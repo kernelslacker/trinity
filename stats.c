@@ -723,6 +723,19 @@ static const struct stat_category pipe_thrash_category =
 	              pipe_thrash_runs,
 	              pipe_thrash_fields);
 
+static const struct stat_field fork_storm_fields[] = {
+	STAT_FIELD(fork_storm, runs),
+	STAT_FIELD(fork_storm, forks),
+	STAT_FIELD(fork_storm, failed),
+	STAT_FIELD(fork_storm, nested),
+	STAT_FIELD(fork_storm, reaped_signal),
+};
+
+static const struct stat_category fork_storm_category =
+	STAT_CATEGORY("fork_storm",
+	              fork_storm_runs,
+	              fork_storm_fields);
+
 /*
  * Emit every counter from struct stats_s as a single JSON object.
  * All scalar counters are emitted unconditionally so consumers see a stable
@@ -1083,8 +1096,6 @@ static void dump_stats_json_lifecycle_and_storms(void)
 	printf("\"fs_lifecycle\":{\"tmpfs\":%lu,\"ramfs\":%lu,\"rdonly\":%lu,"
 			"\"overlay\":%lu,\"quota\":%lu,\"bind\":%lu,\"unsupported\":%lu},"
 		"\"futex_storm\":{\"runs\":%lu,\"inner_crashed\":%lu,\"iters\":%lu},"
-		"\"fork_storm\":{\"runs\":%lu,\"forks\":%lu,\"failed\":%lu,"
-			"\"nested\":%lu,\"reaped_signal\":%lu},"
 		"\"pidfd_storm\":{\"runs\":%lu,\"signals\":%lu,\"getfds\":%lu,\"failed\":%lu},"
 		"\"madvise_cycler\":{\"runs\":%lu,\"calls\":%lu,\"failed\":%lu},"
 		"\"keyring_spam\":{\"runs\":%lu,\"calls\":%lu,\"failed\":%lu},"
@@ -1105,9 +1116,6 @@ static void dump_stats_json_lifecycle_and_storms(void)
 		shm->stats.fs_lifecycle_unsupported,
 		shm->stats.futex_storm_runs, shm->stats.futex_storm_inner_crashed,
 		shm->stats.futex_storm_iters,
-		shm->stats.fork_storm_runs, shm->stats.fork_storm_forks,
-		shm->stats.fork_storm_failed, shm->stats.fork_storm_nested,
-		shm->stats.fork_storm_reaped_signal,
 		shm->stats.pidfd_storm_runs, shm->stats.pidfd_storm_signals,
 		shm->stats.pidfd_storm_getfds, shm->stats.pidfd_storm_failed,
 		shm->stats.madvise_cycler_runs, shm->stats.madvise_cycler_calls,
@@ -1861,6 +1869,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&pipe_thrash_category);
+
+	printf(",");
+	stat_category_emit_json(&fork_storm_category);
 
 	dump_stats_json_iouring_zc_and_kvm();
 	dump_stats_json_rxrpc_alg_ublk_block();
@@ -4389,13 +4400,7 @@ static void dump_stats_childop_runs_local(void)
 
 	stat_category_emit_text(&pipe_thrash_category);
 
-	if (shm->stats.fork_storm_runs) {
-		stat_row("fork_storm", "runs",          shm->stats.fork_storm_runs);
-		stat_row("fork_storm", "forks",         shm->stats.fork_storm_forks);
-		stat_row("fork_storm", "failed",        shm->stats.fork_storm_failed);
-		stat_row("fork_storm", "nested",        shm->stats.fork_storm_nested);
-		stat_row("fork_storm", "reaped_signal", shm->stats.fork_storm_reaped_signal);
-	}
+	stat_category_emit_text(&fork_storm_category);
 
 	if (shm->stats.pidfd_storm_runs) {
 		stat_row("pidfd_storm", "runs",    shm->stats.pidfd_storm_runs);
