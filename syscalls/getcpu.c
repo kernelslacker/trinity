@@ -265,24 +265,18 @@ static void post_getcpu(struct syscallrecord *rec)
 		goto out_free;
 
 	/*
-	 * Defense in depth: even with the post_state snapshot, a wholesale
-	 * stomp could rewrite the snapshot's inner pointer fields.  Reject
-	 * pid-scribbled cpup/nodep before deref.
-	 */
-	if (looks_like_corrupted_ptr(rec, (void *) snap->cpup) ||
-	    looks_like_corrupted_ptr(rec, (void *) snap->nodep)) {
-		outputerr("post_getcpu: rejected suspicious cpup=%p nodep=%p (post_state-scribbled?)\n",
-			  (void *) snap->cpup, (void *) snap->nodep);
-		goto out_free;
-	}
-
-	/*
 	 * Snapshot both user slots before any cross-check so a sibling
 	 * thread can't scribble the buffer between the snapshot and the
 	 * sysfs comparison.
 	 */
-	memcpy(&cpu_user, (const void *) snap->cpup, sizeof(cpu_user));
-	memcpy(&node_user, (const void *) snap->nodep, sizeof(node_user));
+	if (!post_snapshot_or_skip(&cpu_user,
+				   (const void *) snap->cpup,
+				   sizeof(cpu_user)))
+		goto out_free;
+	if (!post_snapshot_or_skip(&node_user,
+				   (const void *) snap->nodep,
+				   sizeof(node_user)))
+		goto out_free;
 
 	nproc_configured = sysconf(_SC_NPROCESSORS_CONF);
 	if (nproc_configured > 0 &&
