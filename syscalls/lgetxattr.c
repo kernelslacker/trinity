@@ -8,7 +8,6 @@
 #include <unistd.h>
 #include <linux/limits.h>
 #include "arch.h"
-#include "deferred-free.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -121,7 +120,7 @@ static void sanitise_lgetxattr(struct syscallrecord *rec)
 	if (!post_snapshot_str(snap->name, sizeof(snap->name),
 			       (const char *)(unsigned long) rec->a2))
 		snap->name[0] = '\0';
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 #endif
 }
 
@@ -176,45 +175,23 @@ static void sanitise_lgetxattr(struct syscallrecord *rec)
  */
 static void post_lgetxattr(struct syscallrecord *rec)
 {
-	struct lgetxattr_post_state *snap =
-		(struct lgetxattr_post_state *) rec->post_state;
+	struct lgetxattr_post_state *snap;
 	unsigned long retval = rec->retval;
 	unsigned char first_buf[4096];
 	unsigned char recheck_buf[4096];
 	size_t snap_len;
 	long rc;
 
+	/*
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
+	 */
+	snap = post_state_claim_owned(rec, LGETXATTR_POST_STATE_MAGIC,
+				      __func__);
 	if (snap == NULL)
 		return;
-
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_lgetxattr: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	/*
-	 * Magic-cookie check: snap survived the heap-shape gate but a
-	 * sibling scribble of rec->post_state with a heap-shaped pointer
-	 * to a foreign allocation would let the wrong bytes pose as a
-	 * lgetxattr_post_state.  A cookie mismatch means snap does not
-	 * point at our struct -- abandon rather than feed wild bytes into
-	 * the pathname / name / value inner derefs and re-issue recheck.
-	 */
-	if (snap->magic != LGETXATTR_POST_STATE_MAGIC) {
-		outputerr("post_lgetxattr: rejected snap with bad magic 0x%lx "
-			  "(post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
 
 	/*
 	 * STRONG-VAL count bound: lgetxattr(2) on success returns the number
@@ -229,29 +206,29 @@ static void post_lgetxattr(struct syscallrecord *rec)
 	 * The pre-existing retval <= 0 gate after the sample stays in place.
 	 */
 	if ((long) retval < 0)
-		goto out_free;
+		goto out_release;
 	if (snap->size != 0 && retval > snap->size) {
 		outputerr("post_lgetxattr: rejecting retval %lu > size %lu\n",
 			  retval, snap->size);
 		post_handler_corrupt_ptr_bump(rec, NULL);
-		goto out_free;
+		goto out_release;
 	}
 
 	if (!ONE_IN(100))
-		goto out_free;
+		goto out_release;
 
 	if ((long) retval <= 0)
-		goto out_free;
+		goto out_release;
 
 	/* size=0 / NULL-buffer probe -- see post_getxattr for rationale. */
 	if (snap->size == 0)
-		goto out_free;
+		goto out_release;
 
 	if (snap->value == 0)
-		goto out_free;
+		goto out_release;
 
 	if (snap->pathname[0] == '\0' || snap->name[0] == '\0')
-		goto out_free;
+		goto out_release;
 
 	snap_len = (size_t) retval;
 	if (snap_len > sizeof(first_buf))
@@ -269,19 +246,19 @@ static void post_lgetxattr(struct syscallrecord *rec)
 	if (!post_snapshot_or_skip(first_buf,
 				   (void *)(unsigned long) snap->value,
 				   snap_len))
-		goto out_free;
+		goto out_release;
 
 	rc = syscall(SYS_lgetxattr, snap->pathname, snap->name,
 		     recheck_buf, sizeof(recheck_buf));
 
 	if (rc <= 0)
-		goto out_free;
+		goto out_release;
 
 	if ((size_t) rc != snap_len)
-		goto out_free;
+		goto out_release;
 
 	if (memcmp(first_buf, recheck_buf, snap_len) == 0)
-		goto out_free;
+		goto out_release;
 
 	{
 		char first_hex[32 * 2 + 1];
@@ -306,8 +283,8 @@ static void post_lgetxattr(struct syscallrecord *rec)
 				   1, __ATOMIC_RELAXED);
 	}
 
-out_free:
-	deferred_freeptr(&rec->post_state);
+out_release:
+	post_state_release(rec, snap);
 }
 #endif /* SYS_lgetxattr || __NR_lgetxattr */
 

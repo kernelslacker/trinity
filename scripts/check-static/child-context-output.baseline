@@ -190,10 +190,8 @@ syscalls/io_uring_register.c:1294:post_io_uring_register
 syscalls/io_uring_register.c:1301:post_io_uring_register
 syscalls/ipc.c:377:post_ipc
 syscalls/kcmp.c:39:post_kcmp
-syscalls/lgetxattr.c:196:post_lgetxattr
 syscalls/lgetxattr.c:211:post_lgetxattr
-syscalls/lgetxattr.c:234:post_lgetxattr
-syscalls/lgetxattr.c:301:post_lgetxattr
+syscalls/lgetxattr.c:278:post_lgetxattr
 syscalls/listmount.c:339:post_listmount
 syscalls/listmount.c:346:post_listmount
 syscalls/listmount.c:367:post_listmount
