@@ -9,7 +9,6 @@
 #include <sys/utsname.h>
 #include <unistd.h>
 #include <linux/utsname.h>
-#include "deferred-free.h"
 #include "random.h"
 #include "shm.h"
 #include "sanitise.h"
@@ -50,12 +49,16 @@ static void sanitise_newuname(struct syscallrecord *rec)
 	 * cannot tell a real-but-wrong heap address from the original name
 	 * user-buffer pointer, so the source memcpy would touch a foreign
 	 * allocation that the guard never inspected.  post_state is private
-	 * to the post handler.
+	 * to the post handler.  post_state_install pairs the rec->post_state
+	 * assign with the ownership-table register so the observable window
+	 * between the two is closed; post_newuname() will then gate the snap
+	 * through post_state_claim_owned() and prove ownership before
+	 * dereferencing any field.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = NEWUNAME_POST_STATE_MAGIC;
 	snap->name = rec->a1;
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 }
 
 static int read_kernel_string(const char *path, char *out, size_t outsz)
@@ -125,56 +128,34 @@ static void post_newuname(struct syscallrecord *rec)
 		{ "/proc/sys/kernel/version",    "version",    offsetof(struct utsname, version)    },
 		{ "/proc/sys/kernel/domainname", "domainname", offsetof(struct utsname, domainname) },
 	};
-	struct newuname_post_state *snap =
-		(struct newuname_post_state *) rec->post_state;
+	struct newuname_post_state *snap;
 	struct utsname uts;
 	unsigned int i;
 
+	/*
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
+	 */
+	snap = post_state_claim_owned(rec, NEWUNAME_POST_STATE_MAGIC,
+				      __func__);
 	if (snap == NULL)
 		return;
 
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_newuname: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	/*
-	 * Magic-cookie check: snap survived the heap-shape gate but a
-	 * sibling scribble of rec->post_state with a heap-shaped pointer
-	 * to a foreign allocation would let the wrong bytes pose as a
-	 * newuname_post_state.  A cookie mismatch means snap does not
-	 * point at our struct -- abandon rather than feed wild bytes into
-	 * the procfs cross-check source memcpy of the user name buffer.
-	 */
-	if (snap->magic != NEWUNAME_POST_STATE_MAGIC) {
-		outputerr("post_newuname: rejected snap with bad magic 0x%lx "
-			  "(post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
-
 	if (!ONE_IN(100))
-		goto out_free;
+		goto out_release;
 	if (rec->retval != 0)
-		goto out_free;
+		goto out_release;
 	if (snap->name == 0)
-		goto out_free;
+		goto out_release;
 
 	/* Local copy defends against a concurrent overwrite of the syscall
 	 * output buffer while we're walking it. */
 	if (!post_snapshot_or_skip(&uts,
 				   (void *)(unsigned long) snap->name,
 				   sizeof(uts)))
-		goto out_free;
+		goto out_release;
 
 	for (i = 0; i < sizeof(fields) / sizeof(fields[0]); i++) {
 		char proc_buf[__NEW_UTS_LEN + 1];
@@ -193,8 +174,8 @@ static void post_newuname(struct syscallrecord *rec)
 		}
 	}
 
-out_free:
-	deferred_freeptr(&rec->post_state);
+out_release:
+	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_newuname = {
