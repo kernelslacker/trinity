@@ -26,6 +26,17 @@
 # `looks_like_corrupted_ptr(` or a `*_POST_STATE_MAGIC` token in the
 # same function, the handler is flagged.
 #
+# Second check (ORDERING): for any handler that uses BOTH the
+# ownership-table gate (post_state_is_owned()) and the magic-cookie
+# gate (snap->magic compare), post_state_is_owned() MUST appear first.
+# A sibling stomp that redirects rec->post_state at a foreign chunk
+# carrying a matching magic cookie (in-flight sibling snap, stale
+# deferred-free snap not yet evicted, or a coincidental same-bucket
+# alloc) clears the magic gate on the wrong struct -- only the
+# ownership-table lookup proves the pointer references THIS attempt's
+# snapshot, so reading snap->magic before that gate trusts memory we
+# have not yet proven we own.  prctl.c is the reference shape.
+#
 # A baseline of grandfathered handlers may live alongside this script as
 # post-state-deref.baseline (one `file:funcname` per line).  The
 # baseline should shrink over time, never grow.
@@ -43,6 +54,16 @@ if [ -r "$BASELINE" ]; then
 		case "$entry" in \#*) continue ;; esac
 		GRANDFATHERED["$entry"]=1
 	done < <(sed -e 's/#.*$//' -e 's/[[:space:]]*$//' "$BASELINE")
+fi
+
+ORDER_BASELINE="$ROOT/scripts/check-static/post-state-deref-order.baseline"
+declare -A ORDER_GRANDFATHERED=()
+if [ -r "$ORDER_BASELINE" ]; then
+	while IFS= read -r entry; do
+		[ -z "$entry" ] && continue
+		case "$entry" in \#*) continue ;; esac
+		ORDER_GRANDFATHERED["$entry"]=1
+	done < <(sed -e 's/#.*$//' -e 's/[[:space:]]*$//' "$ORDER_BASELINE")
 fi
 
 # Collect every post-handler symbol referenced from any
@@ -102,11 +123,36 @@ while IFS= read -r srcfile; do
 		}
 		return opens - closes
 	}
-	function strip_comments(s) {
-		# Crude but adequate for single-line scanning of post handlers.
-		sub(/\/\/.*$/, "", s)
-		gsub(/\/\*[^*]*\*+([^\/*][^*]*\*+)*\//, " ", s)
-		return s
+	function strip_comments(s,    out, i, c, n) {
+		# Track /* ... */ block-comment state across lines via the
+		# file-scope in_block_comment flag so a multi-paragraph
+		# comment cannot leak tokens (snap->magic,
+		# post_state_is_owned) into the ordering scanner.  Also
+		# strip // line comments.
+		out = ""
+		n = length(s)
+		i = 1
+		while (i <= n) {
+			c = substr(s, i, 1)
+			if (in_block_comment) {
+				if (c == "*" && substr(s, i+1, 1) == "/") {
+					in_block_comment = 0
+					i += 2
+					continue
+				}
+				i++
+				continue
+			}
+			if (c == "/" && substr(s, i+1, 1) == "*") {
+				in_block_comment = 1
+				i += 2
+				continue
+			}
+			if (c == "/" && substr(s, i+1, 1) == "/") break
+			out = out c
+			i++
+		}
+		return out
 	}
 	function reset_state() {
 		cur_fname = ""
@@ -114,14 +160,30 @@ while IFS= read -r srcfile; do
 		cur_deref = 0
 		cur_guard = 0
 		cur_reads = 0
+		cur_lineno = 0
+		cur_magic_line = 0
+		cur_isowned_line = 0
+		in_block_comment = 0
 	}
 	function analyze_line(line,    v, pat, m, code) {
+		cur_lineno++
 		code = strip_comments(line)
 
 		# Guard tokens.  Either is sufficient; we trust the author to
 		# place the check before the deref it gates.
 		if (code ~ /looks_like_corrupted_ptr[[:space:]]*\(/) cur_guard = 1
 		if (code ~ /_POST_STATE_MAGIC/) cur_guard = 1
+
+		# Ordering trackers: record the first body line that reads
+		# snap->magic and the first that calls post_state_is_owned().
+		# The relative order matters -- see ORDERING note in the file
+		# header.
+		if (cur_magic_line == 0 && code ~ /->[[:space:]]*magic([^A-Za-z0-9_]|$)/) {
+			cur_magic_line = cur_lineno
+		}
+		if (cur_isowned_line == 0 && code ~ /post_state_is_owned[[:space:]]*\(/) {
+			cur_isowned_line = cur_lineno
+		}
 
 		# Direct deref of rec->post_state without going through a local
 		# -- a handler chasing rec->post_state-> straight through is the
@@ -176,6 +238,13 @@ while IFS= read -r srcfile; do
 				if (cur_reads && cur_deref && !cur_guard) {
 					print "VIOLATION " file ":" cur_fname
 				}
+				# Ordering: any handler that uses BOTH gates must
+				# call post_state_is_owned() before reading
+				# snap->magic.
+				if (cur_isowned_line > 0 && cur_magic_line > 0 &&
+				    cur_magic_line < cur_isowned_line) {
+					print "ORDER " file ":" cur_fname
+				}
 				if (cur_reads) {
 					print "SEEN " file ":" cur_fname
 				}
@@ -189,6 +258,7 @@ while IFS= read -r srcfile; do
 done < <(find "$ROOT/syscalls" -name '*.c' -print | sort) > "$RESULTS_FILE"
 
 new_unbaselined=()
+order_violations=()
 declare -A SEEN_KEY=()
 
 while IFS=' ' read -r kind key; do
@@ -201,6 +271,13 @@ while IFS=' ' read -r kind key; do
 				:
 			else
 				new_unbaselined+=("$key")
+			fi
+			;;
+		ORDER)
+			if [ -n "${ORDER_GRANDFATHERED[$key]+x}" ]; then
+				:
+			else
+				order_violations+=("$key")
 			fi
 			;;
 	esac
@@ -234,8 +311,25 @@ if [ "${#stale_baseline[@]}" -gt 0 ]; then
 	} >&2
 fi
 
+if [ "${#order_violations[@]}" -gt 0 ]; then
+	{
+		echo "  ${#order_violations[@]} post handler(s) read snap->magic before post_state_is_owned():"
+		for e in "${order_violations[@]}"; do echo "    $e"; done
+		echo "  fix: move the post_state_is_owned() check above the snap->magic"
+		echo "       compare.  See prctl.c for the reference shape."
+	} >&2
+fi
+
+fail=0
 if [ "${#new_unbaselined[@]}" -gt 0 ]; then
 	echo "FAIL: $NAME: ${#new_unbaselined[@]} unguarded post_state deref(s)"
+	fail=1
+fi
+if [ "${#order_violations[@]}" -gt 0 ]; then
+	echo "FAIL: $NAME: ${#order_violations[@]} handler(s) read snap->magic before post_state_is_owned()"
+	fail=1
+fi
+if [ "$fail" -ne 0 ]; then
 	exit 1
 fi
 
