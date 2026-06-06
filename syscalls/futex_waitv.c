@@ -4,6 +4,7 @@
                    struct __kernel_timespec __user *, timeout, clockid_t, clockid)
  */
 #include <linux/futex.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
 #include <time.h>
@@ -64,6 +65,7 @@ static void sanitise_futex_waitv(struct syscallrecord *rec)
 
 	for (i = 0; i < nr; i++) {
 		uint32_t *shared;
+		bool is_shared = false;
 
 		futex_words[i] = rand32();
 
@@ -78,12 +80,21 @@ static void sanitise_futex_waitv(struct syscallrecord *rec)
 		if (RAND_BOOL() && (shared = get_shared_futex_word()) != NULL) {
 			waiters[i].uaddr = (__u64)(unsigned long) shared;
 			waiters[i].val = *shared;
+			is_shared = true;
 		} else {
 			waiters[i].uaddr = (__u64)(unsigned long) &futex_words[i];
 			waiters[i].val = futex_words[i];
 		}
 		waiters[i].flags = FUTEX2_SIZE_U32;
-		if (RAND_BOOL())
+		/*
+		 * FUTEX2_PRIVATE routes the waiter through the per-mm hash
+		 * bucket; setting it on a uaddr that lives in shared cross-
+		 * child memory defeats the whole point of the shared-word pool
+		 * (different children would each hash to their own private
+		 * bucket and never collide).  Only flag a private waiter when
+		 * the uaddr is the per-call word in this child's address space.
+		 */
+		if (!is_shared && RAND_BOOL())
 			waiters[i].flags |= FUTEX2_PRIVATE;
 		if (RAND_BOOL()) {
 			waiters[i].flags |= FUTEX2_MPOL;
