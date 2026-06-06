@@ -504,6 +504,51 @@ static const struct struct_field open_how_fields[] = {
 };
 
 /* ------------------------------------------------------------------ */
+/* struct sigevent (timer_create)                                      */
+/* ------------------------------------------------------------------ */
+
+/*
+ * timer_create(clockid_t, struct sigevent *, timer_t *) passes the
+ * sigevent at a2 with argtype ARG_ADDRESS (not ARG_STRUCT_PTR_*), so
+ * the schema-aware fill path never runs against it -- the bespoke
+ * timer_create_sanitise() in syscalls/timer_create.c continues to own
+ * the live (sigev_value, sigev_signo, sigev_notify, _sigev_un._tid)
+ * layout, including the SIGEV_NONE / SIGEV_SIGNAL / SIGEV_THREAD_ID /
+ * (SIGEV_SIGNAL | SIGEV_THREAD_ID) notify-mode distribution and the
+ * gettid-derived _tid fill on the THREAD_ID arms.
+ *
+ * Registration is attribution-only, mirroring pollfd / sembuf /
+ * open_how above: struct_field_for_cmp() uses the FT_ENUM tag to
+ * steer KCOV-CMP learned constants at sigev_notify (a 4-valued
+ * discrete vocab the kernel branches on in do_timer_create) and the
+ * FT_RANGE tag to attribute small ints at sigev_signo rather than at
+ * a coincidentally-same-width slot.  sigev_value and the _sigev_un
+ * union stay FT_RAW: sigev_value is an opaque cookie the kernel
+ * stores and replays without any per-bit CMP, and the union arms are
+ * a tagged-by-sigev_notify payload (a thread tid, or a pair of
+ * user-space pointers) with no useful CMP vocab -- no single-field
+ * vocab maps cleanly across the arms, so attribution-only with no
+ * invented tag is the right call.  sigev_signo upper bound is _NSIG
+ * (64 on Linux); the bespoke pick_signo_avoiding_sigint() already
+ * draws from rnd_modulo_u32(_NSIG) so the range envelope matches.
+ */
+static const unsigned long sigevent_notify_values[] = {
+	SIGEV_NONE, SIGEV_SIGNAL, SIGEV_THREAD, SIGEV_THREAD_ID,
+};
+
+static const struct struct_field sigevent_fields[] = {
+	FIELD(struct sigevent, sigev_value),
+	FIELDX(struct sigevent, sigev_signo, FT_RANGE,
+	       .u.range = { 1, 64 },
+	       .mutate_weight = 60),
+	FIELDX(struct sigevent, sigev_notify, FT_ENUM,
+	       .u.enum_ = { sigevent_notify_values,
+			    ARRAY_SIZE(sigevent_notify_values) },
+	       .mutate_weight = 80),
+	FIELD(struct sigevent, _sigev_un),
+};
+
+/* ------------------------------------------------------------------ */
 /* struct epoll_event (epoll_ctl)                                      */
 /* ------------------------------------------------------------------ */
 
@@ -3853,6 +3898,19 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= open_how_fields,
 		.num_fields	= ARRAY_SIZE(open_how_fields),
 	},
+	/*
+	 * sigevent: appended at the tail so the existing struct_catalog[N]
+	 * indices above stay stable; the syscall_struct_args[] mapping below
+	 * picks up the new entry via an explicit USE_BPF-aware index since
+	 * the bpf_attr / bpf_insn entries shift the position by two when
+	 * USE_BPF is set.
+	 */
+	{
+		.name		= "sigevent",
+		.struct_size	= sizeof(struct sigevent),
+		.fields		= sigevent_fields,
+		.num_fields	= ARRAY_SIZE(sigevent_fields),
+	},
 };
 
 const unsigned int struct_catalog_count = ARRAY_SIZE(struct_catalog);
@@ -4005,6 +4063,17 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * flags / resolve slot.
 	 */
 	{ "openat2",		3, &struct_catalog[29] },
+	/*
+	 * timer_create(clockid_t, struct sigevent *, timer_t *)
+	 * a2 is ARG_ADDRESS (not ARG_STRUCT_PTR_*), so the bespoke
+	 * timer_create_sanitise() keeps owning the live (sigev_value,
+	 * sigev_signo, sigev_notify, _sigev_un._tid) layout and the
+	 * SIGEV_* notify-mode distribution.  Attribution-only
+	 * registration lets struct_field_for_cmp steer CMP-learned
+	 * constants at sigev_notify / sigev_signo rather than at a
+	 * coincidentally-same-width slot.
+	 */
+	{ "timer_create",	2, &struct_catalog[30] },
 #else
 	{ "clock_nanosleep",	3, &struct_catalog[22] },
 	{ "nanosleep",		1, &struct_catalog[22] },
@@ -4017,6 +4086,7 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	{ "poll",		1, &struct_catalog[26] },
 	{ "ppoll",		1, &struct_catalog[26] },
 	{ "openat2",		3, &struct_catalog[27] },
+	{ "timer_create",	2, &struct_catalog[28] },
 #endif
 	/* sentinel */
 	{ NULL, 0, NULL },
