@@ -426,14 +426,12 @@ static void post_statx(struct syscallrecord *rec)
 	 */
 	if ((long) retval == 0 && snap->statxbuf != 0) {
 		void *buf = (void *)(unsigned long) snap->statxbuf;
+		unsigned int req_mask = (unsigned int) snap->mask;
+		unsigned int got_mask;
 
-		if (!looks_like_corrupted_ptr(rec, buf)) {
-			unsigned int req_mask = (unsigned int) snap->mask;
-			unsigned int got_mask;
-
-			memcpy(&got_mask, (char *)buf + offsetof(struct statx, stx_mask),
-			       sizeof(got_mask));
-
+		if (post_snapshot_or_skip(&got_mask,
+					  (char *)buf + offsetof(struct statx, stx_mask),
+					  sizeof(got_mask))) {
 			if ((req_mask & STATX_TYPE) && !(got_mask & STATX_TYPE)) {
 				output(0,
 				       "statx oracle: STATX_TYPE requested "
@@ -480,7 +478,10 @@ static void post_statx(struct syscallrecord *rec)
 		goto out_free;
 	flags = (unsigned int) snap->flags;
 	mask = (unsigned int) snap->mask;
-	memcpy(&first, (void *)(unsigned long) snap->statxbuf, sizeof(first));
+	if (!post_snapshot_or_skip(&first,
+				   (void *)(unsigned long) snap->statxbuf,
+				   sizeof(first)))
+		goto out_free;
 
 	if (syscall(SYS_statx, dfd, local_path, flags, mask, &recheck) != 0)
 		goto out_free;
