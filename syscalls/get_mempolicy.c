@@ -206,23 +206,6 @@ static void post_get_mempolicy(struct syscallrecord *rec)
 	if (snap->flags & MPOL_F_ADDR)
 		goto out_free;
 
-	{
-		void *policy_p = (void *)(unsigned long) snap->policy;
-		void *nmask_p = (void *)(unsigned long) snap->nmask;
-
-		/*
-		 * Defense in depth: even with the post_state snapshot, a
-		 * wholesale stomp could rewrite the snapshot's inner pointer
-		 * fields.  Reject pid-scribbled policy/nmask before deref.
-		 */
-		if (looks_like_corrupted_ptr(rec, policy_p) ||
-		    looks_like_corrupted_ptr(rec, nmask_p)) {
-			outputerr("post_get_mempolicy: rejected suspicious policy=%p nmask=%p (post_state-scribbled?)\n",
-				  policy_p, nmask_p);
-			goto out_free;
-		}
-	}
-
 	nmask_words = (snap->maxnode + 63) / 64;
 	if (nmask_words == 0)
 		nmask_words = 1;
@@ -230,10 +213,14 @@ static void post_get_mempolicy(struct syscallrecord *rec)
 		goto out_free;
 	nmask_bytes = nmask_words * sizeof(unsigned long);
 
-	memcpy(&policy_first, (const void *)(unsigned long) snap->policy,
-	       sizeof(policy_first));
-	memcpy(nmask_first, (const void *)(unsigned long) snap->nmask,
-	       nmask_bytes);
+	if (!post_snapshot_or_skip(&policy_first,
+				   (const void *)(unsigned long) snap->policy,
+				   sizeof(policy_first)))
+		goto out_free;
+	if (!post_snapshot_or_skip(nmask_first,
+				   (const void *)(unsigned long) snap->nmask,
+				   nmask_bytes))
+		goto out_free;
 
 	memset(&policy_recall, 0, sizeof(policy_recall));
 	memset(nmask_recall, 0, nmask_bytes);
