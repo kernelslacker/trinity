@@ -832,6 +832,18 @@ static const struct stat_category cgroup_churn_category =
 	              cgroup_churn_runs,
 	              cgroup_churn_fields);
 
+static const struct stat_field mount_churn_fields[] = {
+	STAT_FIELD(mount_churn, runs),
+	STAT_FIELD(mount_churn, mounts),
+	STAT_FIELD(mount_churn, umounts),
+	STAT_FIELD(mount_churn, failed),
+};
+
+static const struct stat_category mount_churn_category =
+	STAT_CATEGORY("mount_churn",
+	              mount_churn_runs,
+	              mount_churn_fields);
+
 /*
  * Emit every counter from struct stats_s as a single JSON object.
  * All scalar counters are emitted unconditionally so consumers see a stable
@@ -1192,7 +1204,6 @@ static void dump_stats_json_lifecycle_and_storms(void)
 	printf("\"fs_lifecycle\":{\"tmpfs\":%lu,\"ramfs\":%lu,\"rdonly\":%lu,"
 			"\"overlay\":%lu,\"quota\":%lu,\"bind\":%lu,\"unsupported\":%lu},"
 		"\"futex_storm\":{\"runs\":%lu,\"inner_crashed\":%lu,\"iters\":%lu},"
-		"\"mount_churn\":{\"runs\":%lu,\"mounts\":%lu,\"umounts\":%lu,\"failed\":%lu},"
 		"\"uffd_churn\":{\"runs\":%lu,\"registers\":%lu,\"unregisters\":%lu,\"failed\":%lu},"
 		"\"iouring_flood\":{\"runs\":%lu,\"submits\":%lu,\"reaped\":%lu,\"failed\":%lu},"
 		"\"close_racer\":{\"runs\":%lu,\"pairs\":%lu,\"failed\":%lu,\"thread_spawn_fail\":%lu},",
@@ -1202,8 +1213,6 @@ static void dump_stats_json_lifecycle_and_storms(void)
 		shm->stats.fs_lifecycle_unsupported,
 		shm->stats.futex_storm_runs, shm->stats.futex_storm_inner_crashed,
 		shm->stats.futex_storm_iters,
-		shm->stats.mount_churn_runs, shm->stats.mount_churn_mounts,
-		shm->stats.mount_churn_umounts, shm->stats.mount_churn_failed,
 		shm->stats.uffd_runs, shm->stats.uffd_registers,
 		shm->stats.uffd_unregisters, shm->stats.uffd_failed,
 		shm->stats.iouring_runs, shm->stats.iouring_submits,
@@ -1961,6 +1970,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&cgroup_churn_category);
+
+	printf(",");
+	stat_category_emit_json(&mount_churn_category);
 
 	dump_stats_json_iouring_zc_and_kvm();
 	dump_stats_json_rxrpc_alg_ublk_block();
@@ -4507,12 +4519,7 @@ static void dump_stats_childop_runs_local(void)
 
 	stat_category_emit_text(&cgroup_churn_category);
 
-	if (shm->stats.mount_churn_runs) {
-		stat_row("mount_churn", "runs",    shm->stats.mount_churn_runs);
-		stat_row("mount_churn", "mounts",  shm->stats.mount_churn_mounts);
-		stat_row("mount_churn", "umounts", shm->stats.mount_churn_umounts);
-		stat_row("mount_churn", "failed",  shm->stats.mount_churn_failed);
-	}
+	stat_category_emit_text(&mount_churn_category);
 
 	if (shm->stats.uffd_runs) {
 		stat_row("uffd_churn", "runs",        shm->stats.uffd_runs);
