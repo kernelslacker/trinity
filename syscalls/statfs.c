@@ -168,24 +168,6 @@ static void post_statfs(struct syscallrecord *rec)
 	if (!ONE_IN(100))
 		goto out_free;
 
-	{
-		void *buf = (void *)(unsigned long) snap->buf;
-
-		/*
-		 * Defense in depth: even with the post_state snapshot, a
-		 * wholesale stomp could rewrite the snapshot's inner buf
-		 * field.  Reject pid-scribbled pointers before deref.  The
-		 * pathname is now snapshotted by value into the snap's
-		 * embedded buffer, so the post-time strncpy walk-off risk
-		 * is gone -- only the buf pointer still needs a shape gate.
-		 */
-		if (looks_like_corrupted_ptr(rec, buf)) {
-			outputerr("post_statfs: rejected suspicious buf=%p (post_state-scribbled?)\n",
-				  buf);
-			goto out_free;
-		}
-	}
-
 	if (!post_snapshot_or_skip(&first,
 				   (void *)(unsigned long) snap->buf,
 				   sizeof(first)))
@@ -394,24 +376,6 @@ static void post_statfs64(struct syscallrecord *rec)
 		goto out_free;
 
 	sz_snapshot = (size_t) snap->sz;
-
-	{
-		void *buf = (void *)(unsigned long) snap->buf;
-
-		/*
-		 * Defense in depth: even with the post_state snapshot, a
-		 * wholesale stomp could rewrite the snapshot's inner buf
-		 * field.  Reject pid-scribbled pointers before deref.  The
-		 * pathname is now snapshotted by value into the snap's
-		 * embedded buffer, so the post-time strncpy walk-off risk
-		 * is gone -- only the buf pointer still needs a shape gate.
-		 */
-		if (looks_like_corrupted_ptr(rec, buf)) {
-			outputerr("post_statfs64: rejected suspicious buf=%p (post_state-scribbled?)\n",
-				  buf);
-			goto out_free;
-		}
-	}
 
 	if (!post_snapshot_or_skip(&first,
 				   (void *)(unsigned long) snap->buf,
