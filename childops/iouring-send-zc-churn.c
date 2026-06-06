@@ -120,6 +120,7 @@
 
 #include "child.h"
 #include "childops-iouring.h"
+#include "childops-netlink.h"
 #include "childops-util.h"
 #include "jitter.h"
 #include "random.h"
@@ -207,16 +208,6 @@ static int do_enter(int fd, unsigned int to_submit, unsigned int min_complete,
 {
 	return (int)syscall(__NR_io_uring_enter, fd, to_submit, min_complete,
 			    flags, NULL, 0);
-}
-
-static long long ns_since(const struct timespec *t0)
-{
-	struct timespec now;
-
-	if (clock_gettime(CLOCK_MONOTONIC, &now) < 0)
-		return 0;
-	return (long long)(now.tv_sec - t0->tv_sec) * 1000000000LL +
-	       (long long)(now.tv_nsec - t0->tv_nsec);
 }
 
 static bool ring_setup(struct ring_ctx *ctx)
