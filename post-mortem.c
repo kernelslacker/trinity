@@ -98,8 +98,18 @@ static void dump_syscall_slot(FILE *fp, const struct chronicle_slot *slot)
  * number of entries copied.  Lock-free SPSC: acquire-load on head pairs
  * with the child's release-store after writing the slot, so any entry
  * we observe in [head-N, head-1] was fully written before head was
- * published.  A straggling write from a still-running child can only
- * race against the slot at (head % N), which we don't read.
+ * published.
+ *
+ * The acquire-load gives a consistent starting snapshot, but the loop
+ * is not instantaneous and a still-running child can advance head
+ * underneath us -- specifically, the oldest slot at j == 0 is exactly
+ * one publish away from being clobbered when the writer wraps.  Use
+ * head itself as the seq guard: snapshot the slot into a local, then
+ * re-load head with acquire and drop the entry if the writer has
+ * reached (and may be mid-write of) the same physical position.  This
+ * matches the child_syscall_ring_push() side, which advances head
+ * exactly once per slot write -- so head doubles as a per-slot
+ * generation counter without an extra field.
  */
 static unsigned int drain_child_ring(unsigned int idx,
 				     struct ring_entry *out)
@@ -112,15 +122,34 @@ static unsigned int drain_child_ring(unsigned int idx,
 	count = head < CHILD_SYSCALL_RING_SIZE ? head : CHILD_SYSCALL_RING_SIZE - 1;
 
 	for (j = 0; j < count; j++) {
-		uint32_t idx_slot = (head - count + j) & (CHILD_SYSCALL_RING_SIZE - 1);
+		uint32_t abs_idx = head - count + j;
+		uint32_t idx_slot = abs_idx & (CHILD_SYSCALL_RING_SIZE - 1);
 		struct chronicle_slot *slot = &ring->recent[idx_slot];
+		struct chronicle_slot snap;
+		uint32_t head_after;
 
 		/* Skip slots that a freshly spawned child has not yet filled. */
 		if (!slot->valid)
 			continue;
 
+		snap = *slot;
+
+		/*
+		 * Re-check head.  The writer overwrites the physical slot at
+		 * (abs_idx & (N-1)) once head reaches abs_idx + N, publishing
+		 * the new abs_idx + N value at head = abs_idx + N + 1.  If the
+		 * post-copy head is >= abs_idx + N, the writer is either mid-
+		 * rewrite of this slot or has already finished -- either way
+		 * snap may carry torn fields from a partial overwrite.  Drop
+		 * it; we'd rather lose a stale chronicle line than emit one
+		 * stitched from two different syscalls.
+		 */
+		head_after = __atomic_load_n(&ring->head, __ATOMIC_ACQUIRE);
+		if (head_after - abs_idx >= CHILD_SYSCALL_RING_SIZE)
+			continue;
+
 		out[n].child_idx = idx;
-		out[n].slot = *slot;
+		out[n].slot = snap;
 		n++;
 	}
 	return n;
