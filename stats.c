@@ -632,6 +632,21 @@ static const struct stat_category msg_zerocopy_churn_category =
 	              msg_zerocopy_churn_runs,
 	              msg_zerocopy_churn_fields);
 
+static const struct stat_field tls_rotate_fields[] = {
+	STAT_FIELD(tls_rotate, runs),
+	STAT_FIELD(tls_rotate, setup_failed),
+	STAT_FIELD(tls_rotate, ulp_failed),
+	STAT_FIELD(tls_rotate, ulp_asymmetric),
+	STAT_FIELD(tls_rotate, installs),
+	STAT_FIELD(tls_rotate, rekeys_ok),
+	STAT_FIELD(tls_rotate, rekeys_rejected),
+};
+
+static const struct stat_category tls_rotate_category =
+	STAT_CATEGORY("tls_rotate",
+	              tls_rotate_runs,
+	              tls_rotate_fields);
+
 static const struct stat_field setsockopt_pairing_fields[] = {
 	STAT_FIELD(setsockopt_pairing, paired_emitted),
 };
@@ -1260,7 +1275,6 @@ static void dump_stats_json_socket_family_and_tls(void)
 {
 	printf("\"socket_family_chain\":{\"runs\":%lu,\"completed\":%lu,\"failed\":%lu,\"authencesn_attempts\":%lu,\"splice_attempts\":%lu},"
 		"\"socket_family_grammar\":{\"runs\":%lu,\"completed\":%lu},"
-		"\"tls_rotate\":{\"runs\":%lu,\"setup_failed\":%lu,\"ulp_failed\":%lu,\"ulp_asymmetric\":%lu,\"installs\":%lu,\"rekeys_ok\":%lu,\"rekeys_rejected\":%lu},"
 		"\"packet_fanout_thrash\":{\"runs\":%lu,\"setup_failed\":%lu,\"ring_failed\":%lu,\"rings_installed\":%lu,\"mmap_failed\":%lu,\"joins\":%lu,\"rejoins_ok\":%lu,\"rejoins_rejected\":%lu},"
 		"\"eth_emitter\":{\"runs\":%lu,\"setup_failed\":%lu,\"short\":%lu,\"sends_ok\":%lu,\"sends_failed\":%lu,\"tmpl_arp\":%lu,\"tmpl_ipv4_frag_zero\":%lu,\"tmpl_ipv6_na\":%lu,\"tmpl_vlan_qinq\":%lu,\"tmpl_bad_ethertype\":%lu},"
 		"\"iouring_net_multishot\":{\"runs\":%lu,\"setup_failed\":%lu,\"pbuf_ring_ok\":%lu,\"pbuf_legacy_ok\":%lu,\"armed\":%lu,\"packets_sent\":%lu,\"completions\":%lu,\"cancel_submitted\":%lu,\"napi_register_ok\":%lu,\"napi_register_fail\":%lu,\"napi_unregister_ok\":%lu,\"napi_unregister_fail\":%lu},"
@@ -1283,13 +1297,6 @@ static void dump_stats_json_socket_family_and_tls(void)
 		shm->stats.socket_family_chain_splice_attempts,
 		shm->stats.socket_family_grammar_runs,
 		shm->stats.socket_family_grammar_completed,
-		shm->stats.tls_rotate_runs,
-		shm->stats.tls_rotate_setup_failed,
-		shm->stats.tls_rotate_ulp_failed,
-		shm->stats.tls_rotate_ulp_asymmetric,
-		shm->stats.tls_rotate_installs,
-		shm->stats.tls_rotate_rekeys_ok,
-		shm->stats.tls_rotate_rekeys_rejected,
 		shm->stats.packet_fanout_runs,
 		shm->stats.packet_fanout_setup_failed,
 		shm->stats.packet_fanout_ring_failed,
@@ -2011,6 +2018,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&uffd_churn_category);
+
+	printf(",");
+	stat_category_emit_json(&tls_rotate_category);
 
 	printf(",");
 	stat_category_emit_json(&iouring_flood_category);
@@ -4585,15 +4595,7 @@ static void dump_stats_childop_runs_network(void)
 		stat_row("socket_family_grammar", "completed", shm->stats.socket_family_grammar_completed);
 	}
 
-	if (shm->stats.tls_rotate_runs) {
-		stat_row("tls_rotate", "runs",            shm->stats.tls_rotate_runs);
-		stat_row("tls_rotate", "setup_failed",    shm->stats.tls_rotate_setup_failed);
-		stat_row("tls_rotate", "ulp_failed",      shm->stats.tls_rotate_ulp_failed);
-		stat_row("tls_rotate", "ulp_asymmetric",  shm->stats.tls_rotate_ulp_asymmetric);
-		stat_row("tls_rotate", "installs",        shm->stats.tls_rotate_installs);
-		stat_row("tls_rotate", "rekeys_ok",       shm->stats.tls_rotate_rekeys_ok);
-		stat_row("tls_rotate", "rekeys_rejected", shm->stats.tls_rotate_rekeys_rejected);
-	}
+	stat_category_emit_text(&tls_rotate_category);
 
 	if (shm->stats.packet_fanout_runs) {
 		stat_row("packet_fanout_thrash", "runs",             shm->stats.packet_fanout_runs);
