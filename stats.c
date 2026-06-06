@@ -880,6 +880,18 @@ static const struct stat_category close_racer_category =
 	              close_racer_runs,
 	              close_racer_fields);
 
+static const struct stat_field refcount_audit_fields[] = {
+	STAT_FIELD(refcount_audit, runs),
+	STAT_FIELD(refcount_audit, fd_anomalies),
+	STAT_FIELD(refcount_audit, mmap_anomalies),
+	STAT_FIELD(refcount_audit, sock_anomalies),
+};
+
+static const struct stat_category refcount_audit_category =
+	STAT_CATEGORY("refcount_audit",
+	              refcount_audit_runs,
+	              refcount_audit_fields);
+
 /*
  * Emit every counter from struct stats_s as a single JSON object.
  * All scalar counters are emitted unconditionally so consumers see a stable
@@ -1180,9 +1192,7 @@ static void dump_stats_json_corruption_and_audit(void)
 			"\"get_writable_address_scribbled_mprotect_shm\":%lu,"
 			"\"get_writable_address_scribbled_postmp_mmap\":%lu,"
 			"\"get_writable_address_scribbled_postmp_shm\":%lu,"
-			"\"get_writable_address_enomem_exhausted\":%lu},"
-		"\"refcount_audit\":{\"runs\":%lu,\"fd_anomalies\":%lu,"
-			"\"mmap_anomalies\":%lu,\"sock_anomalies\":%lu},",
+			"\"get_writable_address_enomem_exhausted\":%lu},",
 		shm->stats.fd_event_ring_corrupted,
 		shm->stats.fd_event_ring_overwritten,
 		shm->stats.fd_event_payload_corrupt,
@@ -1230,9 +1240,7 @@ static void dump_stats_json_corruption_and_audit(void)
 		parent_stats.get_writable_address_scribbled_mprotect_shm,
 		parent_stats.get_writable_address_scribbled_postmp_mmap,
 		parent_stats.get_writable_address_scribbled_postmp_shm,
-		parent_stats.get_writable_address_enomem_exhausted,
-		shm->stats.refcount_audit_runs, shm->stats.refcount_audit_fd_anomalies,
-		shm->stats.refcount_audit_mmap_anomalies, shm->stats.refcount_audit_sock_anomalies);
+		parent_stats.get_writable_address_enomem_exhausted);
 }
 
 static void dump_stats_json_lifecycle_and_storms(void)
@@ -2009,6 +2017,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&close_racer_category);
+
+	printf(",");
+	stat_category_emit_json(&refcount_audit_category);
 
 	dump_stats_json_iouring_zc_and_kvm();
 	dump_stats_json_rxrpc_alg_ublk_block();
@@ -4507,12 +4518,7 @@ static void dump_stats_strategy_summary(void)
 
 static void dump_stats_childop_runs_local(void)
 {
-	if (shm->stats.refcount_audit_runs) {
-		stat_row("refcount_audit", "runs",           shm->stats.refcount_audit_runs);
-		stat_row("refcount_audit", "fd_anomalies",   shm->stats.refcount_audit_fd_anomalies);
-		stat_row("refcount_audit", "mmap_anomalies", shm->stats.refcount_audit_mmap_anomalies);
-		stat_row("refcount_audit", "sock_anomalies", shm->stats.refcount_audit_sock_anomalies);
-	}
+	stat_category_emit_text(&refcount_audit_category);
 
 	if (shm->stats.fs_lifecycle_tmpfs   || shm->stats.fs_lifecycle_ramfs   ||
 	    shm->stats.fs_lifecycle_rdonly  || shm->stats.fs_lifecycle_overlay ||
