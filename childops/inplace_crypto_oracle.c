@@ -675,7 +675,6 @@ bool inplace_crypto_oracle(struct childdata *child)
 	}
 	if (chosen == TGT_NR) {
 		unsupported_inplace_crypto_oracle = true;
-		outputerr("inplace_crypto_oracle: all 8 targets latched, op going dormant\n");
 		return true;
 	}
 

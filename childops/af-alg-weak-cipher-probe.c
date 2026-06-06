@@ -299,7 +299,5 @@ bool af_alg_weak_cipher_probe(struct childdata *child)
 
 	/* All entries latched -- nothing left to learn from this op. */
 	unsupported_af_alg_top_level = true;
-	outputerr("af_alg_weak_cipher_probe: all %u entries latched, op going dormant\n",
-		  (unsigned int)PROBE_TABLE_LEN);
 	return true;
 }

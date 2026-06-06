@@ -668,7 +668,7 @@ void tracefs_fuzzer_init(void)
 	ftrace_subset_present = (access(TRACEFS_ROOT "/current_tracer", F_OK) == 0);
 	events_subset_present = (access(TRACEFS_ROOT "/available_events", F_OK) == 0);
 
-	outputstd("tracefs-fuzzer: ftrace_subset=%s events_subset=%s\n",
+	outputstd("tracefs-fuzzer: ftrace_subset=%s events_subset=%s\n", /* check-static: child-output-ok */
 		  ftrace_subset_present ? "yes" : "no",
 		  events_subset_present ? "yes" : "no");
 

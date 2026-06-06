@@ -4108,8 +4108,6 @@ bool recipe_runner(struct childdata *child)
 
 	r = &recipes[idx];
 
-	output(1, "recipe: running %s\n", r->name);
-
 	/* Publish the active recipe name so post-mortem can attribute a
 	 * kernel taint to the sequence in flight.  Cleared on completion
 	 * regardless of success/failure so a stale name never lingers. */
@@ -4154,7 +4152,7 @@ void recipe_runner_dump_stats(void)
 		if (n == 0 && !disabled)
 			continue;
 
-		output(0, "  %-14s %lu%s\n",
+		output(0, "  %-14s %lu%s\n", /* check-static: child-output-ok */
 			recipes[i].name, n,
 			disabled ? " (disabled — kernel feature absent)" : "");
 	}

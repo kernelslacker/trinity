@@ -8,7 +8,6 @@
 childops/af-alg-template-probe.c:196:af_alg_template_probe
 childops/af-alg-template-probe.c:209:af_alg_template_probe
 childops/af-alg-weak-cipher-probe.c:211:probe_one_entry
-childops/af-alg-weak-cipher-probe.c:302:af_alg_weak_cipher_probe
 childops/eth-emitter.c:239:ensure_socket
 childops/fs-lifecycle.c:157:ensure_private_ns
 childops/genetlink-fuzzer.c:284:ensure_discovery
@@ -17,9 +16,6 @@ childops/inplace_crypto_oracle.c:160:latch_target
 childops/inplace_crypto_oracle.c:270:log_corruption
 childops/inplace_crypto_oracle.c:272:log_corruption
 childops/inplace_crypto_oracle.c:273:log_corruption
-childops/inplace_crypto_oracle.c:678:inplace_crypto_oracle
-childops/iouring-recipes.c:2799:iouring_recipes
-childops/iouring-recipes.c:2893:iouring_recipes_dump_stats
 childops/ip6gre-bond-lapb-stack.c:118:latch_unsupported
 childops/mount-churn.c:130:ensure_private_ns
 childops/mpls-route-churn.c:206:maybe_modprobe_once
@@ -32,16 +28,12 @@ childops/nat-t-churn.c:931:nat_t_churn_v6
 childops/numa-migration-churn.c:182:parse_online_nodes
 childops/numa-migration-churn.c:190:parse_online_nodes
 childops/pagecache-canary-check.c:179:log_corruption
-childops/recipe-runner.c:4111:recipe_runner
-childops/recipe-runner.c:4157:recipe_runner_dump_stats
 childops/refcount-auditor.c:147:audit_fd_bucket
 childops/refcount-auditor.c:195:audit_mmap_bucket
 childops/refcount-auditor.c:455:audit_socket_bucket
 childops/refcount-auditor.c:492:audit_socket_bucket
 childops/rxrpc-key-install.c:202:probe_rxrpc_key_supported
 childops/rxrpc-key-install.c:348:do_add_rxrpc
-childops/splice-protocols.c:617:splice_protocols_selftest
-childops/tracefs-fuzzer.c:671:tracefs_fuzzer_init
 syscalls/alarm.c:100:post_alarm
 syscalls/alarm.c:61:post_alarm
 syscalls/alarm.c:76:post_alarm

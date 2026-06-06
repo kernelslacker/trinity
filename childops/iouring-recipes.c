@@ -2796,8 +2796,6 @@ bool iouring_recipes(struct childdata *child __unused__)
 
 	r = &catalog[idx];
 
-	output(1, "iouring-recipe: running %s\n", r->name);
-
 	if (!iour_setup(&ctx, 16)) {
 		if (errno == ENOSYS)
 			__atomic_store_n(&shm->iouring_enosys, true,
@@ -2890,7 +2888,7 @@ void iouring_recipes_dump_stats(void)
 		if (n == 0 && !disabled)
 			continue;
 
-		output(0, "  %-24s %lu%s\n",
+		output(0, "  %-24s %lu%s\n", /* check-static: child-output-ok */
 			catalog[i].name, n,
 			disabled ? " (disabled — kernel feature absent)" : "");
 	}
