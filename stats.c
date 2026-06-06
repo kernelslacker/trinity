@@ -662,6 +662,16 @@ static const struct stat_category userns_fuzzer_category =
 	              userns_runs,
 	              userns_fuzzer_fields);
 
+static const struct stat_field barrier_racer_fields[] = {
+	STAT_FIELD(barrier_racer, runs),
+	STAT_FIELD(barrier_racer, inner_crashed),
+};
+
+static const struct stat_category barrier_racer_category =
+	STAT_CATEGORY("barrier_racer",
+	              barrier_racer_runs,
+	              barrier_racer_fields);
+
 /*
  * Emit every counter from struct stats_s as a single JSON object.
  * All scalar counters are emitted unconditionally so consumers see a stable
@@ -852,7 +862,6 @@ static void dump_stats_json_basic_subsystems(void)
 {
 	printf("\"vfs_writes\":{\"procfs\":%lu,\"sysfs\":%lu,\"debugfs\":%lu},"
 		"\"memory_pressure\":{\"runs_madv_pageout\":%lu},"
-		"\"barrier_racer\":{\"runs\":%lu,\"inner_crashed\":%lu},"
 		"\"genetlink_fuzzer\":{\"families_discovered\":%lu,\"msgs_sent\":%lu,\"eperm\":%lu},"
 		"\"genl_family_calls\":{\"devlink\":%lu,\"nl80211\":%lu,\"taskstats\":%lu,"
 			"\"ethtool\":%lu,\"mptcp_pm\":%lu,\"l2tp\":%lu,\"gtp\":%lu,\"macsec\":%lu,"
@@ -870,7 +879,6 @@ static void dump_stats_json_basic_subsystems(void)
 		"\"bpf_fd_provider\":{\"maps_provided\":%lu,\"progs_provided\":%lu},",
 		shm->stats.procfs_writes, shm->stats.sysfs_writes, shm->stats.debugfs_writes,
 		shm->stats.memory_pressure_runs,
-		shm->stats.barrier_racer_runs, shm->stats.barrier_racer_inner_crashed,
 		shm->stats.genetlink_families_discovered, shm->stats.genetlink_msgs_sent,
 		shm->stats.genetlink_eperm,
 		shm->stats.genl_family_calls_devlink,
@@ -1803,6 +1811,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&userns_fuzzer_category);
+
+	printf(",");
+	stat_category_emit_json(&barrier_racer_category);
 
 	dump_stats_json_iouring_zc_and_kvm();
 	dump_stats_json_rxrpc_alg_ublk_block();
@@ -3777,10 +3788,7 @@ static void dump_stats_fuzzer_subsystems(void)
 
 	stat_category_emit_text(&userns_fuzzer_category);
 
-	if (shm->stats.barrier_racer_runs) {
-		stat_row("barrier_racer", "runs",          shm->stats.barrier_racer_runs);
-		stat_row("barrier_racer", "inner_crashed", shm->stats.barrier_racer_inner_crashed);
-	}
+	stat_category_emit_text(&barrier_racer_category);
 
 	if (shm->stats.genetlink_families_discovered ||
 	    shm->stats.genetlink_msgs_sent) {
