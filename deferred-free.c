@@ -279,7 +279,7 @@ static void alloc_track_hash_remove(void *ptr)
 	alloc_track_hash[hole] = NULL;
 }
 
-static bool alloc_track_hash_contains(void *ptr)
+bool alloc_track_lookup(void *ptr)
 {
 	unsigned int idx = alloc_track_hash_index(ptr);
 	unsigned int probes;
@@ -455,7 +455,7 @@ static bool alloc_track_consume(void *ptr)
 	unsigned int idx;
 	unsigned int i;
 
-	if (!alloc_track_hash_contains(ptr))
+	if (!alloc_track_lookup(ptr))
 		return false;
 
 	idx = (alloc_track_head - 1) & (ALLOC_TRACK_SIZE - 1);
@@ -489,18 +489,6 @@ void alloc_track_refresh(void *ptr)
 		return;
 	(void)alloc_track_consume(ptr);
 	deferred_alloc_track(ptr);
-}
-
-/*
- * Non-consuming peer of alloc_track_consume: returns true if @ptr is
- * present in the side-set without removing it.  Used by readers that
- * want to validate a stored pointer (e.g. an object-pool slot) before
- * the first deref, but must not perturb the consume-on-free invariant
- * the deferred_free_enqueue path relies on.
- */
-bool alloc_track_lookup(void *ptr)
-{
-	return alloc_track_hash_contains(ptr);
 }
 
 /*
