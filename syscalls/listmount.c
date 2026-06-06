@@ -268,7 +268,7 @@ static void sanitise_listmount(struct syscallrecord *rec)
 	snap->req        = rec->a1;
 	snap->mnt_ids    = rec->a2;
 	snap->nr_mnt_ids = rec->a3;
-	rec->post_state  = (unsigned long) snap;
+	post_state_install(rec, snap);
 #endif
 
 	/*
@@ -317,7 +317,7 @@ static void sanitise_listmount(struct syscallrecord *rec)
 static void post_listmount(struct syscallrecord *rec)
 {
 #ifdef HAVE_SYS_LISTMOUNT
-	struct listmount_post_state *snap = (struct listmount_post_state *) rec->post_state;
+	struct listmount_post_state *snap;
 	unsigned long retval = rec->retval;
 	long ret = (long) retval;
 	struct mnt_id_req first_req;
@@ -327,29 +327,16 @@ static void post_listmount(struct syscallrecord *rec)
 	unsigned long buf_slots;
 	long rc;
 
+	/*
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
+	 */
+	snap = post_state_claim_owned(rec, LISTMOUNT_POST_STATE_MAGIC,
+				      __func__);
 	if (snap == NULL)
 		return;
-
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_listmount: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	if (snap->magic != LISTMOUNT_POST_STATE_MAGIC) {
-		outputerr("post_listmount: rejected snap with bad magic "
-			  "0x%lx (post_state-stomped to foreign "
-			  "allocation?)\n", snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
 
 	/*
 	 * Kernel ABI: sys_listmount writes at most nr_mnt_ids u64 mount IDs
@@ -361,32 +348,32 @@ static void post_listmount(struct syscallrecord *rec)
 	 * the user-supplied bound, or a torn read of the iterator counter.
 	 * Reject before the ONE_IN(100) re-issue oracle below, which would
 	 * otherwise miss 99% of corrupted retvals.  Fall through to
-	 * out_free so the deferred post_state buffer is still released.
+	 * out_release so the post_state ownership bracket is still closed.
 	 */
 	if (ret != -1L && retval > snap->nr_mnt_ids) {
 		outputerr("post_listmount: retval %lu exceeds requested nr_mnt_ids %lu\n",
 			  retval, snap->nr_mnt_ids);
 		post_handler_corrupt_ptr_bump(rec, NULL);
-		goto out_free;
+		goto out_release;
 	}
 
 	if (!ONE_IN(100))
-		goto out_free;
+		goto out_release;
 
 	if (ret <= 0)
-		goto out_free;
+		goto out_release;
 
 	if (snap->req == 0 || snap->mnt_ids == 0 || snap->nr_mnt_ids == 0)
-		goto out_free;
+		goto out_release;
 
 	if (!post_snapshot_or_skip(&first_req, (void *) snap->req,
 				   sizeof(first_req)))
-		goto out_free;
+		goto out_release;
 
 	n = (retval < 64ul) ? retval : 64ul;
 	if (!post_snapshot_or_skip(first_ids, (void *) snap->mnt_ids,
 				   n * sizeof(u64)))
-		goto out_free;
+		goto out_release;
 
 	{
 		struct mnt_id_req recheck_req = first_req;
@@ -398,10 +385,10 @@ static void post_listmount(struct syscallrecord *rec)
 	}
 
 	if (rc < 0)
-		goto out_free;
+		goto out_release;
 
 	if (rc != ret)
-		goto out_free;
+		goto out_release;
 
 	if (memcmp(first_ids, recheck_ids, (size_t) rc * sizeof(u64)) != 0) {
 		char first_hex[64 * 17 + 1];
@@ -433,8 +420,8 @@ static void post_listmount(struct syscallrecord *rec)
 				   1, __ATOMIC_RELAXED);
 	}
 
-out_free:
-	deferred_freeptr(&rec->post_state);
+out_release:
+	post_state_release(rec, snap);
 #else
 	(void) rec;
 #endif

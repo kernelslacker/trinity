@@ -192,10 +192,8 @@ syscalls/ipc.c:377:post_ipc
 syscalls/kcmp.c:39:post_kcmp
 syscalls/lgetxattr.c:211:post_lgetxattr
 syscalls/lgetxattr.c:278:post_lgetxattr
-syscalls/listmount.c:339:post_listmount
-syscalls/listmount.c:346:post_listmount
-syscalls/listmount.c:367:post_listmount
-syscalls/listmount.c:428:post_listmount
+syscalls/listmount.c:354:post_listmount
+syscalls/listmount.c:415:post_listmount
 syscalls/listns.c:297:post_listns
 syscalls/listns.c:313:post_listns
 syscalls/listns.c:334:post_listns
