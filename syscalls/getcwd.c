@@ -6,7 +6,6 @@
 #include <unistd.h>
 #include <limits.h>
 #include "arch.h"
-#include "deferred-free.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
@@ -48,12 +47,17 @@ static void sanitise_getcwd(struct syscallrecord *rec)
 	 * cannot tell a real-but-wrong heap address from the original buf
 	 * user-buffer pointer, so the source memcpy would touch a foreign
 	 * allocation.  post_state is private to the post handler.
+	 * post_state_install pairs the rec->post_state assign with the
+	 * ownership-table register so the observable window between the
+	 * two is closed; post_getcwd() will then gate the snap through
+	 * post_state_claim_owned() and prove ownership before dereferencing
+	 * any field.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = GETCWD_POST_STATE_MAGIC;
 	snap->buf = rec->a1;
 	snap->size = rec->a2;
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 }
 
 /*
@@ -80,8 +84,7 @@ static void sanitise_getcwd(struct syscallrecord *rec)
  */
 static void post_getcwd(struct syscallrecord *rec)
 {
-	struct getcwd_post_state *snap =
-		(struct getcwd_post_state *) rec->post_state;
+	struct getcwd_post_state *snap;
 	unsigned long retval = rec->retval;
 	long ret = (long) retval;
 	char proc_cwd[PATH_MAX];
@@ -89,37 +92,16 @@ static void post_getcwd(struct syscallrecord *rec)
 	ssize_t n;
 	size_t copy_len;
 
+	/*
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
+	 */
+	snap = post_state_claim_owned(rec, GETCWD_POST_STATE_MAGIC,
+				      __func__);
 	if (snap == NULL)
 		return;
-
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_getcwd: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	/*
-	 * Magic-cookie check: snap survived the heap-shape gate but a
-	 * sibling scribble of rec->post_state with a heap-shaped pointer
-	 * to a foreign allocation would let the wrong bytes pose as a
-	 * getcwd_post_state.  A cookie mismatch means snap does not point
-	 * at our struct -- abandon rather than feed wild bytes into the
-	 * length bound and inner-buf deref.
-	 */
-	if (snap->magic != GETCWD_POST_STATE_MAGIC) {
-		outputerr("post_getcwd: rejected snap with bad magic 0x%lx "
-			  "(post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
 
 	/*
 	 * STRONG-VAL length bound: sys_getcwd on success returns the byte
@@ -138,20 +120,20 @@ static void post_getcwd(struct syscallrecord *rec)
 		outputerr("post_getcwd: rejected retval=0x%lx > size=%lu\n",
 			  retval, snap->size);
 		post_handler_corrupt_ptr_bump(rec, NULL);
-		goto out_free;
+		goto out_release;
 	}
 
 	if (!ONE_IN(100))
-		goto out_free;
+		goto out_release;
 
 	if (ret <= 0)
-		goto out_free;			/* syscall failed/empty */
+		goto out_release;			/* syscall failed/empty */
 	if (snap->buf == 0)
-		goto out_free;			/* no user buffer */
+		goto out_release;			/* no user buffer */
 
 	n = readlink("/proc/self/cwd", proc_cwd, sizeof(proc_cwd) - 1);
 	if (n <= 0)
-		goto out_free;			/* readlink failed */
+		goto out_release;			/* readlink failed */
 	proc_cwd[n] = '\0';
 
 	copy_len = ((size_t)ret < sizeof(user_cwd))
@@ -159,7 +141,7 @@ static void post_getcwd(struct syscallrecord *rec)
 	if (!post_snapshot_or_skip(user_cwd,
 				   (const void *)(uintptr_t) snap->buf,
 				   copy_len))
-		goto out_free;
+		goto out_release;
 	/* sys_getcwd includes the trailing NUL in the returned length, so
 	 * the string proper is copy_len-1 bytes.  Force NUL-terminate
 	 * defensively. */
@@ -172,8 +154,8 @@ static void post_getcwd(struct syscallrecord *rec)
 				   __ATOMIC_RELAXED);
 	}
 
-out_free:
-	deferred_freeptr(&rec->post_state);
+out_release:
+	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_getcwd = {

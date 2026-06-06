@@ -102,10 +102,8 @@ syscalls/getcpu.c:236:post_getcpu
 syscalls/getcpu.c:251:post_getcpu
 syscalls/getcpu.c:284:post_getcpu
 syscalls/getcpu.c:294:post_getcpu
-syscalls/getcwd.c:101:post_getcwd
-syscalls/getcwd.c:116:post_getcwd
-syscalls/getcwd.c:138:post_getcwd
-syscalls/getcwd.c:169:post_getcwd
+syscalls/getcwd.c:120:post_getcwd
+syscalls/getcwd.c:151:post_getcwd
 syscalls/getdents.c:45:post_getdents
 syscalls/getegid.c:33:post_getegid
 syscalls/getegid.c:48:post_getegid
