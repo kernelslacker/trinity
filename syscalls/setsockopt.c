@@ -872,7 +872,26 @@ static void post_setsockopt(struct syscallrecord *rec)
 
 #ifdef USE_BPF
 	if (snap->optname == SO_ATTACH_FILTER) {
-		bpf_free_filter((struct sock_fprog *) snap->optval);
+		/*
+		 * Wrapper-side gate before bpf_free_filter() dereferences
+		 * bpf->filter: looks_like_corrupted_ptr() above is shape-only
+		 * (heap-band + alignment), so a heap-shaped but unmapped
+		 * snap->optval would survive that gate and fault inside the
+		 * inner-pointer read.  Require the wrapper to be a tracked
+		 * allocation (definitively one we produced via bpf_gen_filter)
+		 * or readable for a sock_fprog-sized window.  When neither
+		 * holds, skip the inner-free dispatch and fall back to outer-
+		 * only enqueue (same path as the non-ATTACH_FILTER branch);
+		 * mirrors the bpf_free_filter() inner-filter gate added in
+		 * 64f659289041.
+		 */
+		struct sock_fprog *bpf = (struct sock_fprog *) snap->optval;
+
+		if (alloc_track_lookup(bpf) ||
+		    range_readable_user(bpf, sizeof(struct sock_fprog)))
+			bpf_free_filter(bpf);
+		else
+			deferred_free_enqueue(snap->optval);
 	} else
 #endif
 	{
