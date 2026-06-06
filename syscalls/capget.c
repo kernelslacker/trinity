@@ -182,27 +182,15 @@ static void post_capget(struct syscallrecord *rec)
 	if (snap->header == 0 || snap->data == 0)
 		goto out_free;
 
-	{
-		void *hdr_p = (void *)(unsigned long) snap->header;
-		void *data_p = (void *)(unsigned long) snap->data;
-
-		/*
-		 * Defense in depth: even with the post_state snapshot, a
-		 * wholesale stomp could rewrite the snapshot's inner pointer
-		 * fields.  Reject pid-scribbled header/data before deref.
-		 */
-		if (looks_like_corrupted_ptr(rec, hdr_p) ||
-		    looks_like_corrupted_ptr(rec, data_p)) {
-			outputerr("post_capget: rejected suspicious header=%p dataptr=%p (post_state-scribbled?)\n",
-				  hdr_p, data_p);
-			goto out_free;
-		}
-	}
-
-	memcpy(&hdr_first, (void *)(unsigned long) snap->header, sizeof(hdr_first));
+	if (!post_snapshot_or_skip(&hdr_first,
+				   (const void *)(unsigned long) snap->header,
+				   sizeof(hdr_first)))
+		goto out_free;
 	slots = (hdr_first.version == _LINUX_CAPABILITY_VERSION_1) ? 1 : 2;
-	memcpy(data_first, (void *)(unsigned long) snap->data,
-	       slots * sizeof(struct __user_cap_data_struct));
+	if (!post_snapshot_or_skip(data_first,
+				   (const void *)(unsigned long) snap->data,
+				   slots * sizeof(struct __user_cap_data_struct)))
+		goto out_free;
 
 	hdr_recall = hdr_first;
 	if (syscall(SYS_capget, &hdr_recall, data_recall) != 0)
