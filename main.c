@@ -357,6 +357,10 @@ static void reap_dead_kids(void)
 		if (kill(pid, 0) != 0) {
 			if (errno == ESRCH) {
 				output(0, "pid %u has disappeared. Reaping.\n", pid);
+				if (pidstatfiles[i] >= 0) {
+					close(pidstatfiles[i]);
+					pidstatfiles[i] = -1;
+				}
 				reap_child(children[i], i);
 				reaped++;
 			} else if (errno == EPERM) {
@@ -401,8 +405,13 @@ static void kill_all_kids(void)
 			children_seen++;
 		} else {
 			/* check we don't have anything stale in the pidlist */
-			if (errno == ESRCH)
+			if (errno == ESRCH) {
+				if (pidstatfiles[i] >= 0) {
+					close(pidstatfiles[i]);
+					pidstatfiles[i] = -1;
+				}
 				reap_child(children[i], i);
+			}
 		}
 	}
 
