@@ -85,10 +85,8 @@ syscalls/fcntl.c:499:post_fcntl
 syscalls/fcntl.c:514:post_fcntl
 syscalls/fcntl.c:528:post_fcntl
 syscalls/fcntl.c:543:post_fcntl
-syscalls/fgetxattr.c:198:post_fgetxattr
-syscalls/fgetxattr.c:213:post_fgetxattr
-syscalls/fgetxattr.c:236:post_fgetxattr
-syscalls/fgetxattr.c:307:post_fgetxattr
+syscalls/fgetxattr.c:218:post_fgetxattr
+syscalls/fgetxattr.c:289:post_fgetxattr
 syscalls/file_getattr.c:282:post_file_getattr
 syscalls/fork.c:60:post_fork
 syscalls/fstatfs.c:126:post_fstatfs
