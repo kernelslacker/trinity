@@ -273,26 +273,9 @@ static void post_file_getattr(struct syscallrecord *rec)
 	dfd = (int) snap->dfd;
 	at_flags = (unsigned int) snap->at_flags;
 
-	{
-		void *ufattr = (void *)(unsigned long) snap->ufattr;
-
-		/*
-		 * Defense in depth: even with the post_state snapshot, a
-		 * wholesale stomp could rewrite the snapshot's inner ufattr
-		 * pointer field.  Reject a pid-scribbled ufattr before
-		 * deref.  The pathname is now snapshotted by value into the
-		 * snap's embedded buffer, so the post-time strncpy walk-off
-		 * risk is gone -- only the ufattr pointer still needs a
-		 * shape gate.
-		 */
-		if (looks_like_corrupted_ptr(rec, ufattr)) {
-			outputerr("post_file_getattr: rejected suspicious ufattr=%p (post_state-scribbled?)\n",
-				  ufattr);
-			goto out_free;
-		}
-	}
-
-	memcpy(&first_attr, (const void *) snap->ufattr, usize);
+	if (!post_snapshot_or_skip(&first_attr,
+				   (const void *) snap->ufattr, usize))
+		goto out_free;
 
 	memset(&recheck_attr, 0, sizeof(recheck_attr));
 	rc = syscall(SYS_file_getattr, dfd, snap->pathname, &recheck_attr,
