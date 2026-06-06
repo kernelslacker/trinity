@@ -49,6 +49,7 @@
 
 #include "arch.h"		/* page_size */
 #include "child.h"
+#include "childops-iouring.h"
 #include "maps.h"
 #include "random.h"
 #include "rnd.h"
@@ -124,16 +125,6 @@ struct iouring_flood_iter_ctx {
 	unsigned int	cq_off_mask;
 	unsigned int	cq_off_cqes;
 };
-
-static inline unsigned int ring_u32(void *ring, unsigned int off)
-{
-	return *(volatile unsigned int *)((char *)ring + off);
-}
-
-static inline void ring_store_u32(void *ring, unsigned int off, unsigned int v)
-{
-	*(volatile unsigned int *)((char *)ring + off) = v;
-}
 
 /*
  * Random subset of SETUP flags.  Kept conservative: only flags that do

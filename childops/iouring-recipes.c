@@ -64,6 +64,7 @@ struct iour_open_how {
 
 #include "arch.h"
 #include "child.h"
+#include "childops-iouring.h"
 #include "errno-classify.h"
 #include "maps.h"
 #include "random.h"
@@ -152,16 +153,6 @@ struct iour_recipe_state {
 	unsigned int	provided_buf_group_id;
 	unsigned int	provided_buf_count;
 };
-
-static inline unsigned int ring_u32(void *ring, unsigned int off)
-{
-	return *(volatile unsigned int *)((char *)ring + off);
-}
-
-static inline void ring_store_u32(void *ring, unsigned int off, unsigned int v)
-{
-	*(volatile unsigned int *)((char *)ring + off) = v;
-}
 
 /*
  * Set up a private io_uring with the requested number of SQ entries.

@@ -119,6 +119,7 @@
 #include <linux/io_uring.h>
 
 #include "child.h"
+#include "childops-iouring.h"
 #include "childops-util.h"
 #include "jitter.h"
 #include "random.h"
@@ -190,16 +191,6 @@ struct ring_ctx {
 	unsigned int	cq_off_mask;
 	unsigned int	cq_off_cqes;
 };
-
-static inline unsigned int ring_u32(void *ring, unsigned int off)
-{
-	return *(volatile unsigned int *)((char *)ring + off);
-}
-
-static inline void ring_store_u32(void *ring, unsigned int off, unsigned int v)
-{
-	*(volatile unsigned int *)((char *)ring + off) = v;
-}
 
 static int do_setup(struct io_uring_params *p, unsigned int entries)
 {

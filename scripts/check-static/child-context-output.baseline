@@ -18,8 +18,8 @@ childops/inplace_crypto_oracle.c:270:log_corruption
 childops/inplace_crypto_oracle.c:272:log_corruption
 childops/inplace_crypto_oracle.c:273:log_corruption
 childops/inplace_crypto_oracle.c:678:inplace_crypto_oracle
-childops/iouring-recipes.c:2808:iouring_recipes
-childops/iouring-recipes.c:2902:iouring_recipes_dump_stats
+childops/iouring-recipes.c:2799:iouring_recipes
+childops/iouring-recipes.c:2893:iouring_recipes_dump_stats
 childops/ip6gre-bond-lapb-stack.c:118:latch_unsupported
 childops/mount-churn.c:130:ensure_private_ns
 childops/mpls-route-churn.c:234:maybe_modprobe_once

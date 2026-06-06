@@ -76,6 +76,7 @@
 #include <linux/io_uring.h>
 
 #include "child.h"
+#include "childops-iouring.h"
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
@@ -174,16 +175,6 @@ struct ms_ctx {
 	unsigned int	cq_off_mask;
 	unsigned int	cq_off_cqes;
 };
-
-static inline unsigned int ring_u32(void *ring, unsigned int off)
-{
-	return *(volatile unsigned int *)((char *)ring + off);
-}
-
-static inline void ring_store_u32(void *ring, unsigned int off, unsigned int v)
-{
-	*(volatile unsigned int *)((char *)ring + off) = v;
-}
 
 static bool ms_setup(struct ms_ctx *ctx)
 {
