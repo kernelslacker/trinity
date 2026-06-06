@@ -567,12 +567,6 @@ unsigned int get_pool_file_count(unsigned int pool_id)
 	return pools[pool_id].count;
 }
 
-/* Return a random path from the startup-walked pool, or NULL if empty. */
-const char * get_random_walked_pathname(void)
-{
-	return get_filename();
-}
-
 /*
  * Mint a brand-new pathname by anchoring under a random pool entry and
  * appending 1-6 trailing components of random length and content.  Each
