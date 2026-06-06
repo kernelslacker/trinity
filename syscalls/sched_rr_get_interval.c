@@ -148,23 +148,10 @@ static void post_sched_rr_get_interval(struct syscallrecord *rec)
 	if ((pid_t) snap->pid != 0 && (pid_t) snap->pid != gettid())
 		goto out_free;
 
-	{
-		void *interval = (void *)(unsigned long) snap->tp;
-
-		/*
-		 * Defense in depth: even with the post_state snapshot, a
-		 * wholesale stomp could rewrite the snapshot's inner pointer
-		 * field.  Reject pid-scribbled tp before deref.
-		 */
-		if (looks_like_corrupted_ptr(rec, interval)) {
-			outputerr("post_sched_rr_get_interval: rejected suspicious interval=%p (post_state-scribbled?)\n",
-				  interval);
-			goto out_free;
-		}
-	}
-
-	memcpy(&user_ts, (struct timespec *)(unsigned long) snap->tp,
-	       sizeof(user_ts));
+	if (!post_snapshot_or_skip(&user_ts,
+				   (const void *)(unsigned long) snap->tp,
+				   sizeof(user_ts)))
+		goto out_free;
 
 	rc = syscall(SYS_sched_rr_get_interval, 0, &kernel_ts);
 	if (rc != 0)
