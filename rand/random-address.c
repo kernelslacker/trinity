@@ -91,6 +91,21 @@ retry:	tries++;
 		 */
 		if (map->prot == 0)
 			goto retry;
+		/*
+		 * Skip hugetlb-backed mmap slots, mirroring the SysV-shm
+		 * branch's SHM_HUGETLB guard further below.  The mmap slow
+		 * path upgrades the whole mapping (mp_len = map->size),
+		 * which is hugepage-aligned for a freshly-created hugetlb
+		 * VMA -- but an mremap or partial-munmap that shrank
+		 * map->size to a non-hugepage-aligned extent makes the
+		 * kernel's hugetlb_change_protection reject the mprotect
+		 * with -EINVAL, and the retry pool churns on the slot every
+		 * pick.  Hugetlb mmap slots stay in the pool for the mmap /
+		 * munmap / mremap sanitisers that legitimately want a
+		 * hugetlb VMA to fuzz.
+		 */
+		if (map->flags & MAP_HUGETLB)
+			goto retry;
 		if (map->size < size)
 			goto retry;
 
