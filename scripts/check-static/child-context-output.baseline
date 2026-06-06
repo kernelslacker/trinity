@@ -434,12 +434,10 @@ syscalls/statmount.c:488:post_statmount
 syscalls/sysfs.c:153:post_sysfs
 syscalls/sysfs.c:169:post_sysfs
 syscalls/sysfs.c:221:post_sysfs
-syscalls/sysinfo.c:115:post_sysinfo
-syscalls/sysinfo.c:130:post_sysinfo
-syscalls/sysinfo.c:156:post_sysinfo
-syscalls/sysinfo.c:162:post_sysinfo
-syscalls/sysinfo.c:168:post_sysinfo
-syscalls/sysinfo.c:174:post_sysinfo
+syscalls/sysinfo.c:133:post_sysinfo
+syscalls/sysinfo.c:139:post_sysinfo
+syscalls/sysinfo.c:145:post_sysinfo
+syscalls/sysinfo.c:151:post_sysinfo
 syscalls/time.c:84:post_time
 syscalls/time.c:98:post_time
 syscalls/timer_create.c:267:post_timer_create
