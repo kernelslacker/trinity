@@ -791,6 +791,7 @@ static void sanitise_setsockopt(struct syscallrecord *rec)
 	snap->optname = so.optname;
 	snap->optval = (void *) so.optval;
 	rec->post_state = (unsigned long) snap;
+	post_state_register(snap);
 }
 
 static void post_setsockopt(struct syscallrecord *rec)
@@ -810,6 +811,30 @@ static void post_setsockopt(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_setsockopt: rejected suspicious post_state=%p "
 			  "(pid-scribbled?)\n", snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Ownership-table check: shape passed but the magic cookie below
+	 * only proves "looks like struct setsockopt_post_state", not "is
+	 * the snapshot we produced for this attempt".  A sibling scribble
+	 * that redirects rec->post_state at a stale same-type snap still
+	 * resident on the deferred-free queue carries the matching cookie
+	 * by construction, so a cookie-only gate would trust it and route
+	 * the SO_ATTACH_FILTER optname dispatch into bpf_free_filter() with
+	 * a foreign sock_fprog *, or hand snap->optval to
+	 * deferred_free_enqueue() despite never having allocated it.
+	 * sanitise_setsockopt() registers each snap in the post_state
+	 * ownership table immediately after the rec->post_state assignment;
+	 * a value that fails the lookup is not the live snap for this record
+	 * and must not be dereferenced.  Mirrors prctl.c / execve.c / pipe.c.
+	 * Bail without freeing -- the pointer is suspect.
+	 */
+	if (!post_state_is_owned(snap)) {
+		outputerr("post_setsockopt: rejected post_state=%p not in "
+			  "ownership table (post_state-redirected?)\n", snap);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}
@@ -840,6 +865,7 @@ static void post_setsockopt(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap->optval)) {
 		outputerr("post_setsockopt: rejected suspicious snap optval=%p (post_state-scribbled?)\n",
 			  snap->optval);
+		post_state_unregister(snap);
 		deferred_freeptr(&rec->post_state);
 		return;
 	}
@@ -853,6 +879,7 @@ static void post_setsockopt(struct syscallrecord *rec)
 		deferred_free_enqueue(snap->optval);
 	}
 
+	post_state_unregister(snap);
 	deferred_freeptr(&rec->post_state);
 }
 
