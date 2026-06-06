@@ -781,6 +781,17 @@ static const struct stat_category vdso_mremap_race_category =
 	              vdso_race_runs,
 	              vdso_mremap_race_fields);
 
+static const struct stat_field flock_thrash_fields[] = {
+	STAT_FIELD(flock_thrash, runs),
+	STAT_FIELD(flock_thrash, locks),
+	STAT_FIELD(flock_thrash, failed),
+};
+
+static const struct stat_category flock_thrash_category =
+	STAT_CATEGORY("flock_thrash",
+	              flock_thrash_runs,
+	              flock_thrash_fields);
+
 /*
  * Emit every counter from struct stats_s as a single JSON object.
  * All scalar counters are emitted unconditionally so consumers see a stable
@@ -1141,7 +1152,6 @@ static void dump_stats_json_lifecycle_and_storms(void)
 	printf("\"fs_lifecycle\":{\"tmpfs\":%lu,\"ramfs\":%lu,\"rdonly\":%lu,"
 			"\"overlay\":%lu,\"quota\":%lu,\"bind\":%lu,\"unsupported\":%lu},"
 		"\"futex_storm\":{\"runs\":%lu,\"inner_crashed\":%lu,\"iters\":%lu},"
-		"\"flock_thrash\":{\"runs\":%lu,\"locks\":%lu,\"failed\":%lu},"
 		"\"xattr_thrash\":{\"runs\":%lu,\"set\":%lu,\"get\":%lu,"
 			"\"remove\":%lu,\"list\":%lu,\"failed\":%lu},"
 		"\"epoll_volatility\":{\"runs\":%lu,\"ctl_calls\":%lu,\"failed\":%lu},"
@@ -1157,8 +1167,6 @@ static void dump_stats_json_lifecycle_and_storms(void)
 		shm->stats.fs_lifecycle_unsupported,
 		shm->stats.futex_storm_runs, shm->stats.futex_storm_inner_crashed,
 		shm->stats.futex_storm_iters,
-		shm->stats.flock_thrash_runs, shm->stats.flock_thrash_locks,
-		shm->stats.flock_thrash_failed,
 		shm->stats.xattr_thrash_runs, shm->stats.xattr_thrash_set,
 		shm->stats.xattr_thrash_get, shm->stats.xattr_thrash_remove,
 		shm->stats.xattr_thrash_list, shm->stats.xattr_thrash_failed,
@@ -1917,6 +1925,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&vdso_mremap_race_category);
+
+	printf(",");
+	stat_category_emit_json(&flock_thrash_category);
 
 	dump_stats_json_iouring_zc_and_kvm();
 	dump_stats_json_rxrpc_alg_ublk_block();
@@ -4455,11 +4466,7 @@ static void dump_stats_childop_runs_local(void)
 
 	stat_category_emit_text(&vdso_mremap_race_category);
 
-	if (shm->stats.flock_thrash_runs) {
-		stat_row("flock_thrash", "runs",   shm->stats.flock_thrash_runs);
-		stat_row("flock_thrash", "locks",  shm->stats.flock_thrash_locks);
-		stat_row("flock_thrash", "failed", shm->stats.flock_thrash_failed);
-	}
+	stat_category_emit_text(&flock_thrash_category);
 
 	if (shm->stats.xattr_thrash_runs) {
 		stat_row("xattr_thrash", "runs",   shm->stats.xattr_thrash_runs);
