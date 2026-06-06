@@ -828,11 +828,6 @@ static int find_field_index_in(const struct struct_field *fields,
 	return -1;
 }
 
-static int find_field_index(const struct struct_desc *desc, const char *name)
-{
-	return find_field_index_in(desc->fields, desc->num_fields, name);
-}
-
 /*
  * Caps and per-iteration bias for the FT_PTR_* family.  Defaults apply
  * when the field's annotation leaves max_bytes / max_count at zero.
@@ -3229,7 +3224,9 @@ static void scrub_struct_addresses(unsigned char *buf, unsigned int size,
 			if (target == NULL || target->struct_size == 0)
 				break;
 
-			paired = find_field_index(desc, f->u.ptr_array.len_field);
+			paired = find_field_index_in(desc->fields,
+						     desc->num_fields,
+						     f->u.ptr_array.len_field);
 			if (paired >= 0)
 				count = (unsigned long) read_field_uint(
 					buf, &desc->fields[paired]);
