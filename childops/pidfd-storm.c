@@ -179,17 +179,6 @@ static int sys_pidfd_getfd(int pidfd, int targetfd, unsigned int flags)
 #endif
 }
 
-static bool budget_elapsed(const struct timespec *start)
-{
-	struct timespec now;
-	long elapsed_ns;
-
-	clock_gettime(CLOCK_MONOTONIC, &now);
-	elapsed_ns = (now.tv_sec  - start->tv_sec)  * 1000000000L
-		   + (now.tv_nsec - start->tv_nsec);
-	return elapsed_ns >= BUDGET_NS;
-}
-
 struct pidfd_slot {
 	pid_t pid;
 	int pidfd;
@@ -328,7 +317,7 @@ static void pidfd_storm_iter_drive(struct pidfd_slot *slots,
 			}
 		}
 
-		if (budget_elapsed(&start))
+		if (budget_elapsed_ns(&start, BUDGET_NS))
 			break;
 	}
 }

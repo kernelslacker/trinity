@@ -62,6 +62,7 @@
 #include <linux/sched/types.h>
 
 #include "child.h"
+#include "childops-util.h"
 #include "jitter.h"
 #include "random.h"
 #include "rnd.h"
@@ -254,17 +255,6 @@ static bool real_offline_cycle(int cpu)
 	return true;
 }
 
-static bool budget_elapsed(const struct timespec *start)
-{
-	struct timespec now;
-	long elapsed_ns;
-
-	clock_gettime(CLOCK_MONOTONIC, &now);
-	elapsed_ns = (now.tv_sec  - start->tv_sec)  * 1000000000L
-		   + (now.tv_nsec - start->tv_nsec);
-	return elapsed_ns >= BUDGET_NS;
-}
-
 bool cpu_hotplug_rider(struct childdata *child)
 {
 	struct timespec start;
@@ -344,7 +334,7 @@ bool cpu_hotplug_rider(struct childdata *child)
 		}
 		}
 
-		if (budget_elapsed(&start))
+		if (budget_elapsed_ns(&start, BUDGET_NS))
 			break;
 	}
 

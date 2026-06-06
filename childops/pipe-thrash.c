@@ -39,6 +39,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childops-util.h"
 #include "effector-map.h"
 #include "jitter.h"
 #include "random.h"
@@ -114,17 +115,6 @@ static void shuffle_close(int *fds, unsigned int n)
 	}
 }
 
-static bool budget_elapsed(const struct timespec *start)
-{
-	struct timespec now;
-	long elapsed_ns;
-
-	clock_gettime(CLOCK_MONOTONIC, &now);
-	elapsed_ns = (now.tv_sec  - start->tv_sec)  * 1000000000L
-		   + (now.tv_nsec - start->tv_nsec);
-	return elapsed_ns >= PIPE_THRASH_BUDGET_NS;
-}
-
 bool pipe_thrash(struct childdata *child)
 {
 	struct timespec start;
@@ -186,7 +176,7 @@ bool pipe_thrash(struct childdata *child)
 			filled = 0;
 		}
 
-		if (budget_elapsed(&start))
+		if (budget_elapsed_ns(&start, PIPE_THRASH_BUDGET_NS))
 			break;
 	}
 

@@ -67,6 +67,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childops-util.h"
 #include "jitter.h"
 #include "random.h"
 #include "rnd.h"
@@ -123,17 +124,6 @@ static uint32_t random_events(void)
 	if ((ev & (EPOLLIN | EPOLLOUT)) == 0)
 		ev |= EPOLLIN;
 	return ev;
-}
-
-static bool budget_elapsed(const struct timespec *start)
-{
-	struct timespec now;
-	long elapsed_ns;
-
-	clock_gettime(CLOCK_MONOTONIC, &now);
-	elapsed_ns = (now.tv_sec  - start->tv_sec)  * 1000000000L
-		   + (now.tv_nsec - start->tv_nsec);
-	return elapsed_ns >= BUDGET_NS;
 }
 
 /* Find a target_fd slot in the chosen epfd that matches the desired
@@ -305,7 +295,7 @@ static void epoll_volatility_iter_drive(struct epoll_volatility_iter_ctx *ctx)
 					  (int) ARRAY_SIZE(evs), 1);
 		}
 
-		if (budget_elapsed(&start))
+		if (budget_elapsed_ns(&start, BUDGET_NS))
 			break;
 	}
 }

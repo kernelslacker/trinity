@@ -71,6 +71,7 @@
 
 #include "arch.h"
 #include "child.h"
+#include "childops-util.h"
 #include "jitter.h"
 #include "maps.h"
 #include "random.h"
@@ -346,17 +347,6 @@ static void touch_region(volatile unsigned char *base, unsigned long len)
 	}
 }
 
-static bool budget_elapsed(const struct timespec *start)
-{
-	struct timespec now;
-	long elapsed_ns;
-
-	clock_gettime(CLOCK_MONOTONIC, &now);
-	elapsed_ns = (now.tv_sec  - start->tv_sec)  * 1000000000L
-		   + (now.tv_nsec - start->tv_nsec);
-	return elapsed_ns >= BUDGET_NS;
-}
-
 enum migration_op {
 	OP_MBIND = 0,
 	OP_MIGRATE_PAGES,
@@ -490,7 +480,7 @@ bool numa_migration_churn(struct childdata *child)
 
 		touch_region((volatile unsigned char *) region, region_len);
 
-		if (budget_elapsed(&start))
+		if (budget_elapsed_ns(&start, BUDGET_NS))
 			break;
 	}
 

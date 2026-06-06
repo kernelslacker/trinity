@@ -51,6 +51,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childops-util.h"
 #include "jitter.h"
 #include "random.h"
 #include "rnd.h"
@@ -100,17 +101,6 @@ static int open_one(unsigned int idx)
 	snprintf(path, sizeof(path), "%s/trinity-testfile%u",
 		 trinity_tmpdir_abs(), idx);
 	return open(path, O_RDWR | O_CREAT, 0666);
-}
-
-static bool budget_elapsed(const struct timespec *start)
-{
-	struct timespec now;
-	long elapsed_ns;
-
-	clock_gettime(CLOCK_MONOTONIC, &now);
-	elapsed_ns = (now.tv_sec  - start->tv_sec)  * 1000000000L
-		   + (now.tv_nsec - start->tv_nsec);
-	return elapsed_ns >= BUDGET_NS;
 }
 
 /*
@@ -334,7 +324,7 @@ bool xattr_thrash(struct childdata *child)
 
 		xattr_thrash_iter_dispatch(s, name, rnd_modulo_u32(12));
 
-		if (budget_elapsed(&start))
+		if (budget_elapsed_ns(&start, BUDGET_NS))
 			break;
 	}
 

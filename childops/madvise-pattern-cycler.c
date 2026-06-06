@@ -66,6 +66,7 @@
 #include "arch.h"
 #include "pids.h"
 #include "child.h"
+#include "childops-util.h"
 #include "effector-map.h"
 #include "jitter.h"
 #include "maps.h"
@@ -125,17 +126,6 @@ static const unsigned long advice_cycle[] = {
 	MADV_COLLAPSE,
 	MADV_NORMAL,
 };
-
-static bool budget_elapsed(const struct timespec *start)
-{
-	struct timespec now;
-	long elapsed_ns;
-
-	clock_gettime(CLOCK_MONOTONIC, &now);
-	elapsed_ns = (now.tv_sec  - start->tv_sec)  * 1000000000L
-		   + (now.tv_nsec - start->tv_nsec);
-	return elapsed_ns >= BUDGET_NS;
-}
 
 /*
  * Pick a page-aligned sub-range whose length is capped at region/2.
@@ -292,7 +282,7 @@ static int madvise_cycler_iter_pick_region(struct madvise_cycler_iter_ctx *ctx)
 }
 
 /*
- * Phase 2: stamp the wall-clock start (read by budget_elapsed inside
+ * Phase 2: stamp the wall-clock start (read by budget_elapsed_ns inside
  * the cycle loop) and pick the starting offset into the curated advice
  * list.  Biasing the start through the effector map weights advice
  * values whose bit pattern overlaps the kernel's hot branches on
@@ -393,7 +383,7 @@ static void madvise_cycler_iter_run_cycle(struct madvise_cycler_iter_ctx *ctx,
 					ctx->region + offset,
 				len);
 
-		if (budget_elapsed(&ctx->start))
+		if (budget_elapsed_ns(&ctx->start, BUDGET_NS))
 			break;
 	}
 }

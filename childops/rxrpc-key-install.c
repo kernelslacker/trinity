@@ -91,6 +91,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "childops-util.h"
 #include "jitter.h"
 #include "random.h"
 #include "rnd.h"
@@ -135,17 +136,6 @@ static bool errno_is_unsupported(int e)
 {
 	return e == ENOPROTOOPT || e == ENOSYS || e == EAFNOSUPPORT ||
 	       e == ENODEV;
-}
-
-static bool budget_elapsed(const struct timespec *start)
-{
-	struct timespec now;
-	long elapsed_ns;
-
-	clock_gettime(CLOCK_MONOTONIC, &now);
-	elapsed_ns = (now.tv_sec  - start->tv_sec)  * 1000000000L
-		   + (now.tv_nsec - start->tv_nsec);
-	return elapsed_ns >= BUDGET_NS;
 }
 
 static void ring_insert(int32_t *ring, int32_t serial)
@@ -746,7 +736,7 @@ bool rxrpc_key_install(struct childdata *child __unused__)
 
 		if (unsupported_rxrpc_key_install)
 			return true;
-		if (budget_elapsed(&start))
+		if (budget_elapsed_ns(&start, BUDGET_NS))
 			break;
 	}
 
