@@ -212,36 +212,37 @@ static void post_getsockname(struct syscallrecord *rec)
 	}
 
 	/*
-	 * Magic-cookie check: snap survived the heap-shape gate but a
-	 * sibling scribble of rec->post_state with a heap-shaped pointer
-	 * to a foreign allocation would let the wrong bytes pose as a
-	 * getsockname_post_state.  A cookie mismatch means snap does not
-	 * point at our struct -- abandon rather than feed wild bytes into
-	 * the inner-field deref.  Mirrors recv.c post_recvmsg.
+	 * Ownership-table check: must be the FIRST gate that touches snap
+	 * after the shape check, BEFORE any field read.  A foreign chunk
+	 * could carry a matching magic cookie by coincidence (another
+	 * in-flight getsockname child's snap, or a stale snap a sibling
+	 * stomp resurrected by redirecting rec->post_state at it), in
+	 * which case reading snap->magic touches the wrong struct.  The
+	 * subsequent oracle path dereferences snap->usockaddr and
+	 * snap->usockaddr_len, so a coincidental same-magic match would
+	 * feed garbage inner pointers into the source memcpy.  Verify
+	 * against the ownership table -- a value not registered cannot be
+	 * one we produced.  Mirrors prctl.c.
+	 */
+	if (!post_state_is_owned(snap)) {
+		outputerr("post_getsockname: rejected post_state=%p not in ownership table "
+			  "(post_state-redirected?)\n", snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: ownership table confirmed this is our snap,
+	 * so reading snap->magic is now safe.  A mismatch here means the
+	 * snapshot itself was wholesale-scribbled in place -- abandon
+	 * rather than feed wild bytes into the inner-field deref.
+	 * Mirrors recv.c post_recvmsg.
 	 */
 	if (snap->magic != GETSOCKNAME_POST_STATE_MAGIC) {
 		outputerr("post_getsockname: rejected snap with bad magic 0x%lx "
 			  "(post_state-stomped to foreign allocation?)\n",
 			  snap->magic);
 		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
-
-	/*
-	 * Shape + magic passed, but a foreign chunk could in principle
-	 * carry the matching cookie by coincidence (e.g. another in-flight
-	 * getsockname child's snap, or a stale snap a sibling stomp
-	 * resurrected by redirecting rec->post_state at it).  The
-	 * subsequent oracle path dereferences snap->usockaddr and
-	 * snap->usockaddr_len, so a coincidental match would feed garbage
-	 * inner pointers into the source memcpy.  Verify against the
-	 * ownership table -- a value not registered cannot be one we
-	 * produced.
-	 */
-	if (!post_state_is_owned(snap)) {
-		outputerr("post_getsockname: rejected post_state=%p not in ownership table "
-			  "(post_state-redirected?)\n", snap);
 		rec->post_state = 0;
 		return;
 	}
