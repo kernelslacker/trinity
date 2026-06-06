@@ -132,6 +132,7 @@
 #include <linux/errqueue.h>
 
 #include "child.h"
+#include "childops-netlink.h"
 #include "childops-util.h"
 #include "compat.h"
 #include "jitter.h"
@@ -284,16 +285,6 @@ static void reap_acceptor(pid_t pid)
 	}
 	(void)kill(pid, SIGTERM);
 	(void)waitpid_eintr(pid, &status, 0);
-}
-
-static long long ns_since(const struct timespec *t0)
-{
-	struct timespec now;
-
-	if (clock_gettime(CLOCK_MONOTONIC, &now) < 0)
-		return 0;
-	return (long long)(now.tv_sec - t0->tv_sec) * 1000000000LL +
-	       (long long)(now.tv_nsec - t0->tv_nsec);
 }
 
 /* Drain the sk_error_queue of MSG_ZEROCOPY completion notifications
