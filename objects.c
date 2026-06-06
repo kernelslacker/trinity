@@ -1560,6 +1560,31 @@ void close_fd_destructor(struct object *obj)
 }
 
 /*
+ * Generic objhead->dump shared by every fd-bearing pool whose dump
+ * carries no fields beyond the per-pool label, fd, and scope.  The
+ * label is dispatched off obj->obj_type so the output text matches
+ * what each pool's bespoke dumper used to emit.
+ */
+void generic_fd_dump(struct object *obj, enum obj_scope scope)
+{
+	const char *name;
+
+	switch (obj->obj_type) {
+	case OBJ_FD_CGROUP:		name = "cgroup"; break;
+	case OBJ_FD_IOMMUFD:		name = "iommufd"; break;
+	case OBJ_FD_SECCOMP_NOTIF:	name = "seccomp_notif"; break;
+	case OBJ_FD_FS_CTX:		name = "fs_ctx"; break;
+	case OBJ_FD_LANDLOCK:		name = "landlock"; break;
+	case OBJ_FD_MOUNT:		name = "mount"; break;
+	case OBJ_FD_SIGNALFD:		name = "signalfd"; break;
+	default:			name = "?"; break;
+	}
+
+	output(2, "%s fd:%d scope:%d\n",
+		name, fd_from_object(obj, obj->obj_type), scope);
+}
+
+/*
  * Look up an fd in the parent's hash table and destroy its object.
  * Called from fd_event_drain() after a child reported a close.
  *

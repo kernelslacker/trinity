@@ -626,6 +626,15 @@ void set_object_fd(struct object *obj, enum objecttype type, int fd);
  * of registering this one.
  */
 void close_fd_destructor(struct object *obj);
+
+/*
+ * Generic objhead->dump handler for fd-bearing pools whose dump line is
+ * the canonical "<name> fd:<n> scope:<s>" form with no extra fields.
+ * The per-objtype label is resolved internally; providers whose dump
+ * carries extra state (filename, flags, paired-fd, ...) must keep their
+ * bespoke dumper.
+ */
+void generic_fd_dump(struct object *obj, enum obj_scope scope);
 struct object *find_local_object_by_fd(enum objecttype type, int fd);
 void remove_object_by_fd(int fd);
 

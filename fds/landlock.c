@@ -29,12 +29,6 @@
  */
 static bool unsupported_landlock;
 
-static void landlock_dump(struct object *obj, enum obj_scope scope)
-{
-	output(2, "landlock fd:%d scope:%d\n",
-		obj->landlockobj.fd, scope);
-}
-
 static const char *landlock_paths[] = {
 	"/tmp", "/dev", "/proc", "/sys", "/dev/shm",
 };
@@ -175,7 +169,7 @@ static int init_landlock_fds(void)
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_LANDLOCK);
 	head->destroy = &close_fd_destructor;
-	head->dump = &landlock_dump;
+	head->dump = &generic_fd_dump;
 
 	return open_landlock_fd();
 }

@@ -20,11 +20,6 @@
 #define CGROUP_ROOT		"/sys/fs/cgroup"
 #define CGROUP_INIT_POOL	8
 
-static void cgroup_dump(struct object *obj, enum obj_scope scope)
-{
-	output(2, "cgroup fd:%d scope:%d\n", obj->cgroupfdobj.fd, scope);
-}
-
 static int open_cgroup_dir(const char *path)
 {
 	return open(path, O_PATH | O_CLOEXEC | O_DIRECTORY);
@@ -54,7 +49,7 @@ static int init_cgroup_fds(void)
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_CGROUP);
 	head->destroy = &close_fd_destructor;
-	head->dump = &cgroup_dump;
+	head->dump = &generic_fd_dump;
 
 	/* Always register the root itself first; it's the one cgroup dir
 	 * we're certain exists if /sys/fs/cgroup is mounted at all. */

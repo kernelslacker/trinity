@@ -22,11 +22,6 @@
 #define AT_RECURSIVE		0x8000
 #endif
 
-static void mount_dump(struct object *obj, enum obj_scope scope)
-{
-	output(2, "mount fd:%d scope:%d\n", obj->mountfdobj.fd, scope);
-}
-
 static int do_open_tree(void)
 {
 #ifdef __NR_open_tree
@@ -47,7 +42,7 @@ static int init_mount_fds(void)
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_MOUNT);
 	head->destroy = &close_fd_destructor;
-	head->dump = &mount_dump;
+	head->dump = &generic_fd_dump;
 
 	for (i = 0; i < MOUNT_INIT_POOL; i++) {
 		struct object *obj;

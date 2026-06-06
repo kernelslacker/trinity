@@ -17,17 +17,6 @@
 #include "trinity.h"
 #include "utils.h"
 
-/*
- * Cross-process safe: only reads obj->iommufdobj.fd (now in shm via
- * alloc_object) and the scope scalar.  No process-local pointers
- * are dereferenced, so it is correct to call this from a different
- * process than the one that allocated the obj.
- */
-static void iommufd_dump(struct object *obj, enum obj_scope scope)
-{
-	output(2, "iommufd fd:%d scope:%d\n", obj->iommufdobj.fd, scope);
-}
-
 static int open_iommufd(void)
 {
 	int fd;
@@ -46,7 +35,7 @@ static int init_iommufd_fds(void)
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_IOMMUFD);
 	head->destroy = &close_fd_destructor;
-	head->dump = &iommufd_dump;
+	head->dump = &generic_fd_dump;
 	/*
 	 * Opt this provider into the shared obj heap.  __destroy_object()
 	 * checks this flag to route the obj struct release through

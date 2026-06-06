@@ -20,11 +20,6 @@
 #define FSOPEN_CLOEXEC 0x00000001
 #endif
 
-static void fsctx_dump(struct object *obj, enum obj_scope scope)
-{
-	output(2, "fs_ctx fd:%d scope:%d\n", obj->fsctxobj.fd, scope);
-}
-
 static int do_fsopen(const char *fstype, unsigned int flags)
 {
 #ifdef __NR_fsopen
@@ -55,7 +50,7 @@ static int init_fs_ctx_fds(void)
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_FS_CTX);
 	head->destroy = &close_fd_destructor;
-	head->dump = &fsctx_dump;
+	head->dump = &generic_fd_dump;
 
 	for (i = 0; i < ARRAY_SIZE(fsctx_fstypes); i++) {
 		for (j = 0; j < ARRAY_SIZE(fsctx_flags); j++) {

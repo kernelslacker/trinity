@@ -34,21 +34,6 @@
 #endif
 
 /*
- * Cross-process safe: only reads obj->seccomp_notifobj.fd (now in shm
- * via alloc_object) and the scope scalar.  No process-local
- * pointers are dereferenced, so it is correct to call this from a
- * different process than the one that allocated the obj — which
- * matters because head->dump runs from dump_childdata() in the
- * parent's crash diagnostics path even when a child triggered the
- * crash.
- */
-static void seccomp_notif_dump(struct object *obj, enum obj_scope scope)
-{
-	output(2, "seccomp_notif fd:%d scope:%d\n",
-		obj->seccomp_notifobj.fd, scope);
-}
-
-/*
  * Build a minimal BPF program that returns SECCOMP_RET_USER_NOTIF for
  * an obsolete syscall and SECCOMP_RET_ALLOW for everything else.  This
  * gives us a notification fd without interfering with normal operation.
@@ -115,7 +100,7 @@ static int init_seccomp_notif_fds(void)
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_SECCOMP_NOTIF);
 	head->destroy = &close_fd_destructor;
-	head->dump = &seccomp_notif_dump;
+	head->dump = &generic_fd_dump;
 	/*
 	 * Opt this provider into the shared obj heap.  __destroy_object()
 	 * checks this flag to route the obj struct release through
