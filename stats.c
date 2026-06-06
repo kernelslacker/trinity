@@ -900,6 +900,22 @@ static const struct stat_category ovs_tunnel_vport_churn_category =
 	              ovs_tunnel_vport_churn_runs,
 	              ovs_tunnel_vport_churn_fields);
 
+static const struct stat_field netlink_monitor_race_fields[] = {
+	STAT_FIELD(netlink_monitor_race, runs),
+	STAT_FIELD(netlink_monitor_race, setup_failed),
+	STAT_FIELD(netlink_monitor_race, mon_open),
+	STAT_FIELD(netlink_monitor_race, mut_open),
+	STAT_FIELD(netlink_monitor_race, mut_op_ok),
+	STAT_FIELD(netlink_monitor_race, recv_drained),
+	STAT_FIELD(netlink_monitor_race, group_drop),
+	STAT_FIELD(netlink_monitor_race, group_add),
+};
+
+static const struct stat_category netlink_monitor_race_category =
+	STAT_CATEGORY("netlink_monitor_race",
+	              netlink_monitor_race_runs,
+	              netlink_monitor_race_fields);
+
 static const struct stat_field pipe_thrash_fields[] = {
 	STAT_FIELD(pipe_thrash, runs),
 	STAT_FIELD(pipe_thrash, pipes),
@@ -1450,7 +1466,6 @@ static void dump_stats_json_socket_family_and_tls(void)
 	printf("\"packet_fanout_thrash\":{\"runs\":%lu,\"setup_failed\":%lu,\"ring_failed\":%lu,\"rings_installed\":%lu,\"mmap_failed\":%lu,\"joins\":%lu,\"rejoins_ok\":%lu,\"rejoins_rejected\":%lu},"
 		"\"eth_emitter\":{\"runs\":%lu,\"setup_failed\":%lu,\"short\":%lu,\"sends_ok\":%lu,\"sends_failed\":%lu,\"tmpl_arp\":%lu,\"tmpl_ipv4_frag_zero\":%lu,\"tmpl_ipv6_na\":%lu,\"tmpl_vlan_qinq\":%lu,\"tmpl_bad_ethertype\":%lu},"
 		"\"iouring_net_multishot\":{\"runs\":%lu,\"setup_failed\":%lu,\"pbuf_ring_ok\":%lu,\"pbuf_legacy_ok\":%lu,\"armed\":%lu,\"packets_sent\":%lu,\"completions\":%lu,\"cancel_submitted\":%lu,\"napi_register_ok\":%lu,\"napi_register_fail\":%lu,\"napi_unregister_ok\":%lu,\"napi_unregister_fail\":%lu},"
-		"\"netlink_monitor_race\":{\"runs\":%lu,\"setup_failed\":%lu,\"mon_open\":%lu,\"mut_open\":%lu,\"mut_op_ok\":%lu,\"recv_drained\":%lu,\"group_drop\":%lu,\"group_add\":%lu},"
 		"\"tipc_link_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bearer_enable_ok\":%lu,\"sock_rdm_ok\":%lu,\"topsrv_connect_ok\":%lu,\"sub_ports_sent\":%lu,\"publish_ok\":%lu,\"bearer_disable_ok\":%lu},"
 		"\"bridge_fdb_stp\":{\"runs\":%lu,\"setup_failed\":%lu,\"bridge_create_ok\":%lu,\"veth_create_ok\":%lu,\"raw_send_ok\":%lu,\"stp_toggle_ok\":%lu,\"fdb_del_ok\":%lu,\"link_del_ok\":%lu,\"vlan_mass_runs\":%lu,\"vlan_mass_max_n\":%lu,\"vlan_mass_enotbufs\":%lu},"
 		"\"bridge_conntrack_churn\":{\"runs\":%lu,\"flushes\":%lu,\"pkts_sent\":%lu},",
@@ -1484,14 +1499,6 @@ static void dump_stats_json_socket_family_and_tls(void)
 		shm->stats.iouring_napi_register_fail,
 		shm->stats.iouring_napi_unregister_ok,
 		shm->stats.iouring_napi_unregister_fail,
-		shm->stats.netlink_monitor_race_runs,
-		shm->stats.netlink_monitor_race_setup_failed,
-		shm->stats.netlink_monitor_race_mon_open,
-		shm->stats.netlink_monitor_race_mut_open,
-		shm->stats.netlink_monitor_race_mut_op_ok,
-		shm->stats.netlink_monitor_race_recv_drained,
-		shm->stats.netlink_monitor_race_group_drop,
-		shm->stats.netlink_monitor_race_group_add,
 		shm->stats.tipc_link_churn_runs,
 		shm->stats.tipc_link_churn_setup_failed,
 		shm->stats.tipc_link_churn_bearer_enable_ok,
@@ -2140,6 +2147,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&ovs_tunnel_vport_churn_category);
+
+	printf(",");
+	stat_category_emit_json(&netlink_monitor_race_category);
 
 	printf(",");
 	stat_category_emit_json(&iouring_flood_category);
@@ -4756,16 +4766,7 @@ static void dump_stats_childop_runs_network(void)
 
 	stat_category_emit_text(&mpls_route_churn_category);
 
-	if (shm->stats.netlink_monitor_race_runs) {
-		stat_row("netlink_monitor_race", "runs",         shm->stats.netlink_monitor_race_runs);
-		stat_row("netlink_monitor_race", "setup_failed", shm->stats.netlink_monitor_race_setup_failed);
-		stat_row("netlink_monitor_race", "mon_open",     shm->stats.netlink_monitor_race_mon_open);
-		stat_row("netlink_monitor_race", "mut_open",     shm->stats.netlink_monitor_race_mut_open);
-		stat_row("netlink_monitor_race", "mut_op_ok",    shm->stats.netlink_monitor_race_mut_op_ok);
-		stat_row("netlink_monitor_race", "recv_drained", shm->stats.netlink_monitor_race_recv_drained);
-		stat_row("netlink_monitor_race", "group_drop",   shm->stats.netlink_monitor_race_group_drop);
-		stat_row("netlink_monitor_race", "group_add",    shm->stats.netlink_monitor_race_group_add);
-	}
+	stat_category_emit_text(&netlink_monitor_race_category);
 
 	if (shm->stats.tipc_link_churn_runs) {
 		stat_row("tipc_link_churn", "runs",              shm->stats.tipc_link_churn_runs);
