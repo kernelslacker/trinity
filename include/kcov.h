@@ -781,9 +781,9 @@ void kcov_get_cmp_records(struct kcov_child *kc,
 /*
  * Per-child kcov PC fd and cmp fd are protected from fuzz close /
  * dup2 / dup3 / close_range targeting via fd_is_protected() /
- * range_contains_protected_fd() / lowest_protected_fd_in_range() in
- * include/fd.h -- the same registry that protects STDERR_FILENO and
- * the stderr capture memfd.  See those declarations for the contract.
+ * lowest_protected_fd_in_range() in include/fd.h -- the same registry
+ * that protects STDERR_FILENO and the stderr capture memfd.  See those
+ * declarations for the contract.
  */
 
 /* Returns true if syscall nr hasn't found new edges recently.

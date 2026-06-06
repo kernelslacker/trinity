@@ -132,14 +132,6 @@ int get_typed_fd(enum argtype type);
 bool fd_is_protected(int fd);
 
 /*
- * Returns true if [lo, hi] (inclusive) overlaps any protected fd.
- * Companion to fd_is_protected for range-based syscalls (close_range)
- * where the bounds themselves are safe but the range walk in between
- * would sweep over a protected slot.
- */
-bool range_contains_protected_fd(int lo, int hi);
-
-/*
  * Returns the lowest protected fd inside [lo, hi] (inclusive), or -1
  * if no protected fd lies in the range.  close_range trims its upper
  * bound to (this value - 1) so the kernel-side walk stops short of

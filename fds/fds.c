@@ -520,11 +520,6 @@ bool fd_is_protected(int fd)
 	return false;
 }
 
-bool range_contains_protected_fd(int lo, int hi)
-{
-	return lowest_protected_fd_in_range(lo, hi) >= 0;
-}
-
 int lowest_protected_fd_in_range(int lo, int hi)
 {
 	struct childdata *child;
