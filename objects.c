@@ -1459,10 +1459,21 @@ void set_object_fd(struct object *obj, enum objecttype type, int fd)
  * allocated on the first fd-typed insert, so an empty pool's lookup short-
  * circuits via the head->fd_hash == NULL check inside local_fd_hash_lookup
  * with no allocation pressure.
+ *
+ * The hash is a cache, not the source of truth: local_fd_hash_insert()
+ * silently drops entries when the hash allocation fails or the 1024-slot
+ * table saturates, but in both cases the obj IS still present in
+ * head->array.  Returning NULL from those paths would cause callers such
+ * as register_returned_fd() to re-register the live fd as a fresh obj,
+ * setting up a later double-close once the duplicate is destroyed.  Fall
+ * back to a linear walk of head->array on hash miss so the answer matches
+ * reality even when the fast path has lost an entry.
  */
 struct object *find_local_object_by_fd(enum objecttype type, int fd)
 {
 	struct objhead *head;
+	struct object *obj;
+	unsigned int i;
 
 	if (fd < 0)
 		return NULL;
@@ -1471,7 +1482,16 @@ struct object *find_local_object_by_fd(enum objecttype type, int fd)
 	if (head == NULL || head->num_entries == 0)
 		return NULL;
 
-	return local_fd_hash_lookup(head, fd);
+	obj = local_fd_hash_lookup(head, fd);
+	if (obj != NULL)
+		return obj;
+
+	for (i = 0; i < head->num_entries; i++) {
+		obj = head->array[i];
+		if (obj != NULL && fd_from_object(obj, type) == fd)
+			return obj;
+	}
+	return NULL;
 }
 
 /*
