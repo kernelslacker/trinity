@@ -916,6 +916,22 @@ static const struct stat_category netlink_monitor_race_category =
 	              netlink_monitor_race_runs,
 	              netlink_monitor_race_fields);
 
+static const struct stat_field tipc_link_churn_fields[] = {
+	STAT_FIELD(tipc_link_churn, runs),
+	STAT_FIELD(tipc_link_churn, setup_failed),
+	STAT_FIELD(tipc_link_churn, bearer_enable_ok),
+	STAT_FIELD(tipc_link_churn, sock_rdm_ok),
+	STAT_FIELD(tipc_link_churn, topsrv_connect_ok),
+	STAT_FIELD(tipc_link_churn, sub_ports_sent),
+	STAT_FIELD(tipc_link_churn, publish_ok),
+	STAT_FIELD(tipc_link_churn, bearer_disable_ok),
+};
+
+static const struct stat_category tipc_link_churn_category =
+	STAT_CATEGORY("tipc_link_churn",
+	              tipc_link_churn_runs,
+	              tipc_link_churn_fields);
+
 static const struct stat_field pipe_thrash_fields[] = {
 	STAT_FIELD(pipe_thrash, runs),
 	STAT_FIELD(pipe_thrash, pipes),
@@ -1466,7 +1482,6 @@ static void dump_stats_json_socket_family_and_tls(void)
 	printf("\"packet_fanout_thrash\":{\"runs\":%lu,\"setup_failed\":%lu,\"ring_failed\":%lu,\"rings_installed\":%lu,\"mmap_failed\":%lu,\"joins\":%lu,\"rejoins_ok\":%lu,\"rejoins_rejected\":%lu},"
 		"\"eth_emitter\":{\"runs\":%lu,\"setup_failed\":%lu,\"short\":%lu,\"sends_ok\":%lu,\"sends_failed\":%lu,\"tmpl_arp\":%lu,\"tmpl_ipv4_frag_zero\":%lu,\"tmpl_ipv6_na\":%lu,\"tmpl_vlan_qinq\":%lu,\"tmpl_bad_ethertype\":%lu},"
 		"\"iouring_net_multishot\":{\"runs\":%lu,\"setup_failed\":%lu,\"pbuf_ring_ok\":%lu,\"pbuf_legacy_ok\":%lu,\"armed\":%lu,\"packets_sent\":%lu,\"completions\":%lu,\"cancel_submitted\":%lu,\"napi_register_ok\":%lu,\"napi_register_fail\":%lu,\"napi_unregister_ok\":%lu,\"napi_unregister_fail\":%lu},"
-		"\"tipc_link_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bearer_enable_ok\":%lu,\"sock_rdm_ok\":%lu,\"topsrv_connect_ok\":%lu,\"sub_ports_sent\":%lu,\"publish_ok\":%lu,\"bearer_disable_ok\":%lu},"
 		"\"bridge_fdb_stp\":{\"runs\":%lu,\"setup_failed\":%lu,\"bridge_create_ok\":%lu,\"veth_create_ok\":%lu,\"raw_send_ok\":%lu,\"stp_toggle_ok\":%lu,\"fdb_del_ok\":%lu,\"link_del_ok\":%lu,\"vlan_mass_runs\":%lu,\"vlan_mass_max_n\":%lu,\"vlan_mass_enotbufs\":%lu},"
 		"\"bridge_conntrack_churn\":{\"runs\":%lu,\"flushes\":%lu,\"pkts_sent\":%lu},",
 		shm->stats.packet_fanout_runs,
@@ -1499,14 +1514,6 @@ static void dump_stats_json_socket_family_and_tls(void)
 		shm->stats.iouring_napi_register_fail,
 		shm->stats.iouring_napi_unregister_ok,
 		shm->stats.iouring_napi_unregister_fail,
-		shm->stats.tipc_link_churn_runs,
-		shm->stats.tipc_link_churn_setup_failed,
-		shm->stats.tipc_link_churn_bearer_enable_ok,
-		shm->stats.tipc_link_churn_sock_rdm_ok,
-		shm->stats.tipc_link_churn_topsrv_connect_ok,
-		shm->stats.tipc_link_churn_sub_ports_sent,
-		shm->stats.tipc_link_churn_publish_ok,
-		shm->stats.tipc_link_churn_bearer_disable_ok,
 		shm->stats.bridge_fdb_stp_runs,
 		shm->stats.bridge_fdb_stp_setup_failed,
 		shm->stats.bridge_fdb_stp_bridge_create_ok,
@@ -2150,6 +2157,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&netlink_monitor_race_category);
+
+	printf(",");
+	stat_category_emit_json(&tipc_link_churn_category);
 
 	printf(",");
 	stat_category_emit_json(&iouring_flood_category);
@@ -4768,16 +4778,7 @@ static void dump_stats_childop_runs_network(void)
 
 	stat_category_emit_text(&netlink_monitor_race_category);
 
-	if (shm->stats.tipc_link_churn_runs) {
-		stat_row("tipc_link_churn", "runs",              shm->stats.tipc_link_churn_runs);
-		stat_row("tipc_link_churn", "setup_failed",      shm->stats.tipc_link_churn_setup_failed);
-		stat_row("tipc_link_churn", "bearer_enable_ok",  shm->stats.tipc_link_churn_bearer_enable_ok);
-		stat_row("tipc_link_churn", "sock_rdm_ok",       shm->stats.tipc_link_churn_sock_rdm_ok);
-		stat_row("tipc_link_churn", "topsrv_connect_ok", shm->stats.tipc_link_churn_topsrv_connect_ok);
-		stat_row("tipc_link_churn", "sub_ports_sent",    shm->stats.tipc_link_churn_sub_ports_sent);
-		stat_row("tipc_link_churn", "publish_ok",        shm->stats.tipc_link_churn_publish_ok);
-		stat_row("tipc_link_churn", "bearer_disable_ok", shm->stats.tipc_link_churn_bearer_disable_ok);
-	}
+	stat_category_emit_text(&tipc_link_churn_category);
 
 	stat_category_emit_text(&tls_ulp_churn_category);
 
