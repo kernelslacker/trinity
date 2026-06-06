@@ -185,22 +185,9 @@ static void post_sysfs(struct syscallrecord *rec)
 	if (snap->buf == 0)
 		goto out_free;
 
-	{
-		void *buf = (void *)(unsigned long) snap->buf;
-
-		/*
-		 * Defense in depth: even with the post_state snapshot, a
-		 * wholesale stomp could rewrite the snapshot's inner
-		 * buf field.  Reject pid-scribbled buf before deref.
-		 */
-		if (looks_like_corrupted_ptr(rec, buf)) {
-			outputerr("post_sysfs: rejected suspicious arg2=%p (post_state-scribbled?)\n",
-				  buf);
-			goto out_free;
-		}
-	}
-
-	memcpy(first, (void *)(unsigned long) snap->buf, sizeof(first));
+	if (!post_snapshot_or_skip(first, (void *)(unsigned long) snap->buf,
+				   sizeof(first)))
+		goto out_free;
 
 	rc = syscall(SYS_sysfs, 2UL, snap->idx, (unsigned long) recheck_buf);
 
