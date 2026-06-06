@@ -835,6 +835,22 @@ static const struct stat_category mpls_route_churn_category =
 	              mpls_route_churn_runs,
 	              mpls_route_churn_fields);
 
+static const struct stat_field tls_ulp_churn_fields[] = {
+	STAT_FIELD(tls_ulp_churn, runs),
+	STAT_FIELD(tls_ulp_churn, setup_failed),
+	STAT_FIELD(tls_ulp_churn, ulp_install_ok),
+	STAT_FIELD(tls_ulp_churn, tx_install_ok),
+	STAT_FIELD(tls_ulp_churn, send_ok),
+	STAT_FIELD(tls_ulp_churn, splice_ok),
+	STAT_FIELD(tls_ulp_churn, rekey_ok),
+	STAT_FIELD(tls_ulp_churn, recv_ok),
+};
+
+static const struct stat_category tls_ulp_churn_category =
+	STAT_CATEGORY("tls_ulp_churn",
+	              tls_ulp_churn_runs,
+	              tls_ulp_churn_fields);
+
 static const struct stat_field pipe_thrash_fields[] = {
 	STAT_FIELD(pipe_thrash, runs),
 	STAT_FIELD(pipe_thrash, pipes),
@@ -1388,7 +1404,6 @@ static void dump_stats_json_socket_family_and_tls(void)
 		"\"iouring_net_multishot\":{\"runs\":%lu,\"setup_failed\":%lu,\"pbuf_ring_ok\":%lu,\"pbuf_legacy_ok\":%lu,\"armed\":%lu,\"packets_sent\":%lu,\"completions\":%lu,\"cancel_submitted\":%lu,\"napi_register_ok\":%lu,\"napi_register_fail\":%lu,\"napi_unregister_ok\":%lu,\"napi_unregister_fail\":%lu},"
 		"\"netlink_monitor_race\":{\"runs\":%lu,\"setup_failed\":%lu,\"mon_open\":%lu,\"mut_open\":%lu,\"mut_op_ok\":%lu,\"recv_drained\":%lu,\"group_drop\":%lu,\"group_add\":%lu},"
 		"\"tipc_link_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bearer_enable_ok\":%lu,\"sock_rdm_ok\":%lu,\"topsrv_connect_ok\":%lu,\"sub_ports_sent\":%lu,\"publish_ok\":%lu,\"bearer_disable_ok\":%lu},"
-		"\"tls_ulp_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"ulp_install_ok\":%lu,\"tx_install_ok\":%lu,\"send_ok\":%lu,\"splice_ok\":%lu,\"rekey_ok\":%lu,\"recv_ok\":%lu},"
 		"\"vxlan_encap_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"link_create_ok\":%lu,\"fdb_add_ok\":%lu,\"link_up_ok\":%lu,\"packet_sent_ok\":%lu,\"link_del_ok\":%lu},"
 		"\"ovs_tunnel_vport_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"create_ok\":%lu,\"delete_ok\":%lu,\"race_dellink_attempted\":%lu},"
 		"\"bridge_fdb_stp\":{\"runs\":%lu,\"setup_failed\":%lu,\"bridge_create_ok\":%lu,\"veth_create_ok\":%lu,\"raw_send_ok\":%lu,\"stp_toggle_ok\":%lu,\"fdb_del_ok\":%lu,\"link_del_ok\":%lu,\"vlan_mass_runs\":%lu,\"vlan_mass_max_n\":%lu,\"vlan_mass_enotbufs\":%lu},"
@@ -1441,14 +1456,6 @@ static void dump_stats_json_socket_family_and_tls(void)
 		shm->stats.tipc_link_churn_sub_ports_sent,
 		shm->stats.tipc_link_churn_publish_ok,
 		shm->stats.tipc_link_churn_bearer_disable_ok,
-		shm->stats.tls_ulp_churn_runs,
-		shm->stats.tls_ulp_churn_setup_failed,
-		shm->stats.tls_ulp_churn_ulp_install_ok,
-		shm->stats.tls_ulp_churn_tx_install_ok,
-		shm->stats.tls_ulp_churn_send_ok,
-		shm->stats.tls_ulp_churn_splice_ok,
-		shm->stats.tls_ulp_churn_rekey_ok,
-		shm->stats.tls_ulp_churn_recv_ok,
 		shm->stats.vxlan_encap_churn_runs,
 		shm->stats.vxlan_encap_churn_setup_failed,
 		shm->stats.vxlan_encap_churn_link_create_ok,
@@ -2091,6 +2098,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&mpls_route_churn_category);
+
+	printf(",");
+	stat_category_emit_json(&tls_ulp_churn_category);
 
 	printf(",");
 	stat_category_emit_json(&iouring_flood_category);
@@ -4732,16 +4742,7 @@ static void dump_stats_childop_runs_network(void)
 		stat_row("tipc_link_churn", "bearer_disable_ok", shm->stats.tipc_link_churn_bearer_disable_ok);
 	}
 
-	if (shm->stats.tls_ulp_churn_runs) {
-		stat_row("tls_ulp_churn", "runs",            shm->stats.tls_ulp_churn_runs);
-		stat_row("tls_ulp_churn", "setup_failed",    shm->stats.tls_ulp_churn_setup_failed);
-		stat_row("tls_ulp_churn", "ulp_install_ok",  shm->stats.tls_ulp_churn_ulp_install_ok);
-		stat_row("tls_ulp_churn", "tx_install_ok",   shm->stats.tls_ulp_churn_tx_install_ok);
-		stat_row("tls_ulp_churn", "send_ok",         shm->stats.tls_ulp_churn_send_ok);
-		stat_row("tls_ulp_churn", "splice_ok",       shm->stats.tls_ulp_churn_splice_ok);
-		stat_row("tls_ulp_churn", "rekey_ok",        shm->stats.tls_ulp_churn_rekey_ok);
-		stat_row("tls_ulp_churn", "recv_ok",         shm->stats.tls_ulp_churn_recv_ok);
-	}
+	stat_category_emit_text(&tls_ulp_churn_category);
 
 	if (shm->stats.vxlan_encap_churn_runs) {
 		stat_row("vxlan_encap_churn", "runs",           shm->stats.vxlan_encap_churn_runs);
