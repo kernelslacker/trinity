@@ -748,6 +748,17 @@ static const struct stat_category pidfd_storm_category =
 	              pidfd_storm_runs,
 	              pidfd_storm_fields);
 
+static const struct stat_field madvise_cycler_fields[] = {
+	STAT_FIELD(madvise_cycler, runs),
+	STAT_FIELD(madvise_cycler, calls),
+	STAT_FIELD(madvise_cycler, failed),
+};
+
+static const struct stat_category madvise_cycler_category =
+	STAT_CATEGORY("madvise_cycler",
+	              madvise_cycler_runs,
+	              madvise_cycler_fields);
+
 /*
  * Emit every counter from struct stats_s as a single JSON object.
  * All scalar counters are emitted unconditionally so consumers see a stable
@@ -1108,7 +1119,6 @@ static void dump_stats_json_lifecycle_and_storms(void)
 	printf("\"fs_lifecycle\":{\"tmpfs\":%lu,\"ramfs\":%lu,\"rdonly\":%lu,"
 			"\"overlay\":%lu,\"quota\":%lu,\"bind\":%lu,\"unsupported\":%lu},"
 		"\"futex_storm\":{\"runs\":%lu,\"inner_crashed\":%lu,\"iters\":%lu},"
-		"\"madvise_cycler\":{\"runs\":%lu,\"calls\":%lu,\"failed\":%lu},"
 		"\"keyring_spam\":{\"runs\":%lu,\"calls\":%lu,\"failed\":%lu},"
 		"\"vdso_mremap_race\":{\"runs\":%lu,\"mutations\":%lu,\"helper_segvs\":%lu},"
 		"\"flock_thrash\":{\"runs\":%lu,\"locks\":%lu,\"failed\":%lu},"
@@ -1127,8 +1137,6 @@ static void dump_stats_json_lifecycle_and_storms(void)
 		shm->stats.fs_lifecycle_unsupported,
 		shm->stats.futex_storm_runs, shm->stats.futex_storm_inner_crashed,
 		shm->stats.futex_storm_iters,
-		shm->stats.madvise_cycler_runs, shm->stats.madvise_cycler_calls,
-		shm->stats.madvise_cycler_failed,
 		shm->stats.keyring_spam_runs, shm->stats.keyring_spam_calls,
 		shm->stats.keyring_spam_failed,
 		shm->stats.vdso_race_runs, shm->stats.vdso_race_mutations,
@@ -1884,6 +1892,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&pidfd_storm_category);
+
+	printf(",");
+	stat_category_emit_json(&madvise_cycler_category);
 
 	dump_stats_json_iouring_zc_and_kvm();
 	dump_stats_json_rxrpc_alg_ublk_block();
@@ -4416,11 +4427,7 @@ static void dump_stats_childop_runs_local(void)
 
 	stat_category_emit_text(&pidfd_storm_category);
 
-	if (shm->stats.madvise_cycler_runs) {
-		stat_row("madvise_cycler", "runs",   shm->stats.madvise_cycler_runs);
-		stat_row("madvise_cycler", "calls",  shm->stats.madvise_cycler_calls);
-		stat_row("madvise_cycler", "failed", shm->stats.madvise_cycler_failed);
-	}
+	stat_category_emit_text(&madvise_cycler_category);
 
 	if (shm->stats.keyring_spam_runs) {
 		stat_row("keyring_spam", "runs",   shm->stats.keyring_spam_runs);
