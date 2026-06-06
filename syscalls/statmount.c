@@ -439,25 +439,12 @@ static void post_statmount(struct syscallrecord *rec)
 	if (snap->bufsize < sizeof(struct statmount))
 		goto out_free;
 
-	{
-		void *req_p = (void *)(unsigned long) snap->req;
-		void *buf_p = (void *)(unsigned long) snap->buffer;
-
-		/*
-		 * Defense in depth: even with the post_state snapshot, a
-		 * wholesale stomp could rewrite the snapshot's inner pointer
-		 * fields.  Reject pid-scribbled req/buffer before deref.
-		 */
-		if (looks_like_corrupted_ptr(rec, req_p) ||
-		    looks_like_corrupted_ptr(rec, buf_p)) {
-			outputerr("post_statmount: rejected suspicious req=%p buf=%p (post_state-scribbled?)\n",
-				  req_p, buf_p);
-			goto out_free;
-		}
-	}
-
-	memcpy(&first_req, (void *) snap->req, sizeof(first_req));
-	memcpy(&first_buf, (void *) snap->buffer, sizeof(first_buf));
+	if (!post_snapshot_or_skip(&first_req, (void *) snap->req,
+				   sizeof(first_req)))
+		goto out_free;
+	if (!post_snapshot_or_skip(&first_buf, (void *) snap->buffer,
+				   sizeof(first_buf)))
+		goto out_free;
 
 	{
 		struct mnt_id_req recheck_req = first_req;
