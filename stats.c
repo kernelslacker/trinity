@@ -887,6 +887,19 @@ static const struct stat_category vxlan_encap_churn_category =
 	              vxlan_encap_churn_runs,
 	              vxlan_encap_churn_fields);
 
+static const struct stat_field ovs_tunnel_vport_churn_fields[] = {
+	STAT_FIELD(ovs_tunnel_vport_churn, runs),
+	STAT_FIELD(ovs_tunnel_vport_churn, setup_failed),
+	STAT_FIELD(ovs_tunnel_vport_churn, create_ok),
+	STAT_FIELD(ovs_tunnel_vport_churn, delete_ok),
+	STAT_FIELD(ovs_tunnel_vport_churn, race_dellink_attempted),
+};
+
+static const struct stat_category ovs_tunnel_vport_churn_category =
+	STAT_CATEGORY("ovs_tunnel_vport_churn",
+	              ovs_tunnel_vport_churn_runs,
+	              ovs_tunnel_vport_churn_fields);
+
 static const struct stat_field pipe_thrash_fields[] = {
 	STAT_FIELD(pipe_thrash, runs),
 	STAT_FIELD(pipe_thrash, pipes),
@@ -1439,7 +1452,6 @@ static void dump_stats_json_socket_family_and_tls(void)
 		"\"iouring_net_multishot\":{\"runs\":%lu,\"setup_failed\":%lu,\"pbuf_ring_ok\":%lu,\"pbuf_legacy_ok\":%lu,\"armed\":%lu,\"packets_sent\":%lu,\"completions\":%lu,\"cancel_submitted\":%lu,\"napi_register_ok\":%lu,\"napi_register_fail\":%lu,\"napi_unregister_ok\":%lu,\"napi_unregister_fail\":%lu},"
 		"\"netlink_monitor_race\":{\"runs\":%lu,\"setup_failed\":%lu,\"mon_open\":%lu,\"mut_open\":%lu,\"mut_op_ok\":%lu,\"recv_drained\":%lu,\"group_drop\":%lu,\"group_add\":%lu},"
 		"\"tipc_link_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bearer_enable_ok\":%lu,\"sock_rdm_ok\":%lu,\"topsrv_connect_ok\":%lu,\"sub_ports_sent\":%lu,\"publish_ok\":%lu,\"bearer_disable_ok\":%lu},"
-		"\"ovs_tunnel_vport_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"create_ok\":%lu,\"delete_ok\":%lu,\"race_dellink_attempted\":%lu},"
 		"\"bridge_fdb_stp\":{\"runs\":%lu,\"setup_failed\":%lu,\"bridge_create_ok\":%lu,\"veth_create_ok\":%lu,\"raw_send_ok\":%lu,\"stp_toggle_ok\":%lu,\"fdb_del_ok\":%lu,\"link_del_ok\":%lu,\"vlan_mass_runs\":%lu,\"vlan_mass_max_n\":%lu,\"vlan_mass_enotbufs\":%lu},"
 		"\"bridge_conntrack_churn\":{\"runs\":%lu,\"flushes\":%lu,\"pkts_sent\":%lu},",
 		shm->stats.packet_fanout_runs,
@@ -1488,11 +1500,6 @@ static void dump_stats_json_socket_family_and_tls(void)
 		shm->stats.tipc_link_churn_sub_ports_sent,
 		shm->stats.tipc_link_churn_publish_ok,
 		shm->stats.tipc_link_churn_bearer_disable_ok,
-		shm->stats.ovs_tunnel_vport_churn_runs,
-		shm->stats.ovs_tunnel_vport_churn_setup_failed,
-		shm->stats.ovs_tunnel_vport_churn_create_ok,
-		shm->stats.ovs_tunnel_vport_churn_delete_ok,
-		shm->stats.ovs_tunnel_vport_churn_race_dellink_attempted,
 		shm->stats.bridge_fdb_stp_runs,
 		shm->stats.bridge_fdb_stp_setup_failed,
 		shm->stats.bridge_fdb_stp_bridge_create_ok,
@@ -2130,6 +2137,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&vxlan_encap_churn_category);
+
+	printf(",");
+	stat_category_emit_json(&ovs_tunnel_vport_churn_category);
 
 	printf(",");
 	stat_category_emit_json(&iouring_flood_category);
@@ -4772,13 +4782,7 @@ static void dump_stats_childop_runs_network(void)
 
 	stat_category_emit_text(&vxlan_encap_churn_category);
 
-	if (shm->stats.ovs_tunnel_vport_churn_runs) {
-		stat_row("ovs_tunnel_vport_churn", "runs",                   shm->stats.ovs_tunnel_vport_churn_runs);
-		stat_row("ovs_tunnel_vport_churn", "setup_failed",           shm->stats.ovs_tunnel_vport_churn_setup_failed);
-		stat_row("ovs_tunnel_vport_churn", "create_ok",              shm->stats.ovs_tunnel_vport_churn_create_ok);
-		stat_row("ovs_tunnel_vport_churn", "delete_ok",              shm->stats.ovs_tunnel_vport_churn_delete_ok);
-		stat_row("ovs_tunnel_vport_churn", "race_dellink_attempted", shm->stats.ovs_tunnel_vport_churn_race_dellink_attempted);
-	}
+	stat_category_emit_text(&ovs_tunnel_vport_churn_category);
 
 	if (shm->stats.bridge_fdb_stp_runs) {
 		stat_row("bridge_fdb_stp", "runs",            shm->stats.bridge_fdb_stp_runs);
