@@ -64,7 +64,7 @@ static void sanitise_uname(struct syscallrecord *rec)
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = UNAME_POST_STATE_MAGIC;
 	snap->name = rec->a1;
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 }
 
 /*
@@ -107,60 +107,38 @@ static void sanitise_uname(struct syscallrecord *rec)
  */
 static void post_uname(struct syscallrecord *rec)
 {
-	struct uname_post_state *snap =
-		(struct uname_post_state *) rec->post_state;
+	struct uname_post_state *snap;
 	struct new_utsname first;
 	struct new_utsname recheck;
 	bool diverged;
 
+	/*
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
+	 */
+	snap = post_state_claim_owned(rec, UNAME_POST_STATE_MAGIC,
+				      __func__);
 	if (snap == NULL)
 		return;
 
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_uname: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	/*
-	 * Magic-cookie check: snap survived the heap-shape gate but a
-	 * sibling scribble of rec->post_state with a heap-shaped pointer
-	 * to a foreign allocation would let the wrong bytes pose as a
-	 * uname_post_state.  A cookie mismatch means snap does not point
-	 * at our struct -- abandon rather than feed wild bytes into the
-	 * source memcpy of the user name buffer.
-	 */
-	if (snap->magic != UNAME_POST_STATE_MAGIC) {
-		outputerr("post_uname: rejected snap with bad magic 0x%lx "
-			  "(post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
-
 	if (!ONE_IN(100))
-		goto out_free;
+		goto out_release;
 
 	if (rec->retval != 0)
-		goto out_free;
+		goto out_release;
 
 	if (snap->name == 0)
-		goto out_free;
+		goto out_release;
 
 	if (!post_snapshot_or_skip(&first,
 				   (void *)(unsigned long) snap->name,
 				   sizeof(first)))
-		goto out_free;
+		goto out_release;
 
 	if (syscall(SYS_uname, &recheck) != 0)
-		goto out_free;
+		goto out_release;
 
 	diverged = (memcmp(first.sysname,    recheck.sysname,    __NEW_UTS_LEN + 1) != 0) ||
 		   (memcmp(first.nodename,   recheck.nodename,   __NEW_UTS_LEN + 1) != 0) ||
@@ -170,7 +148,7 @@ static void post_uname(struct syscallrecord *rec)
 		   (memcmp(first.domainname, recheck.domainname, __NEW_UTS_LEN + 1) != 0);
 
 	if (!diverged)
-		goto out_free;
+		goto out_release;
 
 	{
 		char first_hex[6][32 * 2 + 1];
@@ -208,8 +186,8 @@ static void post_uname(struct syscallrecord *rec)
 				   __ATOMIC_RELAXED);
 	}
 
-out_free:
-	deferred_freeptr(&rec->post_state);
+out_release:
+	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_uname = {

@@ -465,9 +465,7 @@ syscalls/times.c:146:post_times
 syscalls/times.c:177:post_times
 syscalls/umask.c:52:post_umask
 syscalls/umask.c:70:post_umask
-syscalls/uname.c:125:post_uname
-syscalls/uname.c:140:post_uname
-syscalls/uname.c:197:post_uname
+syscalls/uname.c:175:post_uname
 syscalls/vfork.c:33:post_vfork
 syscalls/wait4.c:37:post_wait4
 syscalls/waitid.c:43:post_waitid
