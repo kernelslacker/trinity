@@ -151,25 +151,6 @@ static void post_newlstat(struct syscallrecord *rec)
 	if (snap->filename[0] == '\0')
 		goto out_free;
 
-	{
-		void *buf = (void *)(unsigned long) snap->statbuf;
-
-		/*
-		 * Defense in depth: even with the post_state snapshot, a
-		 * wholesale stomp could rewrite the snapshot's inner
-		 * statbuf field.  Reject pid-scribbled pointers before
-		 * deref.  The filename is now snapshotted by value into
-		 * the snap's embedded buffer, so the post-time strncpy
-		 * walk-off risk is gone -- only the statbuf pointer still
-		 * needs a shape gate.
-		 */
-		if (looks_like_corrupted_ptr(rec, buf)) {
-			outputerr("post_newlstat: rejected suspicious statbuf=%p (post_state-scribbled?)\n",
-				  buf);
-			goto out_free;
-		}
-	}
-
 	if (!post_snapshot_or_skip(&first,
 				   (void *)(unsigned long) snap->statbuf,
 				   sizeof(first)))
