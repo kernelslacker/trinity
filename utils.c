@@ -24,6 +24,7 @@
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
+#include "signals.h"	// asb_copy_recover / asb_copy_active snapshot-copy guard
 #include "stats.h"
 #include "stats_ring.h"
 #include "syscall.h"
@@ -2590,14 +2591,29 @@ bool post_snapshot_str(char *dst, size_t dstsz, const char *src)
 	if (!range_readable_user(src, dstsz))
 		return false;
 
+	/*
+	 * Same TOCTOU window as post_snapshot_or_skip: a sibling
+	 * mprotect/munmap between the readability proof and the read can
+	 * fault the src[i] load.  Guard the copy loop with the
+	 * asb_copy_active sigsetjmp slot so the fault degrades to a
+	 * skipped sample rather than a child crash.
+	 */
+	if (sigsetjmp(asb_copy_recover, 1) != 0) {
+		asb_copy_active = 0;
+		return false;
+	}
+	asb_copy_active = 1;
 	for (i = 0; i + 1 < dstsz; i++) {
 		char c = src[i];
 
 		dst[i] = c;
-		if (c == '\0')
+		if (c == '\0') {
+			asb_copy_active = 0;
 			return true;
+		}
 	}
 	dst[i] = '\0';
+	asb_copy_active = 0;
 	return true;
 }
 
@@ -2621,7 +2637,22 @@ bool post_snapshot_or_skip(void *dst, const void *src, size_t len)
 	if (!range_readable_user(src, len))
 		return false;
 
+	/*
+	 * range_readable_user() proves src is mapped per trinity's
+	 * shared/heap bookkeeping, but a sibling syscall can mprotect or
+	 * munmap the tracked region in the window between that check and
+	 * this copy.  Guard the memcpy with the asb_copy_active sigsetjmp
+	 * slot (the same recovery the get_writable_struct relocate-copy
+	 * uses) so a TOCTOU fault skips the .post sample instead of
+	 * killing the child.
+	 */
+	if (sigsetjmp(asb_copy_recover, 1) != 0) {
+		asb_copy_active = 0;
+		return false;
+	}
+	asb_copy_active = 1;
 	memcpy(dst, src, len);
+	asb_copy_active = 0;
 	return true;
 }
 
