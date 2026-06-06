@@ -67,12 +67,6 @@ static rlim64_t random_rlim64(void)
 	}
 }
 
-static unsigned int random_rlimit_resource(void)
-{
-	return rlimit_resources[rnd_modulo_u32(
-		sizeof(rlimit_resources) / sizeof(rlimit_resources[0]))];
-}
-
 /* Fill struct rlimit64 with interesting boundary values. */
 static void sanitise_prlimit64(struct syscallrecord *rec)
 {
@@ -116,7 +110,8 @@ static void sanitise_prlimit64(struct syscallrecord *rec)
 			if (bucket >= 9)
 				rec->a2 = rand32();
 			else if (bucket >= 7)
-				rec->a2 = random_rlimit_resource();
+				rec->a2 = random_rlimit_resource(rlimit_resources,
+								 ARRAY_SIZE(rlimit_resources));
 
 			rlim->rlim_cur = random_rlim64();
 			rlim->rlim_max = random_rlim64();

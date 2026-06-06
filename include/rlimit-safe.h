@@ -24,6 +24,20 @@
 
 #include <stdint.h>
 
+#include "rnd.h"
+
 int rlimit_pick_safe_pair(unsigned int resource,
 			  unsigned long long *cur_out,
 			  unsigned long long *max_out);
+
+/*
+ * Uniform draw from a caller-supplied table of RLIMIT_* values.  The
+ * three rlimit syscall sites each keep their own resources[] for the
+ * .arg_params[].list = ARGLIST(...) registration; this shared helper
+ * gives all three the same uniform pick without copy-pasted bodies.
+ */
+static inline unsigned int random_rlimit_resource(const unsigned long *table,
+						  unsigned int count)
+{
+	return (unsigned int) table[rnd_modulo_u32(count)];
+}

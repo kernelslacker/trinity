@@ -8,6 +8,7 @@
 #include <sys/syscall.h>
 #include "deferred-free.h"
 #include "random.h"
+#include "rlimit-safe.h"
 #include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -46,12 +47,6 @@ static unsigned long getrlimit_resources[] = {
 	RLIMIT_RTPRIO, RLIMIT_RTTIME, RLIMIT_SIGPENDING, RLIMIT_STACK,
 };
 
-static unsigned int random_rlimit_resource(void)
-{
-	return getrlimit_resources[rnd_modulo_u32(
-		sizeof(getrlimit_resources) / sizeof(getrlimit_resources[0]))];
-}
-
 static void sanitise_getrlimit(struct syscallrecord *rec)
 {
 #ifdef HAVE_SYS_GETRLIMIT
@@ -79,7 +74,8 @@ static void sanitise_getrlimit(struct syscallrecord *rec)
 	if (ONE_IN(10))
 		rec->a1 = rand32();
 	else if (ONE_IN(10))
-		rec->a1 = random_rlimit_resource();
+		rec->a1 = random_rlimit_resource(getrlimit_resources,
+						 ARRAY_SIZE(getrlimit_resources));
 
 #ifdef HAVE_SYS_GETRLIMIT
 	/*

@@ -7,6 +7,7 @@
 #include "rlimit-safe.h"
 #include "rnd.h"
 #include "sanitise.h"
+#include "utils.h"
 
 static unsigned long rlimit_resources[] = {
 	RLIMIT_CPU, RLIMIT_FSIZE, RLIMIT_DATA, RLIMIT_STACK,
@@ -17,12 +18,6 @@ static unsigned long rlimit_resources[] = {
 	RLIMIT_RTTIME,
 #endif
 };
-
-static unsigned int random_rlimit_resource(void)
-{
-	return rlimit_resources[rnd_modulo_u32(
-		sizeof(rlimit_resources) / sizeof(rlimit_resources[0]))];
-}
 
 static rlim_t random_rlim(void)
 {
@@ -66,7 +61,8 @@ static void sanitise_setrlimit(struct syscallrecord *rec)
 			if (bucket >= 9)
 				rec->a1 = rand32();
 			else if (bucket >= 7)
-				rec->a1 = random_rlimit_resource();
+				rec->a1 = random_rlimit_resource(rlimit_resources,
+								 ARRAY_SIZE(rlimit_resources));
 
 			rlim->rlim_cur = random_rlim();
 			rlim->rlim_max = random_rlim();
