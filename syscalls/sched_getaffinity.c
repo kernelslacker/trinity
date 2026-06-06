@@ -178,29 +178,15 @@ static void post_sched_getaffinity(struct syscallrecord *rec)
 	if (snap->pid != 0 && snap->pid != (unsigned long)gettid())
 		goto out_free;
 
-	{
-		void *mask = (void *)(unsigned long) snap->mask;
-
-		/*
-		 * Defense in depth: even with the post_state snapshot, a
-		 * wholesale stomp could rewrite the snapshot's inner mask
-		 * pointer field.  Reject pid-scribbled mask before deref.
-		 */
-		if (mask == NULL)
-			goto out_free;
-		if (looks_like_corrupted_ptr(rec, mask)) {
-			outputerr("post_sched_getaffinity: rejected suspicious user_mask_ptr=%p (post_state-scribbled?)\n",
-				  mask);
-			goto out_free;
-		}
-	}
-
 	copied = (size_t)retval;
 	if (copied > sizeof(cpu_set_t))
 		copied = sizeof(cpu_set_t);
 
 	memset(&syscall_buf, 0, sizeof(syscall_buf));
-	memcpy(&syscall_buf, (void *)(unsigned long) snap->mask, copied);
+	if (!post_snapshot_or_skip(&syscall_buf,
+				   (const void *)(unsigned long) snap->mask,
+				   copied))
+		goto out_free;
 
 	if (proc_status_read(buf, sizeof(buf)) < 0)
 		goto out_free;
