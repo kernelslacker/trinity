@@ -424,9 +424,7 @@ syscalls/stat.c:413:post_statx
 syscalls/stat.c:476:post_statx
 syscalls/statfs.c:176:post_statfs
 syscalls/statfs.c:368:post_statfs64
-syscalls/statmount.c:408:post_statmount
-syscalls/statmount.c:423:post_statmount
-syscalls/statmount.c:488:post_statmount
+syscalls/statmount.c:472:post_statmount
 syscalls/sysfs.c:153:post_sysfs
 syscalls/sysfs.c:169:post_sysfs
 syscalls/sysfs.c:221:post_sysfs

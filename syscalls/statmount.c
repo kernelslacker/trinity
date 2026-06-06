@@ -319,7 +319,6 @@ static void sanitise_statmount(struct syscallrecord *rec)
 	snap->magic        = STATMOUNT_POST_STATE_MAGIC;
 	snap->original_buf = buf;
 	snap->bufsize      = rec->a3;
-	rec->post_state    = (unsigned long) snap;
 #endif
 
 	avoid_shared_buffer_inout(&rec->a1, sizeof(struct mnt_id_req));
@@ -330,9 +329,15 @@ static void sanitise_statmount(struct syscallrecord *rec)
 	 * Capture req/buffer after relocation -- the post oracle re-reads
 	 * the user buffer from the address the kernel actually wrote into,
 	 * which is the relocated pool pointer, not the libc-heap zmalloc.
+	 * post_state_install pairs the rec->post_state assign with the
+	 * ownership-table register so the observable window between the two
+	 * is closed; post_statmount() will then gate the snap through
+	 * post_state_claim_owned() and prove ownership before dereferencing
+	 * any field.
 	 */
 	snap->req    = rec->a1;
 	snap->buffer = rec->a2;
+	post_state_install(rec, snap);
 #endif
 
 	/*
@@ -389,62 +394,41 @@ static void sanitise_statmount(struct syscallrecord *rec)
 static void post_statmount(struct syscallrecord *rec)
 {
 #ifdef HAVE_SYS_STATMOUNT
-	struct statmount_post_state *snap =
-		(struct statmount_post_state *) rec->post_state;
+	struct statmount_post_state *snap;
 	struct mnt_id_req first_req;
 	struct statmount first_buf;
 	struct statmount recheck_buf;
 	long rc;
 
+	/*
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
+	 */
+	snap = post_state_claim_owned(rec, STATMOUNT_POST_STATE_MAGIC,
+				      __func__);
 	if (snap == NULL)
 		return;
 
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_statmount: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	/*
-	 * Magic-cookie check: snap survived the heap-shape gate but a
-	 * sibling scribble of rec->post_state with a heap-shaped pointer
-	 * to a foreign allocation would let the wrong bytes pose as a
-	 * statmount_post_state -- post_statmount would then chase
-	 * snap->req/buffer pointers into a foreign allocation and free
-	 * snap->original_buf out of someone else's tracked heap.
-	 */
-	if (snap->magic != STATMOUNT_POST_STATE_MAGIC) {
-		outputerr("post_statmount: rejected snap with bad magic 0x%lx "
-			  "(post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		rec->post_state = 0;
-		return;
-	}
-
 	if (!ONE_IN(100))
-		goto out_free;
+		goto out_release;
 
 	if ((long) rec->retval != 0)
-		goto out_free;
+		goto out_release;
 
 	if (snap->req == 0 || snap->buffer == 0)
-		goto out_free;
+		goto out_release;
 
 	if (snap->bufsize < sizeof(struct statmount))
-		goto out_free;
+		goto out_release;
 
 	if (!post_snapshot_or_skip(&first_req, (void *) snap->req,
 				   sizeof(first_req)))
-		goto out_free;
+		goto out_release;
 	if (!post_snapshot_or_skip(&first_buf, (void *) snap->buffer,
 				   sizeof(first_buf)))
-		goto out_free;
+		goto out_release;
 
 	{
 		struct mnt_id_req recheck_req = first_req;
@@ -454,7 +438,7 @@ static void post_statmount(struct syscallrecord *rec)
 	}
 
 	if (rc < 0)
-		goto out_free;
+		goto out_release;
 
 	if (memcmp(&first_buf, &recheck_buf, sizeof(struct statmount)) != 0) {
 		const u64 *first_words = (const u64 *) &first_buf;
@@ -493,16 +477,17 @@ static void post_statmount(struct syscallrecord *rec)
 				   1, __ATOMIC_RELAXED);
 	}
 
-out_free:
+out_release:
 	/*
 	 * Enqueue the original zmalloc()'d buf for deferred free.  rec->a2
 	 * was relocated into the writable-address pool by
 	 * avoid_shared_buffer_out(); free()ing that address would trip the
 	 * tracked-allocator gate.  snap->original_buf is the libc-heap
-	 * pointer the allocator knows about.
+	 * pointer the allocator knows about.  Read snap->original_buf BEFORE
+	 * post_state_release frees the snap struct itself.
 	 */
 	deferred_free_enqueue(snap->original_buf);
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 #else
 	(void) rec;
 #endif
