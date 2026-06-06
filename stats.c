@@ -770,6 +770,17 @@ static const struct stat_category keyring_spam_category =
 	              keyring_spam_runs,
 	              keyring_spam_fields);
 
+static const struct stat_field vdso_mremap_race_fields[] = {
+	STAT_FIELD(vdso_race, runs),
+	STAT_FIELD(vdso_race, mutations),
+	STAT_FIELD(vdso_race, helper_segvs),
+};
+
+static const struct stat_category vdso_mremap_race_category =
+	STAT_CATEGORY("vdso_mremap_race",
+	              vdso_race_runs,
+	              vdso_mremap_race_fields);
+
 /*
  * Emit every counter from struct stats_s as a single JSON object.
  * All scalar counters are emitted unconditionally so consumers see a stable
@@ -1130,7 +1141,6 @@ static void dump_stats_json_lifecycle_and_storms(void)
 	printf("\"fs_lifecycle\":{\"tmpfs\":%lu,\"ramfs\":%lu,\"rdonly\":%lu,"
 			"\"overlay\":%lu,\"quota\":%lu,\"bind\":%lu,\"unsupported\":%lu},"
 		"\"futex_storm\":{\"runs\":%lu,\"inner_crashed\":%lu,\"iters\":%lu},"
-		"\"vdso_mremap_race\":{\"runs\":%lu,\"mutations\":%lu,\"helper_segvs\":%lu},"
 		"\"flock_thrash\":{\"runs\":%lu,\"locks\":%lu,\"failed\":%lu},"
 		"\"xattr_thrash\":{\"runs\":%lu,\"set\":%lu,\"get\":%lu,"
 			"\"remove\":%lu,\"list\":%lu,\"failed\":%lu},"
@@ -1147,8 +1157,6 @@ static void dump_stats_json_lifecycle_and_storms(void)
 		shm->stats.fs_lifecycle_unsupported,
 		shm->stats.futex_storm_runs, shm->stats.futex_storm_inner_crashed,
 		shm->stats.futex_storm_iters,
-		shm->stats.vdso_race_runs, shm->stats.vdso_race_mutations,
-		shm->stats.vdso_race_helper_segvs,
 		shm->stats.flock_thrash_runs, shm->stats.flock_thrash_locks,
 		shm->stats.flock_thrash_failed,
 		shm->stats.xattr_thrash_runs, shm->stats.xattr_thrash_set,
@@ -1906,6 +1914,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&keyring_spam_category);
+
+	printf(",");
+	stat_category_emit_json(&vdso_mremap_race_category);
 
 	dump_stats_json_iouring_zc_and_kvm();
 	dump_stats_json_rxrpc_alg_ublk_block();
@@ -4442,11 +4453,7 @@ static void dump_stats_childop_runs_local(void)
 
 	stat_category_emit_text(&keyring_spam_category);
 
-	if (shm->stats.vdso_race_runs) {
-		stat_row("vdso_mremap_race", "runs",         shm->stats.vdso_race_runs);
-		stat_row("vdso_mremap_race", "mutations",    shm->stats.vdso_race_mutations);
-		stat_row("vdso_mremap_race", "helper_segvs", shm->stats.vdso_race_helper_segvs);
-	}
+	stat_category_emit_text(&vdso_mremap_race_category);
 
 	if (shm->stats.flock_thrash_runs) {
 		stat_row("flock_thrash", "runs",   shm->stats.flock_thrash_runs);
