@@ -207,27 +207,15 @@ static void post_lookup_dcookie(struct syscallrecord *rec)
 	if (snap->len == 0)
 		goto out_free;
 
-	{
-		void *buf = (void *)(unsigned long) snap->buf;
-
-		/*
-		 * Defense in depth: even with the post_state snapshot, a
-		 * wholesale stomp could rewrite the snapshot's inner buf
-		 * pointer field.  Reject pid-scribbled buf before deref.
-		 */
-		if (looks_like_corrupted_ptr(rec, buf)) {
-			outputerr("post_lookup_dcookie: rejected suspicious buf=%p (post_state-scribbled?)\n",
-				  buf);
-			goto out_free;
-		}
-	}
-
 	snap_len = (size_t) retval;
 	if (snap_len > sizeof(first))
 		snap_len = sizeof(first);
 
 	snap_cookie = snap->cookie;
-	memcpy(first, (void *)(unsigned long) snap->buf, snap_len);
+	if (!post_snapshot_or_skip(first,
+				   (void *)(unsigned long) snap->buf,
+				   snap_len))
+		goto out_free;
 
 	memset(recheck, 0, sizeof(recheck));
 	rc = syscall(SYS_lookup_dcookie, snap_cookie, recheck, sizeof(recheck));
