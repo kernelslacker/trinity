@@ -117,23 +117,10 @@ static void post_timer_gettime(struct syscallrecord *rec)
 	if (snap->setting == 0)
 		goto out_free;
 
-	{
-		void *setting = (void *)(unsigned long) snap->setting;
-
-		/*
-		 * Defense in depth: even with the post_state snapshot, a
-		 * wholesale stomp could rewrite the snapshot's inner setting
-		 * field.  Reject pid-scribbled setting before deref.
-		 */
-		if (looks_like_corrupted_ptr(rec, setting)) {
-			outputerr("post_timer_gettime: rejected suspicious setting=%p (post_state-scribbled?)\n",
-				  setting);
-			goto out_free;
-		}
-	}
-
-	memcpy(&first, (struct itimerspec *)(unsigned long) snap->setting,
-	       sizeof(first));
+	if (!post_snapshot_or_skip(&first,
+				   (const void *)(unsigned long) snap->setting,
+				   sizeof(first)))
+		goto out_free;
 
 	if (first.it_value.tv_nsec < 0 ||
 	    first.it_value.tv_nsec > 999999999L ||
