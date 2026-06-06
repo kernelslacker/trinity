@@ -440,27 +440,6 @@ fail:
 	return -1;
 }
 
-static void reap_acceptor(pid_t pid)
-{
-	int status;
-	int waited = 0;
-
-	if (pid <= 0)
-		return;
-
-	while (waited++ < 8) {
-		pid_t r = waitpid_eintr(pid, &status, WNOHANG);
-		if (r == pid || r < 0)
-			return;
-		{
-			struct timespec ts = { 0, 1000000L };  /* 1 ms */
-			(void)nanosleep(&ts, NULL);
-		}
-	}
-	(void)kill(pid, SIGTERM);
-	(void)waitpid_eintr(pid, &status, 0);
-}
-
 /* Fill an SEND_ZC SQE referencing a registered buffer slot.  The kernel
  * resolves the buffer through the rsrc_node table when
  * IORING_RECVSEND_FIXED_BUF is set in ioprio (the documented carrier

@@ -2,6 +2,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <signal.h>
 #include <stdbool.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -72,4 +73,31 @@ static inline bool budget_elapsed_ns(const struct timespec *start, long budget_n
 	elapsed_ns = (now.tv_sec  - start->tv_sec)  * 1000000000L
 		   + (now.tv_nsec - start->tv_nsec);
 	return elapsed_ns >= budget_ns;
+}
+
+/*
+ * Reap an acceptor helper child forked by a churn op.  The acceptor exits
+ * as soon as its peer closes, which the caller does before this call.
+ * Bound the wait with a few WNOHANG polls separated by short sleeps; if
+ * it still hasn't gone, send a SIGTERM and reap blocking.
+ */
+static inline void reap_acceptor(pid_t pid)
+{
+	int status;
+	int waited = 0;
+
+	if (pid <= 0)
+		return;
+
+	while (waited++ < 8) {
+		pid_t r = waitpid_eintr(pid, &status, WNOHANG);
+		if (r == pid || r < 0)
+			return;
+		{
+			struct timespec ts = { 0, 1000000L };  /* 1 ms */
+			(void)nanosleep(&ts, NULL);
+		}
+	}
+	(void)kill(pid, SIGTERM);
+	(void)waitpid_eintr(pid, &status, 0);
 }

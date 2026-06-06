@@ -266,27 +266,6 @@ fail:
 	return -1;
 }
 
-static void reap_acceptor(pid_t pid)
-{
-	int status;
-	int waited = 0;
-
-	if (pid <= 0)
-		return;
-
-	while (waited++ < 8) {
-		pid_t r = waitpid_eintr(pid, &status, WNOHANG);
-		if (r == pid || r < 0)
-			return;
-		{
-			struct timespec ts = { 0, 1000000L };  /* 1 ms */
-			(void)nanosleep(&ts, NULL);
-		}
-	}
-	(void)kill(pid, SIGTERM);
-	(void)waitpid_eintr(pid, &status, 0);
-}
-
 /* Drain the sk_error_queue of MSG_ZEROCOPY completion notifications
  * via recvmsg(MSG_ERRQUEUE).  Validates the sock_extended_err shape
  * when a cmsg arrives (origin should be SO_EE_ORIGIN_ZEROCOPY for our

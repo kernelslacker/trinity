@@ -486,7 +486,7 @@ static int open_loopback_pair(pid_t *out_pid)
 	return cli;
 }
 
-static void reap_acceptor(pid_t pid)
+static void reap_acceptor_blocking(pid_t pid)
 {
 	int status;
 
@@ -509,7 +509,7 @@ static int try_ktls(int file_fd)
 		if (errno_unsupported(errno))
 			latch_target(TGT_KTLS, "TCP_ULP", errno);
 		close(s);
-		reap_acceptor(acceptor);
+		reap_acceptor_blocking(acceptor);
 		return -1;
 	}
 	memset(&ci, 0, sizeof(ci));
@@ -523,13 +523,13 @@ static int try_ktls(int file_fd)
 		if (errno_unsupported(errno))
 			latch_target(TGT_KTLS, "TLS_TX", errno);
 		close(s);
-		reap_acceptor(acceptor);
+		reap_acceptor_blocking(acceptor);
 		return -1;
 	}
 	set_short_recv_timeout(s);
 	(void)splice_into_socket(file_fd, s);
 	close(s);
-	reap_acceptor(acceptor);
+	reap_acceptor_blocking(acceptor);
 	return 0;
 }
 

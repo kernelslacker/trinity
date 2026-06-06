@@ -262,31 +262,6 @@ fail:
 	return -1;
 }
 
-static void reap_acceptor(pid_t pid)
-{
-	int status;
-	int waited = 0;
-
-	if (pid <= 0)
-		return;
-
-	/* The acceptor exits as soon as its peer closes, which we do
-	 * before this call.  Bound the wait with a few WNOHANG polls
-	 * separated by short sleeps; if it still hasn't gone, send a
-	 * SIGTERM and reap blocking. */
-	while (waited++ < 8) {
-		pid_t r = waitpid_eintr(pid, &status, WNOHANG);
-		if (r == pid || r < 0)
-			return;
-		{
-			struct timespec ts = { 0, 1000000L };  /* 1 ms */
-			(void)nanosleep(&ts, NULL);
-		}
-	}
-	(void)kill(pid, SIGTERM);
-	(void)waitpid_eintr(pid, &status, 0);
-}
-
 /* Step 2: install kTLS ULP on the loopback fd.  ENOPROTOOPT means no
  * CONFIG_TLS; EPERM is unusual here (TCP_ULP doesn't typically gate on
  * caps) but treat it the same — neither flips mid-process, so latch the

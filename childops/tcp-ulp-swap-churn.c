@@ -293,27 +293,6 @@ fail:
 	return -1;
 }
 
-static void reap_acceptor(pid_t pid)
-{
-	int status;
-	int waited = 0;
-
-	if (pid <= 0)
-		return;
-
-	while (waited++ < 8) {
-		pid_t r = waitpid_eintr(pid, &status, WNOHANG);
-		if (r == pid || r < 0)
-			return;
-		{
-			struct timespec ts = { 0, 1000000L };  /* 1 ms */
-			(void)nanosleep(&ts, NULL);
-		}
-	}
-	(void)kill(pid, SIGTERM);
-	(void)waitpid_eintr(pid, &status, 0);
-}
-
 /* SIOCGIFNAME(ifindex=1) -> SIOCSIFNAME with the same name back.  The
  * "rename to current name" round-trip exercises the dev_change_name()
  * path without actually mutating lo.  EPERM (no CAP_NET_ADMIN) latches
