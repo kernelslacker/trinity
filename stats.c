@@ -948,6 +948,20 @@ static const struct stat_category igmp_mld_source_churn_category =
 	              igmp_mld_source_churn_runs,
 	              igmp_mld_source_churn_fields);
 
+static const struct stat_field handshake_req_abort_fields[] = {
+	STAT_FIELD(handshake_req_abort, runs),
+	STAT_FIELD(handshake_req_abort, setup_failed),
+	STAT_FIELD(handshake_req_abort, accept_ok),
+	STAT_FIELD(handshake_req_abort, done_ok),
+	STAT_FIELD(handshake_req_abort, abort_ok),
+	STAT_FIELD(handshake_req_abort, orphan_close),
+};
+
+static const struct stat_category handshake_req_abort_category =
+	STAT_CATEGORY("handshake_req_abort",
+	              handshake_req_abort_runs,
+	              handshake_req_abort_fields);
+
 static const struct stat_field pipe_thrash_fields[] = {
 	STAT_FIELD(pipe_thrash, runs),
 	STAT_FIELD(pipe_thrash, pipes),
@@ -1555,7 +1569,6 @@ static void dump_stats_json_netfilter_and_xfrm(void)
 		"\"sctp_assoc_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bindx_added\":%lu,\"bindx_removed\":%lu,\"bindx_rejected\":%lu,\"connect_failed\":%lu,\"connected\":%lu,\"accepted\":%lu,\"packets_sent\":%lu,\"peeled_off\":%lu,\"peeloff_rejected\":%lu,\"cycles\":%lu},"
 		"\"mptcp_pm_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sock_mptcp_ok\":%lu,\"addr_added_ok\":%lu,\"addr_removed_ok\":%lu,\"send_ok\":%lu,\"setsockopt_unsupported\":%lu,\"setsockopt_master_set\":%lu,\"setsockopt_master_fail\":%lu,\"getsockopt_verify_ok\":%lu,\"getsockopt_verify_drift\":%lu,\"sockopt_sweep_runs\":%lu,\"sockopt_set_ok\":%lu,\"sockopt_set_failed\":%lu,\"sockopt_subflow_added\":%lu,\"sockopt_readback_ok\":%lu,\"sockopt_inherit_mismatch\":%lu,\"sockopt_unsupported_latched\":%lu},"
 		"\"devlink_port_churn\":{\"iterations\":%lu,\"split_ok\":%lu,\"split_fail\":%lu,\"reload_ok\":%lu,\"reload_fail\":%lu,\"create_skipped\":%lu},"
-		"\"handshake_req_abort\":{\"runs\":%lu,\"setup_failed\":%lu,\"accept_ok\":%lu,\"done_ok\":%lu,\"abort_ok\":%lu,\"orphan_close\":%lu},"
 		"\"nf_conntrack_helper_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"no_helper\":%lu,\"attach_ok\":%lu,\"attach_fail\":%lu,\"exp_ok\":%lu,\"packet_sent\":%lu,\"delete_ok\":%lu,\"zone_swap\":%lu,\"detach_ok\":%lu},"
 		"\"af_unix_scm_rights_gc\":{\"runs\":%lu,\"setup_failed\":%lu,\"cycle_built_ok\":%lu,\"close_ok\":%lu,\"trigger_ok\":%lu,\"recv_ok\":%lu,\"peek_ok\":%lu,\"iouring_variant_ok\":%lu,\"sibling_spawn_ok\":%lu,\"sibling_spawn_failed\":%lu,\"sibling_reaped_ok\":%lu,\"sibling_crashed\":%lu},"
 		"\"tcp_ulp_swap_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"install_tls_ok\":%lu,\"tx_install_ok\":%lu,\"send_ok\":%lu,\"swap_rejected_ok\":%lu,\"ifname_probe_ok\":%lu,\"uninstall_ok\":%lu,\"reinstall_ok\":%lu,\"install_failed\":%lu},",
@@ -1668,12 +1681,6 @@ static void dump_stats_json_netfilter_and_xfrm(void)
 		shm->stats.devlink_port_churn_reload_ok,
 		shm->stats.devlink_port_churn_reload_fail,
 		shm->stats.devlink_port_churn_create_skipped,
-		shm->stats.handshake_req_abort_runs,
-		shm->stats.handshake_req_abort_setup_failed,
-		shm->stats.handshake_req_abort_accept_ok,
-		shm->stats.handshake_req_abort_done_ok,
-		shm->stats.handshake_req_abort_abort_ok,
-		shm->stats.handshake_req_abort_orphan_close,
 		shm->stats.nf_conntrack_helper_churn_runs,
 		shm->stats.nf_conntrack_helper_churn_setup_failed,
 		shm->stats.nf_conntrack_helper_churn_no_helper,
@@ -2170,6 +2177,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&igmp_mld_source_churn_category);
+
+	printf(",");
+	stat_category_emit_json(&handshake_req_abort_category);
 
 	printf(",");
 	stat_category_emit_json(&iouring_flood_category);
@@ -5001,14 +5011,7 @@ static void dump_stats_childop_runs_network(void)
 		stat_row("devlink_port_churn", "create_skipped", shm->stats.devlink_port_churn_create_skipped);
 	}
 
-	if (shm->stats.handshake_req_abort_runs) {
-		stat_row("handshake_req_abort", "runs",         shm->stats.handshake_req_abort_runs);
-		stat_row("handshake_req_abort", "setup_failed", shm->stats.handshake_req_abort_setup_failed);
-		stat_row("handshake_req_abort", "accept_ok",    shm->stats.handshake_req_abort_accept_ok);
-		stat_row("handshake_req_abort", "done_ok",      shm->stats.handshake_req_abort_done_ok);
-		stat_row("handshake_req_abort", "abort_ok",     shm->stats.handshake_req_abort_abort_ok);
-		stat_row("handshake_req_abort", "orphan_close", shm->stats.handshake_req_abort_orphan_close);
-	}
+	stat_category_emit_text(&handshake_req_abort_category);
 
 	if (shm->stats.nf_conntrack_helper_churn_runs) {
 		stat_row("nf_conntrack_helper_churn", "runs",         shm->stats.nf_conntrack_helper_churn_runs);
