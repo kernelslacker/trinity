@@ -458,21 +458,6 @@ static void post_listxattr(struct syscallrecord *rec)
 	if (snap->arg1 == 0 || snap->list == 0)
 		goto out_free;
 
-	{
-		void *path_p = (void *)(unsigned long) snap->arg1;
-
-		/*
-		 * Defense in depth: even with the post_state snapshot, a
-		 * wholesale stomp could rewrite the snapshot's inner pointer
-		 * fields.  Reject pid-scribbled pathname before deref.
-		 */
-		if (looks_like_corrupted_ptr(rec, path_p)) {
-			outputerr("post_listxattr: rejected suspicious pathname=%p (post_state-scribbled?)\n",
-				  path_p);
-			goto out_free;
-		}
-	}
-
 	if (!post_snapshot_str(snap_path, sizeof(snap_path),
 			       (const char *)(unsigned long) snap->arg1))
 		goto out_free;
@@ -702,21 +687,6 @@ static void post_llistxattr(struct syscallrecord *rec)
 
 	if (snap->arg1 == 0 || snap->list == 0)
 		goto out_free;
-
-	{
-		void *path_p = (void *)(unsigned long) snap->arg1;
-
-		/*
-		 * Defense in depth: even with the post_state snapshot, a
-		 * wholesale stomp could rewrite the snapshot's inner pointer
-		 * fields.  Reject pid-scribbled pathname before deref.
-		 */
-		if (looks_like_corrupted_ptr(rec, path_p)) {
-			outputerr("post_llistxattr: rejected suspicious pathname=%p (post_state-scribbled?)\n",
-				  path_p);
-			goto out_free;
-		}
-	}
 
 	if (!post_snapshot_str(snap_path, sizeof(snap_path),
 			       (const char *)(unsigned long) snap->arg1))
