@@ -195,34 +195,6 @@ static bool ns_unsupported_lwtunnel;
 static bool modprobe_tried_mpls_router;
 static bool mpls_rc_unshared;
 
-/*
- * Best-effort modprobe.  Same fork+execvp shape as xfrm-churn's
- * try_modprobe -- redirect stdio to /dev/null so module-load chatter
- * doesn't pollute trinity's output.  Failure (no module, no
- * /sbin/modprobe, no permission, lockdown=integrity) is exactly the
- * case the per-arm latch will catch on the subsequent NEWROUTE.
- */
-static void try_modprobe(const char *mod)
-{
-	pid_t pid = fork();
-	int status;
-
-	if (pid < 0)
-		return;
-	if (pid == 0) {
-		int devnull = open("/dev/null", O_RDWR | O_CLOEXEC);
-		if (devnull >= 0) {
-			(void)dup2(devnull, 0);
-			(void)dup2(devnull, 1);
-			(void)dup2(devnull, 2);
-			close(devnull);
-		}
-		execlp("modprobe", "modprobe", "-q", mod, (char *)NULL);
-		_exit(127);
-	}
-	(void)waitpid_eintr(pid, &status, 0);
-}
-
 static void maybe_modprobe_once(void)
 {
 	if (modprobe_tried_mpls_router)

@@ -72,27 +72,6 @@ static bool ns_unsupported_ipvs_sysctl;
 static bool setup_done;
 static bool burn_setup_done;
 
-static void try_modprobe(const char *mod)
-{
-	pid_t pid = fork();
-	int status;
-
-	if (pid < 0)
-		return;
-	if (pid == 0) {
-		int devnull = open("/dev/null", O_RDWR | O_CLOEXEC);
-		if (devnull >= 0) {
-			(void)dup2(devnull, 0);
-			(void)dup2(devnull, 1);
-			(void)dup2(devnull, 2);
-			close(devnull);
-		}
-		execlp("modprobe", "modprobe", "-q", mod, (char *)NULL);
-		_exit(127);
-	}
-	(void)waitpid_eintr(pid, &status, 0);
-}
-
 static void try_ipvsadm(const char *const argv[])
 {
 	pid_t pid = fork();

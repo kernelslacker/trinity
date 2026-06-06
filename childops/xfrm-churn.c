@@ -489,35 +489,6 @@ static bool lo_brought_up;
  */
 static __u32 g_pfkey_seq;
 
-/*
- * Best-effort modprobe.  fork+execvp; child redirects stdio to
- * /dev/null so any module-load chatter doesn't pollute trinity's
- * output.  Ignore the exit status — modprobe failures (no module,
- * no permission, no /sbin/modprobe, lockdown=integrity) are exactly
- * the cases the per-algo latch will catch on the subsequent
- * XFRM_MSG_NEWSA probe.
- */
-static void try_modprobe(const char *mod)
-{
-	pid_t pid = fork();
-	int status;
-
-	if (pid < 0)
-		return;
-	if (pid == 0) {
-		int devnull = open("/dev/null", O_RDWR | O_CLOEXEC);
-		if (devnull >= 0) {
-			(void)dup2(devnull, 0);
-			(void)dup2(devnull, 1);
-			(void)dup2(devnull, 2);
-			close(devnull);
-		}
-		execlp("modprobe", "modprobe", "-q", mod, (char *)NULL);
-		_exit(127);
-	}
-	(void)waitpid_eintr(pid, &status, 0);
-}
-
 static void modprobe_algo(unsigned int idx)
 {
 	if (modprobe_tried_algo[idx])

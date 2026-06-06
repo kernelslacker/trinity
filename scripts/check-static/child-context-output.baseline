@@ -22,9 +22,9 @@ childops/iouring-recipes.c:2799:iouring_recipes
 childops/iouring-recipes.c:2893:iouring_recipes_dump_stats
 childops/ip6gre-bond-lapb-stack.c:118:latch_unsupported
 childops/mount-churn.c:130:ensure_private_ns
-childops/mpls-route-churn.c:234:maybe_modprobe_once
-childops/mpls-route-churn.c:245:latch_ns_unsupported_mpls
-childops/mpls-route-churn.c:257:latch_ns_unsupported_lwtunnel
+childops/mpls-route-churn.c:206:maybe_modprobe_once
+childops/mpls-route-churn.c:217:latch_ns_unsupported_mpls
+childops/mpls-route-churn.c:229:latch_ns_unsupported_lwtunnel
 childops/nat-t-churn.c:384:warn_once_unsupported
 childops/nat-t-churn.c:818:open_encap_udp6
 childops/nat-t-churn.c:839:open_encap_udp6

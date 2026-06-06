@@ -520,36 +520,6 @@ static int enumerate_wiphys(struct genl_ctx *ctx, uint32_t *first_phy)
 }
 
 /*
- * Best-effort modprobe.  fork+execvp; child redirects stdio to /dev/null
- * so module-load chatter doesn't pollute trinity output.  Ignore the
- * exit status -- modprobe failures (no module, no permission, no
- * /sbin/modprobe, lockdown=integrity) are exactly the cases the hwsim
- * probe will catch on the wiphy enumerate immediately after.
- */
-static void try_modprobe(const char *mod)
-{
-	pid_t pid;
-	int status;
-
-	pid = fork();
-	if (pid < 0)
-		return;
-	if (pid == 0) {
-		int devnull = open("/dev/null", O_RDWR | O_CLOEXEC);
-
-		if (devnull >= 0) {
-			(void)dup2(devnull, 0);
-			(void)dup2(devnull, 1);
-			(void)dup2(devnull, 2);
-			close(devnull);
-		}
-		execlp("modprobe", "modprobe", "-q", mod, (char *)NULL);
-		_exit(127);
-	}
-	(void)waitpid_eintr(pid, &status, 0);
-}
-
-/*
  * Capability gate: presence check for mac80211_hwsim.  Sequence:
  *   - /sys/class/mac80211_hwsim must exist and be a directory.  If not,
  *     fire modprobe (latched once per child) and re-check.
