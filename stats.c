@@ -868,6 +868,18 @@ static const struct stat_category iouring_flood_category =
 	              iouring_runs,
 	              iouring_flood_fields);
 
+static const struct stat_field close_racer_fields[] = {
+	STAT_FIELD(close_racer, runs),
+	STAT_FIELD(close_racer, pairs),
+	STAT_FIELD(close_racer, failed),
+	STAT_FIELD(close_racer, thread_spawn_fail),
+};
+
+static const struct stat_category close_racer_category =
+	STAT_CATEGORY("close_racer",
+	              close_racer_runs,
+	              close_racer_fields);
+
 /*
  * Emit every counter from struct stats_s as a single JSON object.
  * All scalar counters are emitted unconditionally so consumers see a stable
@@ -1227,16 +1239,13 @@ static void dump_stats_json_lifecycle_and_storms(void)
 {
 	printf("\"fs_lifecycle\":{\"tmpfs\":%lu,\"ramfs\":%lu,\"rdonly\":%lu,"
 			"\"overlay\":%lu,\"quota\":%lu,\"bind\":%lu,\"unsupported\":%lu},"
-		"\"futex_storm\":{\"runs\":%lu,\"inner_crashed\":%lu,\"iters\":%lu},"
-		"\"close_racer\":{\"runs\":%lu,\"pairs\":%lu,\"failed\":%lu,\"thread_spawn_fail\":%lu},",
+		"\"futex_storm\":{\"runs\":%lu,\"inner_crashed\":%lu,\"iters\":%lu},",
 		shm->stats.fs_lifecycle_tmpfs, shm->stats.fs_lifecycle_ramfs,
 		shm->stats.fs_lifecycle_rdonly, shm->stats.fs_lifecycle_overlay,
 		shm->stats.fs_lifecycle_quota, shm->stats.fs_lifecycle_bind,
 		shm->stats.fs_lifecycle_unsupported,
 		shm->stats.futex_storm_runs, shm->stats.futex_storm_inner_crashed,
-		shm->stats.futex_storm_iters,
-		shm->stats.close_racer_runs, shm->stats.close_racer_pairs,
-		shm->stats.close_racer_failed, shm->stats.close_racer_thread_spawn_fail);
+		shm->stats.futex_storm_iters);
 }
 
 static void dump_stats_json_socket_family_and_tls(void)
@@ -1997,6 +2006,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&iouring_flood_category);
+
+	printf(",");
+	stat_category_emit_json(&close_racer_category);
 
 	dump_stats_json_iouring_zc_and_kvm();
 	dump_stats_json_rxrpc_alg_ublk_block();
@@ -4549,12 +4561,7 @@ static void dump_stats_childop_runs_local(void)
 
 	stat_category_emit_text(&iouring_flood_category);
 
-	if (shm->stats.close_racer_runs) {
-		stat_row("close_racer", "runs",              shm->stats.close_racer_runs);
-		stat_row("close_racer", "pairs",             shm->stats.close_racer_pairs);
-		stat_row("close_racer", "failed",            shm->stats.close_racer_failed);
-		stat_row("close_racer", "thread_spawn_fail", shm->stats.close_racer_thread_spawn_fail);
-	}
+	stat_category_emit_text(&close_racer_category);
 }
 
 static void dump_stats_childop_runs_network(void)
