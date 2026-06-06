@@ -637,6 +637,50 @@ static const struct struct_field rseq_fields[] = {
 };
 
 /* ------------------------------------------------------------------ */
+/* struct itimerval (setitimer)                                        */
+/* ------------------------------------------------------------------ */
+
+/*
+ * setitimer(int which, const struct itimerval __user *value,
+ *           struct itimerval __user *ovalue) passes the input itimerval
+ * at a2.  The bespoke sanitise_setitimer() in syscalls/setitimer.c
+ * continues to own the live fill: it get_writable_address()es a struct
+ * itimerval, walks both embedded timevals through fill_timeval() (zero
+ * / sub-second / small-positive / random tv_sec buckets paired with a
+ * legal tv_usec), half the time disarms the timer by zeroing it_value,
+ * routes a2 to the writable buffer, and runs a3 through
+ * avoid_shared_buffer_out().  setitimer's argtype[1] is not
+ * ARG_STRUCT_PTR_*, so the schema-aware fill path never runs against
+ * it -- mirrors itimerspec / robust_list_head / rseq / pollfd / sembuf
+ * / open_how / sigevent above.
+ *
+ * Registration is attribution-only: struct_field_for_cmp() uses the
+ * FT_RANGE tags to attribute small-int CMP constants at the named
+ * tv_sec / tv_usec slots rather than at a coincidentally-same-width
+ * slot.  Bounds mirror the timespec_fields[] precedent: tv_sec is left
+ * unbounded so absolute / past / future buckets stay reachable; tv_usec
+ * is pinned to the legal microsecond range so the request actually
+ * clears timeval_valid() inside the kernel's setitimer entry.  Only
+ * setitimer's INPUT a2 is mapped below -- a3 (ovalue) is a kernel-
+ * written output, and getitimer's a2 is likewise an output, so neither
+ * is mapped.
+ */
+static const struct struct_field itimerval_fields[] = {
+	FIELDX(struct itimerval, it_interval.tv_sec, FT_RANGE,
+	       .u.range = { 0, 4000000000UL },
+	       .mutate_weight = 60),
+	FIELDX(struct itimerval, it_interval.tv_usec, FT_RANGE,
+	       .u.range = { 0, 999999UL },
+	       .mutate_weight = 60),
+	FIELDX(struct itimerval, it_value.tv_sec, FT_RANGE,
+	       .u.range = { 0, 4000000000UL },
+	       .mutate_weight = 60),
+	FIELDX(struct itimerval, it_value.tv_usec, FT_RANGE,
+	       .u.range = { 0, 999999UL },
+	       .mutate_weight = 60),
+};
+
+/* ------------------------------------------------------------------ */
 /* struct epoll_event (epoll_ctl)                                      */
 /* ------------------------------------------------------------------ */
 
@@ -4025,6 +4069,19 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= rseq_fields,
 		.num_fields	= ARRAY_SIZE(rseq_fields),
 	},
+	/*
+	 * itimerval: appended at the tail so the existing struct_catalog[N]
+	 * indices above stay stable; the syscall_struct_args[] mapping
+	 * below picks up the new entry via an explicit USE_BPF-aware index
+	 * since the bpf_attr / bpf_insn entries shift the position by two
+	 * when USE_BPF is set.
+	 */
+	{
+		.name		= "itimerval",
+		.struct_size	= sizeof(struct itimerval),
+		.fields		= itimerval_fields,
+		.num_fields	= ARRAY_SIZE(itimerval_fields),
+	},
 };
 
 const unsigned int struct_catalog_count = ARRAY_SIZE(struct_catalog);
@@ -4209,6 +4266,21 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * coincidentally-same-width slot.
 	 */
 	{ "rseq",		1, &struct_catalog[32] },
+	/*
+	 * setitimer(int which, const struct itimerval __user *value,
+	 *           struct itimerval __user *ovalue)
+	 * a2 is the INPUT struct itimerval pointer; the bespoke
+	 * sanitise_setitimer() keeps owning the live fill (writable
+	 * allocation, per-timeval bucket distribution via fill_timeval(),
+	 * half-the-time disarm of it_value, a3 routed through
+	 * avoid_shared_buffer_out()).  a3 (ovalue) is a kernel-written
+	 * output and is intentionally not mapped; getitimer's a2 is
+	 * likewise an output and is not mapped either.  Attribution-only
+	 * registration lets struct_field_for_cmp steer CMP-learned
+	 * constants at the named tv_sec / tv_usec slots rather than at a
+	 * coincidentally-same-width slot.
+	 */
+	{ "setitimer",		2, &struct_catalog[33] },
 #else
 	{ "clock_nanosleep",	3, &struct_catalog[22] },
 	{ "nanosleep",		1, &struct_catalog[22] },
@@ -4224,6 +4296,7 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	{ "timer_create",	2, &struct_catalog[28] },
 	{ "set_robust_list",	1, &struct_catalog[29] },
 	{ "rseq",		1, &struct_catalog[30] },
+	{ "setitimer",		2, &struct_catalog[31] },
 #endif
 	/* sentinel */
 	{ NULL, 0, NULL },
