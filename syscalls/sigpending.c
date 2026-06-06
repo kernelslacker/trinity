@@ -154,22 +154,14 @@ static void post_sigpending(struct syscallrecord *rec)
 		goto out_free;
 
 	/*
-	 * Defense in depth: even with the post_state snapshot, a wholesale
-	 * stomp could rewrite the snapshot's inner pointer field.  Reject
-	 * a pid-scribbled set before deref.
-	 */
-	if (looks_like_corrupted_ptr(rec, (void *) snap->set)) {
-		outputerr("post_sigpending: rejected suspicious set=%p (post_state-scribbled?)\n",
-			  (void *) snap->set);
-		goto out_free;
-	}
-
-	/*
 	 * Snapshot the user buffer BEFORE the proc read so a sibling-thread
 	 * scribble of the buffer between syscall return and our procfs read
 	 * can't alias the comparison.
 	 */
-	memcpy(&user_snap, (const void *) snap->set, sizeof(user_snap));
+	if (!post_snapshot_or_skip(&user_snap,
+				   (const void *) snap->set,
+				   sizeof(user_snap)))
+		goto out_free;
 	syscall_pending = (uint64_t)user_snap;
 
 	if (!proc_status_read_sigmask("SigPnd", &proc_pending))
