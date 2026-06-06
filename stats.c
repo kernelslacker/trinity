@@ -822,6 +822,19 @@ static const struct stat_category vrf_fib_churn_category =
 	              vrf_fib_churn_runs,
 	              vrf_fib_churn_fields);
 
+static const struct stat_field mpls_route_churn_fields[] = {
+	STAT_FIELD(mpls_route_churn, runs),
+	STAT_FIELD(mpls_route_churn, label_install_ok),
+	STAT_FIELD(mpls_route_churn, iptunnel_install_ok),
+	STAT_FIELD(mpls_route_churn, delete_ok),
+	STAT_FIELD(mpls_route_churn, ns_unsupported),
+};
+
+static const struct stat_category mpls_route_churn_category =
+	STAT_CATEGORY("mpls_route_churn",
+	              mpls_route_churn_runs,
+	              mpls_route_churn_fields);
+
 static const struct stat_field pipe_thrash_fields[] = {
 	STAT_FIELD(pipe_thrash, runs),
 	STAT_FIELD(pipe_thrash, pipes),
@@ -1373,7 +1386,6 @@ static void dump_stats_json_socket_family_and_tls(void)
 		"\"packet_fanout_thrash\":{\"runs\":%lu,\"setup_failed\":%lu,\"ring_failed\":%lu,\"rings_installed\":%lu,\"mmap_failed\":%lu,\"joins\":%lu,\"rejoins_ok\":%lu,\"rejoins_rejected\":%lu},"
 		"\"eth_emitter\":{\"runs\":%lu,\"setup_failed\":%lu,\"short\":%lu,\"sends_ok\":%lu,\"sends_failed\":%lu,\"tmpl_arp\":%lu,\"tmpl_ipv4_frag_zero\":%lu,\"tmpl_ipv6_na\":%lu,\"tmpl_vlan_qinq\":%lu,\"tmpl_bad_ethertype\":%lu},"
 		"\"iouring_net_multishot\":{\"runs\":%lu,\"setup_failed\":%lu,\"pbuf_ring_ok\":%lu,\"pbuf_legacy_ok\":%lu,\"armed\":%lu,\"packets_sent\":%lu,\"completions\":%lu,\"cancel_submitted\":%lu,\"napi_register_ok\":%lu,\"napi_register_fail\":%lu,\"napi_unregister_ok\":%lu,\"napi_unregister_fail\":%lu},"
-		"\"mpls_route_churn\":{\"runs\":%lu,\"label_install_ok\":%lu,\"iptunnel_install_ok\":%lu,\"delete_ok\":%lu,\"ns_unsupported\":%lu},"
 		"\"netlink_monitor_race\":{\"runs\":%lu,\"setup_failed\":%lu,\"mon_open\":%lu,\"mut_open\":%lu,\"mut_op_ok\":%lu,\"recv_drained\":%lu,\"group_drop\":%lu,\"group_add\":%lu},"
 		"\"tipc_link_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bearer_enable_ok\":%lu,\"sock_rdm_ok\":%lu,\"topsrv_connect_ok\":%lu,\"sub_ports_sent\":%lu,\"publish_ok\":%lu,\"bearer_disable_ok\":%lu},"
 		"\"tls_ulp_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"ulp_install_ok\":%lu,\"tx_install_ok\":%lu,\"send_ok\":%lu,\"splice_ok\":%lu,\"rekey_ok\":%lu,\"recv_ok\":%lu},"
@@ -1413,11 +1425,6 @@ static void dump_stats_json_socket_family_and_tls(void)
 		shm->stats.iouring_napi_register_fail,
 		shm->stats.iouring_napi_unregister_ok,
 		shm->stats.iouring_napi_unregister_fail,
-		shm->stats.mpls_route_churn_runs,
-		shm->stats.mpls_route_churn_label_install_ok,
-		shm->stats.mpls_route_churn_iptunnel_install_ok,
-		shm->stats.mpls_route_churn_delete_ok,
-		shm->stats.mpls_route_churn_ns_unsupported,
 		shm->stats.netlink_monitor_race_runs,
 		shm->stats.netlink_monitor_race_setup_failed,
 		shm->stats.netlink_monitor_race_mon_open,
@@ -2081,6 +2088,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&vrf_fib_churn_category);
+
+	printf(",");
+	stat_category_emit_json(&mpls_route_churn_category);
 
 	printf(",");
 	stat_category_emit_json(&iouring_flood_category);
@@ -4698,13 +4708,7 @@ static void dump_stats_childop_runs_network(void)
 
 	stat_category_emit_text(&vrf_fib_churn_category);
 
-	if (shm->stats.mpls_route_churn_runs) {
-		stat_row("mpls_route_churn", "runs",                shm->stats.mpls_route_churn_runs);
-		stat_row("mpls_route_churn", "label_install_ok",    shm->stats.mpls_route_churn_label_install_ok);
-		stat_row("mpls_route_churn", "iptunnel_install_ok", shm->stats.mpls_route_churn_iptunnel_install_ok);
-		stat_row("mpls_route_churn", "delete_ok",           shm->stats.mpls_route_churn_delete_ok);
-		stat_row("mpls_route_churn", "ns_unsupported",      shm->stats.mpls_route_churn_ns_unsupported);
-	}
+	stat_category_emit_text(&mpls_route_churn_category);
 
 	if (shm->stats.netlink_monitor_race_runs) {
 		stat_row("netlink_monitor_race", "runs",         shm->stats.netlink_monitor_race_runs);
