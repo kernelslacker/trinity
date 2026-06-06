@@ -434,12 +434,8 @@ syscalls/stat.c:391:post_statx
 syscalls/stat.c:406:post_statx
 syscalls/stat.c:436:post_statx
 syscalls/stat.c:499:post_statx
-syscalls/statfs.c:136:post_statfs
-syscalls/statfs.c:151:post_statfs
-syscalls/statfs.c:194:post_statfs
-syscalls/statfs.c:340:post_statfs64
-syscalls/statfs.c:355:post_statfs64
-syscalls/statfs.c:403:post_statfs64
+syscalls/statfs.c:176:post_statfs
+syscalls/statfs.c:368:post_statfs64
 syscalls/statmount.c:408:post_statmount
 syscalls/statmount.c:423:post_statmount
 syscalls/statmount.c:488:post_statmount

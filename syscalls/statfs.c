@@ -7,7 +7,6 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include "arch.h"
-#include "deferred-free.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -59,6 +58,11 @@ static void sanitise_statfs(struct syscallrecord *rec)
 		 * post handler never re-derefs the user pointer; skip the
 		 * post sample when the snapshot source is not provably
 		 * readable.  post_state is private to the post handler.
+		 * post_state_install pairs the rec->post_state assign with
+		 * the ownership-table register so the observable window
+		 * between the two is closed; post_statfs() will then gate
+		 * the snap through post_state_claim_owned() and prove
+		 * ownership before dereferencing any field.
 		 */
 		snap = zmalloc_tracked(sizeof(*snap));
 		snap->magic    = STATFS_POST_STATE_MAGIC;
@@ -66,7 +70,7 @@ static void sanitise_statfs(struct syscallrecord *rec)
 		if (!post_snapshot_str(snap->pathname, sizeof(snap->pathname),
 				       (const char *)(unsigned long) rec->a1))
 			snap->pathname[0] = '\0';
-		rec->post_state = (unsigned long) snap;
+		post_state_install(rec, snap);
 	}
 #endif
 }
@@ -119,66 +123,44 @@ static void sanitise_statfs(struct syscallrecord *rec)
 #if defined(SYS_statfs) || defined(__NR_statfs)
 static void post_statfs(struct syscallrecord *rec)
 {
-	struct statfs_post_state *snap =
-		(struct statfs_post_state *) rec->post_state;
+	struct statfs_post_state *snap;
 	struct statfs first, recheck;
 	int diverged = 0;
 
+	/*
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
+	 */
+	snap = post_state_claim_owned(rec, STATFS_POST_STATE_MAGIC,
+				      __func__);
 	if (snap == NULL)
 		return;
 
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_statfs: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	/*
-	 * Magic-cookie check: snap survived the heap-shape gate but a
-	 * sibling scribble of rec->post_state with a heap-shaped pointer
-	 * to a foreign allocation would let the wrong bytes pose as a
-	 * statfs_post_state.  A cookie mismatch means snap does not point
-	 * at our struct -- abandon rather than feed wild bytes into the
-	 * pathname / buf inner derefs and re-issue recheck.
-	 */
-	if (snap->magic != STATFS_POST_STATE_MAGIC) {
-		outputerr("post_statfs: rejected snap with bad magic 0x%lx "
-			  "(post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
-
 	if ((long) rec->retval != 0)
-		goto out_free;
+		goto out_release;
 
 	if (snap->buf == 0)
-		goto out_free;
+		goto out_release;
 
 	if (snap->pathname[0] == '\0')
-		goto out_free;
+		goto out_release;
 
 	if (!ONE_IN(100))
-		goto out_free;
+		goto out_release;
 
 	if (!post_snapshot_or_skip(&first,
 				   (void *)(unsigned long) snap->buf,
 				   sizeof(first)))
-		goto out_free;
+		goto out_release;
 
 	if (syscall(SYS_statfs, snap->pathname, &recheck) != 0)
-		goto out_free;
+		goto out_release;
 
 	if (first.f_fsid.__val[0] != recheck.f_fsid.__val[0] ||
 	    first.f_fsid.__val[1] != recheck.f_fsid.__val[1])
-		goto out_free;
+		goto out_release;
 
 	if (first.f_type    != recheck.f_type)    diverged = 1;
 	if (first.f_bsize   != recheck.f_bsize)   diverged = 1;
@@ -189,7 +171,7 @@ static void post_statfs(struct syscallrecord *rec)
 	if (first.f_flags   != recheck.f_flags)   diverged = 1;
 
 	if (!diverged)
-		goto out_free;
+		goto out_release;
 
 	output(0,
 	       "statfs oracle anomaly: path=%s "
@@ -216,8 +198,8 @@ static void post_statfs(struct syscallrecord *rec)
 	__atomic_add_fetch(&shm->stats.statfs_oracle_anomalies, 1,
 			   __ATOMIC_RELAXED);
 
-out_free:
-	deferred_freeptr(&rec->post_state);
+out_release:
+	post_state_release(rec, snap);
 }
 #endif
 
@@ -286,6 +268,11 @@ static void sanitise_statfs64(struct syscallrecord *rec)
 		 * post handler never re-derefs the user pointer; skip the
 		 * post sample when the snapshot source is not provably
 		 * readable.  post_state is private to the post handler.
+		 * post_state_install pairs the rec->post_state assign with
+		 * the ownership-table register so the observable window
+		 * between the two is closed; post_statfs64() will then gate
+		 * the snap through post_state_claim_owned() and prove
+		 * ownership before dereferencing any field.
 		 */
 		snap = zmalloc_tracked(sizeof(*snap));
 		snap->magic    = STATFS64_POST_STATE_MAGIC;
@@ -294,7 +281,7 @@ static void sanitise_statfs64(struct syscallrecord *rec)
 		if (!post_snapshot_str(snap->pathname, sizeof(snap->pathname),
 				       (const char *)(unsigned long) rec->a1))
 			snap->pathname[0] = '\0';
-		rec->post_state = (unsigned long) snap;
+		post_state_install(rec, snap);
 	}
 #endif
 }
@@ -322,72 +309,50 @@ static void sanitise_statfs64(struct syscallrecord *rec)
 #ifdef SYS_statfs64
 static void post_statfs64(struct syscallrecord *rec)
 {
-	struct statfs64_post_state *snap =
-		(struct statfs64_post_state *) rec->post_state;
+	struct statfs64_post_state *snap;
 	struct statfs64 first, recheck;
 	size_t sz_snapshot;
 	int diverged = 0;
 
+	/*
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
+	 */
+	snap = post_state_claim_owned(rec, STATFS64_POST_STATE_MAGIC,
+				      __func__);
 	if (snap == NULL)
 		return;
 
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_statfs64: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	/*
-	 * Magic-cookie check: snap survived the heap-shape gate but a
-	 * sibling scribble of rec->post_state with a heap-shaped pointer
-	 * to a foreign allocation would let the wrong bytes pose as a
-	 * statfs64_post_state.  A cookie mismatch means snap does not
-	 * point at our struct -- abandon rather than feed wild bytes into
-	 * the pathname / sz / buf inner derefs and re-issue recheck.
-	 */
-	if (snap->magic != STATFS64_POST_STATE_MAGIC) {
-		outputerr("post_statfs64: rejected snap with bad magic 0x%lx "
-			  "(post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
-
 	if ((long) rec->retval != 0)
-		goto out_free;
+		goto out_release;
 
 	if (snap->sz < sizeof(struct statfs64))
-		goto out_free;
+		goto out_release;
 
 	if (snap->buf == 0)
-		goto out_free;
+		goto out_release;
 
 	if (snap->pathname[0] == '\0')
-		goto out_free;
+		goto out_release;
 
 	if (!ONE_IN(100))
-		goto out_free;
+		goto out_release;
 
 	sz_snapshot = (size_t) snap->sz;
 
 	if (!post_snapshot_or_skip(&first,
 				   (void *)(unsigned long) snap->buf,
 				   sizeof(first)))
-		goto out_free;
+		goto out_release;
 
 	if (syscall(SYS_statfs64, snap->pathname, sz_snapshot, &recheck) != 0)
-		goto out_free;
+		goto out_release;
 
 	if (first.f_fsid.__val[0] != recheck.f_fsid.__val[0] ||
 	    first.f_fsid.__val[1] != recheck.f_fsid.__val[1])
-		goto out_free;
+		goto out_release;
 
 	if (first.f_type    != recheck.f_type)    diverged = 1;
 	if (first.f_bsize   != recheck.f_bsize)   diverged = 1;
@@ -398,7 +363,7 @@ static void post_statfs64(struct syscallrecord *rec)
 	if (first.f_flags   != recheck.f_flags)   diverged = 1;
 
 	if (!diverged)
-		goto out_free;
+		goto out_release;
 
 	output(0,
 	       "statfs64 oracle anomaly: path=%s sz=%zu "
@@ -425,8 +390,8 @@ static void post_statfs64(struct syscallrecord *rec)
 	__atomic_add_fetch(&shm->stats.statfs64_oracle_anomalies, 1,
 			   __ATOMIC_RELAXED);
 
-out_free:
-	deferred_freeptr(&rec->post_state);
+out_release:
+	post_state_release(rec, snap);
 }
 #endif
 
