@@ -39,37 +39,6 @@ static void socketcall_socket(unsigned long *args)
 	args[2] = st.protocol;
 }
 
-static void socketcall_bind(unsigned long *args)
-{
-	args[0] = get_random_socket_fd();
-}
-
-static void socketcall_connect(unsigned long *args)
-{
-	args[0] = get_random_socket_fd();
-}
-
-static void socketcall_listen(unsigned long *args)
-{
-	args[0] = get_random_socket_fd();
-	args[1] = rand32() % 128;
-}
-
-static void socketcall_accept(unsigned long *args)
-{
-	args[0] = get_random_socket_fd();
-}
-
-static void socketcall_getsockname(unsigned long *args)
-{
-	args[0] = get_random_socket_fd();
-}
-
-static void socketcall_getpeername(unsigned long *args)
-{
-	args[0] = get_random_socket_fd();
-}
-
 static void socketcall_socketpair(unsigned long *args)
 {
 	struct socket_triplet st = { .family = 0, .protocol = 0, .type = 0 };
@@ -90,105 +59,80 @@ static void socketcall_socketpair(unsigned long *args)
 	avoid_shared_buffer_out(&args[3], sizeof(int) * 2);
 }
 
-static void socketcall_send(unsigned long *args)
-{
-	args[0] = get_random_socket_fd();
-	args[2] = rand32() % page_size;
-}
-
-static void socketcall_recv(unsigned long *args)
-{
-	args[0] = get_random_socket_fd();
-	args[2] = rand32() % page_size;
-}
-
-static void socketcall_sendto(unsigned long *args)
-{
-	args[0] = get_random_socket_fd();
-	args[2] = rand32() % page_size;
-}
-
-static void socketcall_recvfrom(unsigned long *args)
-{
-	args[0] = get_random_socket_fd();
-	args[2] = rand32() % page_size;
-}
-
-static void socketcall_shutdown(unsigned long *args)
-{
-	args[0] = get_random_socket_fd();
-	args[1] = rand32() % 3;	/* SHUT_RD, SHUT_WR, SHUT_RDWR */
-}
-
-static void socketcall_setsockopt(unsigned long *args)
-{
-	args[0] = get_random_socket_fd();
-}
-
-static void socketcall_getsockopt(unsigned long *args)
-{
-	args[0] = get_random_socket_fd();
-}
-
-static void socketcall_sendmsg(unsigned long *args)
-{
-	args[0] = get_random_socket_fd();
-}
-
-static void socketcall_recvmsg(unsigned long *args)
-{
-	args[0] = get_random_socket_fd();
-}
-
-static void socketcall_recvmmsg(unsigned long *args)
-{
-	args[0] = get_random_socket_fd();
-}
-
-static void socketcall_sendmmsg(unsigned long *args)
-{
-	args[0] = get_random_socket_fd();
-}
-
-struct socketcall_ptr {
-        unsigned int call;
-        void (*func)(unsigned long *args);
+/*
+ * What to scribble into args[] for a given socketcall sub-call.  Most
+ * sub-calls just want a random socket fd in args[0]; a handful also
+ * want a length in args[2], a shutdown-how in args[1], or a listen
+ * backlog in args[1].  SYS_SOCKET and SYS_SOCKETPAIR don't take an fd
+ * at all and need their own argument generator (special != NULL); in
+ * that case the dispatcher skips the args[0] = fd path entirely.
+ */
+enum socketcall_extra {
+	EXTRA_NONE,
+	EXTRA_LEN,	/* args[2] = rand32() % page_size  (send/recv/sendto/recvfrom) */
+	EXTRA_SHUT,	/* args[1] = rand32() % 3          (shutdown how) */
+	EXTRA_BACKLOG,	/* args[1] = rand32() % 128        (listen) */
 };
 
-static const struct socketcall_ptr socketcallptrs[] = {
-	{ .call = SYS_SOCKET, .func = socketcall_socket },
-	{ .call = SYS_BIND, .func = socketcall_bind },
-	{ .call = SYS_CONNECT, .func = socketcall_connect },
-	{ .call = SYS_LISTEN, .func = socketcall_listen },
-	{ .call = SYS_ACCEPT, .func = socketcall_accept },
-	{ .call = SYS_GETSOCKNAME, .func = socketcall_getsockname },
-	{ .call = SYS_GETPEERNAME, .func = socketcall_getpeername },
-	{ .call = SYS_SOCKETPAIR, .func = socketcall_socketpair },
-	{ .call = SYS_SEND, .func = socketcall_send },
-	{ .call = SYS_RECV, .func = socketcall_recv },
-	{ .call = SYS_SENDTO, .func = socketcall_sendto },
-	{ .call = SYS_RECVFROM, .func = socketcall_recvfrom },
-	{ .call = SYS_SHUTDOWN, .func = socketcall_shutdown },
-	{ .call = SYS_SETSOCKOPT, .func = socketcall_setsockopt },
-	{ .call = SYS_GETSOCKOPT, .func = socketcall_getsockopt },
-	{ .call = SYS_SENDMSG, .func = socketcall_sendmsg },
-	{ .call = SYS_RECVMSG, .func = socketcall_recvmsg },
-	{ .call = SYS_ACCEPT4, .func = socketcall_accept },
-	{ .call = SYS_RECVMMSG, .func = socketcall_recvmmsg },
-	{ .call = SYS_SENDMMSG, .func = socketcall_sendmmsg },
+struct socketcall_desc {
+	unsigned int call;
+	enum socketcall_extra extra;
+	void (*special)(unsigned long *args);
 };
 
+static const struct socketcall_desc socketcalls[] = {
+	{ SYS_SOCKET,		EXTRA_NONE,	socketcall_socket },
+	{ SYS_BIND,		EXTRA_NONE,	NULL },
+	{ SYS_CONNECT,		EXTRA_NONE,	NULL },
+	{ SYS_LISTEN,		EXTRA_BACKLOG,	NULL },
+	{ SYS_ACCEPT,		EXTRA_NONE,	NULL },
+	{ SYS_GETSOCKNAME,	EXTRA_NONE,	NULL },
+	{ SYS_GETPEERNAME,	EXTRA_NONE,	NULL },
+	{ SYS_SOCKETPAIR,	EXTRA_NONE,	socketcall_socketpair },
+	{ SYS_SEND,		EXTRA_LEN,	NULL },
+	{ SYS_RECV,		EXTRA_LEN,	NULL },
+	{ SYS_SENDTO,		EXTRA_LEN,	NULL },
+	{ SYS_RECVFROM,		EXTRA_LEN,	NULL },
+	{ SYS_SHUTDOWN,		EXTRA_SHUT,	NULL },
+	{ SYS_SETSOCKOPT,	EXTRA_NONE,	NULL },
+	{ SYS_GETSOCKOPT,	EXTRA_NONE,	NULL },
+	{ SYS_SENDMSG,		EXTRA_NONE,	NULL },
+	{ SYS_RECVMSG,		EXTRA_NONE,	NULL },
+	{ SYS_ACCEPT4,		EXTRA_NONE,	NULL },
+	{ SYS_RECVMMSG,		EXTRA_NONE,	NULL },
+	{ SYS_SENDMMSG,		EXTRA_NONE,	NULL },
+};
 
 static void sanitise_socketcall(struct syscallrecord *rec)
 {
+	const struct socketcall_desc *desc;
 	unsigned long *args;
 	unsigned int r;
 
 	args = zmalloc_tracked(6 * sizeof(unsigned long));
 
-	r = rnd_modulo_u32(ARRAY_SIZE(socketcallptrs));
-	rec->a1 = socketcallptrs[r].call;
-	socketcallptrs[r].func(args);
+	r = rnd_modulo_u32(ARRAY_SIZE(socketcalls));
+	desc = &socketcalls[r];
+	rec->a1 = desc->call;
+
+	if (desc->special != NULL) {
+		desc->special(args);
+	} else {
+		args[0] = get_random_socket_fd();
+		switch (desc->extra) {
+		case EXTRA_LEN:
+			args[2] = rand32() % page_size;
+			break;
+		case EXTRA_SHUT:
+			args[1] = rand32() % 3;	/* SHUT_RD, SHUT_WR, SHUT_RDWR */
+			break;
+		case EXTRA_BACKLOG:
+			args[1] = rand32() % 128;
+			break;
+		case EXTRA_NONE:
+			break;
+		}
+	}
 
 	rec->a2 = (unsigned long) args;
 	/* Snapshot for the post handler -- a2 may be scribbled by a sibling

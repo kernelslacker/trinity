@@ -436,7 +436,7 @@ syscalls/sigaltstack.c:282:post_sigaltstack
 syscalls/sigpending.c:125:post_sigpending
 syscalls/sigpending.c:140:post_sigpending
 syscalls/sigpending.c:171:post_sigpending
-syscalls/socketcall.c:249:post_socketcall
+syscalls/socketcall.c:193:post_socketcall
 syscalls/socketpair.c:190:post_socketpair
 syscalls/socketpair.c:208:post_socketpair
 syscalls/socketpair.c:221:post_socketpair
