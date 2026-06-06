@@ -286,19 +286,16 @@ static void post_getpeername(struct syscallrecord *rec)
 	fd = (int) snap->fd;
 
 	{
-		void *addr_p = (void *)(unsigned long) snap->usockaddr;
 		void *len_p = (void *)(unsigned long) snap->usockaddr_len;
 
 		/*
 		 * Defense in depth: even with the post_state snapshot, a
 		 * wholesale stomp could rewrite the snapshot's inner pointer
-		 * fields.  Reject pid-scribbled usockaddr/usockaddr_len before
-		 * deref.
+		 * fields.  Reject pid-scribbled usockaddr_len before deref.
 		 */
-		if (looks_like_corrupted_ptr(rec, addr_p) ||
-		    looks_like_corrupted_ptr(rec, len_p)) {
-			outputerr("post_getpeername: rejected suspicious usockaddr=%p usockaddr_len=%p (post_state-scribbled?)\n",
-				  addr_p, len_p);
+		if (looks_like_corrupted_ptr(rec, len_p)) {
+			outputerr("post_getpeername: rejected suspicious usockaddr_len=%p (post_state-scribbled?)\n",
+				  len_p);
 			goto out_free;
 		}
 	}
@@ -318,7 +315,9 @@ static void post_getpeername(struct syscallrecord *rec)
 		goto out_free;
 
 	memset(&first_addr, 0, sizeof(first_addr));
-	memcpy(&first_addr, (const void *) snap->usockaddr, first_len);
+	if (!post_snapshot_or_skip(&first_addr,
+				   (const void *) snap->usockaddr, first_len))
+		goto out_free;
 
 	recheck_len = sizeof(struct sockaddr_storage);
 	memset(&recheck_addr, 0, sizeof(recheck_addr));
