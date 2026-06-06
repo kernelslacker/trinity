@@ -186,11 +186,11 @@ static void sanitise_seccomp(struct syscallrecord *rec)
 	}
 
 	/*
-	 * Snapshot the op alongside the heap pointer.  rec->a1 (op) and
-	 * rec->a3 (heap) are both ABI-exposed; the old post handler
-	 * dispatched off rec->a1 directly and a sibling scribble would
-	 * either leak the sock_fprog or coerce the smaller GET_*
-	 * allocation into being treated as one.
+	 * Snapshot the op alongside the heap pointer (magic-cookie /
+	 * private post_state: see post_state_register()).  Specific
+	 * seccomp failure: the old post handler dispatched off rec->a1
+	 * directly, so a sibling scribble would either leak the sock_fprog
+	 * or coerce the smaller GET_* allocation into being treated as one.
 	 */
 	if (heap != NULL) {
 		snap = zmalloc_tracked(sizeof(*snap));

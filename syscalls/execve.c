@@ -202,21 +202,7 @@ static void sanitise_execve(struct syscallrecord *rec)
 
 	block_self_exec(rec);
 
-	/*
-	 * Snapshot the array pointers and counts for the post handler.  The
-	 * snapshot lives in rec->post_state, which the syscall ABI does not
-	 * expose, so a sibling syscall scribbling rec->a2/a3/a4 between the
-	 * syscall returning and the post handler running cannot misdirect
-	 * the array walk into an unrelated heap allocation.
-	 *
-	 * Register the snap pointer in the post_state ownership table so
-	 * the post handler can verify the value it reads back out of
-	 * rec->post_state really came from this allocation -- a sibling
-	 * scribble that redirects rec->post_state to a foreign chunk is
-	 * caught by the post_state_is_owned() lookup before we copy bytes
-	 * out of an allocation that may be smaller than struct
-	 * execve_post_state.
-	 */
+	/* magic-cookie / private post_state: see post_state_register(). */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = EXECVE_POST_STATE_MAGIC;
 	snap->argv = (void **) argv;

@@ -538,12 +538,12 @@ static void sanitise_bpf(struct syscallrecord *rec)
 
 	/*
 	 * Snapshot the cmd alongside the pre-relocation attr pointer.
-	 * rec->a1 (cmd) and rec->a2 (attr) are both ABI-exposed and a
-	 * sibling syscall can scribble either between syscall return and
-	 * post entry; the old post handler dispatched off rec->a1 directly,
-	 * so a flip from a pool-seeding cmd to BPF_PROG_LOAD would skip the
-	 * insn-buffer free and a flip in the other direction would
-	 * dereference attr fields that bpf_prog_load() never wrote.
+	 * magic-cookie / private post_state: see post_state_register().
+	 * Specific bpf failure mode: the old post handler dispatched off
+	 * rec->a1 directly, so a flip from a pool-seeding cmd to
+	 * BPF_PROG_LOAD would skip the insn-buffer free and a flip in the
+	 * other direction would dereference attr fields that
+	 * bpf_prog_load() never wrote.
 	 *
 	 * The local attr still references the zmalloc above -- ASB only
 	 * rewrote rec->a2 and did not touch attr -- so storing it here

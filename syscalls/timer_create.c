@@ -146,14 +146,7 @@ static void timer_create_sanitise(struct syscallrecord *rec)
 	 */
 	avoid_shared_buffer_out(&rec->a3, sizeof(timer_t));
 
-	/*
-	 * Snapshot the user out-pointer for the post handler.  Sibling
-	 * syscalls in the child can scribble rec->aN between sanitise and
-	 * post; reading from a private slot keeps the deref pointed at the
-	 * buffer the kernel actually wrote into, and the identity check in
-	 * the post handler turns a scribbled rec->a3 into a clean bail
-	 * rather than a quiet read from a stale or unmapped address.
-	 */
+	/* magic-cookie / private post_state: see post_state_register(). */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = TIMER_CREATE_POST_STATE_MAGIC;
 	snap->idp = (timer_t *) rec->a3;

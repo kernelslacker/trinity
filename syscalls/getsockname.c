@@ -110,17 +110,10 @@ static void sanitise_getsockname(struct syscallrecord *rec)
 
 #ifdef HAVE_SYS_GETSOCKNAME
 	/*
-	 * Snapshot the three input args for the post oracle.  Without this
-	 * the post handler reads rec->aN at post-time, when a sibling
-	 * syscall may have scribbled the slots: looks_like_corrupted_ptr()
-	 * cannot tell a real-but-wrong heap address from the original user
-	 * buffer pointers, so the source memcpy would touch a foreign
-	 * allocation, and a stomped fd would steer the re-issue against a
-	 * different socket entirely.  post_state is private to the post
-	 * handler.  Gated on HAVE_SYS_GETSOCKNAME to mirror the .post
-	 * registration -- on systems without SYS_getsockname the post
-	 * handler is not registered and a snapshot only the post handler
-	 * can free would leak.
+	 * magic-cookie / private post_state: see post_state_register().
+	 * Gated on HAVE_SYS_GETSOCKNAME to mirror the .post registration --
+	 * without the post handler a snap that only the post path frees
+	 * would leak.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic         = GETSOCKNAME_POST_STATE_MAGIC;

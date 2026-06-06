@@ -109,14 +109,7 @@ static void sanitise_io_setup(struct syscallrecord *rec)
 	/* Re-route ctxp out of any alloc_shared / libc-heap region. */
 	avoid_shared_buffer_out(&rec->a2, sizeof(aio_context_t));
 
-	/*
-	 * Snapshot the user out-pointer for the post handler.  Sibling
-	 * syscalls in the child can scribble rec->aN between sanitise and
-	 * post; reading from a private slot keeps the deref pointed at the
-	 * buffer the kernel actually wrote into, and the identity check in
-	 * the post handler turns a scribbled rec->a2 into a clean bail
-	 * rather than a quiet read from a stale or unmapped address.
-	 */
+	/* magic-cookie / private post_state: see post_state_register(). */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = IO_SETUP_POST_STATE_MAGIC;
 	snap->ctxp = (unsigned long *) rec->a2;
