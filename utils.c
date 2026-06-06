@@ -1457,6 +1457,90 @@ bool post_state_is_owned(const void *p)
 	return false;
 }
 
+void post_state_install(struct syscallrecord *rec, void *snap)
+{
+	rec->post_state = (unsigned long) snap;
+	post_state_register(snap);
+}
+
+/*
+ * Canonical .post-entry gate.  See the helper-block comment in
+ * include/utils.h for the rationale and the three-step ordering this
+ * encodes.  Diagnostic strings and counter bumps mirror the prior
+ * hand-rolled gates so log readers and stat dashboards keep working.
+ *
+ * The shape gate calls looks_like_corrupted_ptr_pc() directly with the
+ * caller PC fetched by __builtin_return_address(0); that preserves the
+ * per-callsite PC attribution that the static-inline looks_like_corrupted_ptr()
+ * wrapper would otherwise lose now that we are a separate function.
+ *
+ * The magic word is read via *(const unsigned long *)snap rather than
+ * snap->magic; every post_state struct puts `unsigned long magic`
+ * first by convention (post-state-magic.sh enforces it), so the
+ * leading-word read aliases the magic field without the helper needing
+ * to know the caller's struct type.
+ */
+void *post_state_claim_owned(struct syscallrecord *rec,
+			     unsigned long magic_expected,
+			     const char *handler_name)
+{
+	void *snap = (void *) rec->post_state;
+	unsigned long magic_found;
+
+	if (snap == NULL)
+		return NULL;
+
+	if (looks_like_corrupted_ptr_pc(rec, snap, __builtin_return_address(0))) {
+		outputerr("%s: rejected suspicious post_state=%p "
+			  "(pid-scribbled?)\n", handler_name, snap);
+		rec->post_state = 0;
+		return NULL;
+	}
+
+	/*
+	 * Ownership gate -- MUST run before reading any field of snap,
+	 * including the magic cookie below.  A foreign chunk that survived
+	 * the shape gate may not even be sizeof(unsigned long) bytes in
+	 * size; reading the leading word on a non-snap allocation is a
+	 * wild read.  post_state_is_owned() is pure pointer comparison
+	 * against the table and is well-defined regardless of what snap
+	 * points at.
+	 */
+	if (!post_state_is_owned(snap)) {
+		outputerr("%s: rejected post_state=%p not in ownership table "
+			  "(post_state-redirected?)\n", handler_name, snap);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		rec->post_state = 0;
+		return NULL;
+	}
+
+	/*
+	 * Ownership confirmed -- snap really is one of our chunks, so
+	 * reading the leading word is now safe.  By convention every
+	 * post_state struct puts `unsigned long magic` first, so this read
+	 * aliases snap->magic without a typed deref.
+	 */
+	magic_found = *(const unsigned long *) snap;
+	if (magic_found != magic_expected) {
+		outputerr("%s: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  handler_name, magic_found);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+		rec->post_state = 0;
+		return NULL;
+	}
+
+	return snap;
+}
+
+void post_state_release(struct syscallrecord *rec, void *snap)
+{
+	if (snap == NULL)
+		return;
+	post_state_unregister(snap);
+	deferred_freeptr(&rec->post_state);
+}
+
 void sizeunit(unsigned long size, char *buf, size_t buflen)
 {
 	/* non kilobyte aligned size? */

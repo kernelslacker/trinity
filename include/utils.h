@@ -141,6 +141,98 @@ void post_state_register(void *p);
 void post_state_unregister(void *p);
 bool post_state_is_owned(const void *p);
 
+/*
+ * Correct-by-construction helpers for the post_state ownership bracket.
+ *
+ * Every .post handler that hangs a snapshot off rec->post_state must
+ * perform the same three-step dance, in this exact order:
+ *
+ *   1. sanitise: assign rec->post_state, then register the pointer in
+ *      the ownership table.  Doing them in one operation closes the
+ *      sibling-scribble window that opens the instant rec->post_state
+ *      is observable but the table entry is not yet present.
+ *
+ *   2. .post entry: shape-check snap, then post_state_is_owned(snap),
+ *      then compare snap->magic against the expected cookie.  Ordering
+ *      is load-bearing -- the ownership gate MUST precede the magic
+ *      read, because a foreign chunk that survived the shape gate may
+ *      not even be sizeof(unsigned long) bytes in size and reading
+ *      snap->magic on a non-snap allocation is a wild read.
+ *      post-state-deref.sh enforces this ordering at build time;
+ *      prctl.c / pipe.c are the reference shape.
+ *
+ *   3. .post exit: post_state_unregister(snap) BEFORE
+ *      deferred_freeptr(&rec->post_state), on every exit path.  A
+ *      registered-but-freed slot poisons the next allocation that
+ *      hashes to the same bucket -- post_state_is_owned() would then
+ *      return true for memory that is no longer ours.
+ *
+ * Hand-rolling the dance at every call site is one chance per file to
+ * fumble the ordering.  The three helpers below collapse it into three
+ * named operations so the bracket is correct-by-construction:
+ *
+ *   post_state_install(rec, snap)                          step 1
+ *   snap = post_state_claim_owned(rec, MAGIC, __func__)    step 2
+ *   post_state_release(rec, snap)                          step 3
+ *
+ * Convention: every post_state snapshot struct MUST begin with
+ * `unsigned long magic` as its first field (already enforced by
+ * scripts/check-static/post-state-magic.sh).  The claim helper reads
+ * the magic word via *(const unsigned long *)snap rather than
+ * snap->magic so it has no compile-time dependency on the caller's
+ * struct type.
+ */
+struct syscallrecord;
+
+/*
+ * Step 1.  Assign rec->post_state and register in the ownership table,
+ * in that order, with no statements between -- closes the observable
+ * window where snap is reachable but unregistered.  Out-of-line because
+ * struct syscallrecord is not visible at this point in the header and
+ * pulling its definition in would create a circular include.
+ */
+void post_state_install(struct syscallrecord *rec, void *snap);
+
+/*
+ * Step 2.  Read rec->post_state, run it through the canonical
+ * shape -> ownership -> magic gate, and return the validated snap
+ * pointer.  Returns NULL on any gate failure; the helper has already
+ * cleared rec->post_state, emitted the appropriate outputerr() line,
+ * and (on ownership / magic failure) bumped the
+ * post_handler_corrupt_ptr counter via post_handler_corrupt_ptr_bump.
+ *
+ * Callers MUST early-return on NULL -- snap is unsafe to touch and
+ * the helper has already done all the bookkeeping.
+ *
+ * The shape gate uses looks_like_corrupted_ptr_pc() with the caller
+ * PC (__builtin_return_address(0) inside the helper), so per-handler
+ * attribution lands on the .post handler that called us, not on this
+ * wrapper.
+ *
+ * @magic_expected is the *_POST_STATE_MAGIC value the caller's struct
+ * carries in its leading `unsigned long magic` field.
+ * @handler_name is the human-readable tag used in outputerr() lines;
+ * pass __func__ from the .post handler so log readers see the
+ * caller's name.
+ */
+__must_check
+void *post_state_claim_owned(struct syscallrecord *rec,
+			     unsigned long magic_expected,
+			     const char *handler_name);
+
+/*
+ * Step 3.  Unregister the ownership-table slot, then route the chunk
+ * through deferred_freeptr().  Always paired 1:1 with a prior
+ * post_state_install() on the success path.  Safe on NULL snap (the
+ * .post handler short-circuited before claim and there is nothing
+ * registered to remove).
+ *
+ * The unregister-before-free ordering is what keeps the ownership
+ * table consistent: the slot must not describe an allocation that has
+ * already been queued for release.
+ */
+void post_state_release(struct syscallrecord *rec, void *snap);
+
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
 
 #define min(x, y) ({				\
