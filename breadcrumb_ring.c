@@ -49,8 +49,12 @@ void corrupt_ptr_breadcrumb_push(const struct syscallrecord *rec,
 
 	/* Invalidate before write so a concurrent dump-side read that
 	 * lands mid-write skips this slot rather than serving a half-
-	 * built record under a stale .valid flag. */
-	slot->valid = false;
+	 * built record under a stale .valid flag.  Atomic relaxed store
+	 * so -O2 dead-store elimination cannot drop this in favour of
+	 * the .valid = true publish below: on the function-local view
+	 * there is no intervening read of slot->valid, so a plain store
+	 * is a redundant predecessor the optimiser is free to delete. */
+	__atomic_store_n(&slot->valid, false, __ATOMIC_RELAXED);
 
 	slot->bad_ptr = bad_ptr;
 	slot->iter_at_fire = child->op_nr;
@@ -70,7 +74,7 @@ void corrupt_ptr_breadcrumb_push(const struct syscallrecord *rec,
 		slot->site_tag[0] = '\0';
 	}
 
-	slot->valid = true;
+	__atomic_store_n(&slot->valid, true, __ATOMIC_RELAXED);
 	ring->head++;
 }
 
@@ -99,7 +103,7 @@ static unsigned int linearise_child(const struct corrupt_ptr_breadcrumb_ring *ri
 					(CORRUPT_PTR_BREADCRUMB_SLOTS - 1);
 		const struct corrupt_ptr_breadcrumb *s = &ring->slots[slot_idx];
 
-		if (!s->valid)
+		if (!__atomic_load_n(&s->valid, __ATOMIC_RELAXED))
 			continue;
 		out[n++] = *s;
 	}
