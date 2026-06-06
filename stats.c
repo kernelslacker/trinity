@@ -672,6 +672,17 @@ static const struct stat_category barrier_racer_category =
 	              barrier_racer_runs,
 	              barrier_racer_fields);
 
+static const struct stat_field perf_event_chains_fields[] = {
+	STAT_FIELD(perf_chains, runs),
+	STAT_FIELD(perf_chains, groups_created),
+	STAT_FIELD(perf_chains, ioctl_ops),
+};
+
+static const struct stat_category perf_event_chains_category =
+	STAT_CATEGORY("perf_event_chains",
+	              perf_chains_runs,
+	              perf_event_chains_fields);
+
 /*
  * Emit every counter from struct stats_s as a single JSON object.
  * All scalar counters are emitted unconditionally so consumers see a stable
@@ -871,7 +882,6 @@ static void dump_stats_json_basic_subsystems(void)
 		"\"nfnl_subsys_calls\":{\"ctnetlink\":%lu,\"ctnetlink_exp\":%lu,"
 			"\"nftables\":%lu,\"ipset\":%lu},"
 		"\"netlink_generator\":{\"nested_attrs_emitted\":%lu},"
-		"\"perf_event_chains\":{\"runs\":%lu,\"groups_created\":%lu,\"ioctl_ops\":%lu},"
 		"\"tracefs_fuzzer\":{\"kprobe_writes\":%lu,\"uprobe_writes\":%lu,"
 			"\"filter_writes\":%lu,\"event_enable_writes\":%lu,\"misc_writes\":%lu},"
 		"\"bpf_lifecycle\":{\"runs\":%lu,\"progs_loaded\":%lu,\"attached\":%lu,"
@@ -904,8 +914,6 @@ static void dump_stats_json_basic_subsystems(void)
 		shm->stats.nfnl_subsys_calls_nftables,
 		shm->stats.nfnl_subsys_calls_ipset,
 		shm->stats.netlink_nested_attrs_emitted,
-		shm->stats.perf_chains_runs, shm->stats.perf_chains_groups_created,
-		shm->stats.perf_chains_ioctl_ops,
 		shm->stats.tracefs_kprobe_writes, shm->stats.tracefs_uprobe_writes,
 		shm->stats.tracefs_filter_writes, shm->stats.tracefs_event_enable_writes,
 		shm->stats.tracefs_misc_writes,
@@ -1814,6 +1822,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&barrier_racer_category);
+
+	printf(",");
+	stat_category_emit_json(&perf_event_chains_category);
 
 	dump_stats_json_iouring_zc_and_kvm();
 	dump_stats_json_rxrpc_alg_ublk_block();
@@ -3849,11 +3860,7 @@ static void dump_stats_fuzzer_subsystems(void)
 	if (shm->stats.kvm_vcpu_ioctls_dispatched)
 		stat_row("kvm", "vcpu_ioctls_dispatched", shm->stats.kvm_vcpu_ioctls_dispatched);
 
-	if (shm->stats.perf_chains_runs) {
-		stat_row("perf_event_chains", "runs",           shm->stats.perf_chains_runs);
-		stat_row("perf_event_chains", "groups_created", shm->stats.perf_chains_groups_created);
-		stat_row("perf_event_chains", "ioctl_ops",      shm->stats.perf_chains_ioctl_ops);
-	}
+	stat_category_emit_text(&perf_event_chains_category);
 
 	if (shm->stats.tracefs_kprobe_writes || shm->stats.tracefs_uprobe_writes ||
 	    shm->stats.tracefs_filter_writes || shm->stats.tracefs_event_enable_writes ||
