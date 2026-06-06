@@ -1440,22 +1440,6 @@ static bool op_uses_outer_bracket(enum child_op_type op)
 	}
 }
 
-/*
- * Per-childop remote-KCOV opt-in.  Returns false for every op
- * today.  A follow-up commit adds case labels for the
- * net/io_uring-heavy childops whose kernel work runs in worker
- * threads outside task scope, and threads it through the bracket
- * helper so the enable wrapper choice (trace vs. remote) is
- * per-op.  Accessor form chosen for symmetry with
- * op_uses_outer_bracket above.
- */
-__attribute__((unused))
-static bool op_uses_remote_kcov(enum child_op_type op)
-{
-	(void)op;
-	return false;
-}
-
 const char *alt_op_name(enum child_op_type op)
 {
 	switch (op) {
