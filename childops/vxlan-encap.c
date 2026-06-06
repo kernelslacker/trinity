@@ -198,32 +198,6 @@ static bool *kind_latch(enum tun_kind k)
  * Setlink errors are ignored — a kernel that refuses lo up is also
  * one where the rest of the sequence will fail visibly.
  */
-static void bring_lo_up(struct nl_ctx *ctx)
-{
-	unsigned char buf[256];
-	struct nlmsghdr *nlh;
-	struct ifinfomsg *ifi;
-	int lo_idx = (int)if_nametoindex("lo");
-
-	if (lo_idx <= 0)
-		return;
-
-	memset(buf, 0, sizeof(buf));
-	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_type  = RTM_NEWLINK;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = nl_seq_next(ctx);
-
-	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
-	ifi->ifi_family = AF_UNSPEC;
-	ifi->ifi_index  = lo_idx;
-	ifi->ifi_flags  = IFF_UP;
-	ifi->ifi_change = IFF_UP;
-
-	nlh->nlmsg_len = (__u32)(NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi)));
-	(void)nl_send_recv(ctx, buf, nlh->nlmsg_len);
-}
-
 /*
  * Build & send RTM_NEWLINK creating a tunnel of the requested kind.
  * Local pinned to 127.0.0.1, remote to 127.0.0.2.  vni / keys are
@@ -409,28 +383,6 @@ static int build_fdb_add(struct nl_ctx *ctx, int ifindex)
 	return nl_send_recv(ctx, buf, off);
 }
 
-static int build_dellink(struct nl_ctx *ctx, int ifindex)
-{
-	unsigned char buf[128];
-	struct nlmsghdr *nlh;
-	struct ifinfomsg *ifi;
-	size_t off;
-
-	memset(buf, 0, sizeof(buf));
-	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_type  = RTM_DELLINK;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = nl_seq_next(ctx);
-
-	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
-	ifi->ifi_family = AF_UNSPEC;
-	ifi->ifi_index  = ifindex;
-
-	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
-	nlh->nlmsg_len = (__u32)off;
-	return nl_send_recv(ctx, buf, off);
-}
-
 /*
  * Phase: per-child netns setup.  Unshares CLONE_NEWNET the first time
  * through and best-effort modprobes the three tunnel modules so the
@@ -521,7 +473,7 @@ static int vxlan_encap_iter_open_ctx(struct vxlan_encap_iter_ctx *ctx)
 	ctx->nl_opened = true;
 
 	if (!lo_brought_up) {
-		bring_lo_up(&ctx->nl);
+		rtnl_bring_lo_up(&ctx->nl);
 		lo_brought_up = true;
 	}
 	return 0;
@@ -661,7 +613,7 @@ static void vxlan_encap_iter_teardown(struct vxlan_encap_iter_ctx *ctx)
 		return;
 
 	if (ctx->link_added && ctx->ifindex > 0) {
-		if (build_dellink(&ctx->nl, ctx->ifindex) == 0)
+		if (rtnl_dellink(&ctx->nl, ctx->ifindex) == 0)
 			__atomic_add_fetch(&shm->stats.vxlan_encap_churn_link_del_ok,
 					   1, __ATOMIC_RELAXED);
 	}

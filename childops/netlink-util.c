@@ -35,6 +35,7 @@
  */
 
 #include <errno.h>
+#include <net/if.h>
 #include <stddef.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -44,6 +45,7 @@
 #include <unistd.h>
 
 #include <linux/netlink.h>
+#include <linux/rtnetlink.h>
 
 #include "childops-netlink.h"
 
@@ -326,4 +328,76 @@ long long ns_since(const struct timespec *t0)
 		return 0;
 	return (long long)(now.tv_sec - t0->tv_sec) * 1000000000LL +
 	       (long long)(now.tv_nsec - t0->tv_nsec);
+}
+
+int rtnl_dellink(struct nl_ctx *ctx, int ifindex)
+{
+	unsigned char buf[128];
+	struct nlmsghdr *nlh;
+	struct ifinfomsg *ifi;
+	size_t off;
+
+	memset(buf, 0, sizeof(buf));
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_type  = RTM_DELLINK;
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
+
+	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
+	ifi->ifi_family = AF_UNSPEC;
+	ifi->ifi_index  = ifindex;
+
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
+	nlh->nlmsg_len = (__u32)off;
+	return nl_send_recv(ctx, buf, off);
+}
+
+int rtnl_setlink_up(struct nl_ctx *ctx, int ifindex)
+{
+	unsigned char buf[256];
+	struct nlmsghdr *nlh;
+	struct ifinfomsg *ifi;
+	size_t off;
+
+	memset(buf, 0, sizeof(buf));
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_type  = RTM_SETLINK;
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
+
+	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
+	ifi->ifi_family = AF_UNSPEC;
+	ifi->ifi_index  = ifindex;
+	ifi->ifi_flags  = IFF_UP;
+	ifi->ifi_change = IFF_UP;
+
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
+	nlh->nlmsg_len = (__u32)off;
+	return nl_send_recv(ctx, buf, off);
+}
+
+void rtnl_bring_lo_up(struct nl_ctx *ctx)
+{
+	unsigned char buf[256];
+	struct nlmsghdr *nlh;
+	struct ifinfomsg *ifi;
+	int lo_idx = (int)if_nametoindex("lo");
+
+	if (lo_idx <= 0)
+		return;
+
+	memset(buf, 0, sizeof(buf));
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_type  = RTM_NEWLINK;
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
+
+	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
+	ifi->ifi_family = AF_UNSPEC;
+	ifi->ifi_index  = lo_idx;
+	ifi->ifi_flags  = IFF_UP;
+	ifi->ifi_change = IFF_UP;
+
+	nlh->nlmsg_len = (__u32)(NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi)));
+	(void)nl_send_recv(ctx, buf, nlh->nlmsg_len);
 }

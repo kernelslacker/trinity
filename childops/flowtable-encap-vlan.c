@@ -343,48 +343,6 @@ static int build_addaddr(struct nl_ctx *rtnl, int ifindex, __u32 addr_be,
 	return nl_send_recv(rtnl, buf, off);
 }
 
-static int build_setlink_up(struct nl_ctx *rtnl, int ifindex)
-{
-	unsigned char buf[128];
-	struct nlmsghdr *nlh;
-	struct ifinfomsg *ifi;
-	size_t off;
-
-	memset(buf, 0, sizeof(buf));
-	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_type  = RTM_SETLINK;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = nl_seq_next(rtnl);
-	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
-	ifi->ifi_family = AF_UNSPEC;
-	ifi->ifi_index  = ifindex;
-	ifi->ifi_flags  = IFF_UP;
-	ifi->ifi_change = IFF_UP;
-	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
-	nlh->nlmsg_len = (__u32)off;
-	return nl_send_recv(rtnl, buf, off);
-}
-
-static int build_dellink(struct nl_ctx *rtnl, int ifindex)
-{
-	unsigned char buf[128];
-	struct nlmsghdr *nlh;
-	struct ifinfomsg *ifi;
-	size_t off;
-
-	memset(buf, 0, sizeof(buf));
-	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_type  = RTM_DELLINK;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = nl_seq_next(rtnl);
-	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
-	ifi->ifi_family = AF_UNSPEC;
-	ifi->ifi_index  = ifindex;
-	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
-	nlh->nlmsg_len = (__u32)off;
-	return nl_send_recv(rtnl, buf, off);
-}
-
 static int build_nft_table(struct nfnl_ctx *nf, const char *table)
 {
 	unsigned char buf[FEV_NFNL_BUF];
@@ -627,10 +585,10 @@ static int flowtable_vlan_iter_setup(struct nl_ctx *rtnl,
 	(void)build_addaddr(rtnl, c->vla_idx, c->a_addr, 30);
 	(void)build_addaddr(rtnl, c->vlb_idx, c->b_addr, 30);
 
-	(void)build_setlink_up(rtnl, c->vp_a_idx);
-	(void)build_setlink_up(rtnl, c->vp_b_idx);
-	(void)build_setlink_up(rtnl, c->vla_idx);
-	(void)build_setlink_up(rtnl, c->vlb_idx);
+	(void)rtnl_setlink_up(rtnl, c->vp_a_idx);
+	(void)rtnl_setlink_up(rtnl, c->vp_b_idx);
+	(void)rtnl_setlink_up(rtnl, c->vla_idx);
+	(void)rtnl_setlink_up(rtnl, c->vlb_idx);
 
 	enable_ip_forward();
 	return 0;
@@ -798,7 +756,7 @@ static void flowtable_vlan_iter_race(unsigned int iter_idx,
 				     struct flowtable_vlan_iter_ctx *c)
 {
 	if ((iter_idx & 1U) && c->vla_added && c->vla_idx > 0) {
-		if (build_dellink(rtnl, c->vla_idx) == 0) {
+		if (rtnl_dellink(rtnl, c->vla_idx) == 0) {
 			__atomic_add_fetch(&shm->stats.flowtable_vlan_vlan_teardown_races,
 					   1, __ATOMIC_RELAXED);
 			c->vla_added = false;
@@ -832,11 +790,11 @@ flowtable_vlan_iter_teardown(struct nfnl_ctx *nf, struct nl_ctx *rtnl,
 					   NULL, 0, NULL);
 	}
 	if (c->vla_added && c->vla_idx > 0)
-		(void)build_dellink(rtnl, c->vla_idx);
+		(void)rtnl_dellink(rtnl, c->vla_idx);
 	if (c->vlb_added && c->vlb_idx > 0)
-		(void)build_dellink(rtnl, c->vlb_idx);
+		(void)rtnl_dellink(rtnl, c->vlb_idx);
 	if (c->veth_added && c->vp_a_idx > 0)
-		(void)build_dellink(rtnl, c->vp_a_idx);
+		(void)rtnl_dellink(rtnl, c->vp_a_idx);
 }
 
 /*

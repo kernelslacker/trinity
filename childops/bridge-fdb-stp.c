@@ -260,32 +260,6 @@ struct bridge_fdb_stp_iter_ctx {
  * Failures are ignored — they latch through the rest of the sequence
  * naturally.
  */
-static void bring_lo_up(struct nl_ctx *ctx)
-{
-	unsigned char buf[256];
-	struct nlmsghdr *nlh;
-	struct ifinfomsg *ifi;
-	int lo_idx = (int)if_nametoindex("lo");
-
-	if (lo_idx <= 0)
-		return;
-
-	memset(buf, 0, sizeof(buf));
-	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_type  = RTM_NEWLINK;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = nl_seq_next(ctx);
-
-	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
-	ifi->ifi_family = AF_UNSPEC;
-	ifi->ifi_index  = lo_idx;
-	ifi->ifi_flags  = IFF_UP;
-	ifi->ifi_change = IFF_UP;
-
-	nlh->nlmsg_len = (__u32)(NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi)));
-	(void)nl_send_recv(ctx, buf, nlh->nlmsg_len);
-}
-
 /*
  * RTM_NEWLINK type=bridge with the supplied dev name.  No
  * IFLA_INFO_DATA — defaults are fine for our purposes (STP off,
@@ -433,30 +407,6 @@ static int build_setlink_master(struct nl_ctx *ctx, int ifindex,
 	return nl_send_recv(ctx, buf, off);
 }
 
-static int build_setlink_up(struct nl_ctx *ctx, int ifindex)
-{
-	unsigned char buf[256];
-	struct nlmsghdr *nlh;
-	struct ifinfomsg *ifi;
-	size_t off;
-
-	memset(buf, 0, sizeof(buf));
-	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_type  = RTM_SETLINK;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = nl_seq_next(ctx);
-
-	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
-	ifi->ifi_family = AF_UNSPEC;
-	ifi->ifi_index  = ifindex;
-	ifi->ifi_flags  = IFF_UP;
-	ifi->ifi_change = IFF_UP;
-
-	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
-	nlh->nlmsg_len = (__u32)off;
-	return nl_send_recv(ctx, buf, off);
-}
-
 /*
  * RTM_SETLINK family=AF_BRIDGE with IFLA_PROTINFO containing
  * IFLA_BRPORT_LEARNING=1 — arms BR_LEARNING on the port.  This is
@@ -529,28 +479,6 @@ static int build_fdb_del(struct nl_ctx *ctx, int port_ifindex,
 	if (!off)
 		return -EIO;
 
-	nlh->nlmsg_len = (__u32)off;
-	return nl_send_recv(ctx, buf, off);
-}
-
-static int build_dellink(struct nl_ctx *ctx, int ifindex)
-{
-	unsigned char buf[128];
-	struct nlmsghdr *nlh;
-	struct ifinfomsg *ifi;
-	size_t off;
-
-	memset(buf, 0, sizeof(buf));
-	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_type  = RTM_DELLINK;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = nl_seq_next(ctx);
-
-	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
-	ifi->ifi_family = AF_UNSPEC;
-	ifi->ifi_index  = ifindex;
-
-	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
 	nlh->nlmsg_len = (__u32)off;
 	return nl_send_recv(ctx, buf, off);
 }
@@ -726,8 +654,8 @@ static void bridge_vlan_mass_add(struct nl_ctx *ctx)
 		goto out;
 
 	(void)build_setlink_master(ctx, va_idx, br_idx);
-	(void)build_setlink_up(ctx, br_idx);
-	(void)build_setlink_up(ctx, va_idx);
+	(void)rtnl_setlink_up(ctx, br_idx);
+	(void)rtnl_setlink_up(ctx, va_idx);
 
 	(void)clock_gettime(CLOCK_MONOTONIC, &t0);
 	iters = BUDGETED(CHILD_OP_BRIDGE_FDB_STP,
@@ -767,9 +695,9 @@ static void bridge_vlan_mass_add(struct nl_ctx *ctx)
 
 out:
 	if (bridge_added && br_idx > 0)
-		(void)build_dellink(ctx, br_idx);
+		(void)rtnl_dellink(ctx, br_idx);
 	if (veth_added && va_idx > 0)
-		(void)build_dellink(ctx, va_idx);
+		(void)rtnl_dellink(ctx, va_idx);
 }
 
 /*
@@ -877,10 +805,10 @@ static void bridge_fdb_stp_iter_veth_attach(struct bridge_fdb_stp_iter_ctx *ctx)
 						   ctx->br_idx);
 	}
 
-	(void)build_setlink_up(&ctx->ctx, ctx->br_idx);
+	(void)rtnl_setlink_up(&ctx->ctx, ctx->br_idx);
 	for (i = 0; i < 4; i++) {
 		if (ctx->port_idx[i] > 0)
-			(void)build_setlink_up(&ctx->ctx, ctx->port_idx[i]);
+			(void)rtnl_setlink_up(&ctx->ctx, ctx->port_idx[i]);
 	}
 
 	for (i = 0; i < 4; i++) {
@@ -1040,14 +968,14 @@ static void bridge_fdb_stp_iter_teardown(struct bridge_fdb_stp_iter_ctx *ctx)
 
 	if (ctx->ctx.fd >= 0) {
 		if (ctx->bridge_added && ctx->br_idx > 0) {
-			if (build_dellink(&ctx->ctx, ctx->br_idx) == 0)
+			if (rtnl_dellink(&ctx->ctx, ctx->br_idx) == 0)
 				__atomic_add_fetch(&shm->stats.bridge_fdb_stp_link_del_ok,
 						   1, __ATOMIC_RELAXED);
 		}
 		if (ctx->veth0_added && ctx->port_idx[0] > 0)
-			(void)build_dellink(&ctx->ctx, ctx->port_idx[0]);
+			(void)rtnl_dellink(&ctx->ctx, ctx->port_idx[0]);
 		if (ctx->veth1_added && ctx->port_idx[2] > 0)
-			(void)build_dellink(&ctx->ctx, ctx->port_idx[2]);
+			(void)rtnl_dellink(&ctx->ctx, ctx->port_idx[2]);
 		nl_close(&ctx->ctx);
 	}
 }
@@ -1088,7 +1016,7 @@ bool bridge_fdb_stp(struct childdata *child)
 	}
 
 	if (!lo_brought_up) {
-		bring_lo_up(&ictx.ctx);
+		rtnl_bring_lo_up(&ictx.ctx);
 		lo_brought_up = true;
 	}
 

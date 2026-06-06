@@ -146,29 +146,6 @@ static size_t nla_put_be32(unsigned char *buf, size_t off, size_t cap,
 	return nla_put(buf, off, cap, type, &be, sizeof(be));
 }
 
-static void bring_lo_up(struct nl_ctx *rtnl)
-{
-	unsigned char buf[256];
-	struct nlmsghdr *nlh = (struct nlmsghdr *)buf;
-	struct ifinfomsg *ifi;
-	int idx = (int)if_nametoindex("lo");
-
-	if (idx <= 0)
-		return;
-
-	memset(buf, 0, sizeof(buf));
-	nlh->nlmsg_type  = RTM_NEWLINK;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = nl_seq_next(rtnl);
-	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
-	ifi->ifi_family = AF_UNSPEC;
-	ifi->ifi_index  = idx;
-	ifi->ifi_flags  = IFF_UP;
-	ifi->ifi_change = IFF_UP;
-	nlh->nlmsg_len = (__u32)(NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi)));
-	(void)nl_send_recv(rtnl, buf, nlh->nlmsg_len);
-}
-
 static int rtnl_create_bridge(struct nl_ctx *rtnl, const char *name)
 {
 	unsigned char buf[BRCT_RTNL_BUF_BYTES];
@@ -270,46 +247,6 @@ static int rtnl_setlink_master(struct nl_ctx *rtnl, int idx, int master)
 	off = nla_put_u32(buf, off, sizeof(buf), IFLA_MASTER, (__u32)master);
 	if (!off)
 		return -EIO;
-	nlh->nlmsg_len = (__u32)off;
-	return nl_send_recv(rtnl, buf, off);
-}
-
-static int rtnl_setlink_up(struct nl_ctx *rtnl, int idx)
-{
-	unsigned char buf[256];
-	struct nlmsghdr *nlh = (struct nlmsghdr *)buf;
-	struct ifinfomsg *ifi;
-	size_t off;
-
-	memset(buf, 0, sizeof(buf));
-	nlh->nlmsg_type  = RTM_SETLINK;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = nl_seq_next(rtnl);
-	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
-	ifi->ifi_family = AF_UNSPEC;
-	ifi->ifi_index  = idx;
-	ifi->ifi_flags  = IFF_UP;
-	ifi->ifi_change = IFF_UP;
-	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
-	nlh->nlmsg_len = (__u32)off;
-	return nl_send_recv(rtnl, buf, off);
-}
-
-static int rtnl_dellink(struct nl_ctx *rtnl, int idx)
-{
-	unsigned char buf[128];
-	struct nlmsghdr *nlh = (struct nlmsghdr *)buf;
-	struct ifinfomsg *ifi;
-	size_t off;
-
-	memset(buf, 0, sizeof(buf));
-	nlh->nlmsg_type  = RTM_DELLINK;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = nl_seq_next(rtnl);
-	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
-	ifi->ifi_family = AF_UNSPEC;
-	ifi->ifi_index  = idx;
-	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
 	nlh->nlmsg_len = (__u32)off;
 	return nl_send_recv(rtnl, buf, off);
 }
@@ -576,7 +513,7 @@ static int bridge_conntrack_iter_setup_names(struct bridge_conntrack_iter_ctx *c
 	if (nl_open(&ctx->rtnl, &rtnl_opts) < 0)
 		return -1;
 	if (!lo_up_done) {
-		bring_lo_up(&ctx->rtnl);
+		rtnl_bring_lo_up(&ctx->rtnl);
 		lo_up_done = true;
 	}
 

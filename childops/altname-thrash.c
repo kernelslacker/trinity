@@ -168,52 +168,6 @@ static int build_dummy_create(struct nl_ctx *ctx, const char *name)
 	return nl_send_recv(ctx, buf, off);
 }
 
-static int build_setlink_up(struct nl_ctx *ctx, int ifindex)
-{
-	unsigned char buf[256];
-	struct nlmsghdr *nlh;
-	struct ifinfomsg *ifi;
-	size_t off;
-
-	memset(buf, 0, sizeof(buf));
-	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_type  = RTM_SETLINK;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = nl_seq_next(ctx);
-
-	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
-	ifi->ifi_family = AF_UNSPEC;
-	ifi->ifi_index  = ifindex;
-	ifi->ifi_flags  = IFF_UP;
-	ifi->ifi_change = IFF_UP;
-
-	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
-	nlh->nlmsg_len = (__u32)off;
-	return nl_send_recv(ctx, buf, off);
-}
-
-static int build_dellink(struct nl_ctx *ctx, int ifindex)
-{
-	unsigned char buf[128];
-	struct nlmsghdr *nlh;
-	struct ifinfomsg *ifi;
-	size_t off;
-
-	memset(buf, 0, sizeof(buf));
-	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_type  = RTM_DELLINK;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = nl_seq_next(ctx);
-
-	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
-	ifi->ifi_family = AF_UNSPEC;
-	ifi->ifi_index  = ifindex;
-
-	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
-	nlh->nlmsg_len = (__u32)off;
-	return nl_send_recv(ctx, buf, off);
-}
-
 /* Generate one altname under the IFNAMSIZ-1 cap.  Format
  * "alt_XXXXXX" with XXXXXX hex-derived from rand32(); 10 bytes plus
  * NUL fits comfortably under 15. */
@@ -382,7 +336,7 @@ static int altname_thrash_iter_setup(struct altname_iter_ctx *ctx)
 	if (ctx->dummy_idx == 0)
 		return -1;
 
-	(void)build_setlink_up(&ctx->nl, ctx->dummy_idx);
+	(void)rtnl_setlink_up(&ctx->nl, ctx->dummy_idx);
 	return 0;
 }
 
@@ -473,7 +427,7 @@ static void altname_thrash_iter_teardown(struct altname_iter_ctx *ctx)
 	if (!ctx->nl_opened)
 		return;
 	if (ctx->dummy_added && ctx->dummy_idx > 0)
-		(void)build_dellink(&ctx->nl, ctx->dummy_idx);
+		(void)rtnl_dellink(&ctx->nl, ctx->dummy_idx);
 	nl_close(&ctx->nl);
 }
 

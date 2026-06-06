@@ -270,28 +270,6 @@ static int build_rule(struct nl_ctx *ctx, int cmd, __u32 table, __u32 prio)
 	return nl_send_recv(ctx, buf, off);
 }
 
-static int build_dellink(struct nl_ctx *ctx, int ifindex)
-{
-	unsigned char buf[128];
-	struct nlmsghdr *nlh;
-	struct ifinfomsg *ifi;
-	size_t off;
-
-	memset(buf, 0, sizeof(buf));
-	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_type  = RTM_DELLINK;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = nl_seq_next(ctx);
-
-	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
-	ifi->ifi_family = AF_UNSPEC;
-	ifi->ifi_index  = ifindex;
-
-	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
-	nlh->nlmsg_len = (__u32)off;
-	return nl_send_recv(ctx, buf, off);
-}
-
 bool vrf_fib_churn(struct childdata *child)
 {
 	char vrf_name[IFNAMSIZ];
@@ -416,7 +394,7 @@ out:
 						   1, __ATOMIC_RELAXED);
 		}
 		if (link_added && ifindex > 0) {
-			if (build_dellink(&ctx, ifindex) == 0)
+			if (rtnl_dellink(&ctx, ifindex) == 0)
 				__atomic_add_fetch(&shm->stats.vrf_fib_churn_link_removed,
 						   1, __ATOMIC_RELAXED);
 		}

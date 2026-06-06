@@ -304,32 +304,6 @@ static void modprobe_cls(unsigned int idx)
  * Failures are ignored — the rest of the sequence will fail
  * visibly if rtnl is genuinely broken.
  */
-static void bring_lo_up(struct nl_ctx *ctx)
-{
-	unsigned char buf[256];
-	struct nlmsghdr *nlh;
-	struct ifinfomsg *ifi;
-	int lo_idx = (int)if_nametoindex("lo");
-
-	if (lo_idx <= 0)
-		return;
-
-	memset(buf, 0, sizeof(buf));
-	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_type  = RTM_NEWLINK;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = nl_seq_next(ctx);
-
-	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
-	ifi->ifi_family = AF_UNSPEC;
-	ifi->ifi_index  = lo_idx;
-	ifi->ifi_flags  = IFF_UP;
-	ifi->ifi_change = IFF_UP;
-
-	nlh->nlmsg_len = (__u32)(NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi)));
-	(void)nl_send_recv(ctx, buf, nlh->nlmsg_len);
-}
-
 /*
  * RTM_NEWLINK type=dummy with the supplied dev name.  Each iteration
  * gets a fresh dummy device so the qdisc tree is isolated from any
@@ -371,52 +345,6 @@ static int build_dummy_create(struct nl_ctx *ctx, const char *name)
 
 	nlh->nlmsg_len = (__u32)off;
 	return nl_send_recv_retry(ctx, buf, off);
-}
-
-static int build_setlink_up(struct nl_ctx *ctx, int ifindex)
-{
-	unsigned char buf[256];
-	struct nlmsghdr *nlh;
-	struct ifinfomsg *ifi;
-	size_t off;
-
-	memset(buf, 0, sizeof(buf));
-	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_type  = RTM_SETLINK;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = nl_seq_next(ctx);
-
-	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
-	ifi->ifi_family = AF_UNSPEC;
-	ifi->ifi_index  = ifindex;
-	ifi->ifi_flags  = IFF_UP;
-	ifi->ifi_change = IFF_UP;
-
-	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
-	nlh->nlmsg_len = (__u32)off;
-	return nl_send_recv(ctx, buf, off);
-}
-
-static int build_dellink(struct nl_ctx *ctx, int ifindex)
-{
-	unsigned char buf[128];
-	struct nlmsghdr *nlh;
-	struct ifinfomsg *ifi;
-	size_t off;
-
-	memset(buf, 0, sizeof(buf));
-	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_type  = RTM_DELLINK;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = nl_seq_next(ctx);
-
-	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
-	ifi->ifi_family = AF_UNSPEC;
-	ifi->ifi_index  = ifindex;
-
-	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
-	nlh->nlmsg_len = (__u32)off;
-	return nl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -1163,7 +1091,7 @@ static int tc_qdisc_setup_netns(struct nl_ctx *ctx)
 	}
 
 	if (!lo_brought_up) {
-		bring_lo_up(ctx);
+		rtnl_bring_lo_up(ctx);
 		lo_brought_up = true;
 	}
 	return 0;
@@ -1202,7 +1130,7 @@ static int tc_qdisc_add_link(struct tc_qdisc_iter_ctx *it)
 			rc = build_veth_pair(&it->nl, it->dummy_name, it->peer_name);
 			if (rc != 0) {
 				if (it->bridge_idx > 0)
-					(void)build_dellink(&it->nl, it->bridge_idx);
+					(void)rtnl_dellink(&it->nl, it->bridge_idx);
 				it->bridge_idx = 0;
 				it->bridge_mode = false;
 			} else {
@@ -1211,9 +1139,9 @@ static int tc_qdisc_add_link(struct tc_qdisc_iter_ctx *it)
 					(void)build_setlink_master(&it->nl, it->dummy_idx,
 								   it->bridge_idx);
 				if (it->bridge_idx > 0)
-					(void)build_setlink_up(&it->nl, it->bridge_idx);
+					(void)rtnl_setlink_up(&it->nl, it->bridge_idx);
 				if (it->dummy_idx > 0)
-					(void)build_setlink_up(&it->nl, it->dummy_idx);
+					(void)rtnl_setlink_up(&it->nl, it->dummy_idx);
 				it->dummy_added = true;
 				__atomic_add_fetch(&shm->stats.tc_qdisc_churn_link_create_ok,
 						   1, __ATOMIC_RELAXED);
@@ -1241,7 +1169,7 @@ static int tc_qdisc_add_link(struct tc_qdisc_iter_ctx *it)
 		if (it->dummy_idx == 0)
 			return -1;
 
-		(void)build_setlink_up(&it->nl, it->dummy_idx);
+		(void)rtnl_setlink_up(&it->nl, it->dummy_idx);
 	}
 
 	if (it->dummy_idx <= 0)
@@ -1438,7 +1366,7 @@ static void tc_qdisc_churn_loop(struct tc_qdisc_iter_ctx *it)
 				     MSG_DONTWAIT,
 				     (struct sockaddr *)&dst, sizeof(dst));
 		}
-		if (build_dellink(&it->nl, it->dummy_idx) == 0) {
+		if (rtnl_dellink(&it->nl, it->dummy_idx) == 0) {
 			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_link_del_ok,
 					   1, __ATOMIC_RELAXED);
 			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_bridge_dellink_race_ok,
@@ -1499,12 +1427,12 @@ out:
 
 	if (it.nl.fd >= 0) {
 		if (it.dummy_added && it.dummy_idx > 0 && !it.slave_dellinked) {
-			if (build_dellink(&it.nl, it.dummy_idx) == 0)
+			if (rtnl_dellink(&it.nl, it.dummy_idx) == 0)
 				__atomic_add_fetch(&shm->stats.tc_qdisc_churn_link_del_ok,
 						   1, __ATOMIC_RELAXED);
 		}
 		if (it.bridge_idx > 0)
-			(void)build_dellink(&it.nl, it.bridge_idx);
+			(void)rtnl_dellink(&it.nl, it.bridge_idx);
 		nl_close(&it.nl);
 	}
 

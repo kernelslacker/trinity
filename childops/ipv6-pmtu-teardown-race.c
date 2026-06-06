@@ -296,15 +296,6 @@ static int build_dellink_byname(struct nl_ctx *ctx, const char *name)
 	return nl_send_recv(ctx, buf, off);
 }
 
-static void bring_lo_up(struct nl_ctx *ctx)
-{
-	unsigned int lo_idx = if_nametoindex("lo");
-
-	if (lo_idx == 0)
-		return;
-	(void)build_setlink_up(ctx, (int)lo_idx);
-}
-
 /*
  * Build the four (rN, pN) veth pairs, assign fc01::N/64 to rN, bring
  * rN up, install the fc01:N::/48 route via fc01::N+1 dev rN.  Best
@@ -536,7 +527,7 @@ static int v6pmtu_iter_setup_network(char names[V6PMTU_NUM_PAIRS][8])
 		return -1;
 	}
 
-	bring_lo_up(&ctx);
+	rtnl_bring_lo_up(&ctx);
 	setup_pairs(&ctx, names);
 	nl_close(&ctx);
 	return 0;

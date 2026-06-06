@@ -210,28 +210,6 @@ static int build_addr(struct nl_ctx *ctx, int cmd, int ifindex, __u32 addr)
 	return nl_send_recv(ctx, buf, off);
 }
 
-static int build_dellink(struct nl_ctx *ctx, int ifindex)
-{
-	unsigned char buf[128];
-	struct nlmsghdr *nlh;
-	struct ifinfomsg *ifi;
-	size_t off;
-
-	memset(buf, 0, sizeof(buf));
-	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_type  = RTM_DELLINK;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = nl_seq_next(ctx);
-
-	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
-	ifi->ifi_family = AF_UNSPEC;
-	ifi->ifi_index  = ifindex;
-
-	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
-	nlh->nlmsg_len = (__u32)off;
-	return nl_send_recv(ctx, buf, off);
-}
-
 /*
  * Drain pending broadcast events from `mon` non-blockingly.  Returns
  * the number of times a recv() returned > 0; caller bumps the
@@ -514,7 +492,7 @@ out:
 		if (ctx.addr_added)
 			(void)build_addr(&ctx.mut, RTM_DELADDR, ctx.ifindex, ctx.addr);
 		if (ctx.link_added && ctx.ifindex > 0)
-			(void)build_dellink(&ctx.mut, ctx.ifindex);
+			(void)rtnl_dellink(&ctx.mut, ctx.ifindex);
 		nl_close(&ctx.mut);
 	}
 	nl_close(&ctx.mon);

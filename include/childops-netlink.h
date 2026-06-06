@@ -24,7 +24,11 @@
  *
  * Out of scope (per-childop concerns that stay local):
  *   - Message builders.  These are the fuzzing surface; they belong
- *     next to the per-op coverage rationale.
+ *     next to the per-op coverage rationale.  The narrow exception
+ *     is the rtnl_dellink / rtnl_setlink_up / rtnl_bring_lo_up
+ *     triplet below: these are pure boilerplate (one-shot ack'd
+ *     RTM_DELLINK / RTM_SETLINK on an ifindex, lo-up dance) that
+ *     a dozen-plus ops were copying verbatim with no per-op tuning.
  *   - genetlink envelope (CTRL_CMD_GETFAMILY, family id, version,
  *     cmd) — wire shape differs enough to deserve its own helper if
  *     and when it lands.
@@ -248,3 +252,31 @@ static inline void nla_nest_end(unsigned char *buf, size_t start_off,
  * replaces.
  */
 long long ns_since(const struct timespec *t0);
+
+/*
+ * RTM_DELLINK on ifindex.  AF_UNSPEC family, NLM_F_REQUEST|NLM_F_ACK,
+ * ifinfomsg payload only.  Returns 0 on positive ack, negated errno
+ * on rejection, -EIO on local failure (per nl_send_recv()).
+ */
+int rtnl_dellink(struct nl_ctx *ctx, int ifindex);
+
+/*
+ * RTM_SETLINK on ifindex with ifi_flags=IFF_UP, ifi_change=IFF_UP.
+ * AF_UNSPEC family, NLM_F_REQUEST|NLM_F_ACK, ifinfomsg payload only —
+ * no flag bits other than IFF_UP are touched.  Return convention is
+ * nl_send_recv()'s.
+ *
+ * The ops that need RTM_NEWLINK semantics on a setlink (vrf-fib,
+ * ipv6-pmtu-teardown, vxlan-encap) keep an open-coded copy because
+ * the message type is the user-visible behaviour, not boilerplate.
+ */
+int rtnl_setlink_up(struct nl_ctx *ctx, int ifindex);
+
+/*
+ * Bring lo up inside the current netns via RTM_NEWLINK ifi_flags=
+ * IFF_UP / ifi_change=IFF_UP.  Resolves "lo" via if_nametoindex();
+ * silently returns if lo is absent or the reply is an error — every
+ * open-coded copy was best-effort and the rest of the per-op
+ * sequence latches on a missing lo naturally.
+ */
+void rtnl_bring_lo_up(struct nl_ctx *ctx);

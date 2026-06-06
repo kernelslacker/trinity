@@ -505,33 +505,6 @@ static void modprobe_algo(unsigned int idx)
  * Failures are ignored — the rest of the sequence will fail visibly
  * if rtnl is genuinely broken.
  */
-static void bring_lo_up(struct nl_ctx *rtnl)
-{
-	unsigned char buf[256];
-	struct nlmsghdr *nlh;
-	struct ifinfomsg *ifi;
-	int lo_idx = (int)if_nametoindex("lo");
-
-	if (lo_idx <= 0)
-		return;
-
-	memset(buf, 0, sizeof(buf));
-	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_type  = RTM_NEWLINK;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = nl_seq_next(rtnl);
-
-	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
-	ifi->ifi_family = AF_UNSPEC;
-	ifi->ifi_index  = lo_idx;
-	ifi->ifi_flags  = IFF_UP;
-	ifi->ifi_change = IFF_UP;
-
-	nlh->nlmsg_len = (__u32)(NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi)));
-
-	(void)nl_send_recv(rtnl, buf, nlh->nlmsg_len);
-}
-
 /* Build the SA selector matching 127.0.0.1 -> 127.0.0.2 UDP, both
  * sides /32.  Same shape used for the policy selector so the SPD
  * lookup at output time finds our SA cleanly. */
@@ -1452,7 +1425,7 @@ static int xfrm_churn_iter_setup_netns(struct xfrm_churn_iter_ctx *ctx)
 		struct nl_open_opts rtnl_opts = { .proto = NETLINK_ROUTE };
 
 		if (nl_open(&rtnl, &rtnl_opts) == 0) {
-			bring_lo_up(&rtnl);
+			rtnl_bring_lo_up(&rtnl);
 			nl_close(&rtnl);
 		}
 		lo_brought_up = true;

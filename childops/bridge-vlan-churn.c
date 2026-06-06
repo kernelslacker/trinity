@@ -345,30 +345,6 @@ static int build_setlink_master(struct nl_ctx *ctx, int ifindex,
 	return nl_send_recv(ctx, buf, off);
 }
 
-static int build_setlink_up(struct nl_ctx *ctx, int ifindex)
-{
-	unsigned char buf[256];
-	struct nlmsghdr *nlh;
-	struct ifinfomsg *ifi;
-	size_t off;
-
-	memset(buf, 0, sizeof(buf));
-	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_type  = RTM_SETLINK;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = nl_seq_next(ctx);
-
-	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
-	ifi->ifi_family = AF_UNSPEC;
-	ifi->ifi_index  = ifindex;
-	ifi->ifi_flags  = IFF_UP;
-	ifi->ifi_change = IFF_UP;
-
-	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
-	nlh->nlmsg_len = (__u32)off;
-	return nl_send_recv(ctx, buf, off);
-}
-
 /*
  * Emit RTM_SETLINK / RTM_DELLINK family=AF_BRIDGE on a port (or
  * bridge), with IFLA_AF_SPEC nesting one or more
@@ -565,28 +541,6 @@ static int build_mst_set(struct nl_ctx *ctx, int port_idx,
 	return nl_send_recv(ctx, buf, off);
 }
 
-static int build_dellink(struct nl_ctx *ctx, int ifindex)
-{
-	unsigned char buf[128];
-	struct nlmsghdr *nlh;
-	struct ifinfomsg *ifi;
-	size_t off;
-
-	memset(buf, 0, sizeof(buf));
-	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_type  = RTM_DELLINK;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = nl_seq_next(ctx);
-
-	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
-	ifi->ifi_family = AF_UNSPEC;
-	ifi->ifi_index  = ifindex;
-
-	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
-	nlh->nlmsg_len = (__u32)off;
-	return nl_send_recv(ctx, buf, off);
-}
-
 /*
  * Build a synthetic 802.1Q tagged ethernet frame:
  *   dst (6) | src (6) | TPID 0x8100 | TCI (vid in low 12 bits) |
@@ -751,11 +705,11 @@ static void bridge_vlan_iter_add_vlan(struct bridge_vlan_iter_ctx *it)
 					   1, __ATOMIC_RELAXED);
 	}
 
-	(void)build_setlink_up(&it->nl, it->br_idx);
-	if (it->v0a_idx > 0) (void)build_setlink_up(&it->nl, it->v0a_idx);
-	if (it->v0b_idx > 0) (void)build_setlink_up(&it->nl, it->v0b_idx);
-	if (it->v1a_idx > 0) (void)build_setlink_up(&it->nl, it->v1a_idx);
-	if (it->v1b_idx > 0) (void)build_setlink_up(&it->nl, it->v1b_idx);
+	(void)rtnl_setlink_up(&it->nl, it->br_idx);
+	if (it->v0a_idx > 0) (void)rtnl_setlink_up(&it->nl, it->v0a_idx);
+	if (it->v0b_idx > 0) (void)rtnl_setlink_up(&it->nl, it->v0b_idx);
+	if (it->v1a_idx > 0) (void)rtnl_setlink_up(&it->nl, it->v1a_idx);
+	if (it->v1b_idx > 0) (void)rtnl_setlink_up(&it->nl, it->v1b_idx);
 }
 
 /*
@@ -899,11 +853,11 @@ static void bridge_vlan_iter_teardown(struct bridge_vlan_iter_ctx *it)
 	}
 
 	if (it->bridge_added && it->br_idx > 0)
-		(void)build_dellink(&it->nl, it->br_idx);
+		(void)rtnl_dellink(&it->nl, it->br_idx);
 	if (it->veth0_added && it->v0a_idx > 0)
-		(void)build_dellink(&it->nl, it->v0a_idx);
+		(void)rtnl_dellink(&it->nl, it->v0a_idx);
 	if (it->veth1_added && it->v1a_idx > 0)
-		(void)build_dellink(&it->nl, it->v1a_idx);
+		(void)rtnl_dellink(&it->nl, it->v1a_idx);
 }
 
 /*

@@ -1602,32 +1602,6 @@ static size_t nla_put_be64(unsigned char *buf, size_t off, size_t cap,
  * errors are ignored — a kernel that refuses lo up is also one where
  * the rest of the sequence will fail visibly.
  */
-static void bring_lo_up(struct nl_ctx *rtnl)
-{
-	unsigned char buf[256];
-	struct nlmsghdr *nlh;
-	struct ifinfomsg *ifi;
-	int lo_idx = (int)if_nametoindex("lo");
-
-	if (lo_idx <= 0)
-		return;
-
-	memset(buf, 0, sizeof(buf));
-	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_type  = RTM_NEWLINK;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = nl_seq_next(rtnl);
-
-	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
-	ifi->ifi_family = AF_UNSPEC;
-	ifi->ifi_index  = lo_idx;
-	ifi->ifi_flags  = IFF_UP;
-	ifi->ifi_change = IFF_UP;
-
-	nlh->nlmsg_len = (__u32)(NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi)));
-	(void)nl_send_recv(rtnl, buf, nlh->nlmsg_len);
-}
-
 /*
  * NFT_MSG_NEWTABLE.  Family is randomised per call; flags=0.
  * NLM_F_CREATE | NLM_F_EXCL fails if the name already exists, which
@@ -6873,7 +6847,7 @@ static int nftables_churn_iter_open_rtnl(struct nftables_churn_iter_ctx *ctx)
 	}
 
 	if (!lo_brought_up) {
-		bring_lo_up(&ctx->rtnl);
+		rtnl_bring_lo_up(&ctx->rtnl);
 		lo_brought_up = true;
 	}
 
