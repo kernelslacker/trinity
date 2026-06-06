@@ -153,10 +153,10 @@ static void post_io_setup_record_ctx(struct syscallrecord *rec)
 	if (snap == NULL || looks_like_corrupted_ptr(rec, snap))
 		return;
 
-	if (snap->magic != IO_SETUP_POST_STATE_MAGIC)
+	if (!post_state_is_owned(snap))
 		return;
 
-	if (!post_state_is_owned(snap))
+	if (snap->magic != IO_SETUP_POST_STATE_MAGIC)
 		return;
 
 	/*
@@ -215,18 +215,18 @@ static void post_io_setup(struct syscallrecord *rec)
 		return;
 	}
 
+	if (!post_state_is_owned(snap)) {
+		outputerr("post_io_setup: rejected post_state=%p not in "
+			  "ownership table (post_state-redirected?)\n", snap);
+		rec->post_state = 0;
+		return;
+	}
+
 	if (snap->magic != IO_SETUP_POST_STATE_MAGIC) {
 		outputerr("post_io_setup: rejected snap with bad magic 0x%lx "
 			  "(post_state-stomped to foreign allocation?)\n",
 			  snap->magic);
 		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
-
-	if (!post_state_is_owned(snap)) {
-		outputerr("post_io_setup: rejected post_state=%p not in "
-			  "ownership table (post_state-redirected?)\n", snap);
 		rec->post_state = 0;
 		return;
 	}
