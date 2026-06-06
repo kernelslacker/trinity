@@ -851,6 +851,17 @@ static const struct stat_category tls_ulp_churn_category =
 	              tls_ulp_churn_runs,
 	              tls_ulp_churn_fields);
 
+static const struct stat_field ip6gre_bond_lapb_stack_fields[] = {
+	STAT_FIELD(ip6gre_lapb, runs),
+	STAT_FIELD(ip6gre_lapb, setup_failed),
+	STAT_FIELD(ip6gre_lapb, flag_toggles),
+};
+
+static const struct stat_category ip6gre_bond_lapb_stack_category =
+	STAT_CATEGORY("ip6gre_bond_lapb_stack",
+	              ip6gre_lapb_runs,
+	              ip6gre_bond_lapb_stack_fields);
+
 static const struct stat_field pipe_thrash_fields[] = {
 	STAT_FIELD(pipe_thrash, runs),
 	STAT_FIELD(pipe_thrash, pipes),
@@ -1793,7 +1804,6 @@ static void dump_stats_json_rxrpc_alg_ublk_block(void)
 		"\"ublk_lifecycle\":{\"iters\":%lu,\"eperm\":%lu,\"add_ok\":%lu,\"fetch_ok\":%lu,\"del_ok\":%lu,\"race_observed\":%lu},"
 		"\"veth_asymmetric_xdp\":{\"iters\":%lu,\"eperm\":%lu,\"unsupported\":%lu,\"pair_ok\":%lu,\"xdp_attach_ok\":%lu,\"send_ok\":%lu},"
 		"\"ip6erspan_netns_migrate\":{\"iters\":%lu,\"eperm\":%lu,\"unsupported\":%lu,\"link_create_ok\":%lu,\"netns_migrate_ok\":%lu,\"changelink_ok\":%lu},"
-		"\"ip6gre_bond_lapb_stack\":{\"runs\":%lu,\"setup_failed\":%lu,\"flag_toggles\":%lu},"
 		"\"wireguard_decrypt_flood\":{\"runs\":%lu,\"setup_failed\":%lu,\"packets_sent\":%lu,\"unsupported_latched\":%lu},"
 		"\"blkdev_lifecycle_race\":{\"runs\":%lu,\"setup_failed\":%lu,\"set_fd_ok\":%lu,\"clr_fd\":%lu,\"ebusy\":%lu,\"rescans\":%lu},"
 		"\"pci_bind\":{\"runs\":%lu,\"drivers_available\":%lu,\"no_devices\":%lu,\"unbind_ok\":%lu,\"unbind_enodev\":%lu,\"unbind_failed\":%lu,\"bind_ok\":%lu,\"bind_enodev\":%lu,\"bind_failed\":%lu},",
@@ -1842,9 +1852,6 @@ static void dump_stats_json_rxrpc_alg_ublk_block(void)
 		shm->stats.inm_link_create_ok,
 		shm->stats.inm_netns_migrate_ok,
 		shm->stats.inm_changelink_ok,
-		shm->stats.ip6gre_lapb_runs,
-		shm->stats.ip6gre_lapb_setup_failed,
-		shm->stats.ip6gre_lapb_flag_toggles,
 		shm->stats.wgdf_runs,
 		shm->stats.wgdf_setup_failed,
 		shm->stats.wgdf_packets_sent,
@@ -2101,6 +2108,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&tls_ulp_churn_category);
+
+	printf(",");
+	stat_category_emit_json(&ip6gre_bond_lapb_stack_category);
 
 	printf(",");
 	stat_category_emit_json(&iouring_flood_category);
@@ -5112,11 +5122,7 @@ static void dump_stats_childop_runs_network(void)
 		stat_row("ip6erspan_netns_migrate", "changelink_ok",    shm->stats.inm_changelink_ok);
 	}
 
-	if (shm->stats.ip6gre_lapb_runs) {
-		stat_row("ip6gre_bond_lapb_stack", "runs",          shm->stats.ip6gre_lapb_runs);
-		stat_row("ip6gre_bond_lapb_stack", "setup_failed",  shm->stats.ip6gre_lapb_setup_failed);
-		stat_row("ip6gre_bond_lapb_stack", "flag_toggles",  shm->stats.ip6gre_lapb_flag_toggles);
-	}
+	stat_category_emit_text(&ip6gre_bond_lapb_stack_category);
 
 	if (shm->stats.wgdf_runs) {
 		stat_row("wireguard_decrypt_flood", "runs",                shm->stats.wgdf_runs);
