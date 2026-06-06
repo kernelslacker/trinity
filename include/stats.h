@@ -610,8 +610,8 @@ struct stats_s {
 	 * Read-only signal for dormancy detection: the operator (or a
 	 * downstream reader) computes (current_fleet_op_count - ts) to see
 	 * how long an op has been quiet.  No threshold / TTL / picker
-	 * gating is wired in here -- this commit only records the
-	 * timestamp; consumers decide what "dormant" means.  Multiple
+	 * gating happens here -- this slot only records the timestamp
+	 * and consumers decide what "dormant" means.  Multiple
 	 * siblings dispatching the same op race on this slot; the last
 	 * RELAXED store wins, which is exactly the "most recent observed
 	 * success across the fleet" semantics dump_stats wants. */
