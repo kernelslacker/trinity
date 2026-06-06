@@ -18,11 +18,6 @@
 #include "unblocker.h"
 #include "utils.h"
 
-static void pipefd_destructor(struct object *obj)
-{
-	close(obj->pipeobj.fd);
-}
-
 /*
  * Cross-process safe: only reads obj->pipeobj fields (now in shm via
  * alloc_shared_obj) and the scope scalar.  No process-local pointers
@@ -103,7 +98,7 @@ static int init_pipes(void)
 	unsigned int i;
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_PIPE);
-	head->destroy = &pipefd_destructor;
+	head->destroy = &close_fd_destructor;
 	head->dump = &pipefd_dump;
 	/*
 	 * Opt this provider into the shared obj heap.  __destroy_object()

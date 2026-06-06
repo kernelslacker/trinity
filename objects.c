@@ -1545,6 +1545,21 @@ int fd_from_object(struct object *obj, enum objecttype type)
 }
 
 /*
+ * Generic objhead->destroy handler shared by every fd-bearing pool whose
+ * teardown is just close() on the per-pool fd.  Reads the fd via
+ * fd_from_object(obj, obj->obj_type) so providers that need anything
+ * extra (mq_unlink, munmap of mapped rings, peer fixups, releasing a
+ * shared name buffer, ...) must keep their own destructor.
+ */
+void close_fd_destructor(struct object *obj)
+{
+	int fd = fd_from_object(obj, obj->obj_type);
+
+	if (fd >= 0)
+		close(fd);
+}
+
+/*
  * Look up an fd in the parent's hash table and destroy its object.
  * Called from fd_event_drain() after a child reported a close.
  *

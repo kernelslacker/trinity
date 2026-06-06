@@ -16,11 +16,6 @@
 #include "utils.h"
 #include "compat.h"
 
-static void timerfd_destructor(struct object *obj)
-{
-	close(obj->timerfdobj.fd);
-}
-
 /*
  * Cross-process safe: only reads obj->timerfdobj fields (now in shm
  * via alloc_shared_obj) and the scope scalar.  No process-local
@@ -86,7 +81,7 @@ static int __init_timerfd_fds(int clockid)
 	};
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_TIMERFD);
-	head->destroy = &timerfd_destructor;
+	head->destroy = &close_fd_destructor;
 	head->dump = &timerfd_dump;
 	/*
 	 * Opt this provider into the shared obj heap.  __destroy_object()

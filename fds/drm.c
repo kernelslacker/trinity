@@ -24,11 +24,6 @@
 #include <fcntl.h>
 #include <drm/drm.h>
 
-static void drmfd_destructor(struct object *obj)
-{
-	close(obj->drmfd);
-}
-
 static void drmfd_dump(struct object *obj, enum obj_scope scope)
 {
 	output(2, "drmfd:%d scope:%d\n", obj->drmfd, scope);
@@ -98,7 +93,7 @@ static int open_drm_fds(void)
 	char buf[256 + 10];
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_DRM);
-	head->destroy = &drmfd_destructor;
+	head->destroy = &close_fd_destructor;
 	head->dump = &drmfd_dump;
 
 	dir = opendir("/dev/dri/");

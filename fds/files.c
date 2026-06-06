@@ -84,11 +84,6 @@ retry_flags:
 	return fd;
 }
 
-static void filefd_destructor(struct object *obj)
-{
-	close(obj->fileobj.fd);
-}
-
 static void filefd_dump(struct object *obj, enum obj_scope scope)
 {
 	struct fileobj *fo = &obj->fileobj;
@@ -106,7 +101,7 @@ int open_pool_files(unsigned int pool_id, enum objecttype objtype)
 	unsigned int i, nr_to_open, pool_count;
 
 	head = get_objhead(OBJ_GLOBAL, objtype);
-	head->destroy = &filefd_destructor;
+	head->destroy = &close_fd_destructor;
 	head->dump = &filefd_dump;
 
 	generate_filelist();

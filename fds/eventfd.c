@@ -15,11 +15,6 @@
 #include "utils.h"
 #include "compat.h"
 
-static void eventfd_destructor(struct object *obj)
-{
-	close(obj->eventfdobj.fd);
-}
-
 /*
  * Cross-process safe: only reads obj->eventfdobj fields (now in shm
  * via alloc_shared_obj) and the scope scalar.  No process-local
@@ -53,7 +48,7 @@ static int init_eventfd_fds(void)
 	};
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_EVENTFD);
-	head->destroy = &eventfd_destructor;
+	head->destroy = &close_fd_destructor;
 	head->dump = &eventfd_dump;
 
 	for (i = 0; i < ARRAY_SIZE(flags); i++) {

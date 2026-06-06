@@ -44,11 +44,6 @@ static int bpf_create_map(enum bpf_map_type map_type, unsigned int key_size,
 }
 
 
-static void bpf_map_destructor(struct object *obj)
-{
-	close(obj->bpfobj.map_fd);
-}
-
 struct bpf_fd_types {
 	u32 map_type;
 	u32 key_size;
@@ -134,7 +129,7 @@ static int init_bpf_fds(void)
 	setrlimit(RLIMIT_MEMLOCK, &r);
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_BPF_MAP);
-	head->destroy = &bpf_map_destructor;
+	head->destroy = &close_fd_destructor;
 	head->dump = &bpf_map_dump;
 	/*
 	 * Opt this provider into the shared obj heap.  __destroy_object()
@@ -295,11 +290,6 @@ static const char *bpf_prog_template_name(u32 prog_type)
 	return "unknown";
 }
 
-static void bpf_prog_destructor(struct object *obj)
-{
-	close(obj->bpfprogobj.fd);
-}
-
 /*
  * Cross-process safe: reads obj->bpfprogobj fields (now in shm via
  * alloc_shared_obj) and looks up the prog type name from the static
@@ -330,7 +320,7 @@ static int init_bpf_prog_fds(void)
 	setrlimit(RLIMIT_MEMLOCK, &r);
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_BPF_PROG);
-	head->destroy = &bpf_prog_destructor;
+	head->destroy = &close_fd_destructor;
 	head->dump = &bpf_prog_dump;
 	/*
 	 * Opt this provider into the shared obj heap.  bpfprogobj is
@@ -448,11 +438,6 @@ REG_FD_PROV(bpf_prog_fd_provider);
  * the per-child pool entries the existing map / prog providers
  * rely on.  .open is left NULL for the same reason.
  */
-static void bpf_link_destructor(struct object *obj)
-{
-	close(obj->bpflinkobj.fd);
-}
-
 /*
  * Cross-process safe: reads obj->bpflinkobj fields (now in shm via
  * alloc_shared_obj) and the scope scalar.  No process-local pointers
@@ -471,7 +456,7 @@ static int init_bpf_link_fds(void)
 	struct objhead *head;
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_BPF_LINK);
-	head->destroy = &bpf_link_destructor;
+	head->destroy = &close_fd_destructor;
 	head->dump = &bpf_link_dump;
 	/*
 	 * Opt this provider into the shared obj heap.  bpflinkobj is

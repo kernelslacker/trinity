@@ -29,11 +29,6 @@
  */
 static bool unsupported_landlock;
 
-static void landlock_destructor(struct object *obj)
-{
-	close(obj->landlockobj.fd);
-}
-
 static void landlock_dump(struct object *obj, enum obj_scope scope)
 {
 	output(2, "landlock fd:%d scope:%d\n",
@@ -179,7 +174,7 @@ static int init_landlock_fds(void)
 	struct objhead *head;
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_LANDLOCK);
-	head->destroy = &landlock_destructor;
+	head->destroy = &close_fd_destructor;
 	head->dump = &landlock_dump;
 
 	return open_landlock_fd();

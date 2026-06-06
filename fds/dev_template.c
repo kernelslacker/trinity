@@ -49,11 +49,6 @@ static const struct dev_template dev_templates[DEV_TEMPLATE_MAX] = {
 	[DEV_TEMPLATE_BINDER]        = { "/dev/binder",         O_RDWR,   "CONFIG_ANDROID_BINDER_IPC" },
 };
 
-static void dev_template_destructor(struct object *obj)
-{
-	close(obj->fileobj.fd);
-}
-
 static void dev_template_dump(struct object *obj, enum obj_scope scope)
 {
 	struct fileobj *fo = &obj->fileobj;
@@ -69,7 +64,7 @@ static int init_dev_templates(void)
 	unsigned int opened = 0;
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_DEV_TEMPLATE);
-	head->destroy = &dev_template_destructor;
+	head->destroy = &close_fd_destructor;
 	head->dump = &dev_template_dump;
 
 	for (i = 0; i < DEV_TEMPLATE_MAX; i++) {

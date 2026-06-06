@@ -23,11 +23,6 @@
 #define SFD_NONBLOCK 04000
 #endif
 
-static void signalfd_destructor(struct object *obj)
-{
-	close(obj->signalfdobj.fd);
-}
-
 static void signalfd_dump(struct object *obj, enum obj_scope scope)
 {
 	output(2, "signalfd fd:%d scope:%d\n", obj->signalfdobj.fd, scope);
@@ -59,7 +54,7 @@ static int init_signalfd_fds(void)
 	unsigned int i;
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_SIGNALFD);
-	head->destroy = &signalfd_destructor;
+	head->destroy = &close_fd_destructor;
 	head->dump = &signalfd_dump;
 
 	for (i = 0; i < SIGNALFD_INIT_POOL; i++) {

@@ -22,11 +22,6 @@
 #define AT_RECURSIVE		0x8000
 #endif
 
-static void mount_destructor(struct object *obj)
-{
-	close(obj->mountfdobj.fd);
-}
-
 static void mount_dump(struct object *obj, enum obj_scope scope)
 {
 	output(2, "mount fd:%d scope:%d\n", obj->mountfdobj.fd, scope);
@@ -51,7 +46,7 @@ static int init_mount_fds(void)
 	unsigned int i;
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_MOUNT);
-	head->destroy = &mount_destructor;
+	head->destroy = &close_fd_destructor;
 	head->dump = &mount_dump;
 
 	for (i = 0; i < MOUNT_INIT_POOL; i++) {

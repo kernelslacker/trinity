@@ -56,11 +56,6 @@ static int memfd_secret(unsigned int flags)
 #endif
 }
 
-static void memfd_secret_destructor(struct object *obj)
-{
-	close(obj->memfd_secretobj.fd);
-}
-
 /*
  * Cross-process safe: only reads obj->memfd_secretobj fields (in shm
  * via alloc_shared_obj) and the scope scalar.  No process-local
@@ -114,7 +109,7 @@ static int init_memfd_secret_fds(void)
 	int ret = false;
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_MEMFD_SECRET);
-	head->destroy = &memfd_secret_destructor;
+	head->destroy = &close_fd_destructor;
 	head->dump = &memfd_secret_dump;
 
 	for (i = 0; i < NR_MEMFD_SECRET_FDS; i++) {

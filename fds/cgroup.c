@@ -20,11 +20,6 @@
 #define CGROUP_ROOT		"/sys/fs/cgroup"
 #define CGROUP_INIT_POOL	8
 
-static void cgroup_destructor(struct object *obj)
-{
-	close(obj->cgroupfdobj.fd);
-}
-
 static void cgroup_dump(struct object *obj, enum obj_scope scope)
 {
 	output(2, "cgroup fd:%d scope:%d\n", obj->cgroupfdobj.fd, scope);
@@ -58,7 +53,7 @@ static int init_cgroup_fds(void)
 	int fd;
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_CGROUP);
-	head->destroy = &cgroup_destructor;
+	head->destroy = &close_fd_destructor;
 	head->dump = &cgroup_dump;
 
 	/* Always register the root itself first; it's the one cgroup dir

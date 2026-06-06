@@ -33,11 +33,6 @@
 #define SECCOMP_RET_ALLOW 0x7fff0000U
 #endif
 
-static void seccomp_notif_destructor(struct object *obj)
-{
-	close(obj->seccomp_notifobj.fd);
-}
-
 /*
  * Cross-process safe: only reads obj->seccomp_notifobj.fd (now in shm
  * via alloc_object) and the scope scalar.  No process-local
@@ -119,7 +114,7 @@ static int init_seccomp_notif_fds(void)
 	int ret = false;
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_SECCOMP_NOTIF);
-	head->destroy = &seccomp_notif_destructor;
+	head->destroy = &close_fd_destructor;
 	head->dump = &seccomp_notif_dump;
 	/*
 	 * Opt this provider into the shared obj heap.  __destroy_object()

@@ -74,11 +74,6 @@ static bool fs_is_pagecache_backed(int fd)
 	}
 }
 
-static void pagecache_destructor(struct object *obj)
-{
-	close(obj->fileobj.fd);
-}
-
 static void pagecache_dump(struct object *obj, enum obj_scope scope)
 {
 	struct fileobj *fo = &obj->fileobj;
@@ -95,7 +90,7 @@ static int init_pagecache_fds(void)
 	unsigned int opened = 0;
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_PAGECACHE);
-	head->destroy = &pagecache_destructor;
+	head->destroy = &close_fd_destructor;
 	head->dump = &pagecache_dump;
 
 	generate_filelist();

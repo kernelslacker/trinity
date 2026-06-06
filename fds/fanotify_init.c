@@ -27,11 +27,6 @@ static int fanotify_init(__unused__ unsigned int flags, __unused__ unsigned int 
 #endif
 }
 
-static void fanotifyfd_destructor(struct object *obj)
-{
-	close(obj->fanotifyobj.fd);
-}
-
 /*
  * Cross-process safe: only reads obj->fanotifyobj fields (now in shm
  * via alloc_shared_obj) and the scope scalar.  No process-local
@@ -77,7 +72,7 @@ static int init_fanotify_fds(void)
 	int ret = false;
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_FANOTIFY);
-	head->destroy = &fanotifyfd_destructor;
+	head->destroy = &close_fd_destructor;
 	head->dump = &fanotifyfd_dump;
 	/*
 	 * Opt this provider into the shared obj heap.  __destroy_object()

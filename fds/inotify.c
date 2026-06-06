@@ -47,11 +47,6 @@ static void arm_inotify(int fd)
 	}
 }
 
-static void inotify_destructor(struct object *obj)
-{
-	close(obj->inotifyobj.fd);
-}
-
 /*
  * Cross-process safe: only reads obj->inotifyobj fields (now in shm
  * via alloc_shared_obj) and the scope scalar.  No process-local
@@ -82,7 +77,7 @@ static int init_inotify_fds(void)
 	};
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_INOTIFY);
-	head->destroy = &inotify_destructor;
+	head->destroy = &close_fd_destructor;
 	head->dump = &inotify_dump;
 	/*
 	 * Opt this provider into the shared obj heap.  __destroy_object()

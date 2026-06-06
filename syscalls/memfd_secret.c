@@ -23,7 +23,7 @@ struct syscallentry syscall_memfd_secret = {
 	/*
 	 * No .post: the dispatcher's register_returned_fd() claims the
 	 * fd into the OBJ_FD_MEMFD_SECRET OBJ_LOCAL pool via the
-	 * .ret_objtype annotation, and memfd_secret_destructor handles
+	 * .ret_objtype annotation, and close_fd_destructor handles
 	 * close() at child teardown.  Replaces the previous
 	 * generic_post_close_fd hook, which closed the fd immediately
 	 * and so prevented any consumer from picking it up.

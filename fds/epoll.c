@@ -126,11 +126,6 @@ void arm_epoll_if_needed(struct epollobj *eo)
 			   __ATOMIC_RELAXED);
 }
 
-static void epoll_destructor(struct object *obj)
-{
-	close(obj->epollobj.fd);
-}
-
 /*
  * Cross-process safe: only reads obj->epollobj fields (now in shm
  * via alloc_shared_obj) and the scope scalar.  No process-local
@@ -166,7 +161,7 @@ static int init_epoll_fds(void)
 	int fd, use_create1;
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_EPOLL);
-	head->destroy = &epoll_destructor;
+	head->destroy = &close_fd_destructor;
 	head->dump = &epoll_dump;
 
 	while (i < MAX_EPOLL_FDS) {

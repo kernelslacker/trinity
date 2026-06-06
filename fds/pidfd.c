@@ -26,11 +26,6 @@
 #define PIDFD_NONBLOCK O_NONBLOCK
 #endif
 
-static void pidfd_destructor(struct object *obj)
-{
-	close(obj->pidfdobj.fd);
-}
-
 /*
  * Cross-process safe: only reads obj->pidfdobj fields (now in shm
  * via alloc_shared_obj) and the scope scalar.  No process-local
@@ -65,7 +60,7 @@ static int init_pidfd_fds(void)
 	int fd;
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_PIDFD);
-	head->destroy = &pidfd_destructor;
+	head->destroy = &close_fd_destructor;
 	head->dump = &pidfd_dump;
 	/*
 	 * Opt this provider into the shared obj heap.  __destroy_object()

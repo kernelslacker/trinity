@@ -17,11 +17,6 @@
 #include "trinity.h"
 #include "utils.h"
 
-static void iommufd_destructor(struct object *obj)
-{
-	close(obj->iommufdobj.fd);
-}
-
 /*
  * Cross-process safe: only reads obj->iommufdobj.fd (now in shm via
  * alloc_object) and the scope scalar.  No process-local pointers
@@ -50,7 +45,7 @@ static int init_iommufd_fds(void)
 	int fd;
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_IOMMUFD);
-	head->destroy = &iommufd_destructor;
+	head->destroy = &close_fd_destructor;
 	head->dump = &iommufd_dump;
 	/*
 	 * Opt this provider into the shared obj heap.  __destroy_object()

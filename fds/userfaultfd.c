@@ -46,11 +46,6 @@ static int devuserfaultfd_create(unsigned int flag)
 	return fd;
 }
 
-static void userfaultfd_destructor(struct object *obj)
-{
-	close(obj->userfaultobj.fd);
-}
-
 /*
  * Cross-process safe: only reads obj->userfaultobj fields (now in shm
  * via alloc_object) and the scope scalar.  No process-local
@@ -148,7 +143,7 @@ static int init_userfaultfds(void)
 	int ret = false;
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_USERFAULTFD);
-	head->destroy = &userfaultfd_destructor;
+	head->destroy = &close_fd_destructor;
 	head->dump = &userfaultfd_dump;
 	/*
 	 * Opt this provider into the shared obj heap.  __destroy_object()

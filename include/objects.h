@@ -616,6 +616,16 @@ struct objhead * get_objhead(enum obj_scope scope, enum objecttype type) __must_
 void prune_objects(void);
 int fd_from_object(struct object *obj, enum objecttype type);
 void set_object_fd(struct object *obj, enum objecttype type, int fd);
+
+/*
+ * Generic objhead->destroy handler for fd-bearing pools whose teardown
+ * is nothing more than close() on the per-pool fd.  Looks the fd up via
+ * fd_from_object(obj, obj->obj_type), so providers that need extra
+ * cleanup (mq_unlink, munmap of mapped rings, peer fixups, freeing a
+ * shared name buffer, ...) must keep their bespoke destructor instead
+ * of registering this one.
+ */
+void close_fd_destructor(struct object *obj);
 struct object *find_local_object_by_fd(enum objecttype type, int fd);
 void remove_object_by_fd(int fd);
 
