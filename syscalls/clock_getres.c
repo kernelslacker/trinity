@@ -226,23 +226,10 @@ static void post_clock_getres(struct syscallrecord *rec)
 
 	clockid = (clockid_t) snap->clockid;
 
-	{
-		void *tp = (void *)(unsigned long) snap->tp;
-
-		/*
-		 * Defense in depth: even with the post_state snapshot, a
-		 * wholesale stomp could rewrite the snapshot's inner tp
-		 * pointer field.  Reject pid-scribbled tp before deref.
-		 */
-		if (looks_like_corrupted_ptr(rec, tp)) {
-			outputerr("post_clock_getres: rejected suspicious tp=%p (post_state-scribbled?)\n",
-				  tp);
-			goto out_free;
-		}
-	}
-
-	memcpy(&first, (struct timespec *)(unsigned long) snap->tp,
-	       sizeof(first));
+	if (!post_snapshot_or_skip(&first,
+				   (const void *)(unsigned long) snap->tp,
+				   sizeof(first)))
+		goto out_free;
 
 	if (syscall(SYS_clock_getres, clockid, &recall) != 0)
 		goto out_free;
