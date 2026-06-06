@@ -440,6 +440,70 @@ static const struct struct_field pollfd_fields[] = {
 };
 
 /* ------------------------------------------------------------------ */
+/* struct open_how (openat2)                                           */
+/* ------------------------------------------------------------------ */
+
+/*
+ * struct open_how / RESOLVE_* may not be present in every host's
+ * <linux/openat2.h>; mirror the trinity-local fallback already used
+ * by syscalls/open.c so this TU compiles on toolchains that pre-date
+ * the openat2 uapi.  The ifndef guard hands off to the host header
+ * (or to whichever earlier-included TU has already pulled the symbols
+ * in) when it is present.
+ */
+#ifndef RESOLVE_NO_XDEV
+struct open_how {
+	__u64 flags;
+	__u64 mode;
+	__u64 resolve;
+};
+#define RESOLVE_NO_XDEV		0x01
+#define RESOLVE_NO_MAGICLINKS	0x02
+#define RESOLVE_NO_SYMLINKS	0x04
+#define RESOLVE_BENEATH		0x08
+#define RESOLVE_IN_ROOT		0x10
+#define RESOLVE_CACHED		0x20
+#endif
+
+/*
+ * openat2 passes struct open_how at a3 with a usize at a4
+ * (copy_struct_from_user semantics).  The slot is ARG_ADDRESS rather
+ * than ARG_STRUCT_PTR_*, so the schema-aware fill path never runs
+ * against it -- the bespoke sanitise_openat2() in syscalls/open.c
+ * continues to own the live (flags, mode, resolve) layout, including
+ * the O_CREAT / __O_TMPFILE-gated mode write and the curated
+ * openat2_resolve_combos[] table that walks the namei RESOLVE_*
+ * paths the kernel actually branches on.
+ *
+ * Registration is attribution-only, mirroring pollfd / sembuf above:
+ * struct_field_for_cmp() uses the FT_FLAGS tags to steer KCOV-CMP
+ * learned constants at the flags or resolve slot rather than at a
+ * coincidentally-same-width slot.  mode stays FT_RAW: the kernel
+ * only honours it (masked to S_IALLUGO) when O_CREAT / __O_TMPFILE
+ * is set, otherwise a non-zero mode trips the -EINVAL gate before
+ * any per-bit CMP fires -- no single-field vocab maps cleanly.
+ */
+#define OPEN_HOW_FLAGS_MASK						\
+	(O_ACCMODE | O_CREAT | O_EXCL | O_NOCTTY | O_TRUNC | O_APPEND |	\
+	 O_NONBLOCK | O_DSYNC | O_SYNC | O_ASYNC | O_DIRECTORY |	\
+	 O_NOFOLLOW | O_CLOEXEC | O_DIRECT | O_NOATIME | O_PATH |	\
+	 O_LARGEFILE | O_TMPFILE)
+
+#define OPEN_HOW_RESOLVE_MASK						\
+	(RESOLVE_NO_XDEV | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_SYMLINKS |\
+	 RESOLVE_BENEATH | RESOLVE_IN_ROOT | RESOLVE_CACHED)
+
+static const struct struct_field open_how_fields[] = {
+	FIELDX(struct open_how, flags, FT_FLAGS,
+	       .u.flags.mask = OPEN_HOW_FLAGS_MASK,
+	       .mutate_weight = 100),
+	FIELD(struct open_how, mode),
+	FIELDX(struct open_how, resolve, FT_FLAGS,
+	       .u.flags.mask = OPEN_HOW_RESOLVE_MASK,
+	       .mutate_weight = 80),
+};
+
+/* ------------------------------------------------------------------ */
 /* struct epoll_event (epoll_ctl)                                      */
 /* ------------------------------------------------------------------ */
 
@@ -3776,6 +3840,19 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= pollfd_fields,
 		.num_fields	= ARRAY_SIZE(pollfd_fields),
 	},
+	/*
+	 * open_how: appended at the tail so the existing struct_catalog[N]
+	 * indices above stay stable; the syscall_struct_args[] mapping below
+	 * picks up the new entry via an explicit USE_BPF-aware index since
+	 * the bpf_attr / bpf_insn entries shift the position by two when
+	 * USE_BPF is set.
+	 */
+	{
+		.name		= "open_how",
+		.struct_size	= sizeof(struct open_how),
+		.fields		= open_how_fields,
+		.num_fields	= ARRAY_SIZE(open_how_fields),
+	},
 };
 
 const unsigned int struct_catalog_count = ARRAY_SIZE(struct_catalog);
@@ -3917,6 +3994,17 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 */
 	{ "poll",		1, &struct_catalog[28] },
 	{ "ppoll",		1, &struct_catalog[28] },
+	/*
+	 * openat2(int dfd, const char *filename, struct open_how *how,
+	 *         size_t usize)
+	 * a3 is ARG_ADDRESS (not ARG_STRUCT_PTR_*), so the bespoke
+	 * sanitise_openat2 / build_csfu_struct path keeps owning the
+	 * live (flags, mode, resolve) layout and the usize bucket
+	 * distribution.  Attribution-only registration lets
+	 * struct_field_for_cmp steer CMP-learned constants at the named
+	 * flags / resolve slot.
+	 */
+	{ "openat2",		3, &struct_catalog[29] },
 #else
 	{ "clock_nanosleep",	3, &struct_catalog[22] },
 	{ "nanosleep",		1, &struct_catalog[22] },
@@ -3928,6 +4016,7 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	{ "semtimedop",		2, &struct_catalog[25] },
 	{ "poll",		1, &struct_catalog[26] },
 	{ "ppoll",		1, &struct_catalog[26] },
+	{ "openat2",		3, &struct_catalog[27] },
 #endif
 	/* sentinel */
 	{ NULL, 0, NULL },
