@@ -755,6 +755,26 @@ static const struct stat_category socket_family_chain_category =
 	              socket_family_chain_runs,
 	              socket_family_chain_fields);
 
+static const struct stat_field tcp_ao_rotate_fields[] = {
+	STAT_FIELD(tcp_ao_rotate, runs),
+	STAT_FIELD(tcp_ao_rotate, setup_failed),
+	STAT_FIELD(tcp_ao_rotate, addkey_rejected),
+	STAT_FIELD(tcp_ao_rotate, keys_added),
+	STAT_FIELD(tcp_ao_rotate, connect_failed),
+	STAT_FIELD(tcp_ao_rotate, connected),
+	STAT_FIELD(tcp_ao_rotate, packets_sent),
+	STAT_FIELD(tcp_ao_rotate, key_rotations),
+	STAT_FIELD(tcp_ao_rotate, info_rejected),
+	STAT_FIELD(tcp_ao_rotate, key_dels),
+	STAT_FIELD(tcp_ao_rotate, delkey_rejected),
+	STAT_FIELD(tcp_ao_rotate, cycles),
+};
+
+static const struct stat_category tcp_ao_rotate_category =
+	STAT_CATEGORY("tcp_ao_rotate",
+	              tcp_ao_rotate_runs,
+	              tcp_ao_rotate_fields);
+
 static const struct stat_field pipe_thrash_fields[] = {
 	STAT_FIELD(pipe_thrash, runs),
 	STAT_FIELD(pipe_thrash, pipes),
@@ -1306,7 +1326,6 @@ static void dump_stats_json_socket_family_and_tls(void)
 		"\"packet_fanout_thrash\":{\"runs\":%lu,\"setup_failed\":%lu,\"ring_failed\":%lu,\"rings_installed\":%lu,\"mmap_failed\":%lu,\"joins\":%lu,\"rejoins_ok\":%lu,\"rejoins_rejected\":%lu},"
 		"\"eth_emitter\":{\"runs\":%lu,\"setup_failed\":%lu,\"short\":%lu,\"sends_ok\":%lu,\"sends_failed\":%lu,\"tmpl_arp\":%lu,\"tmpl_ipv4_frag_zero\":%lu,\"tmpl_ipv6_na\":%lu,\"tmpl_vlan_qinq\":%lu,\"tmpl_bad_ethertype\":%lu},"
 		"\"iouring_net_multishot\":{\"runs\":%lu,\"setup_failed\":%lu,\"pbuf_ring_ok\":%lu,\"pbuf_legacy_ok\":%lu,\"armed\":%lu,\"packets_sent\":%lu,\"completions\":%lu,\"cancel_submitted\":%lu,\"napi_register_ok\":%lu,\"napi_register_fail\":%lu,\"napi_unregister_ok\":%lu,\"napi_unregister_fail\":%lu},"
-		"\"tcp_ao_rotate\":{\"runs\":%lu,\"setup_failed\":%lu,\"addkey_rejected\":%lu,\"keys_added\":%lu,\"connect_failed\":%lu,\"connected\":%lu,\"packets_sent\":%lu,\"key_rotations\":%lu,\"info_rejected\":%lu,\"key_dels\":%lu,\"delkey_rejected\":%lu,\"cycles\":%lu},"
 		"\"tcp_md5_listener_race\":{\"runs\":%lu,\"setup_failed\":%lu,\"md5_set_ok\":%lu,\"md5_set_failed\":%lu,\"connect_ok\":%lu,\"rst_sent_ok\":%lu,\"completed_ok\":%lu},"
 		"\"ipv6_pmtu_race\":{\"runs\":%lu,\"setup_failed\":%lu,\"ptb_sent_ok\":%lu,\"dellink_ok\":%lu,\"completed_ok\":%lu},"
 		"\"vrf_fib_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"link_ok\":%lu,\"addr_ok\":%lu,\"up_ok\":%lu,\"rule_added\":%lu,\"bound\":%lu,\"sendto_ok\":%lu,\"rule2_added\":%lu,\"rule_removed\":%lu,\"link_removed\":%lu},"
@@ -1350,18 +1369,6 @@ static void dump_stats_json_socket_family_and_tls(void)
 		shm->stats.iouring_napi_register_fail,
 		shm->stats.iouring_napi_unregister_ok,
 		shm->stats.iouring_napi_unregister_fail,
-		shm->stats.tcp_ao_rotate_runs,
-		shm->stats.tcp_ao_rotate_setup_failed,
-		shm->stats.tcp_ao_rotate_addkey_rejected,
-		shm->stats.tcp_ao_rotate_keys_added,
-		shm->stats.tcp_ao_rotate_connect_failed,
-		shm->stats.tcp_ao_rotate_connected,
-		shm->stats.tcp_ao_rotate_packets_sent,
-		shm->stats.tcp_ao_rotate_key_rotations,
-		shm->stats.tcp_ao_rotate_info_rejected,
-		shm->stats.tcp_ao_rotate_key_dels,
-		shm->stats.tcp_ao_rotate_delkey_rejected,
-		shm->stats.tcp_ao_rotate_cycles,
 		shm->stats.tcp_md5_listener_race_runs,
 		shm->stats.tcp_md5_listener_race_setup_failed,
 		shm->stats.tcp_md5_listener_race_md5_set_ok,
@@ -2041,6 +2048,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&socket_family_chain_category);
+
+	printf(",");
+	stat_category_emit_json(&tcp_ao_rotate_category);
 
 	printf(",");
 	stat_category_emit_json(&iouring_flood_category);
@@ -4650,20 +4660,7 @@ static void dump_stats_childop_runs_network(void)
 		stat_row("iouring_net_multishot", "napi_unregister_fail", shm->stats.iouring_napi_unregister_fail);
 	}
 
-	if (shm->stats.tcp_ao_rotate_runs) {
-		stat_row("tcp_ao_rotate", "runs",            shm->stats.tcp_ao_rotate_runs);
-		stat_row("tcp_ao_rotate", "setup_failed",    shm->stats.tcp_ao_rotate_setup_failed);
-		stat_row("tcp_ao_rotate", "addkey_rejected", shm->stats.tcp_ao_rotate_addkey_rejected);
-		stat_row("tcp_ao_rotate", "keys_added",      shm->stats.tcp_ao_rotate_keys_added);
-		stat_row("tcp_ao_rotate", "connect_failed",  shm->stats.tcp_ao_rotate_connect_failed);
-		stat_row("tcp_ao_rotate", "connected",       shm->stats.tcp_ao_rotate_connected);
-		stat_row("tcp_ao_rotate", "packets_sent",    shm->stats.tcp_ao_rotate_packets_sent);
-		stat_row("tcp_ao_rotate", "key_rotations",   shm->stats.tcp_ao_rotate_key_rotations);
-		stat_row("tcp_ao_rotate", "info_rejected",   shm->stats.tcp_ao_rotate_info_rejected);
-		stat_row("tcp_ao_rotate", "key_dels",        shm->stats.tcp_ao_rotate_key_dels);
-		stat_row("tcp_ao_rotate", "delkey_rejected", shm->stats.tcp_ao_rotate_delkey_rejected);
-		stat_row("tcp_ao_rotate", "cycles",          shm->stats.tcp_ao_rotate_cycles);
-	}
+	stat_category_emit_text(&tcp_ao_rotate_category);
 
 	if (shm->stats.tcp_md5_listener_race_runs) {
 		stat_row("tcp_md5_listener_race", "runs",           shm->stats.tcp_md5_listener_race_runs);
