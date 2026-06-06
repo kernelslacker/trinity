@@ -261,25 +261,6 @@ static void post_getxattr(struct syscallrecord *rec)
 	if (snap->pathname[0] == '\0' || snap->name[0] == '\0')
 		goto out_free;
 
-	{
-		void *value = (void *)(unsigned long) snap->value;
-
-		/*
-		 * Defense in depth: even with the post_state snapshot, a
-		 * wholesale stomp could rewrite the snapshot's inner value
-		 * pointer field.  Reject pid-scribbled values before deref.
-		 * pathname and name are now snapshotted by value into the
-		 * snap's embedded buffers, so the post-time strncpy walk-off
-		 * risk is gone -- only the value pointer still needs a shape
-		 * gate.
-		 */
-		if (looks_like_corrupted_ptr(rec, value)) {
-			outputerr("post_getxattr: rejected suspicious value=%p (post_state-scribbled?)\n",
-				  value);
-			goto out_free;
-		}
-	}
-
 	snap_len = (size_t) retval;
 	if (snap_len > sizeof(first_buf))
 		snap_len = sizeof(first_buf);
