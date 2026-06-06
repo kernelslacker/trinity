@@ -164,22 +164,10 @@ static void post_gettimeofday(struct syscallrecord *rec)
 	if (snap->tv == 0)
 		goto out_free;
 
-	{
-		void *tv = (void *)(unsigned long) snap->tv;
-
-		/*
-		 * Defense in depth: even with the post_state snapshot, a
-		 * wholesale stomp could rewrite the snapshot's inner tv
-		 * field.  Reject pid-scribbled tv before deref.
-		 */
-		if (looks_like_corrupted_ptr(rec, tv)) {
-			outputerr("post_gettimeofday: rejected suspicious tv=%p (post_state-scribbled?)\n",
-				  tv);
-			goto out_free;
-		}
-	}
-
-	memcpy(&local_tv, (void *)(unsigned long) snap->tv, sizeof(local_tv));
+	if (!post_snapshot_or_skip(&local_tv,
+				   (const void *)(unsigned long) snap->tv,
+				   sizeof(local_tv)))
+		goto out_free;
 
 	if (clock_gettime(CLOCK_REALTIME, &ts) != 0)
 		goto out_free;
