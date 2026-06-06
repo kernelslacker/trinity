@@ -16,6 +16,7 @@
 #include <sys/timex.h>
 #include <sys/resource.h>
 #include <sys/epoll.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/uio.h>
@@ -402,6 +403,40 @@ static const struct struct_field sembuf_fields[] = {
 	FIELDX(struct sembuf, sem_flg, FT_FLAGS,
 	       .u.flags.mask = IPC_NOWAIT | SEM_UNDO,
 	       .mutate_weight = 80),
+};
+
+/* ------------------------------------------------------------------ */
+/* struct pollfd (poll, ppoll)                                         */
+/* ------------------------------------------------------------------ */
+
+/*
+ * poll and ppoll pass an ARRAY of pollfd at a1 (nfds in a2), not a
+ * single struct, and the arg slot is ARG_ADDRESS rather than
+ * ARG_STRUCT_PTR_*.  The bespoke alloc_pollfds() helper in
+ * syscalls/poll.c allocates the buffer, picks each entry's
+ * (fd, events) tuple from the pollable-fd pool plus a curated event
+ * vocabulary, and overwrites rec->a1 -- the schema-aware fill path
+ * never runs for this slot.
+ *
+ * Registration is attribution-only, mirroring sembuf above:
+ * struct_field_for_cmp() uses the FT_FD / FT_FLAGS tags to steer
+ * KCOV-CMP learned constants at the fd or events slot rather than at
+ * a coincidentally-same-width slot.  revents is the kernel-written
+ * output half of this value-result buffer and stays FT_RAW: no
+ * userspace-side vocab applies, and FT_FLAGS attribution against the
+ * kernel-chosen revents bitmask would mislead the heuristic.
+ */
+#define POLLFD_EVENTS_MASK \
+	(POLLIN | POLLOUT | POLLPRI | POLLERR | \
+	 POLLHUP | POLLNVAL | POLLRDHUP)
+
+static const struct struct_field pollfd_fields[] = {
+	FIELDX(struct pollfd, fd, FT_FD,
+	       .mutate_weight = 80),
+	FIELDX(struct pollfd, events, FT_FLAGS,
+	       .u.flags.mask = POLLFD_EVENTS_MASK,
+	       .mutate_weight = 80),
+	FIELD(struct pollfd, revents),
 };
 
 /* ------------------------------------------------------------------ */
@@ -3728,6 +3763,19 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= sembuf_fields,
 		.num_fields	= ARRAY_SIZE(sembuf_fields),
 	},
+	/*
+	 * pollfd: appended at the tail so the existing struct_catalog[N]
+	 * indices above stay stable; the syscall_struct_args[] mapping below
+	 * picks up the new entry via an explicit USE_BPF-aware index since
+	 * the bpf_attr / bpf_insn entries shift the position by two when
+	 * USE_BPF is set.
+	 */
+	{
+		.name		= "pollfd",
+		.struct_size	= sizeof(struct pollfd),
+		.fields		= pollfd_fields,
+		.num_fields	= ARRAY_SIZE(pollfd_fields),
+	},
 };
 
 const unsigned int struct_catalog_count = ARRAY_SIZE(struct_catalog);
@@ -3861,6 +3909,14 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 */
 	{ "semop",		2, &struct_catalog[27] },
 	{ "semtimedop",		2, &struct_catalog[27] },
+	/*
+	 * pollfd is an array slot on ARG_ADDRESS at a1 of both poll and
+	 * ppoll; the per-element type is named here so future schema
+	 * consumers and struct_field_for_cmp can resolve it.  The bespoke
+	 * alloc_pollfds() owns the live (nfds, fd, events) layout.
+	 */
+	{ "poll",		1, &struct_catalog[28] },
+	{ "ppoll",		1, &struct_catalog[28] },
 #else
 	{ "clock_nanosleep",	3, &struct_catalog[22] },
 	{ "nanosleep",		1, &struct_catalog[22] },
@@ -3870,6 +3926,8 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	{ "open_tree_attr",	4, &struct_catalog[24] },
 	{ "semop",		2, &struct_catalog[25] },
 	{ "semtimedop",		2, &struct_catalog[25] },
+	{ "poll",		1, &struct_catalog[26] },
+	{ "ppoll",		1, &struct_catalog[26] },
 #endif
 	/* sentinel */
 	{ NULL, 0, NULL },
