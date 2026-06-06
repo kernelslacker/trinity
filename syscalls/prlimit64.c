@@ -285,24 +285,10 @@ static void post_prlimit64(struct syscallrecord *rec)
 	if (snap->resource >= RLIMIT_NLIMITS)
 		goto out_free;
 
-	{
-		void *old_rlim = (void *)(unsigned long) snap->old_rlim;
-
-		/*
-		 * Defense in depth: even with the post_state snapshot, a
-		 * wholesale stomp could rewrite the snapshot's inner
-		 * old_rlim pointer field.  Reject pid-scribbled old_rlim
-		 * before deref.
-		 */
-		if (looks_like_corrupted_ptr(rec, old_rlim)) {
-			outputerr("post_prlimit64: rejected suspicious old_rlim=%p (post_state-scribbled?)\n",
-				  old_rlim);
-			goto out_free;
-		}
-	}
-
-	memcpy(&first_rlim, (const void *)(unsigned long) snap->old_rlim,
-	       sizeof(first_rlim));
+	if (!post_snapshot_or_skip(&first_rlim,
+				   (const void *)(unsigned long) snap->old_rlim,
+				   sizeof(first_rlim)))
+		goto out_free;
 
 	memset(&recheck_rlim, 0, sizeof(recheck_rlim));
 	rc = syscall(SYS_prlimit64, (pid_t) snap->pid,
