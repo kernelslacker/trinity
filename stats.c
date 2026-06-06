@@ -844,6 +844,18 @@ static const struct stat_category mount_churn_category =
 	              mount_churn_runs,
 	              mount_churn_fields);
 
+static const struct stat_field uffd_churn_fields[] = {
+	STAT_FIELD(uffd, runs),
+	STAT_FIELD(uffd, registers),
+	STAT_FIELD(uffd, unregisters),
+	STAT_FIELD(uffd, failed),
+};
+
+static const struct stat_category uffd_churn_category =
+	STAT_CATEGORY("uffd_churn",
+	              uffd_runs,
+	              uffd_churn_fields);
+
 /*
  * Emit every counter from struct stats_s as a single JSON object.
  * All scalar counters are emitted unconditionally so consumers see a stable
@@ -1204,7 +1216,6 @@ static void dump_stats_json_lifecycle_and_storms(void)
 	printf("\"fs_lifecycle\":{\"tmpfs\":%lu,\"ramfs\":%lu,\"rdonly\":%lu,"
 			"\"overlay\":%lu,\"quota\":%lu,\"bind\":%lu,\"unsupported\":%lu},"
 		"\"futex_storm\":{\"runs\":%lu,\"inner_crashed\":%lu,\"iters\":%lu},"
-		"\"uffd_churn\":{\"runs\":%lu,\"registers\":%lu,\"unregisters\":%lu,\"failed\":%lu},"
 		"\"iouring_flood\":{\"runs\":%lu,\"submits\":%lu,\"reaped\":%lu,\"failed\":%lu},"
 		"\"close_racer\":{\"runs\":%lu,\"pairs\":%lu,\"failed\":%lu,\"thread_spawn_fail\":%lu},",
 		shm->stats.fs_lifecycle_tmpfs, shm->stats.fs_lifecycle_ramfs,
@@ -1213,8 +1224,6 @@ static void dump_stats_json_lifecycle_and_storms(void)
 		shm->stats.fs_lifecycle_unsupported,
 		shm->stats.futex_storm_runs, shm->stats.futex_storm_inner_crashed,
 		shm->stats.futex_storm_iters,
-		shm->stats.uffd_runs, shm->stats.uffd_registers,
-		shm->stats.uffd_unregisters, shm->stats.uffd_failed,
 		shm->stats.iouring_runs, shm->stats.iouring_submits,
 		shm->stats.iouring_reaped, shm->stats.iouring_failed,
 		shm->stats.close_racer_runs, shm->stats.close_racer_pairs,
@@ -1973,6 +1982,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&mount_churn_category);
+
+	printf(",");
+	stat_category_emit_json(&uffd_churn_category);
 
 	dump_stats_json_iouring_zc_and_kvm();
 	dump_stats_json_rxrpc_alg_ublk_block();
@@ -4521,12 +4533,7 @@ static void dump_stats_childop_runs_local(void)
 
 	stat_category_emit_text(&mount_churn_category);
 
-	if (shm->stats.uffd_runs) {
-		stat_row("uffd_churn", "runs",        shm->stats.uffd_runs);
-		stat_row("uffd_churn", "registers",   shm->stats.uffd_registers);
-		stat_row("uffd_churn", "unregisters", shm->stats.uffd_unregisters);
-		stat_row("uffd_churn", "failed",      shm->stats.uffd_failed);
-	}
+	stat_category_emit_text(&uffd_churn_category);
 
 	if (shm->stats.iouring_runs) {
 		stat_row("iouring_flood", "runs",     shm->stats.iouring_runs);
