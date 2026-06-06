@@ -925,6 +925,8 @@ static bool is_child_making_progress(struct childdata *child, int childno)
 	 * actual queued kill so the >= 10 threshold means "we tried." */
 	state = get_pid_state(childno);
 	if (state == 'D') {
+		if (!child->kill_in_flight)
+			stuck_syscall_info(child, childno);
 		kill_pid(pid);
 		__atomic_add_fetch(&child->kill_count, 1, __ATOMIC_RELAXED);
 		child->kill_in_flight = true;
