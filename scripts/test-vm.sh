@@ -3,29 +3,31 @@
 # This script demonstrates hunting for a VM bug that involved mmap + some other
 # VM related syscall.
 
+set -uo pipefail
+
 . scripts/paths.sh
 . scripts/taint.sh
 
-chmod 755 $TRINITY_TMP
+chmod 755 "$TRINITY_TMP"
 cd "$TRINITY_TMP" || exit 1
 
 while true;
 do
   for syscall in madvise mbind migrate_pages mincore mlockall mlock move_pages mprotect mremap msync munlockall munlock munmap remap_file_pages vmsplice
   do
-	echo testing mmap + $syscall
-	pushd $TRINITY_TMP > /dev/null
+	echo "testing mmap + $syscall"
+	pushd "$TRINITY_TMP" > /dev/null || exit 1
 
-	if [ ! -f $TRINITY_PATH/trinity ]; then
+	if [ ! -f "$TRINITY_PATH/trinity" ]; then
 		echo lost!
 		pwd
-		exit
+		exit 1
 	fi
 
-	MALLOC_CHECK_=2 $TRINITY_PATH/trinity -c mmap -c $syscall -N 1000000 -C 64
+	MALLOC_CHECK_=2 "$TRINITY_PATH/trinity" -c mmap -c "$syscall" -N 1000000 -C 64
 
-	chmod 755 $TRINITY_TMP
-	popd > /dev/null
+	chmod 755 "$TRINITY_TMP"
+	popd > /dev/null || exit 1
 
 	check_tainted
 	echo
