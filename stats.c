@@ -742,6 +742,19 @@ static const struct stat_category signal_storm_category =
 	              signal_storm_runs,
 	              signal_storm_fields);
 
+static const struct stat_field socket_family_chain_fields[] = {
+	STAT_FIELD(socket_family_chain, runs),
+	STAT_FIELD(socket_family_chain, completed),
+	STAT_FIELD(socket_family_chain, failed),
+	STAT_FIELD(socket_family_chain, authencesn_attempts),
+	STAT_FIELD(socket_family_chain, splice_attempts),
+};
+
+static const struct stat_category socket_family_chain_category =
+	STAT_CATEGORY("socket_family_chain",
+	              socket_family_chain_runs,
+	              socket_family_chain_fields);
+
 static const struct stat_field pipe_thrash_fields[] = {
 	STAT_FIELD(pipe_thrash, runs),
 	STAT_FIELD(pipe_thrash, pipes),
@@ -1289,8 +1302,7 @@ static void dump_stats_json_lifecycle_and_storms(void)
 
 static void dump_stats_json_socket_family_and_tls(void)
 {
-	printf("\"socket_family_chain\":{\"runs\":%lu,\"completed\":%lu,\"failed\":%lu,\"authencesn_attempts\":%lu,\"splice_attempts\":%lu},"
-		"\"socket_family_grammar\":{\"runs\":%lu,\"completed\":%lu},"
+	printf("\"socket_family_grammar\":{\"runs\":%lu,\"completed\":%lu},"
 		"\"packet_fanout_thrash\":{\"runs\":%lu,\"setup_failed\":%lu,\"ring_failed\":%lu,\"rings_installed\":%lu,\"mmap_failed\":%lu,\"joins\":%lu,\"rejoins_ok\":%lu,\"rejoins_rejected\":%lu},"
 		"\"eth_emitter\":{\"runs\":%lu,\"setup_failed\":%lu,\"short\":%lu,\"sends_ok\":%lu,\"sends_failed\":%lu,\"tmpl_arp\":%lu,\"tmpl_ipv4_frag_zero\":%lu,\"tmpl_ipv6_na\":%lu,\"tmpl_vlan_qinq\":%lu,\"tmpl_bad_ethertype\":%lu},"
 		"\"iouring_net_multishot\":{\"runs\":%lu,\"setup_failed\":%lu,\"pbuf_ring_ok\":%lu,\"pbuf_legacy_ok\":%lu,\"armed\":%lu,\"packets_sent\":%lu,\"completions\":%lu,\"cancel_submitted\":%lu,\"napi_register_ok\":%lu,\"napi_register_fail\":%lu,\"napi_unregister_ok\":%lu,\"napi_unregister_fail\":%lu},"
@@ -1306,11 +1318,6 @@ static void dump_stats_json_socket_family_and_tls(void)
 		"\"ovs_tunnel_vport_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"create_ok\":%lu,\"delete_ok\":%lu,\"race_dellink_attempted\":%lu},"
 		"\"bridge_fdb_stp\":{\"runs\":%lu,\"setup_failed\":%lu,\"bridge_create_ok\":%lu,\"veth_create_ok\":%lu,\"raw_send_ok\":%lu,\"stp_toggle_ok\":%lu,\"fdb_del_ok\":%lu,\"link_del_ok\":%lu,\"vlan_mass_runs\":%lu,\"vlan_mass_max_n\":%lu,\"vlan_mass_enotbufs\":%lu},"
 		"\"bridge_conntrack_churn\":{\"runs\":%lu,\"flushes\":%lu,\"pkts_sent\":%lu},",
-		shm->stats.socket_family_chain_runs,
-		shm->stats.socket_family_chain_completed,
-		shm->stats.socket_family_chain_failed,
-		shm->stats.socket_family_chain_authencesn_attempts,
-		shm->stats.socket_family_chain_splice_attempts,
 		shm->stats.socket_family_grammar_runs,
 		shm->stats.socket_family_grammar_completed,
 		shm->stats.packet_fanout_runs,
@@ -2031,6 +2038,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&netns_teardown_category);
+
+	printf(",");
+	stat_category_emit_json(&socket_family_chain_category);
 
 	printf(",");
 	stat_category_emit_json(&iouring_flood_category);
@@ -4592,13 +4602,7 @@ static void dump_stats_childop_runs_local(void)
 
 static void dump_stats_childop_runs_network(void)
 {
-	if (shm->stats.socket_family_chain_runs) {
-		stat_row("socket_family_chain", "runs",                shm->stats.socket_family_chain_runs);
-		stat_row("socket_family_chain", "completed",           shm->stats.socket_family_chain_completed);
-		stat_row("socket_family_chain", "failed",              shm->stats.socket_family_chain_failed);
-		stat_row("socket_family_chain", "authencesn_attempts", shm->stats.socket_family_chain_authencesn_attempts);
-		stat_row("socket_family_chain", "splice_attempts",     shm->stats.socket_family_chain_splice_attempts);
-	}
+	stat_category_emit_text(&socket_family_chain_category);
 
 	if (shm->stats.socket_family_grammar_runs) {
 		stat_row("socket_family_grammar", "runs",      shm->stats.socket_family_grammar_runs);
