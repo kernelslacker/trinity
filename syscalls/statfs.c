@@ -186,7 +186,10 @@ static void post_statfs(struct syscallrecord *rec)
 		}
 	}
 
-	memcpy(&first, (void *)(unsigned long) snap->buf, sizeof(first));
+	if (!post_snapshot_or_skip(&first,
+				   (void *)(unsigned long) snap->buf,
+				   sizeof(first)))
+		goto out_free;
 
 	if (syscall(SYS_statfs, snap->pathname, &recheck) != 0)
 		goto out_free;
@@ -410,7 +413,10 @@ static void post_statfs64(struct syscallrecord *rec)
 		}
 	}
 
-	memcpy(&first, (void *)(unsigned long) snap->buf, sizeof(first));
+	if (!post_snapshot_or_skip(&first,
+				   (void *)(unsigned long) snap->buf,
+				   sizeof(first)))
+		goto out_free;
 
 	if (syscall(SYS_statfs64, snap->pathname, sz_snapshot, &recheck) != 0)
 		goto out_free;
