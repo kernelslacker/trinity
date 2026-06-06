@@ -117,23 +117,10 @@ static void post_timerfd_gettime(struct syscallrecord *rec)
 	if (snap->otmr == 0)
 		goto out_free;
 
-	{
-		void *otmr = (void *)(unsigned long) snap->otmr;
-
-		/*
-		 * Defense in depth: even with the post_state snapshot, a
-		 * wholesale stomp could rewrite the snapshot's inner otmr
-		 * field.  Reject pid-scribbled otmr before deref.
-		 */
-		if (looks_like_corrupted_ptr(rec, otmr)) {
-			outputerr("post_timerfd_gettime: rejected suspicious otmr=%p (post_state-scribbled?)\n",
-				  otmr);
-			goto out_free;
-		}
-	}
-
-	memcpy(&first, (struct itimerspec *)(unsigned long) snap->otmr,
-	       sizeof(first));
+	if (!post_snapshot_or_skip(&first,
+				   (const void *)(unsigned long) snap->otmr,
+				   sizeof(first)))
+		goto out_free;
 
 	if (first.it_value.tv_nsec < 0 ||
 	    first.it_value.tv_nsec > 999999999L ||
