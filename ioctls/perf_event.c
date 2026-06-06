@@ -45,8 +45,10 @@ static void perf_event_sanitise(const struct ioctl_group *grp, struct syscallrec
 {
 	pick_random_ioctl(grp, rec);
 
+#ifdef USE_BPF
 	if (rec->a2 == PERF_EVENT_IOC_SET_BPF || rec->a2 == PERF_EVENT_IOC_QUERY_BPF)
 		rec->a3 = (unsigned long) get_rand_bpf_prog_fd();
+#endif
 }
 
 static const struct ioctl_group perf_event_grp = {
