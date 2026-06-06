@@ -19,6 +19,7 @@
 #include "tables.h"
 #include "compat.h"
 #include "rnd.h"
+#include "utils.h"
 
 #ifdef USE_BPF
 /**
@@ -1023,12 +1024,36 @@ void bpf_gen_filter(unsigned long **addr, unsigned long *addrlen)
  * bypass the consume step and leave a stale tracker slot to be evicted
  * by LRU, and the inner buffer needs explicit handling because the
  * wrapper-tracking fix in f9913742ec91 only tagged the outer alloc.
+ *
+ * Choke-point gate on bpf->filter: every caller (syscalls/bpf.c,
+ * syscalls/setsockopt.c, syscalls/seccomp.c, syscalls/prctl.c) reaches
+ * the inner free through here, so the gate covers them all without
+ * per-file edits.  A sibling-scribbled snap pointer can survive the
+ * outer post-state shape / cookie / ownership gates only to be handed
+ * here as bpf with a wild inner filter pointer; deferred_free_enqueue()
+ * would forward that pointer to free() (tracked_free_now() on the
+ * eventual ring eviction also free()s on an alloc_track miss --
+ * deferred-free.c:525-532 -- so the validation cannot be deferred to
+ * the free side, it has to gate the decision to enqueue at all).
+ *
+ * Require bpf->filter to be a tracked allocation (definitively one we
+ * produced via zmalloc_tracked in bpf_gen_filter / bpf_gen_seccomp) or
+ * at minimum readable for a sock_fprog-sized window (a real mapping in
+ * a tracked-shared region or the libc heap, not a wild fuzz pointer).
+ * Skip the free when neither holds -- the outer wrapper still
+ * enqueues, but the unproven inner pointer is leaked rather than
+ * routed to free() / tracked_free_now() on a foreign chunk.
  */
 void bpf_free_filter(struct sock_fprog *bpf)
 {
 	if (bpf == NULL)
 		return;
-	deferred_free_enqueue(bpf->filter);
+
+	if (bpf->filter != NULL &&
+	    (alloc_track_lookup(bpf->filter) ||
+	     range_readable_user(bpf->filter, sizeof(struct sock_fprog))))
+		deferred_free_enqueue(bpf->filter);
+
 	deferred_free_enqueue(bpf);
 }
 #endif
