@@ -165,17 +165,6 @@ static void post_newfstat(struct syscallrecord *rec)
 		void *buf = (void *)(unsigned long) snap->statbuf;
 
 		/*
-		 * Defense in depth: even with the post_state snapshot, a
-		 * wholesale stomp could rewrite the snapshot's inner statbuf
-		 * field.  Reject pid-scribbled statbuf before deref.
-		 */
-		if (looks_like_corrupted_ptr(rec, buf)) {
-			outputerr("post_newfstat: rejected suspicious statbuf=%p (post_state-scribbled?)\n",
-				  buf);
-			goto out_free;
-		}
-
-		/*
 		 * Untouched-buffer check: newfstat returned 0 (success) but
 		 * the user buffer still byte-for-byte matches the poison
 		 * pattern we stamped at sanitise time -- the kernel never
@@ -424,25 +413,6 @@ static void post_newfstatat(struct syscallrecord *rec)
 		goto out_free;
 
 	dfd = (int) snap->dfd;
-
-	{
-		void *buf = (void *)(unsigned long) snap->statbuf;
-
-		/*
-		 * Defense in depth: even with the post_state snapshot, a
-		 * wholesale stomp could rewrite the snapshot's inner
-		 * statbuf field.  Reject pid-scribbled pointers before
-		 * deref.  The pathname is now snapshotted by value into
-		 * the snap's embedded buffer, so the post-time strncpy
-		 * walk-off risk is gone -- only the statbuf pointer still
-		 * needs a shape gate.
-		 */
-		if (looks_like_corrupted_ptr(rec, buf)) {
-			outputerr("post_newfstatat: rejected suspicious statbuf=%p (post_state-scribbled?)\n",
-				  buf);
-			goto out_free;
-		}
-	}
 
 	flag = (int) snap->at_flags;
 	if (!post_snapshot_or_skip(&first,
