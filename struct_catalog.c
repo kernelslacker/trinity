@@ -34,6 +34,7 @@
 #include <linux/capability.h>
 #include <linux/netfilter.h>
 #include <linux/futex.h>
+#include <linux/rseq.h>
 #include <linux/sched.h>
 #include <linux/sched/types.h>
 #include <linux/io_uring.h>
@@ -583,6 +584,56 @@ static const struct struct_field robust_list_head_fields[] = {
 	       .mutate_weight = 60),
 	FIELDX(struct robust_list_head, list_op_pending, FT_ADDRESS,
 	       .mutate_weight = 100),
+};
+
+/* ------------------------------------------------------------------ */
+/* struct rseq (rseq)                                                  */
+/* ------------------------------------------------------------------ */
+
+/*
+ * rseq(struct rseq __user *rseq, u32 rseq_len, int flags, u32 sig)
+ * passes the rseq pointer at a1.  The bespoke sanitise_rseq() in
+ * syscalls/rseq.c continues to own the live fill: it allocates a
+ * 32-byte-aligned struct rseq via get_writable_address(),
+ * memset()s it to zero, routes a1 through avoid_shared_buffer_inout(),
+ * cycles a2 through the rseq_len validation buckets (zero / undersized
+ * / current ABI / oversized), and pins a4 to a fixed signature.
+ *
+ * Registration is attribution-only, mirroring robust_list_head /
+ * pollfd / sembuf / open_how / sigevent above: struct_field_for_cmp()
+ * uses the FT_RANGE tags to attribute small-int CMP constants at the
+ * cpu_id / node_id / mm_cid slots rather than at a coincidentally-
+ * same-width slot; FT_FLAGS on flags carries the RSEQ_CS_FLAG_*
+ * vocabulary the kernel reads at critical-section abort; FT_ADDRESS
+ * on rseq_cs documents the __user pointer slot the kernel
+ * dereferences to reach the active struct rseq_cs.  cpu_id_start /
+ * cpu_id / node_id / mm_cid are kernel-written outputs whose userspace
+ * envelope still benefits from CMP attribution; the bounds mirror the
+ * page-sized walk envelopes the kernel uses to validate them.  The
+ * abort signature is the syscall's a4 argument, not a struct member,
+ * so it has no field here.  The trailing flexible char end[] member
+ * has no fixed offset/size and is not registered.
+ */
+static const struct struct_field rseq_fields[] = {
+	FIELDX(struct rseq, cpu_id_start, FT_RANGE,
+	       .u.range = { 0, 4096 },
+	       .mutate_weight = 60),
+	FIELDX(struct rseq, cpu_id, FT_RANGE,
+	       .u.range = { 0, 4096 },
+	       .mutate_weight = 60),
+	FIELDX(struct rseq, rseq_cs, FT_ADDRESS,
+	       .mutate_weight = 100),
+	FIELDX(struct rseq, flags, FT_FLAGS,
+	       .u.flags.mask = RSEQ_CS_FLAG_NO_RESTART_ON_PREEMPT |
+			       RSEQ_CS_FLAG_NO_RESTART_ON_SIGNAL |
+			       RSEQ_CS_FLAG_NO_RESTART_ON_MIGRATE,
+	       .mutate_weight = 80),
+	FIELDX(struct rseq, node_id, FT_RANGE,
+	       .u.range = { 0, 1024 },
+	       .mutate_weight = 60),
+	FIELDX(struct rseq, mm_cid, FT_RANGE,
+	       .u.range = { 0, 4096 },
+	       .mutate_weight = 60),
 };
 
 /* ------------------------------------------------------------------ */
@@ -3961,6 +4012,19 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= robust_list_head_fields,
 		.num_fields	= ARRAY_SIZE(robust_list_head_fields),
 	},
+	/*
+	 * rseq: appended at the tail so the existing struct_catalog[N]
+	 * indices above stay stable; the syscall_struct_args[] mapping
+	 * below picks up the new entry via an explicit USE_BPF-aware index
+	 * since the bpf_attr / bpf_insn entries shift the position by two
+	 * when USE_BPF is set.
+	 */
+	{
+		.name		= "rseq",
+		.struct_size	= sizeof(struct rseq),
+		.fields		= rseq_fields,
+		.num_fields	= ARRAY_SIZE(rseq_fields),
+	},
 };
 
 const unsigned int struct_catalog_count = ARRAY_SIZE(struct_catalog);
@@ -4135,6 +4199,16 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * set_robust_list's a1 is mapped.
 	 */
 	{ "set_robust_list",	1, &struct_catalog[31] },
+	/*
+	 * rseq(struct rseq __user *rseq, u32 rseq_len, int flags, u32 sig)
+	 * a1 is the INPUT struct rseq pointer; the bespoke sanitise_rseq()
+	 * keeps owning the live fill (32-byte-aligned allocation, zero-
+	 * init, a2 length-bucket distribution, a4 signature pin).
+	 * Attribution-only registration lets struct_field_for_cmp steer
+	 * CMP-learned constants at the named fields rather than at a
+	 * coincidentally-same-width slot.
+	 */
+	{ "rseq",		1, &struct_catalog[32] },
 #else
 	{ "clock_nanosleep",	3, &struct_catalog[22] },
 	{ "nanosleep",		1, &struct_catalog[22] },
@@ -4149,6 +4223,7 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	{ "openat2",		3, &struct_catalog[27] },
 	{ "timer_create",	2, &struct_catalog[28] },
 	{ "set_robust_list",	1, &struct_catalog[29] },
+	{ "rseq",		1, &struct_catalog[30] },
 #endif
 	/* sentinel */
 	{ NULL, 0, NULL },
