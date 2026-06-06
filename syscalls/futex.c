@@ -317,6 +317,16 @@ static void sanitise_futex(struct syscallrecord *rec)
 			goto out_setclock;
 		rec->a1 = (unsigned long) w1;
 		rec->a5 = (unsigned long) w2;
+		/*
+		 * The shared pool is the whole reason these words exist:
+		 * children share the VA and contend on the same kernel hash
+		 * bucket.  *_PRIVATE ops route through the per-mm bucket and
+		 * defeat that -- two children with the same shared uaddr but
+		 * a _PRIVATE op never collide.  Strip FUTEX_PRIVATE_FLAG so
+		 * the op picked from futex_ops[] (which mixes shared and
+		 * _PRIVATE variants) reverts to its shared form.
+		 */
+		rec->a2 &= ~FUTEX_PRIVATE_FLAG;
 		goto out_setclock;
 	} else {
 		rec->a1 = (unsigned long) get_futex_mmap();
