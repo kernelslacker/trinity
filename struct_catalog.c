@@ -549,6 +549,43 @@ static const struct struct_field sigevent_fields[] = {
 };
 
 /* ------------------------------------------------------------------ */
+/* struct robust_list_head (set_robust_list)                           */
+/* ------------------------------------------------------------------ */
+
+/*
+ * set_robust_list(struct robust_list_head __user *head, size_t len)
+ * passes the head pointer at a1 with argtype ARG_ADDRESS (not
+ * ARG_STRUCT_PTR_*), so the schema-aware fill path never runs against
+ * it -- the bespoke sanitise_set_robust_list() in
+ * syscalls/set_robust_list.c continues to own the live (list.next,
+ * futex_offset, list_op_pending) layout: it zmalloc_tracked()s a head,
+ * self-points list.next, zeros futex_offset, and NULLs list_op_pending
+ * before each call.
+ *
+ * Registration is attribution-only, mirroring pollfd / sembuf /
+ * open_how / sigevent above: struct_field_for_cmp() uses the FT_RANGE
+ * tag to attribute small-int CMP constants at futex_offset rather than
+ * at a coincidentally-same-width slot, and FT_ADDRESS on the embedded
+ * list (whose first member is a __user "next" pointer) and on
+ * list_op_pending documents the kernel-dereferenced slots for any
+ * downstream nested-scrub walker.  futex_offset bounds envelope the
+ * page-sized window the kernel walks across the robust list node.
+ *
+ * get_robust_list's robust_list_head is an OUTPUT (its a2 is a double
+ * pointer the kernel writes), so the syscall_struct_args[] mapping
+ * below names set_robust_list a1 only.
+ */
+static const struct struct_field robust_list_head_fields[] = {
+	FIELDX(struct robust_list_head, list, FT_ADDRESS,
+	       .mutate_weight = 100),
+	FIELDX(struct robust_list_head, futex_offset, FT_RANGE,
+	       .u.range = { 0, 4096 },
+	       .mutate_weight = 60),
+	FIELDX(struct robust_list_head, list_op_pending, FT_ADDRESS,
+	       .mutate_weight = 100),
+};
+
+/* ------------------------------------------------------------------ */
 /* struct epoll_event (epoll_ctl)                                      */
 /* ------------------------------------------------------------------ */
 
@@ -3911,6 +3948,19 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= sigevent_fields,
 		.num_fields	= ARRAY_SIZE(sigevent_fields),
 	},
+	/*
+	 * robust_list_head: appended at the tail so the existing
+	 * struct_catalog[N] indices above stay stable; the
+	 * syscall_struct_args[] mapping below picks up the new entry via an
+	 * explicit USE_BPF-aware index since the bpf_attr / bpf_insn entries
+	 * shift the position by two when USE_BPF is set.
+	 */
+	{
+		.name		= "robust_list_head",
+		.struct_size	= sizeof(struct robust_list_head),
+		.fields		= robust_list_head_fields,
+		.num_fields	= ARRAY_SIZE(robust_list_head_fields),
+	},
 };
 
 const unsigned int struct_catalog_count = ARRAY_SIZE(struct_catalog);
@@ -4074,6 +4124,17 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * coincidentally-same-width slot.
 	 */
 	{ "timer_create",	2, &struct_catalog[30] },
+	/*
+	 * set_robust_list(struct robust_list_head __user *head, size_t len)
+	 * a1 is ARG_ADDRESS (not ARG_STRUCT_PTR_*), so the bespoke
+	 * sanitise_set_robust_list() keeps owning the live (list.next,
+	 * futex_offset, list_op_pending) layout.  Attribution-only
+	 * registration lets struct_field_for_cmp steer CMP-learned constants
+	 * at the named fields.  get_robust_list's robust_list_head is an
+	 * output (a2 is a double pointer the kernel writes), so only
+	 * set_robust_list's a1 is mapped.
+	 */
+	{ "set_robust_list",	1, &struct_catalog[31] },
 #else
 	{ "clock_nanosleep",	3, &struct_catalog[22] },
 	{ "nanosleep",		1, &struct_catalog[22] },
@@ -4087,6 +4148,7 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	{ "ppoll",		1, &struct_catalog[26] },
 	{ "openat2",		3, &struct_catalog[27] },
 	{ "timer_create",	2, &struct_catalog[28] },
+	{ "set_robust_list",	1, &struct_catalog[29] },
 #endif
 	/* sentinel */
 	{ NULL, 0, NULL },
