@@ -4,11 +4,6 @@
 
 #define PAGE_OFFSET 0x10000000
 
-#if 0
-// for 64 bit
-#define PAGE_OFFSET 0x40000000
-#endif
-
 #define KERNEL_ADDR	0x10100000
 #define MODULE_ADDR     0x10000L	// TODO: runtime-dependent (parisc_vmalloc_start), this is an approximation
 #define TASK_SIZE 0xFFF00000
