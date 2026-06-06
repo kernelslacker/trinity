@@ -235,27 +235,14 @@ static void post_clock_gettime(struct syscallrecord *rec)
 	if (snap->tp == 0)
 		goto out_free;
 
-	{
-		void *tp = (void *)(unsigned long) snap->tp;
-
-		/*
-		 * Defense in depth: even with the post_state snapshot, a
-		 * wholesale stomp could rewrite the snapshot's inner tp
-		 * pointer field.  Reject pid-scribbled tp before deref.
-		 */
-		if (looks_like_corrupted_ptr(rec, tp)) {
-			outputerr("post_clock_gettime: rejected suspicious tp=%p (post_state-scribbled?)\n",
-				  tp);
-			goto out_free;
-		}
-	}
-
 	/*
 	 * Snapshot the user buffer first so a sibling thread can't
 	 * scribble it between the snapshot and the range checks.
 	 */
-	memcpy(&ts_user, (const void *)(unsigned long) snap->tp,
-	       sizeof(ts_user));
+	if (!post_snapshot_or_skip(&ts_user,
+				   (const void *)(unsigned long) snap->tp,
+				   sizeof(ts_user)))
+		goto out_free;
 
 	if (ts_user.tv_nsec < 0 || ts_user.tv_nsec >= 1000000000) {
 		output(0, "clock_gettime oracle: tv_nsec=%ld out of [0..999999999]\n",
