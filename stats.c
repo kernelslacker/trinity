@@ -698,6 +698,19 @@ static const struct stat_category bpf_lifecycle_category =
 	              bpf_lifecycle_runs,
 	              bpf_lifecycle_fields);
 
+static const struct stat_field signal_storm_fields[] = {
+	STAT_FIELD(signal_storm, runs),
+	STAT_FIELD(signal_storm, kill),
+	STAT_FIELD(signal_storm, probe),
+	STAT_FIELD(signal_storm, sigqueue),
+	STAT_FIELD(signal_storm, no_targets),
+};
+
+static const struct stat_category signal_storm_category =
+	STAT_CATEGORY("signal_storm",
+	              signal_storm_runs,
+	              signal_storm_fields);
+
 /*
  * Emit every counter from struct stats_s as a single JSON object.
  * All scalar counters are emitted unconditionally so consumers see a stable
@@ -1057,7 +1070,6 @@ static void dump_stats_json_lifecycle_and_storms(void)
 {
 	printf("\"fs_lifecycle\":{\"tmpfs\":%lu,\"ramfs\":%lu,\"rdonly\":%lu,"
 			"\"overlay\":%lu,\"quota\":%lu,\"bind\":%lu,\"unsupported\":%lu},"
-		"\"signal_storm\":{\"runs\":%lu,\"kill\":%lu,\"probe\":%lu,\"sigqueue\":%lu,\"no_targets\":%lu},"
 		"\"futex_storm\":{\"runs\":%lu,\"inner_crashed\":%lu,\"iters\":%lu},"
 		"\"pipe_thrash\":{\"runs\":%lu,\"pipes\":%lu,\"socketpairs\":%lu,\"alloc_failed\":%lu},"
 		"\"fork_storm\":{\"runs\":%lu,\"forks\":%lu,\"failed\":%lu,"
@@ -1080,9 +1092,6 @@ static void dump_stats_json_lifecycle_and_storms(void)
 		shm->stats.fs_lifecycle_rdonly, shm->stats.fs_lifecycle_overlay,
 		shm->stats.fs_lifecycle_quota, shm->stats.fs_lifecycle_bind,
 		shm->stats.fs_lifecycle_unsupported,
-		shm->stats.signal_storm_runs, shm->stats.signal_storm_kill,
-		shm->stats.signal_storm_probe,
-		shm->stats.signal_storm_sigqueue, shm->stats.signal_storm_no_targets,
 		shm->stats.futex_storm_runs, shm->stats.futex_storm_inner_crashed,
 		shm->stats.futex_storm_iters,
 		shm->stats.pipe_thrash_runs, shm->stats.pipe_thrash_pipes,
@@ -1837,6 +1846,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&bpf_lifecycle_category);
+
+	printf(",");
+	stat_category_emit_json(&signal_storm_category);
 
 	dump_stats_json_iouring_zc_and_kvm();
 	dump_stats_json_rxrpc_alg_ublk_block();
@@ -4355,13 +4367,7 @@ static void dump_stats_childop_runs_local(void)
 		stat_row("fs_lifecycle", "unsupported", shm->stats.fs_lifecycle_unsupported);
 	}
 
-	if (shm->stats.signal_storm_runs) {
-		stat_row("signal_storm", "runs",       shm->stats.signal_storm_runs);
-		stat_row("signal_storm", "kill",       shm->stats.signal_storm_kill);
-		stat_row("signal_storm", "probe",      shm->stats.signal_storm_probe);
-		stat_row("signal_storm", "sigqueue",   shm->stats.signal_storm_sigqueue);
-		stat_row("signal_storm", "no_targets", shm->stats.signal_storm_no_targets);
-	}
+	stat_category_emit_text(&signal_storm_category);
 
 	if (shm->stats.futex_storm_runs)
 		output(0, "\nfutex storm: runs:%lu inner_crashed:%lu iters:%lu\n",
