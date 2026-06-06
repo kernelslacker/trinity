@@ -81,6 +81,7 @@
 
 #include "arch.h"
 #include "bpf.h"
+#include "bpf-syscall.h"
 #include "child.h"
 #include "objects.h"
 #include "publish_resource.h"
@@ -100,11 +101,6 @@
 #endif
 
 #define MAP_ENTRIES		8
-
-static int sys_bpf(int cmd, union bpf_attr *attr, unsigned int size)
-{
-	return (int)syscall(__NR_bpf, cmd, attr, size);
-}
 
 /*
  * Build and load the verifier-passing template program for prog_type.

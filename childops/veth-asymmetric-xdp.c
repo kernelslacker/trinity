@@ -92,6 +92,7 @@
 #include <linux/rtnetlink.h>
 
 #include "bpf.h"
+#include "bpf-syscall.h"
 #include "child.h"
 #include "childops-netlink.h"
 #include "random.h"
@@ -196,11 +197,6 @@ struct veth_xdp_iter_ctx {
 	int		prog_fd;
 	int		raw;
 };
-
-static int sys_bpf(int cmd, union bpf_attr *attr, unsigned int size)
-{
-	return (int)syscall(__NR_bpf, cmd, attr, size);
-}
 
 /*
  * RTM_NEWLINK creating an asymmetric-queue pair of @kind (veth or vxcan;

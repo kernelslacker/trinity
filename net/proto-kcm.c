@@ -14,6 +14,7 @@
 #include <fcntl.h>
 #include "arch.h"
 #include "bpf.h"
+#include "bpf-syscall.h"
 #include "net.h"
 #include "random.h"
 #include "socket-family-grammar.h"
@@ -135,11 +136,6 @@ const struct netproto proto_kcm = {
 static int kcm_supported = -1;
 static int kcm_bpf_prog_fd = -1;
 static pid_t kcm_bpf_owner_pid;
-
-static int sys_bpf(int cmd, union bpf_attr *attr, unsigned int size)
-{
-	return (int)syscall(__NR_bpf, cmd, attr, size);
-}
 
 /*
  * Minimal SOCKET_FILTER eBPF parser:  r0 = 4; exit;

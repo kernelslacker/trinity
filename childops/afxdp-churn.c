@@ -122,6 +122,7 @@
 #include "childops-netlink.h"
 
 #include "bpf.h"
+#include "bpf-syscall.h"
 #include "child.h"
 #include "jitter.h"
 #include "random.h"
@@ -269,11 +270,6 @@ static bool ns_unsupported_afxdp;
 static bool ns_unsupported_bpf_xdp;
 static bool ns_unsupported_xdp_sg;
 static bool ns_unsupported_tx_metadata;
-
-static int sys_bpf(int cmd, union bpf_attr *attr, unsigned int size)
-{
-	return (int)syscall(__NR_bpf, cmd, attr, size);
-}
 
 static bool retryable(int e)
 {

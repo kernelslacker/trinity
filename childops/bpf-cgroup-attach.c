@@ -78,6 +78,7 @@
 
 #include "arch.h"
 #include "bpf.h"
+#include "bpf-syscall.h"
 #include "child.h"
 #include "random.h"
 #include "rnd.h"
@@ -112,11 +113,6 @@
  * Per-child static — each forked child gets its own copy.
  */
 static bool latched_off;
-
-static int sys_bpf(int cmd, union bpf_attr *attr, unsigned int size)
-{
-	return (int)syscall(__NR_bpf, cmd, attr, size);
-}
 
 struct attach_combo {
 	uint32_t prog_type;
