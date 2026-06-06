@@ -205,7 +205,10 @@ static void post_olduname(struct syscallrecord *rec)
 		}
 	}
 
-	memcpy(&first, (void *)(unsigned long) snap->name, sizeof(first));
+	if (!post_snapshot_or_skip(&first,
+				   (void *)(unsigned long) snap->name,
+				   sizeof(first)))
+		goto out_free;
 
 	memset(&recheck, 0, sizeof(recheck));
 	if (syscall(SYS_olduname, &recheck) != 0)
