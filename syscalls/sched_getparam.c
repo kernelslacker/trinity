@@ -136,27 +136,14 @@ static void post_sched_getparam(struct syscallrecord *rec)
 	if (snap->param == 0)
 		goto out_free;
 
-	{
-		void *param = (void *)(unsigned long) snap->param;
-
-		/*
-		 * Defense in depth: even with the post_state snapshot, a
-		 * wholesale stomp could rewrite the snapshot's inner pointer
-		 * field.  Reject pid-scribbled param before deref.
-		 */
-		if (looks_like_corrupted_ptr(rec, param)) {
-			outputerr("post_sched_getparam: rejected suspicious param=%p (post_state-scribbled?)\n",
-				  param);
-			goto out_free;
-		}
-	}
-
 	memset(&local, 0, sizeof(local));
 	if (sched_getparam(0, &local) == -1)
 		goto out_free;
 
-	memcpy(&syscall_buf, (struct sched_param *)(unsigned long) snap->param,
-	       sizeof(syscall_buf));
+	if (!post_snapshot_or_skip(&syscall_buf,
+				   (const void *)(unsigned long) snap->param,
+				   sizeof(syscall_buf)))
+		goto out_free;
 
 	if (local.sched_priority != syscall_buf.sched_priority) {
 		output(0, "sched_getparam oracle: syscall=%d but recheck=%d\n",
