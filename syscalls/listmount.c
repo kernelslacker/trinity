@@ -379,27 +379,14 @@ static void post_listmount(struct syscallrecord *rec)
 	if (snap->req == 0 || snap->mnt_ids == 0 || snap->nr_mnt_ids == 0)
 		goto out_free;
 
-	{
-		void *req_p = (void *)(unsigned long) snap->req;
-		void *ids_p = (void *)(unsigned long) snap->mnt_ids;
-
-		/*
-		 * Defense in depth: even with the post_state snapshot, a
-		 * wholesale stomp could rewrite the snapshot's inner pointer
-		 * fields.  Reject pid-scribbled req/mnt_ids before deref.
-		 */
-		if (looks_like_corrupted_ptr(rec, req_p) ||
-		    looks_like_corrupted_ptr(rec, ids_p)) {
-			outputerr("post_listmount: rejected suspicious req=%p mnt_ids=%p (post_state-scribbled?)\n",
-				  req_p, ids_p);
-			goto out_free;
-		}
-	}
-
-	memcpy(&first_req, (void *) snap->req, sizeof(first_req));
+	if (!post_snapshot_or_skip(&first_req, (void *) snap->req,
+				   sizeof(first_req)))
+		goto out_free;
 
 	n = (retval < 64ul) ? retval : 64ul;
-	memcpy(first_ids, (void *) snap->mnt_ids, n * sizeof(u64));
+	if (!post_snapshot_or_skip(first_ids, (void *) snap->mnt_ids,
+				   n * sizeof(u64)))
+		goto out_free;
 
 	{
 		struct mnt_id_req recheck_req = first_req;
