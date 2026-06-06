@@ -458,9 +458,26 @@ static void post_prctl(struct syscallrecord *rec)
 	case PR_SET_SECCOMP:
 		bpf = snap->bpf;
 		if (bpf != NULL) {
-			if (inner_ptr_ok_to_free(rec, bpf->filter,
-						 "post_prctl/bpf_filter"))
-				tracked_free_now(bpf->filter);
+			/*
+			 * Wrapper-side gate before reading bpf->filter:
+			 * looks_like_corrupted_ptr() above is shape-only
+			 * (heap-band + alignment), so a heap-shaped but
+			 * unmapped snap->bpf survives and the bpf->filter
+			 * read here would fault the post handler before
+			 * inner_ptr_ok_to_free() ever runs.  Require the
+			 * wrapper to be a tracked allocation (one we
+			 * produced via do_set_seccomp) or readable for a
+			 * sock_fprog-sized window.  When neither holds,
+			 * skip the inner-free dispatch; the outer wrapper
+			 * still enqueues.  Mirrors the bpf_free_filter()
+			 * inner-filter gate added in 64f659289041.
+			 */
+			if (alloc_track_lookup(bpf) ||
+			    range_readable_user(bpf, sizeof(struct sock_fprog))) {
+				if (inner_ptr_ok_to_free(rec, bpf->filter,
+							 "post_prctl/bpf_filter"))
+					tracked_free_now(bpf->filter);
+			}
 			deferred_free_enqueue(bpf);
 		}
 		break;
