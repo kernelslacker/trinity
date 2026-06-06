@@ -920,6 +920,17 @@ struct iovec * alloc_iovec(unsigned int num, enum iov_direction dir)
 	if (iov == NULL)
 		return NULL;
 
+	/*
+	 * The slot holds exactly UIO_MAXIOV entries.  generate-args hands
+	 * num == UIO_MAXIOV + 1 to exercise the kernel's oversized-iovcnt
+	 * EINVAL arm; that count reaches the syscall via publish_paired_
+	 * length(), so cap the fill here -- writing iov[UIO_MAXIOV] runs off
+	 * the slot into the adjacent unwritable pool page (SEGV_ACCERR at the
+	 * page boundary).
+	 */
+	if (num > UIO_MAXIOV)
+		num = UIO_MAXIOV;
+
 	for (i = 0; i < num; i++) {
 		enum iovec_entry_shape shape = pick_iovec_entry_shape(i, dir);
 		void *pool;
