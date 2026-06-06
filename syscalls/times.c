@@ -160,22 +160,10 @@ static void post_times(struct syscallrecord *rec)
 	if (snap->tbuf == 0)
 		goto out_free;
 
-	{
-		void *tbuf = (void *)(unsigned long) snap->tbuf;
-
-		/*
-		 * Defense in depth: even with the post_state snapshot, a
-		 * wholesale stomp could rewrite the snapshot's inner tbuf
-		 * field.  Reject pid-scribbled tbuf before deref.
-		 */
-		if (looks_like_corrupted_ptr(rec, tbuf)) {
-			outputerr("post_times: rejected suspicious tbuf=%p (post_state-scribbled?)\n",
-				  tbuf);
-			goto out_free;
-		}
-	}
-
-	memcpy(&first, (struct tms *)(unsigned long) snap->tbuf, sizeof(first));
+	if (!post_snapshot_or_skip(&first,
+				   (const void *)(unsigned long) snap->tbuf,
+				   sizeof(first)))
+		goto out_free;
 
 	r = times(&recall);
 	if (r == (clock_t) -1)
