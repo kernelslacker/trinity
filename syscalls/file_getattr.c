@@ -12,7 +12,6 @@
 #include <asm/unistd.h>
 #include <linux/fs.h>
 #include "arch.h"
-#include "deferred-free.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -147,7 +146,7 @@ static void sanitise_file_getattr(struct syscallrecord *rec)
 	if (!post_snapshot_str(snap->pathname, sizeof(snap->pathname),
 			       (const char *)(unsigned long) rec->a2))
 		snap->pathname[0] = '\0';
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 #endif
 }
 
@@ -197,8 +196,7 @@ static void sanitise_file_getattr(struct syscallrecord *rec)
 static void post_file_getattr(struct syscallrecord *rec)
 {
 #ifdef HAVE_SYS_FILE_GETATTR
-	struct file_getattr_post_state *snap =
-		(struct file_getattr_post_state *) rec->post_state;
+	struct file_getattr_post_state *snap;
 	struct file_attr first_attr;
 	struct file_attr recheck_attr;
 	size_t usize;
@@ -206,54 +204,32 @@ static void post_file_getattr(struct syscallrecord *rec)
 	int dfd;
 	long rc;
 
+	/*
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
+	 */
+	snap = post_state_claim_owned(rec, FILE_GETATTR_POST_STATE_MAGIC,
+				      __func__);
 	if (snap == NULL)
 		return;
 
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_file_getattr: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	/*
-	 * Magic-cookie check: snap survived the heap-shape gate but a
-	 * sibling scribble of rec->post_state with a heap-shaped pointer
-	 * to a foreign allocation would let the wrong bytes pose as a
-	 * file_getattr_post_state.  A cookie mismatch means snap does not
-	 * point at our struct -- abandon rather than feed wild bytes into
-	 * the dfd / pathname / ufattr / usize / at_flags inner derefs and
-	 * re-issue recheck.
-	 */
-	if (snap->magic != FILE_GETATTR_POST_STATE_MAGIC) {
-		outputerr("post_file_getattr: rejected snap with bad magic 0x%lx "
-			  "(post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
-
 	if (!ONE_IN(100))
-		goto out_free;
+		goto out_release;
 
 	if ((long) rec->retval != 0)
-		goto out_free;
+		goto out_release;
 
 	if (snap->ufattr == 0)
-		goto out_free;
+		goto out_release;
 
 	if (snap->pathname[0] == '\0')
-		goto out_free;
+		goto out_release;
 
 	usize = (size_t) snap->usize;
 	if (usize < sizeof(struct file_attr))
-		goto out_free;
+		goto out_release;
 	if (usize > sizeof(struct file_attr))
 		usize = sizeof(struct file_attr);
 	/*
@@ -268,20 +244,20 @@ static void post_file_getattr(struct syscallrecord *rec)
 	if (snap->buf_alloc_size != 0 && usize > snap->buf_alloc_size)
 		usize = snap->buf_alloc_size;
 	if (usize < sizeof(struct file_attr))
-		goto out_free;
+		goto out_release;
 
 	dfd = (int) snap->dfd;
 	at_flags = (unsigned int) snap->at_flags;
 
 	if (!post_snapshot_or_skip(&first_attr,
 				   (const void *) snap->ufattr, usize))
-		goto out_free;
+		goto out_release;
 
 	memset(&recheck_attr, 0, sizeof(recheck_attr));
 	rc = syscall(SYS_file_getattr, dfd, snap->pathname, &recheck_attr,
 		     sizeof(recheck_attr), at_flags);
 	if (rc != 0)
-		goto out_free;
+		goto out_release;
 
 	if (memcmp(&first_attr, &recheck_attr, usize) != 0) {
 		const unsigned char *first_bytes = (const unsigned char *) &first_attr;
@@ -310,8 +286,8 @@ static void post_file_getattr(struct syscallrecord *rec)
 				   1, __ATOMIC_RELAXED);
 	}
 
-out_free:
-	deferred_freeptr(&rec->post_state);
+out_release:
+	post_state_release(rec, snap);
 #else
 	(void) rec;
 #endif
