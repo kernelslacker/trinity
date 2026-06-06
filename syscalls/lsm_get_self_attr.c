@@ -262,12 +262,11 @@ static void post_lsm_get_self_attr(struct syscallrecord *rec)
 	/*
 	 * Defense in depth: even with the post_state snapshot, a wholesale
 	 * stomp could rewrite the snapshot's inner pointer fields.  Reject
-	 * pid-scribbled ctx/size before deref.
+	 * pid-scribbled size before deref.
 	 */
-	if (looks_like_corrupted_ptr(rec, (void *) snap->ctx) ||
-	    looks_like_corrupted_ptr(rec, (void *) snap->size)) {
-		outputerr("post_lsm_get_self_attr: rejected suspicious ctx=%p size=%p (post_state-scribbled?)\n",
-			  (void *) snap->ctx, (void *) snap->size);
+	if (looks_like_corrupted_ptr(rec, (void *) snap->size)) {
+		outputerr("post_lsm_get_self_attr: rejected suspicious size=%p (post_state-scribbled?)\n",
+			  (void *) snap->size);
 		goto out_free;
 	}
 
@@ -284,7 +283,9 @@ static void post_lsm_get_self_attr(struct syscallrecord *rec)
 	if (size_first > LSM_CTX_BUF_MAX)
 		goto out_free;
 
-	memcpy(ctx_first, (const void *) snap->ctx, size_first);
+	if (!post_snapshot_or_skip(ctx_first, (const void *) snap->ctx,
+				   size_first))
+		goto out_free;
 
 	size_recall = LSM_CTX_BUF_MAX;
 	memset(ctx_recall, 0, sizeof(ctx_recall));
