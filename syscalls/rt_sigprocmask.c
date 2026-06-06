@@ -149,18 +149,10 @@ static void post_rt_sigprocmask(struct syscallrecord *rec)
 	if (snap->sigsetsize != sizeof(sigset_t))
 		goto out_free;
 
-	/*
-	 * Defense in depth: even with the post_state snapshot, a wholesale
-	 * stomp could rewrite the snapshot's inner pointer field.  Reject
-	 * a pid-scribbled oset before deref.
-	 */
-	if (looks_like_corrupted_ptr(rec, (void *) snap->oset)) {
-		outputerr("post_rt_sigprocmask: rejected suspicious oset=%p (post_state-scribbled?)\n",
-			  (void *) snap->oset);
+	if (!post_snapshot_or_skip(&buf,
+				   (const void *) snap->oset,
+				   sizeof(buf)))
 		goto out_free;
-	}
-
-	memcpy(&buf, (const void *) snap->oset, sizeof(buf));
 	memcpy(&syscall_blocked, &buf, sizeof(syscall_blocked));
 
 	if (proc_status_read(procbuf, sizeof(procbuf)) < 0)
