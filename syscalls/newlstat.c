@@ -7,7 +7,6 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include "arch.h"
-#include "deferred-free.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -61,7 +60,7 @@ static void sanitise_newlstat(struct syscallrecord *rec)
 	if (!post_snapshot_str(snap->filename, sizeof(snap->filename),
 			       (const char *)(unsigned long) rec->a1))
 		snap->filename[0] = '\0';
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 }
 
 /*
@@ -102,62 +101,40 @@ static void sanitise_newlstat(struct syscallrecord *rec)
  */
 static void post_newlstat(struct syscallrecord *rec)
 {
-	struct newlstat_post_state *snap =
-		(struct newlstat_post_state *) rec->post_state;
+	struct newlstat_post_state *snap;
 	struct stat first, recheck;
 	int diverged = 0;
 
+	/*
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
+	 */
+	snap = post_state_claim_owned(rec, NEWLSTAT_POST_STATE_MAGIC,
+				      __func__);
 	if (snap == NULL)
 		return;
 
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_newlstat: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	/*
-	 * Magic-cookie check: snap survived the heap-shape gate but a
-	 * sibling scribble of rec->post_state with a heap-shaped pointer
-	 * to a foreign allocation would let the wrong bytes pose as a
-	 * newlstat_post_state.  A cookie mismatch means snap does not
-	 * point at our struct -- abandon rather than feed wild bytes
-	 * into the inner-field deref.
-	 */
-	if (snap->magic != NEWLSTAT_POST_STATE_MAGIC) {
-		outputerr("post_newlstat: rejected snap with bad magic 0x%lx "
-			  "(post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
-
 	if (!ONE_IN(100))
-		goto out_free;
+		goto out_release;
 
 	if ((long) rec->retval != 0)
-		goto out_free;
+		goto out_release;
 
 	if (snap->statbuf == 0)
-		goto out_free;
+		goto out_release;
 
 	if (snap->filename[0] == '\0')
-		goto out_free;
+		goto out_release;
 
 	if (!post_snapshot_or_skip(&first,
 				   (void *)(unsigned long) snap->statbuf,
 				   sizeof(first)))
-		goto out_free;
+		goto out_release;
 
 	if (syscall(SYS_lstat, snap->filename, &recheck) != 0)
-		goto out_free;
+		goto out_release;
 
 	if (first.st_dev     != recheck.st_dev)     diverged = 1;
 	if (first.st_ino     != recheck.st_ino)     diverged = 1;
@@ -171,7 +148,7 @@ static void post_newlstat(struct syscallrecord *rec)
 	if (first.st_blocks  != recheck.st_blocks)  diverged = 1;
 
 	if (!diverged)
-		goto out_free;
+		goto out_release;
 
 	output(0,
 	       "newlstat oracle anomaly: path=%s "
@@ -194,8 +171,8 @@ static void post_newlstat(struct syscallrecord *rec)
 	__atomic_add_fetch(&shm->stats.newlstat_oracle_anomalies, 1,
 			   __ATOMIC_RELAXED);
 
-out_free:
-	deferred_freeptr(&rec->post_state);
+out_release:
+	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_newlstat = {
