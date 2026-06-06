@@ -157,21 +157,6 @@ static void post_fstatfs(struct syscallrecord *rec)
 
 	fd = (int) snap->fd;
 
-	{
-		void *buf = (void *)(unsigned long) snap->buf;
-
-		/*
-		 * Defense in depth: even with the post_state snapshot, a
-		 * wholesale stomp could rewrite the snapshot's inner buf
-		 * field.  Reject pid-scribbled buf before deref.
-		 */
-		if (looks_like_corrupted_ptr(rec, buf)) {
-			outputerr("post_fstatfs: rejected suspicious buf=%p (post_state-scribbled?)\n",
-				  buf);
-			goto out_free;
-		}
-	}
-
 	if (!post_snapshot_or_skip(&first,
 				   (void *)(unsigned long) snap->buf,
 				   sizeof(first)))
@@ -376,21 +361,6 @@ static void post_fstatfs64(struct syscallrecord *rec)
 
 	fd = (int) snap->fd;
 	sz = (size_t) snap->sz;
-
-	{
-		void *buf = (void *)(unsigned long) snap->buf;
-
-		/*
-		 * Defense in depth: even with the post_state snapshot, a
-		 * wholesale stomp could rewrite the snapshot's inner buf
-		 * field.  Reject pid-scribbled buf before deref.
-		 */
-		if (looks_like_corrupted_ptr(rec, buf)) {
-			outputerr("post_fstatfs64: rejected suspicious buf=%p (post_state-scribbled?)\n",
-				  buf);
-			goto out_free;
-		}
-	}
 
 	if (!post_snapshot_or_skip(&first,
 				   (void *)(unsigned long) snap->buf,
