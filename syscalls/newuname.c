@@ -186,7 +186,10 @@ static void post_newuname(struct syscallrecord *rec)
 
 	/* Local copy defends against a concurrent overwrite of the syscall
 	 * output buffer while we're walking it. */
-	memcpy(&uts, (void *)(unsigned long) snap->name, sizeof(uts));
+	if (!post_snapshot_or_skip(&uts,
+				   (void *)(unsigned long) snap->name,
+				   sizeof(uts)))
+		goto out_free;
 
 	for (i = 0; i < sizeof(fields) / sizeof(fields[0]); i++) {
 		char proc_buf[__NEW_UTS_LEN + 1];
