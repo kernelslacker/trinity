@@ -806,6 +806,17 @@ static const struct stat_category xattr_thrash_category =
 	              xattr_thrash_runs,
 	              xattr_thrash_fields);
 
+static const struct stat_field epoll_volatility_fields[] = {
+	STAT_FIELD(epoll_volatility, runs),
+	STAT_FIELD(epoll_volatility, ctl_calls),
+	STAT_FIELD(epoll_volatility, failed),
+};
+
+static const struct stat_category epoll_volatility_category =
+	STAT_CATEGORY("epoll_volatility",
+	              epoll_volatility_runs,
+	              epoll_volatility_fields);
+
 /*
  * Emit every counter from struct stats_s as a single JSON object.
  * All scalar counters are emitted unconditionally so consumers see a stable
@@ -1166,7 +1177,6 @@ static void dump_stats_json_lifecycle_and_storms(void)
 	printf("\"fs_lifecycle\":{\"tmpfs\":%lu,\"ramfs\":%lu,\"rdonly\":%lu,"
 			"\"overlay\":%lu,\"quota\":%lu,\"bind\":%lu,\"unsupported\":%lu},"
 		"\"futex_storm\":{\"runs\":%lu,\"inner_crashed\":%lu,\"iters\":%lu},"
-		"\"epoll_volatility\":{\"runs\":%lu,\"ctl_calls\":%lu,\"failed\":%lu},"
 		"\"cgroup_churn\":{\"runs\":%lu,\"mkdirs\":%lu,\"rmdirs\":%lu,\"failed\":%lu,"
 			"\"psi_race_runs\":%lu,\"psi_race_writes\":%lu,\"psi_race_failed\":%lu},"
 		"\"mount_churn\":{\"runs\":%lu,\"mounts\":%lu,\"umounts\":%lu,\"failed\":%lu},"
@@ -1179,9 +1189,6 @@ static void dump_stats_json_lifecycle_and_storms(void)
 		shm->stats.fs_lifecycle_unsupported,
 		shm->stats.futex_storm_runs, shm->stats.futex_storm_inner_crashed,
 		shm->stats.futex_storm_iters,
-		shm->stats.epoll_volatility_runs,
-		shm->stats.epoll_volatility_ctl_calls,
-		shm->stats.epoll_volatility_failed,
 		shm->stats.cgroup_churn_runs, shm->stats.cgroup_mkdirs,
 		shm->stats.cgroup_rmdirs, shm->stats.cgroup_failed,
 		shm->stats.cgroup_psi_race_runs,
@@ -1940,6 +1947,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&xattr_thrash_category);
+
+	printf(",");
+	stat_category_emit_json(&epoll_volatility_category);
 
 	dump_stats_json_iouring_zc_and_kvm();
 	dump_stats_json_rxrpc_alg_ublk_block();
@@ -4482,11 +4492,7 @@ static void dump_stats_childop_runs_local(void)
 
 	stat_category_emit_text(&xattr_thrash_category);
 
-	if (shm->stats.epoll_volatility_runs) {
-		stat_row("epoll_volatility", "runs",      shm->stats.epoll_volatility_runs);
-		stat_row("epoll_volatility", "ctl_calls", shm->stats.epoll_volatility_ctl_calls);
-		stat_row("epoll_volatility", "failed",    shm->stats.epoll_volatility_failed);
-	}
+	stat_category_emit_text(&epoll_volatility_category);
 
 	if (shm->stats.cgroup_churn_runs) {
 		stat_row("cgroup_churn", "runs",   shm->stats.cgroup_churn_runs);
