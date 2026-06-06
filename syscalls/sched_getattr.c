@@ -272,21 +272,6 @@ static void post_sched_getattr(struct syscallrecord *rec)
 	if (snap->size < SCHED_ATTR_SIZE_VER0)
 		goto out_free;
 
-	{
-		void *uattr = (void *)(unsigned long) snap->attr;
-
-		/*
-		 * Defense in depth: even with the post_state snapshot, a
-		 * wholesale stomp could rewrite the snapshot's inner pointer
-		 * field.  Reject pid-scribbled attr before deref.
-		 */
-		if (looks_like_corrupted_ptr(rec, uattr)) {
-			outputerr("post_sched_getattr: rejected suspicious uattr=%p (post_state-scribbled?)\n",
-				  uattr);
-			goto out_free;
-		}
-	}
-
 	/*
 	 * cpy_len bound by THREE inputs:
 	 *   - snap->size:           the size argument the kernel was given,
@@ -316,7 +301,10 @@ static void post_sched_getattr(struct syscallrecord *rec)
 	 */
 	if (cpy_len < SCHED_ATTR_SIZE_VER0)
 		goto out_free;
-	memcpy(user_snap, (const void *)(unsigned long) snap->attr, cpy_len);
+	if (!post_snapshot_or_skip(user_snap,
+				   (const void *)(unsigned long) snap->attr,
+				   cpy_len))
+		goto out_free;
 	memcpy(&user_size_returned, user_snap, sizeof(user_size_returned));
 
 	memset(kernel_snap, 0, sizeof(kernel_snap));
