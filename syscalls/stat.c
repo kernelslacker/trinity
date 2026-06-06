@@ -457,22 +457,6 @@ static void post_statx(struct syscallrecord *rec)
 
 	dfd = (int) snap->dfd;
 
-	{
-		void *buf = (void *)(unsigned long) snap->statxbuf;
-		void *path = (void *)(unsigned long) snap->pathname;
-
-		/*
-		 * Defense in depth: even with the post_state snapshot, a
-		 * wholesale stomp could rewrite the snapshot's inner pointer
-		 * fields.  Reject pid-scribbled statxbuf/pathname before deref.
-		 */
-		if (looks_like_corrupted_ptr(rec, buf) || looks_like_corrupted_ptr(rec, path)) {
-			outputerr("post_statx: rejected suspicious buffer=%p filename=%p (post_state-scribbled?)\n",
-				  buf, path);
-			goto out_free;
-		}
-	}
-
 	if (!post_snapshot_str(local_path, sizeof(local_path),
 			       (const char *)(unsigned long) snap->pathname))
 		goto out_free;
