@@ -57,6 +57,7 @@
 #endif
 
 #include "child.h"
+#include "childops-netlink.h"
 #include "jitter.h"
 #include "proto-alg-dict.h"
 #include "random.h"
@@ -107,16 +108,6 @@ static const enum alg_dict_type ati_to_dict[ATI_NR] = {
 };
 
 static bool alg_unsupported;
-
-static long long ns_since(const struct timespec *t0)
-{
-	struct timespec now;
-
-	if (clock_gettime(CLOCK_MONOTONIC, &now) < 0)
-		return 0;
-	return (long long)(now.tv_sec - t0->tv_sec) * 1000000000LL +
-	       (long long)(now.tv_nsec - t0->tv_nsec);
-}
 
 #ifdef USE_IF_ALG
 /* Sample (alg_type, alg_name) from the parent-side dict.  Tries up to
