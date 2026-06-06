@@ -298,9 +298,24 @@ static void post_seccomp(struct syscallrecord *rec)
 			}
 		}
 
-		if (inner_ptr_ok_to_free(rec, fprog->filter,
-					 "post_seccomp/fprog_filter"))
-			tracked_free_now(fprog->filter);
+		/*
+		 * Wrapper-side gate before reading fprog->filter:
+		 * looks_like_corrupted_ptr() above is shape-only (heap-band
+		 * + alignment), so a heap-shaped but unmapped snap->heap
+		 * would survive and fault on the inner-pointer read here.
+		 * Require the wrapper to be a tracked allocation (one we
+		 * produced via bpf_gen_seccomp) or readable for a sock_fprog-
+		 * sized window.  When neither holds, skip the inner-free
+		 * dispatch; the outer wrapper still enqueues so the
+		 * post_state slot is released.  Mirrors the bpf_free_filter()
+		 * inner-filter gate added in 64f659289041.
+		 */
+		if (alloc_track_lookup(fprog) ||
+		    range_readable_user(fprog, sizeof(struct sock_fprog))) {
+			if (inner_ptr_ok_to_free(rec, fprog->filter,
+						 "post_seccomp/fprog_filter"))
+				tracked_free_now(fprog->filter);
+		}
 		deferred_free_enqueue(fprog);
 		break;
 	}
