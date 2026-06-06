@@ -1245,7 +1245,7 @@ static bool check_stall(struct childdata *child)
 		child->stall_count = 0;
 		child->stall_last = child->op_nr;
 	}
-	if (child->stall_count == stall_threshold(child->op_type)) {
+	if (child->stall_count >= stall_threshold(child->op_type)) {
 		output(1, "no progress for %u tries (op_type=%d), exiting child.\n",
 			child->stall_count, child->op_type);
 		return true;
