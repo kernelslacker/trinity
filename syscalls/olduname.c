@@ -190,21 +190,6 @@ static void post_olduname(struct syscallrecord *rec)
 	if (snap->name == 0)
 		goto out_free;
 
-	{
-		void *name = (void *)(unsigned long) snap->name;
-
-		/*
-		 * Defense in depth: even with the post_state snapshot, a
-		 * wholesale stomp could rewrite the snapshot's inner name
-		 * field.  Reject pid-scribbled name before deref.
-		 */
-		if (looks_like_corrupted_ptr(rec, name)) {
-			outputerr("post_olduname: rejected suspicious name=%p (post_state-scribbled?)\n",
-				  name);
-			goto out_free;
-		}
-	}
-
 	if (!post_snapshot_or_skip(&first,
 				   (void *)(unsigned long) snap->name,
 				   sizeof(first)))
