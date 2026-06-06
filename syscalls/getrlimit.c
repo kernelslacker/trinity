@@ -178,18 +178,10 @@ static void post_getrlimit(struct syscallrecord *rec)
 	if (snap->rlim == NULL)
 		goto out_free;
 
-	/*
-	 * Defense in depth: even with the post_state snapshot, a wholesale
-	 * stomp could rewrite the snapshot's inner rlim pointer field.
-	 * Reject pid-scribbled rlim before deref.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap->rlim)) {
-		outputerr("post_getrlimit: rejected suspicious rlim=%p (post_state-scribbled?)\n",
-			  snap->rlim);
+	if (!post_snapshot_or_skip(&syscall_buf,
+				   (const void *) snap->rlim,
+				   sizeof(syscall_buf)))
 		goto out_free;
-	}
-
-	memcpy(&syscall_buf, (struct rlimit *) snap->rlim, sizeof(syscall_buf));
 
 	memset(&local, 0, sizeof(local));
 	if (getrlimit(snap->resource, &local) == -1)
