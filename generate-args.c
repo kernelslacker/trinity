@@ -3153,6 +3153,36 @@ static void scrub_struct_addresses(unsigned char *buf, unsigned int size,
 	    depth >= NESTED_ADDRESS_SCRUB_MAX_DEPTH)
 		return;
 
+	/*
+	 * Range-gate the whole walk before touching @buf.  At depth 0
+	 * @buf is the caller-supplied syscall slot (rec->aN); at depth
+	 * >= 1 it is a pointer value read out of a parent struct.  Both
+	 * are the exact class of value a sibling scribble can replace
+	 * with garbage between sanitise and dispatch -- defending
+	 * against which is the entire reason the scrub exists.  The
+	 * field walk below dereferences @buf in two ways that fault on
+	 * a stale pointer with no recovery: read_field_uint() does a
+	 * memcpy out of buf+offset, and avoid_shared_buffer_out() ->
+	 * asb_relocate() reads *addr at the top of its body (the
+	 * asb_copy_active sigsetjmp guard covers only the inner
+	 * memcpy, not this outer deref).  The per-field bound check
+	 * (f->offset + f->size > size) only constrains the walk within
+	 * an assumed-valid @size-byte allocation; it does nothing when
+	 * @buf itself is unmapped.
+	 *
+	 * range_readable_user() proves @buf is mapped from cached
+	 * state (tracked shared regions + libc heap snapshot) -- a
+	 * pure in-process lookup, no deref, cannot fault.  Legit
+	 * zmalloc_tracked() targets live in the heap snapshot and
+	 * pass; scribbled garbage that aliases neither snapshot fails.
+	 * Skip-the-scrub on false is safe: the scrub is purely
+	 * defensive, the fuzzed syscall has not yet fired, and falling
+	 * through means the kernel sees the pre-scrub argument -- the
+	 * exact gap the scrub narrows, not a regression.
+	 */
+	if (!range_readable_user(buf, size))
+		return;
+
 	for (i = 0; i < desc->num_fields; i++) {
 		const struct struct_field *f = &desc->fields[i];
 		const struct struct_desc *target;
