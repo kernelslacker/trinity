@@ -306,9 +306,7 @@ syscalls/sched_getaffinity.c:228:post_sched_getaffinity
 syscalls/sched_getattr.c:245:post_sched_getattr
 syscalls/sched_getattr.c:252:post_sched_getattr
 syscalls/sched_getattr.c:329:post_sched_getattr
-syscalls/sched_getparam.c:104:post_sched_getparam
-syscalls/sched_getparam.c:119:post_sched_getparam
-syscalls/sched_getparam.c:149:post_sched_getparam
+syscalls/sched_getparam.c:132:post_sched_getparam
 syscalls/sched_get_priority_max.c:74:post_sched_get_priority_max
 syscalls/sched_get_priority_min.c:74:post_sched_get_priority_min
 syscalls/sched_getscheduler.c:55:post_sched_getscheduler
