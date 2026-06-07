@@ -120,7 +120,7 @@ syscalls/getpeername.c:231:post_getpeername
 syscalls/getpeername.c:245:post_getpeername
 syscalls/getpeername.c:265:post_getpeername
 syscalls/getpeername.c:291:post_getpeername
-syscalls/getpeername.c:379:post_getpeername
+syscalls/getpeername.c:378:post_getpeername
 syscalls/getpgid.c:49:post_getpgid
 syscalls/getpgid.c:72:post_getpgid
 syscalls/getpgrp.c:38:post_getpgrp

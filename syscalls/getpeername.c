@@ -295,16 +295,15 @@ static void post_getpeername(struct syscallrecord *rec)
 	}
 
 	/*
-	 * Range-prove the length word before reading it.  The shape-only
-	 * guard above lets a non-NULL but stale/unmapped snap->usockaddr_len
-	 * through; the memcpy below would then fault inside the .post
-	 * handler.  range_readable_user gates the full socklen_t window.
+	 * Copy the length word through the TOCTOU-guarded helper.  The
+	 * shape-only guard above lets a non-NULL but stale/unmapped
+	 * snap->usockaddr_len through; post_snapshot_or_skip range-proves
+	 * the socklen_t window and recovers from a sibling mprotect/munmap
+	 * fault instead of crashing the child mid-sample.
 	 */
-	if (!range_readable_user((const void *) snap->usockaddr_len,
-				 sizeof(socklen_t)))
+	if (!post_snapshot_or_skip(&first_len, (const void *) snap->usockaddr_len,
+				   sizeof(socklen_t)))
 		goto out_free;
-
-	memcpy(&first_len, (const void *) snap->usockaddr_len, sizeof(socklen_t));
 	if (first_len == 0 || first_len > sizeof(struct sockaddr_storage))
 		goto out_free;
 
