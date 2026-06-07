@@ -329,12 +329,77 @@ static bool enable_memory_subtree(const char *container_path)
 }
 
 /*
- * Build sub-cgroups under container/: parent/ and children/.  Sets all
- * memory knobs and moves trinity-main into parent/.  On any failure
- * returns false; caller falls back to single-cgroup mode using the same
- * container directory.
+ * Decide whether the current scope is ours to carve a memory subtree out
+ * of.  True only when the memory controller is available here, the
+ * scope's subtree_control is writable, and the scope holds no process
+ * other than trinity-main -- i.e. it is trinity's own systemd-run scope,
+ * not a shared cgroup whose siblings we must not disturb.  Checked at
+ * setup time, before fork_children(), so trinity-main is the only trinity
+ * process that can be present.
+ */
+static bool scope_can_delegate(const char *scope_path)
+{
+	char path[PATH_MAX];
+	char buf[256];
+	FILE *f;
+	bool has_memory = false;
+	bool solo = true;
+	pid_t me = mypid();
+
+	if ((size_t)snprintf(path, sizeof(path), "%s/cgroup.controllers",
+			     scope_path) >= sizeof(path))
+		return false;
+	f = fopen(path, "re");
+	if (f == NULL)
+		return false;
+	while (fgets(buf, sizeof(buf), f) != NULL) {
+		if (strstr(buf, "memory") != NULL) {
+			has_memory = true;
+			break;
+		}
+	}
+	fclose(f);
+	if (!has_memory)
+		return false;
+
+	if ((size_t)snprintf(path, sizeof(path), "%s/cgroup.subtree_control",
+			     scope_path) >= sizeof(path))
+		return false;
+	if (access(path, W_OK) != 0)
+		return false;
+
+	if ((size_t)snprintf(path, sizeof(path), "%s/cgroup.procs",
+			     scope_path) >= sizeof(path))
+		return false;
+	f = fopen(path, "re");
+	if (f == NULL)
+		return false;
+	while (fgets(buf, sizeof(buf), f) != NULL) {
+		pid_t p = (pid_t)strtol(buf, NULL, 10);
+
+		if (p != 0 && p != me) {
+			solo = false;
+			break;
+		}
+	}
+	fclose(f);
+	return solo;
+}
+
+/*
+ * Build the parent/children memory split for trinity's own solo scope.
+ * cgroup v2 needs the memory controller delegated down to container/
+ * before its sub-cgroups can carry memory.* knobs, and a controller can
+ * only be enabled in a cgroup's subtree_control while that cgroup has no
+ * member processes.  So: create the leaves, vacate the scope by moving
+ * trinity-main into container/parent, enable +memory on the scope then on
+ * container/, and only then write the knobs.  Returns false (caller falls
+ * back) when scope_can_delegate() says no or any step fails; trinity-main
+ * may be left in container/parent, still bounded by the scope's outer
+ * memory.max and reaped with the scope on exit.
  */
 static bool setup_split(const char *container_path,
+			const char *scope_path,
 			const char *children_max_str,
 			const char *children_high_str,
 			const char *children_swap_str,
@@ -348,11 +413,11 @@ static bool setup_split(const char *container_path,
 	int wfd = -1;
 	unsigned long parent_high;
 
-	if (!enable_memory_subtree(container_path)) {
-		outputerr("self-cgroup: enable +memory in subtree_control failed: %s\n",
-			  strerror(errno));
+	/* Only carve a subtree out of a scope that is ours alone (solo,
+	 * writable, memory available) -- trinity's own systemd-run scope.
+	 * On a shared cgroup we must not touch the scope's subtree_control. */
+	if (!scope_can_delegate(scope_path))
 		return false;
-	}
 
 	if (asprintf(&parent_path, "%s/parent", container_path) < 0) {
 		parent_path = NULL;
@@ -373,6 +438,31 @@ static bool setup_split(const char *container_path,
 			  children_path, strerror(errno));
 		rmdir(parent_path);
 		goto fail;
+	}
+
+	/* Vacate the scope: move trinity-main into parent/ before enabling
+	 * controllers up the chain.  v2 forbids enabling a controller in a
+	 * cgroup's subtree_control while it holds member processes, and
+	 * trinity-main starts out directly in the scope. */
+	n = snprintf(pidbuf, sizeof(pidbuf), "%d\n", (int)mypid());
+	if (n < 0 || (size_t)n >= sizeof(pidbuf) ||
+	    !write_cg_file(parent_path, "cgroup.procs", pidbuf)) {
+		outputerr("self-cgroup: move trinity-main into parent/ failed: %s\n",
+			  strerror(errno));
+		goto fail_rmdir;
+	}
+
+	/* Delegate +memory down the chain now the scope is process-free:
+	 * scope -> container -> {parent, children}. */
+	if (!write_cg_file(scope_path, "cgroup.subtree_control", "+memory")) {
+		outputerr("self-cgroup: enable +memory on scope subtree_control failed: %s\n",
+			  strerror(errno));
+		goto fail_rmdir;
+	}
+	if (!enable_memory_subtree(container_path)) {
+		outputerr("self-cgroup: enable +memory in container subtree_control failed: %s\n",
+			  strerror(errno));
+		goto fail_rmdir;
 	}
 
 	/* Children: hard cap + swap cap + back-pressure threshold + group-OOM. */
@@ -408,17 +498,6 @@ static bool setup_split(const char *container_path,
 	if (!write_cg_file(parent_path, "memory.oom.group", "0"))
 		output(1, "self-cgroup: write parent/memory.oom.group=0 failed: %s\n",
 		       strerror(errno));
-
-	/* Move trinity-main into parent/.  If this fails the split is moot:
-	 * trinity-main would be left in container/ alongside the empty
-	 * subgroups, which violates v2's "no internal processes" rule. */
-	n = snprintf(pidbuf, sizeof(pidbuf), "%d\n", (int)mypid());
-	if (n < 0 || (size_t)n >= sizeof(pidbuf) ||
-	    !write_cg_file(parent_path, "cgroup.procs", pidbuf)) {
-		outputerr("self-cgroup: parent/cgroup.procs write failed: %s\n",
-			  strerror(errno));
-		goto fail_rmdir;
-	}
 
 	/* Open children/ as O_DIRECTORY so spawn_child() can hand the fd to
 	 * clone3(CLONE_INTO_CGROUP).  O_PATH would also work but O_DIRECTORY
@@ -499,6 +578,8 @@ static bool setup_single(const char *container_path,
 void self_cgroup_setup(void)
 {
 	char *parent_cg = NULL;
+	char *scope_path = NULL;
+	bool wrapper_capped = false;
 	unsigned long memtotal;
 	char *max_str = NULL;
 	char *high_str = NULL;
@@ -517,11 +598,13 @@ void self_cgroup_setup(void)
 		goto out;
 	}
 
-	if (already_capped(parent_cg)) {
-		output(1, "self-cgroup: parent cgroup %s already capped; "
-		       "deferring to wrapper\n", parent_cg);
-		goto out;
-	}
+	/* A wrapper (run-trinity.sh's systemd-run, kubelet, ...) may have
+	 * already set memory.max on our scope.  That stays as the outer
+	 * safety net; rather than deferring outright we try to nest our
+	 * parent/children OOM split underneath it (so the parent survives a
+	 * children-only OOM).  Remember it so a split that can't be set up
+	 * falls back to leaving the wrapper cap in place. */
+	wrapper_capped = already_capped(parent_cg);
 
 	memtotal = mem_total_bytes();
 	if (memtotal == 0) {
@@ -554,8 +637,15 @@ void self_cgroup_setup(void)
 	(void)high_bytes;
 	(void)swap_bytes;
 
-	if (asprintf(&cg_container, "/sys/fs/cgroup%s/trinity-%d",
-		     parent_cg, (int)mypid()) < 0) {
+	if (asprintf(&scope_path, "/sys/fs/cgroup%s", parent_cg) < 0) {
+		scope_path = NULL;
+		outputerr("self-cgroup: asprintf failed; "
+			  "running without memory cap\n");
+		goto out;
+	}
+
+	if (asprintf(&cg_container, "%s/trinity-%d",
+		     scope_path, (int)mypid()) < 0) {
 		cg_container = NULL;
 		outputerr("self-cgroup: asprintf failed; "
 			  "running without memory cap\n");
@@ -578,12 +668,21 @@ void self_cgroup_setup(void)
 	 * fly.  setup_split() leaves the container directory in place either
 	 * way; we then attach memory.* directly to it for the fallback.
 	 */
-	if (setup_split(cg_container, max_str, high_str, swap_str, max_bytes)) {
-		/* split mode established; cg_parent/cg_workload populated.
-		 * Save the original /sys/fs/cgroup path so cleanup can move
-		 * trinity-main back before tearing down parent/. */
-		if (asprintf(&cg_original, "/sys/fs/cgroup%s", parent_cg) < 0)
-			cg_original = NULL;
+	if (setup_split(cg_container, scope_path, max_str, high_str, swap_str,
+			max_bytes)) {
+		/* Split mode established; cg_parent/cg_workload populated.  Hand
+		 * scope_path to cg_original (in split mode cleanup defers
+		 * teardown to systemd, but the field still records the scope we
+		 * joined from). */
+		cg_original = scope_path;
+		scope_path = NULL;
+	} else if (wrapper_capped) {
+		output(1, "self-cgroup: parent/children split unavailable; "
+		       "deferring to the existing wrapper cap on %s\n", parent_cg);
+		rmdir(cg_container);
+		free(cg_container);
+		cg_container = NULL;
+		goto out;
 	} else {
 		output(1, "self-cgroup: parent/children split unavailable; "
 		       "falling back to single-cgroup mode\n");
@@ -600,6 +699,7 @@ void self_cgroup_setup(void)
 	events_setup();
 
 out:
+	free(scope_path);
 	free(parent_cg);
 	free(max_str);
 	free(high_str);
@@ -613,6 +713,23 @@ void self_cgroup_cleanup(void)
 	if (cg_workload_fd >= 0) {
 		close(cg_workload_fd);
 		cg_workload_fd = -1;
+	}
+
+	/*
+	 * Split (dance) mode only runs in trinity's own solo systemd-run
+	 * scope, where we delegated +memory onto the scope itself.  v2
+	 * forbids moving trinity-main back into a scope that now distributes
+	 * a controller, and unwinding the nested delegation by hand is
+	 * fragile -- systemd reaps the whole scope (and our sub-cgroups with
+	 * it) when trinity exits, so leave teardown to it.
+	 */
+	if (cg_split_mode) {
+		free(cg_workload);  cg_workload = NULL;
+		free(cg_parent);    cg_parent = NULL;
+		free(cg_container); cg_container = NULL;
+		free(cg_original);  cg_original = NULL;
+		cg_split_mode = false;
+		return;
 	}
 
 	/*

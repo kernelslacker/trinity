@@ -85,7 +85,11 @@ if [[ -z "${TRINITY_NO_CGROUP:-}" ]]; then
             mem_swap_max=${TRINITY_MEM_SWAP_MAX:-$((mem_total_kb * 20 / 100))K}
 
             echo "trinity: wrapping in systemd scope (MemoryMax=${mem_max}, MemoryHigh=${mem_high}, MemorySwapMax=${mem_swap_max})"
+            # Delegate=yes hands the scope's cgroup subtree to trinity so
+            # self_cgroup can enable +memory on it and nest its
+            # parent/children OOM split under this cap.
             cmd=(systemd-run --user --scope --quiet
+                -p Delegate=yes
                 -p MemoryMax="${mem_max}"
                 -p MemoryHigh="${mem_high}"
                 -p MemorySwapMax="${mem_swap_max}"
