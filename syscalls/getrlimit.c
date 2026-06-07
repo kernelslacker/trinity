@@ -95,7 +95,7 @@ static void sanitise_getrlimit(struct syscallrecord *rec)
 	snap->magic    = GETRLIMIT_POST_STATE_MAGIC;
 	snap->resource = (unsigned int) rec->a1;
 	snap->rlim     = (void *)(unsigned long) rec->a2;
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 #endif
 }
 
@@ -117,6 +117,14 @@ static void sanitise_getrlimit(struct syscallrecord *rec)
  * re-call writes into a fresh private stack buffer -- a sibling could
  * mutate the user buffer itself mid-syscall and forge a clean compare.
  *
+ * Snap gating: the snap is registered in the ownership table at install
+ * time and the post handler gates entry through post_state_claim_owned(),
+ * which runs the canonical shape -> ownership -> magic check before any
+ * inner-field deref -- a stale same-type snapshot still readable in the
+ * deferred-free queue, or a sibling scribble of rec->post_state with a
+ * heap-shaped pointer at a foreign allocation, is rejected before the
+ * resource or rlim fields are touched.
+ *
  * If the re-call returns -1 (the original syscall succeeded but the
  * re-call hit a transient failure), give up rather than report a false
  * divergence.  Sample one in a hundred to stay in line with the rest of
@@ -130,40 +138,12 @@ static void sanitise_getrlimit(struct syscallrecord *rec)
 static void post_getrlimit(struct syscallrecord *rec)
 {
 	struct getrlimit_post_state *snap =
-		(struct getrlimit_post_state *) rec->post_state;
+		post_state_claim_owned(rec, GETRLIMIT_POST_STATE_MAGIC,
+				       __func__);
 	struct rlimit local, syscall_buf;
 
 	if (snap == NULL)
 		return;
-
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_getrlimit: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	/*
-	 * Magic-cookie check: snap survived the heap-shape gate but a
-	 * sibling scribble of rec->post_state with a heap-shaped pointer
-	 * to a foreign allocation would let the wrong bytes pose as a
-	 * getrlimit_post_state.  A cookie mismatch means snap does not
-	 * point at our struct -- abandon rather than feed wild bytes into
-	 * the inner-field deref.  Mirrors recv.c post_recvmsg.
-	 */
-	if (snap->magic != GETRLIMIT_POST_STATE_MAGIC) {
-		outputerr("post_getrlimit: rejected snap with bad magic 0x%lx "
-			  "(post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
 
 	if (!ONE_IN(100))
 		goto out_free;
@@ -197,7 +177,7 @@ static void post_getrlimit(struct syscallrecord *rec)
 	}
 
 out_free:
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 #endif
 
