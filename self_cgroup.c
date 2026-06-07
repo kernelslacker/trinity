@@ -1,6 +1,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <inttypes.h>
 #include <limits.h>
 #include <signal.h>
 #include <stdbool.h>
@@ -27,20 +28,6 @@
 #ifndef CLONE_INTO_CGROUP
 #define CLONE_INTO_CGROUP 0x200000000ULL
 #endif
-
-/*
- * parse_size_arg() canonicalises sizes through 'unsigned long long'
- * but stores them into 'unsigned long' and writes them back out via
- * memory.* knobs that the kernel rounds to PAGE_SIZE multiples.  On
- * 32-bit hosts 'unsigned long' is 32 bits, so a "5G" cap silently
- * truncates to 1 GiB -- defeating the cap on exactly the size
- * operators are likely to set.  Trinity has not been tested on
- * 32-bit hosts in years; pin the assumption here so a future
- * cross-build failure surfaces at compile time rather than as a
- * silently-wrong production cap.
- */
-_Static_assert(sizeof(unsigned long) >= 8,
-	       "trinity self-cgroup memory caps assume 64-bit unsigned long");
 
 /*
  * Sub-cgroup layout (all under the v2 cgroup we belong to at startup):
@@ -72,39 +59,45 @@ static int  cg_workload_fd = -1;	/* O_DIRECTORY on cg_workload */
 static bool cg_split_mode;	/* true if parent/children sub-cgroups are live */
 static bool clone3_unavailable;	/* latched on first ENOSYS */
 
-static unsigned long mem_total_bytes(void)
+static uint64_t mem_total_bytes(void)
 {
 	FILE *f;
 	char line[256];
-	unsigned long kb = 0;
+	uint64_t kb = 0;
 
 	f = fopen("/proc/meminfo", "re");
 	if (f == NULL)
 		return 0;
 	while (fgets(line, sizeof(line), f) != NULL) {
-		if (sscanf(line, "MemTotal: %lu kB", &kb) == 1)
+		if (sscanf(line, "MemTotal: %" SCNu64 " kB", &kb) == 1)
 			break;
 	}
 	fclose(f);
-	return kb * 1024UL;
+	return kb * UINT64_C(1024);
 }
 
 /*
  * Parse a size argument and produce a byte-count (out_bytes) plus the
  * canonical string we write into the cgroup file (out_str).  Accepted forms:
- *   "max"          → out_str="max", out_bytes=ULONG_MAX (sentinel for uncapped)
+ *   "max"          → out_str="max", *out_is_max=true, out_bytes=0 (unused)
  *   "<n>%"         → percentage of MemTotal (1..100)
  *   "<n>[KMG]"     → bytes, with optional K/M/G binary suffix (1024)
+ *
+ * out_is_max is the explicit "uncapped" flag: callers that need to branch
+ * on the "max" sentinel test it directly instead of comparing out_bytes
+ * against an in-band magic value.  out_is_max may be NULL when the caller
+ * has no interest in the distinction.
  *
  * On success returns true; *out_str is malloc'd, caller frees.
  * On failure returns false and outputs are untouched.
  */
-static bool parse_size_arg(const char *arg, unsigned long mem_total,
-			   char **out_str, unsigned long *out_bytes)
+static bool parse_size_arg(const char *arg, uint64_t mem_total,
+			   char **out_str, uint64_t *out_bytes,
+			   bool *out_is_max)
 {
 	char *end;
-	unsigned long long val;
-	unsigned long long mult = 1;
+	uint64_t val;
+	uint64_t mult = 1;
 
 	if (arg == NULL || *arg == '\0')
 		return false;
@@ -113,7 +106,9 @@ static bool parse_size_arg(const char *arg, unsigned long mem_total,
 		*out_str = strdup("max");
 		if (*out_str == NULL)
 			return false;
-		*out_bytes = ULONG_MAX;
+		*out_bytes = 0;
+		if (out_is_max != NULL)
+			*out_is_max = true;
 		return true;
 	}
 
@@ -139,24 +134,26 @@ static bool parse_size_arg(const char *arg, unsigned long mem_total,
 			return false;
 		if (mem_total == 0)
 			return false;
-		val = (unsigned long long)mem_total * val / 100ULL;
+		val = mem_total * val / 100;
 	} else if (*end != '\0') {
 		if (end[1] != '\0')
 			return false;
 		switch (*end) {
-		case 'k': case 'K': mult = 1024ULL; break;
-		case 'm': case 'M': mult = 1024ULL * 1024; break;
-		case 'g': case 'G': mult = 1024ULL * 1024 * 1024; break;
+		case 'k': case 'K': mult = UINT64_C(1024); break;
+		case 'm': case 'M': mult = UINT64_C(1024) * 1024; break;
+		case 'g': case 'G': mult = UINT64_C(1024) * 1024 * 1024; break;
 		default: return false;
 		}
-		if (val > ULLONG_MAX / mult)
+		if (val > UINT64_MAX / mult)
 			return false;
 		val *= mult;
 	}
 
-	if (asprintf(out_str, "%llu", val) < 0)
+	if (asprintf(out_str, "%" PRIu64, val) < 0)
 		return false;
-	*out_bytes = (unsigned long)val;
+	*out_bytes = val;
+	if (out_is_max != NULL)
+		*out_is_max = false;
 	return true;
 }
 
@@ -178,9 +175,9 @@ static bool parse_size_arg(const char *arg, unsigned long mem_total,
 bool validate_cgroup_size_arg(const char *flag_name, const char *arg)
 {
 	char *out_str = NULL;
-	unsigned long out_bytes = 0;
+	uint64_t out_bytes = 0;
 
-	if (parse_size_arg(arg, 1, &out_str, &out_bytes)) {
+	if (parse_size_arg(arg, 1, &out_str, &out_bytes, NULL)) {
 		free(out_str);
 		return true;
 	}
@@ -305,11 +302,11 @@ static void events_cleanup(void);
  * not a hard cap.  We deliberately do not set memory.max on the parent —
  * if parent ever genuinely needs more, it should be allowed to allocate.
  */
-static unsigned long compute_parent_high(unsigned long total_max_bytes)
+static uint64_t compute_parent_high(uint64_t total_max_bytes, bool total_is_max)
 {
-	const unsigned long PARENT_HIGH_CAP = 200UL * 1024 * 1024;
+	const uint64_t PARENT_HIGH_CAP = UINT64_C(200) * 1024 * 1024;
 
-	if (total_max_bytes == ULONG_MAX)
+	if (total_is_max)
 		return PARENT_HIGH_CAP;
 	if (total_max_bytes / 16 < PARENT_HIGH_CAP)
 		return total_max_bytes / 16;
@@ -403,7 +400,8 @@ static bool setup_split(const char *container_path,
 			const char *children_max_str,
 			const char *children_high_str,
 			const char *children_swap_str,
-			unsigned long children_max_bytes)
+			uint64_t children_max_bytes,
+			bool children_max_is_max)
 {
 	char *parent_path = NULL;
 	char *children_path = NULL;
@@ -411,7 +409,7 @@ static bool setup_split(const char *container_path,
 	char pidbuf[32];
 	int n;
 	int wfd = -1;
-	unsigned long parent_high;
+	uint64_t parent_high;
 
 	/* Only carve a subtree out of a scope that is ours alone (solo,
 	 * writable, memory available) -- trinity's own systemd-run scope.
@@ -485,10 +483,9 @@ static bool setup_split(const char *container_path,
 		       strerror(errno));
 
 	/* Parent: small soft limit, no hard cap, never group-killed. */
-	parent_high = compute_parent_high(children_max_bytes == ULONG_MAX
-					  ? ULONG_MAX
-					  : children_max_bytes);
-	n = snprintf(parent_high_str, sizeof(parent_high_str), "%lu",
+	parent_high = compute_parent_high(children_max_bytes,
+					  children_max_is_max);
+	n = snprintf(parent_high_str, sizeof(parent_high_str), "%" PRIu64,
 		     parent_high);
 	if (n < 0 || (size_t)n >= sizeof(parent_high_str))
 		goto fail_rmdir;
@@ -580,13 +577,14 @@ void self_cgroup_setup(void)
 	char *parent_cg = NULL;
 	char *scope_path = NULL;
 	bool wrapper_capped = false;
-	unsigned long memtotal;
+	uint64_t memtotal;
 	char *max_str = NULL;
 	char *high_str = NULL;
 	char *swap_str = NULL;
-	unsigned long max_bytes = 0;
-	unsigned long high_bytes = 0;
-	unsigned long swap_bytes = 0;
+	uint64_t max_bytes = 0;
+	uint64_t high_bytes = 0;
+	uint64_t swap_bytes = 0;
+	bool max_is_max = false;
 
 	if (no_cgroup)
 		return;
@@ -614,21 +612,21 @@ void self_cgroup_setup(void)
 	}
 
 	if (!parse_size_arg(memory_max_arg ? memory_max_arg : "60%",
-			    memtotal, &max_str, &max_bytes)) {
+			    memtotal, &max_str, &max_bytes, &max_is_max)) {
 		outputerr("self-cgroup: invalid --memory-max '%s'; "
 			  "running without memory cap\n",
 			  memory_max_arg ? memory_max_arg : "60%");
 		goto out;
 	}
 	if (!parse_size_arg(memory_high_arg ? memory_high_arg : "50%",
-			    memtotal, &high_str, &high_bytes)) {
+			    memtotal, &high_str, &high_bytes, NULL)) {
 		outputerr("self-cgroup: invalid --memory-high '%s'; "
 			  "running without memory cap\n",
 			  memory_high_arg ? memory_high_arg : "50%");
 		goto out;
 	}
 	if (!parse_size_arg(memory_swap_max_arg ? memory_swap_max_arg : "20%",
-			    memtotal, &swap_str, &swap_bytes)) {
+			    memtotal, &swap_str, &swap_bytes, NULL)) {
 		outputerr("self-cgroup: invalid --memory-swap-max '%s'; "
 			  "running without memory cap\n",
 			  memory_swap_max_arg ? memory_swap_max_arg : "20%");
@@ -669,7 +667,7 @@ void self_cgroup_setup(void)
 	 * way; we then attach memory.* directly to it for the fallback.
 	 */
 	if (setup_split(cg_container, scope_path, max_str, high_str, swap_str,
-			max_bytes)) {
+			max_bytes, max_is_max)) {
 		/* Split mode established; cg_parent/cg_workload populated.  Hand
 		 * scope_path to cg_original (in split mode cleanup defers
 		 * teardown to systemd, but the field still records the scope we
