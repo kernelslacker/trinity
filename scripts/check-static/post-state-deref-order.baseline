@@ -5,12 +5,3 @@
 # ordering bug awaiting its own commit -- the baseline should shrink
 # over time, never grow.  See post-state-deref.sh for the rationale
 # and prctl.c for the reference shape.
-#
-# TODO: post_execve / post_execveat read snap->magic before
-# post_state_is_owned().  The bug shape mirrors the swap landed for
-# send / recv / pipe / socketpair / io_setup / timer_create /
-# getpeername / getsockname -- ownership-table proves "this is THIS
-# attempt's snapshot" and must run before any field read.  Holding
-# off here because execve.c is being worked on by another claw.
-syscalls/execve.c:post_execve
-syscalls/execve.c:post_execveat

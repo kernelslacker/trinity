@@ -60,13 +60,13 @@ syscalls/close_range.c:303:post_close_range
 syscalls/epoll_pwait.c:208:post_epoll_pwait
 syscalls/epoll_wait.c:98:post_epoll_wait
 syscalls/execve.c:266:post_execve
-syscalls/execve.c:280:post_execve
-syscalls/execve.c:310:post_execve
+syscalls/execve.c:294:post_execve
+syscalls/execve.c:308:post_execve
 syscalls/execve.c:336:post_execve
 syscalls/execve.c:349:post_execve
 syscalls/execve.c:374:post_execveat
 syscalls/execve.c:386:post_execveat
-syscalls/execve.c:400:post_execveat
+syscalls/execve.c:398:post_execveat
 syscalls/execve.c:416:post_execveat
 syscalls/execve.c:423:post_execveat
 syscalls/fcntl.c:410:post_fcntl

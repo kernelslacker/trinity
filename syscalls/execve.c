@@ -270,22 +270,6 @@ static void post_execve(struct syscallrecord *rec)
 	}
 
 	/*
-	 * Magic-cookie check: snap survived the heap-shape gate but a
-	 * sibling scribble of rec->post_state with a heap-shaped pointer
-	 * to a foreign allocation would let the wrong bytes pose as a
-	 * execve_post_state.  A cookie mismatch means snap does not point
-	 * at our struct -- bail without freeing, the pointer is suspect.
-	 */
-	if (snap->magic != EXECVE_POST_STATE_MAGIC) {
-		outputerr("post_execve: rejected snap with bad magic 0x%lx "
-			  "(post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
-
-	/*
 	 * Shape passed, but a sibling-stomp can still redirect post_state
 	 * to a different heap allocation that happens to be canonical and
 	 * aligned -- typically a smaller struct from another syscall's own
@@ -309,6 +293,22 @@ static void post_execve(struct syscallrecord *rec)
 	if (!post_state_is_owned(snap)) {
 		outputerr("post_execve: rejected post_state=%p not in ownership table "
 			  "(post_state-redirected?)\n", snap);
+		rec->post_state = 0;
+		return;
+	}
+
+	/*
+	 * Magic-cookie check: snap survived the heap-shape gate but a
+	 * sibling scribble of rec->post_state with a heap-shaped pointer
+	 * to a foreign allocation would let the wrong bytes pose as a
+	 * execve_post_state.  A cookie mismatch means snap does not point
+	 * at our struct -- bail without freeing, the pointer is suspect.
+	 */
+	if (snap->magic != EXECVE_POST_STATE_MAGIC) {
+		outputerr("post_execve: rejected snap with bad magic 0x%lx "
+			  "(post_state-stomped to foreign allocation?)\n",
+			  snap->magic);
+		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
 		return;
 	}
@@ -377,6 +377,18 @@ static void post_execveat(struct syscallrecord *rec)
 		return;
 	}
 
+	/* See post_execve() — ownership-table guard against post_state
+	 * redirected to a foreign allocation by sibling stomp.  Replaces
+	 * the prior malloc_usable_size() probe, which was UB on a
+	 * non-malloc-owned pointer and aborted the child under ASAN.
+	 */
+	if (!post_state_is_owned(snap)) {
+		outputerr("post_execveat: rejected post_state=%p not in ownership table "
+			  "(post_state-redirected?)\n", snap);
+		rec->post_state = 0;
+		return;
+	}
+
 	/* See post_execve() — magic-cookie gate against a sibling
 	 * scribble redirecting rec->post_state to a foreign heap-shaped
 	 * allocation that would otherwise pose as our struct.  Bail
@@ -387,18 +399,6 @@ static void post_execveat(struct syscallrecord *rec)
 			  "(post_state-stomped to foreign allocation?)\n",
 			  snap->magic);
 		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
-
-	/* See post_execve() — ownership-table guard against post_state
-	 * redirected to a foreign allocation by sibling stomp.  Replaces
-	 * the prior malloc_usable_size() probe, which was UB on a
-	 * non-malloc-owned pointer and aborted the child under ASAN.
-	 */
-	if (!post_state_is_owned(snap)) {
-		outputerr("post_execveat: rejected post_state=%p not in ownership table "
-			  "(post_state-redirected?)\n", snap);
 		rec->post_state = 0;
 		return;
 	}
