@@ -769,15 +769,6 @@ unsigned long kcov_collect_cmp(struct kcov_child *kc, unsigned int nr,
 			       bool do32, bool is_explorer,
 			       int strategy_at_pick);
 
-/* Accessor for the raw CMP record stream after kcov_disable().
- * On return, *out points at the first record (NULL when cmp_capable
- * is false or the buffer is empty) and *count is the (clamped) record
- * count.  Future mutator-side consumers that want raw operand pairs
- * rather than the deduped hint-pool view call this. */
-void kcov_get_cmp_records(struct kcov_child *kc,
-			  struct kcov_cmp_record **out,
-			  unsigned long *count);
-
 /*
  * Per-child kcov PC fd and cmp fd are protected from fuzz close /
  * dup2 / dup3 / close_range targeting via fd_is_protected() /

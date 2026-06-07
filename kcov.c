@@ -1538,28 +1538,6 @@ unsigned long kcov_collect_cmp(struct kcov_child *kc, unsigned int nr,
 	return novel;
 }
 
-void kcov_get_cmp_records(struct kcov_child *kc,
-			  struct kcov_cmp_record **out,
-			  unsigned long *count)
-{
-	unsigned long n;
-
-	*out = NULL;
-	*count = 0;
-
-	if (kc == NULL || !kc->cmp_capable || kc->cmp_trace_buf == NULL)
-		return;
-
-	n = __atomic_load_n(&kc->cmp_trace_buf[0], __ATOMIC_RELAXED);
-	if (n > KCOV_CMP_RECORDS_MAX)
-		n = KCOV_CMP_RECORDS_MAX;
-	if (n == 0)
-		return;
-
-	*out = (struct kcov_cmp_record *)&kc->cmp_trace_buf[1];
-	*count = n;
-}
-
 unsigned int kcov_syscall_cold_skip_pct(unsigned int nr)
 {
 	unsigned long edges, gap;
