@@ -17,6 +17,7 @@
 #include "sanitise.h"
 #include "compat.h"
 #include "trinity.h"
+#include "utils.h"
 
 /* Filesystem types read from /proc/filesystems at startup. */
 const char **filesystem_types;
@@ -417,11 +418,12 @@ static void sanitise_mount_setattr(struct syscallrecord *rec)
 	rec->a5 = buf.usize;
 
 	/*
-	 * Hand the csfu buffer to the deferred-free queue at sanitise
-	 * time -- mount_setattr has no post handler, so this is the only
-	 * place the zmalloc_tracked() allocation gets released.
+	 * Stash the csfu buffer in rec->post_state so the unconditional
+	 * .cleanup hook frees it.  mount_setattr has no .post handler, so
+	 * this was the only release point; post_state is private to the
+	 * cleanup path and less stomp-prone than rec->a4.
 	 */
-	deferred_free_enqueue_or_leak(ma);
+	rec->post_state = (unsigned long) ma;
 }
 
 #ifndef AT_RECURSIVE
@@ -431,6 +433,31 @@ static void sanitise_mount_setattr(struct syscallrecord *rec)
 static unsigned long mount_setattr_flags[] = {
 	AT_EMPTY_PATH, AT_RECURSIVE, AT_SYMLINK_NOFOLLOW, AT_NO_AUTOMOUNT,
 };
+
+static void cleanup_mount_setattr(struct syscallrecord *rec)
+{
+	struct mount_attr *ma = (struct mount_attr *) rec->post_state;
+
+	rec->post_state = 0;
+
+	if (ma == NULL)
+		return;
+
+	/*
+	 * post_state is not exposed as a syscall arg, but the whole
+	 * record can be stomped by a sibling; guard the deref.  This
+	 * replaces the old deferred_free_enqueue_or_leak() pressure path.
+	 */
+	if (looks_like_corrupted_ptr(rec, ma))
+		return;
+
+	/*
+	 * ma came from build_csfu_struct() -> zmalloc_tracked(), which
+	 * registered the pointer in the alloc-track LRU.  tracked_free_now()
+	 * removes it from the LRU and frees it.
+	 */
+	tracked_free_now(ma);
+}
 
 struct syscallentry syscall_mount_setattr = {
 	.name = "mount_setattr",
@@ -442,4 +469,5 @@ struct syscallentry syscall_mount_setattr = {
 	.group = GROUP_VFS,
 	.flags = KCOV_REMOTE_HEAVY,
 	.sanitise = sanitise_mount_setattr,
+	.cleanup = cleanup_mount_setattr,
 };
