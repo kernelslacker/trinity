@@ -9,7 +9,6 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include "arch.h"
-#include "deferred-free.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -53,7 +52,7 @@ static void sanitise_fstatfs(struct syscallrecord *rec)
 	snap->magic = FSTATFS_POST_STATE_MAGIC;
 	snap->fd  = rec->a1;
 	snap->buf = rec->a2;
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 }
 
 /*
@@ -108,62 +107,33 @@ static void sanitise_fstatfs(struct syscallrecord *rec)
  */
 static void post_fstatfs(struct syscallrecord *rec)
 {
-	struct fstatfs_post_state *snap =
-		(struct fstatfs_post_state *) rec->post_state;
+	struct fstatfs_post_state *snap;
 	struct statfs first, recheck;
 	int fd;
 	int diverged = 0;
 
+	snap = post_state_claim_owned(rec, FSTATFS_POST_STATE_MAGIC, __func__);
 	if (snap == NULL)
 		return;
 
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_fstatfs: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	/*
-	 * Magic-cookie check: snap survived the heap-shape gate but a
-	 * sibling scribble of rec->post_state with a heap-shaped pointer
-	 * to a foreign allocation would let the wrong bytes pose as a
-	 * fstatfs_post_state.  A cookie mismatch means snap does not point
-	 * at our struct -- abandon rather than feed wild bytes into the fd
-	 * re-issue gate and inner buf deref.
-	 */
-	if (snap->magic != FSTATFS_POST_STATE_MAGIC) {
-		outputerr("post_fstatfs: rejected snap with bad magic 0x%lx "
-			  "(post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
-
 	if (!ONE_IN(100))
-		goto out_free;
+		goto out_release;
 
 	if ((long) rec->retval != 0)
-		goto out_free;
+		goto out_release;
 
 	if (snap->buf == 0)
-		goto out_free;
+		goto out_release;
 
 	fd = (int) snap->fd;
 
 	if (!post_snapshot_or_skip(&first,
 				   (void *)(unsigned long) snap->buf,
 				   sizeof(first)))
-		goto out_free;
+		goto out_release;
 
 	if (syscall(SYS_fstatfs, fd, &recheck) != 0)
-		goto out_free;
+		goto out_release;
 
 	if (first.f_type    != recheck.f_type)    diverged = 1;
 	if (first.f_bsize   != recheck.f_bsize)   diverged = 1;
@@ -176,7 +146,7 @@ static void post_fstatfs(struct syscallrecord *rec)
 	if (first.f_fsid.__val[1] != recheck.f_fsid.__val[1]) diverged = 1;
 
 	if (!diverged)
-		goto out_free;
+		goto out_release;
 
 	output(0,
 	       "fstatfs oracle anomaly: fd=%d "
@@ -203,8 +173,8 @@ static void post_fstatfs(struct syscallrecord *rec)
 	__atomic_add_fetch(&shm->stats.fstatfs_oracle_anomalies, 1,
 			   __ATOMIC_RELAXED);
 
-out_free:
-	deferred_freeptr(&rec->post_state);
+out_release:
+	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_fstatfs = {
@@ -272,7 +242,7 @@ static void sanitise_fstatfs64(struct syscallrecord *rec)
 		snap->fd  = rec->a1;
 		snap->sz  = rec->a2;
 		snap->buf = rec->a3;
-		rec->post_state = (unsigned long) snap;
+		post_state_install(rec, snap);
 	}
 #endif
 }
@@ -311,53 +281,24 @@ static void sanitise_fstatfs64(struct syscallrecord *rec)
 #ifdef SYS_fstatfs64
 static void post_fstatfs64(struct syscallrecord *rec)
 {
-	struct fstatfs64_post_state *snap =
-		(struct fstatfs64_post_state *) rec->post_state;
+	struct fstatfs64_post_state *snap;
 	struct statfs64 first, recheck;
 	int fd;
 	size_t sz;
 	int diverged = 0;
 
+	snap = post_state_claim_owned(rec, FSTATFS64_POST_STATE_MAGIC, __func__);
 	if (snap == NULL)
 		return;
 
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_fstatfs64: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	/*
-	 * Magic-cookie check: snap survived the heap-shape gate but a
-	 * sibling scribble of rec->post_state with a heap-shaped pointer
-	 * to a foreign allocation would let the wrong bytes pose as a
-	 * fstatfs64_post_state.  A cookie mismatch means snap does not
-	 * point at our struct -- abandon rather than feed wild bytes into
-	 * the fd/sz re-issue gate and inner buf deref.
-	 */
-	if (snap->magic != FSTATFS64_POST_STATE_MAGIC) {
-		outputerr("post_fstatfs64: rejected snap with bad magic 0x%lx "
-			  "(post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
-
 	if (!ONE_IN(100))
-		goto out_free;
+		goto out_release;
 
 	if ((long) rec->retval != 0)
-		goto out_free;
+		goto out_release;
 
 	if (snap->buf == 0)
-		goto out_free;
+		goto out_release;
 
 	fd = (int) snap->fd;
 	sz = (size_t) snap->sz;
@@ -365,10 +306,10 @@ static void post_fstatfs64(struct syscallrecord *rec)
 	if (!post_snapshot_or_skip(&first,
 				   (void *)(unsigned long) snap->buf,
 				   sizeof(first)))
-		goto out_free;
+		goto out_release;
 
 	if (syscall(SYS_fstatfs64, fd, sz, &recheck) != 0)
-		goto out_free;
+		goto out_release;
 
 	if (first.f_type    != recheck.f_type)    diverged = 1;
 	if (first.f_bsize   != recheck.f_bsize)   diverged = 1;
@@ -381,7 +322,7 @@ static void post_fstatfs64(struct syscallrecord *rec)
 	if (first.f_fsid.__val[1] != recheck.f_fsid.__val[1]) diverged = 1;
 
 	if (!diverged)
-		goto out_free;
+		goto out_release;
 
 	output(0,
 	       "fstatfs64 oracle anomaly: fd=%d sz=%zu "
@@ -408,8 +349,8 @@ static void post_fstatfs64(struct syscallrecord *rec)
 	__atomic_add_fetch(&shm->stats.fstatfs64_oracle_anomalies, 1,
 			   __ATOMIC_RELAXED);
 
-out_free:
-	deferred_freeptr(&rec->post_state);
+out_release:
+	post_state_release(rec, snap);
 }
 #endif
 

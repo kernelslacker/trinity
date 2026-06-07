@@ -89,12 +89,8 @@ syscalls/fgetxattr.c:218:post_fgetxattr
 syscalls/fgetxattr.c:289:post_fgetxattr
 syscalls/file_getattr.c:282:post_file_getattr
 syscalls/fork.c:60:post_fork
-syscalls/fstatfs.c:126:post_fstatfs
-syscalls/fstatfs.c:141:post_fstatfs
-syscalls/fstatfs.c:181:post_fstatfs
-syscalls/fstatfs.c:330:post_fstatfs64
-syscalls/fstatfs.c:345:post_fstatfs64
-syscalls/fstatfs.c:386:post_fstatfs64
+syscalls/fstatfs.c:151:post_fstatfs
+syscalls/fstatfs.c:327:post_fstatfs64
 syscalls/futex_wake.c:63:post_futex_wake
 syscalls/getcpu.c:236:post_getcpu
 syscalls/getcpu.c:251:post_getcpu
