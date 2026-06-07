@@ -62,12 +62,6 @@ static void sanitise_file_setattr(struct syscallrecord *rec)
 		return;
 
 	/*
-	 * Hand the csfu buffer to the deferred-free queue up front --
-	 * the zmalloc_tracked() allocation has no other release path.
-	 */
-	deferred_free_enqueue_or_leak(fa);
-
-	/*
 	 * Non-EXACT buckets are rejected on usize by copy_struct_from_user()
 	 * before the kernel reads fa->fa_xflags, so populating body fields
 	 * there is wasted work; OVERSIZE_NONZERO and TAIL_MISMATCH
@@ -101,6 +95,52 @@ static void sanitise_file_setattr(struct syscallrecord *rec)
 
 	rec->a3 = (unsigned long) fa;
 	rec->a4 = buf.usize;
+
+	/*
+	 * Stash the canonical fa pointer in rec->post_state so the .cleanup
+	 * hook can release it unconditionally -- .cleanup runs on every
+	 * dispatch outcome, including paths that skip .post (retfd_rejected
+	 * / rzs_rejected gates in handle_syscall_ret()).  post_state is
+	 * private to the post / cleanup pair and less stomp-prone than
+	 * rec->a3, which the syscall-arg ABI exposes to sibling
+	 * value-result writes.  The kernel only reads fa synchronously
+	 * during the syscall (no async lifetime past return), so a
+	 * deterministic post-dispatch free in .cleanup replaces the
+	 * pre-dispatch deferred_free_enqueue_or_leak() that owned the
+	 * lifecycle before.
+	 */
+	rec->post_state = (unsigned long) fa;
+}
+
+static void cleanup_file_setattr(struct syscallrecord *rec)
+{
+	struct file_attr *fa = (struct file_attr *) rec->post_state;
+
+	rec->post_state = 0;
+	rec->a3 = 0;
+
+	if (fa == NULL)
+		return;
+
+	/*
+	 * post_state is not exposed as a syscall arg, but the whole
+	 * syscallrecord can still be wholesale-stomped by a sibling.  A
+	 * shape-failing pointer is leaked rather than freed -- matches the
+	 * old deferred_free_enqueue_or_leak() pressure-path behaviour
+	 * (bounded leak reclaimed at child exit) and is strictly safer
+	 * than calling free() on a foreign / pid-shaped address.
+	 */
+	if (looks_like_corrupted_ptr(rec, fa))
+		return;
+
+	/*
+	 * fa came from build_csfu_struct() -> zmalloc_tracked(), which
+	 * registered the pointer in the alloc-track LRU.  tracked_free_now()
+	 * removes it from the ring and calls free() in one step; a raw
+	 * free() would leave the alloc-track side-set claiming the address
+	 * is still live and mislead subsequent alloc_track_lookup() callers.
+	 */
+	tracked_free_now(fa);
 }
 
 struct syscallentry syscall_file_setattr = {
@@ -110,6 +150,7 @@ struct syscallentry syscall_file_setattr = {
 	.argname = { [0] = "dfd", [1] = "filename", [2] = "ufattr", [3] = "usize", [4] = "at_flags" },
 	.arg_params[4].list = ARGLIST(file_setattr_at_flags),
 	.sanitise = sanitise_file_setattr,
+	.cleanup = cleanup_file_setattr,
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_VFS,
 };
