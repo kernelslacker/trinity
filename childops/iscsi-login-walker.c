@@ -22,7 +22,7 @@
  *   Zero kernel-side BUG/Oops in that window.  The dispatcher coverage
  *   is bottlenecked on the framing, not the deeper logic.
  *
- * What this childop does in this commit:
+ * What this childop does:
  *
  *   INIT          open a nonblocking TCP connection to 127.0.0.1:3260
  *                 and send a Login Request PDU with CSG=0
