@@ -65,7 +65,14 @@ static void sanitise_getresgid(struct syscallrecord *rec)
 	snap->rgid = rec->a1;
 	snap->egid = rec->a2;
 	snap->sgid = rec->a3;
-	rec->post_state = (unsigned long) snap;
+	/*
+	 * post_state_install pairs the rec->post_state assign with the
+	 * ownership-table register so the observable window between the
+	 * two is closed; post_getresgid() will then gate the snap through
+	 * post_state_claim_owned() and prove ownership before
+	 * dereferencing any field.
+	 */
+	post_state_install(rec, snap);
 }
 
 /*
@@ -88,42 +95,19 @@ static void sanitise_getresgid(struct syscallrecord *rec)
  */
 static void post_getresgid(struct syscallrecord *rec)
 {
-	struct getresgid_post_state *snap =
-		(struct getresgid_post_state *) rec->post_state;
+	struct getresgid_post_state *snap;
 	unsigned long ids[4];
 	gid_t krgid, kegid, ksgid;
 
+	/*
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
+	 */
+	snap = post_state_claim_owned(rec, GETRESGID_POST_STATE_MAGIC, __func__);
 	if (snap == NULL)
 		return;
-
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_getresgid: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	/*
-	 * Magic-cookie check: snap survived the heap-shape gate but a
-	 * sibling scribble of rec->post_state with a heap-shaped pointer
-	 * to a foreign allocation would let the wrong bytes pose as a
-	 * getresgid_post_state.  A cookie mismatch means snap does not
-	 * point at our struct -- abandon rather than feed wild bytes into
-	 * the rgid / egid / sgid inner derefs.
-	 */
-	if (snap->magic != GETRESGID_POST_STATE_MAGIC) {
-		outputerr("post_getresgid: rejected snap with bad magic 0x%lx "
-			  "(post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
 
 	if (!ONE_IN(100))
 		goto out_free;
@@ -172,7 +156,7 @@ static void post_getresgid(struct syscallrecord *rec)
 	}
 
 out_free:
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_getresgid = {
