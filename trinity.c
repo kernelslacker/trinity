@@ -675,16 +675,19 @@ static void init_main_early(void)
 }
 
 /*
- * Init the run-time monitors (core_pattern surfacing, kmsg monitor,
- * taint-checker) and dispatch the early-exit dump modes that operate
- * purely on the parsed tables (--show-disabled-syscalls,
- * --show-syscall-list, --show-ioctl-list, --show-unannotated).  The
- * dump modes need init_taint_checking() to have run first because the
- * disabled-syscalls printer queries the taint-derived deny list, and
- * each dump-mode path is mutually exclusive with normal fuzzing.
- * Returned value tells main() whether to fall through to the next
- * init phase or short-circuit to the out: label, with EXIT_FAILURE
- * reserved for the munge_tables() error path.
+ * Surface core_pattern, init the taint-checker, and dispatch
+ * --show-disabled-syscalls before munge_tables() rewrites the active
+ * set.  The disabled-syscalls printer is documented as querying the
+ * taint-derived deny list, so init_taint_checking() runs first.
+ * kmsg_monitor_start() lives at its own call site in main() so the
+ * --show-disabled-syscalls path can satisfy the taint contract
+ * without spinning up the kmsg pthread.  The other early-exit dump
+ * modes (-L / --show-ioctl-list / --show-unannotated) are handled
+ * directly in main() right after parse_args because they need
+ * nothing beyond the syscall-table selection that init_main_process
+ * already performed.  Returned value tells main() whether to fall
+ * through to the next init phase or short-circuit to finalize_and_exit,
+ * with INIT_FAILED reserved for the munge_tables() error path.
  */
 enum init_action {
 	INIT_CONTINUE,
@@ -692,11 +695,9 @@ enum init_action {
 	INIT_FAILED,
 };
 
-static enum init_action init_monitors_and_handle_dump_modes(void)
+static enum init_action init_taint_and_handle_disabled_dump(void)
 {
 	print_core_pattern();
-
-	kmsg_monitor_start();
 
 	init_taint_checking();
 
@@ -707,16 +708,6 @@ static enum init_action init_monitors_and_handle_dump_modes(void)
 
 	if (munge_tables() == false)
 		return INIT_FAILED;
-
-	if (show_ioctl_list == true) {
-		dump_ioctls();
-		return INIT_DONE;
-	}
-
-	if (show_unannotated == true) {
-		show_unannotated_args();
-		return INIT_DONE;
-	}
 
 	return INIT_CONTINUE;
 }
@@ -890,14 +881,33 @@ int main(int argc, char* argv[])
 
 	parse_args(argc, argv);
 
-	/* -L (--list): emit the bare set of syscall names known on this
-	 * arch and exit before any heavy init.  Runs immediately after
-	 * parse_args (so we know -L was passed) and before create_shm /
-	 * self_cgroup_setup / init_pre_fork / generate_filelist, so the
-	 * dump is pipeable (`trinity -L | sort -u`) and has no side
-	 * effects -- no shm carve-out, no cgroup placement, no fs walk. */
+	/* Early-exit dump modes share a side-effect-free contract: emit
+	 * the requested data and exit before create_shm / self_cgroup_setup /
+	 * kmsg_monitor_start / init_pre_fork / generate_filelist.  Each
+	 * dump runs on state that init_main_process already populated
+	 * (syscall tables via select_syscall_tables; the ioctl-group
+	 * table via per-group __attribute__((constructor)) registrations;
+	 * argtype[] fields baked in at compile time), so none of them
+	 * need the heavier init phases. */
+
+	/* -L (--list): bare syscall names, one per line; pipeable
+	 * (`trinity -L | sort -u`). */
 	if (show_syscall_list == true) {
 		dump_syscall_tables();
+		exit(EXIT_SUCCESS);
+	}
+
+	/* --show-ioctl-list: dump every registered ioctl group. */
+	if (show_ioctl_list == true) {
+		dump_ioctls();
+		exit(EXIT_SUCCESS);
+	}
+
+	/* --show-unannotated: report syscalls with ARG_UNDEFINED entries
+	 * in their argtype[].  Biarch-only today; the uniarch branch of
+	 * show_unannotated_args() is an intentional no-op. */
+	if (show_unannotated == true) {
+		show_unannotated_args();
 		exit(EXIT_SUCCESS);
 	}
 
@@ -934,7 +944,7 @@ int main(int argc, char* argv[])
 
 	publish_and_persist_seed();
 
-	switch (init_monitors_and_handle_dump_modes()) {
+	switch (init_taint_and_handle_disabled_dump()) {
 	case INIT_CONTINUE:
 		break;
 	case INIT_FAILED:
@@ -943,6 +953,12 @@ int main(int argc, char* argv[])
 	case INIT_DONE:
 		finalize_and_exit(ret, false);
 	}
+
+	/* Start the kmsg monitor only on the fuzz path -- the early-exit
+	 * dump modes (handled above and right after parse_args) and the
+	 * --show-disabled-syscalls path all exit before reaching here,
+	 * so none of them pay for the pthread_create. */
+	kmsg_monitor_start();
 
 	init_pre_fork();
 
