@@ -192,6 +192,20 @@ int get_new_random_fd(void)
 
 retry:
 	provider = active_providers[rnd_modulo_u32(num_active_providers)];
+	/*
+	 * active_providers[] is filled once at init and every registered
+	 * provider has a non-NULL ->get, so a NULL draw means the zmalloc'd
+	 * pool (or num_active_providers) was scribbled by an out-of-bounds
+	 * write elsewhere.  Bump a canary and re-draw within the retry budget
+	 * instead of dereferencing the wild slot and crashing in ->get().
+	 */
+	if (provider == NULL || provider->get == NULL) {
+		__atomic_add_fetch(&shm->stats.fd_provider_invalid, 1,
+				   __ATOMIC_RELAXED);
+		if (++retries < 10)
+			goto retry;
+		return -1;
+	}
 	fd = provider->get();
 	if (fd >= 0 && fd <= 2) {
 		if (++retries < 10)

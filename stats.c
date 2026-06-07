@@ -1488,7 +1488,8 @@ static void dump_stats_json_fault_and_fd_lifecycle(void)
 			"\"local_hash_insert_dropped\":%lu,"
 			"\"runtime_registered\":%lu,\"epoll_lazy_armed\":%lu,"
 			"\"epoll_blocking_poll_skipped\":%lu,"
-			"\"random_exhausted\":%lu},",
+			"\"random_exhausted\":%lu,"
+			"\"provider_invalid\":%lu},",
 		parent_stats.fault_injected, parent_stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
 		shm->stats.fd_closed_tracked, shm->stats.fd_regenerated,
@@ -1500,7 +1501,8 @@ static void dump_stats_json_fault_and_fd_lifecycle(void)
 		shm->stats.fd_runtime_registered,
 		shm->stats.epoll_lazy_armed,
 		shm->stats.epoll_blocking_poll_skipped,
-		shm->stats.fd_random_exhausted);
+		shm->stats.fd_random_exhausted,
+		shm->stats.fd_provider_invalid);
 }
 
 static void dump_stats_json_oracle(void)
@@ -4088,7 +4090,8 @@ static void dump_stats_fd_tracking(void)
 	    shm->stats.local_fd_hash_insert_dropped ||
 	    shm->stats.epoll_lazy_armed ||
 	    shm->stats.epoll_blocking_poll_skipped ||
-	    shm->stats.fd_random_exhausted) {
+	    shm->stats.fd_random_exhausted ||
+	    shm->stats.fd_provider_invalid) {
 		stat_row("fd_lifecycle", "stale_detected",      shm->stats.fd_stale_detected);
 		stat_row("fd_lifecycle", "stale_by_generation", shm->stats.fd_stale_by_generation);
 		stat_row("fd_lifecycle", "closed_tracked",      shm->stats.fd_closed_tracked);
@@ -4105,6 +4108,7 @@ static void dump_stats_fd_tracking(void)
 		stat_row("fd_lifecycle", "epoll_blocking_poll_skipped",
 			 shm->stats.epoll_blocking_poll_skipped);
 		stat_row("fd_lifecycle", "random_exhausted",    shm->stats.fd_random_exhausted);
+		stat_row("fd_lifecycle", "provider_invalid",    shm->stats.fd_provider_invalid);
 	}
 
 	/*

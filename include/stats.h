@@ -1615,6 +1615,16 @@ struct stats_s {
 	 * or persistently returning untracked/<=2 fds. */
 	unsigned long fd_random_exhausted;
 
+	/* get_new_random_fd() drew a NULL entry from active_providers[] (or a
+	 * provider with a NULL ->get).  Every registered provider has a
+	 * non-NULL compile-time ->get and the pool is filled once at init, so
+	 * a NULL here means the zmalloc'd active_providers array (or
+	 * num_active_providers) was scribbled by an out-of-bounds write
+	 * elsewhere -- a heap-corruption canary, not a normal condition.  The
+	 * draw is retried within the existing inner budget; persistent
+	 * non-zero is a strong corruption signal. */
+	unsigned long fd_provider_invalid;
+
 	/* fd_hash_reinsert() exhausted the linear-probe chain without
 	 * finding a free slot and silently dropped the displaced entry.
 	 * Only reachable when fd_hash_count == FD_HASH_SIZE; non-zero
