@@ -870,7 +870,6 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 				memset(data_buf, 0xff, data_sz);  /* -1 fill */
 		} else {
 			data_buf = alloc_iovec(nr, IOV_KERNEL_WRITE);
-			data_sz = nr * sizeof(struct iovec);
 		}
 		tags_buf = get_writable_struct(nr * sizeof(__u64));
 		if (tags_buf)
@@ -914,7 +913,6 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 				memset(data_buf, 0xff, data_sz);
 		} else {
 			data_buf = alloc_iovec(nr, IOV_KERNEL_WRITE);
-			data_sz = nr * sizeof(struct iovec);
 		}
 		tags_buf = get_writable_struct(nr * sizeof(__u64));
 		if (tags_buf)
