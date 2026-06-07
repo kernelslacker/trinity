@@ -1043,6 +1043,17 @@ static const struct stat_category af_alg_weak_cipher_probe_category =
 	              af_alg_weak_cipher_probe_runs,
 	              af_alg_weak_cipher_probe_fields);
 
+static const struct stat_field bridge_conntrack_churn_fields[] = {
+	STAT_FIELD(bridge_ct, runs),
+	STAT_FIELD(bridge_ct, flushes),
+	STAT_FIELD(bridge_ct, pkts_sent),
+};
+
+static const struct stat_category bridge_conntrack_churn_category =
+	STAT_CATEGORY("bridge_conntrack_churn",
+	              bridge_ct_runs,
+	              bridge_conntrack_churn_fields);
+
 static const struct stat_field pci_bind_fields[] = {
 	STAT_FIELD(pci_bind, runs),
 	STAT_FIELD(pci_bind, drivers_available),
@@ -1708,8 +1719,7 @@ static void dump_stats_json_socket_family_and_tls(void)
 	printf("\"packet_fanout_thrash\":{\"runs\":%lu,\"setup_failed\":%lu,\"ring_failed\":%lu,\"rings_installed\":%lu,\"mmap_failed\":%lu,\"joins\":%lu,\"rejoins_ok\":%lu,\"rejoins_rejected\":%lu},"
 		"\"eth_emitter\":{\"runs\":%lu,\"setup_failed\":%lu,\"short\":%lu,\"sends_ok\":%lu,\"sends_failed\":%lu,\"tmpl_arp\":%lu,\"tmpl_ipv4_frag_zero\":%lu,\"tmpl_ipv6_na\":%lu,\"tmpl_vlan_qinq\":%lu,\"tmpl_bad_ethertype\":%lu},"
 		"\"iouring_net_multishot\":{\"runs\":%lu,\"setup_failed\":%lu,\"pbuf_ring_ok\":%lu,\"pbuf_legacy_ok\":%lu,\"armed\":%lu,\"packets_sent\":%lu,\"completions\":%lu,\"cancel_submitted\":%lu,\"napi_register_ok\":%lu,\"napi_register_fail\":%lu,\"napi_unregister_ok\":%lu,\"napi_unregister_fail\":%lu},"
-		"\"bridge_fdb_stp\":{\"runs\":%lu,\"setup_failed\":%lu,\"bridge_create_ok\":%lu,\"veth_create_ok\":%lu,\"raw_send_ok\":%lu,\"stp_toggle_ok\":%lu,\"fdb_del_ok\":%lu,\"link_del_ok\":%lu,\"vlan_mass_runs\":%lu,\"vlan_mass_max_n\":%lu,\"vlan_mass_enotbufs\":%lu},"
-		"\"bridge_conntrack_churn\":{\"runs\":%lu,\"flushes\":%lu,\"pkts_sent\":%lu},",
+		"\"bridge_fdb_stp\":{\"runs\":%lu,\"setup_failed\":%lu,\"bridge_create_ok\":%lu,\"veth_create_ok\":%lu,\"raw_send_ok\":%lu,\"stp_toggle_ok\":%lu,\"fdb_del_ok\":%lu,\"link_del_ok\":%lu,\"vlan_mass_runs\":%lu,\"vlan_mass_max_n\":%lu,\"vlan_mass_enotbufs\":%lu},",
 		shm->stats.packet_fanout_runs,
 		shm->stats.packet_fanout_setup_failed,
 		shm->stats.packet_fanout_ring_failed,
@@ -1750,10 +1760,7 @@ static void dump_stats_json_socket_family_and_tls(void)
 		shm->stats.bridge_fdb_stp_link_del_ok,
 		shm->stats.bridge_vlan_mass_runs,
 		shm->stats.bridge_vlan_mass_max_n,
-		shm->stats.bridge_vlan_mass_enotbufs,
-		shm->stats.bridge_ct_runs,
-		shm->stats.bridge_ct_flushes,
-		shm->stats.bridge_ct_pkts_sent);
+		shm->stats.bridge_vlan_mass_enotbufs);
 }
 
 static void dump_stats_json_netfilter_and_xfrm(void)
@@ -2311,6 +2318,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&af_alg_weak_cipher_probe_category);
+
+	printf(",");
+	stat_category_emit_json(&bridge_conntrack_churn_category);
 
 	dump_stats_json_iouring_zc_and_kvm();
 	dump_stats_json_rxrpc_alg_ublk_block();
@@ -4942,11 +4952,7 @@ static void dump_stats_childop_runs_network(void)
 		stat_row("bridge_fdb_stp", "vlan_mass_enotbufs", shm->stats.bridge_vlan_mass_enotbufs);
 	}
 
-	if (shm->stats.bridge_ct_runs) {
-		stat_row("bridge_conntrack_churn", "runs",      shm->stats.bridge_ct_runs);
-		stat_row("bridge_conntrack_churn", "flushes",   shm->stats.bridge_ct_flushes);
-		stat_row("bridge_conntrack_churn", "pkts_sent", shm->stats.bridge_ct_pkts_sent);
-	}
+	stat_category_emit_text(&bridge_conntrack_churn_category);
 
 	if (shm->stats.nftables_churn_runs) {
 		stat_row("nftables_churn", "runs",             shm->stats.nftables_churn_runs);
