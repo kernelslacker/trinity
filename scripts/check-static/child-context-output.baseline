@@ -153,9 +153,7 @@ syscalls/getsockopt.c:128:post_getsockopt
 syscalls/getsockopt.c:137:post_getsockopt
 syscalls/gettid.c:33:post_gettid
 syscalls/gettid.c:48:post_gettid
-syscalls/gettimeofday.c:135:post_gettimeofday
-syscalls/gettimeofday.c:150:post_gettimeofday
-syscalls/gettimeofday.c:178:post_gettimeofday
+syscalls/gettimeofday.c:156:post_gettimeofday
 syscalls/getuid.c:38:post_getuid
 syscalls/getuid.c:59:post_getuid
 syscalls/getxattrat.c:133:post_getxattrat

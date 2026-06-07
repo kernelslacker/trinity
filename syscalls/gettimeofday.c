@@ -80,7 +80,7 @@ static void sanitise_gettimeofday(struct syscallrecord *rec)
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = GETTIMEOFDAY_POST_STATE_MAGIC;
 	snap->tv = rec->a1;
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 }
 
 /*
@@ -117,43 +117,21 @@ static void sanitise_gettimeofday(struct syscallrecord *rec)
  */
 static void post_gettimeofday(struct syscallrecord *rec)
 {
-	struct gettimeofday_post_state *snap =
-		(struct gettimeofday_post_state *) rec->post_state;
+	struct gettimeofday_post_state *snap;
 	struct timeval local_tv;
 	struct timespec ts;
 	long diff;
 
+	/*
+	 * Canonical ownership bracket: shape -> ownership -> magic, in that
+	 * order.  post_state_claim_owned() has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption counter
+	 * on failure -- just early-return on NULL.
+	 */
+	snap = post_state_claim_owned(rec, GETTIMEOFDAY_POST_STATE_MAGIC,
+				      __func__);
 	if (snap == NULL)
 		return;
-
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_gettimeofday: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	/*
-	 * Magic-cookie check: snap survived the heap-shape gate but a
-	 * sibling scribble of rec->post_state with a heap-shaped pointer
-	 * to a foreign allocation would let the wrong bytes pose as a
-	 * gettimeofday_post_state.  A cookie mismatch means snap does not
-	 * point at our struct -- abandon rather than feed wild bytes into
-	 * the inner-field deref.  Mirrors recv.c post_recvmsg.
-	 */
-	if (snap->magic != GETTIMEOFDAY_POST_STATE_MAGIC) {
-		outputerr("post_gettimeofday: rejected snap with bad magic 0x%lx "
-			  "(post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
 
 	if (!ONE_IN(100))
 		goto out_free;
@@ -182,7 +160,7 @@ static void post_gettimeofday(struct syscallrecord *rec)
 	}
 
 out_free:
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_gettimeofday = {
