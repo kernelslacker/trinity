@@ -274,6 +274,32 @@ struct results {
 struct syscallentry {
 	void (*sanitise)(struct syscallrecord *rec);
 	void (*post)(struct syscallrecord *rec);
+	/*
+	 * Unconditional per-syscall teardown hook.  Runs exactly once per
+	 * dispatched call, from the tail of handle_syscall_ret(), AFTER
+	 * .post and BEFORE generic_free_arg() recycles the argtype-owned
+	 * buffers.  Unlike .post, .cleanup does NOT gate on state == AFTER
+	 * or on the retfd / rzs rejection flags: it fires on success, on
+	 * failure, on the validator_rejected early-EINVAL skip, on the
+	 * --dry-run synthesised ENOSYS path, and on the EXTRA_FORK
+	 * grandchild that died before reaching AFTER.  This is the home for
+	 * sanitiser-owned frees -- buffers the sanitiser allocated and
+	 * stashed in rec (typically via rec->post_state, which is private
+	 * to the post / cleanup pair and less stomp-prone than the rec->aN
+	 * syscall slots).  Moving these frees out of pre-dispatch
+	 * deferred_free_enqueue_or_leak() and out of .post lets .post stay
+	 * a pure successful-result inspector (close the returned fd,
+	 * publish_resource(), mq_unlink the named queue, ...) while
+	 * .cleanup owns the deterministic teardown.
+	 *
+	 * Implementation pattern: stash the canonical pointer in
+	 * rec->post_state at sanitise time, defend the cleanup-time deref
+	 * with looks_like_corrupted_ptr() (or a *_POST_STATE_MAGIC cookie
+	 * compare for snap structs), and call tracked_free_now() rather
+	 * than raw free() for zmalloc_tracked() pointers so the alloc-track
+	 * side-set stays in lock-step with the heap.
+	 */
+	void (*cleanup)(struct syscallrecord *rec);
 	int (*init)(void);
 	char * (*decode)(struct syscallrecord *rec, unsigned int argnum);
 

@@ -105,24 +105,58 @@ static void sanitise_io_uring_setup(struct syscallrecord *rec)
 	avoid_shared_buffer_inout(&rec->a2, sizeof(struct io_uring_params));
 
 	/*
-	 * Hand the snap to the deferred-free queue at sanitise time so cleanup
-	 * is independent of whether the .post handler ever runs.  When
-	 * reject_corrupt_retfd() flags retfd, handle_syscall_ret() skips .post
-	 * entirely, and a post-side free would leak the snap.
+	 * Stash the canonical params pointer in rec->post_state so the
+	 * .cleanup hook can free it independent of whether .post ran (the
+	 * retfd_rejected / rzs_rejected gates in handle_syscall_ret() skip
+	 * .post entirely; .cleanup is unconditional).  post_state is private
+	 * to the post / cleanup pair and less stomp-prone than rec->a2,
+	 * which the syscall-arg ABI exposes to sibling value-result writes.
+	 * The kernel only reads params synchronously during the syscall
+	 * (no async lifetime past return), so a deterministic post-dispatch
+	 * free in .cleanup replaces the pre-dispatch
+	 * deferred_free_enqueue_or_leak() that owned the lifecycle before.
 	 */
-	deferred_free_enqueue_or_leak(params);
+	rec->post_state = (unsigned long) params;
 }
 
 static void post_io_uring_setup(struct syscallrecord *rec)
 {
-	int fd = rec->retval;
-
-	rec->a2 = 0;
-
 	if ((long)rec->retval < 0)
 		return;
 
-	publish_resource(OBJ_FD_IO_URING, fd, NULL);
+	publish_resource(OBJ_FD_IO_URING, (int)rec->retval, NULL);
+}
+
+static void cleanup_io_uring_setup(struct syscallrecord *rec)
+{
+	struct io_uring_params *params =
+		(struct io_uring_params *) rec->post_state;
+
+	rec->post_state = 0;
+	rec->a2 = 0;
+
+	if (params == NULL)
+		return;
+
+	/*
+	 * post_state is not exposed as a syscall arg, but the whole
+	 * syscallrecord can still be wholesale-stomped by a sibling.  A
+	 * shape-failing pointer is leaked rather than freed -- matches the
+	 * old deferred_free_enqueue_or_leak() pressure-path behaviour
+	 * (bounded leak reclaimed at child exit) and is strictly safer
+	 * than calling free() on a foreign / pid-shaped address.
+	 */
+	if (looks_like_corrupted_ptr(rec, params))
+		return;
+
+	/*
+	 * params came from zmalloc_tracked(), which registered the pointer
+	 * in the alloc-track LRU.  tracked_free_now() removes it from the
+	 * ring and calls free() in one step; a raw free() would leave the
+	 * alloc-track side-set claiming the address is still live and
+	 * mislead subsequent alloc_track_lookup() callers.
+	 */
+	tracked_free_now(params);
 }
 
 struct syscallentry syscall_io_uring_setup = {
@@ -136,4 +170,5 @@ struct syscallentry syscall_io_uring_setup = {
 	.flags = NEED_ALARM | KCOV_REMOTE_HEAVY,
 	.sanitise = sanitise_io_uring_setup,
 	.post = post_io_uring_setup,
+	.cleanup = cleanup_io_uring_setup,
 };

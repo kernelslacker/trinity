@@ -1299,5 +1299,31 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 	 * leaking. */
 	check_uid();
 
+	/* Unconditional per-syscall .cleanup hook.  Fires exactly once
+	 * per dispatched call -- handle_syscall_ret() is the single
+	 * funnel every syscall flows through, with no early returns
+	 * between the dispatch tail and this point.  No state == AFTER
+	 * gate: cleanup MUST run on the validator_rejected early-EINVAL
+	 * skip (state IS AFTER, synthesised in __do_syscall), on the
+	 * --dry-run synthesised ENOSYS path (same), AND on the
+	 * EXTRA_FORK grandchild that was SIGKILL'd before AFTER (state
+	 * stays at whatever the previous syscall left it at) -- all
+	 * three paths still allocated sanitiser-owned buffers in
+	 * generate_syscall_args() that must be reclaimed.  No
+	 * retfd_rejected / rzs_rejected gate either: cleanup is
+	 * teardown, not result interpretation, so a fabricated retval
+	 * does not change what needs freeing.
+	 *
+	 * Ordering: AFTER entry->post (which interprets the kernel
+	 * return -- closes a returned fd, calls publish_resource,
+	 * mq_unlinks the named queue) and BEFORE generic_free_arg()
+	 * (which runs the per-argtype cleanup for ARG_PATHNAME /
+	 * ARG_IOVEC / ARG_SOCKADDR slots).  This lets .post stay a
+	 * pure successful-result inspector while .cleanup owns the
+	 * syscall-level teardown that used to be conflated into
+	 * pre-dispatch deferred_free_enqueue_or_leak() and into .post. */
+	if (entry->cleanup != NULL)
+		entry->cleanup(rec);
+
 	generic_free_arg(entry, rec);
 }
