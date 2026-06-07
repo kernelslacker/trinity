@@ -572,12 +572,14 @@ static void publish_and_persist_seed(void)
 
 /*
  * Process bootstrap: stdio buffering, progname/mainpid capture,
- * RLIMIT_NOFILE probe with a 1024 fallback, NUMA enumeration, syscall
- * table selection, and the initial shm carve-out.  Runs as the very
- * first work after entry, before parse_args, because every later
- * helper (parser included) depends on at least one of these globals.
- * Sets the default max_children = num_online_cpus * 4; parse_args may
- * override it, and clamp_default_max_children() applies any caps.
+ * RLIMIT_NOFILE probe with a 1024 fallback, NUMA enumeration, and
+ * syscall table selection.  Runs as the very first work after entry,
+ * before parse_args, because every later helper (parser included)
+ * depends on at least one of these globals.  Sets the default
+ * max_children = num_online_cpus * 4; parse_args may override it,
+ * and clamp_default_max_children() applies any caps.  The shm
+ * carve-out is deferred to main() so the -L (--list) bare-name
+ * dump can run and exit without touching any shared state.
  */
 static void init_main_process(char *argv[])
 {
@@ -602,8 +604,6 @@ static void init_main_process(char *argv[])
 	init_numa_nodes();
 
 	select_syscall_tables();
-
-	create_shm();
 }
 
 /*
@@ -707,11 +707,6 @@ static enum init_action init_monitors_and_handle_dump_modes(void)
 
 	if (munge_tables() == false)
 		return INIT_FAILED;
-
-	if (show_syscall_list == true) {
-		dump_syscall_tables();
-		return INIT_DONE;
-	}
 
 	if (show_ioctl_list == true) {
 		dump_ioctls();
@@ -894,6 +889,19 @@ int main(int argc, char* argv[])
 	sanitize_inherited_fds();
 
 	parse_args(argc, argv);
+
+	/* -L (--list): emit the bare set of syscall names known on this
+	 * arch and exit before any heavy init.  Runs immediately after
+	 * parse_args (so we know -L was passed) and before create_shm /
+	 * self_cgroup_setup / init_pre_fork / generate_filelist, so the
+	 * dump is pipeable (`trinity -L | sort -u`) and has no side
+	 * effects -- no shm carve-out, no cgroup placement, no fs walk. */
+	if (show_syscall_list == true) {
+		dump_syscall_tables();
+		exit(EXIT_SUCCESS);
+	}
+
+	create_shm();
 
 	/* Capture PIE/DSO load bases now, before any fork, so post-mortem
 	 * symbolize of a raw IP from a bug log or FAULT! line is a

@@ -350,41 +350,31 @@ void dump_syscall_tables_biarch(void)
 	struct syscallentry *entry;
 	unsigned int i;
 
-	outputstd("syscalls: %d [32-bit]\n", max_nr_32bit_syscalls);
-	outputstd("syscalls: %d [64-bit]\n", max_nr_64bit_syscalls);
-
 	for_each_32bit_syscall(i) {
 		entry = syscalls_32bit[i].entry;
 		if (entry == NULL)
 			continue;
-
-		outputstd("entrypoint %d %s : [32-bit] ",
-			entry->number, entry->name);
-		show_state(entry->flags & ACTIVE);
-
 		if (entry->flags & AVOID_SYSCALL)
-			outputstd(" AVOID");
-		if (entry->flags & NEEDS_ROOT)
-			outputstd(" NEEDS_ROOT");
+			continue;
+		/* Skip placeholder names that contain whitespace
+		 * (e.g. "ni_syscall (generic)"); they don't round-trip
+		 * through `trinity -c <name>`. */
+		if (strchr(entry->name, ' ') != NULL)
+			continue;
 
-		outputstd("\n");
+		outputstd("%s\n", entry->name);
 	}
 
 	for_each_64bit_syscall(i) {
 		entry = syscalls_64bit[i].entry;
 		if (entry == NULL)
 			continue;
-
-		outputstd("entrypoint %d %s : [64-bit] ",
-			entry->number, entry->name);
-		show_state(entry->flags & ACTIVE);
-
 		if (entry->flags & AVOID_SYSCALL)
-			outputstd(" AVOID");
-		if (entry->flags & NEEDS_ROOT)
-			outputstd(" NEEDS_ROOT");
+			continue;
+		if (strchr(entry->name, ' ') != NULL)
+			continue;
 
-		outputstd("\n");
+		outputstd("%s\n", entry->name);
 	}
 }
 

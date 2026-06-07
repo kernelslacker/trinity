@@ -446,14 +446,6 @@ void deactivate_disabled_syscalls(void)
 		deactivate_disabled_syscalls_uniarch();
 }
 
-void show_state(unsigned int state)
-{
-	if (state)
-		outputstd("Enabled");
-	else
-		outputstd("Disabled");
-}
-
 void dump_syscall_tables(void)
 {
 	if (biarch == true)

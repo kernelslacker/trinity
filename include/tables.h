@@ -52,7 +52,6 @@ void deactivate_syscall_uniarch(unsigned int calln);
 void deactivate_syscall32(unsigned int calln);
 void deactivate_syscall64(unsigned int calln);
 
-void show_state(unsigned int state);
 void dump_syscall_tables(void);
 void dump_syscall_tables_uniarch(void);
 void dump_syscall_tables_biarch(void);

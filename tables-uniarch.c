@@ -160,21 +160,20 @@ void dump_syscall_tables_uniarch(void)
 {
 	unsigned int i;
 
-	outputstd("syscalls: %d\n", max_nr_syscalls);
-
 	for_each_syscall(i) {
 		struct syscallentry *entry = syscalls[i].entry;
 
 		if (entry == NULL)
 			continue;
-
-		outputstd("entrypoint %d %s : ", entry->number, entry->name);
-		show_state(entry->flags & ACTIVE);
 		if (entry->flags & AVOID_SYSCALL)
-			outputstd(" AVOID");
-		if (entry->flags & NEEDS_ROOT)
-			outputstd(" NEEDS_ROOT");
-		outputstd("\n");
+			continue;
+		/* Skip placeholder names that contain whitespace
+		 * (e.g. "ni_syscall (generic)"); they don't round-trip
+		 * through `trinity -c <name>`. */
+		if (strchr(entry->name, ' ') != NULL)
+			continue;
+
+		outputstd("%s\n", entry->name);
 	}
 }
 

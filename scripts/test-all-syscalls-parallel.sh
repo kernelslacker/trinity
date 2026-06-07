@@ -10,7 +10,7 @@ NR_CPUS=$(nproc)
 
 while true;
 do
-  $TRINITY_PATH/trinity -L | grep entrypoint | grep -v AVOID | awk '{ print $3 }' | sort -u | \
+  $TRINITY_PATH/trinity -L | sort -u | \
     xargs -P "$NR_CPUS" -I{} env MALLOC_CHECK_=2 $TRINITY_PATH/trinity -c {}
   check_tainted
 done
