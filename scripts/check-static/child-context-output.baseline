@@ -249,12 +249,8 @@ syscalls/munmap.c:172:post_munmap
 syscalls/munmap.c:205:post_munmap
 syscalls/munmap.c:268:post_munmap
 syscalls/nanosleep.c:13:post_nanosleep
-syscalls/newfstat.c:130:post_newfstat
-syscalls/newfstat.c:145:post_newfstat
-syscalls/newfstat.c:204:post_newfstat
-syscalls/newfstat.c:380:post_newfstatat
+syscalls/newfstat.c:181:post_newfstat
 syscalls/newfstat.c:395:post_newfstatat
-syscalls/newfstat.c:440:post_newfstatat
 syscalls/newlstat.c:153:post_newlstat
 syscalls/newstat.c:163:post_newstat
 syscalls/newuname.c:169:post_newuname
