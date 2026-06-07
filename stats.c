@@ -1155,6 +1155,22 @@ static const struct stat_category iouring_flood_category =
 	              iouring_runs,
 	              iouring_flood_fields);
 
+static const struct stat_field iouring_send_zc_churn_fields[] = {
+	STAT_FIELD(iouring_send_zc_churn, runs),
+	STAT_FIELD(iouring_send_zc_churn, setup_failed),
+	STAT_FIELD(iouring_send_zc_churn, register_bufs_ok),
+	STAT_FIELD(iouring_send_zc_churn, send_zc_ok),
+	STAT_FIELD(iouring_send_zc_churn, sendmsg_zc_ok),
+	STAT_FIELD(iouring_send_zc_churn, unregister_race_ok),
+	STAT_FIELD(iouring_send_zc_churn, update_race_ok),
+	STAT_FIELD(iouring_send_zc_churn, cqe_drained),
+};
+
+static const struct stat_category iouring_send_zc_churn_category =
+	STAT_CATEGORY("iouring_send_zc_churn",
+	              iouring_send_zc_churn_runs,
+	              iouring_send_zc_churn_fields);
+
 static const struct stat_field close_racer_fields[] = {
 	STAT_FIELD(close_racer, runs),
 	STAT_FIELD(close_racer, pairs),
@@ -1731,7 +1747,7 @@ static void dump_stats_json_netfilter_and_xfrm(void)
 
 static void dump_stats_json_iouring_zc_and_kvm(void)
 {
-	printf(",\"iouring_send_zc_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"register_bufs_ok\":%lu,\"send_zc_ok\":%lu,\"sendmsg_zc_ok\":%lu,\"unregister_race_ok\":%lu,\"update_race_ok\":%lu,\"cqe_drained\":%lu},"
+	printf(","
 		"\"vsock_transport_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bind_ok\":%lu,\"connect_ok\":%lu,\"send_ok\":%lu,\"buffer_size_ok\":%lu,\"timeout_ok\":%lu,\"get_cid_ok\":%lu,\"seq_eom_runs\":%lu,\"seq_eom_sends_ok\":%lu,\"seq_eom_sends_failed\":%lu,\"seq_eom_skipped\":%lu},"
 		"\"bridge_vlan_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bridge_create_ok\":%lu,\"veth_create_ok\":%lu,\"vlan_add_ok\":%lu,\"vlan_del_ok\":%lu,\"tunnel_add_ok\":%lu,\"mst_set_ok\":%lu,\"raw_send_ok\":%lu},"
 		"\"psp_key_rotate\":{\"runs\":%lu,\"setup_failed\":%lu,\"netdev_create_ok\":%lu,\"family_resolve_ok\":%lu,\"dev_get_ok\":%lu,\"key_install_ok\":%lu,\"spi_set_ok\":%lu,\"send_ok\":%lu,\"rotate_ok\":%lu,\"spi_switch_ok\":%lu,\"shutdown_ok\":%lu,\"devlink_port_churn_runs\":%lu,\"devlink_port_churn_port_add_ok\":%lu,\"devlink_port_churn_port_del_ok\":%lu,\"devlink_port_churn_vf_spawn_ok\":%lu,\"devlink_port_churn_unsupported_latched\":%lu},"
@@ -1741,14 +1757,6 @@ static void dump_stats_json_iouring_zc_and_kvm(void)
 		"\"nl80211\":{\"runs\":%lu,\"setup_failed\":%lu,\"scan_triggered\":%lu,\"connect_attempted\":%lu,\"connect_succeeded\":%lu,\"disconnect_attempted\":%lu,\"regdom_changed\":%lu,\"iface_created\":%lu,\"iface_destroyed\":%lu,\"bursts_sent\":%lu,\"pmsr_runs\":%lu,\"pmsr_ok\":%lu,\"admin_gate_runs\":%lu,\"admin_gate_eperm_ok\":%lu,\"admin_gate_unexpected\":%lu},"
 		"\"nat_t_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sa_added\":%lu,\"sa_deleted\":%lu,\"frames_sent\":%lu,\"xfrm6_setup_ok\":%lu,\"xfrm6_setup_fail\":%lu,\"xfrm6_sendto_runs\":%lu,\"xfrm6_delsa_races\":%lu},"
 		"\"splice_protocols\":{\"runs\":%lu,\"setup_failed\":%lu,\"chain_ok\":%lu,\"in_bytes\":%lu,\"out_bytes\":%lu,\"udp_encap_attempted\":%lu,\"tcp_repair_attempted\":%lu,\"packet_ring_attempted\":%lu,\"alg_attempted\":%lu,\"rxrpc_attempted\":%lu,\"msg_splice_pages_attempted\":%lu,\"msg_splice_pages_path_taken_inferred\":%lu},",
-		shm->stats.iouring_send_zc_churn_runs,
-		shm->stats.iouring_send_zc_churn_setup_failed,
-		shm->stats.iouring_send_zc_churn_register_bufs_ok,
-		shm->stats.iouring_send_zc_churn_send_zc_ok,
-		shm->stats.iouring_send_zc_churn_sendmsg_zc_ok,
-		shm->stats.iouring_send_zc_churn_unregister_race_ok,
-		shm->stats.iouring_send_zc_churn_update_race_ok,
-		shm->stats.iouring_send_zc_churn_cqe_drained,
 		shm->stats.vsock_transport_churn_runs,
 		shm->stats.vsock_transport_churn_setup_failed,
 		shm->stats.vsock_transport_churn_bind_ok,
@@ -2209,6 +2217,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&refcount_audit_category);
+
+	printf(",");
+	stat_category_emit_json(&iouring_send_zc_churn_category);
 
 	dump_stats_json_iouring_zc_and_kvm();
 	dump_stats_json_rxrpc_alg_ublk_block();
@@ -5058,16 +5069,7 @@ static void dump_stats_childop_runs_network(void)
 
 	stat_category_emit_text(&setsockopt_pairing_category);
 
-	if (shm->stats.iouring_send_zc_churn_runs) {
-		stat_row("iouring_send_zc_churn", "runs",               shm->stats.iouring_send_zc_churn_runs);
-		stat_row("iouring_send_zc_churn", "setup_failed",       shm->stats.iouring_send_zc_churn_setup_failed);
-		stat_row("iouring_send_zc_churn", "register_bufs_ok",   shm->stats.iouring_send_zc_churn_register_bufs_ok);
-		stat_row("iouring_send_zc_churn", "send_zc_ok",         shm->stats.iouring_send_zc_churn_send_zc_ok);
-		stat_row("iouring_send_zc_churn", "sendmsg_zc_ok",      shm->stats.iouring_send_zc_churn_sendmsg_zc_ok);
-		stat_row("iouring_send_zc_churn", "unregister_race_ok", shm->stats.iouring_send_zc_churn_unregister_race_ok);
-		stat_row("iouring_send_zc_churn", "update_race_ok",     shm->stats.iouring_send_zc_churn_update_race_ok);
-		stat_row("iouring_send_zc_churn", "cqe_drained",        shm->stats.iouring_send_zc_churn_cqe_drained);
-	}
+	stat_category_emit_text(&iouring_send_zc_churn_category);
 
 	if (shm->stats.vsock_transport_churn_runs) {
 		stat_row("vsock_transport_churn", "runs",           shm->stats.vsock_transport_churn_runs);
