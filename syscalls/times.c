@@ -3,7 +3,6 @@
  */
 #include <string.h>
 #include <sys/times.h>
-#include "deferred-free.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -44,11 +43,16 @@ static void sanitise_times(struct syscallrecord *rec)
 	 * cannot tell a real-but-wrong heap address from the original tbuf
 	 * user-buffer pointer, so the source memcpy would touch a foreign
 	 * allocation.  post_state is private to the post handler.
+	 * post_state_install pairs the rec->post_state assign with the
+	 * ownership-table register so the observable window between the
+	 * two is closed; post_times() will then gate the snap through
+	 * post_state_claim_owned() and prove ownership before dereferencing
+	 * any field.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = TIMES_POST_STATE_MAGIC;
 	snap->tbuf = rec->a1;
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 }
 
 /*
@@ -97,13 +101,20 @@ static void sanitise_times(struct syscallrecord *rec)
  */
 static void post_times(struct syscallrecord *rec)
 {
-	struct times_post_state *snap =
-		(struct times_post_state *) rec->post_state;
+	struct times_post_state *snap;
 	struct tms first, recall;
 	unsigned long retval;
 	clock_t syscall_r;
 	clock_t r;
 
+	/*
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
+	 */
+	snap = post_state_claim_owned(rec, TIMES_POST_STATE_MAGIC,
+				      __func__);
 	if (snap == NULL)
 		return;
 
@@ -122,52 +133,23 @@ static void post_times(struct syscallrecord *rec)
 	retval = rec->retval;
 	syscall_r = (clock_t) retval;
 
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_times: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	/*
-	 * Magic-cookie check: snap survived the heap-shape gate but a
-	 * sibling scribble of rec->post_state with a heap-shaped pointer
-	 * to a foreign allocation would let the wrong bytes pose as a
-	 * times_post_state.  A cookie mismatch means snap does not point
-	 * at our struct -- abandon rather than feed wild bytes into the
-	 * inner-field deref.  Mirrors recv.c post_recvmsg.
-	 */
-	if (snap->magic != TIMES_POST_STATE_MAGIC) {
-		outputerr("post_times: rejected snap with bad magic 0x%lx "
-			  "(post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
-
 	if (!ONE_IN(100))
-		goto out_free;
+		goto out_release;
 
 	if (syscall_r == (clock_t) -1)
-		goto out_free;
+		goto out_release;
 
 	if (snap->tbuf == 0)
-		goto out_free;
+		goto out_release;
 
 	if (!post_snapshot_or_skip(&first,
 				   (const void *)(unsigned long) snap->tbuf,
 				   sizeof(first)))
-		goto out_free;
+		goto out_release;
 
 	r = times(&recall);
 	if (r == (clock_t) -1)
-		goto out_free;
+		goto out_release;
 
 	if (r < syscall_r ||
 	    recall.tms_utime  < first.tms_utime  ||
@@ -185,8 +167,8 @@ static void post_times(struct syscallrecord *rec)
 				   __ATOMIC_RELAXED);
 	}
 
-out_free:
-	deferred_freeptr(&rec->post_state);
+out_release:
+	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_times = {
