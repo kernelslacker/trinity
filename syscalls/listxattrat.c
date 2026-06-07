@@ -9,7 +9,6 @@
 #include <unistd.h>
 #include <linux/limits.h>
 #include "arch.h"
-#include "deferred-free.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -118,7 +117,7 @@ static void sanitise_listxattrat(struct syscallrecord *rec)
 	snap->list     = rec->a4;
 	snap->size     = rec->a5;
 	snap->buf_alloc_size = buf_alloc_size;
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 #endif
 }
 
@@ -177,8 +176,7 @@ static void sanitise_listxattrat(struct syscallrecord *rec)
  */
 static void post_listxattrat(struct syscallrecord *rec)
 {
-	struct listxattrat_post_state *snap =
-		(struct listxattrat_post_state *) rec->post_state;
+	struct listxattrat_post_state *snap;
 	unsigned long retval = rec->retval;
 	int snap_dfd;
 	char snap_path[PATH_MAX];
@@ -188,29 +186,16 @@ static void post_listxattrat(struct syscallrecord *rec)
 	size_t snap_len;
 	long rc;
 
+	/*
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
+	 */
+	snap = post_state_claim_owned(rec, LISTXATTRAT_POST_STATE_MAGIC,
+				      __func__);
 	if (snap == NULL)
 		return;
-
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_listxattrat: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	if (snap->magic != LISTXATTRAT_POST_STATE_MAGIC) {
-		outputerr("post_listxattrat: rejected snap with bad magic "
-			  "0x%lx (post_state-stomped to foreign "
-			  "allocation?)\n", snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
 
 	/*
 	 * STRONG-VAL count bound: listxattrat(2) on success returns the
@@ -315,7 +300,7 @@ static void post_listxattrat(struct syscallrecord *rec)
 	}
 
 out_free:
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 #endif /* SYS_listxattrat || __NR_listxattrat */
 
