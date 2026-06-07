@@ -104,7 +104,15 @@ static void sanitise_mq_open(struct syscallrecord *rec)
 	 * cannot tell a real-but-wrong heap address from the original
 	 * name pointer in the writable-struct pool, so a foreign-heap
 	 * stomp slips the guard and mq_unlink runs against a foreign
-	 * string.  post_state is private to the post handler.
+	 * string.  post_state is private to the post / cleanup pair.
+	 *
+	 * The snap allocation is owned by the .cleanup hook, which runs
+	 * unconditionally after every dispatch outcome -- including paths
+	 * that skip .post (retfd_rejected / rzs_rejected gates in
+	 * handle_syscall_ret()).  cleanup_mq_open reads rec->post_state
+	 * and calls tracked_free_now(), so a deterministic post-dispatch
+	 * free replaces the pre-dispatch deferred_free_enqueue_or_leak()
+	 * that owned the lifecycle before.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = MQ_OPEN_POST_STATE_MAGIC;
@@ -113,16 +121,6 @@ static void sanitise_mq_open(struct syscallrecord *rec)
 	snap->mode  = rec->a3;
 	snap->attr  = rec->a4;
 	rec->post_state = (unsigned long) snap;
-
-	/*
-	 * Hand the snap to the deferred-free queue at sanitise time so cleanup
-	 * is independent of whether the .post handler ever runs.  When
-	 * reject_corrupt_retfd() flags retfd, handle_syscall_ret() skips .post
-	 * entirely, and a post-side free would leak the snap.  The post handler
-	 * still reads rec->post_state to drive same-iteration mq_unlink within
-	 * the deferred-queue TTL window, but no longer frees the snap itself.
-	 */
-	deferred_free_enqueue_or_leak(snap);
 }
 
 static void post_mq_open(struct syscallrecord *rec)
@@ -136,9 +134,13 @@ static void post_mq_open(struct syscallrecord *rec)
 		return;
 
 	/*
-	 * post_state is private to the post handler, but the whole
+	 * post_state is private to the post / cleanup pair, but the whole
 	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
+	 * snapshot pointer before dereferencing it.  Null post_state on
+	 * the abandon path so the unconditional .cleanup hook NULL-bails
+	 * and leaks the suspect allocation rather than handing a foreign
+	 * / pid-shaped address to tracked_free_now().  Bounded leak:
+	 * child exit reclaims it.
 	 */
 	if (looks_like_corrupted_ptr(rec, snap)) {
 		outputerr("post_mq_open: rejected suspicious post_state=%p (pid-scribbled?)\n",
@@ -153,10 +155,10 @@ static void post_mq_open(struct syscallrecord *rec)
 	 * to a foreign allocation would let the wrong bytes pose as a
 	 * mq_open_post_state.  A cookie mismatch means snap does not
 	 * point at our struct -- abandon rather than feed a wild pointer
-	 * to mq_unlink.  The snap is owned by the deferred-free queue
-	 * (enqueued at sanitise time), so do NOT free here even on the
-	 * abandon path: the pointer is suspect and the queue still holds
-	 * the original allocation for delayed reclamation.
+	 * to mq_unlink.  Null post_state on the abandon path so the
+	 * unconditional .cleanup hook NULL-bails and leaks the suspect
+	 * allocation rather than handing a foreign / pid-shaped address
+	 * to tracked_free_now().  Bounded leak: child exit reclaims it.
 	 */
 	if (snap->magic != MQ_OPEN_POST_STATE_MAGIC) {
 		outputerr("post_mq_open: rejected snap with bad magic 0x%lx "
@@ -209,11 +211,51 @@ static void post_mq_open(struct syscallrecord *rec)
 	 * arg slot in the TOCTOU window between guard and mq_unlink
 	 * cannot redirect this call at a foreign string.
 	 *
-	 * The snap buffer itself is owned by the deferred-free queue
-	 * (enqueued at sanitise time), so the post handler does not free
-	 * it here -- doing so would double-free.
+	 * The snap buffer itself is owned by the .cleanup hook (read from
+	 * rec->post_state, freed via tracked_free_now()), so the post
+	 * handler reads snap->name here but does not free snap -- doing
+	 * so would double-free against the cleanup-time release.
 	 */
 	mq_unlink((const char *) snap->name);
+}
+
+static void cleanup_mq_open(struct syscallrecord *rec)
+{
+	struct mq_open_post_state *snap =
+		(struct mq_open_post_state *) rec->post_state;
+
+	rec->post_state = 0;
+
+	/*
+	 * Do NOT zero rec->a1 here: a1 carries the name buffer pointer
+	 * returned by get_writable_struct(), which lives in a separate
+	 * pool with its own lifecycle (not the snap allocation).  Zeroing
+	 * it would drop the syscall-arg ABI's view of the input without
+	 * any matching free.
+	 */
+
+	if (snap == NULL)
+		return;
+
+	/*
+	 * post_state is not exposed as a syscall arg, but the whole
+	 * syscallrecord can still be wholesale-stomped by a sibling.  A
+	 * shape-failing pointer is leaked rather than freed -- matches
+	 * the old deferred_free_enqueue_or_leak() pressure-path behaviour
+	 * (bounded leak reclaimed at child exit) and is strictly safer
+	 * than calling free() on a foreign / pid-shaped address.
+	 */
+	if (looks_like_corrupted_ptr(rec, snap))
+		return;
+
+	/*
+	 * snap came from zmalloc_tracked(), which registered the pointer
+	 * in the alloc-track LRU.  tracked_free_now() removes it from the
+	 * ring and calls free() in one step; a raw free() would leave the
+	 * alloc-track side-set claiming the address is still live and
+	 * mislead subsequent alloc_track_lookup() callers.
+	 */
+	tracked_free_now(snap);
 }
 
 struct syscallentry syscall_mq_open = {
@@ -227,4 +269,5 @@ struct syscallentry syscall_mq_open = {
 	.ret_objtype = OBJ_FD_MQ,
 	.sanitise = sanitise_mq_open,
 	.post = post_mq_open,
+	.cleanup = cleanup_mq_open,
 };
