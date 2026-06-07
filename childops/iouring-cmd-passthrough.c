@@ -63,7 +63,7 @@
  *              backing file would risk concurrent corruption from a
  *              sibling.
  *
- *   fuse     — skipped in this commit.  fuse_uring_cmd handlers
+ *   fuse     — currently not implemented.  fuse_uring_cmd handlers
  *              (REGISTER / COMMIT_AND_FETCH) require a fuse session
  *              fd from a mount that trinity owns and pinned in a
  *              reusable way, and the fuse-side childops infrastructure
@@ -72,7 +72,7 @@
  *              would block the daemon or corrupt user data.  TODO:
  *              wire this up once a fuse-owning childop exists.
  *
- *   btrfs    — skipped in this commit.  btrfs_uring_cmd handlers
+ *   btrfs    — currently not implemented.  btrfs_uring_cmd handlers
  *              (ENCODED_READ / ENCODED_WRITE) require a btrfs file
  *              fd inside a mount trinity owns.  No trinity-owned
  *              btrfs mount infrastructure exists; operating against
@@ -237,7 +237,7 @@ static int find_unbound_loop(void)
  *
  * Returns true if at least one loop-backed nvme controller is
  * present.  The caller does not currently use the controller
- * identifier — the nvme variant is stub-only in this commit (see
+ * identifier — the nvme variant is currently stub-only (see
  * file header) — but the probe still runs so the surface presence
  * is logged for the eventual SQE128-enabled implementation.
  */
