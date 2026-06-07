@@ -1754,12 +1754,9 @@ static void mutate_dispatch_one(unsigned char *buf,
  * child sub-buffer reachable via FT_PTR_STRUCT, not the top-level buf).
  * Bumps the per-tag attribution stash before returning so the next
  * minicorpus_mut_attrib_commit folds the trial into the per-tag
- * histogram.  No gate roll -- callers (public entry point +
- * self-test) own the gating decision.  Returns the winning candidate
- * for the self-test's invariant assertions; NULL when no mutable
- * candidate existed across the whole reachable chain.
+ * histogram.  No gate roll -- callers own the gating decision.
  */
-static const struct mutate_candidate *
+static void
 mutate_one_unconditional(unsigned char *buf, unsigned int size,
 			 const struct struct_desc *desc,
 			 struct syscallrecord *rec)
@@ -1771,15 +1768,14 @@ mutate_one_unconditional(unsigned char *buf, unsigned int size,
 	n_cands = collect_mutable_candidates(buf, size, desc, rec, 0,
 					     cands, STRUCT_MUTATE_MAX_CANDIDATES);
 	if (n_cands == 0)
-		return NULL;
+		return;
 
 	winner = weighted_pick_candidate(cands, n_cands);
 	if (winner == NULL)
-		return NULL;
+		return;
 
 	mutate_dispatch_one(winner->buf, winner->field);
 	minicorpus_struct_field_attrib(winner->field->tag);
-	return winner;
 }
 
 /*
@@ -1793,9 +1789,9 @@ mutate_one_unconditional(unsigned char *buf, unsigned int size,
  *
  * One field per call keeps the change atomic so a coverage win
  * attributes to a single (tag, field) pair instead of being smeared
- * across a whole-buffer re-roll.  Depth 1 only -- recursive candidate
- * collection for FT_PTR_STRUCT children is not yet modeled; widening
- * the surface area waits on a per-tag counter histogram to justify it.
+ * across a whole-buffer re-roll.  Candidate collection recurses through
+ * FT_PTR_STRUCT children up to STRUCT_MUTATE_DEPTH_CAP, so the winning
+ * field may live in a sub-buffer rather than the top-level buf.
  */
 void struct_field_mutate_one(unsigned char *buf, unsigned int size,
 			     const struct struct_desc *desc,
@@ -1803,7 +1799,7 @@ void struct_field_mutate_one(unsigned char *buf, unsigned int size,
 {
 	if (rnd_modulo_u32(100) >= STRUCT_FIELD_MUTATE_PCT)
 		return;
-	(void) mutate_one_unconditional(buf, size, desc, rec);
+	mutate_one_unconditional(buf, size, desc, rec);
 }
 
 /*
