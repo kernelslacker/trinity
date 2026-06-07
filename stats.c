@@ -5472,6 +5472,8 @@ static void dump_stats_kcov_block(void)
 
 		/* Find top 10 edge-producing syscalls via insertion sort. */
 		unsigned int nr_syscalls_to_scan = biarch ? max_nr_64bit_syscalls : max_nr_syscalls;
+		if (nr_syscalls_to_scan > MAX_NR_SYSCALL)
+			nr_syscalls_to_scan = MAX_NR_SYSCALL;
 		const struct syscalltable *table = biarch ? syscalls_64bit : syscalls;
 
 		memset(top_edges, 0, sizeof(top_edges));
