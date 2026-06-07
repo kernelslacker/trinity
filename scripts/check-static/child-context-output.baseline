@@ -294,14 +294,10 @@ syscalls/pselect6.c:236:post_pselect6
 syscalls/ptrace.c:276:post_ptrace
 syscalls/ptrace.c:292:post_ptrace
 syscalls/ptrace.c:308:post_ptrace
-syscalls/readlink.c:160:post_readlink
-syscalls/readlink.c:176:post_readlink
-syscalls/readlink.c:199:post_readlink
-syscalls/readlink.c:253:post_readlink
-syscalls/readlink.c:418:post_readlinkat
-syscalls/readlink.c:434:post_readlinkat
+syscalls/readlink.c:175:post_readlink
+syscalls/readlink.c:229:post_readlink
+syscalls/readlink.c:412:post_readlinkat
 syscalls/readlink.c:458:post_readlinkat
-syscalls/readlink.c:504:post_readlinkat
 syscalls/recv.c:129:post_recvfrom
 syscalls/recv.c:137:post_recvfrom
 syscalls/recv.c:395:post_recvmsg

@@ -7,7 +7,6 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include "arch.h"
-#include "deferred-free.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -87,7 +86,7 @@ static void sanitise_readlink(struct syscallrecord *rec)
 	if (!post_snapshot_str(snap->path, sizeof(snap->path),
 			       (const char *)(unsigned long) rec->a1))
 		snap->path[0] = '\0';
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 #endif
 }
 
@@ -139,8 +138,7 @@ static void sanitise_readlink(struct syscallrecord *rec)
  */
 static void post_readlink(struct syscallrecord *rec)
 {
-	struct readlink_post_state *snap =
-		(struct readlink_post_state *) rec->post_state;
+	struct readlink_post_state *snap;
 	unsigned long retval = rec->retval;
 	long ret = (long) retval;
 	unsigned char first_buf[4096];
@@ -148,38 +146,16 @@ static void post_readlink(struct syscallrecord *rec)
 	size_t snap_len;
 	long rc;
 
+	/*
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
+	 */
+	snap = post_state_claim_owned(rec, READLINK_POST_STATE_MAGIC,
+				      __func__);
 	if (snap == NULL)
 		return;
-
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_readlink: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	/*
-	 * Magic-cookie check: snap survived the heap-shape gate but a
-	 * sibling scribble of rec->post_state with a heap-shaped pointer
-	 * to a foreign allocation would let the wrong bytes pose as a
-	 * readlink_post_state.  A cookie mismatch means snap does not
-	 * point at our struct -- abandon rather than feed wild bytes into
-	 * the bufsiz strong-val gate, the path strncpy, the source memcpy
-	 * of the user buffer, and the syscall<->syscall byte compare.
-	 */
-	if (snap->magic != READLINK_POST_STATE_MAGIC) {
-		outputerr("post_readlink: rejected snap with bad magic 0x%lx "
-			  "(post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
 
 	/*
 	 * STRONG-VAL count bound: readlink(2) on success returns the number
@@ -258,7 +234,7 @@ static void post_readlink(struct syscallrecord *rec)
 	}
 
 out_free:
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 #endif /* SYS_readlink || __NR_readlink */
 
@@ -359,7 +335,7 @@ static void sanitise_readlinkat(struct syscallrecord *rec)
 	if (!post_snapshot_str(snap->pathname, sizeof(snap->pathname),
 			       (const char *)(unsigned long) rec->a2))
 		snap->pathname[0] = '\0';
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 #endif
 }
 
@@ -396,48 +372,26 @@ static void sanitise_readlinkat(struct syscallrecord *rec)
  */
 static void post_readlinkat(struct syscallrecord *rec)
 {
-	struct readlinkat_post_state *snap =
-		(struct readlinkat_post_state *) rec->post_state;
+	struct readlinkat_post_state *snap;
 	unsigned char first_buf[4096];
 	unsigned char recheck_buf[4096];
 	size_t snap_len;
 	int dfd;
 	long rc;
+	unsigned long retval;
 
+	/*
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
+	 */
+	snap = post_state_claim_owned(rec, READLINKAT_POST_STATE_MAGIC,
+				      __func__);
 	if (snap == NULL)
 		return;
 
-	unsigned long retval = rec->retval;
-
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_readlinkat: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	/*
-	 * Magic-cookie check: snap survived the heap-shape gate but a
-	 * sibling scribble of rec->post_state with a heap-shaped pointer
-	 * to a foreign allocation would let the wrong bytes pose as a
-	 * readlinkat_post_state.  A cookie mismatch means snap does not
-	 * point at our struct -- abandon rather than feed wild bytes into
-	 * the dfd re-target, pathname strncpy, bufsiz anomaly gate, source
-	 * memcpy of the user buffer, and the syscall<->syscall byte compare.
-	 */
-	if (snap->magic != READLINKAT_POST_STATE_MAGIC) {
-		outputerr("post_readlinkat: rejected snap with bad magic 0x%lx "
-			  "(post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
+	retval = rec->retval;
 
 	if (!ONE_IN(100))
 		goto out_free;
@@ -509,7 +463,7 @@ static void post_readlinkat(struct syscallrecord *rec)
 	}
 
 out_free:
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 #endif /* SYS_readlinkat || __NR_readlinkat */
 
