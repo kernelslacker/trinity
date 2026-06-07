@@ -17,6 +17,7 @@
 #include <sys/resource.h>
 #include <unistd.h>
 
+#include "params.h"
 #include "rlimits.h"
 #include "trinity.h"
 
@@ -59,7 +60,22 @@ void init_rlimits(unsigned int nr_children)
 	rlim_t nproc_target = (rlim_t) nr_children * NPROC_PER_CHILD + NPROC_BASE;
 
 	cap_one(RLIMIT_NOFILE, "NOFILE", (rlim_t) NOFILE_TARGET);
-	cap_one(RLIMIT_NPROC, "NPROC", nproc_target);
+
+	/*
+	 * RLIMIT_NPROC is per-UID -- it counts every process the invoking
+	 * user already owns, not just trinity's.  The absolute target here is
+	 * sized for a dedicated host; on a shared box where the user already
+	 * runs more than nproc_target processes the cap strangles trinity the
+	 * instant it spawns a thread or forks a child (EAGAIN).  The cap is
+	 * here to bound the fork-storm / pidfd-storm childops -- and --dry-run
+	 * gates every childop off and executes no fuzzed clone/fork, so the
+	 * child count is already bounded by the fixed worker pool and the cap
+	 * is pure downside.  Skip it under --dry-run.
+	 */
+	if (dry_run)
+		output(0, "rlimit: NPROC=skipped (--dry-run gates fork-storm childops)\n");
+	else
+		cap_one(RLIMIT_NPROC, "NPROC", nproc_target);
 
 	/* ASAN reserves TB-scale virtual address space for its shadow
 	 * tables.  An RLIMIT_AS cap of a few GB starves ASAN's mmap and
