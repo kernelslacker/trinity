@@ -405,9 +405,7 @@ syscalls/timerfd_gettime.c:106:post_timerfd_gettime
 syscalls/timerfd_gettime.c:129:post_timerfd_gettime
 syscalls/timerfd_gettime.c:91:post_timerfd_gettime
 syscalls/timer_getoverrun.c:17:post_timer_getoverrun
-syscalls/timer_gettime.c:106:post_timer_gettime
-syscalls/timer_gettime.c:129:post_timer_gettime
-syscalls/timer_gettime.c:91:post_timer_gettime
+syscalls/timer_gettime.c:104:post_timer_gettime
 syscalls/times.c:159:post_times
 syscalls/umask.c:52:post_umask
 syscalls/umask.c:70:post_umask

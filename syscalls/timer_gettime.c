@@ -3,7 +3,6 @@
  */
 #include <string.h>
 #include <time.h>
-#include "deferred-free.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "stats_ring.h"
@@ -48,7 +47,7 @@ static void sanitise_timer_gettime(struct syscallrecord *rec)
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic   = TIMER_GETTIME_POST_STATE_MAGIC;
 	snap->setting = rec->a2;
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 }
 
 /*
@@ -65,9 +64,13 @@ static void sanitise_timer_gettime(struct syscallrecord *rec)
  * (prlimit64): the user out-pointer is captured at sanitise time into a
  * heap struct in rec->post_state so a sibling scribbling rec->a2 between
  * syscall return and post entry cannot redirect the source memcpy at a
- * foreign allocation.  Two-level looks_like_corrupted_ptr guard: outer
- * check on the snapshot pointer itself, inner check on the snapshot's
- * inner setting field (defense in depth against wholesale stomps).
+ * foreign allocation.  The snap is registered in the ownership table at
+ * install time and the post handler gates entry through
+ * post_state_claim_owned(), which runs the canonical shape -> ownership
+ * -> magic check before any inner-field deref -- a stale same-type
+ * snapshot still readable in the deferred-free queue, or a sibling
+ * scribble of rec->post_state with a heap-shaped pointer at a foreign
+ * allocation, is rejected before the setting field is touched.
  *
  * Binary check: no sampling.  Reading two longs out of a user buffer and
  * comparing each against 1e9 is cheap enough to run on every successful
@@ -76,40 +79,12 @@ static void sanitise_timer_gettime(struct syscallrecord *rec)
 static void post_timer_gettime(struct syscallrecord *rec)
 {
 	struct timer_gettime_post_state *snap =
-		(struct timer_gettime_post_state *) rec->post_state;
+		post_state_claim_owned(rec, TIMER_GETTIME_POST_STATE_MAGIC,
+				       __func__);
 	struct itimerspec first;
 
 	if (snap == NULL)
 		return;
-
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_timer_gettime: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	/*
-	 * Magic-cookie check: snap survived the heap-shape gate but a
-	 * sibling scribble of rec->post_state with a heap-shaped pointer
-	 * to a foreign allocation would let the wrong bytes pose as a
-	 * timer_gettime_post_state.  A cookie mismatch means snap does
-	 * not point at our struct -- abandon rather than feed wild bytes
-	 * into the inner-field deref.
-	 */
-	if (snap->magic != TIMER_GETTIME_POST_STATE_MAGIC) {
-		outputerr("post_timer_gettime: rejected snap with bad magic 0x%lx "
-			  "(post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
 
 	if ((long) rec->retval != 0)
 		goto out_free;
@@ -143,7 +118,7 @@ static void post_timer_gettime(struct syscallrecord *rec)
 	}
 
 out_free:
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_timer_gettime = {
