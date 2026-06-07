@@ -899,22 +899,8 @@ int main(int argc, char* argv[])
 	 * symbolize of a raw IP from a bug log or FAULT! line is a
 	 * grep-the-outerr-log operation instead of needing the live
 	 * process's /proc/<pid>/maps.  Children inherit the same bases
-	 * via fork.  Placed before the dry-run gate so --dry-run also
-	 * exercises the logging path. */
+	 * via fork. */
 	log_load_bases();
-
-	/* --dry-run: parse-validate the argument set and exit before cgroup
-	 * setup, child fork, or any fuzzing work runs.  Note that some early
-	 * init must complete before parse can succeed — init_numa_nodes(),
-	 * select_syscall_tables(), create_shm(), sanitize_inherited_fds()
-	 * all run above this point.  So --dry-run is NOT a no-side-effect
-	 * parse-only mode; it's a 'parse + early-init validation' gate.
-	 * Moving parse_args earlier to give a true parse-only mode is a
-	 * separate restructure (the early helpers consume some parsed args). */
-	if (dry_run) {
-		output(0, "--dry-run: parse + early-init complete, exiting before fork/fuzz\n");
-		exit(EXIT_SUCCESS);
-	}
 
 	init_post_parse_io();
 

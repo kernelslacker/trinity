@@ -273,6 +273,40 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 		return;
 	}
 
+	/*
+	 * --dry-run: run the full argument-generation/sanitise pipeline
+	 * (already complete by the time we reach here) and the post
+	 * handlers, but never execute the syscall.  Synthesize a -1/ENOSYS
+	 * AFTER state so the post path accounts it as an early failure --
+	 * handle_failure() runs for coverage while the success-gated
+	 * registrars (handle_success, register_returned_fd, prop_ring_push)
+	 * and entry->post all short-circuit on retval == -1UL, issuing no
+	 * syscall of their own.  deactivate_enosys() is skipped for dry-run
+	 * at its call site so the synthetic ENOSYS does not drain the
+	 * syscall table.  Zero the kcov trace header manually (kcov_enable
+	 * never ran on this skip path) so the caller's kcov_collect() does
+	 * not re-process the previous syscall's PCs -- mirroring the
+	 * validate_arg_coupling() reject above.  Lets ASAN drive the
+	 * generators on any host without firing a fuzzed syscall.
+	 */
+	if (dry_run) {
+		if (kc != NULL && kc->active) {
+			if (kc->mode == KCOV_MODE_PC && kc->trace_buf != NULL)
+				__atomic_store_n(&kc->trace_buf[0], 0,
+						 __ATOMIC_RELAXED);
+			else if (kc->mode == KCOV_MODE_CMP &&
+				 kc->cmp_trace_buf != NULL)
+				__atomic_store_n(&kc->cmp_trace_buf[0], 0,
+						 __ATOMIC_RELAXED);
+		}
+		srec_publish_begin(rec);
+		rec->errno_post = ENOSYS;
+		rec->retval = (unsigned long) -1L;
+		__atomic_store_n(&rec->state, AFTER, __ATOMIC_RELEASE);
+		srec_publish_end(rec);
+		return;
+	}
+
 	/* Arm the alarm after the publish-end above.  alarm(1) used to
 	 * sit above the rec->lock region, opening a window where
 	 * SIGALRM could fire while the lock was held; the siglongjmp
@@ -1092,7 +1126,9 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 		 * setting state to AFTER.  Only process the result if the
 		 * syscall actually completed. */
 		if (__atomic_load_n(&rec->state, __ATOMIC_ACQUIRE) == AFTER) {
-			if (err == ENOSYS)
+			/* dry-run synthesizes ENOSYS for every un-executed
+			 * syscall; skip deactivation so the table isn't drained. */
+			if (err == ENOSYS && !dry_run)
 				deactivate_enosys(rec, entry, call);
 
 			handle_failure(rec);

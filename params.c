@@ -448,7 +448,7 @@ static const struct option_help option_descs[] = {
 	{ "dangerous",		'd', "enable dangerous mode" },
 	{ "debug",		'D', "enable debug" },
 	{ "disable-fds",	 0,  NULL },	/* handled separately */
-	{ "dry-run",		 0,  "parse args and exit without fuzzing" },
+	{ "dry-run",		 0,  "run arg-gen + sanitise but skip the syscall (safe ASAN/repro mode)" },
 	{ "effector-map",	 0,  "calibrate per-bit input significance under KCOV and exit (one-shot)" },
 	{ "enable-fds",		 0,  NULL },	/* handled separately */
 	{ "epoch-iterations",	 0,  "syscalls per epoch before restarting (must be > 0; omit to disable)" },

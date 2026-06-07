@@ -2326,6 +2326,16 @@ void child_process(struct childdata *child, int childno)
 		if (use_dedicated_op == false)
 			child->op_type = pick_op_type();
 
+		/* --dry-run only neutralizes the syscall-dispatch path (the
+		 * __do_syscall gate synthesizes -1/ENOSYS without entering the
+		 * kernel).  Childops issue real syscalls directly and bypass
+		 * that gate, so force every iteration -- both the dedicated
+		 * alt-op children and the 5% alt-op mix -- onto CHILD_OP_SYSCALL
+		 * under dry_run, leaving the mode genuinely syscall-free apart
+		 * from the well-formed fd-provider setup. */
+		if (dry_run)
+			child->op_type = CHILD_OP_SYSCALL;
+
 		/* Snapshot op_type once per iter.  child->op_type lives in
 		 * shared memory and can be scribbled by a poisoned-arena
 		 * write between the picker above and the stats writers
