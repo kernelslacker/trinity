@@ -42,6 +42,11 @@ static inline bool pc_in_text(void *pc)
 	return pc >= (void *)__executable_start && pc < (void *)_etext;
 }
 
+static const char * const op_names[MUT_NUM_OPS] = {
+	"bit-flip", "add", "sub", "boundary", "byte-shuf", "keep",
+	"bswap-add", "bswap-sub", "fd-swap"
+};
+
 /*
  * Aggregate-stats table column widths. Header + every row uses the same
  * format string so output is greppable (grep '^fd_lifecycle ') and
@@ -415,10 +420,6 @@ static void json_emit_kcov_section(void)
 
 static void json_emit_minicorpus_section(void)
 {
-	static const char * const op_names[MUT_NUM_OPS] = {
-		"bit-flip", "add", "sub", "boundary", "byte-shuf", "keep",
-		"bswap-add", "bswap-sub", "fd-swap"
-	};
 	unsigned int i;
 	unsigned long s_hits, s_wins, r_count, r_wins;
 	unsigned long c_iter, c_subst, c_save, c_replay;
@@ -5755,10 +5756,6 @@ static void dump_stats_corpus_and_taint_tail(void)
 	unsigned int i;
 
 	if (minicorpus_shm != NULL) {
-		static const char * const op_names[MUT_NUM_OPS] = {
-			"bit-flip", "add", "sub", "boundary", "byte-shuf", "keep",
-			"bswap-add", "bswap-sub", "fd-swap"
-		};
 		unsigned long tot_trials = 0;
 		unsigned long r_count, r_wins, s_hits, s_wins, pct10;
 		unsigned long histo_total;
