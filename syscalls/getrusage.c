@@ -66,7 +66,7 @@ static void sanitise_getrusage(struct syscallrecord *rec)
 	snap->magic     = GETRUSAGE_POST_STATE_MAGIC;
 	snap->who       = rec->a1;
 	snap->ru        = rec->a2;
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 #endif
 }
 
@@ -117,6 +117,14 @@ static void sanitise_getrusage(struct syscallrecord *rec)
  * credentials or otherwise broke the second call) give up rather than
  * report.
  *
+ * Snap gating: the snap is registered in the ownership table at install
+ * time and the post handler gates entry through post_state_claim_owned(),
+ * which runs the canonical shape -> ownership -> magic check before any
+ * inner-field deref -- a stale same-type snapshot still readable in the
+ * deferred-free queue, or a sibling scribble of rec->post_state with a
+ * heap-shaped pointer at a foreign allocation, is rejected before the
+ * who or ru fields are touched.
+ *
  * Comparison rules:
  *   - ru_utime / ru_stime are timeval pairs that the kernel updates
  *     monotonically but which advance even within the post-hook itself
@@ -143,7 +151,8 @@ static void post_getrusage(struct syscallrecord *rec)
 {
 #if defined(SYS_getrusage) || defined(__NR_getrusage)
 	struct getrusage_post_state *snap =
-		(struct getrusage_post_state *) rec->post_state;
+		post_state_claim_owned(rec, GETRUSAGE_POST_STATE_MAGIC,
+				       __func__);
 	int who;
 	struct rusage first, recall;
 	int utime_dec, stime_dec;
@@ -151,35 +160,6 @@ static void post_getrusage(struct syscallrecord *rec)
 
 	if (snap == NULL)
 		return;
-
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_getrusage: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	/*
-	 * Magic-cookie check: snap survived the heap-shape gate but a
-	 * sibling scribble of rec->post_state with a heap-shaped pointer
-	 * to a foreign allocation would let the wrong bytes pose as a
-	 * getrusage_post_state.  A cookie mismatch means snap does not
-	 * point at our struct -- abandon rather than feed wild bytes into
-	 * the inner-field deref.  Mirrors recv.c post_recvmsg.
-	 */
-	if (snap->magic != GETRUSAGE_POST_STATE_MAGIC) {
-		outputerr("post_getrusage: rejected snap with bad magic 0x%lx "
-			  "(post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
 
 	if (!ONE_IN(100))
 		goto out_free;
@@ -250,7 +230,7 @@ static void post_getrusage(struct syscallrecord *rec)
 	}
 
 out_free:
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 #else
 	(void) rec;
 #endif

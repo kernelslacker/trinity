@@ -138,9 +138,7 @@ syscalls/getrlimit.c:188:post_getrlimit
 syscalls/get_robust_list.c:148:post_get_robust_list
 syscalls/get_robust_list.c:164:post_get_robust_list
 syscalls/get_robust_list.c:198:post_get_robust_list
-syscalls/getrusage.c:161:post_getrusage
-syscalls/getrusage.c:176:post_getrusage
-syscalls/getrusage.c:228:post_getrusage
+syscalls/getrusage.c:208:post_getrusage
 syscalls/getsid.c:45:post_getsid
 syscalls/getsid.c:66:post_getsid
 syscalls/getsockname.c:201:post_getsockname
