@@ -1111,6 +1111,26 @@ static const struct stat_category flowtable_encap_vlan_category =
 	              flowtable_vlan_runs,
 	              flowtable_encap_vlan_fields);
 
+static const struct stat_field splice_protocols_fields[] = {
+	STAT_FIELD(splice_protocols, runs),
+	STAT_FIELD(splice_protocols, setup_failed),
+	STAT_FIELD(splice_protocols, chain_ok),
+	STAT_FIELD(splice_protocols, in_bytes),
+	STAT_FIELD(splice_protocols, out_bytes),
+	STAT_FIELD(splice_protocols, udp_encap_attempted),
+	STAT_FIELD(splice_protocols, tcp_repair_attempted),
+	STAT_FIELD(splice_protocols, packet_ring_attempted),
+	STAT_FIELD(splice_protocols, alg_attempted),
+	STAT_FIELD(splice_protocols, rxrpc_attempted),
+	STAT_FIELD(splice_protocols, msg_splice_pages_attempted),
+	STAT_FIELD(splice_protocols, msg_splice_pages_path_taken_inferred),
+};
+
+static const struct stat_category splice_protocols_category =
+	STAT_CATEGORY("splice_protocols",
+	              splice_protocols_runs,
+	              splice_protocols_fields);
+
 static const struct stat_field wireguard_decrypt_flood_fields[] = {
 	STAT_FIELD(wgdf, runs),
 	STAT_FIELD(wgdf, setup_failed),
@@ -1964,8 +1984,7 @@ static void dump_stats_json_iouring_zc_and_kvm(void)
 		"\"kvm\":{\"vcpu_ioctls_dispatched\":%lu},"
 		"\"kvm_run_churn\":{\"invocations\":%lu,\"exit_io\":%lu,\"exit_mmio\":%lu,\"exit_hlt\":%lu,\"exit_shutdown\":%lu,\"exit_fail_entry\":%lu,\"exit_internal_error\":%lu,\"exit_intr\":%lu,\"exit_other\":%lu,\"errors\":%lu,\"gpc_memslot_race_runs\":%lu,\"gpc_memslot_race_deletes\":%lu,\"gpc_memslot_race_unsupported\":%lu},"
 		"\"nl80211\":{\"runs\":%lu,\"setup_failed\":%lu,\"scan_triggered\":%lu,\"connect_attempted\":%lu,\"connect_succeeded\":%lu,\"disconnect_attempted\":%lu,\"regdom_changed\":%lu,\"iface_created\":%lu,\"iface_destroyed\":%lu,\"bursts_sent\":%lu,\"pmsr_runs\":%lu,\"pmsr_ok\":%lu,\"admin_gate_runs\":%lu,\"admin_gate_eperm_ok\":%lu,\"admin_gate_unexpected\":%lu},"
-		"\"nat_t_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sa_added\":%lu,\"sa_deleted\":%lu,\"frames_sent\":%lu,\"xfrm6_setup_ok\":%lu,\"xfrm6_setup_fail\":%lu,\"xfrm6_sendto_runs\":%lu,\"xfrm6_delsa_races\":%lu},"
-		"\"splice_protocols\":{\"runs\":%lu,\"setup_failed\":%lu,\"chain_ok\":%lu,\"in_bytes\":%lu,\"out_bytes\":%lu,\"udp_encap_attempted\":%lu,\"tcp_repair_attempted\":%lu,\"packet_ring_attempted\":%lu,\"alg_attempted\":%lu,\"rxrpc_attempted\":%lu,\"msg_splice_pages_attempted\":%lu,\"msg_splice_pages_path_taken_inferred\":%lu},",
+		"\"nat_t_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sa_added\":%lu,\"sa_deleted\":%lu,\"frames_sent\":%lu,\"xfrm6_setup_ok\":%lu,\"xfrm6_setup_fail\":%lu,\"xfrm6_sendto_runs\":%lu,\"xfrm6_delsa_races\":%lu},",
 		shm->stats.vsock_transport_churn_runs,
 		shm->stats.vsock_transport_churn_setup_failed,
 		shm->stats.vsock_transport_churn_bind_ok,
@@ -2051,19 +2070,7 @@ static void dump_stats_json_iouring_zc_and_kvm(void)
 		shm->stats.nat_t_xfrm6_setup_ok,
 		shm->stats.nat_t_xfrm6_setup_fail,
 		shm->stats.nat_t_xfrm6_sendto_runs,
-		shm->stats.nat_t_xfrm6_delsa_races,
-		shm->stats.splice_protocols_runs,
-		shm->stats.splice_protocols_setup_failed,
-		shm->stats.splice_protocols_chain_ok,
-		shm->stats.splice_protocols_in_bytes,
-		shm->stats.splice_protocols_out_bytes,
-		shm->stats.splice_protocols_udp_encap_attempted,
-		shm->stats.splice_protocols_tcp_repair_attempted,
-		shm->stats.splice_protocols_packet_ring_attempted,
-		shm->stats.splice_protocols_alg_attempted,
-		shm->stats.splice_protocols_rxrpc_attempted,
-		shm->stats.splice_protocols_msg_splice_pages_attempted,
-		shm->stats.splice_protocols_msg_splice_pages_path_taken_inferred);
+		shm->stats.nat_t_xfrm6_delsa_races);
 }
 
 static void dump_stats_json_rxrpc_alg_ublk_block(void)
@@ -2375,6 +2382,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&flowtable_encap_vlan_category);
+
+	printf(",");
+	stat_category_emit_json(&splice_protocols_category);
 
 	printf(",");
 	stat_category_emit_json(&wireguard_decrypt_flood_category);
@@ -5408,20 +5418,7 @@ static void dump_stats_childop_runs_network(void)
 		stat_row("nl80211_churn", "admin_gate_unexpected", shm->stats.nl80211_admin_gate_unexpected);
 	}
 
-	if (shm->stats.splice_protocols_runs) {
-		stat_row("splice_protocols", "runs",                  shm->stats.splice_protocols_runs);
-		stat_row("splice_protocols", "setup_failed",          shm->stats.splice_protocols_setup_failed);
-		stat_row("splice_protocols", "chain_ok",              shm->stats.splice_protocols_chain_ok);
-		stat_row("splice_protocols", "in_bytes",              shm->stats.splice_protocols_in_bytes);
-		stat_row("splice_protocols", "out_bytes",             shm->stats.splice_protocols_out_bytes);
-		stat_row("splice_protocols", "udp_encap_attempted",   shm->stats.splice_protocols_udp_encap_attempted);
-		stat_row("splice_protocols", "tcp_repair_attempted",  shm->stats.splice_protocols_tcp_repair_attempted);
-		stat_row("splice_protocols", "packet_ring_attempted", shm->stats.splice_protocols_packet_ring_attempted);
-		stat_row("splice_protocols", "alg_attempted",         shm->stats.splice_protocols_alg_attempted);
-		stat_row("splice_protocols", "rxrpc_attempted",       shm->stats.splice_protocols_rxrpc_attempted);
-		stat_row("splice_protocols", "msg_splice_pages_attempted",           shm->stats.splice_protocols_msg_splice_pages_attempted);
-		stat_row("splice_protocols", "msg_splice_pages_path_taken_inferred", shm->stats.splice_protocols_msg_splice_pages_path_taken_inferred);
-	}
+	stat_category_emit_text(&splice_protocols_category);
 
 	stat_category_emit_text(&rxrpc_key_install_category);
 
