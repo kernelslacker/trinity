@@ -745,9 +745,9 @@ static const struct struct_field epoll_event_fields[] = {
 /*
  * type (offset 0): PERF_TYPE_* major-type discriminator.  Six legal
  * values today; vendor PMU type IDs >= PERF_TYPE_MAX are dynamically
- * registered and not enumerable at compile time.  The buffer-
- * discriminator infra (step 4) will read this slot to select the
- * per-type config / bp_* / config1 / config2 variant.
+ * registered and not enumerable at compile time.  Buffer-discriminator
+ * infra reads this slot to select the per-type config / bp_* /
+ * config1 / config2 variant.
  */
 static const unsigned long perf_type_values[] = {
 	PERF_TYPE_HARDWARE,
@@ -855,8 +855,8 @@ static const unsigned long clockid_values[] = {
  *                  inherit_stat, enable_on_exec, task, watermark
  *   - bits 15..16  precise_ip (0..3 value, NOT a flag) -- excluded
  *                  so FT_FLAGS leaves it 0 (broadest "arbitrary skid"
- *                  path).  A future commit could carve out a tiny
- *                  ε-random splat for the 4 legal values.
+ *                  path).  An ε-random splat across the 4 legal values
+ *                  is intentionally deferred.
  *   - bits 17..37  single-bit flags: mmap_data, sample_id_all,
  *                  exclude_host, exclude_guest,
  *                  exclude_callchain_kernel, exclude_callchain_user,
@@ -916,8 +916,8 @@ static const struct struct_field perf_event_attr_fields[] = {
 	 * config: meaning depends on `type`.  HARDWARE -> perf_hw_id,
 	 * SOFTWARE -> perf_sw_ids, HW_CACHE -> packed (cache, op,
 	 * result) triple, BREAKPOINT -> ignored, RAW/TRACEPOINT ->
-	 * vendor-/runtime-specific.  Per-type variants land in
-	 * commits C/D once the step-4 buffer-discriminator lands.
+	 * vendor-/runtime-specific.  Per-type variants are intentionally
+	 * deferred pending buffer-discriminator infra to select among them.
 	 */
 	FIELD(struct perf_event_attr, config),
 	/* sample_period / sample_freq anon union; `freq` flag picks. */
@@ -1464,8 +1464,7 @@ static const struct struct_field sockaddr_in6_variant_fields[] = {
  * AF_NETLINK (sockaddr_nl) -- nl_groups is a multicast bitmask whose
  * meaning depends on which NETLINK_* family the socket was opened
  * with; that's not discoverable from sockaddr_nl alone so the mask
- * stays generic-full-32.  Family-aware biasing is a follow-up if
- * coverage stats argue for it.
+ * stays generic-full-32.  Family-aware biasing is currently unmodeled.
  */
 static const struct struct_field sockaddr_nl_variant_fields[] = {
 	FIELD(struct sockaddr_nl, nl_pad),
@@ -2610,10 +2609,10 @@ const unsigned int bpf_attach_types_count = ARRAY_SIZE(bpf_attach_types);
  * constant lands on the field most likely to satisfy validation.
  *
  * Fields absent from older uapi headers (excl_prog_hash /
- * excl_prog_hash_size) are intentionally not annotated this round;
- * adding offsetof references against a union member the header
- * doesn't declare would break the build on older distros, and the
- * kernel still accepts a zero-fill in those bytes.
+ * excl_prog_hash_size) are intentionally not annotated; adding
+ * offsetof references against a union member the header doesn't
+ * declare would break the build on older distros, and the kernel
+ * still accepts a zero-fill in those bytes.
  */
 static const struct struct_field bpf_attr_MAP_CREATE_fields[] = {
 	FIELDX(union bpf_attr, map_type, FT_ENUM,
@@ -2694,7 +2693,7 @@ static const struct struct_field bpf_attr_MAP_CREATE_fields[] = {
  * kernel reads the same bytes either way.
  *
  * Older uapi vintages may lack signature / signature_size /
- * keyring_id; those references are skipped this round rather than
+ * keyring_id; those references are intentionally skipped rather than
  * gated on #ifdef offsetof which the preprocessor doesn't support.
  */
 static const struct struct_field bpf_attr_PROG_LOAD_fields[] = {
@@ -2849,7 +2848,7 @@ static const struct struct_field bpf_attr_GET_ID_fields[] = {
  * group per the design doc, but the prog_assoc_struct_ops named
  * struct member is absent from the local uapi vintage; the cmd
  * itself is only available via syscalls/bpf.c's fallback #define.
- * Skipped this round.
+ * Intentionally skipped.
  */
 static const struct struct_field bpf_attr_LINK_UPDATE_fields[] = {
 	FIELDX(union bpf_attr, link_update.link_fd, FT_FD),
@@ -2962,9 +2961,10 @@ static const struct struct_field bpf_attr_TASK_FD_QUERY_fields[] = {
 /*
  * BPF_BTF_LOAD btf_load variant.  Random bytes in btf fail the BTF
  * magic check (0xEB9F) and bounce on -EINVAL before reaching the
- * verifier proper -- acceptable for this round; a follow-up can plant
- * the magic via FT_VERSION_MAGIC to widen coverage past the magic
- * gate.  btf_log_buf is optional so the no-log path runs too.
+ * verifier proper -- currently acceptable; planting the magic via
+ * FT_VERSION_MAGIC would widen coverage past the magic gate but is
+ * intentionally deferred.  btf_log_buf is optional so the no-log
+ * path runs too.
  */
 static const struct struct_field bpf_attr_BTF_LOAD_fields[] = {
 	FIELDX(union bpf_attr, btf, FT_PTR_BYTES,
