@@ -4396,6 +4396,9 @@ struct_desc_resolve_variant(const struct struct_desc *desc,
 		 */
 		if (buf == NULL)
 			return NULL;
+		if (desc->buffer_discrim_offset + desc->buffer_discrim_size >
+		    desc->struct_size)
+			return NULL;
 		switch (desc->buffer_discrim_size) {
 		case 1:
 			discrim = buf[desc->buffer_discrim_offset];
