@@ -397,7 +397,7 @@ static int file_tree_callback(const char *fpath, const struct stat *sb, int type
 static void open_fds_from_path(const char *dirpath)
 {
 	int before = files_in_index;
-	int flags = FTW_DEPTH | FTW_ACTIONRETVAL | FTW_MOUNT;
+	int flags = FTW_ACTIONRETVAL | FTW_MOUNT;
 	int ret;
 
 	pool_cap_reached = false;
