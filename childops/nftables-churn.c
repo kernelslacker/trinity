@@ -6121,6 +6121,8 @@ static void nft_dormant_abort_sweep(struct nfnl_ctx *ctx)
 	if (!off)
 		return;
 	off = nla_put_str(buf, off, sizeof(buf), NFTA_TABLE_NAME, table_name);
+	if (!off)
+		return;
 	off = nla_put_be32(buf, off, sizeof(buf), NFTA_TABLE_FLAGS,
 			   NFT_TABLE_F_DORMANT);
 	if (!off)
@@ -6140,13 +6142,21 @@ static void nft_dormant_abort_sweep(struct nfnl_ctx *ctx)
 			return;
 		off = nla_put_str(buf, off, sizeof(buf),
 				  NFTA_CHAIN_TABLE, table_name);
+		if (!off)
+			return;
 		off = nla_put_str(buf, off, sizeof(buf),
 				  NFTA_CHAIN_NAME, chain_name);
+		if (!off)
+			return;
 		hook_off = off;
 		off = nla_put(buf, off, sizeof(buf),
 			      NFTA_CHAIN_HOOK | NLA_F_NESTED, NULL, 0);
+		if (!off)
+			return;
 		off = nla_put_be32(buf, off, sizeof(buf),
 				   NFTA_HOOK_HOOKNUM, chain_hook[i]);
+		if (!off)
+			return;
 		off = nla_put_be32(buf, off, sizeof(buf),
 				   NFTA_HOOK_PRIORITY, (__u32)(i ? 10 : 0));
 		if (!off)
@@ -6170,6 +6180,8 @@ static void nft_dormant_abort_sweep(struct nfnl_ctx *ctx)
 	if (!off)
 		return;
 	off = nla_put_str(buf, off, sizeof(buf), NFTA_CHAIN_TABLE, table_name);
+	if (!off)
+		return;
 	bogus_handle = ((__u64)htonl(0xdeadbeefU) << 32) |
 		       (__u64)htonl(0xcafebabeU);
 	off = nla_put(buf, off, sizeof(buf), NFTA_CHAIN_HANDLE,
