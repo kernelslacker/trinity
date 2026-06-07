@@ -1087,12 +1087,19 @@ static int gen_tier3(struct bpf_insn *insns, int max_insns)
  *
  * Both triggers share the same empty-pool guard, so a build with no
  * maps available silently degrades both paths to scalar-only.
+ *
+ * Tier 3 is excluded outright: gen_tier3 ignores the prepended map
+ * register, so substituting there would burn two instruction slots on
+ * a load no generated code ever reads.
  */
 static int pick_map_fd_for_program(int tier_id)
 {
 	bool force = (tier_id == 2 && ONE_IN(TIER2_FORCE_MAP_FD_DENOM));
 	bool base = (rnd_modulo_u32(100) < MAP_FD_WEIGHT_PCT);
 	int fd;
+
+	if (tier_id == 3)
+		return -1;
 
 	if (!force && !base)
 		return -1;
