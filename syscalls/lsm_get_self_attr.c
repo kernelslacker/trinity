@@ -271,15 +271,15 @@ static void post_lsm_get_self_attr(struct syscallrecord *rec)
 	}
 
 	/*
-	 * Range-prove the size word before reading it.  The shape-only
-	 * guard above lets a non-NULL but stale/unmapped snap->size
-	 * through; the memcpy below would then fault inside the .post
-	 * handler.  range_readable_user gates the full size_first window.
+	 * Copy the size word through the TOCTOU-guarded helper.  The
+	 * shape-only guard above lets a non-NULL but stale/unmapped
+	 * snap->size through; post_snapshot_or_skip range-proves the
+	 * size_first window and recovers from a sibling mprotect/munmap
+	 * fault instead of crashing the child mid-sample.
 	 */
-	if (!range_readable_user((const void *) snap->size, sizeof(size_first)))
+	if (!post_snapshot_or_skip(&size_first, (const void *) snap->size,
+				   sizeof(size_first)))
 		goto out_free;
-
-	memcpy(&size_first, (const void *) snap->size, sizeof(size_first));
 	if (size_first > LSM_CTX_BUF_MAX)
 		goto out_free;
 
