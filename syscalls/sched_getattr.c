@@ -152,6 +152,11 @@ static void sanitise_sched_getattr(struct syscallrecord *rec)
 	 * Gated on HAVE_SYS_SCHED_GETATTR to mirror the .post body -- on
 	 * systems without SYS_sched_getattr the post handler is a no-op
 	 * stub and a snapshot only the post handler can free would leak.
+	 * post_state_install pairs the rec->post_state assign with the
+	 * ownership-table register so the observable window between the
+	 * two is closed; post_sched_getattr() will then gate the snap
+	 * through post_state_claim_owned() and prove ownership before
+	 * dereferencing any field.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic           = SCHED_GETATTR_POST_STATE_MAGIC;
@@ -159,7 +164,7 @@ static void sanitise_sched_getattr(struct syscallrecord *rec)
 	snap->attr            = rec->a2;
 	snap->size            = rec->a3;
 	snap->attr_alloc_size = attr_alloc_size;
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 #endif
 }
 
@@ -223,8 +228,7 @@ static void sanitise_sched_getattr(struct syscallrecord *rec)
 static void post_sched_getattr(struct syscallrecord *rec)
 {
 #ifdef HAVE_SYS_SCHED_GETATTR
-	struct sched_getattr_post_state *snap =
-		(struct sched_getattr_post_state *) rec->post_state;
+	struct sched_getattr_post_state *snap;
 	unsigned char user_snap[256];
 	unsigned char kernel_snap[256];
 	__u32 user_size_returned;
@@ -233,29 +237,16 @@ static void post_sched_getattr(struct syscallrecord *rec)
 	int memcmp_result;
 	long rc;
 
+	/*
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
+	 */
+	snap = post_state_claim_owned(rec, SCHED_GETATTR_POST_STATE_MAGIC,
+				      __func__);
 	if (snap == NULL)
 		return;
-
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_sched_getattr: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	if (snap->magic != SCHED_GETATTR_POST_STATE_MAGIC) {
-		outputerr("post_sched_getattr: rejected snap with bad magic "
-			  "0x%lx (post_state-stomped to foreign "
-			  "allocation?)\n", snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
 
 	if (!ONE_IN(100))
 		goto out_free;
@@ -335,7 +326,7 @@ static void post_sched_getattr(struct syscallrecord *rec)
 	}
 
 out_free:
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 #else
 	(void) rec;
 #endif

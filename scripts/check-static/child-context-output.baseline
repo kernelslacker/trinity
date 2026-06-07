@@ -303,9 +303,7 @@ syscalls/rt_sigprocmask.c:132:post_rt_sigprocmask
 syscalls/rt_sigprocmask.c:167:post_rt_sigprocmask
 syscalls/sched_getaffinity.c:156:post_sched_getaffinity
 syscalls/sched_getaffinity.c:228:post_sched_getaffinity
-syscalls/sched_getattr.c:245:post_sched_getattr
-syscalls/sched_getattr.c:252:post_sched_getattr
-syscalls/sched_getattr.c:329:post_sched_getattr
+syscalls/sched_getattr.c:320:post_sched_getattr
 syscalls/sched_getparam.c:132:post_sched_getparam
 syscalls/sched_get_priority_max.c:74:post_sched_get_priority_max
 syscalls/sched_get_priority_min.c:74:post_sched_get_priority_min
