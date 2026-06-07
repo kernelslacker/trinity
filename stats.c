@@ -1474,6 +1474,39 @@ static const struct stat_category refcount_audit_category =
 	              refcount_audit_fields);
 
 /*
+ * Descriptors for dump_stats_json_lifecycle_and_storms().  The JSON walker
+ * ignores gate_offset (it emits every category unconditionally) so the gate
+ * field here only matters if a future change wires stat_category_emit_text()
+ * onto these tables; the current text dump for these two categories stays
+ * hand-coded in dump_stats_childop_runs_local().
+ */
+static const struct stat_field fs_lifecycle_fields[] = {
+	STAT_FIELD(fs_lifecycle, tmpfs),
+	STAT_FIELD(fs_lifecycle, ramfs),
+	STAT_FIELD(fs_lifecycle, rdonly),
+	STAT_FIELD(fs_lifecycle, overlay),
+	STAT_FIELD(fs_lifecycle, quota),
+	STAT_FIELD(fs_lifecycle, bind),
+	STAT_FIELD(fs_lifecycle, unsupported),
+};
+
+static const struct stat_category fs_lifecycle_category =
+	STAT_CATEGORY("fs_lifecycle",
+	              fs_lifecycle_tmpfs,
+	              fs_lifecycle_fields);
+
+static const struct stat_field futex_storm_fields[] = {
+	STAT_FIELD(futex_storm, runs),
+	STAT_FIELD(futex_storm, inner_crashed),
+	STAT_FIELD(futex_storm, iters),
+};
+
+static const struct stat_category futex_storm_category =
+	STAT_CATEGORY("futex_storm",
+	              futex_storm_runs,
+	              futex_storm_fields);
+
+/*
  * Emit every counter from struct stats_s as a single JSON object.
  * All scalar counters are emitted unconditionally so consumers see a stable
  * schema regardless of which subsystems happened to fire on this run.
@@ -1828,15 +1861,10 @@ static void dump_stats_json_corruption_and_audit(void)
 
 static void dump_stats_json_lifecycle_and_storms(void)
 {
-	printf("\"fs_lifecycle\":{\"tmpfs\":%lu,\"ramfs\":%lu,\"rdonly\":%lu,"
-			"\"overlay\":%lu,\"quota\":%lu,\"bind\":%lu,\"unsupported\":%lu},"
-		"\"futex_storm\":{\"runs\":%lu,\"inner_crashed\":%lu,\"iters\":%lu},",
-		shm->stats.fs_lifecycle_tmpfs, shm->stats.fs_lifecycle_ramfs,
-		shm->stats.fs_lifecycle_rdonly, shm->stats.fs_lifecycle_overlay,
-		shm->stats.fs_lifecycle_quota, shm->stats.fs_lifecycle_bind,
-		shm->stats.fs_lifecycle_unsupported,
-		shm->stats.futex_storm_runs, shm->stats.futex_storm_inner_crashed,
-		shm->stats.futex_storm_iters);
+	stat_category_emit_json(&fs_lifecycle_category);
+	putchar(',');
+	stat_category_emit_json(&futex_storm_category);
+	putchar(',');
 }
 
 static void dump_stats_json_socket_family_and_tls(void)
