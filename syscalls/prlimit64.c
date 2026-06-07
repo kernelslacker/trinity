@@ -161,7 +161,7 @@ static void sanitise_prlimit64(struct syscallrecord *rec)
 	snap->resource  = rec->a2;
 	snap->new_rlim  = rec->a3;
 	snap->old_rlim  = rec->a4;
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 #endif
 }
 
@@ -205,6 +205,15 @@ static void sanitise_prlimit64(struct syscallrecord *rec)
  * buffer (NOT the snapshot's old_rlim -- a sibling could mutate the user
  * buffer itself mid-syscall and forge a clean compare).
  *
+ * Snap gating: the snap is registered in the ownership table at install
+ * time and the post handler gates entry through post_state_claim_owned(),
+ * which runs the canonical shape -> ownership -> magic check before any
+ * inner-field deref -- a stale same-type snapshot still readable in the
+ * deferred-free queue, or a sibling scribble of rec->post_state with a
+ * heap-shaped pointer at a foreign allocation, is rejected before the
+ * pid self-filter, resource bound, old_rlim deref, or the re-issue are
+ * touched.
+ *
  * Sample one in a hundred to stay in line with the rest of the oracle
  * family.  Per-field bumps with no early-return so simultaneous
  * rlim_cur+rlim_max corruption surfaces in a single sample.
@@ -223,43 +232,14 @@ static void sanitise_prlimit64(struct syscallrecord *rec)
 static void post_prlimit64(struct syscallrecord *rec)
 {
 	struct prlimit64_post_state *snap =
-		(struct prlimit64_post_state *) rec->post_state;
+		post_state_claim_owned(rec, PRLIMIT64_POST_STATE_MAGIC,
+				       __func__);
 	struct rlimit64 first_rlim;
 	struct rlimit64 recheck_rlim;
 	long rc;
 
 	if (snap == NULL)
 		return;
-
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_prlimit64: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	/*
-	 * Magic-cookie check: snap survived the heap-shape gate but a
-	 * sibling scribble of rec->post_state with a heap-shaped pointer
-	 * to a foreign allocation would let the wrong bytes pose as a
-	 * prlimit64_post_state.  A cookie mismatch means snap does not
-	 * point at our struct -- abandon rather than feed wild bytes into
-	 * the pid self-filter, resource bound, old_rlim deref, and the
-	 * stable-equality re-issue against task->signal->rlim[].
-	 */
-	if (snap->magic != PRLIMIT64_POST_STATE_MAGIC) {
-		outputerr("post_prlimit64: rejected snap with bad magic 0x%lx "
-			  "(post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
 
 	if (!ONE_IN(100))
 		goto out_free;
@@ -312,7 +292,7 @@ static void post_prlimit64(struct syscallrecord *rec)
 	}
 
 out_free:
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 #endif
 

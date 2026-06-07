@@ -272,10 +272,8 @@ syscalls/prctl.c:715:post_prctl
 syscalls/prctl.c:729:post_prctl
 syscalls/prctl.c:742:post_prctl
 syscalls/prctl.c:757:post_prctl
-syscalls/prlimit64.c:240:post_prlimit64
-syscalls/prlimit64.c:256:post_prlimit64
-syscalls/prlimit64.c:295:post_prlimit64
-syscalls/prlimit64.c:305:post_prlimit64
+syscalls/prlimit64.c:275:post_prlimit64
+syscalls/prlimit64.c:285:post_prlimit64
 syscalls/pselect6.c:200:post_pselect6
 syscalls/pselect6.c:215:post_pselect6
 syscalls/pselect6.c:236:post_pselect6
