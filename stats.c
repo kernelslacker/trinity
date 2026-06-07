@@ -962,6 +962,22 @@ static const struct stat_category handshake_req_abort_category =
 	              handshake_req_abort_runs,
 	              handshake_req_abort_fields);
 
+static const struct stat_field bpf_cgroup_attach_fields[] = {
+	STAT_FIELD(bpf_cgroup_attach, runs),
+	STAT_FIELD(bpf_cgroup_attach, setup_failed),
+	STAT_FIELD(bpf_cgroup_attach, prog_loaded),
+	STAT_FIELD(bpf_cgroup_attach, attached),
+	STAT_FIELD(bpf_cgroup_attach, attach_rejected),
+	STAT_FIELD(bpf_cgroup_attach, packets_sent),
+	STAT_FIELD(bpf_cgroup_attach, detached),
+	STAT_FIELD(bpf_cgroup_attach, post_detach_sent),
+};
+
+static const struct stat_category bpf_cgroup_attach_category =
+	STAT_CATEGORY("bpf_cgroup_attach",
+	              bpf_cgroup_attach_runs,
+	              bpf_cgroup_attach_fields);
+
 static const struct stat_field pipe_thrash_fields[] = {
 	STAT_FIELD(pipe_thrash, runs),
 	STAT_FIELD(pipe_thrash, pipes),
@@ -1565,7 +1581,6 @@ static void dump_stats_json_netfilter_and_xfrm(void)
 	printf("\"nftables_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"table_create_ok\":%lu,\"set_create_ok\":%lu,\"chain_create_ok\":%lu,\"rule_create_ok\":%lu,\"packet_sent_ok\":%lu,\"rule_insert_ok\":%lu,\"rule_del_ok\":%lu,\"table_del_ok\":%lu,\"payload_expr_emit\":%lu,\"objref_expr_emit\":%lu,\"compat_validate_install_ok\":%lu,\"compat_validate_install_fail\":%lu,\"compat_validate_unsupported\":%lu,\"compat_validate_per_hook_pairs\":%lu,\"dormant_abort_iters\":%lu,\"dormant_abort_eperm\":%lu,\"dormant_abort_emsg\":%lu,\"dormant_abort_ok\":%lu,\"xt_ct_iters\":%lu,\"xt_ct_eperm\":%lu,\"xt_ct_unsupported\":%lu,\"xt_ct_set_ok\":%lu,\"xt_ct_get_ok\":%lu,\"xt_ct_v2_seen\":%lu,\"fwd_loop_runs\":%lu,\"fwd_loop_ns_setup_failed\":%lu,\"fwd_loop_probe_sent_ok\":%lu,\"fwd_loop_completed_ok\":%lu,\"l4frag_iters\":%lu,\"l4frag_install_ok\":%lu,\"l4frag_rule_ok\":%lu,\"l4frag_send_ok\":%lu,\"l4frag_send_failed\":%lu},"
 		"\"tc_qdisc_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"link_create_ok\":%lu,\"qdisc_create_ok\":%lu,\"tclass_create_ok\":%lu,\"tfilter_create_ok\":%lu,\"packet_sent_ok\":%lu,\"qdisc_replace_ok\":%lu,\"tfilter_del_ok\":%lu,\"qdisc_del_ok\":%lu,\"link_del_ok\":%lu,\"peek_stack_runs\":%lu,\"peek_stack_install_ok\":%lu,\"peek_stack_install_fail\":%lu,\"peek_stack_burst_ok\":%lu,\"bridge_parent_runs\":%lu,\"bridge_dellink_race_ok\":%lu},"
 		"\"xfrm_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sa_added\":%lu,\"sa_updated\":%lu,\"sa_deleted\":%lu,\"pol_added\":%lu,\"pol_deleted\":%lu,\"esp_sent\":%lu,\"pfkey_send_ok\":%lu,\"ah_esn_setup_ok\":%lu,\"ah_esn_setup_fail\":%lu,\"ah_esn_async_runs\":%lu,\"ah_esn_delsa_races\":%lu},"
-		"\"bpf_cgroup_attach\":{\"runs\":%lu,\"setup_failed\":%lu,\"prog_loaded\":%lu,\"attached\":%lu,\"attach_rejected\":%lu,\"packets_sent\":%lu,\"detached\":%lu,\"post_detach_sent\":%lu},"
 		"\"sctp_assoc_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bindx_added\":%lu,\"bindx_removed\":%lu,\"bindx_rejected\":%lu,\"connect_failed\":%lu,\"connected\":%lu,\"accepted\":%lu,\"packets_sent\":%lu,\"peeled_off\":%lu,\"peeloff_rejected\":%lu,\"cycles\":%lu},"
 		"\"mptcp_pm_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sock_mptcp_ok\":%lu,\"addr_added_ok\":%lu,\"addr_removed_ok\":%lu,\"send_ok\":%lu,\"setsockopt_unsupported\":%lu,\"setsockopt_master_set\":%lu,\"setsockopt_master_fail\":%lu,\"getsockopt_verify_ok\":%lu,\"getsockopt_verify_drift\":%lu,\"sockopt_sweep_runs\":%lu,\"sockopt_set_ok\":%lu,\"sockopt_set_failed\":%lu,\"sockopt_subflow_added\":%lu,\"sockopt_readback_ok\":%lu,\"sockopt_inherit_mismatch\":%lu,\"sockopt_unsupported_latched\":%lu},"
 		"\"devlink_port_churn\":{\"iterations\":%lu,\"split_ok\":%lu,\"split_fail\":%lu,\"reload_ok\":%lu,\"reload_fail\":%lu,\"create_skipped\":%lu},"
@@ -1637,14 +1652,6 @@ static void dump_stats_json_netfilter_and_xfrm(void)
 		shm->stats.xfrm_ah_esn_setup_fail,
 		shm->stats.xfrm_ah_esn_async_runs,
 		shm->stats.xfrm_ah_esn_delsa_races,
-		shm->stats.bpf_cgroup_attach_runs,
-		shm->stats.bpf_cgroup_attach_setup_failed,
-		shm->stats.bpf_cgroup_attach_prog_loaded,
-		shm->stats.bpf_cgroup_attach_attached,
-		shm->stats.bpf_cgroup_attach_attach_rejected,
-		shm->stats.bpf_cgroup_attach_packets_sent,
-		shm->stats.bpf_cgroup_attach_detached,
-		shm->stats.bpf_cgroup_attach_post_detach_sent,
 		shm->stats.sctp_assoc_churn_runs,
 		shm->stats.sctp_assoc_churn_setup_failed,
 		shm->stats.sctp_assoc_churn_bindx_added,
@@ -2180,6 +2187,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&handshake_req_abort_category);
+
+	printf(",");
+	stat_category_emit_json(&bpf_cgroup_attach_category);
 
 	printf(",");
 	stat_category_emit_json(&iouring_flood_category);
@@ -4969,16 +4979,7 @@ static void dump_stats_childop_runs_network(void)
 		stat_row("nat_t_churn", "xfrm6_delsa_races", shm->stats.nat_t_xfrm6_delsa_races);
 	}
 
-	if (shm->stats.bpf_cgroup_attach_runs) {
-		stat_row("bpf_cgroup_attach", "runs",             shm->stats.bpf_cgroup_attach_runs);
-		stat_row("bpf_cgroup_attach", "setup_failed",     shm->stats.bpf_cgroup_attach_setup_failed);
-		stat_row("bpf_cgroup_attach", "prog_loaded",      shm->stats.bpf_cgroup_attach_prog_loaded);
-		stat_row("bpf_cgroup_attach", "attached",         shm->stats.bpf_cgroup_attach_attached);
-		stat_row("bpf_cgroup_attach", "attach_rejected",  shm->stats.bpf_cgroup_attach_attach_rejected);
-		stat_row("bpf_cgroup_attach", "packets_sent",     shm->stats.bpf_cgroup_attach_packets_sent);
-		stat_row("bpf_cgroup_attach", "detached",         shm->stats.bpf_cgroup_attach_detached);
-		stat_row("bpf_cgroup_attach", "post_detach_sent", shm->stats.bpf_cgroup_attach_post_detach_sent);
-	}
+	stat_category_emit_text(&bpf_cgroup_attach_category);
 
 	if (shm->stats.mptcp_pm_churn_runs) {
 		stat_row("mptcp_pm_churn", "runs",            shm->stats.mptcp_pm_churn_runs);
