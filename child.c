@@ -1619,10 +1619,10 @@ void log_alt_op_config(void)
 	if (alt_op_children == 0)
 		return;
 
-	/* Dave wants the head of the rotation visible at -v so the
-	 * assignment for the first few slots is eyeballable.  Cap at 5
-	 * (or fewer if alt_op_children itself is smaller) and append
-	 * an ellipsis when there are more rotation entries left. */
+	/* Show the head of the rotation at -v so the assignment for the
+	 * first few slots is eyeballable.  Cap at 5 (or fewer if
+	 * alt_op_children itself is smaller) and append an ellipsis when
+	 * there are more rotation entries left. */
 	show = alt_op_children < 5 ? alt_op_children : 5;
 	if (show > NR_ALT_OP_ROTATION)
 		show = NR_ALT_OP_ROTATION;
@@ -1853,9 +1853,8 @@ static unsigned int enabled_altop_count;
  * the operator can see at -v what the effective altop mix actually is.
  *
  * Called once from main_loop before fork_children; the dormant gates
- * are compile-time constants so a single startup pass suffices.  Any
- * future runtime dormant-flipping must re-invoke this function so the
- * dense vector and log line stay accurate.
+ * are compile-time constants so a single startup pass suffices.
+ * dormant_op_set() re-invokes this so runtime flips stay accurate.
  */
 void init_altop_dispatch(void)
 {
@@ -2371,9 +2370,7 @@ void child_process(struct childdata *child, int childno)
 			clock_gettime(CLOCK_MONOTONIC, &child->tp);
 
 		/* Non-debug: hoisted to init_child().  Kept gated under
-		 * shm->debug for parity with the existing debug semantics
-		 * (even though enable_coredumps() is a no-op there) -- preserves
-		 * the surface in case the debug branch grows mid-loop work. */
+		 * shm->debug for parity with the existing debug semantics. */
 		if (shm->debug == true)
 			disable_coredumps();
 
