@@ -10,6 +10,7 @@
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
+#include "utils.h"
 
 #ifndef LANDLOCK_CREATE_RULESET_VERSION
 #define LANDLOCK_CREATE_RULESET_VERSION			(1U << 0)
@@ -151,12 +152,38 @@ static void sanitise_landlock_create_ruleset(struct syscallrecord *rec)
 		rec->a3 = rnd_u32();
 
 	/*
-	 * Hand the csfu buffer to the deferred-free queue at sanitise
-	 * time -- matches the io_uring_setup convention and keeps
-	 * cleanup independent of whether post_landlock_create_ruleset
-	 * ever runs (it's skipped when the retfd reject hook fires).
+	 * Stash the csfu buffer in rec->post_state so the unconditional
+	 * .cleanup hook frees it whether or not .post runs (.post is
+	 * skipped on the retfd reject path).  post_state is private to the
+	 * post/cleanup pair and less stomp-prone than rec->a1.
 	 */
-	deferred_free_enqueue_or_leak(attr);
+	rec->post_state = (unsigned long) attr;
+}
+
+static void cleanup_landlock_create_ruleset(struct syscallrecord *rec)
+{
+	struct landlock_ruleset_attr *attr =
+		(struct landlock_ruleset_attr *) rec->post_state;
+
+	rec->post_state = 0;
+
+	if (attr == NULL)
+		return;
+
+	/*
+	 * post_state is not exposed as a syscall arg, but the whole
+	 * record can be stomped by a sibling; guard the deref.  This
+	 * replaces the old deferred_free_enqueue_or_leak() pressure path.
+	 */
+	if (looks_like_corrupted_ptr(rec, attr))
+		return;
+
+	/*
+	 * attr came from build_csfu_struct() -> zmalloc_tracked(), which
+	 * registered the pointer in the alloc-track LRU.  tracked_free_now()
+	 * removes it from the LRU and frees it.
+	 */
+	tracked_free_now(attr);
 }
 
 static void post_landlock_create_ruleset(struct syscallrecord *rec)
@@ -179,5 +206,6 @@ struct syscallentry syscall_landlock_create_ruleset = {
 	.ret_objtype = OBJ_FD_LANDLOCK,
 	.sanitise = sanitise_landlock_create_ruleset,
 	.post = post_landlock_create_ruleset,
+	.cleanup = cleanup_landlock_create_ruleset,
 	.group = GROUP_PROCESS,
 };
