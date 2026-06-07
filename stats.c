@@ -983,6 +983,20 @@ static const struct stat_category pci_bind_category =
 	              pci_bind_runs,
 	              pci_bind_fields);
 
+static const struct stat_field ublk_lifecycle_fields[] = {
+	STAT_FIELD(ublk_lifecycle, iters),
+	STAT_FIELD(ublk_lifecycle, eperm),
+	STAT_FIELD(ublk_lifecycle, add_ok),
+	STAT_FIELD(ublk_lifecycle, fetch_ok),
+	STAT_FIELD(ublk_lifecycle, del_ok),
+	STAT_FIELD(ublk_lifecycle, race_observed),
+};
+
+static const struct stat_category ublk_lifecycle_category =
+	STAT_CATEGORY("ublk_lifecycle",
+	              ublk_lifecycle_iters,
+	              ublk_lifecycle_fields);
+
 static const struct stat_field handshake_req_abort_fields[] = {
 	STAT_FIELD(handshake_req_abort, runs),
 	STAT_FIELD(handshake_req_abort, setup_failed),
@@ -1903,7 +1917,6 @@ static void dump_stats_json_rxrpc_alg_ublk_block(void)
 		"\"af_alg_weak_cipher_probe\":{\"runs\":%lu,\"socket_failed\":%lu,\"total_bind_attempts\":%lu,\"total_bind_accepted\":%lu,\"weak_accepted_total\":%lu,\"setkey_accepted_total\":%lu,\"skcipher_weak_accepted\":%lu,\"aead_weak_accepted\":%lu,\"hash_weak_accepted\":%lu,\"strong_rejected\":%lu},"
 		"\"af_alg_probe\":{\"runs\":%lu,\"unsupported\":%lu,\"accept_total\":%lu,\"reject_total\":%lu},"
 		"\"af_alg_recvmsg\":{\"runs\":%lu,\"setkey_sent\":%lu,\"iv_sent\":%lu,\"oob_iov\":%lu,\"zerolen\":%lu,\"oversize\":%lu,\"empty_cmsg_no_more\":%lu,\"unsupported\":%lu},"
-		"\"ublk_lifecycle\":{\"iters\":%lu,\"eperm\":%lu,\"add_ok\":%lu,\"fetch_ok\":%lu,\"del_ok\":%lu,\"race_observed\":%lu},"
 		"\"veth_asymmetric_xdp\":{\"iters\":%lu,\"eperm\":%lu,\"unsupported\":%lu,\"pair_ok\":%lu,\"xdp_attach_ok\":%lu,\"send_ok\":%lu},"
 		"\"ip6erspan_netns_migrate\":{\"iters\":%lu,\"eperm\":%lu,\"unsupported\":%lu,\"link_create_ok\":%lu,\"netns_migrate_ok\":%lu,\"changelink_ok\":%lu},"
 		"\"wireguard_decrypt_flood\":{\"runs\":%lu,\"setup_failed\":%lu,\"packets_sent\":%lu,\"unsupported_latched\":%lu},"
@@ -1935,12 +1948,6 @@ static void dump_stats_json_rxrpc_alg_ublk_block(void)
 		shm->stats.af_alg_recvmsg_oversize,
 		shm->stats.af_alg_recvmsg_empty_cmsg_no_more,
 		shm->stats.af_alg_recvmsg_unsupported,
-		shm->stats.ublk_lifecycle_iters,
-		shm->stats.ublk_lifecycle_eperm,
-		shm->stats.ublk_lifecycle_add_ok,
-		shm->stats.ublk_lifecycle_fetch_ok,
-		shm->stats.ublk_lifecycle_del_ok,
-		shm->stats.ublk_lifecycle_race_observed,
 		shm->stats.veth_asym_iters,
 		shm->stats.veth_asym_eperm,
 		shm->stats.veth_asym_unsupported,
@@ -2230,6 +2237,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&pci_bind_category);
+
+	printf(",");
+	stat_category_emit_json(&ublk_lifecycle_category);
 
 	printf(",");
 	stat_category_emit_json(&handshake_req_abort_category);
@@ -4966,14 +4976,7 @@ static void dump_stats_childop_runs_network(void)
 		stat_row("xfrm_churn", "compat_replies_seen", shm->stats.xfrm_compat_replies_seen);
 	}
 
-	if (shm->stats.ublk_lifecycle_iters) {
-		stat_row("ublk_lifecycle", "iters",         shm->stats.ublk_lifecycle_iters);
-		stat_row("ublk_lifecycle", "eperm",         shm->stats.ublk_lifecycle_eperm);
-		stat_row("ublk_lifecycle", "add_ok",        shm->stats.ublk_lifecycle_add_ok);
-		stat_row("ublk_lifecycle", "fetch_ok",      shm->stats.ublk_lifecycle_fetch_ok);
-		stat_row("ublk_lifecycle", "del_ok",        shm->stats.ublk_lifecycle_del_ok);
-		stat_row("ublk_lifecycle", "race_observed", shm->stats.ublk_lifecycle_race_observed);
-	}
+	stat_category_emit_text(&ublk_lifecycle_category);
 
 	stat_category_emit_text(&pci_bind_category);
 
