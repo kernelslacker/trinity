@@ -72,7 +72,14 @@ static void sanitise_rt_sigprocmask(struct syscallrecord *rec)
 	snap->set        = rec->a2;
 	snap->oset       = rec->a3;
 	snap->sigsetsize = rec->a4;
-	rec->post_state = (unsigned long) snap;
+	/*
+	 * post_state_install pairs the rec->post_state assign with the
+	 * ownership-table register so the observable window between the
+	 * two is closed; post_rt_sigprocmask() will then gate the snap
+	 * through post_state_claim_owned() and prove ownership before
+	 * dereferencing any field.
+	 */
+	post_state_install(rec, snap);
 }
 
 static unsigned long sigprocmask_how[] = {
@@ -98,44 +105,21 @@ static unsigned long sigprocmask_how[] = {
  */
 static void post_rt_sigprocmask(struct syscallrecord *rec)
 {
-	struct rt_sigprocmask_post_state *snap =
-		(struct rt_sigprocmask_post_state *) rec->post_state;
+	struct rt_sigprocmask_post_state *snap;
 	char procbuf[2048];
 	const char *value;
 	uint64_t syscall_blocked, proc_blocked;
 	sigset_t buf;
 
+	/*
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
+	 */
+	snap = post_state_claim_owned(rec, RT_SIGPROCMASK_POST_STATE_MAGIC, __func__);
 	if (snap == NULL)
 		return;
-
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_rt_sigprocmask: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	/*
-	 * Magic-cookie check: snap survived the heap-shape gate but a
-	 * sibling scribble of rec->post_state with a heap-shaped pointer
-	 * to a foreign allocation would let the wrong bytes pose as a
-	 * rt_sigprocmask_post_state.  A cookie mismatch means snap does
-	 * not point at our struct -- abandon rather than feed wild bytes
-	 * into the set / oset gate and the sigsetsize length check.
-	 */
-	if (snap->magic != RT_SIGPROCMASK_POST_STATE_MAGIC) {
-		outputerr("post_rt_sigprocmask: rejected snap with bad magic 0x%lx "
-			  "(post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
 
 	if (!ONE_IN(100))
 		goto out_free;
@@ -173,7 +157,7 @@ static void post_rt_sigprocmask(struct syscallrecord *rec)
 	}
 
 out_free:
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_rt_sigprocmask = {
