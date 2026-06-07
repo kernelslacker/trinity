@@ -275,6 +275,30 @@ static void json_emit_syscalls_array(void)
 	putchar(']');
 }
 
+/* Insertion-sort push for a top-N table held as parallel arrays
+ * (vals[], nrs[], descending by value, capped at cap).  Shared by the
+ * kcov dump paths that track leading edge-producing, recent-growth, and
+ * CMP-insert syscalls. */
+static void topn_push(unsigned long *vals, unsigned int *nrs,
+		      unsigned int *count, unsigned int cap,
+		      unsigned long value, unsigned int nr)
+{
+	unsigned int j;
+
+	for (j = *count; j > 0 && value > vals[j - 1]; j--) {
+		if (j < cap) {
+			vals[j] = vals[j - 1];
+			nrs[j] = nrs[j - 1];
+		}
+	}
+	if (j < cap) {
+		vals[j] = value;
+		nrs[j] = nr;
+		if (*count < cap)
+			(*count)++;
+	}
+}
+
 static void json_emit_kcov_section(void)
 {
 	unsigned int i, j;
@@ -321,35 +345,11 @@ static void json_emit_kcov_section(void)
 		unsigned long prev  = kcov_shm->per_syscall_edges_previous[i];
 		unsigned long delta = (edges > prev) ? edges - prev : 0;
 
-		if (edges > 0) {
-			for (j = top_count; j > 0 && edges > top_edges[j - 1]; j--) {
-				if (j < 10) {
-					top_edges[j] = top_edges[j - 1];
-					top_nr[j] = top_nr[j - 1];
-				}
-			}
-			if (j < 10) {
-				top_edges[j] = edges;
-				top_nr[j] = i;
-				if (top_count < 10)
-					top_count++;
-			}
-		}
+		if (edges > 0)
+			topn_push(top_edges, top_nr, &top_count, 10, edges, i);
 
-		if (delta > 0) {
-			for (j = delta_count; j > 0 && delta > delta_edges[j - 1]; j--) {
-				if (j < 10) {
-					delta_edges[j] = delta_edges[j - 1];
-					delta_nr[j] = delta_nr[j - 1];
-				}
-			}
-			if (j < 10) {
-				delta_edges[j] = delta;
-				delta_nr[j] = i;
-				if (delta_count < 10)
-					delta_count++;
-			}
-		}
+		if (delta > 0)
+			topn_push(delta_edges, delta_nr, &delta_count, 10, delta, i);
 	}
 
 	printf(",\"kcov\":{\"unique_edges\":%lu,\"total_pcs\":%lu,"
@@ -5504,19 +5504,7 @@ static void dump_stats_kcov_block(void)
 			if (kcov_syscall_is_cold(i))
 				cold_count++;
 
-			/* Find insertion point. */
-			for (j = top_count; j > 0 && edges > top_edges[j - 1]; j--) {
-				if (j < 10) {
-					top_edges[j] = top_edges[j - 1];
-					top_nr[j] = top_nr[j - 1];
-				}
-			}
-			if (j < 10) {
-				top_edges[j] = edges;
-				top_nr[j] = i;
-				if (top_count < 10)
-					top_count++;
-			}
+			topn_push(top_edges, top_nr, &top_count, 10, edges, i);
 		}
 
 		if (top_count > 0) {
@@ -5548,18 +5536,7 @@ static void dump_stats_kcov_block(void)
 				if (delta == 0)
 					continue;
 
-				for (j = delta_count; j > 0 && delta > delta_edges[j - 1]; j--) {
-					if (j < 10) {
-						delta_edges[j] = delta_edges[j - 1];
-						delta_nr[j] = delta_nr[j - 1];
-					}
-				}
-				if (j < 10) {
-					delta_edges[j] = delta;
-					delta_nr[j] = i;
-					if (delta_count < 10)
-						delta_count++;
-				}
+				topn_push(delta_edges, delta_nr, &delta_count, 10, delta, i);
 			}
 
 			if (any_delta && delta_count > 0) {
@@ -5601,18 +5578,7 @@ static void dump_stats_kcov_block(void)
 				if (delta == 0)
 					continue;
 
-				for (j = cmp_delta_count; j > 0 && delta > cmp_delta_inserts[j - 1]; j--) {
-					if (j < 10) {
-						cmp_delta_inserts[j] = cmp_delta_inserts[j - 1];
-						cmp_delta_nr[j] = cmp_delta_nr[j - 1];
-					}
-				}
-				if (j < 10) {
-					cmp_delta_inserts[j] = delta;
-					cmp_delta_nr[j] = i;
-					if (cmp_delta_count < 10)
-						cmp_delta_count++;
-				}
+				topn_push(cmp_delta_inserts, cmp_delta_nr, &cmp_delta_count, 10, delta, i);
 			}
 
 			if (any_cmp_delta && cmp_delta_count > 0) {
