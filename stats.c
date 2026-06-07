@@ -966,6 +966,23 @@ static const struct stat_category igmp_mld_source_churn_category =
 	              igmp_mld_source_churn_runs,
 	              igmp_mld_source_churn_fields);
 
+static const struct stat_field bridge_vlan_churn_fields[] = {
+	STAT_FIELD(bridge_vlan_churn, runs),
+	STAT_FIELD(bridge_vlan_churn, setup_failed),
+	STAT_FIELD(bridge_vlan_churn, bridge_create_ok),
+	STAT_FIELD(bridge_vlan_churn, veth_create_ok),
+	STAT_FIELD(bridge_vlan_churn, vlan_add_ok),
+	STAT_FIELD(bridge_vlan_churn, vlan_del_ok),
+	STAT_FIELD(bridge_vlan_churn, tunnel_add_ok),
+	STAT_FIELD(bridge_vlan_churn, mst_set_ok),
+	STAT_FIELD(bridge_vlan_churn, raw_send_ok),
+};
+
+static const struct stat_category bridge_vlan_churn_category =
+	STAT_CATEGORY("bridge_vlan_churn",
+	              bridge_vlan_churn_runs,
+	              bridge_vlan_churn_fields);
+
 static const struct stat_field pci_bind_fields[] = {
 	STAT_FIELD(pci_bind, runs),
 	STAT_FIELD(pci_bind, drivers_available),
@@ -1794,7 +1811,6 @@ static void dump_stats_json_iouring_zc_and_kvm(void)
 {
 	printf(","
 		"\"vsock_transport_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bind_ok\":%lu,\"connect_ok\":%lu,\"send_ok\":%lu,\"buffer_size_ok\":%lu,\"timeout_ok\":%lu,\"get_cid_ok\":%lu,\"seq_eom_runs\":%lu,\"seq_eom_sends_ok\":%lu,\"seq_eom_sends_failed\":%lu,\"seq_eom_skipped\":%lu},"
-		"\"bridge_vlan_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bridge_create_ok\":%lu,\"veth_create_ok\":%lu,\"vlan_add_ok\":%lu,\"vlan_del_ok\":%lu,\"tunnel_add_ok\":%lu,\"mst_set_ok\":%lu,\"raw_send_ok\":%lu},"
 		"\"psp_key_rotate\":{\"runs\":%lu,\"setup_failed\":%lu,\"netdev_create_ok\":%lu,\"family_resolve_ok\":%lu,\"dev_get_ok\":%lu,\"key_install_ok\":%lu,\"spi_set_ok\":%lu,\"send_ok\":%lu,\"rotate_ok\":%lu,\"spi_switch_ok\":%lu,\"shutdown_ok\":%lu,\"devlink_port_churn_runs\":%lu,\"devlink_port_churn_port_add_ok\":%lu,\"devlink_port_churn_port_del_ok\":%lu,\"devlink_port_churn_vf_spawn_ok\":%lu,\"devlink_port_churn_unsupported_latched\":%lu},"
 		"\"afxdp_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"umem_reg_ok\":%lu,\"rings_setup_ok\":%lu,\"prog_load_ok\":%lu,\"map_create_ok\":%lu,\"map_update_ok\":%lu,\"bind_ok\":%lu,\"link_attach_ok\":%lu,\"netlink_attach_ok\":%lu,\"attach_failed\":%lu,\"send_ok\":%lu,\"recv_ok\":%lu,\"map_delete_ok\":%lu,\"munmap_race_ok\":%lu,\"xsg_iters\":%lu,\"tx_metadata_iters\":%lu,\"tun_bind_iters\":%lu,\"xsg_bind_failed\":%lu,\"tx_md_bind_failed\":%lu},"
 		"\"kvm\":{\"vcpu_ioctls_dispatched\":%lu},"
@@ -1814,15 +1830,6 @@ static void dump_stats_json_iouring_zc_and_kvm(void)
 		shm->stats.vsock_seq_eom_sends_ok,
 		shm->stats.vsock_seq_eom_sends_failed,
 		shm->stats.vsock_seq_eom_skipped,
-		shm->stats.bridge_vlan_churn_runs,
-		shm->stats.bridge_vlan_churn_setup_failed,
-		shm->stats.bridge_vlan_churn_bridge_create_ok,
-		shm->stats.bridge_vlan_churn_veth_create_ok,
-		shm->stats.bridge_vlan_churn_vlan_add_ok,
-		shm->stats.bridge_vlan_churn_vlan_del_ok,
-		shm->stats.bridge_vlan_churn_tunnel_add_ok,
-		shm->stats.bridge_vlan_churn_mst_set_ok,
-		shm->stats.bridge_vlan_churn_raw_send_ok,
 		shm->stats.psp_key_rotate_runs,
 		shm->stats.psp_key_rotate_setup_failed,
 		shm->stats.psp_key_rotate_netdev_create_ok,
@@ -2234,6 +2241,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&igmp_mld_source_churn_category);
+
+	printf(",");
+	stat_category_emit_json(&bridge_vlan_churn_category);
 
 	printf(",");
 	stat_category_emit_json(&pci_bind_category);
@@ -5088,17 +5098,7 @@ static void dump_stats_childop_runs_network(void)
 		stat_row("vsock_transport_churn", "seq_eom_skipped",      shm->stats.vsock_seq_eom_skipped);
 	}
 
-	if (shm->stats.bridge_vlan_churn_runs) {
-		stat_row("bridge_vlan_churn", "runs",             shm->stats.bridge_vlan_churn_runs);
-		stat_row("bridge_vlan_churn", "setup_failed",     shm->stats.bridge_vlan_churn_setup_failed);
-		stat_row("bridge_vlan_churn", "bridge_create_ok", shm->stats.bridge_vlan_churn_bridge_create_ok);
-		stat_row("bridge_vlan_churn", "veth_create_ok",   shm->stats.bridge_vlan_churn_veth_create_ok);
-		stat_row("bridge_vlan_churn", "vlan_add_ok",      shm->stats.bridge_vlan_churn_vlan_add_ok);
-		stat_row("bridge_vlan_churn", "vlan_del_ok",      shm->stats.bridge_vlan_churn_vlan_del_ok);
-		stat_row("bridge_vlan_churn", "tunnel_add_ok",    shm->stats.bridge_vlan_churn_tunnel_add_ok);
-		stat_row("bridge_vlan_churn", "mst_set_ok",       shm->stats.bridge_vlan_churn_mst_set_ok);
-		stat_row("bridge_vlan_churn", "raw_send_ok",      shm->stats.bridge_vlan_churn_raw_send_ok);
-	}
+	stat_category_emit_text(&bridge_vlan_churn_category);
 
 	stat_category_emit_text(&igmp_mld_source_churn_category);
 
