@@ -1054,6 +1054,18 @@ static const struct stat_category bridge_conntrack_churn_category =
 	              bridge_ct_runs,
 	              bridge_conntrack_churn_fields);
 
+static const struct stat_field wireguard_decrypt_flood_fields[] = {
+	STAT_FIELD(wgdf, runs),
+	STAT_FIELD(wgdf, setup_failed),
+	STAT_FIELD(wgdf, packets_sent),
+	STAT_FIELD(wgdf, unsupported_latched),
+};
+
+static const struct stat_category wireguard_decrypt_flood_category =
+	STAT_CATEGORY("wireguard_decrypt_flood",
+	              wgdf_runs,
+	              wireguard_decrypt_flood_fields);
+
 static const struct stat_field pci_bind_fields[] = {
 	STAT_FIELD(pci_bind, runs),
 	STAT_FIELD(pci_bind, drivers_available),
@@ -1991,7 +2003,6 @@ static void dump_stats_json_rxrpc_alg_ublk_block(void)
 		"\"af_alg_recvmsg\":{\"runs\":%lu,\"setkey_sent\":%lu,\"iv_sent\":%lu,\"oob_iov\":%lu,\"zerolen\":%lu,\"oversize\":%lu,\"empty_cmsg_no_more\":%lu,\"unsupported\":%lu},"
 		"\"veth_asymmetric_xdp\":{\"iters\":%lu,\"eperm\":%lu,\"unsupported\":%lu,\"pair_ok\":%lu,\"xdp_attach_ok\":%lu,\"send_ok\":%lu},"
 		"\"ip6erspan_netns_migrate\":{\"iters\":%lu,\"eperm\":%lu,\"unsupported\":%lu,\"link_create_ok\":%lu,\"netns_migrate_ok\":%lu,\"changelink_ok\":%lu},"
-		"\"wireguard_decrypt_flood\":{\"runs\":%lu,\"setup_failed\":%lu,\"packets_sent\":%lu,\"unsupported_latched\":%lu},"
 		"\"blkdev_lifecycle_race\":{\"runs\":%lu,\"setup_failed\":%lu,\"set_fd_ok\":%lu,\"clr_fd\":%lu,\"ebusy\":%lu,\"rescans\":%lu},",
 		shm->stats.af_alg_probe_runs,
 		shm->stats.af_alg_probe_unsupported,
@@ -2017,10 +2028,6 @@ static void dump_stats_json_rxrpc_alg_ublk_block(void)
 		shm->stats.inm_link_create_ok,
 		shm->stats.inm_netns_migrate_ok,
 		shm->stats.inm_changelink_ok,
-		shm->stats.wgdf_runs,
-		shm->stats.wgdf_setup_failed,
-		shm->stats.wgdf_packets_sent,
-		shm->stats.wgdf_unsupported_latched,
 		shm->stats.blkdev_lifecycle_runs,
 		shm->stats.blkdev_lifecycle_setup_failed,
 		shm->stats.blkdev_lifecycle_set_fd_ok,
@@ -2321,6 +2328,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&bridge_conntrack_churn_category);
+
+	printf(",");
+	stat_category_emit_json(&wireguard_decrypt_flood_category);
 
 	dump_stats_json_iouring_zc_and_kvm();
 	dump_stats_json_rxrpc_alg_ublk_block();
@@ -5190,12 +5200,7 @@ static void dump_stats_childop_runs_network(void)
 
 	stat_category_emit_text(&ip6gre_bond_lapb_stack_category);
 
-	if (shm->stats.wgdf_runs) {
-		stat_row("wireguard_decrypt_flood", "runs",                shm->stats.wgdf_runs);
-		stat_row("wireguard_decrypt_flood", "setup_failed",        shm->stats.wgdf_setup_failed);
-		stat_row("wireguard_decrypt_flood", "packets_sent",        shm->stats.wgdf_packets_sent);
-		stat_row("wireguard_decrypt_flood", "unsupported_latched", shm->stats.wgdf_unsupported_latched);
-	}
+	stat_category_emit_text(&wireguard_decrypt_flood_category);
 
 	if (shm->stats.blkdev_lifecycle_runs) {
 		stat_row("blkdev_lifecycle_race", "runs",          shm->stats.blkdev_lifecycle_runs);
