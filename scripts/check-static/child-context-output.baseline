@@ -211,8 +211,8 @@ syscalls/lsm_get_self_attr.c:307:post_lsm_get_self_attr
 syscalls/lsm_list_modules.c:200:post_lsm_list_modules
 syscalls/lsm_list_modules.c:207:post_lsm_list_modules
 syscalls/lsm_list_modules.c:233:post_lsm_list_modules
-syscalls/lsm_list_modules.c:300:post_lsm_list_modules
-syscalls/lsm_list_modules.c:304:post_lsm_list_modules
+syscalls/lsm_list_modules.c:298:post_lsm_list_modules
+syscalls/lsm_list_modules.c:302:post_lsm_list_modules
 syscalls/map_shadow_stack.c:45:post_map_shadow_stack
 syscalls/mincore.c:98:post_mincore
 syscalls/mmap.c:216:post_mmap
