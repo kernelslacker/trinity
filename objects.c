@@ -809,7 +809,6 @@ static bool add_object_grow_capacity(struct object *obj, enum obj_scope scope,
 			free(head->array);
 			head->array = newarray;
 			head->array_capacity = newcap;
-			cap = newcap;
 		}
 	} else if (n >= cap) {
 		/*
@@ -854,7 +853,6 @@ static bool add_object_grow_capacity(struct object *obj, enum obj_scope scope,
 			memcpy(newarray, oldarray, cap * sizeof(struct object *));
 		head->array = newarray;
 		head->array_capacity = newcap;
-		cap = newcap;
 		if (oldarray != NULL)
 			deferred_free_enqueue(oldarray);
 	}
@@ -893,6 +891,8 @@ static void add_object_publish(struct object *obj, enum obj_scope scope,
 	unsigned int n;
 
 	head = get_objhead(scope, type);
+	if (head == NULL)
+		return;
 	n = head->num_entries;
 
 	head->array[n] = obj;
