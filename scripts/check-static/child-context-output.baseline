@@ -261,9 +261,7 @@ syscalls/newlstat.c:153:post_newlstat
 syscalls/newstat.c:163:post_newstat
 syscalls/newuname.c:169:post_newuname
 syscalls/nice.c:56:post_nice
-syscalls/olduname.c:161:post_olduname
-syscalls/olduname.c:176:post_olduname
-syscalls/olduname.c:233:post_olduname
+syscalls/olduname.c:210:post_olduname
 syscalls/open.c:136:post_openat
 syscalls/open.c:149:post_openat
 syscalls/open.c:322:post_openat2
