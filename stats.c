@@ -1068,6 +1068,20 @@ static const struct stat_category blkdev_lifecycle_race_category =
 	              blkdev_lifecycle_runs,
 	              blkdev_lifecycle_race_fields);
 
+static const struct stat_field veth_asymmetric_xdp_fields[] = {
+	STAT_FIELD(veth_asym, iters),
+	STAT_FIELD(veth_asym, eperm),
+	STAT_FIELD(veth_asym, unsupported),
+	STAT_FIELD(veth_asym, pair_ok),
+	STAT_FIELD(veth_asym, xdp_attach_ok),
+	STAT_FIELD(veth_asym, send_ok),
+};
+
+static const struct stat_category veth_asymmetric_xdp_category =
+	STAT_CATEGORY("veth_asymmetric_xdp",
+	              veth_asym_iters,
+	              veth_asymmetric_xdp_fields);
+
 static const struct stat_field wireguard_decrypt_flood_fields[] = {
 	STAT_FIELD(wgdf, runs),
 	STAT_FIELD(wgdf, setup_failed),
@@ -2027,7 +2041,6 @@ static void dump_stats_json_rxrpc_alg_ublk_block(void)
 {
 	printf("\"af_alg_probe\":{\"runs\":%lu,\"unsupported\":%lu,\"accept_total\":%lu,\"reject_total\":%lu},"
 		"\"af_alg_recvmsg\":{\"runs\":%lu,\"setkey_sent\":%lu,\"iv_sent\":%lu,\"oob_iov\":%lu,\"zerolen\":%lu,\"oversize\":%lu,\"empty_cmsg_no_more\":%lu,\"unsupported\":%lu},"
-		"\"veth_asymmetric_xdp\":{\"iters\":%lu,\"eperm\":%lu,\"unsupported\":%lu,\"pair_ok\":%lu,\"xdp_attach_ok\":%lu,\"send_ok\":%lu},"
 		"\"ip6erspan_netns_migrate\":{\"iters\":%lu,\"eperm\":%lu,\"unsupported\":%lu,\"link_create_ok\":%lu,\"netns_migrate_ok\":%lu,\"changelink_ok\":%lu},",
 		shm->stats.af_alg_probe_runs,
 		shm->stats.af_alg_probe_unsupported,
@@ -2041,12 +2054,6 @@ static void dump_stats_json_rxrpc_alg_ublk_block(void)
 		shm->stats.af_alg_recvmsg_oversize,
 		shm->stats.af_alg_recvmsg_empty_cmsg_no_more,
 		shm->stats.af_alg_recvmsg_unsupported,
-		shm->stats.veth_asym_iters,
-		shm->stats.veth_asym_eperm,
-		shm->stats.veth_asym_unsupported,
-		shm->stats.veth_asym_pair_ok,
-		shm->stats.veth_asym_xdp_attach_ok,
-		shm->stats.veth_asym_send_ok,
 		shm->stats.inm_iters,
 		shm->stats.inm_eperm,
 		shm->stats.inm_unsupported,
@@ -2345,6 +2352,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&blkdev_lifecycle_race_category);
+
+	printf(",");
+	stat_category_emit_json(&veth_asymmetric_xdp_category);
 
 	printf(",");
 	stat_category_emit_json(&wireguard_decrypt_flood_category);
@@ -5200,14 +5210,7 @@ static void dump_stats_childop_runs_network(void)
 		stat_row("psp_devlink_port_churn", "unsupported_latched",  shm->stats.psp_devlink_port_churn_unsupported_latched);
 	}
 
-	if (shm->stats.veth_asym_iters) {
-		stat_row("veth_asymmetric_xdp", "iters",         shm->stats.veth_asym_iters);
-		stat_row("veth_asymmetric_xdp", "eperm",         shm->stats.veth_asym_eperm);
-		stat_row("veth_asymmetric_xdp", "unsupported",   shm->stats.veth_asym_unsupported);
-		stat_row("veth_asymmetric_xdp", "pair_ok",       shm->stats.veth_asym_pair_ok);
-		stat_row("veth_asymmetric_xdp", "xdp_attach_ok", shm->stats.veth_asym_xdp_attach_ok);
-		stat_row("veth_asymmetric_xdp", "send_ok",       shm->stats.veth_asym_send_ok);
-	}
+	stat_category_emit_text(&veth_asymmetric_xdp_category);
 
 	if (shm->stats.inm_iters) {
 		stat_row("ip6erspan_netns_migrate", "iters",            shm->stats.inm_iters);
