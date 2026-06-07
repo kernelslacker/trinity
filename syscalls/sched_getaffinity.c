@@ -91,14 +91,19 @@ static void sanitise_sched_getaffinity(struct syscallrecord *rec)
 	 * cannot tell a real-but-wrong heap address from the original user
 	 * mask pointer, and the post-handler's pid filter and the memcpy
 	 * bound would resolve against scribbled values.  post_state is
-	 * private to the post handler.
+	 * private to the post handler.  post_state_install pairs the
+	 * rec->post_state assign with the ownership-table register so the
+	 * observable window between the two is closed;
+	 * post_sched_getaffinity() will then gate the snap through
+	 * post_state_claim_owned() and prove ownership before dereferencing
+	 * any field.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = SCHED_GETAFFINITY_POST_STATE_MAGIC;
 	snap->pid  = rec->a1;
 	snap->len  = rec->a2;
 	snap->mask = rec->a3;
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 }
 
 /*
@@ -119,7 +124,7 @@ static void sanitise_sched_getaffinity(struct syscallrecord *rec)
  */
 static void post_sched_getaffinity(struct syscallrecord *rec)
 {
-	struct sched_getaffinity_post_state *snap = (struct sched_getaffinity_post_state *) rec->post_state;
+	struct sched_getaffinity_post_state *snap;
 	unsigned long retval = rec->retval;
 	long ret = (long) retval;
 	char buf[2048];
@@ -129,29 +134,16 @@ static void post_sched_getaffinity(struct syscallrecord *rec)
 	uint32_t chunks[sizeof(cpu_set_t) / sizeof(uint32_t)];
 	int nchunks = 0, i;
 
+	/*
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
+	 */
+	snap = post_state_claim_owned(rec, SCHED_GETAFFINITY_POST_STATE_MAGIC,
+				      __func__);
 	if (snap == NULL)
 		return;
-
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_sched_getaffinity: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	if (snap->magic != SCHED_GETAFFINITY_POST_STATE_MAGIC) {
-		outputerr("post_sched_getaffinity: rejected snap with bad magic "
-			  "0x%lx (post_state-stomped to foreign "
-			  "allocation?)\n", snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
 
 	/*
 	 * Kernel ABI: sys_sched_getaffinity returns the cpumask size in
@@ -244,7 +236,7 @@ static void post_sched_getaffinity(struct syscallrecord *rec)
 	}
 
 out_free:
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_sched_getaffinity = {

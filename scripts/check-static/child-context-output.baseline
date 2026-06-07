@@ -303,10 +303,8 @@ syscalls/rt_sigpending.c:93:post_rt_sigpending
 syscalls/rt_sigprocmask.c:117:post_rt_sigprocmask
 syscalls/rt_sigprocmask.c:132:post_rt_sigprocmask
 syscalls/rt_sigprocmask.c:167:post_rt_sigprocmask
-syscalls/sched_getaffinity.c:141:post_sched_getaffinity
-syscalls/sched_getaffinity.c:148:post_sched_getaffinity
-syscalls/sched_getaffinity.c:164:post_sched_getaffinity
-syscalls/sched_getaffinity.c:236:post_sched_getaffinity
+syscalls/sched_getaffinity.c:156:post_sched_getaffinity
+syscalls/sched_getaffinity.c:228:post_sched_getaffinity
 syscalls/sched_getattr.c:245:post_sched_getattr
 syscalls/sched_getattr.c:252:post_sched_getattr
 syscalls/sched_getattr.c:329:post_sched_getattr
