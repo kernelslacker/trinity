@@ -1066,6 +1066,18 @@ static const struct stat_category wireguard_decrypt_flood_category =
 	              wgdf_runs,
 	              wireguard_decrypt_flood_fields);
 
+static const struct stat_field rtnl_vf_broadcast_getlink_fields[] = {
+	STAT_FIELD(rtnl_vf_broadcast, runs),
+	STAT_FIELD(rtnl_vf_broadcast, setup_ok),
+	STAT_FIELD(rtnl_vf_broadcast, setup_failed),
+	STAT_FIELD(rtnl_vf_broadcast, getlink_ok),
+};
+
+static const struct stat_category rtnl_vf_broadcast_getlink_category =
+	STAT_CATEGORY("rtnl_vf_broadcast_getlink",
+	              rtnl_vf_broadcast_runs,
+	              rtnl_vf_broadcast_getlink_fields);
+
 static const struct stat_field pci_bind_fields[] = {
 	STAT_FIELD(pci_bind, runs),
 	STAT_FIELD(pci_bind, drivers_available),
@@ -2041,7 +2053,6 @@ static void dump_stats_json_probes_misuse_and_tail(void)
 	printf("\"iscsi_login_walker\":{\"runs\":%lu,\"setup_failed\":%lu,\"no_target\":%lu,\"connected\":%lu,\"state_init_sent\":%lu,\"state_security_sent\":%lu,\"state_op_neg_sent\":%lu,\"ffp_iters\":%lu,\"ffp_pdus\":%lu,\"chaos_runs\":%lu,\"chaos_pdus\":%lu,\"bytes_out\":%lu,\"bytes_in\":%lu},"
 		"\"ipvs_sysctl_writer\":{\"runs\":%lu,\"writes_ok\":%lu,\"writes_failed\":%lu,\"unsupported_latched\":%lu,\"burn_iters\":%lu},"
 		"\"ipfrag_source_churn\":{\"runs\":%lu,\"packets_sent_ok\":%lu,\"send_failed\":%lu,\"unique_srcs\":%lu},"
-		"\"rtnl_vf_broadcast_getlink\":{\"runs\":%lu,\"setup_ok\":%lu,\"setup_failed\":%lu,\"getlink_ok\":%lu},"
 		"\"obscure_af_churn\":{\"runs\":%lu,\"no_viable_pf\":%lu,"
 			"\"sendmsg_no_bind\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu},"
 			"\"bind_then_sendmsg\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu},"
@@ -2079,10 +2090,6 @@ static void dump_stats_json_probes_misuse_and_tail(void)
 		shm->stats.ipfrag_packets_sent_ok,
 		shm->stats.ipfrag_send_failed,
 		shm->stats.ipfrag_unique_srcs,
-		shm->stats.rtnl_vf_broadcast_runs,
-		shm->stats.rtnl_vf_broadcast_setup_ok,
-		shm->stats.rtnl_vf_broadcast_setup_failed,
-		shm->stats.rtnl_vf_broadcast_getlink_ok,
 		shm->stats.obscure_af_churn_runs,
 		shm->stats.obscure_af_churn_no_viable_pf,
 		shm->stats.obscure_af_churn_pattern_runs[0],
@@ -2331,6 +2338,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&wireguard_decrypt_flood_category);
+
+	printf(",");
+	stat_category_emit_json(&rtnl_vf_broadcast_getlink_category);
 
 	dump_stats_json_iouring_zc_and_kvm();
 	dump_stats_json_rxrpc_alg_ublk_block();
@@ -5245,12 +5255,7 @@ static void dump_stats_childop_runs_network(void)
 		stat_row("ipfrag_source_churn", "unique_srcs",     shm->stats.ipfrag_unique_srcs);
 	}
 
-	if (shm->stats.rtnl_vf_broadcast_runs) {
-		stat_row("rtnl_vf_broadcast_getlink", "runs",          shm->stats.rtnl_vf_broadcast_runs);
-		stat_row("rtnl_vf_broadcast_getlink", "setup_ok",      shm->stats.rtnl_vf_broadcast_setup_ok);
-		stat_row("rtnl_vf_broadcast_getlink", "setup_failed",  shm->stats.rtnl_vf_broadcast_setup_failed);
-		stat_row("rtnl_vf_broadcast_getlink", "getlink_ok",    shm->stats.rtnl_vf_broadcast_getlink_ok);
-	}
+	stat_category_emit_text(&rtnl_vf_broadcast_getlink_category);
 
 	if (shm->stats.obscure_af_churn_runs) {
 		static const char * const ap_names[] = {
