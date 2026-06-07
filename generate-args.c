@@ -972,6 +972,10 @@ static void struct_fill_passes(unsigned char *buf, unsigned int size,
 			}
 			if (stride > f->size)
 				stride = f->size;
+			if (stride == 0) {
+				fill_field_raw(buf, f);
+				break;
+			}
 			pick = vocab[rnd_modulo_u32(nv)];
 			plen = strnlen(pick, stride - 1);
 			memset(buf + f->offset, 0, stride);
