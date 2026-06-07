@@ -44,10 +44,8 @@ syscalls/bpf.c:661:post_bpf
 syscalls/bpf.c:678:post_bpf
 syscalls/bpf.c:713:post_bpf
 syscalls/bpf.c:728:post_bpf
-syscalls/capget.c:153:post_capget
-syscalls/capget.c:168:post_capget
-syscalls/capget.c:213:post_capget
-syscalls/capget.c:229:post_capget
+syscalls/capget.c:198:post_capget
+syscalls/capget.c:214:post_capget
 syscalls/capset.c:200:post_capset
 syscalls/capset.c:215:post_capset
 syscalls/capset.c:239:post_capset

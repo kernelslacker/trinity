@@ -85,7 +85,14 @@ static void sanitise_capget(struct syscallrecord *rec)
 	snap->magic  = CAPGET_POST_STATE_MAGIC;
 	snap->header = rec->a1;
 	snap->data   = rec->a2;
-	rec->post_state = (unsigned long) snap;
+	/*
+	 * post_state_install pairs the rec->post_state assign with the
+	 * ownership-table register so the observable window between the
+	 * two is closed; post_capget() will then gate the snap through
+	 * post_state_claim_owned() and prove ownership before
+	 * dereferencing any field.
+	 */
+	post_state_install(rec, snap);
 }
 
 /*
@@ -133,7 +140,7 @@ static void sanitise_capget(struct syscallrecord *rec)
  */
 static void post_capget(struct syscallrecord *rec)
 {
-	struct capget_post_state *snap = (struct capget_post_state *) rec->post_state;
+	struct capget_post_state *snap;
 	struct __user_cap_header_struct hdr_first, hdr_recall;
 	struct __user_cap_data_struct data_first[2] = { { 0 } };
 	struct __user_cap_data_struct data_recall[2] = { { 0 } };
@@ -141,37 +148,15 @@ static void post_capget(struct syscallrecord *rec)
 	int diverged = 0;
 	unsigned int i;
 
+	/*
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
+	 */
+	snap = post_state_claim_owned(rec, CAPGET_POST_STATE_MAGIC, __func__);
 	if (snap == NULL)
 		return;
-
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_capget: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	/*
-	 * Magic-cookie check: snap survived the heap-shape gate but a
-	 * sibling scribble of rec->post_state with a heap-shaped pointer
-	 * to a foreign allocation would let the wrong bytes pose as a
-	 * capget_post_state.  A cookie mismatch means snap does not point
-	 * at our struct -- abandon rather than feed wild bytes into the
-	 * header/data memcpy and the cap-mask compare.
-	 */
-	if (snap->magic != CAPGET_POST_STATE_MAGIC) {
-		outputerr("post_capget: rejected snap with bad magic 0x%lx "
-			  "(post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
 
 	if (!ONE_IN(100))
 		goto out_free;
@@ -241,7 +226,7 @@ static void post_capget(struct syscallrecord *rec)
 			   __ATOMIC_RELAXED);
 
 out_free:
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_capget = {
