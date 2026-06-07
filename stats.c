@@ -1012,6 +1012,19 @@ static const struct stat_category ipv6_ndisc_proxy_category =
 	              ipv6_ndisc_proxy_runs,
 	              ipv6_ndisc_proxy_fields);
 
+static const struct stat_field rxrpc_key_install_fields[] = {
+	STAT_FIELD(rxrpc_key_install, runs),
+	STAT_FIELD(rxrpc_key_install, calls),
+	STAT_FIELD(rxrpc_key_install, revokes),
+	STAT_FIELD(rxrpc_key_install, quota_hits),
+	STAT_FIELD(rxrpc_key_install, unsupported),
+};
+
+static const struct stat_category rxrpc_key_install_category =
+	STAT_CATEGORY("rxrpc_key_install",
+	              rxrpc_key_install_runs,
+	              rxrpc_key_install_fields);
+
 static const struct stat_field pci_bind_fields[] = {
 	STAT_FIELD(pci_bind, runs),
 	STAT_FIELD(pci_bind, drivers_available),
@@ -1949,19 +1962,13 @@ static void dump_stats_json_iouring_zc_and_kvm(void)
 
 static void dump_stats_json_rxrpc_alg_ublk_block(void)
 {
-	printf("\"rxrpc_key_install\":{\"runs\":%lu,\"calls\":%lu,\"revokes\":%lu,\"quota_hits\":%lu,\"unsupported\":%lu},"
-		"\"af_alg_weak_cipher_probe\":{\"runs\":%lu,\"socket_failed\":%lu,\"total_bind_attempts\":%lu,\"total_bind_accepted\":%lu,\"weak_accepted_total\":%lu,\"setkey_accepted_total\":%lu,\"skcipher_weak_accepted\":%lu,\"aead_weak_accepted\":%lu,\"hash_weak_accepted\":%lu,\"strong_rejected\":%lu},"
+	printf("\"af_alg_weak_cipher_probe\":{\"runs\":%lu,\"socket_failed\":%lu,\"total_bind_attempts\":%lu,\"total_bind_accepted\":%lu,\"weak_accepted_total\":%lu,\"setkey_accepted_total\":%lu,\"skcipher_weak_accepted\":%lu,\"aead_weak_accepted\":%lu,\"hash_weak_accepted\":%lu,\"strong_rejected\":%lu},"
 		"\"af_alg_probe\":{\"runs\":%lu,\"unsupported\":%lu,\"accept_total\":%lu,\"reject_total\":%lu},"
 		"\"af_alg_recvmsg\":{\"runs\":%lu,\"setkey_sent\":%lu,\"iv_sent\":%lu,\"oob_iov\":%lu,\"zerolen\":%lu,\"oversize\":%lu,\"empty_cmsg_no_more\":%lu,\"unsupported\":%lu},"
 		"\"veth_asymmetric_xdp\":{\"iters\":%lu,\"eperm\":%lu,\"unsupported\":%lu,\"pair_ok\":%lu,\"xdp_attach_ok\":%lu,\"send_ok\":%lu},"
 		"\"ip6erspan_netns_migrate\":{\"iters\":%lu,\"eperm\":%lu,\"unsupported\":%lu,\"link_create_ok\":%lu,\"netns_migrate_ok\":%lu,\"changelink_ok\":%lu},"
 		"\"wireguard_decrypt_flood\":{\"runs\":%lu,\"setup_failed\":%lu,\"packets_sent\":%lu,\"unsupported_latched\":%lu},"
 		"\"blkdev_lifecycle_race\":{\"runs\":%lu,\"setup_failed\":%lu,\"set_fd_ok\":%lu,\"clr_fd\":%lu,\"ebusy\":%lu,\"rescans\":%lu},",
-		shm->stats.rxrpc_key_install_runs,
-		shm->stats.rxrpc_key_install_calls,
-		shm->stats.rxrpc_key_install_revokes,
-		shm->stats.rxrpc_key_install_quota_hits,
-		shm->stats.rxrpc_key_install_unsupported,
 		shm->stats.af_alg_weak_cipher_probe_runs,
 		shm->stats.af_alg_weak_cipher_probe_socket_failed,
 		shm->stats.af_alg_weak_cipher_probe_total_bind_attempts,
@@ -2291,6 +2298,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&ipv6_ndisc_proxy_category);
+
+	printf(",");
+	stat_category_emit_json(&rxrpc_key_install_category);
 
 	dump_stats_json_iouring_zc_and_kvm();
 	dump_stats_json_rxrpc_alg_ublk_block();
@@ -5376,13 +5386,7 @@ static void dump_stats_childop_runs_network(void)
 		stat_row("splice_protocols", "msg_splice_pages_path_taken_inferred", shm->stats.splice_protocols_msg_splice_pages_path_taken_inferred);
 	}
 
-	if (shm->stats.rxrpc_key_install_runs) {
-		stat_row("rxrpc_key_install", "runs",        shm->stats.rxrpc_key_install_runs);
-		stat_row("rxrpc_key_install", "calls",       shm->stats.rxrpc_key_install_calls);
-		stat_row("rxrpc_key_install", "revokes",     shm->stats.rxrpc_key_install_revokes);
-		stat_row("rxrpc_key_install", "quota_hits",  shm->stats.rxrpc_key_install_quota_hits);
-		stat_row("rxrpc_key_install", "unsupported", shm->stats.rxrpc_key_install_unsupported);
-	}
+	stat_category_emit_text(&rxrpc_key_install_category);
 
 	if (shm->stats.af_alg_weak_cipher_probe_runs) {
 		stat_row("af_alg_weak_cipher_probe", "runs",                   shm->stats.af_alg_weak_cipher_probe_runs);
