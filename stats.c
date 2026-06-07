@@ -962,6 +962,26 @@ static const struct stat_category handshake_req_abort_category =
 	              handshake_req_abort_runs,
 	              handshake_req_abort_fields);
 
+static const struct stat_field af_unix_scm_rights_gc_fields[] = {
+	STAT_FIELD(af_unix_scm_rights_gc, runs),
+	STAT_FIELD(af_unix_scm_rights_gc, setup_failed),
+	STAT_FIELD(af_unix_scm_rights_gc, cycle_built_ok),
+	STAT_FIELD(af_unix_scm_rights_gc, close_ok),
+	STAT_FIELD(af_unix_scm_rights_gc, trigger_ok),
+	STAT_FIELD(af_unix_scm_rights_gc, recv_ok),
+	STAT_FIELD(af_unix_scm_rights_gc, peek_ok),
+	STAT_FIELD(af_unix_scm_rights_gc, iouring_variant_ok),
+	STAT_FIELD(af_unix_scm_rights_gc, sibling_spawn_ok),
+	STAT_FIELD(af_unix_scm_rights_gc, sibling_spawn_failed),
+	STAT_FIELD(af_unix_scm_rights_gc, sibling_reaped_ok),
+	STAT_FIELD(af_unix_scm_rights_gc, sibling_crashed),
+};
+
+static const struct stat_category af_unix_scm_rights_gc_category =
+	STAT_CATEGORY("af_unix_scm_rights_gc",
+	              af_unix_scm_rights_gc_runs,
+	              af_unix_scm_rights_gc_fields);
+
 static const struct stat_field bpf_cgroup_attach_fields[] = {
 	STAT_FIELD(bpf_cgroup_attach, runs),
 	STAT_FIELD(bpf_cgroup_attach, setup_failed),
@@ -1585,7 +1605,6 @@ static void dump_stats_json_netfilter_and_xfrm(void)
 		"\"mptcp_pm_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sock_mptcp_ok\":%lu,\"addr_added_ok\":%lu,\"addr_removed_ok\":%lu,\"send_ok\":%lu,\"setsockopt_unsupported\":%lu,\"setsockopt_master_set\":%lu,\"setsockopt_master_fail\":%lu,\"getsockopt_verify_ok\":%lu,\"getsockopt_verify_drift\":%lu,\"sockopt_sweep_runs\":%lu,\"sockopt_set_ok\":%lu,\"sockopt_set_failed\":%lu,\"sockopt_subflow_added\":%lu,\"sockopt_readback_ok\":%lu,\"sockopt_inherit_mismatch\":%lu,\"sockopt_unsupported_latched\":%lu},"
 		"\"devlink_port_churn\":{\"iterations\":%lu,\"split_ok\":%lu,\"split_fail\":%lu,\"reload_ok\":%lu,\"reload_fail\":%lu,\"create_skipped\":%lu},"
 		"\"nf_conntrack_helper_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"no_helper\":%lu,\"attach_ok\":%lu,\"attach_fail\":%lu,\"exp_ok\":%lu,\"packet_sent\":%lu,\"delete_ok\":%lu,\"zone_swap\":%lu,\"detach_ok\":%lu},"
-		"\"af_unix_scm_rights_gc\":{\"runs\":%lu,\"setup_failed\":%lu,\"cycle_built_ok\":%lu,\"close_ok\":%lu,\"trigger_ok\":%lu,\"recv_ok\":%lu,\"peek_ok\":%lu,\"iouring_variant_ok\":%lu,\"sibling_spawn_ok\":%lu,\"sibling_spawn_failed\":%lu,\"sibling_reaped_ok\":%lu,\"sibling_crashed\":%lu},"
 		"\"tcp_ulp_swap_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"install_tls_ok\":%lu,\"tx_install_ok\":%lu,\"send_ok\":%lu,\"swap_rejected_ok\":%lu,\"ifname_probe_ok\":%lu,\"uninstall_ok\":%lu,\"reinstall_ok\":%lu,\"install_failed\":%lu},",
 		shm->stats.nftables_churn_runs,
 		shm->stats.nftables_churn_setup_failed,
@@ -1698,18 +1717,6 @@ static void dump_stats_json_netfilter_and_xfrm(void)
 		shm->stats.nf_conntrack_helper_churn_delete_ok,
 		shm->stats.nf_conntrack_helper_churn_zone_swap,
 		shm->stats.nf_conntrack_helper_churn_detach_ok,
-		shm->stats.af_unix_scm_rights_gc_runs,
-		shm->stats.af_unix_scm_rights_gc_setup_failed,
-		shm->stats.af_unix_scm_rights_gc_cycle_built_ok,
-		shm->stats.af_unix_scm_rights_gc_close_ok,
-		shm->stats.af_unix_scm_rights_gc_trigger_ok,
-		shm->stats.af_unix_scm_rights_gc_recv_ok,
-		shm->stats.af_unix_scm_rights_gc_peek_ok,
-		shm->stats.af_unix_scm_rights_gc_iouring_variant_ok,
-		shm->stats.af_unix_scm_rights_gc_sibling_spawn_ok,
-		shm->stats.af_unix_scm_rights_gc_sibling_spawn_failed,
-		shm->stats.af_unix_scm_rights_gc_sibling_reaped_ok,
-		shm->stats.af_unix_scm_rights_gc_sibling_crashed,
 		shm->stats.tcp_ulp_swap_churn_runs,
 		shm->stats.tcp_ulp_swap_churn_setup_failed,
 		shm->stats.tcp_ulp_swap_churn_install_tls_ok,
@@ -2187,6 +2194,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&handshake_req_abort_category);
+
+	printf(",");
+	stat_category_emit_json(&af_unix_scm_rights_gc_category);
 
 	printf(",");
 	stat_category_emit_json(&bpf_cgroup_attach_category);
@@ -5027,20 +5037,7 @@ static void dump_stats_childop_runs_network(void)
 		stat_row("nf_conntrack_helper_churn", "detach_ok",    shm->stats.nf_conntrack_helper_churn_detach_ok);
 	}
 
-	if (shm->stats.af_unix_scm_rights_gc_runs) {
-		stat_row("af_unix_scm_rights_gc", "runs",                shm->stats.af_unix_scm_rights_gc_runs);
-		stat_row("af_unix_scm_rights_gc", "setup_failed",        shm->stats.af_unix_scm_rights_gc_setup_failed);
-		stat_row("af_unix_scm_rights_gc", "cycle_built_ok",      shm->stats.af_unix_scm_rights_gc_cycle_built_ok);
-		stat_row("af_unix_scm_rights_gc", "close_ok",            shm->stats.af_unix_scm_rights_gc_close_ok);
-		stat_row("af_unix_scm_rights_gc", "trigger_ok",          shm->stats.af_unix_scm_rights_gc_trigger_ok);
-		stat_row("af_unix_scm_rights_gc", "recv_ok",             shm->stats.af_unix_scm_rights_gc_recv_ok);
-		stat_row("af_unix_scm_rights_gc", "peek_ok",             shm->stats.af_unix_scm_rights_gc_peek_ok);
-		stat_row("af_unix_scm_rights_gc", "iouring_variant_ok",  shm->stats.af_unix_scm_rights_gc_iouring_variant_ok);
-		stat_row("af_unix_scm_rights_gc", "sibling_spawn_ok",    shm->stats.af_unix_scm_rights_gc_sibling_spawn_ok);
-		stat_row("af_unix_scm_rights_gc", "sibling_spawn_failed", shm->stats.af_unix_scm_rights_gc_sibling_spawn_failed);
-		stat_row("af_unix_scm_rights_gc", "sibling_reaped_ok",   shm->stats.af_unix_scm_rights_gc_sibling_reaped_ok);
-		stat_row("af_unix_scm_rights_gc", "sibling_crashed",     shm->stats.af_unix_scm_rights_gc_sibling_crashed);
-	}
+	stat_category_emit_text(&af_unix_scm_rights_gc_category);
 
 	stat_category_emit_text(&netns_teardown_category);
 
