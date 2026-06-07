@@ -44,7 +44,8 @@ void corrupt_ptr_breadcrumb_push(const struct syscallrecord *rec,
 		return;
 
 	ring = &child->breadcrumb_ring;
-	idx = ring->head & (CORRUPT_PTR_BREADCRUMB_SLOTS - 1);
+	idx = __atomic_load_n(&ring->head, __ATOMIC_RELAXED) &
+	      (CORRUPT_PTR_BREADCRUMB_SLOTS - 1);
 	slot = &ring->slots[idx];
 
 	/* Invalidate before write so a concurrent dump-side read that
@@ -75,7 +76,7 @@ void corrupt_ptr_breadcrumb_push(const struct syscallrecord *rec,
 	}
 
 	__atomic_store_n(&slot->valid, true, __ATOMIC_RELAXED);
-	ring->head++;
+	__atomic_add_fetch(&ring->head, 1, __ATOMIC_RELAXED);
 }
 
 /* Linearise one child's ring into the merge buffer, oldest-first.  When
@@ -89,7 +90,7 @@ static unsigned int linearise_child(const struct corrupt_ptr_breadcrumb_ring *ri
 				    struct corrupt_ptr_breadcrumb *out,
 				    unsigned int out_cap)
 {
-	unsigned int head = ring->head;
+	unsigned int head = __atomic_load_n(&ring->head, __ATOMIC_RELAXED);
 	unsigned int populated = head < CORRUPT_PTR_BREADCRUMB_SLOTS
 				 ? head : CORRUPT_PTR_BREADCRUMB_SLOTS;
 	unsigned int start = head < CORRUPT_PTR_BREADCRUMB_SLOTS
