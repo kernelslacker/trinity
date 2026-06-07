@@ -9,9 +9,19 @@
 
 #define RAND_BOOL()		(rnd_u32() & 1)
 #define RAND_BYTE()		(rnd_u32() & 0xff)
+/* Span is computed in 32 bits; use RAND_RANGE64 when (max - min) > UINT32_MAX. */
 #define RAND_RANGE(min, max)	((min) <= (max) \
 	? (min) + (typeof(min))rnd_modulo_u32((max) - (min) + 1) \
 	: (max) + (typeof(max))rnd_modulo_u32((min) - (max) + 1))
+
+/*
+ * 64-bit-span variant of RAND_RANGE: use when (max - min) can exceed
+ * UINT32_MAX.  RAND_RANGE computes its span with rnd_modulo_u32 and
+ * would truncate a 64-bit span to 32 bits.
+ */
+#define RAND_RANGE64(min, max)	((min) <= (max) \
+	? (min) + (typeof(min))rnd_modulo_u64((max) - (min) + 1) \
+	: (max) + (typeof(max))rnd_modulo_u64((min) - (max) + 1))
 
 /*
  * Edge-value injection.  A childop that picks a numeric arg from random
