@@ -632,6 +632,24 @@ static const struct stat_category msg_zerocopy_churn_category =
 	              msg_zerocopy_churn_runs,
 	              msg_zerocopy_churn_fields);
 
+static const struct stat_field tcp_ulp_swap_churn_fields[] = {
+	STAT_FIELD(tcp_ulp_swap_churn, runs),
+	STAT_FIELD(tcp_ulp_swap_churn, setup_failed),
+	STAT_FIELD(tcp_ulp_swap_churn, install_tls_ok),
+	STAT_FIELD(tcp_ulp_swap_churn, tx_install_ok),
+	STAT_FIELD(tcp_ulp_swap_churn, send_ok),
+	STAT_FIELD(tcp_ulp_swap_churn, swap_rejected_ok),
+	STAT_FIELD(tcp_ulp_swap_churn, ifname_probe_ok),
+	STAT_FIELD(tcp_ulp_swap_churn, uninstall_ok),
+	STAT_FIELD(tcp_ulp_swap_churn, reinstall_ok),
+	STAT_FIELD(tcp_ulp_swap_churn, install_failed),
+};
+
+static const struct stat_category tcp_ulp_swap_churn_category =
+	STAT_CATEGORY("tcp_ulp_swap_churn",
+	              tcp_ulp_swap_churn_runs,
+	              tcp_ulp_swap_churn_fields);
+
 static const struct stat_field tls_rotate_fields[] = {
 	STAT_FIELD(tls_rotate, runs),
 	STAT_FIELD(tls_rotate, setup_failed),
@@ -1637,8 +1655,7 @@ static void dump_stats_json_netfilter_and_xfrm(void)
 		"\"sctp_assoc_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bindx_added\":%lu,\"bindx_removed\":%lu,\"bindx_rejected\":%lu,\"connect_failed\":%lu,\"connected\":%lu,\"accepted\":%lu,\"packets_sent\":%lu,\"peeled_off\":%lu,\"peeloff_rejected\":%lu,\"cycles\":%lu},"
 		"\"mptcp_pm_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sock_mptcp_ok\":%lu,\"addr_added_ok\":%lu,\"addr_removed_ok\":%lu,\"send_ok\":%lu,\"setsockopt_unsupported\":%lu,\"setsockopt_master_set\":%lu,\"setsockopt_master_fail\":%lu,\"getsockopt_verify_ok\":%lu,\"getsockopt_verify_drift\":%lu,\"sockopt_sweep_runs\":%lu,\"sockopt_set_ok\":%lu,\"sockopt_set_failed\":%lu,\"sockopt_subflow_added\":%lu,\"sockopt_readback_ok\":%lu,\"sockopt_inherit_mismatch\":%lu,\"sockopt_unsupported_latched\":%lu},"
 		"\"devlink_port_churn\":{\"iterations\":%lu,\"split_ok\":%lu,\"split_fail\":%lu,\"reload_ok\":%lu,\"reload_fail\":%lu,\"create_skipped\":%lu},"
-		"\"nf_conntrack_helper_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"no_helper\":%lu,\"attach_ok\":%lu,\"attach_fail\":%lu,\"exp_ok\":%lu,\"packet_sent\":%lu,\"delete_ok\":%lu,\"zone_swap\":%lu,\"detach_ok\":%lu},"
-		"\"tcp_ulp_swap_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"install_tls_ok\":%lu,\"tx_install_ok\":%lu,\"send_ok\":%lu,\"swap_rejected_ok\":%lu,\"ifname_probe_ok\":%lu,\"uninstall_ok\":%lu,\"reinstall_ok\":%lu,\"install_failed\":%lu},",
+		"\"nf_conntrack_helper_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"no_helper\":%lu,\"attach_ok\":%lu,\"attach_fail\":%lu,\"exp_ok\":%lu,\"packet_sent\":%lu,\"delete_ok\":%lu,\"zone_swap\":%lu,\"detach_ok\":%lu}",
 		shm->stats.nftables_churn_runs,
 		shm->stats.nftables_churn_setup_failed,
 		shm->stats.nftables_churn_table_create_ok,
@@ -1749,17 +1766,7 @@ static void dump_stats_json_netfilter_and_xfrm(void)
 		shm->stats.nf_conntrack_helper_churn_packet_sent,
 		shm->stats.nf_conntrack_helper_churn_delete_ok,
 		shm->stats.nf_conntrack_helper_churn_zone_swap,
-		shm->stats.nf_conntrack_helper_churn_detach_ok,
-		shm->stats.tcp_ulp_swap_churn_runs,
-		shm->stats.tcp_ulp_swap_churn_setup_failed,
-		shm->stats.tcp_ulp_swap_churn_install_tls_ok,
-		shm->stats.tcp_ulp_swap_churn_tx_install_ok,
-		shm->stats.tcp_ulp_swap_churn_send_ok,
-		shm->stats.tcp_ulp_swap_churn_swap_rejected_ok,
-		shm->stats.tcp_ulp_swap_churn_ifname_probe_ok,
-		shm->stats.tcp_ulp_swap_churn_uninstall_ok,
-		shm->stats.tcp_ulp_swap_churn_reinstall_ok,
-		shm->stats.tcp_ulp_swap_churn_install_failed);
+		shm->stats.nf_conntrack_helper_churn_detach_ok);
 }
 
 static void dump_stats_json_iouring_zc_and_kvm(void)
@@ -2103,6 +2110,10 @@ static void dump_stats_json(void)
 	dump_stats_json_socket_family_and_tls();
 	dump_stats_json_netfilter_and_xfrm();
 
+	printf(",");
+	stat_category_emit_json(&tcp_ulp_swap_churn_category);
+
+	printf(",");
 	stat_category_emit_json(&msg_zerocopy_churn_category);
 
 	printf(",");
@@ -5052,18 +5063,7 @@ static void dump_stats_childop_runs_network(void)
 
 	stat_category_emit_text(&netns_teardown_category);
 
-	if (shm->stats.tcp_ulp_swap_churn_runs) {
-		stat_row("tcp_ulp_swap_churn", "runs",              shm->stats.tcp_ulp_swap_churn_runs);
-		stat_row("tcp_ulp_swap_churn", "setup_failed",      shm->stats.tcp_ulp_swap_churn_setup_failed);
-		stat_row("tcp_ulp_swap_churn", "install_tls_ok",    shm->stats.tcp_ulp_swap_churn_install_tls_ok);
-		stat_row("tcp_ulp_swap_churn", "tx_install_ok",     shm->stats.tcp_ulp_swap_churn_tx_install_ok);
-		stat_row("tcp_ulp_swap_churn", "send_ok",           shm->stats.tcp_ulp_swap_churn_send_ok);
-		stat_row("tcp_ulp_swap_churn", "swap_rejected_ok",  shm->stats.tcp_ulp_swap_churn_swap_rejected_ok);
-		stat_row("tcp_ulp_swap_churn", "ifname_probe_ok",   shm->stats.tcp_ulp_swap_churn_ifname_probe_ok);
-		stat_row("tcp_ulp_swap_churn", "uninstall_ok",      shm->stats.tcp_ulp_swap_churn_uninstall_ok);
-		stat_row("tcp_ulp_swap_churn", "reinstall_ok",      shm->stats.tcp_ulp_swap_churn_reinstall_ok);
-		stat_row("tcp_ulp_swap_churn", "install_failed",    shm->stats.tcp_ulp_swap_churn_install_failed);
-	}
+	stat_category_emit_text(&tcp_ulp_swap_churn_category);
 
 	stat_category_emit_text(&msg_zerocopy_churn_category);
 
