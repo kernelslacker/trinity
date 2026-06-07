@@ -46,10 +46,8 @@ syscalls/bpf.c:713:post_bpf
 syscalls/bpf.c:728:post_bpf
 syscalls/capget.c:198:post_capget
 syscalls/capget.c:214:post_capget
-syscalls/capset.c:200:post_capset
-syscalls/capset.c:215:post_capset
-syscalls/capset.c:239:post_capset
-syscalls/capset.c:249:post_capset
+syscalls/capset.c:224:post_capset
+syscalls/capset.c:234:post_capset
 syscalls/clock_getres.c:152:post_clock_getres
 syscalls/clock_gettime.c:161:post_clock_gettime
 syscalls/clock_gettime.c:168:post_clock_gettime
