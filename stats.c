@@ -997,6 +997,24 @@ static const struct stat_category handshake_req_abort_category =
 	              handshake_req_abort_runs,
 	              handshake_req_abort_fields);
 
+static const struct stat_field nf_conntrack_helper_churn_fields[] = {
+	STAT_FIELD(nf_conntrack_helper_churn, runs),
+	STAT_FIELD(nf_conntrack_helper_churn, setup_failed),
+	STAT_FIELD(nf_conntrack_helper_churn, no_helper),
+	STAT_FIELD(nf_conntrack_helper_churn, attach_ok),
+	STAT_FIELD(nf_conntrack_helper_churn, attach_fail),
+	STAT_FIELD(nf_conntrack_helper_churn, exp_ok),
+	STAT_FIELD(nf_conntrack_helper_churn, packet_sent),
+	STAT_FIELD(nf_conntrack_helper_churn, delete_ok),
+	STAT_FIELD(nf_conntrack_helper_churn, zone_swap),
+	STAT_FIELD(nf_conntrack_helper_churn, detach_ok),
+};
+
+static const struct stat_category nf_conntrack_helper_churn_category =
+	STAT_CATEGORY("nf_conntrack_helper_churn",
+	              nf_conntrack_helper_churn_runs,
+	              nf_conntrack_helper_churn_fields);
+
 static const struct stat_field af_unix_scm_rights_gc_fields[] = {
 	STAT_FIELD(af_unix_scm_rights_gc, runs),
 	STAT_FIELD(af_unix_scm_rights_gc, setup_failed),
@@ -1654,8 +1672,7 @@ static void dump_stats_json_netfilter_and_xfrm(void)
 		"\"xfrm_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sa_added\":%lu,\"sa_updated\":%lu,\"sa_deleted\":%lu,\"pol_added\":%lu,\"pol_deleted\":%lu,\"esp_sent\":%lu,\"pfkey_send_ok\":%lu,\"ah_esn_setup_ok\":%lu,\"ah_esn_setup_fail\":%lu,\"ah_esn_async_runs\":%lu,\"ah_esn_delsa_races\":%lu},"
 		"\"sctp_assoc_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bindx_added\":%lu,\"bindx_removed\":%lu,\"bindx_rejected\":%lu,\"connect_failed\":%lu,\"connected\":%lu,\"accepted\":%lu,\"packets_sent\":%lu,\"peeled_off\":%lu,\"peeloff_rejected\":%lu,\"cycles\":%lu},"
 		"\"mptcp_pm_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sock_mptcp_ok\":%lu,\"addr_added_ok\":%lu,\"addr_removed_ok\":%lu,\"send_ok\":%lu,\"setsockopt_unsupported\":%lu,\"setsockopt_master_set\":%lu,\"setsockopt_master_fail\":%lu,\"getsockopt_verify_ok\":%lu,\"getsockopt_verify_drift\":%lu,\"sockopt_sweep_runs\":%lu,\"sockopt_set_ok\":%lu,\"sockopt_set_failed\":%lu,\"sockopt_subflow_added\":%lu,\"sockopt_readback_ok\":%lu,\"sockopt_inherit_mismatch\":%lu,\"sockopt_unsupported_latched\":%lu},"
-		"\"devlink_port_churn\":{\"iterations\":%lu,\"split_ok\":%lu,\"split_fail\":%lu,\"reload_ok\":%lu,\"reload_fail\":%lu,\"create_skipped\":%lu},"
-		"\"nf_conntrack_helper_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"no_helper\":%lu,\"attach_ok\":%lu,\"attach_fail\":%lu,\"exp_ok\":%lu,\"packet_sent\":%lu,\"delete_ok\":%lu,\"zone_swap\":%lu,\"detach_ok\":%lu}",
+		"\"devlink_port_churn\":{\"iterations\":%lu,\"split_ok\":%lu,\"split_fail\":%lu,\"reload_ok\":%lu,\"reload_fail\":%lu,\"create_skipped\":%lu}",
 		shm->stats.nftables_churn_runs,
 		shm->stats.nftables_churn_setup_failed,
 		shm->stats.nftables_churn_table_create_ok,
@@ -1756,17 +1773,7 @@ static void dump_stats_json_netfilter_and_xfrm(void)
 		shm->stats.devlink_port_churn_split_fail,
 		shm->stats.devlink_port_churn_reload_ok,
 		shm->stats.devlink_port_churn_reload_fail,
-		shm->stats.devlink_port_churn_create_skipped,
-		shm->stats.nf_conntrack_helper_churn_runs,
-		shm->stats.nf_conntrack_helper_churn_setup_failed,
-		shm->stats.nf_conntrack_helper_churn_no_helper,
-		shm->stats.nf_conntrack_helper_churn_attach_ok,
-		shm->stats.nf_conntrack_helper_churn_attach_fail,
-		shm->stats.nf_conntrack_helper_churn_exp_ok,
-		shm->stats.nf_conntrack_helper_churn_packet_sent,
-		shm->stats.nf_conntrack_helper_churn_delete_ok,
-		shm->stats.nf_conntrack_helper_churn_zone_swap,
-		shm->stats.nf_conntrack_helper_churn_detach_ok);
+		shm->stats.devlink_port_churn_create_skipped);
 }
 
 static void dump_stats_json_iouring_zc_and_kvm(void)
@@ -2109,6 +2116,9 @@ static void dump_stats_json(void)
 	printf(",");
 	dump_stats_json_socket_family_and_tls();
 	dump_stats_json_netfilter_and_xfrm();
+
+	printf(",");
+	stat_category_emit_json(&nf_conntrack_helper_churn_category);
 
 	printf(",");
 	stat_category_emit_json(&tcp_ulp_swap_churn_category);
@@ -5046,18 +5056,7 @@ static void dump_stats_childop_runs_network(void)
 
 	stat_category_emit_text(&handshake_req_abort_category);
 
-	if (shm->stats.nf_conntrack_helper_churn_runs) {
-		stat_row("nf_conntrack_helper_churn", "runs",         shm->stats.nf_conntrack_helper_churn_runs);
-		stat_row("nf_conntrack_helper_churn", "setup_failed", shm->stats.nf_conntrack_helper_churn_setup_failed);
-		stat_row("nf_conntrack_helper_churn", "no_helper",    shm->stats.nf_conntrack_helper_churn_no_helper);
-		stat_row("nf_conntrack_helper_churn", "attach_ok",    shm->stats.nf_conntrack_helper_churn_attach_ok);
-		stat_row("nf_conntrack_helper_churn", "attach_fail",  shm->stats.nf_conntrack_helper_churn_attach_fail);
-		stat_row("nf_conntrack_helper_churn", "exp_ok",       shm->stats.nf_conntrack_helper_churn_exp_ok);
-		stat_row("nf_conntrack_helper_churn", "packet_sent",  shm->stats.nf_conntrack_helper_churn_packet_sent);
-		stat_row("nf_conntrack_helper_churn", "delete_ok",    shm->stats.nf_conntrack_helper_churn_delete_ok);
-		stat_row("nf_conntrack_helper_churn", "zone_swap",    shm->stats.nf_conntrack_helper_churn_zone_swap);
-		stat_row("nf_conntrack_helper_churn", "detach_ok",    shm->stats.nf_conntrack_helper_churn_detach_ok);
-	}
+	stat_category_emit_text(&nf_conntrack_helper_churn_category);
 
 	stat_category_emit_text(&af_unix_scm_rights_gc_category);
 
