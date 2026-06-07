@@ -3,7 +3,6 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include "arch.h"
-#include "deferred-free.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -107,7 +106,7 @@ static void sanitise_flistxattr(struct syscallrecord *rec)
 	snap->list = rec->a2;
 	snap->size = rec->a3;
 	snap->buf_alloc_size = buf_alloc_size;
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 }
 
 /*
@@ -161,8 +160,7 @@ static void sanitise_flistxattr(struct syscallrecord *rec)
  */
 static void post_flistxattr(struct syscallrecord *rec)
 {
-	struct listxattr_post_state *snap =
-		(struct listxattr_post_state *) rec->post_state;
+	struct listxattr_post_state *snap;
 	unsigned long retval = rec->retval;
 	int snap_fd;
 	unsigned char first_buf[4096];
@@ -170,29 +168,10 @@ static void post_flistxattr(struct syscallrecord *rec)
 	size_t snap_len;
 	long rc;
 
+	snap = post_state_claim_owned(rec, LISTXATTR_POST_STATE_MAGIC,
+				      __func__);
 	if (snap == NULL)
 		return;
-
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_flistxattr: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	if (snap->magic != LISTXATTR_POST_STATE_MAGIC) {
-		outputerr("post_flistxattr: rejected snap with bad magic "
-			  "0x%lx (post_state-stomped to foreign "
-			  "allocation?)\n", snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
 
 	if ((long) retval < 0)
 		goto out_free;
@@ -277,7 +256,7 @@ static void post_flistxattr(struct syscallrecord *rec)
 	}
 
 out_free:
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 #endif /* SYS_flistxattr || __NR_flistxattr */
 
@@ -344,7 +323,7 @@ static void sanitise_listxattr(struct syscallrecord *rec)
 	snap->list = rec->a2;
 	snap->size = rec->a3;
 	snap->buf_alloc_size = buf_alloc_size;
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 }
 
 /*
@@ -398,8 +377,7 @@ static void sanitise_listxattr(struct syscallrecord *rec)
  */
 static void post_listxattr(struct syscallrecord *rec)
 {
-	struct listxattr_post_state *snap =
-		(struct listxattr_post_state *) rec->post_state;
+	struct listxattr_post_state *snap;
 	unsigned long retval = rec->retval;
 	char snap_path[4096];
 	unsigned char first_buf[4096];
@@ -407,29 +385,10 @@ static void post_listxattr(struct syscallrecord *rec)
 	size_t snap_len;
 	long rc;
 
+	snap = post_state_claim_owned(rec, LISTXATTR_POST_STATE_MAGIC,
+				      __func__);
 	if (snap == NULL)
 		return;
-
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_listxattr: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	if (snap->magic != LISTXATTR_POST_STATE_MAGIC) {
-		outputerr("post_listxattr: rejected snap with bad magic "
-			  "0x%lx (post_state-stomped to foreign "
-			  "allocation?)\n", snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
 
 	if ((long) retval < 0)
 		goto out_free;
@@ -513,7 +472,7 @@ static void post_listxattr(struct syscallrecord *rec)
 	}
 
 out_free:
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 #endif /* SYS_listxattr || __NR_listxattr */
 
@@ -581,7 +540,7 @@ static void sanitise_llistxattr(struct syscallrecord *rec)
 	snap->list = rec->a2;
 	snap->size = rec->a3;
 	snap->buf_alloc_size = buf_alloc_size;
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 }
 
 /*
@@ -633,8 +592,7 @@ static void sanitise_llistxattr(struct syscallrecord *rec)
  */
 static void post_llistxattr(struct syscallrecord *rec)
 {
-	struct listxattr_post_state *snap =
-		(struct listxattr_post_state *) rec->post_state;
+	struct listxattr_post_state *snap;
 	unsigned long retval = rec->retval;
 	char snap_path[4096];
 	unsigned char first_buf[4096];
@@ -642,29 +600,10 @@ static void post_llistxattr(struct syscallrecord *rec)
 	size_t snap_len;
 	long rc;
 
+	snap = post_state_claim_owned(rec, LISTXATTR_POST_STATE_MAGIC,
+				      __func__);
 	if (snap == NULL)
 		return;
-
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_llistxattr: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	if (snap->magic != LISTXATTR_POST_STATE_MAGIC) {
-		outputerr("post_llistxattr: rejected snap with bad magic "
-			  "0x%lx (post_state-stomped to foreign "
-			  "allocation?)\n", snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
 
 	if ((long) retval < 0)
 		goto out_free;
@@ -743,7 +682,7 @@ static void post_llistxattr(struct syscallrecord *rec)
 	}
 
 out_free:
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 #endif /* SYS_llistxattr || __NR_llistxattr */
 
