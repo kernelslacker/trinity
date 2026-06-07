@@ -199,10 +199,16 @@ static void can_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 	switch (so->optname) {
 	case CAN_RAW_FILTER:
 		/* 1-3 filters with random CAN IDs and masks */
-		filter = (struct can_filter *) so->optval;
-		filter[0].can_id = rnd_u32();
-		filter[0].can_mask = rnd_u32();
-		so->optlen = sizeof(struct can_filter);
+		{
+			unsigned int i, n = 1 + rnd_modulo_u32(3);
+
+			filter = (struct can_filter *) so->optval;
+			for (i = 0; i < n; i++) {
+				filter[i].can_id = rnd_u32();
+				filter[i].can_mask = rnd_u32();
+			}
+			so->optlen = n * sizeof(struct can_filter);
+		}
 		break;
 
 	case CAN_RAW_ERR_FILTER:
