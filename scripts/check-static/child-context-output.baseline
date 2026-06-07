@@ -52,9 +52,7 @@ syscalls/capset.c:200:post_capset
 syscalls/capset.c:215:post_capset
 syscalls/capset.c:239:post_capset
 syscalls/capset.c:249:post_capset
-syscalls/clock_getres.c:130:post_clock_getres
-syscalls/clock_getres.c:145:post_clock_getres
-syscalls/clock_getres.c:174:post_clock_getres
+syscalls/clock_getres.c:152:post_clock_getres
 syscalls/clock_gettime.c:161:post_clock_gettime
 syscalls/clock_gettime.c:168:post_clock_gettime
 syscalls/clock_nanosleep.c:100:post_clock_nanosleep
