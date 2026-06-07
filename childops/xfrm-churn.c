@@ -1463,7 +1463,7 @@ static int xfrm_churn_iter_install_sa(struct xfrm_churn_iter_ctx *ctx)
 	ctx->reqid = (rand32() % XFRM_REQID_RANGE) + 1U;
 	ctx->spi   = htonl((rand32() % XFRM_SPI_RANGE) + XFRM_SPI_MIN);
 	ctx->seq   = pick_sa_seq();
-	ctx->mode  = (rand32() & 1U) ? XFRM_MODE_TRANSPORT : XFRM_MODE_TRANSPORT;
+	ctx->mode  = XFRM_MODE_TRANSPORT;
 	/* TUNNEL mode requires routes to the inner addresses; staying
 	 * in TRANSPORT keeps the data plane self-contained on lo.
 	 * Knob preserved as a no-op so the rotation can be widened
