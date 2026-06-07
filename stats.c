@@ -1082,6 +1082,20 @@ static const struct stat_category veth_asymmetric_xdp_category =
 	              veth_asym_iters,
 	              veth_asymmetric_xdp_fields);
 
+static const struct stat_field ip6erspan_netns_migrate_fields[] = {
+	STAT_FIELD(inm, iters),
+	STAT_FIELD(inm, eperm),
+	STAT_FIELD(inm, unsupported),
+	STAT_FIELD(inm, link_create_ok),
+	STAT_FIELD(inm, netns_migrate_ok),
+	STAT_FIELD(inm, changelink_ok),
+};
+
+static const struct stat_category ip6erspan_netns_migrate_category =
+	STAT_CATEGORY("ip6erspan_netns_migrate",
+	              inm_iters,
+	              ip6erspan_netns_migrate_fields);
+
 static const struct stat_field wireguard_decrypt_flood_fields[] = {
 	STAT_FIELD(wgdf, runs),
 	STAT_FIELD(wgdf, setup_failed),
@@ -2040,8 +2054,7 @@ static void dump_stats_json_iouring_zc_and_kvm(void)
 static void dump_stats_json_rxrpc_alg_ublk_block(void)
 {
 	printf("\"af_alg_probe\":{\"runs\":%lu,\"unsupported\":%lu,\"accept_total\":%lu,\"reject_total\":%lu},"
-		"\"af_alg_recvmsg\":{\"runs\":%lu,\"setkey_sent\":%lu,\"iv_sent\":%lu,\"oob_iov\":%lu,\"zerolen\":%lu,\"oversize\":%lu,\"empty_cmsg_no_more\":%lu,\"unsupported\":%lu},"
-		"\"ip6erspan_netns_migrate\":{\"iters\":%lu,\"eperm\":%lu,\"unsupported\":%lu,\"link_create_ok\":%lu,\"netns_migrate_ok\":%lu,\"changelink_ok\":%lu},",
+		"\"af_alg_recvmsg\":{\"runs\":%lu,\"setkey_sent\":%lu,\"iv_sent\":%lu,\"oob_iov\":%lu,\"zerolen\":%lu,\"oversize\":%lu,\"empty_cmsg_no_more\":%lu,\"unsupported\":%lu},",
 		shm->stats.af_alg_probe_runs,
 		shm->stats.af_alg_probe_unsupported,
 		shm->stats.af_alg_probe_accept_total,
@@ -2053,13 +2066,7 @@ static void dump_stats_json_rxrpc_alg_ublk_block(void)
 		shm->stats.af_alg_recvmsg_zerolen,
 		shm->stats.af_alg_recvmsg_oversize,
 		shm->stats.af_alg_recvmsg_empty_cmsg_no_more,
-		shm->stats.af_alg_recvmsg_unsupported,
-		shm->stats.inm_iters,
-		shm->stats.inm_eperm,
-		shm->stats.inm_unsupported,
-		shm->stats.inm_link_create_ok,
-		shm->stats.inm_netns_migrate_ok,
-		shm->stats.inm_changelink_ok);
+		shm->stats.af_alg_recvmsg_unsupported);
 }
 
 static void dump_stats_json_probes_misuse_and_tail(void)
@@ -2355,6 +2362,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&veth_asymmetric_xdp_category);
+
+	printf(",");
+	stat_category_emit_json(&ip6erspan_netns_migrate_category);
 
 	printf(",");
 	stat_category_emit_json(&wireguard_decrypt_flood_category);
@@ -5212,14 +5222,7 @@ static void dump_stats_childop_runs_network(void)
 
 	stat_category_emit_text(&veth_asymmetric_xdp_category);
 
-	if (shm->stats.inm_iters) {
-		stat_row("ip6erspan_netns_migrate", "iters",            shm->stats.inm_iters);
-		stat_row("ip6erspan_netns_migrate", "eperm",            shm->stats.inm_eperm);
-		stat_row("ip6erspan_netns_migrate", "unsupported",      shm->stats.inm_unsupported);
-		stat_row("ip6erspan_netns_migrate", "link_create_ok",   shm->stats.inm_link_create_ok);
-		stat_row("ip6erspan_netns_migrate", "netns_migrate_ok", shm->stats.inm_netns_migrate_ok);
-		stat_row("ip6erspan_netns_migrate", "changelink_ok",    shm->stats.inm_changelink_ok);
-	}
+	stat_category_emit_text(&ip6erspan_netns_migrate_category);
 
 	stat_category_emit_text(&ip6gre_bond_lapb_stack_category);
 
