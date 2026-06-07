@@ -293,9 +293,7 @@ syscalls/recv.c:704:post_recvmmsg
 syscalls/recv.c:722:post_recvmmsg
 syscalls/recv.c:734:post_recvmmsg
 syscalls/recv.c:749:post_recvmmsg
-syscalls/rt_sigpending.c:108:post_rt_sigpending
-syscalls/rt_sigpending.c:144:post_rt_sigpending
-syscalls/rt_sigpending.c:93:post_rt_sigpending
+syscalls/rt_sigpending.c:128:post_rt_sigpending
 syscalls/rt_sigprocmask.c:117:post_rt_sigprocmask
 syscalls/rt_sigprocmask.c:132:post_rt_sigprocmask
 syscalls/rt_sigprocmask.c:167:post_rt_sigprocmask
