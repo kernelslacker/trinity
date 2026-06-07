@@ -3,6 +3,7 @@
 #include <sys/types.h>
 #include <sys/mman.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -605,3 +606,11 @@ static inline bool is_in_arena_band(unsigned long p)
 {
 	return p >= ARENA_BAND_LO && p < ARENA_BAND_HI;
 }
+
+/*
+ * Plain CRC32 (IEEE 802.3 polynomial 0xedb88320, reflected, init/final
+ * 0xffffffff).  Lazy 256-entry table built on first call.  Used by the
+ * effector-map, minicorpus, cmp_hints, and kcov-bitmap persistence
+ * formats for header/payload checksums.
+ */
+uint32_t crc32(const void *buf, size_t len);

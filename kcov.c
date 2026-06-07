@@ -35,6 +35,7 @@
 #include "arch.h"
 #include "child.h"
 #include "cmp_hints.h"
+#include "fd.h"
 #include "kcov.h"
 #include "params.h"
 #include "persist-util.h"
@@ -1786,37 +1787,6 @@ struct kcov_bitmap_file_header {
 				    * lookups. */
 };
 
-/* Plain CRC32 (IEEE 802.3 polynomial, reflected).  Same algorithm
- * effector-map / minicorpus use; kept here so a future divergence in
- * any one persistence format's checksum doesn't ripple across the
- * others.  Declared in include/kcov.h. */
-uint32_t kcov_bitmap_crc32(const void *buf, size_t len)
-{
-	static uint32_t table[256];
-	static bool table_built;
-	const uint8_t *p = buf;
-	uint32_t crc = 0xffffffffU;
-	size_t i;
-
-	if (!table_built) {
-		uint32_t c;
-		unsigned int n, k;
-
-		for (n = 0; n < 256; n++) {
-			c = n;
-			for (k = 0; k < 8; k++)
-				c = (c & 1) ? (0xedb88320U ^ (c >> 1)) : (c >> 1);
-			table[n] = c;
-		}
-		table_built = true;
-	}
-
-	for (i = 0; i < len; i++)
-		crc = table[(crc ^ p[i]) & 0xff] ^ (crc >> 8);
-
-	return crc ^ 0xffffffffU;
-}
-
 /*
  * Streaming SHA-256 implementation.  Trinity links no crypto library, so
  * we ship the algorithm here -- compact enough that the fingerprint code
@@ -2051,48 +2021,6 @@ bool kcov_get_kernel_fp(uint8_t out[32])
 	return true;
 }
 
-static ssize_t kcov_bitmap_write_all(int fd, const void *buf, size_t len)
-{
-	const uint8_t *p = buf;
-	size_t left = len;
-
-	while (left > 0) {
-		ssize_t n = write(fd, p, left);
-
-		if (n < 0) {
-			if (errno == EINTR)
-				continue;
-			return -1;
-		}
-		if (n == 0)
-			return -1;
-		p += n;
-		left -= n;
-	}
-	return (ssize_t)len;
-}
-
-static ssize_t kcov_bitmap_read_all(int fd, void *buf, size_t len)
-{
-	uint8_t *p = buf;
-	size_t left = len;
-
-	while (left > 0) {
-		ssize_t n = read(fd, p, left);
-
-		if (n < 0) {
-			if (errno == EINTR)
-				continue;
-			return -1;
-		}
-		if (n == 0)
-			break;
-		p += n;
-		left -= n;
-	}
-	return (ssize_t)(len - left);
-}
-
 /*
  * Dirty-bit proxy for kcov_bitmap_save_file().  edges_found increments
  * once per (edge, bucket) bit-flip in kcov_collect(); when it equals the
@@ -2152,10 +2080,10 @@ bool kcov_bitmap_save_file(const char *path)
 	hdr.edges_found = edges_now;
 	hdr.distinct_edges = __atomic_load_n(&kcov_shm->distinct_edges,
 					     __ATOMIC_RELAXED);
-	hdr.payload_crc32 = kcov_bitmap_crc32(kcov_shm->bucket_seen,
+	hdr.payload_crc32 = crc32(kcov_shm->bucket_seen,
 					      KCOV_NUM_EDGES);
 	hdr.max_nr_syscall = MAX_NR_SYSCALL;
-	hdr.priors_crc32 = kcov_bitmap_crc32(priors_blob, priors_blob_size);
+	hdr.priors_crc32 = crc32(priors_blob, priors_blob_size);
 	/* Stamp the canonicalisation mode so the loader can refuse a
 	 * canonical-vs-raw mismatch.  Zero means the writer hashed PCs
 	 * raw (kallsyms unreadable, _text absent); non-zero is the
@@ -2186,12 +2114,12 @@ bool kcov_bitmap_save_file(const char *path)
 		return false;
 	}
 
-	if (kcov_bitmap_write_all(fd, &hdr, sizeof(hdr)) < 0)
+	if (write_all(fd, &hdr, sizeof(hdr)) < 0)
 		goto fail;
-	if (kcov_bitmap_write_all(fd, kcov_shm->bucket_seen,
+	if (write_all(fd, kcov_shm->bucket_seen,
 				  KCOV_NUM_EDGES) < 0)
 		goto fail;
-	if (kcov_bitmap_write_all(fd, priors_blob, priors_blob_size) < 0)
+	if (write_all(fd, priors_blob, priors_blob_size) < 0)
 		goto fail;
 	if (fsync(fd) != 0)
 		goto fail;
@@ -2246,7 +2174,7 @@ bool kcov_bitmap_load_file(const char *path)
 		return false;
 	}
 
-	n = kcov_bitmap_read_all(fd, &hdr, sizeof(hdr));
+	n = read_all(fd, &hdr, sizeof(hdr));
 	if (n != (ssize_t)sizeof(hdr)) {
 		output(0, "kcov-bitmap: header truncated at %s (got %zd, want %zu) -- cold start\n",
 		       path, n, sizeof(hdr));
@@ -2312,7 +2240,7 @@ bool kcov_bitmap_load_file(const char *path)
 		(void)close(fd);
 		return false;
 	}
-	n = kcov_bitmap_read_all(fd, scratch, KCOV_NUM_EDGES);
+	n = read_all(fd, scratch, KCOV_NUM_EDGES);
 	if (n != (ssize_t)KCOV_NUM_EDGES) {
 		output(0, "kcov-bitmap: payload truncated at %s (got %zd, want %zu) -- cold start\n",
 		       path, n, (size_t)KCOV_NUM_EDGES);
@@ -2321,7 +2249,7 @@ bool kcov_bitmap_load_file(const char *path)
 		return false;
 	}
 
-	want_crc = kcov_bitmap_crc32(scratch, KCOV_NUM_EDGES);
+	want_crc = crc32(scratch, KCOV_NUM_EDGES);
 	if (want_crc != hdr.payload_crc32) {
 		output(0, "kcov-bitmap: skipping warm-start of %s -- CRC mismatch\n",
 		       path);
@@ -2349,7 +2277,7 @@ bool kcov_bitmap_load_file(const char *path)
 			output(0, "kcov-bitmap: priors scratch alloc fail (%zu bytes) -- priors skipped\n",
 			       priors_blob_size);
 		} else {
-			n = kcov_bitmap_read_all(fd, priors_blob,
+			n = read_all(fd, priors_blob,
 						 priors_blob_size);
 			if (n != (ssize_t)priors_blob_size) {
 				output(0, "kcov-bitmap: priors truncated at %s (got %zd, want %zu) -- priors skipped\n",
@@ -2357,7 +2285,7 @@ bool kcov_bitmap_load_file(const char *path)
 			} else {
 				uint32_t got_crc;
 
-				got_crc = kcov_bitmap_crc32(priors_blob,
+				got_crc = crc32(priors_blob,
 							    priors_blob_size);
 				if (got_crc != hdr.priors_crc32) {
 					output(0, "kcov-bitmap: priors CRC mismatch at %s -- priors skipped\n",

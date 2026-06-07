@@ -43,6 +43,7 @@
 
 #include "arch.h"
 #include "effector-map.h"
+#include "fd.h"
 #include "kcov.h"
 #include "params.h"
 #include "persist-util.h"
@@ -586,79 +587,6 @@ struct effector_file_header {
 #define EFFECTOR_PAYLOAD_BYTES \
 	((size_t)MAX_NR_SYSCALL * EFFECTOR_NR_ARGS * EFFECTOR_BITS_PER_ARG)
 
-/* Plain CRC32 (IEEE 802.3 polynomial, reflected).  Same algorithm the
- * minicorpus persistence uses; kept local rather than refactored into
- * a shared helper so a future divergence (e.g. adding a checksum to
- * the corpus header) doesn't ripple over here. */
-static uint32_t effector_crc32(const void *buf, size_t len)
-{
-	static uint32_t table[256];
-	static bool table_built;
-	const uint8_t *p = buf;
-	uint32_t crc = 0xffffffffU;
-	size_t i;
-
-	if (!table_built) {
-		uint32_t c;
-		unsigned int n, k;
-
-		for (n = 0; n < 256; n++) {
-			c = n;
-			for (k = 0; k < 8; k++)
-				c = (c & 1) ? (0xedb88320U ^ (c >> 1)) : (c >> 1);
-			table[n] = c;
-		}
-		table_built = true;
-	}
-
-	for (i = 0; i < len; i++)
-		crc = table[(crc ^ p[i]) & 0xff] ^ (crc >> 8);
-
-	return crc ^ 0xffffffffU;
-}
-
-static ssize_t write_all(int fd, const void *buf, size_t len)
-{
-	const uint8_t *p = buf;
-	size_t left = len;
-
-	while (left > 0) {
-		ssize_t n = write(fd, p, left);
-
-		if (n < 0) {
-			if (errno == EINTR)
-				continue;
-			return -1;
-		}
-		if (n == 0)
-			return -1;
-		p += n;
-		left -= n;
-	}
-	return (ssize_t)len;
-}
-
-static ssize_t read_all(int fd, void *buf, size_t len)
-{
-	uint8_t *p = buf;
-	size_t left = len;
-
-	while (left > 0) {
-		ssize_t n = read(fd, p, left);
-
-		if (n < 0) {
-			if (errno == EINTR)
-				continue;
-			return -1;
-		}
-		if (n == 0)
-			break;
-		p += n;
-		left -= n;
-	}
-	return (ssize_t)(len - left);
-}
-
 bool effector_map_save_file(const char *path)
 {
 	struct effector_file_header hdr;
@@ -679,7 +607,7 @@ bool effector_map_save_file(const char *path)
 	hdr.max_nr_syscall = MAX_NR_SYSCALL;
 	hdr.nr_args = EFFECTOR_NR_ARGS;
 	hdr.bits_per_arg = EFFECTOR_BITS_PER_ARG;
-	hdr.payload_crc32 = effector_crc32(effector_map, EFFECTOR_PAYLOAD_BYTES);
+	hdr.payload_crc32 = crc32(effector_map, EFFECTOR_PAYLOAD_BYTES);
 	strncpy(hdr.kernel_release, u.release, sizeof(hdr.kernel_release) - 1);
 	hdr.kernel_release[sizeof(hdr.kernel_release) - 1] = '\0';
 	strncpy(hdr.kernel_version, u.version, sizeof(hdr.kernel_version) - 1);
@@ -785,7 +713,7 @@ bool effector_map_load_file(const char *path)
 	}
 	(void)close(fd);
 
-	want_crc = effector_crc32(tmpmap, EFFECTOR_PAYLOAD_BYTES);
+	want_crc = crc32(tmpmap, EFFECTOR_PAYLOAD_BYTES);
 	if (want_crc != hdr.payload_crc32) {
 		free(tmpmap);
 		return false;

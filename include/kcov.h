@@ -823,10 +823,6 @@ bool kcov_bitmap_save_file(const char *path);
 bool kcov_bitmap_load_file(const char *path);
 const char *kcov_bitmap_default_path(void);
 
-/* Plain CRC32 (IEEE 802.3 polynomial, reflected).  Used by the kcov
- * bitmap save/load path to checksum the persisted payload. */
-uint32_t kcov_bitmap_crc32(const void *buf, size_t len);
-
 /* Fill OUT[32] with the cached kallsyms-derived kernel fingerprint
  * (sha256 over /proc/kallsyms with the leading address column stripped
  * and module / BPF runtime symbols filtered out -- see the comment on

@@ -37,6 +37,7 @@
 #include "arch.h"
 #include "child.h"
 #include "cmp_hints.h"
+#include "fd.h"
 #include "kcov.h"
 #include "persist-util.h"
 #include "random.h"
@@ -895,79 +896,6 @@ struct cmp_hints_file_header {
 
 unsigned long cmp_hints_load_rejected_entries;
 
-/* Plain CRC32 (IEEE 802.3 polynomial, reflected).  Same algorithm
- * kcov-bitmap / minicorpus use; kept local so a future divergence in
- * any one persistence format's checksum doesn't ripple across the
- * others. */
-static uint32_t cmp_hints_crc32(const void *buf, size_t len)
-{
-	static uint32_t table[256];
-	static bool table_built;
-	const uint8_t *p = buf;
-	uint32_t crc = 0xffffffffU;
-	size_t i;
-
-	if (!table_built) {
-		uint32_t c;
-		unsigned int n, k;
-
-		for (n = 0; n < 256; n++) {
-			c = n;
-			for (k = 0; k < 8; k++)
-				c = (c & 1) ? (0xedb88320U ^ (c >> 1)) : (c >> 1);
-			table[n] = c;
-		}
-		table_built = true;
-	}
-
-	for (i = 0; i < len; i++)
-		crc = table[(crc ^ p[i]) & 0xff] ^ (crc >> 8);
-
-	return crc ^ 0xffffffffU;
-}
-
-static ssize_t cmp_hints_write_all(int fd, const void *buf, size_t len)
-{
-	const uint8_t *p = buf;
-	size_t left = len;
-
-	while (left > 0) {
-		ssize_t n = write(fd, p, left);
-
-		if (n < 0) {
-			if (errno == EINTR)
-				continue;
-			return -1;
-		}
-		if (n == 0)
-			return -1;
-		p += n;
-		left -= n;
-	}
-	return (ssize_t)len;
-}
-
-static ssize_t cmp_hints_read_all(int fd, void *buf, size_t len)
-{
-	uint8_t *p = buf;
-	size_t left = len;
-
-	while (left > 0) {
-		ssize_t n = read(fd, p, left);
-
-		if (n < 0) {
-			if (errno == EINTR)
-				continue;
-			return -1;
-		}
-		if (n == 0)
-			break;
-		p += n;
-		left -= n;
-	}
-	return (ssize_t)(len - left);
-}
-
 /* Parent-private scratch buffer for the per-pool snapshot phase of
  * cmp_hints_serialise().  cmp_hints_save_file (the sole caller) only
  * runs in parent context -- from cmp_hints_maybe_snapshot()'s stats-tick
@@ -1112,7 +1040,7 @@ bool cmp_hints_save_file(const char *path)
 	hdr.per_syscall = CMP_HINTS_PER_SYSCALL;
 	hdr.entry_size = (uint32_t)sizeof(struct cmp_hints_entry_ondisk);
 	hdr.payload_bytes = payload_bytes;
-	hdr.payload_crc32 = cmp_hints_crc32(payload, payload_bytes);
+	hdr.payload_crc32 = crc32(payload, payload_bytes);
 
 	ret = snprintf(tmppath, sizeof(tmppath), "%s.tmp.%d",
 		       path, (int)mypid());
@@ -1135,9 +1063,9 @@ bool cmp_hints_save_file(const char *path)
 		return false;
 	}
 
-	if (cmp_hints_write_all(fd, &hdr, sizeof(hdr)) < 0)
+	if (write_all(fd, &hdr, sizeof(hdr)) < 0)
 		goto fail;
-	if (cmp_hints_write_all(fd, payload, payload_bytes) < 0)
+	if (write_all(fd, payload, payload_bytes) < 0)
 		goto fail;
 	if (fsync(fd) != 0)
 		goto fail;
@@ -1227,7 +1155,7 @@ static bool cmp_hints_load_file_header(const char *path,
 		return false;
 	}
 
-	n = cmp_hints_read_all(fd, hdr, sizeof(*hdr));
+	n = read_all(fd, hdr, sizeof(*hdr));
 	if (n != (ssize_t)sizeof(*hdr)) {
 		output(0, "cmp-hints: header truncated at %s (got %zd, want %zu) -- cold start\n",
 		       path, n, sizeof(*hdr));
@@ -1320,7 +1248,7 @@ static bool cmp_hints_load_file_payload(const char *path, int fd,
 		(void)close(fd);
 		return false;
 	}
-	n = cmp_hints_read_all(fd, payload, payload_bytes);
+	n = read_all(fd, payload, payload_bytes);
 	if (n != (ssize_t)payload_bytes) {
 		output(0, "cmp-hints: payload truncated at %s (got %zd, want %zu) -- cold start\n",
 		       path, n, payload_bytes);
@@ -1330,7 +1258,7 @@ static bool cmp_hints_load_file_payload(const char *path, int fd,
 	}
 	(void)close(fd);
 
-	want_crc = cmp_hints_crc32(payload, payload_bytes);
+	want_crc = crc32(payload, payload_bytes);
 	if (want_crc != hdr->payload_crc32) {
 		output(0, "cmp-hints: skipping warm-start of %s -- CRC mismatch\n",
 		       path);

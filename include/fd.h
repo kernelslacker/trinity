@@ -156,3 +156,13 @@ void arm_epoll_if_needed(struct epollobj *eo);
 	static void __attribute__((constructor)) register_##_struct(void) { \
 		register_fd_provider(&_struct); \
 	}
+
+/*
+ * Full-buffer fd I/O loops shared by every persistence format trinity
+ * emits.  Both restart on EINTR.  write_all() returns @len on success
+ * or -1 on error (including a short-write of 0).  read_all() returns
+ * the number of bytes successfully read, which may be less than @len
+ * at EOF; -1 on error.
+ */
+ssize_t write_all(int fd, const void *buf, size_t len);
+ssize_t read_all(int fd, void *buf, size_t len);

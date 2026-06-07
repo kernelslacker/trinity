@@ -1426,33 +1426,6 @@ struct corpus_file_entry {
 	uint32_t pad;
 };
 
-/* Plain CRC32 (IEEE 802.3 polynomial, reflected).  Small, no deps. */
-static uint32_t corpus_crc32(const void *buf, size_t len)
-{
-	static uint32_t table[256];
-	static bool table_built;
-	const uint8_t *p = buf;
-	uint32_t crc = 0xffffffffU;
-	size_t i;
-
-	if (!table_built) {
-		uint32_t c;
-		unsigned int n, k;
-		for (n = 0; n < 256; n++) {
-			c = n;
-			for (k = 0; k < 8; k++)
-				c = (c & 1) ? (0xedb88320U ^ (c >> 1)) : (c >> 1);
-			table[n] = c;
-		}
-		table_built = true;
-	}
-
-	for (i = 0; i < len; i++)
-		crc = table[(crc ^ p[i]) & 0xff] ^ (crc >> 8);
-
-	return crc ^ 0xffffffffU;
-}
-
 static bool parse_kernel_version(const char *release,
 		uint32_t *major, uint32_t *minor)
 {
@@ -1482,46 +1455,6 @@ static bool current_kernel_version(uint32_t *major, uint32_t *minor)
 	if (uname(&u) != 0)
 		return false;
 	return parse_kernel_version(u.release, major, minor);
-}
-
-static ssize_t write_all(int fd, const void *buf, size_t len)
-{
-	const uint8_t *p = buf;
-	size_t left = len;
-
-	while (left > 0) {
-		ssize_t n = write(fd, p, left);
-		if (n < 0) {
-			if (errno == EINTR)
-				continue;
-			return -1;
-		}
-		if (n == 0)
-			return -1;
-		p += n;
-		left -= n;
-	}
-	return (ssize_t)len;
-}
-
-static ssize_t read_all(int fd, void *buf, size_t len)
-{
-	uint8_t *p = buf;
-	size_t left = len;
-
-	while (left > 0) {
-		ssize_t n = read(fd, p, left);
-		if (n < 0) {
-			if (errno == EINTR)
-				continue;
-			return -1;
-		}
-		if (n == 0)
-			break;
-		p += n;
-		left -= n;
-	}
-	return (ssize_t)(len - left);
 }
 
 /*
@@ -1637,7 +1570,7 @@ bool minicorpus_save_file(const char *path)
 			for (j = 0; j < 6; j++)
 				ent.args[j] = (uint64_t)src->args[j];
 
-			ent.crc = corpus_crc32(&ent,
+			ent.crc = crc32(&ent,
 				offsetof(struct corpus_file_entry, crc));
 
 			if (write_all(fd, &ent, sizeof(ent)) < 0)
@@ -1755,7 +1688,7 @@ bool minicorpus_load_file(const char *path,
 			break;
 		}
 
-		want = corpus_crc32(&ent,
+		want = crc32(&ent,
 			offsetof(struct corpus_file_entry, crc));
 		if (want != ent.crc || ent.nr >= MAX_NR_SYSCALL ||
 		    ent.num_args > 6) {
