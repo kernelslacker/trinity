@@ -1054,6 +1054,20 @@ static const struct stat_category bridge_conntrack_churn_category =
 	              bridge_ct_runs,
 	              bridge_conntrack_churn_fields);
 
+static const struct stat_field blkdev_lifecycle_race_fields[] = {
+	STAT_FIELD(blkdev_lifecycle, runs),
+	STAT_FIELD(blkdev_lifecycle, setup_failed),
+	STAT_FIELD(blkdev_lifecycle, set_fd_ok),
+	STAT_FIELD(blkdev_lifecycle, clr_fd),
+	STAT_FIELD(blkdev_lifecycle, ebusy),
+	STAT_FIELD(blkdev_lifecycle, rescans),
+};
+
+static const struct stat_category blkdev_lifecycle_race_category =
+	STAT_CATEGORY("blkdev_lifecycle_race",
+	              blkdev_lifecycle_runs,
+	              blkdev_lifecycle_race_fields);
+
 static const struct stat_field wireguard_decrypt_flood_fields[] = {
 	STAT_FIELD(wgdf, runs),
 	STAT_FIELD(wgdf, setup_failed),
@@ -2014,8 +2028,7 @@ static void dump_stats_json_rxrpc_alg_ublk_block(void)
 	printf("\"af_alg_probe\":{\"runs\":%lu,\"unsupported\":%lu,\"accept_total\":%lu,\"reject_total\":%lu},"
 		"\"af_alg_recvmsg\":{\"runs\":%lu,\"setkey_sent\":%lu,\"iv_sent\":%lu,\"oob_iov\":%lu,\"zerolen\":%lu,\"oversize\":%lu,\"empty_cmsg_no_more\":%lu,\"unsupported\":%lu},"
 		"\"veth_asymmetric_xdp\":{\"iters\":%lu,\"eperm\":%lu,\"unsupported\":%lu,\"pair_ok\":%lu,\"xdp_attach_ok\":%lu,\"send_ok\":%lu},"
-		"\"ip6erspan_netns_migrate\":{\"iters\":%lu,\"eperm\":%lu,\"unsupported\":%lu,\"link_create_ok\":%lu,\"netns_migrate_ok\":%lu,\"changelink_ok\":%lu},"
-		"\"blkdev_lifecycle_race\":{\"runs\":%lu,\"setup_failed\":%lu,\"set_fd_ok\":%lu,\"clr_fd\":%lu,\"ebusy\":%lu,\"rescans\":%lu},",
+		"\"ip6erspan_netns_migrate\":{\"iters\":%lu,\"eperm\":%lu,\"unsupported\":%lu,\"link_create_ok\":%lu,\"netns_migrate_ok\":%lu,\"changelink_ok\":%lu},",
 		shm->stats.af_alg_probe_runs,
 		shm->stats.af_alg_probe_unsupported,
 		shm->stats.af_alg_probe_accept_total,
@@ -2039,13 +2052,7 @@ static void dump_stats_json_rxrpc_alg_ublk_block(void)
 		shm->stats.inm_unsupported,
 		shm->stats.inm_link_create_ok,
 		shm->stats.inm_netns_migrate_ok,
-		shm->stats.inm_changelink_ok,
-		shm->stats.blkdev_lifecycle_runs,
-		shm->stats.blkdev_lifecycle_setup_failed,
-		shm->stats.blkdev_lifecycle_set_fd_ok,
-		shm->stats.blkdev_lifecycle_clr_fd,
-		shm->stats.blkdev_lifecycle_ebusy,
-		shm->stats.blkdev_lifecycle_rescans);
+		shm->stats.inm_changelink_ok);
 }
 
 static void dump_stats_json_probes_misuse_and_tail(void)
@@ -2335,6 +2342,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&bridge_conntrack_churn_category);
+
+	printf(",");
+	stat_category_emit_json(&blkdev_lifecycle_race_category);
 
 	printf(",");
 	stat_category_emit_json(&wireguard_decrypt_flood_category);
@@ -5212,14 +5222,7 @@ static void dump_stats_childop_runs_network(void)
 
 	stat_category_emit_text(&wireguard_decrypt_flood_category);
 
-	if (shm->stats.blkdev_lifecycle_runs) {
-		stat_row("blkdev_lifecycle_race", "runs",          shm->stats.blkdev_lifecycle_runs);
-		stat_row("blkdev_lifecycle_race", "setup_failed",  shm->stats.blkdev_lifecycle_setup_failed);
-		stat_row("blkdev_lifecycle_race", "set_fd_ok",     shm->stats.blkdev_lifecycle_set_fd_ok);
-		stat_row("blkdev_lifecycle_race", "clr_fd",        shm->stats.blkdev_lifecycle_clr_fd);
-		stat_row("blkdev_lifecycle_race", "ebusy",         shm->stats.blkdev_lifecycle_ebusy);
-		stat_row("blkdev_lifecycle_race", "rescans",       shm->stats.blkdev_lifecycle_rescans);
-	}
+	stat_category_emit_text(&blkdev_lifecycle_race_category);
 
 	stat_category_emit_text(&iscsi_target_probe_category);
 
