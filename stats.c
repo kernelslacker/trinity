@@ -1096,6 +1096,21 @@ static const struct stat_category ip6erspan_netns_migrate_category =
 	              inm_iters,
 	              ip6erspan_netns_migrate_fields);
 
+static const struct stat_field flowtable_encap_vlan_fields[] = {
+	STAT_FIELD(flowtable_vlan, runs),
+	STAT_FIELD(flowtable_vlan, setup_ok),
+	STAT_FIELD(flowtable_vlan, setup_failed),
+	STAT_FIELD(flowtable_vlan, offloaded_pkts),
+	STAT_FIELD(flowtable_vlan, gso_sends),
+	STAT_FIELD(flowtable_vlan, vlan_teardown_races),
+	STAT_FIELD(flowtable_vlan, unsupported_latched),
+};
+
+static const struct stat_category flowtable_encap_vlan_category =
+	STAT_CATEGORY("flowtable_encap_vlan",
+	              flowtable_vlan_runs,
+	              flowtable_encap_vlan_fields);
+
 static const struct stat_field wireguard_decrypt_flood_fields[] = {
 	STAT_FIELD(wgdf, runs),
 	STAT_FIELD(wgdf, setup_failed),
@@ -2081,7 +2096,6 @@ static void dump_stats_json_probes_misuse_and_tail(void)
 			"\"ioctl_rotation\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu},"
 			"\"setsockopt_zero_len\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu},"
 			"\"close_via_dup\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu}},"
-		"\"flowtable_encap_vlan\":{\"runs\":%lu,\"setup_ok\":%lu,\"setup_failed\":%lu,\"offloaded_pkts\":%lu,\"gso_sends\":%lu,\"vlan_teardown_races\":%lu,\"unsupported_latched\":%lu},"
 		"\"rxrpc_sendmsg_cmsg_churn\":{\"runs\":%lu,\"socket_failed\":%lu,\"sendmsg_ok\":%lu,\"sendmsg_fail\":%lu,"
 			"\"user_call_id\":%lu,\"abort\":%lu,\"accept\":%lu,\"exclusive_call\":%lu,"
 			"\"upgrade_service\":%lu,\"tx_length\":%lu,\"set_call_timeout\":%lu,\"charge_accept\":%lu},"
@@ -2131,13 +2145,6 @@ static void dump_stats_json_probes_misuse_and_tail(void)
 		shm->stats.obscure_af_churn_pattern_runs[5],
 		shm->stats.obscure_af_churn_pattern_kernel_rejected[5],
 		shm->stats.obscure_af_churn_pattern_unexpected_success[5],
-		shm->stats.flowtable_vlan_runs,
-		shm->stats.flowtable_vlan_setup_ok,
-		shm->stats.flowtable_vlan_setup_failed,
-		shm->stats.flowtable_vlan_offloaded_pkts,
-		shm->stats.flowtable_vlan_gso_sends,
-		shm->stats.flowtable_vlan_vlan_teardown_races,
-		shm->stats.flowtable_vlan_unsupported_latched,
 		shm->stats.rxrpc_sendmsg_cmsg_runs,
 		shm->stats.rxrpc_sendmsg_cmsg_socket_failed,
 		shm->stats.rxrpc_sendmsg_cmsg_sendmsg_ok,
@@ -2365,6 +2372,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&ip6erspan_netns_migrate_category);
+
+	printf(",");
+	stat_category_emit_json(&flowtable_encap_vlan_category);
 
 	printf(",");
 	stat_category_emit_json(&wireguard_decrypt_flood_category);
@@ -5294,15 +5304,7 @@ static void dump_stats_childop_runs_network(void)
 		}
 	}
 
-	if (shm->stats.flowtable_vlan_runs) {
-		stat_row("flowtable_encap_vlan", "runs",                 shm->stats.flowtable_vlan_runs);
-		stat_row("flowtable_encap_vlan", "setup_ok",             shm->stats.flowtable_vlan_setup_ok);
-		stat_row("flowtable_encap_vlan", "setup_failed",         shm->stats.flowtable_vlan_setup_failed);
-		stat_row("flowtable_encap_vlan", "offloaded_pkts",       shm->stats.flowtable_vlan_offloaded_pkts);
-		stat_row("flowtable_encap_vlan", "gso_sends",            shm->stats.flowtable_vlan_gso_sends);
-		stat_row("flowtable_encap_vlan", "vlan_teardown_races",  shm->stats.flowtable_vlan_vlan_teardown_races);
-		stat_row("flowtable_encap_vlan", "unsupported_latched",  shm->stats.flowtable_vlan_unsupported_latched);
-	}
+	stat_category_emit_text(&flowtable_encap_vlan_category);
 
 	if (shm->stats.rxrpc_sendmsg_cmsg_runs) {
 		static const char * const rxrpc_cmsg_slot_names[8] = {
