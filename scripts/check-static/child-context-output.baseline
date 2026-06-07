@@ -350,11 +350,9 @@ syscalls/setsockopt.c:866:post_setsockopt
 syscalls/setuid.c:39:post_setuid
 syscalls/setuid.c:54:post_setuid
 syscalls/sigaction.c:217:post_rt_sigaction
-syscalls/sigaltstack.c:218:post_sigaltstack
-syscalls/sigaltstack.c:233:post_sigaltstack
-syscalls/sigaltstack.c:264:post_sigaltstack
-syscalls/sigaltstack.c:273:post_sigaltstack
-syscalls/sigaltstack.c:282:post_sigaltstack
+syscalls/sigaltstack.c:249:post_sigaltstack
+syscalls/sigaltstack.c:258:post_sigaltstack
+syscalls/sigaltstack.c:267:post_sigaltstack
 syscalls/sigpending.c:155:post_sigpending
 syscalls/socketcall.c:193:post_socketcall
 syscalls/socketpair.c:190:post_socketpair
