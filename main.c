@@ -2121,10 +2121,8 @@ static void run_periodic_surfaces(void)
 	kcov_cmp_stats_periodic_dump();
 
 	/* Canary queue summary line (60-s cadence, self-rate-limited
-	 * inside the call).  Lives in stats.c next to the other
-	 * periodic-surface dumps so adding new operator visibility
-	 * lines to the queue stays a single-file edit. */
-	canary_queue_periodic_dump();
+	 * inside the call). */
+	canary_queue_summary();
 
 	kcov_plateau_check();
 
