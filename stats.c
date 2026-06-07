@@ -1000,6 +1000,27 @@ static const struct stat_category iscsi_target_probe_category =
 	              iscsi_target_probe_runs,
 	              iscsi_target_probe_fields);
 
+static const struct stat_field iscsi_login_walker_fields[] = {
+	STAT_FIELD(iscsi_walker, runs),
+	STAT_FIELD(iscsi_walker, setup_failed),
+	STAT_FIELD(iscsi_walker, no_target),
+	STAT_FIELD(iscsi_walker, connected),
+	STAT_FIELD(iscsi_walker, state_init_sent),
+	STAT_FIELD(iscsi_walker, state_security_sent),
+	STAT_FIELD(iscsi_walker, state_op_neg_sent),
+	STAT_FIELD(iscsi_walker, ffp_iters),
+	STAT_FIELD(iscsi_walker, ffp_pdus),
+	STAT_FIELD(iscsi_walker, chaos_runs),
+	STAT_FIELD(iscsi_walker, chaos_pdus),
+	STAT_FIELD(iscsi_walker, bytes_out),
+	STAT_FIELD(iscsi_walker, bytes_in),
+};
+
+static const struct stat_category iscsi_login_walker_category =
+	STAT_CATEGORY("iscsi_login_walker",
+	              iscsi_walker_runs,
+	              iscsi_login_walker_fields);
+
 static const struct stat_field ipv6_ndisc_proxy_fields[] = {
 	STAT_FIELD(ipv6_ndisc_proxy, runs),
 	STAT_FIELD(ipv6_ndisc_proxy, ns_sent_ok),
@@ -2093,8 +2114,7 @@ static void dump_stats_json_rxrpc_alg_ublk_block(void)
 
 static void dump_stats_json_probes_misuse_and_tail(void)
 {
-	printf("\"iscsi_login_walker\":{\"runs\":%lu,\"setup_failed\":%lu,\"no_target\":%lu,\"connected\":%lu,\"state_init_sent\":%lu,\"state_security_sent\":%lu,\"state_op_neg_sent\":%lu,\"ffp_iters\":%lu,\"ffp_pdus\":%lu,\"chaos_runs\":%lu,\"chaos_pdus\":%lu,\"bytes_out\":%lu,\"bytes_in\":%lu},"
-		"\"ipvs_sysctl_writer\":{\"runs\":%lu,\"writes_ok\":%lu,\"writes_failed\":%lu,\"unsupported_latched\":%lu,\"burn_iters\":%lu},"
+	printf("\"ipvs_sysctl_writer\":{\"runs\":%lu,\"writes_ok\":%lu,\"writes_failed\":%lu,\"unsupported_latched\":%lu,\"burn_iters\":%lu},"
 		"\"ipfrag_source_churn\":{\"runs\":%lu,\"packets_sent_ok\":%lu,\"send_failed\":%lu,\"unique_srcs\":%lu},"
 		"\"obscure_af_churn\":{\"runs\":%lu,\"no_viable_pf\":%lu,"
 			"\"sendmsg_no_bind\":{\"runs\":%lu,\"rejected\":%lu,\"unexpected_success\":%lu},"
@@ -2110,19 +2130,6 @@ static void dump_stats_json_probes_misuse_and_tail(void)
 			"\"write_ok\":%lu,\"read_ok\":%lu,"
 			"\"per_disc\":[%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu]}"
 		"}",
-		shm->stats.iscsi_walker_runs,
-		shm->stats.iscsi_walker_setup_failed,
-		shm->stats.iscsi_walker_no_target,
-		shm->stats.iscsi_walker_connected,
-		shm->stats.iscsi_walker_state_init_sent,
-		shm->stats.iscsi_walker_state_security_sent,
-		shm->stats.iscsi_walker_state_op_neg_sent,
-		shm->stats.iscsi_walker_ffp_iters,
-		shm->stats.iscsi_walker_ffp_pdus,
-		shm->stats.iscsi_walker_chaos_runs,
-		shm->stats.iscsi_walker_chaos_pdus,
-		shm->stats.iscsi_walker_bytes_out,
-		shm->stats.iscsi_walker_bytes_in,
 		shm->stats.ipvs_sysctl_writer_runs,
 		shm->stats.ipvs_sysctl_writer_writes_ok,
 		shm->stats.ipvs_sysctl_writer_writes_failed,
@@ -2358,6 +2365,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&iscsi_target_probe_category);
+
+	printf(",");
+	stat_category_emit_json(&iscsi_login_walker_category);
 
 	printf(",");
 	stat_category_emit_json(&ipv6_ndisc_proxy_category);
@@ -5252,21 +5262,7 @@ static void dump_stats_childop_runs_network(void)
 
 	stat_category_emit_text(&iscsi_target_probe_category);
 
-	if (shm->stats.iscsi_walker_runs) {
-		stat_row("iscsi_login_walker", "runs",                shm->stats.iscsi_walker_runs);
-		stat_row("iscsi_login_walker", "setup_failed",        shm->stats.iscsi_walker_setup_failed);
-		stat_row("iscsi_login_walker", "no_target",           shm->stats.iscsi_walker_no_target);
-		stat_row("iscsi_login_walker", "connected",           shm->stats.iscsi_walker_connected);
-		stat_row("iscsi_login_walker", "state_init_sent",     shm->stats.iscsi_walker_state_init_sent);
-		stat_row("iscsi_login_walker", "state_security_sent", shm->stats.iscsi_walker_state_security_sent);
-		stat_row("iscsi_login_walker", "state_op_neg_sent",   shm->stats.iscsi_walker_state_op_neg_sent);
-		stat_row("iscsi_login_walker", "ffp_iters",           shm->stats.iscsi_walker_ffp_iters);
-		stat_row("iscsi_login_walker", "ffp_pdus",            shm->stats.iscsi_walker_ffp_pdus);
-		stat_row("iscsi_login_walker", "chaos_runs",          shm->stats.iscsi_walker_chaos_runs);
-		stat_row("iscsi_login_walker", "chaos_pdus",          shm->stats.iscsi_walker_chaos_pdus);
-		stat_row("iscsi_login_walker", "bytes_out",           shm->stats.iscsi_walker_bytes_out);
-		stat_row("iscsi_login_walker", "bytes_in",            shm->stats.iscsi_walker_bytes_in);
-	}
+	stat_category_emit_text(&iscsi_login_walker_category);
 
 	if (shm->stats.ipvs_sysctl_writer_runs) {
 		stat_row("ipvs_sysctl_writer", "runs",                shm->stats.ipvs_sysctl_writer_runs);
