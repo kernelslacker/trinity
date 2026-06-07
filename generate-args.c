@@ -1143,6 +1143,26 @@ static void struct_fill_passes(unsigned char *buf, unsigned int size,
 			nbytes = count * elem_size;
 			sub = zmalloc_tracked(nbytes);
 			deferred_free_enqueue_or_leak(sub);
+			/*
+			 * Schema-fill each element when a cataloged
+			 * elem_struct resolved -- zmalloc_tracked only
+			 * zeroes, so a cataloged array would otherwise
+			 * reach the kernel as count all-zero structs and
+			 * the elem_struct annotation would be silently
+			 * inert.  Mirrors the per-buffer fill the single-
+			 * pointer FT_PTR_STRUCT case below does.  The
+			 * scalar elem_size-override path (elem == NULL or
+			 * elem->struct_size == 0) stays zero-filled.
+			 */
+			if (elem != NULL && elem->struct_size != 0) {
+				unsigned long j;
+
+				for (j = 0; j < count; j++)
+					struct_field_fill_schema_aware(
+						(unsigned char *) sub
+							+ j * elem_size,
+						elem->struct_size, elem, rec);
+			}
 			write_field_uint(buf, f, (uint64_t)(uintptr_t) sub);
 			chosen_len[i] = count;
 			break;
