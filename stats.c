@@ -948,6 +948,23 @@ static const struct stat_category igmp_mld_source_churn_category =
 	              igmp_mld_source_churn_runs,
 	              igmp_mld_source_churn_fields);
 
+static const struct stat_field pci_bind_fields[] = {
+	STAT_FIELD(pci_bind, runs),
+	STAT_FIELD(pci_bind, drivers_available),
+	STAT_FIELD(pci_bind, no_devices),
+	STAT_FIELD(pci_bind, unbind_ok),
+	STAT_FIELD(pci_bind, unbind_enodev),
+	STAT_FIELD(pci_bind, unbind_failed),
+	STAT_FIELD(pci_bind, bind_ok),
+	STAT_FIELD(pci_bind, bind_enodev),
+	STAT_FIELD(pci_bind, bind_failed),
+};
+
+static const struct stat_category pci_bind_category =
+	STAT_CATEGORY("pci_bind",
+	              pci_bind_runs,
+	              pci_bind_fields);
+
 static const struct stat_field handshake_req_abort_fields[] = {
 	STAT_FIELD(handshake_req_abort, runs),
 	STAT_FIELD(handshake_req_abort, setup_failed),
@@ -1876,8 +1893,7 @@ static void dump_stats_json_rxrpc_alg_ublk_block(void)
 		"\"veth_asymmetric_xdp\":{\"iters\":%lu,\"eperm\":%lu,\"unsupported\":%lu,\"pair_ok\":%lu,\"xdp_attach_ok\":%lu,\"send_ok\":%lu},"
 		"\"ip6erspan_netns_migrate\":{\"iters\":%lu,\"eperm\":%lu,\"unsupported\":%lu,\"link_create_ok\":%lu,\"netns_migrate_ok\":%lu,\"changelink_ok\":%lu},"
 		"\"wireguard_decrypt_flood\":{\"runs\":%lu,\"setup_failed\":%lu,\"packets_sent\":%lu,\"unsupported_latched\":%lu},"
-		"\"blkdev_lifecycle_race\":{\"runs\":%lu,\"setup_failed\":%lu,\"set_fd_ok\":%lu,\"clr_fd\":%lu,\"ebusy\":%lu,\"rescans\":%lu},"
-		"\"pci_bind\":{\"runs\":%lu,\"drivers_available\":%lu,\"no_devices\":%lu,\"unbind_ok\":%lu,\"unbind_enodev\":%lu,\"unbind_failed\":%lu,\"bind_ok\":%lu,\"bind_enodev\":%lu,\"bind_failed\":%lu},",
+		"\"blkdev_lifecycle_race\":{\"runs\":%lu,\"setup_failed\":%lu,\"set_fd_ok\":%lu,\"clr_fd\":%lu,\"ebusy\":%lu,\"rescans\":%lu},",
 		shm->stats.rxrpc_key_install_runs,
 		shm->stats.rxrpc_key_install_calls,
 		shm->stats.rxrpc_key_install_revokes,
@@ -1932,16 +1948,7 @@ static void dump_stats_json_rxrpc_alg_ublk_block(void)
 		shm->stats.blkdev_lifecycle_set_fd_ok,
 		shm->stats.blkdev_lifecycle_clr_fd,
 		shm->stats.blkdev_lifecycle_ebusy,
-		shm->stats.blkdev_lifecycle_rescans,
-		shm->stats.pci_bind_runs,
-		shm->stats.pci_bind_drivers_available,
-		shm->stats.pci_bind_no_devices,
-		shm->stats.pci_bind_unbind_ok,
-		shm->stats.pci_bind_unbind_enodev,
-		shm->stats.pci_bind_unbind_failed,
-		shm->stats.pci_bind_bind_ok,
-		shm->stats.pci_bind_bind_enodev,
-		shm->stats.pci_bind_bind_failed);
+		shm->stats.blkdev_lifecycle_rescans);
 }
 
 static void dump_stats_json_probes_misuse_and_tail(void)
@@ -2199,6 +2206,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&igmp_mld_source_churn_category);
+
+	printf(",");
+	stat_category_emit_json(&pci_bind_category);
 
 	printf(",");
 	stat_category_emit_json(&handshake_req_abort_category);
@@ -4944,17 +4954,7 @@ static void dump_stats_childop_runs_network(void)
 		stat_row("ublk_lifecycle", "race_observed", shm->stats.ublk_lifecycle_race_observed);
 	}
 
-	if (shm->stats.pci_bind_runs) {
-		stat_row("pci_bind", "runs",              shm->stats.pci_bind_runs);
-		stat_row("pci_bind", "drivers_available", shm->stats.pci_bind_drivers_available);
-		stat_row("pci_bind", "no_devices",        shm->stats.pci_bind_no_devices);
-		stat_row("pci_bind", "unbind_ok",         shm->stats.pci_bind_unbind_ok);
-		stat_row("pci_bind", "unbind_enodev",     shm->stats.pci_bind_unbind_enodev);
-		stat_row("pci_bind", "unbind_failed",     shm->stats.pci_bind_unbind_failed);
-		stat_row("pci_bind", "bind_ok",           shm->stats.pci_bind_bind_ok);
-		stat_row("pci_bind", "bind_enodev",       shm->stats.pci_bind_bind_enodev);
-		stat_row("pci_bind", "bind_failed",       shm->stats.pci_bind_bind_failed);
-	}
+	stat_category_emit_text(&pci_bind_category);
 
 	if (shm->stats.accept_unblocker_connects_fired ||
 	    shm->stats.accept_unblocker_loopback_only_skipped ||
