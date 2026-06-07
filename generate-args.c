@@ -1793,10 +1793,9 @@ mutate_one_unconditional(unsigned char *buf, unsigned int size,
  *
  * One field per call keeps the change atomic so a coverage win
  * attributes to a single (tag, field) pair instead of being smeared
- * across a whole-buffer re-roll.  Depth 1 here -- the recursive
- * candidate collection for FT_PTR_STRUCT children lands in a follow-up
- * commit with the per-tag counter histogram that justifies the wider
- * surface area.
+ * across a whole-buffer re-roll.  Depth 1 only -- recursive candidate
+ * collection for FT_PTR_STRUCT children is not yet modeled; widening
+ * the surface area waits on a per-tag counter histogram to justify it.
  */
 void struct_field_mutate_one(unsigned char *buf, unsigned int size,
 			     const struct struct_desc *desc,
