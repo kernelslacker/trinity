@@ -1000,6 +1000,18 @@ static const struct stat_category iscsi_target_probe_category =
 	              iscsi_target_probe_runs,
 	              iscsi_target_probe_fields);
 
+static const struct stat_field ipv6_ndisc_proxy_fields[] = {
+	STAT_FIELD(ipv6_ndisc_proxy, runs),
+	STAT_FIELD(ipv6_ndisc_proxy, ns_sent_ok),
+	STAT_FIELD(ipv6_ndisc_proxy, setup_failed),
+	STAT_FIELD(ipv6_ndisc_proxy, proxy_enable_ok),
+};
+
+static const struct stat_category ipv6_ndisc_proxy_category =
+	STAT_CATEGORY("ipv6_ndisc_proxy",
+	              ipv6_ndisc_proxy_runs,
+	              ipv6_ndisc_proxy_fields);
+
 static const struct stat_field pci_bind_fields[] = {
 	STAT_FIELD(pci_bind, runs),
 	STAT_FIELD(pci_bind, drivers_available),
@@ -2000,7 +2012,6 @@ static void dump_stats_json_probes_misuse_and_tail(void)
 {
 	printf("\"iscsi_login_walker\":{\"runs\":%lu,\"setup_failed\":%lu,\"no_target\":%lu,\"connected\":%lu,\"state_init_sent\":%lu,\"state_security_sent\":%lu,\"state_op_neg_sent\":%lu,\"ffp_iters\":%lu,\"ffp_pdus\":%lu,\"chaos_runs\":%lu,\"chaos_pdus\":%lu,\"bytes_out\":%lu,\"bytes_in\":%lu},"
 		"\"ipvs_sysctl_writer\":{\"runs\":%lu,\"writes_ok\":%lu,\"writes_failed\":%lu,\"unsupported_latched\":%lu,\"burn_iters\":%lu},"
-		"\"ipv6_ndisc_proxy\":{\"runs\":%lu,\"ns_sent_ok\":%lu,\"setup_failed\":%lu,\"proxy_enable_ok\":%lu},"
 		"\"ipfrag_source_churn\":{\"runs\":%lu,\"packets_sent_ok\":%lu,\"send_failed\":%lu,\"unique_srcs\":%lu},"
 		"\"rtnl_vf_broadcast_getlink\":{\"runs\":%lu,\"setup_ok\":%lu,\"setup_failed\":%lu,\"getlink_ok\":%lu},"
 		"\"obscure_af_churn\":{\"runs\":%lu,\"no_viable_pf\":%lu,"
@@ -2036,10 +2047,6 @@ static void dump_stats_json_probes_misuse_and_tail(void)
 		shm->stats.ipvs_sysctl_writer_writes_failed,
 		shm->stats.ipvs_sysctl_writer_unsupported_latched,
 		shm->stats.ipvs_sysctl_writer_burn_iters,
-		shm->stats.ipv6_ndisc_proxy_runs,
-		shm->stats.ipv6_ndisc_proxy_ns_sent_ok,
-		shm->stats.ipv6_ndisc_proxy_setup_failed,
-		shm->stats.ipv6_ndisc_proxy_proxy_enable_ok,
 		shm->stats.ipfrag_source_runs,
 		shm->stats.ipfrag_packets_sent_ok,
 		shm->stats.ipfrag_send_failed,
@@ -2281,6 +2288,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&iscsi_target_probe_category);
+
+	printf(",");
+	stat_category_emit_json(&ipv6_ndisc_proxy_category);
 
 	dump_stats_json_iouring_zc_and_kvm();
 	dump_stats_json_rxrpc_alg_ublk_block();
@@ -5195,12 +5205,7 @@ static void dump_stats_childop_runs_network(void)
 		stat_row("ipvs_sysctl_writer", "unsupported_latched", shm->stats.ipvs_sysctl_writer_unsupported_latched);
 	}
 
-	if (shm->stats.ipv6_ndisc_proxy_runs) {
-		stat_row("ipv6_ndisc_proxy", "runs",            shm->stats.ipv6_ndisc_proxy_runs);
-		stat_row("ipv6_ndisc_proxy", "ns_sent_ok",      shm->stats.ipv6_ndisc_proxy_ns_sent_ok);
-		stat_row("ipv6_ndisc_proxy", "setup_failed",    shm->stats.ipv6_ndisc_proxy_setup_failed);
-		stat_row("ipv6_ndisc_proxy", "proxy_enable_ok", shm->stats.ipv6_ndisc_proxy_proxy_enable_ok);
-	}
+	stat_category_emit_text(&ipv6_ndisc_proxy_category);
 
 	if (shm->stats.ipfrag_source_runs) {
 		stat_row("ipfrag_source_churn", "runs",            shm->stats.ipfrag_source_runs);
