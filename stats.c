@@ -1526,6 +1526,106 @@ static const struct stat_category futex_storm_category =
 	              futex_storm_fields);
 
 /*
+ * Descriptors for dump_stats_json_oracle().  Every member is named
+ * <syscall>_oracle_anomalies in struct stats_s but the JSON schema emits it
+ * as "<syscall>_anomalies" (the "oracle_" infix is implicit in the enclosing
+ * category key), so each row uses STAT_FIELD_JSON to pin the cross-prefix
+ * JSON key.  The JSON walker ignores stat_category.gate_offset (it emits
+ * every category unconditionally) and the text dump for oracle stays
+ * hand-coded in dump_stats_oracle_anomalies() where each row has its own
+ * per-field gate, so fd_oracle_anomalies here is a placeholder gate that
+ * matters only if a future change wires stat_category_emit_text() onto this
+ * table.
+ */
+static const struct stat_field oracle_fields[] = {
+	STAT_FIELD_JSON(fd_oracle, anomalies, "fd_anomalies"),
+	STAT_FIELD_JSON(mmap_oracle, anomalies, "mmap_anomalies"),
+	STAT_FIELD_JSON(cred_oracle, anomalies, "cred_anomalies"),
+	STAT_FIELD_JSON(sched_oracle, anomalies, "sched_anomalies"),
+	STAT_FIELD_JSON(uid_oracle, anomalies, "uid_anomalies"),
+	STAT_FIELD_JSON(gid_oracle, anomalies, "gid_anomalies"),
+	STAT_FIELD_JSON(setgroups_oracle, anomalies, "setgroups_anomalies"),
+	STAT_FIELD_JSON(getegid_oracle, anomalies, "getegid_anomalies"),
+	STAT_FIELD_JSON(getuid_oracle, anomalies, "getuid_anomalies"),
+	STAT_FIELD_JSON(getgid_oracle, anomalies, "getgid_anomalies"),
+	STAT_FIELD_JSON(getppid_oracle, anomalies, "getppid_anomalies"),
+	STAT_FIELD_JSON(getcwd_oracle, anomalies, "getcwd_anomalies"),
+	STAT_FIELD_JSON(getpid_oracle, anomalies, "getpid_anomalies"),
+	STAT_FIELD_JSON(getpgid_oracle, anomalies, "getpgid_anomalies"),
+	STAT_FIELD_JSON(getpgrp_oracle, anomalies, "getpgrp_anomalies"),
+	STAT_FIELD_JSON(geteuid_oracle, anomalies, "geteuid_anomalies"),
+	STAT_FIELD_JSON(getsid_oracle, anomalies, "getsid_anomalies"),
+	STAT_FIELD_JSON(gettid_oracle, anomalies, "gettid_anomalies"),
+	STAT_FIELD_JSON(setsid_oracle, anomalies, "setsid_anomalies"),
+	STAT_FIELD_JSON(setpgid_oracle, anomalies, "setpgid_anomalies"),
+	STAT_FIELD_JSON(sched_getscheduler_oracle, anomalies, "sched_getscheduler_anomalies"),
+	STAT_FIELD_JSON(getgroups_oracle, anomalies, "getgroups_anomalies"),
+	STAT_FIELD_JSON(getresuid_oracle, anomalies, "getresuid_anomalies"),
+	STAT_FIELD_JSON(getresgid_oracle, anomalies, "getresgid_anomalies"),
+	STAT_FIELD_JSON(umask_oracle, anomalies, "umask_anomalies"),
+	STAT_FIELD_JSON(sched_get_priority_max_oracle, anomalies, "sched_get_priority_max_anomalies"),
+	STAT_FIELD_JSON(sched_get_priority_min_oracle, anomalies, "sched_get_priority_min_anomalies"),
+	STAT_FIELD_JSON(sched_yield_oracle, anomalies, "sched_yield_anomalies"),
+	STAT_FIELD_JSON(getpagesize_oracle, anomalies, "getpagesize_anomalies"),
+	STAT_FIELD_JSON(time_oracle, anomalies, "time_anomalies"),
+	STAT_FIELD_JSON(gettimeofday_oracle, anomalies, "gettimeofday_anomalies"),
+	STAT_FIELD_JSON(newuname_oracle, anomalies, "newuname_anomalies"),
+	STAT_FIELD_JSON(rt_sigpending_oracle, anomalies, "rt_sigpending_anomalies"),
+	STAT_FIELD_JSON(sched_getaffinity_oracle, anomalies, "sched_getaffinity_anomalies"),
+	STAT_FIELD_JSON(rt_sigprocmask_oracle, anomalies, "rt_sigprocmask_anomalies"),
+	STAT_FIELD_JSON(sched_getparam_oracle, anomalies, "sched_getparam_anomalies"),
+	STAT_FIELD_JSON(sched_rr_get_interval_oracle, anomalies, "sched_rr_get_interval_anomalies"),
+	STAT_FIELD_JSON(get_robust_list_oracle, anomalies, "get_robust_list_anomalies"),
+	STAT_FIELD_JSON(getrlimit_oracle, anomalies, "getrlimit_anomalies"),
+	STAT_FIELD_JSON(sysinfo_oracle, anomalies, "sysinfo_anomalies"),
+	STAT_FIELD_JSON(times_oracle, anomalies, "times_anomalies"),
+	STAT_FIELD_JSON(clock_getres_oracle, anomalies, "clock_getres_anomalies"),
+	STAT_FIELD_JSON(capget_oracle, anomalies, "capget_anomalies"),
+	STAT_FIELD_JSON(newlstat_oracle, anomalies, "newlstat_anomalies"),
+	STAT_FIELD_JSON(newstat_oracle, anomalies, "newstat_anomalies"),
+	STAT_FIELD_JSON(newfstat_oracle, anomalies, "newfstat_anomalies"),
+	STAT_FIELD_JSON(newfstatat_oracle, anomalies, "newfstatat_anomalies"),
+	STAT_FIELD_JSON(statx_oracle, anomalies, "statx_anomalies"),
+	STAT_FIELD_JSON(fstatfs_oracle, anomalies, "fstatfs_anomalies"),
+	STAT_FIELD_JSON(fstatfs64_oracle, anomalies, "fstatfs64_anomalies"),
+	STAT_FIELD_JSON(statfs_oracle, anomalies, "statfs_anomalies"),
+	STAT_FIELD_JSON(statfs64_oracle, anomalies, "statfs64_anomalies"),
+	STAT_FIELD_JSON(uname_oracle, anomalies, "uname_anomalies"),
+	STAT_FIELD_JSON(lsm_list_modules_oracle, anomalies, "lsm_list_modules_anomalies"),
+	STAT_FIELD_JSON(listmount_oracle, anomalies, "listmount_anomalies"),
+	STAT_FIELD_JSON(statmount_oracle, anomalies, "statmount_anomalies"),
+	STAT_FIELD_JSON(getsockname_oracle, anomalies, "getsockname_anomalies"),
+	STAT_FIELD_JSON(getpeername_oracle, anomalies, "getpeername_anomalies"),
+	STAT_FIELD_JSON(file_getattr_oracle, anomalies, "file_getattr_anomalies"),
+	STAT_FIELD_JSON(sched_getattr_oracle, anomalies, "sched_getattr_anomalies"),
+	STAT_FIELD_JSON(getrusage_oracle, anomalies, "getrusage_anomalies"),
+	STAT_FIELD_JSON(sigpending_oracle, anomalies, "sigpending_anomalies"),
+	STAT_FIELD_JSON(getcpu_oracle, anomalies, "getcpu_anomalies"),
+	STAT_FIELD_JSON(clock_gettime_oracle, anomalies, "clock_gettime_anomalies"),
+	STAT_FIELD_JSON(get_mempolicy_oracle, anomalies, "get_mempolicy_anomalies"),
+	STAT_FIELD_JSON(lsm_get_self_attr_oracle, anomalies, "lsm_get_self_attr_anomalies"),
+	STAT_FIELD_JSON(prlimit64_oracle, anomalies, "prlimit64_anomalies"),
+	STAT_FIELD_JSON(sigaltstack_oracle, anomalies, "sigaltstack_anomalies"),
+	STAT_FIELD_JSON(olduname_oracle, anomalies, "olduname_anomalies"),
+	STAT_FIELD_JSON(lookup_dcookie_oracle, anomalies, "lookup_dcookie_anomalies"),
+	STAT_FIELD_JSON(getxattr_oracle, anomalies, "getxattr_anomalies"),
+	STAT_FIELD_JSON(lgetxattr_oracle, anomalies, "lgetxattr_anomalies"),
+	STAT_FIELD_JSON(fgetxattr_oracle, anomalies, "fgetxattr_anomalies"),
+	STAT_FIELD_JSON(listxattrat_oracle, anomalies, "listxattrat_anomalies"),
+	STAT_FIELD_JSON(flistxattr_oracle, anomalies, "flistxattr_anomalies"),
+	STAT_FIELD_JSON(listxattr_oracle, anomalies, "listxattr_anomalies"),
+	STAT_FIELD_JSON(llistxattr_oracle, anomalies, "llistxattr_anomalies"),
+	STAT_FIELD_JSON(readlink_oracle, anomalies, "readlink_anomalies"),
+	STAT_FIELD_JSON(readlinkat_oracle, anomalies, "readlinkat_anomalies"),
+	STAT_FIELD_JSON(sysfs_oracle, anomalies, "sysfs_anomalies"),
+};
+
+static const struct stat_category oracle_category =
+	STAT_CATEGORY("oracle",
+	              fd_oracle_anomalies,
+	              oracle_fields);
+
+/*
  * Descriptor tables staged for the follow-up JSON fan-out (per-fn conversions
  * of dump_stats_json_iouring_and_zombies / _socket_family_and_tls /
  * _iouring_zc_and_kvm / _netfilter_and_xfrm / _fault_and_fd_lifecycle).
@@ -1724,157 +1824,8 @@ static void dump_stats_json_fault_and_fd_lifecycle(void)
 
 static void dump_stats_json_oracle(void)
 {
-	printf("\"oracle\":{\"fd_anomalies\":%lu,\"mmap_anomalies\":%lu,"
-			"\"cred_anomalies\":%lu,\"sched_anomalies\":%lu,"
-			"\"uid_anomalies\":%lu,\"gid_anomalies\":%lu,"
-			"\"setgroups_anomalies\":%lu,\"getegid_anomalies\":%lu,"
-			"\"getuid_anomalies\":%lu,\"getgid_anomalies\":%lu,"
-				"\"getppid_anomalies\":%lu,\"getcwd_anomalies\":%lu,"
-				"\"getpid_anomalies\":%lu,"
-				"\"getpgid_anomalies\":%lu,"
-				"\"getpgrp_anomalies\":%lu,"
-				"\"geteuid_anomalies\":%lu,"
-				"\"getsid_anomalies\":%lu,"
-				"\"gettid_anomalies\":%lu,"
-				"\"setsid_anomalies\":%lu,"
-				"\"setpgid_anomalies\":%lu,"
-				"\"sched_getscheduler_anomalies\":%lu,"
-				"\"getgroups_anomalies\":%lu,"
-				"\"getresuid_anomalies\":%lu,"
-				"\"getresgid_anomalies\":%lu,"
-				"\"umask_anomalies\":%lu,"
-				"\"sched_get_priority_max_anomalies\":%lu,"
-				"\"sched_get_priority_min_anomalies\":%lu,"
-				"\"sched_yield_anomalies\":%lu,"
-				"\"getpagesize_anomalies\":%lu,"
-				"\"time_anomalies\":%lu,"
-				"\"gettimeofday_anomalies\":%lu,"
-				"\"newuname_anomalies\":%lu,"
-				"\"rt_sigpending_anomalies\":%lu,"
-				"\"sched_getaffinity_anomalies\":%lu,"
-				"\"rt_sigprocmask_anomalies\":%lu,"
-				"\"sched_getparam_anomalies\":%lu,"
-				"\"sched_rr_get_interval_anomalies\":%lu,"
-				"\"get_robust_list_anomalies\":%lu,"
-				"\"getrlimit_anomalies\":%lu,"
-				"\"sysinfo_anomalies\":%lu,"
-				"\"times_anomalies\":%lu,"
-				"\"clock_getres_anomalies\":%lu,"
-				"\"capget_anomalies\":%lu,"
-				"\"newlstat_anomalies\":%lu,"
-				"\"newstat_anomalies\":%lu,"
-				"\"newfstat_anomalies\":%lu,"
-				"\"newfstatat_anomalies\":%lu,"
-				"\"statx_anomalies\":%lu,"
-				"\"fstatfs_anomalies\":%lu,"
-				"\"fstatfs64_anomalies\":%lu,"
-				"\"statfs_anomalies\":%lu,"
-				"\"statfs64_anomalies\":%lu,"
-				"\"uname_anomalies\":%lu,"
-				"\"lsm_list_modules_anomalies\":%lu,"
-				"\"listmount_anomalies\":%lu,"
-				"\"statmount_anomalies\":%lu,"
-				"\"getsockname_anomalies\":%lu,"
-				"\"getpeername_anomalies\":%lu,"
-				"\"file_getattr_anomalies\":%lu,"
-				"\"sched_getattr_anomalies\":%lu,"
-				"\"getrusage_anomalies\":%lu,"
-				"\"sigpending_anomalies\":%lu,"
-				"\"getcpu_anomalies\":%lu,"
-				"\"clock_gettime_anomalies\":%lu,"
-				"\"get_mempolicy_anomalies\":%lu,"
-				"\"lsm_get_self_attr_anomalies\":%lu,"
-				"\"prlimit64_anomalies\":%lu,"
-				"\"sigaltstack_anomalies\":%lu,"
-				"\"olduname_anomalies\":%lu,"
-				"\"lookup_dcookie_anomalies\":%lu,"
-				"\"getxattr_anomalies\":%lu,"
-				"\"lgetxattr_anomalies\":%lu,"
-				"\"fgetxattr_anomalies\":%lu,"
-				"\"listxattrat_anomalies\":%lu,"
-				"\"flistxattr_anomalies\":%lu,"
-				"\"listxattr_anomalies\":%lu,"
-				"\"llistxattr_anomalies\":%lu,"
-				"\"readlink_anomalies\":%lu,"
-				"\"readlinkat_anomalies\":%lu,"
-				"\"sysfs_anomalies\":%lu},",
-		shm->stats.fd_oracle_anomalies, shm->stats.mmap_oracle_anomalies,
-		shm->stats.cred_oracle_anomalies, shm->stats.sched_oracle_anomalies,
-		shm->stats.uid_oracle_anomalies, shm->stats.gid_oracle_anomalies,
-		shm->stats.setgroups_oracle_anomalies,
-		shm->stats.getegid_oracle_anomalies,
-		shm->stats.getuid_oracle_anomalies,
-		shm->stats.getgid_oracle_anomalies,
-		shm->stats.getppid_oracle_anomalies,
-		shm->stats.getcwd_oracle_anomalies,
-		shm->stats.getpid_oracle_anomalies,
-		shm->stats.getpgid_oracle_anomalies,
-		shm->stats.getpgrp_oracle_anomalies,
-		shm->stats.geteuid_oracle_anomalies,
-		shm->stats.getsid_oracle_anomalies,
-		shm->stats.gettid_oracle_anomalies,
-		shm->stats.setsid_oracle_anomalies,
-		shm->stats.setpgid_oracle_anomalies,
-		shm->stats.sched_getscheduler_oracle_anomalies,
-		shm->stats.getgroups_oracle_anomalies,
-		shm->stats.getresuid_oracle_anomalies,
-		shm->stats.getresgid_oracle_anomalies,
-		shm->stats.umask_oracle_anomalies,
-		shm->stats.sched_get_priority_max_oracle_anomalies,
-		shm->stats.sched_get_priority_min_oracle_anomalies,
-		shm->stats.sched_yield_oracle_anomalies,
-		shm->stats.getpagesize_oracle_anomalies,
-		shm->stats.time_oracle_anomalies,
-		shm->stats.gettimeofday_oracle_anomalies,
-		shm->stats.newuname_oracle_anomalies,
-		shm->stats.rt_sigpending_oracle_anomalies,
-		shm->stats.sched_getaffinity_oracle_anomalies,
-		shm->stats.rt_sigprocmask_oracle_anomalies,
-		shm->stats.sched_getparam_oracle_anomalies,
-		shm->stats.sched_rr_get_interval_oracle_anomalies,
-		shm->stats.get_robust_list_oracle_anomalies,
-		shm->stats.getrlimit_oracle_anomalies,
-		shm->stats.sysinfo_oracle_anomalies,
-		shm->stats.times_oracle_anomalies,
-		shm->stats.clock_getres_oracle_anomalies,
-		shm->stats.capget_oracle_anomalies,
-		shm->stats.newlstat_oracle_anomalies,
-		shm->stats.newstat_oracle_anomalies,
-		shm->stats.newfstat_oracle_anomalies,
-		shm->stats.newfstatat_oracle_anomalies,
-		shm->stats.statx_oracle_anomalies,
-		shm->stats.fstatfs_oracle_anomalies,
-		shm->stats.fstatfs64_oracle_anomalies,
-		shm->stats.statfs_oracle_anomalies,
-		shm->stats.statfs64_oracle_anomalies,
-		shm->stats.uname_oracle_anomalies,
-		shm->stats.lsm_list_modules_oracle_anomalies,
-		shm->stats.listmount_oracle_anomalies,
-		shm->stats.statmount_oracle_anomalies,
-		shm->stats.getsockname_oracle_anomalies,
-		shm->stats.getpeername_oracle_anomalies,
-		shm->stats.file_getattr_oracle_anomalies,
-		shm->stats.sched_getattr_oracle_anomalies,
-		shm->stats.getrusage_oracle_anomalies,
-		shm->stats.sigpending_oracle_anomalies,
-		shm->stats.getcpu_oracle_anomalies,
-		shm->stats.clock_gettime_oracle_anomalies,
-		shm->stats.get_mempolicy_oracle_anomalies,
-		shm->stats.lsm_get_self_attr_oracle_anomalies,
-		shm->stats.prlimit64_oracle_anomalies,
-		shm->stats.sigaltstack_oracle_anomalies,
-		shm->stats.olduname_oracle_anomalies,
-		shm->stats.lookup_dcookie_oracle_anomalies,
-		shm->stats.getxattr_oracle_anomalies,
-		shm->stats.lgetxattr_oracle_anomalies,
-		shm->stats.fgetxattr_oracle_anomalies,
-		shm->stats.listxattrat_oracle_anomalies,
-		shm->stats.flistxattr_oracle_anomalies,
-		shm->stats.listxattr_oracle_anomalies,
-		shm->stats.llistxattr_oracle_anomalies,
-		shm->stats.readlink_oracle_anomalies,
-		shm->stats.readlinkat_oracle_anomalies,
-		shm->stats.sysfs_oracle_anomalies);
+	stat_category_emit_json(&oracle_category);
+	putchar(',');
 }
 
 static void dump_stats_json_basic_subsystems(void)
