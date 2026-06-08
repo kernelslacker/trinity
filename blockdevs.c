@@ -92,12 +92,14 @@ void process_bdev_param(char *optarg)
 	for (i = 0; i < len; i++) {
 		if (buf[i] == ',') {
 			buf[i] = '\0';
-			stat_dev(str);
+			if (*str != '\0')
+				stat_dev(str);
 			str = buf + i + 1;
 		}
 	}
 
-	stat_dev(str);
+	if (*str != '\0')
+		stat_dev(str);
 	free(buf);
 }
 
