@@ -331,8 +331,9 @@ struct kcov_child {
 	 * mode byte and the packed recovery counters slot into the bool
 	 * block so the struct stays at 48 bytes without disturbing pointer
 	 * alignment.  That leaves room in the 64-byte hot leading cacheline
-	 * for the three childdata fields that follow (last_syscall_nr,
-	 * last_group, op_nr).  child_id is intentionally not stored here —
+	 * for the childdata fields that follow (last_group, op_nr, plus
+	 * last_syscall_nr inside the embedded bug_backtrace).  child_id is
+	 * intentionally not stored here —
 	 * kcov_enable_remote() takes it as a parameter (sourced from
 	 * childdata->num) so the second fd's metadata fits without
 	 * overflowing the cacheline. */

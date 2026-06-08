@@ -464,8 +464,9 @@ void frontier_window_advance(void);
 
 /*
  * Classify a new-edge rescue produced during a SR_PLATEAU_FORCE window.
- * Walks the structured-picker state for (child->last_syscall_nr,
- * rec->nr) and returns the FIRST class whose precondition matches; the
+ * Walks the structured-picker state for
+ * (child->bug_backtrace.last_syscall_nr, rec->nr) and returns the FIRST
+ * class whose precondition matches; the
  * caller bumps shm->random_rescue_class_count[class] so dump and
  * orchestrator amplification can read the cumulative distribution.
  *

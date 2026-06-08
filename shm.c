@@ -36,8 +36,6 @@ struct fd_event_ring **expected_fd_event_rings;
 
 struct stats_ring **expected_stats_rings;
 
-#define SHM_PROT_PAGES 30
-
 unsigned int shm_size;
 
 void create_shm(void)
@@ -48,9 +46,7 @@ void create_shm(void)
 	shm_size = (sizeof(struct shm_s) + page_size - 1) & PAGE_MASK;
 	nr_shm_pages = shm_size / page_size;
 
-	/* Waste some address space to set up some "protection" near the SHM location.
-	 *
-	 * Wild-write risk: a child wild-write into shm could corrupt any
+	/* Wild-write risk: a child wild-write into shm could corrupt any
 	 * scalar / counter field — children write to shm->stats counters on
 	 * every syscall, to shm->shared_obj_freelist / shm->shared_str_
 	 * freelist on every shared-heap free, to shm->shared_obj_heap_used /
