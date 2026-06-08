@@ -650,7 +650,6 @@ static void flowtable_vlan_iter_churn(const struct flowtable_vlan_iter_ctx *c)
 	struct sockaddr_in src_a, dst_b;
 	int udp_fd, tcp_fd, gso_fd;
 	ssize_t n;
-	unsigned char *gso_buf;
 
 	memset(&src_a, 0, sizeof(src_a));
 	src_a.sin_family = AF_INET;
@@ -702,7 +701,9 @@ static void flowtable_vlan_iter_churn(const struct flowtable_vlan_iter_ctx *c)
 	gso_fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK |
 			SOCK_CLOEXEC, 0);
 	if (gso_fd >= 0) {
+		static unsigned char gso_buf[FEV_GSO_PAYLOAD];
 		int one = 0;
+
 		(void)setsockopt(gso_fd, IPPROTO_TCP, TCP_NODELAY,
 				 &one, sizeof(one));
 		(void)bind(gso_fd, (struct sockaddr *)&src_a,
@@ -710,16 +711,12 @@ static void flowtable_vlan_iter_churn(const struct flowtable_vlan_iter_ctx *c)
 		dst_b.sin_port = htons(9091);
 		(void)connect(gso_fd, (struct sockaddr *)&dst_b,
 			      sizeof(dst_b));
-		gso_buf = calloc(1, FEV_GSO_PAYLOAD);
-		if (gso_buf) {
-			n = send(gso_fd, gso_buf, FEV_GSO_PAYLOAD,
-				 MSG_DONTWAIT | MSG_NOSIGNAL);
-			if (n > 0)
-				__atomic_add_fetch(
-					&shm->stats.flowtable_vlan_gso_sends,
-					1, __ATOMIC_RELAXED);
-			free(gso_buf);
-		}
+		n = send(gso_fd, gso_buf, FEV_GSO_PAYLOAD,
+			 MSG_DONTWAIT | MSG_NOSIGNAL);
+		if (n > 0)
+			__atomic_add_fetch(
+				&shm->stats.flowtable_vlan_gso_sends,
+				1, __ATOMIC_RELAXED);
 		close(gso_fd);
 	}
 
