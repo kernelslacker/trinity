@@ -222,13 +222,21 @@ void handle_success(struct syscallrecord *rec)
 	 * they are disjoint by construction (ARG_LEN is neither ARG_FD nor
 	 * a typed-fd argtype), so OR-ing them gives every eligible slot.
 	 * Most syscalls have no fd/len args -- mask==0 short-circuits the
-	 * loop entirely. */
+	 * loop entirely.
+	 *
+	 * Read via get_arg_snapshot(): for any slot in this entry's
+	 * arg_snapshot_mask we scoreboard the dispatch-time value the
+	 * kernel actually saw rather than the live rec->aN, which a sibling
+	 * may have stomped between the syscall returning and this scoreboard
+	 * pass.  Slots that did not opt into the snapshot fall through the
+	 * accessor's mask gate to the live read, so unopted syscalls keep
+	 * their current behaviour. */
 	mask = (uint8_t)(entry->fd_arg_mask | entry->len_arg_mask);
 	while (mask != 0) {
 		unsigned int i = (unsigned int)__builtin_ctz(mask) + 1;
 		uint8_t bit = (uint8_t)(1u << (i - 1));
 		struct results *results = get_results_ptr(entry, i);
-		unsigned long value = get_argval(rec, i);
+		unsigned long value = get_arg_snapshot(rec, i);
 
 		if (entry->len_arg_mask & bit)
 			store_successful_len(results, value);
@@ -249,12 +257,13 @@ void handle_failure(struct syscallrecord *rec)
 	BUG_ON(entry == NULL);
 
 	/* Only fd args feed the failed-fd scoreboard.  Skip the walk
-	 * entirely when no slot is an fd. */
+	 * entirely when no slot is an fd.  Same snapshot gate as
+	 * handle_success: shadow-when-opted, live-when-not. */
 	mask = entry->fd_arg_mask;
 	while (mask != 0) {
 		unsigned int i = (unsigned int)__builtin_ctz(mask) + 1;
 		struct results *results = get_results_ptr(entry, i);
-		unsigned long value = get_argval(rec, i);
+		unsigned long value = get_arg_snapshot(rec, i);
 
 		store_failed_fd(results, value);
 		mask &= (uint8_t)(mask - 1);

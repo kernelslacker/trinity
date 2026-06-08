@@ -2682,10 +2682,19 @@ static unsigned long gen_arg_struct_size(struct syscallentry *entry,
  * Shared cleanup helper for any argtype whose generator hands back a
  * heap allocation that must be released after the syscall returns
  * (ARG_PATHNAME, ARG_SOCKADDR).
+ *
+ * Read via get_arg_snapshot() so that if the slot opted into the
+ * arg_shadow mask, we free the pointer the parent's sanitiser actually
+ * handed the kernel rather than whatever a sibling may have stomped
+ * into rec->aN after the syscall returned -- the latter is the
+ * highest-value site for a wild-free hazard, since deferred_free_enqueue
+ * would otherwise feed a non-malloc pointer to the side-set gate.
+ * Unopted slots fall through to the live rec->aN, matching the
+ * pre-change behaviour.
  */
 static void cleanup_deferred_free(struct syscallrecord *rec, unsigned int argnum)
 {
-	deferred_free_enqueue((void *) get_argval(rec, argnum));
+	deferred_free_enqueue((void *) get_arg_snapshot(rec, argnum));
 }
 
 /*

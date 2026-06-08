@@ -643,15 +643,17 @@ static void enforce_count_bound(const struct syscallentry *entry,
 	if (rec->retval == -1UL)
 		return;
 
-	switch (idx) {
-	case 1: count = rec->a1; break;
-	case 2: count = rec->a2; break;
-	case 3: count = rec->a3; break;
-	case 4: count = rec->a4; break;
-	case 5: count = rec->a5; break;
-	case 6: count = rec->a6; break;
-	default: return;
-	}
+	if (idx < 1 || idx > 6)
+		return;
+
+	/* Read via get_arg_snapshot() so a bound_arg slot that opted into
+	 * the arg_shadow mask is compared against the dispatch-time value
+	 * the kernel actually saw -- a sibling stomping rec->aN between
+	 * syscall return and this check would otherwise either fabricate a
+	 * spurious "retval exceeds count" warning or hide a real one by
+	 * inflating the bound.  Unopted slots fall through the accessor's
+	 * mask gate to the live rec->aN, matching the pre-change behaviour. */
+	count = get_arg_snapshot(rec, (unsigned int) idx);
 
 	ret = rec->retval;
 	if (ret > count) {
