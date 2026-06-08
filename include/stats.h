@@ -358,28 +358,13 @@ struct stats_s {
 	 * from seeing the two rates side by side instead of having to
 	 * untangle them from per-PC attribution.
 	 *
-	 * Phase 2: the arg-slot site now regenerates the offending slot
-	 * via the per-argtype generator and re-checks before letting
-	 * entry->post run; the ..._arg counter still bumps once per
-	 * detection so the catch rate stays comparable to Phase 1.  The
-	 * post_state site stays telemetry-only -- the kernel has already
-	 * observed the syscall by the time the .post handler reads the
-	 * tail, so rejection has nothing to influence. */
+	 * Both sites are telemetry-only -- the kernel has already observed
+	 * the syscall by the time the probe runs, so post-dispatch coercion
+	 * of the slot would just scribble shared rec state without changing
+	 * the syscall outcome.  Downstream consumers must take their own
+	 * explicit skip path on a stale slot. */
 	unsigned long arena_ptr_stale_caught_arg;
 	unsigned long arena_ptr_stale_caught_post_state;
-
-	/* Phase 2 give-up tally for the arena-band arg-slot rejection
-	 * path.  Bumped when the per-argtype generator returned a value
-	 * that itself landed in the literal arena band on three
-	 * consecutive retries; the original stale value is then left in
-	 * place so the dispatcher does not spin.  Catch rate of the
-	 * rejection policy is (arena_ptr_stale_caught_arg -
-	 * arena_ptr_stale_reject_giveup) / arena_ptr_stale_caught_arg;
-	 * a sustained non-zero rate on this counter says something
-	 * systemic is feeding arena-shaped values into the generator
-	 * mix (cmp_hints / prop_ring poisoning, get_writable_address
-	 * pool drift) and is worth chasing separately. */
-	unsigned long arena_ptr_stale_reject_giveup;
 
 	/* fill_arg() fired the ONE_IN(WRONG_FD_TYPE_FREQ) branch on a
 	 * typed-fd argument and substituted either a different typed-fd
