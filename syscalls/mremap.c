@@ -8,7 +8,6 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include "arch.h"
-#include "deferred-free.h"
 #include "maps.h"
 #include "random.h"
 #include "rnd.h"
@@ -168,13 +167,17 @@ static void sanitise_mremap(struct syscallrecord *rec)
 	 * allocation.  rec->a3 is unguarded entirely; a stomped value
 	 * caches the wrong size into map->size and a later consumer that
 	 * trusts m->size walks off the actual mapping.  post_state is
-	 * private to the post handler.
+	 * private to the post handler.  post_state_install pairs the
+	 * rec->post_state assign with the ownership-table register so
+	 * the observable window between the two is closed; post_mremap()
+	 * will then gate the snap through post_state_claim_owned() and
+	 * prove ownership before dereferencing any field.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic   = MREMAP_POST_STATE_MAGIC;
 	snap->new_len = rec->a3;
 	snap->map     = rec->a6;
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 }
 
 /*
@@ -183,43 +186,19 @@ static void sanitise_mremap(struct syscallrecord *rec)
  */
 static void post_mremap(struct syscallrecord *rec)
 {
-	struct mremap_post_state *snap =
-		(struct mremap_post_state *) rec->post_state;
+	struct mremap_post_state *snap;
 	struct map *map;
 	void *ptr = (void *) rec->retval;
 
+	/*
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
+	 */
+	snap = post_state_claim_owned(rec, MREMAP_POST_STATE_MAGIC, __func__);
 	if (snap == NULL)
 		return;
-
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_mremap: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	/*
-	 * Magic-cookie check: snap survived the heap-shape gate but a
-	 * sibling scribble of rec->post_state with a heap-shaped pointer
-	 * to a foreign allocation would pass looks_like_corrupted_ptr().
-	 * The magic field is stamped immediately after zmalloc in
-	 * sanitise_mremap; any other allocation will not carry it.  On
-	 * mismatch the snap pointer is suspect — clear rec->post_state
-	 * and return WITHOUT freeing, since the pointer may not be ours.
-	 */
-	if (snap->magic != MREMAP_POST_STATE_MAGIC) {
-		outputerr("post_mremap: rejected snap with bad magic 0x%lx "
-			  "(post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
 
 	map = (struct map *) snap->map;
 
@@ -312,7 +291,7 @@ static void post_mremap(struct syscallrecord *rec)
 	}
 
 out_free:
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 
 static unsigned long mremap_flags[] = {
