@@ -1509,7 +1509,8 @@ void *post_state_claim_owned(struct syscallrecord *rec,
 	if (!post_state_is_owned(snap)) {
 		outputerr("%s: rejected post_state=%p not in ownership table "
 			  "(post_state-redirected?)\n", handler_name, snap);
-		post_handler_corrupt_ptr_bump(rec, NULL);
+		post_handler_corrupt_ptr_bump_at(rec, NULL,
+						 CORRUPT_PTR_SITE_CLAIM_OWNED_NOT_OWNED);
 		rec->post_state = 0;
 		return NULL;
 	}
@@ -1525,7 +1526,8 @@ void *post_state_claim_owned(struct syscallrecord *rec,
 		outputerr("%s: rejected snap with bad magic 0x%lx "
 			  "(post_state-stomped to foreign allocation?)\n",
 			  handler_name, magic_found);
-		post_handler_corrupt_ptr_bump(rec, NULL);
+		post_handler_corrupt_ptr_bump_at(rec, NULL,
+						 CORRUPT_PTR_SITE_CLAIM_OWNED_BAD_MAGIC);
 		rec->post_state = 0;
 		return NULL;
 	}
@@ -1838,6 +1840,79 @@ void post_handler_corrupt_ptr_bump_site(struct syscallrecord *rec,
 }
 
 /*
+ * TRINITY_CORRUPT_ATTRIB measurement path.  Off by default; enabled at
+ * runtime by exporting TRINITY_CORRUPT_ATTRIB=1 before fork.  Latched
+ * on first query so the hot path pays one cached-bool branch when the
+ * gate is off.
+ *
+ * The mprotect-armor probe (corruption probe #1) proved that the
+ * syscallrecord itself is not wild-written (0 trap fires, rec_canary=0)
+ * yet the post_handler_corrupt_ptr headline keeps spiking ~40k/60s.
+ * This counter must therefore be conflating distinct rejection paths
+ * -- structural validators (validate_arg_coupling, enforce_count_bound)
+ * that bump on perfectly-fine-but-rejected kernel results AND the
+ * shape-heuristic firing on genuine scribbles into rec->aN AND the
+ * per-handler oracle bumps (mq_notify / getitimer / timer_gettime /
+ * timerfd_gettime).  Per-site attribution disambiguates: if the spike
+ * is dominated by validator_rejected the headline tells us nothing
+ * about real corruption; if a residual "post_generic" bucket remains
+ * non-trivial, that's the next call-site sweep target.
+ */
+_Static_assert(sizeof(((struct stats_s *)0)->corrupt_ptr_site_count) ==
+	       sizeof(unsigned long) * CORRUPT_PTR_SITE__COUNT,
+	       "corrupt_ptr_site_count array size out of sync with enum");
+
+const char *const corrupt_ptr_site_names[CORRUPT_PTR_SITE__COUNT] = {
+	[CORRUPT_PTR_SITE_VALIDATOR_REJECTED]    = "validator_rejected",
+	[CORRUPT_PTR_SITE_ENFORCE_COUNT_BOUND]   = "enforce_count_bound",
+	[CORRUPT_PTR_SITE_RETFD_INVALID]         = "retfd_invalid",
+	[CORRUPT_PTR_SITE_CLAIM_OWNED_NOT_OWNED] = "claim_owned_not_owned",
+	[CORRUPT_PTR_SITE_CLAIM_OWNED_BAD_MAGIC] = "claim_owned_bad_magic",
+	[CORRUPT_PTR_SITE_SHAPE_HEURISTIC]       = "shape_heuristic",
+	[CORRUPT_PTR_SITE_MQ_NOTIFY]             = "mq_notify",
+	[CORRUPT_PTR_SITE_GETITIMER]             = "getitimer",
+	[CORRUPT_PTR_SITE_TIMER_GETTIME]         = "timer_gettime",
+	[CORRUPT_PTR_SITE_TIMERFD_GETTIME]       = "timerfd_gettime",
+};
+
+static bool corrupt_attrib_inited;
+static bool corrupt_attrib_enabled;
+
+bool corrupt_ptr_attrib_active(void)
+{
+	if (!corrupt_attrib_inited) {
+		const char *v = getenv("TRINITY_CORRUPT_ATTRIB");
+
+		corrupt_attrib_enabled =
+			(v != NULL && v[0] == '1' && v[1] == '\0');
+		corrupt_attrib_inited = true;
+	}
+	return corrupt_attrib_enabled;
+}
+
+void corrupt_ptr_site_record(enum corrupt_ptr_site site)
+{
+	if (!corrupt_ptr_attrib_active())
+		return;
+	if ((unsigned int) site >= CORRUPT_PTR_SITE__COUNT)
+		return;
+	__atomic_add_fetch(&shm->stats.corrupt_ptr_site_count[site], 1,
+			   __ATOMIC_RELAXED);
+}
+
+void post_handler_corrupt_ptr_bump_at(struct syscallrecord *rec,
+				      void *caller_pc,
+				      enum corrupt_ptr_site site)
+{
+	const char *tag = NULL;
+
+	if ((unsigned int) site < CORRUPT_PTR_SITE__COUNT)
+		tag = corrupt_ptr_site_names[site];
+	corrupt_ptr_site_record(site);
+	post_handler_corrupt_ptr_bump_site(rec, caller_pc, tag);
+}
+
+/*
  * Record a caller PC into this child's deferred_free_reject sub-attribution
  * shard.  Same eviction policy and ownership model as corrupt_ptr_pc_record
  * -- the owning child is the sole writer of its own shard, so no lock is
@@ -1931,6 +2006,7 @@ void deferred_free_reject_bump(void *caller_pc)
 __attribute__((noinline))
 void post_handler_corrupt_ptr_bump_retfd(struct syscallrecord *rec)
 {
+	corrupt_ptr_site_record(CORRUPT_PTR_SITE_RETFD_INVALID);
 	post_handler_corrupt_ptr_bump_site(rec, __builtin_return_address(0),
 					   "handle_syscall_ret:retfd_invalid");
 }
@@ -2004,6 +2080,7 @@ bool looks_like_corrupted_ptr_pc(struct syscallrecord *rec, const void *p,
 	if (!is_corrupt_ptr_shape(p))
 		return false;
 
+	corrupt_ptr_site_record(CORRUPT_PTR_SITE_SHAPE_HEURISTIC);
 	post_handler_corrupt_ptr_bump_full(rec, caller_pc, "shape-heuristic",
 					   CORRUPT_PTR_BREADCRUMB_NO_ARG, v);
 

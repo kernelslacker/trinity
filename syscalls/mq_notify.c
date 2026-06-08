@@ -10,6 +10,7 @@
 #include "shm.h"
 #include "stats_ring.h"
 #include "trinity.h"
+#include "utils.h"
 
 static void sanitise_mq_notify(struct syscallrecord *rec)
 {
@@ -82,16 +83,10 @@ static void post_mq_notify(struct syscallrecord *rec)
 	 * but the kernel bounces those with EBADF.
 	 */
 	if ((long) a1 < 0 || a1 >= 0x10000UL) {
-		struct childdata *c = this_child();
-
 		outputerr("post_mq_notify: rejected suspicious mqdes=%lu (pid-scribbled?)\n",
 			  a1);
-		if (c != NULL && c->stats_ring != NULL)
-			stats_ring_enqueue(c->stats_ring,
-					   STATS_FIELD_POST_HANDLER_CORRUPT_PTR,
-					   0, 1);
-		else
-			parent_stats.post_handler_corrupt_ptr++;
+		post_handler_corrupt_ptr_bump_at(rec, NULL,
+						 CORRUPT_PTR_SITE_MQ_NOTIFY);
 		return;
 	}
 

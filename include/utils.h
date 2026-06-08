@@ -378,6 +378,66 @@ void post_handler_corrupt_ptr_bump_full(struct syscallrecord *rec,
 	post_handler_corrupt_ptr_bump_site((rec), (caller_pc), NULL)
 
 /*
+ * Per-callsite attribution buckets for post_handler_corrupt_ptr.  The
+ * headline counter is the sum of every bump from every site; the
+ * spike-detector reacts to that sum but cannot tell whether a spike is
+ * dominated by structural-validator noise (every validate_arg_coupling
+ * reject from __do_syscall folds into this) or by a genuinely-detected
+ * scribble.  Off by default; enabled at runtime by setting the
+ * TRINITY_CORRUPT_ATTRIB=1 environment variable, in which case each
+ * named site additionally bumps an SHM-resident slot counted in this
+ * enum and the periodic dump renders the per-site breakdown.
+ *
+ * Anything bumped through the legacy macro at a site without an enum
+ * tag stays anonymous: at dump time, the implicit "post_generic" bucket
+ * = headline - sum(named slots).  A non-trivial residual is the lead
+ * for hunting the next call site to instrument.
+ */
+enum corrupt_ptr_site {
+	CORRUPT_PTR_SITE_VALIDATOR_REJECTED = 0,
+	CORRUPT_PTR_SITE_ENFORCE_COUNT_BOUND,
+	CORRUPT_PTR_SITE_RETFD_INVALID,
+	CORRUPT_PTR_SITE_CLAIM_OWNED_NOT_OWNED,
+	CORRUPT_PTR_SITE_CLAIM_OWNED_BAD_MAGIC,
+	CORRUPT_PTR_SITE_SHAPE_HEURISTIC,
+	CORRUPT_PTR_SITE_MQ_NOTIFY,
+	CORRUPT_PTR_SITE_GETITIMER,
+	CORRUPT_PTR_SITE_TIMER_GETTIME,
+	CORRUPT_PTR_SITE_TIMERFD_GETTIME,
+	CORRUPT_PTR_SITE__COUNT,
+};
+
+extern const char *const corrupt_ptr_site_names[CORRUPT_PTR_SITE__COUNT];
+
+/*
+ * Combined "bump the headline + record site enum" entrypoint.  Use at
+ * any named site so the dump can break out which categories dominate
+ * the headline counter.  The per-site slot bump is gated on the
+ * TRINITY_CORRUPT_ATTRIB env var so production callers pay only one
+ * branch on a cached bool when the gate is off.
+ */
+void post_handler_corrupt_ptr_bump_at(struct syscallrecord *rec,
+				      void *caller_pc,
+				      enum corrupt_ptr_site site);
+
+/*
+ * Cheap per-site bump used by callers that need to keep the existing
+ * bump_full() invocation (because they pass a known bad_ptr to the
+ * breadcrumb ring -- looks_like_corrupted_ptr_pc, the retfd wrapper)
+ * but still want a per-site slot bump.  Same env-gate as
+ * post_handler_corrupt_ptr_bump_at; no-op when the gate is off.
+ */
+void corrupt_ptr_site_record(enum corrupt_ptr_site site);
+
+/*
+ * True when TRINITY_CORRUPT_ATTRIB=1 is in the environment.  Latched on
+ * first call so a getenv() doesn't fire on the hot path; subsequent
+ * calls return the cached bool.  Exposed for the dump path which gates
+ * its rendering on the same flag.
+ */
+bool corrupt_ptr_attrib_active(void);
+
+/*
  * Bump the deferred_free_reject counter and record per-callsite
  * attribution into deferred_free_reject_pc.  Use from the two reject
  * sites inside deferred_free_enqueue (shape heuristic + alloc-track

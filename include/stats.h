@@ -2502,6 +2502,20 @@ struct stats_s {
 	 * out-pointer slot is being stomped, not just an aggregate. */
 	unsigned long timer_create_inner_ptr_mismatch;		/* timer_create: snap->idp != rec->a3 in post */
 	unsigned long io_setup_inner_ptr_mismatch;		/* io_setup: snap->ctxp != rec->a2 in post */
+
+	/* Per-call-site attribution buckets for the post_handler_corrupt_ptr
+	 * headline counter.  Inert by default; the producer side (the
+	 * post_handler_corrupt_ptr_bump_at / corrupt_ptr_site_record path
+	 * in utils.c) only writes when TRINITY_CORRUPT_ATTRIB=1 is in the
+	 * env, and the dump path renders the breakdown under the same gate.
+	 * Indexed by enum corrupt_ptr_site (include/utils.h); kept here as a
+	 * bare unsigned long array rather than declared in terms of the
+	 * enum to avoid pulling utils.h into the stats header.  The slot
+	 * count tracks CORRUPT_PTR_SITE__COUNT -- bumped in lockstep with
+	 * the enum.  Multi-producer (any child can fire from any named
+	 * site) so the writers use __atomic_add_fetch RELAXED; this lives
+	 * in shm->stats rather than parent_stats for that reason. */
+	unsigned long corrupt_ptr_site_count[10];	/* CORRUPT_PTR_SITE__COUNT */
 };
 
 unsigned int stats_syscall_category(const char *name);

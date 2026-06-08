@@ -254,7 +254,8 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 	 * and the caller's kcov_collect() would otherwise re-process the
 	 * previous syscall's PCs against this slot. */
 	if (validate_arg_coupling(rec) != 0) {
-		post_handler_corrupt_ptr_bump(rec, NULL);
+		post_handler_corrupt_ptr_bump_at(rec, NULL,
+						 CORRUPT_PTR_SITE_VALIDATOR_REJECTED);
 		if (kc != NULL && kc->active) {
 			if (kc->mode == KCOV_MODE_PC && kc->trace_buf != NULL)
 				__atomic_store_n(&kc->trace_buf[0], 0,
@@ -661,7 +662,8 @@ static void enforce_count_bound(const struct syscallentry *entry,
 			  entry->name, ret,
 			  entry->argname[idx - 1] ? entry->argname[idx - 1] : "count",
 			  count);
-		post_handler_corrupt_ptr_bump(rec, NULL);
+		post_handler_corrupt_ptr_bump_at(rec, NULL,
+						 CORRUPT_PTR_SITE_ENFORCE_COUNT_BOUND);
 	}
 }
 

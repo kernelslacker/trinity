@@ -119,16 +119,8 @@ static void post_getitimer(struct syscallrecord *rec)
 		       "[oracle:getitimer] tv_usec out of range: it_value.tv_usec=%ld it_interval.tv_usec=%ld (must be in [0, 999999])\n",
 		       (long) first.it_value.tv_usec,
 		       (long) first.it_interval.tv_usec);
-		{
-			struct childdata *c = this_child();
-
-			if (c != NULL && c->stats_ring != NULL)
-				stats_ring_enqueue(c->stats_ring,
-						   STATS_FIELD_POST_HANDLER_CORRUPT_PTR,
-						   0, 1);
-			else
-				parent_stats.post_handler_corrupt_ptr++;
-		}
+		post_handler_corrupt_ptr_bump_at(rec, NULL,
+						 CORRUPT_PTR_SITE_GETITIMER);
 	}
 
 out_free:

@@ -4699,6 +4699,46 @@ static void dump_stats_corruption_and_pool(void)
 	 */
 	output(0, "[main] post_handler_corrupt_ptr_cumulative=%lu\n",
 	       parent_stats.post_handler_corrupt_ptr);
+	/*
+	 * TRINITY_CORRUPT_ATTRIB per-call-site breakdown.  Gated on the
+	 * env-var-latched bool so production dumps stay terse; when on,
+	 * emits one stat_row per named site plus a computed "post_generic"
+	 * row carrying the residual headline - sum(named).  A non-trivial
+	 * post_generic value is the lead for the next call-site sweep --
+	 * the producer is some legacy post_handler_corrupt_ptr_bump() macro
+	 * caller that hasn't been categorised yet.  Reads shm->stats via
+	 * RELAXED atomic loads since children are concurrent writers.
+	 */
+	if (corrupt_ptr_attrib_active()) {
+		unsigned long named_sum = 0;
+		unsigned long total = parent_stats.post_handler_corrupt_ptr;
+		unsigned int i;
+
+		for (i = 0; i < CORRUPT_PTR_SITE__COUNT; i++) {
+			unsigned long v;
+			char metric[64];
+
+			v = __atomic_load_n(&shm->stats.corrupt_ptr_site_count[i],
+					    __ATOMIC_RELAXED);
+			named_sum += v;
+			snprintf(metric, sizeof(metric),
+				 "corrupt_ptr_site:%s",
+				 corrupt_ptr_site_names[i]);
+			stat_row("corruption", metric, v);
+			output(0, "[main] %s_cumulative=%lu\n", metric, v);
+		}
+		/* Anything in the headline not claimed by a named site:
+		 * the legacy post_handler_corrupt_ptr_bump(rec, NULL) callers
+		 * in syscalls (the per-handler oracle bumps that weren't
+		 * routed through _at()).  Saturate to zero if named_sum
+		 * outruns the headline due to non-atomic reads of the two
+		 * counters at slightly different moments. */
+		stat_row("corruption", "corrupt_ptr_site:post_generic",
+			 total > named_sum ? total - named_sum : 0);
+		output(0, "[main] corrupt_ptr_site:post_generic_cumulative=%lu (headline=%lu named_sum=%lu)\n",
+		       total > named_sum ? total - named_sum : 0,
+		       total, named_sum);
+	}
 	if (parent_stats.arg_shadow_stomp)
 		stat_row("corruption", "arg_shadow_stomp", parent_stats.arg_shadow_stomp);
 	if (parent_stats.deferred_free_reject)
