@@ -40,5 +40,4 @@ syscalls/pselect6.c:sanitise_pselect6
 syscalls/ptrace.c:sanitise_ptrace
 syscalls/recv.c:sanitise_recvfrom
 syscalls/select.c:sanitise_select
-syscalls/timerfd_create.c:sanitise_timerfd_create
 syscalls/write.c:sanitise_write
