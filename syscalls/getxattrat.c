@@ -94,7 +94,7 @@ static void sanitise_getxattrat(struct syscallrecord *rec)
 			snap = zmalloc_tracked(sizeof(*snap));
 			snap->magic = GETXATTRAT_POST_STATE_MAGIC;
 			snap->size = args->size;
-			rec->post_state = (unsigned long) snap;
+			post_state_install(rec, snap);
 		}
 
 		rec->a5 = (unsigned long) args;
@@ -122,28 +122,18 @@ static void sanitise_getxattrat(struct syscallrecord *rec)
  */
 static void post_getxattrat(struct syscallrecord *rec)
 {
-	struct getxattrat_post_state *snap =
-		(struct getxattrat_post_state *) rec->post_state;
+	struct getxattrat_post_state *snap;
 	unsigned long retval = rec->retval;
 
+	/*
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
+	 */
+	snap = post_state_claim_owned(rec, GETXATTRAT_POST_STATE_MAGIC, __func__);
 	if (snap == NULL)
 		return;
-
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_getxattrat: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	if (snap->magic != GETXATTRAT_POST_STATE_MAGIC) {
-		outputerr("post_getxattrat: rejected snap with bad magic 0x%lx "
-			  "(post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
 
 	if ((long) retval >= 0 && snap->size != 0 &&
 	    retval > snap->size) {
@@ -152,7 +142,7 @@ static void post_getxattrat(struct syscallrecord *rec)
 		post_handler_corrupt_ptr_bump(rec, NULL);
 	}
 
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_getxattrat = {

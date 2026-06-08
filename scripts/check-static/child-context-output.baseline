@@ -134,9 +134,7 @@ syscalls/gettid.c:48:post_gettid
 syscalls/gettimeofday.c:156:post_gettimeofday
 syscalls/getuid.c:38:post_getuid
 syscalls/getuid.c:59:post_getuid
-syscalls/getxattrat.c:133:post_getxattrat
 syscalls/getxattrat.c:140:post_getxattrat
-syscalls/getxattrat.c:150:post_getxattrat
 syscalls/getxattr.c:215:post_getxattr
 syscalls/getxattr.c:287:post_getxattr
 syscalls/init_module.c:158:post_init_module
