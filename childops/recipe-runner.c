@@ -73,6 +73,7 @@
 #include "arch.h"
 #include "child.h"
 #include "childops-util.h"
+#include "childops/iouring-recipes.h"
 #include "compat.h"
 #include "maps.h"
 #include "random.h"
@@ -2228,14 +2229,8 @@ out:
  */
 static bool recipe_iouring_fixed_uaf(bool *unsupported)
 {
-	struct io_uring_params p;
+	struct iour_ctx ctx;
 	struct io_uring_sqe *sqes_arr;
-	void *sq_ring = MAP_FAILED;
-	void *cq_ring = MAP_FAILED;
-	void *sqes = MAP_FAILED;
-	size_t sq_sz = 0, cq_sz = 0, sqes_sz = 0;
-	bool single_mmap = false;
-	int ring_fd = -1;
 	int devnull = -1;
 	int fds[1];
 	unsigned int *sq_array;
@@ -2244,56 +2239,27 @@ static bool recipe_iouring_fixed_uaf(bool *unsupported)
 	bool ok = false;
 	int r;
 
-	memset(&p, 0, sizeof(p));
-	ring_fd = (int)syscall(__NR_io_uring_setup, 8U, &p);
-	if (ring_fd < 0) {
-		if (errno == ENOSYS || errno == EPERM) {
+	/* The setup-ENOSYS/EPERM and SQ-mmap-EOPNOTSUPP/EPERM cases the
+	 * hand-rolled version detected separately collapse into a single
+	 * post-call errno check: iour_setup preserves errno across its
+	 * cleanup path, and any of ENOSYS/EPERM/EOPNOTSUPP on the way in
+	 * means the kernel doesn't support the feature -- stop probing. */
+	if (!iour_setup(&ctx, 8U)) {
+		if (errno == ENOSYS || errno == EPERM ||
+		    errno == EOPNOTSUPP) {
 			*unsupported = true;
 			__atomic_add_fetch(&shm->stats.recipe_unsupported, 1,
 					   __ATOMIC_RELAXED);
 		}
 		goto out;
 	}
-
-	sq_sz = (size_t)p.sq_off.array +
-		(size_t)p.sq_entries * sizeof(unsigned int);
-	cq_sz = (size_t)p.cq_off.cqes +
-		(size_t)p.cq_entries * sizeof(struct io_uring_cqe);
-	sqes_sz = (size_t)p.sq_entries * sizeof(struct io_uring_sqe);
-
-	sq_ring = mmap(NULL, sq_sz, PROT_READ | PROT_WRITE,
-		       MAP_SHARED | MAP_POPULATE, ring_fd, IORING_OFF_SQ_RING);
-	if (sq_ring == MAP_FAILED) {
-		if (errno == EOPNOTSUPP || errno == EPERM) {
-			*unsupported = true;
-			__atomic_add_fetch(&shm->stats.recipe_unsupported, 1,
-					   __ATOMIC_RELAXED);
-		}
-		goto out;
-	}
-
-	if (p.features & IORING_FEAT_SINGLE_MMAP) {
-		cq_ring = sq_ring;
-		single_mmap = true;
-	} else {
-		cq_ring = mmap(NULL, cq_sz, PROT_READ | PROT_WRITE,
-			       MAP_SHARED | MAP_POPULATE,
-			       ring_fd, IORING_OFF_CQ_RING);
-		if (cq_ring == MAP_FAILED)
-			goto out;
-	}
-
-	sqes = mmap(NULL, sqes_sz, PROT_READ | PROT_WRITE,
-		    MAP_SHARED | MAP_POPULATE, ring_fd, IORING_OFF_SQES);
-	if (sqes == MAP_FAILED)
-		goto out;
 
 	devnull = open("/dev/null", O_RDONLY | O_CLOEXEC);
 	if (devnull < 0)
 		goto out;
 
 	fds[0] = devnull;
-	r = (int)syscall(__NR_io_uring_register, ring_fd,
+	r = (int)syscall(__NR_io_uring_register, ctx.fd,
 			 IORING_REGISTER_FILES, fds, 1U);
 	if (r < 0) {
 		if (errno == ENOSYS || errno == EINVAL) {
@@ -2312,7 +2278,7 @@ static bool recipe_iouring_fixed_uaf(bool *unsupported)
 	close(devnull);
 	devnull = -1;
 
-	sqes_arr = (struct io_uring_sqe *)sqes;
+	sqes_arr = (struct io_uring_sqe *)ctx.sqes;
 	memset(&sqes_arr[0], 0, sizeof(sqes_arr[0]));
 	sqes_arr[0].opcode    = IORING_OP_READ;
 	sqes_arr[0].fd        = 0;		/* registered slot index */
@@ -2320,26 +2286,26 @@ static bool recipe_iouring_fixed_uaf(bool *unsupported)
 	sqes_arr[0].len       = 16;
 	sqes_arr[0].user_data = 0xfeedface;
 
-	mask = *(volatile unsigned int *)((char *)sq_ring + p.sq_off.ring_mask);
-	head = *(volatile unsigned int *)((char *)sq_ring + p.sq_off.head);
-	tail = *(volatile unsigned int *)((char *)sq_ring + p.sq_off.tail);
-	if ((tail - head) >= p.sq_entries)
+	mask = *(volatile unsigned int *)((char *)ctx.sq_ring + ctx.sq_off_mask);
+	head = *(volatile unsigned int *)((char *)ctx.sq_ring + ctx.sq_off_head);
+	tail = *(volatile unsigned int *)((char *)ctx.sq_ring + ctx.sq_off_tail);
+	if ((tail - head) >= ctx.sq_entries)
 		goto out;
 
-	sq_array = (unsigned int *)((char *)sq_ring + p.sq_off.array);
+	sq_array = (unsigned int *)((char *)ctx.sq_ring + ctx.sq_off_array);
 	sq_array[tail & mask] = 0;
 	__sync_synchronize();
-	*(volatile unsigned int *)((char *)sq_ring + p.sq_off.tail) = tail + 1;
+	*(volatile unsigned int *)((char *)ctx.sq_ring + ctx.sq_off_tail) = tail + 1;
 
 	/* Submit-and-return: min_complete=0 means we don't wait for the
 	 * read to land in the CQ before kicking off the unregister.  The
 	 * race window is the gap between the kernel queueing the request
 	 * (which grabs the rsrc-node ref) and posting the completion
 	 * (which drops it). */
-	(void)syscall(__NR_io_uring_enter, ring_fd, 1U, 0U,
+	(void)syscall(__NR_io_uring_enter, ctx.fd, 1U, 0U,
 		      0U /* no GETEVENTS */, NULL, 0UL);
 
-	(void)syscall(__NR_io_uring_register, ring_fd,
+	(void)syscall(__NR_io_uring_register, ctx.fd,
 		      IORING_UNREGISTER_FILES, NULL, 0U);
 	registered = false;
 
@@ -2350,32 +2316,25 @@ static bool recipe_iouring_fixed_uaf(bool *unsupported)
 	{
 		unsigned int chead, ctail;
 
-		chead = *(volatile unsigned int *)((char *)cq_ring +
-						   p.cq_off.head);
-		ctail = *(volatile unsigned int *)((char *)cq_ring +
-						   p.cq_off.tail);
+		chead = *(volatile unsigned int *)((char *)ctx.cq_ring +
+						   ctx.cq_off_head);
+		ctail = *(volatile unsigned int *)((char *)ctx.cq_ring +
+						   ctx.cq_off_tail);
 		while (chead != ctail)
 			chead++;
 		__sync_synchronize();
-		*(volatile unsigned int *)((char *)cq_ring +
-					   p.cq_off.head) = chead;
+		*(volatile unsigned int *)((char *)ctx.cq_ring +
+					   ctx.cq_off_head) = chead;
 	}
 
 	ok = true;
 out:
 	if (registered)
-		(void)syscall(__NR_io_uring_register, ring_fd,
+		(void)syscall(__NR_io_uring_register, ctx.fd,
 			      IORING_UNREGISTER_FILES, NULL, 0U);
-	if (sqes != MAP_FAILED)
-		munmap(sqes, sqes_sz);
-	if (cq_ring != MAP_FAILED && !single_mmap)
-		munmap(cq_ring, cq_sz);
-	if (sq_ring != MAP_FAILED)
-		munmap(sq_ring, sq_sz);
 	if (devnull >= 0)
 		close(devnull);
-	if (ring_fd >= 0)
-		close(ring_fd);
+	iour_teardown(&ctx);
 	return ok;
 }
 

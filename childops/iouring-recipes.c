@@ -65,6 +65,7 @@ struct iour_open_how {
 #include "arch.h"
 #include "child.h"
 #include "childops-iouring.h"
+#include "childops/iouring-recipes.h"
 #include "errno-classify.h"
 #include "maps.h"
 #include "random.h"
@@ -85,36 +86,6 @@ struct iour_open_how {
 #define IORING_OFF_CQ_RING	0x8000000ULL
 #define IORING_OFF_SQES		0x10000000ULL
 #endif
-
-/*
- * Local ring context — set up per-invocation, torn down before return.
- * Keeps all mmap'd regions together so cleanup is a single goto-chain.
- */
-struct iour_ctx {
-	int		fd;
-	void		*sq_ring;
-	void		*cq_ring;	/* may equal sq_ring if SINGLE_MMAP */
-	void		*sqes;
-	size_t		sq_ring_sz;
-	size_t		cq_ring_sz;	/* 0 when SINGLE_MMAP */
-	size_t		sqes_sz;
-	bool		single_mmap;
-
-	unsigned int	sq_entries;
-	unsigned int	cq_entries;
-
-	/* SQ ring field offsets within the mmap'd region. */
-	unsigned int	sq_off_head;
-	unsigned int	sq_off_tail;
-	unsigned int	sq_off_mask;
-	unsigned int	sq_off_array;
-
-	/* CQ ring field offsets within the mmap'd region. */
-	unsigned int	cq_off_head;
-	unsigned int	cq_off_tail;
-	unsigned int	cq_off_mask;
-	unsigned int	cq_off_cqes;
-};
 
 /*
  * Per-iteration recipe resources.  Recipes may allocate fds, pipes,
@@ -157,9 +128,10 @@ struct iour_recipe_state {
 /*
  * Set up a private io_uring with the requested number of SQ entries.
  * Returns true on success; ctx is fully populated.  On failure, ctx is
- * zeroed and no resources need freeing.
+ * zeroed and no resources need freeing; errno is preserved across the
+ * cleanup so the caller can distinguish io_uring_setup vs mmap failures.
  */
-static bool iour_setup(struct iour_ctx *ctx, unsigned int entries)
+bool iour_setup(struct iour_ctx *ctx, unsigned int entries)
 {
 	struct io_uring_params p;
 	size_t sq_sz, cq_sz, sqes_sz;
@@ -231,12 +203,17 @@ static bool iour_setup(struct iour_ctx *ctx, unsigned int entries)
 	return true;
 
 fail_close:
-	close(ctx->fd);
-	ctx->fd = -1;
+	{
+		int saved_errno = errno;
+
+		close(ctx->fd);
+		ctx->fd = -1;
+		errno = saved_errno;
+	}
 	return false;
 }
 
-static void iour_teardown(struct iour_ctx *ctx)
+void iour_teardown(struct iour_ctx *ctx)
 {
 	if (ctx->sqes)
 		munmap(ctx->sqes, ctx->sqes_sz);
