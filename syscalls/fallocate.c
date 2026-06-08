@@ -146,7 +146,7 @@ static void sanitise_fallocate(struct syscallrecord *rec)
 	snap->magic = FALLOCATE_POST_STATE_MAGIC;
 	snap->fd    = rec->a1;
 	snap->mode  = rec->a2;
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 }
 
 /*
@@ -175,30 +175,17 @@ static bool fallocate_mode_destroys_content(unsigned long mode)
 
 static void post_fallocate(struct syscallrecord *rec)
 {
-	struct fallocate_post_state *snap =
-		(struct fallocate_post_state *) rec->post_state;
-
-	if (snap == NULL)
-		return;
+	struct fallocate_post_state *snap;
 
 	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 * looks_like_corrupted_ptr bumps the corrupt-ptr counter
-	 * internally on a positive result; no outputerr here because
-	 * child-context output() silently dup2'd /dev/null.
+	 * Canonical ownership bracket: shape -> ownership -> magic, in that
+	 * order.  post_state_claim_owned() has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption counter
+	 * on failure -- just early-return on NULL.
 	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		rec->post_state = 0;
+	snap = post_state_claim_owned(rec, FALLOCATE_POST_STATE_MAGIC, __func__);
+	if (snap == NULL)
 		return;
-	}
-
-	if (snap->magic != FALLOCATE_POST_STATE_MAGIC) {
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
 
 	if (rec->retval != 0)
 		goto out_free;
@@ -209,7 +196,7 @@ static void post_fallocate(struct syscallrecord *rec)
 	invalidate_obj_mmap_by_fd((int) snap->fd);
 
 out_free:
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_fallocate = {
