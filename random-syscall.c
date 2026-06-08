@@ -526,7 +526,7 @@ retry:
 		unsigned long soft_max = (unsigned long)ilog2_ul(max_weight) *
 					 FRONTIER_SOFT_SCALE;
 		unsigned long denom = soft_max + 1UL;
-		unsigned long roll = (unsigned long)rnd_modulo_u64(denom);
+		unsigned long roll = (unsigned long)rnd_modulo_u32(denom);
 
 		if (roll >= w + 1UL)
 			goto retry;
