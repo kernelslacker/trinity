@@ -51,6 +51,7 @@ static void sanitise_fb_cmap(struct syscallrecord *rec)
 	cmap = (struct fb_cmap *) get_writable_struct(sizeof(*cmap));
 	if (!cmap)
 		return;
+	memset(cmap, 0, sizeof(*cmap));
 	len = rnd_modulo_u32(16) + 1;
 	red = get_writable_struct(len * sizeof(__u16));
 	green = get_writable_struct(len * sizeof(__u16));
