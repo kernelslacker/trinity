@@ -1766,6 +1766,7 @@ static void dump_stats_json_corruption_and_audit(void)
 {
 	printf("\"corruption\":{\"fd_event_ring_noncanon\":%lu,"
 			"\"fd_event_ring_canary\":%lu,\"fd_event_payload\":%lu,"
+			"\"stats_ring_noncanon\":%lu,\"stats_ring_canary\":%lu,"
 			"\"deferred_free_corrupt_ptr\":%lu,"
 			"\"post_handler_corrupt_ptr\":%lu,\"deferred_free_reject\":%lu,"
 			"\"deferred_free_reject_pathname\":%lu,"
@@ -1812,6 +1813,8 @@ static void dump_stats_json_corruption_and_audit(void)
 		shm->stats.fd_event_ring_corrupted,
 		shm->stats.fd_event_ring_overwritten,
 		shm->stats.fd_event_payload_corrupt,
+		shm->stats.stats_ring_corrupted,
+		shm->stats.stats_ring_overwritten,
 		parent_stats.deferred_free_corrupt_ptr,
 		parent_stats.post_handler_corrupt_ptr,
 		parent_stats.deferred_free_reject,
@@ -2699,6 +2702,10 @@ static const struct {
 	  offsetof(struct stats_s, fd_event_ring_corrupted) },
 	{ "fd_event_ring_overwritten",
 	  offsetof(struct stats_s, fd_event_ring_overwritten) },
+	{ "stats_ring_corrupted",
+	  offsetof(struct stats_s, stats_ring_corrupted) },
+	{ "stats_ring_overwritten",
+	  offsetof(struct stats_s, stats_ring_overwritten) },
 	{ "fd_event_payload_corrupt",
 	  offsetof(struct stats_s, fd_event_payload_corrupt) },
 	{ "destroy_object_idx_corrupt",
@@ -4534,6 +4541,10 @@ static void dump_stats_corruption_and_pool(void)
 		stat_row("corruption", "fd_event_ring_noncanon", shm->stats.fd_event_ring_corrupted);
 	if (shm->stats.fd_event_ring_overwritten)
 		stat_row("corruption", "fd_event_ring_canary",   shm->stats.fd_event_ring_overwritten);
+	if (shm->stats.stats_ring_corrupted)
+		stat_row("corruption", "stats_ring_noncanon",    shm->stats.stats_ring_corrupted);
+	if (shm->stats.stats_ring_overwritten)
+		stat_row("corruption", "stats_ring_canary",      shm->stats.stats_ring_overwritten);
 	if (shm->stats.fd_event_payload_corrupt)
 		stat_row("corruption", "fd_event_payload",       shm->stats.fd_event_payload_corrupt);
 	if (parent_stats.deferred_free_corrupt_ptr)

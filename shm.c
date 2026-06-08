@@ -34,6 +34,8 @@ struct childdata **children;
 
 struct fd_event_ring **expected_fd_event_rings;
 
+struct stats_ring **expected_stats_rings;
+
 #define SHM_PROT_PAGES 30
 
 unsigned int shm_size;
@@ -217,19 +219,20 @@ static void init_shm_strategy_state(void)
 }
 
 /*
- * Allocate the parent's two child-indexed pointer arrays:
- * children[] (the per-slot childdata pointer array) and
- * expected_fd_event_rings[] (the fd_event_ring canary).  Both are
- * sized max_children * sizeof(pointer), checked with
- * shared_size_mul -- overflow at this scale is structurally
- * unrecoverable so the helper exits on overflow rather than
- * threading a failure back to the caller.  childptrslen is rounded
- * up to page_size before the children[] alloc (the parent-only
- * mprotect(PROT_READ) at the tail of init_shm runs on this exact
- * length) and stashed in init_shm_childptrslen so that mprotect
- * can find it without a third pass through shared_size_mul.  The
- * for_each_child population pass that fills both arrays is the
- * next phase; this helper only carves the address space.
+ * Allocate the parent's three child-indexed pointer arrays:
+ * children[] (the per-slot childdata pointer array),
+ * expected_fd_event_rings[] (the fd_event_ring canary), and
+ * expected_stats_rings[] (the stats_ring canary).  All are sized
+ * max_children * sizeof(pointer), checked with shared_size_mul --
+ * overflow at this scale is structurally unrecoverable so the
+ * helper exits on overflow rather than threading a failure back to
+ * the caller.  childptrslen is rounded up to page_size before the
+ * children[] alloc (the parent-only mprotect(PROT_READ) at the
+ * tail of init_shm runs on this exact length) and stashed in
+ * init_shm_childptrslen so that mprotect can find it without a
+ * third pass through shared_size_mul.  The for_each_child
+ * population pass that fills all three arrays is the next phase;
+ * this helper only carves the address space.
  */
 static void init_shm_alloc_children(void)
 {
@@ -266,6 +269,22 @@ static void init_shm_alloc_children(void)
 		exit(EXIT_FAILURE);
 	}
 	expected_fd_event_rings = alloc_shared(fd_event_ring_arr_bytes);
+
+	/*
+	 * Same shape for the stats_ring canary -- one pointer per child slot,
+	 * compared in stats_ring_drain_all().
+	 */
+	{
+		size_t stats_ring_arr_bytes;
+
+		if (!shared_size_mul(max_children, sizeof(struct stats_ring *),
+				     &stats_ring_arr_bytes)) {
+			outputerr("init_shm: max_children=%u * sizeof(struct stats_ring *) overflows size_t\n",
+				  max_children);
+			exit(EXIT_FAILURE);
+		}
+		expected_stats_rings = alloc_shared(stats_ring_arr_bytes);
+	}
 }
 
 /*
@@ -332,15 +351,16 @@ static void init_shm_per_child_rings(void)
 
 		/* Per-child stats ring.  The child IS the producer (every
 		 * syscall enqueues at least one slot), so the ring contents
-		 * stay child-writable.  The ring POINTER is in struct
-		 * childdata which sits in shared memory; a wild write that
-		 * swapped it would surface in the same overflow / payload
-		 * validation paths the drain already runs.  No dedicated
-		 * canary array yet -- the structural improvement here is
-		 * moving the COUNTER VALUES out of shm; the ring storage
-		 * being shared is inherent to the SPSC contract. */
+		 * stay child-writable.  The ring POINTER lives in struct
+		 * childdata in shared memory and would SIGSEGV the parent's
+		 * drain if a wild write or recycled-zombie store swapped it;
+		 * record the address in the canary array so
+		 * stats_ring_drain_all() can spot the swap before deref. */
 		child->stats_ring = alloc_shared(sizeof(struct stats_ring));
 		stats_ring_init(child->stats_ring);
+
+		/* Record the ring address in the canary array. */
+		expected_stats_rings[i] = child->stats_ring;
 	}
 }
 

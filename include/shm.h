@@ -963,3 +963,12 @@ extern struct childdata **children;
  * the known-good value to keep draining while logging the incident.
  */
 extern struct fd_event_ring **expected_fd_event_rings;
+
+/*
+ * Canary copy of each child's stats_ring pointer, taken at init time so
+ * wild-write damage to the per-child ring pointer can be detected.
+ * stats_ring_drain_all() compares the live pointer against this array;
+ * a mismatch means the pointer was overwritten after init, and we use
+ * the known-good value to keep draining while logging the incident.
+ */
+extern struct stats_ring **expected_stats_rings;

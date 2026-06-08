@@ -265,6 +265,57 @@ void stats_ring_drain_all(void)
 		if (ring == NULL)
 			continue;
 
+		/*
+		 * Sanity-check the ring pointer before dereferencing it.
+		 * A D-state zombie waking after its slot was recycled can
+		 * write a wild pointer here.  fd_event_drain_all() caught
+		 * 0x9c000000890000 in the wild (bit 47 set, bits 48-63
+		 * clear -- non-canonical on x86-64).  Catch that pattern
+		 * and any obviously low address rather than taking a
+		 * SIGSEGV that would take the parent down.
+		 */
+		{
+			uintptr_t raddr = (uintptr_t)ring;
+			uintptr_t top = raddr >> 47;
+
+			if (raddr < 0x10000 ||
+			    (top != 0 && top != 0x1ffff)) {
+				output(0, "stats_ring: child[%u] ring pointer %p is non-canonical, skipping\n",
+				       i, ring);
+				__atomic_add_fetch(&shm->stats.stats_ring_corrupted, 1,
+						   __ATOMIC_RELAXED);
+				continue;
+			}
+		}
+
+		/*
+		 * Canary check: compare the live pointer against the
+		 * known-good value captured at init time.  A mismatch means
+		 * the pointer field was overwritten after init (e.g. a stray
+		 * write from a recycled child slot).  Use the expected
+		 * pointer for the drain so fuzzing can continue, but only
+		 * after it passes the same sanity check we applied to the
+		 * live pointer above.
+		 */
+		if (ring != expected_stats_rings[i]) {
+			struct stats_ring *expected = expected_stats_rings[i];
+			uintptr_t eaddr = (uintptr_t)expected;
+			uintptr_t etop = eaddr >> 47;
+
+			output(0, "stats_ring: child[%u] ring pointer %p overwritten (expected %p)\n",
+			       i, ring, expected);
+			__atomic_add_fetch(&shm->stats.stats_ring_overwritten, 1,
+					   __ATOMIC_RELAXED);
+
+			if (eaddr < 0x10000 ||
+			    (etop != 0 && etop != 0x1ffff)) {
+				output(0, "stats_ring: child[%u] expected ring %p also non-canonical, skipping\n",
+				       i, expected);
+				continue;
+			}
+			ring = expected;
+		}
+
 		(void) stats_ring_drain(ring);
 	}
 

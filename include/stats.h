@@ -1770,6 +1770,16 @@ struct stats_s {
 	 * Indicates the pointer was overwritten after init. */
 	unsigned long fd_event_ring_overwritten;
 
+	/* stats_ring_drain_all() found a child->stats_ring pointer that
+	 * failed the canonical-address / minimum-address sanity check.
+	 * Same defense-in-depth role as fd_event_ring_corrupted. */
+	unsigned long stats_ring_corrupted;
+
+	/* stats_ring_drain_all() found a live child->stats_ring that
+	 * differed from the canary copy taken at init time.  Indicates
+	 * the pointer was overwritten after init. */
+	unsigned long stats_ring_overwritten;
+
 	/* fd_event_drain() rejected a child-supplied event whose payload
 	 * (type tag, objtype, fd, family, ...) was outside the dispatch
 	 * code's safe range.  Children write their own ring under hostile
