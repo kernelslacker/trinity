@@ -1569,11 +1569,55 @@ static const struct stat_field recipe_runner_fields[] = {
 	STAT_FIELD(recipe, unsupported),
 };
 
-static const struct stat_category recipe_runner_category
-	__attribute__((unused)) =
+static const struct stat_category recipe_runner_category =
 	STAT_CATEGORY("recipe_runner",
 	              recipe_runs,
 	              recipe_runner_fields);
+
+/*
+ * Descriptors for the remaining categories in
+ * dump_stats_json_iouring_and_zombies().  The text-side dump for these stays
+ * hand-coded for now, and the JSON walker ignores gate_offset, so the gate
+ * field choices below only matter if a future change wires
+ * stat_category_emit_text() onto these tables.
+ */
+static const struct stat_field iouring_recipes_fields[] = {
+	STAT_FIELD(iouring_recipes, runs),
+	STAT_FIELD(iouring_recipes, completed),
+	STAT_FIELD(iouring_recipes, partial),
+	STAT_FIELD(iouring_recipes, enosys),
+};
+
+static const struct stat_category iouring_recipes_category =
+	STAT_CATEGORY("iouring_recipes",
+	              iouring_recipes_runs,
+	              iouring_recipes_fields);
+
+static const struct stat_field iouring_eventfd_fields[] = {
+	STAT_FIELD(iouring_eventfd, register_ok),
+	STAT_FIELD(iouring_eventfd, register_fail),
+	STAT_FIELD(iouring_eventfd, recursive_runs),
+	STAT_FIELD(iouring_eventfd, recursive_cqes),
+};
+
+static const struct stat_category iouring_eventfd_category =
+	STAT_CATEGORY("iouring_eventfd",
+	              iouring_eventfd_register_ok,
+	              iouring_eventfd_fields);
+
+/* zombie_slots mixes two struct prefixes (zombie_slots_ for the gauge,
+ * zombies_ for the counters); each STAT_FIELD picks its own prefix so the
+ * JSON keys stay flat ("pending", "reaped", "timed_out"). */
+static const struct stat_field zombie_slots_fields[] = {
+	STAT_FIELD(zombie_slots, pending),
+	STAT_FIELD(zombies, reaped),
+	STAT_FIELD(zombies, timed_out),
+};
+
+static const struct stat_category zombie_slots_category =
+	STAT_CATEGORY("zombie_slots",
+	              zombies_reaped,
+	              zombie_slots_fields);
 
 static const struct stat_field nat_t_churn_fields[] = {
 	STAT_FIELD(nat_t_churn, runs),
@@ -1884,21 +1928,14 @@ static void dump_stats_json_basic_subsystems(void)
 
 static void dump_stats_json_iouring_and_zombies(void)
 {
-	printf("\"recipe_runner\":{\"runs\":%lu,\"completed\":%lu,\"partial\":%lu,\"unsupported\":%lu},"
-		"\"iouring_recipes\":{\"runs\":%lu,\"completed\":%lu,\"partial\":%lu,\"enosys\":%lu},"
-		"\"iouring_eventfd\":{\"register_ok\":%lu,\"register_fail\":%lu,"
-			"\"recursive_runs\":%lu,\"recursive_cqes\":%lu},"
-		"\"zombie_slots\":{\"pending\":%lu,\"reaped\":%lu,\"timed_out\":%lu},",
-		shm->stats.recipe_runs, shm->stats.recipe_completed,
-		shm->stats.recipe_partial, shm->stats.recipe_unsupported,
-		shm->stats.iouring_recipes_runs, shm->stats.iouring_recipes_completed,
-		shm->stats.iouring_recipes_partial, shm->stats.iouring_recipes_enosys,
-		shm->stats.iouring_eventfd_register_ok,
-		shm->stats.iouring_eventfd_register_fail,
-		shm->stats.iouring_eventfd_recursive_runs,
-		shm->stats.iouring_eventfd_recursive_cqes,
-		shm->stats.zombie_slots_pending, shm->stats.zombies_reaped,
-		shm->stats.zombies_timed_out);
+	stat_category_emit_json(&recipe_runner_category);
+	putchar(',');
+	stat_category_emit_json(&iouring_recipes_category);
+	putchar(',');
+	stat_category_emit_json(&iouring_eventfd_category);
+	putchar(',');
+	stat_category_emit_json(&zombie_slots_category);
+	putchar(',');
 }
 
 static void dump_stats_json_corruption_and_audit(void)
