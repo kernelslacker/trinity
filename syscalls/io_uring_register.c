@@ -1166,7 +1166,7 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = IO_URING_REGISTER_POST_STATE_MAGIC;
-	snap->opcode = opcode;
+	snap->opcode = opcode & ~IORING_REGISTER_USE_REGISTERED_RING;
 	snap->arg_len = arg_len;
 	rec->post_state = (unsigned long) snap;
 
