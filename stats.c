@@ -550,6 +550,12 @@ static void json_emit_cmp_hints_section(void)
  */
 struct stat_field {
 	const char *name;	/* JSON key / text metric column */
+	const char *json_key;	/* Optional JSON-key override (NULL = use .name).
+				 * Set when the struct member's suffix doesn't
+				 * carry the JSON key the schema needs (e.g.
+				 * local_fd_hash_insert_dropped emits as
+				 * "local_hash_insert_dropped").  Ignored by the
+				 * text walker, which always emits .name. */
 	size_t      offset;	/* offsetof(struct stats_s, <field>) */
 };
 
@@ -561,7 +567,17 @@ struct stat_category {
 };
 
 #define STAT_FIELD(cat, suffix) \
-	{ #suffix, offsetof(struct stats_s, cat##_##suffix) }
+	{ .name = #suffix, \
+	  .offset = offsetof(struct stats_s, cat##_##suffix) }
+
+/* Like STAT_FIELD, but the JSON walker emits @jkey instead of #suffix.
+ * Use only when the struct member's suffix doesn't match the JSON schema
+ * (cross-prefix fields pulled into a category whose JSON key isn't the
+ * struct prefix; see fd_lifecycle's local_fd_/epoll_ members). */
+#define STAT_FIELD_JSON(cat, suffix, jkey) \
+	{ .name = #suffix, \
+	  .json_key = (jkey), \
+	  .offset = offsetof(struct stats_s, cat##_##suffix) }
 
 #define STAT_CATEGORY(cat_name, gate_field, fields_array) \
 	{ (cat_name), \
@@ -591,10 +607,13 @@ static void stat_category_emit_json(const struct stat_category *cat)
 
 	printf("\"%s\":{", cat->name);
 	for (i = 0; i < cat->n_fields; i++) {
+		const struct stat_field *f = &cat->fields[i];
+		const char *key = f->json_key ? f->json_key : f->name;
+
 		printf("%s\"%s\":%lu",
 		       i ? "," : "",
-		       cat->fields[i].name,
-		       stat_field_load(&cat->fields[i]));
+		       key,
+		       stat_field_load(f));
 	}
 	putchar('}');
 }
@@ -1505,6 +1524,126 @@ static const struct stat_category futex_storm_category =
 	STAT_CATEGORY("futex_storm",
 	              futex_storm_runs,
 	              futex_storm_fields);
+
+/*
+ * Descriptor tables staged for the follow-up JSON fan-out (per-fn conversions
+ * of dump_stats_json_iouring_and_zombies / _socket_family_and_tls /
+ * _iouring_zc_and_kvm / _netfilter_and_xfrm / _fault_and_fd_lifecycle).
+ *
+ * The category JSON key in each case doesn't match the struct member's
+ * single prefix, so STAT_FIELD() rows pick whichever prefix matches the
+ * actual struct member (packet_fanout_*, recipe_*, nat_t_churn_/nat_t_,
+ * kvm_run_/kvm_, fd_/local_fd_/epoll_); .name doubles as the text-side
+ * key.  For fd_lifecycle's three cross-prefix members (local_fd_* and
+ * epoll_*) the suffix alone wouldn't yield the schema's JSON key, so
+ * STAT_FIELD_JSON() pins the JSON key explicitly.
+ *
+ * As with the fs_lifecycle/futex_storm pair above, the JSON walker
+ * ignores stat_category.gate_offset; the gate field is set to the same
+ * counter the existing text emitter uses (or a placeholder for
+ * fd_lifecycle, which has no single gate) so a future text-side wiring
+ * has a sensible default.  These tables have no live caller yet -- they
+ * land here so the per-fn JSON conversions can be reviewed in isolation.
+ */
+static const struct stat_field packet_fanout_thrash_fields[] = {
+	STAT_FIELD(packet_fanout, runs),
+	STAT_FIELD(packet_fanout, setup_failed),
+	STAT_FIELD(packet_fanout, ring_failed),
+	STAT_FIELD(packet_fanout, rings_installed),
+	STAT_FIELD(packet_fanout, mmap_failed),
+	STAT_FIELD(packet_fanout, joins),
+	STAT_FIELD(packet_fanout, rejoins_ok),
+	STAT_FIELD(packet_fanout, rejoins_rejected),
+};
+
+static const struct stat_category packet_fanout_thrash_category
+	__attribute__((unused)) =
+	STAT_CATEGORY("packet_fanout_thrash",
+	              packet_fanout_runs,
+	              packet_fanout_thrash_fields);
+
+static const struct stat_field recipe_runner_fields[] = {
+	STAT_FIELD(recipe, runs),
+	STAT_FIELD(recipe, completed),
+	STAT_FIELD(recipe, partial),
+	STAT_FIELD(recipe, unsupported),
+};
+
+static const struct stat_category recipe_runner_category
+	__attribute__((unused)) =
+	STAT_CATEGORY("recipe_runner",
+	              recipe_runs,
+	              recipe_runner_fields);
+
+static const struct stat_field nat_t_churn_fields[] = {
+	STAT_FIELD(nat_t_churn, runs),
+	STAT_FIELD(nat_t_churn, setup_failed),
+	STAT_FIELD(nat_t_churn, sa_added),
+	STAT_FIELD(nat_t_churn, sa_deleted),
+	STAT_FIELD(nat_t_churn, frames_sent),
+	STAT_FIELD(nat_t, xfrm6_setup_ok),
+	STAT_FIELD(nat_t, xfrm6_setup_fail),
+	STAT_FIELD(nat_t, xfrm6_sendto_runs),
+	STAT_FIELD(nat_t, xfrm6_delsa_races),
+};
+
+static const struct stat_category nat_t_churn_category
+	__attribute__((unused)) =
+	STAT_CATEGORY("nat_t_churn",
+	              nat_t_churn_runs,
+	              nat_t_churn_fields);
+
+static const struct stat_field kvm_run_churn_fields[] = {
+	STAT_FIELD(kvm_run, invocations),
+	STAT_FIELD(kvm_run, exit_io),
+	STAT_FIELD(kvm_run, exit_mmio),
+	STAT_FIELD(kvm_run, exit_hlt),
+	STAT_FIELD(kvm_run, exit_shutdown),
+	STAT_FIELD(kvm_run, exit_fail_entry),
+	STAT_FIELD(kvm_run, exit_internal_error),
+	STAT_FIELD(kvm_run, exit_intr),
+	STAT_FIELD(kvm_run, exit_other),
+	STAT_FIELD(kvm_run, errors),
+	STAT_FIELD(kvm, gpc_memslot_race_runs),
+	STAT_FIELD(kvm, gpc_memslot_race_deletes),
+	STAT_FIELD(kvm, gpc_memslot_race_unsupported),
+};
+
+static const struct stat_category kvm_run_churn_category
+	__attribute__((unused)) =
+	STAT_CATEGORY("kvm_run_churn",
+	              kvm_run_invocations,
+	              kvm_run_churn_fields);
+
+static const struct stat_field fd_lifecycle_fields[] = {
+	STAT_FIELD(fd, stale_detected),
+	STAT_FIELD(fd, stale_by_generation),
+	STAT_FIELD(fd, closed_tracked),
+	STAT_FIELD(fd, regenerated),
+	STAT_FIELD(fd, duped),
+	STAT_FIELD(fd, events_processed),
+	STAT_FIELD(fd, events_dropped),
+	STAT_FIELD(fd, event_close_count),
+	STAT_FIELD(fd, event_evict_count),
+	STAT_FIELD(fd, hash_reinsert_dropped),
+	STAT_FIELD_JSON(local_fd, hash_insert_dropped,
+	                "local_hash_insert_dropped"),
+	STAT_FIELD(fd, runtime_registered),
+	STAT_FIELD_JSON(epoll, lazy_armed, "epoll_lazy_armed"),
+	STAT_FIELD_JSON(epoll, blocking_poll_skipped,
+	                "epoll_blocking_poll_skipped"),
+	STAT_FIELD(fd, random_exhausted),
+	STAT_FIELD(fd, provider_invalid),
+};
+
+/* fd_lifecycle has no single gate counter -- the text emitter ORs many
+ * fields.  Use fd_stale_detected as a placeholder for the JSON walker
+ * (which ignores gate_offset); any text-side wiring will need to revisit. */
+static const struct stat_category fd_lifecycle_category
+	__attribute__((unused)) =
+	STAT_CATEGORY("fd_lifecycle",
+	              fd_stale_detected,
+	              fd_lifecycle_fields);
 
 /*
  * Emit every counter from struct stats_s as a single JSON object.
