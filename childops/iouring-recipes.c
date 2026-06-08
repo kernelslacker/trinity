@@ -126,12 +126,17 @@ struct iour_recipe_state {
 };
 
 /*
- * Set up a private io_uring with the requested number of SQ entries.
+ * Set up a private io_uring with the requested number of SQ entries,
+ * passing `entries` to io_uring_setup verbatim -- no RAND_NEGATIVE_OR
+ * edge-value injection.  Use this for reproducer recipes whose hit rate
+ * depends on a fixed ring shape (an edge `entries` value would set up a
+ * differently-shaped ring or fail outright, diluting the reproducer).
+ *
  * Returns true on success; ctx is fully populated.  On failure, ctx is
  * zeroed and no resources need freeing; errno is preserved across the
  * cleanup so the caller can distinguish io_uring_setup vs mmap failures.
  */
-bool iour_setup(struct iour_ctx *ctx, unsigned int entries)
+bool iour_setup_exact(struct iour_ctx *ctx, unsigned int entries)
 {
 	struct io_uring_params p;
 	size_t sq_sz, cq_sz, sqes_sz;
@@ -141,8 +146,7 @@ bool iour_setup(struct iour_ctx *ctx, unsigned int entries)
 	ctx->fd = -1;
 
 	memset(&p, 0, sizeof(p));
-	ctx->fd = (int)syscall(__NR_io_uring_setup,
-			       (unsigned int)RAND_NEGATIVE_OR(entries), &p);
+	ctx->fd = (int)syscall(__NR_io_uring_setup, entries, &p);
 	if (ctx->fd < 0)
 		return false;
 
@@ -211,6 +215,22 @@ fail_close:
 		errno = saved_errno;
 	}
 	return false;
+}
+
+/*
+ * Edge-fuzzing wrapper around iour_setup_exact: ~1/RAND_NEGATIVE_RATIO
+ * of invocations substitute a curated boundary value (0, -1, INT_MAX,
+ * ...) for `entries` so io_uring_setup's bounds-check path gets
+ * exercised.  Recipes that don't care about ring shape -- the chained-
+ * SQE sequences and per-opcode breadth recipes here -- use this; the
+ * fixed-uaf reproducer in recipe-runner.c calls iour_setup_exact()
+ * directly because an edge-value entries setup would dilute its hit
+ * rate.
+ */
+bool iour_setup(struct iour_ctx *ctx, unsigned int entries)
+{
+	return iour_setup_exact(ctx,
+				(unsigned int)RAND_NEGATIVE_OR(entries));
 }
 
 void iour_teardown(struct iour_ctx *ctx)

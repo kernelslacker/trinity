@@ -2241,10 +2241,20 @@ static bool recipe_iouring_fixed_uaf(bool *unsupported)
 
 	/* The setup-ENOSYS/EPERM and SQ-mmap-EOPNOTSUPP/EPERM cases the
 	 * hand-rolled version detected separately collapse into a single
-	 * post-call errno check: iour_setup preserves errno across its
-	 * cleanup path, and any of ENOSYS/EPERM/EOPNOTSUPP on the way in
-	 * means the kernel doesn't support the feature -- stop probing. */
-	if (!iour_setup(&ctx, 8U)) {
+	 * post-call errno check: iour_setup_exact preserves errno across
+	 * its cleanup path, and any of ENOSYS/EPERM/EOPNOTSUPP on the way
+	 * in means the kernel doesn't support the feature -- stop probing.
+	 *
+	 * Deliberately the _exact() variant, not iour_setup(): the UAF
+	 * reproducer's hit rate depends on the kernel allocating a ring
+	 * with the requested 8-entry shape every iteration.  Routing
+	 * through iour_setup() would substitute a curated edge value (0,
+	 * -1, INT_MAX, ...) for entries on ~1/RAND_NEGATIVE_RATIO calls,
+	 * which either fails the setup outright or yields a differently-
+	 * shaped ring -- both dilute this recipe's race window without
+	 * adding coverage the other iour_setup() callers don't already
+	 * provide. */
+	if (!iour_setup_exact(&ctx, 8U)) {
 		if (errno == ENOSYS || errno == EPERM ||
 		    errno == EOPNOTSUPP) {
 			*unsupported = true;

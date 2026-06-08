@@ -45,12 +45,25 @@ struct iour_ctx {
 
 /*
  * Set up a private io_uring with the requested number of SQ entries.
+ * `entries` is wrapped in RAND_NEGATIVE_OR(), so ~1/RAND_NEGATIVE_RATIO
+ * of calls substitute a curated boundary value for the requested count
+ * to exercise io_uring_setup's bounds-check path.  Reproducer recipes
+ * whose hit rate depends on a fixed ring shape should call
+ * iour_setup_exact() instead.
+ *
  * Returns true on success; ctx is fully populated.  On failure, ctx is
  * zeroed (ctx->fd = -1) and no resources need freeing; errno is
  * preserved across the cleanup path so the caller can distinguish
  * io_uring_setup vs mmap failures.
  */
 bool iour_setup(struct iour_ctx *ctx, unsigned int entries);
+
+/*
+ * Deterministic variant of iour_setup: passes `entries` to
+ * io_uring_setup verbatim with no RAND_NEGATIVE_OR edge-value
+ * substitution.  Same success/failure contract as iour_setup.
+ */
+bool iour_setup_exact(struct iour_ctx *ctx, unsigned int entries);
 
 /*
  * Release every resource owned by ctx.  Idempotent: safe to call on a
