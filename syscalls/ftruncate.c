@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(ftruncate, unsigned int, fd, unsigned long, length)
  */
-#include "deferred-free.h"
 #include "maps.h"
 #include "sanitise.h"
 #include "utils.h"
@@ -30,35 +29,22 @@ static void sanitise_ftruncate(struct syscallrecord *rec)
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = FTRUNCATE_POST_STATE_MAGIC;
 	snap->fd    = rec->a1;
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 }
 
 static void post_ftruncate(struct syscallrecord *rec)
 {
-	struct ftruncate_post_state *snap =
-		(struct ftruncate_post_state *) rec->post_state;
-
-	if (snap == NULL)
-		return;
+	struct ftruncate_post_state *snap;
 
 	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 * looks_like_corrupted_ptr bumps the corrupt-ptr counter
-	 * internally on a positive result; no outputerr here because
-	 * child-context output() silently dup2'd /dev/null.
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
 	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		rec->post_state = 0;
+	snap = post_state_claim_owned(rec, FTRUNCATE_POST_STATE_MAGIC, __func__);
+	if (snap == NULL)
 		return;
-	}
-
-	if (snap->magic != FTRUNCATE_POST_STATE_MAGIC) {
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
 
 	if (rec->retval != 0)
 		goto out_free;
@@ -76,7 +62,7 @@ static void post_ftruncate(struct syscallrecord *rec)
 	invalidate_obj_mmap_by_fd((int) snap->fd);
 
 out_free:
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_ftruncate = {

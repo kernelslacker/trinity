@@ -25,7 +25,6 @@
 #
 # Lines starting with `#` and blank lines are ignored.
 
-syscalls/ftruncate.c:sanitise_ftruncate
 syscalls/get_robust_list.c:sanitise_get_robust_list
 syscalls/getsockopt.c:sanitise_getsockopt
 syscalls/getxattrat.c:sanitise_getxattrat
