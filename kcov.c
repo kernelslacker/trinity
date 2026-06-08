@@ -101,26 +101,6 @@ enum childop_kcov_attribution_mode childop_kcov_attr_mode =
 	CHILDOP_KCOV_ATTR_OFF;
 
 /*
- * Record a KCOV_TRACE_CMP setup/runtime failure into the parent-visible
- * cmp_diag slots.  Called from child context (post-dup2-to-/dev/null),
- * where output() to stdout is silently dropped — the shm fields are
- * the only diagnostic channel that survives back to the parent.
- *
- * First failure wins for the errno slot: CAS-from-zero so subsequent
- * failures at the same site don't overwrite the original errno.  The
- * count slot atomically tallies every failure so the parent can see
- * how many children hit each site even when they all hit the same one.
- */
-static void kcov_cmp_diag_record(int *errno_slot, unsigned int *count_slot,
-				 int err)
-{
-	int expected = 0;
-	__atomic_compare_exchange_n(errno_slot, &expected, err, false,
-		__ATOMIC_RELAXED, __ATOMIC_RELAXED);
-	__atomic_fetch_add(count_slot, 1, __ATOMIC_RELAXED);
-}
-
-/*
  * Record a KCOV PC or remote enable/disable failure into the parent-
  * visible pc_diag slots.  Called from child context (post-dup2-to-
  * /dev/null), where output() to stdout is silently dropped — the shm
@@ -132,8 +112,8 @@ static void kcov_cmp_diag_record(int *errno_slot, unsigned int *count_slot,
  * count slot atomically tallies every failure so the parent can see
  * how many children hit each site even when they all hit the same one.
  */
-static void kcov_pc_diag_record(int *errno_slot, unsigned int *count_slot,
-				int err)
+static void kcov_diag_record(int *errno_slot, unsigned int *count_slot,
+			     int err)
 {
 	int expected = 0;
 	__atomic_compare_exchange_n(errno_slot, &expected, err, false,
@@ -554,14 +534,14 @@ static bool kcov_init_child_cmp_fd(struct kcov_child *kc)
 
 	kc->cmp_fd = open("/sys/kernel/debug/kcov", O_RDWR);
 	if (kc->cmp_fd < 0) {
-		kcov_cmp_diag_record(&kcov_shm->cmp_diag.init_open_errno,
+		kcov_diag_record(&kcov_shm->cmp_diag.init_open_errno,
 			&kcov_shm->cmp_diag.init_open_count, errno);
 		return false;
 	}
 
 	if (ioctl(kc->cmp_fd, KCOV_INIT_TRACE,
 			(unsigned long)KCOV_CMP_BUFFER_SIZE) < 0) {
-		kcov_cmp_diag_record(&kcov_shm->cmp_diag.init_init_trace_errno,
+		kcov_diag_record(&kcov_shm->cmp_diag.init_init_trace_errno,
 			&kcov_shm->cmp_diag.init_init_trace_count, errno);
 		goto err_close_cmp;
 	}
@@ -571,7 +551,7 @@ static bool kcov_init_child_cmp_fd(struct kcov_child *kc)
 		PROT_READ | PROT_WRITE, MAP_SHARED,
 		kc->cmp_fd, 0);
 	if (kc->cmp_trace_buf == MAP_FAILED) {
-		kcov_cmp_diag_record(&kcov_shm->cmp_diag.init_mmap_errno,
+		kcov_diag_record(&kcov_shm->cmp_diag.init_mmap_errno,
 			&kcov_shm->cmp_diag.init_mmap_count, errno);
 		kc->cmp_trace_buf = NULL;
 		goto err_close_cmp;
@@ -581,12 +561,12 @@ static bool kcov_init_child_cmp_fd(struct kcov_child *kc)
 	 * without CMP returns -ENOTSUPP from ENABLE; tear
 	 * down the cmp fd and leave cmp_capable = false. */
 	if (ioctl(kc->cmp_fd, KCOV_ENABLE, KCOV_TRACE_CMP) < 0) {
-		kcov_cmp_diag_record(&kcov_shm->cmp_diag.init_enable_errno,
+		kcov_diag_record(&kcov_shm->cmp_diag.init_enable_errno,
 			&kcov_shm->cmp_diag.init_enable_count, errno);
 		goto err_unmap_cmp;
 	}
 	if (ioctl(kc->cmp_fd, KCOV_DISABLE, 0) < 0) {
-		kcov_cmp_diag_record(&kcov_shm->cmp_diag.init_disable_errno,
+		kcov_diag_record(&kcov_shm->cmp_diag.init_disable_errno,
 			&kcov_shm->cmp_diag.init_disable_count, errno);
 		goto err_unmap_cmp;
 	}
@@ -866,7 +846,7 @@ void kcov_enable_trace(struct kcov_child *kc)
 				1, __ATOMIC_RELAXED);
 			continue;
 		}
-		kcov_pc_diag_record(
+		kcov_diag_record(
 			&kcov_shm->pc_diag.pc_enable_errno,
 			&kcov_shm->pc_diag.pc_enable_count, errno);
 		/* On the very first EBADF observed by any child, snapshot
@@ -953,7 +933,7 @@ void kcov_enable_cmp(struct kcov_child *kc)
 		 * the cmp-not-supported / cmp-broken-by-the-kernel case
 		 * is not a slot-replacement symptom, PC tracing on the
 		 * other fd remains valid, so just stop attempting CMP. */
-		kcov_cmp_diag_record(&kcov_shm->cmp_diag.runtime_enable_errno,
+		kcov_diag_record(&kcov_shm->cmp_diag.runtime_enable_errno,
 			&kcov_shm->cmp_diag.runtime_enable_count, errno);
 		if (errno == EBADF) {
 			kc->cmp_recovery_attempts++;
@@ -996,7 +976,7 @@ void kcov_enable_remote(struct kcov_child *kc, unsigned int child_id)
 				1, __ATOMIC_RELAXED);
 			continue;
 		}
-		kcov_pc_diag_record(
+		kcov_diag_record(
 			&kcov_shm->pc_diag.remote_enable_errno,
 			&kcov_shm->pc_diag.remote_enable_count, errno);
 		kc->remote_capable = false;
@@ -1017,7 +997,7 @@ void kcov_enable_remote(struct kcov_child *kc, unsigned int child_id)
 				1, __ATOMIC_RELAXED);
 			continue;
 		}
-		kcov_pc_diag_record(
+		kcov_diag_record(
 			&kcov_shm->pc_diag.pc_enable_errno,
 			&kcov_shm->pc_diag.pc_enable_count, errno);
 		/* Same recover-or-die logic as kcov_enable_trace: an EBADF
@@ -1062,7 +1042,7 @@ void kcov_disable(struct kcov_child *kc)
 	if (kc->mode == KCOV_MODE_PC) {
 		if (kc->fd >= 0 && kc->trace_buf != NULL) {
 			if (ioctl(kc->fd, KCOV_DISABLE, 0) < 0)
-				kcov_pc_diag_record(
+				kcov_diag_record(
 					&kcov_shm->pc_diag.pc_disable_errno,
 					&kcov_shm->pc_diag.pc_disable_count,
 					errno);
@@ -1074,7 +1054,7 @@ void kcov_disable(struct kcov_child *kc)
 		 * mid-run flipping cmp_capable=false — the disable then
 		 * knows not to fire on an fd the kernel never enabled. */
 		if (ioctl(kc->cmp_fd, KCOV_DISABLE, 0) < 0)
-			kcov_pc_diag_record(
+			kcov_diag_record(
 				&kcov_shm->pc_diag.pc_disable_errno,
 				&kcov_shm->pc_diag.pc_disable_count,
 				errno);
