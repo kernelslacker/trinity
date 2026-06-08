@@ -1,0 +1,51 @@
+# post-state-ownership.baseline
+#
+# Grandfathered list of .sanitise handlers that stamp a
+# *_POST_STATE_MAGIC cookie into a post_state struct but do not wire
+# the chunk into the ownership table.  Each line is `path/to/file.c:funcname`.
+#
+# The defended pattern (see syscalls/newstat.c for the helper form,
+# syscalls/execve.c for the equivalent hand-rolled pair) couples
+# the magic cookie with an ownership-table register so the .post
+# handler can prove via post_state_is_owned() / post_state_claim_owned()
+# that the snap pointer references THIS attempt's snapshot, not a
+# foreign chunk a sibling stomp redirected rec->post_state to.
+#
+# Holdouts that rely on the magic cookie alone can be cleared by a
+# sibling stomp that happens to land a heap-shaped pointer to a
+# foreign chunk carrying a matching cookie value (in-flight sibling
+# snap, stale deferred-free slot not yet evicted, coincidental
+# same-bucket alloc).
+#
+# This baseline should SHRINK over time, never grow.  When a holdout
+# is bracketed (post_state_install() at sanitise + post_state_claim_owned()
+# at .post), remove its entry from this file.  A new magic-only
+# sanitise handler will FAIL `make check-static` rather than be
+# silently added here.
+#
+# Lines starting with `#` and blank lines are ignored.
+
+syscalls/close_range.c:sanitise_close_range
+syscalls/fallocate.c:sanitise_fallocate
+syscalls/ftruncate.c:sanitise_ftruncate
+syscalls/get_robust_list.c:sanitise_get_robust_list
+syscalls/getsockopt.c:sanitise_getsockopt
+syscalls/getxattrat.c:sanitise_getxattrat
+syscalls/io_uring_register.c:sanitise_io_uring_register
+syscalls/listns.c:sanitise_listns
+syscalls/lookup_dcookie.c:sanitise_lookup_dcookie
+syscalls/lsm_get_self_attr.c:sanitise_lsm_get_self_attr
+syscalls/lsm_list_modules.c:sanitise_lsm_list_modules
+syscalls/madvise.c:sanitise_madvise
+syscalls/move_pages.c:sanitise_move_pages
+syscalls/mprotect.c:sanitise_mprotect
+syscalls/mq_open.c:sanitise_mq_open
+syscalls/mremap.c:sanitise_mremap
+syscalls/munmap.c:sanitise_munmap
+syscalls/poll.c:sanitise_ppoll
+syscalls/pselect6.c:sanitise_pselect6
+syscalls/ptrace.c:sanitise_ptrace
+syscalls/recv.c:sanitise_recvfrom
+syscalls/select.c:sanitise_select
+syscalls/timerfd_create.c:sanitise_timerfd_create
+syscalls/write.c:sanitise_write

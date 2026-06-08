@@ -5,7 +5,6 @@
  *  or zero if there was no previously scheduled
  */
 #include <limits.h>
-#include "deferred-free.h"
 #include "sanitise.h"
 #include "trinity.h"
 #include "utils.h"
@@ -30,10 +29,17 @@ static void sanitise_alarm(struct syscallrecord *rec)
 
 	rec->post_state = 0;
 
+	/*
+	 * post_state_install pairs the rec->post_state assign with the
+	 * ownership-table register so the observable window between the
+	 * two is closed; post_alarm() will then gate the snap through
+	 * post_state_claim_owned() and prove ownership before
+	 * dereferencing any field.
+	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic   = ALARM_POST_STATE_MAGIC;
 	snap->seconds = (unsigned int) rec->a1;
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 }
 
 /*
@@ -63,48 +69,23 @@ static void post_alarm(struct syscallrecord *rec)
 		post_handler_corrupt_ptr_bump(rec, NULL);
 	}
 
-	snap = (struct alarm_post_state *) rec->post_state;
+	/*
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
+	 */
+	snap = post_state_claim_owned(rec, ALARM_POST_STATE_MAGIC, __func__);
 	if (snap == NULL)
 		return;
-
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_alarm: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	/*
-	 * Magic-cookie check: snap survived the heap-shape gate but a
-	 * sibling scribble of rec->post_state with a heap-shaped pointer
-	 * to a foreign allocation would let the wrong bytes pose as an
-	 * alarm_post_state.  A cookie mismatch means snap does not point
-	 * at our struct -- abandon rather than feed wild bytes into the
-	 * prev-bound check.
-	 */
-	if (snap->magic != ALARM_POST_STATE_MAGIC) {
-		outputerr("post_alarm: rejected snap with bad magic 0x%lx "
-			  "(post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
 
 	if (retval != (unsigned long)-1L && (long) retval > (long) snap->seconds) {
 		output(0, "post_alarm: rejected retval %lu exceeds prior alarm bound %u\n",
 		       retval, snap->seconds);
 		post_handler_corrupt_ptr_bump(rec, NULL);
-		goto out_free;
 	}
 
-out_free:
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_alarm = {

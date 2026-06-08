@@ -34,10 +34,8 @@ childops/refcount-auditor.c:455:audit_socket_bucket
 childops/refcount-auditor.c:492:audit_socket_bucket
 childops/rxrpc-key-install.c:202:probe_rxrpc_key_supported
 childops/rxrpc-key-install.c:348:do_add_rxrpc
-syscalls/alarm.c:100:post_alarm
-syscalls/alarm.c:61:post_alarm
-syscalls/alarm.c:76:post_alarm
-syscalls/alarm.c:91:post_alarm
+syscalls/alarm.c:67:post_alarm
+syscalls/alarm.c:83:post_alarm
 syscalls/bpf.c:620:post_bpf
 syscalls/bpf.c:643:post_bpf
 syscalls/bpf.c:661:post_bpf
