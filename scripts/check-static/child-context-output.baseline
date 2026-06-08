@@ -117,9 +117,7 @@ syscalls/getresgid.c:147:post_getresgid
 syscalls/getresuid.c:131:post_getresuid
 syscalls/getresuid.c:147:post_getresuid
 syscalls/getrlimit.c:168:post_getrlimit
-syscalls/get_robust_list.c:148:post_get_robust_list
-syscalls/get_robust_list.c:164:post_get_robust_list
-syscalls/get_robust_list.c:198:post_get_robust_list
+syscalls/get_robust_list.c:173:post_get_robust_list
 syscalls/getrusage.c:208:post_getrusage
 syscalls/getsid.c:45:post_getsid
 syscalls/getsid.c:66:post_getsid
