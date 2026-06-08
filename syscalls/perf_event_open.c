@@ -1811,12 +1811,14 @@ void sanitise_perf_event_open(struct syscallrecord *rec)
 	rec->a1 = (unsigned long) attr;
 
 	/*
-	 * Hand the snap to the deferred-free queue at sanitise time so cleanup
-	 * is independent of whether the .post handler ever runs.  When
-	 * reject_corrupt_retfd() flags retfd, handle_syscall_ret() skips .post
-	 * entirely, and a post-side free would leak the snap.
+	 * Stash the csfu buffer in rec->post_state so the unconditional
+	 * .cleanup hook frees it.  Cleanup must be independent of whether
+	 * the .post handler runs: when reject_corrupt_retfd() flags retfd,
+	 * handle_syscall_ret() skips .post entirely, and a post-side free
+	 * would leak the snap.  post_perf_event_open does not touch
+	 * post_state, so it is free to carry the buffer.
 	 */
-	deferred_free_enqueue_or_leak(attr);
+	rec->post_state = (unsigned long) attr;
 
 	pick_perf_cpu(rec);
 
@@ -1898,6 +1900,32 @@ static unsigned long perf_event_open_flags[] = {
 	PERF_FLAG_FD_CLOEXEC,
 };
 
+static void cleanup_perf_event_open(struct syscallrecord *rec)
+{
+	struct perf_event_attr *attr = (struct perf_event_attr *) rec->post_state;
+
+	rec->post_state = 0;
+
+	if (attr == NULL)
+		return;
+
+	/*
+	 * post_state is not exposed as a syscall arg, but the whole
+	 * record can be stomped by a sibling; guard the deref.  This
+	 * replaces the old sanitise-time deferred_free_enqueue_or_leak()
+	 * of the snap.
+	 */
+	if (looks_like_corrupted_ptr(rec, attr))
+		return;
+
+	/*
+	 * attr came from build_csfu_struct() -> zmalloc_tracked(), which
+	 * registered the pointer in the alloc-track LRU.  tracked_free_now()
+	 * removes it from the LRU and frees it.
+	 */
+	tracked_free_now(attr);
+}
+
 struct syscallentry syscall_perf_event_open = {
 	.name = "perf_event_open",
 	.num_args = 5,
@@ -1908,6 +1936,7 @@ struct syscallentry syscall_perf_event_open = {
 	.ret_objtype = OBJ_FD_PERF,
 	.sanitise = sanitise_perf_event_open,
 	.post = post_perf_event_open,
+	.cleanup = cleanup_perf_event_open,
 	.init = init_pmus,
 	.flags = NEED_ALARM | IGNORE_ENOSYS,
 	.group = GROUP_PROCESS,
