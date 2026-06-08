@@ -19,6 +19,7 @@
 #include "fd.h"
 #include "fd-event.h"
 #include "kcov.h"
+#include "kmsg-monitor.h"
 #include "minicorpus.h"
 #include "objects.h"
 #include "params.h"
@@ -332,10 +333,17 @@ static void reap_dead_kids(void)
 		} else {
 			/* Reaped a pid we no longer track — its slot was
 			 * already cleared by some earlier path but the
-			 * kernel hadn't released the task struct yet.
-			 * Nothing more to do; kernel side is now clean. */
+			 * kernel hadn't released the task struct yet, OR
+			 * the pid belongs to the kmsg-monitor helper which
+			 * lives outside the fuzz-child pids[] machinery.
+			 * Nothing more to do for the fuzz side; kernel side
+			 * is now clean.  Notify the kmsg monitor so it can
+			 * clear its cached pid if this was the helper —
+			 * otherwise a later stop() would signal a recycled
+			 * pid. */
 			output(1, "reap_dead_kids: reaped untracked pid %d (status 0x%x)\n",
 				wpid, childstatus);
+			kmsg_monitor_note_reaped(wpid, childstatus);
 		}
 		reaped++;
 	}

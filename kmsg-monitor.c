@@ -9,15 +9,30 @@
  * the bug, often *before* the taint bit gets set, and they roll out of
  * the buffer fast on busy systems.
  *
- * This file spawns a single pthread early in trinity startup that:
- *   - opens /dev/kmsg O_NONBLOCK
- *   - seeks to the end so we only see records produced after we
- *     started fuzzing
- *   - polls + reads records as the kernel emits them
- *   - pattern-matches each record body against a list of known
- *     report headers, and re-emits matches (plus a bounded run of
- *     follow-up records for the backtrace) into trinity's normal
- *     output() channel with a "KMSG:" prefix
+ * The monitor runs as a forked HELPER PROCESS (not a thread).  Doing
+ * it in a parent-side pthread would force fork() to clone a multi-
+ * threaded process every time the spawn loop carved a new fuzz child:
+ * fork only inherits the calling thread, so if the spawn raced while
+ * the monitor held glibc's stdio FILE lock the child would inherit the
+ * lock held but ownerless and deadlock the first time it called into
+ * fprintf.  Running the monitor as a separate process keeps the parent
+ * single-threaded at fork time and gives the monitor its own glibc
+ * stdio state.
+ *
+ * Lifecycle:
+ *   - kmsg_monitor_start() fork()s once during early init (before the
+ *     fuzz-child fork-storm).  Parent stashes the helper pid.
+ *   - The helper installs a SIGTERM handler, requests
+ *     PR_SET_PDEATHSIG=SIGTERM so it dies if the parent crashes, opens
+ *     /dev/kmsg O_NONBLOCK, seeks to the end of the ringbuffer, and
+ *     polls + reads records until SIGTERM.
+ *   - kmsg_monitor_stop() SIGTERMs the helper and waitpids it.  ESRCH
+ *     / ECHILD are tolerated: reap_dead_kids' generic waitpid(-1)
+ *     drain may have already reaped the helper, and it calls
+ *     kmsg_monitor_note_reaped() so the cached pid is cleared.
+ *   - The helper is intentionally NOT registered in pids[]/
+ *     running_childs/childdata — it is infrastructure, not a fuzz
+ *     child, and the fuzz-side reap_child accounting does not apply.
  *
  * Scope is deliberately narrow: detect and log only.  Correlating
  * reports back to which child / which syscall provoked them is a
@@ -27,12 +42,16 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
-#include <pthread.h>
+#include <signal.h>
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/prctl.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include "kcov.h"		/* kcov_shm */
@@ -88,9 +107,18 @@ static const char * const kmsg_triggers[] = {
  * long enough that we don't burn CPU on an idle system. */
 #define KMSG_POLL_TIMEOUT_MS 200
 
-static pthread_t kmsg_thread;
-static bool kmsg_thread_started;
-static volatile int kmsg_thread_stop;
+/*
+ * Parent-side cache of the helper's pid.  Zero means no helper running
+ * (either start hasn't run, fork failed, or reap_dead_kids already
+ * picked it up via its waitpid(-1) drain).
+ */
+static pid_t kmsg_helper_pid;
+
+/*
+ * Helper-side stop flag.  Set by the SIGTERM handler; the poll loop
+ * checks it on every iteration and exits when set.
+ */
+static volatile sig_atomic_t kmsg_stop_flag;
 
 static bool line_matches_trigger(const char *body)
 {
@@ -184,20 +212,84 @@ static void trim_body(char *body)
 	}
 }
 
-static void *kmsg_monitor_thread(void *arg)
+/*
+ * Helper-side output: emit a "[kmsg] " prefixed line on the same
+ * stdout/stderr fd the parent uses.  output() would dispatch via
+ * find_childno() which returns CHILD_NOT_FOUND for the helper (it is
+ * not in pids[]) and emit a misleading "[child-1:<pid>] " prefix; this
+ * wrapper keeps the helper's lines self-identifying.  Helper has its
+ * own glibc FILE* state since it is a separate process, so no shared
+ * stdio lock with the parent.
+ */
+static void kmsg_emit(const char *fmt, ...)
+{
+	char buf[2048];
+	va_list args;
+	int n;
+
+	va_start(args, fmt);
+	n = vsnprintf(buf, sizeof(buf), fmt, args);
+	va_end(args);
+	if (n < 0)
+		return;
+	fprintf(should_route_to_stdout() ? stdout : stderr, "[kmsg] %s", buf);
+}
+
+static void kmsg_sigterm_handler(int sig)
+{
+	(void)sig;
+	kmsg_stop_flag = 1;
+}
+
+/*
+ * Helper-process entry point.  Never returns; every exit goes through
+ * _exit() so atexit handlers registered in the parent
+ * (self_cgroup_cleanup, etc.) do not run a second time from here.
+ */
+static void __attribute__((noreturn)) kmsg_helper_main(void)
 {
 	int fd;
 	char buf[KMSG_BUFSIZE];
 	struct pollfd pfd;
 	unsigned int follow_remaining = 0;
+	struct sigaction sa;
+	const char taskname[13] = "trinity-kmsg";
 
-	(void)arg;
+	/*
+	 * Install the SIGTERM handler before anything else: the parent's
+	 * stop signal could in principle land on us between fork and the
+	 * first instruction of the helper, and the inherited disposition
+	 * is whatever main had at the time of the fork (default = kill).
+	 * No SA_RESTART so poll() returns EINTR and the loop re-checks
+	 * kmsg_stop_flag promptly.
+	 */
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = 0;
+	sa.sa_handler = kmsg_sigterm_handler;
+	(void)sigaction(SIGTERM, &sa, NULL);
+
+	/* Parent handles ctrl-c; helper just exits with the parent. */
+	(void)signal(SIGINT, SIG_IGN);
+	/* No children to reap. */
+	(void)signal(SIGCHLD, SIG_DFL);
+
+	/*
+	 * If the parent dies unexpectedly, get SIGTERM'd so we don't end
+	 * up reparented to init burning CPU reading /dev/kmsg forever.
+	 * Race: the parent might already be gone between fork() return
+	 * and this prctl; detect that by re-checking getppid().
+	 */
+	(void)prctl(PR_SET_PDEATHSIG, SIGTERM);
+	if (getppid() == 1)
+		_exit(0);
+
+	(void)prctl(PR_SET_NAME, (unsigned long)taskname);
 
 	fd = open("/dev/kmsg", O_RDONLY | O_NONBLOCK | O_CLOEXEC);
 	if (fd < 0) {
-		output(0, "kmsg-monitor: open(/dev/kmsg) failed: %s\n",
+		kmsg_emit("kmsg-monitor: open(/dev/kmsg) failed: %s\n",
 			strerror(errno));
-		return NULL;
+		_exit(0);
 	}
 
 	/*
@@ -207,14 +299,14 @@ static void *kmsg_monitor_thread(void *arg)
 	 * see boot-time messages too — log it and continue.
 	 */
 	if (lseek(fd, 0, SEEK_END) == (off_t)-1) {
-		output(0, "kmsg-monitor: lseek(SEEK_END) failed: %s\n",
+		kmsg_emit("kmsg-monitor: lseek(SEEK_END) failed: %s\n",
 			strerror(errno));
 	}
 
 	pfd.fd = fd;
 	pfd.events = POLLIN;
 
-	while (__atomic_load_n(&kmsg_thread_stop, __ATOMIC_ACQUIRE) == 0) {
+	while (!kmsg_stop_flag) {
 		ssize_t n;
 		char *body;
 		bool match;
@@ -224,7 +316,7 @@ static void *kmsg_monitor_thread(void *arg)
 		if (rc < 0) {
 			if (errno == EINTR)
 				continue;
-			output(0, "kmsg-monitor: poll failed: %s\n",
+			kmsg_emit("kmsg-monitor: poll failed: %s\n",
 				strerror(errno));
 			break;
 		}
@@ -240,7 +332,7 @@ static void *kmsg_monitor_thread(void *arg)
 				(void)lseek(fd, 0, SEEK_END);
 				continue;
 			}
-			output(0, "kmsg-monitor: read failed: %s\n",
+			kmsg_emit("kmsg-monitor: read failed: %s\n",
 				strerror(errno));
 			break;
 		}
@@ -269,50 +361,82 @@ static void *kmsg_monitor_thread(void *arg)
 			 * the per-window delta lands.  UNKNOWN means the
 			 * trigger ladder matched but the structured classifier
 			 * did not recognise it, so it is not a real signal --
-			 * leave the counter alone in that case. */
+			 * leave the counter alone in that case.  kcov_shm is a
+			 * MAP_SHARED region; the atomic from the helper process
+			 * lands in the same memory the parent and fuzz children
+			 * read. */
 			if (kind != KMSG_EVENT_UNKNOWN && kcov_shm != NULL)
 				__atomic_fetch_add(&kcov_shm->kmsg_warn_fires,
 						   1UL, __ATOMIC_RELAXED);
 
-			output(0, "KMSG: {event:%d, banner:\"%s\"}\n",
+			kmsg_emit("KMSG: {event:%d, banner:\"%s\"}\n",
 				(int)kind, body);
 			/* dump pre-crash context for the event-detection postmortem */
 			if (kind != KMSG_EVENT_UNKNOWN && kind != KMSG_RCU)
 				pre_crash_ring_dump_all();
 			follow_remaining = KMSG_FOLLOW_MAX_RECORDS;
 		} else if (follow_remaining > 0) {
-			output(0, "KMSG: %s\n", body);
+			kmsg_emit("KMSG: %s\n", body);
 			follow_remaining--;
 		}
 	}
 
 	close(fd);
-	return NULL;
+	_exit(0);
 }
 
 void kmsg_monitor_start(void)
 {
-	int rc;
+	pid_t pid;
 
-	__atomic_store_n(&kmsg_thread_stop, 0, __ATOMIC_RELEASE);
-	rc = pthread_create(&kmsg_thread, NULL, kmsg_monitor_thread, NULL);
-	if (rc != 0) {
-		output(0, "kmsg-monitor: pthread_create failed: %s\n",
-			strerror(rc));
+	pid = fork();
+	if (pid < 0) {
+		output(0, "kmsg-monitor: fork failed: %s\n", strerror(errno));
 		return;
 	}
-	kmsg_thread_started = true;
+	if (pid == 0)
+		kmsg_helper_main();		/* noreturn */
+
+	kmsg_helper_pid = pid;
+	output(1, "kmsg-monitor: helper process pid %d started\n", (int)pid);
 }
 
 void kmsg_monitor_stop(void)
 {
-	if (!kmsg_thread_started)
+	pid_t pid = kmsg_helper_pid;
+	int status;
+	pid_t rc;
+
+	if (pid == 0)
 		return;
+
+	/* Clear up front so a second call (or a reap_dead_kids untracked
+	 * reap landing concurrently) doesn't double-signal. */
+	kmsg_helper_pid = 0;
+
+	if (kill(pid, SIGTERM) != 0 && errno != ESRCH) {
+		output(0, "kmsg-monitor: kill(%d, SIGTERM) failed: %s\n",
+			(int)pid, strerror(errno));
+	}
+
+	do {
+		rc = waitpid(pid, &status, 0);
+	} while (rc < 0 && errno == EINTR);
+
 	/*
-	 * Set the stop flag and wait for the thread to notice on its
-	 * next poll wakeup (worst case KMSG_POLL_TIMEOUT_MS).
+	 * ECHILD just means reap_dead_kids' waitpid(-1) drain already
+	 * picked the helper up; kmsg_monitor_note_reaped() would have
+	 * cleared kmsg_helper_pid above, in which case we never got
+	 * here.  Either way the helper is gone; no diagnostic needed.
 	 */
-	__atomic_store_n(&kmsg_thread_stop, 1, __ATOMIC_RELEASE);
-	pthread_join(kmsg_thread, NULL);
-	kmsg_thread_started = false;
+}
+
+void kmsg_monitor_note_reaped(pid_t pid, int status)
+{
+	if (pid <= 0 || pid != kmsg_helper_pid)
+		return;
+
+	kmsg_helper_pid = 0;
+	output(0, "kmsg-monitor: helper process pid %d exited unexpectedly (status 0x%x)\n",
+		(int)pid, status);
 }

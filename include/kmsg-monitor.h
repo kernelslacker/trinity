@@ -1,5 +1,7 @@
 #pragma once
 
+#include <sys/types.h>
+
 /*
  * Structured tag for a /dev/kmsg report that kmsg-monitor noticed.
  * Emitted alongside the raw banner string so downstream log parsers
@@ -21,3 +23,12 @@ enum kmsg_event_kind {
 
 void kmsg_monitor_start(void);
 void kmsg_monitor_stop(void);
+
+/*
+ * Notify the kmsg monitor that reap_dead_kids has waitpid'd a pid the
+ * parent didn't have in pids[].  If the pid matches the helper, clear
+ * the cached helper pid (so a later kmsg_monitor_stop does not signal
+ * a now-recycled pid) and log the unexpected exit.  No-op for any
+ * other pid.
+ */
+void kmsg_monitor_note_reaped(pid_t pid, int status);
