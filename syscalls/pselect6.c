@@ -16,7 +16,6 @@
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
-#include "deferred-free.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
@@ -167,19 +166,20 @@ static void sanitise_pselect6(struct syscallrecord *rec)
 
 	/*
 	 * Stash nfds for the post handler's retval bound check.  The snap
-	 * itself is a small heap allocation (not a syscall-visible buffer),
-	 * carries a magic cookie, and is released via deferred_freeptr()
-	 * after the post handler runs.
+	 * itself is a small heap allocation (not a syscall-visible buffer)
+	 * and carries a magic cookie; install it through the ownership
+	 * table so the post handler can run post_state_claim_owned() and
+	 * prove ownership before dereferencing any field.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = PSELECT6_POST_STATE_MAGIC;
 	snap->nfds = nfds;
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 }
 
 static void post_pselect6(struct syscallrecord *rec)
 {
-	struct pselect6_post_state *snap = (struct pselect6_post_state *) rec->post_state;
+	struct pselect6_post_state *snap;
 	unsigned long retval = rec->retval;
 
 	rec->a2 = 0;
@@ -188,37 +188,15 @@ static void post_pselect6(struct syscallrecord *rec)
 	rec->a5 = 0;
 	rec->a6 = 0;
 
+	/*
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
+	 */
+	snap = post_state_claim_owned(rec, PSELECT6_POST_STATE_MAGIC, __func__);
 	if (snap == NULL)
 		return;
-
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_pselect6: rejected suspicious post_state=%p "
-			  "(pid-scribbled?)\n", snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	/*
-	 * Magic-cookie check: snap survived the heap-shape gate but a
-	 * sibling scribble of rec->post_state with a heap-shaped pointer
-	 * to a foreign allocation would let the wrong bytes pose as a
-	 * pselect6_post_state.  A cookie mismatch means snap does not point
-	 * at our struct -- abandon rather than feed wild bytes into the
-	 * inner-pointer free path.
-	 */
-	if (snap->magic != PSELECT6_POST_STATE_MAGIC) {
-		outputerr("post_pselect6: rejected snap with bad magic 0x%lx "
-			  "(post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
 
 	/*
 	 * Kernel ABI: pselect6(2) on success returns the total count of
@@ -239,7 +217,7 @@ static void post_pselect6(struct syscallrecord *rec)
 		/* fall through to release the snap */
 	}
 
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_pselect6 = {
