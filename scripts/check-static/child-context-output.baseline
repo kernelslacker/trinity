@@ -205,9 +205,8 @@ syscalls/mq_open.c:202:post_mq_open
 syscalls/mremap.c:214:post_mremap
 syscalls/mremap.c:228:post_mremap
 syscalls/msgsnd.c:67:post_msgsnd
-syscalls/munmap.c:172:post_munmap
-syscalls/munmap.c:205:post_munmap
-syscalls/munmap.c:268:post_munmap
+syscalls/munmap.c:187:post_munmap
+syscalls/munmap.c:250:post_munmap
 syscalls/nanosleep.c:13:post_nanosleep
 syscalls/newfstat.c:181:post_newfstat
 syscalls/newfstat.c:395:post_newfstatat

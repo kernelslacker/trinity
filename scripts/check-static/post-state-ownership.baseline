@@ -39,7 +39,6 @@ syscalls/lsm_list_modules.c:sanitise_lsm_list_modules
 syscalls/madvise.c:sanitise_madvise
 syscalls/move_pages.c:sanitise_move_pages
 syscalls/mq_open.c:sanitise_mq_open
-syscalls/munmap.c:sanitise_munmap
 syscalls/poll.c:sanitise_ppoll
 syscalls/pselect6.c:sanitise_pselect6
 syscalls/ptrace.c:sanitise_ptrace

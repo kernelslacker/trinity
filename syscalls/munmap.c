@@ -3,7 +3,6 @@
  */
 #include <stdlib.h>
 #include "arch.h"
-#include "deferred-free.h"
 #include "maps.h"
 #include "object-types.h"
 #include "objects.h"
@@ -141,7 +140,11 @@ static void sanitise_munmap(struct syscallrecord *rec)
 	 * rec->a1/a2 retargets the proc-maps oracle at a window the
 	 * syscall never touched -- forging either a clean compare or a
 	 * never-happened anomaly.  post_state is private to the post
-	 * handler.
+	 * handler.  post_state_install pairs the rec->post_state assign
+	 * with the ownership-table register so the observable window
+	 * between the two is closed; post_munmap() will then gate the
+	 * snap through post_state_claim_owned() and prove ownership
+	 * before dereferencing any field.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic  = MUNMAP_POST_STATE_MAGIC;
@@ -150,45 +153,24 @@ static void sanitise_munmap(struct syscallrecord *rec)
 	snap->map    = rec->a3;
 	snap->action = rec->a4;
 	snap->type   = (unsigned long) map_type;
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 }
 
 static void post_munmap(struct syscallrecord *rec)
 {
-	struct munmap_post_state *snap =
-		(struct munmap_post_state *) rec->post_state;
+	struct munmap_post_state *snap;
 	struct map *map;
 	unsigned long action;
 
+	/*
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
+	 */
+	snap = post_state_claim_owned(rec, MUNMAP_POST_STATE_MAGIC, __func__);
 	if (snap == NULL)
 		return;
-
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_munmap: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	/*
-	 * Validate the magic cookie before touching any other snap field.
-	 * looks_like_corrupted_ptr only filters obviously bogus pointers;
-	 * a wholesale stomp could leave snap pointing at an attacker-chosen
-	 * but plausibly-addressed slab object whose contents would otherwise
-	 * drive the destroy_object / map->prot=0 / proc-maps oracle paths.
-	 * On mismatch the pointer is suspect, so do NOT free it; just bump
-	 * the counter, clear the slot, and bail.
-	 */
-	if (snap->magic != MUNMAP_POST_STATE_MAGIC) {
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
 
 	if (rec->retval != 0)
 		goto out_free;
@@ -274,7 +256,7 @@ static void post_munmap(struct syscallrecord *rec)
 	}
 
 out_free:
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_munmap = {
