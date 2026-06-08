@@ -43,6 +43,19 @@ void self_cgroup_cleanup(void);
 void self_cgroup_events_check(void);
 
 /*
+ * Close the parent's memory.events watcher fds in a freshly forked
+ * child.  The inotify fd is created IN_CLOEXEC, but CLOEXEC only fires
+ * on exec(); trinity's children fork-and-fuzz without exec, so they
+ * inherit the parent's open-file-descriptions.  A fuzzed fcntl(fd,
+ * F_SETFL, ...) in a child can then clear O_NONBLOCK on the shared
+ * OFD, after which the parent's drain-read in
+ * self_cgroup_events_check() blocks forever -- main loop hangs, no
+ * fuzz children get reaped, zombie pileup.  Drop the fds in the
+ * child's fd-shedding path so they're not reachable for fuzzing.
+ */
+void self_cgroup_drop_fds_in_child(void);
+
+/*
  * fork() replacement that places the new child in the children/ cgroup
  * via clone3(CLONE_INTO_CGROUP).  Same return semantics as fork(): pid in
  * parent, 0 in child, -1 on error.  Falls back to plain fork() (single-

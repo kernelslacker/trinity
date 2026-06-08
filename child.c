@@ -32,6 +32,7 @@
 #include "pre_crash_ring.h"
 #include "random.h"
 #include "rnd.h"
+#include "self_cgroup.h"
 #include "shm.h"
 #include "signals.h"
 #include "stats.h"
@@ -696,6 +697,15 @@ static void init_child_isolate_io(void)
 	 * reach it numerically via fchmod / ftruncate / write at random
 	 * offset, smashing the operator's log mid-run. */
 	stats_log_drop_in_child();
+
+	/* Same hazard, different fds: the parent's memory.events watcher
+	 * (inotify fd + memory.events file fd) was created IN_CLOEXEC, but
+	 * CLOEXEC only fires on exec(), and our children fork-and-fuzz
+	 * without exec.  A fuzzed fcntl on the inherited inotify fd can
+	 * clear O_NONBLOCK on the shared open-file-description, wedging the
+	 * parent's drain-read in self_cgroup_events_check() and stalling
+	 * the main loop (no child reap -> zombie pileup).  Close both. */
+	self_cgroup_drop_fds_in_child();
 
 	/* Detach from the controlling terminal so a fuzzed
 	 * open("/dev/tty", O_WRONLY) followed by write() can't reach the
