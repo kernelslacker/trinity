@@ -224,7 +224,7 @@ syscalls/nice.c:56:post_nice
 syscalls/olduname.c:210:post_olduname
 syscalls/open.c:136:post_openat
 syscalls/open.c:149:post_openat
-syscalls/open.c:322:post_openat2
+syscalls/open.c:323:post_openat2
 syscalls/open.c:93:post_open
 syscalls/pause.c:22:post_pause
 syscalls/perf_event_open.c:1885:post_perf_event_open

@@ -293,12 +293,13 @@ static void sanitise_openat2(struct syscallrecord *rec)
 	rec->a4 = buf.usize;
 
 	/*
-	 * Hand the snap to the deferred-free queue at sanitise time so cleanup
-	 * is independent of whether the .post handler ever runs.  When
-	 * reject_corrupt_retfd() flags retfd, handle_syscall_ret() skips .post
-	 * entirely, and a post-side free would leak the snap.
+	 * Stash the csfu buffer in rec->post_state so the unconditional
+	 * .cleanup hook frees it regardless of whether .post ran (when
+	 * reject_corrupt_retfd() flags retfd, handle_syscall_ret() skips
+	 * .post entirely).  post_state is private to the cleanup path and
+	 * less stomp-prone than rec->a3, which post_openat2 zeros.
 	 */
-	deferred_free_enqueue_or_leak(how);
+	rec->post_state = (unsigned long) how;
 }
 
 static void post_openat2(struct syscallrecord *rec)
@@ -329,6 +330,31 @@ static void post_openat2(struct syscallrecord *rec)
 	rec->a3 = 0;
 }
 
+static void cleanup_openat2(struct syscallrecord *rec)
+{
+	struct open_how *how = (struct open_how *) rec->post_state;
+
+	rec->post_state = 0;
+
+	if (how == NULL)
+		return;
+
+	/*
+	 * post_state is not exposed as a syscall arg, but the whole
+	 * record can be stomped by a sibling; guard the deref.  This
+	 * replaces the old deferred_free_enqueue_or_leak() pressure path.
+	 */
+	if (looks_like_corrupted_ptr(rec, how))
+		return;
+
+	/*
+	 * how came from build_csfu_struct() -> zmalloc_tracked(), which
+	 * registered the pointer in the alloc-track LRU.  tracked_free_now()
+	 * removes it from the LRU and frees it.
+	 */
+	tracked_free_now(how);
+}
+
 struct syscallentry syscall_openat2 = {
 	.name = "openat2",
 	.num_args = 4,
@@ -338,6 +364,7 @@ struct syscallentry syscall_openat2 = {
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_openat2,
 	.post = post_openat2,
+	.cleanup = cleanup_openat2,
 	.group = GROUP_VFS,
 };
 
