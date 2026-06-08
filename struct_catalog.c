@@ -4416,6 +4416,36 @@ static unsigned int natural_width(unsigned long val)
 	return 8;
 }
 
+/*
+ * Read a discriminator of the given width out of buf at off and widen to
+ * unsigned long.  Caller must validate width to {1,2,4,8} and that the
+ * read stays within the surrounding buffer.
+ */
+static unsigned long read_discrim(const unsigned char *buf,
+				  unsigned int off, unsigned int width)
+{
+	switch (width) {
+	case 1:
+		return buf[off];
+	case 2: {
+		uint16_t v;
+		memcpy(&v, buf + off, sizeof(v));
+		return v;
+	}
+	case 4: {
+		uint32_t v;
+		memcpy(&v, buf + off, sizeof(v));
+		return v;
+	}
+	case 8: {
+		uint64_t v;
+		memcpy(&v, buf + off, sizeof(v));
+		return (unsigned long) v;
+	}
+	}
+	return 0;
+}
+
 const struct union_variant *
 struct_desc_resolve_variant(const struct struct_desc *desc,
 			    struct syscallrecord *rec,
@@ -4455,27 +4485,19 @@ struct_desc_resolve_variant(const struct struct_desc *desc,
 		if (desc->buffer_discrim_offset + desc->buffer_discrim_size >
 		    desc->struct_size)
 			return NULL;
-		switch (desc->buffer_discrim_size) {
-		case 1:
-			discrim = buf[desc->buffer_discrim_offset];
-			break;
-		case 2: {
-			uint16_t v;
-			memcpy(&v, buf + desc->buffer_discrim_offset,
-			       sizeof(v));
-			discrim = v;
-			break;
-		}
-		case 4: {
-			uint32_t v;
-			memcpy(&v, buf + desc->buffer_discrim_offset,
-			       sizeof(v));
-			discrim = v;
-			break;
-		}
-		default:
+		/*
+		 * Accept widths 1/2/4/8 -- matches the nested reader so the
+		 * two callers of read_discrim() stay identical.  Today's
+		 * buffer-discrim users are width 2 and 4 only; the width-8
+		 * branch is intentionally reachable for future users.
+		 */
+		if (desc->buffer_discrim_size != 1 &&
+		    desc->buffer_discrim_size != 2 &&
+		    desc->buffer_discrim_size != 4 &&
+		    desc->buffer_discrim_size != 8)
 			return NULL;
-		}
+		discrim = read_discrim(buf, desc->buffer_discrim_offset,
+				       desc->buffer_discrim_size);
 	} else {
 		return NULL;
 	}
@@ -4519,29 +4541,7 @@ struct_desc_resolve_nested_variant(const struct union_variant *outer,
 	if (off + width > size)
 		return NULL;
 
-	switch (width) {
-	case 1:
-		discrim = buf[off];
-		break;
-	case 2: {
-		uint16_t v;
-		memcpy(&v, buf + off, sizeof(v));
-		discrim = v;
-		break;
-	}
-	case 4: {
-		uint32_t v;
-		memcpy(&v, buf + off, sizeof(v));
-		discrim = v;
-		break;
-	}
-	case 8: {
-		uint64_t v;
-		memcpy(&v, buf + off, sizeof(v));
-		discrim = (unsigned long) v;
-		break;
-	}
-	}
+	discrim = read_discrim(buf, off, width);
 
 	for (i = 0; i < outer->num_nested_variants; i++) {
 		const struct union_variant *v = &outer->nested_variants[i];
