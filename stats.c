@@ -1849,11 +1849,6 @@ static void dump_stats_json_oracle(void)
  * descriptor stays self-consistent.  Those .name values do NOT match
  * the keys the hand-coded text emitter currently uses, so any future
  * text-side wiring onto these tables will need to revisit .name.
- *
- * genl_family_calls intentionally omits tipc and wireguard: the
- * existing hand-written JSON printf never emitted those two slots, so
- * including them here would break byte-identical schema parity.  The
- * text emitter still calls stat_row() for both directly.
  */
 static const struct stat_field vfs_writes_fields[] = {
 	STAT_FIELD_JSON(procfs, writes, "procfs"),
@@ -1892,6 +1887,8 @@ static const struct stat_field genl_family_calls_fields[] = {
 	STAT_FIELD(genl_family_calls, taskstats),
 	STAT_FIELD(genl_family_calls, ethtool),
 	STAT_FIELD(genl_family_calls, mptcp_pm),
+	STAT_FIELD(genl_family_calls, tipc),
+	STAT_FIELD(genl_family_calls, wireguard),
 	STAT_FIELD(genl_family_calls, l2tp),
 	STAT_FIELD(genl_family_calls, gtp),
 	STAT_FIELD(genl_family_calls, macsec),
