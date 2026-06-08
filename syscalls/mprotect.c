@@ -3,7 +3,6 @@
  */
 #include <asm/mman.h>
 #include "arch.h"
-#include "deferred-free.h"
 #include "maps.h"
 #include "random.h"
 #include "sanitise.h"
@@ -103,7 +102,11 @@ static void sanitise_mprotect(struct syscallrecord *rec)
 	 * syscall may have scribbled the slots: a stomped prot caches the
 	 * wrong bits into the cached map->prot invariant, and a stomped
 	 * addr/len mis-aims the proc-maps oracle.  post_state is private
-	 * to the post handler.
+	 * to the post handler.  post_state_install pairs the rec->post_state
+	 * assign with the ownership-table register so the observable window
+	 * between the two is closed; post_mprotect() will then gate the snap
+	 * through post_state_claim_owned() and prove ownership before
+	 * dereferencing any field.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = MPROTECT_POST_STATE_MAGIC;
@@ -112,7 +115,7 @@ static void sanitise_mprotect(struct syscallrecord *rec)
 	snap->prot = rec->a3;
 	snap->pkey = rec->a4;
 	snap->map  = (unsigned long) map;
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 }
 
 /*
@@ -120,42 +123,18 @@ static void sanitise_mprotect(struct syscallrecord *rec)
  */
 static void post_mprotect(struct syscallrecord *rec)
 {
-	struct mprotect_post_state *snap =
-		(struct mprotect_post_state *) rec->post_state;
+	struct mprotect_post_state *snap;
 	struct map *map;
 
+	/*
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
+	 */
+	snap = post_state_claim_owned(rec, MPROTECT_POST_STATE_MAGIC, __func__);
 	if (snap == NULL)
 		return;
-
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_mprotect: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	/*
-	 * Magic-cookie check: snap survived the heap-shape gate but a
-	 * sibling scribble of rec->post_state with a heap-shaped pointer
-	 * to a foreign allocation would let the wrong bytes pose as a
-	 * mprotect_post_state.  A cookie mismatch means snap does not
-	 * point at our struct -- abandon without freeing rather than feed
-	 * wild bytes into the map->prot update or the proc-maps oracle
-	 * (and don't deferred_freeptr() a pointer we don't own).
-	 */
-	if (snap->magic != MPROTECT_POST_STATE_MAGIC) {
-		outputerr("post_mprotect: rejected snap with bad magic 0x%lx "
-			  "(post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
 
 	map = (struct map *) snap->map;
 
@@ -224,7 +203,7 @@ static void post_mprotect(struct syscallrecord *rec)
 	}
 
 out_free:
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 
 #ifndef PROT_MTE

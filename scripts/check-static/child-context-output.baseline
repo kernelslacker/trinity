@@ -195,10 +195,8 @@ syscalls/move_pages.c:159:post_move_pages
 syscalls/move_pages.c:177:post_move_pages
 syscalls/move_pages.c:196:post_move_pages
 syscalls/move_pages.c:226:post_move_pages
-syscalls/mprotect.c:136:post_mprotect
-syscalls/mprotect.c:152:post_mprotect
-syscalls/mprotect.c:171:post_mprotect
-syscalls/mprotect.c:218:post_mprotect
+syscalls/mprotect.c:150:post_mprotect
+syscalls/mprotect.c:197:post_mprotect
 syscalls/mq_notify.c:86:post_mq_notify
 syscalls/mq_open.c:146:post_mq_open
 syscalls/mq_open.c:164:post_mq_open
