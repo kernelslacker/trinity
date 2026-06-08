@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <linux/ioctl.h>
 #include <linux/major.h>
+#include "arch.h"
 #include "ioctls.h"
 #include "maps.h"
 #include "random.h"
@@ -38,6 +39,19 @@ static void sanitise_ioctl(struct syscallrecord *rec)
 			break;
 		}
 	}
+
+	/*
+	 * pick_random_ioctl() scrubs rec->a3 against shared_regions[], but
+	 * most custom sanitisers run pick_random_ioctl() and then overwrite
+	 * a3 with a get_writable_struct()/get_writable_address() pointer.
+	 * Those allocators legitimately return addresses inside the global
+	 * shared tracker (childdata, stats, kcov buffers, the obj/str
+	 * heaps), so a read/write-direction ioctl would copy_to_user back
+	 * onto our own bookkeeping.  Re-run the scrub here so the post-
+	 * sanitise a3 cannot land in shared_regions[] regardless of which
+	 * group ran.
+	 */
+	avoid_shared_buffer_out(&rec->a3, page_size);
 }
 
 struct syscallentry syscall_ioctl = {
