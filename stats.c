@@ -2143,115 +2143,186 @@ static void dump_stats_json_socket_family_and_tls(void)
 		shm->stats.bridge_vlan_mass_enotbufs);
 }
 
+/*
+ * Descriptor tables for dump_stats_json_netfilter_and_xfrm().
+ *
+ * Six categories that the previous hand-written printf emitted with one
+ * %lu slot per field and a parallel shm->stats.<field> va-list; adding a
+ * counter required three correlated edits.  STAT_FIELD picks whichever
+ * struct prefix matches the actual member (nftables_churn_/nft_,
+ * tc_qdisc_churn_/tc_qdisc_, xfrm_churn_/xfrm_ah_esn_,
+ * mptcp_pm_churn_/mptcp_setsockopt_/mptcp_getsockopt_/mptcp_sockopt_);
+ * .name doubles as the (currently unused) text-side key.  STAT_FIELD_JSON
+ * pins the JSON key for the xt_ct_* members pulled into nftables_churn,
+ * whose struct suffix (e.g. "ct_iters") doesn't carry the "xt_ct_"
+ * qualifier the schema emits.
+ *
+ * The text emitter for these subsystems stays hand-coded for now, so the
+ * gate_offset choices below only matter if a future change wires
+ * stat_category_emit_text() onto these tables.
+ */
+static const struct stat_field nftables_churn_fields[] = {
+	STAT_FIELD(nftables_churn, runs),
+	STAT_FIELD(nftables_churn, setup_failed),
+	STAT_FIELD(nftables_churn, table_create_ok),
+	STAT_FIELD(nftables_churn, set_create_ok),
+	STAT_FIELD(nftables_churn, chain_create_ok),
+	STAT_FIELD(nftables_churn, rule_create_ok),
+	STAT_FIELD(nftables_churn, packet_sent_ok),
+	STAT_FIELD(nftables_churn, rule_insert_ok),
+	STAT_FIELD(nftables_churn, rule_del_ok),
+	STAT_FIELD(nftables_churn, table_del_ok),
+	STAT_FIELD(nftables_churn, payload_expr_emit),
+	STAT_FIELD(nftables_churn, objref_expr_emit),
+	STAT_FIELD(nft, compat_validate_install_ok),
+	STAT_FIELD(nft, compat_validate_install_fail),
+	STAT_FIELD(nft, compat_validate_unsupported),
+	STAT_FIELD(nft, compat_validate_per_hook_pairs),
+	STAT_FIELD(nft, dormant_abort_iters),
+	STAT_FIELD(nft, dormant_abort_eperm),
+	STAT_FIELD(nft, dormant_abort_emsg),
+	STAT_FIELD(nft, dormant_abort_ok),
+	STAT_FIELD_JSON(xt, ct_iters, "xt_ct_iters"),
+	STAT_FIELD_JSON(xt, ct_eperm, "xt_ct_eperm"),
+	STAT_FIELD_JSON(xt, ct_unsupported, "xt_ct_unsupported"),
+	STAT_FIELD_JSON(xt, ct_set_ok, "xt_ct_set_ok"),
+	STAT_FIELD_JSON(xt, ct_get_ok, "xt_ct_get_ok"),
+	STAT_FIELD_JSON(xt, ct_v2_seen, "xt_ct_v2_seen"),
+	STAT_FIELD(nft, fwd_loop_runs),
+	STAT_FIELD(nft, fwd_loop_ns_setup_failed),
+	STAT_FIELD(nft, fwd_loop_probe_sent_ok),
+	STAT_FIELD(nft, fwd_loop_completed_ok),
+	STAT_FIELD(nft, l4frag_iters),
+	STAT_FIELD(nft, l4frag_install_ok),
+	STAT_FIELD(nft, l4frag_rule_ok),
+	STAT_FIELD(nft, l4frag_send_ok),
+	STAT_FIELD(nft, l4frag_send_failed),
+};
+
+static const struct stat_category nftables_churn_category =
+	STAT_CATEGORY("nftables_churn",
+	              nftables_churn_runs,
+	              nftables_churn_fields);
+
+static const struct stat_field tc_qdisc_churn_fields[] = {
+	STAT_FIELD(tc_qdisc_churn, runs),
+	STAT_FIELD(tc_qdisc_churn, setup_failed),
+	STAT_FIELD(tc_qdisc_churn, link_create_ok),
+	STAT_FIELD(tc_qdisc_churn, qdisc_create_ok),
+	STAT_FIELD(tc_qdisc_churn, tclass_create_ok),
+	STAT_FIELD(tc_qdisc_churn, tfilter_create_ok),
+	STAT_FIELD(tc_qdisc_churn, packet_sent_ok),
+	STAT_FIELD(tc_qdisc_churn, qdisc_replace_ok),
+	STAT_FIELD(tc_qdisc_churn, tfilter_del_ok),
+	STAT_FIELD(tc_qdisc_churn, qdisc_del_ok),
+	STAT_FIELD(tc_qdisc_churn, link_del_ok),
+	STAT_FIELD(tc_qdisc, peek_stack_runs),
+	STAT_FIELD(tc_qdisc, peek_stack_install_ok),
+	STAT_FIELD(tc_qdisc, peek_stack_install_fail),
+	STAT_FIELD(tc_qdisc, peek_stack_burst_ok),
+	STAT_FIELD(tc_qdisc_churn, bridge_parent_runs),
+	STAT_FIELD(tc_qdisc_churn, bridge_dellink_race_ok),
+};
+
+static const struct stat_category tc_qdisc_churn_category =
+	STAT_CATEGORY("tc_qdisc_churn",
+	              tc_qdisc_churn_runs,
+	              tc_qdisc_churn_fields);
+
+static const struct stat_field xfrm_churn_fields[] = {
+	STAT_FIELD(xfrm_churn, runs),
+	STAT_FIELD(xfrm_churn, setup_failed),
+	STAT_FIELD(xfrm_churn, sa_added),
+	STAT_FIELD(xfrm_churn, sa_updated),
+	STAT_FIELD(xfrm_churn, sa_deleted),
+	STAT_FIELD(xfrm_churn, pol_added),
+	STAT_FIELD(xfrm_churn, pol_deleted),
+	STAT_FIELD(xfrm_churn, esp_sent),
+	STAT_FIELD(xfrm_churn, pfkey_send_ok),
+	STAT_FIELD(xfrm, ah_esn_setup_ok),
+	STAT_FIELD(xfrm, ah_esn_setup_fail),
+	STAT_FIELD(xfrm, ah_esn_async_runs),
+	STAT_FIELD(xfrm, ah_esn_delsa_races),
+};
+
+static const struct stat_category xfrm_churn_category =
+	STAT_CATEGORY("xfrm_churn",
+	              xfrm_churn_runs,
+	              xfrm_churn_fields);
+
+static const struct stat_field sctp_assoc_churn_fields[] = {
+	STAT_FIELD(sctp_assoc_churn, runs),
+	STAT_FIELD(sctp_assoc_churn, setup_failed),
+	STAT_FIELD(sctp_assoc_churn, bindx_added),
+	STAT_FIELD(sctp_assoc_churn, bindx_removed),
+	STAT_FIELD(sctp_assoc_churn, bindx_rejected),
+	STAT_FIELD(sctp_assoc_churn, connect_failed),
+	STAT_FIELD(sctp_assoc_churn, connected),
+	STAT_FIELD(sctp_assoc_churn, accepted),
+	STAT_FIELD(sctp_assoc_churn, packets_sent),
+	STAT_FIELD(sctp_assoc_churn, peeled_off),
+	STAT_FIELD(sctp_assoc_churn, peeloff_rejected),
+	STAT_FIELD(sctp_assoc_churn, cycles),
+};
+
+static const struct stat_category sctp_assoc_churn_category =
+	STAT_CATEGORY("sctp_assoc_churn",
+	              sctp_assoc_churn_runs,
+	              sctp_assoc_churn_fields);
+
+static const struct stat_field mptcp_pm_churn_fields[] = {
+	STAT_FIELD(mptcp_pm_churn, runs),
+	STAT_FIELD(mptcp_pm_churn, setup_failed),
+	STAT_FIELD(mptcp_pm_churn, sock_mptcp_ok),
+	STAT_FIELD(mptcp_pm_churn, addr_added_ok),
+	STAT_FIELD(mptcp_pm_churn, addr_removed_ok),
+	STAT_FIELD(mptcp_pm_churn, send_ok),
+	STAT_FIELD(mptcp, setsockopt_unsupported),
+	STAT_FIELD(mptcp, setsockopt_master_set),
+	STAT_FIELD(mptcp, setsockopt_master_fail),
+	STAT_FIELD(mptcp, getsockopt_verify_ok),
+	STAT_FIELD(mptcp, getsockopt_verify_drift),
+	STAT_FIELD(mptcp, sockopt_sweep_runs),
+	STAT_FIELD(mptcp, sockopt_set_ok),
+	STAT_FIELD(mptcp, sockopt_set_failed),
+	STAT_FIELD(mptcp, sockopt_subflow_added),
+	STAT_FIELD(mptcp, sockopt_readback_ok),
+	STAT_FIELD(mptcp, sockopt_inherit_mismatch),
+	STAT_FIELD(mptcp, sockopt_unsupported_latched),
+};
+
+static const struct stat_category mptcp_pm_churn_category =
+	STAT_CATEGORY("mptcp_pm_churn",
+	              mptcp_pm_churn_runs,
+	              mptcp_pm_churn_fields);
+
+static const struct stat_field devlink_port_churn_fields[] = {
+	STAT_FIELD(devlink_port_churn, iterations),
+	STAT_FIELD(devlink_port_churn, split_ok),
+	STAT_FIELD(devlink_port_churn, split_fail),
+	STAT_FIELD(devlink_port_churn, reload_ok),
+	STAT_FIELD(devlink_port_churn, reload_fail),
+	STAT_FIELD(devlink_port_churn, create_skipped),
+};
+
+static const struct stat_category devlink_port_churn_category =
+	STAT_CATEGORY("devlink_port_churn",
+	              devlink_port_churn_iterations,
+	              devlink_port_churn_fields);
+
 static void dump_stats_json_netfilter_and_xfrm(void)
 {
-	printf("\"nftables_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"table_create_ok\":%lu,\"set_create_ok\":%lu,\"chain_create_ok\":%lu,\"rule_create_ok\":%lu,\"packet_sent_ok\":%lu,\"rule_insert_ok\":%lu,\"rule_del_ok\":%lu,\"table_del_ok\":%lu,\"payload_expr_emit\":%lu,\"objref_expr_emit\":%lu,\"compat_validate_install_ok\":%lu,\"compat_validate_install_fail\":%lu,\"compat_validate_unsupported\":%lu,\"compat_validate_per_hook_pairs\":%lu,\"dormant_abort_iters\":%lu,\"dormant_abort_eperm\":%lu,\"dormant_abort_emsg\":%lu,\"dormant_abort_ok\":%lu,\"xt_ct_iters\":%lu,\"xt_ct_eperm\":%lu,\"xt_ct_unsupported\":%lu,\"xt_ct_set_ok\":%lu,\"xt_ct_get_ok\":%lu,\"xt_ct_v2_seen\":%lu,\"fwd_loop_runs\":%lu,\"fwd_loop_ns_setup_failed\":%lu,\"fwd_loop_probe_sent_ok\":%lu,\"fwd_loop_completed_ok\":%lu,\"l4frag_iters\":%lu,\"l4frag_install_ok\":%lu,\"l4frag_rule_ok\":%lu,\"l4frag_send_ok\":%lu,\"l4frag_send_failed\":%lu},"
-		"\"tc_qdisc_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"link_create_ok\":%lu,\"qdisc_create_ok\":%lu,\"tclass_create_ok\":%lu,\"tfilter_create_ok\":%lu,\"packet_sent_ok\":%lu,\"qdisc_replace_ok\":%lu,\"tfilter_del_ok\":%lu,\"qdisc_del_ok\":%lu,\"link_del_ok\":%lu,\"peek_stack_runs\":%lu,\"peek_stack_install_ok\":%lu,\"peek_stack_install_fail\":%lu,\"peek_stack_burst_ok\":%lu,\"bridge_parent_runs\":%lu,\"bridge_dellink_race_ok\":%lu},"
-		"\"xfrm_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sa_added\":%lu,\"sa_updated\":%lu,\"sa_deleted\":%lu,\"pol_added\":%lu,\"pol_deleted\":%lu,\"esp_sent\":%lu,\"pfkey_send_ok\":%lu,\"ah_esn_setup_ok\":%lu,\"ah_esn_setup_fail\":%lu,\"ah_esn_async_runs\":%lu,\"ah_esn_delsa_races\":%lu},"
-		"\"sctp_assoc_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bindx_added\":%lu,\"bindx_removed\":%lu,\"bindx_rejected\":%lu,\"connect_failed\":%lu,\"connected\":%lu,\"accepted\":%lu,\"packets_sent\":%lu,\"peeled_off\":%lu,\"peeloff_rejected\":%lu,\"cycles\":%lu},"
-		"\"mptcp_pm_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sock_mptcp_ok\":%lu,\"addr_added_ok\":%lu,\"addr_removed_ok\":%lu,\"send_ok\":%lu,\"setsockopt_unsupported\":%lu,\"setsockopt_master_set\":%lu,\"setsockopt_master_fail\":%lu,\"getsockopt_verify_ok\":%lu,\"getsockopt_verify_drift\":%lu,\"sockopt_sweep_runs\":%lu,\"sockopt_set_ok\":%lu,\"sockopt_set_failed\":%lu,\"sockopt_subflow_added\":%lu,\"sockopt_readback_ok\":%lu,\"sockopt_inherit_mismatch\":%lu,\"sockopt_unsupported_latched\":%lu},"
-		"\"devlink_port_churn\":{\"iterations\":%lu,\"split_ok\":%lu,\"split_fail\":%lu,\"reload_ok\":%lu,\"reload_fail\":%lu,\"create_skipped\":%lu}",
-		shm->stats.nftables_churn_runs,
-		shm->stats.nftables_churn_setup_failed,
-		shm->stats.nftables_churn_table_create_ok,
-		shm->stats.nftables_churn_set_create_ok,
-		shm->stats.nftables_churn_chain_create_ok,
-		shm->stats.nftables_churn_rule_create_ok,
-		shm->stats.nftables_churn_packet_sent_ok,
-		shm->stats.nftables_churn_rule_insert_ok,
-		shm->stats.nftables_churn_rule_del_ok,
-		shm->stats.nftables_churn_table_del_ok,
-		shm->stats.nftables_churn_payload_expr_emit,
-		shm->stats.nftables_churn_objref_expr_emit,
-		shm->stats.nft_compat_validate_install_ok,
-		shm->stats.nft_compat_validate_install_fail,
-		shm->stats.nft_compat_validate_unsupported,
-		shm->stats.nft_compat_validate_per_hook_pairs,
-		shm->stats.nft_dormant_abort_iters,
-		shm->stats.nft_dormant_abort_eperm,
-		shm->stats.nft_dormant_abort_emsg,
-		shm->stats.nft_dormant_abort_ok,
-		shm->stats.xt_ct_iters,
-		shm->stats.xt_ct_eperm,
-		shm->stats.xt_ct_unsupported,
-		shm->stats.xt_ct_set_ok,
-		shm->stats.xt_ct_get_ok,
-		shm->stats.xt_ct_v2_seen,
-		shm->stats.nft_fwd_loop_runs,
-		shm->stats.nft_fwd_loop_ns_setup_failed,
-		shm->stats.nft_fwd_loop_probe_sent_ok,
-		shm->stats.nft_fwd_loop_completed_ok,
-		shm->stats.nft_l4frag_iters,
-		shm->stats.nft_l4frag_install_ok,
-		shm->stats.nft_l4frag_rule_ok,
-		shm->stats.nft_l4frag_send_ok,
-		shm->stats.nft_l4frag_send_failed,
-		shm->stats.tc_qdisc_churn_runs,
-		shm->stats.tc_qdisc_churn_setup_failed,
-		shm->stats.tc_qdisc_churn_link_create_ok,
-		shm->stats.tc_qdisc_churn_qdisc_create_ok,
-		shm->stats.tc_qdisc_churn_tclass_create_ok,
-		shm->stats.tc_qdisc_churn_tfilter_create_ok,
-		shm->stats.tc_qdisc_churn_packet_sent_ok,
-		shm->stats.tc_qdisc_churn_qdisc_replace_ok,
-		shm->stats.tc_qdisc_churn_tfilter_del_ok,
-		shm->stats.tc_qdisc_churn_qdisc_del_ok,
-		shm->stats.tc_qdisc_churn_link_del_ok,
-		shm->stats.tc_qdisc_peek_stack_runs,
-		shm->stats.tc_qdisc_peek_stack_install_ok,
-		shm->stats.tc_qdisc_peek_stack_install_fail,
-		shm->stats.tc_qdisc_peek_stack_burst_ok,
-		shm->stats.tc_qdisc_churn_bridge_parent_runs,
-		shm->stats.tc_qdisc_churn_bridge_dellink_race_ok,
-		shm->stats.xfrm_churn_runs,
-		shm->stats.xfrm_churn_setup_failed,
-		shm->stats.xfrm_churn_sa_added,
-		shm->stats.xfrm_churn_sa_updated,
-		shm->stats.xfrm_churn_sa_deleted,
-		shm->stats.xfrm_churn_pol_added,
-		shm->stats.xfrm_churn_pol_deleted,
-		shm->stats.xfrm_churn_esp_sent,
-		shm->stats.xfrm_churn_pfkey_send_ok,
-		shm->stats.xfrm_ah_esn_setup_ok,
-		shm->stats.xfrm_ah_esn_setup_fail,
-		shm->stats.xfrm_ah_esn_async_runs,
-		shm->stats.xfrm_ah_esn_delsa_races,
-		shm->stats.sctp_assoc_churn_runs,
-		shm->stats.sctp_assoc_churn_setup_failed,
-		shm->stats.sctp_assoc_churn_bindx_added,
-		shm->stats.sctp_assoc_churn_bindx_removed,
-		shm->stats.sctp_assoc_churn_bindx_rejected,
-		shm->stats.sctp_assoc_churn_connect_failed,
-		shm->stats.sctp_assoc_churn_connected,
-		shm->stats.sctp_assoc_churn_accepted,
-		shm->stats.sctp_assoc_churn_packets_sent,
-		shm->stats.sctp_assoc_churn_peeled_off,
-		shm->stats.sctp_assoc_churn_peeloff_rejected,
-		shm->stats.sctp_assoc_churn_cycles,
-		shm->stats.mptcp_pm_churn_runs,
-		shm->stats.mptcp_pm_churn_setup_failed,
-		shm->stats.mptcp_pm_churn_sock_mptcp_ok,
-		shm->stats.mptcp_pm_churn_addr_added_ok,
-		shm->stats.mptcp_pm_churn_addr_removed_ok,
-		shm->stats.mptcp_pm_churn_send_ok,
-		shm->stats.mptcp_setsockopt_unsupported,
-		shm->stats.mptcp_setsockopt_master_set,
-		shm->stats.mptcp_setsockopt_master_fail,
-		shm->stats.mptcp_getsockopt_verify_ok,
-		shm->stats.mptcp_getsockopt_verify_drift,
-		shm->stats.mptcp_sockopt_sweep_runs,
-		shm->stats.mptcp_sockopt_set_ok,
-		shm->stats.mptcp_sockopt_set_failed,
-		shm->stats.mptcp_sockopt_subflow_added,
-		shm->stats.mptcp_sockopt_readback_ok,
-		shm->stats.mptcp_sockopt_inherit_mismatch,
-		shm->stats.mptcp_sockopt_unsupported_latched,
-		shm->stats.devlink_port_churn_iterations,
-		shm->stats.devlink_port_churn_split_ok,
-		shm->stats.devlink_port_churn_split_fail,
-		shm->stats.devlink_port_churn_reload_ok,
-		shm->stats.devlink_port_churn_reload_fail,
-		shm->stats.devlink_port_churn_create_skipped);
+	stat_category_emit_json(&nftables_churn_category);
+	putchar(',');
+	stat_category_emit_json(&tc_qdisc_churn_category);
+	putchar(',');
+	stat_category_emit_json(&xfrm_churn_category);
+	putchar(',');
+	stat_category_emit_json(&sctp_assoc_churn_category);
+	putchar(',');
+	stat_category_emit_json(&mptcp_pm_churn_category);
+	putchar(',');
+	stat_category_emit_json(&devlink_port_churn_category);
 }
 
 static void dump_stats_json_iouring_zc_and_kvm(void)
