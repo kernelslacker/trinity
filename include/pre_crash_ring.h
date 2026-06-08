@@ -99,9 +99,20 @@ void pre_crash_ring_record_canary(struct childdata *child,
 				  const struct syscallrecord *rec,
 				  uint64_t observed);
 
-void pre_crash_ring_dump(struct childdata *child);
+/*
+ * Printf-style emit callback used by the dump routines.  Lets the caller
+ * decide where the output lands: parent post-mortem paths pass outputerr
+ * so lines reach the operator's stderr; the kmsg helper passes its own
+ * kmsg_emit so the dump shares the single "[kmsg] "-tagged stream the
+ * helper's banner already uses, instead of split-streaming between the
+ * helper's stdout banner and a raw-stderr dump.
+ */
+typedef void (*pre_crash_emit_fn)(const char *fmt, ...)
+	__attribute__((format(printf, 1, 2)));
 
-void pre_crash_ring_dump_all(void);
+void pre_crash_ring_dump(struct childdata *child, pre_crash_emit_fn emit);
+
+void pre_crash_ring_dump_all(pre_crash_emit_fn emit);
 
 /*
  * Slot-recycle reset: drop the rolling-history entries pages back to

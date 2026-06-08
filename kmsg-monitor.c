@@ -57,6 +57,7 @@
 #include "kcov.h"		/* kcov_shm */
 #include "kmsg-monitor.h"
 #include "pre_crash_ring.h"
+#include "stats.h"
 #include "trinity.h"
 #include "utils.h"
 
@@ -256,6 +257,17 @@ static void __attribute__((noreturn)) kmsg_helper_main(void)
 	const char taskname[13] = "trinity-kmsg";
 
 	/*
+	 * Drop the inherited stats-log fd before anything else.  stats.c
+	 * opens it via fopen(path, "a") with no "e" flag, so the underlying
+	 * fd lacks O_CLOEXEC and the fork-time clone landed it in our table
+	 * too -- the fuzz-child path drops the same fd in
+	 * stats_log_drop_in_child() to preserve the parent-only-writer
+	 * invariant.  Without this the helper would silently hold a second
+	 * fd-table reference to the operator's stats.log for the whole run.
+	 */
+	stats_log_drop_in_child();
+
+	/*
 	 * Install the SIGTERM handler before anything else: the parent's
 	 * stop signal could in principle land on us between fork and the
 	 * first instruction of the helper, and the inherited disposition
@@ -371,9 +383,15 @@ static void __attribute__((noreturn)) kmsg_helper_main(void)
 
 			kmsg_emit("KMSG: {event:%d, banner:\"%s\"}\n",
 				(int)kind, body);
-			/* dump pre-crash context for the event-detection postmortem */
+			/* dump pre-crash context for the event-detection
+			 * postmortem.  Route through kmsg_emit so the per-slot
+			 * dump lines land on the helper's own tagged stream
+			 * alongside the KMSG: banner above; outputerr would
+			 * split-stream them to raw stderr with no "[kmsg] "
+			 * prefix, defeating the helper's single-stream
+			 * self-identifying output. */
 			if (kind != KMSG_EVENT_UNKNOWN && kind != KMSG_RCU)
-				pre_crash_ring_dump_all();
+				pre_crash_ring_dump_all(kmsg_emit);
 			follow_remaining = KMSG_FOLLOW_MAX_RECORDS;
 		} else if (follow_remaining > 0) {
 			kmsg_emit("KMSG: %s\n", body);

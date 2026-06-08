@@ -122,21 +122,22 @@ static void format_ts_relative(char *out, size_t outlen,
 }
 
 static void dump_one_ring(struct childdata *child,
-			  const struct timespec *anchor)
+			  const struct timespec *anchor,
+			  pre_crash_emit_fn emit)
 {
 	struct pre_crash_ring *ring = &child->pre_crash;
 	uint32_t head, count, i;
 
 	head = __atomic_load_n(&ring->base.head, __ATOMIC_ACQUIRE);
 	if (head == 0) {
-		outputerr("pre-crash ring (child %u): empty\n", child->num);
+		emit("pre-crash ring (child %u): empty\n", child->num);
 		return;
 	}
 
 	count = head < PRE_CRASH_RING_SIZE ? head : PRE_CRASH_RING_SIZE;
 
-	outputerr("pre-crash ring (child %u): last %u syscall(s), oldest first\n",
-		  child->num, count);
+	emit("pre-crash ring (child %u): last %u syscall(s), oldest first\n",
+	     child->num, count);
 
 	for (i = 0; i < count; i++) {
 		uint32_t slot = (head - count + i) & (PRE_CRASH_RING_SIZE - 1);
@@ -146,9 +147,9 @@ static void dump_one_ring(struct childdata *child,
 		format_ts_relative(tsbuf, sizeof(tsbuf), &e->ts, anchor);
 
 		if (e->kind == PRE_CRASH_KIND_TAINT) {
-			outputerr("  [%s] taint delta=0x%lx now=0x%lx op_type=%lu op_nr=%lu\n",
-				  tsbuf, e->args[0], e->args[1],
-				  e->args[2], e->args[3]);
+			emit("  [%s] taint delta=0x%lx now=0x%lx op_type=%lu op_nr=%lu\n",
+			     tsbuf, e->args[0], e->args[1],
+			     e->args[2], e->args[3]);
 			continue;
 		}
 
@@ -157,12 +158,12 @@ static void dump_one_ring(struct childdata *child,
 									e->do32bit);
 			const char *cname = centry ? centry->name : "?";
 
-			outputerr("  [%s] CANARY-STOMP nr=%u (%s%s) observed=0x%lx a1=%lx a2=%lx a3=%lx a4=%lx a5=%lx retval=%ld\n",
-				  tsbuf, e->syscall_nr, cname,
-				  e->do32bit ? ",32" : "",
-				  e->args[5], e->args[0], e->args[1],
-				  e->args[2], e->args[3], e->args[4],
-				  e->retval);
+			emit("  [%s] CANARY-STOMP nr=%u (%s%s) observed=0x%lx a1=%lx a2=%lx a3=%lx a4=%lx a5=%lx retval=%ld\n",
+			     tsbuf, e->syscall_nr, cname,
+			     e->do32bit ? ",32" : "",
+			     e->args[5], e->args[0], e->args[1],
+			     e->args[2], e->args[3], e->args[4],
+			     e->retval);
 			continue;
 		}
 
@@ -170,12 +171,12 @@ static void dump_one_ring(struct childdata *child,
 							       e->do32bit);
 		const char *name = entry ? entry->name : "?";
 
-		outputerr("  [%s] nr=%u (%s%s) a1=%lx a2=%lx a3=%lx a4=%lx a5=%lx a6=%lx retval=%ld errno=%d\n",
-			  tsbuf, e->syscall_nr, name,
-			  e->do32bit ? ",32" : "",
-			  e->args[0], e->args[1], e->args[2],
-			  e->args[3], e->args[4], e->args[5],
-			  e->retval, e->errno_post);
+		emit("  [%s] nr=%u (%s%s) a1=%lx a2=%lx a3=%lx a4=%lx a5=%lx a6=%lx retval=%ld errno=%d\n",
+		     tsbuf, e->syscall_nr, name,
+		     e->do32bit ? ",32" : "",
+		     e->args[0], e->args[1], e->args[2],
+		     e->args[3], e->args[4], e->args[5],
+		     e->retval, e->errno_post);
 	}
 }
 
@@ -212,17 +213,17 @@ void pre_crash_ring_reset(struct pre_crash_ring *ring)
 	__atomic_store_n(&ring->base.head, 0, __ATOMIC_RELEASE);
 }
 
-void pre_crash_ring_dump(struct childdata *child)
+void pre_crash_ring_dump(struct childdata *child, pre_crash_emit_fn emit)
 {
 	struct timespec now;
 
 	if (child == NULL)
 		return;
 	clock_gettime(CLOCK_MONOTONIC, &now);
-	dump_one_ring(child, &now);
+	dump_one_ring(child, &now, emit);
 }
 
-void pre_crash_ring_dump_all(void)
+void pre_crash_ring_dump_all(pre_crash_emit_fn emit)
 {
 	struct timespec now;
 	unsigned int i;
@@ -231,6 +232,6 @@ void pre_crash_ring_dump_all(void)
 	for_each_child(i) {
 		if (children[i] == NULL)
 			continue;
-		dump_one_ring(children[i], &now);
+		dump_one_ring(children[i], &now, emit);
 	}
 }

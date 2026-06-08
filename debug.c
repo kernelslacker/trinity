@@ -116,7 +116,7 @@ void __attribute__((noreturn)) __BUG(const char *bugtxt, const char *filename, c
 	 * in some child's ring even though the parent has no obvious
 	 * pointer to which one. */
 	if (child == NULL) {
-		pre_crash_ring_dump_all();
+		pre_crash_ring_dump_all(outputerr);
 		/* Parent-side BUG: main_loop has stopped ticking by the
 		 * time we reach this branch, so any slots still pending in
 		 * a child's fd_event / stats ring would never be consumed.
@@ -241,7 +241,7 @@ void dump_child_bug(struct childdata *child)
 	/* pre_crash_ring entries live in shared childdata; dump_one_ring
 	 * needs only the childdata pointer and an anchor timestamp, both
 	 * available here. */
-	pre_crash_ring_dump(child);
+	pre_crash_ring_dump(child, outputerr);
 
 	outputerr("BUG!: fleet halted — fuzzing stopped, attach gdb to pid %d (or any other live process) to inspect\n",
 		  pids[child->num]);
