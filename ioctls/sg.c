@@ -5,6 +5,7 @@
 
 #include <limits.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "arch.h"		// page_size
 #include "ioctls.h"
@@ -141,6 +142,7 @@ static void sg_io_sanitise(struct syscallrecord *rec)
 	sgio = (struct sg_io_buf *) get_address();
 	if (sgio == NULL)
 		return;
+	memset(sgio, 0, sizeof(*sgio));
 
 	/* INQUIRY (0x12) with a small allocation length keeps the cmd
 	 * structurally valid without depending on target state. */
