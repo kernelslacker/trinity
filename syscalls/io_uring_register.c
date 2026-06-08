@@ -6,7 +6,6 @@
 #include <string.h>
 #include <linux/io_uring.h>
 #include "arch.h"
-#include "deferred-free.h"
 #include "objects.h"
 #include "random.h"
 #include "rnd.h"
@@ -1166,7 +1165,7 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 	snap->magic = IO_URING_REGISTER_POST_STATE_MAGIC;
 	snap->opcode = opcode & ~IORING_REGISTER_USE_REGISTERED_RING;
 	snap->arg_len = arg_len;
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 
 	/*
 	 * Several opcodes above (PROBE, IOWQ_MAX_WORKERS, the default
@@ -1201,44 +1200,21 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
  */
 static void post_io_uring_register(struct syscallrecord *rec)
 {
-	struct io_uring_register_post_state *snap =
-		(struct io_uring_register_post_state *) rec->post_state;
+	struct io_uring_register_post_state *snap;
 	unsigned long ret = rec->retval;
 	unsigned long a4 = rec->a4;
 
 	rec->a3 = 0;
 
+	/*
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
+	 */
+	snap = post_state_claim_owned(rec, IO_URING_REGISTER_POST_STATE_MAGIC, __func__);
 	if (snap == NULL)
 		return;
-
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_io_uring_register: rejected suspicious "
-			  "post_state=%p (pid-scribbled?)\n", snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	/*
-	 * Magic-cookie check: snap survived the heap-shape gate but a
-	 * sibling scribble of rec->post_state with a heap-shaped pointer
-	 * to a foreign allocation would let the wrong bytes pose as an
-	 * io_uring_register_post_state -- post_io_uring_register would
-	 * then dispatch off a foreign opcode field and hand a foreign
-	 * pointer to deferred_free_enqueue().
-	 */
-	if (snap->magic != IO_URING_REGISTER_POST_STATE_MAGIC) {
-		outputerr("post_io_uring_register: rejected snap with bad "
-			  "magic 0x%lx (post_state-stomped to foreign "
-			  "allocation?)\n", snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
 
 	/*
 	 * Per-opcode STRONG-VAL.  io_uring_register(2) is a multiplexer;
@@ -1304,7 +1280,7 @@ static void post_io_uring_register(struct syscallrecord *rec)
 		}
 	}
 
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_io_uring_register = {
