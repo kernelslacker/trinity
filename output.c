@@ -55,9 +55,9 @@ void output(int level, const char *fmt, ...)
 	if (pid == mainpid)
 		prefix = main_prefix;
 	else {
-		int childno;
+		struct childdata *c = this_child();
+		int childno = c ? (int) c->num : find_childno(pid);
 
-		childno = find_childno(pid);
 		snprintf(child_prefix, sizeof(child_prefix), "[child%d:%d] ", childno, pid);
 		prefix = child_prefix;
 	}
