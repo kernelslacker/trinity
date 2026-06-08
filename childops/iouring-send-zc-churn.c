@@ -483,6 +483,12 @@ struct iouring_send_zc_iter_ctx {
 	void		*pages[ZC_BUF_COUNT];
 	void		*replacement;
 	struct iovec	replacement_iov;
+	/* SENDMSG_ZC submission backing -- must outlive
+	 * iouring_send_zc_iter_submit() because io_uring_enter() in the
+	 * drive phase is what causes the kernel to copy_from_user() the
+	 * msghdr and walk msg_iov.  Stack-locals would be UAF. */
+	struct msghdr	sendmsg_msg;
+	struct iovec	sendmsg_iov[4];
 	pid_t		acceptor;
 	int		sock_fd;
 	unsigned int	submitted;
@@ -599,8 +605,6 @@ static void iouring_send_zc_iter_submit(struct iouring_send_zc_iter_ctx *it)
 	 * touches multiple rsrc_node entries. */
 	{
 		struct io_uring_sqe sqe;
-		struct msghdr msg;
-		struct iovec local_iov[4];
 		unsigned int n_iov = 1 + rnd_modulo_u32(4U);
 		unsigned int j;
 		unsigned int buf_index = rnd_modulo_u32(ZC_BUF_COUNT);
@@ -611,14 +615,14 @@ static void iouring_send_zc_iter_submit(struct iouring_send_zc_iter_ctx *it)
 			unsigned int slot = (buf_index + j) % ZC_BUF_COUNT;
 			size_t len = (size_t)(1 + rnd_modulo_u32(ZC_BUF_BYTES));
 
-			local_iov[j].iov_base = it->pages[slot];
-			local_iov[j].iov_len  = len;
+			it->sendmsg_iov[j].iov_base = it->pages[slot];
+			it->sendmsg_iov[j].iov_len  = len;
 		}
-		memset(&msg, 0, sizeof(msg));
-		msg.msg_iov    = local_iov;
-		msg.msg_iovlen = n_iov;
+		memset(&it->sendmsg_msg, 0, sizeof(it->sendmsg_msg));
+		it->sendmsg_msg.msg_iov    = it->sendmsg_iov;
+		it->sendmsg_msg.msg_iovlen = n_iov;
 
-		fill_sendmsg_zc(&sqe, it->sock_fd, &msg, buf_index);
+		fill_sendmsg_zc(&sqe, it->sock_fd, &it->sendmsg_msg, buf_index);
 		if (submit_one(&it->ring, &sqe) == 1) {
 			it->submitted++;
 			__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_sendmsg_zc_ok,
