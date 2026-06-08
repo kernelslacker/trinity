@@ -14,7 +14,6 @@
 #include <stdbool.h>
 #include <unistd.h>
 #include "child.h"
-#include "deferred-free.h"
 #include "fd.h"
 #include "fd-event.h"
 #include "kcov.h"
@@ -253,7 +252,7 @@ static void sanitise_close_range(struct syscallrecord *rec)
 	snap->fd     = (unsigned int) rec->a1;
 	snap->max_fd = (unsigned int) rec->a2;
 	snap->flags  = (unsigned int) rec->a3;
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 }
 
 /*
@@ -268,45 +267,22 @@ static void sanitise_close_range(struct syscallrecord *rec)
  */
 static void post_close_range(struct syscallrecord *rec)
 {
-	struct close_range_post_state *snap =
-		(struct close_range_post_state *) rec->post_state;
+	struct close_range_post_state *snap;
 	struct childdata *child;
 	unsigned int fd, max_fd, flags;
 
-	if (rec->retval != 0)
-		return;
-
+	/*
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
+	 */
+	snap = post_state_claim_owned(rec, CLOSE_RANGE_POST_STATE_MAGIC, __func__);
 	if (snap == NULL)
 		return;
 
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_close_range: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	/*
-	 * Magic-cookie check: snap survived the heap-shape gate but a
-	 * sibling scribble of rec->post_state with a heap-shaped pointer
-	 * to a foreign allocation would let the wrong bytes pose as a
-	 * close_range_post_state.  A cookie mismatch means snap does not
-	 * point at our struct -- abandon rather than feed wild bytes into
-	 * the fd-range walk.
-	 */
-	if (snap->magic != CLOSE_RANGE_POST_STATE_MAGIC) {
-		outputerr("post_close_range: rejected snap with bad magic 0x%lx "
-			  "(post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
+	if (rec->retval != 0)
+		goto out_free;
 
 	fd     = snap->fd;
 	max_fd = snap->max_fd;
@@ -362,8 +338,7 @@ static void post_close_range(struct syscallrecord *rec)
 	}
 
 out_free:
-	deferred_free_enqueue(snap);
-	rec->post_state = 0;
+	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_close_range = {
