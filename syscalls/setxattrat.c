@@ -9,6 +9,7 @@
 #include "deferred-free.h"
 #include "rnd.h"
 #include "sanitise.h"
+#include "utils.h"
 #include "xattr.h"
 #include "compat.h"
 #ifdef USE_XATTR_ARGS
@@ -58,11 +59,13 @@ static void sanitise_setxattrat(struct syscallrecord *rec)
 			return;
 
 		/*
-		 * Hand the csfu buffer to the deferred-free queue up
-		 * front so the value-buffer allocation failure path
-		 * below cannot leak it.
+		 * Stash the csfu buffer in rec->post_state up front so the
+		 * unconditional .cleanup hook frees it even on the value-buffer
+		 * allocation-failure return below.  setxattrat has no .post handler,
+		 * so this was the only release point; post_state is private to the
+		 * cleanup path and less stomp-prone than rec->a5.
 		 */
-		deferred_free_enqueue_or_leak(args);
+		rec->post_state = (unsigned long) args;
 
 		/*
 		 * Non-EXACT buckets get rejected on size by the validator
@@ -117,6 +120,33 @@ static void sanitise_setxattrat(struct syscallrecord *rec)
 #endif
 }
 
+#ifdef USE_XATTR_ARGS
+static void cleanup_setxattrat(struct syscallrecord *rec)
+{
+	struct xattr_args *args = (struct xattr_args *) rec->post_state;
+
+	rec->post_state = 0;
+
+	if (args == NULL)
+		return;
+
+	/*
+	 * post_state is not exposed as a syscall arg, but the whole
+	 * record can be stomped by a sibling; guard the deref.  This
+	 * replaces the old deferred_free_enqueue_or_leak() pressure path.
+	 */
+	if (looks_like_corrupted_ptr(rec, args))
+		return;
+
+	/*
+	 * args came from build_csfu_struct() -> zmalloc_tracked(), which
+	 * registered the pointer in the alloc-track LRU.  tracked_free_now()
+	 * removes it from the LRU and frees it.
+	 */
+	tracked_free_now(args);
+}
+#endif
+
 struct syscallentry syscall_setxattrat = {
 	.name = "setxattrat",
 	.num_args = 6,
@@ -127,4 +157,7 @@ struct syscallentry syscall_setxattrat = {
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
 	.sanitise = sanitise_setxattrat,
+#ifdef USE_XATTR_ARGS
+	.cleanup = cleanup_setxattrat,
+#endif
 };
