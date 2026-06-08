@@ -996,6 +996,17 @@ void self_cgroup_drop_fds_in_child(void)
 		close(events_inotify_fd);
 		events_inotify_fd = -1;
 	}
+	/* The workload-cgroup dirfd is parent-only: the parent uses it for
+	 * clone3(CLONE_INTO_CGROUP) (and openat-on-cgroup.procs in the
+	 * post-migrate fallback) before the child reaches this hook, and
+	 * nothing in the child path needs it.  Leaving it inherited lets a
+	 * fuzzed dup2 redirect future spawns into the wrong cgroup
+	 * (escaping memory.max + oom.group containment) or a fuzzed close
+	 * turn the next spawn into EBADF. */
+	if (cg_workload_fd >= 0) {
+		close(cg_workload_fd);
+		cg_workload_fd = -1;
+	}
 }
 
 void self_cgroup_events_check(void)

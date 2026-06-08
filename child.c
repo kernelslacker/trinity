@@ -698,14 +698,25 @@ static void init_child_isolate_io(void)
 	 * offset, smashing the operator's log mid-run. */
 	stats_log_drop_in_child();
 
-	/* Same hazard, different fds: the parent's memory.events watcher
-	 * (inotify fd + memory.events file fd) was created IN_CLOEXEC, but
-	 * CLOEXEC only fires on exec(), and our children fork-and-fuzz
-	 * without exec.  A fuzzed fcntl on the inherited inotify fd can
-	 * clear O_NONBLOCK on the shared open-file-description, wedging the
-	 * parent's drain-read in self_cgroup_events_check() and stalling
-	 * the main loop (no child reap -> zombie pileup).  Close both. */
+	/* Same hazard, different fds: the parent's self-cgroup fds (the
+	 * memory.events file fd, its inotify watch fd, and the workload
+	 * cgroup O_DIRECTORY fd handed to clone3(CLONE_INTO_CGROUP)) were
+	 * created IN_CLOEXEC, but CLOEXEC only fires on exec(), and our
+	 * children fork-and-fuzz without exec.  A fuzzed fcntl on the
+	 * inherited inotify fd can clear O_NONBLOCK on the shared OFD,
+	 * wedging the parent's drain-read in self_cgroup_events_check()
+	 * and stalling the main loop (no child reap -> zombie pileup).  A
+	 * fuzzed dup2 onto the workload-cgroup dirfd redirects subsequent
+	 * spawns into the wrong cgroup, breaking memory.max + oom.group
+	 * containment.  Drop all three. */
 	self_cgroup_drop_fds_in_child();
+
+	/* And the parent's /proc/<pid>/stat fds for liveness polling.  They
+	 * are opened post-fork as each child is spawned, so every later
+	 * child inherits earlier slots' fds.  Only the parent reads them;
+	 * leaving them open in the child lets a fuzzed close/dup2 corrupt
+	 * the parent's get_pid_state view and blind stuck-detection. */
+	pidstatfiles_drop_in_child();
 
 	/* Detach from the controlling terminal so a fuzzed
 	 * open("/dev/tty", O_WRONLY) followed by write() can't reach the

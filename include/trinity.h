@@ -13,6 +13,7 @@ const char *trinity_tmpdir_abs(void);
 
 void main_loop(void);
 void reset_epoch_state(void);
+void pidstatfiles_drop_in_child(void);
 
 void panic(int reason);
 

@@ -2217,6 +2217,31 @@ static void wait_for_children_to_exit(void)
 	}
 }
 
+/*
+ * Close inherited /proc/<pid>/stat fds in a freshly forked child.
+ * pidstatfiles[] is parent-only (only get_pid_state and the parent
+ * reap/replace paths in this file read or close them), but the fds are
+ * opened post-fork as each child is spawned, so every later child
+ * inherits the earlier slots' fds.  Without this drop, a fuzzed close()
+ * or dup2() in any child blinds the parent's liveness / stuck-detection
+ * (get_pid_state then misreads child state via a stale or repointed fd).
+ * No CLOEXEC alternative: trinity's children don't exec.
+ */
+void pidstatfiles_drop_in_child(void)
+{
+	unsigned int i;
+
+	if (pidstatfiles == NULL)
+		return;
+
+	for_each_child(i) {
+		if (pidstatfiles[i] >= 0) {
+			close(pidstatfiles[i]);
+			pidstatfiles[i] = -1;
+		}
+	}
+}
+
 void main_loop(void)
 {
 	struct timespec epoch_start;

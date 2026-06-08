@@ -43,15 +43,30 @@ void self_cgroup_cleanup(void);
 void self_cgroup_events_check(void);
 
 /*
- * Close the parent's memory.events watcher fds in a freshly forked
- * child.  The inotify fd is created IN_CLOEXEC, but CLOEXEC only fires
- * on exec(); trinity's children fork-and-fuzz without exec, so they
- * inherit the parent's open-file-descriptions.  A fuzzed fcntl(fd,
- * F_SETFL, ...) in a child can then clear O_NONBLOCK on the shared
- * OFD, after which the parent's drain-read in
- * self_cgroup_events_check() blocks forever -- main loop hangs, no
- * fuzz children get reaped, zombie pileup.  Drop the fds in the
- * child's fd-shedding path so they're not reachable for fuzzing.
+ * Close the parent's self-cgroup fds in a freshly forked child.  All
+ * are opened IN_CLOEXEC, but CLOEXEC only fires on exec(); trinity's
+ * children fork-and-fuzz without exec, so they inherit the parent's
+ * open-file-descriptions.  Three fds need dropping:
+ *
+ *   - the memory.events file fd and its inotify watch fd.  A fuzzed
+ *     fcntl(fd, F_SETFL, ...) in a child can clear O_NONBLOCK on the
+ *     shared OFD, after which the parent's drain-read in
+ *     self_cgroup_events_check() blocks forever -- main loop hangs,
+ *     no fuzz children get reaped, zombie pileup.
+ *
+ *   - cg_workload_fd, the O_DIRECTORY fd on children/ that the parent
+ *     hands to clone3(CLONE_INTO_CGROUP) (and falls back to
+ *     openat(fd, "cgroup.procs") for post-migrate placement).  A
+ *     fuzzed dup2 onto this slot redirects subsequent spawns into the
+ *     wrong cgroup -- children escape the memory.max cap and the
+ *     oom.group=1 scoped kill, defeating the whole containment story.
+ *     A fuzzed close() turns the next spawn into EBADF and stalls the
+ *     fork loop.  The parent already used the fd for its own clone3
+ *     before the child reaches this hook, so closing the child's
+ *     inherited copy can't break the parent's spawn path.
+ *
+ * Drop them all in the child's fd-shedding path so none are reachable
+ * for fuzzing.
  */
 void self_cgroup_drop_fds_in_child(void);
 
