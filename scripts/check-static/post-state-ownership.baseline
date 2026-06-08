@@ -39,5 +39,4 @@ syscalls/poll.c:sanitise_ppoll
 syscalls/pselect6.c:sanitise_pselect6
 syscalls/ptrace.c:sanitise_ptrace
 syscalls/recv.c:sanitise_recvfrom
-syscalls/select.c:sanitise_select
 syscalls/write.c:sanitise_write
