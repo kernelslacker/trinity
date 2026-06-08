@@ -15,7 +15,6 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include "arch.h"
-#include "deferred-free.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -90,7 +89,7 @@ static void sanitise_lookup_dcookie(struct syscallrecord *rec)
 	snap->cookie    = (uint64_t) rec->a1;
 	snap->buf       = rec->a2;
 	snap->len       = rec->a3;
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 #endif
 }
 
@@ -131,8 +130,7 @@ static void sanitise_lookup_dcookie(struct syscallrecord *rec)
  */
 static void post_lookup_dcookie(struct syscallrecord *rec)
 {
-	struct lookup_dcookie_post_state *snap =
-		(struct lookup_dcookie_post_state *) rec->post_state;
+	struct lookup_dcookie_post_state *snap;
 	unsigned long retval = rec->retval;
 	long ret = (long) retval;
 	uint64_t snap_cookie;
@@ -141,37 +139,15 @@ static void post_lookup_dcookie(struct syscallrecord *rec)
 	long rc;
 	size_t snap_len;
 
+	/*
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
+	 */
+	snap = post_state_claim_owned(rec, LOOKUP_DCOOKIE_POST_STATE_MAGIC, __func__);
 	if (snap == NULL)
 		return;
-
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_lookup_dcookie: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	/*
-	 * Magic-cookie check: snap survived the heap-shape gate but a
-	 * sibling scribble of rec->post_state with a heap-shaped pointer
-	 * to a foreign allocation would let the wrong bytes pose as a
-	 * lookup_dcookie_post_state.  A cookie mismatch means snap does
-	 * not point at our struct -- abandon cleanup rather than feed
-	 * wild bytes into the inner-field deref.  Cannot deferred_freeptr
-	 * the snap because we cannot prove it is one of our allocations.
-	 */
-	if (snap->magic != LOOKUP_DCOOKIE_POST_STATE_MAGIC) {
-		outputerr("post_lookup_dcookie: rejected snap with bad magic 0x%lx (post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
 
 	/*
 	 * STRONG-VAL byte-count bound: lookup_dcookie(2) on success returns
@@ -249,7 +225,7 @@ static void post_lookup_dcookie(struct syscallrecord *rec)
 	}
 
 out_free:
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 #endif /* SYS_lookup_dcookie || __NR_lookup_dcookie */
 

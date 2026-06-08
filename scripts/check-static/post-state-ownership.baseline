@@ -29,7 +29,6 @@ syscalls/getsockopt.c:sanitise_getsockopt
 syscalls/getxattrat.c:sanitise_getxattrat
 syscalls/io_uring_register.c:sanitise_io_uring_register
 syscalls/listns.c:sanitise_listns
-syscalls/lookup_dcookie.c:sanitise_lookup_dcookie
 syscalls/lsm_get_self_attr.c:sanitise_lsm_get_self_attr
 syscalls/lsm_list_modules.c:sanitise_lsm_list_modules
 syscalls/move_pages.c:sanitise_move_pages

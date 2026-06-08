@@ -169,10 +169,8 @@ syscalls/listxattr.c:396:post_listxattr
 syscalls/listxattr.c:467:post_listxattr
 syscalls/listxattr.c:611:post_llistxattr
 syscalls/listxattr.c:677:post_llistxattr
-syscalls/lookup_dcookie.c:153:post_lookup_dcookie
-syscalls/lookup_dcookie.c:169:post_lookup_dcookie
-syscalls/lookup_dcookie.c:192:post_lookup_dcookie
-syscalls/lookup_dcookie.c:243:post_lookup_dcookie
+syscalls/lookup_dcookie.c:168:post_lookup_dcookie
+syscalls/lookup_dcookie.c:219:post_lookup_dcookie
 syscalls/lsm_get_self_attr.c:238:post_lsm_get_self_attr
 syscalls/lsm_get_self_attr.c:245:post_lsm_get_self_attr
 syscalls/lsm_get_self_attr.c:268:post_lsm_get_self_attr
