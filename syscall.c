@@ -1106,7 +1106,7 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 
 			handle_failure(rec);
 			__atomic_add_fetch(&entry->failures, 1, __ATOMIC_RELAXED);
-			if (err >= 0 && err < NR_ERRNOS) {
+			if (err >= 0 && err <= NR_ERRNOS) {
 				__atomic_add_fetch(&entry->errnos[err], 1, __ATOMIC_RELAXED);
 			} else if (err < 0) {
 				/* A real kernel return can never produce a

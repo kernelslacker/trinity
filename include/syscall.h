@@ -316,7 +316,7 @@ struct syscallentry {
 	struct results results[6];
 
 	unsigned int successes, failures, attempted;
-	unsigned int errnos[NR_ERRNOS];
+	unsigned int errnos[NR_ERRNOS + 1];
 
 	/*
 	 * Per-argument type-specific parameters, indexed [0..5] for args 1..6.

@@ -169,7 +169,7 @@ static void dump_entry(const struct syscalltable *table, unsigned int i)
 
 	output(0, "%s: (attempted:%u. success:%u. failures:%u.\n", entry->name, entry->attempted, entry->successes, entry->failures);
 
-	for (j = 0; j < NR_ERRNOS; j++) {
+	for (j = 0; j <= NR_ERRNOS; j++) {
 		if (entry->errnos[j] != 0) {
 			output(0, "    %s: %d\n", strerror(j), entry->errnos[j]);
 		}
@@ -224,7 +224,7 @@ static bool json_emit_syscall(const struct syscalltable *table, unsigned int i)
 	json_emit_string(entry->name);
 	printf(",\"attempted\":%u,\"successes\":%u,\"failures\":%u,\"errnos\":{",
 		entry->attempted, entry->successes, entry->failures);
-	for (j = 0; j < NR_ERRNOS; j++) {
+	for (j = 0; j <= NR_ERRNOS; j++) {
 		if (entry->errnos[j] == 0)
 			continue;
 		if (!first_errno)
