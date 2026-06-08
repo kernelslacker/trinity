@@ -1828,53 +1828,152 @@ static void dump_stats_json_oracle(void)
 	putchar(',');
 }
 
+/*
+ * Descriptor tables for dump_stats_json_basic_subsystems().
+ *
+ * The eight categories below were previously emitted by a single
+ * hand-written printf with one %lu slot per field and a parallel
+ * shm->stats.<field> va-list; adding a counter required three
+ * correlated edits.  These tables collapse that to one STAT_FIELD*
+ * row per field.
+ *
+ * The JSON walker ignores stat_category.gate_offset (every category
+ * emits unconditionally), so the gate choices below only matter if a
+ * future change wires stat_category_emit_text() onto these tables.
+ * Each text-side block in dump_stats_text() stays hand-coded for now
+ * and picks its own gate predicate.
+ *
+ * Where the JSON schema key doesn't match the struct member suffix
+ * (vfs_writes, memory_pressure) the row uses STAT_FIELD_JSON to pin
+ * the JSON key; .name still mirrors the struct suffix so the
+ * descriptor stays self-consistent.  Those .name values do NOT match
+ * the keys the hand-coded text emitter currently uses, so any future
+ * text-side wiring onto these tables will need to revisit .name.
+ *
+ * genl_family_calls intentionally omits tipc and wireguard: the
+ * existing hand-written JSON printf never emitted those two slots, so
+ * including them here would break byte-identical schema parity.  The
+ * text emitter still calls stat_row() for both directly.
+ */
+static const struct stat_field vfs_writes_fields[] = {
+	STAT_FIELD_JSON(procfs, writes, "procfs"),
+	STAT_FIELD_JSON(sysfs, writes, "sysfs"),
+	STAT_FIELD_JSON(debugfs, writes, "debugfs"),
+};
+
+static const struct stat_category vfs_writes_category =
+	STAT_CATEGORY("vfs_writes",
+	              procfs_writes,
+	              vfs_writes_fields);
+
+static const struct stat_field memory_pressure_fields[] = {
+	STAT_FIELD_JSON(memory_pressure, runs, "runs_madv_pageout"),
+};
+
+static const struct stat_category memory_pressure_category =
+	STAT_CATEGORY("memory_pressure",
+	              memory_pressure_runs,
+	              memory_pressure_fields);
+
+static const struct stat_field genetlink_fuzzer_fields[] = {
+	STAT_FIELD(genetlink, families_discovered),
+	STAT_FIELD(genetlink, msgs_sent),
+	STAT_FIELD(genetlink, eperm),
+};
+
+static const struct stat_category genetlink_fuzzer_category =
+	STAT_CATEGORY("genetlink_fuzzer",
+	              genetlink_families_discovered,
+	              genetlink_fuzzer_fields);
+
+static const struct stat_field genl_family_calls_fields[] = {
+	STAT_FIELD(genl_family_calls, devlink),
+	STAT_FIELD(genl_family_calls, nl80211),
+	STAT_FIELD(genl_family_calls, taskstats),
+	STAT_FIELD(genl_family_calls, ethtool),
+	STAT_FIELD(genl_family_calls, mptcp_pm),
+	STAT_FIELD(genl_family_calls, l2tp),
+	STAT_FIELD(genl_family_calls, gtp),
+	STAT_FIELD(genl_family_calls, macsec),
+	STAT_FIELD(genl_family_calls, netlabel),
+	STAT_FIELD(genl_family_calls, team),
+	STAT_FIELD(genl_family_calls, hsr),
+	STAT_FIELD(genl_family_calls, fou),
+	STAT_FIELD(genl_family_calls, psample),
+	STAT_FIELD(genl_family_calls, ila),
+	STAT_FIELD(genl_family_calls, ioam6),
+	STAT_FIELD(genl_family_calls, seg6),
+	STAT_FIELD(genl_family_calls, thermal),
+	STAT_FIELD(genl_family_calls, ipvs),
+};
+
+static const struct stat_category genl_family_calls_category =
+	STAT_CATEGORY("genl_family_calls",
+	              genl_family_calls_devlink,
+	              genl_family_calls_fields);
+
+static const struct stat_field nfnl_subsys_calls_fields[] = {
+	STAT_FIELD(nfnl_subsys_calls, ctnetlink),
+	STAT_FIELD(nfnl_subsys_calls, ctnetlink_exp),
+	STAT_FIELD(nfnl_subsys_calls, nftables),
+	STAT_FIELD(nfnl_subsys_calls, ipset),
+};
+
+static const struct stat_category nfnl_subsys_calls_category =
+	STAT_CATEGORY("nfnl_subsys_calls",
+	              nfnl_subsys_calls_ctnetlink,
+	              nfnl_subsys_calls_fields);
+
+static const struct stat_field netlink_generator_fields[] = {
+	STAT_FIELD(netlink, nested_attrs_emitted),
+};
+
+static const struct stat_category netlink_generator_category =
+	STAT_CATEGORY("netlink_generator",
+	              netlink_nested_attrs_emitted,
+	              netlink_generator_fields);
+
+static const struct stat_field tracefs_fuzzer_fields[] = {
+	STAT_FIELD(tracefs, kprobe_writes),
+	STAT_FIELD(tracefs, uprobe_writes),
+	STAT_FIELD(tracefs, filter_writes),
+	STAT_FIELD(tracefs, event_enable_writes),
+	STAT_FIELD(tracefs, misc_writes),
+};
+
+static const struct stat_category tracefs_fuzzer_category =
+	STAT_CATEGORY("tracefs_fuzzer",
+	              tracefs_kprobe_writes,
+	              tracefs_fuzzer_fields);
+
+static const struct stat_field bpf_fd_provider_fields[] = {
+	STAT_FIELD(bpf, maps_provided),
+	STAT_FIELD(bpf, progs_provided),
+};
+
+static const struct stat_category bpf_fd_provider_category =
+	STAT_CATEGORY("bpf_fd_provider",
+	              bpf_maps_provided,
+	              bpf_fd_provider_fields);
+
 static void dump_stats_json_basic_subsystems(void)
 {
-	printf("\"vfs_writes\":{\"procfs\":%lu,\"sysfs\":%lu,\"debugfs\":%lu},"
-		"\"memory_pressure\":{\"runs_madv_pageout\":%lu},"
-		"\"genetlink_fuzzer\":{\"families_discovered\":%lu,\"msgs_sent\":%lu,\"eperm\":%lu},"
-		"\"genl_family_calls\":{\"devlink\":%lu,\"nl80211\":%lu,\"taskstats\":%lu,"
-			"\"ethtool\":%lu,\"mptcp_pm\":%lu,\"l2tp\":%lu,\"gtp\":%lu,\"macsec\":%lu,"
-				"\"netlabel\":%lu,\"team\":%lu,\"hsr\":%lu,\"fou\":%lu,"
-				"\"psample\":%lu,\"ila\":%lu,\"ioam6\":%lu,\"seg6\":%lu,"
-				"\"thermal\":%lu,\"ipvs\":%lu},"
-		"\"nfnl_subsys_calls\":{\"ctnetlink\":%lu,\"ctnetlink_exp\":%lu,"
-			"\"nftables\":%lu,\"ipset\":%lu},"
-		"\"netlink_generator\":{\"nested_attrs_emitted\":%lu},"
-		"\"tracefs_fuzzer\":{\"kprobe_writes\":%lu,\"uprobe_writes\":%lu,"
-			"\"filter_writes\":%lu,\"event_enable_writes\":%lu,\"misc_writes\":%lu},"
-		"\"bpf_fd_provider\":{\"maps_provided\":%lu,\"progs_provided\":%lu},",
-		shm->stats.procfs_writes, shm->stats.sysfs_writes, shm->stats.debugfs_writes,
-		shm->stats.memory_pressure_runs,
-		shm->stats.genetlink_families_discovered, shm->stats.genetlink_msgs_sent,
-		shm->stats.genetlink_eperm,
-		shm->stats.genl_family_calls_devlink,
-		shm->stats.genl_family_calls_nl80211,
-		shm->stats.genl_family_calls_taskstats,
-		shm->stats.genl_family_calls_ethtool,
-		shm->stats.genl_family_calls_mptcp_pm,
-		shm->stats.genl_family_calls_l2tp,
-		shm->stats.genl_family_calls_gtp,
-		shm->stats.genl_family_calls_macsec,
-		shm->stats.genl_family_calls_netlabel,
-		shm->stats.genl_family_calls_team,
-		shm->stats.genl_family_calls_hsr,
-		shm->stats.genl_family_calls_fou,
-		shm->stats.genl_family_calls_psample,
-		shm->stats.genl_family_calls_ila,
-		shm->stats.genl_family_calls_ioam6,
-		shm->stats.genl_family_calls_seg6,
-		shm->stats.genl_family_calls_thermal,
-		shm->stats.genl_family_calls_ipvs,
-		shm->stats.nfnl_subsys_calls_ctnetlink,
-		shm->stats.nfnl_subsys_calls_ctnetlink_exp,
-		shm->stats.nfnl_subsys_calls_nftables,
-		shm->stats.nfnl_subsys_calls_ipset,
-		shm->stats.netlink_nested_attrs_emitted,
-		shm->stats.tracefs_kprobe_writes, shm->stats.tracefs_uprobe_writes,
-		shm->stats.tracefs_filter_writes, shm->stats.tracefs_event_enable_writes,
-		shm->stats.tracefs_misc_writes,
-		shm->stats.bpf_maps_provided, shm->stats.bpf_progs_provided);
+	stat_category_emit_json(&vfs_writes_category);
+	putchar(',');
+	stat_category_emit_json(&memory_pressure_category);
+	putchar(',');
+	stat_category_emit_json(&genetlink_fuzzer_category);
+	putchar(',');
+	stat_category_emit_json(&genl_family_calls_category);
+	putchar(',');
+	stat_category_emit_json(&nfnl_subsys_calls_category);
+	putchar(',');
+	stat_category_emit_json(&netlink_generator_category);
+	putchar(',');
+	stat_category_emit_json(&tracefs_fuzzer_category);
+	putchar(',');
+	stat_category_emit_json(&bpf_fd_provider_category);
+	putchar(',');
 }
 
 static void dump_stats_json_iouring_and_zombies(void)
