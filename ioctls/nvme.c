@@ -24,6 +24,7 @@ static void sanitise_nvme_admin_cmd(struct syscallrecord *rec)
 	cmd = (struct nvme_passthru_cmd *) get_writable_struct(sizeof(*cmd));
 	if (!cmd)
 		return;
+	memset(cmd, 0, sizeof(*cmd));
 	buf = get_writable_struct(4096);
 	if (!buf)
 		return;
@@ -52,6 +53,7 @@ static void sanitise_nvme_admin64_cmd(struct syscallrecord *rec)
 	cmd = (struct nvme_passthru_cmd64 *) get_writable_struct(sizeof(*cmd));
 	if (!cmd)
 		return;
+	memset(cmd, 0, sizeof(*cmd));
 	buf = get_writable_struct(4096);
 	if (!buf)
 		return;
@@ -77,6 +79,7 @@ static void sanitise_nvme_io_cmd(struct syscallrecord *rec)
 	cmd = (struct nvme_passthru_cmd *) get_writable_struct(sizeof(*cmd));
 	if (!cmd)
 		return;
+	memset(cmd, 0, sizeof(*cmd));
 	buf = get_writable_struct(4096);
 	if (!buf)
 		return;
@@ -95,6 +98,7 @@ static void sanitise_nvme_io64_cmd(struct syscallrecord *rec)
 	cmd = (struct nvme_passthru_cmd64 *) get_writable_struct(sizeof(*cmd));
 	if (!cmd)
 		return;
+	memset(cmd, 0, sizeof(*cmd));
 	buf = get_writable_struct(4096);
 	if (!buf)
 		return;
