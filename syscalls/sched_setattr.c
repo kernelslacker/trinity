@@ -8,6 +8,7 @@
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
+#include "utils.h"
 #include "compat.h"
 
 #ifndef SCHED_ATTR_SIZE_VER0
@@ -160,11 +161,37 @@ submit:
 		rec->a1 = 0;
 
 	/*
-	 * Hand the csfu buffer to the deferred-free queue at sanitise
-	 * time -- sched_setattr has no post handler, so this is the only
-	 * place the zmalloc_tracked() allocation gets released.
+	 * Stash the csfu buffer in rec->post_state so the unconditional
+	 * .cleanup hook frees it.  sched_setattr has no .post handler, so
+	 * this was the only release point; post_state is private to the
+	 * cleanup path and less stomp-prone than rec->a2.
 	 */
-	deferred_free_enqueue_or_leak(sa);
+	rec->post_state = (unsigned long) sa;
+}
+
+static void cleanup_sched_setattr(struct syscallrecord *rec)
+{
+	struct sched_attr *sa = (struct sched_attr *) rec->post_state;
+
+	rec->post_state = 0;
+
+	if (sa == NULL)
+		return;
+
+	/*
+	 * post_state is not exposed as a syscall arg, but the whole
+	 * record can be stomped by a sibling; guard the deref.  This
+	 * replaces the old deferred_free_enqueue_or_leak() pressure path.
+	 */
+	if (looks_like_corrupted_ptr(rec, sa))
+		return;
+
+	/*
+	 * sa came from build_csfu_struct() -> zmalloc_tracked(), which
+	 * registered the pointer in the alloc-track LRU.  tracked_free_now()
+	 * removes it from the LRU and frees it.
+	 */
+	tracked_free_now(sa);
 }
 
 struct syscallentry syscall_sched_setattr = {
@@ -175,4 +202,5 @@ struct syscallentry syscall_sched_setattr = {
 	.argname = { [0] = "pid", [1] = "uattr", [2] = "flags" },
 	.rettype = RET_ZERO_SUCCESS,
 	.sanitise = sanitise_sched_setattr,
+	.cleanup = cleanup_sched_setattr,
 };
