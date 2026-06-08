@@ -16,7 +16,7 @@
 
 static void dump_sysv_shm(struct object *obj, enum obj_scope scope)
 {
-	output(0, "sysv_shm: id:%u size:%ld flags:%x ptr:%p scope:%d\n",
+	output(0, "sysv_shm: id:%u size:%zu flags:%x ptr:%p scope:%d\n",
 		obj->sysv_shm.id, obj->sysv_shm.size,
 		obj->sysv_shm.flags, obj->sysv_shm.ptr, scope);
 }
