@@ -71,6 +71,42 @@ void alloc_track_refresh(void *ptr);
 void tracked_free_now(void *ptr);
 
 /*
+ * Generic .cleanup helper: release a zmalloc_tracked() buffer that the
+ * matching .sanitise stashed in rec->post_state.  Used by the family of
+ * cleanup_<syscall> handlers that all follow the same pattern --
+ * sanitise allocates a csfu/snap buffer with zmalloc_tracked() and
+ * parks it in post_state; .cleanup must release it unconditionally
+ * after dispatch.
+ *
+ * Steps, in order:
+ *   1. Clear rec->post_state up front so any early return below leaves
+ *      the record in a known-clean state (matches the pre-helper
+ *      handlers and the .post idiom).
+ *   2. NULL-bail.
+ *   3. Shape guard via looks_like_corrupted_ptr_pc().  Shape-only:
+ *      rejects NULL-ish / non-canonical / misaligned addresses.
+ *   4. Ownership gate via alloc_track_lookup().  Critical: the shape
+ *      guard passes any heap-shaped pointer, including FOREIGN ones
+ *      produced by a sibling stomp on the shm-resident syscallrecord.
+ *      Without this probe the unconditional free() inside
+ *      tracked_free_now() would hand a non-malloc'd address to free(),
+ *      a glibc/ASAN abort indistinguishable from a real finding.
+ *      A miss leaks the slot -- bounded, child exit reclaims, matches
+ *      the old deferred_free_enqueue_or_leak() pressure-path behaviour.
+ *   5. tracked_free_now() on a hit (consumes alloc_track + frees).
+ *
+ * Caller PC is captured via __builtin_return_address(0) and forwarded
+ * to looks_like_corrupted_ptr_pc(), so per-handler attribution in the
+ * shape-reject sub-ring still resolves to the individual
+ * cleanup_<syscall> callsite rather than collapsing onto a single
+ * helper PC.
+ *
+ * Handlers with extra per-syscall release work (e.g. zeroing a specific
+ * aN slot) should do that work at the call site, then call this helper.
+ */
+void cleanup_release_post_state(struct syscallrecord *rec);
+
+/*
  * Enqueue a pointer for deferred freeing.  Always released with free()
  * when the entry's TTL expires; the function-pointer parameter was
  * removed to eliminate the ROP/JOP surface a corrupted ring entry's

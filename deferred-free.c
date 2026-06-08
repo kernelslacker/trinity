@@ -520,6 +520,37 @@ void tracked_free_now(void *ptr)
 	free(ptr);
 }
 
+void cleanup_release_post_state(struct syscallrecord *rec)
+{
+	void *ptr = (void *) rec->post_state;
+
+	rec->post_state = 0;
+
+	if (ptr == NULL)
+		return;
+
+	/*
+	 * Shape gate first: cheap reject for NULL-ish / non-canonical /
+	 * misaligned scribbles.  Forward our caller's PC so per-handler
+	 * shape-reject attribution stays sharp.
+	 */
+	if (looks_like_corrupted_ptr_pc(rec, ptr, __builtin_return_address(0)))
+		return;
+
+	/*
+	 * Ownership gate: the shape guard waves through heap-shaped
+	 * foreign pointers, so verify @ptr was actually produced by a
+	 * zmalloc_tracked() in this child before handing it to free().
+	 * A miss is silently leaked -- bounded by child lifetime, vastly
+	 * preferable to a glibc/ASAN abort on a foreign address that
+	 * would masquerade as a real kernel finding.
+	 */
+	if (!alloc_track_lookup(ptr))
+		return;
+
+	tracked_free_now(ptr);
+}
+
 /*
  * Ring storage lives in an mmap'd region whose address range is registered
  * with shared_regions[] via track_shared_region().  That tracking lets

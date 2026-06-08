@@ -332,27 +332,7 @@ static void post_openat2(struct syscallrecord *rec)
 
 static void cleanup_openat2(struct syscallrecord *rec)
 {
-	struct open_how *how = (struct open_how *) rec->post_state;
-
-	rec->post_state = 0;
-
-	if (how == NULL)
-		return;
-
-	/*
-	 * post_state is not exposed as a syscall arg, but the whole
-	 * record can be stomped by a sibling; guard the deref.  This
-	 * replaces the old deferred_free_enqueue_or_leak() pressure path.
-	 */
-	if (looks_like_corrupted_ptr(rec, how))
-		return;
-
-	/*
-	 * how came from build_csfu_struct() -> zmalloc_tracked(), which
-	 * registered the pointer in the alloc-track LRU.  tracked_free_now()
-	 * removes it from the LRU and frees it.
-	 */
-	tracked_free_now(how);
+	cleanup_release_post_state(rec);
 }
 
 struct syscallentry syscall_openat2 = {

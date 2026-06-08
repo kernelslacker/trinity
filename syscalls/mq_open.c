@@ -221,11 +221,6 @@ static void post_mq_open(struct syscallrecord *rec)
 
 static void cleanup_mq_open(struct syscallrecord *rec)
 {
-	struct mq_open_post_state *snap =
-		(struct mq_open_post_state *) rec->post_state;
-
-	rec->post_state = 0;
-
 	/*
 	 * Do NOT zero rec->a1 here: a1 carries the name buffer pointer
 	 * returned by get_writable_struct(), which lives in a separate
@@ -233,29 +228,7 @@ static void cleanup_mq_open(struct syscallrecord *rec)
 	 * it would drop the syscall-arg ABI's view of the input without
 	 * any matching free.
 	 */
-
-	if (snap == NULL)
-		return;
-
-	/*
-	 * post_state is not exposed as a syscall arg, but the whole
-	 * syscallrecord can still be wholesale-stomped by a sibling.  A
-	 * shape-failing pointer is leaked rather than freed -- matches
-	 * the old deferred_free_enqueue_or_leak() pressure-path behaviour
-	 * (bounded leak reclaimed at child exit) and is strictly safer
-	 * than calling free() on a foreign / pid-shaped address.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap))
-		return;
-
-	/*
-	 * snap came from zmalloc_tracked(), which registered the pointer
-	 * in the alloc-track LRU.  tracked_free_now() removes it from the
-	 * ring and calls free() in one step; a raw free() would leave the
-	 * alloc-track side-set claiming the address is still live and
-	 * mislead subsequent alloc_track_lookup() callers.
-	 */
-	tracked_free_now(snap);
+	cleanup_release_post_state(rec);
 }
 
 struct syscallentry syscall_mq_open = {

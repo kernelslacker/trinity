@@ -129,34 +129,8 @@ static void post_io_uring_setup(struct syscallrecord *rec)
 
 static void cleanup_io_uring_setup(struct syscallrecord *rec)
 {
-	struct io_uring_params *params =
-		(struct io_uring_params *) rec->post_state;
-
-	rec->post_state = 0;
 	rec->a2 = 0;
-
-	if (params == NULL)
-		return;
-
-	/*
-	 * post_state is not exposed as a syscall arg, but the whole
-	 * syscallrecord can still be wholesale-stomped by a sibling.  A
-	 * shape-failing pointer is leaked rather than freed -- matches the
-	 * old deferred_free_enqueue_or_leak() pressure-path behaviour
-	 * (bounded leak reclaimed at child exit) and is strictly safer
-	 * than calling free() on a foreign / pid-shaped address.
-	 */
-	if (looks_like_corrupted_ptr(rec, params))
-		return;
-
-	/*
-	 * params came from zmalloc_tracked(), which registered the pointer
-	 * in the alloc-track LRU.  tracked_free_now() removes it from the
-	 * ring and calls free() in one step; a raw free() would leave the
-	 * alloc-track side-set claiming the address is still live and
-	 * mislead subsequent alloc_track_lookup() callers.
-	 */
-	tracked_free_now(params);
+	cleanup_release_post_state(rec);
 }
 
 struct syscallentry syscall_io_uring_setup = {

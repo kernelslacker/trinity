@@ -218,27 +218,7 @@ static void sanitise_open_tree_attr(struct syscallrecord *rec)
 
 static void cleanup_open_tree_attr(struct syscallrecord *rec)
 {
-	struct mount_attr *ma = (struct mount_attr *) rec->post_state;
-
-	rec->post_state = 0;
-
-	if (ma == NULL)
-		return;
-
-	/*
-	 * post_state is not exposed as a syscall arg, but the whole
-	 * record can be stomped by a sibling; guard the deref.  This
-	 * replaces the old deferred_free_enqueue_or_leak() pressure path.
-	 */
-	if (looks_like_corrupted_ptr(rec, ma))
-		return;
-
-	/*
-	 * ma came from build_csfu_struct() -> zmalloc_tracked(), which
-	 * registered the pointer in the alloc-track LRU.  tracked_free_now()
-	 * removes it from the LRU and frees it.
-	 */
-	tracked_free_now(ma);
+	cleanup_release_post_state(rec);
 }
 
 struct syscallentry syscall_open_tree_attr = {

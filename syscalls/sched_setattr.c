@@ -171,27 +171,7 @@ submit:
 
 static void cleanup_sched_setattr(struct syscallrecord *rec)
 {
-	struct sched_attr *sa = (struct sched_attr *) rec->post_state;
-
-	rec->post_state = 0;
-
-	if (sa == NULL)
-		return;
-
-	/*
-	 * post_state is not exposed as a syscall arg, but the whole
-	 * record can be stomped by a sibling; guard the deref.  This
-	 * replaces the old deferred_free_enqueue_or_leak() pressure path.
-	 */
-	if (looks_like_corrupted_ptr(rec, sa))
-		return;
-
-	/*
-	 * sa came from build_csfu_struct() -> zmalloc_tracked(), which
-	 * registered the pointer in the alloc-track LRU.  tracked_free_now()
-	 * removes it from the LRU and frees it.
-	 */
-	tracked_free_now(sa);
+	cleanup_release_post_state(rec);
 }
 
 struct syscallentry syscall_sched_setattr = {

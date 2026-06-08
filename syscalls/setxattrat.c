@@ -123,27 +123,7 @@ static void sanitise_setxattrat(struct syscallrecord *rec)
 #ifdef USE_XATTR_ARGS
 static void cleanup_setxattrat(struct syscallrecord *rec)
 {
-	struct xattr_args *args = (struct xattr_args *) rec->post_state;
-
-	rec->post_state = 0;
-
-	if (args == NULL)
-		return;
-
-	/*
-	 * post_state is not exposed as a syscall arg, but the whole
-	 * record can be stomped by a sibling; guard the deref.  This
-	 * replaces the old deferred_free_enqueue_or_leak() pressure path.
-	 */
-	if (looks_like_corrupted_ptr(rec, args))
-		return;
-
-	/*
-	 * args came from build_csfu_struct() -> zmalloc_tracked(), which
-	 * registered the pointer in the alloc-track LRU.  tracked_free_now()
-	 * removes it from the LRU and frees it.
-	 */
-	tracked_free_now(args);
+	cleanup_release_post_state(rec);
 }
 #endif
 

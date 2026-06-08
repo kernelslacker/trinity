@@ -1902,28 +1902,7 @@ static unsigned long perf_event_open_flags[] = {
 
 static void cleanup_perf_event_open(struct syscallrecord *rec)
 {
-	struct perf_event_attr *attr = (struct perf_event_attr *) rec->post_state;
-
-	rec->post_state = 0;
-
-	if (attr == NULL)
-		return;
-
-	/*
-	 * post_state is not exposed as a syscall arg, but the whole
-	 * record can be stomped by a sibling; guard the deref.  This
-	 * replaces the old sanitise-time deferred_free_enqueue_or_leak()
-	 * of the snap.
-	 */
-	if (looks_like_corrupted_ptr(rec, attr))
-		return;
-
-	/*
-	 * attr came from build_csfu_struct() -> zmalloc_tracked(), which
-	 * registered the pointer in the alloc-track LRU.  tracked_free_now()
-	 * removes it from the LRU and frees it.
-	 */
-	tracked_free_now(attr);
+	cleanup_release_post_state(rec);
 }
 
 struct syscallentry syscall_perf_event_open = {
