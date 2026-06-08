@@ -139,7 +139,7 @@ static void sanitise_madvise(struct syscallrecord *rec)
 	snap->addr   = rec->a1;
 	snap->len    = rec->a2;
 	snap->advice = rec->a3;
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 }
 
 /*
@@ -174,37 +174,17 @@ static bool madvise_advice_hole_punches(unsigned long advice)
 
 static void post_madvise(struct syscallrecord *rec)
 {
-	struct madvise_post_state *snap =
-		(struct madvise_post_state *) rec->post_state;
+	struct madvise_post_state *snap;
 
+	/*
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
+	 */
+	snap = post_state_claim_owned(rec, MADVISE_POST_STATE_MAGIC, __func__);
 	if (snap == NULL)
 		return;
-
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 * looks_like_corrupted_ptr bumps the corrupt-ptr counter
-	 * internally on a positive result; no outputerr here because
-	 * child-context output() silently dup2'd /dev/null.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		rec->post_state = 0;
-		return;
-	}
-
-	/*
-	 * Magic-cookie check: a sibling scribble of rec->post_state with a
-	 * heap-shaped pointer to a foreign allocation would let the wrong
-	 * bytes pose as a madvise_post_state.  A mismatch means snap does
-	 * not point at our struct -- abandon without freeing rather than
-	 * feed wild bytes into invalidate_obj_mmap_in_range().
-	 */
-	if (snap->magic != MADVISE_POST_STATE_MAGIC) {
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
 
 	if (rec->retval != 0)
 		goto out_free;
@@ -218,7 +198,7 @@ static void post_madvise(struct syscallrecord *rec)
 	invalidate_obj_mmap_in_range(snap->addr, snap->len);
 
 out_free:
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 
 static unsigned long madvise_advices[] = {
