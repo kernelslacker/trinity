@@ -7,6 +7,7 @@
 #include <sys/types.h>
 #include <signal.h>
 #include <unistd.h>
+#include "arch.h"
 #include "objects.h"
 #include "params.h"	// dangerous
 #include "pids.h"
@@ -261,7 +262,7 @@ void dump_childnos(void)
 void dump_pids_page_state(void)
 {
 	uintptr_t base = (uintptr_t) pids;
-	uintptr_t page = base & ~((uintptr_t) 4095);
+	uintptr_t page = base & (uintptr_t) PAGE_MASK;
 	const unsigned char *p = (const unsigned char *) page;
 	unsigned int dump_bytes = 512;
 	unsigned int i, nz = 0;
@@ -307,10 +308,10 @@ void dump_pids_page_state(void)
 			  p[i+12], p[i+13], p[i+14], p[i+15]);
 	}
 
-	for (i = dump_bytes; i < 4096; i++)
+	for (i = dump_bytes; i < page_size; i++)
 		if (p[i] != 0)
 			nz++;
-	outputerr("page tail [%u..4096): %u non-zero bytes\n", dump_bytes, nz);
+	outputerr("page tail [%u..%u): %u non-zero bytes\n", dump_bytes, page_size, nz);
 	outputerr("running_childs=%u\n",
 		  __atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED));
 	outputerr("=== end pids[] page state ===\n");
