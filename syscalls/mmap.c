@@ -33,6 +33,10 @@
 #define MAP_SYNC 0x080000
 #endif
 
+#ifndef MAP_ABOVE4G
+#define MAP_ABOVE4G 0x80
+#endif
+
 static void do_anon(struct syscallrecord *rec)
 {
 	/* no fd if anonymous mapping. */
@@ -60,6 +64,7 @@ unsigned long get_rand_mmap_flags(void)
 		MAP_FIXED_NOREPLACE, MAP_DROPPABLE,
 #ifdef __x86_64__
 		MAP_32BIT,
+		MAP_ABOVE4G,
 #endif
 	};
 
