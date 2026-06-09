@@ -566,6 +566,110 @@ static bool guard_scope_covers(bool is_pool)
 		return false;
 	}
 }
+
+/*
+ * Classify a fault address against the guarded regions tracked in
+ * shared_regions[].  Returns true and fills outs when @fault_addr
+ * lands in either the leading or trailing PROT_NONE page abutting a
+ * guarded region; false otherwise.
+ *
+ * Called from child_fault_handler() on every fatal-signal delivery
+ * before the in-handler diagnostic path runs, so this MUST be async-
+ * signal-safe: plain reads of file-scope arrays only -- no allocator,
+ * no stdio, no lock, no libc call outside the POSIX 2024 sec 2.4.3 set.
+ * shared_regions[] is published once at init time (single-threaded
+ * parent context) and never mutated past first fork, so a child
+ * handler observing it sees a stable snapshot.  The page_size global
+ * is set in init_main_process(), also before any fork.
+ *
+ * @delta_out is the byte-distance from the fault address to the
+ * nearest legitimate edge of the region: how far past the end for a
+ * trailing-guard fault (fault_addr - region_end), or how far before
+ * the start for a leading-guard fault (region_start - fault_addr - 1
+ * mapped through 0).  Bounded by page_size by construction.
+ */
+bool guard_pages_classify(uintptr_t fault_addr,
+			  uintptr_t *region_addr_out,
+			  size_t *region_size_out,
+			  bool *trailing_out,
+			  unsigned long *delta_out)
+{
+	uintptr_t ps = (uintptr_t)page_size;
+	uintptr_t leading_start, trailing_start;
+	unsigned long pages;
+	unsigned int i;
+
+	if (ps == 0)
+		return false;
+
+	for (i = 0; i < nr_shared_regions; i++) {
+		if (shared_regions[i].guarded == 0)
+			continue;
+
+		pages = (shared_regions[i].size + ps - 1) & ~(ps - 1);
+		leading_start = shared_regions[i].addr - ps -
+				(pages - shared_regions[i].size);
+		trailing_start = shared_regions[i].addr +
+				 shared_regions[i].size;
+		/* trailing guard sits at base+PAGE+pages == addr+size +
+		 * (pages - size); collapse via the layout invariant. */
+		trailing_start = leading_start + ps + pages;
+
+		if (fault_addr >= leading_start &&
+		    fault_addr < leading_start + ps) {
+			*region_addr_out = shared_regions[i].addr;
+			*region_size_out = shared_regions[i].size;
+			*trailing_out = false;
+			*delta_out = (unsigned long)
+				(shared_regions[i].addr - fault_addr);
+			return true;
+		}
+		if (fault_addr >= trailing_start &&
+		    fault_addr < trailing_start + ps) {
+			*region_addr_out = shared_regions[i].addr;
+			*region_size_out = shared_regions[i].size;
+			*trailing_out = true;
+			*delta_out = (unsigned long)
+				(fault_addr -
+				 (shared_regions[i].addr +
+				  shared_regions[i].size));
+			return true;
+		}
+	}
+
+	for (i = 0; i < nr_shared_regions_overflow; i++) {
+		if (shared_regions_overflow[i].guarded == 0)
+			continue;
+
+		pages = (shared_regions_overflow[i].size + ps - 1) & ~(ps - 1);
+		leading_start = shared_regions_overflow[i].addr - ps -
+				(pages - shared_regions_overflow[i].size);
+		trailing_start = leading_start + ps + pages;
+
+		if (fault_addr >= leading_start &&
+		    fault_addr < leading_start + ps) {
+			*region_addr_out = shared_regions_overflow[i].addr;
+			*region_size_out = shared_regions_overflow[i].size;
+			*trailing_out = false;
+			*delta_out = (unsigned long)
+				(shared_regions_overflow[i].addr - fault_addr);
+			return true;
+		}
+		if (fault_addr >= trailing_start &&
+		    fault_addr < trailing_start + ps) {
+			*region_addr_out = shared_regions_overflow[i].addr;
+			*region_size_out = shared_regions_overflow[i].size;
+			*trailing_out = true;
+			*delta_out = (unsigned long)
+				(fault_addr -
+				 (shared_regions_overflow[i].addr +
+				  shared_regions_overflow[i].size));
+			return true;
+		}
+	}
+
+	return false;
+}
 #endif	/* CONFIG_GUARD_SHARED */
 
 #ifdef CONFIG_GUARD_SHARED

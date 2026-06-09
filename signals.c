@@ -19,6 +19,7 @@
 #include "shm.h"
 #include "pids.h"
 #include "child.h"
+#include "utils.h"	// guard_pages_classify (CONFIG_GUARD_SHARED only)
 
 volatile sig_atomic_t sigalrm_pending;
 volatile sig_atomic_t xcpu_pending;
@@ -711,6 +712,68 @@ void child_fault_handler(int sig, siginfo_t *info, void *ctx)
 		int nframes = backtrace(frames, 64);
 
 		backtrace_symbols_fd(frames, nframes, STDERR_FILENO);
+	}
+#endif
+#ifdef CONFIG_GUARD_SHARED
+	/*
+	 * Guard-page attribution.  When --guard-shared wrapped a tracked
+	 * region in PROT_NONE pages and a fuzzer write overflows past
+	 * the buffer, the kernel raises SIGSEGV at the writing
+	 * instruction with si_addr inside the guard page.  Walk the
+	 * tracked-region table to find the abutting region and emit a
+	 * single line naming WHICH region was overflowed, WHICH
+	 * direction (leading=underflow vs trailing=forward overflow),
+	 * how far past the edge, and the writer PC -- the one-line root
+	 * cause the hunt instrument exists to produce.
+	 *
+	 * Skipped for non-SIGSEGV faults (a SIGBUS or SIGABRT can still
+	 * reach the in-handler diagnostic path but is not a guard trip
+	 * by construction).  Async-signal-safe: guard_pages_classify is
+	 * a plain read of shared_regions[], the format path uses only
+	 * the sigsafe_* byte builders that write_siginfo_safely below
+	 * already relies on, and the output is a single write() to the
+	 * inherited stderr (which dup2 redirected to the per-pid bug
+	 * log a few statements above).  No allocator, no stdio, no
+	 * libc lookup, no lock.
+	 *
+	 * The writer PC is emitted raw rather than resolved through
+	 * dladdr() because dladdr is not on the POSIX 2024 sec 2.4.3
+	 * safe list and the existing handler bans it for the same
+	 * reason; the bugs.txt post-parser resolves PIE-relative
+	 * offsets offline against the binary's load base, same idiom as
+	 * fault_beacon's stored fault_ip.
+	 */
+	if (sig == SIGSEGV) {
+		uintptr_t region_addr;
+		size_t region_size;
+		bool trailing;
+		unsigned long delta;
+
+		if (guard_pages_classify((uintptr_t)info->si_addr,
+					 &region_addr, &region_size,
+					 &trailing, &delta)) {
+			char buf[256];
+			struct sigsafe_buf b = { buf, sizeof(buf) };
+			size_t used;
+			ssize_t w;
+
+			sigsafe_puts(&b, "GUARD TRAP: region=");
+			sigsafe_putp(&b, (void *)region_addr);
+			sigsafe_puts(&b, " size=");
+			sigsafe_putu(&b, (unsigned long)region_size);
+			sigsafe_puts(&b, trailing ? " trailing" : " leading");
+			sigsafe_puts(&b, " overflow delta=");
+			sigsafe_putu(&b, delta);
+			sigsafe_puts(&b, " writer=");
+			sigsafe_putp(&b, fault_beacon_extract_ip(ctx));
+			sigsafe_puts(&b, " si_addr=");
+			sigsafe_putp(&b, info->si_addr);
+			sigsafe_putc(&b, '\n');
+
+			used = sizeof(buf) - b.left;
+			w = write(STDERR_FILENO, buf, used);
+			(void)w;	/* dying anyway; short write irrelevant */
+		}
 	}
 #endif
 	write_siginfo_safely(sig, info, "trinity child");

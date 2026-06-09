@@ -87,6 +87,25 @@ void * alloc_shared(size_t size) __must_check;
 void * __alloc_shared(size_t size, bool is_pool) __must_check;
 void * alloc_shared_pool(size_t size) __must_check;
 void free_shared(void *p, size_t size);
+
+/*
+ * Classify a fault address against the guarded regions.  Returns true
+ * iff @fault_addr lands in either the leading or trailing PROT_NONE
+ * page abutting a guarded region; fills the outs in that case.
+ * Async-signal-safe -- the only consumer is child_fault_handler.
+ *
+ * region_addr_out/region_size_out: the INNER buffer (addr, size) the
+ * scribble was aimed past.
+ * trailing_out: true iff the trailing guard was struck (forward
+ * overflow), false for a leading-guard hit (gross underflow).
+ * delta_out: bytes past the region end (trailing) or before the
+ * region start (leading).  Bounded by page_size by construction.
+ */
+bool guard_pages_classify(uintptr_t fault_addr,
+			  uintptr_t *region_addr_out,
+			  size_t *region_size_out,
+			  bool *trailing_out,
+			  unsigned long *delta_out);
 #else
 #define alloc_shared_pool(size)	alloc_shared(size)
 #endif
