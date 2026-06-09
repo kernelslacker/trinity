@@ -43,6 +43,7 @@
 #include <linux/landlock.h>
 #include <linux/mman.h>
 #include <linux/mount.h>
+#include <linux/fs.h>
 #include <mqueue.h>
 
 #include "compat.h"
@@ -2026,6 +2027,45 @@ static const struct struct_field xattr_args_fields[] = {
 	       .mutate_weight = 80),
 };
 #endif
+
+/* ------------------------------------------------------------------ */
+/* struct file_attr (file_setattr)                                     */
+/* ------------------------------------------------------------------ */
+
+/*
+ * struct file_attr from <linux/fs.h> (shimmed in include/compat.h when
+ * the system uapi headers predate the file_getattr/file_setattr
+ * addition).  The bespoke sanitise_file_setattr() owns the live fill --
+ * build_csfu_struct(&desc_file_setattr) stamps the size word envelope
+ * and the in-line xflag picker draws fa_xflags from a curated
+ * FS_XFLAG_* pool with an occasional outside-mask leg; this
+ * registration layers per-field CMP attribution on top.
+ *
+ * fa_xflags carries the FS_XFLAG_* vocabulary -- anything outside the
+ * mask is bounced by vfs_fileattr_set() on -EINVAL before the kernel
+ * reaches the real setattr arms, so the mask is the entire useful CMP
+ * vocabulary.  fa_extsize / fa_nextents / fa_projid / fa_cowextsize are
+ * free u32 slots the kernel reads as raw values.  Mirrors the
+ * attribution-only treatment of timer_create's sigevent, rseq, and
+ * the just-landed xattr_args entries.
+ */
+#define FILE_ATTR_XFLAGS_MASK						\
+	(FS_XFLAG_REALTIME    | FS_XFLAG_PREALLOC    | FS_XFLAG_IMMUTABLE | \
+	 FS_XFLAG_APPEND      | FS_XFLAG_SYNC        | FS_XFLAG_NOATIME  | \
+	 FS_XFLAG_NODUMP      | FS_XFLAG_RTINHERIT   | FS_XFLAG_PROJINHERIT | \
+	 FS_XFLAG_NOSYMLINKS  | FS_XFLAG_EXTSIZE     | FS_XFLAG_EXTSZINHERIT | \
+	 FS_XFLAG_NODEFRAG    | FS_XFLAG_FILESTREAM  | FS_XFLAG_DAX      | \
+	 FS_XFLAG_COWEXTSIZE  | FS_XFLAG_HASATTR)
+
+static const struct struct_field file_attr_fields[] = {
+	FIELDX(struct file_attr, fa_xflags, FT_FLAGS,
+	       .u.flags.mask = FILE_ATTR_XFLAGS_MASK,
+	       .mutate_weight = 80),
+	FIELD(struct file_attr, fa_extsize),
+	FIELD(struct file_attr, fa_nextents),
+	FIELD(struct file_attr, fa_projid),
+	FIELD(struct file_attr, fa_cowextsize),
+};
 
 /* ------------------------------------------------------------------ */
 /* struct __user_cap_header_struct (capset, capget)                    */
@@ -4449,6 +4489,21 @@ const struct struct_desc struct_catalog[] = {
 		.num_fields	= ARRAY_SIZE(xattr_args_fields),
 	},
 #endif
+	/*
+	 * file_attr: appended at the tail so the existing
+	 * struct_catalog[N] indices above stay stable.  The
+	 * syscall_struct_args[] mapping below uses
+	 * ARRAY_SIZE(struct_catalog) - 1 to address this slot, sparing
+	 * us the USE_BPF / USE_XATTR_ARGS index gymnastics that would
+	 * otherwise be needed (this is the new last entry under every
+	 * configure combination).
+	 */
+	{
+		.name		= "file_attr",
+		.struct_size	= sizeof(struct file_attr),
+		.fields		= file_attr_fields,
+		.num_fields	= ARRAY_SIZE(file_attr_fields),
+	},
 };
 
 const unsigned int struct_catalog_count = ARRAY_SIZE(struct_catalog);
@@ -4781,6 +4836,26 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	{ "getxattrat",		5, &struct_catalog[37] },
 #endif
 #endif
+	/*
+	 * file_setattr(int dfd, const char __user *filename,
+	 *              struct file_attr __user *ufattr, size_t usize,
+	 *              unsigned int at_flags)
+	 * a3 is the INPUT struct file_attr pointer.  The bespoke
+	 * sanitise_file_setattr() keeps owning the live fill via
+	 * build_csfu_struct(&desc_file_setattr) and the curated
+	 * FS_XFLAG_* pool picker; this registration is attribution-only
+	 * so struct_field_for_cmp can steer CMP-learned constants at
+	 * the named fa_xflags / fa_extsize / fa_nextents / fa_projid /
+	 * fa_cowextsize slots rather than at a coincidentally-same-
+	 * width slot.  Sized via ARRAY_SIZE(struct_catalog) - 1 so the
+	 * tail position resolves correctly under every USE_BPF /
+	 * USE_XATTR_ARGS combination.
+	 *
+	 * Not mapped here on purpose: file_getattr's a2 buffer is a
+	 * kernel-written OUTPUT and has no input fill to attribute
+	 * against.
+	 */
+	{ "file_setattr",	3, &struct_catalog[ARRAY_SIZE(struct_catalog) - 1] },
 	/* sentinel */
 	{ NULL, 0, NULL },
 };
