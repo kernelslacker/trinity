@@ -34,6 +34,20 @@
 #define MAX_WALKED_PATHS 10000
 
 /*
+ * Maximum number of entries the walk will stat per pool.  MAX_WALKED_PATHS
+ * only counts entries that pass check_stat_file(), so a tree dense with
+ * unreadable nodes (a busy /sys with thousands of cgroups, NICs, and per-
+ * device attribute files) can stat hundreds of thousands of entries before
+ * the collected-cap fires.  Strace on a loaded host showed 800K+ newfstatat
+ * calls at init — appears as a multi-minute hang before fuzzing starts.
+ *
+ * Set well above a normal host's /sys size (50-150K typical) so coverage
+ * isn't truncated under normal conditions; only the pathological case is
+ * bounded.  Reset per pool in open_fds_from_path().
+ */
+#define MAX_WALKED_ENTRIES 200000
+
+/*
  * Probability (0-100) that generate_pathname() draws from the walked pool
  * rather than from the hardcoded interesting-paths list.  The hardcoded
  * list is a lightweight fallback that guarantees coverage of a few
@@ -55,8 +69,13 @@ struct pathname_pool {
 static struct pathname_pool pools[MAX_PATHNAME_POOLS];
 static unsigned int num_pools;
 
-/* Set to true when the walk terminates early due to MAX_WALKED_PATHS. */
+/* Set to true when the walk terminates early due to MAX_WALKED_PATHS
+ * or MAX_WALKED_ENTRIES. */
 static bool pool_cap_reached;
+
+/* Entries seen by file_tree_callback for the current pool walk, regardless
+ * of whether they were collected.  Reset in open_fds_from_path(). */
+static unsigned int walked_entries;
 
 struct namelist {
 	struct list_head list;
@@ -358,6 +377,14 @@ int check_stat_file(const struct stat *sb)
 
 static int file_tree_callback(const char *fpath, const struct stat *sb, int typeflag, __unused__ struct FTW *ftwbuf)
 {
+	/* Bail the walk if we've stat'd enough entries already — backstop
+	 * against pathological /proc+/sys explosions where unreadable nodes
+	 * vastly outnumber readable ones and MAX_WALKED_PATHS never fires. */
+	if (++walked_entries > MAX_WALKED_ENTRIES) {
+		pool_cap_reached = true;
+		return FTW_STOP;
+	}
+
 	if (typeflag == FTW_DNR)
 		return FTW_CONTINUE;
 
@@ -401,6 +428,7 @@ static void open_fds_from_path(const char *dirpath)
 	int ret;
 
 	pool_cap_reached = false;
+	walked_entries = 0;
 
 	/* By default, don't follow symlinks so we only get each file once.
 	 * But, if we do something like -V /lib, then follow it
@@ -417,6 +445,10 @@ static void open_fds_from_path(const char *dirpath)
 				dirpath, ret, strerror(errno));
 		return;
 	}
+
+	if (walked_entries > MAX_WALKED_ENTRIES)
+		output(0, "Walk cap (%u entries) hit for %s -- filelist truncated\n",
+			MAX_WALKED_ENTRIES, dirpath);
 
 	output(0, "Added %d filenames from %s\n", files_in_index - before, dirpath);
 }
