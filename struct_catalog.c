@@ -13,6 +13,7 @@
 #include <string.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <sys/time.h>
 #include <sys/timex.h>
 #include <sys/resource.h>
 #include <sys/epoll.h>
@@ -705,6 +706,40 @@ static const struct struct_field itimerval_fields[] = {
 static const struct struct_field utimbuf_fields[] = {
 	FIELD(struct utimbuf, actime),
 	FIELD(struct utimbuf, modtime),
+};
+
+/* ------------------------------------------------------------------ */
+/* struct timeval (settimeofday, select)                               */
+/* ------------------------------------------------------------------ */
+
+/*
+ * struct timeval is the (tv_sec, tv_usec) pair the kernel takes at
+ * settimeofday's a1 (INPUT wall-clock value) and at select's a5
+ * (INOUT timeout).  Both syscalls already carry a bespoke .sanitise
+ * that owns the live fill via get_writable_address(): settimeofday
+ * biases 70% near-now / 30% random with an explicit invalid-tv_usec
+ * leg, and select stamps a deterministic short {0, 10us} timeout.
+ * Without a catalog entry the slots were filled but had no schema
+ * path of their own, so struct_field_for_cmp() had nothing to hang
+ * KCOV-CMP attribution against and learned constants fell at a
+ * coincidentally-same-width slot rather than at a named field.
+ *
+ * Registration is attribution-only, mirroring the in-tree timespec /
+ * utimensat handling and the landed utimbuf / flock / sigevent
+ * commits: the bespoke sanitisers keep owning the fill -- this only
+ * feeds the CMP-attribution path.  tv_sec stays FT_RAW so the
+ * near-now / random / wraparound bytes the bespoke fills already
+ * produce are preserved; tv_usec is pinned to the legal microsecond
+ * range so attribution at the named tv_usec slot lines up with the
+ * kernel's timeval_valid() check rather than landing on a
+ * coincidentally-same-width neighbour.  Bound mirrors the
+ * itimerval_fields[] tv_usec precedent (0..999999).
+ */
+static const struct struct_field timeval_fields[] = {
+	FIELD(struct timeval, tv_sec),
+	FIELDX(struct timeval, tv_usec, FT_RANGE,
+	       .u.range = { 0, 999999UL },
+	       .mutate_weight = 60),
 };
 
 /* ------------------------------------------------------------------ */
@@ -4236,6 +4271,19 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= flock_fields,
 		.num_fields	= ARRAY_SIZE(flock_fields),
 	},
+	/*
+	 * timeval: appended at the tail so the existing struct_catalog[N]
+	 * indices above stay stable; the syscall_struct_args[] mapping
+	 * below picks up the new entry via an explicit USE_BPF-aware index
+	 * since the bpf_attr / bpf_insn entries shift the position by two
+	 * when USE_BPF is set.
+	 */
+	{
+		.name		= "timeval",
+		.struct_size	= sizeof(struct timeval),
+		.fields		= timeval_fields,
+		.num_fields	= ARRAY_SIZE(timeval_fields),
+	},
 };
 
 const unsigned int struct_catalog_count = ARRAY_SIZE(struct_catalog);
@@ -4467,6 +4515,32 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * l_pid slots rather than at a coincidentally-same-width slot.
 	 */
 	{ "fcntl",		3, &struct_catalog[35] },
+	/*
+	 * settimeofday(struct timeval __user *tv, struct timezone __user *tz)
+	 * a1 is the INPUT struct timeval pointer.  The bespoke
+	 * sanitise_settimeofday() keeps owning the live fill (70% near-now
+	 * via clock_gettime() + bounded tv_usec, 30% random with an
+	 * explicit invalid-tv_usec leg).  Attribution-only registration
+	 * lets struct_field_for_cmp steer CMP-learned constants at the
+	 * named tv_sec / tv_usec slots rather than at a coincidentally-
+	 * same-width slot.
+	 *
+	 * select(int n, fd_set *, fd_set *, fd_set *, struct timeval *tvp)
+	 * a5 is the INOUT timeout pointer.  sanitise_select() stamps a
+	 * deterministic {0, 10us} short timeout in the writable buffer it
+	 * allocates; the kernel may write back the remaining time, so the
+	 * slot is INOUT.  Attribution-only registration again -- the
+	 * bespoke fill remains the sole writer; the catalog entry just
+	 * lets CMP-learned constants attribute at tv_sec / tv_usec rather
+	 * than at a coincidentally-same-width slot.
+	 *
+	 * Not mapped here on purpose: utimes / futimesat pass a
+	 * struct timeval[2] array, which the single-struct descriptor
+	 * cannot represent, and gettimeofday's a1 is a kernel-written
+	 * OUTPUT buffer with no input fill to attribute against.
+	 */
+	{ "settimeofday",	1, &struct_catalog[36] },
+	{ "select",		5, &struct_catalog[36] },
 #else
 	{ "clock_nanosleep",	3, &struct_catalog[22] },
 	{ "nanosleep",		1, &struct_catalog[22] },
@@ -4486,6 +4560,8 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	{ "setitimer",		2, &struct_catalog[31] },
 	{ "utime",		2, &struct_catalog[32] },
 	{ "fcntl",		3, &struct_catalog[33] },
+	{ "settimeofday",	1, &struct_catalog[34] },
+	{ "select",		5, &struct_catalog[34] },
 #endif
 	/* sentinel */
 	{ NULL, 0, NULL },
