@@ -743,6 +743,43 @@ static const struct struct_field timeval_fields[] = {
 };
 
 /* ------------------------------------------------------------------ */
+/* struct timezone (settimeofday)                                      */
+/* ------------------------------------------------------------------ */
+
+/*
+ * struct timezone is the (tz_minuteswest, tz_dsttime) pair settimeofday
+ * takes at a2.  The bespoke sanitise_settimeofday() owns the live fill
+ * via get_writable_address(): a 50/50 zero-vs-random leg producing
+ * tz_minuteswest in [-780, +780] (-13h..+13h in minutes) and tz_dsttime
+ * in [0, 3].  Without a catalog entry the slot was filled but had no
+ * schema path of its own, so struct_field_for_cmp() had nothing to
+ * hang KCOV-CMP attribution against and learned constants fell at a
+ * coincidentally-same-width slot rather than at a named field.
+ *
+ * Registration is attribution-only, mirroring the in-tree timespec /
+ * utimensat handling and the landed timeval / utimbuf / flock commits:
+ * the bespoke sanitiser keeps owning the fill -- this only feeds the
+ * CMP-attribution path.  tz_minuteswest is left FT_RAW: the live fill
+ * spans a signed window [-780, +780] and the FT_RANGE union carries
+ * unsigned bounds (struct { unsigned long lo, hi; } range), so a
+ * literal {-780, 780} would wrap to a garbage upper bound; the signed
+ * bytes the bespoke fill produces are preserved verbatim.  tz_dsttime
+ * is all-positive [0, 3] and pins cleanly to FT_RANGE so attribution
+ * at the named slot lines up with the kernel's narrow legal window.
+ */
+static const struct struct_field timezone_fields[] = {
+	/*
+	 * FT_RANGE's bounds are unsigned long, so this signed
+	 * [-780, +780] minutes-west window cannot be expressed as a
+	 * range; keep FT_RAW and let the bespoke fill own the value.
+	 */
+	FIELD(struct timezone, tz_minuteswest),
+	FIELDX(struct timezone, tz_dsttime, FT_RANGE,
+	       .u.range = { 0, 3 },
+	       .mutate_weight = 40),
+};
+
+/* ------------------------------------------------------------------ */
 /* struct flock (fcntl)                                                */
 /* ------------------------------------------------------------------ */
 
@@ -4284,6 +4321,19 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= timeval_fields,
 		.num_fields	= ARRAY_SIZE(timeval_fields),
 	},
+	/*
+	 * timezone: appended at the tail so the existing struct_catalog[N]
+	 * indices above stay stable; the syscall_struct_args[] mapping
+	 * below picks up the new entry via an explicit USE_BPF-aware index
+	 * since the bpf_attr / bpf_insn entries shift the position by two
+	 * when USE_BPF is set.
+	 */
+	{
+		.name		= "timezone",
+		.struct_size	= sizeof(struct timezone),
+		.fields		= timezone_fields,
+		.num_fields	= ARRAY_SIZE(timezone_fields),
+	},
 };
 
 const unsigned int struct_catalog_count = ARRAY_SIZE(struct_catalog);
@@ -4541,6 +4591,20 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 */
 	{ "settimeofday",	1, &struct_catalog[36] },
 	{ "select",		5, &struct_catalog[36] },
+	/*
+	 * settimeofday(struct timeval __user *tv, struct timezone __user *tz)
+	 * a2 is the INPUT struct timezone pointer.  The bespoke
+	 * sanitise_settimeofday() keeps owning the live fill via a
+	 * RAND_BOOL() gate over get_writable_address(): a 50/50 zero-leg vs
+	 * random-leg producing tz_minuteswest in [-780, +780] and tz_dsttime
+	 * in [0, 3].  Attribution-only registration lets struct_field_for_cmp
+	 * steer CMP-learned constants at the named tz_minuteswest /
+	 * tz_dsttime slots rather than at a coincidentally-same-width slot.
+	 *
+	 * Not mapped here on purpose: gettimeofday's a2 is a kernel-written
+	 * OUTPUT buffer with no input fill to attribute against.
+	 */
+	{ "settimeofday",	2, &struct_catalog[37] },
 #else
 	{ "clock_nanosleep",	3, &struct_catalog[22] },
 	{ "nanosleep",		1, &struct_catalog[22] },
@@ -4562,6 +4626,7 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	{ "fcntl",		3, &struct_catalog[33] },
 	{ "settimeofday",	1, &struct_catalog[34] },
 	{ "select",		5, &struct_catalog[34] },
+	{ "settimeofday",	2, &struct_catalog[35] },
 #endif
 	/* sentinel */
 	{ NULL, 0, NULL },
