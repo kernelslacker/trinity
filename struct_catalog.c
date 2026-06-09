@@ -1942,6 +1942,55 @@ static const struct struct_field mnt_id_req_fields[] = {
 };
 
 /* ------------------------------------------------------------------ */
+/* struct ns_id_req (listns)                                           */
+/* ------------------------------------------------------------------ */
+
+/*
+ * struct ns_id_req from include/uapi/linux/nsfs.h.  Defined locally
+ * under the same #ifndef guard the listns sanitiser uses so the
+ * translation unit builds against kernel headers that predate the
+ * struct.  The shape MUST match the one in syscalls/listns.c -- a
+ * future header bump that grows the struct needs both copies updated.
+ *
+ * ns_type carries a single CLONE_NEW* namespace selector.  An out-of-
+ * vocab bit makes listns return -EINVAL before any iterator runs, so
+ * an FT_RAW splat almost never reaches the namespace lookup paths;
+ * mask the field to the eight defined CLONE_NEW* bits so CMP-learned
+ * constants attribute against a real selector.  CLONE_NEWCGROUP /
+ * CLONE_NEWTIME are shimmed because older kernel headers may omit
+ * them; mirror the listns sanitiser's shim values verbatim.
+ */
+#ifndef NS_ID_REQ_SIZE_VER0
+struct ns_id_req {
+	__u32 size;
+	__u32 ns_type;
+	__u64 ns_id;
+	__u64 user_ns_id;
+};
+#define NS_ID_REQ_SIZE_VER0	24
+#endif
+
+#ifndef CLONE_NEWCGROUP
+#define CLONE_NEWCGROUP		0x02000000
+#endif
+
+#ifndef CLONE_NEWTIME
+#define CLONE_NEWTIME		0x00000080
+#endif
+
+#define NS_ID_REQ_NS_TYPE_MASK \
+	(CLONE_NEWNS   | CLONE_NEWUTS  | CLONE_NEWIPC     | CLONE_NEWUSER | \
+	 CLONE_NEWPID  | CLONE_NEWNET  | CLONE_NEWCGROUP  | CLONE_NEWTIME)
+
+static const struct struct_field ns_id_req_fields[] = {
+	FIELD(struct ns_id_req, size),
+	FIELDX(struct ns_id_req, ns_type, FT_FLAGS,
+	       .u.flags.mask = NS_ID_REQ_NS_TYPE_MASK),
+	FIELD(struct ns_id_req, ns_id),
+	FIELD(struct ns_id_req, user_ns_id),
+};
+
+/* ------------------------------------------------------------------ */
 /* struct __user_cap_header_struct (capset, capget)                    */
 /* ------------------------------------------------------------------ */
 
@@ -4334,6 +4383,19 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= timezone_fields,
 		.num_fields	= ARRAY_SIZE(timezone_fields),
 	},
+	/*
+	 * ns_id_req: appended at the tail so the existing struct_catalog[N]
+	 * indices above stay stable; the syscall_struct_args[] mapping
+	 * below picks up the new entry via an explicit USE_BPF-aware index
+	 * since the bpf_attr / bpf_insn entries shift the position by two
+	 * when USE_BPF is set.
+	 */
+	{
+		.name		= "ns_id_req",
+		.struct_size	= sizeof(struct ns_id_req),
+		.fields		= ns_id_req_fields,
+		.num_fields	= ARRAY_SIZE(ns_id_req_fields),
+	},
 };
 
 const unsigned int struct_catalog_count = ARRAY_SIZE(struct_catalog);
@@ -4605,6 +4667,19 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * OUTPUT buffer with no input fill to attribute against.
 	 */
 	{ "settimeofday",	2, &struct_catalog[37] },
+	/*
+	 * listns(const struct ns_id_req __user *req, u64 __user *ns_ids,
+	 *        size_t nr_ns_ids, unsigned int flags)
+	 * a1 is the INPUT struct ns_id_req pointer.  sanitise_listns()
+	 * keeps owning the live fill via build_csfu_struct(&desc_listns)
+	 * -- the csfu path stamps the versioned size word and the
+	 * subsequent ns_type / ns_id / user_ns_id pickers populate the
+	 * remaining slots.  Attribution-only registration lets
+	 * struct_field_for_cmp steer CMP-learned constants at the named
+	 * size / ns_type / ns_id / user_ns_id slots, with ns_type masked
+	 * to the eight defined CLONE_NEW* selector bits.
+	 */
+	{ "listns",		1, &struct_catalog[38] },
 #else
 	{ "clock_nanosleep",	3, &struct_catalog[22] },
 	{ "nanosleep",		1, &struct_catalog[22] },
@@ -4627,6 +4702,7 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	{ "settimeofday",	1, &struct_catalog[34] },
 	{ "select",		5, &struct_catalog[34] },
 	{ "settimeofday",	2, &struct_catalog[35] },
+	{ "listns",		1, &struct_catalog[36] },
 #endif
 	/* sentinel */
 	{ NULL, 0, NULL },
