@@ -25,6 +25,7 @@
 #include <sys/sem.h>
 #include <sched.h>
 #include <time.h>
+#include <utime.h>
 #include <netinet/in.h>
 #include <linux/netlink.h>
 #include <linux/if_arp.h>
@@ -678,6 +679,32 @@ static const struct struct_field itimerval_fields[] = {
 	FIELDX(struct itimerval, it_value.tv_usec, FT_RANGE,
 	       .u.range = { 0, 999999UL },
 	       .mutate_weight = 60),
+};
+
+/* ------------------------------------------------------------------ */
+/* struct utimbuf (utime)                                              */
+/* ------------------------------------------------------------------ */
+
+/*
+ * utime(const char *filename, const struct utimbuf __user *times) passes
+ * the utimbuf at a2.  utime has no bespoke .sanitise -- argtype[1] was
+ * ARG_ADDRESS, so the times buffer was filled as an undifferentiated
+ * address slot with no schema path of its own.  Flipping argtype[1] to
+ * ARG_STRUCT_PTR_IN routes the slot through the schema-aware fill so it
+ * lands on a dedicated sized buffer, and the catalog entry below names
+ * the (actime, modtime) layout for CMP attribution.
+ *
+ * Both members are time_t and currently FT_RAW: the bytes match the
+ * historical random splat -- the win is the dedicated sized buffer and
+ * letting struct_field_for_cmp attribute KCOV CMP constants at the named
+ * actime / modtime fields rather than at a coincidentally-same-width
+ * slot.  No FT_TIME tag exists in the catalog vocabulary today; adding
+ * one is deferred until a precedent for time_t-shaped semantic tagging
+ * lands across the other timespec / timeval consumers.
+ */
+static const struct struct_field utimbuf_fields[] = {
+	FIELD(struct utimbuf, actime),
+	FIELD(struct utimbuf, modtime),
 };
 
 /* ------------------------------------------------------------------ */
@@ -4138,6 +4165,19 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= itimerval_fields,
 		.num_fields	= ARRAY_SIZE(itimerval_fields),
 	},
+	/*
+	 * utimbuf: appended at the tail so the existing struct_catalog[N]
+	 * indices above stay stable; the syscall_struct_args[] mapping
+	 * below picks up the new entry via an explicit USE_BPF-aware index
+	 * since the bpf_attr / bpf_insn entries shift the position by two
+	 * when USE_BPF is set.
+	 */
+	{
+		.name		= "utimbuf",
+		.struct_size	= sizeof(struct utimbuf),
+		.fields		= utimbuf_fields,
+		.num_fields	= ARRAY_SIZE(utimbuf_fields),
+	},
 };
 
 const unsigned int struct_catalog_count = ARRAY_SIZE(struct_catalog);
@@ -4348,6 +4388,17 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * coincidentally-same-width slot.
 	 */
 	{ "setitimer",		2, &struct_catalog[33] },
+	/*
+	 * utime(const char *filename, const struct utimbuf __user *times)
+	 * a2 is the INPUT struct utimbuf pointer.  utime has no bespoke
+	 * .sanitise -- the slot previously fell through ARG_ADDRESS with no
+	 * schema-aware fill.  argtype[1] is now ARG_STRUCT_PTR_IN so the
+	 * times buffer lands on a dedicated sized buffer; the catalog entry
+	 * also lets struct_field_for_cmp steer CMP-learned constants at the
+	 * named actime / modtime slots rather than at a coincidentally-
+	 * same-width slot.
+	 */
+	{ "utime",		2, &struct_catalog[34] },
 #else
 	{ "clock_nanosleep",	3, &struct_catalog[22] },
 	{ "nanosleep",		1, &struct_catalog[22] },
@@ -4365,6 +4416,7 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	{ "set_robust_list",	1, &struct_catalog[29] },
 	{ "rseq",		1, &struct_catalog[30] },
 	{ "setitimer",		2, &struct_catalog[31] },
+	{ "utime",		2, &struct_catalog[32] },
 #endif
 	/* sentinel */
 	{ NULL, 0, NULL },
