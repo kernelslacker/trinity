@@ -38,6 +38,9 @@ static unsigned long landlock_create_ruleset_flags[] = {
 #ifndef LANDLOCK_ACCESS_FS_IOCTL_DEV
 #define LANDLOCK_ACCESS_FS_IOCTL_DEV	(1ULL << 15)
 #endif
+#ifndef LANDLOCK_ACCESS_FS_RESOLVE_UNIX
+#define LANDLOCK_ACCESS_FS_RESOLVE_UNIX	(1ULL << 16)
+#endif
 #ifndef LANDLOCK_ACCESS_NET_BIND_TCP
 #define LANDLOCK_ACCESS_NET_BIND_TCP	(1ULL << 0)
 #endif
@@ -74,6 +77,7 @@ static const __u64 landlock_access_fs_bits[] = {
 	LANDLOCK_ACCESS_FS_REFER,
 	LANDLOCK_ACCESS_FS_TRUNCATE,
 	LANDLOCK_ACCESS_FS_IOCTL_DEV,
+	LANDLOCK_ACCESS_FS_RESOLVE_UNIX,
 };
 
 static const __u64 landlock_access_net_bits[] = {
