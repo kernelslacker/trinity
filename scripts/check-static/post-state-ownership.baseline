@@ -25,7 +25,6 @@
 #
 # Lines starting with `#` and blank lines are ignored.
 
-syscalls/getsockopt.c:sanitise_getsockopt
 syscalls/listns.c:sanitise_listns
 syscalls/lsm_get_self_attr.c:sanitise_lsm_get_self_attr
 syscalls/lsm_list_modules.c:sanitise_lsm_list_modules

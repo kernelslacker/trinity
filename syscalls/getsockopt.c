@@ -89,13 +89,17 @@ static void sanitise_getsockopt(struct syscallrecord *rec)
 	 * handler must free the zmalloc results, not the relocated
 	 * pointers (which the deferred-free heap-bounds gate rejects).
 	 * The snap also doubles as a sibling-scribble shield: a foreign
-	 * heap-shaped pointer parked in rec->post_state survives
-	 * looks_like_corrupted_ptr() but fails the magic check.
+	 * heap-shaped pointer parked in rec->post_state must fail the
+	 * ownership-table gate before any inner-field deref.
+	 * post_state_install pairs the rec->post_state assign with the
+	 * ownership-table register so the observable window between the
+	 * two is closed; post_getsockopt() then gates the snap through
+	 * post_state_claim_owned() before touching snap->vrb.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = GETSOCKOPT_POST_STATE_MAGIC;
 	snap->vrb = vrb;
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 
 	/*
 	 * The kernel writes the option value through optval (a4) up to
@@ -115,39 +119,40 @@ static void sanitise_getsockopt(struct syscallrecord *rec)
 
 static void post_getsockopt(struct syscallrecord *rec)
 {
-	struct getsockopt_post_state *snap =
-		(struct getsockopt_post_state *) rec->post_state;
+	struct getsockopt_post_state *snap;
 
-	if (snap == NULL) {
-		rec->a4 = 0;
-		rec->a5 = 0;
-		return;
-	}
-
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_getsockopt: rejected suspicious post_state=%p "
-			  "(pid-scribbled?)\n", snap);
-		rec->a4 = 0;
-		rec->a5 = 0;
-		rec->post_state = 0;
-		return;
-	}
-
-	if (snap->magic != GETSOCKOPT_POST_STATE_MAGIC) {
-		outputerr("post_getsockopt: rejected snap with bad magic 0x%lx "
-			  "(post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->a4 = 0;
-		rec->a5 = 0;
-		rec->post_state = 0;
-		return;
-	}
-
+	/*
+	 * Clear the relocated user pointers unconditionally before any
+	 * other work.  rec->a4 / rec->a5 still hold the avoid_shared_
+	 * buffer-relocated addresses (or, on the sanitise early-return
+	 * path, the ARG-generator's values); leaving them in place would
+	 * hand them to trinity's generic arg-free path, where the
+	 * deferred-free heap-bounds gate would reject the relocated
+	 * pointers as noise.  Done at the top so every exit path -- the
+	 * claim_owned NULL early-return included -- gets the same
+	 * scrubbing.
+	 */
 	rec->a4 = 0;
 	rec->a5 = 0;
+
+	/*
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
+	 */
+	snap = post_state_claim_owned(rec, GETSOCKOPT_POST_STATE_MAGIC,
+				      __func__);
+	if (snap == NULL)
+		return;
+
+	/*
+	 * Free the inner valresult payload BEFORE post_state_release:
+	 * release queues the outer snap chunk for deferred-free, after
+	 * which snap->vrb is no longer safe to touch.
+	 */
 	valresult_free(&snap->vrb);
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_getsockopt = {

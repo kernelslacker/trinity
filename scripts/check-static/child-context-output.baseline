@@ -127,8 +127,6 @@ syscalls/getsockname.c:235:post_getsockname
 syscalls/getsockname.c:256:post_getsockname
 syscalls/getsockname.c:282:post_getsockname
 syscalls/getsockname.c:361:post_getsockname
-syscalls/getsockopt.c:128:post_getsockopt
-syscalls/getsockopt.c:137:post_getsockopt
 syscalls/gettid.c:33:post_gettid
 syscalls/gettid.c:48:post_gettid
 syscalls/gettimeofday.c:156:post_gettimeofday
