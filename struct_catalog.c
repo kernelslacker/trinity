@@ -1936,6 +1936,39 @@ static const struct struct_field landlock_ruleset_attr_fields[] = {
 };
 
 /* ------------------------------------------------------------------ */
+/* struct landlock_path_beneath_attr (landlock_add_rule)               */
+/* ------------------------------------------------------------------ */
+
+/*
+ * landlock_add_rule(ruleset_fd, rule_type, rule_attr, flags) passes
+ * the rule_attr struct at a3.  Under LANDLOCK_RULE_PATH_BENEATH the
+ * struct is landlock_path_beneath_attr; the bespoke
+ * sanitise_landlock_add_rule() in syscalls/landlock_add_rule.c keeps
+ * owning the live fill (get_writable_address() allocation, the
+ * allowed_access bitmask masked to the low 16 bits, parent_fd drawn
+ * from get_random_fd()).  argtype[2] is not declared (the sanitiser
+ * unconditionally overwrites rec->a3), so the schema-aware fill path
+ * never runs against it -- registration is attribution-only,
+ * mirroring sigevent / rseq / landlock_ruleset_attr above.
+ *
+ * allowed_access carries the LANDLOCK_ACCESS_FS_* vocabulary; reuse
+ * the LANDLOCK_ACCESS_FS_MASK defined for landlock_ruleset_attr so a
+ * future uapi bit lands in one place.  parent_fd is an open fd the
+ * kernel resolves to a path -- no useful per-bit CMP vocab, FT_RAW.
+ *
+ * The sibling LANDLOCK_RULE_NET_PORT arm passes a different struct
+ * (landlock_net_port_attr) at the same a3 slot; that variant needs a
+ * tagged-union descriptor and is intentionally out of scope here --
+ * this entry attributes the PATH_BENEATH arm only.
+ */
+static const struct struct_field landlock_path_beneath_attr_fields[] = {
+	FIELDX(struct landlock_path_beneath_attr, allowed_access, FT_FLAGS,
+	       .u.flags.mask = LANDLOCK_ACCESS_FS_MASK,
+	       .mutate_weight = 80),
+	FIELD(struct landlock_path_beneath_attr, parent_fd),
+};
+
+/* ------------------------------------------------------------------ */
 /* struct mnt_id_req (statmount, listmount)                            */
 /* ------------------------------------------------------------------ */
 
@@ -4493,16 +4526,31 @@ const struct struct_desc struct_catalog[] = {
 	 * file_attr: appended at the tail so the existing
 	 * struct_catalog[N] indices above stay stable.  The
 	 * syscall_struct_args[] mapping below uses
-	 * ARRAY_SIZE(struct_catalog) - 1 to address this slot, sparing
+	 * ARRAY_SIZE(struct_catalog) - 2 to address this slot, sparing
 	 * us the USE_BPF / USE_XATTR_ARGS index gymnastics that would
-	 * otherwise be needed (this is the new last entry under every
-	 * configure combination).
+	 * otherwise be needed (the landlock_path_beneath_attr entry
+	 * below now occupies the -1 tail slot).
 	 */
 	{
 		.name		= "file_attr",
 		.struct_size	= sizeof(struct file_attr),
 		.fields		= file_attr_fields,
 		.num_fields	= ARRAY_SIZE(file_attr_fields),
+	},
+	/*
+	 * landlock_path_beneath_attr: appended at the tail so the
+	 * existing struct_catalog[N] indices above stay stable.  The
+	 * syscall_struct_args[] mapping below uses
+	 * ARRAY_SIZE(struct_catalog) - 1 to address this slot, sparing
+	 * us the USE_BPF / USE_XATTR_ARGS index gymnastics that would
+	 * otherwise be needed (this is the new last entry under every
+	 * configure combination).
+	 */
+	{
+		.name		= "landlock_path_beneath_attr",
+		.struct_size	= sizeof(struct landlock_path_beneath_attr),
+		.fields		= landlock_path_beneath_attr_fields,
+		.num_fields	= ARRAY_SIZE(landlock_path_beneath_attr_fields),
 	},
 };
 
@@ -4855,7 +4903,27 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * kernel-written OUTPUT and has no input fill to attribute
 	 * against.
 	 */
-	{ "file_setattr",	3, &struct_catalog[ARRAY_SIZE(struct_catalog) - 1] },
+	{ "file_setattr",	3, &struct_catalog[ARRAY_SIZE(struct_catalog) - 2] },
+	/*
+	 * landlock_add_rule(int ruleset_fd, enum landlock_rule_type rule_type,
+	 *                   const void __user *rule_attr, __u32 flags)
+	 * a3 is the INPUT struct landlock_path_beneath_attr pointer under
+	 * the LANDLOCK_RULE_PATH_BENEATH rule_type.  The bespoke
+	 * sanitise_landlock_add_rule() keeps owning the live fill --
+	 * argtype[2] is not declared, so the schema-aware fill path never
+	 * runs against rec->a3; this registration is attribution-only so
+	 * struct_field_for_cmp can steer CMP-learned constants at the
+	 * named allowed_access / parent_fd slots rather than at a
+	 * coincidentally-same-width slot.  Sized via
+	 * ARRAY_SIZE(struct_catalog) - 1 so the tail position resolves
+	 * correctly under every USE_BPF / USE_XATTR_ARGS combination.
+	 *
+	 * Not mapped here on purpose: the LANDLOCK_RULE_NET_PORT arm
+	 * passes landlock_net_port_attr at the same a3 slot; that
+	 * variant needs a tagged-union descriptor and is intentionally
+	 * out of scope for this attribution-only registration.
+	 */
+	{ "landlock_add_rule",	3, &struct_catalog[ARRAY_SIZE(struct_catalog) - 1] },
 	/* sentinel */
 	{ NULL, 0, NULL },
 };
