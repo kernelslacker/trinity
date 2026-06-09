@@ -310,9 +310,12 @@ static void sanitise_fcntl(struct syscallrecord *rec)
 	}
 
 	case F_ADD_SEALS: {
+#ifndef F_SEAL_EXEC
+#define F_SEAL_EXEC 0x0020
+#endif
 		static const unsigned long seal_bits[] = {
 			F_SEAL_SEAL, F_SEAL_SHRINK, F_SEAL_GROW,
-			F_SEAL_WRITE, F_SEAL_FUTURE_WRITE,
+			F_SEAL_WRITE, F_SEAL_FUTURE_WRITE, F_SEAL_EXEC,
 		};
 		rec->a3 = set_rand_bitmask(ARRAY_SIZE(seal_bits), seal_bits);
 		break;
