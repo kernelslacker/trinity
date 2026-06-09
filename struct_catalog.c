@@ -4302,6 +4302,17 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 */
 	{ "timer_create",	2, &struct_catalog[30] },
 	/*
+	 * mq_notify(mqd_t, const struct sigevent *)
+	 * a2 carries the same struct sigevent that timer_create's a2
+	 * carries; the bespoke sanitise_mq_notify() keeps owning the
+	 * live fill (NULL-deregister half the time, otherwise SIGEV_NONE
+	 * / SIGEV_SIGNAL / SIGEV_THREAD with sigev_signo populated).
+	 * Attribution-only registration lets struct_field_for_cmp steer
+	 * CMP-learned constants at sigev_notify / sigev_signo rather
+	 * than at a coincidentally-same-width slot.
+	 */
+	{ "mq_notify",		2, &struct_catalog[30] },
+	/*
 	 * set_robust_list(struct robust_list_head __user *head, size_t len)
 	 * a1 is ARG_ADDRESS (not ARG_STRUCT_PTR_*), so the bespoke
 	 * sanitise_set_robust_list() keeps owning the live (list.next,
@@ -4350,6 +4361,7 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	{ "ppoll",		1, &struct_catalog[26] },
 	{ "openat2",		3, &struct_catalog[27] },
 	{ "timer_create",	2, &struct_catalog[28] },
+	{ "mq_notify",		2, &struct_catalog[28] },
 	{ "set_robust_list",	1, &struct_catalog[29] },
 	{ "rseq",		1, &struct_catalog[30] },
 	{ "setitimer",		2, &struct_catalog[31] },
