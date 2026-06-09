@@ -150,7 +150,7 @@ void init_taint_checking(void)
 {
 	int fd;
 
-	fd = open("/proc/sys/kernel/tainted", O_RDONLY);
+	fd = open("/proc/sys/kernel/tainted", O_RDONLY | O_CLOEXEC);
 	if (fd >= 0) {
 		taint_available = true;
 		close(fd);
