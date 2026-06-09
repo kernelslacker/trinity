@@ -68,6 +68,9 @@
 #define XDP_USE_NEED_WAKEUP	(1 << 3)
 #endif
 #endif
+#ifdef USE_XATTR_ARGS
+#include <linux/xattr.h>
+#endif
 
 #include "struct_catalog.h"
 #include "arch.h"
@@ -1989,6 +1992,40 @@ static const struct struct_field ns_id_req_fields[] = {
 	FIELD(struct ns_id_req, ns_id),
 	FIELD(struct ns_id_req, user_ns_id),
 };
+
+/* ------------------------------------------------------------------ */
+/* struct xattr_args (setxattrat, getxattrat)                          */
+/* ------------------------------------------------------------------ */
+
+/*
+ * struct xattr_args from include/uapi/linux/xattr.h.  Gated on
+ * USE_XATTR_ARGS because the build host's uapi headers may predate
+ * the addition; mirror the syscalls/{set,get}xattrat.c guard so the
+ * translation unit still builds on older headers.  The bespoke
+ * sanitisers in those syscall files own the live fill --
+ * build_csfu_struct(&desc_{set,get}xattrat) stamps the size word
+ * envelope and the in-line picker populates value / size / flags
+ * plus the value sub-buffer; this registration layers per-field
+ * CMP attribution on top.
+ *
+ * value is an embedded __aligned_u64 carrying a userspace pointer --
+ * FT_ADDRESS mirrors the rseq_cs / robust_list_head treatment so
+ * KCOV-CMP learned address constants attribute against it.  size is
+ * a free __u32 the kernel reads as the value-buffer bound (FT_RAW).
+ * flags carries the XATTR_CREATE / XATTR_REPLACE vocabulary --
+ * anything outside the mask is rejected by the VFS before any
+ * sub-buffer read, so the mask is the entire useful CMP vocabulary.
+ */
+#ifdef USE_XATTR_ARGS
+static const struct struct_field xattr_args_fields[] = {
+	FIELDX(struct xattr_args, value, FT_ADDRESS,
+	       .mutate_weight = 100),
+	FIELD(struct xattr_args, size),
+	FIELDX(struct xattr_args, flags, FT_FLAGS,
+	       .u.flags.mask = (XATTR_CREATE | XATTR_REPLACE),
+	       .mutate_weight = 80),
+};
+#endif
 
 /* ------------------------------------------------------------------ */
 /* struct __user_cap_header_struct (capset, capget)                    */
@@ -4396,6 +4433,22 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= ns_id_req_fields,
 		.num_fields	= ARRAY_SIZE(ns_id_req_fields),
 	},
+#ifdef USE_XATTR_ARGS
+	/*
+	 * xattr_args: appended at the tail so the existing
+	 * struct_catalog[N] indices above stay stable; the
+	 * syscall_struct_args[] mapping below picks up the new entry
+	 * via an explicit USE_BPF-aware index since the bpf_attr /
+	 * bpf_insn entries shift the position by two when USE_BPF is
+	 * set.
+	 */
+	{
+		.name		= "xattr_args",
+		.struct_size	= sizeof(struct xattr_args),
+		.fields		= xattr_args_fields,
+		.num_fields	= ARRAY_SIZE(xattr_args_fields),
+	},
+#endif
 };
 
 const unsigned int struct_catalog_count = ARRAY_SIZE(struct_catalog);
@@ -4680,6 +4733,26 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * to the eight defined CLONE_NEW* selector bits.
 	 */
 	{ "listns",		1, &struct_catalog[38] },
+#ifdef USE_XATTR_ARGS
+	/*
+	 * setxattrat(int dfd, const char __user *pathname,
+	 *            unsigned int at_flags, const char __user *name,
+	 *            const struct xattr_args __user *uargs, size_t usize)
+	 * getxattrat(int dfd, const char __user *pathname,
+	 *            unsigned int at_flags, const char __user *name,
+	 *            struct xattr_args __user *uargs, size_t usize)
+	 * a5 is the INPUT struct xattr_args pointer in both cases (the
+	 * kernel reads value / size / flags before any sub-buffer access
+	 * even for getxattrat).  sanitise_{set,get}xattrat() keep owning
+	 * the live fill via build_csfu_struct(&desc_{set,get}xattrat) and
+	 * the in-line value/size/flags picker; attribution-only
+	 * registration lets struct_field_for_cmp steer CMP-learned
+	 * constants at the named value / size / flags slots, with flags
+	 * masked to XATTR_CREATE | XATTR_REPLACE.
+	 */
+	{ "setxattrat",		5, &struct_catalog[39] },
+	{ "getxattrat",		5, &struct_catalog[39] },
+#endif
 #else
 	{ "clock_nanosleep",	3, &struct_catalog[22] },
 	{ "nanosleep",		1, &struct_catalog[22] },
@@ -4703,6 +4776,10 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	{ "select",		5, &struct_catalog[34] },
 	{ "settimeofday",	2, &struct_catalog[35] },
 	{ "listns",		1, &struct_catalog[36] },
+#ifdef USE_XATTR_ARGS
+	{ "setxattrat",		5, &struct_catalog[37] },
+	{ "getxattrat",		5, &struct_catalog[37] },
+#endif
 #endif
 	/* sentinel */
 	{ NULL, 0, NULL },
