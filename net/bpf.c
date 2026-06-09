@@ -1025,34 +1025,37 @@ void bpf_gen_filter(unsigned long **addr, unsigned long *addrlen)
  * by LRU, and the inner buffer needs explicit handling because the
  * wrapper-tracking fix in f9913742ec91 only tagged the outer alloc.
  *
- * Choke-point gate on bpf->filter: every caller (syscalls/bpf.c,
- * syscalls/setsockopt.c, syscalls/seccomp.c, syscalls/prctl.c) reaches
- * the inner free through here, so the gate covers them all without
- * per-file edits.  A sibling-scribbled snap pointer can survive the
- * outer post-state shape / cookie / ownership gates only to be handed
- * here as bpf with a wild inner filter pointer; deferred_free_enqueue()
- * would forward that pointer to free() (tracked_free_now() on the
- * eventual ring eviction also free()s on an alloc_track miss --
- * deferred-free.c:525-532 -- so the validation cannot be deferred to
- * the free side, it has to gate the decision to enqueue at all).
+ * Helper-boundary validation: the .post paths in syscalls/setsockopt.c,
+ * syscalls/seccomp.c and syscalls/prctl.c already gate the wrapper with
+ * alloc_track_lookup() || range_readable_user() before reaching us, but
+ * syscalls/bpf.c's BPF_PROG_LOAD classic-BPF cleanup calls in directly
+ * from snap->classic_bpf_insns + attr->insns -- a sibling-scribbled
+ * attr->insns that survives the snap shape check would fault on the
+ * bpf->filter deref here.  Prove the wrapper inside the helper so the
+ * direct caller is safe and the .post-path callers stay double-gated
+ * without per-file edits.  Same shape as those callers: tracked
+ * allocation (definitively one we produced via zmalloc_tracked in
+ * bpf_gen_filter / bpf_gen_seccomp) or at minimum readable for a
+ * sock_fprog-sized window.
  *
- * Require bpf->filter to be a tracked allocation (definitively one we
- * produced via zmalloc_tracked in bpf_gen_filter / bpf_gen_seccomp) or
- * at minimum readable for a sock_fprog-sized window (a real mapping in
- * a tracked-shared region or the libc heap, not a wild fuzz pointer).
- * Skip the free when neither holds -- the outer wrapper still
- * enqueues, but the unproven inner pointer is leaked rather than
- * routed to free() / tracked_free_now() on a foreign chunk.
+ * Inner-filter free is alloc_track_lookup()-only: free what we own,
+ * leak the unproven.  A readable-but-untracked inner pointer (a wild
+ * fuzz pointer that happens to land in a real mapping) is deliberately
+ * left to leak rather than handed to deferred_free_enqueue() ->
+ * tracked_free_now(), which resolves an alloc_track miss to free() on
+ * a foreign chunk (deferred-free.c:525-532).  The outer wrapper still
+ * enqueues so the post_state / tracker slot releases.
  */
 void bpf_free_filter(struct sock_fprog *bpf)
 {
 	if (bpf == NULL)
 		return;
 
-	if (bpf->filter != NULL &&
-	    (alloc_track_lookup(bpf->filter) ||
-	     range_readable_user(bpf->filter, sizeof(struct sock_fprog))))
-		deferred_free_enqueue(bpf->filter);
+	if (alloc_track_lookup(bpf) ||
+	    range_readable_user(bpf, sizeof(struct sock_fprog))) {
+		if (bpf->filter != NULL && alloc_track_lookup(bpf->filter))
+			deferred_free_enqueue(bpf->filter);
+	}
 
 	deferred_free_enqueue(bpf);
 }
