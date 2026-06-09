@@ -708,6 +708,51 @@ static const struct struct_field utimbuf_fields[] = {
 };
 
 /* ------------------------------------------------------------------ */
+/* struct flock (fcntl)                                                */
+/* ------------------------------------------------------------------ */
+
+/*
+ * fcntl's lock-pointer arg (F_GETLK / F_SETLK / F_SETLKW and the
+ * F_OFD_* variants) carries a struct flock at a3.  The bespoke
+ * sanitise_fcntl() keeps owning the live fill via build_flock(): it
+ * picks an l_type / l_whence vocab member, a bounded l_start and
+ * l_len, and zeroes l_pid (F_OFD_SETLK requires it).
+ *
+ * Attribution-only registration, mirroring the mq_notify / sigevent
+ * pattern: struct_field_for_cmp() uses the FT_ENUM tags to steer
+ * KCOV-CMP learned constants at l_type (a 3-valued vocab the kernel
+ * branches on in posix_lock_inode) and l_whence (a 3-valued vocab the
+ * kernel uses to resolve the start offset), and FT_RAW on l_start /
+ * l_len / l_pid keeps attribution at the named range / pid slots
+ * rather than at a coincidentally-same-width slot.  Without the
+ * registration the slot fell through with no schema-aware attribution
+ * even though the bespoke sanitiser already produced a plausible
+ * payload, so per-field CMP steering at l_type / l_whence had nothing
+ * to hang against.
+ */
+static const unsigned long flock_l_type_values[] = {
+	F_RDLCK, F_WRLCK, F_UNLCK,
+};
+
+static const unsigned long flock_l_whence_values[] = {
+	SEEK_SET, SEEK_CUR, SEEK_END,
+};
+
+static const struct struct_field flock_fields[] = {
+	FIELDX(struct flock, l_type, FT_ENUM,
+	       .u.enum_ = { flock_l_type_values,
+			    ARRAY_SIZE(flock_l_type_values) },
+	       .mutate_weight = 80),
+	FIELDX(struct flock, l_whence, FT_ENUM,
+	       .u.enum_ = { flock_l_whence_values,
+			    ARRAY_SIZE(flock_l_whence_values) },
+	       .mutate_weight = 80),
+	FIELD(struct flock, l_start),
+	FIELD(struct flock, l_len),
+	FIELD(struct flock, l_pid),
+};
+
+/* ------------------------------------------------------------------ */
 /* struct epoll_event (epoll_ctl)                                      */
 /* ------------------------------------------------------------------ */
 
@@ -4178,6 +4223,19 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= utimbuf_fields,
 		.num_fields	= ARRAY_SIZE(utimbuf_fields),
 	},
+	/*
+	 * flock: appended at the tail so the existing struct_catalog[N]
+	 * indices above stay stable; the syscall_struct_args[] mapping
+	 * below picks up the new entry via an explicit USE_BPF-aware index
+	 * since the bpf_attr / bpf_insn entries shift the position by two
+	 * when USE_BPF is set.
+	 */
+	{
+		.name		= "flock",
+		.struct_size	= sizeof(struct flock),
+		.fields		= flock_fields,
+		.num_fields	= ARRAY_SIZE(flock_fields),
+	},
 };
 
 const unsigned int struct_catalog_count = ARRAY_SIZE(struct_catalog);
@@ -4399,6 +4457,16 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * same-width slot.
 	 */
 	{ "utime",		2, &struct_catalog[34] },
+	/*
+	 * fcntl(int fd, int cmd, ... arg)
+	 * a3 is the F_GETLK / F_SETLK / F_SETLKW (and F_OFD_* variants)
+	 * struct flock lock-pointer.  The bespoke sanitise_fcntl() keeps
+	 * owning the live fill via build_flock(); attribution-only
+	 * registration lets struct_field_for_cmp steer CMP-learned
+	 * constants at the named l_type / l_whence / l_start / l_len /
+	 * l_pid slots rather than at a coincidentally-same-width slot.
+	 */
+	{ "fcntl",		3, &struct_catalog[35] },
 #else
 	{ "clock_nanosleep",	3, &struct_catalog[22] },
 	{ "nanosleep",		1, &struct_catalog[22] },
@@ -4417,6 +4485,7 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	{ "rseq",		1, &struct_catalog[30] },
 	{ "setitimer",		2, &struct_catalog[31] },
 	{ "utime",		2, &struct_catalog[32] },
+	{ "fcntl",		3, &struct_catalog[33] },
 #endif
 	/* sentinel */
 	{ NULL, 0, NULL },
