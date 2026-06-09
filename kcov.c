@@ -381,7 +381,7 @@ void kcov_init_global(void)
 	 * would stick a syscall in or out of the cold-skip pool).
 	 * Diagnostics only; doesn't crash the parent.
 	 */
-	kcov_shm = alloc_shared(sizeof(struct kcov_shared));
+	kcov_shm = alloc_shared_pool(sizeof(struct kcov_shared));
 	memset(kcov_shm, 0, sizeof(struct kcov_shared));
 	output(0, "KCOV: coverage collection enabled (%lu MB bucket-seen table, %u edges, %u buckets; counters: distinct_edges=%lu, edges_found=%lu bucket-transitions)\n",
 		(unsigned long)KCOV_NUM_EDGES / (1024 * 1024),

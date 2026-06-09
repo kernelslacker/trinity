@@ -544,6 +544,7 @@ static const struct option longopts[] = {
 	{ "explorer-children", required_argument, NULL, 0 },
 	{ "group", required_argument, NULL, 'g' },
 	{ "group-bias", no_argument, NULL, 0 },
+	{ "guard-shared", optional_argument, NULL, 0 },
 	{ "kernel_taint", required_argument, NULL, 'T' },
 	{ "help", no_argument, NULL, 'h' },
 	{ "list", no_argument, NULL, 'L' },
@@ -972,6 +973,39 @@ void parse_args(int argc, char *argv[])
 
 			if (strcmp("group-bias", longopts[opt_index].name) == 0)
 				group_bias = true;
+
+#ifdef CONFIG_GUARD_SHARED
+			if (strcmp("guard-shared", longopts[opt_index].name) == 0) {
+				/* --guard-shared        -> pools (default)
+				 * --guard-shared=pools  -> pools
+				 * --guard-shared=all    -> all
+				 * --guard-shared=off    -> off (explicit no-op)
+				 *
+				 * Decided defaults from the 2026-06-09 spec:
+				 * pools is the focused scope (kcov_shm, shared
+				 * str/obj heap, childdata) and is what an
+				 * operator wants the first time they reach for
+				 * the flag.  ALL is the wider sweep; warn the
+				 * operator that the VMA budget may need a
+				 * vm.max_map_count bump so a guarded fleet host
+				 * doesn't ENOMEM on its own mprotect splits.
+				 */
+				if (optarg == NULL ||
+				    strcmp(optarg, "pools") == 0) {
+					guard_shared_scope = GUARD_SCOPE_POOLS;
+				} else if (strcmp(optarg, "all") == 0) {
+					guard_shared_scope = GUARD_SCOPE_ALL;
+					outputerr("--guard-shared=all: every alloc_shared region is guarded; "
+						  "consider raising vm.max_map_count if mprotect splits ENOMEM\n");
+				} else if (strcmp(optarg, "off") == 0) {
+					guard_shared_scope = GUARD_SCOPE_OFF;
+				} else {
+					outputerr("--guard-shared: unknown scope '%s' (use pools|all|off)\n",
+						  optarg);
+					exit(EXIT_FAILURE);
+				}
+			}
+#endif
 
 			if (strcmp("show-unannotated", longopts[opt_index].name) == 0)
 				show_unannotated = true;

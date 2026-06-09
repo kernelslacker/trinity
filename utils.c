@@ -40,9 +40,50 @@
  * mprotect) can avoid clobbering trinity's own shared state.
  */
 
+#ifdef CONFIG_GUARD_SHARED
+/*
+ * Runtime scope for the guard-page armour wired into __alloc_shared().
+ * Initialised to GUARD_SCOPE_OFF; flipped to POOLS or ALL by parse_args()
+ * when the operator passes --guard-shared[=pools|all].  Hot path:
+ * __alloc_shared() reads this once per call.
+ *
+ *   OFF   - no guards, byte-identical to the legacy single-mmap path
+ *           (modulo the runtime branch).  This is the production default.
+ *   POOLS - guard only the long-lived regions tagged is_pool=true by
+ *           their alloc site (kcov_shm, the shared str/obj heap, per-
+ *           child childdata).  Bounded VMA cost, focused on the
+ *           recurring corruption-witness clusters from the 2026-06-08
+ *           overnight triages.
+ *   ALL   - guard every alloc_shared() region, pool or not.  VMA cost
+ *           scales with MAX_SHARED_ALLOCS; intended for short-run
+ *           investigations where the writer might not be in the pools
+ *           subset.  Warns + suggests raising vm.max_map_count at the
+ *           flag-parse site.
+ *
+ * Off → __alloc_shared() and free_shared() collapse to today's exact
+ * mmap / unregister behaviour at runtime as well, so a build that
+ * compiled CONFIG_GUARD_SHARED in stays production-safe until the
+ * operator opts in.
+ */
+enum guard_scope guard_shared_scope = GUARD_SCOPE_OFF;
+#endif
+
 static struct {
 	unsigned long addr;
 	unsigned long size;
+#ifdef CONFIG_GUARD_SHARED
+	/*
+	 * 1 iff __alloc_shared() wrapped this region in PROT_NONE guard
+	 * pages; 0 for a legacy single-mmap region (alloc_shared with
+	 * guards off, or track_shared_region for an externally-mmap'd
+	 * mapping).  free_shared() reads this to decide whether to
+	 * derive a guarded span (PAGE + pages + PAGE) and munmap the
+	 * whole span, or to munmap just (addr, size) like the legacy
+	 * path.  child_fault_handler reads this in P1.2 to attribute a
+	 * SEGV that lands in a guard page to its abutting region.
+	 */
+	uint8_t guarded;
+#endif
 } shared_regions[MAX_SHARED_ALLOCS];
 unsigned int nr_shared_regions;
 
@@ -66,6 +107,9 @@ unsigned int nr_shared_regions;
 static struct {
 	unsigned long addr;
 	unsigned long size;
+#ifdef CONFIG_GUARD_SHARED
+	uint8_t guarded;	/* parity with shared_regions[] above */
+#endif
 } shared_regions_overflow[SHARED_REGIONS_OVERFLOW_TAIL];
 static unsigned int nr_shared_regions_overflow;
 
@@ -361,7 +405,11 @@ static void tracked_size_unmark(unsigned long len)
  *     just be a slower path to the same silent-under-protection bug.
  */
 static void register_shared_overflow(const char *who, unsigned long addr,
-				     unsigned long size, void *caller)
+				     unsigned long size,
+#ifdef CONFIG_GUARD_SHARED
+				     bool guarded,
+#endif
+				     void *caller)
 {
 	char pcbuf[128];
 
@@ -386,6 +434,10 @@ static void register_shared_overflow(const char *who, unsigned long addr,
 
 	shared_regions_overflow[nr_shared_regions_overflow].addr = addr;
 	shared_regions_overflow[nr_shared_regions_overflow].size = size;
+#ifdef CONFIG_GUARD_SHARED
+	shared_regions_overflow[nr_shared_regions_overflow].guarded =
+		guarded ? 1 : 0;
+#endif
 	shared_bitmap_mark(addr, size);
 	tracked_size_mark(size);
 	nr_shared_regions_overflow++;
@@ -396,6 +448,266 @@ static void register_shared_overflow(const char *who, unsigned long addr,
 #endif
 }
 
+#ifdef CONFIG_GUARD_SHARED
+/*
+ * Round len up to the nearest page boundary.  page_size is populated by
+ * init_main_process() before parse_args() and any alloc_shared() caller,
+ * so it is always non-zero by the time this is reachable.
+ */
+static size_t guard_pages_round_up(size_t len)
+{
+	size_t ps = (size_t)page_size;
+
+	return (len + ps - 1) & ~(ps - 1);
+}
+
+/*
+ * Recover (base, span) from the inner pointer + size of a guarded
+ * region.  __alloc_shared() lays out a guarded mapping as
+ *
+ *   | leading guard (1 page) | unused fold | inner buffer | trailing guard (1 page) |
+ *   ^base                     ^base+PAGE    ^ret           ^base+PAGE+pages
+ *
+ * with pages = round_up(size, page_size) and the inner buffer end-
+ * aligned against the trailing guard so a forward overflow (buf[size])
+ * traps at byte granularity.  Inverting:
+ *
+ *   pages = round_up(size, page_size)
+ *   base  = ret - PAGE - (pages - size)
+ *   span  = PAGE + pages + PAGE
+ *
+ * The size is stored in shared_regions[].size and the guarded bit is
+ * stored alongside, so free_shared() needs no parallel side table to
+ * unwind the layout.
+ */
+static void guard_pages_derive_span(void *ret, size_t size,
+				    void **base_out, size_t *span_out)
+{
+	size_t ps = (size_t)page_size;
+	size_t pages = guard_pages_round_up(size);
+	char *base = (char *)ret - ps - (pages - size);
+
+	*base_out = base;
+	*span_out = ps + pages + ps;
+}
+
+/*
+ * Mmap a guarded region: one VA span = leading-guard + usable-pages +
+ * trailing-guard, with the inner buffer end-aligned against the
+ * trailing guard.  Returns the inner pointer (the address callers see
+ * and store in shared_regions[]), or MAP_FAILED on failure.  On
+ * failure logs a single outputerr() line and leaves no VMA behind:
+ * the leading-guard mprotect is reverted by munmap before return so
+ * the caller can fall back to a non-guarded mmap without leaking VA.
+ */
+static void *guard_pages_alloc(size_t size)
+{
+	size_t ps = (size_t)page_size;
+	size_t pages = guard_pages_round_up(size);
+	size_t span = ps + pages + ps;
+	char *base;
+
+	base = mmap(NULL, span, PROT_READ | PROT_WRITE,
+		    MAP_ANON | MAP_SHARED, -1, 0);
+	if (base == MAP_FAILED) {
+		outputerr("guard_pages_alloc: mmap %zu failure (span=%zu)\n",
+			  size, span);
+		return MAP_FAILED;
+	}
+
+	/* Drop the leading and trailing pages to PROT_NONE so any
+	 * adjacent overflow traps in copy_*_user (kernel-side) or
+	 * directly at the writer PC (userspace).  Splits the span into
+	 * three VMAs (guard / usable / guard); the cost is +2 VMAs per
+	 * guarded region.
+	 *
+	 * Both mprotects run once per guarded region at setup time
+	 * (alloc_shared is called from init paths, not from the arg-gen
+	 * hot loop), so the slow-path checker's blanket ban does not
+	 * apply -- mark explicitly to keep the surface honest.
+	 */
+	/* check-static: slow-ok */
+	if (mprotect(base, ps, PROT_NONE) != 0) {
+		outputerr("guard_pages_alloc: mprotect(leading) failed: errno=%d\n",
+			  errno);
+		(void)munmap(base, span);
+		return MAP_FAILED;
+	}
+	/* check-static: slow-ok */
+	if (mprotect(base + ps + pages, ps, PROT_NONE) != 0) {
+		outputerr("guard_pages_alloc: mprotect(trailing) failed: errno=%d\n",
+			  errno);
+		(void)munmap(base, span);
+		return MAP_FAILED;
+	}
+
+	/* End-align the inner buffer against the trailing guard so a
+	 * forward overflow at byte granularity (buf[size] = x) faults
+	 * at the writer PC instead of corrupting the fold region. */
+	return base + ps + (pages - size);
+}
+
+/*
+ * Decide whether this allocation falls into the current guard scope.
+ * GUARD_SCOPE_OFF gates everything off (legacy fast path).
+ * GUARD_SCOPE_POOLS guards only is_pool=true alloc sites (kcov_shm,
+ * shared str heap, childdata -- the long-lived regions the corruption
+ * clusters keep pointing at).  GUARD_SCOPE_ALL guards every site.
+ */
+static bool guard_scope_covers(bool is_pool)
+{
+	switch (guard_shared_scope) {
+	case GUARD_SCOPE_ALL:
+		return true;
+	case GUARD_SCOPE_POOLS:
+		return is_pool;
+	case GUARD_SCOPE_OFF:
+	default:
+		return false;
+	}
+}
+#endif	/* CONFIG_GUARD_SHARED */
+
+#ifdef CONFIG_GUARD_SHARED
+/*
+ * Primary shared-region allocator under CONFIG_GUARD_SHARED.  is_pool
+ * tags long-lived regions (kcov_shm, shared str heap, childdata) so
+ * --guard-shared=pools picks them up without dragging every per-child
+ * tiny alloc into the VMA budget.  alloc_shared() below is the no-pool
+ * entry point most call sites use; the three pool sites call
+ * alloc_shared_pool() (a thin wrapper) which routes here with
+ * is_pool=true.
+ *
+ * Behaviour matrix:
+ *
+ *   scope == OFF             -> single-mmap path (one runtime branch,
+ *                               no extra syscalls).
+ *   scope covers is_pool     -> guarded layout from guard_pages_alloc();
+ *                               a guard-alloc failure logs and falls
+ *                               back to the non-guarded path so the
+ *                               run continues.
+ *
+ * Either path registers the INNER (ret, size) with shared_regions[] and
+ * the bitmap; the guard pages are deliberately NOT tracked so the mm-
+ * syscall sanitisers don't reject fuzzed calls against unrelated VA
+ * that happens to share a 2 MiB bitmap chunk with a guard.  free_shared
+ * inverts the layout via the guarded flag stored alongside.
+ */
+void * __alloc_shared(size_t size, bool is_pool)
+{
+	void *ret;
+	bool guarded = false;
+
+	if (guard_scope_covers(is_pool)) {
+		ret = guard_pages_alloc(size);
+		if (ret != MAP_FAILED)
+			guarded = true;
+	} else {
+		ret = MAP_FAILED;
+	}
+
+	if (ret == MAP_FAILED) {
+		ret = mmap(NULL, size, PROT_READ | PROT_WRITE,
+			   MAP_ANON | MAP_SHARED, -1, 0);
+	}
+	if (ret == MAP_FAILED) {
+		outputerr("mmap %zu failure\n", size);
+		exit(EXIT_FAILURE);
+	}
+	/* poison with independently-random bytes to expose uninitialized reads. */
+	{
+		unsigned char *p = ret;
+		size_t i;
+
+		for (i = 0; i + sizeof(unsigned int) <= size; i += sizeof(unsigned int)) {
+			unsigned int r = rnd_u32();
+			memcpy(p + i, &r, sizeof(r));
+		}
+		for (; i < size; i++)
+			p[i] = (unsigned char)rnd_u32();
+	}
+
+	if (nr_shared_regions < MAX_SHARED_ALLOCS) {
+		shared_regions[nr_shared_regions].addr = (unsigned long) ret;
+		shared_regions[nr_shared_regions].size = size;
+		shared_regions[nr_shared_regions].guarded = guarded ? 1 : 0;
+		shared_bitmap_mark((unsigned long) ret, size);
+		tracked_size_mark(size);
+		nr_shared_regions++;
+	} else {
+		register_shared_overflow("alloc_shared", (unsigned long) ret,
+					 size, guarded,
+					 __builtin_return_address(0));
+	}
+
+	return ret;
+}
+
+void * alloc_shared(size_t size)
+{
+	return __alloc_shared(size, false);
+}
+
+void * alloc_shared_pool(size_t size)
+{
+	return __alloc_shared(size, true);
+}
+
+/*
+ * Inverse of __alloc_shared().  Removes the matching shared_regions[]
+ * slot, then munmaps either the full guarded span (PAGE + pages + PAGE
+ * derived from the stored size+guarded flag) or the legacy (ret, size)
+ * range.  No current alloc_shared caller has a destructor -- all pool
+ * regions live for the parent's lifetime -- but the symmetry is the
+ * spec contract for free-path correctness, and a future caller that
+ * needs to release a pool region (test harness, lifecycle rework) must
+ * route through here so the guard VMAs are not leaked behind.  Misses
+ * silently to match untrack_shared_region()'s tolerance for callers
+ * whose alloc was a no-op (size==0) or whose addr+size pair never
+ * matched a registered slot exactly.
+ */
+void free_shared(void *p, size_t size)
+{
+	void *base = p;
+	size_t span = size;
+	bool guarded = false;
+	unsigned int i;
+
+	if (p == NULL)
+		return;
+
+	for (i = 0; i < nr_shared_regions; i++) {
+		if (shared_regions[i].addr != (unsigned long)p ||
+		    shared_regions[i].size != size)
+			continue;
+		guarded = shared_regions[i].guarded != 0;
+		break;
+	}
+	if (i == nr_shared_regions) {
+		for (i = 0; i < nr_shared_regions_overflow; i++) {
+			if (shared_regions_overflow[i].addr != (unsigned long)p ||
+			    shared_regions_overflow[i].size != size)
+				continue;
+			guarded = shared_regions_overflow[i].guarded != 0;
+			break;
+		}
+	}
+
+	untrack_shared_region((unsigned long)p, size);
+
+	if (guarded)
+		guard_pages_derive_span(p, size, &base, &span);
+
+	if (munmap(base, span) != 0)
+		outputerr("free_shared: munmap(%p, %zu) failed: errno=%d\n",
+			  base, span, errno);
+}
+
+#else	/* !CONFIG_GUARD_SHARED */
+
+/*
+ * Legacy single-mmap path.  Byte-identical to pre-guard-armor trinity.
+ */
 void * alloc_shared(size_t size)
 {
 	void *ret;
@@ -432,6 +744,8 @@ void * alloc_shared(size_t size)
 	return ret;
 }
 
+#endif	/* CONFIG_GUARD_SHARED */
+
 /*
  * Add an externally-mmap'd region to the shared_regions tracker so the
  * range_overlaps_shared() guards in the mm-syscall sanitisers refuse
@@ -445,11 +759,18 @@ void track_shared_region(unsigned long addr, unsigned long size)
 	if (nr_shared_regions < MAX_SHARED_ALLOCS) {
 		shared_regions[nr_shared_regions].addr = addr;
 		shared_regions[nr_shared_regions].size = size;
+#ifdef CONFIG_GUARD_SHARED
+		/* Externally-mmap'd, never guarded by __alloc_shared. */
+		shared_regions[nr_shared_regions].guarded = 0;
+#endif
 		shared_bitmap_mark(addr, size);
 		tracked_size_mark(size);
 		nr_shared_regions++;
 	} else {
 		register_shared_overflow("track_shared_region", addr, size,
+#ifdef CONFIG_GUARD_SHARED
+					 false,
+#endif
 					 __builtin_return_address(0));
 	}
 }
@@ -759,7 +1080,7 @@ static void shared_str_heap_init(void)
 		abort();
 	}
 	shared_str_heap_capacity = SHARED_STR_HEAP_SIZE;
-	shared_str_heap = alloc_shared(shared_str_heap_capacity);
+	shared_str_heap = alloc_shared_pool(shared_str_heap_capacity);
 }
 
 void * alloc_shared_str(size_t size)

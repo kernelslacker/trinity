@@ -51,7 +51,45 @@
 
 extern unsigned int nr_shared_regions;
 
+#ifdef CONFIG_GUARD_SHARED
+/*
+ * Runtime scope for the guard-page armour wired into __alloc_shared().
+ * See utils.c for the per-value semantics and the gating rationale.
+ * Defaults to GUARD_SCOPE_OFF; the only writer is parse_args().
+ */
+enum guard_scope {
+	GUARD_SCOPE_OFF = 0,
+	GUARD_SCOPE_POOLS,
+	GUARD_SCOPE_ALL,
+};
+extern enum guard_scope guard_shared_scope;
+#endif
+
 void * alloc_shared(size_t size) __must_check;
+
+#ifdef CONFIG_GUARD_SHARED
+/*
+ * Pool-tagged shared-region allocator.  Names the long-lived regions
+ * the corruption-witness clusters keep pointing at (kcov_shm, the
+ * shared str/obj heap, per-child childdata) so --guard-shared=pools
+ * focuses the guard-page VMA cost on those without dragging every
+ * per-child tiny alloc into the budget.  Without CONFIG_GUARD_SHARED
+ * the pool tag is meaningless and the macro form collapses to plain
+ * alloc_shared() so the legacy single-mmap path stays byte-identical.
+ *
+ * free_shared() is the inverse: untracks the region and munmaps either
+ * the legacy (p, size) range or, when the region was guarded, the full
+ * leading-guard + usable-pages + trailing-guard span derived from the
+ * stored size.  Free-path symmetry the spec calls out as correctness:
+ * future destructors that release a pool region must route through
+ * free_shared() so the guard VMAs are not leaked.
+ */
+void * __alloc_shared(size_t size, bool is_pool) __must_check;
+void * alloc_shared_pool(size_t size) __must_check;
+void free_shared(void *p, size_t size);
+#else
+#define alloc_shared_pool(size)	alloc_shared(size)
+#endif
 
 /*
  * Checked size = a * b for shared-allocation call sites with a variable

@@ -324,7 +324,7 @@ static void init_shm_per_child_rings(void)
 		 * fd_event_ring canary) catches the structural fallout when
 		 * it does happen.
 		 */
-		child = alloc_shared(sizeof(struct childdata));
+		child = alloc_shared_pool(sizeof(struct childdata));
 		children[i] = child;
 
 		memset(&child->syscall, 0, sizeof(struct syscallrecord));

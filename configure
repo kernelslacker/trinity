@@ -361,6 +361,26 @@ check_header linux/if_xdp.h USE_XDP
 check_header linux/mctp.h USE_MCTP
 
 #############################################################################################
+# Optional: guard-page armour for alloc_shared() regions.  Off-by-default
+# hunt instrument that wraps tagged shared regions in PROT_NONE pages so
+# a forward overflow (buf[size]) faults at the writer PC instead of
+# scribbling an adjacent pool and crashing an unrelated consumer many
+# operations later.  See shared-region-guardpage-armor-spec-2026-06-09.md
+# for the design.
+#
+# Opt in at configure time with GUARD_SHARED=1.  Without the build flag
+# the guard machinery compiles out entirely and alloc_shared keeps its
+# legacy single-mmap path; with the build flag the runtime --guard-shared
+# scope (off|pools|all, default off) gates whether any guarding fires.
+echo -n "[*] Guard-page armour for alloc_shared (GUARD_SHARED): "
+if [ "${GUARD_SHARED:-0}" = "1" ]; then
+	echo $GREEN "[ON]" $COL_RESET
+	echo "#define CONFIG_GUARD_SHARED 1" >> $CONFIGH
+else
+	echo "[off]"
+fi
+
+#############################################################################################
 
 if [ "$MISSING_DEFS" == "1" ]; then
   echo "[-] Some header definitions were missing. This is not fatal."
