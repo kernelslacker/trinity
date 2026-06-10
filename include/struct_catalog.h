@@ -212,6 +212,19 @@ struct struct_desc {
  * as before.  At most one default per (name, arg_idx); discriminated
  * variants are walked in registration order, first match wins.
  *
+ * Packed discriminators: some syscalls pack the discriminator into a
+ * single arg alongside an unrelated subfield (e.g. quotactl's a1 is
+ * QCMD(subcmd, type) == (subcmd << 8) | (type & 0xff), so the cmd
+ * subfield -- the one that actually selects which struct the kernel
+ * reads at a4 -- lives in the high bits).  Optional discrim_shift /
+ * discrim_mask extract the meaningful subfield before the match:
+ * the lookup tests
+ *   ((rec->a<discrim_arg_idx> >> discrim_shift) & effective_mask)
+ *      == discrim_value (or any discrim_values[] entry)
+ * where effective_mask is discrim_mask when set and ~0UL otherwise.
+ * Both fields default to zero, which gives the historical exact-match
+ * semantics -- all existing registrations stay byte-identical.
+ *
  * This is a DIFFERENT axis from the in-buffer struct_desc->variants
  * resolved by struct_desc_resolve_variant(): variants pick a field
  * subset INSIDE an already-chosen descriptor based on a value WITHIN
@@ -229,6 +242,8 @@ struct syscall_struct_arg {
 	unsigned long		  discrim_value;	/* single-value shortcut */
 	const unsigned long	 *discrim_values;	/* multi-value match-list */
 	unsigned int		  num_discrim_values;
+	unsigned int		  discrim_shift;	/* right-shift applied to the raw arg before match (0 = none) */
+	unsigned long		  discrim_mask;		/* AND-mask applied after the shift (0 = no mask, i.e. all bits) */
 };
 
 /* All cataloged struct types. */

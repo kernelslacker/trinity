@@ -5263,7 +5263,7 @@ const struct struct_desc *struct_arg_lookup(unsigned int nr,
 	if (rec != NULL && b->num_discrim != 0) {
 		for (i = 0; i < b->num_discrim; i++) {
 			const struct syscall_struct_arg *sa = b->discrim[i];
-			unsigned long discrim;
+			unsigned long discrim, mask;
 
 			if (sa->discrim_arg_idx == 0 || sa->discrim_arg_idx > 6)
 				continue;
@@ -5276,6 +5276,16 @@ const struct struct_desc *struct_arg_lookup(unsigned int nr,
 			case 6: discrim = rec->a6; break;
 			default: continue;
 			}
+			/*
+			 * Packed discriminator: extract the meaningful
+			 * subfield before the match.  Shift / mask both
+			 * default to zero, which is the pre-extension
+			 * identity transform (shift by 0, mask of 0
+			 * promoted to ~0UL).  Existing exact-match
+			 * registrations stay byte-identical.
+			 */
+			mask = sa->discrim_mask ? sa->discrim_mask : ~0UL;
+			discrim = (discrim >> sa->discrim_shift) & mask;
 			if (sa->discrim_values != NULL) {
 				unsigned int j;
 
