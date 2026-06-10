@@ -356,6 +356,26 @@ static void run_inner_fuzzer(void)
  */
 static void inner_child_main(void)
 {
+	stack_t disable_ss = { .ss_flags = SS_DISABLE };
+
+	/*
+	 * Drop any alt-signal-stack inherited from the trinity child.
+	 * The sigaltstack syscall fuzzer deliberately registers
+	 * misaligned ss_sp values (its "misaligned ss_sp" bucket nudges
+	 * a writable base by 1-7 bytes to probe kernel validation).  In
+	 * an ASAN build, the _exit() calls below trigger
+	 * __asan_handle_no_return -> PlatformUnpoisonStacks, which queries
+	 * sigaltstack() and poisons/unpoisons the reported range.  An
+	 * inherited sub-granularity ss_sp trips libasan's
+	 * AddrIsAlignedByGranularity CHECK and aborts the inner child
+	 * before it can run any of the userns-gated ops.  SS_DISABLE
+	 * causes the kernel to zero sas_ss_sp/sas_ss_size, so the
+	 * libasan readback sees a NULL ss_sp and skips the alt-stack
+	 * branch entirely.  Inner child is about to _exit, so dropping
+	 * the inherited alt stack has no functional cost.
+	 */
+	(void)sigaltstack(&disable_ss, NULL);
+
 	if (unshare(CLONE_NEWUSER) != 0)
 		_exit(1);
 
