@@ -1741,8 +1741,27 @@ void kcov_plateau_check(void)
  * (kallsyms unreadable, _text absent), or vice versa, the bucket
  * indices would silently disagree and the load is refused.  Files
  * written under v4 reject cleanly on the version mismatch, costing
- * one cold start at the format bump. */
-#define KCOV_BITMAP_FILE_VERSION	5U
+ * one cold start at the format bump.
+ *
+ * Version 6 appends a per-syscall diag block after the v3 priors
+ * blob: per_syscall_diag[MAX_NR_SYSCALL][2] serialised as packed
+ * 16-byte records {u64 bucket_bits_real; u64 distinct_pcs;} with
+ * the syscall slot as the outer index and the do32 arch dimension
+ * as the inner index.  The previously-unused header pad slot is
+ * repurposed as diag_crc32 over that block; in v5 files the same
+ * slot is always written as zero by the save path and ignored by
+ * the load path, so the on-disk header size is unchanged at 88 B
+ * and v5 files load on a v6 binary as before -- they just lack
+ * the appended diag block.  The block records true per-syscall
+ * edge totals (the bucket_bits_real / distinct_pcs counters the
+ * hot path already maintains) so offline tooling can rank
+ * syscalls by actual edges discovered rather than only by the
+ * v3 productive-call counts. */
+#define KCOV_BITMAP_FILE_VERSION	6U
+/* Oldest file-format version this binary will warm-load.  v4 stays
+ * rejected (different header size, different PC basis); v5 loads
+ * without the v6 diag block; v6 loads with it. */
+#define KCOV_BITMAP_FILE_MIN_LOAD_VERSION	5U
 
 struct kcov_bitmap_file_header {
 	uint32_t magic;
@@ -1752,7 +1771,8 @@ struct kcov_bitmap_file_header {
 	uint64_t edges_found;
 	uint64_t distinct_edges;
 	uint32_t payload_crc32;
-	uint32_t pad;
+	uint32_t diag_crc32;       /* v6: CRC over the appended diag
+				    * block.  v5: always zero (pad). */
 	uint8_t  kallsyms_sha256[32];
 	uint32_t max_nr_syscall;   /* MAX_NR_SYSCALL at save time */
 	uint32_t priors_crc32;     /* CRC over both prior arrays */
@@ -1765,6 +1785,15 @@ struct kcov_bitmap_file_header {
 				    * != 0) -- a canonical-vs-raw mix
 				    * would silently corrupt bucket
 				    * lookups. */
+};
+
+/* On-disk record for a single per_syscall_diag[nr][dim] slot.
+ * Packed pair of u64s, naturally aligned, little-endian.  16 B per
+ * slot; MAX_NR_SYSCALL * 2 slots = 32 KiB.  Layout is the contract
+ * for the external cache-stats reader, so do not reorder. */
+struct kcov_per_syscall_diag_ondisk {
+	uint64_t bucket_bits_real;
+	uint64_t distinct_pcs;
 };
 
 /*
@@ -2020,9 +2049,12 @@ bool kcov_bitmap_save_file(const char *path)
 	struct kcov_bitmap_file_header hdr;
 	unsigned long edges_now;
 	unsigned char *priors_blob;
+	struct kcov_per_syscall_diag_ondisk *diag_blob;
 	size_t priors_blob_size;
 	size_t one_array_size;
+	size_t diag_blob_size;
 	char tmppath[PATH_MAX];
+	unsigned int nr;
 	int fd;
 	int ret;
 
@@ -2047,8 +2079,42 @@ bool kcov_bitmap_save_file(const char *path)
 	memcpy(priors_blob + one_array_size, kcov_shm->per_syscall_calls,
 	       one_array_size);
 
+	/* v6 diag block: pack per_syscall_diag[nr][dim].{bucket_bits_real,
+	 * distinct_pcs} into a contiguous 16-B-per-slot array, nr outer,
+	 * dim inner.  Read each field with a relaxed atomic load because
+	 * children are still bumping these in parallel from the snapshot
+	 * path; a torn pair across (bucket_bits_real, distinct_pcs) of
+	 * the same slot is harmless since the two are independent
+	 * counters and the readers treat them as soft per-syscall
+	 * totals. */
+	diag_blob_size = (size_t)MAX_NR_SYSCALL * 2 *
+			 sizeof(struct kcov_per_syscall_diag_ondisk);
+	diag_blob = malloc(diag_blob_size);
+	if (diag_blob == NULL) {
+		output(0, "kcov-bitmap: diag scratch alloc fail (%zu bytes) -- save aborted\n",
+		       diag_blob_size);
+		free(priors_blob);
+		return false;
+	}
+	for (nr = 0; nr < MAX_NR_SYSCALL; nr++) {
+		unsigned int dim;
+
+		for (dim = 0; dim < 2; dim++) {
+			struct kcov_per_syscall_diag *d =
+				&kcov_shm->per_syscall_diag[nr][dim];
+			struct kcov_per_syscall_diag_ondisk *o =
+				&diag_blob[nr * 2 + dim];
+
+			o->bucket_bits_real = __atomic_load_n(
+				&d->bucket_bits_real, __ATOMIC_RELAXED);
+			o->distinct_pcs = __atomic_load_n(
+				&d->distinct_pcs, __ATOMIC_RELAXED);
+		}
+	}
+
 	memset(&hdr, 0, sizeof(hdr));
 	if (!kcov_get_kernel_fp(hdr.kallsyms_sha256)) {
+		free(diag_blob);
 		free(priors_blob);
 		return false;
 	}
@@ -2064,6 +2130,7 @@ bool kcov_bitmap_save_file(const char *path)
 					      KCOV_NUM_EDGES);
 	hdr.max_nr_syscall = MAX_NR_SYSCALL;
 	hdr.priors_crc32 = crc32(priors_blob, priors_blob_size);
+	hdr.diag_crc32 = crc32(diag_blob, diag_blob_size);
 	/* Stamp the canonicalisation mode so the loader can refuse a
 	 * canonical-vs-raw mismatch.  Zero means the writer hashed PCs
 	 * raw (kallsyms unreadable, _text absent); non-zero is the
@@ -2076,12 +2143,14 @@ bool kcov_bitmap_save_file(const char *path)
 	ret = snprintf(tmppath, sizeof(tmppath), "%s.tmp.%d",
 		       path, (int)mypid());
 	if (ret < 0 || (size_t)ret >= sizeof(tmppath)) {
+		free(diag_blob);
 		free(priors_blob);
 		return false;
 	}
 
 	fd = open(tmppath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 	if (fd < 0) {
+		free(diag_blob);
 		free(priors_blob);
 		return false;
 	}
@@ -2090,6 +2159,7 @@ bool kcov_bitmap_save_file(const char *path)
 	if (fchmod(fd, 0644) != 0) {
 		(void)close(fd);
 		(void)unlink(tmppath);
+		free(diag_blob);
 		free(priors_blob);
 		return false;
 	}
@@ -2101,18 +2171,23 @@ bool kcov_bitmap_save_file(const char *path)
 		goto fail;
 	if (write_all(fd, priors_blob, priors_blob_size) < 0)
 		goto fail;
+	if (write_all(fd, diag_blob, diag_blob_size) < 0)
+		goto fail;
 	if (fsync(fd) != 0)
 		goto fail;
 	if (close(fd) != 0) {
 		(void)unlink(tmppath);
+		free(diag_blob);
 		free(priors_blob);
 		return false;
 	}
 	if (rename(tmppath, path) != 0) {
 		(void)unlink(tmppath);
+		free(diag_blob);
 		free(priors_blob);
 		return false;
 	}
+	free(diag_blob);
 	free(priors_blob);
 	kcov_bitmap_edges_at_last_save = edges_now;
 	return true;
@@ -2120,6 +2195,7 @@ bool kcov_bitmap_save_file(const char *path)
 fail:
 	(void)close(fd);
 	(void)unlink(tmppath);
+	free(diag_blob);
 	free(priors_blob);
 	return false;
 }
@@ -2168,9 +2244,12 @@ bool kcov_bitmap_load_file(const char *path)
 		(void)close(fd);
 		return false;
 	}
-	if (hdr.version != KCOV_BITMAP_FILE_VERSION) {
-		output(0, "kcov-bitmap: file version %u != expected %u at %s -- cold start\n",
-		       hdr.version, KCOV_BITMAP_FILE_VERSION, path);
+	if (hdr.version < KCOV_BITMAP_FILE_MIN_LOAD_VERSION ||
+	    hdr.version > KCOV_BITMAP_FILE_VERSION) {
+		output(0, "kcov-bitmap: file version %u outside accepted range [%u..%u] at %s -- cold start\n",
+		       hdr.version,
+		       (unsigned int)KCOV_BITMAP_FILE_MIN_LOAD_VERSION,
+		       (unsigned int)KCOV_BITMAP_FILE_VERSION, path);
 		(void)close(fd);
 		return false;
 	}
@@ -2281,6 +2360,63 @@ bool kcov_bitmap_load_file(const char *path)
 			free(priors_blob);
 		}
 	}
+
+	/* v6 diag block: per_syscall_diag[nr][dim].{bucket_bits_real,
+	 * distinct_pcs} packed as 16 B per slot, nr outer, dim inner.
+	 * Soft signal like the priors above -- any failure mode here
+	 * logs and falls through with the diag counters left at zero,
+	 * but must not invalidate the bitmap load already committed.
+	 * v5 (and below) files lack the block; skip on those without
+	 * complaint. */
+	if (hdr.version >= 6U && hdr.max_nr_syscall == MAX_NR_SYSCALL) {
+		size_t diag_blob_size = (size_t)MAX_NR_SYSCALL * 2 *
+			sizeof(struct kcov_per_syscall_diag_ondisk);
+		struct kcov_per_syscall_diag_ondisk *diag_blob =
+			malloc(diag_blob_size);
+
+		if (diag_blob == NULL) {
+			output(0, "kcov-bitmap: diag scratch alloc fail (%zu bytes) -- diag skipped\n",
+			       diag_blob_size);
+		} else {
+			n = read_all(fd, diag_blob, diag_blob_size);
+			if (n != (ssize_t)diag_blob_size) {
+				output(0, "kcov-bitmap: diag truncated at %s (got %zd, want %zu) -- diag skipped\n",
+				       path, n, diag_blob_size);
+			} else {
+				uint32_t got_crc = crc32(diag_blob,
+							 diag_blob_size);
+
+				if (got_crc != hdr.diag_crc32) {
+					output(0, "kcov-bitmap: diag CRC mismatch at %s -- diag skipped\n",
+					       path);
+				} else {
+					unsigned int nr;
+
+					for (nr = 0; nr < MAX_NR_SYSCALL; nr++) {
+						unsigned int dim;
+
+						for (dim = 0; dim < 2; dim++) {
+							struct kcov_per_syscall_diag_ondisk *o =
+								&diag_blob[nr * 2 + dim];
+							struct kcov_per_syscall_diag *d =
+								&kcov_shm->per_syscall_diag[nr][dim];
+
+							__atomic_store_n(&d->bucket_bits_real,
+									 o->bucket_bits_real,
+									 __ATOMIC_RELAXED);
+							__atomic_store_n(&d->distinct_pcs,
+									 o->distinct_pcs,
+									 __ATOMIC_RELAXED);
+						}
+					}
+					output(0, "kcov-bitmap: loaded v6 diag block from %s (CRC OK)\n",
+					       path);
+				}
+			}
+			free(diag_blob);
+		}
+	}
+
 	(void)close(fd);
 	__atomic_store_n(&kcov_shm->edges_found, hdr.edges_found,
 			 __ATOMIC_RELAXED);
