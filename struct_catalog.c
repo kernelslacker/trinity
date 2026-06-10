@@ -4424,11 +4424,6 @@ const struct struct_desc struct_catalog[] = {
 	 * (io_uring_sync_cancel_reg @ 64 bytes) so the buffer fed to the
 	 * fill path is never too small for any single-struct opcode.
 	 *
-	 * Placed BEFORE the USE_BPF block so its struct_catalog[] index is
-	 * stable across USE_BPF / non-USE_BPF builds for the
-	 * syscall_struct_args[] mapping below; the bpf_attr / bpf_insn /
-	 * iovec entries that follow shift by one slot accordingly.
-	 *
 	 * No live consumer wires this entry today: io_uring_register's
 	 * arg slot is ARG_ADDRESS (not ARG_STRUCT_PTR_*) and the existing
 	 * sanitise_io_uring_register hand-rolls every opcode's payload.
