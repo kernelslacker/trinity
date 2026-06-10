@@ -2,7 +2,7 @@
 """Dump stats from trinity's ~/.cache/trinity/ persisted artifacts.
 
 Parses four on-disk formats version-aware:
-  - kcov-bitmap        magic "KCBV", versions 4, 5, 6
+  - kcov-bitmap        magic "KCBV", versions 4, 5, 6, 7
   - corpus/<arch>      magic "TRNC", version 3
   - cmp-hints          magic "CHP_", version 4
   - effector/<arch>    magic "TREM", version 1
@@ -44,6 +44,13 @@ KCOV_HDR_COMMON = "<IIIIQQII32sII"
 KCOV_HDR_COMMON_SIZE = struct.calcsize(KCOV_HDR_COMMON)
 KCOV_HDR_V4_SIZE = 120
 KCOV_HDR_V5_SIZE = 88
+KCOV_HDR_V7_SIZE = 96
+KCOV_HDR_V7_TRAILER_FMT = "<II"
+
+KCOV_NR_STRATEGIES = 3
+KCOV_STRATEGY_NAMES = ("HEURISTIC", "RANDOM", "FRONTIER")
+KCOV_STRAT_BLOCK_FMT = f"<{KCOV_NR_STRATEGIES * 2}Q"
+KCOV_STRAT_BLOCK_SIZE = struct.calcsize(KCOV_STRAT_BLOCK_FMT)
 
 CORPUS_HDR_FMT = "<IIIIII65s65s"
 CORPUS_HDR_SIZE_RAW = struct.calcsize(CORPUS_HDR_FMT)
@@ -142,6 +149,10 @@ class KcovData:
     diag_bucket_bits_real: list[int] = field(default_factory=list)
     diag_distinct_pcs: list[int] = field(default_factory=list)
     diag_crc32: Optional[int] = None
+    strat_present: bool = False
+    strat_crc32: Optional[int] = None
+    strat_calls_by_strategy: list[int] = field(default_factory=list)
+    strat_count_by_strategy: list[int] = field(default_factory=list)
     crc_ok: bool = True
     notes: list[str] = field(default_factory=list)
 
@@ -162,7 +173,7 @@ def load_kcov(path: str) -> Optional[KcovData]:
     if magic != KCOV_MAGIC:
         warn(f"kcov: {path}: bad magic 0x{magic:08x}")
         return None
-    if version not in (4, 5, 6):
+    if version not in (4, 5, 6, 7):
         warn(f"kcov: {path}: unsupported version {version}")
         return None
 
@@ -190,6 +201,7 @@ def load_kcov(path: str) -> Optional[KcovData]:
     boot_id: Optional[str] = None
     kaslr_base: Optional[int] = None
     diag_crc32: Optional[int] = None
+    strat_crc32: Optional[int] = None
 
     if version == 4:
         # v4 trails the common prefix with a 40-byte boot-id block instead of
@@ -205,6 +217,14 @@ def load_kcov(path: str) -> Optional[KcovData]:
         hdr_size = KCOV_HDR_V5_SIZE
         if version >= 6:
             diag_crc32 = hdr_pad_or_diag_crc
+        if version >= 7:
+            if len(raw) < KCOV_HDR_V7_SIZE:
+                warn(f"kcov: {path}: truncated v7 header")
+                return None
+            (strat_crc32, _pad2) = struct.unpack_from(
+                KCOV_HDR_V7_TRAILER_FMT, raw, KCOV_HDR_V5_SIZE
+            )
+            hdr_size = KCOV_HDR_V7_SIZE
 
     payload_end = hdr_size + KCOV_NUM_EDGES
     priors_end = payload_end + 2 * MAX_NR_SYSCALL * 8
@@ -244,6 +264,7 @@ def load_kcov(path: str) -> Optional[KcovData]:
     diag_present = False
     diag_bucket_bits_real: list[int] = []
     diag_distinct_pcs: list[int] = []
+    diag_end = priors_end
 
     if version >= 6:
         diag_bytes = MAX_NR_SYSCALL * 2 * 16
@@ -253,6 +274,7 @@ def load_kcov(path: str) -> Optional[KcovData]:
                 f"kcov: {path}: v6 diag block truncated "
                 f"(have {len(raw)}, want >= {diag_end})"
             )
+            diag_end = priors_end
         else:
             diag = raw[priors_end:diag_end]
             calc_diag_crc = zlib.crc32(diag) & 0xFFFFFFFF
@@ -268,6 +290,30 @@ def load_kcov(path: str) -> Optional[KcovData]:
                 diag_bucket_bits_real.append(flat[base] + flat[base + 2])
                 diag_distinct_pcs.append(flat[base + 1] + flat[base + 3])
             diag_present = True
+
+    strat_present = False
+    strat_calls_by_strategy: list[int] = []
+    strat_count_by_strategy: list[int] = []
+
+    if version >= 7:
+        strat_end = diag_end + KCOV_STRAT_BLOCK_SIZE
+        if len(raw) < strat_end:
+            notes.append(
+                f"v7 strat block truncated " f"(have {len(raw)}, want >= {strat_end})"
+            )
+        else:
+            strat_blob = raw[diag_end:strat_end]
+            calc_strat_crc = zlib.crc32(strat_blob) & 0xFFFFFFFF
+            if strat_crc32 is not None and calc_strat_crc != strat_crc32:
+                notes.append(
+                    f"strat_crc32 mismatch: file=0x{strat_crc32:08x} "
+                    f"calc=0x{calc_strat_crc:08x} (strat block skipped)"
+                )
+            else:
+                vals = struct.unpack(KCOV_STRAT_BLOCK_FMT, strat_blob)
+                strat_calls_by_strategy = list(vals[:KCOV_NR_STRATEGIES])
+                strat_count_by_strategy = list(vals[KCOV_NR_STRATEGIES:])
+                strat_present = True
 
     if bitmap_popcount != edges_found:
         notes.append(f"popcount {bitmap_popcount} != edges_found {edges_found}")
@@ -295,6 +341,10 @@ def load_kcov(path: str) -> Optional[KcovData]:
         diag_bucket_bits_real=diag_bucket_bits_real,
         diag_distinct_pcs=diag_distinct_pcs,
         diag_crc32=diag_crc32,
+        strat_present=strat_present,
+        strat_crc32=strat_crc32,
+        strat_calls_by_strategy=strat_calls_by_strategy,
+        strat_count_by_strategy=strat_count_by_strategy,
         crc_ok=crc_ok,
         notes=notes,
     )
@@ -804,6 +854,19 @@ def print_kcov_stats(b: CacheBundle, top_n: int) -> None:
         for nr, calls in wasted[:top_n]:
             print(f"  {syscall_label(b.syscall_names, nr):<28s} {calls:>12d}")
 
+    if k.version >= 7:
+        section("per-strategy coverage (v7)")
+        if not k.strat_present:
+            print("  v7 strat block absent")
+        else:
+            print(f"  {'strategy':<12s} {'prod-calls':>14s} {'edges(real)':>14s}")
+            for s, name in enumerate(KCOV_STRATEGY_NAMES):
+                print(
+                    f"  {name:<12s} "
+                    f"{k.strat_calls_by_strategy[s]:>14d} "
+                    f"{k.strat_count_by_strategy[s]:>14d}"
+                )
+
 
 def print_corpus_stats(b: CacheBundle, top_n: int) -> None:
     section("corpus")
@@ -1068,6 +1131,24 @@ def cmd_diff(args: argparse.Namespace) -> int:
             sample = sorted(novel_on_b)[: args.top]
             for nr in sample:
                 print(f"    {syscall_label(names, nr)}")
+
+        if a.kcov.strat_present and b.kcov.strat_present:
+            section("per-strategy edge delta (v7)")
+            print(
+                f"  {'strategy':<12s} "
+                f"{'A.edges':>12s} {'B.edges':>12s} {'delta':>10s} "
+                f"{'A.calls':>12s} {'B.calls':>12s}"
+            )
+            for s, name in enumerate(KCOV_STRATEGY_NAMES):
+                ea = a.kcov.strat_count_by_strategy[s]
+                eb = b.kcov.strat_count_by_strategy[s]
+                ca = a.kcov.strat_calls_by_strategy[s]
+                cb = b.kcov.strat_calls_by_strategy[s]
+                print(
+                    f"  {name:<12s} "
+                    f"{ea:>12d} {eb:>12d} {eb - ea:>+10d} "
+                    f"{ca:>12d} {cb:>12d}"
+                )
 
     if a.corpus is not None and b.corpus is not None:
         section("corpus-composition delta")
