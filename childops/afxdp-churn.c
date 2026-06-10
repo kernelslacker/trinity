@@ -276,6 +276,24 @@ static bool retryable(int e)
 	return e == EAGAIN || e == EBUSY || e == EINTR;
 }
 
+/*
+ * Compute mmap length for an XDP ring as desc_off + entries * entry_sz.
+ * Returns false on wrap from the kernel-supplied desc_off or the
+ * multiplication so a short/corrupt XDP_MMAP_OFFSETS reply can't drive
+ * a bogus mmap (and matching bogus munmap) length.
+ */
+static bool xdp_ring_mmap_size(__u64 desc_off, size_t entries,
+			       size_t entry_sz, size_t *out)
+{
+	size_t prod;
+
+	if (__builtin_mul_overflow(entries, entry_sz, &prod))
+		return false;
+	if (__builtin_add_overflow((size_t)desc_off, prod, out))
+		return false;
+	return true;
+}
+
 /* setsockopt with bounded EAGAIN/EBUSY retry. */
 static int setsockopt_retry(int s, int level, int name,
 			    const void *val, socklen_t len)
@@ -672,21 +690,30 @@ static int afxdp_iter_setup_rings(struct xsk_state *st)
 	__atomic_add_fetch(&shm->stats.afxdp_churn_rings_setup_ok,
 			   1, __ATOMIC_RELAXED);
 
+	/* Zero before the getsockopt so a short reply leaves known state,
+	 * then require the full struct came back before we trust any of
+	 * its fields for downstream mmap sizing. */
+	memset(&st->off, 0, sizeof(st->off));
 	if (getsockopt(st->xsk_fd, SOL_XDP, XDP_MMAP_OFFSETS,
-		       &st->off, &off_len) < 0) {
+		       &st->off, &off_len) < 0 ||
+	    off_len < sizeof(st->off)) {
 		__atomic_add_fetch(&shm->stats.afxdp_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
 
-	st->rx_ring_sz = (size_t)st->off.rx.desc +
-			 (size_t)AFXDP_RING_ENTRIES * sizeof(struct xdp_desc);
-	st->tx_ring_sz = (size_t)st->off.tx.desc +
-			 (size_t)AFXDP_RING_ENTRIES * sizeof(struct xdp_desc);
-	st->fr_ring_sz = (size_t)st->off.fr.desc +
-			 (size_t)AFXDP_RING_ENTRIES * sizeof(uint64_t);
-	st->cr_ring_sz = (size_t)st->off.cr.desc +
-			 (size_t)AFXDP_RING_ENTRIES * sizeof(uint64_t);
+	if (!xdp_ring_mmap_size(st->off.rx.desc, AFXDP_RING_ENTRIES,
+				sizeof(struct xdp_desc), &st->rx_ring_sz) ||
+	    !xdp_ring_mmap_size(st->off.tx.desc, AFXDP_RING_ENTRIES,
+				sizeof(struct xdp_desc), &st->tx_ring_sz) ||
+	    !xdp_ring_mmap_size(st->off.fr.desc, AFXDP_RING_ENTRIES,
+				sizeof(uint64_t), &st->fr_ring_sz) ||
+	    !xdp_ring_mmap_size(st->off.cr.desc, AFXDP_RING_ENTRIES,
+				sizeof(uint64_t), &st->cr_ring_sz)) {
+		__atomic_add_fetch(&shm->stats.afxdp_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return -1;
+	}
 
 	st->rx_ring = mmap(NULL, st->rx_ring_sz, PROT_READ | PROT_WRITE,
 			   MAP_SHARED | MAP_POPULATE, st->xsk_fd,

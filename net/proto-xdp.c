@@ -58,6 +58,24 @@
 #define XDP_RING_SIZE	64
 
 /*
+ * Compute mmap length for an XDP ring as desc_off + entries * entry_sz.
+ * Returns false on wrap from the kernel-supplied desc_off or the
+ * multiplication so a short/corrupt XDP_MMAP_OFFSETS reply can't drive
+ * a bogus mmap (and matching bogus munmap) length.
+ */
+static bool xdp_ring_mmap_size(__u64 desc_off, size_t entries,
+			       size_t entry_sz, size_t *out)
+{
+	size_t prod;
+
+	if (__builtin_mul_overflow(entries, entry_sz, &prod))
+		return false;
+	if (__builtin_add_overflow((size_t)desc_off, prod, out))
+		return false;
+	return true;
+}
+
+/*
  * Set up the full XDP lifecycle on fd:
  * 1. Allocate UMEM via anonymous mmap
  * 2. Register UMEM via XDP_UMEM_REG setsockopt
@@ -70,6 +88,7 @@ static void xdp_socket_setup(int fd)
 	struct xdp_umem_reg reg;
 	struct xdp_mmap_offsets offsets;
 	socklen_t optlen;
+	size_t map_sz;
 	int ring_size = XDP_RING_SIZE;
 	void *umem_area;
 	void *map;
@@ -100,36 +119,51 @@ static void xdp_socket_setup(int fd)
 	if (setsockopt(fd, SOL_XDP, XDP_TX_RING, &ring_size, sizeof(ring_size)) == -1)
 		goto out_unmap_umem;
 
-	/* 4. Query mmap offsets */
+	/* 4. Query mmap offsets.  Zero first so a short getsockopt leaves
+	 * known state, then require the full struct came back before we
+	 * trust any of its fields. */
+	memset(&offsets, 0, sizeof(offsets));
 	optlen = sizeof(offsets);
 	if (getsockopt(fd, SOL_XDP, XDP_MMAP_OFFSETS, &offsets, &optlen) == -1)
+		goto out_unmap_umem;
+	if (optlen < sizeof(offsets))
 		goto out_unmap_umem;
 
 	/* 5. mmap each ring — these will likely fail without a real
 	 * netdev, but we exercise the kernel mmap paths regardless. */
-	map = mmap(NULL, offsets.rx.desc + XDP_RING_SIZE * sizeof(__u64),
-		   PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE,
-		   fd, XDP_PGOFF_RX_RING);
-	if (map != MAP_FAILED)
-		munmap(map, offsets.rx.desc + XDP_RING_SIZE * sizeof(__u64));
+	if (xdp_ring_mmap_size(offsets.rx.desc, XDP_RING_SIZE,
+			       sizeof(__u64), &map_sz)) {
+		map = mmap(NULL, map_sz, PROT_READ | PROT_WRITE,
+			   MAP_SHARED | MAP_POPULATE, fd, XDP_PGOFF_RX_RING);
+		if (map != MAP_FAILED)
+			munmap(map, map_sz);
+	}
 
-	map = mmap(NULL, offsets.tx.desc + XDP_RING_SIZE * sizeof(__u64),
-		   PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE,
-		   fd, XDP_PGOFF_TX_RING);
-	if (map != MAP_FAILED)
-		munmap(map, offsets.tx.desc + XDP_RING_SIZE * sizeof(__u64));
+	if (xdp_ring_mmap_size(offsets.tx.desc, XDP_RING_SIZE,
+			       sizeof(__u64), &map_sz)) {
+		map = mmap(NULL, map_sz, PROT_READ | PROT_WRITE,
+			   MAP_SHARED | MAP_POPULATE, fd, XDP_PGOFF_TX_RING);
+		if (map != MAP_FAILED)
+			munmap(map, map_sz);
+	}
 
-	map = mmap(NULL, offsets.fr.desc + XDP_RING_SIZE * sizeof(__u64),
-		   PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE,
-		   fd, XDP_UMEM_PGOFF_FILL_RING);
-	if (map != MAP_FAILED)
-		munmap(map, offsets.fr.desc + XDP_RING_SIZE * sizeof(__u64));
+	if (xdp_ring_mmap_size(offsets.fr.desc, XDP_RING_SIZE,
+			       sizeof(__u64), &map_sz)) {
+		map = mmap(NULL, map_sz, PROT_READ | PROT_WRITE,
+			   MAP_SHARED | MAP_POPULATE, fd,
+			   XDP_UMEM_PGOFF_FILL_RING);
+		if (map != MAP_FAILED)
+			munmap(map, map_sz);
+	}
 
-	map = mmap(NULL, offsets.cr.desc + XDP_RING_SIZE * sizeof(__u64),
-		   PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE,
-		   fd, XDP_UMEM_PGOFF_COMPLETION_RING);
-	if (map != MAP_FAILED)
-		munmap(map, offsets.cr.desc + XDP_RING_SIZE * sizeof(__u64));
+	if (xdp_ring_mmap_size(offsets.cr.desc, XDP_RING_SIZE,
+			       sizeof(__u64), &map_sz)) {
+		map = mmap(NULL, map_sz, PROT_READ | PROT_WRITE,
+			   MAP_SHARED | MAP_POPULATE, fd,
+			   XDP_UMEM_PGOFF_COMPLETION_RING);
+		if (map != MAP_FAILED)
+			munmap(map, map_sz);
+	}
 
 	/* Leave UMEM mapped — the kernel holds a reference while the
 	 * socket is alive.  It gets cleaned up when the fd closes. */
