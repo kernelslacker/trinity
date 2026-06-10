@@ -2003,15 +2003,58 @@ static const struct struct_field landlock_ruleset_attr_fields[] = {
  * kernel resolves to a path -- no useful per-bit CMP vocab, FT_RAW.
  *
  * The sibling LANDLOCK_RULE_NET_PORT arm passes a different struct
- * (landlock_net_port_attr) at the same a3 slot; that variant needs a
- * tagged-union descriptor and is intentionally out of scope here --
- * this entry attributes the PATH_BENEATH arm only.
+ * (landlock_net_port_attr) at the same a3 slot; that variant is
+ * registered separately below and selected by the discriminator-
+ * aware syscall_struct_args[] entry on rec->a2 == rule_type.
  */
 static const struct struct_field landlock_path_beneath_attr_fields[] = {
 	FIELDX(struct landlock_path_beneath_attr, allowed_access, FT_FLAGS,
 	       .u.flags.mask = LANDLOCK_ACCESS_FS_MASK,
 	       .mutate_weight = 80),
 	FIELD(struct landlock_path_beneath_attr, parent_fd),
+};
+
+/* ------------------------------------------------------------------ */
+/* struct landlock_net_port_attr (landlock_add_rule)                   */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Sibling variant of landlock_path_beneath_attr above: under
+ * LANDLOCK_RULE_NET_PORT the rule_attr at a3 is a
+ * struct landlock_net_port_attr instead.  The bespoke
+ * sanitise_landlock_add_rule() keeps owning the live fill
+ * (get_writable_address() allocation, allowed_access drawn from a
+ * 2-bit pool covering LANDLOCK_ACCESS_NET_BIND_TCP and
+ * LANDLOCK_ACCESS_NET_CONNECT_TCP, port stratified across the
+ * ephemeral / well-known / privileged / unprivileged ranges).
+ * argtype[2] is not declared, so the schema-aware fill path never
+ * runs against rec->a3; registration is attribution-only and mirrors
+ * the landlock_path_beneath_attr entry above.
+ *
+ * allowed_access carries the LANDLOCK_ACCESS_NET_* vocabulary; reuse
+ * the LANDLOCK_ACCESS_NET_MASK defined for landlock_ruleset_attr so
+ * a future uapi bit lands in one place.  port is __u64 host-endian
+ * and the kernel rejects values > 65535 (build_check_abi() bounds);
+ * FT_RANGE {0, 65535} steers KCOV-CMP learned constants at the
+ * actually-reachable port space.
+ *
+ * Resolution to this descriptor is gated on the
+ * LANDLOCK_RULE_NET_PORT rule_type via the discriminator-aware
+ * syscall_struct_args[] entry below, mirroring the fcntl
+ * flock / f_owner_ex registration.  Pre-discriminator the catalog
+ * could map only one descriptor per (syscall, arg), so a3 resolved
+ * to landlock_path_beneath_attr for every rule_type and
+ * struct_field_for_cmp() was attributing CMP-learned constants at
+ * allowed_access / parent_fd even on NET_PORT dispatches where the
+ * kernel was reading a wholly different struct.
+ */
+static const struct struct_field landlock_net_port_attr_fields[] = {
+	FIELDX(struct landlock_net_port_attr, allowed_access, FT_FLAGS,
+	       .u.flags.mask = LANDLOCK_ACCESS_NET_MASK,
+	       .mutate_weight = 80),
+	FIELDX(struct landlock_net_port_attr, port, FT_RANGE,
+	       .u.range = { 0, 65535 },
+	       .mutate_weight = 60),
 };
 
 /* ------------------------------------------------------------------ */
@@ -4572,10 +4615,11 @@ const struct struct_desc struct_catalog[] = {
 	 * file_attr: appended at the tail so the existing
 	 * struct_catalog[N] indices above stay stable.  The
 	 * syscall_struct_args[] mapping below uses
-	 * ARRAY_SIZE(struct_catalog) - 2 to address this slot, sparing
+	 * ARRAY_SIZE(struct_catalog) - 4 to address this slot, sparing
 	 * us the USE_BPF / USE_XATTR_ARGS index gymnastics that would
-	 * otherwise be needed (the landlock_path_beneath_attr entry
-	 * below now occupies the -1 tail slot).
+	 * otherwise be needed (the landlock_path_beneath_attr / f_owner_ex
+	 * / landlock_net_port_attr entries below now occupy the -3 / -2
+	 * / -1 tail slots).
 	 */
 	{
 		.name		= "file_attr",
@@ -4587,10 +4631,10 @@ const struct struct_desc struct_catalog[] = {
 	 * landlock_path_beneath_attr: appended at the tail so the
 	 * existing struct_catalog[N] indices above stay stable.  The
 	 * syscall_struct_args[] mapping below uses
-	 * ARRAY_SIZE(struct_catalog) - 2 to address this slot, sparing
+	 * ARRAY_SIZE(struct_catalog) - 3 to address this slot, sparing
 	 * us the USE_BPF / USE_XATTR_ARGS index gymnastics that would
-	 * otherwise be needed (the f_owner_ex entry below now occupies
-	 * the -1 tail slot).
+	 * otherwise be needed (the f_owner_ex / landlock_net_port_attr
+	 * entries below now occupy the -2 / -1 tail slots).
 	 */
 	{
 		.name		= "landlock_path_beneath_attr",
@@ -4601,16 +4645,31 @@ const struct struct_desc struct_catalog[] = {
 	/*
 	 * f_owner_ex: appended at the tail so the existing struct_catalog[N]
 	 * indices above stay stable.  The syscall_struct_args[] mapping
-	 * below uses ARRAY_SIZE(struct_catalog) - 1 to address this slot,
+	 * below uses ARRAY_SIZE(struct_catalog) - 2 to address this slot,
 	 * sparing us the USE_BPF / USE_XATTR_ARGS index gymnastics that
-	 * would otherwise be needed (this is the new last entry under
-	 * every configure combination).
+	 * would otherwise be needed (the landlock_net_port_attr entry
+	 * below now occupies the -1 tail slot).
 	 */
 	{
 		.name		= "f_owner_ex",
 		.struct_size	= sizeof(struct f_owner_ex),
 		.fields		= f_owner_ex_fields,
 		.num_fields	= ARRAY_SIZE(f_owner_ex_fields),
+	},
+	/*
+	 * landlock_net_port_attr: appended at the tail so the existing
+	 * struct_catalog[N] indices above stay stable.  The
+	 * syscall_struct_args[] mapping below uses
+	 * ARRAY_SIZE(struct_catalog) - 1 to address this slot, sparing
+	 * us the USE_BPF / USE_XATTR_ARGS index gymnastics that would
+	 * otherwise be needed (this is the new last entry under every
+	 * configure combination).
+	 */
+	{
+		.name		= "landlock_net_port_attr",
+		.struct_size	= sizeof(struct landlock_net_port_attr),
+		.fields		= landlock_net_port_attr_fields,
+		.num_fields	= ARRAY_SIZE(landlock_net_port_attr_fields),
 	},
 };
 
@@ -4646,6 +4705,30 @@ static const unsigned long fcntl_flock_cmds[] = {
 
 static const unsigned long fcntl_f_owner_ex_cmds[] = {
 	F_GETOWN_EX, F_SETOWN_EX,
+};
+
+/*
+ * landlock_add_rule arg3 rule_type discriminator pools.  Sibling arg
+ * a2 (rule_type) selects which struct backs the a3 pointer; the
+ * discriminator-aware lookup resolves these lists against rec->a2 to
+ * pick the right descriptor.
+ *
+ * landlock_add_rule_path_beneath_rule_types: just
+ * LANDLOCK_RULE_PATH_BENEATH (a3 is a struct landlock_path_beneath_attr).
+ *
+ * landlock_add_rule_net_port_rule_types: just LANDLOCK_RULE_NET_PORT
+ * (a3 is a struct landlock_net_port_attr).
+ *
+ * One-element pools so the registration shape matches the fcntl
+ * cmd-discriminator above; new landlock rule_types will land here as
+ * additional entries with their own descriptor + pool.
+ */
+static const unsigned long landlock_add_rule_path_beneath_rule_types[] = {
+	LANDLOCK_RULE_PATH_BENEATH,
+};
+
+static const unsigned long landlock_add_rule_net_port_rule_types[] = {
+	LANDLOCK_RULE_NET_PORT,
 };
 
 /* ------------------------------------------------------------------ */
@@ -4893,7 +4976,8 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * integer flag word, same as before.
 	 *
 	 * struct flock @ struct_catalog[35] (stable index pre-USE_BPF
-	 * tail entries); struct f_owner_ex @ ARRAY_SIZE - 1 (tail).
+	 * tail entries); struct f_owner_ex @ ARRAY_SIZE - 2 (tail; the
+	 * -1 tail slot now belongs to landlock_net_port_attr).
 	 */
 	{
 		"fcntl", 3, &struct_catalog[35],
@@ -4902,7 +4986,7 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 		.num_discrim_values	= ARRAY_SIZE(fcntl_flock_cmds),
 	},
 	{
-		"fcntl", 3, &struct_catalog[ARRAY_SIZE(struct_catalog) - 1],
+		"fcntl", 3, &struct_catalog[ARRAY_SIZE(struct_catalog) - 2],
 		.discrim_arg_idx	= 2,
 		.discrim_values		= fcntl_f_owner_ex_cmds,
 		.num_discrim_values	= ARRAY_SIZE(fcntl_f_owner_ex_cmds),
@@ -5005,7 +5089,7 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 		.num_discrim_values	= ARRAY_SIZE(fcntl_flock_cmds),
 	},
 	{
-		"fcntl", 3, &struct_catalog[ARRAY_SIZE(struct_catalog) - 1],
+		"fcntl", 3, &struct_catalog[ARRAY_SIZE(struct_catalog) - 2],
 		.discrim_arg_idx	= 2,
 		.discrim_values		= fcntl_f_owner_ex_cmds,
 		.num_discrim_values	= ARRAY_SIZE(fcntl_f_owner_ex_cmds),
@@ -5030,7 +5114,7 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * so struct_field_for_cmp can steer CMP-learned constants at
 	 * the named fa_xflags / fa_extsize / fa_nextents / fa_projid /
 	 * fa_cowextsize slots rather than at a coincidentally-same-
-	 * width slot.  Sized via ARRAY_SIZE(struct_catalog) - 3 so the
+	 * width slot.  Sized via ARRAY_SIZE(struct_catalog) - 4 so the
 	 * tail position resolves correctly under every USE_BPF /
 	 * USE_XATTR_ARGS combination.
 	 *
@@ -5038,27 +5122,60 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * kernel-written OUTPUT and has no input fill to attribute
 	 * against.
 	 */
-	{ "file_setattr",	3, &struct_catalog[ARRAY_SIZE(struct_catalog) - 3] },
+	{ "file_setattr",	3, &struct_catalog[ARRAY_SIZE(struct_catalog) - 4] },
 	/*
 	 * landlock_add_rule(int ruleset_fd, enum landlock_rule_type rule_type,
 	 *                   const void __user *rule_attr, __u32 flags)
-	 * a3 is the INPUT struct landlock_path_beneath_attr pointer under
-	 * the LANDLOCK_RULE_PATH_BENEATH rule_type.  The bespoke
-	 * sanitise_landlock_add_rule() keeps owning the live fill --
-	 * argtype[2] is not declared, so the schema-aware fill path never
-	 * runs against rec->a3; this registration is attribution-only so
-	 * struct_field_for_cmp can steer CMP-learned constants at the
-	 * named allowed_access / parent_fd slots rather than at a
-	 * coincidentally-same-width slot.  Sized via
-	 * ARRAY_SIZE(struct_catalog) - 2 so the tail position resolves
-	 * correctly under every USE_BPF / USE_XATTR_ARGS combination.
+	 * a3's type depends on the rule_type in a2, mirroring fcntl's
+	 * cmd-discriminated a3 above.  Two variants, both attribution-only
+	 * (the bespoke sanitise_landlock_add_rule() keeps owning the live
+	 * fill -- argtype[2] is not declared, so the schema-aware fill
+	 * path never runs against rec->a3):
 	 *
-	 * Not mapped here on purpose: the LANDLOCK_RULE_NET_PORT arm
-	 * passes landlock_net_port_attr at the same a3 slot; that
-	 * variant needs a tagged-union descriptor and is intentionally
-	 * out of scope for this attribution-only registration.
+	 *   - struct landlock_path_beneath_attr for
+	 *     LANDLOCK_RULE_PATH_BENEATH.  The bespoke arm masks
+	 *     allowed_access to the low 16 bits (LANDLOCK_ACCESS_FS_*) and
+	 *     stamps get_random_fd() into parent_fd;
+	 *     struct_field_for_cmp() steers CMP-learned constants at the
+	 *     named allowed_access / parent_fd slots.
+	 *
+	 *   - struct landlock_net_port_attr for LANDLOCK_RULE_NET_PORT.
+	 *     The bespoke arm picks allowed_access from the 2-bit
+	 *     LANDLOCK_ACCESS_NET_* pool and stratifies port across
+	 *     ephemeral / well-known / privileged / unprivileged ranges;
+	 *     struct_field_for_cmp() steers CMP-learned constants at the
+	 *     named allowed_access / port slots.
+	 *
+	 * rule_types outside both lists match no variant and resolve to
+	 * NULL -- gen_arg_struct_ptr_inout falls through to a zeroed
+	 * fallback buffer that sanitise_landlock_add_rule's switch
+	 * default leaves untouched (rec->a3 keeps whatever the generic
+	 * arg-gen wrote), same as before.
+	 *
+	 * Pre-discriminator the catalog could map only one descriptor per
+	 * (syscall, arg), so a3 resolved to landlock_path_beneath_attr
+	 * for every rule_type and struct_field_for_cmp() was attributing
+	 * CMP-learned constants at allowed_access / parent_fd even on
+	 * NET_PORT dispatches where the kernel was reading a wholly
+	 * different struct.
+	 *
+	 * struct landlock_path_beneath_attr @ ARRAY_SIZE - 3;
+	 * struct landlock_net_port_attr     @ ARRAY_SIZE - 1 (tail).
 	 */
-	{ "landlock_add_rule",	3, &struct_catalog[ARRAY_SIZE(struct_catalog) - 2] },
+	{
+		"landlock_add_rule", 3,
+		&struct_catalog[ARRAY_SIZE(struct_catalog) - 3],
+		.discrim_arg_idx	= 2,
+		.discrim_values		= landlock_add_rule_path_beneath_rule_types,
+		.num_discrim_values	= ARRAY_SIZE(landlock_add_rule_path_beneath_rule_types),
+	},
+	{
+		"landlock_add_rule", 3,
+		&struct_catalog[ARRAY_SIZE(struct_catalog) - 1],
+		.discrim_arg_idx	= 2,
+		.discrim_values		= landlock_add_rule_net_port_rule_types,
+		.num_discrim_values	= ARRAY_SIZE(landlock_add_rule_net_port_rule_types),
+	},
 	/* sentinel */
 	{ NULL, 0, NULL },
 };
