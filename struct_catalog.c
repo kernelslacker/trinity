@@ -44,6 +44,7 @@
 #include <linux/mman.h>
 #include <linux/mount.h>
 #include <linux/fs.h>
+#include <linux/quota.h>
 #include <mqueue.h>
 
 #include "compat.h"
@@ -2054,6 +2055,96 @@ static const struct struct_field landlock_net_port_attr_fields[] = {
 	       .mutate_weight = 80),
 	FIELDX(struct landlock_net_port_attr, port, FT_RANGE,
 	       .u.range = { 0, 65535 },
+	       .mutate_weight = 60),
+};
+
+/* ------------------------------------------------------------------ */
+/* struct if_dqblk (quotactl Q_SETQUOTA, quotactl_fd Q_SETQUOTA)       */
+/* ------------------------------------------------------------------ */
+
+/*
+ * quotactl(cmd, special, id, addr) and quotactl_fd(fd, cmd, id, addr)
+ * pass a struct if_dqblk at the addr slot (quotactl a4 / quotactl_fd
+ * a3) under Q_SETQUOTA -- the SET path is the input arm where the
+ * bytes we stamp actually reach disk-quota code.  The bespoke
+ * sanitise_quotactl() / sanitise_quotactl_fd() keep owning the live
+ * fill (writable allocation, dqb_bhardlimit / dqb_bsoftlimit drawn
+ * from rand32(), dqb_ihardlimit / dqb_isoftlimit bounded to 100000,
+ * routed through avoid_shared_buffer_inout()); attribution-only
+ * registration lets struct_field_for_cmp() steer CMP-learned
+ * constants at the named limit / time / valid slots rather than at a
+ * coincidentally-same-width slot.
+ *
+ * dqb_valid carries the QIF_* mask vocabulary; FT_FLAGS over QIF_ALL
+ * keeps CMP attribution against the bits the kernel actually
+ * switches on (the bespoke arm leaves the field zero today, so this
+ * is purely about which slot a learned constant pegs).
+ *
+ * Q_GETQUOTA / Q_GETNEXTQUOTA also use if_dqblk at the same slot,
+ * but they're output-only -- the bytes we stamp on dispatch don't
+ * reach the kernel's quota lookup, only the kernel's write-back
+ * touches them.  Register only the SET arm so CMP attribution
+ * doesn't fire on output bytes that came from the kernel rather
+ * than our fill.
+ *
+ * Resolution to this descriptor is gated on the Q_SETQUOTA subcmd
+ * via the discriminator-aware syscall_struct_args[] entry below,
+ * which uses the packed-discriminator (shift, mask) extension to
+ * unpack QCMD(subcmd, type) -- rec->a<n> >> SUBCMDSHIFT yields the
+ * raw subcmd that the kernel switches on, which is what Q_SETQUOTA
+ * actually equals.
+ */
+static const struct struct_field if_dqblk_fields[] = {
+	FIELD(struct if_dqblk, dqb_bhardlimit),
+	FIELD(struct if_dqblk, dqb_bsoftlimit),
+	FIELD(struct if_dqblk, dqb_curspace),
+	FIELD(struct if_dqblk, dqb_ihardlimit),
+	FIELD(struct if_dqblk, dqb_isoftlimit),
+	FIELD(struct if_dqblk, dqb_curinodes),
+	FIELD(struct if_dqblk, dqb_btime),
+	FIELD(struct if_dqblk, dqb_itime),
+	FIELDX(struct if_dqblk, dqb_valid, FT_FLAGS,
+	       .u.flags.mask = QIF_ALL,
+	       .mutate_weight = 60),
+};
+
+/* ------------------------------------------------------------------ */
+/* struct if_dqinfo (quotactl Q_SETINFO, quotactl_fd Q_SETINFO)        */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Sibling to the if_dqblk registration above: under Q_SETINFO the
+ * same addr slot (quotactl a4 / quotactl_fd a3) is a struct
+ * if_dqinfo pointer instead.  The bespoke sanitisers keep owning
+ * the live fill (writable allocation, dqi_bgrace / dqi_igrace
+ * drawn from a deterministic hour-stride picker, routed through
+ * avoid_shared_buffer_inout()); attribution-only registration lets
+ * struct_field_for_cmp() steer CMP-learned constants at the named
+ * grace / flags / valid slots rather than at a coincidentally-same-
+ * width slot.
+ *
+ * dqi_flags carries the DQF_* vocabulary (DQF_ROOT_SQUASH /
+ * DQF_SYS_FILE today); dqi_valid carries the IIF_* vocabulary
+ * (IIF_BGRACE / IIF_IGRACE / IIF_FLAGS).  FT_FLAGS keeps CMP
+ * attribution against the bits the kernel actually switches on.
+ *
+ * Q_GETINFO also uses if_dqinfo at the same slot but is output-only
+ * (kernel writes the grace fields on dispatch); register only the
+ * SET arm so CMP attribution doesn't fire on output bytes.
+ *
+ * Resolution is gated on the Q_SETINFO subcmd via the discriminator-
+ * aware syscall_struct_args[] entry below, using the same packed-
+ * discriminator (shift=SUBCMDSHIFT, mask=implicit-~0UL) extension
+ * the if_dqblk registration uses.
+ */
+static const struct struct_field if_dqinfo_fields[] = {
+	FIELD(struct if_dqinfo, dqi_bgrace),
+	FIELD(struct if_dqinfo, dqi_igrace),
+	FIELDX(struct if_dqinfo, dqi_flags, FT_FLAGS,
+	       .u.flags.mask = DQF_ROOT_SQUASH | DQF_SYS_FILE,
+	       .mutate_weight = 60),
+	FIELDX(struct if_dqinfo, dqi_valid, FT_FLAGS,
+	       .u.flags.mask = IIF_ALL,
 	       .mutate_weight = 60),
 };
 
@@ -4615,11 +4706,11 @@ const struct struct_desc struct_catalog[] = {
 	 * file_attr: appended at the tail so the existing
 	 * struct_catalog[N] indices above stay stable.  The
 	 * syscall_struct_args[] mapping below uses
-	 * ARRAY_SIZE(struct_catalog) - 4 to address this slot, sparing
+	 * ARRAY_SIZE(struct_catalog) - 6 to address this slot, sparing
 	 * us the USE_BPF / USE_XATTR_ARGS index gymnastics that would
 	 * otherwise be needed (the landlock_path_beneath_attr / f_owner_ex
-	 * / landlock_net_port_attr entries below now occupy the -3 / -2
-	 * / -1 tail slots).
+	 * / landlock_net_port_attr / if_dqblk / if_dqinfo entries below
+	 * now occupy the -5 / -4 / -3 / -2 / -1 tail slots).
 	 */
 	{
 		.name		= "file_attr",
@@ -4631,10 +4722,11 @@ const struct struct_desc struct_catalog[] = {
 	 * landlock_path_beneath_attr: appended at the tail so the
 	 * existing struct_catalog[N] indices above stay stable.  The
 	 * syscall_struct_args[] mapping below uses
-	 * ARRAY_SIZE(struct_catalog) - 3 to address this slot, sparing
+	 * ARRAY_SIZE(struct_catalog) - 5 to address this slot, sparing
 	 * us the USE_BPF / USE_XATTR_ARGS index gymnastics that would
 	 * otherwise be needed (the f_owner_ex / landlock_net_port_attr
-	 * entries below now occupy the -2 / -1 tail slots).
+	 * / if_dqblk / if_dqinfo entries below now occupy the -4 / -3 /
+	 * -2 / -1 tail slots).
 	 */
 	{
 		.name		= "landlock_path_beneath_attr",
@@ -4645,10 +4737,11 @@ const struct struct_desc struct_catalog[] = {
 	/*
 	 * f_owner_ex: appended at the tail so the existing struct_catalog[N]
 	 * indices above stay stable.  The syscall_struct_args[] mapping
-	 * below uses ARRAY_SIZE(struct_catalog) - 2 to address this slot,
+	 * below uses ARRAY_SIZE(struct_catalog) - 4 to address this slot,
 	 * sparing us the USE_BPF / USE_XATTR_ARGS index gymnastics that
-	 * would otherwise be needed (the landlock_net_port_attr entry
-	 * below now occupies the -1 tail slot).
+	 * would otherwise be needed (the landlock_net_port_attr / if_dqblk
+	 * / if_dqinfo entries below now occupy the -3 / -2 / -1 tail
+	 * slots).
 	 */
 	{
 		.name		= "f_owner_ex",
@@ -4660,16 +4753,44 @@ const struct struct_desc struct_catalog[] = {
 	 * landlock_net_port_attr: appended at the tail so the existing
 	 * struct_catalog[N] indices above stay stable.  The
 	 * syscall_struct_args[] mapping below uses
-	 * ARRAY_SIZE(struct_catalog) - 1 to address this slot, sparing
+	 * ARRAY_SIZE(struct_catalog) - 3 to address this slot, sparing
 	 * us the USE_BPF / USE_XATTR_ARGS index gymnastics that would
-	 * otherwise be needed (this is the new last entry under every
-	 * configure combination).
+	 * otherwise be needed (the if_dqblk / if_dqinfo entries below
+	 * now occupy the -2 / -1 tail slots).
 	 */
 	{
 		.name		= "landlock_net_port_attr",
 		.struct_size	= sizeof(struct landlock_net_port_attr),
 		.fields		= landlock_net_port_attr_fields,
 		.num_fields	= ARRAY_SIZE(landlock_net_port_attr_fields),
+	},
+	/*
+	 * if_dqblk: appended at the tail so the existing struct_catalog[N]
+	 * indices above stay stable.  The syscall_struct_args[] mapping
+	 * below uses ARRAY_SIZE(struct_catalog) - 2 to address this slot,
+	 * sparing us the USE_BPF / USE_XATTR_ARGS index gymnastics that
+	 * would otherwise be needed (the if_dqinfo entry below now
+	 * occupies the -1 tail slot).
+	 */
+	{
+		.name		= "if_dqblk",
+		.struct_size	= sizeof(struct if_dqblk),
+		.fields		= if_dqblk_fields,
+		.num_fields	= ARRAY_SIZE(if_dqblk_fields),
+	},
+	/*
+	 * if_dqinfo: appended at the tail so the existing struct_catalog[N]
+	 * indices above stay stable.  The syscall_struct_args[] mapping
+	 * below uses ARRAY_SIZE(struct_catalog) - 1 to address this slot,
+	 * sparing us the USE_BPF / USE_XATTR_ARGS index gymnastics that
+	 * would otherwise be needed (this is the new last entry under
+	 * every configure combination).
+	 */
+	{
+		.name		= "if_dqinfo",
+		.struct_size	= sizeof(struct if_dqinfo),
+		.fields		= if_dqinfo_fields,
+		.num_fields	= ARRAY_SIZE(if_dqinfo_fields),
 	},
 };
 
@@ -4729,6 +4850,37 @@ static const unsigned long landlock_add_rule_path_beneath_rule_types[] = {
 
 static const unsigned long landlock_add_rule_net_port_rule_types[] = {
 	LANDLOCK_RULE_NET_PORT,
+};
+
+/*
+ * quotactl / quotactl_fd cmd discriminator pools.  Both syscalls pack
+ * the cmd into a single arg as QCMD(subcmd, type) (subcmd in the high
+ * bits, USRQUOTA / GRPQUOTA / PRJQUOTA / ... type in the low byte),
+ * so the discriminator-aware lookup unpacks via the (shift, mask)
+ * extension: discrim_shift = SUBCMDSHIFT strips the type byte and
+ * leaves the raw subcmd that the kernel switches on, which is what
+ * Q_SETQUOTA / Q_SETINFO actually equal.
+ *
+ * quotactl_if_dqblk_subcmds: just Q_SETQUOTA (a4 / a3 is a struct
+ * if_dqblk pointer the kernel reads on dispatch).  Q_GETQUOTA /
+ * Q_GETNEXTQUOTA also use if_dqblk at the same slot but they're
+ * output-only -- registering them would attribute CMP-learned
+ * constants against bytes the kernel wrote rather than bytes we
+ * stamped.
+ */
+static const unsigned long quotactl_if_dqblk_subcmds[] = {
+	Q_SETQUOTA,
+};
+
+/*
+ * quotactl_if_dqinfo_subcmds: just Q_SETINFO (a4 / a3 is a struct
+ * if_dqinfo pointer the kernel reads on dispatch).  Q_GETINFO also
+ * uses if_dqinfo at the same slot but is output-only -- registering
+ * it would attribute CMP-learned constants against bytes the kernel
+ * wrote rather than bytes we stamped.
+ */
+static const unsigned long quotactl_if_dqinfo_subcmds[] = {
+	Q_SETINFO,
 };
 
 /* ------------------------------------------------------------------ */
@@ -4986,7 +5138,7 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 		.num_discrim_values	= ARRAY_SIZE(fcntl_flock_cmds),
 	},
 	{
-		"fcntl", 3, &struct_catalog[ARRAY_SIZE(struct_catalog) - 2],
+		"fcntl", 3, &struct_catalog[ARRAY_SIZE(struct_catalog) - 4],
 		.discrim_arg_idx	= 2,
 		.discrim_values		= fcntl_f_owner_ex_cmds,
 		.num_discrim_values	= ARRAY_SIZE(fcntl_f_owner_ex_cmds),
@@ -5089,7 +5241,7 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 		.num_discrim_values	= ARRAY_SIZE(fcntl_flock_cmds),
 	},
 	{
-		"fcntl", 3, &struct_catalog[ARRAY_SIZE(struct_catalog) - 2],
+		"fcntl", 3, &struct_catalog[ARRAY_SIZE(struct_catalog) - 4],
 		.discrim_arg_idx	= 2,
 		.discrim_values		= fcntl_f_owner_ex_cmds,
 		.num_discrim_values	= ARRAY_SIZE(fcntl_f_owner_ex_cmds),
@@ -5114,7 +5266,7 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * so struct_field_for_cmp can steer CMP-learned constants at
 	 * the named fa_xflags / fa_extsize / fa_nextents / fa_projid /
 	 * fa_cowextsize slots rather than at a coincidentally-same-
-	 * width slot.  Sized via ARRAY_SIZE(struct_catalog) - 4 so the
+	 * width slot.  Sized via ARRAY_SIZE(struct_catalog) - 6 so the
 	 * tail position resolves correctly under every USE_BPF /
 	 * USE_XATTR_ARGS combination.
 	 *
@@ -5122,7 +5274,7 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * kernel-written OUTPUT and has no input fill to attribute
 	 * against.
 	 */
-	{ "file_setattr",	3, &struct_catalog[ARRAY_SIZE(struct_catalog) - 4] },
+	{ "file_setattr",	3, &struct_catalog[ARRAY_SIZE(struct_catalog) - 6] },
 	/*
 	 * landlock_add_rule(int ruleset_fd, enum landlock_rule_type rule_type,
 	 *                   const void __user *rule_attr, __u32 flags)
@@ -5159,22 +5311,102 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * NET_PORT dispatches where the kernel was reading a wholly
 	 * different struct.
 	 *
-	 * struct landlock_path_beneath_attr @ ARRAY_SIZE - 3;
-	 * struct landlock_net_port_attr     @ ARRAY_SIZE - 1 (tail).
+	 * struct landlock_path_beneath_attr @ ARRAY_SIZE - 5;
+	 * struct landlock_net_port_attr     @ ARRAY_SIZE - 3.
 	 */
 	{
 		"landlock_add_rule", 3,
-		&struct_catalog[ARRAY_SIZE(struct_catalog) - 3],
+		&struct_catalog[ARRAY_SIZE(struct_catalog) - 5],
 		.discrim_arg_idx	= 2,
 		.discrim_values		= landlock_add_rule_path_beneath_rule_types,
 		.num_discrim_values	= ARRAY_SIZE(landlock_add_rule_path_beneath_rule_types),
 	},
 	{
 		"landlock_add_rule", 3,
-		&struct_catalog[ARRAY_SIZE(struct_catalog) - 1],
+		&struct_catalog[ARRAY_SIZE(struct_catalog) - 3],
 		.discrim_arg_idx	= 2,
 		.discrim_values		= landlock_add_rule_net_port_rule_types,
 		.num_discrim_values	= ARRAY_SIZE(landlock_add_rule_net_port_rule_types),
+	},
+	/*
+	 * quotactl(unsigned int cmd, const char *special, qid_t id,
+	 *          void *addr)
+	 * quotactl_fd(unsigned int fd, unsigned int cmd, qid_t id,
+	 *             void *addr)
+	 * The addr slot (quotactl a4 / quotactl_fd a3) is a struct
+	 * if_dqblk pointer under Q_SETQUOTA -- the SET path is the
+	 * input arm where the bytes we stamp actually reach the
+	 * kernel's quota lookup.  Both sanitisers keep owning the live
+	 * fill (writable allocation, dqb_*hardlimit / dqb_*softlimit
+	 * pickers, routed through avoid_shared_buffer_inout()); this
+	 * registration is attribution-only so struct_field_for_cmp()
+	 * can steer CMP-learned constants at the named limit / time /
+	 * valid slots rather than at a coincidentally-same-width slot.
+	 *
+	 * The cmd discriminator is packed: rec->a1 (quotactl) /
+	 * rec->a2 (quotactl_fd) is QCMD(subcmd, type) ==
+	 * (subcmd << SUBCMDSHIFT) | (type & SUBCMDMASK), so the
+	 * pre-extension exact-match discriminator could never resolve
+	 * (Q_SETQUOTA would have had to land in the low byte to
+	 * compare equal to the raw arg).  discrim_shift = SUBCMDSHIFT
+	 * strips the type byte before the match; discrim_mask defaults
+	 * to zero (i.e. ~0UL, all bits after the shift), which suffices
+	 * because the kernel-side subcmd values are disjoint scalars.
+	 *
+	 * Q_GETQUOTA / Q_GETNEXTQUOTA also use if_dqblk at the same
+	 * slot but they're output-only -- registering them would
+	 * attribute CMP-learned constants against bytes the kernel
+	 * wrote rather than bytes we stamped.  Subcmds outside the
+	 * Q_SETQUOTA pool match no variant and resolve to NULL --
+	 * gen_arg_struct_ptr_inout falls through to a zeroed fallback
+	 * buffer that the bespoke sanitiser overwrites for the
+	 * remaining cmds, same as before.
+	 *
+	 * struct if_dqblk @ ARRAY_SIZE - 2.
+	 */
+	{
+		"quotactl", 4,
+		&struct_catalog[ARRAY_SIZE(struct_catalog) - 2],
+		.discrim_arg_idx	= 1,
+		.discrim_values		= quotactl_if_dqblk_subcmds,
+		.num_discrim_values	= ARRAY_SIZE(quotactl_if_dqblk_subcmds),
+		.discrim_shift		= SUBCMDSHIFT,
+	},
+	{
+		"quotactl_fd", 3,
+		&struct_catalog[ARRAY_SIZE(struct_catalog) - 2],
+		.discrim_arg_idx	= 2,
+		.discrim_values		= quotactl_if_dqblk_subcmds,
+		.num_discrim_values	= ARRAY_SIZE(quotactl_if_dqblk_subcmds),
+		.discrim_shift		= SUBCMDSHIFT,
+	},
+	/*
+	 * if_dqinfo sibling of the if_dqblk registration above: the same
+	 * addr slot (quotactl a4 / quotactl_fd a3) is a struct if_dqinfo
+	 * pointer under Q_SETINFO.  Same packed-discriminator extraction
+	 * (discrim_shift = SUBCMDSHIFT) and same attribution-only shape
+	 * as the if_dqblk pair -- the bespoke sanitisers own the live
+	 * dqi_bgrace / dqi_igrace fill; this entry only steers
+	 * struct_field_for_cmp().  Q_GETINFO uses if_dqinfo at the same
+	 * slot but is output-only, so the pool stays at just Q_SETINFO.
+	 *
+	 * struct if_dqinfo @ ARRAY_SIZE - 1 (tail).
+	 */
+	{
+		"quotactl", 4,
+		&struct_catalog[ARRAY_SIZE(struct_catalog) - 1],
+		.discrim_arg_idx	= 1,
+		.discrim_values		= quotactl_if_dqinfo_subcmds,
+		.num_discrim_values	= ARRAY_SIZE(quotactl_if_dqinfo_subcmds),
+		.discrim_shift		= SUBCMDSHIFT,
+	},
+	{
+		"quotactl_fd", 3,
+		&struct_catalog[ARRAY_SIZE(struct_catalog) - 1],
+		.discrim_arg_idx	= 2,
+		.discrim_values		= quotactl_if_dqinfo_subcmds,
+		.num_discrim_values	= ARRAY_SIZE(quotactl_if_dqinfo_subcmds),
+		.discrim_shift		= SUBCMDSHIFT,
 	},
 	/* sentinel */
 	{ NULL, 0, NULL },
