@@ -63,6 +63,7 @@ ulimit -n 65536 2>/dev/null || true
 
 cmd=(./trinity "$@")
 
+scope_name=""
 if [[ -z "${TRINITY_NO_CGROUP:-}" ]]; then
     if ! command -v systemd-run >/dev/null 2>&1; then
         echo "NOTE: systemd-run not found; skipping outer scope (trinity's self_cgroup is still active unless --no-cgroup was passed)." >&2
@@ -84,11 +85,16 @@ if [[ -z "${TRINITY_NO_CGROUP:-}" ]]; then
             mem_high=${TRINITY_MEM_HIGH:-$((mem_total_kb * 50 / 100))K}
             mem_swap_max=${TRINITY_MEM_SWAP_MAX:-$((mem_total_kb * 20 / 100))K}
 
-            echo "trinity: wrapping in systemd scope (MemoryMax=${mem_max}, MemoryHigh=${mem_high}, MemorySwapMax=${mem_swap_max})"
+            # Named scope so the EXIT/INT/TERM trap below can reap the
+            # whole trinity process tree by stopping the scope's cgroup.
+            scope_name="trinity-run-$$.scope"
+
+            echo "trinity: wrapping in systemd scope ${scope_name} (MemoryMax=${mem_max}, MemoryHigh=${mem_high}, MemorySwapMax=${mem_swap_max})"
             # Delegate=yes hands the scope's cgroup subtree to trinity so
             # self_cgroup can enable +memory on it and nest its
             # parent/children OOM split under this cap.
             cmd=(systemd-run --user --scope --quiet
+                --unit="${scope_name}"
                 -p Delegate=yes
                 -p MemoryMax="${mem_max}"
                 -p MemoryHigh="${mem_high}"
@@ -98,4 +104,44 @@ if [[ -z "${TRINITY_NO_CGROUP:-}" ]]; then
     fi
 fi
 
-exec "${cmd[@]}"
+# Reap the entire trinity process tree on wrapper exit. Without this,
+# the parent, children, and any zombies/D-state stragglers out-live the
+# wrapper and accumulate over repeated runs (a relaunch loop on a fuzz
+# host was observed leaving 35+ orphaned -C16 parents pinning memory and
+# wedging subsequent runs).
+#
+# Scoping is per-invocation: stop only this run's named scope, or signal
+# only this run's process group -- never a broad pkill that would also
+# kill concurrent trinity runs on the same host.
+#
+# D-state children can't be force-killed until their in-flight syscall
+# returns; scope-stop / pgid-kill sends SIGKILL to every task in the
+# group, reaps everything killable immediately, and the kernel releases
+# the rest as their syscalls complete.
+child=""
+cleanup() {
+    local rc=$?
+    trap - EXIT INT TERM
+    if [[ -n "${scope_name}" ]]; then
+        systemctl --user stop "${scope_name}" >/dev/null 2>&1 || true
+    elif [[ -n "${child}" ]]; then
+        kill -KILL -- "-${child}" 2>/dev/null || true
+    fi
+    exit "${rc}"
+}
+trap cleanup EXIT INT TERM
+
+if [[ -n "${scope_name}" ]]; then
+    # systemd-run places the command in the named scope's cgroup;
+    # cleanup reaps the tree via `systemctl --user stop <scope>`.
+    "${cmd[@]}" &
+else
+    # No scope (TRINITY_NO_CGROUP / systemd-run absent / already capped):
+    # enable job control so bash puts the backgrounded command in its own
+    # process group, then $! == PGID and `kill -- -PGID` reaps the tree.
+    set -m
+    "${cmd[@]}" &
+    set +m
+fi
+child=$!
+wait "${child}"
