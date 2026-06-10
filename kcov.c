@@ -22,6 +22,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1756,11 +1757,29 @@ void kcov_plateau_check(void)
  * edge totals (the bucket_bits_real / distinct_pcs counters the
  * hot path already maintains) so offline tooling can rank
  * syscalls by actual edges discovered rather than only by the
- * v3 productive-call counts. */
-#define KCOV_BITMAP_FILE_VERSION	6U
+ * v3 productive-call counts.
+ *
+ * Version 7 appends a per-strategy edge-counter block after the v6
+ * diag block: pc_edge_calls_by_strategy[NR_STRATEGIES] followed by
+ * pc_edge_count_by_strategy[NR_STRATEGIES], each as plain u64
+ * little-endian, naturally aligned.  With NR_STRATEGIES == 3 today
+ * (HEURISTIC, RANDOM, COVERAGE_FRONTIER -- see include/strategy.h)
+ * the block is 6 x 8 = 48 bytes total.  Two new u32s are appended
+ * to the header: strat_crc32 (CRC over the strat block) and a
+ * reserved pad slot, growing the on-disk header from 88 B to 96 B.
+ * v5/v6 files have only 88 B of header on disk; the load path
+ * reads the v6-sized header prefix first, validates the version,
+ * and reads the extra 8 B of trailer only when hdr.version >= 7,
+ * so v5/v6 files continue to warm-load unchanged on a v7 binary.
+ * The block records which selection strategy is producing fresh
+ * edges across runs, so offline tooling can spot when (for
+ * example) STRATEGY_COVERAGE_FRONTIER stops contributing new
+ * edges as the bitmap saturates. */
+#define KCOV_BITMAP_FILE_VERSION	7U
 /* Oldest file-format version this binary will warm-load.  v4 stays
  * rejected (different header size, different PC basis); v5 loads
- * without the v6 diag block; v6 loads with it. */
+ * without the v6 diag block or v7 strat block; v6 loads with diag
+ * but without strat; v7 loads all three. */
 #define KCOV_BITMAP_FILE_MIN_LOAD_VERSION	5U
 
 struct kcov_bitmap_file_header {
@@ -1785,7 +1804,33 @@ struct kcov_bitmap_file_header {
 				    * != 0) -- a canonical-vs-raw mix
 				    * would silently corrupt bucket
 				    * lookups. */
+	uint32_t strat_crc32;      /* v7: CRC over the appended strat
+				    * block.  v5/v6 files lack this
+				    * trailer; the loader leaves it
+				    * implicit-zero in those cases. */
+	uint32_t pad2;             /* v7: reserved for future use,
+				    * always written as zero.  Kept so
+				    * the on-disk header is u64-aligned
+				    * (96 B) and a future block can
+				    * repurpose this slot the way
+				    * diag_crc32 / strat_crc32 did. */
 };
+
+/* On-disk size of the header as written by v5 and v6 binaries (no
+ * trailing strat_crc32 / pad2).  The v7 load path reads this prefix
+ * first, validates magic+version, then conditionally reads the
+ * trailing 8 B only when the file is v7+. */
+#define KCOV_BITMAP_HDR_V6_SIZE	88U
+
+_Static_assert(offsetof(struct kcov_bitmap_file_header, strat_crc32) ==
+		       KCOV_BITMAP_HDR_V6_SIZE,
+	       "v7 trailer must begin exactly at the end of the v6 header");
+_Static_assert(sizeof(struct kcov_bitmap_file_header) == 96,
+	       "v7 on-disk header is 96 B (v6 prefix + strat_crc32 + pad2)");
+/* NR_STRATEGIES is baked into the v7 strat block layout (6 x u64 = 48 B).
+ * Bumping it requires a new on-disk format version. */
+_Static_assert(NR_STRATEGIES == 3,
+	       "v7 strat block layout assumes exactly 3 strategies");
 
 /* On-disk record for a single per_syscall_diag[nr][dim] slot.
  * Packed pair of u64s, naturally aligned, little-endian.  16 B per
@@ -1795,6 +1840,28 @@ struct kcov_per_syscall_diag_ondisk {
 	uint64_t bucket_bits_real;
 	uint64_t distinct_pcs;
 };
+
+/* On-disk strat block (v7), appended after the v6 diag block.  Six
+ * contiguous u64s, naturally aligned, little-endian; total 48 B.
+ * Field order (do NOT reorder -- the external cache-stats reader
+ * matches this byte-for-byte):
+ *
+ *   bytes  0..7  : pc_edge_calls_by_strategy[0]   (STRATEGY_HEURISTIC)
+ *   bytes  8..15 : pc_edge_calls_by_strategy[1]   (STRATEGY_RANDOM)
+ *   bytes 16..23 : pc_edge_calls_by_strategy[2]   (STRATEGY_COVERAGE_FRONTIER)
+ *   bytes 24..31 : pc_edge_count_by_strategy[0]   (STRATEGY_HEURISTIC)
+ *   bytes 32..39 : pc_edge_count_by_strategy[1]   (STRATEGY_RANDOM)
+ *   bytes 40..47 : pc_edge_count_by_strategy[2]   (STRATEGY_COVERAGE_FRONTIER)
+ *
+ * Both arrays carry the strategy_t value as the index.  The block is
+ * covered by hdr.strat_crc32 at header offset 88. */
+struct kcov_strat_ondisk {
+	uint64_t calls[NR_STRATEGIES];
+	uint64_t count[NR_STRATEGIES];
+};
+
+_Static_assert(sizeof(struct kcov_strat_ondisk) == 48,
+	       "v7 strat block is 48 B (6 x u64)");
 
 /*
  * Streaming SHA-256 implementation.  Trinity links no crypto library, so
@@ -2047,6 +2114,7 @@ static unsigned long kcov_bitmap_edges_at_last_save = ULONG_MAX;
 bool kcov_bitmap_save_file(const char *path)
 {
 	struct kcov_bitmap_file_header hdr;
+	struct kcov_strat_ondisk strat_blob;
 	unsigned long edges_now;
 	unsigned char *priors_blob;
 	struct kcov_per_syscall_diag_ondisk *diag_blob;
@@ -2055,6 +2123,7 @@ bool kcov_bitmap_save_file(const char *path)
 	size_t diag_blob_size;
 	char tmppath[PATH_MAX];
 	unsigned int nr;
+	unsigned int s;
 	int fd;
 	int ret;
 
@@ -2112,6 +2181,22 @@ bool kcov_bitmap_save_file(const char *path)
 		}
 	}
 
+	/* v7 strat block: pack pc_edge_calls_by_strategy[] then
+	 * pc_edge_count_by_strategy[] into a 48 B u64-LE array.  Same
+	 * relaxed-atomic-load reasoning as the diag block above --
+	 * children are bumping these in parallel from the snapshot
+	 * path; the readers treat them as soft per-strategy totals
+	 * so a torn pair is benign. */
+	memset(&strat_blob, 0, sizeof(strat_blob));
+	for (s = 0; s < NR_STRATEGIES; s++) {
+		strat_blob.calls[s] = __atomic_load_n(
+			&shm->pc_edge_calls_by_strategy[s],
+			__ATOMIC_RELAXED);
+		strat_blob.count[s] = __atomic_load_n(
+			&shm->pc_edge_count_by_strategy[s],
+			__ATOMIC_RELAXED);
+	}
+
 	memset(&hdr, 0, sizeof(hdr));
 	if (!kcov_get_kernel_fp(hdr.kallsyms_sha256)) {
 		free(diag_blob);
@@ -2131,6 +2216,7 @@ bool kcov_bitmap_save_file(const char *path)
 	hdr.max_nr_syscall = MAX_NR_SYSCALL;
 	hdr.priors_crc32 = crc32(priors_blob, priors_blob_size);
 	hdr.diag_crc32 = crc32(diag_blob, diag_blob_size);
+	hdr.strat_crc32 = crc32(&strat_blob, sizeof(strat_blob));
 	/* Stamp the canonicalisation mode so the loader can refuse a
 	 * canonical-vs-raw mismatch.  Zero means the writer hashed PCs
 	 * raw (kallsyms unreadable, _text absent); non-zero is the
@@ -2172,6 +2258,8 @@ bool kcov_bitmap_save_file(const char *path)
 	if (write_all(fd, priors_blob, priors_blob_size) < 0)
 		goto fail;
 	if (write_all(fd, diag_blob, diag_blob_size) < 0)
+		goto fail;
+	if (write_all(fd, &strat_blob, sizeof(strat_blob)) < 0)
 		goto fail;
 	if (fsync(fd) != 0)
 		goto fail;
@@ -2230,10 +2318,16 @@ bool kcov_bitmap_load_file(const char *path)
 		return false;
 	}
 
-	n = read_all(fd, &hdr, sizeof(hdr));
-	if (n != (ssize_t)sizeof(hdr)) {
-		output(0, "kcov-bitmap: header truncated at %s (got %zd, want %zu) -- cold start\n",
-		       path, n, sizeof(hdr));
+	/* Read only the v6-sized prefix first so a v5/v6 file (88 B
+	 * header on disk) still passes the truncation check; the v7
+	 * trailer (strat_crc32 + pad2) is read separately below once
+	 * the version is known.  Zero the whole struct up front so the
+	 * v7 trailer fields stay implicit-zero on v5/v6 files. */
+	memset(&hdr, 0, sizeof(hdr));
+	n = read_all(fd, &hdr, KCOV_BITMAP_HDR_V6_SIZE);
+	if (n != (ssize_t)KCOV_BITMAP_HDR_V6_SIZE) {
+		output(0, "kcov-bitmap: header truncated at %s (got %zd, want %u) -- cold start\n",
+		       path, n, (unsigned int)KCOV_BITMAP_HDR_V6_SIZE);
 		(void)close(fd);
 		return false;
 	}
@@ -2252,6 +2346,22 @@ bool kcov_bitmap_load_file(const char *path)
 		       (unsigned int)KCOV_BITMAP_FILE_VERSION, path);
 		(void)close(fd);
 		return false;
+	}
+	/* v7 trailer: 8 B of {strat_crc32, pad2} that v5/v6 binaries
+	 * did not write.  Only present (and only read) when the file
+	 * itself is v7+; otherwise the prefix above already left both
+	 * fields zero. */
+	if (hdr.version >= 7U) {
+		size_t tail_size = sizeof(hdr) - KCOV_BITMAP_HDR_V6_SIZE;
+
+		n = read_all(fd, (unsigned char *)&hdr +
+				 KCOV_BITMAP_HDR_V6_SIZE, tail_size);
+		if (n != (ssize_t)tail_size) {
+			output(0, "kcov-bitmap: v7 header trailer truncated at %s (got %zd, want %zu) -- cold start\n",
+			       path, n, tail_size);
+			(void)close(fd);
+			return false;
+		}
 	}
 	if (hdr.num_edges != KCOV_NUM_EDGES) {
 		output(0, "kcov-bitmap: num_edges %u != expected %u at %s (file built with a different KCOV_NUM_EDGES) -- cold start\n",
@@ -2414,6 +2524,48 @@ bool kcov_bitmap_load_file(const char *path)
 				}
 			}
 			free(diag_blob);
+		}
+	}
+
+	/* v7 strat block: pc_edge_calls_by_strategy[NR_STRATEGIES]
+	 * then pc_edge_count_by_strategy[NR_STRATEGIES], each as
+	 * u64 LE -- 48 B total today (NR_STRATEGIES == 3).  Soft
+	 * signal like the diag/priors blocks above: a short read or
+	 * CRC mismatch logs and falls through with the per-strategy
+	 * counters left at whatever they currently hold (typically
+	 * zero on a fresh shm), and the bitmap warm-load stays
+	 * committed.  v5/v6 files lack the block; skip them quietly. */
+	if (hdr.version >= 7U) {
+		struct kcov_strat_ondisk strat_blob;
+
+		memset(&strat_blob, 0, sizeof(strat_blob));
+		n = read_all(fd, &strat_blob, sizeof(strat_blob));
+		if (n != (ssize_t)sizeof(strat_blob)) {
+			output(0, "kcov-bitmap: strat truncated at %s (got %zd, want %zu) -- strat skipped\n",
+			       path, n, sizeof(strat_blob));
+		} else {
+			uint32_t got_crc = crc32(&strat_blob,
+						 sizeof(strat_blob));
+
+			if (got_crc != hdr.strat_crc32) {
+				output(0, "kcov-bitmap: strat CRC mismatch at %s -- strat skipped\n",
+				       path);
+			} else {
+				unsigned int s;
+
+				for (s = 0; s < NR_STRATEGIES; s++) {
+					__atomic_store_n(
+						&shm->pc_edge_calls_by_strategy[s],
+						strat_blob.calls[s],
+						__ATOMIC_RELAXED);
+					__atomic_store_n(
+						&shm->pc_edge_count_by_strategy[s],
+						strat_blob.count[s],
+						__ATOMIC_RELAXED);
+				}
+				output(0, "kcov-bitmap: loaded v7 strat block from %s (CRC OK)\n",
+				       path);
+			}
 		}
 	}
 
