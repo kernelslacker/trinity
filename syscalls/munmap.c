@@ -200,7 +200,7 @@ static void post_munmap(struct syscallrecord *rec)
 	if (map != NULL)
 		map->known_rw = false;
 
-	if (action == WHOLE) {
+	if (action == WHOLE && map != NULL) {
 		enum objecttype pool_type = (enum objecttype) snap->type;
 
 		/*
