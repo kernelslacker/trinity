@@ -234,6 +234,23 @@ static void post_mmap(struct syscallrecord *rec)
 		return;
 	}
 	new->map.size = rec->a2;
+	/*
+	 * map.size is the consumer-walkable extent and gets clamped below
+	 * to the file-backed in-bounds region for file-backed mmaps so
+	 * dirty walkers stay inside real backing.  map.tracked_size has to
+	 * carry the kernel-actual VMA extent (== the length we passed to
+	 * mmap()) so map_destructor's tracked_size ?: size fallback and the
+	 * sanitise_munmap WHOLE branch unmap the entire VMA, not the
+	 * narrowed consumer extent.  Stash it BEFORE any clamp -- the
+	 * branch below mutates map.size in place and there is no other
+	 * place that holds the pre-clamp length once we are past it.  For
+	 * anonymous mappings no clamp fires and size stays equal to
+	 * tracked_size; setting it unconditionally documents intent and
+	 * keeps the fallback path off the hot teardown lane.  Mirrors
+	 * mmap_fd() in mm/maps.c which captures the same field at line
+	 * obj->map.tracked_size = len; before its own fstat clamp.
+	 */
+	new->map.tracked_size = rec->a2;
 	new->map.prot = rec->a3;
 	/*
 	 * Preserve the actual flags word passed to mmap() so map_dump()

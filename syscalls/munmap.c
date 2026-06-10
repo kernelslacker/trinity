@@ -82,11 +82,22 @@ static void sanitise_munmap(struct syscallrecord *rec)
 		/* delete the whole mapping. */
 		action = WHOLE;
 		/* For WHOLE, post_munmap will destroy the obj and call
-		 * map_destructor → munmap(map->ptr, map->size).  Use the
-		 * full extent here so the shared-region check below covers
-		 * the same span the destructor will unmap. */
+		 * map_destructor → munmap(map->ptr, tracked_size ?: size).
+		 * Match that extent here so the kernel-side munmap covers
+		 * the full VMA -- map->size has been clamped down to the
+		 * file-backed walkable region for clamped MMAPED_FILE
+		 * entries, so passing it would unmap only the head and
+		 * leak the past-EOF tail VMA when post_munmap declines to
+		 * destroy (pool_type == OBJ_NONE arm, line ~217), and even
+		 * when the destructor does fire the kernel sees two munmaps
+		 * for the head plus one for the tail rather than a single
+		 * clean teardown.  shared_region overlap check below also
+		 * gets the real span so a tail that grazes trinity bookkeeping
+		 * gets caught.  Falls back to map->size for legacy entries
+		 * (alloc_zero_map ANON, post_mmap CHILD_ANON) where the two
+		 * are equal anyway. */
 		rec->a1 = (unsigned long) map->ptr;
-		rec->a2 = map->size;
+		rec->a2 = map->tracked_size ? map->tracked_size : map->size;
 	} else if (RAND_BOOL()) {
 		/* unmap a range of the mapping. */
 		unsigned long nr_pages;

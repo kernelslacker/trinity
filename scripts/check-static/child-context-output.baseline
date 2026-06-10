@@ -178,7 +178,7 @@ syscalls/lsm_list_modules.c:302:post_lsm_list_modules
 syscalls/map_shadow_stack.c:45:post_map_shadow_stack
 syscalls/mincore.c:98:post_mincore
 syscalls/mmap.c:221:post_mmap
-syscalls/mmap.c:398:post_mmap
+syscalls/mmap.c:415:post_mmap
 syscalls/move_pages.c:159:post_move_pages
 syscalls/move_pages.c:177:post_move_pages
 syscalls/move_pages.c:196:post_move_pages
@@ -193,8 +193,8 @@ syscalls/mq_open.c:202:post_mq_open
 syscalls/mremap.c:214:post_mremap
 syscalls/mremap.c:228:post_mremap
 syscalls/msgsnd.c:67:post_msgsnd
-syscalls/munmap.c:187:post_munmap
-syscalls/munmap.c:250:post_munmap
+syscalls/munmap.c:198:post_munmap
+syscalls/munmap.c:261:post_munmap
 syscalls/nanosleep.c:13:post_nanosleep
 syscalls/newfstat.c:181:post_newfstat
 syscalls/newfstat.c:395:post_newfstatat
