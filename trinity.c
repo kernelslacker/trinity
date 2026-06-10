@@ -962,6 +962,23 @@ int main(int argc, char* argv[])
 
 	init_pre_fork();
 
+#ifdef CONFIG_GUARD_SHARED
+	/* Announce guard-shared armour state once shared_regions[] has
+	 * settled (init_shm + the pool inits inside init_pre_fork have
+	 * registered every long-lived region).  Without this line a run
+	 * log is silent about whether --guard-shared took effect: the
+	 * longopt is always recognised but the handler only flips the
+	 * scope when the binary was built with GUARD_SHARED=1, so a
+	 * mis-built binary accepts the flag and runs OFF -- exactly the
+	 * misattribution the corruption-hunt triages keep hitting.  Emit
+	 * via output(0) so the banner reaches the top-of-log section
+	 * alongside build_hash and the other startup provenance markers,
+	 * and so the "[main] " prefix is added automatically. */
+	output(0, "guard-shared armor: scope=%s (%u regions guarded)\n",
+	       guard_shared_scope_name(),
+	       guard_shared_count_guarded());
+#endif
+
 	if (!run_oneshot_passes())
 		finalize_and_exit(ret, false);
 

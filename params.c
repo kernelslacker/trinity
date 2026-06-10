@@ -1005,6 +1005,25 @@ void parse_args(int argc, char *argv[])
 					exit(EXIT_FAILURE);
 				}
 			}
+#else
+			/*
+			 * Build does NOT have CONFIG_GUARD_SHARED.  The
+			 * longopt entry above is unconditional (it has to
+			 * be, or getopt would reject --guard-shared with a
+			 * generic "unrecognised option" line that hides
+			 * what actually happened).  Without this branch the
+			 * flag is silently accepted and ignored, which has
+			 * already misled two corruption-hunt sessions into
+			 * believing armour was active when the binary was
+			 * built plain.  Loudly diagnose instead so the
+			 * operator sees the configure step they need to
+			 * re-run.
+			 */
+			if (strcmp("guard-shared", longopts[opt_index].name) == 0) {
+				outputerr("WARNING: --guard-shared ignored -- "
+					  "binary built without GUARD_SHARED=1; "
+					  "rebuild with GUARD_SHARED=1 ./configure && make\n");
+			}
 #endif
 
 			if (strcmp("show-unannotated", longopts[opt_index].name) == 0)

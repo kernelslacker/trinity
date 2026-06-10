@@ -106,6 +106,29 @@ bool guard_pages_classify(uintptr_t fault_addr,
 			  size_t *region_size_out,
 			  bool *trailing_out,
 			  unsigned long *delta_out);
+
+/*
+ * Diagnostic accessors for the startup banner emitted from main() once
+ * pre-fork init has finished populating shared_regions[].  The banner
+ * makes guard-shared activation a positive signal in the run log -- the
+ * recurring corruption-hunt failure mode is mis-attributing a clean-OFF
+ * run to "armour was on and the witness still landed" because nothing in
+ * the log distinguished the two.
+ *
+ *   guard_shared_scope_name()    : "off" | "pools" | "all", stable
+ *                                  string that mirrors the operator
+ *                                  spelling.  Safe to call before
+ *                                  parse_args (returns "off").
+ *   guard_shared_count_guarded() : number of entries in
+ *                                  shared_regions[] + overflow tail
+ *                                  whose .guarded bit is set.  Reflects
+ *                                  exactly what guard_pages_classify
+ *                                  iterates, so a 0 here means no
+ *                                  guard-page VMA exists regardless of
+ *                                  scope.
+ */
+const char *guard_shared_scope_name(void);
+unsigned int guard_shared_count_guarded(void);
 #else
 #define alloc_shared_pool(size)	alloc_shared(size)
 #endif

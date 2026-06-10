@@ -670,6 +670,45 @@ bool guard_pages_classify(uintptr_t fault_addr,
 
 	return false;
 }
+
+/*
+ * Name the current guard-shared scope for the startup banner.  Mirrors
+ * the operator-facing spellings accepted by parse_args() so a log line
+ * is grep-pasteable straight into a re-run command.  Stable string,
+ * safe to call before parse_args (returns "off").
+ */
+const char *guard_shared_scope_name(void)
+{
+	switch (guard_shared_scope) {
+	case GUARD_SCOPE_ALL:
+		return "all";
+	case GUARD_SCOPE_POOLS:
+		return "pools";
+	case GUARD_SCOPE_OFF:
+	default:
+		return "off";
+	}
+}
+
+/*
+ * Count shared_regions[] entries (plus the overflow tail) carrying a
+ * set .guarded bit.  Matches the iteration in guard_pages_classify so
+ * the banner's "(N regions guarded)" reads the same population the
+ * fault-time classifier will see -- a zero here means no guard-page
+ * VMA exists, even if the scope says POOLS / ALL.
+ */
+unsigned int guard_shared_count_guarded(void)
+{
+	unsigned int i, n = 0;
+
+	for (i = 0; i < nr_shared_regions; i++)
+		if (shared_regions[i].guarded)
+			n++;
+	for (i = 0; i < nr_shared_regions_overflow; i++)
+		if (shared_regions_overflow[i].guarded)
+			n++;
+	return n;
+}
 #endif	/* CONFIG_GUARD_SHARED */
 
 #ifdef CONFIG_GUARD_SHARED
