@@ -135,8 +135,22 @@ struct deferred_entry {
  * recent zmalloc_tracked churn without rotating live entries out. */
 #define ALLOC_TRACK_SIZE	4096
 
-static void *alloc_track[ALLOC_TRACK_SIZE];
+/*
+ * alloc_track[] and alloc_track_hash[] share a single mmap'd backing
+ * region so one mprotect bracket covers both arrays' pages, halving
+ * the syscall cost on the deferred_alloc_track hot path (which writes
+ * both in one operation).  The base, size, and array pointers below
+ * are set up in deferred_free_init().  Steady state is PROT_READ so
+ * the lookup hot path (alloc_track_lookup, called from every
+ * cleanup_release_post_state and the deferred-free enqueue gate)
+ * reads directly without an mprotect syscall; only the writer entry
+ * points (deferred_alloc_track, alloc_track_consume) flip RW for the
+ * duration of the mutation.
+ */
+static void **alloc_track;
 static unsigned int alloc_track_head;
+static void *alloc_track_base;
+static size_t alloc_track_bytes;
 
 /*
  * Side-set membership accelerator for alloc_track[].
@@ -159,17 +173,14 @@ static unsigned int alloc_track_head;
  *
  * 16384 slots vs ALLOC_TRACK_SIZE=4096 -> 0.25 max load factor, keeping
  * the average probe length ~1.3 even at full occupancy.  Power of two
- * so the modulo collapses to a bitmask.  Storage is BSS-resident and
- * therefore NOT mprotect-armored against an in-ring stomp targeting
- * the table's own pages.  Unlike inflight_hash[] (whose contents are
- * now mmap-bracketed), alloc_track_hash slots DO hold pointer values
- * an attacker can turn into a free() target: alloc_track_lookup gates
- * cleanup_release_post_state -> tracked_free_now -> free(), and
- * alloc_track_consume admits a scribbled value into the deferred
- * ring.  A planned follow-up moves this table into an mprotect-
- * bracketed mmap'd region in the same shape inflight_hash[] and
- * ring[] now use; until then the worst case is bad-free of a heap-
- * shaped scribble that defeats the upstream shape guard.
+ * so the modulo collapses to a bitmask.  Storage shares the alloc_track
+ * mmap region (see alloc_track declaration above) so one mprotect
+ * bracket covers both arrays.  Slots DO hold pointer values an attacker
+ * can turn into a free() target -- alloc_track_lookup gates
+ * cleanup_release_post_state -> tracked_free_now -> free() and
+ * alloc_track_consume admits values into the deferred ring -- so the
+ * PROT_READ steady state is load-bearing for memory safety, not just
+ * a perf nicety.  Mirror the ring[]/inflight_hash[] armor pattern.
  *
  * Fibonacci hashing: ptr>>4 strips the 4 always-zero low bits glibc
  * malloc gives us on x86_64 (16-byte-aligned chunks on 64-bit), then
@@ -196,7 +207,7 @@ static unsigned int alloc_track_head;
 /* 2^64 / phi, rounded to nearest odd: the 64-bit Fibonacci constant. */
 #define ALLOC_TRACK_FIB_MUL	0x9E3779B97F4A7C15ULL
 
-static void *alloc_track_hash[ALLOC_TRACK_HASH_SIZE];
+static void **alloc_track_hash;
 
 static inline unsigned int alloc_track_hash_index(void *ptr)
 {
@@ -204,6 +215,36 @@ static inline unsigned int alloc_track_hash_index(void *ptr)
 
 	return (unsigned int)((key * ALLOC_TRACK_FIB_MUL) >>
 			      (64 - ALLOC_TRACK_HASH_SHIFT));
+}
+
+/*
+ * Flip the alloc_track / alloc_track_hash backing to PROT_READ|WRITE
+ * for a single mutation, then back to PROT_READ.  Lookups read
+ * directly against the PROT_READ steady state -- no bracket on the
+ * hot path.  An unlock failure leaves the page PROT_READ and the
+ * caller skips its write; the side-set ends up with a missing entry
+ * (subsequent deferred_free_enqueue of that ptr rejects it as
+ * untracked and the ptr is leaked) or a stale entry (subsequent
+ * alloc_track_lookup answers false-positive, the lookup result
+ * still flows through the deferred-free shape/heap/shared-region
+ * gates), both safer than silently flipping a membership bit.
+ */
+static int alloc_track_unlock(void)
+{
+	if (mprotect(alloc_track_base, alloc_track_bytes,
+		     PROT_READ | PROT_WRITE) != 0) {
+		outputerr("deferred_free: alloc_track unlock failed: "
+			  "errno=%d\n", errno);
+		return -1;
+	}
+	return 0;
+}
+
+static void alloc_track_lock(void)
+{
+	if (mprotect(alloc_track_base, alloc_track_bytes, PROT_READ) != 0)
+		outputerr("deferred_free: alloc_track lock failed: "
+			  "errno=%d\n", errno);
 }
 
 /*
@@ -464,6 +505,9 @@ void deferred_alloc_track(void *ptr)
 	if (ptr == NULL)
 		return;
 
+	if (alloc_track_unlock() != 0)
+		return;
+
 	slot = alloc_track_head % ALLOC_TRACK_SIZE;
 	displaced = alloc_track[slot];
 
@@ -479,6 +523,8 @@ void deferred_alloc_track(void *ptr)
 	 */
 	if (displaced != NULL && displaced != ptr)
 		alloc_track_hash_remove(displaced);
+
+	alloc_track_lock();
 }
 
 /*
@@ -510,8 +556,11 @@ static bool alloc_track_consume(void *ptr)
 	idx = (alloc_track_head - 1) & (ALLOC_TRACK_SIZE - 1);
 	for (i = 0; i < ALLOC_TRACK_SIZE; i++) {
 		if (alloc_track[idx] == ptr) {
+			if (alloc_track_unlock() != 0)
+				return false;
 			alloc_track[idx] = NULL;
 			alloc_track_hash_remove(ptr);
+			alloc_track_lock();
 			return true;
 		}
 		idx = (idx - 1) & (ALLOC_TRACK_SIZE - 1);
@@ -819,6 +868,8 @@ void deferred_free_init(void)
 {
 	const size_t raw = sizeof(struct deferred_entry) * DEFERRED_RING_SIZE;
 	const size_t inflight_raw = sizeof(void *) * INFLIGHT_HASH_SIZE;
+	const size_t at_raw = sizeof(void *) *
+		(ALLOC_TRACK_SIZE + ALLOC_TRACK_HASH_SIZE);
 
 	ring_bytes = ((raw + page_size - 1) / page_size) * page_size;
 
@@ -856,6 +907,29 @@ void deferred_free_init(void)
 	memset(inflight_hash, 0, inflight_hash_bytes);
 	track_shared_region((unsigned long)inflight_hash, inflight_hash_bytes);
 	inflight_lock();
+
+	/*
+	 * alloc_track[] and alloc_track_hash[] share one mmap'd region so a
+	 * single mprotect bracket covers both for deferred_alloc_track's
+	 * combined slot+hash write.  PROT_READ steady state keeps the lookup
+	 * hot path (alloc_track_lookup, called from every deferred-free
+	 * enqueue ownership gate and from every cleanup_release_post_state)
+	 * free of mprotect syscalls -- only the writer paths flip RW.
+	 */
+	alloc_track_bytes = ((at_raw + page_size - 1) / page_size) * page_size;
+	alloc_track_base = mmap(NULL, alloc_track_bytes,
+				PROT_READ | PROT_WRITE,
+				MAP_PRIVATE | MAP_ANON, -1, 0);
+	if (alloc_track_base == MAP_FAILED) {
+		outputerr("deferred_free_init: alloc_track mmap %zu failed\n",
+			  alloc_track_bytes);
+		exit(EXIT_FAILURE);
+	}
+	memset(alloc_track_base, 0, alloc_track_bytes);
+	alloc_track = (void **)alloc_track_base;
+	alloc_track_hash = alloc_track + ALLOC_TRACK_SIZE;
+	track_shared_region((unsigned long)alloc_track_base, alloc_track_bytes);
+	alloc_track_lock();
 
 	/*
 	 * Read vm.max_map_count once in the parent so every child
