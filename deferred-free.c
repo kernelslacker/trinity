@@ -670,9 +670,54 @@ void cleanup_release_post_state(struct syscallrecord *rec)
  * its own COW copy of the ring; only the address range is shared with
  * the tracker.
  */
-static struct deferred_entry *ring;
-static unsigned int ring_count;
-static size_t ring_bytes;
+/*
+ * Ring control state -- the ring pointer, its mmap'd size, and the
+ * in-flight slot count.  All three live in their own small mmap'd
+ * armor page so a sibling fuzzed value-result syscall cannot scribble
+ * the values that DRIVE ring[]'s own mprotect/munmap bracket: a
+ * stomped ring would point mprotect at an arbitrary VA, a stomped
+ * ring_bytes would extend munmap into unrelated VMAs, and a stomped
+ * ring_count would mis-gate the enqueue full-ring check and the
+ * tick early-bail.  ring and ring_bytes are write-once during init
+ * (plus the dispose-time NULL/zero clear); ring_count mutates per
+ * enqueue and drain.  Steady state of the armor page is PROT_READ so
+ * the dominant reads (the "if (ring == NULL)" / "if (ring_count == 0)"
+ * fast-bail checks, the ring_count comparison in the full-ring
+ * branch) execute without a syscall; the few writer paths flip RW
+ * via rc_unlock()/rc_lock() for the duration of the mutation.  The
+ * field access pattern is hidden behind the file-scope macros below
+ * so the rest of the file keeps reading like ring/ring_count/
+ * ring_bytes were still plain file-static scalars.
+ */
+struct ring_control {
+	struct deferred_entry *ring;
+	size_t ring_bytes;
+	unsigned int ring_count;
+};
+
+static struct ring_control *rc;
+static size_t rc_bytes;
+
+#define ring		(rc->ring)
+#define ring_bytes	(rc->ring_bytes)
+#define ring_count	(rc->ring_count)
+
+static int rc_unlock(void)
+{
+	if (mprotect(rc, rc_bytes, PROT_READ | PROT_WRITE) != 0) {
+		outputerr("deferred_free: ring_control unlock failed: "
+			  "errno=%d\n", errno);
+		return -1;
+	}
+	return 0;
+}
+
+static void rc_lock(void)
+{
+	if (mprotect(rc, rc_bytes, PROT_READ) != 0)
+		outputerr("deferred_free: ring_control lock failed: "
+			  "errno=%d\n", errno);
+}
 
 /*
  * One bit per ring slot: 1 == occupied, 0 == free.  Lets enqueue find
@@ -808,8 +853,11 @@ static void ring_dispose_after_enomem(void)
 		outputerr("deferred_free: munmap ring after ENOMEM failed: errno=%d\n",
 			  errno);
 
-	ring = NULL;
-	ring_count = 0;
+	if (rc_unlock() == 0) {
+		ring = NULL;
+		ring_count = 0;
+		rc_lock();
+	}
 	occupied_mask = 0;
 	if (inflight_unlock() == 0) {
 		memset(inflight_hash, 0, inflight_hash_bytes);
@@ -870,6 +918,24 @@ void deferred_free_init(void)
 	const size_t inflight_raw = sizeof(void *) * INFLIGHT_HASH_SIZE;
 	const size_t at_raw = sizeof(void *) *
 		(ALLOC_TRACK_SIZE + ALLOC_TRACK_HASH_SIZE);
+	const size_t rc_raw = sizeof(struct ring_control);
+
+	/*
+	 * Ring control armor page first -- writes to ring/ring_bytes/
+	 * ring_count below all go through rc->* fields, so the page must
+	 * be live and writable for the duration of init.  Locked to
+	 * PROT_READ at the tail of init alongside the data ring.
+	 */
+	rc_bytes = ((rc_raw + page_size - 1) / page_size) * page_size;
+	rc = mmap(NULL, rc_bytes, PROT_READ | PROT_WRITE,
+		  MAP_PRIVATE | MAP_ANON, -1, 0);
+	if (rc == MAP_FAILED) {
+		outputerr("deferred_free_init: ring_control mmap %zu failed\n",
+			  rc_bytes);
+		exit(EXIT_FAILURE);
+	}
+	memset(rc, 0, rc_bytes);
+	track_shared_region((unsigned long)rc, rc_bytes);
 
 	ring_bytes = ((raw + page_size - 1) / page_size) * page_size;
 
@@ -884,6 +950,7 @@ void deferred_free_init(void)
 	ring_count = 0;
 	occupied_mask = 0;
 	ring_lock();
+	rc_lock();
 
 	/*
 	 * inflight_hash backing lives in its own mmap'd region so the
@@ -1113,7 +1180,10 @@ static void ring_evict_oldest_safe(void)
 	}
 	ring[oldest].ptr = NULL;
 	occupied_mask &= ~(1ULL << oldest);
-	ring_count--;
+	if (rc_unlock() == 0) {
+		ring_count--;
+		rc_lock();
+	}
 }
 
 /*
@@ -1329,16 +1399,18 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 	ring[i].ptr = ptr;
 	ring[i].ttl = RAND_RANGE(DEFERRED_TTL_MIN, DEFERRED_TTL_MAX);
 	occupied_mask |= 1ULL << i;
-	ring_count++;
+	if (rc_unlock() == 0) {
+		ring_count++;
+		rc_lock();
+	}
 	deferred_free_record_outstanding(ring_count);
 
 	ring_lock();
 
 	/*
-	 * Record this admission in the in-flight set so the drain-time
-	 * gate can tell an unscrobbed slot from a scribbled one.  Outside
-	 * the ring_unlock bracket because the set is BSS-resident -- no
-	 * mprotect cost on this write.
+	 * Record this admission in the in-flight set.  Outside both the
+	 * ring_unlock bracket and the rc_unlock bracket -- inflight_hash
+	 * has its own armor page and its own RW window.
 	 */
 	inflight_hash_insert(ptr);
 }
@@ -1566,6 +1638,18 @@ void deferred_free_tick(void)
 	if (r != RING_UNLOCK_OK)
 		return;
 
+	/*
+	 * Hoist the ring_control bracket around the whole drain loop:
+	 * every ring_count-- inside the loop runs at PROT_READ|WRITE
+	 * without a per-iteration mprotect pair, and locks back to
+	 * PROT_READ once the loop has settled.  Bail before touching
+	 * ring_count if the unlock fails -- the next tick will retry.
+	 */
+	if (rc_unlock() != 0) {
+		ring_lock();
+		return;
+	}
+
 	for (i = 0; i < DEFERRED_RING_SIZE; i++) {
 		void *ptr;
 
@@ -1601,6 +1685,8 @@ void deferred_free_tick(void)
 
 		free_ring_entry(ptr, i);
 	}
+
+	rc_lock();
 
 	if ((++gc_count & (INFLIGHT_GC_INTERVAL - 1)) == 0)
 		inflight_gc_sweep();
@@ -1652,7 +1738,10 @@ void deferred_free_flush(void)
 		ring[i].ptr = NULL;
 		free_ring_entry(ptr, i);
 	}
-	ring_count = 0;
+	if (rc_unlock() == 0) {
+		ring_count = 0;
+		rc_lock();
+	}
 	occupied_mask = 0;
 
 	ring_lock();
