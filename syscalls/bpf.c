@@ -762,16 +762,32 @@ static void post_bpf(struct syscallrecord *rec)
 		 * classic-BPF branch returns a tracked sock_fprog wrapper that
 		 * owns a separate inner filter buffer (both allocations need
 		 * deferred_free_enqueue to consume their tracker slots), and the
-		 * eBPF branch returns a plain insn buffer that's free()'d
-		 * directly through the inner-ptr gate.  classic_bpf_insns is
-		 * captured in the snap at sanitise time so a sibling scribble of
-		 * attr fields cannot misroute the dispatch. */
+		 * eBPF branch returns a tracked insn buffer that releases the
+		 * same way.  classic_bpf_insns is captured in the snap at
+		 * sanitise time so a sibling scribble of attr fields cannot
+		 * misroute the dispatch.
+		 *
+		 * Both branches gate on alloc_track_lookup() before releasing:
+		 * attr->insns is read out of the shm-resident syscallrecord at
+		 * post time and is not captured in the snap, so a sibling fuzzed
+		 * value-result syscall can scribble it between dispatch and here.
+		 * A shape-only gate would pass any heap-shaped scribble through
+		 * to plain free(); if the scribbled value aliases a pointer
+		 * already admitted to the deferred-free in-flight set by another
+		 * site, that plain free() bypasses inflight_hash_remove() and
+		 * the original site's later TTL-expiry double-frees the chunk
+		 * (free_ring_entry sees the value still in inflight_hash, passes
+		 * its in-flight-miss gate, and calls free() a second time).
+		 * Routing the proven-ours eBPF buffer through
+		 * deferred_free_enqueue() keeps the bookkeeping in lock-step:
+		 * enqueue consumes alloc_track and admits to inflight_hash, and
+		 * the TTL-expiry free clears inflight_hash. */
 		if (snap->classic_bpf_insns) {
 			bpf_free_filter((struct sock_fprog *)(unsigned long)attr->insns);
 		} else {
 			void *ptr = (void *)(unsigned long)attr->insns;
-			if (inner_ptr_ok_to_free(rec, ptr, "post_bpf/attr->insns"))
-				free(ptr);
+			if (ptr != NULL && alloc_track_lookup(ptr))
+				deferred_free_enqueue(ptr);
 		}
 		break;
 

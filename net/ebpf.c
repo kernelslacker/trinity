@@ -1210,15 +1210,22 @@ void ebpf_gen_program_into(struct bpf_insn *insns, int max_insns,
 }
 
 /*
- * Allocating wrapper: hand out a fresh zmalloc'd insn buffer sized for
- * the largest tier and delegate fill to the core.  Caller owns free()
- * via the post_bpf inner-ptr gate (see syscalls/bpf.c).
+ * Allocating wrapper: hand out a fresh zmalloc_tracked() insn buffer
+ * sized for the largest tier and delegate fill to the core.  The post
+ * handler in syscalls/bpf.c routes release through deferred_free_enqueue
+ * under an alloc_track_lookup() ownership gate -- a shape-only gate on
+ * attr->insns lets a sibling-scribbled value that aliases another
+ * site's currently-inflight pointer slip through to plain free(), and
+ * because plain free() does not update inflight_hash, the original
+ * site's later TTL-expiry would re-free the same chunk.  Tracking the
+ * allocation here is what lets the post-handler ownership gate prove
+ * the pointer is ours before handing it to the deferred-free ring.
  */
 struct bpf_insn *ebpf_gen_program(int *insn_count, unsigned int prog_type)
 {
 	struct bpf_insn *insns;
 
-	insns = zmalloc(TIER3_MAX_INSNS * sizeof(struct bpf_insn));
+	insns = zmalloc_tracked(TIER3_MAX_INSNS * sizeof(struct bpf_insn));
 	ebpf_gen_program_into(insns, TIER3_MAX_INSNS, insn_count, prog_type);
 	return insns;
 }
