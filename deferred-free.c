@@ -159,13 +159,17 @@ static unsigned int alloc_track_head;
  *
  * 16384 slots vs ALLOC_TRACK_SIZE=4096 -> 0.25 max load factor, keeping
  * the average probe length ~1.3 even at full occupancy.  Power of two
- * so the modulo collapses to a bitmask.  BSS-resident (no mprotect
- * bracket, not inside the mmap'd ring): the ring is mmap'd-shared
- * because shared_regions[] only protects mmap'd VAs from fuzzed-write
- * stomps, but the hash has no pointer values an attacker could turn
- * into a free() target -- the worst a stomp here can do is induce
- * the same false-negative we already tolerate in the duplicate edge
- * case below.
+ * so the modulo collapses to a bitmask.  Storage is BSS-resident and
+ * therefore NOT mprotect-armored against an in-ring stomp targeting
+ * the table's own pages.  Unlike inflight_hash[] (whose contents are
+ * now mmap-bracketed), alloc_track_hash slots DO hold pointer values
+ * an attacker can turn into a free() target: alloc_track_lookup gates
+ * cleanup_release_post_state -> tracked_free_now -> free(), and
+ * alloc_track_consume admits a scribbled value into the deferred
+ * ring.  A planned follow-up moves this table into an mprotect-
+ * bracketed mmap'd region in the same shape inflight_hash[] and
+ * ring[] now use; until then the worst case is bad-free of a heap-
+ * shaped scribble that defeats the upstream shape guard.
  *
  * Fibonacci hashing: ptr>>4 strips the 4 always-zero low bits glibc
  * malloc gives us on x86_64 (16-byte-aligned chunks on 64-bit), then
@@ -312,23 +316,30 @@ bool alloc_track_lookup(void *ptr)
  * Storage shape mirrors alloc_track_hash[] (1024 slots, Fibonacci
  * index, open-addressed with shift-back deletion).  Sized for the
  * 64-slot ring plus headroom for stomp orphans accumulated between
- * GC sweeps; an idle slot costs 8 bytes of BSS.
+ * GC sweeps; an idle slot costs 8 bytes of the mmap'd backing.
  *
- * Storage lives in BSS (zero-init, COW-shared at fork, written
- * single-threaded by the owning child) -- NOT mprotect-armored
- * against an in-ring stomp targeting the set's own pages.  A stomp
- * that landed on inflight_hash[] could flip a membership bit and
- * either let a bad free through (set says "present" when ptr was
- * never admitted) or reject a clean free (set says "absent" when ptr
- * is live).  The residual gap motivates a planned follow-up that
- * moves the membership store into an mprotect-bracketed mmap'd
- * region, the same shape ring[] already uses.
+ * Storage lives in an mmap'd region whose address range is registered
+ * with shared_regions[] via track_shared_region(), mirroring ring[]'s
+ * shape.  Steady state is PROT_READ so the membership-lookup hot path
+ * (inflight_hash_contains, called from the ring eviction and TTL-drain
+ * gates) reads directly without an mprotect syscall.  Writers
+ * (inflight_hash_insert / inflight_hash_remove / the dispose-time
+ * clear) bracket their mutations with inflight_unlock()/inflight_lock()
+ * so a sibling fuzzed value-result syscall that aliases the set's
+ * pages between writes hits the PROT_READ wall instead of silently
+ * flipping a membership bit.  Closes the residual-gap class the
+ * earlier BSS-resident shape documented: a stomp landing on
+ * inflight_hash[] could previously either let a bad free through (set
+ * says "present" when ptr was never admitted -- ring_evict_oldest_safe
+ * 2026-06-10 ASAN bad-free root cause) or reject a clean free (set
+ * says "absent" when ptr is live).
  */
 #define INFLIGHT_HASH_SHIFT	10
 #define INFLIGHT_HASH_SIZE	(1U << INFLIGHT_HASH_SHIFT)
 #define INFLIGHT_HASH_MASK	(INFLIGHT_HASH_SIZE - 1U)
 
-static void *inflight_hash[INFLIGHT_HASH_SIZE];
+static void **inflight_hash;
+static size_t inflight_hash_bytes;
 
 static inline unsigned int inflight_hash_index(void *ptr)
 {
@@ -338,20 +349,53 @@ static inline unsigned int inflight_hash_index(void *ptr)
 			      (64 - INFLIGHT_HASH_SHIFT));
 }
 
+/*
+ * Flip the inflight_hash backing to PROT_READ|PROT_WRITE for the
+ * duration of a single mutation, then back to PROT_READ.  Reads do not
+ * need the bracket -- they execute directly against the PROT_READ
+ * steady state.  A failed unlock leaves the page PROT_READ and the
+ * caller skips its write; the leaked-positive (insert miss) or
+ * stale-positive (remove miss) is bounded by the gc-sweep cadence and
+ * is the safer direction to err vs. silently scribbling a wrong
+ * membership bit.
+ */
+static int inflight_unlock(void)
+{
+	if (mprotect(inflight_hash, inflight_hash_bytes,
+		     PROT_READ | PROT_WRITE) != 0) {
+		outputerr("deferred_free: inflight_hash unlock failed: "
+			  "errno=%d\n", errno);
+		return -1;
+	}
+	return 0;
+}
+
+static void inflight_lock(void)
+{
+	if (mprotect(inflight_hash, inflight_hash_bytes, PROT_READ) != 0)
+		outputerr("deferred_free: inflight_hash lock failed: "
+			  "errno=%d\n", errno);
+}
+
 static void inflight_hash_insert(void *ptr)
 {
 	unsigned int idx = inflight_hash_index(ptr);
 	unsigned int probes;
 
+	if (inflight_unlock() != 0)
+		return;
+
 	for (probes = 0; probes < INFLIGHT_HASH_SIZE; probes++) {
 		if (inflight_hash[idx] == NULL) {
 			inflight_hash[idx] = ptr;
-			return;
+			break;
 		}
 		if (inflight_hash[idx] == ptr)
-			return;
+			break;
 		idx = (idx + 1) & INFLIGHT_HASH_MASK;
 	}
+
+	inflight_lock();
 }
 
 static void inflight_hash_remove(void *ptr)
@@ -370,6 +414,9 @@ static void inflight_hash_remove(void *ptr)
 	if (inflight_hash[idx] != ptr)
 		return;
 
+	if (inflight_unlock() != 0)
+		return;
+
 	hole = idx;
 	for (probes = 0; probes < INFLIGHT_HASH_SIZE; probes++) {
 		unsigned int natural;
@@ -379,6 +426,7 @@ static void inflight_hash_remove(void *ptr)
 		idx = (idx + 1) & INFLIGHT_HASH_MASK;
 		if (inflight_hash[idx] == NULL) {
 			inflight_hash[hole] = NULL;
+			inflight_lock();
 			return;
 		}
 		natural = inflight_hash_index(inflight_hash[idx]);
@@ -390,6 +438,7 @@ static void inflight_hash_remove(void *ptr)
 		}
 	}
 	inflight_hash[hole] = NULL;
+	inflight_lock();
 }
 
 static bool inflight_hash_contains(void *ptr)
@@ -713,7 +762,10 @@ static void ring_dispose_after_enomem(void)
 	ring = NULL;
 	ring_count = 0;
 	occupied_mask = 0;
-	memset(inflight_hash, 0, sizeof(inflight_hash));
+	if (inflight_unlock() == 0) {
+		memset(inflight_hash, 0, inflight_hash_bytes);
+		inflight_lock();
+	}
 }
 
 static void deferred_free_read_max_map_count(void)
@@ -766,6 +818,7 @@ static void deferred_free_record_outstanding(unsigned int v)
 void deferred_free_init(void)
 {
 	const size_t raw = sizeof(struct deferred_entry) * DEFERRED_RING_SIZE;
+	const size_t inflight_raw = sizeof(void *) * INFLIGHT_HASH_SIZE;
 
 	ring_bytes = ((raw + page_size - 1) / page_size) * page_size;
 
@@ -780,6 +833,29 @@ void deferred_free_init(void)
 	ring_count = 0;
 	occupied_mask = 0;
 	ring_lock();
+
+	/*
+	 * inflight_hash backing lives in its own mmap'd region so the
+	 * mm-syscall sanitisers refuse fuzzed pointers/lengths that would
+	 * alias the membership-set pages, and so writers can bracket the
+	 * RW window with mprotect() the same way ring[] does.  Steady
+	 * state is PROT_READ -- the contains() hot path reads directly
+	 * without an mprotect bracket.  See the storage comment above
+	 * INFLIGHT_HASH_SHIFT for the threat model.
+	 */
+	inflight_hash_bytes = ((inflight_raw + page_size - 1) / page_size) *
+			      page_size;
+	inflight_hash = mmap(NULL, inflight_hash_bytes,
+			     PROT_READ | PROT_WRITE,
+			     MAP_PRIVATE | MAP_ANON, -1, 0);
+	if (inflight_hash == MAP_FAILED) {
+		outputerr("deferred_free_init: inflight_hash mmap %zu "
+			  "failed\n", inflight_hash_bytes);
+		exit(EXIT_FAILURE);
+	}
+	memset(inflight_hash, 0, inflight_hash_bytes);
+	track_shared_region((unsigned long)inflight_hash, inflight_hash_bytes);
+	inflight_lock();
 
 	/*
 	 * Read vm.max_map_count once in the parent so every child
