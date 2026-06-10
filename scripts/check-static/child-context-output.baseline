@@ -30,8 +30,8 @@ childops/numa-migration-churn.c:190:parse_online_nodes
 childops/pagecache-canary-check.c:179:log_corruption
 childops/refcount-auditor.c:147:audit_fd_bucket
 childops/refcount-auditor.c:195:audit_mmap_bucket
-childops/refcount-auditor.c:455:audit_socket_bucket
-childops/refcount-auditor.c:492:audit_socket_bucket
+childops/refcount-auditor.c:480:audit_socket_bucket
+childops/refcount-auditor.c:517:audit_socket_bucket
 childops/rxrpc-key-install.c:202:probe_rxrpc_key_supported
 childops/rxrpc-key-install.c:348:do_add_rxrpc
 syscalls/alarm.c:67:post_alarm

@@ -204,13 +204,21 @@ static void audit_mmap_bucket(void)
 /*
  * Parse one /proc/net file and collect the inode numbers found at the given
  * 1-indexed field position in each data line (the header line is skipped).
- * Returns the count written to out[].  Stops when max is reached.
+ * Writes the count gathered to *count_out (capped by max).
+ *
+ * Returns true if the file was reachable (open() succeeded); false on a real
+ * open failure.  The two outputs are kept separate because "file readable but
+ * currently empty" (e.g. a quiet namespace with no sockets of that family) is
+ * a valid sample and must not be conflated with "/proc/net is unavailable" —
+ * the caller latches its unavailable flag only when every probed file fails
+ * to open, never on a zero count from a file that opened cleanly.
  */
 #define MAX_PROC_NET_INODES 4096
 
-static unsigned int collect_proc_net_inodes(const char *path,
-					    unsigned int inode_field,
-					    ino_t *out, unsigned int max)
+static bool collect_proc_net_inodes(const char *path,
+				    unsigned int inode_field,
+				    ino_t *out, unsigned int max,
+				    unsigned int *count_out)
 {
 	/* Chunked stack-buffer read, no stdio.  Each call to the auditor
 	 * sweeps six /proc/net files, and the auditor itself runs in the
@@ -236,9 +244,11 @@ static unsigned int collect_proc_net_inodes(const char *path,
 	bool skip_header = true;
 	int fd;
 
+	*count_out = 0;
+
 	fd = open(path, O_RDONLY);
 	if (fd < 0)
-		return 0;
+		return false;
 
 	for (;;) {
 		ssize_t n;
@@ -302,7 +312,8 @@ static unsigned int collect_proc_net_inodes(const char *path,
 	}
 
 	close(fd);
-	return count;
+	*count_out = count;
+	return true;
 }
 
 /*
@@ -399,6 +410,7 @@ static void audit_socket_bucket(void)
 	ino_t *net_inodes;
 	unsigned int net_count = 0;
 	unsigned int t, i;
+	bool any_open = false;
 
 	if (proc_net_unavailable)
 		return;
@@ -412,17 +424,30 @@ static void audit_socket_bucket(void)
 		return;
 
 	for (t = 0; t < ARRAY_SIZE(net_files) && net_count < MAX_PROC_NET_INODES; t++) {
-		unsigned int n;
+		unsigned int n = 0;
 
-		n = collect_proc_net_inodes(net_files[t].path,
+		if (collect_proc_net_inodes(net_files[t].path,
 					    net_files[t].inode_field,
 					    net_inodes + net_count,
-					    MAX_PROC_NET_INODES - net_count);
+					    MAX_PROC_NET_INODES - net_count,
+					    &n))
+			any_open = true;
 		net_count += n;
 	}
 
-	if (net_count == 0) {
+	/*
+	 * Latch unavailable only when every probed file failed to open — a
+	 * containerised env with /proc/net hidden.  A zero count from files
+	 * that opened cleanly just means no sockets of those families exist
+	 * right now; skip this round and try again next cycle.
+	 */
+	if (!any_open) {
 		proc_net_unavailable = true;
+		free(net_inodes);
+		return;
+	}
+
+	if (net_count == 0) {
 		free(net_inodes);
 		return;
 	}
