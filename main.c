@@ -1038,7 +1038,7 @@ static bool spawn_child(int childno)
 	assign_dedicated_alt_op(child, childno);
 
 	nr_fds = get_num_fds();
-	if ((max_files_rlimit.rlim_cur - nr_fds) < 3) {
+	if ((unsigned long)nr_fds + 3 > max_files_rlimit.rlim_cur) {
 		outputerr("current number of fd: %d, please consider ulimit -n xxx to increase fd limition\n", nr_fds);
 		panic(EXIT_NO_FDS);
 		return false;
