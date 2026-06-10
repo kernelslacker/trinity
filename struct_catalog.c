@@ -76,6 +76,9 @@
 
 #include "struct_catalog.h"
 #include "arch.h"
+#ifdef X86
+#include <asm/ldt.h>		/* struct user_desc -- modify_ldt arg2 */
+#endif
 #include "debug.h"
 #include "perf_event.h"
 #include "random.h"
@@ -2147,6 +2150,35 @@ static const struct struct_field if_dqinfo_fields[] = {
 	       .u.flags.mask = IIF_ALL,
 	       .mutate_weight = 60),
 };
+
+#ifdef X86
+/* ------------------------------------------------------------------ */
+/* struct user_desc (modify_ldt write_ldt arm, func == 1)              */
+/* ------------------------------------------------------------------ */
+/*
+ * x86-only LDT entry descriptor.  Only the three addressable u32 fields
+ * (entry_number / base_addr / limit) get FIELD entries -- the trailing
+ * seg_32bit / contents / read_exec_only / limit_in_pages / seg_not_present
+ * / useable / lm members are sub-byte bitfields and have no stable
+ * offsetof, so they stay outside the schema-aware fill's reach.  The
+ * bespoke sanitise_modify_ldt() arm already curates those bits; this
+ * registration is attribution-only so struct_field_for_cmp() can steer
+ * CMP-learned constants at entry_number / base_addr / limit rather than
+ * at a coincidentally-same-width slot.
+ *
+ * entry_number is FT_RANGE-bounded to [0, LDT_ENTRIES) to match the
+ * kernel's switch domain; base_addr / limit stay FT_RAW since the kernel
+ * accepts any 32-bit value.
+ */
+static const struct struct_field user_desc_fields[] = {
+	FIELDX(struct user_desc, entry_number, FT_RANGE,
+	       .u.range.lo = 0,
+	       .u.range.hi = LDT_ENTRIES - 1,
+	       .mutate_weight = 60),
+	FIELD(struct user_desc, base_addr),
+	FIELD(struct user_desc, limit),
+};
+#endif
 
 /* ------------------------------------------------------------------ */
 /* struct mnt_id_req (statmount, listmount)                            */
@@ -4618,6 +4650,14 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= if_dqinfo_fields,
 		.num_fields	= ARRAY_SIZE(if_dqinfo_fields),
 	},
+#ifdef X86
+	[SC_USER_DESC] = {
+		.name		= "user_desc",
+		.struct_size	= sizeof(struct user_desc),
+		.fields		= user_desc_fields,
+		.num_fields	= ARRAY_SIZE(user_desc_fields),
+	},
+#endif
 };
 
 /*
@@ -5181,6 +5221,29 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 		.num_discrim_values	= ARRAY_SIZE(quotactl_if_dqinfo_subcmds),
 		.discrim_shift		= SUBCMDSHIFT,
 	},
+#ifdef X86
+	/*
+	 * modify_ldt(int func, void __user *ptr, unsigned long bytecount)
+	 * a2 is a struct user_desc pointer only on the write_ldt arm
+	 * (func == 1); the read arm (func == 0) hands the kernel a
+	 * plain user buffer to splat the live LDT into.  The bespoke
+	 * sanitise_modify_ldt() arm keeps owning the live fill (per-bit
+	 * RAND_BOOL pickers for the seg_32bit / contents / read_exec_only
+	 * / limit_in_pages / seg_not_present / useable / lm bitfields,
+	 * rec->a3 pinned to sizeof(struct user_desc));  attribution-only
+	 * registration lets struct_field_for_cmp() steer CMP-learned
+	 * constants at the named entry_number / base_addr / limit slots
+	 * rather than at a coincidentally-same-width slot.
+	 *
+	 * Discriminator pool is the single value {1}; func == 0 / 2 fall
+	 * through to NULL and the bespoke arm continues to own them.
+	 */
+	{
+		"modify_ldt", 2, &struct_catalog[SC_USER_DESC],
+		.discrim_arg_idx	= 1,
+		.discrim_value		= 1,
+	},
+#endif
 	/* sentinel */
 	{ NULL, 0, NULL },
 };

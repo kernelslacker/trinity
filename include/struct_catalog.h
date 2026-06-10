@@ -17,6 +17,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include "arch.h"		/* X86 / ARM / ... for arch-gated enum members */
 #include "syscall.h"
 
 /*
@@ -308,6 +309,9 @@ enum struct_catalog_idx {
 	SC_LANDLOCK_NET_PORT_ATTR,
 	SC_IF_DQBLK,
 	SC_IF_DQINFO,
+#ifdef X86
+	SC_USER_DESC,
+#endif
 
 	SC_NR_ENTRIES,		/* sentinel; equals ARRAY_SIZE(struct_catalog) once both stay in lockstep */
 };
