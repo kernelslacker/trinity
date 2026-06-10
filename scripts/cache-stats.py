@@ -628,36 +628,50 @@ def syscall_label(names: dict[int, str], nr: int) -> str:
     return f"nr={nr:<4d} <unnamed>"
 
 
-def find_artifact(root: str, top: str) -> tuple[Optional[str], Optional[str]]:
+def find_artifact(
+    root: str, top: str, kernel: Optional[str] = None
+) -> tuple[Optional[str], Optional[str]]:
     """Resolve an artifact path under the cache root.
 
     Layouts handled:
-      root/<top>                 -- file (kcov-bitmap, cmp-hints).
-      root/<top>/<arch>          -- per-arch artifact (corpus, effector); the
-                                    subdir basename is the arch hint.
-    Returns (path, arch_hint_or_None).
+      root/<top>                 -- file (flat single-kernel layout).
+      root/<top>/<file>          -- per-kernel files named like
+                                    'x86_64-7.1.0-rc7-gen10+'.
+    When the directory holds several per-kernel files, pick the one whose
+    name contains <kernel> (a substring such as '7.1.0-rc7'); with no
+    kernel hint, pick the newest by mtime.  Returns (path, arch_hint);
+    arch_hint is the leading arch component of the chosen filename.
     """
     candidate = os.path.join(root, top)
     if os.path.isfile(candidate):
         return candidate, None
     if os.path.isdir(candidate):
-        for s in sorted(os.listdir(candidate)):
-            p = os.path.join(candidate, s)
-            if os.path.isfile(p):
-                return p, s
+        files = [
+            s
+            for s in os.listdir(candidate)
+            if os.path.isfile(os.path.join(candidate, s))
+        ]
+        if kernel is not None:
+            files = [s for s in files if kernel in s]
+        if not files:
+            return None, None
+        chosen = max(files, key=lambda s: os.path.getmtime(os.path.join(candidate, s)))
+        return os.path.join(candidate, chosen), arch_from_dirname(chosen)
     return None, None
 
 
-def load_bundle(cache_dir: str) -> CacheBundle:
+def load_bundle(cache_dir: str, kernel: Optional[str] = None) -> CacheBundle:
     cache_dir = os.path.abspath(cache_dir)
     base = os.path.basename(cache_dir.rstrip("/"))
 
-    kcov_path, _ = find_artifact(cache_dir, "kcov-bitmap")
-    corpus_path, corpus_arch = find_artifact(cache_dir, "corpus")
-    cmp_path, _ = find_artifact(cache_dir, "cmp-hints")
-    effector_path, effector_arch = find_artifact(cache_dir, "effector")
+    kcov_path, kcov_arch = find_artifact(cache_dir, "kcov-bitmap", kernel)
+    corpus_path, corpus_arch = find_artifact(cache_dir, "corpus", kernel)
+    cmp_path, cmp_arch = find_artifact(cache_dir, "cmp-hints", kernel)
+    effector_path, effector_arch = find_artifact(cache_dir, "effector", kernel)
 
-    arch = corpus_arch or effector_arch or arch_from_dirname(base)
+    arch = (
+        corpus_arch or effector_arch or kcov_arch or cmp_arch or arch_from_dirname(base)
+    )
     syscall_names = load_syscall_names(arch) if arch else {}
 
     kcov = load_kcov(kcov_path) if kcov_path else None
@@ -908,8 +922,61 @@ def print_effector_stats(b: CacheBundle, top_n: int) -> None:
             print(f"  {syscall_label(b.syscall_names, nr):<28s} {nz:>10d}")
 
 
+def _kernel_mtime(cache_dir: str, fname: str) -> float:
+    for top in ("kcov-bitmap", "corpus", "cmp-hints", "effector"):
+        p = os.path.join(cache_dir, top, fname)
+        if os.path.isfile(p):
+            return os.path.getmtime(p)
+    return 0.0
+
+
+def available_kernels(cache_dir: str) -> list[str]:
+    """Distinct per-kernel artifact filenames present under cache_dir."""
+    labels: set[str] = set()
+    for top in ("kcov-bitmap", "corpus", "cmp-hints", "effector"):
+        d = os.path.join(cache_dir, top)
+        if os.path.isdir(d):
+            for s in os.listdir(d):
+                if os.path.isfile(os.path.join(d, s)):
+                    labels.add(s)
+    return sorted(labels)
+
+
+def resolve_kernel(
+    cache_dir: str, requested: Optional[str], announce: bool = True
+) -> Optional[str]:
+    """Map a --kernel substring to a concrete cache filename.
+
+    Returns the chosen filename (used as the artifact filter), or None for
+    a flat single-kernel cache.  Exits with a listing on no match.
+    """
+    kernels = available_kernels(cache_dir)
+    if not kernels:
+        return None
+    if requested is not None:
+        matched = [s for s in kernels if requested in s]
+        if not matched:
+            sys.stderr.write(f"no cache files match kernel {requested!r}; available:\n")
+            for s in kernels:
+                sys.stderr.write(f"  {s}\n")
+            sys.exit(2)
+        return max(matched, key=lambda s: _kernel_mtime(cache_dir, s))
+    if len(kernels) == 1:
+        return kernels[0]
+    newest = max(kernels, key=lambda s: _kernel_mtime(cache_dir, s))
+    if announce:
+        print(f"note: {len(kernels)} kernels in cache; showing newest ({newest}).")
+        print("      pass -k <substr> (e.g. -k 7.1.0-rc6) to pick another:")
+        for s in kernels:
+            print(f"        {s}")
+        print()
+    return newest
+
+
 def cmd_stats(args: argparse.Namespace) -> int:
-    b = load_bundle(args.cache_dir)
+    cache_dir = os.path.abspath(args.cache_dir)
+    kernel = resolve_kernel(cache_dir, args.kernel)
+    b = load_bundle(cache_dir, kernel)
     print(f"trinity cache stats: {b.cache_dir}")
     print(f"kernel label:        {b.kernel_label}")
     print(
@@ -924,8 +991,10 @@ def cmd_stats(args: argparse.Namespace) -> int:
 
 
 def cmd_diff(args: argparse.Namespace) -> int:
-    a = load_bundle(args.cache_a)
-    b = load_bundle(args.cache_b)
+    cache_a = os.path.abspath(args.cache_a)
+    cache_b = os.path.abspath(args.cache_b) if args.cache_b else cache_a
+    a = load_bundle(cache_a, resolve_kernel(cache_a, args.kernel_a, announce=False))
+    b = load_bundle(cache_b, resolve_kernel(cache_b, args.kernel_b, announce=False))
     print("trinity cache diff (cross-kernel PROXIES ONLY)")
     print(f"  A: {a.cache_dir}  [{a.kernel_label}]")
     print(f"  B: {b.cache_dir}  [{b.kernel_label}]")
@@ -1058,10 +1127,27 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="cmd", required=True)
     p_stats = sub.add_parser("stats", help="single-kernel summary")
     p_stats.add_argument("cache_dir")
+    p_stats.add_argument(
+        "-k",
+        "--kernel",
+        help="kernel substring to select when the cache holds several "
+        "(e.g. -k 7.1.0-rc7); default: newest",
+    )
     p_stats.set_defaults(func=cmd_stats)
     p_diff = sub.add_parser("diff", help="cross-kernel proxies (not edges)")
     p_diff.add_argument("cache_a")
-    p_diff.add_argument("cache_b")
+    p_diff.add_argument(
+        "cache_b",
+        nargs="?",
+        default=None,
+        help="second cache dir (default: same as cache_a)",
+    )
+    p_diff.add_argument(
+        "-a", "--kernel-a", dest="kernel_a", help="kernel substring for side A"
+    )
+    p_diff.add_argument(
+        "-b", "--kernel-b", dest="kernel_b", help="kernel substring for side B"
+    )
     p_diff.set_defaults(func=cmd_diff)
     return p
 
