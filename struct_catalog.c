@@ -4725,95 +4725,92 @@ static const unsigned long quotactl_if_dqinfo_subcmds[] = {
  */
 const struct syscall_struct_arg syscall_struct_args[] = {
 	/* adjtimex(struct timex *) */
-	{ "adjtimex",		1, &struct_catalog[0] },
+	{ "adjtimex",		1, &struct_catalog[SC_TIMEX] },
 	/* clock_adjtime(clockid_t, struct timex *) */
-	{ "clock_adjtime",	2, &struct_catalog[0] },
+	{ "clock_adjtime",	2, &struct_catalog[SC_TIMEX] },
 	/* sched_setattr(pid_t, struct sched_attr *, unsigned int) */
-	{ "sched_setattr",	2, &struct_catalog[1] },
+	{ "sched_setattr",	2, &struct_catalog[SC_SCHED_ATTR] },
 	/* sched_getattr(pid_t, struct sched_attr *, unsigned int, unsigned int) */
-	{ "sched_getattr",	2, &struct_catalog[1] },
+	{ "sched_getattr",	2, &struct_catalog[SC_SCHED_ATTR] },
 	/* clone3(struct clone_args *, size_t) */
-	{ "clone3",		1, &struct_catalog[2] },
+	{ "clone3",		1, &struct_catalog[SC_CLONE_ARGS] },
 	/* io_uring_setup(u32, struct io_uring_params *) */
-	{ "io_uring_setup",	2, &struct_catalog[3] },
+	{ "io_uring_setup",	2, &struct_catalog[SC_IO_URING_PARAMS] },
 	/* setrlimit(unsigned int, struct rlimit *) */
-	{ "setrlimit",		2, &struct_catalog[4] },
+	{ "setrlimit",		2, &struct_catalog[SC_RLIMIT] },
 	/* getrlimit(unsigned int, struct rlimit *) */
-	{ "getrlimit",		2, &struct_catalog[4] },
+	{ "getrlimit",		2, &struct_catalog[SC_RLIMIT] },
 	/* prlimit64(pid_t, unsigned int, struct rlimit *, struct rlimit *) */
-	{ "prlimit64",		3, &struct_catalog[4] },
-	{ "prlimit64",		4, &struct_catalog[4] },
+	{ "prlimit64",		3, &struct_catalog[SC_RLIMIT] },
+	{ "prlimit64",		4, &struct_catalog[SC_RLIMIT] },
 	/* timer_settime(timer_t, int, struct itimerspec *, struct itimerspec *) */
-	{ "timer_settime",	3, &struct_catalog[5] },
+	{ "timer_settime",	3, &struct_catalog[SC_ITIMERSPEC] },
 	/* timerfd_settime(int, int, struct itimerspec *, struct itimerspec *) */
-	{ "timerfd_settime",	3, &struct_catalog[5] },
+	{ "timerfd_settime",	3, &struct_catalog[SC_ITIMERSPEC] },
 	/* epoll_ctl(int, int, int, struct epoll_event *) */
-	{ "epoll_ctl",		4, &struct_catalog[6] },
+	{ "epoll_ctl",		4, &struct_catalog[SC_EPOLL_EVENT] },
 	/* perf_event_open(struct perf_event_attr *, pid_t, int, int, ulong) */
-	{ "perf_event_open",	1, &struct_catalog[7] },
+	{ "perf_event_open",	1, &struct_catalog[SC_PERF_EVENT_ATTR] },
 	/* rt_sigaction(int, const struct sigaction *, struct sigaction *, size_t) */
-	{ "rt_sigaction",	2, &struct_catalog[8] },
-	{ "rt_sigaction",	3, &struct_catalog[8] },
+	{ "rt_sigaction",	2, &struct_catalog[SC_SIGACTION] },
+	{ "rt_sigaction",	3, &struct_catalog[SC_SIGACTION] },
 	/* sigaction(int, const struct old_sigaction *, struct old_sigaction *) */
-	{ "sigaction",		2, &struct_catalog[8] },
-	{ "sigaction",		3, &struct_catalog[8] },
+	{ "sigaction",		2, &struct_catalog[SC_SIGACTION] },
+	{ "sigaction",		3, &struct_catalog[SC_SIGACTION] },
 	/* sendmsg(int, const struct msghdr *, int) */
-	{ "sendmsg",		2, &struct_catalog[9] },
+	{ "sendmsg",		2, &struct_catalog[SC_MSGHDR] },
 	/* recvmsg(int, struct msghdr *, int) */
-	{ "recvmsg",		2, &struct_catalog[9] },
+	{ "recvmsg",		2, &struct_catalog[SC_MSGHDR] },
 	/* bind(int, struct sockaddr *, socklen_t) */
-	{ "bind",		2, &struct_catalog[10] },
+	{ "bind",		2, &struct_catalog[SC_SOCKADDR_STORAGE] },
 	/* connect(int, struct sockaddr *, socklen_t) */
-	{ "connect",		2, &struct_catalog[10] },
+	{ "connect",		2, &struct_catalog[SC_SOCKADDR_STORAGE] },
 	/* sendto(int, const void *, size_t, int, struct sockaddr *, socklen_t) */
-	{ "sendto",		5, &struct_catalog[10] },
+	{ "sendto",		5, &struct_catalog[SC_SOCKADDR_STORAGE] },
 	/* landlock_create_ruleset(const struct landlock_ruleset_attr *, size_t, u32) */
-	{ "landlock_create_ruleset",	1, &struct_catalog[11] },
+	{ "landlock_create_ruleset",	1, &struct_catalog[SC_LANDLOCK_RULESET_ATTR] },
 	/* statmount(const struct mnt_id_req *, struct statmount *, size_t, u32) */
-	{ "statmount",		1, &struct_catalog[12] },
+	{ "statmount",		1, &struct_catalog[SC_MNT_ID_REQ] },
 	/* listmount(const struct mnt_id_req *, u64 *, size_t, u32) */
-	{ "listmount",		1, &struct_catalog[12] },
+	{ "listmount",		1, &struct_catalog[SC_MNT_ID_REQ] },
 	/* capset(cap_user_header_t hdr, const cap_user_data_t data) */
-	{ "capset",		1, &struct_catalog[13] },
-	{ "capset",		2, &struct_catalog[14] },
+	{ "capset",		1, &struct_catalog[SC_USER_CAP_HEADER] },
+	{ "capset",		2, &struct_catalog[SC_USER_CAP_DATA] },
 	/* capget(cap_user_header_t hdr, cap_user_data_t data) */
-	{ "capget",		1, &struct_catalog[13] },
+	{ "capget",		1, &struct_catalog[SC_USER_CAP_HEADER] },
 	/* futex_waitv(struct futex_waitv *waiters, unsigned int nr, unsigned int flags, struct timespec *timo, clockid_t clockid) */
-	{ "futex_waitv",	1, &struct_catalog[15] },
+	{ "futex_waitv",	1, &struct_catalog[SC_FUTEX_WAITV] },
 	/* sigaltstack(const stack_t *ss, stack_t *old_ss) */
-	{ "sigaltstack",	1, &struct_catalog[16] },
+	{ "sigaltstack",	1, &struct_catalog[SC_STACK_T] },
 	/* mq_open(const char *, int, mode_t, struct mq_attr *) */
-	{ "mq_open",		4, &struct_catalog[17] },
+	{ "mq_open",		4, &struct_catalog[SC_MQ_ATTR] },
 	/* mq_getsetattr(mqd_t, const struct mq_attr *, struct mq_attr *) */
-	{ "mq_getsetattr",	2, &struct_catalog[17] },
-	{ "mq_getsetattr",	3, &struct_catalog[17] },
+	{ "mq_getsetattr",	2, &struct_catalog[SC_MQ_ATTR] },
+	{ "mq_getsetattr",	3, &struct_catalog[SC_MQ_ATTR] },
 	/* msgctl(int msqid, int cmd, struct msqid_ds *buf) — IPC_SET path */
-	{ "msgctl",		3, &struct_catalog[18] },
+	{ "msgctl",		3, &struct_catalog[SC_MSQID_DS] },
 	/* sched_setparam(pid_t, struct sched_param *) */
-	{ "sched_setparam",	2, &struct_catalog[19] },
+	{ "sched_setparam",	2, &struct_catalog[SC_SCHED_PARAM] },
 	/* sched_setscheduler(pid_t, int, struct sched_param *) */
-	{ "sched_setscheduler",	3, &struct_catalog[19] },
+	{ "sched_setscheduler",	3, &struct_catalog[SC_SCHED_PARAM] },
 	/* io_uring_register(int fd, unsigned op, void *arg, unsigned nr_args) */
-	{ "io_uring_register",	3, &struct_catalog[20] },
+	{ "io_uring_register",	3, &struct_catalog[SC_IO_URING_REGISTER_ARGS] },
 #ifdef USE_BPF
 	/* bpf(int, union bpf_attr *, unsigned int) */
-	{ "bpf",		2, &struct_catalog[21] },
+	{ "bpf",		2, &struct_catalog[SC_BPF_ATTR] },
 #endif
+	/* clock_nanosleep(clockid_t, int, struct timespec *, struct timespec *) */
+	{ "clock_nanosleep",	3, &struct_catalog[SC_TIMESPEC] },
+	/* nanosleep(struct timespec *, struct timespec *) */
+	{ "nanosleep",		1, &struct_catalog[SC_TIMESPEC] },
 	/*
-	 * timespec lives at the catalog tail; its index shifts by two when
-	 * USE_BPF adds the bpf_attr / bpf_insn entries ahead of iovec.
+	 * utimensat(int, const char *, struct timespec[2], int)
 	 * utimensat's `utimes` arg is a 2-element timespec array -- the
 	 * mapping table has no array semantics, so the entry below names
 	 * the single-struct desc and the existing sanitise_utimensat
 	 * callback continues to own the 2-element layout.
 	 */
-#ifdef USE_BPF
-	/* clock_nanosleep(clockid_t, int, struct timespec *, struct timespec *) */
-	{ "clock_nanosleep",	3, &struct_catalog[24] },
-	/* nanosleep(struct timespec *, struct timespec *) */
-	{ "nanosleep",		1, &struct_catalog[24] },
-	/* utimensat(int, const char *, struct timespec[2], int) */
-	{ "utimensat",		3, &struct_catalog[24] },
+	{ "utimensat",		3, &struct_catalog[SC_TIMESPEC] },
 	/*
 	 * cachestat(unsigned int fd, struct cachestat_range *cstat_range,
 	 *           struct cachestat *cstat, unsigned int flags)
@@ -4821,7 +4818,7 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * output and is intentionally not registered.  Attribution-only:
 	 * sanitise_cachestat / pick_range continues to own the live fill.
 	 */
-	{ "cachestat",		2, &struct_catalog[25] },
+	{ "cachestat",		2, &struct_catalog[SC_CACHESTAT_RANGE] },
 	/*
 	 * mount_setattr(int dfd, const char *path, unsigned int flags,
 	 *               struct mount_attr *uattr, size_t usize)
@@ -4833,24 +4830,24 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * struct_field_for_cmp can steer CMP-learned constants at the
 	 * named fields.  The curated bespoke fill stays live.
 	 */
-	{ "mount_setattr",	4, &struct_catalog[26] },
-	{ "open_tree_attr",	4, &struct_catalog[26] },
+	{ "mount_setattr",	4, &struct_catalog[SC_MOUNT_ATTR] },
+	{ "open_tree_attr",	4, &struct_catalog[SC_MOUNT_ATTR] },
 	/*
 	 * sembuf is an array slot on ARG_ADDRESS at a2 of both semop and
 	 * semtimedop; the per-element type is named here so future schema
 	 * consumers and struct_field_for_cmp can resolve it.  The bespoke
 	 * fill_sembuf_array() owns the live (nsops, sem_*) layout.
 	 */
-	{ "semop",		2, &struct_catalog[27] },
-	{ "semtimedop",		2, &struct_catalog[27] },
+	{ "semop",		2, &struct_catalog[SC_SEMBUF] },
+	{ "semtimedop",		2, &struct_catalog[SC_SEMBUF] },
 	/*
 	 * pollfd is an array slot on ARG_ADDRESS at a1 of both poll and
 	 * ppoll; the per-element type is named here so future schema
 	 * consumers and struct_field_for_cmp can resolve it.  The bespoke
 	 * alloc_pollfds() owns the live (nfds, fd, events) layout.
 	 */
-	{ "poll",		1, &struct_catalog[28] },
-	{ "ppoll",		1, &struct_catalog[28] },
+	{ "poll",		1, &struct_catalog[SC_POLLFD] },
+	{ "ppoll",		1, &struct_catalog[SC_POLLFD] },
 	/*
 	 * openat2(int dfd, const char *filename, struct open_how *how,
 	 *         size_t usize)
@@ -4861,7 +4858,7 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * struct_field_for_cmp steer CMP-learned constants at the named
 	 * flags / resolve slot.
 	 */
-	{ "openat2",		3, &struct_catalog[29] },
+	{ "openat2",		3, &struct_catalog[SC_OPEN_HOW] },
 	/*
 	 * timer_create(clockid_t, struct sigevent *, timer_t *)
 	 * a2 is ARG_ADDRESS (not ARG_STRUCT_PTR_*), so the bespoke
@@ -4872,7 +4869,7 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * constants at sigev_notify / sigev_signo rather than at a
 	 * coincidentally-same-width slot.
 	 */
-	{ "timer_create",	2, &struct_catalog[30] },
+	{ "timer_create",	2, &struct_catalog[SC_SIGEVENT] },
 	/*
 	 * mq_notify(mqd_t, const struct sigevent *)
 	 * a2 carries the same struct sigevent that timer_create's a2
@@ -4883,7 +4880,7 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * CMP-learned constants at sigev_notify / sigev_signo rather
 	 * than at a coincidentally-same-width slot.
 	 */
-	{ "mq_notify",		2, &struct_catalog[30] },
+	{ "mq_notify",		2, &struct_catalog[SC_SIGEVENT] },
 	/*
 	 * set_robust_list(struct robust_list_head __user *head, size_t len)
 	 * a1 is ARG_ADDRESS (not ARG_STRUCT_PTR_*), so the bespoke
@@ -4894,7 +4891,7 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * output (a2 is a double pointer the kernel writes), so only
 	 * set_robust_list's a1 is mapped.
 	 */
-	{ "set_robust_list",	1, &struct_catalog[31] },
+	{ "set_robust_list",	1, &struct_catalog[SC_ROBUST_LIST_HEAD] },
 	/*
 	 * rseq(struct rseq __user *rseq, u32 rseq_len, int flags, u32 sig)
 	 * a1 is the INPUT struct rseq pointer; the bespoke sanitise_rseq()
@@ -4904,7 +4901,7 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * CMP-learned constants at the named fields rather than at a
 	 * coincidentally-same-width slot.
 	 */
-	{ "rseq",		1, &struct_catalog[32] },
+	{ "rseq",		1, &struct_catalog[SC_RSEQ] },
 	/*
 	 * setitimer(int which, const struct itimerval __user *value,
 	 *           struct itimerval __user *ovalue)
@@ -4919,7 +4916,7 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * constants at the named tv_sec / tv_usec slots rather than at a
 	 * coincidentally-same-width slot.
 	 */
-	{ "setitimer",		2, &struct_catalog[33] },
+	{ "setitimer",		2, &struct_catalog[SC_ITIMERVAL] },
 	/*
 	 * utime(const char *filename, const struct utimbuf __user *times)
 	 * a2 is the INPUT struct utimbuf pointer.  utime has no bespoke
@@ -4930,7 +4927,7 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * named actime / modtime slots rather than at a coincidentally-
 	 * same-width slot.
 	 */
-	{ "utime",		2, &struct_catalog[34] },
+	{ "utime",		2, &struct_catalog[SC_UTIMBUF] },
 	/*
 	 * fcntl(int fd, int cmd, ... arg)
 	 * a3's type depends on the cmd in a2 -- the first proof of the
@@ -4957,19 +4954,15 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * NULL -- gen_arg_struct_ptr_inout falls through to a zeroed
 	 * fallback buffer that sanitise_fcntl overwrites with an fd or
 	 * integer flag word, same as before.
-	 *
-	 * struct flock @ struct_catalog[35] (stable index pre-USE_BPF
-	 * tail entries); struct f_owner_ex @ ARRAY_SIZE - 2 (tail; the
-	 * -1 tail slot now belongs to landlock_net_port_attr).
 	 */
 	{
-		"fcntl", 3, &struct_catalog[35],
+		"fcntl", 3, &struct_catalog[SC_FLOCK],
 		.discrim_arg_idx	= 2,
 		.discrim_values		= fcntl_flock_cmds,
 		.num_discrim_values	= ARRAY_SIZE(fcntl_flock_cmds),
 	},
 	{
-		"fcntl", 3, &struct_catalog[ARRAY_SIZE(struct_catalog) - 4],
+		"fcntl", 3, &struct_catalog[SC_F_OWNER_EX],
 		.discrim_arg_idx	= 2,
 		.discrim_values		= fcntl_f_owner_ex_cmds,
 		.num_discrim_values	= ARRAY_SIZE(fcntl_f_owner_ex_cmds),
@@ -4998,8 +4991,8 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * cannot represent, and gettimeofday's a1 is a kernel-written
 	 * OUTPUT buffer with no input fill to attribute against.
 	 */
-	{ "settimeofday",	1, &struct_catalog[36] },
-	{ "select",		5, &struct_catalog[36] },
+	{ "settimeofday",	1, &struct_catalog[SC_TIMEVAL] },
+	{ "select",		5, &struct_catalog[SC_TIMEVAL] },
 	/*
 	 * settimeofday(struct timeval __user *tv, struct timezone __user *tz)
 	 * a2 is the INPUT struct timezone pointer.  The bespoke
@@ -5013,7 +5006,7 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * Not mapped here on purpose: gettimeofday's a2 is a kernel-written
 	 * OUTPUT buffer with no input fill to attribute against.
 	 */
-	{ "settimeofday",	2, &struct_catalog[37] },
+	{ "settimeofday",	2, &struct_catalog[SC_TIMEZONE] },
 	/*
 	 * listns(const struct ns_id_req __user *req, u64 __user *ns_ids,
 	 *        size_t nr_ns_ids, unsigned int flags)
@@ -5026,7 +5019,7 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * size / ns_type / ns_id / user_ns_id slots, with ns_type masked
 	 * to the eight defined CLONE_NEW* selector bits.
 	 */
-	{ "listns",		1, &struct_catalog[38] },
+	{ "listns",		1, &struct_catalog[SC_NS_ID_REQ] },
 #ifdef USE_XATTR_ARGS
 	/*
 	 * setxattrat(int dfd, const char __user *pathname,
@@ -5044,47 +5037,8 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * constants at the named value / size / flags slots, with flags
 	 * masked to XATTR_CREATE | XATTR_REPLACE.
 	 */
-	{ "setxattrat",		5, &struct_catalog[39] },
-	{ "getxattrat",		5, &struct_catalog[39] },
-#endif
-#else
-	{ "clock_nanosleep",	3, &struct_catalog[22] },
-	{ "nanosleep",		1, &struct_catalog[22] },
-	{ "utimensat",		3, &struct_catalog[22] },
-	{ "cachestat",		2, &struct_catalog[23] },
-	{ "mount_setattr",	4, &struct_catalog[24] },
-	{ "open_tree_attr",	4, &struct_catalog[24] },
-	{ "semop",		2, &struct_catalog[25] },
-	{ "semtimedop",		2, &struct_catalog[25] },
-	{ "poll",		1, &struct_catalog[26] },
-	{ "ppoll",		1, &struct_catalog[26] },
-	{ "openat2",		3, &struct_catalog[27] },
-	{ "timer_create",	2, &struct_catalog[28] },
-	{ "mq_notify",		2, &struct_catalog[28] },
-	{ "set_robust_list",	1, &struct_catalog[29] },
-	{ "rseq",		1, &struct_catalog[30] },
-	{ "setitimer",		2, &struct_catalog[31] },
-	{ "utime",		2, &struct_catalog[32] },
-	{
-		"fcntl", 3, &struct_catalog[33],
-		.discrim_arg_idx	= 2,
-		.discrim_values		= fcntl_flock_cmds,
-		.num_discrim_values	= ARRAY_SIZE(fcntl_flock_cmds),
-	},
-	{
-		"fcntl", 3, &struct_catalog[ARRAY_SIZE(struct_catalog) - 4],
-		.discrim_arg_idx	= 2,
-		.discrim_values		= fcntl_f_owner_ex_cmds,
-		.num_discrim_values	= ARRAY_SIZE(fcntl_f_owner_ex_cmds),
-	},
-	{ "settimeofday",	1, &struct_catalog[34] },
-	{ "select",		5, &struct_catalog[34] },
-	{ "settimeofday",	2, &struct_catalog[35] },
-	{ "listns",		1, &struct_catalog[36] },
-#ifdef USE_XATTR_ARGS
-	{ "setxattrat",		5, &struct_catalog[37] },
-	{ "getxattrat",		5, &struct_catalog[37] },
-#endif
+	{ "setxattrat",		5, &struct_catalog[SC_XATTR_ARGS] },
+	{ "getxattrat",		5, &struct_catalog[SC_XATTR_ARGS] },
 #endif
 	/*
 	 * file_setattr(int dfd, const char __user *filename,
@@ -5097,15 +5051,13 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * so struct_field_for_cmp can steer CMP-learned constants at
 	 * the named fa_xflags / fa_extsize / fa_nextents / fa_projid /
 	 * fa_cowextsize slots rather than at a coincidentally-same-
-	 * width slot.  Sized via ARRAY_SIZE(struct_catalog) - 6 so the
-	 * tail position resolves correctly under every USE_BPF /
-	 * USE_XATTR_ARGS combination.
+	 * width slot.
 	 *
 	 * Not mapped here on purpose: file_getattr's a2 buffer is a
 	 * kernel-written OUTPUT and has no input fill to attribute
 	 * against.
 	 */
-	{ "file_setattr",	3, &struct_catalog[ARRAY_SIZE(struct_catalog) - 6] },
+	{ "file_setattr",	3, &struct_catalog[SC_FILE_ATTR] },
 	/*
 	 * landlock_add_rule(int ruleset_fd, enum landlock_rule_type rule_type,
 	 *                   const void __user *rule_attr, __u32 flags)
@@ -5141,20 +5093,17 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * CMP-learned constants at allowed_access / parent_fd even on
 	 * NET_PORT dispatches where the kernel was reading a wholly
 	 * different struct.
-	 *
-	 * struct landlock_path_beneath_attr @ ARRAY_SIZE - 5;
-	 * struct landlock_net_port_attr     @ ARRAY_SIZE - 3.
 	 */
 	{
 		"landlock_add_rule", 3,
-		&struct_catalog[ARRAY_SIZE(struct_catalog) - 5],
+		&struct_catalog[SC_LANDLOCK_PATH_BENEATH_ATTR],
 		.discrim_arg_idx	= 2,
 		.discrim_values		= landlock_add_rule_path_beneath_rule_types,
 		.num_discrim_values	= ARRAY_SIZE(landlock_add_rule_path_beneath_rule_types),
 	},
 	{
 		"landlock_add_rule", 3,
-		&struct_catalog[ARRAY_SIZE(struct_catalog) - 3],
+		&struct_catalog[SC_LANDLOCK_NET_PORT_ATTR],
 		.discrim_arg_idx	= 2,
 		.discrim_values		= landlock_add_rule_net_port_rule_types,
 		.num_discrim_values	= ARRAY_SIZE(landlock_add_rule_net_port_rule_types),
@@ -5192,20 +5141,16 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * gen_arg_struct_ptr_inout falls through to a zeroed fallback
 	 * buffer that the bespoke sanitiser overwrites for the
 	 * remaining cmds, same as before.
-	 *
-	 * struct if_dqblk @ ARRAY_SIZE - 2.
 	 */
 	{
-		"quotactl", 4,
-		&struct_catalog[ARRAY_SIZE(struct_catalog) - 2],
+		"quotactl", 4, &struct_catalog[SC_IF_DQBLK],
 		.discrim_arg_idx	= 1,
 		.discrim_values		= quotactl_if_dqblk_subcmds,
 		.num_discrim_values	= ARRAY_SIZE(quotactl_if_dqblk_subcmds),
 		.discrim_shift		= SUBCMDSHIFT,
 	},
 	{
-		"quotactl_fd", 3,
-		&struct_catalog[ARRAY_SIZE(struct_catalog) - 2],
+		"quotactl_fd", 3, &struct_catalog[SC_IF_DQBLK],
 		.discrim_arg_idx	= 2,
 		.discrim_values		= quotactl_if_dqblk_subcmds,
 		.num_discrim_values	= ARRAY_SIZE(quotactl_if_dqblk_subcmds),
@@ -5220,20 +5165,16 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * dqi_bgrace / dqi_igrace fill; this entry only steers
 	 * struct_field_for_cmp().  Q_GETINFO uses if_dqinfo at the same
 	 * slot but is output-only, so the pool stays at just Q_SETINFO.
-	 *
-	 * struct if_dqinfo @ ARRAY_SIZE - 1 (tail).
 	 */
 	{
-		"quotactl", 4,
-		&struct_catalog[ARRAY_SIZE(struct_catalog) - 1],
+		"quotactl", 4, &struct_catalog[SC_IF_DQINFO],
 		.discrim_arg_idx	= 1,
 		.discrim_values		= quotactl_if_dqinfo_subcmds,
 		.num_discrim_values	= ARRAY_SIZE(quotactl_if_dqinfo_subcmds),
 		.discrim_shift		= SUBCMDSHIFT,
 	},
 	{
-		"quotactl_fd", 3,
-		&struct_catalog[ARRAY_SIZE(struct_catalog) - 1],
+		"quotactl_fd", 3, &struct_catalog[SC_IF_DQINFO],
 		.discrim_arg_idx	= 2,
 		.discrim_values		= quotactl_if_dqinfo_subcmds,
 		.num_discrim_values	= ARRAY_SIZE(quotactl_if_dqinfo_subcmds),
