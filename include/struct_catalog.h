@@ -246,6 +246,75 @@ struct syscall_struct_arg {
 	unsigned long		  discrim_mask;		/* AND-mask applied after the shift (0 = no mask, i.e. all bits) */
 };
 
+/*
+ * Stable indices into struct_catalog[].  Each entry uses C99 designated
+ * initialisers ([SC_FOO] = {...}) so adding / removing slots -- including
+ * #ifdef-gated ones -- doesn't shift the index of any other entry.
+ * syscall_struct_args[] addresses entries by SC_X rather than by raw
+ * integer, so #ifdef-gated catalog entries no longer force the syscall
+ * map to fork into per-configure branches.
+ *
+ * Each SC_X enum constant is gated by the same #ifdef as its catalog
+ * slot, so a referenced-but-disabled entry is a compile error.
+ */
+enum struct_catalog_idx {
+	SC_TIMEX,
+	SC_SCHED_ATTR,
+	SC_CLONE_ARGS,
+	SC_IO_URING_PARAMS,
+	SC_RLIMIT,
+	SC_ITIMERSPEC,
+	SC_EPOLL_EVENT,
+	SC_PERF_EVENT_ATTR,
+	SC_SIGACTION,
+	SC_MSGHDR,
+	SC_SOCKADDR_STORAGE,
+	SC_LANDLOCK_RULESET_ATTR,
+	SC_MNT_ID_REQ,
+	SC_USER_CAP_HEADER,
+	SC_USER_CAP_DATA,
+	SC_FUTEX_WAITV,
+	SC_STACK_T,
+	SC_MQ_ATTR,
+	SC_MSQID_DS,
+	SC_SCHED_PARAM,
+	SC_IO_URING_REGISTER_ARGS,
+#ifdef USE_BPF
+	SC_BPF_ATTR,
+	SC_BPF_INSN,
+#endif
+	SC_IOVEC,
+	SC_TIMESPEC,
+	SC_CACHESTAT_RANGE,
+	SC_MOUNT_ATTR,
+	SC_SEMBUF,
+	SC_POLLFD,
+	SC_OPEN_HOW,
+	SC_SIGEVENT,
+	SC_ROBUST_LIST_HEAD,
+	SC_RSEQ,
+	SC_ITIMERVAL,
+	SC_UTIMBUF,
+	SC_FLOCK,
+	SC_TIMEVAL,
+	SC_TIMEZONE,
+	SC_NS_ID_REQ,
+#ifdef USE_XATTR_ARGS
+	SC_XATTR_ARGS,
+#endif
+	SC_FILE_ATTR,
+	SC_LANDLOCK_PATH_BENEATH_ATTR,
+	SC_F_OWNER_EX,
+	SC_LANDLOCK_NET_PORT_ATTR,
+	SC_IF_DQBLK,
+	SC_IF_DQINFO,
+
+	SC_NR_ENTRIES,		/* sentinel; equals ARRAY_SIZE(struct_catalog) once both stay in lockstep */
+};
+
+_Static_assert(SC_NR_ENTRIES <= 256,
+	       "struct_catalog sanity ceiling");
+
 /* All cataloged struct types. */
 extern const struct struct_desc struct_catalog[];
 extern const unsigned int struct_catalog_count;
