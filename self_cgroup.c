@@ -243,6 +243,8 @@ static bool write_cg_file(const char *cg_path, const char *name,
 	/* Preserve write()'s errno across close() so callers' strerror(errno)
 	 * reports the real cgroup-write failure cause, not a stray close
 	 * errno. */
+	if (n >= 0)
+		errno = EIO;
 	saved_errno = errno;
 	close(fd);
 	errno = saved_errno;
@@ -825,9 +827,12 @@ pid_t self_cgroup_fork_into_workload(void)
 
 				if (wn == n)
 					migrated = true;
-				else
+				else {
+					if (wn >= 0)
+						errno = EIO;
 					output(0, "self-cgroup: post-fork migrate of pid %d failed: %s\n",
 					       (int)pid, strerror(errno));
+				}
 				close(fd);
 			} else {
 				output(0, "self-cgroup: openat(cgroup.procs) failed for pid %d: %s\n",
