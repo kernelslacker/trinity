@@ -4620,7 +4620,13 @@ const struct struct_desc struct_catalog[] = {
 	},
 };
 
-const unsigned int struct_catalog_count = ARRAY_SIZE(struct_catalog);
+/*
+ * Lock the enum and the array in lockstep at compile time.  A missing
+ * [SC_X] = {...} slot would let ARRAY_SIZE diverge from SC_NR_ENTRIES;
+ * catching it here is sharper than the runtime hole-check below.
+ */
+_Static_assert(ARRAY_SIZE(struct_catalog) == SC_NR_ENTRIES,
+	       "struct_catalog[] and enum struct_catalog_idx must stay in lockstep");
 
 /* ------------------------------------------------------------------ */
 /* Discriminator value lists                                            */
@@ -5231,7 +5237,7 @@ const struct struct_desc *struct_catalog_lookup(const char *name)
 	if (name == NULL)
 		return NULL;
 
-	for (i = 0; i < struct_catalog_count; i++) {
+	for (i = 0; i < SC_NR_ENTRIES; i++) {
 		if (strcmp(struct_catalog[i].name, name) == 0)
 			return &struct_catalog[i];
 	}
@@ -5736,7 +5742,7 @@ void struct_catalog_init(void)
 	 * Catch it on first init rather than letting the dispatch path
 	 * deref a half-zeroed struct_desc.
 	 */
-	for (i = 0; i < struct_catalog_count; i++) {
+	for (i = 0; i < SC_NR_ENTRIES; i++) {
 		if (struct_catalog[i].name == NULL) {
 			outputerr("struct_catalog: hole at slot %u "
 				  "(missing [SC_X] designator)\n", i);
@@ -5780,7 +5786,7 @@ void struct_catalog_init(void)
 		}
 	}
 
-	for (i = 0; i < struct_catalog_count; i++)
+	for (i = 0; i < SC_NR_ENTRIES; i++)
 		output(0, "struct catalog: registered %s (%u fields, %u bytes)\n",
 		       struct_catalog[i].name,
 		       struct_catalog[i].num_fields,

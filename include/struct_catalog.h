@@ -317,7 +317,6 @@ _Static_assert(SC_NR_ENTRIES <= 256,
 
 /* All cataloged struct types. */
 extern const struct struct_desc struct_catalog[];
-extern const unsigned int struct_catalog_count;
 
 /* Syscall -> struct arg mapping table. */
 extern const struct syscall_struct_arg syscall_struct_args[];
