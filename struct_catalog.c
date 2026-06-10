@@ -4280,49 +4280,50 @@ static const struct union_variant bpf_attr_variants[] = {
 /* ------------------------------------------------------------------ */
 
 const struct struct_desc struct_catalog[] = {
-	{
+	/* Slot order is immaterial -- refs use SC_X. */
+	[SC_TIMEX] = {
 		.name		= "timex",
 		.struct_size	= sizeof(struct timex),
 		.fields		= timex_fields,
 		.num_fields	= ARRAY_SIZE(timex_fields),
 	},
-	{
+	[SC_SCHED_ATTR] = {
 		.name		= "sched_attr",
 		.struct_size	= sizeof(struct sched_attr),
 		.fields		= sched_attr_fields,
 		.num_fields	= ARRAY_SIZE(sched_attr_fields),
 	},
-	{
+	[SC_CLONE_ARGS] = {
 		.name		= "clone_args",
 		.struct_size	= sizeof(struct clone_args),
 		.fields		= clone_args_fields,
 		.num_fields	= ARRAY_SIZE(clone_args_fields),
 	},
-	{
+	[SC_IO_URING_PARAMS] = {
 		.name		= "io_uring_params",
 		.struct_size	= sizeof(struct io_uring_params),
 		.fields		= io_uring_params_fields,
 		.num_fields	= ARRAY_SIZE(io_uring_params_fields),
 	},
-	{
+	[SC_RLIMIT] = {
 		.name		= "rlimit",
 		.struct_size	= sizeof(struct rlimit),
 		.fields		= rlimit_fields,
 		.num_fields	= ARRAY_SIZE(rlimit_fields),
 	},
-	{
+	[SC_ITIMERSPEC] = {
 		.name		= "itimerspec",
 		.struct_size	= sizeof(struct itimerspec),
 		.fields		= itimerspec_fields,
 		.num_fields	= ARRAY_SIZE(itimerspec_fields),
 	},
-	{
+	[SC_EPOLL_EVENT] = {
 		.name		= "epoll_event",
 		.struct_size	= sizeof(struct epoll_event),
 		.fields		= epoll_event_fields,
 		.num_fields	= ARRAY_SIZE(epoll_event_fields),
 	},
-	{
+	[SC_PERF_EVENT_ATTR] = {
 		.name			= "perf_event_attr",
 		.struct_size		= sizeof(struct perf_event_attr),
 		.fields			= perf_event_attr_fields,
@@ -4333,19 +4334,19 @@ const struct struct_desc struct_catalog[] = {
 		.buffer_discrim_size	= sizeof(((struct perf_event_attr *) 0)->
 						 type),
 	},
-	{
+	[SC_SIGACTION] = {
 		.name		= "sigaction",
 		.struct_size	= sizeof(struct sigaction),
 		.fields		= sigaction_fields,
 		.num_fields	= ARRAY_SIZE(sigaction_fields),
 	},
-	{
+	[SC_MSGHDR] = {
 		.name		= "msghdr",
 		.struct_size	= sizeof(struct msghdr),
 		.fields		= msghdr_fields,
 		.num_fields	= ARRAY_SIZE(msghdr_fields),
 	},
-	{
+	[SC_SOCKADDR_STORAGE] = {
 		.name			= "sockaddr_storage",
 		.struct_size		= sizeof(struct sockaddr_storage),
 		.fields			= sockaddr_storage_fields,
@@ -4357,55 +4358,55 @@ const struct struct_desc struct_catalog[] = {
 		.buffer_discrim_size	= sizeof(((struct sockaddr_storage *) 0)->
 						 ss_family),
 	},
-	{
+	[SC_LANDLOCK_RULESET_ATTR] = {
 		.name		= "landlock_ruleset_attr",
 		.struct_size	= sizeof(struct landlock_ruleset_attr),
 		.fields		= landlock_ruleset_attr_fields,
 		.num_fields	= ARRAY_SIZE(landlock_ruleset_attr_fields),
 	},
-	{
+	[SC_MNT_ID_REQ] = {
 		.name		= "mnt_id_req",
 		.struct_size	= sizeof(struct mnt_id_req),
 		.fields		= mnt_id_req_fields,
 		.num_fields	= ARRAY_SIZE(mnt_id_req_fields),
 	},
-	{
+	[SC_USER_CAP_HEADER] = {
 		.name		= "user_cap_header",
 		.struct_size	= sizeof(struct __user_cap_header_struct),
 		.fields		= user_cap_header_fields,
 		.num_fields	= ARRAY_SIZE(user_cap_header_fields),
 	},
-	{
+	[SC_USER_CAP_DATA] = {
 		.name		= "user_cap_data",
 		.struct_size	= sizeof(struct __user_cap_data_struct),
 		.fields		= user_cap_data_fields,
 		.num_fields	= ARRAY_SIZE(user_cap_data_fields),
 	},
-	{
+	[SC_FUTEX_WAITV] = {
 		.name		= "futex_waitv",
 		.struct_size	= sizeof(struct futex_waitv),
 		.fields		= futex_waitv_fields,
 		.num_fields	= ARRAY_SIZE(futex_waitv_fields),
 	},
-	{
+	[SC_STACK_T] = {
 		.name		= "stack_t",
 		.struct_size	= sizeof(stack_t),
 		.fields		= stack_t_fields,
 		.num_fields	= ARRAY_SIZE(stack_t_fields),
 	},
-	{
+	[SC_MQ_ATTR] = {
 		.name		= "mq_attr",
 		.struct_size	= sizeof(struct mq_attr),
 		.fields		= mq_attr_fields,
 		.num_fields	= ARRAY_SIZE(mq_attr_fields),
 	},
-	{
+	[SC_MSQID_DS] = {
 		.name		= "msqid_ds",
 		.struct_size	= sizeof(struct msqid_ds),
 		.fields		= msqid_ds_fields,
 		.num_fields	= ARRAY_SIZE(msqid_ds_fields),
 	},
-	{
+	[SC_SCHED_PARAM] = {
 		.name		= "sched_param",
 		.struct_size	= sizeof(struct sched_param),
 		.fields		= sched_param_fields,
@@ -4436,7 +4437,7 @@ const struct struct_desc struct_catalog[] = {
 	 * ARG_ADDRESS-mapped fill consumer.  The bpf catalog landed the
 	 * same way: variant data first, sanitise caller after.
 	 */
-	{
+	[SC_IO_URING_REGISTER_ARGS] = {
 		.name			= "io_uring_register_args",
 		.struct_size		= 64,
 		.fields			= NULL,
@@ -4446,7 +4447,7 @@ const struct struct_desc struct_catalog[] = {
 		.num_variants		= ARRAY_SIZE(io_uring_register_variants),
 	},
 #ifdef USE_BPF
-	{
+	[SC_BPF_ATTR] = {
 		.name			= "bpf_attr",
 		.struct_size		= sizeof(union bpf_attr),
 		/*
@@ -4466,11 +4467,9 @@ const struct struct_desc struct_catalog[] = {
 	 * attribution shape (code / off / imm) so KCOV-compare learned
 	 * constants can be attributed to the right field.  No
 	 * syscall_struct_args entry; PROG_LOAD's insns now flows through
-	 * FT_BPF_PROGRAM rather than FT_PTR_ARRAY.elem_struct.  Sits
-	 * after bpf_attr to keep the existing struct_catalog[] indices
-	 * stable for the syscall_struct_args[] table.
+	 * FT_BPF_PROGRAM rather than FT_PTR_ARRAY.elem_struct.
 	 */
-	{
+	[SC_BPF_INSN] = {
 		.name		= "bpf_insn",
 		.struct_size	= sizeof(struct bpf_insn),
 		.fields		= bpf_insn_fields,
@@ -4482,311 +4481,143 @@ const struct struct_desc struct_catalog[] = {
 	 * msghdr.msg_iov's FT_PTR_ARRAY.elem_struct so the pointer pass
 	 * can resolve sizeof(struct iovec) for allocation.  No syscall_
 	 * struct_args entry: iovec is not passed directly as an
-	 * ARG_STRUCT_PTR slot.  Placed at the tail of the catalog so the
-	 * existing struct_catalog[N] indices above stay stable.
+	 * ARG_STRUCT_PTR slot.
 	 */
-	{
+	[SC_IOVEC] = {
 		.name		= "iovec",
 		.struct_size	= sizeof(struct iovec),
 		.fields		= iovec_fields,
 		.num_fields	= ARRAY_SIZE(iovec_fields),
 	},
-	/*
-	 * timespec: highest-fan-out time argument across the syscall
-	 * surface.  Appended at the tail so the existing struct_catalog[N]
-	 * indices above stay stable; the syscall_struct_args[] mappings
-	 * below pick up the new entry via an explicit USE_BPF-aware index
-	 * since iovec's position shifts by two when USE_BPF is set.
-	 */
-	{
+	[SC_TIMESPEC] = {
 		.name		= "timespec",
 		.struct_size	= sizeof(struct timespec),
 		.fields		= timespec_fields,
 		.num_fields	= ARRAY_SIZE(timespec_fields),
 	},
-	/*
-	 * cachestat_range: appended at the tail so the existing
-	 * struct_catalog[N] indices above stay stable; the syscall_struct_
-	 * args[] mapping below picks up the new entry via an explicit
-	 * USE_BPF-aware index since the bpf_attr / bpf_insn entries shift
-	 * the position by two when USE_BPF is set.
-	 */
-	{
+	[SC_CACHESTAT_RANGE] = {
 		.name		= "cachestat_range",
 		.struct_size	= sizeof(struct cachestat_range),
 		.fields		= cachestat_range_fields,
 		.num_fields	= ARRAY_SIZE(cachestat_range_fields),
 	},
-	/*
-	 * mount_attr: appended at the tail so the existing struct_catalog[N]
-	 * indices above stay stable; the syscall_struct_args[] mapping below
-	 * picks up the new entry via an explicit USE_BPF-aware index since
-	 * the bpf_attr / bpf_insn entries shift the position by two when
-	 * USE_BPF is set.
-	 */
-	{
+	[SC_MOUNT_ATTR] = {
 		.name		= "mount_attr",
 		.struct_size	= sizeof(struct mount_attr),
 		.fields		= mount_attr_fields,
 		.num_fields	= ARRAY_SIZE(mount_attr_fields),
 	},
-	/*
-	 * sembuf: appended at the tail so the existing struct_catalog[N]
-	 * indices above stay stable; the syscall_struct_args[] mapping below
-	 * picks up the new entry via an explicit USE_BPF-aware index since
-	 * the bpf_attr / bpf_insn entries shift the position by two when
-	 * USE_BPF is set.
-	 */
-	{
+	[SC_SEMBUF] = {
 		.name		= "sembuf",
 		.struct_size	= sizeof(struct sembuf),
 		.fields		= sembuf_fields,
 		.num_fields	= ARRAY_SIZE(sembuf_fields),
 	},
-	/*
-	 * pollfd: appended at the tail so the existing struct_catalog[N]
-	 * indices above stay stable; the syscall_struct_args[] mapping below
-	 * picks up the new entry via an explicit USE_BPF-aware index since
-	 * the bpf_attr / bpf_insn entries shift the position by two when
-	 * USE_BPF is set.
-	 */
-	{
+	[SC_POLLFD] = {
 		.name		= "pollfd",
 		.struct_size	= sizeof(struct pollfd),
 		.fields		= pollfd_fields,
 		.num_fields	= ARRAY_SIZE(pollfd_fields),
 	},
-	/*
-	 * open_how: appended at the tail so the existing struct_catalog[N]
-	 * indices above stay stable; the syscall_struct_args[] mapping below
-	 * picks up the new entry via an explicit USE_BPF-aware index since
-	 * the bpf_attr / bpf_insn entries shift the position by two when
-	 * USE_BPF is set.
-	 */
-	{
+	[SC_OPEN_HOW] = {
 		.name		= "open_how",
 		.struct_size	= sizeof(struct open_how),
 		.fields		= open_how_fields,
 		.num_fields	= ARRAY_SIZE(open_how_fields),
 	},
-	/*
-	 * sigevent: appended at the tail so the existing struct_catalog[N]
-	 * indices above stay stable; the syscall_struct_args[] mapping below
-	 * picks up the new entry via an explicit USE_BPF-aware index since
-	 * the bpf_attr / bpf_insn entries shift the position by two when
-	 * USE_BPF is set.
-	 */
-	{
+	[SC_SIGEVENT] = {
 		.name		= "sigevent",
 		.struct_size	= sizeof(struct sigevent),
 		.fields		= sigevent_fields,
 		.num_fields	= ARRAY_SIZE(sigevent_fields),
 	},
-	/*
-	 * robust_list_head: appended at the tail so the existing
-	 * struct_catalog[N] indices above stay stable; the
-	 * syscall_struct_args[] mapping below picks up the new entry via an
-	 * explicit USE_BPF-aware index since the bpf_attr / bpf_insn entries
-	 * shift the position by two when USE_BPF is set.
-	 */
-	{
+	[SC_ROBUST_LIST_HEAD] = {
 		.name		= "robust_list_head",
 		.struct_size	= sizeof(struct robust_list_head),
 		.fields		= robust_list_head_fields,
 		.num_fields	= ARRAY_SIZE(robust_list_head_fields),
 	},
-	/*
-	 * rseq: appended at the tail so the existing struct_catalog[N]
-	 * indices above stay stable; the syscall_struct_args[] mapping
-	 * below picks up the new entry via an explicit USE_BPF-aware index
-	 * since the bpf_attr / bpf_insn entries shift the position by two
-	 * when USE_BPF is set.
-	 */
-	{
+	[SC_RSEQ] = {
 		.name		= "rseq",
 		.struct_size	= sizeof(struct rseq),
 		.fields		= rseq_fields,
 		.num_fields	= ARRAY_SIZE(rseq_fields),
 	},
-	/*
-	 * itimerval: appended at the tail so the existing struct_catalog[N]
-	 * indices above stay stable; the syscall_struct_args[] mapping
-	 * below picks up the new entry via an explicit USE_BPF-aware index
-	 * since the bpf_attr / bpf_insn entries shift the position by two
-	 * when USE_BPF is set.
-	 */
-	{
+	[SC_ITIMERVAL] = {
 		.name		= "itimerval",
 		.struct_size	= sizeof(struct itimerval),
 		.fields		= itimerval_fields,
 		.num_fields	= ARRAY_SIZE(itimerval_fields),
 	},
-	/*
-	 * utimbuf: appended at the tail so the existing struct_catalog[N]
-	 * indices above stay stable; the syscall_struct_args[] mapping
-	 * below picks up the new entry via an explicit USE_BPF-aware index
-	 * since the bpf_attr / bpf_insn entries shift the position by two
-	 * when USE_BPF is set.
-	 */
-	{
+	[SC_UTIMBUF] = {
 		.name		= "utimbuf",
 		.struct_size	= sizeof(struct utimbuf),
 		.fields		= utimbuf_fields,
 		.num_fields	= ARRAY_SIZE(utimbuf_fields),
 	},
-	/*
-	 * flock: appended at the tail so the existing struct_catalog[N]
-	 * indices above stay stable; the syscall_struct_args[] mapping
-	 * below picks up the new entry via an explicit USE_BPF-aware index
-	 * since the bpf_attr / bpf_insn entries shift the position by two
-	 * when USE_BPF is set.
-	 */
-	{
+	[SC_FLOCK] = {
 		.name		= "flock",
 		.struct_size	= sizeof(struct flock),
 		.fields		= flock_fields,
 		.num_fields	= ARRAY_SIZE(flock_fields),
 	},
-	/*
-	 * timeval: appended at the tail so the existing struct_catalog[N]
-	 * indices above stay stable; the syscall_struct_args[] mapping
-	 * below picks up the new entry via an explicit USE_BPF-aware index
-	 * since the bpf_attr / bpf_insn entries shift the position by two
-	 * when USE_BPF is set.
-	 */
-	{
+	[SC_TIMEVAL] = {
 		.name		= "timeval",
 		.struct_size	= sizeof(struct timeval),
 		.fields		= timeval_fields,
 		.num_fields	= ARRAY_SIZE(timeval_fields),
 	},
-	/*
-	 * timezone: appended at the tail so the existing struct_catalog[N]
-	 * indices above stay stable; the syscall_struct_args[] mapping
-	 * below picks up the new entry via an explicit USE_BPF-aware index
-	 * since the bpf_attr / bpf_insn entries shift the position by two
-	 * when USE_BPF is set.
-	 */
-	{
+	[SC_TIMEZONE] = {
 		.name		= "timezone",
 		.struct_size	= sizeof(struct timezone),
 		.fields		= timezone_fields,
 		.num_fields	= ARRAY_SIZE(timezone_fields),
 	},
-	/*
-	 * ns_id_req: appended at the tail so the existing struct_catalog[N]
-	 * indices above stay stable; the syscall_struct_args[] mapping
-	 * below picks up the new entry via an explicit USE_BPF-aware index
-	 * since the bpf_attr / bpf_insn entries shift the position by two
-	 * when USE_BPF is set.
-	 */
-	{
+	[SC_NS_ID_REQ] = {
 		.name		= "ns_id_req",
 		.struct_size	= sizeof(struct ns_id_req),
 		.fields		= ns_id_req_fields,
 		.num_fields	= ARRAY_SIZE(ns_id_req_fields),
 	},
 #ifdef USE_XATTR_ARGS
-	/*
-	 * xattr_args: appended at the tail so the existing
-	 * struct_catalog[N] indices above stay stable; the
-	 * syscall_struct_args[] mapping below picks up the new entry
-	 * via an explicit USE_BPF-aware index since the bpf_attr /
-	 * bpf_insn entries shift the position by two when USE_BPF is
-	 * set.
-	 */
-	{
+	[SC_XATTR_ARGS] = {
 		.name		= "xattr_args",
 		.struct_size	= sizeof(struct xattr_args),
 		.fields		= xattr_args_fields,
 		.num_fields	= ARRAY_SIZE(xattr_args_fields),
 	},
 #endif
-	/*
-	 * file_attr: appended at the tail so the existing
-	 * struct_catalog[N] indices above stay stable.  The
-	 * syscall_struct_args[] mapping below uses
-	 * ARRAY_SIZE(struct_catalog) - 6 to address this slot, sparing
-	 * us the USE_BPF / USE_XATTR_ARGS index gymnastics that would
-	 * otherwise be needed (the landlock_path_beneath_attr / f_owner_ex
-	 * / landlock_net_port_attr / if_dqblk / if_dqinfo entries below
-	 * now occupy the -5 / -4 / -3 / -2 / -1 tail slots).
-	 */
-	{
+	[SC_FILE_ATTR] = {
 		.name		= "file_attr",
 		.struct_size	= sizeof(struct file_attr),
 		.fields		= file_attr_fields,
 		.num_fields	= ARRAY_SIZE(file_attr_fields),
 	},
-	/*
-	 * landlock_path_beneath_attr: appended at the tail so the
-	 * existing struct_catalog[N] indices above stay stable.  The
-	 * syscall_struct_args[] mapping below uses
-	 * ARRAY_SIZE(struct_catalog) - 5 to address this slot, sparing
-	 * us the USE_BPF / USE_XATTR_ARGS index gymnastics that would
-	 * otherwise be needed (the f_owner_ex / landlock_net_port_attr
-	 * / if_dqblk / if_dqinfo entries below now occupy the -4 / -3 /
-	 * -2 / -1 tail slots).
-	 */
-	{
+	[SC_LANDLOCK_PATH_BENEATH_ATTR] = {
 		.name		= "landlock_path_beneath_attr",
 		.struct_size	= sizeof(struct landlock_path_beneath_attr),
 		.fields		= landlock_path_beneath_attr_fields,
 		.num_fields	= ARRAY_SIZE(landlock_path_beneath_attr_fields),
 	},
-	/*
-	 * f_owner_ex: appended at the tail so the existing struct_catalog[N]
-	 * indices above stay stable.  The syscall_struct_args[] mapping
-	 * below uses ARRAY_SIZE(struct_catalog) - 4 to address this slot,
-	 * sparing us the USE_BPF / USE_XATTR_ARGS index gymnastics that
-	 * would otherwise be needed (the landlock_net_port_attr / if_dqblk
-	 * / if_dqinfo entries below now occupy the -3 / -2 / -1 tail
-	 * slots).
-	 */
-	{
+	[SC_F_OWNER_EX] = {
 		.name		= "f_owner_ex",
 		.struct_size	= sizeof(struct f_owner_ex),
 		.fields		= f_owner_ex_fields,
 		.num_fields	= ARRAY_SIZE(f_owner_ex_fields),
 	},
-	/*
-	 * landlock_net_port_attr: appended at the tail so the existing
-	 * struct_catalog[N] indices above stay stable.  The
-	 * syscall_struct_args[] mapping below uses
-	 * ARRAY_SIZE(struct_catalog) - 3 to address this slot, sparing
-	 * us the USE_BPF / USE_XATTR_ARGS index gymnastics that would
-	 * otherwise be needed (the if_dqblk / if_dqinfo entries below
-	 * now occupy the -2 / -1 tail slots).
-	 */
-	{
+	[SC_LANDLOCK_NET_PORT_ATTR] = {
 		.name		= "landlock_net_port_attr",
 		.struct_size	= sizeof(struct landlock_net_port_attr),
 		.fields		= landlock_net_port_attr_fields,
 		.num_fields	= ARRAY_SIZE(landlock_net_port_attr_fields),
 	},
-	/*
-	 * if_dqblk: appended at the tail so the existing struct_catalog[N]
-	 * indices above stay stable.  The syscall_struct_args[] mapping
-	 * below uses ARRAY_SIZE(struct_catalog) - 2 to address this slot,
-	 * sparing us the USE_BPF / USE_XATTR_ARGS index gymnastics that
-	 * would otherwise be needed (the if_dqinfo entry below now
-	 * occupies the -1 tail slot).
-	 */
-	{
+	[SC_IF_DQBLK] = {
 		.name		= "if_dqblk",
 		.struct_size	= sizeof(struct if_dqblk),
 		.fields		= if_dqblk_fields,
 		.num_fields	= ARRAY_SIZE(if_dqblk_fields),
 	},
-	/*
-	 * if_dqinfo: appended at the tail so the existing struct_catalog[N]
-	 * indices above stay stable.  The syscall_struct_args[] mapping
-	 * below uses ARRAY_SIZE(struct_catalog) - 1 to address this slot,
-	 * sparing us the USE_BPF / USE_XATTR_ARGS index gymnastics that
-	 * would otherwise be needed (this is the new last entry under
-	 * every configure combination).
-	 */
-	{
+	[SC_IF_DQINFO] = {
 		.name		= "if_dqinfo",
 		.struct_size	= sizeof(struct if_dqinfo),
 		.fields		= if_dqinfo_fields,
@@ -5961,6 +5792,21 @@ void struct_catalog_init(void)
 	const struct syscall_struct_arg *sa;
 	unsigned int i;
 	int nr;
+
+	/*
+	 * Holes are zero-init struct_desc slots with .name == NULL --
+	 * a sign of a typo'd [SC_X] designator above the slot, or of an
+	 * SC_X enum constant added without a matching catalog entry.
+	 * Catch it on first init rather than letting the dispatch path
+	 * deref a half-zeroed struct_desc.
+	 */
+	for (i = 0; i < struct_catalog_count; i++) {
+		if (struct_catalog[i].name == NULL) {
+			outputerr("struct_catalog: hole at slot %u "
+				  "(missing [SC_X] designator)\n", i);
+			BUG("struct_catalog: hole in catalog array");
+		}
+	}
 
 	memset(desc_by_nr_64, 0, sizeof(desc_by_nr_64));
 	memset(desc_by_nr_32, 0, sizeof(desc_by_nr_32));
