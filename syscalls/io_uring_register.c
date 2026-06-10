@@ -554,6 +554,8 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 	 */
 	case IORING_REGISTER_IOWQ_MAX_WORKERS:
 		buf = get_writable_struct(2 * sizeof(unsigned int));
+		if (buf)
+			memset(buf, 0, 2 * sizeof(unsigned int));
 		rec->a3 = (unsigned long) buf;
 		rec->a4 = 2;
 		arg_len = 2 * sizeof(unsigned int);
