@@ -116,7 +116,7 @@ static void sanitise_sched_getattr(struct syscallrecord *rec)
 	if (rec->a2 != pre_a2) {
 		attr_alloc_size = (size_t) rec->a3;
 	} else {
-		desc = struct_arg_lookup(rec->nr, 2, rec->do32bit);
+		desc = struct_arg_lookup(rec->nr, 2, rec->do32bit, rec);
 		attr_alloc_size = desc ? (size_t) desc->struct_size
 				       : (size_t) SCHED_GETATTR_ATTR_FALLBACK_SIZE;
 	}

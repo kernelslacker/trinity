@@ -75,6 +75,7 @@
 
 #include "struct_catalog.h"
 #include "arch.h"
+#include "debug.h"
 #include "perf_event.h"
 #include "random.h"
 #include "tables.h"
@@ -4933,14 +4934,41 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 /* ------------------------------------------------------------------ */
 
 /*
- * desc_by_nr_64[syscall_nr][arg_idx - 1] -> struct_desc* or NULL.
- * desc_by_nr_32[syscall_nr][arg_idx - 1] -> struct_desc* or NULL.
+ * desc_by_nr_64[syscall_nr][arg_idx - 1] -> slot_binding* or NULL.
+ * desc_by_nr_32[syscall_nr][arg_idx - 1] -> slot_binding* or NULL.
  * Populated at init time by scanning the active syscall table.
  * Split to avoid collisions when biarch builds have different syscall
  * numbers for 32-bit and 64-bit that happen to overlap.
+ *
+ * Each non-NULL cell points into slot_pool[] and groups every
+ * registration for that (nr, arg_idx): one optional default entry plus
+ * any discriminator variants.  struct_arg_lookup() walks the variants
+ * (rec required) first and falls back to the default; a slot with
+ * neither a default nor a matching variant returns NULL.
  */
-static const struct struct_desc *desc_by_nr_64[MAX_NR_SYSCALL][6];
-static const struct struct_desc *desc_by_nr_32[MAX_NR_SYSCALL][6];
+#define DISCRIM_VARIANTS_PER_SLOT_MAX	8
+
+struct slot_binding {
+	const struct struct_desc	*default_desc;
+	const struct syscall_struct_arg	*discrim[DISCRIM_VARIANTS_PER_SLOT_MAX];
+	unsigned int			 num_discrim;
+};
+
+/*
+ * Slot-binding pool.  Sized for every registered (nr, arg) cell across
+ * both arch tables -- syscall_struct_args[] is ~60 entries today, so 256
+ * leaves growth headroom and stays comfortably under any reasonable
+ * static budget.  struct_catalog_init() BUG()s if a registration
+ * overflows either the pool or the per-slot variant cap rather than
+ * silently dropping mappings.
+ */
+#define SLOT_POOL_MAX			256
+
+static struct slot_binding slot_pool[SLOT_POOL_MAX];
+static unsigned int slot_pool_used;
+
+static const struct slot_binding *desc_by_nr_64[MAX_NR_SYSCALL][6];
+static const struct slot_binding *desc_by_nr_32[MAX_NR_SYSCALL][6];
 
 /* ------------------------------------------------------------------ */
 /* API                                                                  */
@@ -4962,13 +4990,55 @@ const struct struct_desc *struct_catalog_lookup(const char *name)
 
 const struct struct_desc *struct_arg_lookup(unsigned int nr,
 					    unsigned int arg_idx,
-					    bool do32bit)
+					    bool do32bit,
+					    struct syscallrecord *rec)
 {
+	const struct slot_binding *b;
+	unsigned int i;
+
 	if (nr >= MAX_NR_SYSCALL || arg_idx < 1 || arg_idx > 6)
 		return NULL;
-	if (do32bit)
-		return desc_by_nr_32[nr][arg_idx - 1];
-	return desc_by_nr_64[nr][arg_idx - 1];
+	b = do32bit ? desc_by_nr_32[nr][arg_idx - 1]
+		    : desc_by_nr_64[nr][arg_idx - 1];
+	if (b == NULL)
+		return NULL;
+
+	/*
+	 * Discriminated variants are consulted only when the caller has a
+	 * live syscall record to read sibling args off.  No rec, or no
+	 * discriminated entries registered, falls straight through to the
+	 * default desc -- the byte-identical pre-discriminator path.
+	 */
+	if (rec != NULL && b->num_discrim != 0) {
+		for (i = 0; i < b->num_discrim; i++) {
+			const struct syscall_struct_arg *sa = b->discrim[i];
+			unsigned long discrim;
+
+			if (sa->discrim_arg_idx == 0 || sa->discrim_arg_idx > 6)
+				continue;
+			switch (sa->discrim_arg_idx) {
+			case 1: discrim = rec->a1; break;
+			case 2: discrim = rec->a2; break;
+			case 3: discrim = rec->a3; break;
+			case 4: discrim = rec->a4; break;
+			case 5: discrim = rec->a5; break;
+			case 6: discrim = rec->a6; break;
+			default: continue;
+			}
+			if (sa->discrim_values != NULL) {
+				unsigned int j;
+
+				for (j = 0; j < sa->num_discrim_values; j++) {
+					if (sa->discrim_values[j] == discrim)
+						return sa->desc;
+				}
+				continue;
+			}
+			if (sa->discrim_value == discrim)
+				return sa->desc;
+		}
+	}
+	return b->default_desc;
 }
 
 /*
@@ -5242,15 +5312,45 @@ const struct struct_desc *struct_arg_lookup_by_name(const char *name,
 						    unsigned int arg_idx)
 {
 	const struct syscall_struct_arg *sa;
+	const struct struct_desc *first = NULL;
 
 	if (name == NULL || arg_idx < 1 || arg_idx > 6)
 		return NULL;
+	/*
+	 * Prefer the slot's default (non-discriminated) entry; fall back to
+	 * the first discriminated variant when no default is registered.
+	 * Callers that need OR-across-all-variants semantics (e.g. the
+	 * nested-address-scrub mask) use struct_arg_any_has_address_field()
+	 * below -- single-desc returns can't represent that question.
+	 */
 	for (sa = syscall_struct_args; sa->syscall_name != NULL; sa++) {
-		if (sa->arg_idx == arg_idx &&
-		    strcmp(sa->syscall_name, name) == 0)
+		if (sa->arg_idx != arg_idx)
+			continue;
+		if (strcmp(sa->syscall_name, name) != 0)
+			continue;
+		if (sa->discrim_arg_idx == 0)
 			return sa->desc;
+		if (first == NULL)
+			first = sa->desc;
 	}
-	return NULL;
+	return first;
+}
+
+bool struct_arg_any_has_address_field(const char *name, unsigned int arg_idx)
+{
+	const struct syscall_struct_arg *sa;
+
+	if (name == NULL || arg_idx < 1 || arg_idx > 6)
+		return false;
+	for (sa = syscall_struct_args; sa->syscall_name != NULL; sa++) {
+		if (sa->arg_idx != arg_idx)
+			continue;
+		if (strcmp(sa->syscall_name, name) != 0)
+			continue;
+		if (struct_desc_has_address_field(sa->desc))
+			return true;
+	}
+	return false;
 }
 
 /*
@@ -5297,6 +5397,72 @@ bool struct_desc_has_address_field(const struct struct_desc *desc)
 	return struct_desc_has_address_field_depth(desc, 0);
 }
 
+/*
+ * Allocate (or fetch) the slot_binding cell at table[nr][arg_idx-1].
+ * Pool growth is bounded by SLOT_POOL_MAX; running out is a hard
+ * configuration error (caller forgot to bump the cap when extending
+ * the registration table), not a runtime degradation, so BUG() rather
+ * than silently dropping mappings.
+ */
+static struct slot_binding *
+slot_binding_get(const struct slot_binding *table[MAX_NR_SYSCALL][6],
+		 unsigned int nr, unsigned int arg_idx)
+{
+	struct slot_binding *b;
+
+	if (table[nr][arg_idx - 1] != NULL)
+		return (struct slot_binding *) table[nr][arg_idx - 1];
+
+	if (slot_pool_used >= SLOT_POOL_MAX) {
+		output(0, "struct_catalog: SLOT_POOL_MAX (%u) exhausted at "
+		       "(nr=%u, arg=%u) -- raise SLOT_POOL_MAX or trim "
+		       "syscall_struct_args[]\n",
+		       (unsigned int) SLOT_POOL_MAX, nr, arg_idx);
+		BUG("struct_catalog: SLOT_POOL_MAX exhausted");
+	}
+	b = &slot_pool[slot_pool_used++];
+	b->default_desc = NULL;
+	b->num_discrim = 0;
+	table[nr][arg_idx - 1] = b;
+	return b;
+}
+
+/*
+ * Attach one syscall_struct_args[] entry to its (nr, arg_idx) binding.
+ * Default entries write through to slot_binding::default_desc;
+ * discriminated entries push into the variant list in registration
+ * order so the lookup walk's first-match semantic matches the source
+ * declaration order.  Multiple defaults for the same slot are a
+ * registration bug; BUG() so the conflict surfaces at init rather than
+ * silently leaking the later-registered desc into the lookup.
+ */
+static void slot_binding_attach(const struct slot_binding *table[MAX_NR_SYSCALL][6],
+				unsigned int nr,
+				const struct syscall_struct_arg *sa)
+{
+	struct slot_binding *b = slot_binding_get(table, nr, sa->arg_idx);
+
+	if (sa->discrim_arg_idx == 0) {
+		if (b->default_desc != NULL) {
+			output(0, "struct_catalog: duplicate default "
+			       "registration for (%s, arg %u)\n",
+			       sa->syscall_name, sa->arg_idx);
+			BUG("struct_catalog: duplicate default registration");
+		}
+		b->default_desc = sa->desc;
+		return;
+	}
+	if (b->num_discrim >= DISCRIM_VARIANTS_PER_SLOT_MAX) {
+		output(0, "struct_catalog: DISCRIM_VARIANTS_PER_SLOT_MAX (%u) "
+		       "exhausted for (%s, arg %u) -- raise the cap or "
+		       "collapse variants\n",
+		       (unsigned int) DISCRIM_VARIANTS_PER_SLOT_MAX,
+		       sa->syscall_name, sa->arg_idx);
+		BUG("struct_catalog: DISCRIM_VARIANTS_PER_SLOT_MAX exhausted");
+	}
+	b->discrim[b->num_discrim++] = sa;
+}
+
 void struct_catalog_init(void)
 {
 	const struct syscall_struct_arg *sa;
@@ -5305,6 +5471,7 @@ void struct_catalog_init(void)
 
 	memset(desc_by_nr_64, 0, sizeof(desc_by_nr_64));
 	memset(desc_by_nr_32, 0, sizeof(desc_by_nr_32));
+	slot_pool_used = 0;
 
 	for (sa = syscall_struct_args; sa->syscall_name != NULL; sa++) {
 		if (sa->arg_idx < 1 || sa->arg_idx > 6)
@@ -5316,20 +5483,24 @@ void struct_catalog_init(void)
 						  max_nr_64bit_syscalls,
 						  sa->syscall_name);
 			if (nr >= 0 && (unsigned int) nr < MAX_NR_SYSCALL)
-				desc_by_nr_64[nr][sa->arg_idx - 1] = sa->desc;
+				slot_binding_attach(desc_by_nr_64,
+						    (unsigned int) nr, sa);
 
 			nr = search_syscall_table(syscalls_32bit,
 						  max_nr_32bit_syscalls,
 						  sa->syscall_name);
 			if (nr >= 0 && (unsigned int) nr < MAX_NR_SYSCALL)
-				desc_by_nr_32[nr][sa->arg_idx - 1] = sa->desc;
+				slot_binding_attach(desc_by_nr_32,
+						    (unsigned int) nr, sa);
 		} else {
 			nr = search_syscall_table(syscalls,
 						  max_nr_syscalls,
 						  sa->syscall_name);
 			if (nr >= 0 && (unsigned int) nr < MAX_NR_SYSCALL) {
-				desc_by_nr_64[nr][sa->arg_idx - 1] = sa->desc;
-				desc_by_nr_32[nr][sa->arg_idx - 1] = sa->desc;
+				slot_binding_attach(desc_by_nr_64,
+						    (unsigned int) nr, sa);
+				slot_binding_attach(desc_by_nr_32,
+						    (unsigned int) nr, sa);
 			}
 		}
 	}

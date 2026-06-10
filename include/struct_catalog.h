@@ -202,11 +202,33 @@ struct struct_desc {
 /*
  * Static mapping of (syscall name, 1-based arg index) -> struct type.
  * Terminated by .syscall_name == NULL.
+ *
+ * Optional sibling-arg discriminator: when discrim_arg_idx != 0 the
+ * entry only applies if rec->a<discrim_arg_idx> matches discrim_value
+ * (or any value in discrim_values[0..num_discrim_values)).  Entries
+ * with discrim_arg_idx == 0 are the slot's "default" and are consulted
+ * only if no discriminated entry matched -- so existing non-
+ * discriminated registrations stay byte-identical and resolve exactly
+ * as before.  At most one default per (name, arg_idx); discriminated
+ * variants are walked in registration order, first match wins.
+ *
+ * This is a DIFFERENT axis from the in-buffer struct_desc->variants
+ * resolved by struct_desc_resolve_variant(): variants pick a field
+ * subset INSIDE an already-chosen descriptor based on a value WITHIN
+ * the just-filled buffer (or a syscall arg); the discriminator below
+ * picks which descriptor a slot resolves to in the first place, based
+ * on a sibling syscall arg.  A slot can use both: the discriminator
+ * picks the descriptor, and the descriptor's variants pick the field
+ * subset within it.
  */
 struct syscall_struct_arg {
 	const char		 *syscall_name;
 	unsigned int		  arg_idx;	/* 1-based */
 	const struct struct_desc *desc;
+	unsigned int		  discrim_arg_idx;	/* 1-based; 0 = default */
+	unsigned long		  discrim_value;	/* single-value shortcut */
+	const unsigned long	 *discrim_values;	/* multi-value match-list */
+	unsigned int		  num_discrim_values;
 };
 
 /* All cataloged struct types. */
@@ -227,10 +249,21 @@ const struct struct_desc *struct_catalog_lookup(const char *name);
  * do32bit selects the 32-bit or 64-bit table on biarch builds.
  * Returns NULL if not cataloged.
  * Must be called after struct_catalog_init().
+ *
+ * rec drives the cmd-style discriminator: when one or more
+ * syscall_struct_args[] entries for this (nr, arg_idx) carry a
+ * non-zero discrim_arg_idx, the lookup reads rec->a<discrim_arg_idx>
+ * and returns the first entry whose discrim_value (or discrim_values[])
+ * matches.  No-match falls through to the slot's default entry (or
+ * NULL when none registered).  Pass rec == NULL to skip the
+ * discriminator walk and always return the default desc -- the right
+ * choice for callers that have no live syscall args (e.g. table-init
+ * paths).  Slots with no discriminated entries are unaffected by rec.
  */
 const struct struct_desc *struct_arg_lookup(unsigned int nr,
 					    unsigned int arg_idx,
-					    bool do32bit);
+					    bool do32bit,
+					    struct syscallrecord *rec);
 
 /*
  * Given a CMP hint value and a struct descriptor, return the index of
@@ -358,3 +391,14 @@ const struct struct_desc *struct_arg_lookup_by_name(const char *name,
  * future catalog entries with cyclic references.
  */
 bool struct_desc_has_address_field(const struct struct_desc *desc);
+
+/*
+ * True if ANY syscall_struct_args[] entry for (name, arg_idx) -- the
+ * default entry and every discriminator variant -- reaches an
+ * FT_ADDRESS field.  The nested-address-scrub mask is a conservative
+ * include: if any variant the slot could resolve to carries an address
+ * field, the slot must be walked every dispatch.  Suitable for table-
+ * init paths that run before struct_catalog_init() has populated the
+ * nr-indexed table.
+ */
+bool struct_arg_any_has_address_field(const char *name, unsigned int arg_idx);

@@ -2409,7 +2409,7 @@ static unsigned long gen_arg_struct_ptr_in(struct syscallentry *entry __unused__
 	unsigned int size;
 	unsigned char *buf;
 
-	desc = struct_arg_lookup(rec->nr, argnum, rec->do32bit);
+	desc = struct_arg_lookup(rec->nr, argnum, rec->do32bit, rec);
 	size = desc ? desc->struct_size : STRUCT_PTR_IN_FALLBACK_SIZE;
 
 	buf = zmalloc_tracked(size);
@@ -2482,7 +2482,7 @@ static unsigned long gen_arg_struct_ptr_out(struct syscallentry *entry __unused_
 	unsigned int size;
 	unsigned char *buf;
 
-	desc = struct_arg_lookup(rec->nr, argnum, rec->do32bit);
+	desc = struct_arg_lookup(rec->nr, argnum, rec->do32bit, rec);
 	size = desc ? desc->struct_size : STRUCT_PTR_OUT_FALLBACK_SIZE;
 
 	buf = zmalloc_tracked(size);
@@ -2525,7 +2525,7 @@ static unsigned long gen_arg_struct_ptr_inout(struct syscallentry *entry __unuse
 	unsigned int size;
 	unsigned char *buf;
 
-	desc = struct_arg_lookup(rec->nr, argnum, rec->do32bit);
+	desc = struct_arg_lookup(rec->nr, argnum, rec->do32bit, rec);
 	size = desc ? desc->struct_size : STRUCT_PTR_IN_FALLBACK_SIZE;
 
 	buf = zmalloc_tracked(size);
@@ -2592,7 +2592,8 @@ static const struct struct_desc *paired_struct_desc(struct syscallentry *entry,
 
 		if (t == ARG_STRUCT_PTR_IN || t == ARG_STRUCT_PTR_OUT ||
 		    t == ARG_STRUCT_PTR_INOUT)
-			return struct_arg_lookup(rec->nr, i + 1, rec->do32bit);
+			return struct_arg_lookup(rec->nr, i + 1, rec->do32bit,
+						 rec);
 	}
 	return NULL;
 }
@@ -3026,15 +3027,20 @@ uint8_t compute_nested_address_scrub_mask(const struct syscallentry *entry)
 
 	for (i = 0; i < entry->num_args && i < 6; i++) {
 		enum argtype t = entry->argtype[i];
-		const struct struct_desc *desc;
 
 		if (t != ARG_STRUCT_PTR_IN &&
 		    t != ARG_STRUCT_PTR_OUT &&
 		    t != ARG_STRUCT_PTR_INOUT)
 			continue;
 
-		desc = struct_arg_lookup_by_name(entry->name, i + 1);
-		if (desc != NULL && struct_desc_has_address_field(desc))
+		/*
+		 * Discriminator-aware: any cataloged variant for this slot
+		 * carrying an FT_ADDRESS field forces the bit on, because the
+		 * live variant resolves per-dispatch and the mask is a
+		 * conservative include.  struct_arg_lookup_by_name() returns
+		 * only one descriptor and can't represent that OR-across.
+		 */
+		if (struct_arg_any_has_address_field(entry->name, i + 1))
 			mask |= (uint8_t)(1u << i);
 	}
 	return mask;
@@ -3306,7 +3312,7 @@ static void nested_address_scrub(struct syscallentry *entry,
 		default: slot = 0; break;
 		}
 
-		desc = struct_arg_lookup(rec->nr, i, rec->do32bit);
+		desc = struct_arg_lookup(rec->nr, i, rec->do32bit, rec);
 		if (slot != 0 && desc != NULL)
 			scrub_struct_addresses((unsigned char *) slot,
 					       desc->struct_size, desc, 0);
