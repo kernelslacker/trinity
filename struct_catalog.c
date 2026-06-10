@@ -806,6 +806,13 @@ static const struct struct_field timezone_fields[] = {
  * even though the bespoke sanitiser already produced a plausible
  * payload, so per-field CMP steering at l_type / l_whence had nothing
  * to hang against.
+ *
+ * Resolution to this descriptor is now gated on the F_*LK / F_OFD_*LK
+ * / F_CANCELLK cmds via the discriminator-aware syscall_struct_args[]
+ * entry below; for non-lock cmds the kernel doesn't read a struct
+ * flock at a3 (it reads an fd or an integer flag word that sanitise_
+ * fcntl writes through rec->a3), so attribution at the flock fields
+ * would be meaningless.
  */
 static const unsigned long flock_l_type_values[] = {
 	F_RDLCK, F_WRLCK, F_UNLCK,
@@ -827,6 +834,44 @@ static const struct struct_field flock_fields[] = {
 	FIELD(struct flock, l_start),
 	FIELD(struct flock, l_len),
 	FIELD(struct flock, l_pid),
+};
+
+/* ------------------------------------------------------------------ */
+/* struct f_owner_ex (fcntl F_GETOWN_EX / F_SETOWN_EX)                 */
+/* ------------------------------------------------------------------ */
+
+/*
+ * fcntl's a3 for F_GETOWN_EX / F_SETOWN_EX is a pointer to struct
+ * f_owner_ex.  The bespoke sanitise_fcntl() keeps owning the live
+ * fill: it allocates the buffer via get_writable_struct(), picks
+ * type from {F_OWNER_TID, F_OWNER_PID, F_OWNER_PGRP}, and stamps
+ * get_pid() into pid before overwriting rec->a3.
+ *
+ * Attribution-only registration, same shape as the struct flock
+ * entry above: struct_field_for_cmp() uses the FT_ENUM tag on type
+ * (a 3-valued vocab the kernel branches on in f_setown_ex) to steer
+ * KCOV-CMP learned constants at the named slot rather than at a
+ * coincidentally-same-width slot.  pid stays FT_RAW: the bespoke
+ * sanitiser stamps a getpid()-shaped value and the kernel treats it
+ * as an opaque process / thread id with no vocab to attribute
+ * against.
+ *
+ * Resolution to this descriptor is gated on cmd ∈ {F_GETOWN_EX,
+ * F_SETOWN_EX} via the discriminator-aware syscall_struct_args[]
+ * entry below; this is the first proof of the new mechanism.  Same
+ * (name, arg_idx) -> different desc by sibling-arg value -- the
+ * existing single-desc table couldn't represent it.
+ */
+static const unsigned long f_owner_ex_type_values[] = {
+	F_OWNER_TID, F_OWNER_PID, F_OWNER_PGRP,
+};
+
+static const struct struct_field f_owner_ex_fields[] = {
+	FIELDX(struct f_owner_ex, type, FT_ENUM,
+	       .u.enum_ = { f_owner_ex_type_values,
+			    ARRAY_SIZE(f_owner_ex_type_values) },
+	       .mutate_weight = 80),
+	FIELD(struct f_owner_ex, pid),
 };
 
 /* ------------------------------------------------------------------ */
@@ -4542,10 +4587,10 @@ const struct struct_desc struct_catalog[] = {
 	 * landlock_path_beneath_attr: appended at the tail so the
 	 * existing struct_catalog[N] indices above stay stable.  The
 	 * syscall_struct_args[] mapping below uses
-	 * ARRAY_SIZE(struct_catalog) - 1 to address this slot, sparing
+	 * ARRAY_SIZE(struct_catalog) - 2 to address this slot, sparing
 	 * us the USE_BPF / USE_XATTR_ARGS index gymnastics that would
-	 * otherwise be needed (this is the new last entry under every
-	 * configure combination).
+	 * otherwise be needed (the f_owner_ex entry below now occupies
+	 * the -1 tail slot).
 	 */
 	{
 		.name		= "landlock_path_beneath_attr",
@@ -4553,9 +4598,55 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= landlock_path_beneath_attr_fields,
 		.num_fields	= ARRAY_SIZE(landlock_path_beneath_attr_fields),
 	},
+	/*
+	 * f_owner_ex: appended at the tail so the existing struct_catalog[N]
+	 * indices above stay stable.  The syscall_struct_args[] mapping
+	 * below uses ARRAY_SIZE(struct_catalog) - 1 to address this slot,
+	 * sparing us the USE_BPF / USE_XATTR_ARGS index gymnastics that
+	 * would otherwise be needed (this is the new last entry under
+	 * every configure combination).
+	 */
+	{
+		.name		= "f_owner_ex",
+		.struct_size	= sizeof(struct f_owner_ex),
+		.fields		= f_owner_ex_fields,
+		.num_fields	= ARRAY_SIZE(f_owner_ex_fields),
+	},
 };
 
 const unsigned int struct_catalog_count = ARRAY_SIZE(struct_catalog);
+
+/* ------------------------------------------------------------------ */
+/* Discriminator value lists                                            */
+/* ------------------------------------------------------------------ */
+
+/*
+ * fcntl arg3 cmd discriminator pools.  Sibling arg a2 (cmd) selects
+ * which struct backs the a3 pointer; the discriminator-aware lookup
+ * resolves these lists against rec->a2 to pick the right descriptor.
+ *
+ * fcntl_flock_cmds: every cmd where the kernel reads a struct flock
+ * at a3 -- POSIX (F_GETLK / F_SETLK / F_SETLKW), OFD (F_OFD_*) and
+ * F_CANCELLK.  The LK64 variants are folded in via the
+ * F_GETLK64 != F_GETLK preprocessor gate so 64-bit-clean toolchains
+ * (where the LK64 cmd values collapse onto their non-LK64 siblings)
+ * don't waste a duplicate-match slot.
+ *
+ * fcntl_f_owner_ex_cmds: the two cmds where a3 is a struct
+ * f_owner_ex pointer.
+ */
+static const unsigned long fcntl_flock_cmds[] = {
+	F_GETLK, F_SETLK, F_SETLKW,
+	F_OFD_GETLK, F_OFD_SETLK, F_OFD_SETLKW,
+	F_CANCELLK,
+#if F_GETLK64 != F_GETLK
+	F_GETLK64, F_SETLK64, F_SETLKW64,
+#endif
+};
+
+static const unsigned long fcntl_f_owner_ex_cmds[] = {
+	F_GETOWN_EX, F_SETOWN_EX,
+};
 
 /* ------------------------------------------------------------------ */
 /* Syscall -> struct arg mapping                                        */
@@ -4776,14 +4867,46 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	{ "utime",		2, &struct_catalog[34] },
 	/*
 	 * fcntl(int fd, int cmd, ... arg)
-	 * a3 is the F_GETLK / F_SETLK / F_SETLKW (and F_OFD_* variants)
-	 * struct flock lock-pointer.  The bespoke sanitise_fcntl() keeps
-	 * owning the live fill via build_flock(); attribution-only
-	 * registration lets struct_field_for_cmp steer CMP-learned
-	 * constants at the named l_type / l_whence / l_start / l_len /
-	 * l_pid slots rather than at a coincidentally-same-width slot.
+	 * a3's type depends on the cmd in a2 -- the first proof of the
+	 * discriminator-aware syscall_struct_args[] mechanism.  Two
+	 * variants, both attribution-only (the bespoke sanitise_fcntl()
+	 * keeps owning the live fill):
+	 *
+	 *   - struct flock for F_GETLK / F_SETLK / F_SETLKW, the F_OFD_*
+	 *     variants, F_CANCELLK (and the LK64 variants on archs where
+	 *     F_GETLK64 != F_GETLK).  build_flock() picks an l_type /
+	 *     l_whence vocab member, a bounded l_start and l_len, and
+	 *     zeroes l_pid.  struct_field_for_cmp() steers CMP-learned
+	 *     constants at the named l_type / l_whence slots.
+	 *
+	 *   - struct f_owner_ex for F_GETOWN_EX / F_SETOWN_EX.  The
+	 *     bespoke arm picks type from {F_OWNER_TID, F_OWNER_PID,
+	 *     F_OWNER_PGRP} and stamps get_pid() into pid;
+	 *     struct_field_for_cmp() steers CMP-learned constants at the
+	 *     named type slot.
+	 *
+	 * cmds that don't carry a struct at a3 (F_DUPFD, F_GETFD,
+	 * F_SETFL, F_*OWN, F_*SIG, F_*LEASE, F_*PIPE_SZ, F_ADD_SEALS,
+	 * F_NOTIFY, F_DUPFD_QUERY, ...) match no variant and resolve to
+	 * NULL -- gen_arg_struct_ptr_inout falls through to a zeroed
+	 * fallback buffer that sanitise_fcntl overwrites with an fd or
+	 * integer flag word, same as before.
+	 *
+	 * struct flock @ struct_catalog[35] (stable index pre-USE_BPF
+	 * tail entries); struct f_owner_ex @ ARRAY_SIZE - 1 (tail).
 	 */
-	{ "fcntl",		3, &struct_catalog[35] },
+	{
+		"fcntl", 3, &struct_catalog[35],
+		.discrim_arg_idx	= 2,
+		.discrim_values		= fcntl_flock_cmds,
+		.num_discrim_values	= ARRAY_SIZE(fcntl_flock_cmds),
+	},
+	{
+		"fcntl", 3, &struct_catalog[ARRAY_SIZE(struct_catalog) - 1],
+		.discrim_arg_idx	= 2,
+		.discrim_values		= fcntl_f_owner_ex_cmds,
+		.num_discrim_values	= ARRAY_SIZE(fcntl_f_owner_ex_cmds),
+	},
 	/*
 	 * settimeofday(struct timeval __user *tv, struct timezone __user *tz)
 	 * a1 is the INPUT struct timeval pointer.  The bespoke
@@ -4875,7 +4998,18 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	{ "rseq",		1, &struct_catalog[30] },
 	{ "setitimer",		2, &struct_catalog[31] },
 	{ "utime",		2, &struct_catalog[32] },
-	{ "fcntl",		3, &struct_catalog[33] },
+	{
+		"fcntl", 3, &struct_catalog[33],
+		.discrim_arg_idx	= 2,
+		.discrim_values		= fcntl_flock_cmds,
+		.num_discrim_values	= ARRAY_SIZE(fcntl_flock_cmds),
+	},
+	{
+		"fcntl", 3, &struct_catalog[ARRAY_SIZE(struct_catalog) - 1],
+		.discrim_arg_idx	= 2,
+		.discrim_values		= fcntl_f_owner_ex_cmds,
+		.num_discrim_values	= ARRAY_SIZE(fcntl_f_owner_ex_cmds),
+	},
 	{ "settimeofday",	1, &struct_catalog[34] },
 	{ "select",		5, &struct_catalog[34] },
 	{ "settimeofday",	2, &struct_catalog[35] },
@@ -4896,7 +5030,7 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * so struct_field_for_cmp can steer CMP-learned constants at
 	 * the named fa_xflags / fa_extsize / fa_nextents / fa_projid /
 	 * fa_cowextsize slots rather than at a coincidentally-same-
-	 * width slot.  Sized via ARRAY_SIZE(struct_catalog) - 1 so the
+	 * width slot.  Sized via ARRAY_SIZE(struct_catalog) - 3 so the
 	 * tail position resolves correctly under every USE_BPF /
 	 * USE_XATTR_ARGS combination.
 	 *
@@ -4904,7 +5038,7 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * kernel-written OUTPUT and has no input fill to attribute
 	 * against.
 	 */
-	{ "file_setattr",	3, &struct_catalog[ARRAY_SIZE(struct_catalog) - 2] },
+	{ "file_setattr",	3, &struct_catalog[ARRAY_SIZE(struct_catalog) - 3] },
 	/*
 	 * landlock_add_rule(int ruleset_fd, enum landlock_rule_type rule_type,
 	 *                   const void __user *rule_attr, __u32 flags)
@@ -4916,7 +5050,7 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * struct_field_for_cmp can steer CMP-learned constants at the
 	 * named allowed_access / parent_fd slots rather than at a
 	 * coincidentally-same-width slot.  Sized via
-	 * ARRAY_SIZE(struct_catalog) - 1 so the tail position resolves
+	 * ARRAY_SIZE(struct_catalog) - 2 so the tail position resolves
 	 * correctly under every USE_BPF / USE_XATTR_ARGS combination.
 	 *
 	 * Not mapped here on purpose: the LANDLOCK_RULE_NET_PORT arm
@@ -4924,7 +5058,7 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * variant needs a tagged-union descriptor and is intentionally
 	 * out of scope for this attribution-only registration.
 	 */
-	{ "landlock_add_rule",	3, &struct_catalog[ARRAY_SIZE(struct_catalog) - 1] },
+	{ "landlock_add_rule",	3, &struct_catalog[ARRAY_SIZE(struct_catalog) - 2] },
 	/* sentinel */
 	{ NULL, 0, NULL },
 };
