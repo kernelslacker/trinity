@@ -56,6 +56,18 @@ struct minicorpus_shared *minicorpus_shm = NULL;
 static bool mutators_disabled;
 
 /*
+ * Process-wide gate for the effector-map A/B measurement instrument.  Set
+ * at init from $TRINITY_EFFECTOR_AB=1 and inherited COW by every child.
+ * When true, the op-0 bit-flip case in mutate_arg() does a 50/50 split
+ * between effector_pick_bit (the "effector" arm) and a uniform-random
+ * bit in [0, EFFECTOR_BITS_PER_ARG) (the "uniform" control arm), and
+ * bumps the per-arm trial/win counters in minicorpus_shm so the two arms
+ * can be compared post-run.  When false (the default), the bit-flip case
+ * is unchanged — always effector_pick_bit, no counter writes.
+ */
+static bool effector_ab_enabled;
+
+/*
  * Cross-syscall value propagation (xprop) source whitelist.
  *
  * Within-syscall splice shuffles values between arg slots of one
@@ -118,6 +130,17 @@ void minicorpus_init(void)
 		mutators_disabled = (v != NULL && v[0] == '1' && v[1] == '\0');
 		output(0, "KCOV: mini-corpus mutators=%s\n",
 		       mutators_disabled ? "DISABLED" : "ENABLED");
+	}
+
+	/* Effector-map A/B measurement gate.  Same "1"-only acceptance as
+	 * TRINITY_DISABLE_MUTATORS so an empty / "0" / arbitrary value leaves
+	 * the production effector-weighted bit pick in place. */
+	{
+		const char *v = getenv("TRINITY_EFFECTOR_AB");
+
+		effector_ab_enabled = (v != NULL && v[0] == '1' && v[1] == '\0');
+		output(0, "KCOV: effector-map A/B measurement=%s\n",
+		       effector_ab_enabled ? "ENABLED" : "DISABLED");
 	}
 }
 
@@ -393,6 +416,16 @@ void minicorpus_save_with_reason(struct syscallrecord *rec,
 static unsigned int mut_attrib[MUT_NUM_OPS];
 
 /*
+ * Per-process bit-flip A/B arm pick stash.  Bumped by mutate_arg() inside
+ * the op-0 case when effector_ab_enabled is true; drained by
+ * minicorpus_mut_attrib_commit() into shm->effector_bit_wins /
+ * uniform_bit_wins.  Same per-process / fork-then-single-threaded
+ * guarantee as mut_attrib[].
+ */
+static unsigned int effector_arm_picks;
+static unsigned int uniform_arm_picks;
+
+/*
  * Parallel structured-firing stash.  Bumped from inside mutate_arg
  * whenever the structure-aware branch ran (ARG_LIST / ARG_OP /
  * ARG_RANGE with usable arg_param metadata).  Drained by
@@ -576,6 +609,8 @@ void minicorpus_mut_attrib_commit(bool found_new)
 		this_struct_field_set = false;
 		for (i = 0; i < MUT_NUM_OPS; i++)
 			mut_structured_attrib[i] = 0;
+		effector_arm_picks = 0;
+		uniform_arm_picks = 0;
 		return;
 	}
 
@@ -654,16 +689,43 @@ void minicorpus_mut_attrib_commit(bool found_new)
 			__atomic_fetch_add(&src_entry->novel_replay_hits,
 					   1U, __ATOMIC_RELAXED);
 
+		/* Bit-flip A/B win credit.  Trials were already bumped
+		 * per-pick in mutate_arg; here we credit at most one win per
+		 * arm per call, gated by the same baseline-established rule as
+		 * mut_wins[0] so the per-arm win-rate is directly comparable
+		 * against the aggregate op-0 number.  Both arms can credit on
+		 * the same call (the stack picked op 0 more than once and
+		 * landed on both arms) -- that's the same shape as multiple
+		 * mut_attrib[i] entries crediting on a single found_new. */
+		if (effector_arm_picks > 0) {
+			if (found_new && baseline_established)
+				__atomic_fetch_add(
+					&minicorpus_shm->effector_bit_wins,
+					1UL, __ATOMIC_RELAXED);
+			effector_arm_picks = 0;
+		}
+		if (uniform_arm_picks > 0) {
+			if (found_new && baseline_established)
+				__atomic_fetch_add(
+					&minicorpus_shm->uniform_bit_wins,
+					1UL, __ATOMIC_RELAXED);
+			uniform_arm_picks = 0;
+		}
+
 		this_replay_source_tracked = false;
 	} else {
 		/* Untracked source (chain-replay or other non-minicorpus
 		 * caller).  Clear both stashes without recording per-op
 		 * events -- the bandit signal (and the structured-firing
-		 * companion) stays exclusively per-syscall-replay. */
+		 * companion) stays exclusively per-syscall-replay.  Same
+		 * gating for the A/B arm stash so chain-replay bit-flips
+		 * don't leak win credit into the measurement. */
 		for (i = 0; i < MUT_NUM_OPS; i++) {
 			mut_attrib[i] = 0;
 			mut_structured_attrib[i] = 0;
 		}
+		effector_arm_picks = 0;
+		uniform_arm_picks = 0;
 	}
 
 	if (this_replay_ran) {
@@ -988,8 +1050,29 @@ static unsigned long mutate_arg(unsigned long val, enum argtype atype,
 	case 0:
 		/* flip a bit picked by effector-map weight (uniform when no
 		 * calibration data is loaded for this slot — see
-		 * effector_pick_bit). */
-		val ^= 1UL << effector_pick_bit(nr, arg);
+		 * effector_pick_bit).
+		 *
+		 * Under TRINITY_EFFECTOR_AB the case splits 50/50 between the
+		 * production effector-weighted pick and a uniform-random pick
+		 * over [0, EFFECTOR_BITS_PER_ARG) so the two arms can be
+		 * compared head-to-head in the same fuzz run.  Per-arm trials
+		 * bump here; per-arm wins bump from minicorpus_mut_attrib_commit
+		 * at the same baseline-gated site mut_wins[0] is credited. */
+		if (effector_ab_enabled) {
+			if (RAND_BOOL()) {
+				__atomic_fetch_add(&minicorpus_shm->effector_bit_trials,
+						   1UL, __ATOMIC_RELAXED);
+				effector_arm_picks++;
+				val ^= 1UL << effector_pick_bit(nr, arg);
+			} else {
+				__atomic_fetch_add(&minicorpus_shm->uniform_bit_trials,
+						   1UL, __ATOMIC_RELAXED);
+				uniform_arm_picks++;
+				val ^= 1UL << rnd_modulo_u32(EFFECTOR_BITS_PER_ARG);
+			}
+		} else {
+			val ^= 1UL << effector_pick_bit(nr, arg);
+		}
 		break;
 	case 1: {
 		/* add small delta, saturate at ULONG_MAX */

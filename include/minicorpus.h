@@ -128,6 +128,26 @@ struct minicorpus_shared {
 	unsigned long mut_structured_trials[MUT_NUM_OPS];
 	unsigned long mut_structured_wins[MUT_NUM_OPS];
 	/*
+	 * Bit-flip A/B measurement (TRINITY_EFFECTOR_AB gate).
+	 *
+	 * Splits the op-0 bit-flip case 50/50 between the production
+	 * effector-weighted bit pick and a uniform-random control pick over
+	 * [0, EFFECTOR_BITS_PER_ARG).  Trials are bumped per pick (inside
+	 * mutate_arg); wins are bumped per-call per-arm-that-participated at
+	 * the same commit site that credits mut_wins[0], gated by the same
+	 * baseline-established rule so the ratios are apples-to-apples with
+	 * the per-op productivity numbers above.
+	 *
+	 * Stay zero in the default configuration (env unset); the bit-flip
+	 * case takes the unchanged effector_pick_bit path and no counter is
+	 * touched.  RELAXED atomics; consumed by dump_stats() and the JSON
+	 * minicorpus block.
+	 */
+	unsigned long effector_bit_trials;
+	unsigned long effector_bit_wins;
+	unsigned long uniform_bit_trials;
+	unsigned long uniform_bit_wins;
+	/*
 	 * Per-tag productivity for the C.2b struct-buffer post-fill
 	 * mutator (struct_field_mutate_one).  Bumped exactly once per
 	 * mutated call (the gated entry point picks at most one field

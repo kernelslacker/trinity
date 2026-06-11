@@ -453,6 +453,23 @@ static void json_emit_minicorpus_section(void)
 	printf(",\"splice\":{\"hits\":%lu,\"wins\":%lu}", s_hits, s_wins);
 
 	{
+		unsigned long et = __atomic_load_n(
+			&minicorpus_shm->effector_bit_trials, __ATOMIC_RELAXED);
+		unsigned long ew = __atomic_load_n(
+			&minicorpus_shm->effector_bit_wins, __ATOMIC_RELAXED);
+		unsigned long ut = __atomic_load_n(
+			&minicorpus_shm->uniform_bit_trials, __ATOMIC_RELAXED);
+		unsigned long uw = __atomic_load_n(
+			&minicorpus_shm->uniform_bit_wins, __ATOMIC_RELAXED);
+
+		printf(",\"effector_ab\":{\"effector_trials\":%lu"
+		       ",\"effector_wins\":%lu"
+		       ",\"uniform_trials\":%lu"
+		       ",\"uniform_wins\":%lu}",
+		       et, ew, ut, uw);
+	}
+
+	{
 		unsigned long xp_hits = __atomic_load_n(
 			&minicorpus_shm->xprop_hits, __ATOMIC_RELAXED);
 
@@ -6130,6 +6147,35 @@ static void dump_stats_corpus_and_taint_tail(void)
 			pct10 = s_wins * 1000UL / s_hits;
 			output(0, "Splice: %lu hits  %lu wins (%lu.%lu%%)\n",
 			       s_hits, s_wins, pct10 / 10, pct10 % 10);
+		}
+
+		/* Bit-flip A/B measurement (TRINITY_EFFECTOR_AB).  Gated on
+		 * either arm having seen any trials so the line stays out of
+		 * default-config dumps where the instrument was off. */
+		{
+			unsigned long et = __atomic_load_n(
+				&minicorpus_shm->effector_bit_trials,
+				__ATOMIC_RELAXED);
+			unsigned long ew = __atomic_load_n(
+				&minicorpus_shm->effector_bit_wins,
+				__ATOMIC_RELAXED);
+			unsigned long ut = __atomic_load_n(
+				&minicorpus_shm->uniform_bit_trials,
+				__ATOMIC_RELAXED);
+			unsigned long uw = __atomic_load_n(
+				&minicorpus_shm->uniform_bit_wins,
+				__ATOMIC_RELAXED);
+
+			if (et > 0 || ut > 0) {
+				unsigned long epct = et ? (ew * 1000UL / et) : 0UL;
+				unsigned long upct = ut ? (uw * 1000UL / ut) : 0UL;
+
+				output(0, "Effector-AB bit-flip:  "
+				       "effector %lu/%lu (%lu.%lu%%)  "
+				       "uniform %lu/%lu (%lu.%lu%%)\n",
+				       ew, et, epct / 10, epct % 10,
+				       uw, ut, upct / 10, upct % 10);
+			}
 		}
 
 		{
