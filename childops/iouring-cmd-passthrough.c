@@ -101,7 +101,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
@@ -111,6 +110,7 @@
 
 #include "child.h"
 #include "childops-iouring.h"
+#include "childops/iouring-ring.h"
 #include "compat.h"
 #include "random.h"
 #include "rnd.h"
@@ -119,15 +119,8 @@
 #include "trinity.h"
 #include "utils.h"
 
-#ifndef __NR_io_uring_setup
-#define __NR_io_uring_setup	425
+#ifndef __NR_io_uring_enter
 #define __NR_io_uring_enter	426
-#endif
-
-#ifndef IORING_OFF_SQ_RING
-#define IORING_OFF_SQ_RING	0ULL
-#define IORING_OFF_CQ_RING	0x8000000ULL
-#define IORING_OFF_SQES		0x10000000ULL
 #endif
 
 /* Per-process variant availability cache.  Populated lazily by
@@ -302,113 +295,7 @@ static void probe_variants(void)
  * teardown is straightforward.
  * ------------------------------------------------------------------ */
 
-struct ring_ctx {
-	int		fd;
-	void		*sq_ring;
-	void		*cq_ring;
-	void		*sqes;
-	size_t		sq_ring_sz;
-	size_t		cq_ring_sz;
-	size_t		sqes_sz;
-	bool		single_mmap;
-
-	unsigned int	sq_entries;
-
-	unsigned int	sq_off_head;
-	unsigned int	sq_off_tail;
-	unsigned int	sq_off_mask;
-	unsigned int	sq_off_array;
-
-	unsigned int	cq_off_head;
-	unsigned int	cq_off_tail;
-	unsigned int	cq_off_mask;
-	unsigned int	cq_off_cqes;
-};
-
-static bool ring_setup(struct ring_ctx *ctx, unsigned int entries)
-{
-	struct io_uring_params p;
-	size_t sq_sz, cq_sz, sqes_sz;
-	void *sq_ring, *cq_ring, *sqes;
-
-	memset(ctx, 0, sizeof(*ctx));
-	ctx->fd = -1;
-
-	memset(&p, 0, sizeof(p));
-	ctx->fd = (int)syscall(__NR_io_uring_setup, entries, &p);
-	if (ctx->fd < 0)
-		return false;
-
-	sq_sz = (size_t)p.sq_off.array + (size_t)p.sq_entries * sizeof(unsigned int);
-	cq_sz = (size_t)p.cq_off.cqes + (size_t)p.cq_entries * sizeof(struct io_uring_cqe);
-	sqes_sz = (size_t)p.sq_entries * sizeof(struct io_uring_sqe);
-
-	sq_ring = mmap(NULL, sq_sz, PROT_READ | PROT_WRITE,
-		       MAP_SHARED | MAP_POPULATE, ctx->fd, IORING_OFF_SQ_RING);
-	if (sq_ring == MAP_FAILED)
-		goto fail_close;
-
-	if (p.features & IORING_FEAT_SINGLE_MMAP) {
-		cq_ring = sq_ring;
-		ctx->single_mmap = true;
-	} else {
-		cq_ring = mmap(NULL, cq_sz, PROT_READ | PROT_WRITE,
-			       MAP_SHARED | MAP_POPULATE,
-			       ctx->fd, IORING_OFF_CQ_RING);
-		if (cq_ring == MAP_FAILED) {
-			munmap(sq_ring, sq_sz);
-			goto fail_close;
-		}
-	}
-
-	sqes = mmap(NULL, sqes_sz, PROT_READ | PROT_WRITE,
-		    MAP_SHARED | MAP_POPULATE, ctx->fd, IORING_OFF_SQES);
-	if (sqes == MAP_FAILED) {
-		if (!ctx->single_mmap)
-			munmap(cq_ring, cq_sz);
-		munmap(sq_ring, sq_sz);
-		goto fail_close;
-	}
-
-	ctx->sq_ring    = sq_ring;
-	ctx->sq_ring_sz = sq_sz;
-	ctx->cq_ring    = cq_ring;
-	ctx->cq_ring_sz = ctx->single_mmap ? 0 : cq_sz;
-	ctx->sqes       = sqes;
-	ctx->sqes_sz    = sqes_sz;
-	ctx->sq_entries = p.sq_entries;
-
-	ctx->sq_off_head  = p.sq_off.head;
-	ctx->sq_off_tail  = p.sq_off.tail;
-	ctx->sq_off_mask  = p.sq_off.ring_mask;
-	ctx->sq_off_array = p.sq_off.array;
-
-	ctx->cq_off_head  = p.cq_off.head;
-	ctx->cq_off_tail  = p.cq_off.tail;
-	ctx->cq_off_mask  = p.cq_off.ring_mask;
-	ctx->cq_off_cqes  = p.cq_off.cqes;
-
-	return true;
-
-fail_close:
-	close(ctx->fd);
-	ctx->fd = -1;
-	return false;
-}
-
-static void ring_teardown(struct ring_ctx *ctx)
-{
-	if (ctx->sqes)
-		munmap(ctx->sqes, ctx->sqes_sz);
-	if (ctx->cq_ring && !ctx->single_mmap)
-		munmap(ctx->cq_ring, ctx->cq_ring_sz);
-	if (ctx->sq_ring)
-		munmap(ctx->sq_ring, ctx->sq_ring_sz);
-	if (ctx->fd >= 0)
-		close(ctx->fd);
-}
-
-static bool ring_submit_sqe(struct ring_ctx *ctx, struct io_uring_sqe *sqe)
+static bool ring_submit_sqe(struct iour_ring *ctx, struct io_uring_sqe *sqe)
 {
 	unsigned int mask = ring_u32(ctx->sq_ring, ctx->sq_off_mask);
 	unsigned int head = ring_u32(ctx->sq_ring, ctx->sq_off_head);
@@ -430,14 +317,14 @@ static bool ring_submit_sqe(struct ring_ctx *ctx, struct io_uring_sqe *sqe)
 	return true;
 }
 
-static int ring_enter(struct ring_ctx *ctx, unsigned int n,
+static int ring_enter(struct iour_ring *ctx, unsigned int n,
 		      unsigned int min_complete)
 {
 	return (int)syscall(__NR_io_uring_enter, ctx->fd, n, min_complete,
 			    IORING_ENTER_GETEVENTS, NULL, 0);
 }
 
-static void ring_drain_cqes(struct ring_ctx *ctx)
+static void ring_drain_cqes(struct iour_ring *ctx)
 {
 	unsigned int head = ring_u32(ctx->cq_ring, ctx->cq_off_head);
 	unsigned int tail;
@@ -483,7 +370,7 @@ static const __u32 sock_cmd_ops[] = {
 	SOCKET_URING_OP_SETSOCKOPT,
 };
 
-static bool variant_socket(struct ring_ctx *ctx)
+static bool variant_socket(struct iour_ring *ctx)
 {
 	struct io_uring_sqe sqe;
 	int sock_fd = -1;
@@ -582,7 +469,7 @@ static bool loop_still_unbound(int minor)
 	return buf[0] == '\0';
 }
 
-static bool variant_blockdev(struct ring_ctx *ctx)
+static bool variant_blockdev(struct iour_ring *ctx)
 {
 	struct io_uring_sqe sqe;
 	char devpath[PATH_MAX];
@@ -639,7 +526,9 @@ out:
 
 bool iouring_cmd_passthrough(struct childdata *child __unused__)
 {
-	struct ring_ctx ctx;
+	struct iour_ring ctx;
+	struct io_uring_params p;
+	enum iour_setup_status st;
 	bool ok = false;
 	enum { V_SOCKET, V_BLOCKDEV, V_MAX };
 	int avail[V_MAX];
@@ -660,8 +549,16 @@ bool iouring_cmd_passthrough(struct childdata *child __unused__)
 	if (navail == 0)
 		return true;
 
-	if (!ring_setup(&ctx, 8)) {
-		if (errno == ENOSYS)
+	memset(&p, 0, sizeof(p));
+	st = iour_ring_setup(&p, 8, &ctx);
+	if (st != IOUR_SUPPORTED) {
+		/* Latch the per-process iouring_enosys gate only on a
+		 * real "this kernel won't ever support io_uring"
+		 * verdict.  A transient setup failure (ENOMEM / EAGAIN
+		 * / EMFILE / overflow-rejected hostile return / mmap
+		 * blip) skips this invocation but leaves siblings free
+		 * to retry on the next dispatch. */
+		if (st == IOUR_UNSUPPORTED)
 			__atomic_store_n(&shm->iouring_enosys, true,
 					 __ATOMIC_RELAXED);
 		return true;
@@ -678,7 +575,7 @@ bool iouring_cmd_passthrough(struct childdata *child __unused__)
 		break;
 	}
 
-	ring_teardown(&ctx);
+	iour_ring_teardown(&ctx);
 
 	(void)ok;
 	return true;
