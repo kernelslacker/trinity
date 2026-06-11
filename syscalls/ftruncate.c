@@ -1,6 +1,7 @@
 /*
  * SYSCALL_DEFINE2(ftruncate, unsigned int, fd, unsigned long, length)
  */
+#include "fd.h"
 #include "maps.h"
 #include "sanitise.h"
 #include "utils.h"
@@ -25,6 +26,12 @@ static void sanitise_ftruncate(struct syscallrecord *rec)
 	struct ftruncate_post_state *snap;
 
 	rec->post_state = 0;
+
+	/* Belt-and-suspenders: keep the stderr capture memfd (and other
+	 * protected fds) out of rec->a1 so a fuzz-induced ftruncate can't
+	 * extend it to multi-GB and turn the next SIGABRT-handler bug-log
+	 * drain into a host-swamping write. */
+	reroll_protected_fd_arg(&rec->a1);
 
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = FTRUNCATE_POST_STATE_MAGIC;

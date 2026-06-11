@@ -108,6 +108,14 @@ static void sanitise_write(struct syscallrecord *rec)
 	if (rec->a1 <= 2)
 		rec->a1 = get_random_fd();
 
+	/* Belt-and-suspenders: keep the stderr capture memfd (and other
+	 * protected fds) out of rec->a1 so a fuzz-induced write at a
+	 * fabricated lseek offset can't extend it to multi-GB and turn
+	 * the next SIGABRT-handler bug-log drain into a host-swamping
+	 * write.  Also catches get_random_fd() above happening to draw
+	 * a protected fd. */
+	reroll_protected_fd_arg(&rec->a1);
+
 	if (forced_size >= 0)
 		size = (unsigned int) forced_size;
 	else if (RAND_BOOL())
@@ -306,6 +314,7 @@ static void sanitise_writev(struct syscallrecord *rec)
 	/* Last line of defense: don't write to stdin/stdout/stderr. */
 	if (rec->a1 <= 2)
 		rec->a1 = get_random_fd();
+	reroll_protected_fd_arg(&rec->a1);
 }
 
 struct syscallentry syscall_writev = {
@@ -355,6 +364,7 @@ static void sanitise_pwritev(struct syscallrecord *rec)
 
 	if (rec->a1 <= 2)
 		rec->a1 = get_random_fd();
+	reroll_protected_fd_arg(&rec->a1);
 	v = rand64() & 0x7fffffffffffffffULL;
 	rec->a4 = v & 0xffffffff;
 	rec->a5 = (v >> 32) & 0xffffffff;
@@ -389,6 +399,7 @@ static void sanitise_pwritev2(struct syscallrecord *rec)
 
 	if (rec->a1 <= 2)
 		rec->a1 = get_random_fd();
+	reroll_protected_fd_arg(&rec->a1);
 	if (RAND_BOOL()) {
 		rec->a4 = (unsigned long) -1;
 		rec->a5 = (unsigned long) -1;

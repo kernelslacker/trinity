@@ -5,6 +5,7 @@
  */
 #include <stdint.h>
 #include "deferred-free.h"
+#include "fd.h"
 #include "maps.h"
 #include "random.h"
 #include "rnd.h"
@@ -137,6 +138,12 @@ static void sanitise_fallocate(struct syscallrecord *rec)
 
 	rec->a3 = (unsigned long) offset;
 	rec->a4 = (unsigned long) len;
+
+	/* Belt-and-suspenders: keep the stderr capture memfd (and other
+	 * protected fds) out of rec->a1 so a fuzz-induced fallocate can't
+	 * extend it to multi-GB and turn the next SIGABRT-handler bug-log
+	 * drain into a host-swamping write. */
+	reroll_protected_fd_arg(&rec->a1);
 
 	/*
 	 * Snapshot fd and mode after the rewrites above so the post

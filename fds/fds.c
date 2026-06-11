@@ -477,10 +477,12 @@ int get_child_live_fd(struct childdata *child)
 
 /*
  * Protected-fd registry.  Argument generators for the close family
- * (close, dup2, dup3, close_range) and the random-syscall chain-
- * substitution path consult these predicates to keep diagnostic and
- * coverage fds out of the fuzz picker pool.  See the contract in
- * include/fd.h.
+ * (close, dup2, dup3, close_range), the size-changing fd-arg sanitisers
+ * (ftruncate / ftruncate64, fallocate, lseek / llseek, write / writev /
+ * pwrite64 / pwritev / pwritev2 -- see reroll_protected_fd_arg()), and
+ * the random-syscall chain-substitution path consult these predicates
+ * to keep diagnostic and coverage fds out of the fuzz picker pool.
+ * See the contract in include/fd.h.
  *
  * Two classes of fd live in this registry:
  *
@@ -499,7 +501,11 @@ int get_child_live_fd(struct childdata *child)
  *     the handler runs, the buffered glibc malloc_printerr /
  *     __fortify_fail / __stack_chk_fail text is lost and the bug log
  *     bottoms out at the in-handler backtrace + siginfo with no
- *     pre-crash explanation.
+ *     pre-crash explanation.  The same memfd must also be kept out of
+ *     size-changing syscall slots: a fuzz-induced ftruncate / fallocate /
+ *     pwrite64 / lseek+write that extends the memfd to a multi-GB
+ *     sparse size makes the bug-log drain materialise that range into
+ *     the on-disk log on the next abort, swamping the host.
  *
  * Parent context (this_child() == NULL): STDERR_FILENO still matches
  * the constant check, but the parent never opens a kcov_child or a
@@ -564,6 +570,44 @@ int lowest_protected_fd_in_range(int lo, int hi)
 	}
 
 	return lowest;
+}
+
+/*
+ * Belt-and-suspenders gate for size-changing fd-arg syscalls
+ * (ftruncate / ftruncate64, fallocate, lseek / llseek, write / writev /
+ * pwrite64 / pwritev / pwritev2).  gen_arg_fd() already filters
+ * fd_is_protected() picks out of the ARG_FD pool, but its bounded
+ * reroll falls back to the last (possibly protected) draw on pool
+ * exhaustion, and the per-syscall RAND_RANGE / typed-fd-pool buckets in
+ * the size-changing sanitisers can independently land on a protected
+ * slot.  Per-syscall sanitisers feed rec->a1 through this gate after
+ * their own rewrites and before any snap->fd capture: if the slot
+ * names a protected fd, reroll up to FAILED_FD_REROLL_LIMIT times via
+ * get_random_fd(); on exhaustion stamp the slot with (unsigned long)-1
+ * so the kernel returns EBADF and the call cannot extend the stderr
+ * capture memfd (or any other trinity-internal fd) into a multi-GB
+ * sparse file that the SIGABRT-handler bug-log drain would then
+ * materialise into the on-disk log.  Refusing is correct -- these fds
+ * are never legitimate fuzz targets.
+ */
+void reroll_protected_fd_arg(unsigned long *slot)
+{
+	int fd;
+	unsigned int tries;
+
+	if (slot == NULL)
+		return;
+	if (!fd_is_protected((int) *slot))
+		return;
+
+	for (tries = 0; tries < FAILED_FD_REROLL_LIMIT; tries++) {
+		fd = get_random_fd();
+		if (!fd_is_protected(fd)) {
+			*slot = (unsigned long) fd;
+			return;
+		}
+	}
+	*slot = (unsigned long) -1;
 }
 
 /*

@@ -3,6 +3,7 @@
  */
 #include <sys/types.h>
 #include <unistd.h>
+#include "fd.h"
 #include "objects.h"
 #include "random.h"
 #include "rnd.h"
@@ -19,6 +20,15 @@ static unsigned long lseek_whences[] = {
 static void sanitise_lseek(struct syscallrecord *rec)
 {
 	unsigned int whence = (unsigned int) rec->a3;
+
+	/* Belt-and-suspenders: keep the stderr capture memfd (and other
+	 * protected fds) out of rec->a1 so a fuzz-induced lseek can't
+	 * stash a huge offset for a follow-up write that extends the memfd
+	 * to multi-GB and turns the next SIGABRT-handler bug-log drain
+	 * into a host-swamping write.  Sparse-pool branch below may
+	 * overwrite rec->a1 with a tracked sparse-file fd; reroll first
+	 * so the dense fall-through is covered. */
+	reroll_protected_fd_arg(&rec->a1);
 
 	/*
 	 * SEEK_DATA / SEEK_HOLE return -ENXIO when the offset is past

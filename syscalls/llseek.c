@@ -3,6 +3,7 @@
                 unsigned long, offset_low, loff_t __user *, result,
                 unsigned int, origin)
  */
+#include "fd.h"
 #include "objects.h"
 #include "random.h"
 #include "rnd.h"
@@ -20,6 +21,13 @@ static unsigned long llseek_origins[] = {
 static void sanitise_llseek(struct syscallrecord *rec)
 {
 	unsigned int origin = (unsigned int) rec->a5;
+
+	/* Belt-and-suspenders: keep the stderr capture memfd (and other
+	 * protected fds) out of rec->a1 so a fuzz-induced llseek can't
+	 * stash a huge offset for a follow-up write.  Sparse-pool branch
+	 * below may overwrite rec->a1 with a tracked sparse-file fd;
+	 * reroll first so the dense fall-through is covered. */
+	reroll_protected_fd_arg(&rec->a1);
 
 	rec->a2 = 0;	/* offset_high: keep offset < 4GB */
 

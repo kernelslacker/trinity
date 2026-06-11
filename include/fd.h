@@ -110,9 +110,11 @@ int get_typed_fd(enum argtype type);
 
 /*
  * Protected-fd registry consulted by close / dup2 / dup3 / close_range
- * argument generators (and the random-syscall chain-substitution path) to
- * keep fds whose lifetime trinity depends on for its own correctness or
- * diagnostics OUT of the picker pool.  Currently covers:
+ * argument generators, the size-changing fd-arg sanitisers (see
+ * reroll_protected_fd_arg() below), and the random-syscall chain-
+ * substitution path to keep fds whose lifetime trinity depends on for
+ * its own correctness or diagnostics OUT of the picker pool.  Currently
+ * covers:
  *
  *   - the calling child's per-task kcov PC fd and cmp fd (see kcov.h);
  *     a fuzz-induced close/dup2 over either slot silently disables
@@ -138,6 +140,19 @@ bool fd_is_protected(int fd);
  * the first protected slot rather than skipping it.
  */
 int lowest_protected_fd_in_range(int lo, int hi);
+
+/*
+ * Belt-and-suspenders gate consulted by the size-changing fd-arg
+ * sanitisers (ftruncate / ftruncate64, fallocate, lseek / llseek,
+ * write / writev / pwrite64 / pwritev / pwritev2): if *slot names a
+ * protected fd, reroll via get_random_fd() up to FAILED_FD_REROLL_LIMIT
+ * times, then stamp the slot with (unsigned long)-1 on exhaustion so
+ * the kernel returns EBADF.  Defends the stderr capture memfd against
+ * a fuzz-induced grow to multi-GB sparse size, which the SIGABRT-
+ * handler bug-log drain would otherwise materialise into the on-disk
+ * log.  See the block comment above fd_is_protected() in fds.c.
+ */
+void reroll_protected_fd_arg(unsigned long *slot);
 
 /*
  * Pick from the fd_types whose ->poll handlers park the caller on a
