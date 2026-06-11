@@ -5120,6 +5120,17 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 */
 	{ "rt_sigtimedwait",	3, &struct_catalog[SC_TIMESPEC] },
 	/*
+	 * pselect6(int n, fd_set *inp, fd_set *outp, fd_set *exp,
+	 *          struct timespec *tsp, void *sig)
+	 * a5 is the INPUT timeout timespec.  Attribution-only: the bespoke
+	 * sanitise_pselect6 (allocs the timespec via get_writable_address)
+	 * continues to own the live fill; this row only lets schema-aware
+	 * CMP attribution name the tv_sec / tv_nsec fields.  a6 (sig, a
+	 * packed { sigset_t *, size_t } pointer) is not a timespec and is
+	 * intentionally unregistered here.
+	 */
+	{ "pselect6",		5, &struct_catalog[SC_TIMESPEC] },
+	/*
 	 * cachestat(unsigned int fd, struct cachestat_range *cstat_range,
 	 *           struct cachestat *cstat, unsigned int flags)
 	 * Maps the INPUT cstat_range arg only; cstat is the kernel-written
