@@ -44,6 +44,20 @@
  */
 #define FRONTIER_SOFT_SCALE 16
 
+/*
+ * Acceptance-weight scale for the cold/untried-syscall fallback path in
+ * set_syscall_nr_coverage_frontier().  Engaged when the frontier ring
+ * is silent (max_weight <= 2) so the picker has a per-syscall signal
+ * to steer on instead of degenerating to plain uniform draw -- see the
+ * fallback gate for the full rationale.
+ *
+ * 16 mirrors FRONTIER_SOFT_SCALE: the two paths share a denominator
+ * shape (weight in [0, SCALE], accept probability (w+1)/(SCALE+1)) so
+ * their inner-loop retry budgets behave identically and the picker
+ * always presents the same accept/reject envelope to the outer caller.
+ */
+#define FRONTIER_COLD_SCALE 16
+
 static inline unsigned ilog2_ul(unsigned long x)
 {
 	return x ? (unsigned)(63 - __builtin_clzl(x)) : 0;
@@ -429,14 +443,62 @@ retry:
 }
 
 /*
+ * Cold-syscall weight for the frontier picker's plateau fallback path.
+ * Returns FRONTIER_COLD_SCALE for never-invoked or never-productive
+ * syscalls and scales linearly down to 0 as the per-syscall productive-
+ * call ratio (per_syscall_edges / per_syscall_calls) approaches 1.  The
+ * fallback gate in set_syscall_nr_coverage_frontier() consumes this as
+ * the accept-gate weight when the frontier ring has gone silent.
+ *
+ * Semantics note: per_syscall_edges has "bumps by 1 per call that
+ * discovered >=1 new edge" semantics (see include/kcov.h), not raw
+ * bucket-edge counts, so edges <= calls by construction.  Reads are
+ * RELAXED -- a stale snapshot is harmless; a racing kcov_collect bump
+ * that lands mid-pick only shifts the weight by one step, well inside
+ * the slack the outer accept/retry loop already tolerates.
+ *
+ * Returns the uniform-floor (FRONTIER_COLD_SCALE) when kcov_shm is
+ * unavailable so the caller's accept gate degrades to plain uniform
+ * pick rather than wedging on a NULL deref -- matches the kcov-less
+ * fallback the rest of the codebase already takes (see
+ * kcov_syscall_cold_skip_pct in kcov.c for the sibling pattern).
+ */
+static unsigned long frontier_cold_weight(unsigned int nr)
+{
+	unsigned long edges, calls;
+
+	if (kcov_shm == NULL || nr >= MAX_NR_SYSCALL)
+		return FRONTIER_COLD_SCALE;
+
+	edges = __atomic_load_n(&kcov_shm->per_syscall_edges[nr],
+				__ATOMIC_RELAXED);
+	calls = __atomic_load_n(&kcov_shm->per_syscall_calls[nr],
+				__ATOMIC_RELAXED);
+
+	/* Never invoked, or invoked but never productive: maximum bias
+	 * toward this syscall.  These are the under-explored slots the
+	 * frontier picker should be steering to when its near-coverage
+	 * ring has gone silent. */
+	if (calls == 0 || edges == 0)
+		return FRONTIER_COLD_SCALE;
+
+	/* Inverse productivity: SCALE - floor(SCALE * edges / calls).  A
+	 * perfectly productive syscall (edges == calls) lands at 0; a
+	 * syscall that has produced a handful of new edges across many
+	 * calls keeps a near-full weight.  edges <= calls by construction
+	 * so the subtraction can't underflow. */
+	return FRONTIER_COLD_SCALE -
+	       (edges * FRONTIER_COLD_SCALE) / calls;
+}
+
+/*
  * Pick the syscall to run under STRATEGY_COVERAGE_FRONTIER: uniform draw
  * from active_syscalls, then biased acceptance against the per-syscall
  * frontier-edge weight via rejection sampling.  Each candidate is
  * accepted with probability (frontier_recent_count(nr) + 1) /
  * (max_weight + 1); the +1 keeps cold syscalls from starving completely
  * and lets the strategy still drive forward when no syscall has
- * produced a frontier edge in the last K windows (every weight is 1, so
- * acceptance reduces to uniform).
+ * produced a frontier edge in the last K windows.
  *
  * max_weight is read once at the top of the function from the cached
  * shm->frontier_max_weight_cached so the bias mass stays stable across
@@ -447,6 +509,18 @@ retry:
  * upward on new-edge bumps by frontier_record_new_edge(), turning what
  * used to be an O(MAX_NR_SYSCALL) walk per pick into a single RELAXED
  * load.
+ *
+ * Plateau fallback (max_weight <= 2): the frontier ring decays to zero
+ * everywhere at the plateau (a window with no new edges ages every slot
+ * to 0 within FRONTIER_DECAY_WINDOWS rotations), which is exactly the
+ * regime PIM_COVERAGE_FRONTIER pins ~25% of intervention windows on
+ * FRONTIER for.  The original code fell through to plain uniform draw
+ * in this branch, leaving FRONTIER strictly worse than RANDOM (no
+ * anti-prior bias, no explorer-pool backing, no near-coverage signal --
+ * nothing to steer on).  The fallback path replaces the bypass with a
+ * cold/untried-syscall bias keyed on per_syscall_edges/per_syscall_calls
+ * so the picker still steers toward under-explored syscalls when the
+ * recent-frontier signal is gone.
  *
  * The validate / EXPENSIVE / AVOID_SYSCALL retry budget mirrors the
  * other set_syscall_nr_* variants because those are correctness gates,
@@ -505,27 +579,43 @@ retry:
 	}
 	note_validation_success(syscallnr, do32);
 
-	/* Frontier-weighted acceptance.  When max_weight is 0 (no syscall
-	 * has registered a frontier edge in the last FRONTIER_DECAY_WINDOWS
-	 * rotations -- typical at run start or in a heavily-explored
-	 * codebase where everything has plateaued), the (w+1)/(max+1) ratio
-	 * is 1 for every candidate and the acceptance gate is bypassed,
-	 * degenerating gracefully to uniform pick.
+	/* Frontier-weighted acceptance.  Two regimes share the same
+	 * accept-probability shape ((w+1)/(denom+1)) so the inner-loop
+	 * retry budget behaves identically across both:
 	 *
-	 * Soften the denominator via ilog2 so that a single very hot
-	 * syscall (max_weight in the 10k+ range) doesn't compress every
-	 * cold-but-real candidate to a near-zero acceptance probability
-	 * and burn the retry budget.  soft_max = ilog2(max) * SCALE keeps
-	 * the leader winning the majority of rolls while lifting a w=1
-	 * candidate from ~1/max to ~1/soft_max.  The +1 smoothing on w
-	 * is preserved as the uniform floor.  Only kick the transform in
-	 * once there's actual signal (max_weight > 2); below that the
-	 * existing degenerate-to-uniform behaviour is what we want. */
+	 *  - Live ring (max_weight > 2): weight = frontier_recent_count(nr),
+	 *    the per-syscall sum across the K-window frontier ring.  Soften
+	 *    the denominator via ilog2 so that a single very hot syscall
+	 *    (max_weight in the 10k+ range) doesn't compress every cold-but-
+	 *    real candidate to a near-zero acceptance probability and burn
+	 *    the retry budget.  soft_max = ilog2(max) * SCALE keeps the
+	 *    leader winning the majority of rolls while lifting a w=1
+	 *    candidate from ~1/max to ~1/soft_max.  The +1 smoothing on w
+	 *    is preserved as the uniform floor.
+	 *
+	 *  - Silent ring (max_weight <= 2): the frontier ring has aged out
+	 *    everywhere, the defining state of a coverage plateau.  Without
+	 *    a fallback the picker degenerates to a backing-less uniform
+	 *    draw and ends up strictly worse than RANDOM (no anti-prior
+	 *    bias, no explorer-pool backing, no near-coverage signal --
+	 *    nothing to steer on) at exactly the windows the plateau
+	 *    intervention pins it to.  Steer on lifetime cumulative ratios
+	 *    instead: weight = INVERSE per-syscall productive-call ratio,
+	 *    so the picker biases toward syscalls the fleet has under-
+	 *    explored and away from the few syscalls that already produced
+	 *    most of the saturated coverage. */
 	if (max_weight > 2) {
 		unsigned long w = frontier_recent_count(syscallnr);
 		unsigned long soft_max = (unsigned long)ilog2_ul(max_weight) *
 					 FRONTIER_SOFT_SCALE;
 		unsigned long denom = soft_max + 1UL;
+		unsigned long roll = (unsigned long)rnd_modulo_u32(denom);
+
+		if (roll >= w + 1UL)
+			goto retry;
+	} else {
+		unsigned long w = frontier_cold_weight(syscallnr);
+		unsigned long denom = (unsigned long)FRONTIER_COLD_SCALE + 1UL;
 		unsigned long roll = (unsigned long)rnd_modulo_u32(denom);
 
 		if (roll >= w + 1UL)
