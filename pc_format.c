@@ -35,6 +35,7 @@
 #include <string.h>
 #include <sys/resource.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "pc_format.h"
@@ -189,6 +190,22 @@ const char *pc_to_source_line(void *pc, char *buf, size_t buflen)
 	close(pipefd[1]);
 
 	/*
+	 * Anchor a wall-clock deadline for the whole symbolize: the
+	 * existing poll() gate below bounds the wait for the FIRST byte,
+	 * and the subsequent drain loop reuses the same deadline so a
+	 * live-but-stalled addr2line still gets SIGKILLed within
+	 * ADDR2LINE_TIMEOUT_MS of entry rather than per-iteration.
+	 */
+	struct timespec deadline;
+	clock_gettime(CLOCK_MONOTONIC, &deadline);
+	deadline.tv_sec  += ADDR2LINE_TIMEOUT_MS / 1000;
+	deadline.tv_nsec += (long)(ADDR2LINE_TIMEOUT_MS % 1000) * 1000000L;
+	if (deadline.tv_nsec >= 1000000000L) {
+		deadline.tv_sec  += 1;
+		deadline.tv_nsec -= 1000000000L;
+	}
+
+	/*
 	 * Wait for output (or timeout) on the read end before issuing the
 	 * blocking read().  poll() keeps the cap local to this code path
 	 * rather than reusing alarm(), which is already wired up to the
@@ -215,7 +232,62 @@ const char *pc_to_source_line(void *pc, char *buf, size_t buflen)
 		}
 	}
 
-	n = read(pipefd[0], buf, buflen - 1);
+	/*
+	 * Drain the pipe until addr2line closes its stdout (read() == 0)
+	 * or the buffer is full.  A single read() can return a short count
+	 * and leave the "file:line" tail of a long symbolized line behind
+	 * in the pipe, producing a truncated render.  Each iteration is
+	 * gated by poll() against the remaining deadline budget, so a
+	 * mid-stream stall still triggers the SIGKILL path rather than
+	 * blocking indefinitely.
+	 */
+	n = 0;
+	{
+		struct pollfd pfd;
+		int pr;
+
+		pfd.fd = pipefd[0];
+		pfd.events = POLLIN;
+
+		for (;;) {
+			struct timespec now;
+			long remaining_ms;
+			ssize_t r;
+
+			clock_gettime(CLOCK_MONOTONIC, &now);
+			remaining_ms =
+				(deadline.tv_sec  - now.tv_sec)  * 1000L +
+				(deadline.tv_nsec - now.tv_nsec) / 1000000L;
+			if (remaining_ms < 0)
+				remaining_ms = 0;
+
+			pfd.revents = 0;
+			do {
+				pr = poll(&pfd, 1, (int)remaining_ms);
+			} while (pr < 0 && errno == EINTR);
+			if (pr <= 0) {
+				close(pipefd[0]);
+				(void)kill(pid, SIGKILL);
+				(void)waitpid(pid, &status, 0);
+				return NULL;
+			}
+
+			r = read(pipefd[0], buf + n,
+				 buflen - 1 - (size_t)n);
+			if (r > 0) {
+				n += r;
+				if ((size_t)n >= buflen - 1)
+					break;
+				continue;
+			}
+			if (r == 0)
+				break;
+			if (errno == EINTR || errno == EAGAIN)
+				continue;
+			n = -1;
+			break;
+		}
+	}
 	close(pipefd[0]);
 	if (waitpid(pid, &status, 0) > 0 && WIFSIGNALED(status)) {
 		/*
