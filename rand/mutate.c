@@ -61,8 +61,15 @@ static unsigned long mutate_alignment(unsigned long val)
 		/* Align down to page boundary */
 		return val & ~(page_size - 1);
 	case 1:
-		/* One byte past a page boundary (first byte of next page) */
-		return (val | (page_size - 1)) + 1;
+		/* One byte past a page boundary (first byte of next page).
+		 * If val already sits in the last page of the address space
+		 * the +1 wraps the result to 0; saturate at ULONG_MAX
+		 * instead so the mutation never quietly produces a NULL. */
+	{
+		unsigned long boundary = val | (page_size - 1);
+
+		return boundary == ULONG_MAX ? ULONG_MAX : boundary + 1;
+	}
 	case 2:
 		/* Align to cacheline (64 bytes) */
 		return val & ~63UL;
