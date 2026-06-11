@@ -778,7 +778,7 @@ void tracked_free_now(void *ptr)
 
 	alloc_track_consume(ptr);
 
-	if (ring_count > 0) {
+	if (occupied_mask != 0) {
 		if (ring_unlock() != RING_UNLOCK_OK) {
 			__atomic_add_fetch(&shm->stats.deferred_free_tracked_free_unverified_leak,
 					   1, __ATOMIC_RELAXED);
@@ -1415,7 +1415,7 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 		}
 	}
 
-	if (ring_count == DEFERRED_RING_SIZE)
+	if (occupied_mask == ~0ULL)
 		ring_evict_oldest_safe();
 
 	/*
