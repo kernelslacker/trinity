@@ -5304,6 +5304,50 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 */
 	{ "io_getevents",	5, &struct_catalog[SC_TIMESPEC] },
 	/*
+	 * futex_wait(void *uaddr, unsigned long val, unsigned long mask,
+	 *            unsigned int flags, struct timespec *timeout,
+	 *            clockid_t clockid)
+	 * a5 is the INPUT timeout timespec.  Attribution-only: the bespoke
+	 * sanitise_futex_wait (stamps the slot via get_writable_struct)
+	 * continues to own the live fill; this row only lets schema-aware
+	 * CMP attribution name the tv_sec / tv_nsec fields.  Plain futex()
+	 * is intentionally NOT registered: its a4 is op-multiplexed and is
+	 * a timespec* only for FUTEX_WAIT-family ops, val2 otherwise.
+	 */
+	{ "futex_wait",		5, &struct_catalog[SC_TIMESPEC] },
+	/*
+	 * futex_waitv(struct futex_waitv *waiters, unsigned int nr_futexes,
+	 *             unsigned int flags, struct timespec *timeout,
+	 *             clockid_t clockid)
+	 * a4 is the INPUT timeout timespec.  Attribution-only: the bespoke
+	 * sanitise_futex_waitv (stamps the slot via get_writable_address)
+	 * continues to own the live fill; this row only lets schema-aware
+	 * CMP attribution name the tv_sec / tv_nsec fields.  a1 (waiters)
+	 * is mapped to SC_FUTEX_WAITV above and is unaffected.
+	 */
+	{ "futex_waitv",	4, &struct_catalog[SC_TIMESPEC] },
+	/*
+	 * epoll_pwait2(int epfd, struct epoll_event *events, int maxevents,
+	 *              struct timespec *timeout, const sigset_t *sigmask,
+	 *              size_t sigsetsize)
+	 * a4 is the INPUT timeout timespec (epoll_pwait2 takes a timespec*
+	 * where epoll_pwait took an int ms).  Attribution-only: the bespoke
+	 * sanitise_epoll_pwait2 / pick_timespec (stamps the slot via
+	 * get_writable_struct) continues to own the live fill; this row only
+	 * lets schema-aware CMP attribution name the tv_sec / tv_nsec fields.
+	 */
+	{ "epoll_pwait2",	4, &struct_catalog[SC_TIMESPEC] },
+	/*
+	 * io_pgetevents(aio_context_t ctx_id, long min_nr, long nr,
+	 *               struct io_event *events, struct timespec *timeout,
+	 *               const struct __aio_sigset *usig)
+	 * a5 is the INPUT timeout timespec.  Attribution-only: the bespoke
+	 * sanitise_io_pgetevents (stamps the slot via get_writable_address)
+	 * continues to own the live fill; this row only lets schema-aware
+	 * CMP attribution name the tv_sec / tv_nsec fields.
+	 */
+	{ "io_pgetevents",	5, &struct_catalog[SC_TIMESPEC] },
+	/*
 	 * cachestat(unsigned int fd, struct cachestat_range *cstat_range,
 	 *           struct cachestat *cstat, unsigned int flags)
 	 * Maps the INPUT cstat_range arg only; cstat is the kernel-written
