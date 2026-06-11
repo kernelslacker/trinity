@@ -24,6 +24,7 @@
 #include <sys/ipc.h>
 #include <sys/msg.h>
 #include <sys/sem.h>
+#include <sys/shm.h>
 #include <sched.h>
 #include <time.h>
 #include <utime.h>
@@ -2550,6 +2551,16 @@ static const struct struct_field msqid_ds_fields[] = {
 };
 
 /* ------------------------------------------------------------------ */
+/* struct shmid_ds (shmctl IPC_SET path)                                */
+/* ------------------------------------------------------------------ */
+
+static const struct struct_field shmid_ds_fields[] = {
+	FIELD(struct shmid_ds, shm_perm.uid),
+	FIELD(struct shmid_ds, shm_perm.gid),
+	FIELD(struct shmid_ds, shm_perm.mode),
+};
+
+/* ------------------------------------------------------------------ */
 /* struct sched_param (sched_setparam, sched_setscheduler)              */
 /* ------------------------------------------------------------------ */
 
@@ -4850,6 +4861,12 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= sock_fprog_fields,
 		.num_fields	= ARRAY_SIZE(sock_fprog_fields),
 	},
+	[SC_SHMID_DS] = {
+		.name		= "shmid_ds",
+		.struct_size	= sizeof(struct shmid_ds),
+		.fields		= shmid_ds_fields,
+		.num_fields	= ARRAY_SIZE(shmid_ds_fields),
+	},
 };
 
 /*
@@ -5077,6 +5094,8 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	{ "mq_getsetattr",	3, &struct_catalog[SC_MQ_ATTR] },
 	/* msgctl(int msqid, int cmd, struct msqid_ds *buf) — IPC_SET path */
 	{ "msgctl",		3, &struct_catalog[SC_MSQID_DS] },
+	/* shmctl(int shmid, int cmd, struct shmid_ds *buf) — IPC_SET path */
+	{ "shmctl",		3, &struct_catalog[SC_SHMID_DS] },
 	/* sched_setparam(pid_t, struct sched_param *) */
 	{ "sched_setparam",	2, &struct_catalog[SC_SCHED_PARAM] },
 	/* sched_setscheduler(pid_t, int, struct sched_param *) */

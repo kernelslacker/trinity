@@ -315,6 +315,7 @@ enum struct_catalog_idx {
 #endif
 	SC_SOCK_FILTER,
 	SC_SOCK_FPROG,
+	SC_SHMID_DS,
 
 	SC_NR_ENTRIES,		/* sentinel; equals ARRAY_SIZE(struct_catalog) once both stay in lockstep */
 };
