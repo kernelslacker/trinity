@@ -321,7 +321,7 @@ static void sanitise_statmount(struct syscallrecord *rec)
 	snap->bufsize      = rec->a3;
 #endif
 
-	avoid_shared_buffer_inout(&rec->a1, sizeof(struct mnt_id_req));
+	avoid_shared_buffer_inout(&rec->a1, csfu.usize);
 	avoid_shared_buffer_out(&rec->a2, STATMOUNT_BUF_BYTES);
 
 #ifdef HAVE_SYS_STATMOUNT
