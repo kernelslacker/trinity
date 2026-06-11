@@ -694,12 +694,28 @@ void child_fault_handler(int sig, siginfo_t *info, void *ctx)
 			if (stderr_memfd >= 0) {
 				char drain_buf[4096];
 				ssize_t n, w;
+				size_t drained = 0;
+				static const size_t STDERR_DRAIN_MAX = 1u << 20;	/* 1 MiB */
 
+				/*
+				 * Cap the drain.  A fuzzed child can extend the
+				 * stderr memfd to a huge sparse size; an
+				 * uncapped read/write loop materialises the NUL
+				 * holes as real bytes on tmpfs and can produce
+				 * multi-GB bug logs (log-DoS).  Bound the copy
+				 * at 1 MiB -- well past any plausible real
+				 * diagnostic payload.
+				 */
 				(void)lseek(stderr_memfd, 0, SEEK_SET);
-				while ((n = read(stderr_memfd, drain_buf,
+				while (drained < STDERR_DRAIN_MAX &&
+				       (n = read(stderr_memfd, drain_buf,
 						 sizeof(drain_buf))) > 0) {
-					w = write(bug_fd, drain_buf, n);
+					size_t want = (size_t)n;
+					if (want > STDERR_DRAIN_MAX - drained)
+						want = STDERR_DRAIN_MAX - drained;
+					w = write(bug_fd, drain_buf, want);
 					(void)w;	/* dying anyway; short write irrelevant */
+					drained += want;
 				}
 			}
 			dup2(bug_fd, STDERR_FILENO);
