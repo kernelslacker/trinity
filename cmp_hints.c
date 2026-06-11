@@ -611,6 +611,18 @@ static unsigned int cmp_hints_flush_pending(struct cmp_hint_pool *pool,
 
 	if (n == 0)
 		return 0;
+	/* Pre-lock fast path for already-latched-corrupted pools.  Each
+	 * pool_add_locked() below routes count through cmp_hints_pool_corrupted()
+	 * and bails before any state mutation (including last_used_stamp)
+	 * once the latch is set, so the lock acquire + N-iteration batch
+	 * walk yields zero inserts and zero side effects on a latched pool
+	 * -- pure overhead.  The latched-corrupted branch in
+	 * cmp_hints_pool_corrupted() is itself side-effect free (no
+	 * counter bumps, no re-latch, no canary probes) by design, so
+	 * skipping the walk does not lose any per-record accounting that
+	 * the in-walk check would have produced. */
+	if (__atomic_load_n(&pool->corrupted, __ATOMIC_RELAXED))
+		return 0;
 	pool_lock(pool);
 	for (j = 0; j < n; j++) {
 		if (pool_add_locked(pool, batch[j].ip, batch[j].val,
