@@ -1832,7 +1832,7 @@ void sanitise_perf_event_open(struct syscallrecord *rec)
 
 	maybe_fill_perf_attr_body(attr, buf.bucket, group_leader);
 
-	avoid_shared_buffer_inout(&rec->a1, sizeof(struct perf_event_attr));
+	avoid_shared_buffer_inout(&rec->a1, buf.usize);
 }
 
 static void post_perf_event_open(struct syscallrecord *rec)
