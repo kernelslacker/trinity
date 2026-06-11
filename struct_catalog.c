@@ -5109,6 +5109,17 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 */
 	{ "ppoll",		3, &struct_catalog[SC_TIMESPEC] },
 	/*
+	 * rt_sigtimedwait(const sigset_t *uthese, siginfo_t *uinfo,
+	 *                 const struct timespec *uts, size_t sigsetsize)
+	 * a3 is the INPUT timeout timespec.  Attribution-only: the bespoke
+	 * sanitiser (build_timeout stamps the slot via get_writable_address)
+	 * continues to own the live fill; this row only lets schema-aware
+	 * CMP attribution name the tv_sec / tv_nsec fields.  a1 (uthese,
+	 * sigset_t) and a2 (uinfo, siginfo_t) are not timespecs and are
+	 * intentionally unregistered here.
+	 */
+	{ "rt_sigtimedwait",	3, &struct_catalog[SC_TIMESPEC] },
+	/*
 	 * cachestat(unsigned int fd, struct cachestat_range *cstat_range,
 	 *           struct cachestat *cstat, unsigned int flags)
 	 * Maps the INPUT cstat_range arg only; cstat is the kernel-written
