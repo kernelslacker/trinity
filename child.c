@@ -1324,7 +1324,7 @@ static void check_fd_leaks(struct childdata *child)
  * Slot ordering matches pick_op_type_table[]; the _Static_assert below
  * pins ARRAY_SIZE equality between the two.
  */
-static int dormant_op_disabled[107] = {
+static int dormant_op_disabled[108] = {
 	0, 0, 0, 0, 0,
 	0, 1, 1, 1, 1,
 	1, 1, 1, 0, 1,
@@ -1349,6 +1349,7 @@ static int dormant_op_disabled[107] = {
 	1,	/* sysfs_string_race: dormant until canary-queue load-tests the .store() race burst. */
 	1,	/* pci_bind: dormant until canary-queue load-tests the driver attach/detach path on the conservative allowlist. */
 	1,	/* iscsi_login_walker: dormant until canary-queue load-tests the LIO Login state-machine walk. */
+	1,	/* vma_split_storm: dormant until canary-queue load-tests the heavy VMA-split mm pressure burst. */
 };
 
 /*
@@ -1671,7 +1672,7 @@ void log_alt_op_config(void)
  * CHILD_OP_SYSCALL sentinel filter in init_altop_dispatch() stays as
  * defensive coding for any future hole.
  */
-static const enum child_op_type pick_op_type_table[107] = {
+static const enum child_op_type pick_op_type_table[108] = {
 	[0]  = CHILD_OP_MMAP_LIFECYCLE,
 	[1]  = CHILD_OP_MPROTECT_SPLIT,
 	[2]  = CHILD_OP_MLOCK_PRESSURE,
@@ -1779,9 +1780,16 @@ static const enum child_op_type pick_op_type_table[107] = {
 	[104] = CHILD_OP_SYSFS_STRING_RACE,
 	[105] = CHILD_OP_PCI_BIND,
 	[106] = CHILD_OP_ISCSI_LOGIN_WALKER,
+	[107] = CHILD_OP_VMA_SPLIT_STORM,
 };
 _Static_assert(ARRAY_SIZE(pick_op_type_table) == ARRAY_SIZE(dormant_op_disabled),
 	"pick_op_type_table and dormant_op_disabled must have matching slot counts");
+/* One slot per non-sentinel child_op_type.  Adding a new CHILD_OP_* without
+ * also adding its slot to pick_op_type_table[] (and dormant_op_disabled[])
+ * leaves the op invisible to the random picker + canary queue; fail the
+ * build instead of silently dropping coverage. */
+_Static_assert(ARRAY_SIZE(pick_op_type_table) == NR_CHILD_OP_TYPES - 1,
+	"pick_op_type_table missing a slot for a CHILD_OP_* enum value");
 
 /*
  * Reverse of pick_op_type_table[]: given a child_op_type, find the
