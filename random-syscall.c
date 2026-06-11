@@ -51,12 +51,18 @@
  * to steer on instead of degenerating to plain uniform draw -- see the
  * fallback gate for the full rationale.
  *
- * 16 mirrors FRONTIER_SOFT_SCALE: the two paths share a denominator
- * shape (weight in [0, SCALE], accept probability (w+1)/(SCALE+1)) so
- * their inner-loop retry budgets behave identically and the picker
- * always presents the same accept/reject envelope to the outer caller.
+ * Sized at 256 to give the integer-divide inverse-productivity transform
+ * (SCALE - floor(SCALE * edges / calls)) sub-percent discrimination: at
+ * the previous SCALE=16, any syscall productive at < 6.25% (= 1/16) of
+ * its calls floored the divide to 0 and collapsed to MAX, indistinguishable
+ * from a never-tried slot.  At SCALE=256 the same divide resolves down
+ * to ~0.4%/step, so syscalls with even a handful of productive calls in
+ * the high-thousands range no longer pin at the cold ceiling.  256 is
+ * also the Q8.8 unit used by adapt_budget's mult table -- staying on a
+ * power-of-two keeps the rnd_modulo_u32(SCALE + 1) draw in the same
+ * Lemire fast-path the soft-max path already uses.
  */
-#define FRONTIER_COLD_SCALE 16
+#define FRONTIER_COLD_SCALE 256
 
 static inline unsigned ilog2_ul(unsigned long x)
 {
@@ -444,11 +450,44 @@ retry:
 
 /*
  * Cold-syscall weight for the frontier picker's plateau fallback path.
- * Returns FRONTIER_COLD_SCALE for never-invoked or never-productive
- * syscalls and scales linearly down to 0 as the per-syscall productive-
- * call ratio (per_syscall_edges / per_syscall_calls) approaches 1.  The
- * fallback gate in set_syscall_nr_coverage_frontier() consumes this as
- * the accept-gate weight when the frontier ring has gone silent.
+ * Returns a value in [0, FRONTIER_COLD_SCALE] that the accept gate in
+ * set_syscall_nr_coverage_frontier() consumes as the bias toward this
+ * syscall when the frontier ring has gone silent.  Higher = more biased
+ * toward picking this syscall.
+ *
+ * Three regimes, deliberately distinguished:
+ *
+ *   calls == 0 (never invoked)
+ *     -- return FRONTIER_COLD_SCALE.  Maximum bias.  These are
+ *        genuinely under-explored slots the picker should be steering
+ *        to.
+ *
+ *   calls > 0 && edges == 0 (invoked, never productive)
+ *     -- return 0.  Minimum bias.  The syscall has had its shot and
+ *        failed to produce any new coverage; biasing toward it pulls
+ *        the picker into a bug-graveyard where it spends the plateau
+ *        re-running calls that already established themselves as
+ *        unproductive.  The +1 smoothing on w in the caller's accept
+ *        gate keeps these syscalls reachable at the uniform floor
+ *        ((0+1)/(SCALE+1)) rather than starving entirely.
+ *
+ *   calls > 0 && edges > 0 (invoked, some productivity)
+ *     -- return SCALE - floor(SCALE * edges / calls).  Linear inverse
+ *        productivity, same shape as before but at the new SCALE
+ *        resolution: a perfectly productive syscall (edges == calls)
+ *        lands at 0, a syscall that has produced a small fraction of
+ *        new edges across many calls keeps a near-full weight.
+ *        edges <= calls by construction so the subtraction can't
+ *        underflow.
+ *
+ * The previous shape conflated the first two regimes: both never-tried
+ * and tried-but-broken returned SCALE, so the plateau-fallback picker
+ * weighted the bug-graveyard identically to the genuinely under-explored
+ * frontier and burned its picks re-running known dead-ends.  Splitting
+ * the two regimes is the headline fix; the SCALE bump (16 -> 256, see
+ * the FRONTIER_COLD_SCALE macro comment) is what lets the third regime's
+ * integer divide actually distinguish productivity below ~6% from MAX
+ * instead of flooring everything in that range to the ceiling.
  *
  * Semantics note: per_syscall_edges has "bumps by 1 per call that
  * discovered >=1 new edge" semantics (see include/kcov.h), not raw
@@ -470,23 +509,25 @@ static unsigned long frontier_cold_weight(unsigned int nr)
 	if (kcov_shm == NULL || nr >= MAX_NR_SYSCALL)
 		return FRONTIER_COLD_SCALE;
 
-	edges = __atomic_load_n(&kcov_shm->per_syscall_edges[nr],
-				__ATOMIC_RELAXED);
 	calls = __atomic_load_n(&kcov_shm->per_syscall_calls[nr],
 				__ATOMIC_RELAXED);
 
-	/* Never invoked, or invoked but never productive: maximum bias
-	 * toward this syscall.  These are the under-explored slots the
-	 * frontier picker should be steering to when its near-coverage
-	 * ring has gone silent. */
-	if (calls == 0 || edges == 0)
+	/* Never invoked: MAX bias, genuinely under-explored. */
+	if (calls == 0)
 		return FRONTIER_COLD_SCALE;
 
-	/* Inverse productivity: SCALE - floor(SCALE * edges / calls).  A
-	 * perfectly productive syscall (edges == calls) lands at 0; a
-	 * syscall that has produced a handful of new edges across many
-	 * calls keeps a near-full weight.  edges <= calls by construction
-	 * so the subtraction can't underflow. */
+	edges = __atomic_load_n(&kcov_shm->per_syscall_edges[nr],
+				__ATOMIC_RELAXED);
+
+	/* Invoked but never productive: MIN bias.  This is the bug-graveyard
+	 * case the previous "calls == 0 || edges == 0" guard conflated with
+	 * the never-invoked case above.  Returning 0 here cuts off the bias,
+	 * the caller's (w+1)/(SCALE+1) accept floor still keeps the syscall
+	 * reachable. */
+	if (edges == 0)
+		return 0;
+
+	/* Inverse productivity in the productive range. */
 	return FRONTIER_COLD_SCALE -
 	       (edges * FRONTIER_COLD_SCALE) / calls;
 }
