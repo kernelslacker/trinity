@@ -527,6 +527,14 @@ static unsigned long frontier_cold_weight(unsigned int nr)
 	if (edges == 0)
 		return 0;
 
+	/* Under preemption the two RELAXED loads above can sample edges
+	 * after a kcov_collect bump that landed between the two reads
+	 * even though edges <= calls is the steady-state invariant.  Treat
+	 * any such inversion as "fully productive" (weight 0): without
+	 * this guard the unsigned subtract underflows to ~ULONG_MAX. */
+	if (edges >= calls)
+		return 0;
+
 	/* Inverse productivity in the productive range. */
 	return FRONTIER_COLD_SCALE -
 	       (edges * FRONTIER_COLD_SCALE) / calls;
