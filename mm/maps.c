@@ -317,8 +317,31 @@ void map_destructor(struct object *obj)
 	 * clamped leave tracked_size == 0 and fall back to map->size.
 	 */
 	extent = map->tracked_size ? map->tracked_size : map->size;
-	untrack_shared_region((unsigned long)map->ptr, extent);
-	munmap(map->ptr, extent);
+	/*
+	 * Range-validate map->ptr and cap extent before untrack+munmap.
+	 * The alloc_track armor at get_map_handle (maps.c:103) only
+	 * validates the obj pointer; an in-place scribble of the map body
+	 * via a fuzzed value-result syscall whose user buffer aliases a
+	 * real, pool-resident obj can leave .ptr / .tracked_size wild while
+	 * the obj-pointer gate still vouches for the slot.  munmap() on a
+	 * wild (ptr, len) pair can collateral-unmap trinity's own
+	 * bookkeeping (the armored deferred-free ring, shm regions);
+	 * untrack_shared_region() with the same pair would also corrupt
+	 * shared_regions[] bookkeeping by chance-matching an unrelated
+	 * slot.  Mirror the existing get_map_handle guards: user VA band
+	 * [0x10000, 0x800000000000) (maps.c:78-79) and the GB(4) cap on
+	 * size (maps.c:137).  Skip the whole untrack+munmap pair on miss
+	 * -- leaking the VA for the rest of the run is strictly safer
+	 * than a wild unmap, and the name-free gate below still runs so
+	 * the proven-ours name buffer is recycled.
+	 */
+	if (map->ptr != NULL &&
+	    (uintptr_t)map->ptr >= 0x10000UL &&
+	    (uintptr_t)map->ptr < 0x800000000000UL &&
+	    extent != 0 && extent <= GB(4UL)) {
+		untrack_shared_region((unsigned long)map->ptr, extent);
+		munmap(map->ptr, extent);
+	}
 	/*
 	 * Gate the name free on the live-allocation set, the same way the
 	 * BPF eBPF insn-buffer release does (syscalls/bpf.c:789).  The
@@ -347,6 +370,7 @@ void map_destructor(struct object *obj)
 void map_destructor_shared(struct object *obj)
 {
 	struct map *map;
+	size_t extent;
 
 	map = &obj->map;
 	/*
@@ -369,9 +393,21 @@ void map_destructor_shared(struct object *obj)
 	 * map->size for those (they set size to the real VMA extent because
 	 * they never clamped).
 	 */
-	untrack_shared_region((unsigned long)map->ptr,
-			      map->tracked_size ? map->tracked_size : map->size);
-	munmap(map->ptr, map->tracked_size ? map->tracked_size : map->size);
+	extent = map->tracked_size ? map->tracked_size : map->size;
+	/*
+	 * Same destructor-munmap gate as map_destructor() above: range-
+	 * validate map->ptr and cap extent before untrack+munmap so an
+	 * in-place .ptr / .tracked_size scribble cannot drive a wild
+	 * unmap of trinity's own bookkeeping.  See map_destructor() for
+	 * the full rationale.
+	 */
+	if (map->ptr != NULL &&
+	    (uintptr_t)map->ptr >= 0x10000UL &&
+	    (uintptr_t)map->ptr < 0x800000000000UL &&
+	    extent != 0 && extent <= GB(4UL)) {
+		untrack_shared_region((unsigned long)map->ptr, extent);
+		munmap(map->ptr, extent);
+	}
 	/*
 	 * Gate the name free on shared-heap residency BEFORE strlen
 	 * touches the bytes.  The local destructor uses alloc_track_lookup
