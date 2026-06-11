@@ -463,20 +463,35 @@ static void post_prctl(struct syscallrecord *rec)
 			 * looks_like_corrupted_ptr() above is shape-only
 			 * (heap-band + alignment), so a heap-shaped but
 			 * unmapped snap->bpf survives and the bpf->filter
-			 * read here would fault the post handler before
-			 * inner_ptr_ok_to_free() ever runs.  Require the
+			 * read here would fault the post handler before the
+			 * inner-free dispatch ever runs.  Require the
 			 * wrapper to be a tracked allocation (one we
 			 * produced via do_set_seccomp) or readable for a
 			 * sock_fprog-sized window.  When neither holds,
 			 * skip the inner-free dispatch; the outer wrapper
 			 * still enqueues.  Mirrors the bpf_free_filter()
-			 * inner-filter gate added in 64f659289041.
+			 * inner-filter gate.
+			 *
+			 * Inner-filter free is alloc_track_lookup()-gated
+			 * and routed through deferred_free_enqueue() rather
+			 * than a shape-only gate + direct free().  A
+			 * scribbled bpf->filter that aliases a chunk
+			 * admitted to the deferred ring by another site
+			 * passes any shape check (the alias is a valid
+			 * aligned heap address) but misses the ownership
+			 * check -- ring admission drained the chunk from
+			 * alloc_track -- so the inner free is skipped.  A
+			 * shape-only gate would have landed an out-of-band
+			 * free on the ring-pinned chunk, and the original
+			 * site's later ring_evict_oldest_safe would surface
+			 * as an ASAN bad-free.  Mirrors bpf_free_filter()
+			 * and syscalls/bpf.c BPF_PROG_LOAD eBPF cleanup.
 			 */
 			if (alloc_track_lookup(bpf) ||
 			    range_readable_user(bpf, sizeof(struct sock_fprog))) {
-				if (inner_ptr_ok_to_free(rec, bpf->filter,
-							 "post_prctl/bpf_filter"))
-					tracked_free_now(bpf->filter);
+				if (bpf->filter != NULL &&
+				    alloc_track_lookup(bpf->filter))
+					deferred_free_enqueue(bpf->filter);
 			}
 			deferred_free_enqueue(bpf);
 		}
