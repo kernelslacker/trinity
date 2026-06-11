@@ -17,6 +17,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <linux/aio_abi.h>
 #include "arch.h"		/* X86 / ARM / ... for arch-gated enum members */
 #include "syscall.h"
 
@@ -316,6 +317,7 @@ enum struct_catalog_idx {
 	SC_SOCK_FILTER,
 	SC_SOCK_FPROG,
 	SC_SHMID_DS,
+	SC_IOCB,
 
 	SC_NR_ENTRIES,		/* sentinel; equals ARRAY_SIZE(struct_catalog) once both stay in lockstep */
 };

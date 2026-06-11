@@ -2561,6 +2561,102 @@ static const struct struct_field shmid_ds_fields[] = {
 };
 
 /* ------------------------------------------------------------------ */
+/* struct iocb (io_cancel)                                              */
+/* ------------------------------------------------------------------ */
+
+/*
+ * IOCB_CMD_* opcode vocabulary for aio_lio_opcode.  The kernel rejects
+ * anything outside this set up-front (aio_read_events_ring -> -EINVAL)
+ * before any iocb body is consumed, so FT_RAW would burn most splats
+ * on the reject path.
+ */
+static const unsigned long iocb_opcode_values[] = {
+	IOCB_CMD_PREAD, IOCB_CMD_PWRITE, IOCB_CMD_FSYNC, IOCB_CMD_FDSYNC,
+	IOCB_CMD_POLL,  IOCB_CMD_NOOP,   IOCB_CMD_PREADV, IOCB_CMD_PWRITEV,
+};
+
+#define IOCB_FLAGS_MASK \
+	(IOCB_FLAG_RESFD | IOCB_FLAG_IOPRIO)
+
+/*
+ * RWF_* vocabulary for aio_rw_flags.  Host uapi headers vary on the
+ * newer additions (NOAPPEND, ATOMIC, DONTCACHE) so the per-bit guards
+ * keep the mask portable -- bits absent at build time are simply
+ * omitted from the OR.
+ */
+#ifndef RWF_HIPRI
+#define RWF_HIPRI	0x00000001
+#endif
+#ifndef RWF_DSYNC
+#define RWF_DSYNC	0x00000002
+#endif
+#ifndef RWF_SYNC
+#define RWF_SYNC	0x00000004
+#endif
+#ifndef RWF_NOWAIT
+#define RWF_NOWAIT	0x00000008
+#endif
+#ifndef RWF_APPEND
+#define RWF_APPEND	0x00000010
+#endif
+#ifndef RWF_NOAPPEND
+#define RWF_NOAPPEND	0x00000020
+#endif
+#ifndef RWF_ATOMIC
+#define RWF_ATOMIC	0x00000040
+#endif
+#ifndef RWF_DONTCACHE
+#define RWF_DONTCACHE	0x00000080
+#endif
+
+#define IOCB_RWF_MASK \
+	(RWF_HIPRI | RWF_DSYNC | RWF_SYNC | RWF_NOWAIT | RWF_APPEND | \
+	 RWF_NOAPPEND | RWF_ATOMIC | RWF_DONTCACHE)
+
+/*
+ * io_cancel(aio_context_t ctx_id, struct iocb __user *iocb,
+ *           struct io_event __user *result)
+ * a2 is the INPUT struct iocb pointer.  sanitise_io_cancel() owns the
+ * live fill (memset, aio_lio_opcode = IOCB_CMD_PREAD, fd from
+ * get_random_fd(), aio_buf via get_writable_address, optional pool
+ * pin from OBJ_AIO_IOCB).  Attribution-only registration lets
+ * struct_field_for_cmp steer KCOV-CMP learned constants at the named
+ * opcode / flags / fd slots rather than at a coincidentally-same-width
+ * slot.  Same shape as the timespec / siginfo_t entries above.
+ *
+ * Signed fields stay FT_RAW: FT_RANGE only carries an unsigned [lo, hi]
+ * range, so aio_reqprio (__s16) and aio_offset (__s64) keep the
+ * historical per-field random splat to preserve negative-value coverage.
+ *
+ * aio_key is documented as kernel-written ("the kernel sets aio_key to
+ * the req #"), so FT_RAW avoids attributing CMP constants to bytes we
+ * stamp but the kernel overwrites.
+ */
+static const struct struct_field iocb_fields[] = {
+	FIELD(struct iocb, aio_data),
+	FIELD(struct iocb, aio_key),
+	FIELDX(struct iocb, aio_rw_flags, FT_FLAGS,
+	       .u.flags.mask = IOCB_RWF_MASK,
+	       .mutate_weight = 80),
+	FIELDX(struct iocb, aio_lio_opcode, FT_ENUM,
+	       .u.enum_ = { iocb_opcode_values,
+			    ARRAY_SIZE(iocb_opcode_values) },
+	       .mutate_weight = 100),
+	FIELD(struct iocb, aio_reqprio),
+	FIELDX(struct iocb, aio_fildes, FT_FD,
+	       .mutate_weight = 80),
+	FIELD(struct iocb, aio_buf),
+	FIELD(struct iocb, aio_nbytes),
+	FIELD(struct iocb, aio_offset),
+	FIELD(struct iocb, aio_reserved2),
+	FIELDX(struct iocb, aio_flags, FT_FLAGS,
+	       .u.flags.mask = IOCB_FLAGS_MASK,
+	       .mutate_weight = 80),
+	FIELDX(struct iocb, aio_resfd, FT_FD,
+	       .mutate_weight = 60),
+};
+
+/* ------------------------------------------------------------------ */
 /* struct sched_param (sched_setparam, sched_setscheduler)              */
 /* ------------------------------------------------------------------ */
 
@@ -4867,6 +4963,12 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= shmid_ds_fields,
 		.num_fields	= ARRAY_SIZE(shmid_ds_fields),
 	},
+	[SC_IOCB] = {
+		.name		= "iocb",
+		.struct_size	= sizeof(struct iocb),
+		.fields		= iocb_fields,
+		.num_fields	= ARRAY_SIZE(iocb_fields),
+	},
 };
 
 /*
@@ -5624,6 +5726,23 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 		.discrim_values		= seccomp_set_mode_filter_ops,
 		.num_discrim_values	= ARRAY_SIZE(seccomp_set_mode_filter_ops),
 	},
+	/*
+	 * io_cancel(aio_context_t ctx_id, struct iocb __user *iocb,
+	 *           struct io_event __user *result)
+	 * a2 is the INPUT struct iocb pointer.  sanitise_io_cancel() owns
+	 * the live fill (memset, opcode = IOCB_CMD_PREAD, fd from
+	 * get_random_fd(), aio_buf via get_writable_address, optional pool
+	 * pin from OBJ_AIO_IOCB) and overwrites rec->a2 wholesale.
+	 * Attribution-only registration lets struct_field_for_cmp steer
+	 * KCOV-CMP learned constants at the named opcode / flags / fd
+	 * slots rather than at a coincidentally-same-width slot.
+	 *
+	 * Not registered here on purpose: io_submit's a3 is
+	 * `struct iocb __user * __user *` -- an array-of-pointers, the
+	 * wrong indirection for a flat single-struct descriptor.  The
+	 * io_cancel a2 slot is the real `struct iocb *`.
+	 */
+	{ "io_cancel",		2, &struct_catalog[SC_IOCB] },
 	/* sentinel */
 	{ NULL, 0, NULL },
 };
