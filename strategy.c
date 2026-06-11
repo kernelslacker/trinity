@@ -229,12 +229,27 @@ void bandit_record_pull(int arm, enum strategy_selection_reason reason,
 		&shm->bandit_reward_pc_edge_count_by_reason[arm][reason],
 		pc_edge_count, __ATOMIC_RELAXED);
 
-	/* Per-arm x chaos-state cohort attribution -- chaos-mode V2.  Same
-	 * "captures every window including SR_PLATEAU_FORCE" treatment as
-	 * the by-reason matrix above: the cohort signal must include every
-	 * window the chaos schedule covered, otherwise an intervention
-	 * window that happened to land inside a chaos window would silently
-	 * drop from the cohort the operator is trying to read.
+	/* SR_PLATEAU_FORCE windows skip the learner-facing updates: an
+	 * intervention window ran STRATEGY_RANDOM because every arm was
+	 * stalled, which is structurally different from "RANDOM scored
+	 * best under UCB" (the bandit had no input on the pick).  Folding
+	 * the forced window into bandit_pulls[] / bandit_reward_calls[] /
+	 * the recent_*_x1000 EMA contaminates the learner so the bandit
+	 * can't tell policy-chosen RANDOM windows from forced RANDOM
+	 * windows once the plateau clears.  The caller-side guard that
+	 * used to gate this call moved in here so the by-reason bucketing
+	 * above stays unconditional. */
+	if (reason == SR_PLATEAU_FORCE)
+		return;
+
+	/* Per-arm x chaos-state cohort attribution -- chaos-mode V2.  Sits
+	 * below the SR_PLATEAU_FORCE early-return so the by_chaos cohort
+	 * sums reconcile with the flat bandit_pulls[] / bandit_reward_calls[]
+	 * totals updated immediately below: an intervention window that
+	 * lands inside a chaos window must drop from both cohorts together,
+	 * otherwise sum_arm sum_chaos bandit_pulls_by_chaos[arm][c] runs
+	 * ahead of sum_arm bandit_pulls[arm] by the SR_PLATEAU_FORCE count
+	 * and the operator-facing cohort ratio drifts.
 	 *
 	 * was_chaos is sampled by the caller in maybe_rotate_strategy
 	 * before cmp_hints_chaos_tick advances the schedule, so it reflects
@@ -252,19 +267,6 @@ void bandit_record_pull(int arm, enum strategy_selection_reason reason,
 			   total, __ATOMIC_RELAXED);
 	__atomic_fetch_add(&shm->bandit_warn_fires_by_chaos[arm][chaos_idx],
 			   warn_fires, __ATOMIC_RELAXED);
-
-	/* SR_PLATEAU_FORCE windows skip the learner-facing updates: an
-	 * intervention window ran STRATEGY_RANDOM because every arm was
-	 * stalled, which is structurally different from "RANDOM scored
-	 * best under UCB" (the bandit had no input on the pick).  Folding
-	 * the forced window into bandit_pulls[] / bandit_reward_calls[] /
-	 * the recent_*_x1000 EMA contaminates the learner so the bandit
-	 * can't tell policy-chosen RANDOM windows from forced RANDOM
-	 * windows once the plateau clears.  The caller-side guard that
-	 * used to gate this call moved in here so the by-reason bucketing
-	 * above stays unconditional. */
-	if (reason == SR_PLATEAU_FORCE)
-		return;
 
 	__atomic_fetch_add(&shm->bandit_pulls[arm], 1UL, __ATOMIC_RELAXED);
 	__atomic_fetch_add(&shm->bandit_reward_calls[arm], total,
