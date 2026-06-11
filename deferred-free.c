@@ -590,77 +590,6 @@ void alloc_track_refresh(void *ptr)
 }
 
 /*
- * Synchronously free a zmalloc_tracked() pointer.  alloc_track_consume()
- * pulls the entry out of both alloc_track[] and alloc_track_hash[] in
- * one shot (hash-gated reject, then backward array scan with paired
- * hash_remove on the hit), which is exactly the removal the deferred
- * ring would have done at TTL expiry — but here without the queue
- * latency.  The consume-miss case (pointer was never tracked, was
- * already consumed, or rotated out) is silently tolerated: free()ing
- * a non-tracked pointer is not by itself a bug, and a hard error here
- * would punish callers that legitimately mix tracked and untracked
- * allocations on the same release path.
- *
- * Ring-ownership gate: if @ptr is still pinned in the deferred-free
- * ring (inflight_hash_contains() == true), the ring is the sole owner
- * of the chunk's lifecycle — drain alloc_track and RETURN WITHOUT
- * free(), leaving the inflight membership intact so the TTL/evict
- * path frees the chunk exactly once.  Previous shape (inflight_hash_
- * remove() + free()) made the in-flight set symmetric but left the
- * ring slot dangling on @ptr; when glibc recycled the address and a
- * fresh admission re-armed the value-keyed membership bit, the stale
- * slot's eviction guard passed and ran a second free.  Making the
- * ring sole owner closes that window: no out-of-band free ever lands
- * on a ring-resident pointer, and address reuse can no longer
- * resurrect a dangling slot.  One extra hash probe on the common
- * (not-in-ring) path.
- */
-void tracked_free_now(void *ptr)
-{
-	if (ptr == NULL)
-		return;
-
-	alloc_track_consume(ptr);
-	if (inflight_hash_contains(ptr)) {
-		__atomic_add_fetch(&shm->stats.deferred_free_ring_owned_skip,
-				   1, __ATOMIC_RELAXED);
-		return;
-	}
-	free(ptr);
-}
-
-void cleanup_release_post_state(struct syscallrecord *rec)
-{
-	void *ptr = (void *) rec->post_state;
-
-	rec->post_state = 0;
-
-	if (ptr == NULL)
-		return;
-
-	/*
-	 * Shape gate first: cheap reject for NULL-ish / non-canonical /
-	 * misaligned scribbles.  Forward our caller's PC so per-handler
-	 * shape-reject attribution stays sharp.
-	 */
-	if (looks_like_corrupted_ptr_pc(rec, ptr, __builtin_return_address(0)))
-		return;
-
-	/*
-	 * Ownership gate: the shape guard waves through heap-shaped
-	 * foreign pointers, so verify @ptr was actually produced by a
-	 * zmalloc_tracked() in this child before handing it to free().
-	 * A miss is silently leaked -- bounded by child lifetime, vastly
-	 * preferable to a glibc/ASAN abort on a foreign address that
-	 * would masquerade as a real kernel finding.
-	 */
-	if (!alloc_track_lookup(ptr))
-		return;
-
-	tracked_free_now(ptr);
-}
-
-/*
  * Ring storage lives in an mmap'd region whose address range is registered
  * with shared_regions[] via track_shared_region().  That tracking lets
  * avoid_shared_buffer() and the mm-syscall sanitisers refuse fuzzed
@@ -797,6 +726,111 @@ static void ring_lock(void)
 {
 	if (mprotect(ring, ring_bytes, PROT_NONE) != 0)
 		outputerr("deferred_free: mprotect NONE failed: errno=%d\n", errno);
+}
+
+/*
+ * Synchronously free a zmalloc_tracked() pointer.  alloc_track_consume()
+ * pulls the entry out of both alloc_track[] and alloc_track_hash[] in
+ * one shot (hash-gated reject, then backward array scan with paired
+ * hash_remove on the hit), which is exactly the removal the deferred
+ * ring would have done at TTL expiry — but here without the queue
+ * latency.  The consume-miss case (pointer was never tracked, was
+ * already consumed, or rotated out) is silently tolerated: free()ing
+ * a non-tracked pointer is not by itself a bug, and a hard error here
+ * would punish callers that legitimately mix tracked and untracked
+ * allocations on the same release path.
+ *
+ * Ring-ownership gate: scan ring[] directly to decide whether @ptr
+ * is currently pinned in the deferred-free ring.  ring[] is the
+ * source-of-truth (mprotect-armored AND registered with
+ * shared_regions[], so neither scribble nor mprotect-failure can
+ * desync it from itself).  The previous shape used
+ * inflight_hash_contains() as a proxy, but inflight_hash is a
+ * value-keyed mirror that can desync from ring[] in two ways:
+ * (1) inflight_hash_insert() silently skips when its mprotect-unlock
+ * returns -1 (ENOMEM under VMA pressure -- observed at thousands of
+ * events per run as "mprotect RW failed" log lines, same class the
+ * ring's RING_UNLOCK_ENOMEM path defends against); (2) a sibling
+ * fuzzed value-result syscall that scribbles inflight_hash during a
+ * writer's PROT_READ|PROT_WRITE bracket can overwrite an entry.
+ * Either lie returns false from contains() for a ring-resident @ptr,
+ * the fall-through runs free(), and a subsequent address-reuse
+ * re-admission re-arms contains() for the dangling slot -- eviction
+ * passes its guard and double-frees.  Direct ring[] scan trusts the
+ * stronger gate and is immune to both desync vectors.
+ *
+ * Cost: ring_count > 0 gate (read against rc's PROT_READ steady
+ * state -- no syscall); on the non-empty path, one ring_unlock pair
+ * plus a 64-slot scan.  Acceptable on the cleanup boundary.
+ *
+ * ring_unlock() failure (ENOMEM) cannot verify residency -- leak @ptr
+ * rather than risk a double-free; child exit reclaims it.  Bumps
+ * deferred_free_tracked_free_unverified_leak so the rate is
+ * observable.
+ */
+void tracked_free_now(void *ptr)
+{
+	unsigned int i;
+	bool ring_owned = false;
+
+	if (ptr == NULL)
+		return;
+
+	alloc_track_consume(ptr);
+
+	if (ring_count > 0) {
+		if (ring_unlock() != RING_UNLOCK_OK) {
+			__atomic_add_fetch(&shm->stats.deferred_free_tracked_free_unverified_leak,
+					   1, __ATOMIC_RELAXED);
+			return;
+		}
+		for (i = 0; i < DEFERRED_RING_SIZE; i++) {
+			if (ring[i].ptr == ptr) {
+				ring_owned = true;
+				break;
+			}
+		}
+		ring_lock();
+	}
+
+	if (ring_owned) {
+		__atomic_add_fetch(&shm->stats.deferred_free_ring_owned_skip,
+				   1, __ATOMIC_RELAXED);
+		return;
+	}
+
+	free(ptr);
+}
+
+void cleanup_release_post_state(struct syscallrecord *rec)
+{
+	void *ptr = (void *) rec->post_state;
+
+	rec->post_state = 0;
+
+	if (ptr == NULL)
+		return;
+
+	/*
+	 * Shape gate first: cheap reject for NULL-ish / non-canonical /
+	 * misaligned scribbles.  Forward our caller's PC so per-handler
+	 * shape-reject attribution stays sharp.
+	 */
+	if (looks_like_corrupted_ptr_pc(rec, ptr, __builtin_return_address(0)))
+		return;
+
+	/*
+	 * Ownership gate: the shape guard waves through heap-shaped
+	 * foreign pointers, so verify @ptr was actually produced by a
+	 * zmalloc_tracked() in this child before handing it to free().
+	 * A miss is silently leaked -- bounded by child lifetime, vastly
+	 * preferable to a glibc/ASAN abort on a foreign address that
+	 * would masquerade as a real kernel finding.
+	 */
+	if (!alloc_track_lookup(ptr))
+		return;
+
+	tracked_free_now(ptr);
 }
 
 /*

@@ -2012,6 +2012,17 @@ struct stats_s {
 	 * exercise it. */
 	unsigned long deferred_free_ring_owned_skip;
 
+	/* tracked_free_now() could not verify ring residency because
+	 * ring_unlock() returned non-OK (typically ENOMEM under VMA
+	 * pressure -- same class as deferred_free_enomem_drain).  The
+	 * chunk is leaked rather than freed because freeing without
+	 * having verified the ring would risk a double-free against
+	 * an eviction whose guards happen to pass.  Bounded by child
+	 * lifetime; the kernel reclaims at exit.  Non-zero rate
+	 * indicates VMA-pressure leaking into the cleanup path --
+	 * correlate with deferred_free_enomem_drain. */
+	unsigned long deferred_free_tracked_free_unverified_leak;
+
 	/* Bumped by run_sequence_chain() when chain_corpus_pick() returns
 	 * a chain_entry whose len is zero or greater than MAX_SEQ_LEN.
 	 * The chain corpus is shared memory and tolerates lockless reads
