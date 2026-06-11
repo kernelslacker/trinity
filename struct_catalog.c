@@ -4791,11 +4791,18 @@ const struct struct_desc struct_catalog[] = {
 	},
 #endif
 	/*
-	 * iovec: registered for name lookup only -- referenced by
-	 * msghdr.msg_iov's FT_PTR_ARRAY.elem_struct so the pointer pass
-	 * can resolve sizeof(struct iovec) for allocation.  No syscall_
-	 * struct_args entry: iovec is not passed directly as an
-	 * ARG_STRUCT_PTR slot.
+	 * iovec: referenced by msghdr.msg_iov's FT_PTR_ARRAY.elem_struct
+	 * so the pointer pass can resolve sizeof(struct iovec) for
+	 * allocation, and also named at the iovec-array slot of the
+	 * readv / writev / preadv{,2} / pwritev{,2} / vmsplice /
+	 * process_madvise / process_vm_{readv,writev} syscalls via
+	 * syscall_struct_args[] below.  Those slots are ARG_IOVEC /
+	 * ARG_IOVEC_IN (not ARG_STRUCT_PTR_*), so the schema-aware fill
+	 * path never runs against them -- the bespoke alloc_iovec()
+	 * generator owns the live (iov_base, iov_len) layout.  The
+	 * mapping is attribution-only: it lets struct_field_for_cmp()
+	 * steer CMP-learned constants at the named iov_base / iov_len
+	 * slots rather than at a coincidentally-same-width slot.
 	 */
 	[SC_IOVEC] = {
 		.name		= "iovec",
@@ -5743,6 +5750,49 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * io_cancel a2 slot is the real `struct iocb *`.
 	 */
 	{ "io_cancel",		2, &struct_catalog[SC_IOCB] },
+	/*
+	 * iovec is an array slot on ARG_IOVEC / ARG_IOVEC_IN at the
+	 * vec / iov argument of every iovec-shaped syscall; the per-
+	 * element type is named here so future schema consumers and
+	 * struct_field_for_cmp() can resolve it.  The bespoke
+	 * alloc_iovec() generator owns the live (iov_base, iov_len)
+	 * layout, so all rows below are attribution-only.
+	 *
+	 * readv(int fd, const struct iovec *vec, int vlen)
+	 * writev(int fd, const struct iovec *vec, int vlen)
+	 * preadv(unsigned long fd, const struct iovec *vec,
+	 *        unsigned long vlen, unsigned long pos_l, unsigned long pos_h)
+	 * preadv2(..., int flags)
+	 * pwritev(unsigned long fd, const struct iovec *vec,
+	 *         unsigned long vlen, unsigned long pos_l, unsigned long pos_h)
+	 * pwritev2(..., int flags)
+	 * vmsplice(int fd, const struct iovec *iov, unsigned long nr_segs,
+	 *          unsigned int flags)
+	 * process_madvise(int pidfd, const struct iovec *vec, size_t vlen,
+	 *                 int behavior, unsigned int flags)
+	 */
+	{ "readv",		2, &struct_catalog[SC_IOVEC] },
+	{ "writev",		2, &struct_catalog[SC_IOVEC] },
+	{ "preadv",		2, &struct_catalog[SC_IOVEC] },
+	{ "preadv2",		2, &struct_catalog[SC_IOVEC] },
+	{ "pwritev",		2, &struct_catalog[SC_IOVEC] },
+	{ "pwritev2",		2, &struct_catalog[SC_IOVEC] },
+	{ "vmsplice",		2, &struct_catalog[SC_IOVEC] },
+	{ "process_madvise",	2, &struct_catalog[SC_IOVEC] },
+	/*
+	 * process_vm_readv(pid_t pid, const struct iovec *lvec,
+	 *                  unsigned long liovcnt, const struct iovec *rvec,
+	 *                  unsigned long riovcnt, unsigned long flags)
+	 * process_vm_writev(pid_t pid, const struct iovec *lvec,
+	 *                   unsigned long liovcnt, const struct iovec *rvec,
+	 *                   unsigned long riovcnt, unsigned long flags)
+	 * Both lvec (a2) and rvec (a4) are iovec arrays; map each
+	 * separately so attribution covers both slots.
+	 */
+	{ "process_vm_readv",	2, &struct_catalog[SC_IOVEC] },
+	{ "process_vm_readv",	4, &struct_catalog[SC_IOVEC] },
+	{ "process_vm_writev",	2, &struct_catalog[SC_IOVEC] },
+	{ "process_vm_writev",	4, &struct_catalog[SC_IOVEC] },
 	/* sentinel */
 	{ NULL, 0, NULL },
 };
