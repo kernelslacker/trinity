@@ -116,6 +116,10 @@ static void sanitise_mtd_write_req(struct syscallrecord *rec)
 		void *usr_oob = get_writable_struct(ooblen + 1);
 		if (usr_oob)
 			req->usr_oob = (unsigned long) usr_oob;
+		else
+			req->usr_oob = 0;
+	} else {
+		req->usr_oob = 0;
 	}
 	rec->a3 = (unsigned long) req;
 }
@@ -144,6 +148,10 @@ static void sanitise_mtd_read_req(struct syscallrecord *rec)
 		void *usr_oob = get_writable_struct(ooblen + 1);
 		if (usr_oob)
 			req->usr_oob = (unsigned long) usr_oob;
+		else
+			req->usr_oob = 0;
+	} else {
+		req->usr_oob = 0;
 	}
 	rec->a3 = (unsigned long) req;
 }
