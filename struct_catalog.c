@@ -28,6 +28,7 @@
 #include <time.h>
 #include <utime.h>
 #include <netinet/in.h>
+#include <linux/filter.h>
 #include <linux/netlink.h>
 #include <linux/if_arp.h>
 #include <linux/if_ether.h>
@@ -2179,6 +2180,78 @@ static const struct struct_field user_desc_fields[] = {
 	FIELD(struct user_desc, limit),
 };
 #endif
+
+/* ------------------------------------------------------------------ */
+/* struct sock_filter (sock_fprog.filter array element)                 */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Classic-BPF instruction word.  Registered so sock_fprog.filter can
+ * name it via FT_PTR_ARRAY.elem_struct and the pointer pass knows
+ * sizeof(struct sock_filter) for sub-array allocation.  No syscall_
+ * struct_args entry: sock_filter is never passed directly as an
+ * ARG_STRUCT_PTR slot -- it only appears as the element type of the
+ * len-counted array hung off sock_fprog.filter.
+ *
+ * All four members stay FT_RAW: the live fill is owned by the
+ * bespoke bpf_gen_filter() / bpf_gen_seccomp() Markov-chain BPF
+ * generators in net/bpf.c, which build well-formed cBPF programs
+ * the kernel verifier will actually load.  A flat random splat per
+ * field would produce instruction words the verifier rejects on the
+ * first opcode read.  These FIELD entries exist so struct_field_for_
+ * cmp() can attribute CMP-learned constants at named code / jt / jf
+ * / k slots rather than at coincidentally-same-width slots.
+ */
+static const struct struct_field sock_filter_fields[] = {
+	FIELD(struct sock_filter, code),
+	FIELD(struct sock_filter, jt),
+	FIELD(struct sock_filter, jf),
+	FIELD(struct sock_filter, k),
+};
+
+/* ------------------------------------------------------------------ */
+/* struct sock_fprog (seccomp SET_MODE_FILTER, SO_ATTACH_FILTER, ...)   */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Embedded-pointer struct: { u16 len; struct sock_filter *filter; }.
+ * filter points at a len-counted array of struct sock_filter -- the
+ * kernel reads len first, then dereferences filter for (len *
+ * sizeof(sock_filter)) bytes, so a flat memcpy registration would
+ * leave the embedded pointer as a garbage value the kernel would
+ * dereference.  The catalog already expresses this exact shape via
+ * the FT_PTR_ARRAY (elem_struct + len_field) + FT_LEN_COUNT pair
+ * used by msghdr.msg_iov / msg_iovlen; the pointer-fill pass
+ * allocates a sock_filter[len] sub-buffer, points filter at it, and
+ * the length pass writes the coupled count into len.
+ *
+ * Attribution-only registration: the live fill for the seccomp /
+ * setsockopt(SO_ATTACH_FILTER) / prctl(PR_SET_SECCOMP) call sites
+ * is owned by the bespoke bpf_gen_seccomp() / bpf_gen_filter()
+ * Markov generators in net/bpf.c -- those produce well-formed
+ * cBPF the kernel verifier accepts, which a schema-aware FT_RAW
+ * splat across sock_filter[] words cannot.  The descriptor still
+ * earns its keep by giving struct_field_for_cmp() named len /
+ * filter slots and a cataloged elem_struct so CMP-learned
+ * constants attribute at the right field rather than at a
+ * coincidentally-same-width slot.
+ *
+ * max_count caps the sub-array to 64 elements -- the speculative
+ * allocator path only fires when no bespoke sanitiser has already
+ * stamped (a, len) at the slot (i.e. never for the existing
+ * seccomp / setsockopt / prctl users), so the bound is purely a
+ * safety ceiling on future schema-only callers.  BPF_MAXINSNS is
+ * 4096 in the kernel; 64 is well under that and keeps catalog-
+ * speculative allocations small.
+ */
+static const struct struct_field sock_fprog_fields[] = {
+	FIELDX(struct sock_fprog, len, FT_LEN_COUNT,
+	       .u.len_of = { .buf_field = "filter" }),
+	FIELDX(struct sock_fprog, filter, FT_PTR_ARRAY,
+	       .u.ptr_array = { .len_field = "len",
+				.elem_struct = "sock_filter",
+				.max_count = 64 }),
+};
 
 /* ------------------------------------------------------------------ */
 /* struct mnt_id_req (statmount, listmount)                            */
@@ -4658,6 +4731,18 @@ const struct struct_desc struct_catalog[] = {
 		.num_fields	= ARRAY_SIZE(user_desc_fields),
 	},
 #endif
+	[SC_SOCK_FILTER] = {
+		.name		= "sock_filter",
+		.struct_size	= sizeof(struct sock_filter),
+		.fields		= sock_filter_fields,
+		.num_fields	= ARRAY_SIZE(sock_filter_fields),
+	},
+	[SC_SOCK_FPROG] = {
+		.name		= "sock_fprog",
+		.struct_size	= sizeof(struct sock_fprog),
+		.fields		= sock_fprog_fields,
+		.num_fields	= ARRAY_SIZE(sock_fprog_fields),
+	},
 };
 
 /*
@@ -4753,6 +4838,32 @@ static const unsigned long quotactl_if_dqblk_subcmds[] = {
  */
 static const unsigned long quotactl_if_dqinfo_subcmds[] = {
 	Q_SETINFO,
+};
+
+/*
+ * seccomp(op, flags, args) op-discriminator pool.  Sibling arg a1 (op)
+ * selects which struct backs the a3 pointer; the discriminator-aware
+ * lookup resolves this list against rec->a1 to pick the right descriptor.
+ *
+ * seccomp_set_mode_filter_ops: just SECCOMP_SET_MODE_FILTER (a3 is a
+ * struct sock_fprog pointer the kernel reads for cBPF install).  The
+ * other three ops (SECCOMP_SET_MODE_STRICT, SECCOMP_GET_ACTION_AVAIL,
+ * SECCOMP_GET_NOTIF_SIZES) point a3 at a different shape (or NULL) and
+ * are not registered -- attributing CMP-learned constants against
+ * sock_fprog fields on those dispatches would steer them at bytes the
+ * kernel never reads as filter program.
+ *
+ * SECCOMP_SET_MODE_FILTER fallback mirrors the shims in
+ * childops/recipe-runner.c and fds/seccomp_notif.c so the descriptor
+ * registers even on toolchain headers that predate linux/seccomp.h
+ * carrying the enum.
+ */
+#ifndef SECCOMP_SET_MODE_FILTER
+#define SECCOMP_SET_MODE_FILTER		1
+#endif
+
+static const unsigned long seccomp_set_mode_filter_ops[] = {
+	SECCOMP_SET_MODE_FILTER,
 };
 
 /* ------------------------------------------------------------------ */
@@ -5244,6 +5355,44 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 		.discrim_value		= 1,
 	},
 #endif
+	/*
+	 * seccomp(unsigned int op, unsigned int flags, void __user *args)
+	 * a3 is a struct sock_fprog pointer only on SECCOMP_SET_MODE_FILTER
+	 * (the cBPF install arm); the other ops point a3 at different
+	 * shapes (uint32_t * for SECCOMP_GET_ACTION_AVAIL, a seccomp_notif_
+	 * sizes-sized scratch buffer for SECCOMP_GET_NOTIF_SIZES) or leave
+	 * it unused (SECCOMP_SET_MODE_STRICT).  The bespoke sanitise_seccomp()
+	 * keeps owning the live fill via bpf_gen_seccomp(), which builds a
+	 * Markov-chain cBPF program the kernel verifier will load; an
+	 * FT_RAW splat across sock_filter[] insn words could not.
+	 * Attribution-only registration so struct_field_for_cmp() can steer
+	 * CMP-learned constants at the named len / filter slots (and at
+	 * the cataloged sock_filter elem_struct's code / jt / jf / k
+	 * slots) rather than at a coincidentally-same-width slot.
+	 *
+	 * argtype[2] is ARG_ADDRESS, not ARG_STRUCT_PTR_*, so the schema-
+	 * aware fill path never overwrites rec->a3 -- the bespoke fill
+	 * stays the sole writer.  Ops outside the SET_MODE_FILTER pool
+	 * match no variant and resolve to NULL, matching the iovec /
+	 * sembuf / pollfd attribution-only pattern.
+	 *
+	 * Not registered here on purpose: prctl(PR_SET_SECCOMP, mode, ...)
+	 * also reads a sock_fprog at a3, but only when a2 ==
+	 * SECCOMP_MODE_FILTER -- a two-arg discriminator the catalog does
+	 * not express today.  A single-arg discriminator on a1 ==
+	 * PR_SET_SECCOMP would misattribute on the SECCOMP_MODE_STRICT
+	 * arm (where a3 is unused), so the prctl slot stays unregistered
+	 * until the catalog grows a multi-arg discriminator extension.
+	 * setsockopt(fd, SOL_SOCKET, SO_ATTACH_FILTER, ...) is the same
+	 * shape (a2 + a3 multi-discriminator) and stays unregistered for
+	 * the same reason.
+	 */
+	{
+		"seccomp", 3, &struct_catalog[SC_SOCK_FPROG],
+		.discrim_arg_idx	= 1,
+		.discrim_values		= seccomp_set_mode_filter_ops,
+		.num_discrim_values	= ARRAY_SIZE(seccomp_set_mode_filter_ops),
+	},
 	/* sentinel */
 	{ NULL, 0, NULL },
 };

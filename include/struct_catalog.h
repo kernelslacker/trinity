@@ -312,6 +312,8 @@ enum struct_catalog_idx {
 #ifdef X86
 	SC_USER_DESC,
 #endif
+	SC_SOCK_FILTER,
+	SC_SOCK_FPROG,
 
 	SC_NR_ENTRIES,		/* sentinel; equals ARRAY_SIZE(struct_catalog) once both stay in lockstep */
 };
