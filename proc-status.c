@@ -13,7 +13,7 @@
 
 ssize_t proc_status_read(char *buf, size_t bufsz)
 {
-	ssize_t n;
+	size_t off = 0;
 	int fd;
 
 	if (buf == NULL || bufsz < 2)
@@ -22,12 +22,35 @@ ssize_t proc_status_read(char *buf, size_t bufsz)
 	fd = open("/proc/self/status", O_RDONLY);
 	if (fd < 0)
 		return -1;
-	n = read(fd, buf, bufsz - 1);
+
+	/*
+	 * /proc/self/status is a seq_file; a single read() can return short
+	 * before EOF, silently truncating late fields (SigPnd/ShdPnd, the
+	 * *_allowed masks) that the field parsers then fail to find.  Loop
+	 * read() into the caller-provided fixed buffer until EOF or the
+	 * buffer is full, mirroring the grow/read loop in proc_status_slurp.
+	 */
+	for (;;) {
+		ssize_t n;
+
+		if (off >= bufsz - 1)
+			break;
+
+		n = read(fd, buf + off, bufsz - off - 1);
+		if (n < 0) {
+			close(fd);
+			return -1;
+		}
+		if (n == 0)
+			break;
+		off += (size_t) n;
+	}
+
 	close(fd);
-	if (n <= 0)
+	if (off == 0)
 		return -1;
-	buf[n] = '\0';
-	return n;
+	buf[off] = '\0';
+	return (ssize_t) off;
 }
 
 char *proc_status_slurp(void)
