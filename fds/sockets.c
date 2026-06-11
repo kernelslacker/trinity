@@ -649,26 +649,29 @@ struct socketinfo * get_rand_socketinfo(void)
 	for (int i = 0; i < 1000; i++) {
 		struct object *obj;
 		struct socketinfo *si;
+		unsigned int captured;
 
 		/*
-		 * Use the versioned API so we can re-validate the slot
-		 * right before handing &obj->sockinfo back to the caller.
-		 * The lockless OBJ_GLOBAL reader race that surfaced the
-		 * +0x1ded78 SEGV cluster (sanitise-hook-audit rows 1-4 —
-		 * sanitise_recv/sendmsg/mmsg, setsockopt, getsockopt) is
-		 * the same shape get_map() already defends against:
+		 * Pick + shape-check + version snapshot + last-line
+		 * object_slot_alive() recheck right before handing
+		 * &obj->sockinfo back to the caller.  The lockless
+		 * OBJ_GLOBAL reader race the +0x1ded78 SEGV cluster
+		 * (sanitise_recv/sendmsg/mmsg, setsockopt, getsockopt)
+		 * surfaced is the same shape get_map() defends against:
 		 * the parent destroys the obj between the lockless pick
 		 * and the consumer's later deref of si->triplet.family /
 		 * si->fd, and free_shared_obj() routes the chunk back to
 		 * the shared-heap freelist where a concurrent
 		 * alloc_shared_obj() recycles it underneath us.  The
-		 * version snapshot below + objpool_check() just
-		 * before return narrows that window to a few cycles.
+		 * version snapshot captured after objpool_check() plus
+		 * the object_slot_alive() recheck just before return
+		 * narrows that window to a few cycles.
 		 */
 		obj = get_random_object(OBJ_FD_SOCKET, OBJ_GLOBAL);
 		if (!objpool_check(obj, OBJ_FD_SOCKET))
 			continue;
 
+		captured = obj->slot_version;
 		si = &obj->sockinfo;
 
 		/*
@@ -691,11 +694,14 @@ struct socketinfo * get_rand_socketinfo(void)
 
 		/*
 		 * Last-line check: if the parent destroyed/replaced this
-		 * slot between get_random_object_versioned() and now, the
+		 * slot between the get_random_object() pick and now, the
 		 * version no longer matches and obj is unsafe to deref.
 		 * Drop it and pick again rather than handing &obj->sockinfo
 		 * to the caller.
 		 */
+		if (!object_slot_alive(obj, captured))
+			continue;
+
 		return si;
 	}
 
