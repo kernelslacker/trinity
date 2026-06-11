@@ -455,9 +455,8 @@ static int open_child_pidstat(pid_t target)
 static char get_pid_state(int childno)
 {
 	char buf[256];
-	pid_t pid;
 	char state = '?';
-	char procname[100];
+	char *p;
 	int fd;
 	ssize_t n;
 
@@ -468,17 +467,22 @@ static char get_pid_state(int childno)
 	if (fd < 0)
 		return '?';
 
-	/* The first line of /proc/<pid>/stat fits comfortably in 256
-	 * bytes (typical is well under 200), and sscanf with %99s caps
-	 * the procname read either way.  pread keeps this allocation-
-	 * free: getline(&line=NULL,...) would malloc every poll, and
-	 * the parent reap loop hits this once per child per cycle. */
+	/* The /proc/<pid>/stat line is "pid (comm) state ...".  comm may
+	 * itself contain spaces or ')' (a task can rename itself via
+	 * prctl(PR_SET_NAME)), so a field-based parse on whitespace will
+	 * read the wrong byte.  comm is the only field wrapped in parens,
+	 * so the LAST ')' in the line reliably terminates it and the
+	 * state char sits two bytes after it.  pread keeps this poll
+	 * allocation-free; the parent reap loop hits it once per child
+	 * per cycle. */
 	n = pread(fd, buf, sizeof(buf) - 1, 0);
 	if (n <= 0)
 		return '?';
 	buf[n] = '\0';
 
-	sscanf(buf, "%d %99s %c", &pid, procname, &state);
+	p = strrchr(buf, ')');
+	if (p != NULL && (p - buf) + 2 < n)
+		state = p[2];
 	return state;
 }
 
