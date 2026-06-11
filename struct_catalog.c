@@ -5100,6 +5100,15 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 */
 	{ "utimensat",		3, &struct_catalog[SC_TIMESPEC] },
 	/*
+	 * ppoll(struct pollfd *, nfds_t, struct timespec *tsp, const sigset_t *, size_t)
+	 * a3 is the INPUT timeout timespec.  Attribution-only: the bespoke
+	 * sanitise_ppoll / ppoll_post_state in syscalls/poll.c continues to
+	 * own the live fill; this row only lets schema-aware CMP attribution
+	 * name the tv_sec / tv_nsec fields.  ppoll's a1 (pollfd array) is
+	 * mapped to SC_POLLFD above and is unaffected.
+	 */
+	{ "ppoll",		3, &struct_catalog[SC_TIMESPEC] },
+	/*
 	 * cachestat(unsigned int fd, struct cachestat_range *cstat_range,
 	 *           struct cachestat *cstat, unsigned int flags)
 	 * Maps the INPUT cstat_range arg only; cstat is the kernel-written
