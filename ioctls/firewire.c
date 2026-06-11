@@ -190,6 +190,10 @@ static void firewire_sanitise(const struct ioctl_group *grp, struct syscallrecor
 		/* mostly output; just allocate and let kernel fill it */
 		struct fw_cdev_get_info *info = get_writable_struct(sizeof(*info));
 		if (info) {
+			/* rom and bus_reset are __user pointers consumed by the
+			 * kernel's copy_to_user; zero the struct so we don't
+			 * hand it uninitialised garbage. */
+			memset(info, 0, sizeof(*info));
 			info->version = rnd_modulo_u32(6) + 1;
 			info->bus_reset_closure = rand64();
 			rec->a3 = (unsigned long) info;
