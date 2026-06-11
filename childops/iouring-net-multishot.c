@@ -77,21 +77,15 @@
 
 #include "child.h"
 #include "childops-iouring.h"
+#include "childops/iouring-ring.h"
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 
-#ifndef __NR_io_uring_setup
-#define __NR_io_uring_setup	425
+#ifndef __NR_io_uring_enter
 #define __NR_io_uring_enter	426
 #define __NR_io_uring_register	427
-#endif
-
-#ifndef IORING_OFF_SQ_RING
-#define IORING_OFF_SQ_RING	0ULL
-#define IORING_OFF_CQ_RING	0x8000000ULL
-#define IORING_OFF_SQES		0x10000000ULL
 #endif
 
 /* IORING_REGISTER_PBUF_RING and friends are enum members in the uapi
@@ -153,114 +147,7 @@
  * attempts are pure overhead. */
 static bool ns_unsupported;
 
-struct ms_ctx {
-	int		fd;
-	void		*sq_ring;
-	void		*cq_ring;	/* aliases sq_ring when SINGLE_MMAP */
-	void		*sqes;
-	size_t		sq_ring_sz;
-	size_t		cq_ring_sz;	/* 0 when SINGLE_MMAP */
-	size_t		sqes_sz;
-	bool		single_mmap;
-
-	unsigned int	sq_entries;
-
-	unsigned int	sq_off_head;
-	unsigned int	sq_off_tail;
-	unsigned int	sq_off_mask;
-	unsigned int	sq_off_array;
-
-	unsigned int	cq_off_head;
-	unsigned int	cq_off_tail;
-	unsigned int	cq_off_mask;
-	unsigned int	cq_off_cqes;
-};
-
-static bool ms_setup(struct ms_ctx *ctx)
-{
-	struct io_uring_params p;
-	size_t sq_sz, cq_sz, sqes_sz;
-	void *sq_ring, *cq_ring, *sqes;
-	int fd;
-
-	memset(ctx, 0, sizeof(*ctx));
-	ctx->fd = -1;
-
-	memset(&p, 0, sizeof(p));
-	fd = (int)syscall(__NR_io_uring_setup, RING_ENTRIES, &p);
-	if (fd < 0)
-		return false;
-
-	sq_sz   = (size_t)p.sq_off.array + (size_t)p.sq_entries * sizeof(unsigned int);
-	cq_sz   = (size_t)p.cq_off.cqes  + (size_t)p.cq_entries * sizeof(struct io_uring_cqe);
-	sqes_sz = (size_t)p.sq_entries   * sizeof(struct io_uring_sqe);
-
-	sq_ring = mmap(NULL, sq_sz, PROT_READ | PROT_WRITE,
-		       MAP_SHARED | MAP_POPULATE, fd, IORING_OFF_SQ_RING);
-	if (sq_ring == MAP_FAILED) {
-		close(fd);
-		return false;
-	}
-
-	if (p.features & IORING_FEAT_SINGLE_MMAP) {
-		cq_ring = sq_ring;
-		ctx->single_mmap = true;
-	} else {
-		cq_ring = mmap(NULL, cq_sz, PROT_READ | PROT_WRITE,
-			       MAP_SHARED | MAP_POPULATE,
-			       fd, IORING_OFF_CQ_RING);
-		if (cq_ring == MAP_FAILED) {
-			munmap(sq_ring, sq_sz);
-			close(fd);
-			return false;
-		}
-	}
-
-	sqes = mmap(NULL, sqes_sz, PROT_READ | PROT_WRITE,
-		    MAP_SHARED | MAP_POPULATE, fd, IORING_OFF_SQES);
-	if (sqes == MAP_FAILED) {
-		if (!ctx->single_mmap)
-			munmap(cq_ring, cq_sz);
-		munmap(sq_ring, sq_sz);
-		close(fd);
-		return false;
-	}
-
-	ctx->fd          = fd;
-	ctx->sq_ring     = sq_ring;
-	ctx->sq_ring_sz  = sq_sz;
-	ctx->cq_ring     = cq_ring;
-	ctx->cq_ring_sz  = ctx->single_mmap ? 0 : cq_sz;
-	ctx->sqes        = sqes;
-	ctx->sqes_sz     = sqes_sz;
-	ctx->sq_entries  = p.sq_entries;
-
-	ctx->sq_off_head  = p.sq_off.head;
-	ctx->sq_off_tail  = p.sq_off.tail;
-	ctx->sq_off_mask  = p.sq_off.ring_mask;
-	ctx->sq_off_array = p.sq_off.array;
-
-	ctx->cq_off_head  = p.cq_off.head;
-	ctx->cq_off_tail  = p.cq_off.tail;
-	ctx->cq_off_mask  = p.cq_off.ring_mask;
-	ctx->cq_off_cqes  = p.cq_off.cqes;
-
-	return true;
-}
-
-static void ms_teardown(struct ms_ctx *ctx)
-{
-	if (ctx->sqes)
-		munmap(ctx->sqes, ctx->sqes_sz);
-	if (ctx->cq_ring && !ctx->single_mmap)
-		munmap(ctx->cq_ring, ctx->cq_ring_sz);
-	if (ctx->sq_ring)
-		munmap(ctx->sq_ring, ctx->sq_ring_sz);
-	if (ctx->fd >= 0)
-		close(ctx->fd);
-}
-
-static bool ms_submit(struct ms_ctx *ctx, struct io_uring_sqe *sqe, unsigned int n)
+static bool ms_submit(struct iour_ring *ctx, struct io_uring_sqe *sqe, unsigned int n)
 {
 	unsigned int mask  = ring_u32(ctx->sq_ring, ctx->sq_off_mask);
 	unsigned int head  = ring_u32(ctx->sq_ring, ctx->sq_off_head);
@@ -287,13 +174,13 @@ static bool ms_submit(struct ms_ctx *ctx, struct io_uring_sqe *sqe, unsigned int
 	return true;
 }
 
-static int ms_enter(struct ms_ctx *ctx, unsigned int n, unsigned int min_complete)
+static int ms_enter(struct iour_ring *ctx, unsigned int n, unsigned int min_complete)
 {
 	return (int)syscall(__NR_io_uring_enter, ctx->fd, n, min_complete,
 			    IORING_ENTER_GETEVENTS, NULL, 0);
 }
 
-static unsigned int ms_drain(struct ms_ctx *ctx)
+static unsigned int ms_drain(struct iour_ring *ctx)
 {
 	unsigned int head = ring_u32(ctx->cq_ring, ctx->cq_off_head);
 	unsigned int tail;
@@ -323,7 +210,7 @@ static unsigned int ms_drain(struct ms_ctx *ctx)
  * data regions are returned via *out_ring / *out_data so the caller can
  * unmap them after teardown.
  */
-static bool register_pbuf_ring(struct ms_ctx *ctx,
+static bool register_pbuf_ring(struct iour_ring *ctx,
 			       void **out_ring, void **out_data)
 {
 	struct io_uring_buf_reg reg;
@@ -378,7 +265,7 @@ static bool register_pbuf_ring(struct ms_ctx *ctx,
 	return true;
 }
 
-static void unregister_pbuf_ring(struct ms_ctx *ctx,
+static void unregister_pbuf_ring(struct iour_ring *ctx,
 				 void *ring, void *data)
 {
 	struct io_uring_buf_reg reg;
@@ -397,7 +284,7 @@ static void unregister_pbuf_ring(struct ms_ctx *ctx,
  * via *out_bufs (caller free()s) on success.  On failure, no resources
  * need releasing.
  */
-static bool provide_buffers_legacy(struct ms_ctx *ctx, void **out_bufs)
+static bool provide_buffers_legacy(struct iour_ring *ctx, void **out_bufs)
 {
 	struct io_uring_sqe sqe;
 	void *bufs;
@@ -432,7 +319,7 @@ static bool provide_buffers_legacy(struct ms_ctx *ctx, void **out_bufs)
 	return true;
 }
 
-static void remove_buffers_legacy(struct ms_ctx *ctx, void *bufs)
+static void remove_buffers_legacy(struct iour_ring *ctx, void *bufs)
 {
 	struct io_uring_sqe sqe;
 
@@ -485,14 +372,14 @@ static int open_udp_loopback(uint16_t *out_port)
 
 /*
  * Per-iteration scratchpad shared across the iouring_multishot_iter_<phase>
- * helpers.  Embeds the ring/SQ/CQ state owned by ms_ctx and adds the
+ * helpers.  Embeds the ring/SQ/CQ state owned by the iour_ring helper and adds the
  * UDP socket pair, bound port, provided-buffer pool handles, and the
  * NAPI-armed flag the post-burst probes consult.  Mirrors the
  * iouring_send_zc_iter_ctx shape: fds + ring/buffer ptrs + flags the
  * helpers actually share.
  */
 struct iouring_multishot_iter_ctx {
-	struct ms_ctx	ms;
+	struct iour_ring ms;
 	int		rxfd;
 	int		txfd;
 	uint16_t	port;
@@ -735,12 +622,19 @@ bool iouring_net_multishot(struct childdata *child)
 	it.rxfd = -1;
 	it.txfd = -1;
 
-	if (!ms_setup(&it.ms)) {
-		if (errno == ENOSYS || errno == EPERM)
-			ns_unsupported = true;
-		__atomic_add_fetch(&shm->stats.iouring_multishot_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		return true;
+	{
+		struct io_uring_params p;
+		enum iour_setup_status st;
+
+		memset(&p, 0, sizeof(p));
+		st = iour_ring_setup(&p, RING_ENTRIES, &it.ms);
+		if (st != IOUR_SUPPORTED) {
+			if (st == IOUR_UNSUPPORTED)
+				ns_unsupported = true;
+			__atomic_add_fetch(&shm->stats.iouring_multishot_setup_failed,
+					   1, __ATOMIC_RELAXED);
+			return true;
+		}
 	}
 
 	if (iouring_multishot_iter_setup_pbufs(&it) != 0)
@@ -768,6 +662,6 @@ out:
 	} else if (it.legacy_bufs) {
 		remove_buffers_legacy(&it.ms, it.legacy_bufs);
 	}
-	ms_teardown(&it.ms);
+	iour_ring_teardown(&it.ms);
 	return true;
 }
