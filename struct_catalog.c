@@ -5131,6 +5131,14 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 */
 	{ "pselect6",		5, &struct_catalog[SC_TIMESPEC] },
 	/*
+	 * clock_settime(clockid_t which_clock, const struct timespec *tp)
+	 * a2 is the INPUT timespec.  Attribution-only: the bespoke
+	 * sanitise_clock_settime (stamps the slot via get_writable_address)
+	 * continues to own the live fill; this row only lets schema-aware
+	 * CMP attribution name the tv_sec / tv_nsec fields.
+	 */
+	{ "clock_settime",	2, &struct_catalog[SC_TIMESPEC] },
+	/*
 	 * cachestat(unsigned int fd, struct cachestat_range *cstat_range,
 	 *           struct cachestat *cstat, unsigned int flags)
 	 * Maps the INPUT cstat_range arg only; cstat is the kernel-written
