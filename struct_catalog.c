@@ -5158,6 +5158,15 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 */
 	{ "mq_timedsend",	5, &struct_catalog[SC_TIMESPEC] },
 	/*
+	 * mq_timedreceive(mqd_t mqdes, char *msg_ptr, size_t msg_len,
+	 *                 unsigned int *msg_prio, const struct timespec *abs_timeout)
+	 * a5 is the INPUT abs_timeout timespec.  Attribution-only: the bespoke
+	 * sanitise_mq_timedreceive (stamps the slot via get_writable_address)
+	 * continues to own the live fill; this row only lets schema-aware
+	 * CMP attribution name the tv_sec / tv_nsec fields.
+	 */
+	{ "mq_timedreceive",	5, &struct_catalog[SC_TIMESPEC] },
+	/*
 	 * cachestat(unsigned int fd, struct cachestat_range *cstat_range,
 	 *           struct cachestat *cstat, unsigned int flags)
 	 * Maps the INPUT cstat_range arg only; cstat is the kernel-written
