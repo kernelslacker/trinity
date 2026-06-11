@@ -2070,7 +2070,7 @@ static const struct struct_field landlock_net_port_attr_fields[] = {
 /*
  * quotactl(cmd, special, id, addr) and quotactl_fd(fd, cmd, id, addr)
  * pass a struct if_dqblk at the addr slot (quotactl a4 / quotactl_fd
- * a3) under Q_SETQUOTA -- the SET path is the input arm where the
+ * a4) under Q_SETQUOTA -- the SET path is the input arm where the
  * bytes we stamp actually reach disk-quota code.  The bespoke
  * sanitise_quotactl() / sanitise_quotactl_fd() keep owning the live
  * fill (writable allocation, dqb_bhardlimit / dqb_bsoftlimit drawn
@@ -2119,7 +2119,7 @@ static const struct struct_field if_dqblk_fields[] = {
 
 /*
  * Sibling to the if_dqblk registration above: under Q_SETINFO the
- * same addr slot (quotactl a4 / quotactl_fd a3) is a struct
+ * same addr slot (quotactl a4 / quotactl_fd a4) is a struct
  * if_dqinfo pointer instead.  The bespoke sanitisers keep owning
  * the live fill (writable allocation, dqi_bgrace / dqi_igrace
  * drawn from a deterministic hour-stride picker, routed through
@@ -5649,7 +5649,7 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 *          void *addr)
 	 * quotactl_fd(unsigned int fd, unsigned int cmd, qid_t id,
 	 *             void *addr)
-	 * The addr slot (quotactl a4 / quotactl_fd a3) is a struct
+	 * The addr slot (quotactl a4 / quotactl_fd a4) is a struct
 	 * if_dqblk pointer under Q_SETQUOTA -- the SET path is the
 	 * input arm where the bytes we stamp actually reach the
 	 * kernel's quota lookup.  Both sanitisers keep owning the live
@@ -5686,7 +5686,7 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 		.discrim_shift		= SUBCMDSHIFT,
 	},
 	{
-		"quotactl_fd", 3, &struct_catalog[SC_IF_DQBLK],
+		"quotactl_fd", 4, &struct_catalog[SC_IF_DQBLK],
 		.discrim_arg_idx	= 2,
 		.discrim_values		= quotactl_if_dqblk_subcmds,
 		.num_discrim_values	= ARRAY_SIZE(quotactl_if_dqblk_subcmds),
@@ -5694,7 +5694,7 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	},
 	/*
 	 * if_dqinfo sibling of the if_dqblk registration above: the same
-	 * addr slot (quotactl a4 / quotactl_fd a3) is a struct if_dqinfo
+	 * addr slot (quotactl a4 / quotactl_fd a4) is a struct if_dqinfo
 	 * pointer under Q_SETINFO.  Same packed-discriminator extraction
 	 * (discrim_shift = SUBCMDSHIFT) and same attribution-only shape
 	 * as the if_dqblk pair -- the bespoke sanitisers own the live
@@ -5710,7 +5710,7 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 		.discrim_shift		= SUBCMDSHIFT,
 	},
 	{
-		"quotactl_fd", 3, &struct_catalog[SC_IF_DQINFO],
+		"quotactl_fd", 4, &struct_catalog[SC_IF_DQINFO],
 		.discrim_arg_idx	= 2,
 		.discrim_values		= quotactl_if_dqinfo_subcmds,
 		.num_discrim_values	= ARRAY_SIZE(quotactl_if_dqinfo_subcmds),
