@@ -914,11 +914,21 @@ void kcov_enable_trace(struct kcov_child *kc)
 
 void kcov_enable_cmp(struct kcov_child *kc)
 {
+	unsigned int retries = 0;
+
 	if (kc == NULL || !kc->cmp_capable)
 		return;
 
 	__atomic_store_n(&kc->cmp_trace_buf[0], 0, __ATOMIC_RELAXED);
 	while (ioctl(kc->cmp_fd, KCOV_ENABLE, KCOV_TRACE_CMP) < 0) {
+		/* Ride out signal storms the same way the PC and remote
+		 * paths do -- a single EINTR is not a reason to demote a
+		 * previously-probed-good cmp fd and lose CMP coverage for
+		 * the rest of this child's lifetime. */
+		if (errno == EINTR && retries < KCOV_ENABLE_EINTR_MAX) {
+			retries++;
+			continue;
+		}
 		/* Runtime failure on a previously-probed-good fd.  Record
 		 * the symptom into cmp_diag for every observation -- with
 		 * the recovery loop below the count is no longer one-per-
