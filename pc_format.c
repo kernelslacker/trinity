@@ -227,7 +227,8 @@ const char *pc_to_source_line(void *pc, char *buf, size_t buflen)
 		if (pr <= 0) {
 			close(pipefd[0]);
 			(void)kill(pid, SIGKILL);
-			(void)waitpid(pid, &status, 0);
+			while (waitpid(pid, &status, 0) < 0 && errno == EINTR)
+				;
 			return NULL;
 		}
 	}
@@ -268,7 +269,8 @@ const char *pc_to_source_line(void *pc, char *buf, size_t buflen)
 			if (pr <= 0) {
 				close(pipefd[0]);
 				(void)kill(pid, SIGKILL);
-				(void)waitpid(pid, &status, 0);
+				while (waitpid(pid, &status, 0) < 0 && errno == EINTR)
+					;
 				return NULL;
 			}
 
@@ -289,16 +291,25 @@ const char *pc_to_source_line(void *pc, char *buf, size_t buflen)
 		}
 	}
 	close(pipefd[0]);
-	if (waitpid(pid, &status, 0) > 0 && WIFSIGNALED(status)) {
-		/*
-		 * addr2line died by signal (SEGV etc).  If binutils is
-		 * broken on this binary, every subsequent invocation will
-		 * hit the same wall -- latch the resolver off for the rest
-		 * of the run rather than re-fork()ing per top-N PC across
-		 * every periodic stats dump.  Resets naturally on parent
-		 * restart.
-		 */
-		__atomic_store_n(&resolver_disabled, 1, __ATOMIC_RELAXED);
+	{
+		pid_t w;
+
+		do {
+			w = waitpid(pid, &status, 0);
+		} while (w < 0 && errno == EINTR);
+		if (w > 0 && WIFSIGNALED(status)) {
+			/*
+			 * addr2line died by signal (SEGV etc).  If
+			 * binutils is broken on this binary, every
+			 * subsequent invocation will hit the same wall --
+			 * latch the resolver off for the rest of the run
+			 * rather than re-fork()ing per top-N PC across
+			 * every periodic stats dump.  Resets naturally on
+			 * parent restart.
+			 */
+			__atomic_store_n(&resolver_disabled, 1,
+					 __ATOMIC_RELAXED);
+		}
 	}
 
 	if (n <= 0)
