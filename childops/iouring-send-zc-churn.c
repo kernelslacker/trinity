@@ -122,22 +122,16 @@
 #include "childops-iouring.h"
 #include "childops-netlink.h"
 #include "childops-util.h"
+#include "childops/iouring-ring.h"
 #include "jitter.h"
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 
-#ifndef __NR_io_uring_setup
-#define __NR_io_uring_setup	425
+#ifndef __NR_io_uring_enter
 #define __NR_io_uring_enter	426
 #define __NR_io_uring_register	427
-#endif
-
-#ifndef IORING_OFF_SQ_RING
-#define IORING_OFF_SQ_RING	0ULL
-#define IORING_OFF_CQ_RING	0x8000000ULL
-#define IORING_OFF_SQES		0x10000000ULL
 #endif
 
 /* Opcodes / register-op codes / setup flags introduced over the 6.x
@@ -170,34 +164,6 @@ static bool ns_unsupported_iouring_send_zc_churn;
 #define ZC_BUF_COUNT			8U
 #define ZC_BUF_BYTES			4096U
 
-struct ring_ctx {
-	int		fd;
-	void		*sq_ring;
-	void		*cq_ring;	/* aliases sq_ring when SINGLE_MMAP */
-	void		*sqes;
-	size_t		sq_ring_sz;
-	size_t		cq_ring_sz;	/* 0 when SINGLE_MMAP */
-	size_t		sqes_sz;
-	bool		single_mmap;
-
-	unsigned int	sq_entries;
-
-	unsigned int	sq_off_head;
-	unsigned int	sq_off_tail;
-	unsigned int	sq_off_mask;
-	unsigned int	sq_off_array;
-
-	unsigned int	cq_off_head;
-	unsigned int	cq_off_tail;
-	unsigned int	cq_off_mask;
-	unsigned int	cq_off_cqes;
-};
-
-static int do_setup(struct io_uring_params *p, unsigned int entries)
-{
-	return (int)syscall(__NR_io_uring_setup, entries, p);
-}
-
 static int do_register(int fd, unsigned int op, void *arg, unsigned int nr)
 {
 	return (int)syscall(__NR_io_uring_register, fd, op, arg, nr);
@@ -210,101 +176,31 @@ static int do_enter(int fd, unsigned int to_submit, unsigned int min_complete,
 			    flags, NULL, 0);
 }
 
-static bool ring_setup(struct ring_ctx *ctx)
+/*
+ * Stand up the ring via the shared iour_ring_setup helper.  First
+ * tries the strict IORING_SETUP_SINGLE_ISSUER | IORING_SETUP_DEFER_TASKRUN
+ * submission contract; on an IOUR_TRANSIENT result (pre-6.1 kernels that
+ * have SEND_ZC but reject the flags as EINVAL) falls back to a no-flags
+ * retry so the SEND_ZC path still gets exercised.  Returns the
+ * propagated status; on IOUR_SUPPORTED ctx is populated.
+ */
+static enum iour_setup_status ring_setup(struct iour_ring *ctx)
 {
 	struct io_uring_params p;
-	size_t sq_sz, cq_sz, sqes_sz;
-	void *sq_ring, *cq_ring, *sqes;
-	int fd;
-
-	memset(ctx, 0, sizeof(*ctx));
-	ctx->fd = -1;
+	enum iour_setup_status st;
 
 	memset(&p, 0, sizeof(p));
 	p.flags = IORING_SETUP_SINGLE_ISSUER | IORING_SETUP_DEFER_TASKRUN;
 
-	fd = do_setup(&p, ZC_RING_ENTRIES);
-	if (fd < 0 && (errno == EINVAL || errno == EOPNOTSUPP)) {
-		/* Older kernel without DEFER_TASKRUN/SINGLE_ISSUER -- retry
-		 * with no flags so the SEND_ZC path still gets exercised on
-		 * pre-6.1 kernels that have the opcode but not the strict
-		 * submission contract. */
+	st = iour_ring_setup(&p, ZC_RING_ENTRIES, ctx);
+	if (st == IOUR_TRANSIENT) {
 		memset(&p, 0, sizeof(p));
-		fd = do_setup(&p, ZC_RING_ENTRIES);
+		st = iour_ring_setup(&p, ZC_RING_ENTRIES, ctx);
 	}
-	if (fd < 0)
-		return false;
-
-	sq_sz   = (size_t)p.sq_off.array + (size_t)p.sq_entries * sizeof(unsigned int);
-	cq_sz   = (size_t)p.cq_off.cqes  + (size_t)p.cq_entries * sizeof(struct io_uring_cqe);
-	sqes_sz = (size_t)p.sq_entries   * sizeof(struct io_uring_sqe);
-
-	sq_ring = mmap(NULL, sq_sz, PROT_READ | PROT_WRITE,
-		       MAP_SHARED | MAP_POPULATE, fd, IORING_OFF_SQ_RING);
-	if (sq_ring == MAP_FAILED) {
-		close(fd);
-		return false;
-	}
-
-	if (p.features & IORING_FEAT_SINGLE_MMAP) {
-		cq_ring = sq_ring;
-		ctx->single_mmap = true;
-	} else {
-		cq_ring = mmap(NULL, cq_sz, PROT_READ | PROT_WRITE,
-			       MAP_SHARED | MAP_POPULATE,
-			       fd, IORING_OFF_CQ_RING);
-		if (cq_ring == MAP_FAILED) {
-			munmap(sq_ring, sq_sz);
-			close(fd);
-			return false;
-		}
-	}
-
-	sqes = mmap(NULL, sqes_sz, PROT_READ | PROT_WRITE,
-		    MAP_SHARED | MAP_POPULATE, fd, IORING_OFF_SQES);
-	if (sqes == MAP_FAILED) {
-		if (!ctx->single_mmap)
-			munmap(cq_ring, cq_sz);
-		munmap(sq_ring, sq_sz);
-		close(fd);
-		return false;
-	}
-
-	ctx->fd          = fd;
-	ctx->sq_ring     = sq_ring;
-	ctx->sq_ring_sz  = sq_sz;
-	ctx->cq_ring     = cq_ring;
-	ctx->cq_ring_sz  = ctx->single_mmap ? 0 : cq_sz;
-	ctx->sqes        = sqes;
-	ctx->sqes_sz     = sqes_sz;
-	ctx->sq_entries  = p.sq_entries;
-
-	ctx->sq_off_head  = p.sq_off.head;
-	ctx->sq_off_tail  = p.sq_off.tail;
-	ctx->sq_off_mask  = p.sq_off.ring_mask;
-	ctx->sq_off_array = p.sq_off.array;
-
-	ctx->cq_off_head  = p.cq_off.head;
-	ctx->cq_off_tail  = p.cq_off.tail;
-	ctx->cq_off_mask  = p.cq_off.ring_mask;
-	ctx->cq_off_cqes  = p.cq_off.cqes;
-
-	return true;
+	return st;
 }
 
-static void ring_teardown(struct ring_ctx *ctx)
-{
-	if (ctx->sqes)
-		munmap(ctx->sqes, ctx->sqes_sz);
-	if (ctx->cq_ring && !ctx->single_mmap)
-		munmap(ctx->cq_ring, ctx->cq_ring_sz);
-	if (ctx->sq_ring)
-		munmap(ctx->sq_ring, ctx->sq_ring_sz);
-	if (ctx->fd >= 0)
-		close(ctx->fd);
-}
-
-static unsigned int submit_one(struct ring_ctx *ctx,
+static unsigned int submit_one(struct iour_ring *ctx,
 			       const struct io_uring_sqe *src)
 {
 	unsigned int mask  = ring_u32(ctx->sq_ring, ctx->sq_off_mask);
@@ -328,7 +224,7 @@ static unsigned int submit_one(struct ring_ctx *ctx,
 	return 1;
 }
 
-static unsigned int drain_cqes(struct ring_ctx *ctx)
+static unsigned int drain_cqes(struct iour_ring *ctx)
 {
 	unsigned int head = ring_u32(ctx->cq_ring, ctx->cq_off_head);
 	unsigned int tail;
@@ -478,7 +374,7 @@ static void fill_sendmsg_zc(struct io_uring_sqe *s, int sock_fd,
  * threading a dozen out-parameters through the phase helpers.
  */
 struct iouring_send_zc_iter_ctx {
-	struct ring_ctx	ring;
+	struct iour_ring ring;
 	struct iovec	bufs[ZC_BUF_COUNT];
 	void		*pages[ZC_BUF_COUNT];
 	void		*replacement;
@@ -507,13 +403,29 @@ static int iouring_send_zc_iter_setup(struct iouring_send_zc_iter_ctx *it)
 {
 	unsigned int i;
 
-	if (!ring_setup(&it->ring)) {
-		if (errno == ENOSYS || errno == EPERM ||
-		    errno == ENOMEM || errno == EINVAL)
-			ns_unsupported_iouring_send_zc_churn = true;
-		__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		return -1;
+	{
+		enum iour_setup_status st = ring_setup(&it->ring);
+
+		if (st != IOUR_SUPPORTED) {
+			/* Latch the per-process cap-gate only on a real
+			 * "kernel won't ever support io_uring" verdict.
+			 * IOUR_TRANSIENT (ENOMEM / EAGAIN / EMFILE / a
+			 * hostile-return overflow or out-of-range offset
+			 * rejected by the helper, or an EINVAL on the
+			 * no-flags retry too) skips this iteration but
+			 * leaves siblings free to retry on the next
+			 * dispatch.  The old code latched on EINVAL +
+			 * ENOMEM too, but EINVAL on the no-flags retry
+			 * means the kernel disliked something other than
+			 * the strict-submission flags -- that may clear
+			 * on the next attempt, and ENOMEM definitely
+			 * will. */
+			if (st == IOUR_UNSUPPORTED)
+				ns_unsupported_iouring_send_zc_churn = true;
+			__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_setup_failed,
+					   1, __ATOMIC_RELAXED);
+			return -1;
+		}
 	}
 	it->ring_ok = true;
 
@@ -745,7 +657,7 @@ out:
 	if (it.sock_fd >= 0)
 		close(it.sock_fd);
 	if (it.ring_ok)
-		ring_teardown(&it.ring);
+		iour_ring_teardown(&it.ring);
 	reap_acceptor(it.acceptor);
 }
 
