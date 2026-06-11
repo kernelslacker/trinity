@@ -276,6 +276,7 @@ enum struct_catalog_idx {
 	SC_USER_CAP_DATA,
 	SC_FUTEX_WAITV,
 	SC_STACK_T,
+	SC_SIGINFO_T,
 	SC_MQ_ATTR,
 	SC_MSQID_DS,
 	SC_SCHED_PARAM,

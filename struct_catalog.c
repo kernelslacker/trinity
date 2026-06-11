@@ -2425,6 +2425,103 @@ static const struct struct_field stack_t_fields[] = {
 };
 
 /* ------------------------------------------------------------------ */
+/* siginfo_t (rt_sigqueueinfo, rt_tgsigqueueinfo)                       */
+/* ------------------------------------------------------------------ */
+
+/*
+ * siginfo_t is a si_code-discriminated union.  si_signo / si_errno /
+ * si_code form the fixed header; the union body's active arm is
+ * selected primarily by si_code (with si_signo refining the positive-
+ * si_code receiver-side arms).  Trinity's rt_sigqueueinfo /
+ * rt_tgsigqueueinfo sanitisers own the live fill -- both hand-build
+ * the buffer and pin si_code to SI_USER / SI_QUEUE / SI_TKILL (plus
+ * an "intentionally invalid" bucket on rt_sigqueueinfo for the EPERM
+ * gate).  This registration is attribution-only: schema-aware fill
+ * never runs at the slot (argtype[*] is not ARG_STRUCT_PTR_*), but
+ * struct_field_for_cmp() now steers CMP-learned constants at the
+ * named si_signo / si_code / si_pid / si_uid / si_value slots rather
+ * than at coincidentally-same-width slots.
+ *
+ * Variants resolve via the in-buffer si_code discriminator, mirroring
+ * sockaddr_storage's buffer-relative ss_family and perf_event_attr's
+ * buffer-relative type.  Only the negative-si_code arms userland
+ * actually supplies on the SET path are modeled here: SI_QUEUE picks
+ * the _rt arm (si_pid + si_uid + si_value), SI_USER / SI_TKILL pick
+ * the _kill arm (si_pid + si_uid).  Positive si_code (SI_KERNEL /
+ * SEGV_MAPERR / ...) is kernel-origin and rejected on the unprivileged
+ * SET path with EPERM, so no variant is registered for those values
+ * -- the resolver falls through to the shared head alone.  The
+ * signal-specific receiver-side arms (_sigchld on SIGCHLD,
+ * _sigfault on SIGSEGV/SIGBUS/..., _sigpoll on SIGIO/SIGPOLL,
+ * _sigsys on SIGSYS) need a two-axis (si_signo, si_code) discriminator
+ * the catalog does not express; they are deliberately left unmodeled
+ * here (the SET-path consumers never reach them).
+ *
+ * Width / sign note: si_code is `int` (4 bytes signed).  The width-4
+ * buffer_discrim reader (read_discrim) returns zero-extended, so the
+ * negative SI_* constants live as their uint32_t cast in
+ * discrim_value (0xFFFFFFFFUL for SI_QUEUE etc.), not as the sign-
+ * extended unsigned long form.
+ *
+ * Not mapped here on purpose: waitid's a3 is a kernel-written OUTPUT
+ * buffer with no input fill to attribute against (same shape as the
+ * gettimeofday / get_robust_list / cachestat-output skips above);
+ * pidfd_send_signal's a3 is also struct siginfo_t but is intentionally
+ * not in this commit's scope.
+ */
+static const unsigned long siginfo_t_si_code_vocab[] = {
+	(unsigned long)(uint32_t) SI_USER,
+	(unsigned long)(uint32_t) SI_QUEUE,
+	(unsigned long)(uint32_t) SI_TKILL,
+	(unsigned long)(uint32_t) SI_TIMER,
+	(unsigned long)(uint32_t) SI_ASYNCIO,
+	(unsigned long)(uint32_t) SI_KERNEL,
+};
+
+static const struct struct_field siginfo_t_fields[] = {
+	FIELDX(siginfo_t, si_signo, FT_RANGE,
+	       .u.range = { 1, 64 }),
+	FIELD(siginfo_t, si_errno),
+	FIELDX(siginfo_t, si_code, FT_ENUM,
+	       .u.enum_ = { .vals = siginfo_t_si_code_vocab,
+			    .n    = ARRAY_SIZE(siginfo_t_si_code_vocab) }),
+};
+
+/* SI_QUEUE -- _rt arm (sigqueue() origin: pid + uid + sigval payload). */
+static const struct struct_field siginfo_t_rt_variant_fields[] = {
+	FIELD(siginfo_t, si_pid),
+	FIELD(siginfo_t, si_uid),
+	FIELD(siginfo_t, si_value),
+};
+
+/* SI_USER / SI_TKILL -- _kill arm (kill() / tkill() origin: pid + uid). */
+static const struct struct_field siginfo_t_kill_variant_fields[] = {
+	FIELD(siginfo_t, si_pid),
+	FIELD(siginfo_t, si_uid),
+};
+
+static const unsigned long siginfo_t_kill_discrim_values[] = {
+	(unsigned long)(uint32_t) SI_USER,
+	(unsigned long)(uint32_t) SI_TKILL,
+};
+
+static const struct union_variant siginfo_t_variants[] = {
+	{
+		.discrim_value	= (unsigned long)(uint32_t) SI_QUEUE,
+		.name		= "SI_QUEUE",
+		.fields		= siginfo_t_rt_variant_fields,
+		.num_fields	= ARRAY_SIZE(siginfo_t_rt_variant_fields),
+	},
+	{
+		.discrim_values		= siginfo_t_kill_discrim_values,
+		.num_discrim_values	= ARRAY_SIZE(siginfo_t_kill_discrim_values),
+		.name			= "SI_USER/SI_TKILL",
+		.fields			= siginfo_t_kill_variant_fields,
+		.num_fields		= ARRAY_SIZE(siginfo_t_kill_variant_fields),
+	},
+};
+
+/* ------------------------------------------------------------------ */
 /* struct mq_attr (mq_open, mq_getsetattr)                              */
 /* ------------------------------------------------------------------ */
 
@@ -4499,6 +4596,16 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= stack_t_fields,
 		.num_fields	= ARRAY_SIZE(stack_t_fields),
 	},
+	[SC_SIGINFO_T] = {
+		.name			= "siginfo_t",
+		.struct_size		= sizeof(siginfo_t),
+		.fields			= siginfo_t_fields,
+		.num_fields		= ARRAY_SIZE(siginfo_t_fields),
+		.variants		= siginfo_t_variants,
+		.num_variants		= ARRAY_SIZE(siginfo_t_variants),
+		.buffer_discrim_offset	= offsetof(siginfo_t, si_code),
+		.buffer_discrim_size	= sizeof(((siginfo_t *) 0)->si_code),
+	},
 	[SC_MQ_ATTR] = {
 		.name		= "mq_attr",
 		.struct_size	= sizeof(struct mq_attr),
@@ -4934,6 +5041,35 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	{ "futex_waitv",	1, &struct_catalog[SC_FUTEX_WAITV] },
 	/* sigaltstack(const stack_t *ss, stack_t *old_ss) */
 	{ "sigaltstack",	1, &struct_catalog[SC_STACK_T] },
+	/*
+	 * rt_sigqueueinfo(pid_t pid, int sig, siginfo_t __user *uinfo)
+	 * rt_tgsigqueueinfo(pid_t tgid, pid_t pid, int sig,
+	 *                   siginfo_t __user *uinfo)
+	 *
+	 * Attribution-only registration -- argtype[*] for the siginfo
+	 * slot is not ARG_STRUCT_PTR_*, so the schema-aware fill never
+	 * runs against rec->a3 (rt_sigqueueinfo) / rec->a4
+	 * (rt_tgsigqueueinfo).  The bespoke sanitisers keep owning the
+	 * live fill (fill_siginfo_by_class on rt_sigqueueinfo, a fixed
+	 * SI_QUEUE shape on rt_tgsigqueueinfo), and this entry lets
+	 * struct_field_for_cmp() steer CMP-learned constants at the
+	 * named si_signo / si_code / si_pid / si_uid / si_value slots
+	 * rather than at coincidentally-same-width slots.  Variants in
+	 * the descriptor scope the candidate field pool to the live
+	 * _kill / _rt arm whenever struct_desc_resolve_variant is
+	 * called with the post-fill buf (CMP-time callers that pass
+	 * buf == NULL fall through to the shared head).
+	 *
+	 * Not mapped here on purpose: waitid's a3 is a kernel-written
+	 * OUTPUT (mirrors the gettimeofday / get_robust_list /
+	 * cachestat-output skips above) and registering it would
+	 * attribute CMP-learned constants against bytes the kernel
+	 * wrote rather than bytes we stamped.  pidfd_send_signal's a3
+	 * is also struct siginfo_t but is intentionally out of scope
+	 * for this commit.
+	 */
+	{ "rt_sigqueueinfo",	3, &struct_catalog[SC_SIGINFO_T] },
+	{ "rt_tgsigqueueinfo",	4, &struct_catalog[SC_SIGINFO_T] },
 	/* mq_open(const char *, int, mode_t, struct mq_attr *) */
 	{ "mq_open",		4, &struct_catalog[SC_MQ_ATTR] },
 	/* mq_getsetattr(mqd_t, const struct mq_attr *, struct mq_attr *) */
