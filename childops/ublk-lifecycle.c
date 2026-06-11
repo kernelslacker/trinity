@@ -51,26 +51,19 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
-#include <sys/mman.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <unistd.h>
 #include <linux/io_uring.h>
 
 #include "child.h"
+#include "childops/iouring-ring.h"
 #include "shm.h"
 #include "stats.h"
 #include "trinity.h"
 
-#ifndef __NR_io_uring_setup
-#define __NR_io_uring_setup	425
+#ifndef __NR_io_uring_enter
 #define __NR_io_uring_enter	426
-#endif
-
-#ifndef IORING_OFF_SQ_RING
-#define IORING_OFF_SQ_RING	0ULL
-#define IORING_OFF_CQ_RING	0x8000000ULL
-#define IORING_OFF_SQES		0x10000000ULL
 #endif
 
 /*
@@ -141,16 +134,6 @@ struct ublk_lc_io_cmd {
  * is structurally absent and never cleared. */
 static bool ns_unsupported_ublk;
 
-struct ublk_lc_ring {
-	int		fd;
-	void		*sq_ring, *cq_ring, *sqes;
-	size_t		sq_ring_sz, cq_ring_sz, sqes_sz;
-	bool		single_mmap;
-	unsigned int	sq_entries;
-	unsigned int	sq_off_head, sq_off_tail, sq_off_mask, sq_off_array;
-	unsigned int	cq_off_head, cq_off_tail, cq_off_mask, cq_off_cqes;
-};
-
 static inline unsigned int rdu32(void *ring, unsigned int off)
 {
 	return *(volatile unsigned int *)((char *)ring + off);
@@ -161,83 +144,7 @@ static inline void wru32(void *ring, unsigned int off, unsigned int v)
 	*(volatile unsigned int *)((char *)ring + off) = v;
 }
 
-static bool ring_setup(struct ublk_lc_ring *r, unsigned int entries)
-{
-	struct io_uring_params p;
-	void *sq, *cq, *sqes;
-
-	memset(r, 0, sizeof(*r));
-	r->fd = -1;
-	memset(&p, 0, sizeof(p));
-
-	r->fd = (int)syscall(__NR_io_uring_setup, entries, &p);
-	if (r->fd < 0)
-		return false;
-
-	r->sq_ring_sz = (size_t)p.sq_off.array + (size_t)p.sq_entries * sizeof(unsigned int);
-	r->cq_ring_sz = (size_t)p.cq_off.cqes + (size_t)p.cq_entries * sizeof(struct io_uring_cqe);
-	r->sqes_sz    = (size_t)p.sq_entries * sizeof(struct io_uring_sqe);
-
-	sq = mmap(NULL, r->sq_ring_sz, PROT_READ | PROT_WRITE,
-		  MAP_SHARED | MAP_POPULATE, r->fd, IORING_OFF_SQ_RING);
-	if (sq == MAP_FAILED)
-		goto fail_close;
-
-	if (p.features & IORING_FEAT_SINGLE_MMAP) {
-		cq = sq;
-		r->single_mmap = true;
-		r->cq_ring_sz = 0;
-	} else {
-		cq = mmap(NULL, r->cq_ring_sz, PROT_READ | PROT_WRITE,
-			  MAP_SHARED | MAP_POPULATE, r->fd, IORING_OFF_CQ_RING);
-		if (cq == MAP_FAILED) {
-			munmap(sq, r->sq_ring_sz);
-			goto fail_close;
-		}
-	}
-
-	sqes = mmap(NULL, r->sqes_sz, PROT_READ | PROT_WRITE,
-		    MAP_SHARED | MAP_POPULATE, r->fd, IORING_OFF_SQES);
-	if (sqes == MAP_FAILED) {
-		if (!r->single_mmap)
-			munmap(cq, r->cq_ring_sz);
-		munmap(sq, r->sq_ring_sz);
-		goto fail_close;
-	}
-
-	r->sq_ring = sq;
-	r->cq_ring = cq;
-	r->sqes = sqes;
-	r->sq_entries = p.sq_entries;
-	r->sq_off_head = p.sq_off.head;
-	r->sq_off_tail = p.sq_off.tail;
-	r->sq_off_mask = p.sq_off.ring_mask;
-	r->sq_off_array = p.sq_off.array;
-	r->cq_off_head = p.cq_off.head;
-	r->cq_off_tail = p.cq_off.tail;
-	r->cq_off_mask = p.cq_off.ring_mask;
-	r->cq_off_cqes = p.cq_off.cqes;
-	return true;
-
-fail_close:
-	close(r->fd);
-	r->fd = -1;
-	return false;
-}
-
-static void ring_teardown(struct ublk_lc_ring *r)
-{
-	if (r->sqes)
-		munmap(r->sqes, r->sqes_sz);
-	if (r->cq_ring && !r->single_mmap)
-		munmap(r->cq_ring, r->cq_ring_sz);
-	if (r->sq_ring)
-		munmap(r->sq_ring, r->sq_ring_sz);
-	if (r->fd >= 0)
-		close(r->fd);
-}
-
-static bool ring_submit(struct ublk_lc_ring *r, struct io_uring_sqe *sqe,
+static bool ring_submit(struct iour_ring *r, struct io_uring_sqe *sqe,
 			unsigned int min_complete)
 {
 	unsigned int mask = rdu32(r->sq_ring, r->sq_off_mask);
@@ -263,7 +170,7 @@ static bool ring_submit(struct ublk_lc_ring *r, struct io_uring_sqe *sqe,
 	return rc >= 0;
 }
 
-static void ring_drain(struct ublk_lc_ring *r)
+static void ring_drain(struct iour_ring *r)
 {
 	unsigned int head = rdu32(r->cq_ring, r->cq_off_head);
 	unsigned int tail = rdu32(r->cq_ring, r->cq_off_tail);
@@ -282,8 +189,8 @@ static void ring_drain(struct ublk_lc_ring *r)
  * (ublksrv_ctrl_cmd payload, io_cmd payload, SQE, qpath, ublk_lc_ctrl_dev_info)
  * stays local to its phase. */
 struct ublk_lifecycle_iter_ctx {
-	struct ublk_lc_ring	ctrl_ring;
-	struct ublk_lc_ring	io_ring;
+	struct iour_ring	ctrl_ring;
+	struct iour_ring	io_ring;
 	int			ctrl_fd;
 	int			q_fd;
 	int			dev_id;
@@ -313,16 +220,31 @@ static bool ublk_lifecycle_iter_setup(struct ublk_lifecycle_iter_ctx *ctx)
 		return false;
 	}
 
-	if (!ring_setup(&ctx->ctrl_ring, UBLK_LC_RING_DEPTH)) {
-		if (errno == ENOSYS)
-			ns_unsupported_ublk = true;
-		return false;
-	}
-	ctx->ctrl_ring_up = true;
+	{
+		struct io_uring_params p;
+		enum iour_setup_status st;
 
-	if (!ring_setup(&ctx->io_ring, UBLK_LC_RING_DEPTH))
-		return false;
-	ctx->io_ring_up = true;
+		memset(&p, 0, sizeof(p));
+		st = iour_ring_setup(&p, UBLK_LC_RING_DEPTH, &ctx->ctrl_ring);
+		if (st != IOUR_SUPPORTED) {
+			/* Latch ns_unsupported_ublk only on a real "this
+			 * kernel will never support io_uring" verdict.
+			 * Transient setup failures (ENOMEM / EAGAIN /
+			 * EMFILE / overflow-rejected hostile return / mmap
+			 * blip) skip this invocation but leave siblings
+			 * free to retry. */
+			if (st == IOUR_UNSUPPORTED)
+				ns_unsupported_ublk = true;
+			return false;
+		}
+		ctx->ctrl_ring_up = true;
+
+		memset(&p, 0, sizeof(p));
+		if (iour_ring_setup(&p, UBLK_LC_RING_DEPTH,
+				    &ctx->io_ring) != IOUR_SUPPORTED)
+			return false;
+		ctx->io_ring_up = true;
+	}
 	return true;
 }
 
@@ -456,9 +378,9 @@ static void ublk_lifecycle_iter_teardown(struct ublk_lifecycle_iter_ctx *ctx)
 	if (ctx->q_fd >= 0)
 		close(ctx->q_fd);
 	if (ctx->io_ring_up)
-		ring_teardown(&ctx->io_ring);
+		iour_ring_teardown(&ctx->io_ring);
 	if (ctx->ctrl_ring_up)
-		ring_teardown(&ctx->ctrl_ring);
+		iour_ring_teardown(&ctx->ctrl_ring);
 	if (ctx->ctrl_fd >= 0)
 		close(ctx->ctrl_fd);
 }
