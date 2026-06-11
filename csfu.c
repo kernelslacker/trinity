@@ -89,6 +89,10 @@ struct csfu_buf build_csfu_struct(const struct csfu_desc *desc)
 			out.usize = desc->known_sizes[rnd_modulo_u32((uint32_t) desc->n_known_sizes)];
 		else
 			out.usize = rnd_modulo_u32((uint32_t) desc->ksize);
+		/* known_sizes[] entries are caller-curated and may exceed buflen;
+		 * relocate-by-size copies usize bytes, so an unclamped pick would
+		 * read past the end of the buffer. */
+		out.usize = min(out.usize, out.buflen);
 		break;
 
 	case CSFU_BUCKET_EXACT:
