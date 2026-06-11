@@ -5167,6 +5167,15 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 */
 	{ "mq_timedreceive",	5, &struct_catalog[SC_TIMESPEC] },
 	/*
+	 * io_getevents(aio_context_t ctx_id, long min_nr, long nr,
+	 *              struct io_event *events, struct timespec *timeout)
+	 * a5 is the INPUT timeout timespec.  Attribution-only: the bespoke
+	 * sanitise_io_getevents (stamps the slot via get_writable_address)
+	 * continues to own the live fill; this row only lets schema-aware
+	 * CMP attribution name the tv_sec / tv_nsec fields.
+	 */
+	{ "io_getevents",	5, &struct_catalog[SC_TIMESPEC] },
+	/*
 	 * cachestat(unsigned int fd, struct cachestat_range *cstat_range,
 	 *           struct cachestat *cstat, unsigned int flags)
 	 * Maps the INPUT cstat_range arg only; cstat is the kernel-written
