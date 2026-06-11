@@ -1276,13 +1276,24 @@ static void handle_childsig(int childno, int childstatus, bool stop)
 	case SIGABRT:
 	case SIGBUS:
 	case SIGILL:
-		if (stop == true)
+		if (stop == true) {
+			/* ptrace-STOPPED, not dead.  The slot is still live; if
+			 * we register it as a zombie, the slot's childdata is
+			 * freed and replace_child() is gated for up to 300s
+			 * until process_zombie_pending() decides the pid is
+			 * gone -- except the pid never goes, because the task
+			 * is just stopped.  Mirror the default branch: log,
+			 * release the pidstat fd, and let the next ptrace event
+			 * (continue / kill / real death) drive the slot. */
 			debugf("Child %d (pid %d) was stopped by %s\n",
 					childno, pid, strsignal(WSTOPSIG(childstatus)));
-		else {
-			debugf("got a signal from child %d (pid %d) (%s)\n",
-					childno, pid, strsignal(WTERMSIG(childstatus)));
+			if (pidstatfiles[childno] >= 0)
+				close(pidstatfiles[childno]);
+			pidstatfiles[childno] = -1;
+			return;
 		}
+		debugf("got a signal from child %d (pid %d) (%s)\n",
+				childno, pid, strsignal(WTERMSIG(childstatus)));
 		register_zombie_slot(childno, pid);
 		return;
 
