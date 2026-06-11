@@ -544,6 +544,22 @@ void child_fault_handler(int sig, siginfo_t *info, void *ctx)
 		_exit(EXIT_SUCCESS);
 	}
 	/*
+	 * do_extrafork() throwaway grand-child gate.  Hoisted to cover
+	 * the beacon stamp AND the per-pid buglog open / shared stderr-
+	 * memfd drain below: this_child() returns the parent worker's
+	 * childdata (cached_pid is COW-inherited and never updated
+	 * across the throwaway fork), so a beacon stamp would publish a
+	 * fault attributed to the wrong worker, and the buglog open +
+	 * memfd lseek+drain would corrupt the worker's on-disk forensic
+	 * record for an unrelated fault and race with the worker's own
+	 * memfd offset.  Skip straight to the in-handler stderr writes
+	 * below; the grand-child has no childdata of its own to stamp
+	 * into and the kernel-side crash artefacts still surface the
+	 * death.
+	 */
+	if (in_extrafork_grandchild)
+		goto skip_buglog;
+	/*
 	 * Stamp the fault beacon FIRST -- before umask, open, dup2,
 	 * backtrace_symbols_fd, write_siginfo_safely, or anything else
 	 * libc-touchy.  When the underlying root cause is a corrupted
@@ -562,18 +578,7 @@ void child_fault_handler(int sig, siginfo_t *info, void *ctx)
 	{
 		struct childdata *me = this_child();
 
-		/*
-		 * Skip the beacon stamp when we're the do_extrafork()
-		 * throwaway grand-child: this_child() returns the parent
-		 * worker's childdata (cached_pid is COW-inherited and never
-		 * updated across the throwaway fork), so a stamp here would
-		 * publish a fault beacon attributed to the wrong worker --
-		 * the parent's canary queue then bills the crash to a worker
-		 * that is alive and well, retiring it for no reason.  The
-		 * grand-child has no childdata of its own to stamp into; the
-		 * kernel-side crash artefacts still surface the death.
-		 */
-		if (me != NULL && !in_extrafork_grandchild) {
+		if (me != NULL) {
 			struct child_fault_beacon *beacon = &me->fault_beacon;
 			struct child_fault_beacon local;
 			enum syscallstate st = me->syscall.state;
@@ -722,6 +727,7 @@ void child_fault_handler(int sig, siginfo_t *info, void *ctx)
 			close(bug_fd);
 		}
 	}
+skip_buglog:
 #if defined(USE_BACKTRACE) && !defined(__SANITIZE_ADDRESS__)
 	{
 		void *frames[64];
