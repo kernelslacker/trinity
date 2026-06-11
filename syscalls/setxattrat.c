@@ -114,7 +114,7 @@ static void sanitise_setxattrat(struct syscallrecord *rec)
 		}
 
 		rec->a5 = (unsigned long) args;
-		avoid_shared_buffer_inout(&rec->a5, sizeof(struct xattr_args));
+		avoid_shared_buffer_inout(&rec->a5, buf.usize);
 		rec->a6 = buf.usize;
 	}
 #endif
