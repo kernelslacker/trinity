@@ -2229,7 +2229,9 @@ out:
  */
 static bool recipe_iouring_fixed_uaf(bool *unsupported)
 {
-	struct iour_ctx ctx;
+	struct iour_ring ctx;
+	struct io_uring_params p;
+	enum iour_setup_status st;
 	struct io_uring_sqe *sqes_arr;
 	int devnull = -1;
 	int fds[1];
@@ -2239,24 +2241,26 @@ static bool recipe_iouring_fixed_uaf(bool *unsupported)
 	bool ok = false;
 	int r;
 
-	/* The setup-ENOSYS/EPERM and SQ-mmap-EOPNOTSUPP/EPERM cases the
-	 * hand-rolled version detected separately collapse into a single
-	 * post-call errno check: iour_setup_exact preserves errno across
-	 * its cleanup path, and any of ENOSYS/EPERM/EOPNOTSUPP on the way
-	 * in means the kernel doesn't support the feature -- stop probing.
-	 *
-	 * Deliberately the _exact() variant, not iour_setup(): the UAF
+	/* No RAND_NEGATIVE_OR wrap on the entries count: the UAF
 	 * reproducer's hit rate depends on the kernel allocating a ring
-	 * with the requested 8-entry shape every iteration.  Routing
-	 * through iour_setup() would substitute a curated edge value (0,
-	 * -1, INT_MAX, ...) for entries on ~1/RAND_NEGATIVE_RATIO calls,
-	 * which either fails the setup outright or yields a differently-
-	 * shaped ring -- both dilute this recipe's race window without
-	 * adding coverage the other iour_setup() callers don't already
-	 * provide. */
-	if (!iour_setup_exact(&ctx, 8U)) {
-		if (errno == ENOSYS || errno == EPERM ||
-		    errno == EOPNOTSUPP) {
+	 * with the requested 8-entry shape every iteration.  An
+	 * edge-value substitution (0, -1, INT_MAX, ...) would either
+	 * fail the setup outright or yield a differently-shaped ring --
+	 * both dilute this recipe's race window without adding coverage
+	 * the other ring callers don't already provide.
+	 *
+	 * The helper's 3-state status replaces the old setup-then-
+	 * inspect-errno classification: IOUR_UNSUPPORTED means the
+	 * kernel will never support io_uring on this host (CONFIG off,
+	 * sysctl off, persistently rejected), so we latch
+	 * *unsupported.  IOUR_TRANSIENT (ENOMEM/EAGAIN/EMFILE, an
+	 * overflow-rejected hostile kernel return, an mmap blip) skips
+	 * the recipe without latching -- the next dispatch may well
+	 * succeed. */
+	memset(&p, 0, sizeof(p));
+	st = iour_ring_setup(&p, 8U, &ctx);
+	if (st != IOUR_SUPPORTED) {
+		if (st == IOUR_UNSUPPORTED) {
 			*unsupported = true;
 			__atomic_add_fetch(&shm->stats.recipe_unsupported, 1,
 					   __ATOMIC_RELAXED);
@@ -2344,7 +2348,7 @@ out:
 			      IORING_UNREGISTER_FILES, NULL, 0U);
 	if (devnull >= 0)
 		close(devnull);
-	iour_teardown(&ctx);
+	iour_ring_teardown(&ctx);
 	return ok;
 }
 

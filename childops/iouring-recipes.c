@@ -103,7 +103,7 @@ struct iour_open_how {
  * abort paths.
  */
 struct iour_recipe_state {
-	struct iour_ctx	*ctx;		/* outer ring; convenience handle */
+	struct iour_ring *ctx;		/* outer ring; convenience handle */
 
 	int		evfd;
 	int		sock[2];
@@ -114,7 +114,7 @@ struct iour_recipe_state {
 	int		epoll_fd;
 	void		*malloc_buf;
 
-	struct iour_ctx	inner;		/* recipe_msg_ring destination */
+	struct iour_ring inner;		/* recipe_msg_ring destination */
 	bool		inner_active;
 
 	bool		registered_buf;	  /* IORING_REGISTER_BUFFERS active */
@@ -126,130 +126,17 @@ struct iour_recipe_state {
 };
 
 /*
- * Set up a private io_uring with the requested number of SQ entries,
- * passing `entries` to io_uring_setup verbatim -- no RAND_NEGATIVE_OR
- * edge-value injection.  Use this for reproducer recipes whose hit rate
- * depends on a fixed ring shape (an edge `entries` value would set up a
- * differently-shaped ring or fail outright, diluting the reproducer).
- *
- * Returns true on success; ctx is fully populated.  On failure, ctx is
- * zeroed and no resources need freeing; errno is preserved across the
- * cleanup so the caller can distinguish io_uring_setup vs mmap failures.
+ * Ring lifecycle moved to childops/iouring-ring.{c,h}.  Callers in
+ * this file invoke iour_ring_setup / iour_ring_teardown directly --
+ * see iouring_recipes() for the outer-ring setup and recipe_msg_ring
+ * for the inner-ring setup.
  */
-bool iour_setup_exact(struct iour_ctx *ctx, unsigned int entries)
-{
-	struct io_uring_params p;
-	size_t sq_sz, cq_sz, sqes_sz;
-	void *sq_ring, *cq_ring, *sqes;
-
-	memset(ctx, 0, sizeof(*ctx));
-	ctx->fd = -1;
-
-	memset(&p, 0, sizeof(p));
-	ctx->fd = (int)syscall(__NR_io_uring_setup, entries, &p);
-	if (ctx->fd < 0)
-		return false;
-
-	/* SQ ring: sq_off.array offset + sq_entries * sizeof(u32). */
-	sq_sz = (size_t)p.sq_off.array + (size_t)p.sq_entries * sizeof(unsigned int);
-	/* CQ ring: cq_off.cqes offset + cq_entries * sizeof(io_uring_cqe). */
-	cq_sz = (size_t)p.cq_off.cqes + (size_t)p.cq_entries * sizeof(struct io_uring_cqe);
-	/* SQE array: sq_entries * sizeof(io_uring_sqe). */
-	sqes_sz = (size_t)p.sq_entries * sizeof(struct io_uring_sqe);
-
-	sq_ring = mmap(NULL, sq_sz, PROT_READ | PROT_WRITE,
-		       MAP_SHARED | MAP_POPULATE, ctx->fd, IORING_OFF_SQ_RING);
-	if (sq_ring == MAP_FAILED)
-		goto fail_close;
-
-	if (p.features & IORING_FEAT_SINGLE_MMAP) {
-		cq_ring = sq_ring;
-		ctx->single_mmap = true;
-	} else {
-		cq_ring = mmap(NULL, cq_sz, PROT_READ | PROT_WRITE,
-			       MAP_SHARED | MAP_POPULATE,
-			       ctx->fd, IORING_OFF_CQ_RING);
-		if (cq_ring == MAP_FAILED) {
-			munmap(sq_ring, sq_sz);
-			goto fail_close;
-		}
-	}
-
-	sqes = mmap(NULL, sqes_sz, PROT_READ | PROT_WRITE,
-		    MAP_SHARED | MAP_POPULATE, ctx->fd, IORING_OFF_SQES);
-	if (sqes == MAP_FAILED) {
-		if (!ctx->single_mmap)
-			munmap(cq_ring, cq_sz);
-		munmap(sq_ring, sq_sz);
-		goto fail_close;
-	}
-
-	ctx->sq_ring    = sq_ring;
-	ctx->sq_ring_sz = sq_sz;
-	ctx->cq_ring    = cq_ring;
-	ctx->cq_ring_sz = ctx->single_mmap ? 0 : cq_sz;
-	ctx->sqes       = sqes;
-	ctx->sqes_sz    = sqes_sz;
-
-	ctx->sq_entries = p.sq_entries;
-	ctx->cq_entries = p.cq_entries;
-
-	ctx->sq_off_head  = p.sq_off.head;
-	ctx->sq_off_tail  = p.sq_off.tail;
-	ctx->sq_off_mask  = p.sq_off.ring_mask;
-	ctx->sq_off_array = p.sq_off.array;
-
-	ctx->cq_off_head  = p.cq_off.head;
-	ctx->cq_off_tail  = p.cq_off.tail;
-	ctx->cq_off_mask  = p.cq_off.ring_mask;
-	ctx->cq_off_cqes  = p.cq_off.cqes;
-
-	return true;
-
-fail_close:
-	{
-		int saved_errno = errno;
-
-		close(ctx->fd);
-		ctx->fd = -1;
-		errno = saved_errno;
-	}
-	return false;
-}
-
-/*
- * Edge-fuzzing wrapper around iour_setup_exact: ~1/RAND_NEGATIVE_RATIO
- * of invocations substitute a curated boundary value (0, -1, INT_MAX,
- * ...) for `entries` so io_uring_setup's bounds-check path gets
- * exercised.  Recipes that don't care about ring shape -- the chained-
- * SQE sequences and per-opcode breadth recipes here -- use this; the
- * fixed-uaf reproducer in recipe-runner.c calls iour_setup_exact()
- * directly because an edge-value entries setup would dilute its hit
- * rate.
- */
-bool iour_setup(struct iour_ctx *ctx, unsigned int entries)
-{
-	return iour_setup_exact(ctx,
-				(unsigned int)RAND_NEGATIVE_OR(entries));
-}
-
-void iour_teardown(struct iour_ctx *ctx)
-{
-	if (ctx->sqes)
-		munmap(ctx->sqes, ctx->sqes_sz);
-	if (ctx->cq_ring && !ctx->single_mmap)
-		munmap(ctx->cq_ring, ctx->cq_ring_sz);
-	if (ctx->sq_ring)
-		munmap(ctx->sq_ring, ctx->sq_ring_sz);
-	if (ctx->fd >= 0)
-		close(ctx->fd);
-}
 
 /*
  * Place n SQEs starting at sqe[] into the submission ring and update the
  * published tail.  Returns false if n exceeds the available ring space.
  */
-static bool iour_submit_sqes(struct iour_ctx *ctx,
+static bool iour_submit_sqes(struct iour_ring *ctx,
 			      struct io_uring_sqe *sqe, unsigned int n)
 {
 	unsigned int mask  = ring_u32(ctx->sq_ring, ctx->sq_off_mask);
@@ -280,7 +167,7 @@ static bool iour_submit_sqes(struct iour_ctx *ctx,
 /*
  * Submit n SQEs and optionally wait for min_complete CQEs.
  */
-static int iour_enter(struct iour_ctx *ctx, unsigned int n,
+static int iour_enter(struct iour_ring *ctx, unsigned int n,
 		      unsigned int min_complete)
 {
 	return (int)syscall(__NR_io_uring_enter, ctx->fd, n, min_complete,
@@ -290,7 +177,7 @@ static int iour_enter(struct iour_ctx *ctx, unsigned int n,
 /*
  * Drain all available CQEs from the completion ring, advancing the head.
  */
-static void iour_drain_cqes(struct iour_ctx *ctx)
+static void iour_drain_cqes(struct iour_ring *ctx)
 {
 	unsigned int head = ring_u32(ctx->cq_ring, ctx->cq_off_head);
 	unsigned int tail;
@@ -312,7 +199,7 @@ static void sqe_clear(struct io_uring_sqe *s)
 }
 
 static void iour_recipe_state_init(struct iour_recipe_state *s,
-				   struct iour_ctx *ctx)
+				   struct iour_ring *ctx)
 {
 	memset(s, 0, sizeof(*s));
 	s->ctx        = ctx;
@@ -356,7 +243,7 @@ static void iour_recipe_state_cleanup(struct iour_recipe_state *s)
 		 * landing path.  Skip the REMOVE_BUFFERS submission
 		 * rather than spinning on a retry loop -- the kernel
 		 * reclaims the provided-buffer pool when the ring
-		 * itself is closed in iour_teardown(), so the only
+		 * itself is closed in iour_ring_teardown(), so the only
 		 * thing we lose by skipping is the ability to reuse
 		 * the group id within this same ring before the close,
 		 * which no recipe path does. */
@@ -383,7 +270,7 @@ static void iour_recipe_state_cleanup(struct iour_recipe_state *s)
 		s->registered_files = false;
 	}
 	if (s->inner_active) {
-		iour_teardown(&s->inner);
+		iour_ring_teardown(&s->inner);
 		s->inner_active = false;
 	}
 	if (s->evfd >= 0) {
@@ -520,7 +407,7 @@ void iouring_recipes_pool_race_handler(int sig, siginfo_t *info,
 static bool recipe_nop_chain(struct iour_recipe_state *s,
 			      bool *unsupported __unused__)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqes[3];
 	int r;
 
@@ -560,7 +447,7 @@ static bool recipe_nop_chain(struct iour_recipe_state *s,
 static bool recipe_timeout_drain(struct iour_recipe_state *s,
 				 bool *unsupported __unused__)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqes[2];
 	struct __kernel_timespec ts;
 	int r;
@@ -607,7 +494,7 @@ static bool recipe_timeout_drain(struct iour_recipe_state *s,
 static bool recipe_poll_multishot(struct iour_recipe_state *s,
 				  bool *unsupported __unused__)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqes[2];
 	bool ok = false;
 	int r;
@@ -654,7 +541,7 @@ out:
 static bool recipe_send_recv_linked(struct iour_recipe_state *s,
 				    bool *unsupported __unused__)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqes[2];
 	char buf[32];
 	bool ok = false;
@@ -706,7 +593,7 @@ out:
 static bool recipe_openat_close_linked(struct iour_recipe_state *s,
 				       bool *unsupported __unused__)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqes[2];
 	int r;
 	static const char devnull[] = "/dev/null";
@@ -746,7 +633,7 @@ static bool recipe_openat_close_linked(struct iour_recipe_state *s,
 static bool recipe_socket_shutdown_linked(struct iour_recipe_state *s,
 					  bool *unsupported)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqes[2];
 	int r;
 
@@ -791,7 +678,7 @@ static bool recipe_socket_shutdown_linked(struct iour_recipe_state *s,
 static bool recipe_nop_cqe_skip(struct iour_recipe_state *s,
 				bool *unsupported __unused__)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqes[3];
 	int r;
 
@@ -833,7 +720,7 @@ static bool recipe_nop_cqe_skip(struct iour_recipe_state *s,
 static bool recipe_async_cancel(struct iour_recipe_state *s,
 				bool *unsupported __unused__)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqes[2];
 	bool ok = false;
 	int r;
@@ -880,7 +767,7 @@ out:
 static bool recipe_fixed_buffer_read(struct iour_recipe_state *s,
 				     bool *unsupported __unused__)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct iovec iov;
 	struct io_uring_sqe sqe;
 	struct map *m = NULL;
@@ -967,7 +854,7 @@ out:
 static bool recipe_write_read_fixed(struct iour_recipe_state *s,
 				    bool *unsupported __unused__)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqes[2];
 	struct iovec iov;
 	struct map *m = NULL;
@@ -1062,7 +949,7 @@ static bool recipe_provide_buffers(struct iour_recipe_state *s,
 #define PBUF_COUNT	4
 #define PBUF_BUF_SIZE	256
 
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	bool ok = false;
 	int r;
@@ -1158,14 +1045,20 @@ out:
 
 static bool recipe_msg_ring(struct iour_recipe_state *s, bool *unsupported)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	bool ok = false;
 	int r;
 
-	if (!iour_setup(&s->inner, 8))
-		goto out;
-	s->inner_active = true;
+	{
+		struct io_uring_params p;
+
+		memset(&p, 0, sizeof(p));
+		if (iour_ring_setup(&p, (unsigned int)RAND_NEGATIVE_OR(8),
+				    &s->inner) != IOUR_SUPPORTED)
+			goto out;
+		s->inner_active = true;
+	}
 
 	sqe_clear(&sqe);
 	sqe.opcode    = IORING_OP_MSG_RING;
@@ -1205,7 +1098,7 @@ out:
 static bool recipe_statx_fixed_file(struct iour_recipe_state *s,
 				    bool *unsupported __unused__)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	struct statx stx;
 	int fds[1];
@@ -1261,7 +1154,7 @@ out:
 #ifndef TRINITY_COMPAT_BACKFILLED_FUTEX_WAIT_WAKE
 static bool recipe_futex_wait_wake(struct iour_recipe_state *s, bool *unsupported)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqes[2];
 	struct map *m = NULL;
 	uint32_t *addr = NULL;
@@ -1344,7 +1237,7 @@ out:
  * ------------------------------------------------------------------ */
 static bool recipe_epoll_wait(struct iour_recipe_state *s, bool *unsupported)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	struct epoll_event ev;
 	struct epoll_event evs[4];
@@ -1409,7 +1302,7 @@ out:
 static bool recipe_sendmsg(struct iour_recipe_state *s,
 			   bool *unsupported __unused__)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	struct msghdr msg;
 	struct iovec iov;
@@ -1449,7 +1342,7 @@ static bool recipe_sendmsg(struct iour_recipe_state *s,
 static bool recipe_recvmsg(struct iour_recipe_state *s,
 			   bool *unsupported __unused__)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	struct msghdr msg;
 	struct iovec iov;
@@ -1496,7 +1389,7 @@ static bool recipe_recvmsg(struct iour_recipe_state *s,
 static bool recipe_accept(struct iour_recipe_state *s,
 			  bool *unsupported __unused__)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	struct sockaddr_storage ss;
 	socklen_t slen = sizeof(ss);
@@ -1531,7 +1424,7 @@ static bool recipe_accept(struct iour_recipe_state *s,
 static bool recipe_connect(struct iour_recipe_state *s,
 			   bool *unsupported __unused__)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	struct sockaddr_in sin;
 	int r;
@@ -1572,7 +1465,7 @@ static bool recipe_connect(struct iour_recipe_state *s,
 #ifndef TRINITY_COMPAT_BACKFILLED_BIND
 static bool recipe_bind(struct iour_recipe_state *s, bool *unsupported)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	struct sockaddr_in sin;
 	int r;
@@ -1614,7 +1507,7 @@ static bool recipe_bind(struct iour_recipe_state *s, bool *unsupported)
  * ------------------------------------------------------------------ */
 static bool recipe_listen(struct iour_recipe_state *s, bool *unsupported)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	struct sockaddr_in sin;
 	int r;
@@ -1673,7 +1566,7 @@ static int iour_make_memfd(void)
 static bool recipe_fsync(struct iour_recipe_state *s,
 			 bool *unsupported __unused__)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	int r;
 
@@ -1702,7 +1595,7 @@ static bool recipe_fsync(struct iour_recipe_state *s,
 static bool recipe_sync_file_range(struct iour_recipe_state *s,
 				   bool *unsupported __unused__)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	int r;
 
@@ -1733,7 +1626,7 @@ static bool recipe_sync_file_range(struct iour_recipe_state *s,
 static bool recipe_readv(struct iour_recipe_state *s,
 			 bool *unsupported __unused__)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	struct iovec iov[2];
 	char buf1[64], buf2[64];
@@ -1771,7 +1664,7 @@ static bool recipe_readv(struct iour_recipe_state *s,
 static bool recipe_writev(struct iour_recipe_state *s,
 			  bool *unsupported __unused__)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	struct iovec iov[2];
 	char buf1[32], buf2[32];
@@ -1813,7 +1706,7 @@ static bool recipe_writev(struct iour_recipe_state *s,
 static bool recipe_fallocate(struct iour_recipe_state *s,
 			     bool *unsupported __unused__)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	int r;
 
@@ -1845,7 +1738,7 @@ static bool recipe_fallocate(struct iour_recipe_state *s,
  * ------------------------------------------------------------------ */
 static bool recipe_ftruncate(struct iour_recipe_state *s, bool *unsupported)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	int r;
 
@@ -1882,7 +1775,7 @@ static bool recipe_ftruncate(struct iour_recipe_state *s, bool *unsupported)
 static bool recipe_fadvise(struct iour_recipe_state *s,
 			   bool *unsupported __unused__)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	int r;
 
@@ -1917,7 +1810,7 @@ static bool recipe_fadvise(struct iour_recipe_state *s,
 static bool recipe_read_multishot(struct iour_recipe_state *s,
 				  bool *unsupported)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	int r;
 #define READMS_GROUP	7
@@ -1989,7 +1882,7 @@ static bool recipe_read_multishot(struct iour_recipe_state *s,
 static bool recipe_openat2(struct iour_recipe_state *s,
 			   bool *unsupported __unused__)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	struct iour_open_how how;
 	static const char path[] = "/dev/null";
@@ -2024,7 +1917,7 @@ static bool recipe_openat2(struct iour_recipe_state *s,
 static bool recipe_epoll_ctl(struct iour_recipe_state *s,
 			     bool *unsupported __unused__)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	struct epoll_event ev;
 	int r;
@@ -2063,7 +1956,7 @@ static bool recipe_epoll_ctl(struct iour_recipe_state *s,
 static bool recipe_splice(struct iour_recipe_state *s,
 			  bool *unsupported __unused__)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	int r;
 
@@ -2103,7 +1996,7 @@ static bool recipe_splice(struct iour_recipe_state *s,
 static bool recipe_tee(struct iour_recipe_state *s,
 		       bool *unsupported __unused__)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	int r;
 
@@ -2144,7 +2037,7 @@ static bool recipe_tee(struct iour_recipe_state *s,
 static bool recipe_files_update(struct iour_recipe_state *s,
 				bool *unsupported __unused__)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	int regfds[4] = { -1, -1, -1, -1 };
 	int newfds[1];
@@ -2189,7 +2082,7 @@ static bool recipe_files_update(struct iour_recipe_state *s,
 static bool recipe_link_timeout(struct iour_recipe_state *s,
 				bool *unsupported __unused__)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqes[2];
 	struct __kernel_timespec ts;
 	int r;
@@ -2224,7 +2117,7 @@ static bool recipe_link_timeout(struct iour_recipe_state *s,
 static bool recipe_timeout_remove(struct iour_recipe_state *s,
 				  bool *unsupported __unused__)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	struct __kernel_timespec ts;
 	int r;
@@ -2266,7 +2159,7 @@ static bool recipe_timeout_remove(struct iour_recipe_state *s,
 static bool recipe_renameat(struct iour_recipe_state *s,
 			    bool *unsupported __unused__)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	static const char oldp[] = "/tmp/trinity-iour-rn-src";
 	static const char newp[] = "/tmp/trinity-iour-rn-dst";
@@ -2296,7 +2189,7 @@ static bool recipe_renameat(struct iour_recipe_state *s,
 static bool recipe_unlinkat(struct iour_recipe_state *s,
 			    bool *unsupported __unused__)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	static const char path[] = "/tmp/trinity-iour-unlink-target";
 	int r;
@@ -2323,7 +2216,7 @@ static bool recipe_unlinkat(struct iour_recipe_state *s,
 static bool recipe_mkdirat(struct iour_recipe_state *s,
 			   bool *unsupported __unused__)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	static const char path[] = "/tmp/trinity-iour-mkdir-target";
 	int r;
@@ -2353,7 +2246,7 @@ static bool recipe_mkdirat(struct iour_recipe_state *s,
 static bool recipe_symlinkat(struct iour_recipe_state *s,
 			     bool *unsupported __unused__)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	static const char target[] = "/dev/null";
 	static const char linkp[]  = "/tmp/trinity-iour-symlink";
@@ -2381,7 +2274,7 @@ static bool recipe_symlinkat(struct iour_recipe_state *s,
 static bool recipe_linkat(struct iour_recipe_state *s,
 			  bool *unsupported __unused__)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	static const char oldp[] = "/dev/null";
 	static const char newp[] = "/tmp/trinity-iour-hardlink";
@@ -2413,7 +2306,7 @@ static bool recipe_linkat(struct iour_recipe_state *s,
 static bool recipe_setxattr(struct iour_recipe_state *s,
 			    bool *unsupported __unused__)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	static const char path[]  = "/tmp/trinity-iour-xattr-tgt";
 	static const char name[]  = "user.trinity";
@@ -2441,7 +2334,7 @@ static bool recipe_setxattr(struct iour_recipe_state *s,
 static bool recipe_fsetxattr(struct iour_recipe_state *s,
 			     bool *unsupported __unused__)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	static const char name[]  = "user.trinity";
 	static const char value[] = "v";
@@ -2472,7 +2365,7 @@ static bool recipe_fsetxattr(struct iour_recipe_state *s,
 static bool recipe_getxattr(struct iour_recipe_state *s,
 			    bool *unsupported __unused__)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	static const char path[] = "/dev/null";
 	static const char name[] = "user.trinity";
@@ -2500,7 +2393,7 @@ static bool recipe_getxattr(struct iour_recipe_state *s,
 static bool recipe_fgetxattr(struct iour_recipe_state *s,
 			     bool *unsupported __unused__)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	static const char name[] = "user.trinity";
 	char value[64];
@@ -2536,7 +2429,7 @@ static bool recipe_fgetxattr(struct iour_recipe_state *s,
  * ------------------------------------------------------------------ */
 static bool recipe_waitid(struct iour_recipe_state *s, bool *unsupported)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqe;
 	siginfo_t infop;
 	int r;
@@ -2598,7 +2491,7 @@ static bool recipe_waitid(struct iour_recipe_state *s, bool *unsupported)
 static bool recipe_eventfd_recursive(struct iour_recipe_state *s,
 				     bool *unsupported)
 {
-	struct iour_ctx *ctx = s->ctx;
+	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqes[8];
 	eventfd_t bufs[8];
 	uint64_t one = 1;
@@ -2764,7 +2657,7 @@ _Static_assert(ARRAY_SIZE(catalog) <= MAX_IOURING_RECIPES,
 
 bool iouring_recipes(struct childdata *child __unused__)
 {
-	struct iour_ctx ctx;
+	struct iour_ring ctx;
 	struct iour_recipe_state state;
 	const struct iour_recipe *r;
 	/* volatile: read after sigsetjmp/siglongjmp window so the value
@@ -2793,11 +2686,25 @@ bool iouring_recipes(struct childdata *child __unused__)
 
 	r = &catalog[idx];
 
-	if (!iour_setup(&ctx, 16)) {
-		if (errno == ENOSYS)
-			__atomic_store_n(&shm->iouring_enosys, true,
-					 __ATOMIC_RELAXED);
-		return true;
+	{
+		struct io_uring_params p;
+		enum iour_setup_status st;
+
+		memset(&p, 0, sizeof(p));
+		st = iour_ring_setup(&p, (unsigned int)RAND_NEGATIVE_OR(16),
+				     &ctx);
+		if (st != IOUR_SUPPORTED) {
+			/* Latch the per-process iouring_enosys gate only on
+			 * a real "this kernel won't ever support io_uring"
+			 * verdict.  A transient (ENOMEM/EAGAIN/EMFILE, an
+			 * overflow-rejected hostile kernel return, an mmap
+			 * blip) skips this invocation but leaves siblings
+			 * free to retry on the next dispatch. */
+			if (st == IOUR_UNSUPPORTED)
+				__atomic_store_n(&shm->iouring_enosys, true,
+						 __ATOMIC_RELAXED);
+			return true;
+		}
 	}
 
 	iour_recipe_state_init(&state, &ctx);
@@ -2839,8 +2746,9 @@ bool iouring_recipes(struct childdata *child __unused__)
 			 * but the per-iteration resources it allocated are
 			 * recorded in &state and torn down by
 			 * iour_recipe_state_cleanup() below.  The outer
-			 * iour_teardown() then releases the ring mmaps + ring
-			 * fd that iour_setup() populated above.  Don't latch
+			 * iour_ring_teardown() then releases the ring mmaps +
+			 * ring fd that iour_ring_setup() populated above.
+			 * Don't latch
 			 * iouring_recipe_disabled[idx] — faults are not
 			 * ENOSYS. */
 			__atomic_add_fetch(
@@ -2850,7 +2758,7 @@ bool iouring_recipes(struct childdata *child __unused__)
 	}
 
 	iour_recipe_state_cleanup(&state);
-	iour_teardown(&ctx);
+	iour_ring_teardown(&ctx);
 
 	if (unsupported)
 		__atomic_store_n(&shm->iouring_recipe_disabled[idx], true,
