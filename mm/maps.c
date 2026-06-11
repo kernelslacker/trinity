@@ -319,7 +319,21 @@ void map_destructor(struct object *obj)
 	extent = map->tracked_size ? map->tracked_size : map->size;
 	untrack_shared_region((unsigned long)map->ptr, extent);
 	munmap(map->ptr, extent);
-	free(map->name);
+	/*
+	 * Gate the name free on the live-allocation set, the same way the
+	 * BPF eBPF insn-buffer release does (syscalls/bpf.c:789).  The
+	 * alloc_track armor at get_map_handle (maps.c:103) validates the
+	 * obj pointer, not the bytes inside the obj; an in-place scribble
+	 * of map->name via a fuzzed value-result syscall can leave a real,
+	 * pool-resident obj with a wild .name that survives a shape-only
+	 * looks_like_corrupted_ptr.  Plain free() on the scribbled value
+	 * either aborts in glibc ("invalid pointer") or, worse, lands on a
+	 * valid-but-unowned chunk and corrupts the heap.  Leak the unproven
+	 * pointer instead -- "release what we own, leak the unproven", same
+	 * pattern as bpf_free_filter for the classic-BPF inner buffer.
+	 */
+	if (map->name != NULL && alloc_track_lookup(map->name))
+		free(map->name);
 	map->name = NULL;
 }
 
@@ -358,10 +372,23 @@ void map_destructor_shared(struct object *obj)
 	untrack_shared_region((unsigned long)map->ptr,
 			      map->tracked_size ? map->tracked_size : map->size);
 	munmap(map->ptr, map->tracked_size ? map->tracked_size : map->size);
-	if (map->name != NULL) {
+	/*
+	 * Gate the name free on shared-heap residency BEFORE strlen
+	 * touches the bytes.  The local destructor uses alloc_track_lookup
+	 * (libc heap); this variant's names live in the shared str heap
+	 * (alloc_shared_pool, registered via shared_regions[]), so
+	 * range_in_tracked_shared() is the matching ownership check.
+	 * Without the pre-strlen gate, a scribbled .name pointing outside
+	 * any tracked region drives strlen into unmapped memory before the
+	 * free_shared_str call is reached -- a wild read on the way to a
+	 * bad free.  Skip-and-leak on miss, mirror of map_destructor's
+	 * alloc_track_lookup gate.
+	 */
+	if (map->name != NULL &&
+	    range_in_tracked_shared((unsigned long)map->name, 1)) {
 		free_shared_str(map->name, strlen(map->name) + 1);
-		map->name = NULL;
 	}
+	map->name = NULL;
 }
 
 void map_dump(struct object *obj, enum obj_scope scope)
