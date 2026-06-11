@@ -207,7 +207,7 @@ static void sanitise_clone3(struct syscallrecord *rec)
 		args->tls = (unsigned long) get_address();
 
 	rec->a1 = (unsigned long) args;
-	avoid_shared_buffer_inout(&rec->a1, sizeof(struct clone_args));
+	avoid_shared_buffer_inout(&rec->a1, buf.usize);
 	rec->a2 = buf.usize;
 
 	/* Snapshot for the post handler -- a1 may be scribbled by a sibling
