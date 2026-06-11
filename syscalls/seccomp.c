@@ -308,13 +308,26 @@ static void post_seccomp(struct syscallrecord *rec)
 		 * sized window.  When neither holds, skip the inner-free
 		 * dispatch; the outer wrapper still enqueues so the
 		 * post_state slot is released.  Mirrors the bpf_free_filter()
-		 * inner-filter gate added in 64f659289041.
+		 * inner-filter gate.
+		 *
+		 * Inner-filter free is alloc_track_lookup()-gated and routed
+		 * through deferred_free_enqueue() rather than a shape-only
+		 * gate + direct free().  A scribbled fprog->filter that
+		 * aliases a chunk admitted to the deferred ring by another
+		 * site passes any shape check (the alias is a valid aligned
+		 * heap address) but misses the ownership check -- ring
+		 * admission drained the chunk from alloc_track -- so the
+		 * inner free is skipped.  A shape-only gate would have landed
+		 * an out-of-band free on the ring-pinned chunk, and the
+		 * original site's later ring_evict_oldest_safe would surface
+		 * as an ASAN bad-free.  Mirrors bpf_free_filter() and
+		 * syscalls/bpf.c BPF_PROG_LOAD eBPF cleanup.
 		 */
 		if (alloc_track_lookup(fprog) ||
 		    range_readable_user(fprog, sizeof(struct sock_fprog))) {
-			if (inner_ptr_ok_to_free(rec, fprog->filter,
-						 "post_seccomp/fprog_filter"))
-				tracked_free_now(fprog->filter);
+			if (fprog->filter != NULL &&
+			    alloc_track_lookup(fprog->filter))
+				deferred_free_enqueue(fprog->filter);
 		}
 		deferred_free_enqueue(fprog);
 		break;
