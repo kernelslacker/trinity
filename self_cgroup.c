@@ -412,6 +412,9 @@ static bool setup_split(const char *container_path,
 	int n;
 	int wfd = -1;
 	uint64_t parent_high;
+	bool main_in_parent = false;
+	bool scope_memory = false;
+	bool container_memory = false;
 
 	/* Only carve a subtree out of a scope that is ours alone (solo,
 	 * writable, memory available) -- trinity's own systemd-run scope.
@@ -451,25 +454,28 @@ static bool setup_split(const char *container_path,
 			  strerror(errno));
 		goto fail_rmdir;
 	}
+	main_in_parent = true;
 
 	/* Delegate +memory down the chain now the scope is process-free:
 	 * scope -> container -> {parent, children}. */
 	if (!write_cg_file(scope_path, "cgroup.subtree_control", "+memory")) {
 		outputerr("self-cgroup: enable +memory on scope subtree_control failed: %s\n",
 			  strerror(errno));
-		goto fail_rmdir;
+		goto fail_unwind;
 	}
+	scope_memory = true;
 	if (!enable_memory_subtree(container_path)) {
 		outputerr("self-cgroup: enable +memory in container subtree_control failed: %s\n",
 			  strerror(errno));
-		goto fail_rmdir;
+		goto fail_unwind;
 	}
+	container_memory = true;
 
 	/* Children: hard cap + swap cap + back-pressure threshold + group-OOM. */
 	if (!write_cg_file(children_path, "memory.max", children_max_str)) {
 		outputerr("self-cgroup: write children/memory.max=%s failed: %s\n",
 			  children_max_str, strerror(errno));
-		goto fail_rmdir;
+		goto fail_unwind;
 	}
 	if (!write_cg_file(children_path, "memory.high", children_high_str))
 		output(1, "self-cgroup: write children/memory.high=%s failed: %s\n",
@@ -490,7 +496,7 @@ static bool setup_split(const char *container_path,
 	n = snprintf(parent_high_str, sizeof(parent_high_str), "%" PRIu64,
 		     parent_high);
 	if (n < 0 || (size_t)n >= sizeof(parent_high_str))
-		goto fail_rmdir;
+		goto fail_unwind;
 	if (!write_cg_file(parent_path, "memory.high", parent_high_str))
 		output(1, "self-cgroup: write parent/memory.high=%s failed: %s\n",
 		       parent_high_str, strerror(errno));
@@ -505,7 +511,7 @@ static bool setup_split(const char *container_path,
 	if (wfd < 0) {
 		outputerr("self-cgroup: open(%s) failed: %s\n",
 			  children_path, strerror(errno));
-		goto fail_rmdir;
+		goto fail_unwind;
 	}
 
 	cg_parent = parent_path;
@@ -518,6 +524,32 @@ static bool setup_split(const char *container_path,
 	       parent_high_str, children_max_str, children_high_str, children_swap_str);
 	return true;
 
+fail_unwind:
+	/* Reverse the state setup_split installed so the single-cgroup
+	 * fallback sees a clean topology -- otherwise rmdir below trips on
+	 * the still-populated parent/ and the fallback inherits dangling
+	 * +memory delegation it can't write through.  cgroup v2 dictates a
+	 * strict order: a cgroup distributing controllers can't hold procs,
+	 * and a cgroup can't drop a controller from subtree_control while a
+	 * child still distributes it.  So:
+	 *   1. -memory in container (lets scope drop +memory next),
+	 *   2. -memory in scope    (lets scope hold trinity-main again),
+	 *   3. move trinity-main back to scope (its original cgroup),
+	 *   4. rmdir children/ + parent/ -- both empty now.
+	 * Each step is best-effort: on the failure path partial unwind beats
+	 * abort, and write_cg_file() failures here have nowhere useful to go. */
+	if (container_memory)
+		(void)write_cg_file(container_path,
+				    "cgroup.subtree_control", "-memory");
+	if (scope_memory)
+		(void)write_cg_file(scope_path,
+				    "cgroup.subtree_control", "-memory");
+	if (main_in_parent) {
+		n = snprintf(pidbuf, sizeof(pidbuf), "%d\n", (int)mypid());
+		if (n > 0 && (size_t)n < sizeof(pidbuf))
+			(void)write_cg_file(scope_path,
+					    "cgroup.procs", pidbuf);
+	}
 fail_rmdir:
 	if (wfd >= 0)
 		close(wfd);
@@ -537,12 +569,38 @@ fail:
  * isolation — just the original hard cap.
  */
 static bool setup_single(const char *container_path,
+			 const char *scope_path,
 			 const char *max_str,
 			 const char *high_str,
 			 const char *swap_str)
 {
 	char pidbuf[32];
 	int n;
+
+	n = snprintf(pidbuf, sizeof(pidbuf), "%d\n", (int)mypid());
+	if (n < 0 || (size_t)n >= sizeof(pidbuf))
+		return false;
+
+	/* scope_path != NULL signals "scope is ours to delegate" -- the
+	 * caller checked scope_can_delegate().  A setup_split() failure
+	 * will have unwound scope's +memory delegation, leaving container
+	 * without memory.max; re-enable it here.  v2 won't let us write
+	 * +memory to a scope holding procs, so vacate scope first by
+	 * moving trinity-main into container (container distributes no
+	 * controllers and can hold procs freely). */
+	if (scope_path != NULL) {
+		if (!write_cg_file(container_path, "cgroup.procs", pidbuf)) {
+			outputerr("self-cgroup: cgroup.procs write failed: %s\n",
+				  strerror(errno));
+			return false;
+		}
+		if (!write_cg_file(scope_path, "cgroup.subtree_control",
+				   "+memory")) {
+			outputerr("self-cgroup: re-enable +memory on scope subtree_control failed: %s\n",
+				  strerror(errno));
+			return false;
+		}
+	}
 
 	if (!write_cg_file(container_path, "memory.max", max_str)) {
 		outputerr("self-cgroup: write memory.max=%s failed: %s\n",
@@ -556,8 +614,11 @@ static bool setup_single(const char *container_path,
 		output(1, "self-cgroup: write memory.swap.max=%s failed: %s\n",
 		       swap_str, strerror(errno));
 
-	n = snprintf(pidbuf, sizeof(pidbuf), "%d\n", (int)mypid());
-	if (n < 0 || (size_t)n >= sizeof(pidbuf) ||
+	/* Shared-scope path: scope_path == NULL means we never touched
+	 * scope, so trinity-main is still in it; move it now.  In the
+	 * scope_path != NULL path the move happened above and this branch
+	 * is skipped. */
+	if (scope_path == NULL &&
 	    !write_cg_file(container_path, "cgroup.procs", pidbuf)) {
 		outputerr("self-cgroup: cgroup.procs write failed: %s\n",
 			  strerror(errno));
@@ -684,9 +745,18 @@ void self_cgroup_setup(void)
 		cg_container = NULL;
 		goto out;
 	} else {
+		const char *scope_for_single = NULL;
+
 		output(1, "self-cgroup: parent/children split unavailable; "
 		       "falling back to single-cgroup mode\n");
-		if (!setup_single(cg_container, max_str, high_str, swap_str)) {
+		/* Hand scope_path to setup_single() only when the scope is
+		 * ours alone -- then it can re-enable +memory delegation if
+		 * setup_split()'s unwind dropped it.  In a shared scope we
+		 * must not touch scope's subtree_control. */
+		if (scope_can_delegate(scope_path))
+			scope_for_single = scope_path;
+		if (!setup_single(cg_container, scope_for_single,
+				  max_str, high_str, swap_str)) {
 			outputerr("self-cgroup: single-cgroup fallback also failed; "
 				  "running without memory cap\n");
 			rmdir(cg_container);
