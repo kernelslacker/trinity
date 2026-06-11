@@ -632,13 +632,21 @@ void __for_each_obj_init(struct objhead *head,
  * captures still name the real caller of add_object() rather than
  * this helper's frame.
  *
+ * is_fd / fd are hoisted by add_object() from a single is_fd_type()
+ * + fd_from_object() pair at function entry and threaded through to
+ * here (and onward into the grow / publish helpers) so the same
+ * inputs aren't re-resolved 3-4x per fd-returning syscall.  Pure
+ * CSE -- the obj's fd union member is not written by any add_object
+ * path, so any later re-read would return identical bytes.
+ *
  * Returns true if the obj was rejected (release_obj already
  * called -- add_object() must return immediately); false if
  * validation passed and the slot-resolution / grow / publish
  * phases should run.
  */
 static bool add_object_validate(struct object *obj, enum obj_scope scope,
-				enum objecttype type, void *caller_pc)
+				enum objecttype type, void *caller_pc,
+				bool is_fd, int fd)
 {
 	char pcbuf[128];
 
@@ -658,20 +666,16 @@ static bool add_object_validate(struct object *obj, enum obj_scope scope,
 	 * the per-syscall .post handlers let through because the lower bits
 	 * happened to be positive.
 	 */
-	if (is_fd_type(type)) {
-		int fd = fd_from_object(obj, type);
-
-		if (fd < 0 || fd >= (1 << 20)) {
-			outputerr("add_object: rejecting out-of-bound fd=%d "
-				  "type=%u caller=%s\n", fd, type,
-				  pc_to_string(caller_pc,
-					       pcbuf, sizeof(pcbuf)));
-			post_handler_corrupt_ptr_bump_site(NULL,
-							   caller_pc,
-							   "add_object:fd");
-			release_obj(obj, scope, type);
-			return true;
-		}
+	if (is_fd && (fd < 0 || fd >= (1 << 20))) {
+		outputerr("add_object: rejecting out-of-bound fd=%d "
+			  "type=%u caller=%s\n", fd, type,
+			  pc_to_string(caller_pc,
+				       pcbuf, sizeof(pcbuf)));
+		post_handler_corrupt_ptr_bump_site(NULL,
+						   caller_pc,
+						   "add_object:fd");
+		release_obj(obj, scope, type);
+		return true;
 	}
 
 	/*
@@ -703,8 +707,9 @@ static bool add_object_validate(struct object *obj, enum obj_scope scope,
 }
 
 /*
- * Resolve the per-pool objhead for this (scope, type) and grow
- * head->array if the next slot is past current capacity.
+ * Grow head->array if the next slot is past current capacity.  head
+ * is resolved once in add_object() and threaded through; same for
+ * the hoisted is_fd / fd pair used by the leak-close error paths.
  *
  * On the OBJ_LOCAL path, the alloc-track LRU slot for the live
  * head->array container is refreshed before the grow check so the
@@ -734,22 +739,15 @@ static bool add_object_validate(struct object *obj, enum obj_scope scope,
  * overflow or the malloc-failure path: close any leaked fd,
  * release_obj() the inbound obj, and tell the caller to bail.
  *
- * Returns true if either the head lookup or the grow failed
- * (release_obj already called -- add_object() must return
- * immediately); false if either no grow was needed or the grow
- * succeeded and the publish phase should run.
+ * Returns true if the grow failed (release_obj already called --
+ * add_object() must return immediately); false if either no grow
+ * was needed or the grow succeeded and the publish phase should run.
  */
 static bool add_object_grow_capacity(struct object *obj, enum obj_scope scope,
-				     enum objecttype type)
+				     enum objecttype type, struct objhead *head,
+				     bool is_fd, int fd)
 {
-	struct objhead *head;
 	unsigned int n, cap;
-
-	head = get_objhead(scope, type);
-	if (head == NULL) {
-		release_obj(obj, scope, type);
-		return true;
-	}
 
 	n = head->num_entries;
 	cap = head->array_capacity;
@@ -783,11 +781,8 @@ static bool add_object_grow_capacity(struct object *obj, enum obj_scope scope,
 			if (cap > UINT_MAX / 2) {
 				outputerr("add_object: cap overflow type=%u num_entries=%u capacity=%u\n",
 					  type, n, cap);
-				if (is_fd_type(type)) {
-					int fd = fd_from_object(obj, type);
-					if (fd >= 0)
-						close(fd);
-				}
+				if (is_fd && fd >= 0)
+					close(fd);
 				release_obj(obj, scope, type);
 				return true;
 			}
@@ -795,11 +790,8 @@ static bool add_object_grow_capacity(struct object *obj, enum obj_scope scope,
 			if (newarray == NULL) {
 				outputerr("add_object: malloc failed for type %u (cap %u)\n",
 					  type, newcap);
-				if (is_fd_type(type)) {
-					int fd = fd_from_object(obj, type);
-					if (fd >= 0)
-						close(fd);
-				}
+				if (is_fd && fd >= 0)
+					close(fd);
 				release_obj(obj, scope, type);
 				return true;
 			}
@@ -828,11 +820,8 @@ static bool add_object_grow_capacity(struct object *obj, enum obj_scope scope,
 		if (cap > UINT_MAX / 2) {
 			outputerr("add_object: cap overflow type=%u num_entries=%u capacity=%u\n",
 				  type, n, cap);
-			if (is_fd_type(type)) {
-				int fd = fd_from_object(obj, type);
-				if (fd >= 0)
-					close(fd);
-			}
+			if (is_fd && fd >= 0)
+				close(fd);
 			release_obj(obj, scope, type);
 			return true;
 		}
@@ -840,11 +829,8 @@ static bool add_object_grow_capacity(struct object *obj, enum obj_scope scope,
 		if (newarray == NULL) {
 			outputerr("add_object: malloc failed for type %u (cap %u)\n",
 				  type, newcap);
-			if (is_fd_type(type)) {
-				int fd = fd_from_object(obj, type);
-				if (fd >= 0)
-					close(fd);
-			}
+			if (is_fd && fd >= 0)
+				close(fd);
 			release_obj(obj, scope, type);
 			return true;
 		}
@@ -873,9 +859,10 @@ static bool add_object_grow_capacity(struct object *obj, enum obj_scope scope,
  * last -- any consumer that re-reads obj fields off head->array
  * sees a fully-populated obj as soon as num_entries admits it.
  *
- * Re-resolves head via get_objhead() (idempotent over mypid() /
- * this_child() / array indexing, byte-exact-preserving) since
- * add_object_grow_capacity() already proved it non-NULL.
+ * head / is_fd / fd are resolved once in add_object() and threaded
+ * through, so this function does not re-enter get_objhead(),
+ * is_fd_type() or fd_from_object() -- behavior-preserving CSE on a
+ * hot path.
  *
  * OBJ_GLOBAL fd_hash registration is the only failure path: a
  * fd_hash_insert() reject means the parent's global fd_hash is
@@ -885,14 +872,11 @@ static bool add_object_grow_capacity(struct object *obj, enum obj_scope scope,
  * further work follows the publish in the caller.
  */
 static void add_object_publish(struct object *obj, enum obj_scope scope,
-			       enum objecttype type)
+			       enum objecttype type, struct objhead *head,
+			       bool is_fd, int fd)
 {
-	struct objhead *head;
 	unsigned int n;
 
-	head = get_objhead(scope, type);
-	if (head == NULL)
-		return;
 	n = head->num_entries;
 
 	head->array[n] = obj;
@@ -920,19 +904,13 @@ static void add_object_publish(struct object *obj, enum obj_scope scope,
 	/* Mirror the parent-side global fd hash for OBJ_LOCAL fd-typed
 	 * pools so find_local_object_by_fd() resolves in O(1).  The buffer
 	 * is lazily allocated by local_fd_hash_insert() on first use. */
-	if (scope == OBJ_LOCAL && is_fd_type(type)) {
-		int fd = fd_from_object(obj, type);
-
-		if (fd >= 0)
-			local_fd_hash_insert(head, fd, obj);
-	}
+	if (scope == OBJ_LOCAL && is_fd && fd >= 0)
+		local_fd_hash_insert(head, fd, obj);
 
 	/* Track global fd-type objects in the parent's fd_hash so
 	 * remove_object_by_fd() and the per-child snapshot can resolve
 	 * them by fd. */
-	if (scope == OBJ_GLOBAL && is_fd_type(type)) {
-		int fd = fd_from_object(obj, type);
-
+	if (scope == OBJ_GLOBAL && is_fd) {
 		if (!fd_hash_insert(fd, obj, type)) {
 			outputerr("add_object: fd hash full for type %u, dropping fd %d\n",
 				  type, fd);
@@ -1011,13 +989,33 @@ static void add_object_publish(struct object *obj, enum obj_scope scope,
 __attribute__((noinline))
 void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 {
-	if (add_object_validate(obj, scope, type, __builtin_return_address(0)))
+	void *caller_pc = __builtin_return_address(0);
+	bool is_fd = is_fd_type(type);
+	int fd = is_fd ? fd_from_object(obj, type) : -1;
+	struct objhead *head;
+
+	if (add_object_validate(obj, scope, type, caller_pc, is_fd, fd))
 		return;
 
-	if (add_object_grow_capacity(obj, scope, type))
+	/*
+	 * Resolve the per-pool objhead once and thread it through the
+	 * grow / publish helpers below.  The previous form re-entered
+	 * get_objhead() inside each helper (and is_fd_type / fd_from_object
+	 * 3-4x across the three helpers) on every fd-returning syscall;
+	 * those resolutions are invariant across the call (no fork, no
+	 * obj.fd union mutation, head pointer stable for the duration)
+	 * so a single hoist is byte-equivalent.
+	 */
+	head = get_objhead(scope, type);
+	if (head == NULL) {
+		release_obj(obj, scope, type);
+		return;
+	}
+
+	if (add_object_grow_capacity(obj, scope, type, head, is_fd, fd))
 		return;
 
-	add_object_publish(obj, scope, type);
+	add_object_publish(obj, scope, type, head, is_fd, fd);
 }
 
 /*
