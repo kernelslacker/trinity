@@ -685,6 +685,14 @@ struct plateau_window_snapshot {
 	unsigned long total_calls;
 	unsigned long frontier_picks;
 	unsigned long frontier_pulls;
+	/* Accept-regime split of frontier_picks.  Sourced from
+	 * shm->stats.frontier_{live,silent}_picks; sum equals frontier_picks.
+	 * Surfaced as deltas via plateau_snapshot_delta so the per-tick
+	 * plateau hypothesis line can show which regime owned the window's
+	 * picks -- "silent dominates" inside a plateau means the cold-weight
+	 * fallback is doing the steering rather than the K-window ring. */
+	unsigned long frontier_live_picks;
+	unsigned long frontier_silent_picks;
 	unsigned long group_edges[NR_GROUPS];
 };
 

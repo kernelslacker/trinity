@@ -1250,6 +1250,10 @@ void plateau_snapshot_capture(struct plateau_window_snapshot *snap)
 		__atomic_load_n(
 			&shm->stats.frontier_intervention_pulls,
 			__ATOMIC_RELAXED);
+	snap->frontier_live_picks = __atomic_load_n(
+		&shm->stats.frontier_live_picks, __ATOMIC_RELAXED);
+	snap->frontier_silent_picks = __atomic_load_n(
+		&shm->stats.frontier_silent_picks, __ATOMIC_RELAXED);
 
 	for (op = 0; op < NR_CHILD_OP_TYPES; op++) {
 		snap->childop_edges_total += __atomic_load_n(
@@ -1293,6 +1297,10 @@ void plateau_snapshot_delta(struct plateau_window_snapshot *out,
 				      entry->frontier_picks);
 	out->frontier_pulls = sat_sub(now->frontier_pulls,
 				      entry->frontier_pulls);
+	out->frontier_live_picks = sat_sub(now->frontier_live_picks,
+					   entry->frontier_live_picks);
+	out->frontier_silent_picks = sat_sub(now->frontier_silent_picks,
+					     entry->frontier_silent_picks);
 	for (grp = 0; grp < NR_GROUPS; grp++)
 		out->group_edges[grp] = sat_sub(now->group_edges[grp],
 						entry->group_edges[grp]);
@@ -1502,7 +1510,7 @@ void strategy_plateau_hypothesis_tick(void)
 		if (fired != PLATEAU_HYPOTHESIS_NONE) {
 			hypothesis_fires[fired]++;
 			stats_log_write(
-				"plateau hypothesis: %s fired (cmp_delta=+%lu/window pc_delta=+%lu/window childop_calls_delta=+%lu childop_edges_delta=+%lu generic_delta=+%lu remote_delta=+%lu/+%lu frontier_pulls=%lu frontier_picks=%lu)\n",
+				"plateau hypothesis: %s fired (cmp_delta=+%lu/window pc_delta=+%lu/window childop_calls_delta=+%lu childop_edges_delta=+%lu generic_delta=+%lu remote_delta=+%lu/+%lu frontier_pulls=%lu frontier_picks=%lu frontier_live=%lu frontier_silent=%lu)\n",
 				strategy_plateau_hypothesis_name(fired),
 				hypothesis_last_delta.cmp_unique,
 				hypothesis_last_delta.pc_edges,
@@ -1513,7 +1521,9 @@ void strategy_plateau_hypothesis_tick(void)
 				hypothesis_last_delta.remote_calls,
 				hypothesis_last_delta.total_calls,
 				hypothesis_last_delta.frontier_pulls,
-				hypothesis_last_delta.frontier_picks);
+				hypothesis_last_delta.frontier_picks,
+				hypothesis_last_delta.frontier_live_picks,
+				hypothesis_last_delta.frontier_silent_picks);
 		} else {
 			stats_log_write(
 				"plateau hypothesis: NONE (no rule matched window deltas)\n");

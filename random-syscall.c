@@ -613,6 +613,9 @@ retry:
 
 		if (roll >= w + 1UL)
 			goto retry;
+
+		__atomic_fetch_add(&shm->stats.frontier_live_picks, 1UL,
+				   __ATOMIC_RELAXED);
 	} else {
 		unsigned long w = frontier_cold_weight(syscallnr);
 		unsigned long denom = (unsigned long)FRONTIER_COLD_SCALE + 1UL;
@@ -620,12 +623,24 @@ retry:
 
 		if (roll >= w + 1UL)
 			goto retry;
+
+		__atomic_fetch_add(&shm->stats.frontier_silent_picks, 1UL,
+				   __ATOMIC_RELAXED);
 	}
 
 	srec_publish_begin(rec);
 	rec->do32bit = do32;
 	rec->nr = syscallnr;
 	srec_publish_end(rec);
+
+	/* Per-syscall accept distribution.  Bumped after both regimes converge
+	 * on a successful pick so the array is regime-agnostic; the live/silent
+	 * split lives in frontier_{live,silent}_picks.  Guarded on the same
+	 * MAX_NR_SYSCALL bound the other per-syscall arrays use. */
+	if (syscallnr < MAX_NR_SYSCALL)
+		__atomic_fetch_add(
+			&shm->stats.frontier_picks_per_syscall[syscallnr],
+			1UL, __ATOMIC_RELAXED);
 
 	__atomic_fetch_add(&shm->stats.frontier_strategy_picks, 1UL,
 			   __ATOMIC_RELAXED);

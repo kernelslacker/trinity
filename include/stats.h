@@ -2110,6 +2110,27 @@ struct stats_s {
 	 * regardless of selection path. */
 	unsigned long frontier_intervention_pulls;
 
+	/* Accept-regime split of frontier_strategy_picks.  Bumped at the two
+	 * accept paths inside set_syscall_nr_coverage_frontier so the operator
+	 * can tell which regime is steering the picks:
+	 *
+	 *   frontier_live_picks   -- max_weight > 2, the K-window frontier
+	 *                            ring still carries signal and the picker
+	 *                            is biasing off frontier_recent_count().
+	 *   frontier_silent_picks -- max_weight <= 2, the ring has aged out
+	 *                            everywhere (defining state of a coverage
+	 *                            plateau).  The picker falls back to the
+	 *                            cold-weight path keyed on lifetime
+	 *                            per_syscall_edges / per_syscall_calls --
+	 *                            i.e. the plateau-fallback bias is doing
+	 *                            the steering.
+	 *
+	 * Sum equals frontier_strategy_picks.  A run where silent dominates
+	 * but the cold-weight fallback finds nothing means the fallback's
+	 * weight function is the next thing to tune. */
+	unsigned long frontier_live_picks;
+	unsigned long frontier_silent_picks;
+
 	/* Number of syscall picks the explorer pool forced to STRATEGY_RANDOM
 	 * regardless of the bandit's current arm.  Bumped from set_syscall_nr
 	 * when child->is_explorer is true.  Rate-of-change should track
@@ -2157,6 +2178,23 @@ struct stats_s {
 	 * its previous tick. */
 	unsigned long edges_per_syscall_bandit[MAX_NR_SYSCALL];
 	unsigned long edges_per_syscall_explorer[MAX_NR_SYSCALL];
+
+	/* Per-syscall pick distribution under STRATEGY_COVERAGE_FRONTIER.
+	 * Bumped once per accepted pick inside set_syscall_nr_coverage_frontier
+	 * (same site as the frontier_strategy_picks bump), indexed by the
+	 * resolved syscall nr.  Surfaces which syscalls eat the frontier
+	 * picks regardless of which accept regime (live / silent) owned the
+	 * pick -- the regime split lives in frontier_live_picks /
+	 * frontier_silent_picks above.
+	 *
+	 * Surfaced only via top_syscalls_periodic_dump(), same shape and
+	 * cadence as edges_per_syscall_bandit / _explorer (also MAX_NR_SYSCALL
+	 * sized, also too wide for the JSON path).  Without this array a
+	 * frontier arm that has collapsed to picking the same handful of
+	 * leaders is indistinguishable from one steering across a broad
+	 * surface -- the headline pick total looks identical, only the
+	 * per-syscall distribution separates them. */
+	unsigned long frontier_picks_per_syscall[MAX_NR_SYSCALL];
 
 	/* Coverage-plateau detector transition counters, bumped from
 	 * kcov_plateau_check() on the rising edge (healthy -> plateau, when

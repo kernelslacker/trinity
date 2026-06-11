@@ -3137,6 +3137,14 @@ static const struct {
 	 * classifier's frontier_cold rule. */
 	{ "frontier_intervention_pulls",
 	  offsetof(struct stats_s, frontier_intervention_pulls) },
+	/* Accept-regime split of frontier_strategy_picks.  Sum equals
+	 * frontier_strategy_picks; the periodic ratio surfaces whether the
+	 * picker is steering on the K-window ring (live) or has collapsed
+	 * to the lifetime cold-weight fallback (silent). */
+	{ "frontier_live_picks",
+	  offsetof(struct stats_s, frontier_live_picks) },
+	{ "frontier_silent_picks",
+	  offsetof(struct stats_s, frontier_silent_picks) },
 	/* Picks the explorer pool forced to STRATEGY_RANDOM.  Rate-of-change
 	 * over the run divided by explorer_children gives the per-explorer
 	 * picker throughput; deviation from the bandit-pool throughput
@@ -3776,9 +3784,11 @@ void top_syscalls_periodic_dump(void)
 {
 	static unsigned long prev_bandit[MAX_NR_SYSCALL];
 	static unsigned long prev_explorer[MAX_NR_SYSCALL];
+	static unsigned long prev_frontier_picks[MAX_NR_SYSCALL];
 	static struct timespec last_dump;
 	unsigned long cur_bandit[MAX_NR_SYSCALL];
 	unsigned long cur_explorer[MAX_NR_SYSCALL];
+	unsigned long cur_frontier_picks[MAX_NR_SYSCALL];
 	struct timespec now;
 	long elapsed;
 	unsigned int nr_to_scan;
@@ -3799,6 +3809,9 @@ void top_syscalls_periodic_dump(void)
 			prev_explorer[i] = __atomic_load_n(
 				&shm->stats.edges_per_syscall_explorer[i],
 				__ATOMIC_RELAXED);
+			prev_frontier_picks[i] = __atomic_load_n(
+				&shm->stats.frontier_picks_per_syscall[i],
+				__ATOMIC_RELAXED);
 		}
 		return;
 	}
@@ -3813,6 +3826,9 @@ void top_syscalls_periodic_dump(void)
 			__ATOMIC_RELAXED);
 		cur_explorer[i] = __atomic_load_n(
 			&shm->stats.edges_per_syscall_explorer[i],
+			__ATOMIC_RELAXED);
+		cur_frontier_picks[i] = __atomic_load_n(
+			&shm->stats.frontier_picks_per_syscall[i],
 			__ATOMIC_RELAXED);
 	}
 
@@ -3837,8 +3853,20 @@ void top_syscalls_periodic_dump(void)
 	top_syscalls_emit_pool("explorer", cur_explorer, prev_explorer,
 			       nr_to_scan, table, false);
 
+	/* Frontier-picker accept distribution: which syscalls ate the
+	 * coverage-frontier picks this window.  Same top-N emitter as the
+	 * edge pools above; an empty distribution (frontier arm never
+	 * selected, or selected but accepted nothing) skips the row via the
+	 * helper's zero-total gate. */
+	stats_log_write("Top %u syscalls by frontier picks in last %lds:\n",
+			TOP_SYSCALLS_DUMP_TOPN, elapsed);
+	top_syscalls_emit_pool("frontier", cur_frontier_picks,
+			       prev_frontier_picks, nr_to_scan, table, false);
+
 	memcpy(prev_bandit,   cur_bandit,   sizeof(prev_bandit));
 	memcpy(prev_explorer, cur_explorer, sizeof(prev_explorer));
+	memcpy(prev_frontier_picks, cur_frontier_picks,
+	       sizeof(prev_frontier_picks));
 
 	last_dump = now;
 }
@@ -5261,6 +5289,12 @@ static void dump_stats_strategy_summary(void)
 	if (shm->stats.frontier_strategy_picks)
 		stat_row("strategy", "frontier_strategy_picks",
 			 shm->stats.frontier_strategy_picks);
+	if (shm->stats.frontier_live_picks)
+		stat_row("strategy", "frontier_live_picks",
+			 shm->stats.frontier_live_picks);
+	if (shm->stats.frontier_silent_picks)
+		stat_row("strategy", "frontier_silent_picks",
+			 shm->stats.frontier_silent_picks);
 	if (shm->stats.frontier_underflow_prevented)
 		stat_row("strategy", "frontier_underflow_prevented",
 			 shm->stats.frontier_underflow_prevented);
