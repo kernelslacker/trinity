@@ -75,7 +75,14 @@ void corrupt_ptr_breadcrumb_push(const struct syscallrecord *rec,
 		slot->site_tag[0] = '\0';
 	}
 
-	__atomic_store_n(&slot->valid, true, __ATOMIC_RELAXED);
+	/* RELEASE pairs with the ACQUIRE load of .valid in
+	 * linearise_child(): a dump-side reader that observes valid=true
+	 * is guaranteed to see the payload stores above, not a stale
+	 * resident from the prior wraparound.  Without the release on
+	 * weakly-ordered cores (aarch64) the payload writes can be
+	 * reordered past the valid=true publish and the reader copies a
+	 * half-built record while believing it is fully populated. */
+	__atomic_store_n(&slot->valid, true, __ATOMIC_RELEASE);
 	__atomic_add_fetch(&ring->head, 1, __ATOMIC_RELAXED);
 }
 
@@ -104,7 +111,7 @@ static unsigned int linearise_child(const struct corrupt_ptr_breadcrumb_ring *ri
 					(CORRUPT_PTR_BREADCRUMB_SLOTS - 1);
 		const struct corrupt_ptr_breadcrumb *s = &ring->slots[slot_idx];
 
-		if (!__atomic_load_n(&s->valid, __ATOMIC_RELAXED))
+		if (!__atomic_load_n(&s->valid, __ATOMIC_ACQUIRE))
 			continue;
 		out[n++] = *s;
 	}
