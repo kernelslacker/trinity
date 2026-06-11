@@ -1360,6 +1360,16 @@ static void record_reap(int childno, int childstatus)
 	else
 		lifetime = 0;
 
+	/* spawn_times[] / now both come from CLOCK_REALTIME via time(2),
+	 * so a backward NTP step between spawn and reap can drive lifetime
+	 * negative.  reap_entry_is_fast_die() then treats every reap as
+	 * fast-die (negative < FAST_DIE_LIFETIME_THRESHOLD_S), fills the
+	 * ring, and panics EXIT_SHM_CORRUPTION on a clock skew the parent
+	 * had no business interpreting as a fork-die-respawn loop.  Clamp
+	 * before the fast-die classifier sees it. */
+	if (lifetime < 0)
+		lifetime = 0;
+
 	if (WIFEXITED(childstatus))
 		exit_status = WEXITSTATUS(childstatus);
 	else if (WIFSIGNALED(childstatus))
