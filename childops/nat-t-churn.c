@@ -966,6 +966,14 @@ static void nat_t_churn_v6(void)
 		dst.sin6_port   = htons(NAT_T_ENCAP_PORT);
 
 		hdr[0] = spi;
+		/* Fill the inner payload once.  xfrm6's esp6_input drops
+		 * these frames at the auth/decrypt step well before any byte
+		 * past the SPI+seq header is consulted, so per-iteration
+		 * re-randomisation of the payload is pure overhead --
+		 * generate_rand_bytes is a hot call on the chacha20 RNG and
+		 * burning it NAT_T_XFRM6_SEND_CAP times per op shows up at
+		 * the top of perf top for this childop. */
+		generate_rand_bytes(frame + 8, NAT_T_INNER_PAYLOAD_LEN);
 
 		(void)clock_gettime(CLOCK_MONOTONIC, &t0);
 		sends = BUDGETED(CHILD_OP_NAT_T_CHURN,
@@ -979,7 +987,6 @@ static void nat_t_churn_v6(void)
 			if (nat_t_ns_since(&t0) >= NAT_T_XFRM6_SEND_NS_CAP)
 				break;
 			hdr[1] = htonl(++g_iter);
-			generate_rand_bytes(frame + 8, NAT_T_INNER_PAYLOAD_LEN);
 			(void)sendto(udp, frame, sizeof(frame), MSG_DONTWAIT,
 				     (struct sockaddr *)&dst, sizeof(dst));
 			__atomic_add_fetch(&shm->stats.nat_t_xfrm6_sendto_runs,
