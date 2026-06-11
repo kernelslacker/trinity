@@ -5131,6 +5131,16 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 */
 	{ "pselect6",		5, &struct_catalog[SC_TIMESPEC] },
 	/*
+	 * semtimedop(int semid, struct sembuf *sops, unsigned nsops,
+	 *            const struct timespec *timeout)
+	 * a4 is the INPUT timeout timespec.  Attribution-only: the bespoke
+	 * sanitise_semtimedop (stamps the slot via get_writable_address)
+	 * continues to own the live fill; this row only lets schema-aware
+	 * CMP attribution name the tv_sec / tv_nsec fields.  a2 (sops, the
+	 * sembuf array) is mapped to SC_SEMBUF below and is unaffected.
+	 */
+	{ "semtimedop",		4, &struct_catalog[SC_TIMESPEC] },
+	/*
 	 * clock_settime(clockid_t which_clock, const struct timespec *tp)
 	 * a2 is the INPUT timespec.  Attribution-only: the bespoke
 	 * sanitise_clock_settime (stamps the slot via get_writable_address)
