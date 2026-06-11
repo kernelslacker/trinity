@@ -422,7 +422,18 @@ void map_destructor_shared(struct object *obj)
 	 */
 	if (map->name != NULL &&
 	    range_in_tracked_shared((unsigned long)map->name, 1)) {
-		free_shared_str(map->name, strlen(map->name) + 1);
+		/*
+		 * INITIAL_ANON names are alloc_shared_str(80) fixed-size
+		 * slots, not alloc_shared_strdup(name).  Releasing them with
+		 * strlen+1 lands in a smaller free-bucket than the allocator
+		 * carved, stranding the 80-byte slot in the shared str heap.
+		 * Match the alloc with a literal 80; MMAPED_FILE keeps the
+		 * strlen+1 pairing its alloc_shared_strdup expects.
+		 */
+		if (map->type == INITIAL_ANON)
+			free_shared_str(map->name, 80);
+		else
+			free_shared_str(map->name, strlen(map->name) + 1);
 	}
 	map->name = NULL;
 }
