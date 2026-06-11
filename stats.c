@@ -2020,6 +2020,7 @@ static void dump_stats_json_corruption_and_audit(void)
 			"\"deferred_free_enomem_drain\":%lu,"
 			"\"deferred_free_rw_restore_enomem\":%lu,"
 			"\"deferred_free_pre_dispatch_leaked\":%lu,"
+			"\"deferred_free_ring_owned_skip\":%lu,"
 			"\"pagecache_canary_corrupt_caught\":%lu,"
 			"\"lock_word_scribbled\":%lu,"
 			"\"lock_held_scribble\":%lu,"
@@ -2069,6 +2070,7 @@ static void dump_stats_json_corruption_and_audit(void)
 		shm->stats.deferred_free_enomem_drain,
 		shm->stats.deferred_free_rw_restore_enomem,
 		shm->stats.deferred_free_pre_dispatch_leaked,
+		shm->stats.deferred_free_ring_owned_skip,
 		shm->stats.pagecache_canary_corrupt_caught,
 		parent_stats.lock_word_scribbled,
 		shm->stats.lock_held_scribble,
@@ -3034,6 +3036,8 @@ static const struct {
 	  offsetof(struct stats_s, deferred_free_rw_restore_enomem) },
 	{ "deferred_free_pre_dispatch_leaked",
 	  offsetof(struct stats_s, deferred_free_pre_dispatch_leaked) },
+	{ "deferred_free_ring_owned_skip",
+	  offsetof(struct stats_s, deferred_free_ring_owned_skip) },
 	{ "pagecache_canary_corrupt_caught",
 	  offsetof(struct stats_s, pagecache_canary_corrupt_caught) },
 	/* genetlink registry per-family dispatch counters; rate-of-change
@@ -4926,6 +4930,8 @@ static void dump_stats_corruption_and_pool(void)
 		stat_row("corruption", "deferred_free_rw_restore_enomem",     shm->stats.deferred_free_rw_restore_enomem);
 	if (shm->stats.deferred_free_pre_dispatch_leaked)
 		stat_row("corruption", "deferred_free_pre_dispatch_leaked",   shm->stats.deferred_free_pre_dispatch_leaked);
+	if (shm->stats.deferred_free_ring_owned_skip)
+		stat_row("corruption", "deferred_free_ring_owned_skip",       shm->stats.deferred_free_ring_owned_skip);
 	if (parent_stats.snapshot_non_heap_reject)
 		stat_row("corruption", "snapshot_non_heap_reject", parent_stats.snapshot_non_heap_reject);
 	if (parent_stats.lock_word_scribbled)

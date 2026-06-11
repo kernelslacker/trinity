@@ -1994,6 +1994,24 @@ struct stats_s {
 	 * get/setxattrat, mq_open, listmount, statmount). */
 	unsigned long deferred_free_pre_dispatch_leaked;
 
+	/* tracked_free_now() found @ptr already pinned in the deferred-
+	 * free ring (inflight_hash_contains() == true at entry) and
+	 * routed it through the ring-as-sole-owner path: alloc_track
+	 * drained, free() skipped, inflight membership left intact so
+	 * the TTL/evict path frees the chunk exactly once.  Non-zero
+	 * empirically proves the residual ring-internal double-free
+	 * window is being closed -- previously tracked_free_now() would
+	 * inflight_hash_remove() + free(), and address reuse re-arming
+	 * the value-keyed membership bit let ring_evict_oldest_safe()
+	 * run a second free() on the same address.  Rate-of-change is
+	 * the headline metric: a count proportional to ring throughput
+	 * is normal (any pointer admitted to the ring whose post-handler
+	 * cleanup also routes through tracked_free_now() lands here);
+	 * zero across a full run means either no such overlap occurs
+	 * (suspect the gate isn't engaged) or the workload doesn't
+	 * exercise it. */
+	unsigned long deferred_free_ring_owned_skip;
+
 	/* Bumped by run_sequence_chain() when chain_corpus_pick() returns
 	 * a chain_entry whose len is zero or greater than MAX_SEQ_LEN.
 	 * The chain corpus is shared memory and tolerates lockless reads

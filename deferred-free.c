@@ -601,12 +601,19 @@ void alloc_track_refresh(void *ptr)
  * would punish callers that legitimately mix tracked and untracked
  * allocations on the same release path.
  *
- * inflight_hash_remove() keeps the in-flight set symmetric: if this
- * buffer was already admitted to the deferred-free ring by another
- * owner, drop the stale positive so a later ring eviction of that
- * slot sees the entry gone and skips it instead of double-freeing.
- * The remove no-ops on a miss, so the common case (ptr was never
- * enqueued) costs only one hash probe.
+ * Ring-ownership gate: if @ptr is still pinned in the deferred-free
+ * ring (inflight_hash_contains() == true), the ring is the sole owner
+ * of the chunk's lifecycle — drain alloc_track and RETURN WITHOUT
+ * free(), leaving the inflight membership intact so the TTL/evict
+ * path frees the chunk exactly once.  Previous shape (inflight_hash_
+ * remove() + free()) made the in-flight set symmetric but left the
+ * ring slot dangling on @ptr; when glibc recycled the address and a
+ * fresh admission re-armed the value-keyed membership bit, the stale
+ * slot's eviction guard passed and ran a second free.  Making the
+ * ring sole owner closes that window: no out-of-band free ever lands
+ * on a ring-resident pointer, and address reuse can no longer
+ * resurrect a dangling slot.  One extra hash probe on the common
+ * (not-in-ring) path.
  */
 void tracked_free_now(void *ptr)
 {
@@ -614,7 +621,11 @@ void tracked_free_now(void *ptr)
 		return;
 
 	alloc_track_consume(ptr);
-	inflight_hash_remove(ptr);
+	if (inflight_hash_contains(ptr)) {
+		__atomic_add_fetch(&shm->stats.deferred_free_ring_owned_skip,
+				   1, __ATOMIC_RELAXED);
+		return;
+	}
 	free(ptr);
 }
 
