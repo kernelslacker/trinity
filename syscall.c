@@ -221,7 +221,15 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 	 * lands after dispatch began, which IS the bug class
 	 * arg_shadow_stomp is meant to surface. */
 	{
-		uint8_t mask = entry->arg_snapshot_mask;
+		/* arg_snapshot_mask only carries six valid bits (one per
+		 * syscall arg).  Mask the byte to 0x3f before iterating: a
+		 * stray bit 6/7 -- whether from a sanitiser writing the wrong
+		 * field or from future growth past 6 args without bumping
+		 * arg_shadow[] -- would let __builtin_ctz return 6 or 7 and
+		 * the rec->arg_shadow[i] store below would scribble past the
+		 * six-entry array.  The switch default's val=0 alone is not
+		 * enough; it only neuters the value, not the index. */
+		uint8_t mask = (uint8_t)(entry->arg_snapshot_mask & 0x3fu);
 
 		rec->arg_snapshot_mask = mask;
 		while (mask != 0) {
