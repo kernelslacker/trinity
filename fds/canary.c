@@ -85,8 +85,16 @@ static struct canary_pool *canary_pool;
 
 static void canary_destructor(struct object *obj)
 {
-	free_shared_str((char *)obj->fileobj.filename,
-			strlen(obj->fileobj.filename) + 1);
+	/*
+	 * Do NOT free obj->fileobj.filename here.  The string is owned
+	 * by the canary pool: canary_create_one() stashes the same
+	 * alloc_shared_strdup() pointer in canary_pool->entries[idx].path
+	 * once at init, and the pool retains it for the process lifetime
+	 * (the pool is bounded and allocate-once — no per-op free path
+	 * touches entries[].path anywhere).  Freeing it on object teardown
+	 * leaves a dangling pool entry that pagecache_canary_check()
+	 * subsequently reopens, which is a cross-process use-after-free.
+	 */
 	close(obj->fileobj.fd);
 }
 
