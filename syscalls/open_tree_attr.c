@@ -203,7 +203,7 @@ static void sanitise_open_tree_attr(struct syscallrecord *rec)
 		build_mount_attr(ma);
 
 	rec->a4 = (unsigned long) ma;
-	avoid_shared_buffer_inout(&rec->a4, sizeof(*ma));
+	avoid_shared_buffer_inout(&rec->a4, buf.usize);
 	rec->a5 = buf.usize;
 
 	/*
