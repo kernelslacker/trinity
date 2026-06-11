@@ -1522,24 +1522,42 @@ unsigned long kcov_collect_cmp(struct kcov_child *kc, unsigned int nr,
 
 unsigned int kcov_syscall_cold_skip_pct(unsigned int nr)
 {
-	unsigned long edges, gap;
+	unsigned long edges, calls, edges_total, calls_total, gap;
 	unsigned int pct;
 
 	if (kcov_shm == NULL || nr >= MAX_NR_SYSCALL)
 		return 0;
 
+	/* Fold warm-loaded priors into the per-syscall view so the
+	 * saturation cap fires on cross-session evidence the cold-skip
+	 * path otherwise has to re-accumulate from scratch every run.
+	 * The _prior arrays are frozen at warm-start (see kcov.h) so a
+	 * plain read is sufficient -- no atomic needed. */
 	edges = __atomic_load_n(&kcov_shm->per_syscall_edges[nr],
 		__ATOMIC_RELAXED);
+	calls = __atomic_load_n(&kcov_shm->per_syscall_calls[nr],
+		__ATOMIC_RELAXED);
+	edges_total = edges + kcov_shm->per_syscall_edges_prior[nr];
+	calls_total = calls + kcov_shm->per_syscall_calls_prior[nr];
+
+	/* Saturation cap: confirmed dead-weight slot, short-circuit the
+	 * graduated path below.  See KCOV_SAT_CAP_CALLS / RATIO comment
+	 * in include/kcov.h for the two-branch productivity test. */
+	if (edges_total == 0) {
+		if (calls_total >= KCOV_SAT_CAP_CALLS)
+			return KCOV_SAT_CAP_SKIP_PCT;
+	} else if (calls_total / edges_total >= KCOV_SAT_CAP_RATIO) {
+		return KCOV_SAT_CAP_SKIP_PCT;
+	}
 
 	if (edges == 0) {
-		/* Never produced an edge.  Until this syscall has had
-		 * KCOV_COLD_THRESHOLD attempts of its own, leave it alone —
+		/* Never produced an edge in THIS run.  Until this syscall has
+		 * had KCOV_COLD_THRESHOLD attempts of its own, leave it alone —
 		 * total_calls grows from every other syscall too, so basing
 		 * the cutoff on total_calls would prematurely retire any
 		 * syscall that the dispatch loop happens to under-pick.
 		 * Once it has clearly had a fair shot, skip aggressively. */
-		gap = __atomic_load_n(&kcov_shm->per_syscall_calls[nr],
-			__ATOMIC_RELAXED);
+		gap = calls;
 	} else {
 		unsigned long total, last;
 

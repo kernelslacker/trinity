@@ -92,6 +92,38 @@ enum errno_bucket {
  * it's considered "cold" and deprioritized during selection. */
 #define KCOV_COLD_THRESHOLD 500000
 
+/* Saturation cap: a stronger, faster-firing companion to the
+ * global-gap KCOV_COLD_THRESHOLD path above.  The graduated cold-skip
+ * compares last_edge_at[nr] to the GLOBAL total_calls counter, so a
+ * syscall whose per-run pick budget is small (~1000 calls/run for a
+ * tail-active syscall, like the v7-cache tail of lgetxattr / lchown /
+ * vmsplice / prlimit64 / statfs that show 1000-call / 0-edge runs)
+ * needs hundreds of fuzz sessions before its cumulative gap pushes
+ * past 500000.  In the meantime it keeps burning its per-run quota on
+ * known-dead surface.  The saturation cap looks instead at the
+ * syscall's OWN cumulative call / edge counters (current run plus
+ * warm-loaded priors) and short-circuits to a hard-deprioritise
+ * percentage once either branch of the productivity test trips:
+ *
+ *   - edges_total == 0 && calls_total >= KCOV_SAT_CAP_CALLS:
+ *     no edge has ever been observed for this syscall across the
+ *     accumulated evidence.  Catches the always-EFAULT / always-
+ *     EPERM / strict-validator-reject tail that the cold-skip path
+ *     would otherwise wait 500000 global calls to retire.
+ *
+ *   - edges_total > 0 && calls_total / edges_total >= KCOV_SAT_CAP_RATIO:
+ *     productivity has collapsed below one edge per RATIO calls.
+ *     Catches trivial getters (getegid / getuid / gettid: 1 edge
+ *     after the first call, every subsequent call adds nothing) and
+ *     other syscalls whose kernel-side state space is exhausted.
+ *
+ * SKIP_PCT is a deliberate floor below 100% so a kernel rebuild or
+ * runtime-state change (new namespace, new fd type, new sysctl) can
+ * re-promote a previously-saturated slot via the 1-in-20 leak. */
+#define KCOV_SAT_CAP_CALLS    200U
+#define KCOV_SAT_CAP_RATIO    500U
+#define KCOV_SAT_CAP_SKIP_PCT 95U
+
 /* Coverage-plateau detector: window length and trigger threshold.
  * The window is fixed at 600s (10 minutes) so a single below-threshold
  * sample already represents "sustained for ≥ 10 min".  The threshold of
