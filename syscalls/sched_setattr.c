@@ -150,7 +150,7 @@ static void sanitise_sched_setattr(struct syscallrecord *rec)
 
 submit:
 	rec->a2 = (unsigned long) sa;
-	avoid_shared_buffer_inout(&rec->a2, sizeof(struct sched_attr));
+	avoid_shared_buffer_inout(&rec->a2, buf.usize);
 	rec->a3 = 0;	/* flags must be zero */
 
 	/* Target self (0) most of the time.  ARG_PID overwhelmingly draws
