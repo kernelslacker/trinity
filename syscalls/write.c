@@ -351,10 +351,13 @@ struct syscallentry syscall_pwrite64 = {
 
 static void sanitise_pwritev(struct syscallrecord *rec)
 {
+	uint64_t v;
+
 	if (rec->a1 <= 2)
 		rec->a1 = get_random_fd();
-	rec->a5 = 0;
-	rec->a4 = rand64() & 0x7fffffff;
+	v = rand64() & 0x7fffffffffffffffULL;
+	rec->a4 = v & 0xffffffff;
+	rec->a5 = (v >> 32) & 0xffffffff;
 }
 
 struct syscallentry syscall_pwritev = {
@@ -382,14 +385,17 @@ static unsigned long pwritev2_flags[] = {
 
 static void sanitise_pwritev2(struct syscallrecord *rec)
 {
+	uint64_t v;
+
 	if (rec->a1 <= 2)
 		rec->a1 = get_random_fd();
 	if (RAND_BOOL()) {
 		rec->a4 = (unsigned long) -1;
 		rec->a5 = (unsigned long) -1;
 	} else {
-		rec->a5 = 0;
-		rec->a4 = rand64() & 0x7fffffff;
+		v = rand64() & 0x7fffffffffffffffULL;
+		rec->a4 = v & 0xffffffff;
+		rec->a5 = (v >> 32) & 0xffffffff;
 	}
 }
 
