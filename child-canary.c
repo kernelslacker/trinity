@@ -39,6 +39,7 @@
  * tls_rotate, af_unix_scm_rights_gc_churn, userns_fuzzer,
  * sock_diag_walker.
  */
+#include <errno.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -344,7 +345,15 @@ static void kill_canary_slot_children(void)
 		kill(pid, SIGTERM);
 	}
 
-	/* Phase 2: ~20 ms grace window, opportunistically reap. */
+	/* Phase 2: ~20 ms grace window, polling for liveness only.  We
+	 * must NOT waitpid() the canary child here -- the parent's main
+	 * reaper owns that path and is what updates pids[]/running_childs
+	 * via reap_child().  A self-reap in this loop would race the main
+	 * reaper, which then sees ECHILD and leaves the slot parked in
+	 * the deferred-recovery window for ~30-40s.  kill(pid, 0) treats
+	 * a not-yet-reaped zombie as still alive, which is exactly what
+	 * we want: we keep waiting until the main reaper has fully torn
+	 * the task down. */
 	for (iter = 0; iter < CANARY_SIGTERM_GRACE_ITERS; iter++) {
 		bool any_alive = false;
 
@@ -353,7 +362,7 @@ static void kill_canary_slot_children(void)
 
 			if (pid == EMPTY_PIDSLOT || pid <= 0)
 				continue;
-			if (waitpid_eintr(pid, NULL, WNOHANG) != 0)
+			if (kill(pid, 0) == -1 && errno == ESRCH)
 				continue;
 			any_alive = true;
 		}
