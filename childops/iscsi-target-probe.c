@@ -237,34 +237,94 @@ static size_t build_random_bhs(unsigned char *out)
 	return ISCSI_BHS_LEN;
 }
 
-/* Build a Login Request BHS with valid framing, plus a fuzzed text-key
- * data segment.  Real key names ("InitiatorName=", "TargetName=",
- * "AuthMethod=", etc.) are interspersed with garbage so the text-key
- * parser walks past the recognised prefixes and into the value-parsing
- * paths it doesn't normally reach with malformed input. */
-static const char * const fuzz_keys[] = {
-	"InitiatorName=",
-	"TargetName=",
-	"AuthMethod=",
-	"HeaderDigest=",
-	"DataDigest=",
-	"MaxRecvDataSegmentLength=",
-	"MaxBurstLength=",
-	"FirstBurstLength=",
-	"DefaultTime2Wait=",
-	"DefaultTime2Retain=",
-	"MaxOutstandingR2T=",
-	"DataPDUInOrder=",
-	"DataSequenceInOrder=",
-	"ErrorRecoveryLevel=",
-	"SessionType=",
-	"OFMarker=",
-	"IFMarker=",
-	"TargetAlias=",
-	"X-com.example.bogus=",
-	"=",
+/* Canonical iSCSI login text-key vocabulary (RFC 3720 §12 / §11 plus
+ * the Errata + LIO-supported extensions in iscsi_target_parameters.h).
+ * The set is stable across kernel versions because the keys are wire-
+ * protocol negotiation tokens, not driver internals.  Emitted bare
+ * (no '=') so the caller can append the separator and value half
+ * itself; this is what lets the text-key parser walk past its initial
+ * separator check into the per-key value handlers. */
+static const char *const iscsi_login_key_vocab[] = {
+	"InitiatorName",
+	"TargetName",
+	"InitiatorAlias",
+	"TargetAlias",
+	"TargetAddress",
+	"TargetPortalGroupTag",
+	"SessionType",
+	"AuthMethod",
+	"CHAP_A",
+	"CHAP_I",
+	"CHAP_C",
+	"CHAP_N",
+	"CHAP_R",
+	"HeaderDigest",
+	"DataDigest",
+	"MaxConnections",
+	"MaxRecvDataSegmentLength",
+	"MaxXmitDataSegmentLength",
+	"MaxBurstLength",
+	"FirstBurstLength",
+	"DefaultTime2Wait",
+	"DefaultTime2Retain",
+	"MaxOutstandingR2T",
+	"DataPDUInOrder",
+	"DataSequenceInOrder",
+	"ErrorRecoveryLevel",
+	"InitialR2T",
+	"ImmediateData",
+	"IFMarker",
+	"OFMarker",
+	"IFMarkInt",
+	"OFMarkInt",
+	"RDMAExtensions",
+	"TargetRecvDataSegmentLength",
+	"InitiatorRecvDataSegmentLength",
+	"MaxOutstandingUnexpectedPDUs",
 };
-#define NR_FUZZ_KEYS	(sizeof(fuzz_keys) / sizeof(fuzz_keys[0]))
+
+/* Companion value vocabulary covering the enumeration / list-valued
+ * keys: digest algorithms, auth methods, session types, and the bool
+ * keys' "Yes" / "No".  Numeric-valued keys (MaxBurstLength &c.) get
+ * served small decimal literals from this same pool so the value
+ * arithmetic parsers see in-range token-shaped input rather than
+ * arbitrary bytes.  A NULL value isn't drawn -- the entries are the
+ * literal value bytes that follow the '=' separator. */
+static const char *const iscsi_login_value_vocab[] = {
+	"Yes",
+	"No",
+	"None",
+	"CRC32C",
+	"CHAP",
+	"KRB5",
+	"SPKM1",
+	"SPKM2",
+	"SRP",
+	"Normal",
+	"Discovery",
+	"5",
+	"1",
+	"2",
+	"3",
+	"4",
+	"0",
+	"512",
+	"1024",
+	"2048",
+	"4096",
+	"8192",
+	"262144",
+	"CRC32C,None",
+	"None,CRC32C",
+	"iqn.2026-06.org.example:initiator",
+	"iqn.2026-06.org.example:target",
+};
+
+/* 1/VALUE_RANDOM_RECIP key=value pairs use a random-printable value
+ * instead of a vocab value.  Keeps a deliberate fuzz signal on the
+ * per-key value validators without dominating; the bulk of traffic
+ * gets past framing into the post-parse handlers, which is the point. */
+#define VALUE_RANDOM_RECIP	8U
 
 static size_t build_login_fuzzed(unsigned char *out)
 {
@@ -289,23 +349,43 @@ static size_t build_login_fuzzed(unsigned char *out)
 	/* CmdSN / ExpStatSN are echo cookies — random is fine */
 	rnd_fill(bhs + 24, 8);
 
-	/* Build 3-8 key=value pairs. */
+	/* Build 3-8 key=value pairs.  Each pair is emitted as
+	 *   <key from iscsi_login_key_vocab> '=' <value> '\0'
+	 * so the LIO text-key parser locates its separator on every
+	 * entry and dispatches to the per-key value handler. */
 	nr_keys = 3 + rnd_modulo_u32(6);
 	for (i = 0; i < nr_keys; i++) {
-		const char *key = fuzz_keys[rnd_modulo_u32(NR_FUZZ_KEYS)];
+		const char *key = iscsi_login_key_vocab[
+			rnd_modulo_u32(ARRAY_SIZE(iscsi_login_key_vocab))];
 		size_t key_len = strlen(key);
-		size_t val_len = 1 + rnd_modulo_u32(24);
-		size_t need = key_len + val_len + 1;	/* +1 NUL */
+		bool random_value = (rnd_modulo_u32(VALUE_RANDOM_RECIP) == 0);
+		const char *vocab_val = NULL;
+		size_t val_len;
+		size_t need;
+
+		if (random_value) {
+			val_len = 1 + rnd_modulo_u32(24);
+		} else {
+			vocab_val = iscsi_login_value_vocab[
+				rnd_modulo_u32(ARRAY_SIZE(iscsi_login_value_vocab))];
+			val_len = strlen(vocab_val);
+		}
+		need = key_len + 1 + val_len + 1;	/* key + '=' + value + NUL */
 
 		if (data_off + need >= LOGIN_TEXT_MAX)
 			break;
 		memcpy(data + data_off, key, key_len);
 		data_off += key_len;
-		/* Random printable-ish value bytes */
-		while (val_len--) {
-			unsigned int c = 32 + rnd_modulo_u32(95);
+		data[data_off++] = '=';
+		if (random_value) {
+			while (val_len--) {
+				unsigned int c = 32 + rnd_modulo_u32(95);
 
-			data[data_off++] = (unsigned char)c;
+				data[data_off++] = (unsigned char)c;
+			}
+		} else {
+			memcpy(data + data_off, vocab_val, val_len);
+			data_off += val_len;
 		}
 		data[data_off++] = '\0';
 	}
