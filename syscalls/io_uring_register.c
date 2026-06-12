@@ -192,6 +192,14 @@ struct trinity_io_uring_task_restriction {
 	struct trinity_io_uring_restriction restrictions[];
 };
 
+/*
+ * Hard ceiling for the trinity-side flex-array allocation count in
+ * IORING_REGISTER_RESTRICTIONS.  Independent of the rnd bound used to
+ * pick nr_res so the sizeof() multiply cannot overflow size_t if that
+ * bound is ever widened past a sane fuzz value.
+ */
+#define TRINITY_IO_URING_NR_RES_MAX	16
+
 struct trinity_io_uring_bpf_filter {
 	__u32	opcode;
 	__u32	flags;
@@ -1090,7 +1098,8 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 	 */
 	case IORING_REGISTER_RESTRICTIONS: {
 		struct trinity_io_uring_task_restriction *tr;
-		unsigned int nr_res = rnd_modulo_u32(4);
+		unsigned int nr_res = min(rnd_modulo_u32(4),
+				(unsigned int) TRINITY_IO_URING_NR_RES_MAX);
 		size_t sz = sizeof(*tr) +
 			nr_res * sizeof(struct trinity_io_uring_restriction);
 		tr = (struct trinity_io_uring_task_restriction *)
