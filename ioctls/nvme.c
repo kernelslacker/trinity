@@ -138,6 +138,7 @@ static void sanitise_nvme_io64_cmd_vec(struct syscallrecord *rec)
 	buf = get_writable_struct(4096);
 	if (!buf)
 		return;
+	memset(cmd, 0, sizeof(*cmd));
 	cmd->opcode  = RAND_BOOL() ? 0x01 : 0x02;
 	cmd->nsid    = RAND_BOOL() ? 1 : rand32();
 	cmd->vec_cnt = 1;
