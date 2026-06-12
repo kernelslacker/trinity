@@ -1332,7 +1332,7 @@ static void check_fd_leaks(struct childdata *child)
  * Slot ordering matches pick_op_type_table[]; the _Static_assert below
  * pins ARRAY_SIZE equality between the two.
  */
-static int dormant_op_disabled[108] = {
+static int dormant_op_disabled[109] = {
 	0, 0, 0, 0, 0,
 	0, 1, 1, 1, 1,
 	1, 1, 1, 0, 1,
@@ -1358,6 +1358,7 @@ static int dormant_op_disabled[108] = {
 	1,	/* pci_bind: dormant until canary-queue load-tests the driver attach/detach path on the conservative allowlist. */
 	1,	/* iscsi_login_walker: dormant until canary-queue load-tests the LIO Login state-machine walk. */
 	1,	/* vma_split_storm: dormant until canary-queue load-tests the heavy VMA-split mm pressure burst. */
+	1,	/* af_unix_peek_race: dormant until canary-queue load-tests the SO_PEEK_OFF + MSG_PEEK/recv/shutdown race burst. */
 };
 
 /*
@@ -1583,6 +1584,7 @@ const char *alt_op_name(enum child_op_type op)
 	case CHILD_OP_VMA_SPLIT_STORM:	return "vma_split_storm";
 	case CHILD_OP_SYSFS_STRING_RACE:	return "sysfs_string_race";
 	case CHILD_OP_PCI_BIND:		return "pci_bind";
+	case CHILD_OP_AF_UNIX_PEEK_RACE:	return "af_unix_peek_race";
 	case NR_CHILD_OP_TYPES:		break;
 	}
 	return "unknown";
@@ -1680,7 +1682,7 @@ void log_alt_op_config(void)
  * CHILD_OP_SYSCALL sentinel filter in init_altop_dispatch() stays as
  * defensive coding for any future hole.
  */
-static const enum child_op_type pick_op_type_table[108] = {
+static const enum child_op_type pick_op_type_table[109] = {
 	[0]  = CHILD_OP_MMAP_LIFECYCLE,
 	[1]  = CHILD_OP_MPROTECT_SPLIT,
 	[2]  = CHILD_OP_MLOCK_PRESSURE,
@@ -1789,6 +1791,7 @@ static const enum child_op_type pick_op_type_table[108] = {
 	[105] = CHILD_OP_PCI_BIND,
 	[106] = CHILD_OP_ISCSI_LOGIN_WALKER,
 	[107] = CHILD_OP_VMA_SPLIT_STORM,
+	[108] = CHILD_OP_AF_UNIX_PEEK_RACE,
 };
 _Static_assert(ARRAY_SIZE(pick_op_type_table) == ARRAY_SIZE(dormant_op_disabled),
 	"pick_op_type_table and dormant_op_disabled must have matching slot counts");
@@ -2179,6 +2182,7 @@ static bool (*const op_dispatch[NR_CHILD_OP_TYPES])(struct childdata *) = {
 	[CHILD_OP_VMA_SPLIT_STORM]	= vma_split_storm,
 	[CHILD_OP_SYSFS_STRING_RACE]	= sysfs_string_race,
 	[CHILD_OP_PCI_BIND]		= pci_bind,
+	[CHILD_OP_AF_UNIX_PEEK_RACE]	= af_unix_peek_race,
 };
 
 _Static_assert(ARRAY_SIZE(op_dispatch) == NR_CHILD_OP_TYPES,

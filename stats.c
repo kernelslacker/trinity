@@ -1281,6 +1281,26 @@ static const struct stat_category af_unix_scm_rights_gc_category =
 	              af_unix_scm_rights_gc_runs,
 	              af_unix_scm_rights_gc_fields);
 
+static const struct stat_field af_unix_peek_race_fields[] = {
+	STAT_FIELD(af_unix_peek_race, runs),
+	STAT_FIELD(af_unix_peek_race, setup_failed),
+	STAT_FIELD(af_unix_peek_race, pair_open_ok),
+	STAT_FIELD(af_unix_peek_race, peek_off_armed),
+	STAT_FIELD(af_unix_peek_race, peek_off_rejected),
+	STAT_FIELD(af_unix_peek_race, send_ok),
+	STAT_FIELD(af_unix_peek_race, shutdown_ok),
+	STAT_FIELD(af_unix_peek_race, pair_rebuilds),
+	STAT_FIELD(af_unix_peek_race, sibling_spawn_ok),
+	STAT_FIELD(af_unix_peek_race, sibling_spawn_failed),
+	STAT_FIELD(af_unix_peek_race, sibling_reaped_ok),
+	STAT_FIELD(af_unix_peek_race, sibling_crashed),
+};
+
+static const struct stat_category af_unix_peek_race_category =
+	STAT_CATEGORY("af_unix_peek_race",
+	              af_unix_peek_race_runs,
+	              af_unix_peek_race_fields);
+
 static const struct stat_field bpf_cgroup_attach_fields[] = {
 	STAT_FIELD(bpf_cgroup_attach, runs),
 	STAT_FIELD(bpf_cgroup_attach, setup_failed),
@@ -2679,6 +2699,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&af_unix_scm_rights_gc_category);
+
+	printf(",");
+	stat_category_emit_json(&af_unix_peek_race_category);
 
 	printf(",");
 	stat_category_emit_json(&bpf_cgroup_attach_category);
@@ -5606,6 +5629,8 @@ static void dump_stats_childop_runs_network(void)
 	stat_category_emit_text(&nf_conntrack_helper_churn_category);
 
 	stat_category_emit_text(&af_unix_scm_rights_gc_category);
+
+	stat_category_emit_text(&af_unix_peek_race_category);
 
 	stat_category_emit_text(&netns_teardown_category);
 

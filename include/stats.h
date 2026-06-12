@@ -1341,6 +1341,20 @@ struct stats_s {
 	unsigned long af_unix_scm_rights_gc_sibling_reaped_ok;	/* sibling exited normally and was reaped by parent */
 	unsigned long af_unix_scm_rights_gc_sibling_crashed;	/* sibling killed by signal (SEGV/BUS/KILL) -- forensic hint */
 
+	/* af_unix_peek_race childop counters */
+	unsigned long af_unix_peek_race_runs;			/* total af_unix_peek_race invocations */
+	unsigned long af_unix_peek_race_setup_failed;		/* AF_UNIX SOCK_STREAM socketpair / probe latch fired */
+	unsigned long af_unix_peek_race_pair_open_ok;		/* fresh SOCK_STREAM socketpair + prefill landed */
+	unsigned long af_unix_peek_race_peek_off_armed;		/* setsockopt SO_PEEK_OFF accepted on the reader half */
+	unsigned long af_unix_peek_race_peek_off_rejected;	/* setsockopt SO_PEEK_OFF rejected (old kernel; coverage still proceeds) */
+	unsigned long af_unix_peek_race_send_ok;		/* parent send() landed bytes on the writer half */
+	unsigned long af_unix_peek_race_shutdown_ok;		/* parent shutdown(SHUT_WR) flipped peer state */
+	unsigned long af_unix_peek_race_pair_rebuilds;		/* post-EPIPE socketpair() rebuilds (bounded per burst) */
+	unsigned long af_unix_peek_race_sibling_spawn_ok;	/* clone(CLONE_FILES|SIGCHLD) sibling race-producer spawned */
+	unsigned long af_unix_peek_race_sibling_spawn_failed;	/* clone()/clone3() failed; fell back to single-task race burst */
+	unsigned long af_unix_peek_race_sibling_reaped_ok;	/* sibling exited normally and was reaped by parent */
+	unsigned long af_unix_peek_race_sibling_crashed;	/* sibling killed by signal (SEGV/BUS/KILL) -- forensic hint */
+
 	/* netns_teardown_churn childop counters */
 	unsigned long netns_teardown_runs;			/* total netns_teardown_churn invocations */
 	unsigned long netns_teardown_setup_failed;		/* anchor open / fork / unsupported latch fired */
