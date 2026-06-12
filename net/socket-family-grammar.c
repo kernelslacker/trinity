@@ -32,6 +32,7 @@
 #include "utils.h"
 #include "compat.h"		/* keep last — matches net/proto-*.c order */
 #include "rnd.h"
+#include "xdp-umem-track.h"
 
 #ifndef MSG_NOSIGNAL
 #define MSG_NOSIGNAL	0x4000
@@ -353,9 +354,13 @@ bool run_grammar_chain(const struct socket_family_grammar *sfg,
 	*err_burst = 0;
 	ok = true;
 out:
-	if (child_fd >= 0)
+	if (child_fd >= 0) {
+		xdp_umem_release(child_fd);
 		close(child_fd);
-	if (parent_fd >= 0)
+	}
+	if (parent_fd >= 0) {
+		xdp_umem_release(parent_fd);
 		close(parent_fd);
+	}
 	return ok;
 }

@@ -175,8 +175,14 @@ static void xdp_socket_setup(int fd)
 			munmap(map, map_sz);
 	}
 
-	/* Leave UMEM mapped — the kernel holds a reference while the
-	 * socket is alive.  It gets cleaned up when the fd closes. */
+	/*
+	 * Leave UMEM mapped here — ownership has been handed to the
+	 * fd-keyed table by the xdp_umem_record() call above, so the
+	 * matching munmap() is issued from the socket destructor when
+	 * the fd is closed.  Closing the fd alone only releases the
+	 * kernel-side umem registration; the userspace VMA persists
+	 * until an explicit munmap().
+	 */
 	return;
 
 out_unmap_umem:
@@ -291,8 +297,11 @@ const struct netproto proto_xdp = {
  *
  * The umem is mmap'd at 64 * 4096 == 16 pages, the smallest size
  * the kernel will accept with chunk_size 4096 and frame headroom 0.
- * It leaks deliberately — the fd close path tears it down via
- * xsk_destruct.  bind_or_connect uses sxdp_ifindex of "lo" with
+ * Ownership is recorded against fd via xdp_umem_record() so the
+ * grammar dispatcher's close path can issue the matching munmap();
+ * the AF_XDP fd close on its own only releases the kernel-side umem
+ * registration, the userspace VMA persists until munmap().
+ * bind_or_connect uses sxdp_ifindex of "lo" with
  * a random sxdp_flags; bind() is expected to fail on lo with most
  * flag combinations and EOPNOTSUPP / EINVAL is swallowed by the
  * framework's err_burst counter rather than latching the family.
@@ -453,9 +462,12 @@ static void xdp_grammar_walk_setsockopts(int fd, struct socket_triplet *t,
 			xdp_grammar_set_ring(fd, XDP_TX_RING);
 	}
 
-	/* Leave the umem mapped — the kernel holds a reference while
-	 * the socket is alive and the fd close path tears it down via
-	 * xsk_destruct. */
+	/*
+	 * Leave the umem mapped here — ownership was recorded against
+	 * fd via xdp_umem_record() above, so the dispatcher's close
+	 * path will issue the matching munmap() when this grammar pass
+	 * returns.
+	 */
 }
 
 const struct socket_family_grammar grammar_xdp = {

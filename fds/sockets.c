@@ -24,6 +24,7 @@
 #include "uid.h"
 #include "unblocker.h"
 #include "utils.h"
+#include "xdp-umem-track.h"
 
 unsigned int nr_sockets = 0;
 
@@ -381,6 +382,15 @@ static void socket_destructor(struct object *obj)
 	(void) shutdown(fd, SHUT_RDWR);
 
 do_close:
+	/*
+	 * Release any AF_XDP UMEM mapping owned by this fd before close.
+	 * close() releases the kernel-side umem registration but does
+	 * not munmap() the userspace VMA the registration was attached
+	 * to, so without this the mapping persists for the life of the
+	 * process.  No-op when the fd has no recorded mapping.
+	 */
+	xdp_umem_release(fd);
+
 	if (close(fd) != 0)
 		output(1, "failed to close socket [%u:%u:%u].(%s)\n",
 			si->triplet.family,
