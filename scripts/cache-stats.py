@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """Dump stats from trinity's ~/.cache/trinity/ persisted artifacts.
 
-Parses four on-disk formats version-aware:
+Parses three on-disk formats version-aware:
   - kcov-bitmap        magic "KCBV", versions 4, 5, 6, 7
   - corpus/<arch>      magic "TRNC", version 3
   - cmp-hints          magic "CHP_", version 4
-  - effector/<arch>    magic "TREM", version 1
 
 Two modes:
   stats <cache-dir>            single-kernel summary
@@ -30,15 +29,12 @@ from typing import Optional
 KCOV_MAGIC = 0x4B434256
 CORPUS_MAGIC = 0x54524E43
 CMP_HINTS_MAGIC = 0x4348505F
-EFFECTOR_MAGIC = 0x5452454D
 
 KCOV_NUM_EDGES = 1 << 23
 KCOV_NUM_BUCKETS = 8
 MAX_NR_SYSCALL = 1024
 CORPUS_RING_SIZE = 32
 CMP_HINTS_PER_SYSCALL = 16
-EFFECTOR_NR_ARGS = 6
-EFFECTOR_BITS_PER_ARG = 64
 
 KCOV_HDR_COMMON = "<IIIIQQII32sII"
 KCOV_HDR_COMMON_SIZE = struct.calcsize(KCOV_HDR_COMMON)
@@ -63,10 +59,6 @@ CMP_HINTS_HDR_SIZE = struct.calcsize(CMP_HINTS_HDR_FMT)
 CMP_HINTS_ENTRY_FMT = "<QQIIQ"
 CMP_HINTS_ENTRY_SIZE = struct.calcsize(CMP_HINTS_ENTRY_FMT)
 CMP_HINTS_POOL_SIZE = 4 + 4 + CMP_HINTS_PER_SYSCALL * CMP_HINTS_ENTRY_SIZE
-
-EFFECTOR_HDR_FMT = "<IIIIIII65s65s2s"
-EFFECTOR_HDR_SIZE = struct.calcsize(EFFECTOR_HDR_FMT)
-EFFECTOR_PAYLOAD_BYTES = MAX_NR_SYSCALL * EFFECTOR_NR_ARGS * EFFECTOR_BITS_PER_ARG
 
 
 def warn(msg: str) -> None:
@@ -558,108 +550,6 @@ def load_cmp_hints(path: str) -> Optional[CmpHintsData]:
 
 
 @dataclass
-class EffectorData:
-    path: str
-    version: int
-    max_nr_syscall: int
-    nr_args: int
-    bits_per_arg: int
-    payload_crc32: int
-    kernel_release: str
-    kernel_version: str
-    calibrated_syscalls: int
-    per_syscall_nonzero_bits: list[int]
-    per_arg_global: list[int]
-    crc_ok: bool
-    notes: list[str] = field(default_factory=list)
-
-
-def load_effector(path: str) -> Optional[EffectorData]:
-    try:
-        with open(path, "rb") as fh:
-            raw = fh.read()
-    except OSError as exc:
-        warn(f"effector: open {path}: {exc}")
-        return None
-
-    if len(raw) < EFFECTOR_HDR_SIZE:
-        warn(f"effector: {path}: file too small ({len(raw)} bytes)")
-        return None
-
-    (
-        magic,
-        version,
-        max_nr_syscall,
-        nr_args,
-        bits_per_arg,
-        payload_crc32,
-        _reserved,
-        release_b,
-        version_b,
-        _pad,
-    ) = struct.unpack_from(EFFECTOR_HDR_FMT, raw, 0)
-    if magic != EFFECTOR_MAGIC:
-        warn(f"effector: {path}: bad magic 0x{magic:08x}")
-        return None
-    if version != 1:
-        warn(f"effector: {path}: unsupported version {version}")
-        return None
-    if (
-        max_nr_syscall != MAX_NR_SYSCALL
-        or nr_args != EFFECTOR_NR_ARGS
-        or bits_per_arg != EFFECTOR_BITS_PER_ARG
-    ):
-        warn(f"effector: {path}: dim mismatch")
-        return None
-
-    expected = max_nr_syscall * nr_args * bits_per_arg
-    payload = raw[EFFECTOR_HDR_SIZE : EFFECTOR_HDR_SIZE + expected]
-    if len(payload) < expected:
-        warn(f"effector: {path}: payload truncated")
-        return None
-
-    calc_crc = zlib.crc32(payload) & 0xFFFFFFFF
-    crc_ok = calc_crc == payload_crc32
-    notes: list[str] = []
-    if not crc_ok:
-        notes.append(
-            f"payload_crc32 mismatch: file=0x{payload_crc32:08x} calc=0x{calc_crc:08x}"
-        )
-
-    per_syscall_nonzero_bits = [0] * max_nr_syscall
-    per_arg_global = [0] * nr_args
-    calibrated = 0
-    row_bytes = nr_args * bits_per_arg
-    for nr in range(max_nr_syscall):
-        row = payload[nr * row_bytes : (nr + 1) * row_bytes]
-        nz_total = 0
-        for a in range(nr_args):
-            chunk = row[a * bits_per_arg : (a + 1) * bits_per_arg]
-            nz = bits_per_arg - chunk.count(0)
-            per_arg_global[a] += nz
-            nz_total += nz
-        per_syscall_nonzero_bits[nr] = nz_total
-        if nz_total > 0:
-            calibrated += 1
-
-    return EffectorData(
-        path=path,
-        version=version,
-        max_nr_syscall=max_nr_syscall,
-        nr_args=nr_args,
-        bits_per_arg=bits_per_arg,
-        payload_crc32=payload_crc32,
-        kernel_release=cstr(release_b),
-        kernel_version=cstr(version_b),
-        calibrated_syscalls=calibrated,
-        per_syscall_nonzero_bits=per_syscall_nonzero_bits,
-        per_arg_global=per_arg_global,
-        crc_ok=crc_ok,
-        notes=notes,
-    )
-
-
-@dataclass
 class CacheBundle:
     cache_dir: str
     kernel_label: str
@@ -668,7 +558,6 @@ class CacheBundle:
     kcov: Optional[KcovData]
     corpus: Optional[CorpusData]
     cmp_hints: Optional[CmpHintsData]
-    effector: Optional[EffectorData]
 
 
 def syscall_label(names: dict[int, str], nr: int) -> str:
@@ -717,22 +606,16 @@ def load_bundle(cache_dir: str, kernel: Optional[str] = None) -> CacheBundle:
     kcov_path, kcov_arch = find_artifact(cache_dir, "kcov-bitmap", kernel)
     corpus_path, corpus_arch = find_artifact(cache_dir, "corpus", kernel)
     cmp_path, cmp_arch = find_artifact(cache_dir, "cmp-hints", kernel)
-    effector_path, effector_arch = find_artifact(cache_dir, "effector", kernel)
 
-    arch = (
-        corpus_arch or effector_arch or kcov_arch or cmp_arch or arch_from_dirname(base)
-    )
+    arch = corpus_arch or kcov_arch or cmp_arch or arch_from_dirname(base)
     syscall_names = load_syscall_names(arch) if arch else {}
 
     kcov = load_kcov(kcov_path) if kcov_path else None
     corpus = load_corpus(corpus_path) if corpus_path else None
     cmp_hints = load_cmp_hints(cmp_path) if cmp_path else None
-    effector = load_effector(effector_path) if effector_path else None
 
     if corpus is not None:
         kernel_label = corpus.kernel_release
-    elif effector is not None:
-        kernel_label = effector.kernel_release
     else:
         kernel_label = base
 
@@ -744,7 +627,6 @@ def load_bundle(cache_dir: str, kernel: Optional[str] = None) -> CacheBundle:
         kcov=kcov,
         corpus=corpus,
         cmp_hints=cmp_hints,
-        effector=effector,
     )
 
 
@@ -943,50 +825,8 @@ def print_cmp_hints_stats(b: CacheBundle, top_n: int) -> None:
             )
 
 
-def print_effector_stats(b: CacheBundle, top_n: int) -> None:
-    section("effector-map")
-    e = b.effector
-    if e is None:
-        print("  (no effector loaded)")
-        return
-    total_bits = e.max_nr_syscall * e.nr_args * e.bits_per_arg
-    set_bits = sum(e.per_syscall_nonzero_bits)
-    print(f"  file:            {e.path}")
-    print(f"  kernel_release:  {e.kernel_release}")
-    print(f"  kernel_version:  {e.kernel_version}")
-    print(f"  calibrated syscalls: {e.calibrated_syscalls} / {e.max_nr_syscall}")
-    print(
-        f"  non-zero bytes:  {set_bits} / {total_bits}  "
-        f"({fmt_pct(set_bits / total_bits if total_bits else 0.0)})"
-    )
-    print(f"  crc:             {'OK' if e.crc_ok else 'MISMATCH'}")
-    for n in e.notes:
-        print(f"  note: {n}")
-
-    section("per-arg sensitivity (sum across all syscalls)")
-    for i, v in enumerate(e.per_arg_global):
-        print(f"  arg{i}: {v} non-zero bytes")
-
-    section("top syscalls by per-arg sensitivity")
-    ranked = sorted(
-        (
-            (nr, e.per_syscall_nonzero_bits[nr])
-            for nr in range(e.max_nr_syscall)
-            if e.per_syscall_nonzero_bits[nr] > 0
-        ),
-        key=lambda t: t[1],
-        reverse=True,
-    )
-    if not ranked:
-        print("  (no calibrated syscalls)")
-    else:
-        print(f"  {'syscall':<28s} {'nz-bytes':>10s}")
-        for nr, nz in ranked[:top_n]:
-            print(f"  {syscall_label(b.syscall_names, nr):<28s} {nz:>10d}")
-
-
 def _kernel_mtime(cache_dir: str, fname: str) -> float:
-    for top in ("kcov-bitmap", "corpus", "cmp-hints", "effector"):
+    for top in ("kcov-bitmap", "corpus", "cmp-hints"):
         p = os.path.join(cache_dir, top, fname)
         if os.path.isfile(p):
             return os.path.getmtime(p)
@@ -996,7 +836,7 @@ def _kernel_mtime(cache_dir: str, fname: str) -> float:
 def available_kernels(cache_dir: str) -> list[str]:
     """Distinct per-kernel artifact filenames present under cache_dir."""
     labels: set[str] = set()
-    for top in ("kcov-bitmap", "corpus", "cmp-hints", "effector"):
+    for top in ("kcov-bitmap", "corpus", "cmp-hints"):
         d = os.path.join(cache_dir, top)
         if os.path.isdir(d):
             for s in os.listdir(d):
@@ -1049,7 +889,6 @@ def cmd_stats(args: argparse.Namespace) -> int:
     print_kcov_stats(b, args.top)
     print_corpus_stats(b, args.top)
     print_cmp_hints_stats(b, args.top)
-    print_effector_stats(b, args.top)
     return 0
 
 
