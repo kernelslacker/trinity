@@ -20,6 +20,7 @@
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
+#include "vma-pressure.h"
 
 #ifndef MLOCK_ONFAULT
 #define MLOCK_ONFAULT 1
@@ -99,6 +100,13 @@ bool mlock_pressure(struct childdata *child)
 	struct map *map;
 
 	(void)child;
+
+	/* Global VMA-pressure backoff.  mlock on a page-aligned sub-range
+	 * splits the underlying VMA at the lock boundary; the mlockall
+	 * branch below can also split via MCL_FUTURE intercepts on the
+	 * probe mappings.  Skip the whole dispatch when latched. */
+	if (vma_pressure_is_high())
+		return true;
 
 	/*
 	 * 5% of the time, do a whole-process mlockall/munlockall cycle.

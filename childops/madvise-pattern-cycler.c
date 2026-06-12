@@ -74,6 +74,7 @@
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
+#include "vma-pressure.h"
 
 /* Recent madvise advice modes - libc headers on older build hosts may
  * not define these even though the running kernel supports them.
@@ -343,6 +344,13 @@ static void madvise_cycler_iter_run_cycle(struct madvise_cycler_iter_ctx *ctx,
 	for (iter = 0; iter < iter_cap; iter++) {
 		unsigned long offset, len;
 		int advice, mrc;
+
+		/* Global VMA-pressure backoff.  Most curated advice modes
+		 * here (FREE / COLD / PAGEOUT / POPULATE_* / COLLAPSE) take
+		 * the partial-VMA path inside madvise_walk_vmas, which can
+		 * split.  Bail the remainder of the cycle on a latch. */
+		if (vma_pressure_is_high())
+			break;
 
 		offset = pick_subrange(ctx->nr_pages, &len);
 		advice = (int)advice_cycle[ctx->advice_idx];

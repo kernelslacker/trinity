@@ -46,6 +46,7 @@
 #include "sanitise.h"
 #include "sequence.h"
 #include "utils.h"	// zmalloc
+#include "vma-pressure.h"
 
 /*
  * Pin op_nr — the trailing field of the per-syscall hot block — to an
@@ -1193,6 +1194,13 @@ static void periodic_work(struct childdata *child, unsigned long op_nr)
 	check_parent_pid();
 
 	divergence_sentinel_tick(child);
+
+	/* Global VMA-pressure watchdog: sample the child's live VMA count
+	 * every VMA_PRESSURE_SAMPLE_PERIOD ops and latch a per-child
+	 * flag the heavy-VMA childops poll at iteration top.  Cadence and
+	 * cost are documented in mm/vma-pressure.c; cheap when latched
+	 * LOW, bounded when latched HIGH (only the backoff regime pays). */
+	vma_pressure_sample_maybe(op_nr);
 
 	/* Every 128 iterations. */
 	if ((op_nr & 127) == 0) {

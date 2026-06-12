@@ -60,6 +60,7 @@
 #include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
+#include "vma-pressure.h"
 
 #define VMA_SPLIT_STORM_REGION_BYTES	(8UL << 20)	/* 8 MiB */
 #define VMA_SPLIT_STORM_ITERS_BASE	256U
@@ -123,6 +124,14 @@ bool vma_split_storm(struct childdata *child)
 	for (i = 0; i < iters; i++) {
 		uint32_t pick = rnd_u32() % 100U;
 		unsigned long off, len;
+
+		/* Global VMA-pressure backoff.  Single BSS load; bails the
+		 * remainder of this invocation when the watchdog has latched
+		 * the child near max_map_count.  The trailing munmap() below
+		 * runs unconditionally so the 8 MiB region returns to the
+		 * kernel even when we bailed mid-loop. */
+		if (vma_pressure_is_high())
+			break;
 
 		if (pick < 70U) {
 			/* Split-edge mprotect: alternating prot bits.

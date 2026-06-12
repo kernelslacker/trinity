@@ -22,6 +22,7 @@
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
+#include "vma-pressure.h"
 
 /*
  * Per-invocation prot-shift mode.  A single uniform-random prot pick
@@ -145,6 +146,12 @@ bool mprotect_split(struct childdata *child)
 		unsigned long offset, len;
 		int new_prot, prot_used;
 		void *addr;
+
+		/* Global VMA-pressure backoff: every iteration here can
+		 * cause a __split_vma; back off cleanly before pushing
+		 * the count any further. */
+		if (vma_pressure_is_high())
+			break;
 
 		offset = pick_subrange(map, &len);
 		addr = (char *)map->ptr + offset;

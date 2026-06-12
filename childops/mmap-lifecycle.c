@@ -23,6 +23,7 @@
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
+#include "vma-pressure.h"
 
 /* How many child-local mappings to allow before forcing teardown. */
 #define MAX_LIFECYCLE_MAPS 64
@@ -210,6 +211,14 @@ bool mmap_lifecycle(struct childdata *child)
 	unsigned int nr_maps;
 
 	(void)child;
+
+	/* Global VMA-pressure backoff.  Skip the whole dispatch when
+	 * latched: do_create / do_mremap can only add VMAs from here, and
+	 * do_dirty / do_teardown alone aren't worth the dispatcher slot --
+	 * the natural attrition (other childops returning, other children
+	 * exiting) trims the count down to LO%% on its own. */
+	if (vma_pressure_is_high())
+		return true;
 
 	head = get_objhead(OBJ_LOCAL, OBJ_MMAP_ANON);
 	if (head == NULL)
