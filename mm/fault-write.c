@@ -162,7 +162,7 @@ static void dirty_random_pages(struct map *map)
 		/* Offset is uniform across the FULL mapping; only the
 		 * iteration count is capped.  Preserves the
 		 * "any page in the mapping" sampling distribution. */
-		off_t offset = rnd_modulo_u32(total) * page_size;
+		off_t offset = rnd_modulo_u32(total) * (off_t) page_size;
 		char *p = map->ptr + offset;
 		if (mark_page_rw(p) == true)
 			*p = rnd_u32();

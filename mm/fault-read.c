@@ -148,7 +148,7 @@ static void read_random_pages(struct map *map)
 	for (i = 0; i < walk; i++) {
 		/* Offset is uniform across the FULL mapping; only the
 		 * iteration count is capped. */
-		char *page = p + (rnd_modulo_u32(total) * page_size);
+		char *page = p + (rnd_modulo_u32(total) * (unsigned long) page_size);
 		read_mprotect((void *) page, page_size, PROT_READ);
 		memcpy(page_buf, page, page_size);
 	}
