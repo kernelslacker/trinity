@@ -17,6 +17,12 @@
 #define TAINT_CRAP                      10
 #define TAINT_FIRMWARE_WORKAROUND       11
 #define TAINT_OOT_MODULE                12
+#define TAINT_UNSIGNED_MODULE           13
+#define TAINT_SOFTLOCKUP                14
+#define TAINT_LIVEPATCH                 15
+#define TAINT_AUX                       16
+#define TAINT_RANDSTRUCT                17
+#define TAINT_TEST                      18
 
 /* command line args. */
 void parse_args(int argc, char *argv[]);

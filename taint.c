@@ -121,6 +121,18 @@ static void toggle_taint_flag_by_name(char *beg, char *end)
 		toggle_taint_flag(TAINT_FIRMWARE_WORKAROUND);
 	else if (strcmp(name,"OOT_MODULE") == 0)
 		toggle_taint_flag(TAINT_OOT_MODULE);
+	else if (strcmp(name,"UNSIGNED_MODULE") == 0)
+		toggle_taint_flag(TAINT_UNSIGNED_MODULE);
+	else if (strcmp(name,"SOFTLOCKUP") == 0)
+		toggle_taint_flag(TAINT_SOFTLOCKUP);
+	else if (strcmp(name,"LIVEPATCH") == 0)
+		toggle_taint_flag(TAINT_LIVEPATCH);
+	else if (strcmp(name,"AUX") == 0)
+		toggle_taint_flag(TAINT_AUX);
+	else if (strcmp(name,"RANDSTRUCT") == 0)
+		toggle_taint_flag(TAINT_RANDSTRUCT);
+	else if (strcmp(name,"TEST") == 0)
+		toggle_taint_flag(TAINT_TEST);
 	else {
 		outputerr("Unrecognizable kernel taint flag \"%s\".\n", name);
 		exit(EXIT_FAILURE);
