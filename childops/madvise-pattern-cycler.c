@@ -67,7 +67,6 @@
 #include "pids.h"
 #include "child.h"
 #include "childops-util.h"
-#include "effector-map.h"
 #include "jitter.h"
 #include "maps.h"
 #include "random.h"
@@ -284,10 +283,8 @@ static int madvise_cycler_iter_pick_region(struct madvise_cycler_iter_ctx *ctx)
 /*
  * Phase 2: stamp the wall-clock start (read by budget_elapsed_ns inside
  * the cycle loop) and pick the starting offset into the curated advice
- * list.  Biasing the start through the effector map weights advice
- * values whose bit pattern overlaps the kernel's hot branches on
- * madvise's advice arg so their reclaim / populate / collapse paths
- * see pressure first while the wall-clock budget is still fresh; this
+ * list.  Uniform-random start ensures every advice value gets the same
+ * chance to land first while the wall-clock budget is still fresh; this
  * also keeps concurrent madvise_cycler invocations from all hammering
  * MADV_FREE first.  Nothing here touches the pool mapping, so a fault
  * during setup is not a pool race and the default handler still wins.
@@ -295,9 +292,7 @@ static int madvise_cycler_iter_pick_region(struct madvise_cycler_iter_ctx *ctx)
 static void madvise_cycler_iter_setup_budget(struct madvise_cycler_iter_ctx *ctx)
 {
 	clock_gettime(CLOCK_MONOTONIC, &ctx->start);
-	ctx->advice_idx = effector_pick_array_index(
-		EFFECTOR_NR(__NR_madvise), 2,
-		advice_cycle, ARRAY_SIZE(advice_cycle));
+	ctx->advice_idx = rnd_modulo_u32(ARRAY_SIZE(advice_cycle));
 }
 
 /*

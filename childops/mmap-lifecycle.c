@@ -16,7 +16,6 @@
 #include "arch.h"
 #include "child.h"
 #include "deferred-free.h"
-#include "effector-map.h"
 #include "maps.h"
 #include "objects.h"
 #include "random.h"
@@ -52,8 +51,7 @@ static const unsigned long mmap_prot_combos[] = {
 
 static int pick_prot(void)
 {
-	return (int)mmap_prot_combos[effector_pick_array_index(EFFECTOR_NR(__NR_mmap), 2,
-			mmap_prot_combos, ARRAY_SIZE(mmap_prot_combos))];
+	return (int)mmap_prot_combos[rnd_modulo_u32(ARRAY_SIZE(mmap_prot_combos))];
 }
 
 static bool do_create(void)

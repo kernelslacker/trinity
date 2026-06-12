@@ -25,7 +25,6 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "effector-map.h"
 #include "fd.h"
 #include "kcov.h"
 #include "minicorpus.h"
@@ -959,10 +958,6 @@ static bool try_structured_mutation(unsigned long *val, unsigned int op,
  * weighted_pick_case()).  The selected case is recorded in mut_attrib[]
  * for post-syscall attribution by minicorpus_mut_attrib_commit().
  *
- * @nr / @arg are the syscall table index and zero-based arg slot for
- * the value being mutated.  They are only consulted for the bit-flip
- * case to look up effector-map weights; other cases ignore them.
- *
  * @params (when non-NULL) carries the ABI metadata for the slot --
  * arglist for ARG_LIST/ARG_OP, range for ARG_RANGE -- and lets the
  * picked op fire a type-aware variant instead of a byte-level
@@ -972,8 +967,7 @@ static bool try_structured_mutation(unsigned long *val, unsigned int op,
  * productivity per op.
  */
 static unsigned long mutate_arg(unsigned long val, enum argtype atype,
-		const struct arg_param *params,
-		unsigned int nr, unsigned int arg)
+		const struct arg_param *params)
 {
 	unsigned int op = weighted_pick_case(atype);
 
@@ -986,10 +980,8 @@ static unsigned long mutate_arg(unsigned long val, enum argtype atype,
 
 	switch (op) {
 	case 0:
-		/* flip a bit picked by effector-map weight (uniform when no
-		 * calibration data is loaded for this slot — see
-		 * effector_pick_bit). */
-		val ^= 1UL << effector_pick_bit(nr, arg);
+		/* flip a uniform-random bit. */
+		val ^= 1UL << rnd_modulo_u32(sizeof(unsigned long) * 8);
 		break;
 	case 1: {
 		/* add small delta, saturate at ULONG_MAX */
@@ -1122,18 +1114,15 @@ static unsigned int pick_stack_depth(void)
 /*
  * Apply mutate_arg n_muts times in sequence.  The stack composes the
  * primitive mutations into a single transformation per call site.
- * @nr / @arg pass through to mutate_arg's bit-flip case for effector-map
- * weighting; @params forwards the slot's ABI metadata so the
- * structure-aware variants can fire on every stacked step rather than
- * just the first.
+ * @params forwards the slot's ABI metadata so the structure-aware
+ * variants can fire on every stacked step rather than just the first.
  */
 static unsigned long mutate_arg_stacked(unsigned long val, unsigned int n_muts,
 					enum argtype atype,
-					const struct arg_param *params,
-					unsigned int nr, unsigned int arg)
+					const struct arg_param *params)
 {
 	while (n_muts-- > 0)
-		val = mutate_arg(val, atype, params, nr, arg);
+		val = mutate_arg(val, atype, params);
 	return val;
 }
 
@@ -1146,9 +1135,9 @@ static unsigned long mutate_arg_stacked(unsigned long val, unsigned int n_muts,
  * it bumps — is a single shared engine.
  *
  * @nr is the syscall table index for the call whose args are being
- * mutated; passed through to mutate_arg's bit-flip case so it can
- * consult the effector map for per-(syscall, arg) bit weights.  Both
- * callers already have the value (rec->nr / saved->nr).
+ * mutated; consulted by the xprop branch to scope the cross-syscall
+ * source pool.  Both callers already have the value (rec->nr /
+ * saved->nr).
  *
  * Splice and mutate read from a local snapshot of the input so a
  * sibling arg's value used for splice is the original input, not an
@@ -1220,7 +1209,7 @@ void minicorpus_mutate_args(unsigned long args[6], struct syscallentry *entry,
 			__atomic_fetch_add(&minicorpus_shm->stack_depth_histogram[depth],
 					   1UL, __ATOMIC_RELAXED);
 			val = mutate_arg_stacked(val, depth, entry->argtype[i],
-					&entry->arg_params[i], nr, i);
+					&entry->arg_params[i]);
 		}
 
 fd_safety:
@@ -1704,8 +1693,8 @@ bool minicorpus_load_file(const char *path,
 		 * Bumps ndiscarded so operators see a corpus-quality signal
 		 * rather than silently absorbing the entry.  do32bit isn't
 		 * encoded on disk; the 64-bit table is the canonical view
-		 * (matches effector-map's lookup) and on biarch any pointer/
-		 * pid argtype is shared between both tables for a given nr. */
+		 * and on biarch any pointer/pid argtype is shared between
+		 * both tables for a given nr. */
 		xe = get_syscall_entry(ent.nr, false);
 		if (xe != NULL && !corpus_args_replayable(xe)) {
 			ndiscarded++;

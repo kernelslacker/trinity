@@ -40,7 +40,6 @@
 
 #include "child.h"
 #include "childops-util.h"
-#include "effector-map.h"
 #include "jitter.h"
 #include "random.h"
 #include "rnd.h"
@@ -143,14 +142,14 @@ bool pipe_thrash(struct childdata *child)
 			break;
 		case 1:
 			rc = pipe2(pair,
-				   (int)RAND_NEGATIVE_OR(pipe2_flags[effector_pick_array_index(EFFECTOR_NR(__NR_pipe2), 1, pipe2_flags, ARRAY_SIZE(pipe2_flags))]));
+				   (int)RAND_NEGATIVE_OR(pipe2_flags[rnd_modulo_u32(ARRAY_SIZE(pipe2_flags))]));
 			if (rc == 0)
 				__atomic_add_fetch(&shm->stats.pipe_thrash_pipes,
 						   1, __ATOMIC_RELAXED);
 			break;
 		default:
 			rc = socketpair(AF_UNIX,
-					(int)socketpair_types[effector_pick_array_index(EFFECTOR_NR(__NR_socketpair), 1, socketpair_types, ARRAY_SIZE(socketpair_types))],
+					(int)socketpair_types[rnd_modulo_u32(ARRAY_SIZE(socketpair_types))],
 					0, pair);
 			if (rc == 0)
 				__atomic_add_fetch(&shm->stats.pipe_thrash_socketpairs,

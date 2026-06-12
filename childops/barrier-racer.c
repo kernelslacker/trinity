@@ -46,7 +46,6 @@
 
 #include "child.h"
 #include "childops-util.h"
-#include "effector-map.h"
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
@@ -260,7 +259,7 @@ static void worker_ftruncate_race(struct racer_shared *s)
 
 	int ret __attribute__((unused));
 	ret = ftruncate(s->fd,
-			(off_t)RAND_NEGATIVE_OR(sizes[effector_pick_array_index(EFFECTOR_NR(__NR_ftruncate), 1, sizes, ARRAY_SIZE(sizes))]));
+			(off_t)RAND_NEGATIVE_OR(sizes[rnd_modulo_u32(ARRAY_SIZE(sizes))]));
 }
 
 static void cleanup_ftruncate_race(struct racer_shared *s)
