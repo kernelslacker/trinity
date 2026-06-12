@@ -45,6 +45,9 @@ extern struct genl_family_grammar fam_taskstats;
 #if __has_include(<linux/ethtool_netlink_generated.h>)
 extern struct genl_family_grammar fam_ethtool;
 #endif
+#if __has_include(<linux/netdev.h>)
+extern struct genl_family_grammar fam_netdev;
+#endif
 #if __has_include(<linux/mptcp_pm.h>)
 extern struct genl_family_grammar fam_mptcp_pm;
 #endif
@@ -115,6 +118,9 @@ static struct genl_family_grammar *registry[] = {
 	&fam_taskstats,
 #if __has_include(<linux/ethtool_netlink_generated.h>)
 	&fam_ethtool,
+#endif
+#if __has_include(<linux/netdev.h>)
+	&fam_netdev,
 #endif
 #if __has_include(<linux/mptcp_pm.h>)
 	&fam_mptcp_pm,
