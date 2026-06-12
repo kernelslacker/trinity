@@ -72,8 +72,10 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/syscall.h>
+#include <sys/wait.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <linux/bpf.h>
@@ -83,6 +85,7 @@
 #include "bpf.h"
 #include "bpf-syscall.h"
 #include "child.h"
+#include "childops-util.h"
 #include "objects.h"
 #include "publish_resource.h"
 #include "random.h"
@@ -98,6 +101,12 @@
 #endif
 #ifndef BPF_F_ALLOW_MULTI
 #define BPF_F_ALLOW_MULTI	(1U << 1)
+#endif
+#ifndef BPF_MAP_TYPE_ARENA
+#define BPF_MAP_TYPE_ARENA	33
+#endif
+#ifndef BPF_F_MMAPABLE
+#define BPF_F_MMAPABLE		(1U << 10)
 #endif
 
 #define MAP_ENTRIES		8
@@ -222,6 +231,7 @@ static void test_run(int prog_fd)
  */
 static bool socket_filter_disabled;
 static bool cgroup_disabled;
+static bool arena_unsupported;
 
 /*
  * Publish a freshly-created BPF map fd into the per-child object pool
@@ -491,11 +501,122 @@ out:
 	return ok;
 }
 
+/*
+ * Combo C — exercise the BPF arena map mmap()+fork() teardown path.
+ *
+ * Arena maps (BPF_MAP_TYPE_ARENA, added in v6.9) expose a sparse 4 GiB
+ * region as a mmap()-able fd.  When a process that holds such a mapping
+ * fork()s, the mapping is inherited via the standard vma copy path and
+ * the arena map_vm_close() teardown runs once both parent and child have
+ * dropped their references.  No other childop creates an arena map or
+ * forks against one, so that close-on-fork path was unreached.
+ *
+ * Sequence:
+ *   1. BPF_MAP_CREATE arena with BPF_F_MMAPABLE, key_size = value_size = 0,
+ *      max_entries = small page count (the arena's max grow size).
+ *   2. mmap(MAP_SHARED) the arena fd for a few pages worth.
+ *   3. fork().  Grandchild touches the inherited mapping (forces page
+ *      population so the vma is non-empty), munmap()s, and _exit()s.
+ *      Parent concurrently munmap()s and close()s the map fd — racing
+ *      the arena vm-close teardown across the two address spaces.
+ *   4. Parent reaps the grandchild via waitpid_eintr() (child.c installs
+ *      SIGALRM/SIGXCPU without SA_RESTART, so a plain waitpid() can
+ *      return EINTR mid-syscall).
+ *
+ * If BPF_MAP_CREATE fails (older kernel without arena support, or
+ * CONFIG_BPF_SYSCALL=n / arena disabled), latch arena_unsupported and
+ * bail cleanly — we must not crash trinity over a missing feature.
+ */
+static bool combo_arena_fork(void)
+{
+	union bpf_attr attr;
+	unsigned int npages;
+	long page_sz;
+	size_t map_len;
+	int map_fd;
+	void *map;
+	pid_t pid;
+	int status;
+
+	if (arena_unsupported)
+		return false;
+
+	npages = rnd_modulo_u32(4) + 1;
+
+	memset(&attr, 0, sizeof(attr));
+	attr.map_type = BPF_MAP_TYPE_ARENA;
+	attr.map_flags = BPF_F_MMAPABLE;
+	attr.key_size = 0;
+	attr.value_size = 0;
+	attr.max_entries = npages;
+
+	map_fd = sys_bpf(BPF_MAP_CREATE, &attr, sizeof(attr));
+	if (map_fd < 0) {
+		arena_unsupported = true;
+		__atomic_add_fetch(&shm->stats.bpf_lifecycle_eperm,
+				   1, __ATOMIC_RELAXED);
+		return false;
+	}
+
+	page_sz = sysconf(_SC_PAGESIZE);
+	if (page_sz <= 0)
+		page_sz = 4096;
+	map_len = (size_t)npages * (size_t)page_sz;
+
+	map = mmap(NULL, map_len, PROT_READ | PROT_WRITE, MAP_SHARED, map_fd, 0);
+	if (map == MAP_FAILED) {
+		close(map_fd);
+		return false;
+	}
+
+	pid = fork();
+	if (pid < 0) {
+		(void)munmap(map, map_len);
+		close(map_fd);
+		return false;
+	}
+	if (pid == 0) {
+		/*
+		 * Grandchild: touch one byte per page to fault them in, then
+		 * drop the mapping and exit.  Race window is the gap between
+		 * the parent's munmap+close below and our exit's mm teardown.
+		 */
+		volatile unsigned char *p = map;
+		size_t off;
+
+		for (off = 0; off < map_len; off += (size_t)page_sz)
+			p[off] = (unsigned char)(off & 0xffU);
+		(void)munmap(map, map_len);
+		_exit(0);
+	}
+
+	/* Parent: race the grandchild's vma teardown with our own. */
+	(void)munmap(map, map_len);
+	close(map_fd);
+
+	(void)waitpid_eintr(pid, &status, 0);
+
+	__atomic_add_fetch(&shm->stats.bpf_lifecycle_triggered, 1,
+			   __ATOMIC_RELAXED);
+	return true;
+}
+
 bool bpf_lifecycle(struct childdata *child)
 {
 	(void)child;
 
 	__atomic_add_fetch(&shm->stats.bpf_lifecycle_runs, 1, __ATOMIC_RELAXED);
+
+	/*
+	 * 20% arena+fork combo when arena is supported.  Falls through to
+	 * the existing cgroup/socket dispatch if arena isn't built into
+	 * the running kernel or the combo decides not to run this turn.
+	 */
+	if (!arena_unsupported && RAND_RANGE(0, 9) < 2) {
+		if (combo_arena_fork())
+			return true;
+		/* fall through */
+	}
 
 	/*
 	 * 30% cgroup combo when it isn't latched off, otherwise socket.
