@@ -3,6 +3,7 @@
  */
 #include <stdint.h>
 #include <sys/types.h>
+#include "fd.h"
 #include "files.h"
 #include "random.h"
 #include "rnd.h"
@@ -30,6 +31,7 @@ static void sanitise_sendfile(struct syscallrecord *rec)
 	rec->a3 = (unsigned long) offset;
 	bias_sendfile_in_fd(rec);
 	avoid_shared_buffer_inout(&rec->a3, sizeof(off_t));
+	reroll_protected_fd_arg(&rec->a1);
 }
 
 static void sanitise_sendfile64(struct syscallrecord *rec)
@@ -41,6 +43,7 @@ static void sanitise_sendfile64(struct syscallrecord *rec)
 	rec->a3 = (unsigned long) offset;
 	bias_sendfile_in_fd(rec);
 	avoid_shared_buffer_inout(&rec->a3, sizeof(off_t));
+	reroll_protected_fd_arg(&rec->a1);
 }
 
 struct syscallentry syscall_sendfile = {
