@@ -1018,8 +1018,23 @@ static void maybe_rotate_strategy(void)
 	      : 0;
 	last = __atomic_load_n(&shm->syscalls_at_last_switch, __ATOMIC_RELAXED);
 
-	if (now - last < STRATEGY_WINDOW)
-		return;
+	/* Tighten the rotation window while the plateau detector is latched
+	 * on, so the plateau-intervention layer (SR_PLATEAU_FORCE etc.) re-
+	 * applies many times inside one 600s detector window rather than
+	 * ~1.6 times.  ACQUIRE pairs with the parent's RELEASE-store of
+	 * plateau_active in kcov_plateau_check(); kcov_shm may be NULL when
+	 * kcov is disabled, fall back to the healthy-run cadence. */
+	{
+		unsigned long window = STRATEGY_WINDOW;
+
+		if (kcov_shm != NULL &&
+		    __atomic_load_n(&kcov_shm->plateau_active,
+				    __ATOMIC_ACQUIRE))
+			window = PLATEAU_STRATEGY_WINDOW;
+
+		if (now - last < window)
+			return;
+	}
 
 	if (!__atomic_compare_exchange_n(&shm->syscalls_at_last_switch,
 					 &last, now,

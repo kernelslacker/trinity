@@ -48,6 +48,16 @@ enum strategy_t {
  * a typical run. */
 #define STRATEGY_WINDOW (1UL << 17)	/* 131,072 ops */
 
+/* Tightened rotation boundary used only while kcov_shm->plateau_active
+ * is set.  ~8x more rotations than STRATEGY_WINDOW so the plateau-
+ * intervention layer (SR_PLATEAU_FORCE, RRC-biased replay, anti-prior
+ * accept gating) gets re-applied many times inside one 600s detector
+ * window instead of ~1.6 times.  A real run that re-plateaued after
+ * the detector fired showed 4 edges/600s -- the bandit was stuck in a
+ * local minimum because the rescue cadence was wider than the detector
+ * window.  Healthy-run cadence stays at STRATEGY_WINDOW. */
+#define PLATEAU_STRATEGY_WINDOW (1UL << 14)	/* 16,384 ops */
+
 /*
  * How many rotation windows a CMP constant remains "seen" inside the
  * per-syscall novelty bloom before it decays back to "novel".  At ~100

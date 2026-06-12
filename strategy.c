@@ -1039,6 +1039,66 @@ int select_next_strategy(int prev,
 			__ATOMIC_RELAXED);
 		pim = (enum plateau_intervention_mode)(rot % NR_PIM_MODES);
 
+		/* Cold-ring deweight: PIM_COVERAGE_FRONTIER is a near-no-op
+		 * when the per-syscall frontier rings have aged out everywhere
+		 * (frontier_max_weight_cached == 0), the defining state of a
+		 * deep plateau.  set_syscall_nr_coverage_frontier still drives
+		 * forward via the silent-regime lifetime-ratio fallback, but
+		 * a real run that re-plateaued after the rescue fired observed
+		 * 9 childops self-demoting on "zero_edges" inside their canary
+		 * window -- the rescue's PIM rotation pinned ~25% of windows
+		 * on FRONTIER, the silent fallback found no new edges in the
+		 * canary horizon, the canary gate demoted the ops, throughput
+		 * collapsed to idle.  The rescue fired and did nothing.
+		 *
+		 * Substitute the cold FRONTIER slot with PIM_UNIFORM_RANDOM:
+		 * it needs no populated ring, runs the historical pre-
+		 * classifier baseline that does not feed the canary demote
+		 * gate, and breaks the demote-to-idle spiral.  PIM_ANTI_PRIOR
+		 * still occupies its own rotation slot, so each cold-ring
+		 * cycle still hits both no-ring-needed modes (the cycle
+		 * becomes UNIFORM:ANTI:RRC:UNIFORM-was-FRONTIER).
+		 *
+		 * Approach is skip-when-cold (single conditional substitution)
+		 * rather than weight-to-zero (per-rotation NR_PIM_MODES
+		 * remapping plus an active-modes mask).  Skip keeps the
+		 * per-mode windows array, mode-name tables, and check-static
+		 * gates stable -- substituting one enum value into another
+		 * cell costs no new surface.  Weight-to-zero would add a
+		 * second source of truth for "which modes are active" without
+		 * changing steady-state behaviour.
+		 *
+		 * Threshold is == 0 (strict) rather than the picker's <= 2
+		 * silent-regime threshold: at max_weight 1 or 2 the live
+		 * regime still has a trickle of signal and we want FRONTIER
+		 * to keep running on it.  Only the fully-aged-out case (no
+		 * ratchet at all this rotation) gets the substitution.
+		 *
+		 * RELAXED load: the cache is itself updated RELAXED on every
+		 * frontier_bump() and on each window-rotation recompute, and
+		 * the picker reads it RELAXED, so an in-flight bump is
+		 * acceptable here -- we read it once at the rotation boundary
+		 * and either choice (skip or run) is safe and self-corrects
+		 * on the next rotation when the cache settles.
+		 *
+		 * PIM_RRC_BIASED is deliberately NOT cold-deweighted: it can
+		 * dispatch to FRONTIER via the RRC_CMP_DERIVED leg of
+		 * amplified_intervention_arm(), but only when the classifier
+		 * has accumulated positive evidence that the kernel is
+		 * emitting comparison records the picker is not steering to.
+		 * The cold ring does not contradict that signal -- a syscall
+		 * with a populated cmp_hints pool and zero current frontier
+		 * weight is exactly the case CMP_DERIVED amplification exists
+		 * to escalate. */
+		if (pim == PIM_COVERAGE_FRONTIER &&
+		    __atomic_load_n(&shm->frontier_max_weight_cached,
+				    __ATOMIC_RELAXED) == 0) {
+			pim = PIM_UNIFORM_RANDOM;
+			__atomic_fetch_add(
+				&shm->stats.frontier_intervention_cold_skipped,
+				1UL, __ATOMIC_RELAXED);
+		}
+
 		switch (pim) {
 		case PIM_RRC_BIASED:
 			/* Random-rescue classifier dispatch path.  Reuses

@@ -2123,6 +2123,24 @@ struct stats_s {
 	 * regardless of selection path. */
 	unsigned long frontier_intervention_pulls;
 
+	/* Number of plateau-intervention rotations where the round-robin
+	 * landed on PIM_COVERAGE_FRONTIER but the per-syscall frontier rings
+	 * had aged out everywhere (frontier_max_weight_cached == 0) and the
+	 * rotation substituted PIM_UNIFORM_RANDOM instead.  Bumped from
+	 * select_next_strategy() at the substitution site.
+	 *
+	 * A non-zero value alongside plateau_forced_windows says the cold-
+	 * ring deweight is firing inside live plateaus -- expected during
+	 * deep stalls where the ring has decayed everywhere.  The companion
+	 * frontier_intervention_pulls counter only counts rotations that
+	 * actually ran FRONTIER, so the substitution is invisible there.
+	 * The (skipped / forced_windows) ratio tells the operator what
+	 * fraction of the rescue's FRONTIER slots were deweighted; a high
+	 * ratio sustained across plateaus means the rescue is leaning on
+	 * UNIFORM and ANTI_PRIOR while the frontier ring stays cold, the
+	 * design intent under deep-plateau conditions. */
+	unsigned long frontier_intervention_cold_skipped;
+
 	/* Accept-regime split of frontier_strategy_picks.  Bumped at the two
 	 * accept paths inside set_syscall_nr_coverage_frontier so the operator
 	 * can tell which regime is steering the picks:
@@ -2212,7 +2230,7 @@ struct stats_s {
 	/* Coverage-plateau detector transition counters, bumped from
 	 * kcov_plateau_check() on the rising edge (healthy -> plateau, when
 	 * the sliding-window edge-discovery rate falls below
-	 * KCOV_PLATEAU_RATE_THRESHOLD) and the falling edge (plateau ->
+	 * KCOV_PLATEAU_ENTER_THRESHOLD) and the falling edge (plateau ->
 	 * healthy, when the rate recovers).  Distinct from the one-shot
 	 * stats.log warning so a forensic / cron consumer can tell how many
 	 * distinct plateau episodes a long fuzz hit without parsing the

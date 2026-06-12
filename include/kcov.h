@@ -124,14 +124,23 @@ enum errno_bucket {
 #define KCOV_SAT_CAP_RATIO    500U
 #define KCOV_SAT_CAP_SKIP_PCT 95U
 
-/* Coverage-plateau detector: window length and trigger threshold.
+/* Coverage-plateau detector: window length and trigger thresholds.
  * The window is fixed at 600s (10 minutes) so a single below-threshold
- * sample already represents "sustained for ≥ 10 min".  The threshold of
- * 10 new edges per 600s window is exactly < 1 new edge per 60s, the
- * point at which manual observation has shown the fuzzer is wedged at
- * a local minimum and not making forward progress. */
+ * sample already represents "sustained for ≥ 10 min".  The entry
+ * threshold of 10 new edges per 600s window is exactly < 1 new edge
+ * per 60s, the point at which manual observation has shown the fuzzer
+ * is wedged at a local minimum and not making forward progress.
+ *
+ * Hysteresis: enter and exit do NOT share a threshold.  A run that
+ * re-plateaued after the detector fired showed the rate oscillating
+ * around 10 (clear at 10, re-enter at 4) within consecutive windows,
+ * flapping plateau_active and so re-arming the intervention layer's
+ * entry-only edge-triggered actions every other window.  EXIT is set
+ * 3x ENTER so a recovering rate has to cross a separate, higher bar
+ * before the detector releases. */
 #define KCOV_PLATEAU_WINDOW_SEC 600
-#define KCOV_PLATEAU_RATE_THRESHOLD 10
+#define KCOV_PLATEAU_ENTER_THRESHOLD 10
+#define KCOV_PLATEAU_EXIT_THRESHOLD  30
 
 /* KCOV trace modes */
 #define KCOV_TRACE_PC  0
@@ -689,7 +698,7 @@ struct kcov_shared {
 	 * 600s parent stats tick: each tick, delta = edges_found -
 	 * plateau_prev_edges is the count of new edges discovered in the
 	 * most recent KCOV_PLATEAU_WINDOW_SEC window.  When the delta drops
-	 * below KCOV_PLATEAU_RATE_THRESHOLD (rate < 1 edge per 60s sustained
+	 * below KCOV_PLATEAU_ENTER_THRESHOLD (rate < 1 edge per 60s sustained
 	 * over the 10-minute window) the parent enters PLATEAU state and
 	 * emits a one-line warning to stats.log; a matching CLEARED line is
 	 * emitted when the rate climbs back above threshold.  Entry into
@@ -824,8 +833,9 @@ unsigned int kcov_syscall_cold_skip_pct(unsigned int nr);
  * KCOV_PLATEAU_WINDOW_SEC, so the caller can invoke it once per
  * main_loop tick alongside the other periodic samplers.  Emits a
  * one-line PLATEAU warning to stats.log when the per-window edge
- * discovery rate drops below KCOV_PLATEAU_RATE_THRESHOLD and a matching
- * PLATEAU CLEARED line when the rate recovers.  On the PLATEAU rising
+ * discovery rate drops below KCOV_PLATEAU_ENTER_THRESHOLD and a matching
+ * PLATEAU CLEARED line when the rate climbs back above
+ * KCOV_PLATEAU_EXIT_THRESHOLD (hysteresis band).  On the PLATEAU rising
  * edge it also fires strategy_plateau_response(), which forces a
  * strategy rotation into the plateau-intervention layer (RRC-biased
  * replay, anti-prior accept gating, or uniform random in a flat

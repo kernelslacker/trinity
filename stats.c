@@ -5292,6 +5292,12 @@ static void dump_stats_strategy_summary(void)
 	if (shm->stats.frontier_intervention_pulls)
 		stat_row("strategy", "frontier_intervention_pulls",
 			 shm->stats.frontier_intervention_pulls);
+	if (shm->stats.frontier_intervention_cold_skipped)
+		stat_row("strategy", "frontier_intervention_cold_skipped",
+			 shm->stats.frontier_intervention_cold_skipped);
+	if (shm->stats.plateau_forced_windows)
+		stat_row("strategy", "plateau_forced_windows",
+			 shm->stats.plateau_forced_windows);
 	if (shm->stats.strategy_explorer_picks)
 		stat_row("strategy", "strategy_explorer_picks",
 			 shm->stats.strategy_explorer_picks);

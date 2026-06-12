@@ -1652,7 +1652,7 @@ void kcov_plateau_check(void)
 	__atomic_store_n(&kcov_shm->plateau_window_start, now,
 			 __ATOMIC_RELAXED);
 
-	if (delta < KCOV_PLATEAU_RATE_THRESHOLD) {
+	if (delta < KCOV_PLATEAU_ENTER_THRESHOLD) {
 		/* Edge-triggered: emit the warning, bump the transition
 		 * counter, and fire the auto-response hook only when we cross
 		 * from healthy into PLATEAU.  Subsequent ticks while still in
@@ -1672,9 +1672,9 @@ void kcov_plateau_check(void)
 					 __ATOMIC_RELEASE);
 			__atomic_fetch_add(&shm->stats.plateau_entered, 1,
 					   __ATOMIC_RELAXED);
-			stats_log_write("PLATEAU: edge-discovery rate %lu edges/%ds < threshold (%d) sustained for >=%d minutes (bandit may be in local minimum, consider intervention)\n",
+			stats_log_write("PLATEAU: edge-discovery rate %lu edges/%ds < enter-threshold (%d) sustained for >=%d minutes (bandit may be in local minimum, consider intervention)\n",
 					delta, KCOV_PLATEAU_WINDOW_SEC,
-					KCOV_PLATEAU_RATE_THRESHOLD,
+					KCOV_PLATEAU_ENTER_THRESHOLD,
 					KCOV_PLATEAU_WINDOW_SEC / 60);
 			strategy_plateau_response();
 			/* Lock in the current bitmap on plateau entry --
@@ -1684,24 +1684,27 @@ void kcov_plateau_check(void)
 			 * yet; bypass the gate via a one-shot. */
 			kcov_bitmap_maybe_snapshot();
 		}
-	} else if (__atomic_load_n(&kcov_shm->plateau_active,
+	} else if (delta >= KCOV_PLATEAU_EXIT_THRESHOLD &&
+		   __atomic_load_n(&kcov_shm->plateau_active,
 				   __ATOMIC_ACQUIRE)) {
 		long minutes = (now - __atomic_load_n(
 				&kcov_shm->plateau_entered_at,
 				__ATOMIC_RELAXED)) / 60;
 
-		/* Clear entered_at before publishing plateau_active=false;
-		 * mirrors the entry-path ordering so a child reader sees
-		 * a consistent (active=false, entered_at=0) shape rather
-		 * than a transient (active=false, entered_at=T_old). */
+		/* Hysteresis band: ENTER <= delta < EXIT keeps the current
+		 * state (stay plateaued; don't re-arm a healthy run yet).
+		 * Only a recovery past the higher EXIT bar clears the flag,
+		 * preventing the edge-rate oscillation around ENTER from
+		 * flapping plateau_active window-by-window. */
 		__atomic_store_n(&kcov_shm->plateau_entered_at, 0,
 				 __ATOMIC_RELAXED);
 		__atomic_store_n(&kcov_shm->plateau_active, false,
 				 __ATOMIC_RELEASE);
 		__atomic_fetch_add(&shm->stats.plateau_exited, 1,
 				   __ATOMIC_RELAXED);
-		stats_log_write("PLATEAU CLEARED: edge-discovery rate %lu edges/%ds (plateau lasted %ld minutes)\n",
-				delta, KCOV_PLATEAU_WINDOW_SEC, minutes);
+		stats_log_write("PLATEAU CLEARED: edge-discovery rate %lu edges/%ds >= exit-threshold (%d) (plateau lasted %ld minutes)\n",
+				delta, KCOV_PLATEAU_WINDOW_SEC,
+				KCOV_PLATEAU_EXIT_THRESHOLD, minutes);
 	}
 }
 
