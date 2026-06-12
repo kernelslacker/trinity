@@ -100,6 +100,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <net/if.h>
+#include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -254,6 +255,13 @@ struct afxdp_umem_reg_compat {
  * struct presence assumptions. */
 #define AFXDP_TX_META_BYTES		16U
 #define AFXDP_SG_CHUNK_SIZE		1024U
+
+/* Failsafe iteration cap for the TX-metadata scribbler thread.  Main
+ * signals stop after sendto() returns; the cap exists only so a wedged
+ * main path can't leave the scribbler spinning forever.  ~1M tight-loop
+ * writes is well under 100 ms on any modern CPU, which is comfortably
+ * inside the per-iter AFXDP_WALL_CAP_NS budget. */
+#define AFXDP_TX_META_SCRIBBLE_CAP	(1U << 20)
 
 #define AFXDP_OUTER_BASE		5U
 #define AFXDP_OUTER_FLOOR		16U
@@ -886,6 +894,47 @@ static void afxdp_iter_attach_prog(struct xsk_state *st,
 }
 
 /*
+ * Concurrent scribbler that tight-loops overwriting the 16-byte
+ * xsk_tx_metadata header in the UMEM headroom while the kernel is
+ * consuming the TX descriptor.  The kernel's sw-csum TX path reads
+ * csum_start / csum_offset out of the user-writable UMEM region; a
+ * concurrent overwrite between the kernel's two reads (a classic
+ * double-fetch / TOCTOU window) can drive csum_start past the packet
+ * end, exercising the bounds checks added in d73a9a63f9f7 and friends.
+ *
+ * Flips both the flags u64 at offset 0 and the (csum_start, csum_offset)
+ * u16 pair at offsets 8/10 so any read order in the kernel sees a
+ * moving target.  Bounded by an atomic stop flag (set by the main
+ * thread after sendto() returns) AND a hard iteration cap as failsafe.
+ */
+struct afxdp_meta_scribbler_args {
+	unsigned char	*meta;
+	unsigned int	 stop;
+};
+
+static void *afxdp_meta_scribbler(void *p)
+{
+	struct afxdp_meta_scribbler_args *a = p;
+	unsigned int i;
+	__u64 mflags;
+	__u16 cs;
+
+	for (i = 0; i < AFXDP_TX_META_SCRIBBLE_CAP; i++) {
+		if (__atomic_load_n(&a->stop, __ATOMIC_RELAXED))
+			break;
+		mflags = (i & 1U)
+			? (XDP_TXMD_FLAGS_CHECKSUM | XDP_TXMD_FLAGS_TIMESTAMP)
+			: XDP_TXMD_FLAGS_CHECKSUM;
+		memcpy(a->meta, &mflags, sizeof(mflags));
+		cs = (__u16)i;
+		memcpy(a->meta + 8,  &cs, sizeof(cs));
+		cs = (__u16)(i >> 1);
+		memcpy(a->meta + 10, &cs, sizeof(cs));
+	}
+	return NULL;
+}
+
+/*
  * Phase 6: enqueue 1 (or 2 chained, for want_sg) TX descriptors into
  * the TX ring then sendto(MSG_DONTWAIT) to kick xsk_sendmsg.  This
  * drives descriptors through xsk_buff_pool — the live-pool path we
@@ -893,10 +942,20 @@ static void afxdp_iter_attach_prog(struct xsk_state *st,
  * didn't take.  Touches the want_tx_md / want_sg per-iter knobs to
  * stamp xsk_tx_metadata in headroom and set XDP_PKT_CONTD/XDP_TX_METADATA
  * in desc->options where appropriate.
+ *
+ * When want_tx_md fires, a short-lived scribbler pthread is spawned
+ * just before the sendto() kick to overwrite the metadata bytes WHILE
+ * the kernel reads them, opening the TOCTOU window on the sw-csum
+ * double-read.  The thread is hard-joined before this function returns
+ * — trinity children keep fuzzing past here and a leaked thread would
+ * corrupt subsequent ops.
  */
 static void afxdp_iter_tx_burst(struct xsk_state *st,
 				bool want_sg, bool want_tx_md)
 {
+	struct afxdp_meta_scribbler_args sa;
+	pthread_t scribbler_tid;
+	bool scribbler_spawned = false;
 	uint32_t *prod;
 	struct xdp_desc *desc;
 	uint32_t p, chunk_sz, enq = 1U;
@@ -941,6 +1000,17 @@ static void afxdp_iter_tx_burst(struct xsk_state *st,
 		memset(meta, 0, AFXDP_TX_META_BYTES);
 		memcpy(meta, &mflags, sizeof(mflags));
 		/* csum_start=0, csum_offset=0 — bytes 8..11 already zero. */
+
+		/* Spawn the scribbler BEFORE the sendto() kick so the
+		 * overwrite is already in flight when xsk_sendmsg reads
+		 * the metadata.  pthread_create failure (EAGAIN under
+		 * nproc/thread limits) is non-fatal — the TX path still
+		 * runs, just without the race. */
+		sa.meta = meta;
+		sa.stop = 0;
+		if (pthread_create(&scribbler_tid, NULL,
+				   afxdp_meta_scribbler, &sa) == 0)
+			scribbler_spawned = true;
 	}
 
 	desc[p % AFXDP_RING_ENTRIES].addr    = head_addr;
@@ -960,6 +1030,15 @@ static void afxdp_iter_tx_burst(struct xsk_state *st,
 	    errno == EAGAIN || errno == ENOBUFS || errno == EBUSY)
 		__atomic_add_fetch(&shm->stats.afxdp_churn_send_ok,
 				   1, __ATOMIC_RELAXED);
+
+	/* HARD REQUIREMENT: stop + join the scribbler before returning.
+	 * trinity children keep fuzzing after this op completes; a leaked
+	 * thread would scribble UMEM that has already been munmap'd or
+	 * scribble subsequent ops' shared state. */
+	if (scribbler_spawned) {
+		__atomic_store_n(&sa.stop, 1, __ATOMIC_RELAXED);
+		(void)pthread_join(scribbler_tid, NULL);
+	}
 }
 
 /*
