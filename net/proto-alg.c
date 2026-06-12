@@ -275,6 +275,46 @@ static void alg_setsockopt(struct sockopt *so, __unused__ struct socket_triplet 
  * 3. accept() to get a child fd for crypto operations
  * 4. Close the child fd — we just want to exercise the kernel path
  */
+/*
+ * Boundary keylens for ALG_SET_KEY.  Mixes valid sizes (16/24/32/64 for
+ * AES/Camellia/HMAC ranges), exact off-by-ones around common per-cipher
+ * max-key declarations (16,32,64,256,1024), and oversize values that
+ * push the kernel's count-vs-capacity validation: the userspace buffer
+ * is one page, so any keylen > KEY_BUF_BYTES is a deliberate over-claim
+ * that lets copy_from_user EFAULT past the buffer (which is the path
+ * we want to exercise — a kernel that kalloc()s `keylen` bytes without
+ * bounding it is the bug class).
+ */
+static const unsigned int alg_boundary_keylens[] = {
+	0, 1, 7,
+	15, 16, 17,			/* AES-128 boundary */
+	23, 24, 25,			/* AES-192 boundary */
+	31, 32, 33,			/* AES-256 / chacha20 boundary */
+	47, 48,
+	63, 64, 65,			/* common HMAC block size */
+	127, 128, 129,
+	255, 256, 257,			/* skcipher MAX_KEY_SIZE on many algs */
+	1023, 1024, 1025,		/* per-alg upper declared */
+	4095, 4096, 4097,		/* one-page edge */
+	65535, 65536,
+	0x10000000, 0x7fffffff, 0xffffffff,
+};
+
+/*
+ * ALG_SET_AEAD_AUTHSIZE encodes the authsize in `optlen`; `optval` is
+ * ignored.  Boundary set covers 0, the GCM/CCM legal sizes (4,8,12,13,
+ * 14,15,16), off-by-ones, and unbounded values.
+ */
+static const unsigned int alg_boundary_authsizes[] = {
+	0, 1, 2, 3, 4, 5, 7, 8, 9,
+	11, 12, 13, 14, 15, 16, 17,
+	24, 31, 32, 33,
+	63, 64, 65,
+	128, 256, 0xffff, 0x10000, 0x7fffffff, 0xffffffff,
+};
+
+#define KEY_BUF_BYTES 4096
+
 static void alg_socket_setup(int fd)
 {
 	static const struct {
@@ -287,9 +327,9 @@ static void alg_socket_setup(int fd)
 		{ ALG_DICT_RNG,		"rng"		},
 	};
 	struct sockaddr_alg sa;
-	unsigned char key[64];
+	unsigned char key[KEY_BUF_BYTES];
 	int child_fd;
-	unsigned int keylen, idx;
+	unsigned int keylen, idx, fill;
 
 	memset(&sa, 0, sizeof(sa));
 	sa.salg_family = AF_ALG;
@@ -300,10 +340,36 @@ static void alg_socket_setup(int fd)
 	if (bind(fd, (struct sockaddr *)&sa, sizeof(sa)) == -1)
 		return;
 
-	/* Set a key — required for skcipher/aead, harmless for hash */
-	keylen = (rnd_modulo_u32(32)) + 16;	/* 16..47 bytes */
-	generate_rand_bytes(key, keylen);
+	/*
+	 * Pick a keylen.  Keep the existing valid-key path (16..47) the
+	 * majority of the time so the lifecycle coverage doesn't regress;
+	 * the remaining slice rotates through alg_boundary_keylens[] to
+	 * stress the per-alg setkey validators and the over-claim path.
+	 */
+	if (rnd_modulo_u32(10) < 7) {
+		keylen = rnd_modulo_u32(32) + 16;	/* 16..47 valid */
+	} else {
+		keylen = alg_boundary_keylens[
+			rnd_modulo_u32(ARRAY_SIZE(alg_boundary_keylens))];
+	}
+	fill = keylen < sizeof(key) ? keylen : sizeof(key);
+	generate_rand_bytes(key, fill);
 	(void) setsockopt(fd, SOL_ALG, ALG_SET_KEY, key, keylen);
+
+	/*
+	 * AEAD authsize boundary: ALG_SET_AEAD_AUTHSIZE reads the value
+	 * from optlen, optval is unused.  Only fire on AEAD sockets, and
+	 * only sometimes — most algorithms accept a small fixed set, so
+	 * boundary values yield -EINVAL most of the time; the point is
+	 * the rare path where validation lets one through.
+	 */
+	if (setup_types[idx].type == ALG_DICT_AEAD &&
+	    rnd_modulo_u32(4) == 0) {
+		unsigned int authsize = alg_boundary_authsizes[
+			rnd_modulo_u32(ARRAY_SIZE(alg_boundary_authsizes))];
+		(void) setsockopt(fd, SOL_ALG, ALG_SET_AEAD_AUTHSIZE,
+				  NULL, authsize);
+	}
 
 	/* accept() gives us a child fd for actual crypto I/O */
 	child_fd = accept4(fd, NULL, NULL, SOCK_CLOEXEC);
