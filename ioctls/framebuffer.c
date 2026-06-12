@@ -22,6 +22,7 @@ static void sanitise_fb_var_screeninfo(struct syscallrecord *rec)
 	var = (struct fb_var_screeninfo *) get_writable_struct(sizeof(*var));
 	if (!var)
 		return;
+	memset(var, 0, sizeof(*var));
 	var->xres = rnd_modulo_u32(1920) + 1;
 	var->yres = rnd_modulo_u32(1080) + 1;
 	var->xres_virtual = var->xres + rnd_modulo_u32(64);
