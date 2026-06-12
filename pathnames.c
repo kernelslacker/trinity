@@ -464,7 +464,7 @@ static const char ** list_to_index(struct namelist *namelist)
 	struct namelist *nl;
 	const char **findex;
 	unsigned int i = 0;
-	unsigned int total_str_bytes = 0;
+	size_t total_str_bytes = 0;
 	char *slab;
 	unsigned int slab_off = 0;
 
