@@ -41,6 +41,7 @@ static void sanitise_vt_console_font_op(struct syscallrecord *rec)
 	op = get_writable_struct(sizeof(*op));
 	if (!op)
 		return;
+	memset(op, 0, sizeof(*op));
 	op->op = rnd_modulo_u32(6);	/* KD_FONT_OP_SET=0 .. KD_FONT_OP_GET_TALL=5 */
 	op->flags = RAND_BOOL() ? KD_FONT_FLAG_DONT_RECALC : 0;
 	op->width = rnd_modulo_u32(8) + 8;	/* 8-15 pixels wide */
@@ -224,6 +225,7 @@ static void sanitise_vt_serial_struct(struct syscallrecord *rec)
 	s = get_writable_struct(sizeof(*s));
 	if (!s)
 		return;
+	memset(s, 0, sizeof(*s));
 	s->type            = rnd_modulo_u32(16);
 	s->line            = rnd_modulo_u32(64);
 	s->port            = rnd_modulo_u32(0x400);
