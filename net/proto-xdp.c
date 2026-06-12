@@ -15,6 +15,7 @@
 #include "utils.h"
 #include "compat.h"
 #include "rnd.h"
+#include "xdp-umem-track.h"
 
 #ifndef SOL_XDP
 #define SOL_XDP 283
@@ -98,6 +99,15 @@ static void xdp_socket_setup(int fd)
 			 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (umem_area == MAP_FAILED)
 		return;
+
+	/*
+	 * Record ownership of the UMEM mapping against the fd up front,
+	 * before any setsockopt that may fail and short-circuit setup.
+	 * The matching unmap is issued from the fd close path; the
+	 * out_unmap_umem error label still tears the mapping down
+	 * directly for now.
+	 */
+	(void) xdp_umem_record(fd, umem_area, XDP_UMEM_SIZE);
 
 	/* 2. Register UMEM */
 	memset(&reg, 0, sizeof(reg));
@@ -406,6 +416,14 @@ static void xdp_grammar_walk_setsockopts(int fd, struct socket_triplet *t,
 	area = xdp_grammar_alloc_umem();
 	if (area == NULL)
 		return;
+
+	/*
+	 * Record ownership against the AF_XDP fd so the dispatcher's
+	 * close path can issue the matching munmap().  Without this the
+	 * VMA persists for the life of the long-lived fuzz child and
+	 * every grammar invocation adds another 16-page region.
+	 */
+	(void) xdp_umem_record(fd, area, XDP_GRAMMAR_UMEM_BYTES);
 
 	if (churn_order) {
 		/* Out-of-order: install RX ring before UMEM_REG so the
