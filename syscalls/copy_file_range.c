@@ -8,6 +8,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include "arch.h"
+#include "fd.h"
 #include "files.h"
 #include "random.h"
 #include "rnd.h"
@@ -48,6 +49,11 @@ static void sanitise_copy_file_range(struct syscallrecord *rec)
 		if (fd >= 0)
 			rec->a3 = fd;
 	}
+
+	/* Final gate: the output fd must never resolve to a protected fd
+	 * (e.g. a worker's stderr-memfd). Mirrors the direct fd-size syscalls
+	 * (write/ftruncate/fallocate/lseek/llseek) which reroll on a1. */
+	reroll_protected_fd_arg(&rec->a3);
 }
 
 struct syscallentry syscall_copy_file_range = {
