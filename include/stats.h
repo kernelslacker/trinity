@@ -1369,6 +1369,15 @@ struct stats_s {
 	unsigned long sysv_shm_orphan_race_sibling_reaped_ok;	/* sibling exited normally and was reaped by parent */
 	unsigned long sysv_shm_orphan_race_sibling_crashed;	/* sibling killed by signal (SEGV/BUS/KILL) -- forensic hint */
 
+	/* qrtr_bind_race childop counters */
+	unsigned long qrtr_bind_race_runs;			/* total qrtr_bind_race invocations */
+	unsigned long qrtr_bind_race_setup_failed;		/* AF_QRTR socket() probe latch fired */
+	unsigned long qrtr_bind_race_iter;			/* outer-loop iterations entered */
+	unsigned long qrtr_bind_race_fork_failed;		/* fork() of a bind worker failed */
+	unsigned long qrtr_bind_race_spawn_pair_ok;		/* both bind workers spawned for this round */
+	unsigned long qrtr_bind_race_sibling_reaped_ok;		/* worker exited normally and was reaped */
+	unsigned long qrtr_bind_race_sibling_crashed;		/* worker killed by signal (SEGV/BUS/KILL) -- forensic hint */
+
 	/* netns_teardown_churn childop counters */
 	unsigned long netns_teardown_runs;			/* total netns_teardown_churn invocations */
 	unsigned long netns_teardown_setup_failed;		/* anchor open / fork / unsupported latch fired */

@@ -1321,6 +1321,21 @@ static const struct stat_category sysv_shm_orphan_race_category =
 	              sysv_shm_orphan_race_runs,
 	              sysv_shm_orphan_race_fields);
 
+static const struct stat_field qrtr_bind_race_fields[] = {
+	STAT_FIELD(qrtr_bind_race, runs),
+	STAT_FIELD(qrtr_bind_race, setup_failed),
+	STAT_FIELD(qrtr_bind_race, iter),
+	STAT_FIELD(qrtr_bind_race, fork_failed),
+	STAT_FIELD(qrtr_bind_race, spawn_pair_ok),
+	STAT_FIELD(qrtr_bind_race, sibling_reaped_ok),
+	STAT_FIELD(qrtr_bind_race, sibling_crashed),
+};
+
+static const struct stat_category qrtr_bind_race_category =
+	STAT_CATEGORY("qrtr_bind_race",
+	              qrtr_bind_race_runs,
+	              qrtr_bind_race_fields);
+
 static const struct stat_field bpf_cgroup_attach_fields[] = {
 	STAT_FIELD(bpf_cgroup_attach, runs),
 	STAT_FIELD(bpf_cgroup_attach, setup_failed),
@@ -2725,6 +2740,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&sysv_shm_orphan_race_category);
+
+	printf(",");
+	stat_category_emit_json(&qrtr_bind_race_category);
 
 	printf(",");
 	stat_category_emit_json(&bpf_cgroup_attach_category);
@@ -5656,6 +5674,8 @@ static void dump_stats_childop_runs_network(void)
 	stat_category_emit_text(&af_unix_peek_race_category);
 
 	stat_category_emit_text(&sysv_shm_orphan_race_category);
+
+	stat_category_emit_text(&qrtr_bind_race_category);
 
 	stat_category_emit_text(&netns_teardown_category);
 
