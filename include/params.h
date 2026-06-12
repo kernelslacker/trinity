@@ -163,6 +163,4 @@ extern bool no_cgroup;
 
 extern char *stats_log_path;
 
-extern bool do_effector_map;
-
 void enable_disable_fd_usage(void);

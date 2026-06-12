@@ -1709,9 +1709,9 @@ void kcov_plateau_check(void)
  * Warm-start persistence for kcov_shm->bucket_seen[] + edges_found.
  *
  * Layout: a fixed header followed by KCOV_NUM_EDGES bytes of bucket_seen
- * payload.  Atomic .tmp + rename on save mirrors effector-map /
- * minicorpus.  No __attribute__((packed)) -- the field sequence below is
- * already naturally aligned on the LP64 ABIs trinity targets.
+ * payload.  Atomic .tmp + rename on save mirrors minicorpus.  No
+ * __attribute__((packed)) -- the field sequence below is already
+ * naturally aligned on the LP64 ABIs trinity targets.
  *
  * Fingerprint: sha256 over /proc/kallsyms with the leading address column
  * stripped from each line.  Two reasons we don't use utsname.release +

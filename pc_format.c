@@ -208,8 +208,8 @@ const char *pc_to_source_line(void *pc, char *buf, size_t buflen)
 	/*
 	 * Wait for output (or timeout) on the read end before issuing the
 	 * blocking read().  poll() keeps the cap local to this code path
-	 * rather than reusing alarm(), which is already wired up to the
-	 * effector-map watchdog and would race against it.  On timeout we
+	 * rather than reusing alarm(), which would race against any other
+	 * caller in the same process that arms an alarm.  On timeout we
 	 * SIGKILL the child and reap; the caller treats NULL as a miss
 	 * and falls back to the bare "binary+0xOFFSET" rendering.
 	 */

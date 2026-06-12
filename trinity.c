@@ -14,7 +14,6 @@
 #include "arch.h"
 #include "child.h"
 #include "cmp_hints.h"
-#include "effector-map.h"
 #include "fd.h"
 #include "files.h"
 #include "ioctls.h"
@@ -344,8 +343,8 @@ static void derive_and_clamp_slot_partition(void)
 
 /*
  * Pre-fork warm-start of every cross-run coverage carrier: the
- * minicorpus replay set, the effector-map per-bit significance table,
- * the kcov bucket_seen[] bitmap, and the cmp-hints pool.  Each loader
+ * minicorpus replay set, the kcov bucket_seen[] bitmap, and the
+ * cmp-hints pool.  Each loader
  * is independently gated by its own --no-*-warm-start flag so the
  * operator can opt out of one without losing the others.  Done before
  * fork so children inherit the populated tables via COW and the
@@ -374,24 +373,6 @@ static void warm_start_all(void)
 			 * skipped under --no-warm-start since the user has opted
 			 * out of on-disk corpus persistence entirely. */
 			minicorpus_enable_snapshots(path);
-		}
-
-		/* Effector map warm-start runs alongside the corpus warm-start
-		 * — both are pre-fork loads of stale-but-still-relevant
-		 * calibration data.  Children inherit the populated table via
-		 * COW; a missing file just means mutators fall back to uniform
-		 * bit selection.  Failures are silent: the loader rejects
-		 * dimension or kernel-utsname mismatches, and a stale map
-		 * shouldn't degrade fuzzing — it just becomes inert. */
-		{
-			const char *epath = effector_map_default_path();
-
-			if (epath != NULL) {
-				if (effector_map_load_file(epath))
-					output(0, "effector-map: loaded from %s\n", epath);
-				else
-					output(0, "effector-map: no calibrated map found for this kernel — run `trinity --effector-map` once to enable per-bit input-significance picking (boosts coverage-per-iter)\n");
-			}
 		}
 	}
 
@@ -774,34 +755,17 @@ static void init_pre_fork(void)
 }
 
 /*
- * One-shot discovery passes that walk large directory trees or
- * probe per-bit input significance.  Both run in the parent before
- * fork so children inherit the results via COW.  procfs_writer_init
- * unconditionally populates the writable-procfs path pool;
- * --effector-map is a calibration-only mode that probes per-bit
- * significance under KCOV and then exits via the out: cleanup path,
- * which is why this helper returns a "should main() continue?"
- * boolean rather than threading further phase state.
+ * One-shot discovery passes that walk large directory trees.  Run in
+ * the parent before fork so children inherit the results via COW.
+ * procfs_writer_init unconditionally populates the writable-procfs
+ * path pool.  Returns a "should main() continue?" boolean to leave
+ * room for future calibration-only modes that exit instead of fuzzing.
  */
 static bool run_oneshot_passes(void)
 {
 	procfs_writer_init();
 	perf_event_chains_init();
 	tracefs_fuzzer_init();
-
-	/*
-	 * --effector-map: one-shot calibration pass that probes per-bit
-	 * input significance under KCOV and exits.  Runs after open_fds
-	 * so fill_arg() has the full fd, address, and pid pools available,
-	 * but before warm-start so the calibration
-	 * baseline isn't biased by a replayed corpus snapshot (the
-	 * calibration path itself bypasses minicorpus_replay; skipping
-	 * warm-start here also avoids loading a corpus we will not use).
-	 */
-	if (do_effector_map) {
-		(void)effector_map_calibrate();
-		return false;
-	}
 
 	return true;
 }
@@ -816,8 +780,8 @@ static bool run_oneshot_passes(void)
  *   stats, and re-derive ret from shm->exit_reason via set_exit_code.
  *
  *   clean_run = false  -- a pre-fuzz short-circuit (dump-mode, munge
- *   failure, --effector-map calibration).  Skip the clean-run-only
- *   work; ret is whatever the caller passed in.
+ *   failure).  Skip the clean-run-only work; ret is whatever the
+ *   caller passed in.
  *
  * In both cases, the post-cleanup tail is identical: stop the kmsg
  * monitor, close the stats log, and exit via _exit() on ASAN builds

@@ -208,9 +208,6 @@ garbage named files; just rm -rf tmp afterwards)
  --stats-log-file: path to append periodic stats dumps to (in addition to
    stdout)
 
- --effector-map: calibrate per-bit input significance under KCOV and exit
-   (one-shot)
-
 #######################################################################
 
 Examples:

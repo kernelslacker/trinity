@@ -3380,11 +3380,11 @@ int get_num_fds(void)
 }
 
 /* Plain CRC32 (IEEE 802.3 polynomial, reflected).  Shared by every
- * persistence format trinity emits (effector-map / minicorpus /
- * cmp_hints / kcov-bitmap) so all four headers checksum payloads with
- * one definition instead of byte-identical copies that drift apart
- * silently.  Lazy 256-entry table; first call pays one build, every
- * subsequent call (in any caller) reuses the cached table. */
+ * persistence format trinity emits (minicorpus / cmp_hints /
+ * kcov-bitmap) so the headers checksum payloads with one definition
+ * instead of byte-identical copies that drift apart silently.  Lazy
+ * 256-entry table; first call pays one build, every subsequent call
+ * (in any caller) reuses the cached table. */
 uint32_t crc32(const void *buf, size_t len)
 {
 	static uint32_t table[256];

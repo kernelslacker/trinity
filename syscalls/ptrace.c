@@ -78,11 +78,6 @@ static unsigned long ptrace_o_flags[] = {
  * gets half the per-call budget, with control-flow ops kept rare since
  * they tend to detach the tracee or end the run early.
  *
- * ptrace also carries AVOID_SYSCALL and runs only via the effector
- * path, so the per-call rare-path bias is even more valuable -- there
- * are far fewer ptrace calls overall, and we want each one to land in
- * a path we actually care about exercising.
- *
  * The request is overridden at the top of sanitise_ptrace() so the
  * existing per-request arg sanitisation (data buffers, signal numbers,
  * options bitmask, etc.) runs unchanged on the new selection.

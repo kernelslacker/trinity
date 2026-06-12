@@ -750,7 +750,7 @@ static inline bool is_in_arena_band(unsigned long p)
 /*
  * Plain CRC32 (IEEE 802.3 polynomial 0xedb88320, reflected, init/final
  * 0xffffffff).  Lazy 256-entry table built on first call.  Used by the
- * effector-map, minicorpus, cmp_hints, and kcov-bitmap persistence
- * formats for header/payload checksums.
+ * minicorpus, cmp_hints, and kcov-bitmap persistence formats for
+ * header/payload checksums.
  */
 uint32_t crc32(const void *buf, size_t len);

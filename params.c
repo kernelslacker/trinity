@@ -394,8 +394,6 @@ bool no_cgroup = false;
 
 char *stats_log_path = NULL;
 
-bool do_effector_map = false;
-
 bool user_set_seed = false;
 
 unsigned char desired_group = GROUP_NONE;
@@ -449,7 +447,6 @@ static const struct option_help option_descs[] = {
 	{ "debug",		'D', "enable debug" },
 	{ "disable-fds",	 0,  NULL },	/* handled separately */
 	{ "dry-run",		 0,  "run arg-gen + sanitise but skip the syscall (safe ASAN/repro mode)" },
-	{ "effector-map",	 0,  "calibrate per-bit input significance under KCOV and exit (one-shot)" },
 	{ "enable-fds",		 0,  NULL },	/* handled separately */
 	{ "epoch-iterations",	 0,  "syscalls per epoch before restarting (must be > 0; omit to disable)" },
 	{ "epoch-timeout",	 0,  "seconds per epoch before restarting (must be > 0; omit to disable)" },
@@ -536,7 +533,6 @@ static const struct option longopts[] = {
 	{ "debug", no_argument, NULL, 'D' },
 	{ "disable-fds", required_argument, NULL, 0 },
 	{ "dry-run", no_argument, NULL, 0 },
-	{ "effector-map", no_argument, NULL, 0 },
 	{ "enable-fds", required_argument, NULL, 0 },
 	{ "epoch-iterations", required_argument, NULL, 0 },
 	{ "epoch-timeout", required_argument, NULL, 0 },
@@ -895,9 +891,6 @@ void parse_args(int argc, char *argv[])
 
 			if (strcmp("dry-run", longopts[opt_index].name) == 0)
 				dry_run = true;
-
-			if (strcmp("effector-map", longopts[opt_index].name) == 0)
-				do_effector_map = true;
 
 			if (strcmp("enable-fds", longopts[opt_index].name) == 0)
 				process_fds_param(optarg, true);

@@ -949,8 +949,7 @@ static bool try_structured_mutation(unsigned long *val, unsigned int op,
 /*
  * Apply a small mutation to a single argument value.
  * The mutations are designed to explore nearby input space:
- *   - bit flip: toggle a single bit, biased by per-(syscall, arg)
- *               significance from the effector map when one is loaded
+ *   - bit flip: toggle a uniform-random bit
  *   - add/sub:  adjust by a small delta (1..16)
  *   - boundary: replace with a boundary value (0, -1, page_size, etc.)
  *

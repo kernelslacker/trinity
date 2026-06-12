@@ -1,8 +1,8 @@
 /*
  * Stale staging-file sweeper for persisted-state loaders.
  *
- * Persisted-state writers (minicorpus, effector-map, cmp_hints,
- * kcov-bitmap) save via the classic write-to-sibling-then-rename
+ * Persisted-state writers (minicorpus, cmp_hints, kcov-bitmap) save
+ * via the classic write-to-sibling-then-rename
  * pattern: create "<path>.tmp.<pid>", fsync, rename over <path>.
  * If the process dies between fsync and rename -- watchdog SIGKILL,
  * OOM kill, segfault -- the .tmp.<pid> sibling is orphaned and
