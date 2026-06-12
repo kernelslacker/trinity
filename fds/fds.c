@@ -11,6 +11,7 @@
 #include "fd-event.h"
 #include "list.h"
 #include "net.h"
+#include "object-types.h"
 #include "objects.h"
 #include "params.h"
 #include "pids.h"
@@ -184,30 +185,65 @@ bool open_fds(void)
 int get_new_random_fd(void)
 {
 	struct fd_provider *provider;
+	struct fd_provider *populated[MAX_OBJECT_TYPES];
+	unsigned int npop = 0;
 	unsigned int retries = 0;
+	unsigned int i;
 	int fd;
 
 	if (num_active_providers == 0)
 		return -1;
 
-retry:
-	provider = active_providers[rnd_modulo_u32(num_active_providers)];
 	/*
-	 * active_providers[] is filled once at init and every registered
-	 * provider has a non-NULL ->get, so a NULL draw means the zmalloc'd
-	 * pool (or num_active_providers) was scribbled by an out-of-bounds
-	 * write elsewhere.  Bump a canary and re-draw within the retry budget
-	 * instead of dereferencing the wild slot and crashing in ->get().
+	 * Pre-filter to providers whose OBJ_GLOBAL pool is currently
+	 * non-empty.  Without this, uniform random selection across all
+	 * active providers wastes draws on syscall-populated pools that
+	 * are momentarily empty (sockets, eventfd, timerfd, memfd, pipes,
+	 * ...): each empty draw returns -1, which used to bail this
+	 * function immediately (the historic `fd >= 0 && fd <= 2` check
+	 * silently fell through for fd == -1) and burned a full outer
+	 * regen in get_random_fd().  With ~30+ providers and many often
+	 * empty under load, the outer 64-retry budget was hitting
+	 * exhaustion hundreds of times per child -- each exhaustion
+	 * surfaces to the kernel as EBADF, wasting fd-arg syscalls that
+	 * should have hit real kernel fd paths and produced coverage.
+	 *
+	 * The NULL/->get-NULL slot guard is preserved by skipping such
+	 * slots here; the canary stat still fires once per scan-detected
+	 * invalid entry instead of once per random draw.
+	 *
+	 * objects_empty() is an O(1) read of head->num_entries -- racy
+	 * vs. concurrent updates but only transiently so; worst case we
+	 * skip a provider that just got populated, or include one that
+	 * just emptied (the inner retry covers the latter).
 	 */
-	if (provider == NULL || provider->get == NULL) {
-		__atomic_add_fetch(&shm->stats.fd_provider_invalid, 1,
-				   __ATOMIC_RELAXED);
-		if (++retries < 10)
-			goto retry;
-		return -1;
+	for (i = 0; i < num_active_providers; i++) {
+		provider = active_providers[i];
+		if (provider == NULL || provider->get == NULL) {
+			__atomic_add_fetch(&shm->stats.fd_provider_invalid, 1,
+					   __ATOMIC_RELAXED);
+			continue;
+		}
+		if (objects_empty(provider->objtype))
+			continue;
+		populated[npop++] = provider;
 	}
+
+	if (npop == 0)
+		return -1;
+
+retry:
+	provider = populated[rnd_modulo_u32(npop)];
 	fd = provider->get();
-	if (fd >= 0 && fd <= 2) {
+	/*
+	 * fd <= 2 covers both stdin/stdout/stderr draws and the
+	 * transient -1 a provider can hand back when its internal slot
+	 * pick loses a race (e.g. fds/eventfd.c's 1000-iter objpool_check
+	 * loop bottoms out, OBJ_GLOBAL slot recycle, ...).  Reroll within
+	 * the inner budget instead of letting -1 escape to the outer
+	 * regen and burn a budgeted retry.
+	 */
+	if (fd <= 2) {
 		if (++retries < 10)
 			goto retry;
 		return -1;
