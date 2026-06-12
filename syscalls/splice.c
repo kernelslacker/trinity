@@ -110,6 +110,15 @@ static void sanitise_splice(struct syscallrecord *rec)
 	if ((rnd_modulo_u32(100)) < 5)
 		rec->a3 = rec->a1;
 
+	/*
+	 * Final gate: re-roll fd_out off the protected/reserved fd set so
+	 * we never splice into a worker's stderr-memfd or another reserved
+	 * fd.  Mirrors the protection on the direct fd-size-changing
+	 * syscalls and must come AFTER the same-fd override above so the
+	 * final a3 value is the one inspected.
+	 */
+	reroll_protected_fd_arg(&rec->a3);
+
 	rec->a6 = sanitise_splice_flags();
 }
 
