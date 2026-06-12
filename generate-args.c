@@ -1084,7 +1084,7 @@ static void struct_fill_passes(unsigned char *buf, unsigned int size,
 			/*
 			 * chosen_len[i] != 0 here means a multi-pair LEN
 			 * field pre-pinned this buffer's size in the
-			 * pin-pass below.  Use the shared value rather
+			 * pin-pass above.  Use the shared value rather
 			 * than rolling an independent one.
 			 */
 			if (chosen_len[i] != 0)
