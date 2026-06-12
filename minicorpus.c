@@ -1679,7 +1679,7 @@ bool minicorpus_load_file(const char *path,
 		want = crc32(&ent,
 			offsetof(struct corpus_file_entry, crc));
 		if (want != ent.crc || ent.nr >= MAX_NR_SYSCALL ||
-		    ent.num_args > 6) {
+		    ent.num_args < 1 || ent.num_args > 6) {
 			ndiscarded++;
 			continue;
 		}
