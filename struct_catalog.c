@@ -4317,14 +4317,16 @@ static const struct union_variant bpf_attr_variants[] = {
 		.name		= "PROG_ATTACH",
 		.fields		= bpf_attr_PROG_ATTACH_fields,
 		.num_fields	= ARRAY_SIZE(bpf_attr_PROG_ATTACH_fields),
-		.effective_size	= 16,
+		.effective_size	= offsetof(union bpf_attr, expected_revision) +
+				  sizeof(((union bpf_attr *)NULL)->expected_revision),
 	},
 	{
 		.discrim_value	= BPF_PROG_DETACH,
 		.name		= "PROG_DETACH",
 		.fields		= bpf_attr_PROG_ATTACH_fields,
 		.num_fields	= ARRAY_SIZE(bpf_attr_PROG_ATTACH_fields),
-		.effective_size	= 16,
+		.effective_size	= offsetof(union bpf_attr, expected_revision) +
+				  sizeof(((union bpf_attr *)NULL)->expected_revision),
 	},
 	{
 		.discrim_value	= BPF_OBJ_PIN,
@@ -4387,49 +4389,56 @@ static const struct union_variant bpf_attr_variants[] = {
 		.name		= "PROG_GET_NEXT_ID",
 		.fields		= bpf_attr_GET_ID_fields,
 		.num_fields	= ARRAY_SIZE(bpf_attr_GET_ID_fields),
-		.effective_size	= 8,
+		.effective_size	= offsetof(union bpf_attr, next_id) +
+				  sizeof(((union bpf_attr *)NULL)->next_id),
 	},
 	{
 		.discrim_value	= BPF_MAP_GET_NEXT_ID,
 		.name		= "MAP_GET_NEXT_ID",
 		.fields		= bpf_attr_GET_ID_fields,
 		.num_fields	= ARRAY_SIZE(bpf_attr_GET_ID_fields),
-		.effective_size	= 8,
+		.effective_size	= offsetof(union bpf_attr, next_id) +
+				  sizeof(((union bpf_attr *)NULL)->next_id),
 	},
 	{
 		.discrim_value	= BPF_PROG_GET_FD_BY_ID,
 		.name		= "PROG_GET_FD_BY_ID",
 		.fields		= bpf_attr_GET_ID_fields,
 		.num_fields	= ARRAY_SIZE(bpf_attr_GET_ID_fields),
-		.effective_size	= 8,
+		.effective_size	= offsetof(union bpf_attr, prog_id) +
+				  sizeof(((union bpf_attr *)NULL)->prog_id),
 	},
 	{
 		.discrim_value	= BPF_MAP_GET_FD_BY_ID,
 		.name		= "MAP_GET_FD_BY_ID",
 		.fields		= bpf_attr_GET_ID_fields,
 		.num_fields	= ARRAY_SIZE(bpf_attr_GET_ID_fields),
-		.effective_size	= 8,
+		.effective_size	= offsetof(union bpf_attr, open_flags) +
+				  sizeof(((union bpf_attr *)NULL)->open_flags),
 	},
 	{
 		.discrim_value	= BPF_BTF_GET_FD_BY_ID,
 		.name		= "BTF_GET_FD_BY_ID",
 		.fields		= bpf_attr_GET_ID_fields,
 		.num_fields	= ARRAY_SIZE(bpf_attr_GET_ID_fields),
-		.effective_size	= 8,
+		.effective_size	= offsetof(union bpf_attr, fd_by_id_token_fd) +
+				  sizeof(((union bpf_attr *)NULL)->fd_by_id_token_fd),
 	},
 	{
 		.discrim_value	= BPF_BTF_GET_NEXT_ID,
 		.name		= "BTF_GET_NEXT_ID",
 		.fields		= bpf_attr_GET_ID_fields,
 		.num_fields	= ARRAY_SIZE(bpf_attr_GET_ID_fields),
-		.effective_size	= 8,
+		.effective_size	= offsetof(union bpf_attr, next_id) +
+				  sizeof(((union bpf_attr *)NULL)->next_id),
 	},
 	{
 		.discrim_value	= BPF_LINK_GET_FD_BY_ID,
 		.name		= "LINK_GET_FD_BY_ID",
 		.fields		= bpf_attr_GET_ID_fields,
 		.num_fields	= ARRAY_SIZE(bpf_attr_GET_ID_fields),
-		.effective_size	= 8,
+		.effective_size	= offsetof(union bpf_attr, link_id) +
+				  sizeof(((union bpf_attr *)NULL)->link_id),
 	},
 	{
 		.discrim_value	= BPF_LINK_GET_NEXT_ID,
