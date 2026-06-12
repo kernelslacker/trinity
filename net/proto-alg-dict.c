@@ -46,27 +46,35 @@ static bool list_contains(const struct alg_name_list *l, const char *name)
 	return false;
 }
 
-static void list_append(struct alg_name_list *l, const char *name)
+/* Append name to the list.  Returns true if the entry is in the list
+ * after the call (append succeeded), false on realloc failure.  The
+ * stored pointer is taken as-is; ownership semantics are the caller's
+ * concern — on a false return the caller still owns whatever it passed
+ * in. */
+static bool list_append(struct alg_name_list *l, const char *name)
 {
 	if (l->count == l->cap) {
 		unsigned int newcap = l->cap ? l->cap * 2 : 32;
 		const char **nn = realloc(l->names, newcap * sizeof(*nn));
 
 		if (nn == NULL)
-			return;
+			return false;
 		l->names = nn;
 		l->cap = newcap;
 	}
 	l->names[l->count++] = name;
+	return true;
 }
 
 /* Append name iff not already present.  Caller-owned string (already
- * strdup'd or string-literal). */
-static void list_add_unique(struct alg_name_list *l, const char *name)
+ * strdup'd or string-literal).  Returns true if the entry is in the
+ * list after the call (either already present or freshly appended);
+ * false only on append failure. */
+static bool list_add_unique(struct alg_name_list *l, const char *name)
 {
 	if (list_contains(l, name))
-		return;
-	list_append(l, name);
+		return true;
+	return list_append(l, name);
 }
 
 /*
@@ -130,13 +138,18 @@ static void parse_proc_crypto(void)
 				enum alg_dict_type b = kernel_type_to_bucket(cur_type);
 
 				if (b != ALG_DICT_NR_TYPES) {
-					if (!list_contains(&dict[b], cur_name)) {
+					if (list_contains(&dict[b], cur_name)) {
+						dict_from_proc = true;
+					} else {
 						char *dup = strdup(cur_name);
 
-						if (dup != NULL)
-							list_append(&dict[b], dup);
+						if (dup != NULL) {
+							if (list_append(&dict[b], dup))
+								dict_from_proc = true;
+							else
+								free(dup);
+						}
 					}
-					dict_from_proc = true;
 				}
 			}
 			cur_name[0] = '\0';
@@ -164,13 +177,18 @@ static void parse_proc_crypto(void)
 		enum alg_dict_type b = kernel_type_to_bucket(cur_type);
 
 		if (b != ALG_DICT_NR_TYPES) {
-			if (!list_contains(&dict[b], cur_name)) {
+			if (list_contains(&dict[b], cur_name)) {
+				dict_from_proc = true;
+			} else {
 				char *dup = strdup(cur_name);
 
-				if (dup != NULL)
-					list_append(&dict[b], dup);
+				if (dup != NULL) {
+					if (list_append(&dict[b], dup))
+						dict_from_proc = true;
+					else
+						free(dup);
+				}
 			}
-			dict_from_proc = true;
 		}
 	}
 
