@@ -186,7 +186,15 @@ static void xdp_socket_setup(int fd)
 	return;
 
 out_unmap_umem:
-	munmap(umem_area, XDP_UMEM_SIZE);
+	/*
+	 * Partial setup failure: the UMEM was mmap'd and recorded
+	 * before the failing setsockopt, so route the cleanup through
+	 * xdp_umem_release() rather than a bare munmap().  That tears
+	 * down the VMA AND clears the table slot in one step so the
+	 * later socket destructor cannot revisit a stale (fd, ptr) row
+	 * whose address may by then have been reused by another mmap().
+	 */
+	xdp_umem_release(fd);
 }
 
 static void xdp_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct sockaddr **addr, socklen_t *addrlen)
