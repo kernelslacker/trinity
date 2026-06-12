@@ -314,6 +314,37 @@ static const unsigned short rtax_attrs[] = {
 	RTAX_INITRWND, RTAX_QUICKACK,
 };
 
+/* DCB rtnetlink attributes — older uapi headers may not expose every
+ * symbol (DCB grew incrementally), so guard each constant we touch. */
+#ifndef DCB_ATTR_IFNAME
+#define DCB_ATTR_IFNAME		1
+#endif
+#ifndef DCB_ATTR_IEEE
+#define DCB_ATTR_IEEE		13
+#endif
+#ifndef DCB_ATTR_IEEE_ETS
+#define DCB_ATTR_IEEE_ETS	1
+#endif
+#ifndef DCB_ATTR_IEEE_PFC
+#define DCB_ATTR_IEEE_PFC	2
+#endif
+#ifndef DCB_ATTR_IEEE_APP_TABLE
+#define DCB_ATTR_IEEE_APP_TABLE	3
+#endif
+
+/* Top-level DCB_ATTR_* types emitted alongside struct dcbmsg.  Without
+ * at least DCB_ATTR_IFNAME the kernel's dcb_doit() short-circuits before
+ * dispatching to any per-feature setter, so a netlink message with just
+ * the dcbmsg header can never reach the IEEE / CEE / PFC code paths. */
+static const unsigned short dcb_attrs[] = {
+	DCB_ATTR_IFNAME, DCB_ATTR_IEEE,
+};
+
+/* DCB_ATTR_IEEE_* children for the DCB_ATTR_IEEE nested container. */
+static const unsigned short dcb_ieee_attrs[] = {
+	DCB_ATTR_IEEE_ETS, DCB_ATTR_IEEE_PFC, DCB_ATTR_IEEE_APP_TABLE,
+};
+
 /* Link type names for IFLA_INFO_KIND */
 static const char *link_kinds[] = {
 	"veth", "bridge", "bond", "vlan", "macvlan",
@@ -777,6 +808,44 @@ static size_t gen_rta_neigh_payload(unsigned char *p, size_t avail,
 }
 
 /*
+ * Generate a structured payload for DCB rtnetlink attributes (DCB_ATTR_*).
+ * Only the two attrs the kernel demuxer cares about for reaching the
+ * per-feature setters get structured payloads here; everything else
+ * returns 0 so the caller falls back to a random blob.
+ */
+static size_t gen_rta_dcb_payload(unsigned char *p, size_t avail,
+				  unsigned short nla_type)
+{
+	switch (nla_type) {
+	case DCB_ATTR_IFNAME: {
+		static const char *names[] = {
+			"lo", "eth0", "br0", "veth0", "dummy0",
+		};
+		const char *name = RAND_ARRAY(names);
+		size_t slen = strlen(name) + 1;
+
+		if (avail >= slen) {
+			memcpy(p, name, slen);
+			return slen;
+		}
+		return 0;
+	}
+
+	case DCB_ATTR_IEEE:
+		/* Nested container of DCB_ATTR_IEEE_* sub-attributes;
+		 * mirrors RTA_METRICS' use of build_nested_attrs above. */
+		if (avail >= NLA_HDRLEN + 8) {
+			return build_nested_attrs(p, avail, dcb_ieee_attrs,
+						  ARRAY_SIZE(dcb_ieee_attrs), 0);
+		}
+		return 0;
+
+	default:
+		return 0;
+	}
+}
+
+/*
  * Generate a structured payload for a specific rtnetlink attribute.
  * Dispatches to the appropriate per-group generator based on the
  * rtnetlink message group. Returns the payload length, or 0 for
@@ -794,6 +863,7 @@ static size_t gen_rta_payload(unsigned char *buf, size_t offset, size_t buflen,
 	case 1: return gen_rta_addr_payload(p, avail, nla_type, family);
 	case 2: return gen_rta_route_payload(p, avail, nla_type, family);
 	case 3: return gen_rta_neigh_payload(p, avail, nla_type, family);
+	case 15: return gen_rta_dcb_payload(p, avail, nla_type);
 	default: return 0;
 	}
 }
@@ -810,6 +880,7 @@ static size_t gen_rta_payload(unsigned char *buf, size_t offset, size_t buflen,
  * Keep this in sync with the structured-payload generators above:
  *   group 0 (link):  IFLA_LINKINFO, IFLA_AF_SPEC
  *   group 2 (route): RTA_METRICS, RTA_MULTIPATH
+ *   group 15 (dcb): DCB_ATTR_IEEE
  * The address (group 1) and neigh (group 3) generators only emit flat
  * payloads today; add their nested entries here if that changes.
  */
@@ -820,6 +891,8 @@ static int rta_payload_is_nested(int rtnl_group, unsigned short nla_type)
 		return nla_type == IFLA_LINKINFO || nla_type == IFLA_AF_SPEC;
 	case 2:
 		return nla_type == RTA_METRICS || nla_type == RTA_MULTIPATH;
+	case 15:
+		return nla_type == DCB_ATTR_IEEE;
 	default:
 		return 0;
 	}
@@ -993,6 +1066,7 @@ static unsigned short pick_rtnl_attr_type(unsigned short nlmsg_type)
 	case 6:
 	case 7: return RAND_ARRAY(tca_attrs);
 	case 14: return RAND_ARRAY(ifal_attrs);
+	case 15: return RAND_ARRAY(dcb_attrs);
 	case 16: return RAND_ARRAY(netconfa_attrs);
 	case 17: return RAND_ARRAY(mdba_attrs);
 	case 18: return RAND_ARRAY(bridge_vlandb_attrs);
