@@ -1834,7 +1834,7 @@ enum random_rescue_class classify_random_rescue(struct syscallrecord *rec,
 	 * a soft signal (the per-call substitution probability is fixed and
 	 * we have no per-call attribution), but a non-empty pool is the
 	 * narrowest evidence available without adding per-call tracking. */
-	if (cmp_hints_shm != NULL && curr < 1024 &&
+	if (cmp_hints_shm != NULL && curr < MAX_NR_SYSCALL &&
 	    cmp_hints_pool_safe_count(&cmp_hints_shm->pools[curr][rec->do32bit ? 1 : 0]) > 0)
 		return RRC_CMP_DERIVED;
 
