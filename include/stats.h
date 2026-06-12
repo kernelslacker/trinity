@@ -2012,6 +2012,19 @@ struct stats_s {
 	 * exercise it. */
 	unsigned long deferred_free_ring_owned_skip;
 
+	/* deferred_free_enqueue_internal() found @ptr already pinned in
+	 * an occupied ring slot at admission time and refused to take a
+	 * second slot.  Without this gate, an alloc_track_refresh() that
+	 * re-admits a ring-resident @ptr lets the next enqueue pass the
+	 * alloc_track_consume() check a second time and admit @ptr to
+	 * two ring slots.  The reuse-mediated double-free then runs when
+	 * the first slot's TTL fires and free()s @ptr; address reuse
+	 * binds the same value to a new chunk; the second slot's TTL
+	 * fires and free()s the new owner's chunk.  Non-zero proves the
+	 * gate is engaged; rate-of-change correlates with refresh
+	 * pressure on the maps.c / objects.c hot paths. */
+	unsigned long deferred_free_double_admit_skip;
+
 	/* tracked_free_now() could not verify ring residency because
 	 * ring_unlock() returned non-OK (typically ENOMEM under VMA
 	 * pressure -- same class as deferred_free_enomem_drain).  The

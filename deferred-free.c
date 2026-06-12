@@ -729,6 +729,30 @@ static void ring_lock(void)
 }
 
 /*
+ * Is @ptr currently pinned in the deferred-free ring?  Linear scan of
+ * the 64 slots; cheap (64 cache-resident pointer compares) and definitive
+ * because ring[] is the source-of-truth for ring residency.
+ *
+ * The caller must already hold the ring_unlock() bracket: ring[] is
+ * PROT_NONE at rest, so an unbracketed read would SIGSEGV.  Splitting
+ * the bracket out of this helper lets callers that are already inside
+ * an open ring_unlock() window (deferred_free_enqueue_internal's
+ * admission-dedup, after the unlock + before the matching ring_lock)
+ * skip a second mprotect pair.  Callers that don't already hold the
+ * bracket (tracked_free_now) take it themselves before calling.
+ */
+static bool ring_contains(void *ptr)
+{
+	unsigned int i;
+
+	for (i = 0; i < DEFERRED_RING_SIZE; i++) {
+		if (ring[i].ptr == ptr)
+			return true;
+	}
+	return false;
+}
+
+/*
  * Synchronously free a zmalloc_tracked() pointer.  alloc_track_consume()
  * pulls the entry out of both alloc_track[] and alloc_track_hash[] in
  * one shot (hash-gated reject, then backward array scan with paired
@@ -1413,6 +1437,28 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 				free(ptr);
 			return;
 		}
+	}
+
+	/*
+	 * Admission dedup: refuse to take a second slot for a ptr that
+	 * already owns one.  alloc_track_consume() above does not know
+	 * about ring residency -- alloc_track_refresh() can re-admit a
+	 * ring-resident ptr to alloc_track, after which the next enqueue
+	 * of that ptr passes consume() a second time and would otherwise
+	 * land in a fresh ring slot.  Two slots holding the same value is
+	 * the reuse-mediated double-free shape: slot A's TTL fires and
+	 * free()s @ptr; the address is reused by a new alloc; slot B's
+	 * TTL fires and free()s the new owner's chunk.  ring[] is the
+	 * source-of-truth (inflight_hash is value-keyed and desyncs under
+	 * VMA-pressure mprotect failures), so scan it directly.  The
+	 * ring_unlock bracket above is still open, so this is just a 64-
+	 * compare scan, no additional mprotect.  Re-lock and bail on hit.
+	 */
+	if (ring_contains(ptr)) {
+		ring_lock();
+		__atomic_add_fetch(&shm->stats.deferred_free_double_admit_skip,
+				   1, __ATOMIC_RELAXED);
+		return;
 	}
 
 	if (occupied_mask == ~0ULL)
