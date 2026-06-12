@@ -794,7 +794,6 @@ static bool ring_contains(void *ptr)
  */
 void tracked_free_now(void *ptr)
 {
-	unsigned int i;
 	bool ring_owned = false;
 
 	if (ptr == NULL)
@@ -802,18 +801,24 @@ void tracked_free_now(void *ptr)
 
 	alloc_track_consume(ptr);
 
-	if (occupied_mask != 0) {
+	/*
+	 * Gate on ring != NULL, not occupied_mask != 0.  occupied_mask
+	 * lives in unarmored BSS; a sibling fuzzed value-result syscall
+	 * that scribbles it to zero would skip the authoritative ring[]
+	 * scan and let this function free() a ring-resident chunk, which
+	 * eviction or TTL would then free a second time.  ring is set
+	 * once at init and cleared only by ring_dispose_after_enomem();
+	 * both writers go through rc_unlock()'s armored bracket, so the
+	 * pointer cannot lie about ring liveness.  Always run the armored
+	 * ring[] scan whenever the ring still exists.
+	 */
+	if (ring != NULL) {
 		if (ring_unlock() != RING_UNLOCK_OK) {
 			__atomic_add_fetch(&shm->stats.deferred_free_tracked_free_unverified_leak,
 					   1, __ATOMIC_RELAXED);
 			return;
 		}
-		for (i = 0; i < DEFERRED_RING_SIZE; i++) {
-			if (ring[i].ptr == ptr) {
-				ring_owned = true;
-				break;
-			}
-		}
+		ring_owned = ring_contains(ptr);
 		ring_lock();
 	}
 
