@@ -1251,6 +1251,7 @@ static void invalidate_object_fd(struct object *obj, enum objecttype type)
 	case OBJ_FD_LANDLOCK:	obj->landlockobj.fd = -1; break;
 	case OBJ_FD_PIDFD:	obj->pidfdobj.fd = -1; break;
 	case OBJ_FD_MQ:		obj->mqobj.fd = -1; break;
+	case OBJ_FD_SPARSE_FILE: obj->sparsefileobj.fd = -1; break;
 	case OBJ_FD_SECCOMP_NOTIF: obj->seccomp_notifobj.fd = -1; break;
 	case OBJ_FD_IOMMUFD:	obj->iommufdobj.fd = -1; break;
 	case OBJ_FD_FS_CTX:	obj->fsctxobj.fd = -1; break;
@@ -1410,7 +1411,9 @@ void set_object_fd(struct object *obj, enum objecttype type, int fd)
 	case OBJ_FD_DEVFILE:
 	case OBJ_FD_DEV_TEMPLATE:
 	case OBJ_FD_PROCFILE:
-	case OBJ_FD_SYSFILE:	obj->fileobj.fd = fd; break;
+	case OBJ_FD_SYSFILE:
+	case OBJ_FD_PAGECACHE:
+	case OBJ_FD_CANARY:	obj->fileobj.fd = fd; break;
 	case OBJ_FD_PERF:	obj->perfobj.fd = fd; break;
 	case OBJ_FD_EPOLL:	obj->epollobj.fd = fd; break;
 	case OBJ_FD_EVENTFD:	obj->eventfdobj.fd = fd; break;
@@ -1432,6 +1435,7 @@ void set_object_fd(struct object *obj, enum objecttype type, int fd)
 	case OBJ_FD_LANDLOCK:	obj->landlockobj.fd = fd; break;
 	case OBJ_FD_PIDFD:	obj->pidfdobj.fd = fd; break;
 	case OBJ_FD_MQ:		obj->mqobj.fd = fd; break;
+	case OBJ_FD_SPARSE_FILE: obj->sparsefileobj.fd = fd; break;
 	case OBJ_FD_SECCOMP_NOTIF: obj->seccomp_notifobj.fd = fd; break;
 	case OBJ_FD_IOMMUFD:	obj->iommufdobj.fd = fd; break;
 	case OBJ_FD_FS_CTX:	obj->fsctxobj.fd = fd; break;
@@ -1441,6 +1445,7 @@ void set_object_fd(struct object *obj, enum objecttype type, int fd)
 	case OBJ_FD_SIGNALFD:	obj->signalfdobj.fd = fd; break;
 	case OBJ_FD_MOUNT:	obj->mountfdobj.fd = fd; break;
 	case OBJ_FD_CGROUP:	obj->cgroupfdobj.fd = fd; break;
+	case OBJ_FD_WATCH_QUEUE: obj->watch_queueobj.fd = fd; break;
 	default:		break;
 	}
 }
