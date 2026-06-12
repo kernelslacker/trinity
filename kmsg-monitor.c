@@ -253,6 +253,7 @@ static void __attribute__((noreturn)) kmsg_helper_main(void)
 	char buf[KMSG_BUFSIZE];
 	struct pollfd pfd;
 	unsigned int follow_remaining = 0;
+	unsigned int read_errors = 0;
 	struct sigaction sa;
 	const char taskname[13] = "trinity-kmsg";
 
@@ -344,10 +345,28 @@ static void __attribute__((noreturn)) kmsg_helper_main(void)
 				(void)lseek(fd, 0, SEEK_END);
 				continue;
 			}
-			kmsg_emit("kmsg-monitor: read failed: %s\n",
-				strerror(errno));
-			break;
+			/*
+			 * Unexpected errno.  Do NOT bail: a single transient
+			 * read error would otherwise silently end live
+			 * kernel-log capture for the rest of the run, which
+			 * is exactly the diagnostic stream we need when the
+			 * kernel goes sideways.  Resync past whatever we
+			 * tripped over (same recovery as the EPIPE arm) and
+			 * keep polling.  Rate-limit the warning at 1, 2, 4,
+			 * 8, ... consecutive failures so a persistent error
+			 * (lost CAP_SYSLOG, /dev/kmsg pulled, etc.) does not
+			 * flood the output.  The counter resets on the next
+			 * successful read below.
+			 */
+			read_errors++;
+			if ((read_errors & (read_errors - 1)) == 0) {
+				kmsg_emit("kmsg-monitor: read failed: %s (count=%u)\n",
+					strerror(errno), read_errors);
+			}
+			(void)lseek(fd, 0, SEEK_END);
+			continue;
 		}
+		read_errors = 0;
 		if (n == 0)
 			continue;
 
