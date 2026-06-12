@@ -206,6 +206,7 @@ enum child_op_type {
 	CHILD_OP_SYSFS_STRING_RACE,
 	CHILD_OP_PCI_BIND,
 	CHILD_OP_AF_UNIX_PEEK_RACE,
+	CHILD_OP_SYSV_SHM_ORPHAN_RACE,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -883,6 +884,7 @@ bool handshake_req_abort(struct childdata *child);
 bool nf_conntrack_helper_churn(struct childdata *child);
 bool af_unix_scm_rights_gc_churn(struct childdata *child);
 bool af_unix_peek_race(struct childdata *child);
+bool sysv_shm_orphan_race(struct childdata *child);
 bool netns_teardown_churn(struct childdata *child);
 bool tcp_ulp_swap_churn(struct childdata *child);
 bool msg_zerocopy_churn(struct childdata *child);

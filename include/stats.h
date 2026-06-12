@@ -1355,6 +1355,20 @@ struct stats_s {
 	unsigned long af_unix_peek_race_sibling_reaped_ok;	/* sibling exited normally and was reaped by parent */
 	unsigned long af_unix_peek_race_sibling_crashed;	/* sibling killed by signal (SEGV/BUS/KILL) -- forensic hint */
 
+	/* sysv_shm_orphan_race childop counters */
+	unsigned long sysv_shm_orphan_race_runs;		/* total sysv_shm_orphan_race invocations */
+	unsigned long sysv_shm_orphan_race_setup_failed;	/* probe latch fired or per-iter shared-state alloc failed */
+	unsigned long sysv_shm_orphan_race_shmget_ok;		/* originator shmget(IPC_PRIVATE) created a fresh segment */
+	unsigned long sysv_shm_orphan_race_shmget_failed;	/* originator shmget() failed or never published shmid */
+	unsigned long sysv_shm_orphan_race_attach_ok;		/* parent / solo-burst shmat() returned a valid address */
+	unsigned long sysv_shm_orphan_race_attach_failed;	/* parent / solo-burst shmat() returned -1 (typically EIDRM after destroy) */
+	unsigned long sysv_shm_orphan_race_rmid_ok;		/* shmctl(IPC_RMID) returned 0 (originator already-RMID'd path NOT counted here) */
+	unsigned long sysv_shm_orphan_race_rmid_failed;	/* shmctl(IPC_RMID) returned -1 (typically EIDRM; segment already destroyed -- expected coverage) */
+	unsigned long sysv_shm_orphan_race_sibling_spawn_ok;	/* clone3(SIGCHLD) originator/attacher sibling spawned */
+	unsigned long sysv_shm_orphan_race_sibling_spawn_failed;/* clone3() failed; fell back to single-task race burst */
+	unsigned long sysv_shm_orphan_race_sibling_reaped_ok;	/* sibling exited normally and was reaped by parent */
+	unsigned long sysv_shm_orphan_race_sibling_crashed;	/* sibling killed by signal (SEGV/BUS/KILL) -- forensic hint */
+
 	/* netns_teardown_churn childop counters */
 	unsigned long netns_teardown_runs;			/* total netns_teardown_churn invocations */
 	unsigned long netns_teardown_setup_failed;		/* anchor open / fork / unsupported latch fired */
