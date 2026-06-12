@@ -40,6 +40,27 @@ if [[ -n "${RUNNING_ON_VALGRIND:-}" ]]; then
     fi
 fi
 
+# --- per-run kernel-log capture --------------------------------------------
+# Stream the ring buffer for the whole run into dmesg.log.  Continuous, not
+# an end-of-run dump: the ring is finite and a long noisy run overflows it.
+# --follow-new skips the pre-run buffer (log is THIS run only); stdbuf -oL
+# line-buffers so a splat just before teardown isn't lost in a stdio buffer.
+# Own transient scope mirrors the trinity scope -> reaped by cleanup() below.
+# Needs CAP_SYSLOG (root or kernel.dmesg_restrict=0), same as kcov access.
+# TRINITY_NO_DMESG=1 skips it; TRINITY_DMESG_LOG overrides the path.
+dmesg_log="${TRINITY_DMESG_LOG:-dmesg.log}"
+dmesg_scope=""
+dmesg_pid=""
+if [[ -z "${TRINITY_NO_DMESG:-}" ]]; then
+    dmesg_cmd=(stdbuf -oL dmesg --follow-new --time-format=iso)
+    if command -v systemd-run >/dev/null 2>&1; then
+        dmesg_scope="trinity-dmesg-$$.scope"
+        dmesg_cmd=(systemd-run --user --scope --quiet --unit="${dmesg_scope}" -- "${dmesg_cmd[@]}")
+    fi
+    "${dmesg_cmd[@]}" > "${dmesg_log}" &
+    dmesg_pid=$!
+fi
+
 # Outer-scope memory containment via transient systemd scope, layered on
 # top of trinity's own self_cgroup (--memory-max etc., see self_cgroup.c).
 # The outer scope protects the brief startup window before trinity creates
@@ -126,6 +147,13 @@ cleanup() {
         systemctl --user stop "${scope_name}" >/dev/null 2>&1 || true
     elif [[ -n "${child}" ]]; then
         kill -KILL -- "-${child}" 2>/dev/null || true
+    fi
+    # Stop the dmesg follower after trinity so it captures teardown splats;
+    # line-buffered output means no extra flush is needed.
+    if [[ -n "${dmesg_scope}" ]]; then
+        systemctl --user stop "${dmesg_scope}" >/dev/null 2>&1 || true
+    elif [[ -n "${dmesg_pid}" ]]; then
+        kill "${dmesg_pid}" 2>/dev/null || true
     fi
     exit "${rc}"
 }
