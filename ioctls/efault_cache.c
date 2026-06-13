@@ -83,6 +83,8 @@
 
 #define EFAULT_CACHE_MASK	(IOCTL_EFAULT_CACHE_SIZE - 1u)
 
+#define EFAULT_PROBE_CAP	64
+
 /*
  * Second bogus arg.  Distinct bit pattern from ~0UL so a transient
  * deferred fault landing on the first probe doesn't propagate into the
@@ -117,7 +119,7 @@ static enum ioctl_arg_class cache_lookup(unsigned int group_idx,
 	unsigned int h = efault_hash(group_idx, request);
 	unsigned int i;
 
-	for (i = 0; i < IOCTL_EFAULT_CACHE_SIZE; ++i) {
+	for (i = 0; i < EFAULT_PROBE_CAP; ++i) {
 		unsigned int slot = (h + i) & EFAULT_CACHE_MASK;
 		uint64_t packed = __atomic_load_n(&shm->ioctl_efault_cache[slot],
 						  __ATOMIC_ACQUIRE);
@@ -142,7 +144,7 @@ static void cache_store(unsigned int group_idx, unsigned int request,
 	want = EFAULT_PACK(group_idx, request, (unsigned int) state);
 	h = efault_hash(group_idx, request);
 
-	for (i = 0; i < IOCTL_EFAULT_CACHE_SIZE; ++i) {
+	for (i = 0; i < EFAULT_PROBE_CAP; ++i) {
 		unsigned int slot = (h + i) & EFAULT_CACHE_MASK;
 		uint64_t expected = 0;
 
