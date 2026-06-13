@@ -502,26 +502,34 @@ out:
 }
 
 /*
- * Combo C — exercise the BPF arena map mmap()+fork() teardown path.
+ * Combo C — exercise the BPF arena map mmap() teardown across two mms.
  *
  * Arena maps (BPF_MAP_TYPE_ARENA, added in v6.9) expose a sparse 4 GiB
- * region as a mmap()-able fd.  When a process that holds such a mapping
- * fork()s, the mapping is inherited via the standard vma copy path and
- * the arena map_vm_close() teardown runs once both parent and child have
- * dropped their references.  No other childop creates an arena map or
- * forks against one, so that close-on-fork path was unreached.
+ * region as a mmap()-able fd.  The kernel marks arena VMAs VM_DONTCOPY,
+ * so the mapping is NOT inherited across fork; exercising arena teardown
+ * across multiple mms means each task that wants the mapping must mmap
+ * the fd itself.  No other childop creates an arena map or drives such
+ * a two-mm mapping, so the arena map_vm_close() path under concurrent
+ * teardown was unreached.
  *
  * Sequence:
  *   1. BPF_MAP_CREATE arena with BPF_F_MMAPABLE, key_size = value_size = 0,
  *      max_entries = small page count (the arena's max grow size).
- *   2. mmap(MAP_SHARED) the arena fd for a few pages worth.
- *   3. fork().  Grandchild touches the inherited mapping (forces page
- *      population so the vma is non-empty), munmap()s, and _exit()s.
- *      Parent concurrently munmap()s and close()s the map fd — racing
- *      the arena vm-close teardown across the two address spaces.
+ *   2. mmap(MAP_SHARED) the arena fd for a few pages worth; the kernel
+ *      records user_vm_start/end on this first mapping.
+ *   3. fork().  Grandchild re-mmaps the arena fd at the same virtual
+ *      address with MAP_FIXED_NOREPLACE — the arena requires the same
+ *      addr+len once user_vm_start/end are set, and the parent's VMA is
+ *      absent in the child mm so MAP_FIXED_NOREPLACE will not collide.
+ *      The grandchild then touches each page to force population,
+ *      munmap()s, and _exit(0)s.  Parent concurrently munmap()s and
+ *      close()s its own copies, racing the arena vm-close teardown
+ *      across the two address spaces.
  *   4. Parent reaps the grandchild via waitpid_eintr() (child.c installs
  *      SIGALRM/SIGXCPU without SA_RESTART, so a plain waitpid() can
- *      return EINTR mid-syscall).
+ *      return EINTR mid-syscall) and only counts the run when the
+ *      grandchild reached its clean exit — a SIGSEGV or non-zero exit
+ *      means the multi-mm teardown path was not actually exercised.
  *
  * If BPF_MAP_CREATE fails (older kernel without arena support, or
  * CONFIG_BPF_SYSCALL=n / arena disabled), latch arena_unsupported and
@@ -536,7 +544,8 @@ static bool combo_arena_fork(void)
 	int map_fd;
 	void *map;
 	pid_t pid;
-	int status;
+	pid_t rc;
+	int status = 0;
 
 	if (arena_unsupported)
 		return false;
@@ -577,16 +586,26 @@ static bool combo_arena_fork(void)
 	}
 	if (pid == 0) {
 		/*
-		 * Grandchild: touch one byte per page to fault them in, then
-		 * drop the mapping and exit.  Race window is the gap between
-		 * the parent's munmap+close below and our exit's mm teardown.
+		 * Grandchild: arena VMAs are VM_DONTCOPY, so the parent's
+		 * mapping is absent here.  Re-mmap the inherited fd at the
+		 * same address (the arena enforces same addr+len once
+		 * user_vm_start/end are set), touch each page to fault them
+		 * in, drop the mapping, and exit.  Race window is the gap
+		 * between the parent's munmap+close below and our exit's mm
+		 * teardown.
 		 */
-		volatile unsigned char *p = map;
+		volatile unsigned char *p;
+		void *child_map;
 		size_t off;
 
+		child_map = mmap(map, map_len, PROT_READ | PROT_WRITE,
+				 MAP_SHARED | MAP_FIXED_NOREPLACE, map_fd, 0);
+		if (child_map == MAP_FAILED)
+			_exit(1);
+		p = child_map;
 		for (off = 0; off < map_len; off += (size_t)page_sz)
 			p[off] = (unsigned char)(off & 0xffU);
-		(void)munmap(map, map_len);
+		(void)munmap(child_map, map_len);
 		_exit(0);
 	}
 
@@ -594,10 +613,18 @@ static bool combo_arena_fork(void)
 	(void)munmap(map, map_len);
 	close(map_fd);
 
-	(void)waitpid_eintr(pid, &status, 0);
+	rc = waitpid_eintr(pid, &status, 0);
 
-	__atomic_add_fetch(&shm->stats.bpf_lifecycle_triggered, 1,
-			   __ATOMIC_RELAXED);
+	/*
+	 * Only count the run when the grandchild actually drove the
+	 * multi-mm arena teardown: its mmap+touch succeeded and it exited
+	 * cleanly.  A SIGSEGV (e.g. address/length mismatch against
+	 * user_vm_start/end) or a non-zero exit means we tested a
+	 * userspace error path, not the kernel teardown we care about.
+	 */
+	if (rc == pid && WIFEXITED(status) && WEXITSTATUS(status) == 0)
+		__atomic_add_fetch(&shm->stats.bpf_lifecycle_triggered, 1,
+				   __ATOMIC_RELAXED);
 	return true;
 }
 
