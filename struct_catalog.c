@@ -5778,14 +5778,22 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * rather than at a coincidentally-same-width slot.  The bespoke
 	 * fill remains the sole writer of both elements.
 	 *
-	 * Not mapped here on purpose: utimes's a2 is also a
-	 * struct timeval[2], but utimes has no bespoke sanitiser to
-	 * attribute against; gettimeofday's a1 is a kernel-written
+	 * utimes(char __user *filename, struct __kernel_old_timeval __user *utimes)
+	 * a2 is the INPUT struct timeval[2] pointer.  Attribution-only
+	 * registration describes utimes[0] only -- the single-struct
+	 * descriptor cannot span the [2] array, but covering the first
+	 * element is enough to let struct_field_for_cmp steer CMP-learned
+	 * constants at the named tv_sec / tv_usec slots rather than at a
+	 * coincidentally-same-width slot.  The live fill remains the sole
+	 * writer of both elements.
+	 *
+	 * Not mapped here on purpose: gettimeofday's a1 is a kernel-written
 	 * OUTPUT buffer with no input fill to attribute against.
 	 */
 	{ "settimeofday",	1, &struct_catalog[SC_TIMEVAL] },
 	{ "select",		5, &struct_catalog[SC_TIMEVAL] },
 	{ "futimesat",		3, &struct_catalog[SC_TIMEVAL] },
+	{ "utimes",		2, &struct_catalog[SC_TIMEVAL] },
 	/*
 	 * settimeofday(struct timeval __user *tv, struct timezone __user *tz)
 	 * a2 is the INPUT struct timezone pointer.  The bespoke
