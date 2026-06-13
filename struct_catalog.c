@@ -5957,7 +5957,17 @@ const struct syscall_struct_arg syscall_struct_args[] = {
  * (rec required) first and falls back to the default; a slot with
  * neither a default nor a matching variant returns NULL.
  */
-#define DISCRIM_VARIANTS_PER_SLOT_MAX	8
+/*
+ * Per-slot discriminated variant cap.  Bumped 8 -> 32 ahead of the
+ * setsockopt (level, optname) two-key rows: arg4 will accrete one
+ * binding per cataloged optval shape, and even the proof batch
+ * (linger / timeval / ip_mreqn / ipv6_mreq / packet_mreq) consumes
+ * five slots before any of the higher-leverage shapes (sctp / mptcp /
+ * tcp_repair) land.  Init BUG()s on overflow, so the cap MUST be raised
+ * before any setsockopt rows -- a deferred bump turns the first
+ * registration past 8 into a hard boot failure.
+ */
+#define DISCRIM_VARIANTS_PER_SLOT_MAX	32
 
 struct slot_binding {
 	const struct struct_desc	*default_desc;
@@ -5999,6 +6009,76 @@ const struct struct_desc *struct_catalog_lookup(const char *name)
 	return NULL;
 }
 
+/*
+ * Read rec->a<arg_idx> (1-based) into *out.  Returns false when arg_idx
+ * is out of range so the caller can skip the variant cleanly.  Folded
+ * out so the two key paths (key1 and key2) share the dispatch instead
+ * of cloning the six-way switch.
+ */
+static bool read_rec_arg(const struct syscallrecord *rec,
+			 unsigned int arg_idx, unsigned long *out)
+{
+	if (arg_idx == 0 || arg_idx > 6)
+		return false;
+	switch (arg_idx) {
+	case 1: *out = rec->a1; return true;
+	case 2: *out = rec->a2; return true;
+	case 3: *out = rec->a3; return true;
+	case 4: *out = rec->a4; return true;
+	case 5: *out = rec->a5; return true;
+	case 6: *out = rec->a6; return true;
+	}
+	return false;
+}
+
+/*
+ * Match one discriminator key against a raw input value.  Applies the
+ * packed-discriminator extraction (shift then mask, both zero-default
+ * to the identity transform), then matches against value or values[].
+ * Folded out so key1 and key2 share the extract+match block.
+ */
+static bool discrim_key_matches(unsigned long raw,
+				unsigned int shift,
+				unsigned long mask,
+				unsigned long value,
+				const unsigned long *values,
+				unsigned int num_values)
+{
+	unsigned long effective_mask = mask ? mask : ~0UL;
+	unsigned long extracted = (raw >> shift) & effective_mask;
+	unsigned int j;
+
+	if (values != NULL) {
+		for (j = 0; j < num_values; j++) {
+			if (values[j] == extracted)
+				return true;
+		}
+		return false;
+	}
+	return value == extracted;
+}
+
+/*
+ * Pull the entry's key2 value off rec and AND-match it against key1.
+ * Returns true when discrim2_arg_idx == 0 (single-key entry: key2 is a
+ * no-op) so the caller's single-key AND stays trivially true.  An
+ * unreadable second arg (out-of-range) returns false rather than
+ * silently passing -- a misconfigured row should not match anything.
+ */
+static bool discrim_key2_matches(const struct syscall_struct_arg *sa,
+				 const struct syscallrecord *rec)
+{
+	unsigned long raw;
+
+	if (sa->discrim2_arg_idx == 0)
+		return true;
+	if (!read_rec_arg(rec, sa->discrim2_arg_idx, &raw))
+		return false;
+	return discrim_key_matches(raw, sa->discrim2_shift, sa->discrim2_mask,
+				   sa->discrim2_value, sa->discrim2_values,
+				   sa->num_discrim2_values);
+}
+
 const struct struct_desc *struct_arg_lookup(unsigned int nr,
 					    unsigned int arg_idx,
 					    bool do32bit,
@@ -6023,43 +6103,73 @@ const struct struct_desc *struct_arg_lookup(unsigned int nr,
 	if (rec != NULL && b->num_discrim != 0) {
 		for (i = 0; i < b->num_discrim; i++) {
 			const struct syscall_struct_arg *sa = b->discrim[i];
-			unsigned long discrim, mask;
+			unsigned long raw;
 
-			if (sa->discrim_arg_idx == 0 || sa->discrim_arg_idx > 6)
+			if (!read_rec_arg(rec, sa->discrim_arg_idx, &raw))
 				continue;
-			switch (sa->discrim_arg_idx) {
-			case 1: discrim = rec->a1; break;
-			case 2: discrim = rec->a2; break;
-			case 3: discrim = rec->a3; break;
-			case 4: discrim = rec->a4; break;
-			case 5: discrim = rec->a5; break;
-			case 6: discrim = rec->a6; break;
-			default: continue;
-			}
+			if (!discrim_key_matches(raw, sa->discrim_shift,
+						 sa->discrim_mask,
+						 sa->discrim_value,
+						 sa->discrim_values,
+						 sa->num_discrim_values))
+				continue;
 			/*
-			 * Packed discriminator: extract the meaningful
-			 * subfield before the match.  Shift / mask both
-			 * default to zero, which is the pre-extension
-			 * identity transform (shift by 0, mask of 0
-			 * promoted to ~0UL).  Existing exact-match
-			 * registrations stay byte-identical.
+			 * Key2 only participates when the entry declares one
+			 * (discrim2_arg_idx != 0); single-key rows leave
+			 * key2 a no-op and stay byte-identical to the
+			 * pre-extension path.  Both keys must match.
 			 */
-			mask = sa->discrim_mask ? sa->discrim_mask : ~0UL;
-			discrim = (discrim >> sa->discrim_shift) & mask;
-			if (sa->discrim_values != NULL) {
-				unsigned int j;
-
-				for (j = 0; j < sa->num_discrim_values; j++) {
-					if (sa->discrim_values[j] == discrim)
-						return sa->desc;
-				}
+			if (!discrim_key2_matches(sa, rec))
 				continue;
-			}
-			if (sa->discrim_value == discrim)
-				return sa->desc;
+			return sa->desc;
 		}
 	}
 	return b->default_desc;
+}
+
+const struct struct_desc *struct_arg_lookup_two_key(const char *name,
+						    unsigned int arg_idx,
+						    unsigned long k1,
+						    unsigned long k2)
+{
+	const struct syscall_struct_arg *sa;
+
+	if (name == NULL || arg_idx < 1 || arg_idx > 6)
+		return NULL;
+
+	/*
+	 * Linear scan keeps the cost identical to struct_arg_lookup_by_name
+	 * and avoids a second nr-indexed table just for explicit-key
+	 * callers.  syscall_struct_args[] is small (~70 entries today); the
+	 * scan runs once per apply_sockopt_entry call which already does
+	 * O(table) work picking a random row.
+	 *
+	 * Skip rows with no second key registered: this entry point is for
+	 * genuine two-key resolution -- a single-key row would resolve to
+	 * different semantics on its own and a caller wanting that should
+	 * use struct_arg_lookup() (rec-path) or struct_arg_lookup_by_name
+	 * (discriminator-blind) instead.
+	 */
+	for (sa = syscall_struct_args; sa->syscall_name != NULL; sa++) {
+		if (sa->arg_idx != arg_idx)
+			continue;
+		if (sa->discrim_arg_idx == 0 || sa->discrim2_arg_idx == 0)
+			continue;
+		if (strcmp(sa->syscall_name, name) != 0)
+			continue;
+		if (!discrim_key_matches(k1, sa->discrim_shift, sa->discrim_mask,
+					 sa->discrim_value, sa->discrim_values,
+					 sa->num_discrim_values))
+			continue;
+		if (!discrim_key_matches(k2, sa->discrim2_shift,
+					 sa->discrim2_mask,
+					 sa->discrim2_value,
+					 sa->discrim2_values,
+					 sa->num_discrim2_values))
+			continue;
+		return sa->desc;
+	}
+	return NULL;
 }
 
 /*
