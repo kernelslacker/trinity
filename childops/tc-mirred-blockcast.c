@@ -504,7 +504,9 @@ bool tc_mirred_blockcast(struct childdata *child)
 	__atomic_add_fetch(&shm->stats.tc_mirred_blockcast_runs, 1,
 			   __ATOMIC_RELAXED);
 
-	if (ns_setup_failed || ns_unsupported_rtnl || ns_unsupported_dummy)
+	if (ns_setup_failed || ns_unsupported_rtnl || ns_unsupported_dummy ||
+	    ns_unsupported_clsact || ns_unsupported_matchall ||
+	    ns_unsupported_mirred)
 		return true;
 
 	if (tc_mirred_setup_netns(&nl) != 0)
