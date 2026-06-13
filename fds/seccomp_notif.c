@@ -102,11 +102,9 @@ static int init_seccomp_notif_fds(void)
 	head->destroy = &close_fd_destructor;
 	head->dump = &generic_fd_dump;
 	/*
-	 * Opt this provider into the shared obj heap.  __destroy_object()
-	 * checks this flag to route the obj struct release through
-	 * free_shared_obj() instead of free().  seccomp_notifobj is {int fd;}
-	 * with no pointer members, so this is a mechanical conversion that
-	 * matches the pidfd template exactly.
+	 * seccomp_notifobj is {int fd;} with no pointer members, so the
+	 * OBJ_GLOBAL pool's scalars stay valid across fork/COW and
+	 * cross-process reads are safe.
 	 */
 
 	/* Create a small pool.  Each call installs a new seccomp filter,
@@ -126,15 +124,15 @@ static int get_rand_seccomp_notif_fd(void)
 
 	/*
 	 * Versioned slot pick + objpool_check() before the
-	 * obj->seccomp_notifobj.fd deref, mirroring the wireup at 15b6257b8206
-	 * (fds/sockets.c get_rand_socketinfo) and 5ef98298f6ad
-	 * (syscalls/keyctl.c KEYCTL_WATCH_KEY).  Same OBJ_GLOBAL lockless-
-	 * reader UAF window the framework commit a7fdbb97830c spelled out:
+	 * obj->seccomp_notifobj.fd deref.  A version-validated object-slot
+	 * read guards the lockless reader against a recycled object
+	 * (cf. get_rand_socketinfo in fds/sockets.c).  Same OBJ_GLOBAL
+	 * lockless-reader UAF window:
 	 * between the lockless slot pick and the consumer's read of
 	 * the seccomp notif fd handed to ioctl(SECCOMP_IOCTL_NOTIF_*) via the fd_provider .get callback,
-	 * the parent can destroy the obj, free_shared_obj() returns the
-	 * chunk to the shared-heap freelist, and a concurrent
-	 * alloc_object() recycles it underneath us.
+	 * the parent can destroy the obj; release_obj() zeroes the chunk
+	 * and routes it through deferred-free, so the stale slot pointer
+	 * can read a zeroed or recycled chunk.
 	 */
 	for (int i = 0; i < 1000; i++) {
 		struct object *obj;

@@ -188,10 +188,9 @@ int get_rand_pagecache_fd(void)
 	 * bound check and the deref so a sibling value-result syscall whose
 	 * buffer aliases this child's objhead can't scribble those fields
 	 * between the bound check and the slot deref.  Same TOCTOU shape
-	 * the parent fixes closed in add_object (b677185d7524),
-	 * get_random_object_versioned (2c5d84e5d67b),
-	 * __destroy_object/destroy_objects (3058bd1a64ea), the for_each_obj
-	 * iterator (16682afe606b) and __prune_objects (6a389bbc7f6b). */
+	 * the parent-side fixes close in add_object,
+	 * get_random_object_versioned, __destroy_object/destroy_objects,
+	 * the for_each_obj iterator and __prune_objects. */
 	if (nr_setuid > 0 && (int)rnd_modulo_u32(100) < SETUID_BIAS_PCT) {
 		unsigned int slot = setuid_indices[rnd_modulo_u32(nr_setuid)];
 
@@ -222,15 +221,15 @@ int get_rand_pagecache_fd(void)
 
 	/*
 	 * Versioned slot pick + objpool_check() before the
-	 * obj->fileobj.fd deref, mirroring the wireup at 15b6257b8206
-	 * (fds/sockets.c get_rand_socketinfo) and 5ef98298f6ad
-	 * (syscalls/keyctl.c KEYCTL_WATCH_KEY).  Same OBJ_GLOBAL lockless-
-	 * reader UAF window the framework commit a7fdbb97830c spelled out:
+	 * obj->fileobj.fd deref.  A version-validated object-slot read
+	 * guards the lockless reader against a recycled object
+	 * (cf. get_rand_socketinfo in fds/sockets.c).  Same OBJ_GLOBAL
+	 * lockless-reader UAF window:
 	 * between the lockless slot pick and the consumer's read of the
 	 * pagecache fd routed into mmap/read/write, the parent can destroy
-	 * the obj, free_shared_obj() returns the chunk to the shared-heap
-	 * freelist, and a concurrent alloc_shared_obj() recycles it
-	 * underneath us.
+	 * the obj; release_obj() zeroes the chunk and routes it through
+	 * deferred-free, so the stale slot pointer can read a zeroed or
+	 * recycled chunk.
 	 */
 	for (int i = 0; i < 1000; i++) {
 		struct object *obj;

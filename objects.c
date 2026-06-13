@@ -368,7 +368,7 @@ static bool is_fd_type(enum objecttype type)
  * owning child's private heap — head->fd_hash itself sits in shm alongside
  * the rest of the objhead, but the buffer it points at is per-process and
  * unreachable from any other address space, the same shape head->array
- * uses for OBJ_LOCAL pools (objects.c:203-211).
+ * uses for OBJ_LOCAL pools allocated via get_objhead(OBJ_LOCAL).
  *
  * Replaces the O(n) linear walk over head->array in
  * find_local_object_by_fd() with a single hash probe.  That function is
@@ -732,8 +732,9 @@ static bool add_object_validate(struct object *obj, enum obj_scope scope,
  *     old chunk a 5-50 syscall (effective 80-800 with
  *     DEFERRED_TICK_BATCH) TTL -- far longer than any in-flight
  *     reader's window through cached head->array reads in the
- *     arg-gen path.  Same hazard shape as the obj-struct fix
- *     (3a8d344f0f73, 546f576fae24).
+ *     arg-gen path.  Same hazard shape as the obj-struct
+ *     deferred-free path: a live container freed underneath a
+ *     cached reader is a use-after-free.
  *
  * Both branches cap-overflow-guard at UINT_MAX / 2.  On either the
  * overflow or the malloc-failure path: close any leaked fd,
@@ -759,7 +760,8 @@ static bool add_object_grow_capacity(struct object *obj, enum obj_scope scope,
 	 * refresh the live container ages out of the 4096-slot ring and
 	 * the next grow's deferred_free_enqueue(oldarray) rejects on
 	 * alloc_track miss.  Same pattern as the clone_global_mmap_pool
-	 * dedup-skip refresh (mm/maps.c:430, commit 2329c1e854d8).
+	 * dedup-skip refresh: any long-lived container must be revived
+	 * with alloc_track_refresh() before it can be deferred-freed.
 	 * OBJ_GLOBAL arrays use plain zmalloc and were never tracked, so
 	 * gate on scope to avoid spuriously inserting an untracked ptr.
 	 */
@@ -811,7 +813,8 @@ static bool add_object_grow_capacity(struct object *obj, enum obj_scope scope,
 		 * ring gives the old chunk a 5-50 syscall (effective
 		 * 80-800 with DEFERRED_TICK_BATCH) TTL, far longer than
 		 * any in-flight reader's window.  Same hazard shape as
-		 * the obj-struct fix (3a8d344f0f73, 546f576fae24).
+		 * the obj-struct deferred-free path: freeing a live
+		 * container underneath a cached reader is a use-after-free.
 		 */
 		struct object **newarray;
 		struct object **oldarray;
@@ -1090,12 +1093,12 @@ void init_object_lists(enum obj_scope scope, struct childdata *child)
  * from init_child() to take a shallow snapshot of the head fields and
  * the live slot pointers into the child's own zmalloc'd backing.
  *
- * Bookkeeping only.  The obj structs themselves (and the kernel-side
- * fds / mmap regions they describe) are reached via fork's table dup
- * and the existing MAP_SHARED obj heap that backs the parent's pool —
- * snapshotting the directory of pointers is sufficient for the child
- * to pick, dereference and locally destroy entries without crossing
- * back into shared memory.
+ * Bookkeeping only.  The obj structs come from alloc_object()
+ * (zmalloc_tracked) in the parent's private heap and the OBJ_GLOBAL
+ * pool is inherited by every child through fork/COW.  This routine
+ * clones the directory of slot pointers into the child's own
+ * zmalloc'd backing so the child can pick, dereference and locally
+ * destroy entries.  No obj storage lives in shared memory.
  *
  * Per-type array allocation is sized to the parent's current
  * num_entries rather than the pre-fork GLOBAL_OBJ_MAX_CAPACITY ceiling

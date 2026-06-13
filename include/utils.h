@@ -34,7 +34,7 @@
  *   5. KCOV CMP trace buffer         (track_shared_region in kcov.c, only
  *                                     when KCOV_TRACE_CMP is supported)
  *   6. diag_ring                     (alloc_shared in init_shm, lands with
- *                                     the Wave-1 diag-ring series)
+ *                                     the diag-ring series)
  *
  * The cap formula in derive_max_children_cap() divides the remaining
  * shared_regions[] budget by this number.  We size for the worst case (7)

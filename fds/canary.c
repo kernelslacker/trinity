@@ -276,10 +276,10 @@ static int get_rand_canary_fd(void)
 
 	/*
 	 * Versioned slot pick + objpool_check() before the
-	 * obj->fileobj.fd deref, mirroring the wireup in
-	 * fds/pagecache.c::get_rand_pagecache_fd() at b7e... — same
-	 * OBJ_GLOBAL lockless-reader UAF window the framework commit
-	 * a7fdbb97830c spelled out.
+	 * obj->fileobj.fd deref.  A version-validated object-slot read
+	 * guards the lockless reader against a recycled object
+	 * (cf. get_rand_socketinfo in fds/sockets.c).  Same OBJ_GLOBAL
+	 * lockless-reader UAF window.
 	 */
 	for (int i = 0; i < 1000; i++) {
 		struct object *obj;

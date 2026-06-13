@@ -941,11 +941,10 @@ static void apply_chain_substitution(struct syscallrecord *rec,
 	/*
 	 * Pick uniformly from the eligible-slot set: count the active
 	 * bits in mask, draw a uniform index in [0, nsafe), then walk
-	 * mask to find the index-th set bit.  Restores the uniformity of
-	 * the original safe_slots[rand() % nsafe] dispatch (4ad1cc3f0628
-	 * cached the mask but silently swapped the draw for a
-	 * __builtin_ctz pick, which biases hard toward low-numbered slots
-	 * -- bit 0 wins with p=0.5, bit 1 with p=0.25, and so on).
+	 * mask to find the index-th set bit.  A raw __builtin_ctz(mask)
+	 * pick would bias hard toward low-numbered slots -- bit 0 wins
+	 * with p=0.5, bit 1 with p=0.25, and so on -- so the explicit
+	 * rank walk is required to keep the draw uniform.
 	 */
 	nsafe = (unsigned int)__builtin_popcount(mask);
 	pick = rnd_modulo_u32(nsafe);

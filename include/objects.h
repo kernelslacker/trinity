@@ -24,10 +24,9 @@ struct fileobj {
 	 * Bitmask of OBJ_FLAG_* (see include/canary.h).  Currently
 	 * only OBJ_FLAG_NO_WRITE is defined; the field is sized as a
 	 * full word so future bits don't widen the struct again.
-	 * Default zero — unset by alloc_shared_obj's memset for
-	 * bump-allocated fresh chunks, and by the testfile/pagecache
-	 * providers which never touch this field.  Producers that
-	 * need the flag set assign it explicitly at object publish.
+	 * Default zero — alloc_object() returns zeroed memory, and the
+	 * testfile/pagecache providers never touch this field.  Producers
+	 * that need the flag set assign it explicitly at object publish.
 	 */
 	unsigned int obj_flags;
 };
@@ -55,9 +54,8 @@ struct epollobj {
 	 * into the per-process child_armed_epfds[] bitmap in fds/epoll.c
 	 * that tracks whether THIS process has already issued the
 	 * EPOLL_CTL_ADD population for this epfd.  Written exactly once
-	 * by the parent (under the alloc_shared_obj/add_object thaw
-	 * bracket) and read-only thereafter — children never store into
-	 * the frozen shm region. */
+	 * by the parent at object publish and read-only thereafter; each
+	 * child arms its own inherited copy of the pool independently. */
 	unsigned int pool_idx;
 };
 
@@ -554,8 +552,8 @@ struct object * get_random_object(enum objecttype type, enum obj_scope scope) __
  * 2026-05-18 objpool shape-check audit: a slot the lockless picker
  * resolved to an address that happens to land in the user/heap VA
  * window but doesn't actually name a live obj of the expected pool
- * (typically because the parent destroyed the obj and the shared-heap
- * freelist recycled the chunk underneath the reader, or because
+ * (typically because the obj was destroyed and the deferred-free
+ * allocator recycled the chunk underneath the reader, or because
  * memory corruption stomped a slot pointer).
  *
  * Three layers, cheapest first:

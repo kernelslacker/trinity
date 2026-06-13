@@ -25,9 +25,11 @@ enum errno_bucket {
  * KCOV coverage collection support.
  *
  * Automatically detects whether the kernel supports KCOV by trying to
- * open /sys/kernel/debug/kcov at child init time. If it works, PC-level
- * edge coverage is collected around each syscall invocation. A shared
- * bitmap tracks which PCs have been seen globally across all children.
+ * open /sys/kernel/debug/kcov at child init time. If it works, coverage
+ * is collected around each syscall invocation: PC bucket coverage (a
+ * shared bucket-seen table with AFL-style hit-count bucketing, seen
+ * globally across all children) plus optional shadow transition
+ * coverage (see the kcov_transition_coverage_mode enum below).
  *
  * No command-line flag needed — KCOV is used when available, silently
  * skipped when not.
@@ -51,16 +53,19 @@ enum errno_bucket {
 #define KCOV_CMP_RECORDS_MAX ((KCOV_CMP_BUFFER_SIZE - 1) / 4)
 
 /* Number of distinct edge slots PCs hash into.
- * edges_found counts unique occupied slots in this 8M-entry table.
+ * distinct_edges counts unique occupied slots in this 8M-entry table
+ * (edges_found is a finer-grained bucket-bit novelty counter, not a
+ * slot-occupancy count -- see its field comment).
  * The birthday-paradox figure (50% chance of *any* collision at
  * ~1.177 * sqrt(N) ~= 3400 PCs) is the first-collision threshold, not
  * a practical saturation point: an isolated collision does not skew
- * the cold-syscall or minicorpus heuristics that read
- * edges_found.  What skews them is fractional occupancy -- expected
+ * the cold-syscall or minicorpus heuristics that read the coverage
+ * counters.  What skews them is fractional occupancy -- expected
  * unique slots after k inserts is N * (1 - (1 - 1/N)^k), reaching 50%
- * at k ~= N * ln(2) ~= 5.8M PCs.  Real runs see edges_found in the
+ * at k ~= N * ln(2) ~= 5.8M PCs.  Real runs see distinct_edges in the
  * hundreds of thousands without measurable bias.  Modern kernel builds
- * easily blow past the old 512K-slot budget within seconds. */
+ * easily exercise hundreds of thousands of distinct edges within
+ * seconds. */
 #define KCOV_NUM_EDGES (1 << 23)
 
 /* Shadow transition-coverage map.  See the
@@ -418,9 +423,8 @@ struct kcov_child {
 	 * mode byte and the packed recovery counters slot into the bool
 	 * block so the struct stays at 48 bytes without disturbing pointer
 	 * alignment.  That leaves room in the 64-byte hot leading cacheline
-	 * for the childdata fields that follow (last_group, op_nr, plus
-	 * last_syscall_nr inside the embedded bug_backtrace).  child_id is
-	 * intentionally not stored here —
+	 * for the childdata fields that follow (last_group, op_nr).
+	 * child_id is intentionally not stored here —
 	 * kcov_enable_remote() takes it as a parameter (sourced from
 	 * childdata->num) so the second fd's metadata fits without
 	 * overflowing the cacheline. */
@@ -766,20 +770,18 @@ struct kcov_shared {
 	bool plateau_armed;
 	bool plateau_active;
 
-	/* Greedy CMP RedQueen re-exec stats (Lever #1).  Populated from
-	 * dispatch_step's tail when a CMP-mode child has harvested at least
-	 * one attributable (cmp_ip, arg_slot, value) tuple out of the parent
-	 * call's KCOV_TRACE_CMP records and the gate fires.  See
-	 * projects/trinity/cmp-redqueen-design-2026-06-12.md for the design;
-	 * each counter is bumped once per re-exec dispatch (or once per gated
-	 * skip) so the funnel
+	/* Greedy CMP RedQueen re-exec stats.  A CMP-mode child records
+	 * attributable (cmp_ip, arg_slot, value) tuples from the parent
+	 * call's KCOV_TRACE_CMP records; when the gate fires, these counters
+	 * track the re-exec funnel.  Each counter is bumped once per re-exec
+	 * dispatch (or once per gated skip) so the funnel
 	 *   attribution_found -> attempts -> new_cmps_total
 	 *                                 -> skipped_destructive
 	 *                                 -> skipped_validate_silent
 	 *                                 -> window_cap_hit
-	 * is directly observable.  attribution_ambiguous is the A.c
-	 * diagnostic — bumped once per (cmp_ip, value) where more than one
-	 * arg slot matched, before first-match-wins picked one. */
+	 * is directly observable.  attribution_ambiguous is bumped once per
+	 * (cmp_ip, value) where more than one arg slot matched, before
+	 * first-match-wins picked one. */
 	unsigned long reexec_attempts;
 	unsigned long reexec_attribution_found;
 	unsigned long reexec_attribution_ambiguous;
@@ -792,8 +794,8 @@ struct kcov_shared {
 	 * Sibling of per_syscall_cmp_inserts for the re-exec lift signal:
 	 * lift_ratio_per_syscall = reexec_per_call_new_cmps /
 	 *                          baseline_per_call_new_cmps
-	 * is the per-syscall version of the run-wide success metric in
-	 * the design doc's R7 ("Primary lift metric" block). */
+	 * is the per-syscall version of the run-wide primary lift metric:
+	 * new CMP novelty per call gained from re-exec over baseline. */
 	unsigned long per_syscall_cmp_novelty_reexec[MAX_NR_SYSCALL];
 
 	/* Shadow transition-coverage map and counters.  See

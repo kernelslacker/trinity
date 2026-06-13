@@ -23,8 +23,6 @@
  *   nl80211 (WiFi config), devlink, ethtool, dpll, mptcp_pm, ovs (OVS),
  *   nbd, TIPC, taskstats, NET_DM, ...
  *
- * Trinity-todo top-10 #6.
- *
  * Future enhancements (not implemented here):
  *   - Per-family attribute policy inspection: use the registered policy
  *     (CTRL_CMD_GETPOLICY) to construct mostly-valid messages with one

@@ -64,8 +64,8 @@ static bool check_lock(lock_t *lk)
 		 * the new owner happens to encode identically, so gate the CAS
 		 * on the owner_start_time fingerprint: only release if the live
 		 * owner's start_time differs from the sampled one (or is 0 =
-		 * truly dead).  Mirrors try_release_dead_holder at locks.c:201-204
-		 * and force_bust_lock's same check. */
+		 * truly dead).  Same fingerprint rule used by
+		 * try_release_dead_holder() and force_bust_lock(). */
 		stored_start = __atomic_load_n(&lk->owner_start_time, __ATOMIC_ACQUIRE);
 		current_start = pid_start_time(pid);
 		if (current_start != 0 && current_start == stored_start)
@@ -79,7 +79,7 @@ static bool check_lock(lock_t *lk)
 	return false;
 }
 
-/* returns true if something is awry */
+/* Return true if any lock was found held by a dead owner and repaired. */
 bool check_all_locks(void)
 {
 	static unsigned long last_seen_reaps;
@@ -315,22 +315,22 @@ void lock(lock_t *lk)
 			_exit(EXIT_LOCKING_CATASTROPHE);
 		}
 
-		/* This is pretty horrible. But if we call lock()
-		 * from stuck_syscall_info(), and a child is hogging a lock
-		 * (or worse, a dead child), we'll deadlock, because main won't
-		 *  ever get back, and subsequently check_lock().
-		 * So we add an extra explicit check here.
+		/* The parent can call lock() while reporting stuck-syscall
+		 * state.  If a child holds the target lock and the parent
+		 * blocks here, the parent will never reach check_lock() to
+		 * recover the dead-owner case.  Run an explicit owner-liveness
+		 * check while spinning in the parent.
 		 */
 		if (pid == mainpid) {
 			check_lock(lk);
 		} else {
-			/* Ok, we're a child pid. If we reached the limit, just exit */
+			/* Child-side spin bailout: if the run hit its syscall
+			 * count, exit cleanly rather than wait on a lock. */
 			if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) == EXIT_REACHED_COUNT)
 				_exit(EXIT_SUCCESS);
 
-			/* if something bad happened, like main crashed,
-			 * we don't want to spin forever, so just get out.
-			 */
+			/* Honor global exit state instead of spinning
+			 * indefinitely while the run is shutting down. */
 			if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) != STILL_RUNNING)
 				_exit(__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED));
 
@@ -368,12 +368,10 @@ void unlock(lock_t *lk)
 }
 
 /*
- * Release a lock we already hold.
- *
- * This function should be used sparingly. It's pretty much never something
- * that you'll need, just for rare occasions like when we return from a
- * signal handler with a lock held.  The owner check below means cross-pid
- * recovery (parent freeing a dead child's lock) must use force_bust_lock().
+ * Release a lock held by this process after non-local control flow, such
+ * as returning from a signal handler with a lock held.  Cross-pid orphan
+ * recovery must use force_bust_lock() because the owner check below only
+ * admits cached_pid.
  */
 void bust_lock(lock_t *lk)
 {

@@ -167,7 +167,7 @@ bool proc_status_parse_hex_mask(const char *value, uint64_t *out)
  * into a single call, so the buffer-size choice and the slurp-vs-fixed
  * decision live in one place.  Stack buffer sized 8 KB (4x the historical
  * 2 KB) for the bounded fields; sigmask reader uses the growing slurp so
- * the codex-#3 truncation bug cannot recur on SigPnd/ShdPnd which land
+ * truncation cannot recur on SigPnd/ShdPnd which land
  * late in /proc/self/status.
  */
 

@@ -9,9 +9,10 @@
  * keep multiple allocations alive simultaneously, increasing the chance
  * of hitting UAF, stale-reference, and double-free bugs in the kernel.
  *
- * The queue is a flat array scanned linearly.  At 64 entries and
- * ~10 bytes per entry, this is fast enough — children do millions of
- * syscalls, so the tick overhead is negligible.
+ * Each queue entry is 16 bytes on 64-bit (a pointer plus an unsigned
+ * int ttl).  Membership tests go through a side hash rather than a
+ * linear walk of the queue, so the per-tick overhead stays negligible
+ * even though children do millions of syscalls.
  */
 
 #include <errno.h>
@@ -117,22 +118,21 @@ struct deferred_entry {
  * Sized for the in-flight window: between a sanitise's zmalloc and the
  * matching post handler's deferred_free_enqueue, the same syscall does
  * a handful of additional zmallocs (snap struct, arg generators, etc.)
- * -- well under a hundred in the worst case.  256 entries gives ample
+ * -- well under a hundred in the worst case.  4096 entries gives ample
  * headroom; on overflow we evict in arrival order, which only causes a
  * benign drop (memory leak) of the evicted pointer's eventual free.
- * Narrowing the input set to the opt-in subset buys back ring head-
- * room that init-time / per-child-table zmallocs used to consume.
+ * Narrowing the input set to the opt-in subset keeps init-time and
+ * per-child-table zmallocs out of the ring entirely.
  *
  * Process-local: zero-initialised BSS, COW-shared at fork, written
  * single-threaded by the owning child.  No locking needed.
  */
-/* Bumped 256 -> 4096 on 2026-05-29 after observing
- * maps_reject_alloc_track_miss at 354K/s (1.90x pool_empty) in fuzz.
- * Long-lived MMAP_ANON pool entries were rotating out from under
- * mm/maps.c:103's alloc_track_lookup gate before child cycles
- * completed, making get_map_handle false-reject legitimate slots and
- * burn retry budget.  4096 leaves headroom for pool entries plus
- * recent zmalloc_tracked churn without rotating live entries out. */
+/* 4096 slots.  Long-lived MMAP_ANON pool entries must stay tracked
+ * until their child cycle completes, or get_map_handle's
+ * alloc_track_lookup gate false-rejects legitimate slots and burns
+ * retry budget.  4096 holds those pool entries plus recent
+ * zmalloc_tracked churn without rotating live entries out from under
+ * the lookup. */
 #define ALLOC_TRACK_SIZE	4096
 
 /*
@@ -155,13 +155,12 @@ static size_t alloc_track_bytes;
 /*
  * Side-set membership accelerator for alloc_track[].
  *
- * alloc_track_consume() and alloc_track_lookup() previously did an
- * O(N) backward scan over alloc_track[] for every call.  Hit cost was
- * cheap (post handlers free a few syscalls after the matching
- * __zmalloc, so the hit lives near head), but miss cost was always
- * the full 256-slot walk -- and misses are the path that fires when
- * a scribbled snapshot field arrives at deferred_free_enqueue, which
- * is exactly the case where we want a fast reject, not a slow one.
+ * alloc_track_consume() and alloc_track_lookup() resolve membership
+ * through this 16384-slot hash (0.25 load factor at full occupancy),
+ * so both hit and miss are O(1).  A fast miss matters: misses are the
+ * path that fires when a scribbled snapshot field arrives at
+ * deferred_free_enqueue, which is exactly the case where we want a
+ * fast reject.
  *
  * alloc_track[] remains the source of truth for lifecycle (which slot
  * a ptr lives in, who got displaced on rotation); the hash mirrors it
@@ -533,9 +532,9 @@ void deferred_alloc_track(void *ptr)
  * caller is about to free something __zmalloc() never produced.
  *
  * Hash-gated fast reject: misses short-circuit without touching the
- * 256-slot array.  This is the path that fires when a fuzzed scribble
- * arrives at deferred_free_enqueue (heap-shape, not malloc-returned),
- * and prior to the hash it was always a full 256-slot backward walk.
+ * alloc_track[] array at all.  This is the path that fires when a
+ * fuzzed scribble arrives at deferred_free_enqueue (heap-shape, not
+ * malloc-returned), so the reject is O(1).
  *
  * Hits proceed to the backward scan to locate the slot for the mirror
  * clear.  The scan stays cheap in practice because post handlers free
@@ -578,8 +577,9 @@ static bool alloc_track_consume(void *ptr)
  * Pair with the OBJ_LOCAL anon-pool dedup-skip in clone_global_mmap_pool:
  * dedup'd pool entries don't trigger a fresh __zmalloc_tracked, so without
  * this refresh their alloc_track slots rotate out under churn from
- * unrelated tracked allocations.  Wave-F's 256->4096 widen was outpaced
- * 100x at full throughput (bisect 2026-05-30 localized to f531bb72cd9e).
+ * unrelated tracked allocations faster than any fixed ALLOC_TRACK_SIZE can
+ * absorb at full throughput.  Refreshing the LRU position on reuse keeps a
+ * long-lived dedup'd entry resident regardless of churn rate.
  */
 void alloc_track_refresh(void *ptr)
 {
@@ -596,9 +596,7 @@ void alloc_track_refresh(void *ptr)
  * pointers/lengths that would land inside the ring -- previously the array
  * lived in trinity's BSS, which is NOT registered with shared_regions[],
  * so a fuzzed write could scribble ring[i].ptr with a pid-shaped value
- * (residual-cores triage matched si_addr=0x378a02 against the killing
- * process's pid) and the next deferred_free_tick() would free() the bogus
- * pointer.
+ * and the next deferred_free_tick() would free() the bogus pointer.
  *
  * MAP_PRIVATE (not MAP_SHARED via alloc_shared()) is deliberate: the queue
  * is process-local by contract -- pointers come from each child's own
@@ -677,10 +675,8 @@ static uint64_t occupied_mask;
  * ticks the ring sits at PROT_NONE; any fuzzed value-result syscall
  * that tries to scribble inside it now SIGSEGVs in the kernel's
  * copy_from_user instead of silently overwriting ring[i].ptr with a
- * pid-shaped value (the cluster-1 root cause: ~200 SIGSEGVs at
- * deferred_free_tick+0x49 with si_addr ~= si_pid).  mprotect is
- * async-signal-safe so these are safe to call from anywhere
- * deferred_free_* is reachable.
+ * pid-shaped value.  mprotect is async-signal-safe so these are safe
+ * to call from anywhere deferred_free_* is reachable.
  *
  * ring_unlock() returns RING_UNLOCK_OK on success, RING_UNLOCK_ENOMEM
  * when the kernel rejected the protection change for VMA-budget
@@ -692,18 +688,14 @@ static uint64_t occupied_mask;
  * sooner the ring empties, the sooner the held-back glibc-arena
  * chunks can be returned to the kernel and the VMA budget recovers);
  * generic FAIL just falls back to immediate free for this ptr;
- * either way the caller bails before touching ring[].  Pre-trio the
- * function returned bool, fold both fail cases into one path, and the
- * VMA-exhaustion class observed in the 22:38 run (113/362 bug-logs,
- * 7424 "mprotect RW failed" lines) survived as a silent leak of
- * queued ptrs while the original bracket landed it logged-and-
- * returned, leaving the page at PROT_NONE while the caller fell
- * through -- ~311 self-inflicted SEGV_ACCERR crashes per 1.5h fuzz
- * run, split across deferred_free_tick+0x7e (the ring[i].ttl read in
- * the loop body) and deferred_free_enqueue+0x89 (the ring[i].ptr ==
- * NULL slot scan).  The current routing keeps the page PROT_NONE
- * (no caller proceeds on failure) but stops adding queue pressure
- * while the kernel is at the VMA limit.
+ * either way the caller bails before touching ring[].  Distinguishing
+ * the three cases is load-bearing: collapsing them into a single
+ * logged-and-return path leaves the ring PROT_NONE while the caller
+ * falls through, turning queued pages into SEGV_ACCERR bait for
+ * sibling value-result syscalls and leaking the queued ptrs.  The
+ * current routing keeps the page PROT_NONE (no caller proceeds on
+ * failure) but stops adding queue pressure while the kernel is at the
+ * VMA limit.
  */
 enum ring_unlock_result {
 	RING_UNLOCK_OK,
@@ -772,9 +764,8 @@ static bool ring_contains(void *ptr)
  * inflight_hash_contains() as a proxy, but inflight_hash is a
  * value-keyed mirror that can desync from ring[] in two ways:
  * (1) inflight_hash_insert() silently skips when its mprotect-unlock
- * returns -1 (ENOMEM under VMA pressure -- observed at thousands of
- * events per run as "mprotect RW failed" log lines, same class the
- * ring's RING_UNLOCK_ENOMEM path defends against); (2) a sibling
+ * returns -1 (ENOMEM under VMA pressure, the same class the ring's
+ * RING_UNLOCK_ENOMEM path defends against); (2) a sibling
  * fuzzed value-result syscall that scribbles inflight_hash during a
  * writer's PROT_READ|PROT_WRITE bracket can overwrite an entry.
  * Either lie returns false from contains() for a ring-resident @ptr,
@@ -884,21 +875,17 @@ static unsigned int g_max_vmas = DEFERRED_DEFAULT_MAX_VMAS;
  * if we just bail and leave it that way, every sibling fuzzed value-
  * result syscall whose buffer lands inside the ring SEGV_ACCERRs in
  * copy_to_user, and every subsequent ring_unlock retry hits the same
- * ENOMEM and emits another "mprotect RW failed: errno=12" line.  RC's
- * 02:36 triage caught this as a SEGV_ACCERR storm of 2282 faults across
- * 2270 children at recurring redzone pages, with the matching log
- * volume saturating bug-logs (8k-25k mprotect-RW-failed lines per run).
+ * ENOMEM and emits another "mprotect RW failed" line.
  *
  * Releasing the VMA slot with munmap() drops both failure modes at the
  * source: the PROT_NONE residue is gone (so no more SEGV_ACCERR fault-
  * bait), and the kernel gets the VMA back to satisfy whatever split the
  * wider mm-syscall workload needed.  Cost: every ptr currently in the
  * ring is leaked from glibc's tracking until the child exits.  That is
- * the same tradeoff d8943d44's drain-aggressive bypass already accepted
- * for the per-allocation UAF-detection window -- abandoning the
- * remaining ring slots is the worst case of that bypass, taken once
- * when the kernel has actually told us it cannot satisfy more mprotect
- * splits.
+ * the same tradeoff the drain-aggressive bypass already accepted for
+ * the per-allocation UAF-detection window -- abandoning the remaining
+ * ring slots is the worst case of that bypass, taken once when the
+ * kernel has actually told us it cannot satisfy more mprotect splits.
  *
  * Untrack the shared region BEFORE munmap so range_overlaps_shared()
  * stops answering yes on a VA the kernel will reclaim out from under
@@ -1126,9 +1113,9 @@ static bool deferred_free_reject_misaligned(void *ptr, void *caller_pc)
 
 /*
  * Reject pid-scribbled / canonical-out-of-range / misaligned values
- * BEFORE they ever reach the ring.  Cluster-1/2/3 root cause
- * (residual-cores triage 2026-05-02): a sibling fuzzed value-result
- * syscall scribbles a tid/pid into rec->aN, the post handler does
+ * BEFORE they ever reach the ring.  Bug class: a sibling fuzzed
+ * value-result syscall scribbles a tid/pid into rec->aN, the post
+ * handler does
  * deferred_freeptr(&rec->aN) which arrives here, and N syscalls
  * later deferred_free_tick() free()s the pid -- SIGSEGV with
  * si_addr==si_pid.  Drop the bad value at the post-handler boundary
@@ -1406,12 +1393,12 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 	 * longer your problem" contract still holds (or leak it instead
 	 * for the pre-dispatch variant -- see leak_on_pressure docs).
 	 *
-	 * Pre-dispose this path set a sticky drain-aggressive latch and
-	 * let the next tick chew through the ring; that left every queued
-	 * ptr's PROT_NONE page persistent in the meantime, which is
-	 * exactly the residue RC's 02:36 SEGV_ACCERR storm rode in on.
-	 * Dispose drops the page outright, so the latch infrastructure is
-	 * gone (no consumer left to set it to true).
+	 * Setting a sticky drain-aggressive latch and letting the next
+	 * tick chew through the ring instead would leave every queued
+	 * ptr's PROT_NONE page persistent in the meantime -- exactly the
+	 * SEGV_ACCERR fault-bait residue this path must avoid.  Dispose
+	 * drops the page outright, so the latch infrastructure is gone
+	 * (no consumer left to set it to true).
 	 *
 	 * RING_UNLOCK_FAIL (any other errno) falls through to the same
 	 * immediate-free / leak path, but does NOT dispose the ring -- a
@@ -1706,17 +1693,15 @@ void deferred_free_tick(void)
 	 * ENOMEM on the RW-restore is the same VMA-exhaustion class the
 	 * enqueue path handles, just observed from the drain side: the
 	 * kernel cannot satisfy a split for the protection change.
-	 * Leaving the ring at PROT_NONE here was RC's dominant 02:36
-	 * SEGV_ACCERR storm signature -- the page persists as fault-bait
-	 * for sibling fuzzed value-result syscalls, and the next tick
-	 * hits the same ENOMEM and emits another "mprotect RW failed"
-	 * line (8k-25k per run in RC's three-build trend, dominant
-	 * bug-log volume).  Dispose the ring outright so the PROT_NONE
+	 * Leaving the ring at PROT_NONE here turns the page into
+	 * fault-bait for sibling fuzzed value-result syscalls, and the
+	 * next tick hits the same ENOMEM and emits another "mprotect RW
+	 * failed" line.  Dispose the ring outright so the PROT_NONE
 	 * residue goes away; the entries currently queued are leaked
 	 * (lost forever from glibc's tracking until the child exits),
-	 * which is the worst case of d8943d44's drain-aggressive
-	 * tradeoff -- acceptable because the alternative is the loop
-	 * above continuing to thrash for the rest of the run.
+	 * which is the worst case of the drain-aggressive tradeoff --
+	 * acceptable because the alternative is the loop above
+	 * continuing to thrash for the rest of the run.
 	 *
 	 * RING_UNLOCK_FAIL (any other errno) keeps the prior behaviour:
 	 * bail this tick, leave the page PROT_NONE, and retry on the

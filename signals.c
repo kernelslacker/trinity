@@ -984,7 +984,9 @@ void mask_signals_child(void)
 		(void)sigaction(SIGXCPU, &xcpu_sa, NULL);
 	}
 
-	/* ignore signals we don't care about */
+	/* Ignore terminal, job-control, async-IO and broken-pipe signals,
+	 * plus SIGFPE/SIGXFSZ: none of these should terminate or stop a
+	 * fuzzing child. */
 	(void)signal(SIGFPE, SIG_IGN);
 	(void)signal(SIGTSTP, SIG_IGN);
 	(void)signal(SIGWINCH, SIG_IGN);

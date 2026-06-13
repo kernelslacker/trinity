@@ -700,8 +700,9 @@ static long long random_sysfs_config(__u32 *type,
 	long long c=0,c1=0,c2=0;
 
 	if (num_pmus==0) {
-		/* For some reason we didn't get initialized */
-		/* Fake it so we don't divide by zero        */
+		/* PMU sysfs enumeration failed or found no PMUs.  Fall back to
+		 * fully random config values so the generator remains usable
+		 * and avoids a modulo/divide-by-zero path. */
 		*type=rand32();
 		*config1=rand64();
 		return rand64();
@@ -979,8 +980,9 @@ static long long random_event_config(__u32 *event_type,
 		config = rand64();
 		break;
 	case PERF_TYPE_BREAKPOINT:
-		/* Breakpoint type only valid if config==0 */
-		/* Set it to something else too anyway     */
+		/* PERF_TYPE_BREAKPOINT normally requires config == 0.  Keep that
+		 * valid shape half the time, and deliberately fuzz non-zero
+		 * config values the other half to exercise validation paths. */
 		if (RAND_BOOL())
 			config = rand64();
 		else
@@ -1365,8 +1367,9 @@ static void create_mostly_valid_counting_event(struct perf_event_attr *attr,
 	if (attr->type == PERF_TYPE_BREAKPOINT) {
 		setup_breakpoints(attr);
 	} else {
-		/* config1 set earlier */
-		/* leave config2 alone for now */
+		/* Non-breakpoint events already had config1/config2 populated
+		 * by the earlier type-specific path; only breakpoint events
+		 * need the union fields rebuilt here. */
 	}
 
 	/* branch_sample_type not relevant if not sampling */
@@ -1668,10 +1671,9 @@ static int pick_perf_group_fd(struct syscallrecord *rec)
 {
 	int group_leader = 0;
 
-	/* group_fd */
-	/* should usually be -1 or another perf_event fd         */
-	/* Anything but -1 unlikely to work unless the other pid */
-	/* was properly set up to be a group master              */
+	/* group_fd is usually -1 or another perf_event fd.  Random non--1
+	 * values mostly fail unless they name a compatible group leader,
+	 * but they still exercise the kernel's validation path. */
 	switch (rnd_modulo_u32(3)) {
 	case 0:
 		rec->a4 = -1;

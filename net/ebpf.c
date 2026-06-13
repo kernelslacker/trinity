@@ -38,35 +38,36 @@
 #define TIER3_MAX_INSNS		512
 
 /*
- * Phase 3.3: probability that any generated program prepends an LD_MAP_FD
+ * Map-fd injection probability.  Most generated programs stay scalar-
+ * only; this is the chance that any program prepends an LD_MAP_FD
  * loading a real bpf-map fd from trinity's object pool.  Picked low so
- * scalar-only programs still dominate coverage; the tier2 dedicated
- * map-exercise sub-strategy below forces it independently when more
- * map-path coverage is wanted.  Not env-tunable on purpose — Phase 3.3
- * is the macro's first user and the weight bakes into the build.
+ * scalar-only programs still dominate coverage; the tier-2 dedicated
+ * map-exercise sub-strategy below forces map-fd loading independently
+ * when that coverage path is wanted.  Not env-tunable on purpose; the
+ * weight bakes into the build.
  */
 #define MAP_FD_WEIGHT_PCT	5
 
 /*
- * Phase 3.3: chance that a tier 2 program runs the dedicated map-exercise
- * sub-strategy, which forces an LD_MAP_FD prepend regardless of the 5%
- * base rate.  Triggers only when get_rand_bpf_fd() actually returns a
- * live fd; empty-pool still falls back to scalar-only generation.
+ * Chance that tier 2 forces the dedicated map-exercise sub-strategy,
+ * which prepends an LD_MAP_FD regardless of the base rate above.  The
+ * arm only fires when get_rand_bpf_fd() returns a live map fd; empty
+ * pools fall back to scalar-only generation.
  */
 #define TIER2_FORCE_MAP_FD_DENOM	4
 
 /*
- * Phase 3.4: lottery weight for emitting an arg-bearing helper call
- * inside tier 1's main dispatch.  Picked a touch under the 3.3 map-fd
- * weight so call-storms don't crowd out scalar coverage — the tier 2
- * dedicated sub-strategy below provides a second, deterministic source.
+ * Lottery weight for emitting an arg-bearing helper call inside tier 1's
+ * main dispatch.  Picked a touch under the map-fd weight so call-storms
+ * don't crowd out scalar coverage — the tier 2 dedicated sub-strategy
+ * below provides a second, deterministic source.
  */
 #define HELPER_CALL_WEIGHT_PCT		8
 
 /*
- * Phase 3.4.5/3.4.6: lottery weight for emitting the NULL-check + deref
- * idiom after any PTR_OR_NULL-returning helper leaves R0 holding a
- * possibly-NULL pointer.  Lower than HELPER_CALL_WEIGHT_PCT because the
+ * Lottery weight for emitting the NULL-check + deref idiom after any
+ * PTR_OR_NULL-returning helper leaves R0 holding a possibly-NULL
+ * pointer.  Lower than HELPER_CALL_WEIGHT_PCT because the
  * deref carries a runtime prereq (live or-null pointer in R0) the
  * dispatch cannot force, so most rolls would be no-ops anyway -- the
  * marker survives across iterations that don't touch R0, giving 3% a
@@ -78,20 +79,19 @@
 #define MAP_VAL_DEREF_WEIGHT_PCT	3
 
 /*
- * Phase 3.4: which tier 2 sub-strategy index forces a typed helper call.
- * Acts as the dedicated counterpart to tier1's lottery so map-helper and
+ * Which tier 2 sub-strategy index forces a typed helper call.  Acts as
+ * the dedicated counterpart to tier1's lottery so map-helper and
  * scalar-arg paths see traffic even when the lottery doesn't fire.
  */
 #define TIER2_STRATEGY_HELPER_CALL	5
 #define TIER2_STRATEGY_COUNT		6
 
 /*
- * Phase 3.4: per-arg type tag in the helper descriptor table.  The
- * generator emits a setup sequence for each arg matching its kind, then
- * a BPF_CALL.  Kinds intentionally limited to what we can satisfy
- * cheaply and verifier-cleanly; richer kinds (ARG_CONST_MAP_VALUE,
- * ARG_PTR_TO_MEM with strict size matching, varargs, etc.) are deferred
- * to a follow-on sub-phase along with the map-value NULL-check idiom.
+ * Per-arg type tag in the helper descriptor table.  The generator emits
+ * a setup sequence for each arg matching its kind, then a BPF_CALL.
+ * Kinds intentionally limited to what we can satisfy cheaply and
+ * verifier-cleanly; richer kinds (ARG_CONST_MAP_VALUE, ARG_PTR_TO_MEM
+ * with strict size matching, varargs, etc.) are not modelled.
  */
 enum helper_arg_kind {
 	ARG_SCALAR,		/* MOV64_IMM small constant */
@@ -252,7 +252,7 @@ static struct helper_set get_helpers_for_prog_type(unsigned int prog_type)
  * Register liveness bitmap. Tracks which registers hold known-valid values
  * so we only read from initialized registers.
  *
- * Phase 3.4: map_reg tracks the most recent register holding a PTR_TO_MAP
+ * map_reg tracks the most recent register holding a PTR_TO_MAP
  * (set by the LD_MAP_FD prepend in ebpf_gen_program_into).  Helper calls
  * needing an ARG_MAP_PTR copy from this register instead of emitting a
  * fresh LD_MAP_FD pair, keeping the call sequence short and avoiding any
@@ -485,13 +485,13 @@ static int emit_tier1_mov64_reg(struct bpf_insn *insns, int pos,
 }
 
 /*
- * Phase 3.4: per-call init slot the verifier sees as "definitely
- * written" before any ARG_STACK_PTR is read.  Zero-initialised at the
- * start of the call sequence with a single ST_MEM BPF_DW so each
- * STACK_PTR arg can point at it without dragging in its own init
- * burden.  Fixed offset/size keeps the descriptor emission tiny; map
- * keys/values larger than HELPER_ARG_STACK_BYTES will be verifier-
- * rejected (an accepted Phase-3.4 outcome).
+ * Per-call init slot the verifier sees as "definitely written" before
+ * any ARG_STACK_PTR is read.  Zero-initialised at the start of the call
+ * sequence with a single ST_MEM BPF_DW so each STACK_PTR arg can point
+ * at it without dragging in its own init burden.  Fixed offset/size
+ * keeps the descriptor emission tiny; map keys/values larger than
+ * HELPER_ARG_STACK_BYTES will be verifier-rejected (an accepted
+ * outcome).
  */
 #define HELPER_ARG_STACK_OFF	-8
 #define HELPER_ARG_STACK_BYTES	8
@@ -522,8 +522,8 @@ static int helper_call_insns(const struct helper_desc *h, bool *need_init)
 }
 
 /*
- * Phase 3.4: pick a helper whose prerequisites the current reg state
- * satisfies.  Only ARG_MAP_PTR has a runtime prereq (a live PTR_TO_MAP
+ * Pick a helper whose prerequisites the current reg state satisfies.
+ * Only ARG_MAP_PTR has a runtime prereq (a live PTR_TO_MAP
  * register from a prior LD_MAP_FD); everything else is unconditional.
  * Returns NULL after a few unsuccessful picks so the caller can re-roll
  * the outer dispatch rather than burn the slot on a NOP.
@@ -551,10 +551,10 @@ pick_helper_satisfiable(struct helper_set hs, const struct reg_state *rs)
 }
 
 /*
- * Phase 3.4: emit a helper call whose R1..R5 are populated per the
- * descriptor's per-arg kind, then BPF_CALL and a caller-saved clobber
- * in the liveness map.  Return value (R0) is intentionally ignored —
- * the map-value NULL-check + deref idiom belongs to a follow-on phase.
+ * Emit a helper call whose R1..R5 are populated per the descriptor's
+ * per-arg kind, then BPF_CALL and a caller-saved clobber in the
+ * liveness map.  Return value (R0) is left for the separate map-value
+ * NULL-check + deref path to consume.
  *
  * Bails (returns pos unchanged) when no satisfiable helper exists in
  * the current reg state or the remaining buffer can't fit the setup
@@ -607,8 +607,8 @@ static int emit_tier1_helper_call(struct bpf_insn *insns, int pos,
 	insns[pos++] = EBPF_CALL(h->func);
 	reg_clear_caller_saved(rs);
 	/*
-	 * Phase 3.4.5/3.4.6: arm the deref gate when the helper returns
-	 * a possibly-NULL pointer in R0.  Writable backings (map values,
+	 * Arm the deref gate when the helper returns a possibly-NULL
+	 * pointer in R0.  Writable backings (map values,
 	 * sk/inode/task storage, ringbuf reservation) also permit STXW;
 	 * read-only returns (BTF task ptr) get LDXW only.  Helpers not
 	 * yet in any prog-type table never reach here, so listing them
@@ -640,8 +640,8 @@ static int emit_tier1_helper_call(struct bpf_insn *insns, int pos,
 }
 
 /*
- * Phase 3.4.5/3.4.6: emit the JEQ R0,0,+1 ; LDX/STX pair that actually
- * touches the memory pointed to by R0.  Caller has verified r0_or_null
+ * Emit the JEQ R0,0,+1 ; LDX/STX pair that actually touches the memory
+ * pointed to by R0.  Caller has verified r0_or_null
  * and that body_len - pos >= 2.  Bounded to a 4-byte access at offset 0
  * -- the verifier's per-map bounds check accepts (0, 4) on every map
  * type trinity provisions, and the same shape is safe for ringbuf and
@@ -734,7 +734,7 @@ static int gen_tier1(struct bpf_insn *insns, int max_insns,
 		int choice;
 
 		/*
-		 * Phase 3.4.5/3.4.6: opportunistic deref of a recent
+		 * Opportunistic deref of a recent
 		 * PTR_OR_NULL-returning helper result.  Rolled independently
 		 * of the main lottery so the existing dispatch weights stay
 		 * untouched.  The marker survives across iterations that
@@ -929,7 +929,7 @@ static int gen_tier2(struct bpf_insn *insns, int max_insns,
 
 	case TIER2_STRATEGY_HELPER_CALL:
 		/*
-		 * Phase 3.4 dedicated helper-call probe: force at least
+		 * Dedicated helper-call probe: force at least
 		 * one arg-bearing helper call so the map/scalar arg paths
 		 * see traffic outside the tier1 8% lottery.  Filler ALU
 		 * operates on R6 (callee-saved) so it survives the per-
@@ -950,7 +950,7 @@ static int gen_tier2(struct bpf_insn *insns, int max_insns,
 			if (pos == old_pos)
 				break;
 			/*
-			 * Phase 3.4.5/3.4.6: if the call left a PTR_OR_NULL
+			 * If the call left a PTR_OR_NULL
 			 * in R0, roll the deref idiom now -- the next
 			 * iteration's helper call will clobber R0 and shut
 			 * the window for good.  Same 3% weight as gen_tier1
@@ -1071,8 +1071,8 @@ static int gen_tier3(struct bpf_insn *insns, int max_insns)
 }
 
 /*
- * Phase 3.3: decide whether this program should prepend an LD_MAP_FD,
- * and if so pull a live fd from trinity's bpf-map object pool.
+ * Decide whether this program should prepend an LD_MAP_FD, and if so
+ * pull a live fd from trinity's bpf-map object pool.
  *
  * Returns the fd (>= 0) when substitution should fire, or -1 to skip.
  * Empty pool (get_rand_bpf_fd() == -1) collapses to the skip path so
@@ -1117,9 +1117,9 @@ static int pick_map_fd_for_program(int tier_id)
  * Costs 2 slots (BPF_LD | BPF_DW | BPF_IMM is a 128-bit immediate).
  * Caller has already verified the fd is live and the buffer has room.
  *
- * Returns the dst register so Phase 3.4's typed-helper emitter can
- * thread it through reg_state and satisfy ARG_MAP_PTR slots without
- * emitting another 2-slot LD_MAP_FD mid-body.
+ * Returns the dst register so the typed-helper emitter can thread it
+ * through reg_state and satisfy ARG_MAP_PTR slots without emitting
+ * another 2-slot LD_MAP_FD mid-body.
  */
 static int emit_ld_map_fd_prologue(struct bpf_insn *insns, int map_fd)
 {
@@ -1145,7 +1145,7 @@ static int emit_ld_map_fd_prologue(struct bpf_insn *insns, int map_fd)
  * below) and the schema-mutation FT_BPF_PROGRAM tag, which allocates
  * its own sub-buffer and delegates fill here.
  *
- * Phase 3.3: programs may optionally prepend an LD_MAP_FD loading a
+ * Programs may optionally prepend an LD_MAP_FD loading a
  * real bpf-map fd from the object pool — see pick_map_fd_for_program()
  * for the trigger rules.  The prepend consumes two slots at the head
  * of the buffer; the chosen tier then fills the remainder via a

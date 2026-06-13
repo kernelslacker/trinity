@@ -1816,8 +1816,9 @@ const char *minicorpus_default_path(void)
 	if (ret < 0 || (size_t)ret >= sizeof(dir))
 		return NULL;
 
-	/* mkdir -p the leaf directory.  We don't care about race losses
-	 * (EEXIST is fine), only about the final dir actually existing. */
+	/* mkdir -p the leaf directory.  EEXIST is acceptable; success is
+	 * defined by the final directory existing, not by which racing
+	 * creator won. */
 	{
 		char *p;
 		mode_t saved_umask = umask(0);

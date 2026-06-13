@@ -73,10 +73,10 @@ static struct bpf_fd_types bpf_fds[] = {
 };
 
 /*
- * Cross-process safe: reads obj->bpfobj fields (now in shm via
- * alloc_shared_obj) and looks up the map type name from the static
- * bpf_fds[] table.  No process-local pointers are dereferenced, so
- * it is correct to call this from a different process than the allocator.
+ * Cross-process safe: reads obj->bpfobj scalar fields and looks up the
+ * map type name from the static bpf_fds[] table.  The scalars survive
+ * fork/COW and no process-local pointers are dereferenced, so it is
+ * correct to call this from a different process than the allocator.
  */
 static void bpf_map_dump(struct object *obj, enum obj_scope scope)
 {
@@ -132,11 +132,9 @@ static int init_bpf_fds(void)
 	head->destroy = &close_fd_destructor;
 	head->dump = &bpf_map_dump;
 	/*
-	 * Opt this provider into the shared obj heap.  __destroy_object()
-	 * checks this flag to route the obj struct release through
-	 * free_shared_obj() instead of free().  bpfobj is {u32 map_type;
-	 * int map_fd;} with no pointer members, so this is a mechanical
-	 * conversion matching the pidfd template.
+	 * bpfobj is {u32 map_type; int map_fd;} with no pointer members,
+	 * so the OBJ_GLOBAL pool's scalars stay valid across fork/COW and
+	 * cross-process reads (dump, lockless slot pick) are safe.
 	 */
 
 	for (i = 0; i < ARRAY_SIZE(bpf_fds); i++)
@@ -165,7 +163,8 @@ int get_rand_bpf_fd(void)
 	 * the parent) safely fall through to the global pool.
 	 *
 	 * OBJ_LOCAL is per-child and not subject to the lockless-reader
-	 * UAF window the framework commit a7fdbb97830c addresses, so the
+	 * UAF window that the version-validated object-slot read guards
+	 * against (cf. get_rand_socketinfo in fds/sockets.c), so the
 	 * local pick stays unguarded; only the OBJ_GLOBAL fallback below
 	 * gets the slot-version validation wireup.
 	 */
@@ -182,14 +181,14 @@ int get_rand_bpf_fd(void)
 
 	/*
 	 * Versioned slot pick + objpool_check() before the
-	 * obj->bpfobj.map_fd deref, mirroring the wireup at 15b6257b8206
-	 * (fds/sockets.c get_rand_socketinfo) and 5ef98298f6ad
-	 * (syscalls/keyctl.c KEYCTL_WATCH_KEY).  Same OBJ_GLOBAL lockless-
-	 * reader UAF window: between the lockless slot pick and the
+	 * obj->bpfobj.map_fd deref.  A version-validated object-slot read
+	 * guards the lockless reader against a recycled object
+	 * (cf. get_rand_socketinfo in fds/sockets.c).  Same OBJ_GLOBAL
+	 * lockless-reader UAF window: between the lockless slot pick and the
 	 * consumer's read of the bpf map fd handed to BPF_MAP_LOOKUP_ELEM
-	 * etc., the parent can destroy the obj, free_shared_obj() returns
-	 * the chunk to the shared-heap freelist, and a concurrent
-	 * alloc_shared_obj() recycles it underneath us.
+	 * etc., the parent can destroy the obj; release_obj() zeroes the
+	 * chunk and routes it through deferred-free, so the stale slot
+	 * pointer can read a zeroed or recycled chunk.
 	 */
 	for (int i = 0; i < 1000; i++) {
 		struct object *obj;
@@ -291,9 +290,9 @@ static const char *bpf_prog_template_name(u32 prog_type)
 }
 
 /*
- * Cross-process safe: reads obj->bpfprogobj fields (now in shm via
- * alloc_shared_obj) and looks up the prog type name from the static
- * bpf_prog_templates[] table.  No process-local pointers are
+ * Cross-process safe: reads obj->bpfprogobj scalar fields and looks up
+ * the prog type name from the static bpf_prog_templates[] table.  The
+ * scalars survive fork/COW and no process-local pointers are
  * dereferenced, so it is correct to call this from a different process
  * than the allocator.
  */
@@ -323,9 +322,9 @@ static int init_bpf_prog_fds(void)
 	head->destroy = &close_fd_destructor;
 	head->dump = &bpf_prog_dump;
 	/*
-	 * Opt this provider into the shared obj heap.  bpfprogobj is
-	 * {int fd; u32 prog_type;} with no pointer members — mechanical
-	 * conversion matching the pidfd template.
+	 * bpfprogobj is {int fd; u32 prog_type;} with no pointer members,
+	 * so the OBJ_GLOBAL pool's scalars stay valid across fork/COW and
+	 * cross-process reads are safe.
 	 */
 
 	for (i = 0; i < ARRAY_SIZE(bpf_prog_templates); i++) {
@@ -370,8 +369,10 @@ int get_rand_bpf_prog_fd(void)
 
 	/* See get_rand_bpf_fd() for why we coin-flip OBJ_LOCAL first.
 	 * OBJ_LOCAL is per-child and unaffected by the lockless-reader
-	 * UAF window addressed by a7fdbb97830c, so only the OBJ_GLOBAL
-	 * fallback below gets the slot-version validation wireup. */
+	 * UAF window that the version-validated object-slot read guards
+	 * against (cf. get_rand_socketinfo in fds/sockets.c), so only the
+	 * OBJ_GLOBAL fallback below gets the slot-version validation
+	 * wireup. */
 	local = get_objhead(OBJ_LOCAL, OBJ_FD_BPF_PROG);
 	if (local != NULL && local->num_entries > 0 && RAND_BOOL()) {
 		struct object *obj = get_random_object(OBJ_FD_BPF_PROG,
@@ -385,13 +386,15 @@ int get_rand_bpf_prog_fd(void)
 
 	/*
 	 * Versioned slot pick + objpool_check() before the
-	 * obj->bpfprogobj.fd deref, mirroring the wireup at 15b6257b8206
-	 * (fds/sockets.c get_rand_socketinfo) and 5ef98298f6ad
-	 * (syscalls/keyctl.c KEYCTL_WATCH_KEY).  Same OBJ_GLOBAL lockless-
-	 * reader UAF window: between the lockless slot pick and the
+	 * obj->bpfprogobj.fd deref.  A version-validated object-slot read
+	 * guards the lockless reader against a recycled object
+	 * (cf. get_rand_socketinfo in fds/sockets.c).  Same OBJ_GLOBAL
+	 * lockless-reader UAF window: between the lockless slot pick and the
 	 * consumer's read of the bpf prog fd handed to BPF_PROG_RUN /
 	 * BPF_PROG_TEST_RUN / BPF_LINK_CREATE, the parent can destroy the
-	 * obj and a concurrent alloc_shared_obj() recycles the chunk.
+	 * obj; release_obj() zeroes the chunk and routes it through
+	 * deferred-free, so the stale slot pointer can read a zeroed or
+	 * recycled chunk.
 	 */
 	for (int i = 0; i < 1000; i++) {
 		struct object *obj;
@@ -439,9 +442,9 @@ REG_FD_PROV(bpf_prog_fd_provider);
  * rely on.  .open is left NULL for the same reason.
  */
 /*
- * Cross-process safe: reads obj->bpflinkobj fields (now in shm via
- * alloc_shared_obj) and the scope scalar.  No process-local pointers
- * are dereferenced.
+ * Cross-process safe: reads obj->bpflinkobj scalar fields and the scope
+ * scalar.  These survive fork/COW and no process-local pointers are
+ * dereferenced.
  */
 static void bpf_link_dump(struct object *obj, enum obj_scope scope)
 {
@@ -459,9 +462,9 @@ static int init_bpf_link_fds(void)
 	head->destroy = &close_fd_destructor;
 	head->dump = &bpf_link_dump;
 	/*
-	 * Opt this provider into the shared obj heap.  bpflinkobj is
-	 * {int fd; u32 attach_type;} with no pointer members — mechanical
-	 * conversion matching the pidfd template.
+	 * bpflinkobj is {int fd; u32 attach_type;} with no pointer members,
+	 * so the OBJ_GLOBAL pool's scalars stay valid across fork/COW and
+	 * cross-process reads are safe.
 	 */
 
 	return true;
@@ -473,8 +476,10 @@ int get_rand_bpf_link_fd(void)
 
 	/* See get_rand_bpf_fd() for why we coin-flip OBJ_LOCAL first.
 	 * OBJ_LOCAL is per-child and unaffected by the lockless-reader
-	 * UAF window addressed by a7fdbb97830c, so only the OBJ_GLOBAL
-	 * fallback below gets the slot-version validation wireup. */
+	 * UAF window that the version-validated object-slot read guards
+	 * against (cf. get_rand_socketinfo in fds/sockets.c), so only the
+	 * OBJ_GLOBAL fallback below gets the slot-version validation
+	 * wireup. */
 	local = get_objhead(OBJ_LOCAL, OBJ_FD_BPF_LINK);
 	if (local != NULL && local->num_entries > 0 && RAND_BOOL()) {
 		struct object *obj = get_random_object(OBJ_FD_BPF_LINK,
@@ -488,13 +493,15 @@ int get_rand_bpf_link_fd(void)
 
 	/*
 	 * Versioned slot pick + objpool_check() before the
-	 * obj->bpflinkobj.fd deref, mirroring the wireup at 15b6257b8206
-	 * (fds/sockets.c get_rand_socketinfo) and 5ef98298f6ad
-	 * (syscalls/keyctl.c KEYCTL_WATCH_KEY).  Same OBJ_GLOBAL lockless-
-	 * reader UAF window: between the lockless slot pick and the
+	 * obj->bpflinkobj.fd deref.  A version-validated object-slot read
+	 * guards the lockless reader against a recycled object
+	 * (cf. get_rand_socketinfo in fds/sockets.c).  Same OBJ_GLOBAL
+	 * lockless-reader UAF window: between the lockless slot pick and the
 	 * consumer's read of the bpf link fd handed to BPF_LINK_UPDATE /
 	 * BPF_LINK_DETACH / BPF_LINK_GET_FD_BY_ID, the parent can destroy
-	 * the obj and a concurrent alloc_shared_obj() recycles the chunk.
+	 * the obj; release_obj() zeroes the chunk and routes it through
+	 * deferred-free, so the stale slot pointer can read a zeroed or
+	 * recycled chunk.
 	 */
 	for (int i = 0; i < 1000; i++) {
 		struct object *obj;
@@ -546,9 +553,9 @@ static void bpf_btf_destructor(struct object *obj)
 }
 
 /*
- * Cross-process safe: reads obj->bpfbtfobj.fd (now in shm via
- * alloc_shared_obj) and the scope scalar.  No process-local pointers
- * are dereferenced.
+ * Cross-process safe: reads obj->bpfbtfobj.fd and the scope scalar.
+ * These survive fork/COW and no process-local pointers are
+ * dereferenced.
  */
 static void bpf_btf_dump(struct object *obj, enum obj_scope scope)
 {
@@ -563,9 +570,9 @@ static int init_bpf_btf_fds(void)
 	head->destroy = &bpf_btf_destructor;
 	head->dump = &bpf_btf_dump;
 	/*
-	 * Opt this provider into the shared obj heap.  bpfbtfobj is
-	 * {int fd;} with no pointer members — mechanical conversion
-	 * matching the pidfd template.
+	 * bpfbtfobj is {int fd;} with no pointer members, so the
+	 * OBJ_GLOBAL pool's scalars stay valid across fork/COW and
+	 * cross-process reads are safe.
 	 */
 
 	return true;
@@ -577,8 +584,10 @@ int get_rand_bpf_btf_fd(void)
 
 	/* See get_rand_bpf_fd() for why we coin-flip OBJ_LOCAL first.
 	 * OBJ_LOCAL is per-child and unaffected by the lockless-reader
-	 * UAF window addressed by a7fdbb97830c, so only the OBJ_GLOBAL
-	 * fallback below gets the slot-version validation wireup. */
+	 * UAF window that the version-validated object-slot read guards
+	 * against (cf. get_rand_socketinfo in fds/sockets.c), so only the
+	 * OBJ_GLOBAL fallback below gets the slot-version validation
+	 * wireup. */
 	local = get_objhead(OBJ_LOCAL, OBJ_FD_BPF_BTF);
 	if (local != NULL && local->num_entries > 0 && RAND_BOOL()) {
 		struct object *obj = get_random_object(OBJ_FD_BPF_BTF,
@@ -592,13 +601,15 @@ int get_rand_bpf_btf_fd(void)
 
 	/*
 	 * Versioned slot pick + objpool_check() before the
-	 * obj->bpfbtfobj.fd deref, mirroring the wireup at 15b6257b8206
-	 * (fds/sockets.c get_rand_socketinfo) and 5ef98298f6ad
-	 * (syscalls/keyctl.c KEYCTL_WATCH_KEY).  Same OBJ_GLOBAL lockless-
-	 * reader UAF window: between the lockless slot pick and the
+	 * obj->bpfbtfobj.fd deref.  A version-validated object-slot read
+	 * guards the lockless reader against a recycled object
+	 * (cf. get_rand_socketinfo in fds/sockets.c).  Same OBJ_GLOBAL
+	 * lockless-reader UAF window: between the lockless slot pick and the
 	 * consumer's read of the BTF fd routed into
-	 * BPF_OBJ_GET_INFO_BY_FD, the parent can destroy the obj and a
-	 * concurrent alloc_shared_obj() recycles the chunk.
+	 * BPF_OBJ_GET_INFO_BY_FD, the parent can destroy the obj;
+	 * release_obj() zeroes the chunk and routes it through
+	 * deferred-free, so the stale slot pointer can read a zeroed or
+	 * recycled chunk.
 	 */
 	for (int i = 0; i < 1000; i++) {
 		struct object *obj;
@@ -651,9 +662,9 @@ static void bpf_token_destructor(struct object *obj)
 }
 
 /*
- * Cross-process safe: reads obj->bpftokenobj.fd (now in shm via
- * alloc_shared_obj) and the scope scalar.  No process-local pointers
- * are dereferenced.
+ * Cross-process safe: reads obj->bpftokenobj.fd and the scope scalar.
+ * These survive fork/COW and no process-local pointers are
+ * dereferenced.
  */
 static void bpf_token_dump(struct object *obj, enum obj_scope scope)
 {
@@ -668,9 +679,9 @@ static int init_bpf_token_fds(void)
 	head->destroy = &bpf_token_destructor;
 	head->dump = &bpf_token_dump;
 	/*
-	 * Opt this provider into the shared obj heap.  bpftokenobj is
-	 * {int fd;} with no pointer members -- mechanical conversion
-	 * matching the pidfd template.
+	 * bpftokenobj is {int fd;} with no pointer members, so the
+	 * OBJ_GLOBAL pool's scalars stay valid across fork/COW and
+	 * cross-process reads are safe.
 	 */
 
 	return true;
@@ -682,8 +693,10 @@ int get_rand_bpf_token_fd(void)
 
 	/* See get_rand_bpf_fd() for why we coin-flip OBJ_LOCAL first.
 	 * OBJ_LOCAL is per-child and unaffected by the lockless-reader
-	 * UAF window addressed by a7fdbb97830c, so only the OBJ_GLOBAL
-	 * fallback below gets the slot-version validation wireup. */
+	 * UAF window that the version-validated object-slot read guards
+	 * against (cf. get_rand_socketinfo in fds/sockets.c), so only the
+	 * OBJ_GLOBAL fallback below gets the slot-version validation
+	 * wireup. */
 	local = get_objhead(OBJ_LOCAL, OBJ_FD_BPF_TOKEN);
 	if (local != NULL && local->num_entries > 0 && RAND_BOOL()) {
 		struct object *obj = get_random_object(OBJ_FD_BPF_TOKEN,
@@ -697,13 +710,15 @@ int get_rand_bpf_token_fd(void)
 
 	/*
 	 * Versioned slot pick + objpool_check() before the
-	 * obj->bpftokenobj.fd deref, mirroring the wireup at 15b6257b8206
-	 * (fds/sockets.c get_rand_socketinfo) and 5ef98298f6ad
-	 * (syscalls/keyctl.c KEYCTL_WATCH_KEY).  Same OBJ_GLOBAL lockless-
-	 * reader UAF window: between the lockless slot pick and the
+	 * obj->bpftokenobj.fd deref.  A version-validated object-slot read
+	 * guards the lockless reader against a recycled object
+	 * (cf. get_rand_socketinfo in fds/sockets.c).  Same OBJ_GLOBAL
+	 * lockless-reader UAF window: between the lockless slot pick and the
 	 * consumer's read of the token fd routed into
-	 * attr->{prog,map,btf}_token_fd, the parent can destroy the obj
-	 * and a concurrent alloc_shared_obj() recycles the chunk.
+	 * attr->{prog,map,btf}_token_fd, the parent can destroy the obj;
+	 * release_obj() zeroes the chunk and routes it through
+	 * deferred-free, so the stale slot pointer can read a zeroed or
+	 * recycled chunk.
 	 */
 	for (int i = 0; i < 1000; i++) {
 		struct object *obj;

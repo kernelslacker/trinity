@@ -66,8 +66,8 @@ struct cmp_hints_bloom {
 };
 
 /*
- * Per-call attribution scratch for the CMP RedQueen greedy re-exec lever
- * (Lever #1).  cmp_hints_collect() scans each CMP record's arg1 (the
+ * Per-call attribution scratch for the greedy CMP RedQueen re-exec.
+ * cmp_hints_collect() scans each CMP record's arg1 (the
  * compile-time constant the kernel compared against) against the
  * dispatching syscall's rec->a1..aN.  On match it stamps (slot, cmp_ip,
  * value, size) here; the dispatch_step tail drains the buffer and re-runs
@@ -75,7 +75,7 @@ struct cmp_hints_bloom {
  *
  * Sized 8 entries (24 B each, ~192 B per child) so a single dispatch
  * can stage multiple attributions without truncation; the per-call
- * re-exec cap (Fork C-1) keeps actual drain to one per parent dispatch
+ * re-exec cap keeps actual drain to one per parent dispatch
  * in the initial deployment.  Reset every dispatch_step tail (drain +
  * count = 0) so attribution buffers do NOT carry forward across calls.
  *
@@ -93,10 +93,10 @@ struct reexec_pending {
 };
 
 /*
- * D-5 baseline denominator: ONE_IN(N) gate at the dispatch_step tail
- * outside plateau windows; inside a plateau classified as
+ * Baseline re-exec gate denominator: ONE_IN(N) gate at the dispatch_step
+ * tail outside plateau windows; inside a plateau classified as
  * CMP_RISING_PC_FLAT the gate switches to always-on (the intensification
- * arm).  4 == 25% baseline rate per the design's recommendation; the
+ * arm).  4 == 25% baseline rate; the
  * realised per-CMP-child overhead is attribution_rate * 0.25 syscalls,
  * with the CMP-mode pool being roughly --cmp-fraction of the fleet, so
  * fleet-wide steady-state cost is well within noise.
@@ -104,7 +104,7 @@ struct reexec_pending {
 #define REDQUEEN_REEXEC_GATE_DENOM	4
 
 /*
- * Per-window cap on re-exec dispatches (Fork C).  Bounds runaway when a
+ * Per-window cap on re-exec dispatches.  Bounds runaway when a
  * hot attributing syscall accumulates a stream of matches: per-child
  * re-exec count is reset every REDQUEEN_REEXEC_WINDOW_OPS child
  * iterations and capped at REDQUEEN_REEXEC_WINDOW_CAP within the
@@ -113,7 +113,7 @@ struct reexec_pending {
  *
  * Sized off STRATEGY_WINDOW so the cap is conceptually "no more than
  * 25% of the bandit's rotation budget" -- matches the same headroom
- * fraction the D-5 baseline targets.
+ * fraction the baseline re-exec gate targets.
  */
 #define REDQUEEN_REEXEC_WINDOW_OPS	(1UL << 17)	/* mirror STRATEGY_WINDOW */
 #define REDQUEEN_REEXEC_WINDOW_CAP	(REDQUEEN_REEXEC_WINDOW_OPS / 4)

@@ -19,8 +19,8 @@
 #include "utils.h"
 
 /*
- * Cross-process safe: only reads obj->pipeobj fields (now in shm via
- * alloc_shared_obj) and the scope scalar.  No process-local pointers
+ * Cross-process safe: only reads obj->pipeobj scalar fields and the
+ * scope scalar.  These survive fork/COW and no process-local pointers
  * are dereferenced, so calling this from a different process than the
  * allocator is correct — relevant because head->dump runs from
  * dump_childdata() in the parent's crash diagnostics path even when a
@@ -100,11 +100,6 @@ static int init_pipes(void)
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_PIPE);
 	head->destroy = &close_fd_destructor;
 	head->dump = &pipefd_dump;
-	/*
-	 * Opt this provider into the shared obj heap.  __destroy_object()
-	 * checks this flag to route the obj struct release through
-	 * free_shared_obj() instead of free().
-	 */
 
 	for (i = 0; i < 16; i++)
 		open_pipe();
@@ -119,15 +114,15 @@ int get_rand_pipe_fd(void)
 
 	/*
 	 * Versioned slot pick + objpool_check() before the
-	 * obj->pipeobj.fd deref, mirroring the wireup at 15b6257b8206
-	 * (fds/sockets.c get_rand_socketinfo) and 5ef98298f6ad
-	 * (syscalls/keyctl.c KEYCTL_WATCH_KEY).  Same OBJ_GLOBAL lockless-
-	 * reader UAF window the framework commit a7fdbb97830c spelled out:
+	 * obj->pipeobj.fd deref.  A version-validated object-slot read
+	 * guards the lockless reader against a recycled object
+	 * (cf. get_rand_socketinfo in fds/sockets.c).  Same OBJ_GLOBAL
+	 * lockless-reader UAF window:
 	 * between the lockless slot pick and the consumer's read of
 	 * the pipe fd routed into read/write/splice via the fd_provider .get callback,
-	 * the parent can destroy the obj, free_shared_obj() returns the
-	 * chunk to the shared-heap freelist, and a concurrent
-	 * alloc_shared_obj() recycles it underneath us.
+	 * the parent can destroy the obj; release_obj() zeroes the chunk
+	 * and routes it through deferred-free, so the stale slot pointer
+	 * can read a zeroed or recycled chunk.
 	 */
 	for (int i = 0; i < 1000; i++) {
 		struct object *obj;

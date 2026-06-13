@@ -98,10 +98,11 @@ struct object * add_socket(int fd, unsigned int domain, unsigned int type, unsig
 	obj->sockinfo.is_listener = false;
 	obj->sockinfo.local_len = 0;
 
-	/* Run per-protocol socket setup eagerly, before the obj is
-	 * published into the global pool.  The shared obj heap is
-	 * mprotected READ-ONLY post-init (commit fbce60744dfb), so any
-	 * deferred write to obj->sockinfo from a child SEGVs. */
+	/* Run per-protocol socket setup eagerly, in the parent before the
+	 * obj is published into the OBJ_GLOBAL pool.  OBJ_GLOBAL objects
+	 * are populated pre-fork and inherited by children via fork/COW, so
+	 * a later write to obj->sockinfo from a child only mutates that
+	 * child's private COW copy and never updates the shared slot. */
 	proto = net_protocols[domain].proto;
 	if (proto != NULL && proto->socket_setup != NULL)
 		proto->socket_setup(fd);
@@ -114,8 +115,9 @@ struct object * add_socket(int fd, unsigned int domain, unsigned int type, unsig
 	 * already-listening cases (e.g. socket_setup hooks that bind+listen)
 	 * get cached for the rest of the run.  Sockets that transition to
 	 * LISTEN later via socket_child_ops() bind/listen cannot update this
-	 * slot (heap is read-only post publish) — the connector lazy-probes
-	 * those at fire time.
+	 * slot (a child's write hits only its private COW copy, not the
+	 * shared pre-fork slot) — the connector lazy-probes those at fire
+	 * time.
 	 */
 	{
 		int v = 0;
@@ -155,7 +157,7 @@ static int open_socket(unsigned int domain, unsigned int type, unsigned int prot
 	if (fd == -1)
 		return fd;
 
-	/* add_socket() owns the fd on failure: on shared-heap exhaustion
+	/* add_socket() owns the fd on failure: on obj allocation failure
 	 * it close()s the fd before returning NULL, and on the non-mainpid
 	 * path it frees the obj after add_object() drops it.  Either way
 	 * the fd is not safe to publish, so don't bump nr_sockets. */
@@ -608,30 +610,28 @@ static int open_sockets(void)
 	head->destroy = &socket_destructor;
 	head->dump = &socket_dump;
 	/*
-	 * Route obj structs for this provider through the shared obj
-	 * heap.  Sockets is the largest fan-in of the remaining shared-
-	 * heap holdouts: add_socket() is the single allocation site but
-	 * is reached from three runtime contexts that all need the obj
-	 * to land in shm:
+	 * socketinfo objs come from alloc_object() and land in the
+	 * OBJ_GLOBAL pool.  add_socket() is the single allocation site but
+	 * is reached from two runtime contexts:
 	 *
 	 *   - generate_sockets() at init: the per-protocol valid-triplet
 	 *     fan-out (and the random-fill loop that brings nr_sockets
-	 *     up to NR_SOCKET_FDS).  Pre-fork in the parent.
+	 *     up to NR_SOCKET_FDS).  Pre-fork in the parent, so children
+	 *     inherit the pool via fork/COW.
 	 *
 	 *   - open_socket_fd(): the .open hook fired by try_regenerate_
 	 *     fd() when the pool drops below threshold.  Picks a random
 	 *     family/type/protocol triplet and opens a fresh socket.
-	 *     Runs in the parent post-fork — exactly the case the
-	 *     shared obj heap exists to serve.
 	 *
 	 * struct socketinfo carries no pointer fields (triplet is three
-	 * ints, fd is an int), so this is an obj-struct-only conversion
-	 * — no companion alloc_shared_str() calls for heap-allocated
-	 * members.  The transient sockaddr buffer
-	 * built by generate_sockaddr() inside socket_child_ops() lives
-	 * for the duration of one accept4() attempt and is released in
-	 * the same function via tracked_free_now(sa); it is not attached
-	 * to the obj and therefore stays on the private heap.
+	 * ints, fd is an int), so the obj's scalars stay valid across
+	 * fork/COW and cross-process reads are safe — there are no
+	 * heap-allocated members to place in a shared mapping.  The
+	 * transient sockaddr buffer built by generate_sockaddr() inside
+	 * socket_child_ops() lives for the duration of one accept4()
+	 * attempt and is released in the same function via
+	 * tracked_free_now(sa); it is not attached to the obj and
+	 * therefore stays on the private heap.
 	 */
 
 #ifdef USE_IF_ALG
@@ -670,12 +670,12 @@ struct socketinfo * get_rand_socketinfo(void)
 		 * surfaced is the same shape get_map() defends against:
 		 * the parent destroys the obj between the lockless pick
 		 * and the consumer's later deref of si->triplet.family /
-		 * si->fd, and free_shared_obj() routes the chunk back to
-		 * the shared-heap freelist where a concurrent
-		 * alloc_shared_obj() recycles it underneath us.  The
-		 * version snapshot captured after objpool_check() plus
-		 * the object_slot_alive() recheck just before return
-		 * narrows that window to a few cycles.
+		 * si->fd; release_obj() zeroes the chunk and routes it
+		 * through deferred-free, so the stale slot pointer can
+		 * read a zeroed or recycled chunk.  The version snapshot
+		 * captured after objpool_check() plus the
+		 * object_slot_alive() recheck just before return narrows
+		 * that window to a few cycles.
 		 */
 		obj = get_random_object(OBJ_FD_SOCKET, OBJ_GLOBAL);
 		if (!objpool_check(obj, OBJ_FD_SOCKET))

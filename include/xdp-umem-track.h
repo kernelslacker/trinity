@@ -18,7 +18,7 @@
  * of (ptr, len) pairs so the fd's close path can issue the matching
  * munmap() without having to plumb the pointer through every caller.
  * The side table is intentionally not part of the generic object
- * record so the shared obj heap stays free of family-specific fields.
+ * record so the object struct stays free of family-specific fields.
  */
 
 #ifdef USE_XDP

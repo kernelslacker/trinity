@@ -105,8 +105,8 @@ bool proc_status_parse_hex_mask(const char *value, uint64_t *out);
  *   rather than a fixed buffer because these fields land late enough in
  *   /proc/self/status that a process with a large supplementary group
  *   list or verbose VmFlags can push them past any reasonable stack
- *   buffer — the codex-#3 truncation bug.  Slurp grows on demand so the
- *   bug cannot recur on the migrated callers.
+ *   buffer and get truncated.  Slurp grows on demand so the
+ *   truncation cannot recur on the migrated callers.
  *
  * proc_status_read_sigmask_pair — same %016lx rows, but reads SigPnd:
  *   and ShdPnd: out of a single /proc/self/status snapshot so the two

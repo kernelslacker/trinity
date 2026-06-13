@@ -20,9 +20,11 @@
  * rnd_seed(), so a run reproduced via `-s` reuses the same per-child
  * stream.  The parent seeds at startup from init_seed().
  *
- * Note: rand()-using sites are being migrated incrementally; the
- * existing srand() calls in rand/seed.c stay in place until every
- * caller has been converted.
+ * libc rand() / random() / *rand48() are banned on this path: new
+ * callsites are rejected at build by check-static, with a link-time
+ * --wrap tripwire (rand/rand-warn.c) catching any that arrive via
+ * macro expansion.  srand() in rand/seed.c is the one deliberate
+ * exception, driving seed reproduction.
  */
 
 extern uint64_t rnd_state;
