@@ -48,11 +48,6 @@ static void sanitise_fgetxattr(struct syscallrecord *rec)
 	size_t buf_alloc_size;
 
 	rec->post_state = 0;
-#endif
-
-	if (!sanitise_xattr_name_arg_pooled(rec, 2))
-		return;
-#if defined(SYS_fgetxattr) || defined(__NR_fgetxattr)
 	pre_a3 = rec->a3;
 #endif
 	xattr_pick_valuebuf_bucket(&rec->a3, &rec->a4);
@@ -302,7 +297,7 @@ out_release:
 struct syscallentry syscall_fgetxattr = {
 	.name = "fgetxattr",
 	.num_args = 4,
-	.argtype = { [0] = ARG_FD, [2] = ARG_ADDRESS, [3] = ARG_LEN },
+	.argtype = { [0] = ARG_FD, [1] = ARG_XATTR_NAME, [2] = ARG_ADDRESS, [3] = ARG_LEN },
 	.argname = { [0] = "fd", [1] = "name", [2] = "value", [3] = "size" },
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
