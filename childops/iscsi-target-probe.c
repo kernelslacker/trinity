@@ -22,10 +22,18 @@
  *
  * Per-invocation cycle:
  *   1. nonblocking connect(127.0.0.1:3260), poll(POLLOUT, 1s)
- *   2. pick one of three PDU shapes uniformly:
+ *   2. pick one of four PDU shapes uniformly:
  *        (a) wholly random 48-byte BHS — exercises BHS validators
  *        (b) valid Login opcode with fuzzed text-key data segment
  *        (c) well-formed Login + post-login fuzzed SCSI Command CDB
+ *        (d) Login PDU whose BHS DataSegmentLength is deliberately
+ *            decoupled from the actual on-wire segment (over- /
+ *            under-declare, huge near-24-bit-max, or zero-while-
+ *            non-empty) — probes iscsit's length validators in
+ *            drivers/target/iscsi/iscsi_target_nego.c and the
+ *            text-buffer sizing path that allocates / copies against
+ *            the declared length.  Arms (a)-(c) keep declared == actual
+ *            so the existing truthful coverage doesn't regress.
  *   3. send() the PDU with MSG_DONTWAIT | MSG_NOSIGNAL
  *   4. drain any response with poll(POLLIN, 200ms) + recv()
  *   5. close
@@ -458,6 +466,88 @@ static size_t build_login_well_formed(unsigned char *out)
 	return ISCSI_BHS_LEN + padded;
 }
 
+/* Kinds of declared-vs-actual DataSegmentLength mismatch we inject when
+ * the decoupled-length arm is selected.  All four bypass the truthful
+ * encoding the other arms maintain — none of them changes how many
+ * payload bytes go on the wire, only the 24-bit field in BHS[5..7]. */
+enum length_decouple_kind {
+	LENGTH_DECOUPLE_OVER,	/* declared > actual: kernel expects more */
+	LENGTH_DECOUPLE_UNDER,	/* declared < actual: kernel sees less */
+	LENGTH_DECOUPLE_HUGE,	/* declared near top of 24-bit range */
+	LENGTH_DECOUPLE_ZERO,	/* declared == 0 while actual > 0 */
+	LENGTH_DECOUPLE__NR,
+};
+
+/* Cap for the OVER bump.  Big enough to push the declared length past
+ * MaxRecvDataSegmentLength on most LIO configs (default 8192) so the
+ * length validator has to reject rather than silently allocate, but
+ * small enough to keep arithmetic in u32 + put_be24's 24-bit field. */
+#define LENGTH_DECOUPLE_OVER_BUMP_MAX	16384U
+
+/* Overwrite the BHS DataSegmentLength (bytes 5..7) with a value that
+ * does NOT match @actual.  Returns the declared length actually written
+ * so the caller can record / count the magnitude.  Does not modify the
+ * payload itself — only the wire-format declaration. */
+static uint32_t decouple_data_length(unsigned char *bhs, uint32_t actual)
+{
+	uint32_t declared;
+	enum length_decouple_kind kind;
+
+	kind = (enum length_decouple_kind)rnd_modulo_u32(LENGTH_DECOUPLE__NR);
+
+	/* UNDER and ZERO collapse to a real mismatch only when there's
+	 * something to shrink.  If actual == 0, both produce 0, which
+	 * isn't a decouple — promote to OVER instead. */
+	if (actual == 0 &&
+	    (kind == LENGTH_DECOUPLE_UNDER || kind == LENGTH_DECOUPLE_ZERO))
+		kind = LENGTH_DECOUPLE_OVER;
+
+	switch (kind) {
+	case LENGTH_DECOUPLE_OVER:
+		declared = actual + 1U +
+			rnd_modulo_u32(LENGTH_DECOUPLE_OVER_BUMP_MAX);
+		break;
+	case LENGTH_DECOUPLE_UNDER:
+		/* actual > 0 here: rnd_modulo_u32(actual) ∈ [0, actual-1]. */
+		declared = rnd_modulo_u32(actual);
+		break;
+	case LENGTH_DECOUPLE_HUGE:
+		/* Top byte of the 24-bit field set; low 16 bits random. */
+		declared = 0x00ff0000U | (rnd_u32() & 0x0000ffffU);
+		break;
+	case LENGTH_DECOUPLE_ZERO:
+	default:
+		declared = 0;
+		break;
+	}
+	declared &= 0x00ffffffU;
+	put_be24(bhs + 5, declared);
+	return declared;
+}
+
+/* Build a Login PDU whose declared DataSegmentLength is intentionally
+ * inconsistent with the bytes we'll send.  Reuses one of the existing
+ * truthful builders for the underlying shape so the rest of the BHS
+ * stays plausible — only the length field is the variable.  Sent on
+ * arm (d) only; the truthful builders are unmodified. */
+static size_t build_login_decoupled_length(unsigned char *out)
+{
+	size_t total;
+	uint32_t actual_data;
+
+	/* Pick a sane base so the front-door opcode / flags validators
+	 * have a chance to accept the PDU and let the length checks run.
+	 * 50/50 between the two existing Login shapes. */
+	if (rnd_u32() & 1U)
+		total = build_login_fuzzed(out);
+	else
+		total = build_login_well_formed(out);
+
+	actual_data = (uint32_t)(total - ISCSI_BHS_LEN);
+	(void)decouple_data_length(out, actual_data);
+	return total;
+}
+
 /* Build a SCSI Command PDU targeting LUN 0 with a fuzzed 16-byte CDB.
  * Sent only after a successful login PDU (arm c).  The kernel
  * dispatches into the per-CDB handler tables; READ-side commands are
@@ -558,7 +648,7 @@ bool iscsi_target_probe(struct childdata *child)
 		__atomic_add_fetch(&shm->stats.iscsi_target_probe_connected,
 				   1, __ATOMIC_RELAXED);
 
-		arm = rnd_modulo_u32(3);
+		arm = rnd_modulo_u32(4);
 		switch (arm) {
 		case 0:
 			pdu_len = build_random_bhs(pdu);
@@ -566,8 +656,13 @@ bool iscsi_target_probe(struct childdata *child)
 		case 1:
 			pdu_len = build_login_fuzzed(pdu);
 			break;
-		default:
+		case 2:
 			pdu_len = build_login_well_formed(pdu);
+			break;
+		default:
+			pdu_len = build_login_decoupled_length(pdu);
+			__atomic_add_fetch(&shm->stats.iscsi_target_probe_length_decoupled,
+					   1, __ATOMIC_RELAXED);
 			break;
 		}
 

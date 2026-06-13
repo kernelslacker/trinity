@@ -1015,6 +1015,7 @@ static const struct stat_field iscsi_target_probe_fields[] = {
 	STAT_FIELD(iscsi_target_probe, scsi_cmd_sent),
 	STAT_FIELD(iscsi_target_probe, bytes_out),
 	STAT_FIELD(iscsi_target_probe, bytes_in),
+	STAT_FIELD(iscsi_target_probe, length_decoupled),
 };
 
 static const struct stat_category iscsi_target_probe_category =

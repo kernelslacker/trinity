@@ -1554,6 +1554,7 @@ struct stats_s {
 	unsigned long iscsi_target_probe_scsi_cmd_sent;		/* post-login SCSI Command PDU sent (arm c) */
 	unsigned long iscsi_target_probe_bytes_out;		/* total bytes successfully send()'d */
 	unsigned long iscsi_target_probe_bytes_in;		/* total bytes successfully recv()'d */
+	unsigned long iscsi_target_probe_length_decoupled;	/* arm (d): BHS DataSegmentLength != actual payload */
 
 	/* iscsi_login_walker childop counters.  Companion to
 	 * iscsi_target_probe: instead of single one-shot PDUs, this walker
