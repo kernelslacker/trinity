@@ -58,6 +58,9 @@
 #ifdef USE_VSOCK
 #include <linux/vm_sockets.h>
 #endif
+#ifdef USE_MCTP
+#include <linux/mctp.h>
+#endif
 #ifdef USE_IF_ALG
 #include <linux/if_alg.h>
 #endif
@@ -1603,6 +1606,9 @@ static const unsigned long sockaddr_storage_af_vocab[] = {
 #ifdef USE_VSOCK
 	AF_VSOCK,
 #endif
+#ifdef USE_MCTP
+	AF_MCTP,
+#endif
 #ifdef USE_IF_ALG
 	AF_ALG,
 #endif
@@ -1721,6 +1727,23 @@ static const struct struct_field sockaddr_vm_variant_fields[] = {
 			    .n    = ARRAY_SIZE(vsock_cid_vocab) }),
 	FIELDX(struct sockaddr_vm, svm_flags, FT_FLAGS,
 	       .u.flags.mask = VMADDR_FLAG_TO_HOST),
+};
+#endif
+
+#ifdef USE_MCTP
+/*
+ * AF_MCTP (sockaddr_mctp) -- Management Component Transport Protocol
+ * endpoint.  smctp_network / smctp_addr.s_addr / smctp_type carry the
+ * raw routing bytes the kernel dispatches on; smctp_tag has one defined
+ * owner bit.  smctp_family + the two pad bytes stay zeroed (the shared
+ * head pass writes the family).
+ */
+static const struct struct_field sockaddr_mctp_variant_fields[] = {
+	FIELD(struct sockaddr_mctp, smctp_network),
+	FIELD(struct sockaddr_mctp, smctp_addr.s_addr),
+	FIELD(struct sockaddr_mctp, smctp_type),
+	FIELDX(struct sockaddr_mctp, smctp_tag, FT_FLAGS,
+	       .u.flags.mask = MCTP_TAG_OWNER),
 };
 #endif
 
@@ -1940,6 +1963,15 @@ static const struct union_variant sockaddr_storage_variants[] = {
 		.fields		 = sockaddr_vm_variant_fields,
 		.num_fields	 = ARRAY_SIZE(sockaddr_vm_variant_fields),
 		.effective_size	 = sizeof(struct sockaddr_vm),
+	},
+#endif
+#ifdef USE_MCTP
+	{
+		.discrim_value	 = AF_MCTP,
+		.name		 = "AF_MCTP",
+		.fields		 = sockaddr_mctp_variant_fields,
+		.num_fields	 = ARRAY_SIZE(sockaddr_mctp_variant_fields),
+		.effective_size	 = sizeof(struct sockaddr_mctp),
 	},
 #endif
 #ifdef USE_IF_ALG
