@@ -4,7 +4,6 @@
  */
 #include <stdint.h>
 #include <sys/sem.h>
-#include <time.h>
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -63,30 +62,10 @@ static void fill_sembuf_array(struct sembuf *sops, unsigned int nsops, int semid
 static void sanitise_semtimedop(struct syscallrecord *rec)
 {
 	struct sembuf *sops;
-	struct timespec *ts;
 	unsigned int nsops;
-	bool null_timeout;
 
 	nsops = 1 + (rnd_modulo_u32(MAX_SOPS));
 	sops = (struct sembuf *) get_writable_address(nsops * sizeof(*sops));
-
-	/*
-	 * 25% NULL timeout.  The pre-existing code always handed in a
-	 * non-NULL timespec capped at <1ms, which means the kernel
-	 * never reached its "timeout == NULL" branch -- that arm has
-	 * its own copy_from_user / hrtimer-setup elision and is
-	 * worth exercising.  The remaining 75% keeps the short
-	 * timeout shape (still <1ms) so the syscall doesn't actually
-	 * block on a contended sem -- NEED_ALARM still caps the
-	 * NULL-timeout arm if it does block.
-	 */
-	null_timeout = (rnd_modulo_u32(100) < 25);
-	ts = NULL;
-	if (!null_timeout) {
-		ts = (struct timespec *) get_writable_address(sizeof(*ts));
-		if (ts == NULL)
-			return;
-	}
 	if (sops == NULL)
 		return;
 
@@ -96,21 +75,18 @@ static void sanitise_semtimedop(struct syscallrecord *rec)
 	avoid_shared_buffer_inout(&rec->a2, nsops * sizeof(struct sembuf));
 	rec->a3 = nsops;
 
-	if (ts != NULL) {
-		ts->tv_sec = 0;
-		ts->tv_nsec = rnd_modulo_u32(1000000);	/* up to 1ms */
-		rec->a4 = (unsigned long) ts;
-		avoid_shared_buffer_inout(&rec->a4, sizeof(struct timespec));
-	} else {
-		rec->a4 = 0;
-	}
+	/*
+	 * a4 (timeout) is typed ARG_TIMESPEC; the generator publishes
+	 * a writable pool buffer (or NULL ~10%) for us.  NEED_ALARM caps
+	 * any blocking arm a large tv_sec bucket would otherwise produce.
+	 */
 }
 
 struct syscallentry syscall_semtimedop = {
 	.name = "semtimedop",
 	.group = GROUP_IPC,
 	.num_args = 4,
-	.argtype = { [0] = ARG_SEM_ID, [2] = ARG_LEN },
+	.argtype = { [0] = ARG_SEM_ID, [2] = ARG_LEN, [3] = ARG_TIMESPEC },
 	.argname = { [0] = "semid", [1] = "tsops", [2] = "nsops", [3] = "timeout" },
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
