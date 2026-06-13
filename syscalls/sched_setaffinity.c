@@ -118,7 +118,7 @@ struct syscallentry syscall_sched_setaffinity = {
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_SCHED,
 	.num_args = 3,
-	.argtype = { [0] = ARG_PID },
+	.argtype = { [0] = ARG_PID, [1] = ARG_LEN },
 	.argname = { [0] = "pid", [1] = "len", [2] = "user_mask_ptr" },
 	.sanitise = sanitise_sched_setaffinity,
 };
