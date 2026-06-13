@@ -1562,16 +1562,17 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	}
 
 	/*
-	 * CMP RedQueen greedy re-exec tail (Lever #1).  Fires after the
+	 * CMP RedQueen greedy re-exec tail.  Fires after the
 	 * parent call's handle_syscall_ret has settled so .post / .cleanup
-	 * are done before the re-exec dispatch reuses rec.  Per design Fork
-	 * F-1: single insertion point in dispatch_step so all callers
+	 * are done before the re-exec dispatch reuses rec.  A single
+	 * insertion point in dispatch_step so all callers
 	 * (random_syscall_step, replay_syscall_step, sequence-chain step)
 	 * inherit re-exec coverage automatically.
 	 *
 	 * Gates (ALL must pass):
-	 *   - !in_reexec     -- recursion guard, see R3 in the design.
-	 *   - redqueen_enabled -- R7 A/B sub-fleet stamp.
+	 *   - !in_reexec     -- recursion guard; otherwise we'd self-reinforce
+	 *     a runaway loop.
+	 *   - redqueen_enabled -- A/B-comparison stamp.
 	 *   - kcov.mode == KCOV_MODE_CMP -- PC-mode children produce no
 	 *     attribution.  Defensive: redqueen_enabled is only stamped
 	 *     true on CMP-mode children today, but the gate keeps the
@@ -1584,10 +1585,10 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	 *     known constants adds no information for re-exec.
 	 *   - reexec_pending_count > 0 -- attribution scan in the parent's
 	 *     cmp_hints_collect actually found a slot match.
-	 *   - D-5 gate: ONE_IN(REDQUEEN_REEXEC_GATE_DENOM) baseline,
+	 *   - rate gate: ONE_IN(REDQUEEN_REEXEC_GATE_DENOM) baseline,
 	 *     always-on while the plateau detector classifies the run as
 	 *     CMP_RISING_PC_FLAT.  Combines low-cost steady-state lift
-	 *     with full intensification under the diagnostic this lever
+	 *     with full intensification under the diagnostic this re-exec
 	 *     was designed to break.
 	 */
 	if (!child->in_reexec &&
@@ -1823,7 +1824,7 @@ static bool redqueen_reexec_step(struct childdata *child,
 	int saved_errno_post;
 	bool ok;
 
-	/* Per-window cap (Fork C "Per-window cap").  Reset to a fresh window
+	/* Per-window cap.  Reset to a fresh window
 	 * once REDQUEEN_REEXEC_WINDOW_OPS child iterations have elapsed
 	 * since the last reset; cap exceedance within a window short-
 	 * circuits before any of the more expensive entry resolution. */

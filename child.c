@@ -491,7 +491,7 @@ void clean_childdata(struct childdata *child)
 	 * for the fresh slot occupant.  redqueen_enabled is the CMP RedQueen A/B-comparison stamp
 	 * and is (re)decided per-child in init_child_runtime_config after
 	 * kcov_init_child has picked the per-child KCOV mode -- zero here so
-	 * the fresh occupant defaults to "lever off" until the stamp lands. */
+	 * the fresh occupant defaults to "re-exec off" until the stamp lands. */
 	memset(child->reexec_pending, 0, sizeof(child->reexec_pending));
 	child->reexec_pending_count = 0;
 	child->in_reexec = false;
@@ -1018,9 +1018,10 @@ static void init_child_runtime_config(struct childdata *child, int childno)
 	 * control arm -- subsequent reexec_* per-window deltas can be
 	 * cleanly attributed to the enabled cohort because the disabled
 	 * cohort's gate at the dispatch_step tail short-circuits.  Per-child
-	 * stamp at fork rather than a runtime flag means time-of-day fleet
-	 * drift (kernel state, mounted fs population, other fleet load) is
-	 * common to both arms and falls out of the comparison. */
+	 * stamp at fork rather than a runtime flag means time-of-day
+	 * environmental drift (kernel state, mounted fs population, other
+	 * system load) is common to both arms and falls out of the
+	 * comparison. */
 	child->redqueen_enabled = (child->kcov.mode == KCOV_MODE_CMP) && ONE_IN(2);
 
 	/*
@@ -2045,7 +2046,7 @@ static enum child_op_type pick_op_type(void)
  *     floor rises and the boost ratchet stalls (safe failure mode —
  *     multipliers stay near 1.0x and childop budgets stay at the
  *     fixed baseline used before adaptive budget multipliers
- *     existed (pre-CV.13)).
+ *     existed).
  *
  *   - Updates are RELAXED non-RMW stores.  Two children tail-racing on
  *     the same op_type can lose an update; the worst case is the
@@ -2478,8 +2479,7 @@ void child_process(struct childdata *child, int childno)
 		 * counter stays at zero and the delta is always 0, which
 		 * correctly degrades to "never boost, never shrink" — the
 		 * multiplier sticks at 1.0x and childop budgets remain at the
-		 * fixed baseline used before adaptive budget multipliers
-		 * (pre-CV.13). */
+		 * fixed baseline used before adaptive budget multipliers. */
 		unsigned long edges_before = have_kcov
 			? __atomic_load_n(&kcov_shm->edges_found,
 					  __ATOMIC_RELAXED)

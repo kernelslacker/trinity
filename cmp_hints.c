@@ -650,9 +650,9 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 	 * the per-record inner loop avoids a per-record reload (and a
 	 * per-record entry->num_args branch).  attribute_enabled folds the
 	 * gates the inner loop would otherwise re-check on every record:
-	 * the child must be runnable, opted into the lever, and NOT mid-
-	 * re-exec (otherwise we'd self-reinforce a runaway loop -- see the
-	 * design's R3 risk note).  num_args == 0 (parent-context or
+	 * the child must be runnable, opted into the re-exec, and NOT mid-
+	 * re-exec (recursion guard; otherwise we'd self-reinforce a runaway
+	 * loop).  num_args == 0 (parent-context or
 	 * pre-dispatch rec) also gates off; an attribution scan over zero
 	 * meaningful slots is pure cost.
 	 */
@@ -803,21 +803,21 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 		 * actual re-exec dispatch on `new_cmp > 0` from the parent
 		 * call separately.
 		 *
-		 * Match predicate: A.b-1 exact (rec->aN == arg2).  Catches the
+		 * Match predicate: exact match (rec->aN == arg2).  Catches the
 		 * dominant case where the kernel sees the argument's full
 		 * 64-bit value (cmd codes, length args, flag bitmasks, struct
-		 * sizes).  Width-aware fallback (A.b-3) would add combinatorial
+		 * sizes).  A width-aware fallback would add combinatorial
 		 * noise on small-type slots for marginal coverage gain; the
-		 * lever's value is in collapsing the 1/A slot lottery, not
+		 * re-exec's value is in collapsing the 1/A slot lottery, not
 		 * width matching.
 		 *
 		 * Cardinality > 1 (the same constant appears in multiple
-		 * slots): A.c-1 first-match-wins.  Slot order 1..6 biases
+		 * slots): first-match-wins.  Slot order 1..6 biases
 		 * toward lower slots, which tend to be the cmd-like /
 		 * dispatching ones.  Bump reexec_attribution_ambiguous once
 		 * per matched record where >1 slot matched so the rate is
-		 * observable; if it climbs >10% the design's escalation
-		 * targets (skip-ambiguous or fan-out) become live options.
+		 * observable; if it climbs >10% the escalation
+		 * options (skip-ambiguous or fan-out) become live.
 		 */
 		if (attribute_enabled &&
 		    child->reexec_pending_count < MAX_REEXEC_PENDING) {

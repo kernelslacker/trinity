@@ -24,7 +24,7 @@
  * default fleet size; for very large fleets the noise floor may rise
  * above this value and the boost ratchet effectively stalls (which is
  * the safer failure mode — multipliers stay near 1.0x and behaviour
- * matches the pre-CV.13 fixed budgets).
+ * matches the fixed budgets used before adaptive budget multipliers).
  */
 #define ADAPT_BUDGET_THRESHOLD	16
 
