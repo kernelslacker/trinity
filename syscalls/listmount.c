@@ -431,6 +431,7 @@ struct syscallentry syscall_listmount = {
 	.name = "listmount",
 	.num_args = 4,
 	.argname = { [0] = "req", [1] = "mnt_ids", [2] = "nr_mnt_ids", [3] = "flags" },
+	.argtype = { [1] = ARG_ADDRESS },
 	.group = GROUP_VFS,
 	.flags = KCOV_REMOTE_HEAVY,
 	.sanitise = sanitise_listmount,
