@@ -466,7 +466,7 @@ static const char ** list_to_index(struct namelist *namelist)
 	unsigned int i = 0;
 	size_t total_str_bytes = 0;
 	char *slab;
-	unsigned int slab_off = 0;
+	size_t slab_off = 0;
 
 	/* First pass: measure total string storage needed. */
 	list_for_each(node, &namelist->list) {
@@ -489,7 +489,7 @@ static const char ** list_to_index(struct namelist *namelist)
 	/* Second pass: copy strings into the slab and build the index. */
 	list_for_each_safe(node, tmp, &namelist->list) {
 		nl = (struct namelist *) node;
-		unsigned int len = strlen(nl->name) + 1;
+		size_t len = strlen(nl->name) + 1;
 
 		memcpy(slab + slab_off, nl->name, len);
 		findex[i++] = slab + slab_off;
