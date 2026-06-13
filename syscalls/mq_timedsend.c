@@ -34,7 +34,7 @@ struct syscallentry syscall_mq_timedsend = {
 	.name = "mq_timedsend",
 	.group = GROUP_IPC,
 	.num_args = 5,
-	.argtype = { [0] = ARG_FD_MQ, [3] = ARG_RANGE },
+	.argtype = { [0] = ARG_FD_MQ, [2] = ARG_LEN, [3] = ARG_RANGE },
 	.argname = { [0] = "mqdes", [1] = "u_msg_ptr", [2] = "msg_len", [3] = "msg_prio", [4] = "u_abs_timeout" },
 	.arg_params[3].range.low = 0,
 	.arg_params[3].range.hi = 32768,
