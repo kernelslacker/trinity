@@ -649,11 +649,12 @@ struct childdata {
 	 * re-execs.  The pool / bloom inserts still run inside the re-exec --
 	 * those records are real harvest signal.
 	 *
-	 * redqueen_enabled is the A/B sub-fleet stamp: half the CMP-mode
-	 * children get true (re-exec active), half get false (control
-	 * sub-fleet).  Stamped once at child init and never mutated, so per-
+	 * redqueen_enabled is the A/B-comparison stamp: half the CMP-mode
+	 * children get true (re-exec active), half get false (the control
+	 * group).  Stamped once at child init and never mutated, so per-
 	 * window comparisons of (reexec-enabled vs control) cohort metrics
-	 * isolate the re-exec's contribution from time-of-day fleet drift.
+	 * isolate the re-exec's contribution from time-of-day environmental
+	 * drift.
 	 *
 	 * Owner-only writes from inside the child; the buffer is per-call
 	 * scratch and the two booleans are read-only after child init / drain
