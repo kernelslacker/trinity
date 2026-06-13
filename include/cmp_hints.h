@@ -92,6 +92,32 @@ struct reexec_pending {
 	unsigned int slot;
 };
 
+/*
+ * D-5 baseline denominator: ONE_IN(N) gate at the dispatch_step tail
+ * outside plateau windows; inside a plateau classified as
+ * CMP_RISING_PC_FLAT the gate switches to always-on (the intensification
+ * arm).  4 == 25% baseline rate per the design's recommendation; the
+ * realised per-CMP-child overhead is attribution_rate * 0.25 syscalls,
+ * with the CMP-mode pool being roughly --cmp-fraction of the fleet, so
+ * fleet-wide steady-state cost is well within noise.
+ */
+#define REDQUEEN_REEXEC_GATE_DENOM	4
+
+/*
+ * Per-window cap on re-exec dispatches (Fork C).  Bounds runaway when a
+ * hot attributing syscall accumulates a stream of matches: per-child
+ * re-exec count is reset every REDQUEEN_REEXEC_WINDOW_OPS child
+ * iterations and capped at REDQUEEN_REEXEC_WINDOW_CAP within the
+ * window.  Exceedance bumps kcov_shm->reexec_window_cap_hit and skips
+ * further re-execs until the next window roll.
+ *
+ * Sized off STRATEGY_WINDOW so the cap is conceptually "no more than
+ * 25% of the bandit's rotation budget" -- matches the same headroom
+ * fraction the D-5 baseline targets.
+ */
+#define REDQUEEN_REEXEC_WINDOW_OPS	(1UL << 17)	/* mirror STRATEGY_WINDOW */
+#define REDQUEEN_REEXEC_WINDOW_CAP	(REDQUEEN_REEXEC_WINDOW_OPS / 4)
+
 struct cmp_hint_entry {
 	unsigned long value;
 	unsigned long cmp_ip;
