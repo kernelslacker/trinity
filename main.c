@@ -2271,7 +2271,7 @@ void pidstatfiles_drop_in_child(void)
 
 void main_loop(void)
 {
-	struct timespec epoch_start;
+	struct timespec epoch_start = { 0 };
 	unsigned int i;
 
 	output(1, "phase: entering main_loop\n");
