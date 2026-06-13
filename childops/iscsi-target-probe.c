@@ -72,6 +72,8 @@
 #include "shm.h"
 #include "trinity.h"
 
+#include "generated/parser_vocab.h"
+
 /* iSCSI opcode constants from RFC 7143 §11.  Defined locally so we
  * don't drag in <scsi/iscsi_proto.h> / <linux/scsi/iscsi_proto.h>
  * which aren't shipped in every sysroot. */
@@ -245,88 +247,68 @@ static size_t build_random_bhs(unsigned char *out)
 	return ISCSI_BHS_LEN;
 }
 
-/* Canonical iSCSI login text-key vocabulary (RFC 3720 §12 / §11 plus
- * the Errata + LIO-supported extensions in iscsi_target_parameters.h).
- * The set is stable across kernel versions because the keys are wire-
- * protocol negotiation tokens, not driver internals.  Emitted bare
- * (no '=') so the caller can append the separator and value half
- * itself; this is what lets the text-key parser walk past its initial
- * separator check into the per-key value handlers. */
-static const char *const iscsi_login_key_vocab[] = {
-	"InitiatorName",
-	"TargetName",
-	"InitiatorAlias",
-	"TargetAlias",
-	"TargetAddress",
-	"TargetPortalGroupTag",
-	"SessionType",
-	"AuthMethod",
+/* iSCSI login text-key vocabulary.  Built as the union of two disjoint
+ * pools so emitted PDUs draw from the widest plausible RFC 3720 §12 /
+ * §11 + LIO-extension set:
+ *
+ *   1. iscsi_login_key_vocab[] / iscsi_login_value_vocab[] from
+ *      include/generated/parser_vocab.h -- mined offline from
+ *      drivers/target/iscsi/iscsi_target_parameters.h by
+ *      scripts/seed-vocab-from-dmesg.py, so the negotiation-token set
+ *      tracks the kernel header at regen time.  Also carries the LIO
+ *      default-value pool (LIO.Target, "0.0.0.0:0000,0", ...) which the
+ *      parser's value handlers accept verbatim.
+ *
+ *   2. iscsi_login_*_extras[] below -- entries the offline miner does
+ *      not surface today.  Keys: the CHAP_* security-negotiation set
+ *      from iscsi_target_nego.c, plus MaxOutstandingUnexpectedPDUs.
+ *      Values: small decimal literals and common buffer sizes for the
+ *      numeric-key arithmetic parsers, the reverse-order "None,CRC32C"
+ *      list-tokenizer probe, and two example iqn.* names for the
+ *      Name-shaped key value handlers.
+ *
+ * The pools are kept disjoint by construction so pick_vocab() yields a
+ * de-duplicated draw without runtime deduplication; when the generated
+ * header grows to cover one of the extras, prune it from the list here.
+ * Tokens are emitted bare (no '=') so the caller appends the separator
+ * and value half itself -- this is what lets the text-key parser walk
+ * past its initial separator check into the per-key value handlers. */
+static const char *const iscsi_login_key_extras[] = {
 	"CHAP_A",
 	"CHAP_I",
 	"CHAP_C",
 	"CHAP_N",
 	"CHAP_R",
-	"HeaderDigest",
-	"DataDigest",
-	"MaxConnections",
-	"MaxRecvDataSegmentLength",
-	"MaxXmitDataSegmentLength",
-	"MaxBurstLength",
-	"FirstBurstLength",
-	"DefaultTime2Wait",
-	"DefaultTime2Retain",
-	"MaxOutstandingR2T",
-	"DataPDUInOrder",
-	"DataSequenceInOrder",
-	"ErrorRecoveryLevel",
-	"InitialR2T",
-	"ImmediateData",
-	"IFMarker",
-	"OFMarker",
-	"IFMarkInt",
-	"OFMarkInt",
-	"RDMAExtensions",
-	"TargetRecvDataSegmentLength",
-	"InitiatorRecvDataSegmentLength",
 	"MaxOutstandingUnexpectedPDUs",
 };
 
-/* Companion value vocabulary covering the enumeration / list-valued
- * keys: digest algorithms, auth methods, session types, and the bool
- * keys' "Yes" / "No".  Numeric-valued keys (MaxBurstLength &c.) get
- * served small decimal literals from this same pool so the value
- * arithmetic parsers see in-range token-shaped input rather than
- * arbitrary bytes.  A NULL value isn't drawn -- the entries are the
- * literal value bytes that follow the '=' separator. */
-static const char *const iscsi_login_value_vocab[] = {
-	"Yes",
-	"No",
-	"None",
-	"CRC32C",
-	"CHAP",
-	"KRB5",
-	"SPKM1",
-	"SPKM2",
-	"SRP",
-	"Normal",
-	"Discovery",
+static const char *const iscsi_login_value_extras[] = {
 	"5",
-	"1",
-	"2",
 	"3",
 	"4",
-	"0",
 	"512",
 	"1024",
 	"2048",
 	"4096",
-	"8192",
-	"262144",
-	"CRC32C,None",
 	"None,CRC32C",
 	"iqn.2026-06.org.example:initiator",
 	"iqn.2026-06.org.example:target",
 };
+
+/* Uniformly draw one entry from the concatenation of @primary[0..pn) and
+ * @extras[0..en) without materialising the union -- pn and en are
+ * compile-time constants so the modulo collapses to a single
+ * rnd_modulo_u32() per call.  Caller passes the generated pool as
+ * @primary and the inline extras as @extras; entries on either side
+ * are weighted by pool size, which matches "draw uniformly from the
+ * union" because the pools are disjoint. */
+static const char *pick_vocab(const char *const *primary, unsigned int pn,
+			      const char *const *extras, unsigned int en)
+{
+	unsigned int idx = rnd_modulo_u32(pn + en);
+
+	return (idx < pn) ? primary[idx] : extras[idx - pn];
+}
 
 /* 1/VALUE_RANDOM_RECIP key=value pairs use a random-printable value
  * instead of a vocab value.  Keeps a deliberate fuzz signal on the
@@ -358,13 +340,15 @@ static size_t build_login_fuzzed(unsigned char *out)
 	rnd_fill(bhs + 24, 8);
 
 	/* Build 3-8 key=value pairs.  Each pair is emitted as
-	 *   <key from iscsi_login_key_vocab> '=' <value> '\0'
+	 *   <key from the union pool> '=' <value> '\0'
 	 * so the LIO text-key parser locates its separator on every
 	 * entry and dispatches to the per-key value handler. */
 	nr_keys = 3 + rnd_modulo_u32(6);
 	for (i = 0; i < nr_keys; i++) {
-		const char *key = iscsi_login_key_vocab[
-			rnd_modulo_u32(ARRAY_SIZE(iscsi_login_key_vocab))];
+		const char *key = pick_vocab(iscsi_login_key_vocab,
+					     NR_ISCSI_LOGIN_KEY_VOCAB,
+					     iscsi_login_key_extras,
+					     ARRAY_SIZE(iscsi_login_key_extras));
 		size_t key_len = strlen(key);
 		bool random_value = (rnd_modulo_u32(VALUE_RANDOM_RECIP) == 0);
 		const char *vocab_val = NULL;
@@ -374,8 +358,10 @@ static size_t build_login_fuzzed(unsigned char *out)
 		if (random_value) {
 			val_len = 1 + rnd_modulo_u32(24);
 		} else {
-			vocab_val = iscsi_login_value_vocab[
-				rnd_modulo_u32(ARRAY_SIZE(iscsi_login_value_vocab))];
+			vocab_val = pick_vocab(iscsi_login_value_vocab,
+					       NR_ISCSI_LOGIN_VALUE_VOCAB,
+					       iscsi_login_value_extras,
+					       ARRAY_SIZE(iscsi_login_value_extras));
 			val_len = strlen(vocab_val);
 		}
 		need = key_len + 1 + val_len + 1;	/* key + '=' + value + NUL */
