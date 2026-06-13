@@ -1217,6 +1217,15 @@ struct stats_s {
 	unsigned long tc_qdisc_churn_bridge_parent_runs;	/* iter used a bridge slave veth as qdisc parent */
 	unsigned long tc_qdisc_churn_bridge_dellink_race_ok;	/* RTM_DELLINK on bridge slave port accepted (raced flush burst) */
 
+	/* tc_mirred_blockcast childop counters */
+	unsigned long tc_mirred_blockcast_runs;		/* total tc_mirred_blockcast invocations */
+	unsigned long tc_mirred_blockcast_setup_failed;	/* unshare / NETLINK_ROUTE open latched */
+	unsigned long tc_mirred_blockcast_qdisc_ok;	/* clsact + TCA_EGRESS_BLOCK install accepted (per device) */
+	unsigned long tc_mirred_blockcast_qdisc_fail;	/* clsact + TCA_EGRESS_BLOCK install rejected */
+	unsigned long tc_mirred_blockcast_filter_ok;	/* matchall+mirred(blockid) on shared block accepted */
+	unsigned long tc_mirred_blockcast_filter_fail;	/* matchall+mirred(blockid) on shared block rejected */
+	unsigned long tc_mirred_blockcast_packet_sent_ok;	/* loopback UDP sendto on A bound dummy returned >0 */
+
 	/* xfrm_churn childop counters */
 	unsigned long xfrm_churn_runs;			/* total xfrm_churn invocations */
 	unsigned long xfrm_churn_setup_failed;		/* unshare / NETLINK_XFRM open latched */

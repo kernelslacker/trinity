@@ -2287,6 +2287,21 @@ static const struct stat_category tc_qdisc_churn_category =
 	              tc_qdisc_churn_runs,
 	              tc_qdisc_churn_fields);
 
+static const struct stat_field tc_mirred_blockcast_fields[] = {
+	STAT_FIELD(tc_mirred_blockcast, runs),
+	STAT_FIELD(tc_mirred_blockcast, setup_failed),
+	STAT_FIELD(tc_mirred_blockcast, qdisc_ok),
+	STAT_FIELD(tc_mirred_blockcast, qdisc_fail),
+	STAT_FIELD(tc_mirred_blockcast, filter_ok),
+	STAT_FIELD(tc_mirred_blockcast, filter_fail),
+	STAT_FIELD(tc_mirred_blockcast, packet_sent_ok),
+};
+
+static const struct stat_category tc_mirred_blockcast_category =
+	STAT_CATEGORY("tc_mirred_blockcast",
+	              tc_mirred_blockcast_runs,
+	              tc_mirred_blockcast_fields);
+
 static const struct stat_field xfrm_churn_fields[] = {
 	STAT_FIELD(xfrm_churn, runs),
 	STAT_FIELD(xfrm_churn, setup_failed),
@@ -2373,6 +2388,8 @@ static void dump_stats_json_netfilter_and_xfrm(void)
 	stat_category_emit_json(&nftables_churn_category);
 	putchar(',');
 	stat_category_emit_json(&tc_qdisc_churn_category);
+	putchar(',');
+	stat_category_emit_json(&tc_mirred_blockcast_category);
 	putchar(',');
 	stat_category_emit_json(&xfrm_churn_category);
 	putchar(',');
@@ -5562,6 +5579,16 @@ static void dump_stats_childop_runs_network(void)
 		stat_row("tc_qdisc_churn", "peek_stack_burst_ok",     shm->stats.tc_qdisc_peek_stack_burst_ok);
 		stat_row("tc_qdisc_churn", "bridge_parent_runs",      shm->stats.tc_qdisc_churn_bridge_parent_runs);
 		stat_row("tc_qdisc_churn", "bridge_dellink_race_ok",  shm->stats.tc_qdisc_churn_bridge_dellink_race_ok);
+	}
+
+	if (shm->stats.tc_mirred_blockcast_runs) {
+		stat_row("tc_mirred_blockcast", "runs",            shm->stats.tc_mirred_blockcast_runs);
+		stat_row("tc_mirred_blockcast", "setup_failed",    shm->stats.tc_mirred_blockcast_setup_failed);
+		stat_row("tc_mirred_blockcast", "qdisc_ok",        shm->stats.tc_mirred_blockcast_qdisc_ok);
+		stat_row("tc_mirred_blockcast", "qdisc_fail",      shm->stats.tc_mirred_blockcast_qdisc_fail);
+		stat_row("tc_mirred_blockcast", "filter_ok",       shm->stats.tc_mirred_blockcast_filter_ok);
+		stat_row("tc_mirred_blockcast", "filter_fail",     shm->stats.tc_mirred_blockcast_filter_fail);
+		stat_row("tc_mirred_blockcast", "packet_sent_ok",  shm->stats.tc_mirred_blockcast_packet_sent_ok);
 	}
 
 	if (shm->stats.xfrm_churn_runs) {

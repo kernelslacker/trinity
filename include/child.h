@@ -208,6 +208,7 @@ enum child_op_type {
 	CHILD_OP_AF_UNIX_PEEK_RACE,
 	CHILD_OP_SYSV_SHM_ORPHAN_RACE,
 	CHILD_OP_QRTR_BIND_RACE,
+	CHILD_OP_TC_MIRRED_BLOCKCAST,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -876,6 +877,7 @@ bool vxlan_encap_churn(struct childdata *child);
 bool bridge_fdb_stp(struct childdata *child);
 bool nftables_churn(struct childdata *child);
 bool tc_qdisc_churn(struct childdata *child);
+bool tc_mirred_blockcast(struct childdata *child);
 bool xfrm_churn(struct childdata *child);
 bool bpf_cgroup_attach(struct childdata *child);
 bool sctp_assoc_churn(struct childdata *child);
