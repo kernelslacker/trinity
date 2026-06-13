@@ -83,7 +83,7 @@ struct syscallentry syscall_clock_settime = {
 	.name = "clock_settime",
 	.group = GROUP_TIME,
 	.num_args = 2,
-	.argtype = { [0] = ARG_OP },
+	.argtype = { [0] = ARG_OP, [1] = ARG_ADDRESS },
 	.argname = { [0] = "which_clock", [1] = "tp" },
 	.arg_params[0].list = ARGLIST(clock_ids),
 	.rettype = RET_ZERO_SUCCESS,
