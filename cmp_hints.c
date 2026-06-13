@@ -827,7 +827,46 @@ bool cmp_hints_try_get(unsigned int nr, bool do32, unsigned long *out)
 	if (cmp_hints_pool_corrupted(pool, count))
 		return false;
 
-	*out = pool->entries[rnd_modulo_u32(count)].value;
+	{
+		unsigned long c = pool->entries[rnd_modulo_u32(count)].value;
+
+		/*
+		 * Boundary triple: rotate uniformly among {C-1, C, C+1}.
+		 * KCOV's CMP record exposes operand width and the constant
+		 * but NOT the comparison operator (==, !=, <, <=, >, >=),
+		 * so a substituted value of bare C only satisfies the
+		 * equality cases.  Range checks ("if (len > MAX_LEN)")
+		 * stay unsatisfied unless the kernel separately compares
+		 * the exact boundary constant at another site.  The +/-1
+		 * triple converts every range check whose limit matches
+		 * a harvested C, at the cost of a 2/3 reduction in
+		 * equality-match yield -- the equality slot (C unchanged)
+		 * is retained in the rotation, so the worst case is a 3x
+		 * slowdown on a purely equality-dominated callsite, while
+		 * length-/cap-/extent-dominated syscalls (network length
+		 * validation, BPF program-size caps, filesystem extents)
+		 * get the boundary edges they were missing.
+		 *
+		 * Unsigned wrap is intentional and deliberately unclamped:
+		 *   C == 0          ->  C-1 == ULONG_MAX
+		 *   C == ULONG_MAX  ->  C+1 == 0
+		 * Both wrapped values are themselves useful probes -- the
+		 * underflow exercises length-cap / overflow validators, the
+		 * overflow exercises empty-input / zero-length rejection
+		 * paths -- so clamping would throw away the most useful
+		 * boundary on the rare-but-real wrap case.
+		 */
+		switch (rnd_modulo_u32(3)) {
+		case 0:
+			c -= 1;
+			break;
+		case 2:
+			c += 1;
+			break;
+		/* case 1 (and default): C unchanged */
+		}
+		*out = c;
+	}
 	if (kcov_shm != NULL)
 		__atomic_fetch_add(&kcov_shm->cmp_hints_try_get_returned, 1UL,
 				   __ATOMIC_RELAXED);
