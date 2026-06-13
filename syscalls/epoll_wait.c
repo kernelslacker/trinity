@@ -104,7 +104,7 @@ static void post_epoll_wait(struct syscallrecord *rec)
 struct syscallentry syscall_epoll_wait = {
 	.name = "epoll_wait",
 	.num_args = 4,
-	.argtype = { [0] = ARG_FD_EPOLL, [1] = ARG_NON_NULL_ADDRESS },
+	.argtype = { [0] = ARG_FD_EPOLL, [1] = ARG_NON_NULL_ADDRESS, [2] = ARG_LEN },
 	.argname = { [0] = "epfd", [1] = "events", [2] = "maxevents", [3] = "timeout" },
 	.sanitise = sanitise_epoll_wait,
 	.post = post_epoll_wait,
