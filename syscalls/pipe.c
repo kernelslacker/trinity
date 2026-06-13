@@ -199,6 +199,7 @@ static void post_pipe(struct syscallrecord *rec)
 struct syscallentry syscall_pipe = {
 	.name = "pipe",
 	.num_args = 1,
+	.argtype = { [0] = ARG_ADDRESS },
 	.argname = { [0] = "fildes" },
 	.group = GROUP_VFS,
 	.sanitise = sanitise_pipe,
@@ -289,7 +290,7 @@ static void sanitise_pipe2(struct syscallrecord *rec)
 struct syscallentry syscall_pipe2 = {
 	.name = "pipe2",
 	.num_args = 2,
-	.argtype = { [1] = ARG_LIST },
+	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_LIST },
 	.argname = { [0] = "fildes", [1] = "flags" },
 	.arg_params[1].list = ARGLIST(pipe2_flags),
 	.group = GROUP_VFS,
