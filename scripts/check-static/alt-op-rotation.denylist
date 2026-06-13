@@ -32,6 +32,7 @@ CHILD_OP_PCI_BIND                REASON: PCI driver attach/detach lifecycle race
 CHILD_OP_AF_UNIX_PEEK_RACE       REASON: SO_PEEK_OFF + MSG_PEEK/recv/shutdown race
 CHILD_OP_SYSV_SHM_ORPHAN_RACE    REASON: SysV SHM orphan-destroy / attach / IPC_RMID race
 CHILD_OP_QRTR_BIND_RACE          REASON: AF_QRTR same-port bind/close race; fork+exit storm not safe for steady rotation
+CHILD_OP_PFKEY_SPD_WALK          REASON: PF_KEYv2 SPDDUMP-vs-SPDADD walk race; fork+exit storm + per-child netns unshare not safe for steady rotation
 CHILD_OP_AFXDP_CHURN                  TODO: review for rotation candidacy
 CHILD_OP_AF_ALG_RECVMSG_CHURN         TODO: review for rotation candidacy
 CHILD_OP_AF_ALG_TEMPLATE_PROBE        TODO: review for rotation candidacy

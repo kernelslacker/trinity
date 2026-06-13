@@ -1391,6 +1391,15 @@ struct stats_s {
 	unsigned long qrtr_bind_race_sibling_reaped_ok;		/* worker exited normally and was reaped */
 	unsigned long qrtr_bind_race_sibling_crashed;		/* worker killed by signal (SEGV/BUS/KILL) -- forensic hint */
 
+	/* pfkey_spd_walk childop counters */
+	unsigned long pfkey_spd_walk_runs;			/* total pfkey_spd_walk invocations */
+	unsigned long pfkey_spd_walk_setup_failed;		/* AF_KEY probe or netns unshare latch fired */
+	unsigned long pfkey_spd_walk_iter;			/* outer-loop iterations entered */
+	unsigned long pfkey_spd_walk_fork_failed;		/* fork() of a walker/racer worker failed */
+	unsigned long pfkey_spd_walk_spawn_pair_ok;		/* both walker + racer spawned for this round */
+	unsigned long pfkey_spd_walk_sibling_reaped_ok;		/* worker exited normally and was reaped */
+	unsigned long pfkey_spd_walk_sibling_crashed;		/* worker killed by signal (SEGV/BUS/KILL) -- forensic hint */
+
 	/* netns_teardown_churn childop counters */
 	unsigned long netns_teardown_runs;			/* total netns_teardown_churn invocations */
 	unsigned long netns_teardown_setup_failed;		/* anchor open / fork / unsupported latch fired */
