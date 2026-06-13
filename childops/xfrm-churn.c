@@ -120,6 +120,7 @@
 #include "child.h"
 #include "childops-netlink.h"
 #include "childops-util.h"
+#include "compat.h"
 #include "jitter.h"
 #include "random.h"
 #include "shm.h"
@@ -479,6 +480,31 @@ static bool modprobe_tried_algo[NR_XFRM_ALGOS];
 static bool ns_unshared;
 static bool ns_setup_failed;
 static bool lo_brought_up;
+
+/*
+ * Per-child latch for SO_ZEROCOPY support on the inner UDP socket.
+ * setsockopt rejection is static for the kernel's lifetime
+ * (CONFIG_MSG_ZEROCOPY off / kernel < 5.0 / lockdown variant) so we
+ * pay the EFAIL once and then skip the zerocopy branch entirely.  The
+ * regular copying sendto path remains available unchanged.
+ */
+static bool ns_unsupported_zerocopy;
+
+/*
+ * Backing pages for the MSG_ZEROCOPY inner-UDP variant.  Static
+ * lifetime so the kernel-pinned pages stay valid for any in-flight
+ * uarg until the completion notification lands on the socket's
+ * errqueue and is drained — no early reuse, no GUP-vs-free race
+ * window on our side.  One page is enough: __zerocopy_sg_from_iter
+ * pins the buffer into skb_shinfo()->frags[] regardless of size, so
+ * the SKBFL_SHARED_FRAG marker on the inner skb fires whether the
+ * payload is 64 bytes or 4 KB.  Page-aligned so the kernel's GUP
+ * walks a single page-aligned span rather than crossing a boundary.
+ */
+#define XFRM_ZC_PAYLOAD_BYTES	4096U
+#define XFRM_ZC_DRAIN_CAP	128U	/* errqueue drain ceiling per burst */
+static unsigned char zc_payload[XFRM_ZC_PAYLOAD_BYTES]
+	__attribute__((aligned(4096)));
 
 /*
  * Sequence counter for the PF_KEYv2 alt path only.  PF_KEY is not
@@ -953,6 +979,97 @@ static bool is_unsupported_err(int rc)
 {
 	return rc == -EOPNOTSUPP || rc == -EAFNOSUPPORT ||
 	       rc == -EPROTONOSUPPORT || rc == -ENOENT;
+}
+
+/*
+ * Drain MSG_ERRQUEUE completion notifications from a UDP socket that
+ * issued MSG_ZEROCOPY sends.  Each accepted zerocopy send accrues one
+ * SO_EE_ORIGIN_ZEROCOPY entry when the kernel finishes with the
+ * pinned pages; left undrained, the per-socket errqueue accumulates
+ * until subsequent sends fall back to copy (or ENOBUFS).  Bounded by
+ * `max` so a flood of stale completions can't stall the
+ * STORM_BUDGET_NS wall-clock cap upstream.  Discards the body — the
+ * page-lifecycle/COW bug class lives in skb-side state, not in the
+ * cmsg shape (msg_zerocopy_churn already covers cmsg validation).
+ */
+static unsigned int drain_errqueue_bounded(int udp, unsigned int max)
+{
+	unsigned char ebuf[64];
+	unsigned int i, drained = 0;
+
+	for (i = 0; i < max; i++) {
+		if (recv(udp, ebuf, sizeof(ebuf),
+			 MSG_ERRQUEUE | MSG_DONTWAIT) < 0)
+			break;
+		drained++;
+	}
+	return drained;
+}
+
+/*
+ * Drive the SPD-resolved bundle with MSG_ZEROCOPY sendto on the
+ * inner UDP socket.  __zerocopy_sg_from_iter pins zc_payload[] into
+ * skb_shinfo()->frags[] and skb_zcopy_set marks SKBFL_ZEROCOPY_FRAG
+ * (a superset of SKBFL_SHARED_FRAG) on the inner skb.  The encrypt
+ * path (xfrm_output -> esp_output) then takes the COW branch via
+ * skb_has_shared_frag(): esp4.c:876 falls through to skb_cow_data()
+ * instead of the skip_cow in-place fast path.  This is the precise
+ * branch the shared-frag CVE family (CVE-2026-46300 skb_try_coalesce
+ * SHARED_FRAG-loss; xfrm/iptfs iptfs_consume_frags SHARED_FRAG-loss
+ * sibling) lives in but that the copying sendto path never reaches —
+ * the in-place-encrypt fast path is fine on private skb pages, the
+ * bug only manifests when COW logic is exercised against shared/
+ * externally-owned frags.
+ *
+ * Bounded errqueue drain after the burst keeps zerocopy completion
+ * notifications from accumulating on the socket; the static
+ * zc_payload[] backing pages outlive any in-flight uarg so the
+ * kernel's GUP refcount path can't race a userspace free.  Returns
+ * the count of successful sends so the caller's burst-stats stay
+ * symmetric with the regular sendto path.
+ */
+static unsigned int drive_inner_traffic_zc(int udp, unsigned int iters,
+					   const struct timespec *t0)
+{
+	struct sockaddr_in dst;
+	unsigned int i, ok = 0;
+
+	memset(&dst, 0, sizeof(dst));
+	dst.sin_family      = AF_INET;
+	dst.sin_port        = htons(XFRM_INNER_PORT);
+	dst.sin_addr.s_addr = XFRM_DADDR_BE;
+
+	/* Randomise a prefix of the persistent buffer so each burst's
+	 * ciphertext differs — full-page regen would waste cycles and
+	 * isn't required (the bug-class window is the page-pinning +
+	 * AEAD-in-place decision, not the payload bytes). */
+	generate_rand_bytes(zc_payload, 64);
+
+	for (i = 0; i < iters; i++) {
+		ssize_t n;
+
+		if (ns_since(t0) >= STORM_BUDGET_NS)
+			break;
+
+		n = sendto(udp, zc_payload, sizeof(zc_payload),
+			   MSG_DONTWAIT | MSG_ZEROCOPY,
+			   (struct sockaddr *)&dst, sizeof(dst));
+		if (n > 0) {
+			ok++;
+			__atomic_add_fetch(&shm->stats.xfrm_churn_zc_sent,
+					   1, __ATOMIC_RELAXED);
+		}
+		/* Errors are benign here: EAGAIN means the socket
+		 * buffer / errqueue is full (next iter or post-drain
+		 * frees room), EOPNOTSUPP/EINVAL would mean a kernel
+		 * rejected MSG_ZEROCOPY despite setsockopt accepting
+		 * SO_ZEROCOPY (extremely rare; falls through). */
+	}
+
+	__atomic_add_fetch(&shm->stats.xfrm_churn_zc_errq_drained,
+			   drain_errqueue_bounded(udp, XFRM_ZC_DRAIN_CAP),
+			   __ATOMIC_RELAXED);
+	return ok;
 }
 
 /*
@@ -1500,6 +1617,7 @@ static int xfrm_churn_iter_install_sa(struct xfrm_churn_iter_ctx *ctx)
 static void xfrm_churn_iter_setup_udp(struct xfrm_churn_iter_ctx *ctx)
 {
 	struct sockaddr_in src;
+	int one = 1;
 
 	if (ns_unsupported_inet)
 		return;
@@ -1515,6 +1633,20 @@ static void xfrm_churn_iter_setup_udp(struct xfrm_churn_iter_ctx *ctx)
 	src.sin_family      = AF_INET;
 	src.sin_addr.s_addr = XFRM_SADDR_BE;
 	(void)bind(ctx->udp, (struct sockaddr *)&src, sizeof(src));
+
+	/* Arm the socket for MSG_ZEROCOPY so drive_inner_traffic_zc can
+	 * pin payload pages into skb frags (sets SKBFL_SHARED_FRAG on
+	 * the inner skb, the precondition for the shared-frag/COW
+	 * branch in esp_output).  EOPNOTSUPP / ENOPROTOOPT here means
+	 * the kernel doesn't carry MSG_ZEROCOPY on UDP — pre-v5.0 or
+	 * built-out config.  Latch per-child so subsequent iterations
+	 * keep this fd as copying-sendto only without re-paying the
+	 * EFAIL; the burst dispatcher checks the latch before rolling
+	 * the zerocopy coin. */
+	if (!ns_unsupported_zerocopy &&
+	    setsockopt(ctx->udp, SOL_SOCKET, SO_ZEROCOPY,
+		       &one, sizeof(one)) < 0)
+		ns_unsupported_zerocopy = true;
 }
 
 /*
@@ -1541,7 +1673,19 @@ static void xfrm_churn_iter_drive_burst(struct xfrm_churn_iter_ctx *ctx)
 	if (iters > XFRM_PACKET_CAP)
 		iters = XFRM_PACKET_CAP;
 
-	sent = drive_inner_traffic(ctx->udp, iters, &t0);
+	/* Predominantly copying-sendto (preserves the proven UPDSA/DELSA
+	 * race timing the op exists for); ~1 in 8 bursts switches to
+	 * MSG_ZEROCOPY so the inner skb carries SKBFL_SHARED_FRAG and
+	 * esp_output enters the skb_cow_data() branch (esp4.c:876) that
+	 * the copying path never reaches.  Two burst calls per
+	 * invocation roll the coin independently, so effective coverage
+	 * is ~1 in 4 iterations per child — sparse enough that the
+	 * zerocopy errqueue drain can't perturb the rekey race window,
+	 * dense enough that the COW branch is reached steadily. */
+	if (!ns_unsupported_zerocopy && ONE_IN(8))
+		sent = drive_inner_traffic_zc(ctx->udp, iters, &t0);
+	else
+		sent = drive_inner_traffic(ctx->udp, iters, &t0);
 	if (sent)
 		__atomic_add_fetch(&shm->stats.xfrm_churn_esp_sent,
 				   sent, __ATOMIC_RELAXED);

@@ -1226,6 +1226,8 @@ struct stats_s {
 	unsigned long xfrm_churn_pol_added;		/* XFRM_MSG_NEWPOLICY accepted */
 	unsigned long xfrm_churn_pol_deleted;		/* XFRM_MSG_DELPOLICY accepted */
 	unsigned long xfrm_churn_esp_sent;		/* loopback UDP send through SP/SA bundle returned >0 */
+	unsigned long xfrm_churn_zc_sent;		/* MSG_ZEROCOPY sendto returned >0 (SKBFL_SHARED_FRAG reached) */
+	unsigned long xfrm_churn_zc_errq_drained;	/* SO_EE_ORIGIN_ZEROCOPY completions drained per burst */
 	unsigned long xfrm_churn_pfkey_send_ok;		/* PF_KEYv2 SADB_FLUSH send returned >0 */
 	unsigned long xfrm_ah_esn_setup_ok;		/* AH+ESN+async-algo NEWSA accepted */
 	unsigned long xfrm_ah_esn_setup_fail;		/* AH+ESN+async-algo NEWSA rejected */
