@@ -79,7 +79,7 @@ static void sanitise_setrlimit(struct syscallrecord *rec)
 struct syscallentry syscall_setrlimit = {
 	.name = "setrlimit",
 	.num_args = 2,
-	.argtype = { [0] = ARG_OP },
+	.argtype = { [0] = ARG_OP, [1] = ARG_ADDRESS },
 	.argname = { [0] = "resource", [1] = "rlim" },
 	.arg_params[0].list = ARGLIST(rlimit_resources),
 	.rettype = RET_ZERO_SUCCESS,
