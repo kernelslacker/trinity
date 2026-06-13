@@ -33,22 +33,31 @@
 #include "utils.h"	// zmalloc
 
 /*
- * CMP-hint injection rate.  Baseline is 1-in-16 (the historical rate the
- * ARG_OP / ARG_LIST paths shipped with); boosted to 1-in-4 inside a
- * SR_PLATEAU_FORCE intervention whose dominant rescue class is
- * RRC_CMP_DERIVED, so the learned constants the classifier credited
- * for the recent rescues fire more aggressively during the targeted
- * intervention.  Wrapped in a helper so any future tuning lands in one
- * place rather than scattered across the three call sites.
+ * CMP-hint injection rate.  Baseline is per-call-site (1-in-16 for the
+ * ARG_OP / ARG_LIST paths, 1-in-9 for the ARG_UNDEFINED case-0 hint
+ * shortcut, 1-in-10 for the ARG_STRUCT_SIZE fallback); boosted to
+ * 1-in-4 inside (a) a SR_PLATEAU_FORCE intervention whose dominant
+ * rescue class is RRC_CMP_DERIVED, or (b) any plateau window the
+ * parent's hypothesis tick has classified as CMP_RISING_PC_FLAT.
+ * (b) bypasses the three-gate RRC_CMP_DERIVED chain: the diagnostic
+ * has already concluded the kernel is emitting unique CMP signal we
+ * are failing to convert, so inject more aggressively even when the
+ * rotation hasn't landed on the CMP_DERIVED amplification slot.
+ * Wrapped in a helper so any future tuning lands in one place rather
+ * than scattered across the four call sites.
  */
 #define CMP_HINT_INJECT_DENOM_BASELINE  16U
 #define CMP_HINT_INJECT_DENOM_AMPLIFIED 4U
 
-static unsigned int cmp_hint_inject_denom(void)
+static unsigned int cmp_hint_inject_denom(unsigned int baseline)
 {
-	return plateau_rescue_bias_active_for(RRC_CMP_DERIVED) ?
-		CMP_HINT_INJECT_DENOM_AMPLIFIED :
-		CMP_HINT_INJECT_DENOM_BASELINE;
+	if (__atomic_load_n(&shm->plateau_current_hypothesis,
+			    __ATOMIC_RELAXED) ==
+	    (int)PLATEAU_HYPOTHESIS_CMP_RISING_PC_FLAT)
+		return CMP_HINT_INJECT_DENOM_AMPLIFIED;
+	if (plateau_rescue_bias_active_for(RRC_CMP_DERIVED))
+		return CMP_HINT_INJECT_DENOM_AMPLIFIED;
+	return baseline;
 }
 
 /* ONE_IN denominator for substituting a wrong-subtype fd (or a generic
@@ -171,8 +180,10 @@ static unsigned long handle_arg_op(struct syscallentry *entry,
 
 	/* ~1 in 16: try a CMP hint as an undocumented command code.
 	 * Bumped to ~1 in 4 inside a SR_PLATEAU_FORCE intervention whose
-	 * dominant rescue class is RRC_CMP_DERIVED. */
-	if (ONE_IN(cmp_hint_inject_denom()) &&
+	 * dominant rescue class is RRC_CMP_DERIVED, or inside any plateau
+	 * window the parent's hypothesis tick has flagged as
+	 * CMP_RISING_PC_FLAT. */
+	if (ONE_IN(cmp_hint_inject_denom(CMP_HINT_INJECT_DENOM_BASELINE)) &&
 	    cmp_hints_try_get(call, rec->do32bit, &hint)) {
 		if (kcov_shm != NULL)
 			__atomic_fetch_add(&kcov_shm->cmp_hints_injected,
@@ -207,8 +218,10 @@ static unsigned long handle_arg_list(struct syscallentry *entry,
 
 	/* ~1 in 16: OR in a CMP hint as an undocumented flag bit.
 	 * Bumped to ~1 in 4 inside a SR_PLATEAU_FORCE intervention whose
-	 * dominant rescue class is RRC_CMP_DERIVED. */
-	if (ONE_IN(cmp_hint_inject_denom()) &&
+	 * dominant rescue class is RRC_CMP_DERIVED, or inside any plateau
+	 * window the parent's hypothesis tick has flagged as
+	 * CMP_RISING_PC_FLAT. */
+	if (ONE_IN(cmp_hint_inject_denom(CMP_HINT_INJECT_DENOM_BASELINE)) &&
 	    cmp_hints_try_get(call, rec->do32bit, &hint)) {
 		if (kcov_shm != NULL)
 			__atomic_fetch_add(&kcov_shm->cmp_hints_injected,
@@ -415,15 +428,23 @@ static unsigned long gen_undefined_arg(struct syscallentry *entry __unused__,
 		}
 	}
 
+	/* CMP-hint shortcut.  Hoisted out of the case-0 weight so the
+	 * plateau-aware denom helper can lift the rate from baseline ~1/9
+	 * to amplified ~1/4 when the parent's hypothesis tick flags
+	 * CMP_RISING_PC_FLAT.  Outside the plateau the denom is 9 so the
+	 * attempt rate matches the historical case-0 weight; case 0 now
+	 * always takes the boundary-value fallback that used to fire only
+	 * when the hint try missed. */
+	if (ONE_IN(cmp_hint_inject_denom(9)) &&
+	    cmp_hints_try_get(call, rec->do32bit, &hint)) {
+		if (kcov_shm != NULL)
+			__atomic_fetch_add(&kcov_shm->cmp_hints_injected,
+					   1UL, __ATOMIC_RELAXED);
+		return hint;
+	}
+
 	switch (rnd_modulo_u32(9)) {
-	case 0:
-		if (cmp_hints_try_get(call, rec->do32bit, &hint)) {
-			if (kcov_shm != NULL)
-				__atomic_fetch_add(&kcov_shm->cmp_hints_injected,
-						   1UL, __ATOMIC_RELAXED);
-			return hint;
-		}
-		return mutate_value(get_boundary_value());
+	case 0: return mutate_value(get_boundary_value());
 	case 1: return mutate_value(get_boundary_value());
 	case 2: return mutate_value(rand64());
 	case 3: return get_interesting_value();
@@ -2622,6 +2643,9 @@ static const struct struct_desc *paired_struct_desc(struct syscallentry *entry,
  *   10%  sizeof+/-1 boundary            -- off-by-one in the size check
  *   10%  0 / small / UINT_MAX / huge    -- structural rejection paths
  *   10%  CMP-hint-derived for this nr   -- learned-from-kernel sizes
+ *                                          (lifted to ~25% inside a
+ *                                          CMP_RISING_PC_FLAT plateau
+ *                                          via cmp_hint_inject_denom)
  *
  * Catalog gap: no paired struct cataloged, so the exact size is not
  * derivable.  Fall back to a bounded random scalar; better than zeroing
@@ -2636,7 +2660,8 @@ static unsigned long gen_arg_struct_size(struct syscallentry *entry,
 	unsigned long hint;
 	unsigned int roll;
 
-	if (ONE_IN(10) && cmp_hints_try_get(rec->nr, rec->do32bit, &hint)) {
+	if (ONE_IN(cmp_hint_inject_denom(10)) &&
+	    cmp_hints_try_get(rec->nr, rec->do32bit, &hint)) {
 		if (kcov_shm != NULL)
 			__atomic_fetch_add(&kcov_shm->cmp_hints_injected,
 					   1UL, __ATOMIC_RELAXED);
