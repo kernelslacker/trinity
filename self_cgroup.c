@@ -953,9 +953,31 @@ pid_t self_cgroup_fork_into_workload(void)
 
 unsigned int fork_throttle_us;
 
-#define THROTTLE_MIN_US		1000U	/* 1 ms initial step */
-#define THROTTLE_MAX_US		100000U	/* 100 ms cap */
-#define THROTTLE_DECAY_TICKS	40U	/* ~1s of quiet at 25ms cadence */
+#define THROTTLE_MIN_US		1000U		/* 1 ms initial step */
+#define THROTTLE_MAX_US		1000000U	/* 1 s cap under sustained pressure */
+#define THROTTLE_DECAY_TICKS	40U		/* ~1s of quiet at 25ms cadence */
+
+/*
+ * The cap and the decay schedule together set how aggressively we back
+ * off respawn under memory.high reclaim-throttle pressure.
+ *
+ *   Cap (THROTTLE_MAX_US = 1 s):
+ *     A small cap (e.g. 100 ms) lets per-spawn sleep slow the fork rate
+ *     but not enough to keep up with the kernel's reclaim throttle once
+ *     children/ memory is sitting at the soft limit.  Each fresh child
+ *     immediately hits the same reclaim slowdown in its post-syscall
+ *     userspace path, the parent watchdog times it out, kills, respawns
+ *     -- positive feedback into a death spiral.  Capping at 1 s gives
+ *     the parent room to genuinely pause spawning so the cgroup's
+ *     reclaim drains before the next worker lands on it.
+ *
+ *   Decay (halving per quiet window, not snap-to-zero):
+ *     A binary "any quiet window resets the throttle to 0" decay
+ *     re-ignites the spiral: pressure subsides briefly, throttle snaps
+ *     off, spawn rate slams back to full, pressure returns immediately.
+ *     Halving lets the throttle decay over several windows so a transient
+ *     dip in memory.high firings doesn't undo the prior backoff.
+ */
 
 static int events_inotify_fd = -1;
 static int events_file_fd = -1;
@@ -1118,8 +1140,16 @@ void self_cgroup_events_check(void)
 	if (!any_event) {
 		if (fork_throttle_us > 0 &&
 		    ++quiet_streak >= THROTTLE_DECAY_TICKS) {
-			output(0, "self-cgroup: HIGH cleared -- fork throttle off\n");
-			fork_throttle_us = 0;
+			unsigned int halved = fork_throttle_us / 2;
+
+			if (halved < THROTTLE_MIN_US)
+				halved = 0;
+			if (halved == 0)
+				output(0, "self-cgroup: HIGH cleared -- fork throttle off\n");
+			else
+				output(0, "self-cgroup: HIGH quiet -- fork throttle halved to %uus\n",
+				       halved);
+			fork_throttle_us = halved;
 			quiet_streak = 0;
 		}
 		return;

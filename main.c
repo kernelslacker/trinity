@@ -1228,6 +1228,20 @@ static void fork_children(void)
 
 		if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) != STILL_RUNNING)
 			return;
+
+		/* Under cgroup memory.high pressure (fork_throttle_us > 0)
+		 * yield back to main_loop after one spawn so periodic work
+		 * (zombie reap, ring drain, throttle re-evaluation) runs
+		 * between sequential spawns.  At the 1 s sustained cap,
+		 * refilling N slots back-to-back would otherwise hold the
+		 * main loop for N seconds, blocking reap of children that
+		 * are dying in the same pressure window.  No-op in the
+		 * common no-pressure path -- the loop just spins back to
+		 * the running_childs < max_children check and exits when
+		 * the pool is full.  main_loop's existing under-target
+		 * branch will re-enter fork_children on the next tick. */
+		if (fork_throttle_us > 0)
+			return;
 	}
 	__atomic_store_n(&shm->ready, true, __ATOMIC_RELEASE);
 }
