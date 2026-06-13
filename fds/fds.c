@@ -179,6 +179,33 @@ bool open_fds(void)
 	output(0, "Enabled %d/%d fd providers. initialized:%d.\n",
 		num_fd_providers_enabled, num_fd_providers, num_fd_providers_initialized);
 
+	/*
+	 * Per-provider initial pool size.  Pools populate once here at
+	 * init and only drain afterwards -- no provider has a runtime
+	 * replenish hook -- so this is the entire lifetime budget for
+	 * each pool.  Logging it once at startup makes runtime depletion
+	 * (sustained -1 returns from get_new_random_fd, fd_random_exhausted
+	 * bumps) interpretable: a provider that started with 8 entries
+	 * was always going to bottom out fast under fd-stress / close /
+	 * dup2-replace churn, where a provider that started with 50+
+	 * survives much longer.
+	 */
+	{
+		unsigned int j;
+
+		for (j = 0; j < num_active_providers; j++) {
+			struct fd_provider *prov = active_providers[j];
+			struct objhead *head;
+
+			if (prov == NULL)
+				continue;
+			head = get_objhead(OBJ_GLOBAL, prov->objtype);
+			output(0, "fd_provider init pool size: %s = %u\n",
+			       prov->name,
+			       head != NULL ? head->num_entries : 0);
+		}
+	}
+
 	return num_fd_providers_enabled > 0;
 }
 
@@ -328,6 +355,38 @@ regen:
 		struct fd_hash_entry *e;
 
 		child->current_fd = get_new_random_fd();
+
+		/*
+		 * get_new_random_fd() returns -1 only when every active
+		 * provider's OBJ_GLOBAL pool is currently empty (or no
+		 * providers are active).  Provider pools populate once at
+		 * init via .init and only ever drain after that — no
+		 * provider exposes a runtime .open replenish hook — so
+		 * further outer iterations in this child will see the same
+		 * state and burn the budget for no benefit.  Without this
+		 * early-exit, every fd-arg syscall in a depleted-pool child
+		 * spins the outer regen loop up to the decayed cap (16
+		 * iterations under the existing decay), calls
+		 * get_new_random_fd() each time only to get -1 again, and
+		 * emits the post-budget "outer retry budget exhausted"
+		 * outputerr — hundreds per child under sustained churn.
+		 *
+		 * Bail with the same exhaustion accounting the post-budget
+		 * bail uses (same -1 contract to the caller, same EBADF
+		 * surface in the kernel) but without the per-call log
+		 * spam: when the pool is genuinely empty the message rate
+		 * makes a healthy child indistinguishable from a stuck one
+		 * and floods the bug log.  Persistent fd_random_exhausted
+		 * remains the observable signal; the new pool-size dump in
+		 * open_fds() makes the depletion timeline reproducible
+		 * from a single run's log.
+		 */
+		if (child->current_fd < 0) {
+			__atomic_add_fetch(&shm->stats.fd_random_exhausted, 1,
+					   __ATOMIC_RELAXED);
+			child->fd_lifetime = 0;
+			return -1;
+		}
 
 		/*
 		 * Cache the slot's generation so the next iteration can
