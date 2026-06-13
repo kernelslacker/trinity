@@ -112,7 +112,7 @@ struct syscallentry syscall_msgrcv = {
 	.name = "msgrcv",
 	.group = GROUP_IPC,
 	.num_args = 5,
-	.argtype = { [0] = ARG_MSG_ID, [1] = ARG_NON_NULL_ADDRESS, [3] = ARG_RANGE, [4] = ARG_LIST },
+	.argtype = { [0] = ARG_MSG_ID, [1] = ARG_NON_NULL_ADDRESS, [2] = ARG_LEN, [3] = ARG_RANGE, [4] = ARG_LIST },
 	.argname = { [0] = "msqid", [1] = "msgp", [2] = "msgsz", [3] = "msgtyp", [4] = "msgflg" },
 	.arg_params[3].range.low = 0,
 	.arg_params[3].range.hi = 10,
