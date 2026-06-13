@@ -1221,6 +1221,7 @@ struct stats_s {
 	unsigned long xfrm_churn_runs;			/* total xfrm_churn invocations */
 	unsigned long xfrm_churn_setup_failed;		/* unshare / NETLINK_XFRM open latched */
 	unsigned long xfrm_churn_sa_added;		/* XFRM_MSG_NEWSA accepted */
+	unsigned long xfrm_churn_tunnel_sa_added;	/* XFRM_MSG_NEWSA accepted with mode=XFRM_MODE_TUNNEL */
 	unsigned long xfrm_churn_sa_updated;		/* XFRM_MSG_UPDSA accepted (mid-flow rekey) */
 	unsigned long xfrm_churn_sa_deleted;		/* XFRM_MSG_DELSA accepted */
 	unsigned long xfrm_churn_pol_added;		/* XFRM_MSG_NEWPOLICY accepted */

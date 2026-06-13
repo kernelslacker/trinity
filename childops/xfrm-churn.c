@@ -20,9 +20,11 @@
  *      namespace so no host SAD / SPD entry is touched.  Failure
  *      latches the whole op off.
  *   2. Bring lo up inside the netns (one-time).  IPsec on lo with
- *      transport-mode SAs gives us a self-contained data plane that
- *      drives xfrm_lookup_with_ifid -> esp_output without needing any
- *      routes beyond the kernel's automatic 127.0.0.0/8 entry.
+ *      transport- or tunnel-mode SAs gives us a self-contained data
+ *      plane that drives xfrm_lookup_with_ifid -> esp_output without
+ *      needing any routes beyond the kernel's automatic 127.0.0.0/8
+ *      entry; tunnel-mode SAs keep their outer endpoints on
+ *      127.0.0.0/8 so the same automatic loopback route covers them.
  *   3. Open a NETLINK_XFRM socket.  Failure with EPROTONOSUPPORT
  *      latches ns_unsupported_xfrm — a kernel without CONFIG_XFRM
  *      pays the EFAIL once and skips for the child's lifetime.
@@ -525,11 +527,13 @@ static void modprobe_algo(unsigned int idx)
 }
 
 /*
- * Bring lo up inside the private netns.  IPsec on lo with transport
- * mode SAs gives us a self-contained data plane that drives
- * xfrm_lookup_with_ifid -> esp_output without needing routes.
- * Failures are ignored — the rest of the sequence will fail visibly
- * if rtnl is genuinely broken.
+ * Bring lo up inside the private netns.  IPsec on lo with transport-
+ * or tunnel-mode SAs gives us a self-contained data plane that drives
+ * xfrm_lookup_with_ifid -> esp_output without needing explicit
+ * routes (tunnel-mode SAs keep outer endpoints on 127.0.0.0/8 and
+ * rely on the kernel's automatic loopback route).  Failures are
+ * ignored — the rest of the sequence will fail visibly if rtnl is
+ * genuinely broken.
  */
 /* Build the SA selector matching 127.0.0.1 -> 127.0.0.2 UDP, both
  * sides /32.  Same shape used for the policy selector so the SPD
@@ -1580,11 +1584,20 @@ static int xfrm_churn_iter_install_sa(struct xfrm_churn_iter_ctx *ctx)
 	ctx->reqid = (rand32() % XFRM_REQID_RANGE) + 1U;
 	ctx->spi   = htonl((rand32() % XFRM_SPI_RANGE) + XFRM_SPI_MIN);
 	ctx->seq   = pick_sa_seq();
-	ctx->mode  = XFRM_MODE_TRANSPORT;
-	/* TUNNEL mode requires routes to the inner addresses; staying
-	 * in TRANSPORT keeps the data plane self-contained on lo.
-	 * Knob preserved as a no-op so the rotation can be widened
-	 * later without restructuring this caller. */
+	/* Rotate transport / tunnel mode per iteration.  Tunnel mode
+	 * walks a distinct esp_output path: the inner IP header is
+	 * encapsulated by xfrm4_tunnel_output / xfrm6_tunnel_output
+	 * before the ESP encrypt, exercising the outer-header build,
+	 * the per-mode skb_cow/expand-head sizing, and (combined with
+	 * the MSG_ZEROCOPY variant) the shared-frag/COW decision under
+	 * tunnel encap rather than transport.  Outer SA addresses stay
+	 * on 127.0.0.0/8 -- the kernel's automatic loopback route
+	 * covers tunnel-mode delivery without needing an explicit
+	 * route install.  Tunnel selected ~half the time so transport
+	 * coverage is preserved unchanged; build_newsa /
+	 * build_newpolicy already take mode as a parameter and the
+	 * template's tmpl->mode mirrors it. */
+	ctx->mode  = ONE_IN(2) ? XFRM_MODE_TUNNEL : XFRM_MODE_TRANSPORT;
 
 	modprobe_algo(ctx->aidx);
 	rc = build_newsa(&ctx->nl, ctx->def, ctx->reqid, ctx->spi,
@@ -1596,6 +1609,9 @@ static int xfrm_churn_iter_install_sa(struct xfrm_churn_iter_ctx *ctx)
 	}
 	__atomic_add_fetch(&shm->stats.xfrm_churn_sa_added,
 			   1, __ATOMIC_RELAXED);
+	if (ctx->mode == XFRM_MODE_TUNNEL)
+		__atomic_add_fetch(&shm->stats.xfrm_churn_tunnel_sa_added,
+				   1, __ATOMIC_RELAXED);
 
 	rc = build_newpolicy(&ctx->nl, ctx->def, ctx->reqid, ctx->spi,
 			     ctx->mode);
