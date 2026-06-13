@@ -424,12 +424,13 @@ void psp_key_rotate_cleanup_child(void)
 	char buf[32];
 	unsigned int i;
 
-	if (pdpc_latched_netns_fd >= 0)
-		(void)setns(pdpc_latched_netns_fd, CLONE_NEWNET);
-	for (i = 0; i < pdpc_n_instances; i++) {
-		(void)snprintf(buf, sizeof(buf), "%u",
-			       (unsigned int)pdpc_bus_ids[i]);
-		(void)pdpc_sysfs_write_str(PDPC_NETDEVSIM_DEL, buf);
+	if (pdpc_latched_netns_fd >= 0 &&
+	    setns(pdpc_latched_netns_fd, CLONE_NEWNET) == 0) {
+		for (i = 0; i < pdpc_n_instances; i++) {
+			(void)snprintf(buf, sizeof(buf), "%u",
+				       (unsigned int)pdpc_bus_ids[i]);
+			(void)pdpc_sysfs_write_str(PDPC_NETDEVSIM_DEL, buf);
+		}
 	}
 	pdpc_n_instances = 0;
 	if (pdpc_latched_netns_fd >= 0) {
