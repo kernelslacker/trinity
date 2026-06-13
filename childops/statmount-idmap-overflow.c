@@ -158,14 +158,6 @@ struct mount_attr {
 	__u64	userns_fd;
 };
 
-struct mnt_id_req {
-	__u32	size;
-	__u32	spare;
-	__u64	mnt_id;
-	__u64	param;
-	__u64	mnt_ns_id;
-};
-
 struct statmount {
 	__u32	size;
 	__u32	mnt_opts;
@@ -202,6 +194,27 @@ struct statmount {
 	char	str[];
 };
 #endif /* !__has_include(<linux/mount.h>) */
+
+/*
+ * Request struct for statmount() / listmount().  Defined locally with
+ * the v1 UAPI layout (union { __u32 mnt_ns_fd; __u32 mnt_fd; } at
+ * offset 4) regardless of whether <linux/mount.h> is available,
+ * because older build headers still ship the v0 layout that names
+ * offset 4 as "__u32 spare".  The kernel BY_FD path requires the
+ * mount fd at offset 4 with both mnt_id and mnt_ns_id zero
+ * (fs/namespace.c rejects BY_FD requests with either set), so the
+ * file uses this private name to keep the layout under our control.
+ */
+struct mnt_id_req_v1 {
+	__u32	size;
+	union {
+		__u32	mnt_ns_fd;
+		__u32	mnt_fd;
+	};
+	__u64	mnt_id;
+	__u64	param;
+	__u64	mnt_ns_id;
+};
 
 /*
  * Outer-loop sizing.  Per-iter cost is one fork/exit pair (the
@@ -272,7 +285,7 @@ static long sys_mount_setattr(int dfd, const char *path, unsigned int flags,
 	return syscall(__NR_mount_setattr, dfd, path, flags, attr, size);
 }
 
-static long sys_statmount(struct mnt_id_req *req, struct statmount *buf,
+static long sys_statmount(struct mnt_id_req_v1 *req, struct statmount *buf,
 			  size_t bufsize, unsigned int flags)
 {
 	return syscall(__NR_statmount, req, buf, bufsize, flags);
@@ -503,12 +516,18 @@ static int install_idmap(int mnt_fd, int userns_fd)
 static void issue_one_statmount(int mnt_fd, void *buf,
 				unsigned long bufsize)
 {
-	struct mnt_id_req req;
+	struct mnt_id_req_v1 req;
 	long rc;
 
+	/*
+	 * STATMOUNT_BY_FD carries the mount fd in the offset-4 union
+	 * member (mnt_fd) and requires mnt_id and mnt_ns_id to be
+	 * zero; the kernel rejects the request with -EINVAL otherwise
+	 * and the idmap serialization path is never reached.
+	 */
 	memset(&req, 0, sizeof(req));
 	req.size = sizeof(req);
-	req.mnt_id = (__u64)mnt_fd;
+	req.mnt_fd = (__u32)mnt_fd;
 	req.param = STATMOUNT_MNT_BASIC | STATMOUNT_MNT_UIDMAP |
 		    STATMOUNT_MNT_GIDMAP | STATMOUNT_SUPPORTED_MASK;
 
