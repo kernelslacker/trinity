@@ -496,7 +496,7 @@ out_free:
 struct syscallentry syscall_recvmsg = {
 	.name = "recvmsg",
 	.num_args = 3,
-	.argtype = { [0] = ARG_SOCKETINFO, [2] = ARG_LIST },
+	.argtype = { [0] = ARG_SOCKETINFO, [1] = ARG_ADDRESS, [2] = ARG_LIST },
 	.argname = { [0] = "fd", [1] = "msg", [2] = "flags" },
 	.arg_params[2].list = ARGLIST(recv_flags),
 	.flags = NEED_ALARM | KCOV_REMOTE_HEAVY,
