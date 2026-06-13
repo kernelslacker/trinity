@@ -32,7 +32,7 @@
  * No childop implementation is modified by this queue.  A broken op
  * is detected via the demote path; the cure is to leave it dormant.
  *
- * The wave-1 seed list (consumed in this order before the FIFO walk
+ * The priority seed list (consumed in this order before the FIFO walk
  * over remaining dormant ops): genetlink_fuzzer, bpf_lifecycle,
  * iouring_recipes, nftables_churn, perf_chains, tracefs_fuzzer,
  * tls_rotate, af_unix_scm_rights_gc_churn, userns_fuzzer,
@@ -95,10 +95,10 @@
 #define CANARY_SUMMARY_INTERVAL_SEC	60
 
 /* --------------------------------------------------------------------
- * Wave-1 seed list and skip sets.  These are the operator-visible
+ * Priority seed list and skip sets.  These are the operator-visible
  * inputs to the queue's picker order.
  *
- * Wave-1 is consumed before the general FIFO walk over remaining
+ * Priority seeds are consumed before the general FIFO walk over remaining
  * dormant ops.  config_blocked is permanent (CONFIG_BLOCKED state at
  * startup, never picked).  risky_defer is left in DORMANT but the
  * picker silently skips it -- these ops need isolation (root-only /
@@ -106,7 +106,7 @@
  * provide.
  * -------------------------------------------------------------------- */
 
-static const enum child_op_type canary_wave1_seeds[] = {
+static const enum child_op_type canary_priority_seeds[] = {
 	CHILD_OP_GENETLINK_FUZZER,
 	CHILD_OP_BPF_LIFECYCLE,
 	CHILD_OP_IOURING_RECIPES,
@@ -118,7 +118,7 @@ static const enum child_op_type canary_wave1_seeds[] = {
 	CHILD_OP_USERNS_FUZZER,
 	CHILD_OP_SOCK_DIAG_WALKER,
 };
-#define CANARY_WAVE1_COUNT	ARRAY_SIZE(canary_wave1_seeds)
+#define CANARY_PRIORITY_COUNT	ARRAY_SIZE(canary_priority_seeds)
 
 static const enum child_op_type canary_config_blocked[] = {
 	CHILD_OP_NUMA_MIGRATION,
@@ -149,21 +149,21 @@ static const enum child_op_type canary_risky_defer[] = {
 
 static struct canary_op_state canary_ops[NR_CHILD_OP_TYPES];
 
-/* Picker cursors.  wave1_cursor is the next index into
- * canary_wave1_seeds[] (or the operator-supplied override).  fifo_cursor
+/* Picker cursors.  canary_priority_cursor is the next index into
+ * canary_priority_seeds[] (or the operator-supplied override).  fifo_cursor
  * is the last enum value picked from the general FIFO walk; the next
  * pick resumes from cursor+1 and wraps. */
-static unsigned int canary_wave1_cursor = 0;
+static unsigned int canary_priority_cursor = 0;
 static enum child_op_type canary_fifo_cursor = CHILD_OP_SYSCALL;
 
-/* Resolved wave-1 list pointer.  Defaults to the built-in seed array;
+/* Resolved priority-seed list pointer.  Defaults to the built-in seed array;
  * if --canary-seed was passed, the parser put op enums into
  * canary_seed_override[] / canary_seed_override_count and the init path
  * swaps that in. */
-static const enum child_op_type *canary_wave1_list = NULL;
-static unsigned int canary_wave1_list_count = 0;
+static const enum child_op_type *canary_priority_list = NULL;
+static unsigned int canary_priority_list_count = 0;
 
-/* Storage backing canary_wave1_list when --canary-seed is in use.  The
+/* Storage backing canary_priority_list when --canary-seed is in use.  The
  * parser stuffs unsigned-char-narrowed op enums into
  * canary_seed_override[]; we widen them into a real enum array here so
  * the picker can iterate by value rather than by re-casting on every
@@ -466,9 +466,9 @@ static bool pick_next_canary(enum child_op_type *out)
 	enum child_op_type op;
 	time_t now;
 
-	/* Seed-priority queue: wave-1 seeds first. */
-	while (canary_wave1_cursor < canary_wave1_list_count) {
-		op = canary_wave1_list[canary_wave1_cursor++];
+	/* Seed-priority queue: priority seeds first. */
+	while (canary_priority_cursor < canary_priority_list_count) {
+		op = canary_priority_list[canary_priority_cursor++];
 		if (op == CHILD_OP_SYSCALL || op >= NR_CHILD_OP_TYPES)
 			continue;
 		if (canary_ops[op].state == CANARY_STATE_CONFIG_BLOCKED)
@@ -483,7 +483,7 @@ static bool pick_next_canary(enum child_op_type *out)
 
 	/* FIFO fallback: walk the general dormant pool.  Walks
 	 * the enum in numerical order from fifo_cursor+1, wrapping.
-	 * Skips CONFIG_BLOCKED, risky-defer, wave-1 (already consumed
+	 * Skips CONFIG_BLOCKED, risky-defer, priority seeds (already consumed
 	 * or skipped above), PROMOTED, and DEMOTED entries still inside
 	 * their backoff window.  A DEMOTED whose backoff has elapsed
 	 * transitions back to DORMANT here and is then eligible. */
@@ -515,9 +515,9 @@ static bool pick_next_canary(enum child_op_type *out)
 			output(0, "canary: %s backoff complete, re-queued for canary\n",
 				canary_ops[op].name);
 		}
-		/* Skip wave-1 in the FIFO walk only if it's already been
+		/* Skip priority seeds in the FIFO walk only if it's already been
 		 * canaried at least once (queue handled it already); a
-		 * wave-1 seed that demoted-then-recovered should be
+		 * priority seed that demoted-then-recovered should be
 		 * eligible again via the same backoff path as any other
 		 * op. */
 		if (canary_ops[op].state == CANARY_STATE_DORMANT) {
@@ -615,19 +615,19 @@ void canary_queue_init(void)
 		}
 	}
 
-	/* Wave-1 list: built-in unless --canary-seed overrode it. */
+	/* Priority list: built-in unless --canary-seed overrode it. */
 	if (canary_seed_override_count > 0) {
 		for (i = 0; i < canary_seed_override_count; i++)
 			canary_seed_override_widened[i] =
 				(enum child_op_type)canary_seed_override[i];
-		canary_wave1_list = canary_seed_override_widened;
-		canary_wave1_list_count = canary_seed_override_count;
+		canary_priority_list = canary_seed_override_widened;
+		canary_priority_list_count = canary_seed_override_count;
 	} else {
-		canary_wave1_list = canary_wave1_seeds;
-		canary_wave1_list_count = (unsigned int)CANARY_WAVE1_COUNT;
+		canary_priority_list = canary_priority_seeds;
+		canary_priority_list_count = (unsigned int)CANARY_PRIORITY_COUNT;
 	}
 
-	canary_wave1_cursor = 0;
+	canary_priority_cursor = 0;
 	canary_fifo_cursor = CHILD_OP_SYSCALL;
 	canary_active_op_cell = CHILD_OP_SYSCALL;
 	canary_pending_op = CHILD_OP_SYSCALL;
@@ -657,9 +657,9 @@ void canary_queue_init(void)
 		return;
 	}
 
-	output(0, "canary queue: enabled, slots=%u, window=%u iters, wave1_seeds=%u, dormant_eligible=%u, config_blocked=%u\n",
+	output(0, "canary queue: enabled, slots=%u, window=%u iters, priority_seeds=%u, dormant_eligible=%u, config_blocked=%u\n",
 		canary_slots, window_iters_resolved(),
-		canary_wave1_list_count, dormant_eligible, config_blocked);
+		canary_priority_list_count, dormant_eligible, config_blocked);
 
 	/* Pick the first op and enter CANARYING immediately so the
 	 * fleet starts working it as soon as fork_children() runs. */
@@ -668,7 +668,7 @@ void canary_queue_init(void)
 
 	/* Silence compiler about input tables when build configs avoid
 	 * the picker (none today, but keeps the warning surface clean). */
-	(void)canary_wave1_seeds;
+	(void)canary_priority_seeds;
 	(void)canary_config_blocked;
 	(void)canary_risky_defer;
 }

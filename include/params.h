@@ -84,7 +84,7 @@ void clamp_default_alt_op_children(void);
  * dormant gate is consulted as the historical compile-time-static
  * vector).  canary_seed_override / canary_seed_override_count is the
  * --canary-seed override list, parsed at startup; when count is zero
- * the queue uses the built-in wave-1 seed list.
+ * the queue uses the built-in priority seed list.
  *
  * canary_slots auto-couples to alt_op_children.  The queue carves
  * slots from the front of the alt-op pool, so a non-zero default is
