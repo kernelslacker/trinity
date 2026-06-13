@@ -576,6 +576,22 @@ struct syscalltable {
  * zero per-dispatch cost.
  */
 #define SKIP_BLANKET_SCRUB	(1<<11)
+/*
+ * AVOID_REEXEC: opt this syscall out of the CMP RedQueen greedy re-exec
+ * step in dispatch_step's tail (redqueen_reexec_step).  The re-exec gate
+ * already excludes every sanitise-bearing syscall (same gate
+ * replay_syscall_step uses, for the same reason -- generic_sanitise
+ * re-runs would either resurrect freed pointer slots or stomp the
+ * captured slot pin); AVOID_REEXEC is the auditable layer on top for the
+ * handful of sanitise-free syscalls whose effects are still destructive
+ * to the calling child (process termination, irreversible global state).
+ * Today's denylist is the exit family -- belt-and-braces alongside the
+ * pre-existing AVOID_SYSCALL on those entries, so a future flag rework
+ * that drops AVOID_SYSCALL doesn't silently expose them to re-exec --
+ * with headroom for future sanitise-free additions discovered by the
+ * reexec_skipped_destructive counter.
+ */
+#define AVOID_REEXEC		(1<<12)
 
 struct kcov_child;
 struct childdata;
