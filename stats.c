@@ -363,6 +363,23 @@ static void json_emit_kcov_section(void)
 		kc_cmp_records, kc_cmp_trunc, kc_cmp_bloom_skipped,
 		kc_cmp_strip_skipped, kc_cmp_unique);
 
+	/* Shadow transition-coverage globals.  Emitted unconditionally
+	 * so consumers can rely on a stable schema; both fields are 0
+	 * when the mode is OFF (the per-PC hash never runs and the
+	 * shared counters stay at their post-memset zero). */
+	{
+		unsigned long kc_tedges = __atomic_load_n(
+			&kcov_shm->transition_edges_found,
+			__ATOMIC_RELAXED);
+		unsigned long kc_tdistinct = __atomic_load_n(
+			&kcov_shm->transition_distinct_edges,
+			__ATOMIC_RELAXED);
+
+		printf(",\"transition_edges_found\":%lu,"
+			"\"transition_distinct_edges\":%lu",
+			kc_tedges, kc_tdistinct);
+	}
+
 	fputs(",\"top_syscalls\":[", stdout);
 	for (j = 0; j < top_count; j++) {
 		struct syscallentry *entry = table[top_nr[j]].entry;
@@ -386,6 +403,72 @@ static void json_emit_kcov_section(void)
 		printf(",\"delta\":%lu}", delta_edges[j]);
 	}
 	putchar(']');
+
+	/* Shadow transition-coverage top-N: cumulative by real
+	 * transition-slot count, and per-interval growth by call-count
+	 * delta.  Mirrors the PC top_syscalls / top_recent_growth blocks
+	 * directly above so the two signals share the JSON shape.  Both
+	 * arrays come out empty when the mode is OFF since the per-
+	 * syscall counters never get bumped. */
+	{
+		unsigned int tr_top_nr[10];
+		unsigned long tr_top_edges[10];
+		unsigned int tr_top_count = 0;
+		unsigned int tr_delta_nr[10];
+		unsigned long tr_delta_edges[10];
+		unsigned int tr_delta_count = 0;
+
+		memset(tr_top_edges, 0, sizeof(tr_top_edges));
+		memset(tr_delta_edges, 0, sizeof(tr_delta_edges));
+		for (i = 0; i < nr_syscalls_to_scan; i++) {
+			unsigned long real = __atomic_load_n(
+				&kcov_shm->per_syscall_transition_edges_real[i],
+				__ATOMIC_RELAXED);
+			unsigned long curr = __atomic_load_n(
+				&kcov_shm->per_syscall_transition_edges[i],
+				__ATOMIC_RELAXED);
+			unsigned long prev = kcov_shm->per_syscall_transition_edges_previous[i];
+			unsigned long delta = (curr > prev) ? curr - prev : 0;
+
+			if (real > 0)
+				topn_push(tr_top_edges, tr_top_nr,
+					  &tr_top_count, 10, real, i);
+			if (delta > 0)
+				topn_push(tr_delta_edges, tr_delta_nr,
+					  &tr_delta_count, 10, delta, i);
+		}
+
+		fputs(",\"top_transition_syscalls\":[", stdout);
+		for (j = 0; j < tr_top_count; j++) {
+			struct syscallentry *entry = table[tr_top_nr[j]].entry;
+
+			if (j > 0)
+				putchar(',');
+			fputs("{\"name\":", stdout);
+			json_emit_string(entry ? entry->name : "???");
+			printf(",\"transitions\":%lu}",
+			       tr_top_edges[j]);
+		}
+		putchar(']');
+
+		fputs(",\"top_transition_recent_growth\":[", stdout);
+		for (j = 0; j < tr_delta_count; j++) {
+			struct syscallentry *entry = table[tr_delta_nr[j]].entry;
+
+			if (j > 0)
+				putchar(',');
+			fputs("{\"name\":", stdout);
+			json_emit_string(entry ? entry->name : "???");
+			printf(",\"delta\":%lu}", tr_delta_edges[j]);
+		}
+		putchar(']');
+
+		for (i = 0; i < nr_syscalls_to_scan; i++)
+			kcov_shm->per_syscall_transition_edges_previous[i] =
+				__atomic_load_n(
+					&kcov_shm->per_syscall_transition_edges[i],
+					__ATOMIC_RELAXED);
+	}
 
 	fputs(",\"cold_syscalls\":[", stdout);
 	{
@@ -6115,6 +6198,32 @@ static void dump_stats_kcov_block(void)
 		stat_row("kcov_coverage", "total_calls",           kc_calls);
 		stat_row("kcov_coverage", "remote_calls",          kc_remote);
 		stat_row("kcov_coverage", "cmp_records_collected", kc_cmp_records);
+
+		/* Shadow transition-coverage globals.  See the
+		 * kcov_transition_coverage_mode enum + KCOV_NUM_TRANSITIONS
+		 * comments in include/kcov.h for the design; this block
+		 * surfaces the two run-wide counters so PC vs transition
+		 * yield can be compared side-by-side without parsing a
+		 * separate log channel.  Both stay at zero when the mode is
+		 * OFF, so the early-out below keeps the stats stream quiet
+		 * for runs that opted out. */
+		{
+			unsigned long kc_tedges = __atomic_load_n(
+				&kcov_shm->transition_edges_found,
+				__ATOMIC_RELAXED);
+			unsigned long kc_tdistinct = __atomic_load_n(
+				&kcov_shm->transition_distinct_edges,
+				__ATOMIC_RELAXED);
+
+			if (kc_tedges > 0)
+				stat_row("kcov_coverage",
+					 "transition_edges_found",
+					 kc_tedges);
+			if (kc_tdistinct > 0)
+				stat_row("kcov_coverage",
+					 "transition_distinct_edges",
+					 kc_tdistinct);
+		}
 		if (kc_cmp_trunc > 0)
 			stat_row("kcov_coverage", "cmp_trace_truncated", kc_cmp_trunc);
 		if (kc_dedup_overflow > 0)
@@ -6225,6 +6334,89 @@ static void dump_stats_kcov_block(void)
 			for (i = 0; i < nr_syscalls_to_scan; i++)
 				kcov_shm->per_syscall_edges_previous[i] =
 					__atomic_load_n(&kcov_shm->per_syscall_edges[i], __ATOMIC_RELAXED);
+		}
+
+		/* Shadow transition coverage: top-N by real transition-slot
+		 * count (cumulative since process start, not since the last
+		 * dump) and top-N by per-interval call-count delta.  Printed
+		 * directly beside the PC top-N blocks above so the two
+		 * signals can be compared at a glance — a syscall that
+		 * appears in the transition top-N but not in the PC top-N is
+		 * a candidate for the "new control-flow path through warm
+		 * code" pattern that the PC bitmap misses by design.  Both
+		 * blocks are silent when transition coverage is OFF: the per-
+		 * syscall arrays stay zero, so the any_* gates skip the
+		 * headers. */
+		{
+			unsigned int tr_top_nr[10];
+			unsigned long tr_top_edges[10];
+			unsigned int tr_top_count = 0;
+			bool any_tr = false;
+
+			memset(tr_top_edges, 0, sizeof(tr_top_edges));
+			for (i = 0; i < nr_syscalls_to_scan; i++) {
+				unsigned long tedges = __atomic_load_n(
+					&kcov_shm->per_syscall_transition_edges_real[i],
+					__ATOMIC_RELAXED);
+
+				if (tedges == 0)
+					continue;
+				any_tr = true;
+				topn_push(tr_top_edges, tr_top_nr, &tr_top_count,
+					  10, tedges, i);
+			}
+
+			if (any_tr && tr_top_count > 0) {
+				output(0, "Top transition-producing syscalls (shadow):\n");
+				for (j = 0; j < tr_top_count; j++) {
+					struct syscallentry *entry = table[tr_top_nr[j]].entry;
+					const char *name = entry ? entry->name : "???";
+
+					output(0, "  %-24s %lu\n",
+					       name, tr_top_edges[j]);
+				}
+			}
+		}
+
+		{
+			unsigned int tr_delta_nr[10];
+			unsigned long tr_delta_edges[10];
+			unsigned int tr_delta_count = 0;
+			bool any_tr_delta = false;
+
+			memset(tr_delta_edges, 0, sizeof(tr_delta_edges));
+			for (i = 0; i < nr_syscalls_to_scan; i++) {
+				unsigned long prev = kcov_shm->per_syscall_transition_edges_previous[i];
+				unsigned long curr = __atomic_load_n(
+					&kcov_shm->per_syscall_transition_edges[i],
+					__ATOMIC_RELAXED);
+				unsigned long delta = (curr > prev) ? curr - prev : 0;
+
+				if (delta > 0)
+					any_tr_delta = true;
+				if (delta == 0)
+					continue;
+
+				topn_push(tr_delta_edges, tr_delta_nr,
+					  &tr_delta_count, 10, delta, i);
+			}
+
+			if (any_tr_delta && tr_delta_count > 0) {
+				output(0, "Top syscalls by recent transition growth (shadow):\n");
+				for (j = 0; j < tr_delta_count; j++) {
+					struct syscallentry *entry = table[tr_delta_nr[j]].entry;
+					const char *name = entry ? entry->name : "???";
+
+					output(0, "  %-24s +%lu\n",
+					       name, tr_delta_edges[j]);
+				}
+			}
+
+			for (i = 0; i < nr_syscalls_to_scan; i++)
+				kcov_shm->per_syscall_transition_edges_previous[i] =
+					__atomic_load_n(
+						&kcov_shm->per_syscall_transition_edges[i],
+						__ATOMIC_RELAXED);
 		}
 
 		/* Sibling of "Top syscalls by recent edge growth": top-N by

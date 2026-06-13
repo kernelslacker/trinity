@@ -441,6 +441,7 @@ static const struct option_help option_descs[] = {
 	{ "canary-slots",	 0,  "reserve N slots from the front of --alt-op-children to run the dormant-op canary queue (default: min(alt-op-children, 2) when unset). Clamped to min(N, alt_op_children); N=0 disables the queue identically to --no-canary-queue." },
 	{ "canary-window",	 0,  "invocations of the active canary op per window (default 10000, range 1000..1000000). Counted against the per-op invocation counter, not the fleet-wide op count, so window size is independent of -C and --canary-slots. Lower windows are too noisy to promote on; higher windows let a useless op squat a slot for too long." },
 	{ "childop-kcov-attribution", 0, "per-childop KCOV attribution mode: off (default; no bracketing, childop_edges_clean stays zero), dual (bracket every eligible alt-op and publish the per-call edge delta to childop_edges_clean alongside the existing global-delta path), or on (reserved; identical to dual until consumers switch over)." },
+	{ "kcov-transition-coverage", 0, "shadow transition-coverage map mode: shadow (default; hash consecutive canonical PCs into a separate 16M-slot map and surface a transition top-N beside the PC top-N in the stats dump, with no effect on reward/frontier/plateau steering) or off (skip the per-PC transition hash entirely)." },
 	{ "children",		'C', "specify number of child processes" },
 	{ "clowntown",		 0,  "enable clowntown mode" },
 	{ "dangerous",		'd', "enable dangerous mode" },
@@ -527,6 +528,7 @@ static const struct option longopts[] = {
 	{ "canary-slots", required_argument, NULL, 0 },
 	{ "canary-window", required_argument, NULL, 0 },
 	{ "childop-kcov-attribution", required_argument, NULL, 0 },
+	{ "kcov-transition-coverage", required_argument, NULL, 0 },
 	{ "children", required_argument, NULL, 'C' },
 	{ "clowntown", no_argument, NULL, 0 },
 	{ "dangerous", no_argument, NULL, 'd' },
@@ -797,6 +799,21 @@ void parse_args(int argc, char *argv[])
 						CHILDOP_KCOV_ATTR_ON;
 				} else {
 					outputerr("--childop-kcov-attribution: unknown mode '%s' (expected off, dual, or on)\n",
+						optarg);
+					exit(EXIT_FAILURE);
+				}
+			}
+
+			if (strcmp("kcov-transition-coverage",
+				   longopts[opt_index].name) == 0) {
+				if (strcmp(optarg, "off") == 0) {
+					kcov_transition_coverage_mode =
+						KCOV_TRANSITION_COVERAGE_OFF;
+				} else if (strcmp(optarg, "shadow") == 0) {
+					kcov_transition_coverage_mode =
+						KCOV_TRANSITION_COVERAGE_SHADOW;
+				} else {
+					outputerr("--kcov-transition-coverage: unknown mode '%s' (expected off or shadow)\n",
 						optarg);
 					exit(EXIT_FAILURE);
 				}
