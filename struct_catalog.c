@@ -4669,6 +4669,108 @@ static const struct union_variant bpf_attr_variants[] = {
 #endif
 
 /* ------------------------------------------------------------------ */
+/* setsockopt optval shapes -- proof batch for the two-key             */
+/* (level, optname) discriminator.  Five shapes already owned by       */
+/* bespoke build_*() functions in syscalls/setsockopt.c, registered    */
+/* here so apply_sockopt_entry()'s explicit-key lookup resolves them   */
+/* and struct_field_fill_schema_aware() takes over the fill.  Bespoke  */
+/* builders stay in code as the miss-fallback for the int / bool /    */
+/* string scalar entries (no struct shape to catalog) and for the     */
+/* higher-leverage shapes that have not been migrated yet (sctp /     */
+/* mptcp / tcp_repair / can_filter[] etc.); coverage on those paths   */
+/* is byte-identical to before until their rows land.                 */
+/* ------------------------------------------------------------------ */
+
+/*
+ * struct linger -- SOL_SOCKET / SO_LINGER.  l_onoff is a boolean
+ * (kernel masks to 0/1); l_linger is a small positive lingertime in
+ * seconds (bespoke build_linger() drew 0..59).  Both pin cleanly to
+ * FT_RANGE so the schema fill produces values inside the legal window
+ * the bespoke builder did, and struct_field_for_cmp() can attribute
+ * KCOV-CMP constants at the named slots rather than at a
+ * coincidentally-same-width neighbour.
+ */
+static const struct struct_field linger_fields[] = {
+	FIELDX(struct linger, l_onoff, FT_RANGE,
+	       .u.range = { 0, 1 },
+	       .mutate_weight = 60),
+	FIELDX(struct linger, l_linger, FT_RANGE,
+	       .u.range = { 0, 60 },
+	       .mutate_weight = 60),
+};
+
+/*
+ * struct ip_mreqn -- IPPROTO_IP / IP_{ADD,DROP}_MEMBERSHIP and
+ * IP_MULTICAST_IF.  Bespoke build_ip_mreqn() seeded imr_multiaddr in
+ * the 224.0.0.0/4 multicast range and zeroed imr_address / imr_ifindex
+ * (kernel-default interface).  The three fields stay FT_RAW for the
+ * proof: imr_multiaddr is __be32, so schema fill in host byte order
+ * produces a multicast address only ~1/16 of the time vs the bespoke
+ * builder's 100%, and FT_MAGIC -- the §5-recommended tag for curated
+ * be32 vocab -- still falls through to FT_RAW in the fill switch
+ * today (generate-args.c:1019).  The miss-fallback option is GONE for
+ * the cataloged (level, optname) tuples once this row registers, so
+ * the multicast-bias regression is the price of the proof; a follow-up
+ * implementing FT_MAGIC (or a be32-aware range tag) restores it
+ * without touching this entry.
+ */
+static const struct struct_field ip_mreqn_fields[] = {
+	FIELD(struct ip_mreqn, imr_multiaddr),
+	FIELD(struct ip_mreqn, imr_address),
+	FIELD(struct ip_mreqn, imr_ifindex),
+};
+
+/*
+ * struct ipv6_mreq -- IPPROTO_IPV6 / IPV6_{ADD,DROP}_MEMBERSHIP.
+ * Bespoke build_ipv6_mreq() set ipv6mr_multiaddr to a link-local
+ * solicited-node address (ff02::xx) and zeroed ipv6mr_interface.
+ * ipv6mr_multiaddr is struct in6_addr (16 bytes); fill_field_raw
+ * leaves wider-than-4-byte fields at the buffer's initial fill, which
+ * is zero from zmalloc, so the schema fill produces the IPv6 "any"
+ * address rather than a link-local multicast group.  Same FT_MAGIC
+ * follow-up applies; for the proof the row registers and we accept
+ * that 16-byte multicast biasing is on the schema-fill TODO list.
+ */
+static const struct struct_field ipv6_mreq_fields[] = {
+	FIELD(struct ipv6_mreq, ipv6mr_multiaddr),
+	FIELD(struct ipv6_mreq, ipv6mr_interface),
+};
+
+/*
+ * struct packet_mreq -- SOL_PACKET / PACKET_{ADD,DROP}_MEMBERSHIP.
+ * Bespoke build_packet_mreq() set mr_ifindex=1 (default-ish), mr_type
+ * in [1..4] (which over-shoots PACKET_MR_UNICAST=3 and under-shoots
+ * PACKET_MR_MULTICAST=0), mr_alen=6 (ethernet), and random bytes in
+ * mr_address[8].  FT_ENUM on mr_type pins it to the four actually-
+ * valid PACKET_MR_* values -- a strict improvement over the bespoke
+ * draw.  mr_ifindex / mr_alen go FT_RANGE so the schema fill stays
+ * close to the bespoke window.  mr_address[8] keeps FT_RAW and falls
+ * to "left at initial fill" (zero) the same way ipv6_mreq's 16-byte
+ * addr does; bespoke set random bytes there, so this is a regression
+ * for that field specifically and the same FT_MAGIC follow-up applies.
+ */
+static const unsigned long packet_mreq_type_values[] = {
+	PACKET_MR_MULTICAST,
+	PACKET_MR_PROMISC,
+	PACKET_MR_ALLMULTI,
+	PACKET_MR_UNICAST,
+};
+
+static const struct struct_field packet_mreq_fields[] = {
+	FIELDX(struct packet_mreq, mr_ifindex, FT_RANGE,
+	       .u.range = { 0, 4 },
+	       .mutate_weight = 60),
+	FIELDX(struct packet_mreq, mr_type, FT_ENUM,
+	       .u.enum_ = { packet_mreq_type_values,
+			    ARRAY_SIZE(packet_mreq_type_values) },
+	       .mutate_weight = 80),
+	FIELDX(struct packet_mreq, mr_alen, FT_RANGE,
+	       .u.range = { 0, 8 },
+	       .mutate_weight = 40),
+	FIELD(struct packet_mreq, mr_address),
+};
+
+/* ------------------------------------------------------------------ */
 /* The catalog itself                                                   */
 /* ------------------------------------------------------------------ */
 
@@ -5060,6 +5162,30 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= iocb_fields,
 		.num_fields	= ARRAY_SIZE(iocb_fields),
 	},
+	[SC_LINGER] = {
+		.name		= "linger",
+		.struct_size	= sizeof(struct linger),
+		.fields		= linger_fields,
+		.num_fields	= ARRAY_SIZE(linger_fields),
+	},
+	[SC_IP_MREQN] = {
+		.name		= "ip_mreqn",
+		.struct_size	= sizeof(struct ip_mreqn),
+		.fields		= ip_mreqn_fields,
+		.num_fields	= ARRAY_SIZE(ip_mreqn_fields),
+	},
+	[SC_IPV6_MREQ] = {
+		.name		= "ipv6_mreq",
+		.struct_size	= sizeof(struct ipv6_mreq),
+		.fields		= ipv6_mreq_fields,
+		.num_fields	= ARRAY_SIZE(ipv6_mreq_fields),
+	},
+	[SC_PACKET_MREQ] = {
+		.name		= "packet_mreq",
+		.struct_size	= sizeof(struct packet_mreq),
+		.fields		= packet_mreq_fields,
+		.num_fields	= ARRAY_SIZE(packet_mreq_fields),
+	},
 };
 
 /*
@@ -5181,6 +5307,38 @@ static const unsigned long quotactl_if_dqinfo_subcmds[] = {
 
 static const unsigned long seccomp_set_mode_filter_ops[] = {
 	SECCOMP_SET_MODE_FILTER,
+};
+
+/*
+ * setsockopt (level, optname) discriminator vocab -- proof batch for
+ * the two-key extension.  Each list enumerates the optnames inside a
+ * single level that share an optval struct shape, so one
+ * syscall_struct_args[] row covers every (level, this-vocab) tuple
+ * without cloning the entry.  Same pattern as cgroup link_create's
+ * 20-attach-type discrim_values list.
+ *
+ * Symbol comes from setsockopt.c's sockopt_table[] vocabulary; the
+ * lookup matches on the raw integer value, not the symbolic name.
+ */
+static const unsigned long setsockopt_timeval_optnames[] = {
+	SO_RCVTIMEO,
+	SO_SNDTIMEO,
+};
+
+static const unsigned long setsockopt_ip_mreqn_optnames[] = {
+	IP_ADD_MEMBERSHIP,
+	IP_DROP_MEMBERSHIP,
+	IP_MULTICAST_IF,
+};
+
+static const unsigned long setsockopt_ipv6_mreq_optnames[] = {
+	IPV6_ADD_MEMBERSHIP,
+	IPV6_DROP_MEMBERSHIP,
+};
+
+static const unsigned long setsockopt_packet_mreq_optnames[] = {
+	PACKET_ADD_MEMBERSHIP,
+	PACKET_DROP_MEMBERSHIP,
 };
 
 /* ------------------------------------------------------------------ */
@@ -5861,20 +6019,86 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 *
 	 * Not registered here on purpose: prctl(PR_SET_SECCOMP, mode, ...)
 	 * also reads a sock_fprog at a3, but only when a2 ==
-	 * SECCOMP_MODE_FILTER -- a two-arg discriminator the catalog does
-	 * not express today.  A single-arg discriminator on a1 ==
-	 * PR_SET_SECCOMP would misattribute on the SECCOMP_MODE_STRICT
-	 * arm (where a3 is unused), so the prctl slot stays unregistered
-	 * until the catalog grows a multi-arg discriminator extension.
-	 * setsockopt(fd, SOL_SOCKET, SO_ATTACH_FILTER, ...) is the same
-	 * shape (a2 + a3 multi-discriminator) and stays unregistered for
-	 * the same reason.
+	 * SECCOMP_MODE_FILTER -- a two-arg discriminator that the catalog
+	 * now expresses via (discrim_arg_idx=1, discrim_value=PR_SET_SECCOMP,
+	 * discrim2_arg_idx=2, discrim2_value=SECCOMP_MODE_FILTER).  Left
+	 * unregistered in this batch by scope -- the proof targets the
+	 * setsockopt optval shapes; prctl/seccomp two-key rows follow.
+	 * setsockopt(fd, SOL_SOCKET, SO_ATTACH_FILTER, ...) is similarly
+	 * the SO_ATTACH_FILTER arm of the (level, optname) two-key family
+	 * the proof batch below exercises -- the BPF arms stay bespoke
+	 * because they REPLACE the optval allocation wholesale rather than
+	 * fill it (see socket_setsockopt() SO_ATTACH_FILTER branch), so a
+	 * schema-fill row would race the bpf_gen_filter() replacement.
 	 */
 	{
 		"seccomp", 3, &struct_catalog[SC_SOCK_FPROG],
 		.discrim_arg_idx	= 1,
 		.discrim_values		= seccomp_set_mode_filter_ops,
 		.num_discrim_values	= ARRAY_SIZE(seccomp_set_mode_filter_ops),
+	},
+	/*
+	 * ----------------------------------------------------------------
+	 * setsockopt(fd, level, optname, optval, optlen) optval -- a4.
+	 *
+	 * Two-key proof batch: five (level, optname) shapes already owned
+	 * by bespoke build_*() functions in syscalls/setsockopt.c, now
+	 * resolved through struct_arg_lookup_two_key() from
+	 * apply_sockopt_entry().  discrim_arg_idx=2 is level (a2) and
+	 * discrim2_arg_idx=3 is optname (a3); the explicit-key consumer
+	 * passes them directly off the picked sockopt_table[] row so the
+	 * lookup runs against the authoritative pre-commit values, not
+	 * the post-mangle rec->a2/a3 the kernel would see.
+	 *
+	 * argtype[3] is not ARG_STRUCT_PTR_*, so the rec-based
+	 * struct_arg_lookup() never resolves these rows -- which is the
+	 * point: the bespoke driver owns selection / optlen / BPF-arm
+	 * replacement / per-fd pairing, and routes only the fill through
+	 * the catalog when a row matches.  Bespoke builders remain in
+	 * code as the miss-fallback for the int / bool / string scalar
+	 * sockopt_table[] entries (no struct shape, no row to register)
+	 * and for the higher-leverage shapes (sctp / mptcp / tcp_repair /
+	 * can_filter[] etc.) that follow this proof.
+	 * ----------------------------------------------------------------
+	 */
+	{
+		"setsockopt", 4, &struct_catalog[SC_LINGER],
+		.discrim_arg_idx	= 2,
+		.discrim_value		= SOL_SOCKET,
+		.discrim2_arg_idx	= 3,
+		.discrim2_value		= SO_LINGER,
+	},
+	{
+		"setsockopt", 4, &struct_catalog[SC_TIMEVAL],
+		.discrim_arg_idx	= 2,
+		.discrim_value		= SOL_SOCKET,
+		.discrim2_arg_idx	= 3,
+		.discrim2_values	= setsockopt_timeval_optnames,
+		.num_discrim2_values	= ARRAY_SIZE(setsockopt_timeval_optnames),
+	},
+	{
+		"setsockopt", 4, &struct_catalog[SC_IP_MREQN],
+		.discrim_arg_idx	= 2,
+		.discrim_value		= IPPROTO_IP,
+		.discrim2_arg_idx	= 3,
+		.discrim2_values	= setsockopt_ip_mreqn_optnames,
+		.num_discrim2_values	= ARRAY_SIZE(setsockopt_ip_mreqn_optnames),
+	},
+	{
+		"setsockopt", 4, &struct_catalog[SC_IPV6_MREQ],
+		.discrim_arg_idx	= 2,
+		.discrim_value		= IPPROTO_IPV6,
+		.discrim2_arg_idx	= 3,
+		.discrim2_values	= setsockopt_ipv6_mreq_optnames,
+		.num_discrim2_values	= ARRAY_SIZE(setsockopt_ipv6_mreq_optnames),
+	},
+	{
+		"setsockopt", 4, &struct_catalog[SC_PACKET_MREQ],
+		.discrim_arg_idx	= 2,
+		.discrim_value		= SOL_PACKET,
+		.discrim2_arg_idx	= 3,
+		.discrim2_values	= setsockopt_packet_mreq_optnames,
+		.num_discrim2_values	= ARRAY_SIZE(setsockopt_packet_mreq_optnames),
 	},
 	/*
 	 * io_cancel(aio_context_t ctx_id, struct iocb __user *iocb,

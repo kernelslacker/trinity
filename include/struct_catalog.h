@@ -339,6 +339,18 @@ enum struct_catalog_idx {
 	SC_SOCK_FPROG,
 	SC_SHMID_DS,
 	SC_IOCB,
+	/*
+	 * setsockopt optval struct shapes -- first batch (the proof) for
+	 * the two-key (level, optname) discriminator.  Registered against
+	 * ("setsockopt", arg 4) with discrim_arg_idx=2 (level) and
+	 * discrim2_arg_idx=3 (optname); resolution goes through
+	 * struct_arg_lookup_two_key() from apply_sockopt_entry(), not the
+	 * rec-based path.
+	 */
+	SC_LINGER,
+	SC_IP_MREQN,
+	SC_IPV6_MREQ,
+	SC_PACKET_MREQ,
 
 	SC_NR_ENTRIES,		/* sentinel; equals ARRAY_SIZE(struct_catalog) once both stay in lockstep */
 };
