@@ -35,6 +35,7 @@ extern struct nfnl_subsys_grammar sub_nftables;
 extern struct nfnl_subsys_grammar sub_ipset;
 extern struct nfnl_subsys_grammar sub_acct;
 extern struct nfnl_subsys_grammar sub_cthelper;
+extern struct nfnl_subsys_grammar sub_osf;
 
 /*
  * Per-subsys grammar definitions live in net/netlink-nfnl-sub-*.c;
@@ -49,6 +50,7 @@ static struct nfnl_subsys_grammar *registry[] = {
 	&sub_ipset,
 	&sub_acct,
 	&sub_cthelper,
+	&sub_osf,
 };
 
 /*
