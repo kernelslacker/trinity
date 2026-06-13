@@ -6914,6 +6914,7 @@ static bool is_struct_slot_argtype(enum argtype t)
 	case ARG_IOVEC:
 	case ARG_IOVEC_IN:
 	case ARG_SOCKADDR:
+	case ARG_TIMESPEC:
 	case ARG_UNDEFINED:
 		return true;
 	default:

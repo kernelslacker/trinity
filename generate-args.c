@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <limits.h>
+#include <time.h>
 #include <unistd.h>
 #include <string.h>
 
@@ -696,6 +697,90 @@ static unsigned long gen_arg_xattr_name(struct syscallentry *entry __unused__,
 		return 0;
 	gen_xattr_name_pooled(name, XATTR_NAME_BUFSZ);
 	return (unsigned long) name;
+}
+
+/*
+ * ARG_TIMESPEC: a writable pool buffer filled with a struct timespec.
+ *
+ * The kernel runs every timespec arrival through get_timespec64() ->
+ * timespec64_valid(), which rejects tv_nsec >= NSEC_PER_SEC or < 0
+ * before the timer / wait / IPC body runs.  Random bytes (the bare
+ * ARG_UNDEFINED fill) collapse to tv_nsec ~ 2^63 -> certain -EINVAL
+ * at the gate -- the actual subsystem code never executes.
+ *
+ * Mix:
+ *   - ~10% NULL (legal "no timeout" arm for clock_nanosleep, semtimedop,
+ *     io_getevents, futex_waitv, mq_timed*, ...)
+ *   - ~5% raw bytes (keep the timespec64_valid reject path warm)
+ *   - 85% bucketed legal / boundary / overflow shapes
+ *
+ * Pool buffer (get_writable_struct), off the shared region / libc heap
+ * so the blanket address scrub is a no-op.  No .cleanup needed.
+ *
+ * Note: trinity is built largely as a 64-bit binary; struct timespec
+ * and the kernel's struct __kernel_timespec share an identical layout
+ * on 64-bit so the bespoke sanitisers being folded into this generator
+ * (clock_nanosleep, clock_settime, semtimedop, ...) already type their
+ * locals as struct timespec.  Match that convention.
+ */
+static unsigned long gen_arg_timespec(struct syscallentry *entry __unused__,
+				      struct syscallrecord *rec __unused__,
+				      unsigned int argnum __unused__)
+{
+	struct timespec *ts;
+
+	if (rnd_modulo_u32(10) == 0)
+		return 0;
+
+	ts = (struct timespec *) get_writable_struct(sizeof(*ts));
+	if (ts == NULL)
+		return 0;
+
+	if (rnd_modulo_u32(20) == 0) {
+		ts->tv_sec = (time_t) rand64();
+		ts->tv_nsec = (long) rand64();
+		return (unsigned long) ts;
+	}
+
+	switch (rnd_modulo_u32(8)) {
+	case 0:
+		ts->tv_sec = 0;
+		ts->tv_nsec = 0;
+		break;
+	case 1:
+		ts->tv_sec = 0;
+		ts->tv_nsec = 1;
+		break;
+	case 2:
+		ts->tv_sec = 0;
+		ts->tv_nsec = (long) rnd_modulo_u32(1000000);
+		break;
+	case 3:
+		ts->tv_sec = (time_t) rnd_modulo_u32(60);
+		ts->tv_nsec = (long) rnd_modulo_u32(1000000000u);
+		break;
+	case 4:
+		ts->tv_sec = (time_t) time(NULL) +
+			(time_t) rnd_modulo_u32(120) - (time_t) 60;
+		ts->tv_nsec = (long) rnd_modulo_u32(1000000000u);
+		break;
+	case 5:
+		ts->tv_sec = 0;
+		ts->tv_nsec = 999999999L;
+		break;
+	case 6:
+		ts->tv_sec = 0;
+		ts->tv_nsec = 1000000000L;
+		break;
+	default:
+		if (RAND_BOOL())
+			ts->tv_sec = -(time_t)(1 + rnd_modulo_u32(1u << 20));
+		else
+			ts->tv_sec = (time_t) LONG_MAX;
+		ts->tv_nsec = (long) rnd_modulo_u32(1000000000u);
+		break;
+	}
+	return (unsigned long) ts;
 }
 
 /* ARG_IOVECLEN / ARG_SOCKADDRLEN: the value was published into the slot
@@ -2852,6 +2937,10 @@ const struct argtype_ops argtype_table[] = {
 	[ARG_XATTR_NAME] = {
 		.name = "ARG_XATTR_NAME",
 		.generate = gen_arg_xattr_name,
+	},
+	[ARG_TIMESPEC] = {
+		.name = "ARG_TIMESPEC",
+		.generate = gen_arg_timespec,
 	},
 	[ARG_IOVEC] = {
 		.name = "ARG_IOVEC",

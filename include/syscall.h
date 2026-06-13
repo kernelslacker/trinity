@@ -157,6 +157,7 @@ enum argtype {
 	ARG_NUMA_NODE,
 	ARG_PATHNAME,
 	ARG_XATTR_NAME,	/* writable pool buffer filled with a namespace-shaped xattr name */
+	ARG_TIMESPEC,	/* writable pool buffer filled with a bucketed struct timespec */
 	ARG_IOVEC,
 	ARG_IOVEC_IN,
 	ARG_IOVECLEN,
