@@ -36,6 +36,7 @@
 #include <linux/if_packet.h>
 #include <linux/tipc.h>
 #include <linux/qrtr.h>
+#include <linux/nfc.h>
 #include <linux/capability.h>
 #include <linux/netfilter.h>
 #include <linux/futex.h>
@@ -1615,6 +1616,7 @@ static const unsigned long sockaddr_storage_af_vocab[] = {
 #endif
 	AF_TIPC,
 	AF_QIPCRTR,
+	AF_NFC,
 #ifdef USE_XDP
 	AF_XDP,
 #endif
@@ -1891,6 +1893,40 @@ static const struct struct_field sockaddr_qrtr_variant_fields[] = {
 			    .n    = ARRAY_SIZE(qrtr_port_vocab) }),
 };
 
+/*
+ * AF_NFC (sockaddr_nfc) -- NFC raw socket endpoint.  The 16-byte
+ * address is a flat (family, dev_idx, target_idx, nfc_protocol)
+ * tuple -- no inner tagged union, so this variant stays single-arm
+ * (mirrors AF_QIPCRTR).  sockaddr_nfc_llcp is a separate, larger
+ * address only valid on NFC_SOCKPROTO_LLCP sockets; modelling it
+ * needs a socket-state-aware discriminator the sockaddr_storage
+ * envelope does not carry, so it stays out of this variant table.
+ *
+ * dev_idx / target_idx are the kernel's nfc_dev->idx and nfc_target
+ * ->idx; both are densely packed from 0 and rarely exceed a handful
+ * on real hardware, so a small FT_RANGE covers the live pool without
+ * a /sys/class/nfc walk at init.  nfc_protocol is the per-target
+ * protocol selector the kernel matches in rawsock_bind() via
+ * nfc_find_target(); a curated FT_ENUM over the seven NFC_PROTO_*
+ * values keeps the bind walk hitting registered protocols instead
+ * of -EINVAL on a u32 splat.
+ */
+static const unsigned long nfc_proto_vocab[] = {
+	NFC_PROTO_JEWEL, NFC_PROTO_MIFARE, NFC_PROTO_FELICA,
+	NFC_PROTO_ISO14443, NFC_PROTO_NFC_DEP, NFC_PROTO_ISO14443_B,
+	NFC_PROTO_ISO15693,
+};
+
+static const struct struct_field sockaddr_nfc_variant_fields[] = {
+	FIELDX(struct sockaddr_nfc, dev_idx, FT_RANGE,
+	       .u.range = { .lo = 0, .hi = 16 }),
+	FIELDX(struct sockaddr_nfc, target_idx, FT_RANGE,
+	       .u.range = { .lo = 0, .hi = 16 }),
+	FIELDX(struct sockaddr_nfc, nfc_protocol, FT_ENUM,
+	       .u.enum_ = { .vals = nfc_proto_vocab,
+			    .n    = ARRAY_SIZE(nfc_proto_vocab) }),
+};
+
 #ifdef USE_XDP
 /*
  * AF_XDP (sockaddr_xdp) -- XSK endpoint.  sxdp_flags drives the
@@ -2001,6 +2037,13 @@ static const struct union_variant sockaddr_storage_variants[] = {
 		.fields		 = sockaddr_qrtr_variant_fields,
 		.num_fields	 = ARRAY_SIZE(sockaddr_qrtr_variant_fields),
 		.effective_size	 = sizeof(struct sockaddr_qrtr),
+	},
+	{
+		.discrim_value	 = AF_NFC,
+		.name		 = "AF_NFC",
+		.fields		 = sockaddr_nfc_variant_fields,
+		.num_fields	 = ARRAY_SIZE(sockaddr_nfc_variant_fields),
+		.effective_size	 = sizeof(struct sockaddr_nfc),
 	},
 #ifdef USE_XDP
 	{
