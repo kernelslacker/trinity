@@ -199,6 +199,15 @@
 #define XFRM_MODE_TUNNEL	1
 #endif
 
+/* iptfs (IP-TFS, RFC 9347) mode landed in v6.14 behind CONFIG_XFRM_IPTFS.
+ * UAPI value is fixed at 5; older sysroots without the symbol fall
+ * through to this shim.  The mode is rejected with EOPNOTSUPP /
+ * EINVAL on kernels without IPTFS support, which the install path
+ * latches per-child. */
+#ifndef XFRM_MODE_IPTFS
+#define XFRM_MODE_IPTFS		5
+#endif
+
 #ifndef XFRM_POLICY_ALLOW
 #define XFRM_POLICY_ALLOW	0
 #endif
@@ -482,6 +491,17 @@ static bool modprobe_tried_algo[NR_XFRM_ALGOS];
 static bool ns_unshared;
 static bool ns_setup_failed;
 static bool lo_brought_up;
+
+/*
+ * Per-child latch for iptfs-mode SA support.  CONFIG_XFRM_IPTFS is
+ * compiled out unless CONFIG_XFRM_IPTFS is set; where it is, it
+ * lights up and the bursts route through xfrm_iptfs.c
+ * (iptfs_output -> iptfs_output_queued -> iptfs_consume_frags) ahead
+ * of the ESP encrypt.  First NEWSA rejection sets this latch so
+ * subsequent install_sa invocations skip the iptfs coin without
+ * re-paying the EFAIL.
+ */
+static bool ns_unsupported_iptfs;
 
 /*
  * Per-child latch for SO_ZEROCOPY support on the inner UDP socket.
@@ -1599,10 +1619,34 @@ static int xfrm_churn_iter_install_sa(struct xfrm_churn_iter_ctx *ctx)
 	 * template's tmpl->mode mirrors it. */
 	ctx->mode  = ONE_IN(2) ? XFRM_MODE_TUNNEL : XFRM_MODE_TRANSPORT;
 
+	/* iptfs sub-mode: ~1 in 8 install attempts override the chosen
+	 * mode to XFRM_MODE_IPTFS when the picked algo is AEAD (iptfs
+	 * SAs only accept AEAD constructions and EINVAL otherwise).
+	 * iptfs lives in xfrm_iptfs.c -- iptfs_output_queued aggregates
+	 * multiple inner packets' frags into one outer ESP skb, and
+	 * iptfs_consume_frags is the exact site upstream e9096a5a170e
+	 * patches for SKBFL_SHARED_FRAG-loss on frag merge.  Reachable
+	 * only when CONFIG_XFRM_IPTFS is on (absent on kernels built
+	 * without it; present where it is enabled).  Latched per
+	 * child on first rejection so the EFAIL is paid once. */
+	if (ctx->def->kind == XFRM_ALG_AEAD &&
+	    !ns_unsupported_iptfs && ONE_IN(8))
+		ctx->mode = XFRM_MODE_IPTFS;
+
 	modprobe_algo(ctx->aidx);
 	rc = build_newsa(&ctx->nl, ctx->def, ctx->reqid, ctx->spi,
 			 ctx->mode, ctx->seq);
 	if (rc != 0) {
+		if (ctx->mode == XFRM_MODE_IPTFS) {
+			/* iptfs reject says nothing about the AEAD algo's
+			 * availability -- only that this kernel doesn't
+			 * carry CONFIG_XFRM_IPTFS or that iptfs_create_state
+			 * rejected our SA shape.  Latch the iptfs branch
+			 * off, leave the algo latch alone so transport /
+			 * tunnel AEAD installs keep working. */
+			ns_unsupported_iptfs = true;
+			return -1;
+		}
 		if (is_unsupported_err(rc))
 			ns_unsupported_algo[ctx->aidx] = true;
 		return -1;
@@ -1611,6 +1655,9 @@ static int xfrm_churn_iter_install_sa(struct xfrm_churn_iter_ctx *ctx)
 			   1, __ATOMIC_RELAXED);
 	if (ctx->mode == XFRM_MODE_TUNNEL)
 		__atomic_add_fetch(&shm->stats.xfrm_churn_tunnel_sa_added,
+				   1, __ATOMIC_RELAXED);
+	else if (ctx->mode == XFRM_MODE_IPTFS)
+		__atomic_add_fetch(&shm->stats.xfrm_churn_iptfs_sa_added,
 				   1, __ATOMIC_RELAXED);
 
 	rc = build_newpolicy(&ctx->nl, ctx->def, ctx->reqid, ctx->spi,
