@@ -336,7 +336,7 @@ static void mode_readv(int fd, unsigned int file_idx, size_t size,
 			return;
 
 		size_t consumed = 0;
-		for (i = 0; i < READV_IOV_COUNT && consumed < (size_t)n; i++) {
+		for (i = 0; i < n_iov && consumed < (size_t)n; i++) {
 			size_t this_n = iov[i].iov_len;
 			if (consumed + this_n > (size_t)n)
 				this_n = (size_t)n - consumed;
