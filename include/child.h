@@ -628,6 +628,42 @@ struct childdata {
 	 * insert. */
 	struct cmp_hints_bloom cmp_hints_seen[2];
 
+	/* CMP RedQueen greedy re-exec per-child state (Lever #1).
+	 *
+	 * reexec_pending[] is the per-call attribution scratch the per-record
+	 * loop in cmp_hints_collect() writes to: each (cmp_ip, value, size,
+	 * slot) tuple is one (kernel comparison, runtime operand match)
+	 * proposal that the dispatch_step tail will optionally drain into a
+	 * fresh dispatch with the named slot pinned to value.
+	 *
+	 * reexec_pending_count counts how many slots in [0, MAX_REEXEC_PENDING)
+	 * are populated; the per-dispatch cap (initially 1, see Fork C-1) lives
+	 * at the consumer site, not here -- the buffer always reflects the
+	 * full attribution census the harvest pass produced, regardless of
+	 * how many the consumer chooses to spend.
+	 *
+	 * in_reexec is the recursion guard: set true around redqueen_reexec_step
+	 * so the re-exec's own kcov_collect_cmp pass does NOT emit fresh
+	 * attribution into the buffer (which would self-reinforce a runaway
+	 * loop) and the dispatch_step tail does NOT drain a second tier of
+	 * re-execs.  The pool / bloom inserts still run inside the re-exec --
+	 * those records are real harvest signal.
+	 *
+	 * redqueen_enabled is the R7 A/B sub-fleet stamp: half the CMP-mode
+	 * children get true (re-exec lever active), half get false (control
+	 * sub-fleet).  Stamped once at child init and never mutated, so per-
+	 * window comparisons of (reexec-enabled vs control) cohort metrics
+	 * isolate the lever's contribution from time-of-day fleet drift.
+	 *
+	 * Owner-only writes from inside the child; the buffer is per-call
+	 * scratch and the two booleans are read-only after child init / drain
+	 * boundary.  No cross-process coherence needed.
+	 */
+	struct reexec_pending reexec_pending[MAX_REEXEC_PENDING];
+	unsigned int reexec_pending_count;
+	bool in_reexec;
+	bool redqueen_enabled;
+
 	/* The actual syscall records each child uses.  Dominated by a 4 KiB
 	 * prebuffer + 128 B postbuffer used by -v rendering — only nr / a1..a6
 	 * / retval / lock / state are touched on the hot path, and those are

@@ -489,6 +489,16 @@ void clean_childdata(struct childdata *child)
 		}
 	}
 
+	/* Reset the CMP RedQueen attribution scratch and the recursion guard
+	 * for the fresh slot occupant.  redqueen_enabled is the R7 A/B stamp
+	 * and is (re)decided per-child in init_child_runtime_config after
+	 * kcov_init_child has picked the per-child KCOV mode -- zero here so
+	 * the fresh occupant defaults to "lever off" until the stamp lands. */
+	memset(child->reexec_pending, 0, sizeof(child->reexec_pending));
+	child->reexec_pending_count = 0;
+	child->in_reexec = false;
+	child->redqueen_enabled = false;
+
 	/* Clear any __BUG() stamp left by the prior occupant of this slot
 	 * so the parent's zombie-pending warning doesn't mis-attribute the
 	 * fresh child's eventual exit to the previous one's assertion.
@@ -999,6 +1009,19 @@ static void init_child_runtime_config(struct childdata *child, int childno)
 	child->is_explorer = (childno >= 0 &&
 			      (unsigned int)childno >= alt_op_children &&
 			      (unsigned int)childno < alt_op_children + explorer_children);
+
+	/* CMP RedQueen greedy re-exec R7 A/B sub-fleet stamp.  Only CMP-mode
+	 * children produce CMP attribution in the first place (PC-mode kcov
+	 * never enables the cmp fd, so kcov_collect_cmp short-circuits), so
+	 * stamping false on PC-mode children loses no signal.  Within the
+	 * CMP-mode pool, half the children get the lever and half are the
+	 * control sub-fleet -- subsequent reexec_* per-window deltas can be
+	 * cleanly attributed to the enabled cohort because the disabled
+	 * cohort's gate at the dispatch_step tail short-circuits.  Per-child
+	 * stamp at fork rather than a runtime flag means time-of-day fleet
+	 * drift (kernel state, mounted fs population, other fleet load) is
+	 * common to both arms and falls out of the comparison. */
+	child->redqueen_enabled = (child->kcov.mode == KCOV_MODE_CMP) && ONE_IN(2);
 
 	/*
 	 * Re-snapshot /proc/self/maps now that init_child's allocator-

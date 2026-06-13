@@ -65,6 +65,33 @@ struct cmp_hints_bloom {
 	unsigned int records;	/* CMP records consumed since last reset */
 };
 
+/*
+ * Per-call attribution scratch for the CMP RedQueen greedy re-exec lever
+ * (Lever #1).  cmp_hints_collect() scans each CMP record's arg1 (the
+ * compile-time constant the kernel compared against) against the
+ * dispatching syscall's rec->a1..aN.  On match it stamps (slot, cmp_ip,
+ * value, size) here; the dispatch_step tail drains the buffer and re-runs
+ * the syscall with the targeted slot pinned to the captured constant.
+ *
+ * Sized 8 entries (24 B each, ~192 B per child) so a single dispatch
+ * can stage multiple attributions without truncation; the per-call
+ * re-exec cap (Fork C-1) keeps actual drain to one per parent dispatch
+ * in the initial deployment.  Reset every dispatch_step tail (drain +
+ * count = 0) so attribution buffers do NOT carry forward across calls.
+ *
+ * "slot" is a 1-based arg index (1..6) matching the rec->aN naming
+ * convention.  cmp_ip / value / size mirror the (ip, val, size) tuple
+ * the existing pool entry uses.
+ */
+#define MAX_REEXEC_PENDING	8U
+
+struct reexec_pending {
+	unsigned long cmp_ip;
+	unsigned long value;
+	unsigned int size;
+	unsigned int slot;
+};
+
 struct cmp_hint_entry {
 	unsigned long value;
 	unsigned long cmp_ip;

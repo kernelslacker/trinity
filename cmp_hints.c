@@ -644,6 +644,21 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 	struct childdata *child;
 	struct cmp_hints_pending batch[CMP_HINTS_PENDING_BATCH];
 	unsigned int n_batch = 0;
+	/*
+	 * Per-call CMP RedQueen attribution scan state.  Snapshot the
+	 * dispatching syscall's rec->aN values + num_args once on entry so
+	 * the per-record inner loop avoids a per-record reload (and a
+	 * per-record entry->num_args branch).  attribute_enabled folds the
+	 * gates the inner loop would otherwise re-check on every record:
+	 * the child must be runnable, opted into the lever, and NOT mid-
+	 * re-exec (otherwise we'd self-reinforce a runaway loop -- see the
+	 * design's R3 risk note).  num_args == 0 (parent-context or
+	 * pre-dispatch rec) also gates off; an attribution scan over zero
+	 * meaningful slots is pure cost.
+	 */
+	bool attribute_enabled = false;
+	unsigned long rec_args[6] = { 0 };
+	unsigned int rec_num_args = 0;
 
 	if (cmp_hints_shm == NULL || trace_buf == NULL)
 		return;
@@ -699,6 +714,39 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 			memset(bloom->bits, 0, sizeof(bloom->bits));
 			bloom->records = 0;
 		}
+
+		/*
+		 * Pre-stage the RedQueen attribution scan inputs.  Snapshot
+		 * rec->a1..aN + num_args at entry so the per-record inner
+		 * loop runs over a small stack-resident array instead of
+		 * re-reading rec each iteration (rec lives at the cold tail
+		 * of childdata; the hot CMP loop should not drag those lines
+		 * into L1 thousands of times).  Drop the gate entirely on
+		 * the in_reexec path so the re-exec's own CMP harvest cannot
+		 * stage a second tier of attributions -- the per-call buffer
+		 * stays drained around the dispatch and is read back by the
+		 * dispatch_step tail.
+		 */
+		if (child->redqueen_enabled && !child->in_reexec &&
+		    child->reexec_pending_count < MAX_REEXEC_PENDING) {
+			struct syscallrecord *rec = &child->syscall;
+			struct syscallentry *entry = rec->entry;
+
+			if (entry != NULL && entry->num_args > 0) {
+				unsigned int n = entry->num_args;
+
+				if (n > 6)
+					n = 6;
+				rec_num_args = n;
+				rec_args[0] = rec->a1;
+				rec_args[1] = rec->a2;
+				rec_args[2] = rec->a3;
+				rec_args[3] = rec->a4;
+				rec_args[4] = rec->a5;
+				rec_args[5] = rec->a6;
+				attribute_enabled = true;
+			}
+		}
 	}
 
 	/* Two-phase split: the per-child bloom is lock-free child-private
@@ -712,6 +760,7 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 		unsigned long *rec = &trace_buf[1 + i * WORDS_PER_CMP];
 		unsigned long type = rec[0];
 		unsigned long arg1 = rec[1];
+		unsigned long arg2 = rec[2];
 		unsigned long ip   = rec[3];
 		unsigned int size  = 1U << ((type >> KCOV_CMP_SIZE_SHIFT)
 					    & KCOV_CMP_SIZE_MASK);
@@ -742,6 +791,77 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 			continue;
 		if (arg1 == (unsigned long) -1)
 			continue;
+
+		/*
+		 * RedQueen attribution scan against the dispatching syscall's
+		 * rec->a1..aN (snapshot copy in rec_args[]).  Runs BEFORE the
+		 * bloom-check + pool-insert path so a bloom-suppressed record
+		 * still gets attribution: the constant being in the pool
+		 * already from a prior call carries no signal about which slot
+		 * THIS call's kernel comparison fired on.  Attribution is
+		 * orthogonal to pool novelty -- the consumer side gates the
+		 * actual re-exec dispatch on `new_cmp > 0` from the parent
+		 * call separately.
+		 *
+		 * Match predicate: A.b-1 exact (rec->aN == arg2).  Catches the
+		 * dominant case where the kernel sees the argument's full
+		 * 64-bit value (cmd codes, length args, flag bitmasks, struct
+		 * sizes).  Width-aware fallback (A.b-3) would add combinatorial
+		 * noise on small-type slots for marginal coverage gain; the
+		 * lever's value is in collapsing the 1/A slot lottery, not
+		 * width matching.
+		 *
+		 * Cardinality > 1 (the same constant appears in multiple
+		 * slots): A.c-1 first-match-wins.  Slot order 1..6 biases
+		 * toward lower slots, which tend to be the cmd-like /
+		 * dispatching ones.  Bump reexec_attribution_ambiguous once
+		 * per matched record where >1 slot matched so the rate is
+		 * observable; if it climbs >10% the design's escalation
+		 * targets (skip-ambiguous or fan-out) become live options.
+		 */
+		if (attribute_enabled &&
+		    child->reexec_pending_count < MAX_REEXEC_PENDING) {
+			unsigned int first_match = 0;
+			unsigned int match_count = 0;
+			unsigned int k;
+
+			for (k = 0; k < rec_num_args; k++) {
+				if (rec_args[k] == arg2) {
+					if (match_count == 0)
+						first_match = k + 1;
+					match_count++;
+				}
+			}
+
+			if (match_count > 0) {
+				struct reexec_pending *p =
+					&child->reexec_pending[child->reexec_pending_count];
+
+				p->cmp_ip = ip;
+				p->value = arg1;
+				p->size = size;
+				p->slot = first_match;
+				child->reexec_pending_count++;
+
+				if (kcov_shm != NULL) {
+					__atomic_fetch_add(
+						&kcov_shm->reexec_attribution_found,
+						1UL, __ATOMIC_RELAXED);
+					if (match_count > 1)
+						__atomic_fetch_add(
+							&kcov_shm->reexec_attribution_ambiguous,
+							1UL, __ATOMIC_RELAXED);
+				}
+
+				/* Disable further per-record scans this call
+				 * once the buffer fills; the per-call cap at
+				 * the consumer side will drain only a subset
+				 * anyway and the extra scan work is wasted. */
+				if (child->reexec_pending_count >=
+				    MAX_REEXEC_PENDING)
+					attribute_enabled = false;
+			}
+		}
 
 		if (bloom != NULL &&
 		    cmp_hints_bloom_check_and_set(bloom, ip, arg1, size)) {
