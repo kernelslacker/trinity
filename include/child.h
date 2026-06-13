@@ -663,6 +663,16 @@ struct childdata {
 	unsigned int reexec_pending_count;
 	bool in_reexec;
 	bool redqueen_enabled;
+	/* Sliding-window cap on greedy re-exec dispatches.  The design caps
+	 * the per-child rate at STRATEGY_WINDOW / 4 (~25% of the bandit's
+	 * rotation budget) so a hot attributing syscall can't burn the
+	 * window's whole syscall budget on re-execs.  Reset cadence is
+	 * STRATEGY_WINDOW child iterations from window_start_op; cap
+	 * exceedance bumps reexec_window_cap_hit in kcov_shm and skips
+	 * the would-be re-exec.  Per-child storage means no cross-process
+	 * atomic and the cap is enforced symmetrically across the fleet. */
+	unsigned long reexec_count_window;
+	unsigned long reexec_window_start_op;
 
 	/* The actual syscall records each child uses.  Dominated by a 4 KiB
 	 * prebuffer + 128 B postbuffer used by -v rendering — only nr / a1..a6

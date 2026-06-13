@@ -498,6 +498,8 @@ void clean_childdata(struct childdata *child)
 	child->reexec_pending_count = 0;
 	child->in_reexec = false;
 	child->redqueen_enabled = false;
+	child->reexec_count_window = 0;
+	child->reexec_window_start_op = 0;
 
 	/* Clear any __BUG() stamp left by the prior occupant of this slot
 	 * so the parent's zombie-pending warning doesn't mis-attribute the

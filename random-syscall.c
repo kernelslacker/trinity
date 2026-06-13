@@ -1210,6 +1210,14 @@ static void maybe_rotate_strategy(void)
 }
 
 /*
+ * Greedy CMP RedQueen re-exec helper.  Forward-declared so dispatch_step's
+ * tail can call it; definition lives after replay_syscall_step where the
+ * fresh-args-then-pin-slot story is symmetric with the replay contract.
+ */
+static bool redqueen_reexec_step(struct childdata *child,
+				 const struct reexec_pending *p);
+
+/*
  * Dispatch a fully-prepared syscallrecord and run the per-call
  * post-dispatch bookkeeping: kcov collection / cmp-hint collection,
  * edge-pair recording, mutator-attribution commit, mini-corpus save,
@@ -1552,6 +1560,74 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 				1UL, __ATOMIC_RELAXED);
 	}
 
+	/*
+	 * CMP RedQueen greedy re-exec tail (Lever #1).  Fires after the
+	 * parent call's handle_syscall_ret has settled so .post / .cleanup
+	 * are done before the re-exec dispatch reuses rec.  Per design Fork
+	 * F-1: single insertion point in dispatch_step so all callers
+	 * (random_syscall_step, replay_syscall_step, sequence-chain step)
+	 * inherit re-exec coverage automatically.
+	 *
+	 * Gates (ALL must pass):
+	 *   - !in_reexec     -- recursion guard, see R3 in the design.
+	 *   - redqueen_enabled -- R7 A/B sub-fleet stamp.
+	 *   - kcov.mode == KCOV_MODE_CMP -- PC-mode children produce no
+	 *     attribution.  Defensive: redqueen_enabled is only stamped
+	 *     true on CMP-mode children today, but the gate keeps the
+	 *     dispatch invariant local to this site.
+	 *   - !in_chain_mid_step -- chains save their step sequence for
+	 *     replay; a mid-chain re-exec is not part of that contract
+	 *     and would double-count the step against the chain depth.
+	 *   - new_cmp > 0 -- the parent must have produced at least one
+	 *     bloom-novel CMP record.  A call that only re-harvested
+	 *     known constants adds no information for re-exec.
+	 *   - reexec_pending_count > 0 -- attribution scan in the parent's
+	 *     cmp_hints_collect actually found a slot match.
+	 *   - D-5 gate: ONE_IN(REDQUEEN_REEXEC_GATE_DENOM) baseline,
+	 *     always-on while the plateau detector classifies the run as
+	 *     CMP_RISING_PC_FLAT.  Combines low-cost steady-state lift
+	 *     with full intensification under the diagnostic this lever
+	 *     was designed to break.
+	 */
+	if (!child->in_reexec &&
+	    child->redqueen_enabled &&
+	    child->kcov.mode == KCOV_MODE_CMP &&
+	    !child->in_chain_mid_step &&
+	    new_cmp > 0 &&
+	    child->reexec_pending_count > 0) {
+		bool plateau_burst = false;
+
+		if (kcov_shm != NULL &&
+		    __atomic_load_n(&kcov_shm->plateau_active,
+				    __ATOMIC_RELAXED)) {
+			int h = __atomic_load_n(&shm->plateau_current_hypothesis,
+						__ATOMIC_RELAXED);
+
+			if (h == PLATEAU_HYPOTHESIS_CMP_RISING_PC_FLAT)
+				plateau_burst = true;
+		}
+
+		if (plateau_burst ||
+		    ONE_IN(REDQUEEN_REEXEC_GATE_DENOM)) {
+			/* Per-call cap C-1: drain a single attribution per
+			 * parent dispatch.  Slot 0 is the first-emitted
+			 * (earliest CMP record's first-matching arg slot);
+			 * keeping a stable pick rather than a random one
+			 * means the lift metric attributes deterministically
+			 * to that policy. */
+			struct reexec_pending p = child->reexec_pending[0];
+
+			child->in_reexec = true;
+			redqueen_reexec_step(child, &p);
+			child->in_reexec = false;
+		}
+	}
+
+	/* Per-call attribution scratch is single-use: drained or not, the
+	 * next call starts with a clean slate so a stale slot from the
+	 * previous call cannot bleed into this call's attribution census. */
+	child->reexec_pending_count = 0;
+
 	/* Cheap end-of-call check for the strategy rotation boundary.
 	 * Two relaxed loads + a compare in the common case; the CAS only
 	 * fires once per ~STRATEGY_WINDOW ops fleet-wide. */
@@ -1691,4 +1767,198 @@ bool replay_syscall_step(struct childdata *child,
 	srec_publish_end(rec);
 
 	return dispatch_step(child, entry, found_new);
+}
+
+/*
+ * Pin a single arg slot to a learned-constant value.  Slot is 1-based
+ * (matches the rec->aN naming and reexec_pending::slot encoding).  Out-
+ * of-range slots are dropped silently -- the caller validated against
+ * the entry's num_args at attribution emit time, but defensive against
+ * a corrupted pending entry that survived the slot bound check.
+ */
+static void redqueen_pin_slot(struct syscallrecord *rec, unsigned int slot,
+			      unsigned long value)
+{
+	switch (slot) {
+	case 1: rec->a1 = value; break;
+	case 2: rec->a2 = value; break;
+	case 3: rec->a3 = value; break;
+	case 4: rec->a4 = value; break;
+	case 5: rec->a5 = value; break;
+	case 6: rec->a6 = value; break;
+	default: break;
+	}
+}
+
+/*
+ * Greedy CMP RedQueen re-exec step.  Mirrors replay_syscall_step's
+ * contract: resolve the entry, gate on sanitise-free (heap-pointer-
+ * laundering inside generic_sanitise would either resurrect freed
+ * slots or stomp the pin), gate on AVOID_REEXEC (auditable opt-out
+ * for sanitise-free destructive entries -- see include/syscall.h),
+ * gate on validate_specific_syscall_silent (caller may have lost a
+ * cap / hit AVOID_SYSCALL / been deactivated since dispatch).  Then
+ * regenerate fresh args via generate_syscall_args, overwrite the
+ * targeted slot with the captured kernel-side constant, and re-enter
+ * dispatch_step for the actual call.  Rec state is snapshotted on
+ * entry and restored on exit so the chain-corpus save in sequence.c
+ * (which reads rec->a1..a6 after dispatch_step returns) sees the
+ * ORIGINAL dispatched args, not the re-exec's args.
+ *
+ * Per-call cap is enforced at the dispatch_step tail (C-1: 1 re-exec
+ * per parent); per-window cap is enforced here so a corrupted /
+ * misbehaving caller can't bypass it by calling the helper directly.
+ */
+static bool redqueen_reexec_step(struct childdata *child,
+				 const struct reexec_pending *p)
+{
+	struct syscallrecord *rec = &child->syscall;
+	struct syscallentry *entry;
+	unsigned long saved_a[6];
+	unsigned long saved_retval, saved_post_state;
+	int saved_errno_post;
+	bool ok;
+
+	/* Per-window cap (Fork C "Per-window cap").  Reset to a fresh window
+	 * once REDQUEEN_REEXEC_WINDOW_OPS child iterations have elapsed
+	 * since the last reset; cap exceedance within a window short-
+	 * circuits before any of the more expensive entry resolution. */
+	if (child->op_nr - child->reexec_window_start_op >=
+	    REDQUEEN_REEXEC_WINDOW_OPS) {
+		child->reexec_window_start_op = child->op_nr;
+		child->reexec_count_window = 0;
+	}
+	if (child->reexec_count_window >= REDQUEEN_REEXEC_WINDOW_CAP) {
+		if (kcov_shm != NULL)
+			__atomic_fetch_add(&kcov_shm->reexec_window_cap_hit,
+					   1UL, __ATOMIC_RELAXED);
+		return FAIL;
+	}
+
+	entry = get_syscall_entry(rec->nr, rec->do32bit);
+	if (entry == NULL)
+		return FAIL;
+
+	/* Destructive-syscall gate: sanitise-bearing entries replay would
+	 * either re-allocate (and leak) heap state for slots whose previous
+	 * sanitise has already been freed by .cleanup, or stomp the captured
+	 * pin with the re-sanitise's preferred value.  Same gate
+	 * replay_syscall_step uses for the same reason.  Layered with the
+	 * AVOID_REEXEC denylist for sanitise-free entries whose effects are
+	 * still destructive to the calling child or to global state. */
+	if (entry->sanitise != NULL || (entry->flags & AVOID_REEXEC)) {
+		if (kcov_shm != NULL)
+			__atomic_fetch_add(&kcov_shm->reexec_skipped_destructive,
+					   1UL, __ATOMIC_RELAXED);
+		return FAIL;
+	}
+
+	if (!validate_specific_syscall_silent(
+			rec->do32bit ? syscalls_32bit :
+			(biarch ? syscalls_64bit : syscalls),
+			(int)rec->nr)) {
+		if (kcov_shm != NULL)
+			__atomic_fetch_add(&kcov_shm->reexec_skipped_validate_silent,
+					   1UL, __ATOMIC_RELAXED);
+		return FAIL;
+	}
+
+	if (p->slot == 0 || p->slot > entry->num_args)
+		return FAIL;
+
+	/* Snapshot the rec fields the re-exec's dispatch_step will rewrite.
+	 * Restore on exit so a caller that reads rec after the helper
+	 * returns -- the chain-corpus save in sequence.c being the
+	 * load-bearing one -- sees the original dispatched call's args /
+	 * retval, not the re-exec's.  nr / do32bit are NOT in the snapshot
+	 * set: redqueen always dispatches the same (nr, do32) as the
+	 * parent, so those fields stay invariant across the helper. */
+	saved_a[0] = rec->a1;
+	saved_a[1] = rec->a2;
+	saved_a[2] = rec->a3;
+	saved_a[3] = rec->a4;
+	saved_a[4] = rec->a5;
+	saved_a[5] = rec->a6;
+	saved_retval = rec->retval;
+	saved_post_state = rec->post_state;
+	saved_errno_post = rec->errno_post;
+
+	/* Coherent re-publish of the re-exec dispatch state.  Same (nr,
+	 * do32bit) as the parent, but generate_syscall_args is about to
+	 * overwrite rec->aN and the prebuffer/postbuffer, so wrap the
+	 * preparation in a publish bracket so any out-of-band reader
+	 * (parent watchdog, pre_crash decoder) sees the new args paired
+	 * with the original nr rather than a torn mid-mutation view. */
+	srec_publish_begin(rec);
+	rec->postbuffer[0] = '\0';
+	srec_publish_end(rec);
+
+	generate_syscall_args(rec);
+	redqueen_pin_slot(rec, p->slot, p->value);
+
+	/* Don't credit the bandit for re-exec wins -- same rationale as
+	 * replay_syscall_step.  -1 sentinel makes the per-strategy
+	 * attribution and per-arm completion sites skip this dispatch. */
+	child->strategy_at_pick = -1;
+
+	if (kcov_shm != NULL) {
+		__atomic_fetch_add(&kcov_shm->reexec_attempts, 1UL,
+				   __ATOMIC_RELAXED);
+	}
+	child->reexec_count_window++;
+
+	{
+		unsigned long records_before = 0;
+		unsigned long records_after;
+
+		/* The re-exec's contribution to kcov_shm->cmp_records_collected
+		 * is the proxy lift signal: per design R7 the primary metric
+		 * is reexec_new_cmps_total / reexec_attempts compared to the
+		 * baseline cmp_records_collected / total_calls ratio.  Sample
+		 * cmp_records_collected around the inner dispatch_step so the
+		 * re-exec's incremental records can be attributed cleanly,
+		 * without depending on a separate plumbing change to surface
+		 * new_cmp out of dispatch_step's local. */
+		if (kcov_shm != NULL)
+			records_before = __atomic_load_n(
+				&kcov_shm->cmp_records_collected,
+				__ATOMIC_RELAXED);
+
+		ok = dispatch_step(child, entry, NULL);
+
+		if (kcov_shm != NULL) {
+			records_after = __atomic_load_n(
+				&kcov_shm->cmp_records_collected,
+				__ATOMIC_RELAXED);
+			if (records_after > records_before) {
+				unsigned long delta = records_after - records_before;
+
+				__atomic_fetch_add(&kcov_shm->reexec_new_cmps_total,
+						   delta, __ATOMIC_RELAXED);
+				if (rec->nr < MAX_NR_SYSCALL)
+					__atomic_fetch_add(
+						&kcov_shm->per_syscall_cmp_novelty_reexec[rec->nr],
+						delta, __ATOMIC_RELAXED);
+			}
+		}
+	}
+
+	/* Restore the dispatched-call state so downstream readers (the
+	 * chain-corpus save in particular) see the parent's args / retval,
+	 * not the re-exec's.  Wrap in a publish bracket so a watchdog
+	 * sampling rec mid-restore does not catch the rec halfway between
+	 * the re-exec values and the parent values. */
+	srec_publish_begin(rec);
+	rec->a1 = saved_a[0];
+	rec->a2 = saved_a[1];
+	rec->a3 = saved_a[2];
+	rec->a4 = saved_a[3];
+	rec->a5 = saved_a[4];
+	rec->a6 = saved_a[5];
+	rec->retval = saved_retval;
+	rec->post_state = saved_post_state;
+	rec->errno_post = saved_errno_post;
+	srec_publish_end(rec);
+
+	return ok;
 }
