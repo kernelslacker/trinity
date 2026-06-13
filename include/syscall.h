@@ -156,6 +156,7 @@ enum argtype {
 	ARG_CPU,
 	ARG_NUMA_NODE,
 	ARG_PATHNAME,
+	ARG_XATTR_NAME,	/* writable pool buffer filled with a namespace-shaped xattr name */
 	ARG_IOVEC,
 	ARG_IOVEC_IN,
 	ARG_IOVECLEN,
