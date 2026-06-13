@@ -352,22 +352,58 @@ static void unshare_ns_once(void)
 }
 
 /*
- * Carrier child: unshare CLONE_NEWUSER and pause indefinitely.  The
- * parent writes our uid_map/gid_map externally (uid_map can be
- * written from outside the userns once setgroups has been denied)
- * then opens /proc/self/ns/user via /proc/<pid>/ns/user to capture
- * the userns_fd, then SIGTERMs us.
+ * Carrier child: unshare CLONE_NEWUSER, signal the parent that the
+ * unshare has landed, then pause indefinitely.  The parent writes our
+ * uid_map/gid_map externally (uid_map can be written from outside the
+ * userns once setgroups has been denied), opens /proc/<pid>/ns/user
+ * to capture the userns_fd, then SIGTERMs us.
+ *
+ * The ready_fd is the write end of a pipe the parent reads to
+ * synchronise on the unshare completing.  On unshare success we write
+ * one byte and close the fd; on failure we close it without writing,
+ * which lets the parent's read() return 0 and abort cleanly without
+ * racing the proc-file writes against the child's original userns.
  */
-static __attribute__((noreturn)) void carrier_child(void)
+static __attribute__((noreturn)) void carrier_child(int ready_fd)
 {
-	if (unshare(CLONE_NEWUSER) < 0)
+	char ready = 1;
+	ssize_t w;
+
+	if (unshare(CLONE_NEWUSER) < 0) {
+		close(ready_fd);
 		_exit(0);
+	}
+
+	do {
+		w = write(ready_fd, &ready, 1);
+	} while (w < 0 && errno == EINTR);
+	close(ready_fd);
 
 	/* Pause until SIGTERM.  pause() returns -1/EINTR on any
 	 * signal; an unexpected EINTR (SIGALRM bleed-through from
 	 * the trinity outer alarm) just loops back. */
 	for (;;)
 		(void)pause();
+}
+
+/*
+ * Read the one-byte ready handshake from the carrier child, retrying
+ * on EINTR.  Returns 0 if the child reported a successful unshare,
+ * -1 on any other outcome (child failed the unshare and closed the
+ * pipe, child died before writing, read error).
+ */
+static int wait_carrier_ready(int ready_fd)
+{
+	char b = 0;
+	ssize_t r;
+
+	do {
+		r = read(ready_fd, &b, 1);
+	} while (r < 0 && errno == EINTR);
+
+	if (r != 1 || b != 1)
+		return -1;
+	return 0;
 }
 
 /*
@@ -405,21 +441,48 @@ static int build_carrier_userns(void)
 {
 	pid_t pid;
 	int ns_fd = -1;
+	int ready_pipe[2] = { -1, -1 };
 	char nspath[64];
 	char mapline[64];
 	uid_t uid = geteuid();
 	gid_t gid = getegid();
 	int status;
 
+	if (pipe2(ready_pipe, O_CLOEXEC) < 0) {
+		__atomic_add_fetch(
+			&shm->stats.statmount_idmap_carrier_fail,
+			1, __ATOMIC_RELAXED);
+		return -1;
+	}
+
 	pid = fork();
 	if (pid < 0) {
+		close(ready_pipe[0]);
+		close(ready_pipe[1]);
 		__atomic_add_fetch(
 			&shm->stats.statmount_idmap_fork_failed,
 			1, __ATOMIC_RELAXED);
 		return -1;
 	}
-	if (pid == 0)
-		carrier_child();
+	if (pid == 0) {
+		close(ready_pipe[0]);
+		carrier_child(ready_pipe[1]);
+	}
+
+	/* Wait for the carrier to confirm unshare(CLONE_NEWUSER) has
+	 * landed before touching /proc/<pid>/{setgroups,uid_map,gid_map}.
+	 * Without this barrier the parent can race the child and write
+	 * the proc files against the carrier's original user namespace,
+	 * which fails and burns a fork per skipped iteration. */
+	close(ready_pipe[1]);
+	ready_pipe[1] = -1;
+	if (wait_carrier_ready(ready_pipe[0]) < 0) {
+		close(ready_pipe[0]);
+		ready_pipe[0] = -1;
+		goto fail;
+	}
+	close(ready_pipe[0]);
+	ready_pipe[0] = -1;
 
 	/* Best-effort: deny setgroups so a single-line gid_map is
 	 * accepted from outside the carrier.  Failure is benign --
