@@ -68,6 +68,7 @@ struct syscallentry syscall_settimeofday = {
 	.group = GROUP_TIME,
 	.num_args = 2,
 	.argname = { [0] = "tv", [1] = "tz" },
+	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_ADDRESS },
 	.flags = NEEDS_ROOT,
 	.sanitise = sanitise_settimeofday,
 	.rettype = RET_ZERO_SUCCESS,
