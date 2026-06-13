@@ -47,7 +47,7 @@ struct syscallentry syscall_setitimer = {
 	.name = "setitimer",
 	.group = GROUP_TIME,
 	.num_args = 3,
-	.argtype = { [0] = ARG_OP, [2] = ARG_ADDRESS },
+	.argtype = { [0] = ARG_OP, [1] = ARG_ADDRESS, [2] = ARG_ADDRESS },
 	.argname = { [0] = "which", [1] = "value", [2] = "ovalue" },
 	.arg_params[0].list = ARGLIST(setitimer_which),
 	.sanitise = sanitise_setitimer,
