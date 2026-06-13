@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <string.h>
 #include <linux/fiemap.h>
 #include <linux/fs.h>
 #include <linux/blktrace_api.h>
@@ -9,6 +10,9 @@
 #include <asm/ioctls.h>
 #include "ioctls.h"
 #include "net.h"
+#include "random.h"
+#include "rnd.h"
+#include "sanitise.h"
 #include "shm.h"
 #include "utils.h"
 
@@ -120,6 +124,65 @@ struct space_resv {
 #ifndef FS_IOC_RESVSP64
 #define FS_IOC_RESVSP64		_IOW('X', 42, struct space_resv)
 #endif
+
+/*
+ * Header-count gated query: fm_extent_count == 0 makes FIEMAP a pure
+ * read-only "how many extents?" probe — the kernel never reads or writes
+ * the fm_extents[] tail and only stores the count in fm_mapped_extents.
+ */
+static void sanitise_fiemap(struct syscallrecord *rec)
+{
+	struct fiemap *fm;
+
+	fm = (struct fiemap *) get_writable_struct(sizeof(*fm));
+	if (!fm)
+		return;
+	memset(fm, 0, sizeof(*fm));
+	fm->fm_start = rand64() & 0xFFFFFFFFULL;
+	fm->fm_length = FIEMAP_MAX_OFFSET;
+	fm->fm_flags = 0;
+	fm->fm_extent_count = 0;
+	rec->a3 = (unsigned long) fm;
+}
+
+#if defined(USE_FSMAP) && defined(FS_IOC_GETFSMAP)
+/*
+ * Same trick for GETFSMAP: fmh_count == 0 → kernel reports the rmap
+ * total in fmh_entries and never touches the variable-length fmh_recs[]
+ * tail. Low key all zeroes, high key all ones = "from the start, no
+ * upper bound", per the fsmap.h header doc.
+ */
+static void sanitise_getfsmap(struct syscallrecord *rec)
+{
+	struct fsmap_head *fh;
+
+	fh = (struct fsmap_head *) get_writable_struct(sizeof(*fh));
+	if (!fh)
+		return;
+	memset(fh, 0, sizeof(*fh));
+	fh->fmh_count = 0;
+	memset(&fh->fmh_keys[1], 0xff, sizeof(fh->fmh_keys[1]));
+	rec->a3 = (unsigned long) fh;
+}
+#endif
+
+static void vfs_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
+{
+	pick_random_ioctl(grp, rec);
+
+	switch (rec->a2) {
+	case FS_IOC_FIEMAP:
+		sanitise_fiemap(rec);
+		break;
+#ifdef FS_IOC_GETFSMAP
+	case FS_IOC_GETFSMAP:
+		sanitise_getfsmap(rec);
+		break;
+#endif
+	default:
+		break;
+	}
+}
 
 static const struct ioctl vfs_ioctls[] = {
 	{ .name = "FIOCLEX", .request = FIOCLEX, },
@@ -272,7 +335,7 @@ static const struct ioctl vfs_ioctls[] = {
 static const struct ioctl_group vfs_grp = {
 	.name = "vfs",
 	.fd_test = vfs_fd_test,
-	.sanitise = pick_random_ioctl,
+	.sanitise = vfs_sanitise,
 	.ioctls = vfs_ioctls,
 	.ioctls_cnt = ARRAY_SIZE(vfs_ioctls),
 };
