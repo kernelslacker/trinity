@@ -3,38 +3,30 @@
 	size_t, msg_len, unsigned int, msg_prio,
 	const struct timespec __user *, u_abs_timeout)
  */
-#include <time.h>
-#include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
 
 static void sanitise_mq_timedsend(struct syscallrecord *rec)
 {
 	char *msg;
-	struct timespec *ts;
 	unsigned int len;
 
 	/* Generate a message buffer with some data. */
 	len = 1 + (rnd_modulo_u32(8192));
 	msg = (char *) get_writable_address(len);
 
-	/* Short timeout to avoid blocking. */
-	ts = (struct timespec *) get_writable_address(sizeof(*ts));
-	if (msg == NULL || ts == NULL)
+	if (msg == NULL)
 		return;
-	ts->tv_sec = 0;
-	ts->tv_nsec = rnd_modulo_u32(1000000);	/* up to 1ms */
 
 	rec->a2 = (unsigned long) msg;
 	rec->a3 = len;
-	rec->a5 = (unsigned long) ts;
 }
 
 struct syscallentry syscall_mq_timedsend = {
 	.name = "mq_timedsend",
 	.group = GROUP_IPC,
 	.num_args = 5,
-	.argtype = { [0] = ARG_FD_MQ, [2] = ARG_LEN, [3] = ARG_RANGE },
+	.argtype = { [0] = ARG_FD_MQ, [2] = ARG_LEN, [3] = ARG_RANGE, [4] = ARG_TIMESPEC },
 	.argname = { [0] = "mqdes", [1] = "u_msg_ptr", [2] = "msg_len", [3] = "msg_prio", [4] = "u_abs_timeout" },
 	.arg_params[3].range.low = 0,
 	.arg_params[3].range.hi = 32768,
