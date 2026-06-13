@@ -90,4 +90,3 @@ static const char * const iscsi_login_value_vocab[] = {
 #define NR_ISCSI_LOGIN_VALUE_VOCAB (sizeof(iscsi_login_value_vocab) / sizeof(iscsi_login_value_vocab[0]))
 
 #define ISCSI_LOGIN_REJECT_COUNT 0u
-

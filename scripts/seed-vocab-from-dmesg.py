@@ -374,7 +374,7 @@ def render_header(mined: list[MinedRecipe], dmesg_path: Optional[str]) -> str:
         lines.append(f"#define {upper}_REJECT_COUNT {m.reject_count}u")
         lines.append("")
 
-    return "\n".join(lines) + "\n"
+    return "\n".join(lines).rstrip("\n") + "\n"
 
 
 def atomic_write(path: str, content: str) -> bool:
