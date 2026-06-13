@@ -334,7 +334,7 @@ static void unshare_ns_once(void)
 	}
 	/* MS_PRIVATE on / so anything we mount cannot propagate even
 	 * if the host's mount namespace had MS_SHARED propagation. */
-	(void)mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL);
+	(void)syscall(__NR_mount, NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL);
 	ns_unshared_statmount_idmap = true;
 }
 
