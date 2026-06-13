@@ -13,8 +13,6 @@
 #include "utils.h"
 #include "xattr.h"
 
-#define XATTR_NAME_BUFSZ 256
-
 static const char *xattr_prefixes[] = {
 	"user.",
 	"security.",

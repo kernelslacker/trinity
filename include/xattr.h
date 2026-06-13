@@ -5,6 +5,11 @@
 
 struct syscallrecord;
 
+/* Writable scratch size used for every xattr name buffer.  Also the cap
+ * gen_xattr_name() / gen_xattr_name_pooled() honour internally.
+ */
+#define XATTR_NAME_BUFSZ 256
+
 void gen_xattr_name(char *buf, size_t len);
 
 /*

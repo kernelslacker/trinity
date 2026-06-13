@@ -31,6 +31,7 @@
 #include "tables.h"
 #include "trinity.h"	// num_online_cpus
 #include "utils.h"	// zmalloc
+#include "xattr.h"
 
 /*
  * CMP-hint injection rate.  Baseline is per-call-site (1-in-16 for the
@@ -671,6 +672,30 @@ static unsigned long gen_arg_pathname(struct syscallentry *entry __unused__,
 				      unsigned int argnum __unused__)
 {
 	return (unsigned long) generate_pathname();
+}
+
+/*
+ * ARG_XATTR_NAME: a writable pool buffer filled with a namespace-shaped
+ * xattr name ("user.foo", "security.selinux", ...).  Wraps the existing
+ * pooled name generator so any syscall that takes a `const char __user *
+ * name` argument in the xattr family gets resolver-passing names by
+ * declaration instead of by remembering to call the bespoke helper.
+ *
+ * Pool buffer (get_writable_struct) -- no .cleanup, no
+ * default_address_scrub: the pool lives off the shared buffer / libc
+ * heap so the blanket scrub is a no-op anyway.
+ */
+static unsigned long gen_arg_xattr_name(struct syscallentry *entry __unused__,
+					struct syscallrecord *rec __unused__,
+					unsigned int argnum __unused__)
+{
+	char *name;
+
+	name = (char *) get_writable_struct(XATTR_NAME_BUFSZ);
+	if (name == NULL)
+		return 0;
+	gen_xattr_name_pooled(name, XATTR_NAME_BUFSZ);
+	return (unsigned long) name;
 }
 
 /* ARG_IOVECLEN / ARG_SOCKADDRLEN: the value was published into the slot
@@ -2823,6 +2848,10 @@ const struct argtype_ops argtype_table[] = {
 		.name = "ARG_PATHNAME",
 		.generate = gen_arg_pathname,
 		.cleanup = cleanup_deferred_free,
+	},
+	[ARG_XATTR_NAME] = {
+		.name = "ARG_XATTR_NAME",
+		.generate = gen_arg_xattr_name,
 	},
 	[ARG_IOVEC] = {
 		.name = "ARG_IOVEC",
