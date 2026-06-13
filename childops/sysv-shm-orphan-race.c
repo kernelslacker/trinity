@@ -245,7 +245,6 @@ __attribute__((noreturn))
 static void sysv_shm_originator_main(struct sysv_shm_race_shared *rs)
 {
 	long shmid;
-	long addr;
 
 	(void)syscall(__NR_prctl, PR_SET_PDEATHSIG, SIGKILL, 0UL, 0UL, 0UL);
 	(void)alarm(2);
@@ -270,9 +269,14 @@ static void sysv_shm_originator_main(struct sysv_shm_race_shared *rs)
 	while (__atomic_load_n(&rs->go, __ATOMIC_ACQUIRE) == 0U)
 		(void)raw_futex_wait(&rs->go, 0U);
 
-	addr = raw_shmat((int)shmid, NULL, 0);
-	if (addr != -1L)
-		(void)raw_shmdt((const void *)addr);
+	/*
+	 * Stay attached through IPC_RMID so the kernel sees nattch > 0
+	 * and marks the segment SHM_DEST instead of destroying it
+	 * immediately.  Process exit (no explicit shmdt) then drops the
+	 * mapping, and exit_shm() runs the orphan-reap path against the
+	 * SHM_DEST-marked segment, racing the concurrent attach storm.
+	 */
+	(void)raw_shmat((int)shmid, NULL, 0);
 
 	(void)raw_shmctl((int)shmid, IPC_RMID, NULL);
 
