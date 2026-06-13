@@ -262,7 +262,7 @@ out_free:
 struct syscallentry syscall_io_setup = {
 	.name = "io_setup",
 	.num_args = 2,
-	.argtype = { [0] = ARG_RANGE },
+	.argtype = { [0] = ARG_RANGE, [1] = ARG_ADDRESS },
 	.argname = { [0] = "nr_events", [1] = "ctxp" },
 	.arg_params[0].range.low = 1,
 	.arg_params[0].range.hi = 256,
