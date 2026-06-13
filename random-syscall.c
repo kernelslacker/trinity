@@ -1232,7 +1232,7 @@ static bool redqueen_reexec_step(struct childdata *child,
  * output_syscall_prefix forward is shared.
  */
 static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
-			  bool *found_new)
+			  bool *found_new, unsigned long *new_cmp_out)
 {
 	struct syscallrecord *rec = &child->syscall;
 	bool new_edges;
@@ -1635,6 +1635,9 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	 * fires once per ~STRATEGY_WINDOW ops fleet-wide. */
 	maybe_rotate_strategy();
 
+	if (new_cmp_out != NULL)
+		*new_cmp_out = new_cmp;
+
 	return true;
 }
 
@@ -1663,7 +1666,7 @@ bool random_syscall_step(struct childdata *child,
 	entry = get_syscall_entry(rec->nr, rec->do32bit);
 	apply_chain_substitution(rec, entry, have_substitute, substitute_retval);
 
-	return dispatch_step(child, entry, found_new);
+	return dispatch_step(child, entry, found_new, NULL);
 }
 
 bool random_syscall(struct childdata *child)
@@ -1768,7 +1771,7 @@ bool replay_syscall_step(struct childdata *child,
 	apply_chain_substitution(rec, entry, have_substitute, substitute_retval);
 	srec_publish_end(rec);
 
-	return dispatch_step(child, entry, found_new);
+	return dispatch_step(child, entry, found_new, NULL);
 }
 
 /*
@@ -1910,38 +1913,26 @@ static bool redqueen_reexec_step(struct childdata *child,
 	child->reexec_count_window++;
 
 	{
-		unsigned long records_before = 0;
-		unsigned long records_after;
+		unsigned long inner_new_cmp = 0;
 
-		/* The re-exec's contribution to kcov_shm->cmp_records_collected
-		 * is the proxy lift signal: per design R7 the primary metric
-		 * is reexec_new_cmps_total / reexec_attempts compared to the
-		 * baseline cmp_records_collected / total_calls ratio.  Sample
-		 * cmp_records_collected around the inner dispatch_step so the
-		 * re-exec's incremental records can be attributed cleanly,
-		 * without depending on a separate plumbing change to surface
-		 * new_cmp out of dispatch_step's local. */
-		if (kcov_shm != NULL)
-			records_before = __atomic_load_n(
-				&kcov_shm->cmp_records_collected,
-				__ATOMIC_RELAXED);
+		/* The re-exec's lift signal is the inner dispatch's per-call
+		 * bloom-novel CMP count -- the authoritative value
+		 * kcov_collect_cmp() returns to dispatch_step's local new_cmp.
+		 * Surfacing it via the out-param avoids sampling the shared
+		 * cmp_records_collected counter around the call: those relaxed
+		 * loads race other CMP children's increments (over-attributing
+		 * their records to this re-exec) and count raw duplicate
+		 * records (not just novel ones), the same bug class avoided
+		 * for PC edges via kcov_collect()'s new_edge_count out-param. */
+		ok = dispatch_step(child, entry, NULL, &inner_new_cmp);
 
-		ok = dispatch_step(child, entry, NULL);
-
-		if (kcov_shm != NULL) {
-			records_after = __atomic_load_n(
-				&kcov_shm->cmp_records_collected,
-				__ATOMIC_RELAXED);
-			if (records_after > records_before) {
-				unsigned long delta = records_after - records_before;
-
-				__atomic_fetch_add(&kcov_shm->reexec_new_cmps_total,
-						   delta, __ATOMIC_RELAXED);
-				if (rec->nr < MAX_NR_SYSCALL)
-					__atomic_fetch_add(
-						&kcov_shm->per_syscall_cmp_novelty_reexec[rec->nr],
-						delta, __ATOMIC_RELAXED);
-			}
+		if (kcov_shm != NULL && inner_new_cmp > 0) {
+			__atomic_fetch_add(&kcov_shm->reexec_new_cmps_total,
+					   inner_new_cmp, __ATOMIC_RELAXED);
+			if (rec->nr < MAX_NR_SYSCALL)
+				__atomic_fetch_add(
+					&kcov_shm->per_syscall_cmp_novelty_reexec[rec->nr],
+					inner_new_cmp, __ATOMIC_RELAXED);
 		}
 	}
 
