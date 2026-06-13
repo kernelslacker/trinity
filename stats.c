@@ -1299,8 +1299,8 @@ static const struct stat_field af_unix_peek_race_fields[] = {
 
 static const struct stat_category af_unix_peek_race_category =
 	STAT_CATEGORY("af_unix_peek_race",
-	              af_unix_peek_race_runs,
-	              af_unix_peek_race_fields);
+		af_unix_peek_race_runs,
+		af_unix_peek_race_fields);
 
 static const struct stat_field sysv_shm_orphan_race_fields[] = {
 	STAT_FIELD(sysv_shm_orphan_race, runs),
@@ -1319,8 +1319,8 @@ static const struct stat_field sysv_shm_orphan_race_fields[] = {
 
 static const struct stat_category sysv_shm_orphan_race_category =
 	STAT_CATEGORY("sysv_shm_orphan_race",
-	              sysv_shm_orphan_race_runs,
-	              sysv_shm_orphan_race_fields);
+		sysv_shm_orphan_race_runs,
+		sysv_shm_orphan_race_fields);
 
 static const struct stat_field qrtr_bind_race_fields[] = {
 	STAT_FIELD(qrtr_bind_race, runs),
@@ -1334,8 +1334,8 @@ static const struct stat_field qrtr_bind_race_fields[] = {
 
 static const struct stat_category qrtr_bind_race_category =
 	STAT_CATEGORY("qrtr_bind_race",
-	              qrtr_bind_race_runs,
-	              qrtr_bind_race_fields);
+		qrtr_bind_race_runs,
+		qrtr_bind_race_fields);
 
 static const struct stat_field pfkey_spd_walk_fields[] = {
 	STAT_FIELD(pfkey_spd_walk, runs),
@@ -1349,8 +1349,8 @@ static const struct stat_field pfkey_spd_walk_fields[] = {
 
 static const struct stat_category pfkey_spd_walk_category =
 	STAT_CATEGORY("pfkey_spd_walk",
-	              pfkey_spd_walk_runs,
-	              pfkey_spd_walk_fields);
+		pfkey_spd_walk_runs,
+		pfkey_spd_walk_fields);
 
 static const struct stat_field l2tp_ifname_race_fields[] = {
 	STAT_FIELD(l2tp_ifname_race, runs),
@@ -1366,8 +1366,8 @@ static const struct stat_field l2tp_ifname_race_fields[] = {
 
 static const struct stat_category l2tp_ifname_race_category =
 	STAT_CATEGORY("l2tp_ifname_race",
-	              l2tp_ifname_race_runs,
-	              l2tp_ifname_race_fields);
+		l2tp_ifname_race_runs,
+		l2tp_ifname_race_fields);
 
 static const struct stat_field bpf_cgroup_attach_fields[] = {
 	STAT_FIELD(bpf_cgroup_attach, runs),
@@ -2332,8 +2332,8 @@ static const struct stat_field tc_mirred_blockcast_fields[] = {
 
 static const struct stat_category tc_mirred_blockcast_category =
 	STAT_CATEGORY("tc_mirred_blockcast",
-	              tc_mirred_blockcast_runs,
-	              tc_mirred_blockcast_fields);
+		tc_mirred_blockcast_runs,
+		tc_mirred_blockcast_fields);
 
 static const struct stat_field xfrm_churn_fields[] = {
 	STAT_FIELD(xfrm_churn, runs),
