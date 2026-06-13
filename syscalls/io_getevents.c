@@ -43,7 +43,7 @@ static void sanitise_io_getevents(struct syscallrecord *rec)
 struct syscallentry syscall_io_getevents = {
 	.name = "io_getevents",
 	.num_args = 5,
-	.argtype = { [0] = ARG_AIO_CTX, [3] = ARG_ADDRESS },
+	.argtype = { [0] = ARG_AIO_CTX, [1] = ARG_LEN, [2] = ARG_LEN, [3] = ARG_ADDRESS },
 	.argname = { [0] = "ctx_id", [1] = "min_nr", [2] = "nr", [3] = "events", [4] = "timeout" },
 	.group = GROUP_VFS,
 	.sanitise = sanitise_io_getevents,
