@@ -101,6 +101,13 @@ struct kcov_shared *kcov_shm = NULL;
 enum childop_kcov_attribution_mode childop_kcov_attr_mode =
 	CHILDOP_KCOV_ATTR_OFF;
 
+/* Default is SHADOW: collect into the transition map and surface it
+ * through the stats dump, but do not feed deltas into any steering
+ * consumer.  See the kcov_transition_coverage_mode enum in include/
+ * kcov.h for the contract. */
+enum kcov_transition_coverage_mode kcov_transition_coverage_mode =
+	KCOV_TRANSITION_COVERAGE_SHADOW;
+
 /*
  * Record a KCOV PC or remote enable/disable failure into the parent-
  * visible pc_diag slots.  Called from child context (post-dup2-to-
@@ -388,6 +395,11 @@ void kcov_init_global(void)
 		(unsigned long)KCOV_NUM_EDGES / (1024 * 1024),
 		KCOV_NUM_EDGES, KCOV_NUM_BUCKETS,
 		kcov_shm->distinct_edges, kcov_shm->edges_found);
+	output(0, "KCOV: shadow transition coverage mode=%s (%lu MB transition map, %lu slots)\n",
+		kcov_transition_coverage_mode == KCOV_TRANSITION_COVERAGE_SHADOW
+			? "shadow" : "off",
+		(unsigned long)KCOV_NUM_TRANSITIONS / (1024 * 1024),
+		(unsigned long)KCOV_NUM_TRANSITIONS);
 
 	/* Resolve the kernel-text base now -- pre-fork, so every child
 	 * inherits the populated cache via COW and the hot-path PC hash
@@ -1147,9 +1159,14 @@ unsigned long kcov_bracket_end(struct kcov_child *kc,
  * failed it stays zero and this is the identity transform (the run
  * then hashes raw PCs, matching the pre-canonicalisation behaviour).
  *
- * Single point of canonicalisation.  See pc_to_edge below: every PC
- * that lands in bucket_seen[] is routed through here first, and
- * scripts/check-static/kcov-canonicalise-pcs.sh enforces the rule.
+ * Single point of canonicalisation.  Callers route every PC that lands
+ * in bucket_seen[] or the transition map through here exactly once at
+ * the head of the kcov_collect() PC walk, then feed the canonical
+ * value into pc_canon_to_edge() and pair_to_transition() without
+ * re-canonicalising.  scripts/check-static/kcov-canonicalise-pcs.sh
+ * enforces both halves of the rule: pc_canon_to_edge() must not call
+ * kcov_canon_pc (would double-subtract the base), and any function in
+ * kcov.c that calls pc_canon_to_edge() must also call kcov_canon_pc.
  */
 static inline unsigned long kcov_canon_pc(unsigned long pc)
 {
@@ -1157,7 +1174,7 @@ static inline unsigned long kcov_canon_pc(unsigned long pc)
 }
 
 /*
- * Hash a kernel PC value into an edge index.
+ * Hash an already-canonicalised PC into an edge index.
  *
  * The previous xor-shift mixed too few of the bits in a typical kernel PC.
  * Two PCs that landed within the same cacheline (low 6 bits identical) and
@@ -1170,15 +1187,56 @@ static inline unsigned long kcov_canon_pc(unsigned long pc)
  * cacheline clustering without breaking the PC's locality for the rest of
  * the pipeline.
  */
-static unsigned int pc_to_edge(unsigned long pc)
+static inline unsigned int pc_canon_to_edge(unsigned long pc)
 {
-	pc = kcov_canon_pc(pc);
 	pc ^= pc >> 33;
 	pc *= 0xff51afd7ed558ccdUL;
 	pc ^= pc >> 33;
 	pc *= 0xc4ceb9fe1a85ec53UL;
 	pc ^= pc >> 33;
 	return (unsigned int)(pc & (KCOV_NUM_EDGES - 1));
+}
+
+/*
+ * Per-syscall/childop entry sentinel for the shadow transition map.
+ * The transition hash needs a stable predecessor for the first PC of a
+ * trace so two unrelated calls cannot accidentally join across the
+ * boundary (call A's last PC feeding call B's first PC would
+ * manufacture a transition that never executed).  The sentinel sets
+ * bit 63 so it cannot alias any canonicalised kernel PC (after the
+ * KASLR-base subtraction those occupy the low 4 GB), with the
+ * (nr, do32) pair encoded below the marker so each call site gets its
+ * own predecessor.  The do32 dimension matters because a 32-bit-compat
+ * entry into the same syscall slot reaches different kernel entry
+ * trampolines than the native path.
+ */
+static inline unsigned long kcov_entry_sentinel(unsigned int nr, bool do32)
+{
+	return (1UL << 63) | ((unsigned long)do32 << 32) | (unsigned long)nr;
+}
+
+/*
+ * Hash a (prev_canon_pc, cur_canon_pc) pair into a transition slot
+ * index.  Both inputs are already KASLR-canonicalised — the caller
+ * (kcov_collect's PC walk) holds the canonical value for the current
+ * PC so it can be threaded into both pc_canon_to_edge() and here
+ * without re-running kcov_canon_pc.  Rotates cur left by 1 before
+ * xoring so the pair (a, b) hashes differently from (b, a) — a
+ * forward and a backward edge through the same two basic blocks are
+ * distinct transitions.
+ */
+static inline unsigned int pair_to_transition(unsigned long prev,
+					      unsigned long cur)
+{
+	unsigned long h = prev * 0x9E3779B97F4A7C15UL;
+
+	h ^= (cur << 1) | (cur >> 63);
+	h ^= h >> 33;
+	h *= 0xff51afd7ed558ccdUL;
+	h ^= h >> 33;
+	h *= 0xc4ceb9fe1a85ec53UL;
+	h ^= h >> 33;
+	return (unsigned int)(h & (KCOV_NUM_TRANSITIONS - 1));
 }
 
 /*
@@ -1277,7 +1335,21 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 	unsigned long call_nr;
 	unsigned long edges_this_call = 0;
 	unsigned long local_distinct_pcs = 0;
+	unsigned long transitions_this_call = 0;
 	bool found_new = false;
+	/* Snapshot the mode once: a mid-loop flip from SHADOW to OFF (no
+	 * runtime path does this today, but be explicit) cannot leave the
+	 * loop body straddling the gate. */
+	enum kcov_transition_coverage_mode tcov_mode =
+		__atomic_load_n(&kcov_transition_coverage_mode, __ATOMIC_RELAXED);
+	/* Seed prev_canon_pc with the per-syscall entry sentinel so the
+	 * first PC in this trace has a stable predecessor.  Remote-mode
+	 * traces merge coverage copied from remote contexts into the same
+	 * buffer; the ordering quality of that merge
+	 * is unverified, so transition records from remote-mode calls are
+	 * treated as shadow-only by virtue of the whole feature being
+	 * shadow-only — no separate gate is needed yet. */
+	unsigned long prev_canon_pc = kcov_entry_sentinel(nr, do32);
 
 	if (new_edge_count != NULL)
 		*new_edge_count = 0;
@@ -1359,7 +1431,13 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 	for (idx = 0; idx < count; idx++) {
 		unsigned long pc_val = __atomic_load_n(&kc->trace_buf[idx + 1],
 			__ATOMIC_RELAXED);
-		unsigned int edge = pc_to_edge(pc_val);
+		/* Canonicalise once per PC and drive both pc_canon_to_edge
+		 * (for the existing PC bitmap) and pair_to_transition (for
+		 * the shadow transition map) off the same value.  Routing
+		 * through pc_to_edge() instead would re-run kcov_canon_pc on
+		 * every PC. */
+		unsigned long canon_pc = kcov_canon_pc(pc_val);
+		unsigned int edge = pc_canon_to_edge(canon_pc);
 		unsigned int local_count = dedup_inc(kc->dedup, edge,
 			kc->current_generation, nr, do32);
 		unsigned int bucket = bucket_for_count(local_count);
@@ -1367,6 +1445,39 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 
 		if (local_count == 1)
 			local_distinct_pcs++;
+
+		/* Shadow transition coverage: hash the (prev_canon_pc,
+		 * canon_pc) pair into the transition map and bump the
+		 * counters on the 0 -> 1 slot transition.  Done before the
+		 * bucket-bit short-circuits below so a re-hit of a known PC
+		 * still contributes a transition record for the new
+		 * predecessor — that is the whole point of the signal (new
+		 * route through warm code). */
+		if (tcov_mode != KCOV_TRANSITION_COVERAGE_OFF) {
+			unsigned int tslot = pair_to_transition(prev_canon_pc,
+								canon_pc);
+			unsigned char tseen;
+
+			tseen = __atomic_load_n(&kcov_shm->transition_seen[tslot],
+				__ATOMIC_RELAXED);
+			if (!(tseen & 0x1U)) {
+				unsigned char told;
+
+				told = __atomic_fetch_or(
+					&kcov_shm->transition_seen[tslot],
+					0x1U, __ATOMIC_RELAXED);
+				if (!(told & 0x1U)) {
+					__atomic_fetch_add(
+						&kcov_shm->transition_edges_found,
+						1, __ATOMIC_RELAXED);
+					__atomic_fetch_add(
+						&kcov_shm->transition_distinct_edges,
+						1, __ATOMIC_RELAXED);
+					transitions_this_call++;
+				}
+			}
+		}
+		prev_canon_pc = canon_pc;
 
 		/* Skip the atomic OR when this hit kept us inside the same
 		 * bucket as the previous hit on this edge — there is no
@@ -1477,6 +1588,23 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 			__atomic_fetch_add(
 				&kcov_shm->per_syscall_diag[nr][do32].distinct_pcs,
 				local_distinct_pcs, __ATOMIC_RELAXED);
+		/* Shadow transition coverage per-syscall accounting.  The
+		 * call-count counter (per_syscall_transition_edges) bumps by
+		 * 1 for any call that produced ≥ 1 new transition slot — the
+		 * top-N stats block uses its delta the same way the PC top-N
+		 * uses per_syscall_edges.  The real counter
+		 * (per_syscall_transition_edges_real) carries the raw flip
+		 * count so a single call that opens a large new region is
+		 * not flattened to the same weight as a call that flipped a
+		 * single slot. */
+		if (transitions_this_call > 0) {
+			__atomic_fetch_add(
+				&kcov_shm->per_syscall_transition_edges[nr],
+				1, __ATOMIC_RELAXED);
+			__atomic_fetch_add(
+				&kcov_shm->per_syscall_transition_edges_real[nr],
+				transitions_this_call, __ATOMIC_RELAXED);
+		}
 	}
 
 	if (new_edge_count != NULL)

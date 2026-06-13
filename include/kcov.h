@@ -63,6 +63,52 @@ enum errno_bucket {
  * easily blow past the old 512K-slot budget within seconds. */
 #define KCOV_NUM_EDGES (1 << 23)
 
+/* Shadow transition-coverage map.  See the
+ * kcov_transition_coverage_mode enum below for the mode contract; this
+ * macro sets the slot count.
+ *
+ * Trinity walks each KCOV trace in order, so hashing consecutive
+ * canonical PCs as (prev, cur) pairs turns the trace into AFL-style
+ * edge coverage from data the kernel is already producing.  Rewards a
+ * class of progress the PC bitmap misses: a syscall that takes a new
+ * branch through already-warm basic blocks flips no PC bucket bit and
+ * registers as a "warm-known hit" today, even though the control-flow
+ * path itself is new.
+ *
+ * Transition cardinality is strictly higher than PC cardinality: the
+ * same shared helper reached through five distinct predecessor blocks
+ * produces five transition entries vs one PC entry.  Sized to 16M
+ * slots so the fractional-occupancy 50% point lands near 11.6M
+ * observed transitions (N * ln(2)), two orders of magnitude above the
+ * realistic per-run transition load on the surface Trinity exercises.
+ * One byte per slot keeps the cost predictable (16 MB) and leaves the
+ * upper seven bits free for a future bucket layer that parallels the
+ * PC side's KCOV_NUM_BUCKETS hit-count semantics. */
+#define KCOV_NUM_TRANSITIONS (1UL << 24)
+
+/* Shadow transition-coverage mode (--kcov-transition-coverage).
+ *
+ *   OFF    - skip the transition hash inside kcov_collect.  The map
+ *            and counters stay zero; nothing else in Trinity reads
+ *            them today, so this is purely a "don't pay the per-PC
+ *            cost" knob.
+ *   SHADOW - default.  Hash consecutive canonical PCs into the
+ *            transition map and bump the transition_* counters in
+ *            parallel with the existing PC bitmap update.  Stats dump
+ *            surfaces the top transition-yielding syscalls alongside
+ *            the existing PC top-N so the two signals can be compared
+ *            side-by-side; transition deltas do NOT feed
+ *            bandit_record_pull(), frontier_record_new_edge(), the
+ *            plateau detector, or any other steering consumer yet.
+ *            Promotion to a reward source is gated on the shadow
+ *            signal proving out first. */
+enum kcov_transition_coverage_mode {
+	KCOV_TRANSITION_COVERAGE_OFF = 0,
+	KCOV_TRANSITION_COVERAGE_SHADOW = 1,
+};
+
+extern enum kcov_transition_coverage_mode kcov_transition_coverage_mode;
+
 /* AFL-style hit-count bucketing.  Each edge stores an 8-bit mask where bit
  * i is set if the edge has ever been hit a count that falls in bucket i:
  *   bucket 0: 1 hit            bucket 4: 8-15 hits
@@ -749,6 +795,49 @@ struct kcov_shared {
 	 * is the per-syscall version of the run-wide success metric in
 	 * the design doc's R7 ("Primary lift metric" block). */
 	unsigned long per_syscall_cmp_novelty_reexec[MAX_NR_SYSCALL];
+
+	/* Shadow transition-coverage map and counters.  See
+	 * KCOV_NUM_TRANSITIONS and the kcov_transition_coverage_mode enum
+	 * at the top of this header for the design.  All four counters and
+	 * the map stay at zero when the mode is OFF; the map and per-
+	 * syscall arrays are still allocated (the size is fixed at compile
+	 * time and the byte cost is fleet-acceptable, ~16 MB).
+	 *
+	 *  transition_seen[]
+	 *      One byte per (prev_canon_pc, cur_canon_pc) hash slot.  Bit 0
+	 *      is the seen flag bumped from kcov_collect(); the upper seven
+	 *      bits are reserved for a future bucket layer that would
+	 *      parallel bucket_seen[]'s 8-bucket hit-count semantics.
+	 *  transition_edges_found
+	 *      Count of slot bits ever flipped 0 -> 1.  Today this tracks
+	 *      distinct slot occupancy (one bit per slot); the name keeps
+	 *      the PC-side edges_found / distinct_edges naming pattern so a
+	 *      future bucket layer can split the two cleanly.
+	 *  transition_distinct_edges
+	 *      Distinct first-sighting count of new transition slots —
+	 *      identical to transition_edges_found until a bucket layer is
+	 *      added.  Kept separate now so the published counter API is
+	 *      stable when the split lands.
+	 *  per_syscall_transition_edges[nr]
+	 *      Call-count semantics: bumped once per kcov_collect() call
+	 *      that flipped at least one new transition slot.  Mirrors the
+	 *      per_syscall_edges[] semantics noted in the comment above it.
+	 *  per_syscall_transition_edges_previous[nr]
+	 *      Snapshot of the above at the previous dump_stats() interval.
+	 *      Drives the "top syscalls by recent transition growth" delta
+	 *      block in the stats dump.
+	 *  per_syscall_transition_edges_real[nr]
+	 *      Real edge-flip count: sum across all calls of the number of
+	 *      new transition slots flipped in that call.  A single call
+	 *      that opens an entirely new control-flow region bumps this by
+	 *      the size of the region, not by 1 — pair with the call-count
+	 *      counter above to read transitions-per-productive-call. */
+	unsigned long transition_edges_found;
+	unsigned long transition_distinct_edges;
+	unsigned long per_syscall_transition_edges[MAX_NR_SYSCALL];
+	unsigned long per_syscall_transition_edges_previous[MAX_NR_SYSCALL];
+	unsigned long per_syscall_transition_edges_real[MAX_NR_SYSCALL];
+	unsigned char transition_seen[KCOV_NUM_TRANSITIONS];
 };
 
 extern struct kcov_shared *kcov_shm;
