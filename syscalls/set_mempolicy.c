@@ -70,7 +70,7 @@ static void sanitise_set_mempolicy(struct syscallrecord *rec)
 struct syscallentry syscall_set_mempolicy = {
 	.name = "set_mempolicy",
 	.num_args = 3,
-	.argtype = { [0] = ARG_OP },
+	.argtype = { [0] = ARG_OP, [2] = ARG_LEN },
 	.argname = { [0] = "mode", [1] = "nmask", [2] = "maxnode" },
 	.arg_params[0].list = ARGLIST(mempolicy_modes),
 	.rettype = RET_ZERO_SUCCESS,
