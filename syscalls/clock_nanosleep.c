@@ -106,7 +106,7 @@ struct syscallentry syscall_clock_nanosleep = {
 	.name = "clock_nanosleep",
 	.group = GROUP_TIME,
 	.num_args = 4,
-	.argtype = { [0] = ARG_OP, [1] = ARG_LIST, [3] = ARG_ADDRESS },
+	.argtype = { [0] = ARG_OP, [1] = ARG_LIST, [2] = ARG_ADDRESS, [3] = ARG_ADDRESS },
 	.argname = { [0] = "which_clock", [1] = "flags", [2] = "rqtp", [3] = "rmtp" },
 	.arg_params[0].list = ARGLIST(clock_nanosleep_which),
 	.arg_params[1].list = ARGLIST(clock_nanosleep_flags),
