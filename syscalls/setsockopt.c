@@ -948,7 +948,7 @@ static void post_setsockopt(struct syscallrecord *rec)
 struct syscallentry syscall_setsockopt = {
 	.name = "setsockopt",
 	.num_args = 5,
-	.argtype = { [0] = ARG_SOCKETINFO },
+	.argtype = { [0] = ARG_SOCKETINFO, [4] = ARG_LEN },
 	.argname = { [0] = "fd", [1] = "level", [2] = "optname", [3] = "optval", [4] = "optlen" },
 	.sanitise = sanitise_setsockopt,
 	.post = post_setsockopt,
