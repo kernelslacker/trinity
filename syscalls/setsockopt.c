@@ -16,6 +16,14 @@
 #include "bpf.h"
 #include "deferred-free.h"
 #include "net.h"
+/*
+ * struct_catalog.h transitively pulls <linux/fs.h> (via linux/aio_abi.h),
+ * which defines struct file_attr.  compat.h's fallback definition of the
+ * same struct guards on FILE_ATTR_SIZE_VER0 from the kernel header, so
+ * struct_catalog.h must come first or compat.h's unguarded fallback fires
+ * and the kernel header then redefines the type.
+ */
+#include "struct_catalog.h"
 #include "compat.h"
 #include "random.h"
 #include "rnd.h"
@@ -422,6 +430,7 @@ static bool try_paired_setsockopt(struct sockopt *so, int fd)
 static bool apply_sockopt_entry(struct sockopt *so, bool mismatch_len)
 {
 	const struct sockopt_entry *e;
+	const struct struct_desc *desc;
 	socklen_t exact;
 
 	if (ARRAY_SIZE(sockopt_table) == 0)
@@ -430,7 +439,41 @@ static bool apply_sockopt_entry(struct sockopt *so, bool mismatch_len)
 		return false;
 
 	e = &sockopt_table[rnd_modulo_u32(ARRAY_SIZE(sockopt_table))];
-	exact = e->build((void *) so->optval);
+
+	/*
+	 * Catalog-first: if syscall_struct_args[] carries a
+	 * (level, optname) two-key row for ("setsockopt", arg 4) matching
+	 * the row we just picked, fill optval via the schema-aware path so
+	 * the per-field FT_ tags own the bytes and struct_field_for_cmp
+	 * can attribute KCOV CMP constants at named field slots.  optlen
+	 * is set from desc->struct_size; the proof batch is fixed-size
+	 * shapes only.  Variable-length tails (sctp / can_filter[]) keep
+	 * their bespoke builders until the catalog grows length-derivation
+	 * for them, at which point this fast path will start firing on
+	 * them too.
+	 *
+	 * Discriminator source is the freshly-picked (e->level, e->optname),
+	 * not rec->a2/a3: do_setsockopt() has not yet published the values
+	 * to rec and may still mangle optname on the random/legacy arm
+	 * (so->optname |= 1 << rand at line ~664), so the explicit-key
+	 * lookup reads the authoritative pre-commit state directly.
+	 *
+	 * Catalog miss: fall back to the bespoke build_*() in the row.
+	 * That keeps the int/bool/string/scalar entries (no struct shape,
+	 * no catalog row to register) and any struct-shaped optnames not
+	 * yet migrated working byte-identically -- coverage never drops as
+	 * rows are added incrementally.
+	 */
+	desc = struct_arg_lookup_two_key("setsockopt", 4,
+					 (unsigned long) e->level,
+					 (unsigned long) e->optname);
+	if (desc != NULL) {
+		struct_field_fill_schema_aware((unsigned char *) so->optval,
+					       desc->struct_size, desc, NULL);
+		exact = (socklen_t) desc->struct_size;
+	} else {
+		exact = e->build((void *) so->optval);
+	}
 
 	so->level = e->level;
 	so->optname = e->optname;
