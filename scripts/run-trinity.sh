@@ -47,7 +47,12 @@ fi
 # line-buffers so a splat just before teardown isn't lost in a stdio buffer.
 # Own transient scope mirrors the trinity scope -> reaped by cleanup() below.
 # Needs CAP_SYSLOG (root or kernel.dmesg_restrict=0), same as kcov access.
-# TRINITY_NO_DMESG=1 skips it; TRINITY_DMESG_LOG overrides the path.
+# TRINITY_NO_DMESG=1 skips it; TRINITY_DMESG_LOG overrides the path;
+# TRINITY_DMESG_MAX caps the captured size (default 1G) so a long or
+# crash-looping run on a noisy debug kernel can't fill the disk. The cap
+# is enforced on the consumer side via `head -c` in a process substitution
+# so dmesg_pid still refers to the dmesg launcher and cleanup() can reap
+# it through either the scope-stop or the plain-kill teardown path.
 dmesg_log="${TRINITY_DMESG_LOG:-dmesg.log}"
 dmesg_scope=""
 dmesg_pid=""
@@ -57,7 +62,7 @@ if [[ -z "${TRINITY_NO_DMESG:-}" ]]; then
         dmesg_scope="trinity-dmesg-$$.scope"
         dmesg_cmd=(systemd-run --user --scope --quiet --unit="${dmesg_scope}" -- "${dmesg_cmd[@]}")
     fi
-    "${dmesg_cmd[@]}" > "${dmesg_log}" &
+    "${dmesg_cmd[@]}" > >(head -c "${TRINITY_DMESG_MAX:-1G}" > "${dmesg_log}") &
     dmesg_pid=$!
 fi
 
