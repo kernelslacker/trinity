@@ -41,6 +41,7 @@ struct syscallentry syscall_stime = {
 	.group = GROUP_TIME,
 	.num_args = 1,
 	.argname = { [0] = "tptr" },
+	.argtype = { [0] = ARG_ADDRESS },
 	.flags = NEEDS_ROOT,
 	.sanitise = sanitise_stime,
 	.rettype = RET_ZERO_SUCCESS,
