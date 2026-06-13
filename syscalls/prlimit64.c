@@ -299,7 +299,7 @@ out_free:
 struct syscallentry syscall_prlimit64 = {
 	.name = "prlimit64",
 	.num_args = 4,
-	.argtype = { [0] = ARG_PID, [1] = ARG_OP, [3] = ARG_ADDRESS },
+	.argtype = { [0] = ARG_PID, [1] = ARG_OP, [2] = ARG_ADDRESS, [3] = ARG_ADDRESS },
 	.argname = { [0] = "pid", [1] = "resource", [2] = "new_rlim", [3] = "old_rlim" },
 	.arg_params[1].list = ARGLIST(rlimit_resources),
 	.group = GROUP_PROCESS,
