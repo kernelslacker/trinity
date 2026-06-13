@@ -1411,6 +1411,19 @@ struct stats_s {
 	unsigned long l2tp_ifname_race_sibling_reaped_ok;	/* worker exited normally and was reaped */
 	unsigned long l2tp_ifname_race_sibling_crashed;		/* worker killed by signal (SEGV/BUS/KILL) -- forensic hint */
 
+	/* statmount_idmap_overflow childop counters */
+	unsigned long statmount_idmap_runs;			/* total statmount_idmap_overflow invocations */
+	unsigned long statmount_idmap_setup_failed;		/* syscall probe / ns unshare / scratch alloc latch fired */
+	unsigned long statmount_idmap_iter;			/* outer-loop iterations entered */
+	unsigned long statmount_idmap_fork_failed;		/* fork() of the carrier userns helper failed */
+	unsigned long statmount_idmap_carrier_ok;		/* carrier userns built + fd pinned */
+	unsigned long statmount_idmap_carrier_fail;		/* carrier userns setup failed (setgroups/map write/open) */
+	unsigned long statmount_idmap_setattr_ok;		/* mount_setattr(MOUNT_ATTR_IDMAP) accepted on detached mount */
+	unsigned long statmount_idmap_setattr_fail;		/* mount_setattr(MOUNT_ATTR_IDMAP) rejected */
+	unsigned long statmount_idmap_statmount_call;		/* statmount() calls issued across the bufsize sweep */
+	unsigned long statmount_idmap_statmount_ok;		/* statmount() returned 0 (full render fit) */
+	unsigned long statmount_idmap_statmount_overflow;	/* statmount() returned -EOVERFLOW (seq-buffer truncation path) */
+
 	/* netns_teardown_churn childop counters */
 	unsigned long netns_teardown_runs;			/* total netns_teardown_churn invocations */
 	unsigned long netns_teardown_setup_failed;		/* anchor open / fork / unsupported latch fired */

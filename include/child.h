@@ -211,6 +211,7 @@ enum child_op_type {
 	CHILD_OP_TC_MIRRED_BLOCKCAST,
 	CHILD_OP_PFKEY_SPD_WALK,
 	CHILD_OP_L2TP_IFNAME_RACE,
+	CHILD_OP_STATMOUNT_IDMAP_OVERFLOW,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -944,3 +945,4 @@ bool sysfs_string_race(struct childdata *child);
 bool pci_bind(struct childdata *child);
 bool pfkey_spd_walk(struct childdata *child);
 bool l2tp_ifname_race(struct childdata *child);
+bool statmount_idmap_overflow(struct childdata *child);
