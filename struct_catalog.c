@@ -35,6 +35,7 @@
 #include <linux/if_ether.h>
 #include <linux/if_packet.h>
 #include <linux/tipc.h>
+#include <linux/qrtr.h>
 #include <linux/capability.h>
 #include <linux/netfilter.h>
 #include <linux/futex.h>
@@ -1606,6 +1607,7 @@ static const unsigned long sockaddr_storage_af_vocab[] = {
 	AF_ALG,
 #endif
 	AF_TIPC,
+	AF_QIPCRTR,
 #ifdef USE_XDP
 	AF_XDP,
 #endif
@@ -1832,6 +1834,39 @@ static const struct union_variant sockaddr_tipc_addr_nested[] = {
 	},
 };
 
+/*
+ * AF_QIPCRTR (sockaddr_qrtr) -- Qualcomm IPC Router endpoint.  The
+ * 12-byte address is a flat (family, node, port) triple -- no inner
+ * tagged union, so this variant stays single-arm.  sq_family is the
+ * outer discriminator and is filled by the family ENUM; sq_node and
+ * sq_port are u32 routing IDs.
+ *
+ * Both ID spaces are sparsely populated in practice (a handful of
+ * registered nodes, low-numbered well-known ports plus an auto-
+ * allocated ephemeral range), so a curated FT_ENUM pool that mixes
+ * low integers with the two magic sentinels (QRTR_NODE_BCAST, the
+ * broadcast node, and QRTR_PORT_CTRL, the control-channel port the
+ * kernel routes to qrtr_ctrl_recv()) drives more useful coverage
+ * than a uniform 32-bit splat that almost always misses.  Mirrors
+ * the vsock_cid_vocab FT_ENUM shape.
+ */
+static const unsigned long qrtr_node_vocab[] = {
+	0, 1, 2, 3, QRTR_NODE_BCAST,
+};
+
+static const unsigned long qrtr_port_vocab[] = {
+	0, 1, 2, QRTR_PORT_CTRL,
+};
+
+static const struct struct_field sockaddr_qrtr_variant_fields[] = {
+	FIELDX(struct sockaddr_qrtr, sq_node, FT_ENUM,
+	       .u.enum_ = { .vals = qrtr_node_vocab,
+			    .n    = ARRAY_SIZE(qrtr_node_vocab) }),
+	FIELDX(struct sockaddr_qrtr, sq_port, FT_ENUM,
+	       .u.enum_ = { .vals = qrtr_port_vocab,
+			    .n    = ARRAY_SIZE(qrtr_port_vocab) }),
+};
+
 #ifdef USE_XDP
 /*
  * AF_XDP (sockaddr_xdp) -- XSK endpoint.  sxdp_flags drives the
@@ -1926,6 +1961,13 @@ static const struct union_variant sockaddr_storage_variants[] = {
 		.nested_discrim_size   = 1,
 		.nested_variants     = sockaddr_tipc_addr_nested,
 		.num_nested_variants = ARRAY_SIZE(sockaddr_tipc_addr_nested),
+	},
+	{
+		.discrim_value	 = AF_QIPCRTR,
+		.name		 = "AF_QIPCRTR",
+		.fields		 = sockaddr_qrtr_variant_fields,
+		.num_fields	 = ARRAY_SIZE(sockaddr_qrtr_variant_fields),
+		.effective_size	 = sizeof(struct sockaddr_qrtr),
 	},
 #ifdef USE_XDP
 	{
