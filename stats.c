@@ -4135,6 +4135,13 @@ void kcov_cmp_stats_periodic_dump(void)
 	static unsigned long prev_canary_lock_post;
 	static unsigned long prev_canary_pre;
 	static unsigned long prev_canary_post;
+	static unsigned long prev_reexec_attempts;
+	static unsigned long prev_reexec_attribution_found;
+	static unsigned long prev_reexec_attribution_ambiguous;
+	static unsigned long prev_reexec_new_cmps_total;
+	static unsigned long prev_reexec_skipped_destructive;
+	static unsigned long prev_reexec_skipped_validate_silent;
+	static unsigned long prev_reexec_window_cap_hit;
 	static struct timespec last_dump;
 	struct timespec now;
 	long elapsed;
@@ -4144,12 +4151,20 @@ void kcov_cmp_stats_periodic_dump(void)
 	unsigned long cur_prop_injected;
 	unsigned long cur_chaos_suppressed;
 	unsigned long cur_count_oob, cur_canary_lock_post, cur_canary_pre, cur_canary_post;
+	unsigned long cur_reexec_attempts, cur_reexec_attribution_found;
+	unsigned long cur_reexec_attribution_ambiguous, cur_reexec_new_cmps_total;
+	unsigned long cur_reexec_skipped_destructive, cur_reexec_skipped_validate_silent;
+	unsigned long cur_reexec_window_cap_hit;
 	unsigned long delta_records, delta_truncated, delta_bloom_skipped, delta_unique;
 	unsigned long delta_strip_skipped;
 	unsigned long delta_try_get_attempts, delta_try_get_returned, delta_injected;
 	unsigned long delta_prop_injected;
 	unsigned long delta_chaos_suppressed;
 	unsigned long delta_count_oob, delta_canary_lock_post, delta_canary_pre, delta_canary_post;
+	unsigned long delta_reexec_attempts, delta_reexec_attribution_found;
+	unsigned long delta_reexec_attribution_ambiguous, delta_reexec_new_cmps_total;
+	unsigned long delta_reexec_skipped_destructive, delta_reexec_skipped_validate_silent;
+	unsigned long delta_reexec_window_cap_hit;
 	unsigned int pc_kids, cmp_kids;
 
 	if (kcov_shm == NULL)
@@ -4171,6 +4186,13 @@ void kcov_cmp_stats_periodic_dump(void)
 	cur_canary_lock_post = __atomic_load_n(&kcov_shm->cmp_hints_canary_lock_post_corrupt, __ATOMIC_RELAXED);
 	cur_canary_pre       = __atomic_load_n(&kcov_shm->cmp_hints_canary_pre_corrupt,      __ATOMIC_RELAXED);
 	cur_canary_post      = __atomic_load_n(&kcov_shm->cmp_hints_canary_post_corrupt,     __ATOMIC_RELAXED);
+	cur_reexec_attempts                = __atomic_load_n(&kcov_shm->reexec_attempts,                __ATOMIC_RELAXED);
+	cur_reexec_attribution_found       = __atomic_load_n(&kcov_shm->reexec_attribution_found,       __ATOMIC_RELAXED);
+	cur_reexec_attribution_ambiguous   = __atomic_load_n(&kcov_shm->reexec_attribution_ambiguous,   __ATOMIC_RELAXED);
+	cur_reexec_new_cmps_total          = __atomic_load_n(&kcov_shm->reexec_new_cmps_total,          __ATOMIC_RELAXED);
+	cur_reexec_skipped_destructive     = __atomic_load_n(&kcov_shm->reexec_skipped_destructive,     __ATOMIC_RELAXED);
+	cur_reexec_skipped_validate_silent = __atomic_load_n(&kcov_shm->reexec_skipped_validate_silent, __ATOMIC_RELAXED);
+	cur_reexec_window_cap_hit          = __atomic_load_n(&kcov_shm->reexec_window_cap_hit,          __ATOMIC_RELAXED);
 
 	/* First call: arm the window so any pre-existing counts carried
 	 * over from earlier in the run are not mis-attributed to the
@@ -4191,6 +4213,13 @@ void kcov_cmp_stats_periodic_dump(void)
 		prev_canary_lock_post = cur_canary_lock_post;
 		prev_canary_pre       = cur_canary_pre;
 		prev_canary_post      = cur_canary_post;
+		prev_reexec_attempts                = cur_reexec_attempts;
+		prev_reexec_attribution_found       = cur_reexec_attribution_found;
+		prev_reexec_attribution_ambiguous   = cur_reexec_attribution_ambiguous;
+		prev_reexec_new_cmps_total          = cur_reexec_new_cmps_total;
+		prev_reexec_skipped_destructive     = cur_reexec_skipped_destructive;
+		prev_reexec_skipped_validate_silent = cur_reexec_skipped_validate_silent;
+		prev_reexec_window_cap_hit          = cur_reexec_window_cap_hit;
 		return;
 	}
 
@@ -4212,13 +4241,24 @@ void kcov_cmp_stats_periodic_dump(void)
 	delta_canary_lock_post = cur_canary_lock_post - prev_canary_lock_post;
 	delta_canary_pre       = cur_canary_pre       - prev_canary_pre;
 	delta_canary_post      = cur_canary_post      - prev_canary_post;
+	delta_reexec_attempts                = cur_reexec_attempts                - prev_reexec_attempts;
+	delta_reexec_attribution_found       = cur_reexec_attribution_found       - prev_reexec_attribution_found;
+	delta_reexec_attribution_ambiguous   = cur_reexec_attribution_ambiguous   - prev_reexec_attribution_ambiguous;
+	delta_reexec_new_cmps_total          = cur_reexec_new_cmps_total          - prev_reexec_new_cmps_total;
+	delta_reexec_skipped_destructive     = cur_reexec_skipped_destructive     - prev_reexec_skipped_destructive;
+	delta_reexec_skipped_validate_silent = cur_reexec_skipped_validate_silent - prev_reexec_skipped_validate_silent;
+	delta_reexec_window_cap_hit          = cur_reexec_window_cap_hit          - prev_reexec_window_cap_hit;
 
 	if ((delta_records | delta_truncated | delta_bloom_skipped | delta_strip_skipped |
 	     delta_unique | delta_try_get_attempts | delta_try_get_returned |
 	     delta_injected | delta_prop_injected |
 	     delta_chaos_suppressed | delta_count_oob |
 	     delta_canary_lock_post |
-	     delta_canary_pre | delta_canary_post) != 0) {
+	     delta_canary_pre | delta_canary_post |
+	     delta_reexec_attempts | delta_reexec_attribution_found |
+	     delta_reexec_attribution_ambiguous | delta_reexec_new_cmps_total |
+	     delta_reexec_skipped_destructive | delta_reexec_skipped_validate_silent |
+	     delta_reexec_window_cap_hit) != 0) {
 		stats_log_write("KCOV CMP stats over last %lds:\n", elapsed);
 
 		if (delta_records) {
@@ -4310,6 +4350,48 @@ void kcov_cmp_stats_periodic_dump(void)
 					"cmp_hints_canary_post_corrupt", delta_canary_post,
 					rate_milli / 1000, rate_milli % 1000, cur_canary_post);
 		}
+		if (delta_reexec_attempts) {
+			unsigned long rate_milli = (delta_reexec_attempts * 1000UL) / (unsigned long)elapsed;
+			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+					"reexec_attempts", delta_reexec_attempts,
+					rate_milli / 1000, rate_milli % 1000, cur_reexec_attempts);
+		}
+		if (delta_reexec_attribution_found) {
+			unsigned long rate_milli = (delta_reexec_attribution_found * 1000UL) / (unsigned long)elapsed;
+			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+					"reexec_attribution_found", delta_reexec_attribution_found,
+					rate_milli / 1000, rate_milli % 1000, cur_reexec_attribution_found);
+		}
+		if (delta_reexec_attribution_ambiguous) {
+			unsigned long rate_milli = (delta_reexec_attribution_ambiguous * 1000UL) / (unsigned long)elapsed;
+			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+					"reexec_attribution_ambiguous", delta_reexec_attribution_ambiguous,
+					rate_milli / 1000, rate_milli % 1000, cur_reexec_attribution_ambiguous);
+		}
+		if (delta_reexec_new_cmps_total) {
+			unsigned long rate_milli = (delta_reexec_new_cmps_total * 1000UL) / (unsigned long)elapsed;
+			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+					"reexec_new_cmps_total", delta_reexec_new_cmps_total,
+					rate_milli / 1000, rate_milli % 1000, cur_reexec_new_cmps_total);
+		}
+		if (delta_reexec_skipped_destructive) {
+			unsigned long rate_milli = (delta_reexec_skipped_destructive * 1000UL) / (unsigned long)elapsed;
+			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+					"reexec_skipped_destructive", delta_reexec_skipped_destructive,
+					rate_milli / 1000, rate_milli % 1000, cur_reexec_skipped_destructive);
+		}
+		if (delta_reexec_skipped_validate_silent) {
+			unsigned long rate_milli = (delta_reexec_skipped_validate_silent * 1000UL) / (unsigned long)elapsed;
+			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+					"reexec_skipped_validate_silent", delta_reexec_skipped_validate_silent,
+					rate_milli / 1000, rate_milli % 1000, cur_reexec_skipped_validate_silent);
+		}
+		if (delta_reexec_window_cap_hit) {
+			unsigned long rate_milli = (delta_reexec_window_cap_hit * 1000UL) / (unsigned long)elapsed;
+			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+					"reexec_window_cap_hit", delta_reexec_window_cap_hit,
+					rate_milli / 1000, rate_milli % 1000, cur_reexec_window_cap_hit);
+		}
 	}
 
 	/*
@@ -4384,6 +4466,13 @@ void kcov_cmp_stats_periodic_dump(void)
 	prev_canary_lock_post = cur_canary_lock_post;
 	prev_canary_pre       = cur_canary_pre;
 	prev_canary_post      = cur_canary_post;
+	prev_reexec_attempts                = cur_reexec_attempts;
+	prev_reexec_attribution_found       = cur_reexec_attribution_found;
+	prev_reexec_attribution_ambiguous   = cur_reexec_attribution_ambiguous;
+	prev_reexec_new_cmps_total          = cur_reexec_new_cmps_total;
+	prev_reexec_skipped_destructive     = cur_reexec_skipped_destructive;
+	prev_reexec_skipped_validate_silent = cur_reexec_skipped_validate_silent;
+	prev_reexec_window_cap_hit          = cur_reexec_window_cap_hit;
 	last_dump = now;
 }
 
@@ -6044,6 +6133,31 @@ static void dump_stats_kcov_block(void)
 				&kcov_shm->total_warm_known_hits, __ATOMIC_RELAXED);
 			if (warm_known > 0)
 				stat_row("kcov_coverage", "warm_known_hits", warm_known);
+		}
+
+		{
+			unsigned long rx_attempts = __atomic_load_n(&kcov_shm->reexec_attempts, __ATOMIC_RELAXED);
+			unsigned long rx_attribution_found = __atomic_load_n(&kcov_shm->reexec_attribution_found, __ATOMIC_RELAXED);
+			unsigned long rx_attribution_ambiguous = __atomic_load_n(&kcov_shm->reexec_attribution_ambiguous, __ATOMIC_RELAXED);
+			unsigned long rx_new_cmps_total = __atomic_load_n(&kcov_shm->reexec_new_cmps_total, __ATOMIC_RELAXED);
+			unsigned long rx_skipped_destructive = __atomic_load_n(&kcov_shm->reexec_skipped_destructive, __ATOMIC_RELAXED);
+			unsigned long rx_skipped_validate_silent = __atomic_load_n(&kcov_shm->reexec_skipped_validate_silent, __ATOMIC_RELAXED);
+			unsigned long rx_window_cap_hit = __atomic_load_n(&kcov_shm->reexec_window_cap_hit, __ATOMIC_RELAXED);
+
+			if (rx_attempts > 0)
+				stat_row("kcov_coverage", "reexec_attempts", rx_attempts);
+			if (rx_attribution_found > 0)
+				stat_row("kcov_coverage", "reexec_attribution_found", rx_attribution_found);
+			if (rx_attribution_ambiguous > 0)
+				stat_row("kcov_coverage", "reexec_attribution_ambiguous", rx_attribution_ambiguous);
+			if (rx_new_cmps_total > 0)
+				stat_row("kcov_coverage", "reexec_new_cmps_total", rx_new_cmps_total);
+			if (rx_skipped_destructive > 0)
+				stat_row("kcov_coverage", "reexec_skipped_destructive", rx_skipped_destructive);
+			if (rx_skipped_validate_silent > 0)
+				stat_row("kcov_coverage", "reexec_skipped_validate_silent", rx_skipped_validate_silent);
+			if (rx_window_cap_hit > 0)
+				stat_row("kcov_coverage", "reexec_window_cap_hit", rx_window_cap_hit);
 		}
 
 		/* Find top 10 edge-producing syscalls via insertion sort. */
