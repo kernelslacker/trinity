@@ -362,6 +362,80 @@ enum {
 #define NFC_SOCKPROTO_LLCP	1
 #endif
 
+/* linux/qrtr.h — AF_QIPCRTR sockaddr_qrtr + control-channel sentinels.
+ *
+ * Older sysroots predate the 2015 mainline merge (commit bdabad3e363d)
+ * and do not ship <linux/qrtr.h> at all; on those builds the struct
+ * definition and the two well-known sentinels (QRTR_NODE_BCAST, the
+ * broadcast node, and QRTR_PORT_CTRL, the qrtr_ctrl_recv() pseudo-
+ * port) are missing.  struct_catalog references both unconditionally,
+ * so include the header when present and otherwise synthesize a
+ * literal-for-literal mirror.  The constants land behind per-symbol
+ * #ifndef guards so a sysroot that ships the header but not the
+ * sentinels still picks up the missing names.
+ */
+#if __has_include(<linux/qrtr.h>)
+#include <linux/qrtr.h>
+#else
+#include <linux/socket.h>		/* __kernel_sa_family_t */
+struct sockaddr_qrtr {
+	__kernel_sa_family_t sq_family;
+	__u32 sq_node;
+	__u32 sq_port;
+};
+#endif
+#ifndef QRTR_NODE_BCAST
+#define QRTR_NODE_BCAST		0xffffffffu
+#endif
+#ifndef QRTR_PORT_CTRL
+#define QRTR_PORT_CTRL		0xfffffffeu
+#endif
+
+/* linux/nfc.h — AF_NFC raw-socket endpoint + NFC_PROTO_* selectors.
+ *
+ * CONFIG_NFC has historically been a tristate that gated UAPI install
+ * on some distros, so sysroots without <linux/nfc.h> at all are a real
+ * configuration; on those, struct sockaddr_nfc and the seven
+ * NFC_PROTO_* values that select the per-target protocol family in
+ * rawsock_bind() -> nfc_find_target() are missing.  Include the header
+ * when present, synthesize the struct when absent, and gate each
+ * protocol constant behind a #ifndef so a partial header still picks
+ * up the missing names.  Values mirror the upstream UAPI enum
+ * literal-for-literal.
+ */
+#if __has_include(<linux/nfc.h>)
+#include <linux/nfc.h>
+#else
+#include <linux/socket.h>		/* __kernel_sa_family_t */
+struct sockaddr_nfc {
+	__kernel_sa_family_t sa_family;
+	__u32 dev_idx;
+	__u32 target_idx;
+	__u32 nfc_protocol;
+};
+#endif
+#ifndef NFC_PROTO_JEWEL
+#define NFC_PROTO_JEWEL			1
+#endif
+#ifndef NFC_PROTO_MIFARE
+#define NFC_PROTO_MIFARE		2
+#endif
+#ifndef NFC_PROTO_FELICA
+#define NFC_PROTO_FELICA		3
+#endif
+#ifndef NFC_PROTO_ISO14443
+#define NFC_PROTO_ISO14443		4
+#endif
+#ifndef NFC_PROTO_NFC_DEP
+#define NFC_PROTO_NFC_DEP		5
+#endif
+#ifndef NFC_PROTO_ISO14443_B
+#define NFC_PROTO_ISO14443_B		6
+#endif
+#ifndef NFC_PROTO_ISO15693
+#define NFC_PROTO_ISO15693		7
+#endif
+
 #ifndef MSG_WAITFORONE
 #define MSG_WAITFORONE	0x10000
 #endif

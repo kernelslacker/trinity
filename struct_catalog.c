@@ -35,8 +35,6 @@
 #include <linux/if_ether.h>
 #include <linux/if_packet.h>
 #include <linux/tipc.h>
-#include <linux/qrtr.h>
-#include <linux/nfc.h>
 #include <linux/capability.h>
 #include <linux/netfilter.h>
 #include <linux/futex.h>
