@@ -1352,6 +1352,23 @@ static const struct stat_category pfkey_spd_walk_category =
 	              pfkey_spd_walk_runs,
 	              pfkey_spd_walk_fields);
 
+static const struct stat_field l2tp_ifname_race_fields[] = {
+	STAT_FIELD(l2tp_ifname_race, runs),
+	STAT_FIELD(l2tp_ifname_race, setup_failed),
+	STAT_FIELD(l2tp_ifname_race, iter),
+	STAT_FIELD(l2tp_ifname_race, tunnel_ok),
+	STAT_FIELD(l2tp_ifname_race, tunnel_fail),
+	STAT_FIELD(l2tp_ifname_race, fork_failed),
+	STAT_FIELD(l2tp_ifname_race, spawn_pair_ok),
+	STAT_FIELD(l2tp_ifname_race, sibling_reaped_ok),
+	STAT_FIELD(l2tp_ifname_race, sibling_crashed),
+};
+
+static const struct stat_category l2tp_ifname_race_category =
+	STAT_CATEGORY("l2tp_ifname_race",
+	              l2tp_ifname_race_runs,
+	              l2tp_ifname_race_fields);
+
 static const struct stat_field bpf_cgroup_attach_fields[] = {
 	STAT_FIELD(bpf_cgroup_attach, runs),
 	STAT_FIELD(bpf_cgroup_attach, setup_failed),
@@ -2779,6 +2796,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&pfkey_spd_walk_category);
+
+	printf(",");
+	stat_category_emit_json(&l2tp_ifname_race_category);
 
 	printf(",");
 	stat_category_emit_json(&bpf_cgroup_attach_category);
@@ -5724,6 +5744,8 @@ static void dump_stats_childop_runs_network(void)
 	stat_category_emit_text(&qrtr_bind_race_category);
 
 	stat_category_emit_text(&pfkey_spd_walk_category);
+
+	stat_category_emit_text(&l2tp_ifname_race_category);
 
 	stat_category_emit_text(&netns_teardown_category);
 

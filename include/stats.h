@@ -1400,6 +1400,17 @@ struct stats_s {
 	unsigned long pfkey_spd_walk_sibling_reaped_ok;		/* worker exited normally and was reaped */
 	unsigned long pfkey_spd_walk_sibling_crashed;		/* worker killed by signal (SEGV/BUS/KILL) -- forensic hint */
 
+	/* l2tp_ifname_race childop counters */
+	unsigned long l2tp_ifname_race_runs;			/* total l2tp_ifname_race invocations */
+	unsigned long l2tp_ifname_race_setup_failed;		/* genl family probe / netns unshare / parent ctx latch fired */
+	unsigned long l2tp_ifname_race_iter;			/* outer-loop iterations entered */
+	unsigned long l2tp_ifname_race_tunnel_ok;		/* L2TP_CMD_TUNNEL_CREATE accepted by kernel */
+	unsigned long l2tp_ifname_race_tunnel_fail;		/* L2TP_CMD_TUNNEL_CREATE rejected */
+	unsigned long l2tp_ifname_race_fork_failed;		/* fork() of a creator/racer worker failed */
+	unsigned long l2tp_ifname_race_spawn_pair_ok;		/* both creator + racer spawned for this round */
+	unsigned long l2tp_ifname_race_sibling_reaped_ok;	/* worker exited normally and was reaped */
+	unsigned long l2tp_ifname_race_sibling_crashed;		/* worker killed by signal (SEGV/BUS/KILL) -- forensic hint */
+
 	/* netns_teardown_churn childop counters */
 	unsigned long netns_teardown_runs;			/* total netns_teardown_churn invocations */
 	unsigned long netns_teardown_setup_failed;		/* anchor open / fork / unsupported latch fired */

@@ -1332,7 +1332,7 @@ static void check_fd_leaks(struct childdata *child)
  * Slot ordering matches pick_op_type_table[]; the _Static_assert below
  * pins ARRAY_SIZE equality between the two.
  */
-static int dormant_op_disabled[113] = {
+static int dormant_op_disabled[114] = {
 	0, 0, 0, 0, 0,
 	0, 1, 1, 1, 1,
 	1, 1, 1, 0, 1,
@@ -1363,6 +1363,7 @@ static int dormant_op_disabled[113] = {
 	1,	/* qrtr_bind_race: dormant until canary-queue load-tests the AF_QRTR same-port bind/close race burst. */
 	1,	/* tc_mirred_blockcast: dormant until canary-queue load-tests the clsact + shared egress block + mirred blockcast recursion burst. */
 	1,	/* pfkey_spd_walk: dormant until canary-queue load-tests the PF_KEYv2 SPDDUMP-vs-SPDADD walk-race burst. */
+	1,	/* l2tp_ifname_race: dormant until canary-queue load-tests the L2TP SESSION_CREATE same-ifname race burst. */
 };
 
 /*
@@ -1593,6 +1594,7 @@ const char *alt_op_name(enum child_op_type op)
 	case CHILD_OP_QRTR_BIND_RACE:	return "qrtr_bind_race";
 	case CHILD_OP_TC_MIRRED_BLOCKCAST:	return "tc_mirred_blockcast";
 	case CHILD_OP_PFKEY_SPD_WALK:	return "pfkey_spd_walk";
+	case CHILD_OP_L2TP_IFNAME_RACE:	return "l2tp_ifname_race";
 	case NR_CHILD_OP_TYPES:		break;
 	}
 	return "unknown";
@@ -1690,7 +1692,7 @@ void log_alt_op_config(void)
  * CHILD_OP_SYSCALL sentinel filter in init_altop_dispatch() stays as
  * defensive coding for any future hole.
  */
-static const enum child_op_type pick_op_type_table[113] = {
+static const enum child_op_type pick_op_type_table[114] = {
 	[0]  = CHILD_OP_MMAP_LIFECYCLE,
 	[1]  = CHILD_OP_MPROTECT_SPLIT,
 	[2]  = CHILD_OP_MLOCK_PRESSURE,
@@ -1804,6 +1806,7 @@ static const enum child_op_type pick_op_type_table[113] = {
 	[110] = CHILD_OP_QRTR_BIND_RACE,
 	[111] = CHILD_OP_TC_MIRRED_BLOCKCAST,
 	[112] = CHILD_OP_PFKEY_SPD_WALK,
+	[113] = CHILD_OP_L2TP_IFNAME_RACE,
 };
 _Static_assert(ARRAY_SIZE(pick_op_type_table) == ARRAY_SIZE(dormant_op_disabled),
 	"pick_op_type_table and dormant_op_disabled must have matching slot counts");
@@ -2199,6 +2202,7 @@ static bool (*const op_dispatch[NR_CHILD_OP_TYPES])(struct childdata *) = {
 	[CHILD_OP_QRTR_BIND_RACE]	= qrtr_bind_race,
 	[CHILD_OP_TC_MIRRED_BLOCKCAST]	= tc_mirred_blockcast,
 	[CHILD_OP_PFKEY_SPD_WALK]	= pfkey_spd_walk,
+	[CHILD_OP_L2TP_IFNAME_RACE]	= l2tp_ifname_race,
 };
 
 _Static_assert(ARRAY_SIZE(op_dispatch) == NR_CHILD_OP_TYPES,

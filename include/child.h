@@ -210,6 +210,7 @@ enum child_op_type {
 	CHILD_OP_QRTR_BIND_RACE,
 	CHILD_OP_TC_MIRRED_BLOCKCAST,
 	CHILD_OP_PFKEY_SPD_WALK,
+	CHILD_OP_L2TP_IFNAME_RACE,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -942,3 +943,4 @@ bool vma_split_storm(struct childdata *child);
 bool sysfs_string_race(struct childdata *child);
 bool pci_bind(struct childdata *child);
 bool pfkey_spd_walk(struct childdata *child);
+bool l2tp_ifname_race(struct childdata *child);
