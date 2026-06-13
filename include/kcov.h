@@ -719,6 +719,36 @@ struct kcov_shared {
 	time_t plateau_entered_at;
 	bool plateau_armed;
 	bool plateau_active;
+
+	/* Greedy CMP RedQueen re-exec stats (Lever #1).  Populated from
+	 * dispatch_step's tail when a CMP-mode child has harvested at least
+	 * one attributable (cmp_ip, arg_slot, value) tuple out of the parent
+	 * call's KCOV_TRACE_CMP records and the gate fires.  See
+	 * projects/trinity/cmp-redqueen-design-2026-06-12.md for the design;
+	 * each counter is bumped once per re-exec dispatch (or once per gated
+	 * skip) so the funnel
+	 *   attribution_found -> attempts -> new_cmps_total
+	 *                                 -> skipped_destructive
+	 *                                 -> skipped_validate_silent
+	 *                                 -> window_cap_hit
+	 * is directly observable.  attribution_ambiguous is the A.c
+	 * diagnostic — bumped once per (cmp_ip, value) where more than one
+	 * arg slot matched, before first-match-wins picked one. */
+	unsigned long reexec_attempts;
+	unsigned long reexec_attribution_found;
+	unsigned long reexec_attribution_ambiguous;
+	unsigned long reexec_new_cmps_total;
+	unsigned long reexec_skipped_destructive;
+	unsigned long reexec_skipped_validate_silent;
+	unsigned long reexec_window_cap_hit;
+
+	/* Per-syscall new_cmp total attributed to re-exec dispatches.
+	 * Sibling of per_syscall_cmp_inserts for the re-exec lift signal:
+	 * lift_ratio_per_syscall = reexec_per_call_new_cmps /
+	 *                          baseline_per_call_new_cmps
+	 * is the per-syscall version of the run-wide success metric in
+	 * the design doc's R7 ("Primary lift metric" block). */
+	unsigned long per_syscall_cmp_novelty_reexec[MAX_NR_SYSCALL];
 };
 
 extern struct kcov_shared *kcov_shm;
