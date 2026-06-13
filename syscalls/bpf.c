@@ -62,7 +62,8 @@ static bool bpf_prog_load(union bpf_attr *attr)
 		attr->insns = (u64) insns;
 		classic_filter = true;
 	} else {
-		/* eBPF for everything else (and sometimes socket filters) */
+		/* Use eBPF for non-socket-filter programs, and for the socket
+		 * filter half that does not choose classic BPF. */
 		int insn_count = 0;
 		struct bpf_insn *insns = ebpf_gen_program(&insn_count, attr->prog_type);
 		attr->insn_cnt = insn_count;

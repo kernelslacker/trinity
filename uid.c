@@ -79,7 +79,7 @@ void do_uid0_check(void)
 {
 	unsigned int i;
 
-	/* if we're already unprivileged, then don't worry. */
+	/* Already unprivileged; no UID/GID drop is needed. */
 	if (orig_uid != 0)
 		return;
 

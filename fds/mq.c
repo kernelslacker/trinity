@@ -35,12 +35,13 @@ static void mq_destructor(struct object *obj)
 }
 
 /*
- * Cross-process safe: only reads obj->mqobj fields (now in shm via
- * alloc_shared_obj) and the scope scalar.  No process-local pointers
- * are dereferenced, so it is correct to call this from a different
- * process than the one that allocated the obj — which matters because
- * head->dump runs from dump_childdata() in the parent's crash
- * diagnostics path even when a child triggered the crash.
+ * Cross-process safe: only reads obj->mqobj fields and the scope
+ * scalar.  The scalars and the inline name[] array survive fork/COW
+ * and no process-local pointers are dereferenced, so it is correct to
+ * call this from a different process than the one that allocated the
+ * obj — which matters because head->dump runs from dump_childdata() in
+ * the parent's crash diagnostics path even when a child triggered the
+ * crash.
  */
 static void mq_dump(struct object *obj, enum obj_scope scope)
 {
@@ -100,12 +101,10 @@ static int init_mq_fds(void)
 	head->destroy = &mq_destructor;
 	head->dump = &mq_dump;
 	/*
-	 * Opt this provider into the shared obj heap.  __destroy_object()
-	 * checks this flag to route the obj struct release through
-	 * free_shared_obj() instead of free().  mqobj is {int fd; char
-	 * name[N];} — the name is an inline char array that lives in the
-	 * obj struct itself, so it migrates to shm automatically with the
-	 * rest of the struct.  No alloc_shared_str needed.
+	 * mqobj is {int fd; char name[N];} — the name is an inline char
+	 * array stored in the obj struct itself, so it travels with the
+	 * struct across fork/COW.  No separate shared string allocation is
+	 * needed, and cross-process reads stay safe.
 	 */
 
 	for (i = 0; i < 5; i++) {
@@ -135,15 +134,15 @@ static int get_rand_mq_fd(void)
 
 	/*
 	 * Versioned slot pick + objpool_check() before the
-	 * obj->mqobj.fd deref, mirroring the wireup at 15b6257b8206
-	 * (fds/sockets.c get_rand_socketinfo) and 5ef98298f6ad
-	 * (syscalls/keyctl.c KEYCTL_WATCH_KEY).  Same OBJ_GLOBAL lockless-
-	 * reader UAF window the framework commit a7fdbb97830c spelled out:
+	 * obj->mqobj.fd deref.  A version-validated object-slot read
+	 * guards the lockless reader against a recycled object
+	 * (cf. get_rand_socketinfo in fds/sockets.c).  Same OBJ_GLOBAL
+	 * lockless-reader UAF window:
 	 * between the lockless slot pick and the consumer's read of
 	 * the POSIX mqueue fd handed to mq_send/receive/notify via the fd_provider .get callback,
-	 * the parent can destroy the obj, free_shared_obj() returns the
-	 * chunk to the shared-heap freelist, and a concurrent
-	 * alloc_shared_obj() recycles it underneath us.
+	 * the parent can destroy the obj; release_obj() zeroes the chunk
+	 * and routes it through deferred-free, so the stale slot pointer
+	 * can read a zeroed or recycled chunk.
 	 */
 	for (int i = 0; i < 1000; i++) {
 		struct object *obj;

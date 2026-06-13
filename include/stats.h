@@ -1992,7 +1992,7 @@ struct stats_s {
 	 * class as [[maps_reject_alloc_track_miss]]: shared 256-slot LRU
 	 * can rotate out legitimate live entries under fd-pressure
 	 * cascades, false-rejecting them here.  Tracking this branch in
-	 * isolation is the validation gate for Wave-F's alloc_track widen:
+	 * isolation is the validation gate for the alloc_track 256->4096 widen:
 	 * a successful widen should drive this counter's rate-of-change
 	 * down on the next live run.  See deferred-free.c clause 4. */
 	unsigned long deferred_free_reject_untracked;
@@ -2044,8 +2044,7 @@ struct stats_s {
 	 *     deferred_free_tick or deferred_free_flush couldn't restore RW
 	 *     on the ring page before walking it.  The PROT_NONE page would
 	 *     otherwise persist as fault-bait for sibling fuzzed value-
-	 *     result syscalls (RC's 02:36 SEGV_ACCERR storm: 2282 faults
-	 *     across 2270 children at recurring redzone pages), so the
+	 *     result syscalls, so the
 	 *     drain path also munmap's the ring; the entries currently
 	 *     queued are leaked (lost forever from glibc's tracking until
 	 *     the child exits).  Cost of those leaks is bounded by the

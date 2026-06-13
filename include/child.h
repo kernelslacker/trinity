@@ -628,7 +628,7 @@ struct childdata {
 	 * insert. */
 	struct cmp_hints_bloom cmp_hints_seen[2];
 
-	/* CMP RedQueen greedy re-exec per-child state (Lever #1).
+	/* Greedy CMP RedQueen re-exec per-child state.
 	 *
 	 * reexec_pending[] is the per-call attribution scratch the per-record
 	 * loop in cmp_hints_collect() writes to: each (cmp_ip, value, size,
@@ -637,7 +637,7 @@ struct childdata {
 	 * fresh dispatch with the named slot pinned to value.
 	 *
 	 * reexec_pending_count counts how many slots in [0, MAX_REEXEC_PENDING)
-	 * are populated; the per-dispatch cap (initially 1, see Fork C-1) lives
+	 * are populated; the per-dispatch cap (initially 1) lives
 	 * at the consumer site, not here -- the buffer always reflects the
 	 * full attribution census the harvest pass produced, regardless of
 	 * how many the consumer chooses to spend.
@@ -649,11 +649,11 @@ struct childdata {
 	 * re-execs.  The pool / bloom inserts still run inside the re-exec --
 	 * those records are real harvest signal.
 	 *
-	 * redqueen_enabled is the R7 A/B sub-fleet stamp: half the CMP-mode
-	 * children get true (re-exec lever active), half get false (control
+	 * redqueen_enabled is the A/B sub-fleet stamp: half the CMP-mode
+	 * children get true (re-exec active), half get false (control
 	 * sub-fleet).  Stamped once at child init and never mutated, so per-
 	 * window comparisons of (reexec-enabled vs control) cohort metrics
-	 * isolate the lever's contribution from time-of-day fleet drift.
+	 * isolate the re-exec's contribution from time-of-day fleet drift.
 	 *
 	 * Owner-only writes from inside the child; the buffer is per-call
 	 * scratch and the two booleans are read-only after child init / drain
@@ -707,8 +707,9 @@ extern unsigned int max_children;
  * out of shm->stats.childop_budget_mult[op] and scales `base` by it.
  *
  * If the slot is zero (uninitialised, or wild-write zeroed), fall back
- * to `base` so the loop never collapses to zero iterations — preserves
- * the pre-CV.13 behaviour as the safe default.
+ * to `base` so the loop never collapses to zero iterations — this is
+ * the fixed childop budget used before adaptive budget multipliers, and
+ * it remains the safe default.
  *
  * Caller must have shm.h in scope (childop .c files already do).  The
  * macro evaluates `op` and `base` exactly once each via statement-

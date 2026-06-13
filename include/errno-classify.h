@@ -5,8 +5,7 @@
  * "feature unsupported" semantic that recurs across childops, fds/
  * providers, and recipe-runner gates.
  *
- * Two typed helpers, picked along the dominant clusters surfaced by
- * audits/einval-latch-audit-2026-05-25.md:
+ * Two typed helpers model the two dominant "unsupported" clusters:
  *
  *   is_syscall_unsupported() -- cap-gate cluster.  The syscall path
  *     is not reachable at all: kernel built without the option, the

@@ -133,9 +133,6 @@ static void put_be24(unsigned char *p, uint32_t v)
 	p[2] = (unsigned char)(v & 0xff);
 }
 
-/* Random bytes via rnd_u64() rather than libc rand() — per CLAUDE.md
- * rules, rand() is migrating out and rnd_u64() is the mutex-free
- * splitmix64 replacement. */
 static void rnd_fill(unsigned char *buf, size_t len)
 {
 	size_t i;

@@ -25,10 +25,10 @@
 /*
  * Hard cap on chain length.  pick_chain_length() draws from {2,3,4} via
  * a geometric distribution biased toward 2.  The cap is also the step-
- * array size used in the chain corpus: keeping it at 4 keeps each saved
- * chain entry small enough to land inside a single freelist bucket on
- * the shared obj heap, so save / evict cycles recycle slots cleanly
- * rather than bumping the heap watermark forever.
+ * array size used in the chain corpus: each saved chain entry is stored
+ * inline in a fixed-size slot of the chain_corpus_ring (see below), so
+ * keeping the cap at 4 bounds the per-slot footprint and the total shm
+ * cost of the ring.
  */
 #define MAX_SEQ_LEN 4
 
@@ -47,18 +47,16 @@ bool run_sequence_chain(struct childdata *child);
  * corpus inherits the same "interesting input" definition that the rest
  * of the fuzzer is already optimising against.
  *
- * The chain entries themselves are dynamically allocated through
- * alloc_shared_obj.  Each entry is fixed-size (264 B), so eviction
- * recycles into the freelist's 512-byte bucket and the working set
- * stays bounded as the ring overwrites old entries.  The ring header
- * (head / count / lock plus the slot-pointer array) lives in a single
- * alloc_shared region so all forked children share one source of truth.
+ * The chain entries are stored inline in fixed-size slots of the ring
+ * itself (struct chain_corpus_ring::slots[], see below).  The whole
+ * ring -- header plus the inline slot array -- lives in a single
+ * alloc_shared region so all forked children share one source of truth,
+ * and the working set stays bounded as the ring overwrites old entries.
  *
- * The corpus is intentionally a separate structure from minicorpus_shared
- * even though it shares the alloc_shared_obj backend: minicorpus is
- * per-syscall-nr arg snapshots, this is per-chain-shape syscall sequences.
- * Mixing them would conflate two different replay policies under the same
- * lock and slot accounting.
+ * The corpus is intentionally a separate structure from minicorpus_shared:
+ * minicorpus is per-syscall-nr arg snapshots, this is per-chain-shape
+ * syscall sequences.  Mixing them would conflate two different replay
+ * policies under the same lock and slot accounting.
  */
 struct chain_step {
 	unsigned int nr;
@@ -75,12 +73,12 @@ struct chain_entry {
 /*
  * Ring depth for saved chains.
  *
- * 256 slots * ~512 B per chain_entry through the freelist bucket caps
- * the in-flight chain corpus at ~128 KiB, well clear of the 4 MiB
- * shared obj heap.  Larger than minicorpus's per-syscall ring count of
- * 32 because the chain corpus is a single global pool rather than one
- * ring per syscall — replay diversity comes from ring depth, not from
- * per-syscall partitioning.
+ * 256 inline chain_entry slots size the whole ring at ~74 KiB of shared
+ * memory (see the sizing note on struct chain_corpus_ring::slots[]).
+ * Larger than minicorpus's per-syscall ring count of 32 because the
+ * chain corpus is a single global pool rather than one ring per syscall
+ * — replay diversity comes from ring depth, not from per-syscall
+ * partitioning.
  */
 #define CHAIN_CORPUS_RING_SIZE 256
 
@@ -101,14 +99,12 @@ struct chain_corpus_ring {
 	 */
 	unsigned long replay_steps_dispatched;	/* per-step replays dispatched (atomic) */
 	/*
-	 * Inline storage instead of a pointer table.  The original design
-	 * alloc_shared_obj'd each entry from the same heap that backs
-	 * struct object, which forced the obj heap to remain writable from
-	 * children (chain_corpus_save runs in child context).  That defeated
-	 * any mprotect-based wild-write defence on the obj heap.  An inline
-	 * array of fixed-size entries lives in shm directly, costs ~74 KiB
-	 * total (256 * 296 B), and lets the obj heap be mprotect'd RO post-
-	 * init for everyone.
+	 * Inline storage: a flat array of fixed-size entries living in this
+	 * shm region directly, costing ~74 KiB total (256 * 296 B).  Holding
+	 * the entries inline rather than behind a pointer table keeps the
+	 * obj heap out of the chain corpus entirely, so the obj heap can
+	 * stay mprotect'd RO post-init even though chain_corpus_save() runs
+	 * in child context.
 	 */
 	struct chain_entry slots[CHAIN_CORPUS_RING_SIZE];
 };

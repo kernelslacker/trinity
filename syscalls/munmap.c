@@ -115,7 +115,7 @@ static void sanitise_munmap(struct syscallrecord *rec)
 		len *= page_size;
 		rec->a2 = len;
 	} else {
-		/* just unmap 1 page of the mapping. */
+		/* Unmap one page from the selected mapping. */
 
 		rec->a1 = (unsigned long) map->ptr;
 		if (map->size > 0)

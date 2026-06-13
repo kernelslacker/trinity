@@ -1,16 +1,13 @@
 /*
  * Per-vCPU ioctl grammar.
  *
- * Phase 1 (6a98d474117f) and Phase 2 (11222fbf1656) wired up the KVM fd
- * hierarchy: /dev/kvm -> KVM_CREATE_VM -> KVM_CREATE_VCPU, with vCPU fds
- * landing in OBJ_FD_KVM_VCPU.  Until the read-side commit landed, those
- * vCPU fds were exercisable only by the flat ioctls/kvm.c grouping,
- * which matches against the "kvm" misc-device name and so only ever
- * fires when a child happens to grab /dev/kvm itself -- in which case
- * the per-vCPU ioctls in that grouping bounce off the system fd with
- * ENOTTY.  This file installs a dedicated ioctl_group with an fd_test
- * that walks the OBJ_FD_KVM_VCPU pool, so per-vCPU ioctls only fire on
- * actual vCPU fds.
+ * KVM fds form a hierarchy: /dev/kvm -> KVM_CREATE_VM ->
+ * KVM_CREATE_VCPU.  vCPU fds live in OBJ_FD_KVM_VCPU, so this file
+ * registers a dedicated ioctl_group whose fd_test picks actual vCPU fds
+ * instead of relying on the generic "kvm" misc-device group.  That
+ * generic group matches against the "kvm" misc-device name and so only
+ * fires when a child happens to grab /dev/kvm itself, in which case the
+ * per-vCPU ioctls bounce off the system fd with ENOTTY.
  *
  * Read-side ioctls (KVM_GET_*) populate userspace buffers from kernel
  * vCPU state and never mutate the vCPU; write-side ioctls (KVM_SET_*,

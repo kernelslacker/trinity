@@ -30,8 +30,6 @@
  * builds a runtime dispatch table that contains only the handlers whose
  * required subset is actually present, eliminating wasted ENOENT syscalls
  * on each random pick.
- *
- * Trinity-todo #2.3.
  */
 
 #include <dirent.h>

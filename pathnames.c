@@ -430,11 +430,12 @@ static void open_fds_from_path(const char *dirpath)
 	pool_cap_reached = false;
 	walked_entries = 0;
 
-	/* By default, don't follow symlinks so we only get each file once.
-	 * But, if we do something like -V /lib, then follow it
-	 *
-	 * I'm not sure about this, might remove later.
-	 */
+	/* Default walks use FTW_PHYS so each file is visited once and
+	 * symlinks are not followed.  Victim-path walks (-V /lib and the
+	 * like) omit FTW_PHYS so symlinks are followed: a victim path is
+	 * deliberately chosen, and distro trees front real directories
+	 * behind symlinks, so following them is what traverses the actual
+	 * tree the caller asked for. */
 	if (nr_victim_paths == 0)
 		flags |= FTW_PHYS;
 

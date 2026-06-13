@@ -8,7 +8,7 @@
  * a valid JSON object string; this layer adds nothing but the trailing
  * newline.
  *
- * Intended for the wave-1 diag-ring drain and any later per-cmd
+ * Intended for the diag-ring drain and any later per-cmd
  * telemetry that wants a structured on-disk format without pulling in
  * a JSON encoder.  Lives outside trinity's normal output helpers so it
  * can be used before logging/shm/etc. are wired up.

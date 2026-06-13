@@ -166,15 +166,15 @@ static void sanitise_io_uring_enter(struct syscallrecord *rec)
 	ring = get_io_uring_ring();
 	/*
 	 * Guard every pointer/field we are about to dereference.  The obj
-	 * lives on the shared heap (head->shared_alloc) so the struct itself
-	 * survives free, but its sq_ring/sqes pointers and sq_entries count
-	 * have no such guarantee:
+	 * comes from alloc_object() in the private tracked heap, and its
+	 * sq_ring/sqes pointers and sq_entries count carry no validity
+	 * guarantee of their own:
 	 *
 	 *   - A ring whose mmap failed during open_io_uring_fd_config() is
-	 *     never published, but a freed-and-recycled obj chunk can come
-	 *     back zeroed (alloc_shared_obj zero-fills) and republished by
-	 *     the next setup; until that setup completes its field stores
-	 *     a concurrent reader sees sqes==NULL or sq_entries==0.
+	 *     never published, but a freed obj chunk comes back zeroed
+	 *     (release_obj zeroes before deferred-free) and may be
+	 *     republished by the next setup; until that setup completes
+	 *     its field stores a reader sees sqes==NULL or sq_entries==0.
 	 *   - read_ring_u32() at line below dereferences sq_ring at off_mask;
 	 *     if sq_ring is NULL (first SIGSEGV cluster, +0xd4e46) we fault.
 	 *   - fill_sqe() at line below memsets sqes[sqe_idx]; if sqes is

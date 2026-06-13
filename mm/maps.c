@@ -94,11 +94,12 @@ bool get_map_handle(struct map_handle *h)
 		 * read then returns garbage and downstream consumers
 		 * (gen_xattr_name, generate_syscall_args, alloc_iovec)
 		 * walk into unmapped memory.  Skip the slot when the obj
-		 * isn't in the live malloc-result set.  OBJ_GLOBAL pool
-		 * objs come from alloc_shared_obj() which does not feed
-		 * the alloc-track ring, so the lookup is gated on
-		 * OBJ_LOCAL to avoid spurious rejections of legitimate
-		 * shared-heap objs.
+		 * isn't in the live malloc-result set.  This guard is gated
+		 * on OBJ_LOCAL: those live pointers belong to this child's
+		 * own tracked malloc set.  OBJ_GLOBAL objs are the parent's
+		 * pre-fork allocations inherited via COW (or cloned into the
+		 * child), so they aren't in this child's alloc-track ring and
+		 * need a separate validity rule.
 		 */
 		if (scope == OBJ_LOCAL && !alloc_track_lookup(obj)) {
 			__atomic_add_fetch(&shm->stats.maps_reject_alloc_track_miss, 1, __ATOMIC_RELAXED);
@@ -363,8 +364,8 @@ void map_destructor(struct object *obj)
 /*
  * Destructor for OBJ_GLOBAL mmap entries created via mmap_fd() and
  * setup_initial_mappings().  The obj struct itself is freed by
- * release_obj() (it sees head->shared_alloc and routes to
- * free_shared_obj); we only need to release the name string and
+ * release_obj() (which zeroes the chunk and routes it through
+ * deferred-free); we only need to release the name string and
  * unmap the actual mapping here.
  */
 void map_destructor_shared(struct object *obj)
@@ -509,8 +510,8 @@ static void clone_global_mmap_pool(enum objecttype type)
 					 * LRU lookup at get_map_handle (mm/maps.c:103) stays warm
 					 * even when dedup skips a fresh __zmalloc_tracked.  Without
 					 * this, dedup starves alloc_track and pool entries rotate
-					 * out under churn (Wave-F 256->4096 widen was outpaced 100x
-					 * at full throughput per bisect 2026-05-30). */
+					 * out under churn (the 256->4096 alloc_track widen was outpaced 100x
+					 * at full throughput). */
 					alloc_track_refresh(localobj);
 					break;
 				}

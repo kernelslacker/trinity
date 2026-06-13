@@ -29,18 +29,17 @@ CFLAGS += -Wwrite-strings
 CFLAGS += -Wno-format-nonliteral
 CFLAGS += -Wstrict-prototypes -Wmissing-prototypes
 CFLAGS += -fsigned-char
-# BPF spew.
+# Suppress noisy missing-field-initializer warnings from generated
+# BPF/UAPI-style initializers.
 CFLAGS += -Wno-missing-field-initializers
 
 # needed for show_backtrace() to work correctly.
 LDFLAGS += -rdynamic
 
 # Force eager symbol resolution at exec time (LD_BIND_NOW behaviour).
-# Lazy bind walks ld.so's writable link_map; trinity's fuzzed-write
-# storm can stomp those structures, and the resulting NULL deref inside
-# _dl_runtime_resolve is invisible to child_fault_handler because
-# backtrace_symbols_fd calls dladdr() which re-walks the same corrupted
-# chain.  See ldso-corruption-investigation-20260529.md for the chain.
+# Lazy binding walks ld.so's writable link_map. Fuzzed writes can corrupt
+# that state, and later _dl_runtime_resolve/dladdr paths may fault before
+# child_fault_handler can preserve a useful crash record.
 LDFLAGS += -Wl,-z,now
 
 # Runtime tripwire for libc rand().  scripts/check-static/no-libc-rand.sh

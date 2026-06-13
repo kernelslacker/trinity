@@ -57,13 +57,11 @@
  *     kernel.  Attach is via setsockopt on a socketpair; trigger is a
  *     send()/recv() pair plus a BPF_PROG_TEST_RUN to definitively run
  *     the program under the verifier-blessed runtime.
- *   - CGROUP_SKB (~30%) — exercises the canonical bpf(PROG_ATTACH) path
- *     described in the Trinity TODO.  Requires CAP_BPF + CAP_NET_ADMIN
+ *   - CGROUP_SKB (~30%) — exercises the canonical bpf(PROG_ATTACH) path.
+ *     Requires CAP_BPF + CAP_NET_ADMIN
  *     plus a writable cgroup directory; on the first failure with
  *     EPERM/EACCES (or no cgroup) we latch the combo off for the rest of
  *     the child's life so we don't spin retrying.
- *
- * Trinity-todo #1.4.
  */
 
 #include <errno.h>
@@ -393,8 +391,8 @@ static void cgroup_trigger(void)
 }
 
 /*
- * Combo B — CGROUP_SKB via the literal bpf(PROG_ATTACH) path described
- * in the Trinity TODO.  Best-effort: needs CAP_BPF + CAP_NET_ADMIN plus
+ * Combo B — CGROUP_SKB via the literal bpf(PROG_ATTACH) path.
+ * Best-effort: needs CAP_BPF + CAP_NET_ADMIN plus
  * one of the trinity{0..7} cgroup directories that munge_process()
  * already uses.  Latches off on EPERM/EACCES or missing cgroup.
  */

@@ -145,9 +145,12 @@ struct stats_ring {
  * convention is that children only ever write to their stats_ring;
  * parent_stats is read-only from child context.
  *
- * Field set mirrors struct stats_s Group A: see include/stats.h
- * lines 119-219.  The ring drain is the only writer (beyond the
- * parent's own reset/init paths).
+ * Field set is the hot per-syscall counters lifted out of struct
+ * stats_s (op_count, successes/failures, fault and redirection
+ * tallies, the per-syscall reject arrays and the syscall-category
+ * histogram) plus a selection of defense / corruption-attribution
+ * counters, all drained here from the stats ring.  The ring drain is
+ * the only writer (beyond the parent's own reset/init paths).
  */
 struct stats_aggregate {
 	unsigned long op_count;

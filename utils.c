@@ -1129,41 +1129,38 @@ static void freelist_push(uint64_t *head, void *p, size_t slot_size)
 }
 
 /*
- * Shared string heap — backing store for string-shaped fields
- * (filenames, label strings, fixed-size attr buffers) hung off objs
- * that live in the shared obj heap.
+ * Shared string heap — backing store for the string PAYLOADS of
+ * string-shaped fields (filenames, label strings, fixed-size attr
+ * buffers).  The owning obj struct itself comes from alloc_object()/
+ * zmalloc_tracked and lives on the private per-process heap; only the
+ * variable-length payload it points at is carved from this shared slab.
  *
- * Same MAP_SHARED-before-fork argument as the obj heap: any obj
- * struct that is reachable from shm->global_objects[] must point only
- * at memory that other processes can also reach, and the only way to
- * satisfy that for allocations made after fork (the regen path) is to
- * carve out of a region that was already mapped before any child
- * forked.
+ * The payload must be MAP_SHARED-before-fork: any obj struct reachable
+ * from shm->global_objects[] must point only at memory that other
+ * processes can also reach, and the only way to satisfy that for
+ * payloads allocated after fork (the regen path) is to carve out of a
+ * region that was already mapped before any child forked.
  *
- * Why a sibling slab instead of reusing the obj heap:
+ * Why a dedicated slab for payloads:
  *
- *   The obj heap is sized for ~28k struct objects at ~150 B each; if
- *   strings shared the cursor, a regen-heavy provider could starve
- *   future obj allocations and vice versa, with no way for an
- *   exhaustion message to distinguish "out of obj slots" from "out of
- *   string slots".  Splitting the cursor (and the backing region)
- *   keeps each pool's failure mode independent and self-describing.
- *   The sizing tradeoff is also different: obj structs are uniform,
- *   strings are variable-length and dominated by short labels, so the
- *   string pool can be much smaller.
+ *   A single shared region sized only for variable-length string
+ *   payloads keeps its failure mode independent and self-describing:
+ *   an exhaustion message reads as "out of string slots" and nothing
+ *   else.  Payloads are variable-length and dominated by short labels,
+ *   so the pool can stay small.
  *
- * Capacity (64 KiB):
+ * Capacity (1 MiB):
  *
  *   The string-bearing OBJ_GLOBAL providers (file/testfile, perf,
  *   memfd) hold short payloads — file paths typically under ~100 B,
  *   memfd labels under ~32 B, perf_event_attr buffers ~120 B (kernel
  *   caps the attr at PAGE_SIZE but trinity only memcpy's a struct's
  *   worth back into the obj for replay/dump).  At ~64 B average that
- *   is ~1k entries; at ~120 B per perf entry it is ~545.  Both
- *   comfortably exceed GLOBAL_OBJ_MAX_CAPACITY (1024) for the labels
- *   case and cover hundreds of regens for the perf case.  If long
- *   fuzz runs show "alloc_shared_str: heap exhausted" the cap can be
- *   raised — bump-and-leak makes growth the only reasonable answer.
+ *   is ~16k entries; at ~120 B per perf entry it is ~8.7k.  Slots up
+ *   to 1024 B are recycled through the size-bucketed freelists on free,
+ *   so steady-state occupancy tracks the live working set rather than
+ *   total allocation volume.  Only above-bucket frees bump-and-leak;
+ *   the 1 MiB ceiling is headroom for those.
  *
  * Why two entry points (alloc_shared_str + alloc_shared_strdup):
  *
@@ -1184,24 +1181,22 @@ static void freelist_push(uint64_t *head, void *p, size_t slot_size)
  *
  * Free strategy:
  *
- *   Mirror of free_shared_obj — poison the slot to zeros so a
- *   use-after-free surfaces as a "" / NUL-byte read rather than a
- *   live-looking string, then recycle via the size-bucketed freelist
- *   (see freelist_push/pop above).  Callers pass the original
+ *   Poison the slot to zeros so a use-after-free surfaces as a "" /
+ *   NUL-byte read rather than a live-looking string, then recycle via
+ *   the size-bucketed freelist (see freelist_push/pop above).  Callers
+ *   pass the original
  *   allocation size; for strdup-style strings that is strlen(p)+1 at
  *   free time, which is correct for a still-NUL-terminated string and
  *   harmless overshoot if it isn't (the buffer was zero-initialised).
  *   Slots too large for any freelist bucket are poisoned and leaked.
  */
 /*
- * 1 MiB.  Originally sized at 64 KiB for the simple-init case (memfd
- * + perf eventattr + a few testfiles), but bump-and-leak loses a
- * slot for every above-bucket free, and OBJ_LOCAL churn from
- * post_*_fd callbacks plus per-child fanout exhausts 64 KiB within
- * a few hours of a sustained fuzz run.  The freelist recycler now
- * returns slots to the pool, so long-run exhaustion is no longer
- * expected; the 1 MiB ceiling remains as headroom for above-bucket
- * allocations that still bump-and-leak.
+ * 1 MiB.  Slots up to 1024 B are returned to the size-bucketed
+ * freelists on free, so steady-state occupancy tracks the live
+ * working set under OBJ_LOCAL churn (post_*_fd callbacks plus
+ * per-child fanout).  Above-bucket frees bump-and-leak — they lose a
+ * slot apiece — and the 1 MiB ceiling sizes the headroom that path
+ * needs over a sustained fuzz run.
  */
 #define SHARED_STR_HEAP_SIZE (1U * 1024U * 1024U)
 
@@ -1253,14 +1248,12 @@ void * alloc_shared_str(size_t size)
 			return p;
 		/* Round bump to bucket size so the first free of a bump
 		 * slot doesn't overrun the next slot via freelist_push's
-		 * bucket-size memset.  See the matching comment in
-		 * alloc_shared_obj for the full bug-class explanation. */
+		 * bucket-size memset. */
 		size = bucket_sizes[bucket];
 	}
 
 	/* Lock-free bump via CAS on the shm-resident cursor.  RELAXED
-	 * is sufficient for the same reason as alloc_shared_obj: the
-	 * caller publishes the obj (and therefore the string pointer)
+	 * is sufficient because the caller publishes the obj (and therefore the string pointer)
 	 * to consumers via add_object()'s RELEASE store on
 	 * num_entries. */
 	old_used = __atomic_load_n(&shm->shared_str_heap_used,

@@ -57,13 +57,14 @@ static void memfd_destructor(struct object *obj)
 }
 
 /*
- * Cross-process safe: only reads obj->memfdobj fields, all of which
- * (including the name string) now live in shm via alloc_shared_obj /
- * alloc_shared_strdup.  No process-local pointers are dereferenced,
- * so this is correct to call from a different process than the one
- * that allocated the obj — which matters because head->dump runs
- * from dump_childdata() in the parent's crash diagnostics path even
- * when a child triggered the crash.
+ * Cross-process safe: only reads obj->memfdobj fields — the scalars
+ * survive fork/COW, and the name string is the one payload that lives
+ * in shm (allocated via alloc_shared_strdup), so the pointer resolves
+ * in any process.  No process-local pointers are dereferenced, so this
+ * is correct to call from a different process than the one that
+ * allocated the obj — which matters because head->dump runs from
+ * dump_childdata() in the parent's crash diagnostics path even when a
+ * child triggered the crash.
  */
 static void memfd_dump(struct object *obj, enum obj_scope scope)
 {
@@ -130,15 +131,15 @@ static int get_rand_memfd_fd(void)
 
 	/*
 	 * Versioned slot pick + objpool_check() before the
-	 * obj->memfdobj.fd deref, mirroring the wireup at 15b6257b8206
-	 * (fds/sockets.c get_rand_socketinfo) and 5ef98298f6ad
-	 * (syscalls/keyctl.c KEYCTL_WATCH_KEY).  Same OBJ_GLOBAL lockless-
-	 * reader UAF window the framework commit a7fdbb97830c spelled out:
+	 * obj->memfdobj.fd deref.  A version-validated object-slot read
+	 * guards the lockless reader against a recycled object
+	 * (cf. get_rand_socketinfo in fds/sockets.c).  Same OBJ_GLOBAL
+	 * lockless-reader UAF window:
 	 * between the lockless slot pick and the consumer's read of
 	 * the memfd handed to mmap/ftruncate/fcntl via the fd_provider .get callback,
-	 * the parent can destroy the obj, free_shared_obj() returns the
-	 * chunk to the shared-heap freelist, and a concurrent
-	 * alloc_shared_obj() recycles it underneath us.
+	 * the parent can destroy the obj; release_obj() zeroes the chunk
+	 * and routes it through deferred-free, so the stale slot pointer
+	 * can read a zeroed or recycled chunk.
 	 */
 	for (int i = 0; i < 1000; i++) {
 		struct object *obj;

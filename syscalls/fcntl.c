@@ -458,9 +458,9 @@ static void post_fcntl(struct syscallrecord *rec)
 	case F_OFD_SETLKW: {
 		/*
 		 * Record so a sibling SETLK can target this fd's fl_list.
-		 * Skip F_UNLCK — that just released the lock, so the fd no
-		 * longer has interesting state to walk.  Skip F_CANCELLK
-		 * entirely (handled by falling through) for the same reason.
+		 * F_UNLCK and F_CANCELLK remove the lock state that sibling
+		 * SETLK calls would otherwise target, so do not register them
+		 * as interesting lock holders.
 		 */
 		struct flock *fl = (struct flock *) a3;
 		if (fl && fl->l_type != F_UNLCK)

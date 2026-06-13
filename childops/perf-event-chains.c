@@ -11,9 +11,8 @@
  * group_fd argument ties members to the leader).  Trinity's existing
  * perf_event_open syscall path opens events independently; it almost never
  * constructs a leader+members group, so group refcounting and the
- * context-switch multiplexing state machine stay cold.
- *
- * Trinity-todo #2.4.
+ * context-switch multiplexing state machine stay cold.  This childop fills
+ * that gap by always driving events through a leader+members relationship.
  */
 
 #include <dirent.h>

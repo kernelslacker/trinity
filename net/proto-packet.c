@@ -102,8 +102,9 @@ static void packet_socket_setup(int fd)
 {
 	int v3 = TPACKET_V3;
 
-	// for now, we only speak v3
-	// trying to mix it up goes horribly wrong, with oom kills etc.
+	/* Restrict packet sockets to TPACKET_V3.  Mixing ring versions has
+	 * caused excessive memory pressure and OOM kills in this fuzzer
+	 * workload. */
 	(void) setsockopt(fd, SOL_PACKET, PACKET_VERSION, &v3, sizeof(v3));
 }
 

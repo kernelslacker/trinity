@@ -365,8 +365,7 @@ check_header linux/mctp.h USE_MCTP
 # hunt instrument that wraps tagged shared regions in PROT_NONE pages so
 # a forward overflow (buf[size]) faults at the writer PC instead of
 # scribbling an adjacent pool and crashing an unrelated consumer many
-# operations later.  See shared-region-guardpage-armor-spec-2026-06-09.md
-# for the design.
+# operations later.
 #
 # Opt in at configure time with GUARD_SHARED=1.  Without the build flag
 # the guard machinery compiles out entirely and alloc_shared keeps its

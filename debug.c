@@ -429,12 +429,13 @@ void __list_del_entry_valid_or_die(struct list_head *entry,
 		outputerr(" next contents:  list.next=%p list.prev=%p\n", next->next, next->prev);
 		/*
 		 * Distinguish the three forensic states with a one-line summary:
-		 *   - both next->next and next->prev are NULL  -> next was zeroed
-		 *     wholesale (freelist_push of a still-linked obj, or a memset
-		 *     that hit it).
-		 *   - next->prev is NULL and next->next looks like a freelist
-		 *     link (a shared-heap-range pointer)        -> next is on the
-		 *     freelist right now (free_shared_obj without list_del).
+		 *   - both next->next and next->prev are NULL  -> next is a
+		 *     zeroed freed object chunk (release_obj zeroes the struct
+		 *     before deferred_free_enqueue, or a memset that hit it).
+		 *   - next->prev is NULL and next->next looks like a heap-range
+		 *     pointer                                   -> next is a
+		 *     deferred-free or stale object chunk still carrying a live-
+		 *     looking forward link.
 		 *   - next->prev is NULL and next->next looks like a valid list
 		 *     pointer                                   -> stray 8-byte
 		 *     write to next->prev only.

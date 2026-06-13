@@ -250,7 +250,8 @@ static int init_io_uring_fds(void)
 	head->destroy = &io_uring_destructor;
 	head->dump = &io_uring_dump;
 	/*
-	 * Route the io_uringobj struct through the shared obj heap so the
+	 * The io_uringobj struct lives in the OBJ_GLOBAL pool, populated
+	 * pre-fork and inherited by children via fork/COW, so the
 	 * cross-process dump path (head->dump from dump_childdata in the
 	 * parent crash diagnostics) can read its scalar fields (fd,
 	 * off_*, sq_entries, sq_ring_sz, sqes_sz) regardless of which
@@ -280,15 +281,15 @@ static int get_rand_io_uring_fd(void)
 
 	/*
 	 * Versioned slot pick + objpool_check() before the
-	 * obj->io_uringobj.fd deref, mirroring the wireup at 15b6257b8206
-	 * (fds/sockets.c get_rand_socketinfo) and 5ef98298f6ad
-	 * (syscalls/keyctl.c KEYCTL_WATCH_KEY).  Same OBJ_GLOBAL lockless-
-	 * reader UAF window the framework commit a7fdbb97830c spelled out:
+	 * obj->io_uringobj.fd deref.  A version-validated object-slot read
+	 * guards the lockless reader against a recycled object
+	 * (cf. get_rand_socketinfo in fds/sockets.c).  Same OBJ_GLOBAL
+	 * lockless-reader UAF window:
 	 * between the lockless slot pick and the consumer's read of
 	 * the io_uring fd handed to io_uring_setup/enter/register via the fd_provider .get callback,
-	 * the parent can destroy the obj, free_shared_obj() returns the
-	 * chunk to the shared-heap freelist, and a concurrent
-	 * alloc_shared_obj() recycles it underneath us.
+	 * the parent can destroy the obj; release_obj() zeroes the chunk
+	 * and routes it through deferred-free, so the stale slot pointer
+	 * can read a zeroed or recycled chunk.
 	 */
 	for (int i = 0; i < 1000; i++) {
 		struct object *obj;

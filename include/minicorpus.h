@@ -30,7 +30,7 @@
  * PC-bucket edge.  Catches argument neighbourhoods that exercise new
  * comparisons even when the resulting branch lands inside
  * already-covered PC buckets -- the exact gap revealed by the
- * plateau-Phase-1 cmp_rising_pc_flat diagnostic.
+ * cmp_rising_pc_flat plateau diagnostic.
  *
  * The numeric IDs back saves_by_reason[]: re-ordering or inserting a
  * new reason between PC and CMP would silently re-bucket existing
@@ -121,22 +121,23 @@ struct minicorpus_shared {
 	 * mut_structured_trials[i] is the structured win rate per op; the
 	 * difference against the aggregate mut_wins[i] / mut_trials[i]
 	 * shows whether structured firings outperform the unstructured
-	 * fallback.  Phase C.3 will wire these into the bandit; for now
-	 * they exist purely for measurement.  Coupled arg slots (FD,
-	 * ADDRESS, PTR, LEN) never satisfy the structural-metadata gate
-	 * so they cannot bump these counters even by accident. */
+	 * fallback.  Measurement-only: these are not consumed by the
+	 * bandit yet; compare the structured win rate against the
+	 * aggregate mutator win rate before promoting them into scheduling
+	 * input.  Coupled arg slots (FD, ADDRESS, PTR, LEN) never satisfy
+	 * the structural-metadata gate so they cannot bump these counters
+	 * even by accident. */
 	unsigned long mut_structured_trials[MUT_NUM_OPS];
 	unsigned long mut_structured_wins[MUT_NUM_OPS];
 	/*
-	 * Per-tag productivity for the C.2b struct-buffer post-fill
-	 * mutator (struct_field_mutate_one).  Bumped exactly once per
-	 * mutated call (the gated entry point picks at most one field
-	 * per invocation), so attribution is exact and there is no
-	 * stack-depth inflation to subtract.  Separate from the C.2a
-	 * MUT_NUM_OPS counters above because the injection point is
-	 * different (post-fill in-buffer vs top-level scalar) and the
-	 * later bandit pass needs to weight the two arms
-	 * independently.  Indexed by enum field_tag with FT_NUM_TAGS
+	 * Per-tag productivity for the struct-buffer post-fill mutator
+	 * (struct_field_mutate_one).  Bumped exactly once per mutated call
+	 * (the gated entry point picks at most one field per invocation),
+	 * so attribution is exact and there is no stack-depth inflation to
+	 * subtract.  Separate from the MUT_NUM_OPS counters above because
+	 * the injection point is different (post-fill in-buffer vs
+	 * top-level scalar) and a later bandit pass needs to weight the two
+	 * arms independently.  Indexed by enum field_tag with FT_NUM_TAGS
 	 * as the trailing sentinel; skip-listed tag slots simply stay
 	 * zero because their fields are filtered out at candidate
 	 * collection time.  RELAXED atomics; read at dump_stats() time
@@ -160,7 +161,7 @@ struct minicorpus_shared {
 	 * Index is the depth value (1..STACK_MAX); index 0 is unused. */
 	unsigned long stack_depth_histogram[STACK_MAX + 1];
 
-	/* Sequence-chain telemetry (Phase 1).  chain_iter_count is bumped
+	/* Sequence-chain telemetry.  chain_iter_count is bumped
 	 * once per chain dispatched; chain_substitution_count is bumped
 	 * each time a step's arg slot was overwritten with the previous
 	 * step's return value.  The ratio measures the realised substitution
@@ -191,7 +192,7 @@ struct minicorpus_shared {
 	 * insert that just preceded the bump. */
 	unsigned long saves_by_reason[CORPUS_SAVE_NR_REASONS];
 
-	/* Phase 2 plateau intervention (cmp_rising_pc_flat): count of
+	/* Plateau intervention (cmp_rising_pc_flat): count of
 	 * replay slot picks that took the recent-K narrowed path because
 	 * the classifier had the fleet in the CMP_RISING_PC_FLAT regime.
 	 * Tracks how many replays were biased toward CMP-source material
@@ -300,7 +301,7 @@ void minicorpus_mut_attrib_commit(bool found_new);
 void minicorpus_mut_attrib_set_cmp_source(void);
 
 /* Tag the current process's pending mutator attribution as having
- * applied a C.2b post-fill struct-field mutation with tag @tag.  Called
+ * applied a post-fill struct-field mutation with tag @tag.  Called
  * by struct_field_mutate_one() right after a mutation lands; consumed
  * and cleared by the next minicorpus_mut_attrib_commit() call, which
  * bumps mut_struct_field_trials[tag] unconditionally and

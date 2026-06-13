@@ -1048,7 +1048,7 @@ static const unsigned long clockid_values[] = {
 /*
  * Off-40 bit-field flag mask.  perf_event_attr packs 36 single-bit
  * flags plus precise_ip:2 plus __reserved_1:26 into a u64 starting at
- * offset 40 (see include/perf_event.h:397-446).  Trinity cannot use
+ * offset 40, the packed perf flag word.  Trinity cannot use
  * offsetof on a bit-field member, so the catalog entry uses an
  * explicit { .offset = 40, .size = 8 } and this mask is hand-built
  * from the named bit positions:
@@ -4747,9 +4747,9 @@ static const struct struct_field linger_fields[] = {
  * (kernel-default interface).  The three fields stay FT_RAW for the
  * proof: imr_multiaddr is __be32, so schema fill in host byte order
  * produces a multicast address only ~1/16 of the time vs the bespoke
- * builder's 100%, and FT_MAGIC -- the §5-recommended tag for curated
+ * builder's 100%, and FT_MAGIC -- the natural tag for curated
  * be32 vocab -- still falls through to FT_RAW in the fill switch
- * today (generate-args.c:1019).  The miss-fallback option is GONE for
+ * today.  The miss-fallback option is GONE for
  * the cataloged (level, optname) tuples once this row registers, so
  * the multicast-bias regression is the price of the proof; a follow-up
  * implementing FT_MAGIC (or a be32-aware range tag) restores it

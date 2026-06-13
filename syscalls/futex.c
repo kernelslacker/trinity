@@ -304,12 +304,13 @@ static void sanitise_futex(struct syscallrecord *rec)
 		 * the same kernel futex hash bucket -- something the
 		 * per-child COW-private OBJ_FUTEX pool above can't reach.
 		 *
-		 * The shared obj heap is mprotect PROT_READ post-freeze, so
-		 * userspace cmpxchg on these words would SIGSEGV in the
-		 * child.  We jump to out_setclock here, bypassing the
-		 * userspace trylock branch (case 0 below) that would do
-		 * exactly that.  Kernel-side writes from FUTEX_LOCK_PI /
-		 * WAKE_OP simply return -EFAULT, which is acceptable fuzz.
+		 * The shared futex-word mapping is mprotect PROT_READ
+		 * post-freeze, so userspace cmpxchg on these words would
+		 * SIGSEGV in the child.  We jump to out_setclock here,
+		 * bypassing the userspace trylock branch (case 0 below)
+		 * that would do exactly that.  Kernel-side writes from
+		 * FUTEX_LOCK_PI / WAKE_OP simply return -EFAULT, which is
+		 * acceptable fuzz.
 		 */
 		uint32_t *w1 = get_shared_futex_word();
 		uint32_t *w2 = get_shared_futex_word();

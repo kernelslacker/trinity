@@ -1,13 +1,12 @@
 /*
  * child-canary.c -- Dormant-childop canary promotion queue.
  *
- * Phase 1: introduces the queue, the state machine, the slot-carve from
- * the front of the existing --alt-op-children pool, and the operator-
- * visibility surface.  The queue's job is to flip the runtime gate
- * (dormant_op_disabled[]) for one dormant op at a time, run that op on
- * a reserved canary child for a fixed iteration budget, and promote
- * the op into the random alt-op picker when it produces new edges
- * without self-crashing.  Failed canaries are demoted with a backoff.
+ * The queue flips the runtime gate (dormant_op_disabled[]) for one
+ * dormant op at a time, runs that op on a reserved canary child for a
+ * fixed iteration budget, and promotes the op into the random alt-op
+ * picker when it produces new edges without self-crashing.  Failed
+ * canaries are demoted with a backoff.  The slots are carved from the
+ * front of the existing --alt-op-children pool.
  *
  * State lives entirely in parent-private static memory.  The gate
  * vector (dormant_op_disabled[]) and the dense enabled_altops[]
@@ -15,7 +14,7 @@
  * the INITIAL snapshot is shared, but they are not shm-resident: any
  * runtime flip from dormant_op_set() is parent-only.
  *
- * Phase 1 scope: state changes here are seen by NEW children (next
+ * Propagation model: state changes here are seen by NEW children (next
  * respawn forward).  Already-running random children -- those at slot
  * index >= alt_op_children, where pick_op_type() may select an alt-op
  * with ~5% probability -- continue with their fork-time snapshot of
@@ -25,16 +24,16 @@
  * canary_slots indices) re-stamp their op_type on every respawn via
  * assign_dedicated_alt_op() and so always see the current queue state.
  *
- * The full shm-published gate -- where runtime promotions/demotions
- * would be visible to already-forked random children -- is a Phase 2
- * design question combined with persistence; Phase 1 deliberately
- * does not extend the shared region for this.
+ * Runtime promotions/demotions are deliberately not published into the
+ * shared region: already-forked random children would need an shm-
+ * resident gate (plus persistence) to observe them, and that cost is
+ * not paid here.
  *
  * No childop implementation is modified by this queue.  A broken op
  * is detected via the demote path; the cure is to leave it dormant.
  *
- * Phase 1 wave-1 seed list (consumed in this order before the FIFO
- * walk over remaining dormant ops): genetlink_fuzzer, bpf_lifecycle,
+ * The wave-1 seed list (consumed in this order before the FIFO walk
+ * over remaining dormant ops): genetlink_fuzzer, bpf_lifecycle,
  * iouring_recipes, nftables_churn, perf_chains, tracefs_fuzzer,
  * tls_rotate, af_unix_scm_rights_gc_churn, userns_fuzzer,
  * sock_diag_walker.
@@ -59,8 +58,8 @@
 #include "utils.h"
 
 /* --------------------------------------------------------------------
- * Concrete thresholds.  Tuned in the design doc; kept as #defines
- * rather than CLI flags so the operator-facing surface stays small.
+ * Concrete thresholds.  Kept as #defines rather than CLI flags so the
+ * operator-facing surface stays small.
  * The two operator-tunable knobs (slot count, window iters) come in
  * through --canary-slots / --canary-window in params.c.
  * -------------------------------------------------------------------- */
@@ -71,10 +70,9 @@
 #define CANARY_WINDOW_ITERS_MIN		1000U
 #define CANARY_WINDOW_ITERS_MAX		1000000U
 
-/* New edges per window required to call a canary "productive".  See
- * the design doc for the calibration argument; in short, this is
- * tight enough to filter sibling-mediated KCOV noise and loose enough
- * to admit any op that actually exercises a non-trivial code path. */
+/* New edges per window required to call a canary "productive".  Tight
+ * enough to filter sibling-mediated KCOV noise and loose enough to
+ * admit any op that actually exercises a non-trivial code path. */
 #define CANARY_EDGE_THRESHOLD		50UL
 
 /* SIGSEGV/SIGBUS/SIGILL/SIGABRT per window before we treat the op as
@@ -97,15 +95,15 @@
 #define CANARY_SUMMARY_INTERVAL_SEC	60
 
 /* --------------------------------------------------------------------
- * Wave-1 seed list and audit-derived skip sets.  See the design doc;
- * these are the operator-visible inputs to the queue's picker order.
+ * Wave-1 seed list and skip sets.  These are the operator-visible
+ * inputs to the queue's picker order.
  *
  * Wave-1 is consumed before the general FIFO walk over remaining
  * dormant ops.  config_blocked is permanent (CONFIG_BLOCKED state at
  * startup, never picked).  risky_defer is left in DORMANT but the
- * picker silently skips it -- the audit flagged these ops as needing
- * isolation (root-only / inner-fork / SR-IOV / driver prereq) that
- * Phase 1 does not provide.
+ * picker silently skips it -- these ops need isolation (root-only /
+ * inner-fork / SR-IOV / driver prereq) that the queue does not
+ * provide.
  * -------------------------------------------------------------------- */
 
 static const enum child_op_type canary_wave1_seeds[] = {
@@ -283,10 +281,10 @@ static unsigned long invocations_for_op(enum child_op_type op)
 			       __ATOMIC_RELAXED);
 }
 
-/* op_is_in_table() is reserved for an upcoming Phase 2 audit-skip
- * helper.  Phase 1's picker uses inline state-bit checks instead;
- * keep the helper declared but marked unused so adding a new caller
- * in Phase 2 stays a single-LOC change. */
+/* Table-membership helper kept local to the canary picker.  The picker
+ * currently uses inline state-bit checks instead, so there is no live
+ * caller; keep it declared but marked unused until the picker grows a
+ * second table walk. */
 static bool op_is_in_table(enum child_op_type op,
 			   const enum child_op_type *tbl,
 			   unsigned int n) __attribute__((unused));
@@ -315,10 +313,10 @@ static void push_promotion(enum child_op_type op)
  * -------------------------------------------------------------------- */
 
 /*
- * Two-phase teardown: request graceful exit via SIGTERM, give slots a
+ * Three-stage teardown: request graceful exit via SIGTERM, give slots a
  * brief grace window to drop locks / finish cleanup, then SIGKILL any
  * that ignored the request.  kill_pid() itself is SIGKILL-only by
- * contract, so phase 1 uses kill(pid, SIGTERM) directly; phase 3
+ * contract, so stage 1 uses kill(pid, SIGTERM) directly; stage 3
  * routes through kill_pid() to inherit its mainpid / pid_is_valid
  * safety guards.  Slot pids are re-read on every pass because the
  * main reaper races us.
@@ -334,7 +332,7 @@ static void kill_canary_slot_children(void)
 	if (n > max_children)
 		n = max_children;
 
-	/* Phase 1: request graceful exit. */
+	/* Shutdown stage 1: request graceful exit. */
 	for (i = 0; i < n; i++) {
 		pid_t pid = __atomic_load_n(&pids[i], __ATOMIC_ACQUIRE);
 
@@ -345,7 +343,7 @@ static void kill_canary_slot_children(void)
 		kill(pid, SIGTERM);
 	}
 
-	/* Phase 2: ~20 ms grace window, polling for liveness only.  We
+	/* Shutdown stage 2: ~20 ms grace window, polling for liveness only.  We
 	 * must NOT waitpid() the canary child here -- the parent's main
 	 * reaper owns that path and is what updates pids[]/running_childs
 	 * via reap_child().  A self-reap in this loop would race the main
@@ -371,7 +369,7 @@ static void kill_canary_slot_children(void)
 		usleep(CANARY_SIGTERM_GRACE_USLEEP);
 	}
 
-	/* Phase 3: SIGKILL anything still alive. */
+	/* Shutdown stage 3: SIGKILL anything still alive. */
 	for (i = 0; i < n; i++) {
 		pid_t pid = __atomic_load_n(&pids[i], __ATOMIC_ACQUIRE);
 
@@ -468,7 +466,7 @@ static bool pick_next_canary(enum child_op_type *out)
 	enum child_op_type op;
 	time_t now;
 
-	/* Phase 1, tier 1: wave-1 seeds first. */
+	/* Seed-priority queue: wave-1 seeds first. */
 	while (canary_wave1_cursor < canary_wave1_list_count) {
 		op = canary_wave1_list[canary_wave1_cursor++];
 		if (op == CHILD_OP_SYSCALL || op >= NR_CHILD_OP_TYPES)
@@ -483,7 +481,7 @@ static bool pick_next_canary(enum child_op_type *out)
 		return true;
 	}
 
-	/* Phase 1, tier 2: FIFO over the general dormant pool.  Walks
+	/* FIFO fallback: walk the general dormant pool.  Walks
 	 * the enum in numerical order from fifo_cursor+1, wrapping.
 	 * Skips CONFIG_BLOCKED, risky-defer, wave-1 (already consumed
 	 * or skipped above), PROMOTED, and DEMOTED entries still inside
@@ -584,8 +582,8 @@ void canary_queue_init(void)
 	}
 
 	/* Risky-defer set: stay DORMANT but the picker skips them via
-	 * the phase1_ineligible flag.  The audit flagged these as
-	 * needing isolation that Phase 1 does not provide. */
+	 * the phase1_ineligible flag.  These ops need isolation that the
+	 * queue does not provide. */
 	for (i = 0; i < ARRAY_SIZE(canary_risky_defer); i++) {
 		enum child_op_type op = canary_risky_defer[i];
 		if (op < NR_CHILD_OP_TYPES)
@@ -793,7 +791,7 @@ void canary_queue_tick(void)
 
 	/* Per-window progress line.  Emitted at -v on every tick while
 	 * CANARYING; the noise floor is bounded by the 1-s tick cadence
-	 * times canary_slots (Phase 1: 1 slot -> ~1 line/sec). */
+	 * times canary_slots (with 1 slot -> ~1 line/sec). */
 	{
 		unsigned long edges = (now_edges >= canary_ops[op].window_start_edges)
 			? (now_edges - canary_ops[op].window_start_edges) : 0;

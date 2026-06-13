@@ -17,13 +17,12 @@
 #include "compat.h"
 
 /*
- * Cross-process safe: only reads obj->timerfdobj fields (now in shm
- * via alloc_shared_obj) and the scope scalar.  No process-local
- * pointers are dereferenced, so it is correct to call this from a
- * different process than the one that allocated the obj — which
- * matters because head->dump runs from dump_childdata() in the
- * parent's crash diagnostics path even when a child triggered the
- * crash.
+ * Cross-process safe: only reads obj->timerfdobj scalar fields and the
+ * scope scalar.  These survive fork/COW and no process-local pointers
+ * are dereferenced, so it is correct to call this from a different
+ * process than the one that allocated the obj — which matters because
+ * head->dump runs from dump_childdata() in the parent's crash
+ * diagnostics path even when a child triggered the crash.
  */
 static void timerfd_dump(struct object *obj, enum obj_scope scope)
 {
@@ -84,11 +83,9 @@ static int __init_timerfd_fds(int clockid)
 	head->destroy = &close_fd_destructor;
 	head->dump = &timerfd_dump;
 	/*
-	 * Opt this provider into the shared obj heap.  __destroy_object()
-	 * checks this flag to route the obj struct release through
-	 * free_shared_obj() instead of free().  timerfdobj is {int fd;
-	 * int clockid; int flags;} — no pointer members — so the migration
-	 * is mechanical and scoped entirely to this file.
+	 * timerfdobj is {int fd; int clockid; int flags;} — no pointer
+	 * members — so the OBJ_GLOBAL pool's scalars stay valid across
+	 * fork/COW and cross-process reads are safe.
 	 */
 
 	for (i = 0; i < ARRAY_SIZE(flags); i++) {
@@ -137,15 +134,15 @@ static int get_rand_timerfd_fd(void)
 
 	/*
 	 * Versioned slot pick + objpool_check() before the
-	 * obj->timerfdobj.fd deref, mirroring the wireup at 15b6257b8206
-	 * (fds/sockets.c get_rand_socketinfo) and 5ef98298f6ad
-	 * (syscalls/keyctl.c KEYCTL_WATCH_KEY).  Same OBJ_GLOBAL lockless-
-	 * reader UAF window the framework commit a7fdbb97830c spelled out:
+	 * obj->timerfdobj.fd deref.  A version-validated object-slot read
+	 * guards the lockless reader against a recycled object
+	 * (cf. get_rand_socketinfo in fds/sockets.c).  Same OBJ_GLOBAL
+	 * lockless-reader UAF window:
 	 * between the lockless slot pick and the consumer's read of
 	 * the timerfd routed into timerfd_settime/gettime/read via the fd_provider .get callback,
-	 * the parent can destroy the obj, free_shared_obj() returns the
-	 * chunk to the shared-heap freelist, and a concurrent
-	 * alloc_shared_obj() recycles it underneath us.
+	 * the parent can destroy the obj; release_obj() zeroes the chunk
+	 * and routes it through deferred-free, so the stale slot pointer
+	 * can read a zeroed or recycled chunk.
 	 */
 	for (int i = 0; i < 1000; i++) {
 		struct object *obj;

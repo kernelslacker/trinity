@@ -51,10 +51,9 @@
 /*
  * Pin op_nr — the trailing field of the per-syscall hot block — to an
  * offset under 64 so a future field reorder that moves any of the hot
- * block (kcov, last_group, op_nr, plus last_syscall_nr inside the
- * embedded bug_backtrace) past the leading cacheline boundary fails
- * the build instead of silently regressing the per-call cache-miss
- * budget the layout was tuned for.
+ * block (kcov, last_group, op_nr) past the leading cacheline boundary
+ * fails the build instead of silently regressing the per-call
+ * cache-miss budget the layout was tuned for.
  */
 _Static_assert(offsetof(struct childdata, op_nr) < 64,
 	"struct childdata: op_nr (per-syscall hot field) escaped the leading cacheline");
@@ -92,10 +91,9 @@ _Static_assert(offsetof(struct childdata, syscall) >= 64,
 #define TRINITY_CHILD_AS_CAP_BYTES	(4UL << 30)
 
 /*
- * Provide temporary immunity from the reaper
- * This is useful if we're going to do something that might take
- * longer than the time the reaper is prepared to wait, especially if
- * we're doing something critical, like handling a lock, or dumping a log.
+ * Temporarily exempt a child from reaper kills while it is in a critical
+ * section that may legitimately exceed the normal timeout, such as lock
+ * recovery or crash-log dumping.
  */
 void set_dontkillme(struct childdata *child, bool state)
 {
@@ -239,8 +237,8 @@ static void enable_coredumps(void)
 }
 
 /*
- * Enable the kernels fault-injection code for our child process.
- * (Assumes you've set everything else up by hand).
+ * Enable kernel fault injection for this child.  Caller must have completed
+ * child setup and installed the expected procfs/debugfs context.
  */
 static void set_make_it_fail(void)
 {
@@ -490,7 +488,7 @@ void clean_childdata(struct childdata *child)
 	}
 
 	/* Reset the CMP RedQueen attribution scratch and the recursion guard
-	 * for the fresh slot occupant.  redqueen_enabled is the R7 A/B stamp
+	 * for the fresh slot occupant.  redqueen_enabled is the CMP RedQueen A/B-comparison stamp
 	 * and is (re)decided per-child in init_child_runtime_config after
 	 * kcov_init_child has picked the per-child KCOV mode -- zero here so
 	 * the fresh occupant defaults to "lever off" until the stamp lands. */
@@ -1012,12 +1010,12 @@ static void init_child_runtime_config(struct childdata *child, int childno)
 			      (unsigned int)childno >= alt_op_children &&
 			      (unsigned int)childno < alt_op_children + explorer_children);
 
-	/* CMP RedQueen greedy re-exec R7 A/B sub-fleet stamp.  Only CMP-mode
+	/* CMP RedQueen greedy re-exec A/B-comparison stamp.  Only CMP-mode
 	 * children produce CMP attribution in the first place (PC-mode kcov
 	 * never enables the cmp fd, so kcov_collect_cmp short-circuits), so
 	 * stamping false on PC-mode children loses no signal.  Within the
-	 * CMP-mode pool, half the children get the lever and half are the
-	 * control sub-fleet -- subsequent reexec_* per-window deltas can be
+	 * CMP-mode pool, half the children get the re-exec and half are the
+	 * control arm -- subsequent reexec_* per-window deltas can be
 	 * cleanly attributed to the enabled cohort because the disabled
 	 * cohort's gate at the dispatch_step tail short-circuits.  Per-child
 	 * stamp at fork rather than a runtime flag means time-of-day fleet
@@ -2045,8 +2043,9 @@ static enum child_op_type pick_op_type(void)
  *     restructuring the KCOV plumbing.  The threshold is calibrated to
  *     filter out modest sibling noise; on very large fleets the noise
  *     floor rises and the boost ratchet stalls (safe failure mode —
- *     multipliers stay near 1.0x and behaviour matches pre-CV.13
- *     fixed budgets).
+ *     multipliers stay near 1.0x and childop budgets stay at the
+ *     fixed baseline used before adaptive budget multipliers
+ *     existed (pre-CV.13)).
  *
  *   - Updates are RELAXED non-RMW stores.  Two children tail-racing on
  *     the same op_type can lose an update; the worst case is the
@@ -2478,7 +2477,9 @@ void child_process(struct childdata *child, int childno)
 		 * load) and only meaningful if KCOV is active; otherwise the
 		 * counter stays at zero and the delta is always 0, which
 		 * correctly degrades to "never boost, never shrink" — the
-		 * multiplier sticks at 1.0x and behaviour matches pre-CV.13. */
+		 * multiplier sticks at 1.0x and childop budgets remain at the
+		 * fixed baseline used before adaptive budget multipliers
+		 * (pre-CV.13). */
 		unsigned long edges_before = have_kcov
 			? __atomic_load_n(&kcov_shm->edges_found,
 					  __ATOMIC_RELAXED)

@@ -60,8 +60,6 @@
  * Self-bounding: single-pass per call, all sockets non-blocking, all bpf()
  * failures swallowed (errno-based stat increments only).  The SIGALRM(1s)
  * the parent installs in child.c bounds any pathological blocking case.
- *
- * Trinity-todo CV.50.
  */
 
 #include <errno.h>

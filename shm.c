@@ -48,13 +48,12 @@ void create_shm(void)
 
 	/* Wild-write risk: a child wild-write into shm could corrupt any
 	 * scalar / counter field — children write to shm->stats counters on
-	 * every syscall, to shm->shared_obj_freelist / shm->shared_str_
-	 * freelist on every shared-heap free, to shm->shared_obj_heap_used /
-	 * shm->shared_str_heap_used on every alloc, to shm->fd_regen_pending[]
-	 * on every fd regen request, and to shm->seed via reseed().  The
-	 * per-bucket freelist heads in particular are sensitive — a wrong
-	 * value there would hand a bogus pointer to alloc_shared_obj's
-	 * freelist_pop and crash the next allocator.
+	 * every syscall, to shm->shared_str_freelist on every shared-string
+	 * free, to shm->shared_str_heap_used on every shared-string alloc,
+	 * to shm->fd_regen_pending[] on every fd regen request, and to
+	 * shm->seed via reseed().  The shared-string freelist heads in
+	 * particular are sensitive — a wrong value there would hand a bogus
+	 * pointer to the next shared-string allocation and crash it.
 	 */
 	shm = alloc_shared(shm_size);
 
