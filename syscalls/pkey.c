@@ -15,6 +15,10 @@
 
 #define PKEY_DISABLE_ACCESS     0x1
 #define PKEY_DISABLE_WRITE      0x2
+#ifdef __aarch64__
+#define PKEY_DISABLE_EXECUTE    0x4
+#define PKEY_DISABLE_READ       0x8
+#endif
 /* PKEY_UNRESTRICTED added in Linux v6.15 (asm-generic/mman-common.h). */
 #ifndef PKEY_UNRESTRICTED
 #define PKEY_UNRESTRICTED       0x0
@@ -24,6 +28,10 @@ static unsigned long pkey_alloc_initvals[] = {
 	PKEY_UNRESTRICTED,
 	PKEY_DISABLE_ACCESS,
 	PKEY_DISABLE_WRITE,
+#ifdef __aarch64__
+	PKEY_DISABLE_EXECUTE,
+	PKEY_DISABLE_READ,
+#endif
 };
 
 /*
