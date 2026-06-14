@@ -28,6 +28,7 @@
 #include "deferred-free.h"
 #include "pc_format.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "stats_ring.h"
 #include "trinity.h"
@@ -75,9 +76,25 @@ enum argtype deferred_free_get_cleanup_argtype(void)
  */
 #define DEFERRED_TICK_BATCH	16
 
+/*
+ * Per-slot provenance, stamped at admission and validated at every
+ * free-gate.  ring[slot].ptr is what the slot was originally admitted
+ * with AND what the slot currently holds; if a sibling fuzzed value-
+ * result syscall scribbles ring[slot].ptr inside an open ring_unlock
+ * bracket, ptr will diverge from base and the slot-cookie gate
+ * (slot_owns) will refuse the free.  cookie = mk_cookie(base, gen,
+ * slot, rc->cookie_secret) so scribbles of base / gen / cookie also
+ * fail the recomputation; the per-init secret makes a self-consistent
+ * three-field stomp astronomically unlikely.  gen is per-slot
+ * (bumped on every admission) so a re-admission to the same slot
+ * never collides with a stale cookie from a prior tenant.
+ */
 struct deferred_entry {
 	void *ptr;
+	void *base;
+	unsigned long cookie;
 	unsigned int ttl;
+	unsigned int gen;
 };
 
 /*
@@ -347,11 +364,18 @@ bool alloc_track_lookup(void *ptr)
  *
  * Populated at the tail of deferred_free_enqueue after the ring slot
  * write succeeds; cleared at the tail of free_ring_entry on the
- * successful free() path.  Read by the in-flight-miss gate in
- * free_ring_entry to reject ring slots whose pointer was scribbled by
- * a sibling fuzzed value-result syscall between admission and TTL
- * expiry -- the scribbled value was never admitted, so the lookup
- * misses and the slot is dropped instead of being fed to free().
+ * successful free() path.  Telemetry-only mirror in this commit:
+ * the in-flight-miss gate that previously consulted this set in
+ * ring_evict_oldest_safe and free_ring_entry was a value-keyed
+ * shadow that stale-positived under VMA-pressure mprotect failures
+ * and between GC sweeps, letting a sibling-scribbled ring slot whose
+ * new value matched a stale-positive entry reach free() (the ASAN
+ * bad-free class fixed by this commit).  Both gates now read the
+ * authoritative per-slot provenance via slot_owns() instead.  The
+ * set is retained so the inflight_gc_sweep orphan-rate counter
+ * still reflects how often stomps leave the in-flight mirror out of
+ * sync with ring[] -- a useful telemetry signal even though it no
+ * longer participates in any free-decision gate.
  *
  * Storage shape mirrors alloc_track_hash[] (1024 slots, Fibonacci
  * index, open-addressed with shift-back deletion).  Sized for the
@@ -360,19 +384,14 @@ bool alloc_track_lookup(void *ptr)
  *
  * Storage lives in an mmap'd region whose address range is registered
  * with shared_regions[] via track_shared_region(), mirroring ring[]'s
- * shape.  Steady state is PROT_READ so the membership-lookup hot path
- * (inflight_hash_contains, called from the ring eviction and TTL-drain
- * gates) reads directly without an mprotect syscall.  Writers
- * (inflight_hash_insert / inflight_hash_remove / the dispose-time
- * clear) bracket their mutations with inflight_unlock()/inflight_lock()
- * so a sibling fuzzed value-result syscall that aliases the set's
- * pages between writes hits the PROT_READ wall instead of silently
- * flipping a membership bit.  Closes the residual-gap class the
- * earlier BSS-resident shape documented: a stomp landing on
- * inflight_hash[] could previously either let a bad free through (set
- * says "present" when ptr was never admitted -- ring_evict_oldest_safe
- * 2026-06-10 ASAN bad-free root cause) or reject a clean free (set
- * says "absent" when ptr is live).
+ * shape.  Steady state is PROT_READ; inflight_gc_sweep reads the
+ * array directly against that steady state once every 16K syscalls
+ * and is the only reader.  Writers (inflight_hash_insert /
+ * inflight_hash_remove / the dispose-time clear) bracket their
+ * mutations with inflight_unlock()/inflight_lock() so a sibling
+ * fuzzed value-result syscall that aliases the set's pages between
+ * writes hits the PROT_READ wall instead of silently flipping a
+ * membership bit.
  */
 #define INFLIGHT_HASH_SHIFT	10
 #define INFLIGHT_HASH_SIZE	(1U << INFLIGHT_HASH_SHIFT)
@@ -479,21 +498,6 @@ static void inflight_hash_remove(void *ptr)
 	}
 	inflight_hash[hole] = NULL;
 	inflight_lock();
-}
-
-static bool inflight_hash_contains(void *ptr)
-{
-	unsigned int idx = inflight_hash_index(ptr);
-	unsigned int probes;
-
-	for (probes = 0; probes < INFLIGHT_HASH_SIZE; probes++) {
-		if (inflight_hash[idx] == NULL)
-			return false;
-		if (inflight_hash[idx] == ptr)
-			return true;
-		idx = (idx + 1) & INFLIGHT_HASH_MASK;
-	}
-	return false;
 }
 
 void deferred_alloc_track(void *ptr)
@@ -631,6 +635,16 @@ struct ring_control {
 	struct deferred_entry *ring;
 	size_t ring_bytes;
 	unsigned int ring_count;
+	/*
+	 * Per-init random mix folded into every slot cookie.  Stored in
+	 * the same armored page as ring/ring_bytes/ring_count so a
+	 * scribble that wants to forge a cookie has to land here at
+	 * PROT_READ and hit the SIGSEGV-on-write wall.  Per-init means
+	 * the secret is COW'd into every forked child but does not leak
+	 * across unrelated trinity runs -- a coincidental cookie match
+	 * from a prior run cannot replay.
+	 */
+	unsigned long cookie_secret;
 };
 
 static struct ring_control *rc;
@@ -721,17 +735,131 @@ static void ring_lock(void)
 }
 
 /*
- * Is @ptr currently pinned in the deferred-free ring?  Linear scan of
- * the 64 slots; cheap (64 cache-resident pointer compares) and definitive
- * because ring[] is the source-of-truth for ring residency.
+ * Per-slot integrity tag computed from (base, gen, slot, secret).
+ * Stamped at admission, validated at every free-gate.  A scribble of
+ * any of base / gen / cookie -- or a scribble of ring[i].ptr that
+ * makes ptr diverge from base -- fails the recomputation and the
+ * slot is rejected.  The per-init secret (rc->cookie_secret) makes a
+ * coherent three-field stomp astronomically unlikely.  Pure function
+ * over its inputs; caller must hold rc-readable steady state (which
+ * is the default -- rc is PROT_READ outside writer brackets).
+ *
+ * Constants: 0x9E3779B97F4A7C15ULL is 2^64/phi (the same Fibonacci
+ * multiplier used by alloc_track_hash_index for pointer-stream
+ * scattering); a 16-bit shift on slot keeps slot bits out of the
+ * gen-product low bits so each ring position's cookies live in a
+ * distinct sub-range.
+ */
+static inline unsigned long mk_cookie(void *base, unsigned int gen,
+				      unsigned int slot)
+{
+	uint64_t k = (uint64_t)(uintptr_t)base;
+
+	k ^= (uint64_t)gen * 0x9E3779B97F4A7C15ULL;
+	k ^= (uint64_t)slot << 16;
+	k ^= rc->cookie_secret;
+	return (unsigned long)k;
+}
+
+/*
+ * Does ring[slot] still legitimately own the base pointer it was
+ * admitted with?  Reads only ring[] (mprotect-armored, registered
+ * with shared_regions[], the authoritative source of slot ownership)
+ * and rc->cookie_secret (PROT_READ-armored same as the rest of rc).
+ *
+ * NO consultation of inflight_hash, no shadow lookup.  The previous
+ * eviction and TTL-drain gates routed through
+ * inflight_hash_contains(), a value-keyed mirror that stale-positives
+ * when (a) tracked_free_now frees a tracked chunk WITHOUT calling
+ * inflight_hash_remove (path documented above tracked_free_now), or
+ * (b) the GC sweep has not yet reconciled orphaned in-flight entries
+ * from a prior in-ring stomp.  Either lie let a sibling-scribbled
+ * ring slot whose new value happened to match a stale-positive entry
+ * pass the gate and reach free() -- an ASAN bad-free against a
+ * chunk already returned to the arena.  Per-slot provenance is
+ * immune to both desync vectors: a scribble that does not also
+ * coherently restamp base+gen+cookie fails the recomputation.
+ *
+ * Caller must hold the ring_unlock() bracket (ring[] is PROT_NONE at
+ * rest).  rc is PROT_READ steady-state, no bracket needed for the
+ * secret read.
+ */
+static bool slot_owns(unsigned int slot)
+{
+	void *p = ring[slot].ptr;
+
+	if (p == NULL)
+		return false;
+	if (p != ring[slot].base)
+		return false;
+	if (ring[slot].cookie != mk_cookie(p, ring[slot].gen, slot))
+		return false;
+	return true;
+}
+
+/*
+ * Does ANY ring slot legitimately own @ptr?  Scans ring[].base rather
+ * than ring[].ptr so a sibling scribble of ring[i].ptr to some
+ * unrelated value does not fool the check -- the slot still owns the
+ * original base, and TTL-drain will reject the scribbled .ptr at
+ * free_ring_entry's slot-cookie gate.  Used by tracked_free_now to
+ * decide whether the deferred ring is about to free @ptr (skip the
+ * sync free) or has nothing pinned for @ptr (proceed with the sync
+ * free).  Caller must hold ring_unlock().
+ */
+static bool ring_owns_ptr(void *ptr)
+{
+	unsigned int i;
+
+	for (i = 0; i < DEFERRED_RING_SIZE; i++) {
+		if (ring[i].base == ptr && slot_owns(i))
+			return true;
+	}
+	return false;
+}
+
+/*
+ * Rate-limited breadcrumb for slot-cookie rejects.  One log line per
+ * 1000 rejects mirrors the other deferred_free_reject_* logs so a
+ * stomp surge is loud but a steady rate does not flood the output
+ * channel.  Always bumps the headline counter; the log line is the
+ * secondary breadcrumb that ties a future ASAN bad-free (had we
+ * freed) to the slot + ptr that would have been the target.  Caller
+ * may hold or release the ring_unlock() bracket -- the helper does
+ * not touch ring[].
+ */
+static void deferred_free_slot_reject(unsigned int slot, void *ptr,
+				      const char *site)
+{
+	static unsigned long rejects;
+	unsigned long n;
+
+	__atomic_add_fetch(&shm->stats.deferred_free_slot_cookie_mismatch,
+			   1, __ATOMIC_RELAXED);
+	n = ++rejects;
+	if ((n % 1000) == 1) {
+		outputerr("deferred_free: slot-cookie reject site=%s "
+			  "slot=%u ptr=%p ring_count=%u occupied=0x%llx "
+			  "[%lu cumulative]\n", site, slot, ptr,
+			  ring_count, (unsigned long long)occupied_mask, n);
+	}
+}
+
+/*
+ * Legacy "any slot currently holds this ptr value" probe.  Kept as a
+ * thin wrapper over the ring scan for the enqueue admission-dedup
+ * gate, whose semantics are intentionally permissive: a slot whose
+ * .ptr happens to match @ptr is treated as already-admitted even if
+ * its base/cookie no longer validate, so we do not allocate a second
+ * slot for the same value.  The other three free-gates use
+ * slot_owns() / ring_owns_ptr() for the stricter provenance check.
  *
  * The caller must already hold the ring_unlock() bracket: ring[] is
  * PROT_NONE at rest, so an unbracketed read would SIGSEGV.  Splitting
  * the bracket out of this helper lets callers that are already inside
  * an open ring_unlock() window (deferred_free_enqueue_internal's
  * admission-dedup, after the unlock + before the matching ring_lock)
- * skip a second mprotect pair.  Callers that don't already hold the
- * bracket (tracked_free_now) take it themselves before calling.
+ * skip a second mprotect pair.
  */
 static bool ring_contains(void *ptr)
 {
@@ -760,19 +888,19 @@ static bool ring_contains(void *ptr)
  * is currently pinned in the deferred-free ring.  ring[] is the
  * source-of-truth (mprotect-armored AND registered with
  * shared_regions[], so neither scribble nor mprotect-failure can
- * desync it from itself).  The previous shape used
- * inflight_hash_contains() as a proxy, but inflight_hash is a
- * value-keyed mirror that can desync from ring[] in two ways:
- * (1) inflight_hash_insert() silently skips when its mprotect-unlock
- * returns -1 (ENOMEM under VMA pressure, the same class the ring's
- * RING_UNLOCK_ENOMEM path defends against); (2) a sibling
- * fuzzed value-result syscall that scribbles inflight_hash during a
- * writer's PROT_READ|PROT_WRITE bracket can overwrite an entry.
- * Either lie returns false from contains() for a ring-resident @ptr,
- * the fall-through runs free(), and a subsequent address-reuse
- * re-admission re-arms contains() for the dangling slot -- eviction
- * passes its guard and double-frees.  Direct ring[] scan trusts the
- * stronger gate and is immune to both desync vectors.
+ * desync it from itself).  Uses the per-slot provenance probe
+ * ring_owns_ptr(): a slot only registers as owning @ptr if its
+ * recorded .base == @ptr AND the cookie validates against the
+ * recorded .gen + slot + per-init secret.  This is strictly tighter
+ * than a bare ring[i].ptr == @ptr scan: a scribble that overwrote
+ * a slot's .ptr to coincidentally match @ptr no longer fools the
+ * check (the slot's base still records the original admission, so
+ * base != @ptr); and a scribble that overwrote .base / .gen /
+ * .cookie fails the cookie recomputation.  Either way the slot is
+ * NOT treated as owning @ptr, the sync free proceeds, and the
+ * scribbled slot will be rejected at TTL-drain by free_ring_entry's
+ * slot-cookie gate -- exactly the symmetry that prevents the
+ * double-free this commit's mate addresses on the eviction side.
  *
  * Cost: ring_count > 0 gate (read against rc's PROT_READ steady
  * state -- no syscall); on the non-empty path, one ring_unlock pair
@@ -809,7 +937,7 @@ void tracked_free_now(void *ptr)
 					   1, __ATOMIC_RELAXED);
 			return;
 		}
-		ring_owned = ring_contains(ptr);
+		ring_owned = ring_owns_ptr(ptr);
 		ring_lock();
 	}
 
@@ -1029,6 +1157,16 @@ void deferred_free_init(void)
 		exit(EXIT_FAILURE);
 	}
 	memset(rc, 0, rc_bytes);
+	/*
+	 * Per-init random secret that mk_cookie() folds into every slot
+	 * cookie.  Sampled before rc_lock() so a scribbler in a sibling
+	 * fuzzed value-result syscall cannot brute-force a coherent
+	 * three-field stomp without first guessing this value.  Seeded
+	 * once in the parent and COW'd into every forked child, matching
+	 * the ring's COW-private contract; deferred_free_init runs after
+	 * create_shm()'s init_seed() so rnd_state is already live.
+	 */
+	rc->cookie_secret = rnd_u64();
 	track_shared_region((unsigned long)rc, rc_bytes);
 
 	ring_bytes = ((raw + page_size - 1) / page_size) * page_size;
@@ -1216,7 +1354,7 @@ static void ring_evict_oldest_safe(void)
 	unsigned int oldest = 0;
 	unsigned int min_ttl = UINT_MAX;
 	void *evict_ptr;
-	bool corrupt = false;
+	bool gate_pass;
 
 	for (i = 0; i < DEFERRED_RING_SIZE; i++) {
 		if (ring[i].ptr != NULL && ring[i].ttl < min_ttl) {
@@ -1230,47 +1368,56 @@ static void ring_evict_oldest_safe(void)
 	evict_ptr = ring[oldest].ptr;
 
 	/*
-	 * The enqueue path validates ptr against the heap-
-	 * bounds and shared-region bands BEFORE ring_unlock().
-	 * Once unlocked, the slot sits RW until ring_lock()
-	 * runs, so an in-flight stomp from a sibling fuzzed
-	 * value-result syscall can scribble ring[oldest].ptr
-	 * between when the slot was last validated and when
-	 * the full-ring eviction here decides to free it.
-	 * Re-run the surviving stateless guards plus the in-
-	 * flight set membership check before free()ing so a
-	 * wild pointer becomes a telemetry bump instead of a
-	 * crash.  alloc_track_consume() already fired at
-	 * enqueue and would always miss here -- skipped, not
-	 * re-run.  Counter only (no per-rejection log): the
-	 * eviction case is rarer than the enqueue rejection
-	 * paths, whose 1-in-1000 caller-PC logs already prove
-	 * the stomp pattern.
+	 * Per-slot provenance gate: free only if the slot's recorded
+	 * base+gen+cookie still validate -- i.e. the slot is unchanged
+	 * since admission.  Reads only ring[] (mprotect-armored AND
+	 * registered with shared_regions[], the authoritative source of
+	 * slot ownership); the previous inflight_hash_contains() check
+	 * was a value-keyed shadow that could stale-positive when a
+	 * sibling fuzzed value-result syscall scribbled ring[oldest].ptr
+	 * to some value that coincidentally matched a stale-positive
+	 * entry, letting eviction free a chunk already returned to the
+	 * arena (ASAN bad-free; the original root cause this commit
+	 * addresses).
 	 *
-	 * The inflight_hash_contains() check is the strongest
-	 * signal here: if evict_ptr was admitted by this child,
-	 * it is in the set; if a stomp swapped the slot to some
-	 * other value, the set does not know that value and the
-	 * lookup misses.  Heap/shared-region guards remain as
-	 * belt-and-suspenders for the case where the in-flight
-	 * set itself is scribbled (BSS, no mprotect armor yet).
+	 * Keep is_in_glibc_heap / range_overlaps_shared as belt-and-
+	 * suspenders: cheap and catches the theoretical case where the
+	 * ring's own armor failed to detect a scribble that landed
+	 * inside the writer's RW bracket.  alloc_track_consume() already
+	 * fired at enqueue and would always miss here -- skipped, not
+	 * re-run.
+	 *
+	 * On reject we LEAK the candidate (child exit reclaims) rather
+	 * than free() it: under ASAN the leak preserves the bad-free
+	 * report we would otherwise synthesise, and in any build the
+	 * safer direction to err is "do not free a value the slot can
+	 * no longer prove was the admitted pointer."  The 1-in-1000
+	 * breadcrumb captures slot + ptr + ring_count so a future
+	 * audit can tie a missed-free to the slot whose stomp caused
+	 * the reject.
 	 */
-	if (!is_in_glibc_heap(evict_ptr) ||
-	    range_overlaps_shared((unsigned long)evict_ptr, 1) ||
-	    !inflight_hash_contains(evict_ptr))
-		corrupt = true;
-	if (corrupt) {
-		struct childdata *c = this_child();
+	{
+		bool cookie_ok = slot_owns(oldest);
 
-		if (c != NULL && c->stats_ring != NULL)
-			stats_ring_enqueue(c->stats_ring,
-					   STATS_FIELD_RING_EVICTION_CORRUPT,
-					   0, 1);
-		else
-			parent_stats.ring_eviction_corrupt++;
-	} else {
-		inflight_hash_remove(evict_ptr);
-		free(evict_ptr);
+		gate_pass = cookie_ok &&
+			    is_in_glibc_heap(evict_ptr) &&
+			    !range_overlaps_shared((unsigned long)evict_ptr, 1);
+		if (gate_pass) {
+			inflight_hash_remove(evict_ptr);
+			free(evict_ptr);
+		} else {
+			struct childdata *c = this_child();
+
+			if (!cookie_ok)
+				deferred_free_slot_reject(oldest, evict_ptr,
+							  "evict");
+			if (c != NULL && c->stats_ring != NULL)
+				stats_ring_enqueue(c->stats_ring,
+						   STATS_FIELD_RING_EVICTION_CORRUPT,
+						   0, 1);
+			else
+				parent_stats.ring_eviction_corrupt++;
+		}
 	}
 	ring[oldest].ptr = NULL;
 	occupied_mask &= ~(1ULL << oldest);
@@ -1512,7 +1659,23 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 	 * least one bit in occupied_mask is clear, so ~occupied_mask is
 	 * non-zero and __builtin_ctzll's UB-on-zero case can't fire. */
 	i = __builtin_ctzll(~occupied_mask);
+	/*
+	 * Stamp the slot's per-admission provenance under the existing
+	 * ring_unlock() bracket so the four payload fields land in
+	 * lock-step.  base captures the admitted pointer for the
+	 * eventual ptr==base check; gen bumps per-admission so a
+	 * re-tenant of the same slot never collides with a stale
+	 * cookie; cookie is the integrity tag over (base, gen, slot,
+	 * secret).  A sibling fuzzed value-result syscall that scribbles
+	 * ring[i].ptr after this point fails ptr==base; a stomp that
+	 * also rewrites ring[i].base fails the cookie recomputation
+	 * (unless it also coherently restamps gen + cookie + matches
+	 * the per-init secret -- astronomically unlikely).
+	 */
 	ring[i].ptr = ptr;
+	ring[i].base = ptr;
+	ring[i].gen += 1;
+	ring[i].cookie = mk_cookie(ptr, ring[i].gen, i);
 	ring[i].ttl = RAND_RANGE(DEFERRED_TTL_MIN, DEFERRED_TTL_MAX);
 	occupied_mask |= 1ULL << i;
 	if (rc_unlock() == 0) {
@@ -1549,71 +1712,82 @@ void deferred_freeptr(unsigned long *p)
 }
 
 /*
- * Free one ring entry's payload, dropping it if the pointer fails the
- * sanity bands.  Both the tick (TTL expiry) and flush (child exit)
- * paths route through here -- pre-helper, only tick had these checks,
- * so a corrupted ring entry surviving until child exit would silently
- * free a bogus pointer through deferred_free_flush().  The tick guard
+ * Free one ring entry's payload, dropping it if the slot's provenance
+ * (base / gen / cookie) fails the slot-cookie gate or the stateless
+ * bands.  Both the tick (TTL expiry) and flush (child exit) paths
+ * route through here -- pre-helper, only tick had these checks, so a
+ * corrupted ring entry surviving until child exit would silently free
+ * a bogus pointer through deferred_free_flush().  The tick guard
  * rejected ~47.7k corrupt-pointer scribbles in a single 6.76h run
  * (~2/sec), so the ring DOES get scribbled in practice; every entry
  * the tick guard would have rejected was being silently freed by
  * flush instead.
  *
- * Caller must clear ring[slot].ptr (and decrement ring_count where
- * it tracks per-slot) before calling.  Clearing first means a signal
- * that longjmps out of fn() can't leave a freed pointer pending in
- * the ring.
+ * Caller captures (ptr, base, cookie, gen, slot) from ring[slot]
+ * BEFORE clearing ring[slot].ptr and passes the snapshot in.
+ * Clearing first means a signal that longjmps out of free() can't
+ * leave a freed pointer pending in the ring; capturing the snapshot
+ * first is necessary because the slot-cookie gate validates the
+ * captured base/cookie/gen against the captured ptr, and the post-
+ * clear ring[slot] no longer has them.
  *
- * Re-run the same stateless gates deferred_free_enqueue used to admit
- * the pointer in the first place: shape (pid-scribbled / sub-page /
- * non-canonical / misaligned), heap-bounds, shared-region overlap.
- * Today's ASAN run logged 105 "attempting free on un-malloc'd"
- * crashes whose root cause is the ring entry being scribbled between
- * the enqueue admission check and TTL expiry -- the slot lives RW
- * inside ring_unlock() brackets, but a sibling fuzzed value-result
- * syscall can still land a stomp into the same page during that
- * window.  Before this guard, free_ring_entry checked only sub-page
- * and alignment; every stomp that landed on something heap-shaped
- * but not actually malloc-returned was being fed straight to free().
- *
- * In-flight set membership is the fourth (and definitive) gate.  A
- * stomp value whose shape passes heap-bounds and avoids the shared
- * regions can still mismatch the originally admitted pointer -- the
- * inflight_hash records what enqueue admitted, so a scribble flips
- * the lookup from hit to miss whether the new value looks plausible
- * or not.  Ordered last so the stateless gates can attach a more
- * specific reason string when they happen to fire; in-flight-miss
- * fires when nothing else matches but the value isn't one we ever
- * admitted, which is the "stomped to a coincidentally heap-shaped
- * value" case the earlier 3 gates by design cannot catch.
+ * Gates in order:
+ *   1. slot-cookie: ptr must equal base AND cookie must validate
+ *      against (base, gen, slot, secret).  This is the authoritative
+ *      check -- a scribble that touched any of base / gen / cookie /
+ *      or ptr fails here.  Reads only the captured snapshot; no
+ *      shadow-hash lookup.  Replaces the previous
+ *      inflight_hash_contains() gate, which was a value-keyed mirror
+ *      that stale-positived under VMA-pressure mprotect failures or
+ *      between GC sweeps and let a coincidentally-heap-shaped stomp
+ *      reach free() (the ASAN bad-free class this commit's mate
+ *      eviction fix addresses).
+ *   2. stateless belt-and-suspenders: shape (pid-scribbled / sub-page
+ *      / non-canonical / misaligned), heap-bounds, shared-region
+ *      overlap.  Cheap; catches the theoretical case where the ring's
+ *      armor itself failed to detect a scribble that landed inside a
+ *      writer's RW bracket.
  *
  * alloc_track_consume already fired at enqueue and would always miss
- * here -- skipped, not re-run.  The remaining gates are stateless and
- * cheap enough to re-evaluate per drain.
+ * here -- skipped, not re-run.
  *
- * Bumps STATS_FIELD_DEFERRED_FREE_CORRUPT_PTR (or its parent
- * fallback) on any rejection, matching the existing pattern; the
- * specific gate that fired shows up in the outputerr log line.
+ * On reject we LEAK the candidate (child exit reclaims): under ASAN
+ * the leak preserves the bad-free report we would otherwise
+ * synthesise, and in any build the safer direction to err is "do not
+ * free a value the slot can no longer prove was the admitted
+ * pointer."  Bumps the headline slot-cookie-mismatch counter via
+ * deferred_free_slot_reject() AND the legacy
+ * deferred_free_corrupt_ptr counter so existing dashboards continue
+ * to see the per-event rate.
  *
  * On the clean-free path the entry is removed from inflight_hash so
- * the GC sweep does not later mistake it for an orphan.
+ * the GC sweep does not later mistake it for an orphan -- the hash
+ * stays a telemetry-only mirror in this commit (Design Fork A
+ * default: drop the gate but keep the orphan-rate counter).
  */
-static void free_ring_entry(void *ptr, unsigned int slot)
+static void free_ring_entry(void *ptr, void *base, unsigned long cookie,
+			    unsigned int gen, unsigned int slot)
 {
 	struct childdata *c;
 	const char *reason = NULL;
+	bool cookie_reject = false;
 
-	if (is_corrupt_ptr_shape(ptr))
+	if (ptr == NULL || ptr != base ||
+	    cookie != mk_cookie(base, gen, slot)) {
+		reason = "slot-cookie";
+		cookie_reject = true;
+	} else if (is_corrupt_ptr_shape(ptr)) {
 		reason = "shape";
-	else if (!is_in_glibc_heap(ptr))
+	} else if (!is_in_glibc_heap(ptr)) {
 		reason = "non-heap";
-	else if (range_overlaps_shared((unsigned long)ptr, 1))
+	} else if (range_overlaps_shared((unsigned long)ptr, 1)) {
 		reason = "shared-region";
-	else if (!inflight_hash_contains(ptr))
-		reason = "in-flight-miss";
+	}
 
 	if (reason != NULL) {
 		c = this_child();
+		if (cookie_reject)
+			deferred_free_slot_reject(slot, ptr, "free-ring");
 		outputerr("deferred_free: rejected ptr=%p in slot %u (%s)\n",
 			  ptr, slot, reason);
 		if (c != NULL && c->stats_ring != NULL)
@@ -1789,15 +1963,26 @@ void deferred_free_tick(void)
 			continue;
 		}
 
-		/* TTL expired — free it.  Clear the slot BEFORE calling
-		 * the free function so that if a signal interrupts us
-		 * mid-free and we longjmp, the slot is already empty. */
-		ptr = ring[i].ptr;
-		ring[i].ptr = NULL;
-		occupied_mask &= ~(1ULL << i);
-		ring_count--;
+		/* TTL expired — free it.  Capture the slot's per-
+		 * admission provenance (base/cookie/gen) BEFORE clearing
+		 * ring[i].ptr so the slot-cookie gate inside
+		 * free_ring_entry can validate the captured snapshot.
+		 * Clearing the slot before calling free() keeps the
+		 * signal-mid-free + longjmp window safe: even if the
+		 * free() never returns, the slot is already empty so
+		 * the next tick can't re-free it. */
+		{
+			void *base = ring[i].base;
+			unsigned long cookie = ring[i].cookie;
+			unsigned int gen = ring[i].gen;
 
-		free_ring_entry(ptr, i);
+			ptr = ring[i].ptr;
+			ring[i].ptr = NULL;
+			occupied_mask &= ~(1ULL << i);
+			ring_count--;
+
+			free_ring_entry(ptr, base, cookie, gen, i);
+		}
 	}
 
 	rc_lock();
@@ -1842,15 +2027,22 @@ void deferred_free_flush(void)
 
 	for (i = 0; i < DEFERRED_RING_SIZE; i++) {
 		void *ptr;
+		void *base;
+		unsigned long cookie;
+		unsigned int gen;
 
 		if (ring[i].ptr == NULL)
 			continue;
 
-		/* Clear before invoking, mirroring tick: a signal that
-		 * longjmps mid-free leaves the slot empty either way. */
+		/* Capture provenance before clearing; mirror the tick
+		 * path's signal-mid-free safety AND the slot-cookie
+		 * gate's snapshot contract.  See free_ring_entry. */
+		base = ring[i].base;
+		cookie = ring[i].cookie;
+		gen = ring[i].gen;
 		ptr = ring[i].ptr;
 		ring[i].ptr = NULL;
-		free_ring_entry(ptr, i);
+		free_ring_entry(ptr, base, cookie, gen, i);
 	}
 	if (rc_unlock() == 0) {
 		ring_count = 0;

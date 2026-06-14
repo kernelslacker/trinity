@@ -187,6 +187,18 @@ scan:
 check-static:
 	@./scripts/check-static.sh
 
+# Standalone unit harness for the slot-cookie gate in deferred-free.c.
+# Builds with no trinity headers (mirrors struct deferred_entry +
+# mk_cookie + slot_owns; the test source carries a MIRROR ALERT that
+# requires co-update if those algorithms change).  Run as part of the
+# pre-commit sanity sweep.
+tests/test-deferred-free-slot-cookie: tests/test-deferred-free-slot-cookie.c
+	@$(CC) -g -O2 -Wall -Wextra -Wstrict-prototypes -Wmissing-prototypes \
+		-o $@ tests/test-deferred-free-slot-cookie.c
+	@$@
+
+test-unit: tests/test-deferred-free-slot-cookie
+
 coverity:
 	@rm -rf cov-int trinity-coverity.tar.xz
 	@cov-build --dir cov-int make -j $(NR_CPUS)
