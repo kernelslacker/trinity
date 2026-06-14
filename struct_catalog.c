@@ -1641,6 +1641,7 @@ static const unsigned long sockaddr_storage_af_vocab[] = {
 #endif
 #ifdef USE_ATM
 	AF_ATMSVC,
+	AF_ATMPVC,
 #endif
 #ifdef USE_LLC
 	AF_LLC,
@@ -1857,6 +1858,20 @@ static const struct struct_field sockaddr_atmsvc_variant_fields[] = {
 	FIELD(struct sockaddr_atmsvc, sas_addr.pub),
 	FIELD(struct sockaddr_atmsvc, sas_addr.lij_type),
 	FIELD(struct sockaddr_atmsvc, sas_addr.lij_id),
+};
+
+/*
+ * AF_ATMPVC (sockaddr_atmpvc) -- ATM PVC endpoint.  The address is a
+ * nested sap_addr aggregate of three scalars: the ATM interface index
+ * (itf), the virtual path identifier (vpi) and the virtual channel
+ * identifier (vci).  pvc_bind / pvc_connect (atm/pvc.c) consume the
+ * tuple raw against the device's installed PVC table.  sap_family is
+ * omitted; the shared-head pass writes ss_family.
+ */
+static const struct struct_field sockaddr_atmpvc_variant_fields[] = {
+	FIELD(struct sockaddr_atmpvc, sap_addr.itf),
+	FIELD(struct sockaddr_atmpvc, sap_addr.vpi),
+	FIELD(struct sockaddr_atmpvc, sap_addr.vci),
 };
 #endif
 
@@ -2195,6 +2210,13 @@ static const struct union_variant sockaddr_storage_variants[] = {
 		.fields		 = sockaddr_atmsvc_variant_fields,
 		.num_fields	 = ARRAY_SIZE(sockaddr_atmsvc_variant_fields),
 		.effective_size	 = sizeof(struct sockaddr_atmsvc),
+	},
+	{
+		.discrim_value	 = AF_ATMPVC,
+		.name		 = "AF_ATMPVC",
+		.fields		 = sockaddr_atmpvc_variant_fields,
+		.num_fields	 = ARRAY_SIZE(sockaddr_atmpvc_variant_fields),
+		.effective_size	 = sizeof(struct sockaddr_atmpvc),
 	},
 #endif
 #ifdef USE_LLC
