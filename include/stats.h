@@ -2436,6 +2436,15 @@ struct stats_s {
 	 * ENOTTY. */
 	unsigned long kvm_vm_ioctls_dispatched;
 
+	/* btrfs ioctl dispatches into btrfs_grp.  Bumped from btrfs_sanitise()
+	 * each time pick_random_ioctl() lands on an ioctl destined for an
+	 * OBJ_FD_TESTFILE fd matching btrfs_fd_test().  A non-zero count
+	 * confirms the seeded-struct path (TREE_SEARCH / INO_LOOKUP /
+	 * GET_SUBVOL_INFO etc.) is reaching the kernel parsers rather than
+	 * EFAULTing on a random arg pointer; flat counter with active testfile
+	 * fds means find_ioctl_group() arbitration isn't picking btrfs_grp. */
+	unsigned long btrfs_ioctls_dispatched;
+
 	/* kvm_run_churn childop counters */
 	unsigned long kvm_run_invocations;		/* total KVM_RUN ioctls issued */
 	unsigned long kvm_run_exit_io;			/* exit_reason == KVM_EXIT_IO */
