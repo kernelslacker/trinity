@@ -51,7 +51,7 @@ struct syscallentry syscall_fchown16 = {
  */
 
 static unsigned long fchownat_flags[] = {
-	AT_EMPTY_PATH, AT_SYMLINK_NOFOLLOW,
+	AT_EMPTY_PATH, AT_SYMLINK_NOFOLLOW, AT_NO_AUTOMOUNT,
 };
 
 struct syscallentry syscall_fchownat = {
