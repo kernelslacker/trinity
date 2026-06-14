@@ -167,6 +167,12 @@ static socklen_t build_sctp_assocparams(void *buf)
 	memset(buf, 0, sizeof(struct sctp_assocparams));
 	return sizeof(struct sctp_assocparams);
 }
+
+static socklen_t build_sctp_setadaptation(void *buf)
+{
+	memset(buf, 0, sizeof(struct sctp_setadaptation));
+	return sizeof(struct sctp_setadaptation);
+}
 #endif
 
 static socklen_t build_string_ifname(void *buf)
@@ -278,6 +284,7 @@ static const struct sockopt_entry sockopt_table[] = {
 	{ IPPROTO_SCTP, SCTP_INITMSG,             build_sctp_initmsg },
 	{ IPPROTO_SCTP, SCTP_RTOINFO,             build_sctp_rtoinfo },
 	{ IPPROTO_SCTP, SCTP_ASSOCINFO,           build_sctp_assocparams },
+	{ IPPROTO_SCTP, SCTP_ADAPTATION_LAYER,    build_sctp_setadaptation },
 #endif
 };
 

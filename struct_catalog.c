@@ -4894,6 +4894,20 @@ static const struct struct_field sctp_assocparams_fields[] = {
 	       .u.range = { 0, 60000 },
 	       .mutate_weight = 60),
 };
+
+/*
+ * struct sctp_setadaptation -- IPPROTO_SCTP / SCTP_ADAPTATION_LAYER.
+ * RFC 5061 / RFC 5062 indication value advertised to the peer at
+ * association setup; the kernel stores it verbatim and echoes it back
+ * in the ADAPTATION-INDICATION parameter.  Single member
+ * ssb_adaptation_ind (__u32) is FT_RAW -- arbitrary peer-visible
+ * cookie with no useful clamp.  Bespoke build_sctp_setadaptation()
+ * zero-fills as a miss-fallback.
+ */
+static const struct struct_field sctp_setadaptation_fields[] = {
+	FIELDX(struct sctp_setadaptation, ssb_adaptation_ind, FT_RAW,
+	       .mutate_weight = 60),
+};
 #endif
 
 /* ------------------------------------------------------------------ */
@@ -5330,6 +5344,12 @@ const struct struct_desc struct_catalog[] = {
 		.struct_size	= sizeof(struct sctp_assocparams),
 		.fields		= sctp_assocparams_fields,
 		.num_fields	= ARRAY_SIZE(sctp_assocparams_fields),
+	},
+	[SC_SCTP_SETADAPTATION] = {
+		.name		= "sctp_setadaptation",
+		.struct_size	= sizeof(struct sctp_setadaptation),
+		.fields		= sctp_setadaptation_fields,
+		.num_fields	= ARRAY_SIZE(sctp_setadaptation_fields),
 	},
 #endif
 };
@@ -6275,6 +6295,13 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 		.discrim_value		= IPPROTO_SCTP,
 		.discrim2_arg_idx	= 3,
 		.discrim2_value		= SCTP_ASSOCINFO,
+	},
+	{
+		"setsockopt", 4, &struct_catalog[SC_SCTP_SETADAPTATION],
+		.discrim_arg_idx	= 2,
+		.discrim_value		= IPPROTO_SCTP,
+		.discrim2_arg_idx	= 3,
+		.discrim2_value		= SCTP_ADAPTATION_LAYER,
 	},
 #endif
 	/*
