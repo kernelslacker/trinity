@@ -361,6 +361,7 @@ check_header linux/llc.h USE_LLC
 check_header linux/if_xdp.h USE_XDP
 check_header linux/mctp.h USE_MCTP
 check_header linux/sctp.h USE_SCTP
+check_header linux/x25.h USE_X25
 
 #############################################################################################
 # Optional: guard-page armour for alloc_shared() regions.  Off-by-default
