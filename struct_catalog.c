@@ -1639,6 +1639,7 @@ static const unsigned long sockaddr_storage_af_vocab[] = {
 #endif
 #ifdef USE_AX25
 	AF_AX25,
+	AF_NETROM,
 #endif
 #ifdef USE_ROSE
 	AF_ROSE,
@@ -2219,6 +2220,13 @@ static const struct union_variant sockaddr_storage_variants[] = {
 	{
 		.discrim_value	 = AF_AX25,
 		.name		 = "AF_AX25",
+		.fields		 = sockaddr_ax25_variant_fields,
+		.num_fields	 = ARRAY_SIZE(sockaddr_ax25_variant_fields),
+		.effective_size	 = sizeof(struct sockaddr_ax25),
+	},
+	{
+		.discrim_value	 = AF_NETROM,
+		.name		 = "AF_NETROM",
 		.fields		 = sockaddr_ax25_variant_fields,
 		.num_fields	 = ARRAY_SIZE(sockaddr_ax25_variant_fields),
 		.effective_size	 = sizeof(struct sockaddr_ax25),
