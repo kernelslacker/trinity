@@ -340,14 +340,15 @@ static int build_clsact_with_egress_block(struct nl_ctx *ctx, int ifindex,
  * eaction toggles between EGRESS_REDIR and EGRESS_MIRROR per call so
  * the verdict-handling diff between the two branches gets coverage
  * over time; both branches end up in tcf_blockcast() with non-zero
- * blockid, which is the path the bug lives in.  ifindex in the
- * tc_mirred.parms.ifindex field is populated with peer_ifindex as
- * the fallback non-blockcast target (kernel ignores it on the
- * blockcast path but rejects EINVAL when both blockid and ifindex
- * are zero).
+ * blockid, which is the path the bug lives in.  tc_mirred.parms.ifindex
+ * is left at 0: the kernel rejects -EINVAL when both blockid and
+ * ifindex are non-zero, so setting an ifindex here would make the
+ * filter install fail before the blockcast path ever runs.  With
+ * ifindex=0 and TCA_MIRRED_BLOCKID set, the action takes the
+ * tcf_blockcast() route.
  */
 static int build_mirred_blockcast_filter(struct nl_ctx *ctx, __u32 block_idx,
-					 int peer_ifindex, int eaction)
+					 int eaction)
 {
 	unsigned char buf[RTNL_BUF_BYTES];
 	struct nlmsghdr *nlh;
@@ -409,7 +410,7 @@ static int build_mirred_blockcast_filter(struct nl_ctx *ctx, __u32 block_idx,
 	memset(&parms, 0, sizeof(parms));
 	parms.action  = TC_ACT_STOLEN;
 	parms.eaction = eaction;
-	parms.ifindex = (__u32)peer_ifindex;
+	parms.ifindex = 0;
 	off = nla_put(buf, off, sizeof(buf), TCA_MIRRED_PARMS,
 		      &parms, sizeof(parms));
 	if (!off)
@@ -574,7 +575,7 @@ bool tc_mirred_blockcast(struct childdata *child)
 
 	eaction = ONE_IN(2) ? TCA_EGRESS_REDIR : TCA_EGRESS_MIRROR;
 
-	rc = build_mirred_blockcast_filter(&nl, block_idx, b_idx, eaction);
+	rc = build_mirred_blockcast_filter(&nl, block_idx, eaction);
 	if (rc != 0) {
 		if (is_unsupported_err(rc)) {
 			ns_unsupported_matchall = true;
