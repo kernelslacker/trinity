@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <limits.h>
+#include <sys/time.h>
 #include <time.h>
 #include <unistd.h>
 #include <string.h>
@@ -781,6 +782,256 @@ static unsigned long gen_arg_timespec(struct syscallentry *entry __unused__,
 		break;
 	}
 	return (unsigned long) ts;
+}
+
+/*
+ * Bucketed fill for a single struct timeval, shared by gen_arg_timeval()
+ * and gen_arg_itimerval() (which is two timevals back-to-back).
+ *
+ * Mirrors the setitimer bespoke bucket set: zero / sub-ms / sec+usec /
+ * raw, plus an explicit invalid-tv_usec (>= 1e6) bucket so the kernel's
+ * timeval legality validator stays warm.
+ */
+static void fill_timeval_bucket(struct timeval *tv)
+{
+	switch (rnd_modulo_u32(8)) {
+	case 0:
+		tv->tv_sec = 0;
+		tv->tv_usec = 0;
+		break;
+	case 1:
+		tv->tv_sec = 0;
+		tv->tv_usec = 1 + (suseconds_t) rnd_modulo_u32(1000);
+		break;
+	case 2:
+		tv->tv_sec = (time_t) (1 + rnd_modulo_u32(10));
+		tv->tv_usec = (suseconds_t) rnd_modulo_u32(1000000);
+		break;
+	case 3:
+		tv->tv_sec = (time_t) rand32();
+		tv->tv_usec = (suseconds_t) rnd_modulo_u32(1000000);
+		break;
+	case 4:
+		/* Invalid tv_usec (>= 1e6) -- exercises the legality reject. */
+		tv->tv_sec = (time_t) rnd_modulo_u32(60);
+		tv->tv_usec = (suseconds_t) (1000000 + rnd_modulo_u32(1000000));
+		break;
+	case 5:
+		tv->tv_sec = 0;
+		tv->tv_usec = 999999;
+		break;
+	case 6:
+		tv->tv_sec = (time_t) LONG_MAX;
+		tv->tv_usec = (suseconds_t) rnd_modulo_u32(1000000);
+		break;
+	default:
+		tv->tv_sec = -(time_t) (1 + rnd_modulo_u32(1u << 20));
+		tv->tv_usec = (suseconds_t) rnd_modulo_u32(1000000);
+		break;
+	}
+}
+
+/*
+ * Bucketed fill for a single struct timespec, shared by gen_arg_itimerspec()
+ * (two back-to-back).  Same mix as gen_arg_timespec()'s 8-way switch minus
+ * its outer NULL / raw arms (those live on the top-level argtype generator).
+ */
+static void fill_timespec_bucket(struct timespec *ts)
+{
+	switch (rnd_modulo_u32(8)) {
+	case 0:
+		ts->tv_sec = 0;
+		ts->tv_nsec = 0;
+		break;
+	case 1:
+		ts->tv_sec = 0;
+		ts->tv_nsec = 1;
+		break;
+	case 2:
+		ts->tv_sec = 0;
+		ts->tv_nsec = (long) rnd_modulo_u32(1000000);
+		break;
+	case 3:
+		ts->tv_sec = (time_t) rnd_modulo_u32(60);
+		ts->tv_nsec = (long) rnd_modulo_u32(1000000000u);
+		break;
+	case 4:
+		ts->tv_sec = (time_t) time(NULL) +
+			(time_t) rnd_modulo_u32(120) - (time_t) 60;
+		ts->tv_nsec = (long) rnd_modulo_u32(1000000000u);
+		break;
+	case 5:
+		ts->tv_sec = 0;
+		ts->tv_nsec = 999999999L;
+		break;
+	case 6:
+		ts->tv_sec = 0;
+		ts->tv_nsec = 1000000000L;
+		break;
+	default:
+		if (RAND_BOOL())
+			ts->tv_sec = -(time_t)(1 + rnd_modulo_u32(1u << 20));
+		else
+			ts->tv_sec = (time_t) LONG_MAX;
+		ts->tv_nsec = (long) rnd_modulo_u32(1000000000u);
+		break;
+	}
+}
+
+/*
+ * ARG_ITIMERVAL: a writable pool buffer filled with a struct itimerval
+ * (two struct timevals: it_interval, it_value).  Folds the bespoke
+ * sanitise_setitimer() bucket set into a declarative argtype.
+ *
+ * Mix:
+ *   - ~10% NULL (legal "no-op" / out-pointer arm)
+ *   - ~5% raw bytes (keep the timeval legality reject path warm)
+ *   - ~20% DISARM (it_value zeroed; preserves setitimer's disarm flow)
+ *   - balance: bucketed fill for both timevals
+ *
+ * Pool buffer (get_writable_struct), off the shared region / libc heap
+ * so the blanket address scrub is a no-op.  No .cleanup needed.
+ */
+static unsigned long gen_arg_itimerval(struct syscallentry *entry __unused__,
+				       struct syscallrecord *rec __unused__,
+				       unsigned int argnum __unused__)
+{
+	struct itimerval *itv;
+
+	if (rnd_modulo_u32(10) == 0)
+		return 0;
+
+	itv = (struct itimerval *) get_writable_struct(sizeof(*itv));
+	if (itv == NULL)
+		return 0;
+
+	if (rnd_modulo_u32(20) == 0) {
+		itv->it_interval.tv_sec = (time_t) rand64();
+		itv->it_interval.tv_usec = (suseconds_t) rand64();
+		itv->it_value.tv_sec = (time_t) rand64();
+		itv->it_value.tv_usec = (suseconds_t) rand64();
+		return (unsigned long) itv;
+	}
+
+	fill_timeval_bucket(&itv->it_interval);
+	fill_timeval_bucket(&itv->it_value);
+
+	/* ~20% disarm: it_value zeroed (preserves sanitise_setitimer's path). */
+	if (rnd_modulo_u32(5) == 0) {
+		itv->it_value.tv_sec = 0;
+		itv->it_value.tv_usec = 0;
+	}
+
+	return (unsigned long) itv;
+}
+
+/*
+ * ARG_ITIMERSPEC: a writable pool buffer filled with a struct itimerspec
+ * (two struct timespecs: it_interval, it_value).  Folds the bespoke
+ * sanitise_timer_settime() bucket set into a declarative argtype.
+ *
+ * Mix:
+ *   - ~10% NULL (legal "no-op" / out-pointer arm)
+ *   - ~5% raw bytes (keep the timespec64_valid reject path warm)
+ *   - ~20% DISARM (it_value zeroed; the timer_settime disarm flow)
+ *   - ~15% near-now (time(NULL)+1) it_value so TIMER_ABSTIME callers
+ *     reach a deadline-in-the-future instead of fire-immediately
+ *   - balance: bucketed fill for both timespecs
+ *
+ * Pool buffer (get_writable_struct), off the shared region / libc heap
+ * so the blanket address scrub is a no-op.  No .cleanup needed.
+ */
+static unsigned long gen_arg_itimerspec(struct syscallentry *entry __unused__,
+					struct syscallrecord *rec __unused__,
+					unsigned int argnum __unused__)
+{
+	struct itimerspec *its;
+	uint32_t bucket;
+
+	if (rnd_modulo_u32(10) == 0)
+		return 0;
+
+	its = (struct itimerspec *) get_writable_struct(sizeof(*its));
+	if (its == NULL)
+		return 0;
+
+	if (rnd_modulo_u32(20) == 0) {
+		its->it_interval.tv_sec = (time_t) rand64();
+		its->it_interval.tv_nsec = (long) rand64();
+		its->it_value.tv_sec = (time_t) rand64();
+		its->it_value.tv_nsec = (long) rand64();
+		return (unsigned long) its;
+	}
+
+	fill_timespec_bucket(&its->it_interval);
+	fill_timespec_bucket(&its->it_value);
+
+	bucket = rnd_modulo_u32(100);
+	if (bucket < 20) {
+		/* Disarm: it_value zeroed. */
+		its->it_value.tv_sec = 0;
+		its->it_value.tv_nsec = 0;
+	} else if (bucket < 35) {
+		/* Near-now (+1s) it_value so TIMER_ABSTIME deadlines actually
+		 * land in the future and the timer schedules instead of firing
+		 * immediately. */
+		its->it_value.tv_sec = (time_t) time(NULL) + 1;
+		its->it_value.tv_nsec = (long) rnd_modulo_u32(1000000000u);
+	}
+
+	return (unsigned long) its;
+}
+
+/*
+ * ARG_TIMEVAL: a writable pool buffer filled with a struct timeval.
+ * Folds the bespoke sanitise_settimeofday() bias (~70% near-now) into a
+ * declarative argtype: settimeofday EPERMs random tv_sec before parsing
+ * tv_usec, so a uniform random mix wastes draws -- bias near-now so the
+ * tv_usec / monotonic-step validators actually run.
+ *
+ * Mix:
+ *   - ~10% NULL (legal out-pointer / "skip" arm)
+ *   - ~5% raw bytes (keep the timeval legality reject path warm)
+ *   - ~70% near-now tv_sec (settimeofday-shaped bias)
+ *   - balance: full bucketed fill (includes invalid tv_usec >= 1e6)
+ *
+ * Pool buffer (get_writable_struct), off the shared region / libc heap
+ * so the blanket address scrub is a no-op.  No .cleanup needed.
+ */
+static unsigned long gen_arg_timeval(struct syscallentry *entry __unused__,
+				     struct syscallrecord *rec __unused__,
+				     unsigned int argnum __unused__)
+{
+	struct timeval *tv;
+	struct timespec snap;
+
+	if (rnd_modulo_u32(10) == 0)
+		return 0;
+
+	tv = (struct timeval *) get_writable_struct(sizeof(*tv));
+	if (tv == NULL)
+		return 0;
+
+	if (rnd_modulo_u32(20) == 0) {
+		tv->tv_sec = (time_t) rand64();
+		tv->tv_usec = (suseconds_t) rand64();
+		return (unsigned long) tv;
+	}
+
+	if (rnd_modulo_u32(100) < 70) {
+		/* Near-now: ±60s around current wall clock. */
+		if (clock_gettime(CLOCK_REALTIME, &snap) == 0)
+			tv->tv_sec = snap.tv_sec +
+				(time_t) rnd_modulo_u32(120) - (time_t) 60;
+		else
+			tv->tv_sec = time(NULL) +
+				(time_t) rnd_modulo_u32(120) - (time_t) 60;
+		tv->tv_usec = (suseconds_t) rnd_modulo_u32(1000000);
+	} else {
+		fill_timeval_bucket(tv);
+	}
+
+	return (unsigned long) tv;
 }
 
 /* ARG_IOVECLEN / ARG_SOCKADDRLEN: the value was published into the slot
@@ -2941,6 +3192,18 @@ const struct argtype_ops argtype_table[] = {
 	[ARG_TIMESPEC] = {
 		.name = "ARG_TIMESPEC",
 		.generate = gen_arg_timespec,
+	},
+	[ARG_ITIMERVAL] = {
+		.name = "ARG_ITIMERVAL",
+		.generate = gen_arg_itimerval,
+	},
+	[ARG_ITIMERSPEC] = {
+		.name = "ARG_ITIMERSPEC",
+		.generate = gen_arg_itimerspec,
+	},
+	[ARG_TIMEVAL] = {
+		.name = "ARG_TIMEVAL",
+		.generate = gen_arg_timeval,
 	},
 	[ARG_IOVEC] = {
 		.name = "ARG_IOVEC",
