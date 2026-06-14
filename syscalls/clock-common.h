@@ -28,11 +28,21 @@
 	((~(clockid_t)(fd) << 3) | CLOCKFD)
 #endif
 
+/*
+ * CLOCK_AUX is a v7.1 uapi clockid for auxiliary clocks. Older build
+ * hosts' <linux/time.h> may not have it; provide a compat shim so the
+ * value is always available in pick_clockid_common[] below.
+ */
+#ifndef CLOCK_AUX
+#define CLOCK_AUX			16
+#endif
+
 static const unsigned long pick_clockid_common[] = {
 	CLOCK_REALTIME, CLOCK_MONOTONIC, CLOCK_BOOTTIME, CLOCK_TAI,
 	CLOCK_MONOTONIC_RAW, CLOCK_REALTIME_COARSE, CLOCK_MONOTONIC_COARSE,
 	CLOCK_REALTIME_ALARM, CLOCK_BOOTTIME_ALARM,
 	CLOCK_PROCESS_CPUTIME_ID, CLOCK_THREAD_CPUTIME_ID,
+	CLOCK_AUX,
 };
 
 static const int pick_clockid_cpuwhich[] = {
