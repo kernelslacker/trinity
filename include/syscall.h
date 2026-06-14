@@ -207,6 +207,12 @@ static inline bool is_fdarg(enum argtype type)
 struct arglist {
 	unsigned int num;
 	unsigned long *values;
+	/* OR of values[0..num).  Populated once at table init by
+	 * populate_arglist_all_bits() from copy_syscall_table(); zero
+	 * before that pass runs and zero on arg slots whose argtype is
+	 * not ARG_OP/ARG_LIST (those slots use the .range union member
+	 * and never read this field). */
+	unsigned long all_bits;
 };
 
 #define ARGLIST(vals)		\
@@ -631,6 +637,7 @@ uint8_t compute_cleanup_arg_mask(const struct syscallentry *entry);
 uint8_t compute_fd_arg_mask(const struct syscallentry *entry);
 uint8_t compute_len_arg_mask(const struct syscallentry *entry);
 uint8_t compute_nested_address_scrub_mask(const struct syscallentry *entry);
+void populate_arglist_all_bits(struct syscallentry *entry);
 
 /*
  * Tripwire bump for get_arg_snapshot() mismatches.  Out-of-line so the
