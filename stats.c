@@ -3919,6 +3919,17 @@ static unsigned long pct_thousandths(unsigned long num, unsigned long denom)
 {
 	if (denom == 0)
 		return 0;
+	/* num * 100000 overflows unsigned long once num approaches ~1.8e14,
+	 * which the cumulative childop_walltime_ns numerator reaches on a
+	 * sustained run.  Shed low bits from both operands until the multiply
+	 * (plus the denom/2 rounding term) can no longer overflow; the ratio
+	 * is preserved and the helper only needs 0.1% resolution, so the
+	 * dropped bits are immaterial.  num <= denom here, so gating on
+	 * ULONG_MAX / 100001 leaves headroom for the rounding add. */
+	while (denom > ULONG_MAX / 100001UL) {
+		num >>= 1;
+		denom >>= 1;
+	}
 	return (num * 100000UL + denom / 2) / denom;
 }
 
