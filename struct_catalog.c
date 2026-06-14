@@ -63,6 +63,9 @@
 #ifdef USE_PHONET
 #include <linux/phonet.h>
 #endif
+#ifdef USE_AX25
+#include <linux/ax25.h>
+#endif
 #ifdef USE_LLC
 #include <linux/llc.h>
 #endif
@@ -1624,6 +1627,9 @@ static const unsigned long sockaddr_storage_af_vocab[] = {
 #ifdef USE_PHONET
 	AF_PHONET,
 #endif
+#ifdef USE_AX25
+	AF_AX25,
+#endif
 #ifdef USE_LLC
 	AF_LLC,
 #endif
@@ -1784,6 +1790,25 @@ static const struct struct_field sockaddr_pn_variant_fields[] = {
 	FIELD(struct sockaddr_pn, spn_obj),
 	FIELD(struct sockaddr_pn, spn_dev),
 	FIELD(struct sockaddr_pn, spn_resource),
+};
+#endif
+
+#ifdef USE_AX25
+/*
+ * AF_AX25 (sockaddr_ax25) -- amateur-radio packet endpoint.  The
+ * base struct carries the 7-byte AX.25 callsign (ax25_address, a
+ * shifted-ASCII callsign + SSID byte the kernel walks via ax25cmp()
+ * in ax25_bind / ax25_connect) and sax25_ndigis, the digipeater
+ * count the kernel uses to decide whether to read the trailing
+ * fsa_digipeater[] array of full_sockaddr_ax25.  trinity steers the
+ * base sockaddr_ax25 only; full_sockaddr_ax25's variable-length
+ * digipeater tail is intentionally out of scope here so the variant
+ * stays a fixed-size record.  sax25_family is omitted; the shared-
+ * head pass already writes ss_family.
+ */
+static const struct struct_field sockaddr_ax25_variant_fields[] = {
+	FIELD(struct sockaddr_ax25, sax25_call),
+	FIELD(struct sockaddr_ax25, sax25_ndigis),
 };
 #endif
 
@@ -2095,6 +2120,15 @@ static const struct union_variant sockaddr_storage_variants[] = {
 		.fields		 = sockaddr_pn_variant_fields,
 		.num_fields	 = ARRAY_SIZE(sockaddr_pn_variant_fields),
 		.effective_size	 = sizeof(struct sockaddr_pn),
+	},
+#endif
+#ifdef USE_AX25
+	{
+		.discrim_value	 = AF_AX25,
+		.name		 = "AF_AX25",
+		.fields		 = sockaddr_ax25_variant_fields,
+		.num_fields	 = ARRAY_SIZE(sockaddr_ax25_variant_fields),
+		.effective_size	 = sizeof(struct sockaddr_ax25),
 	},
 #endif
 #ifdef USE_LLC
