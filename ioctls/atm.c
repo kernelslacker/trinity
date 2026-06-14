@@ -108,6 +108,7 @@ static void sanitise_br2684_filter_set(struct syscallrecord *rec)
 	fs = (struct br2684_filter_set *) get_writable_struct(sizeof(*fs));
 	if (!fs)
 		return;
+	memset(fs, 0, sizeof(*fs));
 	fs->ifspec.method = rnd_modulo_u32(3);	/* BR2684_FIND_BYNOTHING/BYNUM/BYIFNAME */
 	if (fs->ifspec.method == BR2684_FIND_BYNUM)
 		fs->ifspec.spec.devnum = rnd_modulo_u32(16);
