@@ -351,6 +351,9 @@ enum struct_catalog_idx {
 	SC_IP_MREQN,
 	SC_IPV6_MREQ,
 	SC_PACKET_MREQ,
+#ifdef USE_SCTP
+	SC_SCTP_INITMSG,
+#endif
 
 	SC_NR_ENTRIES,		/* sentinel; equals ARRAY_SIZE(struct_catalog) once both stay in lockstep */
 };

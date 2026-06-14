@@ -78,6 +78,9 @@
 #ifdef USE_XATTR_ARGS
 #include <linux/xattr.h>
 #endif
+#ifdef USE_SCTP
+#include <linux/sctp.h>
+#endif
 
 #include "argtype-ops.h"
 #include "struct_catalog.h"
@@ -4811,6 +4814,34 @@ static const struct struct_field packet_mreq_fields[] = {
 	FIELD(struct packet_mreq, mr_address),
 };
 
+#ifdef USE_SCTP
+/*
+ * struct sctp_initmsg -- IPPROTO_SCTP / SCTP_INITMSG.  Four __u16 fields
+ * controlling SCTP association init params.  Stream counts bound to
+ * [0, 128] (the kernel caps max_instreams/num_ostreams well below this in
+ * practice), max_attempts bounded to a sane small INIT retry count, and
+ * max_init_timeo bounded to a millisecond window matching the SCTP RTO
+ * envelope.  Bespoke build_sctp_initmsg() zero-fills as a miss-fallback;
+ * the schema fill above produces values inside the kernel's accept window
+ * and lets struct_field_for_cmp() attribute KCOV-CMP constants at the
+ * named slots.
+ */
+static const struct struct_field sctp_initmsg_fields[] = {
+	FIELDX(struct sctp_initmsg, sinit_num_ostreams, FT_RANGE,
+	       .u.range = { 0, 128 },
+	       .mutate_weight = 60),
+	FIELDX(struct sctp_initmsg, sinit_max_instreams, FT_RANGE,
+	       .u.range = { 0, 128 },
+	       .mutate_weight = 60),
+	FIELDX(struct sctp_initmsg, sinit_max_attempts, FT_RANGE,
+	       .u.range = { 0, 8 },
+	       .mutate_weight = 40),
+	FIELDX(struct sctp_initmsg, sinit_max_init_timeo, FT_RANGE,
+	       .u.range = { 0, 60000 },
+	       .mutate_weight = 40),
+};
+#endif
+
 /* ------------------------------------------------------------------ */
 /* The catalog itself                                                   */
 /* ------------------------------------------------------------------ */
@@ -5227,6 +5258,14 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= packet_mreq_fields,
 		.num_fields	= ARRAY_SIZE(packet_mreq_fields),
 	},
+#ifdef USE_SCTP
+	[SC_SCTP_INITMSG] = {
+		.name		= "sctp_initmsg",
+		.struct_size	= sizeof(struct sctp_initmsg),
+		.fields		= sctp_initmsg_fields,
+		.num_fields	= ARRAY_SIZE(sctp_initmsg_fields),
+	},
+#endif
 };
 
 /*
@@ -6149,6 +6188,15 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 		.discrim2_values	= setsockopt_packet_mreq_optnames,
 		.num_discrim2_values	= ARRAY_SIZE(setsockopt_packet_mreq_optnames),
 	},
+#ifdef USE_SCTP
+	{
+		"setsockopt", 4, &struct_catalog[SC_SCTP_INITMSG],
+		.discrim_arg_idx	= 2,
+		.discrim_value		= IPPROTO_SCTP,
+		.discrim2_arg_idx	= 3,
+		.discrim2_value		= SCTP_INITMSG,
+	},
+#endif
 	/*
 	 * io_cancel(aio_context_t ctx_id, struct iocb __user *iocb,
 	 *           struct io_event __user *result)

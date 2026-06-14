@@ -359,6 +359,7 @@ check_header bluetooth/bluetooth.h USE_BLUETOOTH
 check_header linux/vm_sockets.h USE_VSOCK
 check_header linux/if_xdp.h USE_XDP
 check_header linux/mctp.h USE_MCTP
+check_header linux/sctp.h USE_SCTP
 
 #############################################################################################
 # Optional: guard-page armour for alloc_shared() regions.  Off-by-default
