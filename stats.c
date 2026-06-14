@@ -2196,6 +2196,7 @@ static void dump_stats_json_corruption_and_audit(void)
 			"\"deferred_free_ring_owned_skip\":%lu,"
 			"\"deferred_free_double_admit_skip\":%lu,"
 			"\"pagecache_canary_corrupt_caught\":%lu,"
+			"\"objpool_array_stale_caught\":%lu,"
 			"\"lock_word_scribbled\":%lu,"
 			"\"lock_held_scribble\":%lu,"
 			"\"chain_replay_len_corrupt\":%lu},"
@@ -2247,6 +2248,7 @@ static void dump_stats_json_corruption_and_audit(void)
 		shm->stats.deferred_free_ring_owned_skip,
 		shm->stats.deferred_free_double_admit_skip,
 		shm->stats.pagecache_canary_corrupt_caught,
+		shm->stats.objpool_array_stale_caught,
 		parent_stats.lock_word_scribbled,
 		shm->stats.lock_held_scribble,
 		shm->stats.chain_replay_len_corrupt,
@@ -3249,6 +3251,8 @@ static const struct {
 	  offsetof(struct stats_s, deferred_free_double_admit_skip) },
 	{ "pagecache_canary_corrupt_caught",
 	  offsetof(struct stats_s, pagecache_canary_corrupt_caught) },
+	{ "objpool_array_stale_caught",
+	  offsetof(struct stats_s, objpool_array_stale_caught) },
 	/* genetlink registry per-family dispatch counters; rate-of-change
 	 * surfaces the live family selection mix without waiting for the
 	 * end-of-run summary.  A counter that stays at zero across an
@@ -5867,6 +5871,9 @@ static void dump_stats_corruption_and_pool(void)
 	if (shm->stats.pagecache_canary_corrupt_caught)
 		stat_row("oracle", "pagecache_canary_corrupt_caught",
 			 shm->stats.pagecache_canary_corrupt_caught);
+	if (shm->stats.objpool_array_stale_caught)
+		stat_row("corruption", "objpool_array_stale_caught",
+			 shm->stats.objpool_array_stale_caught);
 }
 
 static void dump_stats_childop_ranked_tables(void)

@@ -424,6 +424,24 @@ struct local_fd_hash_slot {
 struct objhead {
 	struct object **array;		/* parallel array for O(1) random access */
 	/*
+	 * Strictly-monotonic counter bumped under the owning process's
+	 * write every time head->array is freed and replaced (the OBJ_GLOBAL
+	 * grow free(), the OBJ_LOCAL grow deferred_free_enqueue(), and the
+	 * destroy_objects() teardown tracked_free_now()).  Lets the
+	 * indexed-read helper detect a between-snapshot grow / teardown:
+	 * snapshot the gen alongside the array pointer at pick time, do the
+	 * load, then re-read the gen and discard the result on mismatch
+	 * rather than letting an indexed read fall through to a chunk the
+	 * deferred-free TTL has already handed back to glibc.  Pool-private
+	 * single-writer (parent for OBJ_GLOBAL pre-fork, owning child for
+	 * OBJ_LOCAL) so an unlocked load is sufficient; at 32 bits this
+	 * wraps after ~4 billion grows, comfortably above anything an
+	 * in-process fuzz run reaches.  Even a wrap would be benign --
+	 * captured-gen != current-gen still trips the mismatch path for any
+	 * grow that happens inside the snapshot window.
+	 */
+	unsigned int array_generation;
+	/*
 	 * Per-objhead fd→object hash for OBJ_LOCAL fd-typed pools.  Lazily
 	 * allocated in the child's private heap on the first add_object()
 	 * insert and kept in sync by add_object()/__destroy_object() on every

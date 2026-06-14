@@ -150,10 +150,30 @@ retry:	tries++;
 		if (map->known_rw && size <= map->size)
 			skip_mprotect = true;
 	} else {
+		unsigned int captured_slot;
+
 		from_mmap = false;
 		obj = get_random_object(OBJ_SYSV_SHM, OBJ_GLOBAL);
 		if (obj == NULL)
 			goto retry;
+		/*
+		 * Defend the obj-field reads below against the same
+		 * slot-recycle race fds/sockets.c:684-712 closes one level
+		 * upstream.  get_random_object()'s array-generation gate
+		 * already drops a pick whose head->array snapshot raced a
+		 * grow / teardown, so this captured stamp covers the
+		 * remaining post-pick window: between get_random_object()
+		 * returning and obj->sysv_shm.ptr being copied out below,
+		 * __destroy_object() could swap-with-last over this slot and
+		 * release_obj() the chunk into the deferred-free TTL.  A
+		 * captured pre-deref slot_version that no longer matches
+		 * after the IPC_STAT probe is the same "stale slot" signal
+		 * sockets.c uses, applied to the SysV-SHM hot path that
+		 * turns the stale read into a writable kernel-bound pointer.
+		 */
+		if (!objpool_check(obj, OBJ_SYSV_SHM))
+			goto retry;
+		captured_slot = obj->slot_version;
 		/*
 		 * Skip hugetlb-backed slots.  get_writable_address callers
 		 * ask for sub-hugepage sizes (struct sizes, single
@@ -183,6 +203,17 @@ retry:	tries++;
 			if (buf.shm_perm.mode & SHM_DEST)
 				goto retry;
 		}
+		/*
+		 * Final post-deref re-check: if the slot was destroyed and
+		 * the chunk recycled (or rewritten by add_object's swap-
+		 * with-last under this index) between get_random_object()
+		 * and now, slot_version has been incremented past our
+		 * snapshot and obj->sysv_shm reads above were against stale
+		 * bytes.  Drop the pick rather than handing the caller a
+		 * pointer derived from a destroyed slot.
+		 */
+		if (!object_slot_alive(obj, captured_slot))
+			goto retry;
 		addr = obj->sysv_shm.ptr;
 		/*
 		 * The OBJ_SYSV_SHM branch lacks the OBJ_MMAP branch's

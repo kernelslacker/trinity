@@ -555,15 +555,28 @@ struct objhead * get_objhead(enum obj_scope scope, enum objecttype type)
 		 * Children resolve against their fork-time snapshot of the
 		 * parent's pre-fork pool (allocated by
 		 * clone_global_objects_to_child).  The parent's writer view
-		 * lives in parent_global_objects[] in this file.  Fall back
-		 * to the parent view in the early init_child window before
-		 * the clone runs, so any incidental lookup still resolves.
+		 * lives in parent_global_objects[] in this file.
+		 *
+		 * Children NEVER fall back to the parent view: a child reader
+		 * indexing the parent's live head->array escapes the snapshot
+		 * the OBJ_GLOBAL contract pins them to (post-fork parent grows
+		 * are supposed to be invisible) AND the parent's array may sit
+		 * on a heap chunk the parent has since freed and replaced via
+		 * the deferred-free hand-off in add_object_grow_capacity().
+		 * The child's COW page captured the pre-replacement pointer
+		 * value; the indexed read off it lands inside a recycled chunk
+		 * (the UAF this fix addresses).  Return NULL instead so any
+		 * child whose snapshot did not complete (early init, snapshot
+		 * alloc failure) gracefully takes the "empty pool" branch
+		 * rather than dereferencing the wrong address space's
+		 * bookkeeping.
 		 */
 		if (mypid() != mainpid) {
 			struct childdata *child = this_child();
 
-			if (child != NULL && child->global_objects != NULL)
-				return &child->global_objects[type];
+			if (child == NULL || child->global_objects == NULL)
+				return NULL;
+			return &child->global_objects[type];
 		}
 		head = &parent_global_objects[type];
 	} else {
@@ -597,13 +610,14 @@ void __for_each_obj_init(struct objhead *head,
 }
 
 /*
- * Fixed capacity for global object arrays.  These are allocated in
- * MAP_SHARED memory so children can safely read them.  Using realloc()
- * on private heap would put the new array in the parent's address space
- * only, causing children to SIGSEGV when they follow the pointer.
- *
- * Exposed in objects.h so other code (e.g. mm/maps.c) can use the
- * same upper bound when defending against a corrupt num_entries.
+ * Global object array backing storage.  Allocated via __zmalloc (plain
+ * malloc), so the buffer lives in the parent's PRIVATE heap and is
+ * fork-COW'd into every child rather than shared MAP_SHARED.  Children
+ * do not read the parent's view directly post-fork: get_objhead()
+ * routes them to their own snapshot (clone_global_objects_to_child())
+ * and returns NULL when the snapshot is missing, so the COW divergence
+ * between the parent's live head->array and the child's frozen view
+ * never reaches an indexed read.
  */
 /*
  * Up-front input validation for add_object().  Three rejections,
@@ -804,6 +818,16 @@ static bool add_object_grow_capacity(struct object *obj, enum obj_scope scope,
 			free(head->array);
 			head->array = newarray;
 			head->array_capacity = newcap;
+			/*
+			 * Publish the container replacement to any in-progress
+			 * indexed-read snapshot via objhead_indexed_read().  Pool-
+			 * private single-writer (parent pre-fork on OBJ_GLOBAL,
+			 * owning child on OBJ_LOCAL), so an unlocked bump is
+			 * sufficient; the helper's re-read of array_generation
+			 * after its load picks up the new value and drops the
+			 * stale-snapshot pick.
+			 */
+			head->array_generation++;
 		}
 	} else if (n >= cap) {
 		/*
@@ -843,6 +867,13 @@ static bool add_object_grow_capacity(struct object *obj, enum obj_scope scope,
 			memcpy(newarray, oldarray, cap * sizeof(struct object *));
 		head->array = newarray;
 		head->array_capacity = newcap;
+		/*
+		 * Bump before the deferred-free hand-off so any reader whose
+		 * snapshot raced this grow re-reads the new generation and
+		 * drops the pick rather than indexing the (now-ttl'd) old
+		 * container.  See objhead_indexed_read().
+		 */
+		head->array_generation++;
 		if (oldarray != NULL)
 			deferred_free_enqueue(oldarray);
 	}
@@ -1095,6 +1126,7 @@ void init_object_lists(enum obj_scope scope, struct childdata *child)
 		head->array_capacity = 0;
 		head->fd_hash = NULL;
 		head->next_slot_version = 0;
+		head->array_generation = 0;
 
 		/*
 		 * child lists can inherit properties from global lists.
@@ -1174,6 +1206,17 @@ void clone_global_objects_to_child(struct childdata *child)
 		 * the child's mirror at zero.
 		 */
 		dst->next_slot_version = src->next_slot_version;
+		/*
+		 * Mirror the snapshot's starting array_generation.  The child
+		 * grows its own copy via add_object(OBJ_GLOBAL) never (the
+		 * post-fork guard rejects every such call) so the value is
+		 * effectively read-only on the child side; start it at the
+		 * parent's last published value so the field is self-consistent
+		 * rather than fresh-from-zero.  Any indexed-read snapshot in
+		 * the child that observes a destroy_objects() teardown on this
+		 * pool will see its own monotonic bump and discard.
+		 */
+		dst->array_generation = src->array_generation;
 
 		if (n == 0 || src->array == NULL)
 			continue;
@@ -1202,11 +1245,74 @@ void clone_global_objects_to_child(struct childdata *child)
 }
 
 /*
+ * Indexed read off head->array guarded against a between-snapshot
+ * grow / teardown.  The hazard the bare head->array[idx] read had was
+ * that the array container is freed and replaced on grow (plain free
+ * on OBJ_GLOBAL, deferred_free_enqueue on OBJ_LOCAL) and at pool
+ * teardown -- a reader that captured the array pointer pre-grow then
+ * indexed it post-grow would read off a chunk the deferred-free TTL
+ * had already handed back to glibc.  The recipe here mirrors the
+ * obj-level slot_version / object_slot_alive() pattern one level
+ * earlier:
+ *
+ *   1. Snapshot array_generation, the array pointer and num_entries.
+ *   2. Cheap stateless provenance check on the captured array pointer
+ *      so an obviously-wild value (early-init noise, a scribbled
+ *      head->array) is rejected before the indexed read fires --
+ *      defense in depth on top of the gen re-check, not a substitute
+ *      for it.
+ *   3. Load arr[idx].
+ *   4. Re-read array_generation.  Mismatch ==> a grow/teardown ran
+ *      between (1) and (3), the captured arr is the freed container
+ *      and arr[idx] is a read off a recycled chunk; bump the
+ *      stale-array stat and return NULL so the caller retries.
+ *
+ * The retry-on-NULL contract is what every get_random_object() consumer
+ * already expects (empty pool returns NULL); the new path just widens
+ * the set of conditions that lead to NULL.
+ */
+static struct object *objhead_indexed_read(struct objhead *head, unsigned int idx)
+{
+	unsigned int gen0;
+	struct object **arr;
+	unsigned int n;
+	struct object *obj;
+
+	gen0 = head->array_generation;
+	arr = head->array;
+	n = head->num_entries;
+
+	if (arr == NULL || n == 0 || idx >= n)
+		return NULL;
+
+	if ((uintptr_t)arr < 0x10000UL ||
+	    (uintptr_t)arr >= 0x800000000000UL ||
+	    !is_in_glibc_heap(arr)) {
+		__atomic_add_fetch(&shm->stats.objpool_array_stale_caught, 1,
+				   __ATOMIC_RELAXED);
+		return NULL;
+	}
+
+	obj = arr[idx];
+
+	if (head->array_generation != gen0) {
+		__atomic_add_fetch(&shm->stats.objpool_array_stale_caught, 1,
+				   __ATOMIC_RELAXED);
+		return NULL;
+	}
+
+	return obj;
+}
+
+/*
  * Pick a random object from a pool.  Single-writer per pool, single
- * reader per call (the owning process) -- no locks, no version
- * counters, no snapshot defences.  Children read their fork-time
+ * reader per call (the owning process).  Children read their fork-time
  * snapshot of the parent's pre-fork OBJ_GLOBAL pool; OBJ_LOCAL pools
- * are wholly per-child.  An empty pool returns NULL.
+ * are wholly per-child.  An empty pool returns NULL, as does a pick
+ * the indexed-read helper rejected (head->array was freed and replaced
+ * between the picker's snapshot and the indexed load -- the chunk it
+ * would have read was on the deferred-free path and may already have
+ * been recycled by glibc).  Callers already retry on NULL.
  */
 struct object * get_random_object(enum objecttype type, enum obj_scope scope)
 {
@@ -1221,7 +1327,7 @@ struct object * get_random_object(enum objecttype type, enum obj_scope scope)
 	if (n == 0 || head->array == NULL)
 		return NULL;
 
-	return head->array[rnd_modulo_u32(n)];
+	return objhead_indexed_read(head, rnd_modulo_u32(n));
 }
 
 bool objects_empty(enum objecttype type)
@@ -1437,6 +1543,13 @@ static void destroy_objects(enum objecttype type, enum obj_scope scope)
 	tracked_free_now(head->array);
 	head->array = NULL;
 	head->array_capacity = 0;
+	/*
+	 * Teardown is the third array-replace site (the two grow paths
+	 * are the others).  Bump so a stale pick whose snapshot caught
+	 * the pre-teardown array pointer re-reads a different generation
+	 * and discards rather than indexing the just-freed chunk.
+	 */
+	head->array_generation++;
 }
 
 /* Destroy all global objects on exit. */

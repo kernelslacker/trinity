@@ -1902,6 +1902,19 @@ struct stats_s {
 	 * same corrupted file each contribute one bump). */
 	unsigned long pagecache_canary_corrupt_caught;
 
+	/* objhead_indexed_read() rejected a pick whose array snapshot
+	 * either failed the cheap stateless provenance check on the
+	 * captured head->array pointer, or whose post-load re-read of
+	 * head->array_generation no longer matched the value sampled at
+	 * pick time.  The first case is wild-pointer noise (early-init or
+	 * a scribbled head->array); the second case is the racy-grow /
+	 * teardown the field exists to detect -- an indexed read off a
+	 * container the deferred-free TTL has handed back to glibc.
+	 * Non-zero here means the array-generation gate caught the same
+	 * UAF class the 0117 ASAN run flagged at get_random_object()'s
+	 * head->array[idx] load. */
+	unsigned long objpool_array_stale_caught;
+
 	/* Bumped by get_map_handle() in mm/maps.c when the 1000-iteration
 	 * random-pool draw loop exhausts its retry budget without finding a
 	 * usable map handle.  Most commonly fires because OBJ_LOCAL OBJ_MMAP_*
