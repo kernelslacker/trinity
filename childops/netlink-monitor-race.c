@@ -13,10 +13,21 @@
  * never exercised against a live subscriber list.
  *
  * Sequence (per invocation):
- *   1. unshare(CLONE_NEWNET) into a private net namespace so any
- *      mutation we make never touches the host's main routing table.
- *      Failure (EPERM, no user-namespace privilege) latches the
- *      childop off for the remainder of this child's lifetime.
+ *   1. Enter a private net namespace so any mutation we make never
+ *      touches the host's main routing table.  When the parent
+ *      already provisioned one (shm->isolation.net_ready set --
+ *      root-started, --no-startup-isolation unset, parent unshare +
+ *      lo-up succeeded) we inherit it via fork() and skip the per-
+ *      childop unshare entirely; loopback is already UP with
+ *      127.0.0.1/::1 assigned, so the address/route control surface
+ *      is reachable.  Otherwise we fall back to a per-childop
+ *      unshare(CLONE_NEWNET); EPERM (the post-drop_privs non-root
+ *      case) latches the op off for the rest of this child's
+ *      lifetime, exactly as before the gate existed.  lo-only (no
+ *      veth peer day 1) keeps real two-endpoint datapaths out of
+ *      reach -- this op is single-socket control-plane churn and is
+ *      not affected; a veth-pair follow-up will lift the limit for
+ *      datapath-driven ops.
  *   2. Open `mon` socket: AF_NETLINK / NETLINK_ROUTE, O_CLOEXEC,
  *      SO_RCVTIMEO=1s, bind with nl_groups carrying a random subset
  *      of RTMGRP_LINK | RTMGRP_IPV4_IFADDR | RTMGRP_IPV6_IFADDR |
@@ -114,18 +125,24 @@ static const __u32 monitor_group_ids[] = {
 };
 #define NR_MONITOR_GROUPS	(sizeof(monitor_group_ids) / sizeof(monitor_group_ids[0]))
 
-/* Latched per-child: unshare(CLONE_NEWNET) returned EPERM (or any
- * other fatal error) once.  Trinity doesn't grant CAP_SYS_ADMIN
- * inside the host namespace under default execution, and we MUST
- * NOT touch the host's main routing table -- so when we can't enter
- * a private netns we permanently disable the op for this child. */
+/* Latched per-child on the fallback path only: shm->isolation.net_ready
+ * was false and the per-childop unshare(CLONE_NEWNET) then returned
+ * EPERM (or any other fatal error).  Trinity doesn't grant
+ * CAP_SYS_ADMIN inside the host namespace under default execution, and
+ * we MUST NOT touch the host's main routing table -- so when we can't
+ * enter a private netns we permanently disable the op for this child.
+ * Never latches when the parent provisioned the netns up front (we
+ * already inherit it via fork() and never attempt the per-childop
+ * unshare). */
 static bool ns_unsupported;
 
-/* Latched once a successful unshare puts us in a private netns.
- * The trinity child process is long-lived; we only need to unshare
- * once and inherit the private namespace across subsequent
- * invocations.  Re-unsharing each call would just leak namespaces. */
-static bool ns_unshared;
+/* Latched once this child has a private netns to operate in -- either
+ * inherited from the parent (shm->isolation.net_ready) or obtained via
+ * a successful per-childop unshare(CLONE_NEWNET) on the fallback path.
+ * The trinity child process is long-lived; we only need to confirm the
+ * private namespace once and reuse it across subsequent invocations.
+ * Re-unsharing each call would just leak namespaces. */
+static bool ns_ready;
 
 /*
  * Build & send RTM_NEWLINK creating a dummy dev named `name`.  Returns
@@ -267,16 +284,25 @@ struct netlink_monitor_race_iter_ctx {
 };
 
 /*
- * Phase: per-child netns setup.  Unshares CLONE_NEWNET the first time
- * through and latches ns_unsupported on EPERM / failure so the rest of
- * the child's lifetime pays the EFAIL once.  Returns 0 on success; -1
- * means caller should return true immediately (no fds were opened, so
- * no cleanup is needed).
+ * Phase: per-child netns setup.  Gated on shm->isolation.net_ready:
+ * when the parent provisioned the netns at startup we inherit it via
+ * fork() (lo already UP, 127.0.0.1/::1 already assigned) and just
+ * latch ns_ready.  Otherwise we fall back to a per-childop
+ * unshare(CLONE_NEWNET) -- the pre-isolation code path, unchanged
+ * byte-for-byte: EPERM (post-drop_privs non-root) latches
+ * ns_unsupported so the rest of the child's lifetime pays the EFAIL
+ * once.  Returns 0 on success; -1 means caller should return true
+ * immediately (no fds were opened, so no cleanup is needed).
  */
 static int netlink_monitor_race_iter_setup_netns(void)
 {
-	if (ns_unshared)
+	if (ns_ready)
 		return 0;
+
+	if (__atomic_load_n(&shm->isolation.net_ready, __ATOMIC_RELAXED)) {
+		ns_ready = true;
+		return 0;
+	}
 
 	if (unshare(CLONE_NEWNET) < 0) {
 		ns_unsupported = true;
@@ -284,7 +310,7 @@ static int netlink_monitor_race_iter_setup_netns(void)
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
-	ns_unshared = true;
+	ns_ready = true;
 	return 0;
 }
 
