@@ -14,7 +14,7 @@
 
 static unsigned long msgctl_cmds[] = {
 	IPC_STAT, IPC_SET, IPC_RMID, IPC_INFO,
-	MSG_INFO, MSG_STAT,
+	MSG_INFO, MSG_STAT, MSG_STAT_ANY,
 };
 
 static void sanitise_msgctl(struct syscallrecord *rec)

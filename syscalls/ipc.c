@@ -36,17 +36,17 @@ static unsigned long ipc_calls[] = {
 static int sem_cmds[] = {
 	IPC_STAT, IPC_SET, IPC_RMID, IPC_INFO,
 	GETVAL, GETALL, GETNCNT, GETZCNT, GETPID,
-	SETVAL, SETALL, SEM_INFO, SEM_STAT,
+	SETVAL, SETALL, SEM_INFO, SEM_STAT, SEM_STAT_ANY,
 };
 
 static int msg_cmds[] = {
 	IPC_STAT, IPC_SET, IPC_RMID, IPC_INFO,
-	MSG_INFO, MSG_STAT,
+	MSG_INFO, MSG_STAT, MSG_STAT_ANY,
 };
 
 static int shm_cmds[] = {
 	IPC_STAT, IPC_SET, IPC_RMID, IPC_INFO,
-	SHM_INFO, SHM_STAT, SHM_LOCK, SHM_UNLOCK,
+	SHM_INFO, SHM_STAT, SHM_STAT_ANY, SHM_LOCK, SHM_UNLOCK,
 };
 
 static void sanitise_ipc(struct syscallrecord *rec)
