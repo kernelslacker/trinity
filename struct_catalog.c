@@ -4998,6 +4998,48 @@ static const struct struct_field sctp_sndrcvinfo_fields[] = {
 	FIELDX(struct sctp_sndrcvinfo, sinfo_assoc_id, FT_RAW,
 	       .mutate_weight = 60),
 };
+
+/*
+ * struct sctp_event_subscribe -- IPPROTO_SCTP / SCTP_EVENTS.  Legacy
+ * notification-subscription bitmap (RFC 6458's older event-subscribe
+ * predecessor to SCTP_EVENT) consisting of one __u8 boolean per
+ * notification type.  Each field is FT_RANGE [0, 1] so the per-field
+ * splat lands on the in-spec 0/1 values rather than random byte noise;
+ * the kernel's setsockopt parser tolerates any non-zero byte as "on",
+ * but staying inside [0, 1] keeps the request realistic and gives
+ * struct_field_for_cmp() a clean constant to attribute against
+ * KCOV-CMP.  Bespoke build_sctp_events() zero-fills as a miss-fallback.
+ */
+static const struct struct_field sctp_event_subscribe_fields[] = {
+	FIELDX(struct sctp_event_subscribe, sctp_data_io_event, FT_RANGE,
+	       .u.range = { 0, 1 }, .mutate_weight = 50),
+	FIELDX(struct sctp_event_subscribe, sctp_association_event, FT_RANGE,
+	       .u.range = { 0, 1 }, .mutate_weight = 50),
+	FIELDX(struct sctp_event_subscribe, sctp_address_event, FT_RANGE,
+	       .u.range = { 0, 1 }, .mutate_weight = 50),
+	FIELDX(struct sctp_event_subscribe, sctp_send_failure_event, FT_RANGE,
+	       .u.range = { 0, 1 }, .mutate_weight = 50),
+	FIELDX(struct sctp_event_subscribe, sctp_peer_error_event, FT_RANGE,
+	       .u.range = { 0, 1 }, .mutate_weight = 50),
+	FIELDX(struct sctp_event_subscribe, sctp_shutdown_event, FT_RANGE,
+	       .u.range = { 0, 1 }, .mutate_weight = 50),
+	FIELDX(struct sctp_event_subscribe, sctp_partial_delivery_event, FT_RANGE,
+	       .u.range = { 0, 1 }, .mutate_weight = 50),
+	FIELDX(struct sctp_event_subscribe, sctp_adaptation_layer_event, FT_RANGE,
+	       .u.range = { 0, 1 }, .mutate_weight = 50),
+	FIELDX(struct sctp_event_subscribe, sctp_authentication_event, FT_RANGE,
+	       .u.range = { 0, 1 }, .mutate_weight = 50),
+	FIELDX(struct sctp_event_subscribe, sctp_sender_dry_event, FT_RANGE,
+	       .u.range = { 0, 1 }, .mutate_weight = 50),
+	FIELDX(struct sctp_event_subscribe, sctp_stream_reset_event, FT_RANGE,
+	       .u.range = { 0, 1 }, .mutate_weight = 50),
+	FIELDX(struct sctp_event_subscribe, sctp_assoc_reset_event, FT_RANGE,
+	       .u.range = { 0, 1 }, .mutate_weight = 50),
+	FIELDX(struct sctp_event_subscribe, sctp_stream_change_event, FT_RANGE,
+	       .u.range = { 0, 1 }, .mutate_weight = 50),
+	FIELDX(struct sctp_event_subscribe, sctp_send_failure_event_event, FT_RANGE,
+	       .u.range = { 0, 1 }, .mutate_weight = 50),
+};
 #endif
 
 /* ------------------------------------------------------------------ */
@@ -5458,6 +5500,12 @@ const struct struct_desc struct_catalog[] = {
 		.struct_size	= sizeof(struct sctp_sndrcvinfo),
 		.fields		= sctp_sndrcvinfo_fields,
 		.num_fields	= ARRAY_SIZE(sctp_sndrcvinfo_fields),
+	},
+	[SC_SCTP_EVENT_SUBSCRIBE] = {
+		.name		= "sctp_event_subscribe",
+		.struct_size	= sizeof(struct sctp_event_subscribe),
+		.fields		= sctp_event_subscribe_fields,
+		.num_fields	= ARRAY_SIZE(sctp_event_subscribe_fields),
 	},
 #endif
 };
@@ -6441,6 +6489,13 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 		.discrim_value		= IPPROTO_SCTP,
 		.discrim2_arg_idx	= 3,
 		.discrim2_value		= SCTP_DEFAULT_SEND_PARAM,
+	},
+	{
+		"setsockopt", 4, &struct_catalog[SC_SCTP_EVENT_SUBSCRIBE],
+		.discrim_arg_idx	= 2,
+		.discrim_value		= IPPROTO_SCTP,
+		.discrim2_arg_idx	= 3,
+		.discrim2_value		= SCTP_EVENTS,
 	},
 #endif
 	/*
