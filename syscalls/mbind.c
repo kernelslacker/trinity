@@ -23,6 +23,9 @@
 #ifndef MPOL_WEIGHTED_INTERLEAVE
 #define MPOL_WEIGHTED_INTERLEAVE 6	/* 6.9+ */
 #endif
+#ifndef MPOL_F_NUMA_BALANCING
+#define MPOL_F_NUMA_BALANCING (1 << 13)	/* 5.12+ */
+#endif
 
 #ifndef MPOL_MF_LAZY
 #define MPOL_MF_LAZY (1 << 3)	/* lazy migrate-on-fault */
@@ -83,7 +86,7 @@ static unsigned long mbind_modes[] = {
 
 static unsigned long mbind_flags[] = {
 	MPOL_MF_STRICT, MPOL_MF_MOVE, MPOL_MF_MOVE_ALL, MPOL_MF_LAZY,
-	MPOL_F_STATIC_NODES, MPOL_F_RELATIVE_NODES,
+	MPOL_F_STATIC_NODES, MPOL_F_RELATIVE_NODES, MPOL_F_NUMA_BALANCING,
 };
 
 struct syscallentry syscall_mbind = {
