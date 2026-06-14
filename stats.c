@@ -6895,6 +6895,126 @@ static void dump_stats_kcov_block(void)
 			}
 		}
 
+		/* per-syscall +
+		 * per-childop local-vs-remote PC yield, top-N by combined
+		 * call count.  Lets the operator see whether a static
+		 * remote-sampling policy is spending samples on a mode that
+		 * yields no fresh edges -- the global remote_calls counter
+		 * above can't answer that question.  Silent when no slot has
+		 * any combined activity; columns: calls / edge-calls /
+		 * raw-edge-count per mode. */
+		{
+			unsigned int lr_top_nr[10];
+			unsigned long lr_top_total[10];
+			unsigned int lr_top_count = 0;
+
+			memset(lr_top_total, 0, sizeof(lr_top_total));
+			for (i = 0; i < nr_syscalls_to_scan; i++) {
+				unsigned long lc = __atomic_load_n(
+					&kcov_shm->local_pc_calls[i],
+					__ATOMIC_RELAXED);
+				unsigned long rc = __atomic_load_n(
+					&kcov_shm->remote_pc_calls[i],
+					__ATOMIC_RELAXED);
+				unsigned long tot = lc + rc;
+
+				if (tot == 0)
+					continue;
+				topn_push(lr_top_total, lr_top_nr,
+					  &lr_top_count, 10, tot, i);
+			}
+			if (lr_top_count > 0) {
+				output(0, "Local vs remote PC yield per syscall (top by combined calls):\n");
+				output(0, "  %-24s %10s %10s %10s %10s %10s %10s\n",
+				       "syscall",
+				       "loc_calls", "loc_eCalls", "loc_eCount",
+				       "rem_calls", "rem_eCalls", "rem_eCount");
+				for (j = 0; j < lr_top_count; j++) {
+					struct syscallentry *entry =
+						table[lr_top_nr[j]].entry;
+					const char *name = entry ? entry->name : "???";
+					unsigned int nr = lr_top_nr[j];
+					unsigned long lc = __atomic_load_n(
+						&kcov_shm->local_pc_calls[nr],
+						__ATOMIC_RELAXED);
+					unsigned long lec = __atomic_load_n(
+						&kcov_shm->local_pc_edge_calls[nr],
+						__ATOMIC_RELAXED);
+					unsigned long len_ = __atomic_load_n(
+						&kcov_shm->local_pc_edge_count[nr],
+						__ATOMIC_RELAXED);
+					unsigned long rc = __atomic_load_n(
+						&kcov_shm->remote_pc_calls[nr],
+						__ATOMIC_RELAXED);
+					unsigned long rec = __atomic_load_n(
+						&kcov_shm->remote_pc_edge_calls[nr],
+						__ATOMIC_RELAXED);
+					unsigned long ren = __atomic_load_n(
+						&kcov_shm->remote_pc_edge_count[nr],
+						__ATOMIC_RELAXED);
+
+					output(0, "  %-24s %10lu %10lu %10lu %10lu %10lu %10lu\n",
+					       name, lc, lec, len_, rc, rec, ren);
+				}
+			}
+		}
+		{
+			unsigned int lr_top_op[10];
+			unsigned long lr_top_total[10];
+			unsigned int lr_top_count = 0;
+			unsigned int op;
+
+			memset(lr_top_total, 0, sizeof(lr_top_total));
+			for (op = 0; op < KCOV_CHILDOP_NR_MAX; op++) {
+				unsigned long lc = __atomic_load_n(
+					&kcov_shm->childop_local_pc_calls[op],
+					__ATOMIC_RELAXED);
+				unsigned long rc = __atomic_load_n(
+					&kcov_shm->childop_remote_pc_calls[op],
+					__ATOMIC_RELAXED);
+				unsigned long tot = lc + rc;
+
+				if (tot == 0)
+					continue;
+				topn_push(lr_top_total, lr_top_op,
+					  &lr_top_count, 10, tot, op);
+			}
+			if (lr_top_count > 0) {
+				output(0, "Local vs remote PC yield per childop (top by combined calls):\n");
+				output(0, "  %-24s %10s %10s %10s %10s %10s %10s\n",
+				       "childop",
+				       "loc_calls", "loc_eCalls", "loc_eCount",
+				       "rem_calls", "rem_eCalls", "rem_eCount");
+				for (j = 0; j < lr_top_count; j++) {
+					unsigned int op_id = lr_top_op[j];
+					char opname[24];
+					unsigned long lc = __atomic_load_n(
+						&kcov_shm->childop_local_pc_calls[op_id],
+						__ATOMIC_RELAXED);
+					unsigned long lec = __atomic_load_n(
+						&kcov_shm->childop_local_pc_edge_calls[op_id],
+						__ATOMIC_RELAXED);
+					unsigned long len_ = __atomic_load_n(
+						&kcov_shm->childop_local_pc_edge_count[op_id],
+						__ATOMIC_RELAXED);
+					unsigned long rc = __atomic_load_n(
+						&kcov_shm->childop_remote_pc_calls[op_id],
+						__ATOMIC_RELAXED);
+					unsigned long rec = __atomic_load_n(
+						&kcov_shm->childop_remote_pc_edge_calls[op_id],
+						__ATOMIC_RELAXED);
+					unsigned long ren = __atomic_load_n(
+						&kcov_shm->childop_remote_pc_edge_count[op_id],
+						__ATOMIC_RELAXED);
+
+					snprintf(opname, sizeof(opname),
+						 "op_type_%u", op_id);
+					output(0, "  %-24s %10lu %10lu %10lu %10lu %10lu %10lu\n",
+					       opname, lc, lec, len_, rc, rec, ren);
+				}
+			}
+		}
+
 		/* Per-syscall KCOV diagnostic blocks.  See kcov_diag_emit_block:
 		 * one top-20-non-zero block per counter, alphabetical by
 		 * counter name, silent when no syscall has a non-zero

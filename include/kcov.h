@@ -762,6 +762,37 @@ struct kcov_shared {
 	 * counter for the periodic stats dump so the warm-known signal
 	 * is visible without iterating MAX_NR_SYSCALL slots. */
 	unsigned long total_warm_known_hits;
+	/* Per-syscall split of kcov_collect() activity by collection mode.
+	 * A remote-sampled syscall lands in a DIFFERENT mode (the kernel
+	 * puts the task in KCOV_MODE_REMOTE and drops synchronous local
+	 * PC), so a static remote-sampling policy can spend half a
+	 * syscall's samples on a mode with no annotated producer --
+	 * invisible today behind the single global remote_calls counter.
+	 * local_pc_calls / remote_pc_calls count every kcov_collect()
+	 * invocation in that mode (apples-to-apples against
+	 * per_syscall_calls[] which still tracks both modes summed).
+	 * local_pc_edge_calls / remote_pc_edge_calls count calls that
+	 * produced >= 1 fresh edge (call-count semantics matching
+	 * per_syscall_edges[]).  local_pc_edge_count / remote_pc_edge_count
+	 * carry the raw fresh-edge tally so a single big call is not
+	 * flattened to the same weight as a tiny one.  All bumped in
+	 * kcov_collect() keyed on kc->remote_mode. */
+	unsigned long local_pc_calls[MAX_NR_SYSCALL];
+	unsigned long remote_pc_calls[MAX_NR_SYSCALL];
+	unsigned long local_pc_edge_calls[MAX_NR_SYSCALL];
+	unsigned long remote_pc_edge_calls[MAX_NR_SYSCALL];
+	unsigned long local_pc_edge_count[MAX_NR_SYSCALL];
+	unsigned long remote_pc_edge_count[MAX_NR_SYSCALL];
+	/* Per-childop mirror of the local/remote PC split above, sized
+	 * to KCOV_CHILDOP_NR_MAX and indexed by op = nr -
+	 * CHILDOP_KCOV_NR_BASE inside kcov_collect().  Same semantics as
+	 * the per-syscall arrays; same bump keyed on kc->remote_mode. */
+	unsigned long childop_local_pc_calls[KCOV_CHILDOP_NR_MAX];
+	unsigned long childop_remote_pc_calls[KCOV_CHILDOP_NR_MAX];
+	unsigned long childop_local_pc_edge_calls[KCOV_CHILDOP_NR_MAX];
+	unsigned long childop_remote_pc_edge_calls[KCOV_CHILDOP_NR_MAX];
+	unsigned long childop_local_pc_edge_count[KCOV_CHILDOP_NR_MAX];
+	unsigned long childop_remote_pc_edge_count[KCOV_CHILDOP_NR_MAX];
 	/* Per-syscall 8-bucket errno histogram.  Sibling to the
 	 * per_syscall_edges/calls counters above: those track coverage-side
 	 * activity per syscall; this tracks the shape of what the kernel
