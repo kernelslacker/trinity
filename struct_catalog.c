@@ -57,6 +57,9 @@
 #ifdef USE_VSOCK
 #include <linux/vm_sockets.h>
 #endif
+#ifdef USE_X25
+#include <linux/x25.h>
+#endif
 #ifdef USE_LLC
 #include <linux/llc.h>
 #endif
@@ -1612,6 +1615,9 @@ static const unsigned long sockaddr_storage_af_vocab[] = {
 #ifdef USE_VSOCK
 	AF_VSOCK,
 #endif
+#ifdef USE_X25
+	AF_X25,
+#endif
 #ifdef USE_LLC
 	AF_LLC,
 #endif
@@ -1737,6 +1743,21 @@ static const struct struct_field sockaddr_vm_variant_fields[] = {
 			    .n    = ARRAY_SIZE(vsock_cid_vocab) }),
 	FIELDX(struct sockaddr_vm, svm_flags, FT_FLAGS,
 	       .u.flags.mask = VMADDR_FLAG_TO_HOST),
+};
+#endif
+
+#ifdef USE_X25
+/*
+ * AF_X25 (sockaddr_x25) -- ITU-T X.25 packet-switched endpoint.
+ * The only payload member is sx25_addr.x25_addr, a 16-byte buffer
+ * carrying an ASCII X.121 address (up to 15 digits plus NUL).  The
+ * kernel walks the bytes via strncmp against the bound listener and
+ * does not enforce digit-only content at bind, so FT_RAW covers the
+ * dispatch surface without a digit vocabulary.  sx25_family is
+ * omitted; the shared-head pass already writes ss_family.
+ */
+static const struct struct_field sockaddr_x25_variant_fields[] = {
+	FIELD(struct sockaddr_x25, sx25_addr.x25_addr),
 };
 #endif
 
@@ -2030,6 +2051,15 @@ static const struct union_variant sockaddr_storage_variants[] = {
 		.fields		 = sockaddr_vm_variant_fields,
 		.num_fields	 = ARRAY_SIZE(sockaddr_vm_variant_fields),
 		.effective_size	 = sizeof(struct sockaddr_vm),
+	},
+#endif
+#ifdef USE_X25
+	{
+		.discrim_value	 = AF_X25,
+		.name		 = "AF_X25",
+		.fields		 = sockaddr_x25_variant_fields,
+		.num_fields	 = ARRAY_SIZE(sockaddr_x25_variant_fields),
+		.effective_size	 = sizeof(struct sockaddr_x25),
 	},
 #endif
 #ifdef USE_LLC
