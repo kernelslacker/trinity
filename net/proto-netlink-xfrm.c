@@ -506,6 +506,7 @@ enum xfrm_ae_ftype_t {
 
 struct xfrm_sa_track {
 	bool			used;
+	__u8			evict_fail;	/* consecutive DELSA failures */
 	__u16			family;		/* AF_INET / AF_INET6 */
 	__u8			proto;		/* IPPROTO_ESP / AH / COMP */
 	xfrm_address_t		daddr;
@@ -766,17 +767,24 @@ static int sa_ring_push(int fd, const struct xfrm_sa_track *entry)
 	if (slot->used) {
 		int rc = xfrm_emit_delsa_for(fd, slot);
 
-		/* Eviction failed -- leave the slot intact so we keep
-		 * tracking the prior SA.  The next push attempt will
-		 * retry DELSA on this same slot; do not overwrite or
-		 * advance the cursor here, otherwise the prior SA leaks
-		 * into the kernel SAD with no remaining track entry. */
-		if (rc != 0)
-			return rc;
+		/* Eviction failed.  Give the SA a few ticks to become
+		 * deletable before clobbering the slot -- a transient
+		 * -EBUSY / -ESRCH window is normal.  After three
+		 * consecutive failures the slot is wedged forever and
+		 * the ring loses that coverage permanently, so
+		 * force-overwrite; the kernel SAD is reset on netns
+		 * teardown anyway. */
+		if (rc != 0) {
+			slot->evict_fail++;
+			if (slot->evict_fail < 3)
+				return rc;
+			/* fall through to force-overwrite */
+		}
 	}
 
 	*slot = *entry;
 	slot->used = true;
+	slot->evict_fail = 0;
 	sa_ring_next = (sa_ring_next + 1) % NR_SA_RING_SLOTS;
 	return 0;
 }
