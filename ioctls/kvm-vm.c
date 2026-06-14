@@ -17,12 +17,18 @@
 
 #ifdef USE_KVM
 
+#include <stdlib.h>
+#include <string.h>
 #include <linux/ioctl.h>
 #include <linux/kvm.h>
 
 #include "ioctls.h"
 #include "objects.h"
+#include "random.h"
+#include "rnd.h"
+#include "sanitise.h"
 #include "shm.h"
+#include "syscall.h"
 #include "utils.h"
 
 static int kvm_vm_fd_test(int fd, const struct stat *st __attribute__((unused)))
@@ -107,10 +113,150 @@ static const struct ioctl kvm_vm_ioctls[] = {
 #endif
 };
 
+/*
+ * Per-VM ioctl struct-arg seeding.  Mirrors the kvm_vcpu_sanitise() pattern:
+ * delegate ioctl selection to pick_random_ioctl(), then override rec->a3 for
+ * the cmds whose argument is a struct.  Tier 1's _IOC_SIZE-based generator
+ * gives a header-sized writable buffer, which under-sizes the flexible array
+ * tail on kvm_irq_routing (kernel walks `nr` entries past the buffer) and
+ * leaves the fixed-size structs unconstrained (random slot indices outside
+ * KVM_USER_MEM_SLOTS, unaligned guest_phys_addr / memory_size, etc), so
+ * almost every dispatch bounces on -EINVAL before the kernel touches any
+ * interesting code.
+ */
+#define KVM_FUZZ_PAGE_SIZE	0x1000UL
+#define KVM_FUZZ_MEM_SLOTS	32
+#define KVM_FUZZ_GPA_LIMIT	(1UL << 30)
+#define KVM_FUZZ_MAX_MEM_SIZE	(16UL << 20)
+#define KVM_FUZZ_MAX_ROUTING	16
+
+static void sanitise_kvm_user_memory_region(struct syscallrecord *rec)
+{
+	struct kvm_userspace_memory_region *m;
+	void *ua;
+
+	m = get_writable_address(sizeof(*m));
+	if (m == NULL)
+		return;
+
+	ua = get_writable_address(KVM_FUZZ_PAGE_SIZE);
+	if (ua == NULL)
+		return;
+
+	m->slot = rnd_modulo_u32(KVM_FUZZ_MEM_SLOTS);
+	m->flags = rnd_modulo_u32(2) ? 0 : KVM_MEM_LOG_DIRTY_PAGES;
+	m->guest_phys_addr = (rnd_u64() % KVM_FUZZ_GPA_LIMIT)
+			   & ~(KVM_FUZZ_PAGE_SIZE - 1);
+	m->memory_size = (rnd_u64() % KVM_FUZZ_MAX_MEM_SIZE)
+		       & ~(KVM_FUZZ_PAGE_SIZE - 1);
+	m->userspace_addr = (__u64)(unsigned long)ua;
+
+	rec->a3 = (unsigned long)m;
+}
+
+static void sanitise_kvm_irq_level(struct syscallrecord *rec)
+{
+	struct kvm_irq_level *l;
+
+	l = get_writable_address(sizeof(*l));
+	if (l == NULL)
+		return;
+
+	generate_rand_bytes((unsigned char *)l, sizeof(*l));
+	l->irq = rnd_modulo_u32(256);
+	l->level = rnd_modulo_u32(2);
+
+	rec->a3 = (unsigned long)l;
+}
+
+static void sanitise_kvm_irq_routing(struct syscallrecord *rec)
+{
+	struct kvm_irq_routing *r;
+	unsigned long sz;
+	__u32 nr;
+
+	nr = rnd_modulo_u32(KVM_FUZZ_MAX_ROUTING + 1);
+	sz = sizeof(struct kvm_irq_routing)
+	   + nr * sizeof(struct kvm_irq_routing_entry);
+
+	r = get_writable_address(sz);
+	if (r == NULL)
+		return;
+
+	generate_rand_bytes((unsigned char *)r, sz);
+	r->nr = nr;
+	r->flags = 0;
+
+	rec->a3 = (unsigned long)r;
+}
+
+static void sanitise_kvm_pit_config(struct syscallrecord *rec)
+{
+	struct kvm_pit_config *c;
+
+	c = get_writable_address(sizeof(*c));
+	if (c == NULL)
+		return;
+
+	memset(c, 0, sizeof(*c));
+	c->flags = rnd_modulo_u32(2) ? 0 : KVM_PIT_SPEAKER_DUMMY;
+
+	rec->a3 = (unsigned long)c;
+}
+
+static void sanitise_kvm_u64_addr(struct syscallrecord *rec)
+{
+	__u64 *p;
+
+	p = get_writable_address(sizeof(*p));
+	if (p == NULL)
+		return;
+
+	*p = (rnd_u64() % KVM_FUZZ_GPA_LIMIT) & ~(KVM_FUZZ_PAGE_SIZE - 1);
+	rec->a3 = (unsigned long)p;
+}
+
+static void kvm_vm_sanitise(const struct ioctl_group *grp,
+			    struct syscallrecord *rec)
+{
+	pick_random_ioctl(grp, rec);
+
+	switch (rec->a2) {
+	case KVM_SET_USER_MEMORY_REGION:
+		sanitise_kvm_user_memory_region(rec);
+		break;
+	case KVM_IRQ_LINE:
+	case KVM_IRQ_LINE_STATUS:
+		sanitise_kvm_irq_level(rec);
+		break;
+#ifdef X86
+	case KVM_SET_GSI_ROUTING:
+		sanitise_kvm_irq_routing(rec);
+		break;
+#endif
+	case KVM_CREATE_PIT2:
+		sanitise_kvm_pit_config(rec);
+		break;
+	case KVM_SET_IDENTITY_MAP_ADDR:
+		sanitise_kvm_u64_addr(rec);
+		break;
+	case KVM_SET_TSS_ADDR:
+		/* _IO encoding: arg is the address itself, not a pointer. */
+		rec->a3 = (rnd_u64() % KVM_FUZZ_GPA_LIMIT)
+			& ~(KVM_FUZZ_PAGE_SIZE - 1);
+		break;
+	default:
+		break;
+	}
+
+	__atomic_add_fetch(&shm->stats.kvm_vm_ioctls_dispatched, 1,
+			   __ATOMIC_RELAXED);
+}
+
 static const struct ioctl_group kvm_vm_grp = {
 	.name = "kvm_vm",
 	.fd_test = kvm_vm_fd_test,
-	.sanitise = pick_random_ioctl,
+	.sanitise = kvm_vm_sanitise,
 	.ioctls = kvm_vm_ioctls,
 	.ioctls_cnt = ARRAY_SIZE(kvm_vm_ioctls),
 };

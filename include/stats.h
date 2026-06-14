@@ -2382,6 +2382,15 @@ struct stats_s {
 	 * end-of-run summary. */
 	unsigned long kvm_vcpu_ioctls_dispatched;
 
+	/* Per-VM ioctl dispatches into kvm_vm_grp.  Bumped from
+	 * kvm_vm_sanitise() each time pick_random_ioctl() lands on an ioctl
+	 * destined for an OBJ_FD_KVM_VM fd.  Same diagnostic role as
+	 * kvm_vcpu_ioctls_dispatched for the per-vCPU group: a flat counter
+	 * while VM fds exist in the pool means kvm_vm_fd_test isn't winning
+	 * arbitration and the dispatch is still bouncing off /dev/kvm with
+	 * ENOTTY. */
+	unsigned long kvm_vm_ioctls_dispatched;
+
 	/* kvm_run_churn childop counters */
 	unsigned long kvm_run_invocations;		/* total KVM_RUN ioctls issued */
 	unsigned long kvm_run_exit_io;			/* exit_reason == KVM_EXIT_IO */
