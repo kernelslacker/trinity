@@ -444,8 +444,12 @@ struct syscallentry syscall_execve = {
 	.flags = EXTRA_FORK,
 };
 
+#ifndef AT_EXECVE_CHECK
+#define AT_EXECVE_CHECK 0x10000
+#endif
+
 static unsigned long execveat_flags[] = {
-	AT_EMPTY_PATH, AT_SYMLINK_NOFOLLOW,
+	AT_EMPTY_PATH, AT_SYMLINK_NOFOLLOW, AT_EXECVE_CHECK,
 };
 
 struct syscallentry syscall_execveat = {
