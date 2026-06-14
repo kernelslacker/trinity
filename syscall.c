@@ -461,8 +461,8 @@ static void do_extrafork(struct syscallrecord *rec, struct syscallentry *entry,
 	 * mmap failures in the grandchild's ASAN allocator follow from
 	 * the same CLONE_VM-shared-address-space state.  Skip the extra
 	 * fork on sanitizer builds; the regular fuzz path stays. */
-	(void)rec; (void)entry; (void)child;
-	return;
+	(void)rec; (void)entry;
+	goto out;
 #endif
 
 	extrapid = fork();
@@ -495,7 +495,7 @@ static void do_extrafork(struct syscallrecord *rec, struct syscallentry *entry,
 		 * not run because state never reaches AFTER. Free snap here. */
 		if (entry->post != NULL)
 			entry->post(rec);
-		return;
+		goto out;
 	}
 
 	/* small pause to let grandchild do some work. */
@@ -538,6 +538,18 @@ static void do_extrafork(struct syscallrecord *rec, struct syscallentry *entry,
 	if (__atomic_load_n(&rec->state, __ATOMIC_RELAXED) != AFTER &&
 	    entry->post != NULL)
 		entry->post(rec);
+
+out:
+	/* do_extrafork bypasses the kcov_enable / syscall / kcov_disable
+	 * bracket entirely -- the grandchild runs __do_syscall with
+	 * kc=NULL, so the worker's trace_buf[0] still holds the count
+	 * from the previous bracketed syscall.  Without this reset the
+	 * caller's post-call kcov_collect() would re-read that count
+	 * and re-account the prior call's PCs as EXTRA_FORK coverage,
+	 * skewing total_calls / per_syscall_calls / warm-known-hits /
+	 * diagnostics counters (rarely new bucket bits, but exactly the
+	 * accounting the observability work cares about). */
+	kcov_reset_trace_header(&child->kcov);
 }
 
 
