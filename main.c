@@ -2118,7 +2118,7 @@ static bool check_main_loop_stops(const struct timespec *epoch_start)
 
 	while (check_all_locks() == true) {
 		reap_dead_kids();
-		if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) == EXIT_REACHED_COUNT)
+		if (__atomic_load_n(&shm->exit_reason, __ATOMIC_ACQUIRE) == EXIT_REACHED_COUNT)
 			kill_all_kids();
 	}
 
@@ -2199,7 +2199,7 @@ static void run_periodic_surfaces(void)
 static void log_main_loop_exit(void)
 {
 	enum exit_reasons reason =
-		__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED);
+		__atomic_load_n(&shm->exit_reason, __ATOMIC_ACQUIRE);
 
 	switch (reason) {
 	case EXIT_UID_CHANGED: {
@@ -2323,7 +2323,7 @@ void main_loop(void)
 	output(1, "phase: fork_children\n");
 	fork_children();
 
-	while (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) == STILL_RUNNING) {
+	while (__atomic_load_n(&shm->exit_reason, __ATOMIC_ACQUIRE) == STILL_RUNNING) {
 
 		drain_child_surfaces();
 
@@ -2469,5 +2469,5 @@ void reset_epoch_state(void)
 void panic(int reason)
 {
 	__atomic_store_n(&shm->spawn_no_more, true, __ATOMIC_RELEASE);
-	__atomic_store_n(&shm->exit_reason, reason, __ATOMIC_RELAXED);
+	__atomic_store_n(&shm->exit_reason, reason, __ATOMIC_RELEASE);
 }
