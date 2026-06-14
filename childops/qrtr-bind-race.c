@@ -115,6 +115,14 @@ static void probe_qrtr(void)
  * small service-style ports (where in-tree consumers live), and any
  * 32-bit value.  The hash slot driven by these is what opens the
  * race; the numeric range is incidental.
+ *
+ * The "any 32-bit value" arm is floored at 0x4000: a fully random u32
+ * very often lands on the CTRL port (0xfffffffe) or inside the low
+ * service range [0x1, 0x80), both of which fail to bind (EPERM /
+ * already in use), so the racing siblings rarely contend on the same
+ * live port.  Restricting the random arm to the ephemeral range lets
+ * the common case bind succeed while the deliberate CTRL / service
+ * special-value coverage above is unchanged.
  */
 static uint32_t pick_port(void)
 {
@@ -124,7 +132,7 @@ static uint32_t pick_port(void)
 		return QRTR_PORT_CTRL;
 	if (r < 4)
 		return 1U + rnd_modulo_u32(0x80U);
-	return rnd_u32();
+	return 0x4000U + rnd_modulo_u32(0xfffffffeU - 0x4000U);
 }
 
 /*
