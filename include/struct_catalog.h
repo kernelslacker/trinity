@@ -364,6 +364,7 @@ enum struct_catalog_idx {
 	SC_SCTP_SACK_INFO,
 	SC_SCTP_AUTHKEYID,
 	SC_SCTP_DEFAULT_PRINFO,
+	SC_SCTP_ADD_STREAMS,
 #endif
 
 	SC_NR_ENTRIES,		/* sentinel; equals ARRAY_SIZE(struct_catalog) once both stay in lockstep */

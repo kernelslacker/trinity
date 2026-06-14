@@ -5162,6 +5162,29 @@ static const struct struct_field sctp_default_prinfo_fields[] = {
 			    ARRAY_SIZE(sctp_default_prinfo_policy_values) },
 	       .mutate_weight = 80),
 };
+
+/*
+ * struct sctp_add_streams -- IPPROTO_SCTP / SCTP_ADD_STREAMS.  RFC 6525
+ * dynamic stream reconfiguration: sas_assoc_id picks the target
+ * association (FT_RAW so the kernel's per-assoc lookup constant shows
+ * up to KCOV-CMP) while sas_instrms / sas_outstrms request how many
+ * additional inbound / outbound streams to negotiate, bounded to
+ * [0, 128] -- the kernel branches on (current + requested) overflowing
+ * 16 bits and on the peer's RECONF capability, so staying inside a
+ * realistic envelope exercises the negotiation path rather than the
+ * EINVAL early-out.  Bespoke build_sctp_add_streams() zero-fills as a
+ * miss-fallback.
+ */
+static const struct struct_field sctp_add_streams_fields[] = {
+	FIELDX(struct sctp_add_streams, sas_assoc_id, FT_RAW,
+	       .mutate_weight = 60),
+	FIELDX(struct sctp_add_streams, sas_instrms, FT_RANGE,
+	       .u.range = { 0, 128 },
+	       .mutate_weight = 60),
+	FIELDX(struct sctp_add_streams, sas_outstrms, FT_RANGE,
+	       .u.range = { 0, 128 },
+	       .mutate_weight = 60),
+};
 #endif
 
 /* ------------------------------------------------------------------ */
@@ -5652,6 +5675,12 @@ const struct struct_desc struct_catalog[] = {
 		.struct_size	= sizeof(struct sctp_default_prinfo),
 		.fields		= sctp_default_prinfo_fields,
 		.num_fields	= ARRAY_SIZE(sctp_default_prinfo_fields),
+	},
+	[SC_SCTP_ADD_STREAMS] = {
+		.name		= "sctp_add_streams",
+		.struct_size	= sizeof(struct sctp_add_streams),
+		.fields		= sctp_add_streams_fields,
+		.num_fields	= ARRAY_SIZE(sctp_add_streams_fields),
 	},
 #endif
 };
@@ -6677,6 +6706,13 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 		.discrim_value		= IPPROTO_SCTP,
 		.discrim2_arg_idx	= 3,
 		.discrim2_value		= SCTP_DEFAULT_PRINFO,
+	},
+	{
+		"setsockopt", 4, &struct_catalog[SC_SCTP_ADD_STREAMS],
+		.discrim_arg_idx	= 2,
+		.discrim_value		= IPPROTO_SCTP,
+		.discrim2_arg_idx	= 3,
+		.discrim2_value		= SCTP_ADD_STREAMS,
 	},
 #endif
 	/*
