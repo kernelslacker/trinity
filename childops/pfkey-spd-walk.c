@@ -282,7 +282,7 @@ static void pick_variant(struct spd_variant *v)
 		IPSEC_DIR_INBOUND, IPSEC_DIR_OUTBOUND, IPSEC_DIR_FWD,
 	};
 	static const uint16_t types[] = {
-		IPSEC_POLICY_DISCARD, IPSEC_POLICY_NONE, IPSEC_POLICY_BYPASS,
+		IPSEC_POLICY_DISCARD, IPSEC_POLICY_NONE,
 	};
 
 	v->dir = dirs[rnd_modulo_u32((unsigned int)(sizeof(dirs) / sizeof(dirs[0])))];
