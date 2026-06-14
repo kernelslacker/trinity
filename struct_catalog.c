@@ -5134,6 +5134,34 @@ static const struct struct_field sctp_authkeyid_fields[] = {
 	       .u.range = { 0, 8 },
 	       .mutate_weight = 60),
 };
+
+/*
+ * struct sctp_default_prinfo -- IPPROTO_SCTP / SCTP_DEFAULT_PRINFO.
+ * RFC 7496 PR-SCTP default policy carrier: pr_assoc_id selects the
+ * target association (FT_RAW so the per-assoc lookup constant shows
+ * up to KCOV-CMP), pr_value is the policy-specific lifetime / retx
+ * limit / priority cookie (FT_RAW -- semantics differ per policy and
+ * the kernel does not clamp), and pr_policy is the small 4-valued
+ * vocab the kernel branches on in sctp_set_default_prinfo() (FT_ENUM
+ * over SCTP_PR_SCTP_{NONE,TTL,RTX,PRIO} keeps the mutator inside the
+ * legal shape -- any other value is rejected with -EINVAL).  Bespoke
+ * build_sctp_default_prinfo() zero-fills as a miss-fallback.
+ */
+static const unsigned long sctp_default_prinfo_policy_values[] = {
+	SCTP_PR_SCTP_NONE, SCTP_PR_SCTP_TTL,
+	SCTP_PR_SCTP_RTX,  SCTP_PR_SCTP_PRIO,
+};
+
+static const struct struct_field sctp_default_prinfo_fields[] = {
+	FIELDX(struct sctp_default_prinfo, pr_assoc_id, FT_RAW,
+	       .mutate_weight = 60),
+	FIELDX(struct sctp_default_prinfo, pr_value, FT_RAW,
+	       .mutate_weight = 60),
+	FIELDX(struct sctp_default_prinfo, pr_policy, FT_ENUM,
+	       .u.enum_ = { sctp_default_prinfo_policy_values,
+			    ARRAY_SIZE(sctp_default_prinfo_policy_values) },
+	       .mutate_weight = 80),
+};
 #endif
 
 /* ------------------------------------------------------------------ */
@@ -5618,6 +5646,12 @@ const struct struct_desc struct_catalog[] = {
 		.struct_size	= sizeof(struct sctp_authkeyid),
 		.fields		= sctp_authkeyid_fields,
 		.num_fields	= ARRAY_SIZE(sctp_authkeyid_fields),
+	},
+	[SC_SCTP_DEFAULT_PRINFO] = {
+		.name		= "sctp_default_prinfo",
+		.struct_size	= sizeof(struct sctp_default_prinfo),
+		.fields		= sctp_default_prinfo_fields,
+		.num_fields	= ARRAY_SIZE(sctp_default_prinfo_fields),
 	},
 #endif
 };
@@ -6636,6 +6670,13 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 		.discrim2_arg_idx	= 3,
 		.discrim2_values	= setsockopt_sctp_authkeyid_optnames,
 		.num_discrim2_values	= ARRAY_SIZE(setsockopt_sctp_authkeyid_optnames),
+	},
+	{
+		"setsockopt", 4, &struct_catalog[SC_SCTP_DEFAULT_PRINFO],
+		.discrim_arg_idx	= 2,
+		.discrim_value		= IPPROTO_SCTP,
+		.discrim2_arg_idx	= 3,
+		.discrim2_value		= SCTP_DEFAULT_PRINFO,
 	},
 #endif
 	/*
