@@ -384,6 +384,7 @@ void clean_childdata(struct childdata *child)
 	child->seed = 0;
 	__atomic_store_n(&child->kill_count, 0, __ATOMIC_RELAXED);
 	child->kill_in_flight = false;
+	child->dstate_diag_dumped = false;
 	child->dontkillme = false;
 	child->xcpu_count = 0;
 	child->op_nr = 0;

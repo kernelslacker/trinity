@@ -357,6 +357,15 @@ struct childdata {
 	 * re-fires the banner every cycle until kill_count saturates. */
 	bool kill_in_flight;
 
+	/* One-shot latch for the D-state diagnostic snapshot fired by
+	 * is_child_making_progress() when it first observes the child in
+	 * TASK_UNINTERRUPTIBLE.  Set true after the snapshot lands; cleared
+	 * on reap (clean_childdata) so a fresh occupant of this slot can
+	 * snapshot its own first wedge.  Independent of kill_in_flight so a
+	 * future change to the kill-cadence gating cannot accidentally
+	 * un-throttle the snapshot. */
+	bool dstate_diag_dumped;
+
 	bool dontkillme;	/* provide temporary protection from the reaper. */
 
 	/* Hybrid bandit/explorer split: true for the explorer slice
