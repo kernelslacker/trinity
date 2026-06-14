@@ -364,6 +364,7 @@ check_header linux/sctp.h USE_SCTP
 check_header linux/x25.h USE_X25
 check_header linux/phonet.h USE_PHONET
 check_header linux/ax25.h USE_AX25
+check_header linux/atalk.h USE_ATALK
 
 #############################################################################################
 # Optional: guard-page armour for alloc_shared() regions.  Off-by-default
