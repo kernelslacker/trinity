@@ -67,14 +67,14 @@ CFLAGS += -Wstrict-aliasing=3
 endif
 
 # `make asan` (also `make debug` for backwards-compat) enables
-# AddressSanitizer with -Og/-ggdb3 debuginfo.  ASAN would have caught
-# the 2026-04-22 freelist bucket-overrun (5f6b9d611a7e) immediately as
-# a heap-buffer-overflow instead of letting it manifest later as a wild
-# write.  Frame pointers stay omitted because the 32-on-64
-# DO_32_SYSCALL inline asm in include/arch-x86-64.h clobbers %rbp;
-# ASAN still produces good backtraces from the DWARF info -ggdb3 emits.
-# The trailing -Og overrides the earlier -O2; _FORTIFY_SOURCE is
-# undefined because it requires optimization.
+# AddressSanitizer with -Og/-ggdb3 debuginfo.  AddressSanitizer catches
+# shared-slab freelist overflows at the write site instead of letting
+# them surface later as unrelated wild writes.  Frame pointers stay
+# omitted because the 32-on-64 DO_32_SYSCALL inline asm in
+# include/arch-x86-64.h clobbers %rbp; ASAN still produces good
+# backtraces from the DWARF info -ggdb3 emits.  The trailing -Og
+# overrides the earlier -O2; _FORTIFY_SOURCE is undefined because it
+# requires optimization.
 ifneq ($(filter asan debug,$(MAKECMDGOALS)),)
 CFLAGS += -U_FORTIFY_SOURCE -fsanitize=address -Og -ggdb3
 LDFLAGS += -fsanitize=address
