@@ -22,6 +22,12 @@
 #ifndef MPOL_F_NUMA_BALANCING
 #define MPOL_F_NUMA_BALANCING (1 << 13)	/* 5.12+ */
 #endif
+#ifndef MPOL_F_STATIC_NODES
+#define MPOL_F_STATIC_NODES (1 << 15)
+#endif
+#ifndef MPOL_F_RELATIVE_NODES
+#define MPOL_F_RELATIVE_NODES (1 << 14)
+#endif
 
 static unsigned long mempolicy_modes[] = {
 	MPOL_DEFAULT, MPOL_PREFERRED, MPOL_BIND,
@@ -65,6 +71,14 @@ static void sanitise_set_mempolicy(struct syscallrecord *rec)
 	 * worth exercising. */
 	if (ONE_IN(8))
 		rec->a1 |= MPOL_F_NUMA_BALANCING;
+
+	/* MPOL_F_STATIC_NODES and MPOL_F_RELATIVE_NODES are mutually
+	 * exclusive nodemask-interpretation flags; OR one in occasionally
+	 * to exercise both the accepted and EINVAL paths. */
+	if (ONE_IN(8))
+		rec->a1 |= MPOL_F_STATIC_NODES;
+	if (ONE_IN(8))
+		rec->a1 |= MPOL_F_RELATIVE_NODES;
 }
 
 struct syscallentry syscall_set_mempolicy = {
