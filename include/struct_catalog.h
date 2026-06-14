@@ -360,6 +360,7 @@ enum struct_catalog_idx {
 	SC_SCTP_SNDINFO,
 	SC_SCTP_SNDRCVINFO,
 	SC_SCTP_EVENT_SUBSCRIBE,
+	SC_SCTP_AUTHCHUNK,
 #endif
 
 	SC_NR_ENTRIES,		/* sentinel; equals ARRAY_SIZE(struct_catalog) once both stay in lockstep */
