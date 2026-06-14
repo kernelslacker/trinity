@@ -5688,6 +5688,30 @@ static const struct struct_field sctp_probeinterval_fields[] = {
 	       .u.range = { 0, 60000 },
 	       .mutate_weight = 60),
 };
+
+/*
+ * struct sctp_prim -- IPPROTO_SCTP / { SCTP_PRIMARY_ADDR,
+ * SCTP_SET_PEER_PRIMARY_ADDR }.  Two setsockopt names share one
+ * payload shape: a struct sctp_prim (also spelled sctp_setprim) made
+ * of an sctp_assoc_t association selector and a sockaddr_storage
+ * naming the peer address to promote.  The struct is declared
+ * __attribute__((packed, aligned(4))), so ssp_addr sits at offset 4
+ * with no trailing padding; FIELD()/FIELDX() pick up that layout via
+ * offsetof, no manual offset arithmetic required.  ssp_assoc_id
+ * (FT_RAW) lets the per-assoc lookup constant flow to KCOV-CMP.
+ * ssp_addr is opaque to the kernel's address-match path (it's
+ * compared against the live peer list rather than parsed field-wise),
+ * so a single FT_RAW splat over the whole sockaddr_storage is the
+ * right granularity; field-splitting it would only give KCOV-CMP
+ * misleading sub-field offsets for a value the kernel treats as
+ * atomic.  Bespoke build_sctp_prim() zero-fills as a miss-fallback.
+ */
+static const struct struct_field sctp_prim_fields[] = {
+	FIELDX(struct sctp_prim, ssp_assoc_id, FT_RAW,
+	       .mutate_weight = 60),
+	FIELDX(struct sctp_prim, ssp_addr, FT_RAW,
+	       .mutate_weight = 40),
+};
 #endif
 
 /* ------------------------------------------------------------------ */
@@ -6263,6 +6287,12 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= sctp_probeinterval_fields,
 		.num_fields	= ARRAY_SIZE(sctp_probeinterval_fields),
 	},
+	[SC_SCTP_PRIM] = {
+		.name		= "sctp_prim",
+		.struct_size	= sizeof(struct sctp_prim),
+		.fields		= sctp_prim_fields,
+		.num_fields	= ARRAY_SIZE(sctp_prim_fields),
+	},
 #endif
 	[SC_FILE_HANDLE] = {
 		.name		= "file_handle",
@@ -6461,6 +6491,11 @@ static const unsigned long setsockopt_sctp_authkeyid_optnames[] = {
 	SCTP_AUTH_ACTIVE_KEY,
 	SCTP_AUTH_DELETE_KEY,
 	SCTP_AUTH_DEACTIVATE_KEY,
+};
+
+static const unsigned long setsockopt_sctp_prim_optnames[] = {
+	SCTP_PRIMARY_ADDR,
+	SCTP_SET_PEER_PRIMARY_ADDR,
 };
 #endif
 
@@ -7411,6 +7446,14 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 		.discrim_value		= IPPROTO_SCTP,
 		.discrim2_arg_idx	= 3,
 		.discrim2_value		= SCTP_PLPMTUD_PROBE_INTERVAL,
+	},
+	{
+		"setsockopt", 4, &struct_catalog[SC_SCTP_PRIM],
+		.discrim_arg_idx	= 2,
+		.discrim_value		= IPPROTO_SCTP,
+		.discrim2_arg_idx	= 3,
+		.discrim2_values	= setsockopt_sctp_prim_optnames,
+		.num_discrim2_values	= ARRAY_SIZE(setsockopt_sctp_prim_optnames),
 	},
 #endif
 	/*

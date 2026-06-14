@@ -269,6 +269,12 @@ static socklen_t build_sctp_probeinterval(void *buf)
 	memset(buf, 0, sizeof(struct sctp_probeinterval));
 	return sizeof(struct sctp_probeinterval);
 }
+
+static socklen_t build_sctp_prim(void *buf)
+{
+	memset(buf, 0, sizeof(struct sctp_prim));
+	return sizeof(struct sctp_prim);
+}
 #endif
 
 static socklen_t build_string_ifname(void *buf)
@@ -402,6 +408,8 @@ static const struct sockopt_entry sockopt_table[] = {
 	{ IPPROTO_SCTP, SCTP_REMOTE_UDP_ENCAPS_PORT, build_sctp_udpencaps },
 	{ IPPROTO_SCTP, SCTP_PEER_ADDR_PARAMS,    build_sctp_paddrparams },
 	{ IPPROTO_SCTP, SCTP_PLPMTUD_PROBE_INTERVAL, build_sctp_probeinterval },
+	{ IPPROTO_SCTP, SCTP_PRIMARY_ADDR,        build_sctp_prim },
+	{ IPPROTO_SCTP, SCTP_SET_PEER_PRIMARY_ADDR, build_sctp_prim },
 #endif
 };
 
