@@ -58,6 +58,9 @@
 #ifdef USE_VSOCK
 #include <linux/vm_sockets.h>
 #endif
+#ifdef USE_CAIF
+#include <linux/caif/caif_socket.h>
+#endif
 #ifdef USE_CAN
 #include <linux/can.h>
 #endif
@@ -1637,6 +1640,9 @@ static const unsigned long sockaddr_storage_af_vocab[] = {
 #ifdef USE_VSOCK
 	AF_VSOCK,
 #endif
+#ifdef USE_CAIF
+	AF_CAIF,
+#endif
 #ifdef USE_CAN
 	AF_CAN,
 #endif
@@ -1788,6 +1794,23 @@ static const struct struct_field sockaddr_vm_variant_fields[] = {
 			    .n    = ARRAY_SIZE(vsock_cid_vocab) }),
 	FIELDX(struct sockaddr_vm, svm_flags, FT_FLAGS,
 	       .u.flags.mask = VMADDR_FLAG_TO_HOST),
+};
+#endif
+
+#ifdef USE_CAIF
+/*
+ * AF_CAIF (sockaddr_caif) -- ST-Ericsson modem CAIF endpoint.  The
+ * scalar head carries u.dgm.connection_id (datagram service id the
+ * kernel dispatches on); a __u32 that reaches dispatch as raw, so
+ * FT_RAW covers the surface without a curated vocabulary.  The
+ * family field is omitted; the shared-head pass already writes
+ * ss_family.  The remaining union u arms (at/util/rfm/dbg) stay
+ * HELD and zeroed -- the kernel parses them conditional on the
+ * socket protocol (CAIFPROTO_*) and an unmodeled inner address
+ * won't bias dispatch.
+ */
+static const struct struct_field sockaddr_caif_variant_fields[] = {
+	FIELD(struct sockaddr_caif, u.dgm.connection_id),
 };
 #endif
 
@@ -2243,6 +2266,15 @@ static const struct union_variant sockaddr_storage_variants[] = {
 		.fields		 = sockaddr_vm_variant_fields,
 		.num_fields	 = ARRAY_SIZE(sockaddr_vm_variant_fields),
 		.effective_size	 = sizeof(struct sockaddr_vm),
+	},
+#endif
+#ifdef USE_CAIF
+	{
+		.discrim_value	 = AF_CAIF,
+		.name		 = "AF_CAIF",
+		.fields		 = sockaddr_caif_variant_fields,
+		.num_fields	 = ARRAY_SIZE(sockaddr_caif_variant_fields),
+		.effective_size	 = sizeof(struct sockaddr_caif),
 	},
 #endif
 #ifdef USE_CAN
