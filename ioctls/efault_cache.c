@@ -202,7 +202,19 @@ static const char * const efault_optout_names[] = {
 	"kvm_vcpu",
 };
 
-bool ioctl_efault_probe_allowed(const struct ioctl_group *grp)
+/*
+ * Precomputed opt-out verdicts indexed by ioctl_group_index().  Filled
+ * in once per group from register_ioctl_group() via
+ * ioctl_efault_register_group() so ioctl_efault_classify() doesn't
+ * rescan the string lists on every UNKNOWN classification — a hot path
+ * for legacy raw-constant ioctls and _IO()-encoded pointer ioctls.
+ * BSS-zero default of `false` is safe: a group whose verdict was never
+ * recorded just falls through to the legacy 50/50 generator instead of
+ * probing, which is the conservative choice for an unregistered key.
+ */
+static bool efault_probe_allowed_by_group[IOCTL_GROUPS_MAX];
+
+static bool compute_efault_probe_allowed(const struct ioctl_group *grp)
 {
 	size_t i, j;
 
@@ -226,6 +238,12 @@ bool ioctl_efault_probe_allowed(const struct ioctl_group *grp)
 	}
 
 	return true;
+}
+
+void ioctl_efault_register_group(const struct ioctl_group *grp, int group_idx)
+{
+	efault_probe_allowed_by_group[group_idx] =
+		compute_efault_probe_allowed(grp);
 }
 
 static enum ioctl_arg_class probe_one(int fd, unsigned int request,
@@ -294,7 +312,7 @@ enum ioctl_arg_class ioctl_efault_classify(const struct ioctl_group *grp,
 	if (state != IOCTL_ARG_UNKNOWN)
 		return state;
 
-	if (!ioctl_efault_probe_allowed(grp))
+	if (!efault_probe_allowed_by_group[idx])
 		return IOCTL_ARG_UNKNOWN;
 
 	state = run_probe(fd, request);

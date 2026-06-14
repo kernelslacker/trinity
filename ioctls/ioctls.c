@@ -13,8 +13,6 @@
 #include "shm.h"
 #include "utils.h"	// ARRAY_SIZE
 
-#define IOCTL_GROUPS_MAX 64
-
 static const struct ioctl_group *grps[IOCTL_GROUPS_MAX];
 static int grps_cnt;
 
@@ -30,6 +28,7 @@ void register_ioctl_group(const struct ioctl_group *grp)
 	}
 
 	grps[grps_cnt] = grp;
+	ioctl_efault_register_group(grp, grps_cnt);
 
 	++grps_cnt;
 }
