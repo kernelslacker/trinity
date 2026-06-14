@@ -2006,6 +2006,33 @@ struct stats_s {
 	 * heap.  See deferred-free.c clause 5. */
 	unsigned long deferred_free_reject_shared_region;
 
+	/* post_state_release() rejected snap before deferred_freeptr.  The
+	 * four-gate reject contract converts what used to be an
+	 * abort-in-libc-free into a structured leak + counter bump.  See
+	 * utils.c post_state_release for the gate ordering and rationale;
+	 * the symmetric headline class is deferred_free_reject_untracked,
+	 * which catches the same shape one layer down (post_state_release
+	 * forwards a sanitised pointer into deferred_free_enqueue, so a
+	 * non-zero counter here is the FIRST wall; the deferred_free_
+	 * reject_* family is the SECOND wall for any reject path that
+	 * still slips through).
+	 *
+	 *   _untracked      - snap absent from the ownership table.
+	 *   _released       - snap already released by a prior call (the
+	 *                     idempotency contract).
+	 *   _wrong_owner    - snap is live but tagged to a different
+	 *                     (syscall_nr, do32bit) than the caller.
+	 *                     Skipped for untagged installers
+	 *                     (post_state_register-only call sites).
+	 *   _bad_magic      - snap is live and tagged to us but the
+	 *                     leading-word cookie no longer matches the
+	 *                     install-time magic.  Skipped for untagged
+	 *                     installers (magic==0). */
+	unsigned long post_state_release_reject_untracked;
+	unsigned long post_state_release_reject_released;
+	unsigned long post_state_release_reject_wrong_owner;
+	unsigned long post_state_release_reject_bad_magic;
+
 	/* deferred-free ring exerts pressure on the per-process VMA budget
 	 * (/proc/sys/vm/max_map_count) via the mprotect bracket around its
 	 * mmap'd ring page -- under fuzz pressure the bracket's RW flip can
