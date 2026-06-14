@@ -5683,6 +5683,23 @@ static const struct struct_field file_handle_fields[] = {
 	FIELD(struct file_handle, handle_type),
 };
 
+/*
+ * struct mmsghdr { struct msghdr msg_hdr; unsigned int msg_len; }
+ *
+ * Attribution-only registration for sendmmsg/recvmmsg.  The bespoke
+ * array fill in syscalls/send.c + syscalls/recv.c owns the live fill
+ * across the vlen-element message array; the catalog map only steers
+ * CMP constant attribution onto the message struct.  The catalog has
+ * no embedded-struct field tag today, so msg_hdr is left opaque (it
+ * defaults to FT_RAW byte-splat through the catalog's view, while the
+ * bespoke per-msghdr fill remains authoritative) and only msg_len is
+ * named; that keeps the CMP map attribution-ready without diverting
+ * any fill path.
+ */
+static const struct struct_field mmsghdr_fields[] = {
+	FIELD(struct mmsghdr, msg_len),
+};
+
 /* ------------------------------------------------------------------ */
 /* The catalog itself                                                   */
 /* ------------------------------------------------------------------ */
@@ -6227,6 +6244,12 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= fs_disk_quota_fields,
 		.num_fields	= ARRAY_SIZE(fs_disk_quota_fields),
 	},
+	[SC_MMSGHDR] = {
+		.name		= "mmsghdr",
+		.struct_size	= sizeof(struct mmsghdr),
+		.fields		= mmsghdr_fields,
+		.num_fields	= ARRAY_SIZE(mmsghdr_fields),
+	},
 };
 
 /*
@@ -6456,6 +6479,10 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	{ "sendmsg",		2, &struct_catalog[SC_MSGHDR] },
 	/* recvmsg(int, struct msghdr *, int) */
 	{ "recvmsg",		2, &struct_catalog[SC_MSGHDR] },
+	/* sendmmsg(int, struct mmsghdr *, unsigned int, unsigned int) */
+	{ "sendmmsg",		2, &struct_catalog[SC_MMSGHDR] },
+	/* recvmmsg(int, struct mmsghdr *, unsigned int, unsigned int, struct timespec *) */
+	{ "recvmmsg",		2, &struct_catalog[SC_MMSGHDR] },
 	/* bind(int, struct sockaddr *, socklen_t) */
 	{ "bind",		2, &struct_catalog[SC_SOCKADDR_STORAGE] },
 	/* connect(int, struct sockaddr *, socklen_t) */
