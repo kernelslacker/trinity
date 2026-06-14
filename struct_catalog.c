@@ -5040,6 +5040,20 @@ static const struct struct_field sctp_event_subscribe_fields[] = {
 	FIELDX(struct sctp_event_subscribe, sctp_send_failure_event_event, FT_RANGE,
 	       .u.range = { 0, 1 }, .mutate_weight = 50),
 };
+
+/*
+ * struct sctp_authchunk -- IPPROTO_SCTP / SCTP_AUTH_CHUNK.  RFC 4895
+ * AUTH extension: register a chunk type whose receipt the local
+ * endpoint requires to be carried inside an AUTH chunk.  Single
+ * member sauth_chunk (__u8) is FT_RAW -- arbitrary chunk-type id; the
+ * kernel validates against its own chunk-type table at sockopt time
+ * and ignores anything it does not recognise, so no useful clamp.
+ * Bespoke build_sctp_authchunk() zero-fills as a miss-fallback.
+ */
+static const struct struct_field sctp_authchunk_fields[] = {
+	FIELDX(struct sctp_authchunk, sauth_chunk, FT_RAW,
+	       .mutate_weight = 60),
+};
 #endif
 
 /* ------------------------------------------------------------------ */
@@ -5506,6 +5520,12 @@ const struct struct_desc struct_catalog[] = {
 		.struct_size	= sizeof(struct sctp_event_subscribe),
 		.fields		= sctp_event_subscribe_fields,
 		.num_fields	= ARRAY_SIZE(sctp_event_subscribe_fields),
+	},
+	[SC_SCTP_AUTHCHUNK] = {
+		.name		= "sctp_authchunk",
+		.struct_size	= sizeof(struct sctp_authchunk),
+		.fields		= sctp_authchunk_fields,
+		.num_fields	= ARRAY_SIZE(sctp_authchunk_fields),
 	},
 #endif
 };
@@ -6496,6 +6516,13 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 		.discrim_value		= IPPROTO_SCTP,
 		.discrim2_arg_idx	= 3,
 		.discrim2_value		= SCTP_EVENTS,
+	},
+	{
+		"setsockopt", 4, &struct_catalog[SC_SCTP_AUTHCHUNK],
+		.discrim_arg_idx	= 2,
+		.discrim_value		= IPPROTO_SCTP,
+		.discrim2_arg_idx	= 3,
+		.discrim2_value		= SCTP_AUTH_CHUNK,
 	},
 #endif
 	/*
