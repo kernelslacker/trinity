@@ -239,6 +239,12 @@ static socklen_t build_sctp_event(void *buf)
 	memset(buf, 0, sizeof(struct sctp_event));
 	return sizeof(struct sctp_event);
 }
+
+static socklen_t build_sctp_paddrthlds(void *buf)
+{
+	memset(buf, 0, sizeof(struct sctp_paddrthlds));
+	return sizeof(struct sctp_paddrthlds);
+}
 #endif
 
 static socklen_t build_string_ifname(void *buf)
@@ -367,6 +373,7 @@ static const struct sockopt_entry sockopt_table[] = {
 	{ IPPROTO_SCTP, SCTP_ADD_STREAMS,         build_sctp_add_streams },
 	{ IPPROTO_SCTP, SCTP_STREAM_SCHEDULER_VALUE, build_sctp_stream_value },
 	{ IPPROTO_SCTP, SCTP_EVENT,               build_sctp_event },
+	{ IPPROTO_SCTP, SCTP_PEER_ADDR_THLDS,     build_sctp_paddrthlds },
 #endif
 };
 
