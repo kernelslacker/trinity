@@ -717,33 +717,43 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 
 		/*
 		 * Pre-stage the RedQueen attribution scan inputs.  Snapshot
-		 * rec->a1..aN + num_args at entry so the per-record inner
-		 * loop runs over a small stack-resident array instead of
-		 * re-reading rec each iteration (rec lives at the cold tail
-		 * of childdata; the hot CMP loop should not drag those lines
-		 * into L1 thousands of times).  Drop the gate entirely on
-		 * the in_reexec path so the re-exec's own CMP harvest cannot
-		 * stage a second tier of attributions -- the per-call buffer
-		 * stays drained around the dispatch and is read back by the
-		 * dispatch_step tail.
+		 * num_args + the per-rec dispatch_args[] (populated in
+		 * __do_syscall() from the dispatch-time locals a1..a6, after
+		 * the second blanket_address_scrub and before kernel entry)
+		 * into a small stack-resident array so the per-record inner
+		 * loop avoids re-reading rec each iteration -- rec lives at
+		 * the cold tail of childdata and the hot CMP loop should not
+		 * drag those lines into L1 thousands of times.  Reading from
+		 * dispatch_args[] rather than live rec->aN means a sibling
+		 * stomp between dispatch and this scan can't redirect us at
+		 * a post-call slot value the kernel never compared against;
+		 * dispatch_args_valid gates the read so a rec that never
+		 * went through __do_syscall() (zero-init / parent context)
+		 * stays unattributed instead of feeding the scan a zeroed
+		 * arg vector.  Drop the gate entirely on the in_reexec path
+		 * so the re-exec's own CMP harvest cannot stage a second
+		 * tier of attributions -- the per-call buffer stays drained
+		 * around the dispatch and is read back by the dispatch_step
+		 * tail.
 		 */
 		if (child->redqueen_enabled && !child->in_reexec &&
 		    child->reexec_pending_count < MAX_REEXEC_PENDING) {
 			struct syscallrecord *rec = &child->syscall;
 			struct syscallentry *entry = rec->entry;
 
-			if (entry != NULL && entry->num_args > 0) {
+			if (entry != NULL && entry->num_args > 0 &&
+			    rec->dispatch_args_valid) {
 				unsigned int n = entry->num_args;
 
 				if (n > 6)
 					n = 6;
 				rec_num_args = n;
-				rec_args[0] = rec->a1;
-				rec_args[1] = rec->a2;
-				rec_args[2] = rec->a3;
-				rec_args[3] = rec->a4;
-				rec_args[4] = rec->a5;
-				rec_args[5] = rec->a6;
+				rec_args[0] = rec->dispatch_args[0];
+				rec_args[1] = rec->dispatch_args[1];
+				rec_args[2] = rec->dispatch_args[2];
+				rec_args[3] = rec->dispatch_args[3];
+				rec_args[4] = rec->dispatch_args[4];
+				rec_args[5] = rec->dispatch_args[5];
 				attribute_enabled = true;
 			}
 		}
@@ -794,7 +804,8 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 
 		/*
 		 * RedQueen attribution scan against the dispatching syscall's
-		 * rec->a1..aN (snapshot copy in rec_args[]).  Runs BEFORE the
+		 * dispatch-time arg snapshot (rec->dispatch_args[] staged into
+		 * rec_args[] at the entry to this function).  Runs BEFORE the
 		 * bloom-check + pool-insert path so a bloom-suppressed record
 		 * still gets attribution: the constant being in the pool
 		 * already from a prior call carries no signal about which slot
@@ -803,13 +814,13 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 		 * actual re-exec dispatch on `new_cmp > 0` from the parent
 		 * call separately.
 		 *
-		 * Match predicate: exact match (rec->aN == arg2).  Catches the
-		 * dominant case where the kernel sees the argument's full
-		 * 64-bit value (cmd codes, length args, flag bitmasks, struct
-		 * sizes).  A width-aware fallback would add combinatorial
-		 * noise on small-type slots for marginal coverage gain; the
-		 * re-exec's value is in collapsing the 1/A slot lottery, not
-		 * width matching.
+		 * Match predicate: exact match (dispatch_args[k] == arg2).
+		 * Catches the dominant case where the kernel sees the
+		 * argument's full 64-bit value (cmd codes, length args, flag
+		 * bitmasks, struct sizes).  A width-aware fallback would add
+		 * combinatorial noise on small-type slots for marginal
+		 * coverage gain; the re-exec's value is in collapsing the
+		 * 1/A slot lottery, not width matching.
 		 *
 		 * Cardinality > 1 (the same constant appears in multiple
 		 * slots): first-match-wins.  Slot order 1..6 biases
