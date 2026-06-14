@@ -557,8 +557,27 @@ void child_fault_handler(int sig, siginfo_t *info, void *ctx)
 	 * into and the kernel-side crash artefacts still surface the
 	 * death.
 	 */
-	if (in_extrafork_grandchild)
+	if (in_extrafork_grandchild) {
+		/*
+		 * Redirect this grandchild's STDERR_FILENO to /dev/null
+		 * before the shared post-skip_buglog diagnostics
+		 * (backtrace_symbols_fd + write_siginfo_safely) run.
+		 * Without this, a fault in a throwaway extra-fork
+		 * grandchild skips the per-pid buglog block above but
+		 * still appends backtrace + siginfo text to the
+		 * fork-inherited stderr memfd, polluting the worker's
+		 * diagnostic record for an unrelated fault.  open / dup2
+		 * / close are on the POSIX 2024 §2.4.3 async-signal-safe
+		 * list; the kernel-side oops still prints regardless.
+		 */
+		int devnull = open("/dev/null", O_WRONLY | O_CLOEXEC);
+		if (devnull >= 0) {
+			dup2(devnull, STDERR_FILENO);
+			if (devnull != STDERR_FILENO)
+				close(devnull);
+		}
 		goto skip_buglog;
+	}
 	/*
 	 * Stamp the fault beacon FIRST -- before umask, open, dup2,
 	 * backtrace_symbols_fd, write_siginfo_safely, or anything else
