@@ -4958,6 +4958,46 @@ static const struct struct_field sctp_sndinfo_fields[] = {
 	FIELDX(struct sctp_sndinfo, snd_assoc_id, FT_RAW,
 	       .mutate_weight = 60),
 };
+
+/*
+ * struct sctp_sndrcvinfo -- IPPROTO_SCTP / SCTP_DEFAULT_SEND_PARAM.  The
+ * legacy default-send-parameters struct (RFC 6458's older sndrcvinfo);
+ * sinfo_stream picks the target stream (FT_RANGE [0, 128] matches the
+ * SCTP_INITMSG stream-count envelope and keeps the value inside the
+ * kernel's accept window).  sinfo_flags is a bitfield drawn from the
+ * SCTP send-flag set (UNORDERED / ADDR_OVER / ABORT / SACK_IMMEDIATELY
+ * / SENDALL / EOF), masked so the splat lands on plausible combinations
+ * rather than random 16-bit noise.  sinfo_ssn / sinfo_ppid /
+ * sinfo_context / sinfo_timetolive / sinfo_tsn / sinfo_cumtsn /
+ * sinfo_assoc_id are FT_RAW -- each is either peer-visible / opaque or
+ * a lookup constant that struct_field_for_cmp() can attribute against
+ * KCOV-CMP.  Bespoke build_sctp_sndrcvinfo() zero-fills as a
+ * miss-fallback.
+ */
+static const struct struct_field sctp_sndrcvinfo_fields[] = {
+	FIELDX(struct sctp_sndrcvinfo, sinfo_stream, FT_RANGE,
+	       .u.range = { 0, 128 },
+	       .mutate_weight = 60),
+	FIELDX(struct sctp_sndrcvinfo, sinfo_ssn, FT_RAW,
+	       .mutate_weight = 40),
+	FIELDX(struct sctp_sndrcvinfo, sinfo_flags, FT_FLAGS,
+	       .u.flags.mask = (SCTP_UNORDERED | SCTP_ADDR_OVER |
+				SCTP_ABORT | SCTP_SACK_IMMEDIATELY |
+				SCTP_SENDALL | SCTP_EOF),
+	       .mutate_weight = 60),
+	FIELDX(struct sctp_sndrcvinfo, sinfo_ppid, FT_RAW,
+	       .mutate_weight = 40),
+	FIELDX(struct sctp_sndrcvinfo, sinfo_context, FT_RAW,
+	       .mutate_weight = 40),
+	FIELDX(struct sctp_sndrcvinfo, sinfo_timetolive, FT_RAW,
+	       .mutate_weight = 40),
+	FIELDX(struct sctp_sndrcvinfo, sinfo_tsn, FT_RAW,
+	       .mutate_weight = 40),
+	FIELDX(struct sctp_sndrcvinfo, sinfo_cumtsn, FT_RAW,
+	       .mutate_weight = 40),
+	FIELDX(struct sctp_sndrcvinfo, sinfo_assoc_id, FT_RAW,
+	       .mutate_weight = 60),
+};
 #endif
 
 /* ------------------------------------------------------------------ */
@@ -5412,6 +5452,12 @@ const struct struct_desc struct_catalog[] = {
 		.struct_size	= sizeof(struct sctp_sndinfo),
 		.fields		= sctp_sndinfo_fields,
 		.num_fields	= ARRAY_SIZE(sctp_sndinfo_fields),
+	},
+	[SC_SCTP_SNDRCVINFO] = {
+		.name		= "sctp_sndrcvinfo",
+		.struct_size	= sizeof(struct sctp_sndrcvinfo),
+		.fields		= sctp_sndrcvinfo_fields,
+		.num_fields	= ARRAY_SIZE(sctp_sndrcvinfo_fields),
 	},
 #endif
 };
@@ -6388,6 +6434,13 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 		.discrim_value		= IPPROTO_SCTP,
 		.discrim2_arg_idx	= 3,
 		.discrim2_value		= SCTP_DEFAULT_SNDINFO,
+	},
+	{
+		"setsockopt", 4, &struct_catalog[SC_SCTP_SNDRCVINFO],
+		.discrim_arg_idx	= 2,
+		.discrim_value		= IPPROTO_SCTP,
+		.discrim2_arg_idx	= 3,
+		.discrim2_value		= SCTP_DEFAULT_SEND_PARAM,
 	},
 #endif
 	/*
