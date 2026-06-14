@@ -2522,6 +2522,13 @@ void child_process(struct childdata *child, int childno)
 		    childop_kcov_attr_mode != CHILDOP_KCOV_ATTR_OFF &&
 		    valid_op &&
 		    op_uses_outer_bracket(op)) {
+			/* Count one bracket attempt at the op_uses_outer_bracket
+			 * gate so the begin-side reject arms in kcov_bracket_begin
+			 * (skipped_cmp / skipped_nested / skipped_inactive) and
+			 * the success arm (childop_kcov_bracketed) sum back to
+			 * this counter -- the smoke-test invariant for this row. */
+			__atomic_fetch_add(&kcov_shm->childop_kcov_attempts,
+				1, __ATOMIC_RELAXED);
 			bracketed = kcov_bracket_begin(&child->kcov);
 		}
 

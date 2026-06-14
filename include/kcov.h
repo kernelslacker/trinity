@@ -257,6 +257,14 @@ enum kcov_child_mode {
  * never collide.
  */
 
+/* Compile-time upper bound on NR_CHILD_OP_TYPES, used to size the
+ * per-childop arrays inside struct kcov_shared.  kcov.h cannot
+ * include child.h (child.h includes kcov.h for struct kcov_child),
+ * so the real enum count is asserted to fit inside this bound from
+ * kcov.c at build time -- bump KCOV_CHILDOP_NR_MAX (and accept the
+ * shm cost) if the assertion ever fires. */
+#define KCOV_CHILDOP_NR_MAX 128
+
 /* Per-call dedup slot — counts how many times a single trace hit a given
  * edge so the hit count can be classified into a bucket.  A slot is "live"
  * for the current call only when generation == kcov_child::current_generation;
@@ -665,6 +673,33 @@ struct kcov_shared {
 	 * nothing depends on these for control flow. */
 	unsigned int pc_mode_children;
 	unsigned int cmp_mode_children;
+	/* Childop bracket attempt + skip-reason counters.  Every gated
+	 * kcov_bracket_begin() call from child.c bumps childop_kcov_attempts
+	 * once; the begin then either fires (childop_kcov_bracketed) or
+	 * short-circuits at one of the three reject arms (skipped_cmp /
+	 * skipped_nested / skipped_inactive — see kcov_bracket_begin in
+	 * kcov.c for the reject contract).  The arms are mutually exclusive
+	 * per attempt, so the invariant
+	 *   attempts == bracketed + skipped_cmp + skipped_nested
+	 *             + skipped_inactive
+	 * holds at run end (and is the smoke-test gate on this row).
+	 * Prereq for the childop-dual default flip: without the
+	 * per-reason split a low childop_edges_clean / attempts ratio can't
+	 * be told apart from "bracket never fired because of a known
+	 * short-circuit" vs "bracket fired but found nothing". */
+	unsigned long childop_kcov_attempts;
+	unsigned long childop_kcov_bracketed;
+	unsigned long childop_kcov_skipped_cmp;
+	unsigned long childop_kcov_skipped_nested;
+	unsigned long childop_kcov_skipped_inactive;
+	/* Per-childop trace-truncation count, indexed by enum child_op_type
+	 * (op = nr - CHILDOP_KCOV_NR_BASE inside kcov_collect()).  Mirrors
+	 * per_syscall_diag[].trace_truncated for the childop bracket path:
+	 * bumped when the kernel filled the entire trace buffer for a
+	 * bracketed childop call so the tail of the trace was dropped.
+	 * Sized to KCOV_CHILDOP_NR_MAX; a build-time assertion in kcov.c
+	 * pins NR_CHILD_OP_TYPES below the bound. */
+	unsigned long childop_kcov_trace_truncated[KCOV_CHILDOP_NR_MAX];
 	/* Per-syscall count of CALLS that produced at least one new edge.
 	 * NOT a real edge bucket count — a syscall that uncovers 50 distinct
 	 * new edges in one call bumps this by 1, not by 50.  The real

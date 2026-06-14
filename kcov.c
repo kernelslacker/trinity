@@ -98,6 +98,15 @@ struct kcov_remote_arg {
 
 struct kcov_shared *kcov_shm = NULL;
 
+/* The per-childop arrays in struct kcov_shared are sized off
+ * KCOV_CHILDOP_NR_MAX because include/kcov.h cannot pull in child.h
+ * for the real NR_CHILD_OP_TYPES (child.h includes kcov.h for struct
+ * kcov_child).  Bump KCOV_CHILDOP_NR_MAX in include/kcov.h if a
+ * childop slot beyond the bound is ever added. */
+_Static_assert(NR_CHILD_OP_TYPES <= KCOV_CHILDOP_NR_MAX,
+	"NR_CHILD_OP_TYPES exceeds KCOV_CHILDOP_NR_MAX; "
+	"bump KCOV_CHILDOP_NR_MAX in include/kcov.h");
+
 enum childop_kcov_attribution_mode childop_kcov_attr_mode =
 	CHILDOP_KCOV_ATTR_OFF;
 
@@ -1106,20 +1115,41 @@ void kcov_disable(struct kcov_child *kc)
  */
 bool kcov_bracket_begin(struct kcov_child *kc)
 {
-	if (kc == NULL || !kc->active || kcov_shm == NULL)
+	if (kc == NULL || !kc->active || kcov_shm == NULL) {
+		/* kcov_shm == NULL on this defensive arm means the per-call
+		 * attempt counter at the child.c gate also could not bump,
+		 * so skipping the skipped_inactive bump here keeps the
+		 * attempts == bracketed + sum(skipped) invariant intact. */
+		if (kcov_shm != NULL)
+			__atomic_fetch_add(
+				&kcov_shm->childop_kcov_skipped_inactive,
+				1, __ATOMIC_RELAXED);
 		return false;
-	if (kc->mode == KCOV_MODE_CMP)
+	}
+	if (kc->mode == KCOV_MODE_CMP) {
+		__atomic_fetch_add(&kcov_shm->childop_kcov_skipped_cmp,
+			1, __ATOMIC_RELAXED);
 		return false;
-	if (kc->bracket_owned)
+	}
+	if (kc->bracket_owned) {
+		__atomic_fetch_add(&kcov_shm->childop_kcov_skipped_nested,
+			1, __ATOMIC_RELAXED);
 		return false;
+	}
 
 	kcov_enable_trace(kc);
 	if (!kc->active) {
 		/* kcov_enable_trace flipped active=false on ioctl failure;
-		 * no enable is live, so don't claim ownership. */
+		 * no enable is live, so don't claim ownership.  Counted as
+		 * skipped_inactive so the attempt still balances out against
+		 * the begin-side counter. */
+		__atomic_fetch_add(&kcov_shm->childop_kcov_skipped_inactive,
+			1, __ATOMIC_RELAXED);
 		return false;
 	}
 	kc->bracket_owned = true;
+	__atomic_fetch_add(&kcov_shm->childop_kcov_bracketed,
+		1, __ATOMIC_RELAXED);
 	return true;
 }
 
@@ -1372,9 +1402,16 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 		 * grow again. */
 		__atomic_fetch_add(&kcov_shm->trace_truncated, 1,
 			__ATOMIC_RELAXED);
-		if (nr < MAX_NR_SYSCALL)
+		if (nr < MAX_NR_SYSCALL) {
 			__atomic_fetch_add(&kcov_shm->per_syscall_diag[nr][do32].trace_truncated,
 				1, __ATOMIC_RELAXED);
+		} else if (nr >= CHILDOP_KCOV_NR_BASE) {
+			unsigned long op = nr - CHILDOP_KCOV_NR_BASE;
+			if (op < KCOV_CHILDOP_NR_MAX)
+				__atomic_fetch_add(
+					&kcov_shm->childop_kcov_trace_truncated[op],
+					1, __ATOMIC_RELAXED);
+		}
 		count = KCOV_TRACE_SIZE - 1;
 	}
 
