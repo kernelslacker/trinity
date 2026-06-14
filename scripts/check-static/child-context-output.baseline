@@ -17,7 +17,7 @@ childops/inplace_crypto_oracle.c:270:log_corruption
 childops/inplace_crypto_oracle.c:272:log_corruption
 childops/inplace_crypto_oracle.c:273:log_corruption
 childops/ip6gre-bond-lapb-stack.c:118:latch_unsupported
-childops/mount-churn.c:130:ensure_private_ns
+childops/mount-churn.c:193:ensure_private_ns
 childops/mpls-route-churn.c:206:maybe_modprobe_once
 childops/mpls-route-churn.c:217:latch_ns_unsupported_mpls
 childops/mpls-route-churn.c:229:latch_ns_unsupported_lwtunnel

@@ -17,14 +17,40 @@
  *   - tmpfs/proc/sysfs ->kill_sb teardown back-to-back
  *
  * Per invocation: 1..MAX_CYCLES cycles.  Each cycle picks one of
- * tmpfs/proc/sysfs and a random subset of the safe MS_* flag set.
+ * tmpfs/proc/sysfs (always present) or ext4 (only when the parent's
+ * scratch_block pool published a loop-backed slot) and a random subset
+ * of the safe MS_* flag set.
  *
- * Bounded to a child mount namespace via unshare(CLONE_NEWNS) on first
- * entry, with the root remarked MS_REC|MS_PRIVATE so nothing
- * propagates back to the host mount table.  If unshare or the first
- * mount fails (unprivileged, no CONFIG_NAMESPACES, etc.) a per-process
- * latch turns subsequent invocations into no-ops — there's no point
- * spinning on EPERM.
+ * Bounded to a private mount namespace.  When the parent provisioned
+ * one at startup (shm->isolation.mnt_ready latched -- root-started,
+ * --no-startup-isolation unset, unshare(CLONE_NEWNS) plus the
+ * MS_REC|MS_PRIVATE remount of '/' both succeeded) we inherit it via
+ * fork() and skip the per-child unshare entirely.  When the latch is
+ * false (non-root, opt-out, EPERM/ENOSYS at parent setup) we fall back
+ * to the per-child unshare(CLONE_NEWNS) + MS_REC|MS_PRIVATE remount of
+ * '/' byte-for-byte, exactly as before the gate existed; unshare or
+ * remount failure latches the op off for the rest of this child.
+ *
+ * EPERM handling on the per-cycle mount() differs between the two
+ * paths.  On the fallback path EPERM means the per-child unshare gave
+ * us a private mount-ns but not the caps to mount in it -- a
+ * persistent state -- so we latch the op off as before.  On the
+ * inherited path EPERM is the expected post-drop_privs steady state
+ * (child = nobody, no CAP_SYS_ADMIN in the init user-ns owning the
+ * parent's mount-ns); we count-but-tolerate so the kernel-side
+ * arg-parse coverage the syscall reaches before may_mount() rejects
+ * (copy_mount_string for the type/dev/data, flag-mask validation,
+ * LSM security_sb_mount, LOOKUP_FOLLOW on the target) keeps landing
+ * on every invocation.
+ *
+ * ext4 path source is a /dev/loopN drawn from the scratch_block pool
+ * (fds/scratch_block.c) -- itself gated on mnt_ready.  Every loop
+ * number in the pool came from the kernel's own LOOP_CTL_GET_FREE so
+ * a host disk node cannot enter the mount() call by construction.
+ * When the pool has no loop entry (mnt_ready false, /dev/loop-control
+ * absent, mkfs.ext4 missing) ext4 silently drops out of the per-cycle
+ * pick set and the invocation behaves identically to the pre-pool
+ * three-fstype run.
  *
  * Flag set is curated to the subset that's safe to combine freely with
  * the chosen fstype: MS_NOEXEC, MS_NOSUID, MS_NODEV, MS_RDONLY,
@@ -57,6 +83,7 @@
 #include "pids.h"
 #include "random.h"
 #include "rnd.h"
+#include "scratch_block.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"	/* ARRAY_SIZE */
@@ -66,9 +93,26 @@
  * VFS is under contention from sibling churners. */
 #define MAX_CYCLES	16
 
-/* Latched per-child: private mount namespace is in place. */
-static bool ns_unshared;
-/* Latched per-child: namespace or first mount denied. */
+/* Latched once this child has a private mount namespace to operate
+ * in -- either inherited from the parent's pre-fork unshare(CLONE_
+ * NEWNS) + MS_REC|MS_PRIVATE remount of '/' (shm->isolation.mnt_ready
+ * latched) or obtained via a per-child unshare(CLONE_NEWNS) +
+ * MS_PRIVATE remount on the fallback path.  No need to re-attempt
+ * setup once it succeeded -- the namespace is inherited across
+ * subsequent invocations within this child. */
+static bool ns_ready;
+/* Distinguishes the source of ns_ready: true iff we inherited the
+ * parent-provisioned mount-ns (shm->isolation.mnt_ready was set at
+ * the time ensure_private_ns() first ran).  Gates the EPERM-on-mount
+ * latch below so a child = nobody EPERM does not silently disable the
+ * op when the parent's provisioning is in place. */
+static bool ns_inherited;
+/* Latched on the fallback path: per-child unshare(CLONE_NEWNS) /
+ * MS_PRIVATE remount failed, or a per-cycle mount() returned EPERM
+ * indicating the unshared namespace gave us no caps to mount in it.
+ * Never latches on the inherited path -- there EPERM is expected
+ * and the kernel arg-parse coverage before the may_mount() check is
+ * the point. */
 static bool ns_unsupported;
 
 /* Per-process monotonic counter so each mountpoint name within a
@@ -76,6 +120,11 @@ static bool ns_unsupported;
  * uses it. */
 static unsigned long mount_churn_seq;
 
+/* Always-present fstype set: no block backing required, no scratch
+ * pool draw -- these mount strings double as their own source.
+ * Ordering is load-bearing: the per-cycle pick passes the index
+ * directly to fstypes[], and the per-invocation ext4_available probe
+ * appends ext4 as a virtual entry at index ARRAY_SIZE(fstypes). */
 static const char * const fstypes[] = {
 	"tmpfs",
 	"proc",
@@ -115,11 +164,25 @@ static unsigned long pick_flags(void)
 
 static bool ensure_private_ns(void)
 {
-	if (ns_unshared)
+	if (ns_ready)
 		return true;
 	if (ns_unsupported)
 		return false;
 
+	/* Inherited path: the parent unshared CLONE_NEWNS and remounted
+	 * '/' MS_REC|MS_PRIVATE before fork(), and we are already inside
+	 * that namespace by inheritance.  Latch ns_inherited so the
+	 * per-cycle EPERM handling does not disable the op on the
+	 * expected post-drop_privs cap-block. */
+	if (__atomic_load_n(&shm->isolation.mnt_ready, __ATOMIC_RELAXED)) {
+		ns_inherited = true;
+		ns_ready = true;
+		return true;
+	}
+
+	/* Fallback path: per-child unshare + MS_PRIVATE remount, byte-
+	 * for-byte the pre-gate code.  EPERM here is the non-root host
+	 * execution case and latches the op off for this child. */
 	if (unshare(CLONE_NEWNS) != 0) {
 		ns_unsupported = true;
 		return false;
@@ -132,7 +195,7 @@ static bool ensure_private_ns(void)
 		return false;
 	}
 
-	ns_unshared = true;
+	ns_ready = true;
 	return true;
 }
 
@@ -140,6 +203,8 @@ bool mount_churn(struct childdata *child)
 {
 	unsigned int cycles;
 	unsigned int i;
+	unsigned int pick_modulo;
+	bool ext4_available = false;
 	pid_t pid = mypid();
 
 	(void)child;
@@ -149,13 +214,48 @@ bool mount_churn(struct childdata *child)
 	if (!ensure_private_ns())
 		return true;
 
+	/* Probe the scratch_block pool once per invocation: when the
+	 * parent provisioned mnt_ready AND a loop-backed ext4 image
+	 * survived setup we can drive real-fs mount cycles against
+	 * /dev/loopN as the mount source.  The probe short-circuits on
+	 * mnt_ready false so the fallback path issues zero pool reads
+	 * and the per-cycle RNG draws are bit-identical to the pre-gate
+	 * code.  When unavailable (non-root, mnt_ready degraded,
+	 * /dev/loop-control absent, mkfs.ext4 missing) ext4 silently
+	 * drops out of the pick set. */
+	if (__atomic_load_n(&shm->isolation.mnt_ready, __ATOMIC_RELAXED) &&
+	    scratch_block_random_loop_num() >= 0)
+		ext4_available = true;
+
+	pick_modulo = ARRAY_SIZE(fstypes) + (ext4_available ? 1U : 0U);
 	cycles = 1 + rnd_modulo_u32(MAX_CYCLES);
 
 	for (i = 0; i < cycles; i++) {
-		const char *fstype = fstypes[rnd_modulo_u32(ARRAY_SIZE(fstypes))];
+		const char *fstype;
+		const char *source;
+		char source_buf[32];
+		unsigned int pick = rnd_modulo_u32(pick_modulo);
 		unsigned long flags = pick_flags();
 		unsigned long seq = ++mount_churn_seq;
 		char path[PATH_MAX + 64];
+
+		if (pick < ARRAY_SIZE(fstypes)) {
+			fstype = fstypes[pick];
+			source = fstype;
+		} else {
+			/* ext4: source is /dev/loopN from the vetted
+			 * pool.  Re-draw per cycle so successive ext4
+			 * mounts hit different loop entries when the
+			 * pool has more than one. */
+			int loop_num = scratch_block_random_loop_num();
+
+			if (loop_num < 0)
+				continue;
+			(void)snprintf(source_buf, sizeof(source_buf),
+				       "/dev/loop%d", loop_num);
+			fstype = "ext4";
+			source = source_buf;
+		}
 
 		snprintf(path, sizeof(path),
 			 "%s/trinity-mountchurn-%d-%lu",
@@ -177,17 +277,25 @@ bool mount_churn(struct childdata *child)
 		 * an edge value — exercises sys_mount's flag-mask validation
 		 * (MS_MGC magic, mutually-exclusive bits, unknown-bit
 		 * rejection) which the safe subset above never reaches. */
-		if (mount(fstype, path, fstype,
+		if (mount(source, path, fstype,
 			  (unsigned long)RAND_NEGATIVE_OR(flags), NULL) != 0) {
 			__atomic_add_fetch(&shm->stats.mount_churn_failed,
 					   1, __ATOMIC_RELAXED);
-			/* EPERM here means the namespace setup didn't
-			 * give us mount caps after all (e.g. unprivileged
-			 * userns without the right bits) — latch and
-			 * bail.  ENODEV: fstype not built into kernel,
-			 * skip this iter and try a different one next
-			 * time. */
-			if (errno == EPERM) {
+			/* On the fallback path EPERM means the per-child
+			 * unshare gave us a namespace but not the caps to
+			 * mount in it (e.g. unprivileged userns without
+			 * the right bits) — latch and bail.  On the
+			 * inherited path EPERM is the expected post-
+			 * drop_privs cap-block (the parent's mount-ns is
+			 * owned by the init user-ns and the child = nobody
+			 * has no CAP_SYS_ADMIN in it); the kernel arg-
+			 * parse + flag validation + LSM + target path
+			 * lookup all ran before may_mount() rejected, which
+			 * is exactly the coverage the un-defang unlocks --
+			 * keep going so each cycle lands a fresh call.
+			 * ENODEV: fstype not built into kernel; skip this
+			 * iter and try a different one next time. */
+			if (errno == EPERM && !ns_inherited) {
 				ns_unsupported = true;
 				(void)rmdir(path);
 				return true;
