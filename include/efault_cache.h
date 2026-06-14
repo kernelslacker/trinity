@@ -56,13 +56,15 @@ enum ioctl_arg_class ioctl_efault_classify(const struct ioctl_group *grp,
 					   int fd, unsigned int request);
 
 /*
- * True if this group is eligible for the EFAULT probe.  Default-on; the
- * opt-out list inside efault_cache.c covers groups whose ioctls allocate
- * kernel state on dispatch (KVM CREATE_*, vhost ring setup, vfio /
- * iommufd container allocation, loop-control device creation) where
- * even a "rejected" probe leaks resources.
+ * Record the EFAULT-probe eligibility verdict for `grp` at `group_idx`.
+ * Called once per group at ioctl-group registration time so the classify
+ * path can answer the opt-out question with an O(1) array lookup instead
+ * of rescanning the device-name / group-name opt-out string lists on
+ * every UNKNOWN classification.  Group indexes are stable post-
+ * registration, so the verdict stored here is valid for the rest of the
+ * fuzz run.
  */
-bool ioctl_efault_probe_allowed(const struct ioctl_group *grp);
+void ioctl_efault_register_group(const struct ioctl_group *grp, int group_idx);
 
 /*
  * Index of grp in the registered-groups table, or -1 if not registered.

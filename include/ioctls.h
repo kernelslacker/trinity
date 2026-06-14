@@ -13,6 +13,8 @@ struct ioctl {
 #define DEV_BLOCK 2
 #define DEV_MISC  3
 
+#define IOCTL_GROUPS_MAX 64
+
 struct ioctl_group {
 	/* optional user visible string that describes this group of ioctl
 	 * operations. */
