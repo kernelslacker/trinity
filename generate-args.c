@@ -3523,6 +3523,44 @@ uint8_t compute_len_arg_mask(const struct syscallentry *entry)
 	return mask;
 }
 
+/*
+ * Precompute arg_params[i].list.all_bits (the OR of every value in the
+ * arglist) for each ARG_OP/ARG_LIST slot.  Called once per syscallentry
+ * at table-init time from copy_syscall_table() in tables.c so callers
+ * that need "all valid bits" (e.g. set_rand_bitmask-style boundary or
+ * structured-mutation paths) can read the precomputed mask instead of
+ * re-walking values[] on every invocation.  Slots whose argtype is not
+ * ARG_OP/ARG_LIST own the .range union member and are left untouched.
+ */
+void populate_arglist_all_bits(struct syscallentry *entry)
+{
+	unsigned int i;
+
+	if (entry == NULL)
+		return;
+
+	for (i = 0; i < entry->num_args && i < 6; i++) {
+		enum argtype t = entry->argtype[i];
+		struct arglist *al;
+		unsigned long bits = 0;
+		unsigned int k;
+
+		if (t != ARG_OP && t != ARG_LIST)
+			continue;
+
+		al = &entry->arg_params[i].list;
+		if (al->values == NULL || al->num == 0) {
+			al->all_bits = 0;
+			continue;
+		}
+
+		for (k = 0; k < al->num; k++)
+			bits |= al->values[k];
+
+		al->all_bits = bits;
+	}
+}
+
 static unsigned long fill_arg(struct syscallentry *entry, struct syscallrecord *rec, unsigned int argnum)
 {
 	const struct argtype_ops *ops;
