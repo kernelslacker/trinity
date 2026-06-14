@@ -69,6 +69,9 @@
 #ifdef USE_ATALK
 #include <linux/atalk.h>
 #endif
+#ifdef USE_ATM
+#include <linux/atm.h>
+#endif
 #ifdef USE_LLC
 #include <linux/llc.h>
 #endif
@@ -1636,6 +1639,9 @@ static const unsigned long sockaddr_storage_af_vocab[] = {
 #ifdef USE_ATALK
 	AF_APPLETALK,
 #endif
+#ifdef USE_ATM
+	AF_ATMSVC,
+#endif
 #ifdef USE_LLC
 	AF_LLC,
 #endif
@@ -1832,6 +1838,25 @@ static const struct struct_field sockaddr_at_variant_fields[] = {
 	FIELD(struct sockaddr_at, sat_port),
 	FIELD(struct sockaddr_at, sat_addr.s_net),
 	FIELD(struct sockaddr_at, sat_addr.s_node),
+};
+#endif
+
+#ifdef USE_ATM
+/*
+ * AF_ATMSVC (sockaddr_atmsvc) -- ATM SVC endpoint.  The address is a
+ * nested sas_addr aggregate carrying the 20-byte ATM End System Address
+ * (prv), a 13-byte E.164 public number (pub, NUL-terminated), the LIJ
+ * role byte (one of ATM_LIJ_*) and the LIJ call identifier.  The kernel
+ * walks the buffer raw in svc_bind / svc_connect (atm/svc.c) against the
+ * bound listener; FT_RAW covers the dispatch surface without a curated
+ * ESA / E.164 vocabulary.  sas_family is omitted; the shared-head pass
+ * writes ss_family.
+ */
+static const struct struct_field sockaddr_atmsvc_variant_fields[] = {
+	FIELD(struct sockaddr_atmsvc, sas_addr.prv),
+	FIELD(struct sockaddr_atmsvc, sas_addr.pub),
+	FIELD(struct sockaddr_atmsvc, sas_addr.lij_type),
+	FIELD(struct sockaddr_atmsvc, sas_addr.lij_id),
 };
 #endif
 
@@ -2161,6 +2186,15 @@ static const struct union_variant sockaddr_storage_variants[] = {
 		.fields		 = sockaddr_at_variant_fields,
 		.num_fields	 = ARRAY_SIZE(sockaddr_at_variant_fields),
 		.effective_size	 = sizeof(struct sockaddr_at),
+	},
+#endif
+#ifdef USE_ATM
+	{
+		.discrim_value	 = AF_ATMSVC,
+		.name		 = "AF_ATMSVC",
+		.fields		 = sockaddr_atmsvc_variant_fields,
+		.num_fields	 = ARRAY_SIZE(sockaddr_atmsvc_variant_fields),
+		.effective_size	 = sizeof(struct sockaddr_atmsvc),
 	},
 #endif
 #ifdef USE_LLC
