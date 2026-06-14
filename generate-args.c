@@ -827,6 +827,96 @@ static unsigned long gen_arg_timespec(struct syscallentry *entry __unused__,
 }
 
 /*
+ * ARG_BUF_SIZED: a writable input-buffer slot whose paired ARG_BUF_LEN
+ * sibling publishes the byte length the kernel will copy_from_user().
+ * Models the generic `const void __user *buf, size_t len` pair some
+ * syscalls take for an opaque blob whose layout is not a fixed struct
+ * (mq_timedsend's msg_ptr+msg_len, splice/sendfile-shaped payloads,
+ * ...).  ARG_STRUCT_PTR_IN exists for typed structs; this is its
+ * untyped sibling, and the paired-length wiring mirrors
+ * ARG_IOVEC/ARG_IOVECLEN exactly.
+ *
+ * Mix:
+ *   - ~10% NULL (publish 0, return NULL: legal "no buffer" arm /
+ *     EFAULT-with-len reject arm)
+ *   - ~1/16 deliberate pointer/length mismatch (alloc S, publish
+ *     S' != S; biased S' > S to keep the copy_from_user EFAULT /
+ *     size-check reject path warm, occasionally S' < S for the
+ *     short-copy arm)
+ *   - rest: coherent buf+len at one of seven boundary size buckets
+ *     (0, 1, page-1, page, page+1, mid-range, large-with-real-backing
+ *     capped at ~64 KiB so get_writable_address's residency probe
+ *     stays cheap)
+ *
+ * Pool buffer (get_writable_struct == get_writable_address), off the
+ * shared region / libc heap so the blanket address scrub is a no-op
+ * and no .cleanup is required -- mirror ARG_TIMESPEC.
+ */
+static unsigned long gen_arg_buf_sized(struct syscallentry *entry,
+				       struct syscallrecord *rec,
+				       unsigned int argnum)
+{
+	unsigned long size;
+	void *buf;
+
+	if (rnd_modulo_u32(10) == 0) {
+		publish_paired_length(entry, rec, argnum, 0);
+		return 0;
+	}
+
+	switch (rnd_modulo_u32(7)) {
+	case 0:
+		size = 0;
+		break;
+	case 1:
+		size = 1;
+		break;
+	case 2:
+		size = page_size - 1;
+		break;
+	case 3:
+		size = page_size;
+		break;
+	case 4:
+		size = page_size + 1;
+		break;
+	case 5:
+		size = 1UL + rnd_modulo_u32(8192);
+		break;
+	default:
+		size = 1UL + rnd_modulo_u32(65536);
+		break;
+	}
+
+	buf = get_writable_struct(size);
+	if (buf == NULL) {
+		publish_paired_length(entry, rec, argnum, 0);
+		return 0;
+	}
+
+	if (rnd_modulo_u32(16) == 0) {
+		unsigned long pub;
+
+		/*
+		 * Bias S' > S to drive the kernel's copy_from_user
+		 * EFAULT / size-check reject path; the occasional
+		 * S' < S keeps the short-copy arm warm.
+		 */
+		if (rnd_modulo_u32(4) != 0)
+			pub = size + 1UL + rnd_modulo_u32(8192);
+		else if (size > 0)
+			pub = rnd_modulo_u32((uint32_t) size);
+		else
+			pub = 1UL + rnd_modulo_u32(8192);
+		publish_paired_length(entry, rec, argnum, pub);
+		return (unsigned long) buf;
+	}
+
+	publish_paired_length(entry, rec, argnum, size);
+	return (unsigned long) buf;
+}
+
+/*
  * Bucketed fill for a single struct timeval, shared by gen_arg_timeval()
  * and gen_arg_itimerval() (which is two timevals back-to-back).
  *
@@ -3366,6 +3456,15 @@ const struct argtype_ops argtype_table[] = {
 	[ARG_TIMEVAL] = {
 		.name = "ARG_TIMEVAL",
 		.generate = gen_arg_timeval,
+	},
+	[ARG_BUF_SIZED] = {
+		.name = "ARG_BUF_SIZED",
+		.generate = gen_arg_buf_sized,
+		.paired_length = ARG_BUF_LEN,
+	},
+	[ARG_BUF_LEN] = {
+		.name = "ARG_BUF_LEN",
+		.generate = gen_arg_paired_length,
 	},
 	[ARG_IOVEC] = {
 		.name = "ARG_IOVEC",
