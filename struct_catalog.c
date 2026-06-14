@@ -5117,6 +5117,23 @@ static const struct struct_field sctp_sack_info_fields[] = {
 	       .u.range = { 0, 16 },
 	       .mutate_weight = 60),
 };
+
+/*
+ * struct sctp_authkeyid -- IPPROTO_SCTP / SCTP_AUTH_{ACTIVE,DELETE,
+ * DEACTIVATE}_KEY.  RFC 4895 AUTH key management: scact_assoc_id picks
+ * the target association (FT_RAW so the kernel's per-assoc lookup
+ * constant shows up to KCOV-CMP), scact_keynumber is the shared-key
+ * identifier bounded to [0, 8] -- realistic for the small set of keys an
+ * endpoint typically provisions while still exercising the lookup path.
+ * Bespoke build_sctp_authkeyid() zero-fills as a miss-fallback.
+ */
+static const struct struct_field sctp_authkeyid_fields[] = {
+	FIELDX(struct sctp_authkeyid, scact_assoc_id, FT_RAW,
+	       .mutate_weight = 60),
+	FIELDX(struct sctp_authkeyid, scact_keynumber, FT_RANGE,
+	       .u.range = { 0, 8 },
+	       .mutate_weight = 60),
+};
 #endif
 
 /* ------------------------------------------------------------------ */
@@ -5596,6 +5613,12 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= sctp_sack_info_fields,
 		.num_fields	= ARRAY_SIZE(sctp_sack_info_fields),
 	},
+	[SC_SCTP_AUTHKEYID] = {
+		.name		= "sctp_authkeyid",
+		.struct_size	= sizeof(struct sctp_authkeyid),
+		.fields		= sctp_authkeyid_fields,
+		.num_fields	= ARRAY_SIZE(sctp_authkeyid_fields),
+	},
 #endif
 };
 
@@ -5758,6 +5781,12 @@ static const unsigned long setsockopt_sctp_assoc_value_optnames[] = {
 	SCTP_MAXSEG,
 	SCTP_MAX_BURST,
 	SCTP_STREAM_SCHEDULER,
+};
+
+static const unsigned long setsockopt_sctp_authkeyid_optnames[] = {
+	SCTP_AUTH_ACTIVE_KEY,
+	SCTP_AUTH_DELETE_KEY,
+	SCTP_AUTH_DEACTIVATE_KEY,
 };
 #endif
 
@@ -6599,6 +6628,14 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 		.discrim_value		= IPPROTO_SCTP,
 		.discrim2_arg_idx	= 3,
 		.discrim2_value		= SCTP_DELAYED_SACK,
+	},
+	{
+		"setsockopt", 4, &struct_catalog[SC_SCTP_AUTHKEYID],
+		.discrim_arg_idx	= 2,
+		.discrim_value		= IPPROTO_SCTP,
+		.discrim2_arg_idx	= 3,
+		.discrim2_values	= setsockopt_sctp_authkeyid_optnames,
+		.num_discrim2_values	= ARRAY_SIZE(setsockopt_sctp_authkeyid_optnames),
 	},
 #endif
 	/*
