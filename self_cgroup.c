@@ -576,10 +576,42 @@ static bool setup_single(const char *container_path,
 {
 	char pidbuf[32];
 	int n;
+	char *origin_cg = NULL;
+	char *origin_path = NULL;
+	bool main_moved = false;
+	bool ok = false;
 
 	n = snprintf(pidbuf, sizeof(pidbuf), "%d\n", (int)mypid());
 	if (n < 0 || (size_t)n >= sizeof(pidbuf))
 		return false;
+
+	/* Record the workload path BEFORE any cgroup mutation: a post-move
+	 * strdup-NULL would otherwise return false with trinity-main already
+	 * in the capped container and cg_workload still unset, leaving the
+	 * caller's rmdir EBUSY and main stranded in an untracked cgroup. */
+	cg_workload = strdup(container_path);
+	if (cg_workload == NULL) {
+		outputerr("self-cgroup: strdup(container_path) failed\n");
+		return false;
+	}
+
+	/* Capture where main lives BEFORE the move so a post-move failure
+	 * (memory.max, subtree_control, ...) can unwind by moving main back.
+	 * Re-read /proc/self/cgroup here rather than trusting an earlier
+	 * snapshot: a setup_split() failed-unwind may have left main in
+	 * container/parent rather than the scope. */
+	origin_cg = read_self_cg_path();
+	if (origin_cg == NULL) {
+		outputerr("self-cgroup: cannot read /proc/self/cgroup; "
+			  "aborting before move\n");
+		goto fail;
+	}
+	if (asprintf(&origin_path, "/sys/fs/cgroup%s", origin_cg) < 0) {
+		origin_path = NULL;
+		outputerr("self-cgroup: asprintf(origin_path) failed; "
+			  "aborting before move\n");
+		goto fail;
+	}
 
 	/* scope_path != NULL signals "scope is ours to delegate" -- the
 	 * caller checked scope_can_delegate().  A setup_split() failure
@@ -592,20 +624,21 @@ static bool setup_single(const char *container_path,
 		if (!write_cg_file(container_path, "cgroup.procs", pidbuf)) {
 			outputerr("self-cgroup: cgroup.procs write failed: %s\n",
 				  strerror(errno));
-			return false;
+			goto fail;
 		}
+		main_moved = true;
 		if (!write_cg_file(scope_path, "cgroup.subtree_control",
 				   "+memory")) {
 			outputerr("self-cgroup: re-enable +memory on scope subtree_control failed: %s\n",
 				  strerror(errno));
-			return false;
+			goto fail;
 		}
 	}
 
 	if (!write_cg_file(container_path, "memory.max", max_str)) {
 		outputerr("self-cgroup: write memory.max=%s failed: %s\n",
 			  max_str, strerror(errno));
-		return false;
+		goto fail;
 	}
 	if (!write_cg_file(container_path, "memory.high", high_str))
 		output(1, "self-cgroup: write memory.high=%s failed: %s\n",
@@ -618,21 +651,34 @@ static bool setup_single(const char *container_path,
 	 * scope, so trinity-main is still in it; move it now.  In the
 	 * scope_path != NULL path the move happened above and this branch
 	 * is skipped. */
-	if (scope_path == NULL &&
-	    !write_cg_file(container_path, "cgroup.procs", pidbuf)) {
-		outputerr("self-cgroup: cgroup.procs write failed: %s\n",
-			  strerror(errno));
-		return false;
+	if (scope_path == NULL) {
+		if (!write_cg_file(container_path, "cgroup.procs", pidbuf)) {
+			outputerr("self-cgroup: cgroup.procs write failed: %s\n",
+				  strerror(errno));
+			goto fail;
+		}
+		main_moved = true;
 	}
-
-	cg_workload = strdup(container_path);
-	if (cg_workload == NULL)
-		return false;
 
 	output(0, "self-cgroup: single-cgroup fallback "
 	       "(memory.max=%s memory.high=%s memory.swap.max=%s) -- no OOM scope split\n",
 	       max_str, high_str, swap_str);
-	return true;
+	ok = true;
+
+fail:
+	if (!ok) {
+		/* On any post-move failure, move main back to origin so the
+		 * caller's rmdir(container) succeeds and main isn't stranded
+		 * in a capped, untracked cgroup.  Best-effort: if the write
+		 * fails there is nowhere useful to go. */
+		if (main_moved)
+			(void)write_cg_file(origin_path, "cgroup.procs", pidbuf);
+		free(cg_workload);
+		cg_workload = NULL;
+	}
+	free(origin_cg);
+	free(origin_path);
+	return ok;
 }
 
 void self_cgroup_setup(void)
