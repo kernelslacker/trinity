@@ -1688,7 +1688,7 @@ static void replace_child(int childno)
 			dump_fork_failure_snapshot();
 			return;
 		}
-		usleep(retries * 10000);
+		usleep(min(retries * 10000u, 20000u));
 	}
 }
 
@@ -1746,6 +1746,13 @@ static void fork_children(void)
 	 * inner backoff this caps the stuck window at roughly a minute. */
 	unsigned int consecutive_fork_failures = 0;
 	const unsigned int max_consecutive_fork_failures = 1000;
+	/* Cumulative backoff across all slots in this fork_children call.
+	 * Each inner sleep is clamped to 20 ms; once we've burned ~2 s of
+	 * backoff total, yield back to main_loop so reap, watchdog and the
+	 * deferred-free ring drain run between fork storms instead of being
+	 * starved by an endlessly retrying spawn loop. */
+	unsigned int total_backoff_us = 0;
+	const unsigned int max_total_backoff_us = 2000000u;
 
 	while (__atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED) < max_children) {
 		int childno;
@@ -1792,7 +1799,13 @@ static void fork_children(void)
 					dump_fork_failure_snapshot();
 					break;
 				}
-				usleep(retries * 10000);
+				{
+					unsigned int sleep_us = min(retries * 10000u, 20000u);
+					usleep(sleep_us);
+					total_backoff_us += sleep_us;
+					if (total_backoff_us >= max_total_backoff_us)
+						return;
+				}
 			}
 			if (retries >= 10)
 				continue;
