@@ -209,6 +209,12 @@ static socklen_t build_sctp_sackinfo(void *buf)
 	memset(buf, 0, sizeof(struct sctp_sack_info));
 	return sizeof(struct sctp_sack_info);
 }
+
+static socklen_t build_sctp_authkeyid(void *buf)
+{
+	memset(buf, 0, sizeof(struct sctp_authkeyid));
+	return sizeof(struct sctp_authkeyid);
+}
 #endif
 
 static socklen_t build_string_ifname(void *buf)
@@ -330,6 +336,9 @@ static const struct sockopt_entry sockopt_table[] = {
 	{ IPPROTO_SCTP, SCTP_EVENTS,              build_sctp_events },
 	{ IPPROTO_SCTP, SCTP_AUTH_CHUNK,          build_sctp_authchunk },
 	{ IPPROTO_SCTP, SCTP_DELAYED_SACK,        build_sctp_sackinfo },
+	{ IPPROTO_SCTP, SCTP_AUTH_ACTIVE_KEY,     build_sctp_authkeyid },
+	{ IPPROTO_SCTP, SCTP_AUTH_DELETE_KEY,     build_sctp_authkeyid },
+	{ IPPROTO_SCTP, SCTP_AUTH_DEACTIVATE_KEY, build_sctp_authkeyid },
 #endif
 };
 
