@@ -7,7 +7,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
-#include <time.h>
 #include "futex.h"
 #include "random.h"
 #include "rnd.h"
@@ -49,7 +48,6 @@ static unsigned long futex_waitv_clockids[] = {
 static void sanitise_futex_waitv(struct syscallrecord *rec)
 {
 	struct futex_waitv *waiters;
-	struct timespec *ts;
 	unsigned int nr, i;
 	__u32 *futex_words;
 
@@ -102,23 +100,21 @@ static void sanitise_futex_waitv(struct syscallrecord *rec)
 		}
 	}
 
-	/* Short timeout so we don't block forever. */
-	ts = (struct timespec *) get_writable_address(sizeof(*ts));
-	if (ts == NULL)
-		return;
-	ts->tv_sec = 0;
-	ts->tv_nsec = rnd_modulo_u32(1000000);	/* up to 1ms */
-
 	rec->a1 = (unsigned long) waiters;
 	rec->a2 = nr;
 	rec->a3 = 0;
-	rec->a4 = (unsigned long) ts;
+
+	/*
+	 * a4 (timeout) is typed ARG_TIMESPEC; the generator publishes
+	 * a writable pool buffer (or NULL ~10%) for us.  NEED_ALARM caps
+	 * any blocking arm a large tv_sec bucket would otherwise produce.
+	 */
 }
 
 struct syscallentry syscall_futex_waitv = {
 	.name = "futex_waitv",
 	.num_args = 5,
-	.argtype = { [1] = ARG_LEN, [4] = ARG_OP },
+	.argtype = { [1] = ARG_LEN, [3] = ARG_TIMESPEC, [4] = ARG_OP },
 	.argname = { [0] = "waiters", [1] = "nr_futexes", [2] = "flags", [3] = "timeout", [4] = "clockid" },
 	.arg_params[4].list = ARGLIST(futex_waitv_clockids),
 	.bound_arg = 2,
