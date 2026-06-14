@@ -1289,6 +1289,7 @@ static unsigned int stall_threshold(enum child_op_type op_type)
 	case CHILD_OP_EPOLL_VOLATILITY:		return 30;
 	case CHILD_OP_SLAB_CACHE_THRASH:	return 30;
 	case CHILD_OP_TLS_ROTATE:		return 30;
+	case CHILD_OP_SOCK_ULP_SOCKMAP_LAYERING:	return 30;
 	case CHILD_OP_PACKET_FANOUT_THRASH:	return 30;
 	case CHILD_OP_SPLICE_PROTOCOLS:		return 30;
 	case CHILD_OP_RXRPC_KEY_INSTALL:	return 30;
@@ -1369,7 +1370,7 @@ static void check_fd_leaks(struct childdata *child)
  * Slot ordering matches pick_op_type_table[]; the _Static_assert below
  * pins ARRAY_SIZE equality between the two.
  */
-static int dormant_op_disabled[115] = {
+static int dormant_op_disabled[116] = {
 	0, 0, 0, 0, 0,
 	0, 1, 1, 1, 1,
 	1, 1, 1, 0, 1,
@@ -1402,6 +1403,7 @@ static int dormant_op_disabled[115] = {
 	1,	/* pfkey_spd_walk: dormant until canary-queue load-tests the PF_KEYv2 SPDDUMP-vs-SPDADD walk-race burst. */
 	1,	/* l2tp_ifname_race: dormant until canary-queue load-tests the L2TP SESSION_CREATE same-ifname race burst. */
 	1,	/* statmount_idmap_overflow: dormant until canary-queue load-tests the statmount() idmap seq-buffer overflow sweep. */
+	1,	/* sock_ulp_sockmap_layering: dormant until canary-queue load-tests the TCP_ULP "tls" + sockmap STREAM_VERDICT layering burst. */
 };
 
 /*
@@ -1447,6 +1449,7 @@ static const enum child_op_type alt_op_rotation[] = {
 	CHILD_OP_MEMORY_PRESSURE,
 	CHILD_OP_SLAB_CACHE_THRASH,
 	CHILD_OP_TLS_ROTATE,
+	CHILD_OP_SOCK_ULP_SOCKMAP_LAYERING,
 	CHILD_OP_PACKET_FANOUT_THRASH,
 	CHILD_OP_ETH_EMITTER,
 	CHILD_OP_USERNS_FUZZER,
@@ -1559,6 +1562,7 @@ const char *alt_op_name(enum child_op_type op)
 	case CHILD_OP_CPU_HOTPLUG_RIDER: return "cpu_hotplug_rider";
 	case CHILD_OP_SLAB_CACHE_THRASH: return "slab_cache_thrash";
 	case CHILD_OP_TLS_ROTATE:	return "tls_rotate";
+	case CHILD_OP_SOCK_ULP_SOCKMAP_LAYERING:	return "sock_ulp_sockmap_layering";
 	case CHILD_OP_PACKET_FANOUT_THRASH:	return "packet_fanout_thrash";
 	case CHILD_OP_IOURING_NET_MULTISHOT:	return "iouring_net_multishot";
 	case CHILD_OP_TCP_AO_ROTATE:	return "tcp_ao_rotate";
@@ -1731,7 +1735,7 @@ void log_alt_op_config(void)
  * CHILD_OP_SYSCALL sentinel filter in init_altop_dispatch() stays as
  * defensive coding for any future hole.
  */
-static const enum child_op_type pick_op_type_table[115] = {
+static const enum child_op_type pick_op_type_table[116] = {
 	[0]  = CHILD_OP_MMAP_LIFECYCLE,
 	[1]  = CHILD_OP_MPROTECT_SPLIT,
 	[2]  = CHILD_OP_MLOCK_PRESSURE,
@@ -1847,6 +1851,7 @@ static const enum child_op_type pick_op_type_table[115] = {
 	[112] = CHILD_OP_PFKEY_SPD_WALK,
 	[113] = CHILD_OP_L2TP_IFNAME_RACE,
 	[114] = CHILD_OP_STATMOUNT_IDMAP_OVERFLOW,
+	[115] = CHILD_OP_SOCK_ULP_SOCKMAP_LAYERING,
 };
 _Static_assert(ARRAY_SIZE(pick_op_type_table) == ARRAY_SIZE(dormant_op_disabled),
 	"pick_op_type_table and dormant_op_disabled must have matching slot counts");
@@ -2170,6 +2175,7 @@ static bool (*const op_dispatch[NR_CHILD_OP_TYPES])(struct childdata *) = {
 	[CHILD_OP_CPU_HOTPLUG_RIDER]	= cpu_hotplug_rider,
 	[CHILD_OP_SLAB_CACHE_THRASH]	= slab_cache_thrash,
 	[CHILD_OP_TLS_ROTATE]		= tls_rotate,
+	[CHILD_OP_SOCK_ULP_SOCKMAP_LAYERING]	= sock_ulp_sockmap_layering,
 	[CHILD_OP_PACKET_FANOUT_THRASH]	= packet_fanout_thrash,
 	[CHILD_OP_IOURING_NET_MULTISHOT] = iouring_net_multishot,
 	[CHILD_OP_TCP_AO_ROTATE]	= tcp_ao_rotate,
