@@ -535,6 +535,212 @@ static void dump_pid_syscall(int pid)
 	fclose(fp);
 }
 
+/*
+ * Bounded /proc/<pid>/wchan reader used by the D-state diagnostic
+ * snapshot.  open(O_RDONLY) + single read into a stack buffer + close
+ * keeps the reap loop allocation-free and bounded against a wedged
+ * task: wchan is at most a kernel symbol name (a few dozen bytes) so a
+ * 256 B scratch space is generous and the read returns whatever was
+ * ready without blocking on the task's state.  Silent on any open or
+ * read error -- the snapshot caller treats missing wchan as an omitted
+ * line, not a failure to investigate further.
+ */
+static void dump_pid_wchan(int pid)
+{
+	char filename[80];
+	char buf[256];
+	int fd;
+	ssize_t n;
+
+	snprintf(filename, sizeof(filename), "/proc/%d/wchan", pid);
+
+	fd = open(filename, O_RDONLY | O_CLOEXEC);
+	if (fd < 0)
+		return;
+	n = read(fd, buf, sizeof(buf) - 1);
+	close(fd);
+	if (n <= 0)
+		return;
+	buf[n] = '\0';
+	/* wchan typically omits a trailing newline but be defensive. */
+	while (n > 0 && (buf[n - 1] == '\n' || buf[n - 1] == '\r'))
+		buf[--n] = '\0';
+	if (n == 0)
+		return;
+	output(0, "pid %d wchan: %s\n", pid, buf);
+}
+
+/*
+ * Bounded /proc/<pid>/stack reader.  Distinct from the existing
+ * dump_pid_stack() (which uses fopen/getline and allocates per call)
+ * because the D-state diagnostic path runs unconditionally -- not
+ * gated on shm->debug -- and must stay quiet about permission failures
+ * (most production kernels reject /proc/<pid>/stack reads without
+ * CAP_SYS_ADMIN, returning EACCES; some configs hide it entirely with
+ * ENOENT).  Silent on any open/read failure.
+ */
+static void dump_pid_stack_bounded(int pid)
+{
+	char filename[80];
+	char buf[2048];
+	int fd;
+	ssize_t n;
+	char *p, *eol;
+
+	snprintf(filename, sizeof(filename), "/proc/%d/stack", pid);
+
+	fd = open(filename, O_RDONLY | O_CLOEXEC);
+	if (fd < 0)
+		return;
+	n = read(fd, buf, sizeof(buf) - 1);
+	close(fd);
+	if (n <= 0)
+		return;
+	buf[n] = '\0';
+
+	for (p = buf; *p != '\0'; p = eol + 1) {
+		eol = strchr(p, '\n');
+		if (eol == NULL) {
+			if (*p != '\0')
+				output(0, "pid %d stack: %s\n", pid, p);
+			break;
+		}
+		*eol = '\0';
+		if (*p != '\0')
+			output(0, "pid %d stack: %s\n", pid, p);
+	}
+}
+
+struct dstate_fd_print_ctx {
+	char buf[128];
+	int off;
+	unsigned int n;
+};
+
+static void dstate_print_fd_arg(int fd, void *vctx)
+{
+	struct dstate_fd_print_ctx *c = vctx;
+	int written;
+
+	if (c->off >= (int)sizeof(c->buf))
+		return;
+	written = snprintf(c->buf + c->off, sizeof(c->buf) - c->off,
+			   "%s%d", c->n ? "," : "", fd);
+	if (written < 0)
+		return;
+	c->off += written;
+	c->n++;
+}
+
+/*
+ * Targeted fd-topology line for the epoll/select syscall families.
+ * These dominated a recent unkillable-D-state survey (14 of 25 wedged
+ * children were in epoll_ctl alone); a generic "fd args" dump is opaque
+ * for these because the syscall's semantics make different aN slots
+ * mean very different things (epfd vs target_fd vs maxevents vs nfds).
+ * Returns true if it handled the syscall, false otherwise so the
+ * generic fd-args fallback can fire.
+ */
+static bool dump_dstate_epoll_select_topology(const char *name,
+					      const unsigned long *args)
+{
+	if (strcmp(name, "epoll_ctl") == 0) {
+		output(0, "  fd topology: epfd=%ld op=%ld target_fd=%ld\n",
+			(long)args[0], (long)args[1], (long)args[2]);
+		return true;
+	}
+	if (strcmp(name, "epoll_wait") == 0 ||
+	    strcmp(name, "epoll_pwait") == 0 ||
+	    strcmp(name, "epoll_pwait2") == 0) {
+		output(0, "  fd topology: epfd=%ld maxevents=%ld\n",
+			(long)args[0], (long)args[2]);
+		return true;
+	}
+	if (strcmp(name, "select") == 0 ||
+	    strcmp(name, "pselect6") == 0) {
+		output(0, "  fd topology: nfds=%ld\n", (long)args[0]);
+		return true;
+	}
+	return false;
+}
+
+/*
+ * One-shot D-state diagnostic snapshot.  Fires at the first watchdog
+ * detection of TASK_UNINTERRUPTIBLE for a child and prints a richer
+ * forensic than the bare "watchdog: kill ..." line:
+ *
+ *   - child op (when the wedged child is running a non-syscall childop,
+ *     so the dispatch context is recoverable).
+ *   - the targeted fd-topology line for the epoll/select families that
+ *     dominate the observed unkillable population, or the generic
+ *     fd-bearing arg values for every other syscall.
+ *   - /proc/<pid>/wchan: the kernel sleep address/symbol.
+ *   - /proc/<pid>/stack: the kernel call stack (silently omitted when
+ *     the kernel hides it from unprivileged readers).
+ *
+ * Runs on the parent's reap/watchdog path.  All /proc reads go through
+ * the bounded helpers above so a wedged task cannot stall the reap
+ * loop: open(O_RDONLY) + single read into a stack buffer + close, no
+ * heap allocation, no looped reads.  The caller is responsible for
+ * gating this on the per-child dstate_diag_dumped latch so the snapshot
+ * fires once per stuck child rather than every watchdog tick.
+ */
+static void dump_dstate_diagnostics(struct childdata *child, int childno,
+				    pid_t pid)
+{
+	struct syscallrecord *rec = &child->syscall;
+	struct syscallentry *entry = NULL;
+	unsigned long args[6] = { 0 };
+	unsigned int callno;
+	bool do32;
+	bool got;
+	enum syscallstate state;
+	const char *name;
+
+	SREC_SNAPSHOT(rec, {
+		do32 = rec->do32bit;
+		callno = rec->nr;
+		state = __atomic_load_n(&rec->state, __ATOMIC_RELAXED);
+		args[0] = rec->a1;
+		args[1] = rec->a2;
+		args[2] = rec->a3;
+		args[3] = rec->a4;
+		args[4] = rec->a5;
+		args[5] = rec->a6;
+	}, got);
+
+	output(0, "  D-state diag: child %d pid %u\n", childno, pid);
+
+	if (child->op_type != CHILD_OP_SYSCALL)
+		output(0, "  child op: %s\n", alt_op_name(child->op_type));
+
+	if (got) {
+		entry = get_syscall_entry(callno, do32);
+		name = (entry != NULL) ? entry->name : NULL;
+
+		/* The watchdog kill line printed by stuck_syscall_info()
+		 * already names the syscall; only emit fd-topology / fd-args
+		 * here, since those are what the kill line omits. */
+		if (name != NULL) {
+			if (!dump_dstate_epoll_select_topology(name, args) &&
+			    state == BEFORE) {
+				struct dstate_fd_print_ctx fdctx = { .off = 0, .n = 0 };
+
+				for_each_fd_arg(entry, args,
+						dstate_print_fd_arg, &fdctx);
+				if (fdctx.n > 0)
+					output(0, "  fd args (%s): %s\n",
+						name, fdctx.buf);
+			}
+		}
+	} else {
+		output(0, "  syscall arg snapshot unavailable (writer churn)\n");
+	}
+
+	dump_pid_wchan(pid);
+	dump_pid_stack_bounded(pid);
+}
+
 struct stuck_evict_ctx {
 	int fds[6];
 	unsigned int n;
@@ -939,6 +1145,20 @@ static bool is_child_making_progress(struct childdata *child, int childno)
 	if (state == 'D') {
 		if (!child->kill_in_flight)
 			stuck_syscall_info(child, childno);
+		/* First-detection-only forensic.  Recent unkillable surveys
+		 * showed the epoll family (epoll_ctl in particular) dominating
+		 * the wedged-child population, with the bare watchdog kill line
+		 * giving no way to tell *which* epfd / target fd had blown up
+		 * the ep_item_poll path.  The snapshot adds wchan + the kernel
+		 * stack (when readable) + the fd-topology line for the
+		 * epoll/select family so the unkillables are analysable
+		 * post-hoc.  Gated on a dedicated dstate_diag_dumped latch
+		 * (cleared on reap) so re-entry through is_child_making_progress
+		 * cannot re-fire it every cycle. */
+		if (!child->dstate_diag_dumped) {
+			dump_dstate_diagnostics(child, childno, pid);
+			child->dstate_diag_dumped = true;
+		}
 		kill_pid(pid);
 		__atomic_add_fetch(&child->kill_count, 1, __ATOMIC_RELAXED);
 		child->kill_in_flight = true;
