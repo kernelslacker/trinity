@@ -12,6 +12,7 @@
 #include "fd.h"
 #include "list.h"
 #include "locks.h"
+#include "maps.h"
 #include "objects.h"
 #include "params.h"
 #include "pc_format.h"
@@ -904,6 +905,28 @@ static void add_object_publish(struct object *obj, enum obj_scope scope,
 	obj->publish_call_nr = shm_published ? shm_published->fleet_op_count : 0;
 	head->num_entries = n + 1;
 
+	/*
+	 * Maintain the per-child OBJ_LOCAL OBJ_MMAP_* nonempty-pool mask
+	 * that get_map_handle() uses to skip guaranteed-empty pools.  This
+	 * publish is the 0->1 transition iff the pre-publish n was zero --
+	 * any larger n means the bit is already set.  Only the three mmap
+	 * pool types participate; mmap_pool_bit_for_type() returns -1 for
+	 * everything else and the branch is skipped.  OBJ_GLOBAL is
+	 * parent-only by construction (see add_object_validate's post-fork
+	 * guard) and the mask lives in childdata, so the maintenance is
+	 * gated on scope == OBJ_LOCAL.
+	 */
+	if (scope == OBJ_LOCAL && n == 0) {
+		int bit = mmap_pool_bit_for_type(type);
+
+		if (bit >= 0) {
+			struct childdata *child = this_child();
+
+			if (child != NULL)
+				child->mmap_pool_nonempty_mask |= 1u << bit;
+		}
+	}
+
 	/* Mirror the parent-side global fd hash for OBJ_LOCAL fd-typed
 	 * pools so find_local_object_by_fd() resolves in O(1).  The buffer
 	 * is lazily allocated by local_fd_hash_insert() on first use. */
@@ -1321,6 +1344,28 @@ static void __destroy_object(struct object *obj, enum obj_scope scope,
 	}
 	head->array[last] = NULL;
 	head->num_entries = last;
+
+	/*
+	 * Maintain the per-child OBJ_LOCAL OBJ_MMAP_* nonempty-pool mask
+	 * paired with the set-bit logic in add_object_publish.  This is the
+	 * 1->0 transition iff the just-decremented last is zero -- any
+	 * larger value means the bit must stay set.  destroy_objects()
+	 * routes its drain through __destroy_object() so a whole-pool
+	 * teardown flows naturally through this branch on the final entry.
+	 * Gated on scope == OBJ_LOCAL because the mask lives in childdata;
+	 * OBJ_GLOBAL teardowns from the parent's destroy_global_objects
+	 * leave this_child() == NULL and the branch is a no-op there.
+	 */
+	if (scope == OBJ_LOCAL && last == 0) {
+		int bit = mmap_pool_bit_for_type(type);
+
+		if (bit >= 0) {
+			struct childdata *child = this_child();
+
+			if (child != NULL)
+				child->mmap_pool_nonempty_mask &= ~(1u << bit);
+		}
+	}
 
 	/* Remove from fd hash table */
 	if (scope == OBJ_GLOBAL && is_fd_type(type)) {

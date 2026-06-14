@@ -52,11 +52,64 @@ bool get_map_handle(struct map_handle *h)
 
 	for (int i = 0; i < 1000; i++) {
 		struct object *obj;
+		unsigned int popmask, popcount, pick, bit;
 
 		static const enum objecttype map_pool_types[3] = {
 			OBJ_MMAP_ANON, OBJ_MMAP_FILE, OBJ_MMAP_TESTFILE
 		};
-		type = map_pool_types[rnd_modulo_u32(3)];
+
+		/*
+		 * Restrict the per-iteration pool pick to OBJ_LOCAL pools the
+		 * owning child has marked nonempty.  Without the mask, type was
+		 * chosen uniformly from all three regardless of occupancy, so
+		 * each empty pool burnt one in three iterations on a
+		 * get_random_object() == NULL reject -- a steady-state cost
+		 * paid every draw post-fork until FILE/TESTFILE picked up
+		 * entries via lazy mmap shapes.  The mask filters those
+		 * guaranteed misses out entirely; the post-1000-iter refill
+		 * arm below still runs on real exhaustion (mask==0).
+		 *
+		 * The pick is uniform across the SET bits in popmask, not
+		 * weighted by num_entries -- intentionally preserves the
+		 * pre-mask equal-pool bias (each nonempty pool sampled at
+		 * 1/popcount) so consumer mix over {ANON, FILE, TESTFILE}
+		 * stays unchanged for the common all-nonempty case and
+		 * collapses sensibly to the surviving subset when one or two
+		 * pools drain.  Weighting by num_entries would change the mix
+		 * and is explicitly out of scope.
+		 *
+		 * OBJ_GLOBAL keeps the uniform 1-of-3 pick: the mask lives in
+		 * childdata and is owner-only; the parent-side path through
+		 * this function (child == NULL) has no per-pool occupancy
+		 * shadow and just picks across all three pool types as before.
+		 */
+		if (scope == OBJ_LOCAL && child != NULL) {
+			popmask = child->mmap_pool_nonempty_mask & 0x7u;
+			if (popmask == 0) {
+				/*
+				 * All three OBJ_LOCAL mmap pools are empty.
+				 * Further draws this call cannot succeed; exit
+				 * the retry loop early and let the post-loop
+				 * lazy refill arm decide whether to top up.
+				 */
+				break;
+			}
+		} else {
+			popmask = 0x7u;
+		}
+
+		popcount = (unsigned int) __builtin_popcount(popmask);
+		pick = rnd_modulo_u32(popcount);
+		type = map_pool_types[0];
+		for (bit = 0; bit < 3; bit++) {
+			if ((popmask & (1u << bit)) == 0)
+				continue;
+			if (pick == 0) {
+				type = map_pool_types[bit];
+				break;
+			}
+			pick--;
+		}
 
 		obj = get_random_object(type, scope);
 		if (obj == NULL) {
