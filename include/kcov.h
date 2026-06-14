@@ -1018,6 +1018,58 @@ struct kcov_shared {
 	unsigned long reexec_attribution_slot_hist[CMP_REDQUEEN_SLOT_HIST_NR];
 	unsigned long reexec_success_by_slot[CMP_REDQUEEN_SLOT_HIST_NR];
 	unsigned long reexec_pending_dropped;
+
+	/* RedQueen A/B cohort denominators.  The existing reexec_* family
+	 * counts enabled-arm ACTIVITY (attempts, new_cmps, attribution wins
+	 * etc.) but provides no denominator -- so the fleet-level question
+	 * "did re-exec actually lift CMP novelty per parent call versus the
+	 * control arm" is unanswerable: reexec_new_cmps_total is the enabled
+	 * cohort's numerator with no matching denominator, and the control
+	 * cohort's parent-call population is invisible to the dump.
+	 *
+	 * Bumped from the kcov_collect_cmp() callsite in dispatch_step,
+	 * gated on child->redqueen_enabled to pick the cohort.  Every
+	 * CMP-mode parent call counts: validator-rejected calls (which
+	 * cannot trigger re-exec because their new_cmp is forced to zero)
+	 * are still part of the population the re-exec gate samples from,
+	 * so excluding them would bias the denominator.
+	 *
+	 *  cmp_parent_calls_enabled
+	 *      Count of CMP-mode parent calls in the redqueen-enabled
+	 *      cohort.  Pair with reexec_attempts (and the rest of the
+	 *      reexec_* numerator family) to read per-parent-call re-exec
+	 *      yield in the enabled arm.
+	 *  cmp_parent_calls_control
+	 *      Count of CMP-mode parent calls in the control cohort.  No
+	 *      re-exec ever fires here (the redqueen_enabled gate at
+	 *      dispatch_step's tail short-circuits) so this is purely the
+	 *      A/B baseline denominator.
+	 *  cmp_parent_new_cmps_enabled
+	 *      Sum of kcov_collect_cmp()'s per-call new_cmp return value
+	 *      across all enabled-cohort parent calls.  Together with
+	 *      cmp_parent_calls_enabled, gives baseline per-parent-call
+	 *      bloom-novel CMP yield in the enabled cohort BEFORE the
+	 *      re-exec lift is layered on top.
+	 *  cmp_parent_new_cmps_control
+	 *      Same, for the control cohort.  The two cohorts should
+	 *      produce statistically equivalent per-parent-call novelty in
+	 *      the absence of selection bias: a sustained drift between
+	 *      cmp_parent_new_cmps_enabled / cmp_parent_calls_enabled and
+	 *      cmp_parent_new_cmps_control / cmp_parent_calls_control is
+	 *      itself a sanity-check failure that says the A/B stamp is
+	 *      not actually balanced.  With the two arms confirmed
+	 *      balanced, the lift signal is
+	 *        reexec_new_cmps_total / cmp_parent_calls_enabled
+	 *      measured against either cohort's per-call novelty baseline.
+	 *
+	 * Relaxed atomics; cumulative across the run; mirror the storage
+	 * and discipline of the reexec_* family above.  Measurement-only
+	 * counters -- nothing in the picker, gates, or selection policy
+	 * reads them. */
+	unsigned long cmp_parent_calls_enabled;
+	unsigned long cmp_parent_calls_control;
+	unsigned long cmp_parent_new_cmps_enabled;
+	unsigned long cmp_parent_new_cmps_control;
 };
 
 extern struct kcov_shared *kcov_shm;

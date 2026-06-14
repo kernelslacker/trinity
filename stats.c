@@ -4490,6 +4490,10 @@ void kcov_cmp_stats_periodic_dump(void)
 	static unsigned long prev_reexec_skipped_validate_silent;
 	static unsigned long prev_reexec_window_cap_hit;
 	static unsigned long prev_reexec_pending_dropped;
+	static unsigned long prev_cmp_parent_calls_enabled;
+	static unsigned long prev_cmp_parent_calls_control;
+	static unsigned long prev_cmp_parent_new_cmps_enabled;
+	static unsigned long prev_cmp_parent_new_cmps_control;
 	static unsigned long prev_cmp_hint_callsite[CMP_HINT_CALLSITE_NR];
 	static struct timespec last_dump;
 	struct timespec now;
@@ -4505,6 +4509,8 @@ void kcov_cmp_stats_periodic_dump(void)
 	unsigned long cur_reexec_skipped_destructive, cur_reexec_skipped_validate_silent;
 	unsigned long cur_reexec_window_cap_hit;
 	unsigned long cur_reexec_pending_dropped;
+	unsigned long cur_cmp_parent_calls_enabled, cur_cmp_parent_calls_control;
+	unsigned long cur_cmp_parent_new_cmps_enabled, cur_cmp_parent_new_cmps_control;
 	unsigned long cur_cmp_hint_callsite[CMP_HINT_CALLSITE_NR];
 	unsigned long delta_records, delta_truncated, delta_bloom_skipped, delta_unique;
 	unsigned long delta_strip_skipped;
@@ -4517,6 +4523,8 @@ void kcov_cmp_stats_periodic_dump(void)
 	unsigned long delta_reexec_skipped_destructive, delta_reexec_skipped_validate_silent;
 	unsigned long delta_reexec_window_cap_hit;
 	unsigned long delta_reexec_pending_dropped;
+	unsigned long delta_cmp_parent_calls_enabled, delta_cmp_parent_calls_control;
+	unsigned long delta_cmp_parent_new_cmps_enabled, delta_cmp_parent_new_cmps_control;
 	unsigned long delta_cmp_hint_callsite[CMP_HINT_CALLSITE_NR];
 	bool any_callsite_delta = false;
 	unsigned int pc_kids, cmp_kids;
@@ -4548,6 +4556,10 @@ void kcov_cmp_stats_periodic_dump(void)
 	cur_reexec_skipped_validate_silent = __atomic_load_n(&kcov_shm->reexec_skipped_validate_silent, __ATOMIC_RELAXED);
 	cur_reexec_window_cap_hit          = __atomic_load_n(&kcov_shm->reexec_window_cap_hit,          __ATOMIC_RELAXED);
 	cur_reexec_pending_dropped         = __atomic_load_n(&kcov_shm->reexec_pending_dropped,         __ATOMIC_RELAXED);
+	cur_cmp_parent_calls_enabled       = __atomic_load_n(&kcov_shm->cmp_parent_calls_enabled,       __ATOMIC_RELAXED);
+	cur_cmp_parent_calls_control       = __atomic_load_n(&kcov_shm->cmp_parent_calls_control,       __ATOMIC_RELAXED);
+	cur_cmp_parent_new_cmps_enabled    = __atomic_load_n(&kcov_shm->cmp_parent_new_cmps_enabled,    __ATOMIC_RELAXED);
+	cur_cmp_parent_new_cmps_control    = __atomic_load_n(&kcov_shm->cmp_parent_new_cmps_control,    __ATOMIC_RELAXED);
 	{
 		unsigned int cs;
 		for (cs = 0; cs < CMP_HINT_CALLSITE_NR; cs++)
@@ -4583,6 +4595,10 @@ void kcov_cmp_stats_periodic_dump(void)
 		prev_reexec_skipped_validate_silent = cur_reexec_skipped_validate_silent;
 		prev_reexec_window_cap_hit          = cur_reexec_window_cap_hit;
 		prev_reexec_pending_dropped         = cur_reexec_pending_dropped;
+		prev_cmp_parent_calls_enabled       = cur_cmp_parent_calls_enabled;
+		prev_cmp_parent_calls_control       = cur_cmp_parent_calls_control;
+		prev_cmp_parent_new_cmps_enabled    = cur_cmp_parent_new_cmps_enabled;
+		prev_cmp_parent_new_cmps_control    = cur_cmp_parent_new_cmps_control;
 		{
 			unsigned int cs;
 			for (cs = 0; cs < CMP_HINT_CALLSITE_NR; cs++)
@@ -4617,6 +4633,10 @@ void kcov_cmp_stats_periodic_dump(void)
 	delta_reexec_skipped_validate_silent = cur_reexec_skipped_validate_silent - prev_reexec_skipped_validate_silent;
 	delta_reexec_window_cap_hit          = cur_reexec_window_cap_hit          - prev_reexec_window_cap_hit;
 	delta_reexec_pending_dropped         = cur_reexec_pending_dropped         - prev_reexec_pending_dropped;
+	delta_cmp_parent_calls_enabled       = cur_cmp_parent_calls_enabled       - prev_cmp_parent_calls_enabled;
+	delta_cmp_parent_calls_control       = cur_cmp_parent_calls_control       - prev_cmp_parent_calls_control;
+	delta_cmp_parent_new_cmps_enabled    = cur_cmp_parent_new_cmps_enabled    - prev_cmp_parent_new_cmps_enabled;
+	delta_cmp_parent_new_cmps_control    = cur_cmp_parent_new_cmps_control    - prev_cmp_parent_new_cmps_control;
 	{
 		unsigned int cs;
 		for (cs = 0; cs < CMP_HINT_CALLSITE_NR; cs++) {
@@ -4636,7 +4656,9 @@ void kcov_cmp_stats_periodic_dump(void)
 	     delta_reexec_attempts | delta_reexec_attribution_found |
 	     delta_reexec_attribution_ambiguous | delta_reexec_new_cmps_total |
 	     delta_reexec_skipped_destructive | delta_reexec_skipped_validate_silent |
-	     delta_reexec_window_cap_hit | delta_reexec_pending_dropped) != 0 ||
+	     delta_reexec_window_cap_hit | delta_reexec_pending_dropped |
+	     delta_cmp_parent_calls_enabled | delta_cmp_parent_calls_control |
+	     delta_cmp_parent_new_cmps_enabled | delta_cmp_parent_new_cmps_control) != 0 ||
 	    any_callsite_delta) {
 		stats_log_write("KCOV CMP stats over last %lds:\n", elapsed);
 
@@ -4777,6 +4799,30 @@ void kcov_cmp_stats_periodic_dump(void)
 					"reexec_pending_dropped", delta_reexec_pending_dropped,
 					rate_milli / 1000, rate_milli % 1000, cur_reexec_pending_dropped);
 		}
+		if (delta_cmp_parent_calls_enabled) {
+			unsigned long rate_milli = (delta_cmp_parent_calls_enabled * 1000UL) / (unsigned long)elapsed;
+			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+					"cmp_parent_calls_enabled", delta_cmp_parent_calls_enabled,
+					rate_milli / 1000, rate_milli % 1000, cur_cmp_parent_calls_enabled);
+		}
+		if (delta_cmp_parent_calls_control) {
+			unsigned long rate_milli = (delta_cmp_parent_calls_control * 1000UL) / (unsigned long)elapsed;
+			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+					"cmp_parent_calls_control", delta_cmp_parent_calls_control,
+					rate_milli / 1000, rate_milli % 1000, cur_cmp_parent_calls_control);
+		}
+		if (delta_cmp_parent_new_cmps_enabled) {
+			unsigned long rate_milli = (delta_cmp_parent_new_cmps_enabled * 1000UL) / (unsigned long)elapsed;
+			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+					"cmp_parent_new_cmps_enabled", delta_cmp_parent_new_cmps_enabled,
+					rate_milli / 1000, rate_milli % 1000, cur_cmp_parent_new_cmps_enabled);
+		}
+		if (delta_cmp_parent_new_cmps_control) {
+			unsigned long rate_milli = (delta_cmp_parent_new_cmps_control * 1000UL) / (unsigned long)elapsed;
+			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+					"cmp_parent_new_cmps_control", delta_cmp_parent_new_cmps_control,
+					rate_milli / 1000, rate_milli % 1000, cur_cmp_parent_new_cmps_control);
+		}
 		if (any_callsite_delta) {
 			static const char * const callsite_names[CMP_HINT_CALLSITE_NR] = {
 				[CMP_HINT_CALLSITE_ARG_OP]          = "ARG_OP",
@@ -4884,6 +4930,10 @@ void kcov_cmp_stats_periodic_dump(void)
 	prev_reexec_skipped_validate_silent = cur_reexec_skipped_validate_silent;
 	prev_reexec_window_cap_hit          = cur_reexec_window_cap_hit;
 	prev_reexec_pending_dropped         = cur_reexec_pending_dropped;
+	prev_cmp_parent_calls_enabled       = cur_cmp_parent_calls_enabled;
+	prev_cmp_parent_calls_control       = cur_cmp_parent_calls_control;
+	prev_cmp_parent_new_cmps_enabled    = cur_cmp_parent_new_cmps_enabled;
+	prev_cmp_parent_new_cmps_control    = cur_cmp_parent_new_cmps_control;
 	{
 		unsigned int cs;
 		for (cs = 0; cs < CMP_HINT_CALLSITE_NR; cs++)
@@ -6717,6 +6767,10 @@ static void dump_stats_kcov_block(void)
 			unsigned long rx_skipped_destructive = __atomic_load_n(&kcov_shm->reexec_skipped_destructive, __ATOMIC_RELAXED);
 			unsigned long rx_skipped_validate_silent = __atomic_load_n(&kcov_shm->reexec_skipped_validate_silent, __ATOMIC_RELAXED);
 			unsigned long rx_window_cap_hit = __atomic_load_n(&kcov_shm->reexec_window_cap_hit, __ATOMIC_RELAXED);
+			unsigned long rx_parent_calls_enabled = __atomic_load_n(&kcov_shm->cmp_parent_calls_enabled, __ATOMIC_RELAXED);
+			unsigned long rx_parent_calls_control = __atomic_load_n(&kcov_shm->cmp_parent_calls_control, __ATOMIC_RELAXED);
+			unsigned long rx_parent_new_cmps_enabled = __atomic_load_n(&kcov_shm->cmp_parent_new_cmps_enabled, __ATOMIC_RELAXED);
+			unsigned long rx_parent_new_cmps_control = __atomic_load_n(&kcov_shm->cmp_parent_new_cmps_control, __ATOMIC_RELAXED);
 
 			if (rx_attempts > 0)
 				stat_row("kcov_coverage", "reexec_attempts", rx_attempts);
@@ -6732,6 +6786,14 @@ static void dump_stats_kcov_block(void)
 				stat_row("kcov_coverage", "reexec_skipped_validate_silent", rx_skipped_validate_silent);
 			if (rx_window_cap_hit > 0)
 				stat_row("kcov_coverage", "reexec_window_cap_hit", rx_window_cap_hit);
+			if (rx_parent_calls_enabled > 0)
+				stat_row("kcov_coverage", "cmp_parent_calls_enabled", rx_parent_calls_enabled);
+			if (rx_parent_calls_control > 0)
+				stat_row("kcov_coverage", "cmp_parent_calls_control", rx_parent_calls_control);
+			if (rx_parent_new_cmps_enabled > 0)
+				stat_row("kcov_coverage", "cmp_parent_new_cmps_enabled", rx_parent_new_cmps_enabled);
+			if (rx_parent_new_cmps_control > 0)
+				stat_row("kcov_coverage", "cmp_parent_new_cmps_control", rx_parent_new_cmps_control);
 		}
 
 		/* Find top 10 edge-producing syscalls via insertion sort. */

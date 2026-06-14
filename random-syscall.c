@@ -1338,6 +1338,37 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 					   child->is_explorer,
 					   child->strategy_at_pick);
 		new_edges = false;
+
+		/* A/B cohort denominators for the reexec_* lift signal.
+		 * This is the parent CMP call: every CMP-mode child reaches
+		 * here exactly once per dispatch, and child->redqueen_enabled
+		 * is the stable per-fork stamp that partitions CMP-mode
+		 * children 50/50 into the enabled vs control arms.  Bumping
+		 * once per parent call (and accumulating new_cmp into the
+		 * matching cohort sum) gives the missing denominator the
+		 * existing reexec_* numerator counters need so the per-
+		 * parent-call lift question is answerable from the periodic
+		 * dump.  Bump unconditionally on the cohort path -- even a
+		 * parent call that returned new_cmp == 0 is a parent-call
+		 * the re-exec gate could have sampled, so excluding it would
+		 * bias the denominator. */
+		if (kcov_shm != NULL) {
+			if (child->redqueen_enabled) {
+				__atomic_fetch_add(&kcov_shm->cmp_parent_calls_enabled,
+						   1UL, __ATOMIC_RELAXED);
+				if (new_cmp > 0)
+					__atomic_fetch_add(
+						&kcov_shm->cmp_parent_new_cmps_enabled,
+						new_cmp, __ATOMIC_RELAXED);
+			} else {
+				__atomic_fetch_add(&kcov_shm->cmp_parent_calls_control,
+						   1UL, __ATOMIC_RELAXED);
+				if (new_cmp > 0)
+					__atomic_fetch_add(
+						&kcov_shm->cmp_parent_new_cmps_control,
+						new_cmp, __ATOMIC_RELAXED);
+			}
+		}
 	}
 
 	/* Per-syscall new-edge attribution split by strategy pool.  Skipped
