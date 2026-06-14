@@ -1570,7 +1570,40 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 	if (nr < MAX_NR_SYSCALL) {
 		__atomic_fetch_add(&kcov_shm->per_syscall_calls[nr],
 			1, __ATOMIC_RELAXED);
+		/* per-syscall split of
+		 * kcov_collect() activity by collection mode.  See the field
+		 * comments in include/kcov.h: a remote-sampled syscall lands
+		 * in KCOV_MODE_REMOTE and drops synchronous local PC, so a
+		 * static remote sampling policy can spend half a syscall's
+		 * samples on a mode with no annotated producer.  Bump every
+		 * call into the mode-keyed slot so per-mode yield is
+		 * measurable per syscall. */
+		if (kc->remote_mode)
+			__atomic_fetch_add(&kcov_shm->remote_pc_calls[nr],
+				1, __ATOMIC_RELAXED);
+		else
+			__atomic_fetch_add(&kcov_shm->local_pc_calls[nr],
+				1, __ATOMIC_RELAXED);
 		if (found_new) {
+			/* Mirror the per_syscall_edges call-count + raw-edge
+			 * split above into the local/remote slots so the
+			 * mode-keyed yield ratio (edge_calls / pc_calls and
+			 * edge_count / pc_calls) is directly readable. */
+			if (kc->remote_mode) {
+				__atomic_fetch_add(
+					&kcov_shm->remote_pc_edge_calls[nr],
+					1, __ATOMIC_RELAXED);
+				__atomic_fetch_add(
+					&kcov_shm->remote_pc_edge_count[nr],
+					edges_this_call, __ATOMIC_RELAXED);
+			} else {
+				__atomic_fetch_add(
+					&kcov_shm->local_pc_edge_calls[nr],
+					1, __ATOMIC_RELAXED);
+				__atomic_fetch_add(
+					&kcov_shm->local_pc_edge_count[nr],
+					edges_this_call, __ATOMIC_RELAXED);
+			}
 			/* per_syscall_edges bumps by 1 (call-count semantics --
 			 * see the comment on the field in include/kcov.h).  The
 			 * real bucket-edge count is surfaced via the
@@ -1664,6 +1697,43 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 			__atomic_fetch_add(
 				&kcov_shm->per_syscall_transition_edges_real[nr],
 				transitions_this_call, __ATOMIC_RELAXED);
+		}
+	} else if (nr >= CHILDOP_KCOV_NR_BASE) {
+		/* per-childop mirror
+		 * of the per-syscall local/remote PC split above.  Indexed
+		 * by op = nr - CHILDOP_KCOV_NR_BASE; bounds-clamped against
+		 * KCOV_CHILDOP_NR_MAX (the in-tree _Static_assert pins
+		 * NR_CHILD_OP_TYPES below the bound, but the guard stays
+		 * paranoid since nr is composed from a child_op_type value
+		 * outside this file). */
+		unsigned long op = nr - CHILDOP_KCOV_NR_BASE;
+
+		if (op < KCOV_CHILDOP_NR_MAX) {
+			if (kc->remote_mode)
+				__atomic_fetch_add(
+					&kcov_shm->childop_remote_pc_calls[op],
+					1, __ATOMIC_RELAXED);
+			else
+				__atomic_fetch_add(
+					&kcov_shm->childop_local_pc_calls[op],
+					1, __ATOMIC_RELAXED);
+			if (found_new) {
+				if (kc->remote_mode) {
+					__atomic_fetch_add(
+						&kcov_shm->childop_remote_pc_edge_calls[op],
+						1, __ATOMIC_RELAXED);
+					__atomic_fetch_add(
+						&kcov_shm->childop_remote_pc_edge_count[op],
+						edges_this_call, __ATOMIC_RELAXED);
+				} else {
+					__atomic_fetch_add(
+						&kcov_shm->childop_local_pc_edge_calls[op],
+						1, __ATOMIC_RELAXED);
+					__atomic_fetch_add(
+						&kcov_shm->childop_local_pc_edge_count[op],
+						edges_this_call, __ATOMIC_RELAXED);
+				}
+			}
 		}
 	}
 
