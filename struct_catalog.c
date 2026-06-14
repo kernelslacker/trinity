@@ -50,8 +50,19 @@
 #include <linux/dqblk_xfs.h>
 #include <mqueue.h>
 
-#include "compat.h"
 #include "config.h"
+/*
+ * linux/if_pppox.h pulls in linux/l2tp.h, whose enum declares
+ * L2TP_ATTR_IP6_SADDR / RX_COOKIE_DISCARDS / ... as identifiers.
+ * compat.h defines those same names as fallback numeric macros for
+ * older kernel-headers packages, so the include must precede compat.h;
+ * otherwise the macro expansion turns the enum members into integer
+ * literals and -Werror trips.
+ */
+#ifdef USE_PPPOX
+#include <linux/if_pppox.h>
+#endif
+#include "compat.h"
 #ifdef USE_BPF
 #include <linux/bpf.h>
 #endif
@@ -1640,6 +1651,9 @@ static const unsigned long sockaddr_storage_af_vocab[] = {
 #ifdef USE_VSOCK
 	AF_VSOCK,
 #endif
+#ifdef USE_PPPOX
+	AF_PPPOX,
+#endif
 #ifdef USE_CAIF
 	AF_CAIF,
 #endif
@@ -1794,6 +1808,23 @@ static const struct struct_field sockaddr_vm_variant_fields[] = {
 			    .n    = ARRAY_SIZE(vsock_cid_vocab) }),
 	FIELDX(struct sockaddr_vm, svm_flags, FT_FLAGS,
 	       .u.flags.mask = VMADDR_FLAG_TO_HOST),
+};
+#endif
+
+#ifdef USE_PPPOX
+/*
+ * AF_PPPOX (sockaddr_pppox) -- PPP-over-X transport endpoint.  The
+ * scalar head carries sa_protocol (PX_PROTO_OE / PX_PROTO_OL2TP / ...
+ * the kernel dispatches on); an unsigned int that reaches dispatch
+ * as raw, so FT_RAW covers the surface without a curated vocabulary.
+ * sa_family is omitted; the shared-head pass already writes
+ * ss_family.  struct sockaddr_pppox is packed, so sa_protocol sits
+ * at offset 2 (not 4).  The trailing union sa_addr (pppoe / pptp /
+ * ...) stays HELD and zeroed -- the kernel parses it conditional on
+ * sa_protocol and an unmodeled inner address won't bias dispatch.
+ */
+static const struct struct_field sockaddr_pppox_variant_fields[] = {
+	FIELD(struct sockaddr_pppox, sa_protocol),
 };
 #endif
 
@@ -2266,6 +2297,15 @@ static const struct union_variant sockaddr_storage_variants[] = {
 		.fields		 = sockaddr_vm_variant_fields,
 		.num_fields	 = ARRAY_SIZE(sockaddr_vm_variant_fields),
 		.effective_size	 = sizeof(struct sockaddr_vm),
+	},
+#endif
+#ifdef USE_PPPOX
+	{
+		.discrim_value	 = AF_PPPOX,
+		.name		 = "AF_PPPOX",
+		.fields		 = sockaddr_pppox_variant_fields,
+		.num_fields	 = ARRAY_SIZE(sockaddr_pppox_variant_fields),
+		.effective_size	 = sizeof(struct sockaddr_pppox),
 	},
 #endif
 #ifdef USE_CAIF
