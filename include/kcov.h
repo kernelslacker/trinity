@@ -1070,6 +1070,39 @@ struct kcov_shared {
 	unsigned long cmp_parent_calls_control;
 	unsigned long cmp_parent_new_cmps_enabled;
 	unsigned long cmp_parent_new_cmps_control;
+	/* Per-reason granular counters for the cmp-hint save/persist
+	 * funnel.  The pre-existing cmp_hints_bloom_skipped and
+	 * cmp_hints_strip_skipped reach hundreds of millions per run and
+	 * are kept unchanged for historical comparability, but neither
+	 * explains why the per-syscall pool plateaus at a few thousand
+	 * entries despite a torrent of bloom-novel records.  These five
+	 * count the per-record drops that survive bloom + strip and still
+	 * fail to grow the pool, bucketed by the branch the code actually
+	 * distinguishes at the site -- so the operator can read which
+	 * reason dominates the gap between "collected" and "unique_inserts"
+	 * instead of inferring it from a single coarse aggregate.
+	 *
+	 * Bumped with __atomic_fetch_add RELAXED at the site of each
+	 * reject branch in cmp_hints_collect() / pool_add_locked();
+	 * counter-only -- no save/evict/strip DECISION change rides
+	 * alongside.  Reasons are mutually exclusive per record: the
+	 * value-filter pair (uninteresting / sentinel) short-circuits
+	 * BEFORE the bloom + pool path, so a record can land in at most
+	 * one bucket per call.  cap and dup are pool-add-time outcomes
+	 * (the bloom miss reached pool_add_locked() and either found a
+	 * matching entry -> dup, or did not and the pool was full ->
+	 * cap evict-replace).  nonconst is the type-bit gate at the head
+	 * of the per-record loop -- KCOV_CMP_CONST records are the only
+	 * ones whose arg1 is a kernel compile-time constant worth
+	 * pooling; non-CONST records are dropped wholesale.
+	 *
+	 * Append-only at the tail of the struct so existing offsets
+	 * (and any consumer that has memorised them) stay stable. */
+	unsigned long cmp_hints_save_reject_nonconst;
+	unsigned long cmp_hints_save_reject_uninteresting;
+	unsigned long cmp_hints_save_reject_sentinel;
+	unsigned long cmp_hints_save_reject_dup;
+	unsigned long cmp_hints_save_reject_cap;
 };
 
 extern struct kcov_shared *kcov_shm;

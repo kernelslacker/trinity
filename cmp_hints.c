@@ -484,6 +484,9 @@ static bool pool_add_locked(struct cmp_hint_pool *pool,
 
 		if (e->value == val && e->cmp_ip == cmp_ip && e->size == size) {
 			e->last_used = stamp;
+			if (kcov_shm != NULL)
+				__atomic_fetch_add(&kcov_shm->cmp_hints_save_reject_dup,
+						   1UL, __ATOMIC_RELAXED);
 			return false;
 		}
 	}
@@ -521,9 +524,19 @@ static bool pool_add_locked(struct cmp_hint_pool *pool,
 	pool->entries[victim].size = size;
 	pool->entries[victim].last_used = stamp;
 	__atomic_fetch_add(&pool->generation, 1, __ATOMIC_RELAXED);
-	if (kcov_shm != NULL)
+	if (kcov_shm != NULL) {
 		__atomic_fetch_add(&kcov_shm->cmp_hints_unique_inserts, 1UL,
 				   __ATOMIC_RELAXED);
+		/* Evict-replace pressure: a tuple displaced an older one
+		 * because the per-syscall cap was full.  The new entry won
+		 * the slot (counted via cmp_hints_unique_inserts above) and
+		 * the evicted entry is the silent loser; the cap counter
+		 * tracks displacement events so a saturated pool is
+		 * directly visible as cap > unique_inserts_delta over a
+		 * window once the per-syscall pool tops out. */
+		__atomic_fetch_add(&kcov_shm->cmp_hints_save_reject_cap, 1UL,
+				   __ATOMIC_RELAXED);
+	}
 	return true;
 }
 
@@ -780,8 +793,12 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 		 * actually checks for.  Non-CONST records are dropped
 		 * entirely; both operands are runtime values and feeding
 		 * them back would just recycle the fuzzer's own inputs. */
-		if (!(type & KCOV_CMP_CONST))
+		if (!(type & KCOV_CMP_CONST)) {
+			if (kcov_shm != NULL)
+				__atomic_fetch_add(&kcov_shm->cmp_hints_save_reject_nonconst,
+						   1UL, __ATOMIC_RELAXED);
 			continue;
+		}
 
 		/*
 		 * KCOV's __sanitizer_cov_trace_const_cmpN clang/gcc helpers
@@ -797,10 +814,18 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 		 * skip 0/1/2/3 (caught by the ~3UL mask going to 0) and the
 		 * all-ones sentinel.
 		 */
-		if ((arg1 & ~3UL) == 0)
+		if ((arg1 & ~3UL) == 0) {
+			if (kcov_shm != NULL)
+				__atomic_fetch_add(&kcov_shm->cmp_hints_save_reject_uninteresting,
+						   1UL, __ATOMIC_RELAXED);
 			continue;
-		if (arg1 == (unsigned long) -1)
+		}
+		if (arg1 == (unsigned long) -1) {
+			if (kcov_shm != NULL)
+				__atomic_fetch_add(&kcov_shm->cmp_hints_save_reject_sentinel,
+						   1UL, __ATOMIC_RELAXED);
 			continue;
+		}
 
 		/*
 		 * RedQueen attribution scan against the dispatching syscall's
