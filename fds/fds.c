@@ -37,6 +37,43 @@ static struct fd_provider **active_providers = NULL;
 static unsigned int num_active_providers = 0;
 
 /*
+ * Per-init failure-reason slot.  __open_fds() resets these immediately
+ * before calling provider->init(); on a false return it logs whichever
+ * reason the provider stamped via fd_provider_init_fail().  A provider
+ * that returns false without calling the helper leaves the slot at
+ * FD_INIT_REASON_NONE and the dispatcher falls back to the bare
+ * "Error during initialization of <name>" line.
+ */
+static enum fd_init_reason last_init_reason;
+static int last_init_errno;
+static char last_init_detail[128];
+
+void fd_provider_init_fail(enum fd_init_reason reason, int captured_errno,
+			   const char *detail)
+{
+	last_init_reason = reason;
+	last_init_errno = captured_errno;
+	if (detail != NULL) {
+		strncpy(last_init_detail, detail, sizeof(last_init_detail) - 1);
+		last_init_detail[sizeof(last_init_detail) - 1] = '\0';
+	} else {
+		last_init_detail[0] = '\0';
+	}
+}
+
+const char *fd_init_reason_name(enum fd_init_reason r)
+{
+	switch (r) {
+	case FD_INIT_REASON_NONE:		return "none";
+	case FD_INIT_REASON_ERRNO:		return "errno";
+	case FD_INIT_REASON_CONFIG_ABSENT:	return "config-absent";
+	case FD_INIT_REASON_CAP_MISSING:	return "cap-missing";
+	case FD_INIT_REASON_RESOURCE:		return "resource";
+	}
+	return "unknown";
+}
+
+/*
  * This is called by the REG_FD_PROV constructors on startup.
  * Because of this, this function shouldn't rely on anything
  * already existing/being initialized.
@@ -141,13 +178,24 @@ static void __open_fds(bool do_rand)
 		 * "Initializing %s objects." line that init_global_objects()
 		 * emits for REG_GLOBAL_OBJ entries. */
 		output(1, "Initializing %s fds.\n", provider->name);
+		last_init_reason = FD_INIT_REASON_NONE;
+		last_init_errno = 0;
+		last_init_detail[0] = '\0';
 		provider->enabled = provider->init();
 		if (provider->enabled == true) {
 			provider->initialized = true;
 			num_fd_providers_initialized++;
 			num_fd_providers_enabled++;
 		} else {
-			outputstd("Error during initialization of %s\n", provider->name);
+			if (last_init_reason != FD_INIT_REASON_NONE)
+				outputstd("Error during initialization of %s: reason=%s errno=%d (%s) detail=%s\n",
+					provider->name,
+					fd_init_reason_name(last_init_reason),
+					last_init_errno,
+					last_init_errno != 0 ? strerror(last_init_errno) : "-",
+					last_init_detail[0] != '\0' ? last_init_detail : "-");
+			else
+				outputstd("Error during initialization of %s\n", provider->name);
 			if (num_fd_providers_to_enable > 0)
 				num_fd_providers_to_enable--;
 		}

@@ -97,6 +97,8 @@ static int init_pagecache_fds(void)
 
 	if (fileindex == NULL || files_in_index == 0) {
 		outputerr("init_pagecache_fds: empty fileindex (generate_filelist produced no files)\n");
+		fd_provider_init_fail(FD_INIT_REASON_RESOURCE, 0,
+				      "empty fileindex");
 		return false;
 	}
 
@@ -156,9 +158,12 @@ static int init_pagecache_fds(void)
 		opened++;
 	}
 
-	if (opened == 0)
+	if (opened == 0) {
 		outputerr("init_pagecache_fds: opened 0 files after %u attempts (no pagecache-backed regular files in fileindex)\n",
 			attempts);
+		fd_provider_init_fail(FD_INIT_REASON_RESOURCE, 0,
+				      "no pagecache-backed files in fileindex");
+	}
 
 	return opened > 0;
 }

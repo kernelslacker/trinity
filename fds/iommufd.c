@@ -44,14 +44,22 @@ static int init_iommufd_fds(void)
 
 	fd = open_iommufd();
 	if (fd < 0) {
+		int err = errno;
+		enum fd_init_reason reason = (err == ENOENT || err == ENXIO || err == ENODEV) ?
+				FD_INIT_REASON_CONFIG_ABSENT :
+				(err == EACCES || err == EPERM) ?
+				FD_INIT_REASON_CAP_MISSING :
+				FD_INIT_REASON_ERRNO;
 		outputerr("init_iommufd_fds: open(/dev/iommu) failed: %s\n",
-			strerror(errno));
+			strerror(err));
+		fd_provider_init_fail(reason, err, "open(/dev/iommu)");
 		return false;
 	}
 
 	obj = alloc_object();
 	if (obj == NULL) {
 		outputerr("init_iommufd_fds: alloc_object failed\n");
+		fd_provider_init_fail(FD_INIT_REASON_RESOURCE, 0, "alloc_object");
 		close(fd);
 		return false;
 	}

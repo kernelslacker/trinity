@@ -106,8 +106,11 @@ static int open_landlock_fd(void)
 	size_t attr_size;
 	int abi, fd;
 
-	if (unsupported_landlock)
+	if (unsupported_landlock) {
+		fd_provider_init_fail(FD_INIT_REASON_CONFIG_ABSENT, 0,
+				      "unsupported_landlock latched");
 		return false;
+	}
 
 	abi = (int)syscall(__NR_landlock_create_ruleset, NULL, 0,
 			   LANDLOCK_CREATE_RULESET_VERSION);
@@ -132,14 +135,21 @@ static int open_landlock_fd(void)
 
 	fd = syscall(__NR_landlock_create_ruleset, &attr, attr_size, 0);
 	if (fd < 0) {
-		if (errno == ENOSYS || errno == EOPNOTSUPP || errno == EPERM) {
+		int err = errno;
+		if (err == ENOSYS || err == EOPNOTSUPP || err == EPERM) {
 			outputerr("open_landlock_fd: landlock_create_ruleset(abi=%d) failed: %s -- latching unsupported_landlock\n",
-				abi, strerror(errno));
+				abi, strerror(err));
+			fd_provider_init_fail((err == EPERM) ?
+					      FD_INIT_REASON_CAP_MISSING :
+					      FD_INIT_REASON_CONFIG_ABSENT,
+					      err, "landlock_create_ruleset");
 			unsupported_landlock = true;
 			return false;
 		}
 		outputerr("open_landlock_fd: landlock_create_ruleset(abi=%d) failed: %s\n",
-			abi, strerror(errno));
+			abi, strerror(err));
+		fd_provider_init_fail(FD_INIT_REASON_ERRNO, err,
+				      "landlock_create_ruleset");
 		return false;
 	}
 
@@ -148,6 +158,7 @@ static int open_landlock_fd(void)
 	obj = alloc_object();
 	if (obj == NULL) {
 		outputerr("open_landlock_fd: alloc_object failed\n");
+		fd_provider_init_fail(FD_INIT_REASON_RESOURCE, 0, "alloc_object");
 		close(fd);
 		return false;
 	}
@@ -159,6 +170,8 @@ static int open_landlock_fd(void)
 		outputerr("open_landlock_fd: __NR_landlock_create_ruleset not defined at build time -- latching unsupported_landlock\n");
 		unsupported_landlock = true;
 	}
+	fd_provider_init_fail(FD_INIT_REASON_CONFIG_ABSENT, 0,
+			      "__NR_landlock_create_ruleset undefined");
 	return false;
 #endif
 }

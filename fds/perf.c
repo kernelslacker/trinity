@@ -177,6 +177,8 @@ static int init_perf_fds(void)
 			switch (errno) {
 			case ENOSYS:
 				outputerr("init_perf_fds: perf_event_open returned ENOSYS (kernel lacks CONFIG_PERF_EVENTS)\n");
+				fd_provider_init_fail(FD_INIT_REASON_CONFIG_ABSENT,
+						      ENOSYS, "perf_event_open");
 				return false;
 			case EINVAL:
 			case EMFILE:
@@ -195,11 +197,15 @@ static int init_perf_fds(void)
 
 		if (perm_count > 1000) {
 			output(2, "Couldn't open enough perf events, got EPERM too much. Giving up.\n");
+			fd_provider_init_fail(FD_INIT_REASON_CAP_MISSING, EACCES,
+					      "perf_event_open EACCES >1000");
 			return false;
 		}
 
 		if (inval_count > 10000) {
 			output(2, "couldn't open enough perf events, got EINVAL too much. Giving up.\n");
+			fd_provider_init_fail(FD_INIT_REASON_ERRNO, EINVAL,
+					      "perf_event_open EINVAL >10000");
 			return false;
 		}
 
