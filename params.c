@@ -391,6 +391,7 @@ char *memory_max_arg = NULL;
 char *memory_high_arg = NULL;
 char *memory_swap_max_arg = NULL;
 bool no_cgroup = false;
+bool no_startup_isolation = false;
 
 char *stats_log_path = NULL;
 
@@ -465,6 +466,7 @@ static const struct option_help option_descs[] = {
 	{ "memory-swap-max",	 0,  "children/memory.swap.max cap (workers cgroup). Accepts \"max\", N% of MemTotal, or N[KMG] bytes. Default: 20%." },
 	{ "no-cgroup",		 0,  "skip self-cgroup creation entirely (no in-binary memory containment)" },
 	{ "no-canary-queue",	 0,  "disable the dormant-childop canary queue entirely; the dormant gate is consulted as a static compile-time vector and no canary slots are reserved." },
+	{ "no-startup-isolation", 0,  "skip the parent-side unshare(CLONE_NEWNET|CLONE_NEWNS) + MS_PRIVATE remount that the root-launched fuzzer does in init_pre_fork() (children then take the per-child unshare path). Default off; non-root runs never attempt parent-side isolation regardless." },
 	{ "domain",		'P', "specify specific network domain for sockets" },
 	{ "quiet",		'q', "suppress the per-second progress line (other output unchanged)" },
 	{ "no_domain",		'E', "specify network domains to be excluded from testing" },
@@ -552,6 +554,7 @@ static const struct option longopts[] = {
 	{ "memory-swap-max", required_argument, NULL, 0 },
 	{ "no-cgroup", no_argument, NULL, 0 },
 	{ "no-canary-queue", no_argument, NULL, 0 },
+	{ "no-startup-isolation", no_argument, NULL, 0 },
 	{ "ioctls", no_argument, NULL, 'I' },
 	{ "no_domain", required_argument, NULL, 'E' },
 	{ "domain", required_argument, NULL, 'P' },
@@ -968,6 +971,9 @@ void parse_args(int argc, char *argv[])
 
 			if (strcmp("no-cgroup", longopts[opt_index].name) == 0)
 				no_cgroup = true;
+
+			if (strcmp("no-startup-isolation", longopts[opt_index].name) == 0)
+				no_startup_isolation = true;
 
 			if (strcmp("max-runtime", longopts[opt_index].name) == 0) {
 				unsigned int seconds;
