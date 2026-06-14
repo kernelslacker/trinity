@@ -112,6 +112,7 @@ static int open_perf_fd(void)
 	if (obj == NULL) {
 		outputerr("open_perf_fd: alloc_object failed\n");
 		close(fd);
+		errno = 0;
 		return false;
 	}
 	obj->perfobj.fd = fd;
@@ -120,6 +121,7 @@ static int open_perf_fd(void)
 		outputerr("open_perf_fd: alloc_shared_str(perf_event_attr) failed\n");
 		tracked_free_now(obj);
 		close(fd);
+		errno = 0;
 		return false;
 	}
 	/* rec.a1 carries the PAGE_SIZE attr buffer sanitise_perf_event_open
@@ -137,6 +139,7 @@ static int open_perf_fd(void)
 		obj->perfobj.eventattr = NULL;
 		tracked_free_now(obj);
 		close(fd);
+		errno = 0;
 		return false;
 	}
 	memcpy(obj->perfobj.eventattr, (void *) rec.a1, sizeof(struct perf_event_attr));
