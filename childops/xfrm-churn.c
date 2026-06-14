@@ -186,6 +186,15 @@
 #define XFRMA_REPLAY_ESN_VAL	23
 #endif
 
+#ifndef XFRMA_SA_DIR
+#define XFRMA_SA_DIR		33
+#endif
+
+#ifndef XFRM_SA_DIR_OUT
+#define XFRM_SA_DIR_IN		1
+#define XFRM_SA_DIR_OUT		2
+#endif
+
 #ifndef XFRM_STATE_ESN
 #define XFRM_STATE_ESN		128
 #endif
@@ -686,12 +695,15 @@ static int build_newsa(struct nl_ctx *ctx, const struct xfrm_algo_def *def,
 	struct nlmsghdr *nlh;
 	struct xfrm_usersa_info *sa;
 	size_t off;
+	__u8 sa_dir;
 
 	memset(buf, 0, sizeof(buf));
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = XFRM_MSG_NEWSA;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
 	nlh->nlmsg_seq   = nl_seq_next(ctx);
+
+	sa_dir = ONE_IN(2) ? XFRM_SA_DIR_OUT : XFRM_SA_DIR_IN;
 
 	sa = (struct xfrm_usersa_info *)NLMSG_DATA(nlh);
 	fill_selector(&sa->sel, IPPROTO_UDP);
@@ -704,12 +716,18 @@ static int build_newsa(struct nl_ctx *ctx, const struct xfrm_algo_def *def,
 	sa->reqid          = reqid;
 	sa->family         = AF_INET;
 	sa->mode           = mode;
-	sa->replay_window  = 32;
+	/* Kernel rejects OUT SAs with a nonzero replay_window — keep
+	 * the two coupled so XFRMA_SA_DIR validation actually runs. */
+	sa->replay_window  = (sa_dir == XFRM_SA_DIR_OUT) ? 0 : 32;
 	sa->flags          = 0;
 
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*sa));
 
 	off = append_algo_attrs(buf, off, sizeof(buf), def);
+	if (!off)
+		return -EIO;
+
+	off = nla_put_u8(buf, off, sizeof(buf), XFRMA_SA_DIR, sa_dir);
 	if (!off)
 		return -EIO;
 
@@ -729,12 +747,15 @@ static int build_updsa(struct nl_ctx *ctx, const struct xfrm_algo_def *def,
 	struct nlmsghdr *nlh;
 	struct xfrm_usersa_info *sa;
 	size_t off;
+	__u8 sa_dir;
 
 	memset(buf, 0, sizeof(buf));
 	nlh = (struct nlmsghdr *)buf;
 	nlh->nlmsg_type  = XFRM_MSG_UPDSA;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
 	nlh->nlmsg_seq   = nl_seq_next(ctx);
+
+	sa_dir = ONE_IN(2) ? XFRM_SA_DIR_OUT : XFRM_SA_DIR_IN;
 
 	sa = (struct xfrm_usersa_info *)NLMSG_DATA(nlh);
 	fill_selector(&sa->sel, IPPROTO_UDP);
@@ -747,12 +768,18 @@ static int build_updsa(struct nl_ctx *ctx, const struct xfrm_algo_def *def,
 	sa->reqid          = reqid;
 	sa->family         = AF_INET;
 	sa->mode           = mode;
-	sa->replay_window  = 32;
+	/* OUT SAs must carry replay_window == 0; the kernel rejects
+	 * any other value once XFRMA_SA_DIR is present. */
+	sa->replay_window  = (sa_dir == XFRM_SA_DIR_OUT) ? 0 : 32;
 	sa->flags          = 0;
 
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*sa));
 
 	off = append_algo_attrs(buf, off, sizeof(buf), def);
+	if (!off)
+		return -EIO;
+
+	off = nla_put_u8(buf, off, sizeof(buf), XFRMA_SA_DIR, sa_dir);
 	if (!off)
 		return -EIO;
 
