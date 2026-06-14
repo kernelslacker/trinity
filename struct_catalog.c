@@ -5312,6 +5312,59 @@ static const struct struct_field sctp_udpencaps_fields[] = {
 	FIELDX(struct sctp_udpencaps, sue_port, FT_RAW,
 	       .mutate_weight = 60),
 };
+
+/*
+ * struct sctp_paddrparams -- IPPROTO_SCTP / SCTP_PEER_ADDR_PARAMS.
+ * Per-peer-address heartbeat / PMTU / SACK-delay parameter block
+ * (RFC 6458 7.1.13).  spp_assoc_id picks the target association
+ * (sctp_assoc_t / __u32, FT_RAW so the per-assoc lookup constant
+ * shows up to KCOV-CMP); spp_address embeds a struct sockaddr_storage
+ * and is treated as a single opaque FT_RAW blob spanning
+ * sizeof(struct sockaddr_storage) -- the kernel matches it against
+ * the live peer address list rather than parsing it field-wise, so
+ * the per-byte splat is the right shape and field-splitting it would
+ * just give KCOV-CMP misleading sub-field offsets for a value that
+ * is logically atomic.  spp_hbinterval / spp_pathmtu / spp_sackdelay
+ * are __u32 timer/MTU/delay knobs (FT_RAW -- letting the per-byte
+ * splat exercise the full range without anchoring KCOV-CMP at a
+ * single canonical value); spp_pathmaxrxt is __u16, FT_RANGE
+ * [0, 16] -- keeps it inside plausible retry budgets matching the
+ * paddrthlds rows.  spp_flags is the SPP_* bitset and is masked to
+ * the documented bit set (SPP_HB_{ENABLE,DISABLE,DEMAND},
+ * SPP_PMTUD_{ENABLE,DISABLE}, SPP_SACKDELAY_{ENABLE,DISABLE},
+ * SPP_HB_TIME_IS_ZERO, SPP_IPV6_FLOWLABEL, SPP_DSCP).
+ * spp_ipv6_flowlabel (__u32) and spp_dscp (__u8) are RAW.  The
+ * struct is packed,aligned(4) -- compiler-derived offsetof() in
+ * FIELDX honors the packing.  Bespoke build_sctp_paddrparams()
+ * zero-fills as a miss-fallback.
+ */
+static const struct struct_field sctp_paddrparams_fields[] = {
+	FIELDX(struct sctp_paddrparams, spp_assoc_id, FT_RAW,
+	       .mutate_weight = 60),
+	FIELDX(struct sctp_paddrparams, spp_address, FT_RAW,
+	       .mutate_weight = 40),
+	FIELDX(struct sctp_paddrparams, spp_hbinterval, FT_RAW,
+	       .mutate_weight = 60),
+	FIELDX(struct sctp_paddrparams, spp_pathmaxrxt, FT_RANGE,
+	       .u.range = { 0, 16 },
+	       .mutate_weight = 60),
+	FIELDX(struct sctp_paddrparams, spp_pathmtu, FT_RAW,
+	       .mutate_weight = 60),
+	FIELDX(struct sctp_paddrparams, spp_sackdelay, FT_RAW,
+	       .mutate_weight = 60),
+	FIELDX(struct sctp_paddrparams, spp_flags, FT_FLAGS,
+	       .u.flags.mask = SPP_HB_ENABLE | SPP_HB_DISABLE |
+			       SPP_HB_DEMAND |
+			       SPP_PMTUD_ENABLE | SPP_PMTUD_DISABLE |
+			       SPP_SACKDELAY_ENABLE | SPP_SACKDELAY_DISABLE |
+			       SPP_HB_TIME_IS_ZERO |
+			       SPP_IPV6_FLOWLABEL | SPP_DSCP,
+	       .mutate_weight = 60),
+	FIELDX(struct sctp_paddrparams, spp_ipv6_flowlabel, FT_RAW,
+	       .mutate_weight = 40),
+	FIELDX(struct sctp_paddrparams, spp_dscp, FT_RAW,
+	       .mutate_weight = 40),
+};
 #endif
 
 /* ------------------------------------------------------------------ */
@@ -5838,6 +5891,12 @@ const struct struct_desc struct_catalog[] = {
 		.struct_size	= sizeof(struct sctp_udpencaps),
 		.fields		= sctp_udpencaps_fields,
 		.num_fields	= ARRAY_SIZE(sctp_udpencaps_fields),
+	},
+	[SC_SCTP_PADDRPARAMS] = {
+		.name		= "sctp_paddrparams",
+		.struct_size	= sizeof(struct sctp_paddrparams),
+		.fields		= sctp_paddrparams_fields,
+		.num_fields	= ARRAY_SIZE(sctp_paddrparams_fields),
 	},
 #endif
 };
@@ -6905,6 +6964,13 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 		.discrim_value		= IPPROTO_SCTP,
 		.discrim2_arg_idx	= 3,
 		.discrim2_value		= SCTP_REMOTE_UDP_ENCAPS_PORT,
+	},
+	{
+		"setsockopt", 4, &struct_catalog[SC_SCTP_PADDRPARAMS],
+		.discrim_arg_idx	= 2,
+		.discrim_value		= IPPROTO_SCTP,
+		.discrim2_arg_idx	= 3,
+		.discrim2_value		= SCTP_PEER_ADDR_PARAMS,
 	},
 #endif
 	/*
