@@ -58,6 +58,9 @@
 #ifdef USE_VSOCK
 #include <linux/vm_sockets.h>
 #endif
+#ifdef USE_RXRPC
+#include <linux/rxrpc.h>
+#endif
 #ifdef USE_X25
 #include <linux/x25.h>
 #endif
@@ -1631,6 +1634,9 @@ static const unsigned long sockaddr_storage_af_vocab[] = {
 #ifdef USE_VSOCK
 	AF_VSOCK,
 #endif
+#ifdef USE_RXRPC
+	AF_RXRPC,
+#endif
 #ifdef USE_X25
 	AF_X25,
 #endif
@@ -1776,6 +1782,25 @@ static const struct struct_field sockaddr_vm_variant_fields[] = {
 			    .n    = ARRAY_SIZE(vsock_cid_vocab) }),
 	FIELDX(struct sockaddr_vm, svm_flags, FT_FLAGS,
 	       .u.flags.mask = VMADDR_FLAG_TO_HOST),
+};
+#endif
+
+#ifdef USE_RXRPC
+/*
+ * AF_RXRPC (sockaddr_rxrpc) -- AFS/RxRPC endpoint.  The scalar head
+ * carries srx_service (service-id the kernel dispatches on),
+ * transport_type (SOCK_DGRAM-style selector), and transport_len
+ * (size of the trailing transport union).  All three reach dispatch
+ * as raw __u16s, so FT_RAW covers the surface without a curated
+ * vocabulary.  srx_family is omitted; the shared-head pass already
+ * writes ss_family.  The union transport (sa/sin/sin6) stays HELD
+ * and zeroed -- the kernel parses it conditional on transport_len
+ * and an unmodeled inner address won't bias dispatch.
+ */
+static const struct struct_field sockaddr_rxrpc_variant_fields[] = {
+	FIELD(struct sockaddr_rxrpc, srx_service),
+	FIELD(struct sockaddr_rxrpc, transport_type),
+	FIELD(struct sockaddr_rxrpc, transport_len),
 };
 #endif
 
@@ -2196,6 +2221,15 @@ static const struct union_variant sockaddr_storage_variants[] = {
 		.fields		 = sockaddr_vm_variant_fields,
 		.num_fields	 = ARRAY_SIZE(sockaddr_vm_variant_fields),
 		.effective_size	 = sizeof(struct sockaddr_vm),
+	},
+#endif
+#ifdef USE_RXRPC
+	{
+		.discrim_value	 = AF_RXRPC,
+		.name		 = "AF_RXRPC",
+		.fields		 = sockaddr_rxrpc_variant_fields,
+		.num_fields	 = ARRAY_SIZE(sockaddr_rxrpc_variant_fields),
+		.effective_size	 = sizeof(struct sockaddr_rxrpc),
 	},
 #endif
 #ifdef USE_X25
