@@ -213,7 +213,7 @@ syscalls/personality.c:25:post_personality
 syscalls/pipe.c:153:post_pipe
 syscalls/pipe.c:171:post_pipe
 syscalls/pipe.c:185:post_pipe
-syscalls/pkey.c:119:post_pkey_alloc
+syscalls/pkey.c:127:post_pkey_alloc
 syscalls/poll.c:146:post_poll
 syscalls/poll.c:155:post_poll
 syscalls/poll.c:284:post_ppoll
