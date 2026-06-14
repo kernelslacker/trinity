@@ -52,8 +52,6 @@ static void sanitise_getxattr(struct syscallrecord *rec)
 	rec->post_state = 0;
 #endif
 
-	if (!sanitise_xattr_name_arg_pooled(rec, 2))
-		return;
 #if defined(SYS_getxattr) || defined(__NR_getxattr)
 	pre_a3 = rec->a3;
 #endif
@@ -300,7 +298,7 @@ out_free:
 struct syscallentry syscall_getxattr = {
 	.name = "getxattr",
 	.num_args = 4,
-	.argtype = { [0] = ARG_PATHNAME, [2] = ARG_ADDRESS, [3] = ARG_LEN },
+	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_XATTR_NAME, [2] = ARG_ADDRESS, [3] = ARG_LEN },
 	.argname = { [0] = "pathname", [1] = "name", [2] = "value", [3] = "size" },
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
