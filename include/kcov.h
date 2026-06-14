@@ -1039,6 +1039,15 @@ void kcov_enable_cmp(struct kcov_child *kc);
 void kcov_enable_remote(struct kcov_child *kc, unsigned int child_id);
 void kcov_disable(struct kcov_child *kc);
 
+/* Zero the trace count header at trace_buf[0] (or cmp_trace_buf[0]
+ * for CMP-mode children) without touching the kcov ioctls.  Use on
+ * paths that bypass the normal kcov_enable / syscall / kcov_disable
+ * bracket so the next kcov_collect() / kcov_collect_cmp() does not
+ * re-read the stale count left by the previous bracketed call and
+ * re-account the same PCs / cmp records against the current slot.
+ * No-op when KCOV is disabled or the slot is inactive. */
+void kcov_reset_trace_header(struct kcov_child *kc);
+
 bool kcov_bracket_begin(struct kcov_child *kc);
 unsigned long kcov_bracket_end(struct kcov_child *kc,
 				unsigned long op_nr);

@@ -1094,6 +1094,22 @@ void kcov_disable(struct kcov_child *kc)
 	}
 }
 
+void kcov_reset_trace_header(struct kcov_child *kc)
+{
+	if (kc == NULL || !kc->active)
+		return;
+
+	if (kc->mode == KCOV_MODE_PC) {
+		if (kc->trace_buf != NULL)
+			__atomic_store_n(&kc->trace_buf[0], 0,
+					 __ATOMIC_RELAXED);
+	} else if (kc->mode == KCOV_MODE_CMP) {
+		if (kc->cmp_trace_buf != NULL)
+			__atomic_store_n(&kc->cmp_trace_buf[0], 0,
+					 __ATOMIC_RELAXED);
+	}
+}
+
 /*
  * Open a per-call KCOV bracket around a childop invocation.
  *
