@@ -121,12 +121,16 @@ static bool probe_listener(int fd, struct sockaddr_storage *out,
 
 	if (getsockopt(fd, SOL_SOCKET, SO_ACCEPTCONN, &v, &vlen) != 0)
 		return false;
-	if (v != 1)
+	if (v != 1) {
+		errno = 0;
 		return false;
+	}
 	if (getsockname(fd, (struct sockaddr *) out, &alen) != 0)
 		return false;
-	if (alen == 0 || alen > sizeof(*out))
+	if (alen == 0 || alen > sizeof(*out)) {
+		errno = 0;
 		return false;
+	}
 	*out_len = alen;
 	return true;
 }
