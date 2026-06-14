@@ -12,6 +12,10 @@
 #include <linux/filter.h>
 #include <linux/if_packet.h>
 #include <linux/netlink.h>
+#include "config.h"
+#ifdef USE_SCTP
+#include <linux/sctp.h>
+#endif
 #include "arch.h"
 #include "bpf.h"
 #include "deferred-free.h"
@@ -145,6 +149,14 @@ static socklen_t build_packet_mreq(void *buf)
 	return sizeof(struct packet_mreq);
 }
 
+#ifdef USE_SCTP
+static socklen_t build_sctp_initmsg(void *buf)
+{
+	memset(buf, 0, sizeof(struct sctp_initmsg));
+	return sizeof(struct sctp_initmsg);
+}
+#endif
+
 static socklen_t build_string_ifname(void *buf)
 {
 	static const char *names[] = { "lo", "eth0", "wlan0", "" };
@@ -248,6 +260,11 @@ static const struct sockopt_entry sockopt_table[] = {
 	{ SOL_PACKET,   PACKET_AUXDATA,           build_int_bool },
 	{ SOL_PACKET,   PACKET_RESERVE,           build_int_small_positive },
 	{ SOL_PACKET,   PACKET_FANOUT,            build_int_rand },
+
+#ifdef USE_SCTP
+	/* IPPROTO_SCTP */
+	{ IPPROTO_SCTP, SCTP_INITMSG,             build_sctp_initmsg },
+#endif
 };
 
 /*
