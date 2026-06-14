@@ -55,9 +55,6 @@ static void sanitise_getxattrat(struct syscallrecord *rec)
 
 	rec->post_state = 0;
 
-	if (!sanitise_xattr_name_arg(rec, 4))
-		return;
-
 #ifdef USE_XATTR_ARGS
 	{
 		struct csfu_buf buf = build_csfu_struct(&desc_getxattrat);
@@ -148,7 +145,7 @@ static void post_getxattrat(struct syscallrecord *rec)
 struct syscallentry syscall_getxattrat = {
 	.name = "getxattrat",
 	.num_args = 6,
-	.argtype = { [0] = ARG_FD, [1] = ARG_PATHNAME, [2] = ARG_LIST, [4] = ARG_ADDRESS, [5] = ARG_LEN },
+	.argtype = { [0] = ARG_FD, [1] = ARG_PATHNAME, [2] = ARG_LIST, [3] = ARG_XATTR_NAME, [4] = ARG_ADDRESS, [5] = ARG_LEN },
 	.argname = { [0] = "dfd", [1] = "pathname", [2] = "at_flags", [3] = "name", [4] = "uargs", [5] = "usize" },
 	.arg_params[2].list = ARGLIST(xattrat_flags),
 	.flags = NEED_ALARM,
