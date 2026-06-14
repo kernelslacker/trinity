@@ -203,6 +203,12 @@ static socklen_t build_sctp_authchunk(void *buf)
 	memset(buf, 0, sizeof(struct sctp_authchunk));
 	return sizeof(struct sctp_authchunk);
 }
+
+static socklen_t build_sctp_sackinfo(void *buf)
+{
+	memset(buf, 0, sizeof(struct sctp_sack_info));
+	return sizeof(struct sctp_sack_info);
+}
 #endif
 
 static socklen_t build_string_ifname(void *buf)
@@ -323,6 +329,7 @@ static const struct sockopt_entry sockopt_table[] = {
 	{ IPPROTO_SCTP, SCTP_DEFAULT_SEND_PARAM,  build_sctp_sndrcvinfo },
 	{ IPPROTO_SCTP, SCTP_EVENTS,              build_sctp_events },
 	{ IPPROTO_SCTP, SCTP_AUTH_CHUNK,          build_sctp_authchunk },
+	{ IPPROTO_SCTP, SCTP_DELAYED_SACK,        build_sctp_sackinfo },
 #endif
 };
 
