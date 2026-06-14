@@ -24,24 +24,30 @@ enum fd_event_type {
 	FD_EVENT_CLOSE,		/* child closed this fd */
 	FD_EVENT_EVICT,		/* parent is evicting a stale slot whose fd
 				 * may still be valid in a sibling child */
+	FD_EVENT_CLOSE_RANGE,	/* child closed a contiguous fd range
+				 * [fd1, fd2]; one event per bulk close
+				 * to keep close_range() from overflowing
+				 * the ring */
 };
 
 /*
- * CLOSE and EVICT both carry a single fd in fd1, but their semantics
- * differ: CLOSE means a child genuinely closed the fd, EVICT means the
- * parent watchdog is expiring a stale pool slot whose fd may still be
- * live in a sibling.  The drain handler treats them identically for
+ * CLOSE and EVICT carry a single fd in fd1 (fd2 unused) and differ only
+ * in semantics: CLOSE means a child genuinely closed the fd, EVICT means
+ * the parent watchdog is expiring a stale pool slot whose fd may still
+ * be live in a sibling.  The drain handler treats them identically for
  * pool bookkeeping but bumps separate counters so we can measure how
  * often each path fires.
  *
- * The struct intentionally has no other payload — see commit history
- * for the NEWSOCK publish path that was removed (post-fork accepted
- * fds live only in the child's fd table and cannot be published to
- * the parent's pool).
+ * CLOSE_RANGE carries a contiguous closed range in [fd1, fd2] so a
+ * single close_range() bulk close enqueues one event instead of N --
+ * a child closing a wide span no longer overflows FD_EVENT_RING_SIZE.
+ * The drain loops the range and calls remove_object_by_fd() per fd
+ * (cheap if the fd is not tracked).
  */
 struct fd_event {
 	enum fd_event_type type;
-	int fd1;		/* closed fd */
+	int fd1;		/* CLOSE/EVICT: the fd; CLOSE_RANGE: lo */
+	int fd2;		/* CLOSE_RANGE: hi; unused otherwise */
 };
 
 struct fd_event_ring {
@@ -58,6 +64,13 @@ void fd_event_ring_init(struct fd_event_ring *ring);
 bool fd_event_enqueue(struct fd_event_ring *ring,
 		      enum fd_event_type type,
 		      int fd1);
+
+/*
+ * Range variant: enqueue a single FD_EVENT_CLOSE_RANGE carrying
+ * [lo, hi] for bulk close_range()-style closes.  Returns false if
+ * the ring is full or `hi < lo`.
+ */
+bool fd_event_enqueue_range(struct fd_event_ring *ring, int lo, int hi);
 
 /*
  * Drain all pending events from a child's ring, calling the

@@ -40,9 +40,33 @@ bool fd_event_enqueue(struct fd_event_ring *ring,
 	struct fd_event ev = {
 		.type = type,
 		.fd1 = fd1,
+		.fd2 = 0,
 	};
 
 	if (ring == NULL)
+		return false;
+
+	return spsc_ring_try_enqueue(&ring->base, ring->events,
+				     FD_EVENT_RING_SIZE, sizeof(ring->events[0]),
+				     &ev);
+}
+
+/*
+ * Range enqueue.  Bulk close_range() callers route through here so a
+ * wide span is published as one event rather than N FD_EVENT_CLOSEs
+ * (which would overflow FD_EVENT_RING_SIZE for spans > 1024).
+ */
+bool fd_event_enqueue_range(struct fd_event_ring *ring, int lo, int hi)
+{
+	struct fd_event ev = {
+		.type = FD_EVENT_CLOSE_RANGE,
+		.fd1 = lo,
+		.fd2 = hi,
+	};
+
+	if (ring == NULL)
+		return false;
+	if (hi < lo)
 		return false;
 
 	return spsc_ring_try_enqueue(&ring->base, ring->events,
@@ -70,15 +94,19 @@ void notify_child_fd_closed(struct childdata *child, int fd)
 	child_fd_ring_remove(&child->live_fds, fd);
 }
 
+/*
+ * Range close.  Enqueue a single FD_EVENT_CLOSE_RANGE carrying
+ * [lo, hi] instead of N FD_EVENT_CLOSEs: a wide close_range() must
+ * not overflow FD_EVENT_RING_SIZE (1024) and drop events.  The parent
+ * drain walks the range and calls remove_object_by_fd() per fd; lookup
+ * misses are O(1), so unrelated fds in the span are cheap.
+ */
 void notify_child_fd_closed_range(struct childdata *child, int lo, int hi)
 {
-	int fd;
-
 	if (lo > hi)
 		return;
 
-	for (fd = lo; fd <= hi; fd++)
-		fd_event_enqueue(child->fd_event_ring, FD_EVENT_CLOSE, fd);
+	fd_event_enqueue_range(child->fd_event_ring, lo, hi);
 
 	fd_hash_remove_local_range(lo, hi);
 	child_fd_ring_remove_range(&child->live_fds, lo, hi);
@@ -102,6 +130,11 @@ static bool fd_event_payload_valid(const struct fd_event *ev)
 	case FD_EVENT_CLOSE:
 	case FD_EVENT_EVICT:
 		return ev->fd1 >= 0;
+	case FD_EVENT_CLOSE_RANGE:
+		/* Bounds and ordering.  The drain clamps the upper end of
+		 * the walk separately to bound CPU; this is the structural
+		 * check before any walk happens. */
+		return ev->fd1 >= 0 && ev->fd2 >= ev->fd1;
 	default:
 		return false;
 	}
@@ -154,6 +187,35 @@ static void apply_slot(const void *p, void *ctx __unused__)
 				__atomic_add_fetch(&shm->stats.fd_event_close_count,
 						   1, __ATOMIC_RELAXED);
 			break;
+		case FD_EVENT_CLOSE_RANGE: {
+			/*
+			 * Bulk-close range from close_range().  Walk
+			 * [fd1, fd2] and retire each fd; remove_object_by_fd()
+			 * is a no-op for untracked fds, so a span that
+			 * straddles trinity-tracked and disposable sandbox
+			 * fds is fine.  Clamp the walk width as defence
+			 * against a child stomping fd2 to a wild value past
+			 * the payload_valid() snapshot -- the snapshot is on
+			 * a parent-local copy so a TOCTOU flip can't reach
+			 * here, but the clamp also bounds a kernel-accepted
+			 * range that simply grew past what close_range.c's
+			 * post handler would have clamped.  Match the same
+			 * 1024 cap close_range.c uses on the producer side.
+			 */
+			int lo = ev.fd1;
+			int hi = ev.fd2;
+			int fd;
+
+			if (hi - lo > 1024)
+				hi = lo + 1024;
+
+			for (fd = lo; fd <= hi; fd++)
+				remove_object_by_fd(fd);
+
+			__atomic_add_fetch(&shm->stats.fd_event_close_count,
+					   1, __ATOMIC_RELAXED);
+			break;
+		}
 		default:
 			/* Defense in depth: payload_valid() already
 			 * screened type on the local copy, so reaching
