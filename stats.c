@@ -307,6 +307,11 @@ static void json_emit_kcov_section(void)
 	unsigned long kc_edges, kc_pcs, kc_calls, kc_remote;
 	unsigned long kc_cmp_records, kc_cmp_trunc, kc_cmp_bloom_skipped, kc_cmp_unique;
 	unsigned long kc_cmp_strip_skipped;
+	unsigned long kc_cmp_save_reject_nonconst;
+	unsigned long kc_cmp_save_reject_uninteresting;
+	unsigned long kc_cmp_save_reject_sentinel;
+	unsigned long kc_cmp_save_reject_dup;
+	unsigned long kc_cmp_save_reject_cap;
 	unsigned int top_nr[10];
 	unsigned long top_edges[10];
 	unsigned int top_count = 0;
@@ -333,6 +338,16 @@ static void json_emit_kcov_section(void)
 		__ATOMIC_RELAXED);
 	kc_cmp_unique = __atomic_load_n(&kcov_shm->cmp_hints_unique_inserts,
 		__ATOMIC_RELAXED);
+	kc_cmp_save_reject_nonconst = __atomic_load_n(
+		&kcov_shm->cmp_hints_save_reject_nonconst, __ATOMIC_RELAXED);
+	kc_cmp_save_reject_uninteresting = __atomic_load_n(
+		&kcov_shm->cmp_hints_save_reject_uninteresting, __ATOMIC_RELAXED);
+	kc_cmp_save_reject_sentinel = __atomic_load_n(
+		&kcov_shm->cmp_hints_save_reject_sentinel, __ATOMIC_RELAXED);
+	kc_cmp_save_reject_dup = __atomic_load_n(
+		&kcov_shm->cmp_hints_save_reject_dup, __ATOMIC_RELAXED);
+	kc_cmp_save_reject_cap = __atomic_load_n(
+		&kcov_shm->cmp_hints_save_reject_cap, __ATOMIC_RELAXED);
 
 	nr_syscalls_to_scan = biarch ? max_nr_64bit_syscalls : max_nr_syscalls;
 	if (nr_syscalls_to_scan > MAX_NR_SYSCALL)
@@ -358,10 +373,18 @@ static void json_emit_kcov_section(void)
 		"\"total_calls\":%lu,\"remote_calls\":%lu,"
 		"\"cmp_records_collected\":%lu,\"cmp_trace_truncated\":%lu,"
 		"\"cmp_hints_bloom_skipped\":%lu,\"cmp_hints_strip_skipped\":%lu,"
-		"\"cmp_hints_unique_inserts\":%lu",
+		"\"cmp_hints_unique_inserts\":%lu,"
+		"\"cmp_hints_save_reject_nonconst\":%lu,"
+		"\"cmp_hints_save_reject_uninteresting\":%lu,"
+		"\"cmp_hints_save_reject_sentinel\":%lu,"
+		"\"cmp_hints_save_reject_dup\":%lu,"
+		"\"cmp_hints_save_reject_cap\":%lu",
 		kc_edges, kc_pcs, kc_calls, kc_remote,
 		kc_cmp_records, kc_cmp_trunc, kc_cmp_bloom_skipped,
-		kc_cmp_strip_skipped, kc_cmp_unique);
+		kc_cmp_strip_skipped, kc_cmp_unique,
+		kc_cmp_save_reject_nonconst, kc_cmp_save_reject_uninteresting,
+		kc_cmp_save_reject_sentinel, kc_cmp_save_reject_dup,
+		kc_cmp_save_reject_cap);
 
 	/* Shadow transition-coverage globals.  Emitted unconditionally
 	 * so consumers can rely on a stable schema; both fields are 0
@@ -4511,6 +4534,11 @@ void kcov_cmp_stats_periodic_dump(void)
 	static unsigned long prev_cmp_parent_new_cmps_enabled;
 	static unsigned long prev_cmp_parent_new_cmps_control;
 	static unsigned long prev_cmp_hint_callsite[CMP_HINT_CALLSITE_NR];
+	static unsigned long prev_save_reject_nonconst;
+	static unsigned long prev_save_reject_uninteresting;
+	static unsigned long prev_save_reject_sentinel;
+	static unsigned long prev_save_reject_dup;
+	static unsigned long prev_save_reject_cap;
 	static struct timespec last_dump;
 	struct timespec now;
 	long elapsed;
@@ -4528,6 +4556,10 @@ void kcov_cmp_stats_periodic_dump(void)
 	unsigned long cur_cmp_parent_calls_enabled, cur_cmp_parent_calls_control;
 	unsigned long cur_cmp_parent_new_cmps_enabled, cur_cmp_parent_new_cmps_control;
 	unsigned long cur_cmp_hint_callsite[CMP_HINT_CALLSITE_NR];
+	unsigned long cur_save_reject_nonconst, cur_save_reject_uninteresting;
+	unsigned long cur_save_reject_sentinel, cur_save_reject_dup, cur_save_reject_cap;
+	unsigned long delta_save_reject_nonconst, delta_save_reject_uninteresting;
+	unsigned long delta_save_reject_sentinel, delta_save_reject_dup, delta_save_reject_cap;
 	unsigned long delta_records, delta_truncated, delta_bloom_skipped, delta_unique;
 	unsigned long delta_strip_skipped;
 	unsigned long delta_try_get_attempts, delta_try_get_returned, delta_injected;
@@ -4576,6 +4608,11 @@ void kcov_cmp_stats_periodic_dump(void)
 	cur_cmp_parent_calls_control       = __atomic_load_n(&kcov_shm->cmp_parent_calls_control,       __ATOMIC_RELAXED);
 	cur_cmp_parent_new_cmps_enabled    = __atomic_load_n(&kcov_shm->cmp_parent_new_cmps_enabled,    __ATOMIC_RELAXED);
 	cur_cmp_parent_new_cmps_control    = __atomic_load_n(&kcov_shm->cmp_parent_new_cmps_control,    __ATOMIC_RELAXED);
+	cur_save_reject_nonconst      = __atomic_load_n(&kcov_shm->cmp_hints_save_reject_nonconst,      __ATOMIC_RELAXED);
+	cur_save_reject_uninteresting = __atomic_load_n(&kcov_shm->cmp_hints_save_reject_uninteresting, __ATOMIC_RELAXED);
+	cur_save_reject_sentinel      = __atomic_load_n(&kcov_shm->cmp_hints_save_reject_sentinel,      __ATOMIC_RELAXED);
+	cur_save_reject_dup           = __atomic_load_n(&kcov_shm->cmp_hints_save_reject_dup,           __ATOMIC_RELAXED);
+	cur_save_reject_cap           = __atomic_load_n(&kcov_shm->cmp_hints_save_reject_cap,           __ATOMIC_RELAXED);
 	{
 		unsigned int cs;
 		for (cs = 0; cs < CMP_HINT_CALLSITE_NR; cs++)
@@ -4615,6 +4652,11 @@ void kcov_cmp_stats_periodic_dump(void)
 		prev_cmp_parent_calls_control       = cur_cmp_parent_calls_control;
 		prev_cmp_parent_new_cmps_enabled    = cur_cmp_parent_new_cmps_enabled;
 		prev_cmp_parent_new_cmps_control    = cur_cmp_parent_new_cmps_control;
+		prev_save_reject_nonconst      = cur_save_reject_nonconst;
+		prev_save_reject_uninteresting = cur_save_reject_uninteresting;
+		prev_save_reject_sentinel      = cur_save_reject_sentinel;
+		prev_save_reject_dup           = cur_save_reject_dup;
+		prev_save_reject_cap           = cur_save_reject_cap;
 		{
 			unsigned int cs;
 			for (cs = 0; cs < CMP_HINT_CALLSITE_NR; cs++)
@@ -4653,6 +4695,11 @@ void kcov_cmp_stats_periodic_dump(void)
 	delta_cmp_parent_calls_control       = cur_cmp_parent_calls_control       - prev_cmp_parent_calls_control;
 	delta_cmp_parent_new_cmps_enabled    = cur_cmp_parent_new_cmps_enabled    - prev_cmp_parent_new_cmps_enabled;
 	delta_cmp_parent_new_cmps_control    = cur_cmp_parent_new_cmps_control    - prev_cmp_parent_new_cmps_control;
+	delta_save_reject_nonconst      = cur_save_reject_nonconst      - prev_save_reject_nonconst;
+	delta_save_reject_uninteresting = cur_save_reject_uninteresting - prev_save_reject_uninteresting;
+	delta_save_reject_sentinel      = cur_save_reject_sentinel      - prev_save_reject_sentinel;
+	delta_save_reject_dup           = cur_save_reject_dup           - prev_save_reject_dup;
+	delta_save_reject_cap           = cur_save_reject_cap           - prev_save_reject_cap;
 	{
 		unsigned int cs;
 		for (cs = 0; cs < CMP_HINT_CALLSITE_NR; cs++) {
@@ -4674,7 +4721,10 @@ void kcov_cmp_stats_periodic_dump(void)
 	     delta_reexec_skipped_destructive | delta_reexec_skipped_validate_silent |
 	     delta_reexec_window_cap_hit | delta_reexec_pending_dropped |
 	     delta_cmp_parent_calls_enabled | delta_cmp_parent_calls_control |
-	     delta_cmp_parent_new_cmps_enabled | delta_cmp_parent_new_cmps_control) != 0 ||
+	     delta_cmp_parent_new_cmps_enabled | delta_cmp_parent_new_cmps_control |
+	     delta_save_reject_nonconst | delta_save_reject_uninteresting |
+	     delta_save_reject_sentinel | delta_save_reject_dup |
+	     delta_save_reject_cap) != 0 ||
 	    any_callsite_delta) {
 		stats_log_write("KCOV CMP stats over last %lds:\n", elapsed);
 
@@ -4707,6 +4757,36 @@ void kcov_cmp_stats_periodic_dump(void)
 			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
 					"cmp_hints_unique_inserts", delta_unique,
 					rate_milli / 1000, rate_milli % 1000, cur_unique);
+		}
+		if (delta_save_reject_nonconst) {
+			unsigned long rate_milli = (delta_save_reject_nonconst * 1000UL) / (unsigned long)elapsed;
+			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+					"cmp_hints_save_reject_nonconst", delta_save_reject_nonconst,
+					rate_milli / 1000, rate_milli % 1000, cur_save_reject_nonconst);
+		}
+		if (delta_save_reject_uninteresting) {
+			unsigned long rate_milli = (delta_save_reject_uninteresting * 1000UL) / (unsigned long)elapsed;
+			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+					"cmp_hints_save_reject_uninteresting", delta_save_reject_uninteresting,
+					rate_milli / 1000, rate_milli % 1000, cur_save_reject_uninteresting);
+		}
+		if (delta_save_reject_sentinel) {
+			unsigned long rate_milli = (delta_save_reject_sentinel * 1000UL) / (unsigned long)elapsed;
+			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+					"cmp_hints_save_reject_sentinel", delta_save_reject_sentinel,
+					rate_milli / 1000, rate_milli % 1000, cur_save_reject_sentinel);
+		}
+		if (delta_save_reject_dup) {
+			unsigned long rate_milli = (delta_save_reject_dup * 1000UL) / (unsigned long)elapsed;
+			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+					"cmp_hints_save_reject_dup", delta_save_reject_dup,
+					rate_milli / 1000, rate_milli % 1000, cur_save_reject_dup);
+		}
+		if (delta_save_reject_cap) {
+			unsigned long rate_milli = (delta_save_reject_cap * 1000UL) / (unsigned long)elapsed;
+			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+					"cmp_hints_save_reject_cap", delta_save_reject_cap,
+					rate_milli / 1000, rate_milli % 1000, cur_save_reject_cap);
 		}
 		if (delta_try_get_attempts) {
 			unsigned long rate_milli = (delta_try_get_attempts * 1000UL) / (unsigned long)elapsed;
@@ -4950,6 +5030,11 @@ void kcov_cmp_stats_periodic_dump(void)
 	prev_cmp_parent_calls_control       = cur_cmp_parent_calls_control;
 	prev_cmp_parent_new_cmps_enabled    = cur_cmp_parent_new_cmps_enabled;
 	prev_cmp_parent_new_cmps_control    = cur_cmp_parent_new_cmps_control;
+	prev_save_reject_nonconst      = cur_save_reject_nonconst;
+	prev_save_reject_uninteresting = cur_save_reject_uninteresting;
+	prev_save_reject_sentinel      = cur_save_reject_sentinel;
+	prev_save_reject_dup           = cur_save_reject_dup;
+	prev_save_reject_cap           = cur_save_reject_cap;
 	{
 		unsigned int cs;
 		for (cs = 0; cs < CMP_HINT_CALLSITE_NR; cs++)
@@ -6735,6 +6820,11 @@ static void dump_stats_kcov_block(void)
 		unsigned long kc_cmp_bloom_skipped = __atomic_load_n(&kcov_shm->cmp_hints_bloom_skipped, __ATOMIC_RELAXED);
 		unsigned long kc_cmp_strip_skipped = __atomic_load_n(&kcov_shm->cmp_hints_strip_skipped, __ATOMIC_RELAXED);
 		unsigned long kc_cmp_unique  = __atomic_load_n(&kcov_shm->cmp_hints_unique_inserts, __ATOMIC_RELAXED);
+		unsigned long kc_cmp_save_reject_nonconst      = __atomic_load_n(&kcov_shm->cmp_hints_save_reject_nonconst,      __ATOMIC_RELAXED);
+		unsigned long kc_cmp_save_reject_uninteresting = __atomic_load_n(&kcov_shm->cmp_hints_save_reject_uninteresting, __ATOMIC_RELAXED);
+		unsigned long kc_cmp_save_reject_sentinel      = __atomic_load_n(&kcov_shm->cmp_hints_save_reject_sentinel,      __ATOMIC_RELAXED);
+		unsigned long kc_cmp_save_reject_dup           = __atomic_load_n(&kcov_shm->cmp_hints_save_reject_dup,           __ATOMIC_RELAXED);
+		unsigned long kc_cmp_save_reject_cap           = __atomic_load_n(&kcov_shm->cmp_hints_save_reject_cap,           __ATOMIC_RELAXED);
 
 		stat_row("kcov_coverage", "unique_edges",          kc_edges);
 		stat_row("kcov_coverage", "total_pcs",             kc_pcs);
@@ -6779,6 +6869,16 @@ static void dump_stats_kcov_block(void)
 			stat_row("kcov_coverage", "cmp_hints_strip_skipped", kc_cmp_strip_skipped);
 		if (kc_cmp_unique > 0)
 			stat_row("kcov_coverage", "cmp_hints_unique_inserts", kc_cmp_unique);
+		if (kc_cmp_save_reject_nonconst > 0)
+			stat_row("kcov_coverage", "cmp_hints_save_reject_nonconst", kc_cmp_save_reject_nonconst);
+		if (kc_cmp_save_reject_uninteresting > 0)
+			stat_row("kcov_coverage", "cmp_hints_save_reject_uninteresting", kc_cmp_save_reject_uninteresting);
+		if (kc_cmp_save_reject_sentinel > 0)
+			stat_row("kcov_coverage", "cmp_hints_save_reject_sentinel", kc_cmp_save_reject_sentinel);
+		if (kc_cmp_save_reject_dup > 0)
+			stat_row("kcov_coverage", "cmp_hints_save_reject_dup", kc_cmp_save_reject_dup);
+		if (kc_cmp_save_reject_cap > 0)
+			stat_row("kcov_coverage", "cmp_hints_save_reject_cap", kc_cmp_save_reject_cap);
 
 		{
 			unsigned long warm_known = __atomic_load_n(
