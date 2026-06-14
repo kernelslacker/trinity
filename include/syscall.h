@@ -119,6 +119,29 @@ struct syscallrecord {
 	uint8_t arg_snapshot_mask;
 
 	/*
+	 * Always-populated, non-tripwire snapshot of the six syscall args
+	 * captured in __do_syscall() from the dispatch-time locals a1..a6
+	 * right after the second blanket_address_scrub() and before kernel
+	 * entry.  Read by cmp_hints_collect()'s RedQueen attribution scan
+	 * so attribution runs against the values the kernel actually saw,
+	 * rather than against live rec->aN which a sibling stomp can
+	 * rewrite between dispatch and the consumer.
+	 *
+	 * Distinct from arg_shadow[] above: that array is opt-in per
+	 * syscall (gated by entry->arg_snapshot_mask) and carries the
+	 * post-handler tripwire / corruption-counter contract enforced by
+	 * get_arg_snapshot().  The CMP/RedQueen path is not a per-syscall
+	 * result oracle -- it sweeps every dispatched call -- so it wants
+	 * an always-on snapshot with no per-slot opt-in and no per-read
+	 * tripwire bump.  dispatch_args_valid is set true alongside the
+	 * populate; consumers gate the read on it so a fresh rec that
+	 * never went through __do_syscall() (zero-init) returns no
+	 * attribution rather than reading a zeroed array.
+	 */
+	unsigned long dispatch_args[6];
+	bool dispatch_args_valid;
+
+	/*
 	 * Publish sequence counter for lock-free diagnostic readers.
 	 * Mutated by srec_publish_begin / srec_publish_end (see
 	 * syscall_record.h) which writers bracket around coherent field

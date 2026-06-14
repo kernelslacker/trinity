@@ -206,6 +206,25 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 	a5 = rec->a5;
 	a6 = rec->a6;
 
+	/* Non-tripwire dispatch-arg snapshot, shared with
+	 * cmp_hints_collect()'s RedQueen attribution scan.  Captured here
+	 * from the same locals the kernel will see (post the second
+	 * blanket_address_scrub above) so the scan attributes against the
+	 * kernel-visible values rather than live rec->aN, which a sibling
+	 * stomp can rewrite between dispatch and the post-handler read.
+	 * Distinct from rec->arg_shadow[] populated below: that array is
+	 * opt-in per syscall (entry->arg_snapshot_mask) and bumps a
+	 * tripwire on mismatch via get_arg_snapshot(); this snapshot is
+	 * always populated and read directly, suited to a scanning
+	 * consumer rather than a per-slot result oracle. */
+	rec->dispatch_args[0] = a1;
+	rec->dispatch_args[1] = a2;
+	rec->dispatch_args[2] = a3;
+	rec->dispatch_args[3] = a4;
+	rec->dispatch_args[4] = a5;
+	rec->dispatch_args[5] = a6;
+	rec->dispatch_args_valid = true;
+
 	/* Populate rec->arg_shadow[] from the local a1..a6 about to be
 	 * passed to the kernel, so opted-in post handlers reading via
 	 * get_arg_snapshot() see exactly what the kernel saw.  Captured
