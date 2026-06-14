@@ -6297,6 +6297,7 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 */
 	{ "rt_sigqueueinfo",	3, &struct_catalog[SC_SIGINFO_T] },
 	{ "rt_tgsigqueueinfo",	4, &struct_catalog[SC_SIGINFO_T] },
+	{ "pidfd_send_signal",	3, &struct_catalog[SC_SIGINFO_T] },
 	/* mq_open(const char *, int, mode_t, struct mq_attr *) */
 	{ "mq_open",		4, &struct_catalog[SC_MQ_ATTR] },
 	/* mq_getsetattr(mqd_t, const struct mq_attr *, struct mq_attr *) */
