@@ -268,11 +268,26 @@ struct syscallrecord;
 /*
  * Step 1.  Assign rec->post_state and register in the ownership table,
  * in that order, with no statements between -- closes the observable
- * window where snap is reachable but unregistered.  Out-of-line because
- * struct syscallrecord is not visible at this point in the header and
+ * window where snap is reachable but unregistered.
+ *
+ * Captures the install-time owner (rec->nr / rec->do32bit), the
+ * snap's leading-word magic, and the allocation size into the
+ * ownership table so post_state_release() can reject double frees,
+ * wrong-owner frees, and stomped magic before letting the chunk reach
+ * libc free().  See utils.c struct post_state_entry for the tag
+ * field semantics and the four-gate reject contract.
+ *
+ * Implemented as a macro that forwards sizeof(*snap) to
+ * post_state_install_sized() at the call site -- every existing
+ * caller already holds @snap as a typed pointer, so the size
+ * capture is automatic.  Out-of-line for the same reason as the
+ * underlying helper: struct syscallrecord is not visible here and
  * pulling its definition in would create a circular include.
  */
-void post_state_install(struct syscallrecord *rec, void *snap);
+void post_state_install_sized(struct syscallrecord *rec, void *snap,
+			      size_t size);
+#define post_state_install(rec, snap) \
+	post_state_install_sized((rec), (snap), sizeof(*(snap)))
 
 /*
  * Step 2.  Read rec->post_state, run it through the canonical
