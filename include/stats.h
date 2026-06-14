@@ -2796,6 +2796,34 @@ struct stats_s {
 	unsigned long maps_reject_alloc_track_miss_anon;
 	unsigned long maps_reject_alloc_track_miss_file;
 	unsigned long maps_reject_alloc_track_miss_testfile;
+
+	/* ---- Childop vs random-syscall effort split ----
+	 *
+	 * Three independent buckets so the periodic stats dump can show
+	 * where the child loop actually spends effort: wall-clock time,
+	 * dispatched syscalls, and outer-loop iterations.  Rendered as one
+	 * childop_split block (raw numerators+denominators + percentages)
+	 * by defense_counters_periodic_dump().
+	 *
+	 * Wall-time and the random-syscall dispatch denominator are written
+	 * from child_process()'s per-op bracket in child.c.  The per-syscall
+	 * counters are written from random_syscall_step()'s call-complete
+	 * site, gated by the per-child in_childop flag the bracket sets for
+	 * the duration of an alt-op op_fn.  All RELAXED add-fetch: cumulative
+	 * diagnostic, multi-producer (one writer per child), lost-update
+	 * races are tolerated and bounded by per-tick child counts.
+	 *
+	 * syscalls_in_childops counts only random_syscall-mediated calls
+	 * issued from inside an alt-op bracket (e.g. sched_cycler's tight
+	 * random_syscall() loop).  Childops that call libc / raw syscall()
+	 * directly do not flow through the call-complete enqueue site and
+	 * so are not counted here -- the wall-time and iteration metrics
+	 * cover them. */
+	unsigned long childop_walltime_ns;
+	unsigned long syscall_walltime_ns;
+	unsigned long syscalls_in_childops;
+	unsigned long syscalls_random;
+	unsigned long random_syscall_dispatches;
 };
 
 unsigned int stats_syscall_category(const char *name);

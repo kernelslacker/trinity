@@ -2551,12 +2551,50 @@ void child_process(struct childdata *child, int childno)
 			bracketed = kcov_bracket_begin(&child->kcov);
 		}
 
+		/* childop_split telemetry: bracket op_fn with a monotonic
+		 * sample pair so the elapsed dispatch time can be split into
+		 * childop vs random-syscall buckets.  Also set child->in_childop
+		 * across the dispatch so a random_syscall() called from inside
+		 * an alt-op recipe (e.g. sched_cycler) bumps syscalls_in_childops
+		 * at the call-complete enqueue, not syscalls_random.  The flag
+		 * is the per-child source of truth for the syscall-count
+		 * attribution; the wall-time accumulation below is independent
+		 * of it (driven off the is_alt_op snapshot taken at the top of
+		 * the iter so a corrupted op_type can't reroute the bucket
+		 * after we've already paid the op_fn). */
+		struct timespec split_t0, split_t1;
+		clock_gettime(CLOCK_MONOTONIC, &split_t0);
+		child->in_childop = is_alt_op;
+
 		ret = op_fn ? op_fn(child) : run_sequence_chain(child);
+
+		child->in_childop = false;
+		clock_gettime(CLOCK_MONOTONIC, &split_t1);
 
 		if (bracketed) {
 			edges_this_call = kcov_bracket_end(
 				&child->kcov,
 				CHILDOP_KCOV_NR_BASE + op);
+		}
+
+		{
+			long ns = (split_t1.tv_sec - split_t0.tv_sec) * 1000000000L
+				+ (split_t1.tv_nsec - split_t0.tv_nsec);
+			if (ns < 0)
+				ns = 0;
+			if (is_alt_op) {
+				__atomic_add_fetch(&shm->stats.childop_walltime_ns,
+						   (unsigned long)ns, __ATOMIC_RELAXED);
+			} else if (op == CHILD_OP_SYSCALL) {
+				__atomic_add_fetch(&shm->stats.syscall_walltime_ns,
+						   (unsigned long)ns, __ATOMIC_RELAXED);
+				/* Iteration denominator for childop_split.
+				 * childop_invocations[] is gated on is_alt_op
+				 * upstream, so CHILD_OP_SYSCALL is never counted
+				 * there; this is its parallel counter. */
+				__atomic_add_fetch(&shm->stats.random_syscall_dispatches,
+						   1UL, __ATOMIC_RELAXED);
+			}
 		}
 
 		if (watch_taint) {
