@@ -81,6 +81,7 @@ static void cdrom_send_packet_sanitise(struct syscallrecord *rec)
 	if (!cgc)
 		return;
 
+	memset(cgc, 0, sizeof(*cgc));
 	cgc->cmd[0] = cdrom_scsi_opcodes[rnd_modulo_u32(ARRAY_SIZE(cdrom_scsi_opcodes))];
 	for (i = 1; i < CDROM_PACKET_SIZE; i++)
 		cgc->cmd[i] = (unsigned char) rnd_u32();
@@ -239,6 +240,7 @@ static void sanitise_cdrom_read(struct syscallrecord *rec, int bufsz)
 	cr = (struct cdrom_read *) get_writable_struct(sizeof(*cr));
 	if (!cr)
 		return;
+	memset(cr, 0, sizeof(*cr));
 	bufaddr = get_writable_struct(bufsz);
 	if (!bufaddr)
 		return;
