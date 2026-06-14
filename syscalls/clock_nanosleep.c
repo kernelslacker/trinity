@@ -30,9 +30,6 @@ static unsigned long clock_nanosleep_flags[] = {
 
 static void sanitise_clock_nanosleep(struct syscallrecord *rec)
 {
-	struct timespec *ts;
-	int abstime;
-
 	rec->a1 = pick_clockid();
 
 	/*
@@ -41,49 +38,13 @@ static void sanitise_clock_nanosleep(struct syscallrecord *rec)
 	 * from the values array, which with a single-element {TIMER_ABSTIME}
 	 * means the relative path never ran from random fuzz.
 	 */
-	abstime = RAND_BOOL();
-	rec->a2 = abstime ? TIMER_ABSTIME : 0;
-
-	ts = (struct timespec *) get_writable_address(sizeof(*ts));
-	if (ts == NULL)
-		return;
-
-	if (abstime) {
-		/*
-		 * Absolute mode with a past time returns immediately, which
-		 * never exercises the hrtimer wait path.  Read the same clock
-		 * and add a tiny delta so the kernel actually has to schedule
-		 * the sleep before it expires.  Fall back to a near-epoch
-		 * shape if the clock is unreadable (CPU/dynamic/invalid).
-		 */
-		struct timespec now;
-
-		if (clock_gettime((clockid_t) rec->a1, &now) == 0) {
-			long delta = 1000L * (long) (1 + rnd_modulo_u32(500));
-			ts->tv_sec = now.tv_sec;
-			ts->tv_nsec = now.tv_nsec + delta;
-			if (ts->tv_nsec >= 1000000000L) {
-				ts->tv_sec += ts->tv_nsec / 1000000000L;
-				ts->tv_nsec %= 1000000000L;
-			}
-		} else {
-			ts->tv_sec = 0;
-			ts->tv_nsec = rnd_modulo_u32(1000);
-		}
-	} else {
-		/* Relative: keep durations tiny so we don't block the fuzzer. */
-		ts->tv_sec = 0;
-		switch (rnd_modulo_u32(4)) {
-		case 0: ts->tv_nsec = 0; break;
-		case 1: ts->tv_nsec = 1; break;
-		case 2: ts->tv_nsec = rnd_modulo_u32(1000); break;
-		default: ts->tv_nsec = rnd_modulo_u32(1000000); break;
-		}
-	}
-
-	rec->a3 = (unsigned long) ts;
+	rec->a2 = RAND_BOOL() ? TIMER_ABSTIME : 0;
 
 	/*
+	 * a3 (rqtp) is typed ARG_TIMESPEC; the generator publishes a
+	 * writable pool buffer and fills it for us.  NEED_ALARM caps any
+	 * blocking arm a large tv_sec bucket would otherwise produce.
+	 *
 	 * rmtp (a4) is the kernel's "remaining time on EINTR" output buffer:
 	 * if the sleep is interrupted, the kernel writes the unslept residual
 	 * timespec there.  Random pool can land it inside an alloc_shared
@@ -106,7 +67,7 @@ struct syscallentry syscall_clock_nanosleep = {
 	.name = "clock_nanosleep",
 	.group = GROUP_TIME,
 	.num_args = 4,
-	.argtype = { [0] = ARG_OP, [1] = ARG_LIST, [2] = ARG_ADDRESS, [3] = ARG_ADDRESS },
+	.argtype = { [0] = ARG_OP, [1] = ARG_LIST, [2] = ARG_TIMESPEC, [3] = ARG_ADDRESS },
 	.argname = { [0] = "which_clock", [1] = "flags", [2] = "rqtp", [3] = "rmtp" },
 	.arg_params[0].list = ARGLIST(clock_nanosleep_which),
 	.arg_params[1].list = ARGLIST(clock_nanosleep_flags),
