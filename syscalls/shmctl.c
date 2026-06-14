@@ -11,7 +11,7 @@
 
 static unsigned long shmctl_ops[] = {
 	IPC_STAT, IPC_SET, IPC_RMID, IPC_INFO,
-	SHM_INFO, SHM_STAT, SHM_LOCK, SHM_UNLOCK,
+	SHM_INFO, SHM_STAT, SHM_STAT_ANY, SHM_LOCK, SHM_UNLOCK,
 };
 
 static void sanitise_shmctl(struct syscallrecord *rec)
