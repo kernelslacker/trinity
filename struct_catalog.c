@@ -5287,6 +5287,31 @@ static const struct struct_field sctp_paddrthlds_v2_fields[] = {
 	       .u.range = { 0, 16 },
 	       .mutate_weight = 60),
 };
+
+/*
+ * struct sctp_udpencaps -- IPPROTO_SCTP / SCTP_REMOTE_UDP_ENCAPS_PORT.
+ * Per-peer UDP encapsulation port for SCTP-over-UDP (RFC 6951).
+ * sue_assoc_id picks the target association (sctp_assoc_t / __u32,
+ * FT_RAW so the per-assoc lookup constant shows up to KCOV-CMP).
+ * sue_address embeds a struct sockaddr_storage and is treated as a
+ * single opaque FT_RAW blob spanning sizeof(struct sockaddr_storage)
+ * -- the kernel matches it against the live peer address list rather
+ * than parsing it field-wise, so the per-byte splat is the right
+ * shape and field-splitting it would just give KCOV-CMP misleading
+ * sub-field offsets for a value that is logically atomic.  sue_port
+ * is the UDP encapsulation port (__u16, network/big-endian; FT_RAW
+ * to let the per-byte splat exercise both bytes without anchoring
+ * KCOV-CMP at a single canonical value).  Bespoke
+ * build_sctp_udpencaps() zero-fills as a miss-fallback.
+ */
+static const struct struct_field sctp_udpencaps_fields[] = {
+	FIELDX(struct sctp_udpencaps, sue_assoc_id, FT_RAW,
+	       .mutate_weight = 60),
+	FIELDX(struct sctp_udpencaps, sue_address, FT_RAW,
+	       .mutate_weight = 40),
+	FIELDX(struct sctp_udpencaps, sue_port, FT_RAW,
+	       .mutate_weight = 60),
+};
 #endif
 
 /* ------------------------------------------------------------------ */
@@ -5807,6 +5832,12 @@ const struct struct_desc struct_catalog[] = {
 		.struct_size	= sizeof(struct sctp_paddrthlds_v2),
 		.fields		= sctp_paddrthlds_v2_fields,
 		.num_fields	= ARRAY_SIZE(sctp_paddrthlds_v2_fields),
+	},
+	[SC_SCTP_UDPENCAPS] = {
+		.name		= "sctp_udpencaps",
+		.struct_size	= sizeof(struct sctp_udpencaps),
+		.fields		= sctp_udpencaps_fields,
+		.num_fields	= ARRAY_SIZE(sctp_udpencaps_fields),
 	},
 #endif
 };
@@ -6867,6 +6898,13 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 		.discrim_value		= IPPROTO_SCTP,
 		.discrim2_arg_idx	= 3,
 		.discrim2_value		= SCTP_PEER_ADDR_THLDS_V2,
+	},
+	{
+		"setsockopt", 4, &struct_catalog[SC_SCTP_UDPENCAPS],
+		.discrim_arg_idx	= 2,
+		.discrim_value		= IPPROTO_SCTP,
+		.discrim2_arg_idx	= 3,
+		.discrim2_value		= SCTP_REMOTE_UDP_ENCAPS_PORT,
 	},
 #endif
 	/*
