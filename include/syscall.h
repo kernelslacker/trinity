@@ -184,6 +184,8 @@ enum argtype {
 	ARG_ITIMERVAL,	/* writable pool buffer filled with a bucketed struct itimerval (setitimer) */
 	ARG_ITIMERSPEC,	/* writable pool buffer filled with a bucketed struct itimerspec (timer_settime) */
 	ARG_TIMEVAL,	/* writable pool buffer filled with a bucketed struct timeval (settimeofday/adjtime) */
+	ARG_BUF_SIZED,	/* writable pool buffer + coherent paired byte length */
+	ARG_BUF_LEN,	/* paired byte-length sibling of ARG_BUF_SIZED */
 	ARG_IOVEC,
 	ARG_IOVEC_IN,
 	ARG_IOVECLEN,

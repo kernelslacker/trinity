@@ -819,6 +819,7 @@ static bool argtype_accepts_numeric_substitute(enum argtype t)
 	case ARG_IOVECLEN:
 	case ARG_SOCKADDRLEN:
 	case ARG_STRUCT_SIZE:
+	case ARG_BUF_LEN:
 	case ARG_FD_BPF_BTF:
 	case ARG_FD_BPF_LINK:
 	case ARG_FD_BPF_MAP:
@@ -848,6 +849,7 @@ static bool argtype_accepts_numeric_substitute(enum argtype t)
 	case ARG_ITIMERVAL:
 	case ARG_ITIMERSPEC:
 	case ARG_TIMEVAL:
+	case ARG_BUF_SIZED:
 	case ARG_IOVEC:
 	case ARG_IOVEC_IN:
 	case ARG_SOCKADDR:
