@@ -47,6 +47,7 @@
 #include <linux/mount.h>
 #include <linux/fs.h>
 #include <linux/quota.h>
+#include <linux/dqblk_xfs.h>
 #include <mqueue.h>
 
 #include "compat.h"
@@ -2533,6 +2534,69 @@ static const struct struct_field if_dqinfo_fields[] = {
 	FIELDX(struct if_dqinfo, dqi_valid, FT_FLAGS,
 	       .u.flags.mask = IIF_ALL,
 	       .mutate_weight = 60),
+};
+
+/* ------------------------------------------------------------------ */
+/* struct fs_disk_quota (quotactl Q_XSETQLIM, quotactl_fd Q_XSETQLIM)  */
+/* ------------------------------------------------------------------ */
+
+/*
+ * XFS-shaped sibling to the if_dqblk / if_dqinfo registrations above:
+ * under Q_XSETQLIM the addr slot (quotactl a4 / quotactl_fd a4) is a
+ * struct fs_disk_quota pointer instead.  The bespoke
+ * sanitise_quotactl() / sanitise_quotactl_fd() keep owning the live
+ * fill (writable allocation, limit / id pickers, routed through
+ * avoid_shared_buffer_inout()); attribution-only registration lets
+ * struct_field_for_cmp() steer CMP-learned constants at the named
+ * d_blk_* / d_ino_* / d_rtb_* / d_*timer / d_*warns slots rather
+ * than at a coincidentally-same-width slot.
+ *
+ * d_flags carries the FS_{USER,PROJ,GROUP}_QUOTA vocabulary;
+ * d_fieldmask carries the FS_DQ_* mask the kernel switches on to
+ * decide which sub-limits to apply.  FT_FLAGS on both keeps CMP
+ * attribution against the bits the kernel actually tests.
+ *
+ * Q_XGETQUOTA / Q_XGETNEXTQUOTA also use fs_disk_quota at the same
+ * slot but they're output-only -- the bytes we stamp on dispatch
+ * don't reach the kernel's quota lookup, only the kernel's write-back
+ * touches them.  Register only the Q_XSETQLIM arm so CMP attribution
+ * doesn't fire on output bytes that came from the kernel rather than
+ * our fill.
+ *
+ * Resolution is gated on the Q_XSETQLIM subcmd via the discriminator-
+ * aware syscall_struct_args[] entry below, using the same packed-
+ * discriminator (shift = SUBCMDSHIFT) extension the if_dqblk / if_dqinfo
+ * registrations use.
+ */
+static const struct struct_field fs_disk_quota_fields[] = {
+	FIELD(struct fs_disk_quota, d_version),
+	FIELDX(struct fs_disk_quota, d_flags, FT_FLAGS,
+	       .u.flags.mask = FS_USER_QUOTA | FS_PROJ_QUOTA | FS_GROUP_QUOTA,
+	       .mutate_weight = 60),
+	FIELDX(struct fs_disk_quota, d_fieldmask, FT_FLAGS,
+	       .u.flags.mask = FS_DQ_LIMIT_MASK | FS_DQ_TIMER_MASK |
+			       FS_DQ_WARNS_MASK | FS_DQ_ACCT_MASK |
+			       FS_DQ_BIGTIME,
+	       .mutate_weight = 60),
+	FIELD(struct fs_disk_quota, d_id),
+	FIELD(struct fs_disk_quota, d_blk_hardlimit),
+	FIELD(struct fs_disk_quota, d_blk_softlimit),
+	FIELD(struct fs_disk_quota, d_ino_hardlimit),
+	FIELD(struct fs_disk_quota, d_ino_softlimit),
+	FIELD(struct fs_disk_quota, d_bcount),
+	FIELD(struct fs_disk_quota, d_icount),
+	FIELD(struct fs_disk_quota, d_itimer),
+	FIELD(struct fs_disk_quota, d_btimer),
+	FIELD(struct fs_disk_quota, d_iwarns),
+	FIELD(struct fs_disk_quota, d_bwarns),
+	FIELD(struct fs_disk_quota, d_itimer_hi),
+	FIELD(struct fs_disk_quota, d_btimer_hi),
+	FIELD(struct fs_disk_quota, d_rtbtimer_hi),
+	FIELD(struct fs_disk_quota, d_rtb_hardlimit),
+	FIELD(struct fs_disk_quota, d_rtb_softlimit),
+	FIELD(struct fs_disk_quota, d_rtbcount),
+	FIELD(struct fs_disk_quota, d_rtbtimer),
+	FIELD(struct fs_disk_quota, d_rtbwarns),
 };
 
 #ifdef X86
@@ -6149,6 +6213,12 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= file_handle_fields,
 		.num_fields	= ARRAY_SIZE(file_handle_fields),
 	},
+	[SC_FS_DISK_QUOTA] = {
+		.name		= "fs_disk_quota",
+		.struct_size	= sizeof(struct fs_disk_quota),
+		.fields		= fs_disk_quota_fields,
+		.num_fields	= ARRAY_SIZE(fs_disk_quota_fields),
+	},
 };
 
 /*
@@ -6244,6 +6314,18 @@ static const unsigned long quotactl_if_dqblk_subcmds[] = {
  */
 static const unsigned long quotactl_if_dqinfo_subcmds[] = {
 	Q_SETINFO,
+};
+
+/*
+ * quotactl_fs_disk_quota_subcmds: just Q_XSETQLIM (a4 is a struct
+ * fs_disk_quota pointer the kernel reads on dispatch under the XFS
+ * quota set-limit command).  Q_XGETQUOTA / Q_XGETNEXTQUOTA also use
+ * fs_disk_quota at the same slot but they're output-only -- registering
+ * them would attribute CMP-learned constants against bytes the kernel
+ * wrote rather than bytes we stamped.
+ */
+static const unsigned long quotactl_fs_disk_quota_subcmds[] = {
+	Q_XSETQLIM,
 };
 
 /*
@@ -6965,6 +7047,32 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 		.discrim_arg_idx	= 2,
 		.discrim_values		= quotactl_if_dqinfo_subcmds,
 		.num_discrim_values	= ARRAY_SIZE(quotactl_if_dqinfo_subcmds),
+		.discrim_shift		= SUBCMDSHIFT,
+	},
+	/*
+	 * fs_disk_quota sibling of the if_dqblk / if_dqinfo registrations
+	 * above: the same addr slot (quotactl a4 / quotactl_fd a4) is a
+	 * struct fs_disk_quota pointer under Q_XSETQLIM (the XFS quota
+	 * set-limit command).  Same packed-discriminator extraction
+	 * (discrim_shift = SUBCMDSHIFT) and same attribution-only shape
+	 * as the if_dqblk / if_dqinfo pairs -- the bespoke sanitisers
+	 * own the live fill; this entry only steers
+	 * struct_field_for_cmp().  Q_XGETQUOTA / Q_XGETNEXTQUOTA use
+	 * fs_disk_quota at the same slot but are output-only, so the
+	 * pool stays at just Q_XSETQLIM.
+	 */
+	{
+		"quotactl", 4, &struct_catalog[SC_FS_DISK_QUOTA],
+		.discrim_arg_idx	= 1,
+		.discrim_values		= quotactl_fs_disk_quota_subcmds,
+		.num_discrim_values	= ARRAY_SIZE(quotactl_fs_disk_quota_subcmds),
+		.discrim_shift		= SUBCMDSHIFT,
+	},
+	{
+		"quotactl_fd", 4, &struct_catalog[SC_FS_DISK_QUOTA],
+		.discrim_arg_idx	= 2,
+		.discrim_values		= quotactl_fs_disk_quota_subcmds,
+		.num_discrim_values	= ARRAY_SIZE(quotactl_fs_disk_quota_subcmds),
 		.discrim_shift		= SUBCMDSHIFT,
 	},
 #ifdef X86
