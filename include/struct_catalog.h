@@ -368,6 +368,7 @@ enum struct_catalog_idx {
 	SC_SCTP_STREAM_VALUE,
 	SC_SCTP_EVENT,
 	SC_SCTP_PADDRTHLDS,
+	SC_SCTP_PADDRTHLDS_V2,
 #endif
 
 	SC_NR_ENTRIES,		/* sentinel; equals ARRAY_SIZE(struct_catalog) once both stay in lockstep */
