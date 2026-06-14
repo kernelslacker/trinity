@@ -5010,6 +5010,138 @@ static void kcov_diag_emit_block(const char *counter_name,
 	}
 }
 
+/* combined top-N table joining
+ * per-syscall trace_truncated + cmp_trace_truncated + max_trace_size
+ * (with its share of KCOV_TRACE_SIZE) on the same row, plus a single
+ * summary line for dedup-probe-overflow.
+ *
+ * Sibling kcov_diag_emit_block calls already rank each counter on its
+ * own; that flattens the cross-counter signal -- a syscall whose trace
+ * mostly saturates without an outright truncation event drops off the
+ * trace_truncated block, and one whose CMP buffer truncates appears in
+ * a separate stanza from the trace one.  This combined view ranks by
+ * max(trace_truncated, max_trace_size) so saturation-without-trunc and
+ * trunc-with-modest-max both surface, and prints the CMP counterpart in
+ * the same row -- the data needed to decide between a global
+ * --kcov-trace-size knob and a targeted large-trace child pool
+ * (buffer knob).  Diagnostic only; no collection, buffer, or
+ * reward path is touched.
+ */
+#define KCOV_DIAG_TRUNC_TOPN	10
+
+struct kcov_diag_trunc_entry {
+	unsigned int nr;
+	bool do32;
+	uint64_t trace_truncated;
+	uint64_t cmp_trace_truncated;
+	uint64_t max_trace_size;
+	uint64_t rank;
+};
+
+static void kcov_diag_emit_truncation_topn(void)
+{
+	struct kcov_diag_trunc_entry top[KCOV_DIAG_TRUNC_TOPN];
+	unsigned int top_count = 0;
+	unsigned int nr_per_arch[2];
+	unsigned int arch, i;
+	int j;
+	uint64_t dedup_per_syscall_sum = 0;
+	uint64_t dedup_global;
+	unsigned int dedup_syscall_count = 0;
+
+	if (biarch) {
+		nr_per_arch[0] = max_nr_64bit_syscalls;
+		nr_per_arch[1] = max_nr_32bit_syscalls;
+	} else {
+		nr_per_arch[0] = max_nr_syscalls;
+		nr_per_arch[1] = 0;
+	}
+	for (arch = 0; arch < 2; arch++)
+		if (nr_per_arch[arch] > MAX_NR_SYSCALL)
+			nr_per_arch[arch] = MAX_NR_SYSCALL;
+
+	for (arch = 0; arch < 2; arch++) {
+		bool do32 = (arch == 1);
+
+		for (i = 0; i < nr_per_arch[arch]; i++) {
+			const struct kcov_per_syscall_diag *d =
+				&kcov_shm->per_syscall_diag[i][do32 ? 1 : 0];
+			uint64_t tt = __atomic_load_n(&d->trace_truncated,
+						      __ATOMIC_RELAXED);
+			uint64_t ct = __atomic_load_n(&d->cmp_trace_truncated,
+						      __ATOMIC_RELAXED);
+			uint64_t mt = __atomic_load_n(&d->max_trace_size,
+						      __ATOMIC_RELAXED);
+			uint64_t dpo = __atomic_load_n(&d->dedup_probe_overflow,
+						       __ATOMIC_RELAXED);
+			uint64_t rank;
+
+			if (dpo > 0) {
+				dedup_per_syscall_sum += dpo;
+				dedup_syscall_count++;
+			}
+
+			rank = (tt > mt) ? tt : mt;
+			if (rank == 0 && ct == 0)
+				continue;
+			if (rank == 0)
+				rank = ct;
+
+			for (j = (int)top_count;
+			     j > 0 && rank > top[j - 1].rank; j--) {
+				if (j < KCOV_DIAG_TRUNC_TOPN)
+					top[j] = top[j - 1];
+			}
+			if (j < KCOV_DIAG_TRUNC_TOPN) {
+				top[j].nr = i;
+				top[j].do32 = do32;
+				top[j].trace_truncated = tt;
+				top[j].cmp_trace_truncated = ct;
+				top[j].max_trace_size = mt;
+				top[j].rank = rank;
+				if (top_count < KCOV_DIAG_TRUNC_TOPN)
+					top_count++;
+			}
+		}
+	}
+
+	if (top_count > 0) {
+		output(0, "Top syscalls by trace truncation / max trace (KCOV_TRACE_SIZE=%u longs):\n",
+		       (unsigned int)KCOV_TRACE_SIZE);
+		output(0, "  %5s %-24s %-4s %14s %14s %14s %7s\n",
+		       "nr", "name", "arch",
+		       "trace_trunc", "cmp_trace_tr", "max_trace",
+		       "pct_max");
+		for (j = 0; j < (int)top_count; j++) {
+			const char *name = print_syscall_name(top[j].nr,
+							      top[j].do32);
+			unsigned int pct10 = (unsigned int)
+				((top[j].max_trace_size * 1000ULL) /
+				 (uint64_t)KCOV_TRACE_SIZE);
+
+			output(0, "  %5u %-24s %-4s %14" PRIu64
+				  " %14" PRIu64 " %14" PRIu64
+				  " %4u.%u%%\n",
+			       top[j].nr, name,
+			       top[j].do32 ? "32" : "64",
+			       top[j].trace_truncated,
+			       top[j].cmp_trace_truncated,
+			       top[j].max_trace_size,
+			       pct10 / 10, pct10 % 10);
+		}
+	}
+
+	dedup_global = __atomic_load_n(&kcov_shm->dedup_probe_overflow,
+				       __ATOMIC_RELAXED);
+	if (dedup_global > 0 || dedup_per_syscall_sum > 0) {
+		output(0, "kcov dedup probe overflow: global=%" PRIu64
+			  " per_syscall_sum=%" PRIu64
+			  " syscalls_affected=%u\n",
+		       dedup_global, dedup_per_syscall_sum,
+		       dedup_syscall_count);
+	}
+}
+
 static void dump_stats_runtime_header(void)
 {
 	time_t start = shm->start_time;
@@ -7014,6 +7146,14 @@ static void dump_stats_kcov_block(void)
 				}
 			}
 		}
+
+		/* combined top-N
+		 * trace_truncated + cmp_trace_truncated + max_trace_size
+		 * table plus a dedup-probe-overflow summary line.  Lets
+		 * buffer-policy decisions read off the cross-counter signal
+		 * (saturate-without-trunc vs trunc-with-modest-max) that
+		 * the per-counter blocks below flatten.  Diagnostic only. */
+		kcov_diag_emit_truncation_topn();
 
 		/* Per-syscall KCOV diagnostic blocks.  See kcov_diag_emit_block:
 		 * one top-20-non-zero block per counter, alphabetical by
