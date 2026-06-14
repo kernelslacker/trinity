@@ -59,6 +59,15 @@ void create_shm(void)
 
 	/* clear the whole shm. */
 	memset(shm, 0, shm_size);
+
+	/* memset leaves shm->isolation.netns_fd at 0, which is a valid fd
+	 * (stdin) and would silently sneak past the "not published"
+	 * sentinel check in any childop that reads the field before
+	 * setup_startup_isolation() has run.  Stamp -1 here so the
+	 * sentinel is honest from the moment shm exists, independent of
+	 * whether the parent later opens /proc/self/ns/net. */
+	shm->isolation.netns_fd = -1;
+
 	output(1, "shm:%p-%p (%u pages)\n", shm, (char *)shm + shm_size - 1, nr_shm_pages);
 }
 
