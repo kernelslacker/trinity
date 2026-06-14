@@ -1361,6 +1361,312 @@ static bool spawn_child(int childno)
 	return true;
 }
 
+/*
+ * Read up to bufsz-1 bytes from PATH into BUF, NUL-terminate, strip any
+ * trailing newline.  Returns the byte count on success (>=0) or -1 on
+ * any open/read failure.  Open is O_CLOEXEC so a fork-failure burst
+ * cannot leak the fd to a freshly-forked child.  Backing for the
+ * fork-failure diagnostic snapshot whose probes must stay read-only,
+ * bounded, and fail-soft against a host whose /proc or /sys layout we
+ * do not control.
+ */
+static ssize_t read_small_file(const char *path, char *buf, size_t bufsz)
+{
+	int fd;
+	ssize_t n;
+
+	if (bufsz == 0)
+		return -1;
+	buf[0] = '\0';
+
+	fd = open(path, O_RDONLY | O_CLOEXEC);
+	if (fd < 0)
+		return -1;
+	n = read(fd, buf, bufsz - 1);
+	close(fd);
+	if (n <= 0)
+		return -1;
+	buf[n] = '\0';
+	while (n > 0 && (buf[n - 1] == '\n' || buf[n - 1] == '\r'))
+		buf[--n] = '\0';
+	return n;
+}
+
+/*
+ * Read a single unsigned-long value from PATH (e.g.
+ * /proc/sys/kernel/pid_max, cgroup pids.current).  *OUT is set on
+ * success.  Returns true on success, false on any open / read / parse
+ * failure (with *OUT untouched).  cgroup pids.max etc. may hold the
+ * literal "max" instead of a number; treat that as failure so callers
+ * can omit the field rather than printing a confusing 0.
+ */
+static bool read_u64_file(const char *path, unsigned long long *out)
+{
+	char buf[64];
+	char *end;
+	unsigned long long val;
+
+	if (read_small_file(path, buf, sizeof(buf)) <= 0)
+		return false;
+	errno = 0;
+	val = strtoull(buf, &end, 10);
+	if (end == buf || errno != 0)
+		return false;
+	*out = val;
+	return true;
+}
+
+/*
+ * Search a "key value\n"-shaped PATH (cgroup memory.events layout) for
+ * KEY and put its u64 value in *OUT.  Returns true on success.
+ * memory.events lines are short ("oom_kill 0\n") so a 2 KB scratch
+ * covers any realistic file; over-long files truncate cleanly because
+ * read_small_file uses a fixed-size read.
+ */
+static bool read_kv_u64(const char *path, const char *key,
+			unsigned long long *out)
+{
+	char buf[2048];
+	size_t keylen;
+	char *p, *eol;
+
+	if (read_small_file(path, buf, sizeof(buf)) <= 0)
+		return false;
+
+	keylen = strlen(key);
+	p = buf;
+	while (*p != '\0') {
+		eol = strchr(p, '\n');
+		if (eol != NULL)
+			*eol = '\0';
+		if (strncmp(p, key, keylen) == 0 && p[keylen] == ' ') {
+			char *end;
+			unsigned long long val;
+
+			errno = 0;
+			val = strtoull(p + keylen + 1, &end, 10);
+			if (end == p + keylen + 1 || errno != 0)
+				return false;
+			*out = val;
+			return true;
+		}
+		if (eol == NULL)
+			break;
+		p = eol + 1;
+	}
+	return false;
+}
+
+/*
+ * Read our own cgroup v2 path from /proc/self/cgroup.  The v2 entry is
+ * the line prefixed with "0::".  Writes the path (with leading slash,
+ * trailing newline stripped) into BUF; returns true on success.  v1-only
+ * systems and an unreadable /proc/self/cgroup both return false so the
+ * caller can omit the cgroup section from the snapshot rather than
+ * synthesizing a wrong path.
+ */
+static bool read_self_cgroup_path(char *buf, size_t bufsz)
+{
+	char raw[4096];
+	char *p, *eol;
+	size_t len;
+
+	if (read_small_file("/proc/self/cgroup", raw, sizeof(raw)) <= 0)
+		return false;
+
+	p = raw;
+	while (*p != '\0') {
+		eol = strchr(p, '\n');
+		if (eol != NULL)
+			*eol = '\0';
+		if (strncmp(p, "0::", 3) == 0) {
+			len = strlen(p + 3);
+			if (len == 0 || len >= bufsz)
+				return false;
+			memcpy(buf, p + 3, len + 1);
+			return true;
+		}
+		if (eol == NULL)
+			break;
+		p = eol + 1;
+	}
+	return false;
+}
+
+/*
+ * One-shot diagnostic snapshot emitted at the first sustained replacement-
+ * fork-failure burst.  Latched: at most one snapshot per run, so a wedged
+ * fleet cannot drown the log in repeats.  Mirrors the watchdog "record"
+ * key:value style from the structured-record landing -- post-run grep on
+ * `fork-failure record` pins the bail context to a single log window
+ * without having to stitch fields across surrounding lines.
+ *
+ * Probes are all read-only / bounded / fail-soft: a missing /proc or
+ * /sys path drops the corresponding field from the record rather than
+ * aborting the snapshot.  No behaviour change to the fork loop itself --
+ * the bail decision is upstream of this call.
+ */
+static void dump_fork_failure_snapshot(void)
+{
+	static bool emitted = false;
+	char cgpath[256];
+	char path[512];
+	char line[512];
+	unsigned int state_R = 0, state_S = 0, state_D = 0;
+	unsigned int state_Z = 0, state_T = 0, state_other = 0;
+	unsigned int slots_filled = 0;
+	unsigned int i;
+	struct rlimit rl;
+	unsigned long long pid_max = 0, ns_last_pid = 0;
+	unsigned long long cg_pids_cur = 0, cg_pids_max = 0;
+	unsigned long long mem_low = 0, mem_high = 0, mem_max = 0;
+	unsigned long long mem_oom = 0, mem_oom_kill = 0;
+	bool have_cg_pids_cur = false, have_cg_pids_max = false;
+	bool have_mem_low = false, have_mem_high = false, have_mem_max = false;
+	bool have_mem_oom = false, have_mem_oom_kill = false;
+	char pid_max_str[32], ns_last_pid_str[32];
+	bool have_pid_max, have_ns_last_pid;
+	size_t off;
+
+	if (emitted)
+		return;
+	emitted = true;
+
+	/* Tally child slot state by walking the live pid map.  pids[] lives
+	 * in shm and may be NULL if a snapshot somehow fires before the shm
+	 * carve-out, but in the documented call sites (fork_children /
+	 * replace_child) the array is already populated. */
+	if (pids != NULL) {
+		for_each_child(i) {
+			pid_t pid = __atomic_load_n(&pids[i], __ATOMIC_RELAXED);
+			char s;
+
+			if (pid == EMPTY_PIDSLOT)
+				continue;
+			slots_filled++;
+			s = (pidstatfiles != NULL) ? get_pid_state(i) : '?';
+			switch (s) {
+			case 'R': state_R++; break;
+			case 'S': state_S++; break;
+			case 'D': state_D++; break;
+			case 'Z': state_Z++; break;
+			case 'T': case 't': state_T++; break;
+			default:  state_other++; break;
+			}
+		}
+	}
+
+	if (getrlimit(RLIMIT_NPROC, &rl) != 0) {
+		rl.rlim_cur = 0;
+		rl.rlim_max = 0;
+	}
+
+	have_pid_max     = read_u64_file("/proc/sys/kernel/pid_max", &pid_max);
+	have_ns_last_pid = read_u64_file("/proc/sys/kernel/ns_last_pid",
+					 &ns_last_pid);
+	if (have_pid_max)
+		snprintf(pid_max_str, sizeof(pid_max_str), "%llu", pid_max);
+	else
+		(void)strcpy(pid_max_str, "-");
+	if (have_ns_last_pid)
+		snprintf(ns_last_pid_str, sizeof(ns_last_pid_str),
+			 "%llu", ns_last_pid);
+	else
+		(void)strcpy(ns_last_pid_str, "-");
+
+	outputerr("main: fork-failure record"
+		  " children_filled:%u children_max:%u"
+		  " state_R:%u state_S:%u state_D:%u state_Z:%u state_T:%u"
+		  " state_other:%u"
+		  " rlimit_nproc_cur:%llu rlimit_nproc_max:%llu"
+		  " pid_max:%s ns_last_pid:%s\n",
+		  slots_filled, max_children,
+		  state_R, state_S, state_D, state_Z, state_T, state_other,
+		  (unsigned long long)rl.rlim_cur,
+		  (unsigned long long)rl.rlim_max,
+		  pid_max_str, ns_last_pid_str);
+
+	if (!read_self_cgroup_path(cgpath, sizeof(cgpath)))
+		return;
+
+	/* /sys/fs/cgroup is the canonical v2 mount; an exotic remount (e.g.
+	 * a hybrid host with a separate unified mount) renders these probes
+	 * unreadable and individual fields drop silently rather than the
+	 * whole section. */
+	snprintf(path, sizeof(path), "/sys/fs/cgroup%s/pids.current", cgpath);
+	have_cg_pids_cur = read_u64_file(path, &cg_pids_cur);
+	snprintf(path, sizeof(path), "/sys/fs/cgroup%s/pids.max", cgpath);
+	have_cg_pids_max = read_u64_file(path, &cg_pids_max);
+	snprintf(path, sizeof(path), "/sys/fs/cgroup%s/memory.events", cgpath);
+	have_mem_low      = read_kv_u64(path, "low", &mem_low);
+	have_mem_high     = read_kv_u64(path, "high", &mem_high);
+	have_mem_max      = read_kv_u64(path, "max", &mem_max);
+	have_mem_oom      = read_kv_u64(path, "oom", &mem_oom);
+	have_mem_oom_kill = read_kv_u64(path, "oom_kill", &mem_oom_kill);
+
+	off = snprintf(line, sizeof(line), "main: fork-failure cgroup path:%s",
+		       cgpath);
+	if (have_cg_pids_cur && off < sizeof(line))
+		off += snprintf(line + off, sizeof(line) - off,
+				" pids_current:%llu", cg_pids_cur);
+	if (have_cg_pids_max && off < sizeof(line))
+		off += snprintf(line + off, sizeof(line) - off,
+				" pids_max:%llu", cg_pids_max);
+	if (have_mem_low && off < sizeof(line))
+		off += snprintf(line + off, sizeof(line) - off,
+				" mem_low:%llu", mem_low);
+	if (have_mem_high && off < sizeof(line))
+		off += snprintf(line + off, sizeof(line) - off,
+				" mem_high:%llu", mem_high);
+	if (have_mem_max && off < sizeof(line))
+		off += snprintf(line + off, sizeof(line) - off,
+				" mem_max:%llu", mem_max);
+	if (have_mem_oom && off < sizeof(line))
+		off += snprintf(line + off, sizeof(line) - off,
+				" mem_oom:%llu", mem_oom);
+	if (have_mem_oom_kill && off < sizeof(line))
+		off += snprintf(line + off, sizeof(line) - off,
+				" mem_oom_kill:%llu", mem_oom_kill);
+
+	outputerr("%s\n", line);
+}
+
+/*
+ * Force a save of every cross-run cache (minicorpus, kcov bitmap,
+ * cmp-hints pool) at a bail point so the on-disk snapshot reflects the
+ * in-memory high-water at the moment we gave up.  Mirrors the cluster
+ * of save_file() calls inside persist_state_on_clean_exit() in
+ * trinity.c, but without the clean-exit gate: that gate excludes
+ * EXIT_FORK_FAILURE, so the fork-pressure bail path would otherwise
+ * persist nothing.  Idempotent -- each save_file() is an atomic
+ * overwrite, so on the time-limit path (where the trinity.c cleanup
+ * will save again) the duplicate is wasted I/O but harmless.  Per-
+ * carrier --no-*-warm-start flags still suppress its respective save,
+ * matching the trinity.c policy.
+ */
+static void final_state_save(void)
+{
+	if (!no_warm_start) {
+		const char *path = warm_start_path ? warm_start_path
+						   : minicorpus_default_path();
+
+		if (path != NULL && minicorpus_save_file(path))
+			output(0, "minicorpus: persisted to %s\n", path);
+	}
+	if (!no_kcov_warm_start && kcov_shm != NULL) {
+		const char *kpath = kcov_bitmap_default_path();
+
+		if (kpath != NULL && kcov_bitmap_save_file(kpath))
+			output(0, "kcov-bitmap: persisted to %s\n", kpath);
+	}
+	if (!no_cmp_hints_warm_start && cmp_hints_shm != NULL) {
+		const char *cpath = cmp_hints_default_path();
+
+		if (cpath != NULL && cmp_hints_save_file(cpath))
+			output(0, "cmp-hints: persisted to %s\n", cpath);
+	}
+}
+
 static void replace_child(int childno)
 {
 	unsigned int retries = 0;
@@ -1379,6 +1685,7 @@ static void replace_child(int childno)
 		if (++retries >= 10) {
 			outputerr("Failed to replace child %d after %u fork attempts, giving up.\n",
 				childno, retries);
+			dump_fork_failure_snapshot();
 			return;
 		}
 		usleep(retries * 10000);
@@ -1474,12 +1781,15 @@ static void fork_children(void)
 					outputerr("main: fork stuck - %u consecutive spawn failures; bailing (process table likely exhausted)\n",
 						consecutive_fork_failures);
 					dump_proc_self_status();
+					dump_fork_failure_snapshot();
+					final_state_save();
 					panic(EXIT_FORK_FAILURE);
 					return;
 				}
 				if (++retries >= 10) {
 					outputerr("Failed to fork initial child for slot %d after %u attempts, skipping slot.\n",
 						childno, retries);
+					dump_fork_failure_snapshot();
 					break;
 				}
 				usleep(retries * 10000);
@@ -2413,6 +2723,7 @@ static bool check_main_loop_stops(const struct timespec *epoch_start)
 		clock_gettime(CLOCK_MONOTONIC, &now);
 		if ((unsigned int)(now.tv_sec - epoch_start->tv_sec) >= epoch_timeout) {
 			output(0, "Epoch timeout %u seconds reached.\n", epoch_timeout);
+			final_state_save();
 			panic(EXIT_EPOCH_DONE);
 		}
 	}
@@ -2487,6 +2798,37 @@ static void log_main_loop_exit(void)
 		output(0, "Bailing main loop because %s.\n",
 			decode_exit(reason));
 		break;
+	}
+
+	/* Pair the bail reason with the operator-set runtime ceiling so the
+	 * "hit the limit we were asked to honour" case and an internal
+	 * abort that happens to share the same exit_reason cannot be
+	 * conflated.  EXIT_EPOCH_DONE on a --max-runtime run is the limit
+	 * firing; the same reason without max_runtime_set is the inner
+	 * --epoch-iterations / --epoch-timeout cap; EXIT_FORK_FAILURE is
+	 * never the limit, regardless of what the operator configured.
+	 * Post-mortem grep wants both halves on a single line. */
+	{
+		char limit[64];
+
+		if (max_runtime_set && epoch_timeout)
+			snprintf(limit, sizeof(limit),
+				 "max_runtime=%us", epoch_timeout);
+		else if (epoch_timeout)
+			snprintf(limit, sizeof(limit),
+				 "epoch_timeout=%us", epoch_timeout);
+		else if (epoch_iterations)
+			snprintf(limit, sizeof(limit),
+				 "epoch_iterations=%lu", epoch_iterations);
+		else if (syscalls_todo)
+			snprintf(limit, sizeof(limit),
+				 "syscalls_todo=%lu", syscalls_todo);
+		else
+			snprintf(limit, sizeof(limit), "(none)");
+
+		output(0, "main: exit summary configured_limit:%s"
+			  " internal_exit_reason:%s(%d)\n",
+			limit, decode_exit(reason), (int)reason);
 	}
 }
 
