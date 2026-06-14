@@ -968,3 +968,12 @@ enum child_op_type canary_active_op(void)
 	 * stages a new pending op. */
 	return CHILD_OP_SYSCALL;
 }
+
+bool canary_op_is_promoted(enum child_op_type op)
+{
+	if (!canary_queue_live)
+		return false;
+	if ((unsigned int)op >= NR_CHILD_OP_TYPES)
+		return false;
+	return canary_ops[op].state == CANARY_STATE_PROMOTED;
+}

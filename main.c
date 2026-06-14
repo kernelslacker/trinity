@@ -1,5 +1,6 @@
 #include <errno.h>
 #include <fcntl.h>
+#include <inttypes.h>
 #include <unistd.h>
 #include <string.h>
 #include <stdlib.h>
@@ -545,27 +546,39 @@ static void dump_pid_syscall(int pid)
  * read error -- the snapshot caller treats missing wchan as an omitted
  * line, not a failure to investigate further.
  */
-static void dump_pid_wchan(int pid)
+static ssize_t read_pid_wchan(int pid, char *buf, size_t bufsz)
 {
 	char filename[80];
-	char buf[256];
 	int fd;
 	ssize_t n;
+
+	if (bufsz == 0)
+		return 0;
+	buf[0] = '\0';
 
 	snprintf(filename, sizeof(filename), "/proc/%d/wchan", pid);
 
 	fd = open(filename, O_RDONLY | O_CLOEXEC);
 	if (fd < 0)
-		return;
-	n = read(fd, buf, sizeof(buf) - 1);
+		return 0;
+	n = read(fd, buf, bufsz - 1);
 	close(fd);
-	if (n <= 0)
-		return;
+	if (n <= 0) {
+		buf[0] = '\0';
+		return 0;
+	}
 	buf[n] = '\0';
 	/* wchan typically omits a trailing newline but be defensive. */
 	while (n > 0 && (buf[n - 1] == '\n' || buf[n - 1] == '\r'))
 		buf[--n] = '\0';
-	if (n == 0)
+	return n;
+}
+
+static void dump_pid_wchan(int pid)
+{
+	char buf[256];
+
+	if (read_pid_wchan(pid, buf, sizeof(buf)) <= 0)
 		return;
 	output(0, "pid %d wchan: %s\n", pid, buf);
 }
@@ -810,6 +823,47 @@ static void stuck_syscall_info(struct childdata *child, int childno)
 	outputerr("watchdog: kill pid:%d childno:%d nr:%u cmd:%s state:%d\n",
 		  pid, childno, callno,
 		  entry ? entry->name : "?", state);
+
+	{
+		/* Structured one-liner that mirrors the kill line's
+		 * key:value shape and carries the fields the bare line
+		 * omits: the killed child's kcov dedup generation, a
+		 * boolean recording whether the stuck op was a
+		 * currently-promoted canary, and the kernel wchan when
+		 * /proc still exposes it.  Post-run analysis of
+		 * unkillable / D-state populations grep this line to
+		 * attribute wedged tasks to a (op, kcov-generation,
+		 * canary-state, wchan) tuple rather than only the
+		 * syscall name from the kill line above.  This does NOT
+		 * change any kill/evict decision -- it is purely a
+		 * record-shape extension. */
+		char wbuf[128];
+		const char *opname;
+		bool promoted;
+		bool is_syscall;
+
+		is_syscall = (child->op_type == CHILD_OP_SYSCALL);
+		if (is_syscall)
+			opname = entry ? entry->name : "?";
+		else
+			opname = alt_op_name(child->op_type);
+
+		promoted = canary_op_is_promoted(child->op_type);
+
+		if (read_pid_wchan(pid, wbuf, sizeof(wbuf)) > 0)
+			outputerr("watchdog: record pid:%d nr:%u op:%s"
+				  " fd_gen:%" PRIu64 " canary_promoted:%d"
+				  " wchan:%s\n",
+				  pid, callno, opname,
+				  child->kcov.current_generation,
+				  promoted ? 1 : 0, wbuf);
+		else
+			outputerr("watchdog: record pid:%d nr:%u op:%s"
+				  " fd_gen:%" PRIu64 " canary_promoted:%d\n",
+				  pid, callno, opname,
+				  child->kcov.current_generation,
+				  promoted ? 1 : 0);
+	}
 
 	if (shm->debug == false)
 		return;
