@@ -840,6 +840,39 @@ void cleanup_release_post_state(struct syscallrecord *rec)
 		return;
 
 	/*
+	 * Heap-bounds gate: matches the deferred_free_enqueue_internal
+	 * reject_outside_heap rail.  Catches scribbles whose value passes
+	 * the shape heuristic but lands in the stack / a library mapping /
+	 * an executable mapping / one of trinity's own MAP_PRIVATE
+	 * regions.  alloc_track_lookup below provides a stronger ground-
+	 * truth check, but this rail short-circuits before paying the hash
+	 * probe and matches the page-aligned arena-band stomp class the
+	 * arena_ptr_stale_caught_post_state telemetry surfaces.  Bumps the
+	 * deferred_free_reject_non_heap counter so the rate stays
+	 * comparable with the matching enqueue-side reject.
+	 */
+	if (!is_in_glibc_heap(ptr)) {
+		__atomic_add_fetch(&shm->stats.deferred_free_reject_non_heap,
+				   1, __ATOMIC_RELAXED);
+		return;
+	}
+
+	/*
+	 * Shared-region overlap gate: matches the
+	 * deferred_free_enqueue_internal reject_shared_region rail.  A
+	 * scribbled snapshot whose value falls inside one of trinity's own
+	 * mmap'd regions (object pool, kcov ring, etc.) is not a free()
+	 * target -- libc rejects it as not-malloc()d.  Bumps the matching
+	 * counter so the rate is observable alongside the enqueue-side
+	 * reject.
+	 */
+	if (range_overlaps_shared((unsigned long) ptr, 1)) {
+		__atomic_add_fetch(&shm->stats.deferred_free_reject_shared_region,
+				   1, __ATOMIC_RELAXED);
+		return;
+	}
+
+	/*
 	 * Ownership gate: the shape guard waves through heap-shaped
 	 * foreign pointers, so verify @ptr was actually produced by a
 	 * zmalloc_tracked() in this child before handing it to free().
