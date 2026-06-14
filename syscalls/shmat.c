@@ -9,7 +9,7 @@
 #include "utils.h"
 
 static unsigned long shmat_flags[] = {
-	SHM_RDONLY, SHM_RND,
+	SHM_RDONLY, SHM_RND, SHM_REMAP, SHM_EXEC,
 };
 
 static void sanitise_shmat(struct syscallrecord *rec)
