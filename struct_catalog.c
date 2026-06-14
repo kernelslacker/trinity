@@ -4863,6 +4863,37 @@ static const struct struct_field sctp_rtoinfo_fields[] = {
 	       .u.range = { 0, 60000 },
 	       .mutate_weight = 60),
 };
+
+/*
+ * struct sctp_assocparams -- IPPROTO_SCTP / SCTP_ASSOCINFO.  Examines
+ * and sets various per-association and endpoint parameters.  sasoc_assoc_id
+ * picks the target association (FT_RAW so the per-field splat continues to
+ * drive the association lookup and struct_field_for_cmp() can attribute
+ * KCOV-CMP constants).  sasoc_asocmaxrxt is the association-level max
+ * retransmit (FT_RANGE [0, 16] keeps it within plausible retry budgets).
+ * sasoc_number_peer_destinations / sasoc_peer_rwnd / sasoc_local_rwnd
+ * are FT_RAW (peer-count and window-byte counters with no useful clamp).
+ * sasoc_cookie_life is the cookie lifetime in milliseconds, FT_RANGE
+ * [0, 60000] to exercise the kernel's clamp without flooding the input
+ * validator.  Bespoke build_sctp_assocparams() zero-fills as a
+ * miss-fallback.
+ */
+static const struct struct_field sctp_assocparams_fields[] = {
+	FIELDX(struct sctp_assocparams, sasoc_assoc_id, FT_RAW,
+	       .mutate_weight = 60),
+	FIELDX(struct sctp_assocparams, sasoc_asocmaxrxt, FT_RANGE,
+	       .u.range = { 0, 16 },
+	       .mutate_weight = 60),
+	FIELDX(struct sctp_assocparams, sasoc_number_peer_destinations, FT_RAW,
+	       .mutate_weight = 40),
+	FIELDX(struct sctp_assocparams, sasoc_peer_rwnd, FT_RAW,
+	       .mutate_weight = 40),
+	FIELDX(struct sctp_assocparams, sasoc_local_rwnd, FT_RAW,
+	       .mutate_weight = 40),
+	FIELDX(struct sctp_assocparams, sasoc_cookie_life, FT_RANGE,
+	       .u.range = { 0, 60000 },
+	       .mutate_weight = 60),
+};
 #endif
 
 /* ------------------------------------------------------------------ */
@@ -5293,6 +5324,12 @@ const struct struct_desc struct_catalog[] = {
 		.struct_size	= sizeof(struct sctp_rtoinfo),
 		.fields		= sctp_rtoinfo_fields,
 		.num_fields	= ARRAY_SIZE(sctp_rtoinfo_fields),
+	},
+	[SC_SCTP_ASSOCPARAMS] = {
+		.name		= "sctp_assocparams",
+		.struct_size	= sizeof(struct sctp_assocparams),
+		.fields		= sctp_assocparams_fields,
+		.num_fields	= ARRAY_SIZE(sctp_assocparams_fields),
 	},
 #endif
 };
@@ -6231,6 +6268,13 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 		.discrim_value		= IPPROTO_SCTP,
 		.discrim2_arg_idx	= 3,
 		.discrim2_value		= SCTP_RTOINFO,
+	},
+	{
+		"setsockopt", 4, &struct_catalog[SC_SCTP_ASSOCPARAMS],
+		.discrim_arg_idx	= 2,
+		.discrim_value		= IPPROTO_SCTP,
+		.discrim2_arg_idx	= 3,
+		.discrim2_value		= SCTP_ASSOCINFO,
 	},
 #endif
 	/*
