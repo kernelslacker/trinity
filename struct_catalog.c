@@ -5185,6 +5185,27 @@ static const struct struct_field sctp_add_streams_fields[] = {
 	       .u.range = { 0, 128 },
 	       .mutate_weight = 60),
 };
+
+/*
+ * struct sctp_stream_value -- IPPROTO_SCTP / SCTP_STREAM_SCHEDULER_VALUE.
+ * Per-stream scheduler parameter carrier: assoc_id selects the
+ * association (FT_RAW so the kernel's per-assoc lookup constant shows
+ * up to KCOV-CMP), stream_id picks the target stream bounded to
+ * [0, 128] matching the SCTP_INITMSG stream-count envelope, and
+ * stream_value is the scheduler-specific opaque cookie (FT_RAW; the
+ * kernel's interpretation varies by active scheduler so no useful
+ * clamp).  Bespoke build_sctp_stream_value() zero-fills as a
+ * miss-fallback.
+ */
+static const struct struct_field sctp_stream_value_fields[] = {
+	FIELDX(struct sctp_stream_value, assoc_id, FT_RAW,
+	       .mutate_weight = 60),
+	FIELDX(struct sctp_stream_value, stream_id, FT_RANGE,
+	       .u.range = { 0, 128 },
+	       .mutate_weight = 60),
+	FIELDX(struct sctp_stream_value, stream_value, FT_RAW,
+	       .mutate_weight = 60),
+};
 #endif
 
 /* ------------------------------------------------------------------ */
@@ -5681,6 +5702,12 @@ const struct struct_desc struct_catalog[] = {
 		.struct_size	= sizeof(struct sctp_add_streams),
 		.fields		= sctp_add_streams_fields,
 		.num_fields	= ARRAY_SIZE(sctp_add_streams_fields),
+	},
+	[SC_SCTP_STREAM_VALUE] = {
+		.name		= "sctp_stream_value",
+		.struct_size	= sizeof(struct sctp_stream_value),
+		.fields		= sctp_stream_value_fields,
+		.num_fields	= ARRAY_SIZE(sctp_stream_value_fields),
 	},
 #endif
 };
@@ -6713,6 +6740,13 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 		.discrim_value		= IPPROTO_SCTP,
 		.discrim2_arg_idx	= 3,
 		.discrim2_value		= SCTP_ADD_STREAMS,
+	},
+	{
+		"setsockopt", 4, &struct_catalog[SC_SCTP_STREAM_VALUE],
+		.discrim_arg_idx	= 2,
+		.discrim_value		= IPPROTO_SCTP,
+		.discrim2_arg_idx	= 3,
+		.discrim2_value		= SCTP_STREAM_SCHEDULER_VALUE,
 	},
 #endif
 	/*
