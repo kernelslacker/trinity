@@ -66,6 +66,9 @@
 #ifdef USE_AX25
 #include <linux/ax25.h>
 #endif
+#ifdef USE_ATALK
+#include <linux/atalk.h>
+#endif
 #ifdef USE_LLC
 #include <linux/llc.h>
 #endif
@@ -1630,6 +1633,9 @@ static const unsigned long sockaddr_storage_af_vocab[] = {
 #ifdef USE_AX25
 	AF_AX25,
 #endif
+#ifdef USE_ATALK
+	AF_APPLETALK,
+#endif
 #ifdef USE_LLC
 	AF_LLC,
 #endif
@@ -1809,6 +1815,23 @@ static const struct struct_field sockaddr_pn_variant_fields[] = {
 static const struct struct_field sockaddr_ax25_variant_fields[] = {
 	FIELD(struct sockaddr_ax25, sax25_call),
 	FIELD(struct sockaddr_ax25, sax25_ndigis),
+};
+#endif
+
+#ifdef USE_ATALK
+/*
+ * AF_APPLETALK (sockaddr_at) -- AppleTalk DDP endpoint.  The address
+ * tuple is a __u8 port plus a packed atalk_addr (__be16 net + __u8
+ * node) the kernel matches in atalk_bind / atalk_sendmsg against the
+ * routed atalk_iface list.  All three reach dispatch as raw bytes so
+ * FT_RAW covers the surface without a curated vocabulary.  sat_family
+ * is omitted; the shared-head pass writes ss_family.  sat_zero[8] is
+ * pad the kernel does not consult and stays zeroed.
+ */
+static const struct struct_field sockaddr_at_variant_fields[] = {
+	FIELD(struct sockaddr_at, sat_port),
+	FIELD(struct sockaddr_at, sat_addr.s_net),
+	FIELD(struct sockaddr_at, sat_addr.s_node),
 };
 #endif
 
@@ -2129,6 +2152,15 @@ static const struct union_variant sockaddr_storage_variants[] = {
 		.fields		 = sockaddr_ax25_variant_fields,
 		.num_fields	 = ARRAY_SIZE(sockaddr_ax25_variant_fields),
 		.effective_size	 = sizeof(struct sockaddr_ax25),
+	},
+#endif
+#ifdef USE_ATALK
+	{
+		.discrim_value	 = AF_APPLETALK,
+		.name		 = "AF_APPLETALK",
+		.fields		 = sockaddr_at_variant_fields,
+		.num_fields	 = ARRAY_SIZE(sockaddr_at_variant_fields),
+		.effective_size	 = sizeof(struct sockaddr_at),
 	},
 #endif
 #ifdef USE_LLC
