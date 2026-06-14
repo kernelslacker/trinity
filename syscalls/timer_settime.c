@@ -5,61 +5,26 @@
  */
 #include <time.h>
 #include "random.h"
-#include "rnd.h"
 #include "sanitise.h"
 
-static void fill_nonzero_timespec(struct timespec *ts)
-{
-	switch (rnd_modulo_u32(4)) {
-	case 0: ts->tv_sec = 0; ts->tv_nsec = 1; break;
-	case 1: ts->tv_sec = 0; ts->tv_nsec = 1 + rnd_modulo_u32(1000000); break;
-	case 2: ts->tv_sec = 1 + rnd_modulo_u32(10); ts->tv_nsec = rnd_modulo_u32(1000000000); break;
-	default: ts->tv_sec = rand32(); ts->tv_nsec = rnd_modulo_u32(1000000000); break;
-	}
-}
-
+/*
+ * new_setting (a3) is typed ARG_ITIMERSPEC; the generator publishes a
+ * writable pool buffer (or NULL ~10%) and owns the bucketed it_value /
+ * it_interval fill -- including the near-now (time(NULL)+1) bucket that
+ * keeps a TIMER_ABSTIME deadline in the future.  The generator only
+ * fills the struct though; the sibling flags arg (a2) lives here, so
+ * keep a small stub that still picks TIMER_ABSTIME a fraction of the
+ * time so the kernel's absolute-deadline path stays reachable.
+ *
+ * old_setting (a4) keeps ARG_ADDRESS + avoid_shared_buffer_out so the
+ * kernel writeback never lands in the shared region.
+ */
 static void sanitise_timer_settime(struct syscallrecord *rec)
 {
-	struct itimerspec *its;
-	uint32_t bucket;
-
-	its = (struct itimerspec *) get_writable_address(sizeof(*its));
-	if (its == NULL)
-		return;
-
-	its->it_interval.tv_sec = 0;
-	its->it_interval.tv_nsec = 0;
-	its->it_value.tv_sec = 0;
-	its->it_value.tv_nsec = 0;
-
 	rec->a2 = 0;
-
-	bucket = rnd_modulo_u32(100);
-	if (bucket < 25) {
-		/* disarm: it_value zeroed */
-	} else if (bucket < 55) {
-		/* one-shot: it_value > 0, it_interval = 0 */
-		fill_nonzero_timespec(&its->it_value);
-	} else if (bucket < 80) {
-		/* periodic: both intervals > 0 */
-		fill_nonzero_timespec(&its->it_value);
-		fill_nonzero_timespec(&its->it_interval);
-	} else {
-		/* TIMER_ABSTIME with a near-now deadline so the kernel actually
-		 * schedules the timer instead of firing it immediately on a
-		 * deadline-in-the-past. */
-		struct timespec now;
-
-		if (clock_gettime(CLOCK_REALTIME, &now) == 0) {
-			its->it_value.tv_sec = now.tv_sec + 1;
-			its->it_value.tv_nsec = now.tv_nsec;
-		} else {
-			fill_nonzero_timespec(&its->it_value);
-		}
+	if (ONE_IN(5))
 		rec->a2 = TIMER_ABSTIME;
-	}
 
-	rec->a3 = (unsigned long) its;
 	avoid_shared_buffer_out(&rec->a4, sizeof(struct itimerspec));
 }
 
@@ -67,7 +32,7 @@ struct syscallentry syscall_timer_settime = {
 	.name = "timer_settime",
 	.group = GROUP_TIME,
 	.num_args = 4,
-	.argtype = { [0] = ARG_TIMERID, [2] = ARG_ADDRESS, [3] = ARG_ADDRESS },
+	.argtype = { [0] = ARG_TIMERID, [2] = ARG_ITIMERSPEC, [3] = ARG_ADDRESS },
 	.argname = { [0] = "timer_id", [1] = "flags", [2] = "new_setting", [3] = "old_setting" },
 	.sanitise = sanitise_timer_settime,
 	.rettype = RET_ZERO_SUCCESS,
