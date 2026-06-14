@@ -27,7 +27,7 @@ static unsigned long clock_ids[] = {
 static unsigned long clock_adj_modes[] = {
 	0, ADJ_OFFSET, ADJ_FREQUENCY, ADJ_MAXERROR, ADJ_ESTERROR,
 	ADJ_STATUS, ADJ_TIMECONST, ADJ_SETOFFSET, ADJ_MICRO,
-	ADJ_NANO, ADJ_TICK,
+	ADJ_NANO, ADJ_TICK, ADJ_TAI,
 };
 
 static void sanitise_clock_adjtime(struct syscallrecord *rec)
