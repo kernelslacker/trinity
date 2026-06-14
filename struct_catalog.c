@@ -60,6 +60,9 @@
 #ifdef USE_X25
 #include <linux/x25.h>
 #endif
+#ifdef USE_PHONET
+#include <linux/phonet.h>
+#endif
 #ifdef USE_LLC
 #include <linux/llc.h>
 #endif
@@ -1618,6 +1621,9 @@ static const unsigned long sockaddr_storage_af_vocab[] = {
 #ifdef USE_X25
 	AF_X25,
 #endif
+#ifdef USE_PHONET
+	AF_PHONET,
+#endif
 #ifdef USE_LLC
 	AF_LLC,
 #endif
@@ -1758,6 +1764,26 @@ static const struct struct_field sockaddr_vm_variant_fields[] = {
  */
 static const struct struct_field sockaddr_x25_variant_fields[] = {
 	FIELD(struct sockaddr_x25, sx25_addr.x25_addr),
+};
+#endif
+
+#ifdef USE_PHONET
+/*
+ * AF_PHONET (sockaddr_pn) -- Nokia Phonet endpoint.  The address tuple
+ * is three packed __u8 scalars: spn_obj (object id within the device),
+ * spn_dev (device byte; low two bits steal port high-bits via the
+ * pn_sockaddr_set_port helper), and spn_resource (the routed-to
+ * resource id matched in pn_find_sock_by_res()).  All three reach
+ * dispatch as raw bytes, so FT_RAW covers the surface without a
+ * curated vocabulary.  struct sockaddr_pn is packed, so offsetof
+ * honours the lack of natural alignment.  spn_family and spn_zero[]
+ * are omitted; the shared-head pass writes ss_family and the zero
+ * padding stays zeroed.
+ */
+static const struct struct_field sockaddr_pn_variant_fields[] = {
+	FIELD(struct sockaddr_pn, spn_obj),
+	FIELD(struct sockaddr_pn, spn_dev),
+	FIELD(struct sockaddr_pn, spn_resource),
 };
 #endif
 
@@ -2060,6 +2086,15 @@ static const struct union_variant sockaddr_storage_variants[] = {
 		.fields		 = sockaddr_x25_variant_fields,
 		.num_fields	 = ARRAY_SIZE(sockaddr_x25_variant_fields),
 		.effective_size	 = sizeof(struct sockaddr_x25),
+	},
+#endif
+#ifdef USE_PHONET
+	{
+		.discrim_value	 = AF_PHONET,
+		.name		 = "AF_PHONET",
+		.fields		 = sockaddr_pn_variant_fields,
+		.num_fields	 = ARRAY_SIZE(sockaddr_pn_variant_fields),
+		.effective_size	 = sizeof(struct sockaddr_pn),
 	},
 #endif
 #ifdef USE_LLC
