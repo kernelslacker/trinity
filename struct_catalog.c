@@ -66,6 +66,9 @@
 #ifdef USE_AX25
 #include <linux/ax25.h>
 #endif
+#ifdef USE_ROSE
+#include <linux/rose.h>
+#endif
 #ifdef USE_ATALK
 #include <linux/atalk.h>
 #endif
@@ -1636,6 +1639,9 @@ static const unsigned long sockaddr_storage_af_vocab[] = {
 #ifdef USE_AX25
 	AF_AX25,
 #endif
+#ifdef USE_ROSE
+	AF_ROSE,
+#endif
 #ifdef USE_ATALK
 	AF_APPLETALK,
 #endif
@@ -1822,6 +1828,29 @@ static const struct struct_field sockaddr_pn_variant_fields[] = {
 static const struct struct_field sockaddr_ax25_variant_fields[] = {
 	FIELD(struct sockaddr_ax25, sax25_call),
 	FIELD(struct sockaddr_ax25, sax25_ndigis),
+};
+#endif
+
+#ifdef USE_ROSE
+/*
+ * AF_ROSE (sockaddr_rose) -- ROSE (Rec.X.25 over amateur radio) endpoint.
+ * The address tuple is a 5-byte ROSE address (rose_address), the 7-byte
+ * AX.25 source callsign (ax25_address), the digipeater count the kernel
+ * uses to gate consumption of the trailing digipeater slot, and a single
+ * 7-byte AX.25 digipeater callsign.  The kernel walks these raw via
+ * rose_bind / rose_connect (net/rose/af_rose.c) against the bound ROSE
+ * neighbour table; FT_RAW covers the dispatch surface without curated
+ * callsign / ROSE-address vocabularies.  trinity steers the base
+ * sockaddr_rose only; full_sockaddr_rose's variable-length digipeater
+ * tail is intentionally out of scope here so the variant stays a
+ * fixed-size record.  srose_family is omitted; the shared-head pass
+ * already writes ss_family.
+ */
+static const struct struct_field sockaddr_rose_variant_fields[] = {
+	FIELD(struct sockaddr_rose, srose_addr),
+	FIELD(struct sockaddr_rose, srose_call),
+	FIELD(struct sockaddr_rose, srose_ndigis),
+	FIELD(struct sockaddr_rose, srose_digi),
 };
 #endif
 
@@ -2192,6 +2221,15 @@ static const struct union_variant sockaddr_storage_variants[] = {
 		.fields		 = sockaddr_ax25_variant_fields,
 		.num_fields	 = ARRAY_SIZE(sockaddr_ax25_variant_fields),
 		.effective_size	 = sizeof(struct sockaddr_ax25),
+	},
+#endif
+#ifdef USE_ROSE
+	{
+		.discrim_value	 = AF_ROSE,
+		.name		 = "AF_ROSE",
+		.fields		 = sockaddr_rose_variant_fields,
+		.num_fields	 = ARRAY_SIZE(sockaddr_rose_variant_fields),
+		.effective_size	 = sizeof(struct sockaddr_rose),
 	},
 #endif
 #ifdef USE_ATALK
