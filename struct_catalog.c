@@ -4908,6 +4908,25 @@ static const struct struct_field sctp_setadaptation_fields[] = {
 	FIELDX(struct sctp_setadaptation, ssb_adaptation_ind, FT_RAW,
 	       .mutate_weight = 60),
 };
+
+/*
+ * struct sctp_assoc_value -- IPPROTO_SCTP / { SCTP_CONTEXT, SCTP_MAXSEG,
+ * SCTP_MAX_BURST, SCTP_STREAM_SCHEDULER }.  Two-field carrier shared by
+ * several sockopts that take an (assoc_id, value) pair: assoc_id picks
+ * the target association (FT_RAW so the per-field splat continues to
+ * drive the association lookup and struct_field_for_cmp() can attribute
+ * KCOV-CMP constants), assoc_value is the per-optname payload (FT_RAW --
+ * value semantics differ per optname: SCTP_CONTEXT is an opaque cookie,
+ * SCTP_MAXSEG / SCTP_MAX_BURST / SCTP_STREAM_SCHEDULER are small integers
+ * with kernel-side clamping, so a single FT_RANGE wouldn't fit all four).
+ * Bespoke build_sctp_assoc_value() zero-fills as a miss-fallback.
+ */
+static const struct struct_field sctp_assoc_value_fields[] = {
+	FIELDX(struct sctp_assoc_value, assoc_id, FT_RAW,
+	       .mutate_weight = 60),
+	FIELDX(struct sctp_assoc_value, assoc_value, FT_RAW,
+	       .mutate_weight = 60),
+};
 #endif
 
 /* ------------------------------------------------------------------ */
@@ -5351,6 +5370,12 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= sctp_setadaptation_fields,
 		.num_fields	= ARRAY_SIZE(sctp_setadaptation_fields),
 	},
+	[SC_SCTP_ASSOC_VALUE] = {
+		.name		= "sctp_assoc_value",
+		.struct_size	= sizeof(struct sctp_assoc_value),
+		.fields		= sctp_assoc_value_fields,
+		.num_fields	= ARRAY_SIZE(sctp_assoc_value_fields),
+	},
 #endif
 };
 
@@ -5506,6 +5531,15 @@ static const unsigned long setsockopt_packet_mreq_optnames[] = {
 	PACKET_ADD_MEMBERSHIP,
 	PACKET_DROP_MEMBERSHIP,
 };
+
+#ifdef USE_SCTP
+static const unsigned long setsockopt_sctp_assoc_value_optnames[] = {
+	SCTP_CONTEXT,
+	SCTP_MAXSEG,
+	SCTP_MAX_BURST,
+	SCTP_STREAM_SCHEDULER,
+};
+#endif
 
 /* ------------------------------------------------------------------ */
 /* Syscall -> struct arg mapping                                        */
@@ -6302,6 +6336,14 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 		.discrim_value		= IPPROTO_SCTP,
 		.discrim2_arg_idx	= 3,
 		.discrim2_value		= SCTP_ADAPTATION_LAYER,
+	},
+	{
+		"setsockopt", 4, &struct_catalog[SC_SCTP_ASSOC_VALUE],
+		.discrim_arg_idx	= 2,
+		.discrim_value		= IPPROTO_SCTP,
+		.discrim2_arg_idx	= 3,
+		.discrim2_values	= setsockopt_sctp_assoc_value_optnames,
+		.num_discrim2_values	= ARRAY_SIZE(setsockopt_sctp_assoc_value_optnames),
 	},
 #endif
 	/*
