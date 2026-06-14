@@ -1890,12 +1890,21 @@ bool kcov_syscall_is_cold(unsigned int nr)
 void kcov_plateau_check(void)
 {
 	unsigned long edges_now, delta;
+	struct timespec ts;
 	time_t now;
+	long elapsed;
 
 	if (kcov_shm == NULL)
 		return;
 
-	now = time(NULL);
+	/* CLOCK_MONOTONIC: window math must not be perturbed by a backward
+	 * wall-clock step (e.g. an NTP correction), which under the prior
+	 * CLOCK_REALTIME sampling yielded a negative elapsed and bogus
+	 * plateau-window arithmetic.  plateau_window_start and
+	 * plateau_entered_at are stamped from the monotonic clock too, so
+	 * before/after stay in the same domain. */
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	now = ts.tv_sec;
 	/* Sample distinct_edges, not edges_found.  edges_found increments on
 	 * every (edge, bucket) bit-flip including bucket churn on already-
 	 * known edges, so its per-window delta stays above threshold on flat
@@ -1923,8 +1932,11 @@ void kcov_plateau_check(void)
 		return;
 	}
 
-	if ((now - __atomic_load_n(&kcov_shm->plateau_window_start,
-				   __ATOMIC_RELAXED)) < KCOV_PLATEAU_WINDOW_SEC)
+	elapsed = (long)(now - __atomic_load_n(&kcov_shm->plateau_window_start,
+					       __ATOMIC_RELAXED));
+	if (elapsed < 0)
+		elapsed = 0;
+	if (elapsed < KCOV_PLATEAU_WINDOW_SEC)
 		return;
 
 	{
@@ -1975,9 +1987,10 @@ void kcov_plateau_check(void)
 	} else if (delta >= KCOV_PLATEAU_EXIT_THRESHOLD &&
 		   __atomic_load_n(&kcov_shm->plateau_active,
 				   __ATOMIC_ACQUIRE)) {
-		long minutes = (now - __atomic_load_n(
+		long elapsed_secs = (long)(now - __atomic_load_n(
 				&kcov_shm->plateau_entered_at,
-				__ATOMIC_RELAXED)) / 60;
+				__ATOMIC_RELAXED));
+		long minutes = elapsed_secs > 0 ? elapsed_secs / 60 : 0;
 
 		/* Hysteresis band: ENTER <= delta < EXIT keeps the current
 		 * state (stay plateaued; don't re-arm a healthy run yet).
