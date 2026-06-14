@@ -5259,6 +5259,34 @@ static const struct struct_field sctp_paddrthlds_fields[] = {
 	       .u.range = { 0, 16 },
 	       .mutate_weight = 60),
 };
+
+/*
+ * struct sctp_paddrthlds_v2 -- IPPROTO_SCTP / SCTP_PEER_ADDR_THLDS_V2.
+ * Back-compat extension of struct sctp_paddrthlds adding a trailing
+ * spt_pathcpthld (__u16, FT_RANGE [0, 16]) -- the per-path
+ * consecutive-retransmit threshold the v2 optname carries on top of
+ * the v1 layout.  Everything else mirrors v1: spt_assoc_id is FT_RAW
+ * so the per-assoc lookup constant shows up to KCOV-CMP, spt_address
+ * is a single opaque FT_RAW blob spanning sizeof(struct
+ * sockaddr_storage), and spt_pathmaxrxt / spt_pathpfthld stay in the
+ * [0, 16] envelope.  Bespoke build_sctp_paddrthlds_v2() zero-fills
+ * as a miss-fallback.
+ */
+static const struct struct_field sctp_paddrthlds_v2_fields[] = {
+	FIELDX(struct sctp_paddrthlds_v2, spt_assoc_id, FT_RAW,
+	       .mutate_weight = 60),
+	FIELDX(struct sctp_paddrthlds_v2, spt_address, FT_RAW,
+	       .mutate_weight = 40),
+	FIELDX(struct sctp_paddrthlds_v2, spt_pathmaxrxt, FT_RANGE,
+	       .u.range = { 0, 16 },
+	       .mutate_weight = 60),
+	FIELDX(struct sctp_paddrthlds_v2, spt_pathpfthld, FT_RANGE,
+	       .u.range = { 0, 16 },
+	       .mutate_weight = 60),
+	FIELDX(struct sctp_paddrthlds_v2, spt_pathcpthld, FT_RANGE,
+	       .u.range = { 0, 16 },
+	       .mutate_weight = 60),
+};
 #endif
 
 /* ------------------------------------------------------------------ */
@@ -5773,6 +5801,12 @@ const struct struct_desc struct_catalog[] = {
 		.struct_size	= sizeof(struct sctp_paddrthlds),
 		.fields		= sctp_paddrthlds_fields,
 		.num_fields	= ARRAY_SIZE(sctp_paddrthlds_fields),
+	},
+	[SC_SCTP_PADDRTHLDS_V2] = {
+		.name		= "sctp_paddrthlds_v2",
+		.struct_size	= sizeof(struct sctp_paddrthlds_v2),
+		.fields		= sctp_paddrthlds_v2_fields,
+		.num_fields	= ARRAY_SIZE(sctp_paddrthlds_v2_fields),
 	},
 #endif
 };
@@ -6826,6 +6860,13 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 		.discrim_value		= IPPROTO_SCTP,
 		.discrim2_arg_idx	= 3,
 		.discrim2_value		= SCTP_PEER_ADDR_THLDS,
+	},
+	{
+		"setsockopt", 4, &struct_catalog[SC_SCTP_PADDRTHLDS_V2],
+		.discrim_arg_idx	= 2,
+		.discrim_value		= IPPROTO_SCTP,
+		.discrim2_arg_idx	= 3,
+		.discrim2_value		= SCTP_PEER_ADDR_THLDS_V2,
 	},
 #endif
 	/*
