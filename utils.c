@@ -137,9 +137,11 @@ static unsigned int nr_shared_regions_overflow;
  *
  * Span 1<<47 covers the canonical x86_64 user VA on default
  * (4-level page table) kernels.  Regions registered outside the span
- * trip the BUG_ON in shared_bitmap_mark(); queries entirely outside
- * the span return false (no tracked region can live there because the
- * BUG_ON would have fired).  At 1 bit per 2 MiB, the bitmap is
+ * (5-level page tables, or unusually high mappings) are still recorded
+ * in the authoritative shared_regions[]; shared_bitmap_mark() simply
+ * no-ops for them and range_overlaps_shared() falls back to a linear
+ * scan over shared_regions[] for above-span queries.  At 1 bit per
+ * 2 MiB, the bitmap is
  * 1<<26 bits = 8 MiB of BSS, but it is mostly zero pages: only the
  * 4 KiB pages that cover actually-set bits ever fault in, so true
  * resident growth is in the kilobytes for a typical fleet host where
@@ -196,11 +198,13 @@ static inline void shared_bitmap_clear(unsigned long bit)
  * from the tail of alloc_shared() and track_shared_region() so the
  * bitmap stays in sync with shared_regions[].  size==0 is a no-op
  * (matches the "empty region overlaps nothing" semantics callers rely
- * on).  An out-of-span registration BUG()s loudly: the linear-scan
- * predecessor would have caught such a region, so silently dropping it
- * here would flip the safety invariant from "over-reject" to
- * "under-reject" -- the exact failure mode this whole guard exists to
- * prevent.
+ * on).  An out-of-span (or span-straddling) registration is a no-op
+ * here: the bitmap only covers [0, SHARED_BITMAP_VA_SPAN), but
+ * shared_regions[] is the authoritative registry and registration
+ * already recorded the region there.  The query path falls back to a
+ * linear scan over shared_regions[] for addresses the bitmap can't
+ * cover, so the safety invariant ("no fuzzed mm syscall clobbers a
+ * tracked region") still holds.
  */
 static void shared_bitmap_mark(unsigned long addr, unsigned long size)
 {
@@ -210,12 +214,8 @@ static void shared_bitmap_mark(unsigned long addr, unsigned long size)
 		return;
 
 	if (addr >= SHARED_BITMAP_VA_SPAN ||
-	    size > SHARED_BITMAP_VA_SPAN - addr) {
-		outputerr("shared_bitmap_mark: region 0x%lx+0x%lx outside "
-			  "1<<%lu user VA span; widen SHARED_BITMAP_VA_LOG2\n",
-			  addr, size, SHARED_BITMAP_VA_LOG2);
-		BUG("shared region outside bitmap span");
-	}
+	    size > SHARED_BITMAP_VA_SPAN - addr)
+		return;
 
 	end = addr + size - 1;
 	first = addr >> SHARED_BITMAP_GRANULARITY_LOG2;
@@ -242,9 +242,9 @@ static void shared_bitmap_mark(unsigned long addr, unsigned long size)
  * believes it tracked) is a tree-state bug worth BUG()ing on rather
  * than silently masking -- a stuck bit with refcount==0 would falsely
  * reject every fuzzed mm syscall touching the chunk forever.  An
- * out-of-span unmark cannot occur in practice because shared_bitmap_
- * mark() BUG()s on out-of-span marks, so the symmetric guard here is
- * defence-in-depth, not a reachable path.
+ * out-of-span (or span-straddling) unmark is a no-op for the same
+ * reason mark() no-ops above the span: the bitmap doesn't track those
+ * addresses, so there is nothing to clear.
  */
 static void shared_bitmap_unmark(unsigned long addr, unsigned long size)
 {
@@ -254,12 +254,8 @@ static void shared_bitmap_unmark(unsigned long addr, unsigned long size)
 		return;
 
 	if (addr >= SHARED_BITMAP_VA_SPAN ||
-	    size > SHARED_BITMAP_VA_SPAN - addr) {
-		outputerr("shared_bitmap_unmark: region 0x%lx+0x%lx outside "
-			  "1<<%lu user VA span\n",
-			  addr, size, SHARED_BITMAP_VA_LOG2);
-		BUG("shared region outside bitmap span");
-	}
+	    size > SHARED_BITMAP_VA_SPAN - addr)
+		return;
 
 	end = addr + size - 1;
 	first = addr >> SHARED_BITMAP_GRANULARITY_LOG2;
@@ -1402,11 +1398,19 @@ void shared_bitmap_self_check(void)
 	checked = true;
 
 	base = shared_regions[0].addr;
-	bit = base >> SHARED_BITMAP_GRANULARITY_LOG2;
-	if (!shared_bitmap_test(bit)) {
-		outputerr("range_overlaps_shared bitmap missing first region "
-			  "@ 0x%lx (bit %lu)\n", base, bit);
-		BUG("shared region bitmap inconsistent");
+	/*
+	 * The bitmap only tracks addresses inside its span; above-span
+	 * registrations are recorded in shared_regions[] alone and the
+	 * query path falls back to a linear scan for them.  Asserting on
+	 * such an entry would read past the bitmap.
+	 */
+	if (base < SHARED_BITMAP_VA_SPAN) {
+		bit = base >> SHARED_BITMAP_GRANULARITY_LOG2;
+		if (!shared_bitmap_test(bit)) {
+			outputerr("range_overlaps_shared bitmap missing first region "
+				  "@ 0x%lx (bit %lu)\n", base, bit);
+			BUG("shared region bitmap inconsistent");
+		}
 	}
 
 	/*
@@ -1558,10 +1562,13 @@ bool range_overlaps_shared(unsigned long addr, unsigned long len)
 	/* Bitmap accelerator used as a fast NEGATIVE prefilter:
 	 * O(ceil(len/2MB)+1) bit reads to rule out the common case where
 	 * no tracked region lives in any 2 MiB chunk the query touches.
-	 * A range entirely above the bitmap span has no tracked overlap
-	 * -- shared_bitmap_mark() BUG()s on out-of-span registrations,
-	 * so a miss here cannot hide a real region.  A zero-length probe
-	 * collapses to a single bit read on the chunk containing addr.
+	 * The bitmap only covers [0, SHARED_BITMAP_VA_SPAN); queries that
+	 * start above the span (or straddle it) cannot use the bitmap as
+	 * an authoritative negative -- shared_bitmap_mark() no-ops for
+	 * those addresses, and the authoritative shared_regions[] linear
+	 * scan below answers the membership question for them.  A
+	 * zero-length probe collapses to a single bit read on the chunk
+	 * containing addr.
 	 *
 	 * A bitmap HIT is only a candidate: it means at least one
 	 * tracked region lives in a chunk that touches the query, but
@@ -1625,6 +1632,15 @@ bool range_overlaps_shared(unsigned long addr, unsigned long len)
 			}
 		}
 	}
+
+	/* Above-span / span-straddling queries cannot trust a bitmap
+	 * negative: shared_bitmap_mark() no-ops for those addresses, so
+	 * a registered region up there leaves no bitmap trace.  Force
+	 * the candidate flag so the shared_regions[] linear scan below
+	 * answers the membership question authoritatively. */
+	if (addr >= SHARED_BITMAP_VA_SPAN ||
+	    (len != 0 && len > SHARED_BITMAP_VA_SPAN - addr))
+		overlap = true;
 
 	if (!overlap)
 		return false;
