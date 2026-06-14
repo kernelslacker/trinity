@@ -5206,6 +5206,29 @@ static const struct struct_field sctp_stream_value_fields[] = {
 	FIELDX(struct sctp_stream_value, stream_value, FT_RAW,
 	       .mutate_weight = 60),
 };
+
+/*
+ * struct sctp_event -- IPPROTO_SCTP / SCTP_EVENT.  RFC 6458 generic
+ * notification-subscription opt (the modern per-event toggle that
+ * superseded the legacy SCTP_EVENTS / sctp_event_subscribe bitmap):
+ * se_assoc_id selects the target association (FT_RAW so the kernel's
+ * per-assoc lookup constant shows up to KCOV-CMP), se_type names the
+ * sctp_sn_type notification (FT_RAW -- the value list lives in the
+ * SCTP_SN_TYPE_BASE = (1<<15) range rather than a contiguous small
+ * enum, so the byte-noise default still hits the live span often
+ * enough), and se_on is the on/off toggle clamped to [0, 1] so the
+ * splat lands on the in-spec boolean rather than random noise.
+ * Bespoke build_sctp_event() zero-fills as a miss-fallback.
+ */
+static const struct struct_field sctp_event_fields[] = {
+	FIELDX(struct sctp_event, se_assoc_id, FT_RAW,
+	       .mutate_weight = 60),
+	FIELDX(struct sctp_event, se_type, FT_RAW,
+	       .mutate_weight = 60),
+	FIELDX(struct sctp_event, se_on, FT_RANGE,
+	       .u.range = { 0, 1 },
+	       .mutate_weight = 50),
+};
 #endif
 
 /* ------------------------------------------------------------------ */
@@ -5708,6 +5731,12 @@ const struct struct_desc struct_catalog[] = {
 		.struct_size	= sizeof(struct sctp_stream_value),
 		.fields		= sctp_stream_value_fields,
 		.num_fields	= ARRAY_SIZE(sctp_stream_value_fields),
+	},
+	[SC_SCTP_EVENT] = {
+		.name		= "sctp_event",
+		.struct_size	= sizeof(struct sctp_event),
+		.fields		= sctp_event_fields,
+		.num_fields	= ARRAY_SIZE(sctp_event_fields),
 	},
 #endif
 };
@@ -6747,6 +6776,13 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 		.discrim_value		= IPPROTO_SCTP,
 		.discrim2_arg_idx	= 3,
 		.discrim2_value		= SCTP_STREAM_SCHEDULER_VALUE,
+	},
+	{
+		"setsockopt", 4, &struct_catalog[SC_SCTP_EVENT],
+		.discrim_arg_idx	= 2,
+		.discrim_value		= IPPROTO_SCTP,
+		.discrim2_arg_idx	= 3,
+		.discrim2_value		= SCTP_EVENT,
 	},
 #endif
 	/*
