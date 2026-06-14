@@ -5092,6 +5092,31 @@ static const struct struct_field sctp_authchunk_fields[] = {
 	FIELDX(struct sctp_authchunk, sauth_chunk, FT_RAW,
 	       .mutate_weight = 60),
 };
+
+/*
+ * struct sctp_sack_info -- IPPROTO_SCTP / SCTP_DELAYED_SACK (the canonical
+ * spelling; SCTP_DELAYED_ACK / SCTP_DELAYED_ACK_TIME alias the same
+ * optname value 16).  RFC 6458 delayed-SACK tuning: sack_assoc_id picks
+ * the target association (FT_RAW so the kernel's per-assoc lookup
+ * constant shows up to KCOV-CMP), sack_delay is the delayed-ack timer
+ * in ms bounded to [0, 500] -- the kernel rejects values above
+ * SCTP_MAX_DELAY_VALUE (500ms) outright, so staying inside the window
+ * exercises the timer-arm path rather than the EINVAL early-out, and
+ * sack_freq is the every-Nth-packet ack frequency bounded to [0, 16]
+ * which keeps the kernel's freq counter inside a realistic envelope
+ * without flooding the SACK-immediate path.  Bespoke build_sctp_sackinfo()
+ * zero-fills as a miss-fallback.
+ */
+static const struct struct_field sctp_sack_info_fields[] = {
+	FIELDX(struct sctp_sack_info, sack_assoc_id, FT_RAW,
+	       .mutate_weight = 60),
+	FIELDX(struct sctp_sack_info, sack_delay, FT_RANGE,
+	       .u.range = { 0, 500 },
+	       .mutate_weight = 60),
+	FIELDX(struct sctp_sack_info, sack_freq, FT_RANGE,
+	       .u.range = { 0, 16 },
+	       .mutate_weight = 60),
+};
 #endif
 
 /* ------------------------------------------------------------------ */
@@ -5564,6 +5589,12 @@ const struct struct_desc struct_catalog[] = {
 		.struct_size	= sizeof(struct sctp_authchunk),
 		.fields		= sctp_authchunk_fields,
 		.num_fields	= ARRAY_SIZE(sctp_authchunk_fields),
+	},
+	[SC_SCTP_SACK_INFO] = {
+		.name		= "sctp_sack_info",
+		.struct_size	= sizeof(struct sctp_sack_info),
+		.fields		= sctp_sack_info_fields,
+		.num_fields	= ARRAY_SIZE(sctp_sack_info_fields),
 	},
 #endif
 };
@@ -6561,6 +6592,13 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 		.discrim_value		= IPPROTO_SCTP,
 		.discrim2_arg_idx	= 3,
 		.discrim2_value		= SCTP_AUTH_CHUNK,
+	},
+	{
+		"setsockopt", 4, &struct_catalog[SC_SCTP_SACK_INFO],
+		.discrim_arg_idx	= 2,
+		.discrim_value		= IPPROTO_SCTP,
+		.discrim2_arg_idx	= 3,
+		.discrim2_value		= SCTP_DELAYED_SACK,
 	},
 #endif
 	/*
