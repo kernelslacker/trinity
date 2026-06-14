@@ -847,19 +847,61 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 					__atomic_fetch_add(
 						&kcov_shm->reexec_attribution_found,
 						1UL, __ATOMIC_RELAXED);
-					if (match_count > 1)
+					/* which arg slot
+					 * (a1..a6) won the first-match-wins
+					 * scan.  first_match is 1-based;
+					 * convert to 0-based index and gate
+					 * on the histogram bound -- a
+					 * corrupted pending entry that
+					 * survived the slot bound check at
+					 * the consumer site is harmlessly
+					 * dropped here. */
+					if (first_match >= 1 &&
+					    first_match <= CMP_REDQUEEN_SLOT_HIST_NR)
+						__atomic_fetch_add(
+							&kcov_shm->reexec_attribution_slot_hist[first_match - 1],
+							1UL, __ATOMIC_RELAXED);
+					if (match_count > 1) {
 						__atomic_fetch_add(
 							&kcov_shm->reexec_attribution_ambiguous,
 							1UL, __ATOMIC_RELAXED);
+						/* per-nr
+						 * partition of the ambiguity
+						 * counter.  nr is gated to
+						 * MAX_NR_SYSCALL at
+						 * cmp_hints_collect() entry,
+						 * matching the existing
+						 * per_syscall_cmp_inserts[nr]
+						 * bump below. */
+						__atomic_fetch_add(
+							&kcov_shm->reexec_ambiguous_by_syscall[nr],
+							1UL, __ATOMIC_RELAXED);
+					}
 				}
 
 				/* Disable further per-record scans this call
 				 * once the buffer fills; the per-call cap at
 				 * the consumer side will drain only a subset
-				 * anyway and the extra scan work is wasted. */
+				 * anyway and the extra scan work is wasted.
+				 *
+				 * bump reexec_pending_dropped
+				 * exactly once per parent call where the
+				 * buffer fills, so the operator can read "how
+				 * often did the attribution census get
+				 * truncated".  Subsequent records on this same
+				 * call hit the attribute_enabled-false guard
+				 * above and skip silently; the per-record
+				 * count of dropped tuples is intentionally not
+				 * tracked (the relevant signal is "did we lose
+				 * any", not "how many"). */
 				if (child->reexec_pending_count >=
-				    MAX_REEXEC_PENDING)
+				    MAX_REEXEC_PENDING) {
 					attribute_enabled = false;
+					if (kcov_shm != NULL)
+						__atomic_fetch_add(
+							&kcov_shm->reexec_pending_dropped,
+							1UL, __ATOMIC_RELAXED);
+				}
 			}
 		}
 
@@ -899,9 +941,15 @@ bool cmp_hints_try_get(unsigned int nr, bool do32, unsigned long *out)
 	if (cmp_hints_shm == NULL || nr >= MAX_NR_SYSCALL)
 		return false;
 
-	if (kcov_shm != NULL)
+	if (kcov_shm != NULL) {
 		__atomic_fetch_add(&kcov_shm->cmp_hints_try_get_attempts, 1UL,
 				   __ATOMIC_RELAXED);
+		/* per-nr partition of the consumer-demand
+		 * counter.  The shm/nr guard above already pinned nr <
+		 * MAX_NR_SYSCALL so the index is in-bounds. */
+		__atomic_fetch_add(&kcov_shm->per_syscall_cmp_attempts[nr],
+				   1UL, __ATOMIC_RELAXED);
+	}
 
 	/* Chaos-mode gate.  Placed after the attempts bump so the consumer
 	 * demand series stays comparable across chaos and non-chaos
@@ -987,9 +1035,15 @@ bool cmp_hints_try_get(unsigned int nr, bool do32, unsigned long *out)
 		}
 		*out = c;
 	}
-	if (kcov_shm != NULL)
+	if (kcov_shm != NULL) {
 		__atomic_fetch_add(&kcov_shm->cmp_hints_try_get_returned, 1UL,
 				   __ATOMIC_RELAXED);
+		/* per-nr partition of the producer-side
+		 * pool-hit counter.  Same in-bounds guard reasoning as the
+		 * attempts bump above. */
+		__atomic_fetch_add(&kcov_shm->per_syscall_cmp_returned[nr],
+				   1UL, __ATOMIC_RELAXED);
+	}
 	return true;
 }
 

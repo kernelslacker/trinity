@@ -699,6 +699,18 @@ struct childdata {
 	unsigned long reexec_count_window;
 	unsigned long reexec_window_start_op;
 
+	/* per-call latch, set from any of the four
+	 * cmp_hints_try_get() callsites in generate-args.c that commit the
+	 * returned hint to a produced syscall arg.  Cleared at the top of
+	 * generate_syscall_args() so each new call starts with a fresh
+	 * status, and read in kcov_collect()'s found_new branch to attribute
+	 * a PC-edge win to the cmp-hint pipeline when the call that flipped
+	 * the new edge had a hint injected into its arg surface.  Owner-only
+	 * writes from inside the child; the parent's stats consumer reads
+	 * the resulting per_syscall_cmp_hint_pc_wins[] counter, never this
+	 * flag directly. */
+	bool cmp_hint_injected_this_call;
+
 	/* The actual syscall records each child uses.  Dominated by a 4 KiB
 	 * prebuffer + 128 B postbuffer used by -v rendering — only nr / a1..a6
 	 * / retval / lock / state are touched on the hot path, and those are

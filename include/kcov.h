@@ -471,6 +471,30 @@ struct kcov_child {
 	struct kcov_dedup_slot *dedup;	/* KCOV_DEDUP_SIZE entries, child-private */
 };
 
+/* observability: the four generate-args.c callsites
+ * that pull a cmp_hint via cmp_hints_try_get() are partitioned into
+ * fixed buckets so the per-callsite injection-rate split is visible in
+ * the periodic stats dump without a per-argtype array.  Ordering is
+ * pinned (the slot index is the bucket id) -- append-only.  STRUCT_FIELD
+ * is reserved with no current bumper; the slot exists so the future
+ * field-fill path described in struct_catalog.c can land without
+ * renumbering. */
+enum cmp_hint_callsite {
+	CMP_HINT_CALLSITE_ARG_OP = 0,
+	CMP_HINT_CALLSITE_ARG_LIST,
+	CMP_HINT_CALLSITE_ARG_UNDEFINED,
+	CMP_HINT_CALLSITE_ARG_STRUCT_SIZE,
+	CMP_HINT_CALLSITE_STRUCT_FIELD,
+	CMP_HINT_CALLSITE_OTHER,
+	CMP_HINT_CALLSITE_NR,
+};
+
+/* RedQueen attribution arg-slot histogram width.  Syscalls have at most
+ * 6 args (a1..a6), so the histogram has 6 entries indexed by
+ * (slot - 1).  Pinned here so the kcov_shared field, the bump sites,
+ * and the periodic dump renderer agree on the bound. */
+#define CMP_REDQUEEN_SLOT_HIST_NR 6
+
 /* Shared coverage state, allocated in shared memory. */
 struct kcov_shared {
 	/* Per-edge bucket-seen mask.  See KCOV_NUM_BUCKETS comment above for
@@ -875,6 +899,94 @@ struct kcov_shared {
 	unsigned long per_syscall_transition_edges_previous[MAX_NR_SYSCALL];
 	unsigned long per_syscall_transition_edges_real[MAX_NR_SYSCALL];
 	unsigned char transition_seen[KCOV_NUM_TRANSITIONS];
+
+	/* CMP-hint / RedQueen pipeline observability.
+	 *
+	 * The four per-syscall counters below partition the existing flat
+	 * cmp_hints_try_get_attempts / _returned / cmp_hints_injected funnel
+	 * by syscall slot.  Without the per-nr split, the question "is this
+	 * syscall producing the bulk of cmp-hint demand, deliveries, and
+	 * eventual PC-edge wins, or are the totals dominated by a noisy few
+	 * unrelated to the syscall whose tuning we're judging" is unanswerable
+	 * from the periodic stats log.  All four arrays are MAX_NR_SYSCALL-
+	 * indexed (matching per_syscall_edges[]) and gated on nr < bound at
+	 * each bump site.  Relaxed atomics; cumulative across the run.
+	 *
+	 *  per_syscall_cmp_attempts[nr]
+	 *      Bumped from cmp_hints_try_get() alongside the existing flat
+	 *      cmp_hints_try_get_attempts counter.  Consumer-side demand
+	 *      partitioned by the calling syscall.
+	 *  per_syscall_cmp_returned[nr]
+	 *      Bumped from cmp_hints_try_get() right before the true return,
+	 *      alongside cmp_hints_try_get_returned.  Subset of attempts:
+	 *      the per-nr (returned / attempts) ratio is the per-syscall
+	 *      pool-hit rate.
+	 *  per_syscall_cmp_injected[nr]
+	 *      Bumped from each of the four generate-args.c callsites that
+	 *      commit a cmp_hints_try_get() hint to a produced syscall arg,
+	 *      alongside the existing flat cmp_hints_injected counter.
+	 *      Strictly <= per_syscall_cmp_returned[nr]; the gap is callsites
+	 *      that pulled a hint but discarded it (none today).
+	 *  per_syscall_cmp_hint_pc_wins[nr]
+	 *      Bumped from kcov_collect()'s found_new branch when the calling
+	 *      child had cmp_hint_injected_this_call set for the call being
+	 *      collected.  The per-syscall version of "did the injected hint
+	 *      drive new PC-edge coverage on this call".  Pair with
+	 *      per_syscall_cmp_injected to read per-syscall hint-edge yield;
+	 *      a syscall with high injected and zero pc-wins is the
+	 *      diagnostic signature for an unproductive cmp-hint regime. */
+	unsigned long per_syscall_cmp_attempts[MAX_NR_SYSCALL];
+	unsigned long per_syscall_cmp_returned[MAX_NR_SYSCALL];
+	unsigned long per_syscall_cmp_injected[MAX_NR_SYSCALL];
+	unsigned long per_syscall_cmp_hint_pc_wins[MAX_NR_SYSCALL];
+
+	/* Per-callsite total cmp-hint injections, indexed by enum
+	 * cmp_hint_callsite.  Aggregated across all syscalls; the "which
+	 * argtype-handler is responsible for the bulk of injections" question
+	 * is callsite-shaped, not syscall-shaped, so the per-nr split lives
+	 * in per_syscall_cmp_injected above and this array stays flat.  6
+	 * buckets: ARG_OP, ARG_LIST, ARG_UNDEFINED, ARG_STRUCT_SIZE,
+	 * STRUCT_FIELD (reserved -- no call site today), OTHER. */
+	unsigned long cmp_hint_callsite_injected[CMP_HINT_CALLSITE_NR];
+
+	/* RedQueen re-exec observability counters, sibling of the flat
+	 * reexec_* family above.  Same callsite/attribution funnel, but
+	 * partitioned by syscall slot or by attribution arg-slot so the
+	 * operator can ask "which syscalls are driving the re-exec attempt
+	 * volume, and once attributed, which arg slot did the kernel CMP
+	 * fire on" without having to grep child logs.
+	 *
+	 *  reexec_attempts_by_syscall[nr]
+	 *      Per-nr partition of reexec_attempts: bumped from
+	 *      redqueen_reexec_step() alongside the flat counter.
+	 *  reexec_ambiguous_by_syscall[nr]
+	 *      Per-nr partition of reexec_attribution_ambiguous: bumped from
+	 *      cmp_hints_collect() alongside the flat counter when >1 arg
+	 *      slot matched the same kernel CMP constant.
+	 *  reexec_attribution_slot_hist[CMP_REDQUEEN_SLOT_HIST_NR]
+	 *      6-slot histogram (a1..a6) of which arg slot won the first-
+	 *      match-wins attribution scan.  Bumped from cmp_hints_collect()
+	 *      next to the reexec_attribution_found bump.  Index = slot - 1.
+	 *  reexec_success_by_slot[CMP_REDQUEEN_SLOT_HIST_NR]
+	 *      6-slot success counter: bumped from redqueen_reexec_step()
+	 *      when the inner dispatch returned inner_new_cmp > 0.  Pair
+	 *      with reexec_attribution_slot_hist to read per-slot success
+	 *      rate -- a slot that gets the bulk of attributions but no
+	 *      successes is wasted re-exec budget.
+	 *  reexec_pending_dropped
+	 *      Per-call counter: bumped once per parent call from
+	 *      cmp_hints_collect() when the per-child reexec_pending[] buffer
+	 *      fills (count reaches MAX_REEXEC_PENDING) and the per-record
+	 *      attribution scan is force-disabled for the remainder of that
+	 *      call.  Non-zero means a parent call surfaced more attribution
+	 *      candidates than MAX_REEXEC_PENDING can hold -- the
+	 *      attribution census is truncated, and (cmp_ip, value, size,
+	 *      slot) tuples beyond the cap are silently dropped. */
+	unsigned long reexec_attempts_by_syscall[MAX_NR_SYSCALL];
+	unsigned long reexec_ambiguous_by_syscall[MAX_NR_SYSCALL];
+	unsigned long reexec_attribution_slot_hist[CMP_REDQUEEN_SLOT_HIST_NR];
+	unsigned long reexec_success_by_slot[CMP_REDQUEEN_SLOT_HIST_NR];
+	unsigned long reexec_pending_dropped;
 };
 
 extern struct kcov_shared *kcov_shm;

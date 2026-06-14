@@ -1579,6 +1579,29 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 				1, __ATOMIC_RELAXED);
 			__atomic_store_n(&kcov_shm->last_edge_at[nr],
 				call_nr, __ATOMIC_RELAXED);
+			/* if this call had a cmp_hint
+			 * injected into its arg surface (latched in
+			 * generate-args.c via credit_cmp_hint_injection),
+			 * credit the resulting PC-edge win to the cmp-hint
+			 * pipeline at the per-syscall granularity.  The
+			 * cmp_hint_injected_this_call latch is owner-only
+			 * written by the child generator path that ran just
+			 * before this dispatch, so reading it here is a
+			 * plain field access -- no atomics needed on the
+			 * latch itself.  Parent-context this_child()==NULL
+			 * is handled the same way the prior credit path is:
+			 * the helper either set the flag (child) or did
+			 * nothing (parent), and a NULL child here means no
+			 * latch was set so no PC-win is credited. */
+			{
+				struct childdata *cc = this_child();
+
+				if (cc != NULL &&
+				    cc->cmp_hint_injected_this_call)
+					__atomic_fetch_add(
+						&kcov_shm->per_syscall_cmp_hint_pc_wins[nr],
+						1, __ATOMIC_RELAXED);
+			}
 			/* Bump the per-syscall frontier-edge ring so the
 			 * coverage-frontier picker (when active) can bias
 			 * selection toward syscalls currently producing fresh

@@ -4187,6 +4187,270 @@ void vma_count_periodic_dump(void)
 }
 
 /*
+ * observability table: top syscalls by per-window
+ * cmp-insert delta, with the matching injected / hint_pc_wins / edge
+ * deltas in adjacent columns so the operator can read the conversion
+ * funnel without grepping a flat key/value dump.  The "CMP-rich but
+ * unconverted" diagnostic signature is high cmp+ and injected+ with low
+ * pc-wins+ and edge+ -- the row format puts those four numbers
+ * side-by-side so the visual scan is single-line per syscall.
+ *
+ * Window snapshots live in function-static arrays (MAX_NR_SYSCALL of
+ * unsigned long apiece, ~32 KiB total BSS in this TU) rather than in
+ * kcov_shm: the dump consumer is single-owner (the parent's periodic
+ * tick), so a per-tick window state in shm would just duplicate state
+ * without adding any cross-process value, and the BSS cost is paid
+ * once per process, not per child.  The existing per_syscall_*_previous
+ * arrays in kcov_shm are consumed by dump_stats() at run shutdown and
+ * by the JSON dump, with no defined update cadence; reusing them here
+ * would silently desync the window deltas.
+ */
+static void kcov_cmp_observability_block_render(long elapsed __unused__)
+{
+	static unsigned long prev_cmp_inserts[MAX_NR_SYSCALL];
+	static unsigned long prev_cmp_injected[MAX_NR_SYSCALL];
+	static unsigned long prev_pc_wins[MAX_NR_SYSCALL];
+	static unsigned long prev_edges[MAX_NR_SYSCALL];
+	static bool armed;
+	unsigned int top_nr[10];
+	unsigned long top_cmp[10];
+	unsigned long top_injected[10];
+	unsigned long top_pc_wins[10];
+	unsigned long top_edges[10];
+	unsigned int top_count = 0;
+	unsigned int nr_syscalls_to_scan;
+	const struct syscalltable *table;
+	unsigned int i;
+	unsigned int j;
+
+	if (kcov_shm == NULL)
+		return;
+
+	nr_syscalls_to_scan = biarch ? max_nr_64bit_syscalls : max_nr_syscalls;
+	if (nr_syscalls_to_scan > MAX_NR_SYSCALL)
+		nr_syscalls_to_scan = MAX_NR_SYSCALL;
+	table = biarch ? syscalls_64bit : syscalls;
+
+	memset(top_cmp, 0, sizeof(top_cmp));
+	memset(top_injected, 0, sizeof(top_injected));
+	memset(top_pc_wins, 0, sizeof(top_pc_wins));
+	memset(top_edges, 0, sizeof(top_edges));
+
+	for (i = 0; i < nr_syscalls_to_scan; i++) {
+		unsigned long cur_inserts = __atomic_load_n(
+			&kcov_shm->per_syscall_cmp_inserts[i], __ATOMIC_RELAXED);
+		unsigned long cur_injected = __atomic_load_n(
+			&kcov_shm->per_syscall_cmp_injected[i], __ATOMIC_RELAXED);
+		unsigned long cur_pc_wins = __atomic_load_n(
+			&kcov_shm->per_syscall_cmp_hint_pc_wins[i], __ATOMIC_RELAXED);
+		unsigned long cur_edges = __atomic_load_n(
+			&kcov_shm->per_syscall_edges[i], __ATOMIC_RELAXED);
+		unsigned long delta_inserts;
+		unsigned long delta_injected;
+		unsigned long delta_pc_wins;
+		unsigned long delta_edges;
+		unsigned int k;
+
+		/* First window: arm the snapshot and skip emit so any
+		 * pre-existing cumulative counts (warm-start / prior epoch)
+		 * are not mis-attributed to the first dump window. */
+		if (!armed) {
+			prev_cmp_inserts[i] = cur_inserts;
+			prev_cmp_injected[i] = cur_injected;
+			prev_pc_wins[i] = cur_pc_wins;
+			prev_edges[i] = cur_edges;
+			continue;
+		}
+
+		/* Guarded unsigned subtraction.  Counters are monotonic in
+		 * the steady-state case but a cmp-hints warm-start that
+		 * lands between two dumps can publish a lower value; clamp
+		 * to zero so a one-shot warm-start doesn't underflow into a
+		 * ~ULONG_MAX delta the topn picker would pin to slot 0. */
+		delta_inserts  = (cur_inserts  > prev_cmp_inserts[i])  ? cur_inserts  - prev_cmp_inserts[i]  : 0;
+		delta_injected = (cur_injected > prev_cmp_injected[i]) ? cur_injected - prev_cmp_injected[i] : 0;
+		delta_pc_wins  = (cur_pc_wins  > prev_pc_wins[i])      ? cur_pc_wins  - prev_pc_wins[i]      : 0;
+		delta_edges    = (cur_edges    > prev_edges[i])        ? cur_edges    - prev_edges[i]        : 0;
+
+		prev_cmp_inserts[i] = cur_inserts;
+		prev_cmp_injected[i] = cur_injected;
+		prev_pc_wins[i] = cur_pc_wins;
+		prev_edges[i] = cur_edges;
+
+		if (delta_inserts == 0)
+			continue;
+
+		/* Rank by cmp_inserts delta: that's the producer-side
+		 * "kernel emitted distinct CMP signal for this syscall"
+		 * column, which is the one the PHASE-0 hold cares about.
+		 * Insertion sort on the four arrays in lock-step so the
+		 * top-N rows stay aligned across columns. */
+		for (j = top_count; j > 0 && delta_inserts > top_cmp[j - 1]; j--) {
+			if (j < 10) {
+				top_cmp[j]      = top_cmp[j - 1];
+				top_injected[j] = top_injected[j - 1];
+				top_pc_wins[j]  = top_pc_wins[j - 1];
+				top_edges[j]    = top_edges[j - 1];
+				top_nr[j]       = top_nr[j - 1];
+			}
+		}
+		k = j;
+		if (k < 10) {
+			top_cmp[k]      = delta_inserts;
+			top_injected[k] = delta_injected;
+			top_pc_wins[k]  = delta_pc_wins;
+			top_edges[k]    = delta_edges;
+			top_nr[k]       = i;
+			if (top_count < 10)
+				top_count++;
+		}
+	}
+
+	if (!armed) {
+		armed = true;
+		return;
+	}
+
+	if (top_count == 0)
+		return;
+
+	stats_log_write("KCOV CMP-rich syscalls (top by per-window cmp_inserts delta):\n");
+	stats_log_write("  %-24s %10s %10s %10s %10s\n",
+			"syscall", "cmp+", "injected+", "pc-wins+", "edge+");
+	for (j = 0; j < top_count; j++) {
+		struct syscallentry *entry = table[top_nr[j]].entry;
+		const char *name = entry ? entry->name : "???";
+
+		stats_log_write("  %-24s %10lu %10lu %10lu %10lu\n",
+				name, top_cmp[j], top_injected[j],
+				top_pc_wins[j], top_edges[j]);
+	}
+}
+
+/*
+ * RedQueen observability: top-N syscalls by re-exec
+ * attempt delta + flat aggregates for the per-slot histograms.  The
+ * per-slot histograms stay flat (6 entries each) rather than per-nr to
+ * keep the block readable -- the "which arg slot won attribution" and
+ * "which arg slot produced novelty" questions are aggregate-shaped, not
+ * per-syscall, so the answer is two short rows of counts.  The per-nr
+ * partition for attempts and ambiguity is the syscall-shaped half: that
+ * goes through the top-N table.
+ */
+static void kcov_redqueen_observability_block_render(long elapsed __unused__)
+{
+	static unsigned long prev_attempts[MAX_NR_SYSCALL];
+	static unsigned long prev_ambiguous[MAX_NR_SYSCALL];
+	static bool armed;
+	unsigned int top_nr[10];
+	unsigned long top_attempts[10];
+	unsigned long top_ambiguous[10];
+	unsigned int top_count = 0;
+	unsigned long slot_hist[CMP_REDQUEEN_SLOT_HIST_NR];
+	unsigned long slot_success[CMP_REDQUEEN_SLOT_HIST_NR];
+	bool any_slot = false;
+	unsigned int nr_syscalls_to_scan;
+	const struct syscalltable *table;
+	unsigned int i;
+	unsigned int j;
+
+	if (kcov_shm == NULL)
+		return;
+
+	nr_syscalls_to_scan = biarch ? max_nr_64bit_syscalls : max_nr_syscalls;
+	if (nr_syscalls_to_scan > MAX_NR_SYSCALL)
+		nr_syscalls_to_scan = MAX_NR_SYSCALL;
+	table = biarch ? syscalls_64bit : syscalls;
+
+	memset(top_attempts, 0, sizeof(top_attempts));
+	memset(top_ambiguous, 0, sizeof(top_ambiguous));
+
+	for (i = 0; i < nr_syscalls_to_scan; i++) {
+		unsigned long cur_attempts = __atomic_load_n(
+			&kcov_shm->reexec_attempts_by_syscall[i], __ATOMIC_RELAXED);
+		unsigned long cur_ambig = __atomic_load_n(
+			&kcov_shm->reexec_ambiguous_by_syscall[i], __ATOMIC_RELAXED);
+		unsigned long delta_attempts;
+		unsigned long delta_ambig;
+		unsigned int k;
+
+		if (!armed) {
+			prev_attempts[i] = cur_attempts;
+			prev_ambiguous[i] = cur_ambig;
+			continue;
+		}
+
+		delta_attempts = (cur_attempts > prev_attempts[i])  ? cur_attempts - prev_attempts[i]  : 0;
+		delta_ambig    = (cur_ambig    > prev_ambiguous[i]) ? cur_ambig    - prev_ambiguous[i] : 0;
+
+		prev_attempts[i] = cur_attempts;
+		prev_ambiguous[i] = cur_ambig;
+
+		if (delta_attempts == 0)
+			continue;
+
+		for (j = top_count; j > 0 && delta_attempts > top_attempts[j - 1]; j--) {
+			if (j < 10) {
+				top_attempts[j]  = top_attempts[j - 1];
+				top_ambiguous[j] = top_ambiguous[j - 1];
+				top_nr[j]        = top_nr[j - 1];
+			}
+		}
+		k = j;
+		if (k < 10) {
+			top_attempts[k]  = delta_attempts;
+			top_ambiguous[k] = delta_ambig;
+			top_nr[k]        = i;
+			if (top_count < 10)
+				top_count++;
+		}
+	}
+
+	for (i = 0; i < CMP_REDQUEEN_SLOT_HIST_NR; i++) {
+		slot_hist[i] = __atomic_load_n(
+			&kcov_shm->reexec_attribution_slot_hist[i],
+			__ATOMIC_RELAXED);
+		slot_success[i] = __atomic_load_n(
+			&kcov_shm->reexec_success_by_slot[i],
+			__ATOMIC_RELAXED);
+		if ((slot_hist[i] | slot_success[i]) != 0)
+			any_slot = true;
+	}
+
+	if (!armed) {
+		armed = true;
+		return;
+	}
+
+	if (top_count > 0) {
+		stats_log_write("KCOV RedQueen syscalls (top by per-window reexec_attempts delta):\n");
+		stats_log_write("  %-24s %12s %12s\n",
+				"syscall", "attempts+", "ambiguous+");
+		for (j = 0; j < top_count; j++) {
+			struct syscallentry *entry = table[top_nr[j]].entry;
+			const char *name = entry ? entry->name : "???";
+
+			stats_log_write("  %-24s %12lu %12lu\n",
+					name, top_attempts[j], top_ambiguous[j]);
+		}
+	}
+
+	if (any_slot) {
+		stats_log_write("KCOV RedQueen arg-slot attribution (cumulative, slot=index+1):\n");
+		stats_log_write("  %-12s %10s %10s %10s %10s %10s %10s\n",
+				"counter", "a1", "a2", "a3", "a4", "a5", "a6");
+		stats_log_write("  %-12s %10lu %10lu %10lu %10lu %10lu %10lu\n",
+				"attribute",
+				slot_hist[0], slot_hist[1], slot_hist[2],
+				slot_hist[3], slot_hist[4], slot_hist[5]);
+		stats_log_write("  %-12s %10lu %10lu %10lu %10lu %10lu %10lu\n",
+				"success",
+				slot_success[0], slot_success[1], slot_success[2],
+				slot_success[3], slot_success[4], slot_success[5]);
+	}
+}
+
+/*
  * Surface the KCOV CMP counters in the same 600s periodic stats-log-file
  * dump as defense_counters_periodic_dump.  Without this the cmp counters
  * are only visible from dump_stats() (run shutdown) and the JSON dump
@@ -4225,6 +4489,8 @@ void kcov_cmp_stats_periodic_dump(void)
 	static unsigned long prev_reexec_skipped_destructive;
 	static unsigned long prev_reexec_skipped_validate_silent;
 	static unsigned long prev_reexec_window_cap_hit;
+	static unsigned long prev_reexec_pending_dropped;
+	static unsigned long prev_cmp_hint_callsite[CMP_HINT_CALLSITE_NR];
 	static struct timespec last_dump;
 	struct timespec now;
 	long elapsed;
@@ -4238,6 +4504,8 @@ void kcov_cmp_stats_periodic_dump(void)
 	unsigned long cur_reexec_attribution_ambiguous, cur_reexec_new_cmps_total;
 	unsigned long cur_reexec_skipped_destructive, cur_reexec_skipped_validate_silent;
 	unsigned long cur_reexec_window_cap_hit;
+	unsigned long cur_reexec_pending_dropped;
+	unsigned long cur_cmp_hint_callsite[CMP_HINT_CALLSITE_NR];
 	unsigned long delta_records, delta_truncated, delta_bloom_skipped, delta_unique;
 	unsigned long delta_strip_skipped;
 	unsigned long delta_try_get_attempts, delta_try_get_returned, delta_injected;
@@ -4248,6 +4516,9 @@ void kcov_cmp_stats_periodic_dump(void)
 	unsigned long delta_reexec_attribution_ambiguous, delta_reexec_new_cmps_total;
 	unsigned long delta_reexec_skipped_destructive, delta_reexec_skipped_validate_silent;
 	unsigned long delta_reexec_window_cap_hit;
+	unsigned long delta_reexec_pending_dropped;
+	unsigned long delta_cmp_hint_callsite[CMP_HINT_CALLSITE_NR];
+	bool any_callsite_delta = false;
 	unsigned int pc_kids, cmp_kids;
 
 	if (kcov_shm == NULL)
@@ -4276,6 +4547,14 @@ void kcov_cmp_stats_periodic_dump(void)
 	cur_reexec_skipped_destructive     = __atomic_load_n(&kcov_shm->reexec_skipped_destructive,     __ATOMIC_RELAXED);
 	cur_reexec_skipped_validate_silent = __atomic_load_n(&kcov_shm->reexec_skipped_validate_silent, __ATOMIC_RELAXED);
 	cur_reexec_window_cap_hit          = __atomic_load_n(&kcov_shm->reexec_window_cap_hit,          __ATOMIC_RELAXED);
+	cur_reexec_pending_dropped         = __atomic_load_n(&kcov_shm->reexec_pending_dropped,         __ATOMIC_RELAXED);
+	{
+		unsigned int cs;
+		for (cs = 0; cs < CMP_HINT_CALLSITE_NR; cs++)
+			cur_cmp_hint_callsite[cs] = __atomic_load_n(
+				&kcov_shm->cmp_hint_callsite_injected[cs],
+				__ATOMIC_RELAXED);
+	}
 
 	/* First call: arm the window so any pre-existing counts carried
 	 * over from earlier in the run are not mis-attributed to the
@@ -4303,6 +4582,12 @@ void kcov_cmp_stats_periodic_dump(void)
 		prev_reexec_skipped_destructive     = cur_reexec_skipped_destructive;
 		prev_reexec_skipped_validate_silent = cur_reexec_skipped_validate_silent;
 		prev_reexec_window_cap_hit          = cur_reexec_window_cap_hit;
+		prev_reexec_pending_dropped         = cur_reexec_pending_dropped;
+		{
+			unsigned int cs;
+			for (cs = 0; cs < CMP_HINT_CALLSITE_NR; cs++)
+				prev_cmp_hint_callsite[cs] = cur_cmp_hint_callsite[cs];
+		}
 		return;
 	}
 
@@ -4331,6 +4616,16 @@ void kcov_cmp_stats_periodic_dump(void)
 	delta_reexec_skipped_destructive     = cur_reexec_skipped_destructive     - prev_reexec_skipped_destructive;
 	delta_reexec_skipped_validate_silent = cur_reexec_skipped_validate_silent - prev_reexec_skipped_validate_silent;
 	delta_reexec_window_cap_hit          = cur_reexec_window_cap_hit          - prev_reexec_window_cap_hit;
+	delta_reexec_pending_dropped         = cur_reexec_pending_dropped         - prev_reexec_pending_dropped;
+	{
+		unsigned int cs;
+		for (cs = 0; cs < CMP_HINT_CALLSITE_NR; cs++) {
+			delta_cmp_hint_callsite[cs] =
+				cur_cmp_hint_callsite[cs] - prev_cmp_hint_callsite[cs];
+			if (delta_cmp_hint_callsite[cs] != 0)
+				any_callsite_delta = true;
+		}
+	}
 
 	if ((delta_records | delta_truncated | delta_bloom_skipped | delta_strip_skipped |
 	     delta_unique | delta_try_get_attempts | delta_try_get_returned |
@@ -4341,7 +4636,8 @@ void kcov_cmp_stats_periodic_dump(void)
 	     delta_reexec_attempts | delta_reexec_attribution_found |
 	     delta_reexec_attribution_ambiguous | delta_reexec_new_cmps_total |
 	     delta_reexec_skipped_destructive | delta_reexec_skipped_validate_silent |
-	     delta_reexec_window_cap_hit) != 0) {
+	     delta_reexec_window_cap_hit | delta_reexec_pending_dropped) != 0 ||
+	    any_callsite_delta) {
 		stats_log_write("KCOV CMP stats over last %lds:\n", elapsed);
 
 		if (delta_records) {
@@ -4475,6 +4771,34 @@ void kcov_cmp_stats_periodic_dump(void)
 					"reexec_window_cap_hit", delta_reexec_window_cap_hit,
 					rate_milli / 1000, rate_milli % 1000, cur_reexec_window_cap_hit);
 		}
+		if (delta_reexec_pending_dropped) {
+			unsigned long rate_milli = (delta_reexec_pending_dropped * 1000UL) / (unsigned long)elapsed;
+			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+					"reexec_pending_dropped", delta_reexec_pending_dropped,
+					rate_milli / 1000, rate_milli % 1000, cur_reexec_pending_dropped);
+		}
+		if (any_callsite_delta) {
+			static const char * const callsite_names[CMP_HINT_CALLSITE_NR] = {
+				[CMP_HINT_CALLSITE_ARG_OP]          = "ARG_OP",
+				[CMP_HINT_CALLSITE_ARG_LIST]        = "ARG_LIST",
+				[CMP_HINT_CALLSITE_ARG_UNDEFINED]   = "ARG_UNDEFINED",
+				[CMP_HINT_CALLSITE_ARG_STRUCT_SIZE] = "ARG_STRUCT_SIZE",
+				[CMP_HINT_CALLSITE_STRUCT_FIELD]    = "STRUCT_FIELD",
+				[CMP_HINT_CALLSITE_OTHER]           = "OTHER",
+			};
+			unsigned int cs;
+
+			stats_log_write("  cmp_hint_callsite_injected (per-callsite delta / cumulative):\n");
+			for (cs = 0; cs < CMP_HINT_CALLSITE_NR; cs++) {
+				if (delta_cmp_hint_callsite[cs] == 0 &&
+				    cur_cmp_hint_callsite[cs] == 0)
+					continue;
+				stats_log_write("    %-20s +%lu  (total %lu)\n",
+						callsite_names[cs],
+						delta_cmp_hint_callsite[cs],
+						cur_cmp_hint_callsite[cs]);
+			}
+		}
 	}
 
 	/*
@@ -4535,6 +4859,9 @@ void kcov_cmp_stats_periodic_dump(void)
 		}
 	}
 
+	kcov_cmp_observability_block_render(elapsed);
+	kcov_redqueen_observability_block_render(elapsed);
+
 	prev_records       = cur_records;
 	prev_truncated     = cur_truncated;
 	prev_bloom_skipped = cur_bloom_skipped;
@@ -4556,6 +4883,12 @@ void kcov_cmp_stats_periodic_dump(void)
 	prev_reexec_skipped_destructive     = cur_reexec_skipped_destructive;
 	prev_reexec_skipped_validate_silent = cur_reexec_skipped_validate_silent;
 	prev_reexec_window_cap_hit          = cur_reexec_window_cap_hit;
+	prev_reexec_pending_dropped         = cur_reexec_pending_dropped;
+	{
+		unsigned int cs;
+		for (cs = 0; cs < CMP_HINT_CALLSITE_NR; cs++)
+			prev_cmp_hint_callsite[cs] = cur_cmp_hint_callsite[cs];
+	}
 	last_dump = now;
 }
 
