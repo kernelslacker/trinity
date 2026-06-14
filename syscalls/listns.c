@@ -26,11 +26,13 @@
 #ifndef NS_ID_REQ_SIZE_VER0
 struct ns_id_req {
 	__u32 size;
-	__u32 ns_type;
+	__u32 spare;
 	__u64 ns_id;
+	__u32 ns_type;
+	__u32 spare2;
 	__u64 user_ns_id;
 };
-#define NS_ID_REQ_SIZE_VER0	24
+#define NS_ID_REQ_SIZE_VER0	32
 #endif
 
 #ifndef LISTNS_CURRENT_USER
