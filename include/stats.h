@@ -2167,6 +2167,30 @@ struct stats_s {
 	 * correlate with deferred_free_enomem_drain. */
 	unsigned long deferred_free_tracked_free_unverified_leak;
 
+	/* slot_owns() gate refused to free a deferred-ring candidate
+	 * because the slot's per-admission provenance no longer
+	 * matches: ring[slot].ptr != the base captured at admission,
+	 * or the slot's cookie does not validate against the recorded
+	 * generation+slot+per-init secret.  Reads only ring[] (mprotect-
+	 * armored AND registered with shared_regions[]), never the
+	 * value-keyed inflight_hash mirror that used to gate eviction
+	 * and TTL-drain.  Fires from the three free-gates:
+	 *
+	 *   - ring_evict_oldest_safe()    full-ring eviction in admit
+	 *   - free_ring_entry()           TTL-drain in tick + child-exit flush
+	 *   - tracked_free_now()'s        synchronous-free path
+	 *     ring_owns_ptr() probe
+	 *
+	 * Bumped on the reject path before the breadcrumb log line; the
+	 * candidate is leaked (child exit reclaims) rather than free()d
+	 * so an ASAN run does not synthesise a bad-free that hides the
+	 * real scribble.  Non-zero rate means a sibling fuzzed value-
+	 * result syscall is scribbling the ring slot between admission
+	 * and free -- the same class the per-PC ring fed by
+	 * deferred_free_reject_bump() instruments for the enqueue side.
+	 * Multi-producer; uses RELAXED add-fetch from any child. */
+	unsigned long deferred_free_slot_cookie_mismatch;
+
 	/* Bumped by run_sequence_chain() when chain_corpus_pick() returns
 	 * a chain_entry whose len is zero or greater than MAX_SEQ_LEN.
 	 * The chain corpus is shared memory and tolerates lockless reads
