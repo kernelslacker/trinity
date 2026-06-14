@@ -356,7 +356,7 @@ struct syscallentry syscall_openat2 = {
 struct syscallentry syscall_open_by_handle_at = {
 	.name = "open_by_handle_at",
 	.num_args = 3,
-	.argtype = { [0] = ARG_FD, [1] = ARG_ADDRESS, [2] = ARG_OP },
+	.argtype = { [0] = ARG_FD, [1] = ARG_STRUCT_PTR_IN, [2] = ARG_OP },
 	.argname = { [0] = "mountdirfd", [1] = "handle", [2] = "flags" },
 	.arg_params[2].list = ARGLIST(open_o_flags_base),
 	.rettype = RET_FD,

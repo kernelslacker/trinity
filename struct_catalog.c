@@ -5499,6 +5499,25 @@ static const struct struct_field sctp_paddrparams_fields[] = {
 #endif
 
 /* ------------------------------------------------------------------ */
+/* struct file_handle (open_by_handle_at)                              */
+/* ------------------------------------------------------------------ */
+
+/*
+ * open_by_handle_at's a2 is a struct file_handle followed by a
+ * variable-length opaque f_handle[] payload.  Catalog the two leading
+ * scalar fields so the schema-aware fill produces coherent
+ * (handle_bytes, handle_type) values and KCOV-CMP learned constants
+ * land at the named slot rather than at a coincidentally-same-width
+ * offset in the surrounding opaque buffer.  The flexible tail is
+ * intentionally omitted: a fuzzed handle_bytes greater than the sized
+ * buffer exercises the kernel's bounds check.
+ */
+static const struct struct_field file_handle_fields[] = {
+	FIELD(struct file_handle, handle_bytes),
+	FIELD(struct file_handle, handle_type),
+};
+
+/* ------------------------------------------------------------------ */
 /* The catalog itself                                                   */
 /* ------------------------------------------------------------------ */
 
@@ -6030,6 +6049,12 @@ const struct struct_desc struct_catalog[] = {
 		.num_fields	= ARRAY_SIZE(sctp_paddrparams_fields),
 	},
 #endif
+	[SC_FILE_HANDLE] = {
+		.name		= "file_handle",
+		.struct_size	= sizeof(struct file_handle),
+		.fields		= file_handle_fields,
+		.num_fields	= ARRAY_SIZE(file_handle_fields),
+	},
 };
 
 /*
@@ -6497,6 +6522,13 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * flags / resolve slot.
 	 */
 	{ "openat2",		3, &struct_catalog[SC_OPEN_HOW] },
+	/*
+	 * open_by_handle_at(int mountdirfd, struct file_handle *handle, int flags)
+	 * a2 (1-indexed) is the file_handle.  Schema-fill produces a coherent
+	 * (handle_bytes, handle_type) pair and exercises the kernel's
+	 * handle_bytes bounds check when fuzzed past the sized buffer.
+	 */
+	{ "open_by_handle_at",	2, &struct_catalog[SC_FILE_HANDLE] },
 	/*
 	 * timer_create(clockid_t, struct sigevent *, timer_t *)
 	 * a2 is ARG_ADDRESS (not ARG_STRUCT_PTR_*), so the bespoke
