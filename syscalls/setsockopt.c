@@ -179,6 +179,12 @@ static socklen_t build_sctp_assoc_value(void *buf)
 	memset(buf, 0, sizeof(struct sctp_assoc_value));
 	return sizeof(struct sctp_assoc_value);
 }
+
+static socklen_t build_sctp_sndinfo(void *buf)
+{
+	memset(buf, 0, sizeof(struct sctp_sndinfo));
+	return sizeof(struct sctp_sndinfo);
+}
 #endif
 
 static socklen_t build_string_ifname(void *buf)
@@ -295,6 +301,7 @@ static const struct sockopt_entry sockopt_table[] = {
 	{ IPPROTO_SCTP, SCTP_MAXSEG,              build_sctp_assoc_value },
 	{ IPPROTO_SCTP, SCTP_MAX_BURST,           build_sctp_assoc_value },
 	{ IPPROTO_SCTP, SCTP_STREAM_SCHEDULER,    build_sctp_assoc_value },
+	{ IPPROTO_SCTP, SCTP_DEFAULT_SNDINFO,     build_sctp_sndinfo },
 #endif
 };
 
