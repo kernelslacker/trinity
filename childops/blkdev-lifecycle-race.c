@@ -19,23 +19,28 @@
  *   Thread A (lifecycle) rotates: open /dev/loop$N, LOOP_SET_FD against
  *     a memfd-backed file truncated to a randomised power-of-two size,
  *     mix of BLKFLSBUF / fsync / fallocate(PUNCH_HOLE|KEEP_SIZE) on the
- *     loop fd, LOOP_CLR_FD, close.  N rotates over 0..7.
+ *     loop fd, LOOP_CLR_FD, close.  N is drawn from the scratch_block
+ *     pool (fds/scratch_block.c) so the device exercised here is always
+ *     a parent-vetted loop allocated via LOOP_CTL_GET_FREE -- a host
+ *     loop number cannot leak in.
  *   Thread B (rescan thrash) tightly opens the same /dev/loop$N and
  *     fires BLKRRPART + BLKFLSBUF + close in a loop.  Stops when thread
  *     A signals via a g_thread_b_stop atomic; thread A always waits a
  *     bounded interval before flipping the stop flag, then pthread_joins.
  *
- * Init-latch (one-shot per process): probe /dev/loop0 with O_RDONLY.
- * ENOENT / EACCES / EPERM / ENXIO latches the op disabled for the
- * remainder of process lifetime; subsequent invocations bail at the top
- * of the entry point.  Same shape as ns_atm_unsupported in atm_vcc_churn
- * and ns_unsupported_wireguard_decrypt_flood in wireguard_decrypt_flood.
+ * Box-safety gate: the entry point bails when the scratch_block pool
+ * has no loop entry (scratch_block_random_loop_num() returns -1).
+ * That covers the non-root degrade path (no parent mount-ns -> no
+ * pool), absent /dev/loop-control, exhausted loop pool, and
+ * --no-startup-isolation.  Latches ns_unsupported once observed so
+ * subsequent invocations short-circuit without a fresh pool query.
  *
  * Self-bounding: per-iter wall-clock cap (~150ms band) inside thread B
  * and a hard BUDGETED iteration cap on thread A.  child.c's SIGALRM(1s)
  * is the outer backstop.  EBUSY / ENXIO / EPERM on LOOP_SET_FD are
- * expected (sibling holds /dev/loop$N, or a concurrent lifecycle worker
- * is mid-cycle) — counted, not failure.
+ * expected (the pool's parent-held loop_fd keeps the backing
+ * configured for the run; a sibling lifecycle worker also holds the
+ * dev) -- counted, not failure.
  *
  * DORMANT in dormant_op_disabled[].  Dave smoke-tests before fleet
  * enable.  No module load, no persistent state outside the per-cycle
@@ -56,6 +61,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "scratch_block.h"
 #include "shm.h"
 #include "trinity.h"
 
@@ -72,7 +78,6 @@
 #define MFD_CLOEXEC	0x0001U
 #endif
 
-#define BLKDEV_LOOP_NR		8U	/* rotate over /dev/loop0..7 */
 #define BLKDEV_BACKING_MIN	4096U	/* 4 KiB */
 #define BLKDEV_BACKING_MAX	(16U << 20)	/* 16 MiB */
 #define BLKDEV_RESCAN_BURST	8U	/* thread B inner cycles per spawn */
@@ -84,37 +89,36 @@ static bool ns_unsupported_blkdev_lifecycle;
 static atomic_int g_thread_b_stop;
 
 struct blkdev_rescan_arg {
-	unsigned int loop_n;
+	int loop_n;
 };
 
-static int blkdev_loop_open(unsigned int n, int flags)
+static int blkdev_loop_open(int n, int flags)
 {
 	char path[32];
 
-	(void)snprintf(path, sizeof(path), "/dev/loop%u", n);
+	(void)snprintf(path, sizeof(path), "/dev/loop%d", n);
 	return open(path, flags);
 }
 
 /*
- * Probe /dev/loop0 once per process.  The latch arms on the kernel
- * answers that don't change across the lifetime of the process: ENOENT
- * (no loop module), EACCES / EPERM (no caps to open block nodes),
- * ENXIO (loop driver bailed early).  Other errnos (EBUSY etc.) are
- * transient and we retry on the next invocation.
+ * Pull a vetted loop number from the scratch_block pool.  Returns
+ * -1 when no loop entry is available (non-root, mnt_ready degraded,
+ * /dev/loop-control absent, pool fully tmpfs-only), and latches
+ * ns_unsupported on first absence so subsequent invocations
+ * short-circuit at the top of the entry point without re-querying.
+ *
+ * The pool is a process-wide singleton populated once in the parent
+ * before fork(); a sentinel today is permanent for this process's
+ * lifetime, so the latch is correct.
  */
-static bool blkdev_latch_probe(void)
+static int blkdev_pick_loop_num(void)
 {
-	int fd;
+	int n;
 
-	fd = blkdev_loop_open(0, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
-	if (fd < 0) {
-		if (errno == ENOENT || errno == EACCES ||
-		    errno == EPERM || errno == ENXIO)
-			ns_unsupported_blkdev_lifecycle = true;
-		return false;
-	}
-	close(fd);
-	return true;
+	n = scratch_block_random_loop_num();
+	if (n < 0)
+		ns_unsupported_blkdev_lifecycle = true;
+	return n;
 }
 
 /*
@@ -169,7 +173,7 @@ static void *blkdev_rescan_thread(void *arg)
  * EBUSY / ENXIO / EPERM on LOOP_SET_FD are the ordinary outcomes when
  * a sibling is mid-cycle on the same node — count and continue.
  */
-static void blkdev_lifecycle_cycle(unsigned int loop_n)
+static void blkdev_lifecycle_cycle(int loop_n)
 {
 	off_t backing_size = blkdev_pick_size();
 	int loop_fd, backing_fd, rc;
@@ -246,13 +250,13 @@ bool blkdev_lifecycle_race(struct childdata *child)
 	if (ns_unsupported_blkdev_lifecycle)
 		return true;
 
-	if (!blkdev_latch_probe()) {
+	ra.loop_n = blkdev_pick_loop_num();
+	if (ra.loop_n < 0) {
 		__atomic_add_fetch(&shm->stats.blkdev_lifecycle_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
 
-	ra.loop_n = (unsigned int)(rand32() % BLKDEV_LOOP_NR);
 	atomic_store_explicit(&g_thread_b_stop, 0, memory_order_release);
 	if (pthread_create(&tid, NULL, blkdev_rescan_thread, &ra) == 0)
 		spawned = true;
