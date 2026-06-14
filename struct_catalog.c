@@ -58,6 +58,9 @@
 #ifdef USE_VSOCK
 #include <linux/vm_sockets.h>
 #endif
+#ifdef USE_CAN
+#include <linux/can.h>
+#endif
 #ifdef USE_RXRPC
 #include <linux/rxrpc.h>
 #endif
@@ -1621,7 +1624,7 @@ static const struct struct_field msghdr_fields[] = {
  * the paired FT_LEN_BYTES (msghdr.msg_namelen) reports the kernel-
  * expected length rather than the full 128-byte envelope.
  *
- * Long-tail families (AF_BLUETOOTH, AF_CAN, AF_RDS, ...) fall
+ * Long-tail families (AF_BLUETOOTH, AF_RDS, ...) fall
  * through to the shared head pass alone: ss_family lands on a known
  * AF value but the rest of the buffer stays opaque, matching today's
  * pre-variant placeholder behaviour for those families.  AF_BLUETOOTH
@@ -1633,6 +1636,9 @@ static const unsigned long sockaddr_storage_af_vocab[] = {
 	AF_UNIX, AF_INET, AF_INET6, AF_NETLINK, AF_PACKET,
 #ifdef USE_VSOCK
 	AF_VSOCK,
+#endif
+#ifdef USE_CAN
+	AF_CAN,
 #endif
 #ifdef USE_RXRPC
 	AF_RXRPC,
@@ -1782,6 +1788,22 @@ static const struct struct_field sockaddr_vm_variant_fields[] = {
 			    .n    = ARRAY_SIZE(vsock_cid_vocab) }),
 	FIELDX(struct sockaddr_vm, svm_flags, FT_FLAGS,
 	       .u.flags.mask = VMADDR_FLAG_TO_HOST),
+};
+#endif
+
+#ifdef USE_CAN
+/*
+ * AF_CAN (sockaddr_can) -- Controller Area Network endpoint.  The
+ * scalar head carries can_ifindex (CAN network interface), which
+ * reaches dispatch as a raw int; FT_RAW covers the surface without
+ * a live ifindex pool.  can_family is omitted; the shared-head pass
+ * already writes ss_family.  The trailing union can_addr is
+ * protocol-specific (raw/bcm/tp16/tp20/mcnet/isotp/j1939) and stays
+ * HELD and zeroed -- the kernel parses it conditional on the socket
+ * protocol and an unmodeled inner address won't bias dispatch.
+ */
+static const struct struct_field sockaddr_can_variant_fields[] = {
+	FIELD(struct sockaddr_can, can_ifindex),
 };
 #endif
 
@@ -2221,6 +2243,15 @@ static const struct union_variant sockaddr_storage_variants[] = {
 		.fields		 = sockaddr_vm_variant_fields,
 		.num_fields	 = ARRAY_SIZE(sockaddr_vm_variant_fields),
 		.effective_size	 = sizeof(struct sockaddr_vm),
+	},
+#endif
+#ifdef USE_CAN
+	{
+		.discrim_value	 = AF_CAN,
+		.name		 = "AF_CAN",
+		.fields		 = sockaddr_can_variant_fields,
+		.num_fields	 = ARRAY_SIZE(sockaddr_can_variant_fields),
+		.effective_size	 = sizeof(struct sockaddr_can),
 	},
 #endif
 #ifdef USE_RXRPC
