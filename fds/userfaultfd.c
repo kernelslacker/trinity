@@ -116,8 +116,16 @@ static int open_userfaultfd(void)
 		fd = userfaultfd_create(flags);
 
 	if (fd < 0) {
+		int err = errno;
+		enum fd_init_reason reason = (err == ENOSYS || err == ENXIO ||
+					      err == ENODEV || err == ENOENT) ?
+				FD_INIT_REASON_CONFIG_ABSENT :
+				(err == EACCES || err == EPERM) ?
+				FD_INIT_REASON_CAP_MISSING :
+				FD_INIT_REASON_ERRNO;
 		outputerr("open_userfaultfd: userfaultfd creation failed: %s\n",
-			strerror(errno));
+			strerror(err));
+		fd_provider_init_fail(reason, err, "userfaultfd_create");
 		return false;
 	}
 
@@ -126,6 +134,7 @@ static int open_userfaultfd(void)
 	obj = alloc_object();
 	if (obj == NULL) {
 		outputerr("open_userfaultfd: alloc_object failed\n");
+		fd_provider_init_fail(FD_INIT_REASON_RESOURCE, 0, "alloc_object");
 		close(fd);
 		return false;
 	}

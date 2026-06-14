@@ -50,6 +50,49 @@ void dump_fd_provider_names(void);
 void run_fd_provider_child_ops(void);
 
 /*
+ * Reason categories an fd-provider init() can report when it returns
+ * false, so the open_fds() dispatcher can log WHY a provider failed
+ * rather than just THAT it failed.  Without this, the bare
+ * "Error during initialization of <name>" line forced a
+ * post-hoc audit to tell a build-time CONFIG miss (kernel without
+ * CONFIG_IOMMUFD) from a runtime capability gap (no CAP_SYS_ADMIN
+ * for perf_event_open) from a transient resource shortage
+ * (alloc_object failed, no pagecache-backed files in the index).
+ * Per-provider syscall logs already carry the strerror() text, but
+ * a provider whose init returns false from a non-syscall path
+ * (alloc, empty pool, fileindex without eligible files) had no
+ * structured signal at all.
+ *
+ * Providers report via fd_provider_init_fail() at each return-false
+ * site; the dispatcher resets the slot before calling init() and
+ * reads it after init() returns false.  The LAST reported reason on
+ * the path that returned false wins, which matches what callers want
+ * to know.
+ */
+enum fd_init_reason {
+	FD_INIT_REASON_NONE = 0,
+	FD_INIT_REASON_ERRNO,		/* captured_errno is the underlying cause */
+	FD_INIT_REASON_CONFIG_ABSENT,	/* feature missing at kernel build time / no /dev node */
+	FD_INIT_REASON_CAP_MISSING,	/* lacks capability or permission to use the feature */
+	FD_INIT_REASON_RESOURCE,	/* in-process resource shortage (alloc/pool/eligible-input) */
+};
+
+/*
+ * Record the structured reason for the current fd_provider init()
+ * failure.  Call immediately before "return false" in init().  Safe
+ * to call from any provider; the dispatcher in open_fds() resets the
+ * slot before each init() and consumes it after a false return.
+ * @captured_errno may be 0 when the reason is not errno-derived
+ * (e.g. CONFIG_ABSENT determined at build time, RESOURCE for an
+ * empty input pool).  @detail is a short tag string (e.g. the
+ * syscall or pool name); NULL is accepted.
+ */
+void fd_provider_init_fail(enum fd_init_reason reason, int captured_errno,
+			   const char *detail);
+
+const char *fd_init_reason_name(enum fd_init_reason r);
+
+/*
  * Return the name of the registered fd_provider whose objtype matches
  * the supplied enum value, or NULL when no provider claims that type.
  * Used by dump_stats() to label the per-provider outstanding-fd gauge

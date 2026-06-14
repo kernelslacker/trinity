@@ -77,14 +77,23 @@ static int open_seccomp_notif(void)
 
 	fd = create_seccomp_notif_fd();
 	if (fd < 0) {
+		int err = errno;
+		enum fd_init_reason reason = (err == ENOSYS) ?
+				FD_INIT_REASON_CONFIG_ABSENT :
+				(err == EACCES || err == EPERM) ?
+				FD_INIT_REASON_CAP_MISSING :
+				FD_INIT_REASON_ERRNO;
 		outputerr("open_seccomp_notif: seccomp(SET_MODE_FILTER, NEW_LISTENER) failed: %s\n",
-			strerror(errno));
+			strerror(err));
+		fd_provider_init_fail(reason, err,
+				      "seccomp(SET_MODE_FILTER, NEW_LISTENER)");
 		return false;
 	}
 
 	obj = alloc_object();
 	if (obj == NULL) {
 		outputerr("open_seccomp_notif: alloc_object failed\n");
+		fd_provider_init_fail(FD_INIT_REASON_RESOURCE, 0, "alloc_object");
 		close(fd);
 		return false;
 	}
