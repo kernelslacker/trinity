@@ -1912,6 +1912,15 @@ static bool redqueen_reexec_step(struct childdata *child,
 	if (kcov_shm != NULL) {
 		__atomic_fetch_add(&kcov_shm->reexec_attempts, 1UL,
 				   __ATOMIC_RELAXED);
+		/* per-nr partition of the re-exec attempt
+		 * counter.  Reaching this site means the destructive /
+		 * validate_silent / slot-bounds gates above already cleared,
+		 * so the bump is attributed to the same syscall that the
+		 * inner dispatch_step will actually re-run. */
+		if (rec->nr < MAX_NR_SYSCALL)
+			__atomic_fetch_add(
+				&kcov_shm->reexec_attempts_by_syscall[rec->nr],
+				1UL, __ATOMIC_RELAXED);
 	}
 	child->reexec_count_window++;
 
@@ -1936,6 +1945,19 @@ static bool redqueen_reexec_step(struct childdata *child,
 				__atomic_fetch_add(
 					&kcov_shm->per_syscall_cmp_novelty_reexec[rec->nr],
 					inner_new_cmp, __ATOMIC_RELAXED);
+			/* per-slot success counter.  Pair
+			 * with reexec_attribution_slot_hist (the per-slot
+			 * attempt-attribution histogram) to read per-slot
+			 * success rate -- a slot that attracts the bulk of
+			 * attributions but produces no novelty wins is
+			 * wasted re-exec budget.  p->slot is 1-based and
+			 * was bounds-checked at the consumer-side
+			 * (p->slot <= entry->num_args) gate above. */
+			if (p->slot >= 1 &&
+			    p->slot <= CMP_REDQUEEN_SLOT_HIST_NR)
+				__atomic_fetch_add(
+					&kcov_shm->reexec_success_by_slot[p->slot - 1],
+					1UL, __ATOMIC_RELAXED);
 		}
 	}
 

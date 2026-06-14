@@ -499,6 +499,7 @@ void clean_childdata(struct childdata *child)
 	child->redqueen_enabled = false;
 	child->reexec_count_window = 0;
 	child->reexec_window_start_op = 0;
+	child->cmp_hint_injected_this_call = false;
 
 	/* Clear any __BUG() stamp left by the prior occupant of this slot
 	 * so the parent's zombie-pending warning doesn't mis-attribute the

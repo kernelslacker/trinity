@@ -63,6 +63,54 @@ static unsigned int cmp_hint_inject_denom(unsigned int baseline)
 	return baseline;
 }
 
+/*
+ * bookkeeping for a committed cmp_hint injection.
+ *
+ * Called from each of the four argtype-handler callsites that pull a
+ * cmp_hints_try_get() hint and commit it to a produced syscall arg.
+ * Centralised so the observability counters stay in lock-step: any new
+ * injection callsite gets the full row of bumps via a single helper
+ * call instead of three open-coded atomics.  Effects:
+ *  - bumps the existing flat cmp_hints_injected counter so the legacy
+ *    consumers (periodic dump, JSON dump) keep working unchanged;
+ *  - bumps the per-nr per_syscall_cmp_injected[rec->nr] partition that
+ *    pairs with per_syscall_cmp_attempts / _returned at the producer
+ *    side;
+ *  - bumps the per-callsite bucket counter so the "which argtype
+ *    handler is responsible for the bulk of injections" question is
+ *    answerable from the same dump;
+ *  - sets the per-child cmp_hint_injected_this_call latch that
+ *    kcov_collect()'s found_new branch reads to attribute a PC-edge
+ *    win to the cmp-hint pipeline.
+ */
+static void credit_cmp_hint_injection(struct syscallrecord *rec,
+				      enum cmp_hint_callsite callsite)
+{
+	struct childdata *child;
+
+	if (kcov_shm != NULL) {
+		__atomic_fetch_add(&kcov_shm->cmp_hints_injected,
+				   1UL, __ATOMIC_RELAXED);
+		if (rec->nr < MAX_NR_SYSCALL)
+			__atomic_fetch_add(
+				&kcov_shm->per_syscall_cmp_injected[rec->nr],
+				1UL, __ATOMIC_RELAXED);
+		if ((unsigned int)callsite < (unsigned int)CMP_HINT_CALLSITE_NR)
+			__atomic_fetch_add(
+				&kcov_shm->cmp_hint_callsite_injected[callsite],
+				1UL, __ATOMIC_RELAXED);
+	}
+
+	/* Per-call latch: read in kcov_collect()'s found_new branch.
+	 * generate_syscall_args() clears the flag at the top of each new
+	 * call, so a stale true from a prior call cannot survive.  Parent-
+	 * context this_child()==NULL is benign: the flag has no parent-side
+	 * consumer, so the helper is a quiet no-op in that path. */
+	child = this_child();
+	if (child != NULL)
+		child->cmp_hint_injected_this_call = true;
+}
+
 /* ONE_IN denominator for substituting a wrong-subtype fd (or a generic
  * pool fd) into a typed-fd argument slot.  Trades a small fraction of
  * the precision win that typed-fd dispatch buys for coverage of the
@@ -188,9 +236,7 @@ static unsigned long handle_arg_op(struct syscallentry *entry,
 	 * CMP_RISING_PC_FLAT. */
 	if (ONE_IN(cmp_hint_inject_denom(CMP_HINT_INJECT_DENOM_BASELINE)) &&
 	    cmp_hints_try_get(call, rec->do32bit, &hint)) {
-		if (kcov_shm != NULL)
-			__atomic_fetch_add(&kcov_shm->cmp_hints_injected,
-					   1UL, __ATOMIC_RELAXED);
+		credit_cmp_hint_injection(rec, CMP_HINT_CALLSITE_ARG_OP);
 		return hint;
 	}
 
@@ -226,9 +272,7 @@ static unsigned long handle_arg_list(struct syscallentry *entry,
 	 * CMP_RISING_PC_FLAT. */
 	if (ONE_IN(cmp_hint_inject_denom(CMP_HINT_INJECT_DENOM_BASELINE)) &&
 	    cmp_hints_try_get(call, rec->do32bit, &hint)) {
-		if (kcov_shm != NULL)
-			__atomic_fetch_add(&kcov_shm->cmp_hints_injected,
-					   1UL, __ATOMIC_RELAXED);
+		credit_cmp_hint_injection(rec, CMP_HINT_CALLSITE_ARG_LIST);
 		mask = set_rand_bitmask(num, values);
 		mask |= hint;
 		return mask;
@@ -440,9 +484,7 @@ static unsigned long gen_undefined_arg(struct syscallentry *entry __unused__,
 	 * when the hint try missed. */
 	if (ONE_IN(cmp_hint_inject_denom(9)) &&
 	    cmp_hints_try_get(call, rec->do32bit, &hint)) {
-		if (kcov_shm != NULL)
-			__atomic_fetch_add(&kcov_shm->cmp_hints_injected,
-					   1UL, __ATOMIC_RELAXED);
+		credit_cmp_hint_injection(rec, CMP_HINT_CALLSITE_ARG_UNDEFINED);
 		return hint;
 	}
 
@@ -3023,9 +3065,7 @@ static unsigned long gen_arg_struct_size(struct syscallentry *entry,
 
 	if (ONE_IN(cmp_hint_inject_denom(10)) &&
 	    cmp_hints_try_get(rec->nr, rec->do32bit, &hint)) {
-		if (kcov_shm != NULL)
-			__atomic_fetch_add(&kcov_shm->cmp_hints_injected,
-					   1UL, __ATOMIC_RELAXED);
+		credit_cmp_hint_injection(rec, CMP_HINT_CALLSITE_ARG_STRUCT_SIZE);
 		return hint;
 	}
 
@@ -3859,6 +3899,7 @@ void generic_free_arg(struct syscallentry *entry, struct syscallrecord *rec)
 void generate_syscall_args(struct syscallrecord *rec)
 {
 	struct syscallentry *entry;
+	struct childdata *child;
 
 	srec_publish_begin(rec);
 
@@ -3868,6 +3909,18 @@ void generate_syscall_args(struct syscallrecord *rec)
 		return;
 	}
 	__atomic_store_n(&rec->state, PREP, __ATOMIC_RELAXED);
+
+	/* reset the per-call cmp-hint latch so each new
+	 * call starts with a fresh "no hint injected yet" state.  Any of
+	 * the four argtype-handler callsites below that pulls a hint via
+	 * cmp_hints_try_get() sets the flag through credit_cmp_hint_injection
+	 * before the dispatch lands; kcov_collect()'s found_new branch then
+	 * reads it to credit per_syscall_cmp_hint_pc_wins[nr].  Parent-
+	 * context this_child()==NULL skips the clear -- the flag has no
+	 * parent-side consumer. */
+	child = this_child();
+	if (child != NULL)
+		child->cmp_hint_injected_this_call = false;
 
 	/* Reset post_state on every syscall step, before any branch.
 	 * generic_sanitise() also clears it, but the minicorpus-replay
