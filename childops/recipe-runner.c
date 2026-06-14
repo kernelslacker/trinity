@@ -723,10 +723,16 @@ out:
  * inside the kernel, which is the more interesting variant — the private
  * path is what most application code hits.
  *
- * Filter the pool draw on PROT_READ | PROT_WRITE: the recipe writes the
- * value word before the FUTEX_WAIT and the kernel reads it during the
- * cmpxchg in futex_wait_setup.  Drawing a PROT_READ-only or PROT_NONE
- * pool entry would SEGV on the value-word store before the futex syscall.
+ * Restrict the draw to the OBJ_MMAP_ANON pool, and filter further on
+ * PROT_READ | PROT_WRITE: the recipe writes the value word before the
+ * FUTEX_WAIT and the kernel reads it during the cmpxchg in
+ * futex_wait_setup.  A PROT_READ-only or PROT_NONE entry would SEGV on
+ * the value-word store before the futex syscall; a FILE/TESTFILE-backed
+ * entry can be prot-RW yet have an un-faultable first page (a sibling
+ * truncate / hole-punch / fallocate range-zero left a hole behind a
+ * still-RW VMA), so the store would SIGBUS BUS_ADRERR before the futex
+ * syscall.  Anon-pool entries are zero-fill with no backing file, so
+ * the first-page store is always faultable.
  *
  * The pool owns the mapping: do NOT munmap on cleanup.  Sibling recipes
  * draw from the same pool, so they will sometimes target the same futex
@@ -743,7 +749,7 @@ static bool recipe_futex(bool *unsupported __unused__)
 	uint32_t *futex_addr = NULL;
 	bool ok = false;
 
-	m = get_map_with_prot(PROT_READ | PROT_WRITE);
+	m = get_anon_map_with_prot(PROT_READ | PROT_WRITE);
 	if (m == NULL)
 		goto out;
 	futex_addr = (uint32_t *)m->ptr;

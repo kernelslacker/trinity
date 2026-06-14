@@ -378,6 +378,39 @@ struct map * get_map_with_prot(int required_prot)
 }
 
 /*
+ * Like get_map_with_prot(), but additionally restricts the draw to the
+ * OBJ_MMAP_ANON pool.  Required by consumers that store to the region
+ * synchronously (no fault guard) before issuing the syscall under test:
+ * a FILE/TESTFILE-backed entry can be prot-RW yet have an un-faultable
+ * first page when a sibling syscall (truncate / hole-punch / fallocate
+ * range-zero) has left a hole behind a still-RW VMA, and the store then
+ * SIGBUSes BUS_ADRERR before the syscall is reached.  Anon-pool entries
+ * are zero-fill with no backing file (tracked_size == size), so every
+ * page inside [ptr, ptr+size) is always faultable.
+ *
+ * Same retry budget as get_map_with_prot(); get_map_handle() supplies
+ * the alloc-track / bogus-ptr armor on each pick.  Returns NULL if no
+ * matching entry is drawn within the budget.
+ */
+struct map * get_anon_map_with_prot(int required_prot)
+{
+	for (int i = 0; i < 1000; i++) {
+		struct map_handle h;
+
+		if (!get_map_handle(&h))
+			return NULL;
+
+		if (h.type != OBJ_MMAP_ANON)
+			continue;
+
+		if ((h.map->prot & required_prot) == required_prot)
+			return h.map;
+	}
+
+	return NULL;
+}
+
+/*
  * Destructor for OBJ_LOCAL mmap entries (init_child_mappings copies and
  * the children's own runtime mmaps).  The obj struct and the name string
  * both live on the calling process's private heap, so we use the regular
