@@ -5662,6 +5662,32 @@ static const struct struct_field sctp_paddrparams_fields[] = {
 	FIELDX(struct sctp_paddrparams, spp_dscp, FT_RAW,
 	       .mutate_weight = 40),
 };
+
+/*
+ * struct sctp_probeinterval -- IPPROTO_SCTP / SCTP_PLPMTUD_PROBE_INTERVAL.
+ * PLPMTUD (Packetization Layer Path MTU Discovery, RFC 8899) probe-interval
+ * knob exposed by SCTP.  spi_assoc_id (sctp_assoc_t / __u32) picks the
+ * target association -- FT_RAW so the per-assoc lookup constant shows up
+ * to KCOV-CMP.  spi_address embeds a struct sockaddr_storage and is
+ * treated as a single opaque FT_RAW blob; the kernel matches it against
+ * the live peer address list rather than parsing it field-wise, so the
+ * per-byte splat is the right shape and field-splitting it would just
+ * give KCOV-CMP misleading sub-field offsets for a value that is
+ * logically atomic.  spi_interval is the probe interval in milliseconds
+ * (__u32, unsigned) -- FT_RANGE [0, 60000] keeps the splat inside the
+ * documented kernel envelope (0 disables, otherwise plausible PMTUD
+ * cadence) rather than scattering across the full u32 space.  Bespoke
+ * build_sctp_probeinterval() zero-fills as a miss-fallback.
+ */
+static const struct struct_field sctp_probeinterval_fields[] = {
+	FIELDX(struct sctp_probeinterval, spi_assoc_id, FT_RAW,
+	       .mutate_weight = 60),
+	FIELDX(struct sctp_probeinterval, spi_address, FT_RAW,
+	       .mutate_weight = 40),
+	FIELDX(struct sctp_probeinterval, spi_interval, FT_RANGE,
+	       .u.range = { 0, 60000 },
+	       .mutate_weight = 60),
+};
 #endif
 
 /* ------------------------------------------------------------------ */
@@ -6230,6 +6256,12 @@ const struct struct_desc struct_catalog[] = {
 		.struct_size	= sizeof(struct sctp_paddrparams),
 		.fields		= sctp_paddrparams_fields,
 		.num_fields	= ARRAY_SIZE(sctp_paddrparams_fields),
+	},
+	[SC_SCTP_PROBEINTERVAL] = {
+		.name		= "sctp_probeinterval",
+		.struct_size	= sizeof(struct sctp_probeinterval),
+		.fields		= sctp_probeinterval_fields,
+		.num_fields	= ARRAY_SIZE(sctp_probeinterval_fields),
 	},
 #endif
 	[SC_FILE_HANDLE] = {
@@ -7372,6 +7404,13 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 		.discrim_value		= IPPROTO_SCTP,
 		.discrim2_arg_idx	= 3,
 		.discrim2_value		= SCTP_PEER_ADDR_PARAMS,
+	},
+	{
+		"setsockopt", 4, &struct_catalog[SC_SCTP_PROBEINTERVAL],
+		.discrim_arg_idx	= 2,
+		.discrim_value		= IPPROTO_SCTP,
+		.discrim2_arg_idx	= 3,
+		.discrim2_value		= SCTP_PLPMTUD_PROBE_INTERVAL,
 	},
 #endif
 	/*
