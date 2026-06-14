@@ -34,7 +34,7 @@ struct ns_id_req {
 #endif
 
 #ifndef LISTNS_CURRENT_USER
-#define LISTNS_CURRENT_USER	(1 << 0)
+#define LISTNS_CURRENT_USER	0xffffffffffffffffULL
 #endif
 
 #ifndef CLONE_NEWCGROUP
