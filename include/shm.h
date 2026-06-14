@@ -254,19 +254,35 @@ struct shm_s {
 	 * parent.  Per-child IPC/IO/PID unshares stay exactly where they
 	 * are (cheap, per-child, no parent provisioning required).
 	 *
+	 * The net and mount halves latch independently: a successful
+	 * unshare(CLONE_NEWNET) plus lo provisioning sets net_ready even
+	 * if the MS_PRIVATE remount on the mount side failed, and vice
+	 * versa.  Children consult each latch on its own and fall back to
+	 * the per-child unshare path for whichever half degraded.
+	 *
 	 * RELAXED atomic accesses match the no_private_ns / no_pidns
 	 * latch convention -- the writes happen before fork_children(),
 	 * and the fork() itself supplies the cross-process happens-before
 	 * edge to every child reader.
 	 *
-	 * Stage 1 of TRACK 13 only ships these two latches; Stage 2
-	 * (scratch block pool) and Stage 3 (private network provisioning)
-	 * extend this struct with the loop-fd pool and the netns_fd
-	 * freebie.
+	 * netns_fd: dup'd /proc/self/ns/net handle to the provisioned
+	 *   netns, opened by setup_startup_isolation() once net_ready
+	 *   latches.  Stashed here so childops driving the BPF link API
+	 *   attach types whose target_fd is a netns handle (sk_lookup,
+	 *   flow_dissector, sk_reuseport) can pull a ready-made fd
+	 *   instead of re-opening /proc/self/ns/net per call.  Sentinel
+	 *   -1 means "not published" -- either net_ready is false (so
+	 *   reading this field is meaningless anyway) or net_ready
+	 *   latched but the open failed (best-effort: net provisioning
+	 *   is still done, only the BPF-link freebie is absent).
+	 *   Initialised to -1 by create_shm() over the top of the
+	 *   memset-zero so the sentinel is honest even before the parent
+	 *   has run its setup pass.
 	 */
 	struct {
 		bool net_ready;
 		bool mnt_ready;
+		int netns_fd;
 	} isolation;
 
 	/*
