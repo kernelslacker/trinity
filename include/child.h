@@ -902,6 +902,13 @@ void canary_queue_on_child_respawn(int childno);
 bool canary_slot_active(int childno);
 enum child_op_type canary_active_op(void);
 
+/* Returns true iff the canary queue has graduated the given op into
+ * CANARY_STATE_PROMOTED.  Used by parent-side post-mortem paths (e.g.
+ * the watchdog kill record) to attribute a stuck child to a recently-
+ * promoted op.  Returns false when the queue is disabled, when the op
+ * is out of range, or for any non-promoted state. */
+bool canary_op_is_promoted(enum child_op_type op);
+
 void set_dontkillme(struct childdata *child, bool state);
 
 void reap_child(struct childdata *child, int childno);
