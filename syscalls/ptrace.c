@@ -15,6 +15,20 @@
 #include "utils.h"
 #include "compat.h"
 
+/* Requests added after trinity's original definitions */
+#ifndef PTRACE_SECCOMP_GET_FILTER
+#define PTRACE_SECCOMP_GET_FILTER	0x420c
+#endif
+#ifndef PTRACE_SECCOMP_GET_METADATA
+#define PTRACE_SECCOMP_GET_METADATA	0x420d
+#endif
+#ifndef PTRACE_GET_SYSCALL_INFO
+#define PTRACE_GET_SYSCALL_INFO		0x420e
+#endif
+#ifndef PTRACE_GET_RSEQ_CONFIGURATION
+#define PTRACE_GET_RSEQ_CONFIGURATION	0x420f
+#endif
+
 /*
  * Snapshot of the heap allocation sanitise hands to the kernel via
  * rec->a4, captured at sanitise time and consumed by the post handler.
@@ -22,7 +36,7 @@
  * the post path is immune to a sibling syscall scribbling rec->a1 or
  * rec->a4 between the syscall returning and the post handler running.
  *
- * Per-op allocation matrix.  Of the 25 PTRACE_* requests this generator
+ * Per-op allocation matrix.  Of the 29 PTRACE_* requests this generator
  * knows about, only four allocate a heap buffer that the post handler
  * has to free:
  *
@@ -31,7 +45,7 @@
  *   PTRACE_SETSIGMASK  -> sigset_t *
  *   PTRACE_GETSIGMASK  -> sigset_t *
  *
- * The other 21 requests feed rec->a4 with non-heap values -- signals,
+ * The other 25 requests feed rec->a4 with non-heap values -- signals,
  * immediate bitmasks, addresses from get_address() / get_writable_-
  * address(), or zero -- and leave snap->data NULL.  The post handler
  * dispatches off the snapshot, not rec->a1, so a sibling scribble of
@@ -92,6 +106,8 @@ static const unsigned long ptrace_reqs_siginfo[] = {
 	PTRACE_SETSIGMASK, PTRACE_GETSIGMASK,
 	PTRACE_SETOPTIONS, PTRACE_GETEVENTMSG,
 	PTRACE_PEEKSIGINFO,
+	PTRACE_SECCOMP_GET_FILTER, PTRACE_SECCOMP_GET_METADATA,
+	PTRACE_GET_SYSCALL_INFO, PTRACE_GET_RSEQ_CONFIGURATION,
 };
 
 static const unsigned long ptrace_reqs_control[] = {
@@ -211,6 +227,10 @@ static void sanitise_ptrace(struct syscallrecord *rec)
 	case PTRACE_GETREGS:
 	case PTRACE_GETFPREGS:
 	case PTRACE_GETEVENTMSG:
+	case PTRACE_SECCOMP_GET_FILTER:
+	case PTRACE_SECCOMP_GET_METADATA:
+	case PTRACE_GET_SYSCALL_INFO:
+	case PTRACE_GET_RSEQ_CONFIGURATION:
 		/* data is an output pointer — give it a writable address */
 		rec->a4 = (unsigned long) get_writable_address(page_size);
 		avoid_shared_buffer_out(&rec->a4, page_size);
@@ -324,6 +344,8 @@ static unsigned long ptrace_reqs[] = {
 	PTRACE_SYSCALL, PTRACE_SINGLESTEP, PTRACE_SYSEMU, PTRACE_SYSEMU_SINGLESTEP,
 	PTRACE_KILL, PTRACE_ATTACH, PTRACE_DETACH, PTRACE_GETSIGMASK,
 	PTRACE_SETSIGMASK,
+	PTRACE_SECCOMP_GET_FILTER, PTRACE_SECCOMP_GET_METADATA,
+	PTRACE_GET_SYSCALL_INFO, PTRACE_GET_RSEQ_CONFIGURATION,
 };
 
 struct syscallentry syscall_ptrace = {
