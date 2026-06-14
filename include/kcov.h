@@ -1066,6 +1066,40 @@ enum childop_kcov_attribution_mode {
 
 extern enum childop_kcov_attribution_mode childop_kcov_attr_mode;
 
+/* Per-call PC-edge result struct, optionally filled by kcov_collect().
+ *
+ * The legacy new_edge_count out-param returns bucket_bits only -- the count
+ * of (edge, bucket) bit-flips this call drove into kcov_shm->bucket_seen[].
+ * That conflates "reached new code" with "flipped a new hit-count bucket on
+ * already-warm code".  The result struct splits the signal three ways so
+ * consumers can pick the right one without diffing global shm counters
+ * (racy under concurrent children) or re-walking the trace:
+ *
+ *   bucket_bits
+ *       Identical to the legacy new_edge_count: number of bucket-mask bit
+ *       transitions 0->1 in bucket_seen[] this call.  A re-hit of a known
+ *       PC that lands in a never-seen bucket still bumps this.
+ *   distinct_edges
+ *       True first-sighting count: number of PCs this call drove from
+ *       bucket_seen[edge] == 0 (no bucket bit ever set) to non-zero.
+ *       Filters out the bucket-churn component of bucket_bits, leaving
+ *       only "new code reached" events.  Mirrors at the per-call
+ *       granularity what kcov_shm->distinct_edges tracks globally.
+ *   local_distinct_pcs
+ *       Count of dedup_inc() first-sight events: distinct PCs walked
+ *       in this call's trace buffer regardless of whether the global
+ *       bitmap had already seen them.  A measure of the trace's own
+ *       width independent of cross-run / cross-child history.
+ *
+ * All three are populated when result is non-NULL; pass NULL when only
+ * the legacy bucket-bits signal is wanted.  No extra atomics: the
+ * counters fall out of the existing PC walk. */
+struct kcov_pc_result {
+	unsigned long bucket_bits;
+	unsigned long distinct_edges;
+	unsigned long local_distinct_pcs;
+};
+
 /* After disabling, collect PCs and update the global bitmap.
  *
  * Returns true if new coverage was found (i.e. this call set at least one
@@ -1081,13 +1115,22 @@ extern enum childop_kcov_attribution_mode childop_kcov_attr_mode;
  * the global counter before/after and diff it, which is racy under
  * concurrent children that also bump the global.
  *
+ * If result is non-NULL it is filled with the per-call counts described
+ * on struct kcov_pc_result: bucket_bits (same value the new_edge_count
+ * out-param would receive), distinct_edges (true first-sighting count,
+ * filters bucket-churn out of bucket_bits), and local_distinct_pcs
+ * (dedup_inc() first-sight events).  Pass NULL when only the legacy
+ * bucket-bits signal is wanted; new_edge_count and result may be used
+ * together or independently.
+ *
  * nr is the syscall number for per-syscall edge tracking.  do32 is the
  * KCOV mode bit indicating 32-bit-record collection (snapshotted from the
  * child's current syscall record at set_syscall_nr time, matching how
  * kcov_collect_cmp already receives it).  Threaded into dedup_inc() and
  * reserved for per-syscall diagnostic indexing. */
 bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
-		  unsigned long *new_edge_count);
+		  unsigned long *new_edge_count,
+		  struct kcov_pc_result *result);
 
 /* After disabling, drain the CMP buffer into the per-syscall hint pool
  * and bump the CMP-records-collected counter.  No-op when cmp_capable

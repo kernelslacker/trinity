@@ -1176,7 +1176,7 @@ unsigned long kcov_bracket_end(struct kcov_child *kc,
 	 * and op_nr >= CHILDOP_KCOV_NR_BASE bypasses the per-syscall arrays
 	 * inside kcov_collect, so the do32 dimension is unused on this path;
 	 * pass false as the conservative default. */
-	kcov_collect(kc, (unsigned int)op_nr, false, &edges_this_call);
+	kcov_collect(kc, (unsigned int)op_nr, false, &edges_this_call, NULL);
 	kc->bracket_owned = false;
 	return edges_this_call;
 }
@@ -1358,12 +1358,14 @@ static unsigned int dedup_inc(struct kcov_dedup_slot *dedup, unsigned int edge,
 }
 
 bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
-		  unsigned long *new_edge_count)
+		  unsigned long *new_edge_count,
+		  struct kcov_pc_result *result)
 {
 	unsigned long count;
 	unsigned long idx;
 	unsigned long call_nr;
 	unsigned long edges_this_call = 0;
+	unsigned long distinct_edges_this_call = 0;
 	unsigned long local_distinct_pcs = 0;
 	unsigned long transitions_this_call = 0;
 	bool found_new = false;
@@ -1383,6 +1385,11 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 
 	if (new_edge_count != NULL)
 		*new_edge_count = 0;
+	if (result != NULL) {
+		result->bucket_bits = 0;
+		result->distinct_edges = 0;
+		result->local_distinct_pcs = 0;
+	}
 
 	if (!kc->active)
 		return false;
@@ -1556,9 +1563,11 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 			 * the bucket-bit churn that drives edges_found, so
 			 * the plateau detector can sample a delta that
 			 * actually falls to zero on flat runs. */
-			if (old == 0)
+			if (old == 0) {
 				__atomic_fetch_add(&kcov_shm->distinct_edges,
 					1, __ATOMIC_RELAXED);
+				distinct_edges_this_call++;
+			}
 		}
 
 		prev_edge = edge;
@@ -1739,6 +1748,11 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 
 	if (new_edge_count != NULL)
 		*new_edge_count = edges_this_call;
+	if (result != NULL) {
+		result->bucket_bits = edges_this_call;
+		result->distinct_edges = distinct_edges_this_call;
+		result->local_distinct_pcs = local_distinct_pcs;
+	}
 
 	return found_new;
 }
