@@ -167,6 +167,19 @@ extern char *memory_high_arg;
 extern char *memory_swap_max_arg;
 extern bool no_cgroup;
 
+/*
+ * --no-startup-isolation: operator opt-out for the parent-side
+ * net/mount-ns spine.  Default false: when launched as root we
+ * unshare into a private net+mount ns and remount '/' as MS_REC|
+ * MS_PRIVATE before forking.  Flag set => behave as today (skip the
+ * parent unshare entirely, every child does its own per-child
+ * unshare in init_child_setup_sandbox).  Useful for debugging the
+ * per-child path or running on a host where parent-side ns
+ * provisioning misbehaves.  Non-root runs ignore this flag --
+ * setup_startup_isolation() never attempts the syscalls there.
+ */
+extern bool no_startup_isolation;
+
 extern char *stats_log_path;
 
 void enable_disable_fd_usage(void);

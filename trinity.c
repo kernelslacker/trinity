@@ -17,6 +17,7 @@
 #include "fd.h"
 #include "files.h"
 #include "ioctls.h"
+#include "isolation.h"
 #include "kcov.h"
 #include "kmsg-monitor.h"
 #include "maps.h"
@@ -712,6 +713,20 @@ static void init_pre_fork(void)
 	init_syscalls();
 
 	do_uid0_check();
+
+	/*
+	 * Parent-side startup-isolation spine: when running as root and
+	 * the operator did not pass --no-startup-isolation, unshare the
+	 * parent into a private net + mount ns and remount '/' as
+	 * MS_REC|MS_PRIVATE so subsequent child mount/net churn cannot
+	 * propagate back to the host.  Children inherit the provisioned
+	 * ns via fork() and skip their per-child unshare in
+	 * init_child_setup_sandbox.  Any failure (non-root, --no-startup-
+	 * isolation, EPERM, ENOSYS) leaves shm->isolation.{net,mnt}_ready
+	 * false and the children fall back to today's per-child path --
+	 * byte-for-byte unchanged from a pre-isolation run.
+	 */
+	setup_startup_isolation();
 
 	if (do_specific_domain == true)
 		find_specific_domain(specific_domain_optarg);

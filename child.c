@@ -913,31 +913,42 @@ static void init_child_setup_sandbox(struct childdata *child, int childno)
 	mask_signals_child();
 
 	if (RAND_BOOL()) {
-		/* unshare(CLONE_NEWNS) gives this child its own mount namespace,
-		 * but the new ns inherits propagation mode from the parent.  On
-		 * most distros / is MS_SHARED, so without an explicit MS_PRIVATE
-		 * remount any mount() this child later issues — including the
-		 * random ones from the syscall fuzzer — propagates back into the
-		 * host's mount tree.  Make the new ns recursively private so
-		 * downstream mount churn stays contained.  If the remount is
-		 * rejected (EPERM in some sandboxed configs) we can't undo the
-		 * unshare, so latch shm->no_private_ns to skip future attempts
-		 * and log only the first failure: the child is still usable,
-		 * just not isolated for mount fuzzing. */
-		if (!__atomic_load_n(&shm->no_private_ns, __ATOMIC_RELAXED)) {
-			if (unshare(CLONE_NEWNS) == 0) {
-				if (mount("none", "/", NULL, MS_REC | MS_PRIVATE, NULL) != 0) {
-					if (!__atomic_exchange_n(&shm->no_private_ns, true, __ATOMIC_RELAXED))
-						outputerr("child %d: MS_PRIVATE remount failed (errno=%d) "
-						          "after unshare(CLONE_NEWNS); mounts in this child "
-						          "may propagate to host mount table\n",
-						          childno, errno);
+		/*
+		 * Per-child IPC/IO unshares always run on the coin flip; they
+		 * are cheap, scoped to this child, and require no parent
+		 * provisioning -- the isolation spine deliberately leaves them
+		 * alone.  The net + mount per-child unshares are gated on
+		 * shm->isolation.*_ready: when the parent already provisioned
+		 * (root-started, --no-startup-isolation unset, both syscalls
+		 * succeeded) we inherit the parent's ns via fork() and the
+		 * per-child unshare is redundant.  When either latch is false
+		 * (non-root, EPERM/ENOSYS at parent setup, or operator opt-out)
+		 * we fall back to today's per-child path -- behaviour matches
+		 * a pre-isolation trinity run exactly.
+		 *
+		 * unshare(CLONE_NEWNS) plus the MS_PRIVATE remount: if the
+		 * remount is rejected (EPERM in some sandboxed configs) we
+		 * can't undo the unshare, so latch shm->no_private_ns to skip
+		 * future attempts and log only the first failure -- the child
+		 * is still usable, just not isolated for mount fuzzing.
+		 */
+		if (!__atomic_load_n(&shm->isolation.mnt_ready, __ATOMIC_RELAXED)) {
+			if (!__atomic_load_n(&shm->no_private_ns, __ATOMIC_RELAXED)) {
+				if (unshare(CLONE_NEWNS) == 0) {
+					if (mount("none", "/", NULL, MS_REC | MS_PRIVATE, NULL) != 0) {
+						if (!__atomic_exchange_n(&shm->no_private_ns, true, __ATOMIC_RELAXED))
+							outputerr("child %d: MS_PRIVATE remount failed (errno=%d) "
+							          "after unshare(CLONE_NEWNS); mounts in this child "
+							          "may propagate to host mount table\n",
+							          childno, errno);
+					}
 				}
 			}
 		}
 		unshare(CLONE_NEWIPC);
 		unshare(CLONE_IO);
-		unshare(CLONE_NEWNET);
+		if (!__atomic_load_n(&shm->isolation.net_ready, __ATOMIC_RELAXED))
+			unshare(CLONE_NEWNET);
 	}
 
 	/*

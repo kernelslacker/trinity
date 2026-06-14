@@ -224,6 +224,52 @@ struct shm_s {
 	bool no_private_ns;
 
 	/*
+	 * Parent-provisioned startup-isolation latches.  Set in
+	 * setup_startup_isolation() (called once from init_pre_fork()
+	 * after do_uid0_check(), root-gated, in the parent's brief root
+	 * window before any fork), zeroed by create_shm()'s memset.
+	 * Children read these in init_child_setup_sandbox to decide
+	 * whether to do the per-child net/mount unshare or inherit the
+	 * parent's provisioned ns.
+	 *
+	 * net_ready: true iff the parent successfully entered a private
+	 *   netns (unshare(CLONE_NEWNET) succeeded as part of the
+	 *   combined CLONE_NEWNET|CLONE_NEWNS unshare).  Children skip
+	 *   their per-child unshare(CLONE_NEWNET) -- they already inherit
+	 *   our (empty-but-ours) netns via fork().
+	 *
+	 * mnt_ready: true iff the parent unshare(CLONE_NEWNS) AND the
+	 *   subsequent MS_REC|MS_PRIVATE remount of '/' both succeeded.
+	 *   Children skip the per-child unshare(CLONE_NEWNS) + private-
+	 *   remount dance entirely.  The bar is "containment guaranteed"
+	 *   -- if the private remount failed we DO NOT advertise mnt_ready
+	 *   even though the unshare itself succeeded, so children fall
+	 *   back to their existing per-child path and the no_private_ns
+	 *   latch above keeps log spam bounded.
+	 *
+	 * Either latch false means "degrade to today's per-child unshare
+	 * path".  Non-root, --no-startup-isolation, EPERM or ENOSYS on
+	 * any step all land in the degraded state with zero behaviour
+	 * change vs. a pre-isolation trinity build; logged once by the
+	 * parent.  Per-child IPC/IO/PID unshares stay exactly where they
+	 * are (cheap, per-child, no parent provisioning required).
+	 *
+	 * RELAXED atomic accesses match the no_private_ns / no_pidns
+	 * latch convention -- the writes happen before fork_children(),
+	 * and the fork() itself supplies the cross-process happens-before
+	 * edge to every child reader.
+	 *
+	 * Stage 1 of TRACK 13 only ships these two latches; Stage 2
+	 * (scratch block pool) and Stage 3 (private network provisioning)
+	 * extend this struct with the loop-fd pool and the netns_fd
+	 * freebie.
+	 */
+	struct {
+		bool net_ready;
+		bool mnt_ready;
+	} isolation;
+
+	/*
 	 * Fleet-wide in-flight count of unshare(CLONE_NEWNET) and the
 	 * matching clone()/clone3() flag.  The sanitise hooks for those
 	 * three syscalls bump this on admission and the matching post
