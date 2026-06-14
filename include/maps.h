@@ -103,6 +103,23 @@ bool get_map_handle(struct map_handle *h) __must_check;
 bool validate_map_handle(struct map_handle *h) __must_check;
 
 /*
+ * Map an OBJ_MMAP_* pool type to its bit position in
+ * childdata.mmap_pool_nonempty_mask, or -1 for any other type.
+ * Inlined so the 0<->1 nonempty-transition maintenance in add_object_publish /
+ * __destroy_object stays free of an out-of-line call on the hot
+ * publish/destroy paths.
+ */
+static inline int mmap_pool_bit_for_type(enum objecttype type)
+{
+	switch (type) {
+	case OBJ_MMAP_ANON:	return 0;
+	case OBJ_MMAP_FILE:	return 1;
+	case OBJ_MMAP_TESTFILE:	return 2;
+	default:		return -1;
+	}
+}
+
+/*
  * Process-local ownership validator for runtime mmap() results.
  * Walks the current child's OBJ_LOCAL OBJ_MMAP_* pool and returns true
  * iff [addr, addr+len) is fully contained in at least one runtime

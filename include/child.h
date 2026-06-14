@@ -424,6 +424,30 @@ struct childdata {
 	 * state. */
 	unsigned int maps_local_refill_credit;
 
+	/* Per-child bitmask of nonempty OBJ_LOCAL OBJ_MMAP_* pools, used
+	 * by get_map_handle() to skip pools that are guaranteed to return
+	 * NULL from get_random_object().  Bit 0 = OBJ_MMAP_ANON,
+	 * bit 1 = OBJ_MMAP_FILE, bit 2 = OBJ_MMAP_TESTFILE, matching the
+	 * map_pool_types[] order used by the handle picker.
+	 *
+	 * The picker preserves the prior equal-pool bias: it picks one of
+	 * the set bits uniformly (1/popcount) rather than weighting by
+	 * num_entries.  This deliberately matches the pre-mask uniform
+	 * pick over {ANON, FILE, TESTFILE} restricted to the nonempty
+	 * subset; the only behavior change is that previously-burnt
+	 * iterations on empty pools no longer happen.
+	 *
+	 * Maintained at the 0<->1 transitions of head->num_entries in
+	 * add_object_publish (set bit on first insert) and
+	 * __destroy_object (clear bit on last removal); destroy_objects()
+	 * also flows through __destroy_object so a teardown of a whole
+	 * pool clears the bit too.  Reset in clean_childdata so a slot's
+	 * fresh occupant starts from "all empty" and re-discovers
+	 * non-emptiness through the post-fork init_child_mappings /
+	 * clone_global_mmap_pool seeding (which goes through add_object
+	 * and so naturally re-sets the bits). */
+	unsigned int mmap_pool_nonempty_mask;
+
 	/* Sliding-window state for the per-child storm-rate check.
 	 * storm_check_last_time is the monotonic timestamp at which the
 	 * three local_* counters above last passed the rate gate (or the
