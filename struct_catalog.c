@@ -5229,6 +5229,36 @@ static const struct struct_field sctp_event_fields[] = {
 	       .u.range = { 0, 1 },
 	       .mutate_weight = 50),
 };
+
+/*
+ * struct sctp_paddrthlds -- IPPROTO_SCTP / SCTP_PEER_ADDR_THLDS.  Per-
+ * peer-address retransmit / partial-failure threshold opt (RFC 5062 +
+ * the peer-failure draft).  spt_assoc_id picks the target association
+ * (FT_RAW so the per-assoc lookup constant shows up to KCOV-CMP);
+ * spt_address embeds a struct sockaddr_storage and is treated as a
+ * single opaque FT_RAW blob spanning sizeof(struct sockaddr_storage)
+ * -- the kernel matches it against the live peer address list rather
+ * than parsing it field-wise, so the per-byte splat is the right
+ * shape and field-splitting it would just give KCOV-CMP misleading
+ * sub-field offsets for a value that is logically atomic.
+ * spt_pathmaxrxt is the per-path max retransmit (__u16, FT_RANGE
+ * [0, 16] -- keeps it inside plausible retry budgets) and
+ * spt_pathpfthld is the partial-failure threshold (__u16, FT_RANGE
+ * [0, 16] -- same envelope).  Bespoke build_sctp_paddrthlds()
+ * zero-fills as a miss-fallback.
+ */
+static const struct struct_field sctp_paddrthlds_fields[] = {
+	FIELDX(struct sctp_paddrthlds, spt_assoc_id, FT_RAW,
+	       .mutate_weight = 60),
+	FIELDX(struct sctp_paddrthlds, spt_address, FT_RAW,
+	       .mutate_weight = 40),
+	FIELDX(struct sctp_paddrthlds, spt_pathmaxrxt, FT_RANGE,
+	       .u.range = { 0, 16 },
+	       .mutate_weight = 60),
+	FIELDX(struct sctp_paddrthlds, spt_pathpfthld, FT_RANGE,
+	       .u.range = { 0, 16 },
+	       .mutate_weight = 60),
+};
 #endif
 
 /* ------------------------------------------------------------------ */
@@ -5737,6 +5767,12 @@ const struct struct_desc struct_catalog[] = {
 		.struct_size	= sizeof(struct sctp_event),
 		.fields		= sctp_event_fields,
 		.num_fields	= ARRAY_SIZE(sctp_event_fields),
+	},
+	[SC_SCTP_PADDRTHLDS] = {
+		.name		= "sctp_paddrthlds",
+		.struct_size	= sizeof(struct sctp_paddrthlds),
+		.fields		= sctp_paddrthlds_fields,
+		.num_fields	= ARRAY_SIZE(sctp_paddrthlds_fields),
 	},
 #endif
 };
@@ -6783,6 +6819,13 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 		.discrim_value		= IPPROTO_SCTP,
 		.discrim2_arg_idx	= 3,
 		.discrim2_value		= SCTP_EVENT,
+	},
+	{
+		"setsockopt", 4, &struct_catalog[SC_SCTP_PADDRTHLDS],
+		.discrim_arg_idx	= 2,
+		.discrim_value		= IPPROTO_SCTP,
+		.discrim2_arg_idx	= 3,
+		.discrim2_value		= SCTP_PEER_ADDR_THLDS,
 	},
 #endif
 	/*
