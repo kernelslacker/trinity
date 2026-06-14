@@ -14,7 +14,6 @@ SYSCALL_DEFINE6(epoll_pwait2, int, epfd, struct epoll_event __user *, events,
 #include <limits.h>
 #include <signal.h>
 #include <sys/epoll.h>
-#include <time.h>
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -135,64 +134,17 @@ static void sanitise_epoll_pwait(struct syscallrecord *rec)
 	size_events_buffer(rec);
 }
 
-/*
- * epoll_pwait2's a4 is a timespec* rather than an int timeout, so
- * point it at a writable timespec with a short, valid duration most of
- * the time.  The kernel rejects tv_nsec >= 1e9 with EINVAL, so the
- * invalid bucket keeps that path warm without stalling the child.
- */
-static void pick_timespec(struct syscallrecord *rec)
-{
-	struct timespec *ts;
-
-	switch (rnd_modulo_u32(8)) {
-	case 0:
-		/* NULL: block forever (caller-controlled cancellation). */
-		rec->a4 = 0;
-		return;
-	case 1:
-	case 2:
-	case 3:
-		ts = (struct timespec *) get_writable_struct(sizeof(*ts));
-		if (ts == NULL)
-			return;
-		ts->tv_sec = 0;
-		ts->tv_nsec = (1 + rnd_modulo_u32(100)) * 1000000L;	/* 1..100 ms */
-		rec->a4 = (unsigned long) ts;
-		return;
-	case 4:
-		ts = (struct timespec *) get_writable_struct(sizeof(*ts));
-		if (ts == NULL)
-			return;
-		ts->tv_sec = 0;
-		ts->tv_nsec = 0;					/* poll-only */
-		rec->a4 = (unsigned long) ts;
-		return;
-	case 5:
-		ts = (struct timespec *) get_writable_struct(sizeof(*ts));
-		if (ts == NULL)
-			return;
-		ts->tv_sec = LONG_MAX;
-		ts->tv_nsec = 0;
-		rec->a4 = (unsigned long) ts;
-		return;
-	default:
-		ts = (struct timespec *) get_writable_struct(sizeof(*ts));
-		if (ts == NULL)
-			return;
-		ts->tv_sec = rnd_u32();
-		ts->tv_nsec = 1000000000L + rnd_modulo_u32(1000);	/* invalid */
-		rec->a4 = (unsigned long) ts;
-		return;
-	}
-}
-
 static void sanitise_epoll_pwait2(struct syscallrecord *rec)
 {
 	rec->a3 = (unsigned long) pick_maxevents();
-	pick_timespec(rec);
 	pick_sigmask(rec);
 	size_events_buffer(rec);
+
+	/*
+	 * a4 (timeout) is typed ARG_TIMESPEC; the generator publishes
+	 * a writable pool buffer (or NULL ~10%) for us.  NEED_ALARM caps
+	 * any blocking arm a large tv_sec bucket would otherwise produce.
+	 */
 }
 
 static void post_epoll_pwait(struct syscallrecord *rec)
@@ -229,7 +181,7 @@ struct syscallentry syscall_epoll_pwait = {
 struct syscallentry syscall_epoll_pwait2 = {
 	.name = "epoll_pwait2",
 	.num_args = 6,
-	.argtype = { [0] = ARG_FD_EPOLL, [1] = ARG_NON_NULL_ADDRESS, [2] = ARG_LEN, [5] = ARG_LEN },
+	.argtype = { [0] = ARG_FD_EPOLL, [1] = ARG_NON_NULL_ADDRESS, [2] = ARG_LEN, [3] = ARG_TIMESPEC, [5] = ARG_LEN },
 	.argname = { [0] = "epfd", [1] = "events", [2] = "maxevents", [3] = "timeout", [4] = "sigmask", [5] = "sigsetsize" },
 	.sanitise = sanitise_epoll_pwait2,
 	.post = post_epoll_pwait,
