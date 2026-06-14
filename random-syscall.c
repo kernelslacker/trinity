@@ -1331,7 +1331,7 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 		else
 			new_edges = kcov_collect(&child->kcov, rec->nr,
 						 rec->do32bit,
-						 &new_edge_count);
+						 &new_edge_count, NULL);
 	} else {
 		new_cmp = kcov_collect_cmp(&child->kcov, rec->nr,
 					   rec->do32bit,
