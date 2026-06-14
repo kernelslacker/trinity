@@ -227,6 +227,12 @@ static socklen_t build_sctp_add_streams(void *buf)
 	memset(buf, 0, sizeof(struct sctp_add_streams));
 	return sizeof(struct sctp_add_streams);
 }
+
+static socklen_t build_sctp_stream_value(void *buf)
+{
+	memset(buf, 0, sizeof(struct sctp_stream_value));
+	return sizeof(struct sctp_stream_value);
+}
 #endif
 
 static socklen_t build_string_ifname(void *buf)
@@ -353,6 +359,7 @@ static const struct sockopt_entry sockopt_table[] = {
 	{ IPPROTO_SCTP, SCTP_AUTH_DEACTIVATE_KEY, build_sctp_authkeyid },
 	{ IPPROTO_SCTP, SCTP_DEFAULT_PRINFO,      build_sctp_default_prinfo },
 	{ IPPROTO_SCTP, SCTP_ADD_STREAMS,         build_sctp_add_streams },
+	{ IPPROTO_SCTP, SCTP_STREAM_SCHEDULER_VALUE, build_sctp_stream_value },
 #endif
 };
 
