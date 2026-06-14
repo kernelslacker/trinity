@@ -156,6 +156,34 @@ bool get_map_handle(struct map_handle *h)
 		 */
 		if (scope == OBJ_LOCAL && !alloc_track_lookup(obj)) {
 			__atomic_add_fetch(&shm->stats.maps_reject_alloc_track_miss, 1, __ATOMIC_RELAXED);
+			/*
+			 * Per-type sub-attribution of the alloc-track-miss
+			 * reject.  Aggregate above stays bumped for historical
+			 * comparability; these tell which OBJ_MMAP_* pool's
+			 * slots are the dominant false-rejected source so a
+			 * 153M-class miss spike can be attributed to one pool
+			 * instead of pooled across all three.  `type` is the
+			 * pool the draw landed on this iteration and is the
+			 * only contextual axis available at this site without
+			 * new plumbing; `scope` is gated to OBJ_LOCAL by the
+			 * if-condition above so splitting on it would be inert.
+			 */
+			switch (type) {
+			case OBJ_MMAP_ANON:
+				__atomic_add_fetch(&shm->stats.maps_reject_alloc_track_miss_anon,
+						   1, __ATOMIC_RELAXED);
+				break;
+			case OBJ_MMAP_FILE:
+				__atomic_add_fetch(&shm->stats.maps_reject_alloc_track_miss_file,
+						   1, __ATOMIC_RELAXED);
+				break;
+			case OBJ_MMAP_TESTFILE:
+				__atomic_add_fetch(&shm->stats.maps_reject_alloc_track_miss_testfile,
+						   1, __ATOMIC_RELAXED);
+				break;
+			default:
+				break;
+			}
 			outputerr("get_map_handle: obj %p not in alloc_track "
 				  "(stomped slot, type %u, scope %d)\n",
 				  obj, type, scope);

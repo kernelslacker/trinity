@@ -2778,6 +2778,24 @@ struct stats_s {
 	 * site) so the writers use __atomic_add_fetch RELAXED; this lives
 	 * in shm->stats rather than parent_stats for that reason. */
 	unsigned long corrupt_ptr_site_count[10];	/* CORRUPT_PTR_SITE__COUNT */
+
+	/* Per-pool-type sub-attributions of [[maps_reject_alloc_track_miss]].
+	 * The aggregate above is bumped per false-reject regardless of which
+	 * OBJ_MMAP_* pool the iteration sampled, so a 153M-class miss tally
+	 * cannot be attributed to one pool vs. another -- a 256-slot LRU
+	 * rotating out OBJ_MMAP_ANON entries under fd-pressure cascades looks
+	 * identical at the aggregate to a TESTFILE-only seeding bug.  These
+	 * three counters split the same reject by the pool the draw landed on
+	 * this iteration (the `type` local at the bump site is the only
+	 * contextual axis available there without new plumbing; `scope` is
+	 * gated to OBJ_LOCAL by the surrounding if-condition so splitting on
+	 * it would be inert).  Summed, they equal maps_reject_alloc_track_miss
+	 * minus any iteration where `type` is somehow neither ANON nor FILE
+	 * nor TESTFILE (defensively bounded; should be zero in practice).
+	 * Pure attribution -- no behaviour change. */
+	unsigned long maps_reject_alloc_track_miss_anon;
+	unsigned long maps_reject_alloc_track_miss_file;
+	unsigned long maps_reject_alloc_track_miss_testfile;
 };
 
 unsigned int stats_syscall_category(const char *name);

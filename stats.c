@@ -2181,6 +2181,9 @@ static void dump_stats_json_corruption_and_audit(void)
 			"\"maps_reject_pool_empty\":%lu,"
 			"\"maps_reject_bogus_obj_ptr\":%lu,"
 			"\"maps_reject_alloc_track_miss\":%lu,"
+			"\"maps_reject_alloc_track_miss_anon\":%lu,"
+			"\"maps_reject_alloc_track_miss_file\":%lu,"
+			"\"maps_reject_alloc_track_miss_testfile\":%lu,"
 			"\"maps_reject_size_zero\":%lu,"
 			"\"maps_reject_size_too_large\":%lu,"
 			"\"deferred_free_reject_misaligned\":%lu,"
@@ -2233,6 +2236,9 @@ static void dump_stats_json_corruption_and_audit(void)
 		shm->stats.maps_reject_pool_empty,
 		shm->stats.maps_reject_bogus_obj_ptr,
 		shm->stats.maps_reject_alloc_track_miss,
+		shm->stats.maps_reject_alloc_track_miss_anon,
+		shm->stats.maps_reject_alloc_track_miss_file,
+		shm->stats.maps_reject_alloc_track_miss_testfile,
 		shm->stats.maps_reject_size_zero,
 		shm->stats.maps_reject_size_too_large,
 		shm->stats.deferred_free_reject_misaligned,
@@ -3221,6 +3227,12 @@ static const struct {
 	  offsetof(struct stats_s, maps_reject_bogus_obj_ptr) },
 	{ "maps_reject_alloc_track_miss",
 	  offsetof(struct stats_s, maps_reject_alloc_track_miss) },
+	{ "maps_reject_alloc_track_miss_anon",
+	  offsetof(struct stats_s, maps_reject_alloc_track_miss_anon) },
+	{ "maps_reject_alloc_track_miss_file",
+	  offsetof(struct stats_s, maps_reject_alloc_track_miss_file) },
+	{ "maps_reject_alloc_track_miss_testfile",
+	  offsetof(struct stats_s, maps_reject_alloc_track_miss_testfile) },
 	{ "maps_reject_size_zero",
 	  offsetof(struct stats_s, maps_reject_size_zero) },
 	{ "maps_reject_size_too_large",
@@ -5862,6 +5874,15 @@ static void dump_stats_corruption_and_pool(void)
 		stat_row("pool", "maps_reject_bogus_obj_ptr",  shm->stats.maps_reject_bogus_obj_ptr);
 	if (shm->stats.maps_reject_alloc_track_miss)
 		stat_row("pool", "maps_reject_alloc_track_miss", shm->stats.maps_reject_alloc_track_miss);
+	if (shm->stats.maps_reject_alloc_track_miss_anon)
+		stat_row("pool", "maps_reject_alloc_track_miss_anon",
+			 shm->stats.maps_reject_alloc_track_miss_anon);
+	if (shm->stats.maps_reject_alloc_track_miss_file)
+		stat_row("pool", "maps_reject_alloc_track_miss_file",
+			 shm->stats.maps_reject_alloc_track_miss_file);
+	if (shm->stats.maps_reject_alloc_track_miss_testfile)
+		stat_row("pool", "maps_reject_alloc_track_miss_testfile",
+			 shm->stats.maps_reject_alloc_track_miss_testfile);
 	if (shm->stats.maps_reject_size_zero)
 		stat_row("pool", "maps_reject_size_zero",      shm->stats.maps_reject_size_zero);
 	if (shm->stats.maps_reject_size_too_large)
