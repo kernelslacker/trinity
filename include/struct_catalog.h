@@ -353,6 +353,7 @@ enum struct_catalog_idx {
 	SC_PACKET_MREQ,
 #ifdef USE_SCTP
 	SC_SCTP_INITMSG,
+	SC_SCTP_RTOINFO,
 #endif
 
 	SC_NR_ENTRIES,		/* sentinel; equals ARRAY_SIZE(struct_catalog) once both stay in lockstep */

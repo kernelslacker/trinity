@@ -4840,6 +4840,29 @@ static const struct struct_field sctp_initmsg_fields[] = {
 	       .u.range = { 0, 60000 },
 	       .mutate_weight = 40),
 };
+
+/*
+ * struct sctp_rtoinfo -- IPPROTO_SCTP / SCTP_RTOINFO.  Carries the SCTP
+ * RTO (retransmission timeout) envelope for an association: assoc_id
+ * picks the target association (FT_RAW lets KCOV-CMP attribution catch
+ * the kernel's lookup constant) and three __u32 millisecond fields
+ * (initial / max / min) bounded to [0, 60000] -- a window wide enough to
+ * exercise the kernel's clamp logic without flooding it with absurd
+ * values.  Bespoke build_sctp_rtoinfo() zero-fills as a miss-fallback.
+ */
+static const struct struct_field sctp_rtoinfo_fields[] = {
+	FIELDX(struct sctp_rtoinfo, srto_assoc_id, FT_RAW,
+	       .mutate_weight = 60),
+	FIELDX(struct sctp_rtoinfo, srto_initial, FT_RANGE,
+	       .u.range = { 0, 60000 },
+	       .mutate_weight = 60),
+	FIELDX(struct sctp_rtoinfo, srto_max, FT_RANGE,
+	       .u.range = { 0, 60000 },
+	       .mutate_weight = 60),
+	FIELDX(struct sctp_rtoinfo, srto_min, FT_RANGE,
+	       .u.range = { 0, 60000 },
+	       .mutate_weight = 60),
+};
 #endif
 
 /* ------------------------------------------------------------------ */
@@ -5264,6 +5287,12 @@ const struct struct_desc struct_catalog[] = {
 		.struct_size	= sizeof(struct sctp_initmsg),
 		.fields		= sctp_initmsg_fields,
 		.num_fields	= ARRAY_SIZE(sctp_initmsg_fields),
+	},
+	[SC_SCTP_RTOINFO] = {
+		.name		= "sctp_rtoinfo",
+		.struct_size	= sizeof(struct sctp_rtoinfo),
+		.fields		= sctp_rtoinfo_fields,
+		.num_fields	= ARRAY_SIZE(sctp_rtoinfo_fields),
 	},
 #endif
 };
@@ -6195,6 +6224,13 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 		.discrim_value		= IPPROTO_SCTP,
 		.discrim2_arg_idx	= 3,
 		.discrim2_value		= SCTP_INITMSG,
+	},
+	{
+		"setsockopt", 4, &struct_catalog[SC_SCTP_RTOINFO],
+		.discrim_arg_idx	= 2,
+		.discrim_value		= IPPROTO_SCTP,
+		.discrim2_arg_idx	= 3,
+		.discrim2_value		= SCTP_RTOINFO,
 	},
 #endif
 	/*

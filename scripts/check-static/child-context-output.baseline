@@ -310,10 +310,10 @@ syscalls/setresuid.c:35:post_setresuid
 syscalls/setreuid.c:33:post_setreuid
 syscalls/setsid.c:47:post_setsid
 syscalls/setsid.c:65:post_setsid
-syscalls/setsockopt.c:872:post_setsockopt
-syscalls/setsockopt.c:895:post_setsockopt
-syscalls/setsockopt.c:911:post_setsockopt
-syscalls/setsockopt.c:926:post_setsockopt
+syscalls/setsockopt.c:879:post_setsockopt
+syscalls/setsockopt.c:902:post_setsockopt
+syscalls/setsockopt.c:918:post_setsockopt
+syscalls/setsockopt.c:933:post_setsockopt
 syscalls/setuid.c:39:post_setuid
 syscalls/setuid.c:54:post_setuid
 syscalls/sigaction.c:217:post_rt_sigaction

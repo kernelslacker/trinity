@@ -155,6 +155,12 @@ static socklen_t build_sctp_initmsg(void *buf)
 	memset(buf, 0, sizeof(struct sctp_initmsg));
 	return sizeof(struct sctp_initmsg);
 }
+
+static socklen_t build_sctp_rtoinfo(void *buf)
+{
+	memset(buf, 0, sizeof(struct sctp_rtoinfo));
+	return sizeof(struct sctp_rtoinfo);
+}
 #endif
 
 static socklen_t build_string_ifname(void *buf)
@@ -264,6 +270,7 @@ static const struct sockopt_entry sockopt_table[] = {
 #ifdef USE_SCTP
 	/* IPPROTO_SCTP */
 	{ IPPROTO_SCTP, SCTP_INITMSG,             build_sctp_initmsg },
+	{ IPPROTO_SCTP, SCTP_RTOINFO,             build_sctp_rtoinfo },
 #endif
 };
 
