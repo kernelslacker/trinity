@@ -928,6 +928,14 @@ struct stats_s {
 	unsigned long tls_rotate_rekeys_ok;		/* rekey TLS_TX install accepted */
 	unsigned long tls_rotate_rekeys_rejected;	/* rekey TLS_TX install rejected (EBUSY etc) */
 
+	/* sock_ulp_sockmap_layering childop counters */
+	unsigned long sock_ulp_sockmap_layering_runs;		/* total invocations */
+	unsigned long sock_ulp_sockmap_layering_setup_failed;	/* loopback TCP pair setup failed */
+	unsigned long sock_ulp_sockmap_layering_map_failed;	/* BPF_MAP_CREATE(SOCKMAP) failed (no CONFIG_BPF_SYSCALL etc) */
+	unsigned long sock_ulp_sockmap_layering_prog_failed;	/* BPF_PROG_LOAD(SK_SKB) failed (no CONFIG_BPF_STREAM_PARSER etc) */
+	unsigned long sock_ulp_sockmap_layering_attach_failed;	/* BPF_PROG_ATTACH(STREAM_VERDICT) failed */
+	unsigned long sock_ulp_sockmap_layering_layered_ok;	/* at least one fd ended up with both ULP+sockmap layered */
+
 	/* packet_fanout_thrash childop counters */
 	unsigned long packet_fanout_runs;		/* total packet_fanout_thrash invocations */
 	unsigned long packet_fanout_setup_failed;	/* socket(AF_PACKET) failed (EPERM/no CONFIG_PACKET) */
