@@ -84,6 +84,7 @@ void setup_initial_mappings(void);
 
 struct map * get_map(void) __must_check;
 struct map * get_map_with_prot(int required_prot) __must_check;
+struct map * get_anon_map_with_prot(int required_prot) __must_check;
 
 /*
  * Lightweight handle for an entry in the OBJ_MMAP_* pools.  Post-
