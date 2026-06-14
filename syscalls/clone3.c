@@ -42,15 +42,15 @@
 #endif
 /*
  * CLONE_AUTOREAP / CLONE_NNP / CLONE_PIDFD_AUTOKILL / CLONE_EMPTY_MNTNS
- * come from an out-of-tree kernel series that has not landed in mainline
- * linux/sched.h -- none of the four are present in any uapi sched.h we
- * build against.  Kept here (under an umbrella ifndef on the first
- * symbol) so the clone3_flags[] pool below can speculatively exercise
- * these bit positions: a future kernel that picks any of them up gains
- * immediate fuzz coverage, and if the series lands with the same
- * encoding the local defines drop out cleanly.  If only some of the
- * four ever land upstream, this block needs to be split into per-symbol
- * ifndefs to avoid a redefinition warning on the ones that landed.
+ * are mainline as of Linux v7.1, and the encodings used here match
+ * the upstream uapi.  The umbrella #ifndef below is a forward-compat
+ * shim so the build still works on older build hosts whose
+ * <linux/sched.h> predates these symbols.  All four landed together
+ * with these encodings, so a single guard on the first symbol is
+ * sufficient.  If a future uapi change renumbers any of them or
+ * defines only a subset, this block must be split into per-symbol
+ * ifndefs to avoid a redefinition warning on the symbols that the
+ * system header already provides.
  */
 #ifndef CLONE_AUTOREAP
 #define CLONE_AUTOREAP		(1ULL << 34)
