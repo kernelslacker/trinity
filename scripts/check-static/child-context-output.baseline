@@ -49,7 +49,7 @@ syscalls/capset.c:234:post_capset
 syscalls/clock_getres.c:152:post_clock_getres
 syscalls/clock_gettime.c:161:post_clock_gettime
 syscalls/clock_gettime.c:168:post_clock_gettime
-syscalls/clock_nanosleep.c:100:post_clock_nanosleep
+syscalls/clock_nanosleep.c:61:post_clock_nanosleep
 syscalls/clone3.c:256:post_clone3
 syscalls/clone3.c:272:post_clone3
 syscalls/clone.c:113:post_clone
