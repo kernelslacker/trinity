@@ -358,7 +358,7 @@ struct fd_hash_entry *fd_hash_lookup(int fd)
 
 static bool is_fd_type(enum objecttype type)
 {
-	return type >= OBJ_FD_PIPE && type <= OBJ_FD_WATCH_QUEUE;
+	return type >= OBJ_FD_PIPE && type <= OBJ_FD_SCRATCH_BLOCK;
 }
 
 /*
@@ -1290,6 +1290,7 @@ static void invalidate_object_fd(struct object *obj, enum objecttype type)
 	case OBJ_FD_MOUNT:	obj->mountfdobj.fd = -1; break;
 	case OBJ_FD_CGROUP:	obj->cgroupfdobj.fd = -1; break;
 	case OBJ_FD_WATCH_QUEUE: obj->watch_queueobj.fd = -1; break;
+	case OBJ_FD_SCRATCH_BLOCK: obj->fileobj.fd = -1; break;
 	default:		break;
 	}
 }
@@ -1461,6 +1462,7 @@ void set_object_fd(struct object *obj, enum objecttype type, int fd)
 	case OBJ_FD_PROCFILE:
 	case OBJ_FD_SYSFILE:
 	case OBJ_FD_PAGECACHE:
+	case OBJ_FD_SCRATCH_BLOCK:
 	case OBJ_FD_CANARY:	obj->fileobj.fd = fd; break;
 	case OBJ_FD_PERF:	obj->perfobj.fd = fd; break;
 	case OBJ_FD_EPOLL:	obj->epollobj.fd = fd; break;
@@ -1558,6 +1560,7 @@ int fd_from_object(struct object *obj, enum objecttype type)
 	case OBJ_FD_PROCFILE:
 	case OBJ_FD_SYSFILE:
 	case OBJ_FD_PAGECACHE:
+	case OBJ_FD_SCRATCH_BLOCK:
 	case OBJ_FD_CANARY:	return obj->fileobj.fd;
 	case OBJ_FD_PERF:	return obj->perfobj.fd;
 	case OBJ_FD_EPOLL:	return obj->epollobj.fd;

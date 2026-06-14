@@ -68,6 +68,21 @@ void create_shm(void)
 	 * whether the parent later opens /proc/self/ns/net. */
 	shm->isolation.netns_fd = -1;
 
+	/* Same reasoning for the scratch_block pool: loop_num == 0 maps
+	 * to /dev/loop0 (a live block device on most hosts) and loop_fd
+	 * == 0 is stdin -- a consumer that reads either before the pool
+	 * has been populated would treat the zero sentinel as a vetted
+	 * entry.  Stamp -1 across every slot so a pre-init read trips
+	 * the "not a real entry" check on both fields. */
+	{
+		unsigned int i;
+
+		for (i = 0; i < SCRATCH_BLOCK_MAX; i++) {
+			shm->isolation.scratch_block[i].loop_num = -1;
+			shm->isolation.scratch_block[i].loop_fd = -1;
+		}
+	}
+
 	output(1, "shm:%p-%p (%u pages)\n", shm, (char *)shm + shm_size - 1, nr_shm_pages);
 }
 

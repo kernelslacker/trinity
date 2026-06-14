@@ -12,6 +12,7 @@
 #include "locks.h"
 #include "net.h"
 #include "object-types.h"
+#include "scratch_block.h"
 #include "stats.h"
 #include "strategy.h"
 #include "syscall.h"
@@ -283,6 +284,44 @@ struct shm_s {
 		bool net_ready;
 		bool mnt_ready;
 		int netns_fd;
+
+		/*
+		 * Scratch block-device pool, populated by fds/scratch_block.c
+		 * during open_fds() when mnt_ready is latched.  The provider
+		 * runs in the parent's brief root window, calls
+		 * /dev/loop-control -> LOOP_CTL_GET_FREE -> LOOP_CONFIGURE
+		 * over scratch image files and (best-effort) formats one with
+		 * mkfs.ext4 then mounts it inside the parent's private mount
+		 * ns.  A tmpfs slot is added unconditionally (default:
+		 * tmpfs always; ext4 when the loop side + mkfs.ext4 both
+		 * succeed).
+		 *
+		 * This pool is the BOX-SAFETY CHOKEPOINT for fuzzed block
+		 * I/O: it is the ONLY source of loop fds + device paths that
+		 * a child can draw, by construction.  A host disk node can
+		 * never enter the pool because every entry's loop number
+		 * came from the kernel's own LOOP_CTL_GET_FREE allocation
+		 * and the parent retains the loop fd for the run's lifetime
+		 * (children inherit it via fork; a child close drops only
+		 * that child's ref).  Childops that previously open()ed
+		 * /dev/loopN by host-allocated number migrate to draw from
+		 * here instead of reaching for arbitrary host block devices.
+		 *
+		 * Children consult scratch_block_ready before reading any
+		 * other field; when false (non-root, mnt_ready degraded, or
+		 * provider init failed), childops fall back to today's
+		 * per-child tmpfs/ramfs path.  loop_fd / loop_num are -1
+		 * for the tmpfs slot, so an entry with loop_num >= 0 is the
+		 * only kind a block-fd consumer should pick.
+		 *
+		 * Parent teardown via atexit (mirror self_cgroup_cleanup):
+		 * unmount + LOOP_CLR_FD on every published entry, close the
+		 * parent-held loop fd, unlink the backing image, rmdir the
+		 * scratch subtree.  Idempotent against partial teardown.
+		 */
+		bool scratch_block_ready;
+		unsigned int scratch_block_count;
+		struct scratch_block_entry scratch_block[SCRATCH_BLOCK_MAX];
 	} isolation;
 
 	/*
