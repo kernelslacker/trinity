@@ -1129,7 +1129,102 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 				   inserted, __ATOMIC_RELAXED);
 }
 
-bool cmp_hints_try_get(unsigned int nr, bool do32, unsigned long *out)
+/*
+ * Per-use-case output transform applied after the pool entry is picked.
+ * Factored out of the (formerly inline) try_get body so each transform
+ * lives next to its own documentation; the four use cases map onto
+ * three distinct rotations (EXACT and FIELD share the bare-C path while
+ * the FIELD pool lookup waits on PHASE 3's [11-field-scoped] work).
+ *
+ * The transform does not consult the pool entry's recorded comparison
+ * width: PHASE 2 deliberately keeps every existing pull byte-for-byte
+ * equivalent so the wrapper can land alongside the new API without
+ * shifting any of the four generate-args.c consumers.  The width-aware
+ * fourth transform family from the spec ships in a follow-up once a
+ * callsite opts into it.
+ */
+static unsigned long cmp_hint_apply_transform(unsigned long c,
+					      enum cmp_hint_use use,
+					      unsigned long old)
+{
+	switch (use) {
+	case CMP_HINT_EXACT:
+	case CMP_HINT_FIELD:
+		/* Bare C.  Equality-gated slots (cmd codes, enum
+		 * selectors, version magics) need the constant
+		 * unmolested -- the boundary +/-1 below would silently
+		 * miss every exact-equality kernel check.  FIELD shares
+		 * this path until PHASE 3 wires a field-scoped pool
+		 * lookup. */
+		return c;
+	case CMP_HINT_BOUNDARY:
+		/*
+		 * Rotate uniformly among {C-1, C, C+1}.
+		 * KCOV's CMP record exposes operand width and the constant
+		 * but NOT the comparison operator (==, !=, <, <=, >, >=),
+		 * so a substituted value of bare C only satisfies the
+		 * equality cases.  Range checks ("if (len > MAX_LEN)")
+		 * stay unsatisfied unless the kernel separately compares
+		 * the exact boundary constant at another site.  The +/-1
+		 * triple converts every range check whose limit matches
+		 * a harvested C, at the cost of a 2/3 reduction in
+		 * equality-match yield -- the equality slot (C unchanged)
+		 * is retained in the rotation, so the worst case is a 3x
+		 * slowdown on a purely equality-dominated callsite, while
+		 * length-/cap-/extent-dominated syscalls (network length
+		 * validation, BPF program-size caps, filesystem extents)
+		 * get the boundary edges they were missing.
+		 *
+		 * Unsigned wrap is intentional and deliberately unclamped:
+		 *   C == 0          ->  C-1 == ULONG_MAX
+		 *   C == ULONG_MAX  ->  C+1 == 0
+		 * Both wrapped values are themselves useful probes -- the
+		 * underflow exercises length-cap / overflow validators, the
+		 * overflow exercises empty-input / zero-length rejection
+		 * paths -- so clamping would throw away the most useful
+		 * boundary on the rare-but-real wrap case.
+		 */
+		switch (rnd_modulo_u32(3)) {
+		case 0:
+			c -= 1;
+			break;
+		case 2:
+			c += 1;
+			break;
+		/* case 1 (and default): C unchanged */
+		}
+		return c;
+	case CMP_HINT_FLAG_MASK:
+		/* No caller mask to mix with -- degrade to bare C.  A
+		 * mask-mode consumer that has not built a running mask
+		 * yet (first flag-pull on a fresh slot) is effectively
+		 * asking for the constant unmodified; that matches the
+		 * EXACT path. */
+		if (old == 0)
+			return c;
+		/* Mix C into the caller's running mask.  Three mix
+		 * choices exercise different validators: OR adds a
+		 * (possibly undocumented) bit; AND-NOT clears it
+		 * (probes "this bit must NOT be set" combinations);
+		 * XOR toggles (probes pair-of-flag mutual-exclusion
+		 * constraints). */
+		switch (rnd_modulo_u32(3)) {
+		case 0:
+			return old | c;
+		case 1:
+			return old & ~c;
+		default:
+			return old ^ c;
+		}
+	}
+	/* enum exhaustively handled above; the unreachable return keeps
+	 * the build flag-clean if a future use case is added without a
+	 * matching arm here. */
+	return c;
+}
+
+bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
+			  unsigned long old, unsigned long *out)
 {
 	struct cmp_hint_pool *pool;
 	unsigned int count;
@@ -1191,46 +1286,9 @@ bool cmp_hints_try_get(unsigned int nr, bool do32, unsigned long *out)
 	if (cmp_hints_pool_corrupted(pool, count))
 		return false;
 
-	{
-		unsigned long c = pool->entries[rnd_modulo_u32(count)].value;
+	*out = cmp_hint_apply_transform(pool->entries[rnd_modulo_u32(count)].value,
+					use, old);
 
-		/*
-		 * Boundary triple: rotate uniformly among {C-1, C, C+1}.
-		 * KCOV's CMP record exposes operand width and the constant
-		 * but NOT the comparison operator (==, !=, <, <=, >, >=),
-		 * so a substituted value of bare C only satisfies the
-		 * equality cases.  Range checks ("if (len > MAX_LEN)")
-		 * stay unsatisfied unless the kernel separately compares
-		 * the exact boundary constant at another site.  The +/-1
-		 * triple converts every range check whose limit matches
-		 * a harvested C, at the cost of a 2/3 reduction in
-		 * equality-match yield -- the equality slot (C unchanged)
-		 * is retained in the rotation, so the worst case is a 3x
-		 * slowdown on a purely equality-dominated callsite, while
-		 * length-/cap-/extent-dominated syscalls (network length
-		 * validation, BPF program-size caps, filesystem extents)
-		 * get the boundary edges they were missing.
-		 *
-		 * Unsigned wrap is intentional and deliberately unclamped:
-		 *   C == 0          ->  C-1 == ULONG_MAX
-		 *   C == ULONG_MAX  ->  C+1 == 0
-		 * Both wrapped values are themselves useful probes -- the
-		 * underflow exercises length-cap / overflow validators, the
-		 * overflow exercises empty-input / zero-length rejection
-		 * paths -- so clamping would throw away the most useful
-		 * boundary on the rare-but-real wrap case.
-		 */
-		switch (rnd_modulo_u32(3)) {
-		case 0:
-			c -= 1;
-			break;
-		case 2:
-			c += 1;
-			break;
-		/* case 1 (and default): C unchanged */
-		}
-		*out = c;
-	}
 	if (kcov_shm != NULL) {
 		__atomic_fetch_add(&kcov_shm->cmp_hints_try_get_returned, 1UL,
 				   __ATOMIC_RELAXED);
@@ -1241,6 +1299,11 @@ bool cmp_hints_try_get(unsigned int nr, bool do32, unsigned long *out)
 				   1UL, __ATOMIC_RELAXED);
 	}
 	return true;
+}
+
+bool cmp_hints_try_get(unsigned int nr, bool do32, unsigned long *out)
+{
+	return cmp_hints_try_get_ex(nr, do32, CMP_HINT_BOUNDARY, 0, out);
 }
 
 /*

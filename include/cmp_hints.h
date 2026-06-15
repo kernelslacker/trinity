@@ -219,10 +219,66 @@ void cmp_hints_init(void);
  * add interesting constants to the hint pool for syscall nr. */
 void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32);
 
-/* Try to extract a random hint value for the given syscall.
- * Returns true with the hint written to *out, or false if none available.
- * do32 selects between the 64-bit and 32-bit syscall-table pools so
- * biarch builds do not contend for the same per-nr dedup slots. */
+/*
+ * Use-case taxonomy for the cmp-hint consumer.  cmp_hints_try_get_ex()
+ * selects an output transform from the use case (and, in later phases,
+ * from the pool entry's recorded comparison width).  Callers that today
+ * only need the historical {C-1, C, C+1} boundary triple stay on the
+ * cmp_hints_try_get() wrapper, which routes to CMP_HINT_BOUNDARY.
+ *
+ *   CMP_HINT_EXACT      Return C unchanged.  For cmd codes, enum
+ *                       selectors, version magics -- any slot whose
+ *                       gate is an equality test.  Boundary +/-1 would
+ *                       silently reject these.
+ *   CMP_HINT_BOUNDARY   Rotate uniformly among {C-1, C, C+1}.  For
+ *                       length / size / range checks: probes the
+ *                       "<", "<=", ">", ">=" boundaries that bare
+ *                       equality leaves unsatisfied.  Historical
+ *                       behaviour; the wrapper's default.
+ *   CMP_HINT_FLAG_MASK  Mix C with the caller's existing mask: rotate
+ *                       uniformly among {old|C, old&~C, old^C}.  For
+ *                       flag-bitmask slots where C is a single bit (or
+ *                       narrow group) and the caller already has a
+ *                       running mask -- bare C would clobber it.  When
+ *                       old == 0 the function degrades to bare C (no
+ *                       signal to mix with).
+ *   CMP_HINT_FIELD      Placeholder for the PHASE 3 field-scoped pool
+ *                       lookup ([11-field-scoped]).  Today's behaviour
+ *                       is identical to CMP_HINT_EXACT -- field-scoped
+ *                       pools do not exist yet so there is nothing to
+ *                       look up against; the use case ships here so the
+ *                       caller surface settles before PHASE 3 lands.
+ *
+ * Width-aware masked/sign-extended transforms per comparison size are
+ * called out in the spec as a fourth transform family and will land in
+ * a follow-up: the pool entry already carries the recorded comparison
+ * width, but the existing four callsites in generate-args.c return
+ * full-long values and a silent narrowing here would change their
+ * behaviour.  The PHASE 2 split deliberately keeps the wrapper
+ * byte-for-byte equivalent to today; width-aware lands once a callsite
+ * opts in.
+ */
+enum cmp_hint_use {
+	CMP_HINT_EXACT,
+	CMP_HINT_BOUNDARY,
+	CMP_HINT_FLAG_MASK,
+	CMP_HINT_FIELD,
+};
+
+/* Extract a random hint value for the given syscall and apply the
+ * use-case-driven output transform.  Returns true with the transformed
+ * hint written to *out, or false on chaos-gate suppression / empty pool
+ * / corrupted pool / out-of-range nr.  do32 selects between the 64-bit
+ * and 32-bit syscall-table pools so biarch builds do not contend for
+ * the same per-nr dedup slots.  old is consumed only by
+ * CMP_HINT_FLAG_MASK; pass 0 from other call sites. */
+bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
+			  unsigned long old, unsigned long *out);
+
+/* Back-compat wrapper.  Routes to CMP_HINT_BOUNDARY with old == 0 so
+ * the four existing call sites in generate-args.c retain the pre-split
+ * {C-1, C, C+1} rotation byte-for-byte until each is individually
+ * migrated to the use case that fits its consumer slot. */
 bool cmp_hints_try_get(unsigned int nr, bool do32, unsigned long *out);
 
 /* Advance the chaos-mode window counter.  Called once per bandit window
