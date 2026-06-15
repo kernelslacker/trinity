@@ -726,30 +726,32 @@ static bool add_object_validate(struct object *obj, enum obj_scope scope,
  * is resolved once in add_object() and threaded through; same for
  * the hoisted is_fd / fd pair used by the leak-close error paths.
  *
- * On the OBJ_LOCAL path, the alloc-track LRU slot for the live
- * head->array container is refreshed before the grow check so the
- * upcoming deferred_free_enqueue(oldarray) doesn't reject on an
- * alloc_track miss after thousands of intervening zmalloc_tracked
- * calls in cap>=1024 pools.  OBJ_GLOBAL arrays use plain zmalloc
- * and were never tracked, so the refresh is gated on scope.
+ * The alloc-track LRU slot for the live head->array container is
+ * refreshed before the grow check so the upcoming
+ * deferred_free_enqueue(oldarray) doesn't reject on an alloc_track
+ * miss after thousands of intervening zmalloc_tracked calls in
+ * cap>=1024 pools.  An alloc_track miss would leak the old chunk
+ * rather than UAF it, but still silently bypasses the deferred-free
+ * path the indexed-read correctness model relies on.
  *
- * Same allocate-copy-then-old-array disposal shape for both
- * scopes, distinct only in the allocator and the old-array path:
+ * Both scopes use the same allocate-copy-defer-free shape: a fresh
+ * zmalloc_tracked container, memcpy the live slots over, publish
+ * head->array + array_capacity, bump array_generation, then
+ * deferred_free_enqueue(oldarray).  The deferred-free TTL (5-50
+ * syscalls, effective 80-800 with DEFERRED_TICK_BATCH) keeps the
+ * old chunk readable across any in-flight reader's snapshot
+ * through objhead_indexed_read() -- without it, the same process
+ * can re-enter the picker during arg-gen, hold a cached
+ * head->array snapshot across the grow, and UAF the freed
+ * container.  Same hazard shape as the obj-struct deferred-free
+ * path: a live container freed underneath a cached reader is a
+ * use-after-free.
  *
- *   - OBJ_GLOBAL grows on the parent's private heap (zmalloc +
- *     plain free), safe because there is no concurrent reader to
- *     coordinate with: children see a snapshot pinned at fork
- *     time, a post-fork grow in the parent is invisible to them,
- *     and a pre-fork grow has no readers yet.
- *
- *   - OBJ_LOCAL grows on the owning child's private heap
- *     (zmalloc_tracked + deferred_free_enqueue), which gives the
- *     old chunk a 5-50 syscall (effective 80-800 with
- *     DEFERRED_TICK_BATCH) TTL -- far longer than any in-flight
- *     reader's window through cached head->array reads in the
- *     arg-gen path.  Same hazard shape as the obj-struct
- *     deferred-free path: a live container freed underneath a
- *     cached reader is a use-after-free.
+ * OBJ_GLOBAL needs the same deferral as OBJ_LOCAL even though the
+ * writer is single (parent pre-fork only): the parent itself reads
+ * its own pre-fork OBJ_GLOBAL pool during arg-gen, so single-writer
+ * does not imply single-reader.  This is single-process re-entrancy,
+ * not cross-thread.
  *
  * Both branches cap-overflow-guard at UINT_MAX / 2.  On either the
  * overflow or the malloc-failure path: close any leaked fd,
@@ -769,30 +771,37 @@ static bool add_object_grow_capacity(struct object *obj, enum obj_scope scope,
 	cap = head->array_capacity;
 
 	/*
-	 * Refresh head->array's alloc_track LRU slot before the OBJ_LOCAL
-	 * grow-test below.  Inter-grow windows on cap>=1024 pools span
+	 * Refresh head->array's alloc_track LRU slot before the grow
+	 * check below.  Inter-grow windows on cap>=1024 pools span
 	 * thousands of intervening zmalloc_tracked calls -- without this
 	 * refresh the live container ages out of the 4096-slot ring and
 	 * the next grow's deferred_free_enqueue(oldarray) rejects on
-	 * alloc_track miss.  Same pattern as the clone_global_mmap_pool
+	 * alloc_track miss (leak, not UAF, but still silently bypasses
+	 * the deferred-free path the indexed-read correctness model
+	 * relies on).  Same pattern as the clone_global_mmap_pool
 	 * dedup-skip refresh: any long-lived container must be revived
 	 * with alloc_track_refresh() before it can be deferred-freed.
-	 * OBJ_GLOBAL arrays use plain zmalloc and were never tracked, so
-	 * gate on scope to avoid spuriously inserting an untracked ptr.
+	 * Both scopes alloc via zmalloc_tracked so the refresh applies
+	 * uniformly; the NULL guard skips the first grow (empty pool).
 	 */
-	if (scope == OBJ_LOCAL && head->array != NULL)
+	if (head->array != NULL)
 		alloc_track_refresh(head->array);
 
 	if (scope == OBJ_GLOBAL) {
 		if (n >= cap) {
 			/*
-			 * Grow on the parent's private heap.  No concurrent
-			 * reader to coordinate with -- children see a snapshot
-			 * pinned at fork time, so a post-fork grow in the
-			 * parent is invisible to them and a pre-fork grow has
-			 * no readers yet.
+			 * Grow on the parent's private heap.  Single-writer
+			 * (parent pre-fork only) but NOT single-reader: the
+			 * parent re-enters get_random_object() during its own
+			 * arg-gen and can hold a cached head->array snapshot
+			 * across this grow.  An immediate free of the old
+			 * container would UAF the in-flight indexed-read.
+			 * Use the same allocate-copy-defer-free shape as the
+			 * OBJ_LOCAL branch below; the deferred-free TTL keeps
+			 * the old chunk readable across any reader's window.
 			 */
 			struct object **newarray;
+			struct object **oldarray;
 			unsigned int newcap = cap ? cap * 2 : 16;
 
 			if (cap > UINT_MAX / 2) {
@@ -803,7 +812,7 @@ static bool add_object_grow_capacity(struct object *obj, enum obj_scope scope,
 				release_obj(obj, scope, type);
 				return true;
 			}
-			newarray = zmalloc(newcap * sizeof(struct object *));
+			newarray = zmalloc_tracked(newcap * sizeof(struct object *));
 			if (newarray == NULL) {
 				outputerr("add_object: malloc failed for type %u (cap %u)\n",
 					  type, newcap);
@@ -812,22 +821,24 @@ static bool add_object_grow_capacity(struct object *obj, enum obj_scope scope,
 				release_obj(obj, scope, type);
 				return true;
 			}
-			if (head->array != NULL && cap > 0)
-				memcpy(newarray, head->array,
+			oldarray = head->array;
+			if (oldarray != NULL && cap > 0)
+				memcpy(newarray, oldarray,
 				       cap * sizeof(struct object *));
-			free(head->array);
 			head->array = newarray;
 			head->array_capacity = newcap;
 			/*
-			 * Publish the container replacement to any in-progress
-			 * indexed-read snapshot via objhead_indexed_read().  Pool-
-			 * private single-writer (parent pre-fork on OBJ_GLOBAL,
-			 * owning child on OBJ_LOCAL), so an unlocked bump is
-			 * sufficient; the helper's re-read of array_generation
-			 * after its load picks up the new value and drops the
-			 * stale-snapshot pick.
+			 * Bump before the deferred-free hand-off so any reader
+			 * whose snapshot raced this grow re-reads the new
+			 * generation and drops the pick rather than indexing
+			 * the (now-ttl'd) old container.  Pool-private
+			 * single-writer (parent pre-fork on OBJ_GLOBAL, owning
+			 * child on OBJ_LOCAL), so an unlocked bump is
+			 * sufficient.  See objhead_indexed_read().
 			 */
 			head->array_generation++;
+			if (oldarray != NULL)
+				deferred_free_enqueue(oldarray);
 		}
 	} else if (n >= cap) {
 		/*
@@ -1247,14 +1258,17 @@ void clone_global_objects_to_child(struct childdata *child)
 /*
  * Indexed read off head->array guarded against a between-snapshot
  * grow / teardown.  The hazard the bare head->array[idx] read had was
- * that the array container is freed and replaced on grow (plain free
- * on OBJ_GLOBAL, deferred_free_enqueue on OBJ_LOCAL) and at pool
+ * that the array container is freed and replaced on grow and at pool
  * teardown -- a reader that captured the array pointer pre-grow then
- * indexed it post-grow would read off a chunk the deferred-free TTL
- * had already handed back to glibc (ASAN: heap-use-after-free at the
- * arr[idx] load, seed 3708757146).  The recipe here mirrors the
- * obj-level slot_version / object_slot_alive() pattern one level
- * earlier and is strictly check-then-load:
+ * indexed it post-grow would read off a chunk that may already have
+ * been handed back to glibc (ASAN: heap-use-after-free at the
+ * arr[idx] load).  All three array-replace sites
+ * (OBJ_GLOBAL grow, OBJ_LOCAL grow, destroy_objects teardown) now
+ * route the old container through deferred_free_enqueue, so the
+ * captured arr stays readable across the TTL window the rechecks
+ * below rely on.  The recipe here mirrors the obj-level
+ * slot_version / object_slot_alive() pattern one level earlier and
+ * is strictly check-then-load:
  *
  *   1. Snapshot array_generation, the array pointer and num_entries.
  *   2. Cheap stateless provenance check on the captured array pointer
@@ -1534,6 +1548,7 @@ void destroy_object(struct object *obj, enum obj_scope scope, enum objecttype ty
 static void destroy_objects(enum objecttype type, enum obj_scope scope)
 {
 	struct objhead *head;
+	struct object **oldarray;
 
 	head = get_objhead(scope, type);
 	if (head == NULL || head->array == NULL)
@@ -1560,16 +1575,20 @@ static void destroy_objects(enum objecttype type, enum obj_scope scope)
 		}
 	}
 
-	tracked_free_now(head->array);
+	oldarray = head->array;
 	head->array = NULL;
 	head->array_capacity = 0;
 	/*
 	 * Teardown is the third array-replace site (the two grow paths
-	 * are the others).  Bump so a stale pick whose snapshot caught
-	 * the pre-teardown array pointer re-reads a different generation
-	 * and discards rather than indexing the just-freed chunk.
+	 * are the others).  Bump before the deferred-free hand-off so a
+	 * stale pick whose snapshot caught the pre-teardown array
+	 * pointer re-reads a different generation and discards rather
+	 * than indexing the (now-ttl'd) old container.  oldarray was
+	 * allocated via zmalloc_tracked in add_object_grow_capacity()
+	 * so deferred_free_enqueue() accepts it.
 	 */
 	head->array_generation++;
+	deferred_free_enqueue(oldarray);
 }
 
 /* Destroy all global objects on exit. */
