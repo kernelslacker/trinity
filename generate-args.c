@@ -166,12 +166,13 @@ static unsigned long handle_arg_address(struct syscallentry *entry, struct sysca
 }
 
 static unsigned long handle_arg_range(struct syscallentry *entry,
-				      struct syscallrecord *rec __unused__,
+				      struct syscallrecord *rec,
 				      unsigned int argnum)
 {
 	unsigned long i;
 	unsigned long low = entry->arg_params[argnum - 1].range.low;
 	unsigned long high = entry->arg_params[argnum - 1].range.hi;
+	unsigned long hint;
 
 	if (high == 0) {
 		outputerr("%s forgets to set hirange!\n", entry->name);
@@ -182,6 +183,22 @@ static unsigned long handle_arg_range(struct syscallentry *entry,
 		outputerr("%s has invalid range: low(%lu) >= high(%lu)!\n",
 			entry->name, low, high);
 		BUG("Fix syscall definition!\n");
+	}
+
+	/* Low-probability CMP boundary-hint pull, mirroring the ARG_OP /
+	 * ARG_LIST gates: occasionally swap the random pick for a kernel-
+	 * observed comparison constant rotated through {C-1, C, C+1}.  The
+	 * declared [low, high] range is a hard contract for ARG_RANGE
+	 * consumers, so a hint that falls outside that interval is rejected
+	 * and we fall through to the existing distribution unchanged.  No
+	 * hint, an out-of-range hint, or chaos-gate suppression all leave the
+	 * historical mix in place. */
+	if (ONE_IN(cmp_hint_inject_denom(CMP_HINT_INJECT_DENOM_BASELINE)) &&
+	    cmp_hints_try_get_ex(rec->nr, rec->do32bit,
+				 CMP_HINT_BOUNDARY, 0, &hint) &&
+	    hint >= low && hint <= high) {
+		credit_cmp_hint_injection(rec, CMP_HINT_CALLSITE_OTHER);
+		return hint;
 	}
 
 	/* ~1 in 8: bias toward the range boundaries where off-by-one bugs hide */
