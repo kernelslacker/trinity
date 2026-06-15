@@ -522,8 +522,10 @@ static unsigned long frontier_cold_weight(unsigned int nr)
 {
 	unsigned long edges, calls;
 	unsigned long bucket_bits, distinct_pcs;
+	unsigned long transition_edges_real_local;
 	unsigned long old_weight, blend_weight;
 	unsigned long blend_productivity;
+	enum kcov_transition_reward_mode trew_mode;
 
 	if (kcov_shm == NULL || nr >= MAX_NR_SYSCALL)
 		return FRONTIER_COLD_SCALE;
@@ -565,35 +567,75 @@ static unsigned long frontier_cold_weight(unsigned int nr)
 		old_weight = FRONTIER_COLD_SCALE -
 			     (edges * FRONTIER_COLD_SCALE) / calls;
 
-	/* BLENDED weight (SHADOW-ONLY, [t12-frontier-blend]): treat
+	/* BLENDED weight (formerly SHADOW-ONLY, now mode-gated): treat
 	 * per_syscall_edges (call-count of productive calls) as the stable
-	 * backbone and ADD logarithmic credit for raw bucket-edge yield
-	 * (per_syscall_diag[].bucket_bits_real) and first-sight distinct
-	 * edges (per_syscall_diag[].distinct_pcs).  The old call-count
-	 * formula cannot distinguish a single invocation that opens a
-	 * subsystem and uncovers 50 fresh edges from a single bucket flip
-	 * that opened nothing new -- both bump per_syscall_edges by 1.
-	 * The blend adds the missing dimension without giving up the
-	 * stability of the call-count denominator.
+	 * backbone and ADD logarithmic credit for three disjoint per-call
+	 * yield signals:
 	 *
-	 * Diag counters are split by [nr][do32] (the arch dim the picker
-	 * does not know at this call site); sum both arch slots so the
-	 * blend's productivity numerator pairs against the unsplit
+	 *   bucket_bits_real
+	 *       PC bit transitions across the AFL-style hit-count buckets
+	 *       (per_syscall_diag[].bucket_bits_real).  Fires when a known
+	 *       edge moves into a never-seen hit-count bucket -- "new
+	 *       behaviour on known code".  Weight 1x.
+	 *
+	 *   distinct_pcs
+	 *       First-sight PC events (per_syscall_diag[].distinct_pcs):
+	 *       dedup_inc first-sightings of a PC the global bitmap had
+	 *       not seen.  Unambiguous new coverage; weighted 2x to
+	 *       reflect higher signal-to-noise than the bucket-bit term.
+	 *
+	 *   transition_edges_real_local  (THIS COMMIT)
+	 *       New transition slots flipped (per_syscall_transition_edges_
+	 *       real_local): a 0 -> 1 in the (prev_canon_pc, cur_canon_pc)
+	 *       hash, restricted to local-mode traces.  Fires when a new
+	 *       ORDERING between two PCs is observed -- can happen on
+	 *       warm-known code (a new route through already-mapped
+	 *       blocks).  Weight 1x: symmetric to bucket_bits in that a
+	 *       transition can fire on already-known edges, so the
+	 *       higher-confidence 2x slot stays reserved for distinct_pcs.
+	 *
+	 * The three terms are STRICTLY DISJOINT discovery signals: a
+	 * single PC-edge discovery bumps {edges, bucket_bits_real,
+	 * distinct_pcs}; a single transition discovery bumps
+	 * {transition_edges_real_local} and (via kcov_collect's separate
+	 * branch) {per_syscall_transition_edges_real}.  A call that
+	 * discovers both kinds of novelty correctly contributes to both
+	 * terms because two distinct novelty events happened -- there is
+	 * no double-counting.  Composition with the PC-edge backbone
+	 * coordinated with 86ee2986cec8 ("random-syscall: shadow-score
+	 * blended frontier cold weight"), which landed the bucket-bits
+	 * and distinct-pcs terms; this commit adds the disjoint
+	 * transition term and returns blend_weight under COMBINED mode
+	 * instead of always returning old_weight.
+	 *
+	 * Diag counters are split by [nr][do32]; sum both arch slots so
+	 * the blend's productivity numerator pairs against the unsplit
 	 * per_syscall_calls denominator above -- matches the unsplit
-	 * per_syscall_edges shape the old branch uses.
+	 * per_syscall_edges shape the old branch uses.  Transitions are
+	 * unsplit by [do32] (the per_syscall_transition_edges family
+	 * never grew the arch split), so a single load suffices for the
+	 * transition term.
 	 *
-	 * ilog2() is the per-call contribution clamp: a syscall whose
-	 * single huge trace dumped a million bucket bits contributes ~20
-	 * to the score, not a million, so one productive call cannot
-	 * monopolize the frontier window.  The distinct-edges term is
-	 * weighted 2x the bucket-bits term -- distinct first-sight events
-	 * are the higher-signal proxy (bucket-bit transitions can fire on
-	 * already-known edges that re-hit a different hit-count bucket;
-	 * a distinct first-sight event is unambiguously new coverage).
+	 * ilog2() is the per-call contribution clamp on each term: a
+	 * syscall whose single huge trace dumped a million transition
+	 * slots contributes ~20 to the score, not a million, so one
+	 * productive call cannot monopolize the frontier window.
 	 *
 	 * blend_productivity is capped at calls so the SCALE subtraction
 	 * cannot underflow -- same invariant the OLD branch above relies
-	 * on for the productive range. */
+	 * on for the productive range.
+	 *
+	 * The transition term is folded only when kcov_transition_reward_
+	 * mode != OFF.  Under SHADOW_ONLY the term IS folded into
+	 * blend_weight (so the A/B counters below measure the divergence
+	 * the COMBINED switch would activate); the function still returns
+	 * old_weight, so live selection stays byte-identical.  Under OFF
+	 * the term is zeroed so blend_weight reproduces the pre-commit
+	 * formula exactly, keeping the A/B counters comparable to runs
+	 * recorded before this commit landed. */
+	trew_mode = __atomic_load_n(&kcov_transition_reward_mode,
+				    __ATOMIC_RELAXED);
+
 	bucket_bits = __atomic_load_n(
 			&kcov_shm->per_syscall_diag[nr][0].bucket_bits_real,
 			__ATOMIC_RELAXED) +
@@ -606,10 +648,16 @@ static unsigned long frontier_cold_weight(unsigned int nr)
 		       __atomic_load_n(
 			&kcov_shm->per_syscall_diag[nr][1].distinct_pcs,
 			__ATOMIC_RELAXED);
+	transition_edges_real_local =
+		(trew_mode == KCOV_TRANSITION_REWARD_OFF) ? 0UL :
+		__atomic_load_n(
+			&kcov_shm->per_syscall_transition_edges_real_local[nr],
+			__ATOMIC_RELAXED);
 
 	blend_productivity = edges +
 			     (unsigned long)ilog2_ul(bucket_bits + 1UL) +
-			     2UL * (unsigned long)ilog2_ul(distinct_pcs + 1UL);
+			     2UL * (unsigned long)ilog2_ul(distinct_pcs + 1UL) +
+			     (unsigned long)ilog2_ul(transition_edges_real_local + 1UL);
 	if (blend_productivity >= calls)
 		blend_weight = 0;
 	else
@@ -617,14 +665,18 @@ static unsigned long frontier_cold_weight(unsigned int nr)
 			       (blend_productivity * FRONTIER_COLD_SCALE) /
 			       calls;
 
-	/* SHADOW-ONLY A/B counters.  Bumped once per call here so the
-	 * operator can read the run-wide divergence pattern between the
-	 * OLD (call-count only) and BLENDED (call-count +
-	 * ilog2(bucket_bits) + 2*ilog2(distinct_pcs)) productivity
-	 * scores.  Nothing downstream reads these counters -- the function
-	 * returns old_weight below and selection stays byte-identical.
-	 * The Dave-nodded gate for promoting the blend to live selection
-	 * is the A/B divergence pattern these counters expose. */
+	/* A/B counters.  Bumped once per call so the operator can read
+	 * the run-wide divergence pattern between the OLD (call-count
+	 * only) and BLENDED (call-count + ilog2(bucket_bits) +
+	 * 2*ilog2(distinct_pcs) + ilog2(transition_edges_real_local))
+	 * productivity scores.  Counter names predate the transition
+	 * term but the semantics ("how often the blend would steer
+	 * differently") are unchanged.  Under COMBINED the function
+	 * returns blend_weight below and these counters measure the
+	 * LIVE behaviour delta against the still-recorded OLD shape;
+	 * under SHADOW_ONLY/OFF the function returns old_weight and
+	 * these counters measure the would-be divergence the operator
+	 * is weighing for promotion. */
 	__atomic_fetch_add(&shm->stats.frontier_blend_samples, 1UL,
 			   __ATOMIC_RELAXED);
 	__atomic_fetch_add(&shm->stats.frontier_blend_old_weight_sum,
@@ -641,6 +693,12 @@ static unsigned long frontier_cold_weight(unsigned int nr)
 		__atomic_fetch_add(&shm->stats.frontier_blend_new_equal,
 				   1UL, __ATOMIC_RELAXED);
 
+	/* COMBINED mode promotes the blend (now including the transition
+	 * term) to the live picker.  Any other mode -- SHADOW_ONLY (the
+	 * default) or OFF -- returns the historical OLD weight, keeping
+	 * live selection byte-identical to the pre-knob baseline. */
+	if (trew_mode == KCOV_TRANSITION_REWARD_COMBINED)
+		return blend_weight;
 	return old_weight;
 }
 
@@ -1322,6 +1380,24 @@ static void maybe_rotate_strategy(void)
 			 __atomic_load_n(&shm->bandit_cmp_new_constants[next],
 					 __ATOMIC_RELAXED),
 			 __ATOMIC_RELAXED);
+	/* Reseed the transition reward window-start snapshots so the per-
+	 * window delta bandit_record_pull reads on the next rotation
+	 * matches the (next, this-window) cohort.  Same RELAXED cadence
+	 * and single-writer ordering as the pc_edge_*_at_window_start
+	 * pair above; consumed by bandit_record_pull under COMBINED mode
+	 * (it folds (transition_edge_count_by_strategy[arm] - this
+	 * snapshot) / TRANSITION_BANDIT_REWARD_WEIGHT_RECIPROCAL into the
+	 * per-arm reward total).  Reseeded unconditionally so OFF/SHADOW_
+	 * ONLY runs keep the snapshot fresh; COMBINED can be flipped on
+	 * mid-run without the bandit reading a stale window-start. */
+	__atomic_store_n(&shm->stats.transition_edge_count_at_window_start,
+			 __atomic_load_n(&shm->stats.transition_edge_count_by_strategy[next],
+					 __ATOMIC_RELAXED),
+			 __ATOMIC_RELAXED);
+	__atomic_store_n(&shm->stats.transition_edge_calls_at_window_start,
+			 __atomic_load_n(&shm->stats.transition_edge_calls_by_strategy[next],
+					 __ATOMIC_RELAXED),
+			 __ATOMIC_RELAXED);
 	/* Reseed the kmsg_warn_fires snapshot from the live counter (not a
 	 * per-strategy mirror -- the underlying counter is global).  A
 	 * future commit in this stack reads this snapshot at the top of the
@@ -1462,6 +1538,12 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	 * reaches the classifier (new_edges stays false there). */
 	unsigned int rescue_cold_skip_pct_before = 0;
 
+	/* Initialised here so the transition-attribution block below (which
+	 * runs unconditionally on the CMP-mode side too, gated on
+	 * pcres.transition_edges_real_local > 0) sees a clean zero when
+	 * the kcov_collect path is skipped. */
+	struct kcov_pc_result pcres = { 0 };
+
 	if (child->kcov.mode == KCOV_MODE_PC) {
 		rescue_cold_skip_pct_before =
 			kcov_syscall_cold_skip_pct(rec->nr);
@@ -1474,9 +1556,18 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 		if (rec->validator_rejected)
 			new_edges = false;
 		else
+			/* Pass &pcres (not NULL) so the per-strategy
+			 * transition reward attribution below has access to
+			 * pcres.transition_edges_real_local.  The bucket_bits
+			 * / distinct_edges / local_distinct_pcs fields are
+			 * also populated but the existing PC-edge attribution
+			 * path consumes new_edge_count instead, so they are
+			 * written but not read here -- the extra struct stores
+			 * are zero-atomics and unmeasurable on the per-call
+			 * cost. */
 			new_edges = kcov_collect(&child->kcov, rec->nr,
 						 rec->do32bit,
-						 &new_edge_count, NULL);
+						 &new_edge_count, &pcres);
 	} else {
 		new_cmp = kcov_collect_cmp(&child->kcov, rec->nr,
 					   rec->do32bit,
@@ -1657,6 +1748,70 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 			}
 		}
 	}
+
+	/* Per-strategy transition-reward attribution.  Independent of the
+	 * new_edges gate above: a call can flip transition slots (a new
+	 * ordering between two PCs) without flipping any new bucket bit
+	 * -- the canonical "transition fires on warm-known PCs through a
+	 * new route" case is exactly the signal the operator wants
+	 * separated from the PC-edge stream.  The kcov_collect path
+	 * already filters pcres.transition_edges_real_local on
+	 * !kc->remote_mode and on kcov_transition_reward_mode != OFF
+	 * (see the result-population branch in kcov_collect), so a
+	 * non-zero value here means a local-mode call earned a reward-
+	 * eligible transition delta.
+	 *
+	 * Explorer-pool calls are skipped for the same reason PC-edge
+	 * attribution skips them above: explorers always run STRATEGY_
+	 * RANDOM, so crediting the active bandit arm here would either
+	 * inflate a non-RANDOM arm's reward (when the bandit picked
+	 * something else) or double-count when both pools picked RANDOM.
+	 *
+	 * The raw transition count is capped at TRANSITION_PER_CALL_
+	 * REWARD_CAP before being added to transition_edge_count_by_
+	 * strategy[] so a single pathological trace (e.g. a syscall that
+	 * opens a brand-new control-flow region and flips thousands of
+	 * transition slots in one call) cannot monopolize the per-window
+	 * delta the bandit reads as reward.  The uncapped real-flip
+	 * counter per_syscall_transition_edges_real keeps reporting the
+	 * full magnitude for the stats-dump top-N; the cap only applies
+	 * to the reward-attribution path. */
+	if (pcres.transition_edges_real_local > 0 &&
+	    !child->is_explorer && rec->nr < MAX_NR_SYSCALL) {
+		int strat = child->strategy_at_pick;
+
+		if (strat >= 0 && strat < NR_STRATEGIES) {
+			unsigned long capped =
+				pcres.transition_edges_real_local;
+
+			if (capped > TRANSITION_PER_CALL_REWARD_CAP)
+				capped = TRANSITION_PER_CALL_REWARD_CAP;
+			__atomic_fetch_add(
+				&shm->stats.transition_edge_calls_by_strategy[strat],
+				1UL, __ATOMIC_RELAXED);
+			__atomic_fetch_add(
+				&shm->stats.transition_edge_count_by_strategy[strat],
+				capped, __ATOMIC_RELAXED);
+		}
+	}
+
+	/* COMBINED-mode only: bump the per-syscall frontier-edge ring on
+	 * the transition-discovery path so syscalls producing transitions
+	 * (a new ordering through warm-known code) but no fresh PC bucket
+	 * bits still earn frontier credit -- this is the whole point of
+	 * promoting the signal, since the empirically-observed regime is
+	 * one where transition discovery is healthy while PC-edge
+	 * discovery has plateaued.  In SHADOW_ONLY (the default) the ring
+	 * stays driven only by frontier_record_new_edge() so the
+	 * silent-regime picker distribution remains byte-identical to the
+	 * pre-knob baseline.  Same is_explorer + nr-bounds guards as the
+	 * attribution block above. */
+	if (pcres.transition_edges_real_local > 0 &&
+	    !child->is_explorer && rec->nr < MAX_NR_SYSCALL &&
+	    __atomic_load_n(&kcov_transition_reward_mode,
+			    __ATOMIC_RELAXED) ==
+	    KCOV_TRANSITION_REWARD_COMBINED)
+		frontier_record_transition_edge((unsigned int)rec->nr);
 
 	output_syscall_postfix(rec);
 

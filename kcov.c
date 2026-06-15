@@ -117,6 +117,16 @@ enum childop_kcov_attribution_mode childop_kcov_attr_mode =
 enum kcov_transition_coverage_mode kcov_transition_coverage_mode =
 	KCOV_TRANSITION_COVERAGE_SHADOW;
 
+/* Default is SHADOW_ONLY: compute the per-strategy transition reward
+ * and bump the attribution counters in shm->stats so the operator can
+ * read the divergence, but leave live picker behaviour byte-identical
+ * to the pre-knob baseline.  Promoting to COMBINED is an opt-in A/B
+ * the operator runs on the fuzz box; the default keeps this commit
+ * behaviour-preserving on land.  See the kcov_transition_reward_mode
+ * enum in include/kcov.h for the full contract. */
+enum kcov_transition_reward_mode kcov_transition_reward_mode =
+	KCOV_TRANSITION_REWARD_SHADOW_ONLY;
+
 /*
  * Record a KCOV PC or remote enable/disable failure into the parent-
  * visible pc_diag slots.  Called from child context (post-dup2-to-
@@ -1442,6 +1452,7 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 		result->bucket_bits = 0;
 		result->distinct_edges = 0;
 		result->local_distinct_pcs = 0;
+		result->transition_edges_real_local = 0;
 	}
 
 	if (!kc->active)
@@ -1751,14 +1762,36 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 		 * (per_syscall_transition_edges_real) carries the raw flip
 		 * count so a single call that opens a large new region is
 		 * not flattened to the same weight as a call that flipped a
-		 * single slot. */
+		 * single slot.
+		 *
+		 * per_syscall_transition_edges_real_local mirrors the _real
+		 * counter restricted to local-mode kcov traces (remote-mode
+		 * traces merge coverage copied from remote contexts whose PC
+		 * ordering is not verified to preserve transition adjacency
+		 * -- see the kcov_transition_reward_mode enum comment in
+		 * include/kcov.h).  It is the local-only signal frontier_
+		 * cold_weight() folds into its blend; the unfiltered _real
+		 * counter stays the stats-dump observability signal so the
+		 * top-N output keeps reflecting the full transition load.
+		 * Gated additionally on kcov_transition_reward_mode != OFF
+		 * so OFF mode pays zero per-call cost. */
 		if (transitions_this_call > 0) {
+			enum kcov_transition_reward_mode trew_mode =
+				__atomic_load_n(&kcov_transition_reward_mode,
+						__ATOMIC_RELAXED);
+
 			__atomic_fetch_add(
 				&kcov_shm->per_syscall_transition_edges[nr],
 				1, __ATOMIC_RELAXED);
 			__atomic_fetch_add(
 				&kcov_shm->per_syscall_transition_edges_real[nr],
 				transitions_this_call, __ATOMIC_RELAXED);
+			if (!kc->remote_mode &&
+			    trew_mode != KCOV_TRANSITION_REWARD_OFF)
+				__atomic_fetch_add(
+					&kcov_shm->per_syscall_transition_edges_real_local[nr],
+					transitions_this_call,
+					__ATOMIC_RELAXED);
 		}
 	} else if (nr >= CHILDOP_KCOV_NR_BASE) {
 		/* per-childop mirror
@@ -1805,6 +1838,20 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 		result->bucket_bits = edges_this_call;
 		result->distinct_edges = distinct_edges_this_call;
 		result->local_distinct_pcs = local_distinct_pcs;
+		/* Zeroed for remote-mode traces (the live-reward path
+		 * excludes them -- see the kcov_transition_reward_mode
+		 * remote-mode contract in include/kcov.h) and for OFF mode
+		 * (which never ran the inner tcov bump branch but the
+		 * per-call counter would still be a valid local count;
+		 * gating here keeps the caller-side accounting symmetric
+		 * with the per_syscall_transition_edges_real_local gate
+		 * above so OFF mode pays zero attribution cost). */
+		if (!kc->remote_mode &&
+		    __atomic_load_n(&kcov_transition_reward_mode,
+				    __ATOMIC_RELAXED) !=
+		    KCOV_TRANSITION_REWARD_OFF)
+			result->transition_edges_real_local =
+				transitions_this_call;
 	}
 
 	return found_new;

@@ -201,6 +201,7 @@ void bandit_record_pull(int arm, enum strategy_selection_reason reason,
 			bool was_chaos)
 {
 	unsigned long cmp_term;
+	unsigned long trans_term;
 	unsigned long total;
 	unsigned long now_window;
 	unsigned int chaos_idx;
@@ -212,7 +213,45 @@ void bandit_record_pull(int arm, enum strategy_selection_reason reason,
 		return;
 
 	cmp_term = cmp_new_constants / CMP_BANDIT_REWARD_WEIGHT_RECIPROCAL;
-	total = pc_edge_calls + cmp_term;
+
+	/* Transition-reward window delta.  Read from shm->stats directly
+	 * rather than threaded through a new parameter so the function
+	 * signature (and its declaration in include/strategy.h) stays
+	 * unchanged.  The transition window-start snapshot is reseeded
+	 * during the rotation handler in maybe_rotate_strategy (random-
+	 * syscall.c) at the same RELAXED cadence as the pc_edge_*_at_
+	 * window_start pair; computing the delta here is symmetric to how
+	 * maybe_rotate_strategy computes pc_edge_calls / pc_edge_count
+	 * before calling in.
+	 *
+	 * trans_term divides the raw transition delta by TRANSITION_BANDIT_
+	 * REWARD_WEIGHT_RECIPROCAL (= 4, a 0.25 secondary weight matching
+	 * the CMP-term shape) and is added only under COMBINED mode.  The
+	 * per-call cap that prevents one pathological trace from
+	 * monopolizing the window lives at the source bump in random-
+	 * syscall.c (TRANSITION_PER_CALL_REWARD_CAP); no additional cap
+	 * is needed here.  Under SHADOW_ONLY/OFF trans_term stays zero so
+	 * the bandit reward total is byte-identical to the pre-knob
+	 * baseline. */
+	if (__atomic_load_n(&kcov_transition_reward_mode,
+			    __ATOMIC_RELAXED) ==
+	    KCOV_TRANSITION_REWARD_COMBINED) {
+		unsigned long trans_now = __atomic_load_n(
+			&shm->stats.transition_edge_count_by_strategy[arm],
+			__ATOMIC_RELAXED);
+		unsigned long trans_start = __atomic_load_n(
+			&shm->stats.transition_edge_count_at_window_start,
+			__ATOMIC_RELAXED);
+		unsigned long trans_delta = (trans_now >= trans_start) ?
+					     (trans_now - trans_start) : 0UL;
+
+		trans_term = trans_delta /
+			     TRANSITION_BANDIT_REWARD_WEIGHT_RECIPROCAL;
+	} else {
+		trans_term = 0;
+	}
+
+	total = pc_edge_calls + cmp_term + trans_term;
 
 	/* Always bucket the just-finished window by (arm, reason) before
 	 * any cohort-gated learner update.  These matrices are diagnostic
@@ -565,6 +604,61 @@ void frontier_record_new_edge(unsigned int nr)
 	 * max can clobber our store with its (also-correct) value, and a
 	 * racing rotation will overwrite with the authoritative recompute.
 	 * Both outcomes leave the cache within one window's slack. */
+	w = frontier_recent_count(nr);
+	if (w > UINT_MAX)
+		w = UINT_MAX;
+	cached = __atomic_load_n(&shm->frontier_max_weight_cached,
+				 __ATOMIC_RELAXED);
+	if ((unsigned int)w > cached)
+		__atomic_store_n(&shm->frontier_max_weight_cached,
+				 (unsigned int)w, __ATOMIC_RELAXED);
+}
+
+/*
+ * Transition-discovery sibling of frontier_record_new_edge().  Bumps
+ * the same per-syscall frontier-edge ring + cached max + silent-streak
+ * reset triple, treating a transition-slot flip as evidence that the
+ * syscall is currently producing fresh control-flow coverage.  The
+ * canonical signal pattern this commit promotes is "PC-edge discovery
+ * plateaued while transition discovery still moves" -- so under
+ * COMBINED mode the frontier ring needs to be pushed up for syscalls
+ * producing transitions but no fresh PC bucket bits, otherwise the
+ * silent-regime picker steers away from exactly the syscalls that are
+ * still earning the post-plateau coverage.
+ *
+ * Caller-side gates (in random-syscall.c at the kcov_collect call
+ * site) handle the kcov_transition_reward_mode == COMBINED and
+ * !child->is_explorer and !child->kcov.remote_mode filters before
+ * invoking, so this function only sees calls that should bump the
+ * ring.  The RedQueen-source PC-edge attribution branch in
+ * frontier_record_new_edge() is deliberately omitted here -- that
+ * counter measures PC-edge wins from RedQueen-sourced corpus replays
+ * and a transition discovery is a different signal.  The silent-streak
+ * reset DOES apply: a syscall producing transitions has demonstrably
+ * been productive this window, which is the streak's reset semantics
+ * (frontier_silent_streak_per_syscall is a "consecutive cold windows"
+ * counter, agnostic to PC vs transition).
+ */
+void frontier_record_transition_edge(unsigned int nr)
+{
+	uint32_t slot;
+	unsigned long w;
+	unsigned int cached;
+
+	if (nr >= MAX_NR_SYSCALL)
+		return;
+
+	slot = __atomic_load_n(&shm->frontier_slot, __ATOMIC_RELAXED) &
+	       (FRONTIER_DECAY_WINDOWS - 1);
+	__atomic_fetch_add(&shm->frontier_history[nr][slot], 1U,
+			   __ATOMIC_RELAXED);
+	__atomic_fetch_add(&shm->frontier_recent_count_cached[nr], 1U,
+			   __ATOMIC_RELAXED);
+
+	__atomic_store_n(
+		&shm->stats.frontier_silent_streak_per_syscall[nr],
+		0UL, __ATOMIC_RELAXED);
+
 	w = frontier_recent_count(nr);
 	if (w > UINT_MAX)
 		w = UINT_MAX;
