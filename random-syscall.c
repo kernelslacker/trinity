@@ -1668,37 +1668,93 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	 *     with full intensification under the diagnostic this re-exec
 	 *     was designed to break.
 	 */
-	if (!child->in_reexec &&
-	    child->redqueen_enabled &&
-	    child->kcov.mode == KCOV_MODE_CMP &&
-	    !child->in_chain_mid_step &&
-	    new_cmp > 0 &&
-	    child->reexec_pending_count > 0) {
+	{
+		/* Per-call gate disposition bucketing (PHASE 0 measurement-
+		 * correctness): every dispatch_step that reaches this tail
+		 * bumps EXACTLY ONE counter, partitioning the gap between
+		 * reexec_attribution_found and reexec_attempts.  The
+		 * evaluation order below mirrors the original short-circuited
+		 * compound `if`; gate_skipped holds the counter address for
+		 * the first failing gate (NULL == all gates cleared, the
+		 * re-exec actually fired).  Behaviour is unchanged -- the
+		 * reexec call site and rate-gate semantics are identical to
+		 * the prior code; only the accounting around it is new. */
+		unsigned long *gate_skipped = NULL;
+		bool gate_passed = false;
 		bool plateau_burst = false;
 
-		if (kcov_shm != NULL &&
-		    __atomic_load_n(&kcov_shm->plateau_active,
-				    __ATOMIC_RELAXED)) {
-			int h = __atomic_load_n(&shm->plateau_current_hypothesis,
-						__ATOMIC_RELAXED);
+		if (child->in_reexec) {
+			gate_skipped = (kcov_shm != NULL)
+				? &kcov_shm->reexec_gate_skip_in_reexec
+				: NULL;
+		} else if (!child->redqueen_enabled) {
+			gate_skipped = (kcov_shm != NULL)
+				? &kcov_shm->reexec_gate_skip_disabled
+				: NULL;
+		} else if (child->kcov.mode != KCOV_MODE_CMP) {
+			gate_skipped = (kcov_shm != NULL)
+				? &kcov_shm->reexec_gate_skip_mode
+				: NULL;
+		} else if (child->in_chain_mid_step) {
+			gate_skipped = (kcov_shm != NULL)
+				? &kcov_shm->reexec_gate_skip_chain_mid
+				: NULL;
+		} else if (new_cmp == 0) {
+			gate_skipped = (kcov_shm != NULL)
+				? &kcov_shm->reexec_gate_skip_no_new_cmp
+				: NULL;
+		} else if (child->reexec_pending_count == 0) {
+			gate_skipped = (kcov_shm != NULL)
+				? &kcov_shm->reexec_gate_skip_no_pending
+				: NULL;
+		} else {
+			/* All boolean gates cleared; the rate gate
+			 * (ONE_IN(N) baseline plus always-on during a
+			 * CMP_RISING_PC_FLAT plateau) decides between
+			 * gate_pass and the rate-skip bucket. */
+			if (kcov_shm != NULL &&
+			    __atomic_load_n(&kcov_shm->plateau_active,
+					    __ATOMIC_RELAXED)) {
+				int h = __atomic_load_n(
+					&shm->plateau_current_hypothesis,
+					__ATOMIC_RELAXED);
 
-			if (h == PLATEAU_HYPOTHESIS_CMP_RISING_PC_FLAT)
-				plateau_burst = true;
+				if (h == PLATEAU_HYPOTHESIS_CMP_RISING_PC_FLAT)
+					plateau_burst = true;
+			}
+
+			if (plateau_burst ||
+			    ONE_IN(REDQUEEN_REEXEC_GATE_DENOM)) {
+				/* Per-call cap C-1: drain a single
+				 * attribution per parent dispatch.
+				 * Slot 0 is the first-emitted (earliest
+				 * CMP record's first-matching arg slot);
+				 * keeping a stable pick rather than a
+				 * random one means the lift metric
+				 * attributes deterministically to that
+				 * policy. */
+				struct reexec_pending p =
+					child->reexec_pending[0];
+
+				child->in_reexec = true;
+				redqueen_reexec_step(child, &p);
+				child->in_reexec = false;
+				gate_passed = true;
+			} else {
+				gate_skipped = (kcov_shm != NULL)
+					? &kcov_shm->reexec_gate_skip_rate
+					: NULL;
+			}
 		}
 
-		if (plateau_burst ||
-		    ONE_IN(REDQUEEN_REEXEC_GATE_DENOM)) {
-			/* Per-call cap C-1: drain a single attribution per
-			 * parent dispatch.  Slot 0 is the first-emitted
-			 * (earliest CMP record's first-matching arg slot);
-			 * keeping a stable pick rather than a random one
-			 * means the lift metric attributes deterministically
-			 * to that policy. */
-			struct reexec_pending p = child->reexec_pending[0];
-
-			child->in_reexec = true;
-			redqueen_reexec_step(child, &p);
-			child->in_reexec = false;
+		if (kcov_shm != NULL) {
+			if (gate_passed)
+				__atomic_fetch_add(
+					&kcov_shm->reexec_gate_pass,
+					1UL, __ATOMIC_RELAXED);
+			else if (gate_skipped != NULL)
+				__atomic_fetch_add(gate_skipped,
+						   1UL, __ATOMIC_RELAXED);
 		}
 	}
 
@@ -1984,6 +2040,8 @@ static bool redqueen_reexec_step(struct childdata *child,
 	child->strategy_at_pick = -1;
 
 	if (kcov_shm != NULL) {
+		unsigned int op_type = (unsigned int)child->op_type;
+
 		__atomic_fetch_add(&kcov_shm->reexec_attempts, 1UL,
 				   __ATOMIC_RELAXED);
 		/* per-nr partition of the re-exec attempt
@@ -1994,6 +2052,15 @@ static bool redqueen_reexec_step(struct childdata *child,
 		if (rec->nr < MAX_NR_SYSCALL)
 			__atomic_fetch_add(
 				&kcov_shm->reexec_attempts_by_syscall[rec->nr],
+				1UL, __ATOMIC_RELAXED);
+		/* per-childop partition of the re-exec attempt counter,
+		 * sibling of the per-syscall bump above.  Lets a re-exec
+		 * driven by a non-OP_SYSCALL childop (recipe runner, io_uring
+		 * flood, etc.) be counted separately from the same nr fired
+		 * from the default OP_SYSCALL flow. */
+		if (op_type < KCOV_CHILDOP_NR_MAX)
+			__atomic_fetch_add(
+				&kcov_shm->reexec_attempts_by_childop[op_type],
 				1UL, __ATOMIC_RELAXED);
 	}
 	child->reexec_count_window++;
@@ -2013,11 +2080,22 @@ static bool redqueen_reexec_step(struct childdata *child,
 		ok = dispatch_step(child, entry, NULL, &inner_new_cmp);
 
 		if (kcov_shm != NULL && inner_new_cmp > 0) {
+			unsigned int op_type = (unsigned int)child->op_type;
+
 			__atomic_fetch_add(&kcov_shm->reexec_new_cmps_total,
 					   inner_new_cmp, __ATOMIC_RELAXED);
 			if (rec->nr < MAX_NR_SYSCALL)
 				__atomic_fetch_add(
 					&kcov_shm->per_syscall_cmp_novelty_reexec[rec->nr],
+					inner_new_cmp, __ATOMIC_RELAXED);
+			/* per-childop partition of the re-exec lift signal,
+			 * sibling of the per-syscall sibling above.  Same
+			 * inner_new_cmp accumulation; the childop dimension
+			 * answers "which non-OP_SYSCALL childops are
+			 * harvesting the bulk of the re-exec CMP novelty". */
+			if (op_type < KCOV_CHILDOP_NR_MAX)
+				__atomic_fetch_add(
+					&kcov_shm->per_childop_cmp_novelty_reexec[op_type],
 					inner_new_cmp, __ATOMIC_RELAXED);
 			/* per-slot success counter.  Pair
 			 * with reexec_attribution_slot_hist (the per-slot

@@ -1103,6 +1103,128 @@ struct kcov_shared {
 	unsigned long cmp_hints_save_reject_sentinel;
 	unsigned long cmp_hints_save_reject_dup;
 	unsigned long cmp_hints_save_reject_cap;
+
+	/* Measurement-correctness counters for the RedQueen attribution +
+	 * re-exec funnel.  Counter-only -- nothing in the picker, gates, or
+	 * selection policy reads them.  Relaxed atomics; cumulative across
+	 * the run; append-only at struct tail per the comment above.
+	 *
+	 * The pre-existing reexec_* family covers the flat aggregates and
+	 * the per-syscall partitions of attempts + ambiguity; the per-call
+	 * gate disposition (why a parent call with staged attributions
+	 * did or did not fire a re-exec) was a single un-partitioned gap
+	 * between reexec_attribution_found and reexec_attempts, and the
+	 * per-childop dimension of the same funnel was invisible (a
+	 * childop-driven OP_SYSCALL flow was indistinguishable from a
+	 * top-level random-syscall dispatch in the per-syscall arrays).
+	 *
+	 * The split below mirrors the existing reexec_*_by_syscall pattern
+	 * for the per-syscall HEAD of the funnel and adds the matching
+	 * per-childop arrays + the gate-cause bucketing.  Snapshot health
+	 * is the consumer-side counterpart of dispatch_args_valid: a
+	 * non-zero cmp_attribution_snapshot_unavailable means the
+	 * [11-snapshot] dispatch_args[] feed is not reaching attribution.
+	 *
+	 *  reexec_attribution_found_by_syscall[nr]
+	 *      Per-nr partition of reexec_attribution_found: bumped from
+	 *      cmp_hints_collect() alongside the flat counter on every
+	 *      record where the attribution scan staged a (slot, value)
+	 *      tuple into reexec_pending[].
+	 *  reexec_attribution_dropped_pending_by_syscall[nr]
+	 *      Per-nr partition of reexec_pending_dropped: bumped once per
+	 *      parent call from cmp_hints_collect() when the reexec_pending
+	 *      buffer fills mid-scan.  Non-zero per-nr identifies the hot
+	 *      attributing syscalls whose attribution census is truncated.
+	 *  reexec_attribution_found_by_childop[op]
+	 *      Per-childop partition of reexec_attribution_found, indexed
+	 *      by enum child_op_type bounded to KCOV_CHILDOP_NR_MAX.
+	 *      Bumped alongside the per-syscall sibling so an attribution
+	 *      driven through a non-OP_SYSCALL childop (e.g. recipe runner,
+	 *      io_uring flood) is countable separately from the same nr
+	 *      dispatched from the default OP_SYSCALL flow.
+	 *  reexec_attribution_ambiguous_by_childop[op]
+	 *      Per-childop partition of reexec_attribution_ambiguous.
+	 *  reexec_attempts_by_childop[op]
+	 *      Per-childop partition of reexec_attempts.  Bumped from
+	 *      redqueen_reexec_step() alongside the per-syscall sibling.
+	 *  per_childop_cmp_novelty_reexec[op]
+	 *      Per-childop partition of reexec_new_cmps_total.  Bumped
+	 *      from redqueen_reexec_step() with the inner-dispatch
+	 *      new_cmp value, alongside the per-syscall sibling.
+	 *
+	 *  reexec_gate_skip_in_reexec
+	 *  reexec_gate_skip_disabled
+	 *  reexec_gate_skip_mode
+	 *  reexec_gate_skip_chain_mid
+	 *  reexec_gate_skip_no_new_cmp
+	 *  reexec_gate_skip_no_pending
+	 *  reexec_gate_skip_rate
+	 *  reexec_gate_pass
+	 *      Per-parent-call gate disposition at dispatch_step's re-exec
+	 *      tail.  Mutually exclusive: each dispatch_step that reaches
+	 *      the tail bumps EXACTLY ONE of these (the first gate to
+	 *      fail in evaluation order, or _pass when all gates cleared
+	 *      and redqueen_reexec_step ran).  Sum across the eight
+	 *      counters == total dispatch_step calls that reached the
+	 *      tail, which is the parent-call population the gate samples
+	 *      from.  Skip-reasons in evaluation order:
+	 *        - in_reexec      recursion guard (the inner dispatch_step
+	 *                         the re-exec helper itself invoked)
+	 *        - disabled       child not in the A/B redqueen-enabled
+	 *                         cohort (control arm)
+	 *        - mode           PC-mode child; CMP-mode is required to
+	 *                         produce attribution at all
+	 *        - chain_mid      in_chain_mid_step set; a chain replay's
+	 *                         saved step sequence cannot accommodate
+	 *                         an intermediate re-exec
+	 *        - no_new_cmp     parent call produced no bloom-novel CMP
+	 *                         records (only re-harvested known ones)
+	 *        - no_pending     attribution scan staged zero matches
+	 *                         (no rec->aN value tied to the kernel's
+	 *                         compared operand)
+	 *        - rate           rate gate (ONE_IN(N)) did not fire and
+	 *                         plateau-burst was not active
+	 *      The gap reexec_attribution_found - reexec_attempts is now
+	 *      bucketed by this counter family rather than inferred from
+	 *      a single global delta.
+	 *
+	 *  cmp_attribution_calls_eligible
+	 *      Count of cmp_hints_collect() calls where every attribution
+	 *      precondition cleared (child != NULL, redqueen_enabled,
+	 *      !in_reexec, reexec_pending_count < MAX_REEXEC_PENDING,
+	 *      entry != NULL, entry->num_args > 0, dispatch_args_valid).
+	 *      Denominator for the per-eligible-call attribution win
+	 *      rate -- pair with reexec_attribution_found to read what
+	 *      fraction of eligible parent calls staged at least one
+	 *      match across the call's CMP trace.
+	 *  cmp_attribution_snapshot_unavailable
+	 *      Count of cmp_hints_collect() calls where the redqueen
+	 *      cohort gate cleared and entry->num_args > 0, but
+	 *      rec->dispatch_args_valid was false -- i.e. the per-call
+	 *      arg snapshot the [11-snapshot] feed promised was missing.
+	 *      A healthy run holds this at zero; non-zero means a
+	 *      regression somewhere between __do_syscall's snapshot
+	 *      populate and the cmp_hints_collect consumer (or a
+	 *      parent-context caller reaching cmp_hints_collect that
+	 *      shouldn't).  Attribution correctly skips the call; the
+	 *      counter exposes the rate so the snapshot-feed health is
+	 *      not silently zeroed-out into the eligible cohort. */
+	unsigned long reexec_attribution_found_by_syscall[MAX_NR_SYSCALL];
+	unsigned long reexec_attribution_dropped_pending_by_syscall[MAX_NR_SYSCALL];
+	unsigned long reexec_attribution_found_by_childop[KCOV_CHILDOP_NR_MAX];
+	unsigned long reexec_attribution_ambiguous_by_childop[KCOV_CHILDOP_NR_MAX];
+	unsigned long reexec_attempts_by_childop[KCOV_CHILDOP_NR_MAX];
+	unsigned long per_childop_cmp_novelty_reexec[KCOV_CHILDOP_NR_MAX];
+	unsigned long reexec_gate_skip_in_reexec;
+	unsigned long reexec_gate_skip_disabled;
+	unsigned long reexec_gate_skip_mode;
+	unsigned long reexec_gate_skip_chain_mid;
+	unsigned long reexec_gate_skip_no_new_cmp;
+	unsigned long reexec_gate_skip_no_pending;
+	unsigned long reexec_gate_skip_rate;
+	unsigned long reexec_gate_pass;
+	unsigned long cmp_attribution_calls_eligible;
+	unsigned long cmp_attribution_snapshot_unavailable;
 };
 
 extern struct kcov_shared *kcov_shm;
