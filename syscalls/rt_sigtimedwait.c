@@ -5,7 +5,6 @@
  */
 #include <signal.h>
 #include <string.h>
-#include <time.h>
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -70,101 +69,30 @@ static void build_sigset(sigset_t *set)
 	}
 }
 
-static void build_timeout(struct timespec *ts, unsigned long *sigsetsize)
+static void sanitise_rt_sigtimedwait(struct syscallrecord *rec)
 {
-	unsigned int draw = rnd_modulo_u32(8);
+	sigset_t *set;
 
-	switch (draw) {
-	case 0:
-		/* zero -- poll, return immediately */
-		ts->tv_sec = 0;
-		ts->tv_nsec = 0;
-		break;
-	case 1:
-		/* tiny -- fast-path: 1 ns */
-		ts->tv_sec = 0;
-		ts->tv_nsec = 1;
-		break;
-	case 2:
-		/* 1 ms */
-		ts->tv_sec = 0;
-		ts->tv_nsec = 1000000;
-		break;
-	case 3:
-		/* 100 ms */
-		ts->tv_sec = 0;
-		ts->tv_nsec = 100000000;
-		break;
-	case 4:
-		/* 1 s -- still bounded; child wall time stays sane */
-		ts->tv_sec = 1;
-		ts->tv_nsec = 0;
-		break;
-	case 5:
-		/* far-future: 10000 s.  The syscall must not overflow
-		 * when converting to internal jiffies/ktime_t.  The
-		 * alarm timer wired up by NEED_ALARM will interrupt
-		 * us long before we ever wait this out. */
-		ts->tv_sec = 10000;
-		ts->tv_nsec = 0;
-		break;
-	case 6:
-		/* intentionally invalid: tv_nsec >= 1e9 -- keeps the
-		 * EINVAL gate warm */
-		ts->tv_sec = 0;
-		ts->tv_nsec = 1000000000 + (long) rand32();
-		break;
-	default:
-		/* 10 ms variant */
-		ts->tv_sec = 0;
-		ts->tv_nsec = 10000000;
-		break;
-	}
+	set = (sigset_t *) get_writable_address(sizeof(*set));
+	if (set == NULL)
+		return;
+	build_sigset(set);
+	rec->a1 = (unsigned long) set;
+
+	/*
+	 * a3 (uts) is typed ARG_TIMESPEC; the generator publishes a
+	 * writable pool buffer (or NULL ~10%) for us.  NEED_ALARM caps
+	 * any blocking arm a large tv_sec bucket would otherwise produce.
+	 */
 
 	/*
 	 * sigsetsize legality: 90% sizeof(sigset_t) (the only value the
 	 * kernel accepts on this arch), 10% intentionally-malformed so
 	 * the EINVAL gate against signal_size mismatches keeps firing.
 	 */
-	if (rnd_modulo_u32(10) < 9)
-		*sigsetsize = sizeof(sigset_t);
-	else
-		*sigsetsize = (unsigned long) rand32();
-}
-
-static void sanitise_rt_sigtimedwait(struct syscallrecord *rec)
-{
-	sigset_t *set;
-	struct timespec *ts;
-	unsigned long sigsetsize;
-
-	set = (sigset_t *) get_writable_address(sizeof(*set));
-	if (set == NULL)
-		return;
-	build_sigset(set);
-
-	/*
-	 * Timeout pointer bucket: most of the time non-NULL (with a
-	 * shaped timespec from build_timeout), small fraction NULL
-	 * (block-forever -- the alarm timer will fire).
-	 */
-	if (rnd_modulo_u32(10) < 8) {
-		ts = (struct timespec *) get_writable_address(sizeof(*ts));
-		if (ts == NULL)
-			return;
-		build_timeout(ts, &sigsetsize);
-		rec->a3 = (unsigned long) ts;
-	} else {
-		rec->a3 = 0;
-		/* Still resolve sigsetsize even when ts is NULL. */
-		if (rnd_modulo_u32(10) < 9)
-			sigsetsize = sizeof(sigset_t);
-		else
-			sigsetsize = (unsigned long) rand32();
-	}
-
-	rec->a1 = (unsigned long) set;
-	rec->a4 = sigsetsize;
+	rec->a4 = (rnd_modulo_u32(10) < 9)
+		? sizeof(sigset_t)
+		: (unsigned long) rand32();
 
 	/*
 	 * uinfo (a2) is the kernel's writeback target for the siginfo of the
@@ -178,7 +106,7 @@ struct syscallentry syscall_rt_sigtimedwait = {
 	.name = "rt_sigtimedwait",
 	.group = GROUP_SIGNAL,
 	.num_args = 4,
-	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_ADDRESS, [2] = ARG_ADDRESS, [3] = ARG_LEN },
+	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_ADDRESS, [2] = ARG_TIMESPEC, [3] = ARG_LEN },
 	.argname = { [0] = "uthese", [1] = "uinfo", [2] = "uts", [3] = "sigsetsize" },
 	.sanitise = sanitise_rt_sigtimedwait,
 	.flags = NEED_ALARM,
