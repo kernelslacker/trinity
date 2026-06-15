@@ -768,6 +768,23 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 				rec_args[4] = rec->dispatch_args[4];
 				rec_args[5] = rec->dispatch_args[5];
 				attribute_enabled = true;
+				if (kcov_shm != NULL)
+					__atomic_fetch_add(
+						&kcov_shm->cmp_attribution_calls_eligible,
+						1UL, __ATOMIC_RELAXED);
+			} else if (kcov_shm != NULL &&
+				   entry != NULL && entry->num_args > 0 &&
+				   !rec->dispatch_args_valid) {
+				/* Redqueen cohort gate cleared and the
+				 * syscall has args worth scanning, but
+				 * the [11-snapshot] dispatch_args[] feed
+				 * is missing -- attribution correctly
+				 * skips the call, surface the rate so the
+				 * snapshot-feed health is not silently
+				 * folded into the eligible cohort. */
+				__atomic_fetch_add(
+					&kcov_shm->cmp_attribution_snapshot_unavailable,
+					1UL, __ATOMIC_RELAXED);
 			}
 		}
 	}
@@ -880,9 +897,32 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 				child->reexec_pending_count++;
 
 				if (kcov_shm != NULL) {
+					unsigned int op_type =
+						(unsigned int)child->op_type;
+
 					__atomic_fetch_add(
 						&kcov_shm->reexec_attribution_found,
 						1UL, __ATOMIC_RELAXED);
+					/* per-nr HEAD of the attribution
+					 * funnel.  Sibling of the existing
+					 * reexec_attempts_by_syscall and
+					 * reexec_ambiguous_by_syscall: nr is
+					 * gated to MAX_NR_SYSCALL at
+					 * cmp_hints_collect() entry. */
+					__atomic_fetch_add(
+						&kcov_shm->reexec_attribution_found_by_syscall[nr],
+						1UL, __ATOMIC_RELAXED);
+					/* per-childop partition of the same
+					 * HEAD counter, bounded by
+					 * KCOV_CHILDOP_NR_MAX (the build-
+					 * time sized container).  Lets a
+					 * childop-driven syscall be told
+					 * apart from the same nr dispatched
+					 * from the default OP_SYSCALL flow. */
+					if (op_type < KCOV_CHILDOP_NR_MAX)
+						__atomic_fetch_add(
+							&kcov_shm->reexec_attribution_found_by_childop[op_type],
+							1UL, __ATOMIC_RELAXED);
 					/* which arg slot
 					 * (a1..a6) won the first-match-wins
 					 * scan.  first_match is 1-based;
@@ -912,6 +952,14 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 						__atomic_fetch_add(
 							&kcov_shm->reexec_ambiguous_by_syscall[nr],
 							1UL, __ATOMIC_RELAXED);
+						/* per-childop partition of
+						 * the ambiguity counter,
+						 * mirroring the per-syscall
+						 * sibling above. */
+						if (op_type < KCOV_CHILDOP_NR_MAX)
+							__atomic_fetch_add(
+								&kcov_shm->reexec_attribution_ambiguous_by_childop[op_type],
+								1UL, __ATOMIC_RELAXED);
 					}
 				}
 
@@ -933,10 +981,21 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 				if (child->reexec_pending_count >=
 				    MAX_REEXEC_PENDING) {
 					attribute_enabled = false;
-					if (kcov_shm != NULL)
+					if (kcov_shm != NULL) {
 						__atomic_fetch_add(
 							&kcov_shm->reexec_pending_dropped,
 							1UL, __ATOMIC_RELAXED);
+						/* per-nr partition of the
+						 * pending-overflow counter:
+						 * identifies the hot
+						 * attributing syscalls whose
+						 * attribution census the
+						 * MAX_REEXEC_PENDING cap is
+						 * truncating. */
+						__atomic_fetch_add(
+							&kcov_shm->reexec_attribution_dropped_pending_by_syscall[nr],
+							1UL, __ATOMIC_RELAXED);
+					}
 				}
 			}
 		}
