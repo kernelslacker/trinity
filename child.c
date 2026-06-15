@@ -1371,7 +1371,7 @@ static void check_fd_leaks(struct childdata *child)
  * Slot ordering matches pick_op_type_table[]; the _Static_assert below
  * pins ARRAY_SIZE equality between the two.
  */
-static int dormant_op_disabled[116] = {
+static int dormant_op_disabled[117] = {
 	0, 0, 0, 0, 0,
 	0, 1, 1, 1, 1,
 	1, 1, 1, 0, 1,
@@ -1405,6 +1405,7 @@ static int dormant_op_disabled[116] = {
 	1,	/* l2tp_ifname_race: dormant until canary-queue load-tests the L2TP SESSION_CREATE same-ifname race burst. */
 	1,	/* statmount_idmap_overflow: dormant until canary-queue load-tests the statmount() idmap seq-buffer overflow sweep. */
 	1,	/* sock_ulp_sockmap_layering: dormant until canary-queue load-tests the TCP_ULP "tls" + sockmap STREAM_VERDICT layering burst. */
+	1,	/* umount_race: dormant until canary-queue load-tests the umount2(MNT_DETACH)-vs-accessor race against scratch_block-published mounts. */
 };
 
 /*
@@ -1488,6 +1489,7 @@ static const enum child_op_type alt_op_rotation[] = {
 	CHILD_OP_ALTNAME_THRASH,
 	CHILD_OP_OVS_TUNNEL_VPORT_CHURN,
 	CHILD_OP_TTY_LDISC_CHURN,
+	CHILD_OP_UMOUNT_RACE,
 };
 #define NR_ALT_OP_ROTATION	ARRAY_SIZE(alt_op_rotation)
 
@@ -1639,6 +1641,7 @@ const char *alt_op_name(enum child_op_type op)
 	case CHILD_OP_PFKEY_SPD_WALK:	return "pfkey_spd_walk";
 	case CHILD_OP_L2TP_IFNAME_RACE:	return "l2tp_ifname_race";
 	case CHILD_OP_STATMOUNT_IDMAP_OVERFLOW:	return "statmount_idmap_overflow";
+	case CHILD_OP_UMOUNT_RACE:	return "umount_race";
 	case NR_CHILD_OP_TYPES:		break;
 	}
 	return "unknown";
@@ -1736,7 +1739,7 @@ void log_alt_op_config(void)
  * CHILD_OP_SYSCALL sentinel filter in init_altop_dispatch() stays as
  * defensive coding for any future hole.
  */
-static const enum child_op_type pick_op_type_table[116] = {
+static const enum child_op_type pick_op_type_table[117] = {
 	[0]  = CHILD_OP_MMAP_LIFECYCLE,
 	[1]  = CHILD_OP_MPROTECT_SPLIT,
 	[2]  = CHILD_OP_MLOCK_PRESSURE,
@@ -1853,6 +1856,7 @@ static const enum child_op_type pick_op_type_table[116] = {
 	[113] = CHILD_OP_L2TP_IFNAME_RACE,
 	[114] = CHILD_OP_STATMOUNT_IDMAP_OVERFLOW,
 	[115] = CHILD_OP_SOCK_ULP_SOCKMAP_LAYERING,
+	[116] = CHILD_OP_UMOUNT_RACE,
 };
 _Static_assert(ARRAY_SIZE(pick_op_type_table) == ARRAY_SIZE(dormant_op_disabled),
 	"pick_op_type_table and dormant_op_disabled must have matching slot counts");
@@ -2252,6 +2256,7 @@ static bool (*const op_dispatch[NR_CHILD_OP_TYPES])(struct childdata *) = {
 	[CHILD_OP_PFKEY_SPD_WALK]	= pfkey_spd_walk,
 	[CHILD_OP_L2TP_IFNAME_RACE]	= l2tp_ifname_race,
 	[CHILD_OP_STATMOUNT_IDMAP_OVERFLOW] = statmount_idmap_overflow,
+	[CHILD_OP_UMOUNT_RACE]		= umount_race,
 };
 
 _Static_assert(ARRAY_SIZE(op_dispatch) == NR_CHILD_OP_TYPES,

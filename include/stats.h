@@ -820,6 +820,14 @@ struct stats_s {
 	unsigned long mount_churn_umounts;	/* successful umount2() */
 	unsigned long mount_churn_failed;	/* mkdir/mount/umount returned -1 */
 
+	/* umount_race childop counters */
+	unsigned long umount_race_runs;		/* total umount_race invocations */
+	unsigned long umount_race_picks;	/* cycles with an eligible pool entry */
+	unsigned long umount_race_forks;	/* accessor helpers successfully forked */
+	unsigned long umount_race_umounts;	/* umount2() returned 0 */
+	unsigned long umount_race_umount_failed;/* umount2() returned -1 (incl. expected EPERM) */
+	unsigned long umount_race_setup_failed;	/* fork() returned -1 */
+
 	/* fork_storm childop counters */
 	unsigned long fork_storm_runs;		/* total fork_storm invocations */
 	unsigned long fork_storm_forks;		/* grandchildren successfully forked */
