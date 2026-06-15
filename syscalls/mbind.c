@@ -77,6 +77,21 @@ static void sanitise_mbind(struct syscallrecord *rec)
 		break;
 	}
 	rec->a4 = (unsigned long) mask;
+
+	/* Mode flags live in the high bits of the mode arg.  OR in
+	 * MPOL_F_NUMA_BALANCING occasionally; only valid with MPOL_BIND
+	 * but the kernel rejects it cleanly elsewhere, which is also
+	 * worth exercising. */
+	if (ONE_IN(8))
+		rec->a3 |= MPOL_F_NUMA_BALANCING;
+
+	/* MPOL_F_STATIC_NODES and MPOL_F_RELATIVE_NODES are mutually
+	 * exclusive nodemask-interpretation flags; OR one in occasionally
+	 * to exercise both the accepted and EINVAL paths. */
+	if (ONE_IN(8))
+		rec->a3 |= MPOL_F_STATIC_NODES;
+	if (ONE_IN(8))
+		rec->a3 |= MPOL_F_RELATIVE_NODES;
 }
 
 static unsigned long mbind_modes[] = {
@@ -86,7 +101,6 @@ static unsigned long mbind_modes[] = {
 
 static unsigned long mbind_flags[] = {
 	MPOL_MF_STRICT, MPOL_MF_MOVE, MPOL_MF_MOVE_ALL, MPOL_MF_LAZY,
-	MPOL_F_STATIC_NODES, MPOL_F_RELATIVE_NODES, MPOL_F_NUMA_BALANCING,
 };
 
 struct syscallentry syscall_mbind = {
