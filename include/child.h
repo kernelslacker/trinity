@@ -881,6 +881,20 @@ struct canary_op_state {
 	unsigned long window_start_edges;	/* childop_edges_discovered[op] snapshot */
 	unsigned int  window_crashes;		/* incremented by parent reap path */
 
+	/* Per-window snapshots of fleet-wide defence counters, used by
+	 * leave_canarying_promote() to tag the promotion with a coarse
+	 * health verdict.  These three sources are fleet-wide (not per-op
+	 * attributed): parent_stats.{post_handler_corrupt_ptr,
+	 * deferred_free_reject} aggregate every child's bumps, and
+	 * kcov_shm->pc_diag.first_ebadf_op_nr is a first-failure-wins gate
+	 * latched across the whole run.  The window deltas are therefore
+	 * a coincidence signal ("this counter moved during this op's
+	 * window") rather than an attribution.  Owner-only writes from
+	 * parent context, no atomics needed. */
+	unsigned long window_start_post_handler_corrupt_ptr;
+	unsigned long window_start_deferred_free_reject;
+	unsigned long window_start_kcov_first_ebadf_op_nr;
+
 	/* cumulative diagnostics */
 	unsigned int  canary_iterations;	/* lifetime windows entered */
 	unsigned int  total_promotions;
