@@ -108,7 +108,7 @@ _Static_assert(NR_CHILD_OP_TYPES <= KCOV_CHILDOP_NR_MAX,
 	"bump KCOV_CHILDOP_NR_MAX in include/kcov.h");
 
 enum childop_kcov_attribution_mode childop_kcov_attr_mode =
-	CHILDOP_KCOV_ATTR_OFF;
+	CHILDOP_KCOV_ATTR_DUAL;
 
 /* Default is SHADOW: collect into the transition map and surface it
  * through the stats dump, but do not feed deltas into any steering

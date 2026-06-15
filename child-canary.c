@@ -276,11 +276,22 @@ static unsigned int window_iters_resolved(void)
 	return w;
 }
 
+/* Per-op edge counter consumed by the canary window's promote/demote
+ * decision (CANARY_EDGE_THRESHOLD over a window of canary_window_iters
+ * invocations).  Sourced from childop_edges_clean[], which is published
+ * by the outer KCOV bracket in child_process() and reflects only the
+ * edges attributable to this op's own dispatch -- no sibling traffic
+ * mixed in.  Under --childop-kcov-attribution=off (default is dual) the
+ * clean counter stays at zero and every window resolves to "zero_edges"
+ * demote; that is the documented opt-out of the bracket path, matching
+ * the no-KCOV degradation.  The noisier childop_edges_discovered[] is
+ * still populated as a diagnostic comparator and surfaced in the stats
+ * dump, but the scheduling decision now runs off the clean signal. */
 static unsigned long edges_for_op(enum child_op_type op)
 {
 	if (op >= NR_CHILD_OP_TYPES)
 		return 0UL;
-	return __atomic_load_n(&shm->stats.childop_edges_discovered[op],
+	return __atomic_load_n(&shm->stats.childop_edges_clean[op],
 			       __ATOMIC_RELAXED);
 }
 

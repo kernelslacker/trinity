@@ -1275,16 +1275,22 @@ unsigned long kcov_bracket_end(struct kcov_child *kc,
 /*
  * Per-childop KCOV attribution mode (--childop-kcov-attribution).
  *
- *   OFF  - default.  Childop dispatch path is unchanged; nothing
- *          is bracketed and childop_edges_clean[] stays at zero.
- *   DUAL - bracket every eligible childop and publish the per-call
- *          delta to childop_edges_clean[] in parallel with the
- *          existing global-delta path's writes to
- *          childop_edges_discovered[].  Consumers (adapt_budget,
- *          canary queue) keep reading the noisy counter; the clean
- *          counter is for offline comparison while the bracket
- *          design soaks.
- *   ON   - reserved for flipping consumers to the clean counter.
+ *   OFF  - childop dispatch path is unchanged; nothing is bracketed
+ *          and childop_edges_clean[] stays at zero.  Consumers that
+ *          read the clean signal (adapt_budget, canary queue) see
+ *          zero edges per call in this mode and behave as they would
+ *          on a build without KCOV: budget multipliers stay at unity
+ *          and canary windows always demote on "zero_edges".  Use
+ *          only when the bracket path itself is the suspect.
+ *   DUAL - default.  Bracket every eligible childop and publish the
+ *          per-call delta to childop_edges_clean[].  The existing
+ *          global edges_found before/after delta path keeps writing
+ *          childop_edges_discovered[] / childop_calls_with_edges[]
+ *          as a diagnostic comparator -- operators can watch the
+ *          discovered/clean ratio per op to validate the bracket
+ *          coverage before remaining consumers (plateau snapshot)
+ *          follow.
+ *   ON   - reserved for retiring the discovered diagnostic counter.
  *          Currently identical to DUAL.
  */
 enum childop_kcov_attribution_mode {
