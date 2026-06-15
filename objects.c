@@ -1251,9 +1251,10 @@ void clone_global_objects_to_child(struct childdata *child)
  * on OBJ_GLOBAL, deferred_free_enqueue on OBJ_LOCAL) and at pool
  * teardown -- a reader that captured the array pointer pre-grow then
  * indexed it post-grow would read off a chunk the deferred-free TTL
- * had already handed back to glibc.  The recipe here mirrors the
+ * had already handed back to glibc (ASAN: heap-use-after-free at the
+ * arr[idx] load, seed 3708757146).  The recipe here mirrors the
  * obj-level slot_version / object_slot_alive() pattern one level
- * earlier:
+ * earlier and is strictly check-then-load:
  *
  *   1. Snapshot array_generation, the array pointer and num_entries.
  *   2. Cheap stateless provenance check on the captured array pointer
@@ -1261,15 +1262,22 @@ void clone_global_objects_to_child(struct childdata *child)
  *      head->array) is rejected before the indexed read fires --
  *      defense in depth on top of the gen re-check, not a substitute
  *      for it.
- *   3. Load arr[idx].
- *   4. Re-read array_generation.  Mismatch ==> a grow/teardown ran
- *      between (1) and (3), the captured arr is the freed container
- *      and arr[idx] is a read off a recycled chunk; bump the
- *      stale-array stat and return NULL so the caller retries.
+ *   3. Re-read array_generation BEFORE the load.  Mismatch ==> a
+ *      grow/teardown ran between (1) and now, the captured arr is
+ *      already the freed container, so bail without ever touching
+ *      arr[idx].  This is the load-bearing fix -- a post-load
+ *      re-check can only detect the UAF after the dangerous read has
+ *      already executed.
+ *   4. Load arr[idx].
+ *   5. Re-read array_generation a second time.  Catches a grow that
+ *      raced the load itself (between (3) and (4)); the deferred-free
+ *      TTL keeps the captured arr safely readable across that tiny
+ *      window, so the load completes, but a mismatch still poisons
+ *      the result and we return NULL so the caller retries.
  *
  * The retry-on-NULL contract is what every get_random_object() consumer
- * already expects (empty pool returns NULL); the new path just widens
- * the set of conditions that lead to NULL.
+ * already expects (empty pool returns NULL); the guarded path just
+ * widens the set of conditions that lead to NULL.
  */
 static struct object *objhead_indexed_read(struct objhead *head, unsigned int idx)
 {
@@ -1288,6 +1296,18 @@ static struct object *objhead_indexed_read(struct objhead *head, unsigned int id
 	if ((uintptr_t)arr < 0x10000UL ||
 	    (uintptr_t)arr >= 0x800000000000UL ||
 	    !is_in_glibc_heap(arr)) {
+		__atomic_add_fetch(&shm->stats.objpool_array_stale_caught, 1,
+				   __ATOMIC_RELAXED);
+		return NULL;
+	}
+
+	/*
+	 * Pre-load gen re-check.  If a grow/teardown ran between snapshotting
+	 * gen0 and here, the captured arr is the freed container and the
+	 * indexed load below would touch a chunk the deferred-free TTL may
+	 * already have handed back to glibc.  Bail before the read fires.
+	 */
+	if (head->array_generation != gen0) {
 		__atomic_add_fetch(&shm->stats.objpool_array_stale_caught, 1,
 				   __ATOMIC_RELAXED);
 		return NULL;
