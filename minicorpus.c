@@ -25,6 +25,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "child.h"
 #include "fd.h"
 #include "kcov.h"
 #include "minicorpus.h"
@@ -341,6 +342,20 @@ void minicorpus_save_with_reason(struct syscallrecord *rec,
 	tmp.args[5] = rec->a6;
 	tmp.num_args = entry->num_args;
 
+	/* RedQueen-source provenance tag: read the current child's in_reexec
+	 * recursion guard inside the save site rather than threading a new
+	 * parameter through the random-syscall.c caller.  A NULL child (the
+	 * parent post-mortem path is the only realistic caller; the normal
+	 * dispatch_step save path always runs inside a child) leaves the
+	 * default-zero rq_sourced from the memset above, which is the
+	 * correct PC-source attribution for that case. */
+	{
+		struct childdata *cc = this_child();
+
+		if (cc != NULL && cc->in_reexec)
+			tmp.rq_sourced = true;
+	}
+
 	/* Saved fd numbers are stale on replay — zero them out so mutate_arg
 	 * gets a fresh fd rather than trying to reuse a closed one.  Same
 	 * treatment for ARG_ADDRESS / ARG_NON_NULL_ADDRESS: raw user pointers
@@ -377,6 +392,17 @@ void minicorpus_save_with_reason(struct syscallrecord *rec,
 	__atomic_fetch_add(&minicorpus_shm->mutations, 1UL, __ATOMIC_RELAXED);
 	__atomic_fetch_add(&minicorpus_shm->saves_by_reason[reason], 1UL,
 			   __ATOMIC_RELAXED);
+
+	/* Per-syscall RedQueen-source save counter.  Bumped only when the
+	 * provenance tag captured above is set, so the per-syscall total is
+	 * directly comparable with the rq_sourced_pcedge_wins_per_syscall[]
+	 * counter that frontier_record_new_edge() bumps for later PC-edge
+	 * wins from this same provenance.  RELAXED: cumulative diagnostic,
+	 * consumed only at periodic dump time. */
+	if (tmp.rq_sourced)
+		__atomic_fetch_add(
+			&shm->stats.rq_sourced_saves_per_syscall[nr],
+			1UL, __ATOMIC_RELAXED);
 }
 
 /*
@@ -566,6 +592,22 @@ void minicorpus_struct_field_attrib(enum field_tag tag)
 void minicorpus_mut_attrib_commit(bool found_new)
 {
 	unsigned int i;
+
+	/* Clear the per-child replay-provenance flag unconditionally,
+	 * regardless of whether the call had a tracked corpus source.  The
+	 * flag is set inside minicorpus_replay() right after the snapshot
+	 * picks an entry tagged rq_sourced, and consumed by
+	 * frontier_record_new_edge() during the call's kcov pass which has
+	 * already completed by the time we get here.  Clearing here keeps
+	 * the next iteration's frontier_record_new_edge from mis-crediting
+	 * its PC win to a stale source -- whether the next call is a
+	 * non-replay (fresh args) or a replay of a non-rq-sourced entry. */
+	{
+		struct childdata *cc = this_child();
+
+		if (cc != NULL)
+			cc->replay_rq_sourced = false;
+	}
 
 	if (minicorpus_shm == NULL) {
 		/* Still clear the per-process tag so a future shm-armed
@@ -1315,6 +1357,12 @@ bool minicorpus_replay(struct syscallrecord *rec)
 		this_replay_source_tracked = true;
 		this_replay_source_nr = nr;
 		this_replay_source_slot = slot;
+		{
+			struct childdata *cc = this_child();
+
+			if (cc != NULL)
+				cc->replay_rq_sourced = snapshot.rq_sourced;
+		}
 	} else {
 		/* Common path: uniform over count, lockless.  The writer
 		 * publishes count BEFORE head with release semantics, so
@@ -1346,6 +1394,12 @@ bool minicorpus_replay(struct syscallrecord *rec)
 		this_replay_source_tracked = true;
 		this_replay_source_nr = nr;
 		this_replay_source_slot = slot;
+		{
+			struct childdata *cc = this_child();
+
+			if (cc != NULL)
+				cc->replay_rq_sourced = snapshot.rq_sourced;
+		}
 	}
 
 	entry = get_syscall_entry(nr, rec->do32bit);

@@ -67,6 +67,18 @@ struct corpus_entry {
 	 * explicitly when overwriting a recycled ring slot whose old entry
 	 * had accumulated baseline. */
 	unsigned int novel_replay_hits;
+	/* Provenance tag: true iff the args were captured while the saving
+	 * child was inside redqueen_reexec_step (i.e. child->in_reexec was
+	 * set when minicorpus_save_with_reason ran).  Observability only --
+	 * no mutator / selection / injection path consults this; it exists
+	 * so a later replay of this entry can mark the replaying child as
+	 * being on a RedQueen-sourced trajectory, which lets
+	 * frontier_record_new_edge() credit downstream PC-edge wins to a
+	 * separate rq_sourced_pcedge_wins_per_syscall[] counter.  Zeroed
+	 * along with the rest of the struct by the memset in
+	 * minicorpus_save_with_reason; warm-start loader leaves it at the
+	 * persisted value (no separate clear needed). */
+	bool rq_sourced;
 };
 
 struct corpus_ring {
