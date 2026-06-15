@@ -15,6 +15,13 @@ void main_loop(void);
 void reset_epoch_state(void);
 void pidstatfiles_drop_in_child(void);
 
+/* Returns the CLOCK_MONOTONIC second past which the fork-pressure
+ * drain stops suppressing pid-heavy canary picks, or 0 when the drain
+ * has never armed.  Defined in main.c, consumed from child-canary.c.
+ * Always returns 0 when --fork-pressure-drain is off; callers may
+ * still short-circuit on the flag for cache locality. */
+unsigned long fork_pressure_drain_active(void);
+
 void panic(int reason);
 
 #define __unused__ __attribute((unused))
