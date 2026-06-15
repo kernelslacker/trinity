@@ -143,16 +143,27 @@ static uint32_t pick_port(void)
  */
 static __attribute__((noreturn)) void qrtr_bind_child(uint32_t port)
 {
-	struct sockaddr_qrtr sq;
+	struct sockaddr_qrtr sq, local;
+	socklen_t slen = sizeof(local);
 	int fd;
 
 	fd = socket(AF_QRTR, SOCK_DGRAM, 0);
 	if (fd < 0)
 		_exit(0);
 
+	/* qrtr_bind() rejects with -EINVAL if sq_node doesn't match the
+	 * socket's own node (the kernel checks BEFORE the bind body, so
+	 * the socket stays SOCK_ZAPPED and we never reach the teardown
+	 * path this op targets).  The local node id is configurable via
+	 * the qrtr_local_nid module param (default 1, not 0), so query it
+	 * via getsockname() rather than hardcoding. */
+	memset(&local, 0, sizeof(local));
+	if (getsockname(fd, (struct sockaddr *)&local, &slen) < 0)
+		_exit(0);
+
 	memset(&sq, 0, sizeof(sq));
 	sq.sq_family = AF_QRTR;
-	sq.sq_node = 0;	/* local node */
+	sq.sq_node = local.sq_node;
 	sq.sq_port = port;
 	(void)bind(fd, (struct sockaddr *)&sq, sizeof(sq));
 
