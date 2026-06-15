@@ -3394,6 +3394,23 @@ static const struct {
 	  offsetof(struct stats_s, frontier_live_picks) },
 	{ "frontier_silent_picks",
 	  offsetof(struct stats_s, frontier_silent_picks) },
+	/* SHADOW-ONLY A/B scoring for the [t12-frontier-blend] cold-weight
+	 * blend.  The picker still consumes the OLD weight; these counters
+	 * expose how often the blended formula would have steered
+	 * differently and by how much.  See the struct-field comment in
+	 * include/stats.h for the per-counter semantics. */
+	{ "frontier_blend_samples",
+	  offsetof(struct stats_s, frontier_blend_samples) },
+	{ "frontier_blend_new_lower",
+	  offsetof(struct stats_s, frontier_blend_new_lower) },
+	{ "frontier_blend_new_higher",
+	  offsetof(struct stats_s, frontier_blend_new_higher) },
+	{ "frontier_blend_new_equal",
+	  offsetof(struct stats_s, frontier_blend_new_equal) },
+	{ "frontier_blend_old_weight_sum",
+	  offsetof(struct stats_s, frontier_blend_old_weight_sum) },
+	{ "frontier_blend_new_weight_sum",
+	  offsetof(struct stats_s, frontier_blend_new_weight_sum) },
 	/* Picks the explorer pool forced to STRATEGY_RANDOM.  Rate-of-change
 	 * over the run divided by explorer_children gives the per-explorer
 	 * picker throughput; deviation from the bandit-pool throughput
@@ -6359,6 +6376,26 @@ static void dump_stats_strategy_summary(void)
 			 shm->stats.frontier_shadow_decay_candidates);
 	stat_row("strategy", "frontier_shadow_decay_streak_threshold",
 		 FRONTIER_SHADOW_DECAY_STREAK);
+	/* SHADOW-ONLY A/B scoring for the [t12-frontier-blend] cold-weight
+	 * blend.  Emitted as a sibling block to the silent-decay shadow
+	 * counters above; the picker still consumes the OLD weight from
+	 * frontier_cold_weight() and these counters expose how often the
+	 * blended formula would have steered differently.  See the
+	 * struct-field comments in include/stats.h for semantics. */
+	if (shm->stats.frontier_blend_samples) {
+		stat_row("strategy", "frontier_blend_samples",
+			 shm->stats.frontier_blend_samples);
+		stat_row("strategy", "frontier_blend_new_lower",
+			 shm->stats.frontier_blend_new_lower);
+		stat_row("strategy", "frontier_blend_new_higher",
+			 shm->stats.frontier_blend_new_higher);
+		stat_row("strategy", "frontier_blend_new_equal",
+			 shm->stats.frontier_blend_new_equal);
+		stat_row("strategy", "frontier_blend_old_weight_sum",
+			 shm->stats.frontier_blend_old_weight_sum);
+		stat_row("strategy", "frontier_blend_new_weight_sum",
+			 shm->stats.frontier_blend_new_weight_sum);
+	}
 	if (shm->stats.frontier_underflow_prevented)
 		stat_row("strategy", "frontier_underflow_prevented",
 			 shm->stats.frontier_underflow_prevented);

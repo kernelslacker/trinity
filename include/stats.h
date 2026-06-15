@@ -2426,6 +2426,55 @@ struct stats_s {
 	 * periodic stats dump alongside that array. */
 	unsigned long frontier_silent_streak_per_syscall[MAX_NR_SYSCALL];
 
+	/* SHADOW-ONLY A/B scoring for the [t12-frontier-blend] cold-weight
+	 * blend.  See the frontier_cold_weight() comment in random-syscall.c
+	 * for the experimental formula.
+	 *
+	 * Bumped once per frontier_cold_weight() call on the
+	 * productive-signal path (calls > 0) so the operator can A/B
+	 * compare the OLD weight (call-count only:
+	 * per_syscall_edges/per_syscall_calls) against the BLENDED weight
+	 * (productive_calls + ilog2(real_bucket_bits+1) +
+	 * 2*ilog2(distinct_edges+1), capped at calls) without changing
+	 * what the live picker selects.  The set_syscall_nr_coverage_
+	 * frontier accept/retry math consumes frontier_cold_weight()'s
+	 * return value, which stays the OLD weight; nothing in the
+	 * selection path reads any of the shadow stats below, so the
+	 * picker's per-syscall distribution stays byte-identical to today.
+	 *
+	 *  frontier_blend_samples
+	 *      Total computations.  Denominator for the average-weight
+	 *      ratios below; the calls==0 fast path bypasses the blend
+	 *      entirely (both formulas agree on FRONTIER_COLD_SCALE) so
+	 *      never-invoked syscalls are excluded -- the counter
+	 *      measures only informative samples.
+	 *  frontier_blend_new_lower
+	 *  frontier_blend_new_higher
+	 *  frontier_blend_new_equal
+	 *      Per-sample comparison disposition.  Sum equals
+	 *      frontier_blend_samples.  A high _lower count means the
+	 *      blend would have demoted syscalls the old formula treats
+	 *      as cold -- i.e. the syscall has been productive in ways
+	 *      (deep raw-edge yield, distinct first-sight PCs) the call-
+	 *      count signal alone misses.  A high _higher count means the
+	 *      blend would have promoted them; this is the headline
+	 *      "would a live silent-regime variant of the picker steer
+	 *      differently" signal.
+	 *  frontier_blend_old_weight_sum
+	 *  frontier_blend_new_weight_sum
+	 *      Per-sample weight sums.  Each divided by
+	 *      frontier_blend_samples gives the regime's average weight;
+	 *      the OLD vs NEW gap summarises whether the blend skews
+	 *      colder or hotter at the fleet level.  Each addend is
+	 *      bounded by FRONTIER_COLD_SCALE (256) so overflow needs
+	 *      ~2^56 samples -- comfortable for any fuzz horizon. */
+	unsigned long frontier_blend_samples;
+	unsigned long frontier_blend_new_lower;
+	unsigned long frontier_blend_new_higher;
+	unsigned long frontier_blend_new_equal;
+	unsigned long frontier_blend_old_weight_sum;
+	unsigned long frontier_blend_new_weight_sum;
+
 	/* Coverage-plateau detector transition counters, bumped from
 	 * kcov_plateau_check() on the rising edge (healthy -> plateau, when
 	 * the sliding-window edge-discovery rate falls below
