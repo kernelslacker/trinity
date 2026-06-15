@@ -1,4 +1,5 @@
 #ifdef USE_BTRFS
+#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 #include <linux/fs.h>
@@ -8,6 +9,7 @@
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
+#include "scratch_block.h"
 #include "shm.h"
 #include "syscall.h"
 #include "utils.h"
@@ -47,6 +49,50 @@ static int btrfs_fd_test(int fd, const struct stat *st __attribute__((unused)))
 	struct objhead *head;
 	struct object *obj;
 	unsigned int idx;
+	unsigned int count;
+	unsigned int i;
+	bool isolated;
+	bool seen_btrfs = false;
+
+	/*
+	 * Box-safety + isolation gate (mirror childops/umount-race.c's
+	 * mnt_ready + scratch_block_ready double-check).  When the parent
+	 * latched a private mount namespace AND the scratch_block pool
+	 * stood up AND it published a btrfs-typed entry, the only block
+	 * fd this group is allowed to claim is that entry's loop fd --
+	 * never a host disk node, never an OBJ_FD_TESTFILE plain file
+	 * (those live in trinity's cwd, which on a typical fuzz box sits
+	 * on the host's real-root btrfs filesystem).  When any latch is
+	 * false, or no btrfs entry is published in the pool, fall
+	 * through to today's OBJ_FD_TESTFILE walk byte-for-byte so the
+	 * non-root / non-isolated dev path is unchanged.
+	 */
+	isolated = __atomic_load_n(&shm->isolation.mnt_ready,
+				   __ATOMIC_RELAXED) &&
+		   __atomic_load_n(&shm->isolation.scratch_block_ready,
+				   __ATOMIC_RELAXED);
+	if (isolated) {
+		count = shm->isolation.scratch_block_count;
+		for (i = 0; i < count; i++) {
+			struct scratch_block_entry *e =
+				&shm->isolation.scratch_block[i];
+
+			if (strncmp(e->fs_type, "btrfs",
+				    sizeof(e->fs_type)) != 0)
+				continue;
+			seen_btrfs = true;
+			if (e->loop_fd >= 0 && e->loop_fd == fd)
+				return 0;
+		}
+		/*
+		 * A published btrfs entry exists but @fd isn't its loop
+		 * fd: refuse the claim.  Falling through to the
+		 * OBJ_FD_TESTFILE walk would put btrfs ioctls back on
+		 * host-fs files.
+		 */
+		if (seen_btrfs)
+			return -1;
+	}
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_TESTFILE);
 
