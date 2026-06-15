@@ -2047,8 +2047,10 @@ static enum child_op_type pick_op_type(void)
 /*
  * Post-invocation feedback for the per-childop budget multiplier.
  *
- * Reads kcov_shm->edges_found before and after the dispatch call (the
- * caller hands us the bracketed values).  If the delta clears
+ * The caller hands us the per-call edge delta surfaced by the outer
+ * KCOV bracket (kcov_bracket_end's return value for this dispatch),
+ * i.e. the clean count of edges attributable to THIS op's invocation
+ * with no sibling-traffic noise mixed in.  If the delta clears
  * ADAPT_BUDGET_THRESHOLD we treat the invocation as productive: bump
  * the multiplier by 25% (Q8.8 *5/4) and clear the zero-streak.
  * Otherwise increment the zero-streak; once it hits
@@ -2058,32 +2060,26 @@ static enum child_op_type pick_op_type(void)
  *
  * Caveats deliberately accepted:
  *
- *   - The "edges in window" signal is the GLOBAL edge counter, so
- *     siblings running productive syscalls during our dispatch inflate
- *     our delta.  Most childops don't bracket their own kernel-side
- *     work with KCOV_ENABLE/DISABLE (they're not random_syscall
- *     callers), so a per-child counter wouldn't fire for them either —
- *     the signal we DO have is the only signal available without
- *     restructuring the KCOV plumbing.  The threshold is calibrated to
- *     filter out modest sibling noise; on very large fleets the noise
- *     floor rises and the boost ratchet stalls (safe failure mode —
- *     multipliers stay near 1.0x and childop budgets stay at the
- *     fixed baseline used before adaptive budget multipliers
- *     existed).
+ *   - The caller only invokes adapt_budget when the outer bracket
+ *     fired (mode != OFF, op_uses_outer_bracket(op), and
+ *     kcov_bracket_begin succeeded).  Calls that did not bracket
+ *     leave the multiplier untouched -- a quiet "no signal this
+ *     iteration" rather than a ratchet driven by sibling noise.
+ *     Ops permanently excluded from the bracket (CHILD_OP_SYSCALL,
+ *     CHILD_OP_SCHED_CYCLER -- see op_uses_outer_bracket) therefore
+ *     stay at the unity multiplier, matching the no-KCOV degradation
+ *     path.  CHILD_OP_SYSCALL has its own cold-syscall heuristics
+ *     inside kcov.c that this loop must not fight for control of the
+ *     dominant ~95% path; the bracket exclusion already enforces that.
  *
  *   - Updates are RELAXED non-RMW stores.  Two children tail-racing on
  *     the same op_type can lose an update; the worst case is the
  *     ratchet converges a few invocations later than the strict-RMW
  *     model would.  Ratchet caps make divergence bounded in either
  *     direction.
- *
- *   - CHILD_OP_SYSCALL is excluded entirely.  random_syscall has its
- *     own cold-syscall heuristics inside kcov.c and we don't want this
- *     loop fighting those for control of the dominant ~95% path.
  */
 static void adapt_budget(enum child_op_type op_type,
-			 unsigned long edges_before,
-			 unsigned long edges_after)
+			 unsigned long edges_this_call)
 {
 	uint16_t mult, new_mult;
 	uint16_t streak;
@@ -2097,7 +2093,7 @@ static void adapt_budget(enum child_op_type op_type,
 	if (mult == 0)
 		mult = ADAPT_BUDGET_UNITY;
 
-	delta = (edges_after >= edges_before) ? (edges_after - edges_before) : 0;
+	delta = edges_this_call;
 
 	if (delta >= ADAPT_BUDGET_THRESHOLD) {
 		/* Productive: boost by 25% (Q8.8 *5/4), clamped at the cap. */
@@ -2498,13 +2494,14 @@ void child_process(struct childdata *child, int childno)
 		if (is_alt_op)
 			alarm(1);
 
-		/* Snapshot the global edge counter for adapt_budget()'s
-		 * post-invocation feedback.  Cheap (single relaxed atomic
-		 * load) and only meaningful if KCOV is active; otherwise the
-		 * counter stays at zero and the delta is always 0, which
-		 * correctly degrades to "never boost, never shrink" — the
-		 * multiplier sticks at 1.0x and childop budgets remain at the
-		 * fixed baseline used before adaptive budget multipliers. */
+		/* Snapshot the global edge counter to feed the diagnostic
+		 * childop_edges_discovered[] / childop_calls_with_edges[]
+		 * comparator in the post-call block below.  adapt_budget
+		 * and the canary queue now consume the clean bracketed
+		 * delta (childop_edges_clean[]) instead; the noisy global
+		 * counter is kept tracked so operators can diff the two
+		 * during the bracket-coverage soak.  Cheap (single relaxed
+		 * atomic load) and only meaningful if KCOV is active. */
 		unsigned long edges_before = have_kcov
 			? __atomic_load_n(&kcov_shm->edges_found,
 					  __ATOMIC_RELAXED)
@@ -2624,21 +2621,26 @@ void child_process(struct childdata *child, int childno)
 					   STATS_FIELD_OP_COUNT, 0, 1);
 		}
 
-		/* Feed the post-invocation edge delta back into the per-op
-		 * budget multiplier.  Skipped when KCOV is unavailable —
-		 * adapt_budget() needs a real signal to ratchet on.
+		/* Feed the per-call clean edge delta into the per-op budget
+		 * multiplier and the canary-queue input counter
+		 * (childop_edges_clean[]).  Both consumers see only the
+		 * bracketed contribution from this dispatch -- no sibling
+		 * noise -- and skip the ratchet entirely on calls that did
+		 * not bracket (mode OFF, op_uses_outer_bracket(op) false,
+		 * or kcov_bracket_begin rejected).
 		 *
-		 * For alt-op invocations only, also fold the same delta into
-		 * the per-childop edge-discovery counter so the operator can
-		 * see which alt-op childops actually contribute new coverage.
-		 * CHILD_OP_SYSCALL is skipped here -- the syscall path already
-		 * attributes new edges via the explorer/bandit strategy
-		 * counters, and double-counting would distort both totals. */
+		 * The global edges_found before/after delta is preserved as
+		 * a diagnostic so the operator can compare the noisy
+		 * discovered counter against the clean counter per op while
+		 * the bracket coverage soaks; remaining consumers (plateau
+		 * snapshot) still read childop_edges_discovered[].  Skipped
+		 * when KCOV is unavailable -- both signals require a live
+		 * kcov_shm to be meaningful. */
 		if (have_kcov) {
 			unsigned long edges_after = __atomic_load_n(
 				&kcov_shm->edges_found, __ATOMIC_RELAXED);
-			if (valid_op)
-				adapt_budget(op, edges_before, edges_after);
+			if (bracketed && valid_op)
+				adapt_budget(op, edges_this_call);
 			if (is_alt_op) {
 				unsigned long delta = (edges_after >= edges_before)
 					? (edges_after - edges_before) : 0;
@@ -2657,14 +2659,11 @@ void child_process(struct childdata *child, int childno)
 						1, __ATOMIC_RELAXED);
 			}
 			/* dual / on modes only: publish the bracketed per-
-			 * call delta to childop_edges_clean[] in parallel
-			 * with the noisy global-delta path above.  off mode
-			 * never sets bracketed=true, so this is quiescent
-			 * by default.  Consumers (adapt_budget above, canary
-			 * queue elsewhere) still read the noisy counter;
-			 * switching them is deferred until the dual-counter
-			 * soak shows the clean counter is a strict
-			 * improvement. */
+			 * call delta to childop_edges_clean[].  off mode
+			 * never sets bracketed=true, so this slot stays at
+			 * zero and the consumers above degrade to "no
+			 * signal this iteration" the same way they do on a
+			 * build without KCOV. */
 			if (bracketed) {
 				__atomic_fetch_add(
 					&shm->stats.childop_edges_clean[op],

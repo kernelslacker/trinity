@@ -563,6 +563,23 @@ struct stats_s {
 	 * event log. */
 	unsigned long childop_calls_with_edges[NR_CHILD_OP_TYPES];
 
+	/* Per-childop clean edge count, indexed by enum child_op_type.
+	 * Populated in child_process()'s post-call have_kcov block from
+	 * the outer KCOV bracket's per-call delta (kcov_bracket_end's
+	 * return value), so each bump reflects only the edges
+	 * attributable to that single op's dispatch -- no sibling
+	 * traffic mixed in.  Bracketed under the
+	 * --childop-kcov-attribution=dual default and the equivalent on
+	 * mode; stays at zero under mode=off (the documented opt-out).
+	 *
+	 * This is the steering signal: adapt_budget() consumes the
+	 * per-call delta to drive the budget multiplier ratchet, and the
+	 * canary queue's edges_for_op() reads the cumulative counter to
+	 * size promote/demote decisions over a window.  The noisier
+	 * childop_edges_discovered[] above is kept tracked as a
+	 * diagnostic comparator so the operator can validate bracket
+	 * coverage by diffing the two per op.  RELAXED add-fetch: a
+	 * cumulative diagnostic, not an event log. */
 	unsigned long childop_edges_clean[NR_CHILD_OP_TYPES];
 
 	/* Per-op invocation count: incremented once per alt-op iteration
