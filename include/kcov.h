@@ -871,10 +871,23 @@ struct kcov_shared {
 	 *                                 -> window_cap_hit
 	 * is directly observable.  attribution_ambiguous is bumped once per
 	 * (cmp_ip, value) where more than one arg slot matched, before
-	 * first-match-wins picked one. */
+	 * first-match-wins picked one.
+	 *
+	 * reexec_attribution_width_match is the width-aware fallback
+	 * tally: counted SEPARATELY from reexec_attribution_found so the
+	 * exact full-width predicate's low-noise numerator stays clean.
+	 * Bumped from cmp_hints_collect() when the exact-pass arg vs arg2
+	 * compare misses, the comparison size is narrower than a long, and
+	 * a width-masked rescan finds EXACTLY one matching slot (any
+	 * masked ambiguity is dropped rather than guessed -- the masked
+	 * predicate's higher hit rate makes first-match-wins unreliable
+	 * here).  Total successful attributions ingested into
+	 * reexec_pending[] is therefore (reexec_attribution_found +
+	 * reexec_attribution_width_match). */
 	unsigned long reexec_attempts;
 	unsigned long reexec_attribution_found;
 	unsigned long reexec_attribution_ambiguous;
+	unsigned long reexec_attribution_width_match;
 	unsigned long reexec_new_cmps_total;
 	unsigned long reexec_skipped_destructive;
 	unsigned long reexec_skipped_validate_silent;
