@@ -114,6 +114,87 @@ enum kcov_transition_coverage_mode {
 
 extern enum kcov_transition_coverage_mode kcov_transition_coverage_mode;
 
+/* Transition-edge reward mode (--kcov-transition-reward).  Promotes the
+ * shadow transition-coverage signal (see kcov_transition_coverage_mode
+ * above) from observability-only into an active reward input for the
+ * scheduler.  The coverage mode must be SHADOW for any of the reward
+ * modes below to do work; if coverage is OFF the per-syscall transition
+ * counters never bump and every reward path below sees a zero delta.
+ *
+ *   OFF          - skip the reward path entirely.  Per-strategy
+ *                  transition attribution counters stay zero, the
+ *                  frontier-cold-weight blend drops back to its
+ *                  pre-transition formula (PC-edge + bucket-bits +
+ *                  distinct-PCs only), and bandit_record_pull adds no
+ *                  transition term.
+ *   SHADOW_ONLY  - default.  Compute the transition-reward terms and
+ *                  bump the per-strategy attribution counters in
+ *                  shm->stats so the operator can read the divergence,
+ *                  but DO NOT change live picker behaviour:
+ *                  frontier_cold_weight() returns the pre-transition
+ *                  weight, bandit_record_pull() drops the transition
+ *                  term from the reward total, and the frontier-edge
+ *                  ring is bumped only by the PC-edge hook.  Landing
+ *                  this default leaves selection byte-identical to the
+ *                  pre-knob baseline.
+ *   COMBINED     - feed the capped transition reward into live
+ *                  selection: frontier_cold_weight() returns the
+ *                  transition-blended weight, bandit_record_pull()
+ *                  folds the transition window delta into the per-arm
+ *                  reward total, and the transition-discovery hook
+ *                  bumps the frontier-edge ring alongside the PC-edge
+ *                  hook so syscalls that produce only transitions
+ *                  (no fresh PC bits) still earn frontier credit.
+ *
+ * Remote-mode constraint: remote-mode kcov traces merge coverage
+ * copied from remote contexts into the same buffer; the ordering of
+ * the merged PCs is not verified to preserve transition adjacency, so
+ * a remote-mode transition record carries a weaker signal than a
+ * local-mode one.  Even under COMBINED, remote-mode calls do NOT bump
+ * any of the live-reward inputs (the per-syscall _real_local counter,
+ * the per-strategy attribution counters, or the transition-discovery
+ * frontier hook) so the live reward sees local-mode transitions only.
+ * The existing per_syscall_transition_edges[_real] counters keep
+ * including remote contributions for the unchanged stats-dump top-N.
+ */
+enum kcov_transition_reward_mode {
+	KCOV_TRANSITION_REWARD_OFF = 0,
+	KCOV_TRANSITION_REWARD_SHADOW_ONLY = 1,
+	KCOV_TRANSITION_REWARD_COMBINED = 2,
+};
+
+extern enum kcov_transition_reward_mode kcov_transition_reward_mode;
+
+/* Per-window transition delta divided by this reciprocal before being
+ * folded into the bandit's per-arm reward total in bandit_record_pull
+ * under COMBINED mode.  Matches the shape (and starting value) of
+ * CMP_BANDIT_REWARD_WEIGHT_RECIPROCAL: a 0.25 secondary weight against
+ * the PC-edge-call primary signal.  Tunable once the COMBINED arm has
+ * soaked enough A/B data to bias the choice. */
+#define TRANSITION_BANDIT_REWARD_WEIGHT_RECIPROCAL 4
+
+/* Per-call clamp on how many transition slots a single trace can
+ * contribute to the per-strategy reward counters.  A pathological
+ * trace that opens a brand-new control-flow region can flip thousands
+ * of transition slots in one call; without this clamp such a trace
+ * would monopolize the per-strategy delta the bandit reads as reward,
+ * letting one window's worth of luck dominate the learner.  The raw
+ * per_syscall_transition_edges_real counter stays uncapped (it is the
+ * stats-dump observability signal), and the frontier_cold_weight blend
+ * uses ilog2() as its per-call clamp -- this constant only gates the
+ * per-strategy bandit-reward path. */
+#define TRANSITION_PER_CALL_REWARD_CAP 64UL
+
+/* Transition-discovery sibling of frontier_record_new_edge() defined
+ * in strategy.c.  Declared here (rather than alongside frontier_
+ * record_new_edge in include/strategy.h) because the function exists
+ * solely to feed the transition-reward path: its only caller is the
+ * COMBINED-mode branch in random-syscall.c, and gating the prototype
+ * to the same header that defines kcov_transition_reward_mode keeps
+ * "who is allowed to call this" co-located with "what makes calling
+ * this meaningful".  See the function body for the contract. */
+void frontier_record_transition_edge(unsigned int nr);
+
 /* AFL-style hit-count bucketing.  Each edge stores an 8-bit mask where bit
  * i is set if the edge has ever been hit a count that falls in bucket i:
  *   bucket 0: 1 hit            bucket 4: 8-15 hits
@@ -936,12 +1017,22 @@ struct kcov_shared {
 	 *      new transition slots flipped in that call.  A single call
 	 *      that opens an entirely new control-flow region bumps this by
 	 *      the size of the region, not by 1 — pair with the call-count
-	 *      counter above to read transitions-per-productive-call. */
+	 *      counter above to read transitions-per-productive-call.
+	 *  per_syscall_transition_edges_real_local[nr]
+	 *      Local-mode-only mirror of per_syscall_transition_edges_real.
+	 *      Bumped only when the collecting kcov child is NOT in remote
+	 *      mode AND kcov_transition_reward_mode != OFF.  Consumed by
+	 *      the frontier_cold_weight() blend as the transition-yield
+	 *      term so the live picker (under COMBINED) sees a transition
+	 *      signal restricted to traces whose PC ordering Trinity can
+	 *      trust.  See the kcov_transition_reward_mode enum at the
+	 *      top of this header for the remote-mode contract. */
 	unsigned long transition_edges_found;
 	unsigned long transition_distinct_edges;
 	unsigned long per_syscall_transition_edges[MAX_NR_SYSCALL];
 	unsigned long per_syscall_transition_edges_previous[MAX_NR_SYSCALL];
 	unsigned long per_syscall_transition_edges_real[MAX_NR_SYSCALL];
+	unsigned long per_syscall_transition_edges_real_local[MAX_NR_SYSCALL];
 	unsigned char transition_seen[KCOV_NUM_TRANSITIONS];
 
 	/* CMP-hint / RedQueen pipeline observability.
@@ -1360,14 +1451,26 @@ extern enum childop_kcov_attribution_mode childop_kcov_attr_mode;
  *       in this call's trace buffer regardless of whether the global
  *       bitmap had already seen them.  A measure of the trace's own
  *       width independent of cross-run / cross-child history.
+ *   transition_edges_real_local
+ *       Number of transition slots this call flipped from 0 -> 1,
+ *       filtered to the local kcov mode (zero for remote-mode traces
+ *       per the kcov_transition_reward_mode contract).  Returned to
+ *       the caller so the per-strategy reward attribution path can
+ *       bump shm->stats.transition_edge_*_by_strategy[] without
+ *       re-walking the trace; the strategy that owns the credit is
+ *       only known to the caller via child->strategy_at_pick.  Zero
+ *       when kcov_transition_coverage_mode is OFF (no transitions
+ *       were counted) or kcov_transition_reward_mode is OFF (reward
+ *       path disabled).
  *
- * All three are populated when result is non-NULL; pass NULL when only
+ * All four are populated when result is non-NULL; pass NULL when only
  * the legacy bucket-bits signal is wanted.  No extra atomics: the
  * counters fall out of the existing PC walk. */
 struct kcov_pc_result {
 	unsigned long bucket_bits;
 	unsigned long distinct_edges;
 	unsigned long local_distinct_pcs;
+	unsigned long transition_edges_real_local;
 };
 
 /* After disabling, collect PCs and update the global bitmap.

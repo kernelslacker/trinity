@@ -454,6 +454,7 @@ static const struct option_help option_descs[] = {
 	{ "canary-window",	 0,  "invocations of the active canary op per window (default 10000, range 1000..1000000). Counted against the per-op invocation counter, not the fleet-wide op count, so window size is independent of -C and --canary-slots. Lower windows are too noisy to promote on; higher windows let a useless op squat a slot for too long." },
 	{ "childop-kcov-attribution", 0, "per-childop KCOV attribution mode: off (no bracketing, childop_edges_clean stays zero; budget multipliers stay at unity and canary windows always demote on zero_edges), dual (default; bracket every eligible alt-op and publish the per-call edge delta to childop_edges_clean -- adapt_budget and the canary queue consume this clean signal, the global-delta path keeps writing childop_edges_discovered as a diagnostic comparator), or on (reserved; identical to dual until the discovered counter is retired)." },
 	{ "kcov-transition-coverage", 0, "shadow transition-coverage map mode: shadow (default; hash consecutive canonical PCs into a separate 16M-slot map and surface a transition top-N beside the PC top-N in the stats dump, with no effect on reward/frontier/plateau steering) or off (skip the per-PC transition hash entirely)." },
+	{ "kcov-transition-reward", 0, "transition-edge reward mode (requires --kcov-transition-coverage=shadow): shadow-only (default; compute the transition reward and bump per-strategy attribution counters in shm->stats but leave live picker behaviour byte-identical to the pre-knob baseline), combined (feed the capped transition delta into frontier_cold_weight, bandit_record_pull, and the frontier-edge ring so syscalls producing only transitions earn frontier credit), or off (skip the reward path entirely). Remote-mode transitions are excluded from live reward under combined until ordering quality is checked." },
 	{ "children",		'C', "specify number of child processes" },
 	{ "clowntown",		 0,  "enable clowntown mode" },
 	{ "dangerous",		'd', "enable dangerous mode" },
@@ -544,6 +545,7 @@ static const struct option longopts[] = {
 	{ "canary-window", required_argument, NULL, 0 },
 	{ "childop-kcov-attribution", required_argument, NULL, 0 },
 	{ "kcov-transition-coverage", required_argument, NULL, 0 },
+	{ "kcov-transition-reward", required_argument, NULL, 0 },
 	{ "children", required_argument, NULL, 'C' },
 	{ "clowntown", no_argument, NULL, 0 },
 	{ "dangerous", no_argument, NULL, 'd' },
@@ -832,6 +834,24 @@ void parse_args(int argc, char *argv[])
 						KCOV_TRANSITION_COVERAGE_SHADOW;
 				} else {
 					outputerr("--kcov-transition-coverage: unknown mode '%s' (expected off or shadow)\n",
+						optarg);
+					exit(EXIT_FAILURE);
+				}
+			}
+
+			if (strcmp("kcov-transition-reward",
+				   longopts[opt_index].name) == 0) {
+				if (strcmp(optarg, "off") == 0) {
+					kcov_transition_reward_mode =
+						KCOV_TRANSITION_REWARD_OFF;
+				} else if (strcmp(optarg, "shadow-only") == 0) {
+					kcov_transition_reward_mode =
+						KCOV_TRANSITION_REWARD_SHADOW_ONLY;
+				} else if (strcmp(optarg, "combined") == 0) {
+					kcov_transition_reward_mode =
+						KCOV_TRANSITION_REWARD_COMBINED;
+				} else {
+					outputerr("--kcov-transition-reward: unknown mode '%s' (expected off, shadow-only, or combined)\n",
 						optarg);
 					exit(EXIT_FAILURE);
 				}
