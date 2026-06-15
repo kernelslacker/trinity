@@ -876,16 +876,29 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 		 * actual re-exec dispatch on `new_cmp > 0` from the parent
 		 * call separately.
 		 *
-		 * Match predicate: exact match (dispatch_args[k] == arg2).
-		 * Catches the dominant case where the kernel sees the
-		 * argument's full 64-bit value (cmd codes, length args, flag
-		 * bitmasks, struct sizes).  A width-aware fallback would add
-		 * combinatorial noise on small-type slots for marginal
-		 * coverage gain; the re-exec's value is in collapsing the
-		 * 1/A slot lottery, not width matching.
+		 * Two-pass match.  PRIMARY: exact full-width match
+		 * (dispatch_args[k] == arg2).  Catches the dominant case
+		 * where the kernel sees the argument's full 64-bit value
+		 * (cmd codes, length args, flag bitmasks, struct sizes).
+		 * Low-noise -- a 64-bit equality across six slots collides
+		 * only on genuinely identical args -- so this is the path
+		 * the consumer's lift accounting trusts.
 		 *
-		 * Cardinality > 1 (the same constant appears in multiple
-		 * slots): first-match-wins.  Slot order 1..6 biases
+		 * FALLBACK (only on a primary miss, only when the KCOV
+		 * comparison size is narrower than a long): width-masked
+		 * rescan masking both operands to the low `size`*8 bits.
+		 * Catches the kernel comparing a `u8`/`u16`/`u32` derived
+		 * from a long-sized arg slot when the high bits differ
+		 * (cast/truncation/field extraction), which the exact pass
+		 * would silently drop.  Accepted ONLY when EXACTLY ONE slot
+		 * matches under the mask -- the masked predicate's higher
+		 * hit rate makes first-match-wins unreliable, so any masked
+		 * ambiguity is dropped rather than guessed.  Counted under
+		 * the separate reexec_attribution_width_match counter so
+		 * the exact-path numerator stays clean.
+		 *
+		 * Primary-path cardinality > 1 (the same constant appears in
+		 * multiple slots): first-match-wins.  Slot order 1..6 biases
 		 * toward lower slots, which tend to be the cmd-like /
 		 * dispatching ones.  Bump reexec_attribution_ambiguous once
 		 * per matched record where >1 slot matched so the rate is
@@ -1015,6 +1028,74 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 						__atomic_fetch_add(
 							&kcov_shm->reexec_attribution_dropped_pending_by_syscall[nr],
 							1UL, __ATOMIC_RELAXED);
+					}
+				}
+			} else if (size > 0 && size < sizeof(unsigned long)) {
+				/* Width-aware fallback: exact-pass missed and
+				 * the kernel comparison was narrower than a
+				 * long.  arg2 carries the post-narrowing value
+				 * (KCOV publishes the compared u8/u16/u32 with
+				 * the high bits zero); the matching arg slot
+				 * still holds the full long.  Mask both to the
+				 * low `size`*8 bits and rescan.  Accept ONLY a
+				 * unique match -- the masked predicate's
+				 * higher hit rate makes first-match-wins
+				 * unreliable, so any masked ambiguity is
+				 * dropped rather than guessed.  size <
+				 * sizeof(unsigned long) so the shift is always
+				 * in range; size > 0 belt-and-braces against
+				 * a corrupted KCOV header. */
+				unsigned long width_mask =
+					(1UL << (size * 8U)) - 1UL;
+				unsigned long arg2_masked = arg2 & width_mask;
+				unsigned int width_first = 0;
+				unsigned int width_count = 0;
+
+				for (k = 0; k < rec_num_args; k++) {
+					if ((rec_args[k] & width_mask) == arg2_masked) {
+						if (width_count == 0)
+							width_first = k + 1;
+						width_count++;
+						if (width_count > 1)
+							break;
+					}
+				}
+
+				if (width_count == 1) {
+					struct reexec_pending *p =
+						&child->reexec_pending[child->reexec_pending_count];
+
+					p->cmp_ip = ip;
+					p->value = arg1;
+					p->size = size;
+					p->slot = width_first;
+					child->reexec_pending_count++;
+
+					if (kcov_shm != NULL)
+						__atomic_fetch_add(
+							&kcov_shm->reexec_attribution_width_match,
+							1UL, __ATOMIC_RELAXED);
+
+					/* Same buffer-fill backstop as the
+					 * exact path: once reexec_pending[]
+					 * is full, disable further per-record
+					 * scans for the remainder of this
+					 * parent call and bump
+					 * reexec_pending_dropped + the per-nr
+					 * partition once.  Subsequent records
+					 * skip silently via the
+					 * attribute_enabled guard. */
+					if (child->reexec_pending_count >=
+					    MAX_REEXEC_PENDING) {
+						attribute_enabled = false;
+						if (kcov_shm != NULL) {
+							__atomic_fetch_add(
+								&kcov_shm->reexec_pending_dropped,
+								1UL, __ATOMIC_RELAXED);
+							__atomic_fetch_add(
+								&kcov_shm->reexec_attribution_dropped_pending_by_syscall[nr],
+								1UL, __ATOMIC_RELAXED);
+						}
 					}
 				}
 			}

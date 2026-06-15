@@ -4636,6 +4636,7 @@ void kcov_cmp_stats_periodic_dump(void)
 	static unsigned long prev_reexec_attempts;
 	static unsigned long prev_reexec_attribution_found;
 	static unsigned long prev_reexec_attribution_ambiguous;
+	static unsigned long prev_reexec_attribution_width_match;
 	static unsigned long prev_reexec_new_cmps_total;
 	static unsigned long prev_reexec_skipped_destructive;
 	static unsigned long prev_reexec_skipped_validate_silent;
@@ -4662,6 +4663,7 @@ void kcov_cmp_stats_periodic_dump(void)
 	unsigned long cur_count_oob, cur_canary_lock_post, cur_canary_pre, cur_canary_post;
 	unsigned long cur_reexec_attempts, cur_reexec_attribution_found;
 	unsigned long cur_reexec_attribution_ambiguous, cur_reexec_new_cmps_total;
+	unsigned long cur_reexec_attribution_width_match;
 	unsigned long cur_reexec_skipped_destructive, cur_reexec_skipped_validate_silent;
 	unsigned long cur_reexec_window_cap_hit;
 	unsigned long cur_reexec_pending_dropped;
@@ -4680,6 +4682,7 @@ void kcov_cmp_stats_periodic_dump(void)
 	unsigned long delta_count_oob, delta_canary_lock_post, delta_canary_pre, delta_canary_post;
 	unsigned long delta_reexec_attempts, delta_reexec_attribution_found;
 	unsigned long delta_reexec_attribution_ambiguous, delta_reexec_new_cmps_total;
+	unsigned long delta_reexec_attribution_width_match;
 	unsigned long delta_reexec_skipped_destructive, delta_reexec_skipped_validate_silent;
 	unsigned long delta_reexec_window_cap_hit;
 	unsigned long delta_reexec_pending_dropped;
@@ -4711,6 +4714,7 @@ void kcov_cmp_stats_periodic_dump(void)
 	cur_reexec_attempts                = __atomic_load_n(&kcov_shm->reexec_attempts,                __ATOMIC_RELAXED);
 	cur_reexec_attribution_found       = __atomic_load_n(&kcov_shm->reexec_attribution_found,       __ATOMIC_RELAXED);
 	cur_reexec_attribution_ambiguous   = __atomic_load_n(&kcov_shm->reexec_attribution_ambiguous,   __ATOMIC_RELAXED);
+	cur_reexec_attribution_width_match = __atomic_load_n(&kcov_shm->reexec_attribution_width_match, __ATOMIC_RELAXED);
 	cur_reexec_new_cmps_total          = __atomic_load_n(&kcov_shm->reexec_new_cmps_total,          __ATOMIC_RELAXED);
 	cur_reexec_skipped_destructive     = __atomic_load_n(&kcov_shm->reexec_skipped_destructive,     __ATOMIC_RELAXED);
 	cur_reexec_skipped_validate_silent = __atomic_load_n(&kcov_shm->reexec_skipped_validate_silent, __ATOMIC_RELAXED);
@@ -4755,6 +4759,7 @@ void kcov_cmp_stats_periodic_dump(void)
 		prev_reexec_attempts                = cur_reexec_attempts;
 		prev_reexec_attribution_found       = cur_reexec_attribution_found;
 		prev_reexec_attribution_ambiguous   = cur_reexec_attribution_ambiguous;
+		prev_reexec_attribution_width_match = cur_reexec_attribution_width_match;
 		prev_reexec_new_cmps_total          = cur_reexec_new_cmps_total;
 		prev_reexec_skipped_destructive     = cur_reexec_skipped_destructive;
 		prev_reexec_skipped_validate_silent = cur_reexec_skipped_validate_silent;
@@ -4798,6 +4803,7 @@ void kcov_cmp_stats_periodic_dump(void)
 	delta_reexec_attempts                = cur_reexec_attempts                - prev_reexec_attempts;
 	delta_reexec_attribution_found       = cur_reexec_attribution_found       - prev_reexec_attribution_found;
 	delta_reexec_attribution_ambiguous   = cur_reexec_attribution_ambiguous   - prev_reexec_attribution_ambiguous;
+	delta_reexec_attribution_width_match = cur_reexec_attribution_width_match - prev_reexec_attribution_width_match;
 	delta_reexec_new_cmps_total          = cur_reexec_new_cmps_total          - prev_reexec_new_cmps_total;
 	delta_reexec_skipped_destructive     = cur_reexec_skipped_destructive     - prev_reexec_skipped_destructive;
 	delta_reexec_skipped_validate_silent = cur_reexec_skipped_validate_silent - prev_reexec_skipped_validate_silent;
@@ -4829,7 +4835,8 @@ void kcov_cmp_stats_periodic_dump(void)
 	     delta_canary_lock_post |
 	     delta_canary_pre | delta_canary_post |
 	     delta_reexec_attempts | delta_reexec_attribution_found |
-	     delta_reexec_attribution_ambiguous | delta_reexec_new_cmps_total |
+	     delta_reexec_attribution_ambiguous | delta_reexec_attribution_width_match |
+	     delta_reexec_new_cmps_total |
 	     delta_reexec_skipped_destructive | delta_reexec_skipped_validate_silent |
 	     delta_reexec_window_cap_hit | delta_reexec_pending_dropped |
 	     delta_cmp_parent_calls_enabled | delta_cmp_parent_calls_control |
@@ -4976,6 +4983,12 @@ void kcov_cmp_stats_periodic_dump(void)
 			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
 					"reexec_attribution_ambiguous", delta_reexec_attribution_ambiguous,
 					rate_milli / 1000, rate_milli % 1000, cur_reexec_attribution_ambiguous);
+		}
+		if (delta_reexec_attribution_width_match) {
+			unsigned long rate_milli = (delta_reexec_attribution_width_match * 1000UL) / (unsigned long)elapsed;
+			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+					"reexec_attribution_width_match", delta_reexec_attribution_width_match,
+					rate_milli / 1000, rate_milli % 1000, cur_reexec_attribution_width_match);
 		}
 		if (delta_reexec_new_cmps_total) {
 			unsigned long rate_milli = (delta_reexec_new_cmps_total * 1000UL) / (unsigned long)elapsed;
@@ -5133,6 +5146,7 @@ void kcov_cmp_stats_periodic_dump(void)
 	prev_reexec_attempts                = cur_reexec_attempts;
 	prev_reexec_attribution_found       = cur_reexec_attribution_found;
 	prev_reexec_attribution_ambiguous   = cur_reexec_attribution_ambiguous;
+	prev_reexec_attribution_width_match = cur_reexec_attribution_width_match;
 	prev_reexec_new_cmps_total          = cur_reexec_new_cmps_total;
 	prev_reexec_skipped_destructive     = cur_reexec_skipped_destructive;
 	prev_reexec_skipped_validate_silent = cur_reexec_skipped_validate_silent;
@@ -7003,6 +7017,7 @@ static void dump_stats_kcov_block(void)
 			unsigned long rx_attempts = __atomic_load_n(&kcov_shm->reexec_attempts, __ATOMIC_RELAXED);
 			unsigned long rx_attribution_found = __atomic_load_n(&kcov_shm->reexec_attribution_found, __ATOMIC_RELAXED);
 			unsigned long rx_attribution_ambiguous = __atomic_load_n(&kcov_shm->reexec_attribution_ambiguous, __ATOMIC_RELAXED);
+			unsigned long rx_attribution_width_match = __atomic_load_n(&kcov_shm->reexec_attribution_width_match, __ATOMIC_RELAXED);
 			unsigned long rx_new_cmps_total = __atomic_load_n(&kcov_shm->reexec_new_cmps_total, __ATOMIC_RELAXED);
 			unsigned long rx_skipped_destructive = __atomic_load_n(&kcov_shm->reexec_skipped_destructive, __ATOMIC_RELAXED);
 			unsigned long rx_skipped_validate_silent = __atomic_load_n(&kcov_shm->reexec_skipped_validate_silent, __ATOMIC_RELAXED);
@@ -7018,6 +7033,8 @@ static void dump_stats_kcov_block(void)
 				stat_row("kcov_coverage", "reexec_attribution_found", rx_attribution_found);
 			if (rx_attribution_ambiguous > 0)
 				stat_row("kcov_coverage", "reexec_attribution_ambiguous", rx_attribution_ambiguous);
+			if (rx_attribution_width_match > 0)
+				stat_row("kcov_coverage", "reexec_attribution_width_match", rx_attribution_width_match);
 			if (rx_new_cmps_total > 0)
 				stat_row("kcov_coverage", "reexec_new_cmps_total", rx_new_cmps_total);
 			if (rx_skipped_destructive > 0)
