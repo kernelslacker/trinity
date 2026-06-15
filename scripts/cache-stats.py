@@ -54,7 +54,7 @@ CORPUS_HDR_SIZE = (CORPUS_HDR_SIZE_RAW + 3) & ~3
 CORPUS_ENTRY_FMT = "<II6QII"
 CORPUS_ENTRY_SIZE = struct.calcsize(CORPUS_ENTRY_FMT)
 
-CMP_HINTS_HDR_FMT = "<IIIIIIQ32s"
+CMP_HINTS_HDR_FMT = "<IIIIIIQ32sQ"
 CMP_HINTS_HDR_SIZE = struct.calcsize(CMP_HINTS_HDR_FMT)
 CMP_HINTS_ENTRY_FMT = "<QQIIQ"
 CMP_HINTS_ENTRY_SIZE = struct.calcsize(CMP_HINTS_ENTRY_FMT)
@@ -446,6 +446,7 @@ class CmpHintsData:
     payload_crc32: int
     payload_bytes: int
     kallsyms_sha256: bytes
+    kaslr_base: int
     per_syscall_filled: list[int]
     pool_dim_filled: list[list[int]]
     total_constants: int
@@ -475,11 +476,12 @@ def load_cmp_hints(path: str) -> Optional[CmpHintsData]:
         payload_crc32,
         payload_bytes,
         kallsyms_sha256,
+        kaslr_base,
     ) = struct.unpack_from(CMP_HINTS_HDR_FMT, raw, 0)
     if magic != CMP_HINTS_MAGIC:
         warn(f"cmp-hints: {path}: bad magic 0x{magic:08x}")
         return None
-    if version != 4:
+    if version != 5:
         warn(f"cmp-hints: {path}: unsupported version {version}")
         return None
     if entry_size != CMP_HINTS_ENTRY_SIZE:
@@ -540,6 +542,7 @@ def load_cmp_hints(path: str) -> Optional[CmpHintsData]:
         payload_crc32=payload_crc32,
         payload_bytes=payload_bytes,
         kallsyms_sha256=kallsyms_sha256,
+        kaslr_base=kaslr_base,
         per_syscall_filled=per_syscall_filled,
         pool_dim_filled=pool_dim_filled,
         total_constants=total_constants,
@@ -800,6 +803,8 @@ def print_cmp_hints_stats(b: CacheBundle, top_n: int) -> None:
     print(f"  total constants: {h.total_constants} of {capacity}  ({fmt_pct(fill)})")
     print(f"  syscalls w/ hints:{nonempty}")
     print(f"  most-recent last_used clock: {h.most_recent_last_used}")
+    mode = "canonical cmp_ip" if h.kaslr_base != 0 else "raw cmp_ip"
+    print(f"  kaslr_base:      0x{h.kaslr_base:016x}  ({mode})")
     print(f"  crc:             {'OK' if h.crc_ok else 'MISMATCH'}")
     for n in h.notes:
         print(f"  note: {n}")
