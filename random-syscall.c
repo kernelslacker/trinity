@@ -521,6 +521,9 @@ retry:
 static unsigned long frontier_cold_weight(unsigned int nr)
 {
 	unsigned long edges, calls;
+	unsigned long bucket_bits, distinct_pcs;
+	unsigned long old_weight, blend_weight;
+	unsigned long blend_productivity;
 
 	if (kcov_shm == NULL || nr >= MAX_NR_SYSCALL)
 		return FRONTIER_COLD_SCALE;
@@ -528,32 +531,117 @@ static unsigned long frontier_cold_weight(unsigned int nr)
 	calls = __atomic_load_n(&kcov_shm->per_syscall_calls[nr],
 				__ATOMIC_RELAXED);
 
-	/* Never invoked: MAX bias, genuinely under-explored. */
+	/* Never invoked: MAX bias, genuinely under-explored.  Bypass the
+	 * shadow A/B math entirely -- both formulas agree on
+	 * FRONTIER_COLD_SCALE in this case and the early return keeps the
+	 * cold-path overhead untouched for syscalls that have never seen
+	 * a single call. */
 	if (calls == 0)
 		return FRONTIER_COLD_SCALE;
 
 	edges = __atomic_load_n(&kcov_shm->per_syscall_edges[nr],
 				__ATOMIC_RELAXED);
 
-	/* Invoked but never productive: MIN bias.  This is the bug-graveyard
-	 * case the previous "calls == 0 || edges == 0" guard conflated with
-	 * the never-invoked case above.  Returning 0 here cuts off the bias,
-	 * the caller's (w+1)/(SCALE+1) accept floor still keeps the syscall
-	 * reachable. */
+	/* OLD weight (call-count only): the live-path productivity signal
+	 * this function has always returned.  Logic preserved verbatim from
+	 * the pre-blend implementation.  Computed unconditionally so the
+	 * SHADOW blend below can compare against it, then returned at the
+	 * tail so the picker's per-syscall distribution stays byte-
+	 * identical to today.
+	 *
+	 *  edges == 0 -- invoked but never productive (bug-graveyard);
+	 *  edges >= calls -- RELAXED-load inversion against the steady-
+	 *                    state edges <= calls invariant, treat as
+	 *                    fully productive (would otherwise underflow
+	 *                    the unsigned subtract).
+	 *
+	 * The caller's (w+1)/(SCALE+1) accept floor keeps a w == 0
+	 * syscall reachable in both regimes. */
 	if (edges == 0)
-		return 0;
+		old_weight = 0;
+	else if (edges >= calls)
+		old_weight = 0;
+	else
+		old_weight = FRONTIER_COLD_SCALE -
+			     (edges * FRONTIER_COLD_SCALE) / calls;
 
-	/* Under preemption the two RELAXED loads above can sample edges
-	 * after a kcov_collect bump that landed between the two reads
-	 * even though edges <= calls is the steady-state invariant.  Treat
-	 * any such inversion as "fully productive" (weight 0): without
-	 * this guard the unsigned subtract underflows to ~ULONG_MAX. */
-	if (edges >= calls)
-		return 0;
+	/* BLENDED weight (SHADOW-ONLY, [t12-frontier-blend]): treat
+	 * per_syscall_edges (call-count of productive calls) as the stable
+	 * backbone and ADD logarithmic credit for raw bucket-edge yield
+	 * (per_syscall_diag[].bucket_bits_real) and first-sight distinct
+	 * edges (per_syscall_diag[].distinct_pcs).  The old call-count
+	 * formula cannot distinguish a single invocation that opens a
+	 * subsystem and uncovers 50 fresh edges from a single bucket flip
+	 * that opened nothing new -- both bump per_syscall_edges by 1.
+	 * The blend adds the missing dimension without giving up the
+	 * stability of the call-count denominator.
+	 *
+	 * Diag counters are split by [nr][do32] (the arch dim the picker
+	 * does not know at this call site); sum both arch slots so the
+	 * blend's productivity numerator pairs against the unsplit
+	 * per_syscall_calls denominator above -- matches the unsplit
+	 * per_syscall_edges shape the old branch uses.
+	 *
+	 * ilog2() is the per-call contribution clamp: a syscall whose
+	 * single huge trace dumped a million bucket bits contributes ~20
+	 * to the score, not a million, so one productive call cannot
+	 * monopolize the frontier window.  The distinct-edges term is
+	 * weighted 2x the bucket-bits term -- distinct first-sight events
+	 * are the higher-signal proxy (bucket-bit transitions can fire on
+	 * already-known edges that re-hit a different hit-count bucket;
+	 * a distinct first-sight event is unambiguously new coverage).
+	 *
+	 * blend_productivity is capped at calls so the SCALE subtraction
+	 * cannot underflow -- same invariant the OLD branch above relies
+	 * on for the productive range. */
+	bucket_bits = __atomic_load_n(
+			&kcov_shm->per_syscall_diag[nr][0].bucket_bits_real,
+			__ATOMIC_RELAXED) +
+		      __atomic_load_n(
+			&kcov_shm->per_syscall_diag[nr][1].bucket_bits_real,
+			__ATOMIC_RELAXED);
+	distinct_pcs = __atomic_load_n(
+			&kcov_shm->per_syscall_diag[nr][0].distinct_pcs,
+			__ATOMIC_RELAXED) +
+		       __atomic_load_n(
+			&kcov_shm->per_syscall_diag[nr][1].distinct_pcs,
+			__ATOMIC_RELAXED);
 
-	/* Inverse productivity in the productive range. */
-	return FRONTIER_COLD_SCALE -
-	       (edges * FRONTIER_COLD_SCALE) / calls;
+	blend_productivity = edges +
+			     (unsigned long)ilog2_ul(bucket_bits + 1UL) +
+			     2UL * (unsigned long)ilog2_ul(distinct_pcs + 1UL);
+	if (blend_productivity >= calls)
+		blend_weight = 0;
+	else
+		blend_weight = FRONTIER_COLD_SCALE -
+			       (blend_productivity * FRONTIER_COLD_SCALE) /
+			       calls;
+
+	/* SHADOW-ONLY A/B counters.  Bumped once per call here so the
+	 * operator can read the run-wide divergence pattern between the
+	 * OLD (call-count only) and BLENDED (call-count +
+	 * ilog2(bucket_bits) + 2*ilog2(distinct_pcs)) productivity
+	 * scores.  Nothing downstream reads these counters -- the function
+	 * returns old_weight below and selection stays byte-identical.
+	 * The Dave-nodded gate for promoting the blend to live selection
+	 * is the A/B divergence pattern these counters expose. */
+	__atomic_fetch_add(&shm->stats.frontier_blend_samples, 1UL,
+			   __ATOMIC_RELAXED);
+	__atomic_fetch_add(&shm->stats.frontier_blend_old_weight_sum,
+			   old_weight, __ATOMIC_RELAXED);
+	__atomic_fetch_add(&shm->stats.frontier_blend_new_weight_sum,
+			   blend_weight, __ATOMIC_RELAXED);
+	if (blend_weight < old_weight)
+		__atomic_fetch_add(&shm->stats.frontier_blend_new_lower,
+				   1UL, __ATOMIC_RELAXED);
+	else if (blend_weight > old_weight)
+		__atomic_fetch_add(&shm->stats.frontier_blend_new_higher,
+				   1UL, __ATOMIC_RELAXED);
+	else
+		__atomic_fetch_add(&shm->stats.frontier_blend_new_equal,
+				   1UL, __ATOMIC_RELAXED);
+
+	return old_weight;
 }
 
 /*
