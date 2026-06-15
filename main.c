@@ -49,6 +49,38 @@ static void replace_child(int childno);
  * corrupt them.  -1 means no open fd for that slot. */
 static int *pidstatfiles;
 
+/* CLOCK_MONOTONIC second past which the canary picker may resume
+ * scheduling pid-heavy ops; 0 means no suppression is in effect.
+ * Parent-private (the canary picker is parent-only).  Written from
+ * fork_children() when consecutive_fork_failures crosses
+ * FORK_PRESSURE_DRAIN_THRESHOLD and --fork-pressure-drain is set;
+ * read from child-canary.c via fork_pressure_drain_active().  Read
+ * RELAXED -- the picker only needs eventual consistency; a one-tick
+ * lag in seeing pressure raised or lifted is fine. */
+static unsigned long fork_pressure_active_until;
+
+/* Spawn-failure count at which the drain engages.  Picked an order
+ * of magnitude below the bail threshold (max_consecutive_fork_failures
+ * = 1000) so the drain has room to actually relieve pressure before
+ * the parent gives up.  With the inner spawn_child retry's 10-100ms
+ * backoff, 100 consecutive failures is roughly the first 1-2 s of a
+ * stuck-fork episode -- past any single ENOMEM blip and into
+ * sustained pressure. */
+#define FORK_PRESSURE_DRAIN_THRESHOLD	100U
+
+/* Seconds the suppression stays in effect after the most recent
+ * threshold crossing.  Long enough for the kernel-side resource
+ * (process slots, RLIMIT_NPROC, cgroup pids.max) to drain via the
+ * fleet's normal reap cadence; short enough that a transient pressure
+ * burst does not lock pid-heavy canaries out for a meaningful
+ * fraction of the run.  Each new burst re-arms the window. */
+#define FORK_PRESSURE_DRAIN_RECOVERY_S	30U
+
+unsigned long fork_pressure_drain_active(void)
+{
+	return __atomic_load_n(&fork_pressure_active_until, __ATOMIC_RELAXED);
+}
+
 /*
  * Parent-local tracking of slots whose former occupant is in the kernel
  * as an unkillable D-state task.  We have already cleared the pid slot
@@ -1830,6 +1862,29 @@ static void fork_children(void)
 
 			while (spawn_child(childno) == false) {
 				consecutive_fork_failures++;
+				/* Drain mode: at the first crossing of
+				 * FORK_PRESSURE_DRAIN_THRESHOLD inside this
+				 * burst, arm the recovery window so the canary
+				 * picker stops scheduling pid-heavy ops.  Re-
+				 * arm on every subsequent failure inside the
+				 * burst (cheap, RELAXED store) so a sustained
+				 * pressure spell holds the window open instead
+				 * of timing out mid-spell.  Guarded by the
+				 * opt-in flag -- default behaviour stays
+				 * byte-identical. */
+				if (fork_pressure_drain &&
+				    consecutive_fork_failures >= FORK_PRESSURE_DRAIN_THRESHOLD) {
+					struct timespec ts;
+					(void)clock_gettime(CLOCK_MONOTONIC, &ts);
+					__atomic_store_n(&fork_pressure_active_until,
+						(unsigned long)ts.tv_sec +
+							FORK_PRESSURE_DRAIN_RECOVERY_S,
+						__ATOMIC_RELAXED);
+					if (consecutive_fork_failures == FORK_PRESSURE_DRAIN_THRESHOLD)
+						output(0, "main: fork-pressure drain engaged (%u consecutive spawn failures); pid-heavy canary picks suppressed for %u s\n",
+							consecutive_fork_failures,
+							FORK_PRESSURE_DRAIN_RECOVERY_S);
+				}
 				if (consecutive_fork_failures >= max_consecutive_fork_failures) {
 					outputerr("main: fork stuck - %u consecutive spawn failures; bailing (process table likely exhausted)\n",
 						consecutive_fork_failures);

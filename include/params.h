@@ -120,6 +120,14 @@ extern bool canary_queue_disabled;
 extern unsigned char canary_seed_override[CANARY_SEED_OVERRIDE_MAX];
 extern unsigned int canary_seed_override_count;
 
+/* Opt-in (--fork-pressure-drain): under sustained spawn_child()
+ * failure in the parent fork loop, temporarily stop the canary
+ * picker from scheduling pid-heavy ops so the canary slot stops
+ * adding fork demand to a parent already losing the spawn race.
+ * Default false; gates the entire drain code path so a default
+ * invocation is byte-identical to the pre-flag behaviour. */
+extern bool fork_pressure_drain;
+
 /*
  * Hybrid bandit/explorer split: when --strategy=bandit is in effect, a
  * dedicated explorer slice of the child slots ignores the bandit's pick

@@ -131,6 +131,26 @@ static const enum child_op_type canary_config_blocked[] = {
 	CHILD_OP_IP6GRE_BOND_LAPB_STACK,
 };
 
+/* Pid-heavy ops the picker temporarily evicts while the parent fork
+ * loop is in the drain window (see fork_pressure_drain_active() in
+ * main.c).  Membership criteria: the op either fork()s short-lived
+ * helper workers internally (and bumps a *_fork_failed counter when
+ * that inner fork fails -- those five are the same set surfaced in
+ * main.c's bail-time subworker fork-fail dump) or its primary purpose
+ * is hammering the pid/pidfd allocator (pidfd_storm).  fork_storm
+ * is double-gated: it is already in canary_risky_defer below, but is
+ * listed here for completeness so a future risky-defer reshuffle
+ * cannot quietly let it through the drain. */
+static const enum child_op_type canary_pid_heavy_ops[] = {
+	CHILD_OP_FORK_STORM,
+	CHILD_OP_PIDFD_STORM,
+	CHILD_OP_QRTR_BIND_RACE,
+	CHILD_OP_PFKEY_SPD_WALK,
+	CHILD_OP_L2TP_IFNAME_RACE,
+	CHILD_OP_STATMOUNT_IDMAP_OVERFLOW,
+	CHILD_OP_SYSFS_STRING_RACE,
+};
+
 static const enum child_op_type canary_risky_defer[] = {
 	CHILD_OP_FORK_STORM,
 	CHILD_OP_CPU_HOTPLUG_RIDER,
@@ -295,6 +315,40 @@ static bool op_is_in_table(enum child_op_type op,
 	unsigned int i;
 	for (i = 0; i < n; i++)
 		if (tbl[i] == op)
+			return true;
+	return false;
+}
+
+/* Drain-mode predicate: skip pid-heavy ops in the canary picker while
+ * the parent fork loop is in its post-threshold recovery window.  The
+ * arming side lives in main.c (fork_children); here we just consult
+ * the published deadline.  Three short-circuits keep the hot path
+ * cheap on the default (--fork-pressure-drain off) run: the flag
+ * check, the deadline-is-zero check, and the small-array membership
+ * walk only runs once the first two say yes.
+ *
+ * Active CANARYING is not interrupted -- this only filters NEW picks
+ * from pick_next_canary().  Letting the in-flight window close
+ * naturally avoids polluting the op's window counters with a forced
+ * mid-window kill, and the slot's contribution to pid pressure is
+ * already bounded by the existing window-iter budget. */
+static bool fork_pressure_should_suppress(enum child_op_type op)
+{
+	unsigned long until;
+	struct timespec ts;
+	unsigned int i;
+
+	if (!fork_pressure_drain)
+		return false;
+	until = fork_pressure_drain_active();
+	if (until == 0)
+		return false;
+	(void)clock_gettime(CLOCK_MONOTONIC, &ts);
+	if ((unsigned long)ts.tv_sec >= until)
+		return false;
+
+	for (i = 0; i < ARRAY_SIZE(canary_pid_heavy_ops); i++)
+		if (canary_pid_heavy_ops[i] == op)
 			return true;
 	return false;
 }
@@ -466,17 +520,33 @@ static bool pick_next_canary(enum child_op_type *out)
 	enum child_op_type op;
 	time_t now;
 
-	/* Seed-priority queue: priority seeds first. */
+	/* Seed-priority queue: priority seeds first.  fork-pressure drain
+	 * is consulted here so a pid-heavy seed defers to the next seed
+	 * during the recovery window instead of being skipped permanently:
+	 * the cursor is NOT advanced past a suppressed entry, so the
+	 * picker walks back to it once the window expires and a later
+	 * tick re-enters via retry_parked_slot(). */
 	while (canary_priority_cursor < canary_priority_list_count) {
-		op = canary_priority_list[canary_priority_cursor++];
-		if (op == CHILD_OP_SYSCALL || op >= NR_CHILD_OP_TYPES)
+		op = canary_priority_list[canary_priority_cursor];
+		if (op == CHILD_OP_SYSCALL || op >= NR_CHILD_OP_TYPES) {
+			canary_priority_cursor++;
 			continue;
-		if (canary_ops[op].state == CANARY_STATE_CONFIG_BLOCKED)
+		}
+		if (canary_ops[op].state == CANARY_STATE_CONFIG_BLOCKED) {
+			canary_priority_cursor++;
 			continue;
-		if (canary_ops[op].phase1_ineligible)
+		}
+		if (canary_ops[op].phase1_ineligible) {
+			canary_priority_cursor++;
 			continue;
-		if (canary_ops[op].state == CANARY_STATE_PROMOTED)
+		}
+		if (canary_ops[op].state == CANARY_STATE_PROMOTED) {
+			canary_priority_cursor++;
 			continue;
+		}
+		if (fork_pressure_should_suppress(op))
+			break;
+		canary_priority_cursor++;
 		*out = op;
 		return true;
 	}
@@ -521,6 +591,15 @@ static bool pick_next_canary(enum child_op_type *out)
 		 * eligible again via the same backoff path as any other
 		 * op. */
 		if (canary_ops[op].state == CANARY_STATE_DORMANT) {
+			/* fork-pressure drain: skip pid-heavy ops while
+			 * the recovery window is active.  The FIFO cursor
+			 * has already been advanced for this iteration,
+			 * so a suppressed op falls through to the next
+			 * candidate; once the window expires a later tick
+			 * re-enters the picker and wraps back around to
+			 * pick it up. */
+			if (fork_pressure_should_suppress(op))
+				continue;
 			*out = op;
 			return true;
 		}

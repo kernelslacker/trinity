@@ -54,6 +54,16 @@ unsigned int canary_slots = 0;
 bool user_specified_canary_slots = false;
 unsigned int canary_window_iters = 10000;
 bool canary_queue_disabled = false;
+
+/* Opt-in drain mode: under sustained fork() failure, temporarily stop
+ * scheduling pid-heavy canary ops (PIDFD_STORM and the per-childop
+ * subworker-forking races) so the canary picker stops piling new
+ * fork demand on a parent already losing the spawn race.  Default
+ * off -- this only engages in a degenerate state and the canary
+ * picker is not normally a contributor to fork pressure, but the
+ * flag exists so an operator who sees the bail snapshot in the log
+ * can re-run with the suppression in place. */
+bool fork_pressure_drain = false;
 unsigned char canary_seed_override[CANARY_SEED_OVERRIDE_MAX];
 unsigned int canary_seed_override_count = 0;
 
@@ -454,6 +464,7 @@ static const struct option_help option_descs[] = {
 	{ "epoch-iterations",	 0,  "syscalls per epoch before restarting (must be > 0; omit to disable)" },
 	{ "epoch-timeout",	 0,  "seconds per epoch before restarting (must be > 0; omit to disable)" },
 	{ "exclude",		'x', "don't call a specific syscall" },
+	{ "fork-pressure-drain", 0, "opt-in: under sustained fork() failure (>=100 consecutive spawn_child failures), suppress canary picks of pid-heavy ops (pidfd_storm, qrtr_bind_race, pfkey_spd_walk, l2tp_ifname_race, statmount_idmap_overflow, sysfs_string_race) for 30 s so the canary picker stops piling new fork demand on a parent already losing the spawn race. fork_storm is always skipped via the risky-defer set. Default off." },
 	{ "explorer-children",	 0,  "reserve N children to always run STRATEGY_RANDOM as a strategy-independent explorer pool (default: max_children/4 under --strategy=bandit, 0 otherwise; max: max_children/2). Works in any picker mode; non-bandit modes get no explorer pool unless this is set." },
 	{ "group",		'g', "only run syscalls from a certain group (vfs,vm,net,ipc,process,signal,io_uring,bpf,sched,time)" },
 	{ "group-bias",		 0,  "bias syscall selection toward the same group as the previous call" },
@@ -557,6 +568,7 @@ static const struct option longopts[] = {
 	{ "memory-swap-max", required_argument, NULL, 0 },
 	{ "no-cgroup", no_argument, NULL, 0 },
 	{ "no-canary-queue", no_argument, NULL, 0 },
+	{ "fork-pressure-drain", no_argument, NULL, 0 },
 	{ "no-startup-isolation", no_argument, NULL, 0 },
 	{ "ioctls", no_argument, NULL, 'I' },
 	{ "no_domain", required_argument, NULL, 'E' },
@@ -855,6 +867,9 @@ void parse_args(int argc, char *argv[])
 
 			if (strcmp("no-canary-queue", longopts[opt_index].name) == 0)
 				canary_queue_disabled = true;
+
+			if (strcmp("fork-pressure-drain", longopts[opt_index].name) == 0)
+				fork_pressure_drain = true;
 
 			if (strcmp("canary-seed", longopts[opt_index].name) == 0) {
 				/* Parse a comma-separated list of childop names
