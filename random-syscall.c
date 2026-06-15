@@ -6,6 +6,7 @@
 #include <signal.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -2204,6 +2205,55 @@ static void redqueen_pin_slot(struct syscallrecord *rec, unsigned int slot,
 }
 
 /*
+ * Field-scoped pin ([11-field-scoped]).  Unlike redqueen_pin_slot, the
+ * targeted slot holds a POINTER to a freshly-regenerated fixed-size
+ * struct; pin a single field inside that buffer and leave the rest of
+ * the generated struct intact, so a kernel comparison that fired on one
+ * field is satisfied without clobbering the whole arg.  Slot is 1-based.
+ *
+ * The buffer pointer is read AFTER generate_syscall_args() has run, so
+ * it is whatever the generator just produced -- which for ARG_TIMESPEC
+ * is either a valid pool pointer or the generator's ~10% NULL arm.  A
+ * NULL / implausibly small pointer is left unpinned (the re-exec still
+ * runs with fresh args, just without the field pin); the per-window cap
+ * bounds the wasted budget.  Only the ARG_TIMESPEC tv_sec/tv_nsec pair
+ * is wired today.
+ */
+static void redqueen_pin_field(struct syscallrecord *rec,
+			       const struct reexec_pending *p)
+{
+	unsigned long ptr;
+	struct timespec *ts;
+
+	switch (p->slot) {
+	case 1: ptr = rec->a1; break;
+	case 2: ptr = rec->a2; break;
+	case 3: ptr = rec->a3; break;
+	case 4: ptr = rec->a4; break;
+	case 5: ptr = rec->a5; break;
+	case 6: ptr = rec->a6; break;
+	default: return;
+	}
+
+	if (ptr < 4096)
+		return;
+
+	switch (p->field_kind) {
+	case REEXEC_FIELD_TIMESPEC_SEC:
+		ts = (struct timespec *) ptr;
+		ts->tv_sec = (time_t) p->value;
+		break;
+	case REEXEC_FIELD_TIMESPEC_NSEC:
+		ts = (struct timespec *) ptr;
+		ts->tv_nsec = (long) p->value;
+		break;
+	case REEXEC_FIELD_NONE:
+	default:
+		break;
+	}
+}
+
+/*
  * Greedy CMP RedQueen re-exec step.  Mirrors replay_syscall_step's
  * contract: resolve the entry, gate on sanitise-free (heap-pointer-
  * laundering inside generic_sanitise would either resurrect freed
@@ -2307,7 +2357,10 @@ static bool redqueen_reexec_step(struct childdata *child,
 	srec_publish_end(rec);
 
 	generate_syscall_args(rec);
-	redqueen_pin_slot(rec, p->slot, p->value);
+	if (p->field_kind == REEXEC_FIELD_NONE)
+		redqueen_pin_slot(rec, p->slot, p->value);
+	else
+		redqueen_pin_field(rec, p);
 
 	/* Don't credit the bandit for re-exec wins -- same rationale as
 	 * replay_syscall_step.  -1 sentinel makes the per-strategy

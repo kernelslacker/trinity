@@ -1104,6 +1104,15 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 	 */
 	struct syscallrecord *srec_field = NULL;
 	struct syscallentry *entry_field = NULL;
+	/*
+	 * Per-slot argtype snapshot + a cheap gate for the field-scoped
+	 * RedQueen scan ([11-field-scoped]).  field_scan_enabled stays false
+	 * for the overwhelming majority of syscalls (no field-eligible arg),
+	 * so the per-record field scan is skipped outright and the scalar
+	 * fast-path pays nothing beyond one bool test.
+	 */
+	enum argtype rec_argtype[6] = { 0 };
+	bool field_scan_enabled = false;
 
 	if (cmp_hints_shm == NULL || trace_buf == NULL)
 		return;
@@ -1189,6 +1198,7 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 			if (entry != NULL && entry->num_args > 0 &&
 			    rec->dispatch_args_valid) {
 				unsigned int n = entry->num_args;
+				unsigned int k;
 
 				if (n > 6)
 					n = 6;
@@ -1199,6 +1209,16 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 				rec_args[3] = rec->dispatch_args[3];
 				rec_args[4] = rec->dispatch_args[4];
 				rec_args[5] = rec->dispatch_args[5];
+				/* Snapshot the argtypes so the per-record field
+				 * scan can tell which slots carry a pointer to a
+				 * field-eligible struct without re-reading entry;
+				 * flag the cheap gate so non-timespec syscalls
+				 * skip the scan entirely. */
+				for (k = 0; k < n; k++) {
+					rec_argtype[k] = entry->argtype[k];
+					if (entry->argtype[k] == ARG_TIMESPEC)
+						field_scan_enabled = true;
+				}
 				attribute_enabled = true;
 				if (kcov_shm != NULL)
 					__atomic_fetch_add(
@@ -1353,6 +1373,8 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 		 */
 		if (attribute_enabled &&
 		    child->reexec_pending_count < MAX_REEXEC_PENDING) {
+			unsigned int pending_before =
+				child->reexec_pending_count;
 			unsigned int first_match = 0;
 			unsigned int match_count = 0;
 			unsigned int k;
@@ -1373,6 +1395,12 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 				p->value = arg1;
 				p->size = size;
 				p->slot = first_match;
+				/* Scalar slot pin: the consumer overwrites
+				 * rec->a<slot> outright.  Set explicitly --
+				 * reexec_pending[] is reused scratch, so a stale
+				 * field_kind from a prior call must not survive
+				 * into a scalar stamp. */
+				p->field_kind = REEXEC_FIELD_NONE;
 				child->reexec_pending_count++;
 
 				if (kcov_shm != NULL) {
@@ -1515,6 +1543,10 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 					p->value = arg1;
 					p->size = size;
 					p->slot = width_first;
+					/* Scalar slot pin (see the exact-match
+					 * stamp above for why field_kind is set
+					 * explicitly on this reused scratch). */
+					p->field_kind = REEXEC_FIELD_NONE;
 					child->reexec_pending_count++;
 
 					if (kcov_shm != NULL)
@@ -1543,6 +1575,104 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 								1UL, __ATOMIC_RELAXED);
 						}
 					}
+				}
+			}
+
+			/*
+			 * Field-scoped RedQueen fallback ([11-field-scoped]).
+			 * Runs only when the scalar exact + width passes added
+			 * NO pending for this record (count unchanged) AND the
+			 * dispatching syscall actually carries a field-eligible
+			 * arg -- so the scalar fast-path stays untouched and
+			 * non-timespec syscalls pay nothing past one bool test.
+			 *
+			 * The kernel compares a struct field (here a timespec's
+			 * tv_sec / tv_nsec) but the scalar scan only ever sees
+			 * the pointer in rec->a<slot>, never the field value, so
+			 * a field comparison is invisible to it.  Read the
+			 * candidate fields out of the dispatch-time buffer and
+			 * match the runtime operand (arg2) against them; on a
+			 * hit stamp a field-kind pending so the consumer pins
+			 * just that one field on re-exec rather than spraying
+			 * the constant across the whole arg.  Exact full-width
+			 * match only in this first patch (fixed-size structs);
+			 * width-masked field matching and variable-length
+			 * buffers land in the follow-up.
+			 */
+			if (field_scan_enabled &&
+			    child->reexec_pending_count == pending_before &&
+			    child->reexec_pending_count < MAX_REEXEC_PENDING) {
+				unsigned int fk;
+
+				for (fk = 0; fk < rec_num_args; fk++) {
+					const struct timespec *ts;
+					enum reexec_field_kind kind =
+						REEXEC_FIELD_NONE;
+					struct reexec_pending *p;
+
+					if (rec_argtype[fk] != ARG_TIMESPEC)
+						continue;
+					/* NULL "no timeout" arm or an
+					 * implausibly small value -- nothing
+					 * safe to dereference. */
+					if (rec_args[fk] < 4096)
+						continue;
+
+					ts = (const struct timespec *)
+						rec_args[fk];
+					if ((unsigned long)ts->tv_sec == arg2)
+						kind = REEXEC_FIELD_TIMESPEC_SEC;
+					else if ((unsigned long)ts->tv_nsec ==
+						 arg2)
+						kind = REEXEC_FIELD_TIMESPEC_NSEC;
+					if (kind == REEXEC_FIELD_NONE)
+						continue;
+
+					p = &child->reexec_pending[
+						child->reexec_pending_count];
+					p->cmp_ip = ip;
+					p->value = arg1;
+					p->size = size;
+					p->slot = fk + 1;
+					p->field_kind = kind;
+					child->reexec_pending_count++;
+
+					if (kcov_shm != NULL) {
+						/* Field attributions share the
+						 * scalar attribution counters in
+						 * this first patch -- they too
+						 * produce a reexec_pending entry;
+						 * a dedicated field counter lands
+						 * with the field-scoped CMP pool
+						 * follow-up. */
+						__atomic_fetch_add(
+							&kcov_shm->reexec_attribution_found,
+							1UL, __ATOMIC_RELAXED);
+						__atomic_fetch_add(
+							&kcov_shm->reexec_attribution_found_by_syscall[nr],
+							1UL, __ATOMIC_RELAXED);
+						if (fk < CMP_REDQUEEN_SLOT_HIST_NR)
+							__atomic_fetch_add(
+								&kcov_shm->reexec_attribution_slot_hist[fk],
+								1UL, __ATOMIC_RELAXED);
+					}
+
+					/* One field pin per CMP record; the
+					 * buffer-fill backstop mirrors the
+					 * scalar paths exactly. */
+					if (child->reexec_pending_count >=
+					    MAX_REEXEC_PENDING) {
+						attribute_enabled = false;
+						if (kcov_shm != NULL) {
+							__atomic_fetch_add(
+								&kcov_shm->reexec_pending_dropped,
+								1UL, __ATOMIC_RELAXED);
+							__atomic_fetch_add(
+								&kcov_shm->reexec_attribution_dropped_pending_by_syscall[nr],
+								1UL, __ATOMIC_RELAXED);
+						}
+					}
+					break;
 				}
 			}
 		}
