@@ -7,6 +7,7 @@
 #include <linux/fs.h>
 #include <linux/mount.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -36,6 +37,24 @@ unsigned int nr_filesystem_types;
 static char sacrificial_mount_paths[NR_SACRIFICIAL_MOUNT_PATHS][64];
 static unsigned int nr_sacrificial_mount_paths;
 
+/*
+ * Parent-only atexit teardown.  Children fork after the constructor and
+ * exit via _exit(), so they never run this -- only the parent rmdirs the
+ * sacrificial dirs it mkdir'd.  Idempotent + fail-soft: a dir the kernel
+ * already reaped (or a stray bind-mount in the host ns we cannot break)
+ * is left alone rather than aborting teardown.  Without this, every
+ * trinity invocation (including --dry-run smokes that gate childops off
+ * but still run constructors) leaks NR_SACRIFICIAL_MOUNT_PATHS empty
+ * /tmp/trinity-mount-<pid>-N dirs into /tmp.
+ */
+static void cleanup_sacrificial_mount_paths(void)
+{
+	unsigned int i;
+
+	for (i = 0; i < nr_sacrificial_mount_paths; i++)
+		(void) rmdir(sacrificial_mount_paths[i]);
+}
+
 static void __attribute__((constructor)) make_sacrificial_mount_paths(void)
 {
 	unsigned int i;
@@ -50,6 +69,9 @@ static void __attribute__((constructor)) make_sacrificial_mount_paths(void)
 		else
 			break;
 	}
+
+	if (nr_sacrificial_mount_paths > 0)
+		atexit(cleanup_sacrificial_mount_paths);
 }
 
 static char *pick_sacrificial_target(void)
