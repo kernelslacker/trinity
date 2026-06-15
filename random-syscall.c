@@ -40,6 +40,17 @@
 #include "trinity.h"
 #include "utils.h"
 
+/* The per-pending-index success counter in kcov_shared is sized off
+ * REEXEC_PENDING_PICK_HIST_NR (include/kcov.h); the per-call attribution
+ * buffer it indexes is sized off MAX_REEXEC_PENDING (include/cmp_hints.h).
+ * They MUST stay equal -- a wider counter under-uses the kcov_shm field
+ * and a narrower one would let the clamped index drop the last slots'
+ * success signal on the floor.  kcov.h does not include cmp_hints.h
+ * (to stay self-contained), so the parity check lives here, where both
+ * headers are in scope. */
+_Static_assert(REEXEC_PENDING_PICK_HIST_NR == MAX_REEXEC_PENDING,
+	       "REEXEC_PENDING_PICK_HIST_NR must equal MAX_REEXEC_PENDING");
+
 /*
  * Compression factor for the frontier-weighted acceptance denominator.
  * See the gate in set_syscall_nr_frontier() for the rationale.
@@ -1439,9 +1450,17 @@ static void maybe_rotate_strategy(void)
  * Greedy CMP RedQueen re-exec helper.  Forward-declared so dispatch_step's
  * tail can call it; definition lives after replay_syscall_step where the
  * fresh-args-then-pin-slot story is symmetric with the replay contract.
+ *
+ * pending_idx is the position in child->reexec_pending[] that the
+ * consumer at the dispatch_step tail picked (0..reexec_pending_count);
+ * carried through to the inner_new_cmp > 0 success block so the
+ * per-pending-index success counter (kcov_shm->reexec_pending_pick_success[])
+ * can be bumped at the chosen index without retaining the index in
+ * per-child scratch.
  */
 static bool redqueen_reexec_step(struct childdata *child,
-				 const struct reexec_pending *p);
+				 const struct reexec_pending *p,
+				 unsigned int pending_idx);
 
 /*
  * Dispatch a fully-prepared syscallrecord and run the per-call
@@ -2002,18 +2021,50 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 			if (plateau_burst ||
 			    ONE_IN(REDQUEEN_REEXEC_GATE_DENOM)) {
 				/* Per-call cap C-1: drain a single
-				 * attribution per parent dispatch.
-				 * Slot 0 is the first-emitted (earliest
-				 * CMP record's first-matching arg slot);
-				 * keeping a stable pick rather than a
-				 * random one means the lift metric
-				 * attributes deterministically to that
-				 * policy. */
-				struct reexec_pending p =
-					child->reexec_pending[0];
+				 * attribution per parent dispatch.  The
+				 * --redqueen-pending-pick A/B flag
+				 * (params.c) selects which entry of the
+				 * per-call reexec_pending[] census to
+				 * drain:
+				 *   FIRST  -- always entry 0, the first-
+				 *             emitted (earliest CMP
+				 *             record's first-matching arg
+				 *             slot).  Prior behaviour;
+				 *             biases hard toward early
+				 *             validation checks.
+				 *   RANDOM -- uniform pick over
+				 *             [0, reexec_pending_count)
+				 *             via trinity's Lemire-debiased
+				 *             rnd_modulo_u32() (NEVER libc
+				 *             rand()).  Surfaces signal
+				 *             from any pending entry, not
+				 *             just the trace-order winner.
+				 * The reexec_pending_count==0 short-
+				 * circuit above guarantees count > 0 here,
+				 * so the rnd_modulo_u32(count) argument is
+				 * safe (and the helper's own n==0 guard
+				 * would just return 0 anyway).
+				 * Per-pending-index success counters
+				 * (kcov_shm->reexec_pending_pick_success[])
+				 * are bumped inside redqueen_reexec_step
+				 * on inner_new_cmp > 0 in BOTH modes, so
+				 * an A/B run reads directly whether
+				 * entry-0's trace-order bias under FIRST
+				 * actually costs signal vs RANDOM. */
+				unsigned int pending_idx;
+				struct reexec_pending p;
+
+				if (redqueen_pending_pick_mode_arg ==
+				    REDQUEEN_PENDING_PICK_RANDOM)
+					pending_idx = rnd_modulo_u32(
+						child->reexec_pending_count);
+				else
+					pending_idx = 0;
+
+				p = child->reexec_pending[pending_idx];
 
 				child->in_reexec = true;
-				redqueen_reexec_step(child, &p);
+				redqueen_reexec_step(child, &p, pending_idx);
 				child->in_reexec = false;
 				gate_passed = true;
 			} else {
@@ -2273,7 +2324,8 @@ static void redqueen_pin_field(struct syscallrecord *rec,
  * misbehaving caller can't bypass it by calling the helper directly.
  */
 static bool redqueen_reexec_step(struct childdata *child,
-				 const struct reexec_pending *p)
+				 const struct reexec_pending *p,
+				 unsigned int pending_idx)
 {
 	struct syscallrecord *rec = &child->syscall;
 	struct syscallentry *entry;
@@ -2437,6 +2489,22 @@ static bool redqueen_reexec_step(struct childdata *child,
 			    p->slot <= CMP_REDQUEEN_SLOT_HIST_NR)
 				__atomic_fetch_add(
 					&kcov_shm->reexec_success_by_slot[p->slot - 1],
+					1UL, __ATOMIC_RELAXED);
+			/* Per-pending-buffer-index success counter, the
+			 * A/B signal for --redqueen-pending-pick.  The
+			 * caller's pick site clamps pending_idx to
+			 * [0, child->reexec_pending_count) and the
+			 * reexec_pending_count==0 short-circuit one level
+			 * above guarantees count > 0 there, so a sane
+			 * caller always lands in range -- the explicit
+			 * REEXEC_PENDING_PICK_HIST_NR clamp here is
+			 * defence in depth against a future caller
+			 * passing an out-of-range index (or a corrupted
+			 * reexec_pending_count value reaching
+			 * rnd_modulo_u32 and rolling past the bound). */
+			if (pending_idx < REEXEC_PENDING_PICK_HIST_NR)
+				__atomic_fetch_add(
+					&kcov_shm->reexec_pending_pick_success[pending_idx],
 					1UL, __ATOMIC_RELAXED);
 		}
 	}

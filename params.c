@@ -406,6 +406,44 @@ bool no_startup_isolation = false;
 
 char *stats_log_path = NULL;
 
+/*
+ * Default = RANDOM per the "start simple" A/B baseline (PHASE 4
+ * pending-entry selection): a uniform pick over the per-call
+ * reexec_pending[] census reveals whether the prior-behaviour
+ * always-entry-0 pick was costing signal.  FIRST is available as the
+ * baseline control arm so the two policies are directly comparable on
+ * the same host.  See enum redqueen_pending_pick_mode_t in
+ * include/params.h for the long-form rationale.
+ */
+enum redqueen_pending_pick_mode_t redqueen_pending_pick_mode_arg =
+	REDQUEEN_PENDING_PICK_RANDOM;
+
+bool parse_redqueen_pending_pick(const char *name,
+				 enum redqueen_pending_pick_mode_t *out)
+{
+	if (name == NULL || out == NULL)
+		return false;
+
+	if (strcmp(name, "random") == 0) {
+		*out = REDQUEEN_PENDING_PICK_RANDOM;
+		return true;
+	}
+	if (strcmp(name, "first") == 0) {
+		*out = REDQUEEN_PENDING_PICK_FIRST;
+		return true;
+	}
+	return false;
+}
+
+const char *redqueen_pending_pick_name(enum redqueen_pending_pick_mode_t mode)
+{
+	switch (mode) {
+	case REDQUEEN_PENDING_PICK_RANDOM:	return "random";
+	case REDQUEEN_PENDING_PICK_FIRST:	return "first";
+	}
+	return "unknown";
+}
+
 bool user_set_seed = false;
 
 unsigned char desired_group = GROUP_NONE;
@@ -486,6 +524,7 @@ static const struct option_help option_descs[] = {
 	{ "no_domain",		'E', "specify network domains to be excluded from testing" },
 	{ "print-disabled-syscalls", 0, "print syscalls disabled via AVOID_SYSCALL or NEED_ALARM and exit" },
 	{ "random",		'r', "pick N syscalls at random and just fuzz those" },
+	{ "redqueen-pending-pick", 0, "A/B selection policy for the RedQueen re-exec consumer at the dispatch_step tail.  Accepts 'random' (default) -- uniform pick from the per-call reexec_pending[] attribution census via rnd_modulo_u32 -- or 'first', which always drains entry 0 (the prior-behaviour trace-order winner).  Per-pending-index success counters are active in BOTH modes for direct A/B comparison." },
 	{ "show-unannotated",	 0,  "show unannotated syscalls" },
 	{ "stats",		 0,  "show errno distribution per syscall before exiting" },
 	{ "stats-json",		 0,  "emit dump_stats output as a single JSON object on stdout (machine-readable)" },
@@ -578,6 +617,7 @@ static const struct option longopts[] = {
 	{ "print-disabled-syscalls", no_argument, NULL, 0 },
 	{ "quiet", no_argument, NULL, 'q' },
 	{ "random", required_argument, NULL, 'r' },
+	{ "redqueen-pending-pick", required_argument, NULL, 0 },
 	{ "stats", no_argument, NULL, 0 },
 	{ "stats-json", no_argument, NULL, 0 },
 	{ "stats-log-file", required_argument, NULL, 0 },
@@ -1106,6 +1146,17 @@ void parse_args(int argc, char *argv[])
 			if (strcmp("strategy", longopts[opt_index].name) == 0) {
 				if (!parse_picker_mode(optarg, &picker_mode_arg)) {
 					outputerr("--strategy: unknown picker '%s' (try bandit or round-robin)\n",
+						  optarg);
+					exit(EXIT_FAILURE);
+				}
+			}
+
+			if (strcmp("redqueen-pending-pick",
+				   longopts[opt_index].name) == 0) {
+				if (!parse_redqueen_pending_pick(
+						optarg,
+						&redqueen_pending_pick_mode_arg)) {
+					outputerr("--redqueen-pending-pick: unknown policy '%s' (try random or first)\n",
 						  optarg);
 					exit(EXIT_FAILURE);
 				}
