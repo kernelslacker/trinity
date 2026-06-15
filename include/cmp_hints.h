@@ -73,7 +73,7 @@ struct cmp_hints_bloom {
  * value, size) here; the dispatch_step tail drains the buffer and re-runs
  * the syscall with the targeted slot pinned to the captured constant.
  *
- * Sized 8 entries (24 B each, ~192 B per child) so a single dispatch
+ * Sized 8 entries (32 B each, ~256 B per child) so a single dispatch
  * can stage multiple attributions without truncation; the per-call
  * re-exec cap keeps actual drain to one per parent dispatch
  * in the initial deployment.  Reset every dispatch_step tail (drain +
@@ -84,14 +84,36 @@ struct cmp_hints_bloom {
  * the existing pool entry uses; cmp_ip is the canonical (KASLR-stripped)
  * comparison-instruction address, the same value cmp_hints_collect()
  * routes into the bloom and the per-syscall pool.
+ *
+ * field_kind selects how the consumer applies the pin ([11-field-scoped]).
+ * REEXEC_FIELD_NONE is the historical scalar-slot pin: rec->a<slot> is
+ * overwritten with `value` outright.  The field kinds instead treat
+ * rec->a<slot> as a pointer to a fixed-size struct and pin ONE field
+ * inside the freshly regenerated buffer, leaving the rest of the
+ * generated struct intact -- so a kernel comparison that fired on a
+ * single struct field is satisfied without spraying the constant across
+ * the whole arg.  The scalar attribution scan runs first and stays
+ * byte-for-byte unchanged; a field scan only runs after the scalar +
+ * width passes miss, and only on syscalls that actually carry a
+ * field-eligible arg, so scalar RedQueen stays cheap.  Today only the
+ * ARG_TIMESPEC fixed-layout tv_sec/tv_nsec pair is wired; the xattr
+ * namespace vocab and the variable-length / nested buffers land in the
+ * follow-up alongside the field-scoped CMP pool.
  */
 #define MAX_REEXEC_PENDING	8U
+
+enum reexec_field_kind {
+	REEXEC_FIELD_NONE = 0,		/* scalar slot pin (historical) */
+	REEXEC_FIELD_TIMESPEC_SEC,	/* pin ((struct timespec *)slot)->tv_sec */
+	REEXEC_FIELD_TIMESPEC_NSEC,	/* pin ((struct timespec *)slot)->tv_nsec */
+};
 
 struct reexec_pending {
 	unsigned long cmp_ip;
 	unsigned long value;
 	unsigned int size;
 	unsigned int slot;
+	enum reexec_field_kind field_kind;
 };
 
 /*
