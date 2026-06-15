@@ -14,6 +14,7 @@
 #include "arg-decoder.h"
 #include "child.h"
 #include "cmp_hints.h"
+#include "cred_throttle.h"
 #include "debug.h"
 #include "fd.h"
 #include "kcov.h"
@@ -320,6 +321,15 @@ retry:
 		}
 	}
 
+	/* --cred-throttle gate.  Returns false unconditionally when the flag
+	 * is off (single RELAXED bool load short-circuit, no per-class state
+	 * touched) so the default picker distribution is byte-identical.
+	 * Placed AFTER validate/EXPENSIVE/group/cold-skip so a rejected pick
+	 * shares the existing outer_attempts budget instead of needing its
+	 * own retry cap. */
+	if (cred_throttle_should_reject(syscallnr, do32))
+		goto retry;
+
 	/* publish (nr, do32bit) as a coherent pair. */
 	srec_publish_begin(rec);
 	rec->do32bit = do32;
@@ -439,6 +449,12 @@ retry:
 		 * shape stays anti-prior on average even if individual
 		 * picks fall through. */
 	}
+
+	/* --cred-throttle gate.  Same contract as the matching call site in
+	 * set_syscall_nr_heuristic above: byte-identical default when the
+	 * flag is off, and the outer_attempts budget absorbs the retries. */
+	if (cred_throttle_should_reject(syscallnr, do32))
+		goto retry;
 
 	srec_publish_begin(rec);
 	rec->do32bit = do32;
@@ -627,6 +643,13 @@ retry:
 		goto retry;
 	}
 	note_validation_success(syscallnr, do32);
+
+	/* --cred-throttle gate.  Same contract as the matching call sites in
+	 * set_syscall_nr_heuristic / set_syscall_nr_random above: returns
+	 * false unconditionally when the flag is off so the frontier
+	 * picker's distribution is byte-identical to today's default. */
+	if (cred_throttle_should_reject(syscallnr, do32))
+		goto retry;
 
 	/* Frontier-weighted acceptance.  Two regimes share the same
 	 * accept-probability shape ((w+1)/(denom+1)) so the inner-loop

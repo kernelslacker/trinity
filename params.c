@@ -76,6 +76,7 @@ bool show_stats = false;
 bool stats_json = false;
 bool quiet = false;
 bool group_bias = false;
+bool cred_throttle = false;
 
 unsigned long epoch_iterations = 0;
 unsigned int epoch_timeout = 0;
@@ -456,6 +457,7 @@ static const struct option_help option_descs[] = {
 	{ "explorer-children",	 0,  "reserve N children to always run STRATEGY_RANDOM as a strategy-independent explorer pool (default: max_children/4 under --strategy=bandit, 0 otherwise; max: max_children/2). Works in any picker mode; non-bandit modes get no explorer pool unless this is set." },
 	{ "group",		'g', "only run syscalls from a certain group (vfs,vm,net,ipc,process,signal,io_uring,bpf,sched,time)" },
 	{ "group-bias",		 0,  "bias syscall selection toward the same group as the previous call" },
+	{ "cred-throttle",	 0,  "DEFAULT OFF. Enable the credential-syscall throttle: when a credential class (setregid/setreuid/setresuid/setresgid/setgid/setuid/setfsuid/setfsgid/setgroups) has accumulated >=64 attempts with zero successes and EPERM+EINVAL dominating >=90% of returns, downweight the class by rejecting 31/32 of subsequent picks. Flag off keeps the picker distribution byte-identical to a build without this row; the per-class observability counters are bumped regardless of this flag." },
 	{ "help",		'h', "show this help" },
 	{ "ioctls",		'I', "list all ioctls" },
 	{ "kernel_taint",	'T', "controls which kernel taint flags should be considered (see README)" },
@@ -544,6 +546,7 @@ static const struct option longopts[] = {
 	{ "explorer-children", required_argument, NULL, 0 },
 	{ "group", required_argument, NULL, 'g' },
 	{ "group-bias", no_argument, NULL, 0 },
+	{ "cred-throttle", no_argument, NULL, 0 },
 	{ "guard-shared", optional_argument, NULL, 0 },
 	{ "kernel_taint", required_argument, NULL, 'T' },
 	{ "help", no_argument, NULL, 'h' },
@@ -989,6 +992,9 @@ void parse_args(int argc, char *argv[])
 
 			if (strcmp("group-bias", longopts[opt_index].name) == 0)
 				group_bias = true;
+
+			if (strcmp("cred-throttle", longopts[opt_index].name) == 0)
+				cred_throttle = true;
 
 #ifdef CONFIG_GUARD_SHARED
 			if (strcmp("guard-shared", longopts[opt_index].name) == 0) {

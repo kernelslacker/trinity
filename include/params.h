@@ -55,6 +55,15 @@ extern bool dangerous;
 extern bool do_syslog;
 extern unsigned char desired_group;
 extern bool group_bias;
+/*
+ * --cred-throttle: A/B scaffold for sharply downweighting credential
+ * syscalls (setregid/setreuid/...) when the oracle in cred_throttle.c
+ * has classified the class as "provably impossible" in this run.
+ * DEFAULT OFF: the picker distribution is byte-identical to a build
+ * without this flag when cred_throttle is false.  Always-on observability
+ * (oracle counters) is independent of this flag.
+ */
+extern bool cred_throttle;
 extern bool user_set_seed;
 extern char *victim_paths[];
 extern unsigned int nr_victim_paths;
