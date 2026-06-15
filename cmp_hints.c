@@ -43,11 +43,13 @@
 #include "arch.h"
 #include "child.h"
 #include "cmp_hints.h"
+#include "debug.h"
 #include "fd.h"
 #include "kcov.h"
 #include "persist-util.h"
 #include "random.h"
 #include "rnd.h"
+#include "struct_catalog.h"
 #include "syscall.h"
 #include "tables.h"
 #include "trinity.h"
@@ -333,12 +335,26 @@ void cmp_hints_init(void)
 			}
 		}
 	}
+	/* Field-pool canaries.  Same triplet (lock_post / pre / post) as the
+	 * per-syscall pools so a wild-write into either family lands in the
+	 * same channel-attributed sentinels. */
+	{
+		unsigned int i;
+		for (i = 0; i < CMP_FIELD_POOL_BUCKETS; i++) {
+			struct cmp_field_pool *pool =
+				&cmp_hints_shm->field_pools[i];
+			pool->canary_lock_post = CMP_HINTS_POOL_CANARY;
+			pool->canary_pre = CMP_HINTS_POOL_CANARY;
+			pool->canary_post = CMP_HINTS_POOL_CANARY;
+		}
+	}
 	output(0, "KCOV: CMP hint pool allocated (%lu KB)\n",
 		(unsigned long) sizeof(struct cmp_hints_shared) / 1024);
 
 	cmp_hints_strip_install(cmp_hints_strip_targets,
 				ARRAY_SIZE(cmp_hints_strip_targets));
 	cmp_hints_strip_no_arg_syscalls();
+	cmp_hints_field_record_self_check();
 }
 
 static void pool_lock(struct cmp_hint_pool *pool)
@@ -652,6 +668,406 @@ static unsigned int cmp_hints_flush_pending(struct cmp_hint_pool *pool,
 	return inserted;
 }
 
+/*
+ * Field-pool table lookup.  splitmix64-style mix over the key tuple so
+ * (nr, do32, arg_idx, field_idx, size) variations spread evenly across
+ * buckets and the desc pointer's low bits don't dominate the index.  The
+ * result is masked to CMP_FIELD_POOL_BUCKETS so the bucket count can
+ * change without touching the hash.
+ */
+static inline uint32_t cmp_field_pool_hash(const struct struct_desc *desc,
+					   unsigned int nr, unsigned int do32,
+					   unsigned int arg_idx,
+					   unsigned int field_idx,
+					   unsigned int size)
+{
+	uint64_t x = (uint64_t)(uintptr_t) desc;
+
+	x ^= ((uint64_t) nr * 0x9e3779b97f4a7c15ULL);
+	x ^= ((uint64_t) arg_idx << 17);
+	x ^= ((uint64_t) field_idx * 0xbf58476d1ce4e5b9ULL);
+	x ^= ((uint64_t) size << 41);
+	x ^= ((uint64_t) do32 << 53);
+	x ^= x >> 30;
+	x *= 0xbf58476d1ce4e5b9ULL;
+	x ^= x >> 27;
+	return (uint32_t)(x & (CMP_FIELD_POOL_BUCKETS - 1U));
+}
+
+/* Same wild-write gate as cmp_hints_pool_corrupted() but for field pools.
+ * Independent latch + counter bumps so a stomp on a field pool is not
+ * folded into the per-syscall pool's corruption rate (the two paths
+ * write to different parts of cmp_hints_shm and pinpointing which one
+ * tripped narrows root-causing wild-write reports). */
+static bool cmp_field_pool_corrupted(struct cmp_field_pool *pool,
+				     unsigned int observed_count)
+{
+	if (__atomic_load_n(&pool->corrupted, __ATOMIC_RELAXED))
+		return true;
+	if (observed_count <= CMP_HINTS_PER_SYSCALL)
+		return false;
+	if (kcov_shm != NULL) {
+		__atomic_fetch_add(&kcov_shm->cmp_hints_count_oob, 1UL,
+				   __ATOMIC_RELAXED);
+		if (pool->canary_lock_post != CMP_HINTS_POOL_CANARY)
+			__atomic_fetch_add(&kcov_shm->cmp_hints_canary_lock_post_corrupt,
+					   1UL, __ATOMIC_RELAXED);
+		if (pool->canary_pre != CMP_HINTS_POOL_CANARY)
+			__atomic_fetch_add(&kcov_shm->cmp_hints_canary_pre_corrupt,
+					   1UL, __ATOMIC_RELAXED);
+		if (pool->canary_post != CMP_HINTS_POOL_CANARY)
+			__atomic_fetch_add(&kcov_shm->cmp_hints_canary_post_corrupt,
+					   1UL, __ATOMIC_RELAXED);
+	}
+	__atomic_store_n(&pool->corrupted, true, __ATOMIC_RELAXED);
+	return true;
+}
+
+/* Mirror of pool_add_locked() for the field pool entries[] array.  Same
+ * dedup / LRU-eviction discipline -- caller must hold pool->lock. */
+static bool cmp_field_pool_insert_locked(struct cmp_field_pool *pool,
+				  unsigned long cmp_ip,
+				  unsigned long val,
+				  unsigned int size)
+{
+	unsigned int i, count = pool->count;
+	uint64_t stamp;
+	unsigned int victim;
+	uint64_t oldest;
+
+	if (cmp_field_pool_corrupted(pool, count))
+		return false;
+
+	stamp = ++pool->last_used_stamp;
+
+	for (i = 0; i < count; i++) {
+		struct cmp_hint_entry *e = &pool->entries[i];
+
+		if (e->value == val && e->cmp_ip == cmp_ip && e->size == size) {
+			e->last_used = stamp;
+			return false;
+		}
+	}
+
+	if (count < CMP_HINTS_PER_SYSCALL) {
+		struct cmp_hint_entry *e = &pool->entries[count];
+
+		e->value = val;
+		e->cmp_ip = cmp_ip;
+		e->size = size;
+		e->last_used = stamp;
+		__atomic_fetch_add(&pool->generation, 1, __ATOMIC_RELAXED);
+		__atomic_store_n(&pool->count, count + 1, __ATOMIC_RELEASE);
+		return true;
+	}
+
+	victim = 0;
+	oldest = pool->entries[0].last_used;
+	for (i = 1; i < CMP_HINTS_PER_SYSCALL; i++) {
+		if (pool->entries[i].last_used < oldest) {
+			oldest = pool->entries[i].last_used;
+			victim = i;
+		}
+	}
+	pool->entries[victim].value = val;
+	pool->entries[victim].cmp_ip = cmp_ip;
+	pool->entries[victim].size = size;
+	pool->entries[victim].last_used = stamp;
+	__atomic_fetch_add(&pool->generation, 1, __ATOMIC_RELAXED);
+	return true;
+}
+
+void cmp_hints_field_record(unsigned int nr, bool do32, unsigned int arg_idx,
+			    const struct struct_desc *desc,
+			    unsigned int field_idx, unsigned int size,
+			    unsigned long val, unsigned long cmp_ip)
+{
+	uint32_t h;
+	unsigned int probe;
+	unsigned int do32_idx = do32 ? 1U : 0U;
+
+	if (cmp_hints_shm == NULL || desc == NULL)
+		return;
+	if (nr >= MAX_NR_SYSCALL || arg_idx < 1 || arg_idx > 6)
+		return;
+	if (size != 1 && size != 2 && size != 4 && size != 8)
+		return;
+
+	h = cmp_field_pool_hash(desc, nr, do32_idx, arg_idx, field_idx, size);
+
+	for (probe = 0; probe < CMP_FIELD_POOL_PROBE_MAX; probe++) {
+		unsigned int idx = (h + probe) & (CMP_FIELD_POOL_BUCKETS - 1U);
+		struct cmp_field_pool *pool = &cmp_hints_shm->field_pools[idx];
+		const struct struct_desc *occ;
+		bool inserted;
+
+		/* ACQUIRE-load the occupancy gate so a non-NULL desc read is
+		 * guaranteed to see the rest of the key the claimer published.
+		 * NULL means empty -- candidate for our claim. */
+		occ = __atomic_load_n(&pool->key.desc, __ATOMIC_ACQUIRE);
+		if (occ != NULL && occ != desc)
+			continue;
+
+		lock(&pool->lock);
+		/* Re-read under lock so a racing claimer can't slip a different
+		 * desc in between our ACQUIRE-load and lock acquire. */
+		occ = pool->key.desc;
+		if (occ == NULL) {
+			/* Claim: fill all key fields, then RELEASE-store desc
+			 * last so a reader that ACQUIRE-loads desc sees a
+			 * fully-populated key. */
+			pool->key.nr = (uint16_t) nr;
+			pool->key.do32 = (uint8_t) do32_idx;
+			pool->key.arg_idx = (uint8_t) arg_idx;
+			pool->key.field_idx = (uint16_t) field_idx;
+			pool->key.size = (uint8_t) size;
+			__atomic_store_n(&pool->key.desc, desc,
+					 __ATOMIC_RELEASE);
+		} else if (occ != desc ||
+			   pool->key.nr != (uint16_t) nr ||
+			   pool->key.do32 != (uint8_t) do32_idx ||
+			   pool->key.arg_idx != (uint8_t) arg_idx ||
+			   pool->key.field_idx != (uint16_t) field_idx ||
+			   pool->key.size != (uint8_t) size) {
+			/* Different key at this probe slot; keep walking. */
+			unlock(&pool->lock);
+			continue;
+		}
+
+		inserted = cmp_field_pool_insert_locked(pool, cmp_ip, val, size);
+		unlock(&pool->lock);
+
+		if (kcov_shm != NULL) {
+			__atomic_fetch_add(&kcov_shm->cmp_field_attribution_found,
+					   1UL, __ATOMIC_RELAXED);
+			(void) inserted;	/* dedup-refresh is a hit too */
+		}
+		return;
+	}
+
+	/* All probes filled with unrelated keys; advisory pool, drop. */
+	if (kcov_shm != NULL)
+		__atomic_fetch_add(&kcov_shm->cmp_field_attribution_pool_full,
+				   1UL, __ATOMIC_RELAXED);
+}
+
+void cmp_hints_field_record_self_check(void)
+{
+	/* Synthesise an insert against a sentinel desc pointer that can
+	 * never collide with a real catalog entry (the catalog is an array
+	 * of structs, never the address of the cmp_hints_shm itself), prove
+	 * the counter bumps + the bucket claims, then clear the bucket back
+	 * to empty so the live table starts clean.  Runs at every fresh
+	 * trinity startup so a regression in the recording path surfaces
+	 * loudly here rather than hiding behind silent zero counters during
+	 * a fuzz run.
+	 *
+	 * A sentinel address that is non-NULL, canonical-aligned, and
+	 * stable for the lifetime of the process: the address of
+	 * cmp_hints_shm itself.  Cast through (const struct struct_desc *)
+	 * for the key field type; we never deref it.
+	 */
+	const struct struct_desc *sentinel;
+	unsigned int idx;
+	unsigned int probe;
+	uint32_t h;
+	unsigned long before, after;
+	struct cmp_field_pool *claimed = NULL;
+
+	if (cmp_hints_shm == NULL || kcov_shm == NULL)
+		return;
+
+	sentinel = (const struct struct_desc *)(uintptr_t) cmp_hints_shm;
+	before = __atomic_load_n(&kcov_shm->cmp_field_attribution_found,
+				 __ATOMIC_RELAXED);
+
+	cmp_hints_field_record(/*nr=*/0, /*do32=*/false, /*arg_idx=*/1,
+			       sentinel, /*field_idx=*/0, /*size=*/8,
+			       /*val=*/0x5a5a5a5a5a5a5a5aULL,
+			       /*cmp_ip=*/0xc0ffee00c0ffee00ULL);
+
+	after = __atomic_load_n(&kcov_shm->cmp_field_attribution_found,
+				__ATOMIC_RELAXED);
+	if (after != before + 1)
+		BUG("cmp_hints: field-record self-check counter did not bump");
+
+	/* Locate the claimed bucket (linear probe from the same hash) and
+	 * reset it so the live table starts empty.  Walk the full probe
+	 * window because a subsequent self-check that re-hashes the same
+	 * sentinel must land on a freshly-empty slot, not the one we just
+	 * filled. */
+	h = cmp_field_pool_hash(sentinel, 0, 0, 1, 0, 8);
+	for (probe = 0; probe < CMP_FIELD_POOL_PROBE_MAX; probe++) {
+		idx = (h + probe) & (CMP_FIELD_POOL_BUCKETS - 1U);
+		if (cmp_hints_shm->field_pools[idx].key.desc == sentinel) {
+			claimed = &cmp_hints_shm->field_pools[idx];
+			break;
+		}
+	}
+	if (claimed == NULL)
+		BUG("cmp_hints: field-record self-check could not locate claimed bucket");
+
+	/* Reset the claimed bucket back to empty.  The unreachable() inside
+	 * BUG() above makes the NULL branch terminal, but gcc's fortify
+	 * memset-bounds check on -O2 still complains about deref through a
+	 * possibly-NULL pointer; clear the entries[] in a hand loop so the
+	 * checker sees the bounded indexing directly. */
+	for (probe = 0; probe < CMP_HINTS_PER_SYSCALL; probe++)
+		claimed->entries[probe] = (struct cmp_hint_entry){ 0 };
+	claimed->count = 0;
+	claimed->generation = 0;
+	claimed->last_used_stamp = 0;
+	claimed->key = (struct cmp_field_pool_key){ 0 };
+	/* Roll back the counter so the live table starts at zero -- the
+	 * synthetic self-check insert isn't a real field attribution. */
+	__atomic_fetch_sub(&kcov_shm->cmp_field_attribution_found, 1UL,
+			   __ATOMIC_RELAXED);
+
+	output(0, "KCOV: CMP field-record self-check passed\n");
+}
+
+/*
+ * Field-attribution scan for one CMP record.  For each cataloged INPUT
+ * struct arg, walk its fields and -- on a runtime field value matching
+ * arg2 -- record the kernel constant arg1 into the field-keyed pool
+ * via cmp_hints_field_record().  Independent of the scalar RedQueen
+ * attribution path above; runs as a recording-side accumulator so a
+ * future consumer can re-inject the constant at the named field.
+ *
+ * NARROW MVP scope (PHASE 3 first patch): fixed-size cataloged structs
+ * only.  Tagged-union descs (variants != NULL) and buffer-discriminated
+ * descs (buffer_discrim_size != 0) are skipped -- the live variant
+ * isn't carried in the dispatch_args[] snapshot and re-reading the
+ * post-fill buffer to resolve it would race a sibling stomp.  Array /
+ * pointer / length-pair tags are skipped because their sibling-coupled
+ * reads need the array-aware path landing in [11-array-attrib].  Only
+ * flat scalar tags with size in {1,2,4,8} contribute records here.
+ */
+static void cmp_hints_field_scan_record(struct syscallrecord *srec,
+					struct syscallentry *entry,
+					unsigned int nr, bool do32,
+					unsigned long arg1, unsigned long arg2,
+					unsigned int size, unsigned long cmp_ip)
+{
+	unsigned int slot;
+	unsigned int slot_max;
+
+	if (size != 1 && size != 2 && size != 4 && size != 8)
+		return;
+	slot_max = entry->num_args;
+	if (slot_max > 6)
+		slot_max = 6;
+
+	for (slot = 0; slot < slot_max; slot++) {
+		enum argtype t = entry->argtype[slot];
+		const struct struct_desc *desc;
+		const unsigned char *buf;
+		unsigned int i;
+
+		if (t != ARG_STRUCT_PTR_IN && t != ARG_STRUCT_PTR_INOUT)
+			continue;
+
+		desc = struct_arg_lookup(nr, slot + 1, do32, srec);
+		if (desc == NULL || desc->struct_size == 0 ||
+		    desc->fields == NULL || desc->num_fields == 0)
+			continue;
+
+		/* NARROW MVP: skip tagged-union and buffer-discriminated descs.
+		 * Variant-scoped attribution needs the live variant choice
+		 * which is post-fill state the CMP-time scan can't resolve
+		 * safely from the snapshot alone. */
+		if (desc->variants != NULL || desc->num_variants != 0 ||
+		    desc->buffer_discrim_size != 0)
+			continue;
+
+		/* Pointer comes from the dispatch-time snapshot, not live
+		 * rec->aN, so a sibling stomp between dispatch and this scan
+		 * cannot redirect us at an unrelated buffer.  Shape-gate
+		 * before the deref: a NULL / non-canonical / misaligned
+		 * snapshot pointer means the snapshot was never written or
+		 * the sanitiser handed the kernel something the field scan
+		 * can't safely walk.  Bump the dedicated counter so the
+		 * occurrence rate is observable. */
+		buf = (const unsigned char *)(uintptr_t)
+			srec->dispatch_args[slot];
+		if (is_corrupt_ptr_shape(buf)) {
+			if (kcov_shm != NULL)
+				__atomic_fetch_add(
+					&kcov_shm->cmp_field_attribution_arg_skipped_bad_ptr,
+					1UL, __ATOMIC_RELAXED);
+			continue;
+		}
+
+		if (kcov_shm != NULL)
+			__atomic_fetch_add(
+				&kcov_shm->cmp_field_attribution_scanned,
+				1UL, __ATOMIC_RELAXED);
+
+		for (i = 0; i < desc->num_fields; i++) {
+			const struct struct_field *f = &desc->fields[i];
+			unsigned long fv;
+
+			/* NARROW MVP: only flat scalar tags.  Array / pointer
+			 * / length-pair / aggregate tags need either array-
+			 * aware sibling resolution or sub-buffer reads, both
+			 * deferred to PHASE 5 [11-array-attrib]. */
+			switch (f->tag) {
+			case FT_PTR_BYTES:
+			case FT_PTR_ARRAY:
+			case FT_PTR_STRUCT:
+			case FT_LEN_BYTES:
+			case FT_LEN_COUNT:
+			case FT_TAGGED_UNION:
+			case FT_BPF_PROGRAM:
+			case FT_VOCAB:
+				continue;
+			default:
+				break;
+			}
+
+			if (f->size != size)
+				continue;
+			/* Bound the read inside the cataloged struct extent so
+			 * a buggy field entry can't walk past the buffer the
+			 * sanitiser actually allocated. */
+			if ((unsigned long) f->offset + size > desc->struct_size)
+				continue;
+
+			fv = 0;
+			switch (size) {
+			case 1:
+				fv = *(const uint8_t *)(buf + f->offset);
+				break;
+			case 2: {
+				uint16_t v;
+
+				memcpy(&v, buf + f->offset, sizeof(v));
+				fv = v;
+				break;
+			}
+			case 4: {
+				uint32_t v;
+
+				memcpy(&v, buf + f->offset, sizeof(v));
+				fv = v;
+				break;
+			}
+			case 8: {
+				uint64_t v;
+
+				memcpy(&v, buf + f->offset, sizeof(v));
+				fv = v;
+				break;
+			}
+			}
+
+			if (fv == arg2)
+				cmp_hints_field_record(nr, do32, slot + 1, desc,
+						       i, size, arg1, cmp_ip);
+		}
+	}
+}
+
 void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 {
 	unsigned long count;
@@ -678,6 +1094,16 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 	bool attribute_enabled = false;
 	unsigned long rec_args[6] = { 0 };
 	unsigned int rec_num_args = 0;
+	/*
+	 * Field-attribution scan state.  Independent gate from
+	 * attribute_enabled above: field attribution is a recording-side
+	 * accumulator that does NOT require the RedQueen cohort, only a
+	 * live dispatched syscall (entry != NULL, dispatch_args_valid).
+	 * srec_field / entry_field stay NULL when the call is parent-
+	 * context or pre-dispatch and the per-record helper short-circuits.
+	 */
+	struct syscallrecord *srec_field = NULL;
+	struct syscallentry *entry_field = NULL;
 
 	if (cmp_hints_shm == NULL || trace_buf == NULL)
 		return;
@@ -791,6 +1217,26 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 				__atomic_fetch_add(
 					&kcov_shm->cmp_attribution_snapshot_unavailable,
 					1UL, __ATOMIC_RELAXED);
+			}
+		}
+
+		/* Field-attribution gate is decoupled from the redqueen
+		 * cohort: any dispatched syscall with a valid arg snapshot
+		 * is a candidate for the recording-side field scan.  Held
+		 * separately from rec_args[] / rec_num_args above so the
+		 * scalar fast-path keeps its existing shape (and stays cheap
+		 * for non-struct syscalls).  in_reexec calls are excluded
+		 * for the same reason the scalar gate excludes them -- the
+		 * re-exec's CMP harvest would self-reinforce records into
+		 * the same field pool a parent dispatch just populated. */
+		if (!child->in_reexec) {
+			struct syscallrecord *rec = &child->syscall;
+			struct syscallentry *entry = rec->entry;
+
+			if (entry != NULL && entry->num_args > 0 &&
+			    rec->dispatch_args_valid) {
+				srec_field = rec;
+				entry_field = entry;
 			}
 		}
 	}
@@ -1100,6 +1546,23 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 				}
 			}
 		}
+
+		/* Field-attribution recording.  Decoupled from the scalar
+		 * attribute_enabled / reexec_pending plumbing above: the
+		 * field scan walks cataloged INPUT struct args looking for
+		 * a field whose runtime value matches arg2 and routes the
+		 * matching const to a (nr, do32, arg, desc, field, size)
+		 * pool.  Independent counters keep the scalar fast-path's
+		 * lift accounting unpolluted -- field attribution is
+		 * recording-side only in this MVP; the consumer side that
+		 * re-injects from these pools is a follow-up.  Runs only
+		 * when the syscall actually has a dispatched-arg snapshot
+		 * to read, so non-struct / parent-context calls cost a
+		 * single NULL-test per record. */
+		if (srec_field != NULL && entry_field != NULL)
+			cmp_hints_field_scan_record(srec_field, entry_field,
+						    nr, do32, arg1, arg2,
+						    size, ip);
 
 		if (bloom != NULL &&
 		    cmp_hints_bloom_check_and_set(bloom, ip, arg1, size)) {
