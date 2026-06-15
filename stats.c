@@ -11,6 +11,7 @@
 #include "breadcrumb_ring.h"
 #include "child.h"
 #include "cmp_hints.h"
+#include "cred_throttle.h"
 #include "fd.h"
 #include "kcov.h"
 #include "minicorpus.h"
@@ -7324,6 +7325,59 @@ static void dump_stats_kcov_block(void)
 					       errno_top_buckets[j][ERRNO_BUCKET_EBADF],
 					       errno_top_buckets[j][ERRNO_BUCKET_EAGAIN],
 					       errno_top_buckets[j][ERRNO_BUCKET_OTHER]);
+				}
+			}
+		}
+
+		/* Credential-class oracle dump.  Always-on observability:
+		 * per-class call / success / EPERM / EINVAL / throttled
+		 * counts so the operator can spot a class burning attempts
+		 * with zero successes (the diagnostic signature the throttle
+		 * exists to fix) without grepping the per-syscall errno
+		 * histogram for the nine credential names by hand.  The
+		 * `throttled` column is bumped only when --cred-throttle is
+		 * on and the gate fired; non-zero values double as a "flag
+		 * was active and engaged" indicator.  Silent when no class
+		 * has any activity. */
+		{
+			bool any = false;
+			unsigned int c;
+
+			for (c = 0; c < CRED_CLASS_NR; c++) {
+				if (__atomic_load_n(&shm->stats.cred_class_calls[c],
+						    __ATOMIC_RELAXED) != 0) {
+					any = true;
+					break;
+				}
+			}
+			if (any) {
+				output(0, "Credential-class oracle (--cred-throttle %s):\n",
+				       cred_throttle ? "ON" : "OFF");
+				output(0, "  %-12s %10s %10s %10s %10s %10s\n",
+				       "class", "calls", "success",
+				       "EPERM", "EINVAL", "throttled");
+				for (c = 0; c < CRED_CLASS_NR; c++) {
+					unsigned long calls = __atomic_load_n(
+						&shm->stats.cred_class_calls[c],
+						__ATOMIC_RELAXED);
+					unsigned long succ = __atomic_load_n(
+						&shm->stats.cred_class_success[c],
+						__ATOMIC_RELAXED);
+					unsigned long eperm = __atomic_load_n(
+						&shm->stats.cred_class_eperm[c],
+						__ATOMIC_RELAXED);
+					unsigned long einval = __atomic_load_n(
+						&shm->stats.cred_class_einval[c],
+						__ATOMIC_RELAXED);
+					unsigned long thr = __atomic_load_n(
+						&shm->stats.cred_class_throttled[c],
+						__ATOMIC_RELAXED);
+
+					if (calls == 0 && thr == 0)
+						continue;
+					output(0, "  %-12s %10lu %10lu %10lu %10lu %10lu\n",
+					       cred_class_name[c], calls,
+					       succ, eperm, einval, thr);
 				}
 			}
 		}

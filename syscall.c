@@ -18,6 +18,7 @@
 #include "arg_coupling.h"
 #include "argtype-ops.h"
 #include "child.h"
+#include "cred_throttle.h"
 #include "debug.h"
 #include "deferred-free.h"
 #include "fd-event.h"
@@ -1228,6 +1229,17 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 		}
 		__atomic_add_fetch(&kcov_shm->per_syscall_errno[call][bucket],
 				   1, __ATOMIC_RELAXED);
+
+		/* Credential-class oracle (always on, no flag gate): mirror the
+		 * just-classified bucket into the per-class success / EPERM /
+		 * EINVAL / calls counters when the entry resolves to a known
+		 * credential syscall.  No-op (single name-compare strcmp loop
+		 * plus an early return) on the ~99% non-credential majority.
+		 * Kept here so the bucket variable is already computed and the
+		 * AFTER gate above already filtered out grandchild-killed and
+		 * pre-validation paths -- the oracle should reflect only calls
+		 * the kernel actually saw. */
+		cred_oracle_record(entry, bucket);
 
 		/* Stamp last_efault_at[] with the current total_calls so a
 		 * future picker pass can bias away from syscalls stuck in
