@@ -729,6 +729,74 @@ static bool ring_contains(void *ptr)
 }
 
 /*
+ * Free-time ownership gate shared by every path that hands a tracked
+ * pointer back to free().  alloc_track_consume() scans the authoritative
+ * alloc_track[] array and clears the matching slot on a hit; only a true
+ * return is proof that __zmalloc() currently owns @ptr.  On a miss the
+ * caller is about to free something the heap does not own -- swallow the
+ * free() and bump the per-site corrupt/untracked counter so existing
+ * telemetry granularity (ring_eviction_corrupt vs deferred_free_corrupt_ptr
+ * vs deferred_free_reject_untracked) is preserved.
+ *
+ * Why not gate on alloc_track_lookup()?  lookup is a value-keyed hash
+ * prefilter that can stay true after the backing alloc_track[] slot has
+ * been rotated out -- duplicate-ptr edge case, or a hash entry that
+ * survived its array slot's rotation.  The reverted slot-cookie stack
+ * (4bdaa74 -> bb11874) tried adding a NEW value-keyed shadow on top of
+ * the existing one; the new shadow also desynced.  consume() reads the
+ * source of truth (the array); its return is the binding gate.  The
+ * previous shape gated on lookup() and then called consume() while
+ * discarding its return, free()ing chunks __zmalloc() no longer owned --
+ * the deferred-free.c:1279 ASAN bad-free class (143 reports across
+ * 2026-06-15).
+ *
+ * Cheap stateless prefilters (is_in_glibc_heap, range_overlaps_shared)
+ * may still run before the helper at sites that want their own granular
+ * stat counter for those rejection classes, but they are NOT sufficient
+ * proof of ownership -- only a true return from alloc_track_consume() is.
+ */
+enum tracked_free_site {
+	TRACKED_FREE_SITE_RING_EVICT,	/* ring_evict_oldest_safe */
+	TRACKED_FREE_SITE_RING_DRAIN,	/* free_ring_entry */
+	TRACKED_FREE_SITE_IMMEDIATE,	/* tracked_free_now + enqueue immediate-free fallbacks */
+};
+
+static void tracked_free_checked(void *ptr, enum tracked_free_site site)
+{
+	struct childdata *c;
+
+	if (alloc_track_consume(ptr)) {
+		free(ptr);
+		return;
+	}
+
+	switch (site) {
+	case TRACKED_FREE_SITE_RING_EVICT:
+		c = this_child();
+		if (c != NULL && c->stats_ring != NULL)
+			stats_ring_enqueue(c->stats_ring,
+					   STATS_FIELD_RING_EVICTION_CORRUPT,
+					   0, 1);
+		else
+			parent_stats.ring_eviction_corrupt++;
+		break;
+	case TRACKED_FREE_SITE_RING_DRAIN:
+		c = this_child();
+		if (c != NULL && c->stats_ring != NULL)
+			stats_ring_enqueue(c->stats_ring,
+					   STATS_FIELD_DEFERRED_FREE_CORRUPT_PTR,
+					   0, 1);
+		else
+			parent_stats.deferred_free_corrupt_ptr++;
+		break;
+	case TRACKED_FREE_SITE_IMMEDIATE:
+		__atomic_add_fetch(&shm->stats.deferred_free_reject_untracked,
+				   1, __ATOMIC_RELAXED);
+		break;
+	}
+}
+
+/*
  * Synchronously free a zmalloc_tracked() pointer.  alloc_track_consume()
  * pulls the entry out of both alloc_track[] and alloc_track_hash[] in
  * one shot (hash-gated reject, then backward array scan with paired
@@ -811,8 +879,7 @@ void tracked_free_now(void *ptr)
 		return;
 	}
 
-	alloc_track_consume(ptr);
-	free(ptr);
+	tracked_free_checked(ptr, TRACKED_FREE_SITE_IMMEDIATE);
 }
 
 void cleanup_release_post_state(struct syscallrecord *rec)
@@ -1230,39 +1297,32 @@ static void ring_evict_oldest_safe(void)
 	 * value-result syscall can scribble ring[oldest].ptr
 	 * between when the slot was last validated and when
 	 * the full-ring eviction here decides to free it.
-	 * Re-run the surviving stateless guards plus the
-	 * alloc_track ownership check before free()ing so a
-	 * wild pointer becomes a telemetry bump instead of a
-	 * crash.  Counter only (no per-rejection log): the
+	 * Re-run the cheap stateless prefilters as fast rejects
+	 * so a wild pointer becomes a telemetry bump instead
+	 * of a crash.  Counter only (no per-rejection log): the
 	 * eviction case is rarer than the enqueue rejection
 	 * paths, whose 1-in-1000 caller-PC logs already prove
 	 * the stomp pattern.
 	 *
-	 * The alloc_track_lookup() check is the authoritative
-	 * gate.  alloc_track[] is populated at zmalloc_tracked()
-	 * time with the address __zmalloc() returned, and the
-	 * consume below is deferred to actual free time, so a
-	 * lookup hit at eviction means evict_ptr is a TRUE BASE
-	 * of a still-live tracked alloc.  Critically, an interior
-	 * pointer (base + N) hashes to a different slot and will
-	 * NOT match -- the ASAN bad-free class where ring[i].ptr
-	 * gets scribbled mid-slot lifetime to base+28 of some
-	 * neighbour and the previous inflight_hash_contains()
-	 * gate let it through is rejected here.  Heap-bounds and
-	 * shared-region guards stay as cheap pre-filters so the
-	 * lookup never runs on a value that obviously cannot be
-	 * a tracked base.
-	 *
-	 * Source-of-truth gate, no separate shadow: alloc_track
-	 * mirrors what __zmalloc() actually produced, lives in a
-	 * mprotect-armored mmap region, and is read-only at rest.
-	 * The earlier inflight_hash mirror that this replaces was
-	 * a value-keyed shadow that could desync under stomp +
-	 * unlock-window pressure -- the desync was the bug.
+	 * Source-of-truth ownership gate: tracked_free_checked()
+	 * gates the free() call on alloc_track_consume()'s bool
+	 * return -- consume scans the authoritative alloc_track[]
+	 * array, and a false return means the hash prefilter's
+	 * value-keyed yes turned out to disagree with the array's
+	 * current contents (the slot rotated out under churn, or
+	 * was scribbled mid-life to an interior pointer that
+	 * hashes to a different slot).  The previous shape gated
+	 * on alloc_track_lookup() (a hash prefilter that stays
+	 * true after the backing slot rotates out) and then
+	 * called alloc_track_consume() while discarding its
+	 * return, free()ing chunks __zmalloc() no longer owned --
+	 * the deferred-free.c:1279 ASAN bad-free class (143
+	 * reports across 2026-06-15).  The helper bumps
+	 * ring_eviction_corrupt on consume-miss so the existing
+	 * counter still captures the same rejection class.
 	 */
 	if (!is_in_glibc_heap(evict_ptr) ||
-	    range_overlaps_shared((unsigned long)evict_ptr, 1) ||
-	    !alloc_track_lookup(evict_ptr))
+	    range_overlaps_shared((unsigned long)evict_ptr, 1))
 		corrupt = true;
 	if (corrupt) {
 		struct childdata *c = this_child();
@@ -1275,8 +1335,8 @@ static void ring_evict_oldest_safe(void)
 			parent_stats.ring_eviction_corrupt++;
 	} else {
 		inflight_hash_remove(evict_ptr);
-		alloc_track_consume(evict_ptr);
-		free(evict_ptr);
+		tracked_free_checked(evict_ptr,
+				     TRACKED_FREE_SITE_RING_EVICT);
 	}
 	ring[oldest].ptr = NULL;
 	occupied_mask &= ~(1ULL << oldest);
@@ -1404,9 +1464,12 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 	 * the mprotect bracket cost.  The alloc_track entry stays
 	 * populated through ring residency by design (consume is
 	 * deferred to free_ring_entry / ring_evict_oldest_safe); the
-	 * pressure-path immediate-free below routes around the ring, so
-	 * its free() also needs the matching alloc_track_consume to keep
-	 * the set in lock-step with the heap.
+	 * pressure-path immediate-free below routes around the ring and
+	 * goes through tracked_free_checked() so its free() is gated on
+	 * alloc_track_consume() success -- keeps the set in lock-step
+	 * with the heap, and a consume-miss (lookup said yes earlier but
+	 * the slot has since rotated out) bumps deferred_free_reject_
+	 * untracked instead of being silently freed.
 	 */
 	if (ring_count > g_max_vmas / 2) {
 		__atomic_add_fetch(&shm->stats.deferred_free_vma_fallback_immediate,
@@ -1415,8 +1478,8 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 			__atomic_add_fetch(&shm->stats.deferred_free_pre_dispatch_leaked,
 					   1, __ATOMIC_RELAXED);
 		} else {
-			alloc_track_consume(ptr);
-			free(ptr);
+			tracked_free_checked(ptr,
+					     TRACKED_FREE_SITE_IMMEDIATE);
 		}
 		return;
 	}
@@ -1434,8 +1497,8 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 			__atomic_add_fetch(&shm->stats.deferred_free_pre_dispatch_leaked,
 					   1, __ATOMIC_RELAXED);
 		} else {
-			alloc_track_consume(ptr);
-			free(ptr);
+			tracked_free_checked(ptr,
+					     TRACKED_FREE_SITE_IMMEDIATE);
 		}
 		return;
 	}
@@ -1476,8 +1539,8 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 				__atomic_add_fetch(&shm->stats.deferred_free_pre_dispatch_leaked,
 						   1, __ATOMIC_RELAXED);
 			} else {
-				alloc_track_consume(ptr);
-				free(ptr);
+				tracked_free_checked(ptr,
+						     TRACKED_FREE_SITE_IMMEDIATE);
 			}
 			return;
 		}
@@ -1486,8 +1549,8 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 				__atomic_add_fetch(&shm->stats.deferred_free_pre_dispatch_leaked,
 						   1, __ATOMIC_RELAXED);
 			} else {
-				alloc_track_consume(ptr);
-				free(ptr);
+				tracked_free_checked(ptr,
+						     TRACKED_FREE_SITE_IMMEDIATE);
 			}
 			return;
 		}
@@ -1532,8 +1595,8 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 			__atomic_add_fetch(&shm->stats.deferred_free_pre_dispatch_leaked,
 					   1, __ATOMIC_RELAXED);
 		} else {
-			alloc_track_consume(ptr);
-			free(ptr);
+			tracked_free_checked(ptr,
+					     TRACKED_FREE_SITE_IMMEDIATE);
 		}
 		return;
 	}
@@ -1606,25 +1669,27 @@ void deferred_freeptr(unsigned long *p)
  * and alignment; every stomp that landed on something heap-shaped
  * but not actually malloc-returned was being fed straight to free().
  *
- * alloc_track ownership is the fourth (and definitive) gate.  A
- * stomp value whose shape passes heap-bounds and avoids the shared
- * regions can still mismatch the originally admitted pointer -- the
- * alloc_track set records what __zmalloc() actually returned, with
- * its consume deferred to here at actual-free time, so a lookup miss
+ * alloc_track ownership is the binding gate, applied via
+ * tracked_free_checked(): the helper calls alloc_track_consume() and
+ * only hands @ptr to free() when consume returns true.  A stomp value
+ * whose shape passes heap-bounds and avoids the shared regions can
+ * still mismatch the originally admitted pointer -- the alloc_track
+ * set records what __zmalloc() actually returned, so a consume miss
  * means @ptr is either an interior pointer (base + N hashes to a
  * different slot) or a value that was never produced by __zmalloc()
  * at all.  Either case is exactly the bad-free shape that the prior
- * inflight_hash_contains() gate let through (inflight_hash was a
- * value-keyed shadow that could desync from ring[] under stomp +
- * mprotect-unlock-window pressure -- the desync was the bug).
- * Ordered last so the stateless gates can attach a more specific
- * reason string when they happen to fire; alloc-track-miss fires
- * when nothing else matches but the value isn't a true base of a
- * still-tracked allocation.
+ * lookup-then-consume-ignored shape let through (lookup is a hash
+ * prefilter that stays true after the backing array slot rotates out
+ * -- the desync was the bug).  Gating on consume's bool return reads
+ * the source of truth.
  *
  * Bumps STATS_FIELD_DEFERRED_FREE_CORRUPT_PTR (or its parent
- * fallback) on any rejection, matching the existing pattern; the
- * specific gate that fired shows up in the outputerr log line.
+ * fallback) on the stateless-prefilter rejections, with the specific
+ * gate that fired in the outputerr log line.  A consume-miss inside
+ * tracked_free_checked() bumps the same counter so the alloc-track-
+ * miss class stays observable; no separate per-rejection log because
+ * the call site is unambiguous (only free_ring_entry routes through
+ * TRACKED_FREE_SITE_RING_DRAIN).
  *
  * On the clean-free path the entry is removed from inflight_hash so
  * the GC sweep does not later mistake it for an orphan, and the
@@ -1642,8 +1707,6 @@ static void free_ring_entry(void *ptr, unsigned int slot)
 		reason = "non-heap";
 	else if (range_overlaps_shared((unsigned long)ptr, 1))
 		reason = "shared-region";
-	else if (!alloc_track_lookup(ptr))
-		reason = "alloc-track-miss";
 
 	if (reason != NULL) {
 		c = this_child();
@@ -1659,8 +1722,7 @@ static void free_ring_entry(void *ptr, unsigned int slot)
 	}
 
 	inflight_hash_remove(ptr);
-	alloc_track_consume(ptr);
-	free(ptr);
+	tracked_free_checked(ptr, TRACKED_FREE_SITE_RING_DRAIN);
 }
 
 /*
