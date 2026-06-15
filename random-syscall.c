@@ -698,6 +698,38 @@ retry:
 
 		__atomic_fetch_add(&shm->stats.frontier_silent_picks, 1UL,
 				   __ATOMIC_RELAXED);
+
+		/* SHADOW-ONLY silent-streak accounting.  Mirrors the
+		 * frontier_silent_picks bump above; counts CONSECUTIVE
+		 * silent-regime accepts of this syscall since the last
+		 * productive-edge event for it (reset to zero by
+		 * frontier_record_new_edge() in strategy.c, the existing
+		 * per-syscall new-edge hook in kcov_collect -- no new
+		 * collection path is added).  When the post-increment value
+		 * crosses FRONTIER_SHADOW_DECAY_STREAK the global
+		 * frontier_shadow_decay_candidates counter bumps exactly
+		 * once, the headline shadow stat that estimates how many
+		 * decay-candidate syscalls a future LIVE silent-decay variant
+		 * of this picker would have demoted, without changing any
+		 * selection today.  Same MAX_NR_SYSCALL bound the
+		 * frontier_picks_per_syscall[] bump below uses.
+		 *
+		 * Selection-byte-identical contract: the picker accept/retry
+		 * math above this point is untouched; the bump runs strictly
+		 * after the accept decision and writes only NEW counters
+		 * that no live-path code reads.  Mirrors the same
+		 * "observation-only, default off-by-construction" shape as
+		 * the cred_throttle gate above so the frontier picker's
+		 * distribution stays byte-identical to today. */
+		if (syscallnr < MAX_NR_SYSCALL) {
+			unsigned long streak = __atomic_add_fetch(
+				&shm->stats.frontier_silent_streak_per_syscall[syscallnr],
+				1UL, __ATOMIC_RELAXED);
+			if (streak == FRONTIER_SHADOW_DECAY_STREAK)
+				__atomic_fetch_add(
+					&shm->stats.frontier_shadow_decay_candidates,
+					1UL, __ATOMIC_RELAXED);
+		}
 	}
 
 	srec_publish_begin(rec);
