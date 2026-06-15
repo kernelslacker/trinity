@@ -6332,6 +6332,16 @@ static void dump_stats_strategy_summary(void)
 	if (shm->stats.frontier_silent_picks)
 		stat_row("strategy", "frontier_silent_picks",
 			 shm->stats.frontier_silent_picks);
+	/* SHADOW-ONLY observability companions to frontier_silent_picks:
+	 * the candidate count (how many threshold-crossings the silent
+	 * regime has produced) and the threshold itself, emitted side by
+	 * side so the operator can interpret the count without consulting
+	 * the source.  Neither value is read by the live picker math. */
+	if (shm->stats.frontier_shadow_decay_candidates)
+		stat_row("strategy", "frontier_shadow_decay_candidates",
+			 shm->stats.frontier_shadow_decay_candidates);
+	stat_row("strategy", "frontier_shadow_decay_streak_threshold",
+		 FRONTIER_SHADOW_DECAY_STREAK);
 	if (shm->stats.frontier_underflow_prevented)
 		stat_row("strategy", "frontier_underflow_prevented",
 			 shm->stats.frontier_underflow_prevented);

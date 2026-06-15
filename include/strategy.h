@@ -81,6 +81,34 @@ enum strategy_t {
 #define FRONTIER_DECAY_WINDOWS 8
 
 /*
+ * SHADOW-ONLY conservative threshold for the per-syscall silent-streak
+ * accounting in the coverage-frontier picker.  The picker bumps a
+ * per-syscall counter (stats.frontier_silent_streak_per_syscall[]) on
+ * every accepted pick that lands in the silent-ring regime (max_weight
+ * <= 2, the defining state of a coverage plateau), and resets that
+ * counter to zero from frontier_record_new_edge() on the per-syscall
+ * new-edge productive path in kcov_collect.  Crossing this threshold
+ * bumps the global stats.frontier_shadow_decay_candidates exactly once
+ * per crossing -- the headline observability stat that estimates how
+ * many syscalls a future LIVE decay variant of the picker would treat
+ * as decay candidates, computed WITHOUT changing any selection today.
+ *
+ * Read by:
+ *   - random-syscall.c  (silent-regime bump site, compares post-
+ *                        increment streak against this threshold)
+ *   - stats.c           (periodic dump emits the threshold value
+ *                        alongside the candidate count, so the
+ *                        operator can interpret the count)
+ *
+ * NOT read by any picker accept/retry / scoring / weight math.  Adjusting
+ * the value cannot perturb the live frontier distribution.  Conservative
+ * default of 64: eight ring-widths (FRONTIER_DECAY_WINDOWS) of CONSECUTIVE
+ * silent-regime picks of the same syscall without one new edge for it --
+ * a clearly-stuck candidate even allowing for short-run unlucky streaks.
+ */
+#define FRONTIER_SHADOW_DECAY_STREAK 64UL
+
+/*
  * Arm-selection policy used at each rotation boundary to decide which
  * strategy runs next.  Selected once at parse_args() time via the
  * --strategy flag, propagated into shm->picker_mode at init_shm time

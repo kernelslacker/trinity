@@ -524,6 +524,24 @@ void frontier_record_new_edge(unsigned int nr)
 	__atomic_fetch_add(&shm->frontier_recent_count_cached[nr], 1U,
 			   __ATOMIC_RELAXED);
 
+	/* SHADOW-ONLY silent-streak reset.  This function is the canonical
+	 * per-syscall new-edge productive-event hook -- already called from
+	 * kcov_collect()'s found_new branch when a syscall's call has
+	 * produced at least one fresh bucket bit, which is also the path
+	 * that contributes the positive local_distinct_pcs delta the
+	 * coverage-frontier picker treats as the "productive" signal.
+	 * Resetting the silent-streak counter here therefore reuses the
+	 * existing per-syscall productive-edge collection site -- no new
+	 * collection path is added.
+	 *
+	 * The counter and the global frontier_shadow_decay_candidates it
+	 * edge-triggers in random-syscall.c's silent-regime accept site
+	 * are observability-only: no live selection or scoring code reads
+	 * them, so the reset cannot perturb the picker distribution. */
+	__atomic_store_n(
+		&shm->stats.frontier_silent_streak_per_syscall[nr],
+		0UL, __ATOMIC_RELAXED);
+
 	/* Ratchet the cached max upward if this bump pushed nr's recent
 	 * count past it.  No CAS: a racing producer that also raises the
 	 * max can clobber our store with its (also-correct) value, and a

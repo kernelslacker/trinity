@@ -2294,6 +2294,26 @@ struct stats_s {
 	unsigned long frontier_live_picks;
 	unsigned long frontier_silent_picks;
 
+	/* SHADOW-ONLY observability counter, paired with the silent-regime
+	 * fallback above.  Number of (syscall_nr,
+	 * FRONTIER_SHADOW_DECAY_STREAK)-crossing events seen since startup --
+	 * bumped exactly once when a per-syscall silent-streak in
+	 * frontier_silent_streak_per_syscall[] transitions through the
+	 * threshold value from below.  The same syscall plateauing repeatedly
+	 * across a run contributes one bump per plateau episode (the streak
+	 * has to be reset by a productive-edge event and grow back to the
+	 * threshold), not one bump per silent pick.
+	 *
+	 * Observability only: the live frontier picker accept/retry math in
+	 * set_syscall_nr_coverage_frontier() does NOT read this counter or
+	 * its per-syscall feeder, so the value can be tallied freely without
+	 * perturbing selection.  Reading it alongside frontier_silent_picks
+	 * gives the operator a rough estimate of "how many decay-candidate
+	 * syscalls would a live silent-decay variant of the picker have
+	 * demoted by now?" -- the shadow signal needed before any change to
+	 * the live picker. */
+	unsigned long frontier_shadow_decay_candidates;
+
 	/* Number of syscall picks the explorer pool forced to STRATEGY_RANDOM
 	 * regardless of the bandit's current arm.  Bumped from set_syscall_nr
 	 * when child->is_explorer is true.  Rate-of-change should track
@@ -2358,6 +2378,28 @@ struct stats_s {
 	 * surface -- the headline pick total looks identical, only the
 	 * per-syscall distribution separates them. */
 	unsigned long frontier_picks_per_syscall[MAX_NR_SYSCALL];
+
+	/* SHADOW-ONLY per-syscall silent-streak counter.  Bumped at the
+	 * silent-regime accept site in set_syscall_nr_coverage_frontier()
+	 * (alongside the existing frontier_silent_picks bump), reset to zero
+	 * by frontier_record_new_edge() on the per-syscall new-edge
+	 * productive path in kcov_collect.  Carries the current count of
+	 * CONSECUTIVE silent-regime picks since the last productive-edge
+	 * event for that syscall.
+	 *
+	 * Read by no production-path code -- observability only; the picker
+	 * accept/retry math at the bump site does not consume this value, so
+	 * any drift in it cannot perturb selection.  Crossing the
+	 * FRONTIER_SHADOW_DECAY_STREAK threshold edge-triggers a one-time
+	 * bump of the global frontier_shadow_decay_candidates above, which
+	 * is the headline number for downstream consumers; the per-syscall
+	 * array is kept for top-N attribution of which syscalls are the
+	 * shadow-decay candidates.
+	 *
+	 * Sized and bounds-guarded the same way the sibling
+	 * frontier_picks_per_syscall[] above is.  Surfaced only via the
+	 * periodic stats dump alongside that array. */
+	unsigned long frontier_silent_streak_per_syscall[MAX_NR_SYSCALL];
 
 	/* Coverage-plateau detector transition counters, bumped from
 	 * kcov_plateau_check() on the rising edge (healthy -> plateau, when
