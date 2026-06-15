@@ -576,6 +576,15 @@ enum cmp_hint_callsite {
  * and the periodic dump renderer agree on the bound. */
 #define CMP_REDQUEEN_SLOT_HIST_NR 6
 
+/* Width of reexec_pending_pick_success[] below.  Mirrors
+ * MAX_REEXEC_PENDING (defined in include/cmp_hints.h) -- the
+ * per-call reexec_pending[] census is at most that many entries,
+ * so the success-by-pick-index counter has the same bound.  Pinned
+ * here as a separate define so kcov.h stays self-contained (no
+ * dependency on cmp_hints.h); a _Static_assert in random-syscall.c
+ * (which includes both headers) catches any drift between the two. */
+#define REEXEC_PENDING_PICK_HIST_NR 8U
+
 /* Shared coverage state, allocated in shared memory. */
 struct kcov_shared {
 	/* Per-edge bucket-seen mask.  See KCOV_NUM_BUCKETS comment above for
@@ -1116,12 +1125,27 @@ struct kcov_shared {
 	 *      call.  Non-zero means a parent call surfaced more attribution
 	 *      candidates than MAX_REEXEC_PENDING can hold -- the
 	 *      attribution census is truncated, and (cmp_ip, value, size,
-	 *      slot) tuples beyond the cap are silently dropped. */
+	 *      slot) tuples beyond the cap are silently dropped.
+	 *  reexec_pending_pick_success[REEXEC_PENDING_PICK_HIST_NR]
+	 *      Per-pending-buffer-index success counter.  The
+	 *      --redqueen-pending-pick={random,first} A/B selection at the
+	 *      dispatch_step tail picks ONE entry from the per-call
+	 *      reexec_pending[] census (index 0..reexec_pending_count) to
+	 *      drain into a re-exec; this counter bumps the chosen index
+	 *      when the inner re-exec dispatch returned inner_new_cmp > 0
+	 *      (i.e., the re-exec produced bloom-novel CMP records).
+	 *      Active in BOTH pick modes so an A/B run can read
+	 *      directly whether entry-0's trace-order bias under FIRST
+	 *      mode actually costs signal vs the uniform RANDOM pick.
+	 *      Bumped from redqueen_reexec_step() inside the existing
+	 *      inner_new_cmp > 0 success block; the chosen index is
+	 *      clamped to REEXEC_PENDING_PICK_HIST_NR before use. */
 	unsigned long reexec_attempts_by_syscall[MAX_NR_SYSCALL];
 	unsigned long reexec_ambiguous_by_syscall[MAX_NR_SYSCALL];
 	unsigned long reexec_attribution_slot_hist[CMP_REDQUEEN_SLOT_HIST_NR];
 	unsigned long reexec_success_by_slot[CMP_REDQUEEN_SLOT_HIST_NR];
 	unsigned long reexec_pending_dropped;
+	unsigned long reexec_pending_pick_success[REEXEC_PENDING_PICK_HIST_NR];
 
 	/* RedQueen A/B cohort denominators.  The existing reexec_* family
 	 * counts enabled-arm ACTIVITY (attempts, new_cmps, attribution wins

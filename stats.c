@@ -4571,6 +4571,8 @@ static void kcov_redqueen_observability_block_render(long elapsed __unused__)
 	unsigned long slot_hist[CMP_REDQUEEN_SLOT_HIST_NR];
 	unsigned long slot_success[CMP_REDQUEEN_SLOT_HIST_NR];
 	bool any_slot = false;
+	unsigned long pick_success[REEXEC_PENDING_PICK_HIST_NR];
+	bool any_pick_success = false;
 	unsigned int nr_syscalls_to_scan;
 	const struct syscalltable *table;
 	unsigned int i;
@@ -4639,6 +4641,14 @@ static void kcov_redqueen_observability_block_render(long elapsed __unused__)
 			any_slot = true;
 	}
 
+	for (i = 0; i < REEXEC_PENDING_PICK_HIST_NR; i++) {
+		pick_success[i] = __atomic_load_n(
+			&kcov_shm->reexec_pending_pick_success[i],
+			__ATOMIC_RELAXED);
+		if (pick_success[i] != 0)
+			any_pick_success = true;
+	}
+
 	if (!armed) {
 		armed = true;
 		return;
@@ -4669,6 +4679,28 @@ static void kcov_redqueen_observability_block_render(long elapsed __unused__)
 				"success",
 				slot_success[0], slot_success[1], slot_success[2],
 				slot_success[3], slot_success[4], slot_success[5]);
+	}
+
+	/* Per-pending-buffer-index success counter (A/B signal for
+	 * --redqueen-pending-pick).  Cumulative across both pick modes:
+	 * a heavy load at index 0 with a flat tail under the FIRST policy
+	 * versus a spread under RANDOM tells whether trace-order bias is
+	 * costing signal.  Header is the policy name so an operator
+	 * eyeballing the dump knows which arm is currently active. */
+	if (any_pick_success) {
+		stats_log_write("KCOV RedQueen pending-buffer pick success (cumulative, policy=%s):\n",
+				redqueen_pending_pick_name(
+					redqueen_pending_pick_mode_arg));
+		stats_log_write("  %-12s %10s %10s %10s %10s %10s %10s %10s %10s\n",
+				"counter",
+				"p0", "p1", "p2", "p3",
+				"p4", "p5", "p6", "p7");
+		stats_log_write("  %-12s %10lu %10lu %10lu %10lu %10lu %10lu %10lu %10lu\n",
+				"success",
+				pick_success[0], pick_success[1],
+				pick_success[2], pick_success[3],
+				pick_success[4], pick_success[5],
+				pick_success[6], pick_success[7]);
 	}
 }
 
