@@ -176,10 +176,11 @@ static size_t alloc_track_bytes;
  * mmap region (see alloc_track declaration above) so one mprotect
  * bracket covers both arrays.  Slots DO hold pointer values an attacker
  * can turn into a free() target -- alloc_track_lookup gates
- * cleanup_release_post_state -> tracked_free_now -> free() and
- * alloc_track_consume admits values into the deferred ring -- so the
- * PROT_READ steady state is load-bearing for memory safety, not just
- * a perf nicety.  Mirror the ring[]/inflight_hash[] armor pattern.
+ * cleanup_release_post_state -> tracked_free_now -> free(), the
+ * deferred-free enqueue admission, AND the deferred-free free-time
+ * ownership check -- so the PROT_READ steady state is load-bearing
+ * for memory safety, not just a perf nicety.  Mirror the
+ * ring[]/inflight_hash[] armor pattern.
  *
  * Fibonacci hashing: ptr>>4 strips the 4 always-zero low bits glibc
  * malloc gives us on x86_64 (16-byte-aligned chunks on 64-bit), then
@@ -340,18 +341,23 @@ bool alloc_track_lookup(void *ptr)
 
 /*
  * In-flight pointer set: mirrors "currently admitted to the deferred
- * ring" membership.  Separate from alloc_track_hash[] (which tracks
- * the broader "deferred-free-eligible alloc side-set" populated by
- * zmalloc_tracked() and drained by alloc_track_consume), so the two
- * lifecycles don't conflict.
+ * ring" membership.  Populated at the tail of deferred_free_enqueue
+ * after the ring slot write succeeds; cleared at the tail of
+ * free_ring_entry / ring_evict_oldest_safe on the successful free()
+ * path.  Used by inflight_gc_sweep() to reconcile stomp orphans (set
+ * entries whose corresponding ring slot has been scribbled to a
+ * different value) so the set stays bounded over long runs.
  *
- * Populated at the tail of deferred_free_enqueue after the ring slot
- * write succeeds; cleared at the tail of free_ring_entry on the
- * successful free() path.  Read by the in-flight-miss gate in
- * free_ring_entry to reject ring slots whose pointer was scribbled by
- * a sibling fuzzed value-result syscall between admission and TTL
- * expiry -- the scribbled value was never admitted, so the lookup
- * misses and the slot is dropped instead of being fed to free().
+ * No longer the ownership gate at free time: the value-keyed shadow
+ * could desync from ring[] under stomp + unlock-window pressure (set
+ * said "present" when ptr was never admitted -- 2026-06-10
+ * ring_evict_oldest_safe ASAN bad-free root cause) or reject a clean
+ * free (set said "absent" when ptr was live).  The authoritative gate
+ * is alloc_track_lookup(), which mirrors what __zmalloc() returned
+ * and is held populated through ring residency by design (see
+ * deferred_free_enqueue_internal's lookup-not-consume gate and the
+ * matching free-time consume in free_ring_entry /
+ * ring_evict_oldest_safe).
  *
  * Storage shape mirrors alloc_track_hash[] (1024 slots, Fibonacci
  * index, open-addressed with shift-back deletion).  Sized for the
@@ -360,19 +366,12 @@ bool alloc_track_lookup(void *ptr)
  *
  * Storage lives in an mmap'd region whose address range is registered
  * with shared_regions[] via track_shared_region(), mirroring ring[]'s
- * shape.  Steady state is PROT_READ so the membership-lookup hot path
- * (inflight_hash_contains, called from the ring eviction and TTL-drain
- * gates) reads directly without an mprotect syscall.  Writers
- * (inflight_hash_insert / inflight_hash_remove / the dispose-time
- * clear) bracket their mutations with inflight_unlock()/inflight_lock()
- * so a sibling fuzzed value-result syscall that aliases the set's
- * pages between writes hits the PROT_READ wall instead of silently
- * flipping a membership bit.  Closes the residual-gap class the
- * earlier BSS-resident shape documented: a stomp landing on
- * inflight_hash[] could previously either let a bad free through (set
- * says "present" when ptr was never admitted -- ring_evict_oldest_safe
- * 2026-06-10 ASAN bad-free root cause) or reject a clean free (set
- * says "absent" when ptr is live).
+ * shape.  Steady state is PROT_READ; writers (inflight_hash_insert /
+ * inflight_hash_remove / the dispose-time clear) bracket their
+ * mutations with inflight_unlock()/inflight_lock() so a sibling
+ * fuzzed value-result syscall that aliases the set's pages between
+ * writes hits the PROT_READ wall instead of silently flipping a
+ * membership bit.
  */
 #define INFLIGHT_HASH_SHIFT	10
 #define INFLIGHT_HASH_SIZE	(1U << INFLIGHT_HASH_SHIFT)
@@ -479,21 +478,6 @@ static void inflight_hash_remove(void *ptr)
 	}
 	inflight_hash[hole] = NULL;
 	inflight_lock();
-}
-
-static bool inflight_hash_contains(void *ptr)
-{
-	unsigned int idx = inflight_hash_index(ptr);
-	unsigned int probes;
-
-	for (probes = 0; probes < INFLIGHT_HASH_SIZE; probes++) {
-		if (inflight_hash[idx] == NULL)
-			return false;
-		if (inflight_hash[idx] == ptr)
-			return true;
-		idx = (idx + 1) & INFLIGHT_HASH_MASK;
-	}
-	return false;
 }
 
 void deferred_alloc_track(void *ptr)
@@ -790,8 +774,6 @@ void tracked_free_now(void *ptr)
 	if (ptr == NULL)
 		return;
 
-	alloc_track_consume(ptr);
-
 	/*
 	 * Gate on ring != NULL, not occupied_mask != 0.  occupied_mask
 	 * lives in unarmored BSS; a sibling fuzzed value-result syscall
@@ -802,6 +784,16 @@ void tracked_free_now(void *ptr)
 	 * both writers go through rc_unlock()'s armored bracket, so the
 	 * pointer cannot lie about ring liveness.  Always run the armored
 	 * ring[] scan whenever the ring still exists.
+	 *
+	 * Ring residency check runs BEFORE alloc_track_consume:
+	 * alloc_track is now populated through ring residency (the
+	 * enqueue gate uses non-consuming alloc_track_lookup; consume is
+	 * deferred to free_ring_entry / ring_evict_oldest_safe).
+	 * Consuming here when the ring owns the ptr would strip the
+	 * alloc_track entry the ring's free-time gate relies on -- the
+	 * subsequent eviction or drain would see alloc_track_lookup miss
+	 * and leak the slot instead of freeing it.  Skip the consume
+	 * (and the free, which the ring will perform) when ring-owned.
 	 */
 	if (ring != NULL) {
 		if (ring_unlock() != RING_UNLOCK_OK) {
@@ -819,6 +811,7 @@ void tracked_free_now(void *ptr)
 		return;
 	}
 
+	alloc_track_consume(ptr);
 	free(ptr);
 }
 
@@ -1237,27 +1230,39 @@ static void ring_evict_oldest_safe(void)
 	 * value-result syscall can scribble ring[oldest].ptr
 	 * between when the slot was last validated and when
 	 * the full-ring eviction here decides to free it.
-	 * Re-run the surviving stateless guards plus the in-
-	 * flight set membership check before free()ing so a
+	 * Re-run the surviving stateless guards plus the
+	 * alloc_track ownership check before free()ing so a
 	 * wild pointer becomes a telemetry bump instead of a
-	 * crash.  alloc_track_consume() already fired at
-	 * enqueue and would always miss here -- skipped, not
-	 * re-run.  Counter only (no per-rejection log): the
+	 * crash.  Counter only (no per-rejection log): the
 	 * eviction case is rarer than the enqueue rejection
 	 * paths, whose 1-in-1000 caller-PC logs already prove
 	 * the stomp pattern.
 	 *
-	 * The inflight_hash_contains() check is the strongest
-	 * signal here: if evict_ptr was admitted by this child,
-	 * it is in the set; if a stomp swapped the slot to some
-	 * other value, the set does not know that value and the
-	 * lookup misses.  Heap/shared-region guards remain as
-	 * belt-and-suspenders for the case where the in-flight
-	 * set itself is scribbled (BSS, no mprotect armor yet).
+	 * The alloc_track_lookup() check is the authoritative
+	 * gate.  alloc_track[] is populated at zmalloc_tracked()
+	 * time with the address __zmalloc() returned, and the
+	 * consume below is deferred to actual free time, so a
+	 * lookup hit at eviction means evict_ptr is a TRUE BASE
+	 * of a still-live tracked alloc.  Critically, an interior
+	 * pointer (base + N) hashes to a different slot and will
+	 * NOT match -- the ASAN bad-free class where ring[i].ptr
+	 * gets scribbled mid-slot lifetime to base+28 of some
+	 * neighbour and the previous inflight_hash_contains()
+	 * gate let it through is rejected here.  Heap-bounds and
+	 * shared-region guards stay as cheap pre-filters so the
+	 * lookup never runs on a value that obviously cannot be
+	 * a tracked base.
+	 *
+	 * Source-of-truth gate, no separate shadow: alloc_track
+	 * mirrors what __zmalloc() actually produced, lives in a
+	 * mprotect-armored mmap region, and is read-only at rest.
+	 * The earlier inflight_hash mirror that this replaces was
+	 * a value-keyed shadow that could desync under stomp +
+	 * unlock-window pressure -- the desync was the bug.
 	 */
 	if (!is_in_glibc_heap(evict_ptr) ||
 	    range_overlaps_shared((unsigned long)evict_ptr, 1) ||
-	    !inflight_hash_contains(evict_ptr))
+	    !alloc_track_lookup(evict_ptr))
 		corrupt = true;
 	if (corrupt) {
 		struct childdata *c = this_child();
@@ -1270,6 +1275,7 @@ static void ring_evict_oldest_safe(void)
 			parent_stats.ring_eviction_corrupt++;
 	} else {
 		inflight_hash_remove(evict_ptr);
+		alloc_track_consume(evict_ptr);
 		free(evict_ptr);
 	}
 	ring[oldest].ptr = NULL;
@@ -1287,9 +1293,10 @@ static void ring_evict_oldest_safe(void)
  * under-pressure fallback paths branch on @leak_on_pressure.  On a
  * leak path the caller's contract is "the buffer survives until
  * child exit"; the heap chunk is not free()d, the alloc-track slot
- * has already been drained by alloc_track_consume() so no stale
- * mirror entry is left behind, and the kernel reclaims the address
- * space when the child exits.
+ * is intentionally left populated so a later tracked_free_now /
+ * deferred_free_enqueue on the same ptr still recognises it as
+ * owned, and the kernel reclaims the address space when the child
+ * exits.
  *
  * The reject paths above the fallback bracket free nothing in either
  * variant -- a rejected pointer either was never a real allocation
@@ -1322,8 +1329,18 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 	 * the heuristic guard above.  Eight ASAN bad-frees in a recent run
 	 * all matched this shape: 8-byte aligned, in user VA, sitting inside
 	 * the heap arena, but not at any malloc-returned offset.
+	 *
+	 * Non-consuming probe: the alloc_track entry is left in place so it
+	 * remains the authoritative ownership gate at actual-free time
+	 * (free_ring_entry / ring_evict_oldest_safe).  Defer of the consume
+	 * is what lets a stomp that swaps ring[i].ptr to an interior or
+	 * stale heap-shaped value be rejected at free time -- the interior
+	 * pointer hashes to a different slot, alloc_track_lookup misses,
+	 * and the slot is leaked instead of handed to free().  The
+	 * companion free-time consume is in free_ring_entry and
+	 * ring_evict_oldest_safe.
 	 */
-	if (!alloc_track_consume(ptr)) {
+	if (!alloc_track_lookup(ptr)) {
 		static unsigned long unknown_drops;
 		unsigned long n = ++unknown_drops;
 		if ((n % 1000) == 1) {
@@ -1381,20 +1398,26 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 	 * default max_map_count (32768+), but stays correct on systems
 	 * tuned down and would limit a future per-slot redzone variant.
 	 *
-	 * Placed AFTER alloc_track_consume so the tracking-set entry is
-	 * already drained (otherwise routing around the ring would leave
-	 * a stale alloc_track[] slot trickling out via LRU rotation);
-	 * placed BEFORE ring_unlock so the rejected enqueue does not pay
-	 * the mprotect bracket cost.
+	 * Placed AFTER the alloc_track_lookup ownership gate so an
+	 * untracked-ptr reject short-circuits before the VMA accounting,
+	 * and BEFORE ring_unlock so the rejected enqueue does not pay
+	 * the mprotect bracket cost.  The alloc_track entry stays
+	 * populated through ring residency by design (consume is
+	 * deferred to free_ring_entry / ring_evict_oldest_safe); the
+	 * pressure-path immediate-free below routes around the ring, so
+	 * its free() also needs the matching alloc_track_consume to keep
+	 * the set in lock-step with the heap.
 	 */
 	if (ring_count > g_max_vmas / 2) {
 		__atomic_add_fetch(&shm->stats.deferred_free_vma_fallback_immediate,
 				   1, __ATOMIC_RELAXED);
-		if (leak_on_pressure)
+		if (leak_on_pressure) {
 			__atomic_add_fetch(&shm->stats.deferred_free_pre_dispatch_leaked,
 					   1, __ATOMIC_RELAXED);
-		else
+		} else {
+			alloc_track_consume(ptr);
 			free(ptr);
+		}
 		return;
 	}
 
@@ -1407,11 +1430,13 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 	 * ring teardowns; per-enqueue noise after teardown adds nothing.
 	 */
 	if (ring == NULL) {
-		if (leak_on_pressure)
+		if (leak_on_pressure) {
 			__atomic_add_fetch(&shm->stats.deferred_free_pre_dispatch_leaked,
 					   1, __ATOMIC_RELAXED);
-		else
+		} else {
+			alloc_track_consume(ptr);
 			free(ptr);
+		}
 		return;
 	}
 
@@ -1447,37 +1472,40 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 			__atomic_add_fetch(&shm->stats.deferred_free_enomem_drain,
 					   1, __ATOMIC_RELAXED);
 			ring_dispose_after_enomem();
-			if (leak_on_pressure)
+			if (leak_on_pressure) {
 				__atomic_add_fetch(&shm->stats.deferred_free_pre_dispatch_leaked,
 						   1, __ATOMIC_RELAXED);
-			else
+			} else {
+				alloc_track_consume(ptr);
 				free(ptr);
+			}
 			return;
 		}
 		if (r != RING_UNLOCK_OK) {
-			if (leak_on_pressure)
+			if (leak_on_pressure) {
 				__atomic_add_fetch(&shm->stats.deferred_free_pre_dispatch_leaked,
 						   1, __ATOMIC_RELAXED);
-			else
+			} else {
+				alloc_track_consume(ptr);
 				free(ptr);
+			}
 			return;
 		}
 	}
 
 	/*
 	 * Admission dedup: refuse to take a second slot for a ptr that
-	 * already owns one.  alloc_track_consume() above does not know
-	 * about ring residency -- alloc_track_refresh() can re-admit a
-	 * ring-resident ptr to alloc_track, after which the next enqueue
-	 * of that ptr passes consume() a second time and would otherwise
-	 * land in a fresh ring slot.  Two slots holding the same value is
-	 * the reuse-mediated double-free shape: slot A's TTL fires and
-	 * free()s @ptr; the address is reused by a new alloc; slot B's
-	 * TTL fires and free()s the new owner's chunk.  ring[] is the
-	 * source-of-truth (inflight_hash is value-keyed and desyncs under
-	 * VMA-pressure mprotect failures), so scan it directly.  The
-	 * ring_unlock bracket above is still open, so this is just a 64-
-	 * compare scan, no additional mprotect.  Re-lock and bail on hit.
+	 * already owns one.  alloc_track_lookup() above does not know
+	 * about ring residency, and with consume deferred to free time
+	 * the same ptr remains alloc_track-resident for the duration of
+	 * its ring lifetime -- two back-to-back enqueues of the same ptr
+	 * would both pass the lookup gate.  Two slots holding the same
+	 * value is the reuse-mediated double-free shape: slot A's TTL
+	 * fires and free()s @ptr; the address is reused by a new alloc;
+	 * slot B's TTL fires and free()s the new owner's chunk.  ring[]
+	 * is the source-of-truth, so scan it directly.  The ring_unlock
+	 * bracket above is still open, so this is just a 64-compare
+	 * scan, no additional mprotect.  Re-lock and bail on hit.
 	 */
 	if (ring_contains(ptr)) {
 		ring_lock();
@@ -1500,11 +1528,13 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 	 */
 	if (occupied_mask == ~0ULL) {
 		ring_lock();
-		if (leak_on_pressure)
+		if (leak_on_pressure) {
 			__atomic_add_fetch(&shm->stats.deferred_free_pre_dispatch_leaked,
 					   1, __ATOMIC_RELAXED);
-		else
+		} else {
+			alloc_track_consume(ptr);
 			free(ptr);
+		}
 		return;
 	}
 
@@ -1576,27 +1606,30 @@ void deferred_freeptr(unsigned long *p)
  * and alignment; every stomp that landed on something heap-shaped
  * but not actually malloc-returned was being fed straight to free().
  *
- * In-flight set membership is the fourth (and definitive) gate.  A
+ * alloc_track ownership is the fourth (and definitive) gate.  A
  * stomp value whose shape passes heap-bounds and avoids the shared
  * regions can still mismatch the originally admitted pointer -- the
- * inflight_hash records what enqueue admitted, so a scribble flips
- * the lookup from hit to miss whether the new value looks plausible
- * or not.  Ordered last so the stateless gates can attach a more
- * specific reason string when they happen to fire; in-flight-miss
- * fires when nothing else matches but the value isn't one we ever
- * admitted, which is the "stomped to a coincidentally heap-shaped
- * value" case the earlier 3 gates by design cannot catch.
- *
- * alloc_track_consume already fired at enqueue and would always miss
- * here -- skipped, not re-run.  The remaining gates are stateless and
- * cheap enough to re-evaluate per drain.
+ * alloc_track set records what __zmalloc() actually returned, with
+ * its consume deferred to here at actual-free time, so a lookup miss
+ * means @ptr is either an interior pointer (base + N hashes to a
+ * different slot) or a value that was never produced by __zmalloc()
+ * at all.  Either case is exactly the bad-free shape that the prior
+ * inflight_hash_contains() gate let through (inflight_hash was a
+ * value-keyed shadow that could desync from ring[] under stomp +
+ * mprotect-unlock-window pressure -- the desync was the bug).
+ * Ordered last so the stateless gates can attach a more specific
+ * reason string when they happen to fire; alloc-track-miss fires
+ * when nothing else matches but the value isn't a true base of a
+ * still-tracked allocation.
  *
  * Bumps STATS_FIELD_DEFERRED_FREE_CORRUPT_PTR (or its parent
  * fallback) on any rejection, matching the existing pattern; the
  * specific gate that fired shows up in the outputerr log line.
  *
  * On the clean-free path the entry is removed from inflight_hash so
- * the GC sweep does not later mistake it for an orphan.
+ * the GC sweep does not later mistake it for an orphan, and the
+ * alloc_track entry is consumed in lock-step with free() so the set
+ * stays in sync with the heap.
  */
 static void free_ring_entry(void *ptr, unsigned int slot)
 {
@@ -1609,8 +1642,8 @@ static void free_ring_entry(void *ptr, unsigned int slot)
 		reason = "non-heap";
 	else if (range_overlaps_shared((unsigned long)ptr, 1))
 		reason = "shared-region";
-	else if (!inflight_hash_contains(ptr))
-		reason = "in-flight-miss";
+	else if (!alloc_track_lookup(ptr))
+		reason = "alloc-track-miss";
 
 	if (reason != NULL) {
 		c = this_child();
@@ -1626,6 +1659,7 @@ static void free_ring_entry(void *ptr, unsigned int slot)
 	}
 
 	inflight_hash_remove(ptr);
+	alloc_track_consume(ptr);
 	free(ptr);
 }
 
@@ -1634,7 +1668,7 @@ static void free_ring_entry(void *ptr, unsigned int slot)
  *
  * In-ring stomps can swap a ring slot's ptr to some other value before
  * the drain fires.  When the drain reaches that slot, free_ring_entry's
- * in-flight-miss gate sees the stomped value (not the originally
+ * alloc-track ownership gate sees the stomped value (not the originally
  * admitted ptr), rejects it, and leaves the original ptr's entry in
  * inflight_hash[] -- we have no way to recover the original value to
  * call inflight_hash_remove on it.  The eviction path leaves the same
