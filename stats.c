@@ -1625,6 +1625,20 @@ static const struct stat_category mount_churn_category =
 	              mount_churn_runs,
 	              mount_churn_fields);
 
+static const struct stat_field umount_race_fields[] = {
+	STAT_FIELD(umount_race, runs),
+	STAT_FIELD(umount_race, picks),
+	STAT_FIELD(umount_race, forks),
+	STAT_FIELD(umount_race, umounts),
+	STAT_FIELD(umount_race, umount_failed),
+	STAT_FIELD(umount_race, setup_failed),
+};
+
+static const struct stat_category umount_race_category =
+	STAT_CATEGORY("umount_race",
+	              umount_race_runs,
+	              umount_race_fields);
+
 static const struct stat_field uffd_churn_fields[] = {
 	STAT_FIELD(uffd, runs),
 	STAT_FIELD(uffd, registers),
@@ -2836,6 +2850,9 @@ static void dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&mount_churn_category);
+
+	printf(",");
+	stat_category_emit_json(&umount_race_category);
 
 	printf(",");
 	stat_category_emit_json(&uffd_churn_category);
@@ -6407,6 +6424,8 @@ static void dump_stats_childop_runs_local(void)
 	stat_category_emit_text(&cgroup_churn_category);
 
 	stat_category_emit_text(&mount_churn_category);
+
+	stat_category_emit_text(&umount_race_category);
 
 	stat_category_emit_text(&uffd_churn_category);
 
