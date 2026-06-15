@@ -1238,6 +1238,41 @@ struct kcov_shared {
 	unsigned long reexec_gate_pass;
 	unsigned long cmp_attribution_calls_eligible;
 	unsigned long cmp_attribution_snapshot_unavailable;
+
+	/*
+	 * Field-scoped CMP attribution counters (PHASE 3 narrow MVP).
+	 * Scalar attribution (reexec_attribution_found above) maps the kernel
+	 * constant to a syscall slot; field attribution scans the cataloged
+	 * struct sitting at that slot's pointer and -- on a runtime field
+	 * value matching arg2 -- records the constant into a field pool keyed
+	 * (nr, do32, arg_idx, desc, field_idx, size).  Counted separately
+	 * from the scalar tally so the new path's signal-to-noise can be read
+	 * without polluting the existing low-noise scalar numerator.
+	 *
+	 *  cmp_field_attribution_scanned
+	 *      Bumped once per (CMP record, cataloged INPUT struct arg) the
+	 *      field scan walked.  Denominator for the scan's hit rate.
+	 *  cmp_field_attribution_found
+	 *      Bumped once per (CMP record, struct arg, field) where the
+	 *      field's runtime value matched arg2 and the recording-path
+	 *      insert was attempted.  Numerator for the scan's hit rate.
+	 *  cmp_field_attribution_pool_full
+	 *      Bumped when every probe position in field_pools[] was occupied
+	 *      by an unrelated key, so the record was dropped.  A sustained
+	 *      non-zero rate flags a saturated table -- raise
+	 *      CMP_FIELD_POOL_BUCKETS or sharpen the key.
+	 *  cmp_field_attribution_arg_skipped_bad_ptr
+	 *      Bumped when the struct arg's snapshotted pointer failed the
+	 *      is_corrupt_ptr_shape() gate (NULL, non-canonical, or
+	 *      misaligned) so the field scan was suppressed for that slot --
+	 *      the kernel did not crash on the same address, so a non-zero
+	 *      rate signals a sanitiser that hands a non-shared-region
+	 *      pointer through and the field scan can't safely deref.
+	 */
+	unsigned long cmp_field_attribution_scanned;
+	unsigned long cmp_field_attribution_found;
+	unsigned long cmp_field_attribution_pool_full;
+	unsigned long cmp_field_attribution_arg_skipped_bad_ptr;
 };
 
 extern struct kcov_shared *kcov_shm;

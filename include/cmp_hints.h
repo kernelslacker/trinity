@@ -191,6 +191,69 @@ struct cmp_hint_pool {
 };
 
 /*
+ * Field-scoped attribution pool (PHASE 3 narrow MVP).
+ *
+ * The per-syscall pools above ([nr][do32]) attribute a kernel CMP
+ * constant to a *syscall slot* but not to a specific struct field --
+ * so a value the kernel compared against, say, clone_args::flags is
+ * sprayed back into any broad scalar slot of the same syscall rather
+ * than steered to the matching field of the same cataloged struct.
+ * Field pools are keyed by (nr, do32, arg_idx, desc, field_idx, size)
+ * so a future consumer side can re-inject the constant at the exact
+ * field that produced it; this header only carries the recording-path
+ * storage.
+ *
+ * Storage is a fixed-size open-addressed table.  A bounded probe length
+ * keeps lookup O(1); probe exhaustion drops the record (advisory pool,
+ * no correctness impact) and bumps cmp_field_attribution_pool_full so
+ * a saturated table is directly observable in stats.  Buckets are
+ * claimed lazily on the first matching record by RELEASE-storing the
+ * desc pointer (the occupancy gate); readers ACQUIRE-load desc before
+ * reading the rest of the key so a partially-written key is invisible.
+ *
+ * check_all_locks() walks the per-syscall pools[][2] grid but does NOT
+ * yet visit field_pools[].  A child dying while holding a field-pool
+ * lock wedges that ONE bucket -- bounded blast radius; the rest of the
+ * field table and every per-syscall pool keep working.  The walk will
+ * extend once the consumer side (re-injection) lands.
+ */
+#define CMP_FIELD_POOL_BUCKETS		256U
+#define CMP_FIELD_POOL_PROBE_MAX	8U
+_Static_assert((CMP_FIELD_POOL_BUCKETS & (CMP_FIELD_POOL_BUCKETS - 1)) == 0,
+	       "CMP_FIELD_POOL_BUCKETS must be a power of two");
+
+struct struct_desc;	/* forward decl; full type in include/struct_catalog.h */
+
+/*
+ * Key tuple identifying one field pool.  desc doubles as the bucket
+ * occupancy gate: NULL means the bucket is empty and may be claimed; a
+ * non-NULL desc is published with RELEASE so a reader that ACQUIRE-loads
+ * desc is guaranteed to see the rest of the key.
+ */
+struct cmp_field_pool_key {
+	const struct struct_desc *desc;
+	uint16_t nr;
+	uint8_t do32;
+	uint8_t arg_idx;	/* 1-based syscall arg index (1..6) */
+	uint16_t field_idx;	/* index into the resolved fields[] array */
+	uint8_t size;		/* CMP operand width in bytes: 1, 2, 4, or 8 */
+	uint8_t pad;
+};
+
+struct cmp_field_pool {
+	lock_t lock;
+	uint64_t canary_lock_post;
+	unsigned int count;
+	unsigned int generation;
+	uint64_t last_used_stamp;
+	uint64_t canary_pre;
+	struct cmp_hint_entry entries[CMP_HINTS_PER_SYSCALL];
+	uint64_t canary_post;
+	struct cmp_field_pool_key key;
+	bool corrupted;
+};
+
+/*
  * Pool grid indexed by [syscall_nr][do32 ? 1 : 0].  Mirrors the arch
  * dimension already carried by cmp_hints_strip[2][MAX_NR_SYSCALL]:
  * under biarch, syscall nr=N under the 32-bit table and syscall nr=N
@@ -206,6 +269,10 @@ struct cmp_hints_shared {
 	 * decremented after release.  check_all_locks may skip the family when
 	 * zero. */
 	unsigned long held_count;
+	/* Field-scoped attribution table.  Bucket occupancy is gated on
+	 * field_pools[i].key.desc; an all-zero memset at init leaves every
+	 * bucket empty until claimed by the first matching CMP record. */
+	struct cmp_field_pool field_pools[CMP_FIELD_POOL_BUCKETS];
 };
 _Static_assert(MAX_NR_SYSCALL == 1024,
 	"cmp_hints_shared layout assumes MAX_NR_SYSCALL == 1024");
@@ -346,3 +413,37 @@ void cmp_hints_maybe_snapshot(void);
  * slots that failed the bounds / size / IP-range validation in the
  * loader and were skipped while the surrounding pool was kept. */
 extern unsigned long cmp_hints_load_rejected_entries;
+
+/*
+ * Record a CMP constant attributed to a specific cataloged struct field.
+ * Selects (or lazily claims) the bucket keyed by (nr, do32, arg_idx,
+ * desc, field_idx, size) and inserts (cmp_ip, val, size) into that
+ * pool's entries[] using the same dedup / LRU-eviction discipline as
+ * pool_add_locked() for the per-syscall pool.  A field-attribution hit
+ * bumps cmp_field_attribution_found; probe-exhaustion (the table is
+ * saturated with unrelated keys at all probe positions) bumps
+ * cmp_field_attribution_pool_full and silently drops the record --
+ * field pools are advisory, never load-bearing.
+ *
+ * Caller contract: nr < MAX_NR_SYSCALL, arg_idx in 1..6, size in
+ * {1,2,4,8}, desc != NULL.  Out-of-range inputs are silently ignored
+ * so a hot CMP path that hands a corrupt rec through never destabilises
+ * the table.
+ */
+void cmp_hints_field_record(unsigned int nr, bool do32, unsigned int arg_idx,
+			    const struct struct_desc *desc,
+			    unsigned int field_idx, unsigned int size,
+			    unsigned long val, unsigned long cmp_ip);
+
+/*
+ * One-shot self-check called from cmp_hints_init().  Synthesises an
+ * insert against a reserved sentinel-nr key, verifies the bucket gets
+ * claimed and the field-attribution counter bumps, then clears the
+ * bucket back to empty so the live table starts clean.  Proves the
+ * recording path is wired end-to-end at every fresh trinity startup --
+ * not just at build time -- which is the gate the PHASE 3 dispatch
+ * mandates for landing the row.  BUG()s on failure so a regression
+ * surfaces loudly at init rather than hiding behind silent zero
+ * counters during a run.
+ */
+void cmp_hints_field_record_self_check(void);
