@@ -524,6 +524,24 @@ void frontier_record_new_edge(unsigned int nr)
 	__atomic_fetch_add(&shm->frontier_recent_count_cached[nr], 1U,
 			   __ATOMIC_RELAXED);
 
+	/* RedQueen-source PC-edge attribution.  When the call that produced
+	 * this new edge was a replay of a corpus entry whose args were
+	 * originally captured under in_reexec (i.e. the RedQueen re-exec
+	 * path harvested those args), credit the win to the dedicated
+	 * rq_sourced_pcedge_wins_per_syscall[] counter so the periodic
+	 * dump can report PC-edge conversion of RedQueen-sourced saves
+	 * separately from the bulk per-strategy attribution.  Observability
+	 * only -- no selection / reward code reads this counter.  RELAXED
+	 * add-fetch matches the surrounding accounting. */
+	{
+		struct childdata *cc = this_child();
+
+		if (cc != NULL && cc->replay_rq_sourced)
+			__atomic_fetch_add(
+				&shm->stats.rq_sourced_pcedge_wins_per_syscall[nr],
+				1UL, __ATOMIC_RELAXED);
+	}
+
 	/* SHADOW-ONLY silent-streak reset.  This function is the canonical
 	 * per-syscall new-edge productive-event hook -- already called from
 	 * kcov_collect()'s found_new branch when a syscall's call has

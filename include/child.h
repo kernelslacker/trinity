@@ -709,6 +709,18 @@ struct childdata {
 	unsigned int reexec_pending_count;
 	bool in_reexec;
 	bool redqueen_enabled;
+	/* Replay-side companion to corpus_entry::rq_sourced.  Set inside
+	 * minicorpus_replay() right after the snapshot picks an entry whose
+	 * args were captured under in_reexec; cleared unconditionally at the
+	 * top of minicorpus_mut_attrib_commit() so the next iteration starts
+	 * with a known-clear flag.  Consumed by frontier_record_new_edge()
+	 * (strategy.c) to credit later PC-edge wins from RedQueen-sourced
+	 * corpus saves to rq_sourced_pcedge_wins_per_syscall[], separate
+	 * from the in_reexec/redqueen_enabled axes above which describe the
+	 * current dispatch's RedQueen role rather than the source provenance
+	 * of the corpus entry being replayed.  Owner-only writes from inside
+	 * the child; no cross-process coherence needed. */
+	bool replay_rq_sourced;
 	/* Sliding-window cap on greedy re-exec dispatches.  The design caps
 	 * the per-child rate at STRATEGY_WINDOW / 4 (~25% of the bandit's
 	 * rotation budget) so a hot attributing syscall can't burn the

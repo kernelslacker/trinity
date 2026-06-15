@@ -4162,10 +4162,14 @@ void top_syscalls_periodic_dump(void)
 	static unsigned long prev_bandit[MAX_NR_SYSCALL];
 	static unsigned long prev_explorer[MAX_NR_SYSCALL];
 	static unsigned long prev_frontier_picks[MAX_NR_SYSCALL];
+	static unsigned long prev_rq_saves[MAX_NR_SYSCALL];
+	static unsigned long prev_rq_wins[MAX_NR_SYSCALL];
 	static struct timespec last_dump;
 	unsigned long cur_bandit[MAX_NR_SYSCALL];
 	unsigned long cur_explorer[MAX_NR_SYSCALL];
 	unsigned long cur_frontier_picks[MAX_NR_SYSCALL];
+	unsigned long cur_rq_saves[MAX_NR_SYSCALL];
+	unsigned long cur_rq_wins[MAX_NR_SYSCALL];
 	struct timespec now;
 	long elapsed;
 	unsigned int nr_to_scan;
@@ -4189,6 +4193,12 @@ void top_syscalls_periodic_dump(void)
 			prev_frontier_picks[i] = __atomic_load_n(
 				&shm->stats.frontier_picks_per_syscall[i],
 				__ATOMIC_RELAXED);
+			prev_rq_saves[i] = __atomic_load_n(
+				&shm->stats.rq_sourced_saves_per_syscall[i],
+				__ATOMIC_RELAXED);
+			prev_rq_wins[i] = __atomic_load_n(
+				&shm->stats.rq_sourced_pcedge_wins_per_syscall[i],
+				__ATOMIC_RELAXED);
 		}
 		return;
 	}
@@ -4206,6 +4216,12 @@ void top_syscalls_periodic_dump(void)
 			__ATOMIC_RELAXED);
 		cur_frontier_picks[i] = __atomic_load_n(
 			&shm->stats.frontier_picks_per_syscall[i],
+			__ATOMIC_RELAXED);
+		cur_rq_saves[i] = __atomic_load_n(
+			&shm->stats.rq_sourced_saves_per_syscall[i],
+			__ATOMIC_RELAXED);
+		cur_rq_wins[i] = __atomic_load_n(
+			&shm->stats.rq_sourced_pcedge_wins_per_syscall[i],
 			__ATOMIC_RELAXED);
 	}
 
@@ -4240,10 +4256,31 @@ void top_syscalls_periodic_dump(void)
 	top_syscalls_emit_pool("frontier", cur_frontier_picks,
 			       prev_frontier_picks, nr_to_scan, table, false);
 
+	/* RedQueen-source corpus saves vs the PC-edge wins those saves
+	 * later produce, per-syscall.  The two top-Ns answer the
+	 * harvest->edge bottleneck question: which syscalls are RedQueen
+	 * harvesting args for, and which of those convert downstream to
+	 * new PC-bucket edges once a corpus replay picks them up.  The
+	 * helper's zero-total gate skips each row when its pool is empty
+	 * (re-exec disabled, or enabled but no corpus replay landed on an
+	 * rq-sourced entry that flipped a new edge this window). */
+	stats_log_write("Top %u syscalls by RedQueen-sourced saves "
+			"in last %lds:\n",
+			TOP_SYSCALLS_DUMP_TOPN, elapsed);
+	top_syscalls_emit_pool("rq-saves", cur_rq_saves, prev_rq_saves,
+			       nr_to_scan, table, false);
+	stats_log_write("Top %u syscalls by PC-edge wins from "
+			"RedQueen-sourced saves in last %lds:\n",
+			TOP_SYSCALLS_DUMP_TOPN, elapsed);
+	top_syscalls_emit_pool("rq-pcedge-wins", cur_rq_wins, prev_rq_wins,
+			       nr_to_scan, table, false);
+
 	memcpy(prev_bandit,   cur_bandit,   sizeof(prev_bandit));
 	memcpy(prev_explorer, cur_explorer, sizeof(prev_explorer));
 	memcpy(prev_frontier_picks, cur_frontier_picks,
 	       sizeof(prev_frontier_picks));
+	memcpy(prev_rq_saves, cur_rq_saves, sizeof(prev_rq_saves));
+	memcpy(prev_rq_wins,  cur_rq_wins,  sizeof(prev_rq_wins));
 
 	last_dump = now;
 }
