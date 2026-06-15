@@ -89,6 +89,18 @@
  * canary_queue_summary().  Fixed at 5; spec verbatim. */
 #define CANARY_PROMOTION_RING_SIZE	5
 
+/* Per-window deltas at or above which a promotion is tagged as
+ * "state-corrupting" in the promotion log line.  Inputs are fleet-
+ * wide cumulative counters (parent_stats.{post_handler_corrupt_ptr,
+ * deferred_free_reject}), so the delta is a coincidence signal, not
+ * a per-op attribution: every running child contributes.  Thresholds
+ * are intentionally loose to start; the tag is observability-only
+ * and re-tuning is cheap once a baseline distribution exists in the
+ * field.  Treat a tagged promotion as "look at this one", not
+ * "block this one". */
+#define CANARY_HEALTH_CORRUPT_PTR_THRESHOLD	50UL
+#define CANARY_HEALTH_DEFERRED_FREE_THRESHOLD	50UL
+
 /* Queue-summary cadence (60 s; spec verbatim).  Per-window-progress
  * lines are emitted from the ~1 s tick path with no extra rate-limit
  * (one line per tick while CANARYING). */
@@ -456,6 +468,14 @@ static void enter_canarying(enum child_op_type op)
 	s->window_crashes = 0;
 	s->window_start_invocations = invocations_for_op(op);
 	s->window_start_edges = edges_for_op(op);
+	s->window_start_post_handler_corrupt_ptr =
+		parent_stats.post_handler_corrupt_ptr;
+	s->window_start_deferred_free_reject =
+		parent_stats.deferred_free_reject;
+	s->window_start_kcov_first_ebadf_op_nr = kcov_shm
+		? __atomic_load_n(&kcov_shm->pc_diag.first_ebadf_op_nr,
+				  __ATOMIC_RELAXED)
+		: 0;
 	s->last_canary_window_start = now;
 	s->last_state_transition = now;
 	s->canary_iterations++;
@@ -483,11 +503,69 @@ static void enter_canarying(enum child_op_type op)
 	kill_canary_slot_children();
 }
 
+/* Classify a just-finished canary window into a coarse health
+ * verdict, computed from per-window deltas of the three fleet-wide
+ * defence counters captured at window open in enter_canarying().
+ *
+ * Verdict precedence (most severe wins):
+ *   "KCOV-damaging"    -- kcov_shm->pc_diag.first_ebadf_op_nr was 0
+ *                         at window open and is non-zero at window
+ *                         close.  Means the first kcov_enable_trace
+ *                         EBADF observed in this run was first seen
+ *                         during this op's canary window; the
+ *                         first-failure-wins gate latches once, so a
+ *                         later non-zero observation does not retag.
+ *   "state-corrupting" -- corrupt_ptr_delta or deferred_free_delta
+ *                         crossed its threshold during the window.
+ *                         Inputs are fleet-wide so this is a
+ *                         coincidence tag (any sibling can have
+ *                         driven the delta), not attribution.
+ *   "clean"            -- otherwise.
+ *
+ * The "leak-associated" class from the spec is unimplemented: there
+ * is no per-canary-window kmemleak growth counter in the tree today.
+ * The deltas themselves are returned through the *_out pointers so
+ * the caller can include the raw numbers in the promotion log line
+ * for forensic value. */
+static const char *canary_health_verdict(const struct canary_op_state *s,
+					 unsigned long *corrupt_ptr_delta_out,
+					 unsigned long *deferred_free_delta_out,
+					 bool *kcov_ebadf_in_window_out)
+{
+	unsigned long now_corrupt = parent_stats.post_handler_corrupt_ptr;
+	unsigned long now_deferred = parent_stats.deferred_free_reject;
+	unsigned long now_ebadf = kcov_shm
+		? __atomic_load_n(&kcov_shm->pc_diag.first_ebadf_op_nr,
+				  __ATOMIC_RELAXED)
+		: 0;
+	unsigned long corrupt_delta = (now_corrupt >= s->window_start_post_handler_corrupt_ptr)
+		? (now_corrupt - s->window_start_post_handler_corrupt_ptr) : 0;
+	unsigned long deferred_delta = (now_deferred >= s->window_start_deferred_free_reject)
+		? (now_deferred - s->window_start_deferred_free_reject) : 0;
+	bool ebadf_in_window =
+		(s->window_start_kcov_first_ebadf_op_nr == 0) && (now_ebadf != 0);
+
+	*corrupt_ptr_delta_out = corrupt_delta;
+	*deferred_free_delta_out = deferred_delta;
+	*kcov_ebadf_in_window_out = ebadf_in_window;
+
+	if (ebadf_in_window)
+		return "KCOV-damaging";
+	if (corrupt_delta >= CANARY_HEALTH_CORRUPT_PTR_THRESHOLD ||
+	    deferred_delta >= CANARY_HEALTH_DEFERRED_FREE_THRESHOLD)
+		return "state-corrupting";
+	return "clean";
+}
+
 static void leave_canarying_promote(enum child_op_type op,
 				    unsigned long window_iters,
 				    unsigned long window_edges)
 {
 	struct canary_op_state *s = &canary_ops[op];
+	unsigned long corrupt_delta = 0;
+	unsigned long deferred_delta = 0;
+	bool ebadf_in_window = false;
+	const char *verdict;
 
 	s->state = CANARY_STATE_PROMOTED;
 	s->last_state_transition = monotonic_seconds();
@@ -497,8 +575,19 @@ static void leave_canarying_promote(enum child_op_type op,
 	/* Gate stays at 0 (active).  The random picker keeps the op. */
 	dormant_op_set(op, false);
 
-	output(0, "canary: %s promoted (window edges=%lu crashes=%u in %lu iters; effective for new children at next respawn)\n",
-		s->name, window_edges, s->window_crashes, window_iters);
+	verdict = canary_health_verdict(s, &corrupt_delta, &deferred_delta,
+					&ebadf_in_window);
+
+	/* Observability-only: the verdict is appended to the existing
+	 * promotion log so operators can correlate the latest promotion
+	 * with a coincident defence-counter spike.  The deltas are
+	 * fleet-wide (see comment on canary_op_state snapshot fields and
+	 * canary_health_verdict above), so the tag flags a window for
+	 * inspection -- it does not gate scheduling. */
+	output(0, "canary: %s promoted (window edges=%lu crashes=%u in %lu iters; health=%s corrupt_ptr_delta=%lu deferred_free_delta=%lu kcov_first_ebadf_in_window=%d; deltas are fleet-wide, not per-op attributed; effective for new children at next respawn)\n",
+		s->name, window_edges, s->window_crashes, window_iters,
+		verdict, corrupt_delta, deferred_delta,
+		ebadf_in_window ? 1 : 0);
 }
 
 static void leave_canarying_demote(enum child_op_type op,
