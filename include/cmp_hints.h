@@ -81,7 +81,9 @@ struct cmp_hints_bloom {
  *
  * "slot" is a 1-based arg index (1..6) matching the rec->aN naming
  * convention.  cmp_ip / value / size mirror the (ip, val, size) tuple
- * the existing pool entry uses.
+ * the existing pool entry uses; cmp_ip is the canonical (KASLR-stripped)
+ * comparison-instruction address, the same value cmp_hints_collect()
+ * routes into the bloom and the per-syscall pool.
  */
 #define MAX_REEXEC_PENDING	8U
 

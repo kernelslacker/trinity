@@ -1436,6 +1436,25 @@ const char *kcov_bitmap_default_path(void);
  * and stay in lock-step with the kcov-bitmap warm-start invariants. */
 bool kcov_get_kernel_fp(uint8_t out[32]);
 
+/* Read-only accessor for the runtime kernel-text base resolved by
+ * kcov_init_global from /proc/kallsyms.  Zero means the lookup failed
+ * (kallsyms unreadable, _text/_stext absent, or kptr_restrict zeroed
+ * every address) and the run is hashing kernel addresses raw.  Exposed
+ * so cross-run-state writers outside kcov.c (the cmp-hints pool) can
+ * stamp the same value into their on-disk headers and reject a
+ * canonical-vs-raw mismatch on load, matching the kcov-bitmap header's
+ * kaslr_base field. */
+uint64_t kcov_kaslr_base_value(void);
+
+/* Strip the runtime KASLR base from a kernel comparison-instruction
+ * address before it enters the cmp-hints bloom + per-syscall pool +
+ * persisted state file.  Companion to kcov_canon_pc (the PC-coverage
+ * canonicaliser) -- same arithmetic, separate named entry point so the
+ * cmp-hint canonicalisation invariant can be enforced in isolation by
+ * scripts/check-static/cmp-hints-canonicalise-cmp-ip.sh.  Returns the
+ * argument unchanged on systems where kcov_kaslr_base stayed zero. */
+unsigned long kcov_canon_cmp_ip(unsigned long ip);
+
 /* Wire periodic mid-run snapshots of the bucket_seen bitmap to PATH.
  * Subsequent kcov_bitmap_maybe_snapshot() calls become live; a no-op
  * before this is called.  Path is copied. */
