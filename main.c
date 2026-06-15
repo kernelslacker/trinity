@@ -1632,6 +1632,52 @@ static void dump_fork_failure_snapshot(void)
 }
 
 /*
+ * Per-childop fork-failed counter dump for the stuck-fork bail path.
+ * Several childops fork their own short-lived helper workers
+ * (sysfs_string_race writers, qrtr_bind_race binders, pfkey_spd_walk
+ * walkers, l2tp_ifname_race creators, statmount_idmap carrier helpers)
+ * and bump a *_fork_failed counter when their inner fork() returns
+ * EAGAIN / ENOMEM / RLIMIT_NPROC.  Those counters are the closest
+ * thing the tree has to per-source attribution for pid pressure: if
+ * the parent's spawn loop wedged because one specific childop is
+ * burning subworker fork budget, the dominant counter here names it.
+ *
+ * Emitted as a single line (one key:value per source) so log scrapers
+ * can lift it out of the surrounding bail block with a fixed prefix
+ * match.  Sources with a zero counter are still printed so the
+ * absence of a contribution is unambiguous.  Latched via the same
+ * one-shot pattern as dump_fork_failure_snapshot(): the bail path
+ * touches several dump helpers in sequence; if any of them is reached
+ * twice via a future refactor we still emit at most one line per run.
+ */
+static void dump_fork_failure_subworker_counters(void)
+{
+	static bool emitted = false;
+
+	if (emitted)
+		return;
+	emitted = true;
+
+	if (shm == NULL)
+		return;
+
+	outputerr("main: fork-failure subworker_fork_failed"
+		  " sysfs_string_race:%lu qrtr_bind_race:%lu"
+		  " pfkey_spd_walk:%lu l2tp_ifname_race:%lu"
+		  " statmount_idmap:%lu\n",
+		  __atomic_load_n(&shm->stats.sysfs_string_race_fork_failed,
+				  __ATOMIC_RELAXED),
+		  __atomic_load_n(&shm->stats.qrtr_bind_race_fork_failed,
+				  __ATOMIC_RELAXED),
+		  __atomic_load_n(&shm->stats.pfkey_spd_walk_fork_failed,
+				  __ATOMIC_RELAXED),
+		  __atomic_load_n(&shm->stats.l2tp_ifname_race_fork_failed,
+				  __ATOMIC_RELAXED),
+		  __atomic_load_n(&shm->stats.statmount_idmap_fork_failed,
+				  __ATOMIC_RELAXED));
+}
+
+/*
  * Force a save of every cross-run cache (minicorpus, kcov bitmap,
  * cmp-hints pool) at a bail point so the on-disk snapshot reflects the
  * in-memory high-water at the moment we gave up.  Mirrors the cluster
@@ -1789,6 +1835,7 @@ static void fork_children(void)
 						consecutive_fork_failures);
 					dump_proc_self_status();
 					dump_fork_failure_snapshot();
+					dump_fork_failure_subworker_counters();
 					final_state_save();
 					panic(EXIT_FORK_FAILURE);
 					return;
