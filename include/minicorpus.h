@@ -225,6 +225,27 @@ struct minicorpus_shared {
 	 * accounting addition. */
 	unsigned long mut_attrib_cmp_wins;
 
+	/* SHADOW measurement for the Phase C.3 structure-aware arm picker.
+	 * mut_structured_shadow_samples is bumped each time mutate_arg
+	 * picks an op on a slot whose argtype + arg_param metadata makes
+	 * it eligible for structured firing (ARG_LIST / ARG_OP / ARG_RANGE
+	 * with a non-degenerate values / range payload).  Of those samples,
+	 * mut_structured_shadow_divergences counts the subset where a
+	 * parallel shadow picker -- one that adds the existing
+	 * mut_structured_trials / mut_structured_wins per-op stats as a
+	 * second Beta arm alongside the live mut_trials / mut_wins arm and
+	 * draws from the doubled 2 * MUT_NUM_OPS pool -- would have selected
+	 * a different op than the live picker did.  The shadow draw does
+	 * not influence the live pick; mutate_arg keeps calling
+	 * weighted_pick_case() exactly as before and the live op is what
+	 * fires.  Read at dump_stats() time; RELAXED atomics.  Promoting
+	 * the structured arm to the live picker will consume this
+	 * measurement, not be gated on a separate knob -- the SHADOW commit
+	 * exists so the promotion's downstream effect on op distribution
+	 * can be quantified before behaviour changes. */
+	unsigned long mut_structured_shadow_samples;
+	unsigned long mut_structured_shadow_divergences;
+
 	/* Monotonic mutation counter.  Bumped via __atomic_fetch_add on every
 	 * ring-entry insert (minicorpus_save) and every entry admitted from the
 	 * warm-start loader (minicorpus_load_file).  minicorpus_save_file
