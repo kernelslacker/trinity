@@ -1803,7 +1803,7 @@ void * __zmalloc_tracked(size_t size, const char *func)
 {
 	void *p = __zmalloc(size, func);
 
-	deferred_alloc_track(p);
+	deferred_alloc_track(p, size);
 	return p;
 }
 

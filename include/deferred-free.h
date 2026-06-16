@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 
 #include "compiler.h"
 #include "syscall.h"
@@ -30,9 +31,14 @@ void deferred_free_init(void);
  * pointer is a real malloc result before queuing it for free().
  *
  * Process-local — must be called after fork inherits the COW heap.
- * NULL is silently ignored.
+ * NULL is silently ignored.  @size is the allocation extent recorded
+ * alongside @ptr so consumers that need the real-buffer length
+ * (e.g. cmp_hints field-scan bounds) can recover it via
+ * alloc_track_lookup_size().  Pass 0 only when the caller genuinely
+ * does not know the extent; downstream lookups treat 0 as "unknown"
+ * and bail conservatively.
  */
-void deferred_alloc_track(void *ptr);
+void deferred_alloc_track(void *ptr, size_t size);
 
 /*
  * Non-consuming probe: returns true if @ptr was registered via
@@ -45,6 +51,18 @@ void deferred_alloc_track(void *ptr);
  * consumed, or was evicted by ring rollover.
  */
 bool alloc_track_lookup(void *ptr) __must_check;
+
+/*
+ * Recover the allocation extent recorded for @ptr at
+ * deferred_alloc_track() time.  Returns the byte count on hit, 0 on
+ * miss (never tracked / consumed / rotated out / inserted with an
+ * unknown size).  Callers that need a hard upper bound on a tracked
+ * buffer (e.g. cmp_hints field-scan bounding reads against the real
+ * sanitiser allocation rather than a catalog struct_size that can
+ * overshoot variable-length / over-large descs) gate on a non-zero
+ * return and treat 0 as "cannot prove the extent, skip the read".
+ */
+size_t alloc_track_lookup_size(void *ptr) __must_check;
 
 /*
  * Refresh an existing tracked allocation's LRU position.  Use this

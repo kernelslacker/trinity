@@ -1489,6 +1489,18 @@ struct kcov_shared {
 	 *      the kernel did not crash on the same address, so a non-zero
 	 *      rate signals a sanitiser that hands a non-shared-region
 	 *      pointer through and the field scan can't safely deref.
+	 *  cmp_field_attribution_arg_skipped_short_alloc
+	 *      Bumped when alloc_track_lookup_size() returned 0 for the
+	 *      snapshotted pointer (untracked / consumed / rotated out of
+	 *      the alloc-track ring) so the scan could not prove the
+	 *      buffer's real extent and refused to bound the field walk by
+	 *      desc->struct_size alone -- variable-length / over-large
+	 *      catalog rows can claim more bytes than the runtime alloc
+	 *      owns and the read would otherwise spill past the chunk
+	 *      (heap-buffer-overflow).  A sustained non-zero rate flags a
+	 *      sanitiser that fills a cataloged struct from an untracked
+	 *      allocation; rebase the alloc onto zmalloc_tracked() so the
+	 *      scan can recover the extent.
 	 *  cmp_field_timespec_skipped_bad_ptr
 	 *      Bumped when the field-scoped ARG_TIMESPEC fallback in
 	 *      cmp_hints_collect() saw a shape-valid (>= 4096) saved
@@ -1505,6 +1517,7 @@ struct kcov_shared {
 	unsigned long cmp_field_attribution_found;
 	unsigned long cmp_field_attribution_pool_full;
 	unsigned long cmp_field_attribution_arg_skipped_bad_ptr;
+	unsigned long cmp_field_attribution_arg_skipped_short_alloc;
 	unsigned long cmp_field_timespec_skipped_bad_ptr;
 
 	/* A/B-comparison counter for the substitution-pool "uninteresting

@@ -44,6 +44,7 @@
 #include "child.h"
 #include "cmp_hints.h"
 #include "debug.h"
+#include "deferred-free.h"
 #include "fd.h"
 #include "kcov.h"
 #include "persist-util.h"
@@ -981,6 +982,8 @@ static void cmp_hints_field_scan_record(struct syscallrecord *srec,
 		enum argtype t = entry->argtype[slot];
 		const struct struct_desc *desc;
 		const unsigned char *buf;
+		unsigned long limit;
+		size_t actual_len;
 		unsigned int i;
 
 		if (t != ARG_STRUCT_PTR_IN && t != ARG_STRUCT_PTR_INOUT)
@@ -1017,6 +1020,30 @@ static void cmp_hints_field_scan_record(struct syscallrecord *srec,
 			continue;
 		}
 
+		/* Bound the field-walk against the real sanitiser allocation
+		 * extent recovered from alloc_track, NOT range_readable_user
+		 * (mappability, not allocation bounds) and NOT desc->struct_size
+		 * alone (a variable-length / over-large catalog entry can claim
+		 * more bytes than the runtime alloc behind @buf actually owns,
+		 * walking the scan past the heap chunk and tripping ASAN
+		 * heap-buffer-overflow).  Tracked buffers expose their length
+		 * via lookup_size; an untracked buffer cannot prove its extent
+		 * and we skip the slot entirely (conservative direction).
+		 * limit = min(struct_size, actual_len) so a smaller real alloc
+		 * tightens the per-field check while an oversized catalog row
+		 * still cannot push us off the chunk. */
+		actual_len = alloc_track_lookup_size((void *)(uintptr_t)buf);
+		if (actual_len == 0) {
+			if (kcov_shm != NULL)
+				__atomic_fetch_add(
+					&kcov_shm->cmp_field_attribution_arg_skipped_short_alloc,
+					1UL, __ATOMIC_RELAXED);
+			continue;
+		}
+		limit = desc->struct_size;
+		if ((unsigned long)actual_len < limit)
+			limit = (unsigned long)actual_len;
+
 		if (kcov_shm != NULL)
 			__atomic_fetch_add(
 				&kcov_shm->cmp_field_attribution_scanned,
@@ -1046,10 +1073,12 @@ static void cmp_hints_field_scan_record(struct syscallrecord *srec,
 
 			if (f->size != size)
 				continue;
-			/* Bound the read inside the cataloged struct extent so
-			 * a buggy field entry can't walk past the buffer the
-			 * sanitiser actually allocated. */
-			if ((unsigned long) f->offset + size > desc->struct_size)
+			/* Per-field cap against the smaller of the cataloged
+			 * struct extent and the real alloc extent (limit above).
+			 * Cataloged structs whose real alloc is shorter than
+			 * struct_size (variable-length tails, over-large catalog
+			 * rows) get rejected here before the deref. */
+			if ((unsigned long) f->offset + size > limit)
 				continue;
 
 			fv = 0;
