@@ -1333,14 +1333,38 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 		 *
 		 * Filter out uninteresting constants inline so the compiler
 		 * can fold the per-record check to a couple of branches:
-		 * skip 0/1/2/3 (caught by the ~3UL mask going to 0) and the
-		 * all-ones sentinel.
+		 * skip the low constants caught by the boring-mask going to
+		 * zero and the all-ones sentinel.
+		 *
+		 * A/B-comparison on the drop band: Arm A keeps the
+		 * historical ~3UL mask (drop 0/1/2/3); Arm B widens to ~7UL
+		 * (also drop 4/5/6/7).  The widened band straddles common
+		 * meaningful bounds (struct sizes, low flag bits) so the
+		 * per-arm pool-novelty + downstream new-edge deltas show
+		 * whether the dropped values were carrying signal.  Parent-
+		 * context callers (child == NULL) fall through with the
+		 * historical mask so the off-child path is unchanged.  The
+		 * divergence counter (cmp_hints_boring_arm_b_drops) bumps
+		 * once per record where arg1 is in [4,7] -- every record the
+		 * two arms would decide differently on, regardless of which
+		 * arm this child is on -- giving the raw rate at which the
+		 * wider filter actually deviates from the narrower one.
 		 */
-		if ((arg1 & ~3UL) == 0) {
-			if (kcov_shm != NULL)
-				__atomic_fetch_add(&kcov_shm->cmp_hints_save_reject_uninteresting,
+		{
+			unsigned long boring_mask =
+				(child != NULL && child->boring_filter_arm_b) ?
+					~7UL : ~3UL;
+
+			if (kcov_shm != NULL && arg1 >= 4 && arg1 <= 7)
+				__atomic_fetch_add(&kcov_shm->cmp_hints_boring_arm_b_drops,
 						   1UL, __ATOMIC_RELAXED);
-			continue;
+
+			if ((arg1 & boring_mask) == 0) {
+				if (kcov_shm != NULL)
+					__atomic_fetch_add(&kcov_shm->cmp_hints_save_reject_uninteresting,
+							   1UL, __ATOMIC_RELAXED);
+				continue;
+			}
 		}
 		if (arg1 == (unsigned long) -1) {
 			if (kcov_shm != NULL)

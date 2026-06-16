@@ -1484,6 +1484,21 @@ struct kcov_shared {
 	unsigned long cmp_field_attribution_pool_full;
 	unsigned long cmp_field_attribution_arg_skipped_bad_ptr;
 	unsigned long cmp_field_timespec_skipped_bad_ptr;
+
+	/* A/B-comparison counter for the substitution-pool "uninteresting
+	 * constant" drop mask.  Each CMP-mode child is stamped at fork into
+	 * one of two arms (boring_filter_arm in childdata): Arm A uses the
+	 * historical ~3UL mask (drop 0/1/2/3); Arm B widens to ~7UL (also
+	 * drop 4/5/6/7).  The widened band straddles common meaningful
+	 * bounds (struct sizes, low flag bits), so the per-arm pool-novelty
+	 * delta tells whether the dropped values were carrying actual
+	 * signal.  Counter-only -- no decision rides on it.  Bumped from
+	 * cmp_hints_collect() once per record where arg1 is in [4,7] (i.e.
+	 * Arm A would keep the record and Arm B would drop it); this is
+	 * the only band where the two arms diverge.  Append-only at the
+	 * struct tail per the existing convention so consumer offsets stay
+	 * stable. */
+	unsigned long cmp_hints_boring_arm_b_drops;
 };
 
 extern struct kcov_shared *kcov_shm;
