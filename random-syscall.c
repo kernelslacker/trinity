@@ -1133,6 +1133,7 @@ static bool argtype_accepts_numeric_substitute(enum argtype t)
 	case ARG_NON_NULL_ADDRESS:
 	case ARG_PATHNAME:
 	case ARG_XATTR_NAME:
+	case ARG_FSTYPE_NAME:
 	case ARG_TIMESPEC:
 	case ARG_ITIMERVAL:
 	case ARG_ITIMERSPEC:
