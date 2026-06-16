@@ -726,6 +726,18 @@ struct childdata {
 	 * novelty signal can drift independently of the pool-substitution
 	 * threshold; this stamp drives only the pool-side filter. */
 	bool boring_filter_arm_b;
+	/* Per-child A/B stamp for the frontier_cold_weight blend promotion.
+	 * Arm A (false) returns the historical OLD weight to the live picker
+	 * so selection stays byte-identical to the pre-blend baseline; Arm B
+	 * (true) returns the BLENDED weight (call-count + ilog2(bucket_bits)
+	 * + 2*ilog2(distinct_pcs) + ilog2(transition_edges_real_local)) so
+	 * the operator can read the live divergence between cohorts off the
+	 * frontier_blend_* shm counters.  Stamped once at child init via
+	 * ONE_IN(2) and never mutated, matching the boring_filter_arm_b
+	 * stamp pattern so time-of-day environmental drift is common to
+	 * both arms.  Read-only after stamp; owner-only writes; no
+	 * cross-process coherence needed. */
+	bool frontier_blend_arm_b;
 	/* Replay-side companion to corpus_entry::rq_sourced.  Set inside
 	 * minicorpus_replay() right after the snapshot picks an entry whose
 	 * args were captured under in_reexec; cleared unconditionally at the
