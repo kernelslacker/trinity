@@ -5198,6 +5198,16 @@ static const struct union_variant bpf_attr_variants[] = {
 /* higher-leverage shapes that have not been migrated yet (sctp /     */
 /* mptcp / tcp_repair / can_filter[] etc.); coverage on those paths   */
 /* is byte-identical to before until their rows land.                 */
+/*                                                                    */
+/* Scope of every row in this section: schema-aware FILL only.  There */
+/* is NO field-scoped CMP attribution for the setsockopt optval --    */
+/* the optval slot's argtype is ARG_UNDEFINED, and the field-scoped   */
+/* CMP machinery (cmp_hints_field_scan_record() -> field_pools[]) is  */
+/* gated on ARG_STRUCT_PTR_IN / ARG_STRUCT_PTR_INOUT, so it never     */
+/* visits optval.  The FT_ tags below shape the live values via the   */
+/* schema fill; they do not steer struct_field_for_cmp() at runtime   */
+/* for these rows.  Wiring field-scoped CMP for ARG_UNDEFINED is out  */
+/* of scope here and waits on the broader field-scoped-steering lift. */
 /* ------------------------------------------------------------------ */
 
 /*
@@ -5205,9 +5215,9 @@ static const struct union_variant bpf_attr_variants[] = {
  * (kernel masks to 0/1); l_linger is a small positive lingertime in
  * seconds (bespoke build_linger() drew 0..59).  Both pin cleanly to
  * FT_RANGE so the schema fill produces values inside the legal window
- * the bespoke builder did, and struct_field_for_cmp() can attribute
- * KCOV-CMP constants at the named slots rather than at a
- * coincidentally-same-width neighbour.
+ * the bespoke builder did.  Schema-aware FILL only: per the section
+ * header above, the setsockopt optval gets no field-scoped CMP
+ * attribution.
  */
 static const struct struct_field linger_fields[] = {
 	FIELDX(struct linger, l_onoff, FT_RANGE,
@@ -5375,9 +5385,9 @@ static const struct struct_field tcp_repair_opt_fields[] = {
  * practice), max_attempts bounded to a sane small INIT retry count, and
  * max_init_timeo bounded to a millisecond window matching the SCTP RTO
  * envelope.  Bespoke build_sctp_initmsg() zero-fills as a miss-fallback;
- * the schema fill above produces values inside the kernel's accept window
- * and lets struct_field_for_cmp() attribute KCOV-CMP constants at the
- * named slots.
+ * the schema fill above produces values inside the kernel's accept
+ * window.  Schema-aware FILL only -- no field-scoped CMP attribution
+ * for setsockopt optval (see section header).
  */
 static const struct struct_field sctp_initmsg_fields[] = {
 	FIELDX(struct sctp_initmsg, sinit_num_ostreams, FT_RANGE,
@@ -5397,8 +5407,8 @@ static const struct struct_field sctp_initmsg_fields[] = {
 /*
  * struct sctp_rtoinfo -- IPPROTO_SCTP / SCTP_RTOINFO.  Carries the SCTP
  * RTO (retransmission timeout) envelope for an association: assoc_id
- * picks the target association (FT_RAW lets KCOV-CMP attribution catch
- * the kernel's lookup constant) and three __u32 millisecond fields
+ * picks the target association (FT_RAW lets the per-byte splat drive
+ * the kernel's per-assoc lookup) and three __u32 millisecond fields
  * (initial / max / min) bounded to [0, 60000] -- a window wide enough to
  * exercise the kernel's clamp logic without flooding it with absurd
  * values.  Bespoke build_sctp_rtoinfo() zero-fills as a miss-fallback.
@@ -5421,9 +5431,8 @@ static const struct struct_field sctp_rtoinfo_fields[] = {
  * struct sctp_assocparams -- IPPROTO_SCTP / SCTP_ASSOCINFO.  Examines
  * and sets various per-association and endpoint parameters.  sasoc_assoc_id
  * picks the target association (FT_RAW so the per-field splat continues to
- * drive the association lookup and struct_field_for_cmp() can attribute
- * KCOV-CMP constants).  sasoc_asocmaxrxt is the association-level max
- * retransmit (FT_RANGE [0, 16] keeps it within plausible retry budgets).
+ * drive the association lookup).  sasoc_asocmaxrxt is the association-level
+ * max retransmit (FT_RANGE [0, 16] keeps it within plausible retry budgets).
  * sasoc_number_peer_destinations / sasoc_peer_rwnd / sasoc_local_rwnd
  * are FT_RAW (peer-count and window-byte counters with no useful clamp).
  * sasoc_cookie_life is the cookie lifetime in milliseconds, FT_RANGE
@@ -5467,11 +5476,11 @@ static const struct struct_field sctp_setadaptation_fields[] = {
  * SCTP_MAX_BURST, SCTP_STREAM_SCHEDULER }.  Two-field carrier shared by
  * several sockopts that take an (assoc_id, value) pair: assoc_id picks
  * the target association (FT_RAW so the per-field splat continues to
- * drive the association lookup and struct_field_for_cmp() can attribute
- * KCOV-CMP constants), assoc_value is the per-optname payload (FT_RAW --
- * value semantics differ per optname: SCTP_CONTEXT is an opaque cookie,
- * SCTP_MAXSEG / SCTP_MAX_BURST / SCTP_STREAM_SCHEDULER are small integers
- * with kernel-side clamping, so a single FT_RANGE wouldn't fit all four).
+ * drive the association lookup), assoc_value is the per-optname payload
+ * (FT_RAW -- value semantics differ per optname: SCTP_CONTEXT is an
+ * opaque cookie, SCTP_MAXSEG / SCTP_MAX_BURST / SCTP_STREAM_SCHEDULER
+ * are small integers with kernel-side clamping, so a single FT_RANGE
+ * wouldn't fit all four).
  * Bespoke build_sctp_assoc_value() zero-fills as a miss-fallback.
  */
 static const struct struct_field sctp_assoc_value_fields[] = {
@@ -5491,9 +5500,9 @@ static const struct struct_field sctp_assoc_value_fields[] = {
  * on plausible combinations rather than random 16-bit noise.  snd_ppid
  * (peer-visible payload protocol id), snd_context (opaque per-message
  * cookie), and snd_assoc_id (association lookup key) are FT_RAW -- each
- * is either peer-visible / opaque or a lookup constant that
- * struct_field_for_cmp() can attribute against KCOV-CMP.  Bespoke
- * build_sctp_sndinfo() zero-fills as a miss-fallback.
+ * is either peer-visible / opaque or a lookup constant the kernel
+ * compares against.  Bespoke build_sctp_sndinfo() zero-fills as a
+ * miss-fallback.
  */
 static const struct struct_field sctp_sndinfo_fields[] = {
 	FIELDX(struct sctp_sndinfo, snd_sid, FT_RANGE,
@@ -5523,9 +5532,8 @@ static const struct struct_field sctp_sndinfo_fields[] = {
  * rather than random 16-bit noise.  sinfo_ssn / sinfo_ppid /
  * sinfo_context / sinfo_timetolive / sinfo_tsn / sinfo_cumtsn /
  * sinfo_assoc_id are FT_RAW -- each is either peer-visible / opaque or
- * a lookup constant that struct_field_for_cmp() can attribute against
- * KCOV-CMP.  Bespoke build_sctp_sndrcvinfo() zero-fills as a
- * miss-fallback.
+ * a lookup constant the kernel compares against.  Bespoke
+ * build_sctp_sndrcvinfo() zero-fills as a miss-fallback.
  */
 static const struct struct_field sctp_sndrcvinfo_fields[] = {
 	FIELDX(struct sctp_sndrcvinfo, sinfo_stream, FT_RANGE,
@@ -5559,9 +5567,8 @@ static const struct struct_field sctp_sndrcvinfo_fields[] = {
  * notification type.  Each field is FT_RANGE [0, 1] so the per-field
  * splat lands on the in-spec 0/1 values rather than random byte noise;
  * the kernel's setsockopt parser tolerates any non-zero byte as "on",
- * but staying inside [0, 1] keeps the request realistic and gives
- * struct_field_for_cmp() a clean constant to attribute against
- * KCOV-CMP.  Bespoke build_sctp_events() zero-fills as a miss-fallback.
+ * but staying inside [0, 1] keeps the request realistic.  Bespoke
+ * build_sctp_events() zero-fills as a miss-fallback.
  */
 static const struct struct_field sctp_event_subscribe_fields[] = {
 	FIELDX(struct sctp_event_subscribe, sctp_data_io_event, FT_RANGE,
