@@ -946,6 +946,64 @@ void cleanup_release_post_state(struct syscallrecord *rec)
 	tracked_free_now(ptr);
 }
 
+void rec_own(struct syscallrecord *rec, void *ptr)
+{
+	if (ptr == NULL)
+		return;
+
+	/*
+	 * Bound: REC_OWNED_MAX is sized so this branch never fires in
+	 * practice for in-tree callers (heaviest are ~3 buffers, bound
+	 * is 8).  A non-zero overflow rate is a bug to surface, not a
+	 * workload to tolerate: log + counter bump so it cannot fail
+	 * silently, then fall back to the deferred-free ring so the
+	 * caller's "no longer your problem" contract still holds.  The
+	 * fallback re-introduces the pre-dispatch ring-enqueue shape the
+	 * owned list was built to eliminate -- spec acknowledges and
+	 * accepts this trade-off, bounded by the assumption the fallback
+	 * is unreachable.
+	 */
+	if (rec->owned_count >= REC_OWNED_MAX) {
+		__atomic_add_fetch(&shm->stats.rec_owned_overflow_to_ring, 1,
+				   __ATOMIC_RELAXED);
+		outputerr("rec_own: rec->owned[] saturated at %u entries for %s; falling back to deferred_free_enqueue\n",
+			  REC_OWNED_MAX,
+			  rec->entry != NULL ? rec->entry->name : "(unknown)");
+		deferred_free_enqueue(ptr);
+		return;
+	}
+
+	rec->owned[rec->owned_count++] = ptr;
+}
+
+void rec_owned_drain(struct syscallrecord *rec)
+{
+	unsigned int i;
+
+	if (rec->owned_count == 0)
+		return;
+
+	/*
+	 * Walk the carrier high-to-low so a longjmp-interrupted drain
+	 * leaves a contiguous prefix of still-owned slots and a tail of
+	 * cleared (NULL'd, count-decremented) slots.  Critical:
+	 * null the slot AND decrement owned_count BEFORE handing the
+	 * pointer to tracked_free_now() -- if tracked_free_now() (or a
+	 * signal taken during it) longjmps out, a second drain pass on
+	 * this rec (or deferred_free_flush() on child exit) sees no
+	 * residue and cannot double-free.  Mirrors the "clear the slot
+	 * before free" discipline already used by free_ring_entry /
+	 * deferred_free_tick on the deferred-free ring itself.
+	 */
+	for (i = rec->owned_count; i > 0; i--) {
+		void *p = rec->owned[i - 1];
+
+		rec->owned[i - 1] = NULL;
+		rec->owned_count = i - 1;
+		tracked_free_now(p);
+	}
+}
+
 /*
  * Per-process kernel VMA budget, read once from
  * /proc/sys/vm/max_map_count at parent init and inherited by every

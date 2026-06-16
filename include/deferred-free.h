@@ -107,6 +107,51 @@ void tracked_free_now(void *ptr);
 void cleanup_release_post_state(struct syscallrecord *rec);
 
 /*
+ * Per-rec owned-pointer registration.  Append @ptr to rec->owned[],
+ * marking the dispatcher's cleanup phase responsible for releasing it
+ * via tracked_free_now() after dispatch.  Idempotent on NULL.
+ *
+ * This is the unified carrier for sanitiser-owned heap allocations
+ * (and, in later phases, generator-owned struct fills): registration
+ * happens at allocation time, the actual free happens after the
+ * kernel has consumed the buffer, and the cleanup phase runs
+ * unconditionally -- so the buffer cannot be freed before the kernel
+ * has read it (no early-drain UAF) and cannot be leaked when .post
+ * is skipped (retfd_rejected / killed EXTRA_FORK grandchild / etc.).
+ *
+ * Overflow handling: rec->owned[] is bounded at REC_OWNED_MAX.  On
+ * saturation we fall back to deferred_free_enqueue(ptr) and bump
+ * shm->stats.rec_owned_overflow_to_ring so the rate is observable.
+ * This intentionally trades the owned-list's no-UAF guarantee for a
+ * (still bounded) leak / sync-free under the ring's pressure rails:
+ * REC_OWNED_MAX is sized so the fallback is a safety net, not a
+ * steady-state path -- non-zero overflow rate is a bug to surface,
+ * not a workload to tolerate.
+ */
+void rec_own(struct syscallrecord *rec, void *ptr);
+
+/*
+ * Drain rec->owned[]: release every registered pointer via
+ * tracked_free_now() (which keeps the alloc_track[] side-set in
+ * lock-step with the heap), then reset owned_count to zero.
+ *
+ * Called exactly once per dispatched call from the tail of
+ * handle_syscall_ret(), between the per-syscall .cleanup hook and
+ * generic_free_arg().  The drain is itself the "default" cleanup
+ * hook -- most migrated callsites need only register their pointer
+ * via rec_own() at sanitise time; only callers with cleanup logic
+ * richer than "free these pointers" (none today) need a per-syscall
+ * .cleanup function.
+ *
+ * Drain discipline: null each owned[i] BEFORE calling
+ * tracked_free_now(), and decrement owned_count as we go, so a
+ * signal that longjmps mid-drain cannot leave a freed pointer in the
+ * carrier for a second pass (or for deferred_free_flush() on child
+ * exit) to free again.
+ */
+void rec_owned_drain(struct syscallrecord *rec);
+
+/*
  * Enqueue a pointer for deferred freeing.  Always released with free()
  * when the entry's TTL expires; the function-pointer parameter was
  * removed to eliminate the ROP/JOP surface a corrupted ring entry's

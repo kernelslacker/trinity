@@ -155,6 +155,48 @@ struct syscallrecord {
 	 * childdata, so seq lands far outside any hot cacheline.
 	 */
 	uint32_t seq;
+
+	/*
+	 * Per-rec owned-pointer list.  A small fixed-size carrier any
+	 * pre-dispatch phase (sanitise, fill_arg generators, nested
+	 * struct fills) appends to via rec_own(); the dispatcher's
+	 * cleanup phase drains it via rec_owned_drain() exactly once
+	 * per dispatched call, unconditionally -- on success, on
+	 * failure, on the validator_rejected early-EINVAL skip, on the
+	 * --dry-run synthesised ENOSYS path, and on the EXTRA_FORK
+	 * grandchild that died before AFTER.  Lets a sanitiser register
+	 * ownership of a heap buffer at allocation time without having
+	 * to enqueue it onto the deferred-free ring before the kernel
+	 * has read it (the lifetime-inversion shape that motivated this
+	 * carrier in the first place: a pre-dispatch enqueue survives
+	 * today only because the ring TTL outlasts the in-flight
+	 * syscall, and any early-drain path -- ENOMEM dispose, full-
+	 * ring eviction -- can free a buffer the kernel is still
+	 * reading).
+	 *
+	 * Sized to cover every in-tree sanitiser with headroom: the
+	 * heaviest planned callers (execve, io_uring_setup, setsockopt)
+	 * own <= 3 buffers; nested cataloged-struct fills (Phase 5) are
+	 * the only path that can plausibly approach the bound, and a
+	 * static_assert there can grow the limit if a future addition
+	 * pushes past it.  Overflow degrades to deferred_free_enqueue()
+	 * (with a stat bump) rather than leaking; see rec_own() for the
+	 * fallback rationale.
+	 *
+	 * Memory cost: REC_OWNED_MAX * sizeof(void *) + sizeof(unsigned
+	 * int) ~= 68 bytes per rec, in the cold tail of the rec which
+	 * is itself in the cold tail of struct childdata -- no hot-
+	 * cacheline impact.  Reset to empty (owned_count = 0) at the
+	 * top of generate_syscall_args() alongside the rec->post_state
+	 * reset hoist, so a sanitise-less minicorpus-replay step cannot
+	 * inherit a stale entry from the previous dispatch.
+	 *
+	 * Placed after seq so the seq field's offset (and every
+	 * existing field offset above it) stay put.
+	 */
+#define REC_OWNED_MAX	8
+	void		*owned[REC_OWNED_MAX];
+	unsigned int	owned_count;
 };
 
 #define REC_CANARY_MAGIC	0xdeadbeefcafebabeULL
