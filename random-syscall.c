@@ -530,7 +530,8 @@ retry:
  * fallback the rest of the codebase already takes (see
  * kcov_syscall_cold_skip_pct in kcov.c for the sibling pattern).
  */
-static unsigned long frontier_cold_weight(unsigned int nr)
+static unsigned long frontier_cold_weight(unsigned int nr,
+					  struct childdata *child)
 {
 	unsigned long edges, calls;
 	unsigned long bucket_bits, distinct_pcs;
@@ -683,12 +684,12 @@ static unsigned long frontier_cold_weight(unsigned int nr)
 	 * 2*ilog2(distinct_pcs) + ilog2(transition_edges_real_local))
 	 * productivity scores.  Counter names predate the transition
 	 * term but the semantics ("how often the blend would steer
-	 * differently") are unchanged.  Under COMBINED the function
-	 * returns blend_weight below and these counters measure the
-	 * LIVE behaviour delta against the still-recorded OLD shape;
-	 * under SHADOW_ONLY/OFF the function returns old_weight and
-	 * these counters measure the would-be divergence the operator
-	 * is weighing for promotion. */
+	 * differently") are unchanged.  The counters fire from both
+	 * arms in lock-step so the would-be divergence stays observable
+	 * regardless of which arm the calling child is stamped under;
+	 * the LIVE behaviour delta from Arm B's blend_weight promotion
+	 * shows up downstream in frontier_silent_picks / per-syscall
+	 * pick rates rather than in these sums. */
 	__atomic_fetch_add(&shm->stats.frontier_blend_samples, 1UL,
 			   __ATOMIC_RELAXED);
 	__atomic_fetch_add(&shm->stats.frontier_blend_old_weight_sum,
@@ -705,11 +706,18 @@ static unsigned long frontier_cold_weight(unsigned int nr)
 		__atomic_fetch_add(&shm->stats.frontier_blend_new_equal,
 				   1UL, __ATOMIC_RELAXED);
 
-	/* COMBINED mode promotes the blend (now including the transition
-	 * term) to the live picker.  Any other mode -- SHADOW_ONLY (the
-	 * default) or OFF -- returns the historical OLD weight, keeping
-	 * live selection byte-identical to the pre-knob baseline. */
-	if (trew_mode == KCOV_TRANSITION_REWARD_COMBINED)
+	/* Per-child A/B arm promotes the blend (now including the
+	 * transition term) to the live picker for half the children
+	 * (Arm B); the other half (Arm A) returns the historical OLD
+	 * weight so the picker's per-syscall distribution stays byte-
+	 * identical to the pre-blend baseline for that cohort.  The
+	 * frontier_blend_* shm counters above record the would-be
+	 * divergence for both arms in lock-step, so the operator can
+	 * read the live promotion delta off a single run instead of
+	 * gating it on a fleet-wide mode flip.  child==NULL (parent
+	 * context, should not reach here under the FRONTIER picker)
+	 * falls back to the OLD weight to preserve baseline behaviour. */
+	if (child != NULL && child->frontier_blend_arm_b)
 		return blend_weight;
 	return old_weight;
 }
@@ -847,7 +855,7 @@ retry:
 		__atomic_fetch_add(&shm->stats.frontier_live_picks, 1UL,
 				   __ATOMIC_RELAXED);
 	} else {
-		unsigned long w = frontier_cold_weight(syscallnr);
+		unsigned long w = frontier_cold_weight(syscallnr, child);
 		unsigned long denom = (unsigned long)FRONTIER_COLD_SCALE + 1UL;
 		unsigned long roll = (unsigned long)rnd_modulo_u32(denom);
 
