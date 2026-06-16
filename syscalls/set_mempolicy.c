@@ -1,6 +1,7 @@
 /*
  * SYSCALL_DEFINE3(set_mempolicy, int, mode, unsigned long __user *, nmask, unsigned long, maxnode)
  */
+#include "nodemask.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -35,35 +36,13 @@ static unsigned long mempolicy_modes[] = {
 	MPOL_WEIGHTED_INTERLEAVE,
 };
 
-#define MAX_NUMNODES 64
-
 static void sanitise_set_mempolicy(struct syscallrecord *rec)
 {
-	unsigned long *mask;
-	unsigned int maxnode;
-
-	/* Nodemask is a bitmap, one bit per NUMA node. */
-	maxnode = 1 + (rnd_modulo_u32(MAX_NUMNODES));
-	mask = (unsigned long *) get_writable_address(sizeof(unsigned long) * 2);
-	if (mask == NULL)
-		return;
-	mask[0] = 0;
-	mask[1] = 0;
-
-	switch (rnd_modulo_u32(3)) {
-	case 0: /* node 0 only (most common on non-NUMA) */
-		mask[0] = 1;
-		break;
-	case 1: /* first few nodes */
-		mask[0] = (1UL << (1 + (rnd_modulo_u32(4)))) - 1;
-		break;
-	default: /* random bits */
-		mask[0] = rand32();
-		break;
-	}
-
-	rec->a2 = (unsigned long) mask;
-	rec->a3 = maxnode;
+	/* maxnode is the bit count the kernel uses to size its
+	 * copy_from_user(ceil(maxnode/8)) of the nodemask.  Cap at
+	 * NODEMASK_POOL_BITS so the copy stays inside the ARG_NODEMASK
+	 * pool buffer the foundation generator hands to a2. */
+	rec->a3 = 1 + rnd_modulo_u32(NODEMASK_POOL_BITS);
 
 	/* Mode flags live in the high bits of the mode arg.  OR in
 	 * MPOL_F_NUMA_BALANCING occasionally; only valid with MPOL_BIND
@@ -84,7 +63,7 @@ static void sanitise_set_mempolicy(struct syscallrecord *rec)
 struct syscallentry syscall_set_mempolicy = {
 	.name = "set_mempolicy",
 	.num_args = 3,
-	.argtype = { [0] = ARG_OP, [2] = ARG_LEN },
+	.argtype = { [0] = ARG_OP, [1] = ARG_NODEMASK, [2] = ARG_LEN },
 	.argname = { [0] = "mode", [1] = "nmask", [2] = "maxnode" },
 	.arg_params[0].list = ARGLIST(mempolicy_modes),
 	.rettype = RET_ZERO_SUCCESS,
