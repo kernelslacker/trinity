@@ -332,16 +332,26 @@ retry:
  * sub-retries) plus the fd_hash_lookup recovery path.  If we still
  * cannot produce a usable fd (>2, tracked-or-over-budget) after this
  * many outer iterations, bail and return -1.  Callers cast the result
- * to unsigned long and pass it as a syscall arg, so an exhausted-pool
+ * to unsigned long and pass it as a syscall arg, so an outer-budget
  * bail surfaces to the kernel as EBADF — same handling already in
  * place for the existing -1/<=2 returns.
  *
- * Without this bound, an empty/broken provider pool combined with a
- * persistently <=2 or untracked return from get_new_random_fd() can
- * tight-loop in argument generation.  Because the syscall record is
- * still in PREP at that point, the parent's progress check (which
- * only acts from BEFORE onward) does not consider the child stuck and
- * will not kill it, so a single child can burn a CPU indefinitely.
+ * get_new_random_fd() itself has two distinct paths that can return
+ * -1, both of which feed back into this outer regen loop:
+ *   (1) the populated-provider list is empty — no providers are
+ *       active, or every active provider's OBJ_GLOBAL pool is
+ *       currently empty/broken; and
+ *   (2) the inner per-attempt retry budget (10 rerolls) is exhausted
+ *       because every draw from the chosen provider came back <=2
+ *       (stdin/stdout/stderr or a transient provider-side -1).
+ * The bound below has to guard against either source, not just (1).
+ *
+ * Without this bound, either of those -1 sources — or a persistently
+ * untracked return from get_new_random_fd() — can tight-loop in
+ * argument generation.  Because the syscall record is still in PREP
+ * at that point, the parent's progress check (which only acts from
+ * BEFORE onward) does not consider the child stuck and will not kill
+ * it, so a single child can burn a CPU indefinitely.
  */
 #define GET_RANDOM_FD_BUDGET 64
 
