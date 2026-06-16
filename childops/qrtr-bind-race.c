@@ -148,8 +148,11 @@ static __attribute__((noreturn)) void qrtr_bind_child(uint32_t port)
 	int fd;
 
 	fd = socket(AF_QRTR, SOCK_DGRAM, 0);
-	if (fd < 0)
+	if (fd < 0) {
+		__atomic_add_fetch(&shm->stats.qrtr_bind_setup_fail,
+				   1, __ATOMIC_RELAXED);
 		_exit(0);
+	}
 
 	/* qrtr_bind() rejects with -EINVAL if sq_node doesn't match the
 	 * socket's own node (the kernel checks BEFORE the bind body, so
@@ -158,8 +161,11 @@ static __attribute__((noreturn)) void qrtr_bind_child(uint32_t port)
 	 * the qrtr_local_nid module param (default 1, not 0), so query it
 	 * via getsockname() rather than hardcoding. */
 	memset(&local, 0, sizeof(local));
-	if (getsockname(fd, (struct sockaddr *)&local, &slen) < 0)
+	if (getsockname(fd, (struct sockaddr *)&local, &slen) < 0) {
+		__atomic_add_fetch(&shm->stats.qrtr_bind_setup_fail,
+				   1, __ATOMIC_RELAXED);
 		_exit(0);
+	}
 
 	memset(&sq, 0, sizeof(sq));
 	sq.sq_family = AF_QRTR;

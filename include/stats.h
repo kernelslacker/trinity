@@ -193,6 +193,13 @@ struct stats_s {
 	unsigned long lsm_list_modules_oracle_anomalies;
 	unsigned long listmount_oracle_anomalies;
 	unsigned long statmount_oracle_anomalies;
+	/* sanitise_statmount() bailed before assigning rec->aN because the
+	 * csfu mnt_id_req allocation came back NULL.  Without this counter
+	 * a statmount syscall whose setup always failed presents as a
+	 * silently-zero op in the dispatch histogram -- the syscall path
+	 * has no other place to record a pre-syscall abort.  Bumped from
+	 * sanitise_statmount; the post handler stays untouched. */
+	unsigned long statmount_setup_fail;
 	unsigned long getsockname_oracle_anomalies;
 	unsigned long getpeername_oracle_anomalies;
 	unsigned long file_getattr_oracle_anomalies;
@@ -1425,6 +1432,14 @@ struct stats_s {
 	unsigned long qrtr_bind_race_spawn_pair_ok;		/* both bind workers spawned for this round */
 	unsigned long qrtr_bind_race_sibling_reaped_ok;		/* worker exited normally and was reaped */
 	unsigned long qrtr_bind_race_sibling_crashed;		/* worker killed by signal (SEGV/BUS/KILL) -- forensic hint */
+	/* In-worker setup-fail: bumped from the forked bind-child when its
+	 * own socket(AF_QRTR) or getsockname() returns -1 before the bind
+	 * attempt.  Distinct from qrtr_bind_race_setup_failed, which only
+	 * fires from the parent-side probe latch and is invisible to a worker
+	 * that crashes during its own per-iter setup phase.  Without this
+	 * counter an op whose workers all fail setup looks identical to one
+	 * that succeeded silently. */
+	unsigned long qrtr_bind_setup_fail;
 
 	/* pfkey_spd_walk childop counters */
 	unsigned long pfkey_spd_walk_runs;			/* total pfkey_spd_walk invocations */
@@ -1434,6 +1449,19 @@ struct stats_s {
 	unsigned long pfkey_spd_walk_spawn_pair_ok;		/* both walker + racer spawned for this round */
 	unsigned long pfkey_spd_walk_sibling_reaped_ok;		/* worker exited normally and was reaped */
 	unsigned long pfkey_spd_walk_sibling_crashed;		/* worker killed by signal (SEGV/BUS/KILL) -- forensic hint */
+	/* SPDGET resolution counters.  The racer alternates SADB_X_SPDDUMP
+	 * with SADB_X_SPDGET against a small set of policy ids; the SPDDUMP
+	 * arm always finds something to walk, but kernel-assigned policy
+	 * ids are sparse and the SPDGET arm typically never lands on a live
+	 * id.  pfkey_spdget_resolved bumps when an inbound SPDGET reply
+	 * carries sadb_msg_errno == 0 (the kernel resolved the id);
+	 * pfkey_spdget_missed bumps when the reply carries a nonzero errno
+	 * (typically -ESRCH).  A 0% resolved rate over a long run flags
+	 * that the SPDGET arm is contributing no real coverage and the id
+	 * pool needs to be steered toward live ids -- counter-only here;
+	 * the sparse-id root cause is tracked separately. */
+	unsigned long pfkey_spdget_resolved;
+	unsigned long pfkey_spdget_missed;
 
 	/* l2tp_ifname_race childop counters */
 	unsigned long l2tp_ifname_race_runs;			/* total l2tp_ifname_race invocations */

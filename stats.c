@@ -1440,6 +1440,7 @@ static const struct stat_field qrtr_bind_race_fields[] = {
 	STAT_FIELD(qrtr_bind_race, spawn_pair_ok),
 	STAT_FIELD(qrtr_bind_race, sibling_reaped_ok),
 	STAT_FIELD(qrtr_bind_race, sibling_crashed),
+	STAT_FIELD(qrtr_bind, setup_fail),
 };
 
 static const struct stat_category qrtr_bind_race_category =
@@ -1455,6 +1456,8 @@ static const struct stat_field pfkey_spd_walk_fields[] = {
 	STAT_FIELD(pfkey_spd_walk, spawn_pair_ok),
 	STAT_FIELD(pfkey_spd_walk, sibling_reaped_ok),
 	STAT_FIELD(pfkey_spd_walk, sibling_crashed),
+	STAT_FIELD(pfkey, spdget_resolved),
+	STAT_FIELD(pfkey, spdget_missed),
 };
 
 static const struct stat_category pfkey_spd_walk_category =
@@ -5936,6 +5939,9 @@ static void dump_stats_oracle_anomalies(void)
 	if (shm->stats.statmount_oracle_anomalies)
 		stat_row("oracle", "statmount_anomalies",
 			 shm->stats.statmount_oracle_anomalies);
+	if (shm->stats.statmount_setup_fail)
+		stat_row("syscall", "statmount_setup_fail",
+			 shm->stats.statmount_setup_fail);
 	if (shm->stats.getsockname_oracle_anomalies)
 		stat_row("oracle", "getsockname_anomalies",
 			 shm->stats.getsockname_oracle_anomalies);
