@@ -63,54 +63,7 @@ static unsigned long pick_affinity_len(void)
 
 static void sanitise_sched_setaffinity(struct syscallrecord *rec)
 {
-	cpu_set_t *mask;
-	unsigned int online = cached_online_cpus();
-	unsigned int i, bits, idx;
-	unsigned int roll;
-
-	mask = (cpu_set_t *) get_writable_struct(sizeof(*mask));
-	if (!mask)
-		return;
-	CPU_ZERO(mask);
-
-	/*
-	 * Mask shape buckets, weighted toward shapes the kernel does not
-	 * silently reject: 30% single online CPU, 25% sparse subset,
-	 * 20% all-online, 15% offline bits set above num_online_cpus
-	 * (kernel silently strips -- keeps the strip path warm), 10%
-	 * empty (must EINVAL).  CPU_SETSIZE-wide random draws otherwise
-	 * almost always have no bits in cpu_online_mask.
-	 */
-	roll = rnd_modulo_u32(100);
-
-	if (roll < 30) {
-		CPU_SET(rnd_modulo_u32(online), mask);
-	} else if (roll < 55) {
-		bits = 1 + rnd_modulo_u32(online);
-		for (i = 0; i < bits; i++) {
-			idx = rnd_modulo_u32(online);
-			CPU_SET(idx, mask);
-		}
-	} else if (roll < 75) {
-		for (i = 0; i < online; i++)
-			CPU_SET(i, mask);
-	} else if (roll < 90) {
-		if (online < CPU_SETSIZE) {
-			unsigned int span = CPU_SETSIZE - online;
-			bits = 1 + rnd_modulo_u32(span);
-			for (i = 0; i < bits; i++) {
-				idx = online +
-					rnd_modulo_u32(span);
-				CPU_SET(idx, mask);
-			}
-		} else {
-			CPU_SET(rnd_modulo_u32(CPU_SETSIZE), mask);
-		}
-	}
-	/* else: empty mask -- CPU_ZERO already done above. */
-
 	rec->a2 = pick_affinity_len();
-	rec->a3 = (unsigned long) mask;
 }
 
 struct syscallentry syscall_sched_setaffinity = {
@@ -118,7 +71,7 @@ struct syscallentry syscall_sched_setaffinity = {
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_SCHED,
 	.num_args = 3,
-	.argtype = { [0] = ARG_PID, [1] = ARG_LEN },
+	.argtype = { [0] = ARG_PID, [1] = ARG_LEN, [2] = ARG_CPUMASK },
 	.argname = { [0] = "pid", [1] = "len", [2] = "user_mask_ptr" },
 	.sanitise = sanitise_sched_setaffinity,
 };
