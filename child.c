@@ -69,6 +69,16 @@ _Static_assert(offsetof(struct childdata, syscall) >= 64,
 	"struct childdata: syscallrecord drifted into the hot cacheline");
 
 /*
+ * Pin the kcov local-stats staging pointer (a cold field, touched
+ * only on the periodic-flush path) outside the leading hot cacheline
+ * so a future field reorder that drags it into the per-syscall hot
+ * block fails the build instead of silently shrinking the budget the
+ * kcov / last_group / op_nr triplet was tuned to fit.
+ */
+_Static_assert(offsetof(struct childdata, local_stats) >= 64,
+	"struct childdata: local_stats drifted into the hot cacheline");
+
+/*
  * Hard per-child virtual-memory cap.  A single runaway mmap/mremap (or the
  * cumulative drift of N children each growing to multi-GiB) can push the
  * machine into global OOM; with memory.oom.group on the user slice that
@@ -1019,6 +1029,14 @@ static void init_child_setup_sandbox(struct childdata *child, int childno)
 static void init_child_runtime_config(struct childdata *child, int childno)
 {
 	kcov_init_child(&child->kcov, child->num);
+
+	/* Per-child staging buffer for the kcov global counters.  Pure
+	 * plumbing in this commit -- nothing bumps these fields yet and
+	 * kcov_child_flush_stats() is a no-op stub.  calloc post-fork
+	 * keeps the allocation child-private (matches kc->dedup); an
+	 * alloc failure leaves the pointer NULL and the future bumpers
+	 * / flush path will gate on local_stats != NULL. */
+	child->local_stats = calloc(1, sizeof(*child->local_stats));
 
 	/* Uniarch: pin the active-syscalls pointer once.  Biarch leaves
 	 * this NULL — the first choose_syscall_table call refreshes it. */

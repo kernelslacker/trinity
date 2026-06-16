@@ -299,6 +299,16 @@ struct childdata {
 
 	/* ---- End of hot leading cacheline ---- */
 
+	/* Per-child staging for the kcov global counters.  See struct
+	 * kcov_child_local_stats in include/kcov.h for the field set and
+	 * the flush contract.  MUST sit after op_nr -- folding the
+	 * counters into struct kcov_child itself would push op_nr past
+	 * the 64-byte hot cacheline budget (the static_assert in child.c
+	 * pins op_nr there) and the static_assert below pins this field
+	 * to >= 64 so a future reorder that drags it into the hot line
+	 * fails the build. */
+	struct kcov_child_local_stats *local_stats;
+
 	/* Warm fields: read or written per call but not in inner retry
 	 * loops.  Kept adjacent so the second cacheline absorbs whatever
 	 * the first one missed. */

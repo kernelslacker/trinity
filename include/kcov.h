@@ -552,6 +552,28 @@ struct kcov_child {
 	struct kcov_dedup_slot *dedup;	/* KCOV_DEDUP_SIZE entries, child-private */
 };
 
+/* Per-child local staging for the kcov global counters
+ * (kcov_shared::total_calls / remote_calls / total_pcs).  Bumped on
+ * the hot per-syscall path inside the owning child and flushed in
+ * batches into the shared atomics via kcov_child_flush_stats() so the
+ * shared cacheline stops bouncing on every call.  Pure plumbing in
+ * this commit -- no migration of bumpers yet, the flush stub is a
+ * no-op, and nothing reads these counters.  Lives behind a pointer on
+ * struct childdata (NOT inside struct kcov_child, which is pinned to
+ * 48 bytes by the static_assert on offsetof(childdata, op_nr) < 64 --
+ * folding scalar counters in would push op_nr out of the leading hot
+ * cacheline). */
+struct kcov_child_local_stats {
+	unsigned long total_calls;
+	unsigned long remote_calls;
+	unsigned long total_pcs;
+	/* Number of syscalls since the last flush.  Drives the
+	 * flush-cadence heuristic the future kcov_child_flush_stats()
+	 * implementation will use; bumped alongside total_calls and
+	 * cleared on flush. */
+	unsigned int local_syscalls_since_flush;
+};
+
 /* observability: the four generate-args.c callsites
  * that pull a cmp_hint via cmp_hints_try_get() are partitioned into
  * fixed buckets so the per-callsite injection-rate split is visible in
@@ -1513,6 +1535,19 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id);
 
 /* Called per-child on exit to clean up. */
 void kcov_cleanup_child(struct kcov_child *kc);
+
+/* Forward declaration -- kcov.h cannot include child.h (child.h
+ * includes kcov.h for struct kcov_child), so the flush stub takes
+ * a forward-declared childdata pointer. */
+struct childdata;
+
+/* Drain the per-child kcov_child_local_stats counters into the
+ * shared kcov_shared atomics.  No-op stub today -- this commit is
+ * pure plumbing for the per-child local-counter staging path; no
+ * bumper has been migrated to the staging counters yet, so the flush
+ * has nothing to publish.  Callers will be added incrementally in
+ * follow-up commits. */
+void kcov_child_flush_stats(struct childdata *child);
 
 /* Bracket the actual syscall() call with these. No-ops if !active. */
 void kcov_enable_trace(struct kcov_child *kc);
