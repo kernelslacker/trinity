@@ -64,11 +64,11 @@ static void sanitise_getxattrat(struct syscallrecord *rec)
 			return;
 
 		/*
-		 * Hand the csfu buffer to the deferred-free queue up front
-		 * so the value-buffer allocation failure path below cannot
-		 * leak it.
+		 * Hand the csfu buffer to the per-record owned-pointer
+		 * carrier so the post-dispatch cleanup drain frees it
+		 * deterministically after .post runs.
 		 */
-		deferred_free_enqueue_or_leak(args);
+		rec_own(rec, args);
 
 		/*
 		 * Non-EXACT buckets get rejected on size by the validator
