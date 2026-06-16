@@ -297,7 +297,7 @@ def c_string_literal(s: str) -> str:
         elif 0x20 <= ord(ch) <= 0x7e:
             out.append(ch)
         else:
-            out.append(f'\\x{ord(ch):02x}')
+            out.append(f'\\{ord(ch):03o}')
     out.append('"')
     return ''.join(out)
 
