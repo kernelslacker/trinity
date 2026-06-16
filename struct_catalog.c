@@ -5309,6 +5309,29 @@ static const struct struct_field group_req_fields[] = {
 	FIELD(struct group_req, gr_group),
 };
 
+/*
+ * struct group_source_req -- IPPROTO_IP / IPPROTO_IPV6 /
+ * MCAST_{JOIN,LEAVE}_SOURCE_GROUP / MCAST_{BLOCK,UNBLOCK}_SOURCE.
+ * Source-filter sibling of group_req: same ifindex + group-address
+ * payload, with an additional sockaddr_storage carrying the source
+ * address (AF_INET sin_addr / AF_INET6 sin6_addr in the unicast
+ * source range).  The protocol-independent MCAST_*_SOURCE optnames
+ * accept the same payload under both IPv4 and IPv6 levels.
+ * gsr_interface tags FT_RANGE over the same small ifindex window
+ * used for gr_interface / mr_ifindex; gsr_group and gsr_source are
+ * left FT_RAW.  A multicast-addr bias on gsr_group (and a unicast
+ * bias on gsr_source) is a follow-up, mirroring the group_req
+ * deferral; FT_RAW is the accepted default for the initial
+ * registration since no bespoke builder for this shape exists.
+ */
+static const struct struct_field group_source_req_fields[] = {
+	FIELDX(struct group_source_req, gsr_interface, FT_RANGE,
+	       .u.range = { 0, 4 },
+	       .mutate_weight = 60),
+	FIELD(struct group_source_req, gsr_group),
+	FIELD(struct group_source_req, gsr_source),
+};
+
 #ifdef USE_TCP_REPAIR_OPT
 /*
  * struct tcp_repair_opt -- IPPROTO_TCP / TCP_REPAIR_OPTIONS.  The kernel
@@ -6349,6 +6372,12 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= group_req_fields,
 		.num_fields	= ARRAY_SIZE(group_req_fields),
 	},
+	[SC_GROUP_SOURCE_REQ] = {
+		.name		= "group_source_req",
+		.struct_size	= sizeof(struct group_source_req),
+		.fields		= group_source_req_fields,
+		.num_fields	= ARRAY_SIZE(group_source_req_fields),
+	},
 #ifdef USE_TCP_REPAIR_OPT
 	[SC_TCP_REPAIR_OPT] = {
 		.name		= "tcp_repair_opt",
@@ -6684,6 +6713,18 @@ static const unsigned long setsockopt_mcast_levels[] = {
 static const unsigned long setsockopt_mcast_join_optnames[] = {
 	MCAST_JOIN_GROUP,
 	MCAST_LEAVE_GROUP,
+};
+
+/*
+ * Source-filter optnames in the same protocol-independent MCAST_*
+ * family, sharing setsockopt_mcast_levels[] with the join/leave row.
+ * Sibling list for the group_source_req payload shape.
+ */
+static const unsigned long setsockopt_mcast_source_optnames[] = {
+	MCAST_JOIN_SOURCE_GROUP,
+	MCAST_LEAVE_SOURCE_GROUP,
+	MCAST_BLOCK_SOURCE,
+	MCAST_UNBLOCK_SOURCE,
 };
 
 #ifdef USE_SCTP
@@ -7519,6 +7560,15 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 		.discrim2_arg_idx	= 3,
 		.discrim2_values	= setsockopt_mcast_join_optnames,
 		.num_discrim2_values	= ARRAY_SIZE(setsockopt_mcast_join_optnames),
+	},
+	{
+		"setsockopt", 4, &struct_catalog[SC_GROUP_SOURCE_REQ],
+		.discrim_arg_idx	= 2,
+		.discrim_values		= setsockopt_mcast_levels,
+		.num_discrim_values	= ARRAY_SIZE(setsockopt_mcast_levels),
+		.discrim2_arg_idx	= 3,
+		.discrim2_values	= setsockopt_mcast_source_optnames,
+		.num_discrim2_values	= ARRAY_SIZE(setsockopt_mcast_source_optnames),
 	},
 #ifdef USE_TCP_REPAIR_OPT
 	{
