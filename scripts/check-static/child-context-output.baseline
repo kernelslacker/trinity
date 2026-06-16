@@ -216,10 +216,10 @@ syscalls/pipe.c:185:post_pipe
 syscalls/pkey.c:127:post_pkey_alloc
 syscalls/poll.c:146:post_poll
 syscalls/poll.c:155:post_poll
-syscalls/poll.c:284:post_ppoll
-syscalls/poll.c:296:post_ppoll
-syscalls/poll.c:313:post_ppoll
-syscalls/poll.c:323:post_ppoll
+syscalls/poll.c:295:post_ppoll
+syscalls/poll.c:307:post_ppoll
+syscalls/poll.c:324:post_ppoll
+syscalls/poll.c:334:post_ppoll
 syscalls/prctl.c:392:post_prctl
 syscalls/prctl.c:424:post_prctl
 syscalls/prctl.c:432:post_prctl
