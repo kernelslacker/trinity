@@ -227,6 +227,7 @@ enum argtype {
 	ARG_ITIMERSPEC,	/* writable pool buffer filled with a bucketed struct itimerspec (timer_settime) */
 	ARG_TIMEVAL,	/* writable pool buffer filled with a bucketed struct timeval (settimeofday/adjtime) */
 	ARG_NODEMASK,	/* writable pool buffer filled with a valid-ish NUMA nodemask bitmap */
+	ARG_CPUMASK,	/* writable pool buffer filled with a valid-ish CPU affinity mask (cpu_set_t) */
 	ARG_BUF_SIZED,	/* writable pool buffer + coherent paired byte length */
 	ARG_BUF_LEN,	/* paired byte-length sibling of ARG_BUF_SIZED */
 	ARG_IOVEC,
