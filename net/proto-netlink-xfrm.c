@@ -797,7 +797,7 @@ static bool sa_ring_pick(struct xfrm_sa_track *out, unsigned int *idx_out)
 	if (count == 0)
 		return false;
 
-	pick = rand32() % count;
+	pick = rnd_modulo_u32(count);
 	for (i = 0; i < NR_SA_RING_SLOTS; i++) {
 		if (!sa_ring[i].used)
 			continue;
@@ -873,7 +873,7 @@ static bool policy_ring_pick(struct xfrm_policy_track *out, unsigned int *idx_ou
 	if (count == 0)
 		return false;
 
-	pick = rand32() % count;
+	pick = rnd_modulo_u32(count);
 	for (i = 0; i < NR_POLICY_RING_SLOTS; i++) {
 		if (!policy_ring[i].used)
 			continue;
@@ -945,7 +945,7 @@ static size_t append_auth_trunc(unsigned char *buf, size_t off, size_t cap)
 {
 	struct xfrm_algo_auth *au;
 	unsigned char abuf[sizeof(*au) + 64];
-	const char *name = auth_trunc_names[rand32() % ARRAY_SIZE(auth_trunc_names)];
+	const char *name = RAND_ARRAY(auth_trunc_names);
 	unsigned int key_bits = 128 + ((rand32() & 3) * 64);	/* 128/192/256/320 */
 	unsigned int key_bytes = key_bits / 8;
 
@@ -965,7 +965,7 @@ static size_t append_auth_trunc(unsigned char *buf, size_t off, size_t cap)
 			96, 128, 160, 192, 256,
 			0,			/* invalid -- exercises rejection */
 		};
-		au->alg_trunc_len = trunc_choices[rand32() % ARRAY_SIZE(trunc_choices)];
+		au->alg_trunc_len = RAND_ARRAY(trunc_choices);
 		if ((rand32() & 7) == 0)
 			au->alg_trunc_len = key_bits + 8;	/* oversized */
 	}
@@ -979,7 +979,7 @@ static size_t append_crypt(unsigned char *buf, size_t off, size_t cap)
 {
 	struct xfrm_algo *enc;
 	unsigned char ebuf[sizeof(*enc) + 64];
-	const char *name = crypt_names[rand32() % ARRAY_SIZE(crypt_names)];
+	const char *name = RAND_ARRAY(crypt_names);
 	unsigned int key_bits = 128 + ((rand32() & 3) * 64);
 	unsigned int key_bytes = key_bits / 8;
 
@@ -1000,7 +1000,7 @@ static size_t append_aead(unsigned char *buf, size_t off, size_t cap)
 {
 	struct xfrm_algo_aead *aead;
 	unsigned char abuf[sizeof(*aead) + 64];
-	const char *name = aead_names[rand32() % ARRAY_SIZE(aead_names)];
+	const char *name = RAND_ARRAY(aead_names);
 	unsigned int key_bits = 160 + ((rand32() & 3) * 32);	/* 160/192/224/256 */
 	unsigned int key_bytes = key_bits / 8;
 	static const unsigned int icv_choices[] = { 64, 96, 128, 160, 192 };
@@ -1012,7 +1012,7 @@ static size_t append_aead(unsigned char *buf, size_t off, size_t cap)
 	aead = (struct xfrm_algo_aead *)abuf;
 	strncpy(aead->alg_name, name, sizeof(aead->alg_name) - 1);
 	aead->alg_key_len = key_bits;
-	aead->alg_icv_len = icv_choices[rand32() % ARRAY_SIZE(icv_choices)];
+	aead->alg_icv_len = RAND_ARRAY(icv_choices);
 	generate_rand_bytes((unsigned char *)aead->alg_key, key_bytes);
 
 	return xfrm_nla_put(buf, off, cap, XFRMA_ALG_AEAD,
@@ -1023,7 +1023,7 @@ static size_t append_comp(unsigned char *buf, size_t off, size_t cap)
 {
 	struct xfrm_algo *comp;
 	unsigned char cbuf[sizeof(*comp) + 8];
-	const char *name = comp_names[rand32() % ARRAY_SIZE(comp_names)];
+	const char *name = RAND_ARRAY(comp_names);
 
 	memset(cbuf, 0, sizeof(cbuf));
 	comp = (struct xfrm_algo *)cbuf;
@@ -1055,10 +1055,10 @@ static size_t append_encap_maybe(unsigned char *buf, size_t off, size_t cap)
 		return off;	/* skip half the time -- "no encap" path */
 
 	memset(&encap, 0, sizeof(encap));
-	encap.encap_type  = encap_types[rand32() % ARRAY_SIZE(encap_types)];
-	encap.encap_sport = htons(ports[rand32() % ARRAY_SIZE(ports)] +
+	encap.encap_type  = RAND_ARRAY(encap_types);
+	encap.encap_sport = htons(RAND_ARRAY(ports) +
 				  (rand32() & 1U ? 1024 + (rand32() & 0xfff) : 0));
-	encap.encap_dport = htons(ports[rand32() % ARRAY_SIZE(ports)]);
+	encap.encap_dport = htons(RAND_ARRAY(ports));
 	encap.encap_oa.a4 = (__be32)htonl(0x7f000001U);
 
 	return xfrm_nla_put(buf, off, cap, XFRMA_ENCAP, &encap, sizeof(encap));
@@ -1097,7 +1097,7 @@ static size_t append_replay_maybe(unsigned char *buf, size_t off, size_t cap,
 		};
 		struct xfrm_replay_state_esn *esn;
 		unsigned char ebuf[sizeof(*esn) + 128 * sizeof(__u32)];
-		__u32 win = win_choices[rand32() % ARRAY_SIZE(win_choices)];
+		__u32 win = RAND_ARRAY(win_choices);
 		__u32 bmp_len = (win + 31) / 32;
 
 		if (bmp_len > 128)
@@ -1109,10 +1109,10 @@ static size_t append_replay_maybe(unsigned char *buf, size_t off, size_t cap,
 		esn->oseq          = rand32();
 		esn->seq           = rand32();
 		esn->oseq_hi       = (rand32() & 1)
-			? hi_choices[rand32() % ARRAY_SIZE(hi_choices)]
+			? RAND_ARRAY(hi_choices)
 			: rand32();
 		esn->seq_hi        = (rand32() & 1)
-			? hi_choices[rand32() % ARRAY_SIZE(hi_choices)]
+			? RAND_ARRAY(hi_choices)
 			: rand32();
 		esn->replay_window = win;
 
@@ -1213,11 +1213,11 @@ static __u8 pick_prefixlen(__u16 family)
 	if (family == AF_INET) {
 		static const __u8 choices[] = { 0, 8, 16, 24, 32, 33 };
 
-		return choices[rand32() % ARRAY_SIZE(choices)];
+		return RAND_ARRAY(choices);
 	} else {
 		static const __u8 choices[] = { 0, 32, 64, 96, 128, 129 };
 
-		return choices[rand32() % ARRAY_SIZE(choices)];
+		return RAND_ARRAY(choices);
 	}
 }
 
@@ -1228,7 +1228,7 @@ static __u8 pick_proto(void)
 		IPPROTO_UDP, IPPROTO_TCP, IPPROTO_ICMP, IPPROTO_ICMPV6,
 	};
 
-	return choices[rand32() % ARRAY_SIZE(choices)];
+	return RAND_ARRAY(choices);
 }
 
 static __u8 pick_mode(void)
@@ -1241,7 +1241,7 @@ static __u8 pick_mode(void)
 		XFRM_MODE_IN_TRIGGER,
 	};
 
-	return choices[rand32() % ARRAY_SIZE(choices)];
+	return RAND_ARRAY(choices);
 }
 
 static __u8 pick_sa_proto(void)
@@ -1250,7 +1250,7 @@ static __u8 pick_sa_proto(void)
 		IPPROTO_ESP, IPPROTO_AH, IPPROTO_COMP,
 	};
 
-	return choices[rand32() % ARRAY_SIZE(choices)];
+	return RAND_ARRAY(choices);
 }
 
 static __u16 pick_family(void)
@@ -1292,14 +1292,14 @@ static void fill_lifetime(struct xfrm_lifetime_cfg *lft)
 		0, 1, 60, 3600, 86400, ~0ULL,
 	};
 
-	lft->soft_byte_limit          = byte_choices[rand32() % ARRAY_SIZE(byte_choices)];
-	lft->hard_byte_limit          = byte_choices[rand32() % ARRAY_SIZE(byte_choices)];
-	lft->soft_packet_limit        = pkt_choices[rand32() % ARRAY_SIZE(pkt_choices)];
-	lft->hard_packet_limit        = pkt_choices[rand32() % ARRAY_SIZE(pkt_choices)];
-	lft->soft_add_expires_seconds = sec_choices[rand32() % ARRAY_SIZE(sec_choices)];
-	lft->hard_add_expires_seconds = sec_choices[rand32() % ARRAY_SIZE(sec_choices)];
-	lft->soft_use_expires_seconds = sec_choices[rand32() % ARRAY_SIZE(sec_choices)];
-	lft->hard_use_expires_seconds = sec_choices[rand32() % ARRAY_SIZE(sec_choices)];
+	lft->soft_byte_limit          = RAND_ARRAY(byte_choices);
+	lft->hard_byte_limit          = RAND_ARRAY(byte_choices);
+	lft->soft_packet_limit        = RAND_ARRAY(pkt_choices);
+	lft->hard_packet_limit        = RAND_ARRAY(pkt_choices);
+	lft->soft_add_expires_seconds = RAND_ARRAY(sec_choices);
+	lft->hard_add_expires_seconds = RAND_ARRAY(sec_choices);
+	lft->soft_use_expires_seconds = RAND_ARRAY(sec_choices);
+	lft->hard_use_expires_seconds = RAND_ARRAY(sec_choices);
 }
 
 /*
@@ -1320,7 +1320,7 @@ static int xfrm_emit_newsa(int fd)
 	__u8 mode = pick_mode();
 	__u8 proto = pick_sa_proto();
 	__u32 reqid = (rand32() & 0xff) + 1U;
-	__be32 spi = htonl(0x100U + (rand32() % 0xfff000U));
+	__be32 spi = htonl(0x100U + rnd_modulo_u32(0xfff000U));
 	size_t off;
 	int rc;
 
@@ -1339,7 +1339,7 @@ static int xfrm_emit_newsa(int fd)
 	sa->reqid         = reqid;
 	sa->family        = family;
 	sa->mode          = mode;
-	sa->replay_window = (__u8)(rand32() % 64);
+	sa->replay_window = (__u8)rnd_modulo_u32(64);
 	sa->flags         = (__u8)(rand32() & 0x7f);
 
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*sa));
@@ -1410,24 +1410,24 @@ static int xfrm_emit_newsa(int fd)
  */
 static void pick_spi_range(__u32 *out_min, __u32 *out_max)
 {
-	unsigned int r = rand32() % 100U;
+	unsigned int r = rnd_modulo_u32(100U);
 	__u32 a, b;
 
 	if (r < 60U) {
-		*out_min = 0x100U + (rand32() % 0x1000U);
-		*out_max = *out_min + 0x100U + (rand32() % 0xff00U);
+		*out_min = 0x100U + rnd_modulo_u32(0x1000U);
+		*out_max = *out_min + 0x100U + rnd_modulo_u32(0xff00U);
 	} else if (r < 70U) {
-		*out_min = *out_max = 0x100U + (rand32() % 0xfffffU);
+		*out_min = *out_max = 0x100U + rnd_modulo_u32(0xfffffU);
 	} else if (r < 80U) {
-		a = 0x100U + (rand32() % 0xff00U);
-		b = 0x100U + (rand32() % 0xff00U);
+		a = 0x100U + rnd_modulo_u32(0xff00U);
+		b = 0x100U + rnd_modulo_u32(0xff00U);
 		if (a == b)
 			b++;
 		*out_min = (a > b ? a : b) + 1U;
 		*out_max = (a < b ? a : b);
 	} else if (r < 90U) {
 		*out_min = 0U;
-		*out_max = 0x100U + (rand32() % 0xff00U);
+		*out_max = 0x100U + rnd_modulo_u32(0xff00U);
 	} else {
 		*out_min = rand32() | 0x80000000U;
 		*out_max = ~0U;
@@ -1469,7 +1469,7 @@ static int xfrm_emit_allocspi(int fd)
 	sa->reqid         = reqid;
 	sa->family        = family;
 	sa->mode          = mode;
-	sa->replay_window = (__u8)(rand32() % 64);
+	sa->replay_window = (__u8)rnd_modulo_u32(64);
 	sa->flags         = (__u8)(rand32() & 0x7f);
 	pick_spi_range(&spi->min, &spi->max);
 
@@ -1547,7 +1547,7 @@ static int xfrm_emit_updsa(int fd)
 	sa->reqid         = t.reqid;
 	sa->family        = t.family;
 	sa->mode          = pick_mode();
-	sa->replay_window = (__u8)(rand32() % 64);
+	sa->replay_window = (__u8)rnd_modulo_u32(64);
 	sa->flags         = (__u8)(rand32() & 0x7f);
 
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*sa));
@@ -1720,7 +1720,7 @@ static int xfrm_emit_expire(int fd)
 	fill_lifetime(&sa->lft);
 	sa->reqid         = t.reqid;
 	sa->mode          = pick_mode();
-	sa->replay_window = (__u8)(rand32() % 64);
+	sa->replay_window = (__u8)rnd_modulo_u32(64);
 	sa->flags         = (__u8)(rand32() & 0x7f);
 
 	/* Rotate hard 0/1 -- soft hits the kn->event(STATE_EXPIRED) path
@@ -1803,7 +1803,7 @@ static int xfrm_emit_newpolicy(int fd)
 		}
 	} else {
 		tmpl.id.proto = pick_sa_proto();
-		tmpl.id.spi   = htonl(0x100U + (rand32() % 0xfff000U));
+		tmpl.id.spi   = htonl(0x100U + rnd_modulo_u32(0xfff000U));
 		tmpl.family   = family;
 		tmpl.reqid    = (rand32() & 0xff) + 1U;
 		fill_addresses(family, &tmpl.saddr, &tmpl.id.daddr);
@@ -1879,7 +1879,7 @@ static int xfrm_emit_flushsa(int fd)
 	nlh->nlmsg_seq   = xfrm_next_seq();
 
 	uf = (struct xfrm_usersa_flush *)NLMSG_DATA(nlh);
-	uf->proto = proto_choices[rand32() % ARRAY_SIZE(proto_choices)];
+	uf->proto = RAND_ARRAY(proto_choices);
 
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*uf));
 	nlh->nlmsg_len = (__u32)off;
@@ -1931,8 +1931,8 @@ static int xfrm_emit_migrate(int fd)
 	struct xfrm_userpolicy_id *id;
 	struct xfrm_user_migrate mig[3];
 	__u16 family = pick_family();
-	__u8 dir = (__u8)(rand32() % 3);
-	unsigned int n_slots = 1 + (rand32() % 3);
+	__u8 dir = (__u8)rnd_modulo_u32(3);
+	unsigned int n_slots = 1 + rnd_modulo_u32(3);
 	size_t off, addr_bytes;
 	unsigned int i;
 
@@ -2020,7 +2020,7 @@ static int xfrm_emit_polexpire(int fd)
 		pol->dir = t.dir;
 	} else {
 		fill_selector(&pol->sel, pick_family());
-		pol->dir = (__u8)(rand32() % 3);	/* IN / OUT / FWD */
+		pol->dir = (__u8)rnd_modulo_u32(3);	/* IN / OUT / FWD */
 	}
 	fill_lifetime(&pol->lft);
 	pol->priority = (__u32)(rand32() & 0xffff);
@@ -2076,7 +2076,7 @@ static int xfrm_emit_acquire(int fd)
 	family = pick_family();
 
 	fill_addresses(family, &ua->saddr, &ua->id.daddr);
-	ua->id.spi   = htonl(0x100U + (rand32() % 0xfff000U));
+	ua->id.spi   = htonl(0x100U + rnd_modulo_u32(0xfff000U));
 	ua->id.proto = pick_sa_proto();
 
 	fill_selector(&ua->sel, family);
@@ -2120,7 +2120,7 @@ static int xfrm_emit_acquire(int fd)
 		}
 	} else {
 		tmpl.id.proto = pick_sa_proto();
-		tmpl.id.spi   = htonl(0x100U + (rand32() % 0xfff000U));
+		tmpl.id.spi   = htonl(0x100U + rnd_modulo_u32(0xfff000U));
 		tmpl.family   = family;
 		tmpl.reqid    = (rand32() & 0xff) + 1U;
 		fill_addresses(family, &tmpl.saddr, &tmpl.id.daddr);
@@ -2152,7 +2152,7 @@ static int xfrm_emit_acquire(int fd)
  */
 static __u8 pick_default_byte(void)
 {
-	unsigned int r = rand32() % 100;
+	unsigned int r = rnd_modulo_u32(100);
 
 	if (r < 75)
 		return r % 3;		/* UNSPEC / BLOCK / ACCEPT */
@@ -2289,7 +2289,7 @@ static enum xfrm_msg_kind pick_msg_kind(void)
 	if (total == 0)
 		return XMK_NEWSA;	/* defensive */
 
-	pick = rand32() % total;
+	pick = rnd_modulo_u32(total);
 	for (i = 0; i < XMK_MAX; i++) {
 		accum += weights[i];
 		if (pick < accum)
