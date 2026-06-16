@@ -517,6 +517,11 @@ void clean_childdata(struct childdata *child)
 	 * in init_child_runtime_config below; zero here so the fresh occupant
 	 * defaults to Arm A (current 1-in-16 baseline) until the stamp lands. */
 	child->cmp_hint_inject_arm_b = false;
+	/* handle_arg_op prop_ring A/B stamp -- (re)decided per-child in
+	 * init_child_runtime_config below; zero here so the fresh occupant
+	 * defaults to Arm A (no prop_ring pull at the ARG_OP callsite) until
+	 * the stamp lands. */
+	child->prop_ring_argop_arm_b = false;
 	/* SHADOW cmp-hint feedback scoring stash starts empty for a fresh
 	 * child occupant ([11-feedback-loop]); generate_syscall_args also
 	 * resets at every call boundary, but a fresh-fork clear here means
@@ -1110,6 +1115,24 @@ static void init_child_runtime_config(struct childdata *child, int childno)
 	 * runs that never enter that strategy but stamping anyway keeps
 	 * the field semantics uniform with the other A/B stamps). */
 	child->frontier_blend_arm_b = ONE_IN(2);
+
+	/* A/B-comparison stamp for the prop_ring injection at handle_arg_op's
+	 * ARG_OP callsite.  Independent of redqueen_enabled / boring_filter_
+	 * arm_b / cmp_hint_inject_arm_b / frontier_blend_arm_b so the five A/B
+	 * axes can cross without confounding each other's cohort comparisons.
+	 * Stamped unconditionally (the ARG_OP callsite fires on any syscall
+	 * argument whose argtype is ARG_OP regardless of KCOV mode -- gating
+	 * the stamp on the mode would shrink the sample without any matching
+	 * reduction in the signal we're measuring). */
+	child->prop_ring_argop_arm_b = ONE_IN(2);
+	if (kcov_shm != NULL) {
+		if (child->prop_ring_argop_arm_b)
+			__atomic_fetch_add(&kcov_shm->prop_ring_argop_arm_b_children,
+					   1U, __ATOMIC_RELAXED);
+		else
+			__atomic_fetch_add(&kcov_shm->prop_ring_argop_arm_a_children,
+					   1U, __ATOMIC_RELAXED);
+	}
 
 	/*
 	 * Re-snapshot /proc/self/maps now that init_child's allocator-

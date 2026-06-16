@@ -801,6 +801,23 @@ struct childdata {
 	 * the helper bumps, not this flag directly. */
 	bool cmp_hint_inject_arm_b;
 
+	/* A/B-comparison stamp for the prop_ring injection at handle_arg_op's
+	 * ARG_OP callsite (the second prop_ring consumer; the first lives in
+	 * gen_undefined_arg and is not gated by this stamp).  Arm A (false) is
+	 * the control: no prop_ring_try_get pull, the handle_arg_op RNG
+	 * sequence stays byte-identical to the pre-row behaviour.  Arm B (true)
+	 * attempts a low-prob pull after the existing cmp_hints try has missed;
+	 * a successful pull returns a recent kernel-handed-back scalar as the
+	 * ARG_OP command code.  Stamped once in init_child_runtime_config() at
+	 * ONE_IN(2), independent of cmp_hint_inject_arm_b / redqueen_enabled /
+	 * boring_filter_arm_b / frontier_blend_arm_b so the five A/B axes can
+	 * cross without confounding each other's cohort comparisons, and
+	 * cleared in clean_childdata so a fresh slot occupant restamps.
+	 * Owner-only writes from inside the child; the parent's stats consumer
+	 * reads the kcov_shm-resident prop_ring_argop_arm_* counters the
+	 * callsite bumps, not this flag directly. */
+	bool prop_ring_argop_arm_b;
+
 	/* SHADOW per-entry feedback scoring scratch ([11-feedback-loop]
 	 * PHASE 4).  cmp_hints_try_get_ex() pushes one entry per successful
 	 * pull (capped at CMP_HINT_CONSUMED_STASH_MAX; overflow drops the

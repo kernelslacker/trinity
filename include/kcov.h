@@ -804,6 +804,21 @@ struct kcov_shared {
 	unsigned long cmp_inject_arm_a_baseline_fires;
 	unsigned long cmp_inject_arm_b_baseline_fires;
 	unsigned long cmp_inject_denom_diverged;
+	/* A/B cohort split + per-arm fire count for the prop_ring injection at
+	 * handle_arg_op's ARG_OP callsite.  prop_ring_argop_arm_{a,b}_children
+	 * is bumped once per child in init_child_runtime_config so the operator
+	 * can normalise the Arm B fire rate against the realised population
+	 * split (the ONE_IN(2) stamp has fleet-scale variance and a small fleet
+	 * can land lopsided).  prop_ring_argop_arm_b_fires counts the Arm B
+	 * pulls that returned a recent kernel-handed-back scalar and committed
+	 * it as the ARG_OP command code; Arm A never pulls so the symmetric
+	 * arm_a counter does not exist by design.  Fires are also reflected in
+	 * the existing flat propagation_injected counter so the operator can
+	 * read the combined prop_ring contribution across both consumer sites
+	 * (gen_undefined_arg + handle_arg_op) without re-summing. */
+	unsigned int  prop_ring_argop_arm_a_children;
+	unsigned int  prop_ring_argop_arm_b_children;
+	unsigned long prop_ring_argop_arm_b_fires;
 	/* See struct kcov_cmp_diag — child-context writes are routed here
 	 * because the child's stdout has already been dup2'd to /dev/null
 	 * by the time KCOV_TRACE_CMP setup runs. */

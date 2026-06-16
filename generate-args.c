@@ -337,6 +337,33 @@ static unsigned long handle_arg_op(struct syscallentry *entry,
 		return hint;
 	}
 
+	/* Constant propagation: with low probability pull a value the kernel
+	 * just handed us back from a recent syscall and try it as an ARG_OP
+	 * command code.  Sibling channel to the cmp_hints try above (which
+	 * surfaces values the kernel compared against); this one surfaces
+	 * values trinity received as return.  A/B-gated by prop_ring_argop_
+	 * arm_b: Arm A (control) skips the pull so the handle_arg_op RNG
+	 * sequence stays byte-identical to the pre-row behaviour, Arm B
+	 * attempts the pull.  Probability gate lives inside prop_ring_try_get
+	 * so the existing case mix stays untouched; on an empty or stale ring
+	 * we just fall through to the regular values[] pick.  Sits AFTER the
+	 * cmp_hints try so the cmp_hint baseline A/B path is unaffected. */
+	{
+		struct childdata *child = this_child();
+		unsigned long val;
+
+		if (child != NULL && child->prop_ring_argop_arm_b &&
+		    prop_ring_try_get(child, rec, &val)) {
+			if (kcov_shm != NULL) {
+				__atomic_fetch_add(&kcov_shm->prop_ring_argop_arm_b_fires,
+						   1UL, __ATOMIC_RELAXED);
+				__atomic_fetch_add(&kcov_shm->propagation_injected,
+						   1UL, __ATOMIC_RELAXED);
+			}
+			return val;
+		}
+	}
+
 	return values[rnd_modulo_u32(num)];
 }
 
