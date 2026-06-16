@@ -498,6 +498,7 @@ void clean_childdata(struct childdata *child)
 	child->reexec_pending_count = 0;
 	child->in_reexec = false;
 	child->redqueen_enabled = false;
+	child->boring_filter_arm_b = false;
 	child->reexec_count_window = 0;
 	child->reexec_window_start_op = 0;
 	child->cmp_hint_injected_this_call = false;
@@ -1070,6 +1071,15 @@ static void init_child_runtime_config(struct childdata *child, int childno)
 			__atomic_fetch_add(&kcov_shm->cmp_inject_arm_a_children,
 					   1U, __ATOMIC_RELAXED);
 	}
+	/* A/B-comparison stamp for the cmp_hints substitution-pool
+	 * "uninteresting constant" drop mask.  Independent of the
+	 * redqueen_enabled stamp -- the two A/B axes need to cross so
+	 * neither cohort comparison gets confounded by the other.  Stamped
+	 * unconditionally (PC-mode children never reach the cmp_hints
+	 * collect path so the stamp is moot for them, but stamping anyway
+	 * keeps the field semantics uniform with redqueen_enabled and
+	 * avoids a mode-conditional read at the harvest site). */
+	child->boring_filter_arm_b = ONE_IN(2);
 
 	/*
 	 * Re-snapshot /proc/self/maps now that init_child's allocator-

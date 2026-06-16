@@ -709,6 +709,23 @@ struct childdata {
 	unsigned int reexec_pending_count;
 	bool in_reexec;
 	bool redqueen_enabled;
+	/* A/B-comparison stamp for the cmp_hints "uninteresting constant"
+	 * substitution-pool drop mask.  Half the children get Arm A (the
+	 * historical ~3UL mask -- drop 0/1/2/3) and half get Arm B (~7UL --
+	 * also drop 4/5/6/7).  The widened band crosses common meaningful
+	 * bounds (struct sizes, low flag bits), so per-arm cohort metrics
+	 * (unique pool inserts, downstream new-edge wins per substituted
+	 * hint) reveal whether those low values were carrying real signal
+	 * or were just bloat in the 16-slot per-syscall pool.  Stamped once
+	 * at child init and never mutated, matching the redqueen_enabled
+	 * stamp pattern so time-of-day environmental drift is common to
+	 * both arms.  Read-only after stamp; owner-only writes; no
+	 * cross-process coherence needed.  Strategy.c's
+	 * cmp_novelty_interesting() intentionally stays at val < 4 -- the
+	 * in-tree comment there keeps the two filters decoupled so the
+	 * novelty signal can drift independently of the pool-substitution
+	 * threshold; this stamp drives only the pool-side filter. */
+	bool boring_filter_arm_b;
 	/* Replay-side companion to corpus_entry::rq_sourced.  Set inside
 	 * minicorpus_replay() right after the snapshot picks an entry whose
 	 * args were captured under in_reexec; cleared unconditionally at the
