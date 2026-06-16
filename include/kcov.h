@@ -775,6 +775,30 @@ struct kcov_shared {
 	unsigned long cmp_hints_canary_lock_post_corrupt;
 	unsigned long cmp_hints_canary_pre_corrupt;
 	unsigned long cmp_hints_canary_post_corrupt;
+	/* A/B cohort split + per-arm baseline-injection fire counts +
+	 * per-call divergence counter for the cmp-hint baseline inject denom
+	 * A/B (Arm A = 1-in-16, Arm B = 1-in-12).  cmp_inject_arm_{a,b}_
+	 * children is bumped once per child in init_child_runtime_config so
+	 * the operator can normalise the per-arm fire rate against the
+	 * realised population split (the ONE_IN(2) stamp has fleet-scale
+	 * variance and a small fleet can land lopsided).  cmp_inject_arm_b_
+	 * baseline_fires counts the baseline-callsite ONE_IN that fired on an
+	 * Arm B child; the matching Arm A count is the existing
+	 * cmp_hint_callsite_injected[] baseline buckets minus this delta, but
+	 * a flat sibling counter is provided here too for read-ergonomics.
+	 * cmp_inject_denom_diverged is bumped once per baseline-callsite call
+	 * on an Arm B child when the same uniform sample would have produced
+	 * a different fire/skip decision for Arm A than for Arm B (the
+	 * helper rolls one sample in [0, lcm(16,12)) and tests both denoms).
+	 * Bumping only on Arm B children leaves Arm A's per-call RNG
+	 * sequence byte-identical to before this row -- the divergence
+	 * counter is a lower bound on the per-call decision delta but
+	 * preserves the A-arm-purity invariant the A/B row demands. */
+	unsigned int  cmp_inject_arm_a_children;
+	unsigned int  cmp_inject_arm_b_children;
+	unsigned long cmp_inject_arm_a_baseline_fires;
+	unsigned long cmp_inject_arm_b_baseline_fires;
+	unsigned long cmp_inject_denom_diverged;
 	/* See struct kcov_cmp_diag — child-context writes are routed here
 	 * because the child's stdout has already been dup2'd to /dev/null
 	 * by the time KCOV_TRACE_CMP setup runs. */

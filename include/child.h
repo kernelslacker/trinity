@@ -744,6 +744,24 @@ struct childdata {
 	 * flag directly. */
 	bool cmp_hint_injected_this_call;
 
+	/* A/B-comparison stamp for the cmp-hint baseline injection denom.
+	 * Half the children are stamped Arm A (false: ONE_IN(BASELINE) =
+	 * the historical 1-in-16 baseline rate) and half are stamped Arm B
+	 * (true: ONE_IN(BASELINE_ARM_B) = the more aggressive 1-in-12 rate).
+	 * Read at the three baseline callsites in generate-args.c via
+	 * cmp_hint_baseline_should_inject(); the amplified callsites are
+	 * NOT branched on this flag (the SR_PLATEAU_FORCE / CMP_RISING_PC_
+	 * FLAT path already overrides the denom to AMPLIFIED for both arms,
+	 * and the separate denom(9)/denom(10) amplified callsites are out of
+	 * scope by design).  Stamped once in init_child_runtime_config() at
+	 * ONE_IN(2), independent of the KCOV mode pick so the comparison is
+	 * not entangled with [redqueen_enabled]'s CMP-mode-only split, and
+	 * cleared in clean_childdata so a fresh slot occupant restamps.
+	 * Owner-only writes from inside the child; the parent's stats
+	 * consumer reads the kcov_shm-resident cmp_inject_arm_* counters
+	 * the helper bumps, not this flag directly. */
+	bool cmp_hint_inject_arm_b;
+
 	/* SHADOW per-entry feedback scoring scratch ([11-feedback-loop]
 	 * PHASE 4).  cmp_hints_try_get_ex() pushes one entry per successful
 	 * pull (capped at CMP_HINT_CONSUMED_STASH_MAX; overflow drops the
