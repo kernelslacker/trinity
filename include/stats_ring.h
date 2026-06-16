@@ -129,6 +129,18 @@ enum stats_field {
 	 * Drained into parent_stats.total_pcs; same flush cadence as the
 	 * other two kcov staging counters. */
 	STATS_FIELD_TOTAL_PCS,
+	/* cmp_hints_try_get_ex() bumps these on every consumer call that
+	 * passed the cmp_hints_shm / nr guard and reached the pool-snapshot
+	 * lookup.  Direct +1 enqueue per call -- no local staging like the
+	 * kcov counters above, because cmp_hints_try_get fires far less
+	 * often than kcov_collect (consumer-side, gated on argument
+	 * generation rather than per-syscall dispatch) and the per-call
+	 * SPSC slot cost is well within budget.  Stale-by-one-drain
+	 * tolerance is identical to the precedent counters: the periodic
+	 * dump reader is the only consumer and reports cumulative deltas
+	 * across a multi-second window. */
+	STATS_FIELD_CMP_HINTS_TRY_GET_ATTEMPTS,
+	STATS_FIELD_CMP_HINTS_TRY_GET_RETURNED,
 	STATS_FIELD_NR,
 };
 
@@ -241,6 +253,19 @@ struct stats_aggregate {
 	 * folds the per-syscall accumulation into one ring enqueue per
 	 * flush. */
 	unsigned long total_pcs;
+
+	/* Drained from STATS_FIELD_CMP_HINTS_TRY_GET_ATTEMPTS /
+	 * STATS_FIELD_CMP_HINTS_TRY_GET_RETURNED.  Consumer-side cmp-hint
+	 * pull demand and pool-hit count, lifted out of kcov_shm so a wild
+	 * kernel write through a fuzzed syscall arg cannot scribble the
+	 * counters that observe whether the cmp-hint pipeline is delivering
+	 * to argument generators.  The dump reader (stats.c periodic
+	 * window) now sources both from here; the per-syscall partitions
+	 * (per_syscall_cmp_attempts/_returned in kcov_shm) stay where they
+	 * are -- no cross-child reader, but they ride the same hardening
+	 * sweep as per_syscall_calls/edges when that lands. */
+	unsigned long cmp_hints_try_get_attempts;
+	unsigned long cmp_hints_try_get_returned;
 
 	/* Visibility / health counters surfaced via dump_stats. */
 	unsigned long ring_overflow_total;	/* sum of dropped enqueues across all rings */
