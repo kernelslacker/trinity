@@ -169,6 +169,7 @@ static void sanitise_sendmsg(struct syscallrecord *rec)
 
 skip_si:
 	msg = zmalloc_tracked(sizeof(struct msghdr));
+	rec_own(rec, msg);
 	msg->msg_name = sa;
 	msg->msg_namelen = salen;
 
@@ -423,20 +424,24 @@ static void post_sendmsg(struct syscallrecord *rec)
 skip_bound:
 
 	/*
-	 * Free from the trusted snap, not from the live msghdr.  The
-	 * kernel can write back through msghdr fields on SCM_RIGHTS /
-	 * fault-in paths, and a sibling iov_base aliased inside the
-	 * msghdr can leave a heap-shaped within-array offset in
-	 * msg_name that passes the inner shape-only check but aborts
-	 * in libasan free().  The snap fields are wrapped in the
-	 * magic-cookie struct above and hold the sanitise-time
-	 * allocations.  msg_iov is no longer freed -- it lives in the
-	 * writable-pool now (see sanitise_sendmsg) and pool allocations
-	 * are never released by trinity.
+	 * Free msg_name from the trusted snap, not from the live
+	 * msghdr.  The kernel can write back through msghdr fields on
+	 * SCM_RIGHTS / fault-in paths, and a sibling iov_base aliased
+	 * inside the msghdr can leave a heap-shaped within-array offset
+	 * in msg_name that passes the inner shape-only check but aborts
+	 * in libasan free().  snap->name holds the sanitise-time
+	 * allocation regardless of what the kernel (or a sibling) left
+	 * in the live msghdr.  The msghdr itself is owned by the rec
+	 * carrier (rec_own at sanitise time) and gets reclaimed
+	 * unconditionally by rec_owned_drain after .post runs -- that
+	 * also closes the leak on paths where .post is skipped entirely
+	 * (retfd-rejected, killed grandchild, ...).  msg_iov is not
+	 * freed -- it lives in the writable-pool now (see
+	 * sanitise_sendmsg) and pool allocations are never released by
+	 * trinity.
 	 */
 	tracked_free_now(snap->name);	// free sockaddr
 	rec->a2 = 0;
-	deferred_free_enqueue(msg);
 
 out_free:
 	post_state_unregister(snap);
