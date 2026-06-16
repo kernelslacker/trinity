@@ -790,6 +790,16 @@ static void register_returned_fd(const struct syscallentry *entry,
 		if (s <= 0 || s > INT32_MAX)
 			return;
 		register_key_serial((int32_t) s);
+		/* Mirror the key serial into the per-child prop_ring so
+		 * untyped consumers in gen_undefined_arg can replay it as
+		 * input to a later syscall.  prop_ring_push() above
+		 * gates OBJ_NONE only, so without this bypass entry the
+		 * value would never reach the ring.  Bypass is safe here:
+		 * the value already cleared the (0, INT32_MAX] window
+		 * register_key_serial requires, and the in-line filters
+		 * inside prop_ring_push_scalar still reject pointer-shaped
+		 * and fd-aliased values. */
+		prop_ring_push_scalar(rec->nr, s);
 		return;
 	}
 

@@ -5791,6 +5791,18 @@ static void dump_stats_fd_tracking(void)
 			stat_row("fd_provider_outstanding", name, outstanding);
 		}
 	}
+
+	/* Producer-side capture count for the typed-scalar bypass push.
+	 * Sibling to kcov_shm->propagation_injected (consumer-side); see
+	 * the field comment in include/stats.h.  Lives next to the
+	 * fd_runtime_* family because its capture site is the same
+	 * register_returned_fd dispatch -- the OBJ_KEY_SERIAL branch
+	 * mirrors the value into prop_ring after handing it to the typed
+	 * registrar. */
+	if (shm->stats.propagation_injected_key_scalar) {
+		stat_row("propagation", "injected_key_scalar",
+			 shm->stats.propagation_injected_key_scalar);
+	}
 }
 
 static void dump_stats_oracle_anomalies(void)

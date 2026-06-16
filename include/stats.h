@@ -1824,6 +1824,19 @@ struct stats_s {
 	unsigned long fd_runtime_skipped_stdio;
 	unsigned long fd_runtime_skipped_already_registered;
 
+	/* Bumped by prop_ring_push_scalar() each time a typed scalar return
+	 * (currently OBJ_KEY_SERIAL from register_returned_fd's add_key /
+	 * keyctl path) was successfully mirrored into the per-child
+	 * propagation ring after its own typed registrar accepted it.
+	 * Reads as "key serials made available to untyped consumers via
+	 * the prop_ring path" — distinct from kcov_shm->propagation_injected,
+	 * which counts the consumer-side draws from the ring; this is the
+	 * producer-side capture count for the bypass-the-OBJ_NONE-firewall
+	 * push variant.  Skipped pushes (dedup against most recent slot,
+	 * pointer-shape or fd-alias rejections, out-of-range) do NOT bump
+	 * this -- the counter tracks publications, not call-attempts. */
+	unsigned long propagation_injected_key_scalar;
+
 	/* fds/bpf provisioning counters: cumulative count of fds we
 	 * successfully published into the global object pool, including
 	 * regenerations after stale-fd teardown.  Tells you how much of

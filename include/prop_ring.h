@@ -38,6 +38,18 @@ void prop_ring_push(struct childdata *child,
 		    const struct syscallrecord *rec);
 
 /*
+ * Mirror a typed scalar return (currently OBJ_KEY_SERIAL) into the
+ * owning child's propagation ring.  Bypasses prop_ring_push()'s
+ * OBJ_NONE gate -- the gate exists to keep fd/pid-typed objects from
+ * leaking into untyped slots, and is preserved on that path; this
+ * variant exists for typed integer cookies whose own registrar has
+ * already accepted the value and which can safely be replayed as a
+ * scalar input by untyped consumers.  Looks up the owning child via
+ * this_child(); no-op if called outside a child context.
+ */
+void prop_ring_push_scalar(unsigned int nr, long scalar_val);
+
+/*
  * Try to pull a recent return value out of CHILD's ring for injection
  * as an input arg to the syscall described by REC.  On success returns
  * true and stores the value in *OUT; the per-call probability gate
