@@ -887,6 +887,73 @@ retry:
 				__atomic_fetch_add(
 					&shm->stats.frontier_shadow_decay_candidates,
 					1UL, __ATOMIC_RELAXED);
+
+			/* SHADOW-ONLY tightened decay predicate.  Pairs with
+			 * the looser frontier_shadow_decay_candidates bump
+			 * above: the looser counter fires on N-silent alone
+			 * (no PC novelty since reset, since the streak is
+			 * reset by frontier_record_new_edge() / _transition_
+			 * edge() on the PC-edge and transition productive
+			 * paths).  The tighter predicate here additionally
+			 * requires that NEITHER per-syscall CMP-pool inserts
+			 * NOR the SUCCESS-bucket errno count has advanced
+			 * since the streak's last reset -- the "no recent
+			 * CMP novelty and no useful errno shift" UNLESS
+			 * clause that distinguishes a genuinely-stuck
+			 * candidate from one whose non-PC novelty stream is
+			 * still moving.
+			 *
+			 * Baseline snapshots are refreshed at every streak
+			 * reset (in strategy.c) so a current-vs-baseline
+			 * equality test is sufficient -- no per-pick stash
+			 * is needed.  Atomic loads under RELAXED ordering:
+			 * shadow predicate, racing producer bumps are
+			 * tolerated (worst case is a one-pick over/under-
+			 * count of the shadow counters, never a perturbation
+			 * of live selection).
+			 *
+			 *  frontier_decay_candidates
+			 *      Edge bump: fires on the (streak ==
+			 *      FRONTIER_SHADOW_DECAY_STREAK) crossing when
+			 *      the UNLESS clause holds, the tighter sibling
+			 *      of the frontier_shadow_decay_candidates bump
+			 *      above.  Strictly <= the looser counter by
+			 *      construction.
+			 *  frontier_decay_would_skip
+			 *      Cumulative bump on every silent-regime pick
+			 *      where the streak is already past threshold
+			 *      AND the UNLESS clause holds -- the projected
+			 *      demote count a live silent-decay variant of
+			 *      this picker would produce. */
+			if (streak >= FRONTIER_SHADOW_DECAY_STREAK &&
+			    kcov_shm != NULL) {
+				unsigned long cmp_now, cmp_base;
+				unsigned long errno_now, errno_base;
+
+				cmp_now = __atomic_load_n(
+					&kcov_shm->per_syscall_cmp_inserts[syscallnr],
+					__ATOMIC_RELAXED);
+				cmp_base = __atomic_load_n(
+					&shm->stats.frontier_silent_cmp_baseline[syscallnr],
+					__ATOMIC_RELAXED);
+				errno_now = __atomic_load_n(
+					&kcov_shm->per_syscall_errno[syscallnr][ERRNO_BUCKET_SUCCESS],
+					__ATOMIC_RELAXED);
+				errno_base = __atomic_load_n(
+					&shm->stats.frontier_silent_errno_success_baseline[syscallnr],
+					__ATOMIC_RELAXED);
+
+				if (cmp_now == cmp_base &&
+				    errno_now == errno_base) {
+					__atomic_fetch_add(
+						&shm->stats.frontier_decay_would_skip,
+						1UL, __ATOMIC_RELAXED);
+					if (streak == FRONTIER_SHADOW_DECAY_STREAK)
+						__atomic_fetch_add(
+							&shm->stats.frontier_decay_candidates,
+							1UL, __ATOMIC_RELAXED);
+				}
+			}
 		}
 	}
 

@@ -2440,6 +2440,72 @@ struct stats_s {
 	 * periodic stats dump alongside that array. */
 	unsigned long frontier_silent_streak_per_syscall[MAX_NR_SYSCALL];
 
+	/* SHADOW-ONLY no-novelty baselines paired with the silent-streak
+	 * counter above.  Snapshotted at every streak reset (in
+	 * frontier_record_new_edge() and frontier_record_transition_edge(),
+	 * the two existing per-syscall productive-event hooks) from the
+	 * matching kcov_shm counters, so the silent-regime accept site can
+	 * cheaply ask "has any non-PC-edge novelty fired for this syscall
+	 * since the streak last reset?" via a current-vs-baseline equality
+	 * test -- no new collection path is added, only the snapshot.
+	 *
+	 *  frontier_silent_cmp_baseline[nr]
+	 *      Mirror of kcov_shm->per_syscall_cmp_inserts[nr] at the most
+	 *      recent streak reset.  Current > baseline means at least one
+	 *      distinct CMP insert/evict-replace event landed for this
+	 *      syscall during the silent streak -- CMP novelty the PC-edge
+	 *      reset path did not see.
+	 *  frontier_silent_errno_success_baseline[nr]
+	 *      Mirror of kcov_shm->per_syscall_errno[nr][ERRNO_BUCKET_
+	 *      SUCCESS] at the most recent streak reset.  Current > baseline
+	 *      means the syscall transitioned from error-only to producing
+	 *      a successful return at least once during the silent streak --
+	 *      a coarse "useful errno shift" signal.  Only the SUCCESS slot
+	 *      is mirrored (not the full 8-bucket histogram) so the snapshot
+	 *      is one ulong per syscall, same shape as the streak counter.
+	 *
+	 * Read by no production-path code -- the silent-regime accept site
+	 * is the sole consumer.  The picker's accept/retry math does not
+	 * consume either baseline, so drift in them cannot perturb live
+	 * selection.  Sized and bounds-guarded the same way the sibling
+	 * frontier_silent_streak_per_syscall[] above is. */
+	unsigned long frontier_silent_cmp_baseline[MAX_NR_SYSCALL];
+	unsigned long frontier_silent_errno_success_baseline[MAX_NR_SYSCALL];
+
+	/* SHADOW-ONLY decay-candidate accounting, paired with the silent-
+	 * streak counter and the no-novelty baselines above.  Tighter
+	 * variant of frontier_shadow_decay_candidates: the threshold-
+	 * crossing edge bumps the candidate counter ONLY when the no-
+	 * novelty UNLESS clause holds (no CMP insert and no SUCCESS-bucket
+	 * errno shift since the streak's most recent reset), and a separate
+	 * counter tallies every silent-regime pick a live decay variant
+	 * would have demoted.  Used together with the looser sibling above
+	 * so the operator can A/B compare the two predicates before any
+	 * change to the live picker.
+	 *
+	 *  frontier_decay_candidates
+	 *      Edge-triggered: one bump per (syscallnr) crossing of
+	 *      FRONTIER_SHADOW_DECAY_STREAK where the no-novelty UNLESS
+	 *      clause holds at the crossing pick.  Strictly <=
+	 *      frontier_shadow_decay_candidates by construction; the gap
+	 *      between the two values is the candidate set the CMP/errno
+	 *      tightening would have spared.
+	 *  frontier_decay_would_skip
+	 *      Cumulative: one bump per silent-regime pick where the
+	 *      streak is already >= FRONTIER_SHADOW_DECAY_STREAK AND the
+	 *      no-novelty UNLESS clause holds -- the projected demote count
+	 *      a live silent-decay variant of the picker would produce.
+	 *      Read alongside frontier_silent_picks to read the projected
+	 *      saving fraction.
+	 *
+	 * Observability only: live frontier selection in set_syscall_nr_
+	 * coverage_frontier() is byte-identical to today's behaviour; these
+	 * counters bump strictly AFTER the accept decision and no live-path
+	 * code reads them.  Mirrors the off-by-construction discipline the
+	 * sibling [t12-frontier-blend] A/B counters use. */
+	unsigned long frontier_decay_candidates;
+	unsigned long frontier_decay_would_skip;
+
 	/* SHADOW-ONLY A/B scoring for the [t12-frontier-blend] cold-weight
 	 * blend.  See the frontier_cold_weight() comment in random-syscall.c
 	 * for the experimental formula.
