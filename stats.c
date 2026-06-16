@@ -2234,6 +2234,7 @@ static void dump_stats_json_corruption_and_audit(void)
 			"\"deferred_free_enomem_drain\":%lu,"
 			"\"deferred_free_rw_restore_enomem\":%lu,"
 			"\"deferred_free_pre_dispatch_leaked\":%lu,"
+			"\"ring_evict_leaked\":%lu,"
 			"\"deferred_free_ring_owned_skip\":%lu,"
 			"\"deferred_free_double_admit_skip\":%lu,"
 			"\"pagecache_canary_corrupt_caught\":%lu,"
@@ -2289,6 +2290,7 @@ static void dump_stats_json_corruption_and_audit(void)
 		shm->stats.deferred_free_enomem_drain,
 		shm->stats.deferred_free_rw_restore_enomem,
 		shm->stats.deferred_free_pre_dispatch_leaked,
+		shm->stats.ring_evict_leaked,
 		shm->stats.deferred_free_ring_owned_skip,
 		shm->stats.deferred_free_double_admit_skip,
 		shm->stats.pagecache_canary_corrupt_caught,
@@ -3298,6 +3300,8 @@ static const struct {
 	  offsetof(struct stats_s, deferred_free_rw_restore_enomem) },
 	{ "deferred_free_pre_dispatch_leaked",
 	  offsetof(struct stats_s, deferred_free_pre_dispatch_leaked) },
+	{ "ring_evict_leaked",
+	  offsetof(struct stats_s, ring_evict_leaked) },
 	{ "deferred_free_ring_owned_skip",
 	  offsetof(struct stats_s, deferred_free_ring_owned_skip) },
 	{ "deferred_free_double_admit_skip",
@@ -6199,6 +6203,8 @@ static void dump_stats_corruption_and_pool(void)
 		stat_row("corruption", "deferred_free_rw_restore_enomem",     shm->stats.deferred_free_rw_restore_enomem);
 	if (shm->stats.deferred_free_pre_dispatch_leaked)
 		stat_row("corruption", "deferred_free_pre_dispatch_leaked",   shm->stats.deferred_free_pre_dispatch_leaked);
+	if (shm->stats.ring_evict_leaked)
+		stat_row("corruption", "ring_evict_leaked",                   shm->stats.ring_evict_leaked);
 	if (shm->stats.deferred_free_ring_owned_skip)
 		stat_row("corruption", "deferred_free_ring_owned_skip",       shm->stats.deferred_free_ring_owned_skip);
 	if (shm->stats.deferred_free_double_admit_skip)

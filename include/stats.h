@@ -2207,6 +2207,25 @@ struct stats_s {
 	 * correlate with deferred_free_enomem_drain. */
 	unsigned long deferred_free_tracked_free_unverified_leak;
 
+	/* ring_evict_oldest_safe() reclaimed a full-ring slot WITHOUT
+	 * free()ing the evicted chunk.  Interim defense against the
+	 * address-reuse window where a stale caller ref to a freed-and-
+	 * reused chunk passes every value-keyed gate (heap-bounds,
+	 * shared-region, alloc_track_consume) and eviction free()s a
+	 * now-live chunk -- the surviving class of bad-free at the
+	 * eviction site.  The durable fix is at the caller-lifecycle
+	 * root (drop the retained ref).  This counter only fires when
+	 * the ring is full (TTL eviction is rare given the 5-50 TTL
+	 * range and per-syscall tick), so the leak is bounded; child
+	 * exit reclaims it.  Cannot double-free because the site never
+	 * free()s.  The RING_DRAIN / flush + immediate-free fallback
+	 * paths intentionally KEEP freeing -- leaking everywhere would
+	 * be a whole-ring RSS blowup, not a bounded eviction-only
+	 * defense.  Expected to read as zero on a fixed caller chain;
+	 * the next ASAN run is the validation gate (ring_evict bad-free
+	 * count should drop to zero). */
+	unsigned long ring_evict_leaked;
+
 	/* Bumped by run_sequence_chain() when chain_corpus_pick() returns
 	 * a chain_entry whose len is zero or greater than MAX_SEQ_LEN.
 	 * The chain corpus is shared memory and tolerates lockless reads
