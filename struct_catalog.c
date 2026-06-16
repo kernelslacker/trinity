@@ -8602,6 +8602,15 @@ static void validate_one_against_table(const struct syscalltable *table,
 			  entry->name, entry->num_args, tablename);
 		(*violations)++;
 	}
+
+	if (sa->discrim2_arg_idx != 0 &&
+	    (sa->discrim2_arg_idx < 1 || sa->discrim2_arg_idx > entry->num_args)) {
+		outputerr("struct_catalog: %s arg %u discrim2_arg_idx %u out of "
+			  "range for syscall %s (num_args=%u) in %s\n",
+			  sa->syscall_name, sa->arg_idx, sa->discrim2_arg_idx,
+			  entry->name, entry->num_args, tablename);
+		(*violations)++;
+	}
 }
 
 static void validate_syscall_struct_args(void)
