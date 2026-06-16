@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <limits.h>
+#include <sched.h>
 #include <sys/time.h>
 #include <time.h>
 #include <unistd.h>
@@ -1422,6 +1423,108 @@ static unsigned long gen_arg_nodemask(struct syscallentry *entry __unused__,
 		break;
 	}
 	}
+
+	return (unsigned long) mask;
+}
+
+/*
+ * Online-CPU count snapshotted on first use.  The kernel rejects
+ * sched_setaffinity masks with no bits in cpu_online_mask, so a
+ * random CPU_SETSIZE-wide draw misses every legality test path
+ * unless we constrain it to the real online range.  File-local until
+ * the bespoke duplicate in syscalls/sched_setaffinity.c is folded
+ * away by its conversion row.
+ */
+static unsigned int cached_online_cpus(void)
+{
+	static unsigned int n;
+	long v;
+
+	if (n != 0)
+		return n;
+
+	v = sysconf(_SC_NPROCESSORS_ONLN);
+	if (v <= 0)
+		v = 1;
+	if (v > CPU_SETSIZE)
+		v = CPU_SETSIZE;
+	n = (unsigned int) v;
+	return n;
+}
+
+/*
+ * ARG_CPUMASK: a writable pool buffer filled with a valid-ish CPU
+ * affinity mask (cpu_set_t -- CPU_SETSIZE bits / 128 bytes on glibc).
+ *
+ * The kernel's sched_setaffinity gate rejects a mask with no bits in
+ * cpu_online_mask before any of the scheduler body runs, and the raw
+ * ARG_UNDEFINED fill is virtually guaranteed to land outside the
+ * online range on any system with a small num_online_cpus.  Promote
+ * sched_setaffinity's hand-rolled bucket distribution into a first-
+ * class argtype so the affinity-mask body actually executes, and so
+ * any future syscall that grows a cpumask slot picks up the same
+ * valid-ish distribution by declaration.
+ *
+ * Fill buckets, biased toward shapes the kernel does not silently
+ * reject:
+ *   30%  single online CPU
+ *   25%  sparse subset within [0, num_online)
+ *   20%  all-online
+ *   15%  offline bits set above num_online -- kernel silently strips,
+ *         keeps the strip path warm
+ *   10%  empty -- kernel EINVAL arm
+ *
+ * Pool buffer (get_writable_struct), off the shared region / libc
+ * heap so the blanket address scrub is a no-op.  No .cleanup needed
+ * -- mirror ARG_NODEMASK.
+ *
+ * The generator owns only the buffer + fill.  The sibling len
+ * argument is a BYTE COUNT floored at cpumask_size(), set
+ * independently per caller; the converted caller's .sanitise keeps
+ * owning the len slot so the kernel's copy_from_user stays in-bounds
+ * of the pool buffer.
+ */
+static unsigned long gen_arg_cpumask(struct syscallentry *entry __unused__,
+				     struct syscallrecord *rec __unused__,
+				     unsigned int argnum __unused__)
+{
+	cpu_set_t *mask;
+	unsigned int online = cached_online_cpus();
+	unsigned int i, bits, idx;
+	unsigned int roll;
+
+	mask = (cpu_set_t *) get_writable_struct(sizeof(*mask));
+	if (mask == NULL)
+		return 0;
+	CPU_ZERO(mask);
+
+	roll = rnd_modulo_u32(100);
+
+	if (roll < 30) {
+		CPU_SET(rnd_modulo_u32(online), mask);
+	} else if (roll < 55) {
+		bits = 1 + rnd_modulo_u32(online);
+		for (i = 0; i < bits; i++) {
+			idx = rnd_modulo_u32(online);
+			CPU_SET(idx, mask);
+		}
+	} else if (roll < 75) {
+		for (i = 0; i < online; i++)
+			CPU_SET(i, mask);
+	} else if (roll < 90) {
+		if (online < CPU_SETSIZE) {
+			unsigned int span = CPU_SETSIZE - online;
+
+			bits = 1 + rnd_modulo_u32(span);
+			for (i = 0; i < bits; i++) {
+				idx = online + rnd_modulo_u32(span);
+				CPU_SET(idx, mask);
+			}
+		} else {
+			CPU_SET(rnd_modulo_u32(CPU_SETSIZE), mask);
+		}
+	}
+	/* else: empty mask -- CPU_ZERO already done above. */
 
 	return (unsigned long) mask;
 }
@@ -3720,6 +3823,10 @@ const struct argtype_ops argtype_table[] = {
 	[ARG_NODEMASK] = {
 		.name = "ARG_NODEMASK",
 		.generate = gen_arg_nodemask,
+	},
+	[ARG_CPUMASK] = {
+		.name = "ARG_CPUMASK",
+		.generate = gen_arg_cpumask,
 	},
 	[ARG_BUF_SIZED] = {
 		.name = "ARG_BUF_SIZED",
