@@ -3060,9 +3060,10 @@ static const struct struct_field stack_t_fields[] = {
  *
  * Not mapped here on purpose: waitid's a3 is a kernel-written OUTPUT
  * buffer with no input fill to attribute against (same shape as the
- * gettimeofday / get_robust_list / cachestat-output skips above);
- * pidfd_send_signal's a3 is also struct siginfo_t but is intentionally
- * not in this commit's scope.
+ * gettimeofday / get_robust_list / cachestat-output skips above).
+ * pidfd_send_signal's a3 IS mapped (attribution-only, same as
+ * rt_sigqueueinfo / rt_tgsigqueueinfo — the bespoke sanitisers keep
+ * owning the live fill).
  */
 static const unsigned long siginfo_t_si_code_vocab[] = {
 	(unsigned long)(uint32_t) SI_USER,
@@ -6881,8 +6882,9 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * cachestat-output skips above) and registering it would
 	 * attribute CMP-learned constants against bytes the kernel
 	 * wrote rather than bytes we stamped.  pidfd_send_signal's a3
-	 * is also struct siginfo_t but is intentionally out of scope
-	 * for this commit.
+	 * IS mapped (attribution-only, same as rt_sigqueueinfo /
+	 * rt_tgsigqueueinfo — the bespoke sanitisers keep owning the
+	 * live fill).
 	 */
 	{ "rt_sigqueueinfo",	3, &struct_catalog[SC_SIGINFO_T] },
 	{ "rt_tgsigqueueinfo",	4, &struct_catalog[SC_SIGINFO_T] },
