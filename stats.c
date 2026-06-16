@@ -4794,6 +4794,7 @@ void kcov_cmp_stats_periodic_dump(void)
 	static unsigned long prev_cmp_inject_arm_a_baseline_fires;
 	static unsigned long prev_cmp_inject_arm_b_baseline_fires;
 	static unsigned long prev_cmp_inject_denom_diverged;
+	static unsigned long prev_prop_ring_argop_arm_b_fires;
 	static struct timespec last_dump;
 	struct timespec now;
 	long elapsed;
@@ -4842,6 +4843,8 @@ void kcov_cmp_stats_periodic_dump(void)
 	unsigned long delta_cmp_inject_arm_a_baseline_fires, delta_cmp_inject_arm_b_baseline_fires;
 	unsigned long delta_cmp_inject_denom_diverged;
 	unsigned int  cur_cmp_inject_arm_a_children, cur_cmp_inject_arm_b_children;
+	unsigned long cur_prop_ring_argop_arm_b_fires, delta_prop_ring_argop_arm_b_fires;
+	unsigned int  cur_prop_ring_argop_arm_a_children, cur_prop_ring_argop_arm_b_children;
 	bool any_callsite_delta = false;
 	unsigned int pc_kids, cmp_kids;
 
@@ -4903,6 +4906,9 @@ void kcov_cmp_stats_periodic_dump(void)
 	cur_cmp_inject_denom_diverged       = __atomic_load_n(&kcov_shm->cmp_inject_denom_diverged,       __ATOMIC_RELAXED);
 	cur_cmp_inject_arm_a_children       = __atomic_load_n(&kcov_shm->cmp_inject_arm_a_children,       __ATOMIC_RELAXED);
 	cur_cmp_inject_arm_b_children       = __atomic_load_n(&kcov_shm->cmp_inject_arm_b_children,       __ATOMIC_RELAXED);
+	cur_prop_ring_argop_arm_b_fires     = __atomic_load_n(&kcov_shm->prop_ring_argop_arm_b_fires,     __ATOMIC_RELAXED);
+	cur_prop_ring_argop_arm_a_children  = __atomic_load_n(&kcov_shm->prop_ring_argop_arm_a_children,  __ATOMIC_RELAXED);
+	cur_prop_ring_argop_arm_b_children  = __atomic_load_n(&kcov_shm->prop_ring_argop_arm_b_children,  __ATOMIC_RELAXED);
 
 	/* First call: arm the window so any pre-existing counts carried
 	 * over from earlier in the run are not mis-attributed to the
@@ -4955,6 +4961,7 @@ void kcov_cmp_stats_periodic_dump(void)
 		prev_cmp_inject_arm_a_baseline_fires = cur_cmp_inject_arm_a_baseline_fires;
 		prev_cmp_inject_arm_b_baseline_fires = cur_cmp_inject_arm_b_baseline_fires;
 		prev_cmp_inject_denom_diverged       = cur_cmp_inject_denom_diverged;
+		prev_prop_ring_argop_arm_b_fires     = cur_prop_ring_argop_arm_b_fires;
 		return;
 	}
 
@@ -5012,6 +5019,7 @@ void kcov_cmp_stats_periodic_dump(void)
 	delta_cmp_inject_arm_a_baseline_fires = cur_cmp_inject_arm_a_baseline_fires - prev_cmp_inject_arm_a_baseline_fires;
 	delta_cmp_inject_arm_b_baseline_fires = cur_cmp_inject_arm_b_baseline_fires - prev_cmp_inject_arm_b_baseline_fires;
 	delta_cmp_inject_denom_diverged       = cur_cmp_inject_denom_diverged       - prev_cmp_inject_denom_diverged;
+	delta_prop_ring_argop_arm_b_fires     = cur_prop_ring_argop_arm_b_fires     - prev_prop_ring_argop_arm_b_fires;
 
 	if ((delta_records | delta_truncated | delta_bloom_skipped | delta_strip_skipped |
 	     delta_unique | delta_try_get_attempts | delta_try_get_returned |
@@ -5034,7 +5042,8 @@ void kcov_cmp_stats_periodic_dump(void)
 	     delta_cmp_hint_credit_entry_evicted |
 	     delta_cmp_inject_arm_a_baseline_fires |
 	     delta_cmp_inject_arm_b_baseline_fires |
-	     delta_cmp_inject_denom_diverged) != 0 ||
+	     delta_cmp_inject_denom_diverged |
+	     delta_prop_ring_argop_arm_b_fires) != 0 ||
 	    any_callsite_delta) {
 		stats_log_write("KCOV CMP stats over last %lds:\n", elapsed);
 
@@ -5337,6 +5346,22 @@ void kcov_cmp_stats_periodic_dump(void)
 					rate_milli / 1000, rate_milli % 1000,
 					cur_cmp_inject_denom_diverged);
 		}
+		/* A/B handle_arg_op prop_ring cohort (Arm A = no pull, Arm B =
+		 * low-prob pull).  Print the realised cohort split + the Arm B
+		 * fire delta so the operator can size the per-row contribution
+		 * to propagation_injected against the population-normalised fire
+		 * rate.  Arm A has no symmetric fire counter by design (control
+		 * arm skips the pull entirely). */
+		if (delta_prop_ring_argop_arm_b_fires) {
+			unsigned long rate_milli = (delta_prop_ring_argop_arm_b_fires * 1000UL) / (unsigned long)elapsed;
+			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu, children a=%u b=%u)\n",
+					"prop_ring_argop_arm_b_fires",
+					delta_prop_ring_argop_arm_b_fires,
+					rate_milli / 1000, rate_milli % 1000,
+					cur_prop_ring_argop_arm_b_fires,
+					cur_prop_ring_argop_arm_a_children,
+					cur_prop_ring_argop_arm_b_children);
+		}
 	}
 
 	/*
@@ -5446,6 +5471,7 @@ void kcov_cmp_stats_periodic_dump(void)
 	prev_cmp_inject_arm_a_baseline_fires = cur_cmp_inject_arm_a_baseline_fires;
 	prev_cmp_inject_arm_b_baseline_fires = cur_cmp_inject_arm_b_baseline_fires;
 	prev_cmp_inject_denom_diverged       = cur_cmp_inject_denom_diverged;
+	prev_prop_ring_argop_arm_b_fires     = cur_prop_ring_argop_arm_b_fires;
 	last_dump = now;
 }
 
