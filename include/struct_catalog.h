@@ -351,6 +351,7 @@ enum struct_catalog_idx {
 	SC_IP_MREQN,
 	SC_IPV6_MREQ,
 	SC_PACKET_MREQ,
+	SC_GROUP_REQ,
 #ifdef USE_TCP_REPAIR_OPT
 	SC_TCP_REPAIR_OPT,
 #endif
