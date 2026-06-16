@@ -344,12 +344,12 @@ static void sanitise_statmount(struct syscallrecord *rec)
 	 * The csfu allocation (`req`) is the libc-heap pointer the kernel
 	 * read from; once avoid_shared_buffer_inout has either left rec->a1
 	 * pointing at it or relocated it, the local handle is the only path
-	 * back to that buffer.  Enqueue it for deferred release so its TTL
-	 * outlives the post handler without leaking on the no-relocation
-	 * path.  Matches the deferred_free_enqueue() lifetime sched_setattr
-	 * and the rest of the csfu consumer set already use.
+	 * back to that buffer.  Register it with the per-rec owned-pointer
+	 * carrier so the post-dispatch cleanup drain frees it after .post
+	 * has re-read snap->req, replacing the deferred-free TTL margin
+	 * with a deterministic post-dispatch lifetime.
 	 */
-	deferred_free_enqueue_or_leak(req);
+	rec_own(rec, req);
 }
 
 /*
