@@ -327,7 +327,10 @@ static void json_emit_kcov_section(void)
 
 	kc_edges  = __atomic_load_n(&kcov_shm->edges_found,  __ATOMIC_RELAXED);
 	kc_pcs    = __atomic_load_n(&kcov_shm->total_pcs,    __ATOMIC_RELAXED);
-	kc_calls  = __atomic_load_n(&kcov_shm->total_calls,  __ATOMIC_RELAXED);
+	/* total_calls drained from the per-child stats_ring into
+	 * parent_stats; kcov_shm->total_calls is kept as the stamp
+	 * source for last_edge_at[] / last_efault_at[] only. */
+	kc_calls  = parent_stats.total_calls;
 	kc_remote = __atomic_load_n(&kcov_shm->remote_calls, __ATOMIC_RELAXED);
 	kc_cmp_records = __atomic_load_n(&kcov_shm->cmp_records_collected,
 		__ATOMIC_RELAXED);
@@ -7246,7 +7249,10 @@ static void dump_stats_kcov_block(void)
 
 		unsigned long kc_edges       = __atomic_load_n(&kcov_shm->edges_found,            __ATOMIC_RELAXED);
 		unsigned long kc_pcs         = __atomic_load_n(&kcov_shm->total_pcs,              __ATOMIC_RELAXED);
-		unsigned long kc_calls       = __atomic_load_n(&kcov_shm->total_calls,            __ATOMIC_RELAXED);
+		/* See per-child total_calls migration in stats_ring.h:
+		 * dump-side total_calls reads parent_stats; kcov_shm
+		 * stays as the stamp source. */
+		unsigned long kc_calls       = parent_stats.total_calls;
 		unsigned long kc_remote      = __atomic_load_n(&kcov_shm->remote_calls,           __ATOMIC_RELAXED);
 		unsigned long kc_cmp_records = __atomic_load_n(&kcov_shm->cmp_records_collected,  __ATOMIC_RELAXED);
 		unsigned long kc_cmp_trunc   = __atomic_load_n(&kcov_shm->cmp_trace_truncated,    __ATOMIC_RELAXED);

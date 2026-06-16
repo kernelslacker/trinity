@@ -44,6 +44,7 @@
 #include "rnd.h"
 #include "shm.h"
 #include "stats.h"
+#include "stats_ring.h"
 #include "strategy.h"
 #include "syscall.h"
 #include "tables.h"
@@ -744,19 +745,64 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 
 /*
  * Drain the per-child kcov_child_local_stats counters into the
- * shared kcov_shared atomics.  No-op stub today -- this commit lands
- * the per-child staging plumbing (struct kcov_child_local_stats, the
- * childdata->local_stats pointer, the calloc in
- * init_child_runtime_config) without migrating any bumper, so the
- * staging counters never advance and the flush has nothing to
- * publish.  The function exists so the future migration patch can
- * add callers in one place rather than threading flush logic through
- * every bump site.
+ * parent_stats aggregate via the child's stats_ring.  Called from
+ * kcov_collect() on two triggers ORed together:
+ *
+ *   (a) a piggyback on the found-new-edge branch -- a syscall that
+ *       widened coverage is already paying the dump-side notification
+ *       cost, so fold the staged total_calls delta into the same
+ *       parent drain cycle;
+ *   (b) a fallback cadence cap of KCOV_LOCAL_STATS_FLUSH_SYSCALLS
+ *       calls since the last flush, so a workload that goes a long
+ *       stretch without finding a new edge still publishes its
+ *       per-call accounting in bounded time.
+ *
+ * Ring-overflow policy mirrors every other stats_ring_enqueue
+ * caller: if the ring is full, stats_ring_enqueue() drops the slot
+ * and bumps parent_stats.ring_overflow_total -- the staged delta is
+ * still zeroed here so the next flush does not double-publish.  The
+ * dump path's "total_calls" is best-effort by construction (the
+ * pre-existing kcov_shm->total_calls atomic was a relaxed bump
+ * anyway), so a dropped batch surfaces as a small undercount with
+ * the overflow counter as the diagnostic.
  */
 void kcov_child_flush_stats(struct childdata *child)
 {
-	(void) child;
+	struct kcov_child_local_stats *ls;
+	unsigned long delta;
+
+	if (child == NULL)
+		return;
+	ls = child->local_stats;
+	if (ls == NULL)
+		return;
+
+	delta = ls->total_calls;
+	if (delta > 0) {
+		/* uint32_t delta field on the slot: clamp in the
+		 * pathological case where the flush cadence cap was
+		 * itself missed (e.g. ring stayed full for so long that
+		 * total_calls climbed past UINT32_MAX).  Publish what
+		 * fits, leave the remainder staged for the next flush. */
+		uint32_t pub = (delta > UINT32_MAX) ? UINT32_MAX
+						    : (uint32_t)delta;
+
+		(void) stats_ring_enqueue(child->stats_ring,
+					  STATS_FIELD_TOTAL_CALLS, 0, pub);
+		ls->total_calls = delta - pub;
+	}
+	ls->local_syscalls_since_flush = 0;
 }
+
+/*
+ * Fallback flush cadence: bump local_syscalls_since_flush every
+ * kcov_collect() call and force a flush once this many syscalls have
+ * elapsed without one.  Picked so the parent's per-iteration drain
+ * still sees a non-stale total_calls under a workload that goes long
+ * stretches without finding a new edge; the found-new piggyback
+ * keeps the common-case latency near zero.
+ */
+#define KCOV_LOCAL_STATS_FLUSH_SYSCALLS 4096u
 
 void kcov_cleanup_child(struct kcov_child *kc)
 {
@@ -1474,12 +1520,36 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 	if (!kc->active)
 		return false;
 
+	/* kcov_shm->total_calls is now bumped ONLY for its stamp role:
+	 * the returned call_nr is stored into kcov_shm->last_edge_at[nr]
+	 * on the found-new-edge branch below and read by the cold-skip
+	 * gap denominator in kcov_syscall_cold_skip_pct() / by the
+	 * last_efault_at[] stamp in syscall.c.  The dump-side accounting
+	 * (post-mortem, stats.c JSON + Scuba rows, strategy snapshots)
+	 * now reads parent_stats.total_calls instead, drained from the
+	 * per-child kcov_child_local_stats staging counter bumped below. */
 	call_nr = __atomic_fetch_add(&kcov_shm->total_calls,
 		1, __ATOMIC_RELAXED);
 
 	if (kc->remote_mode)
 		__atomic_fetch_add(&kcov_shm->remote_calls,
 			1, __ATOMIC_RELAXED);
+
+	/* Per-child staging bump for the dump-side total_calls.  Lives
+	 * on childdata->local_stats so the hot kcov_shm->total_calls
+	 * cacheline does not also take a relaxed atomic bump per call
+	 * for the (formerly) duplicate dump accounting.  this_child()
+	 * is NULL only in parent context, which kcov_collect()'s
+	 * callers do not reach -- guard anyway so a future caller
+	 * cannot crash the parent on a stray invocation. */
+	{
+		struct childdata *cc = this_child();
+
+		if (cc != NULL && cc->local_stats != NULL) {
+			cc->local_stats->total_calls++;
+			cc->local_stats->local_syscalls_since_flush++;
+		}
+	}
 
 	count = __atomic_load_n(&kc->trace_buf[0], __ATOMIC_RELAXED);
 	if (count >= KCOV_TRACE_SIZE - 1) {
@@ -1868,6 +1938,25 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 		    KCOV_TRANSITION_REWARD_OFF)
 			result->transition_edges_real_local =
 				transitions_this_call;
+	}
+
+	/* Drain the per-child kcov_child_local_stats staging counters
+	 * into parent_stats via the stats_ring on either trigger:
+	 *   (a) found_new -- a fresh edge already costs a dump-side
+	 *       notification, fold the staged delta into the same drain;
+	 *   (b) the syscalls-since-flush counter has reached the cadence
+	 *       cap, so a long run of no-new-edge calls still publishes.
+	 * The bumps above are gated on this_child() != NULL && local_stats
+	 * != NULL; mirror that gate here. */
+	{
+		struct childdata *cc = this_child();
+
+		if (cc != NULL && cc->local_stats != NULL) {
+			if (found_new ||
+			    cc->local_stats->local_syscalls_since_flush >=
+				    KCOV_LOCAL_STATS_FLUSH_SYSCALLS)
+				kcov_child_flush_stats(cc);
+		}
 	}
 
 	return found_new;

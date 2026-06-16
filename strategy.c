@@ -39,6 +39,7 @@
 #include "rnd.h"
 #include "shm.h"
 #include "stats.h"		/* stats_log_write */
+#include "stats_ring.h"		/* parent_stats */
 #include "strategy.h"
 #include "syscall.h"		/* MAX_NR_SYSCALL */
 #include "tables.h"		/* syscalls, max_nr_syscalls */
@@ -1441,8 +1442,12 @@ void plateau_snapshot_capture(struct plateau_window_snapshot *snap)
 			&kcov_shm->cmp_hints_unique_inserts, __ATOMIC_RELAXED);
 		snap->remote_calls = __atomic_load_n(&kcov_shm->remote_calls,
 						     __ATOMIC_RELAXED);
-		snap->total_calls = __atomic_load_n(&kcov_shm->total_calls,
-						    __ATOMIC_RELAXED);
+		/* total_calls is now drained from per-child stats_ring
+		 * into parent_stats; kcov_shm->total_calls is reserved
+		 * for the last_edge_at[] / last_efault_at[] stamp source
+		 * and the cold-skip gap denominator only.  See
+		 * stats_ring.h. */
+		snap->total_calls = parent_stats.total_calls;
 
 		/* Per-group new-edge attribution.  per_syscall_edges is a
 		 * CALL-COUNT signal (a syscall that uncovers 50 distinct
