@@ -5240,6 +5240,24 @@ static const struct struct_field ip_mreqn_fields[] = {
 };
 
 /*
+ * struct ip_mreq_source -- IPPROTO_IP / IP_{ADD,DROP}_SOURCE_MEMBERSHIP
+ * and IP_{BLOCK,UNBLOCK}_SOURCE.  The IPv4 source-multicast sibling of
+ * ip_mreqn: imr_multiaddr selects the multicast group, imr_interface
+ * the local interface address (zero = kernel default), imr_sourceaddr
+ * the unicast source whose membership is being added / dropped /
+ * blocked / unblocked.  imr_multiaddr tags FT_MAGIC -- the natural tag
+ * for curated be32 multicast vocab -- though the schema fill switch
+ * still falls through to FT_RAW for it today; the other two fields
+ * stay FT_RAW.  Same multicast-bias regression vs the bespoke builder
+ * applies, with the same FT_MAGIC follow-up restoring it.
+ */
+static const struct struct_field ip_mreq_source_fields[] = {
+	FIELDX(struct ip_mreq_source, imr_multiaddr, FT_MAGIC),
+	FIELD(struct ip_mreq_source, imr_interface),
+	FIELD(struct ip_mreq_source, imr_sourceaddr),
+};
+
+/*
  * struct ipv6_mreq -- IPPROTO_IPV6 / IPV6_{ADD,DROP}_MEMBERSHIP.
  * Bespoke build_ipv6_mreq() set ipv6mr_multiaddr to a link-local
  * solicited-node address (ff02::xx) and zeroed ipv6mr_interface.
@@ -6378,6 +6396,12 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= group_source_req_fields,
 		.num_fields	= ARRAY_SIZE(group_source_req_fields),
 	},
+	[SC_IP_MREQ_SOURCE] = {
+		.name		= "ip_mreq_source",
+		.struct_size	= sizeof(struct ip_mreq_source),
+		.fields		= ip_mreq_source_fields,
+		.num_fields	= ARRAY_SIZE(ip_mreq_source_fields),
+	},
 #ifdef USE_TCP_REPAIR_OPT
 	[SC_TCP_REPAIR_OPT] = {
 		.name		= "tcp_repair_opt",
@@ -6687,6 +6711,13 @@ static const unsigned long setsockopt_ip_mreqn_optnames[] = {
 	IP_ADD_MEMBERSHIP,
 	IP_DROP_MEMBERSHIP,
 	IP_MULTICAST_IF,
+};
+
+static const unsigned long setsockopt_ip_mreq_source_optnames[] = {
+	IP_ADD_SOURCE_MEMBERSHIP,
+	IP_DROP_SOURCE_MEMBERSHIP,
+	IP_BLOCK_SOURCE,
+	IP_UNBLOCK_SOURCE,
 };
 
 static const unsigned long setsockopt_ipv6_mreq_optnames[] = {
@@ -7535,6 +7566,14 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 		.discrim2_arg_idx	= 3,
 		.discrim2_values	= setsockopt_ip_mreqn_optnames,
 		.num_discrim2_values	= ARRAY_SIZE(setsockopt_ip_mreqn_optnames),
+	},
+	{
+		"setsockopt", 4, &struct_catalog[SC_IP_MREQ_SOURCE],
+		.discrim_arg_idx	= 2,
+		.discrim_value		= IPPROTO_IP,
+		.discrim2_arg_idx	= 3,
+		.discrim2_values	= setsockopt_ip_mreq_source_optnames,
+		.num_discrim2_values	= ARRAY_SIZE(setsockopt_ip_mreq_source_optnames),
 	},
 	{
 		"setsockopt", 4, &struct_catalog[SC_IPV6_MREQ],

@@ -382,6 +382,7 @@ enum struct_catalog_idx {
 	SC_FS_DISK_QUOTA,
 	SC_MMSGHDR,
 	SC_GROUP_SOURCE_REQ,
+	SC_IP_MREQ_SOURCE,
 
 	SC_NR_ENTRIES,		/* sentinel; equals ARRAY_SIZE(struct_catalog) once both stay in lockstep */
 };
