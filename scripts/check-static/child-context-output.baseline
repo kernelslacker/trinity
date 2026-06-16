@@ -179,10 +179,10 @@ syscalls/map_shadow_stack.c:45:post_map_shadow_stack
 syscalls/mincore.c:103:post_mincore
 syscalls/mmap.c:221:post_mmap
 syscalls/mmap.c:415:post_mmap
-syscalls/move_pages.c:159:post_move_pages
-syscalls/move_pages.c:177:post_move_pages
-syscalls/move_pages.c:196:post_move_pages
-syscalls/move_pages.c:226:post_move_pages
+syscalls/move_pages.c:169:post_move_pages
+syscalls/move_pages.c:187:post_move_pages
+syscalls/move_pages.c:206:post_move_pages
+syscalls/move_pages.c:236:post_move_pages
 syscalls/mprotect.c:150:post_mprotect
 syscalls/mprotect.c:197:post_mprotect
 syscalls/mq_notify.c:86:post_mq_notify

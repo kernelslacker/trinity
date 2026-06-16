@@ -100,6 +100,16 @@ static void sanitise_move_pages(struct syscallrecord *rec)
 	snap->status = status;
 	snap->count = count;
 	rec->post_state = (unsigned long) snap;
+
+	/*
+	 * Capture the genuine kernel-input buffers at sanitise time, before
+	 * any sibling can stomp rec->a3/a4/a5; the carrier drain after .post
+	 * frees them unconditionally and also closes the skip-.post leak on
+	 * retfd-rejected / killed-EXTRA_FORK paths.
+	 */
+	rec_own(rec, page_alloc);
+	rec_own(rec, nodes);
+	rec_own(rec, status);
 }
 
 /*
@@ -229,9 +239,6 @@ static void post_move_pages(struct syscallrecord *rec)
 		/* fall through to release allocations */
 	}
 
-	deferred_free_enqueue(snap->pages);
-	deferred_free_enqueue(snap->nodes);
-	deferred_free_enqueue(snap->status);
 	deferred_freeptr(&rec->post_state);
 }
 
