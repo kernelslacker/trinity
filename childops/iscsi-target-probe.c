@@ -66,6 +66,7 @@
 #include <arpa/inet.h>
 
 #include "child.h"
+#include "debug.h"
 #include "jitter.h"
 #include "random.h"
 #include "rnd.h"
@@ -302,7 +303,10 @@ static const char *const iscsi_login_value_extras[] = {
 static const char *pick_vocab(const char *const *primary, unsigned int pn,
 			      const char *const *extras, unsigned int en)
 {
-	unsigned int idx = rnd_modulo_u32(pn + en);
+	unsigned int idx;
+
+	BUG_ON(pn + en == 0);
+	idx = rnd_modulo_u32(pn + en);
 
 	return (idx < pn) ? primary[idx] : extras[idx - pn];
 }
