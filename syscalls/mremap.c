@@ -308,4 +308,5 @@ struct syscallentry syscall_mremap = {
 	.group = GROUP_VM,
 	.post = post_mremap,
 	.rettype = RET_ADDRESS,
+	.flags = AVOID_REEXEC,
 };
