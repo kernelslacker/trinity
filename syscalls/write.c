@@ -28,9 +28,12 @@
  * is value-based only -- a sibling scribbling rec->post_state with any
  * heap-shaped 8-byte aligned pointer to a foreign allocation sails past
  * looks_like_corrupted_ptr() and the post handler then reads snap->count
- * from foreign bytes and free()s snap->buf as a foreign address; both
- * surface as the dominant __zmalloc -> malloc -> malloc_printerr ->
- * abort crash cluster.  Mirrors RECVMSG_POST_STATE_MAGIC at recv.c:103.
+ * from foreign bytes, surfacing as the dominant __zmalloc -> malloc ->
+ * malloc_printerr -> abort crash cluster.  Mirrors RECVMSG_POST_STATE_MAGIC
+ * at recv.c:103.  The kernel-input buffer itself is captured into the
+ * rec owned[] carrier at sanitise time and drained unconditionally after
+ * .post, so snap->buf is read-only here -- a foreign re-read can no longer
+ * drive a bad free.
  * Padded to 32 bytes (48-byte glibc malloc chunk) so the snap does not
  * land in the 32-byte chunk bucket shared with size=1 bufs (the
  * RAND_BOOL branch below uses size=1 half the time) and with the small
@@ -147,6 +150,14 @@ static void sanitise_write(struct syscallrecord *rec)
 	snap->buf = (unsigned long) ptr;
 	snap->count = size;
 	rec->post_state = (unsigned long) snap;
+
+	/*
+	 * Capture the genuine kernel-input buffer at sanitise time, before
+	 * any sibling can stomp rec->a2 or rec->post_state; the carrier drain
+	 * after .post frees it unconditionally and also closes the skip-.post
+	 * leak on retfd-rejected / killed-EXTRA_FORK paths.
+	 */
+	rec_own(rec, ptr);
 }
 
 static void post_write(struct syscallrecord *rec)
@@ -170,9 +181,8 @@ static void post_write(struct syscallrecord *rec)
 	 * Magic-cookie check: snap survived the heap-shape gate but a
 	 * sibling scribble of rec->post_state with a heap-shaped pointer
 	 * to a foreign allocation would let the wrong bytes pose as a
-	 * write_post_state -- the subsequent free(snap->buf) would feed
-	 * a foreign address back to glibc and the count-bound check would
-	 * compare retval against garbage.  Mirrors recv.c:212.
+	 * write_post_state -- the count-bound check would then compare
+	 * retval against garbage.  Mirrors recv.c:212.
 	 */
 	if (snap->magic != WRITE_POST_STATE_MAGIC) {
 		outputerr("post_write: rejected snap with bad magic 0x%lx "
@@ -211,8 +221,6 @@ skip_bound:
 
 out_free:
 	rec->a2 = 0;
-	deferred_free_enqueue((void *) snap->buf);
-	snap->buf = 0;
 	deferred_freeptr(&rec->post_state);
 }
 
