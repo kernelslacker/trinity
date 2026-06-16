@@ -1137,6 +1137,7 @@ static bool argtype_accepts_numeric_substitute(enum argtype t)
 	case ARG_ITIMERVAL:
 	case ARG_ITIMERSPEC:
 	case ARG_TIMEVAL:
+	case ARG_NODEMASK:
 	case ARG_BUF_SIZED:
 	case ARG_IOVEC:
 	case ARG_IOVEC_IN:
