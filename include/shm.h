@@ -796,10 +796,6 @@ struct shm_s {
 	 *   recent_reward_x1000[i] / recent_pulls_x1000[i] (the x1000
 	 *   cancels) so the UCB1 exploit term works without an explicit
 	 *   rescale step.
-	 * last_selected_window[]: bandit_window_count snapshot at the last
-	 *   pull of each arm.  Diagnostic only — surfaced in
-	 *   dump_strategy_stats() so the operator can see how stale each
-	 *   arm's recent estimate is.
 	 *
 	 * Decaying EVERY arm each window (not just the pulled one) is what
 	 * keeps the UCB1 exploration term n_i denominator meaningful under
@@ -821,7 +817,6 @@ struct shm_s {
 	 */
 	unsigned long recent_pulls_x1000[NR_STRATEGIES];
 	unsigned long recent_reward_x1000[NR_STRATEGIES];
-	unsigned long last_selected_window[NR_STRATEGIES];
 
 	/*
 	 * Monotonic rotation counter, bumped by the CAS-winning child in

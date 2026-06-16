@@ -204,7 +204,6 @@ void bandit_record_pull(int arm, enum strategy_selection_reason reason,
 	unsigned long cmp_term;
 	unsigned long trans_term;
 	unsigned long total;
-	unsigned long now_window;
 	unsigned int chaos_idx;
 	int i;
 
@@ -331,8 +330,6 @@ void bandit_record_pull(int arm, enum strategy_selection_reason reason,
 	 * observed by any path, including SR_PLATEAU_FORCE" rather than
 	 * "not observed lately" -- and the lifetime fields also back
 	 * dump_strategy_stats. */
-	now_window = __atomic_load_n(&shm->bandit_window_count,
-				     __ATOMIC_RELAXED);
 	for (i = 0; i < NR_STRATEGIES; i++) {
 		unsigned long p = __atomic_load_n(&shm->recent_pulls_x1000[i],
 						  __ATOMIC_RELAXED);
@@ -348,8 +345,6 @@ void bandit_record_pull(int arm, enum strategy_selection_reason reason,
 			   __ATOMIC_RELAXED);
 	__atomic_fetch_add(&shm->recent_reward_x1000[arm],
 			   total * BANDIT_EMA_SCALE, __ATOMIC_RELAXED);
-	__atomic_store_n(&shm->last_selected_window[arm], now_window,
-			 __ATOMIC_RELAXED);
 
 	if (cmp_term == 0)
 		return;
