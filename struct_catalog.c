@@ -5289,6 +5289,26 @@ static const struct struct_field packet_mreq_fields[] = {
 	FIELD(struct packet_mreq, mr_address),
 };
 
+/*
+ * struct group_req -- IPPROTO_IP / IPPROTO_IPV6 / MCAST_{JOIN,LEAVE}_GROUP.
+ * The protocol-independent MCAST_JOIN_GROUP / MCAST_LEAVE_GROUP optnames
+ * accept the same payload at both levels: a small unsigned ifindex plus a
+ * sockaddr_storage carrying the multicast group address (AF_INET sin_addr
+ * in 224.0.0.0/4 or AF_INET6 sin6_addr in ff00::/8).  gr_interface tags
+ * FT_RANGE over a small ifindex window, mirroring packet_mreq's
+ * mr_ifindex.  gr_group is left FT_RAW: a multicast-addr bias (or
+ * re-using the cataloged sockaddr_storage variant set) is a follow-up;
+ * for the initial registration FT_RAW is the accepted default per the
+ * two-key catalog design (the bespoke builder did not exist for this
+ * shape, so there is no "lands in a valid range" regression to preserve).
+ */
+static const struct struct_field group_req_fields[] = {
+	FIELDX(struct group_req, gr_interface, FT_RANGE,
+	       .u.range = { 0, 4 },
+	       .mutate_weight = 60),
+	FIELD(struct group_req, gr_group),
+};
+
 #ifdef USE_TCP_REPAIR_OPT
 /*
  * struct tcp_repair_opt -- IPPROTO_TCP / TCP_REPAIR_OPTIONS.  The kernel
@@ -6323,6 +6343,12 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= packet_mreq_fields,
 		.num_fields	= ARRAY_SIZE(packet_mreq_fields),
 	},
+	[SC_GROUP_REQ] = {
+		.name		= "group_req",
+		.struct_size	= sizeof(struct group_req),
+		.fields		= group_req_fields,
+		.num_fields	= ARRAY_SIZE(group_req_fields),
+	},
 #ifdef USE_TCP_REPAIR_OPT
 	[SC_TCP_REPAIR_OPT] = {
 		.name		= "tcp_repair_opt",
@@ -6642,6 +6668,22 @@ static const unsigned long setsockopt_ipv6_mreq_optnames[] = {
 static const unsigned long setsockopt_packet_mreq_optnames[] = {
 	PACKET_ADD_MEMBERSHIP,
 	PACKET_DROP_MEMBERSHIP,
+};
+
+/*
+ * Protocol-independent MCAST_* setsockopt family: the same optname
+ * payload is accepted under both IPPROTO_IP and IPPROTO_IPV6.  The
+ * two-key map entry uses both lists so one row covers the full
+ * (level, optname) cross product without cloning the entry.
+ */
+static const unsigned long setsockopt_mcast_levels[] = {
+	IPPROTO_IP,
+	IPPROTO_IPV6,
+};
+
+static const unsigned long setsockopt_mcast_join_optnames[] = {
+	MCAST_JOIN_GROUP,
+	MCAST_LEAVE_GROUP,
 };
 
 #ifdef USE_SCTP
@@ -7468,6 +7510,15 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 		.discrim2_arg_idx	= 3,
 		.discrim2_values	= setsockopt_packet_mreq_optnames,
 		.num_discrim2_values	= ARRAY_SIZE(setsockopt_packet_mreq_optnames),
+	},
+	{
+		"setsockopt", 4, &struct_catalog[SC_GROUP_REQ],
+		.discrim_arg_idx	= 2,
+		.discrim_values		= setsockopt_mcast_levels,
+		.num_discrim_values	= ARRAY_SIZE(setsockopt_mcast_levels),
+		.discrim2_arg_idx	= 3,
+		.discrim2_values	= setsockopt_mcast_join_optnames,
+		.num_discrim2_values	= ARRAY_SIZE(setsockopt_mcast_join_optnames),
 	},
 #ifdef USE_TCP_REPAIR_OPT
 	{
