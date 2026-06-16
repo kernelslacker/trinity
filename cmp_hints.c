@@ -50,6 +50,7 @@
 #include "persist-util.h"
 #include "random.h"
 #include "rnd.h"
+#include "stats_ring.h"
 #include "struct_catalog.h"
 #include "syscall.h"
 #include "tables.h"
@@ -1974,8 +1975,20 @@ bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 		return false;
 
 	if (kcov_shm != NULL) {
-		__atomic_fetch_add(&kcov_shm->cmp_hints_try_get_attempts, 1UL,
-				   __ATOMIC_RELAXED);
+		/* Scalar attempts counter now lives in parent_stats and is
+		 * fed via the per-child stats_ring -- the kernel cannot
+		 * scribble it through any fuzzed syscall arg because the
+		 * authoritative copy is in MAP_PRIVATE parent memory.
+		 * Direct +1 enqueue (no local staging like the kcov
+		 * batched counters): cmp_hints_try_get fires at consumer
+		 * cadence, well below the SPSC budget.  Ring-full drops
+		 * fold into ring_overflow_total. */
+		struct childdata *attempt_child = this_child();
+
+		if (attempt_child != NULL)
+			(void) stats_ring_enqueue(attempt_child->stats_ring,
+						  STATS_FIELD_CMP_HINTS_TRY_GET_ATTEMPTS,
+						  0, 1);
 		/* per-nr partition of the consumer-demand
 		 * counter.  The shm/nr guard above already pinned nr <
 		 * MAX_NR_SYSCALL so the index is in-bounds. */
@@ -2043,8 +2056,16 @@ bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 	*out = cmp_hint_apply_transform(picked_value, use, old);
 
 	if (kcov_shm != NULL) {
-		__atomic_fetch_add(&kcov_shm->cmp_hints_try_get_returned, 1UL,
-				   __ATOMIC_RELAXED);
+		/* Mirror of the attempts ring path above: scalar returned
+		 * counter now drained into parent_stats; per-nr partition
+		 * stays in kcov_shm pending the same shm_published redesign
+		 * that the per_syscall_calls/edges arrays need. */
+		struct childdata *return_child = this_child();
+
+		if (return_child != NULL)
+			(void) stats_ring_enqueue(return_child->stats_ring,
+						  STATS_FIELD_CMP_HINTS_TRY_GET_RETURNED,
+						  0, 1);
 		/* per-nr partition of the producer-side
 		 * pool-hit counter.  Same in-bounds guard reasoning as the
 		 * attempts bump above. */
