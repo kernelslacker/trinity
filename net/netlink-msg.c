@@ -384,7 +384,7 @@ static size_t gen_rta_route_payload(unsigned char *p, size_t avail,
 	case RTA_NH_ID:
 	case RTA_PRIORITY:
 		if (avail >= 4) {
-			__u32 val = rand32() % 64;
+			__u32 val = rnd_modulo_u32(64);
 			memcpy(p, &val, 4);
 			return 4;
 		}
@@ -446,7 +446,7 @@ static size_t gen_rta_route_payload(unsigned char *p, size_t avail,
 
 			nh.rtnh_flags = rnd_modulo_u32(256);
 			nh.rtnh_hops = rnd_modulo_u32(256);
-			nh.rtnh_ifindex = rand32() % 64;
+			nh.rtnh_ifindex = rnd_modulo_u32(64);
 			nh.rtnh_len = sizeof(struct rtnexthop);
 
 			memcpy(p + written, &nh, sizeof(nh));
@@ -545,7 +545,7 @@ static size_t gen_rta_link_payload(unsigned char *p, size_t avail,
 	case IFLA_NET_NS_PID:
 	case IFLA_NET_NS_FD:
 		if (avail >= 4) {
-			__u32 val = rand32() % 64;
+			__u32 val = rnd_modulo_u32(64);
 			memcpy(p, &val, 4);
 			return 4;
 		}
@@ -1137,7 +1137,7 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 		ifi.ifi_family = rand_family();
 		ifi.__ifi_pad = 0;
 		ifi.ifi_type = rand16();     /* ARPHRD_* */
-		ifi.ifi_index = rand32() % 64; /* small interface indices */
+		ifi.ifi_index = rnd_modulo_u32(64); /* small interface indices */
 		ifi.ifi_flags = rand32();    /* IFF_* */
 		ifi.ifi_change = rand32();
 		*out_family = ifi.ifi_family;
@@ -1153,7 +1153,7 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 		ifa.ifa_prefixlen = rnd_modulo_u32(129);
 		ifa.ifa_flags = rnd_modulo_u32(256);
 		ifa.ifa_scope = rnd_modulo_u32(256);
-		ifa.ifa_index = rand32() % 64;
+		ifa.ifa_index = rnd_modulo_u32(64);
 		*out_family = ifa.ifa_family;
 		memcpy(body, &ifa, sizeof(ifa));
 		return sizeof(ifa);
@@ -1184,7 +1184,7 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 		ndm.ndm_family = rand_family();
 		ndm.ndm_pad1 = 0;
 		ndm.ndm_pad2 = 0;
-		ndm.ndm_ifindex = rand32() % 64;
+		ndm.ndm_ifindex = rnd_modulo_u32(64);
 		ndm.ndm_state = rand16();
 		ndm.ndm_flags = rnd_modulo_u32(256);
 		ndm.ndm_type = rnd_modulo_u32(256);
@@ -1228,7 +1228,7 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 			return 0;
 		memset(&pmsg, 0, sizeof(pmsg));
 		pmsg.prefix_family = rand_family();
-		pmsg.prefix_ifindex = rand32() % 64;
+		pmsg.prefix_ifindex = rnd_modulo_u32(64);
 		pmsg.prefix_type = rnd_modulo_u32(256);
 		pmsg.prefix_len = rnd_modulo_u32(129);
 		pmsg.prefix_flags = rnd_modulo_u32(256);
@@ -1306,7 +1306,7 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 		if (sizeof(bpm) > buflen)
 			return 0;
 		bpm.family = rand_family();
-		bpm.ifindex = rand32() % 64;
+		bpm.ifindex = rnd_modulo_u32(64);
 		*out_family = bpm.family;
 		memcpy(body, &bpm, sizeof(bpm));
 		return sizeof(bpm);
@@ -1319,7 +1319,7 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 		bvm.family = rand_family();
 		bvm.reserved1 = 0;
 		bvm.reserved2 = 0;
-		bvm.ifindex = rand32() % 64;
+		bvm.ifindex = rnd_modulo_u32(64);
 		*out_family = bvm.family;
 		memcpy(body, &bvm, sizeof(bvm));
 		return sizeof(bvm);
@@ -1331,7 +1331,7 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 			return 0;
 		memset(&smsg, 0, sizeof(smsg));
 		smsg.family = rand_family();
-		smsg.ifindex = rand32() % 64;
+		smsg.ifindex = rnd_modulo_u32(64);
 		smsg.filter_mask = rand32();
 		*out_family = smsg.family;
 		memcpy(body, &smsg, sizeof(smsg));
@@ -1360,7 +1360,7 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 		tm.family = rand_family();
 		tm.flags = rand32() & 0xff;
 		tm.reserved2 = 0;
-		tm.ifindex = rand32() % 64;
+		tm.ifindex = rnd_modulo_u32(64);
 		*out_family = tm.family;
 		memcpy(body, &tm, sizeof(tm));
 		return sizeof(tm);
@@ -1376,7 +1376,7 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 		tc.tcm_family = rand_family();
 		tc.tcm__pad1 = 0;
 		tc.tcm__pad2 = 0;
-		tc.tcm_ifindex = rand32() % 64;
+		tc.tcm_ifindex = rnd_modulo_u32(64);
 		tc.tcm_handle = rand32();
 		tc.tcm_parent = rand32();
 		tc.tcm_info = rand32();
