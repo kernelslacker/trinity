@@ -1353,5 +1353,20 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 	if (entry->cleanup != NULL)
 		entry->cleanup(rec);
 
+	/* Default cleanup: drain any pointers a sanitiser / generator /
+	 * .cleanup hook registered via rec_own().  Runs unconditionally
+	 * for the same reasons entry->cleanup above and generic_free_arg
+	 * below do (no state == AFTER gate, no retfd/rzs gate) -- a
+	 * registered pointer is heap memory we own regardless of how the
+	 * dispatch played out.  Ordered AFTER the per-syscall .cleanup
+	 * hook so a handler can register additional pointers from inside
+	 * its hook body (e.g. a snap freed conditionally on rec->retval)
+	 * and still have them swept here in the same cleanup phase.
+	 * Empty on every dispatched call until Phase 2 migrations begin
+	 * populating the carrier; until then this is a NULL-fast-path
+	 * read of rec->owned_count and an early return -- behaviour is
+	 * byte-identical to pre-change. */
+	rec_owned_drain(rec);
+
 	generic_free_arg(entry, rec);
 }

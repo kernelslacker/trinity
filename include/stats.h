@@ -2152,6 +2152,19 @@ struct stats_s {
 	 * get/setxattrat, mq_open, listmount, statmount). */
 	unsigned long deferred_free_pre_dispatch_leaked;
 
+	/* rec_own() found rec->owned[] saturated at REC_OWNED_MAX and
+	 * routed the overflowing pointer through deferred_free_enqueue()
+	 * as the fallback owner.  The per-rec carrier is sized so this
+	 * never fires in practice (heaviest in-tree callers own <= 3
+	 * buffers; the bound is 8); a non-zero rate means a caller is
+	 * registering more pointers per syscall than the carrier
+	 * accommodates, and the fallback re-introduces the very
+	 * pre-dispatch ring-enqueue shape the owned list was built to
+	 * eliminate.  Treat any non-zero rate as a signal to either raise
+	 * REC_OWNED_MAX or audit the offending caller -- the fallback is
+	 * a safety net, not a steady-state path. */
+	unsigned long rec_owned_overflow_to_ring;
+
 	/* tracked_free_now() found @ptr already pinned in the deferred-
 	 * free ring (inflight_hash_contains() == true at entry) and
 	 * routed it through the ring-as-sole-owner path: alloc_track

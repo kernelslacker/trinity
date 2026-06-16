@@ -4167,6 +4167,15 @@ void generate_syscall_args(struct syscallrecord *rec)
 	 * deferred_freeptr would leave a stale pointer in post_state for
 	 * the next syscall's post handler to dereference. */
 	rec->post_state = 0;
+	/* Same hoist for the per-rec owned-pointer list: rec_owned_drain
+	 * zeros owned_count after every dispatched call, but the drain
+	 * site is in handle_syscall_ret -- a minicorpus-replay step that
+	 * inherits a rec where the previous dispatch never reached the
+	 * drain (e.g. the child died between BEFORE and AFTER and the
+	 * rec is re-used after fork) could otherwise see a stale owned[]
+	 * entry and free a pointer the new caller never owned.  Hoisting
+	 * the reset here matches the post_state contract above. */
+	rec->owned_count = 0;
 	/* Same hoist for arg_snapshot_mask: defaults to "nothing shadowed"
 	 * so get_arg_snapshot() in any unrelated handler that somehow gets
 	 * called against this rec (e.g. an early validate_arg_coupling
