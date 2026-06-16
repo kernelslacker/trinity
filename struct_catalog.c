@@ -123,6 +123,9 @@
 #ifdef USE_SCTP
 #include <linux/sctp.h>
 #endif
+#ifdef USE_TCP_REPAIR_OPT
+#include <linux/tcp.h>
+#endif
 
 #include "argtype-ops.h"
 #include "struct_catalog.h"
@@ -5286,6 +5289,23 @@ static const struct struct_field packet_mreq_fields[] = {
 	FIELD(struct packet_mreq, mr_address),
 };
 
+#ifdef USE_TCP_REPAIR_OPT
+/*
+ * struct tcp_repair_opt -- IPPROTO_TCP / TCP_REPAIR_OPTIONS.  The kernel
+ * iterates optlen/sizeof(struct tcp_repair_opt) entries from optval and
+ * switches on opt_code (TCPOPT_*) -- a small discrete opcode set.  Both
+ * fields stay FT_RAW: opt_code is treated as an enum by the kernel (not
+ * an unsigned contiguous window, so FT_RANGE would be wrong), and opt_val
+ * is a per-opcode payload with no shared range.  Single-entry fill is
+ * sufficient to exercise the path; a FT_PTR_ARRAY multi-entry follow-up
+ * is the natural next step but does not block this proof.
+ */
+static const struct struct_field tcp_repair_opt_fields[] = {
+	FIELD(struct tcp_repair_opt, opt_code),
+	FIELD(struct tcp_repair_opt, opt_val),
+};
+#endif
+
 #ifdef USE_SCTP
 /*
  * struct sctp_initmsg -- IPPROTO_SCTP / SCTP_INITMSG.  Four __u16 fields
@@ -6303,6 +6323,14 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= packet_mreq_fields,
 		.num_fields	= ARRAY_SIZE(packet_mreq_fields),
 	},
+#ifdef USE_TCP_REPAIR_OPT
+	[SC_TCP_REPAIR_OPT] = {
+		.name		= "tcp_repair_opt",
+		.struct_size	= sizeof(struct tcp_repair_opt),
+		.fields		= tcp_repair_opt_fields,
+		.num_fields	= ARRAY_SIZE(tcp_repair_opt_fields),
+	},
+#endif
 #ifdef USE_SCTP
 	[SC_SCTP_INITMSG] = {
 		.name		= "sctp_initmsg",
@@ -7441,6 +7469,15 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 		.discrim2_values	= setsockopt_packet_mreq_optnames,
 		.num_discrim2_values	= ARRAY_SIZE(setsockopt_packet_mreq_optnames),
 	},
+#ifdef USE_TCP_REPAIR_OPT
+	{
+		"setsockopt", 4, &struct_catalog[SC_TCP_REPAIR_OPT],
+		.discrim_arg_idx	= 2,
+		.discrim_value		= IPPROTO_TCP,
+		.discrim2_arg_idx	= 3,
+		.discrim2_value		= TCP_REPAIR_OPTIONS,
+	},
+#endif
 #ifdef USE_SCTP
 	{
 		"setsockopt", 4, &struct_catalog[SC_SCTP_INITMSG],
