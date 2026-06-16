@@ -474,7 +474,7 @@ static unsigned long handle_arg_iovec_dir(struct syscallentry *entry,
 	 *
 	 *   5% 0                            (legal zero-length arm)
 	 *  25% 1                            (dominant in real code)
-	 *  40% RAND_RANGE(2, UIO_FASTIOV)
+	 *  40% RAND_RANGE(2, UIO_FASTIOV - 1)
 	 *  10% UIO_FASTIOV                  (stack/heap boundary)
 	 *  10% RAND_RANGE(9, 64)
 	 *   5% RAND_RANGE(65, UIO_MAXIOV-1)
