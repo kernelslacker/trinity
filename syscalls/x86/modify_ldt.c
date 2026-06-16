@@ -53,6 +53,11 @@ static void sanitise_modify_ldt(struct syscallrecord *rec)
 		ldt = zmalloc_tracked(ALLOCSIZE);
 		rec->a2 = (unsigned long) ldt;
 		rec->a3 = ALLOCSIZE;
+		/* Hand the genuine tracked pointer to the rec owned[] carrier
+		 * now, before any sibling can stomp rec->post_state.  The drain
+		 * runs after post_modify_ldt(), so the oracle deref of snap->ldt
+		 * stays valid; the free then happens unconditionally. */
+		rec_own(rec, ldt);
 		/* Snapshot for the post handler -- a1 / a2 / a3 may be
 		 * scribbled by a sibling syscall before post_modify_ldt() runs. */
 		snap = zmalloc_tracked(sizeof(*snap));
@@ -113,8 +118,9 @@ static void post_modify_ldt(struct syscallrecord *rec)
 	 * to a foreign allocation would let the wrong bytes pose as a
 	 * modify_ldt_post_state.  A cookie mismatch means snap does not
 	 * point at our struct -- abandon rather than feed wild bytes into
-	 * the func / bytecount retval bound check and the inner ldt
-	 * deferred-free.
+	 * the func / bytecount retval bound check.  The ldt buffer itself
+	 * is owned by the rec carrier and freed unconditionally by the
+	 * drain after this handler returns, so bailing here cannot leak it.
 	 */
 	if (snap->magic != MODIFY_LDT_POST_STATE_MAGIC) {
 		outputerr("post_modify_ldt: rejected snap with bad magic 0x%lx "
@@ -136,8 +142,8 @@ static void post_modify_ldt(struct syscallrecord *rec)
 	 * user-supplied bound, or -errno leaking through the success slot.
 	 * Write funcs (a1 == 1/2) return 0/-1 only and are covered by the
 	 * dispatcher-level RZS blanket validator; nothing to do here.  Fall
-	 * through to the free path so the deferred ldt / snap buffers are
-	 * still released.
+	 * through to the snap free below; the ldt buffer itself is owned by
+	 * the rec carrier and released by the drain after .post.
 	 */
 	if (snap->func == 0 &&
 	    ret != -1L &&
@@ -148,7 +154,6 @@ static void post_modify_ldt(struct syscallrecord *rec)
 	}
 
 	rec->a2 = 0;
-	deferred_freeptr(&snap->ldt);
 	deferred_freeptr(&rec->post_state);
 }
 
