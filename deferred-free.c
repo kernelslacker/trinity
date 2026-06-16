@@ -153,6 +153,24 @@ static void *alloc_track_base;
 static size_t alloc_track_bytes;
 
 /*
+ * Parallel size storage indexed identically to alloc_track[]: each
+ * slot records the allocation extent passed to deferred_alloc_track()
+ * at registration time, so a consumer that holds a tracked pointer
+ * (cmp_hints field scan today) can recover the real allocation length
+ * without re-asking the allocator.  Shares the alloc_track_base
+ * mmap'd region so the same mprotect bracket covers it -- a fuzzed
+ * value-result syscall that aliases these pages hits the PROT_READ
+ * wall instead of silently flipping a recorded size.  Slot index
+ * matches alloc_track[]: a consume() that nulls alloc_track[idx]
+ * MUST zero alloc_track_sizes[idx] in the same bracket so the size
+ * cannot survive its pointer (a stale non-zero size lingering after
+ * the slot rotated out would feed a downstream bound check with a
+ * length that does not belong to the value the caller actually
+ * holds).
+ */
+static size_t *alloc_track_sizes;
+
+/*
  * Side-set membership accelerator for alloc_track[].
  *
  * alloc_track_consume() and alloc_track_lookup() resolve membership
@@ -340,6 +358,37 @@ bool alloc_track_lookup(void *ptr)
 }
 
 /*
+ * Hash-gated fast reject mirrors alloc_track_consume(): a miss
+ * short-circuits without touching alloc_track[] / alloc_track_sizes[].
+ * Hits proceed to the backward scan to locate the slot whose ptr
+ * matches, then read the parallel sizes array.  Backward-from-head
+ * walks the recently-inserted entries first; most cmp_hints field
+ * scans look up a buffer registered a handful of allocations earlier
+ * (sanitiser zmalloc_tracked just before dispatch), so the scan
+ * terminates close to head.  Reads run against the PROT_READ steady
+ * state -- no mprotect bracket on this hot path.  Returns 0 on miss
+ * so the caller can treat "unknown extent" as "do not derive a bound"
+ * (the safer direction: a downstream read gated on lookup_size > 0
+ * skips when we cannot prove the buffer's length).
+ */
+size_t alloc_track_lookup_size(void *ptr)
+{
+	unsigned int idx;
+	unsigned int i;
+
+	if (ptr == NULL || !alloc_track_lookup(ptr))
+		return 0;
+
+	idx = (alloc_track_head - 1) & (ALLOC_TRACK_SIZE - 1);
+	for (i = 0; i < ALLOC_TRACK_SIZE; i++) {
+		if (alloc_track[idx] == ptr)
+			return alloc_track_sizes[idx];
+		idx = (idx - 1) & (ALLOC_TRACK_SIZE - 1);
+	}
+	return 0;
+}
+
+/*
  * In-flight pointer set: mirrors "currently admitted to the deferred
  * ring" membership.  Populated at the tail of deferred_free_enqueue
  * after the ring slot write succeeds; cleared at the tail of
@@ -480,7 +529,7 @@ static void inflight_hash_remove(void *ptr)
 	inflight_lock();
 }
 
-void deferred_alloc_track(void *ptr)
+void deferred_alloc_track(void *ptr, size_t size)
 {
 	unsigned int slot;
 	void *displaced;
@@ -495,6 +544,7 @@ void deferred_alloc_track(void *ptr)
 	displaced = alloc_track[slot];
 
 	alloc_track[slot] = ptr;
+	alloc_track_sizes[slot] = size;
 	alloc_track_head++;
 
 	alloc_track_hash_insert(ptr);
@@ -542,6 +592,7 @@ static bool alloc_track_consume(void *ptr)
 			if (alloc_track_unlock() != 0)
 				return false;
 			alloc_track[idx] = NULL;
+			alloc_track_sizes[idx] = 0;
 			alloc_track_hash_remove(ptr);
 			alloc_track_lock();
 			return true;
@@ -753,6 +804,7 @@ static bool ring_contains(void *ptr)
 void alloc_track_refresh(void *ptr)
 {
 	bool ring_owned = false;
+	size_t size;
 
 	if (ptr == NULL)
 		return;
@@ -773,8 +825,18 @@ void alloc_track_refresh(void *ptr)
 		return;
 	}
 
+	/*
+	 * Preserve the recorded extent across the consume + re-add so
+	 * downstream lookup_size() readers continue to see the original
+	 * allocation length.  If @ptr was already rotated out, the
+	 * lookup returns 0 and the fresh insert acts as a size-unknown
+	 * registration -- the conservative direction (cmp_hints field
+	 * scan skips a slot it cannot bound) is the same as before the
+	 * refresh.
+	 */
+	size = alloc_track_lookup_size(ptr);
 	(void)alloc_track_consume(ptr);
-	deferred_alloc_track(ptr);
+	deferred_alloc_track(ptr, size);
 }
 
 /*
@@ -1178,7 +1240,8 @@ void deferred_free_init(void)
 	const size_t raw = sizeof(struct deferred_entry) * DEFERRED_RING_SIZE;
 	const size_t inflight_raw = sizeof(void *) * INFLIGHT_HASH_SIZE;
 	const size_t at_raw = sizeof(void *) *
-		(ALLOC_TRACK_SIZE + ALLOC_TRACK_HASH_SIZE);
+		(ALLOC_TRACK_SIZE + ALLOC_TRACK_HASH_SIZE) +
+		sizeof(size_t) * ALLOC_TRACK_SIZE;
 	const size_t rc_raw = sizeof(struct ring_control);
 
 	/*
@@ -1256,6 +1319,7 @@ void deferred_free_init(void)
 	memset(alloc_track_base, 0, alloc_track_bytes);
 	alloc_track = (void **)alloc_track_base;
 	alloc_track_hash = alloc_track + ALLOC_TRACK_SIZE;
+	alloc_track_sizes = (size_t *)(alloc_track_hash + ALLOC_TRACK_HASH_SIZE);
 	track_shared_region((unsigned long)alloc_track_base, alloc_track_bytes);
 	alloc_track_lock();
 
