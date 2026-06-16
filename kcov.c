@@ -742,6 +742,22 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 	kcov_init_child_select_mode(kc);
 }
 
+/*
+ * Drain the per-child kcov_child_local_stats counters into the
+ * shared kcov_shared atomics.  No-op stub today -- this commit lands
+ * the per-child staging plumbing (struct kcov_child_local_stats, the
+ * childdata->local_stats pointer, the calloc in
+ * init_child_runtime_config) without migrating any bumper, so the
+ * staging counters never advance and the flush has nothing to
+ * publish.  The function exists so the future migration patch can
+ * add callers in one place rather than threading flush logic through
+ * every bump site.
+ */
+void kcov_child_flush_stats(struct childdata *child)
+{
+	(void) child;
+}
+
 void kcov_cleanup_child(struct kcov_child *kc)
 {
 	if (kc->trace_buf != NULL) {
