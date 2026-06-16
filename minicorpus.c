@@ -578,6 +578,104 @@ static unsigned int weighted_pick_case(enum argtype atype)
 	return MUT_NUM_OPS - 1;
 }
 
+/*
+ * SHADOW eligibility predicate for the Phase C.3 structure-aware arm
+ * picker.  True iff the slot's argtype + arg_param payload would have
+ * let try_structured_mutation() fire a type-aware variant for at least
+ * one op -- i.e. the same gates that branch already enforces inline.
+ * Kept here rather than reaching into try_structured_mutation() so the
+ * shadow path can reject degenerate metadata (empty arglist, inverted
+ * range) at the same coarse granularity the unstructured fallback
+ * currently bypasses it at.
+ */
+static bool slot_is_structured(enum argtype atype,
+		const struct arg_param *params)
+{
+	if (params == NULL)
+		return false;
+
+	switch (atype) {
+	case ARG_LIST:
+	case ARG_OP:
+		return params->list.num != 0 && params->list.values != NULL;
+	case ARG_RANGE:
+		return params->range.hi >= params->range.low;
+	default:
+		return false;
+	}
+}
+
+/*
+ * Shadow variant of weighted_pick_case() that adds the existing
+ * mut_structured_trials / mut_structured_wins per-op stats as a second
+ * Beta arm alongside the live mut_trials / mut_wins arm and draws from
+ * the doubled 2 * MUT_NUM_OPS pool.  The op index returned is the
+ * arm's op (arm mod MUT_NUM_OPS); the caller treats arms 0..N-1 and
+ * N..2N-1 as the same op for divergence accounting, because the live
+ * picker only ever returns an op index.  Caller MUST have already
+ * confirmed slot_is_structured() -- otherwise the structured half is
+ * meaningless and would just double-count the unstructured arm.
+ *
+ * Uses a fresh rnd_modulo_u32() draw rather than re-using the live
+ * picker's r: the doubled-pool total differs from the live total, so
+ * the live r does not map onto the same arm interval.  Burns one
+ * additional RNG step per shadow sample, which is negligible against
+ * the per-call cost.
+ *
+ * The same fd-only zeroing applied to op 8 in the live picker is
+ * applied to both arm copies of op 8 here, so a non-fd structured slot
+ * cannot accidentally make the fd-swap op weight non-zero just because
+ * the structured arm exists.
+ */
+static unsigned int weighted_pick_case_shadow_structured(enum argtype atype)
+{
+	unsigned int weights[2 * MUT_NUM_OPS];
+	unsigned int total = 0;
+	unsigned int r, accum, i;
+
+	for (i = 0; i < MUT_NUM_OPS; i++) {
+		unsigned long t = __atomic_load_n(&minicorpus_shm->mut_trials[i],
+						  __ATOMIC_RELAXED);
+		unsigned long s = __atomic_load_n(&minicorpus_shm->mut_wins[i],
+						  __ATOMIC_RELAXED);
+		unsigned long w = ((s + 1) * 1000UL) / (t + 2UL);
+
+		if (w < MUT_WEIGHT_FLOOR)
+			w = MUT_WEIGHT_FLOOR;
+		weights[i] = (unsigned int)w;
+	}
+	for (i = 0; i < MUT_NUM_OPS; i++) {
+		unsigned long t = __atomic_load_n(
+			&minicorpus_shm->mut_structured_trials[i],
+			__ATOMIC_RELAXED);
+		unsigned long s = __atomic_load_n(
+			&minicorpus_shm->mut_structured_wins[i],
+			__ATOMIC_RELAXED);
+		unsigned long w = ((s + 1) * 1000UL) / (t + 2UL);
+
+		if (w < MUT_WEIGHT_FLOOR)
+			w = MUT_WEIGHT_FLOOR;
+		weights[MUT_NUM_OPS + i] = (unsigned int)w;
+	}
+
+	if (!is_fdarg(atype)) {
+		weights[8] = 0;
+		weights[MUT_NUM_OPS + 8] = 0;
+	}
+
+	for (i = 0; i < 2 * MUT_NUM_OPS; i++)
+		total += weights[i];
+
+	r = rnd_modulo_u32(total);
+	accum = 0;
+	for (i = 0; i < 2 * MUT_NUM_OPS; i++) {
+		accum += weights[i];
+		if (r < accum)
+			return i % MUT_NUM_OPS;
+	}
+	return MUT_NUM_OPS - 1;
+}
+
 void minicorpus_mut_attrib_set_cmp_source(void)
 {
 	this_attrib_cmp_source = true;
@@ -1011,6 +1109,27 @@ static unsigned long mutate_arg(unsigned long val, enum argtype atype,
 		const struct arg_param *params)
 {
 	unsigned int op = weighted_pick_case(atype);
+
+	/* SHADOW: on structured-eligible slots, compare the live op pick
+	 * against what a doubled-pool picker (live arm + structured arm
+	 * per op) would have chosen, and stamp the divergence rate into
+	 * shm.  Does not change which op fires -- the live `op` above is
+	 * what mut_attrib[]/try_structured_mutation()/the case switch all
+	 * consume.  See struct minicorpus_shared mut_structured_shadow_*
+	 * for the why; promoting structured arms to the live picker will
+	 * consume this measurement. */
+	if (minicorpus_shm != NULL && slot_is_structured(atype, params)) {
+		unsigned int shadow_op =
+			weighted_pick_case_shadow_structured(atype);
+
+		__atomic_fetch_add(
+			&minicorpus_shm->mut_structured_shadow_samples,
+			1UL, __ATOMIC_RELAXED);
+		if (shadow_op != op)
+			__atomic_fetch_add(
+				&minicorpus_shm->mut_structured_shadow_divergences,
+				1UL, __ATOMIC_RELAXED);
+	}
 
 	mut_attrib[op]++;
 
