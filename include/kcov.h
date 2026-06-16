@@ -1443,11 +1443,23 @@ struct kcov_shared {
 	 *      the kernel did not crash on the same address, so a non-zero
 	 *      rate signals a sanitiser that hands a non-shared-region
 	 *      pointer through and the field scan can't safely deref.
+	 *  cmp_field_timespec_skipped_bad_ptr
+	 *      Bumped when the field-scoped ARG_TIMESPEC fallback in
+	 *      cmp_hints_collect() saw a shape-valid (>= 4096) saved
+	 *      pointer that range_readable_user() could not prove was
+	 *      still mapped at harvest time -- the dispatched syscall (or
+	 *      a sibling) freed or munmapped the original timespec
+	 *      between dispatch and CMP collection.  A non-zero rate is
+	 *      expected churn (the gate prevented a SIGSEGV); a sustained
+	 *      high rate against cmp_field_attribution_scanned flags an
+	 *      arg-gen path that hands the kernel a non-shared-region
+	 *      timespec the harvest can't safely deref.
 	 */
 	unsigned long cmp_field_attribution_scanned;
 	unsigned long cmp_field_attribution_found;
 	unsigned long cmp_field_attribution_pool_full;
 	unsigned long cmp_field_attribution_arg_skipped_bad_ptr;
+	unsigned long cmp_field_timespec_skipped_bad_ptr;
 };
 
 extern struct kcov_shared *kcov_shm;
