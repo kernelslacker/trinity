@@ -274,11 +274,11 @@ static void sanitise_listmount(struct syscallrecord *rec)
 	/*
 	 * The csfu allocation (`req`) is a tracked libc-heap pointer rather
 	 * than the get_writable_address() pool slot it replaced; without an
-	 * explicit enqueue here it would dangle until LRU eviction.  The
-	 * deferred-free TTL outlives the post handler, which still reads
+	 * explicit handoff here it would dangle until LRU eviction.  The
+	 * rec_own carrier frees it after .post runs, which still reads
 	 * via snap->req in the same iteration.
 	 */
-	deferred_free_enqueue_or_leak(req);
+	rec_own(rec, req);
 }
 
 /*
