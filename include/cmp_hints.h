@@ -146,7 +146,33 @@ struct cmp_hint_entry {
 	unsigned long value;
 	unsigned long cmp_ip;
 	uint32_t size;		/* operand width in bytes: 1, 2, 4, or 8 */
-	uint32_t pad;
+	/*
+	 * SHADOW per-entry feedback scoring ([11-feedback-loop] PHASE 4).
+	 *
+	 * On a successful cmp_hints_try_get_ex(), the (nr, arch, cmp_ip,
+	 * value, size, transform) tuple is stashed per-child.  On dispatch
+	 * completion the stash is drained: a PC-edge win in PC-mode bumps
+	 * wins on the matching pool entry; a no-win bumps misses; CMP-mode
+	 * novelty is credited to a SEPARATE flat counter (kept out of the
+	 * per-entry score so CMP novelty cannot masquerade as PC-edge
+	 * conversion -- the spec's measurement-first discipline).  The
+	 * follow-up live-pick commit will weigh entries by these counters;
+	 * today they are SHADOW only and do not steer pool selection.
+	 *
+	 * Saturating uint16_t (cap 65535) is enough headroom for the
+	 * shadow window: a per-entry score that high already conclusively
+	 * dominates / loses against unscored peers.  Replaces the 4-byte
+	 * pad slot so cmp_hint_entry stays at 32 bytes -- both the
+	 * per-syscall pools[] grid and the field_pools[] table inherit the
+	 * counters for free without re-laying-out either fixed array.
+	 *
+	 * Updated lock-free under the same RELAXED atomic discipline as
+	 * the pool's count load: a concurrent eviction on the matching
+	 * slot may misattribute a single ++ to the replacement entry, which
+	 * is acceptable for shadow scoring (advisory, no correctness use).
+	 */
+	uint16_t wins;
+	uint16_t misses;
 	uint64_t last_used;	/* pool->last_used_stamp at insertion */
 };
 
@@ -369,6 +395,82 @@ bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
  * {C-1, C, C+1} rotation byte-for-byte until each is individually
  * migrated to the use case that fits its consumer slot. */
 bool cmp_hints_try_get(unsigned int nr, bool do32, unsigned long *out);
+
+/*
+ * SHADOW per-entry feedback scoring for hint consumption
+ * ([11-feedback-loop] PHASE 4).
+ *
+ * cmp_hints_try_get_ex() stashes (nr, arch, pool-kind, cmp_ip, value,
+ * size, transform) into a small per-child ring on each successful
+ * return.  dispatch_step()'s post-call bookkeeping drains the ring via
+ * exactly ONE of the three credit calls below per parent dispatch,
+ * then resets it.  Today the credit is OBSERVATION-ONLY: it updates
+ * the cmp_hint_wins / cmp_hint_misses / cmp_hint_cmp_novelty_wins flat
+ * counters in kcov_shm and the per-entry wins/misses on the matching
+ * pool entry.  The follow-up A/B-gated commit will turn this score
+ * into a weighted live-pick policy (`weight = floor + wins*4 - misses`
+ * clamped, keeping random exploration); the SHADOW phase here is the
+ * measurement-first prerequisite -- live pool selection stays uniform.
+ *
+ * pool_kind partitions the stash by which pool the hint came from so
+ * the follow-up can score per-kind independently.  Today only the
+ * per-syscall pool is consumed; the field-scoped pool is recording-
+ * only.  CMP_HINT_POOL_FIELD is reserved for the field-scoped
+ * consumer when [11-field-scoped] consumer wiring lands.
+ */
+enum cmp_hint_pool_kind {
+	CMP_HINT_POOL_PER_SYSCALL = 0,
+	CMP_HINT_POOL_FIELD,
+	CMP_HINT_POOL_KIND_NR,
+};
+
+/*
+ * Per-child stash entry recording one cmp_hints_try_get_ex() return.
+ * Packed to 24 bytes so the 8-deep stash fits in two cachelines on the
+ * childdata struct; 8 entries covers the maximum hint-consuming-arg
+ * count (6 syscall args, with the four ARG_OP / ARG_LIST / ARG_RANGE /
+ * ARG_UNDEFINED / ARG_STRUCT_SIZE consumers possibly firing per arg)
+ * with headroom -- overflow drops the excess (bumped via
+ * cmp_hint_stash_overflow).
+ */
+struct cmp_hint_consumed_entry {
+	unsigned long cmp_ip;
+	unsigned long value;
+	uint16_t nr;
+	uint8_t do32;
+	uint8_t pool_kind;	/* enum cmp_hint_pool_kind */
+	uint8_t size;
+	uint8_t transform;	/* enum cmp_hint_use */
+	uint16_t pad;
+};
+
+#define CMP_HINT_CONSUMED_STASH_MAX	8U
+
+/*
+ * Reset the per-child stash without crediting anything.  Called from
+ * generate_syscall_args() at the top of a new call so a parent
+ * dispatch that bailed before reaching the credit drain does not leak
+ * its stash into the next call.
+ */
+void cmp_hints_feedback_reset_stash(void);
+
+/*
+ * Drain the per-child stash and credit the PC-mode call outcome.
+ * outcome_win == true bumps cmp_hint_wins and each stashed entry's
+ * pool wins counter; outcome_win == false bumps cmp_hint_misses and
+ * each stashed entry's pool misses counter.  Always resets the stash
+ * on return.  No-op if the stash is empty.
+ */
+void cmp_hints_feedback_credit_pc(bool outcome_win);
+
+/*
+ * Drain the per-child stash and credit CMP-mode novelty.  Bumps
+ * cmp_hint_cmp_novelty_wins (SEPARATE from cmp_hint_wins so CMP
+ * novelty cannot masquerade as PC-edge conversion -- per spec).
+ * Does NOT touch the per-entry pool counters: those are PC-edge
+ * scored only.  Always resets the stash on return.
+ */
+void cmp_hints_feedback_credit_cmp_novelty(void);
 
 /* Advance the chaos-mode window counter.  Called once per bandit window
  * rotation from maybe_rotate_strategy().  Every CHAOS_WINDOW_MODULO'th

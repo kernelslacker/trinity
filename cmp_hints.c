@@ -519,6 +519,12 @@ static bool pool_add_locked(struct cmp_hint_pool *pool,
 		e->value = val;
 		e->cmp_ip = cmp_ip;
 		e->size = size;
+		/* SHADOW feedback score starts at zero for a freshly inserted
+		 * tuple ([11-feedback-loop]).  Dedup-refresh above keeps the
+		 * existing score (same tuple, same identity); only this
+		 * fresh-insert and the evict-replace below reset. */
+		e->wins = 0;
+		e->misses = 0;
 		e->last_used = stamp;
 		__atomic_fetch_add(&pool->generation, 1, __ATOMIC_RELAXED);
 		/*
@@ -544,6 +550,11 @@ static bool pool_add_locked(struct cmp_hint_pool *pool,
 	pool->entries[victim].value = val;
 	pool->entries[victim].cmp_ip = cmp_ip;
 	pool->entries[victim].size = size;
+	/* Evict-replace: zero the SHADOW score so the displaced tuple's
+	 * history does not bleed into the new identity that now lives in
+	 * this slot ([11-feedback-loop]). */
+	pool->entries[victim].wins = 0;
+	pool->entries[victim].misses = 0;
 	pool->entries[victim].last_used = stamp;
 	__atomic_fetch_add(&pool->generation, 1, __ATOMIC_RELAXED);
 	if (kcov_shm != NULL) {
@@ -755,6 +766,12 @@ static bool cmp_field_pool_insert_locked(struct cmp_field_pool *pool,
 		e->value = val;
 		e->cmp_ip = cmp_ip;
 		e->size = size;
+		/* Field pools inherit the same fresh-insert / evict-replace
+		 * SHADOW-score reset discipline as the per-syscall pool above;
+		 * the score field today is recording-only since field pools
+		 * have no consumer yet ([11-feedback-loop]). */
+		e->wins = 0;
+		e->misses = 0;
 		e->last_used = stamp;
 		__atomic_fetch_add(&pool->generation, 1, __ATOMIC_RELAXED);
 		__atomic_store_n(&pool->count, count + 1, __ATOMIC_RELEASE);
@@ -772,6 +789,8 @@ static bool cmp_field_pool_insert_locked(struct cmp_field_pool *pool,
 	pool->entries[victim].value = val;
 	pool->entries[victim].cmp_ip = cmp_ip;
 	pool->entries[victim].size = size;
+	pool->entries[victim].wins = 0;
+	pool->entries[victim].misses = 0;
 	pool->entries[victim].last_used = stamp;
 	__atomic_fetch_add(&pool->generation, 1, __ATOMIC_RELAXED);
 	return true;
@@ -1816,11 +1835,65 @@ static unsigned long cmp_hint_apply_transform(unsigned long c,
 	return c;
 }
 
+/*
+ * SHADOW per-entry feedback scoring ([11-feedback-loop] PHASE 4).
+ *
+ * Push one stash entry on the per-child cmp_hints_consumed_stash for
+ * the just-pulled hint.  The dispatch_step tail drains the ring via
+ * cmp_hints_feedback_credit_pc() / cmp_hints_feedback_credit_cmp_novelty()
+ * and resets it; generate_syscall_args() resets it at call start too
+ * so a parent dispatch that bailed before the credit drain does not
+ * leak its stash into the next call.
+ *
+ * No-op outside child context (parent calls into cmp_hints_try_get_ex
+ * during init self-checks etc. -- the SHADOW score is a per-child
+ * concept).  No-op when in_reexec is set: the re-exec rebuilds args
+ * with the slot pinned, so any hint pulled during the inner generate
+ * call belongs to the re-exec, not the original parent call we are
+ * about to credit, and crediting it here would double-attribute.
+ */
+static void cmp_hints_stash_consumed(unsigned int nr, bool do32,
+				     enum cmp_hint_pool_kind pool_kind,
+				     unsigned long cmp_ip, unsigned long value,
+				     unsigned int size, enum cmp_hint_use use)
+{
+	struct childdata *child = this_child();
+	struct cmp_hint_consumed_entry *e;
+
+	if (child == NULL || child->in_reexec)
+		return;
+
+	if (child->cmp_hints_consumed_count >= CMP_HINT_CONSUMED_STASH_MAX) {
+		if (kcov_shm != NULL)
+			__atomic_fetch_add(&kcov_shm->cmp_hint_stash_overflow,
+					   1UL, __ATOMIC_RELAXED);
+		return;
+	}
+
+	e = &child->cmp_hints_consumed_stash[child->cmp_hints_consumed_count++];
+	e->cmp_ip = cmp_ip;
+	e->value = value;
+	e->nr = (uint16_t)nr;
+	e->do32 = do32 ? 1 : 0;
+	e->pool_kind = (uint8_t)pool_kind;
+	e->size = (uint8_t)size;
+	e->transform = (uint8_t)use;
+	e->pad = 0;
+
+	if (kcov_shm != NULL)
+		__atomic_fetch_add(&kcov_shm->cmp_hints_consumed, 1UL,
+				   __ATOMIC_RELAXED);
+}
+
 bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 			  unsigned long old, unsigned long *out)
 {
 	struct cmp_hint_pool *pool;
+	struct cmp_hint_entry *picked;
 	unsigned int count;
+	unsigned long picked_value;
+	unsigned long picked_cmp_ip;
+	uint32_t picked_size;
 
 	if (cmp_hints_shm == NULL || nr >= MAX_NR_SYSCALL)
 		return false;
@@ -1879,8 +1952,20 @@ bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 	if (cmp_hints_pool_corrupted(pool, count))
 		return false;
 
-	*out = cmp_hint_apply_transform(pool->entries[rnd_modulo_u32(count)].value,
-					use, old);
+	picked = &pool->entries[rnd_modulo_u32(count)];
+	/* Snapshot the entry triplet BEFORE the transform so the stash
+	 * carries the raw pool-entry identity (cmp_ip, value, size) -- the
+	 * tuple the credit drain uses to re-find the same entry.  Reading
+	 * each field once locally also avoids reading a torn (cmp_ip, value,
+	 * size) triplet on a concurrent eviction: even if a sibling overwrites
+	 * the slot between our load of value and load of cmp_ip, the credit
+	 * drain just fails to re-find a matching entry and the per-entry score
+	 * for that pull is lost (the flat counter still bumps). */
+	picked_value = picked->value;
+	picked_cmp_ip = picked->cmp_ip;
+	picked_size = picked->size;
+
+	*out = cmp_hint_apply_transform(picked_value, use, old);
 
 	if (kcov_shm != NULL) {
 		__atomic_fetch_add(&kcov_shm->cmp_hints_try_get_returned, 1UL,
@@ -1891,12 +1976,160 @@ bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 		__atomic_fetch_add(&kcov_shm->per_syscall_cmp_returned[nr],
 				   1UL, __ATOMIC_RELAXED);
 	}
+
+	cmp_hints_stash_consumed(nr, do32, CMP_HINT_POOL_PER_SYSCALL,
+				 picked_cmp_ip, picked_value, picked_size, use);
 	return true;
 }
 
 bool cmp_hints_try_get(unsigned int nr, bool do32, unsigned long *out)
 {
 	return cmp_hints_try_get_ex(nr, do32, CMP_HINT_BOUNDARY, 0, out);
+}
+
+/*
+ * SHADOW per-entry feedback scoring -- credit drain.
+ *
+ * Three small helpers feed off the same per-child stash that
+ * cmp_hints_try_get_ex pushed entries onto.  Exactly ONE of the three
+ * runs per parent dispatch (PC-mode win / PC-mode miss / CMP-mode
+ * novelty) -- the dispatch_step caller picks based on the same mode +
+ * outcome signals it already computed for the other per-call counters.
+ *
+ * Saturating per-entry counters use a small CAS-saturate loop on the
+ * matching pool entry's uint16_t wins/misses field: the common path
+ * is one __atomic_compare_exchange_n on the not-yet-saturated counter
+ * and short-circuits as soon as the field hits UINT16_MAX so a
+ * pathologically hot tuple stops spending atomics once its score has
+ * already conclusively dominated the population.  Lock-free scan
+ * tolerates a concurrent eviction the same way cmp_hints_try_get does:
+ * the picked entry may have been replaced by a sibling between consume
+ * and credit, in which case the entries[] re-find at the saved
+ * (cmp_ip, value, size) fails, the flat call-level counter still
+ * bumps, and the per-entry score for that stash slot is forfeit -- a
+ * shadow scoring loss bounded by pool churn.
+ */
+static void cmp_hint_entry_bump_sat(uint16_t *fld)
+{
+	uint16_t old;
+
+	old = __atomic_load_n(fld, __ATOMIC_RELAXED);
+	while (old < UINT16_MAX) {
+		if (__atomic_compare_exchange_n(fld, &old, (uint16_t)(old + 1),
+						true,
+						__ATOMIC_RELAXED,
+						__ATOMIC_RELAXED))
+			return;
+	}
+}
+
+static void cmp_hint_credit_entry_per_syscall(unsigned int nr, bool do32,
+					      unsigned long cmp_ip,
+					      unsigned long value,
+					      unsigned int size,
+					      bool win)
+{
+	struct cmp_hint_pool *pool;
+	unsigned int count;
+	unsigned int i;
+
+	if (cmp_hints_shm == NULL || nr >= MAX_NR_SYSCALL)
+		return;
+	pool = &cmp_hints_shm->pools[nr][do32 ? 1 : 0];
+	count = __atomic_load_n(&pool->count, __ATOMIC_ACQUIRE);
+	if (count == 0)
+		return;
+	if (cmp_hints_pool_corrupted(pool, count))
+		return;
+
+	for (i = 0; i < count; i++) {
+		struct cmp_hint_entry *e = &pool->entries[i];
+
+		if (e->value != value || e->cmp_ip != cmp_ip ||
+		    e->size != size)
+			continue;
+		cmp_hint_entry_bump_sat(win ? &e->wins : &e->misses);
+		return;
+	}
+
+	if (kcov_shm != NULL)
+		__atomic_fetch_add(&kcov_shm->cmp_hint_credit_entry_evicted,
+				   1UL, __ATOMIC_RELAXED);
+}
+
+void cmp_hints_feedback_reset_stash(void)
+{
+	struct childdata *child = this_child();
+
+	if (child == NULL)
+		return;
+	child->cmp_hints_consumed_count = 0;
+}
+
+void cmp_hints_feedback_credit_pc(bool outcome_win)
+{
+	struct childdata *child = this_child();
+	unsigned int i, n;
+
+	if (child == NULL)
+		return;
+	n = child->cmp_hints_consumed_count;
+	if (n == 0)
+		return;
+
+	if (kcov_shm != NULL) {
+		if (outcome_win)
+			__atomic_fetch_add(&kcov_shm->cmp_hint_wins, 1UL,
+					   __ATOMIC_RELAXED);
+		else
+			__atomic_fetch_add(&kcov_shm->cmp_hint_misses, 1UL,
+					   __ATOMIC_RELAXED);
+	}
+
+	for (i = 0; i < n; i++) {
+		const struct cmp_hint_consumed_entry *e =
+			&child->cmp_hints_consumed_stash[i];
+
+		switch ((enum cmp_hint_pool_kind)e->pool_kind) {
+		case CMP_HINT_POOL_PER_SYSCALL:
+			cmp_hint_credit_entry_per_syscall(e->nr, e->do32 != 0,
+							  e->cmp_ip, e->value,
+							  e->size, outcome_win);
+			break;
+		case CMP_HINT_POOL_FIELD:
+		case CMP_HINT_POOL_KIND_NR:
+		default:
+			/* No field-scoped consumer yet (PHASE 3 records
+			 * only).  When [11-field-scoped] consumer wiring
+			 * lands the matching credit arm goes here. */
+			break;
+		}
+	}
+
+	child->cmp_hints_consumed_count = 0;
+}
+
+void cmp_hints_feedback_credit_cmp_novelty(void)
+{
+	struct childdata *child = this_child();
+
+	if (child == NULL)
+		return;
+	if (child->cmp_hints_consumed_count == 0)
+		return;
+
+	if (kcov_shm != NULL)
+		__atomic_fetch_add(&kcov_shm->cmp_hint_cmp_novelty_wins, 1UL,
+				   __ATOMIC_RELAXED);
+
+	/* Per spec: CMP-mode novelty is kept SEPARATE from PC-edge win
+	 * credit so it cannot masquerade as PC-edge conversion.  Do NOT
+	 * bump per-entry wins/misses here -- those are the PC-edge
+	 * shadow score the follow-up live-pick will weigh by.  The flat
+	 * cmp_hint_cmp_novelty_wins counter is the diagnostic channel
+	 * for the CMP-mode signal. */
+
+	child->cmp_hints_consumed_count = 0;
 }
 
 /*

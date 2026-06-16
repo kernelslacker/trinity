@@ -1093,6 +1093,66 @@ struct kcov_shared {
 	 * STRUCT_FIELD (reserved -- no call site today), OTHER. */
 	unsigned long cmp_hint_callsite_injected[CMP_HINT_CALLSITE_NR];
 
+	/* SHADOW feedback scoring counters ([11-feedback-loop] PHASE 4).
+	 *
+	 * These are SHADOW / measurement-only this commit: cmp_hints_try_get
+	 * pool selection stays uniform; the follow-up commit gates a
+	 * weighted live pick (`weight = floor + wins*4 - misses`, clamped,
+	 * keep random exploration) on these counters showing a real signal.
+	 *
+	 *  cmp_hints_consumed
+	 *      Bumped from cmp_hints_try_get_ex right before the true return,
+	 *      next to the existing cmp_hints_try_get_returned bump.  Counts
+	 *      successful pulls that produced a stashed (nr, arch, cmp_ip,
+	 *      value, size, transform) tuple for credit at dispatch tail.
+	 *      Same conceptual counter as cmp_hints_try_get_returned --
+	 *      tracked SEPARATELY so a future change to the stash discipline
+	 *      (overflow-drop, narrowing to a subset of consumers) is visible
+	 *      against the unchanged try_get_returned baseline.
+	 *  cmp_hint_wins
+	 *      PC-mode dispatch produced new_edges == true AND the per-child
+	 *      stash for the call was non-empty.  Bumped once per such
+	 *      dispatch from cmp_hints_feedback_credit_pc(true).  Each
+	 *      stashed entry's matching pool entry's saturating uint16_t
+	 *      wins counter is bumped at the same site -- the per-entry
+	 *      counters feed the follow-up live-pick weight; this flat
+	 *      counter is the cohort-level rollup for the periodic dump.
+	 *  cmp_hint_misses
+	 *      PC-mode dispatch produced no new edges AND the per-child
+	 *      stash was non-empty.  Bumped once per such dispatch from
+	 *      cmp_hints_feedback_credit_pc(false), with the per-entry
+	 *      pool misses bumped at the same site.
+	 *  cmp_hint_cmp_novelty_wins
+	 *      CMP-mode dispatch produced new_cmp > 0 AND the per-child
+	 *      stash was non-empty.  Bumped once per such dispatch from
+	 *      cmp_hints_feedback_credit_cmp_novelty().  Kept SEPARATE
+	 *      from cmp_hint_wins per the spec's "CMP novelty credit must
+	 *      not masquerade as PC-edge conversion" discipline: the
+	 *      follow-up live-pick weight is PC-edge-only and this counter
+	 *      is the visibility channel for the CMP-mode novelty signal
+	 *      that the PC-mode score does not include.
+	 *  cmp_hint_stash_overflow
+	 *      cmp_hints_try_get_ex tried to push onto a full stash
+	 *      (cmp_hints_consumed_count == CMP_HINT_CONSUMED_STASH_MAX).
+	 *      Records the dropped tail.  Operator gate on resizing the
+	 *      stash; a non-trivial delta means a hot syscall regularly
+	 *      pulls more hints per call than the buffer holds and the
+	 *      tail credit is lost to truncation.
+	 *  cmp_hint_credit_entry_evicted
+	 *      Credit-drain scan walked the matching pool entries[] and
+	 *      did NOT find the stashed (cmp_ip, value, size) tuple --
+	 *      the entry was evicted between consume and credit.  The
+	 *      flat wins/misses counter still bumps (the call-level
+	 *      outcome is unambiguous); only the per-entry score is lost
+	 *      to the eviction.  Diagnostic gate on pool churn vs the
+	 *      consume-to-credit gap. */
+	unsigned long cmp_hints_consumed;
+	unsigned long cmp_hint_wins;
+	unsigned long cmp_hint_misses;
+	unsigned long cmp_hint_cmp_novelty_wins;
+	unsigned long cmp_hint_stash_overflow;
+	unsigned long cmp_hint_credit_entry_evicted;
+
 	/* RedQueen re-exec observability counters, sibling of the flat
 	 * reexec_* family above.  Same callsite/attribution funnel, but
 	 * partitioned by syscall slot or by attribution arg-slot so the
