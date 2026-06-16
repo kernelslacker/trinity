@@ -1348,36 +1348,44 @@ static void ring_evict_oldest_safe(void)
 	evict_ptr = ring[oldest].ptr;
 
 	/*
-	 * The enqueue path validates ptr against the heap-
-	 * bounds and shared-region bands BEFORE ring_unlock().
-	 * Once unlocked, the slot sits RW until ring_lock()
-	 * runs, so an in-flight stomp from a sibling fuzzed
-	 * value-result syscall can scribble ring[oldest].ptr
-	 * between when the slot was last validated and when
-	 * the full-ring eviction here decides to free it.
-	 * Re-run the cheap stateless prefilters as fast rejects
-	 * so a wild pointer becomes a telemetry bump instead
-	 * of a crash.  Counter only (no per-rejection log): the
-	 * eviction case is rarer than the enqueue rejection
-	 * paths, whose 1-in-1000 caller-PC logs already prove
-	 * the stomp pattern.
+	 * Interim leak-on-eviction defense: this site does NOT free()
+	 * the evicted chunk.  Reclaim the ring slot, drop the inflight-
+	 * hash entry, bump ring_evict_leaked, and let the heap chunk
+	 * leak.  Child exit reclaims it.
 	 *
-	 * Source-of-truth ownership gate: tracked_free_checked()
-	 * gates the free() call on alloc_track_consume()'s bool
-	 * return -- consume scans the authoritative alloc_track[]
-	 * array, and a false return means the hash prefilter's
-	 * value-keyed yes turned out to disagree with the array's
-	 * current contents (the slot rotated out under churn, or
-	 * was scribbled mid-life to an interior pointer that
-	 * hashes to a different slot).  The previous shape gated
-	 * on alloc_track_lookup() (a hash prefilter that stays
-	 * true after the backing slot rotates out) and then
-	 * called alloc_track_consume() while discarding its
-	 * return, free()ing chunks __zmalloc() no longer owned --
-	 * the deferred-free.c:1279 ASAN bad-free class (143
-	 * reports across 2026-06-15).  The helper bumps
-	 * ring_eviction_corrupt on consume-miss so the existing
-	 * counter still captures the same rejection class.
+	 * Why leak instead of free: the surviving bad-free class at the
+	 * eviction site is the address-reuse window.  A stale caller
+	 * reference to a chunk that was freed and recycled by glibc
+	 * still holds the original pointer value; that value now names
+	 * a live chunk owned by an unrelated allocation.  The value
+	 * gates here (is_in_glibc_heap, range_overlaps_shared) and the
+	 * source-of-truth gate (alloc_track_consume) all answer "yes,
+	 * this value is a valid live tracked chunk" -- because it IS,
+	 * just not the one the stale ref thought it was.  Freeing on
+	 * that signal frees a now-live chunk and the original owner
+	 * eventually trips ASAN.  The durable fix is at the caller-
+	 * lifecycle root (drop the retained ref before glibc can reuse
+	 * the address); removing eviction as a free() site closes the
+	 * crash window while that work bakes separately.
+	 *
+	 * Bounded leak: eviction only fires when the ring is full
+	 * (TTL range 5-50, ticked every syscall, so steady-state
+	 * eviction is rare).  The RING_DRAIN / flush and immediate-
+	 * free fallback paths intentionally keep freeing -- leaking
+	 * the whole ring would be an RSS blowup, not a bounded
+	 * defense.  Cannot double-free / bad-free because the site
+	 * never calls free().
+	 *
+	 * The cheap stateless prefilters stay for telemetry granularity:
+	 * a scribbled slot still bumps ring_eviction_corrupt instead of
+	 * being silently leaked under ring_evict_leaked, so the stomp-
+	 * rate signal is preserved (and is independent of the leak
+	 * decision).  alloc_track is intentionally left populated --
+	 * the chunk is, from the heap allocator's view, still live.
+	 *
+	 * VALIDATION GATE: the next multi-child ASAN fuzz run should
+	 * show the ring_evict bad-free class drop to zero.  Until that
+	 * run confirms it, this lands on local master only.
 	 */
 	if (!is_in_glibc_heap(evict_ptr) ||
 	    range_overlaps_shared((unsigned long)evict_ptr, 1))
@@ -1393,8 +1401,8 @@ static void ring_evict_oldest_safe(void)
 			parent_stats.ring_eviction_corrupt++;
 	} else {
 		inflight_hash_remove(evict_ptr);
-		tracked_free_checked(evict_ptr,
-				     TRACKED_FREE_SITE_RING_EVICT);
+		__atomic_add_fetch(&shm->stats.ring_evict_leaked,
+				   1, __ATOMIC_RELAXED);
 	}
 	ring[oldest].ptr = NULL;
 	occupied_mask &= ~(1ULL << oldest);
