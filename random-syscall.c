@@ -727,9 +727,13 @@ static unsigned long frontier_cold_weight(unsigned int nr,
  * from active_syscalls, then biased acceptance against the per-syscall
  * frontier-edge weight via rejection sampling.  Each candidate is
  * accepted with probability (frontier_recent_count(nr) + 1) /
- * (max_weight + 1); the +1 keeps cold syscalls from starving completely
- * and lets the strategy still drive forward when no syscall has
- * produced a frontier edge in the last K windows.
+ * (ilog2_ul(max_weight) * FRONTIER_SOFT_SCALE + 1); the softened
+ * denominator stops a single very hot syscall from compressing every
+ * cold-but-real candidate to near-zero acceptance and burning the retry
+ * budget, while the +1 on both numerator and denominator keeps cold
+ * syscalls from starving completely and lets the strategy still drive
+ * forward when no syscall has produced a frontier edge in the last K
+ * windows.
  *
  * max_weight is read once at the top of the function from the cached
  * shm->frontier_max_weight_cached so the bias mass stays stable across
