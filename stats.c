@@ -4775,6 +4775,9 @@ void kcov_cmp_stats_periodic_dump(void)
 	static unsigned long prev_cmp_hint_cmp_novelty_wins;
 	static unsigned long prev_cmp_hint_stash_overflow;
 	static unsigned long prev_cmp_hint_credit_entry_evicted;
+	static unsigned long prev_cmp_inject_arm_a_baseline_fires;
+	static unsigned long prev_cmp_inject_arm_b_baseline_fires;
+	static unsigned long prev_cmp_inject_denom_diverged;
 	static struct timespec last_dump;
 	struct timespec now;
 	long elapsed;
@@ -4818,6 +4821,11 @@ void kcov_cmp_stats_periodic_dump(void)
 	unsigned long delta_cmp_hints_consumed, delta_cmp_hint_wins, delta_cmp_hint_misses;
 	unsigned long delta_cmp_hint_cmp_novelty_wins;
 	unsigned long delta_cmp_hint_stash_overflow, delta_cmp_hint_credit_entry_evicted;
+	unsigned long cur_cmp_inject_arm_a_baseline_fires, cur_cmp_inject_arm_b_baseline_fires;
+	unsigned long cur_cmp_inject_denom_diverged;
+	unsigned long delta_cmp_inject_arm_a_baseline_fires, delta_cmp_inject_arm_b_baseline_fires;
+	unsigned long delta_cmp_inject_denom_diverged;
+	unsigned int  cur_cmp_inject_arm_a_children, cur_cmp_inject_arm_b_children;
 	bool any_callsite_delta = false;
 	unsigned int pc_kids, cmp_kids;
 
@@ -4871,6 +4879,11 @@ void kcov_cmp_stats_periodic_dump(void)
 	cur_cmp_hint_cmp_novelty_wins      = __atomic_load_n(&kcov_shm->cmp_hint_cmp_novelty_wins,      __ATOMIC_RELAXED);
 	cur_cmp_hint_stash_overflow        = __atomic_load_n(&kcov_shm->cmp_hint_stash_overflow,        __ATOMIC_RELAXED);
 	cur_cmp_hint_credit_entry_evicted  = __atomic_load_n(&kcov_shm->cmp_hint_credit_entry_evicted,  __ATOMIC_RELAXED);
+	cur_cmp_inject_arm_a_baseline_fires = __atomic_load_n(&kcov_shm->cmp_inject_arm_a_baseline_fires, __ATOMIC_RELAXED);
+	cur_cmp_inject_arm_b_baseline_fires = __atomic_load_n(&kcov_shm->cmp_inject_arm_b_baseline_fires, __ATOMIC_RELAXED);
+	cur_cmp_inject_denom_diverged       = __atomic_load_n(&kcov_shm->cmp_inject_denom_diverged,       __ATOMIC_RELAXED);
+	cur_cmp_inject_arm_a_children       = __atomic_load_n(&kcov_shm->cmp_inject_arm_a_children,       __ATOMIC_RELAXED);
+	cur_cmp_inject_arm_b_children       = __atomic_load_n(&kcov_shm->cmp_inject_arm_b_children,       __ATOMIC_RELAXED);
 
 	/* First call: arm the window so any pre-existing counts carried
 	 * over from earlier in the run are not mis-attributed to the
@@ -4920,6 +4933,9 @@ void kcov_cmp_stats_periodic_dump(void)
 		prev_cmp_hint_cmp_novelty_wins      = cur_cmp_hint_cmp_novelty_wins;
 		prev_cmp_hint_stash_overflow        = cur_cmp_hint_stash_overflow;
 		prev_cmp_hint_credit_entry_evicted  = cur_cmp_hint_credit_entry_evicted;
+		prev_cmp_inject_arm_a_baseline_fires = cur_cmp_inject_arm_a_baseline_fires;
+		prev_cmp_inject_arm_b_baseline_fires = cur_cmp_inject_arm_b_baseline_fires;
+		prev_cmp_inject_denom_diverged       = cur_cmp_inject_denom_diverged;
 		return;
 	}
 
@@ -4974,6 +4990,9 @@ void kcov_cmp_stats_periodic_dump(void)
 	delta_cmp_hint_cmp_novelty_wins      = cur_cmp_hint_cmp_novelty_wins      - prev_cmp_hint_cmp_novelty_wins;
 	delta_cmp_hint_stash_overflow        = cur_cmp_hint_stash_overflow        - prev_cmp_hint_stash_overflow;
 	delta_cmp_hint_credit_entry_evicted  = cur_cmp_hint_credit_entry_evicted  - prev_cmp_hint_credit_entry_evicted;
+	delta_cmp_inject_arm_a_baseline_fires = cur_cmp_inject_arm_a_baseline_fires - prev_cmp_inject_arm_a_baseline_fires;
+	delta_cmp_inject_arm_b_baseline_fires = cur_cmp_inject_arm_b_baseline_fires - prev_cmp_inject_arm_b_baseline_fires;
+	delta_cmp_inject_denom_diverged       = cur_cmp_inject_denom_diverged       - prev_cmp_inject_denom_diverged;
 
 	if ((delta_records | delta_truncated | delta_bloom_skipped | delta_strip_skipped |
 	     delta_unique | delta_try_get_attempts | delta_try_get_returned |
@@ -4993,7 +5012,10 @@ void kcov_cmp_stats_periodic_dump(void)
 	     delta_save_reject_cap |
 	     delta_cmp_hints_consumed | delta_cmp_hint_wins | delta_cmp_hint_misses |
 	     delta_cmp_hint_cmp_novelty_wins | delta_cmp_hint_stash_overflow |
-	     delta_cmp_hint_credit_entry_evicted) != 0 ||
+	     delta_cmp_hint_credit_entry_evicted |
+	     delta_cmp_inject_arm_a_baseline_fires |
+	     delta_cmp_inject_arm_b_baseline_fires |
+	     delta_cmp_inject_denom_diverged) != 0 ||
 	    any_callsite_delta) {
 		stats_log_write("KCOV CMP stats over last %lds:\n", elapsed);
 
@@ -5265,6 +5287,37 @@ void kcov_cmp_stats_periodic_dump(void)
 					rate_milli / 1000, rate_milli % 1000,
 					cur_cmp_hint_credit_entry_evicted);
 		}
+		/* A/B baseline inject denom (Arm A = 16, Arm B = 12).  Print
+		 * the realised cohort split + per-arm baseline-fire deltas +
+		 * the per-call divergence count so the operator can size the
+		 * A/B effect on PC-edge yield against population-normalised
+		 * fire rates without recomputing from cmp_hint_callsite[]. */
+		if (delta_cmp_inject_arm_a_baseline_fires) {
+			unsigned long rate_milli = (delta_cmp_inject_arm_a_baseline_fires * 1000UL) / (unsigned long)elapsed;
+			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu, children %u)\n",
+					"cmp_inject_arm_a_baseline_fires",
+					delta_cmp_inject_arm_a_baseline_fires,
+					rate_milli / 1000, rate_milli % 1000,
+					cur_cmp_inject_arm_a_baseline_fires,
+					cur_cmp_inject_arm_a_children);
+		}
+		if (delta_cmp_inject_arm_b_baseline_fires) {
+			unsigned long rate_milli = (delta_cmp_inject_arm_b_baseline_fires * 1000UL) / (unsigned long)elapsed;
+			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu, children %u)\n",
+					"cmp_inject_arm_b_baseline_fires",
+					delta_cmp_inject_arm_b_baseline_fires,
+					rate_milli / 1000, rate_milli % 1000,
+					cur_cmp_inject_arm_b_baseline_fires,
+					cur_cmp_inject_arm_b_children);
+		}
+		if (delta_cmp_inject_denom_diverged) {
+			unsigned long rate_milli = (delta_cmp_inject_denom_diverged * 1000UL) / (unsigned long)elapsed;
+			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+					"cmp_inject_denom_diverged",
+					delta_cmp_inject_denom_diverged,
+					rate_milli / 1000, rate_milli % 1000,
+					cur_cmp_inject_denom_diverged);
+		}
 	}
 
 	/*
@@ -5371,6 +5424,9 @@ void kcov_cmp_stats_periodic_dump(void)
 	prev_cmp_hint_cmp_novelty_wins      = cur_cmp_hint_cmp_novelty_wins;
 	prev_cmp_hint_stash_overflow        = cur_cmp_hint_stash_overflow;
 	prev_cmp_hint_credit_entry_evicted  = cur_cmp_hint_credit_entry_evicted;
+	prev_cmp_inject_arm_a_baseline_fires = cur_cmp_inject_arm_a_baseline_fires;
+	prev_cmp_inject_arm_b_baseline_fires = cur_cmp_inject_arm_b_baseline_fires;
+	prev_cmp_inject_denom_diverged       = cur_cmp_inject_denom_diverged;
 	last_dump = now;
 }
 

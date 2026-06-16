@@ -501,6 +501,10 @@ void clean_childdata(struct childdata *child)
 	child->reexec_count_window = 0;
 	child->reexec_window_start_op = 0;
 	child->cmp_hint_injected_this_call = false;
+	/* Cmp-hint baseline inject denom A/B stamp -- (re)decided per-child
+	 * in init_child_runtime_config below; zero here so the fresh occupant
+	 * defaults to Arm A (current 1-in-16 baseline) until the stamp lands. */
+	child->cmp_hint_inject_arm_b = false;
 	/* SHADOW cmp-hint feedback scoring stash starts empty for a fresh
 	 * child occupant ([11-feedback-loop]); generate_syscall_args also
 	 * resets at every call boundary, but a fresh-fork clear here means
@@ -1045,6 +1049,27 @@ static void init_child_runtime_config(struct childdata *child, int childno)
 	 * system load) is common to both arms and falls out of the
 	 * comparison. */
 	child->redqueen_enabled = (child->kcov.mode == KCOV_MODE_CMP) && ONE_IN(2);
+
+	/* Cmp-hint baseline inject denom A/B-comparison stamp.  Half the
+	 * children get Arm B (the more aggressive 1-in-12 baseline rate);
+	 * the rest stay on Arm A (the historical 1-in-16 baseline).  Stamped
+	 * at fork rather than rolled per-call so per-window deltas of the
+	 * arm-B fire / divergence counters can be cleanly attributed to a
+	 * population split that doesn't drift with time-of-day environmental
+	 * noise.  Independent of kcov.mode (PC and CMP children both
+	 * participate) -- the baseline cmp-hint injection helpers fire
+	 * regardless of the per-child KCOV mode, so gating the A/B split on
+	 * the mode would shrink the sample without any matching reduction in
+	 * the signal we're measuring. */
+	child->cmp_hint_inject_arm_b = ONE_IN(2);
+	if (kcov_shm != NULL) {
+		if (child->cmp_hint_inject_arm_b)
+			__atomic_fetch_add(&kcov_shm->cmp_inject_arm_b_children,
+					   1U, __ATOMIC_RELAXED);
+		else
+			__atomic_fetch_add(&kcov_shm->cmp_inject_arm_a_children,
+					   1U, __ATOMIC_RELAXED);
+	}
 
 	/*
 	 * Re-snapshot /proc/self/maps now that init_child's allocator-

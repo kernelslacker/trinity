@@ -51,6 +51,21 @@
  */
 #define CMP_HINT_INJECT_DENOM_BASELINE  16U
 #define CMP_HINT_INJECT_DENOM_AMPLIFIED 4U
+/* Arm B baseline denom for the per-child A/B comparison wired through
+ * cmp_hint_baseline_should_inject() below.  Arm A children keep the
+ * historical 1-in-16 baseline; Arm B children swap to 1-in-12 -- a
+ * modestly higher inject rate that the row measures against the
+ * existing PC-edge yield counters.  Kept narrow on purpose: the band
+ * here is tight, too-aggressive injection starves the random arms.
+ * The AMPLIFIED denom (4U) is the separate plateau-driven lever and is
+ * left at its current value -- the A/B knob only moves the baseline. */
+#define CMP_HINT_INJECT_DENOM_BASELINE_ARM_B 12U
+/* lcm(16, 12) -- the smallest sample period that lets one uniform roll
+ * answer both denoms exactly: Arm A fires iff sample % 16 == 0, Arm B
+ * fires iff sample % 12 == 0.  Used only on the Arm B path inside
+ * cmp_hint_baseline_should_inject() to count per-call divergence
+ * without perturbing Arm A's per-call RNG sequence. */
+#define CMP_HINT_INJECT_BASELINE_LCM    48U
 
 static unsigned int cmp_hint_inject_denom(unsigned int baseline)
 {
@@ -61,6 +76,68 @@ static unsigned int cmp_hint_inject_denom(unsigned int baseline)
 	if (plateau_rescue_bias_active_for(RRC_CMP_DERIVED))
 		return CMP_HINT_INJECT_DENOM_AMPLIFIED;
 	return baseline;
+}
+
+/*
+ * Per-child A/B-gated baseline cmp-hint inject decision.
+ *
+ * Replaces the bare ONE_IN(cmp_hint_inject_denom(CMP_HINT_INJECT_DENOM_BASELINE))
+ * gate at each of the three BASELINE callsites in this file (ARG_RANGE,
+ * ARG_OP, ARG_LIST).  The AMPLIFIED callsites at gen_undefined_arg
+ * (denom 9) and the ARG_STRUCT_SIZE fallback (denom 10) are out of
+ * scope by design and continue to call cmp_hint_inject_denom() directly.
+ *
+ * Behaviour summary:
+ *  - When cmp_hint_inject_denom() returns AMPLIFIED (plateau path),
+ *    both arms use the amplified denom byte-identically; the A/B knob
+ *    is silent under amplification.
+ *  - When the resolved denom is the baseline (16) AND the child is
+ *    stamped Arm B (child->cmp_hint_inject_arm_b == true), we swap to
+ *    ONE_IN(12), bump cmp_inject_arm_b_baseline_fires on a fire, and
+ *    bump cmp_inject_denom_diverged when the same uniform sample would
+ *    have produced a different decision under Arm A's denom.
+ *  - Arm A children, parent-context callers (this_child() == NULL),
+ *    and the amplified path all preserve the historical sequence:
+ *    exactly one ONE_IN(denom) call, no extra RNG consumption.
+ *
+ * The per-call divergence counter is intentionally Arm-B-only so that
+ * Arm A's children remain byte-identical to the pre-row build.  The
+ * counter is therefore a lower bound on the cross-arm divergence: it
+ * counts ~half the fleet's "Arm A would have decided otherwise" events,
+ * which is enough to size the A/B effect without giving up arm-A
+ * purity.
+ */
+static bool cmp_hint_baseline_should_inject(void)
+{
+	unsigned int denom = cmp_hint_inject_denom(CMP_HINT_INJECT_DENOM_BASELINE);
+	struct childdata *child;
+	bool fires;
+
+	if (denom != CMP_HINT_INJECT_DENOM_BASELINE)
+		return ONE_IN(denom);
+
+	child = this_child();
+	if (child == NULL || !child->cmp_hint_inject_arm_b) {
+		fires = ONE_IN(denom);
+		if (fires && kcov_shm != NULL)
+			__atomic_fetch_add(&kcov_shm->cmp_inject_arm_a_baseline_fires,
+					   1UL, __ATOMIC_RELAXED);
+		return fires;
+	}
+
+	{
+		unsigned int sample = rnd_modulo_u32(CMP_HINT_INJECT_BASELINE_LCM);
+		bool arm_a_fires = (sample % CMP_HINT_INJECT_DENOM_BASELINE) == 0;
+		bool arm_b_fires = (sample % CMP_HINT_INJECT_DENOM_BASELINE_ARM_B) == 0;
+
+		if (kcov_shm != NULL && arm_a_fires != arm_b_fires)
+			__atomic_fetch_add(&kcov_shm->cmp_inject_denom_diverged,
+					   1UL, __ATOMIC_RELAXED);
+		if (kcov_shm != NULL && arm_b_fires)
+			__atomic_fetch_add(&kcov_shm->cmp_inject_arm_b_baseline_fires,
+					   1UL, __ATOMIC_RELAXED);
+		return arm_b_fires;
+	}
 }
 
 /*
@@ -193,7 +270,7 @@ static unsigned long handle_arg_range(struct syscallentry *entry,
 	 * and we fall through to the existing distribution unchanged.  No
 	 * hint, an out-of-range hint, or chaos-gate suppression all leave the
 	 * historical mix in place. */
-	if (ONE_IN(cmp_hint_inject_denom(CMP_HINT_INJECT_DENOM_BASELINE)) &&
+	if (cmp_hint_baseline_should_inject() &&
 	    cmp_hints_try_get_ex(rec->nr, rec->do32bit,
 				 CMP_HINT_BOUNDARY, 0, &hint) &&
 	    hint >= low && hint <= high) {
@@ -251,7 +328,7 @@ static unsigned long handle_arg_op(struct syscallentry *entry,
 	 * dominant rescue class is RRC_CMP_DERIVED, or inside any plateau
 	 * window the parent's hypothesis tick has flagged as
 	 * CMP_RISING_PC_FLAT. */
-	if (ONE_IN(cmp_hint_inject_denom(CMP_HINT_INJECT_DENOM_BASELINE)) &&
+	if (cmp_hint_baseline_should_inject() &&
 	    cmp_hints_try_get(call, rec->do32bit, &hint)) {
 		credit_cmp_hint_injection(rec, CMP_HINT_CALLSITE_ARG_OP);
 		return hint;
@@ -287,7 +364,7 @@ static unsigned long handle_arg_list(struct syscallentry *entry,
 	 * dominant rescue class is RRC_CMP_DERIVED, or inside any plateau
 	 * window the parent's hypothesis tick has flagged as
 	 * CMP_RISING_PC_FLAT. */
-	if (ONE_IN(cmp_hint_inject_denom(CMP_HINT_INJECT_DENOM_BASELINE)) &&
+	if (cmp_hint_baseline_should_inject() &&
 	    cmp_hints_try_get(call, rec->do32bit, &hint)) {
 		credit_cmp_hint_injection(rec, CMP_HINT_CALLSITE_ARG_LIST);
 		mask = set_rand_bitmask(num, values);
