@@ -791,6 +791,32 @@ void kcov_child_flush_stats(struct childdata *child)
 					  STATS_FIELD_TOTAL_CALLS, 0, pub);
 		ls->total_calls = delta - pub;
 	}
+
+	delta = ls->remote_calls;
+	if (delta > 0) {
+		uint32_t pub = (delta > UINT32_MAX) ? UINT32_MAX
+						    : (uint32_t)delta;
+
+		(void) stats_ring_enqueue(child->stats_ring,
+					  STATS_FIELD_REMOTE_CALLS, 0, pub);
+		ls->remote_calls = delta - pub;
+	}
+
+	delta = ls->total_pcs;
+	if (delta > 0) {
+		/* total_pcs is a +count batch at the bump site, so a
+		 * single flush can carry a much larger residual than the
+		 * +1-per-call counters above; the same UINT32_MAX clamp
+		 * still bounds the slot field and keeps the remainder
+		 * staged. */
+		uint32_t pub = (delta > UINT32_MAX) ? UINT32_MAX
+						    : (uint32_t)delta;
+
+		(void) stats_ring_enqueue(child->stats_ring,
+					  STATS_FIELD_TOTAL_PCS, 0, pub);
+		ls->total_pcs = delta - pub;
+	}
+
 	ls->local_syscalls_since_flush = 0;
 }
 
@@ -1531,22 +1557,23 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 	call_nr = __atomic_fetch_add(&kcov_shm->total_calls,
 		1, __ATOMIC_RELAXED);
 
-	if (kc->remote_mode)
-		__atomic_fetch_add(&kcov_shm->remote_calls,
-			1, __ATOMIC_RELAXED);
-
-	/* Per-child staging bump for the dump-side total_calls.  Lives
-	 * on childdata->local_stats so the hot kcov_shm->total_calls
-	 * cacheline does not also take a relaxed atomic bump per call
-	 * for the (formerly) duplicate dump accounting.  this_child()
-	 * is NULL only in parent context, which kcov_collect()'s
-	 * callers do not reach -- guard anyway so a future caller
-	 * cannot crash the parent on a stray invocation. */
+	/* Per-child staging bumps for the dump-side total_calls /
+	 * remote_calls accounting.  Lives on childdata->local_stats so
+	 * the hot kcov_shm cacheline does not also take a relaxed
+	 * atomic bump per call for the (formerly) duplicate dump
+	 * accounting.  this_child() is NULL only in parent context,
+	 * which kcov_collect()'s callers do not reach -- guard anyway
+	 * so a future caller cannot crash the parent on a stray
+	 * invocation.  kcov_shm->remote_calls is no longer bumped: no
+	 * stamp-role consumer references the shm field, so the staged
+	 * delta is the source of truth for the dump path. */
 	{
 		struct childdata *cc = this_child();
 
 		if (cc != NULL && cc->local_stats != NULL) {
 			cc->local_stats->total_calls++;
+			if (kc->remote_mode)
+				cc->local_stats->remote_calls++;
 			cc->local_stats->local_syscalls_since_flush++;
 		}
 	}
@@ -1724,7 +1751,19 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 		prev_bucket = bucket;
 	}
 
-	__atomic_fetch_add(&kcov_shm->total_pcs, count, __ATOMIC_RELAXED);
+	/* Per-child staging bump for the dump-side total_pcs.  Same
+	 * batched-flush model as total_calls / remote_calls above; the
+	 * delta here is +count (PCs returned by the kernel for this
+	 * syscall), already a batched value at this site.  No
+	 * stamp-role consumer reads kcov_shm->total_pcs, so the shm
+	 * atomic is no longer bumped and the staged delta is the
+	 * source of truth for the dump path. */
+	{
+		struct childdata *cc = this_child();
+
+		if (cc != NULL && cc->local_stats != NULL)
+			cc->local_stats->total_pcs += count;
+	}
 
 	if (nr < MAX_NR_SYSCALL) {
 		__atomic_fetch_add(&kcov_shm->per_syscall_calls[nr],

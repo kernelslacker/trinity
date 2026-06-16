@@ -186,6 +186,12 @@ static void apply_slot(const void *p, void *ctx __unused__)
 	case STATS_FIELD_TOTAL_CALLS:
 		parent_stats.total_calls += delta;
 		break;
+	case STATS_FIELD_REMOTE_CALLS:
+		parent_stats.remote_calls += delta;
+		break;
+	case STATS_FIELD_TOTAL_PCS:
+		parent_stats.total_pcs += delta;
+		break;
 	case STATS_FIELD_CALL_COMPLETE: {
 		/* One slot, three logical bumps.  op_count is unconditional
 		 * (the SPSC slot wouldn't have made it past spsc_ring_drain

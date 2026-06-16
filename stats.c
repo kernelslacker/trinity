@@ -326,12 +326,14 @@ static void json_emit_kcov_section(void)
 	}
 
 	kc_edges  = __atomic_load_n(&kcov_shm->edges_found,  __ATOMIC_RELAXED);
-	kc_pcs    = __atomic_load_n(&kcov_shm->total_pcs,    __ATOMIC_RELAXED);
-	/* total_calls drained from the per-child stats_ring into
-	 * parent_stats; kcov_shm->total_calls is kept as the stamp
-	 * source for last_edge_at[] / last_efault_at[] only. */
+	/* total_pcs / total_calls / remote_calls drained from the
+	 * per-child stats_ring into parent_stats; kcov_shm->total_calls
+	 * is kept as the stamp source for last_edge_at[] /
+	 * last_efault_at[] only, and the other two shm fields are no
+	 * longer bumped (no stamp-role consumer references them). */
+	kc_pcs    = parent_stats.total_pcs;
 	kc_calls  = parent_stats.total_calls;
-	kc_remote = __atomic_load_n(&kcov_shm->remote_calls, __ATOMIC_RELAXED);
+	kc_remote = parent_stats.remote_calls;
 	kc_cmp_records = __atomic_load_n(&kcov_shm->cmp_records_collected,
 		__ATOMIC_RELAXED);
 	kc_cmp_trunc = __atomic_load_n(&kcov_shm->cmp_trace_truncated,
@@ -7278,12 +7280,14 @@ static void dump_stats_kcov_block(void)
 		unsigned int j;
 
 		unsigned long kc_edges       = __atomic_load_n(&kcov_shm->edges_found,            __ATOMIC_RELAXED);
-		unsigned long kc_pcs         = __atomic_load_n(&kcov_shm->total_pcs,              __ATOMIC_RELAXED);
-		/* See per-child total_calls migration in stats_ring.h:
-		 * dump-side total_calls reads parent_stats; kcov_shm
-		 * stays as the stamp source. */
+		/* See per-child kcov stats migration in stats_ring.h:
+		 * total_pcs / total_calls / remote_calls read from
+		 * parent_stats.  kcov_shm->total_calls is kept as the
+		 * stamp source for last_edge_at[] / last_efault_at[];
+		 * the other two shm fields are no longer bumped. */
+		unsigned long kc_pcs         = parent_stats.total_pcs;
 		unsigned long kc_calls       = parent_stats.total_calls;
-		unsigned long kc_remote      = __atomic_load_n(&kcov_shm->remote_calls,           __ATOMIC_RELAXED);
+		unsigned long kc_remote      = parent_stats.remote_calls;
 		unsigned long kc_cmp_records = __atomic_load_n(&kcov_shm->cmp_records_collected,  __ATOMIC_RELAXED);
 		unsigned long kc_cmp_trunc   = __atomic_load_n(&kcov_shm->cmp_trace_truncated,    __ATOMIC_RELAXED);
 		unsigned long kc_dedup_overflow    = __atomic_load_n(&kcov_shm->dedup_probe_overflow,   __ATOMIC_RELAXED);

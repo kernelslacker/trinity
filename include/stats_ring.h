@@ -112,6 +112,23 @@ enum stats_field {
 	 * for the last_edge_at[] / last_efault_at[] stamp value and the
 	 * cold-skip gap denominator only. */
 	STATS_FIELD_TOTAL_CALLS,
+	/* kcov_collect()'s remote_mode call counter.  Same staging /
+	 * batched-flush model as STATS_FIELD_TOTAL_CALLS: bumped on the
+	 * per-child kcov_child_local_stats slot when kc->remote_mode is
+	 * set, drained into parent_stats.remote_calls via the stats_ring
+	 * on the found-new-edge piggyback or the syscalls-since-flush
+	 * cadence cap.  Dump-only reader, no per-call branch reads it,
+	 * so the batched delta is the source of truth for the dump path
+	 * and the kcov_shm field is no longer bumped. */
+	STATS_FIELD_REMOTE_CALLS,
+	/* kcov_collect()'s per-call PC-count bump.  Already a batched
+	 * "+count" delta at the bump site (count = PCs returned by the
+	 * kernel for this syscall, often dozens-to-hundreds), so the
+	 * staging slot folds the per-syscall accumulation into a single
+	 * ring enqueue per flush rather than one atomic-add per call.
+	 * Drained into parent_stats.total_pcs; same flush cadence as the
+	 * other two kcov staging counters. */
+	STATS_FIELD_TOTAL_PCS,
 	STATS_FIELD_NR,
 };
 
@@ -209,6 +226,21 @@ struct stats_aggregate {
 	 * the stamp source for last_edge_at[] / last_efault_at[] and the
 	 * cold-skip gap denominator only. */
 	unsigned long total_calls;
+
+	/* Drained from STATS_FIELD_REMOTE_CALLS.  Subset of total_calls
+	 * that took the kc->remote_mode branch (KCOV_REMOTE_ENABLE-backed
+	 * collection).  Reported by the same dump readers as total_calls;
+	 * the kcov_shm->remote_calls atomic is no longer bumped, no
+	 * stamp-role consumer references it. */
+	unsigned long remote_calls;
+
+	/* Drained from STATS_FIELD_TOTAL_PCS.  Sum of PC counts pulled
+	 * out of per-call KCOV trace buffers across every child; the
+	 * pre-existing kcov_shm->total_pcs atomic was a relaxed +count
+	 * (not +1) batched delta at the same site, so the staging slot
+	 * folds the per-syscall accumulation into one ring enqueue per
+	 * flush. */
+	unsigned long total_pcs;
 
 	/* Visibility / health counters surfaced via dump_stats. */
 	unsigned long ring_overflow_total;	/* sum of dropped enqueues across all rings */
