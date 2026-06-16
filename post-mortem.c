@@ -16,6 +16,7 @@
 #include "kcov.h"
 #include "pids.h"
 #include "shm.h"
+#include "stats_ring.h"
 #include "tables.h"
 #include "taint.h"
 #include "trinity.h"
@@ -433,7 +434,11 @@ static void dump_kcov_state(FILE *fp)
 
 	edges         = __atomic_load_n(&kcov_shm->edges_found,           __ATOMIC_RELAXED);
 	pcs           = __atomic_load_n(&kcov_shm->total_pcs,             __ATOMIC_RELAXED);
-	calls         = __atomic_load_n(&kcov_shm->total_calls,           __ATOMIC_RELAXED);
+	/* total_calls migrated off the kcov_shm atomic onto the per-child
+	 * staged counter drained into parent_stats; the kcov_shm field is
+	 * retained as the stamp source for last_edge_at[] / last_efault_at[]
+	 * and the cold-skip gap denominator only.  See stats_ring.h. */
+	calls         = parent_stats.total_calls;
 	remote        = __atomic_load_n(&kcov_shm->remote_calls,          __ATOMIC_RELAXED);
 	truncated     = __atomic_load_n(&kcov_shm->trace_truncated,       __ATOMIC_RELAXED);
 	cmp_records   = __atomic_load_n(&kcov_shm->cmp_records_collected, __ATOMIC_RELAXED);

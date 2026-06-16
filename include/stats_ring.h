@@ -104,6 +104,14 @@ enum stats_field {
 	 * SPSC enqueue count per dispatched syscall from three to one.
 	 */
 	STATS_FIELD_CALL_COMPLETE,
+	/* kcov_collect()'s per-call total_calls bump.  Children stage the
+	 * count in kcov_child_local_stats and flush in batches (on a
+	 * found-new-edge piggyback, or once per N syscalls) so the
+	 * kcov_shm->total_calls shared cacheline no longer takes a hot
+	 * atomic bump for the dump-side accounting; the shm field is kept
+	 * for the last_edge_at[] / last_efault_at[] stamp value and the
+	 * cold-skip gap denominator only. */
+	STATS_FIELD_TOTAL_CALLS,
 	STATS_FIELD_NR,
 };
 
@@ -193,6 +201,14 @@ struct stats_aggregate {
 	unsigned long ring_eviction_corrupt;
 	unsigned long deferred_free_corrupt_ptr;
 	unsigned long arg_shadow_stomp;
+
+	/* Drained from STATS_FIELD_TOTAL_CALLS.  Aggregate of every child's
+	 * kcov_collect() invocations.  Reported by the dump path (stats.c
+	 * JSON + Scuba rows, post-mortem, strategy plateau snapshots) in
+	 * place of the kcov_shm->total_calls atomic; the shm field stays as
+	 * the stamp source for last_edge_at[] / last_efault_at[] and the
+	 * cold-skip gap denominator only. */
+	unsigned long total_calls;
 
 	/* Visibility / health counters surfaced via dump_stats. */
 	unsigned long ring_overflow_total;	/* sum of dropped enqueues across all rings */
