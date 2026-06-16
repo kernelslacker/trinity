@@ -275,6 +275,7 @@ static void sanitise_recvmsg(struct syscallrecord *rec)
 
 skip_si:
 	msg = zmalloc_tracked(sizeof(struct msghdr));
+	rec_own(rec, msg);
 	msg->msg_name = sa;
 	msg->msg_namelen = salen;
 
@@ -424,11 +425,14 @@ static void post_recvmsg(struct syscallrecord *rec)
 	/*
 	 * Magic-cookie check: ownership table confirmed this is our snap,
 	 * so reading snap->magic is now safe.  A mismatch here means the
-	 * snapshot itself was wholesale-scribbled in place -- abandon both
-	 * the snap and the msghdr cleanup rather than feed wild bytes into
-	 * the inner-field deref.  Cannot deferred_freeptr the snap because
-	 * its contents are no longer trustworthy -- leak it and let the
-	 * deferred-free tick reclaim the original snap on the next pass.
+	 * snapshot itself was wholesale-scribbled in place -- abandon the
+	 * snap->name free rather than feed wild bytes into the inner-field
+	 * deref.  Cannot deferred_freeptr the snap because its contents are
+	 * no longer trustworthy -- leak it and let the deferred-free tick
+	 * reclaim the original snap on the next pass.  The msghdr itself is
+	 * owned by the rec carrier (rec_own at sanitise time) and gets
+	 * reclaimed unconditionally by rec_owned_drain after .post runs,
+	 * independent of this bail-out.
 	 */
 	if (snap->magic != RECVMSG_POST_STATE_MAGIC) {
 		outputerr("post_recvmsg: rejected snap with bad magic 0x%lx "
@@ -472,21 +476,23 @@ static void post_recvmsg(struct syscallrecord *rec)
 skip_bound:
 
 	/*
-	 * Free from the trusted snap, not from the current msghdr.  The
-	 * kernel writes through msg_namelen on success, and a sibling
-	 * iov_base aliased into the msghdr can scribble msg_name with
-	 * a heap-shaped within-array offset that the inner shape-only
-	 * check accepts but free() aborts on in libasan.  The snap fields
-	 * are wrapped in the magic-cookie struct above, so they hold the
-	 * sanitise-time allocations regardless of what the kernel (or a
-	 * sibling) left in the live msghdr.  msg_iov and msg_control are
-	 * no longer freed -- both live in the writable-pool now (see
-	 * sanitise_recvmsg) and pool allocations are never released by
-	 * trinity.
+	 * Free msg_name from the trusted snap, not from the current
+	 * msghdr.  The kernel writes through msg_namelen on success, and a
+	 * sibling iov_base aliased into the msghdr can scribble msg_name
+	 * with a heap-shaped within-array offset that the inner shape-only
+	 * check accepts but free() aborts on in libasan.  snap->name holds
+	 * the sanitise-time allocation regardless of what the kernel (or a
+	 * sibling) left in the live msghdr.  The msghdr itself is owned by
+	 * the rec carrier (rec_own at sanitise time) and gets reclaimed
+	 * unconditionally by rec_owned_drain after .post runs -- that also
+	 * closes the leak on paths where .post is skipped entirely
+	 * (retfd-rejected, killed grandchild, ...).  msg_iov and
+	 * msg_control are not freed -- both live in the writable-pool now
+	 * (see sanitise_recvmsg) and pool allocations are never released
+	 * by trinity.
 	 */
 	tracked_free_now(snap->name);
 	rec->a2 = 0;
-	deferred_free_enqueue(msg);
 
 out_free:
 	post_state_unregister(snap);
