@@ -437,6 +437,12 @@ static size_t build_spdget(uint8_t *buf, size_t cap, uint8_t dir,
  * and subsequent sends start returning ENOBUFS.  We don't need the
  * payload -- the bug surface is the kernel-side walk -- so a fixed
  * burst of MSG_DONTWAIT recvs is enough.
+ *
+ * For SADB_X_SPDGET replies the sadb_msg_errno field tells us
+ * whether the racer's id-guess landed on a live policy (errno == 0)
+ * or missed (errno != 0, typically -ESRCH).  Bump the per-outcome
+ * counters so a 0% resolved rate is visible in the stats dump even
+ * though the racer keeps blasting unresolved SPDGETs to no effect.
  */
 static void drain_replies(int fd)
 {
@@ -445,8 +451,21 @@ static void drain_replies(int fd)
 
 	for (i = 0; i < 16U; i++) {
 		ssize_t r = recv(fd, buf, sizeof(buf), MSG_DONTWAIT);
+		const struct sadb_msg *m;
+
 		if (r < 0)
 			break;
+		if ((size_t)r < sizeof(*m))
+			continue;
+		m = (const struct sadb_msg *)buf;
+		if (m->sadb_msg_type != SADB_X_SPDGET)
+			continue;
+		if (m->sadb_msg_errno == 0)
+			__atomic_add_fetch(&shm->stats.pfkey_spdget_resolved,
+					   1, __ATOMIC_RELAXED);
+		else
+			__atomic_add_fetch(&shm->stats.pfkey_spdget_missed,
+					   1, __ATOMIC_RELAXED);
 	}
 }
 
