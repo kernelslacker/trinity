@@ -575,6 +575,7 @@ static void sanitise_recvmmsg(struct syscallrecord *rec)
 
 	vlen = RAND_RANGE(1, RECVMMSG_MAX_VLEN);
 	msgs = zmalloc_tracked(vlen * sizeof(struct mmsghdr));
+	rec_own(rec, msgs);
 
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = RECVMMSG_POST_STATE_MAGIC;
@@ -768,12 +769,14 @@ static void post_recvmmsg(struct syscallrecord *rec)
 	 * cookie struct above, so they still hold the sanitise-time
 	 * allocations.  msg_iov and msg_control are no longer freed --
 	 * both live in the writable-pool now (see sanitise_recvmmsg) and
-	 * pool allocations are never released by trinity.
+	 * pool allocations are never released by trinity.  The msgs[]
+	 * array itself is owned by the rec carrier (rec_own at sanitise
+	 * time) and gets reclaimed unconditionally by rec_owned_drain
+	 * after .post runs -- no explicit free here.
 	 */
 	for (i = 0; i < vlen; i++)
 		tracked_free_now(snap->name[i]);
 	rec->a2 = 0;
-	deferred_free_enqueue(msgs);
 
 out_free:
 	post_state_unregister(snap);
