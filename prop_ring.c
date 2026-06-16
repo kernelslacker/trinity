@@ -22,6 +22,7 @@
 #include "objects.h"
 #include "prop_ring.h"
 #include "rnd.h"
+#include "shm.h"
 
 /* Slots older than this (measured in child->op_nr ticks) are skipped
  * by the consumer -- the win is chaining values into multi-step
@@ -54,15 +55,69 @@ static unsigned int ring_prev(unsigned int head)
 	return (head - 1) & (CHILD_PROP_RING_SIZE - 1);
 }
 
-void prop_ring_push(struct childdata *child,
-		    const struct syscallentry *entry,
-		    const struct syscallrecord *rec)
+/*
+ * Shared filter + dedup + slot-fill body for the public push variants.
+ * Returns true iff a new slot was published.  Callers gate the OBJ_NONE
+ * firewall (or deliberately bypass it for typed scalar returns that
+ * have their own external registrar) before reaching here.
+ */
+static bool prop_ring_push_filtered(struct childdata *child,
+				    unsigned int src_nr,
+				    bool do32bit,
+				    unsigned long value)
 {
 	struct child_prop_ring *ring;
 	struct prop_slot *prev;
 	struct prop_slot *slot;
-	long sret;
+	long sret = (long) value;
 
+	/* -1 is the failure sentinel; small negative values just outside
+	 * it (errno-encoded returns from syscalls that don't go through
+	 * libc's errno indirection, signal numbers, etc.) are legitimate
+	 * cookies and stay in the window. */
+	if (sret == -1)
+		return false;
+	if (sret < -32 || sret > INT32_MAX)
+		return false;
+
+	/* Pointer-shape firewall for positive returns.  Negatives in
+	 * [-32, -2] survive the unsigned cast as huge values and would
+	 * otherwise be rejected here -- exempt them explicitly. */
+	if (sret > 0 && (unsigned long) sret > PROP_RING_HIGH_PTR)
+		return false;
+
+	/* The fd pool already biases live fds back into ARG_FD slots.
+	 * If a generic scalar return happens to alias a registered fd,
+	 * skip capture so we don't double-bias. */
+	if (sret > 2 && fd_hash_lookup((int) sret) != NULL)
+		return false;
+
+	ring = &child->prop_ring;
+
+	/* Dedup against the most recent slot so an open/close loop
+	 * that keeps returning the same fd doesn't fill the whole ring
+	 * with one value. */
+	prev = &ring->slots[ring_prev(ring->head)];
+	if (prev->valid &&
+	    prev->value == value &&
+	    prev->src_nr == src_nr &&
+	    prev->do32bit == do32bit)
+		return false;
+
+	slot = &ring->slots[ring->head & (CHILD_PROP_RING_SIZE - 1)];
+	slot->value = value;
+	slot->captured_at = child->op_nr;
+	slot->src_nr = src_nr;
+	slot->do32bit = do32bit;
+	slot->valid = true;
+	ring->head++;
+	return true;
+}
+
+void prop_ring_push(struct childdata *child,
+		    const struct syscallentry *entry,
+		    const struct syscallrecord *rec)
+{
 	if (child == NULL || entry == NULL || rec == NULL)
 		return;
 
@@ -72,48 +127,31 @@ void prop_ring_push(struct childdata *child,
 	if (entry->ret_objtype != OBJ_NONE)
 		return;
 
-	sret = (long) rec->retval;
+	prop_ring_push_filtered(child, rec->nr, rec->do32bit, rec->retval);
+}
 
-	/* -1 is the failure sentinel; small negative values just outside
-	 * it (errno-encoded returns from syscalls that don't go through
-	 * libc's errno indirection, signal numbers, etc.) are legitimate
-	 * cookies and stay in the window. */
-	if (sret == -1)
-		return;
-	if (sret < -32 || sret > INT32_MAX)
-		return;
+/*
+ * Variant for typed scalar returns whose own registrar (key serial,
+ * etc.) has already accepted the value and we additionally want it
+ * mirrored into the propagation ring so untyped consumers in
+ * gen_undefined_arg can replay it.  Bypasses the OBJ_NONE firewall
+ * by design -- the caller must guarantee the value is a non-fd /
+ * non-pid scalar, since the in-line pointer-shape / fd-alias filters
+ * cannot tell typed integer cookies apart from raw scalars.  The
+ * OBJ_NONE firewall on prop_ring_push() above stays intact so the
+ * fd/pid leakage vector it was added to close stays closed.
+ */
+void prop_ring_push_scalar(unsigned int nr, long scalar_val)
+{
+	struct childdata *child = this_child();
 
-	/* Pointer-shape firewall for positive returns.  Negatives in
-	 * [-32, -2] survive the unsigned cast as huge values and would
-	 * otherwise be rejected here -- exempt them explicitly. */
-	if (sret > 0 && (unsigned long) sret > PROP_RING_HIGH_PTR)
-		return;
-
-	/* The fd pool already biases live fds back into ARG_FD slots.
-	 * If a generic scalar return happens to alias a registered fd,
-	 * skip capture so we don't double-bias. */
-	if (sret > 2 && fd_hash_lookup((int) sret) != NULL)
+	if (child == NULL)
 		return;
 
-	ring = &child->prop_ring;
-
-	/* Dedup against the most recent slot so an open/close loop
-	 * that keeps returning the same fd doesn't fill the whole ring
-	 * with one value. */
-	prev = &ring->slots[ring_prev(ring->head)];
-	if (prev->valid &&
-	    prev->value == rec->retval &&
-	    prev->src_nr == rec->nr &&
-	    prev->do32bit == rec->do32bit)
-		return;
-
-	slot = &ring->slots[ring->head & (CHILD_PROP_RING_SIZE - 1)];
-	slot->value = rec->retval;
-	slot->captured_at = child->op_nr;
-	slot->src_nr = rec->nr;
-	slot->do32bit = rec->do32bit;
-	slot->valid = true;
-	ring->head++;
+	if (prop_ring_push_filtered(child, nr, false,
+				    (unsigned long) scalar_val))
+		__atomic_add_fetch(&shm->stats.propagation_injected_key_scalar,
+				   1, __ATOMIC_RELAXED);
 }
 
 bool prop_ring_try_get(struct childdata *child,
