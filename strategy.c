@@ -599,6 +599,40 @@ void frontier_record_new_edge(unsigned int nr)
 		&shm->stats.frontier_silent_streak_per_syscall[nr],
 		0UL, __ATOMIC_RELAXED);
 
+	/* SHADOW-ONLY no-novelty baseline snapshot, paired with the streak
+	 * reset above.  Snapshots the current value of the two non-PC-edge
+	 * novelty signals (per-syscall CMP-pool inserts and per-syscall
+	 * SUCCESS-bucket errno count) so the silent-regime accept site can
+	 * detect whether either fired during the next silent streak via a
+	 * cheap current-vs-baseline equality test.  A streak reset here is
+	 * the right moment to refresh the baselines: by construction this
+	 * call also bumped per_syscall_edges, so PC-edge novelty IS the
+	 * reset event and the no-novelty UNLESS clause is being re-armed
+	 * for the next streak.
+	 *
+	 * Same observability-only contract as the streak counter above --
+	 * no selection or scoring code reads these baselines, only the
+	 * shadow decay predicate at the silent-regime accept site does.
+	 * kcov_shm NULL-checked because frontier_record_new_edge is
+	 * unreachable without a coverage trace under collection, but the
+	 * guard matches the pattern other kcov_shm consumers follow. */
+	if (kcov_shm != NULL) {
+		unsigned long cmp_snap, errno_snap;
+
+		cmp_snap = __atomic_load_n(
+			&kcov_shm->per_syscall_cmp_inserts[nr],
+			__ATOMIC_RELAXED);
+		errno_snap = __atomic_load_n(
+			&kcov_shm->per_syscall_errno[nr][ERRNO_BUCKET_SUCCESS],
+			__ATOMIC_RELAXED);
+		__atomic_store_n(
+			&shm->stats.frontier_silent_cmp_baseline[nr],
+			cmp_snap, __ATOMIC_RELAXED);
+		__atomic_store_n(
+			&shm->stats.frontier_silent_errno_success_baseline[nr],
+			errno_snap, __ATOMIC_RELAXED);
+	}
+
 	/* Ratchet the cached max upward if this bump pushed nr's recent
 	 * count past it.  No CAS: a racing producer that also raises the
 	 * max can clobber our store with its (also-correct) value, and a
@@ -658,6 +692,29 @@ void frontier_record_transition_edge(unsigned int nr)
 	__atomic_store_n(
 		&shm->stats.frontier_silent_streak_per_syscall[nr],
 		0UL, __ATOMIC_RELAXED);
+
+	/* SHADOW-ONLY no-novelty baseline snapshot.  Mirror of the snapshot
+	 * pair in frontier_record_new_edge(): a transition-edge discovery
+	 * is also a productive event for the streak's purposes, so the
+	 * decay predicate's UNLESS-clause baselines re-arm here too.  Same
+	 * observability-only contract; see the matching block in
+	 * frontier_record_new_edge() for full rationale. */
+	if (kcov_shm != NULL) {
+		unsigned long cmp_snap, errno_snap;
+
+		cmp_snap = __atomic_load_n(
+			&kcov_shm->per_syscall_cmp_inserts[nr],
+			__ATOMIC_RELAXED);
+		errno_snap = __atomic_load_n(
+			&kcov_shm->per_syscall_errno[nr][ERRNO_BUCKET_SUCCESS],
+			__ATOMIC_RELAXED);
+		__atomic_store_n(
+			&shm->stats.frontier_silent_cmp_baseline[nr],
+			cmp_snap, __ATOMIC_RELAXED);
+		__atomic_store_n(
+			&shm->stats.frontier_silent_errno_success_baseline[nr],
+			errno_snap, __ATOMIC_RELAXED);
+	}
 
 	w = frontier_recent_count(nr);
 	if (w > UINT_MAX)

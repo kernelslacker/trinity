@@ -3394,6 +3394,16 @@ static const struct {
 	  offsetof(struct stats_s, frontier_live_picks) },
 	{ "frontier_silent_picks",
 	  offsetof(struct stats_s, frontier_silent_picks) },
+	/* SHADOW-ONLY decay accounting under the tightened no-novelty
+	 * predicate (consecutive silent picks past threshold AND no CMP
+	 * insert AND no SUCCESS-bucket errno shift since the streak's
+	 * most recent reset).  Sibling of frontier_shadow_decay_candidates;
+	 * see the struct-field comment in include/stats.h for the per-
+	 * counter semantics. */
+	{ "frontier_decay_candidates",
+	  offsetof(struct stats_s, frontier_decay_candidates) },
+	{ "frontier_decay_would_skip",
+	  offsetof(struct stats_s, frontier_decay_would_skip) },
 	/* SHADOW-ONLY A/B scoring for the [t12-frontier-blend] cold-weight
 	 * blend.  The picker still consumes the OLD weight; these counters
 	 * expose how often the blended formula would have steered
@@ -6533,6 +6543,20 @@ static void dump_stats_strategy_summary(void)
 			 shm->stats.frontier_shadow_decay_candidates);
 	stat_row("strategy", "frontier_shadow_decay_streak_threshold",
 		 FRONTIER_SHADOW_DECAY_STREAK);
+	/* Tightened decay predicate (sibling of the looser counter above):
+	 * adds the no-CMP-novelty + no-errno-shift UNLESS clause to the
+	 * threshold-crossing test, and tallies the projected demote count
+	 * across all silent-regime picks past the threshold.  The (looser
+	 * candidates / candidates) ratio tells the operator what fraction
+	 * of N-silent crossings the CMP/errno tightening would have spared;
+	 * the would_skip / silent_picks ratio is the projected pick share a
+	 * live silent-decay variant would demote. */
+	if (shm->stats.frontier_decay_candidates)
+		stat_row("strategy", "frontier_decay_candidates",
+			 shm->stats.frontier_decay_candidates);
+	if (shm->stats.frontier_decay_would_skip)
+		stat_row("strategy", "frontier_decay_would_skip",
+			 shm->stats.frontier_decay_would_skip);
 	/* SHADOW-ONLY A/B scoring for the [t12-frontier-blend] cold-weight
 	 * blend.  Emitted as a sibling block to the silent-decay shadow
 	 * counters above; the picker still consumes the OLD weight from
