@@ -2267,6 +2267,34 @@ struct stats_s {
 	 * count should drop to zero). */
 	unsigned long ring_evict_leaked;
 
+	/* alloc_track_refresh() found @ptr currently pinned in the
+	 * deferred ring and skipped both the consume + re-add.  The
+	 * ring already owns the chunk's lifecycle; re-admitting a
+	 * fresh alloc_track entry for a ring-resident @ptr decouples
+	 * that entry's lifetime from the original __zmalloc-time entry
+	 * the ring's free-time consume gate relies on, leaving the
+	 * address-reuse-then-stale-enqueue path through which eviction
+	 * matches a fresh consume entry and free()s a now-live chunk
+	 * owned by a different allocation.  Non-zero proves the gate
+	 * is engaged on a refresh of a ring-resident ptr; rate-of-
+	 * change correlates with the maps.c / objects.c refresh
+	 * pressure that previously fed deferred_free_double_admit_skip
+	 * at the enqueue dedup. */
+	unsigned long alloc_track_refresh_ring_owned_skip;
+
+	/* alloc_track_refresh() could not verify ring residency because
+	 * ring_unlock() returned non-OK (typically ENOMEM under VMA
+	 * pressure -- same class as deferred_free_enomem_drain).  The
+	 * refresh is skipped entirely rather than risk re-adding a
+	 * ring-resident @ptr; the only cost is the LRU position --
+	 * the original alloc_track entry is untouched, so a follow-up
+	 * lookup still resolves and the entry rotates out per the
+	 * normal alloc_track[] aging.  Non-zero rate indicates VMA-
+	 * pressure leaking into the refresh path -- correlate with
+	 * deferred_free_enomem_drain and
+	 * deferred_free_tracked_free_unverified_leak. */
+	unsigned long alloc_track_refresh_unverified_skip;
+
 	/* Bumped by run_sequence_chain() when chain_corpus_pick() returns
 	 * a chain_entry whose len is zero or greater than MAX_SEQ_LEN.
 	 * The chain corpus is shared memory and tolerates lockless reads

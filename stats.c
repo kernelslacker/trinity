@@ -2243,6 +2243,8 @@ static void dump_stats_json_corruption_and_audit(void)
 			"\"ring_evict_leaked\":%lu,"
 			"\"deferred_free_ring_owned_skip\":%lu,"
 			"\"deferred_free_double_admit_skip\":%lu,"
+			"\"alloc_track_refresh_ring_owned_skip\":%lu,"
+			"\"alloc_track_refresh_unverified_skip\":%lu,"
 			"\"pagecache_canary_corrupt_caught\":%lu,"
 			"\"objpool_array_stale_caught\":%lu,"
 			"\"lock_word_scribbled\":%lu,"
@@ -2299,6 +2301,8 @@ static void dump_stats_json_corruption_and_audit(void)
 		shm->stats.ring_evict_leaked,
 		shm->stats.deferred_free_ring_owned_skip,
 		shm->stats.deferred_free_double_admit_skip,
+		shm->stats.alloc_track_refresh_ring_owned_skip,
+		shm->stats.alloc_track_refresh_unverified_skip,
 		shm->stats.pagecache_canary_corrupt_caught,
 		shm->stats.objpool_array_stale_caught,
 		parent_stats.lock_word_scribbled,
@@ -3312,6 +3316,10 @@ static const struct {
 	  offsetof(struct stats_s, deferred_free_ring_owned_skip) },
 	{ "deferred_free_double_admit_skip",
 	  offsetof(struct stats_s, deferred_free_double_admit_skip) },
+	{ "alloc_track_refresh_ring_owned_skip",
+	  offsetof(struct stats_s, alloc_track_refresh_ring_owned_skip) },
+	{ "alloc_track_refresh_unverified_skip",
+	  offsetof(struct stats_s, alloc_track_refresh_unverified_skip) },
 	{ "pagecache_canary_corrupt_caught",
 	  offsetof(struct stats_s, pagecache_canary_corrupt_caught) },
 	{ "objpool_array_stale_caught",
@@ -6286,6 +6294,10 @@ static void dump_stats_corruption_and_pool(void)
 		stat_row("corruption", "deferred_free_ring_owned_skip",       shm->stats.deferred_free_ring_owned_skip);
 	if (shm->stats.deferred_free_double_admit_skip)
 		stat_row("corruption", "deferred_free_double_admit_skip",     shm->stats.deferred_free_double_admit_skip);
+	if (shm->stats.alloc_track_refresh_ring_owned_skip)
+		stat_row("corruption", "alloc_track_refresh_ring_owned_skip", shm->stats.alloc_track_refresh_ring_owned_skip);
+	if (shm->stats.alloc_track_refresh_unverified_skip)
+		stat_row("corruption", "alloc_track_refresh_unverified_skip", shm->stats.alloc_track_refresh_unverified_skip);
 	if (parent_stats.snapshot_non_heap_reject)
 		stat_row("corruption", "snapshot_non_heap_reject", parent_stats.snapshot_non_heap_reject);
 	if (parent_stats.lock_word_scribbled)
