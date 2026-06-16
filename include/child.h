@@ -744,6 +744,20 @@ struct childdata {
 	 * flag directly. */
 	bool cmp_hint_injected_this_call;
 
+	/* SHADOW per-entry feedback scoring scratch ([11-feedback-loop]
+	 * PHASE 4).  cmp_hints_try_get_ex() pushes one entry per successful
+	 * pull (capped at CMP_HINT_CONSUMED_STASH_MAX; overflow drops the
+	 * excess).  Cleared at the top of generate_syscall_args() (via
+	 * cmp_hints_feedback_reset_stash) and drained by exactly ONE of the
+	 * cmp_hints_feedback_credit_* calls in dispatch_step's post-call
+	 * bookkeeping, which credit per-entry wins/misses on the matching
+	 * pool entries and bump the flat cmp_hint_wins / cmp_hint_misses /
+	 * cmp_hint_cmp_novelty_wins counters.  Owner-only writes from
+	 * inside the child; no cross-process coherence needed. */
+	struct cmp_hint_consumed_entry
+		cmp_hints_consumed_stash[CMP_HINT_CONSUMED_STASH_MAX];
+	unsigned int cmp_hints_consumed_count;
+
 	/* The actual syscall records each child uses.  Dominated by a 4 KiB
 	 * prebuffer + 128 B postbuffer used by -v rendering — only nr / a1..a6
 	 * / retval / lock / state are touched on the hot path, and those are

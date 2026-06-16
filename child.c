@@ -501,6 +501,14 @@ void clean_childdata(struct childdata *child)
 	child->reexec_count_window = 0;
 	child->reexec_window_start_op = 0;
 	child->cmp_hint_injected_this_call = false;
+	/* SHADOW cmp-hint feedback scoring stash starts empty for a fresh
+	 * child occupant ([11-feedback-loop]); generate_syscall_args also
+	 * resets at every call boundary, but a fresh-fork clear here means
+	 * the child's very first call sees a clean buffer regardless of
+	 * what bytes the slot held under the prior occupant. */
+	memset(child->cmp_hints_consumed_stash, 0,
+	       sizeof(child->cmp_hints_consumed_stash));
+	child->cmp_hints_consumed_count = 0;
 
 	/* Clear any __BUG() stamp left by the prior occupant of this slot
 	 * so the parent's zombie-pending warning doesn't mis-attribute the

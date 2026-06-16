@@ -1674,6 +1674,46 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	 * mutator productivity stats and corpus growth in lockstep. */
 	minicorpus_mut_attrib_commit(found_something);
 
+	/*
+	 * SHADOW per-entry cmp-hint feedback scoring ([11-feedback-loop]
+	 * PHASE 4).  Drain the per-child stash that cmp_hints_try_get_ex
+	 * pushed onto during arg generation; credit per-entry pool wins/
+	 * misses on the matching pool entries and bump the flat
+	 * cmp_hint_wins / cmp_hint_misses / cmp_hint_cmp_novelty_wins
+	 * counters.  Exactly ONE drain per parent dispatch:
+	 *  - PC mode: credit_pc(true) on new_edges, credit_pc(false) on
+	 *    no-edge.  PC-edge is the win signal the follow-up live-pick
+	 *    weight will read.
+	 *  - CMP mode with new_cmp > 0: credit_cmp_novelty (SEPARATE
+	 *    counter; spec mandate -- CMP novelty must not masquerade as
+	 *    PC-edge conversion).
+	 *  - CMP mode with new_cmp == 0: just reset the stash, no credit
+	 *    (PC-mode score is undefined for a CMP-mode call, and CMP
+	 *    novelty did not fire).
+	 *
+	 * SHADOW: live pool selection in cmp_hints_try_get is UNCHANGED
+	 * this commit; only the per-entry scores and the flat counters
+	 * record outcomes.  The follow-up A/B-gated commit will turn the
+	 * scores into the weighted live pick.
+	 *
+	 * Gated on !child->in_reexec so the inner re-exec dispatch does
+	 * not credit the outer parent's stash a second time.  The outer
+	 * dispatch_step already credited and reset the stash above; the
+	 * inner generate_syscall_args under in_reexec did not push (the
+	 * stash helper gates on the same flag), so the inner stash is
+	 * provably empty here.  Belt-and-braces vs an accidental future
+	 * push that forgets the gate.
+	 */
+	if (!child->in_reexec) {
+		if (child->kcov.mode == KCOV_MODE_PC) {
+			cmp_hints_feedback_credit_pc(new_edges);
+		} else if (new_cmp > 0) {
+			cmp_hints_feedback_credit_cmp_novelty();
+		} else {
+			cmp_hints_feedback_reset_stash();
+		}
+	}
+
 	/* Save args that produced any novelty signal, but only for
 	 * syscalls without sanitise (which may stash pointers).  Tag with
 	 * the source so saves_by_reason[] separates PC-promoted from

@@ -4157,8 +4157,16 @@ void generate_syscall_args(struct syscallrecord *rec)
 	 * context this_child()==NULL skips the clear -- the flag has no
 	 * parent-side consumer. */
 	child = this_child();
-	if (child != NULL)
+	if (child != NULL) {
 		child->cmp_hint_injected_this_call = false;
+		/* SHADOW feedback scoring stash starts each call empty
+		 * ([11-feedback-loop]).  cmp_hints_try_get_ex pushes; the
+		 * dispatch_step tail drains and credits via one of the
+		 * cmp_hints_feedback_credit_* helpers.  Resetting here too
+		 * means a parent dispatch that bailed before reaching the
+		 * credit drain cannot leak its stash into the next call. */
+		cmp_hints_feedback_reset_stash();
+	}
 
 	/* Reset post_state on every syscall step, before any branch.
 	 * generic_sanitise() also clears it, but the minicorpus-replay
