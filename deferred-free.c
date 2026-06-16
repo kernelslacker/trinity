@@ -552,28 +552,6 @@ static bool alloc_track_consume(void *ptr)
 }
 
 /*
- * Refresh an existing tracked entry's LRU position without freeing it.
- * If @ptr is in the ring, null its current slot + remove from hash, then
- * re-insert at head.  If @ptr is not present (already rotated out), just
- * insert at head.  Either way the post-call state has @ptr exactly once
- * in the ring (at head) and exactly once in the hash.
- *
- * Pair with the OBJ_LOCAL anon-pool dedup-skip in clone_global_mmap_pool:
- * dedup'd pool entries don't trigger a fresh __zmalloc_tracked, so without
- * this refresh their alloc_track slots rotate out under churn from
- * unrelated tracked allocations faster than any fixed ALLOC_TRACK_SIZE can
- * absorb at full throughput.  Refreshing the LRU position on reuse keeps a
- * long-lived dedup'd entry resident regardless of churn rate.
- */
-void alloc_track_refresh(void *ptr)
-{
-	if (ptr == NULL)
-		return;
-	(void)alloc_track_consume(ptr);
-	deferred_alloc_track(ptr);
-}
-
-/*
  * Ring storage lives in an mmap'd region whose address range is registered
  * with shared_regions[] via track_shared_region().  That tracking lets
  * avoid_shared_buffer() and the mm-syscall sanitisers refuse fuzzed
@@ -726,6 +704,77 @@ static bool ring_contains(void *ptr)
 			return true;
 	}
 	return false;
+}
+
+/*
+ * Refresh an existing tracked entry's LRU position without freeing it.
+ * If @ptr is in the ring, null its current slot + remove from hash, then
+ * re-insert at head.  If @ptr is not present (already rotated out), just
+ * insert at head.  Either way the post-call state has @ptr exactly once
+ * in the ring (at head) and exactly once in the hash.
+ *
+ * Pair with the OBJ_LOCAL anon-pool dedup-skip in clone_global_mmap_pool:
+ * dedup'd pool entries don't trigger a fresh __zmalloc_tracked, so without
+ * this refresh their alloc_track slots rotate out under churn from
+ * unrelated tracked allocations faster than any fixed ALLOC_TRACK_SIZE can
+ * absorb at full throughput.  Refreshing the LRU position on reuse keeps a
+ * long-lived dedup'd entry resident regardless of churn rate.
+ *
+ * Ring-residency gate: skip the consume + re-add when @ptr is currently
+ * pinned in the deferred ring.  The ring already owns the chunk's
+ * lifecycle (free-time consume runs in free_ring_entry /
+ * ring_evict_oldest_safe), so a fresh alloc_track entry from
+ * deferred_alloc_track(@ptr) creates a stale-survivor entry that
+ * outlives the ring's drain: after the ring drains @ptr and frees the
+ * chunk, the heap recycles the address, and a stale caller ref that
+ * re-enqueues @ptr (or any free-time consume() against the reused
+ * address) matches the leftover entry and frees the new owner's live
+ * chunk.  The choke-point enqueue dedup (ring_contains check feeding
+ * deferred_free_double_admit_skip) catches the value-side symptom
+ * (two ring slots for the same ptr) but the desync this refresh
+ * creates between alloc_track and ring residency survives that
+ * gate -- it is the address-reuse residual the leak-on-eviction
+ * interim (ring_evict_leaked) was put in place to mask.  Treat
+ * "ring owns this ptr" as an authoritative skip on the refresh
+ * source itself.
+ *
+ * Source of truth: ring[] is mprotect-armored AND registered with
+ * shared_regions[], so neither scribble nor mprotect-failure can
+ * desync it from itself; alloc_track is not.  The scan needs an
+ * open ring_unlock() bracket (ring[] is PROT_NONE at rest, see
+ * ring_contains' contract).  ring_unlock() failure (typically
+ * ENOMEM under VMA pressure) cannot verify residency; skip the
+ * refresh entirely rather than risk re-adding a ring-resident
+ * ptr.  The cost of a skipped refresh is the LRU position only --
+ * the original alloc_track entry is untouched, so a follow-up
+ * lookup still resolves and the entry rotates out per the normal
+ * alloc_track[] aging.
+ */
+void alloc_track_refresh(void *ptr)
+{
+	bool ring_owned = false;
+
+	if (ptr == NULL)
+		return;
+
+	if (ring != NULL) {
+		if (ring_unlock() != RING_UNLOCK_OK) {
+			__atomic_add_fetch(&shm->stats.alloc_track_refresh_unverified_skip,
+					   1, __ATOMIC_RELAXED);
+			return;
+		}
+		ring_owned = ring_contains(ptr);
+		ring_lock();
+	}
+
+	if (ring_owned) {
+		__atomic_add_fetch(&shm->stats.alloc_track_refresh_ring_owned_skip,
+				   1, __ATOMIC_RELAXED);
+		return;
+	}
+
+	(void)alloc_track_consume(ptr);
+	deferred_alloc_track(ptr);
 }
 
 /*
