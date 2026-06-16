@@ -1639,6 +1639,28 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 
 					ts = (const struct timespec *)
 						rec_args[fk];
+					/*
+					 * Shape (>= 4096) does not prove the
+					 * saved pointer is still mapped: CMP
+					 * harvest runs post-dispatch and the
+					 * dispatched syscall (or a sibling)
+					 * may have freed / munmapped the
+					 * timespec the arg-gen path handed
+					 * the kernel.  Gate the deref on the
+					 * same cached-VMA readability check
+					 * that protects every other post-
+					 * dispatch pointer read in trinity;
+					 * a stale pointer would otherwise
+					 * SIGSEGV the whole child here.
+					 */
+					if (!range_readable_user(ts,
+								 sizeof(*ts))) {
+						if (kcov_shm != NULL)
+							__atomic_fetch_add(
+								&kcov_shm->cmp_field_timespec_skipped_bad_ptr,
+								1UL, __ATOMIC_RELAXED);
+						continue;
+					}
 					if ((unsigned long)ts->tv_sec == arg2)
 						kind = REEXEC_FIELD_TIMESPEC_SEC;
 					else if ((unsigned long)ts->tv_nsec ==
