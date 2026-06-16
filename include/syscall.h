@@ -222,6 +222,7 @@ enum argtype {
 	ARG_NUMA_NODE,
 	ARG_PATHNAME,
 	ARG_XATTR_NAME,	/* writable pool buffer filled with a namespace-shaped xattr name */
+	ARG_FSTYPE_NAME,	/* writable pool buffer filled with a filesystem-type name */
 	ARG_TIMESPEC,	/* writable pool buffer filled with a bucketed struct timespec */
 	ARG_ITIMERVAL,	/* writable pool buffer filled with a bucketed struct itimerval (setitimer) */
 	ARG_ITIMERSPEC,	/* writable pool buffer filled with a bucketed struct itimerspec (timer_settime) */

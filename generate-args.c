@@ -35,6 +35,7 @@
 #include "tables.h"
 #include "trinity.h"	// num_online_cpus
 #include "utils.h"	// zmalloc
+#include "fstype.h"
 #include "xattr.h"
 
 /*
@@ -835,6 +836,34 @@ static unsigned long gen_arg_xattr_name(struct syscallentry *entry __unused__,
 	if (name == NULL)
 		return 0;
 	gen_xattr_name_pooled(name, XATTR_NAME_BUFSZ);
+	return (unsigned long) name;
+}
+
+/*
+ * ARG_FSTYPE_NAME: a writable pool buffer filled with a filesystem-
+ * type name ("ext4", "tmpfs", "9p", ...) drawn from the loaded /
+ * builtin / autoload / garbage / long / empty mix in
+ * gen_fstype_name_pooled().  Random bytes virtually never spell out a
+ * registered filesystem name, so the mount(2) / fsopen(2) handler
+ * dispatch path stays cold without this pool.  Promote that mix to a
+ * first-class argtype so any name slot in the fs-context family gets
+ * it by declaration instead of by remembering to call a bespoke
+ * helper.
+ *
+ * Pool buffer (get_writable_struct) -- no .cleanup, no
+ * default_address_scrub: the pool lives off the shared buffer / libc
+ * heap so the blanket scrub is a no-op anyway.
+ */
+static unsigned long gen_arg_fstype_name(struct syscallentry *entry __unused__,
+					 struct syscallrecord *rec __unused__,
+					 unsigned int argnum __unused__)
+{
+	char *name;
+
+	name = (char *) get_writable_struct(FSTYPE_NAME_BUFSZ);
+	if (name == NULL)
+		return 0;
+	gen_fstype_name_pooled(name, FSTYPE_NAME_BUFSZ);
 	return (unsigned long) name;
 }
 
@@ -3803,6 +3832,10 @@ const struct argtype_ops argtype_table[] = {
 	[ARG_XATTR_NAME] = {
 		.name = "ARG_XATTR_NAME",
 		.generate = gen_arg_xattr_name,
+	},
+	[ARG_FSTYPE_NAME] = {
+		.name = "ARG_FSTYPE_NAME",
+		.generate = gen_arg_fstype_name,
 	},
 	[ARG_TIMESPEC] = {
 		.name = "ARG_TIMESPEC",
