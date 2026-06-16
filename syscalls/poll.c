@@ -259,6 +259,17 @@ static void sanitise_ppoll(struct syscallrecord *rec)
 	snap->fds = fds;
 	snap->ts = ts;
 	rec->post_state = (unsigned long) snap;
+
+	/*
+	 * Hand the fds/timespec heap allocations to the rec carrier so the
+	 * post-iteration drain frees them unconditionally.  The .post handler
+	 * still reads via snap->fds / snap->ts (drain runs after .post), and
+	 * the carrier closes the leak on the skip-.post paths
+	 * (retfd-rejected, child killed) that deferred_free_enqueue() inside
+	 * .post would miss.
+	 */
+	rec_own(rec, fds);
+	rec_own(rec, ts);
 }
 
 static void post_ppoll(struct syscallrecord *rec)
@@ -326,8 +337,6 @@ static void post_ppoll(struct syscallrecord *rec)
 		return;
 	}
 
-	deferred_free_enqueue(snap->fds);
-	deferred_free_enqueue(snap->ts);
 	deferred_freeptr(&rec->post_state);
 }
 
