@@ -67,6 +67,7 @@ static void sanitise_init_module(struct syscallrecord *rec)
 	total_sz = ehdr_sz + shdrs_sz + strtab_sz + payload_sz;
 
 	buf = zmalloc_tracked(total_sz);
+	rec_own(rec, buf);
 	generate_rand_bytes(buf, total_sz);
 
 	/* ELF header */
@@ -141,28 +142,6 @@ static void sanitise_init_module(struct syscallrecord *rec)
 
 	/* arg3: uargs — NUL-terminated module parameter string */
 	rec->a3 = (unsigned long) RAND_ARRAY(module_params);
-
-	/* Snapshot for the post handler -- a1 may be scribbled by a sibling
-	 * syscall before post_init_module() runs. */
-	rec->post_state = (unsigned long) buf;
-}
-
-static void post_init_module(struct syscallrecord *rec)
-{
-	void *umod = (void *) rec->post_state;
-
-	if (umod == NULL)
-		return;
-
-	if (looks_like_corrupted_ptr(rec, umod)) {
-		outputerr("post_init_module: rejected suspicious umod=%p (pid-scribbled?)\n", umod);
-		rec->a1 = 0;
-		rec->post_state = 0;
-		return;
-	}
-
-	rec->a1 = 0;
-	deferred_freeptr(&rec->post_state);
 }
 
 struct syscallentry syscall_init_module = {
@@ -173,6 +152,5 @@ struct syscallentry syscall_init_module = {
 	.group = GROUP_PROCESS,
 	.flags = NEEDS_ROOT,
 	.sanitise = sanitise_init_module,
-	.post = post_init_module,
 	.rettype = RET_ZERO_SUCCESS,
 };
