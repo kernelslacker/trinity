@@ -603,13 +603,24 @@ static void json_emit_minicorpus_section(void)
 		unsigned long saves_cmp = __atomic_load_n(
 			&minicorpus_shm->saves_by_reason[CORPUS_SAVE_REASON_CMP],
 			__ATOMIC_RELAXED);
+		unsigned long saves_errno = __atomic_load_n(
+			&minicorpus_shm->saves_by_reason[CORPUS_SAVE_REASON_ERRNO],
+			__ATOMIC_RELAXED);
 		unsigned long cmp_wins = __atomic_load_n(
 			&minicorpus_shm->mut_attrib_cmp_wins,
 			__ATOMIC_RELAXED);
+		unsigned long errno_would = __atomic_load_n(
+			&shm->stats.errno_grad_save_would_save,
+			__ATOMIC_RELAXED);
+		unsigned long errno_did = __atomic_load_n(
+			&shm->stats.errno_grad_save_did_save,
+			__ATOMIC_RELAXED);
 
-		printf(",\"saves_by_reason\":{\"pc\":%lu,\"cmp\":%lu}"
-		       ",\"mut_attrib_cmp_wins\":%lu",
-		       saves_pc, saves_cmp, cmp_wins);
+		printf(",\"saves_by_reason\":{\"pc\":%lu,\"cmp\":%lu,\"errno\":%lu}"
+		       ",\"mut_attrib_cmp_wins\":%lu"
+		       ",\"errno_grad_save\":{\"would_save\":%lu,\"did_save\":%lu}",
+		       saves_pc, saves_cmp, saves_errno, cmp_wins,
+		       errno_would, errno_did);
 	}
 
 	c_iter   = __atomic_load_n(&minicorpus_shm->chain_iter_count,         __ATOMIC_RELAXED);
@@ -8140,12 +8151,24 @@ static void dump_stats_corpus_and_taint_tail(void)
 			unsigned long saves_cmp = __atomic_load_n(
 				&minicorpus_shm->saves_by_reason[CORPUS_SAVE_REASON_CMP],
 				__ATOMIC_RELAXED);
+			unsigned long saves_errno = __atomic_load_n(
+				&minicorpus_shm->saves_by_reason[CORPUS_SAVE_REASON_ERRNO],
+				__ATOMIC_RELAXED);
 			unsigned long cmp_wins = __atomic_load_n(
 				&minicorpus_shm->mut_attrib_cmp_wins,
 				__ATOMIC_RELAXED);
+			unsigned long errno_would = __atomic_load_n(
+				&shm->stats.errno_grad_save_would_save,
+				__ATOMIC_RELAXED);
+			unsigned long errno_did = __atomic_load_n(
+				&shm->stats.errno_grad_save_did_save,
+				__ATOMIC_RELAXED);
 
-			output(0, "Corpus saves: pc=%lu cmp=%lu  mut wins (cmp-source): %lu\n",
-			       saves_pc, saves_cmp, cmp_wins);
+			output(0, "Corpus saves: pc=%lu cmp=%lu errno=%lu  mut wins (cmp-source): %lu\n",
+			       saves_pc, saves_cmp, saves_errno, cmp_wins);
+			output(0, "Errno-gradient save: would=%lu did=%lu (gate=%s)\n",
+			       errno_would, errno_did,
+			       corpus_save_errno_grad_live ? "live" : "shadow");
 		}
 
 		/*

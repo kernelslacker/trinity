@@ -25,6 +25,7 @@
 #include "fd.h"
 #include "kcov.h"
 #include "maps.h"
+#include "minicorpus.h"
 #include "objects.h"
 #include "params.h"
 #include "pids.h"
@@ -1262,6 +1263,48 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 						__ATOMIC_RELAXED);
 			__atomic_store_n(&kcov_shm->last_efault_at[call],
 					 now_call, __ATOMIC_RELAXED);
+		}
+
+		/* errno-gradient-save CHEAP FIRST trigger.  PC-edge
+		 * reward is too sparse to seed admission for validator-bound
+		 * syscalls, but errno buckets already encode gate progress
+		 * (EFAULT -> EINVAL -> EPERM/EBADF -> EAGAIN/0).  On the first
+		 * non-EFAULT bucket per syscall per run window, bump the
+		 * would-save shadow counter; if the --corpus-save-errno-grad-
+		 * live A/B flag is on, also admit the args via
+		 * CORPUS_SAVE_REASON_ERRNO.  Default-off keeps the corpus
+		 * admission distribution byte-identical to before, while the
+		 * shadow counter is always live so the would-be-save volume
+		 * is observable.
+		 *
+		 * EFAULT (bit set deliberately skipped): the userspace-pointer
+		 * noise floor; the queued errno-waste-decay handles
+		 * EFAULT-heavy syscalls on the DECAY side, distinct from this
+		 * SAVE side.  Bit indexes into errno_bucket_seen[call]; the
+		 * fetch-or returns the prior mask so the "first time" test is
+		 * atomic vs concurrent children racing the same syscall slot
+		 * (loser sees prev & bit set and falls through; winner sees it
+		 * clear and triggers exactly once for the first-discoverer). */
+		if (bucket != ERRNO_BUCKET_EFAULT) {
+			unsigned int bit = 1u << bucket;
+			unsigned int prev = __atomic_fetch_or(
+				&kcov_shm->errno_bucket_seen[call], bit,
+				__ATOMIC_RELAXED);
+
+			if ((prev & bit) == 0) {
+				__atomic_fetch_add(
+					&shm->stats.errno_grad_save_would_save,
+					1UL, __ATOMIC_RELAXED);
+
+				if (corpus_save_errno_grad_live &&
+				    entry->sanitise == NULL) {
+					__atomic_fetch_add(
+						&shm->stats.errno_grad_save_did_save,
+						1UL, __ATOMIC_RELAXED);
+					minicorpus_save_with_reason(rec,
+						CORPUS_SAVE_REASON_ERRNO);
+				}
+			}
 		}
 	}
 

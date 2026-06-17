@@ -575,6 +575,18 @@ void frontier_record_new_edge(unsigned int nr)
 			__atomic_fetch_add(
 				&shm->stats.rq_sourced_pcedge_wins_per_syscall[nr],
 				1UL, __ATOMIC_RELAXED);
+
+		/* errno-gradient-save conversion counter.  Sibling of the
+		 * rq_sourced bump above for the errno-source provenance lane.
+		 * Bumped only when the call that produced this PC win was a
+		 * replay of a corpus entry whose errno_sourced flag was set --
+		 * i.e. a downstream PC-edge win from an errno-gradient save.
+		 * Observability only; cumulative-diagnostic semantics matches
+		 * the rest of the strategy.c accounting. */
+		if (cc != NULL && cc->replay_errno_sourced)
+			__atomic_fetch_add(
+				&shm->stats.errno_sourced_pcedge_wins_per_syscall[nr],
+				1UL, __ATOMIC_RELAXED);
 	}
 
 	/* SHADOW-ONLY silent-streak reset.  This function is the canonical

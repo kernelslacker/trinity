@@ -398,6 +398,8 @@ char *warm_start_path = NULL;
 bool no_kcov_warm_start = false;
 bool no_cmp_hints_warm_start = false;
 
+bool corpus_save_errno_grad_live = false;
+
 char *memory_max_arg = NULL;
 char *memory_high_arg = NULL;
 char *memory_swap_max_arg = NULL;
@@ -537,6 +539,7 @@ static const struct option_help option_descs[] = {
 	{ "warm-start-path",	 0,  "override the on-disk minicorpus path (default: $XDG_CACHE_HOME/trinity/corpus/<arch>)" },
 	{ "no-kcov-warm-start",	 0,  "skip loading and saving the persisted kcov edge bitmap" },
 	{ "no-cmp-hints-warm-start", 0, "skip loading and saving the persisted kcov CMP-hint pool" },
+	{ "corpus-save-errno-grad-live", 0, "DEFAULT OFF. Enable the errno-gradient corpus save trigger (CORPUS_SAVE_REASON_ERRNO): when a syscall returns a non-EFAULT errno bucket for the first time this run, admit its args to the per-syscall ring. Flag off keeps the corpus admission distribution byte-identical to a build without this trigger; the errno_grad_save_would_save shadow counter is bumped regardless of this flag so the would-be-save volume is measurable before flipping live." },
 	{ NULL,			 0,  NULL },
 };
 
@@ -630,6 +633,7 @@ static const struct option longopts[] = {
 	{ "warm-start-path", required_argument, NULL, 0 },
 	{ "no-kcov-warm-start", no_argument, NULL, 0 },
 	{ "no-cmp-hints-warm-start", no_argument, NULL, 0 },
+	{ "corpus-save-errno-grad-live", no_argument, NULL, 0 },
 	{ NULL, 0, NULL, 0 } };
 
 void parse_args(int argc, char *argv[])
@@ -1184,6 +1188,10 @@ void parse_args(int argc, char *argv[])
 			if (strcmp("no-cmp-hints-warm-start",
 				   longopts[opt_index].name) == 0)
 				no_cmp_hints_warm_start = true;
+
+			if (strcmp("corpus-save-errno-grad-live",
+				   longopts[opt_index].name) == 0)
+				corpus_save_errno_grad_live = true;
 
 			break;
 		}

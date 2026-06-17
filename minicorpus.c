@@ -356,6 +356,17 @@ void minicorpus_save_with_reason(struct syscallrecord *rec,
 			tmp.rq_sourced = true;
 	}
 
+	/* Errno-gradient provenance tag: the reason argument is the
+	 * authoritative source.  Propagates through minicorpus_replay()
+	 * into childdata::replay_errno_sourced so frontier_record_new_edge()
+	 * can credit a downstream PC-edge win back to the errno-source
+	 * save.  Decoupled from rq_sourced above: a single entry can't be
+	 * both rq_sourced and errno_sourced (RedQueen captures happen on
+	 * the in_reexec path with the PC/CMP reasons; errno saves happen
+	 * from handle_syscall_ret with CORPUS_SAVE_REASON_ERRNO). */
+	if (reason == CORPUS_SAVE_REASON_ERRNO)
+		tmp.errno_sourced = true;
+
 	/* Saved fd numbers are stale on replay — zero them out so mutate_arg
 	 * gets a fresh fd rather than trying to reuse a closed one.  Same
 	 * treatment for ARG_ADDRESS / ARG_NON_NULL_ADDRESS: raw user pointers
@@ -402,6 +413,15 @@ void minicorpus_save_with_reason(struct syscallrecord *rec,
 	if (tmp.rq_sourced)
 		__atomic_fetch_add(
 			&shm->stats.rq_sourced_saves_per_syscall[nr],
+			1UL, __ATOMIC_RELAXED);
+
+	/* Per-syscall errno-source save counter.  Mirror of the rq_sourced
+	 * bump above, paired with errno_sourced_pcedge_wins_per_syscall[]
+	 * that frontier_record_new_edge() bumps for later PC-edge wins
+	 * traced back to an errno-source save. */
+	if (tmp.errno_sourced)
+		__atomic_fetch_add(
+			&shm->stats.errno_sourced_saves_per_syscall[nr],
 			1UL, __ATOMIC_RELAXED);
 }
 
@@ -703,8 +723,10 @@ void minicorpus_mut_attrib_commit(bool found_new)
 	{
 		struct childdata *cc = this_child();
 
-		if (cc != NULL)
+		if (cc != NULL) {
 			cc->replay_rq_sourced = false;
+			cc->replay_errno_sourced = false;
+		}
 	}
 
 	if (minicorpus_shm == NULL) {
@@ -1496,8 +1518,11 @@ bool minicorpus_replay(struct syscallrecord *rec)
 		{
 			struct childdata *cc = this_child();
 
-			if (cc != NULL)
+			if (cc != NULL) {
 				cc->replay_rq_sourced = snapshot.rq_sourced;
+				cc->replay_errno_sourced =
+					snapshot.errno_sourced;
+			}
 		}
 	} else {
 		/* Common path: uniform over count, lockless.  The writer
@@ -1533,8 +1558,11 @@ bool minicorpus_replay(struct syscallrecord *rec)
 		{
 			struct childdata *cc = this_child();
 
-			if (cc != NULL)
+			if (cc != NULL) {
 				cc->replay_rq_sourced = snapshot.rq_sourced;
+				cc->replay_errno_sourced =
+					snapshot.errno_sourced;
+			}
 		}
 	}
 

@@ -32,6 +32,15 @@
  * already-covered PC buckets -- the exact gap revealed by the
  * cmp_rising_pc_flat plateau diagnostic.
  *
+ * ERRNO: a per-syscall errno bucket fired for the first time in this
+ * run window (excluding EFAULT, the userspace-pointer noise floor).
+ * Errno buckets encode validator-gate progress
+ * (EFAULT -> EINVAL -> EPERM/EBADF -> EAGAIN/0) for syscalls where
+ * PC-edge reward is too sparse to drive admission.  Gated behind the
+ * --corpus-save-errno-grad-live A/B flag: when off (default) the
+ * trigger only bumps the would-save shadow counter and does not
+ * admit; when on it admits as a normal CORPUS_SAVE_REASON_ERRNO save.
+ *
  * The numeric IDs back saves_by_reason[]: re-ordering or inserting a
  * new reason between PC and CMP would silently re-bucket existing
  * stats.  Append-only.
@@ -39,6 +48,7 @@
 enum corpus_save_reason {
 	CORPUS_SAVE_REASON_PC = 0,
 	CORPUS_SAVE_REASON_CMP = 1,
+	CORPUS_SAVE_REASON_ERRNO = 2,
 	CORPUS_SAVE_NR_REASONS,
 };
 
@@ -79,6 +89,18 @@ struct corpus_entry {
 	 * minicorpus_save_with_reason; warm-start loader leaves it at the
 	 * persisted value (no separate clear needed). */
 	bool rq_sourced;
+	/* Provenance tag: true iff the entry was admitted via
+	 * CORPUS_SAVE_REASON_ERRNO -- the errno-gradient-save trigger
+	 * that fires on the first non-EFAULT errno bucket per syscall per
+	 * run window.  Observability only -- propagates through
+	 * minicorpus_replay() into childdata::replay_errno_sourced so
+	 * frontier_record_new_edge() can credit downstream PC-edge wins to
+	 * errno_sourced_pcedge_wins_per_syscall[], the errno-source
+	 * counterpart of the rq_sourced wins array.  Zeroed by the memset
+	 * in minicorpus_save_with_reason; warm-start loader leaves it at
+	 * the persisted value (the on-disk format carries only args/num_args,
+	 * so a warm-started entry reads as PC-sourced, matching rq_sourced). */
+	bool errno_sourced;
 };
 
 struct corpus_ring {
