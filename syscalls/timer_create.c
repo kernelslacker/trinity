@@ -12,6 +12,7 @@
 
 #include "deferred-free.h"
 #include "objects.h"
+#include "prop_ring.h"
 #include "publish_resource.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -236,6 +237,18 @@ static void post_timer_create_record_tid(struct syscallrecord *rec)
 		return;
 
 	register_timerid((int32_t) tid_int);
+
+	/* Mirror the freshly-registered timer id into the per-child
+	 * prop_ring so the typed consumer in gen_arg_timerid can prefer
+	 * recently-returned ids over raw randoms / stale pool draws.
+	 * tid_int has already been gated to [0, 65535] above, but the
+	 * SCALAR_SYSV_SEM exemplar re-checks the success window as
+	 * defence in depth before prop_ring_push_scalar -- do the same
+	 * here.  The filters inside prop_ring_push_filtered still
+	 * reject pointer-shaped and fd-aliased values. */
+	if (tid_int < 0 || tid_int > 65535)
+		return;
+	prop_ring_push_scalar(rec->nr, tid_int, SCALAR_TIMER_ID);
 }
 
 /*
