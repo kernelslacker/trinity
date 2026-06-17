@@ -1045,6 +1045,37 @@ static void cmp_hints_field_scan_record(struct syscallrecord *srec,
 		if ((unsigned long)actual_len < limit)
 			limit = (unsigned long)actual_len;
 
+		/*
+		 * A tracked alloc-extent does not prove the page is still
+		 * mapped readable at scan time.  CMP harvest runs post-
+		 * dispatch and the dispatched syscall (brk()/munmap()/
+		 * mprotect(), or a sibling consuming the same shared
+		 * region) may have dropped or PROT_NONE'd the page holding
+		 * @buf between the dispatch-time alloc and this walk.  The
+		 * follow-on memcpy() / direct deref inside the field loop
+		 * would then SEGV_ACCERR (mapped-but-wrong-perm or freed-
+		 * then-recycled VMA) and kill the child mid-collection.
+		 *
+		 * Same hazard d51f1a67 closed on the field-scoped TIMESPEC
+		 * deref via range_readable_user(); apply the same cached-
+		 * VMA readability gate over [buf, limit) here.  alloc_track
+		 * still owns the size bound (range_readable_user proves
+		 * mappability, not allocation extent -- the two invariants
+		 * are complementary, exactly the split eea70d8 called out).
+		 * On the unreadable path absorb into
+		 * cmp_field_attribution_arg_skipped_bad_ptr (the existing
+		 * counter for "@buf is not safe to walk"); shape-corruption
+		 * and stale-mapping share semantic family from the caller's
+		 * point of view -- both mean "skip this slot".
+		 */
+		if (!range_readable_user(buf, limit)) {
+			if (kcov_shm != NULL)
+				__atomic_fetch_add(
+					&kcov_shm->cmp_field_attribution_arg_skipped_bad_ptr,
+					1UL, __ATOMIC_RELAXED);
+			continue;
+		}
+
 		if (kcov_shm != NULL)
 			__atomic_fetch_add(
 				&kcov_shm->cmp_field_attribution_scanned,
