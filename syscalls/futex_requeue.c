@@ -57,7 +57,7 @@ static void sanitise_futex_requeue(struct syscallrecord *rec)
 struct syscallentry syscall_futex_requeue = {
 	.name = "futex_requeue",
 	.num_args = 4,
-	.argtype = { [2] = ARG_RANGE, [3] = ARG_RANGE },
+	.argtype = { [0] = ARG_ADDRESS, [2] = ARG_RANGE, [3] = ARG_RANGE },
 	.argname = { [0] = "waiters", [1] = "flags", [2] = "nr_wake", [3] = "nr_requeue" },
 	.arg_params[2].range.low = 0,
 	.arg_params[2].range.hi = 128,
