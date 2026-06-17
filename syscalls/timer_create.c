@@ -266,13 +266,6 @@ static void post_timer_create(struct syscallrecord *rec)
 	timer_t *idp;
 	intptr_t tid_int;
 
-	/* Same strict success gate as post_timer_create_record_tid:
-	 * RET_ZERO_SUCCESS contract means only retval == 0 indicates the
-	 * kernel actually wrote *idp.  Reject everything else (including
-	 * the rzs-coerced -1UL) before dereferencing post_state. */
-	if (rec->retval != 0)
-		return;
-
 	if (snap == NULL)
 		return;
 
@@ -299,7 +292,13 @@ static void post_timer_create(struct syscallrecord *rec)
 		return;
 	}
 
-	if ((long) rec->retval < 0)
+	/* RET_ZERO_SUCCESS contract: only retval == 0 means the kernel wrote
+	 * *idp.  A failed timer_create still needs its validated snap freed
+	 * and unregistered from the post-state ownership table -- otherwise
+	 * routine create failures strand 64-slot ownership entries until the
+	 * table fills and post_state_is_owned() starts rejecting good snaps
+	 * across every syscall.  Skip the *idp deref but still clean up. */
+	if ((long) rec->retval != 0)
 		goto out_free;
 
 	/*
