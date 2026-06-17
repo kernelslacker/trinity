@@ -2594,6 +2594,47 @@ struct stats_s {
 	unsigned long frontier_decay_candidates;
 	unsigned long frontier_decay_would_skip;
 
+	/* SHADOW + per-child A/B accounting for the errno-plateau decay at the
+	 * coverage-frontier picker's silent-regime accept site.  Predicate is
+	 * frontier_errno_plateau_should_decay() in strategy.c -- see the
+	 * FRONTIER_ERRNO_PLATEAU_* constants in include/strategy.h for the
+	 * threshold contract and the cred-throttle coordination.
+	 *
+	 *  frontier_errno_decay_would_skip
+	 *      Cumulative: one bump per silent-regime pick where the predicate
+	 *      fires, BUMPED FOR BOTH A/B ARMS in lock-step so the would-be
+	 *      divergence stays observable regardless of which arm the calling
+	 *      child is stamped under.  Ratio against frontier_silent_picks is
+	 *      the projected silent-regime pick share the live decay would
+	 *      demote.
+	 *  frontier_errno_decay_live_rejects
+	 *      Cumulative: one bump per arm-B pick that the live REJECT_DENOM-1
+	 *      / REJECT_DENOM probabilistic gate actually rejected -- the
+	 *      headline live-arm behaviour delta.  Strictly <= frontier_errno_
+	 *      decay_would_skip restricted to arm-B picks.  Arm A NEVER bumps
+	 *      this counter (it has no live reject path) so the value is the
+	 *      pure Arm-B demote count, comparable against the Arm-B silent-pick
+	 *      throughput recoverable from frontier_silent_picks normalised by
+	 *      frontier_errno_decay_arm_b_children / total cohort split.
+	 *  frontier_errno_decay_overlap_silent
+	 *      Cumulative: one bump per pick where the errno-plateau predicate
+	 *      fires AND the existing silent-streak shadow predicate (the
+	 *      frontier_decay_* counters above) is also past its threshold for
+	 *      the same syscall -- i.e. the two SHADOW decay families would
+	 *      both have demoted this pick.  Measures the overlap so the
+	 *      operator can read the orthogonal coverage of the errno-plateau
+	 *      predicate vs the consecutive-silent-pick predicate: (would_skip
+	 *      - overlap_silent) is the errno-plateau-only contribution.
+	 *
+	 * Observability + A/B: arm A is byte-identical to the pre-row picker.
+	 * Arm B adds the live reject; the shadow counters above stay symmetric
+	 * across arms so the would-be decay rate is comparable across cohorts.
+	 * Mirrors the off-by-construction discipline the sibling
+	 * frontier_blend_* / cred_throttle counters use. */
+	unsigned long frontier_errno_decay_would_skip;
+	unsigned long frontier_errno_decay_live_rejects;
+	unsigned long frontier_errno_decay_overlap_silent;
+
 	/* SHADOW-ONLY A/B scoring for the [t12-frontier-blend] cold-weight
 	 * blend.  See the frontier_cold_weight() comment in random-syscall.c
 	 * for the experimental formula.

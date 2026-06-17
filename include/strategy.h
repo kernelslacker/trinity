@@ -109,6 +109,57 @@ enum strategy_t {
 #define FRONTIER_SHADOW_DECAY_STREAK 64UL
 
 /*
+ * Errno-plateau decay predicate constants for the coverage-frontier
+ * picker's silent-regime accept path.  A syscall whose lifetime call
+ * count has accumulated past FRONTIER_ERRNO_PLATEAU_MIN_CALLS without
+ * ever producing a PC edge, a transition slot flip, or a CMP-pool
+ * insert -- AND whose returns are dominated >= _DOM_PCT by a single
+ * non-SUCCESS errno bucket -- is classified as wasting silent-regime
+ * picks: the picker is repeatedly steering toward a syscall the kernel
+ * has shown it will reject with the same errno every time, and that
+ * rejection has yet to translate into any coverage signal.  Worst
+ * offenders Dave cited (tee 95k EBADF/EINVAL 0-edge; userfaultfd 93k
+ * EPERM 0-edge; process_mrelease 0-success) all match this shape.
+ *
+ * REJECT_DENOM matches CRED_THROTTLE_REJECT_DENOM (31/32 == ~96.875%
+ * rejection) so the cohort that flips to the live decay still samples
+ * the syscall at ~3% -- recoverable on any one of:
+ *   PC-edge novelty   (per_syscall_edges[nr] becomes > 0)
+ *   transition novelty (per_syscall_transition_edges_real_local[nr] > 0)
+ *   CMP novelty       (per_syscall_cmp_inserts[nr] > 0)
+ *   new-errno novelty (a fresh bucket dilutes the dominant ratio below
+ *                      DOM_PCT, including a late SUCCESS)
+ * The predicate is checked per-pick against monotonic counters, so any
+ * of the above flips it permanently false for the syscall without
+ * needing a per-syscall reset hook.
+ *
+ * The credential-class syscall set already has its own EPERM/EINVAL
+ * dominance throttle (--cred-throttle / cred_throttle_should_reject);
+ * frontier_errno_plateau_should_decay() excludes that set so a
+ * credential syscall cannot be decayed by both gates simultaneously.
+ */
+#define FRONTIER_ERRNO_PLATEAU_MIN_CALLS 512UL
+#define FRONTIER_ERRNO_PLATEAU_DOM_PCT 90U
+#define FRONTIER_ERRNO_PLATEAU_REJECT_DENOM 32U
+
+/*
+ * Errno-plateau decay predicate.  Returns true when syscall nr (under
+ * the do32 arch table) matches the wasteful-silent-pick shape described
+ * above the FRONTIER_ERRNO_PLATEAU_* constants.  Called from the
+ * coverage-frontier picker's silent-regime accept path; the SHADOW
+ * counters (frontier_errno_decay_*) are bumped at the call site for
+ * both A/B arms in lock-step, and the per-child stamp
+ * (child->frontier_errno_decay_arm_b) drives the live REJECT_DENOM-1 /
+ * REJECT_DENOM probabilistic rejection only in Arm B.
+ *
+ * Returns false when kcov_shm is unavailable so the picker degrades to
+ * the historical accept distribution rather than wedging on a NULL
+ * deref -- matches the kcov-less fallback the rest of the codebase
+ * already takes.
+ */
+bool frontier_errno_plateau_should_decay(unsigned int nr, bool do32);
+
+/*
  * Arm-selection policy used at each rotation boundary to decide which
  * strategy runs next.  Selected once at parse_args() time via the
  * --strategy flag, propagated into shm->picker_mode at init_shm time

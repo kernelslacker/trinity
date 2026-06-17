@@ -748,6 +748,20 @@ struct childdata {
 	 * both arms.  Read-only after stamp; owner-only writes; no
 	 * cross-process coherence needed. */
 	bool frontier_blend_arm_b;
+	/* A/B-comparison stamp for the errno-plateau decay in the coverage-
+	 * frontier picker's silent-regime accept site.  Arm A (false) is the
+	 * control: shadow counters bump but no live reject, so selection
+	 * stays byte-identical to the pre-row baseline for that cohort.  Arm B
+	 * (true) additionally engages the REJECT_DENOM-1 / REJECT_DENOM
+	 * probabilistic reject in the picker when the predicate fires, so the
+	 * operator can read the live divergence between cohorts off the
+	 * frontier_errno_decay_live_rejects shm counter (Arm B only) against
+	 * the symmetric frontier_errno_decay_would_skip shm counter (both
+	 * arms).  Stamped once at child init via ONE_IN(2) and never mutated,
+	 * matching the frontier_blend_arm_b pattern above so time-of-day
+	 * environmental drift is common to both arms.  Read-only after stamp;
+	 * owner-only writes; no cross-process coherence needed. */
+	bool frontier_errno_decay_arm_b;
 	/* Replay-side companion to corpus_entry::rq_sourced.  Set inside
 	 * minicorpus_replay() right after the snapshot picks an entry whose
 	 * args were captured under in_reexec; cleared unconditionally at the

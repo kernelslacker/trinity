@@ -33,6 +33,7 @@
 
 #include "child.h"		/* struct childdata */
 #include "cmp_hints.h"		/* cmp_hints_shm */
+#include "cred_throttle.h"	/* cred_class_for_nr, CRED_CLASS_NR */
 #include "debug.h"
 #include "kcov.h"		/* KCOV_CMP_RECORDS_MAX, kcov_shm */
 #include "params.h"
@@ -741,6 +742,110 @@ unsigned long frontier_recent_count(unsigned int nr)
 
 	return __atomic_load_n(&shm->frontier_recent_count_cached[nr],
 			       __ATOMIC_RELAXED);
+}
+
+/*
+ * Errno-plateau decay predicate for the coverage-frontier picker's
+ * silent-regime accept site.  See the FRONTIER_ERRNO_PLATEAU_* contract
+ * in include/strategy.h for the design rationale; the four novelty-
+ * restore lanes (PC edge / transition / CMP / new-errno) are all the
+ * predicate ever needs because the underlying counters are monotonic --
+ * any productive event flips the predicate permanently false for that
+ * syscall without requiring a per-syscall reset hook in frontier_
+ * record_new_edge / frontier_record_transition_edge.
+ *
+ * Reads are RELAXED.  A torn or stale snapshot only shifts the predicate
+ * by at most one call's worth of evidence, well inside the slack the
+ * outer accept/retry loop already tolerates, and the inequality tests
+ * cannot misclassify across the threshold by more than one increment.
+ *
+ * Returns false when kcov_shm is NULL or nr is out of range so the
+ * caller's accept gate degrades to the historical accept distribution
+ * rather than wedging on a NULL deref -- matches the kcov-less fallback
+ * frontier_cold_weight already takes.
+ */
+bool frontier_errno_plateau_should_decay(unsigned int nr, bool do32)
+{
+	unsigned long calls, edges, cmp_inserts, transition_edges;
+	unsigned long max_failure_bucket = 0;
+	unsigned int bucket;
+
+	if (kcov_shm == NULL || nr >= MAX_NR_SYSCALL)
+		return false;
+
+	/* Coordinate with the landed --cred-throttle gate: credential-class
+	 * syscalls have their own EPERM/EINVAL dominance throttle keyed on
+	 * cred_class_* counters in cred_throttle.c, and a credential-class
+	 * pick already burns its rejection budget on that gate.  Excluding
+	 * the set here keeps a credential syscall from being decayed by both
+	 * gates in lock-step -- the cred-throttle reject lands first inside
+	 * set_syscall_nr_coverage_frontier, so this predicate only ever sees
+	 * a credential pick that the throttle already let through. */
+	if (cred_class_for_nr(nr, do32) != CRED_CLASS_NR)
+		return false;
+
+	calls = __atomic_load_n(&kcov_shm->per_syscall_calls[nr],
+				__ATOMIC_RELAXED);
+	if (calls < FRONTIER_ERRNO_PLATEAU_MIN_CALLS)
+		return false;
+
+	/* PC-edge novelty lane.  per_syscall_edges has call-count semantics
+	 * (see include/kcov.h): one bump per call that discovered at least
+	 * one fresh bucket bit.  A non-zero value means the syscall has been
+	 * productive in PC-coverage terms at least once across its lifetime,
+	 * so the decay must release.  Counter is monotonic non-decreasing,
+	 * so once edges > 0 the predicate is permanently false for nr. */
+	edges = __atomic_load_n(&kcov_shm->per_syscall_edges[nr],
+				__ATOMIC_RELAXED);
+	if (edges > 0)
+		return false;
+
+	/* CMP novelty lane.  per_syscall_cmp_inserts counts fresh inserts
+	 * and evict-replaces in cmp_hints' per-syscall pool (dedup-refresh
+	 * hits do not count, matching the global counter's semantics).  A
+	 * syscall producing CMP signal without PC-edge progress is still
+	 * earning post-plateau coverage of a different shape, so don't
+	 * decay it.  Monotonic non-decreasing same as the edges counter. */
+	cmp_inserts = __atomic_load_n(&kcov_shm->per_syscall_cmp_inserts[nr],
+				      __ATOMIC_RELAXED);
+	if (cmp_inserts > 0)
+		return false;
+
+	/* Transition-novelty lane.  per_syscall_transition_edges_real_local
+	 * counts local-mode trace transition-slot first-flips (a new
+	 * (prev_canon_pc, cur_canon_pc) ordering observed) for this syscall.
+	 * Like the CMP lane: a syscall flipping new transition slots is
+	 * earning control-flow coverage the PC bitmap misses, so the decay
+	 * must release.  Monotonic non-decreasing. */
+	transition_edges = __atomic_load_n(
+		&kcov_shm->per_syscall_transition_edges_real_local[nr],
+		__ATOMIC_RELAXED);
+	if (transition_edges > 0)
+		return false;
+
+	/* New-errno novelty lane.  Scan the 7 non-SUCCESS buckets and find
+	 * the dominant one.  SUCCESS is excluded from the dominance test
+	 * because a syscall returning SUCCESS but bumping no PC edges is
+	 * still exercising kernel state worth probing -- the decay targets
+	 * syscalls whose calls the kernel is REJECTING with a single fixed
+	 * errno.  Any new bucket (including a late SUCCESS) bumps per_
+	 * syscall_calls and dilutes the dominant failure ratio below
+	 * DOM_PCT, restoring the syscall to full sampling. */
+	for (bucket = ERRNO_BUCKET_SUCCESS + 1;
+	     bucket < ERRNO_BUCKET_NR; bucket++) {
+		unsigned long c = __atomic_load_n(
+			&kcov_shm->per_syscall_errno[nr][bucket],
+			__ATOMIC_RELAXED);
+		if (c > max_failure_bucket)
+			max_failure_bucket = c;
+	}
+	/* Percent check rearranged to integer-safe form, matching the same
+	 * shape cred_throttle_should_reject uses for HARD_FAIL_PCT. */
+	if (max_failure_bucket * 100UL <
+	    (unsigned long)FRONTIER_ERRNO_PLATEAU_DOM_PCT * calls)
+		return false;
+
+	return true;
 }
 
 void frontier_window_advance(void)
