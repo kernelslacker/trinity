@@ -115,6 +115,9 @@ static void apply_slot(const void *p, void *ctx __unused__)
 	case STATS_FIELD_HEAP_POINTER_OUTSIDE_CACHE:
 		parent_stats.heap_pointer_outside_cache += delta;
 		break;
+	case STATS_FIELD_HEAP_BRK_STALE_WINDOW_HIT:
+		parent_stats.heap_brk_stale_window_hit += delta;
+		break;
 	case STATS_FIELD_RANGE_OVERLAPS_SHARED_REJECTS:
 		parent_stats.range_overlaps_shared_rejects += delta;
 		break;
