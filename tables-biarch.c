@@ -86,7 +86,14 @@ static void toggle_syscall_biarch_n(int calln, const struct syscalltable *table,
 
 		if ((state == true) && onlyflag && doflag) {
 			entry->flags |= ACTIVE;
-			(*activate)(calln);
+			/* `-c <syscall>` lands here from parse_args, before
+			 * create_shm() has mapped the active table the
+			 * activate helper writes into.  Defer the shm write
+			 * to activate_flagged_syscalls() in munge_tables();
+			 * later callers (-r / -g) run post-create_shm and
+			 * activate inline. */
+			if (shm != NULL)
+				(*activate)(calln);
 		} else {
 			entry->flags |= TO_BE_DEACTIVATED;
 		}
@@ -260,6 +267,38 @@ int setup_syscall_group_biarch(unsigned int group)
 	}
 
 	return true;
+}
+
+/* Walk the syscall tables and stamp any entry whose ACTIVE flag was
+ * set before shm existed (today: `-c <syscall>` in parse_args) into
+ * the shm-backed active table.  activate_syscall_in_table() short-
+ * circuits on entry->active_number != 0, so this is idempotent for
+ * entries that mark_all_syscalls_active_biarch() or enable_random_
+ * syscalls_biarch() already activated. */
+void activate_flagged_syscalls_biarch(void)
+{
+	struct syscallentry *entry;
+	unsigned int i;
+
+	if (do_64_arch) {
+		for_each_64bit_syscall(i) {
+			entry = syscalls_64bit[i].entry;
+			if (entry == NULL)
+				continue;
+			if ((entry->flags & ACTIVE) && entry->active_number == 0)
+				activate_syscall64(i);
+		}
+	}
+
+	if (do_32_arch) {
+		for_each_32bit_syscall(i) {
+			entry = syscalls_32bit[i].entry;
+			if (entry == NULL)
+				continue;
+			if ((entry->flags & ACTIVE) && entry->active_number == 0)
+				activate_syscall32(i);
+		}
+	}
 }
 
 void mark_all_syscalls_active_biarch(void)
