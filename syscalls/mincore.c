@@ -87,27 +87,13 @@ static void sanitise_mincore(struct syscallrecord *rec)
 
 	avoid_shared_buffer_out(&rec->a3, vec_bytes);
 
-	/* Snapshot for the post handler -- a3 may be scribbled by a sibling
-	 * syscall before post_mincore() runs. */
-	rec->post_state = (unsigned long) vec;
-}
-
-static void post_mincore(struct syscallrecord *rec)
-{
-	void *vec = (void *) rec->post_state;
-
-	if (vec == NULL)
-		return;
-
-	if (looks_like_corrupted_ptr(rec, vec)) {
-		outputerr("post_mincore: rejected suspicious vec=%p (pid-scribbled?)\n", vec);
-		rec->a3 = 0;
-		rec->post_state = 0;
-		return;
-	}
-
-	rec->a3 = 0;
-	deferred_freeptr(&rec->post_state);
+	/* Hand vec to the per-rec owned-buffer carrier: rec_owned_drain()
+	 * frees it unconditionally after dispatch, capturing the genuine
+	 * tracked pointer here so a sibling scribble of a3 can't strand or
+	 * misdirect the free, and covering the skip-.post paths
+	 * (retfd-rejected / killed EXTRA_FORK grandchild) that previously
+	 * leaked the buffer. */
+	rec_own(rec, vec);
 }
 
 struct syscallentry syscall_mincore = {
@@ -117,6 +103,5 @@ struct syscallentry syscall_mincore = {
 	.argname = { [0] = "start", [1] = "len", [2] = "vec" },
 	.group = GROUP_VM,
 	.sanitise = sanitise_mincore,
-	.post = post_mincore,
 	.rettype = RET_ZERO_SUCCESS,
 };
