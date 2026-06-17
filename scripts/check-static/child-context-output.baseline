@@ -192,7 +192,6 @@ syscalls/mq_open.c:176:post_mq_open
 syscalls/mq_open.c:202:post_mq_open
 syscalls/mremap.c:214:post_mremap
 syscalls/mremap.c:228:post_mremap
-syscalls/msgsnd.c:67:post_msgsnd
 syscalls/munmap.c:198:post_munmap
 syscalls/munmap.c:261:post_munmap
 syscalls/nanosleep.c:13:post_nanosleep
