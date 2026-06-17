@@ -1027,6 +1027,7 @@ static const unsigned long perf_attr_known_sizes[] = {
 	PERF_ATTR_SIZE_VER6,
 	PERF_ATTR_SIZE_VER7,
 	PERF_ATTR_SIZE_VER8,
+	PERF_ATTR_SIZE_VER9,
 };
 
 /*
