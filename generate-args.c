@@ -876,9 +876,30 @@ static unsigned long gen_arg_msg_id(struct syscallentry *entry __unused__,
 }
 
 static unsigned long gen_arg_sysv_shm(struct syscallentry *entry __unused__,
-				      struct syscallrecord *rec __unused__,
+				      struct syscallrecord *rec,
 				      unsigned int argnum __unused__)
 {
+	/* Typed prop_ring consumer.  Mirrors the SCALAR_KEY_SERIAL
+	 * exemplar above: only a SCALAR_SYSV_SHM slot (or, with low
+	 * probability, any slot via the chaos escape hatch inside
+	 * prop_ring_try_get_kind) commits, so shmat / shmctl get fed
+	 * shmids shmget just published instead of either a raw random
+	 * or a stale pool draw.  A/B-gated on prop_ring_typed_arm_b:
+	 * Arm A skips the pull so the per-call RNG sequence stays
+	 * byte-identical to the pre-typing baseline; Arm B attempts
+	 * it.  The per-call probability gate lives inside
+	 * prop_ring_try_get_kind so the case mix below stays untouched
+	 * on an empty or stale ring. */
+	{
+		struct childdata *child = this_child();
+		unsigned long val;
+
+		if (child != NULL && child->prop_ring_typed_arm_b &&
+		    prop_ring_try_get_kind(child, rec, SCALAR_SYSV_SHM,
+					   &val))
+			return val;
+	}
+
 	if (ONE_IN(8))
 		return (unsigned long) (int) rand32();
 	return (unsigned long) get_random_sysv_shm();
