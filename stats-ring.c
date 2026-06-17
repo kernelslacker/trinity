@@ -192,6 +192,9 @@ static void apply_slot(const void *p, void *ctx __unused__)
 	case STATS_FIELD_TOTAL_PCS:
 		parent_stats.total_pcs += delta;
 		break;
+	case STATS_FIELD_WARM_KNOWN_HITS:
+		parent_stats.total_warm_known_hits += delta;
+		break;
 	case STATS_FIELD_CMP_HINTS_TRY_GET_ATTEMPTS:
 		parent_stats.cmp_hints_try_get_attempts += delta;
 		break;

@@ -824,6 +824,16 @@ void kcov_child_flush_stats(struct childdata *child)
 		ls->total_pcs = delta - pub;
 	}
 
+	delta = ls->total_warm_known_hits;
+	if (delta > 0) {
+		uint32_t pub = (delta > UINT32_MAX) ? UINT32_MAX
+						    : (uint32_t)delta;
+
+		(void) stats_ring_enqueue(child->stats_ring,
+					  STATS_FIELD_WARM_KNOWN_HITS, 0, pub);
+		ls->total_warm_known_hits = delta - pub;
+	}
+
 	ls->local_syscalls_since_flush = 0;
 }
 
@@ -1855,8 +1865,22 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 			__atomic_fetch_add(
 				&kcov_shm->per_syscall_warm_known_hits[nr], 1,
 				__ATOMIC_RELAXED);
-			__atomic_fetch_add(&kcov_shm->total_warm_known_hits, 1,
-				__ATOMIC_RELAXED);
+			/* Per-child staging bump for the dump-side run-wide
+			 * warm-known-hits counter.  Same batched-flush model
+			 * as total_calls / remote_calls / total_pcs above;
+			 * no stamp-role consumer reads
+			 * kcov_shm->total_warm_known_hits, so the shm atomic
+			 * is no longer bumped and the staged delta is the
+			 * source of truth for the dump path.  The per-syscall
+			 * split above stays on the shm atomic -- it's an nr-
+			 * indexed array, not the cross-child cacheline-bounce
+			 * scalar this migration targets. */
+			{
+				struct childdata *cc = this_child();
+
+				if (cc != NULL && cc->local_stats != NULL)
+					cc->local_stats->total_warm_known_hits++;
+			}
 			/* Lazy-seed last_edge_at[nr] from the warm-known hit
 			 * stream.  Without this seed, a syscall whose entire
 			 * surface is warm-loaded looks indistinguishable from
