@@ -338,7 +338,7 @@ static void cleanup_openat2(struct syscallrecord *rec)
 struct syscallentry syscall_openat2 = {
 	.name = "openat2",
 	.num_args = 4,
-	.argtype = { [0] = ARG_FD, [1] = ARG_PATHNAME, [3] = ARG_LEN },
+	.argtype = { [0] = ARG_FD, [1] = ARG_PATHNAME, [2] = ARG_ADDRESS, [3] = ARG_LEN },
 	.argname = { [0] = "dfd", [1] = "filename", [2] = "how", [3] = "usize" },
 	.rettype = RET_FD,
 	.flags = NEED_ALARM,
