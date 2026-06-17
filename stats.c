@@ -3290,6 +3290,8 @@ static const struct {
 	  offsetof(struct stats_aggregate, asb_relocate_copy_fault), true },
 	{ "heap_pointer_outside_cache",
 	  offsetof(struct stats_aggregate, heap_pointer_outside_cache), true },
+	{ "heap_brk_stale_window_hit",
+	  offsetof(struct stats_aggregate, heap_brk_stale_window_hit), true },
 	{ "get_writable_address_scribbled_shm_range",
 	  offsetof(struct stats_aggregate, get_writable_address_scribbled_shm_range), true },
 	{ "get_writable_address_scribbled_mprotect_mmap",
@@ -6900,6 +6902,9 @@ static void dump_stats_shared_buffer_misc(void)
 	if (parent_stats.heap_pointer_outside_cache)
 		stat_row("shared_buffer", "heap_pointer_outside_cache",
 			 parent_stats.heap_pointer_outside_cache);
+	if (parent_stats.heap_brk_stale_window_hit)
+		stat_row("shared_buffer", "heap_brk_stale_window_hit",
+			 parent_stats.heap_brk_stale_window_hit);
 	if (parent_stats.range_overlaps_shared_rejects) {
 		stat_row("shared_buffer", "range_overlaps_shared_rejects",
 			 parent_stats.range_overlaps_shared_rejects);

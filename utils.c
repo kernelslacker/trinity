@@ -1770,6 +1770,19 @@ void * __zmalloc(size_t size, const char *func)
 {
 	void *p;
 
+	/*
+	 * Tick the brk-cache refresh on the malloc path as well as the
+	 * alloc_object() path.  Heavy __zmalloc users (cmp-hints /
+	 * RedQueen pool inflation, per-syscall sequence records) can
+	 * drive billions of malloc()s in a session without ever calling
+	 * alloc_object(), and a malloc that triggers a brk grow leaves
+	 * cached_brk_end behind by exactly that grow until the next
+	 * alloc_object() refresh fires -- which on those workloads can
+	 * be never.  Refreshing here closes the diagnostic-window race
+	 * the heap_brk_stale_window_hit counter exists to measure.
+	 */
+	heap_brk_maybe_refresh();
+
 	p = malloc(size);
 	if (p == NULL) {
 		/* Maybe we mlockall'd everything. Try and undo that, and retry. */
@@ -3237,6 +3250,37 @@ bool range_overlaps_libc_heap(unsigned long addr, unsigned long len)
 
 		if (addr < hend && end > heap_start)
 			return true;
+
+		/*
+		 * Diagnostic: the cached snapshot just judged this address
+		 * not-heap, but brk may have grown past cached_brk_end since
+		 * the last heap_brk_maybe_refresh() tick.  Sample sbrk(0) to
+		 * confirm whether the address falls in [cached_brk_end,
+		 * live_brk) -- the staleness window that lets a fuzzed
+		 * pointer through the predicate and onto glibc's top chunk.
+		 * Cheap gates (addr above the cached end, addr at-or-above
+		 * heap_start) keep the syscall off the common path; the
+		 * counter's only consumer is dump_stats(), so accuracy is
+		 * best-effort and a sibling brk grow racing the sample is
+		 * tolerated.  Predicate return value is unchanged -- this
+		 * commit only adds observability so the next run can
+		 * confirm the brk-cache staleness hypothesis before the
+		 * refresh cadence is tightened in a follow-up.
+		 */
+		if (addr >= heap_start && addr >= cached_brk_end) {
+			unsigned long live_brk = (unsigned long) sbrk(0);
+
+			if (live_brk != (unsigned long) -1 && addr < live_brk) {
+				struct childdata *c = this_child();
+
+				if (c != NULL && c->stats_ring != NULL)
+					stats_ring_enqueue(c->stats_ring,
+							   STATS_FIELD_HEAP_BRK_STALE_WINDOW_HIT,
+							   0, 1);
+				else
+					parent_stats.heap_brk_stale_window_hit++;
+			}
+		}
 	}
 
 	/*
