@@ -40,6 +40,21 @@ sigjmp_buf asb_copy_recover;
 volatile sig_atomic_t asb_copy_active;
 
 /*
+ * Recovery point for cmp_hints_collect()'s field-scoped ARG_TIMESPEC
+ * deref.  See include/signals.h and cmp_hints.c::cmp_hints_collect()
+ * for the full contract.  Definition lives here so the storage for
+ * the jmp_buf is colocated with the handler that reads
+ * cmp_field_read_active.
+ *
+ * Inherited COW-private into every forked child; never touched by the
+ * parent.  Plain file-scope storage rather than __thread because
+ * trinity children are single-threaded processes -- no two threads in
+ * the same address space race on the slot.
+ */
+sigjmp_buf cmp_field_recover;
+volatile sig_atomic_t cmp_field_read_active;
+
+/*
  * Cached pointer to glibc's __abort_msg.  Resolved once at child init
  * so there is no link-time GLIBC_PRIVATE dependency: a glibc upgrade
  * that drops the symbol leaves this NULL and the SIGABRT handler
@@ -515,6 +530,23 @@ void child_fault_handler(int sig, siginfo_t *info, void *ctx)
 	if (asb_copy_active && info->si_code > 0 &&
 	    (sig == SIGSEGV || sig == SIGBUS)) {
 		siglongjmp(asb_copy_recover, 1);
+	}
+
+	/*
+	 * cmp_hints_collect() field-scoped ARG_TIMESPEC deref recovery.
+	 * Mirrors the asb_copy edge above: range_readable_user() proves
+	 * the saved pointer from cached VMA state, but a sibling raw
+	 * munmap/mremap can stale the cache between the gate and the
+	 * tv_sec/tv_nsec loads, so the loads still fault on an
+	 * unmapped/torn-down region.  Gating is identical -- SIGSEGV or
+	 * SIGBUS, si_code > 0, and cmp_field_read_active set ONLY across
+	 * the two field reads -- so any unrelated SIGSEGV/SIGBUS the
+	 * child takes still falls through to the existing diagnostic +
+	 * _exit path.
+	 */
+	if (cmp_field_read_active && info->si_code > 0 &&
+	    (sig == SIGSEGV || sig == SIGBUS)) {
+		siglongjmp(cmp_field_recover, 1);
 	}
 
 	if (info->si_code <= 0 && info->si_pid != mypid()) {
