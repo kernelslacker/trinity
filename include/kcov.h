@@ -1666,15 +1666,28 @@ struct kcov_shared {
 	 *      scan can recover the extent.
 	 *  cmp_field_timespec_skipped_bad_ptr
 	 *      Bumped when the field-scoped ARG_TIMESPEC fallback in
-	 *      cmp_hints_collect() saw a shape-valid (>= 4096) saved
-	 *      pointer that range_readable_user() could not prove was
-	 *      still mapped at harvest time -- the dispatched syscall (or
-	 *      a sibling) freed or munmapped the original timespec
-	 *      between dispatch and CMP collection.  A non-zero rate is
-	 *      expected churn (the gate prevented a SIGSEGV); a sustained
-	 *      high rate against cmp_field_attribution_scanned flags an
-	 *      arg-gen path that hands the kernel a non-shared-region
-	 *      timespec the harvest can't safely deref.
+	 *      cmp_hints_collect() could not safely deref the saved
+	 *      timespec pointer.  Two pathways feed the same counter --
+	 *      both are "shape-valid (>= 4096) but not safe to read"
+	 *      skips and have the same root cause (the dispatched
+	 *      syscall, or a sibling, freed/munmapped the original
+	 *      timespec between dispatch and CMP collection):
+	 *        (a) range_readable_user() proved the cached VMA state
+	 *            had no mapping for the pointer -- gate fired and
+	 *            the deref was skipped without faulting; or
+	 *        (b) range_readable_user() returned yes (cached VMA
+	 *            state still claimed the mapping) but a sibling raw
+	 *            munmap/mremap bypassed untrack_shared_region() and
+	 *            staled the cache, so the tv_sec/tv_nsec load
+	 *            actually faulted -- the sigsetjmp guard around the
+	 *            reads caught the SIGSEGV/SIGBUS and longjmp'd back
+	 *            to bump this counter and continue with the next
+	 *            field.
+	 *      A non-zero rate is expected churn (both gates prevented
+	 *      a child-killing SIGSEGV); a sustained high rate against
+	 *      cmp_field_attribution_scanned flags an arg-gen path that
+	 *      hands the kernel a non-shared-region timespec the
+	 *      harvest can't safely deref.
 	 */
 	unsigned long cmp_field_attribution_scanned;
 	unsigned long cmp_field_attribution_found;

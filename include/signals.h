@@ -54,6 +54,38 @@ extern volatile sig_atomic_t in_extrafork_grandchild;
 extern sigjmp_buf asb_copy_recover;
 extern volatile sig_atomic_t asb_copy_active;
 
+/*
+ * Per-child recovery point for cmp_hints_collect()'s field-scoped
+ * RedQueen deref of an ARG_TIMESPEC saved pointer.
+ *
+ * The field-scoped fallback in cmp_hints_collect() reads ts->tv_sec /
+ * ts->tv_nsec out of the dispatch-time buffer to match the runtime
+ * operand.  The deref is already gated on range_readable_user(), which
+ * proves readability from cached state (tracked shared regions + heap
+ * snapshots) -- but a sibling syscall can tear down a MAP_SHARED
+ * region via raw munmap/mremap without calling
+ * untrack_shared_region(), leaving the cache stale.  The next
+ * tv_sec/tv_nsec load then faults inside the harvest with
+ * SIGSEGV/SEGV_MAPERR -- a sanitiser fault, not a kernel bug -- and
+ * the whole child dies, masking whatever real syscall behaviour the
+ * dispatched op was about to expose.
+ *
+ * The flag/buffer pair lets the field reads install a sigsetjmp
+ * recovery point around the two compares: child_fault_handler checks
+ * cmp_field_read_active on entry, and on a real kernel SIGSEGV/SIGBUS
+ * (si_code > 0) while the flag is set, siglongjmp's back to the
+ * harvest, which counts the skip and falls through to the next field.
+ *
+ * Scope is intentionally narrow: the flag is set ONLY across the two
+ * field reads, cleared immediately after on BOTH the normal and the
+ * fault-return path, and the recovery edge applies only to SIGSEGV /
+ * SIGBUS with si_code > 0.  All other signals, and the default
+ * (flag-clear) state, fall through to the existing crash-log path so
+ * a real kernel-fuzzed bug still produces a bug log.
+ */
+extern sigjmp_buf cmp_field_recover;
+extern volatile sig_atomic_t cmp_field_read_active;
+
 void mask_signals_child(void);
 void setup_main_signals(void);
 void init_abort_msg_capture(void);

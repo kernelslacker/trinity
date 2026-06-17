@@ -52,6 +52,7 @@
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
+#include "signals.h"
 #include "stats_ring.h"
 #include "strategy.h"
 #include "struct_catalog.h"
@@ -1211,6 +1212,54 @@ static void cmp_hints_field_scan_record(struct syscallrecord *srec,
 	}
 }
 
+/*
+ * Read ts->tv_sec / ts->tv_nsec under a sigsetjmp recovery point and
+ * report which (if either) matches @arg2.
+ *
+ * The caller has already proved @ts readable via range_readable_user()
+ * -- but that gate consults cached VMA state (tracked shared regions
+ * + heap snapshots), and a sibling raw munmap/mremap that bypasses
+ * untrack_shared_region() can stale the cache between the gate and
+ * this read.  The sigsetjmp slot lets child_fault_handler longjmp
+ * back here when a SIGSEGV/SIGBUS fires inside the read window,
+ * degrading the fault to a counted skip instead of killing the whole
+ * child mid-CMP-harvest.
+ *
+ * Lives in its own function (not inlined into cmp_hints_collect)
+ * because sigsetjmp forces -Wclobbered to flag every local of the
+ * containing function -- cmp_hints_collect has many.  Marked
+ * noinline so the compiler can't undo the isolation.
+ *
+ * Returns true on a successful read (*@out_kind set, possibly to
+ * REEXEC_FIELD_NONE if neither field matched).  Returns false on a
+ * recovered fault -- caller should bump the shared skip counter and
+ * move to the next field.
+ */
+static __attribute__((noinline)) bool
+cmp_field_match_timespec(const struct timespec *ts, unsigned long arg2,
+			 enum reexec_field_kind *out_kind)
+{
+	*out_kind = REEXEC_FIELD_NONE;
+
+	if (sigsetjmp(cmp_field_recover, 1) != 0) {
+		/*
+		 * Clear the flag FIRST so any subsequent fault in this
+		 * child takes the normal diagnostic + _exit path rather
+		 * than silently recovering here.
+		 */
+		cmp_field_read_active = 0;
+		return false;
+	}
+
+	cmp_field_read_active = 1;
+	if ((unsigned long)ts->tv_sec == arg2)
+		*out_kind = REEXEC_FIELD_TIMESPEC_SEC;
+	else if ((unsigned long)ts->tv_nsec == arg2)
+		*out_kind = REEXEC_FIELD_TIMESPEC_NSEC;
+	cmp_field_read_active = 0;
+	return true;
+}
+
 void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 {
 	unsigned long count;
@@ -1824,11 +1873,33 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 								1UL, __ATOMIC_RELAXED);
 						continue;
 					}
-					if ((unsigned long)ts->tv_sec == arg2)
-						kind = REEXEC_FIELD_TIMESPEC_SEC;
-					else if ((unsigned long)ts->tv_nsec ==
-						 arg2)
-						kind = REEXEC_FIELD_TIMESPEC_NSEC;
+					/*
+					 * range_readable_user() proves the
+					 * pointer from cached VMA state, but
+					 * a sibling raw munmap/mremap that
+					 * bypasses untrack_shared_region() can
+					 * stale the cache between the gate and
+					 * the loads below.  Wrap the two field
+					 * reads in sigsetjmp/siglongjmp (in a
+					 * helper so the recovery slot does not
+					 * force every local in this function
+					 * volatile under -Wclobbered) so the
+					 * fault degrades to a counted skip
+					 * instead of killing the child.
+					 * Counter is shared with the cached-
+					 * state miss above -- both are "shape-
+					 * valid but not safe to deref" skips
+					 * and include/kcov.h's counter doc
+					 * already names both pathways.
+					 */
+					if (!cmp_field_match_timespec(ts, arg2,
+								      &kind)) {
+						if (kcov_shm != NULL)
+							__atomic_fetch_add(
+								&kcov_shm->cmp_field_timespec_skipped_bad_ptr,
+								1UL, __ATOMIC_RELAXED);
+						continue;
+					}
 					if (kind == REEXEC_FIELD_NONE)
 						continue;
 
