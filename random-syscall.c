@@ -1557,7 +1557,8 @@ static bool redqueen_reexec_step(struct childdata *child,
  * output_syscall_prefix forward is shared.
  */
 static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
-			  bool *found_new, unsigned long *new_cmp_out)
+			  bool *found_new, unsigned long *new_cmp_out,
+			  unsigned long *new_transition_out)
 {
 	struct syscallrecord *rec = &child->syscall;
 	bool new_edges;
@@ -2220,13 +2221,18 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	if (new_cmp_out != NULL)
 		*new_cmp_out = new_cmp;
 
+	if (new_transition_out != NULL)
+		*new_transition_out = pcres.transition_edges_real_local;
+
 	return true;
 }
 
 bool random_syscall_step(struct childdata *child,
 			 bool have_substitute,
 			 unsigned long substitute_retval,
-			 bool *found_new)
+			 bool *found_new,
+			 unsigned long *new_transition_out,
+			 unsigned long *new_cmp_out)
 {
 	struct syscallrecord *rec = &child->syscall;
 	struct syscallentry *entry;
@@ -2248,12 +2254,13 @@ bool random_syscall_step(struct childdata *child,
 	entry = get_syscall_entry(rec->nr, rec->do32bit);
 	apply_chain_substitution(rec, entry, have_substitute, substitute_retval);
 
-	return dispatch_step(child, entry, found_new, NULL);
+	return dispatch_step(child, entry, found_new, new_cmp_out,
+			     new_transition_out);
 }
 
 bool random_syscall(struct childdata *child)
 {
-	return random_syscall_step(child, false, 0, NULL);
+	return random_syscall_step(child, false, 0, NULL, NULL, NULL);
 }
 
 /*
@@ -2275,7 +2282,9 @@ bool replay_syscall_step(struct childdata *child,
 			 const struct chain_step *saved,
 			 bool have_substitute,
 			 unsigned long substitute_retval,
-			 bool *found_new)
+			 bool *found_new,
+			 unsigned long *new_transition_out,
+			 unsigned long *new_cmp_out)
 {
 	struct syscallrecord *rec = &child->syscall;
 	struct syscallentry *entry;
@@ -2353,7 +2362,8 @@ bool replay_syscall_step(struct childdata *child,
 	apply_chain_substitution(rec, entry, have_substitute, substitute_retval);
 	srec_publish_end(rec);
 
-	return dispatch_step(child, entry, found_new, NULL);
+	return dispatch_step(child, entry, found_new, new_cmp_out,
+			     new_transition_out);
 }
 
 /*
@@ -2591,7 +2601,7 @@ static bool redqueen_reexec_step(struct childdata *child,
 		 * their records to this re-exec) and count raw duplicate
 		 * records (not just novel ones), the same bug class avoided
 		 * for PC edges via kcov_collect()'s new_edge_count out-param. */
-		ok = dispatch_step(child, entry, NULL, &inner_new_cmp);
+		ok = dispatch_step(child, entry, NULL, &inner_new_cmp, NULL);
 
 		if (kcov_shm != NULL && inner_new_cmp > 0) {
 			unsigned int op_type = (unsigned int)child->op_type;

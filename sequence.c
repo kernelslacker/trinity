@@ -60,6 +60,20 @@
  */
 #define CHAIN_REPLAY_RATIO 4
 
+/*
+ * Probability divisor (1/N) applied to replay picks whose source chain
+ * was admitted under a non-PC reason (TRANSITION / CMP).  The non-PC save
+ * reasons exist to grow the corpus on the warm-PC plateau where the PC-
+ * only gate produces ~zero saves; until per-reason replay productivity
+ * data is in (chain_replay_win_by_reason[] vs chain_save_by_reason[]) we
+ * deliberately pull non-PC replays at half the PC-saved rate.  Anchored
+ * to PC-saved replays at the full CHAIN_REPLAY_RATIO so the comparison
+ * stays controlled: any divergence in coverage productivity between PC-
+ * saved and non-PC-saved chain replay is attributable to the source
+ * signal rather than to a sampling rate gap.
+ */
+#define CHAIN_REPLAY_NONPC_DOWNSAMPLE 2
+
 struct chain_corpus_ring *chain_corpus_shm = NULL;
 
 void chain_corpus_init(void)
@@ -136,21 +150,50 @@ static bool chain_is_replay_safe(const struct chain_step *steps,
  * when the ring is full.  Slots are inline structs in shm (no separate
  * allocation), so the write is a memcpy under the ring lock and there is
  * no eviction free path to defer.
+ *
+ * Per-(reason, trigger_nr) admission cap: at most one admit per rotation
+ * window.  The chain corpus is a single fleet-wide pool, so a hot syscall
+ * that earns a non-PC novelty signal on every other call (CMP / transition
+ * floods are the realistic shape) could otherwise sweep the ring's PC-
+ * saved entries out inside one window.  Reading shm->syscalls_at_last_switch
+ * and comparing against the per-(reason, nr) stamp turns that into "first
+ * winner this window admits, the rest are dropped" without needing a
+ * separate per-window counter that has to be reset on rotation.
  */
-void chain_corpus_save(const struct chain_step *steps, unsigned int len)
+void chain_corpus_save(const struct chain_step *steps, unsigned int len,
+		       unsigned int reason, unsigned int trigger_nr)
 {
 	struct chain_corpus_ring *ring = chain_corpus_shm;
 	struct chain_entry tmp;
 	unsigned int slot, head, count;
+	unsigned long window_id, prev_window;
 
 	if (ring == NULL || len == 0 || len > MAX_SEQ_LEN)
+		return;
+
+	if (reason >= CHAIN_SAVE_NR_REASONS || trigger_nr >= MAX_NR_SYSCALL)
 		return;
 
 	if (!chain_is_replay_safe(steps, len))
 		return;
 
+	/* Per-(reason, nr) per-window cap.  Racing children in the same
+	 * window may both observe a stale stamp and both admit -- the cap is
+	 * a flood ceiling, not an exact-one-admit invariant, and the lock
+	 * cost of CAS-tightening it would dwarf the avoided ring churn. */
+	window_id = __atomic_load_n(&shm->syscalls_at_last_switch,
+				    __ATOMIC_RELAXED);
+	prev_window = __atomic_load_n(
+		&ring->chain_save_window_id[reason][trigger_nr],
+		__ATOMIC_RELAXED);
+	if (prev_window == window_id && window_id != 0)
+		return;
+	__atomic_store_n(&ring->chain_save_window_id[reason][trigger_nr],
+			 window_id, __ATOMIC_RELAXED);
+
 	memset(&tmp, 0, sizeof(tmp));
 	tmp.len = len;
+	tmp.save_reason = reason;
 	memcpy(tmp.steps, steps, len * sizeof(struct chain_step));
 
 	lock(&ring->lock);
@@ -172,6 +215,8 @@ void chain_corpus_save(const struct chain_step *steps, unsigned int len)
 	unlock(&ring->lock);
 
 	__atomic_fetch_add(&ring->save_count, 1UL, __ATOMIC_RELAXED);
+	__atomic_fetch_add(&ring->chain_save_by_reason[reason], 1UL,
+			   __ATOMIC_RELAXED);
 }
 
 bool chain_corpus_pick(struct chain_entry *out)
@@ -244,6 +289,21 @@ bool run_sequence_chain(struct childdata *child)
 	unsigned long substitute_retval = 0;
 	bool chain_found_new = false;
 	bool replaying = false;
+	/* Per-chain novelty accounting.  Track each save-reason category
+	 * separately so the chain admission decision can prefer PC over
+	 * TRANSITION over CMP -- the priority mirrors the per-call
+	 * minicorpus save tag (PC wins on calls where both PC and CMP fire),
+	 * keeping the chain corpus's reason mix interpretable alongside the
+	 * per-call corpus's saves_by_reason[] for the same event class.
+	 * trigger_nr_* captures the syscall_nr of the FIRST step that fired
+	 * each signal, so chain_corpus_save's per-(reason, nr) per-window
+	 * cap is bounded by the actual triggering syscall and not the last
+	 * step that happened to run. */
+	bool chain_new_transition = false;
+	bool chain_new_cmp = false;
+	unsigned int trigger_nr_pc = 0;
+	unsigned int trigger_nr_transition = 0;
+	unsigned int trigger_nr_cmp = 0;
 
 	/* With CHAIN_REPLAY_RATIO probability, try to replay a saved chain
 	 * rather than generate a fresh one.  Falls back to fresh if the
@@ -264,6 +324,15 @@ bool run_sequence_chain(struct childdata *child)
 			__atomic_fetch_add(&shm->stats.chain_replay_len_corrupt,
 					   1UL, __ATOMIC_RELAXED);
 			len = pick_chain_length();
+		} else if (replay.save_reason != CHAIN_SAVE_PC &&
+			   replay.save_reason < CHAIN_SAVE_NR_REASONS &&
+			   !ONE_IN(CHAIN_REPLAY_NONPC_DOWNSAMPLE)) {
+			/* Non-PC-saved chains replay at a lower rate than
+			 * PC-saved ones until per-reason productivity data
+			 * exists (chain_replay_win_by_reason).  Fall back to
+			 * a fresh chain on the down-sampled half so the
+			 * iteration still does useful work. */
+			len = pick_chain_length();
 		} else {
 			replaying = true;
 			replay_template = replay.steps;
@@ -278,6 +347,8 @@ bool run_sequence_chain(struct childdata *child)
 	for (i = 0; i < len; i++) {
 		bool step_ret;
 		bool step_found_new = false;
+		unsigned long step_new_transition = 0;
+		unsigned long step_new_cmp = 0;
 		unsigned long rv;
 
 		/* Mark steps i >= 1 of a fresh-generation chain as mid-chain
@@ -291,7 +362,9 @@ bool run_sequence_chain(struct childdata *child)
 						       &replay_template[i],
 						       have_substitute,
 						       substitute_retval,
-						       &step_found_new);
+						       &step_found_new,
+						       &step_new_transition,
+						       &step_new_cmp);
 			if (step_ret == FAIL) {
 				/* Replay safety check failed (saved syscall
 				 * has been deactivated or otherwise become
@@ -306,13 +379,17 @@ bool run_sequence_chain(struct childdata *child)
 				step_ret = random_syscall_step(child,
 							       have_substitute,
 							       substitute_retval,
-							       &step_found_new);
+							       &step_found_new,
+							       &step_new_transition,
+							       &step_new_cmp);
 			}
 		} else {
 			step_ret = random_syscall_step(child,
 						       have_substitute,
 						       substitute_retval,
-						       &step_found_new);
+						       &step_found_new,
+						       &step_new_transition,
+						       &step_new_cmp);
 		}
 
 		/* Clear the flag immediately after dispatch so any non-chain
@@ -345,8 +422,26 @@ bool run_sequence_chain(struct childdata *child)
 			cs->retval = rec->retval;
 		}
 
-		if (step_found_new)
+		if (step_found_new) {
+			if (!chain_found_new)
+				trigger_nr_pc = rec->nr;
 			chain_found_new = true;
+		}
+		/* Per-step transition / CMP novelty.  Captured here on the
+		 * SAME step record as the chain snapshot above so the trigger
+		 * nr matches the syscall that actually fired the signal --
+		 * keeps the per-(reason, nr) admit cap aligned with what the
+		 * kernel-side counter actually observed. */
+		if (step_new_transition > 0) {
+			if (!chain_new_transition)
+				trigger_nr_transition = rec->nr;
+			chain_new_transition = true;
+		}
+		if (step_new_cmp > 0) {
+			if (!chain_new_cmp)
+				trigger_nr_cmp = rec->nr;
+			chain_new_cmp = true;
+		}
 
 		/* Decide whether the next step may receive a substitute.
 		 * Errno-style returns (-1..-4095 region, all negative when
@@ -365,18 +460,23 @@ bool run_sequence_chain(struct childdata *child)
 		}
 	}
 
-	/* Save chains that produced new coverage in any step.  The same
-	 * found_new signal that drives the per-call minicorpus save and the
-	 * weighted_pick_case attribution gates this — chains the rest of
-	 * the fuzzer already considers interesting are the chains worth
-	 * keeping for replay.  Saves apply equally to fresh chains and to
-	 * mutated replays of saved chains: a replay that finds new edges
-	 * proves the mutated form was structurally distinct from its
-	 * parent and is worth retaining as a corpus entry in its own
-	 * right.  Length-1 chains aren't saved (trivially subsumed by
-	 * the per-syscall minicorpus); the chain length floor of 2 from
-	 * pick_chain_length() makes that condition redundant in practice
-	 * but the explicit check keeps the contract obvious. */
+	/* Save chains that produced any novelty signal in any step.  The
+	 * historical PC-only gate (chain_found_new) saved ~zero chains under
+	 * a warm PC-edge plateau: at a 221k-edge fleet plateau the per-step
+	 * PC novelty rate is near zero and the chain corpus sat idle (no
+	 * saves, no replays) while the executor still spent the iter budget
+	 * generating and dispatching chains.  Widening to TRANSITION /
+	 * KCOV_CMP novelty parallels the per-call minicorpus save gate's
+	 * earlier widening from PC-only to PC || CMP (see dispatch_step),
+	 * keeping the chain corpus's "interesting input" definition aligned
+	 * with the per-call corpus.  PC wins the tag when multiple signals
+	 * fire on the same chain so the chain_save_by_reason[] historical
+	 * accounting is comparable to minicorpus's saves_by_reason[].
+	 *
+	 * Length-1 chains aren't saved (trivially subsumed by the per-call
+	 * minicorpus); the chain length floor of 2 from pick_chain_length()
+	 * makes that condition redundant in practice but the explicit check
+	 * keeps the contract obvious. */
 	/* Defensive: per-iteration clear inside the loop should have left
 	 * the flag false on every exit, but a future early-return path
 	 * could miss it.  Clearing once here at the end of the chain is
@@ -384,8 +484,49 @@ bool run_sequence_chain(struct childdata *child)
 	 * outside the chain executor) observing a stale true. */
 	child->in_chain_mid_step = false;
 
-	if (chain_found_new && steps_recorded >= 2)
-		chain_corpus_save(steps, steps_recorded);
+	if (steps_recorded >= 2) {
+		unsigned int reason;
+		unsigned int trigger_nr;
+		bool admit = true;
+
+		if (chain_found_new) {
+			reason = CHAIN_SAVE_PC;
+			trigger_nr = trigger_nr_pc;
+		} else if (chain_new_transition) {
+			reason = CHAIN_SAVE_TRANSITION;
+			trigger_nr = trigger_nr_transition;
+		} else if (chain_new_cmp) {
+			reason = CHAIN_SAVE_CMP;
+			trigger_nr = trigger_nr_cmp;
+		} else {
+			admit = false;
+			reason = CHAIN_SAVE_NR_REASONS;
+			trigger_nr = 0;
+		}
+
+		if (admit)
+			chain_corpus_save(steps, steps_recorded, reason,
+					  trigger_nr);
+
+		/* Credit a replay "win" when every step of the dispatched
+		 * chain came from the corpus and the chain earned any of the
+		 * novelty signals above.  Gated on `replaying` (still true at
+		 * loop exit means no replay_syscall_step FAIL forced a fresh-
+		 * suffix fallback) so a fresh-suffix step's novelty cannot be
+		 * mis-attributed to the picked entry's save_reason.
+		 *
+		 * The ratio chain_replay_win_by_reason[r] / chain_save_by_reason[r]
+		 * is the productivity signal that drives the per-reason replay
+		 * rate scaling in CHAIN_REPLAY_NONPC_DOWNSAMPLE. */
+		if (chain_corpus_shm != NULL && replaying &&
+		    (chain_found_new || chain_new_transition ||
+		     chain_new_cmp) &&
+		    replay.save_reason < CHAIN_SAVE_NR_REASONS)
+			__atomic_fetch_add(
+				&chain_corpus_shm->chain_replay_win_by_reason[
+					replay.save_reason],
+				1UL, __ATOMIC_RELAXED);
+	}
 
 	if (minicorpus_shm != NULL)
 		__atomic_fetch_add(&minicorpus_shm->chain_iter_count, 1,
