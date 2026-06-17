@@ -151,6 +151,16 @@ enum stats_field {
 	 * across a multi-second window. */
 	STATS_FIELD_CMP_HINTS_TRY_GET_ATTEMPTS,
 	STATS_FIELD_CMP_HINTS_TRY_GET_RETURNED,
+	/* Per-syscall partition of the cmp_hints_try_get() consumer-demand
+	 * and pool-hit counters.  Companion to the scalar
+	 * CMP_HINTS_TRY_GET_ATTEMPTS / _RETURNED above; aux carries the
+	 * calling syscall nr (already gated nr < MAX_NR_SYSCALL at the
+	 * cmp_hints_try_get_ex producer).  Both write-only-by-child --
+	 * no cross-child reader -- so moving them off kcov_shm purely
+	 * shrinks the wild-write attack surface for diagnostic counters
+	 * the dump path reads off parent_stats. */
+	STATS_FIELD_PER_SYSCALL_CMP_ATTEMPTS,	/* aux = syscall nr */
+	STATS_FIELD_PER_SYSCALL_CMP_RETURNED,	/* aux = syscall nr */
 	STATS_FIELD_NR,
 };
 
@@ -280,12 +290,18 @@ struct stats_aggregate {
 	 * kernel write through a fuzzed syscall arg cannot scribble the
 	 * counters that observe whether the cmp-hint pipeline is delivering
 	 * to argument generators.  The dump reader (stats.c periodic
-	 * window) now sources both from here; the per-syscall partitions
-	 * (per_syscall_cmp_attempts/_returned in kcov_shm) stay where they
-	 * are -- no cross-child reader, but they ride the same hardening
-	 * sweep as per_syscall_calls/edges when that lands. */
+	 * window) now sources both from here. */
 	unsigned long cmp_hints_try_get_attempts;
 	unsigned long cmp_hints_try_get_returned;
+
+	/* Drained from STATS_FIELD_PER_SYSCALL_CMP_ATTEMPTS /
+	 * STATS_FIELD_PER_SYSCALL_CMP_RETURNED.  Per-syscall partition of
+	 * the cmp-hint consumer-demand / pool-hit counters above.  Same
+	 * write-only-by-child / no cross-child reader profile as the
+	 * scalars, so the move off kcov_shm shrinks the wild-write attack
+	 * surface for diagnostic counters without changing any reader. */
+	unsigned long per_syscall_cmp_attempts[MAX_NR_SYSCALL];
+	unsigned long per_syscall_cmp_returned[MAX_NR_SYSCALL];
 
 	/* Visibility / health counters surfaced via dump_stats. */
 	unsigned long ring_overflow_total;	/* sum of dropped enqueues across all rings */

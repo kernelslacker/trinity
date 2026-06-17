@@ -2031,15 +2031,18 @@ bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 		 * fold into ring_overflow_total. */
 		struct childdata *attempt_child = this_child();
 
-		if (attempt_child != NULL)
+		if (attempt_child != NULL) {
 			(void) stats_ring_enqueue(attempt_child->stats_ring,
 						  STATS_FIELD_CMP_HINTS_TRY_GET_ATTEMPTS,
 						  0, 1);
-		/* per-nr partition of the consumer-demand
-		 * counter.  The shm/nr guard above already pinned nr <
-		 * MAX_NR_SYSCALL so the index is in-bounds. */
-		__atomic_fetch_add(&kcov_shm->per_syscall_cmp_attempts[nr],
-				   1UL, __ATOMIC_RELAXED);
+			/* per-nr partition of the consumer-demand counter,
+			 * drained into parent_stats.per_syscall_cmp_attempts[].
+			 * The shm/nr guard above already pinned nr <
+			 * MAX_NR_SYSCALL so aux is in-bounds at the drain. */
+			(void) stats_ring_enqueue(attempt_child->stats_ring,
+						  STATS_FIELD_PER_SYSCALL_CMP_ATTEMPTS,
+						  (uint16_t)nr, 1);
+		}
 	}
 
 	/* Chaos-mode gate.  Placed after the attempts bump so the consumer
@@ -2102,21 +2105,22 @@ bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 	*out = cmp_hint_apply_transform(picked_value, use, old);
 
 	if (kcov_shm != NULL) {
-		/* Mirror of the attempts ring path above: scalar returned
-		 * counter now drained into parent_stats; per-nr partition
-		 * stays in kcov_shm pending the same shm_published redesign
-		 * that the per_syscall_calls/edges arrays need. */
+		/* Mirror of the attempts ring path above: both the scalar
+		 * and per-nr returned counters drain into parent_stats via
+		 * the per-child stats_ring. */
 		struct childdata *return_child = this_child();
 
-		if (return_child != NULL)
+		if (return_child != NULL) {
 			(void) stats_ring_enqueue(return_child->stats_ring,
 						  STATS_FIELD_CMP_HINTS_TRY_GET_RETURNED,
 						  0, 1);
-		/* per-nr partition of the producer-side
-		 * pool-hit counter.  Same in-bounds guard reasoning as the
-		 * attempts bump above. */
-		__atomic_fetch_add(&kcov_shm->per_syscall_cmp_returned[nr],
-				   1UL, __ATOMIC_RELAXED);
+			/* per-nr partition of the producer-side pool-hit
+			 * counter.  Same in-bounds guard reasoning as the
+			 * attempts bump above. */
+			(void) stats_ring_enqueue(return_child->stats_ring,
+						  STATS_FIELD_PER_SYSCALL_CMP_RETURNED,
+						  (uint16_t)nr, 1);
+		}
 	}
 
 	cmp_hints_stash_consumed(nr, do32, CMP_HINT_POOL_PER_SYSCALL,

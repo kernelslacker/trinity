@@ -1258,31 +1258,30 @@ struct kcov_shared {
 
 	/* CMP-hint / RedQueen pipeline observability.
 	 *
-	 * The four per-syscall counters below partition the existing flat
-	 * cmp_hints_try_get_attempts / _returned / cmp_hints_injected funnel
-	 * by syscall slot.  Without the per-nr split, the question "is this
-	 * syscall producing the bulk of cmp-hint demand, deliveries, and
-	 * eventual PC-edge wins, or are the totals dominated by a noisy few
-	 * unrelated to the syscall whose tuning we're judging" is unanswerable
-	 * from the periodic stats log.  All four arrays are MAX_NR_SYSCALL-
-	 * indexed (matching per_syscall_edges[]) and gated on nr < bound at
-	 * each bump site.  Relaxed atomics; cumulative across the run.
+	 * The two per-syscall counters below partition the existing flat
+	 * cmp_hints_injected funnel by syscall slot.  Without the per-nr
+	 * split, the question "is this syscall producing the bulk of cmp-hint
+	 * deliveries and eventual PC-edge wins, or are the totals dominated
+	 * by a noisy few unrelated to the syscall whose tuning we're judging"
+	 * is unanswerable from the periodic stats log.  Both arrays are
+	 * MAX_NR_SYSCALL-indexed (matching per_syscall_edges[]) and gated on
+	 * nr < bound at each bump site.  Relaxed atomics; cumulative across
+	 * the run.
 	 *
-	 *  per_syscall_cmp_attempts[nr]
-	 *      Bumped from cmp_hints_try_get() alongside the existing flat
-	 *      cmp_hints_try_get_attempts counter.  Consumer-side demand
-	 *      partitioned by the calling syscall.
-	 *  per_syscall_cmp_returned[nr]
-	 *      Bumped from cmp_hints_try_get() right before the true return,
-	 *      alongside cmp_hints_try_get_returned.  Subset of attempts:
-	 *      the per-nr (returned / attempts) ratio is the per-syscall
-	 *      pool-hit rate.
+	 * The consumer-side demand/pool-hit partitions
+	 * (per_syscall_cmp_attempts/_returned) live in parent_stats and are
+	 * fed via STATS_FIELD_PER_SYSCALL_CMP_ATTEMPTS / _RETURNED on the
+	 * per-child stats_ring -- write-only-by-child, no cross-child reader,
+	 * so the migration off kernel-visible shm purely shrinks the wild-
+	 * write attack surface.
+	 *
 	 *  per_syscall_cmp_injected[nr]
 	 *      Bumped from each of the four generate-args.c callsites that
 	 *      commit a cmp_hints_try_get() hint to a produced syscall arg,
 	 *      alongside the existing flat cmp_hints_injected counter.
-	 *      Strictly <= per_syscall_cmp_returned[nr]; the gap is callsites
-	 *      that pulled a hint but discarded it (none today).
+	 *      Strictly <= parent_stats.per_syscall_cmp_returned[nr]; the
+	 *      gap is callsites that pulled a hint but discarded it (none
+	 *      today).
 	 *  per_syscall_cmp_hint_pc_wins[nr]
 	 *      Bumped from kcov_collect()'s found_new branch when the calling
 	 *      child had cmp_hint_injected_this_call set for the call being
@@ -1291,8 +1290,6 @@ struct kcov_shared {
 	 *      per_syscall_cmp_injected to read per-syscall hint-edge yield;
 	 *      a syscall with high injected and zero pc-wins is the
 	 *      diagnostic signature for an unproductive cmp-hint regime. */
-	unsigned long per_syscall_cmp_attempts[MAX_NR_SYSCALL];
-	unsigned long per_syscall_cmp_returned[MAX_NR_SYSCALL];
 	unsigned long per_syscall_cmp_injected[MAX_NR_SYSCALL];
 	unsigned long per_syscall_cmp_hint_pc_wins[MAX_NR_SYSCALL];
 
