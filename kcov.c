@@ -38,10 +38,12 @@
 #include "cmp_hints.h"
 #include "fd.h"
 #include "kcov.h"
+#include "minicorpus.h"
 #include "params.h"
 #include "persist-util.h"
 #include "pids.h"
 #include "rnd.h"
+#include "sequence.h"
 #include "shm.h"
 #include "stats.h"
 #include "stats_ring.h"
@@ -56,6 +58,11 @@
 #define KCOV_ENABLE        _IO('c', 100)
 #define KCOV_DISABLE       _IO('c', 101)
 #define KCOV_REMOTE_ENABLE _IOW('c', 102, struct kcov_remote_arg)
+
+/* Diagnostic coverage-jump breadcrumb -- called from the tail of
+ * kcov_collect() once call_nr is known.  Forward-declared so the
+ * definition can sit alongside kcov_plateau_check() further down. */
+static void kcov_covjump_breadcrumb_maybe(unsigned long call_nr);
 
 /*
  * Park the per-child kcov fds well above the low-numbered range the
@@ -2029,6 +2036,12 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 		}
 	}
 
+	/* Diagnostic coverage-jump breadcrumb -- pure observability, no
+	 * behaviour gate.  See kcov_covjump_breadcrumb_maybe() for the
+	 * contract; call_nr is the kcov_shm->total_calls stamp this
+	 * call took at the top of kcov_collect(). */
+	kcov_covjump_breadcrumb_maybe(call_nr);
+
 	return found_new;
 }
 
@@ -2144,6 +2157,359 @@ unsigned int kcov_syscall_cold_skip_pct(unsigned int nr)
 bool kcov_syscall_is_cold(unsigned int nr)
 {
 	return kcov_syscall_cold_skip_pct(nr) > 0;
+}
+
+/*
+ * Coverage-jump breadcrumb -- diagnostic only.
+ *
+ * Sampled at the tail of kcov_collect() so call_nr (the kcov_shm->
+ * total_calls fetch_add return from earlier in this call) is in hand
+ * without a second atomic read.  See the KCOV_COVJUMP_* block in
+ * include/kcov.h for the detector contract.
+ *
+ * No runtime behaviour reads any output of this path: it writes one
+ * stats.log line when the (distinct_edges) coverage delta over a
+ * KCOV_COVJUMP_WINDOW_CALLS-sized window crosses KCOV_COVJUMP_DELTA_
+ * THRESHOLD, rate-capped to one line per KCOV_COVJUMP_RATE_CAP_CALLS
+ * total_calls.  All emitted facts (recent syscalls, top childop
+ * deltas, plateau hypothesis + bandit arm name, corpus save/replay
+ * deltas) are observability snapshots taken by the CAS winner -- no
+ * fleet counter is written, no policy is consulted.
+ *
+ * The CAS on covjump_window_start_call_nr serialises window advances
+ * across racing children so only one breadcrumb fires per window even
+ * when many children cross the boundary in the same instant.
+ */
+static const enum child_op_type covjump_bridge_ops[] = {
+	CHILD_OP_BRIDGE_FDB_STP,
+	CHILD_OP_BRIDGE_VLAN_CHURN,
+	CHILD_OP_BRIDGE_CT_CHURN,
+};
+static const enum child_op_type covjump_conntrack_ops[] = {
+	CHILD_OP_NF_CONNTRACK_HELPER,
+};
+static const enum child_op_type covjump_mld_ops[] = {
+	CHILD_OP_IGMP_MLD_SOURCE_CHURN,
+};
+static const enum child_op_type covjump_mempress_ops[] = {
+	CHILD_OP_MEMORY_PRESSURE,
+	CHILD_OP_MLOCK_PRESSURE,
+};
+
+static bool covjump_any_delta(const enum child_op_type *ops, unsigned int n,
+			      const unsigned long *now,
+			      const unsigned long *snap)
+{
+	unsigned int i;
+
+	for (i = 0; i < n; i++) {
+		unsigned int op = (unsigned int)ops[i];
+
+		if (op >= KCOV_CHILDOP_NR_MAX)
+			continue;
+		if (now[op] > snap[op])
+			return true;
+	}
+	return false;
+}
+
+static void covjump_seed_snapshot(unsigned long call_nr, unsigned long edges_now)
+{
+	unsigned int op;
+
+	__atomic_store_n(&kcov_shm->covjump_window_start_call_nr, call_nr,
+			 __ATOMIC_RELAXED);
+	__atomic_store_n(&kcov_shm->covjump_window_start_distinct_edges,
+			 edges_now, __ATOMIC_RELAXED);
+	if (minicorpus_shm != NULL) {
+		__atomic_store_n(&kcov_shm->covjump_snap_saves_pc,
+			__atomic_load_n(&minicorpus_shm->saves_by_reason[CORPUS_SAVE_REASON_PC],
+					__ATOMIC_RELAXED),
+			__ATOMIC_RELAXED);
+		__atomic_store_n(&kcov_shm->covjump_snap_saves_cmp,
+			__atomic_load_n(&minicorpus_shm->saves_by_reason[CORPUS_SAVE_REASON_CMP],
+					__ATOMIC_RELAXED),
+			__ATOMIC_RELAXED);
+	}
+	if (chain_corpus_shm != NULL) {
+		__atomic_store_n(&kcov_shm->covjump_snap_chain_saves,
+			__atomic_load_n(&chain_corpus_shm->save_count,
+					__ATOMIC_RELAXED),
+			__ATOMIC_RELAXED);
+		__atomic_store_n(&kcov_shm->covjump_snap_chain_replays,
+			__atomic_load_n(&chain_corpus_shm->replay_count,
+					__ATOMIC_RELAXED),
+			__ATOMIC_RELAXED);
+	}
+	for (op = 0; op < KCOV_CHILDOP_NR_MAX; op++) {
+		unsigned long v = 0;
+
+		if (op < (unsigned int)NR_CHILD_OP_TYPES)
+			v = __atomic_load_n(&shm->stats.childop_invocations[op],
+					    __ATOMIC_RELAXED);
+		__atomic_store_n(&kcov_shm->covjump_snap_childop_invocations[op],
+				 v, __ATOMIC_RELAXED);
+	}
+}
+
+static void kcov_covjump_breadcrumb_maybe(unsigned long call_nr)
+{
+	unsigned long expected_start, edges_now, edges_prev, delta;
+	unsigned long elapsed, last_emit, sample_calls;
+	unsigned long now_childop[KCOV_CHILDOP_NR_MAX];
+	unsigned long snap_childop[KCOV_CHILDOP_NR_MAX];
+	unsigned long saves_pc_now = 0, saves_cmp_now = 0;
+	unsigned long chain_saves_now = 0, chain_replays_now = 0;
+	unsigned long saves_pc_snap, saves_cmp_snap;
+	unsigned long chain_saves_snap, chain_replays_snap;
+	unsigned int top_idx[KCOV_COVJUMP_RECENT_N];
+	unsigned long top_delta[KCOV_COVJUMP_RECENT_N];
+	char syscalls_buf[256];
+	char childops_buf[256];
+	char tag_buf[64];
+	unsigned int top_n = 0;
+	unsigned int op, i;
+	struct childdata *cc;
+	enum plateau_hypothesis hyp;
+	int arm;
+	bool bridge_hit, conntrack_hit, mld_hit, mempress_hit;
+
+	if (kcov_shm == NULL)
+		return;
+
+	/* First-call arm.  RELEASE-store the gate after the companion
+	 * fields are seeded so a peer that observes covjump_window_armed
+	 * via the ACQUIRE pair below also sees the freshly seeded
+	 * snapshot. */
+	if (!__atomic_load_n(&kcov_shm->covjump_window_armed,
+			     __ATOMIC_ACQUIRE)) {
+		bool expected = false;
+
+		edges_now = __atomic_load_n(&kcov_shm->distinct_edges,
+					    __ATOMIC_RELAXED);
+		covjump_seed_snapshot(call_nr, edges_now);
+		__atomic_compare_exchange_n(&kcov_shm->covjump_window_armed,
+			&expected, true, false,
+			__ATOMIC_RELEASE, __ATOMIC_RELAXED);
+		return;
+	}
+
+	expected_start = __atomic_load_n(&kcov_shm->covjump_window_start_call_nr,
+					 __ATOMIC_RELAXED);
+	if (call_nr <= expected_start)
+		return;
+	elapsed = call_nr - expected_start;
+	if (elapsed < KCOV_COVJUMP_WINDOW_CALLS)
+		return;
+
+	/* CAS-elect a single window-advance winner.  Losers see the new
+	 * start on a later call and re-evaluate. */
+	if (!__atomic_compare_exchange_n(&kcov_shm->covjump_window_start_call_nr,
+		&expected_start, call_nr, false,
+		__ATOMIC_RELAXED, __ATOMIC_RELAXED))
+		return;
+
+	sample_calls = call_nr - expected_start;
+	edges_now = __atomic_load_n(&kcov_shm->distinct_edges, __ATOMIC_RELAXED);
+	edges_prev = __atomic_load_n(&kcov_shm->covjump_window_start_distinct_edges,
+				     __ATOMIC_RELAXED);
+	delta = (edges_now >= edges_prev) ? edges_now - edges_prev : 0;
+
+	/* Refresh the edge snapshot every window even when the delta is
+	 * sub-threshold so the NEXT window measures a contiguous interval. */
+	__atomic_store_n(&kcov_shm->covjump_window_start_distinct_edges,
+			 edges_now, __ATOMIC_RELAXED);
+
+	if (delta < KCOV_COVJUMP_DELTA_THRESHOLD)
+		goto refresh_snapshot;
+
+	last_emit = __atomic_load_n(&kcov_shm->covjump_last_emit_call_nr,
+				    __ATOMIC_RELAXED);
+	if (last_emit != 0 && call_nr - last_emit < KCOV_COVJUMP_RATE_CAP_CALLS)
+		goto refresh_snapshot;
+	__atomic_store_n(&kcov_shm->covjump_last_emit_call_nr, call_nr,
+			 __ATOMIC_RELAXED);
+
+	/* Snapshot live + saved counters for the line. */
+	if (minicorpus_shm != NULL) {
+		saves_pc_now = __atomic_load_n(&minicorpus_shm->saves_by_reason[CORPUS_SAVE_REASON_PC],
+					       __ATOMIC_RELAXED);
+		saves_cmp_now = __atomic_load_n(&minicorpus_shm->saves_by_reason[CORPUS_SAVE_REASON_CMP],
+						__ATOMIC_RELAXED);
+	}
+	if (chain_corpus_shm != NULL) {
+		chain_saves_now = __atomic_load_n(&chain_corpus_shm->save_count,
+						  __ATOMIC_RELAXED);
+		chain_replays_now = __atomic_load_n(&chain_corpus_shm->replay_count,
+						    __ATOMIC_RELAXED);
+	}
+	saves_pc_snap = __atomic_load_n(&kcov_shm->covjump_snap_saves_pc,
+					__ATOMIC_RELAXED);
+	saves_cmp_snap = __atomic_load_n(&kcov_shm->covjump_snap_saves_cmp,
+					 __ATOMIC_RELAXED);
+	chain_saves_snap = __atomic_load_n(&kcov_shm->covjump_snap_chain_saves,
+					   __ATOMIC_RELAXED);
+	chain_replays_snap = __atomic_load_n(&kcov_shm->covjump_snap_chain_replays,
+					     __ATOMIC_RELAXED);
+	for (op = 0; op < KCOV_CHILDOP_NR_MAX; op++) {
+		now_childop[op] = 0;
+		if (op < (unsigned int)NR_CHILD_OP_TYPES)
+			now_childop[op] = __atomic_load_n(
+				&shm->stats.childop_invocations[op],
+				__ATOMIC_RELAXED);
+		snap_childop[op] = __atomic_load_n(
+			&kcov_shm->covjump_snap_childop_invocations[op],
+			__ATOMIC_RELAXED);
+	}
+
+	/* Top-N childops by per-window invocation delta.  Trivial
+	 * insertion sort over the small KCOV_COVJUMP_RECENT_N tail. */
+	for (i = 0; i < KCOV_COVJUMP_RECENT_N; i++) {
+		top_idx[i] = 0;
+		top_delta[i] = 0;
+	}
+	for (op = 0; op < KCOV_CHILDOP_NR_MAX && op < (unsigned int)NR_CHILD_OP_TYPES; op++) {
+		unsigned long d;
+
+		if (now_childop[op] <= snap_childop[op])
+			continue;
+		d = now_childop[op] - snap_childop[op];
+		for (i = 0; i < KCOV_COVJUMP_RECENT_N; i++) {
+			if (d > top_delta[i]) {
+				unsigned int j;
+
+				for (j = KCOV_COVJUMP_RECENT_N - 1; j > i; j--) {
+					top_delta[j] = top_delta[j - 1];
+					top_idx[j] = top_idx[j - 1];
+				}
+				top_delta[i] = d;
+				top_idx[i] = op;
+				if (top_n < KCOV_COVJUMP_RECENT_N)
+					top_n++;
+				break;
+			}
+		}
+	}
+
+	bridge_hit = covjump_any_delta(covjump_bridge_ops,
+		sizeof(covjump_bridge_ops) / sizeof(covjump_bridge_ops[0]),
+		now_childop, snap_childop);
+	conntrack_hit = covjump_any_delta(covjump_conntrack_ops,
+		sizeof(covjump_conntrack_ops) / sizeof(covjump_conntrack_ops[0]),
+		now_childop, snap_childop);
+	mld_hit = covjump_any_delta(covjump_mld_ops,
+		sizeof(covjump_mld_ops) / sizeof(covjump_mld_ops[0]),
+		now_childop, snap_childop);
+	mempress_hit = covjump_any_delta(covjump_mempress_ops,
+		sizeof(covjump_mempress_ops) / sizeof(covjump_mempress_ops[0]),
+		now_childop, snap_childop);
+
+	/* Recent per-child syscall names from THIS child's syscall_ring
+	 * (the CAS winner -- one of many in-flight children).  Bounded to
+	 * KCOV_COVJUMP_RECENT_N entries; head-1 is the most recent. */
+	syscalls_buf[0] = '\0';
+	cc = this_child();
+	if (cc != NULL) {
+		struct child_syscall_ring *ring = &cc->syscall_ring;
+		uint32_t head = __atomic_load_n(&ring->head, __ATOMIC_RELAXED);
+		size_t pos = 0;
+
+		for (i = 0; i < KCOV_COVJUMP_RECENT_N; i++) {
+			uint32_t slot;
+			const struct chronicle_slot *s;
+			const char *name;
+			int n;
+
+			if (head == 0 && i == 0)
+				break;
+			slot = (head + CHILD_SYSCALL_RING_SIZE - 1 - i)
+				% CHILD_SYSCALL_RING_SIZE;
+			s = &ring->recent[slot];
+			if (!s->valid)
+				break;
+			name = print_syscall_name(s->nr, s->do32bit);
+			if (name == NULL)
+				name = "?";
+			n = snprintf(syscalls_buf + pos,
+				     sizeof(syscalls_buf) - pos,
+				     "%s%s", pos == 0 ? "" : ",", name);
+			if (n < 0 || (size_t)n >= sizeof(syscalls_buf) - pos)
+				break;
+			pos += (size_t)n;
+		}
+	}
+	if (syscalls_buf[0] == '\0')
+		snprintf(syscalls_buf, sizeof(syscalls_buf), "none");
+
+	childops_buf[0] = '\0';
+	{
+		size_t pos = 0;
+
+		for (i = 0; i < top_n; i++) {
+			const char *name = alt_op_name(
+				(enum child_op_type)top_idx[i]);
+			int n;
+
+			if (name == NULL)
+				name = "?";
+			n = snprintf(childops_buf + pos,
+				     sizeof(childops_buf) - pos,
+				     "%s%s:%lu", pos == 0 ? "" : ",",
+				     name, top_delta[i]);
+			if (n < 0 || (size_t)n >= sizeof(childops_buf) - pos)
+				break;
+			pos += (size_t)n;
+		}
+	}
+	if (childops_buf[0] == '\0')
+		snprintf(childops_buf, sizeof(childops_buf), "none");
+
+	hyp = strategy_plateau_hypothesis_current();
+	arm = __atomic_load_n(&shm->current_strategy, __ATOMIC_RELAXED);
+	tag_buf[0] = '\0';
+	{
+		size_t pos = 0;
+		int n;
+
+		if (bridge_hit) {
+			n = snprintf(tag_buf + pos, sizeof(tag_buf) - pos,
+				     "%sbridge", pos == 0 ? "" : ",");
+			if (n > 0) pos += (size_t)n;
+		}
+		if (conntrack_hit && pos < sizeof(tag_buf)) {
+			n = snprintf(tag_buf + pos, sizeof(tag_buf) - pos,
+				     "%sconntrack", pos == 0 ? "" : ",");
+			if (n > 0) pos += (size_t)n;
+		}
+		if (mld_hit && pos < sizeof(tag_buf)) {
+			n = snprintf(tag_buf + pos, sizeof(tag_buf) - pos,
+				     "%smld", pos == 0 ? "" : ",");
+			if (n > 0) pos += (size_t)n;
+		}
+		if (mempress_hit && pos < sizeof(tag_buf)) {
+			n = snprintf(tag_buf + pos, sizeof(tag_buf) - pos,
+				     "%smempress", pos == 0 ? "" : ",");
+			if (n > 0) pos += (size_t)n;
+		}
+	}
+	if (tag_buf[0] == '\0')
+		snprintf(tag_buf, sizeof(tag_buf), "none");
+
+	stats_log_write(
+		"COVJUMP: distinct_edges +%lu over %lu calls (>=%lu) prev=%lu now=%lu hypothesis=%s arm=%s syscalls=[%s] childops=[%s] saves(pc/cmp)=+%lu/+%lu chain(save/replay)=+%lu/+%lu tags=[%s]\n",
+		delta, sample_calls, KCOV_COVJUMP_DELTA_THRESHOLD,
+		edges_prev, edges_now,
+		strategy_plateau_hypothesis_name(hyp),
+		strategy_name(arm),
+		syscalls_buf, childops_buf,
+		saves_pc_now > saves_pc_snap ? saves_pc_now - saves_pc_snap : 0UL,
+		saves_cmp_now > saves_cmp_snap ? saves_cmp_now - saves_cmp_snap : 0UL,
+		chain_saves_now > chain_saves_snap ? chain_saves_now - chain_saves_snap : 0UL,
+		chain_replays_now > chain_replays_snap ? chain_replays_now - chain_replays_snap : 0UL,
+		tag_buf);
+
+refresh_snapshot:
+	covjump_seed_snapshot(call_nr, edges_now);
 }
 
 void kcov_plateau_check(void)

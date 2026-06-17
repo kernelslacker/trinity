@@ -276,6 +276,30 @@ void frontier_record_transition_edge(unsigned int nr);
 #define KCOV_PLATEAU_ENTER_THRESHOLD 10
 #define KCOV_PLATEAU_EXIT_THRESHOLD  30
 
+/*
+ * Coverage-jump breadcrumb (diagnostic only).
+ *
+ * A recent run's bucket-edge (distinct_edges) count jumped from 223344
+ * to 232965 inside a single ~10k-syscall window, with nothing in the
+ * logs naming the triggering syscall / childop sequence.  When the
+ * sampled delta over a window of WINDOW_CALLS syscalls exceeds
+ * DELTA_THRESHOLD, emit ONE compact one-line breadcrumb to stats.log
+ * naming the active strategy / hypothesis, the recent per-child
+ * syscalls, the childops that fired most in the window, and the most
+ * recent corpus save/replay deltas so the jump becomes attributable.
+ *
+ * RATE_CAP_CALLS imposes a per-emission floor on the number of total
+ * syscall calls that must pass before a second breadcrumb may fire, so
+ * a sustained burst over many adjacent windows produces one line, not
+ * one-per-window spam.  No runtime behaviour reads the breadcrumb
+ * fields -- this is pure observability fed back into the next
+ * validation run.
+ */
+#define KCOV_COVJUMP_WINDOW_CALLS	10000UL
+#define KCOV_COVJUMP_DELTA_THRESHOLD	2000UL
+#define KCOV_COVJUMP_RATE_CAP_CALLS	50000UL
+#define KCOV_COVJUMP_RECENT_N		4
+
 /* KCOV trace modes */
 #define KCOV_TRACE_PC  0
 #define KCOV_TRACE_CMP 1
@@ -1063,6 +1087,29 @@ struct kcov_shared {
 	time_t plateau_entered_at;
 	bool plateau_armed;
 	bool plateau_active;
+
+	/*
+	 * Coverage-jump breadcrumb state.  See KCOV_COVJUMP_* constants at
+	 * the top of this header for the detector contract.  Pure
+	 * diagnostic; no runtime path reads these.  The snapshot block is
+	 * sampled by the CAS winner at each window boundary and replayed
+	 * against the live counters at the next boundary to compute the
+	 * per-window deltas that populate the breadcrumb.
+	 *
+	 * covjump_snap_childop_invocations[] mirrors the indexing of the
+	 * surrounding childop_* arrays (sized to KCOV_CHILDOP_NR_MAX with
+	 * the in-tree _Static_assert on NR_CHILD_OP_TYPES pinning the
+	 * tail).  RELAXED atomics throughout.
+	 */
+	unsigned long covjump_window_start_call_nr;
+	unsigned long covjump_window_start_distinct_edges;
+	unsigned long covjump_snap_saves_pc;
+	unsigned long covjump_snap_saves_cmp;
+	unsigned long covjump_snap_chain_saves;
+	unsigned long covjump_snap_chain_replays;
+	unsigned long covjump_snap_childop_invocations[KCOV_CHILDOP_NR_MAX];
+	unsigned long covjump_last_emit_call_nr;
+	bool covjump_window_armed;
 
 	/* Greedy CMP RedQueen re-exec stats.  A CMP-mode child records
 	 * attributable (cmp_ip, arg_slot, value) tuples from the parent
