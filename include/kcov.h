@@ -1697,6 +1697,68 @@ struct kcov_shared {
 	 * struct tail per the existing convention so consumer offsets stay
 	 * stable. */
 	unsigned long cmp_hints_boring_arm_b_drops;
+
+	/*
+	 * SHADOW counters for the run-local CMP "recent" pool tier.
+	 * The recent ring sits next to the
+	 * durable per-syscall pool and absorbs every fresh insert /
+	 * evict-replace pool_add_locked() observes -- a small lossy
+	 * window over constants the kernel has produced recently that
+	 * the saturated durable pool would otherwise drop on the
+	 * eviction floor.  The A/B flag (--cmp-recent-pool) gates
+	 * whether cmp_hints_try_get_ex() samples the recent ring first
+	 * during a CMP_RISING_PC_FLAT plateau; the default keeps the
+	 * historical durable-first behaviour so this commit is
+	 * behaviour-neutral until the flag is flipped.  Every counter
+	 * below is RELAXED + flat per the SHADOW-first discipline:
+	 * recording active in BOTH arms so an A/B run reads the same
+	 * shadow rates the live arm will eventually consume.
+	 *
+	 *  cmp_recent_inserts
+	 *      Bumped once per pool_add_locked() success that also
+	 *      landed an entry in the per-syscall recent ring.  Pairs
+	 *      with cmp_hints_unique_inserts -- the durable counter --
+	 *      so the relative volume of "recent absorbed" vs
+	 *      "durable accepted" is observable.
+	 *  cmp_recent_evicts
+	 *      Bumped once per recent-ring insert that displaced an
+	 *      existing entry (the ring head wrapped over a populated
+	 *      slot).  The ring is small (CMP_RECENT_PER_SYSCALL) so
+	 *      this saturates quickly on a hot syscall; the rate is
+	 *      the recent tier's churn signal.
+	 *  cmp_recent_would_pick
+	 *      Bumped once per cmp_hints_try_get_ex() call where the
+	 *      recent ring was non-empty AND the current plateau
+	 *      hypothesis is CMP_RISING_PC_FLAT -- i.e. the call where
+	 *      the recent-first arm would have sampled from the recent
+	 *      ring.  Active in BOTH arms so the would-be-pick rate is
+	 *      legible from the default durable-first run.
+	 *  cmp_recent_would_miss
+	 *      Bumped once per cmp_hints_try_get_ex() call where the
+	 *      plateau hypothesis is CMP_RISING_PC_FLAT but the recent
+	 *      ring is empty (the recent-first arm would have fallen
+	 *      back to the durable pool).  would_pick + would_miss is
+	 *      the plateau-window try_get population.
+	 *  cmp_recent_live_picks
+	 *      Bumped once per cmp_hints_try_get_ex() return that was
+	 *      actually served from the recent ring.  Stays at zero
+	 *      under the default A/B arm; non-zero once the operator
+	 *      flips --cmp-recent-pool=recent-first.
+	 *  cmp_recent_promotions
+	 *      Bumped from the feedback drain when a recent-ring
+	 *      sample converts (PC-edge / CMP-novel / errno-shift) --
+	 *      the conversion event that the follow-up commit will
+	 *      route into a real recent->durable promotion.  Today
+	 *      the recording-only path; no entry is moved.
+	 *
+	 * Append-only at the tail per the existing convention so
+	 * consumer offsets stay stable. */
+	unsigned long cmp_recent_inserts;
+	unsigned long cmp_recent_evicts;
+	unsigned long cmp_recent_would_pick;
+	unsigned long cmp_recent_would_miss;
+	unsigned long cmp_recent_live_picks;
+	unsigned long cmp_recent_promotions;
 };
 
 extern struct kcov_shared *kcov_shm;

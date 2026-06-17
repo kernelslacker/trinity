@@ -47,10 +47,13 @@
 #include "deferred-free.h"
 #include "fd.h"
 #include "kcov.h"
+#include "params.h"
 #include "persist-util.h"
 #include "random.h"
 #include "rnd.h"
+#include "shm.h"
 #include "stats_ring.h"
+#include "strategy.h"
 #include "struct_catalog.h"
 #include "syscall.h"
 #include "tables.h"
@@ -650,7 +653,59 @@ struct cmp_hints_pending {
 	unsigned int size;
 };
 
+/*
+ * Recent-ring insert.  Called for every
+ * pool_add_locked() return-true (fresh insert or evict-replace) under
+ * the durable pool's lock, so the only writer at any instant is the
+ * caller already holding pool->lock above; recent_pools[] needs no
+ * lock of its own.  Lockless readers in cmp_hints_try_get_ex tolerate
+ * a torn (cmp_ip, value, size) triplet the same way the durable pool's
+ * lockless reader does -- hints are advisory.
+ *
+ * Ring write: overwrite the head slot, advance head modulo the cap.
+ * Count grows up to CMP_RECENT_PER_SYSCALL and then sticks; an insert
+ * over a populated slot bumps cmp_recent_evicts so the saturation
+ * point is observable.  No dedup deliberately: "recent" semantics aren't
+ * diluted by collapsing a tuple the kernel saw twice into one slot.
+ */
+static void cmp_recent_insert(unsigned int nr, bool do32,
+			      unsigned long cmp_ip, unsigned long val,
+			      unsigned int size)
+{
+	struct cmp_recent_pool *rp;
+	unsigned int head;
+	unsigned int count;
+
+	if (cmp_hints_shm == NULL || nr >= MAX_NR_SYSCALL)
+		return;
+
+	rp = &cmp_hints_shm->recent_pools[nr][do32 ? 1 : 0];
+	head = rp->head;
+	if (head >= CMP_RECENT_PER_SYSCALL)
+		head = 0;	/* defensive: a stomp on head would index OOB */
+	count = rp->count;
+
+	if (kcov_shm != NULL) {
+		__atomic_fetch_add(&kcov_shm->cmp_recent_inserts, 1UL,
+				   __ATOMIC_RELAXED);
+		if (count >= CMP_RECENT_PER_SYSCALL)
+			__atomic_fetch_add(&kcov_shm->cmp_recent_evicts, 1UL,
+					   __ATOMIC_RELAXED);
+	}
+
+	rp->entries[head].value = val;
+	rp->entries[head].cmp_ip = cmp_ip;
+	rp->entries[head].size = size;
+	rp->entries[head].pad = 0;
+
+	head = (head + 1U) % CMP_RECENT_PER_SYSCALL;
+	__atomic_store_n(&rp->head, head, __ATOMIC_RELAXED);
+	if (count < CMP_RECENT_PER_SYSCALL)
+		__atomic_store_n(&rp->count, count + 1U, __ATOMIC_RELEASE);
+}
+
 static unsigned int cmp_hints_flush_pending(struct cmp_hint_pool *pool,
+					    unsigned int nr, bool do32,
 					    const struct cmp_hints_pending *batch,
 					    unsigned int n)
 {
@@ -674,8 +729,16 @@ static unsigned int cmp_hints_flush_pending(struct cmp_hint_pool *pool,
 	pool_lock(pool);
 	for (j = 0; j < n; j++) {
 		if (pool_add_locked(pool, batch[j].ip, batch[j].val,
-				    batch[j].size))
+				    batch[j].size)) {
 			inserted++;
+			/* Mirror every durable content change into the
+			 * run-local recent ring.  Under pool->lock so the
+			 * recent insert has the same single-writer guarantee
+			 * the durable insert has -- the only place that
+			 * writes recent_pools[nr][do32] is this exact path. */
+			cmp_recent_insert(nr, do32, batch[j].ip, batch[j].val,
+					  batch[j].size);
+		}
 	}
 	pool_unlock(pool);
 	return inserted;
@@ -1847,12 +1910,13 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 		n_batch++;
 
 		if (n_batch == CMP_HINTS_PENDING_BATCH) {
-			inserted += cmp_hints_flush_pending(pool, batch, n_batch);
+			inserted += cmp_hints_flush_pending(pool, nr, do32,
+							    batch, n_batch);
 			n_batch = 0;
 		}
 	}
 
-	inserted += cmp_hints_flush_pending(pool, batch, n_batch);
+	inserted += cmp_hints_flush_pending(pool, nr, do32, batch, n_batch);
 
 	if (skipped != 0 && kcov_shm != NULL)
 		__atomic_fetch_add(&kcov_shm->cmp_hints_bloom_skipped, skipped,
@@ -2060,6 +2124,81 @@ bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 	}
 
 	pool = &cmp_hints_shm->pools[nr][do32 ? 1 : 0];
+
+	/*
+	 * Recent-pool sampling tier.
+	 *
+	 * The recent ring carries fresh constants the durable pool's
+	 * saturated LRU floor would have dropped.  Sampling it first --
+	 * but only during a CMP_RISING_PC_FLAT plateau, when the
+	 * cmp_hints_save_reject_cap dominance signal says the durable
+	 * pool is the bottleneck -- gives the consumer a window onto
+	 * the late-run constant stream without competing with the
+	 * durable pool's selection on the off-plateau steady state.
+	 *
+	 * SHADOW first: cmp_recent_would_pick / cmp_recent_would_miss
+	 * are bumped on every plateau call regardless of arm, so the
+	 * would-be-pick rate is observable from a default
+	 * (--cmp-recent-pool=off) run before the live arm is flipped.
+	 * cmp_recent_live_picks only bumps on a return actually served
+	 * from the recent ring (i.e. recent-first arm AND non-empty
+	 * ring), so the live-pick rate stays cleanly separable from
+	 * the shadow rate.
+	 *
+	 * Lockless reads with ACQUIRE on count + RELAXED on entries[]
+	 * mirror the durable pool's lockless reader contract: torn
+	 * cross-field reads are tolerated (hints are advisory), and a
+	 * concurrent ring writer can only ever produce the pre- or
+	 * post-overwrite triplet -- both lived in the ring.
+	 */
+	if (shm != NULL &&
+	    __atomic_load_n(&shm->plateau_current_hypothesis,
+			    __ATOMIC_RELAXED) ==
+	    (int)PLATEAU_HYPOTHESIS_CMP_RISING_PC_FLAT) {
+		struct cmp_recent_pool *rp =
+			&cmp_hints_shm->recent_pools[nr][do32 ? 1 : 0];
+		unsigned int rcount =
+			__atomic_load_n(&rp->count, __ATOMIC_ACQUIRE);
+
+		if (rcount > 0 && rcount <= CMP_RECENT_PER_SYSCALL) {
+			if (kcov_shm != NULL)
+				__atomic_fetch_add(&kcov_shm->cmp_recent_would_pick,
+						   1UL, __ATOMIC_RELAXED);
+			if (cmp_recent_pool_mode_arg ==
+			    CMP_RECENT_POOL_RECENT_FIRST) {
+				struct cmp_recent_entry *re =
+					&rp->entries[rnd_modulo_u32(rcount)];
+				unsigned long re_value = re->value;
+				unsigned long re_cmp_ip = re->cmp_ip;
+				uint32_t re_size = re->size;
+
+				*out = cmp_hint_apply_transform(re_value,
+								use, old);
+
+				if (kcov_shm != NULL)
+					__atomic_fetch_add(&kcov_shm->cmp_recent_live_picks,
+							   1UL, __ATOMIC_RELAXED);
+
+				/* Stash the recent-served pull under the
+				 * per-syscall pool-kind: the feedback drain's
+				 * per-entry credit path re-finds by (cmp_ip,
+				 * value, size) in the durable pool and will
+				 * harmlessly fail to find the recent-only
+				 * tuple, while the flat cmp_hint_wins /
+				 * cmp_hint_misses counters still bump -- the
+				 * follow-up commit wires the recent-pool
+				 * conversion credit + promotion. */
+				cmp_hints_stash_consumed(nr, do32,
+							 CMP_HINT_POOL_PER_SYSCALL,
+							 re_cmp_ip, re_value,
+							 re_size, use);
+				return true;
+			}
+		} else if (kcov_shm != NULL) {
+			__atomic_fetch_add(&kcov_shm->cmp_recent_would_miss,
+					   1UL, __ATOMIC_RELAXED);
+		}
+	}
 
 	/*
 	 * Lockless read.  Multiple children fuzzing the same syscall would
