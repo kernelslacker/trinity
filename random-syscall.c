@@ -2520,21 +2520,33 @@ static bool redqueen_reexec_step(struct childdata *child,
 	saved_post_state = rec->post_state;
 	saved_errno_post = rec->errno_post;
 
-	/* Coherent re-publish of the re-exec dispatch state.  Same (nr,
-	 * do32bit) as the parent, but generate_syscall_args is about to
-	 * overwrite rec->aN and the prebuffer/postbuffer, so wrap the
-	 * preparation in a publish bracket so any out-of-band reader
-	 * (parent watchdog, pre_crash decoder) sees the new args paired
-	 * with the original nr rather than a torn mid-mutation view. */
+	/* Coherent re-publishes around the re-exec dispatch state.  Same
+	 * (nr, do32bit) as the parent so those don't need re-publication,
+	 * but three other rec mutations do, and each runs in its own
+	 * publish bracket (generate_syscall_args carries its own bracket
+	 * internally, so it can't be folded into either neighbour):
+	 *   1. postbuffer reset (this bracket) -- a pre_crash decoder
+	 *      sampling between dispatches must not pair stale postbuffer
+	 *      bytes with the new in-flight call.
+	 *   2. fresh args, published by generate_syscall_args's own bracket.
+	 *   3. the slot / field pin (bracket below) -- generate_syscall_args
+	 *      has already closed its publish_end by the time the pin runs,
+	 *      so the pin would otherwise land OUTSIDE any publish section
+	 *      and an out-of-band reader (parent watchdog, pre_crash
+	 *      decoder) could observe the pinned slot torn against the
+	 *      generator's freshly-published aN values. */
 	srec_publish_begin(rec);
 	rec->postbuffer[0] = '\0';
 	srec_publish_end(rec);
 
 	generate_syscall_args(rec);
+
+	srec_publish_begin(rec);
 	if (p->field_kind == REEXEC_FIELD_NONE)
 		redqueen_pin_slot(rec, p->slot, p->value);
 	else
 		redqueen_pin_field(rec, p);
+	srec_publish_end(rec);
 
 	/* Don't credit the bandit for re-exec wins -- same rationale as
 	 * replay_syscall_step.  -1 sentinel makes the per-strategy
