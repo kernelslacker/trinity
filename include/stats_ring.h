@@ -129,6 +129,16 @@ enum stats_field {
 	 * Drained into parent_stats.total_pcs; same flush cadence as the
 	 * other two kcov staging counters. */
 	STATS_FIELD_TOTAL_PCS,
+	/* kcov_collect()'s warm-known-hit counter (one bump per call that
+	 * returned coverage where every PC was already in bucket_seen[]).
+	 * Same staging / batched-flush model as STATS_FIELD_REMOTE_CALLS:
+	 * +1 onto the per-child kcov_child_local_stats slot, drained into
+	 * parent_stats.total_warm_known_hits via the stats_ring on the
+	 * found-new-edge piggyback or the syscalls-since-flush cadence
+	 * cap.  Dump-only reader, no per-call branch reads it, so the
+	 * batched delta is the source of truth for the dump path and the
+	 * kcov_shm field is no longer bumped. */
+	STATS_FIELD_WARM_KNOWN_HITS,
 	/* cmp_hints_try_get_ex() bumps these on every consumer call that
 	 * passed the cmp_hints_shm / nr guard and reached the pool-snapshot
 	 * lookup.  Direct +1 enqueue per call -- no local staging like the
@@ -253,6 +263,16 @@ struct stats_aggregate {
 	 * folds the per-syscall accumulation into one ring enqueue per
 	 * flush. */
 	unsigned long total_pcs;
+
+	/* Drained from STATS_FIELD_WARM_KNOWN_HITS.  Run-wide count of
+	 * kcov_collect() calls that returned coverage where every PC was
+	 * already in bucket_seen[] (warm-loaded or seen earlier this run).
+	 * Reported by the periodic stats dump as a liveness signal; the
+	 * kcov_shm->total_warm_known_hits atomic is no longer bumped, no
+	 * stamp-role consumer references it.  The per-syscall split lives
+	 * in kcov_shm->per_syscall_warm_known_hits[] and is left untouched
+	 * here -- only the cross-child run-wide counter migrates. */
+	unsigned long total_warm_known_hits;
 
 	/* Drained from STATS_FIELD_CMP_HINTS_TRY_GET_ATTEMPTS /
 	 * STATS_FIELD_CMP_HINTS_TRY_GET_RETURNED.  Consumer-side cmp-hint

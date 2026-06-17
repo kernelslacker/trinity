@@ -569,6 +569,7 @@ struct kcov_child_local_stats {
 	unsigned long total_calls;
 	unsigned long remote_calls;
 	unsigned long total_pcs;
+	unsigned long total_warm_known_hits;
 	/* Number of syscalls since the last flush.  Drives the
 	 * flush-cadence heuristic the future kcov_child_flush_stats()
 	 * implementation will use; bumped alongside total_calls and
@@ -947,7 +948,10 @@ struct kcov_shared {
 	unsigned long per_syscall_warm_known_hits[MAX_NR_SYSCALL];
 	/* Sum of per_syscall_warm_known_hits[] across all nr.  Run-wide
 	 * counter for the periodic stats dump so the warm-known signal
-	 * is visible without iterating MAX_NR_SYSCALL slots. */
+	 * is visible without iterating MAX_NR_SYSCALL slots.  Write-dead:
+	 * migrated to the per-child stats_ring drain into
+	 * parent_stats.total_warm_known_hits; the field is retained so
+	 * the shared-mapping ABI does not shift. */
 	unsigned long total_warm_known_hits;
 	/* Per-syscall split of kcov_collect() activity by collection mode.
 	 * A remote-sampled syscall lands in a DIFFERENT mode (the kernel

@@ -7503,8 +7503,12 @@ static void dump_stats_kcov_block(void)
 			stat_row("kcov_coverage", "cmp_hints_save_reject_cap", kc_cmp_save_reject_cap);
 
 		{
-			unsigned long warm_known = __atomic_load_n(
-				&kcov_shm->total_warm_known_hits, __ATOMIC_RELAXED);
+			/* total_warm_known_hits migrated off the kcov_shm
+			 * atomic onto the per-child staged counter drained
+			 * into parent_stats; the shm field is write-dead but
+			 * kept for shared-mapping ABI stability.  See
+			 * stats_ring.h. */
+			unsigned long warm_known = parent_stats.total_warm_known_hits;
 			if (warm_known > 0)
 				stat_row("kcov_coverage", "warm_known_hits", warm_known);
 		}
