@@ -319,6 +319,7 @@ struct syscallentry syscall_lsm_list_modules = {
 	.name = "lsm_list_modules",
 	.num_args = 3,
 	.argname = { [0] = "ids", [1] = "size", [2] = "flags" },
+	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_ADDRESS },
 	.sanitise = sanitise_lsm_list_modules,
 	.post = post_lsm_list_modules,
 	.group = GROUP_PROCESS,
