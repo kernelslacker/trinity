@@ -278,9 +278,11 @@ int kcov_cmp_diag_format(char *buf, size_t bufsz, enum kcov_cmp_diag_part part)
  * sufficient -- the ring is single-producer with the owning child as
  * the sole writer, and no other context mutates these slots.
  *
- * Used only by the one-shot first-EBADF latch in kcov_enable_trace
- * to root-cause WHICH fuzzed syscall plausibly aliased the kcov fd
- * the EBADF was observed on -- it is NOT a hot-path helper.
+ * Used only by the one-shot first-EBADF latch (kcov_latch_first_ebadf),
+ * which fires from both PC-enable EBADF arms -- kcov_enable_trace and
+ * kcov_enable_remote's PC fallback -- to root-cause WHICH fuzzed syscall
+ * plausibly aliased the kcov fd the EBADF was observed on.  It is NOT
+ * a hot-path helper.
  */
 static const struct chronicle_slot *
 kcov_find_last_fd_mut_slot(struct childdata *c)
@@ -1179,6 +1181,86 @@ static bool kcov_recover_fd(struct kcov_child *kc, bool is_cmp)
 	return true;
 }
 
+/*
+ * One-shot snapshot of the in-flight context the first time any child
+ * observes EBADF from a PC-enable ioctl.  CAS-from-zero on
+ * first_ebadf_op_nr is the gate -- subsequent failures (from this
+ * caller OR the remote-fallback caller) see a non-zero slot and skip
+ * the stores below, so the captured fields stay consistent w.r.t.
+ * each other and the latch fires at most once across both PC-enable
+ * arms.  op_nr + 1 offsets the empty-slot sentinel (0) from the
+ * legitimate "EBADF on the very first syscall" reading.
+ */
+static void kcov_latch_first_ebadf(struct kcov_child *kc, struct childdata *c)
+{
+	unsigned long op_nr = (c != NULL) ? c->op_nr + 1 : 1;
+	unsigned long expected = 0;
+
+	if (!__atomic_compare_exchange_n(
+			&kcov_shm->pc_diag.first_ebadf_op_nr,
+			&expected, op_nr, false,
+			__ATOMIC_RELAXED, __ATOMIC_RELAXED))
+		return;
+
+	{
+		const struct chronicle_slot *fdm =
+			kcov_find_last_fd_mut_slot(c);
+		unsigned int last_fd_mut_nr =
+			(fdm != NULL) ? fdm->nr : 0;
+		unsigned char protected_touched = (fdm != NULL &&
+			kcov_chronicle_slot_touched_protected(fdm))
+			? 1 : 0;
+		int fd_snapshot[KCOV_FIRST_EBADF_PROC_FD_MAX];
+		unsigned int snap_count =
+			kcov_snapshot_proc_self_fd(fd_snapshot,
+				KCOV_FIRST_EBADF_PROC_FD_MAX);
+		unsigned int i;
+
+		__atomic_store_n(
+			&kcov_shm->pc_diag.first_ebadf_pid,
+			(unsigned long) mypid(),
+			__ATOMIC_RELAXED);
+		__atomic_store_n(
+			&kcov_shm->pc_diag.first_ebadf_syscall_nr,
+			(c != NULL) ? c->syscall.nr : 0,
+			__ATOMIC_RELAXED);
+		__atomic_store_n(
+			&kcov_shm->pc_diag.first_ebadf_fd_value,
+			kc->fd, __ATOMIC_RELAXED);
+		/* Per-child kcov-collect epoch so the dump
+		 * pins the snapshot to a specific generation
+		 * window -- a slot that lived through N
+		 * kcov_collect() bumps before its kcov fd
+		 * vanished reads N here, isolating the "fd
+		 * died on the very first call" shape from
+		 * the late-life shape. */
+		__atomic_store_n(
+			&kcov_shm->pc_diag.first_ebadf_generation,
+			kc->current_generation, __ATOMIC_RELAXED);
+		__atomic_store_n(
+			&kcov_shm->pc_diag.first_ebadf_last_fd_mut_syscall_nr,
+			last_fd_mut_nr, __ATOMIC_RELAXED);
+		__atomic_store_n(
+			&kcov_shm->pc_diag.first_ebadf_protected_touched,
+			protected_touched, __ATOMIC_RELAXED);
+		for (i = 0; i < snap_count; i++)
+			__atomic_store_n(
+				&kcov_shm->pc_diag.first_ebadf_proc_fds[i],
+				fd_snapshot[i],
+				__ATOMIC_RELAXED);
+		/* Publish proc_fd_count last so a reader
+		 * that observes a non-zero count is
+		 * guaranteed the corresponding fd entries
+		 * are visible (relaxed matches the rest of
+		 * the latch -- the dump reader runs long
+		 * after the CAS winner has retired). */
+		__atomic_store_n(
+			&kcov_shm->pc_diag.first_ebadf_proc_fd_count,
+			(unsigned char) snap_count,
+			__ATOMIC_RELAXED);
+	}
+}
+
 void kcov_enable_trace(struct kcov_child *kc)
 {
 	unsigned int retries = 0;
@@ -1199,79 +1281,8 @@ void kcov_enable_trace(struct kcov_child *kc)
 		kcov_diag_record(
 			&kcov_shm->pc_diag.pc_enable_errno,
 			&kcov_shm->pc_diag.pc_enable_count, errno);
-		/* On the very first EBADF observed by any child, snapshot
-		 * which fuzzed syscall was in flight (or had just retired)
-		 * and what kc->fd held.  CAS-from-zero on first_ebadf_op_nr
-		 * is the gate -- subsequent failures see a non-zero slot
-		 * and skip the four stores below, so the four fields stay
-		 * consistent w.r.t. each other.  op_nr + 1 offsets the
-		 * empty-slot sentinel (0) from the legitimate "EBADF on the
-		 * very first syscall" reading. */
 		if (errno == EBADF) {
-			struct childdata *c = this_child();
-			unsigned long op_nr = (c != NULL) ? c->op_nr + 1 : 1;
-			unsigned long expected = 0;
-
-			if (__atomic_compare_exchange_n(
-					&kcov_shm->pc_diag.first_ebadf_op_nr,
-					&expected, op_nr, false,
-					__ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
-				const struct chronicle_slot *fdm =
-					kcov_find_last_fd_mut_slot(c);
-				unsigned int last_fd_mut_nr =
-					(fdm != NULL) ? fdm->nr : 0;
-				unsigned char protected_touched = (fdm != NULL &&
-					kcov_chronicle_slot_touched_protected(fdm))
-					? 1 : 0;
-				int fd_snapshot[KCOV_FIRST_EBADF_PROC_FD_MAX];
-				unsigned int snap_count =
-					kcov_snapshot_proc_self_fd(fd_snapshot,
-						KCOV_FIRST_EBADF_PROC_FD_MAX);
-				unsigned int i;
-
-				__atomic_store_n(
-					&kcov_shm->pc_diag.first_ebadf_pid,
-					(unsigned long) mypid(),
-					__ATOMIC_RELAXED);
-				__atomic_store_n(
-					&kcov_shm->pc_diag.first_ebadf_syscall_nr,
-					(c != NULL) ? c->syscall.nr : 0,
-					__ATOMIC_RELAXED);
-				__atomic_store_n(
-					&kcov_shm->pc_diag.first_ebadf_fd_value,
-					kc->fd, __ATOMIC_RELAXED);
-				/* Per-child kcov-collect epoch so the dump
-				 * pins the snapshot to a specific generation
-				 * window -- a slot that lived through N
-				 * kcov_collect() bumps before its kcov fd
-				 * vanished reads N here, isolating the "fd
-				 * died on the very first call" shape from
-				 * the late-life shape. */
-				__atomic_store_n(
-					&kcov_shm->pc_diag.first_ebadf_generation,
-					kc->current_generation, __ATOMIC_RELAXED);
-				__atomic_store_n(
-					&kcov_shm->pc_diag.first_ebadf_last_fd_mut_syscall_nr,
-					last_fd_mut_nr, __ATOMIC_RELAXED);
-				__atomic_store_n(
-					&kcov_shm->pc_diag.first_ebadf_protected_touched,
-					protected_touched, __ATOMIC_RELAXED);
-				for (i = 0; i < snap_count; i++)
-					__atomic_store_n(
-						&kcov_shm->pc_diag.first_ebadf_proc_fds[i],
-						fd_snapshot[i],
-						__ATOMIC_RELAXED);
-				/* Publish proc_fd_count last so a reader
-				 * that observes a non-zero count is
-				 * guaranteed the corresponding fd entries
-				 * are visible (relaxed matches the rest of
-				 * the latch -- the dump reader runs long
-				 * after the CAS winner has retired). */
-				__atomic_store_n(
-					&kcov_shm->pc_diag.first_ebadf_proc_fd_count,
-					(unsigned char) snap_count,
-					__ATOMIC_RELAXED);
-			}
+			kcov_latch_first_ebadf(kc, this_child());
 
 			/* Try to rebuild the vanished fd up to KCOV_-
 			 * RECOVERY_MAX times across this slot's lifetime.
@@ -1413,6 +1424,8 @@ void kcov_enable_remote(struct kcov_child *kc, unsigned int child_id)
 		 * here when EBADF strikes them too) own the fd-rebuild
 		 * budget. */
 		if (errno == EBADF) {
+			kcov_latch_first_ebadf(kc, this_child());
+
 			kc->recovery_attempts++;
 			if (kc->recovery_attempts <= KCOV_RECOVERY_MAX &&
 			    kcov_recover_fd(kc, false)) {
