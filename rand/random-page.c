@@ -134,6 +134,18 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 
 	case 6:
 		/* ascii representation of random numbers */
+		/*
+		 * Numeric-string path needs >=24 bytes of headroom (ptr+(len-23)
+		 * plus sprintf bursts up to 23 chars). The randrange=6 split at
+		 * the switch keeps len<24 out today, but guard locally so a
+		 * future refactor can't underflow len-23.
+		 */
+		if (len < 24) {
+			for (i = 0; i < len; i++)
+				ptr[i] = 32 + rnd_modulo_u32(0x7f - 32);
+			break;
+		}
+
 		separator = separators[rnd_modulo_u32(sizeof(separators))];
 
 		p = (char *) ptr;
