@@ -31,6 +31,9 @@ void mark_all_syscalls_active(void);
 void mark_all_syscalls_active_uniarch(void);
 void mark_all_syscalls_active_biarch(void);
 
+void activate_flagged_syscalls_uniarch(void);
+void activate_flagged_syscalls_biarch(void);
+
 void toggle_syscall(const char *arg, bool state);
 void toggle_syscall_biarch(const char *arg, bool state);
 void toggle_syscall_n(int calln, bool state, const char *arg, const char *arg_name);

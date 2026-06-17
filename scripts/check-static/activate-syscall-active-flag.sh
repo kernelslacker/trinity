@@ -64,6 +64,12 @@ while IFS= read -r srcfile; do
 		helper["setup_syscall_group_biarch"] = 1
 		helper["mark_all_syscalls_active_uniarch"] = 1
 		helper["mark_all_syscalls_active_biarch"] = 1
+		# Deferred-activation sweep for entries whose ACTIVE flag
+		# was set before create_shm() ran (today: `-c <syscall>`
+		# in parse_args).  The activate is gated on the flag the
+		# call already read; the pairing semantics hold.
+		helper["activate_flagged_syscalls_uniarch"] = 1
+		helper["activate_flagged_syscalls_biarch"] = 1
 
 		# Direct-call pattern.  The leading (^|[^A-Za-z0-9_])
 		# alternation acts as a portable word boundary so the

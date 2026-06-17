@@ -731,6 +731,18 @@ static void enable_random_syscalls(void)
 	}
 }
 
+/* Pick up syscalls flagged ACTIVE before create_shm() ran (the
+ * `-c <syscall>` handler in parse_args) and stamp them into the
+ * shm-backed active table.  Idempotent: activate_syscall_in_table()
+ * skips entries with entry->active_number != 0. */
+static void activate_flagged_syscalls(void)
+{
+	if (biarch == true)
+		activate_flagged_syscalls_biarch();
+	else
+		activate_flagged_syscalls_uniarch();
+}
+
 /* By default, all syscall entries will be disabled.
  * If we didn't pass -c, -x, -r, or -g then mark all syscalls active.
  */
@@ -752,6 +764,8 @@ static void decide_if_active(void)
 int munge_tables(void)
 {
 	decide_if_active();
+
+	activate_flagged_syscalls();
 
 	if (desired_group != GROUP_NONE) {
 		unsigned int ret;
