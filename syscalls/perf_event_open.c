@@ -450,22 +450,35 @@ static int scan_pmu_formats(int pmu_num, const char *dir_name)
 			dir_name, format_entry->d_name);
 		if (read_sysfs_value(temp_name, read_buf,
 				     sizeof(read_buf)) < 0)
-			continue;
+			goto drop_format;
 		result = sscanf(read_buf, "%" __stringify(BUFSIZ) "s",
 			format_value);
 		if (result != 1)
-			continue;
+			goto drop_format;
 		pmus[pmu_num].formats[format_num].value =
 			strdup(format_value);
 		if (!pmus[pmu_num].formats[format_num].value)
-			continue;
+			goto drop_format;
 
 		parse_format(format_value,
 			&pmus[pmu_num].formats[format_num].field,
 			&pmus[pmu_num].formats[format_num].mask);
 		format_num++;
+		continue;
+drop_format:
+		free((char *) pmus[pmu_num].formats[format_num].name);
+		pmus[pmu_num].formats[format_num].name = NULL;
+		free((char *) pmus[pmu_num].formats[format_num].value);
+		pmus[pmu_num].formats[format_num].value = NULL;
 	}
 	closedir(format_dir);
+	/*
+	 * Clamp to slots actually populated -- random_sysfs_config()
+	 * picks an index in [0, num_formats), and free_pmus() walks the
+	 * same range, so a stale upper count would surface zeroed slots
+	 * to the fuzzer and skip nothing on teardown.
+	 */
+	pmus[pmu_num].num_formats = format_num;
 	return 0;
 }
 
@@ -534,23 +547,36 @@ static int scan_pmu_generic_events(int pmu_num, const char *dir_name)
 			dir_name, event_entry->d_name);
 		if (read_sysfs_value(temp_name, read_buf,
 				     sizeof(read_buf)) < 0)
-			continue;
+			goto drop_generic;
 		result = sscanf(read_buf, "%" __stringify(BUFSIZ) "s",
 			event_value);
 		if (result != 1)
-			continue;
+			goto drop_generic;
 		pmus[pmu_num].generic_events[generic_num].value =
 			strdup(event_value);
 		if (!pmus[pmu_num].generic_events[generic_num].value)
-			continue;
+			goto drop_generic;
 
 		parse_generic(pmu_num, event_value,
 				&pmus[pmu_num].generic_events[generic_num].config,
 				&pmus[pmu_num].generic_events[generic_num].config1,
 				&pmus[pmu_num].generic_events[generic_num].config2);
 		generic_num++;
+		continue;
+drop_generic:
+		free((char *) pmus[pmu_num].generic_events[generic_num].name);
+		pmus[pmu_num].generic_events[generic_num].name = NULL;
+		free((char *) pmus[pmu_num].generic_events[generic_num].value);
+		pmus[pmu_num].generic_events[generic_num].value = NULL;
 	}
 	closedir(event_dir);
+	/*
+	 * Clamp to slots actually populated -- random_sysfs_config()
+	 * picks an index in [0, num_generic_events) and free_pmus()
+	 * walks the same range, so a stale upper count would expose
+	 * zeroed slots to the fuzzer and skip nothing on teardown.
+	 */
+	pmus[pmu_num].num_generic_events = generic_num;
 	return 0;
 }
 
