@@ -2873,6 +2873,15 @@ void child_process(struct childdata *child, int childno)
 out:
 	deferred_free_flush();
 	check_fd_leaks(child);
+	/* Drain any per-child kcov stats staged below the kcov_collect()
+	 * cadence threshold before tearing the kcov fd down -- otherwise a
+	 * child that exits / is killed / is recycled cold loses up to
+	 * KCOV_LOCAL_STATS_FLUSH_SYSCALLS worth of total_calls / remote_calls
+	 * / total_pcs.  kcov_cleanup_child() takes struct kcov_child * and
+	 * cannot reach child->local_stats, which is why the flush belongs
+	 * here on the full childdata.  The flush is gated per-field on
+	 * (delta > 0) so it is safe to call with nothing staged. */
+	kcov_child_flush_stats(child);
 	kcov_cleanup_child(&child->kcov);
 	inode_spewer_cleanup();
 	psp_key_rotate_cleanup_child();
