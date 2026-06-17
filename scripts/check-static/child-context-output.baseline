@@ -135,7 +135,6 @@ syscalls/getuid.c:59:post_getuid
 syscalls/getxattrat.c:137:post_getxattrat
 syscalls/getxattr.c:213:post_getxattr
 syscalls/getxattr.c:285:post_getxattr
-syscalls/init_module.c:158:post_init_module
 syscalls/inotify_add_watch.c:26:post_inotify_add_watch
 syscalls/ioprio_get.c:21:post_ioprio_get
 syscalls/io_setup.c:205:post_io_setup
