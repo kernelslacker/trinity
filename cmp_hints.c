@@ -1193,6 +1193,21 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 
 	pool = &cmp_hints_shm->pools[nr][do32 ? 1 : 0];
 
+	/* Mirror cmp_hints_try_get_ex()'s latched-corrupted skip: once
+	 * pool->corrupted is set, every bloom-miss this walk would stage
+	 * is dropped by pool_add_locked()/cmp_hints_flush_pending() with
+	 * zero state mutation, so the per-record loop and the per-batch
+	 * lock-acquire path below are pure overhead on the hot cmp path.
+	 * Steady-state cost on a latched pool is one relaxed load --
+	 * cmp_hints_pool_corrupted()'s fast path returns on the latch
+	 * read before touching observed_count. */
+	{
+		unsigned int pool_count =
+			__atomic_load_n(&pool->count, __ATOMIC_RELAXED);
+		if (cmp_hints_pool_corrupted(pool, pool_count))
+			return;
+	}
+
 	count = __atomic_load_n(&trace_buf[0], __ATOMIC_RELAXED);
 
 	/* Buffer is the per-child KCOV_TRACE_CMP mmap, sized off
