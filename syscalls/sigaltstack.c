@@ -281,7 +281,7 @@ struct syscallentry syscall_sigaltstack = {
 	.name = "sigaltstack",
 	.group = GROUP_SIGNAL,
 	.num_args = 2,
-	.argtype = { [1] = ARG_ADDRESS },
+	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_ADDRESS },
 	.argname = { [0] = "uss", [1] = "uoss" },
 	.sanitise = sanitise_sigaltstack,
 #ifdef HAVE_SYS_SIGALTSTACK
