@@ -2141,6 +2141,7 @@ void init_altop_dispatch(void)
 	size_t off = 0;
 	unsigned int i;
 	unsigned int count = 0;
+	bool truncated = false;
 
 	for (i = 0; i < ARRAY_SIZE(pick_op_type_table); i++) {
 		enum child_op_type op = pick_op_type_table[i];
@@ -2153,11 +2154,23 @@ void init_altop_dispatch(void)
 
 		enabled_altops[count++] = op;
 
+		if (truncated)
+			continue;
+
 		n = snprintf(buf + off, sizeof(buf) - off, "%s%s",
 			off ? ", " : "", alt_op_name(op));
-		if (n > 0 && (size_t)n < sizeof(buf) - off)
-			off += (size_t)n;
+		if (n <= 0 || (size_t)n >= sizeof(buf) - off) {
+			/* Drop the partial write and stop appending --
+			 * keep walking the table so enabled_altops[]
+			 * still gets every non-dormant op. */
+			buf[off] = '\0';
+			truncated = true;
+			continue;
+		}
+		off += (size_t)n;
 	}
+	if (truncated && off + sizeof(", ...") <= sizeof(buf))
+		(void) snprintf(buf + off, sizeof(buf) - off, ", ...");
 	enabled_altop_count = count;
 
 	if (count == 0) {
