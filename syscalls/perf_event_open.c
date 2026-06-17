@@ -1649,15 +1649,18 @@ static void create_random_event(struct perf_event_attr *attr)
 #ifndef PERF_ATTR_SIZE_VER8
 #define PERF_ATTR_SIZE_VER8	136
 #endif
+#ifndef PERF_ATTR_SIZE_VER9
+#define PERF_ATTR_SIZE_VER9	144
+#endif
 
 /*
  * Pre-ksize ABI floors for the csfu UNDERSIZE bucket.  The kernel
  * accepts a perf_event_open call whose attr->size matches any prior
  * ABI version and zero-pads the remainder.  build_csfu_struct()
- * draws uniformly from this pool for UNDERSIZE; PERF_ATTR_SIZE_VER8
+ * draws uniformly from this pool for UNDERSIZE; PERF_ATTR_SIZE_VER9
  * equals sizeof(struct perf_event_attr) on a current kernel and is
  * kept in the pool so the table stays self-documenting and remains
- * correct once the kernel grows a VER9.
+ * correct once the kernel grows a further ABI version.
  */
 static const size_t perf_event_attr_known_sizes[] = {
 	PERF_ATTR_SIZE_VER0,
@@ -1669,6 +1672,7 @@ static const size_t perf_event_attr_known_sizes[] = {
 	PERF_ATTR_SIZE_VER6,
 	PERF_ATTR_SIZE_VER7,
 	PERF_ATTR_SIZE_VER8,
+	PERF_ATTR_SIZE_VER9,
 };
 
 static const struct csfu_desc desc_perf_event_attr = {
