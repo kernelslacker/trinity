@@ -766,9 +766,32 @@ static unsigned long gen_arg_pid(struct syscallentry *entry __unused__,
 }
 
 static unsigned long gen_arg_key_serial(struct syscallentry *entry __unused__,
-					struct syscallrecord *rec __unused__,
+					struct syscallrecord *rec,
 					unsigned int argnum __unused__)
 {
+	/* Typed prop_ring consumer.  Sibling to the gen_undefined_arg /
+	 * handle_arg_op untyped consumers, but kind-disciplined: only a
+	 * SCALAR_KEY_SERIAL slot (or, with low probability, any slot
+	 * via the chaos escape hatch inside prop_ring_try_get_kind)
+	 * commits, so the kernel keyring API path gets fed recent
+	 * keyring serials trinity actually received instead of either a
+	 * raw random or a stale pool draw.  A/B-gated on
+	 * prop_ring_typed_arm_b: Arm A skips the pull so the per-call
+	 * RNG sequence stays byte-identical to the pre-typing baseline,
+	 * Arm B attempts it after first roll-of-eligibility (the per-
+	 * call probability gate lives inside prop_ring_try_get_kind so
+	 * the existing case mix below stays untouched on an empty or
+	 * stale ring). */
+	{
+		struct childdata *child = this_child();
+		unsigned long val;
+
+		if (child != NULL && child->prop_ring_typed_arm_b &&
+		    prop_ring_try_get_kind(child, rec, SCALAR_KEY_SERIAL,
+					   &val))
+			return val;
+	}
+
 	if (ONE_IN(8))
 		return (unsigned long) (int32_t) rand32();
 	return (unsigned long) get_random_key_serial();

@@ -854,6 +854,24 @@ struct childdata {
 	 * this flag directly. */
 	bool mut_structured_arm_b;
 
+	/* A/B-comparison stamp for the typed prop_ring consumer rows at the
+	 * gen_arg_* sites in generate-args.c.  Arm A (false) skips the
+	 * typed pull entirely, leaving the existing kind-agnostic
+	 * prop_ring_try_get() callsites in gen_undefined_arg /
+	 * handle_arg_op as the only consumers and the per-call RNG
+	 * sequence byte-identical to the pre-typing baseline.  Arm B
+	 * (true) calls prop_ring_try_get_kind() at the typed callsites
+	 * (currently gen_arg_key_serial) and bumps the per-kind consume
+	 * counters in kcov_shm so the operator can read the typed-pull
+	 * fire rate against the population split.  Stamped once in
+	 * init_child_runtime_config() at ONE_IN(2), independent of all
+	 * other A/B axes so they can cross without confounding each
+	 * other's cohort comparisons, and cleared in clean_childdata so
+	 * a fresh slot occupant restamps.  Owner-only writes from inside
+	 * the child; the parent reads the kcov_shm-resident counters the
+	 * callsite bumps, not this flag directly. */
+	bool prop_ring_typed_arm_b;
+
 	/* SHADOW per-entry feedback scoring scratch ([11-feedback-loop]
 	 * PHASE 4).  cmp_hints_try_get_ex() pushes one entry per successful
 	 * pull (capped at CMP_HINT_CONSUMED_STASH_MAX; overflow drops the
