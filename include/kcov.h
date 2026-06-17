@@ -955,6 +955,19 @@ struct kcov_shared {
 	 * compact view that pairs with the coverage tables above and lives
 	 * in the same dump section. */
 	unsigned long per_syscall_errno[MAX_NR_SYSCALL][ERRNO_BUCKET_NR];
+	/* Per-syscall errno-bucket "seen at least once in this run" bitmask.
+	 * Bit `bucket` set iff a call with errno bucket `bucket` has been
+	 * classified for syscall slot nr.  Set via __atomic_fetch_or by the
+	 * errno-gradient-save trigger in handle_syscall_ret() to detect
+	 * "first non-EFAULT bucket per syscall per window" events; the EFAULT
+	 * bit is deliberately never set (the trigger excludes EFAULT, the
+	 * userspace-pointer noise floor, so its seen-state is uninteresting).
+	 * SHADOW-ONLY: no live selection or scoring code consumes this; only
+	 * the errno-gradient save predicate reads it.  RELAXED atomics --
+	 * concurrent writers across children can race a bit-set with no harm
+	 * (the loser's first-seen test fails, the winner's succeeds; either
+	 * way the bit lands set). */
+	unsigned int errno_bucket_seen[MAX_NR_SYSCALL];
 	/* Sibling of last_edge_at: stamps total_calls at the moment the
 	 * most recent EFAULT return was observed for this syscall slot.
 	 * Lets a future picker pass bias selection away from syscalls

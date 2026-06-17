@@ -176,6 +176,16 @@ extern char *warm_start_path;
 extern bool no_kcov_warm_start;
 extern bool no_cmp_hints_warm_start;
 
+/* errno-gradient-save A/B flag: when true, the errno-gradient
+ * trigger in handle_syscall_ret() admits CORPUS_SAVE_REASON_ERRNO
+ * entries to the minicorpus ring (live distribution change).  Default
+ * false: the trigger still bumps the errno_grad_save_would_save shadow
+ * counter so the would-be-save volume is measurable BEFORE the live
+ * path is flipped on, but the save call is skipped and the corpus
+ * admission distribution stays byte-identical to the pre-feature
+ * baseline.  Operator opt-in via --corpus-save-errno-grad-live. */
+extern bool corpus_save_errno_grad_live;
+
 /* self-cgroup containment knobs (see self_cgroup.c).  NULL string args
  * mean "use the default" (60%/50%/20% of MemTotal).  no_cgroup skips
  * the sub-cgroup creation entirely. */

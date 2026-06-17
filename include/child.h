@@ -760,6 +760,17 @@ struct childdata {
 	 * of the corpus entry being replayed.  Owner-only writes from inside
 	 * the child; no cross-process coherence needed. */
 	bool replay_rq_sourced;
+	/* Replay-side companion to corpus_entry::errno_sourced for
+	 * errno-gradient-save.  Same lifecycle as replay_rq_sourced:
+	 * set by minicorpus_replay() from the picked snapshot, cleared by
+	 * minicorpus_mut_attrib_commit().  Consumed by
+	 * frontier_record_new_edge() to credit later PC-edge wins from
+	 * errno-sourced corpus saves to
+	 * errno_sourced_pcedge_wins_per_syscall[] -- the conversion-rate
+	 * counter that pairs with errno_sourced_saves_per_syscall[].  Owner-
+	 * only writes from inside the child; no cross-process coherence
+	 * needed. */
+	bool replay_errno_sourced;
 	/* Sliding-window cap on greedy re-exec dispatches.  The design caps
 	 * the per-child rate at STRATEGY_WINDOW / 4 (~25% of the bandit's
 	 * rotation budget) so a hot attributing syscall can't burn the
