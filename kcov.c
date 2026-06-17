@@ -118,15 +118,21 @@ enum childop_kcov_attribution_mode childop_kcov_attr_mode =
 enum kcov_transition_coverage_mode kcov_transition_coverage_mode =
 	KCOV_TRANSITION_COVERAGE_SHADOW;
 
-/* Default is SHADOW_ONLY: compute the per-strategy transition reward
- * and bump the attribution counters in shm->stats so the operator can
- * read the divergence, but leave live picker behaviour byte-identical
- * to the pre-knob baseline.  Promoting to COMBINED is an opt-in A/B
- * the operator runs on the fuzz box; the default keeps this commit
- * behaviour-preserving on land.  See the kcov_transition_reward_mode
- * enum in include/kcov.h for the full contract. */
+/* Default is COMBINED: feed the capped transition delta into
+ * frontier_cold_weight()'s blend, bandit_record_pull()'s per-arm
+ * reward total, and the frontier-edge ring via frontier_record_
+ * transition_edge() so syscalls that produce only transitions (a new
+ * ordering through warm-known code, no fresh PC bits) still earn live
+ * frontier credit.  The shadow-mode A/B prior to this default flip
+ * showed the blend weighting frontier-transition syscalls upward an
+ * order of magnitude more often than downward (frontier_blend_new_
+ * higher vs frontier_blend_new_lower in shm->stats), which is the
+ * divergence gate justifying the live promotion.  --kcov-transition-
+ * reward=shadow-only and =off remain as rollback paths.  See the
+ * kcov_transition_reward_mode enum in include/kcov.h for the full
+ * contract. */
 enum kcov_transition_reward_mode kcov_transition_reward_mode =
-	KCOV_TRANSITION_REWARD_SHADOW_ONLY;
+	KCOV_TRANSITION_REWARD_COMBINED;
 
 /*
  * Record a KCOV PC or remote enable/disable failure into the parent-

@@ -1943,8 +1943,8 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	 * bits still earn frontier credit -- this is the whole point of
 	 * promoting the signal, since the empirically-observed regime is
 	 * one where transition discovery is healthy while PC-edge
-	 * discovery has plateaued.  In SHADOW_ONLY (the default) the ring
-	 * stays driven only by frontier_record_new_edge() so the
+	 * discovery has plateaued.  Under SHADOW_ONLY (the rollback path)
+	 * the ring stays driven only by frontier_record_new_edge() so the
 	 * silent-regime picker distribution remains byte-identical to the
 	 * pre-knob baseline.  Same is_explorer + nr-bounds guards as the
 	 * attribution block above. */

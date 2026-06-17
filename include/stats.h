@@ -3156,7 +3156,7 @@ struct stats_s {
 	 *
 	 *   kcov_transition_reward_mode != KCOV_TRANSITION_REWARD_OFF
 	 *       OFF disables the reward path entirely (zero compute, zero
-	 *       accounting).  SHADOW_ONLY (default) and COMBINED both bump
+	 *       accounting).  COMBINED (default) and SHADOW_ONLY both bump
 	 *       these counters so the operator can read the per-strategy
 	 *       transition divergence regardless of whether live selection
 	 *       is consuming the signal.

@@ -127,18 +127,19 @@ extern enum kcov_transition_coverage_mode kcov_transition_coverage_mode;
  *                  pre-transition formula (PC-edge + bucket-bits +
  *                  distinct-PCs only), and bandit_record_pull adds no
  *                  transition term.
- *   SHADOW_ONLY  - default.  Compute the transition-reward terms and
- *                  bump the per-strategy attribution counters in
- *                  shm->stats so the operator can read the divergence,
- *                  but DO NOT change live picker behaviour:
- *                  frontier_cold_weight() returns the pre-transition
- *                  weight, bandit_record_pull() drops the transition
- *                  term from the reward total, and the frontier-edge
- *                  ring is bumped only by the PC-edge hook.  Landing
- *                  this default leaves selection byte-identical to the
- *                  pre-knob baseline.
- *   COMBINED     - feed the capped transition reward into live
- *                  selection: frontier_cold_weight() returns the
+ *   SHADOW_ONLY  - compute the transition-reward terms and bump the
+ *                  per-strategy attribution counters in shm->stats so
+ *                  the operator can read the divergence, but DO NOT
+ *                  change live picker behaviour: frontier_cold_weight()
+ *                  returns the pre-transition weight, bandit_record_
+ *                  pull() drops the transition term from the reward
+ *                  total, and the frontier-edge ring is bumped only by
+ *                  the PC-edge hook.  Selecting this mode leaves
+ *                  selection byte-identical to the pre-knob baseline;
+ *                  kept as a rollback path now that COMBINED is the
+ *                  default.
+ *   COMBINED     - default.  Feed the capped transition reward into
+ *                  live selection: frontier_cold_weight() returns the
  *                  transition-blended weight, bandit_record_pull()
  *                  folds the transition window delta into the per-arm
  *                  reward total, and the transition-discovery hook
