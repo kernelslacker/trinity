@@ -193,7 +193,7 @@ static void post_io_submit(struct syscallrecord *rec)
 struct syscallentry syscall_io_submit = {
 	.name = "io_submit",
 	.num_args = 3,
-	.argtype = { [0] = ARG_AIO_CTX, [1] = ARG_LEN },
+	.argtype = { [0] = ARG_AIO_CTX, [1] = ARG_LEN, [2] = ARG_ADDRESS },
 	.argname = { [0] = "ctx_id", [1] = "nr", [2] = "iocbpp" },
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
