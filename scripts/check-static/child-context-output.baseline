@@ -175,7 +175,6 @@ syscalls/lsm_list_modules.c:233:post_lsm_list_modules
 syscalls/lsm_list_modules.c:298:post_lsm_list_modules
 syscalls/lsm_list_modules.c:302:post_lsm_list_modules
 syscalls/map_shadow_stack.c:45:post_map_shadow_stack
-syscalls/mincore.c:103:post_mincore
 syscalls/mmap.c:221:post_mmap
 syscalls/mmap.c:415:post_mmap
 syscalls/move_pages.c:169:post_move_pages
