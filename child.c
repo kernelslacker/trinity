@@ -528,6 +528,11 @@ void clean_childdata(struct childdata *child)
 	 * occupant defaults to Arm A (no shadow draw, mutate_arg RNG byte-
 	 * identical to pre-shadow control) until the stamp lands. */
 	child->mut_structured_arm_b = false;
+	/* Typed prop_ring consumer A/B stamp -- (re)decided per-child in
+	 * init_child_runtime_config below; zero here so the fresh occupant
+	 * defaults to Arm A (no typed pull at the gen_arg_* callsites, RNG
+	 * byte-identical to pre-typing baseline) until the stamp lands. */
+	child->prop_ring_typed_arm_b = false;
 	/* SHADOW cmp-hint feedback scoring stash starts empty for a fresh
 	 * child occupant ([11-feedback-loop]); generate_syscall_args also
 	 * resets at every call boundary, but a fresh-fork clear here means
@@ -1164,6 +1169,24 @@ static void init_child_runtime_config(struct childdata *child, int childno)
 					   1U, __ATOMIC_RELAXED);
 		else
 			__atomic_fetch_add(&minicorpus_shm->mut_structured_arm_a_children,
+					   1U, __ATOMIC_RELAXED);
+	}
+
+	/* A/B-comparison stamp for the typed prop_ring consumer rows at
+	 * the gen_arg_* callsites.  Independent of all preceding A/B
+	 * stamps so the axes can cross without confounding each other's
+	 * cohort comparisons.  Stamped unconditionally (the gen_arg_*
+	 * callsites fire on any syscall whose argtype matches regardless
+	 * of KCOV mode -- gating the stamp on the mode would shrink the
+	 * sample without any matching reduction in the signal we're
+	 * measuring). */
+	child->prop_ring_typed_arm_b = ONE_IN(2);
+	if (kcov_shm != NULL) {
+		if (child->prop_ring_typed_arm_b)
+			__atomic_fetch_add(&kcov_shm->prop_ring_typed_arm_b_children,
+					   1U, __ATOMIC_RELAXED);
+		else
+			__atomic_fetch_add(&kcov_shm->prop_ring_typed_arm_a_children,
 					   1U, __ATOMIC_RELAXED);
 	}
 

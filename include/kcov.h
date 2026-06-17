@@ -3,6 +3,7 @@
 #include <time.h>
 
 #include "exit.h"	/* NUM_EXIT_REASONS */
+#include "prop_ring.h"	/* enum scalar_kind, SCALAR_NR_KINDS */
 #include "types.h"
 #include "syscall.h"	/* MAX_NR_SYSCALL */
 
@@ -820,6 +821,33 @@ struct kcov_shared {
 	unsigned int  prop_ring_argop_arm_a_children;
 	unsigned int  prop_ring_argop_arm_b_children;
 	unsigned long prop_ring_argop_arm_b_fires;
+	/* A/B cohort split + per-kind consume counters for the typed
+	 * prop_ring consumer rows at the gen_arg_* callsites
+	 * (prop_ring_typed_arm_b).  prop_ring_typed_arm_{a,b}_children
+	 * is bumped once per child in init_child_runtime_config so the
+	 * operator can normalise the per-kind fire rate against the
+	 * realised population split (the ONE_IN(2) stamp has fleet-scale
+	 * variance and a small fleet can land lopsided).  Arm A never
+	 * pulls at these callsites so the symmetric arm_a fire counter
+	 * does not exist by design.
+	 *
+	 * prop_ring_kind_consumed[K] counts Arm B same-kind pulls that
+	 * returned a recent kernel-handed-back scalar tagged K from the
+	 * ring; slot 0 (SCALAR_UNTYPED) stays at zero by construction
+	 * since the typed entry point rejects it on the caller side.
+	 * prop_ring_kind_escape_fires counts the chaos-escape lane
+	 * (a typed callsite that took an any-kind slot via the 1-in-N
+	 * escape hatch), kept out of the per-kind buckets so the kind-
+	 * discipline signal is not polluted by escape-hatch traffic.
+	 * Sum across non-zero buckets + escape_fires is the total Arm B
+	 * typed-pull commit count; it is NOT mirrored into
+	 * propagation_injected because that counter is the
+	 * gen_undefined_arg / handle_arg_op (untyped consumer) total
+	 * and the typed sites are a separate channel by design. */
+	unsigned int  prop_ring_typed_arm_a_children;
+	unsigned int  prop_ring_typed_arm_b_children;
+	unsigned long prop_ring_kind_consumed[SCALAR_NR_KINDS];
+	unsigned long prop_ring_kind_escape_fires;
 	/* A/B cohort split for the frontier_cold_weight blend promotion
 	 * stamp (frontier_blend_arm_b).  frontier_blend_arm_{a,b}_children
 	 * is bumped once per child in init_child_runtime_config so the

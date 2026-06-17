@@ -30,6 +30,7 @@
 #include "params.h"
 #include "pids.h"
 #include "pre_crash_ring.h"
+#include "prop_ring.h"
 #include "random.h"
 #include "results.h"
 #include "sanitise.h"
@@ -800,7 +801,7 @@ static void register_returned_fd(const struct syscallentry *entry,
 		 * register_key_serial requires, and the in-line filters
 		 * inside prop_ring_push_scalar still reject pointer-shaped
 		 * and fd-aliased values. */
-		prop_ring_push_scalar(rec->nr, s);
+		prop_ring_push_scalar(rec->nr, s, SCALAR_KEY_SERIAL);
 		return;
 	}
 

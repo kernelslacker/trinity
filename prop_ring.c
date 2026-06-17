@@ -19,6 +19,7 @@
 #include <string.h>
 
 #include "child.h"
+#include "kcov.h"
 #include "objects.h"
 #include "prop_ring.h"
 #include "rnd.h"
@@ -50,6 +51,15 @@
  * raw-random generation. */
 #define PROP_RING_RECENCY_PROBE_TRIES	4
 
+/* Inverse probability of the typed-consumer escape hatch.  When a
+ * typed callsite asks for kind K but no fresh kind-K slot is found
+ * (or even before the same-kind walk), with ~1-in-N we accept any
+ * slot regardless of tag.  Keeps a chaos contribution alive when the
+ * same-kind population is empty / stale, and lets a SCALAR_UNTYPED
+ * value occasionally land in a typed arg slot the way it would today
+ * under the kind-agnostic prop_ring_try_get(). */
+#define PROP_RING_KIND_ESCAPE_MOD	8
+
 static unsigned int ring_prev(unsigned int head)
 {
 	return (head - 1) & (CHILD_PROP_RING_SIZE - 1);
@@ -58,13 +68,15 @@ static unsigned int ring_prev(unsigned int head)
 /*
  * Shared filter + dedup + slot-fill body for the public push variants.
  * Returns true iff a new slot was published.  Callers gate the OBJ_NONE
- * firewall (or deliberately bypass it for typed scalar returns that
- * have their own external registrar) before reaching here.
+ * check (or deliberately bypass it for typed scalar returns that have
+ * their own external registrar) before reaching here, and pass the
+ * KIND tag the published slot should carry.
  */
 static bool prop_ring_push_filtered(struct childdata *child,
 				    unsigned int src_nr,
 				    bool do32bit,
-				    unsigned long value)
+				    unsigned long value,
+				    enum scalar_kind kind)
 {
 	struct child_prop_ring *ring;
 	struct prop_slot *prev;
@@ -96,18 +108,23 @@ static bool prop_ring_push_filtered(struct childdata *child,
 
 	/* Dedup against the most recent slot so an open/close loop
 	 * that keeps returning the same fd doesn't fill the whole ring
-	 * with one value. */
+	 * with one value.  Kind is part of the dedup key so a value
+	 * pushed first untyped and then typed (or vice-versa) is not
+	 * folded into one slot -- the typed consumer needs to find a
+	 * tagged copy. */
 	prev = &ring->slots[ring_prev(ring->head)];
 	if (prev->valid &&
 	    prev->value == value &&
 	    prev->src_nr == src_nr &&
-	    prev->do32bit == do32bit)
+	    prev->do32bit == do32bit &&
+	    prev->kind == kind)
 		return false;
 
 	slot = &ring->slots[ring->head & (CHILD_PROP_RING_SIZE - 1)];
 	slot->value = value;
 	slot->captured_at = child->op_nr;
 	slot->src_nr = src_nr;
+	slot->kind = kind;
 	slot->do32bit = do32bit;
 	slot->valid = true;
 	ring->head++;
@@ -123,33 +140,43 @@ void prop_ring_push(struct childdata *child,
 
 	/* Typed returns own their own propagation paths (fd pool, key
 	 * serial registrar, pid registrar).  Only general scalars land
-	 * here. */
+	 * here, tagged SCALAR_UNTYPED so the kind-aware consumers can
+	 * distinguish them from typed cookies that arrived via
+	 * prop_ring_push_scalar(). */
 	if (entry->ret_objtype != OBJ_NONE)
 		return;
 
-	prop_ring_push_filtered(child, rec->nr, rec->do32bit, rec->retval);
+	prop_ring_push_filtered(child, rec->nr, rec->do32bit,
+				rec->retval, SCALAR_UNTYPED);
 }
 
 /*
  * Variant for typed scalar returns whose own registrar (key serial,
  * etc.) has already accepted the value and we additionally want it
- * mirrored into the propagation ring so untyped consumers in
- * gen_undefined_arg can replay it.  Bypasses the OBJ_NONE firewall
- * by design -- the caller must guarantee the value is a non-fd /
- * non-pid scalar, since the in-line pointer-shape / fd-alias filters
- * cannot tell typed integer cookies apart from raw scalars.  The
- * OBJ_NONE firewall on prop_ring_push() above stays intact so the
- * fd/pid leakage vector it was added to close stays closed.
+ * mirrored into the propagation ring so consumers can replay it.
+ * Bypasses the OBJ_NONE gate by design -- the caller must guarantee
+ * the value is a non-fd / non-pid scalar, since the in-line pointer-
+ * shape / fd-alias filters cannot tell typed integer cookies apart
+ * from raw scalars.  The OBJ_NONE gate on prop_ring_push() above
+ * stays intact so the fd/pid leakage vector it was added to close
+ * stays closed.  The slot lands tagged with KIND so kind-aware
+ * consumers in generate-args.c can prefer same-type cookies.
  */
-void prop_ring_push_scalar(unsigned int nr, long scalar_val)
+void prop_ring_push_scalar(unsigned int nr, long scalar_val,
+			   enum scalar_kind kind)
 {
 	struct childdata *child = this_child();
 
 	if (child == NULL)
 		return;
+	/* Defensive: a SCALAR_UNTYPED tag here would silently fold the
+	 * typed push into the OBJ_NONE pool the consumer is trying to
+	 * keep separate.  Reject rather than misclassify. */
+	if (kind == SCALAR_UNTYPED || kind >= SCALAR_NR_KINDS)
+		return;
 
 	if (prop_ring_push_filtered(child, nr, false,
-				    (unsigned long) scalar_val))
+				    (unsigned long) scalar_val, kind))
 		__atomic_add_fetch(&shm->stats.propagation_injected_key_scalar,
 				   1, __ATOMIC_RELAXED);
 }
@@ -192,6 +219,75 @@ bool prop_ring_try_get(struct childdata *child,
 
 		*out = slot->value;
 		return true;
+	}
+
+	return false;
+}
+
+bool prop_ring_try_get_kind(struct childdata *child,
+			    const struct syscallrecord *rec,
+			    enum scalar_kind kind,
+			    unsigned long *out)
+{
+	struct child_prop_ring *ring;
+	unsigned int populated;
+	unsigned int tries;
+	unsigned long now;
+	bool escape_hatch;
+
+	if (child == NULL || rec == NULL || out == NULL)
+		return false;
+	if (kind == SCALAR_UNTYPED || kind >= SCALAR_NR_KINDS)
+		return false;
+
+	if (rnd_modulo_u32(PROP_RING_INJECT_MOD) != 0)
+		return false;
+
+	ring = &child->prop_ring;
+	populated = ring->head < CHILD_PROP_RING_SIZE
+		    ? ring->head : CHILD_PROP_RING_SIZE;
+	if (populated == 0)
+		return false;
+
+	/* Roll the escape hatch up-front so the per-call RNG sequence
+	 * is stable regardless of whether the same-kind walk below
+	 * finds a hit -- a downstream A/B comparison needs the same
+	 * draw count whether or not the ring is populated with our
+	 * kind on a given call. */
+	escape_hatch = (rnd_modulo_u32(PROP_RING_KIND_ESCAPE_MOD) == 0);
+
+	now = child->op_nr;
+
+	for (tries = 0; tries < PROP_RING_RECENCY_PROBE_TRIES; tries++) {
+		unsigned int idx = rnd_modulo_u32(populated);
+		struct prop_slot *slot = &ring->slots[idx];
+
+		if (!slot->valid)
+			continue;
+		if (now - slot->captured_at > PROP_RING_RECENCY_MAX)
+			continue;
+
+		if (slot->kind == kind) {
+			*out = slot->value;
+			if (kcov_shm != NULL)
+				__atomic_fetch_add(
+				    &kcov_shm->prop_ring_kind_consumed[kind],
+				    1UL, __ATOMIC_RELAXED);
+			return true;
+		}
+
+		/* Same-kind miss this probe.  If the escape hatch is
+		 * armed for this call we take the slot anyway, counted
+		 * separately so the kind-discipline signal is not
+		 * polluted by chaos contributions. */
+		if (escape_hatch) {
+			*out = slot->value;
+			if (kcov_shm != NULL)
+				__atomic_fetch_add(
+				    &kcov_shm->prop_ring_kind_escape_fires,
+				    1UL, __ATOMIC_RELAXED);
+			return true;
+		}
 	}
 
 	return false;
