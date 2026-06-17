@@ -2830,7 +2830,9 @@ void child_process(struct childdata *child, int childno)
 			if (ret != FAIL && shm_published != NULL) {
 				__atomic_store_n(
 					&shm->stats.childop_last_success_ts[op],
-					shm_published->fleet_op_count,
+					__atomic_load_n(
+						&shm_published->fleet_op_count,
+						__ATOMIC_RELAXED),
 					__ATOMIC_RELAXED);
 			}
 		}
@@ -2850,7 +2852,8 @@ void child_process(struct childdata *child, int childno)
 			 * parent's drain cadence (~ms), well inside the
 			 * termination granularity callers expect. */
 			if (shm_published != NULL &&
-			    shm_published->fleet_op_count >= syscalls_todo) {
+			    __atomic_load_n(&shm_published->fleet_op_count,
+					    __ATOMIC_RELAXED) >= syscalls_todo) {
 				__atomic_store_n(&shm->exit_reason,
 						EXIT_REACHED_COUNT, __ATOMIC_RELAXED);
 				goto out;
