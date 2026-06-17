@@ -51,27 +51,9 @@ static void sanitise_msgsnd(struct syscallrecord *rec)
 	msgp->mtype = (rnd_modulo_u32(255)) + 1;	/* mtype must be > 0 */
 	rec->a2 = (unsigned long) msgp;
 	rec->a3 = msgsz;
-	/* Snapshot for the post handler -- a2 may be scribbled by a sibling
-	 * syscall before post_msgsnd() runs. */
-	rec->post_state = (unsigned long) msgp;
-}
-
-static void post_msgsnd(struct syscallrecord *rec)
-{
-	void *msgp = (void *) rec->post_state;
-
-	if (msgp == NULL)
-		return;
-
-	if (looks_like_corrupted_ptr(rec, msgp)) {
-		outputerr("post_msgsnd: rejected suspicious msgp=%p (pid-scribbled?)\n", msgp);
-		rec->a2 = 0;
-		rec->post_state = 0;
-		return;
-	}
-
-	rec->a2 = 0;
-	deferred_freeptr(&rec->post_state);
+	/* Capture the genuine tracked pointer now: a2 may be scribbled by a
+	 * sibling syscall before the owned-list drain runs. */
+	rec_own(rec, msgp);
 }
 
 struct syscallentry syscall_msgsnd = {
@@ -83,5 +65,4 @@ struct syscallentry syscall_msgsnd = {
 	.arg_params[3].list = ARGLIST(msgsnd_flags),
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_msgsnd,
-	.post = post_msgsnd,
 };
