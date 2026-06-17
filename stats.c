@@ -2325,6 +2325,7 @@ static void dump_stats_json_corruption_and_audit(void)
 			"\"deferred_free_reject_corrupt_shape\":%lu,"
 			"\"deferred_free_reject_non_heap\":%lu,"
 			"\"deferred_free_reject_untracked\":%lu,"
+			"\"nested_scrub_reject_untracked\":%lu,"
 			"\"deferred_free_reject_shared_region\":%lu,"
 			"\"deferred_free_outstanding_vmas\":%lu,"
 			"\"deferred_free_vma_fallback_immediate\":%lu,"
@@ -2406,6 +2407,7 @@ static void dump_stats_json_corruption_and_audit(void)
 		shm->stats.deferred_free_reject_corrupt_shape,
 		shm->stats.deferred_free_reject_non_heap,
 		shm->stats.deferred_free_reject_untracked,
+		shm->stats.nested_scrub_reject_untracked,
 		shm->stats.deferred_free_reject_shared_region,
 		shm->stats.deferred_free_outstanding_vmas,
 		shm->stats.deferred_free_vma_fallback_immediate,
@@ -3504,6 +3506,8 @@ static const struct {
 	  offsetof(struct stats_s, deferred_free_reject_non_heap) },
 	{ "deferred_free_reject_untracked",
 	  offsetof(struct stats_s, deferred_free_reject_untracked) },
+	{ "nested_scrub_reject_untracked",
+	  offsetof(struct stats_s, nested_scrub_reject_untracked) },
 	{ "deferred_free_reject_shared_region",
 	  offsetof(struct stats_s, deferred_free_reject_shared_region) },
 	{ "deferred_free_outstanding_vmas",
@@ -6602,6 +6606,8 @@ static void dump_stats_corruption_and_pool(void)
 		stat_row("corruption", "deferred_free_reject_non_heap",       shm->stats.deferred_free_reject_non_heap);
 	if (shm->stats.deferred_free_reject_untracked)
 		stat_row("corruption", "deferred_free_reject_untracked",      shm->stats.deferred_free_reject_untracked);
+	if (shm->stats.nested_scrub_reject_untracked)
+		stat_row("corruption", "nested_scrub_reject_untracked",       shm->stats.nested_scrub_reject_untracked);
 	if (shm->stats.deferred_free_reject_shared_region)
 		stat_row("corruption", "deferred_free_reject_shared_region",  shm->stats.deferred_free_reject_shared_region);
 	if (shm->stats.deferred_free_outstanding_vmas)

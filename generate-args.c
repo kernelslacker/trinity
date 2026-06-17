@@ -4400,6 +4400,37 @@ static unsigned long fill_arg(struct syscallentry *entry, struct syscallrecord *
  */
 #define NESTED_ADDRESS_SCRUB_MAX_DEPTH	4
 
+/*
+ * Stateless pre-deref guard for every struct base
+ * scrub_struct_addresses() is about to walk -- the top-level
+ * rec->aN slot fed in by nested_address_scrub(), and the
+ * FT_PTR_STRUCT / FT_PTR_ARRAY base pointers read out of a parent
+ * struct during the walk.  All three are the exact class of value a
+ * sibling scribble can replace with garbage between sanitise and
+ * dispatch.  Reject when the candidate base either fails the shape
+ * predicate (NULL-ish, non-canonical, or misaligned) or falls
+ * outside the cached glibc brk arena: a legitimate zmalloc_tracked()
+ * struct slot satisfies both, and a scribbled value that aliases
+ * neither does not.  Bump nested_scrub_reject_untracked on the reject
+ * so a clean run (near-zero rate-of-change) double-checks the guard
+ * is not false-rejecting valid bases.  The predicates are
+ * lifecycle-independent on purpose: by scrub time the deferred-free
+ * ring has already consumed the tracker entries for these pointers,
+ * so an alloc_track_lookup()-based gate would false-reject ~100% of
+ * legitimately-generated bases.
+ */
+static bool nested_scrub_base_unsafe(unsigned long base)
+{
+	const void *p = (const void *) base;
+
+	if (is_corrupt_ptr_shape(p) || !is_in_glibc_heap(p)) {
+		__atomic_add_fetch(&shm->stats.nested_scrub_reject_untracked,
+				   1, __ATOMIC_RELAXED);
+		return true;
+	}
+	return false;
+}
+
 static void scrub_struct_addresses(unsigned char *buf, unsigned int size,
 				   const struct struct_desc *desc,
 				   unsigned int depth);
@@ -4481,6 +4512,8 @@ static void scrub_struct_addresses(unsigned char *buf, unsigned int size,
 			target = struct_catalog_lookup(f->u.ptr_struct.struct_name);
 			if (target == NULL || target->struct_size == 0)
 				break;
+			if (nested_scrub_base_unsafe(ptr))
+				break;
 			scrub_struct_addresses((unsigned char *) ptr,
 					       target->struct_size,
 					       target, depth + 1);
@@ -4496,6 +4529,8 @@ static void scrub_struct_addresses(unsigned char *buf, unsigned int size,
 				break;
 			target = struct_catalog_lookup(f->u.ptr_array.elem_struct);
 			if (target == NULL || target->struct_size == 0)
+				break;
+			if (nested_scrub_base_unsafe(ptr))
 				break;
 
 			paired = find_field_index_in(desc->fields,
@@ -4554,7 +4589,8 @@ static void nested_address_scrub(struct syscallentry *entry,
 		}
 
 		desc = struct_arg_lookup(rec->nr, i, rec->do32bit, rec);
-		if (slot != 0 && desc != NULL)
+		if (slot != 0 && desc != NULL &&
+		    !nested_scrub_base_unsafe(slot))
 			scrub_struct_addresses((unsigned char *) slot,
 					       desc->struct_size, desc, 0);
 		mask &= (uint8_t)(mask - 1);
