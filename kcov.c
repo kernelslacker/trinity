@@ -701,7 +701,8 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 	 * land inside it.  Without this, fuzzed madvise(MADV_REMOVE, ...)
 	 * or madvise(MADV_DONTNEED, ...) on the kcov pages punches their
 	 * physical backing out and the next kcov_collect() reads it,
-	 * tripping SIGBUS at kcov.c:290 ("Nonexisting physical address").
+	 * tripping SIGBUS on the trace_buf[0] load at the head of
+	 * kcov_collect() ("Nonexisting physical address").
 	 * Done after the remote-probe re-mmap dance so we register the
 	 * final, stable address.
 	 */
