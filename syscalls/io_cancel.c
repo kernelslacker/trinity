@@ -58,7 +58,7 @@ static void sanitise_io_cancel(struct syscallrecord *rec)
 struct syscallentry syscall_io_cancel = {
 	.name = "io_cancel",
 	.num_args = 3,
-	.argtype = { [0] = ARG_AIO_CTX, [2] = ARG_ADDRESS },
+	.argtype = { [0] = ARG_AIO_CTX, [1] = ARG_ADDRESS, [2] = ARG_ADDRESS },
 	.argname = { [0] = "ctx_id", [1] = "iocb", [2] = "result" },
 	.group = GROUP_VFS,
 	.sanitise = sanitise_io_cancel,
