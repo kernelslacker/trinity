@@ -1,10 +1,12 @@
 /*
  * SYSCALL_DEFINE3(semget, key_t, key, int, nsems, int, semflg)
  */
+#include <limits.h>
 #include <sys/ipc.h>
 #include <sys/sem.h>
 #include "ipc-common.h"
 #include "objects.h"
+#include "prop_ring.h"
 #include "publish_resource.h"
 #include "sanitise.h"
 #include "trinity.h"
@@ -69,7 +71,23 @@ int get_random_sysv_sem(void)
 
 static void post_semget(struct syscallrecord *rec)
 {
+	long semid;
+
 	post_ipc_get(rec, register_sysv_sem, "semget");
+
+	/* Mirror the semid into the per-child prop_ring so the typed
+	 * consumer in gen_arg_sem_id can prefer recently-returned ids
+	 * over raw randoms / stale pool draws.  Re-check the success
+	 * window post_ipc_get accepted (>= 0, <= INT_MAX) as defence in
+	 * depth -- mirrors the OBJ_KEY_SERIAL exemplar in syscall.c
+	 * which also re-validates before prop_ring_push_scalar despite
+	 * register_key_serial having just gated the same range.  The
+	 * filters inside prop_ring_push_filtered still reject pointer-
+	 * shaped and fd-aliased values. */
+	semid = (long) rec->retval;
+	if (semid < 0 || semid > INT_MAX)
+		return;
+	prop_ring_push_scalar(rec->nr, semid, SCALAR_SYSV_SEM);
 }
 
 struct syscallentry syscall_semget = {
