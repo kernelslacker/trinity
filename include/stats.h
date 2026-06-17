@@ -2590,7 +2590,7 @@ struct stats_s {
 	 * coverage_frontier() is byte-identical to today's behaviour; these
 	 * counters bump strictly AFTER the accept decision and no live-path
 	 * code reads them.  Mirrors the off-by-construction discipline the
-	 * sibling [t12-frontier-blend] A/B counters use. */
+	 * sibling frontier-blend A/B counters use. */
 	unsigned long frontier_decay_candidates;
 	unsigned long frontier_decay_would_skip;
 
@@ -2635,7 +2635,7 @@ struct stats_s {
 	unsigned long frontier_errno_decay_live_rejects;
 	unsigned long frontier_errno_decay_overlap_silent;
 
-	/* SHADOW-ONLY A/B scoring for the [t12-frontier-blend] cold-weight
+	/* SHADOW-ONLY A/B scoring for the frontier-blend cold-weight
 	 * blend.  See the frontier_cold_weight() comment in random-syscall.c
 	 * for the experimental formula.
 	 *
