@@ -4795,6 +4795,7 @@ void kcov_cmp_stats_periodic_dump(void)
 	static unsigned long prev_cmp_inject_arm_b_baseline_fires;
 	static unsigned long prev_cmp_inject_denom_diverged;
 	static unsigned long prev_prop_ring_argop_arm_b_fires;
+	static unsigned long prev_mut_structured_shadow_divergences;
 	static struct timespec last_dump;
 	struct timespec now;
 	long elapsed;
@@ -4845,6 +4846,10 @@ void kcov_cmp_stats_periodic_dump(void)
 	unsigned int  cur_cmp_inject_arm_a_children, cur_cmp_inject_arm_b_children;
 	unsigned long cur_prop_ring_argop_arm_b_fires, delta_prop_ring_argop_arm_b_fires;
 	unsigned int  cur_prop_ring_argop_arm_a_children, cur_prop_ring_argop_arm_b_children;
+	unsigned long cur_mut_structured_shadow_samples;
+	unsigned long cur_mut_structured_shadow_divergences;
+	unsigned long delta_mut_structured_shadow_divergences;
+	unsigned int  cur_mut_structured_arm_a_children, cur_mut_structured_arm_b_children;
 	bool any_callsite_delta = false;
 	unsigned int pc_kids, cmp_kids;
 
@@ -4909,6 +4914,23 @@ void kcov_cmp_stats_periodic_dump(void)
 	cur_prop_ring_argop_arm_b_fires     = __atomic_load_n(&kcov_shm->prop_ring_argop_arm_b_fires,     __ATOMIC_RELAXED);
 	cur_prop_ring_argop_arm_a_children  = __atomic_load_n(&kcov_shm->prop_ring_argop_arm_a_children,  __ATOMIC_RELAXED);
 	cur_prop_ring_argop_arm_b_children  = __atomic_load_n(&kcov_shm->prop_ring_argop_arm_b_children,  __ATOMIC_RELAXED);
+	/* SHADOW structure-aware picker A/B cohort + divergence counters live
+	 * in minicorpus_shm rather than kcov_shm because the picker is a
+	 * mutate_arg concern, not a kcov-cmp concern.  Guard the load so a
+	 * degenerate run with kcov on but minicorpus unmapped does not chase
+	 * a NULL pointer; the dump row's delta gate keeps a zero from
+	 * polluting the kcov-cmp window output. */
+	if (minicorpus_shm != NULL) {
+		cur_mut_structured_shadow_samples     = __atomic_load_n(&minicorpus_shm->mut_structured_shadow_samples,     __ATOMIC_RELAXED);
+		cur_mut_structured_shadow_divergences = __atomic_load_n(&minicorpus_shm->mut_structured_shadow_divergences, __ATOMIC_RELAXED);
+		cur_mut_structured_arm_a_children     = __atomic_load_n(&minicorpus_shm->mut_structured_arm_a_children,     __ATOMIC_RELAXED);
+		cur_mut_structured_arm_b_children     = __atomic_load_n(&minicorpus_shm->mut_structured_arm_b_children,     __ATOMIC_RELAXED);
+	} else {
+		cur_mut_structured_shadow_samples     = 0;
+		cur_mut_structured_shadow_divergences = 0;
+		cur_mut_structured_arm_a_children     = 0;
+		cur_mut_structured_arm_b_children     = 0;
+	}
 
 	/* First call: arm the window so any pre-existing counts carried
 	 * over from earlier in the run are not mis-attributed to the
@@ -4962,6 +4984,7 @@ void kcov_cmp_stats_periodic_dump(void)
 		prev_cmp_inject_arm_b_baseline_fires = cur_cmp_inject_arm_b_baseline_fires;
 		prev_cmp_inject_denom_diverged       = cur_cmp_inject_denom_diverged;
 		prev_prop_ring_argop_arm_b_fires     = cur_prop_ring_argop_arm_b_fires;
+		prev_mut_structured_shadow_divergences = cur_mut_structured_shadow_divergences;
 		return;
 	}
 
@@ -5020,6 +5043,7 @@ void kcov_cmp_stats_periodic_dump(void)
 	delta_cmp_inject_arm_b_baseline_fires = cur_cmp_inject_arm_b_baseline_fires - prev_cmp_inject_arm_b_baseline_fires;
 	delta_cmp_inject_denom_diverged       = cur_cmp_inject_denom_diverged       - prev_cmp_inject_denom_diverged;
 	delta_prop_ring_argop_arm_b_fires     = cur_prop_ring_argop_arm_b_fires     - prev_prop_ring_argop_arm_b_fires;
+	delta_mut_structured_shadow_divergences = cur_mut_structured_shadow_divergences - prev_mut_structured_shadow_divergences;
 
 	if ((delta_records | delta_truncated | delta_bloom_skipped | delta_strip_skipped |
 	     delta_unique | delta_try_get_attempts | delta_try_get_returned |
@@ -5043,7 +5067,8 @@ void kcov_cmp_stats_periodic_dump(void)
 	     delta_cmp_inject_arm_a_baseline_fires |
 	     delta_cmp_inject_arm_b_baseline_fires |
 	     delta_cmp_inject_denom_diverged |
-	     delta_prop_ring_argop_arm_b_fires) != 0 ||
+	     delta_prop_ring_argop_arm_b_fires |
+	     delta_mut_structured_shadow_divergences) != 0 ||
 	    any_callsite_delta) {
 		stats_log_write("KCOV CMP stats over last %lds:\n", elapsed);
 
@@ -5362,6 +5387,26 @@ void kcov_cmp_stats_periodic_dump(void)
 					cur_prop_ring_argop_arm_a_children,
 					cur_prop_ring_argop_arm_b_children);
 		}
+		/* SHADOW structure-aware picker A/B cohort (Arm A = no shadow
+		 * draw / RNG byte-identical to pre-shadow control, Arm B =
+		 * doubled-pool shadow draw on structured-eligible slots).  Print
+		 * the Arm B divergence delta paired with the cumulative sample
+		 * base and the realised cohort split so the operator can size
+		 * the shadow's per-window steer-rate against the population-
+		 * normalised denominator.  Arm A has no symmetric divergence
+		 * counter by design (control arm skips the shadow draw entirely);
+		 * samples and divergences are both Arm-B-only accumulators. */
+		if (delta_mut_structured_shadow_divergences) {
+			unsigned long rate_milli = (delta_mut_structured_shadow_divergences * 1000UL) / (unsigned long)elapsed;
+			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu, samples %lu, children a=%u b=%u)\n",
+					"mut_structured_shadow_divergences",
+					delta_mut_structured_shadow_divergences,
+					rate_milli / 1000, rate_milli % 1000,
+					cur_mut_structured_shadow_divergences,
+					cur_mut_structured_shadow_samples,
+					cur_mut_structured_arm_a_children,
+					cur_mut_structured_arm_b_children);
+		}
 	}
 
 	/*
@@ -5472,6 +5517,7 @@ void kcov_cmp_stats_periodic_dump(void)
 	prev_cmp_inject_arm_b_baseline_fires = cur_cmp_inject_arm_b_baseline_fires;
 	prev_cmp_inject_denom_diverged       = cur_cmp_inject_denom_diverged;
 	prev_prop_ring_argop_arm_b_fires     = cur_prop_ring_argop_arm_b_fires;
+	prev_mut_structured_shadow_divergences = cur_mut_structured_shadow_divergences;
 	last_dump = now;
 }
 

@@ -1117,18 +1117,35 @@ static unsigned long mutate_arg(unsigned long val, enum argtype atype,
 	 * what mut_attrib[]/try_structured_mutation()/the case switch all
 	 * consume.  See struct minicorpus_shared mut_structured_shadow_*
 	 * for the why; promoting structured arms to the live picker will
-	 * consume this measurement. */
-	if (minicorpus_shm != NULL && slot_is_structured(atype, params)) {
-		unsigned int shadow_op =
-			weighted_pick_case_shadow_structured(atype);
+	 * consume this measurement.
+	 *
+	 * Arm-gated by the per-child mut_structured_arm_b stamp: Arm A
+	 * (control) short-circuits before weighted_pick_case_shadow_
+	 * structured() so mutate_arg's RNG sequence stays byte-identical
+	 * to the pre-shadow (pre-139a829f) behaviour and the live
+	 * weighted_pick_case() call above remains the only rnd_modulo_u32
+	 * step on the picker path.  An unconditional shadow draw (the
+	 * original 139a829f shape) burned an extra rnd_modulo_u32 on
+	 * every structured-eligible slot fleet-wide, perturbing the live
+	 * RNG with no clean control arm and making the divergence rate
+	 * impossible to attribute against an unperturbed baseline. */
+	{
+		struct childdata *child = this_child();
 
-		__atomic_fetch_add(
-			&minicorpus_shm->mut_structured_shadow_samples,
-			1UL, __ATOMIC_RELAXED);
-		if (shadow_op != op)
+		if (child != NULL && child->mut_structured_arm_b &&
+		    minicorpus_shm != NULL &&
+		    slot_is_structured(atype, params)) {
+			unsigned int shadow_op =
+				weighted_pick_case_shadow_structured(atype);
+
 			__atomic_fetch_add(
-				&minicorpus_shm->mut_structured_shadow_divergences,
+				&minicorpus_shm->mut_structured_shadow_samples,
 				1UL, __ATOMIC_RELAXED);
+			if (shadow_op != op)
+				__atomic_fetch_add(
+					&minicorpus_shm->mut_structured_shadow_divergences,
+					1UL, __ATOMIC_RELAXED);
+		}
 	}
 
 	mut_attrib[op]++;
