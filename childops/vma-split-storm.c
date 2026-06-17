@@ -122,7 +122,7 @@ bool vma_split_storm(struct childdata *child)
 
 	iters = BUDGETED(CHILD_OP_VMA_SPLIT_STORM, VMA_SPLIT_STORM_ITERS_BASE);
 	for (i = 0; i < iters; i++) {
-		uint32_t pick = rnd_u32() % 100U;
+		uint32_t pick = rnd_modulo_u32(100U);
 		unsigned long off, len;
 
 		/* Global VMA-pressure backoff.  Single BSS load; bails the
