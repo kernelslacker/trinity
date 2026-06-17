@@ -1,10 +1,12 @@
 /*
  * SYSCALL_DEFINE2(msgget, key_t, key, int, msgflg)
  */
+#include <limits.h>
 #include <sys/ipc.h>
 #include <sys/msg.h>
 #include "ipc-common.h"
 #include "objects.h"
+#include "prop_ring.h"
 #include "publish_resource.h"
 #include "sanitise.h"
 #include "trinity.h"
@@ -65,7 +67,23 @@ int get_random_sysv_msg(void)
 
 static void post_msgget(struct syscallrecord *rec)
 {
+	long msqid;
+
 	post_ipc_get(rec, register_sysv_msg, "msgget");
+
+	/* Mirror the msqid into the per-child prop_ring so the typed
+	 * consumer in gen_arg_msg_id can prefer recently-returned ids
+	 * over raw randoms / stale pool draws.  Re-check the success
+	 * window post_ipc_get accepted (>= 0, <= INT_MAX) as defence in
+	 * depth -- mirrors the OBJ_KEY_SERIAL exemplar in syscall.c
+	 * which also re-validates before prop_ring_push_scalar despite
+	 * register_key_serial having just gated the same range.  The
+	 * filters inside prop_ring_push_filtered still reject pointer-
+	 * shaped and fd-aliased values. */
+	msqid = (long) rec->retval;
+	if (msqid < 0 || msqid > INT_MAX)
+		return;
+	prop_ring_push_scalar(rec->nr, msqid, SCALAR_SYSV_MSG);
 }
 
 static unsigned long ipc_flags[] = {
