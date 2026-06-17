@@ -2086,6 +2086,21 @@ struct stats_s {
 	 * down on the next live run.  See deferred-free.c clause 4. */
 	unsigned long deferred_free_reject_untracked;
 
+	/* nested-address scrub (scrub_struct_addresses) refused to walk a
+	 * struct base whose pointer either fails the stateless shape
+	 * predicate (is_corrupt_ptr_shape: NULL-ish, non-canonical, or
+	 * misaligned) or falls outside the cached glibc brk arena
+	 * (is_in_glibc_heap).  Real zmalloc_tracked() struct slots always
+	 * satisfy both; a pointer-shaped-but-invalid value scribbled into
+	 * rec->aN (or into a nested FT_PTR_STRUCT/FT_PTR_ARRAY base field)
+	 * by a sibling stomp in the publish->snapshot window does not, and
+	 * dereferencing it would SEGV the sanitiser before the syscall
+	 * fires.  Rate-of-change near zero on a clean run is the
+	 * regression check that proves the guard is not false-rejecting
+	 * legitimate struct bases.  See generate-args.c
+	 * scrub_struct_addresses / nested_address_scrub. */
+	unsigned long nested_scrub_reject_untracked;
+
 	/* range_overlaps_shared(ptr, 1): pointer fell inside one of
 	 * trinity's own mmap'd shared regions.  ASAN catches these as
 	 * bad-free ("attempting free on address which was not malloc()-ed");
