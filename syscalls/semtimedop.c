@@ -86,7 +86,7 @@ struct syscallentry syscall_semtimedop = {
 	.name = "semtimedop",
 	.group = GROUP_IPC,
 	.num_args = 4,
-	.argtype = { [0] = ARG_SEM_ID, [2] = ARG_LEN, [3] = ARG_TIMESPEC },
+	.argtype = { [0] = ARG_SEM_ID, [1] = ARG_ADDRESS, [2] = ARG_LEN, [3] = ARG_TIMESPEC },
 	.argname = { [0] = "semid", [1] = "tsops", [2] = "nsops", [3] = "timeout" },
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
