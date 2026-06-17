@@ -53,7 +53,7 @@ _Static_assert(REEXEC_PENDING_PICK_HIST_NR == MAX_REEXEC_PENDING,
 
 /*
  * Compression factor for the frontier-weighted acceptance denominator.
- * See the gate in set_syscall_nr_frontier() for the rationale.
+ * See the gate in set_syscall_nr_coverage_frontier() for the rationale.
  */
 #define FRONTIER_SOFT_SCALE 16
 
