@@ -8505,6 +8505,10 @@ static void slot_binding_attach(const struct slot_binding *table[MAX_NR_SYSCALL]
  *     names, see the SC_IOVEC comment above the catalog slot)
  *   - ARG_SOCKADDR  (bespoke sockaddr generator owns the live fill;
  *     attribution-only catalog row for sa_family / port CMP names)
+ *   - ARG_TIMESPEC / ARG_ITIMERSPEC / ARG_TIMEVAL / ARG_ITIMERVAL
+ *     (time-shaped pointer slots; catalog row carries the named
+ *     tv_sec / tv_nsec / tv_usec CMP attributions while the per-argtype
+ *     filler owns the live struct contents)
  *   - ARG_UNDEFINED  (the syscall has not fully classified its
  *     argtypes -- the bespoke .sanitise owns the fill regardless;
  *     this case is permissive on purpose so the guard does not block
