@@ -24,9 +24,10 @@ static const unsigned long poll_events[] = {
 /*
  * Allocate and populate the pollfd[] array shared by both poll and ppoll,
  * stashing the array pointer and length in rec->a1/a2.  Returns the
- * pointer to the caller so each syscall can install its own post_state
- * snapshot (poll snapshots a single pointer; ppoll wraps both pollfd and
- * the timespec into a struct snapshot).
+ * pointer to the caller so each syscall can hand the original heap
+ * allocation to the rec_own carrier (drained unconditionally after .post)
+ * -- ppoll additionally captures its timespec into a post_state struct
+ * snapshot for the oracle.
  */
 static struct pollfd *alloc_pollfds(struct syscallrecord *rec)
 {
@@ -116,17 +117,19 @@ static void sanitise_poll(struct syscallrecord *rec)
 	 */
 	avoid_shared_buffer_inout(&rec->a1, rec->a2 * sizeof(struct pollfd));
 
-	/* Snapshot for the post handler -- a1 may be scribbled by a sibling
-	 * syscall before post_poll() runs.  Snapshot the original heap
-	 * allocation (pollfd), not the post-relocation rec->a1: the post
-	 * handler frees the snapshot via deferred_freeptr(), and the
-	 * relocated address is not a malloc result. */
-	rec->post_state = (unsigned long) pollfd;
+	/*
+	 * Hand the original pollfd heap allocation to the rec carrier so the
+	 * post-iteration drain frees it unconditionally.  Own the
+	 * pre-relocation pointer (not rec->a1, which avoid_shared_buffer_inout
+	 * may have redirected into the get_writable_address() pool); the drain
+	 * runs after .post and closes the skip-.post leak (retfd-rejected /
+	 * killed grandchild) that a guarded deferred_freeptr() would miss.
+	 */
+	rec_own(rec, pollfd);
 }
 
 static void post_poll(struct syscallrecord *rec)
 {
-	void *ufds = (void *) rec->post_state;
 	unsigned long nfds = rec->a2;
 	unsigned long retval = rec->retval;
 
@@ -137,29 +140,14 @@ static void post_poll(struct syscallrecord *rec)
 	 * EFAULT/EINTR/EINVAL/ENOMEM via the syscall return path. Anything
 	 * > nfds (excluding -1UL) is a structural ABI regression: a
 	 * sign-extension tear, a torn write of the count, or -errno leaking
-	 * through the success return slot. Validate before the snapshot
-	 * teardown so the corruption is caught even when the post_state
-	 * pointer is NULL or scribbled; fall through to the existing free
-	 * path so the heap allocation is still released.
+	 * through the success return slot.  The pollfd buffer is freed
+	 * unconditionally by the rec_own drain after .post returns.
 	 */
 	if (retval != (unsigned long)-1L && retval > nfds) {
 		outputerr("post_poll: retval %ld outside [0, %lu] and != -1UL\n",
 			  (long) retval, nfds);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 	}
-
-	if (ufds == NULL)
-		return;
-
-	if (looks_like_corrupted_ptr(rec, ufds)) {
-		outputerr("post_poll: rejected suspicious ufds=%p (pid-scribbled?)\n", ufds);
-		rec->a1 = 0;
-		rec->post_state = 0;
-		return;
-	}
-
-	rec->a1 = 0;
-	deferred_freeptr(&rec->post_state);
 }
 
 struct syscallentry syscall_poll = {
