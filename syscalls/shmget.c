@@ -2,11 +2,13 @@
  * SYSCALL_DEFINE3(shmget, key_t, key, size_t, size, int, shmflg)
  */
 
+#include <limits.h>
 #include <stdlib.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
 #include "ipc-common.h"
 #include "objects.h"
+#include "prop_ring.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
@@ -84,7 +86,23 @@ int get_random_sysv_shm(void)
 
 static void post_shmget(struct syscallrecord *rec)
 {
+	long shmid;
+
 	post_ipc_get(rec, register_sysv_shm, "shmget");
+
+	/* Mirror the shmid into the per-child prop_ring so the typed
+	 * consumer in gen_arg_sysv_shm can prefer recently-returned ids
+	 * over raw randoms / stale pool draws.  Re-check the success
+	 * window post_ipc_get accepted (>= 0, <= INT_MAX) as defence in
+	 * depth -- mirrors the OBJ_KEY_SERIAL exemplar in syscall.c
+	 * which also re-validates before prop_ring_push_scalar despite
+	 * register_key_serial having just gated the same range.  The
+	 * filters inside prop_ring_push_filtered still reject pointer-
+	 * shaped and fd-aliased values. */
+	shmid = (long) rec->retval;
+	if (shmid < 0 || shmid > INT_MAX)
+		return;
+	prop_ring_push_scalar(rec->nr, shmid, SCALAR_SYSV_SHM);
 }
 
 struct syscallentry syscall_shmget = {
