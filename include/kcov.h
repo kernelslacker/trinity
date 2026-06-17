@@ -472,6 +472,19 @@ struct kcov_cmp_diag {
  * distinct even if enum exit_reasons grows. */
 #define KCOV_RECOVERY_EXHAUSTED_EXIT_CODE (NUM_EXIT_REASONS + 1)
 
+/* Bound for the /proc/self/fd snapshot captured into struct
+ * kcov_pc_diag::first_ebadf_proc_fds[].  Sized small enough that the
+ * snapshot fits comfortably inside the 256-byte buffer the periodic
+ * stats.c and main.c summary callers hand to kcov_pc_diag_format(),
+ * even with the rest of the diag line in front of it -- a snapshot of
+ * the immediate fd neighbourhood of the protected slot is what the
+ * operator needs to root-cause the closer; an exhaustive dump is the
+ * unbounded-copy DoS shape this cap prevents.
+ * Children that hold more than this number of fds get the snapshot
+ * truncated; first_ebadf_proc_fd_count == this define on the wire
+ * is the signal that truncation happened. */
+#define KCOV_FIRST_EBADF_PROC_FD_MAX 16U
+
 /* Per-failure-site diagnostic slots for the PC and remote KCOV enable/
  * disable paths.  Same shape as struct kcov_cmp_diag: first failure
  * wins for *_errno (CAS-from-zero), *_count tallies every failure at
@@ -501,6 +514,44 @@ struct kcov_pc_diag {
 	unsigned long first_ebadf_pid;
 	unsigned int  first_ebadf_syscall_nr;
 	int           first_ebadf_fd_value;
+	/* Richer context for the first-EBADF capture above.  All five
+	 * fields below are written by the CAS winner after the four
+	 * fields above land, so they share the same one-shot gate and
+	 * stay consistent w.r.t. the winning child.  Readers must still
+	 * load first_ebadf_op_nr first and only consult these if it is
+	 * non-zero.
+	 *
+	 *   generation              -- kcov_child::current_generation at
+	 *                              latch time, so a winner's slot
+	 *                              ties the snapshot to a per-child
+	 *                              kcov-collect epoch.
+	 *   last_fd_mut_syscall_nr  -- most recent close / dup / dup2 /
+	 *                              dup3 / close_range / fcntl(F_DUPFD*)
+	 *                              found in this child's
+	 *                              child_syscall_ring; 0 if the ring
+	 *                              held none.  Names the likely
+	 *                              closer when the chain-substitution
+	 *                              hypothesis holds.
+	 *   protected_touched       -- 1 if the captured fd-mut syscall
+	 *                              targeted a protected fd (kcov PC /
+	 *                              cmp fd, stderr, the stderr capture
+	 *                              memfd).  0 means the closer was
+	 *                              the unaudited path the registry
+	 *                              cannot see.
+	 *   proc_fd_count           -- entries populated in proc_fds[].
+	 *                              Capped at KCOV_FIRST_EBADF_PROC_FD_MAX
+	 *                              so a fleet running with thousands
+	 *                              of fds cannot blow the diag-line
+	 *                              budget.
+	 *   proc_fds[]              -- numeric /proc/self/fd snapshot of
+	 *                              the winning child, truncated to
+	 *                              proc_fd_count entries.
+	 */
+	uint64_t      first_ebadf_generation;
+	unsigned int  first_ebadf_last_fd_mut_syscall_nr;
+	unsigned char first_ebadf_protected_touched;
+	unsigned char first_ebadf_proc_fd_count;
+	int           first_ebadf_proc_fds[KCOV_FIRST_EBADF_PROC_FD_MAX];
 };
 
 /* Selector for kcov_cmp_diag_format() — keeps stats.c's two-line split
