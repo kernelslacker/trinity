@@ -1163,7 +1163,7 @@ static bool argtype_accepts_numeric_substitute(enum argtype t)
  * Called once per syscallentry at table-init time from
  * copy_syscall_table() in tables.c; the cached mask in
  * entry->numeric_substitute_mask then drives apply_chain_substitution()
- * below without re-walking argtype[] or re-running the 23-case
+ * below without re-walking argtype[] or re-running the 60-case
  * argtype_accepts_numeric_substitute() switch on every chain step.
  * Bit k (k=0..5) set means slot (k+1) accepts a numeric substitute.
  */
