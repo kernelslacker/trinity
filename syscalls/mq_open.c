@@ -235,7 +235,7 @@ struct syscallentry syscall_mq_open = {
 	.name = "mq_open",
 	.group = GROUP_IPC,
 	.num_args = 4,
-	.argtype = { [1] = ARG_LIST, [2] = ARG_MODE_T, [3] = ARG_ADDRESS },
+	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_LIST, [2] = ARG_MODE_T, [3] = ARG_ADDRESS },
 	.argname = { [0] = "u_name", [1] = "oflag", [2] = "mode", [3] = "u_attr" },
 	.arg_params[1].list = ARGLIST(mq_open_flags),
 	.rettype = RET_FD,
