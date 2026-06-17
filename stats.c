@@ -3638,7 +3638,7 @@ static const struct {
 	  offsetof(struct stats_s, frontier_errno_decay_live_rejects) },
 	{ "frontier_errno_decay_overlap_silent",
 	  offsetof(struct stats_s, frontier_errno_decay_overlap_silent) },
-	/* SHADOW-ONLY A/B scoring for the [t12-frontier-blend] cold-weight
+	/* SHADOW-ONLY A/B scoring for the frontier-blend cold-weight
 	 * blend.  The picker still consumes the OLD weight; these counters
 	 * expose how often the blended formula would have steered
 	 * differently and by how much.  See the struct-field comment in
@@ -6992,7 +6992,7 @@ static void dump_stats_strategy_summary(void)
 	if (shm->stats.frontier_errno_decay_overlap_silent)
 		stat_row("strategy", "frontier_errno_decay_overlap_silent",
 			 shm->stats.frontier_errno_decay_overlap_silent);
-	/* SHADOW-ONLY A/B scoring for the [t12-frontier-blend] cold-weight
+	/* SHADOW-ONLY A/B scoring for the frontier-blend cold-weight
 	 * blend.  Emitted as a sibling block to the silent-decay shadow
 	 * counters above; the picker still consumes the OLD weight from
 	 * frontier_cold_weight() and these counters expose how often the
