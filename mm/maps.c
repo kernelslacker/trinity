@@ -114,6 +114,27 @@ bool get_map_handle(struct map_handle *h)
 		obj = get_random_object(type, scope);
 		if (obj == NULL) {
 			__atomic_add_fetch(&shm->stats.maps_reject_pool_empty, 1, __ATOMIC_RELAXED);
+			/* Per-type sub-attribution.  The aggregate
+			 * above is bumped per NULL-pool iteration without
+			 * recording which OBJ_MMAP_* pool returned NULL; the
+			 * three counters below split it so the TESTFILE-share
+			 * of interest post-fork is directly visible. */
+			switch (type) {
+			case OBJ_MMAP_ANON:
+				__atomic_add_fetch(&shm->stats.maps_reject_pool_empty_anon,
+						   1, __ATOMIC_RELAXED);
+				break;
+			case OBJ_MMAP_FILE:
+				__atomic_add_fetch(&shm->stats.maps_reject_pool_empty_file,
+						   1, __ATOMIC_RELAXED);
+				break;
+			case OBJ_MMAP_TESTFILE:
+				__atomic_add_fetch(&shm->stats.maps_reject_pool_empty_testfile,
+						   1, __ATOMIC_RELAXED);
+				break;
+			default:
+				break;
+			}
 			continue;
 		}
 
@@ -227,6 +248,34 @@ bool get_map_handle(struct map_handle *h)
 		h->map = &obj->map;
 		h->type = type;
 		h->scope = scope;
+
+		/* Pick-cost + per-type pool-chosen
+		 * accounting.  `i + 1` is the 1-indexed retry count
+		 * that landed this successful pick; attempts_sum /
+		 * successes is the realised average attempts-per-pick
+		 * the 1000-iter budget exists to amortise.  The
+		 * per-type pool_chosen split lets the dispatch mix be
+		 * cross-checked against pool occupancy. */
+		__atomic_add_fetch(&shm->stats.maps_pick_attempts_sum,
+				   (unsigned long)(i + 1), __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.maps_pick_successes,
+				   1, __ATOMIC_RELAXED);
+		switch (type) {
+		case OBJ_MMAP_ANON:
+			__atomic_add_fetch(&shm->stats.maps_pool_chosen_anon,
+					   1, __ATOMIC_RELAXED);
+			break;
+		case OBJ_MMAP_FILE:
+			__atomic_add_fetch(&shm->stats.maps_pool_chosen_file,
+					   1, __ATOMIC_RELAXED);
+			break;
+		case OBJ_MMAP_TESTFILE:
+			__atomic_add_fetch(&shm->stats.maps_pool_chosen_testfile,
+					   1, __ATOMIC_RELAXED);
+			break;
+		default:
+			break;
+		}
 		return true;
 	}
 
@@ -364,14 +413,42 @@ struct map * get_map(void)
  */
 struct map * get_map_with_prot(int required_prot)
 {
+	/* Low-three-bit mask index for the per-mask
+	 * prot-reject counter array.  The interesting prot bits at
+	 * the rejection-sample sites are PROT_READ|WRITE|EXEC;
+	 * PROT_SEM and other higher bits fold harmlessly into the
+	 * RWX overlap because the rejection signal we're after is
+	 * "which RWX combination is paying the rejection-sample
+	 * cost", not the full prot space. */
+	unsigned int mask_idx = (unsigned int)required_prot & 0x7u;
+
 	for (int i = 0; i < 1000; i++) {
 		struct map *m = get_map();
 
 		if (m == NULL)
 			return NULL;
 
-		if ((m->prot & required_prot) == required_prot)
+		if ((m->prot & required_prot) == required_prot) {
+			/* with_prot pick-cost.  Same
+			 * shape as the inner get_map_handle()
+			 * pair but tracks the outer prot-filter
+			 * retry loop.  attempts_sum / successes
+			 * compounds the inner pool-pick reject
+			 * with the prot-filter reject — the
+			 * higher of the two ratios identifies
+			 * which side of the loop dominates the
+			 * cost a per-prot map index
+			 * would amortise. */
+			__atomic_add_fetch(&shm->stats.maps_pick_with_prot_attempts_sum,
+					   (unsigned long)(i + 1), __ATOMIC_RELAXED);
+			__atomic_add_fetch(&shm->stats.maps_pick_with_prot_successes,
+					   1, __ATOMIC_RELAXED);
 			return m;
+		}
+
+		/* Per-required-mask reject attribution. */
+		__atomic_add_fetch(&shm->stats.maps_prot_reject_by_mask[mask_idx],
+				   1, __ATOMIC_RELAXED);
 	}
 
 	return NULL;
@@ -821,6 +898,12 @@ struct map * common_set_mmap_ptr_len(enum objecttype *out_type)
 			OBJ_MMAP_ANON, OBJ_MMAP_FILE, OBJ_MMAP_TESTFILE,
 		};
 		unsigned int i;
+		/* Cumulative objects visited across the
+		 * three-pool walk this call.  Bumped per-iteration
+		 * inside for_each_obj, accumulated locally so the
+		 * shared counter pays exactly one RELAXED add per
+		 * call instead of one per object visited. */
+		unsigned long scanned = 0;
 
 		for (i = 0; i < 3; i++) {
 			struct objhead *head;
@@ -832,6 +915,7 @@ struct map * common_set_mmap_ptr_len(enum objecttype *out_type)
 				continue;
 
 			for_each_obj(head, obj, idx) {
+				scanned++;
 				if (obj == want) {
 					*out_type = map_pool_types[i];
 					goto type_resolved;
@@ -839,7 +923,17 @@ struct map * common_set_mmap_ptr_len(enum objecttype *out_type)
 			}
 		}
 type_resolved:
-		;
+		/* Bump even on a miss: the walk still cost the
+		 * objects it visited, and the miss-rate (1 - hits /
+		 * calls) is itself a signal that the slot was
+		 * scribbled / pre-clamped / from a non-MMAP pool. */
+		__atomic_add_fetch(&shm->stats.maps_type_resolution_calls,
+				   1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.maps_type_resolution_scan_length_sum,
+				   scanned, __ATOMIC_RELAXED);
+		if (*out_type != OBJ_NONE)
+			__atomic_add_fetch(&shm->stats.maps_type_resolution_hits,
+					   1, __ATOMIC_RELAXED);
 	}
 
 	return map;

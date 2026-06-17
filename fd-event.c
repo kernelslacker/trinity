@@ -42,13 +42,42 @@ bool fd_event_enqueue(struct fd_event_ring *ring,
 		.fd1 = fd1,
 		.fd2 = 0,
 	};
+	bool ok;
 
 	if (ring == NULL)
 		return false;
 
-	return spsc_ring_try_enqueue(&ring->base, ring->events,
-				     FD_EVENT_RING_SIZE, sizeof(ring->events[0]),
-				     &ev);
+	ok = spsc_ring_try_enqueue(&ring->base, ring->events,
+				   FD_EVENT_RING_SIZE, sizeof(ring->events[0]),
+				   &ev);
+	if (!ok) {
+		/* Ring-full failure split by producer
+		 * type.  The existing fd_events_dropped is bumped by
+		 * the consumer-side overflow detector (drain) and
+		 * aggregates everything; this per-type split says
+		 * which producer path drove the overflow.  Bumped
+		 * under the existing per-call RELAXED shm->stats
+		 * convention (every other counter in this file
+		 * follows the same shape). */
+		switch (type) {
+		case FD_EVENT_CLOSE:
+			__atomic_add_fetch(&shm->stats.fd_event_full_close,
+					   1, __ATOMIC_RELAXED);
+			break;
+		case FD_EVENT_EVICT:
+			__atomic_add_fetch(&shm->stats.fd_event_full_evict,
+					   1, __ATOMIC_RELAXED);
+			break;
+		default:
+			/* FD_EVENT_CLOSE_RANGE doesn't reach here
+			 * (it has its own producer at
+			 * fd_event_enqueue_range below) — defensive
+			 * default for any future type added without
+			 * a counter wired through. */
+			break;
+		}
+	}
+	return ok;
 }
 
 /*
@@ -63,15 +92,32 @@ bool fd_event_enqueue_range(struct fd_event_ring *ring, int lo, int hi)
 		.fd1 = lo,
 		.fd2 = hi,
 	};
+	bool ok;
 
 	if (ring == NULL)
 		return false;
 	if (hi < lo)
 		return false;
 
-	return spsc_ring_try_enqueue(&ring->base, ring->events,
-				     FD_EVENT_RING_SIZE, sizeof(ring->events[0]),
-				     &ev);
+	ok = spsc_ring_try_enqueue(&ring->base, ring->events,
+				   FD_EVENT_RING_SIZE, sizeof(ring->events[0]),
+				   &ev);
+	if (ok) {
+		/* Producer-side close-range observability.
+		 * length_sum / enqueued = avg fds collapsed per
+		 * FD_EVENT_CLOSE_RANGE event, the compression ratio
+		 * the range opcode buys over the per-fd
+		 * FD_EVENT_CLOSE path. */
+		__atomic_add_fetch(&shm->stats.fd_event_close_range_enqueued,
+				   1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.fd_event_close_range_length_sum,
+				   (unsigned long)(hi - lo + 1),
+				   __ATOMIC_RELAXED);
+	} else {
+		__atomic_add_fetch(&shm->stats.fd_event_full_close_range,
+				   1, __ATOMIC_RELAXED);
+	}
+	return ok;
 }
 
 /*

@@ -28,6 +28,7 @@
  * the remaining steps.
  */
 
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -160,6 +161,30 @@ static bool chain_is_replay_safe(const struct chain_step *steps,
  * winner this window admits, the rest are dropped" without needing a
  * separate per-window counter that has to be reset on rotation.
  */
+/* lookback depth for chain_corpus_save's duplicate-shape scan */
+#define CHAIN_CORPUS_DUP_LOOKBACK 8
+
+/* shape-hash for a chain: FNV-1a over (nr, do32bit) tuples,
+ * length-included to avoid prefix aliasing */
+static uint32_t chain_shape_hash(const struct chain_step *steps,
+				 unsigned int len)
+{
+	uint32_t h = 0x811c9dc5u;
+	unsigned int i;
+
+	h ^= len;
+	h *= 0x01000193u;
+	for (i = 0; i < len; i++) {
+		uint32_t v = (uint32_t)steps[i].nr;
+
+		if (steps[i].do32bit)
+			v |= 0x80000000u;
+		h ^= v;
+		h *= 0x01000193u;
+	}
+	return h;
+}
+
 void chain_corpus_save(const struct chain_step *steps, unsigned int len,
 		       unsigned int reason, unsigned int trigger_nr)
 {
@@ -167,6 +192,8 @@ void chain_corpus_save(const struct chain_step *steps, unsigned int len,
 	struct chain_entry tmp;
 	unsigned int slot, head, count;
 	unsigned long window_id, prev_window;
+	uint32_t incoming_hash;
+	bool dup_seen = false;
 
 	if (ring == NULL || len == 0 || len > MAX_SEQ_LEN)
 		return;
@@ -196,7 +223,37 @@ void chain_corpus_save(const struct chain_step *steps, unsigned int len,
 	tmp.save_reason = reason;
 	memcpy(tmp.steps, steps, len * sizeof(struct chain_step));
 
+	incoming_hash = chain_shape_hash(steps, len);
+
 	lock(&ring->lock);
+
+	/* Walk up to CHAIN_CORPUS_DUP_LOOKBACK of the
+	 * most-recent saved slots (excluding the still-empty
+	 * incoming slot) and compare shape hashes.  Bounded by
+	 * min(count, lookback) so a warm corpus pays the full
+	 * lookback while a cold corpus pays only its filled depth.
+	 * Done under ring->lock so the slot reads can't tear
+	 * against a concurrent save publishing into the same slot
+	 * range. */
+	{
+		unsigned int lookback = ring->count;
+		unsigned int j;
+
+		if (lookback > CHAIN_CORPUS_DUP_LOOKBACK)
+			lookback = CHAIN_CORPUS_DUP_LOOKBACK;
+		for (j = 0; j < lookback; j++) {
+			unsigned int prev_slot =
+				(ring->head - 1u - j) % CHAIN_CORPUS_RING_SIZE;
+			const struct chain_entry *p = &ring->slots[prev_slot];
+
+			if (p->len == 0 || p->len > MAX_SEQ_LEN)
+				continue;
+			if (chain_shape_hash(p->steps, p->len) == incoming_hash) {
+				dup_seen = true;
+				break;
+			}
+		}
+	}
 
 	head = ring->head;
 	slot = head % CHAIN_CORPUS_RING_SIZE;
@@ -217,6 +274,12 @@ void chain_corpus_save(const struct chain_step *steps, unsigned int len,
 	__atomic_fetch_add(&ring->save_count, 1UL, __ATOMIC_RELAXED);
 	__atomic_fetch_add(&ring->chain_save_by_reason[reason], 1UL,
 			   __ATOMIC_RELAXED);
+	if (dup_seen)
+		__atomic_fetch_add(&shm->stats.chain_corpus_save_dup_shape,
+				   1UL, __ATOMIC_RELAXED);
+	else
+		__atomic_fetch_add(&shm->stats.chain_corpus_save_unique_shape,
+				   1UL, __ATOMIC_RELAXED);
 }
 
 bool chain_corpus_pick(struct chain_entry *out)

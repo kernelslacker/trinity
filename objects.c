@@ -131,21 +131,53 @@ static void fd_live_append(int fd)
  * Swap-remove fd from the parent's parallel live-fd list.  Linear scan
  * over parent_fd_live[0..count); typical occupancy is a few hundred
  * entries so the cost is negligible.
+ *
+ * The "typical few hundred entries" comment is the very
+ * thing a planned fd live-list index should be gated on confirming.
+ * Bump a log2 histogram of the position the match lands at + a miss
+ * counter so the "does the scan actually cost" question is
+ * directly answerable from the periodic dump without a profile run.
+ * Single-writer (parent) so RELAXED add-fetch is uniform with the
+ * shm->stats convention rather than load-bearing for ordering.
  */
 static void fd_live_remove(int fd)
 {
 	unsigned int count = parent_fd_live_count;
 	unsigned int i;
 
+	__atomic_add_fetch(&shm->stats.fd_live_remove_calls, 1, __ATOMIC_RELAXED);
+
 	for (i = 0; i < count; i++) {
+		unsigned int depth;
+		unsigned int bucket;
+
 		if (parent_fd_live[i] != fd)
 			continue;
 
 		if (i != count - 1)
 			parent_fd_live[i] = parent_fd_live[count - 1];
 		parent_fd_live_count = count - 1;
+
+		/* Bucket index = floor(log2(depth)) + 1, with depth==0
+		 * landing in bucket 0 (match-on-first-slot).  Saturates at
+		 * the last bucket so >=64 collapses into one tail slot. */
+		depth = i;
+		if (depth == 0)
+			bucket = 0;
+		else {
+			unsigned int lz = (unsigned int)__builtin_clz(depth);
+			unsigned int hi_bit = 31u - lz;
+
+			bucket = hi_bit + 1u;
+			if (bucket >= ARRAY_SIZE(shm->stats.fd_live_remove_scan_histogram))
+				bucket = ARRAY_SIZE(shm->stats.fd_live_remove_scan_histogram) - 1u;
+		}
+		__atomic_add_fetch(&shm->stats.fd_live_remove_scan_histogram[bucket],
+				   1, __ATOMIC_RELAXED);
 		return;
 	}
+
+	__atomic_add_fetch(&shm->stats.fd_live_remove_miss, 1, __ATOMIC_RELAXED);
 }
 
 static unsigned int fd_hash_slot(int fd)

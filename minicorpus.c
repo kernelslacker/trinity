@@ -226,14 +226,29 @@ static bool minicorpus_pick_from_other_syscall(unsigned int nr,
 	unsigned int count, head;
 	unsigned long picked;
 
+	/* xprop attempt denominator.  Bumped once per
+	 * entry regardless of outcome so the type-hit rate
+	 * xprop_hits / xprop_attempts is directly readable, and
+	 * the reject-cause breakdown below sums (with hits) to
+	 * xprop_attempts minus the xprop_n_fd_src==0 early-out
+	 * (the whitelist-uninitialised case, which is not a
+	 * realised attempt). */
 	if (xprop_n_fd_src == 0)
 		return false;
-	if (!is_fdarg(arg_atype))
+	__atomic_fetch_add(&minicorpus_shm->xprop_attempts, 1UL,
+			   __ATOMIC_RELAXED);
+	if (!is_fdarg(arg_atype)) {
+		__atomic_fetch_add(&minicorpus_shm->xprop_reject_target_not_fdarg,
+				   1UL, __ATOMIC_RELAXED);
 		return false;
+	}
 
 	src_nr = xprop_fd_src_nrs[rnd_modulo_u32(xprop_n_fd_src)];
-	if (src_nr == nr)
+	if (src_nr == nr) {
+		__atomic_fetch_add(&minicorpus_shm->xprop_reject_src_self,
+				   1UL, __ATOMIC_RELAXED);
 		return false;
+	}
 
 	ring = &minicorpus_shm->rings[src_nr];
 
@@ -268,8 +283,11 @@ static bool minicorpus_pick_from_other_syscall(unsigned int nr,
 	 * a slightly-stale value, which is fuzz fodder either way.
 	 */
 	count = __atomic_load_n(&ring->count, __ATOMIC_ACQUIRE);
-	if (count == 0)
+	if (count == 0) {
+		__atomic_fetch_add(&minicorpus_shm->xprop_reject_src_empty,
+				   1UL, __ATOMIC_RELAXED);
 		return false;
+	}
 	head = __atomic_load_n(&ring->head, __ATOMIC_RELAXED);
 
 	/* Newest entry: head points one past the last write.  Adding
@@ -403,6 +421,15 @@ void minicorpus_save_with_reason(struct syscallrecord *rec,
 	__atomic_fetch_add(&minicorpus_shm->mutations, 1UL, __ATOMIC_RELAXED);
 	__atomic_fetch_add(&minicorpus_shm->saves_by_reason[reason], 1UL,
 			   __ATOMIC_RELAXED);
+	/* Ring-overwrite count per incoming reason.  At
+	 * a full ring, the save above displaced the oldest existing
+	 * entry; bump indexed by the incoming reason so the ratio
+	 * evicts_by_reason[r] / saves_by_reason[r] is the realised
+	 * "fraction of reason-r saves that evicted" rate the
+	 * stratified mini-corpus replay policy hangs on. */
+	if (cur_count >= CORPUS_RING_SIZE)
+		__atomic_fetch_add(&minicorpus_shm->evicts_by_reason[reason],
+				   1UL, __ATOMIC_RELAXED);
 
 	/* Per-syscall RedQueen-source save counter.  Bumped only when the
 	 * provenance tag captured above is set, so the per-syscall total is
@@ -483,6 +510,14 @@ static bool this_replay_spliced;
 static bool this_replay_source_tracked;
 static unsigned int this_replay_source_nr;
 static unsigned int this_replay_source_slot;
+/* Source-entry age (distance-from-head, in slots) at
+ * replay-pick time.  Stashed at minicorpus_replay() pick and consumed
+ * by minicorpus_mut_attrib_commit() to bin replay_wins_by_age.  Same
+ * per-process / fork-then-single-threaded guarantee as the other
+ * this_replay_* stashes above; unsigned so an untracked-source
+ * commit just sees 0 without touching the histogram (gated on
+ * this_replay_source_tracked). */
+static unsigned int this_replay_source_age;
 
 /*
  * Process-local CMP-source attribution flag.
@@ -814,6 +849,36 @@ void minicorpus_mut_attrib_commit(bool found_new)
 		if (found_new && src_entry != NULL)
 			__atomic_fetch_add(&src_entry->novel_replay_hits,
 					   1U, __ATOMIC_RELAXED);
+
+		/* Replay-wins-by-entry-age.  Same
+		 * found_new gate the baseline advance above uses --
+		 * "productive replay of a tracked source" — but
+		 * unconditional on baseline_established because the
+		 * histogram measures *coverage discovery* per age
+		 * bucket regardless of whether the discovery is the
+		 * entry's intrinsic novelty or a mutator credit.
+		 * Bucket index = floor(log2(age)) + 1 with age==0
+		 * landing in bucket 0; saturates at the last bucket
+		 * so any age the ring can hold lands in a defined
+		 * slot. */
+		if (found_new) {
+			unsigned int age = this_replay_source_age;
+			unsigned int bucket;
+
+			if (age == 0)
+				bucket = 0;
+			else {
+				unsigned int lz = (unsigned int)__builtin_clz(age);
+				unsigned int hi_bit = 31u - lz;
+
+				bucket = hi_bit + 1u;
+				if (bucket >= ARRAY_SIZE(minicorpus_shm->replay_wins_by_age))
+					bucket = ARRAY_SIZE(minicorpus_shm->replay_wins_by_age) - 1u;
+			}
+			__atomic_fetch_add(
+				&minicorpus_shm->replay_wins_by_age[bucket],
+				1UL, __ATOMIC_RELAXED);
+		}
 
 		this_replay_source_tracked = false;
 	} else {
@@ -1515,6 +1580,11 @@ bool minicorpus_replay(struct syscallrecord *rec)
 		this_replay_source_tracked = true;
 		this_replay_source_nr = nr;
 		this_replay_source_slot = slot;
+		/* Source-entry age at pick.  In the
+		 * K_RECENT-narrowed path the slot is the offset-th
+		 * entry in the K_RECENT window ending at (head - 1),
+		 * so age-from-head = K_RECENT - 1 - offset. */
+		this_replay_source_age = (K_RECENT - 1u) - offset;
 		{
 			struct childdata *cc = this_child();
 
@@ -1555,6 +1625,20 @@ bool minicorpus_replay(struct syscallrecord *rec)
 		this_replay_source_tracked = true;
 		this_replay_source_nr = nr;
 		this_replay_source_slot = slot;
+		/* Source-entry age = (head - 1 - slot)
+		 * mod CORPUS_RING_SIZE.  Load head with RELAXED --
+		 * the uniform-over-count slot pick above doesn't
+		 * reference head, so this load is a measurement-only
+		 * addition with no ordering constraint.  A stale
+		 * head one publish behind just shifts the bin by one
+		 * slot, which is well inside the bucket boundaries. */
+		{
+			unsigned int head_now = __atomic_load_n(
+				&ring->head, __ATOMIC_RELAXED);
+
+			this_replay_source_age =
+				(head_now - 1u - slot) & (CORPUS_RING_SIZE - 1u);
+		}
 		{
 			struct childdata *cc = this_child();
 

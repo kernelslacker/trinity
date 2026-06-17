@@ -3108,6 +3108,157 @@ struct stats_s {
 	unsigned long maps_reject_alloc_track_miss_file;
 	unsigned long maps_reject_alloc_track_miss_testfile;
 
+	/* Map subsystem scan-cost / health observability.
+	 * Pure attribution; no behaviour change.  All bumps RELAXED on
+	 * shm->stats from get_map_handle / get_map_with_prot /
+	 * common_set_mmap_ptr_len (mm/maps.c) — mirrors the existing
+	 * maps_reject_* class above (same writer set, same atomic
+	 * convention, same shm->stats home), so no new hot cross-child
+	 * synchronisation class is introduced.
+	 *
+	 * The planned side-index rows (O(1) map-region resolution, a
+	 * per-prot map index) should only be built once the rate-of-
+	 * change these counters surface in defense_counters_periodic_dump
+	 * proves the cost is real -- do NOT build the side indexes until
+	 * the map-type-resolution scan-length / get_map_with_prot
+	 * prot-reject rates here prove the linear scan actually costs. */
+
+	/* Per-type sub-attribution of get_map_handle()'s pool pick.
+	 * Bumped once per successful pick at the &obj->map publish
+	 * site, indexed by the OBJ_MMAP_* type selected for the
+	 * winning iteration.  Sum across the three equals
+	 * maps_pick_successes below.  The dispatch mix lets
+	 * pool-popmask balance be cross-checked against
+	 * post-pop-mask pool occupancy. */
+	unsigned long maps_pool_chosen_anon;
+	unsigned long maps_pool_chosen_file;
+	unsigned long maps_pool_chosen_testfile;
+
+	/* Per-type sub-attribution of [[maps_reject_pool_empty]]:
+	 * the aggregate above is bumped per get_random_object()==NULL
+	 * iteration without recording which OBJ_MMAP_* pool returned
+	 * NULL.  These three split the same reject by the `type`
+	 * local at the bump site.  Summed they equal
+	 * maps_reject_pool_empty.  The MMAP_TESTFILE share is the
+	 * specific signal of interest (only ANON has a
+	 * well-populated OBJ_LOCAL pool post-fork). */
+	unsigned long maps_reject_pool_empty_anon;
+	unsigned long maps_reject_pool_empty_file;
+	unsigned long maps_reject_pool_empty_testfile;
+
+	/* Per-required-prot-mask sub-attribution of
+	 * get_map_with_prot() retries.  Indexed by required_prot &
+	 * 0x7 (PROT_READ|WRITE|EXEC bits — PROT_NONE collapses to
+	 * index 0, PROT_SEM is out of the low-three-bit window and
+	 * folded into its RWX overlap).  Bumped once per
+	 * (m->prot & required_prot) != required_prot iteration.
+	 * The hottest bucket identifies the prot combination paying
+	 * the highest rejection-sample cost — the input a
+	 * per-prot map index would optimise. */
+	unsigned long maps_prot_reject_by_mask[8];
+
+	/* get_map_handle() pick-cost accounting.  Bumped once per
+	 * successful pick, with `attempts_sum` carrying the
+	 * 1-indexed loop iteration that landed the pick.  The
+	 * ratio maps_pick_attempts_sum / maps_pick_successes is
+	 * the realised average attempts-per-successful-pick the
+	 * 1000-iter budget exists to amortise — a value
+	 * approaching the budget says the loop is dominated by
+	 * the reject path and the side-index work is justified. */
+	unsigned long maps_pick_attempts_sum;
+	unsigned long maps_pick_successes;
+	/* Same pair for the get_map_with_prot() outer retry loop,
+	 * which wraps get_map_handle() with its own up-to-1000-
+	 * iter prot-filter retry.  Tracked separately because the
+	 * prot filter compounds with the inner pool-pick reject
+	 * to multiply iteration cost; the with_prot ratio is the
+	 * one a per-prot map index would directly improve. */
+	unsigned long maps_pick_with_prot_attempts_sum;
+	unsigned long maps_pick_with_prot_successes;
+
+	/* common_set_mmap_ptr_len() type-resolution scan accounting.
+	 * The function walks the three OBJ_LOCAL OBJ_MMAP_* pools
+	 * end-to-end looking for the pointer-identity match for
+	 * the caller-supplied `map`; each pool walks all of
+	 * head->array.  Bumped per call into the resolution arm
+	 * (out_type != NULL): `calls` is the denominator,
+	 * `scan_length_sum` is the cumulative objects visited
+	 * across all three pools, `hits` is the subset where the
+	 * walk resolved (out_type != OBJ_NONE).  scan_length_sum /
+	 * calls = avg objects walked per resolution — the direct
+	 * measurement the O(1) map-region resolution is gated on. */
+	unsigned long maps_type_resolution_calls;
+	unsigned long maps_type_resolution_scan_length_sum;
+	unsigned long maps_type_resolution_hits;
+
+	/* FD bookkeeping observability.
+	 *
+	 * fd_live_remove() (objects.c) does a linear scan of
+	 * parent_fd_live[0..parent_fd_live_count) on every parent-
+	 * side fd retirement.  Comment at the bump site says
+	 * "typical occupancy is a few hundred entries so the cost
+	 * is negligible" but a planned fd live-list index should only
+	 * be built once this histogram shows the scan actually
+	 * expensive in practice.
+	 *
+	 * Single-writer (parent) — no atomics needed for
+	 * correctness, but RELAXED bumps used uniformly to match
+	 * the rest of the shm->stats convention so a future
+	 * concurrent caller can be added without rewriting the
+	 * read path.
+	 *
+	 * Bucket index = log2(scan_depth) with a 1-floor:
+	 *   0: scan ==0 (match on first slot)
+	 *   1: scan 1..1
+	 *   2: scan 2..3
+	 *   3: scan 4..7
+	 *   4: scan 8..15
+	 *   5: scan 16..31
+	 *   6: scan 32..63
+	 *   7: scan >=64
+	 * Bumped per matched call; misses bump fd_live_remove_miss
+	 * separately (a miss is a fd that hash_remove asked us to
+	 * retire but no live_fd slot held — symmetry-bug signal,
+	 * not a scan-cost signal). */
+	unsigned long fd_live_remove_scan_histogram[8];
+	unsigned long fd_live_remove_calls;
+	unsigned long fd_live_remove_miss;
+
+	/* fd_event_enqueue() ring-full failure split by enqueue
+	 * type.  Bumped at the spsc_ring_try_enqueue()==false site
+	 * in fd-event.c, indexed by the producer-supplied
+	 * fd_event_type.  Without the split the existing
+	 * fd_events_dropped aggregates everything the drain
+	 * observes as overflow — these three say which producer
+	 * path is the source.  CLOSE_RANGE has its own counter
+	 * because its producer is a different function
+	 * (fd_event_enqueue_range, single fd_event_type). */
+	unsigned long fd_event_full_close;
+	unsigned long fd_event_full_evict;
+	unsigned long fd_event_full_close_range;
+
+	/* Producer-side close-range observability:
+	 * `_enqueued` is the count of FD_EVENT_CLOSE_RANGE events
+	 * that successfully landed in the ring, `_length_sum` is
+	 * the cumulative (hi - lo + 1) span across those events.
+	 * length_sum / enqueued = avg fds collapsed per
+	 * close_range event — surfaces the effective compression
+	 * ratio close-range buys over the per-fd FD_EVENT_CLOSE
+	 * path. */
+	unsigned long fd_event_close_range_enqueued;
+	unsigned long fd_event_close_range_length_sum;
+
+	/* Chain-corpus duplicate-shape rate
+	 * (sequence.c).  Bumped from chain_corpus_save() under the
+	 * ring lock: dup means the incoming chain's
+	 * (nr, do32bit) tuple shape matched at least one of the
+	 * CHAIN_CORPUS_DUP_LOOKBACK most-recent saved slots;
+	 * unique means no match.  Rate dup / (dup + unique) is the
+	 * realised duplicate-shape rate a per-shape chain quota
+	 * is gated on. */
+	unsigned long chain_corpus_save_dup_shape;
+	unsigned long chain_corpus_save_unique_shape;
+
 	/* ---- Childop vs random-syscall effort split ----
 	 *
 	 * Three independent buckets so the periodic stats dump can show
