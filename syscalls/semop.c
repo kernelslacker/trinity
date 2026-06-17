@@ -89,7 +89,7 @@ struct syscallentry syscall_semop = {
 	.name = "semop",
 	.group = GROUP_IPC,
 	.num_args = 3,
-	.argtype = { [0] = ARG_SEM_ID, [2] = ARG_LEN },
+	.argtype = { [0] = ARG_SEM_ID, [1] = ARG_ADDRESS, [2] = ARG_LEN },
 	.argname = { [0] = "semid", [1] = "tsops", [2] = "nsops" },
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
