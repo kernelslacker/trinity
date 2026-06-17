@@ -942,9 +942,14 @@ static void add_object_publish(struct object *obj, enum obj_scope scope,
 	 * a child COW-copy goes stale immediately after fork; the
 	 * shm_published mirror is the republished, child-visible copy
 	 * of the same counter.  No current reader -- pre-stage field
-	 * for the upcoming diag-drain consumer.
+	 * for the upcoming diag-drain consumer.  RELAXED matches the
+	 * parent's __atomic_store_n in stats_publish_locked(); a plain
+	 * child read racing the parent's atomic write of the same shm
+	 * word is a C11 data race.
 	 */
-	obj->publish_call_nr = shm_published ? shm_published->fleet_op_count : 0;
+	obj->publish_call_nr = shm_published
+	      ? __atomic_load_n(&shm_published->fleet_op_count, __ATOMIC_RELAXED)
+	      : 0;
 	head->num_entries = n + 1;
 
 	/*

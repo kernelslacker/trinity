@@ -200,12 +200,16 @@ static int shm_is_corrupt(void)
 	 * lands, or somehow a wild write succeeded against the read-only
 	 * mapping in a child).  Log + bump rather than panic -- the
 	 * canonical value is still trustworthy. */
-	if (shm_published != NULL &&
-	    shm_published->fleet_op_count != current_op_count) {
-		output(0, "shm_published mirror: fleet_op_count=%lu, "
-			  "aggregate=%lu (mirror scribbled?)\n",
-			  shm_published->fleet_op_count, current_op_count);
-		parent_stats.shm_published_corrupt++;
+	if (shm_published != NULL) {
+		unsigned long mirror =
+			__atomic_load_n(&shm_published->fleet_op_count,
+					__ATOMIC_RELAXED);
+		if (mirror != current_op_count) {
+			output(0, "shm_published mirror: fleet_op_count=%lu, "
+				  "aggregate=%lu (mirror scribbled?)\n",
+				  mirror, current_op_count);
+			parent_stats.shm_published_corrupt++;
+		}
 	}
 
 	for_each_child(i) {
@@ -3106,7 +3110,8 @@ void reset_epoch_state(void)
 	parent_stats.previous_op_count = 0;
 
 	if (shm_published != NULL)
-		shm_published->fleet_op_count = 0;
+		__atomic_store_n(&shm_published->fleet_op_count, 0UL,
+				 __ATOMIC_RELAXED);
 
 	/*
 	 * Strategy-rotation window-start snapshots.  maybe_rotate_strategy()
