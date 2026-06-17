@@ -302,6 +302,54 @@ struct cmp_field_pool {
 };
 
 /*
+ * Run-local "recent" tier.
+ *
+ * The durable per-syscall pool above caps at CMP_HINTS_PER_SYSCALL
+ * (16) entries and saturates on long fuzz runs: cmp_hints_save_reject_cap
+ * dominates cmp_hints_unique_inserts, so the late-run constants the
+ * kernel produced never reach the consumer because the LRU floor is
+ * already full of older entries that keep refreshing their last_used
+ * stamps.  The recent ring is a small second tier that absorbs every
+ * fresh pool_add_locked() insert into a per-syscall circular buffer,
+ * never persisted, never weighted against the durable pool's LRU --
+ * just a window over what the kernel CMP'd recently.
+ *
+ * Eight entries per (nr, arch) is enough to give the recent-first arm
+ * a meaningful population without competing with the durable pool's
+ * memory footprint: MAX_NR_SYSCALL * 2 * CMP_RECENT_PER_SYSCALL *
+ * sizeof(cmp_recent_entry) is on the order of a few hundred KiB,
+ * matching the existing pool grid's scale.  Entries are written under
+ * the durable pool's lock (the only writer is cmp_hints_flush_pending,
+ * already holding it for the durable insert that triggers the recent
+ * insert), and read lock-free from cmp_hints_try_get_ex the same way
+ * the durable pool is -- naturally aligned fields, advisory values,
+ * torn cross-field reads tolerated.
+ *
+ * head is the next slot to write; count grows up to
+ * CMP_RECENT_PER_SYSCALL and then sticks at the cap (the ring stays
+ * full once it has saturated).  Inserts overwrite the slot at head
+ * and advance head modulo the cap, so the oldest entry is always the
+ * one displaced.  No dedup -- the ring deliberately accepts the same
+ * (cmp_ip, value, size) tuple again if the kernel saw it again, so
+ * "recent" semantics aren't diluted by deduping against an earlier
+ * window.
+ */
+#define CMP_RECENT_PER_SYSCALL 8
+
+struct cmp_recent_entry {
+	unsigned long value;
+	unsigned long cmp_ip;
+	uint32_t size;		/* operand width in bytes: 1, 2, 4, or 8 */
+	uint32_t pad;
+};
+
+struct cmp_recent_pool {
+	unsigned int head;
+	unsigned int count;
+	struct cmp_recent_entry entries[CMP_RECENT_PER_SYSCALL];
+};
+
+/*
  * Pool grid indexed by [syscall_nr][do32 ? 1 : 0].  Mirrors the arch
  * dimension already carried by cmp_hints_strip[2][MAX_NR_SYSCALL]:
  * under biarch, syscall nr=N under the 32-bit table and syscall nr=N
@@ -321,6 +369,10 @@ struct cmp_hints_shared {
 	 * field_pools[i].key.desc; an all-zero memset at init leaves every
 	 * bucket empty until claimed by the first matching CMP record. */
 	struct cmp_field_pool field_pools[CMP_FIELD_POOL_BUCKETS];
+	/* Run-local recent tier.  Memset to zero at
+	 * init alongside the rest of the shm allocation; not persisted by
+	 * cmp_hints_save_file (the save path only writes pools[]). */
+	struct cmp_recent_pool recent_pools[MAX_NR_SYSCALL][2];
 };
 _Static_assert(MAX_NR_SYSCALL == 1024,
 	"cmp_hints_shared layout assumes MAX_NR_SYSCALL == 1024");

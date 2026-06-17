@@ -446,6 +446,42 @@ const char *redqueen_pending_pick_name(enum redqueen_pending_pick_mode_t mode)
 	return "unknown";
 }
 
+/*
+ * Default = OFF so the commit ships behaviour-neutral: cmp_hints_try_get_ex()
+ * samples the durable pool exactly as before, while the shadow counters
+ * around the recent ring (cmp_recent_inserts / would_pick / would_miss)
+ * accumulate so an operator reading stats from a default run can already
+ * see the would-be-pick rate before flipping the live arm.  Distribution
+ * changes ship shadow-first: counters land before the live arm flips.
+ */
+enum cmp_recent_pool_mode_t cmp_recent_pool_mode_arg = CMP_RECENT_POOL_OFF;
+
+bool parse_cmp_recent_pool(const char *name,
+			   enum cmp_recent_pool_mode_t *out)
+{
+	if (name == NULL || out == NULL)
+		return false;
+
+	if (strcmp(name, "off") == 0) {
+		*out = CMP_RECENT_POOL_OFF;
+		return true;
+	}
+	if (strcmp(name, "recent-first") == 0) {
+		*out = CMP_RECENT_POOL_RECENT_FIRST;
+		return true;
+	}
+	return false;
+}
+
+const char *cmp_recent_pool_name(enum cmp_recent_pool_mode_t mode)
+{
+	switch (mode) {
+	case CMP_RECENT_POOL_OFF:		return "off";
+	case CMP_RECENT_POOL_RECENT_FIRST:	return "recent-first";
+	}
+	return "unknown";
+}
+
 bool user_set_seed = false;
 
 unsigned char desired_group = GROUP_NONE;
@@ -527,6 +563,7 @@ static const struct option_help option_descs[] = {
 	{ "print-disabled-syscalls", 0, "print syscalls disabled via AVOID_SYSCALL or NEED_ALARM and exit" },
 	{ "random",		'r', "pick N syscalls at random and just fuzz those" },
 	{ "redqueen-pending-pick", 0, "A/B selection policy for the RedQueen re-exec consumer at the dispatch_step tail.  Accepts 'random' (default) -- uniform pick from the per-call reexec_pending[] attribution census via rnd_modulo_u32 -- or 'first', which always drains entry 0 (the prior-behaviour trace-order winner).  Per-pending-index success counters are active in BOTH modes for direct A/B comparison." },
+	{ "cmp-recent-pool", 0, "A/B selection policy for the run-local CMP recent-pool tier.  Accepts 'off' (default; cmp_hints_try_get_ex samples the durable per-syscall pool exactly as before) or 'recent-first' (during a CMP_RISING_PC_FLAT plateau, sample the recent ring first and fall through to the durable pool on an empty ring or off-plateau).  Shadow counters (cmp_recent_inserts / would_pick / would_miss) are active in BOTH modes so the would-be-pick rate is observable from a default run before the live arm is flipped." },
 	{ "show-unannotated",	 0,  "show unannotated syscalls" },
 	{ "stats",		 0,  "show errno distribution per syscall before exiting" },
 	{ "stats-json",		 0,  "emit dump_stats output as a single JSON object on stdout (machine-readable)" },
@@ -621,6 +658,7 @@ static const struct option longopts[] = {
 	{ "quiet", no_argument, NULL, 'q' },
 	{ "random", required_argument, NULL, 'r' },
 	{ "redqueen-pending-pick", required_argument, NULL, 0 },
+	{ "cmp-recent-pool", required_argument, NULL, 0 },
 	{ "stats", no_argument, NULL, 0 },
 	{ "stats-json", no_argument, NULL, 0 },
 	{ "stats-log-file", required_argument, NULL, 0 },
@@ -1161,6 +1199,17 @@ void parse_args(int argc, char *argv[])
 						optarg,
 						&redqueen_pending_pick_mode_arg)) {
 					outputerr("--redqueen-pending-pick: unknown policy '%s' (try random or first)\n",
+						  optarg);
+					exit(EXIT_FAILURE);
+				}
+			}
+
+			if (strcmp("cmp-recent-pool",
+				   longopts[opt_index].name) == 0) {
+				if (!parse_cmp_recent_pool(
+						optarg,
+						&cmp_recent_pool_mode_arg)) {
+					outputerr("--cmp-recent-pool: unknown policy '%s' (try off or recent-first)\n",
 						  optarg);
 					exit(EXIT_FAILURE);
 				}
