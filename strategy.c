@@ -887,7 +887,7 @@ static double ucb1_score(int arm, double total_n, double norm)
  * learner's reward history stays clean, but bandit_pulls_by_reason[]
  * captures every window unconditionally, and summing across reasons
  * gives the true "ever picked?" answer that cold-start wants.
- * NR_STRATEGIES * NR_SELECTION_REASONS is currently 16 cells; the
+ * NR_STRATEGIES * NR_SELECTION_REASONS is currently 12 cells; the
  * cold-start scan only fires until each eligible arm has been picked
  * once, so the cost is irrelevant.
  */
