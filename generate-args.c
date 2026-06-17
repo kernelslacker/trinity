@@ -2410,16 +2410,13 @@ static void mutate_field_vocab(unsigned char *buf, const struct struct_field *f)
 
 	for (retries = 0; retries < 8; retries++) {
 		const char *pick = vocab[rnd_modulo_u32(nv)];
-		size_t plen;
+		size_t plen = strnlen(pick, stride - 1);
 
-		if (memcmp(buf + f->offset, pick,
-			   strnlen(pick, stride - 1)) == 0 &&
-		    strnlen(pick, stride - 1) ==
-			   strnlen((const char *) (buf + f->offset),
-				   stride - 1))
+		if (memcmp(buf + f->offset, pick, plen) == 0 &&
+		    plen == strnlen((const char *) (buf + f->offset),
+				    stride - 1))
 			continue;
 
-		plen = strnlen(pick, stride - 1);
 		memset(buf + f->offset, 0, stride);
 		memcpy(buf + f->offset, pick, plen);
 		return;
