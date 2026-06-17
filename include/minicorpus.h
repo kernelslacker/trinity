@@ -191,6 +191,20 @@ struct minicorpus_shared {
 	 * splice shuffles values within one snapshot, xprop shuffles them
 	 * across syscalls.  RELAXED atomic. */
 	unsigned long xprop_hits;
+	/* xprop source/target type-hit rate accounting.
+	 * xprop_attempts is the denominator (bumped at every entry into
+	 * minicorpus_pick_from_other_syscall regardless of outcome); the
+	 * three reject counters split the !hit path by reason so the
+	 * type-hit rate is xprop_hits / xprop_attempts and the dominant
+	 * reject cause is the largest of the three.  These exist to
+	 * surface the realised hit-rate the typed cross-syscall
+	 * propagation row is gated on (the typed-bucket index is
+	 * only worth building if the current uniform-pick path is
+	 * actually dominated by type-mismatch rejects). */
+	unsigned long xprop_attempts;
+	unsigned long xprop_reject_target_not_fdarg;
+	unsigned long xprop_reject_src_self;
+	unsigned long xprop_reject_src_empty;
 	/* Distribution of stacking depths chosen by pick_stack_depth().
 	 * Index is the depth value (1..STACK_MAX); index 0 is unused. */
 	unsigned long stack_depth_histogram[STACK_MAX + 1];
@@ -225,6 +239,39 @@ struct minicorpus_shared {
 	 * read these once per dump, no ordering constraint with the entry
 	 * insert that just preceded the bump. */
 	unsigned long saves_by_reason[CORPUS_SAVE_NR_REASONS];
+
+	/* Ring-overwrite count per reason.  Bumped
+	 * inside minicorpus_save_with_reason() when the admitting
+	 * ring already held CORPUS_RING_SIZE entries (cur_count ==
+	 * CORPUS_RING_SIZE), so the incoming save is overwriting the
+	 * oldest existing slot.  Indexed by the *incoming* save's
+	 * reason — i.e. the save that caused the eviction — so the
+	 * ratio evicts_by_reason[r] / saves_by_reason[r] is the
+	 * realised "fraction of reason-r saves that displaced
+	 * something" rate the stratified mini-corpus replacement
+	 * row is gated on (a high CMP-evict rate means
+	 * CMP saves are pushing PC saves out at FIFO discipline). */
+	unsigned long evicts_by_reason[CORPUS_SAVE_NR_REASONS];
+
+	/* Replay wins binned by source-entry age at
+	 * pick time.  Bumped from minicorpus_mut_attrib_commit()
+	 * on found_new when a replay source slot was tracked.
+	 * Bucket index = floor(log2(age_in_slots)) + 1, saturating
+	 * at the last bucket; age is (head - 1 - slot) mod
+	 * CORPUS_RING_SIZE captured at minicorpus_replay() pick
+	 * time, so bucket 0 is the newest entry and the highest
+	 * bucket the oldest CORPUS_RING_SIZE-1 distance.
+	 *   0: age 0    (newest)
+	 *   1: age 1
+	 *   2: age 2..3
+	 *   3: age 4..7
+	 *   4: age 8..15
+	 *   5: age 16..31  (oldest in a 32-slot ring)
+	 * Surfaces whether wins concentrate in fresh entries
+	 * (FIFO is fine) or spread across the ring (a protected
+	 * top-K is justified), the question the
+	 * stratified mini-corpus replay policy hangs on. */
+	unsigned long replay_wins_by_age[6];
 
 	/* Plateau intervention (cmp_rising_pc_flat): count of
 	 * replay slot picks that took the recent-K narrowed path because

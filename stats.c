@@ -569,8 +569,28 @@ static void json_emit_minicorpus_section(void)
 	{
 		unsigned long xp_hits = __atomic_load_n(
 			&minicorpus_shm->xprop_hits, __ATOMIC_RELAXED);
+		/* xprop attempt/reject breakdown so the
+		 * hit-rate xp_hits / xp_attempts and the dominant
+		 * reject cause are directly readable from the
+		 * end-of-run dump. */
+		unsigned long xp_attempts = __atomic_load_n(
+			&minicorpus_shm->xprop_attempts, __ATOMIC_RELAXED);
+		unsigned long xp_r_target = __atomic_load_n(
+			&minicorpus_shm->xprop_reject_target_not_fdarg,
+			__ATOMIC_RELAXED);
+		unsigned long xp_r_self = __atomic_load_n(
+			&minicorpus_shm->xprop_reject_src_self,
+			__ATOMIC_RELAXED);
+		unsigned long xp_r_empty = __atomic_load_n(
+			&minicorpus_shm->xprop_reject_src_empty,
+			__ATOMIC_RELAXED);
 
-		printf(",\"xprop\":{\"hits\":%lu}", xp_hits);
+		printf(",\"xprop\":{\"hits\":%lu,\"attempts\":%lu,"
+		       "\"reject_target_not_fdarg\":%lu,"
+		       "\"reject_src_self\":%lu,"
+		       "\"reject_src_empty\":%lu}",
+		       xp_hits, xp_attempts, xp_r_target,
+		       xp_r_self, xp_r_empty);
 	}
 
 	fputs(",\"stack_depth_histogram\":{", stdout);
@@ -609,6 +629,12 @@ static void json_emit_minicorpus_section(void)
 		unsigned long cmp_wins = __atomic_load_n(
 			&minicorpus_shm->mut_attrib_cmp_wins,
 			__ATOMIC_RELAXED);
+		unsigned long evicts_pc = __atomic_load_n(
+			&minicorpus_shm->evicts_by_reason[CORPUS_SAVE_REASON_PC],
+			__ATOMIC_RELAXED);
+		unsigned long evicts_cmp = __atomic_load_n(
+			&minicorpus_shm->evicts_by_reason[CORPUS_SAVE_REASON_CMP],
+			__ATOMIC_RELAXED);
 		unsigned long errno_would = __atomic_load_n(
 			&shm->stats.errno_grad_save_would_save,
 			__ATOMIC_RELAXED);
@@ -617,11 +643,24 @@ static void json_emit_minicorpus_section(void)
 			__ATOMIC_RELAXED);
 
 		printf(",\"saves_by_reason\":{\"pc\":%lu,\"cmp\":%lu,\"errno\":%lu}"
+		       ",\"evicts_by_reason\":{\"pc\":%lu,\"cmp\":%lu}"
 		       ",\"mut_attrib_cmp_wins\":%lu"
 		       ",\"errno_grad_save\":{\"would_save\":%lu,\"did_save\":%lu}",
-		       saves_pc, saves_cmp, saves_errno, cmp_wins,
-		       errno_would, errno_did);
+		       saves_pc, saves_cmp, saves_errno, evicts_pc, evicts_cmp,
+		       cmp_wins, errno_would, errno_did);
 	}
+
+	/* Replay-wins-by-entry-age histogram. */
+	fputs(",\"replay_wins_by_age\":{", stdout);
+	for (i = 0; i < ARRAY_SIZE(minicorpus_shm->replay_wins_by_age); i++) {
+		unsigned long v = __atomic_load_n(
+			&minicorpus_shm->replay_wins_by_age[i], __ATOMIC_RELAXED);
+
+		if (i > 0)
+			putchar(',');
+		printf("\"%u\":%lu", i, v);
+	}
+	putchar('}');
 
 	c_iter   = __atomic_load_n(&minicorpus_shm->chain_iter_count,         __ATOMIC_RELAXED);
 	c_subst  = __atomic_load_n(&minicorpus_shm->chain_substitution_count, __ATOMIC_RELAXED);
@@ -2036,7 +2075,15 @@ static void dump_stats_json_fault_and_fd_lifecycle(void)
 			"\"runtime_registered\":%lu,\"epoll_lazy_armed\":%lu,"
 			"\"epoll_blocking_poll_skipped\":%lu,"
 			"\"random_exhausted\":%lu,"
-			"\"provider_invalid\":%lu},",
+			"\"provider_invalid\":%lu,"
+			"\"live_remove_calls\":%lu,"
+			"\"live_remove_miss\":%lu,"
+			"\"live_remove_scan_histogram\":[%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu],"
+			"\"event_full_close\":%lu,"
+			"\"event_full_evict\":%lu,"
+			"\"event_full_close_range\":%lu,"
+			"\"event_close_range_enqueued\":%lu,"
+			"\"event_close_range_length_sum\":%lu},",
 		parent_stats.fault_injected, parent_stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
 		shm->stats.fd_closed_tracked, shm->stats.fd_regenerated,
@@ -2049,7 +2096,22 @@ static void dump_stats_json_fault_and_fd_lifecycle(void)
 		shm->stats.epoll_lazy_armed,
 		shm->stats.epoll_blocking_poll_skipped,
 		shm->stats.fd_random_exhausted,
-		shm->stats.fd_provider_invalid);
+		shm->stats.fd_provider_invalid,
+		shm->stats.fd_live_remove_calls,
+		shm->stats.fd_live_remove_miss,
+		shm->stats.fd_live_remove_scan_histogram[0],
+		shm->stats.fd_live_remove_scan_histogram[1],
+		shm->stats.fd_live_remove_scan_histogram[2],
+		shm->stats.fd_live_remove_scan_histogram[3],
+		shm->stats.fd_live_remove_scan_histogram[4],
+		shm->stats.fd_live_remove_scan_histogram[5],
+		shm->stats.fd_live_remove_scan_histogram[6],
+		shm->stats.fd_live_remove_scan_histogram[7],
+		shm->stats.fd_event_full_close,
+		shm->stats.fd_event_full_evict,
+		shm->stats.fd_event_full_close_range,
+		shm->stats.fd_event_close_range_enqueued,
+		shm->stats.fd_event_close_range_length_sum);
 }
 
 static void dump_stats_json_oracle(void)
@@ -2243,6 +2305,22 @@ static void dump_stats_json_corruption_and_audit(void)
 			"\"maps_reject_alloc_track_miss_testfile\":%lu,"
 			"\"maps_reject_size_zero\":%lu,"
 			"\"maps_reject_size_too_large\":%lu,"
+			"\"maps_pool_chosen_anon\":%lu,"
+			"\"maps_pool_chosen_file\":%lu,"
+			"\"maps_pool_chosen_testfile\":%lu,"
+			"\"maps_reject_pool_empty_anon\":%lu,"
+			"\"maps_reject_pool_empty_file\":%lu,"
+			"\"maps_reject_pool_empty_testfile\":%lu,"
+			"\"maps_prot_reject_by_mask\":[%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu],"
+			"\"maps_pick_attempts_sum\":%lu,"
+			"\"maps_pick_successes\":%lu,"
+			"\"maps_pick_with_prot_attempts_sum\":%lu,"
+			"\"maps_pick_with_prot_successes\":%lu,"
+			"\"maps_type_resolution_calls\":%lu,"
+			"\"maps_type_resolution_scan_length_sum\":%lu,"
+			"\"maps_type_resolution_hits\":%lu,"
+			"\"chain_corpus_save_dup_shape\":%lu,"
+			"\"chain_corpus_save_unique_shape\":%lu,"
 			"\"deferred_free_reject_misaligned\":%lu,"
 			"\"deferred_free_reject_corrupt_shape\":%lu,"
 			"\"deferred_free_reject_non_heap\":%lu,"
@@ -2301,6 +2379,29 @@ static void dump_stats_json_corruption_and_audit(void)
 		shm->stats.maps_reject_alloc_track_miss_testfile,
 		shm->stats.maps_reject_size_zero,
 		shm->stats.maps_reject_size_too_large,
+		shm->stats.maps_pool_chosen_anon,
+		shm->stats.maps_pool_chosen_file,
+		shm->stats.maps_pool_chosen_testfile,
+		shm->stats.maps_reject_pool_empty_anon,
+		shm->stats.maps_reject_pool_empty_file,
+		shm->stats.maps_reject_pool_empty_testfile,
+		shm->stats.maps_prot_reject_by_mask[0],
+		shm->stats.maps_prot_reject_by_mask[1],
+		shm->stats.maps_prot_reject_by_mask[2],
+		shm->stats.maps_prot_reject_by_mask[3],
+		shm->stats.maps_prot_reject_by_mask[4],
+		shm->stats.maps_prot_reject_by_mask[5],
+		shm->stats.maps_prot_reject_by_mask[6],
+		shm->stats.maps_prot_reject_by_mask[7],
+		shm->stats.maps_pick_attempts_sum,
+		shm->stats.maps_pick_successes,
+		shm->stats.maps_pick_with_prot_attempts_sum,
+		shm->stats.maps_pick_with_prot_successes,
+		shm->stats.maps_type_resolution_calls,
+		shm->stats.maps_type_resolution_scan_length_sum,
+		shm->stats.maps_type_resolution_hits,
+		shm->stats.chain_corpus_save_dup_shape,
+		shm->stats.chain_corpus_save_unique_shape,
 		shm->stats.deferred_free_reject_misaligned,
 		shm->stats.deferred_free_reject_corrupt_shape,
 		shm->stats.deferred_free_reject_non_heap,
@@ -3303,6 +3404,96 @@ static const struct {
 	  offsetof(struct stats_s, maps_reject_size_zero) },
 	{ "maps_reject_size_too_large",
 	  offsetof(struct stats_s, maps_reject_size_too_large) },
+	/* Map selection / pick-cost rows.  Per-second
+	 * rates here let the periodic dump answer "is the
+	 * 1000-iter retry budget actually contended" and "which
+	 * pool / prot-mask is paying the rejection cost", the
+	 * questions the side-index TIER-2/3 rows are gated on. */
+	{ "maps_pool_chosen_anon",
+	  offsetof(struct stats_s, maps_pool_chosen_anon) },
+	{ "maps_pool_chosen_file",
+	  offsetof(struct stats_s, maps_pool_chosen_file) },
+	{ "maps_pool_chosen_testfile",
+	  offsetof(struct stats_s, maps_pool_chosen_testfile) },
+	{ "maps_reject_pool_empty_anon",
+	  offsetof(struct stats_s, maps_reject_pool_empty_anon) },
+	{ "maps_reject_pool_empty_file",
+	  offsetof(struct stats_s, maps_reject_pool_empty_file) },
+	{ "maps_reject_pool_empty_testfile",
+	  offsetof(struct stats_s, maps_reject_pool_empty_testfile) },
+	{ "maps_prot_reject_mask_0",
+	  offsetof(struct stats_s, maps_prot_reject_by_mask[0]) },
+	{ "maps_prot_reject_mask_R",
+	  offsetof(struct stats_s, maps_prot_reject_by_mask[1]) },
+	{ "maps_prot_reject_mask_W",
+	  offsetof(struct stats_s, maps_prot_reject_by_mask[2]) },
+	{ "maps_prot_reject_mask_RW",
+	  offsetof(struct stats_s, maps_prot_reject_by_mask[3]) },
+	{ "maps_prot_reject_mask_X",
+	  offsetof(struct stats_s, maps_prot_reject_by_mask[4]) },
+	{ "maps_prot_reject_mask_RX",
+	  offsetof(struct stats_s, maps_prot_reject_by_mask[5]) },
+	{ "maps_prot_reject_mask_WX",
+	  offsetof(struct stats_s, maps_prot_reject_by_mask[6]) },
+	{ "maps_prot_reject_mask_RWX",
+	  offsetof(struct stats_s, maps_prot_reject_by_mask[7]) },
+	{ "maps_pick_attempts_sum",
+	  offsetof(struct stats_s, maps_pick_attempts_sum) },
+	{ "maps_pick_successes",
+	  offsetof(struct stats_s, maps_pick_successes) },
+	{ "maps_pick_with_prot_attempts_sum",
+	  offsetof(struct stats_s, maps_pick_with_prot_attempts_sum) },
+	{ "maps_pick_with_prot_successes",
+	  offsetof(struct stats_s, maps_pick_with_prot_successes) },
+	{ "maps_type_resolution_calls",
+	  offsetof(struct stats_s, maps_type_resolution_calls) },
+	{ "maps_type_resolution_scan_length_sum",
+	  offsetof(struct stats_s, maps_type_resolution_scan_length_sum) },
+	{ "maps_type_resolution_hits",
+	  offsetof(struct stats_s, maps_type_resolution_hits) },
+	/* FD bookkeeping rows.  fd_live_remove
+	 * histogram surfaces whether the linear scan
+	 * an fd live-list index would replace is actually expensive;
+	 * fd_event_full_* says which producer drove a ring
+	 * overflow; close_range_* surfaces the compression ratio
+	 * the range opcode buys vs the per-fd path. */
+	{ "fd_live_remove_calls",
+	  offsetof(struct stats_s, fd_live_remove_calls) },
+	{ "fd_live_remove_miss",
+	  offsetof(struct stats_s, fd_live_remove_miss) },
+	{ "fd_live_remove_scan_hist_0",
+	  offsetof(struct stats_s, fd_live_remove_scan_histogram[0]) },
+	{ "fd_live_remove_scan_hist_1",
+	  offsetof(struct stats_s, fd_live_remove_scan_histogram[1]) },
+	{ "fd_live_remove_scan_hist_2_3",
+	  offsetof(struct stats_s, fd_live_remove_scan_histogram[2]) },
+	{ "fd_live_remove_scan_hist_4_7",
+	  offsetof(struct stats_s, fd_live_remove_scan_histogram[3]) },
+	{ "fd_live_remove_scan_hist_8_15",
+	  offsetof(struct stats_s, fd_live_remove_scan_histogram[4]) },
+	{ "fd_live_remove_scan_hist_16_31",
+	  offsetof(struct stats_s, fd_live_remove_scan_histogram[5]) },
+	{ "fd_live_remove_scan_hist_32_63",
+	  offsetof(struct stats_s, fd_live_remove_scan_histogram[6]) },
+	{ "fd_live_remove_scan_hist_ge64",
+	  offsetof(struct stats_s, fd_live_remove_scan_histogram[7]) },
+	{ "fd_event_full_close",
+	  offsetof(struct stats_s, fd_event_full_close) },
+	{ "fd_event_full_evict",
+	  offsetof(struct stats_s, fd_event_full_evict) },
+	{ "fd_event_full_close_range",
+	  offsetof(struct stats_s, fd_event_full_close_range) },
+	{ "fd_event_close_range_enqueued",
+	  offsetof(struct stats_s, fd_event_close_range_enqueued) },
+	{ "fd_event_close_range_length_sum",
+	  offsetof(struct stats_s, fd_event_close_range_length_sum) },
+	/* Chain-corpus duplicate-shape rate.  Dup
+	 * vs unique count over the K=8 most-recent slots; rate
+	 * dup/(dup+unique) gates a per-shape chain quota. */
+	{ "chain_corpus_save_dup_shape",
+	  offsetof(struct stats_s, chain_corpus_save_dup_shape) },
+	{ "chain_corpus_save_unique_shape",
+	  offsetof(struct stats_s, chain_corpus_save_unique_shape) },
 	{ "deferred_free_reject_misaligned",
 	  offsetof(struct stats_s, deferred_free_reject_misaligned) },
 	{ "deferred_free_reject_corrupt_shape",
