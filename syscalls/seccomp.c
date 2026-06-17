@@ -118,7 +118,7 @@ struct seccomp_post_state {
  */
 static unsigned int pick_seccomp_op(void)
 {
-	unsigned int r = rand32() % 100;
+	unsigned int r = rnd_modulo_u32(100);
 
 	if (r < 60)
 		return SECCOMP_SET_MODE_FILTER;
