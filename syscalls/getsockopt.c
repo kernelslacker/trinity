@@ -158,7 +158,7 @@ static void post_getsockopt(struct syscallrecord *rec)
 struct syscallentry syscall_getsockopt = {
 	.name = "getsockopt",
 	.num_args = 5,
-	.argtype = { [0] = ARG_SOCKETINFO },
+	.argtype = { [0] = ARG_SOCKETINFO, [3] = ARG_ADDRESS, [4] = ARG_ADDRESS },
 	.argname = { [0] = "fd", [1] = "level", [2] = "optname", [3] = "optval", [4] = "optlen" },
 	.flags = NEED_ALARM,
 	.group = GROUP_NET,
