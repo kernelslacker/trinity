@@ -26,6 +26,7 @@
 #include "kcov.h"
 #include "list.h"
 #include "maps.h"
+#include "minicorpus.h"
 #include "objects.h"
 #include "params.h"
 #include "pids.h"
@@ -522,6 +523,11 @@ void clean_childdata(struct childdata *child)
 	 * defaults to Arm A (no prop_ring pull at the ARG_OP callsite) until
 	 * the stamp lands. */
 	child->prop_ring_argop_arm_b = false;
+	/* mutate_arg SHADOW structure-aware picker A/B stamp -- (re)decided
+	 * per-child in init_child_runtime_config below; zero here so the fresh
+	 * occupant defaults to Arm A (no shadow draw, mutate_arg RNG byte-
+	 * identical to pre-shadow control) until the stamp lands. */
+	child->mut_structured_arm_b = false;
 	/* SHADOW cmp-hint feedback scoring stash starts empty for a fresh
 	 * child occupant ([11-feedback-loop]); generate_syscall_args also
 	 * resets at every call boundary, but a fresh-fork clear here means
@@ -1131,6 +1137,25 @@ static void init_child_runtime_config(struct childdata *child, int childno)
 					   1U, __ATOMIC_RELAXED);
 		else
 			__atomic_fetch_add(&kcov_shm->prop_ring_argop_arm_a_children,
+					   1U, __ATOMIC_RELAXED);
+	}
+
+	/* A/B-comparison stamp for the SHADOW structure-aware arm picker in
+	 * mutate_arg (weighted_pick_case_shadow_structured()'s doubled-pool
+	 * draw).  Independent of redqueen_enabled / boring_filter_arm_b /
+	 * cmp_hint_inject_arm_b / frontier_blend_arm_b / prop_ring_argop_arm_b
+	 * so the six A/B axes can cross without confounding each other's
+	 * cohort comparisons.  Stamped unconditionally (mutate_arg runs on
+	 * every replayed call regardless of KCOV mode -- gating the stamp on
+	 * the mode would shrink the sample without any matching reduction in
+	 * the signal we're measuring). */
+	child->mut_structured_arm_b = ONE_IN(2);
+	if (minicorpus_shm != NULL) {
+		if (child->mut_structured_arm_b)
+			__atomic_fetch_add(&minicorpus_shm->mut_structured_arm_b_children,
+					   1U, __ATOMIC_RELAXED);
+		else
+			__atomic_fetch_add(&minicorpus_shm->mut_structured_arm_a_children,
 					   1U, __ATOMIC_RELAXED);
 	}
 

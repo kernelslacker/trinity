@@ -242,9 +242,31 @@ struct minicorpus_shared {
 	 * the structured arm to the live picker will consume this
 	 * measurement, not be gated on a separate knob -- the SHADOW commit
 	 * exists so the promotion's downstream effect on op distribution
-	 * can be quantified before behaviour changes. */
+	 * can be quantified before behaviour changes.
+	 *
+	 * Arm-gated by the per-child mut_structured_arm_b stamp (see
+	 * include/child.h): only Arm B children call the shadow picker, so
+	 * mut_structured_shadow_samples / mut_structured_shadow_divergences
+	 * accumulate exclusively from the Arm B half of the fleet.  Arm A
+	 * children short-circuit before the shadow draw, leaving mutate_arg's
+	 * RNG byte-identical to the pre-shadow control.  The realised cohort
+	 * split is captured in mut_structured_arm_{a,b}_children below so a
+	 * small-fleet ONE_IN(2) split that landed lopsided can be normalised
+	 * out of the divergence rate. */
 	unsigned long mut_structured_shadow_samples;
 	unsigned long mut_structured_shadow_divergences;
+
+	/* A/B cohort split for the SHADOW structure-aware arm picker.
+	 * mut_structured_arm_{a,b}_children is bumped once per child in
+	 * init_child_runtime_config so the operator can normalise the Arm B
+	 * shadow divergence rate against the realised population split (the
+	 * ONE_IN(2) stamp has fleet-scale variance and a small fleet can land
+	 * lopsided).  No symmetric arm_a fire counter exists by design: the
+	 * control arm short-circuits before the shadow draw, so the only
+	 * fire-side counter is mut_structured_shadow_divergences above (which
+	 * is itself Arm-B-only because samples is Arm-B-only). */
+	unsigned int  mut_structured_arm_a_children;
+	unsigned int  mut_structured_arm_b_children;
 
 	/* Monotonic mutation counter.  Bumped via __atomic_fetch_add on every
 	 * ring-entry insert (minicorpus_save) and every entry admitted from the

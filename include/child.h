@@ -818,6 +818,31 @@ struct childdata {
 	 * callsite bumps, not this flag directly. */
 	bool prop_ring_argop_arm_b;
 
+	/* A/B-comparison stamp for the SHADOW structure-aware arm picker in
+	 * mutate_arg (the doubled-pool weighted_pick_case_shadow_structured()
+	 * draw).  Arm A (false) is the control: the shadow picker is not
+	 * called, so mutate_arg's RNG sequence stays byte-identical to the
+	 * pre-shadow (pre-139a829f) behaviour and the live weighted_pick_case()
+	 * draw is the only rnd_modulo_u32() step on the picker path.  Arm B
+	 * (true) calls the shadow picker on structured-eligible slots after
+	 * the live op is already in hand, burns one extra rnd_modulo_u32 from
+	 * the doubled 2 * MUT_NUM_OPS pool, and bumps mut_structured_shadow_
+	 * samples / mut_structured_shadow_divergences for the cohort.  The
+	 * per-child stamp is the only correct way to measure the shadow's
+	 * downstream effect: an unconditional shadow draw (the 139a829f shape)
+	 * perturbs the live RNG fleet-wide on every structured-eligible slot,
+	 * leaving no clean control arm.  Stamped once in init_child_runtime_
+	 * config() at ONE_IN(2), independent of cmp_hint_inject_arm_b /
+	 * redqueen_enabled / boring_filter_arm_b / frontier_blend_arm_b /
+	 * prop_ring_argop_arm_b so the six A/B axes can cross without
+	 * confounding each other's cohort comparisons, and cleared in
+	 * clean_childdata so a fresh slot occupant restamps.  Owner-only writes
+	 * from inside the child; the parent's stats consumer reads the
+	 * minicorpus_shm-resident mut_structured_arm_* counters bumped at fork
+	 * + the mut_structured_shadow_* counters bumped at the callsite, not
+	 * this flag directly. */
+	bool mut_structured_arm_b;
+
 	/* SHADOW per-entry feedback scoring scratch ([11-feedback-loop]
 	 * PHASE 4).  cmp_hints_try_get_ex() pushes one entry per successful
 	 * pull (capped at CMP_HINT_CONSUMED_STASH_MAX; overflow drops the
