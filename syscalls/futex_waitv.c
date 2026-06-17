@@ -114,7 +114,7 @@ static void sanitise_futex_waitv(struct syscallrecord *rec)
 struct syscallentry syscall_futex_waitv = {
 	.name = "futex_waitv",
 	.num_args = 5,
-	.argtype = { [1] = ARG_LEN, [3] = ARG_TIMESPEC, [4] = ARG_OP },
+	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_LEN, [3] = ARG_TIMESPEC, [4] = ARG_OP },
 	.argname = { [0] = "waiters", [1] = "nr_futexes", [2] = "flags", [3] = "timeout", [4] = "clockid" },
 	.arg_params[4].list = ARGLIST(futex_waitv_clockids),
 	.bound_arg = 2,
