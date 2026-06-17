@@ -3798,46 +3798,32 @@ static const struct union_variant io_uring_register_variants[] = {
  * have no assert: there is no payload struct type to size-check, and
  * inventing one to assert would be noise.
  */
-_Static_assert(sizeof(struct io_uring_rsrc_update) <= 64,
-	"io_uring_register variant FILES_UPDATE exceeds struct_size 64");
-_Static_assert(sizeof(struct io_uring_file_index_range) <= 64,
-	"io_uring_register variant FILE_ALLOC_RANGE exceeds struct_size 64");
-_Static_assert(sizeof(struct io_uring_buf_reg) <= 64,
-	"io_uring_register variant PBUF_RING exceeds struct_size 64");
-_Static_assert(sizeof(struct io_uring_buf_reg) <= 64,
-	"io_uring_register variant UNREGISTER_PBUF_RING exceeds struct_size 64");
-_Static_assert(sizeof(struct io_uring_sync_cancel_reg) <= 64,
-	"io_uring_register variant SYNC_CANCEL exceeds struct_size 64");
-_Static_assert(sizeof(struct iovec) <= 64,
-	"io_uring_register variant BUFFERS exceeds struct_size 64");
-_Static_assert(sizeof(struct iovec) <= 64,
-	"io_uring_register variant UNREGISTER_BUFFERS exceeds struct_size 64");
-_Static_assert(sizeof(struct io_uring_restriction) <= 64,
-	"io_uring_register variant RESTRICTIONS exceeds struct_size 64");
-_Static_assert(sizeof(struct io_uring_rsrc_update) <= 64,
-	"io_uring_register variant RING_FDS exceeds struct_size 64");
-_Static_assert(sizeof(struct io_uring_rsrc_update) <= 64,
-	"io_uring_register variant UNREGISTER_RING_FDS exceeds struct_size 64");
-_Static_assert(sizeof(struct io_uring_napi) <= 64,
-	"io_uring_register variant NAPI exceeds struct_size 64");
-_Static_assert(sizeof(struct io_uring_napi) <= 64,
-	"io_uring_register variant UNREGISTER_NAPI exceeds struct_size 64");
-_Static_assert(sizeof(struct io_uring_clock_register) <= 64,
-	"io_uring_register variant CLOCK exceeds struct_size 64");
-_Static_assert(sizeof(struct io_uring_clone_buffers) <= 64,
-	"io_uring_register variant CLONE_BUFFERS exceeds struct_size 64");
-_Static_assert(sizeof(struct io_uring_buf_status) <= 64,
-	"io_uring_register variant PBUF_STATUS exceeds struct_size 64");
-_Static_assert(sizeof(struct io_uring_rsrc_register) <= 64,
-	"io_uring_register variant FILES2 exceeds struct_size 64");
-_Static_assert(sizeof(struct io_uring_rsrc_register) <= 64,
-	"io_uring_register variant BUFFERS2 exceeds struct_size 64");
-_Static_assert(sizeof(struct io_uring_rsrc_update2) <= 64,
-	"io_uring_register variant FILES_UPDATE2 exceeds struct_size 64");
-_Static_assert(sizeof(struct io_uring_rsrc_update2) <= 64,
-	"io_uring_register variant BUFFERS_UPDATE exceeds struct_size 64");
-_Static_assert(sizeof(struct io_uring_probe) <= 64,
-	"io_uring_register variant PROBE exceeds struct_size 64");
+#define IO_URING_REGISTER_VARIANT_FITS(type, variant) \
+	_Static_assert(sizeof(type) <= 64, \
+		"io_uring_register variant " #variant " exceeds struct_size 64")
+
+IO_URING_REGISTER_VARIANT_FITS(struct io_uring_rsrc_update, FILES_UPDATE);
+IO_URING_REGISTER_VARIANT_FITS(struct io_uring_file_index_range, FILE_ALLOC_RANGE);
+IO_URING_REGISTER_VARIANT_FITS(struct io_uring_buf_reg, PBUF_RING);
+IO_URING_REGISTER_VARIANT_FITS(struct io_uring_buf_reg, UNREGISTER_PBUF_RING);
+IO_URING_REGISTER_VARIANT_FITS(struct io_uring_sync_cancel_reg, SYNC_CANCEL);
+IO_URING_REGISTER_VARIANT_FITS(struct iovec, BUFFERS);
+IO_URING_REGISTER_VARIANT_FITS(struct iovec, UNREGISTER_BUFFERS);
+IO_URING_REGISTER_VARIANT_FITS(struct io_uring_restriction, RESTRICTIONS);
+IO_URING_REGISTER_VARIANT_FITS(struct io_uring_rsrc_update, RING_FDS);
+IO_URING_REGISTER_VARIANT_FITS(struct io_uring_rsrc_update, UNREGISTER_RING_FDS);
+IO_URING_REGISTER_VARIANT_FITS(struct io_uring_napi, NAPI);
+IO_URING_REGISTER_VARIANT_FITS(struct io_uring_napi, UNREGISTER_NAPI);
+IO_URING_REGISTER_VARIANT_FITS(struct io_uring_clock_register, CLOCK);
+IO_URING_REGISTER_VARIANT_FITS(struct io_uring_clone_buffers, CLONE_BUFFERS);
+IO_URING_REGISTER_VARIANT_FITS(struct io_uring_buf_status, PBUF_STATUS);
+IO_URING_REGISTER_VARIANT_FITS(struct io_uring_rsrc_register, FILES2);
+IO_URING_REGISTER_VARIANT_FITS(struct io_uring_rsrc_register, BUFFERS2);
+IO_URING_REGISTER_VARIANT_FITS(struct io_uring_rsrc_update2, FILES_UPDATE2);
+IO_URING_REGISTER_VARIANT_FITS(struct io_uring_rsrc_update2, BUFFERS_UPDATE);
+IO_URING_REGISTER_VARIANT_FITS(struct io_uring_probe, PROBE);
+
+#undef IO_URING_REGISTER_VARIANT_FITS
 
 /* ------------------------------------------------------------------ */
 /* union bpf_attr (bpf)                                                */
