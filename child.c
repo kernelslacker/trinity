@@ -1121,6 +1121,14 @@ static void init_child_runtime_config(struct childdata *child, int childno)
 	 * runs that never enter that strategy but stamping anyway keeps
 	 * the field semantics uniform with the other A/B stamps). */
 	child->frontier_blend_arm_b = ONE_IN(2);
+	if (kcov_shm != NULL) {
+		if (child->frontier_blend_arm_b)
+			__atomic_fetch_add(&kcov_shm->frontier_blend_arm_b_children,
+					   1U, __ATOMIC_RELAXED);
+		else
+			__atomic_fetch_add(&kcov_shm->frontier_blend_arm_a_children,
+					   1U, __ATOMIC_RELAXED);
+	}
 
 	/* A/B-comparison stamp for the prop_ring injection at handle_arg_op's
 	 * ARG_OP callsite.  Independent of redqueen_enabled / boring_filter_

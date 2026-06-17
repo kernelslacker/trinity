@@ -4795,6 +4795,7 @@ void kcov_cmp_stats_periodic_dump(void)
 	static unsigned long prev_cmp_inject_arm_b_baseline_fires;
 	static unsigned long prev_cmp_inject_denom_diverged;
 	static unsigned long prev_prop_ring_argop_arm_b_fires;
+	static unsigned long prev_frontier_blend_samples;
 	static unsigned long prev_mut_structured_shadow_divergences;
 	static struct timespec last_dump;
 	struct timespec now;
@@ -4846,6 +4847,8 @@ void kcov_cmp_stats_periodic_dump(void)
 	unsigned int  cur_cmp_inject_arm_a_children, cur_cmp_inject_arm_b_children;
 	unsigned long cur_prop_ring_argop_arm_b_fires, delta_prop_ring_argop_arm_b_fires;
 	unsigned int  cur_prop_ring_argop_arm_a_children, cur_prop_ring_argop_arm_b_children;
+	unsigned long cur_frontier_blend_samples, delta_frontier_blend_samples;
+	unsigned int  cur_frontier_blend_arm_a_children, cur_frontier_blend_arm_b_children;
 	unsigned long cur_mut_structured_shadow_samples;
 	unsigned long cur_mut_structured_shadow_divergences;
 	unsigned long delta_mut_structured_shadow_divergences;
@@ -4914,6 +4917,14 @@ void kcov_cmp_stats_periodic_dump(void)
 	cur_prop_ring_argop_arm_b_fires     = __atomic_load_n(&kcov_shm->prop_ring_argop_arm_b_fires,     __ATOMIC_RELAXED);
 	cur_prop_ring_argop_arm_a_children  = __atomic_load_n(&kcov_shm->prop_ring_argop_arm_a_children,  __ATOMIC_RELAXED);
 	cur_prop_ring_argop_arm_b_children  = __atomic_load_n(&kcov_shm->prop_ring_argop_arm_b_children,  __ATOMIC_RELAXED);
+	/* frontier_blend_samples lives in shm->stats (bumped per fire from
+	 * both arms in lock-step), the cohort children counters live in
+	 * kcov_shm (bumped once per child).  Read both here so the cohort
+	 * dump row can be delta-gated on the fire counter, matching the
+	 * prop_ring_argop template. */
+	cur_frontier_blend_samples          = __atomic_load_n(&shm->stats.frontier_blend_samples,         __ATOMIC_RELAXED);
+	cur_frontier_blend_arm_a_children   = __atomic_load_n(&kcov_shm->frontier_blend_arm_a_children,   __ATOMIC_RELAXED);
+	cur_frontier_blend_arm_b_children   = __atomic_load_n(&kcov_shm->frontier_blend_arm_b_children,   __ATOMIC_RELAXED);
 	/* SHADOW structure-aware picker A/B cohort + divergence counters live
 	 * in minicorpus_shm rather than kcov_shm because the picker is a
 	 * mutate_arg concern, not a kcov-cmp concern.  Guard the load so a
@@ -4984,6 +4995,7 @@ void kcov_cmp_stats_periodic_dump(void)
 		prev_cmp_inject_arm_b_baseline_fires = cur_cmp_inject_arm_b_baseline_fires;
 		prev_cmp_inject_denom_diverged       = cur_cmp_inject_denom_diverged;
 		prev_prop_ring_argop_arm_b_fires     = cur_prop_ring_argop_arm_b_fires;
+		prev_frontier_blend_samples          = cur_frontier_blend_samples;
 		prev_mut_structured_shadow_divergences = cur_mut_structured_shadow_divergences;
 		return;
 	}
@@ -5043,6 +5055,7 @@ void kcov_cmp_stats_periodic_dump(void)
 	delta_cmp_inject_arm_b_baseline_fires = cur_cmp_inject_arm_b_baseline_fires - prev_cmp_inject_arm_b_baseline_fires;
 	delta_cmp_inject_denom_diverged       = cur_cmp_inject_denom_diverged       - prev_cmp_inject_denom_diverged;
 	delta_prop_ring_argop_arm_b_fires     = cur_prop_ring_argop_arm_b_fires     - prev_prop_ring_argop_arm_b_fires;
+	delta_frontier_blend_samples          = cur_frontier_blend_samples          - prev_frontier_blend_samples;
 	delta_mut_structured_shadow_divergences = cur_mut_structured_shadow_divergences - prev_mut_structured_shadow_divergences;
 
 	if ((delta_records | delta_truncated | delta_bloom_skipped | delta_strip_skipped |
@@ -5387,6 +5400,25 @@ void kcov_cmp_stats_periodic_dump(void)
 					cur_prop_ring_argop_arm_a_children,
 					cur_prop_ring_argop_arm_b_children);
 		}
+		/* frontier_cold_weight blend A/B cohort (Arm A = return historical
+		 * OLD weight, Arm B = promote blended weight including the
+		 * transition term to the picker).  Both arms fire the would-be
+		 * divergence sampler frontier_blend_samples in lock-step, so the
+		 * delta gate uses that fire counter and the row prints the
+		 * realised cohort split as the denominator the operator
+		 * normalises the live Arm B promotion against.  Neither arm has
+		 * a per-arm fire counter by design -- the blend logic itself is
+		 * untouched. */
+		if (delta_frontier_blend_samples) {
+			unsigned long rate_milli = (delta_frontier_blend_samples * 1000UL) / (unsigned long)elapsed;
+			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu, children a=%u b=%u)\n",
+					"frontier_blend_samples",
+					delta_frontier_blend_samples,
+					rate_milli / 1000, rate_milli % 1000,
+					cur_frontier_blend_samples,
+					cur_frontier_blend_arm_a_children,
+					cur_frontier_blend_arm_b_children);
+		}
 		/* SHADOW structure-aware picker A/B cohort (Arm A = no shadow
 		 * draw / RNG byte-identical to pre-shadow control, Arm B =
 		 * doubled-pool shadow draw on structured-eligible slots).  Print
@@ -5517,6 +5549,7 @@ void kcov_cmp_stats_periodic_dump(void)
 	prev_cmp_inject_arm_b_baseline_fires = cur_cmp_inject_arm_b_baseline_fires;
 	prev_cmp_inject_denom_diverged       = cur_cmp_inject_denom_diverged;
 	prev_prop_ring_argop_arm_b_fires     = cur_prop_ring_argop_arm_b_fires;
+	prev_frontier_blend_samples          = cur_frontier_blend_samples;
 	prev_mut_structured_shadow_divergences = cur_mut_structured_shadow_divergences;
 	last_dump = now;
 }

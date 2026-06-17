@@ -819,6 +819,19 @@ struct kcov_shared {
 	unsigned int  prop_ring_argop_arm_a_children;
 	unsigned int  prop_ring_argop_arm_b_children;
 	unsigned long prop_ring_argop_arm_b_fires;
+	/* A/B cohort split for the frontier_cold_weight blend promotion
+	 * stamp (frontier_blend_arm_b).  frontier_blend_arm_{a,b}_children
+	 * is bumped once per child in init_child_runtime_config so the
+	 * operator can normalise the realised population split against the
+	 * fleet-scale variance of the ONE_IN(2) stamp (a small fleet can
+	 * land lopsided).  Observation-only -- the counters do not
+	 * influence the blend weight or the picker; they are the
+	 * denominator the existing frontier_blend_samples /
+	 * frontier_blend_new_{lower,higher,equal} totals (in shm->stats,
+	 * fed from both arms in lock-step) and the live Arm B promotion
+	 * delta are normalised against. */
+	unsigned int  frontier_blend_arm_a_children;
+	unsigned int  frontier_blend_arm_b_children;
 	/* See struct kcov_cmp_diag — child-context writes are routed here
 	 * because the child's stdout has already been dup2'd to /dev/null
 	 * by the time KCOV_TRACE_CMP setup runs. */
