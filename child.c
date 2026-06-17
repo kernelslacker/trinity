@@ -511,6 +511,11 @@ void clean_childdata(struct childdata *child)
 	child->redqueen_enabled = false;
 	child->boring_filter_arm_b = false;
 	child->frontier_blend_arm_b = false;
+	/* Errno-plateau decay A/B stamp -- (re)decided per-child in
+	 * init_child_runtime_config below; zero here so the fresh occupant
+	 * defaults to Arm A (shadow-only, no live reject) until the stamp
+	 * lands.  Matches the frontier_blend_arm_b clear above. */
+	child->frontier_errno_decay_arm_b = false;
 	child->reexec_count_window = 0;
 	child->reexec_window_start_op = 0;
 	child->cmp_hint_injected_this_call = false;
@@ -1132,6 +1137,22 @@ static void init_child_runtime_config(struct childdata *child, int childno)
 					   1U, __ATOMIC_RELAXED);
 		else
 			__atomic_fetch_add(&kcov_shm->frontier_blend_arm_a_children,
+					   1U, __ATOMIC_RELAXED);
+	}
+
+	/* A/B-comparison stamp for the errno-plateau decay at the coverage-
+	 * frontier picker's silent-regime accept site.  Independent of the
+	 * other A/B axes so the cohort comparisons stay un-confounded; same
+	 * unconditional stamp + ONE_IN(2) cohort split + per-arm child count
+	 * shape as frontier_blend_arm_b above so the population-normalisation
+	 * pattern stays uniform across the frontier-side A/B rows. */
+	child->frontier_errno_decay_arm_b = ONE_IN(2);
+	if (kcov_shm != NULL) {
+		if (child->frontier_errno_decay_arm_b)
+			__atomic_fetch_add(&kcov_shm->frontier_errno_decay_arm_b_children,
+					   1U, __ATOMIC_RELAXED);
+		else
+			__atomic_fetch_add(&kcov_shm->frontier_errno_decay_arm_a_children,
 					   1U, __ATOMIC_RELAXED);
 	}
 

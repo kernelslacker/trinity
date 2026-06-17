@@ -3435,6 +3435,18 @@ static const struct {
 	  offsetof(struct stats_s, frontier_decay_candidates) },
 	{ "frontier_decay_would_skip",
 	  offsetof(struct stats_s, frontier_decay_would_skip) },
+	/* SHADOW + per-child A/B accounting for the errno-plateau decay at
+	 * the coverage-frontier picker's silent-regime accept site.  See the
+	 * struct-field comments in include/stats.h and the FRONTIER_ERRNO_
+	 * PLATEAU_* contract in include/strategy.h for the per-counter
+	 * semantics and the would_skip vs live_rejects vs overlap_silent
+	 * triple. */
+	{ "frontier_errno_decay_would_skip",
+	  offsetof(struct stats_s, frontier_errno_decay_would_skip) },
+	{ "frontier_errno_decay_live_rejects",
+	  offsetof(struct stats_s, frontier_errno_decay_live_rejects) },
+	{ "frontier_errno_decay_overlap_silent",
+	  offsetof(struct stats_s, frontier_errno_decay_overlap_silent) },
 	/* SHADOW-ONLY A/B scoring for the [t12-frontier-blend] cold-weight
 	 * blend.  The picker still consumes the OLD weight; these counters
 	 * expose how often the blended formula would have steered
@@ -6773,6 +6785,22 @@ static void dump_stats_strategy_summary(void)
 	if (shm->stats.frontier_decay_would_skip)
 		stat_row("strategy", "frontier_decay_would_skip",
 			 shm->stats.frontier_decay_would_skip);
+	/* SHADOW + per-child A/B errno-plateau decay (silent-regime accept
+	 * site): would_skip is the both-arms shadow demote count, live_
+	 * rejects is the arm-B-only actual demote count, overlap_silent is
+	 * the both-arms shadow count of picks where the consecutive-silent
+	 * shadow predicate ALSO fires.  Emitted side by side with the
+	 * silent-streak shadow rows above so the operator can read the
+	 * orthogonal coverage (would_skip - overlap_silent) at a glance. */
+	if (shm->stats.frontier_errno_decay_would_skip)
+		stat_row("strategy", "frontier_errno_decay_would_skip",
+			 shm->stats.frontier_errno_decay_would_skip);
+	if (shm->stats.frontier_errno_decay_live_rejects)
+		stat_row("strategy", "frontier_errno_decay_live_rejects",
+			 shm->stats.frontier_errno_decay_live_rejects);
+	if (shm->stats.frontier_errno_decay_overlap_silent)
+		stat_row("strategy", "frontier_errno_decay_overlap_silent",
+			 shm->stats.frontier_errno_decay_overlap_silent);
 	/* SHADOW-ONLY A/B scoring for the [t12-frontier-blend] cold-weight
 	 * blend.  Emitted as a sibling block to the silent-decay shadow
 	 * counters above; the picker still consumes the OLD weight from

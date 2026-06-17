@@ -861,6 +861,17 @@ struct kcov_shared {
 	 * delta are normalised against. */
 	unsigned int  frontier_blend_arm_a_children;
 	unsigned int  frontier_blend_arm_b_children;
+	/* A/B cohort split for the errno-plateau decay stamp
+	 * (frontier_errno_decay_arm_b).  frontier_errno_decay_arm_{a,b}_
+	 * children is bumped once per child in init_child_runtime_config so
+	 * the operator can normalise the realised population split against
+	 * the fleet-scale variance of the ONE_IN(2) stamp (a small fleet can
+	 * land lopsided).  Companion to the frontier_errno_decay_* shm->stats
+	 * counters bumped at the picker site: the latter measure the would-be
+	 * and actual demote rates; the cohort split is the denominator the
+	 * Arm-B-only live reject rate is normalised against. */
+	unsigned int  frontier_errno_decay_arm_a_children;
+	unsigned int  frontier_errno_decay_arm_b_children;
 	/* See struct kcov_cmp_diag — child-context writes are routed here
 	 * because the child's stdout has already been dup2'd to /dev/null
 	 * by the time KCOV_TRACE_CMP setup runs. */

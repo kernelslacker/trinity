@@ -967,6 +967,59 @@ retry:
 				}
 			}
 		}
+
+		/* Errno-plateau decay (SHADOW + per-child A/B).  See the
+		 * FRONTIER_ERRNO_PLATEAU_* contract in include/strategy.h and the
+		 * frontier_errno_plateau_should_decay() implementation in strategy.c.
+		 *
+		 * Composition with the sibling shadow decay above: that one keys on
+		 * the CONSECUTIVE-silent-pick streak with a no-CMP-and-no-success-
+		 * shift UNLESS clause; this one keys on a LIFETIME dominant-failure-
+		 * errno + zero-edge shape.  The two predicates are orthogonal --
+		 * a syscall returning EBADF every time will satisfy errno-plateau
+		 * after the first FRONTIER_ERRNO_PLATEAU_MIN_CALLS calls regardless
+		 * of streak length, and a syscall whose silent streak has crossed
+		 * the threshold but whose errno mix is spread across buckets will
+		 * satisfy silent-decay only.  The overlap_silent counter tallies
+		 * picks where BOTH predicates fire so the operator can read the
+		 * incremental coverage the errno-plateau predicate adds.
+		 *
+		 * The cred_throttle gate already rejected impossible credential
+		 * picks above; frontier_errno_plateau_should_decay excludes the
+		 * credential-class set explicitly so a credential syscall is
+		 * never decayed by both gates. */
+		if (frontier_errno_plateau_should_decay(syscallnr, do32)) {
+			__atomic_fetch_add(
+				&shm->stats.frontier_errno_decay_would_skip,
+				1UL, __ATOMIC_RELAXED);
+			if (syscallnr < MAX_NR_SYSCALL) {
+				unsigned long s = __atomic_load_n(
+					&shm->stats.frontier_silent_streak_per_syscall[syscallnr],
+					__ATOMIC_RELAXED);
+				if (s >= FRONTIER_SHADOW_DECAY_STREAK)
+					__atomic_fetch_add(
+						&shm->stats.frontier_errno_decay_overlap_silent,
+						1UL, __ATOMIC_RELAXED);
+			}
+			/* Arm B live reject: REJECT_DENOM-1 / REJECT_DENOM
+			 * probabilistic demote so the syscall still samples at
+			 * ~3% -- any of the four novelty lanes the predicate
+			 * checks will release the decay on the very next pick
+			 * that observes the productive event.  Arm A leaves
+			 * selection byte-identical to today; the shadow counters
+			 * above bumped in lock-step so the would-be divergence
+			 * stays observable across both cohorts.  parent context
+			 * (child == NULL) falls through to no-reject to preserve
+			 * baseline behaviour for any non-child caller, matching
+			 * the frontier_blend arm-b parent fallback. */
+			if (child != NULL && child->frontier_errno_decay_arm_b &&
+			    rnd_modulo_u32(FRONTIER_ERRNO_PLATEAU_REJECT_DENOM) != 0) {
+				__atomic_fetch_add(
+					&shm->stats.frontier_errno_decay_live_rejects,
+					1UL, __ATOMIC_RELAXED);
+				goto retry;
+			}
+		}
 	}
 
 	srec_publish_begin(rec);
