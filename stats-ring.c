@@ -201,6 +201,14 @@ static void apply_slot(const void *p, void *ctx __unused__)
 	case STATS_FIELD_CMP_HINTS_TRY_GET_RETURNED:
 		parent_stats.cmp_hints_try_get_returned += delta;
 		break;
+	case STATS_FIELD_PER_SYSCALL_CMP_ATTEMPTS:
+		if (aux < MAX_NR_SYSCALL)
+			parent_stats.per_syscall_cmp_attempts[aux] += delta;
+		break;
+	case STATS_FIELD_PER_SYSCALL_CMP_RETURNED:
+		if (aux < MAX_NR_SYSCALL)
+			parent_stats.per_syscall_cmp_returned[aux] += delta;
+		break;
 	case STATS_FIELD_CALL_COMPLETE: {
 		/* One slot, three logical bumps.  op_count is unconditional
 		 * (the SPSC slot wouldn't have made it past spsc_ring_drain
