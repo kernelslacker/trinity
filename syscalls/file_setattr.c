@@ -110,6 +110,40 @@ static void sanitise_file_setattr(struct syscallrecord *rec)
 	 * lifecycle before.
 	 */
 	rec->post_state = (unsigned long) fa;
+
+	/*
+	 * Bias at_flags (rec->a5) toward the kernel's allowlist:
+	 *
+	 *   if ((at_flags & ~(AT_SYMLINK_NOFOLLOW | AT_EMPTY_PATH)) != 0)
+	 *           return -EINVAL;
+	 *
+	 * handle_arg_list ORs in shift_flag_bit() / CMP-hint bits for
+	 * adjacent-bit probing on ~3/16 of calls; any bit outside the
+	 * two-flag allowlist bounces the call straight back with -EINVAL
+	 * before filename_lookup() and vfs_fileattr_set() ever run.  Mask
+	 * the noise off ~7/8 of the time so the call reaches the real
+	 * setattr path; ~1/8 leaves the OR'd noise intact so the reject
+	 * path stays covered.  The mask only trims foreign bits -- the
+	 * underlying ARG_LIST pick across {0, AT_SYMLINK_NOFOLLOW,
+	 * AT_EMPTY_PATH, both} is preserved.  Mirrors the at_flags bias
+	 * in the sibling file_getattr sanitiser.
+	 */
+	if (!ONE_IN(8))
+		rec->a5 &= (unsigned long)
+			   (AT_SYMLINK_NOFOLLOW | AT_EMPTY_PATH);
+
+	/*
+	 * dfd (a1): ARG_FD draws from the full fd pool (regular files,
+	 * pipes, sockets, ...).  When pathname is relative the kernel
+	 * does a dir-relative lookup against dfd and a non-directory fd
+	 * is rejected with -ENOTDIR before any vfs_fileattr_set() work.
+	 * Pin to AT_FDCWD on 1/3 of draws so the relative-path fraction
+	 * lands on a usable base while leaving the random-fd path well
+	 * exercised for the dfd-only (AT_EMPTY_PATH + NULL pathname)
+	 * shape.
+	 */
+	if (ONE_IN(3))
+		rec->a1 = (unsigned long)(long) AT_FDCWD;
 }
 
 static void cleanup_file_setattr(struct syscallrecord *rec)
