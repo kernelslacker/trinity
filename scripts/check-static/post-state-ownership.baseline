@@ -24,5 +24,3 @@
 # silently added here.
 #
 # Lines starting with `#` and blank lines are ignored.
-
-syscalls/mq_open.c:sanitise_mq_open

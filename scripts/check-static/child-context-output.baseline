@@ -176,10 +176,8 @@ syscalls/move_pages.c:208:post_move_pages
 syscalls/mprotect.c:150:post_mprotect
 syscalls/mprotect.c:197:post_mprotect
 syscalls/mq_notify.c:86:post_mq_notify
-syscalls/mq_open.c:146:post_mq_open
-syscalls/mq_open.c:164:post_mq_open
-syscalls/mq_open.c:176:post_mq_open
-syscalls/mq_open.c:202:post_mq_open
+syscalls/mq_open.c:154:post_mq_open
+syscalls/mq_open.c:183:post_mq_open
 syscalls/mremap.c:214:post_mremap
 syscalls/mremap.c:228:post_mremap
 syscalls/munmap.c:198:post_munmap
