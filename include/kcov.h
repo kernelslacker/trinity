@@ -356,6 +356,42 @@ enum kcov_child_mode {
  * regression. */
 #define KCOV_REMOTE_RATIO_HEAVY 2
 
+/* Adaptive remote-KCOV mode predicate constants.  The static policy
+ * above keys remote_mode purely off the per-syscall KCOV_REMOTE_HEAVY
+ * flag, so a HEAVY-flagged syscall whose lifetime remote sampling has
+ * never produced an edge still burns the heavier 1-in-2 rate, and an
+ * unflagged syscall whose remote samples have outperformed its local
+ * samples never gets promoted off the 1-in-10 trickle.  The per-syscall
+ * mode-keyed yield counters bumped in kcov_collect() (remote_pc_calls,
+ * remote_pc_edge_calls, local_pc_calls, local_pc_edge_calls in
+ * struct kcov_shared) carry the evidence; what was missing was a
+ * predicate that reads them and a per-child A/B arm that gates the
+ * live mode flip on that read.
+ *
+ * MIN_REMOTE_CALLS / MIN_LOCAL_CALLS are the sample-size floors before
+ * either disposition fires -- a HEAVY syscall whose first dozen remote
+ * samples happen not to land on an edge must not be demoted off the
+ * heavy rate, and an unflagged syscall whose ten local samples happen
+ * to be zero-edge while one remote sample was productive must not be
+ * promoted off the default trickle.  512 matches the order of
+ * magnitude FRONTIER_ERRNO_PLATEAU_MIN_CALLS uses for the analogous
+ * predicate-discipline gate on the picker side.
+ *
+ * PROMOTE_MARGIN_NUM / PROMOTE_MARGIN_DEN encode the relative-margin
+ * the promote rule requires beyond strict inequality.  The naive
+ * remote_edge_calls/remote_calls > local_edge_calls/local_calls would
+ * flip on any tie-break noise; requiring the remote edge rate to beat
+ * the local edge rate by at least PROMOTE_MARGIN_NUM/PROMOTE_MARGIN_DEN
+ * (5/4 == +25%) keeps the predicate quiet on rate ratios that are
+ * inside sampling noise.  The comparison is performed via cross-
+ * multiplication so neither rate has to be divided; both products are
+ * checked with __builtin_mul_overflow so a long run with very large
+ * counters cannot silently wrap into a false promote. */
+#define REMOTE_ADAPTIVE_MIN_REMOTE_CALLS	512UL
+#define REMOTE_ADAPTIVE_MIN_LOCAL_CALLS		512UL
+#define REMOTE_ADAPTIVE_PROMOTE_MARGIN_NUM	5UL
+#define REMOTE_ADAPTIVE_PROMOTE_MARGIN_DEN	4UL
+
 #define CHILDOP_KCOV_NR_BASE  0x10000UL
 /*
  * Childops borrow the kcov_collect() nr parameter to bypass
@@ -948,6 +984,20 @@ struct kcov_shared {
 	 * Arm-B-only live reject rate is normalised against. */
 	unsigned int  frontier_errno_decay_arm_a_children;
 	unsigned int  frontier_errno_decay_arm_b_children;
+	/* A/B cohort split for the adaptive remote-KCOV mode stamp
+	 * (remote_adaptive_arm_b).  remote_adaptive_arm_{a,b}_children is
+	 * bumped once per child in init_child_runtime_config so the operator
+	 * can normalise the realised population split against the fleet-
+	 * scale variance of the ONE_IN(2) stamp (a small fleet can land
+	 * lopsided).  Companion to the remote_adaptive_* shm->stats counters
+	 * bumped at the dispatch_step site: the latter measure the would-be
+	 * demote / promote dispositions across BOTH arms in lock-step; the
+	 * cohort split is the denominator the Arm-B-only live mode flip is
+	 * normalised against.  Shape matches frontier_blend_arm_{a,b}_
+	 * children above so the population-normalisation pattern stays
+	 * uniform across the A/B rows. */
+	unsigned int  remote_adaptive_arm_a_children;
+	unsigned int  remote_adaptive_arm_b_children;
 	/* See struct kcov_cmp_diag — child-context writes are routed here
 	 * because the child's stdout has already been dup2'd to /dev/null
 	 * by the time KCOV_TRACE_CMP setup runs. */

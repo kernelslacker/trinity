@@ -2699,6 +2699,60 @@ struct stats_s {
 	unsigned long frontier_blend_old_weight_sum;
 	unsigned long frontier_blend_new_weight_sum;
 
+	/* Adaptive remote-KCOV mode A/B disposition counters, bumped from
+	 * dispatch_step in random-syscall.c on every productive-signal call
+	 * into the PC-mode + remote_capable path so the operator can A/B
+	 * compare the static remote-mode policy (per-syscall KCOV_REMOTE_
+	 * HEAVY flag + ONE_IN(remote_reciprocal)) against the adaptive
+	 * policy (per-syscall remote_pc_edge_calls / local_pc_edge_calls
+	 * ratio against the REMOTE_ADAPTIVE_PROMOTE_MARGIN_* threshold,
+	 * gated by REMOTE_ADAPTIVE_MIN_REMOTE_CALLS / MIN_LOCAL_CALLS sample
+	 * floors).  All four counters bump in lock-step from BOTH the Arm A
+	 * cohort (control: static policy is what dispatch_step uses for the
+	 * live remote_mode flip on this call) and the Arm B cohort
+	 * (treatment: the adaptive disposition is what dispatch_step uses
+	 * for the live remote_mode flip on this call), so the would-be
+	 * divergence between the two policies stays observable across the
+	 * fleet regardless of the realised cohort split.  The live mode
+	 * flip itself diverges only on Arm B; the cohort split lives in
+	 * kcov_shm->remote_adaptive_arm_{a,b}_children and is the
+	 * denominator the Arm-B-only live divergence is normalised against.
+	 *
+	 *  remote_adaptive_samples
+	 *      Total computations -- one bump per dispatch_step entry into
+	 *      the PC-mode + remote_capable path.  Denominator for the
+	 *      disposition ratios below; the static-mode and non-capable
+	 *      fast paths bypass the adaptive helper entirely (no shadow
+	 *      bump there) so the counter measures only the surface that
+	 *      could meaningfully disagree.
+	 *  remote_adaptive_would_demote
+	 *      Per-call disposition: adaptive policy would flip remote_mode
+	 *      from true (the static decision said remote) to false because
+	 *      the syscall is KCOV_REMOTE_HEAVY-flagged AND its lifetime
+	 *      remote sample has crossed REMOTE_ADAPTIVE_MIN_REMOTE_CALLS
+	 *      without producing a single edge.  Headline signal that the
+	 *      HEAVY flag is mis-calibrated for that syscall in this
+	 *      kernel.
+	 *  remote_adaptive_would_promote
+	 *      Per-call disposition: adaptive policy would flip remote_mode
+	 *      from false to true because the syscall is NOT HEAVY-flagged,
+	 *      its lifetime remote and local samples have BOTH crossed the
+	 *      MIN_*_CALLS sample floors, the remote sample is non-empty,
+	 *      AND the remote edge rate beats the local edge rate by the
+	 *      configured PROMOTE_MARGIN_* relative margin (cross-multiplied,
+	 *      no division).  Headline signal that the syscall has deferred-
+	 *      work coverage the static unflagged trickle is under-sampling.
+	 *  remote_adaptive_agree
+	 *      Per-call disposition: adaptive policy matches the static
+	 *      decision (neither demote nor promote fires).  Sum of
+	 *      {_would_demote, _would_promote, _agree} equals _samples by
+	 *      construction (the three dispositions are mutually exclusive
+	 *      and exhaustive on the adaptive-helper entry path). */
+	unsigned long remote_adaptive_samples;
+	unsigned long remote_adaptive_would_demote;
+	unsigned long remote_adaptive_would_promote;
+	unsigned long remote_adaptive_agree;
+
 	/* Coverage-plateau detector transition counters, bumped from
 	 * kcov_plateau_check() on the rising edge (healthy -> plateau, when
 	 * the sliding-window edge-discovery rate falls below

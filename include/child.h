@@ -762,6 +762,28 @@ struct childdata {
 	 * environmental drift is common to both arms.  Read-only after stamp;
 	 * owner-only writes; no cross-process coherence needed. */
 	bool frontier_errno_decay_arm_b;
+	/* A/B-comparison stamp for the adaptive remote-KCOV mode decision in
+	 * dispatch_step.  Arm A (false) is the control: the static policy
+	 * (per-syscall KCOV_REMOTE_HEAVY flag + ONE_IN(remote_reciprocal))
+	 * runs unchanged and the live remote_mode for the upcoming dispatch
+	 * is byte-identical to the pre-row baseline for that cohort.  Arm B
+	 * (true) replaces the static decision with the adaptive read of the
+	 * per-syscall mode-keyed yield counters (remote_pc_calls /
+	 * remote_pc_edge_calls / local_pc_calls / local_pc_edge_calls in
+	 * struct kcov_shared) -- a HEAVY-flagged syscall whose lifetime
+	 * remote samples have failed to produce a single edge is demoted off
+	 * the heavy rate, and an unflagged syscall whose remote edge rate
+	 * beats its local edge rate by the configured margin is promoted to
+	 * remote sampling.  The shadow disposition counters
+	 * remote_adaptive_{samples,would_demote,would_promote,agree} in
+	 * shm->stats are bumped in lock-step from BOTH arms so the would-be
+	 * divergence stays observable across the cohort split, regardless of
+	 * which arm this child was stamped into.  Stamped once at child init
+	 * via ONE_IN(2) and never mutated, matching the
+	 * frontier_errno_decay_arm_b pattern above so time-of-day
+	 * environmental drift is common to both arms.  Read-only after
+	 * stamp; owner-only writes; no cross-process coherence needed. */
+	bool remote_adaptive_arm_b;
 	/* Replay-side companion to corpus_entry::rq_sourced.  Set inside
 	 * minicorpus_replay() right after the snapshot picks an entry whose
 	 * args were captured under in_reexec; cleared unconditionally at the

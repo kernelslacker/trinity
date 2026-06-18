@@ -3661,6 +3661,18 @@ static const struct {
 	  offsetof(struct stats_s, frontier_blend_old_weight_sum) },
 	{ "frontier_blend_new_weight_sum",
 	  offsetof(struct stats_s, frontier_blend_new_weight_sum) },
+	/* Adaptive remote-KCOV mode A/B disposition counters.  Bumped in
+	 * lock-step from BOTH arms in remote_adaptive_decide(); the live
+	 * remote_mode diverges only on Arm B.  See the struct-field
+	 * comments in include/stats.h for per-counter semantics. */
+	{ "remote_adaptive_samples",
+	  offsetof(struct stats_s, remote_adaptive_samples) },
+	{ "remote_adaptive_would_demote",
+	  offsetof(struct stats_s, remote_adaptive_would_demote) },
+	{ "remote_adaptive_would_promote",
+	  offsetof(struct stats_s, remote_adaptive_would_promote) },
+	{ "remote_adaptive_agree",
+	  offsetof(struct stats_s, remote_adaptive_agree) },
 	/* Picks the explorer pool forced to STRATEGY_RANDOM.  Rate-of-change
 	 * over the run divided by explorer_children gives the per-explorer
 	 * picker throughput; deviation from the bandit-pool throughput
@@ -5016,6 +5028,7 @@ void kcov_cmp_stats_periodic_dump(void)
 	static unsigned long prev_cmp_inject_denom_diverged;
 	static unsigned long prev_prop_ring_argop_arm_b_fires;
 	static unsigned long prev_frontier_blend_samples;
+	static unsigned long prev_remote_adaptive_samples;
 	static unsigned long prev_mut_structured_shadow_divergences;
 	static struct timespec last_dump;
 	struct timespec now;
@@ -5069,6 +5082,11 @@ void kcov_cmp_stats_periodic_dump(void)
 	unsigned int  cur_prop_ring_argop_arm_a_children, cur_prop_ring_argop_arm_b_children;
 	unsigned long cur_frontier_blend_samples, delta_frontier_blend_samples;
 	unsigned int  cur_frontier_blend_arm_a_children, cur_frontier_blend_arm_b_children;
+	unsigned long cur_remote_adaptive_samples, delta_remote_adaptive_samples;
+	unsigned long cur_remote_adaptive_would_demote;
+	unsigned long cur_remote_adaptive_would_promote;
+	unsigned long cur_remote_adaptive_agree;
+	unsigned int  cur_remote_adaptive_arm_a_children, cur_remote_adaptive_arm_b_children;
 	unsigned long cur_mut_structured_shadow_samples;
 	unsigned long cur_mut_structured_shadow_divergences;
 	unsigned long delta_mut_structured_shadow_divergences;
@@ -5145,6 +5163,12 @@ void kcov_cmp_stats_periodic_dump(void)
 	cur_frontier_blend_samples          = __atomic_load_n(&shm->stats.frontier_blend_samples,         __ATOMIC_RELAXED);
 	cur_frontier_blend_arm_a_children   = __atomic_load_n(&kcov_shm->frontier_blend_arm_a_children,   __ATOMIC_RELAXED);
 	cur_frontier_blend_arm_b_children   = __atomic_load_n(&kcov_shm->frontier_blend_arm_b_children,   __ATOMIC_RELAXED);
+	cur_remote_adaptive_samples         = __atomic_load_n(&shm->stats.remote_adaptive_samples,        __ATOMIC_RELAXED);
+	cur_remote_adaptive_would_demote    = __atomic_load_n(&shm->stats.remote_adaptive_would_demote,   __ATOMIC_RELAXED);
+	cur_remote_adaptive_would_promote   = __atomic_load_n(&shm->stats.remote_adaptive_would_promote,  __ATOMIC_RELAXED);
+	cur_remote_adaptive_agree           = __atomic_load_n(&shm->stats.remote_adaptive_agree,          __ATOMIC_RELAXED);
+	cur_remote_adaptive_arm_a_children  = __atomic_load_n(&kcov_shm->remote_adaptive_arm_a_children,  __ATOMIC_RELAXED);
+	cur_remote_adaptive_arm_b_children  = __atomic_load_n(&kcov_shm->remote_adaptive_arm_b_children,  __ATOMIC_RELAXED);
 	/* SHADOW structure-aware picker A/B cohort + divergence counters live
 	 * in minicorpus_shm rather than kcov_shm because the picker is a
 	 * mutate_arg concern, not a kcov-cmp concern.  Guard the load so a
@@ -5216,6 +5240,7 @@ void kcov_cmp_stats_periodic_dump(void)
 		prev_cmp_inject_denom_diverged       = cur_cmp_inject_denom_diverged;
 		prev_prop_ring_argop_arm_b_fires     = cur_prop_ring_argop_arm_b_fires;
 		prev_frontier_blend_samples          = cur_frontier_blend_samples;
+		prev_remote_adaptive_samples         = cur_remote_adaptive_samples;
 		prev_mut_structured_shadow_divergences = cur_mut_structured_shadow_divergences;
 		return;
 	}
@@ -5276,6 +5301,7 @@ void kcov_cmp_stats_periodic_dump(void)
 	delta_cmp_inject_denom_diverged       = cur_cmp_inject_denom_diverged       - prev_cmp_inject_denom_diverged;
 	delta_prop_ring_argop_arm_b_fires     = cur_prop_ring_argop_arm_b_fires     - prev_prop_ring_argop_arm_b_fires;
 	delta_frontier_blend_samples          = cur_frontier_blend_samples          - prev_frontier_blend_samples;
+	delta_remote_adaptive_samples         = cur_remote_adaptive_samples         - prev_remote_adaptive_samples;
 	delta_mut_structured_shadow_divergences = cur_mut_structured_shadow_divergences - prev_mut_structured_shadow_divergences;
 
 	if ((delta_records | delta_truncated | delta_bloom_skipped | delta_strip_skipped |
@@ -5301,6 +5327,7 @@ void kcov_cmp_stats_periodic_dump(void)
 	     delta_cmp_inject_arm_b_baseline_fires |
 	     delta_cmp_inject_denom_diverged |
 	     delta_prop_ring_argop_arm_b_fires |
+	     delta_remote_adaptive_samples |
 	     delta_mut_structured_shadow_divergences) != 0 ||
 	    any_callsite_delta) {
 		stats_log_write("KCOV CMP stats over last %lds:\n", elapsed);
@@ -5639,6 +5666,36 @@ void kcov_cmp_stats_periodic_dump(void)
 					cur_frontier_blend_arm_a_children,
 					cur_frontier_blend_arm_b_children);
 		}
+		/* Adaptive remote-KCOV mode A/B cohort (Arm A = static remote-
+		 * mode policy / byte-identical to pre-row baseline, Arm B = the
+		 * adaptive demote/promote disposition from
+		 * remote_adaptive_decide() substituted as the live remote_mode).
+		 * Both arms feed the would-be disposition counters in lock-
+		 * step, so the headline samples row uses the realised cohort
+		 * split as the denominator the operator normalises the Arm-B-
+		 * only live divergence against.  The three sub-rows print
+		 * unconditionally inside the gate so the breakdown is visible
+		 * even on windows where one disposition is zero (the absence
+		 * itself is the diagnostic signal). */
+		if (delta_remote_adaptive_samples) {
+			unsigned long rate_milli = (delta_remote_adaptive_samples * 1000UL) / (unsigned long)elapsed;
+			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu, children a=%u b=%u)\n",
+					"remote_adaptive_samples",
+					delta_remote_adaptive_samples,
+					rate_milli / 1000, rate_milli % 1000,
+					cur_remote_adaptive_samples,
+					cur_remote_adaptive_arm_a_children,
+					cur_remote_adaptive_arm_b_children);
+			stats_log_write("  %-32s total %lu\n",
+					"remote_adaptive_would_demote",
+					cur_remote_adaptive_would_demote);
+			stats_log_write("  %-32s total %lu\n",
+					"remote_adaptive_would_promote",
+					cur_remote_adaptive_would_promote);
+			stats_log_write("  %-32s total %lu\n",
+					"remote_adaptive_agree",
+					cur_remote_adaptive_agree);
+		}
 		/* SHADOW structure-aware picker A/B cohort (Arm A = no shadow
 		 * draw / RNG byte-identical to pre-shadow control, Arm B =
 		 * doubled-pool shadow draw on structured-eligible slots).  Print
@@ -5770,6 +5827,7 @@ void kcov_cmp_stats_periodic_dump(void)
 	prev_cmp_inject_denom_diverged       = cur_cmp_inject_denom_diverged;
 	prev_prop_ring_argop_arm_b_fires     = cur_prop_ring_argop_arm_b_fires;
 	prev_frontier_blend_samples          = cur_frontier_blend_samples;
+	prev_remote_adaptive_samples         = cur_remote_adaptive_samples;
 	prev_mut_structured_shadow_divergences = cur_mut_structured_shadow_divergences;
 	last_dump = now;
 }

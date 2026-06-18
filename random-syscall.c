@@ -723,6 +723,142 @@ static unsigned long frontier_cold_weight(unsigned int nr,
 }
 
 /*
+ * Adaptive remote-KCOV mode disposition for the upcoming dispatch.
+ * Reads the per-syscall mode-keyed yield counters bumped in
+ * kcov_collect() (remote_pc_calls / remote_pc_edge_calls /
+ * local_pc_calls / local_pc_edge_calls in struct kcov_shared) and
+ * returns the adaptive remote_mode the upcoming call should run with;
+ * the caller threads that through the per-child Arm A/B gate so Arm A
+ * stays byte-identical to the static policy.
+ *
+ * Two dispositions can fire, mutually exclusive on the
+ * (entry->flags & KCOV_REMOTE_HEAVY) axis:
+ *
+ *   DEMOTE  fires only on HEAVY-flagged syscalls whose static decision
+ *           was remote_mode==true and whose lifetime remote_pc_calls
+ *           has crossed REMOTE_ADAPTIVE_MIN_REMOTE_CALLS without ever
+ *           producing a single remote_pc_edge_calls bump.  The HEAVY
+ *           rate (1-in-2) is wasted on that syscall in this kernel
+ *           and the adaptive policy flips remote_mode to false so the
+ *           call lands on the local PC fd instead.
+ *
+ *   PROMOTE fires only on unflagged syscalls whose static decision was
+ *           remote_mode==false, whose lifetime remote AND local samples
+ *           have BOTH crossed their MIN_*_CALLS sample floors, whose
+ *           remote sample produced at least one edge, AND whose remote
+ *           edge rate beats the local edge rate by the configured
+ *           REMOTE_ADAPTIVE_PROMOTE_MARGIN_NUM/PROMOTE_MARGIN_DEN
+ *           relative margin.  The comparison is performed via cross-
+ *           multiplication so neither rate has to be divided -- the
+ *           naive form
+ *
+ *               remote_edge_calls / remote_pc_calls
+ *                 > local_edge_calls / local_pc_calls
+ *
+ *           is replaced by
+ *
+ *               remote_edge_calls * local_pc_calls * MARGIN_DEN
+ *                 > local_edge_calls  * remote_pc_calls * MARGIN_NUM
+ *
+ *           which is equivalent in the positive denominators the
+ *           MIN_*_CALLS gates guarantee and never divides.  Both
+ *           products are checked with __builtin_mul_overflow; on
+ *           overflow the promote disposition is suppressed (treated as
+ *           agree with static) so a long run with very large counters
+ *           cannot silently wrap into a false promote.
+ *
+ * SHADOW: bump one of remote_adaptive_{would_demote, would_promote,
+ * agree} per call and bump remote_adaptive_samples once.  The bumps
+ * happen unconditionally on the helper entry path so both A/B arms
+ * contribute to the same denominator and the would-be divergence
+ * stays observable on Arm A (the control cohort) too.
+ *
+ * Returns the static decision verbatim when kcov_shm is unavailable or
+ * nr is out of range -- matches the kcov-less fallback the rest of the
+ * file already takes (see frontier_cold_weight above for the sibling
+ * pattern).
+ */
+static bool remote_adaptive_decide(unsigned int nr,
+				   struct syscallentry *entry,
+				   bool static_remote)
+{
+	unsigned long rcalls, redgec, lcalls, ledgec;
+	bool would_demote = false, would_promote = false;
+	bool adaptive_remote = static_remote;
+
+	if (kcov_shm == NULL || nr >= MAX_NR_SYSCALL || entry == NULL)
+		return static_remote;
+
+	rcalls = __atomic_load_n(&kcov_shm->remote_pc_calls[nr],
+				 __ATOMIC_RELAXED);
+	redgec = __atomic_load_n(&kcov_shm->remote_pc_edge_calls[nr],
+				 __ATOMIC_RELAXED);
+	lcalls = __atomic_load_n(&kcov_shm->local_pc_calls[nr],
+				 __ATOMIC_RELAXED);
+	ledgec = __atomic_load_n(&kcov_shm->local_pc_edge_calls[nr],
+				 __ATOMIC_RELAXED);
+
+	if ((entry->flags & KCOV_REMOTE_HEAVY) && static_remote) {
+		/* Demote: HEAVY syscall, static says remote, but the
+		 * lifetime evidence is that remote sampling on this
+		 * syscall has produced zero edges across enough samples
+		 * to be confident.  Flip to local. */
+		if (rcalls >= REMOTE_ADAPTIVE_MIN_REMOTE_CALLS &&
+		    redgec == 0) {
+			adaptive_remote = false;
+			would_demote = true;
+		}
+	} else if (!(entry->flags & KCOV_REMOTE_HEAVY) && !static_remote) {
+		/* Promote: not HEAVY, static says local, but the
+		 * lifetime evidence is that remote sampling on this
+		 * syscall has out-yielded local by the configured
+		 * margin.  Both sample-size floors must be met and the
+		 * remote sample must have produced at least one edge --
+		 * otherwise the numerator is zero and the rate
+		 * comparison is uninformative. */
+		if (rcalls >= REMOTE_ADAPTIVE_MIN_REMOTE_CALLS &&
+		    lcalls >= REMOTE_ADAPTIVE_MIN_LOCAL_CALLS &&
+		    redgec > 0) {
+			unsigned long lhs, rhs;
+			bool ok;
+
+			ok = !__builtin_mul_overflow(redgec, lcalls, &lhs);
+			if (ok)
+				ok = !__builtin_mul_overflow(
+					lhs,
+					REMOTE_ADAPTIVE_PROMOTE_MARGIN_DEN,
+					&lhs);
+			if (ok)
+				ok = !__builtin_mul_overflow(
+					ledgec, rcalls, &rhs);
+			if (ok)
+				ok = !__builtin_mul_overflow(
+					rhs,
+					REMOTE_ADAPTIVE_PROMOTE_MARGIN_NUM,
+					&rhs);
+			if (ok && lhs > rhs) {
+				adaptive_remote = true;
+				would_promote = true;
+			}
+		}
+	}
+
+	__atomic_fetch_add(&shm->stats.remote_adaptive_samples, 1UL,
+			   __ATOMIC_RELAXED);
+	if (would_demote)
+		__atomic_fetch_add(&shm->stats.remote_adaptive_would_demote,
+				   1UL, __ATOMIC_RELAXED);
+	else if (would_promote)
+		__atomic_fetch_add(&shm->stats.remote_adaptive_would_promote,
+				   1UL, __ATOMIC_RELAXED);
+	else
+		__atomic_fetch_add(&shm->stats.remote_adaptive_agree, 1UL,
+				   __ATOMIC_RELAXED);
+
+	return adaptive_remote;
+}
+
+/*
  * Pick the syscall to run under STRATEGY_COVERAGE_FRONTIER: uniform draw
  * from active_syscalls, then biased acceptance against the per-syscall
  * frontier-edge weight via rejection sampling.  Each candidate is
@@ -1647,11 +1783,33 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	 * those deferred-work edges don't get stuck cold; everything else
 	 * uses the default 1-in-KCOV_REMOTE_RATIO trickle. */
 	if (child->kcov.mode == KCOV_MODE_PC) {
-		unsigned int remote_reciprocal =
-			(entry->flags & KCOV_REMOTE_HEAVY) ?
-				KCOV_REMOTE_RATIO_HEAVY : KCOV_REMOTE_RATIO;
-		child->kcov.remote_mode = child->kcov.remote_capable &&
-					  ONE_IN(remote_reciprocal);
+		/* When the kernel did not let this child enable KCOV_REMOTE,
+		 * neither the static nor the adaptive policy can flip
+		 * remote_mode true.  Match the historical short-circuit
+		 * (which never invoked ONE_IN in that case) exactly so the
+		 * caller's RNG stream stays byte-identical to the pre-row
+		 * baseline for non-capable children. */
+		if (!child->kcov.remote_capable) {
+			child->kcov.remote_mode = false;
+		} else {
+			unsigned int remote_reciprocal =
+				(entry->flags & KCOV_REMOTE_HEAVY) ?
+					KCOV_REMOTE_RATIO_HEAVY :
+					KCOV_REMOTE_RATIO;
+			bool static_remote = ONE_IN(remote_reciprocal);
+			/* The adaptive helper bumps shadow counters in
+			 * lock-step from both A/B arms so the would-be
+			 * divergence stays observable on Arm A (the control
+			 * cohort) too.  Arm A then discards the adaptive
+			 * disposition and runs the static decision so its
+			 * live remote_mode is byte-identical to the pre-row
+			 * baseline; Arm B substitutes the adaptive
+			 * disposition as the live remote_mode. */
+			bool adaptive_remote = remote_adaptive_decide(
+				rec->nr, entry, static_remote);
+			child->kcov.remote_mode = child->remote_adaptive_arm_b ?
+				adaptive_remote : static_remote;
+		}
 	} else {
 		child->kcov.remote_mode = false;
 	}

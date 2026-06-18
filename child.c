@@ -516,6 +516,12 @@ void clean_childdata(struct childdata *child)
 	 * defaults to Arm A (shadow-only, no live reject) until the stamp
 	 * lands.  Matches the frontier_blend_arm_b clear above. */
 	child->frontier_errno_decay_arm_b = false;
+	/* Adaptive remote-KCOV mode A/B stamp -- (re)decided per-child in
+	 * init_child_runtime_config below; zero here so the fresh occupant
+	 * defaults to Arm A (static remote-mode policy, byte-identical to
+	 * the pre-row baseline) until the stamp lands.  Matches the
+	 * frontier_errno_decay_arm_b clear above. */
+	child->remote_adaptive_arm_b = false;
 	child->reexec_count_window = 0;
 	child->reexec_window_start_op = 0;
 	child->cmp_hint_injected_this_call = false;
@@ -1153,6 +1159,25 @@ static void init_child_runtime_config(struct childdata *child, int childno)
 					   1U, __ATOMIC_RELAXED);
 		else
 			__atomic_fetch_add(&kcov_shm->frontier_errno_decay_arm_a_children,
+					   1U, __ATOMIC_RELAXED);
+	}
+
+	/* A/B-comparison stamp for the adaptive remote-KCOV mode decision in
+	 * dispatch_step.  Independent of the other A/B axes so the cohort
+	 * comparisons stay un-confounded; same unconditional stamp +
+	 * ONE_IN(2) cohort split + per-arm child count shape as
+	 * frontier_blend_arm_b above so the population-normalisation pattern
+	 * stays uniform across the A/B rows.  The shadow disposition counters
+	 * bump in lock-step from both arms, so the stamp is meaningful even
+	 * on Arm A (the would-be divergence stays observable across the
+	 * control cohort). */
+	child->remote_adaptive_arm_b = ONE_IN(2);
+	if (kcov_shm != NULL) {
+		if (child->remote_adaptive_arm_b)
+			__atomic_fetch_add(&kcov_shm->remote_adaptive_arm_b_children,
+					   1U, __ATOMIC_RELAXED);
+		else
+			__atomic_fetch_add(&kcov_shm->remote_adaptive_arm_a_children,
 					   1U, __ATOMIC_RELAXED);
 	}
 
