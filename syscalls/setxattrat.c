@@ -128,7 +128,7 @@ struct syscallentry syscall_setxattrat = {
 	.arg_params[2].list = ARGLIST(setxattrat_at_flags),
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_XATTR,
 	.sanitise = sanitise_setxattrat,
 #ifdef USE_XATTR_ARGS
 	.cleanup = cleanup_setxattrat,

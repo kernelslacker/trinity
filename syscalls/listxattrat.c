@@ -312,7 +312,7 @@ struct syscallentry syscall_listxattrat = {
 	.arg_params[2].list = ARGLIST(listxattrat_at_flags),
 	.sanitise = sanitise_listxattrat,
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_XATTR,
 #if defined(SYS_listxattrat) || defined(__NR_listxattrat)
 	.post = post_listxattrat,
 #endif

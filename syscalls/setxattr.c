@@ -21,6 +21,6 @@ struct syscallentry syscall_setxattr = {
 	.arg_params[4].list = ARGLIST(xattr_set_flags),
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_XATTR,
 	.sanitise = sanitise_setxattr,
 };

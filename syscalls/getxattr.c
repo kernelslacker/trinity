@@ -301,7 +301,7 @@ struct syscallentry syscall_getxattr = {
 	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_XATTR_NAME, [2] = ARG_ADDRESS, [3] = ARG_LEN },
 	.argname = { [0] = "pathname", [1] = "name", [2] = "value", [3] = "size" },
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_XATTR,
 	.sanitise = sanitise_getxattr,
 #if defined(SYS_getxattr) || defined(__NR_getxattr)
 	.post = post_getxattr,

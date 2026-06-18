@@ -10,5 +10,5 @@ struct syscallentry syscall_fremovexattr = {
 	.argname = { [0] = "fd", [1] = "name" },
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_XATTR,
 };

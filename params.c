@@ -500,6 +500,7 @@ static const struct {
 	{ "bpf",      GROUP_BPF },
 	{ "sched",    GROUP_SCHED },
 	{ "time",     GROUP_TIME },
+	{ "xattr",    GROUP_XATTR },
 };
 
 char *specific_domain_optarg = NULL;
@@ -545,7 +546,7 @@ static const struct option_help option_descs[] = {
 	{ "exclude",		'x', "don't call a specific syscall" },
 	{ "explorer-children",	 0,  "reserve N children to always run STRATEGY_RANDOM as a strategy-independent explorer pool (default: max_children/4 under --strategy=bandit, 0 otherwise; max: max_children/2). Works in any picker mode; non-bandit modes get no explorer pool unless this is set." },
 	{ "fork-pressure-drain", 0, "opt-in: under sustained fork() failure (>=100 consecutive spawn_child failures), suppress canary picks of pid-heavy ops (pidfd_storm, qrtr_bind_race, pfkey_spd_walk, l2tp_ifname_race, statmount_idmap_overflow, sysfs_string_race) for 30 s so the canary picker stops piling new fork demand on a parent already losing the spawn race. fork_storm is always skipped via the risky-defer set. Default off." },
-	{ "group",		'g', "only run syscalls from a certain group (vfs,vm,net,ipc,process,signal,io_uring,bpf,sched,time)" },
+	{ "group",		'g', "only run syscalls from a certain group (vfs,vm,net,ipc,process,signal,io_uring,bpf,sched,time,xattr)" },
 	{ "group-bias",		 0,  "bias syscall selection toward the same group as the previous call" },
 	{ "help",		'h', "show this help" },
 	{ "ioctls",		'I', "list all ioctls" },

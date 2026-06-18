@@ -20,6 +20,6 @@ struct syscallentry syscall_fsetxattr = {
 	.arg_params[4].list = ARGLIST(xattr_set_flags),
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_XATTR,
 	.sanitise = sanitise_fsetxattr,
 };
