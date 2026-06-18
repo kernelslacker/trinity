@@ -58,6 +58,13 @@ static unsigned long lsm_get_flags[] = {
  * a sibling syscall scribbling rec->aN between the syscall returning
  * and the post handler running cannot redirect us at a foreign ctx /
  * size user buffer or hand the re-call the wrong (attr, flags) tuple.
+ *
+ * Wired into the post_state ownership table by post_state_install() at
+ * sanitise time; post_lsm_get_self_attr() gates the snap through
+ * post_state_claim_owned() before any field deref, so a sibling stomp
+ * that redirects rec->post_state at a foreign heap chunk is rejected
+ * by the ownership lookup before the leading-word magic compare ever
+ * runs.
  */
 #define LSM_GET_SELF_ATTR_POST_STATE_MAGIC	0x4C534D4753415452UL	/* "LSMGSATR" */
 struct lsm_get_self_attr_post_state {
@@ -169,7 +176,7 @@ static void sanitise_lsm_get_self_attr(struct syscallrecord *rec)
 	snap->ctx   = rec->a2;
 	snap->size  = rec->a3;
 	snap->flags = rec->a4;
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 #endif
 }
 
@@ -218,37 +225,23 @@ static void sanitise_lsm_get_self_attr(struct syscallrecord *rec)
 #ifdef HAVE_SYS_LSM_GET_SELF_ATTR
 static void post_lsm_get_self_attr(struct syscallrecord *rec)
 {
-	struct lsm_get_self_attr_post_state *snap =
-		(struct lsm_get_self_attr_post_state *) rec->post_state;
+	struct lsm_get_self_attr_post_state *snap;
 	u32 size_first;
 	u32 size_recall;
 	unsigned char ctx_first[LSM_CTX_BUF_MAX];
 	unsigned char ctx_recall[LSM_CTX_BUF_MAX];
 	long rc;
 
+	/*
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
+	 */
+	snap = post_state_claim_owned(rec, LSM_GET_SELF_ATTR_POST_STATE_MAGIC,
+				      __func__);
 	if (snap == NULL)
 		return;
-
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_lsm_get_self_attr: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	if (snap->magic != LSM_GET_SELF_ATTR_POST_STATE_MAGIC) {
-		outputerr("post_lsm_get_self_attr: rejected snap with bad magic "
-			  "0x%lx (post_state-stomped to foreign "
-			  "allocation?)\n", snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
 
 	if (!ONE_IN(100))
 		goto out_free;
@@ -313,7 +306,7 @@ static void post_lsm_get_self_attr(struct syscallrecord *rec)
 	}
 
 out_free:
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 #endif
 
