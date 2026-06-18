@@ -77,6 +77,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "syscall-gate.h"
 #include "jitter.h"
 #include "random.h"
 #include "rnd.h"
@@ -275,7 +276,7 @@ static void burst_inode_cache(unsigned int n)
 	for (i = 0; i < n; i++) {
 		snprintf(name, sizeof(name), "sc-%u-%u",
 			 (unsigned int)mypid(), i);
-		fds[i] = (int)syscall(__NR_memfd_create, name, 0U);
+		fds[i] = (int)trinity_raw_syscall(__NR_memfd_create, name, 0U);
 	}
 	free_fds_interleaved(fds, n);
 }

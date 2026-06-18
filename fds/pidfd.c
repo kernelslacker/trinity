@@ -9,6 +9,7 @@
 #include <sys/syscall.h>
 
 #include "child.h"
+#include "syscall-gate.h"
 #include "fd-event.h"
 #include "fd.h"
 #include "objects.h"
@@ -45,7 +46,7 @@ static void pidfd_dump(struct object *obj, enum obj_scope scope)
 static int open_pidfd(pid_t pid, unsigned int flags)
 {
 #ifdef __NR_pidfd_open
-	return syscall(__NR_pidfd_open, pid, flags);
+	return trinity_raw_syscall(__NR_pidfd_open, pid, flags);
 #else
 	errno = ENOSYS;
 	return -1;

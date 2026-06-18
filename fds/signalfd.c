@@ -10,6 +10,7 @@
 #include <unistd.h>
 
 #include "fd.h"
+#include "syscall-gate.h"
 #include "objects.h"
 #include "random.h"
 #include "sanitise.h"
@@ -33,7 +34,7 @@ static int do_signalfd4(void)
 	sigaddset(&mask, SIGCHLD);
 
 #ifdef __NR_signalfd4
-	return syscall(__NR_signalfd4, -1, &mask, sizeof(sigset_t),
+	return trinity_raw_syscall(__NR_signalfd4, -1, &mask, sizeof(sigset_t),
 		       SFD_CLOEXEC | SFD_NONBLOCK);
 #else
 	errno = ENOSYS;

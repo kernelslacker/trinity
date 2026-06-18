@@ -31,6 +31,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "syscall-gate.h"
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
@@ -111,7 +112,7 @@ static long do_alloc_syscall(void)
 		break;
 	case 6:
 		/* memfd_create: tmpfs inode + file allocation */
-		ret = (long)syscall(__NR_memfd_create, "t", 0U);
+		ret = (long)trinity_raw_syscall(__NR_memfd_create, "t", 0U);
 		if (ret >= 0)
 			close((int)ret);
 		break;

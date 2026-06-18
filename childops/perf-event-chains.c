@@ -29,6 +29,7 @@
 #include <linux/perf_event.h>
 
 #include "child.h"
+#include "syscall-gate.h"
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
@@ -50,7 +51,7 @@ static unsigned int pmu_count;
 static long do_perf_event_open(struct perf_event_attr *attr, pid_t pid,
 			       int cpu, int group_fd, unsigned long flags)
 {
-	return syscall(__NR_perf_event_open, attr, pid, cpu, group_fd, flags);
+	return trinity_raw_syscall(__NR_perf_event_open, attr, pid, cpu, group_fd, flags);
 }
 
 static void add_pmu(__u32 type, const char *name)

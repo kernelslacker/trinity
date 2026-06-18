@@ -119,6 +119,7 @@
 #include <linux/io_uring.h>
 
 #include "child.h"
+#include "syscall-gate.h"
 #include "childops-iouring.h"
 #include "childops-netlink.h"
 #include "childops-util.h"
@@ -166,13 +167,13 @@ static bool ns_unsupported_iouring_send_zc_churn;
 
 static int do_register(int fd, unsigned int op, void *arg, unsigned int nr)
 {
-	return (int)syscall(__NR_io_uring_register, fd, op, arg, nr);
+	return (int)trinity_raw_syscall(__NR_io_uring_register, fd, op, arg, nr);
 }
 
 static int do_enter(int fd, unsigned int to_submit, unsigned int min_complete,
 		    unsigned int flags)
 {
-	return (int)syscall(__NR_io_uring_enter, fd, to_submit, min_complete,
+	return (int)trinity_raw_syscall(__NR_io_uring_enter, fd, to_submit, min_complete,
 			    flags, NULL, 0);
 }
 

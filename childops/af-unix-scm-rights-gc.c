@@ -109,6 +109,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "syscall-gate.h"
 #include "shm.h"
 #include "trinity.h"
 
@@ -358,7 +359,7 @@ static int iouring_open(void)
 	long fd;
 
 	memset(&p, 0, sizeof(p));
-	fd = syscall(SYS_io_uring_setup, UNIX_SCM_IOURING_RING_ENTRIES, &p);
+	fd = trinity_raw_syscall(SYS_io_uring_setup, UNIX_SCM_IOURING_RING_ENTRIES, &p);
 	if (fd < 0)
 		return -1;
 	return (int)fd;
@@ -402,12 +403,12 @@ struct af_unix_race_shared {
 
 static long raw_futex_wait(uint32_t *uaddr, uint32_t val)
 {
-	return syscall(__NR_futex, uaddr, FUTEX_WAIT, val, NULL, NULL, 0);
+	return trinity_raw_syscall(__NR_futex, uaddr, FUTEX_WAIT, val, NULL, NULL, 0);
 }
 
 static long raw_futex_wake(uint32_t *uaddr, int n)
 {
-	return syscall(__NR_futex, uaddr, FUTEX_WAKE, n, NULL, NULL, 0);
+	return trinity_raw_syscall(__NR_futex, uaddr, FUTEX_WAKE, n, NULL, NULL, 0);
 }
 
 /*
@@ -450,7 +451,7 @@ static void af_unix_sibling_main(struct af_unix_race_shared *rs)
 	uint32_t budget;
 	uint32_t i;
 
-	(void)syscall(__NR_prctl, PR_SET_PDEATHSIG, SIGKILL, 0UL, 0UL, 0UL);
+	(void)trinity_raw_syscall(__NR_prctl, PR_SET_PDEATHSIG, SIGKILL, 0UL, 0UL, 0UL);
 	(void)alarm(2);
 
 	/*
@@ -461,8 +462,8 @@ static void af_unix_sibling_main(struct af_unix_race_shared *rs)
 	 * block forever in raw_futex_wait below on a 'go' flag no
 	 * one will ever set, permanently leaking the sibling.
 	 */
-	if (syscall(__NR_getppid) == 1)
-		(void)syscall(__NR_exit, 0);
+	if (trinity_raw_syscall(__NR_getppid) == 1)
+		(void)trinity_raw_syscall(__NR_exit, 0);
 
 	while (__atomic_load_n(&rs->go, __ATOMIC_ACQUIRE) == 0U)
 		(void)raw_futex_wait(&rs->go, 0U);
@@ -491,7 +492,7 @@ static void af_unix_sibling_main(struct af_unix_race_shared *rs)
 		mh.msg_control = cbuf;
 		mh.msg_controllen = sizeof(cbuf);
 
-		r = syscall(__NR_recvmsg, (long)recv_fd, (long)&mh,
+		r = trinity_raw_syscall(__NR_recvmsg, (long)recv_fd, (long)&mh,
 			    (long)(MSG_PEEK | MSG_DONTWAIT));
 		if (r < 0)
 			continue;
@@ -510,7 +511,7 @@ static void af_unix_sibling_main(struct af_unix_race_shared *rs)
 			fds = (int *)CMSG_DATA(cmsg);
 			for (j = 0; j < n; j++) {
 				if (fds[j] >= 0)
-					(void)syscall(__NR_close, (long)fds[j]);
+					(void)trinity_raw_syscall(__NR_close, (long)fds[j]);
 			}
 		}
 	}
@@ -518,7 +519,7 @@ static void af_unix_sibling_main(struct af_unix_race_shared *rs)
 	__atomic_store_n(&rs->done, 1U, __ATOMIC_RELEASE);
 	(void)raw_futex_wake(&rs->done, 1);
 
-	syscall(__NR_exit, 0);
+	trinity_raw_syscall(__NR_exit, 0);
 	__builtin_unreachable();
 }
 
@@ -569,7 +570,7 @@ static pid_t spawn_race_sibling(struct af_unix_race_shared *rs)
 	args.flags       = CLONE_FILES;
 	args.exit_signal = SIGCHLD;
 
-	ret = syscall(__NR_clone3, &args, sizeof(args));
+	ret = trinity_raw_syscall(__NR_clone3, &args, sizeof(args));
 	if (ret < 0) {
 		if (errno == ENOSYS)
 			af_unix_scm_clone3_unavailable = true;

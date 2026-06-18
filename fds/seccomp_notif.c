@@ -12,6 +12,7 @@
 #include <linux/seccomp.h>
 
 #include "fd.h"
+#include "syscall-gate.h"
 #include "objects.h"
 #include "random.h"
 #include "sanitise.h"
@@ -66,7 +67,7 @@ static int create_seccomp_notif_fd(void)
 		.filter = filter,
 	};
 
-	return syscall(__NR_seccomp, SECCOMP_SET_MODE_FILTER,
+	return trinity_raw_syscall(__NR_seccomp, SECCOMP_SET_MODE_FILTER,
 		       SECCOMP_FILTER_FLAG_NEW_LISTENER, &prog);
 }
 

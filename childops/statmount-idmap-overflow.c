@@ -110,6 +110,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "syscall-gate.h"
 #include "childops-util.h"
 #include "rnd.h"
 #include "shm.h"
@@ -265,30 +266,30 @@ static bool ns_unshare_failed_statmount_idmap;
 
 static long sys_fsopen(const char *fsname, unsigned int flags)
 {
-	return syscall(__NR_fsopen, fsname, flags);
+	return trinity_raw_syscall(__NR_fsopen, fsname, flags);
 }
 
 static long sys_fsconfig(int fd, unsigned int cmd, const char *key,
 			 const void *value, int aux)
 {
-	return syscall(__NR_fsconfig, fd, cmd, key, value, aux);
+	return trinity_raw_syscall(__NR_fsconfig, fd, cmd, key, value, aux);
 }
 
 static long sys_fsmount(int fd, unsigned int flags, unsigned int attr_flags)
 {
-	return syscall(__NR_fsmount, fd, flags, attr_flags);
+	return trinity_raw_syscall(__NR_fsmount, fd, flags, attr_flags);
 }
 
 static long sys_mount_setattr(int dfd, const char *path, unsigned int flags,
 			      struct mount_attr *attr, size_t size)
 {
-	return syscall(__NR_mount_setattr, dfd, path, flags, attr, size);
+	return trinity_raw_syscall(__NR_mount_setattr, dfd, path, flags, attr, size);
 }
 
 static long sys_statmount(struct mnt_id_req_v1 *req, struct statmount *buf,
 			  size_t bufsize, unsigned int flags)
 {
-	return syscall(__NR_statmount, req, buf, bufsize, flags);
+	return trinity_raw_syscall(__NR_statmount, req, buf, bufsize, flags);
 }
 
 /*
@@ -347,7 +348,7 @@ static void unshare_ns_once(void)
 	}
 	/* MS_PRIVATE on / so anything we mount cannot propagate even
 	 * if the host's mount namespace had MS_SHARED propagation. */
-	(void)syscall(__NR_mount, NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL);
+	(void)trinity_raw_syscall(__NR_mount, NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL);
 	ns_unshared_statmount_idmap = true;
 }
 

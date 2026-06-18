@@ -45,6 +45,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "syscall-gate.h"
 #include "childops-util.h"
 #include "random.h"
 #include "rnd.h"
@@ -174,7 +175,7 @@ static bool setup_futex_wake(struct racer_shared *s)
 
 static void worker_futex_wake(struct racer_shared *s)
 {
-	syscall(__NR_futex, &s->futex_val, FUTEX_WAKE, 1, NULL, NULL, 0);
+	trinity_raw_syscall(__NR_futex, &s->futex_val, FUTEX_WAKE, 1, NULL, NULL, 0);
 }
 
 static void cleanup_futex_wake(struct racer_shared *s)

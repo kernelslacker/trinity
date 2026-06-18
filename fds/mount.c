@@ -8,6 +8,7 @@
 #include <unistd.h>
 
 #include "fd.h"
+#include "syscall-gate.h"
 #include "objects.h"
 #include "publish_resource.h"
 #include "random.h"
@@ -25,7 +26,7 @@
 static int do_open_tree(void)
 {
 #ifdef __NR_open_tree
-	return syscall(__NR_open_tree, AT_FDCWD, "/tmp",
+	return trinity_raw_syscall(__NR_open_tree, AT_FDCWD, "/tmp",
 		       OPEN_TREE_CLONE | AT_RECURSIVE | AT_SYMLINK_NOFOLLOW);
 #else
 	errno = ENOSYS;

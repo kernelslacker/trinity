@@ -76,6 +76,7 @@
 #include <linux/io_uring.h>
 
 #include "child.h"
+#include "syscall-gate.h"
 #include "childops-iouring.h"
 #include "childops/iouring-ring.h"
 #include "random.h"
@@ -176,7 +177,7 @@ static bool ms_submit(struct iour_ring *ctx, struct io_uring_sqe *sqe, unsigned 
 
 static int ms_enter(struct iour_ring *ctx, unsigned int n, unsigned int min_complete)
 {
-	return (int)syscall(__NR_io_uring_enter, ctx->fd, n, min_complete,
+	return (int)trinity_raw_syscall(__NR_io_uring_enter, ctx->fd, n, min_complete,
 			    IORING_ENTER_GETEVENTS, NULL, 0);
 }
 
@@ -252,7 +253,7 @@ static bool register_pbuf_ring(struct iour_ring *ctx,
 	reg.ring_entries = PBUF_COUNT;
 	reg.bgid        = PBUF_GROUP_ID;
 
-	r = (int)syscall(__NR_io_uring_register, ctx->fd,
+	r = (int)trinity_raw_syscall(__NR_io_uring_register, ctx->fd,
 			 IORING_REGISTER_PBUF_RING, &reg, 1);
 	if (r < 0) {
 		munmap(data, (size_t)PBUF_COUNT * PBUF_SIZE);
@@ -272,7 +273,7 @@ static void unregister_pbuf_ring(struct iour_ring *ctx,
 
 	memset(&reg, 0, sizeof(reg));
 	reg.bgid = PBUF_GROUP_ID;
-	(void)syscall(__NR_io_uring_register, ctx->fd,
+	(void)trinity_raw_syscall(__NR_io_uring_register, ctx->fd,
 		      IORING_UNREGISTER_PBUF_RING, &reg, 1);
 
 	munmap(data, (size_t)PBUF_COUNT * PBUF_SIZE);
@@ -460,7 +461,7 @@ static void iouring_multishot_iter_arm_napi(struct iouring_multishot_iter_ctx *i
 	napi_in.busy_poll_to     = (__u32)rnd_modulo_u32(200);
 	napi_in.prefer_busy_poll = (__u8)(rnd_u32() & 1);
 
-	r = (int)syscall(__NR_io_uring_register, it->ms.fd,
+	r = (int)trinity_raw_syscall(__NR_io_uring_register, it->ms.fd,
 			 IORING_REGISTER_NAPI, &napi_in, 1);
 	if (r == 0) {
 		it->napi_armed = true;
@@ -581,7 +582,7 @@ static void iouring_multishot_iter_cancel(struct iouring_multishot_iter_ctx *it)
 		return;
 
 	memset(&napi_out, 0, sizeof(napi_out));
-	r = (int)syscall(__NR_io_uring_register, it->ms.fd,
+	r = (int)trinity_raw_syscall(__NR_io_uring_register, it->ms.fd,
 			 IORING_UNREGISTER_NAPI, &napi_out, 1);
 	if (r == 0)
 		__atomic_add_fetch(&shm->stats.iouring_napi_unregister_ok,

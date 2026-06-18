@@ -68,6 +68,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "syscall-gate.h"
 #include "childops-util.h"
 #include "pids.h"
 #include "jitter.h"
@@ -192,7 +193,7 @@ static void keyring_spam_iter_add_key(int32_t *live,
 	snprintf(desc, sizeof(desc),
 		 "trinity-keyring-spam-%u-%u",
 		 (unsigned int) mypid(), iter);
-	rc = syscall(__NR_add_key, "user", desc,
+	rc = trinity_raw_syscall(__NR_add_key, "user", desc,
 		     payload, (size_t) KEYRING_PAYLOAD_BYTES,
 		     (unsigned long) anchor);
 	if (rc < 0) {
@@ -217,7 +218,7 @@ static void keyring_spam_iter_read(int32_t *live)
 	serial = ring_pick(live);
 	if (serial == 0)
 		return;
-	rc = syscall(__NR_keyctl,
+	rc = trinity_raw_syscall(__NR_keyctl,
 		     (unsigned long) RAND_NEGATIVE_OR(KEYCTL_READ),
 		     (unsigned long) serial,
 		     (unsigned long) buf,
@@ -239,7 +240,7 @@ static void keyring_spam_iter_describe(int32_t *live)
 	serial = ring_pick(live);
 	if (serial == 0)
 		return;
-	rc = syscall(__NR_keyctl, (unsigned long) KEYCTL_DESCRIBE,
+	rc = trinity_raw_syscall(__NR_keyctl, (unsigned long) KEYCTL_DESCRIBE,
 		     (unsigned long) serial,
 		     (unsigned long) buf,
 		     (unsigned long) sizeof(buf), 0UL);
@@ -260,7 +261,7 @@ static void keyring_spam_iter_revoke(int32_t *live)
 	serial = ring_pick(live);
 	if (serial == 0)
 		return;
-	rc = syscall(__NR_keyctl, (unsigned long) KEYCTL_REVOKE,
+	rc = trinity_raw_syscall(__NR_keyctl, (unsigned long) KEYCTL_REVOKE,
 		     (unsigned long) serial, 0UL, 0UL, 0UL);
 	if (rc < 0)
 		__atomic_add_fetch(&shm->stats.keyring_spam_failed,
@@ -279,7 +280,7 @@ static void keyring_spam_iter_invalidate(int32_t *live)
 	serial = ring_pick(live);
 	if (serial == 0)
 		return;
-	rc = syscall(__NR_keyctl,
+	rc = trinity_raw_syscall(__NR_keyctl,
 		     (unsigned long) KEYCTL_INVALIDATE,
 		     (unsigned long) serial, 0UL, 0UL, 0UL);
 	if (rc < 0) {
@@ -303,7 +304,7 @@ static void keyring_spam_iter_unlink(int32_t *live, int anchor)
 	serial = ring_pick(live);
 	if (serial == 0)
 		return;
-	rc = syscall(__NR_keyctl, (unsigned long) KEYCTL_UNLINK,
+	rc = trinity_raw_syscall(__NR_keyctl, (unsigned long) KEYCTL_UNLINK,
 		     (unsigned long) serial,
 		     (unsigned long) anchor, 0UL, 0UL);
 	if (rc < 0) {

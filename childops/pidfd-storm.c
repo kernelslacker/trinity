@@ -58,6 +58,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "syscall-gate.h"
 #include "childops-util.h"
 #include "jitter.h"
 #include "random.h"
@@ -142,7 +143,7 @@ static void sanitize_pause_child_signals(void)
 static int sys_pidfd_open(pid_t pid, unsigned int flags)
 {
 #ifdef __NR_pidfd_open
-	return (int) syscall(__NR_pidfd_open, pid, flags);
+	return (int) trinity_raw_syscall(__NR_pidfd_open, pid, flags);
 #else
 	(void) pid;
 	(void) flags;
@@ -155,7 +156,7 @@ static int sys_pidfd_send_signal(int pidfd, int sig, siginfo_t *info,
 				 unsigned int flags)
 {
 #ifdef __NR_pidfd_send_signal
-	return (int) syscall(__NR_pidfd_send_signal, pidfd, sig, info, flags);
+	return (int) trinity_raw_syscall(__NR_pidfd_send_signal, pidfd, sig, info, flags);
 #else
 	(void) pidfd;
 	(void) sig;
@@ -169,7 +170,7 @@ static int sys_pidfd_send_signal(int pidfd, int sig, siginfo_t *info,
 static int sys_pidfd_getfd(int pidfd, int targetfd, unsigned int flags)
 {
 #ifdef __NR_pidfd_getfd
-	return (int) syscall(__NR_pidfd_getfd, pidfd, targetfd, flags);
+	return (int) trinity_raw_syscall(__NR_pidfd_getfd, pidfd, targetfd, flags);
 #else
 	(void) pidfd;
 	(void) targetfd;
@@ -226,7 +227,7 @@ static unsigned int pidfd_storm_iter_spawn(struct pidfd_slot *slots,
 			 * be gone by the time the inner gets scheduled, in
 			 * which case PDEATHSIG was set too late to fire. */
 			sanitize_pause_child_signals();
-			(void)syscall(__NR_prctl, PR_SET_PDEATHSIG, SIGKILL,
+			(void)trinity_raw_syscall(__NR_prctl, PR_SET_PDEATHSIG, SIGKILL,
 				      0UL, 0UL, 0UL);
 			if (getppid() == 1)
 				_exit(0);

@@ -54,6 +54,7 @@
 #include <linux/userfaultfd.h>
 
 #include "arch.h"		/* page_size */
+#include "syscall-gate.h"
 #include "child.h"
 #include "random.h"
 #include "rnd.h"
@@ -80,7 +81,7 @@ static bool ns_unsupported;
 static int do_userfaultfd(int flags)
 {
 #ifdef SYS_userfaultfd
-	return (int)syscall(SYS_userfaultfd, flags);
+	return (int)trinity_raw_syscall(SYS_userfaultfd, flags);
 #else
 	(void)flags;
 	errno = ENOSYS;

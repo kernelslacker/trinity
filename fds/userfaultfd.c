@@ -10,6 +10,7 @@
 #include <linux/userfaultfd.h>
 
 #include "fd.h"
+#include "syscall-gate.h"
 #include "userfaultfd.h"
 #include "objects.h"
 #include "random.h"
@@ -23,7 +24,7 @@
 static int userfaultfd_create(__unused__ unsigned int flag)
 {
 #ifdef SYS_userfaultfd
-	return syscall(SYS_userfaultfd, flag);
+	return trinity_raw_syscall(SYS_userfaultfd, flag);
 #else
 	return -ENOSYS;
 #endif

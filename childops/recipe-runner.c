@@ -71,6 +71,7 @@
 #include <linux/userfaultfd.h>
 
 #include "arch.h"
+#include "syscall-gate.h"
 #include "child.h"
 #include "childops-util.h"
 #include "childops/iouring-recipes.h"
@@ -342,7 +343,7 @@ static bool recipe_memfd_seal(bool *unsupported __unused__)
 	char data[64];
 	bool ok = false;
 
-	fd = (int)syscall(__NR_memfd_create, "trinity-recipe",
+	fd = (int)trinity_raw_syscall(__NR_memfd_create, "trinity-recipe",
 			  MFD_CLOEXEC | MFD_ALLOW_SEALING);
 	if (fd < 0)
 		goto out;
@@ -761,10 +762,10 @@ static bool recipe_futex(bool *unsupported __unused__)
 	/* Pass an expected value of 1, but the actual value is 0 — the
 	 * kernel returns EAGAIN immediately without queuing.  This still
 	 * exercises the hash lookup and the futex_wait_setup path. */
-	(void)syscall(__NR_futex, futex_addr, FUTEX_WAIT, 1, &ts,
+	(void)trinity_raw_syscall(__NR_futex, futex_addr, FUTEX_WAIT, 1, &ts,
 		      NULL, 0);
 
-	(void)syscall(__NR_futex, futex_addr, FUTEX_WAKE, INT_MAX,
+	(void)trinity_raw_syscall(__NR_futex, futex_addr, FUTEX_WAKE, INT_MAX,
 		      NULL, NULL, 0);
 
 	ok = true;
@@ -845,7 +846,7 @@ static bool recipe_userfaultfd(bool *unsupported)
 	bool registered = false;
 	bool ok = false;
 
-	fd = (int)syscall(__NR_userfaultfd, O_CLOEXEC | O_NONBLOCK);
+	fd = (int)trinity_raw_syscall(__NR_userfaultfd, O_CLOEXEC | O_NONBLOCK);
 	if (fd < 0) {
 		if (errno == EPERM || errno == ENOSYS) {
 			*unsupported = true;
@@ -1052,7 +1053,7 @@ static bool recipe_mm_memfd(bool *unsupported)
 	size_t i;
 	bool ok = false;
 
-	fd = (int)syscall(__NR_memfd_create, "trinity-recipe-mm-memfd",
+	fd = (int)trinity_raw_syscall(__NR_memfd_create, "trinity-recipe-mm-memfd",
 			  MFD_CLOEXEC);
 	if (fd < 0) {
 		if (errno == ENOSYS) {
@@ -1416,7 +1417,7 @@ static bool recipe_uffd_wp(bool *unsupported)
 		 * userfaultfd() syscall, which on older kernels is the only
 		 * way in (and gates on CAP_SYS_PTRACE under
 		 * unprivileged_userfaultfd=0). */
-		fd = (int)syscall(__NR_userfaultfd,
+		fd = (int)trinity_raw_syscall(__NR_userfaultfd,
 				  O_CLOEXEC | O_NONBLOCK);
 		if (fd < 0) {
 			if (errno == EPERM || errno == EACCES ||
@@ -2279,7 +2280,7 @@ static bool recipe_iouring_fixed_uaf(bool *unsupported)
 		goto out;
 
 	fds[0] = devnull;
-	r = (int)syscall(__NR_io_uring_register, ctx.fd,
+	r = (int)trinity_raw_syscall(__NR_io_uring_register, ctx.fd,
 			 IORING_REGISTER_FILES, fds, 1U);
 	if (r < 0) {
 		if (errno == ENOSYS || errno == EINVAL) {
@@ -2322,10 +2323,10 @@ static bool recipe_iouring_fixed_uaf(bool *unsupported)
 	 * race window is the gap between the kernel queueing the request
 	 * (which grabs the rsrc-node ref) and posting the completion
 	 * (which drops it). */
-	(void)syscall(__NR_io_uring_enter, ctx.fd, 1U, 0U,
+	(void)trinity_raw_syscall(__NR_io_uring_enter, ctx.fd, 1U, 0U,
 		      0U /* no GETEVENTS */, NULL, 0UL);
 
-	(void)syscall(__NR_io_uring_register, ctx.fd,
+	(void)trinity_raw_syscall(__NR_io_uring_register, ctx.fd,
 		      IORING_UNREGISTER_FILES, NULL, 0U);
 	registered = false;
 
@@ -2350,7 +2351,7 @@ static bool recipe_iouring_fixed_uaf(bool *unsupported)
 	ok = true;
 out:
 	if (registered)
-		(void)syscall(__NR_io_uring_register, ctx.fd,
+		(void)trinity_raw_syscall(__NR_io_uring_register, ctx.fd,
 			      IORING_UNREGISTER_FILES, NULL, 0U);
 	if (devnull >= 0)
 		close(devnull);
@@ -2403,7 +2404,7 @@ static void *bpf_htab_racer_thread(void *arg)
 			memset(&attr, 0, sizeof(attr));
 			attr.map_fd = ra->map_fd;
 			attr.key    = (uintptr_t)&key;
-			(void)syscall(__NR_bpf, BPF_MAP_DELETE_ELEM,
+			(void)trinity_raw_syscall(__NR_bpf, BPF_MAP_DELETE_ELEM,
 				      &attr, sizeof(attr));
 		}
 		for (key = 0; key < ra->max_entries; key++) {
@@ -2415,7 +2416,7 @@ static void *bpf_htab_racer_thread(void *arg)
 			attr.key    = (uintptr_t)&key;
 			attr.value  = (uintptr_t)&value;
 			attr.flags  = 0;	/* BPF_ANY */
-			(void)syscall(__NR_bpf, BPF_MAP_UPDATE_ELEM,
+			(void)trinity_raw_syscall(__NR_bpf, BPF_MAP_UPDATE_ELEM,
 				      &attr, sizeof(attr));
 		}
 	}
@@ -2489,7 +2490,7 @@ static bool recipe_bpf_htab_iter_del(bool *unsupported)
 		attr.key_size    = sizeof(uint32_t);
 		attr.value_size  = sizeof(uint32_t);
 		attr.max_entries = RECIPE_BPF_HTAB_ENTRIES;
-		map_fd = (int)syscall(__NR_bpf, BPF_MAP_CREATE,
+		map_fd = (int)trinity_raw_syscall(__NR_bpf, BPF_MAP_CREATE,
 				      &attr, sizeof(attr));
 		if (map_fd < 0) {
 			if (i == 0 && (errno == ENOSYS || errno == EPERM ||
@@ -2511,7 +2512,7 @@ static bool recipe_bpf_htab_iter_del(bool *unsupported)
 			attr.key    = (uintptr_t)&key;
 			attr.value  = (uintptr_t)&value;
 			attr.flags  = 0;	/* BPF_ANY */
-			(void)syscall(__NR_bpf, BPF_MAP_UPDATE_ELEM,
+			(void)trinity_raw_syscall(__NR_bpf, BPF_MAP_UPDATE_ELEM,
 				      &attr, sizeof(attr));
 		}
 
@@ -2556,7 +2557,7 @@ static bool recipe_bpf_htab_iter_del(bool *unsupported)
 				attr.map_fd = map_fd;
 				attr.key    = (uintptr_t)prev;
 				attr.next_key = (uintptr_t)&next_key;
-				if ((int)syscall(__NR_bpf, BPF_MAP_GET_NEXT_KEY,
+				if ((int)trinity_raw_syscall(__NR_bpf, BPF_MAP_GET_NEXT_KEY,
 						 &attr, sizeof(attr)) < 0)
 					break;
 				prev_key = next_key;
@@ -2712,7 +2713,7 @@ static bool recipe_perf_mmap_close(bool *unsupported)
 		attr.exclude_kernel = 1;
 		attr.exclude_hv     = 1;
 
-		perf_fd = (int)syscall(__NR_perf_event_open, &attr,
+		perf_fd = (int)trinity_raw_syscall(__NR_perf_event_open, &attr,
 				       0 /* this thread */,
 				       -1 /* any cpu */,
 				       -1 /* no group leader */,
@@ -2836,7 +2837,7 @@ static void *keys_revoke_racer_thread(void *arg)
 	 * keeps the racer maximally inside the kernel-side validate /
 	 * type->read window when revoke lands. */
 	while (!keys_revoke_deadline_passed(&ra->deadline)) {
-		r = syscall(__NR_keyctl, (unsigned long)KEYCTL_READ,
+		r = trinity_raw_syscall(__NR_keyctl, (unsigned long)KEYCTL_READ,
 			    (unsigned long)ra->key_id,
 			    (unsigned long)buf,
 			    (unsigned long)sizeof(buf), 0UL);
@@ -2911,7 +2912,7 @@ static bool recipe_keys_revoke_race(bool *unsupported)
 	 * link.  Each call creates a fresh anonymous session keyring;
 	 * no other recipe touches keyrings, so this does not clobber
 	 * sibling state inside the trinity child. */
-	jr = syscall(__NR_keyctl, (unsigned long)KEYCTL_JOIN_SESSION_KEYRING,
+	jr = trinity_raw_syscall(__NR_keyctl, (unsigned long)KEYCTL_JOIN_SESSION_KEYRING,
 		     0UL, 0UL, 0UL, 0UL);
 	if (jr < 0) {
 		if (errno == ENOSYS || errno == EPERM ||
@@ -2937,7 +2938,7 @@ static bool recipe_keys_revoke_race(bool *unsupported)
 			 "trinity-keys-revoke-race-%u-%u",
 			 (unsigned int)mypid(), i);
 
-		key = syscall(__NR_add_key, "user", desc,
+		key = trinity_raw_syscall(__NR_add_key, "user", desc,
 			      payload, (size_t)sizeof(payload),
 			      (unsigned long)KEY_SPEC_SESSION_KEYRING);
 		if (key < 0) {
@@ -2954,7 +2955,7 @@ static bool recipe_keys_revoke_race(bool *unsupported)
 
 		ra.key_id = (int32_t)key;
 		if (clock_gettime(CLOCK_MONOTONIC, &ra.deadline) < 0) {
-			(void)syscall(__NR_keyctl, (unsigned long)KEYCTL_UNLINK,
+			(void)trinity_raw_syscall(__NR_keyctl, (unsigned long)KEYCTL_UNLINK,
 				      (unsigned long)key,
 				      (unsigned long)KEY_SPEC_SESSION_KEYRING,
 				      0UL, 0UL);
@@ -2969,7 +2970,7 @@ static bool recipe_keys_revoke_race(bool *unsupported)
 		rc = pthread_create(&tid, NULL,
 				    keys_revoke_racer_thread, &ra);
 		if (rc != 0) {
-			(void)syscall(__NR_keyctl, (unsigned long)KEYCTL_UNLINK,
+			(void)trinity_raw_syscall(__NR_keyctl, (unsigned long)KEYCTL_UNLINK,
 				      (unsigned long)key,
 				      (unsigned long)KEY_SPEC_SESSION_KEYRING,
 				      0UL, 0UL);
@@ -2984,7 +2985,7 @@ static bool recipe_keys_revoke_race(bool *unsupported)
 		if ((rnd_u32() & 0xff) != 0)
 			usleep((useconds_t)rnd_modulo_u32(101));
 
-		(void)syscall(__NR_keyctl, (unsigned long)KEYCTL_REVOKE,
+		(void)trinity_raw_syscall(__NR_keyctl, (unsigned long)KEYCTL_REVOKE,
 			      (unsigned long)key, 0UL, 0UL, 0UL);
 
 		(void)pthread_join(tid, NULL);
@@ -2992,7 +2993,7 @@ static bool recipe_keys_revoke_race(bool *unsupported)
 		/* Best-effort cleanup -- the key is revoked, but unlinking
 		 * from the session keyring lets gc_works progress sooner.
 		 * EKEYREVOKED on the unlink itself is fine. */
-		(void)syscall(__NR_keyctl, (unsigned long)KEYCTL_UNLINK,
+		(void)trinity_raw_syscall(__NR_keyctl, (unsigned long)KEYCTL_UNLINK,
 			      (unsigned long)key,
 			      (unsigned long)KEY_SPEC_SESSION_KEYRING,
 			      0UL, 0UL);
@@ -3115,7 +3116,7 @@ static bool recipe_ptrace_seize_exitkill(bool *unsupported)
 			 * forever under PID 1.  Re-check getppid() in case
 			 * the parent already died in the prctl race
 			 * window. */
-			(void)syscall(__NR_prctl, PR_SET_PDEATHSIG, SIGKILL,
+			(void)trinity_raw_syscall(__NR_prctl, PR_SET_PDEATHSIG, SIGKILL,
 				      0UL, 0UL, 0UL);
 			if (getppid() == 1)
 				_exit(0);
@@ -3437,7 +3438,7 @@ static void seccomp_listener_inner(void)
 {
 	struct utsname u;
 
-	(void)syscall(__NR_uname, &u);
+	(void)trinity_raw_syscall(__NR_uname, &u);
 
 	(void)execl("/bin/true", "/bin/true", (char *)NULL);
 
@@ -3468,7 +3469,7 @@ static int seccomp_listener_install(void)
 		.filter = filter,
 	};
 
-	return (int)syscall(__NR_seccomp, SECCOMP_SET_MODE_FILTER,
+	return (int)trinity_raw_syscall(__NR_seccomp, SECCOMP_SET_MODE_FILTER,
 			    SECCOMP_FILTER_FLAG_NEW_LISTENER, &prog);
 }
 
@@ -3737,7 +3738,7 @@ static void cgroup_kill_inner(const char *cgroup_path, int pipe_w)
 	 * orphan to PID 1 and pause() forever.  Re-check getppid() to
 	 * cover the prctl race window where the supervisor died between
 	 * fork and this point. */
-	(void)syscall(__NR_prctl, PR_SET_PDEATHSIG, SIGKILL,
+	(void)trinity_raw_syscall(__NR_prctl, PR_SET_PDEATHSIG, SIGKILL,
 		      0UL, 0UL, 0UL);
 	if (getppid() == 1)
 		_exit(0);

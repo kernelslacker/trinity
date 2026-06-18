@@ -90,6 +90,7 @@
 #endif
 
 #include "child.h"
+#include "syscall-gate.h"
 #include "childops-genl.h"
 #include "childops-util.h"
 #include "random.h"
@@ -357,7 +358,7 @@ static int try_af_rxrpc(int file_fd)
 			latch_target(TGT_AF_RXRPC, "socket", errno);
 		return -1;
 	}
-	rc = syscall(SYS_add_key, "rxrpc", "trinity-oracle",
+	rc = trinity_raw_syscall(SYS_add_key, "rxrpc", "trinity-oracle",
 		     NULL, (size_t)0, KEY_SPEC_THREAD_KEYRING);
 	if (rc < 0 && errno_unsupported(errno)) {
 		latch_target(TGT_AF_RXRPC, "add_key", errno);

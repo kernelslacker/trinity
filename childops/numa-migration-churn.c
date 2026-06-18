@@ -70,6 +70,7 @@
 #include <unistd.h>
 
 #include "arch.h"
+#include "syscall-gate.h"
 #include "child.h"
 #include "childops-util.h"
 #include "jitter.h"
@@ -139,27 +140,27 @@ static long sys_mbind(void *addr, unsigned long len, int mode,
 		      const unsigned long *nodemask, unsigned long maxnode,
 		      unsigned int flags)
 {
-	return syscall(__NR_mbind, addr, len, (unsigned long) mode,
+	return trinity_raw_syscall(__NR_mbind, addr, len, (unsigned long) mode,
 		       nodemask, maxnode, flags);
 }
 
 static long sys_set_mempolicy(int mode, const unsigned long *nodemask,
 			      unsigned long maxnode)
 {
-	return syscall(__NR_set_mempolicy, (unsigned long) mode,
+	return trinity_raw_syscall(__NR_set_mempolicy, (unsigned long) mode,
 		       nodemask, maxnode);
 }
 
 static long sys_migrate_pages(int pid, unsigned long maxnode,
 			      const unsigned long *from, const unsigned long *to)
 {
-	return syscall(__NR_migrate_pages, (unsigned long) pid, maxnode, from, to);
+	return trinity_raw_syscall(__NR_migrate_pages, (unsigned long) pid, maxnode, from, to);
 }
 
 static long sys_move_pages(int pid, unsigned long count, void **pages,
 			   const int *nodes, int *status, int flags)
 {
-	return syscall(__NR_move_pages, (unsigned long) pid, count,
+	return trinity_raw_syscall(__NR_move_pages, (unsigned long) pid, count,
 		       pages, nodes, status, (unsigned long) flags);
 }
 

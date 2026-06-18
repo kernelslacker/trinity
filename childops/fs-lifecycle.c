@@ -45,6 +45,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "syscall-gate.h"
 #include "pids.h"
 #include "random.h"
 #include "rnd.h"
@@ -79,7 +80,7 @@ static unsigned int fslife_seq;
 static int do_statx(int dfd, const char *path, unsigned int flags,
 		    unsigned int mask, struct statx *buf)
 {
-	return (int)syscall(__NR_statx, dfd, path, flags, mask, buf);
+	return (int)trinity_raw_syscall(__NR_statx, dfd, path, flags, mask, buf);
 }
 #endif
 
@@ -91,7 +92,7 @@ static ssize_t do_copy_file_range(int fd_in, off_t *off_in,
 				  int fd_out, off_t *off_out,
 				  size_t len, unsigned int flags)
 {
-	return (ssize_t)syscall(__NR_copy_file_range,
+	return (ssize_t)trinity_raw_syscall(__NR_copy_file_range,
 				fd_in, off_in, fd_out, off_out, len, flags);
 }
 #endif

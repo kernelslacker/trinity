@@ -14,6 +14,7 @@
 #include <linux/perf_event.h>
 
 #include "bpf.h"
+#include "syscall-gate.h"
 #include "fd.h"
 #include "objects.h"
 #include "random.h"
@@ -26,7 +27,7 @@
 
 static int bpf(int cmd, union bpf_attr *attr, unsigned int size)
 {
-	return syscall(__NR_bpf, cmd, attr, size);
+	return trinity_raw_syscall(__NR_bpf, cmd, attr, size);
 }
 
 static int bpf_create_map(enum bpf_map_type map_type, unsigned int key_size,

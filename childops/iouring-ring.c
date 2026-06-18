@@ -14,6 +14,7 @@
 #include <linux/io_uring.h>
 
 #include "childops/iouring-ring.h"
+#include "syscall-gate.h"
 #include "errno-classify.h"
 
 #ifndef __NR_io_uring_setup
@@ -85,7 +86,7 @@ enum iour_setup_status iour_ring_setup(struct io_uring_params *p,
 	memset(out, 0, sizeof(*out));
 	out->fd = -1;
 
-	fd = (int)syscall(__NR_io_uring_setup, entries, p);
+	fd = (int)trinity_raw_syscall(__NR_io_uring_setup, entries, p);
 	if (fd < 0) {
 		/* Capture the setup-failure errno BEFORE any cleanup
 		 * runs (there's no cleanup on this path, but the rule

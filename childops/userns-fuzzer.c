@@ -60,6 +60,7 @@
 #include <linux/perf_event.h>
 
 #include "child.h"
+#include "syscall-gate.h"
 #include "childops-util.h"
 #include "random.h"
 #include "rnd.h"
@@ -220,7 +221,7 @@ static void op_bpf_prog_load(void)
 	attr.insns = (uintptr_t)insns;
 	attr.license = (uintptr_t)license;
 
-	(void)syscall(__NR_bpf, BPF_PROG_LOAD, &attr, sizeof(attr));
+	(void)trinity_raw_syscall(__NR_bpf, BPF_PROG_LOAD, &attr, sizeof(attr));
 }
 
 /*
@@ -242,7 +243,7 @@ static void op_perf_event_open(void)
 	attr.exclude_kernel = 1;
 	attr.exclude_hv = 1;
 
-	fd = (int)syscall(__NR_perf_event_open, &attr, 0, -1, -1, 0UL);
+	fd = (int)trinity_raw_syscall(__NR_perf_event_open, &attr, 0, -1, -1, 0UL);
 	if (fd >= 0)
 		close(fd);
 }
@@ -281,7 +282,7 @@ static void op_tun_setiff(void)
  */
 static void op_keyctl_session(void)
 {
-	(void)syscall(__NR_keyctl, KEYCTL_JOIN_SESSION_KEYRING,
+	(void)trinity_raw_syscall(__NR_keyctl, KEYCTL_JOIN_SESSION_KEYRING,
 		      (unsigned long)NULL, 0UL, 0UL, 0UL);
 }
 
