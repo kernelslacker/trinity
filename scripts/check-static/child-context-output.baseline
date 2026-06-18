@@ -339,6 +339,4 @@ syscalls/vfork.c:33:post_vfork
 syscalls/wait4.c:37:post_wait4
 syscalls/waitid.c:43:post_waitid
 syscalls/waitpid.c:35:post_waitpid
-syscalls/write.c:173:post_write
-syscalls/write.c:188:post_write
-syscalls/write.c:213:post_write
+syscalls/write.c:194:post_write

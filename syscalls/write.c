@@ -24,21 +24,19 @@
  * buffer or hand the count-bound validator the wrong length.  Shared by
  * write(2) and pwrite64(2): both register post_write.
  *
- * Leading magic cookie because the heap-shape check on rec->post_state
- * is value-based only -- a sibling scribbling rec->post_state with any
- * heap-shaped 8-byte aligned pointer to a foreign allocation sails past
- * looks_like_corrupted_ptr() and the post handler then reads snap->count
- * from foreign bytes, surfacing as the dominant __zmalloc -> malloc ->
- * malloc_printerr -> abort crash cluster.  Mirrors RECVMSG_POST_STATE_MAGIC
- * at recv.c:103.  The kernel-input buffer itself is captured into the
- * rec owned[] carrier at sanitise time and drained unconditionally after
- * .post, so snap->buf is read-only here -- a foreign re-read can no longer
- * drive a bad free.
- * Padded to 32 bytes (48-byte glibc malloc chunk) so the snap does not
- * land in the 32-byte chunk bucket shared with size=1 bufs (the
- * RAND_BOOL branch below uses size=1 half the time) and with the small
- * post_state structs.  Bucket separation is defense-in-depth; the
- * cookie is the primary defense.
+ * Wired into the post_state ownership table by post_state_install() at
+ * sanitise time; post_write() gates the snap through
+ * post_state_claim_owned() before any field deref, so a sibling stomp
+ * that redirects rec->post_state at a foreign heap chunk is rejected by
+ * the ownership lookup before the leading-word magic compare ever runs.
+ * The kernel-input buffer itself is captured into the rec owned[]
+ * carrier at sanitise time and drained unconditionally after .post, so
+ * snap->buf is read-only here -- a foreign re-read can no longer drive
+ * a bad free.  Padded to 32 bytes (48-byte glibc malloc chunk) so the
+ * snap lands in its own free-list bucket, separate from the 32-byte
+ * chunk bucket shared with size=1 bufs (the RAND_BOOL branch below uses
+ * size=1 half the time) and with the small post_state structs -- bucket
+ * separation is defense-in-depth on top of ownership + cookie.
  */
 #define WRITE_POST_STATE_MAGIC	0x5752495445504F53UL	/* "WRITEPOS" */
 struct write_post_state {
@@ -149,7 +147,7 @@ static void sanitise_write(struct syscallrecord *rec)
 	snap->magic = WRITE_POST_STATE_MAGIC;
 	snap->buf = (unsigned long) ptr;
 	snap->count = size;
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 
 	/*
 	 * Capture the genuine kernel-input buffer at sanitise time, before
@@ -162,37 +160,20 @@ static void sanitise_write(struct syscallrecord *rec)
 
 static void post_write(struct syscallrecord *rec)
 {
-	struct write_post_state *snap =
-		(struct write_post_state *) rec->post_state;
+	struct write_post_state *snap;
 	unsigned long retval = rec->retval;
 
-	if (snap == NULL)
-		return;
-
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_write: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->a2 = 0;
-		rec->post_state = 0;
-		return;
-	}
+	rec->a2 = 0;
 
 	/*
-	 * Magic-cookie check: snap survived the heap-shape gate but a
-	 * sibling scribble of rec->post_state with a heap-shaped pointer
-	 * to a foreign allocation would let the wrong bytes pose as a
-	 * write_post_state -- the count-bound check would then compare
-	 * retval against garbage.  Mirrors recv.c:212.
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
 	 */
-	if (snap->magic != WRITE_POST_STATE_MAGIC) {
-		outputerr("post_write: rejected snap with bad magic 0x%lx "
-			  "(post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->a2 = 0;
-		rec->post_state = 0;
+	snap = post_state_claim_owned(rec, WRITE_POST_STATE_MAGIC, __func__);
+	if (snap == NULL)
 		return;
-	}
 
 	/*
 	 * STRONG-VAL count bound: write(2) / pwrite64(2) on success return
@@ -220,8 +201,7 @@ skip_bound:
 	/* fall through */
 
 out_free:
-	rec->a2 = 0;
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_write = {
