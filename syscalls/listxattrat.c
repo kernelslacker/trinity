@@ -99,6 +99,31 @@ static void sanitise_listxattrat(struct syscallrecord *rec)
 		rec->a5 = (unsigned long) buf_alloc_size;
 
 	/*
+	 * at_flags (a3): handle_arg_list's 1/8 shift_flag_bit and 1/16
+	 * cmp-hint paths regularly OR in bits outside the kernel-accepted
+	 * (AT_SYMLINK_NOFOLLOW | AT_EMPTY_PATH) mask, and path_listxattrat
+	 * rejects those with -EINVAL before any xattr-list work runs.
+	 * Drop the stray bits on 7/8 of draws so the rejected fraction
+	 * stays meaningful for reject-path coverage but does not dominate
+	 * the call mix.
+	 */
+	if (!ONE_IN(8))
+		rec->a3 &= (unsigned long)(AT_SYMLINK_NOFOLLOW | AT_EMPTY_PATH);
+
+	/*
+	 * dfd (a1): ARG_FD draws from the full fd pool (regular files,
+	 * pipes, sockets, ...).  When pathname is relative the kernel
+	 * does a dir-relative lookup against dfd and a non-directory fd
+	 * is rejected with -ENOTDIR before VFS-level xattr work.  Pin
+	 * to AT_FDCWD on 1/3 of draws so the relative-path fraction
+	 * lands on a usable base while leaving the random-fd path well
+	 * exercised for the dfd-only (AT_EMPTY_PATH + NULL pathname)
+	 * shape.
+	 */
+	if (ONE_IN(3))
+		rec->a1 = (unsigned long)(long) AT_FDCWD;
+
+	/*
 	 * Snapshot all four input args for the post oracle.  Without this
 	 * the post handler reads rec->aN at post-time, when a sibling
 	 * syscall may have scribbled the slots: looks_like_corrupted_ptr()
