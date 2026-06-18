@@ -1,3 +1,5 @@
 #pragma once
 
-void tainted_postmortem(void);
+#include "compiler.h"	/* __cold */
+
+void tainted_postmortem(void) __cold;

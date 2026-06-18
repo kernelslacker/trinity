@@ -2898,7 +2898,7 @@ static void dump_stats_json_probes_misuse_and_tail(void)
 		shm->stats.tty_ldisc_churn_ldisc_set_ok_per_disc[24]);
 }
 
-static void dump_stats_json(void)
+static void __cold dump_stats_json(void)
 {
 	putchar('{');
 
@@ -4982,7 +4982,7 @@ static void kcov_redqueen_observability_block_render(long elapsed __unused__)
  *    mode mix is visible in the time series, not just at shutdown;
  *  - first-failure-wins errno/count per cmp-init/runtime site.
  */
-void kcov_cmp_stats_periodic_dump(void)
+void __cold kcov_cmp_stats_periodic_dump(void)
 {
 	static unsigned long prev_records;
 	static unsigned long prev_truncated;
@@ -7156,7 +7156,7 @@ static void dump_stats_childop_runs_local(void)
 	stat_category_emit_text(&close_racer_category);
 }
 
-static void dump_stats_childop_runs_network(void)
+static void __cold dump_stats_childop_runs_network(void)
 {
 	stat_category_emit_text(&socket_family_chain_category);
 
@@ -7675,7 +7675,7 @@ static void dump_stats_childop_runs_network(void)
 	}
 }
 
-static void dump_stats_kcov_block(void)
+static void __cold dump_stats_kcov_block(void)
 {
 	unsigned int i;
 
@@ -8604,7 +8604,7 @@ static void dump_stats_corpus_and_taint_tail(void)
 	}
 }
 
-void dump_stats(void)
+void __cold dump_stats(void)
 {
 	if (stats_json) {
 		dump_stats_json();
