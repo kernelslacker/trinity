@@ -3564,8 +3564,8 @@ void stats_log_drop_in_child(void);
 
 /* Implemented in childops/recipe-runner.c; emits per-recipe completion
  * counts so the catalog layout stays private to that file. */
-void recipe_runner_dump_stats(void);
+void recipe_runner_dump_stats(void) __cold;
 
 /* Implemented in childops/iouring-recipes.c; emits per-recipe completion
  * counts so the catalog layout stays private to that file. */
-void iouring_recipes_dump_stats(void);
+void iouring_recipes_dump_stats(void) __cold;

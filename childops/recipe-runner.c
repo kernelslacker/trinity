@@ -4117,7 +4117,7 @@ bool recipe_runner(struct childdata *child)
  * latched-disabled state.  Called from dump_stats() so the catalog
  * layout stays private to this file.
  */
-void recipe_runner_dump_stats(void)
+void __cold recipe_runner_dump_stats(void)
 {
 	unsigned int i;
 
