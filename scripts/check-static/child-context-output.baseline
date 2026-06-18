@@ -151,9 +151,7 @@ syscalls/lgetxattr.c:209:post_lgetxattr
 syscalls/lgetxattr.c:276:post_lgetxattr
 syscalls/listmount.c:354:post_listmount
 syscalls/listmount.c:415:post_listmount
-syscalls/listns.c:299:post_listns
-syscalls/listns.c:315:post_listns
-syscalls/listns.c:336:post_listns
+syscalls/listns.c:325:post_listns
 syscalls/listxattrat.c:216:post_listxattrat
 syscalls/listxattrat.c:294:post_listxattrat
 syscalls/listxattr.c:179:post_flistxattr
