@@ -66,7 +66,7 @@ static bool ts_before(const struct timespec *a, const struct timespec *b)
  * usable from the parent because they may dereference user-space
  * pointers from the child's address space.
  */
-static void dump_syscall_slot(FILE *fp, const struct chronicle_slot *slot)
+static void __cold dump_syscall_slot(FILE *fp, const struct chronicle_slot *slot)
 {
 	struct syscallentry *entry = get_syscall_entry(slot->nr, slot->do32bit);
 	const unsigned long args[6] = {
@@ -156,7 +156,7 @@ static unsigned int drain_child_ring(unsigned int idx,
 	return n;
 }
 
-static void dump_syscall_records(FILE *fp, const struct timespec *taint_tp)
+static void __cold dump_syscall_records(FILE *fp, const struct timespec *taint_tp)
 {
 	struct ring_entry *entries;
 	unsigned int i, total = 0;
@@ -405,8 +405,8 @@ static FILE *open_artifact(const char *dir, const char *name)
 	return fopen(path, "w");
 }
 
-static void write_artifact_buf(const char *dir, const char *name,
-			       const char *buf, size_t len)
+static void __cold write_artifact_buf(const char *dir, const char *name,
+				      const char *buf, size_t len)
 {
 	FILE *fp = open_artifact(dir, name);
 
@@ -420,7 +420,7 @@ static void write_artifact_buf(const char *dir, const char *name,
 	fclose(fp);
 }
 
-static void dump_kcov_state(FILE *fp)
+static void __cold dump_kcov_state(FILE *fp)
 {
 	unsigned long edges, pcs, calls, remote, truncated;
 	unsigned long cmp_records, cmp_truncated;
@@ -466,7 +466,7 @@ static void dump_kcov_state(FILE *fp)
 	fprintf(fp, "KCOV: %u cold syscalls\n", cold);
 }
 
-void tainted_postmortem(void)
+void __cold tainted_postmortem(void)
 {
 	int taint = get_taint();
 	struct timespec taint_tp;

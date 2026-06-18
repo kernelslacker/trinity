@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 #include "child.h"	/* NR_CHILD_OP_TYPES */
+#include "compiler.h"	/* __cold */
 #include "cred_throttle.h"	/* CRED_CLASS_NR */
 #include "strategy.h"	/* NR_STRATEGIES */
 #include "syscall.h"	/* MAX_NR_SYSCALL */
@@ -3508,7 +3509,7 @@ struct stats_s {
 
 unsigned int stats_syscall_category(const char *name);
 
-void dump_stats(void);
+void dump_stats(void) __cold;
 
 /* Per-tick scan: emits a WARNING when parent_stats.post_handler_corrupt_ptr
  * advances by a threshold count over a one-minute window. */
@@ -3546,7 +3547,7 @@ void vma_count_periodic_dump(void);
  * errnos).  Without this the cmp counters are only visible at run
  * shutdown via dump_stats(), so a long overnight run produces no
  * time-series of cmp_hints effectiveness. */
-void kcov_cmp_stats_periodic_dump(void);
+void kcov_cmp_stats_periodic_dump(void) __cold;
 
 /* --stats-log-file backing.  Open at startup (append, header line on each
  * open), close at shutdown (footer line).  stats_log_write() mirrors its
