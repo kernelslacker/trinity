@@ -2858,6 +2858,23 @@ static unsigned long heap_end;
 static unsigned long cached_brk_end;
 static unsigned int brk_refresh_counter;
 
+/*
+ * Slack ceiling above the cached brk upper bound for the
+ * self-correcting near-edge re-test in is_in_glibc_heap() and
+ * range_overlaps_libc_heap().  An address that sits in
+ * [cached_upper, cached_upper + SLACK) is plausibly in a brk
+ * extension that grew between BRK_REFRESH_INTERVAL ticks (heavy
+ * non-alloc_object() allocator traffic can outrun the alloc-driven
+ * refresh cadence), so it's worth one sbrk(0) to confirm.  Wild-high
+ * pointers (stack, mmap regions, libasan shadow at 0x511000000000+,
+ * kernel addresses) sit far above the ceiling and skip the syscall
+ * -- cached_brk_end exists precisely to avoid per-call sbrk(0) on
+ * the heap-check hot path.  256 MiB is generous enough to cover any
+ * realistic brk grow between refreshes while keeping clearly-not-heap
+ * pointers off the syscall path.
+ */
+#define HEAP_BRK_STALE_SLACK_BYTES (256UL << 20)
+
 static void heap_brk_refresh(void)
 {
 	unsigned long cur = (unsigned long) sbrk(0);
@@ -3188,6 +3205,44 @@ bool is_in_glibc_heap(const void *p)
 
 		if (v >= heap_start && v < end)
 			return true;
+
+		/*
+		 * Mirror of the self-correcting near-edge re-test in
+		 * range_overlaps_libc_heap().  The cached snapshot just
+		 * judged this pointer not-heap, but brk may have grown past
+		 * cached_brk_end since the last heap_brk_maybe_refresh()
+		 * tick (heavy non-alloc_object() allocator traffic outruns
+		 * the alloc-driven refresh cadence).  Without the re-test, a
+		 * deferred-free backstop that lands in [cached_brk_end,
+		 * live_brk) marks a real heap chunk as not-heap and silently
+		 * drops the free.  Pay one sbrk(0) when the pointer sits in
+		 * the staleness slack above the cached bound, refresh the
+		 * cache, and re-check; return true if it now falls in the
+		 * live arena.  Same slack ceiling
+		 * (HEAP_BRK_STALE_SLACK_BYTES) so wild-high pointers skip
+		 * the syscall.
+		 */
+		if (v >= end && v < end + HEAP_BRK_STALE_SLACK_BYTES) {
+			unsigned long live_brk = (unsigned long) sbrk(0);
+
+			if (live_brk != (unsigned long) -1) {
+				if (live_brk > cached_brk_end)
+					cached_brk_end = live_brk;
+				if (live_brk > end)
+					end = live_brk;
+				if (v >= heap_start && v < end) {
+					struct childdata *c = this_child();
+
+					if (c != NULL && c->stats_ring != NULL)
+						stats_ring_enqueue(c->stats_ring,
+								   STATS_FIELD_HEAP_BRK_STALE_WINDOW_HIT,
+								   0, 1);
+					else
+						parent_stats.heap_brk_stale_window_hit++;
+					return true;
+				}
+			}
+		}
 	}
 
 	for (i = 0; i < nr_extra_heap_regions; i++) {
@@ -3252,33 +3307,46 @@ bool range_overlaps_libc_heap(unsigned long addr, unsigned long len)
 			return true;
 
 		/*
-		 * Diagnostic: the cached snapshot just judged this address
-		 * not-heap, but brk may have grown past cached_brk_end since
-		 * the last heap_brk_maybe_refresh() tick.  Sample sbrk(0) to
-		 * confirm whether the address falls in [cached_brk_end,
-		 * live_brk) -- the staleness window that lets a fuzzed
-		 * pointer through the predicate and onto glibc's top chunk.
-		 * Cheap gates (addr above the cached end, addr at-or-above
-		 * heap_start) keep the syscall off the common path; the
-		 * counter's only consumer is dump_stats(), so accuracy is
-		 * best-effort and a sibling brk grow racing the sample is
-		 * tolerated.  Predicate return value is unchanged -- this
-		 * commit only adds observability so the next run can
-		 * confirm the brk-cache staleness hypothesis before the
-		 * refresh cadence is tightened in a follow-up.
+		 * Self-correcting near-edge re-test.  The cached snapshot
+		 * just judged this address not-heap, but brk may have grown
+		 * past cached_brk_end since the last
+		 * heap_brk_maybe_refresh() tick.  Heavy non-alloc_object()
+		 * allocator traffic (cmp-hint / RedQueen tables, sequence
+		 * record growth) extends the real brk without ticking the
+		 * alloc-driven refresh, opening a window where glibc's top
+		 * chunk sits in [cached_brk_end, live_brk) and a fuzzed
+		 * output pointer in that band gets handed to the kernel
+		 * instead of being relocated -- the kernel scribbles
+		 * top->size and the next malloc anywhere in the child aborts
+		 * with "malloc(): corrupted top size".  Pay one sbrk(0) when
+		 * the address sits in the staleness slack above the cached
+		 * bound, refresh the cache, and re-test the brk arm; if the
+		 * address now falls in the live arena, redirect it (return
+		 * true).  Gated by HEAP_BRK_STALE_SLACK_BYTES so wild-high
+		 * pointers (kernel addresses, libasan shadow, far mmap) skip
+		 * the syscall and the common path stays cached_brk_end-only.
+		 * The counter, kept in place, now signals the fix firing
+		 * (was: observability-only).
 		 */
-		if (addr >= heap_start && addr >= cached_brk_end) {
+		if (addr >= hend && addr < hend + HEAP_BRK_STALE_SLACK_BYTES) {
 			unsigned long live_brk = (unsigned long) sbrk(0);
 
-			if (live_brk != (unsigned long) -1 && addr < live_brk) {
-				struct childdata *c = this_child();
+			if (live_brk != (unsigned long) -1) {
+				if (live_brk > cached_brk_end)
+					cached_brk_end = live_brk;
+				if (live_brk > hend)
+					hend = live_brk;
+				if (addr < hend && end > heap_start) {
+					struct childdata *c = this_child();
 
-				if (c != NULL && c->stats_ring != NULL)
-					stats_ring_enqueue(c->stats_ring,
-							   STATS_FIELD_HEAP_BRK_STALE_WINDOW_HIT,
-							   0, 1);
-				else
-					parent_stats.heap_brk_stale_window_hit++;
+					if (c != NULL && c->stats_ring != NULL)
+						stats_ring_enqueue(c->stats_ring,
+								   STATS_FIELD_HEAP_BRK_STALE_WINDOW_HIT,
+								   0, 1);
+					else
+						parent_stats.heap_brk_stale_window_hit++;
+					return true;
+				}
 			}
 		}
 	}
