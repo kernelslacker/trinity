@@ -2510,6 +2510,25 @@ void child_process(struct childdata *child, int childno)
 	char childname[17];
 	int ret;
 
+	/* PR_SET_PDEATHSIG SIGKILL: when the main process dies for any
+	 * reason -- a fault, or an external SIGKILL from a wrapper that
+	 * gave up on a hung syscall -- the kernel kills this fuzz child
+	 * instead of leaving it reparented to init.  The orderly kill_pid
+	 * shutdown the supervisor would have driven on a clean exit is
+	 * bypassed on a crash; without this, a child wedged in a blocking
+	 * syscall (e.g. a fuse poll) outlives the supervisor and needs
+	 * manual cleanup.  SIGKILL not SIGTERM because a wedged child
+	 * would not respond to a polite signal.
+	 *
+	 * Race window: if the main process died between fork() returning
+	 * here and the prctl above, PDEATHSIG was set too late to fire and
+	 * getppid() != mainpid is the only signal we get.  No CLONE_NEWPID
+	 * at the spawn fork (init_child enters namespaces later, after the
+	 * guard has run), so the host-namespace comparison is reliable. */
+	(void)prctl(PR_SET_PDEATHSIG, SIGKILL);
+	if (getppid() != mainpid)
+		_exit(0);
+
 	/* Rename and lower OOM priority before init_child() runs.  init_child
 	 * does a lot of mmap-heavy work (init_child_mappings, futex setup,
 	 * sibling-childdata mprotect sweeps) which is exactly when memory
