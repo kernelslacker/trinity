@@ -62,7 +62,8 @@ SAN_NAMES_FILE="$(mktemp)"
 RESULTS_FILE="$(mktemp)"
 trap 'rm -f "$SAN_NAMES_FILE" "$RESULTS_FILE" 2>/dev/null' EXIT
 
-grep -hE '^[[:space:]]*\.sanitise[[:space:]]*=' "$ROOT"/syscalls/*.c \
+find "$ROOT/syscalls" -name '*.c' -print0 \
+	| xargs -0 grep -hE '^[[:space:]]*\.sanitise[[:space:]]*=' \
 	| sed -e 's/.*\.sanitise[[:space:]]*=[[:space:]]*//' \
 	      -e 's/[[:space:],].*//' \
 	| sort -u > "$SAN_NAMES_FILE"
