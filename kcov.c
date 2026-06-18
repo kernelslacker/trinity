@@ -1721,6 +1721,29 @@ static unsigned int bucket_for_count(unsigned int n)
 }
 
 /*
+ * Publish a new maximum probe distance to the shared counter.  The
+ * probe==0 fast path (edge found on first probe) is the dominant case
+ * and can never raise the max, so skip the shared-cacheline load there.
+ */
+static void kcov_note_max_probe(unsigned long probe)
+{
+	unsigned long cur;
+
+	if (probe == 0)
+		return;
+	cur = __atomic_load_n(&kcov_shm->dedup_max_probe_seen,
+		__ATOMIC_RELAXED);
+	while (probe > cur) {
+		if (__atomic_compare_exchange_n(&kcov_shm->dedup_max_probe_seen,
+				&cur, probe,
+				false,
+				__ATOMIC_RELAXED,
+				__ATOMIC_RELAXED))
+			break;
+	}
+}
+
+/*
  * Per-call dedup: count how many times this trace has hit a given edge.
  * Returns the updated count (1 on first sight, ++count on repeat).  On
  * probe overflow returns 1, which makes the caller register the hit in
@@ -1741,34 +1764,14 @@ static unsigned int dedup_inc(struct kcov_dedup_slot *dedup, unsigned int edge,
 		struct kcov_dedup_slot *s = &dedup[slot];
 
 		if (s->generation != generation) {
-			unsigned long observed = probe;
-			unsigned long cur = __atomic_load_n(&kcov_shm->dedup_max_probe_seen,
-				__ATOMIC_RELAXED);
-			while (observed > cur) {
-				if (__atomic_compare_exchange_n(&kcov_shm->dedup_max_probe_seen,
-						&cur, observed,
-						false,
-						__ATOMIC_RELAXED,
-						__ATOMIC_RELAXED))
-					break;
-			}
+			kcov_note_max_probe(probe);
 			s->generation = generation;
 			s->edge_idx = edge;
 			s->count = 1;
 			return 1;
 		}
 		if (s->edge_idx == edge) {
-			unsigned long observed = probe;
-			unsigned long cur = __atomic_load_n(&kcov_shm->dedup_max_probe_seen,
-				__ATOMIC_RELAXED);
-			while (observed > cur) {
-				if (__atomic_compare_exchange_n(&kcov_shm->dedup_max_probe_seen,
-						&cur, observed,
-						false,
-						__ATOMIC_RELAXED,
-						__ATOMIC_RELAXED))
-					break;
-			}
+			kcov_note_max_probe(probe);
 			s->count++;
 			return s->count;
 		}
