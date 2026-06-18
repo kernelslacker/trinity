@@ -349,7 +349,7 @@ struct syscallentry syscall_listns = {
 	.name = "listns",
 	.num_args = 4,
 	.argname = { [0] = "req", [1] = "ns_ids", [2] = "nr_ns_ids", [3] = "flags" },
-	.argtype = { [1] = ARG_ADDRESS, [2] = ARG_LEN },
+	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_ADDRESS, [2] = ARG_LEN },
 	.sanitise = sanitise_listns,
 	.post = post_listns,
 	.group = GROUP_PROCESS,
