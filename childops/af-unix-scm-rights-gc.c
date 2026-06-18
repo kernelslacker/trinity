@@ -463,7 +463,7 @@ static void af_unix_sibling_main(struct af_unix_race_shared *rs)
 	 * one will ever set, permanently leaking the sibling.
 	 */
 	if (trinity_raw_syscall(__NR_getppid) == 1)
-		(void)trinity_raw_syscall(__NR_exit, 0);
+		(void)syscall(__NR_exit, 0);
 
 	while (__atomic_load_n(&rs->go, __ATOMIC_ACQUIRE) == 0U)
 		(void)raw_futex_wait(&rs->go, 0U);
@@ -519,7 +519,7 @@ static void af_unix_sibling_main(struct af_unix_race_shared *rs)
 	__atomic_store_n(&rs->done, 1U, __ATOMIC_RELEASE);
 	(void)raw_futex_wake(&rs->done, 1);
 
-	trinity_raw_syscall(__NR_exit, 0);
+	syscall(__NR_exit, 0);
 	__builtin_unreachable();
 }
 

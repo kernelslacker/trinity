@@ -251,7 +251,7 @@ static void sysv_shm_originator_main(struct sysv_shm_race_shared *rs)
 	(void)alarm(2);
 
 	if (trinity_raw_syscall(__NR_getppid) == 1)
-		(void)trinity_raw_syscall(__NR_exit, 0);
+		(void)syscall(__NR_exit, 0);
 
 	shmid = raw_shmget(IPC_PRIVATE, SYSV_SHM_SEG_BYTES, IPC_CREAT | 0600);
 	if (shmid < 0) {
@@ -259,7 +259,7 @@ static void sysv_shm_originator_main(struct sysv_shm_race_shared *rs)
 				 __ATOMIC_RELEASE);
 		__atomic_store_n(&rs->originator_published, 1U, __ATOMIC_RELEASE);
 		(void)raw_futex_wake(&rs->originator_published, 1);
-		trinity_raw_syscall(__NR_exit, 0);
+		syscall(__NR_exit, 0);
 		__builtin_unreachable();
 	}
 
@@ -281,7 +281,7 @@ static void sysv_shm_originator_main(struct sysv_shm_race_shared *rs)
 
 	(void)raw_shmctl((int)shmid, IPC_RMID, NULL);
 
-	trinity_raw_syscall(__NR_exit, 0);
+	syscall(__NR_exit, 0);
 	__builtin_unreachable();
 }
 
@@ -305,14 +305,14 @@ static void sysv_shm_attacher_main(struct sysv_shm_race_shared *rs)
 	(void)alarm(2);
 
 	if (trinity_raw_syscall(__NR_getppid) == 1)
-		(void)trinity_raw_syscall(__NR_exit, 0);
+		(void)syscall(__NR_exit, 0);
 
 	while (__atomic_load_n(&rs->go, __ATOMIC_ACQUIRE) == 0U)
 		(void)raw_futex_wait(&rs->go, 0U);
 
 	shmid = __atomic_load_n(&rs->shmid, __ATOMIC_ACQUIRE);
 	if (shmid < 0)
-		(void)trinity_raw_syscall(__NR_exit, 0);
+		(void)syscall(__NR_exit, 0);
 
 	budget = rs->race_budget;
 	for (i = 0; i < budget; i++) {
@@ -326,7 +326,7 @@ static void sysv_shm_attacher_main(struct sysv_shm_race_shared *rs)
 			(void)raw_shmdt((const void *)addr);
 	}
 
-	trinity_raw_syscall(__NR_exit, 0);
+	syscall(__NR_exit, 0);
 	__builtin_unreachable();
 }
 
