@@ -99,7 +99,7 @@ static void sanitise_move_pages(struct syscallrecord *rec)
 	snap->nodes = nodes;
 	snap->status = status;
 	snap->count = count;
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 
 	/*
 	 * Capture the genuine kernel-input buffers at sanitise time, before
@@ -147,50 +147,22 @@ static const char *snap_field_label(unsigned long v)
 
 static void post_move_pages(struct syscallrecord *rec)
 {
-	struct move_pages_post_state *snap = (struct move_pages_post_state *) rec->post_state;
+	struct move_pages_post_state *snap;
 	unsigned long retval = rec->retval;
 
 	rec->a3 = 0;
 	rec->a4 = 0;
 	rec->a5 = 0;
 
+	/*
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
+	 */
+	snap = post_state_claim_owned(rec, MOVE_PAGES_POST_STATE_MAGIC, __func__);
 	if (snap == NULL)
 		return;
-
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		static unsigned long outer_seq;
-		unsigned long n = ++outer_seq;
-		if ((n % MOVE_PAGES_DIAG_INTERVAL) == 1) {
-			outputerr("post_move_pages-diag: outer-guard reject "
-				  "snap=%p label=%s [%lu cumulative]\n",
-				  snap,
-				  snap_field_label((unsigned long) snap), n);
-		}
-		rec->post_state = 0;
-		return;
-	}
-
-	/*
-	 * Magic-cookie check: snap survived the heap-shape gate but a
-	 * sibling scribble of rec->post_state with a heap-shaped pointer
-	 * to a foreign allocation would let the wrong bytes pose as a
-	 * move_pages_post_state.  A cookie mismatch means snap does not
-	 * point at our struct -- abandon WITHOUT freeing (suspect pointer)
-	 * rather than hand foreign allocations to the deferred-free path.
-	 */
-	if (snap->magic != MOVE_PAGES_POST_STATE_MAGIC) {
-		outputerr("post_move_pages: rejected snap with bad magic 0x%lx "
-			  "(post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
 
 	/*
 	 * Defense in depth: if something corrupted the snapshot itself,
@@ -217,7 +189,7 @@ static void post_move_pages(struct syscallrecord *rec)
 				  snap->count,
 				  retval, n);
 		}
-		deferred_freeptr(&rec->post_state);
+		post_state_release(rec, snap);
 		return;
 	}
 
@@ -239,7 +211,7 @@ static void post_move_pages(struct syscallrecord *rec)
 		/* fall through to release allocations */
 	}
 
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 
 static unsigned long move_pages_flags[] = {
