@@ -54,6 +54,7 @@
 #include "shm.h"
 #include "stats.h"
 #include "stats_ring.h"
+#include "syscall.h"
 #include "trinity.h"
 #include "utils.h"
 
@@ -820,12 +821,28 @@ void canary_queue_init(void)
 
 	/* Gate the live state on the operator flags AND on having at
 	 * least one slot to canary on.  Both kill switches map to the
-	 * same disabled-no-op behaviour. */
-	canary_queue_live = (!canary_queue_disabled) && (canary_slots > 0);
+	 * same disabled-no-op behaviour.
+	 *
+	 * -c <syscall>, -r <num>, and -g <group> scope the run to a
+	 * specific syscall set for isolation / bisection.  The canary
+	 * queue would otherwise stage dormant alt-op childops onto its
+	 * dedicated slots and execute them (entering canarying windows
+	 * and promoting/demoting based on edges/crashes), bypassing the
+	 * syscall-table gate exactly like the picker-leak and
+	 * periodic-work paths that the child_process() / periodic_work()
+	 * gates already cover.  Stay dormant so the targeted-syscall
+	 * signal is not contaminated by canary-discovered edges / crashes
+	 * getting mis-credited to the target syscall. */
+	canary_queue_live = (!canary_queue_disabled) && (canary_slots > 0) &&
+		!do_specific_syscall && !random_selection &&
+		desired_group == GROUP_NONE;
 
 	if (!canary_queue_live) {
 		if (canary_queue_disabled) {
 			output(0, "canary queue: disabled (--no-canary-queue); dormant_op_disabled[] used as static gate\n");
+		} else if (do_specific_syscall || random_selection ||
+			   desired_group != GROUP_NONE) {
+			output(0, "canary queue: disabled (targeted-syscall mode -c/-r/-g); dormant_op_disabled[] used as static gate\n");
 		} else {
 			/* canary_slots == 0 -- either explicit
 			 * --canary-slots=0 or alt_op_children=0 collapsed
