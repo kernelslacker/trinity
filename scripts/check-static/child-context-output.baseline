@@ -165,11 +165,9 @@ syscalls/lookup_dcookie.c:219:post_lookup_dcookie
 syscalls/lsm_get_self_attr.c:261:post_lsm_get_self_attr
 syscalls/lsm_get_self_attr.c:291:post_lsm_get_self_attr
 syscalls/lsm_get_self_attr.c:300:post_lsm_get_self_attr
-syscalls/lsm_list_modules.c:200:post_lsm_list_modules
-syscalls/lsm_list_modules.c:207:post_lsm_list_modules
-syscalls/lsm_list_modules.c:233:post_lsm_list_modules
-syscalls/lsm_list_modules.c:298:post_lsm_list_modules
-syscalls/lsm_list_modules.c:302:post_lsm_list_modules
+syscalls/lsm_list_modules.c:227:post_lsm_list_modules
+syscalls/lsm_list_modules.c:292:post_lsm_list_modules
+syscalls/lsm_list_modules.c:296:post_lsm_list_modules
 syscalls/map_shadow_stack.c:45:post_map_shadow_stack
 syscalls/mmap.c:221:post_mmap
 syscalls/mmap.c:415:post_mmap
