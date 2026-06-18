@@ -13,6 +13,7 @@
 #include <linux/fs.h>
 #include "arch.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
@@ -69,6 +70,61 @@ static void sanitise_file_getattr(struct syscallrecord *rec)
 
 	pre_a3 = rec->a3;
 #endif
+
+	/*
+	 * Bias usize (rec->a4) toward the kernel's valid window so the
+	 * call reaches the FS-attr read path instead of bouncing on early
+	 * validation:
+	 *
+	 *   if (usize > PAGE_SIZE)            return -E2BIG;
+	 *   if (usize < FILE_ATTR_SIZE_VER0)  return -EINVAL;
+	 *
+	 * ARG_LEN -> get_len() draws across 0..UINT_MAX with boundary
+	 * picks (UINT_MAX, 0, page_size-1, sizeof(char/short/int/long)),
+	 * almost none of which land in [FILE_ATTR_SIZE_VER0, page_size].
+	 * The pre-bias rate of falling through to vfs_fileattr_get() is
+	 * ~3% of calls and the syscall surfaces only a handful of edges
+	 * as a result.  Rewrite ~7/8 of calls to a valid size -- half
+	 * pinned at the canonical FILE_ATTR_SIZE_VER0 a real userspace
+	 * caller would pass, half uniform across [VER0, page_size) --
+	 * and leave ~1/8 at whatever get_len() picked so the rejection
+	 * paths (undersize -EINVAL, oversize -E2BIG) stay covered.
+	 *
+	 * The buffer-bounded usize clamp below still runs unchanged on
+	 * the biased value so it can never exceed the allocation backing
+	 * rec->a3 (preserves the kernel write-OOB guard from
+	 * 862ee5c6ae3a).  Mirrors the pattern at the top of
+	 * sanitise_sched_getattr.
+	 */
+	if (!ONE_IN(8)) {
+		if (RAND_BOOL()) {
+			rec->a4 = (unsigned long) FILE_ATTR_SIZE_VER0;
+		} else {
+			unsigned long range = (unsigned long) page_size -
+					      FILE_ATTR_SIZE_VER0;
+
+			rec->a4 = rnd_modulo_u32(range) + FILE_ATTR_SIZE_VER0;
+		}
+	}
+
+	/*
+	 * Bias at_flags (rec->a5) toward the kernel's allowlist:
+	 *
+	 *   if ((at_flags & ~(AT_SYMLINK_NOFOLLOW | AT_EMPTY_PATH)) != 0)
+	 *           return -EINVAL;
+	 *
+	 * handle_arg_list ORs in shift_flag_bit() / CMP-hint bits for
+	 * adjacent-bit probing on ~3/16 of calls; any bit outside the
+	 * two-flag allowlist bounces the call straight back with -EINVAL
+	 * before the lookup runs.  Mask the noise off ~7/8 of the time
+	 * so the call reaches filename_lookup(); ~1/8 leaves the OR'd
+	 * noise intact so the reject path stays covered.  The mask only
+	 * trims foreign bits -- the underlying ARG_LIST pick across
+	 * {0, AT_SYMLINK_NOFOLLOW, AT_EMPTY_PATH, both} is preserved.
+	 */
+	if (!ONE_IN(8))
+		rec->a5 &= (unsigned long)
+			   (AT_SYMLINK_NOFOLLOW | AT_EMPTY_PATH);
 
 	avoid_shared_buffer_out(&rec->a3, rec->a4);
 
