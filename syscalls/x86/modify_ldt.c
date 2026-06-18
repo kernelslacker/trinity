@@ -27,6 +27,12 @@
  * in rec->post_state, a slot the syscall ABI does not expose, so a sibling
  * syscall scribbling rec->aN between the syscall returning and the post
  * handler running cannot smear the size bound used to validate the retval.
+ *
+ * Wired into the post_state ownership table by post_state_install() at
+ * sanitise time; post_modify_ldt() gates the snap through
+ * post_state_claim_owned() before any field deref, so a sibling stomp
+ * that redirects rec->post_state at a foreign heap chunk is rejected by
+ * the ownership lookup before the leading-word magic compare ever runs.
  */
 #define MODIFY_LDT_POST_STATE_MAGIC	0x4D4C4454UL	/* "MLDT" */
 struct modify_ldt_post_state {
@@ -54,9 +60,9 @@ static void sanitise_modify_ldt(struct syscallrecord *rec)
 		rec->a2 = (unsigned long) ldt;
 		rec->a3 = ALLOCSIZE;
 		/* Hand the genuine tracked pointer to the rec owned[] carrier
-		 * now, before any sibling can stomp rec->post_state.  The drain
-		 * runs after post_modify_ldt(), so the oracle deref of snap->ldt
-		 * stays valid; the free then happens unconditionally. */
+		 * so the drain frees it unconditionally after post_modify_ldt()
+		 * runs.  The oracle deref of snap->ldt stays valid because the
+		 * drain only fires after .post returns. */
 		rec_own(rec, ldt);
 		/* Snapshot for the post handler -- a1 / a2 / a3 may be
 		 * scribbled by a sibling syscall before post_modify_ldt() runs. */
@@ -65,7 +71,7 @@ static void sanitise_modify_ldt(struct syscallrecord *rec)
 		snap->func = rec->a1;
 		snap->ldt = (unsigned long) ldt;
 		snap->bytecount = rec->a3;
-		rec->post_state = (unsigned long) snap;
+		post_state_install(rec, snap);
 		break;
 
 	case 1:
@@ -97,40 +103,21 @@ static void sanitise_modify_ldt(struct syscallrecord *rec)
 
 static void post_modify_ldt(struct syscallrecord *rec)
 {
-	struct modify_ldt_post_state *snap = (struct modify_ldt_post_state *) rec->post_state;
+	struct modify_ldt_post_state *snap;
 	unsigned long retval = rec->retval;
 	long ret = (long) retval;
 
-	if (snap == NULL)
-		return;
-
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_modify_ldt: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->a2 = 0;
-		rec->post_state = 0;
-		return;
-	}
+	rec->a2 = 0;
 
 	/*
-	 * Magic-cookie check: snap survived the heap-shape gate but a
-	 * sibling scribble of rec->post_state with a heap-shaped pointer
-	 * to a foreign allocation would let the wrong bytes pose as a
-	 * modify_ldt_post_state.  A cookie mismatch means snap does not
-	 * point at our struct -- abandon rather than feed wild bytes into
-	 * the func / bytecount retval bound check.  The ldt buffer itself
-	 * is owned by the rec carrier and freed unconditionally by the
-	 * drain after this handler returns, so bailing here cannot leak it.
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
 	 */
-	if (snap->magic != MODIFY_LDT_POST_STATE_MAGIC) {
-		outputerr("post_modify_ldt: rejected snap with bad magic 0x%lx "
-			  "(post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->a2 = 0;
-		rec->post_state = 0;
+	snap = post_state_claim_owned(rec, MODIFY_LDT_POST_STATE_MAGIC, __func__);
+	if (snap == NULL)
 		return;
-	}
 
 	/*
 	 * STRONG-VAL count bound for the read func (a1 == 0): the kernel
@@ -153,8 +140,7 @@ static void post_modify_ldt(struct syscallrecord *rec)
 		post_handler_corrupt_ptr_bump(rec, NULL);
 	}
 
-	rec->a2 = 0;
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 
 static unsigned long modify_ldt_funcs[] = {
