@@ -240,7 +240,8 @@ int setup_syscall_group_biarch(unsigned int group)
 		if (entry == NULL)
 			continue;
 
-		if (entry->group == group)
+		if (entry->group == group ||
+		    group_parent[entry->group] == group)
 			toggle_syscall(entry->name, true);
 	}
 
@@ -255,7 +256,8 @@ int setup_syscall_group_biarch(unsigned int group)
 		if (entry == NULL)
 		continue;
 
-		if (entry->group == group)
+		if (entry->group == group ||
+		    group_parent[entry->group] == group)
 			toggle_syscall(entry->name, true);
 	}
 

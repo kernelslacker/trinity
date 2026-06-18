@@ -656,6 +656,18 @@ void select_syscall_tables(void)
 #endif
 }
 
+/*
+ * Subgroup inheritance for `-g <group>`: a syscall is selected under
+ * group G if its .group is G, OR if its .group's parent is G.  The
+ * lookup is selection-only -- xattr syscalls keep .group = GROUP_XATTR
+ * so per-group stats/bias keep attributing to the leaf group.  Only
+ * GROUP_XATTR currently has a parent (GROUP_VFS); every other slot
+ * defaults to GROUP_NONE.
+ */
+const unsigned int group_parent[NR_GROUPS] = {
+	[GROUP_XATTR] = GROUP_VFS,
+};
+
 int setup_syscall_group(unsigned int group)
 {
 	if (biarch == true)
