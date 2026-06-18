@@ -1027,10 +1027,12 @@ static unsigned long gen_arg_fstype_name(struct syscallentry *entry __unused__,
  * locals as struct timespec.  Match that convention.
  */
 static unsigned long gen_arg_timespec(struct syscallentry *entry __unused__,
-				      struct syscallrecord *rec __unused__,
-				      unsigned int argnum __unused__)
+				      struct syscallrecord *rec,
+				      unsigned int argnum)
 {
 	struct timespec *ts;
+	const struct struct_desc *desc;
+	unsigned long hint;
 
 	if (rnd_modulo_u32(10) == 0)
 		return 0;
@@ -1083,6 +1085,33 @@ static unsigned long gen_arg_timespec(struct syscallentry *entry __unused__,
 		ts->tv_nsec = (long) rnd_modulo_u32(1000000000u);
 		break;
 	}
+
+	/*
+	 * Field-scoped hint pull (SHADOW today, LIVE on the follow-up
+	 * flip).  Both fields of the cataloged timespec layout
+	 * (timespec_fields[]: tv_sec at index 0, tv_nsec at index 1) are
+	 * 8-byte FT_RANGE entries; size matches the operand width
+	 * cmp_hints_field_record() insists on for the recorder side.
+	 * Probes against the (timespec desc, rec->nr, do32, argnum)
+	 * bucket bump the shadow would-pick / would-miss / key-absent
+	 * counters; the in-buffer overwrite only fires once the LIVE arm
+	 * is flipped on, so today the post-bucketed values above stand.
+	 * CMP_HINT_FIELD shares the bare-C transform with CMP_HINT_EXACT
+	 * (cmp_hint_apply_transform) -- equality-gated field validators
+	 * want the constant unmolested.
+	 */
+	desc = struct_catalog_lookup("timespec");
+	if (desc != NULL) {
+		if (cmp_hints_field_try_get(rec->nr, rec->do32bit, argnum,
+					    desc, 0, sizeof(ts->tv_sec),
+					    CMP_HINT_FIELD, 0, &hint))
+			ts->tv_sec = (time_t) hint;
+		if (cmp_hints_field_try_get(rec->nr, rec->do32bit, argnum,
+					    desc, 1, sizeof(ts->tv_nsec),
+					    CMP_HINT_FIELD, 0, &hint))
+			ts->tv_nsec = (long) hint;
+	}
+
 	return (unsigned long) ts;
 }
 

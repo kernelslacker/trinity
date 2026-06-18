@@ -2133,7 +2133,10 @@ static unsigned long cmp_hint_apply_transform(unsigned long c,
 static void cmp_hints_stash_consumed(unsigned int nr, bool do32,
 				     enum cmp_hint_pool_kind pool_kind,
 				     unsigned long cmp_ip, unsigned long value,
-				     unsigned int size, enum cmp_hint_use use)
+				     unsigned int size, enum cmp_hint_use use,
+				     unsigned int arg_idx,
+				     unsigned int field_idx,
+				     const struct struct_desc *desc)
 {
 	struct childdata *child = this_child();
 	struct cmp_hint_consumed_entry *e;
@@ -2151,12 +2154,17 @@ static void cmp_hints_stash_consumed(unsigned int nr, bool do32,
 	e = &child->cmp_hints_consumed_stash[child->cmp_hints_consumed_count++];
 	e->cmp_ip = cmp_ip;
 	e->value = value;
+	e->desc = desc;
 	e->nr = (uint16_t)nr;
+	e->field_idx = (uint16_t)field_idx;
 	e->do32 = do32 ? 1 : 0;
 	e->pool_kind = (uint8_t)pool_kind;
 	e->size = (uint8_t)size;
 	e->transform = (uint8_t)use;
-	e->pad = 0;
+	e->arg_idx = (uint8_t)arg_idx;
+	e->pad[0] = 0;
+	e->pad[1] = 0;
+	e->pad[2] = 0;
 
 	if (kcov_shm != NULL)
 		__atomic_fetch_add(&kcov_shm->cmp_hints_consumed, 1UL,
@@ -2283,7 +2291,8 @@ bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 				cmp_hints_stash_consumed(nr, do32,
 							 CMP_HINT_POOL_PER_SYSCALL,
 							 re_cmp_ip, re_value,
-							 re_size, use);
+							 re_size, use,
+							 0, 0, NULL);
 				return true;
 			}
 		} else if (kcov_shm != NULL) {
@@ -2355,13 +2364,146 @@ bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 	}
 
 	cmp_hints_stash_consumed(nr, do32, CMP_HINT_POOL_PER_SYSCALL,
-				 picked_cmp_ip, picked_value, picked_size, use);
+				 picked_cmp_ip, picked_value, picked_size, use,
+				 0, 0, NULL);
 	return true;
 }
 
 bool cmp_hints_try_get(unsigned int nr, bool do32, unsigned long *out)
 {
 	return cmp_hints_try_get_ex(nr, do32, CMP_HINT_BOUNDARY, 0, out);
+}
+
+/*
+ * SHADOW gate for the field-scoped pool consumer.  Defaults off so the
+ * lookup, would-pick / would-miss counters, and the rest of the pick
+ * path are wired end-to-end below without the in-buffer overwrite ever
+ * firing -- the same shadow-vs-live discipline the recent-ring tier
+ * (cmp_recent_pool_mode_arg) uses for its A/B introduction.  The
+ * follow-up commit will expose this via a CLI flag; today the field
+ * pool stays observation-only.
+ */
+static bool cmp_field_consumer_live_arm;
+
+bool cmp_hints_field_try_get(unsigned int nr, bool do32, unsigned int arg_idx,
+			     const struct struct_desc *desc,
+			     unsigned int field_idx, unsigned int size,
+			     enum cmp_hint_use use, unsigned long old,
+			     unsigned long *out)
+{
+	struct cmp_field_pool *pool = NULL;
+	struct cmp_hint_entry *picked;
+	unsigned long picked_value;
+	unsigned long picked_cmp_ip;
+	uint32_t picked_size;
+	unsigned int count;
+	uint32_t h;
+	unsigned int probe;
+	unsigned int do32_idx = do32 ? 1U : 0U;
+
+	if (cmp_hints_shm == NULL || desc == NULL)
+		return false;
+	if (nr >= MAX_NR_SYSCALL || arg_idx < 1 || arg_idx > 6)
+		return false;
+	if (size != 1 && size != 2 && size != 4 && size != 8)
+		return false;
+
+	/* Chaos-mode gate.  Mirror cmp_hints_try_get_ex so suppressed
+	 * windows skip the field consumer the same way they skip the
+	 * scalar one -- a chaos window that only suppresses one consumer
+	 * arm would bias the kernel-validated mix on the other. */
+	if (kcov_shm != NULL &&
+	    __atomic_load_n(&kcov_shm->cmp_hints_chaos_active,
+			    __ATOMIC_RELAXED))
+		return false;
+
+	/* Bucket lookup: same hash + ACQUIRE-load key probe loop as the
+	 * recorder (cmp_hints_field_record above).  Full-key match
+	 * required at every probe slot -- a hash collision on a different
+	 * key continues walking until either a matching key is found or
+	 * the probe window exhausts. */
+	h = cmp_field_pool_hash(desc, nr, do32_idx, arg_idx, field_idx, size);
+
+	for (probe = 0; probe < CMP_FIELD_POOL_PROBE_MAX; probe++) {
+		unsigned int idx = (h + probe) & (CMP_FIELD_POOL_BUCKETS - 1U);
+		struct cmp_field_pool *cand = &cmp_hints_shm->field_pools[idx];
+		const struct struct_desc *occ;
+
+		occ = __atomic_load_n(&cand->key.desc, __ATOMIC_ACQUIRE);
+		if (occ == NULL)
+			break;
+		if (occ != desc ||
+		    cand->key.nr != (uint16_t) nr ||
+		    cand->key.do32 != (uint8_t) do32_idx ||
+		    cand->key.arg_idx != (uint8_t) arg_idx ||
+		    cand->key.field_idx != (uint16_t) field_idx ||
+		    cand->key.size != (uint8_t) size)
+			continue;
+
+		pool = cand;
+		break;
+	}
+
+	if (pool == NULL) {
+		if (kcov_shm != NULL)
+			__atomic_fetch_add(&kcov_shm->cmp_field_consumer_key_absent,
+					   1UL, __ATOMIC_RELAXED);
+		return false;
+	}
+
+	/* Lockless count + corruption gate, byte-for-byte parallel to the
+	 * per-syscall pick path: a kernel-side wild write that stomps
+	 * pool->count would otherwise feed garbage into rnd_modulo_u32 and
+	 * index off the field_pools[] array.  Hints are advisory -- skip
+	 * is the safe response. */
+	count = __atomic_load_n(&pool->count, __ATOMIC_ACQUIRE);
+	if (count == 0) {
+		if (kcov_shm != NULL)
+			__atomic_fetch_add(&kcov_shm->cmp_field_consumer_would_miss,
+					   1UL, __ATOMIC_RELAXED);
+		return false;
+	}
+	if (cmp_field_pool_corrupted(pool, count)) {
+		if (kcov_shm != NULL)
+			__atomic_fetch_add(&kcov_shm->cmp_field_consumer_pool_corrupted,
+					   1UL, __ATOMIC_RELAXED);
+		return false;
+	}
+
+	/* SHADOW: count the would-be-pick on EVERY call regardless of arm
+	 * so the would-pick rate is legible from a default (LIVE off) run.
+	 * The LIVE arm bumps the separate cmp_field_consumer_live_picks
+	 * counter so the two rates stay cleanly separable. */
+	if (kcov_shm != NULL)
+		__atomic_fetch_add(&kcov_shm->cmp_field_consumer_would_pick,
+				   1UL, __ATOMIC_RELAXED);
+
+	if (!cmp_field_consumer_live_arm)
+		return false;
+
+	picked = &pool->entries[rnd_modulo_u32(count)];
+	/* Snapshot the triplet BEFORE the transform so the stash carries
+	 * the raw pool-entry identity (cmp_ip, value, size) -- the tuple
+	 * the credit drain uses to re-find the same entry.  Reading each
+	 * field once locally also avoids a torn (cmp_ip, value, size)
+	 * triplet on a concurrent eviction: even if a sibling overwrites
+	 * the slot between our loads, the credit drain just fails to
+	 * re-find a matching entry and the per-entry score for that pull
+	 * is lost (the flat counter still bumps). */
+	picked_value = picked->value;
+	picked_cmp_ip = picked->cmp_ip;
+	picked_size = picked->size;
+
+	*out = cmp_hint_apply_transform(picked_value, use, old);
+
+	if (kcov_shm != NULL)
+		__atomic_fetch_add(&kcov_shm->cmp_field_consumer_live_picks,
+				   1UL, __ATOMIC_RELAXED);
+
+	cmp_hints_stash_consumed(nr, do32, CMP_HINT_POOL_FIELD,
+				 picked_cmp_ip, picked_value, picked_size, use,
+				 arg_idx, field_idx, desc);
+	return true;
 }
 
 /*
@@ -2434,6 +2576,81 @@ static void cmp_hint_credit_entry_per_syscall(unsigned int nr, bool do32,
 				   1UL, __ATOMIC_RELAXED);
 }
 
+/*
+ * Mirror of cmp_hint_credit_entry_per_syscall for the field-scoped pool.
+ * Re-walks the bucket via the SAME cmp_field_pool_hash + ACQUIRE-load key
+ * probe loop the recorder uses so the credit drain re-finds the entry the
+ * pick path stashed -- modulo a concurrent eviction, which forfeits this
+ * pull's per-entry score (the flat call-level counter still bumps via
+ * cmp_hints_feedback_credit_pc).  Full-key match is required: a hash
+ * collision on (desc, nr, do32, arg_idx, field_idx, size) where the live
+ * occupant is a different key continues the probe walk.  Walks the same
+ * CMP_FIELD_POOL_PROBE_MAX window the recorder bounded so a saturated
+ * table whose late buckets are unrelated keys still terminates.
+ */
+static void cmp_hint_credit_entry_field(unsigned int nr, bool do32,
+					unsigned int arg_idx,
+					const struct struct_desc *desc,
+					unsigned int field_idx,
+					unsigned long cmp_ip,
+					unsigned long value,
+					unsigned int size,
+					bool win)
+{
+	uint32_t h;
+	unsigned int probe;
+	unsigned int do32_idx = do32 ? 1U : 0U;
+
+	if (cmp_hints_shm == NULL || desc == NULL)
+		return;
+	if (nr >= MAX_NR_SYSCALL || arg_idx < 1 || arg_idx > 6)
+		return;
+	if (size != 1 && size != 2 && size != 4 && size != 8)
+		return;
+
+	h = cmp_field_pool_hash(desc, nr, do32_idx, arg_idx, field_idx, size);
+
+	for (probe = 0; probe < CMP_FIELD_POOL_PROBE_MAX; probe++) {
+		unsigned int idx = (h + probe) & (CMP_FIELD_POOL_BUCKETS - 1U);
+		struct cmp_field_pool *pool = &cmp_hints_shm->field_pools[idx];
+		const struct struct_desc *occ;
+		unsigned int count;
+		unsigned int i;
+
+		occ = __atomic_load_n(&pool->key.desc, __ATOMIC_ACQUIRE);
+		if (occ == NULL)
+			return;
+		if (occ != desc ||
+		    pool->key.nr != (uint16_t) nr ||
+		    pool->key.do32 != (uint8_t) do32_idx ||
+		    pool->key.arg_idx != (uint8_t) arg_idx ||
+		    pool->key.field_idx != (uint16_t) field_idx ||
+		    pool->key.size != (uint8_t) size)
+			continue;
+
+		count = __atomic_load_n(&pool->count, __ATOMIC_ACQUIRE);
+		if (count == 0)
+			return;
+		if (cmp_field_pool_corrupted(pool, count))
+			return;
+
+		for (i = 0; i < count; i++) {
+			struct cmp_hint_entry *e = &pool->entries[i];
+
+			if (e->value != value || e->cmp_ip != cmp_ip ||
+			    e->size != size)
+				continue;
+			cmp_hint_entry_bump_sat(win ? &e->wins : &e->misses);
+			return;
+		}
+
+		if (kcov_shm != NULL)
+			__atomic_fetch_add(&kcov_shm->cmp_hint_credit_entry_evicted,
+					   1UL, __ATOMIC_RELAXED);
+		return;
+	}
+}
+
 void cmp_hints_feedback_reset_stash(void)
 {
 	struct childdata *child = this_child();
@@ -2474,11 +2691,14 @@ void cmp_hints_feedback_credit_pc(bool outcome_win)
 							  e->size, outcome_win);
 			break;
 		case CMP_HINT_POOL_FIELD:
+			cmp_hint_credit_entry_field(e->nr, e->do32 != 0,
+						    e->arg_idx, e->desc,
+						    e->field_idx, e->cmp_ip,
+						    e->value, e->size,
+						    outcome_win);
+			break;
 		case CMP_HINT_POOL_KIND_NR:
 		default:
-			/* No field-scoped consumer yet (PHASE 3 records
-			 * only).  When [11-field-scoped] consumer wiring
-			 * lands the matching credit arm goes here. */
 			break;
 		}
 	}
