@@ -449,6 +449,25 @@ bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 bool cmp_hints_try_get(unsigned int nr, bool do32, unsigned long *out);
 
 /*
+ * Field-scoped hint pull.  Locates the field pool keyed by
+ * (desc, nr, do32, arg_idx, field_idx, size) via the same hash + ACQUIRE
+ * probe loop the recorder uses, picks one entry uniformly at random, and
+ * routes the result through cmp_hint_apply_transform() before writing it
+ * to *out.  Bumps cmp_field_consumer_would_pick / would_miss / pool_empty
+ * / key_absent counters on every call regardless of the LIVE arm state so
+ * the would-pull distribution is observable from a default run; only the
+ * LIVE arm actually returns a value and stashes it for credit.  Returns
+ * false on chaos suppression / corrupted pool / out-of-range key / SHADOW
+ * arm.  Caller contract mirrors cmp_hints_field_record(): nr <
+ * MAX_NR_SYSCALL, arg_idx in 1..6, size in {1,2,4,8}, desc != NULL.
+ */
+bool cmp_hints_field_try_get(unsigned int nr, bool do32, unsigned int arg_idx,
+			     const struct struct_desc *desc,
+			     unsigned int field_idx, unsigned int size,
+			     enum cmp_hint_use use, unsigned long old,
+			     unsigned long *out);
+
+/*
  * SHADOW per-entry feedback scoring for hint consumption
  * ([11-feedback-loop] PHASE 4).
  *
@@ -478,22 +497,28 @@ enum cmp_hint_pool_kind {
 
 /*
  * Per-child stash entry recording one cmp_hints_try_get_ex() return.
- * Packed to 24 bytes so the 8-deep stash fits in two cachelines on the
- * childdata struct; 8 entries covers the maximum hint-consuming-arg
- * count (6 syscall args, with the four ARG_OP / ARG_LIST / ARG_RANGE /
- * ARG_UNDEFINED / ARG_STRUCT_SIZE consumers possibly firing per arg)
- * with headroom -- overflow drops the excess (bumped via
- * cmp_hint_stash_overflow).
+ * Sized to 40 bytes after the field-scoped widen (arg_idx / field_idx /
+ * desc).  The historical 24-byte layout carried only the per-syscall
+ * key (nr + cmp_ip); the field-scoped credit drain re-finds its bucket
+ * via cmp_field_pool_hash(desc, nr, do32, arg_idx, field_idx, size), so
+ * every field key component must round-trip through the stash.  The
+ * extra fields are NULL/0 for per-syscall pool kinds; only the
+ * CMP_HINT_POOL_FIELD branch populates them.  The 8-deep stash now
+ * spans five cachelines on the childdata struct (was three); 8 entries
+ * still covers the maximum hint-consuming-arg count with headroom.
  */
 struct cmp_hint_consumed_entry {
 	unsigned long cmp_ip;
 	unsigned long value;
+	const struct struct_desc *desc;	/* NULL for CMP_HINT_POOL_PER_SYSCALL */
 	uint16_t nr;
+	uint16_t field_idx;		/* 0 for CMP_HINT_POOL_PER_SYSCALL */
 	uint8_t do32;
-	uint8_t pool_kind;	/* enum cmp_hint_pool_kind */
+	uint8_t pool_kind;		/* enum cmp_hint_pool_kind */
 	uint8_t size;
-	uint8_t transform;	/* enum cmp_hint_use */
-	uint16_t pad;
+	uint8_t transform;		/* enum cmp_hint_use */
+	uint8_t arg_idx;		/* 1-based, 0 for CMP_HINT_POOL_PER_SYSCALL */
+	uint8_t pad[3];
 };
 
 #define CMP_HINT_CONSUMED_STASH_MAX	8U

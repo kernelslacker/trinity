@@ -1822,6 +1822,57 @@ struct kcov_shared {
 	unsigned long cmp_recent_would_miss;
 	unsigned long cmp_recent_live_picks;
 	unsigned long cmp_recent_promotions;
+
+	/*
+	 * SHADOW counters for the field-scoped CMP hint consumer.
+	 *
+	 * cmp_hints_field_try_get() is wired end-to-end at the
+	 * gen_arg_timespec() callsite (tv_sec / tv_nsec) but the LIVE
+	 * arm is gated off by default so the pool stays observation-
+	 * only.  Every counter below is RELAXED + flat per the SHADOW-
+	 * first discipline that the per-syscall recent-ring tier
+	 * follows: recording active in BOTH arms so an A/B run reads
+	 * the same shadow rates the live arm will eventually consume.
+	 *
+	 *  cmp_field_consumer_would_pick
+	 *      Bumped once per cmp_hints_field_try_get() call where the
+	 *      keyed bucket was found AND its entries[] pool was non-
+	 *      empty AND uncorrupted -- i.e. the call where the live
+	 *      arm would have served a value.  Active in BOTH arms.
+	 *  cmp_field_consumer_would_miss
+	 *      Bumped once per cmp_hints_field_try_get() call where the
+	 *      keyed bucket was found but its entries[] pool was empty.
+	 *      Active in BOTH arms.  would_pick + would_miss bounds the
+	 *      sites where the consumer found a matching bucket.
+	 *  cmp_field_consumer_key_absent
+	 *      Bumped once per cmp_hints_field_try_get() call where the
+	 *      probe loop exhausted CMP_FIELD_POOL_PROBE_MAX without a
+	 *      matching key (no recorder has populated a bucket for
+	 *      this (desc, nr, do32, arg_idx, field_idx, size) tuple
+	 *      yet).  Active in BOTH arms; a steady non-zero rate just
+	 *      means the consumer is asking for keys the recorder has
+	 *      not produced.
+	 *  cmp_field_consumer_pool_corrupted
+	 *      Bumped once per cmp_hints_field_try_get() call where the
+	 *      keyed bucket was found but cmp_field_pool_corrupted()
+	 *      latched corruption on it (wild-write evidence).  Folds
+	 *      into the existing cmp_hints_count_oob / canary counters;
+	 *      called out here so the consumer-side fraction of
+	 *      corruption-bucket skips is directly observable.
+	 *  cmp_field_consumer_live_picks
+	 *      Bumped once per cmp_hints_field_try_get() return that
+	 *      actually served a value (i.e. would_pick AND the LIVE
+	 *      arm flag is on).  Stays at zero under the default SHADOW
+	 *      arm; non-zero once a follow-up flips the live gate.
+	 *
+	 * Append-only at the tail per the existing convention so
+	 * consumer offsets stay stable.
+	 */
+	unsigned long cmp_field_consumer_would_pick;
+	unsigned long cmp_field_consumer_would_miss;
+	unsigned long cmp_field_consumer_key_absent;
+	unsigned long cmp_field_consumer_pool_corrupted;
+	unsigned long cmp_field_consumer_live_picks;
 };
 
 extern struct kcov_shared *kcov_shm;
