@@ -25,5 +25,4 @@
 #
 # Lines starting with `#` and blank lines are ignored.
 
-syscalls/lsm_list_modules.c:sanitise_lsm_list_modules
 syscalls/mq_open.c:sanitise_mq_open

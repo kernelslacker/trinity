@@ -32,6 +32,13 @@
  * a sibling syscall scribbling rec->aN between the syscall returning
  * and the post handler running cannot redirect us at a foreign LSM-id
  * buffer or smear the size word read out of the user buffer.
+ *
+ * Wired into the post_state ownership table by post_state_install() at
+ * sanitise time; post_lsm_list_modules() gates the snap through
+ * post_state_claim_owned() before any field deref, so a sibling stomp
+ * that redirects rec->post_state at a foreign heap chunk is rejected
+ * by the ownership lookup before the leading-word magic compare ever
+ * runs.
  */
 #define LSM_LIST_MODULES_POST_STATE_MAGIC	0x4C534D4C4D4F4453UL	/* "LSMLMODS" */
 struct lsm_list_modules_post_state {
@@ -131,7 +138,7 @@ static void sanitise_lsm_list_modules(struct syscallrecord *rec)
 	snap->ids  = rec->a1;
 	snap->size = rec->a2;
 	snap->vrb  = vrb;
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 #endif
 }
 
@@ -176,7 +183,7 @@ static void sanitise_lsm_list_modules(struct syscallrecord *rec)
 static void post_lsm_list_modules(struct syscallrecord *rec)
 {
 #ifdef HAVE_SYS_LSM_LIST_MODULES
-	struct lsm_list_modules_post_state *snap = (struct lsm_list_modules_post_state *) rec->post_state;
+	struct lsm_list_modules_post_state *snap;
 	u32 first_size;
 	u64 first_ids[64];
 	size_t first_count;
@@ -188,29 +195,16 @@ static void post_lsm_list_modules(struct syscallrecord *rec)
 	bool ids_diverged;
 	int rc;
 
+	/*
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
+	 */
+	snap = post_state_claim_owned(rec, LSM_LIST_MODULES_POST_STATE_MAGIC,
+				      __func__);
 	if (snap == NULL)
 		return;
-
-	/*
-	 * post_state is private to the post handler, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_lsm_list_modules: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	if (snap->magic != LSM_LIST_MODULES_POST_STATE_MAGIC) {
-		outputerr("post_lsm_list_modules: rejected snap with bad magic "
-			  "0x%lx (post_state-stomped to foreign "
-			  "allocation?)\n", snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
 
 	if (!ONE_IN(100))
 		goto out_free;
@@ -309,7 +303,7 @@ static void post_lsm_list_modules(struct syscallrecord *rec)
 
 out_free:
 	valresult_free(&snap->vrb);
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 #else
 	(void) rec;
 #endif
