@@ -902,4 +902,4 @@ unsigned long strategy_plateau_hypothesis_fires(enum plateau_hypothesis h);
  * End-of-run summary: per-arm pulls + cumulative reward + mean
  * edges/window.  Called from dump_stats().
  */
-void dump_strategy_stats(void);
+void dump_strategy_stats(void) __cold;

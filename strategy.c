@@ -2631,7 +2631,7 @@ static void dump_strategy_stats_arms(void)
 	}
 }
 
-void dump_strategy_stats(void)
+void __cold dump_strategy_stats(void)
 {
 	dump_strategy_stats_header();
 	dump_strategy_stats_plateau_forced_cohort();
