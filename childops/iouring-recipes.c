@@ -2779,7 +2779,7 @@ bool iouring_recipes(struct childdata *child __unused__)
 	return true;
 }
 
-void iouring_recipes_dump_stats(void)
+void __cold iouring_recipes_dump_stats(void)
 {
 	unsigned int i;
 
