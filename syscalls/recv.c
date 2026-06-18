@@ -102,50 +102,46 @@ static void sanitise_recvfrom(struct syscallrecord *rec)
 	 * Snapshot the vrb BEFORE avoid_shared_buffer() runs.  a6 is
 	 * about to be relocated off the libc heap; the post handler must
 	 * free the zmalloc result, not the relocated pointer (which the
-	 * deferred-free heap-bounds gate rejects).  The snap doubles as a
-	 * sibling-scribble shield: a foreign heap-shaped pointer parked
-	 * in rec->post_state survives looks_like_corrupted_ptr() but
-	 * fails the magic check.
+	 * deferred-free heap-bounds gate rejects).  Wired into the
+	 * post_state ownership table via post_state_install() so
+	 * post_recvfrom() can prove the snap belongs to this attempt
+	 * before any field deref; a sibling stomp that redirects
+	 * rec->post_state at a foreign heap chunk happening to carry
+	 * RECVFROM_POST_STATE_MAGIC is rejected by the ownership lookup
+	 * before the leading-word magic compare ever runs.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = RECVFROM_POST_STATE_MAGIC;
 	snap->vrb = vrb;
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 
 	avoid_shared_buffer_inout(&rec->a6, sizeof(*vrb.len_io));
 }
 
 static void post_recvfrom(struct syscallrecord *rec)
 {
-	struct recvfrom_post_state *snap =
-		(struct recvfrom_post_state *) rec->post_state;
+	struct recvfrom_post_state *snap;
 
-	if (snap == NULL) {
-		rec->a6 = 0;
-		return;
-	}
-
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_recvfrom: rejected suspicious post_state=%p "
-			  "(pid-scribbled?)\n", snap);
-		rec->a6 = 0;
-		rec->post_state = 0;
-		return;
-	}
-
-	if (snap->magic != RECVFROM_POST_STATE_MAGIC) {
-		outputerr("post_recvfrom: rejected snap with bad magic 0x%lx "
-			  "(post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->a6 = 0;
-		rec->post_state = 0;
-		return;
-	}
-
+	/*
+	 * a6 was the valresult len_io slot; the kernel has either written
+	 * through it or EFAULTed by now.  Clear unconditionally before any
+	 * early-return so a rejected-snap path does not leave a stale
+	 * heap pointer in the ABI slot for replay.
+	 */
 	rec->a6 = 0;
+
+	/*
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- the caller just early-returns on NULL.
+	 */
+	snap = post_state_claim_owned(rec, RECVFROM_POST_STATE_MAGIC, __func__);
+	if (snap == NULL)
+		return;
+
 	valresult_free(&snap->vrb);
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 
 #ifndef MSG_SOCK_DEVMEM
