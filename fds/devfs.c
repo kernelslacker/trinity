@@ -14,8 +14,9 @@ static const struct fd_provider devfile_provider = {
 	.init = &init_devfiles,
 	.get = &get_rand_devfile_fd,
 	/*
-	 * The /dev pool is the only entry point through which trinity acquires
-	 * /dev/fuse and /dev/userfaultfd handles, both of which back ->poll
+	 * The /dev pool is one entry point through which trinity acquires
+	 * /dev/fuse and /dev/userfaultfd handles (the dev_template provider
+	 * is another, tagged the same way), both of which back ->poll
 	 * implementations that block for an external userspace actor
 	 * (fuse_dev_poll waits on its connected daemon; uffd_poll waits for
 	 * the next pending fault).  Tagging the whole pool is broader than

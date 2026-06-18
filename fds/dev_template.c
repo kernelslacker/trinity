@@ -139,6 +139,15 @@ static const struct fd_provider dev_template_provider = {
 	.enabled = true,
 	.init = &init_dev_templates,
 	.get = &get_rand_dev_template_fd,
+	/*
+	 * /dev/fuse and /dev/userfaultfd (opened above) back ->poll
+	 * handlers that block on an external userspace actor.  As with
+	 * the /dev pool provider, tag the whole provider poll_can_block
+	 * so arm_epoll and the poll/select/epoll_ctl sanitisers keep
+	 * these fds out of watch sets; per-fd tracking is not plumbed
+	 * through the fileobj path.
+	 */
+	.poll_can_block = true,
 };
 
 REG_FD_PROV(dev_template_provider);
