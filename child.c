@@ -1413,8 +1413,16 @@ static void periodic_work(struct childdata *child, unsigned long op_nr)
 	 * LOW, bounded when latched HIGH (only the backoff regime pays). */
 	vma_pressure_sample_maybe(op_nr);
 
-	/* Every 128 iterations. */
-	if ((op_nr & 127) == 0) {
+	/* Every 128 iterations.  Skip the maps-dirty + fd-provider fuzzing
+	 * passes under -c/-r so a targeted-syscall run stays isolated to
+	 * the syscall set the user asked for; the picker gate in
+	 * child_process() handles the per-iteration alt-op leak, this
+	 * handles the periodic-work leak that lives outside that picker.
+	 * check_parent_pid + divergence_sentinel + vma_pressure stay
+	 * unconditional -- those are watchdog / diagnostic work, not
+	 * fuzzing. */
+	if ((op_nr & 127) == 0 &&
+	    !do_specific_syscall && !random_selection) {
 		dirty_random_mapping();
 		run_fd_provider_child_ops();
 	}
@@ -2631,6 +2639,19 @@ void child_process(struct childdata *child, int childno)
 		 * under dry_run, leaving the mode genuinely syscall-free apart
 		 * from the well-formed fd-provider setup. */
 		if (dry_run)
+			child->op_type = CHILD_OP_SYSCALL;
+
+		/* -c <syscall> and -r <num> scope the run to a specific syscall
+		 * (or a random subset) for isolation / bisection runs.  The
+		 * alt-op childops bypass the syscall-table gate and issue
+		 * their own unrelated syscalls; the 5% leak from pick_op_type
+		 * (and any dedicated alt-op slot from --alt-op-children) would
+		 * contribute coverage, crashes, and brk/VMA churn that pollute
+		 * the per-syscall signal.  Force CHILD_OP_SYSCALL so the run is
+		 * actually isolated to the targeted syscall set; mirrors the
+		 * dry_run override above and catches the dedicated alt-op slot
+		 * same way. */
+		if (do_specific_syscall || random_selection)
 			child->op_type = CHILD_OP_SYSCALL;
 
 		/* Snapshot op_type once per iter.  child->op_type lives in
