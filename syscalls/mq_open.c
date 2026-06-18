@@ -106,13 +106,19 @@ static void sanitise_mq_open(struct syscallrecord *rec)
 	 * stomp slips the guard and mq_unlink runs against a foreign
 	 * string.  post_state is private to the post / cleanup pair.
 	 *
-	 * The snap allocation is owned by the .cleanup hook, which runs
-	 * unconditionally after every dispatch outcome -- including paths
-	 * that skip .post (retfd_rejected / rzs_rejected gates in
-	 * handle_syscall_ret()).  cleanup_mq_open reads rec->post_state
-	 * and calls tracked_free_now(), so a deterministic post-dispatch
-	 * free replaces the pre-dispatch deferred_free_enqueue_or_leak()
-	 * that owned the lifecycle before.
+	 * Lifetime is owned by the canonical install / claim_owned /
+	 * release bracket.  post_state_install() couples the rec->post_state
+	 * assign with the ownership-table register so the observable window
+	 * between the two is closed; post_mq_open() runs the snap through
+	 * post_state_claim_owned() (shape -> ownership -> magic) and
+	 * post_state_release() on every exit path it reaches.  The release
+	 * gate is idempotent, so cleanup_mq_open() funnels its still-live
+	 * rec->post_state through the same release helper as a safety net
+	 * for paths that skip .post entirely (retfd_rejected / rzs_rejected
+	 * in handle_syscall_ret(), --dry-run synthesised ENOSYS, EXTRA_FORK
+	 * SIGKILL before AFTER): the second call short-circuits on the
+	 * already-released gate when .post got there first, and unregisters
+	 * + frees when .post never ran.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = MQ_OPEN_POST_STATE_MAGIC;
@@ -120,61 +126,34 @@ static void sanitise_mq_open(struct syscallrecord *rec)
 	snap->oflag = rec->a2;
 	snap->mode  = rec->a3;
 	snap->attr  = rec->a4;
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 }
 
 static void post_mq_open(struct syscallrecord *rec)
 {
-	struct mq_open_post_state *snap =
-		(struct mq_open_post_state *) rec->post_state;
+	struct mq_open_post_state *snap;
 	unsigned long retval = rec->retval;
 	long ret = (long) retval;
 
+	/*
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
+	 */
+	snap = post_state_claim_owned(rec, MQ_OPEN_POST_STATE_MAGIC, __func__);
 	if (snap == NULL)
 		return;
 
-	/*
-	 * post_state is private to the post / cleanup pair, but the whole
-	 * syscallrecord can still be wholesale-stomped, so guard the
-	 * snapshot pointer before dereferencing it.  Null post_state on
-	 * the abandon path so the unconditional .cleanup hook NULL-bails
-	 * and leaks the suspect allocation rather than handing a foreign
-	 * / pid-shaped address to tracked_free_now().  Bounded leak:
-	 * child exit reclaims it.
-	 */
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_mq_open: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->post_state = 0;
+	if (ret < 0) {
+		post_state_release(rec, snap);
 		return;
 	}
-
-	/*
-	 * Magic-cookie check: snap survived the heap-shape gate but a
-	 * sibling scribble of rec->post_state with a heap-shaped pointer
-	 * to a foreign allocation would let the wrong bytes pose as a
-	 * mq_open_post_state.  A cookie mismatch means snap does not
-	 * point at our struct -- abandon rather than feed a wild pointer
-	 * to mq_unlink.  Null post_state on the abandon path so the
-	 * unconditional .cleanup hook NULL-bails and leaks the suspect
-	 * allocation rather than handing a foreign / pid-shaped address
-	 * to tracked_free_now().  Bounded leak: child exit reclaims it.
-	 */
-	if (snap->magic != MQ_OPEN_POST_STATE_MAGIC) {
-		outputerr("post_mq_open: rejected snap with bad magic 0x%lx "
-			  "(post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
-
-	if (ret < 0)
-		return;
 
 	if (retval >= (1UL << 20)) {
 		outputerr("post_mq_open: rejecting out-of-bound fd=%ld\n", ret);
 		post_handler_corrupt_ptr_bump(rec, NULL);
+		post_state_release(rec, snap);
 		return;
 	}
 
@@ -196,11 +175,14 @@ static void post_mq_open(struct syscallrecord *rec)
 		 * wholesale stomp could rewrite the snapshot's inner name
 		 * field.  Reject pid-scribbled name before mq_unlink.
 		 */
-		if (name == NULL)
+		if (name == NULL) {
+			post_state_release(rec, snap);
 			return;
+		}
 		if (looks_like_corrupted_ptr(rec, name)) {
 			outputerr("post_mq_open: rejected suspicious u_name=%p (post_state-scribbled?)\n",
 				  name);
+			post_state_release(rec, snap);
 			return;
 		}
 	}
@@ -210,13 +192,10 @@ static void post_mq_open(struct syscallrecord *rec)
 	 * time, not from rec->a1, so a sibling that scribbled the syscall
 	 * arg slot in the TOCTOU window between guard and mq_unlink
 	 * cannot redirect this call at a foreign string.
-	 *
-	 * The snap buffer itself is owned by the .cleanup hook (read from
-	 * rec->post_state, freed via tracked_free_now()), so the post
-	 * handler reads snap->name here but does not free snap -- doing
-	 * so would double-free against the cleanup-time release.
 	 */
 	mq_unlink((const char *) snap->name);
+
+	post_state_release(rec, snap);
 }
 
 static void cleanup_mq_open(struct syscallrecord *rec)
@@ -227,8 +206,25 @@ static void cleanup_mq_open(struct syscallrecord *rec)
 	 * pool with its own lifecycle (not the snap allocation).  Zeroing
 	 * it would drop the syscall-arg ABI's view of the input without
 	 * any matching free.
+	 *
+	 * Funnel rec->post_state through the same post_state_release()
+	 * the .post handler uses.  Idempotent: on the success / inner-ptr
+	 * reject paths .post has already released and cleared
+	 * rec->post_state to 0, so this call short-circuits on the NULL
+	 * snap.  On the claim-owned reject paths .post cleared
+	 * rec->post_state too (the helper does so before returning NULL),
+	 * same short-circuit.  On skip-.post paths (retfd_rejected /
+	 * rzs_rejected in handle_syscall_ret(), validator-rejected
+	 * early-EINVAL, --dry-run synthesised ENOSYS, EXTRA_FORK SIGKILL
+	 * before AFTER) rec->post_state still carries the live snap, so
+	 * the helper unregisters the ownership-table slot and routes the
+	 * chunk through deferred_freeptr().  The already-released gate in
+	 * post_state_release() makes a second-release attempt on the same
+	 * snap a counter bump rather than a libc free abort, so the
+	 * .post/.cleanup pair is balanced and called exactly once across
+	 * every dispatch outcome.
 	 */
-	cleanup_release_post_state(rec);
+	post_state_release(rec, (void *) rec->post_state);
 }
 
 struct syscallentry syscall_mq_open = {
