@@ -176,17 +176,13 @@ struct syscallentry syscall_poll = {
  * path is immune to a sibling syscall scribbling rec->a1/a3 between the
  * syscall returning and the post handler running.
  *
- * Leading magic cookie because the heap-shape check on rec->post_state
- * is value-based only -- a sibling scribbling rec->post_state with any
- * heap-shaped 8-byte aligned pointer to a foreign allocation sails past
- * looks_like_corrupted_ptr() and the post handler then loads snap->fds
- * from foreign bytes; deferred_free_enqueue() queues that bogus pointer
- * for free and glibc aborts in malloc_printerr when the chunk is later
- * released.  Mirrors RECVMMSG_POST_STATE_MAGIC at recv.c:305.  Padded
- * to 32 bytes (48-byte glibc malloc chunk) so the snap lands in a
- * different free-list bucket than the 16-byte alloc_iovec(1) bucket and
- * the 24-byte pipe_post_state bucket -- defense-in-depth on top of the
- * cookie.
+ * Wired into the post_state ownership table by post_state_install() at
+ * sanitise time; post_ppoll() gates the snap through
+ * post_state_claim_owned() before any field deref, so a sibling stomp
+ * that redirects rec->post_state at a foreign heap chunk is rejected
+ * by the ownership lookup before the leading-word magic compare ever
+ * runs.  The bucket-pad keeps the 32-byte snap in its own glibc
+ * free-list bucket as defense-in-depth on top of ownership + cookie.
  */
 #define PPOLL_POST_STATE_MAGIC	0x50504F4C5F4D4147UL	/* "PPOL_MAG" */
 struct ppoll_post_state {
@@ -246,7 +242,7 @@ static void sanitise_ppoll(struct syscallrecord *rec)
 	snap->magic = PPOLL_POST_STATE_MAGIC;
 	snap->fds = fds;
 	snap->ts = ts;
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 
 	/*
 	 * Hand the fds/timespec heap allocations to the rec carrier so the
@@ -262,7 +258,7 @@ static void sanitise_ppoll(struct syscallrecord *rec)
 
 static void post_ppoll(struct syscallrecord *rec)
 {
-	struct ppoll_post_state *snap = (struct ppoll_post_state *) rec->post_state;
+	struct ppoll_post_state *snap;
 	unsigned long nfds = rec->a2;
 	unsigned long retval = rec->retval;
 
@@ -288,44 +284,25 @@ static void post_ppoll(struct syscallrecord *rec)
 	rec->a1 = 0;
 	rec->a3 = 0;
 
+	/*
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
+	 */
+	snap = post_state_claim_owned(rec, PPOLL_POST_STATE_MAGIC, __func__);
 	if (snap == NULL)
 		return;
-
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_ppoll: rejected suspicious post_state=%p "
-			  "(pid-scribbled?)\n", snap);
-		rec->post_state = 0;
-		return;
-	}
-
-	/*
-	 * Magic-cookie check: snap survived the heap-shape gate but a
-	 * sibling scribble of rec->post_state with a heap-shaped pointer
-	 * to a foreign allocation would let the wrong bytes pose as a
-	 * ppoll_post_state.  A cookie mismatch means snap does not point
-	 * at our struct -- abandon the cleanup rather than hand the inner
-	 * (foreign) pointers to deferred_free_enqueue(), which would queue
-	 * a bogus free that glibc aborts on in malloc_printerr.  Mirrors
-	 * recv.c:445 (post_recvmmsg).
-	 */
-	if (snap->magic != PPOLL_POST_STATE_MAGIC) {
-		outputerr("post_ppoll: rejected snap with bad magic 0x%lx "
-			  "(post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		rec->post_state = 0;
-		return;
-	}
 
 	if (looks_like_corrupted_ptr(rec, snap->fds) ||
 	    looks_like_corrupted_ptr(rec, snap->ts)) {
 		outputerr("post_ppoll: rejected suspicious snap fds=%p ts=%p "
 			  "(post_state-scribbled?)\n", snap->fds, snap->ts);
-		deferred_freeptr(&rec->post_state);
+		post_state_release(rec, snap);
 		return;
 	}
 
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_ppoll = {

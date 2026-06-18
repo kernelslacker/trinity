@@ -30,7 +30,6 @@ syscalls/lsm_get_self_attr.c:sanitise_lsm_get_self_attr
 syscalls/lsm_list_modules.c:sanitise_lsm_list_modules
 syscalls/move_pages.c:sanitise_move_pages
 syscalls/mq_open.c:sanitise_mq_open
-syscalls/poll.c:sanitise_ppoll
 syscalls/ptrace.c:sanitise_ptrace
 syscalls/recv.c:sanitise_recvfrom
 syscalls/write.c:sanitise_write
