@@ -4290,7 +4290,7 @@ static void childop_split_dump(void)
 		it_childop, it_random, it_pct / 100);
 }
 
-void defense_counters_periodic_dump(void)
+void __cold defense_counters_periodic_dump(void)
 {
 	static unsigned long prev[ARRAY_SIZE(defense_counters)];
 	static struct timespec last_dump;
@@ -4419,7 +4419,7 @@ static void top_syscalls_emit_pool(const char *pool_name,
 	}
 }
 
-void top_syscalls_periodic_dump(void)
+void __cold top_syscalls_periodic_dump(void)
 {
 	static unsigned long prev_bandit[MAX_NR_SYSCALL];
 	static unsigned long prev_explorer[MAX_NR_SYSCALL];
@@ -4589,7 +4589,7 @@ static long count_proc_maps_lines(const char *path)
  * the leak signature.  /proc reads that fail (process died between the
  * pid snapshot and the open) are silently skipped rather than panicked.
  */
-void vma_count_periodic_dump(void)
+void __cold vma_count_periodic_dump(void)
 {
 	static struct timespec last_dump;
 	struct timespec now;

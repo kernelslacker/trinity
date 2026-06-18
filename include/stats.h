@@ -3519,7 +3519,7 @@ void corrupt_ptr_spike_check(void);
  * counters surfaced once-per-run by dump_stats(), so an operator watching
  * a long fuzz run can tell which guards are catching real wild writes vs
  * sitting at noise without waiting for the run to finish. */
-void defense_counters_periodic_dump(void);
+void defense_counters_periodic_dump(void) __cold;
 
 /* Per-tick scan paired with defense_counters_periodic_dump: every dump
  * window, emits the top-5 syscalls by new-edge attribution for each
@@ -3529,7 +3529,7 @@ void defense_counters_periodic_dump(void);
  * surfacing a syscall the bandit-top has dropped means either the
  * bandit has correctly converged or has over-converged and is missing
  * something. */
-void top_syscalls_periodic_dump(void);
+void top_syscalls_periodic_dump(void) __cold;
 
 /* Per-tick scan paired with defense_counters_periodic_dump: every dump
  * window, snapshot the parent's /proc/self/maps line count and walk the
@@ -3537,7 +3537,7 @@ void top_syscalls_periodic_dump(void);
  * counts.  Surfaces VMA-count growth (e.g. a thaw/freeze path that
  * leaks a split VMA per cycle) before a host OOM-kill removes the
  * post-mortem evidence; children_max specifically is the leak-finder. */
-void vma_count_periodic_dump(void);
+void vma_count_periodic_dump(void) __cold;
 
 /* Per-tick scan paired with defense_counters_periodic_dump: every dump
  * window, emit the KCOV CMP counter block (per-window deltas + rates for
