@@ -65,6 +65,8 @@ int setup_syscall_group(unsigned int desired_group);
 int setup_syscall_group_uniarch(unsigned int desired_group);
 int setup_syscall_group_biarch(unsigned int desired_group);
 
+extern const unsigned int group_parent[NR_GROUPS];
+
 int validate_syscall_tables(void);
 bool no_syscalls_enabled(void);
 int validate_syscall_table_64(void);
