@@ -103,6 +103,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "syscall-gate.h"
 #include "compat.h"
 #include "shm.h"
 #include "trinity.h"
@@ -178,12 +179,12 @@ struct sysv_shm_race_shared {
 
 static long raw_futex_wait(uint32_t *uaddr, uint32_t val)
 {
-	return syscall(__NR_futex, uaddr, FUTEX_WAIT, val, NULL, NULL, 0);
+	return trinity_raw_syscall(__NR_futex, uaddr, FUTEX_WAIT, val, NULL, NULL, 0);
 }
 
 static long raw_futex_wake(uint32_t *uaddr, int n)
 {
-	return syscall(__NR_futex, uaddr, FUTEX_WAKE, n, NULL, NULL, 0);
+	return trinity_raw_syscall(__NR_futex, uaddr, FUTEX_WAKE, n, NULL, NULL, 0);
 }
 
 /*
@@ -195,22 +196,22 @@ static long raw_futex_wake(uint32_t *uaddr, int n)
  */
 static long raw_shmget(key_t key, size_t size, int flag)
 {
-	return syscall(__NR_shmget, (long)key, (long)size, (long)flag);
+	return trinity_raw_syscall(__NR_shmget, (long)key, (long)size, (long)flag);
 }
 
 static long raw_shmat(int shmid, const void *addr, int flag)
 {
-	return syscall(__NR_shmat, (long)shmid, (long)addr, (long)flag);
+	return trinity_raw_syscall(__NR_shmat, (long)shmid, (long)addr, (long)flag);
 }
 
 static long raw_shmdt(const void *addr)
 {
-	return syscall(__NR_shmdt, (long)addr);
+	return trinity_raw_syscall(__NR_shmdt, (long)addr);
 }
 
 static long raw_shmctl(int shmid, int cmd, void *buf)
 {
-	return syscall(__NR_shmctl, (long)shmid, (long)cmd, (long)buf);
+	return trinity_raw_syscall(__NR_shmctl, (long)shmid, (long)cmd, (long)buf);
 }
 
 /*
@@ -246,11 +247,11 @@ static void sysv_shm_originator_main(struct sysv_shm_race_shared *rs)
 {
 	long shmid;
 
-	(void)syscall(__NR_prctl, PR_SET_PDEATHSIG, SIGKILL, 0UL, 0UL, 0UL);
+	(void)trinity_raw_syscall(__NR_prctl, PR_SET_PDEATHSIG, SIGKILL, 0UL, 0UL, 0UL);
 	(void)alarm(2);
 
-	if (syscall(__NR_getppid) == 1)
-		(void)syscall(__NR_exit, 0);
+	if (trinity_raw_syscall(__NR_getppid) == 1)
+		(void)trinity_raw_syscall(__NR_exit, 0);
 
 	shmid = raw_shmget(IPC_PRIVATE, SYSV_SHM_SEG_BYTES, IPC_CREAT | 0600);
 	if (shmid < 0) {
@@ -258,7 +259,7 @@ static void sysv_shm_originator_main(struct sysv_shm_race_shared *rs)
 				 __ATOMIC_RELEASE);
 		__atomic_store_n(&rs->originator_published, 1U, __ATOMIC_RELEASE);
 		(void)raw_futex_wake(&rs->originator_published, 1);
-		syscall(__NR_exit, 0);
+		trinity_raw_syscall(__NR_exit, 0);
 		__builtin_unreachable();
 	}
 
@@ -280,7 +281,7 @@ static void sysv_shm_originator_main(struct sysv_shm_race_shared *rs)
 
 	(void)raw_shmctl((int)shmid, IPC_RMID, NULL);
 
-	syscall(__NR_exit, 0);
+	trinity_raw_syscall(__NR_exit, 0);
 	__builtin_unreachable();
 }
 
@@ -300,18 +301,18 @@ static void sysv_shm_attacher_main(struct sysv_shm_race_shared *rs)
 	uint32_t i;
 	int shmid;
 
-	(void)syscall(__NR_prctl, PR_SET_PDEATHSIG, SIGKILL, 0UL, 0UL, 0UL);
+	(void)trinity_raw_syscall(__NR_prctl, PR_SET_PDEATHSIG, SIGKILL, 0UL, 0UL, 0UL);
 	(void)alarm(2);
 
-	if (syscall(__NR_getppid) == 1)
-		(void)syscall(__NR_exit, 0);
+	if (trinity_raw_syscall(__NR_getppid) == 1)
+		(void)trinity_raw_syscall(__NR_exit, 0);
 
 	while (__atomic_load_n(&rs->go, __ATOMIC_ACQUIRE) == 0U)
 		(void)raw_futex_wait(&rs->go, 0U);
 
 	shmid = __atomic_load_n(&rs->shmid, __ATOMIC_ACQUIRE);
 	if (shmid < 0)
-		(void)syscall(__NR_exit, 0);
+		(void)trinity_raw_syscall(__NR_exit, 0);
 
 	budget = rs->race_budget;
 	for (i = 0; i < budget; i++) {
@@ -325,7 +326,7 @@ static void sysv_shm_attacher_main(struct sysv_shm_race_shared *rs)
 			(void)raw_shmdt((const void *)addr);
 	}
 
-	syscall(__NR_exit, 0);
+	trinity_raw_syscall(__NR_exit, 0);
 	__builtin_unreachable();
 }
 
@@ -375,7 +376,7 @@ static pid_t spawn_sysv_shm_sibling(struct sysv_shm_race_shared *rs,
 	memset(&args, 0, sizeof(args));
 	args.exit_signal = SIGCHLD;
 
-	ret = syscall(__NR_clone3, &args, sizeof(args));
+	ret = trinity_raw_syscall(__NR_clone3, &args, sizeof(args));
 	if (ret < 0) {
 		if (errno == ENOSYS)
 			sysv_shm_orphan_race_clone3_unavailable = true;
@@ -436,7 +437,7 @@ static int wait_for_shmid_publish(struct sysv_shm_race_shared *rs)
 					    __ATOMIC_ACQUIRE)) == 0U) {
 		ts.tv_sec  = 0;
 		ts.tv_nsec = SYSV_SHM_PUBLISH_WAIT_NS;
-		(void)syscall(__NR_futex, &rs->originator_published, FUTEX_WAIT,
+		(void)trinity_raw_syscall(__NR_futex, &rs->originator_published, FUTEX_WAIT,
 			      0U, &ts, NULL, 0);
 		if (__atomic_load_n(&rs->originator_published,
 				    __ATOMIC_ACQUIRE) != 0U)

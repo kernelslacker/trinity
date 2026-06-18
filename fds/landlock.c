@@ -11,6 +11,7 @@
 #include <linux/landlock.h>
 
 #include "fd.h"
+#include "syscall-gate.h"
 #include "objects.h"
 #include "random.h"
 #include "rnd.h"
@@ -62,7 +63,7 @@ static void arm_landlock(int ruleset_fd)
 		attr.parent_fd = path_fd;
 		attr.allowed_access = rnd_u32();
 
-		syscall(__NR_landlock_add_rule, ruleset_fd,
+		trinity_raw_syscall(__NR_landlock_add_rule, ruleset_fd,
 			LANDLOCK_RULE_PATH_BENEATH, &attr, 0);
 		close(path_fd);
 	}
@@ -112,7 +113,7 @@ static int open_landlock_fd(void)
 		return false;
 	}
 
-	abi = (int)syscall(__NR_landlock_create_ruleset, NULL, 0,
+	abi = (int)trinity_raw_syscall(__NR_landlock_create_ruleset, NULL, 0,
 			   LANDLOCK_CREATE_RULESET_VERSION);
 	if (abi < 1)
 		abi = 1;
@@ -133,7 +134,7 @@ static int open_landlock_fd(void)
 		attr_size = LANDLOCK_ATTR_SIZE_V1;
 	}
 
-	fd = syscall(__NR_landlock_create_ruleset, &attr, attr_size, 0);
+	fd = trinity_raw_syscall(__NR_landlock_create_ruleset, &attr, attr_size, 0);
 	if (fd < 0) {
 		int err = errno;
 		if (err == ENOSYS || err == EOPNOTSUPP || err == EPERM) {

@@ -91,6 +91,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "syscall-gate.h"
 #include "childops-util.h"
 #include "jitter.h"
 #include "random.h"
@@ -192,7 +193,7 @@ static void probe_rxrpc_key_supported(void)
 		return;
 	probe_done = true;
 
-	rc = syscall(__NR_add_key, "rxrpc", "trinity-rxrpc-probe",
+	rc = trinity_raw_syscall(__NR_add_key, "rxrpc", "trinity-rxrpc-probe",
 		     NULL, (size_t) 0,
 		     (unsigned long) KEY_SPEC_THREAD_KEYRING);
 	if (rc < 0 && errno_is_unsupported(errno)) {
@@ -335,7 +336,7 @@ static int32_t do_add_rxrpc(const char *desc,
 
 	__atomic_add_fetch(&shm->stats.rxrpc_key_install_calls,
 			   1, __ATOMIC_RELAXED);
-	rc = syscall(__NR_add_key, "rxrpc", desc, payload, paylen,
+	rc = trinity_raw_syscall(__NR_add_key, "rxrpc", desc, payload, paylen,
 		     (unsigned long) KEY_SPEC_THREAD_KEYRING);
 	if (rc < 0) {
 		if (errno == EDQUOT)
@@ -366,7 +367,7 @@ static int32_t do_add_rxrpc_s(const char *desc,
 
 	__atomic_add_fetch(&shm->stats.rxrpc_key_install_calls,
 			   1, __ATOMIC_RELAXED);
-	rc = syscall(__NR_add_key, "rxrpc_s", desc, payload, paylen,
+	rc = trinity_raw_syscall(__NR_add_key, "rxrpc_s", desc, payload, paylen,
 		     (unsigned long) KEY_SPEC_THREAD_KEYRING);
 	if (rc < 0) {
 		if (errno == EDQUOT)
@@ -659,7 +660,7 @@ static void teardown_one(int32_t *ring)
 		return;
 
 	if (RAND_BOOL()) {
-		rc = syscall(__NR_keyctl, (unsigned long) KEYCTL_REVOKE,
+		rc = trinity_raw_syscall(__NR_keyctl, (unsigned long) KEYCTL_REVOKE,
 			     (unsigned long) serial, 0UL, 0UL, 0UL);
 		if (rc == 0)
 			__atomic_add_fetch(&shm->stats.rxrpc_key_install_revokes,
@@ -668,7 +669,7 @@ static void teardown_one(int32_t *ring)
 		 * naturally so subsequent picks land on a -EKEYREVOKED
 		 * read path too. */
 	} else {
-		rc = syscall(__NR_keyctl, (unsigned long) KEYCTL_UNLINK,
+		rc = trinity_raw_syscall(__NR_keyctl, (unsigned long) KEYCTL_UNLINK,
 			     (unsigned long) serial,
 			     (unsigned long) KEY_SPEC_THREAD_KEYRING,
 			     0UL, 0UL);

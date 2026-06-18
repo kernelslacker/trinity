@@ -8,6 +8,7 @@
 #include <sys/syscall.h>
 
 #include "fd.h"
+#include "syscall-gate.h"
 #include "objects.h"
 #include "publish_resource.h"
 #include "random.h"
@@ -23,7 +24,7 @@
 static int do_fsopen(const char *fstype, unsigned int flags)
 {
 #ifdef __NR_fsopen
-	return syscall(__NR_fsopen, fstype, flags);
+	return trinity_raw_syscall(__NR_fsopen, fstype, flags);
 #else
 	(void) fstype;
 	(void) flags;

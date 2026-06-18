@@ -9,6 +9,7 @@
 #include <sys/syscall.h>
 
 #include "fd.h"
+#include "syscall-gate.h"
 #include "objects.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -145,7 +146,7 @@ static int open_io_uring_fd_config(unsigned int entries, unsigned int flags,
 	if (flags & IORING_SETUP_CQSIZE)
 		params.cq_entries = entries * 2;
 
-	fd = syscall(__NR_io_uring_setup, entries, &params);
+	fd = trinity_raw_syscall(__NR_io_uring_setup, entries, &params);
 	if (fd < 0)
 		return false;
 

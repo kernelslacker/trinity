@@ -8,6 +8,7 @@
 #include <unistd.h>
 
 #include "fd.h"
+#include "syscall-gate.h"
 #include "fanotify.h"
 #include "objects.h"
 #include "sanitise.h"
@@ -21,7 +22,7 @@
 static int fanotify_init(__unused__ unsigned int flags, __unused__ unsigned int eflags)
 {
 #ifdef SYS_fanotify_init
-	return syscall(SYS_fanotify_init, flags, eflags);
+	return trinity_raw_syscall(SYS_fanotify_init, flags, eflags);
 #else
 	return -ENOSYS;
 #endif

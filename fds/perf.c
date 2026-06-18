@@ -10,6 +10,7 @@
 #include <asm/unistd.h>
 
 #include "deferred-free.h"
+#include "syscall-gate.h"
 #include "fd.h"
 #include "objects.h"
 #include "perf.h"
@@ -98,7 +99,7 @@ static int open_perf_fd(void)
 	memset(&rec, 0, sizeof(rec));
 	sanitise_perf_event_open(&rec);
 
-	fd = syscall(__NR_perf_event_open, rec.a1, rec.a2, rec.a3, rec.a4, rec.a5);
+	fd = trinity_raw_syscall(__NR_perf_event_open, rec.a1, rec.a2, rec.a3, rec.a4, rec.a5);
 	if (fd < 0) {
 		/* No log here: failure-classification is handled by the
 		 * init_perf_fds caller, which inspects errno across many

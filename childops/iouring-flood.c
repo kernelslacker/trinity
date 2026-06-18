@@ -47,6 +47,7 @@
 #include <linux/io_uring.h>
 
 #include "arch.h"		/* page_size */
+#include "syscall-gate.h"
 #include "child.h"
 #include "childops-iouring.h"
 #include "childops/iouring-ring.h"
@@ -284,7 +285,7 @@ static void iouring_flood_iter_reap_cqes(
 	unsigned int head, tail, reaped = 0;
 	int r;
 
-	r = (int)syscall(__NR_io_uring_enter, ctx->fd, n_subs,
+	r = (int)trinity_raw_syscall(__NR_io_uring_enter, ctx->fd, n_subs,
 			 n_subs, IORING_ENTER_GETEVENTS, NULL, 0);
 	if (r < 0) {
 		__atomic_add_fetch(&shm->stats.iouring_failed, 1,

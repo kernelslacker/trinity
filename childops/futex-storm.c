@@ -41,6 +41,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "syscall-gate.h"
 #include "pids.h"
 #include "childops-util.h"
 #include "random.h"
@@ -112,7 +113,7 @@ static void do_wait(struct futex_storm_shared *s, int idx)
 	ts.tv_nsec = 100000 + rnd_modulo_u32(900000);
 
 	val = __atomic_load_n(&s->futexes[idx], __ATOMIC_RELAXED);
-	syscall(__NR_futex, &s->futexes[idx], FUTEX_WAIT, val, &ts, NULL, 0);
+	trinity_raw_syscall(__NR_futex, &s->futexes[idx], FUTEX_WAIT, val, &ts, NULL, 0);
 }
 
 static void do_wake(struct futex_storm_shared *s, int idx)
@@ -126,7 +127,7 @@ static void do_wake(struct futex_storm_shared *s, int idx)
 	 * exercises the value-vs-enqueue ordering.
 	 */
 	__atomic_add_fetch(&s->futexes[idx], 1, __ATOMIC_RELAXED);
-	syscall(__NR_futex, &s->futexes[idx], (int)RAND_NEGATIVE_OR(FUTEX_WAKE), nwake, NULL, NULL, 0);
+	trinity_raw_syscall(__NR_futex, &s->futexes[idx], (int)RAND_NEGATIVE_OR(FUTEX_WAKE), nwake, NULL, NULL, 0);
 }
 
 static void do_requeue(struct futex_storm_shared *s, int idx1, int idx2)
@@ -136,7 +137,7 @@ static void do_requeue(struct futex_storm_shared *s, int idx1, int idx2)
 	 * uaddr2.  No value check — pairs with the WAKE path's value
 	 * bump to create cmp-vs-requeue races.
 	 */
-	syscall(__NR_futex, &s->futexes[idx1], FUTEX_REQUEUE,
+	trinity_raw_syscall(__NR_futex, &s->futexes[idx1], FUTEX_REQUEUE,
 		1, INT_MAX, &s->futexes[idx2], 0);
 }
 
@@ -150,7 +151,7 @@ static void do_cmp_requeue(struct futex_storm_shared *s, int idx1, int idx2)
 	 * concurrent wakers may flip it between sample and syscall, and
 	 * that's exactly the path we want to exercise.
 	 */
-	syscall(__NR_futex, &s->futexes[idx1], FUTEX_CMP_REQUEUE,
+	trinity_raw_syscall(__NR_futex, &s->futexes[idx1], FUTEX_CMP_REQUEUE,
 		1, INT_MAX, &s->futexes[idx2], val);
 }
 
@@ -261,7 +262,7 @@ static void broadcast_wake(struct futex_storm_shared *s)
 	 * before its timeout would have expired. */
 	for (i = 0; i < NR_FUTEX_WORDS; i++) {
 		__atomic_add_fetch(&s->futexes[i], 1, __ATOMIC_RELAXED);
-		syscall(__NR_futex, &s->futexes[i], FUTEX_WAKE,
+		trinity_raw_syscall(__NR_futex, &s->futexes[i], FUTEX_WAKE,
 			INT_MAX, NULL, NULL, 0);
 	}
 }

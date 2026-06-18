@@ -109,6 +109,7 @@
 #include <linux/io_uring.h>
 
 #include "child.h"
+#include "syscall-gate.h"
 #include "childops-iouring.h"
 #include "childops/iouring-ring.h"
 #include "compat.h"
@@ -320,7 +321,7 @@ static bool ring_submit_sqe(struct iour_ring *ctx, struct io_uring_sqe *sqe)
 static int ring_enter(struct iour_ring *ctx, unsigned int n,
 		      unsigned int min_complete)
 {
-	return (int)syscall(__NR_io_uring_enter, ctx->fd, n, min_complete,
+	return (int)trinity_raw_syscall(__NR_io_uring_enter, ctx->fd, n, min_complete,
 			    IORING_ENTER_GETEVENTS, NULL, 0);
 }
 

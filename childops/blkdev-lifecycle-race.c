@@ -61,6 +61,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "syscall-gate.h"
 #include "scratch_block.h"
 #include "shm.h"
 #include "trinity.h"
@@ -178,7 +179,7 @@ static void blkdev_lifecycle_cycle(int loop_n)
 	off_t backing_size = blkdev_pick_size();
 	int loop_fd, backing_fd, rc;
 
-	backing_fd = (int)syscall(__NR_memfd_create, "trinity-blkdev",
+	backing_fd = (int)trinity_raw_syscall(__NR_memfd_create, "trinity-blkdev",
 				  MFD_CLOEXEC);
 	if (backing_fd < 0)
 		return;

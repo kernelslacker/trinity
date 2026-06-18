@@ -13,6 +13,7 @@
 #include "results.h"
 #include "stats.h"
 #include "syscall.h"
+#include "syscall-gate.h"
 #include "shm.h"
 #include "tables.h"
 #include "trinity.h"	// MAX_LOGLEVEL
@@ -804,6 +805,55 @@ int munge_tables(void)
 	}
 
 	return true;
+}
+
+/*
+ * Honor -x <syscall> at raw syscall(__NR_X, ...) sites in childops /
+ * fds that bypass the syscall-table picker entirely.  Returns true
+ * if `nr` names a syscall that -x has deactivated -- the syscallentry
+ * exists in the host's syscall table but the ACTIVE flag has been
+ * cleared by deactivate_disabled_syscalls() during munge_tables().
+ *
+ * Returns false in every other case, including the common one:
+ *   - do_exclude_syscall is false (one load + branch, no table touch),
+ *   - nr is negative or out of range for the host arch table,
+ *   - the table slot is NULL (gaps for arch-specific syscalls),
+ *   - the entry is still ACTIVE (not -x'd).
+ *
+ * Biarch: trinity itself runs as the host's native (64bit) binary; a
+ * raw syscall(__NR_X) from a childop / fd-provider invokes the 64bit
+ * syscall regardless of which table -c <name> resolved against, so
+ * consult the 64bit table only.  -x toggles the 32bit and 64bit slots
+ * in lockstep (toggle_syscall_biarch in tables-biarch.c) so an entry
+ * marked inactive in one table is inactive in the other.
+ *
+ * Callers should treat a true return as "skip this syscall"; the
+ * trinity_raw_syscall() wrapper in include/syscall-gate.h sets
+ * errno = ENOSYS and returns -1, which existing childops already
+ * handle gracefully (kernels legitimately ENOSYS unsupported calls).
+ */
+bool syscall_nr_is_excluded(int nr)
+{
+	struct syscallentry *entry;
+
+	if (do_exclude_syscall == false)
+		return false;
+	if (nr < 0)
+		return false;
+
+#ifdef ARCH_IS_BIARCH
+	if ((unsigned int)nr >= max_nr_64bit_syscalls)
+		return false;
+	entry = syscalls_64bit[nr].entry;
+#else
+	if ((unsigned int)nr >= max_nr_syscalls)
+		return false;
+	entry = syscalls[nr].entry;
+#endif
+
+	if (entry == NULL)
+		return false;
+	return (entry->flags & ACTIVE) == 0;
 }
 
 /*

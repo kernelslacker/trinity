@@ -62,6 +62,7 @@
 #include <linux/sched/types.h>
 
 #include "child.h"
+#include "syscall-gate.h"
 #include "childops-util.h"
 #include "jitter.h"
 #include "random.h"
@@ -97,7 +98,7 @@ static int max_cpu_id;
 
 static long do_sched_setattr(pid_t pid, struct sched_attr *attr)
 {
-	return syscall(__NR_sched_setattr, (long) pid, attr, 0L);
+	return trinity_raw_syscall(__NR_sched_setattr, (long) pid, attr, 0L);
 }
 
 static bool online_file_exists(int cpu, char *path_out, size_t path_len)

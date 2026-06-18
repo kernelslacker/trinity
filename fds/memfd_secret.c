@@ -23,6 +23,7 @@
 #include <sys/syscall.h>
 
 #include "fd.h"
+#include "syscall-gate.h"
 #include "list.h"
 #include "objects.h"
 #include "random.h"
@@ -48,7 +49,7 @@ static bool unsupported_memfd_secret;
 static int memfd_secret(unsigned int flags)
 {
 #ifdef __NR_memfd_secret
-	return syscall(__NR_memfd_secret, flags);
+	return trinity_raw_syscall(__NR_memfd_secret, flags);
 #else
 	(void) flags;
 	errno = ENOSYS;

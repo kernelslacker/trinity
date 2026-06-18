@@ -47,6 +47,7 @@
 #include <linux/io_uring.h>
 
 #include "compat.h"
+#include "syscall-gate.h"
 #include "pids.h"
 
 #ifndef MFD_CLOEXEC
@@ -170,7 +171,7 @@ static bool iour_submit_sqes(struct iour_ring *ctx,
 static int iour_enter(struct iour_ring *ctx, unsigned int n,
 		      unsigned int min_complete)
 {
-	return (int)syscall(__NR_io_uring_enter, ctx->fd, n, min_complete,
+	return (int)trinity_raw_syscall(__NR_io_uring_enter, ctx->fd, n, min_complete,
 			    IORING_ENTER_GETEVENTS, NULL, 0);
 }
 
@@ -260,12 +261,12 @@ static void iour_recipe_state_cleanup(struct iour_recipe_state *s)
 		s->provided_buf_active = false;
 	}
 	if (s->registered_buf) {
-		(void)syscall(__NR_io_uring_register, s->ctx->fd,
+		(void)trinity_raw_syscall(__NR_io_uring_register, s->ctx->fd,
 			      IORING_UNREGISTER_BUFFERS, NULL, 0);
 		s->registered_buf = false;
 	}
 	if (s->registered_files) {
-		(void)syscall(__NR_io_uring_register, s->ctx->fd,
+		(void)trinity_raw_syscall(__NR_io_uring_register, s->ctx->fd,
 			      IORING_UNREGISTER_FILES, NULL, 0);
 		s->registered_files = false;
 	}
@@ -812,7 +813,7 @@ static bool recipe_fixed_buffer_read(struct iour_recipe_state *s,
 	iov.iov_base = buf;
 	iov.iov_len  = buf_sz;
 
-	r = (int)syscall(__NR_io_uring_register, ctx->fd,
+	r = (int)trinity_raw_syscall(__NR_io_uring_register, ctx->fd,
 			 IORING_REGISTER_BUFFERS, &iov, 1);
 	if (r < 0)
 		goto out;
@@ -894,7 +895,7 @@ static bool recipe_write_read_fixed(struct iour_recipe_state *s,
 	iov.iov_base = buf;
 	iov.iov_len  = buf_sz;
 
-	r = (int)syscall(__NR_io_uring_register, ctx->fd,
+	r = (int)trinity_raw_syscall(__NR_io_uring_register, ctx->fd,
 			 IORING_REGISTER_BUFFERS, &iov, 1);
 	if (r < 0)
 		goto out;
@@ -1111,7 +1112,7 @@ static bool recipe_statx_fixed_file(struct iour_recipe_state *s,
 		goto out;
 
 	fds[0] = s->open_fd;
-	r = (int)syscall(__NR_io_uring_register, ctx->fd,
+	r = (int)trinity_raw_syscall(__NR_io_uring_register, ctx->fd,
 			 IORING_REGISTER_FILES, fds, 1);
 	if (r < 0)
 		goto out;
@@ -1549,7 +1550,7 @@ static bool recipe_listen(struct iour_recipe_state *s, bool *unsupported)
  * ------------------------------------------------------------------ */
 static int iour_make_memfd(void)
 {
-	int fd = (int)syscall(SYS_memfd_create, "trinity-iour", MFD_CLOEXEC);
+	int fd = (int)trinity_raw_syscall(SYS_memfd_create, "trinity-iour", MFD_CLOEXEC);
 
 	if (fd < 0)
 		return -1;
@@ -2047,7 +2048,7 @@ static bool recipe_files_update(struct iour_recipe_state *s,
 	if (s->open_fd < 0)
 		return false;
 
-	r = (int)syscall(__NR_io_uring_register, ctx->fd,
+	r = (int)trinity_raw_syscall(__NR_io_uring_register, ctx->fd,
 			 IORING_REGISTER_FILES, regfds, 4);
 	if (r < 0)
 		return false;
@@ -2507,7 +2508,7 @@ static bool recipe_eventfd_recursive(struct iour_recipe_state *s,
 	reg_op = ONE_IN(2) ? IORING_REGISTER_EVENTFD_ASYNC
 			   : IORING_REGISTER_EVENTFD;
 
-	r = (int)syscall(__NR_io_uring_register, ctx->fd, reg_op,
+	r = (int)trinity_raw_syscall(__NR_io_uring_register, ctx->fd, reg_op,
 			 &s->evfd, 1);
 	if (r < 0) {
 		__atomic_add_fetch(&shm->stats.iouring_eventfd_register_fail,
@@ -2539,7 +2540,7 @@ static bool recipe_eventfd_recursive(struct iour_recipe_state *s,
 	if (!iour_submit_sqes(ctx, sqes, nreads))
 		goto cleanup;
 
-	r = (int)syscall(__NR_io_uring_enter, ctx->fd, nreads, 0, 0, NULL, 0);
+	r = (int)trinity_raw_syscall(__NR_io_uring_enter, ctx->fd, nreads, 0, 0, NULL, 0);
 	if (r < 0)
 		goto cleanup;
 
@@ -2557,7 +2558,7 @@ static bool recipe_eventfd_recursive(struct iour_recipe_state *s,
 	 * hang us, and break early once every read SQE has completed. */
 	reaped = 0;
 	for (spins = 0; spins < 32 && reaped < 32; spins++) {
-		(void)syscall(__NR_io_uring_enter, ctx->fd, 0, 0,
+		(void)trinity_raw_syscall(__NR_io_uring_enter, ctx->fd, 0, 0,
 			      IORING_ENTER_GETEVENTS, NULL, 0);
 
 		head = ring_u32(ctx->cq_ring, ctx->cq_off_head);
@@ -2581,7 +2582,7 @@ static bool recipe_eventfd_recursive(struct iour_recipe_state *s,
 
 cleanup:
 	if (registered) {
-		(void)syscall(__NR_io_uring_register, ctx->fd,
+		(void)trinity_raw_syscall(__NR_io_uring_register, ctx->fd,
 			      IORING_UNREGISTER_EVENTFD, NULL, 0);
 	}
 out:

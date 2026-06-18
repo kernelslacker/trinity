@@ -36,6 +36,7 @@
 #include <linux/sched/types.h>
 
 #include "child.h"
+#include "syscall-gate.h"
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
@@ -45,7 +46,7 @@
 
 static int do_sched_setattr(pid_t pid, struct sched_attr *attr)
 {
-	return (int)syscall(__NR_sched_setattr, pid, attr, 0U);
+	return (int)trinity_raw_syscall(__NR_sched_setattr, pid, attr, 0U);
 }
 
 bool sched_cycler(struct childdata *child)

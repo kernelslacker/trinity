@@ -87,6 +87,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "syscall-gate.h"
 #include "compat.h"
 #include "shm.h"
 #include "trinity.h"
@@ -214,12 +215,12 @@ struct af_unix_peek_race_shared {
 
 static long raw_futex_wait(uint32_t *uaddr, uint32_t val)
 {
-	return syscall(__NR_futex, uaddr, FUTEX_WAIT, val, NULL, NULL, 0);
+	return trinity_raw_syscall(__NR_futex, uaddr, FUTEX_WAIT, val, NULL, NULL, 0);
 }
 
 static long raw_futex_wake(uint32_t *uaddr, int n)
 {
-	return syscall(__NR_futex, uaddr, FUTEX_WAKE, n, NULL, NULL, 0);
+	return trinity_raw_syscall(__NR_futex, uaddr, FUTEX_WAKE, n, NULL, NULL, 0);
 }
 
 /*
@@ -261,11 +262,11 @@ static void af_unix_peek_sibling_main(struct af_unix_peek_race_shared *rs)
 	uint32_t budget;
 	uint32_t i;
 
-	(void)syscall(__NR_prctl, PR_SET_PDEATHSIG, SIGKILL, 0UL, 0UL, 0UL);
+	(void)trinity_raw_syscall(__NR_prctl, PR_SET_PDEATHSIG, SIGKILL, 0UL, 0UL, 0UL);
 	(void)alarm(2);
 
-	if (syscall(__NR_getppid) == 1)
-		(void)syscall(__NR_exit, 0);
+	if (trinity_raw_syscall(__NR_getppid) == 1)
+		(void)trinity_raw_syscall(__NR_exit, 0);
 
 	while (__atomic_load_n(&rs->go, __ATOMIC_ACQUIRE) == 0U)
 		(void)raw_futex_wait(&rs->go, 0U);
@@ -281,11 +282,11 @@ static void af_unix_peek_sibling_main(struct af_unix_peek_race_shared *rs)
 
 		read_fd = __atomic_load_n(&rs->read_fd, __ATOMIC_ACQUIRE);
 		if (read_fd < 0) {
-			(void)syscall(__NR_sched_yield);
+			(void)trinity_raw_syscall(__NR_sched_yield);
 			continue;
 		}
 
-		r = syscall(__NR_recvfrom, (long)read_fd, (long)buf,
+		r = trinity_raw_syscall(__NR_recvfrom, (long)read_fd, (long)buf,
 			    (long)sizeof(buf), (long)(MSG_PEEK | MSG_DONTWAIT),
 			    0L, 0L);
 		(void)r;
@@ -294,7 +295,7 @@ static void af_unix_peek_sibling_main(struct af_unix_peek_race_shared *rs)
 		if (read_fd < 0)
 			continue;
 
-		r = syscall(__NR_recvfrom, (long)read_fd, (long)buf,
+		r = trinity_raw_syscall(__NR_recvfrom, (long)read_fd, (long)buf,
 			    (long)sizeof(buf), (long)MSG_DONTWAIT,
 			    0L, 0L);
 		(void)r;
@@ -303,7 +304,7 @@ static void af_unix_peek_sibling_main(struct af_unix_peek_race_shared *rs)
 	__atomic_store_n(&rs->done, 1U, __ATOMIC_RELEASE);
 	(void)raw_futex_wake(&rs->done, 1);
 
-	syscall(__NR_exit, 0);
+	trinity_raw_syscall(__NR_exit, 0);
 	__builtin_unreachable();
 }
 
@@ -348,7 +349,7 @@ static pid_t spawn_race_sibling(struct af_unix_peek_race_shared *rs)
 	args.flags       = CLONE_FILES;
 	args.exit_signal = SIGCHLD;
 
-	ret = syscall(__NR_clone3, &args, sizeof(args));
+	ret = trinity_raw_syscall(__NR_clone3, &args, sizeof(args));
 	if (ret < 0) {
 		if (errno == ENOSYS)
 			af_unix_peek_race_clone3_unavailable = true;
