@@ -1266,6 +1266,19 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 	unsigned long i;
 	unsigned long skipped = 0;
 	unsigned long inserted = 0;
+	/*
+	 * Per-record diagnostic reject counters: accumulate locally in
+	 * the hot loop and flush once at function exit (mirroring the
+	 * skipped/inserted pattern below) so the per-record fast path
+	 * stays free of shared atomic traffic.  All four are advisory
+	 * stat counters consumed only by stats.c reporters; nothing in
+	 * the collect/save path gates on them, so the per-record-versus-
+	 * batched accumulation is observably identical at the consumer.
+	 */
+	unsigned long reject_nonconst = 0;
+	unsigned long reject_uninteresting = 0;
+	unsigned long reject_sentinel = 0;
+	unsigned long boring_arm_b_drops = 0;
 	struct cmp_hint_pool *pool;
 	struct cmp_hints_bloom *bloom = NULL;
 	struct childdata *child;
@@ -1504,9 +1517,7 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 		 * entirely; both operands are runtime values and feeding
 		 * them back would just recycle the fuzzer's own inputs. */
 		if (!(type & KCOV_CMP_CONST)) {
-			if (kcov_shm != NULL)
-				__atomic_fetch_add(&kcov_shm->cmp_hints_save_reject_nonconst,
-						   1UL, __ATOMIC_RELAXED);
+			reject_nonconst++;
 			continue;
 		}
 
@@ -1543,21 +1554,16 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 				(child != NULL && child->boring_filter_arm_b) ?
 					~7UL : ~3UL;
 
-			if (kcov_shm != NULL && arg1 >= 4 && arg1 <= 7)
-				__atomic_fetch_add(&kcov_shm->cmp_hints_boring_arm_b_drops,
-						   1UL, __ATOMIC_RELAXED);
+			if (arg1 >= 4 && arg1 <= 7)
+				boring_arm_b_drops++;
 
 			if ((arg1 & boring_mask) == 0) {
-				if (kcov_shm != NULL)
-					__atomic_fetch_add(&kcov_shm->cmp_hints_save_reject_uninteresting,
-							   1UL, __ATOMIC_RELAXED);
+				reject_uninteresting++;
 				continue;
 			}
 		}
 		if (arg1 == (unsigned long) -1) {
-			if (kcov_shm != NULL)
-				__atomic_fetch_add(&kcov_shm->cmp_hints_save_reject_sentinel,
-						   1UL, __ATOMIC_RELAXED);
+			reject_sentinel++;
 			continue;
 		}
 
@@ -1996,6 +2002,21 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 	if (inserted != 0 && kcov_shm != NULL)
 		__atomic_fetch_add(&kcov_shm->per_syscall_cmp_inserts[nr],
 				   inserted, __ATOMIC_RELAXED);
+
+	if (kcov_shm != NULL) {
+		if (reject_nonconst != 0)
+			__atomic_fetch_add(&kcov_shm->cmp_hints_save_reject_nonconst,
+					   reject_nonconst, __ATOMIC_RELAXED);
+		if (reject_uninteresting != 0)
+			__atomic_fetch_add(&kcov_shm->cmp_hints_save_reject_uninteresting,
+					   reject_uninteresting, __ATOMIC_RELAXED);
+		if (reject_sentinel != 0)
+			__atomic_fetch_add(&kcov_shm->cmp_hints_save_reject_sentinel,
+					   reject_sentinel, __ATOMIC_RELAXED);
+		if (boring_arm_b_drops != 0)
+			__atomic_fetch_add(&kcov_shm->cmp_hints_boring_arm_b_drops,
+					   boring_arm_b_drops, __ATOMIC_RELAXED);
+	}
 }
 
 /*
