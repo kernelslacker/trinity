@@ -607,7 +607,8 @@ struct syscallentry {
 #define GROUP_BPF	8
 #define GROUP_SCHED	9
 #define GROUP_TIME	10
-#define NR_GROUPS	11
+#define GROUP_XATTR	11
+#define NR_GROUPS	12
 
 struct syscalltable {
 	struct syscallentry *entry;

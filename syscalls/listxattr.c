@@ -266,7 +266,7 @@ struct syscallentry syscall_flistxattr = {
 	.argtype = { [0] = ARG_FD, [1] = ARG_ADDRESS, [2] = ARG_LEN },
 	.argname = { [0] = "fd", [1] = "list", [2] = "size" },
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_XATTR,
 #if defined(SYS_flistxattr) || defined(__NR_flistxattr)
 	.sanitise = sanitise_flistxattr,
 	.post = post_flistxattr,
@@ -482,7 +482,7 @@ struct syscallentry syscall_listxattr = {
 	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_ADDRESS, [2] = ARG_LEN },
 	.argname = { [0] = "pathname", [1] = "list", [2] = "size" },
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_XATTR,
 #if defined(SYS_listxattr) || defined(__NR_listxattr)
 	.sanitise = sanitise_listxattr,
 	.post = post_listxattr,
@@ -692,7 +692,7 @@ struct syscallentry syscall_llistxattr = {
 	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_ADDRESS, [2] = ARG_LEN },
 	.argname = { [0] = "pathname", [1] = "list", [2] = "size" },
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_XATTR,
 #if defined(SYS_llistxattr) || defined(__NR_llistxattr)
 	.sanitise = sanitise_llistxattr,
 	.post = post_llistxattr,

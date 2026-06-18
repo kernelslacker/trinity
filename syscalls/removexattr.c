@@ -10,5 +10,5 @@ struct syscallentry syscall_removexattr = {
 	.argname = { [0] = "pathname", [1] = "name" },
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_XATTR,
 };

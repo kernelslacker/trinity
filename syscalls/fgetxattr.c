@@ -300,7 +300,7 @@ struct syscallentry syscall_fgetxattr = {
 	.argtype = { [0] = ARG_FD, [1] = ARG_XATTR_NAME, [2] = ARG_ADDRESS, [3] = ARG_LEN },
 	.argname = { [0] = "fd", [1] = "name", [2] = "value", [3] = "size" },
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_XATTR,
 	.sanitise = sanitise_fgetxattr,
 #if defined(SYS_fgetxattr) || defined(__NR_fgetxattr)
 	.post = post_fgetxattr,

@@ -199,7 +199,7 @@ struct syscallentry syscall_getxattrat = {
 	.argname = { [0] = "dfd", [1] = "pathname", [2] = "at_flags", [3] = "name", [4] = "uargs", [5] = "usize" },
 	.arg_params[2].list = ARGLIST(xattrat_flags),
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_XATTR,
 	.sanitise = sanitise_getxattrat,
 	.post = post_getxattrat,
 };

@@ -1546,6 +1546,7 @@ static void check_fd_leaks(struct childdata *child)
 		[GROUP_BPF] = "bpf",
 		[GROUP_SCHED] = "sched",
 		[GROUP_TIME] = "time",
+		[GROUP_XATTR] = "xattr",
 	};
 	long delta;
 	unsigned int i;

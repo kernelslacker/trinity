@@ -14,5 +14,5 @@ struct syscallentry syscall_removexattrat = {
 	.arg_params[2].list = ARGLIST(xattrat_flags),
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
-	.group = GROUP_VFS,
+	.group = GROUP_XATTR,
 };
