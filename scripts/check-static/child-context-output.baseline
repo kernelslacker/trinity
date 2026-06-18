@@ -132,7 +132,7 @@ syscalls/gettid.c:48:post_gettid
 syscalls/gettimeofday.c:156:post_gettimeofday
 syscalls/getuid.c:38:post_getuid
 syscalls/getuid.c:59:post_getuid
-syscalls/getxattrat.c:137:post_getxattrat
+syscalls/getxattrat.c:187:post_getxattrat
 syscalls/getxattr.c:213:post_getxattr
 syscalls/getxattr.c:285:post_getxattr
 syscalls/inotify_add_watch.c:26:post_inotify_add_watch

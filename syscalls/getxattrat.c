@@ -3,9 +3,12 @@
  *		unsigned int, at_flags, const char __user *, name,
  *		struct xattr_args __user *, uargs, size_t, usize)
  */
+#include <fcntl.h>
+#include <stdbool.h>
 #include "arch.h"
 #include "csfu.h"
 #include "deferred-free.h"
+#include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
@@ -59,6 +62,7 @@ static void sanitise_getxattrat(struct syscallrecord *rec)
 	{
 		struct csfu_buf buf = build_csfu_struct(&desc_getxattrat);
 		struct xattr_args *args = buf.ptr;
+		bool reaches_vfs;
 
 		if (!args)
 			return;
@@ -71,16 +75,37 @@ static void sanitise_getxattrat(struct syscallrecord *rec)
 		rec_own(rec, args);
 
 		/*
-		 * Non-EXACT buckets get rejected on size by the validator
-		 * before the kernel reads any body field, so populating
-		 * args->value / size / flags (and allocating the value
-		 * sub-buffer they reference) is wasted work.  The
-		 * zmalloc_tracked() buffer is already zeroed where the
-		 * kernel cares to look.  The post-handler snap is only
-		 * meaningful when the kernel actually wrote into the
-		 * value buffer, which only happens on EXACT.
+		 * Validator-reject bias: OVERSIZE_NONZERO and TAIL_MISMATCH
+		 * are guaranteed -E2BIG out of copy_struct_from_user before
+		 * any body field is read.  Half the time pin them back to
+		 * EXACT (zero-tail by construction once usize collapses to
+		 * ksize) so the call actually reaches path_getxattrat ->
+		 * vfs_getxattr.  The remaining half keeps the validator
+		 * reject path exercised.
 		 */
-		if (buf.bucket == CSFU_BUCKET_EXACT) {
+		if ((buf.bucket == CSFU_BUCKET_OVERSIZE_NONZERO ||
+		     buf.bucket == CSFU_BUCKET_TAIL_MISMATCH) && ONE_IN(2)) {
+			buf.usize = sizeof(*args);
+			buf.bucket = CSFU_BUCKET_EXACT;
+		}
+
+		/*
+		 * EXACT, UNDERSIZE (= ksize here since the single-version
+		 * ABI curates known_sizes to {ksize}), and OVERSIZE_ZERO
+		 * all pass copy_struct_from_user and reach the xattr-get
+		 * path.  Populate args->value / size / flags + install the
+		 * post-handler snap for every bucket that reaches VFS, not
+		 * just EXACT, so the bulk of draws exercise the real read
+		 * path with a populated value buffer rather than the
+		 * size=0 / value=NULL probe shape zmalloc left behind.
+		 * OVERSIZE_NONZERO and TAIL_MISMATCH still bounce at the
+		 * tail-zero check; leaving them with zeroed args is fine.
+		 */
+		reaches_vfs = (buf.bucket == CSFU_BUCKET_EXACT ||
+			       buf.bucket == CSFU_BUCKET_UNDERSIZE ||
+			       buf.bucket == CSFU_BUCKET_OVERSIZE_ZERO);
+
+		if (reaches_vfs) {
 			void *value = get_writable_struct(256);
 			if (!value)
 				return;
@@ -101,6 +126,31 @@ static void sanitise_getxattrat(struct syscallrecord *rec)
 #else
 	avoid_shared_buffer_out(&rec->a5, page_size);
 #endif
+
+	/*
+	 * at_flags (a3): handle_arg_list's 1/8 shift_flag_bit and 1/16
+	 * cmp-hint paths regularly OR in bits outside the kernel-accepted
+	 * (AT_SYMLINK_NOFOLLOW | AT_EMPTY_PATH) mask, and path_getxattrat
+	 * rejects those with -EINVAL before any xattr-get work runs.
+	 * Drop the stray bits on 7/8 of draws so the rejected fraction
+	 * stays meaningful for reject-path coverage but does not dominate
+	 * the call mix.
+	 */
+	if (!ONE_IN(8))
+		rec->a3 &= (unsigned long)(AT_SYMLINK_NOFOLLOW | AT_EMPTY_PATH);
+
+	/*
+	 * dfd (a1): ARG_FD draws from the full fd pool (regular files,
+	 * pipes, sockets, ...).  When pathname is relative the kernel
+	 * does a dir-relative lookup against dfd and a non-directory fd
+	 * is rejected with -ENOTDIR before VFS-level xattr work.  Pin
+	 * to AT_FDCWD on 1/3 of draws so the relative-path fraction
+	 * lands on a usable base while leaving the random-fd path well
+	 * exercised for the dfd-only (AT_EMPTY_PATH + NULL pathname)
+	 * shape.
+	 */
+	if (ONE_IN(3))
+		rec->a1 = (unsigned long)(long) AT_FDCWD;
 }
 
 /*
