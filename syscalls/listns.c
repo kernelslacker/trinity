@@ -221,6 +221,12 @@ static unsigned long pick_listns_flags(void)
  * a slot the syscall ABI does not expose, so a sibling syscall scribbling
  * rec->aN between the syscall returning and the post handler running cannot
  * smear the size bound used to validate the retval.
+ *
+ * Wired into the post_state ownership table by post_state_install() at
+ * sanitise time; post_listns() gates the snap through
+ * post_state_claim_owned() before any field deref, so a sibling stomp that
+ * redirects rec->post_state at a foreign heap chunk is rejected by the
+ * ownership lookup before the leading-word magic compare ever runs.
  */
 #define LISTNS_POST_STATE_MAGIC	0x4C4E5321UL	/* "LNS!" */
 struct listns_post_state {
@@ -283,41 +289,24 @@ static void sanitise_listns(struct syscallrecord *rec)
 	snap->magic = LISTNS_POST_STATE_MAGIC;
 	snap->req = rec->a1;
 	snap->nr_ns_ids = rec->a3;
-	rec->post_state = (unsigned long) snap;
+	post_state_install(rec, snap);
 }
 
 static void post_listns(struct syscallrecord *rec)
 {
-	struct listns_post_state *snap = (struct listns_post_state *) rec->post_state;
+	struct listns_post_state *snap;
 	unsigned long retval = rec->retval;
 	long ret = (long) retval;
 
-	if (snap == NULL)
-		return;
-
-	if (looks_like_corrupted_ptr(rec, snap)) {
-		outputerr("post_listns: rejected suspicious post_state=%p (pid-scribbled?)\n",
-			  snap);
-		rec->a1 = 0;
-		rec->post_state = 0;
-		return;
-	}
-
 	/*
-	 * Magic-cookie check: snap survived the heap-shape gate but a
-	 * sibling scribble of rec->post_state with a heap-shaped pointer
-	 * to a foreign allocation would let the wrong bytes pose as a
-	 * listns_post_state.  A cookie mismatch means snap does not point
-	 * at our struct -- abandon rather than feed wild bytes into the
-	 * inner req deferred-free and the nr_ns_ids retval bound check.
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
 	 */
-	if (snap->magic != LISTNS_POST_STATE_MAGIC) {
-		outputerr("post_listns: rejected snap with bad magic 0x%lx "
-			  "(post_state-stomped to foreign allocation?)\n",
-			  snap->magic);
-		post_handler_corrupt_ptr_bump(rec, NULL);
+	snap = post_state_claim_owned(rec, LISTNS_POST_STATE_MAGIC, __func__);
+	if (snap == NULL) {
 		rec->a1 = 0;
-		rec->post_state = 0;
 		return;
 	}
 
@@ -342,7 +331,7 @@ static void post_listns(struct syscallrecord *rec)
 out_free:
 	rec->a1 = 0;
 	deferred_freeptr(&snap->req);
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_listns = {
