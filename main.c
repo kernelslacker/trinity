@@ -1232,23 +1232,22 @@ static bool is_child_making_progress(struct childdata *child, int childno)
 	 * kernel finally schedules it.  Pair every kill_count++ with an
 	 * actual queued kill so the >= 10 threshold means "we tried." */
 	state = get_pid_state(childno);
+
+	/* First-detection-only forensic for ANY 30s-stalled child, D or
+	 * interruptible.  The epoll/ep_item_poll wedge holder blocks in
+	 * interruptible sleep on the polled fd's waitqueue, not 'D', so
+	 * gating this on 'D' alone skipped exactly the task whose
+	 * fd-topology names the blocking fd.  A task with zero progress for
+	 * 30s is parked in its wait, so /proc/<pid>/stack is stable either
+	 * way.  Read-only + latched, so no change to the kill logic. */
+	if (!child->dstate_diag_dumped) {
+		dump_dstate_diagnostics(child, childno, pid);
+		child->dstate_diag_dumped = true;
+	}
+
 	if (state == 'D') {
 		if (!child->kill_in_flight)
 			stuck_syscall_info(child, childno);
-		/* First-detection-only forensic.  Recent unkillable surveys
-		 * showed the epoll family (epoll_ctl in particular) dominating
-		 * the wedged-child population, with the bare watchdog kill line
-		 * giving no way to tell *which* epfd / target fd had blown up
-		 * the ep_item_poll path.  The snapshot adds wchan + the kernel
-		 * stack (when readable) + the fd-topology line for the
-		 * epoll/select family so the unkillables are analysable
-		 * post-hoc.  Gated on a dedicated dstate_diag_dumped latch
-		 * (cleared on reap) so re-entry through is_child_making_progress
-		 * cannot re-fire it every cycle. */
-		if (!child->dstate_diag_dumped) {
-			dump_dstate_diagnostics(child, childno, pid);
-			child->dstate_diag_dumped = true;
-		}
 		kill_pid(pid);
 		__atomic_add_fetch(&child->kill_count, 1, __ATOMIC_RELAXED);
 		child->kill_in_flight = true;
