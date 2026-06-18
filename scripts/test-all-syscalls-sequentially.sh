@@ -52,7 +52,13 @@ do
 	# check below still works.  Flat profile (no -g): the per-syscall top-symbol
 	# list is the mine; for a deep-dive on one syscall add `--call-graph dwarf`.
 	# -a64 keeps us off the 32-bit (int 0x80) path that segfaults on this kernel.
+	# Cap each run at 10G via a transient memory cgroup so a memory-hog syscall
+	# (pwritev2 & co. filling memfd/tmpfs page cache) OOM-kills a child inside
+	# the scope instead of taking the host + the whole sweep down.  --user keeps
+	# trinity non-root (plain --scope needs sudo, which would change the fuzz
+	# surface); --scope inherits the MALLOC_* env and rc still reflects trinity.
 	MALLOC_PERTURB_=$RANDOM MALLOC_CHECK_=3 \
+		systemd-run --user --scope -q -p MemoryMax=10G -- \
 		"${PERF_PREFIX[@]}" ${PERF_PREFIX:+-o perf-$TIME.data --} \
 		timeout -k 30s 15m "$TRINITY_PATH/trinity" -c "$syscall" -N 50000 -C $CHILDREN -a64 -x execve -x execveat --stats --stats-log-file=stats.log >out.log 2>outerr.log
 	rc=$?; { [ "$rc" = 124 ] || [ "$rc" = 137 ]; } && echo "$syscall" >> timeouts-$TIME.log
