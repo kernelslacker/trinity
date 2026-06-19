@@ -32,19 +32,42 @@ static const unsigned int sa_flag_pool[] = {
 	SA_NOCLDWAIT,
 };
 
-/* Real signals we are willing to install a handler for via the set path.
+/* Real signals we are willing to install a handler for via the default
+ * settable bucket below.  The synchronous-fault class (SIGILL/SIGTRAP/
+ * SIGABRT/SIGBUS/SIGFPE/SIGSEGV) is deliberately excluded here: a
+ * draw that pairs one of those signos with the SIG_DFL/SIG_IGN/dummy/
+ * wild-pointer handler bucket in alloc_sigaction() replaces trinity's
+ * own child_fault_handler (installed exactly once per child in
+ * signals.c::mask_signals_child, never re-armed), so the next benign
+ * self-fault -- a scrubbed-pointer deref during arg-gen, a sibling shm
+ * scribble -- either kills the child uncaught or is mis-attributed by
+ * the parent's reaper as a kernel crash.  Same self-instrumentation-
+ * defeat class as PR_SET_MDWE in prctl().  The fault signals stay
+ * reachable via the small fault_class_signals[] bucket in
+ * pick_signal_target() so install-path coverage for those signos is
+ * preserved at a rate low enough not to dominate runs with mis-
+ * attributed deaths.
+ *
  * SIGKILL/SIGSTOP are rejected by the kernel before sa_flags are ever
- * inspected; we keep a small bucket that targets them explicitly to
- * keep the EINVAL gate exercised, but the default pool steers clear so
- * the rest of the handler-installation code path actually runs.
+ * inspected; the forbidden bucket targets them explicitly to keep the
+ * EINVAL gate exercised.
  */
 static const unsigned long settable_signals[] = {
-	SIGHUP, SIGINT, SIGQUIT, SIGILL, SIGTRAP,
-	SIGABRT, SIGBUS, SIGFPE, SIGUSR1, SIGSEGV,
-	SIGUSR2, SIGPIPE, SIGALRM, SIGCHLD, SIGCONT,
-	SIGTSTP, SIGTTIN, SIGTTOU, SIGURG, SIGXCPU,
-	SIGXFSZ, SIGVTALRM, SIGPROF, SIGWINCH, SIGIO,
-	SIGPWR, SIGSYS,
+	SIGHUP, SIGINT, SIGQUIT, SIGUSR1, SIGUSR2,
+	SIGPIPE, SIGALRM, SIGCHLD, SIGCONT, SIGTSTP,
+	SIGTTIN, SIGTTOU, SIGURG, SIGXCPU, SIGXFSZ,
+	SIGVTALRM, SIGPROF, SIGWINCH, SIGIO, SIGPWR,
+	SIGSYS,
+};
+
+/* Synchronous-fault class -- excluded from settable_signals[] above to
+ * avoid wiping trinity's child_fault_handler.  Drawn at low rate in
+ * pick_signal_target() so do_sigaction() coverage for these signos
+ * stays warm without the per-call handler-clobber probability that the
+ * pre-curation default pool carried.
+ */
+static const unsigned long fault_class_signals[] = {
+	SIGILL, SIGTRAP, SIGABRT, SIGBUS, SIGFPE, SIGSEGV,
 };
 
 /*
@@ -161,6 +184,12 @@ static unsigned long pick_signal_target(void)
 		static const unsigned long forbidden[] = { SIGKILL, SIGSTOP };
 		return RAND_ARRAY(forbidden);
 	}
+	if (draw < 10)
+		/* Synchronous-fault class: kept reachable at low rate so
+		 * do_sigaction() coverage for these signos stays warm; see
+		 * settable_signals[] for why this is not folded into the
+		 * default bucket. */
+		return RAND_ARRAY(fault_class_signals);
 	if (draw < 70)
 		return RAND_ARRAY(settable_signals);
 	if (rtcount > 0)
