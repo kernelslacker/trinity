@@ -1,6 +1,7 @@
 /*
  * SYSCALL_DEFINE4(sendfile, int, out_fd, int, in_fd, off_t __user *, offset, size_t, count)
  */
+#include <stdbool.h>
 #include <stdint.h>
 #include <sys/types.h>
 #include "fd.h"
@@ -12,37 +13,47 @@
 #include "utils.h"
 
 /* ~25% bias toward a page-cache-backed in_fd; mirrors splice's fd_in swap. */
-static void bias_sendfile_in_fd(struct syscallrecord *rec)
+static bool bias_sendfile_in_fd(struct syscallrecord *rec)
 {
 	if (rnd_modulo_u32(100) < 25) {
 		int fd = get_rand_pagecache_fd();
 
-		if (fd >= 0)
+		if (fd >= 0) {
 			rec->a2 = fd;
+			return true;
+		}
 	}
+	return false;
 }
 
-static void sanitise_sendfile(struct syscallrecord *rec)
+static void install_sendfile_offset(struct syscallrecord *rec)
 {
 	off_t *offset = (off_t *) get_writable_address(sizeof(off_t));
+
 	if (offset == NULL)
 		return;
 	*offset = RAND_RANGE(0ULL, 1ULL << 30);
 	rec->a3 = (unsigned long) offset;
-	bias_sendfile_in_fd(rec);
 	avoid_shared_buffer_inout(&rec->a3, sizeof(off_t));
+}
+
+static void sanitise_sendfile(struct syscallrecord *rec)
+{
+	bool in_is_seekable = bias_sendfile_in_fd(rec);
+
+	rec->a3 = 0;
+	if (in_is_seekable || rnd_modulo_u32(100) < 5)
+		install_sendfile_offset(rec);
 	reroll_protected_fd_arg(&rec->a1);
 }
 
 static void sanitise_sendfile64(struct syscallrecord *rec)
 {
-	off_t *offset = (off_t *) get_writable_address(sizeof(off_t));
-	if (offset == NULL)
-		return;
-	*offset = RAND_RANGE(0ULL, 1ULL << 30);
-	rec->a3 = (unsigned long) offset;
-	bias_sendfile_in_fd(rec);
-	avoid_shared_buffer_inout(&rec->a3, sizeof(off_t));
+	bool in_is_seekable = bias_sendfile_in_fd(rec);
+
+	rec->a3 = 0;
+	if (in_is_seekable || rnd_modulo_u32(100) < 5)
+		install_sendfile_offset(rec);
 	reroll_protected_fd_arg(&rec->a1);
 }
 
