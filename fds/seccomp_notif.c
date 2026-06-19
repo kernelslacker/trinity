@@ -168,6 +168,7 @@ static const struct fd_provider seccomp_notif_fd_provider = {
 	.enabled = true,
 	.init = &init_seccomp_notif_fds,
 	.get = &get_rand_seccomp_notif_fd,
+	.poll_can_block = true,
 };
 
 REG_FD_PROV(seccomp_notif_fd_provider);
