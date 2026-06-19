@@ -187,6 +187,13 @@ static void note_validation_failure(unsigned int syscallnr, bool do32)
 	__atomic_store_n(&shm->syscall_validation_failures[arch][syscallnr], 0,
 			 __ATOMIC_RELAXED);
 	deactivate_syscall_locked(syscallnr, do32);
+
+	if ((do_specific_syscall || random_selection ||
+	     desired_group != GROUP_NONE) &&
+	    no_syscalls_enabled() == true)
+		output(0, "%s was the last syscall in the targeted set; "
+			  "depleted via %u validation failures\n",
+		       name, VALIDATE_FAIL_THRESHOLD);
 }
 
 /*

@@ -894,11 +894,18 @@ static void deactivate_enosys(struct syscallrecord *rec, struct syscallentry *en
 
 	unlock(&shm->syscalltable_lock);
 
-	if (did_deactivate)
+	if (did_deactivate) {
 		output(0, "%s (%d%s) returned ENOSYS, marking as inactive.\n",
 			entry->name,
 			call + SYSCALL_OFFSET,
 			rec->do32bit == true ? ":[32BIT]" : "");
+		if ((do_specific_syscall || random_selection ||
+		     desired_group != GROUP_NONE) &&
+		    no_syscalls_enabled() == true)
+			output(0, "%s was the last syscall in the targeted "
+				  "set; depleted via ENOSYS self-disable\n",
+			       entry->name);
+	}
 }
 
 /*
