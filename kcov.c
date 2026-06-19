@@ -3327,6 +3327,7 @@ bool kcov_bitmap_save_file(const char *path)
 	struct kcov_strat_ondisk strat_blob;
 	unsigned long edges_now;
 	unsigned char *priors_blob;
+	unsigned char *bucket_seen_blob;
 	struct kcov_per_syscall_diag_ondisk *diag_blob;
 	size_t priors_blob_size;
 	size_t one_array_size;
@@ -3407,8 +3408,30 @@ bool kcov_bitmap_save_file(const char *path)
 			__ATOMIC_RELAXED);
 	}
 
+	/* Snapshot bucket_seen into a stable buffer so the CRC stamped in
+	 * the header and the bytes later streamed to disk cover the
+	 * identical payload.  Without this, a fuzzing child flipping a
+	 * new-edge byte between the crc32() and write_all() calls below
+	 * would leave the on-disk payload not matching its stored CRC,
+	 * and the next warm-start load would reject it as a CRC mismatch
+	 * and silently drop accumulated coverage.  The copy itself need
+	 * not be atomic: coverage is additive, so a byte flipping mid-
+	 * memcpy is harmless (we capture 0 or 1; the edge is recaptured
+	 * on the next save).  The only invariant is that the CRC and the
+	 * write reference the same bytes. */
+	bucket_seen_blob = malloc(KCOV_NUM_EDGES);
+	if (bucket_seen_blob == NULL) {
+		output(0, "kcov-bitmap: bucket_seen scratch alloc fail (%zu bytes) -- save aborted\n",
+		       (size_t)KCOV_NUM_EDGES);
+		free(diag_blob);
+		free(priors_blob);
+		return false;
+	}
+	memcpy(bucket_seen_blob, kcov_shm->bucket_seen, KCOV_NUM_EDGES);
+
 	memset(&hdr, 0, sizeof(hdr));
 	if (!kcov_get_kernel_fp(hdr.kallsyms_sha256)) {
+		free(bucket_seen_blob);
 		free(diag_blob);
 		free(priors_blob);
 		return false;
@@ -3421,8 +3444,7 @@ bool kcov_bitmap_save_file(const char *path)
 	hdr.edges_found = edges_now;
 	hdr.distinct_edges = __atomic_load_n(&kcov_shm->distinct_edges,
 					     __ATOMIC_RELAXED);
-	hdr.payload_crc32 = crc32(kcov_shm->bucket_seen,
-					      KCOV_NUM_EDGES);
+	hdr.payload_crc32 = crc32(bucket_seen_blob, KCOV_NUM_EDGES);
 	hdr.max_nr_syscall = MAX_NR_SYSCALL;
 	hdr.priors_crc32 = crc32(priors_blob, priors_blob_size);
 	hdr.diag_crc32 = crc32(diag_blob, diag_blob_size);
@@ -3439,6 +3461,7 @@ bool kcov_bitmap_save_file(const char *path)
 	ret = snprintf(tmppath, sizeof(tmppath), "%s.tmp.%d",
 		       path, (int)mypid());
 	if (ret < 0 || (size_t)ret >= sizeof(tmppath)) {
+		free(bucket_seen_blob);
 		free(diag_blob);
 		free(priors_blob);
 		return false;
@@ -3446,6 +3469,7 @@ bool kcov_bitmap_save_file(const char *path)
 
 	fd = open(tmppath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 	if (fd < 0) {
+		free(bucket_seen_blob);
 		free(diag_blob);
 		free(priors_blob);
 		return false;
@@ -3455,6 +3479,7 @@ bool kcov_bitmap_save_file(const char *path)
 	if (fchmod(fd, 0644) != 0) {
 		(void)close(fd);
 		(void)unlink(tmppath);
+		free(bucket_seen_blob);
 		free(diag_blob);
 		free(priors_blob);
 		return false;
@@ -3462,8 +3487,7 @@ bool kcov_bitmap_save_file(const char *path)
 
 	if (write_all(fd, &hdr, sizeof(hdr)) < 0)
 		goto fail;
-	if (write_all(fd, kcov_shm->bucket_seen,
-				  KCOV_NUM_EDGES) < 0)
+	if (write_all(fd, bucket_seen_blob, KCOV_NUM_EDGES) < 0)
 		goto fail;
 	if (write_all(fd, priors_blob, priors_blob_size) < 0)
 		goto fail;
@@ -3475,16 +3499,19 @@ bool kcov_bitmap_save_file(const char *path)
 		goto fail;
 	if (close(fd) != 0) {
 		(void)unlink(tmppath);
+		free(bucket_seen_blob);
 		free(diag_blob);
 		free(priors_blob);
 		return false;
 	}
 	if (rename(tmppath, path) != 0) {
 		(void)unlink(tmppath);
+		free(bucket_seen_blob);
 		free(diag_blob);
 		free(priors_blob);
 		return false;
 	}
+	free(bucket_seen_blob);
 	free(diag_blob);
 	free(priors_blob);
 	kcov_bitmap_edges_at_last_save = edges_now;
@@ -3493,6 +3520,7 @@ bool kcov_bitmap_save_file(const char *path)
 fail:
 	(void)close(fd);
 	(void)unlink(tmppath);
+	free(bucket_seen_blob);
 	free(diag_blob);
 	free(priors_blob);
 	return false;
