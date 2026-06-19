@@ -70,28 +70,29 @@ unsigned long get_random_aio_ctx(void)
  * Snapshot for the post handler.  Mirrors the pipe/socketpair shape:
  *
  *   1. The snap struct carries a magic cookie that the post handler
- *      checks before dereferencing snap->ctxp.  A sibling scribble of
- *      rec->post_state with a heap-shaped pointer to a foreign chunk
- *      survives looks_like_corrupted_ptr() but fails the cookie gate.
+ *      checks before dereferencing *get_arg_snapshot(rec, 2).  A
+ *      sibling scribble of rec->post_state with a heap-shaped pointer
+ *      to a foreign chunk survives looks_like_corrupted_ptr() but
+ *      fails the cookie gate.
  *
  *   2. The snap pointer is registered in the post-state ownership
  *      table at sanitise time and checked in the post handler via
  *      post_state_is_owned().  A cookie-collision foreign chunk would
  *      otherwise sail past the magic check.
  *
- *   3. snap->ctxp records the out-pointer value as written into rec->a2
- *      at sanitise time.  The post handler compares snap->ctxp against
- *      the live rec->a2 and bails on mismatch -- a sibling scribble of
- *      rec->a2 between sanitise and post means the kernel either wrote
- *      to a different buffer (so *snap->ctxp is the pre-syscall zero
- *      we stamped) or rec->a2 was clobbered after the syscall returned
- *      (so *snap->ctxp may have been written-to-then-unmapped under
- *      us).  Either way the aio_context_t we'd read is untrustworthy.
+ * The OUT-pointer (a2 / ctxp) defence is now generic:
+ * .arg_snapshot_mask opts a2 into the dispatch-time arg_shadow capture
+ * (snapshotted inside __do_syscall() after the final
+ * blanket_address_scrub, from the locals about to enter the kernel),
+ * and the post handler reads it via get_arg_snapshot(rec, 2).  A
+ * sibling scribble of rec->a2 between dispatch and post bumps the
+ * generic arg_shadow_stomp tripwire from inside the accessor; the
+ * returned value is the kernel-visible address, so the *ctxp deref
+ * still hits the buffer the kernel actually wrote.
  */
 #define IO_SETUP_POST_STATE_MAGIC	0x494F5354505F4D47UL	/* "IOSTP_MG" */
 struct io_setup_post_state {
 	unsigned long magic;
-	unsigned long *ctxp;
 };
 
 static void sanitise_io_setup(struct syscallrecord *rec)
@@ -109,10 +110,11 @@ static void sanitise_io_setup(struct syscallrecord *rec)
 	/* Re-route ctxp out of any alloc_shared / libc-heap region. */
 	avoid_shared_buffer_out(&rec->a2, sizeof(aio_context_t));
 
-	/* magic-cookie / private post_state: see post_state_register(). */
+	/* magic-cookie / private post_state: see post_state_register().
+	 * The OUT-pointer is defended via .arg_snapshot_mask + the
+	 * dispatch-time arg_shadow capture, not a snap field. */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = IO_SETUP_POST_STATE_MAGIC;
-	snap->ctxp = (unsigned long *) rec->a2;
 	rec->post_state = (unsigned long) snap;
 	post_state_register(snap);
 }
@@ -127,11 +129,12 @@ static void sanitise_io_setup(struct syscallrecord *rec)
  * the real io_destroy() at child teardown so produced contexts
  * don't outlive the producing child.  Runs ahead of post_io_setup(),
  * which clears rec->post_state during cleanup.  Does its own shape
- * + magic + ownership + inner-pointer-identity validation before
- * deref so a sibling-stomped post_state doesn't drive
- * register_aio_ctx() with foreign bytes -- corruption attribution
- * stays in post_io_setup() below, which repeats the same checks and
- * owns the inner-ptr-mismatch counter bump.
+ * + magic + ownership validation and reads the OUT-pointer via the
+ * generic arg_shadow accessor before deref so a sibling-stomped
+ * post_state or rec->a2 doesn't drive register_aio_ctx() with
+ * foreign bytes -- corruption attribution for the snap-struct gates
+ * stays in post_io_setup() below; out-pointer corruption is bumped
+ * generically by arg_shadow_stomp from inside get_arg_snapshot().
  */
 static void post_io_setup_record_ctx(struct syscallrecord *rec)
 {
@@ -153,31 +156,28 @@ static void post_io_setup_record_ctx(struct syscallrecord *rec)
 		return;
 
 	/*
-	 * Inner-pointer-identity check: snap->ctxp is the out-pointer
-	 * captured at sanitise; rec->a2 is the live slot.  A mismatch
-	 * means a sibling scribble retargeted the kernel's write or
-	 * clobbered rec->a2 after return -- *snap->ctxp would read the
-	 * pre-syscall zero we stamped (or unmapped bytes) either way.
+	 * The OUT-pointer (a2 / ctxp) is read via the generic arg_shadow
+	 * accessor: it returns the kernel-visible address snapshotted in
+	 * __do_syscall() after the final blanket_address_scrub.  A
+	 * sibling stomp of rec->a2 between dispatch and here bumps
+	 * arg_shadow_stomp from inside the accessor and the post handler
+	 * still sees the address the kernel actually wrote.
 	 */
-	if ((unsigned long *) rec->a2 != snap->ctxp)
-		return;
-
-	ctxp = snap->ctxp;
+	ctxp = (unsigned long *) get_arg_snapshot(rec, 2);
 	if (ctxp == NULL || looks_like_corrupted_ptr(rec, ctxp))
 		return;
 
 	/*
-	 * The snapshot above protects the OUT-pointer (ctxp) from rec->aN
-	 * scribbles, but the kernel-written aio_context_t value at *ctxp
-	 * lives in the user-supplied buffer and is fair game for a sibling
-	 * syscall to clobber between the syscall returning and this handler
-	 * running.  A scribbled value handed to io_destroy() (called from
-	 * the pool destructor) would make the kernel walk a foreign id
-	 * through the per-mm aio context table.  aio_context_t is opaque,
-	 * but a real kernel-allocated context is never zero — drop
-	 * zero-valued reads instead of feeding them to the pool.
-	 * Corruption-bump attribution stays in post_io_setup() so a
-	 * single bad call is logged once.
+	 * arg_shadow protects the OUT-pointer (ctxp) from rec->aN scribbles,
+	 * but the kernel-written aio_context_t value at *ctxp lives in the
+	 * user-supplied buffer and is fair game for a sibling syscall to
+	 * clobber between the syscall returning and this handler running.
+	 * A scribbled value handed to io_destroy() (called from the pool
+	 * destructor) would make the kernel walk a foreign id through the
+	 * per-mm aio context table.  aio_context_t is opaque, but a real
+	 * kernel-allocated context is never zero — drop zero-valued reads
+	 * instead of feeding them to the pool.  Corruption-bump attribution
+	 * stays in post_io_setup() so a single bad call is logged once.
 	 */
 	ctx = *ctxp;
 	if (ctx == 0)
@@ -188,9 +188,11 @@ static void post_io_setup_record_ctx(struct syscallrecord *rec)
 
 /*
  * Cleanup-only sibling of post_io_setup_record_ctx().  Owns the
- * scratch-slot teardown, the zero-ctx corruption-bump, and the
- * inner-ptr-mismatch counter so the registrar above can stay focused
- * on adding ctxs to the pool.
+ * scratch-slot teardown and the zero-ctx corruption-bump so the
+ * registrar above can stay focused on adding ctxs to the pool.
+ * Reads the OUT-pointer via the generic arg_shadow accessor; a
+ * sibling scribble of rec->a2 between dispatch and here bumps
+ * arg_shadow_stomp from inside the accessor.
  */
 static void post_io_setup(struct syscallrecord *rec)
 {
@@ -228,24 +230,14 @@ static void post_io_setup(struct syscallrecord *rec)
 		goto out_free;
 
 	/*
-	 * Inner-pointer-identity check: snap->ctxp is the out-pointer
-	 * captured at sanitise; rec->a2 is the live slot.  A mismatch
-	 * means a sibling scribble retargeted the kernel's write or
-	 * clobbered rec->a2 after return.  Bump the dedicated mismatch
-	 * counter and skip the *ctxp deref entirely -- the
-	 * aio_context_t there is untrustworthy.
+	 * Read the OUT-pointer via the generic arg_shadow accessor: it
+	 * returns the kernel-visible address captured in __do_syscall() and
+	 * bumps arg_shadow_stomp from inside the accessor on any
+	 * post-dispatch sibling scribble of rec->a2, so a separate
+	 * per-syscall mismatch counter would only ever fire on the same
+	 * stomp class the generic tripwire already covers.
 	 */
-	if ((unsigned long *) rec->a2 != snap->ctxp) {
-		outputerr("post_io_setup: inner-ptr mismatch snap->ctxp=%p rec->a2=%p "
-			  "(sibling-scribbled out-pointer)\n",
-			  (void *) snap->ctxp, (void *) rec->a2);
-		__atomic_add_fetch(&shm->stats.io_setup_inner_ptr_mismatch,
-				   1, __ATOMIC_RELAXED);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		goto out_free;
-	}
-
-	ctxp = snap->ctxp;
+	ctxp = (unsigned long *) get_arg_snapshot(rec, 2);
 	if (ctxp == NULL || looks_like_corrupted_ptr(rec, ctxp))
 		goto out_free;
 
@@ -271,4 +263,10 @@ struct syscallentry syscall_io_setup = {
 	.post = post_io_setup,
 	.ret_objtype_via_post = post_io_setup_record_ctx,
 	.rettype = RET_ZERO_SUCCESS,
+	/* a2 (ctxp) is the kernel's OUT-pointer; both post handlers
+	 * deref through it.  Shadow it so a sibling stomp between
+	 * dispatch and post bumps arg_shadow_stomp from inside
+	 * get_arg_snapshot() and the handlers still see the address the
+	 * kernel actually wrote, not the stomped value. */
+	.arg_snapshot_mask = (1u << 1),
 };
