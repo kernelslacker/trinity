@@ -85,7 +85,8 @@ struct cmp_hints_bloom {
  * comparison-instruction address, the same value cmp_hints_collect()
  * routes into the bloom and the per-syscall pool.
  *
- * field_kind selects how the consumer applies the pin ([11-field-scoped]).
+ * field_kind selects how the consumer applies the pin for the
+ * field-scoped pool.
  * REEXEC_FIELD_NONE is the historical scalar-slot pin: rec->a<slot> is
  * overwritten with `value` outright.  The field kinds instead treat
  * rec->a<slot> as a pointer to a fixed-size struct and pin ONE field
@@ -147,7 +148,8 @@ struct cmp_hint_entry {
 	unsigned long cmp_ip;
 	uint32_t size;		/* operand width in bytes: 1, 2, 4, or 8 */
 	/*
-	 * SHADOW per-entry feedback scoring ([11-feedback-loop] PHASE 4).
+	 * SHADOW per-entry feedback scoring for the score-based feedback
+	 * loop.
 	 *
 	 * On a successful cmp_hints_try_get_ex(), the (nr, arch, cmp_ip,
 	 * value, size, transform) tuple is stashed per-child.  On dispatch
@@ -239,7 +241,7 @@ struct cmp_hint_pool {
 };
 
 /*
- * Field-scoped attribution pool (PHASE 3 narrow MVP).
+ * Field-scoped attribution pool (narrow MVP).
  *
  * The per-syscall pools above ([nr][do32]) attribute a kernel CMP
  * constant to a *syscall slot* but not to a specific struct field --
@@ -388,7 +390,7 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32);
 
 /*
  * Use-case taxonomy for the cmp-hint consumer.  cmp_hints_try_get_ex()
- * selects an output transform from the use case (and, in later phases,
+ * selects an output transform from the use case (and, in a follow-up,
  * from the pool entry's recorded comparison width).  Callers that today
  * only need the historical {C-1, C, C+1} boundary triple stay on the
  * cmp_hints_try_get() wrapper, which routes to CMP_HINT_BOUNDARY.
@@ -409,19 +411,19 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32);
  *                       running mask -- bare C would clobber it.  When
  *                       old == 0 the function degrades to bare C (no
  *                       signal to mix with).
- *   CMP_HINT_FIELD      Placeholder for the PHASE 3 field-scoped pool
- *                       lookup ([11-field-scoped]).  Today's behaviour
- *                       is identical to CMP_HINT_EXACT -- field-scoped
- *                       pools do not exist yet so there is nothing to
- *                       look up against; the use case ships here so the
- *                       caller surface settles before PHASE 3 lands.
+ *   CMP_HINT_FIELD      Placeholder for the field-scoped pool lookup.
+ *                       Today's behaviour is identical to
+ *                       CMP_HINT_EXACT -- field-scoped pools do not
+ *                       exist yet so there is nothing to look up
+ *                       against; the use case ships here so the caller
+ *                       surface settles before the consumer side lands.
  *
  * Width-aware masked/sign-extended transforms per comparison size are
  * called out in the spec as a fourth transform family and will land in
  * a follow-up: the pool entry already carries the recorded comparison
  * width, but the existing four callsites in generate-args.c return
  * full-long values and a silent narrowing here would change their
- * behaviour.  The PHASE 2 split deliberately keeps the wrapper
+ * behaviour.  The wrapper split deliberately keeps the wrapper
  * byte-for-byte equivalent to today; width-aware lands once a callsite
  * opts in.
  */
@@ -468,8 +470,8 @@ bool cmp_hints_field_try_get(unsigned int nr, bool do32, unsigned int arg_idx,
 			     unsigned long *out);
 
 /*
- * SHADOW per-entry feedback scoring for hint consumption
- * ([11-feedback-loop] PHASE 4).
+ * SHADOW per-entry feedback scoring for hint consumption -- the
+ * recording half of the score-based feedback loop.
  *
  * cmp_hints_try_get_ex() stashes (nr, arch, pool-kind, cmp_ip, value,
  * size, transform) into a small per-child ring on each successful
@@ -643,9 +645,8 @@ void cmp_hints_field_record(unsigned int nr, bool do32, unsigned int arg_idx,
  * claimed and the field-attribution counter bumps, then clears the
  * bucket back to empty so the live table starts clean.  Proves the
  * recording path is wired end-to-end at every fresh trinity startup --
- * not just at build time -- which is the gate the PHASE 3 dispatch
- * mandates for landing the row.  BUG()s on failure so a regression
- * surfaces loudly at init rather than hiding behind silent zero
- * counters during a run.
+ * not just at build time.  BUG()s on failure so a regression surfaces
+ * loudly at init rather than hiding behind silent zero counters during
+ * a run.
  */
 void cmp_hints_field_record_self_check(void);

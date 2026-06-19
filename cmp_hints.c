@@ -526,9 +526,9 @@ static bool pool_add_locked(struct cmp_hint_pool *pool,
 		e->cmp_ip = cmp_ip;
 		e->size = size;
 		/* SHADOW feedback score starts at zero for a freshly inserted
-		 * tuple ([11-feedback-loop]).  Dedup-refresh above keeps the
-		 * existing score (same tuple, same identity); only this
-		 * fresh-insert and the evict-replace below reset. */
+		 * tuple.  Dedup-refresh above keeps the existing score (same
+		 * tuple, same identity); only this fresh-insert and the
+		 * evict-replace below reset. */
 		e->wins = 0;
 		e->misses = 0;
 		e->last_used = stamp;
@@ -558,7 +558,7 @@ static bool pool_add_locked(struct cmp_hint_pool *pool,
 	pool->entries[victim].size = size;
 	/* Evict-replace: zero the SHADOW score so the displaced tuple's
 	 * history does not bleed into the new identity that now lives in
-	 * this slot ([11-feedback-loop]). */
+	 * this slot. */
 	pool->entries[victim].wins = 0;
 	pool->entries[victim].misses = 0;
 	pool->entries[victim].last_used = stamp;
@@ -834,9 +834,9 @@ static bool cmp_field_pool_insert_locked(struct cmp_field_pool *pool,
 		e->size = size;
 		/* Field pools inherit the same fresh-insert / evict-replace
 		 * SHADOW-score reset discipline as the per-syscall pool above;
-		 * the score field is recording-only because [11-feedback-loop]
-		 * PHASE-4 score-based selection is shadow for both pools and
-		 * does not steer pool selection yet. */
+		 * the score field is recording-only because the score-based
+		 * feedback selection is shadow for both pools and does not
+		 * steer pool selection yet. */
 		e->wins = 0;
 		e->misses = 0;
 		e->last_used = stamp;
@@ -1020,14 +1020,14 @@ void cmp_hints_field_record_self_check(void)
  * attribution path above; runs as a recording-side accumulator so a
  * future consumer can re-inject the constant at the named field.
  *
- * NARROW MVP scope (PHASE 3 first patch): fixed-size cataloged structs
- * only.  Tagged-union descs (variants != NULL) and buffer-discriminated
- * descs (buffer_discrim_size != 0) are skipped -- the live variant
- * isn't carried in the dispatch_args[] snapshot and re-reading the
- * post-fill buffer to resolve it would race a sibling stomp.  Array /
- * pointer / length-pair tags are skipped because their sibling-coupled
- * reads need the array-aware path landing in [11-array-attrib].  Only
- * flat scalar tags with size in {1,2,4,8} contribute records here.
+ * NARROW MVP scope: fixed-size cataloged structs only.  Tagged-union
+ * descs (variants != NULL) and buffer-discriminated descs
+ * (buffer_discrim_size != 0) are skipped -- the live variant isn't
+ * carried in the dispatch_args[] snapshot and re-reading the post-fill
+ * buffer to resolve it would race a sibling stomp.  Array / pointer /
+ * length-pair tags are skipped because their sibling-coupled reads
+ * need the array-aware attribution path, which lands later.  Only flat
+ * scalar tags with size in {1,2,4,8} contribute records here.
  */
 static void cmp_hints_field_scan_record(struct syscallrecord *srec,
 					struct syscallentry *entry,
@@ -1153,7 +1153,7 @@ static void cmp_hints_field_scan_record(struct syscallrecord *srec,
 			/* NARROW MVP: only flat scalar tags.  Array / pointer
 			 * / length-pair / aggregate tags need either array-
 			 * aware sibling resolution or sub-buffer reads, both
-			 * deferred to PHASE 5 [11-array-attrib]. */
+			 * deferred to a follow-up. */
 			switch (f->tag) {
 			case FT_PTR_BYTES:
 			case FT_PTR_ARRAY:
@@ -1312,10 +1312,11 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 	struct syscallentry *entry_field = NULL;
 	/*
 	 * Per-slot argtype snapshot + a cheap gate for the field-scoped
-	 * RedQueen scan ([11-field-scoped]).  field_scan_enabled stays false
-	 * for the overwhelming majority of syscalls (no field-eligible arg),
-	 * so the per-record field scan is skipped outright and the scalar
-	 * fast-path pays nothing beyond one bool test.
+	 * RedQueen scan over the field-scoped pool.  field_scan_enabled
+	 * stays false for the overwhelming majority of syscalls (no
+	 * field-eligible arg), so the per-record field scan is skipped
+	 * outright and the scalar fast-path pays nothing beyond one bool
+	 * test.
 	 */
 	enum argtype rec_argtype[6] = { 0 };
 	bool field_scan_enabled = false;
@@ -1450,9 +1451,9 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 				   !rec->dispatch_args_valid) {
 				/* Redqueen cohort gate cleared and the
 				 * syscall has args worth scanning, but
-				 * the [11-snapshot] dispatch_args[] feed
-				 * is missing -- attribution correctly
-				 * skips the call, surface the rate so the
+				 * the dispatch_args[] snapshot feed is
+				 * missing -- attribution correctly skips
+				 * the call, surface the rate so the
 				 * snapshot-feed health is not silently
 				 * folded into the eligible cohort. */
 				__atomic_fetch_add(
@@ -1817,10 +1818,10 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 			}
 
 			/*
-			 * Field-scoped RedQueen fallback ([11-field-scoped]).
-			 * Runs only when the scalar exact + width passes added
-			 * NO pending for this record (count unchanged) AND the
-			 * dispatching syscall actually carries a field-eligible
+			 * Field-scoped RedQueen fallback over the field-scoped
+			 * pool.  Runs only when the scalar exact + width passes
+			 * added NO pending for this record (count unchanged) AND
+			 * the dispatching syscall actually carries a field-eligible
 			 * arg -- so the scalar fast-path stays untouched and
 			 * non-timespec syscalls pay nothing past one bool test.
 			 *
@@ -2029,7 +2030,7 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
  * constant unmolested).
  *
  * The transform does not consult the pool entry's recorded comparison
- * width: PHASE 2 deliberately keeps every existing pull byte-for-byte
+ * width: this split deliberately keeps every existing pull byte-for-byte
  * equivalent so the wrapper can land alongside the new API without
  * shifting any of the four generate-args.c consumers.  The width-aware
  * fourth transform family from the spec ships in a follow-up once a
@@ -2117,7 +2118,7 @@ static unsigned long cmp_hint_apply_transform(unsigned long c,
 }
 
 /*
- * SHADOW per-entry feedback scoring ([11-feedback-loop] PHASE 4).
+ * SHADOW per-entry feedback scoring for the score-based feedback loop.
  *
  * Push one stash entry on the per-child cmp_hints_consumed_stash for
  * the just-pulled hint.  The dispatch_step tail drains the ring via
