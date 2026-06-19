@@ -598,6 +598,64 @@ struct stats_s {
 	 * success across the fleet" semantics dump_stats wants. */
 	unsigned long childop_last_success_ts[NR_CHILD_OP_TYPES];
 
+	/* Per-childop "setup reached its accepted point" counter, indexed
+	 * by enum child_op_type.  Bumped once per alt-op invocation that
+	 * passed its one-shot setup / capability / namespace probe and
+	 * reached the point where the childop considers itself ready to
+	 * exercise the kernel under test.  Parallel to childop_invocations[]
+	 * (which counts the dispatch entry) so the operator can read the
+	 * setup-yield ratio per op:  setup_accepted / invocations.  A low
+	 * ratio means the op is being dispatched but bouncing on early
+	 * checks (missing config, denied capability, hostile netns) before
+	 * any kernel-facing work.
+	 *
+	 * Producers are wired per-childop in a follow-on step; until then
+	 * the array stays at 0 and the per-op dump simply omits the row
+	 * (skip-zero convention, matching childop_edges_discovered[] et al).
+	 * CHILD_OP_SYSCALL is skipped at the dump site for the same reason
+	 * as the surrounding per-childop arrays.  RELAXED add-fetch: a
+	 * cumulative diagnostic, not an event log. */
+	unsigned long childop_setup_accepted[NR_CHILD_OP_TYPES];
+
+	/* Per-childop "data-path entry reached" counter, indexed by enum
+	 * child_op_type.  Bumped once per alt-op invocation that crossed
+	 * from the childop's setup/probe phase into the data-path region
+	 * that actually issues kernel work (syscall / ioctl / write / etc.).
+	 * Pairs with childop_setup_accepted[] above to factor the yield:
+	 * setup_accepted - data_path is the count of invocations that
+	 * accepted setup but bailed before exercising the data path (e.g.
+	 * a fd-open succeeded but a later guard rejected the per-iter
+	 * argument shape).  Together with childop_calls_with_edges[] /
+	 * childop_edges_discovered[] this lets the operator separate
+	 * "setup-bound" ops from "data-path-bound" ops.
+	 *
+	 * Producers are wired per-childop in a follow-on step; until then
+	 * the array stays at 0.  CHILD_OP_SYSCALL is skipped at the dump
+	 * site for the same reason as the surrounding per-childop arrays.
+	 * RELAXED add-fetch: a cumulative diagnostic, not an event log. */
+	unsigned long childop_data_path[NR_CHILD_OP_TYPES];
+
+	/* Per-childop one-shot latch reason, indexed by enum child_op_type.
+	 * Set once (by the childop itself) at the moment the op disables
+	 * itself for the remainder of the run.  Value is a compact code
+	 * from enum childop_latch_reason (see include/child.h); rendered as
+	 * the integer in the per-op dump.  0 (CHILDOP_LATCH_NONE) means
+	 * "never latched off" and is the skip-zero default that matches
+	 * create_shm()'s memset.
+	 *
+	 * Storage is per-op (NOT per-child) so the parent's dump shows a
+	 * single global "this op gave up because X" reason for each
+	 * latched-off op rather than a per-child reason ring.  Multiple
+	 * siblings racing to latch the same op race on this slot; the
+	 * last RELAXED store wins, which is fine -- the reasons are by
+	 * construction permanent (an op that latched UNSUPPORTED in one
+	 * child will latch UNSUPPORTED in its siblings on the same kernel),
+	 * so any winner is correct.
+	 *
+	 * Producers are wired per-childop in a follow-on step; until then
+	 * the array stays at 0 and the per-op dump simply omits the row. */
+	unsigned long childop_latch_reason[NR_CHILD_OP_TYPES];
+
 	/* ---- Group C: per-childop ---- */
 
 	/* procfs_writer childop: per-tree write counts */

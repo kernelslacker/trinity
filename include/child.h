@@ -217,6 +217,28 @@ enum child_op_type {
 	NR_CHILD_OP_TYPES,
 };
 
+/* Per-childop one-shot latch reason codes published to
+ * shm->stats.childop_latch_reason[op] when a childop disables itself for
+ * the remainder of the run.  Compact enum (rendered as the integer code
+ * in stats; no string table is materialised at this layer -- decoding is
+ * the operator's job).  CHILDOP_LATCH_NONE = 0 matches the create_shm()
+ * memset so a never-latched op renders as absent in the per-op dump.
+ *
+ * Keep this list small and generic -- the reason a childop latches off
+ * usually reduces to one of "this kernel can't do it" (missing config /
+ * netns scope / cap), "the one-shot init step returned an error", or "a
+ * persistent resource exhaustion is happening".  Childop-specific detail
+ * stays in that childop's own counters; this enum is the cross-childop
+ * summary the per-arm-yield telemetry consumes. */
+enum childop_latch_reason {
+	CHILDOP_LATCH_NONE = 0,
+	CHILDOP_LATCH_UNSUPPORTED,		/* kernel feature absent / built out */
+	CHILDOP_LATCH_NS_UNSUPPORTED,		/* namespace or capability scope refused */
+	CHILDOP_LATCH_INIT_FAILED,		/* one-shot setup/init step returned error */
+	CHILDOP_LATCH_RESOURCE_EXHAUSTED,	/* persistent ENOMEM/EMFILE/EAGAIN at setup */
+	CHILDOP_LATCH_OTHER,
+};
+
 /* Per-handler attribution ring for the post_handler_corrupt_ptr counter.
  * Sized to comfortably hold the long tail of distinct handlers without
  * inflating the per-child footprint -- 32 entries cover the unique
