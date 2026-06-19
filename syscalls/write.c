@@ -6,6 +6,7 @@
 #include <sys/uio.h>
 #include "arch.h"	// page_size
 #include "fd.h"
+#include "files.h"
 #include "maps.h"
 #include "random.h"
 #include "rnd.h"
@@ -324,6 +325,11 @@ struct syscallentry syscall_writev = {
 static void sanitise_pwrite64(struct syscallrecord *rec)
 {
 	sanitise_write(rec);
+	if (rnd_modulo_u32(100) < 25) {
+		int fd = get_rand_writeable_pagecache_fd();
+		if (fd >= 0)
+			rec->a1 = fd;
+	}
 	rec->a4 = rand64() & 0x7fffffffffffffffULL;
 }
 
@@ -350,6 +356,11 @@ static void sanitise_pwritev(struct syscallrecord *rec)
 {
 	uint64_t v;
 
+	if (rnd_modulo_u32(100) < 25) {
+		int fd = get_rand_writeable_pagecache_fd();
+		if (fd >= 0)
+			rec->a1 = fd;
+	}
 	if (rec->a1 <= 2)
 		rec->a1 = get_random_fd();
 	reroll_protected_fd_arg(&rec->a1);
@@ -385,6 +396,11 @@ static void sanitise_pwritev2(struct syscallrecord *rec)
 {
 	uint64_t v;
 
+	if (rnd_modulo_u32(100) < 25) {
+		int fd = get_rand_writeable_pagecache_fd();
+		if (fd >= 0)
+			rec->a1 = fd;
+	}
 	if (rec->a1 <= 2)
 		rec->a1 = get_random_fd();
 	reroll_protected_fd_arg(&rec->a1);
