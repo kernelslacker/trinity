@@ -7,6 +7,7 @@
 #include <sys/uio.h>
 #include "arch.h"
 #include "fd.h"
+#include "files.h"
 #include "maps.h"
 #include "random.h"
 #include "rnd.h"
@@ -170,6 +171,12 @@ struct syscallentry syscall_readv = {
 
 static void sanitise_pread64(struct syscallrecord *rec)
 {
+	if (rnd_modulo_u32(100) < 25) {
+		int fd = get_rand_pagecache_fd();
+		if (fd >= 0)
+			rec->a1 = fd;
+	}
+
 	rec->a3 = rnd_modulo_u32(page_size);
 	rec->a4 = rand64() & 0x7fffffffffffffffULL;
 	avoid_shared_buffer_out(&rec->a2, rec->a3);
@@ -194,6 +201,12 @@ struct syscallentry syscall_pread64 = {
 
 static void sanitise_preadv(struct syscallrecord *rec)
 {
+	if (rnd_modulo_u32(100) < 25) {
+		int fd = get_rand_pagecache_fd();
+		if (fd >= 0)
+			rec->a1 = fd;
+	}
+
 	/* Generate a valid file position (non-negative loff_t). */
 	rec->a5 = 0;	/* pos_h: keep offset < 4GB */
 	rec->a4 = rand64() & 0x7fffffff;	/* pos_l: non-negative */
@@ -225,6 +238,12 @@ static unsigned long preadv2_flags[] = {
 
 static void sanitise_preadv2(struct syscallrecord *rec)
 {
+	if (rnd_modulo_u32(100) < 25) {
+		int fd = get_rand_pagecache_fd();
+		if (fd >= 0)
+			rec->a1 = fd;
+	}
+
 	if (RAND_BOOL()) {
 		/* pos == -1: use current file position */
 		rec->a4 = (unsigned long) -1;
