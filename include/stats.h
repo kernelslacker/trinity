@@ -3143,7 +3143,6 @@ struct stats_s {
 	 * rec->aN between syscall return and the .post handler running.
 	 * Distinct counter per syscall so the operator dump shows which
 	 * out-pointer slot is being stomped, not just an aggregate. */
-	unsigned long timer_create_inner_ptr_mismatch;		/* timer_create: snap->idp != rec->a3 in post */
 	unsigned long io_setup_inner_ptr_mismatch;		/* io_setup: snap->ctxp != rec->a2 in post */
 
 	/* Per-call-site attribution buckets for the post_handler_corrupt_ptr
