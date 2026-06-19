@@ -1397,15 +1397,17 @@ static const struct struct_field perf_event_attr_hw_cache_variant_fields[] = {
  * rejects non-{1,2,4,8} bp_len on most arches, so they probe the
  * validator gate.
  *
- * bp_addr's FT_ADDRESS is latent documentation today on two counts:
- * (1) sanitise_perf_event_open() discards the schema-filled buffer
- * and setup_breakpoints() plants its own get_address() value into
- * the csfu buffer; (2) struct_desc_has_address_field() walks only
- * desc->fields[] -- not per-variant fields[] -- so the nested-scrub
- * arg-mask doesn't register perf_event_open's a1 slot from this
- * annotation.  Lifting the walker into variants is out of scope
- * here; for perf the FT_ADDRESS annotation is forward-infra parity
- * with the hand-rolled path.
+ * bp_addr's FT_ADDRESS is latent documentation for perf today
+ * because sanitise_perf_event_open() discards the schema-filled
+ * buffer and setup_breakpoints() plants its own get_address() value
+ * into the csfu buffer.  The reachability walker
+ * (struct_desc_has_address_field()) and the runtime nested-address
+ * scrub (scrub_struct_addresses() in generate-args.c) are both now
+ * variant-aware, so the bp_addr annotation does flow through to the
+ * scrub mask -- the perf slot just doesn't currently route through
+ * the generic struct buffer the scrub guards.  Any future cataloged
+ * struct that places FT_ADDRESS only inside a variant inherits the
+ * scrub from this plumbing without extra annotation.
  *
  * `config` is not listed in the variant -- the shared pass leaves it
  * at FT_RAW, the kernel ignores it for BREAKPOINT, and there is no
@@ -8382,15 +8384,27 @@ bool struct_arg_any_has_address_field(const char *name, unsigned int arg_idx)
 #define STRUCT_ADDRESS_SCAN_MAX_DEPTH	4
 
 static bool struct_desc_has_address_field_depth(const struct struct_desc *desc,
-						unsigned int depth)
+						unsigned int depth);
+
+/*
+ * Per-array reachability scan: returns true iff @fields[0..n) contains
+ * an FT_ADDRESS or reaches one via an FT_PTR_STRUCT / FT_PTR_ARRAY
+ * target's own catalog descriptor.  Shared by the desc->fields[] walk
+ * and the per-variant walks so a variant-only FT_ADDRESS contributes
+ * to the reachability gate the nested-address scrub mask is built
+ * from.
+ */
+static bool fields_have_address_field(const struct struct_field *fields,
+				      unsigned int num_fields,
+				      unsigned int depth)
 {
 	unsigned int i;
 
-	if (desc == NULL || depth >= STRUCT_ADDRESS_SCAN_MAX_DEPTH)
+	if (fields == NULL)
 		return false;
 
-	for (i = 0; i < desc->num_fields; i++) {
-		const struct struct_field *f = &desc->fields[i];
+	for (i = 0; i < num_fields; i++) {
+		const struct struct_field *f = &fields[i];
 		const struct struct_desc *target;
 
 		switch (f->tag) {
@@ -8408,6 +8422,52 @@ static bool struct_desc_has_address_field_depth(const struct struct_desc *desc,
 			break;
 		default:
 			break;
+		}
+	}
+	return false;
+}
+
+/*
+ * Variant-aware: walks desc->fields[] and -- since the live discriminator
+ * is not known at mask-build time -- every variant's fields[],
+ * variant->base->fields, and variant->nested_variants[k]->fields too.
+ * A conservative OR across all variants is correct here because the
+ * mask gates whether the per-dispatch scrub runs at all; the runtime
+ * scrub then resolves the active variant and walks only those fields
+ * (see scrub_struct_addresses() in generate-args.c).  Without the
+ * variant walk a variant-only FT_ADDRESS (e.g. perf_event_attr's
+ * bp_addr on the BREAKPOINT arm) would silently disable the scrub for
+ * any syscall slot that reaches one only through a variant.
+ */
+static bool struct_desc_has_address_field_depth(const struct struct_desc *desc,
+						unsigned int depth)
+{
+	unsigned int v;
+
+	if (desc == NULL || depth >= STRUCT_ADDRESS_SCAN_MAX_DEPTH)
+		return false;
+
+	if (fields_have_address_field(desc->fields, desc->num_fields, depth))
+		return true;
+
+	for (v = 0; v < desc->num_variants; v++) {
+		const struct union_variant *var = &desc->variants[v];
+		unsigned int k;
+
+		if (fields_have_address_field(var->fields, var->num_fields,
+					      depth))
+			return true;
+		if (var->base != NULL &&
+		    fields_have_address_field(var->base->fields,
+					      var->base->num_fields, depth))
+			return true;
+		for (k = 0; k < var->num_nested_variants; k++) {
+			const struct union_variant *nv =
+				&var->nested_variants[k];
+
+			if (fields_have_address_field(nv->fields,
+						      nv->num_fields, depth))
+				return true;
 		}
 	}
 	return false;
