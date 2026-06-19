@@ -2818,6 +2818,40 @@ static bool check_main_loop_stops(const struct timespec *epoch_start)
 	if (shm_is_corrupt() == true)
 		return true;
 
+	/* Targeted-run depletion: in -c <syscall> / -r <num> / -g <group>
+	 * mode the active set is a fixed subset of the table.  Each entry
+	 * can be self-disabled by deactivate_enosys() (ENOSYS return) or
+	 * note_validation_failure() (VALIDATE_FAIL_THRESHOLD validation
+	 * fails).  When the set empties, the next child that runs
+	 * set_syscall_nr() stamps shm->exit_reason and exits clean (0),
+	 * but until that observation lands the parent keeps fork-replacing
+	 * any slot that races ahead.  Under the wrong scheduling, the
+	 * replacement children burn through init_child, hit
+	 * no_syscalls_enabled on their first pick, exit, and a sustained
+	 * stream of fast (<2s) reaps fills reap_ring[] enough that some
+	 * adjacent non-clean exit (a panic-reason _exit from a sibling that
+	 * tripped EXIT_REPARENT_PROBLEM / EXIT_KERNEL_TAINTED / similar)
+	 * tips reap_ring_fast_die_count to FAST_DIE_RING_SIZE and panics
+	 * EXIT_SHM_CORRUPTION.  That alarm is a false positive: the shm is
+	 * fine, the targeted set just exhausted itself.  The parent has
+	 * authoritative visibility into nr_active_syscalls before the next
+	 * round-trip through a child, so detect the depletion here and
+	 * stamp the genuine reason before the fast-die circuit fires.  The
+	 * gate on do_specific_syscall / random_selection / desired_group is
+	 * load-bearing: in default-fuzz mode an unexpected drop to zero
+	 * active syscalls IS evidence of corruption and must stay on the
+	 * fast-die / shm_is_corrupt path.  Only targeted mode treats
+	 * empty-set as expected-and-clean. */
+	if ((do_specific_syscall || random_selection ||
+	     desired_group != GROUP_NONE) &&
+	    no_syscalls_enabled() == true &&
+	    __atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) == STILL_RUNNING) {
+		output(0, "targeted syscall set self-disabled (every selected "
+			  "syscall hit ENOSYS or VALIDATE_FAIL_THRESHOLD); "
+			  "nothing left to fuzz, exiting cleanly\n");
+		panic(EXIT_NO_SYSCALLS_ENABLED);
+	}
+
 	while (check_all_locks() == true) {
 		reap_dead_kids();
 		if (__atomic_load_n(&shm->exit_reason, __ATOMIC_ACQUIRE) == EXIT_REACHED_COUNT)
