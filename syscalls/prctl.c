@@ -264,6 +264,42 @@ static void sanitise_prctl(struct syscallrecord *rec)
 		rec->a5 = 0;
 		break;
 
+	case PR_SET_SHADOW_STACK_STATUS:
+		/*
+		 * Pin shadow-stack status to 0 (all feature bits clear).
+		 * The argument is a bitmask of PR_SHADOW_STACK_ENABLE
+		 * (1<<0), PR_SHADOW_STACK_WRITE (1<<1) and
+		 * PR_SHADOW_STACK_PUSH (1<<2); the generic arg-fill draws
+		 * a2 from the boundary-value pool and from rnd_u64(), so
+		 * any combination of those bits -- crucially the ENABLE
+		 * bit -- is reachable.  Setting ENABLE installs a shadow
+		 * stack for the calling thread and turns on CET CALL/RET
+		 * enforcement: the very next RET checks SSP against the
+		 * shadow copy, and trinity's own call frames -- pushed
+		 * before the prctl returned -- have no matching shadow
+		 * entries, so the child takes a control-protection
+		 * exception (SIGSEGV with si_code=SEGV_CPERR on x86) on
+		 * the first RET out of the syscall wrapper.  The WRITE
+		 * and PUSH bits widen the attack surface further by
+		 * exposing WRSS / shadow-stack-PUSH to userspace, both of
+		 * which can scribble the shadow stack and produce the
+		 * same self-break on a later RET.  Setting one's own
+		 * shadow-stack status requires no capability, so the
+		 * child's unconditional cap-clear does not defang this --
+		 * same shape as the recent PR_SET_TSC and
+		 * PR_SET_SYSCALL_USER_DISPATCH pins.  Zero is a legal
+		 * argument (all features disabled, matching the task's
+		 * initial state when CET is not in use) and exercises the
+		 * kernel's input-validation path without flipping any
+		 * self-breaking bit.  Zero a3-a5; prctl ignores them for
+		 * this option but the ABI reserves them.
+		 */
+		rec->a2 = 0;
+		rec->a3 = 0;
+		rec->a4 = 0;
+		rec->a5 = 0;
+		break;
+
 	case PR_SET_NAME:
 		/*
 		 * Kernel reads up to 16 bytes from userspace and truncates.
