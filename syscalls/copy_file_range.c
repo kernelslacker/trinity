@@ -44,7 +44,7 @@ static void sanitise_copy_file_range(struct syscallrecord *rec)
 			rec->a1 = fd;
 	}
 	if (rnd_modulo_u32(100) < 25) {
-		int fd = get_rand_pagecache_fd();
+		int fd = get_rand_writeable_pagecache_fd();
 
 		if (fd >= 0)
 			rec->a3 = fd;
