@@ -189,7 +189,7 @@ static const struct {
 };
 
 static const unsigned long rlimit_fragile_resources[] = {
-	RLIMIT_NOFILE, RLIMIT_AS, RLIMIT_DATA,
+	RLIMIT_CPU, RLIMIT_NOFILE, RLIMIT_AS, RLIMIT_DATA,
 	RLIMIT_STACK, RLIMIT_RSS, RLIMIT_MEMLOCK,
 };
 
@@ -210,7 +210,7 @@ unsigned long pick_nonfragile_rlimit_resource(const unsigned long *table,
 	unsigned int i;
 
 	if (count == 0)
-		return RLIMIT_CPU;
+		return RLIMIT_CORE;
 
 	start = rnd_modulo_u32(count);
 	for (i = 0; i < count; i++) {
@@ -219,7 +219,7 @@ unsigned long pick_nonfragile_rlimit_resource(const unsigned long *table,
 		if (!resource_is_fragile(r))
 			return r;
 	}
-	return RLIMIT_CPU;
+	return RLIMIT_CORE;
 }
 
 int rlimit_pick_safe_pair(unsigned int resource,

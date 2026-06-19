@@ -51,6 +51,8 @@ static inline unsigned int random_rlimit_resource(const unsigned long *table,
  * RLIMIT_AS / RLIMIT_DATA / RLIMIT_STACK / RLIMIT_RSS / RLIMIT_MEMLOCK
  * cap address-space or pinned pages so deferred_free's mprotect-RW
  * step ENOMEMs and the alloc-tracker quietly leaks every freed slot.
+ * RLIMIT_CPU {0,0} arms update_rlimit_cpu() with a zero hard cap so
+ * the next posix-cpu-timer tick SIGKILLs the harness child outright.
  * The safe-dictionary entries for these resources include {0,0} and
  * single-page sizes -- legal to the kernel (cur<=max, per-resource
  * bounds satisfied), lethal to us.  prlimit64 and setrlimit both draw
@@ -65,8 +67,8 @@ bool resource_is_fragile(unsigned long resource);
  * random start so the chosen non-fragile resource is still uniform,
  * and is guaranteed to terminate as long as the table contains at
  * least one non-fragile entry (callers register tables that always
- * include CPU/FSIZE/CORE/NPROC/LOCKS/SIGPENDING/MSGQUEUE/NICE/
- * RTPRIO/RTTIME alongside the fragile set).
+ * include FSIZE/CORE/NPROC/LOCKS/SIGPENDING/MSGQUEUE/NICE/RTPRIO/
+ * RTTIME alongside the fragile set).
  */
 unsigned long pick_nonfragile_rlimit_resource(const unsigned long *table,
 					      unsigned int count);

@@ -42,18 +42,19 @@ static void sanitise_setrlimit(struct syscallrecord *rec)
 	/*
 	 * Self-poison guard.  setrlimit has no pid argument: the call
 	 * always lands on the calling task, which in trinity is always
-	 * a harness-owned process.  Lowering one of NOFILE / AS / DATA
-	 * / STACK / RSS / MEMLOCK with the {0,0} or single-page entries
-	 * the safe dictionary draws (see prlimit64.c rationale) is
-	 * kernel-legal but harness-lethal: deferred_free's mprotect-RW
-	 * ENOMEMs and heap_bounds_init's /proc/self/maps open hits
-	 * EMFILE, leaving the child to limp on with broken bookkeeping.
-	 * Re-roll the resource to a non-fragile one before the bucket
-	 * decides cur/max, keeping the full value range against CPU /
-	 * FSIZE / CORE / NPROC / LOCKS / SIGPENDING / MSGQUEUE / NICE /
-	 * RTPRIO / RTTIME.  prlimit64 preserves full-range fragile-
-	 * resource coverage via its "random nearby pid" bucket; setrlimit
-	 * has no equivalent escape hatch because the target is always us.
+	 * a harness-owned process.  Lowering one of CPU / NOFILE / AS /
+	 * DATA / STACK / RSS / MEMLOCK with the {0,0} or single-page
+	 * entries the safe dictionary draws (see prlimit64.c rationale)
+	 * is kernel-legal but harness-lethal: deferred_free's mprotect-RW
+	 * ENOMEMs, heap_bounds_init's /proc/self/maps open hits EMFILE,
+	 * and a CPU {0,0} hard cap arms update_rlimit_cpu() for an
+	 * immediate posix-cpu-timer SIGKILL.  Re-roll the resource to a
+	 * non-fragile one before the bucket decides cur/max, keeping the
+	 * full value range against FSIZE / CORE / NPROC / LOCKS /
+	 * SIGPENDING / MSGQUEUE / NICE / RTPRIO / RTTIME.  prlimit64
+	 * preserves full-range fragile-resource coverage (incl. CPU) via
+	 * its "random nearby pid" bucket; setrlimit has no equivalent
+	 * escape hatch because the target is always us.
 	 */
 	if (resource_is_fragile(rec->a1))
 		rec->a1 = pick_nonfragile_rlimit_resource(
