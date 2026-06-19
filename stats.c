@@ -2570,6 +2570,7 @@ static const struct stat_field tc_qdisc_churn_fields[] = {
 	STAT_FIELD(tc_qdisc, peek_stack_burst_ok),
 	STAT_FIELD(tc_qdisc_churn, bridge_parent_runs),
 	STAT_FIELD(tc_qdisc_churn, bridge_dellink_race_ok),
+	STAT_FIELD(tc_qdisc_churn, gso_burst_ok),
 };
 
 static const struct stat_category tc_qdisc_churn_category =
