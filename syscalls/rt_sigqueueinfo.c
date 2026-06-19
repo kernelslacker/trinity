@@ -27,9 +27,15 @@
 #define SI_TKILL	-6
 #endif
 
+/*
+ * Drop the synchronous-fault signals (SIGILL/SIGTRAP/SIGABRT/SIGBUS/
+ * SIGSEGV) and the lifecycle-fatal trio (SIGKILL/SIGSTOP/SIGTERM) from
+ * the default path -- they hammer trinity's own handlers and child
+ * teardown.  sig==0 is the kernel's existence-probe and is covered by
+ * the dedicated path below.
+ */
 static unsigned long safe_signals[] = {
-	SIGHUP, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
-	SIGBUS, SIGFPE, SIGUSR1, SIGSEGV, SIGUSR2, SIGPIPE,
+	SIGHUP, SIGQUIT, SIGFPE, SIGUSR1, SIGUSR2, SIGPIPE,
 	SIGALRM, SIGCHLD, SIGCONT, SIGURG, SIGXCPU, SIGXFSZ,
 	SIGVTALRM, SIGPROF, SIGWINCH, SIGIO, SIGSYS,
 };
@@ -112,18 +118,22 @@ static pid_t pick_target_pid(void)
 static void sanitise_rt_sigqueueinfo(struct syscallrecord *rec)
 {
 	siginfo_t *info;
+	unsigned int draw;
 
 	rec->a1 = pick_target_pid();
 
-	/* Avoid SIGKILL, SIGSTOP, SIGTERM on the default path; use safe
-	 * signals or realtime range.  Realtime signals (SIGRTMIN..SIGRTMAX)
-	 * are the ones that actually carry siginfo all the way through to
-	 * the receiver; regular signals work but the kernel drops most
-	 * fields. */
-	if (RAND_BOOL())
+	/*
+	 * Bias toward sig==0 (existence-probe, no delivery), the ignorable
+	 * safe set, and the realtime range -- realtime signals are the ones
+	 * that carry siginfo all the way through to the receiver.
+	 */
+	draw = rnd_modulo_u32(10);
+	if (draw < 2)
+		rec->a2 = 0;
+	else if (draw < 6)
 		rec->a2 = RAND_ARRAY(safe_signals);
 	else
-		rec->a2 = SIGRTMIN + (rnd_modulo_u32((SIGRTMAX - SIGRTMIN + 1)));
+		rec->a2 = SIGRTMIN + rnd_modulo_u32(SIGRTMAX - SIGRTMIN + 1);
 
 	info = (siginfo_t *) get_writable_address(sizeof(*info));
 	if (info == NULL)
