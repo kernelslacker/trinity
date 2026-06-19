@@ -168,13 +168,20 @@ static bool reap_entry_is_fast_die(const struct reap_record *r)
 	 *     / VALIDATE_FAIL_THRESHOLD (depletion).
 	 *   - EXIT_REACHED_COUNT:       requested op count reached.
 	 *   - EXIT_EPOCH_DONE:          epoch budget consumed.
-	 *   - EXIT_USER_REQUEST:        operator-driven shutdown (^C, etc.).
+	 *   - EXIT_SIGINT:              ^C from terminal -- parent panics
+	 *     EXIT_SIGINT in sigint_handler; child main loop panics
+	 *     EXIT_SIGINT on ctrlc_pending.  Spin-bailout then propagates
+	 *     EXIT_SIGINT to any racing child.
+	 *   - EXIT_USER_REQUEST:        operator-driven shutdown path; no
+	 *     current caller, retained so future operator exits routed
+	 *     through shm->exit_reason are exempted the same way.
 	 * Excluded in targeted mode only -- default fuzz mode keeps a zero
 	 * active set on the corruption path.
 	 */
 	if ((r->exit_status == EXIT_NO_SYSCALLS_ENABLED ||
 	     r->exit_status == EXIT_REACHED_COUNT ||
 	     r->exit_status == EXIT_EPOCH_DONE ||
+	     r->exit_status == EXIT_SIGINT ||
 	     r->exit_status == EXIT_USER_REQUEST) &&
 	    (do_specific_syscall || random_selection ||
 	     desired_group != GROUP_NONE))
