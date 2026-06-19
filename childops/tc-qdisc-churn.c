@@ -112,6 +112,9 @@
 #if __has_include(<linux/veth.h>)
 #include <linux/veth.h>
 #endif
+#if __has_include(<linux/udp.h>)
+#include <linux/udp.h>
+#endif
 
 #include <errno.h>
 #include <fcntl.h>
@@ -182,6 +185,18 @@
 /* veth peer attribute (linux/veth.h, stable). */
 #ifndef VETH_INFO_PEER
 #define VETH_INFO_PEER		1
+#endif
+
+/* UDP GSO setsockopt (linux/udp.h ~4.18+; uapi number stable).  Used
+ * by send_udp_gso_burst to force the kernel to build a single
+ * super-skb with skb_is_gso(skb)==true, so qdisc enqueue takes the
+ * GSO-accounting branch through qdisc_pkt_len_segs_init -- the path
+ * the bridge-slave-dellink race targets. */
+#ifndef SOL_UDP
+#define SOL_UDP			17
+#endif
+#ifndef UDP_SEGMENT
+#define UDP_SEGMENT		103
 #endif
 
 /* Reasonable ceiling on a single rtnl message + payload.  The
@@ -1254,6 +1269,43 @@ static void tc_qdisc_add_filter_class(struct tc_qdisc_iter_ctx *it)
 }
 
 /*
+ * UDP GSO burst.  Enables UDP_SEGMENT with a small gso_size and
+ * sends a payload > gso_size so the kernel builds a single super-skb
+ * with skb_is_gso(skb)==true; qdisc enqueue takes the GSO branch and
+ * calls qdisc_pkt_len_segs_init() to back-out per-segment lengths
+ * into the parent qdisc's backlog accounting.  That accounting path
+ * is the bridge-slave-dellink / qdisc-replace UAF window targeted
+ * here; plain 64-byte UDP packets never reach it because they are
+ * non-GSO.  Self-bounded by `iters` (caller picks a small constant)
+ * and ignores all errors -- UDP_SEGMENT EOPNOTSUPP, sendto EMSGSIZE,
+ * the dummy dropping segments after dequeue: the enqueue path that
+ * runs the accounting code is what matters.
+ */
+static void send_udp_gso_burst(int udp, const struct sockaddr_in *dst,
+			       unsigned int iters)
+{
+	int gso_size = 128;
+	unsigned char payload[1024];
+	unsigned int i;
+
+	if (udp < 0)
+		return;
+	(void)setsockopt(udp, SOL_UDP, UDP_SEGMENT,
+			 &gso_size, sizeof(gso_size));
+
+	for (i = 0; i < iters; i++) {
+		ssize_t n;
+
+		generate_rand_bytes(payload, sizeof(payload));
+		n = sendto(udp, payload, sizeof(payload), MSG_DONTWAIT,
+			   (const struct sockaddr *)dst, sizeof(*dst));
+		if (n > 0)
+			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_gso_burst_ok,
+					   1, __ATOMIC_RELAXED);
+	}
+}
+
+/*
  * Drive the freshly-installed qdisc/class/filter tree with a UDP
  * burst, then race the in-flight traffic against teardown.
  *
@@ -1326,6 +1378,15 @@ static void tc_qdisc_churn_loop(struct tc_qdisc_iter_ctx *it)
 				__atomic_add_fetch(&shm->stats.tc_qdisc_churn_packet_sent_ok,
 						   1, __ATOMIC_RELAXED);
 		}
+
+		/*
+		 * Push a few GSO super-skbs so the imminent REPLACE
+		 * (both modes) and DELLINK (bridge mode) race the
+		 * qdisc_pkt_len_segs_init accounting on still-segmenting
+		 * skbs.  4 sends * 8 segments each gives the kernel work
+		 * to drain across the teardown window.
+		 */
+		send_udp_gso_burst(it->udp, &dst, 4);
 	}
 
 	qidx2 = pick_qdisc_idx_other(it->qidx);
@@ -1379,6 +1440,15 @@ static void tc_qdisc_churn_loop(struct tc_qdisc_iter_ctx *it)
 				     MSG_DONTWAIT,
 				     (struct sockaddr *)&dst, sizeof(dst));
 		}
+		/*
+		 * Final GSO sub-burst: slave is gone but the netdev
+		 * unregister is workqueue-deferred, so the qdisc tree
+		 * may still accept enqueue.  GSO super-skbs land in
+		 * qdisc_pkt_len_segs_init on a parent whose lifetime
+		 * is dropping out from underneath -- the exact UAF
+		 * shape this childop chases.
+		 */
+		send_udp_gso_burst(it->udp, &dst, 4);
 	}
 }
 

@@ -1223,6 +1223,7 @@ struct stats_s {
 	unsigned long tc_qdisc_peek_stack_burst_ok;	/* loopback UDP sendto on stacked tree returned >0 */
 	unsigned long tc_qdisc_churn_bridge_parent_runs;	/* iter used a bridge slave veth as qdisc parent */
 	unsigned long tc_qdisc_churn_bridge_dellink_race_ok;	/* RTM_DELLINK on bridge slave port accepted (raced flush burst) */
+	unsigned long tc_qdisc_churn_gso_burst_ok;	/* UDP_SEGMENT sendto produced a GSO skb (reaches qdisc_pkt_len_segs_init) */
 
 	/* tc_mirred_blockcast childop counters */
 	unsigned long tc_mirred_blockcast_runs;		/* total tc_mirred_blockcast invocations */
