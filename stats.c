@@ -6948,6 +6948,106 @@ static void dump_stats_childop_ranked_tables(void)
 					 metric, ranked[ri].count);
 			}
 		}
+
+		/* Per-childop setup-accepted yield: counts invocations that
+		 * cleared the childop's one-shot setup / capability /
+		 * namespace probe and reached the ready-to-exercise point.
+		 * Read alongside childop_invocations[] to compute the
+		 * setup-yield ratio per op.  Stays at 0 until per-childop
+		 * producers are wired; until then the per-op dump simply
+		 * omits the row (skip-zero, matching the sibling tables).
+		 * CHILD_OP_SYSCALL is skipped for the same reason as above. */
+		{
+			struct { unsigned int op; unsigned long count; }
+				ranked[NR_CHILD_OP_TYPES];
+			unsigned int nranked = 0, ri, rj;
+
+			for (op = CHILD_OP_SYSCALL + 1;
+			     op < NR_CHILD_OP_TYPES; op++) {
+				unsigned long v =
+					shm->stats.childop_setup_accepted[op];
+				if (v == 0)
+					continue;
+				ranked[nranked].op = op;
+				ranked[nranked].count = v;
+				nranked++;
+			}
+			for (ri = 1; ri < nranked; ri++) {
+				for (rj = ri; rj > 0 &&
+				     ranked[rj].count > ranked[rj - 1].count;
+				     rj--) {
+					unsigned int to = ranked[rj].op;
+					unsigned long tc = ranked[rj].count;
+					ranked[rj] = ranked[rj - 1];
+					ranked[rj - 1].op = to;
+					ranked[rj - 1].count = tc;
+				}
+			}
+			for (ri = 0; ri < nranked; ri++) {
+				snprintf(metric, sizeof(metric),
+					 "op_type_%u", ranked[ri].op);
+				stat_row("childop_setup_accepted",
+					 metric, ranked[ri].count);
+			}
+		}
+
+		/* Per-childop data-path entry count: counts invocations that
+		 * crossed from setup into the kernel-facing data path.
+		 * setup_accepted - data_path is the count of invocations
+		 * that accepted setup but bailed before exercising the
+		 * kernel.  Stays at 0 until per-childop producers are wired.
+		 * CHILD_OP_SYSCALL is skipped for the same reason as above. */
+		{
+			struct { unsigned int op; unsigned long count; }
+				ranked[NR_CHILD_OP_TYPES];
+			unsigned int nranked = 0, ri, rj;
+
+			for (op = CHILD_OP_SYSCALL + 1;
+			     op < NR_CHILD_OP_TYPES; op++) {
+				unsigned long v =
+					shm->stats.childop_data_path[op];
+				if (v == 0)
+					continue;
+				ranked[nranked].op = op;
+				ranked[nranked].count = v;
+				nranked++;
+			}
+			for (ri = 1; ri < nranked; ri++) {
+				for (rj = ri; rj > 0 &&
+				     ranked[rj].count > ranked[rj - 1].count;
+				     rj--) {
+					unsigned int to = ranked[rj].op;
+					unsigned long tc = ranked[rj].count;
+					ranked[rj] = ranked[rj - 1];
+					ranked[rj - 1].op = to;
+					ranked[rj - 1].count = tc;
+				}
+			}
+			for (ri = 0; ri < nranked; ri++) {
+				snprintf(metric, sizeof(metric),
+					 "op_type_%u", ranked[ri].op);
+				stat_row("childop_data_path",
+					 metric, ranked[ri].count);
+			}
+		}
+
+		/* Per-childop one-shot latch reason: rendered as the integer
+		 * enum childop_latch_reason code (see include/child.h).  No
+		 * string table is materialised at the dump layer -- the
+		 * operator decodes.  0 (CHILDOP_LATCH_NONE) is skipped so
+		 * the per-op dump only emits rows for ops that actually
+		 * latched themselves off.  CHILD_OP_SYSCALL is skipped for
+		 * the same reason as above. */
+		for (op = CHILD_OP_SYSCALL + 1;
+		     op < NR_CHILD_OP_TYPES; op++) {
+			unsigned long v =
+				shm->stats.childop_latch_reason[op];
+			if (v == 0)
+				continue;
+			snprintf(metric, sizeof(metric),
+				 "op_type_%u", op);
+			stat_row("childop_latch_reason", metric, v);
+		}
 	}
 }
 
