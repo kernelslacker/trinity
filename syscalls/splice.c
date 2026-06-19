@@ -4,6 +4,7 @@
 	size_t, len, unsigned int, flags)
  */
 #include <fcntl.h>
+#include <stdbool.h>
 #include "files.h"
 #include "random.h"
 #include "rnd.h"
@@ -68,20 +69,22 @@ static unsigned long sanitise_splice_flags(void)
 	}
 }
 
-static void sanitise_splice(struct syscallrecord *rec)
+static void install_offset(unsigned long *slot)
 {
-	loff_t *off_in = (loff_t *) get_writable_address(sizeof(loff_t));
-	loff_t *off_out = (loff_t *) get_writable_address(sizeof(loff_t));
+	loff_t *off = (loff_t *) get_writable_address(sizeof(loff_t));
 
-	if (off_in == NULL || off_out == NULL)
+	if (off == NULL)
 		return;
 
-	*off_in = RAND_RANGE(0ULL, 1ULL << 30);
-	*off_out = RAND_RANGE(0ULL, 1ULL << 30);
-	rec->a2 = (unsigned long) off_in;
-	rec->a4 = (unsigned long) off_out;
-	avoid_shared_buffer_inout(&rec->a2, sizeof(loff_t));
-	avoid_shared_buffer_inout(&rec->a4, sizeof(loff_t));
+	*off = RAND_RANGE(0ULL, 1ULL << 30);
+	*slot = (unsigned long) off;
+	avoid_shared_buffer_inout(slot, sizeof(loff_t));
+}
+
+static void sanitise_splice(struct syscallrecord *rec)
+{
+	bool in_is_pipe = true;
+	bool out_is_pipe = true;
 
 	/*
 	 * ~25% of the time, replace fd_in with a page-cache-backed fd so
@@ -94,30 +97,61 @@ static void sanitise_splice(struct syscallrecord *rec)
 	if ((rnd_modulo_u32(100)) < 25) {
 		int fd = get_rand_pagecache_fd();
 
-		if (fd >= 0)
+		if (fd >= 0) {
 			rec->a1 = fd;
+			in_is_pipe = false;
+		}
 	}
 
 	/* ~20%: regular-file fd_out routes through iter_file_splice_write. */
 	if ((rnd_modulo_u32(100)) < 20) {
 		int fd = get_rand_pagecache_fd();
 
-		if (fd >= 0)
+		if (fd >= 0) {
 			rec->a3 = fd;
+			out_is_pipe = false;
+		}
 	}
 
 	/* ~5%: same-fd terminal override -- kernel rejects overlap EINVAL. */
-	if ((rnd_modulo_u32(100)) < 5)
+	if ((rnd_modulo_u32(100)) < 5) {
 		rec->a3 = rec->a1;
+		out_is_pipe = in_is_pipe;
+	}
 
 	/*
 	 * Final gate: re-roll fd_out off the protected/reserved fd set so
 	 * we never splice into a worker's stderr-memfd or another reserved
 	 * fd.  Mirrors the protection on the direct fd-size-changing
 	 * syscalls and must come AFTER the same-fd override above so the
-	 * final a3 value is the one inspected.
+	 * final a3 value is the one inspected.  If reroll swaps the slot,
+	 * we no longer know the replacement's type; assume pipe so we
+	 * don't hand it a non-NULL offset and earn ESPIPE.
 	 */
-	reroll_protected_fd_arg(&rec->a3);
+	{
+		unsigned long pre = rec->a3;
+
+		reroll_protected_fd_arg(&rec->a3);
+		if (rec->a3 != pre)
+			out_is_pipe = true;
+	}
+
+	/*
+	 * Offset selection.  The kernel rejects splice with a non-NULL
+	 * offset against a pipe endpoint with -ESPIPE, so always installing
+	 * both offsets (the historical sanitiser) burned the vast majority
+	 * of runs on the default pipe->pipe path.  Hand a non-NULL offset
+	 * only when the endpoint is a regular (seekable) file; keep a small
+	 * pipe+offset bucket so the ESPIPE validator path is still hit.
+	 */
+	rec->a2 = 0;
+	rec->a4 = 0;
+
+	if (!in_is_pipe || rnd_modulo_u32(100) < 5)
+		install_offset(&rec->a2);
+
+	if (!out_is_pipe || rnd_modulo_u32(100) < 5)
+		install_offset(&rec->a4);
 
 	rec->a6 = sanitise_splice_flags();
 }
