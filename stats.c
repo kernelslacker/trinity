@@ -7353,11 +7353,6 @@ static void __cold dump_stats_childop_runs_network(void)
 			 shm->stats.pipe_waker_write_failed);
 	}
 
-	if (shm->stats.timer_create_inner_ptr_mismatch) {
-		stat_row("timer_create", "inner_ptr_mismatch",
-			 shm->stats.timer_create_inner_ptr_mismatch);
-	}
-
 	if (shm->stats.io_setup_inner_ptr_mismatch) {
 		stat_row("io_setup", "inner_ptr_mismatch",
 			 shm->stats.io_setup_inner_ptr_mismatch);

@@ -89,28 +89,29 @@ static int pick_signo_avoiding_sigint(void)
  * Snapshot for the post handler.  Mirrors the pipe/socketpair shape:
  *
  *   1. The snap struct carries a magic cookie that the post handler
- *      checks before dereferencing snap->idp.  A sibling scribble of
- *      rec->post_state with a heap-shaped pointer to a foreign chunk
- *      survives looks_like_corrupted_ptr() but fails the cookie gate.
+ *      checks before dereferencing *get_arg_snapshot(rec, 3).  A
+ *      sibling scribble of rec->post_state with a heap-shaped pointer
+ *      to a foreign chunk survives looks_like_corrupted_ptr() but
+ *      fails the cookie gate.
  *
  *   2. The snap pointer is registered in the post-state ownership
  *      table at sanitise time and checked in the post handler via
  *      post_state_is_owned().  A cookie-collision foreign chunk would
  *      otherwise sail past the magic check.
  *
- *   3. snap->idp records the out-pointer value as written into rec->a3
- *      at sanitise time.  The post handler compares snap->idp against
- *      the live rec->a3 and bails on mismatch -- a sibling scribble of
- *      rec->a3 between sanitise and post means the kernel either wrote
- *      to a different buffer (so *snap->idp is stale) or rec->a3 was
- *      clobbered after the syscall returned (so *snap->idp may have
- *      been written-to-then-unmapped underneath us).  Either way the
- *      timer_t we'd read is untrustworthy.
+ * The OUT-pointer (a3 / created_timer_id) defence is now generic:
+ * .arg_snapshot_mask opts a3 into the dispatch-time arg_shadow capture
+ * (snapshotted inside __do_syscall() after the final
+ * blanket_address_scrub, from the locals about to enter the kernel), and
+ * the post handler reads it via get_arg_snapshot(rec, 3).  A sibling
+ * scribble of rec->a3 between dispatch and post bumps the generic
+ * arg_shadow_stomp tripwire from inside the accessor; the returned
+ * value is the kernel-visible address, so the *idp deref still hits the
+ * buffer the kernel actually wrote.
  */
 #define TIMER_CREATE_POST_STATE_MAGIC	0x54494D52435F4D47UL	/* "TIMRC_MG" */
 struct timer_create_post_state {
 	unsigned long magic;
-	timer_t *idp;
 };
 
 static void timer_create_sanitise(struct syscallrecord *rec)
@@ -147,10 +148,11 @@ static void timer_create_sanitise(struct syscallrecord *rec)
 	 */
 	avoid_shared_buffer_out(&rec->a3, sizeof(timer_t));
 
-	/* magic-cookie / private post_state: see post_state_register(). */
+	/* magic-cookie / private post_state: see post_state_register().
+	 * The OUT-pointer is defended via .arg_snapshot_mask + the
+	 * dispatch-time arg_shadow capture, not a snap field. */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = TIMER_CREATE_POST_STATE_MAGIC;
-	snap->idp = (timer_t *) rec->a3;
 	rec->post_state = (unsigned long) snap;
 	post_state_register(snap);
 }
@@ -172,11 +174,12 @@ static unsigned long clock_ids[] = {
  * timer_delete() at child teardown so produced timers don't outlive
  * the producing child.  Runs ahead of post_timer_create(), which
  * clears rec->post_state during cleanup.  Does its own shape + magic
- * + ownership + inner-pointer-identity validation before deref so a
- * sibling-stomped post_state doesn't drive register_timerid() with
- * foreign bytes -- corruption attribution stays in post_timer_create()
- * below, which repeats the same checks and owns the inner-ptr-mismatch
- * counter bump.
+ * + ownership validation and reads the OUT-pointer via the generic
+ * arg_shadow accessor before deref so a sibling-stomped post_state or
+ * rec->a3 doesn't drive register_timerid() with foreign bytes --
+ * corruption attribution for the snap-struct gates stays in
+ * post_timer_create() below; out-of-pointer corruption is bumped
+ * generically by arg_shadow_stomp from inside get_arg_snapshot().
  */
 static void post_timer_create_record_tid(struct syscallrecord *rec)
 {
@@ -205,24 +208,23 @@ static void post_timer_create_record_tid(struct syscallrecord *rec)
 		return;
 
 	/*
-	 * Inner-pointer-identity check: snap->idp is the out-pointer we
-	 * captured at sanitise; rec->a3 is the live slot.  A mismatch
-	 * means a sibling scribble retargeted the kernel's write or
-	 * clobbered rec->a3 after return -- *snap->idp would read stale
-	 * or unmapped bytes either way.
+	 * The OUT-pointer (a3 / created_timer_id) is read via the generic
+	 * arg_shadow accessor: it returns the kernel-visible address
+	 * snapshotted in __do_syscall() after the final
+	 * blanket_address_scrub.  A sibling stomp of rec->a3 between
+	 * dispatch and here bumps arg_shadow_stomp from inside the
+	 * accessor and the post handler still sees the address the kernel
+	 * actually wrote.
 	 */
-	if ((timer_t *) rec->a3 != snap->idp)
-		return;
-
-	idp = snap->idp;
+	idp = (timer_t *) get_arg_snapshot(rec, 3);
 	if (idp == NULL || looks_like_corrupted_ptr(rec, idp))
 		return;
 
 	/*
-	 * The snapshot protects the OUT-pointer (idp) from rec->aN
-	 * scribbles, but the kernel-written timer_t value at *idp lives in
-	 * the user-supplied buffer and is fair game for a sibling syscall
-	 * to clobber between the syscall returning and this handler running.
+	 * arg_shadow protects the OUT-pointer (idp) from rec->aN scribbles,
+	 * but the kernel-written timer_t value at *idp lives in the
+	 * user-supplied buffer and is fair game for a sibling syscall to
+	 * clobber between the syscall returning and this handler running.
 	 * glibc's timer_delete() (called from the pool destructor) indexes
 	 * a per-process timer table by tid, so a garbage tid faults inside
 	 * the table lookup before any defensive return path can run.  A
@@ -253,11 +255,11 @@ static void post_timer_create_record_tid(struct syscallrecord *rec)
 
 /*
  * Cleanup-only sibling of post_timer_create_record_tid().  Owns the
- * scratch-slot teardown, the out-of-range corruption-bump, and the
- * inner-ptr-mismatch counter so the registrar above can stay focused
- * on adding tids to the pool.  This replaces a previous delete-
- * immediately post handler that prevented any pool-based tracking
- * from being useful.
+ * scratch-slot teardown and the out-of-range corruption-bump so the
+ * registrar above can stay focused on adding tids to the pool.  Reads
+ * the OUT-pointer via the generic arg_shadow accessor; a sibling
+ * scribble of rec->a3 between dispatch and here bumps arg_shadow_stomp
+ * from inside the accessor.
  */
 static void post_timer_create(struct syscallrecord *rec)
 {
@@ -302,24 +304,14 @@ static void post_timer_create(struct syscallrecord *rec)
 		goto out_free;
 
 	/*
-	 * Inner-pointer-identity check: snap->idp is the out-pointer we
-	 * captured at sanitise; rec->a3 is the live slot.  A mismatch
-	 * means a sibling scribble retargeted the kernel's write or
-	 * clobbered rec->a3 after return.  Bump the dedicated mismatch
-	 * counter and skip the *idp deref entirely -- the timer_t there
-	 * is untrustworthy.
+	 * Read the OUT-pointer via the generic arg_shadow accessor: it
+	 * returns the kernel-visible address captured in __do_syscall() and
+	 * bumps arg_shadow_stomp from inside the accessor on any
+	 * post-dispatch sibling scribble of rec->a3, so a separate
+	 * per-syscall mismatch counter would only ever fire on the same
+	 * stomp class the generic tripwire already covers.
 	 */
-	if ((timer_t *) rec->a3 != snap->idp) {
-		outputerr("post_timer_create: inner-ptr mismatch snap->idp=%p rec->a3=%p "
-			  "(sibling-scribbled out-pointer)\n",
-			  (void *) snap->idp, (void *) rec->a3);
-		__atomic_add_fetch(&shm->stats.timer_create_inner_ptr_mismatch,
-				   1, __ATOMIC_RELAXED);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		goto out_free;
-	}
-
-	idp = snap->idp;
+	idp = (timer_t *) get_arg_snapshot(rec, 3);
 	if (idp == NULL || looks_like_corrupted_ptr(rec, idp))
 		goto out_free;
 
@@ -346,4 +338,10 @@ struct syscallentry syscall_timer_create = {
 	.post = post_timer_create,
 	.ret_objtype_via_post = post_timer_create_record_tid,
 	.rettype = RET_ZERO_SUCCESS,
+	/* a3 (created_timer_id) is the kernel's OUT-pointer; both post
+	 * handlers deref through it.  Shadow it so a sibling stomp
+	 * between dispatch and post bumps arg_shadow_stomp from inside
+	 * get_arg_snapshot() and the handlers still see the address the
+	 * kernel actually wrote, not the stomped value. */
+	.arg_snapshot_mask = (1u << 2),
 };
