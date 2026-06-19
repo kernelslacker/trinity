@@ -69,6 +69,7 @@
  */
 
 #include <errno.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <sched.h>
 #include <stdbool.h>
@@ -76,6 +77,7 @@
 #include <stdlib.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -85,8 +87,48 @@
 #include "rnd.h"
 #include "scratch_block.h"
 #include "shm.h"
+#include "syscall-gate.h"
 #include "trinity.h"
 #include "utils.h"	/* ARRAY_SIZE */
+
+/* New-mount-API constants.  Defined locally so the build does not
+ * require a current <linux/mount.h>; the syscalls themselves are
+ * available on every kernel trinity targets (fsopen landed in 5.2). */
+#ifndef FSOPEN_CLOEXEC
+#define FSOPEN_CLOEXEC		0x00000001
+#endif
+#ifndef FSMOUNT_CLOEXEC
+#define FSMOUNT_CLOEXEC		0x00000001
+#endif
+#ifndef FSCONFIG_SET_FLAG
+#define FSCONFIG_SET_FLAG	0
+#endif
+#ifndef FSCONFIG_SET_STRING
+#define FSCONFIG_SET_STRING	1
+#endif
+#ifndef FSCONFIG_CMD_CREATE
+#define FSCONFIG_CMD_CREATE	6
+#endif
+#ifndef MOVE_MOUNT_F_EMPTY_PATH
+#define MOVE_MOUNT_F_EMPTY_PATH	0x00000004
+#endif
+#ifndef MOUNT_ATTR_RDONLY
+#define MOUNT_ATTR_RDONLY	0x00000001
+#endif
+#ifndef MOUNT_ATTR_NOSUID
+#define MOUNT_ATTR_NOSUID	0x00000002
+#endif
+#ifndef MOUNT_ATTR_NODEV
+#define MOUNT_ATTR_NODEV	0x00000004
+#endif
+#ifndef MOUNT_ATTR_NOEXEC
+#define MOUNT_ATTR_NOEXEC	0x00000008
+#endif
+
+#if defined(__NR_fsopen) && defined(__NR_fsconfig) && \
+    defined(__NR_fsmount) && defined(__NR_move_mount)
+#define HAVE_FSOPEN_QUARTET	1
+#endif
 
 /* Hard cap on mount/umount cycles per invocation.  Kept modest so a
  * single op completes well inside the alarm(1) window even when the
@@ -199,11 +241,157 @@ static bool ensure_private_ns(void)
 	return true;
 }
 
+#ifdef HAVE_FSOPEN_QUARTET
+/* Filesystems suitable for an fsopen() probe.  tmpfs/ramfs are
+ * universally built; bpf/proc/sysfs are present in any non-trivial
+ * kernel.  The kernel-side fsopen→fsconfig→fsmount parse and the
+ * subsequent inode-timestamp path (current_time on every namei
+ * mutation) is the coverage target; an fstype that rejects symlink
+ * creation just exits the inner churn after the first errored op
+ * without disturbing the rest of the cycle. */
+static const char * const fsopen_fstypes[] = {
+	"tmpfs",
+	"ramfs",
+	"bpf",
+	"proc",
+	"sysfs",
+};
+
+/* Drive the dirfd-on-the-fsmount-fd path that lands in the kernel
+ * namei + inode_update_time machinery.  Each symlinkat publishes a
+ * fresh dentry; the unlinkat-through-the-symlink walks "name/../name"
+ * which forces a path resolution that touches the parent inode's
+ * timestamps via current_time -- the inode-timestamp update
+ * path.  Iterations are hard-capped; the loop exits on the first
+ * fatal error (EPERM/EROFS/EINVAL on an fstype that rejects
+ * symlinks). */
+static void fsopen_path_churn(int mnt_fd, unsigned long seq)
+{
+	const unsigned int iters = 1U + rnd_modulo_u32(8U);
+	unsigned int i;
+
+	for (i = 0; i < iters; i++) {
+		char name[32];
+		char nested[96];
+
+		(void)snprintf(name, sizeof(name),
+			       "file%lu_%u", seq, i);
+		(void)snprintf(nested, sizeof(nested),
+			       "file%lu_%u/../file%lu_%u/file%lu_%u",
+			       seq, i, seq, i, seq, i);
+
+		if (symlinkat(".", mnt_fd, name) != 0)
+			return;
+
+		(void)unlinkat(mnt_fd, nested, 0);
+		(void)unlinkat(mnt_fd, name, 0);
+	}
+}
+
+static void fsopen_mount_cycle(void)
+{
+	const char *type;
+	int fs_fd;
+	int mnt_fd;
+	unsigned int fsopen_flags;
+	unsigned int fsmount_flags;
+	unsigned int attr_flags = 0;
+	unsigned long seq;
+	pid_t pid;
+	char path[PATH_MAX + 64];
+	bool moved = false;
+
+	type = fsopen_fstypes[rnd_modulo_u32(ARRAY_SIZE(fsopen_fstypes))];
+	fsopen_flags = RAND_BOOL() ? FSOPEN_CLOEXEC : 0U;
+
+	fs_fd = (int)trinity_raw_syscall(__NR_fsopen, type, fsopen_flags);
+	if (fs_fd < 0) {
+		__atomic_add_fetch(&shm->stats.mount_churn_failed,
+				   1, __ATOMIC_RELAXED);
+		return;
+	}
+
+	/* Exercise the per-parameter fsconfig() arms before the CREATE.
+	 * Most fstypes will reject these key strings -- the point is to
+	 * land in the fs_parser dispatch, not to succeed. */
+	if (RAND_BOOL())
+		(void)trinity_raw_syscall(__NR_fsconfig, fs_fd,
+					  FSCONFIG_SET_STRING, "source",
+					  type, 0);
+	if (RAND_BOOL())
+		(void)trinity_raw_syscall(__NR_fsconfig, fs_fd,
+					  FSCONFIG_SET_FLAG, "ro",
+					  NULL, 0);
+
+	if (trinity_raw_syscall(__NR_fsconfig, fs_fd,
+				FSCONFIG_CMD_CREATE, NULL, NULL, 0) != 0) {
+		__atomic_add_fetch(&shm->stats.mount_churn_failed,
+				   1, __ATOMIC_RELAXED);
+		close(fs_fd);
+		return;
+	}
+
+	fsmount_flags = RAND_BOOL() ? FSMOUNT_CLOEXEC : 0U;
+	if (RAND_BOOL())
+		attr_flags |= MOUNT_ATTR_RDONLY;
+	if (RAND_BOOL())
+		attr_flags |= MOUNT_ATTR_NOSUID;
+	if (RAND_BOOL())
+		attr_flags |= MOUNT_ATTR_NODEV;
+	if (RAND_BOOL())
+		attr_flags |= MOUNT_ATTR_NOEXEC;
+
+	mnt_fd = (int)trinity_raw_syscall(__NR_fsmount, fs_fd,
+					  fsmount_flags, attr_flags);
+	close(fs_fd);
+	if (mnt_fd < 0) {
+		__atomic_add_fetch(&shm->stats.mount_churn_failed,
+				   1, __ATOMIC_RELAXED);
+		return;
+	}
+
+	__atomic_add_fetch(&shm->stats.mount_churn_mounts,
+			   1, __ATOMIC_RELAXED);
+
+	seq = ++mount_churn_seq;
+	pid = mypid();
+
+	/* 1-in-4: graft the detached fsmount fd into the namespace via
+	 * move_mount(MOVE_MOUNT_F_EMPTY_PATH).  The kernel grafts on a
+	 * path it hasn't seen before (vs. the legacy mount() path the
+	 * rest of this op drives), and the umount2() teardown follows
+	 * the deactivate_super RCU machinery from a known-good
+	 * starting point. */
+	if (rnd_modulo_u32(4U) == 0U) {
+		(void)snprintf(path, sizeof(path),
+			       "%s/trinity-fsmount-%d-%lu",
+			       trinity_tmpdir_abs(), (int)pid, seq);
+		if (mkdir(path, 0755) == 0 &&
+		    trinity_raw_syscall(__NR_move_mount, mnt_fd, "",
+					AT_FDCWD, path,
+					MOVE_MOUNT_F_EMPTY_PATH) == 0)
+			moved = true;
+	}
+
+	fsopen_path_churn(mnt_fd, seq);
+
+	if (moved) {
+		if (umount2(path, MNT_DETACH) == 0)
+			__atomic_add_fetch(&shm->stats.mount_churn_umounts,
+					   1, __ATOMIC_RELAXED);
+		(void)rmdir(path);
+	}
+
+	close(mnt_fd);
+}
+#endif /* HAVE_FSOPEN_QUARTET */
+
 bool mount_churn(struct childdata *child)
 {
 	unsigned int cycles;
 	unsigned int i;
 	unsigned int pick_modulo;
+	unsigned int fsopen_idx;
 	bool ext4_available = false;
 	pid_t pid = mypid();
 
@@ -228,6 +416,10 @@ bool mount_churn(struct childdata *child)
 		ext4_available = true;
 
 	pick_modulo = ARRAY_SIZE(fstypes) + (ext4_available ? 1U : 0U);
+	fsopen_idx = pick_modulo;
+#ifdef HAVE_FSOPEN_QUARTET
+	pick_modulo++;
+#endif
 	cycles = 1 + rnd_modulo_u32(MAX_CYCLES);
 
 	for (i = 0; i < cycles; i++) {
@@ -235,9 +427,19 @@ bool mount_churn(struct childdata *child)
 		const char *source;
 		char source_buf[32];
 		unsigned int pick = rnd_modulo_u32(pick_modulo);
-		unsigned long flags = pick_flags();
-		unsigned long seq = ++mount_churn_seq;
+		unsigned long flags;
+		unsigned long seq;
 		char path[PATH_MAX + 64];
+
+#ifdef HAVE_FSOPEN_QUARTET
+		if (pick == fsopen_idx) {
+			fsopen_mount_cycle();
+			continue;
+		}
+#endif
+
+		flags = pick_flags();
+		seq = ++mount_churn_seq;
 
 		if (pick < ARRAY_SIZE(fstypes)) {
 			fstype = fstypes[pick];
