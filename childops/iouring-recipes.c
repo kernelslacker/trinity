@@ -1910,6 +1910,124 @@ static bool recipe_openat2(struct iour_recipe_state *s,
 }
 
 /* ------------------------------------------------------------------ *
+ * Recipe: OPENAT2 with flag combinations that fast-fail through
+ * __io_openat_prep / build_open_flags / path_openat.
+ *
+ * recipe_openat2 above covers the success path with a plain
+ * O_RDONLY|O_CLOEXEC open.  This sibling drives the *error* paths
+ * that historically leaked the getname()'d struct filename or the
+ * nameidata's path components.  Each invocation picks one combo at
+ * random so a long fuzz run sees them all without bloating the
+ * catalog.
+ *
+ *  0. O_TMPFILE|O_RDWR on AT_FDCWD with a regular-file path
+ *     (-ENOTDIR through path_openat's terminate_walk).
+ *  1. O_TMPFILE|O_RDONLY (rejected at build_open_flags — O_TMPFILE
+ *     requires write access).
+ *  2. O_PATH|O_TMPFILE (mutually exclusive, rejected at
+ *     build_open_flags after the filename has been getname()'d).
+ *  3. sqe->file_index != 0 with O_CLOEXEC (-EINVAL after the
+ *     prep grabbed the filename; cleanup path must release it).
+ *  4. RESOLVE_BENEATH|RESOLVE_IN_ROOT (mutually exclusive
+ *     resolve bits, -EINVAL from build_open_flags).
+ *  5. RESOLVE_CACHED against a fresh /tmp path (forces the
+ *     rcu-walk fast path; misses → -EAGAIN, exercising the
+ *     io_uring REQ_F_FORCE_ASYNC retry handoff).
+ *  6. open_how.mode set without O_CREAT/O_TMPFILE (-EINVAL from
+ *     build_open_how).
+ *  7. how.resolve with an undefined high bit (-EINVAL from
+ *     build_open_flags' RESOLVE_* mask check).
+ * ------------------------------------------------------------------ */
+#ifndef RESOLVE_NO_XDEV
+#define RESOLVE_NO_XDEV		0x01
+#endif
+#ifndef RESOLVE_NO_MAGICLINKS
+#define RESOLVE_NO_MAGICLINKS	0x02
+#endif
+#ifndef RESOLVE_NO_SYMLINKS
+#define RESOLVE_NO_SYMLINKS	0x04
+#endif
+#ifndef RESOLVE_BENEATH
+#define RESOLVE_BENEATH		0x08
+#endif
+#ifndef RESOLVE_IN_ROOT
+#define RESOLVE_IN_ROOT		0x10
+#endif
+#ifndef RESOLVE_CACHED
+#define RESOLVE_CACHED		0x20
+#endif
+
+static bool recipe_openat2_leak_combos(struct iour_recipe_state *s,
+				       bool *unsupported __unused__)
+{
+	struct iour_ring *ctx = s->ctx;
+	struct io_uring_sqe sqe;
+	struct iour_open_how how;
+	static const char tmp_dir[]   = "/tmp";
+	static const char dev_null[]  = "/dev/null";
+	static const char etc_passwd[] = "/etc/passwd";
+	const char *path;
+	int r;
+
+	memset(&how, 0, sizeof(how));
+	sqe_clear(&sqe);
+	sqe.opcode    = IORING_OP_OPENAT2;
+	sqe.fd        = AT_FDCWD;
+	sqe.len       = sizeof(how);
+	sqe.user_data = 0x4a4b;
+	path          = dev_null;
+
+	switch (rnd_modulo_u32(8)) {
+	case 0:
+		how.flags = O_TMPFILE | O_RDWR | O_CLOEXEC;
+		path = tmp_dir;
+		break;
+	case 1:
+		how.flags = O_TMPFILE | O_RDONLY;
+		path = tmp_dir;
+		break;
+	case 2:
+		how.flags = O_PATH | O_TMPFILE;
+		path = tmp_dir;
+		break;
+	case 3:
+		how.flags = O_RDONLY | O_CLOEXEC;
+		sqe.file_index = 1;
+		break;
+	case 4:
+		how.flags   = O_RDONLY;
+		how.resolve = RESOLVE_BENEATH | RESOLVE_IN_ROOT;
+		break;
+	case 5:
+		how.flags   = O_RDONLY | O_NONBLOCK;
+		how.resolve = RESOLVE_CACHED | RESOLVE_NO_SYMLINKS;
+		path = etc_passwd;
+		break;
+	case 6:
+		how.flags = O_RDONLY;
+		how.mode  = 0644;
+		break;
+	case 7:
+	default:
+		how.flags   = O_RDONLY;
+		how.resolve = 0x80;
+		break;
+	}
+
+	sqe.addr      = (__u64)(uintptr_t)path;
+	sqe.addr2     = (__u64)(uintptr_t)&how;
+	sqe.open_flags = 0;
+
+	if (!iour_submit_sqes(ctx, &sqe, 1))
+		return false;
+	r = iour_enter(ctx, 1, 1);
+	if (r < 0)
+		return false;
+	iour_drain_cqes(ctx);
+	return true;
+}
+
+/* ------------------------------------------------------------------ *
  * Recipe: EPOLL_CTL — add an eventfd to an epoll set via the ring
  *
  * SQE layout: sqe->fd=epfd, sqe->len=op, sqe->off=target fd,
@@ -2624,6 +2742,7 @@ static const struct iour_recipe catalog[] = {
 	{ "fadvise",                recipe_fadvise                },
 	{ "read_multishot",         recipe_read_multishot         },
 	{ "openat2",                recipe_openat2                },
+	{ "openat2_leak_combos",    recipe_openat2_leak_combos    },
 	{ "epoll_ctl",              recipe_epoll_ctl              },
 	{ "splice",                 recipe_splice                 },
 	{ "tee",                    recipe_tee                    },
