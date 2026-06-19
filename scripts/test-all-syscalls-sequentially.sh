@@ -15,6 +15,9 @@ KVER=$(uname -r); KVER=${KVER%%-*}
 . scripts/paths.sh
 . scripts/taint.sh
 
+cd "$TRINITY_TMP" || exit 1
+echo "Run artifacts under: $TRINITY_TMP"
+
 # Pre-flight: can we system-wide perf record?  If not (perf_event_paranoid > 1
 # and not root), fall back to fuzzing WITHOUT perf rather than silently
 # producing empty runs for the whole sweep.  PERF_PREFIX is the per-run perf wrapper
@@ -81,20 +84,21 @@ do
 
 	echo > stats.log
 
-	./logtar.sh
+	"$TRINITY_PATH/logtar.sh"
 	mv bugs.tar.gz bugs-$TIME.tar.gz
 
-	scripts/cache-stats.py stats ~/.cache/trinity/ -k "$KVER" > cache-stats-$TIME.log
+	"$TRINITY_PATH/scripts/cache-stats.py" stats ~/.cache/trinity/ -k "$KVER" > cache-stats-$TIME.log
 
 	mkdir $TIME-$syscall
 	find . -maxdepth 1 -type f -name "*$TIME*" -exec mv "{}" $TIME-$syscall/ \;
 
 	# Group any core dumps in with this run's logs (most produce none).
 	if compgen -G "tmp/core.*" > /dev/null; then
-		mv tmp/core.* $TIME-$syscall/
+		find tmp -name "core.*" -exec gzip -9 "{}" \;
+		mv tmp/core.*.gz $TIME-$syscall/
 	fi
 
-	sudo rm -rf tmp ; mkdir tmp
+	rm -rf tmp ; mkdir tmp
 
 	check_tainted
 	echo
