@@ -12,19 +12,24 @@
 #include "utils.h"
 
 /*
- * Snapshot of the three getresuid input args read by the post oracle,
- * captured at sanitise time and consumed by the post handler.  Lives in
- * rec->post_state, a slot the syscall ABI does not expose, so a sibling
- * syscall scribbling rec->aN between the syscall returning and the post
- * handler running cannot redirect the source reads at foreign ruid /
- * euid / suid user buffers.
+ * Magic-cookie + ownership-proof slot consumed by the post oracle, kept
+ * in rec->post_state so a sibling stomp of that slot with a heap-shaped
+ * pointer to a foreign chunk survives looks_like_corrupted_ptr() but
+ * fails the cookie / ownership-table gates.
+ *
+ * The three OUT-pointers (a1/a2/a3 = ruid/euid/suid) are defended via
+ * .arg_snapshot_mask: the dispatch-time arg_shadow capture inside
+ * __do_syscall() (after the final blanket_address_scrub, from the
+ * locals about to enter the kernel), read in the post oracle via
+ * get_arg_snapshot(rec, N).  A sibling stomp of rec->aN between
+ * dispatch and post bumps the generic arg_shadow_stomp tripwire from
+ * inside the accessor; the returned value is the kernel-visible
+ * address, so the uid_t deref still hits the buffer the kernel
+ * actually wrote.
  */
 #define GETRESUID_POST_STATE_MAGIC	0x47525549UL	/* "GRUI" */
 struct getresuid_post_state {
 	unsigned long magic;
-	unsigned long ruid;
-	unsigned long euid;
-	unsigned long suid;
 };
 
 static void sanitise_getresuid16(struct syscallrecord *rec)
@@ -50,21 +55,14 @@ static void sanitise_getresuid(struct syscallrecord *rec)
 	avoid_shared_buffer_out(&rec->a3, sizeof(uid_t));
 
 	/*
-	 * Snapshot the three input args read by the post oracle.  Without
-	 * this the post handler reads rec->a1/a2/a3 at post-time, when a
-	 * sibling syscall may have scribbled the slots:
-	 * looks_like_corrupted_ptr() cannot tell a real-but-wrong heap
-	 * address from the original ruid / euid / suid user buffer pointers,
-	 * so the source reads would touch foreign allocations that the guard
-	 * never inspected.  post_state is private to the post handler.  The
-	 * 16-bit getresuid16 path uses sanitise_getresuid16 instead because
-	 * it has no .post handler and would leak the snapshot.
+	 * Magic-cookie + ownership entry consumed by the post oracle; the
+	 * OUT-pointers themselves are defended via .arg_snapshot_mask, not
+	 * a snap field.  The 16-bit getresuid16 path uses
+	 * sanitise_getresuid16 instead because it has no .post handler and
+	 * would leak the snap.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = GETRESUID_POST_STATE_MAGIC;
-	snap->ruid = rec->a1;
-	snap->euid = rec->a2;
-	snap->suid = rec->a3;
 	/*
 	 * post_state_install pairs the rec->post_state assign with the
 	 * ownership-table register so the observable window between the
@@ -116,27 +114,33 @@ static void post_getresuid(struct syscallrecord *rec)
 		goto out_free;
 
 	{
-		void *r = (void *) snap->ruid;
-		void *e = (void *) snap->euid;
-		void *s = (void *) snap->suid;
-
 		/*
-		 * Defense in depth: even with the post_state snapshot, a
-		 * wholesale stomp could rewrite the snapshot's inner pointer
-		 * fields.  Reject pid-scribbled ruid/euid/suid before deref.
+		 * Read the three OUT-pointers via the generic arg_shadow
+		 * accessor: it returns the kernel-visible addresses captured
+		 * in __do_syscall() after the final blanket_address_scrub,
+		 * and bumps arg_shadow_stomp from inside the accessor on any
+		 * post-dispatch sibling scribble of rec->aN.  Defense in
+		 * depth: a wholesale stomp can rewrite shadow + live in
+		 * lock-step, surviving the tripwire; reject pid-scribbled
+		 * ruid/euid/suid before deref.
 		 */
-		if (looks_like_corrupted_ptr(rec, r) ||
+		uid_t *r = (uid_t *) get_arg_snapshot(rec, 1);
+		uid_t *e = (uid_t *) get_arg_snapshot(rec, 2);
+		uid_t *s = (uid_t *) get_arg_snapshot(rec, 3);
+
+		if (r == NULL || e == NULL || s == NULL ||
+		    looks_like_corrupted_ptr(rec, r) ||
 		    looks_like_corrupted_ptr(rec, e) ||
 		    looks_like_corrupted_ptr(rec, s)) {
-			outputerr("post_getresuid: rejected suspicious ruid=%p euid=%p suid=%p (post_state-scribbled?)\n",
+			outputerr("post_getresuid: rejected suspicious ruid=%p euid=%p suid=%p (shadow-scribbled?)\n",
 				  r, e, s);
 			goto out_free;
 		}
-	}
 
-	kruid = *(uid_t *) snap->ruid;
-	keuid = *(uid_t *) snap->euid;
-	ksuid = *(uid_t *) snap->suid;
+		kruid = *r;
+		keuid = *e;
+		ksuid = *s;
+	}
 
 	if (!proc_status_read_id_quad("Uid", ids))
 		goto out_free;
@@ -168,6 +172,12 @@ struct syscallentry syscall_getresuid = {
 	.group = GROUP_PROCESS,
 	.post = post_getresuid,
 	.rettype = RET_ZERO_SUCCESS,
+	/* a1/a2/a3 (ruid/euid/suid) are the kernel's OUT-pointers; the
+	 * post oracle derefs through them.  Shadow them so a sibling stomp
+	 * between dispatch and post bumps arg_shadow_stomp from inside
+	 * get_arg_snapshot() and the oracle still sees the addresses the
+	 * kernel actually wrote, not the stomped values. */
+	.arg_snapshot_mask = (1u << 0) | (1u << 1) | (1u << 2),
 };
 
 /*
