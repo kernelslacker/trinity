@@ -51,7 +51,7 @@ static void register_socketpair_fd(int fd, struct syscallrecord *rec)
 
 /*
  * Snapshot for the post handler.  Three-leg hardening, mirroring the
- * shape that landed for getsockname/getpeername:
+ * shape that landed for pipe/timer_create/io_setup:
  *
  *   1. The int[2] output buffer is sourced from get_writable_address()
  *      rather than zmalloc() + avoid_shared_buffer_out().  The arena
@@ -61,24 +61,34 @@ static void register_socketpair_fd(int fd, struct syscallrecord *rec)
  *      raise IP.  Pool-owned -- no deferred_free needed for the buffer.
  *
  *   2. The snap struct carries a magic cookie that the post handler
- *      checks before dereferencing inner fields.  A sibling scribble of
- *      rec->post_state with a heap-shaped pointer to a foreign chunk
- *      survives looks_like_corrupted_ptr() but fails the cookie gate.
+ *      checks before dereferencing *get_arg_snapshot(rec, 4).  A
+ *      sibling scribble of rec->post_state with a heap-shaped pointer
+ *      to a foreign chunk survives looks_like_corrupted_ptr() but
+ *      fails the cookie gate.
  *
  *   3. The snap pointer is registered in the post-state ownership table
  *      at sanitise time and checked in the post handler via
  *      post_state_is_owned().  A cookie-collision foreign chunk would
- *      otherwise sail past the magic check and feed garbage into the
- *      inner usockvec deref; the ownership table closes that gap.
+ *      otherwise sail past the magic check; the ownership table closes
+ *      that gap.
  *
- * Only the writable-arena buffer pointer needs storing -- there is no
- * second pointer to free because get_writable_address() returns
- * pool-managed memory.
+ * The OUT-pointer (a4 / usockvec) defence is now generic:
+ * .arg_snapshot_mask opts a4 into the dispatch-time arg_shadow capture
+ * (snapshotted inside __do_syscall() after the final
+ * blanket_address_scrub, from the locals about to enter the kernel),
+ * and the post handler reads it via get_arg_snapshot(rec, 4).  A
+ * sibling scribble of rec->a4 between dispatch and post bumps the
+ * generic arg_shadow_stomp tripwire from inside the accessor; the
+ * returned value is the kernel-visible address, so the fd-pair deref
+ * still hits the buffer the kernel actually wrote.  The previous
+ * snap->usockvec vs rec->a4 identity check was a false-positive source:
+ * a4 is ARG_ADDRESS, so the dispatcher's blanket_address_scrub
+ * benignly relocates the pointer between sanitise and dispatch and
+ * the divergence is expected, not a corruption signal.
  */
 #define SOCKETPAIR_POST_STATE_MAGIC	0x534F434B5F4D4147UL	/* "SOCK_MAG" */
 struct socketpair_post_state {
 	unsigned long magic;
-	int *usockvec;
 };
 
 static void sanitise_socketpair(struct syscallrecord *rec)
@@ -114,9 +124,11 @@ static void sanitise_socketpair(struct syscallrecord *rec)
 	}
 	rec->a4 = (unsigned long) usockvec;
 
+	/* magic-cookie / private post_state: see post_state_register().
+	 * The OUT-pointer is defended via .arg_snapshot_mask + the
+	 * dispatch-time arg_shadow capture, not a snap field. */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = SOCKETPAIR_POST_STATE_MAGIC;
-	snap->usockvec = usockvec;
 	rec->post_state = (unsigned long) snap;
 	post_state_register(snap);
 }
@@ -126,11 +138,12 @@ static void sanitise_socketpair(struct syscallrecord *rec)
  * .ret_objtype_via_post.  Runs ahead of post_socketpair(), which
  * clears rec->post_state during cleanup; reading the snap from a
  * .post hook after that point would see zero.  Does its own shape +
- * magic + ownership validation before deref so a sibling-stomped
- * post_state doesn't drive register_socketpair_fd() with foreign
- * bytes -- corruption attribution stays in post_socketpair() below,
- * which repeats the same checks and owns the
- * post_handler_corrupt_ptr_bump() accounting.
+ * magic + ownership validation and reads the OUT-pointer via the
+ * generic arg_shadow accessor before deref so a sibling-stomped
+ * post_state or rec->a4 doesn't drive register_socketpair_fd() with
+ * foreign bytes -- corruption attribution for the snap-struct gates
+ * stays in post_socketpair() below; out-pointer corruption is bumped
+ * generically by arg_shadow_stomp from inside get_arg_snapshot().
  */
 static void post_socketpair_record_fds(struct syscallrecord *rec)
 {
@@ -150,29 +163,17 @@ static void post_socketpair_record_fds(struct syscallrecord *rec)
 	if (snap->magic != SOCKETPAIR_POST_STATE_MAGIC)
 		return;
 
-	usockvec = snap->usockvec;
+	/*
+	 * The OUT-pointer (a4 / usockvec) is read via the generic arg_shadow
+	 * accessor: it returns the kernel-visible address snapshotted in
+	 * __do_syscall() after the final blanket_address_scrub.  A sibling
+	 * stomp of rec->a4 between dispatch and here bumps arg_shadow_stomp
+	 * from inside the accessor and the post handler still sees the
+	 * address the kernel actually wrote.
+	 */
+	usockvec = (int *) get_arg_snapshot(rec, 4);
 	if (usockvec == NULL || looks_like_corrupted_ptr(rec, usockvec))
 		return;
-
-	/*
-	 * Identity check: snap->usockvec was set to rec->a4 at sanitise
-	 * time -- both slots hold the same get_writable_address() return.
-	 * looks_like_corrupted_ptr() above is shape-only: a sibling stomp
-	 * that left a heap-shaped value in either slot survives the shape
-	 * gate and the fd-pair deref below would read either the kernel's
-	 * writes into a foreign address (snap->usockvec intact, rec->a4
-	 * stomped pre-syscall) or foreign memory the kernel never touched
-	 * (snap->usockvec stomped, rec->a4 intact).  The snap struct has
-	 * already cleared the magic + ownership gates, so a snap->usockvec
-	 * != rec->a4 divergence narrows the scribble to one of those two
-	 * vectors.  Bail before register_socketpair_fd() sees fd values
-	 * read from the wrong buffer.
-	 */
-	if ((unsigned long) usockvec != rec->a4) {
-		__atomic_add_fetch(&shm->stats.socketpair_inner_ptr_mismatch,
-				   1, __ATOMIC_RELAXED);
-		return;
-	}
 
 	register_socketpair_fd(usockvec[0], rec);
 	register_socketpair_fd(usockvec[1], rec);
@@ -242,4 +243,10 @@ struct syscallentry syscall_socketpair = {
 	.post = post_socketpair,
 	.ret_objtype_via_post = post_socketpair_record_fds,
 	.rettype = RET_ZERO_SUCCESS,
+	/* a4 (usockvec) is the kernel's OUT-pointer; both post handlers
+	 * deref through it.  Shadow it so a sibling stomp between
+	 * dispatch and post bumps arg_shadow_stomp from inside
+	 * get_arg_snapshot() and the handlers still see the address the
+	 * kernel actually wrote, not the stomped value. */
+	.arg_snapshot_mask = (1u << 3),
 };
