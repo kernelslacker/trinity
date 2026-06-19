@@ -8,12 +8,18 @@
 #include "rnd.h"
 #include "sanitise.h"
 
+/*
+ * Drop the synchronous-fault signals (SIGILL/SIGTRAP/SIGABRT/SIGBUS/
+ * SIGSEGV) and the lifecycle-fatal trio (SIGKILL/SIGSTOP/SIGTERM) from
+ * the default path -- a self-targeted or sibling-targeted deliver will
+ * re-enter trinity's own fault handlers or tear down a healthy child.
+ * sig==0 is the kernel's existence-probe and is covered by the dedicated
+ * path in sanitise_tgkill().
+ */
 static unsigned long safe_signals[] = {
-	SIGHUP, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
-	SIGBUS, SIGFPE, SIGUSR1, SIGSEGV, SIGUSR2, SIGPIPE,
-	SIGALRM, SIGTERM, SIGCHLD, SIGCONT,
-	SIGURG, SIGXCPU, SIGXFSZ, SIGVTALRM,
-	SIGPROF, SIGWINCH, SIGIO, SIGSYS,
+	SIGHUP, SIGQUIT, SIGFPE, SIGUSR1, SIGUSR2, SIGPIPE,
+	SIGALRM, SIGCHLD, SIGCONT, SIGURG, SIGXCPU, SIGXFSZ,
+	SIGVTALRM, SIGPROF, SIGWINCH, SIGIO, SIGSYS,
 };
 
 /*
@@ -47,19 +53,30 @@ static void pick_target_pair(pid_t *tgid, pid_t *pid)
 static void sanitise_tgkill(struct syscallrecord *rec)
 {
 	pid_t tgid, pid;
+	unsigned int draw;
 
 	pick_target_pair(&tgid, &pid);
 	rec->a1 = (unsigned long) tgid;
 	rec->a2 = (unsigned long) pid;
+
+	/*
+	 * Bias toward sig==0 (existence-probe, no delivery) and the
+	 * ignorable safe set.  tgkill has no siginfo path so there is no
+	 * realtime branch to exercise here.
+	 */
+	draw = rnd_modulo_u32(10);
+	if (draw < 3)
+		rec->a3 = 0;
+	else
+		rec->a3 = RAND_ARRAY(safe_signals);
 }
 
 struct syscallentry syscall_tgkill = {
 	.name = "tgkill",
 	.group = GROUP_SIGNAL,
 	.num_args = 3,
-	.argtype = { [0] = ARG_PID, [1] = ARG_PID, [2] = ARG_OP },
+	.argtype = { [0] = ARG_PID, [1] = ARG_PID },
 	.argname = { [0] = "tgid", [1] = "pid", [2] = "sig" },
-	.arg_params[2].list = ARGLIST(safe_signals),
 	.sanitise = sanitise_tgkill,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = AVOID_SYSCALL,
