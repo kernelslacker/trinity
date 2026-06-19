@@ -158,15 +158,24 @@ static unsigned int reap_ring_fast_die_count;
 static bool reap_entry_is_fast_die(const struct reap_record *r)
 {
 	/*
-	 * EXIT_NO_SYSCALLS_ENABLED is the clean, expected terminal reason in
-	 * targeted mode (-c/-r/-g): the selected set self-disabled via ENOSYS /
-	 * VALIDATE_FAIL_THRESHOLD.  Children racing the shutdown exit with this
-	 * reason (status 1) via the locks.c spin-bailout
-	 * _exit(shm->exit_reason); that is depletion, not a fork-die-respawn
-	 * corruption loop.  Excluded in targeted mode only -- default fuzz mode
-	 * keeps a zero active set on the corruption path.
+	 * Clean, expected terminal exits in targeted mode (-c/-r/-g) are not
+	 * fork-die-respawn corruption -- they are the run finishing on its
+	 * own terms.  Children racing the shutdown exit with one of these
+	 * reasons via the locks.c spin-bailout _exit(shm->exit_reason), which
+	 * otherwise fills the fast-die ring and trips a spurious
+	 * EXIT_SHM_CORRUPTION panic:
+	 *   - EXIT_NO_SYSCALLS_ENABLED: selected set self-disabled via ENOSYS
+	 *     / VALIDATE_FAIL_THRESHOLD (depletion).
+	 *   - EXIT_REACHED_COUNT:       requested op count reached.
+	 *   - EXIT_EPOCH_DONE:          epoch budget consumed.
+	 *   - EXIT_USER_REQUEST:        operator-driven shutdown (^C, etc.).
+	 * Excluded in targeted mode only -- default fuzz mode keeps a zero
+	 * active set on the corruption path.
 	 */
-	if (r->exit_status == EXIT_NO_SYSCALLS_ENABLED &&
+	if ((r->exit_status == EXIT_NO_SYSCALLS_ENABLED ||
+	     r->exit_status == EXIT_REACHED_COUNT ||
+	     r->exit_status == EXIT_EPOCH_DONE ||
+	     r->exit_status == EXIT_USER_REQUEST) &&
 	    (do_specific_syscall || random_selection ||
 	     desired_group != GROUP_NONE))
 		return false;
