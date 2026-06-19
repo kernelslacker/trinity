@@ -5,20 +5,7 @@
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
-
-/*
- * Drop the synchronous-fault signals (SIGILL/SIGTRAP/SIGABRT/SIGBUS/
- * SIGSEGV) and the lifecycle-fatal trio (SIGKILL/SIGSTOP/SIGTERM) from
- * the default path -- a self-targeted or sibling-targeted deliver will
- * re-enter trinity's own fault handlers or tear down a healthy child.
- * sig==0 is the kernel's existence-probe and is covered by the dedicated
- * path in sanitise_kill().
- */
-static unsigned long safe_signals[] = {
-	SIGHUP, SIGQUIT, SIGFPE, SIGUSR1, SIGUSR2, SIGPIPE,
-	SIGALRM, SIGCHLD, SIGCONT, SIGURG, SIGXCPU, SIGXFSZ,
-	SIGVTALRM, SIGPROF, SIGWINCH, SIGIO, SIGSYS,
-};
+#include "signals-safelist.h"
 
 static void sanitise_kill(struct syscallrecord *rec)
 {
@@ -26,14 +13,20 @@ static void sanitise_kill(struct syscallrecord *rec)
 
 	/*
 	 * Bias toward sig==0 (existence-probe, no delivery) and the
-	 * ignorable safe set.  kill has no siginfo path so there is no
-	 * realtime branch to exercise here.
+	 * child-safe set so a self/sibling-targeted delivery does not
+	 * tear down a healthy fuzz child.  A small slice picks from the
+	 * crash-probe (child-fatal) bucket so the kernel-side delivery
+	 * path for the obviously-fatal signals still sees traffic
+	 * without dominating the run with teardowns.  kill has no
+	 * siginfo path so there is no realtime branch to exercise here.
 	 */
-	draw = rnd_modulo_u32(10);
-	if (draw < 3)
+	draw = rnd_modulo_u32(20);
+	if (draw < 6)
 		rec->a2 = 0;
+	else if (draw < 19)
+		rec->a2 = child_safe_signals[rnd_modulo_u32(child_safe_signals_count)];
 	else
-		rec->a2 = RAND_ARRAY(safe_signals);
+		rec->a2 = child_fatal_signals[rnd_modulo_u32(child_fatal_signals_count)];
 }
 
 struct syscallentry syscall_kill = {

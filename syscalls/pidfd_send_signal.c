@@ -8,20 +8,7 @@
 #include "rnd.h"
 #include "sanitise.h"
 #include "pids.h"
-
-/*
- * Drop the synchronous-fault signals (SIGILL/SIGTRAP/SIGABRT/SIGBUS/
- * SIGSEGV) and the lifecycle-fatal trio (SIGKILL/SIGSTOP/SIGTERM) from
- * the default path -- a self- or sibling-targeted deliver will re-enter
- * trinity's own fault handlers or tear down a healthy child.  sig==0 is
- * the kernel's existence-probe and is covered by the dedicated path in
- * sanitise_pidfd_send_signal().
- */
-static unsigned long pidfd_signals[] = {
-	SIGHUP, SIGQUIT, SIGFPE, SIGUSR1, SIGUSR2, SIGPIPE,
-	SIGALRM, SIGCHLD, SIGCONT, SIGURG, SIGXCPU, SIGXFSZ,
-	SIGVTALRM, SIGPROF, SIGWINCH, SIGIO, SIGSYS,
-};
+#include "signals-safelist.h"
 
 static unsigned long pidfd_send_signal_flags[] = {
 	PIDFD_SIGNAL_THREAD, PIDFD_SIGNAL_THREAD_GROUP, PIDFD_SIGNAL_PROCESS_GROUP,
@@ -33,15 +20,22 @@ static void sanitise_pidfd_send_signal(struct syscallrecord *rec)
 
 	/*
 	 * Bias toward sig==0 (existence-probe, no delivery) and the
-	 * ignorable safe set.  pidfd_send_signal does not accept a
-	 * realtime signo with arbitrary siginfo from unprivileged callers
-	 * any differently, so no separate realtime branch is needed.
+	 * child-safe set so a self/sibling-targeted delivery does not
+	 * tear down a healthy fuzz child.  A small slice picks from the
+	 * crash-probe (child-fatal) bucket so the kernel-side delivery
+	 * path for the obviously-fatal signals still sees traffic
+	 * without dominating the run with teardowns.
+	 * pidfd_send_signal does not accept a realtime signo with
+	 * arbitrary siginfo from unprivileged callers any differently,
+	 * so no separate realtime branch is needed.
 	 */
-	draw = rnd_modulo_u32(10);
-	if (draw < 3)
+	draw = rnd_modulo_u32(20);
+	if (draw < 6)
 		rec->a2 = 0;
+	else if (draw < 19)
+		rec->a2 = child_safe_signals[rnd_modulo_u32(child_safe_signals_count)];
 	else
-		rec->a2 = RAND_ARRAY(pidfd_signals);
+		rec->a2 = child_fatal_signals[rnd_modulo_u32(child_fatal_signals_count)];
 
 #ifdef PIDFD_SELF_THREAD
 	/* Sometimes pass a self-referencing sentinel instead of a real pidfd. */

@@ -9,6 +9,7 @@
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
+#include "signals-safelist.h"
 #include "utils.h"
 
 #ifndef SI_USER
@@ -26,19 +27,6 @@
 #ifndef SI_TKILL
 #define SI_TKILL	-6
 #endif
-
-/*
- * Drop the synchronous-fault signals (SIGILL/SIGTRAP/SIGABRT/SIGBUS/
- * SIGSEGV) and the lifecycle-fatal trio (SIGKILL/SIGSTOP/SIGTERM) from
- * the default path -- they hammer trinity's own handlers and child
- * teardown.  sig==0 is the kernel's existence-probe and is covered by
- * the dedicated path below.
- */
-static unsigned long safe_signals[] = {
-	SIGHUP, SIGQUIT, SIGFPE, SIGUSR1, SIGUSR2, SIGPIPE,
-	SIGALRM, SIGCHLD, SIGCONT, SIGURG, SIGXCPU, SIGXFSZ,
-	SIGVTALRM, SIGPROF, SIGWINCH, SIGIO, SIGSYS,
-};
 
 /*
  * si_code classes the kernel will accept on the rt_sigqueueinfo path:
@@ -123,15 +111,21 @@ static void sanitise_rt_sigqueueinfo(struct syscallrecord *rec)
 	rec->a1 = pick_target_pid();
 
 	/*
-	 * Bias toward sig==0 (existence-probe, no delivery), the ignorable
-	 * safe set, and the realtime range -- realtime signals are the ones
-	 * that carry siginfo all the way through to the receiver.
+	 * Bias toward sig==0 (existence-probe, no delivery), the
+	 * child-safe set, and the realtime range -- realtime signals are
+	 * the ones that carry siginfo all the way through to the
+	 * receiver.  A small slice picks from the crash-probe (child-
+	 * fatal) bucket so the kernel-side delivery path for the
+	 * obviously-fatal signals still sees traffic without dominating
+	 * the run with teardowns.
 	 */
-	draw = rnd_modulo_u32(10);
-	if (draw < 2)
+	draw = rnd_modulo_u32(20);
+	if (draw < 4)
 		rec->a2 = 0;
-	else if (draw < 6)
-		rec->a2 = RAND_ARRAY(safe_signals);
+	else if (draw < 11)
+		rec->a2 = child_safe_signals[rnd_modulo_u32(child_safe_signals_count)];
+	else if (draw < 12)
+		rec->a2 = child_fatal_signals[rnd_modulo_u32(child_fatal_signals_count)];
 	else
 		rec->a2 = SIGRTMIN + rnd_modulo_u32(SIGRTMAX - SIGRTMIN + 1);
 
