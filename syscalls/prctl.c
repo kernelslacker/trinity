@@ -209,6 +209,30 @@ static void sanitise_prctl(struct syscallrecord *rec)
 		rec->a3 = rec->a4 = rec->a5 = 0;
 		break;
 
+	case PR_SET_SYSCALL_USER_DISPATCH:
+		/*
+		 * Pin SUD to PR_SYS_DISPATCH_OFF.  ON installs a per-task
+		 * selector that traps every syscall whose PC is outside
+		 * [offset, offset+len) -- or inside the range with the
+		 * selector byte != ALLOW -- to SIGSYS.  The generic
+		 * arg-fill can land mode=PR_SYS_DISPATCH_ON via the
+		 * boundary-value pool (which includes 1) paired with a
+		 * writable selector address from get_writable_address()
+		 * (one branch of gen_undefined_arg), at which point the
+		 * next syscall the fuzz child issues -- libc PC, random
+		 * range, random selector byte -- traps SIGSYS and the
+		 * child dies before the post handler can run.  OFF mode
+		 * requires offset/len/selector all zero per the kernel's
+		 * task_set_syscall_user_dispatch input validation; pinning
+		 * them keeps that input-validation path exercised without
+		 * the ON-side self-break.
+		 */
+		rec->a2 = PR_SYS_DISPATCH_OFF;
+		rec->a3 = 0;
+		rec->a4 = 0;
+		rec->a5 = 0;
+		break;
+
 	case PR_SET_NAME:
 		/*
 		 * Kernel reads up to 16 bytes from userspace and truncates.
