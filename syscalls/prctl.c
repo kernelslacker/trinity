@@ -233,6 +233,37 @@ static void sanitise_prctl(struct syscallrecord *rec)
 		rec->a5 = 0;
 		break;
 
+	case PR_SET_TSC:
+		/*
+		 * Pin TSC mode to PR_TSC_ENABLE.  The other legal value,
+		 * PR_TSC_SIGSEGV (2), is reachable from the boundary-value
+		 * pool the generic arg-fill draws from.  Landing it sets
+		 * CR4.TSD on the task, after which any user-mode rdtsc /
+		 * rdtscp raises #GP and the kernel turns it into SIGSEGV
+		 * per the prctl ABI.  The fuzz child calls clock_gettime
+		 * (CLOCK_MONOTONIC) from its inner loop and elsewhere;
+		 * glibc 2.17+ routes that through the vDSO's
+		 * __vdso_clock_gettime fast path, which reads the TSC in
+		 * user mode.  A landed PR_TSC_SIGSEGV therefore SIGSEGV-
+		 * kills the child on its next clock_gettime call, before
+		 * the post handler can run, and the death is mis-
+		 * attributed by the reaper.  Setting one's own TSC mode
+		 * requires no capability, so the child's cap-clear does
+		 * not defang this the way it does PR_SET_MM /
+		 * PR_SET_SECUREBITS.  PR_TSC_ENABLE is the boot default
+		 * and matches the task's initial state, so pinning it
+		 * keeps the input-validation path exercised (the kernel
+		 * still walks the legal-mode switch) without flipping the
+		 * self-breaking bit.  Zero a3-a5; prctl ignores them for
+		 * PR_SET_TSC but the kernel ABI reserves them for
+		 * possible future use.
+		 */
+		rec->a2 = PR_TSC_ENABLE;
+		rec->a3 = 0;
+		rec->a4 = 0;
+		rec->a5 = 0;
+		break;
+
 	case PR_SET_NAME:
 		/*
 		 * Kernel reads up to 16 bytes from userspace and truncates.
