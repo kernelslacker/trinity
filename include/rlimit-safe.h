@@ -22,6 +22,7 @@
  * (in which case the caller should fall back to random values).
  */
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "rnd.h"
@@ -41,3 +42,31 @@ static inline unsigned int random_rlimit_resource(const unsigned long *table,
 {
 	return (unsigned int) table[rnd_modulo_u32(count)];
 }
+
+/*
+ * Harness-fragile rlimit set: lowering any of these on a trinity-owned
+ * pid breaks the fuzz child's own runtime.  RLIMIT_NOFILE {0,0} caps
+ * fds so heap_bounds_init's /proc/self/maps open hits EMFILE and the
+ * child runs the rest of its life with broken bounds tracking.
+ * RLIMIT_AS / RLIMIT_DATA / RLIMIT_STACK / RLIMIT_RSS / RLIMIT_MEMLOCK
+ * cap address-space or pinned pages so deferred_free's mprotect-RW
+ * step ENOMEMs and the alloc-tracker quietly leaks every freed slot.
+ * The safe-dictionary entries for these resources include {0,0} and
+ * single-page sizes -- legal to the kernel (cur<=max, per-resource
+ * bounds satisfied), lethal to us.  prlimit64 and setrlimit both draw
+ * from the same dictionary, so the guard is shared.
+ */
+bool resource_is_fragile(unsigned long resource);
+
+/*
+ * Pick a non-fragile RLIMIT_* from a caller-supplied table.  Used
+ * when the target is harness-owned (prlimit64) or unconditionally
+ * (setrlimit, whose target is always self): walks the table from a
+ * random start so the chosen non-fragile resource is still uniform,
+ * and is guaranteed to terminate as long as the table contains at
+ * least one non-fragile entry (callers register tables that always
+ * include CPU/FSIZE/CORE/NPROC/LOCKS/SIGPENDING/MSGQUEUE/NICE/
+ * RTPRIO/RTTIME alongside the fragile set).
+ */
+unsigned long pick_nonfragile_rlimit_resource(const unsigned long *table,
+					      unsigned int count);
