@@ -484,10 +484,11 @@ bool cmp_hints_field_try_get(unsigned int nr, bool do32, unsigned int arg_idx,
  * measurement-first prerequisite -- live pool selection stays uniform.
  *
  * pool_kind partitions the stash by which pool the hint came from so
- * the follow-up can score per-kind independently.  Today only the
- * per-syscall pool is consumed; the field-scoped pool is recording-
- * only.  CMP_HINT_POOL_FIELD is reserved for the field-scoped
- * consumer when [11-field-scoped] consumer wiring lands.
+ * the follow-up can score per-kind independently.  Both pools now have
+ * consumers wired; the field-scoped consumer runs in SHADOW today
+ * (bumps would-pick / would-miss counters but does not affect the live
+ * pick, which stays per-syscall) and a follow-up flips it LIVE once
+ * the shadow signal is validated against a real run.
  */
 enum cmp_hint_pool_kind {
 	CMP_HINT_POOL_PER_SYSCALL = 0,
