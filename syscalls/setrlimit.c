@@ -40,6 +40,27 @@ static void sanitise_setrlimit(struct syscallrecord *rec)
 		return;
 
 	/*
+	 * Self-poison guard.  setrlimit has no pid argument: the call
+	 * always lands on the calling task, which in trinity is always
+	 * a harness-owned process.  Lowering one of NOFILE / AS / DATA
+	 * / STACK / RSS / MEMLOCK with the {0,0} or single-page entries
+	 * the safe dictionary draws (see prlimit64.c rationale) is
+	 * kernel-legal but harness-lethal: deferred_free's mprotect-RW
+	 * ENOMEMs and heap_bounds_init's /proc/self/maps open hits
+	 * EMFILE, leaving the child to limp on with broken bookkeeping.
+	 * Re-roll the resource to a non-fragile one before the bucket
+	 * decides cur/max, keeping the full value range against CPU /
+	 * FSIZE / CORE / NPROC / LOCKS / SIGPENDING / MSGQUEUE / NICE /
+	 * RTPRIO / RTTIME.  prlimit64 preserves full-range fragile-
+	 * resource coverage via its "random nearby pid" bucket; setrlimit
+	 * has no equivalent escape hatch because the target is always us.
+	 */
+	if (resource_is_fragile(rec->a1))
+		rec->a1 = pick_nonfragile_rlimit_resource(
+				rlimit_resources,
+				ARRAY_SIZE(rlimit_resources));
+
+	/*
 	 * Per-resource safe-limit bias (see prlimit64.c for the full
 	 * rationale).  Bucket distribution:
 	 *
@@ -47,6 +68,12 @@ static void sanitise_setrlimit(struct syscallrecord *rec)
 	 *   ~20% real resource + random values to keep the cur<=max /
 	 *        privileged-max validation path warm.
 	 *   ~10% pure-random resource and values for the long tail.
+	 *
+	 * Bucket-7/9 re-pick the resource; gate those picks through the
+	 * harness-fragile filter too so a re-roll does not undo the
+	 * self-poison guard above.  rand32() in bucket 9 is replaced by
+	 * a non-fragile pick because, unlike prlimit64's "random nearby
+	 * pid" bucket, every setrlimit call is self-targeted.
 	 */
 	{
 		unsigned int bucket = rnd_modulo_u32(10);
@@ -58,11 +85,10 @@ static void sanitise_setrlimit(struct syscallrecord *rec)
 			rlim->rlim_cur = (rlim_t) safe_cur;
 			rlim->rlim_max = (rlim_t) safe_max;
 		} else {
-			if (bucket >= 9)
-				rec->a1 = rand32();
-			else if (bucket >= 7)
-				rec->a1 = random_rlimit_resource(rlimit_resources,
-								 ARRAY_SIZE(rlimit_resources));
+			if (bucket >= 7)
+				rec->a1 = pick_nonfragile_rlimit_resource(
+						rlimit_resources,
+						ARRAY_SIZE(rlimit_resources));
 
 			rlim->rlim_cur = random_rlim();
 			rlim->rlim_max = random_rlim();
