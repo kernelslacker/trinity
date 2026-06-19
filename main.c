@@ -155,6 +155,20 @@ static unsigned int reap_ring_fast_die_count;
 
 static bool reap_entry_is_fast_die(const struct reap_record *r)
 {
+	/*
+	 * EXIT_NO_SYSCALLS_ENABLED is the clean, expected terminal reason in
+	 * targeted mode (-c/-r/-g): the selected set self-disabled via ENOSYS /
+	 * VALIDATE_FAIL_THRESHOLD.  Children racing the shutdown exit with this
+	 * reason (status 1) via the locks.c spin-bailout
+	 * _exit(shm->exit_reason); that is depletion, not a fork-die-respawn
+	 * corruption loop.  Excluded in targeted mode only -- default fuzz mode
+	 * keeps a zero active set on the corruption path.
+	 */
+	if (r->exit_status == EXIT_NO_SYSCALLS_ENABLED &&
+	    (do_specific_syscall || random_selection ||
+	     desired_group != GROUP_NONE))
+		return false;
+
 	return r->lifetime < FAST_DIE_LIFETIME_THRESHOLD_S &&
 	       r->exit_status > 0;
 }
