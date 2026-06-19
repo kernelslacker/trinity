@@ -79,7 +79,15 @@ static int prctl_opts[] = {
 	PR_SET_TAGGED_ADDR_CTRL, PR_GET_TAGGED_ADDR_CTRL,
 	PR_SET_IO_FLUSHER, PR_GET_IO_FLUSHER,
 	PR_SET_SYSCALL_USER_DISPATCH, PR_SCHED_CORE,
-	PR_SET_MDWE, PR_GET_MDWE,
+	/*
+	 * PR_SET_MDWE is intentionally omitted: MDWE is irreversible
+	 * per-process and enforces W^X.  Once the long-lived fuzz child
+	 * sets PR_MDWE_REFUSE_EXEC_GAIN on itself, trinity's deferred-free
+	 * allocator can no longer mprotect its tracked arenas back to
+	 * writable -- the next re-protect returns EACCES and the child
+	 * SIGSEGVs.  PR_GET_MDWE is read-only and stays.
+	 */
+	PR_GET_MDWE,
 	PR_SET_MEMORY_MERGE, PR_GET_MEMORY_MERGE,
 	PR_GET_SHADOW_STACK_STATUS, PR_SET_SHADOW_STACK_STATUS, PR_LOCK_SHADOW_STACK_STATUS,
 	PR_TIMER_CREATE_RESTORE_IDS, PR_FUTEX_HASH, PR_RSEQ_SLICE_EXTENSION,
@@ -208,20 +216,6 @@ static void sanitise_prctl(struct syscallrecord *rec)
 		 */
 		rec->a2 = (unsigned long) get_writable_address(16);
 		break;
-
-#ifdef PR_MDWE_REFUSE_EXEC_GAIN
-	case PR_SET_MDWE: {
-		static const unsigned long mdwe_flags[] = {
-			0,
-			PR_MDWE_REFUSE_EXEC_GAIN,
-			PR_MDWE_NO_INHERIT,
-			PR_MDWE_REFUSE_EXEC_GAIN | PR_MDWE_NO_INHERIT,
-		};
-		rec->a2 = mdwe_flags[rnd_modulo_u32(ARRAY_SIZE(mdwe_flags))];
-		rec->a3 = rec->a4 = rec->a5 = 0;
-		break;
-	}
-#endif
 
 #ifdef PR_TAGGED_ADDR_ENABLE
 	case PR_SET_TAGGED_ADDR_CTRL: {
