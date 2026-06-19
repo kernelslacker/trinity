@@ -1107,6 +1107,50 @@ retry:
 						__atomic_fetch_add(
 							&shm->stats.frontier_decay_candidates,
 							1UL, __ATOMIC_RELAXED);
+
+					/* Arm B live reject for the silent-streak
+					 * decay.  FRONTIER_SILENT_DECAY_REJECT_DENOM-1
+					 * / FRONTIER_SILENT_DECAY_REJECT_DENOM
+					 * probabilistic demote so the syscall still
+					 * samples at ~3% -- any of the four lanes the
+					 * streak resets on (PC-edge, transition,
+					 * CMP-insert, SUCCESS-bucket errno shift) will
+					 * release the decay on the very next pick that
+					 * observes the productive event.  Arm A leaves
+					 * selection byte-identical to today; the shadow
+					 * counters above bumped in lock-step so the
+					 * would-be divergence stays observable across
+					 * both cohorts.  parent context (child == NULL)
+					 * falls through to no-reject to preserve
+					 * baseline behaviour for any non-child caller,
+					 * matching the frontier_blend / errno-plateau
+					 * arm-b parent fallbacks.
+					 *
+					 * Coordination with the errno-plateau decay
+					 * below: the goto retry here preempts the
+					 * errno-plateau check that follows in this
+					 * accept iteration, so a single pick can never
+					 * be double-demoted within one iteration
+					 * regardless of how the two arm-B stamps cross.
+					 * Across picks, the joint (silent-decay arm B
+					 * AND errno-plateau arm B) cohort sees
+					 * compounded rejection (~99.9% combined) on a
+					 * syscall both predicates classify as wasteful
+					 * from orthogonal angles -- intentional: both
+					 * gates target the same ~3% recoverable
+					 * sampling rate, and compounding to a smaller
+					 * effective rate on a doubly-classified-stuck
+					 * syscall is strictly safer (any productive
+					 * lane on either predicate still releases the
+					 * decay on the next pick). */
+					if (child != NULL &&
+					    child->frontier_silent_decay_arm_b &&
+					    rnd_modulo_u32(FRONTIER_SILENT_DECAY_REJECT_DENOM) != 0) {
+						__atomic_fetch_add(
+							&shm->stats.frontier_silent_decay_live_rejects,
+							1UL, __ATOMIC_RELAXED);
+						goto retry;
+					}
 				}
 			}
 		}

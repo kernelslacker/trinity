@@ -109,6 +109,19 @@ enum strategy_t {
 #define FRONTIER_SHADOW_DECAY_STREAK 64UL
 
 /*
+ * Silent-streak decay live-reject denom (Arm B only).  Companion to the
+ * shadow predicate gated on FRONTIER_SHADOW_DECAY_STREAK + the no-CMP-
+ * and-no-SUCCESS-errno-shift UNLESS clause.  REJECT_DENOM-1 / REJECT_DENOM
+ * (31/32 == ~96.875% rejection) matches FRONTIER_ERRNO_PLATEAU_REJECT_DENOM
+ * and CRED_THROTTLE_REJECT_DENOM so an Arm-B child still samples a
+ * decay-classified syscall at ~3% -- any of the four lanes the silent
+ * streak resets on (PC-edge novelty, transition novelty, CMP novelty,
+ * SUCCESS-errno shift) will release the decay on the very next pick that
+ * observes the productive event.
+ */
+#define FRONTIER_SILENT_DECAY_REJECT_DENOM 32U
+
+/*
  * Errno-plateau decay predicate constants for the coverage-frontier
  * picker's silent-regime accept path.  A syscall whose lifetime call
  * count has accumulated past FRONTIER_ERRNO_PLATEAU_MIN_CALLS without
