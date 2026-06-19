@@ -2023,8 +2023,9 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
  * Per-use-case output transform applied after the pool entry is picked.
  * Factored out of the (formerly inline) try_get body so each transform
  * lives next to its own documentation; the four use cases map onto
- * three distinct rotations (EXACT and FIELD share the bare-C path while
- * the FIELD pool lookup waits on PHASE 3's [11-field-scoped] work).
+ * three distinct rotations (EXACT and FIELD share the bare-C path
+ * because both back equality-gated slots that need the recorded
+ * constant unmolested).
  *
  * The transform does not consult the pool entry's recorded comparison
  * width: PHASE 2 deliberately keeps every existing pull byte-for-byte
@@ -2044,8 +2045,9 @@ static unsigned long cmp_hint_apply_transform(unsigned long c,
 		 * selectors, version magics) need the constant
 		 * unmolested -- the boundary +/-1 below would silently
 		 * miss every exact-equality kernel check.  FIELD shares
-		 * this path until PHASE 3 wires a field-scoped pool
-		 * lookup. */
+		 * this path for the same reason: a field-scoped pull
+		 * also targets equality-gated struct fields, so the
+		 * recorded constant must reach the kernel unmodified. */
 		return c;
 	case CMP_HINT_BOUNDARY:
 		/*
