@@ -4,32 +4,140 @@
  */
 #include <signal.h>
 #include <string.h>
+#include <sys/types.h>
+#include <unistd.h>
 #include "pids.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
+#include "utils.h"
 
+#ifndef SI_USER
+#define SI_USER		0
+#endif
+#ifndef SI_QUEUE
+#define SI_QUEUE	-1
+#endif
+#ifndef SI_TIMER
+#define SI_TIMER	-2
+#endif
+#ifndef SI_ASYNCIO
+#define SI_ASYNCIO	-4
+#endif
+#ifndef SI_TKILL
+#define SI_TKILL	-6
+#endif
+
+/*
+ * Drop the synchronous-fault signals (SIGILL/SIGTRAP/SIGABRT/SIGBUS/
+ * SIGSEGV) and the lifecycle-fatal trio (SIGKILL/SIGSTOP/SIGTERM) from
+ * the default path -- they hammer trinity's own handlers and child
+ * teardown.  sig==0 is the kernel's existence-probe and is covered by
+ * the dedicated path below.
+ */
 static unsigned long safe_signals[] = {
-	SIGHUP, SIGQUIT, SIGILL, SIGTRAP, SIGABRT,
-	SIGBUS, SIGFPE, SIGUSR1, SIGSEGV, SIGUSR2, SIGPIPE,
-	SIGALRM, SIGTERM, SIGCHLD, SIGCONT,
-	SIGURG, SIGXCPU, SIGXFSZ, SIGVTALRM,
-	SIGPROF, SIGWINCH, SIGIO, SIGSYS,
+	SIGHUP, SIGQUIT, SIGFPE, SIGUSR1, SIGUSR2, SIGPIPE,
+	SIGALRM, SIGCHLD, SIGCONT, SIGURG, SIGXCPU, SIGXFSZ,
+	SIGVTALRM, SIGPROF, SIGWINCH, SIGIO, SIGSYS,
 };
+
+/* see rt_sigqueueinfo.c for the si_code class commentary */
+static const int valid_si_codes[] = {
+	SI_USER,
+	SI_QUEUE,
+	SI_TKILL,
+};
+
+static const int invalid_si_codes[] = {
+	SI_TIMER,
+	SI_ASYNCIO,
+	1,	/* SI_KERNEL on most arches -- rejected with EPERM */
+	2,
+};
+
+static void fill_siginfo_by_class(siginfo_t *info)
+{
+	int code;
+
+	memset(info, 0, sizeof(*info));
+
+	if (rnd_modulo_u32(10) < 7)
+		code = RAND_ARRAY(valid_si_codes);
+	else
+		code = RAND_ARRAY(invalid_si_codes);
+
+	info->si_code = code;
+	info->si_pid = mypid();
+	info->si_uid = getuid();
+
+	if (code == SI_QUEUE) {
+		if (RAND_BOOL())
+			info->si_int = (int) rand32();
+		else
+			info->si_ptr = (void *) (unsigned long) rand64();
+	} else if (code == SI_USER || code == SI_TKILL) {
+		/* leave union arm zero -- matches kill()/tkill() shape */
+	} else {
+		info->si_int = (int) rand32();
+	}
+}
+
+/*
+ * do_send_specific() requires the located task's real tgid to equal the
+ * supplied tgid -- two independent ARG_PID picks return ESRCH ~60% of the
+ * time.  Trinity's children are single-threaded forks so tgid == pid for
+ * every pool entry; reuse the same value for both args.  Keep a small
+ * slice of incoherent / random pairs so the ESRCH / EPERM gates still
+ * see traffic.
+ */
+static void pick_target_pair(pid_t *tgid, pid_t *pid)
+{
+	unsigned int draw = rnd_modulo_u32(10);
+	pid_t p;
+
+	if (draw < 6) {
+		*tgid = mypid();
+		*pid = mypid();
+		return;
+	}
+	if (draw < 9) {
+		p = get_random_pid_from_pool();
+		*tgid = p;
+		*pid = p;
+		return;
+	}
+	*tgid = (pid_t) rand32();
+	*pid = (pid_t) rand32();
+}
 
 static void sanitise_rt_tgsigqueueinfo(struct syscallrecord *rec)
 {
+	pid_t tgid, pid;
 	siginfo_t *info;
+	unsigned int draw;
 
-	info = (siginfo_t *) get_writable_struct(sizeof(*info));
-	if (!info)
+	pick_target_pair(&tgid, &pid);
+	rec->a1 = (unsigned long) tgid;
+	rec->a2 = (unsigned long) pid;
+
+	/*
+	 * Bias toward sig==0 (existence-probe, no delivery), the ignorable
+	 * safe set, and the realtime range -- realtime signals are the ones
+	 * that carry siginfo all the way through to the receiver.
+	 */
+	draw = rnd_modulo_u32(10);
+	if (draw < 2)
+		rec->a3 = 0;
+	else if (draw < 6)
+		rec->a3 = RAND_ARRAY(safe_signals);
+	else
+		rec->a3 = SIGRTMIN + rnd_modulo_u32(SIGRTMAX - SIGRTMIN + 1);
+
+	info = (siginfo_t *) get_writable_address(sizeof(*info));
+	if (info == NULL)
 		return;
-	memset(info, 0, sizeof(*info));
 
-	info->si_code = SI_QUEUE;
-	info->si_pid = mypid();
-	info->si_uid = getuid();
-	info->si_int = rand32();
-
+	fill_siginfo_by_class(info);
 	rec->a4 = (unsigned long) info;
 }
 
@@ -37,9 +145,9 @@ struct syscallentry syscall_rt_tgsigqueueinfo = {
 	.name = "rt_tgsigqueueinfo",
 	.group = GROUP_SIGNAL,
 	.num_args = 4,
-	.argtype = { [0] = ARG_PID, [1] = ARG_PID, [2] = ARG_OP },
+	.argtype = { [0] = ARG_PID, [1] = ARG_PID },
 	.argname = { [0] = "tgid", [1] = "pid", [2] = "sig", [3] = "uinfo" },
-	.arg_params[2].list = ARGLIST(safe_signals),
+	.flags = AVOID_SYSCALL,	/* can disrupt signal handling */
 	.sanitise = sanitise_rt_tgsigqueueinfo,
 	.rettype = RET_ZERO_SUCCESS,
 };
