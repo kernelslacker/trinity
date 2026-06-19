@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
+#include <stdint.h>
 #include <unistd.h>
 #include <string.h>
 #include <stdlib.h>
@@ -8,6 +9,7 @@
 #include <sys/ptrace.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 
@@ -674,6 +676,93 @@ static void dump_pid_stack_bounded(int pid)
 	}
 }
 
+/*
+ * Bounded /proc/<pid>/fdinfo/ reader.  fdinfo is a directory of
+ * per-fd files, so a wedged child with many open descriptors could
+ * stream unbounded text into the watchdog snapshot, and individual
+ * entries (eventpoll, in particular) can dump every watched fd.
+ * Cap both the number of entries walked and the bytes read per
+ * entry; truncate the rest silently rather than chase the long
+ * tail.  Uses getdents64 directly to stay allocation-free on the
+ * reap/watchdog path (opendir/readdir would malloc), and a single
+ * O_RDONLY read per fdinfo file to match the wchan/stack helpers.
+ * Silent on any open/read failure -- the snapshot treats missing
+ * fdinfo as an omitted line, not a failure to investigate further.
+ */
+#define DSTATE_FDINFO_MAX_ENTRIES 64
+#define DSTATE_FDINFO_MAX_BYTES   512
+
+static void dump_pid_fdinfo_bounded(int pid)
+{
+	struct linux_dirent64 {
+		uint64_t       d_ino;
+		int64_t        d_off;
+		unsigned short d_reclen;
+		unsigned char  d_type;
+		char           d_name[];
+	};
+	char dirpath[80];
+	char filename[96];
+	char dirbuf[4096];
+	char buf[DSTATE_FDINFO_MAX_BYTES];
+	int dirfd, fd;
+	long nread, pos;
+	unsigned int seen = 0;
+	ssize_t n;
+	char *p, *eol;
+
+	snprintf(dirpath, sizeof(dirpath), "/proc/%d/fdinfo", pid);
+
+	dirfd = open(dirpath, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+	if (dirfd < 0)
+		return;
+
+	while (seen < DSTATE_FDINFO_MAX_ENTRIES &&
+	       (nread = syscall(SYS_getdents64, dirfd, dirbuf,
+				sizeof(dirbuf))) > 0) {
+		for (pos = 0; pos < nread &&
+		     seen < DSTATE_FDINFO_MAX_ENTRIES; ) {
+			struct linux_dirent64 *de =
+				(struct linux_dirent64 *)(dirbuf + pos);
+			const char *name = de->d_name;
+
+			pos += de->d_reclen;
+
+			/* Skip "." / ".." and any non-numeric entry. */
+			if (name[0] < '0' || name[0] > '9')
+				continue;
+
+			snprintf(filename, sizeof(filename),
+				 "/proc/%d/fdinfo/%s", pid, name);
+			fd = open(filename, O_RDONLY | O_CLOEXEC);
+			if (fd < 0)
+				continue;
+			n = read(fd, buf, sizeof(buf) - 1);
+			close(fd);
+			if (n <= 0)
+				continue;
+			buf[n] = '\0';
+			seen++;
+
+			for (p = buf; *p != '\0'; p = eol + 1) {
+				eol = strchr(p, '\n');
+				if (eol == NULL) {
+					if (*p != '\0')
+						output(0, "pid %d fdinfo[%s]: %s\n",
+						       pid, name, p);
+					break;
+				}
+				*eol = '\0';
+				if (*p != '\0')
+					output(0, "pid %d fdinfo[%s]: %s\n",
+					       pid, name, p);
+			}
+		}
+	}
+
+	close(dirfd);
+}
+
 struct dstate_fd_print_ctx {
 	char buf[128];
 	int off;
@@ -740,6 +829,11 @@ static bool dump_dstate_epoll_select_topology(const char *name,
  *   - /proc/<pid>/wchan: the kernel sleep address/symbol.
  *   - /proc/<pid>/stack: the kernel call stack (silently omitted when
  *     the kernel hides it from unprivileged readers).
+ *   - /proc/<pid>/fdinfo/: per-fd state (pos/flags + driver-specific
+ *     bits like eventpoll/inotify watches) for the wedged task's open
+ *     descriptors, capped at DSTATE_FDINFO_MAX_ENTRIES entries and
+ *     DSTATE_FDINFO_MAX_BYTES per entry so a fd-heavy child cannot
+ *     stream unbounded text into the snapshot.
  *
  * Runs on the parent's reap/watchdog path.  All /proc reads go through
  * the bounded helpers above so a wedged task cannot stall the reap
@@ -802,6 +896,7 @@ static void dump_dstate_diagnostics(struct childdata *child, int childno,
 
 	dump_pid_wchan(pid);
 	dump_pid_stack_bounded(pid);
+	dump_pid_fdinfo_bounded(pid);
 }
 
 struct stuck_evict_ctx {
