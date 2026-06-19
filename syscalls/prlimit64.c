@@ -113,20 +113,22 @@ static void sanitise_prlimit64(struct syscallrecord *rec)
 
 	/*
 	 * Self-poison guard.  prlimit64 against a trinity-owned pid with a
-	 * harness-fragile resource lowers our own NOFILE / AS / DATA /
-	 * STACK / RSS / MEMLOCK -- the kernel accepts the call as legal
-	 * (the safe-dictionary draws are cur<=max + within per-resource
-	 * bounds), but the immediate downstream effect on the harness
-	 * child is mprotect-RW returning ENOMEM in deferred_free and the
-	 * heap_bounds_init /proc/self/maps open returning EMFILE.  The
-	 * child does not crash; it limps on with broken heap-tracking and
-	 * fd machinery for the rest of its life (silent coverage loss).
+	 * harness-fragile resource lowers our own CPU / NOFILE / AS /
+	 * DATA / STACK / RSS / MEMLOCK -- the kernel accepts the call as
+	 * legal (the safe-dictionary draws are cur<=max + within per-
+	 * resource bounds), but the immediate downstream effect on the
+	 * harness child is mprotect-RW returning ENOMEM in deferred_free,
+	 * the heap_bounds_init /proc/self/maps open returning EMFILE, or
+	 * (for a CPU {0,0} cap) update_rlimit_cpu() arming an immediate
+	 * posix-cpu-timer SIGKILL.  In the non-CPU cases the child does
+	 * not crash; it limps on with broken heap-tracking and fd
+	 * machinery for the rest of its life (silent coverage loss).
 	 * Re-roll the resource to a non-fragile one for harness targets,
-	 * keeping the full safe/random value range against CPU / FSIZE /
-	 * NPROC / NICE / RTPRIO / LOCKS / SIGPENDING / MSGQUEUE / CORE.
-	 * Full-range fragile-resource fuzzing is preserved for the
-	 * non-harness "random nearby pid" bucket above, where the
-	 * tiny-limit kernel coverage path actually wants to land.
+	 * keeping the full safe/random value range against FSIZE / NPROC /
+	 * NICE / RTPRIO / LOCKS / SIGPENDING / MSGQUEUE / CORE.  Full-
+	 * range fragile-resource fuzzing (incl. CPU {0,0}) is preserved
+	 * for the non-harness "random nearby pid" bucket above, where
+	 * the tiny-limit kernel coverage path actually wants to land.
 	 */
 	if (pid_is_harness_owned((pid_t) rec->a1) &&
 	    resource_is_fragile(rec->a2))
