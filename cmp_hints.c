@@ -834,8 +834,9 @@ static bool cmp_field_pool_insert_locked(struct cmp_field_pool *pool,
 		e->size = size;
 		/* Field pools inherit the same fresh-insert / evict-replace
 		 * SHADOW-score reset discipline as the per-syscall pool above;
-		 * the score field today is recording-only since field pools
-		 * have no consumer yet ([11-feedback-loop]). */
+		 * the score field is recording-only because [11-feedback-loop]
+		 * PHASE-4 score-based selection is shadow for both pools and
+		 * does not steer pool selection yet. */
 		e->wins = 0;
 		e->misses = 0;
 		e->last_used = stamp;
