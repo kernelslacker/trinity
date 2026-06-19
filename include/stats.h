@@ -2580,6 +2580,20 @@ struct stats_s {
 	unsigned long frontier_decay_candidates;
 	unsigned long frontier_decay_would_skip;
 
+	/* Live arm-B reject count for the silent-streak decay above.  Pairs
+	 * with frontier_decay_would_skip (the both-arms shadow count of every
+	 * silent-regime pick the predicate fires for) as the headline arm-B
+	 * behaviour delta: one bump per arm-B pick the live REJECT_DENOM-1 /
+	 * REJECT_DENOM probabilistic gate at the picker site actually rejected.
+	 * Strictly <= frontier_decay_would_skip restricted to arm-B picks.
+	 * Arm A NEVER bumps this counter (it has no live reject path) so the
+	 * value is the pure Arm-B demote count, comparable against the Arm-B
+	 * silent-pick throughput recoverable from frontier_silent_picks
+	 * normalised by frontier_silent_decay_arm_b_children / total cohort
+	 * split (kcov_shm).  Mirrors the frontier_errno_decay_live_rejects
+	 * shape below so the two live-decay deltas read side by side. */
+	unsigned long frontier_silent_decay_live_rejects;
+
 	/* SHADOW + per-child A/B accounting for the errno-plateau decay at the
 	 * coverage-frontier picker's silent-regime accept site.  Predicate is
 	 * frontier_errno_plateau_should_decay() in strategy.c -- see the

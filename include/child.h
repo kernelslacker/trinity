@@ -762,6 +762,29 @@ struct childdata {
 	 * environmental drift is common to both arms.  Read-only after stamp;
 	 * owner-only writes; no cross-process coherence needed. */
 	bool frontier_errno_decay_arm_b;
+	/* A/B-comparison stamp for the silent-streak decay at the coverage-
+	 * frontier picker's silent-regime accept site.  Arm A (false) is the
+	 * control: the shadow counters (frontier_decay_candidates /
+	 * frontier_decay_would_skip) still bump in lock-step but selection
+	 * stays byte-identical to the pre-row baseline for that cohort.  Arm B
+	 * (true) additionally engages the FRONTIER_SILENT_DECAY_REJECT_DENOM-1
+	 * / FRONTIER_SILENT_DECAY_REJECT_DENOM probabilistic reject when the
+	 * predicate fires (streak >= FRONTIER_SHADOW_DECAY_STREAK AND the
+	 * no-CMP-and-no-SUCCESS-errno-shift UNLESS clause holds), so the
+	 * operator can read the live divergence between cohorts off the
+	 * frontier_silent_decay_live_rejects shm counter (Arm B only) against
+	 * the symmetric frontier_decay_would_skip shm counter (both arms).
+	 * Independent of the sibling frontier_errno_decay_arm_b above so the
+	 * two decay-axis cohort comparisons stay un-confounded; the goto retry
+	 * the silent-streak reject takes preempts the errno-plateau check that
+	 * follows it at the picker site, so a single pick can never be
+	 * double-demoted within one accept iteration regardless of how the two
+	 * arm-B stamps cross.  Stamped once at child init via ONE_IN(2) and
+	 * never mutated, matching the frontier_errno_decay_arm_b pattern above
+	 * so time-of-day environmental drift is common to both arms.  Read-
+	 * only after stamp; owner-only writes; no cross-process coherence
+	 * needed. */
+	bool frontier_silent_decay_arm_b;
 	/* A/B-comparison stamp for the adaptive remote-KCOV mode decision in
 	 * dispatch_step.  Arm A (false) is the control: the static policy
 	 * (per-syscall KCOV_REMOTE_HEAVY flag + ONE_IN(remote_reciprocal))

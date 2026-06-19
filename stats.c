@@ -3630,6 +3630,8 @@ static const struct {
 	  offsetof(struct stats_s, frontier_decay_candidates) },
 	{ "frontier_decay_would_skip",
 	  offsetof(struct stats_s, frontier_decay_would_skip) },
+	{ "frontier_silent_decay_live_rejects",
+	  offsetof(struct stats_s, frontier_silent_decay_live_rejects) },
 	/* SHADOW + per-child A/B accounting for the errno-plateau decay at
 	 * the coverage-frontier picker's silent-regime accept site.  See the
 	 * struct-field comments in include/stats.h and the FRONTIER_ERRNO_
@@ -7046,6 +7048,14 @@ static void dump_stats_strategy_summary(void)
 	if (shm->stats.frontier_decay_would_skip)
 		stat_row("strategy", "frontier_decay_would_skip",
 			 shm->stats.frontier_decay_would_skip);
+	/* Arm-B-only live reject count for the silent-streak decay above.
+	 * Pairs with frontier_decay_would_skip (both arms) as the headline
+	 * arm-B behaviour delta; normalise against the Arm-B silent-pick
+	 * throughput recoverable from frontier_silent_picks and the
+	 * frontier_silent_decay_arm_{a,b}_children cohort split in kcov_shm. */
+	if (shm->stats.frontier_silent_decay_live_rejects)
+		stat_row("strategy", "frontier_silent_decay_live_rejects",
+			 shm->stats.frontier_silent_decay_live_rejects);
 	/* SHADOW + per-child A/B errno-plateau decay (silent-regime accept
 	 * site): would_skip is the both-arms shadow demote count, live_
 	 * rejects is the arm-B-only actual demote count, overlap_silent is

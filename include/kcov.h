@@ -984,6 +984,20 @@ struct kcov_shared {
 	 * Arm-B-only live reject rate is normalised against. */
 	unsigned int  frontier_errno_decay_arm_a_children;
 	unsigned int  frontier_errno_decay_arm_b_children;
+	/* A/B cohort split for the silent-streak decay stamp
+	 * (frontier_silent_decay_arm_b).  frontier_silent_decay_arm_{a,b}_
+	 * children is bumped once per child in init_child_runtime_config so
+	 * the operator can normalise the realised population split against the
+	 * fleet-scale variance of the ONE_IN(2) stamp (a small fleet can land
+	 * lopsided).  Companion to the frontier_silent_decay_live_rejects
+	 * shm->stats counter bumped at the picker site and to the symmetric
+	 * frontier_decay_would_skip shadow counter that bumps for both arms:
+	 * the cohort split is the denominator the Arm-B-only live reject rate
+	 * is normalised against.  Shape matches frontier_errno_decay_arm_{a,b}
+	 * _children above so the population-normalisation pattern stays
+	 * uniform across the A/B rows. */
+	unsigned int  frontier_silent_decay_arm_a_children;
+	unsigned int  frontier_silent_decay_arm_b_children;
 	/* A/B cohort split for the adaptive remote-KCOV mode stamp
 	 * (remote_adaptive_arm_b).  remote_adaptive_arm_{a,b}_children is
 	 * bumped once per child in init_child_runtime_config so the operator
