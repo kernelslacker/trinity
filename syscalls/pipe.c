@@ -39,9 +39,10 @@ static void register_pipe_fd(int fd, bool reader)
  *      raise IP.  Pool-owned -- no deferred_free needed for the buffer.
  *
  *   2. The snap struct carries a magic cookie that the post handler
- *      checks before dereferencing snap->fildes.  A sibling scribble of
- *      rec->post_state with a heap-shaped pointer to a foreign chunk
- *      survives looks_like_corrupted_ptr() but fails the cookie gate.
+ *      checks before dereferencing *get_arg_snapshot(rec, 1).  A
+ *      sibling scribble of rec->post_state with a heap-shaped pointer
+ *      to a foreign chunk survives looks_like_corrupted_ptr() but
+ *      fails the cookie gate.
  *
  *   3. The snap pointer is registered in the post-state ownership table
  *      at sanitise time and checked in the post handler via
@@ -49,14 +50,19 @@ static void register_pipe_fd(int fd, bool reader)
  *      otherwise sail past the magic check; the ownership table closes
  *      that gap.
  *
- * Only the writable-arena buffer pointer needs storing -- there is no
- * second pointer to free because get_writable_address() returns
- * pool-managed memory.
+ * The OUT-pointer (a1 / fildes) defence is now generic:
+ * .arg_snapshot_mask opts a1 into the dispatch-time arg_shadow capture
+ * (snapshotted inside __do_syscall() after the final
+ * blanket_address_scrub, from the locals about to enter the kernel),
+ * and the post handler reads it via get_arg_snapshot(rec, 1).  A
+ * sibling scribble of rec->a1 between dispatch and post bumps the
+ * generic arg_shadow_stomp tripwire from inside the accessor; the
+ * returned value is the kernel-visible address, so the fd-pair deref
+ * still hits the buffer the kernel actually wrote.
  */
 #define PIPE_POST_STATE_MAGIC	0x504950455F4D4147UL	/* "PIPE_MAG" */
 struct pipe_post_state {
 	unsigned long magic;
-	int *fildes;
 };
 
 static void sanitise_pipe(struct syscallrecord *rec)
@@ -77,9 +83,11 @@ static void sanitise_pipe(struct syscallrecord *rec)
 	}
 	rec->a1 = (unsigned long) fildes;
 
+	/* magic-cookie / private post_state: see post_state_register().
+	 * The OUT-pointer is defended via .arg_snapshot_mask + the
+	 * dispatch-time arg_shadow capture, not a snap field. */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = PIPE_POST_STATE_MAGIC;
-	snap->fildes = fildes;
 	rec->post_state = (unsigned long) snap;
 	post_state_register(snap);
 }
@@ -89,11 +97,12 @@ static void sanitise_pipe(struct syscallrecord *rec)
  * .ret_objtype_via_post.  Runs ahead of post_pipe(), which clears
  * rec->post_state during its cleanup pass; reading the snap from a
  * .post hook after that point would see zero.  Does its own shape +
- * magic + ownership validation before deref so a sibling-stomped
- * post_state doesn't drive register_pipe_fd() with foreign bytes --
- * corruption attribution stays in post_pipe() below, which repeats
- * the same checks and owns the post_handler_corrupt_ptr_bump()
- * accounting.
+ * magic + ownership validation and reads the OUT-pointer via the
+ * generic arg_shadow accessor before deref so a sibling-stomped
+ * post_state or rec->a1 doesn't drive register_pipe_fd() with foreign
+ * bytes -- corruption attribution for the snap-struct gates stays in
+ * post_pipe() below; out-pointer corruption is bumped generically by
+ * arg_shadow_stomp from inside get_arg_snapshot().
  */
 static void post_pipe_record_fds(struct syscallrecord *rec)
 {
@@ -113,29 +122,17 @@ static void post_pipe_record_fds(struct syscallrecord *rec)
 	if (snap->magic != PIPE_POST_STATE_MAGIC)
 		return;
 
-	fildes = snap->fildes;
+	/*
+	 * The OUT-pointer (a1 / fildes) is read via the generic arg_shadow
+	 * accessor: it returns the kernel-visible address snapshotted in
+	 * __do_syscall() after the final blanket_address_scrub.  A sibling
+	 * stomp of rec->a1 between dispatch and here bumps arg_shadow_stomp
+	 * from inside the accessor and the post handler still sees the
+	 * address the kernel actually wrote.
+	 */
+	fildes = (int *) get_arg_snapshot(rec, 1);
 	if (fildes == NULL || looks_like_corrupted_ptr(rec, fildes))
 		return;
-
-	/*
-	 * Identity check: snap->fildes was set to rec->a1 at sanitise
-	 * time -- both slots hold the same get_writable_address() return.
-	 * looks_like_corrupted_ptr() above is shape-only: a sibling stomp
-	 * that left a heap-shaped value in either slot survives the
-	 * shape gate and the fd-pair deref below would read either the
-	 * kernel's writes into a foreign address (snap->fildes intact,
-	 * rec->a1 stomped pre-syscall) or foreign memory the kernel
-	 * never touched (snap->fildes stomped, rec->a1 intact).  The
-	 * snap struct already cleared the magic + ownership gates, so a
-	 * snap->fildes != rec->a1 divergence narrows the scribble to one
-	 * of those two vectors.  Bail before register_pipe_fd() sees fd
-	 * values read from the wrong buffer.
-	 */
-	if ((unsigned long) fildes != rec->a1) {
-		__atomic_add_fetch(&shm->stats.pipe_inner_ptr_mismatch,
-				   1, __ATOMIC_RELAXED);
-		return;
-	}
 
 	register_pipe_fd(fildes[0], true);
 	register_pipe_fd(fildes[1], false);
@@ -206,6 +203,12 @@ struct syscallentry syscall_pipe = {
 	.post = post_pipe,
 	.ret_objtype_via_post = post_pipe_record_fds,
 	.rettype = RET_ZERO_SUCCESS,
+	/* a1 (fildes) is the kernel's OUT-pointer; the post handler
+	 * derefs through it.  Shadow it so a sibling stomp between
+	 * dispatch and post bumps arg_shadow_stomp from inside
+	 * get_arg_snapshot() and the handler still sees the address the
+	 * kernel actually wrote, not the stomped value. */
+	.arg_snapshot_mask = (1u << 0),
 };
 
 /*
@@ -278,9 +281,11 @@ static void sanitise_pipe2(struct syscallrecord *rec)
 	}
 	rec->a1 = (unsigned long) fildes;
 
+	/* magic-cookie / private post_state: see post_state_register().
+	 * The OUT-pointer is defended via .arg_snapshot_mask + the
+	 * dispatch-time arg_shadow capture, not a snap field. */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = PIPE_POST_STATE_MAGIC;
-	snap->fildes = fildes;
 	rec->post_state = (unsigned long) snap;
 	post_state_register(snap);
 
@@ -298,4 +303,10 @@ struct syscallentry syscall_pipe2 = {
 	.post = post_pipe,
 	.ret_objtype_via_post = post_pipe_record_fds,
 	.rettype = RET_ZERO_SUCCESS,
+	/* a1 (fildes) is the kernel's OUT-pointer; the post handler
+	 * derefs through it.  Shadow it so a sibling stomp between
+	 * dispatch and post bumps arg_shadow_stomp from inside
+	 * get_arg_snapshot() and the handler still sees the address the
+	 * kernel actually wrote, not the stomped value. */
+	.arg_snapshot_mask = (1u << 0),
 };

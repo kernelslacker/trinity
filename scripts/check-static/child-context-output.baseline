@@ -196,9 +196,9 @@ syscalls/open.c:93:post_open
 syscalls/pause.c:22:post_pause
 syscalls/perf_event_open.c:1919:post_perf_event_open
 syscalls/personality.c:25:post_personality
-syscalls/pipe.c:153:post_pipe
-syscalls/pipe.c:171:post_pipe
-syscalls/pipe.c:185:post_pipe
+syscalls/pipe.c:150:post_pipe
+syscalls/pipe.c:168:post_pipe
+syscalls/pipe.c:182:post_pipe
 syscalls/pkey.c:127:post_pkey_alloc
 syscalls/poll.c:147:post_poll
 syscalls/poll.c:279:post_ppoll
