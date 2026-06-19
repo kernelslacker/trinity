@@ -3402,6 +3402,154 @@ static void selftest_depth_cap(void)
 		BUG("depth-walk did not visit all three reachable leaves");
 }
 
+/*
+ * Variant-aware reachability gate: struct_desc_has_address_field()
+ * powers the nested-address-scrub mask, which decides whether the
+ * runtime scrub walks a given (syscall, arg) slot at all.  Before the
+ * variant walk landed, an FT_ADDRESS that lived only inside a variant
+ * (e.g. perf_event_attr.bp_addr on the BREAKPOINT arm) was invisible
+ * to the reachability gate -- the mask stayed zero, the scrub never
+ * ran, and an in-struct kernel-deref pointer was free to alias the
+ * shared sibling buffer.
+ *
+ * This selftest pins the three variant locations the walker must now
+ * follow (variant->fields, variant->base->fields, nested_variant->
+ * fields) plus a negative case where no FT_ADDRESS is reachable.  The
+ * runtime scrub in scrub_struct_addresses() mirrors the same
+ * traversal shape, so guarding the reachability walker also guards
+ * the live scrub against the same regression class.
+ */
+static void selftest_variant_address_walk(void)
+{
+	static const struct struct_field fields_with_addr[] = {
+		{
+			.name	= "va_addr",
+			.offset	= 8,
+			.size	= sizeof(unsigned long),
+			.tag	= FT_ADDRESS,
+		},
+	};
+	static const struct struct_field fields_no_addr[] = {
+		{
+			.name		= "va_flags",
+			.offset		= 8,
+			.size		= 4,
+			.tag		= FT_FLAGS,
+			.u.flags	= { .mask = 0xFFU },
+		},
+	};
+
+	/* Case A: FT_ADDRESS lives only in variant->fields[]. */
+	{
+		static const struct union_variant variants[] = {
+			{
+				.discrim_value	= 1,
+				.name		= "addr_v",
+				.fields		= fields_with_addr,
+				.num_fields	= ARRAY_SIZE(fields_with_addr),
+			},
+		};
+		static const struct struct_desc desc = {
+			.name			= "selftest_va_variant_addr",
+			.struct_size		= 16,
+			.buffer_discrim_offset	= 0,
+			.buffer_discrim_size	= 1,
+			.variants		= variants,
+			.num_variants		= ARRAY_SIZE(variants),
+		};
+
+		if (!struct_desc_has_address_field(&desc))
+			BUG("variant-only FT_ADDRESS missed by reachability walker");
+	}
+
+	/* Case B: FT_ADDRESS lives only in variant->base->fields[]. */
+	{
+		static const struct union_variant base = {
+			.name		= "addr_base",
+			.fields		= fields_with_addr,
+			.num_fields	= ARRAY_SIZE(fields_with_addr),
+		};
+		static const struct union_variant variants[] = {
+			{
+				.discrim_value	= 1,
+				.name		= "outer_v",
+				.fields		= fields_no_addr,
+				.num_fields	= ARRAY_SIZE(fields_no_addr),
+				.base		= &base,
+			},
+		};
+		static const struct struct_desc desc = {
+			.name			= "selftest_va_base_addr",
+			.struct_size		= 16,
+			.buffer_discrim_offset	= 0,
+			.buffer_discrim_size	= 1,
+			.variants		= variants,
+			.num_variants		= ARRAY_SIZE(variants),
+		};
+
+		if (!struct_desc_has_address_field(&desc))
+			BUG("variant->base FT_ADDRESS missed by reachability walker");
+	}
+
+	/* Case C: FT_ADDRESS lives only in nested_variants[k]->fields[]. */
+	{
+		static const struct union_variant nested[] = {
+			{
+				.discrim_value	= 7,
+				.name		= "nested_addr_v",
+				.fields		= fields_with_addr,
+				.num_fields	= ARRAY_SIZE(fields_with_addr),
+			},
+		};
+		static const struct union_variant variants[] = {
+			{
+				.discrim_value		= 1,
+				.name			= "outer_v",
+				.fields			= fields_no_addr,
+				.num_fields		= ARRAY_SIZE(fields_no_addr),
+				.nested_discrim_offset	= 4,
+				.nested_discrim_size	= 1,
+				.nested_variants	= nested,
+				.num_nested_variants	= ARRAY_SIZE(nested),
+			},
+		};
+		static const struct struct_desc desc = {
+			.name			= "selftest_va_nested_addr",
+			.struct_size		= 16,
+			.buffer_discrim_offset	= 0,
+			.buffer_discrim_size	= 1,
+			.variants		= variants,
+			.num_variants		= ARRAY_SIZE(variants),
+		};
+
+		if (!struct_desc_has_address_field(&desc))
+			BUG("nested_variant FT_ADDRESS missed by reachability walker");
+	}
+
+	/* Case D: no FT_ADDRESS anywhere -- walker must return false. */
+	{
+		static const struct union_variant variants[] = {
+			{
+				.discrim_value	= 1,
+				.name		= "noaddr_v",
+				.fields		= fields_no_addr,
+				.num_fields	= ARRAY_SIZE(fields_no_addr),
+			},
+		};
+		static const struct struct_desc desc = {
+			.name			= "selftest_va_no_addr",
+			.struct_size		= 16,
+			.buffer_discrim_offset	= 0,
+			.buffer_discrim_size	= 1,
+			.variants		= variants,
+			.num_variants		= ARRAY_SIZE(variants),
+		};
+
+		if (struct_desc_has_address_field(&desc))
+			BUG("reachability walker false-positive on variant without FT_ADDRESS");
+	}
+}
+
 void struct_field_mutate_self_check(void)
 {
 	selftest_flags();
@@ -3412,6 +3560,7 @@ void struct_field_mutate_self_check(void)
 	selftest_skiplist();
 	selftest_variant_scope();
 	selftest_depth_cap();
+	selftest_variant_address_walk();
 }
 
 /*
@@ -4462,7 +4611,149 @@ static bool nested_scrub_base_unsafe(unsigned long base)
 
 static void scrub_struct_addresses(unsigned char *buf, unsigned int size,
 				   const struct struct_desc *desc,
+				   struct syscallrecord *rec,
 				   unsigned int depth);
+
+/*
+ * Per-field-array scrub sweep: visit every FT_ADDRESS in @fields[0..n)
+ * and recurse through FT_PTR_STRUCT / FT_PTR_ARRAY edges.  Shared by
+ * the flat desc->fields[] walk and the variant overlay walks
+ * (variant->fields, variant->base->fields, matched nested variant's
+ * fields), mirroring how struct_field_fill_schema_aware() splits
+ * between a flat pass and overlay passes.  @rec is threaded through so
+ * a recursed-into child struct can resolve its own variants the same
+ * way the FILL path does in struct_field_fill_schema_aware().
+ *
+ * Sibling LEN lookup uses find_field_index_in() against the same
+ * fields[] array currently being walked, matching the runtime
+ * pre-pin pass and validate_struct_catalog()'s comment that each
+ * fields[] array is an independent name-resolution scope.
+ */
+static void scrub_field_array(unsigned char *buf, unsigned int size,
+			      const struct struct_field *fields,
+			      unsigned int num_fields,
+			      struct syscallrecord *rec,
+			      unsigned int depth)
+{
+	unsigned int i;
+
+	for (i = 0; i < num_fields; i++) {
+		const struct struct_field *f = &fields[i];
+		const struct struct_desc *target;
+		unsigned long ptr;
+
+		if (f->offset + f->size > size)
+			continue;
+
+		switch (f->tag) {
+		case FT_ADDRESS: {
+			/*
+			 * Scrub at the field's natural pointer width.
+			 * Sub-pointer-sized FT_ADDRESS fields cannot hold a
+			 * useful address; skip them rather than scribble
+			 * adjacent bytes.
+			 */
+			if (f->size != sizeof(unsigned long))
+				break;
+			avoid_shared_buffer_out(
+				(unsigned long *)(buf + f->offset), page_size);
+			break;
+		}
+		case FT_PTR_STRUCT:
+			ptr = (unsigned long) read_field_uint(buf, f);
+			if (ptr == 0)
+				break;
+			target = struct_catalog_lookup(f->u.ptr_struct.struct_name);
+			if (target == NULL || target->struct_size == 0)
+				break;
+			if (nested_scrub_base_unsafe(ptr))
+				break;
+			scrub_struct_addresses((unsigned char *) ptr,
+					       target->struct_size,
+					       target, rec, depth + 1);
+			break;
+		case FT_PTR_ARRAY: {
+			unsigned long count = 0;
+			unsigned long cap;
+			int paired;
+			unsigned long j;
+
+			ptr = (unsigned long) read_field_uint(buf, f);
+			if (ptr == 0)
+				break;
+			target = struct_catalog_lookup(f->u.ptr_array.elem_struct);
+			if (target == NULL || target->struct_size == 0)
+				break;
+			if (nested_scrub_base_unsafe(ptr))
+				break;
+
+			paired = find_field_index_in(fields, num_fields,
+						     f->u.ptr_array.len_field);
+			if (paired >= 0)
+				count = (unsigned long) read_field_uint(
+					buf, &fields[paired]);
+
+			/*
+			 * Cap the iteration at the catalog's declared
+			 * max_count (or PTR_ARRAY_DEFAULT_MAX) so a sibling-
+			 * scribbled len field cannot drive a walk past the
+			 * allocation's tail and SEGV the sanitiser.
+			 */
+			cap = f->u.ptr_array.max_count;
+			if (cap == 0)
+				cap = PTR_ARRAY_DEFAULT_MAX;
+			if (count > cap)
+				count = cap;
+
+			for (j = 0; j < count; j++) {
+				unsigned char *elem = (unsigned char *) ptr
+					+ j * target->struct_size;
+
+				scrub_struct_addresses(elem,
+						       target->struct_size,
+						       target, rec, depth + 1);
+			}
+			break;
+		}
+		default:
+			break;
+		}
+	}
+}
+
+/*
+ * Mirror struct_variant_overlay_nested() from the FILL path: when an
+ * outer variant carries a nested_variants table, re-resolve the
+ * sub-variant against the just-filled buffer and scrub variant->base
+ * (if set) plus the matched nested->fields[] in the same order FILL
+ * wrote them.  Depth-1 only -- struct_desc_resolve_nested_variant()
+ * rejects nested-of-nested, matching the FILL contract.
+ */
+static void scrub_variant_overlay_nested(unsigned char *buf,
+					 unsigned int size,
+					 const struct union_variant *variant,
+					 struct syscallrecord *rec,
+					 unsigned int depth)
+{
+	const struct union_variant *nested;
+
+	if (variant->nested_variants == NULL)
+		return;
+
+	nested = struct_desc_resolve_nested_variant(variant, buf, size);
+	if (nested == NULL && variant->base == NULL)
+		return;
+
+	if (variant->base != NULL)
+		scrub_field_array(buf, size,
+				  variant->base->fields,
+				  variant->base->num_fields, rec, depth);
+
+	if (nested != NULL)
+		scrub_field_array(buf, size,
+				  nested->fields,
+				  nested->num_fields, rec, depth);
+}
 
 /*
  * Walk one cataloged-struct buffer and scrub every FT_ADDRESS field,
@@ -4471,12 +4762,25 @@ static void scrub_struct_addresses(unsigned char *buf, unsigned int size,
  * pointers themselves are trinity-allocated via zmalloc_tracked() and
  * cannot alias shared_regions[] or the libc brk arena; they are not
  * scrub targets, only recursion edges.
+ *
+ * Variant-aware: when desc carries variants the active variant
+ * resolves the field set the FILL path actually wrote, and a variant-
+ * only FT_ADDRESS is reachable only through variant->fields,
+ * variant->base->fields, or the matched nested_variant->fields.  The
+ * traversal exactly mirrors struct_field_fill_schema_aware() so an
+ * arg-derived variant replaces desc->fields, a buffer-derived variant
+ * overlays it, and nested overlays apply on top -- the scrub visits
+ * every byte the fill could have written an FT_ADDRESS into.  Without
+ * this mirroring a variant-only FT_ADDRESS field is never scrubbed,
+ * leaving it free to alias a shared sibling buffer and re-open the
+ * cross-child corruption window the top-level scrub closes.
  */
 static void scrub_struct_addresses(unsigned char *buf, unsigned int size,
 				   const struct struct_desc *desc,
+				   struct syscallrecord *rec,
 				   unsigned int depth)
 {
-	unsigned int i;
+	const struct union_variant *variant;
 
 	if (buf == NULL || desc == NULL ||
 	    depth >= NESTED_ADDRESS_SCRUB_MAX_DEPTH)
@@ -4512,88 +4816,35 @@ static void scrub_struct_addresses(unsigned char *buf, unsigned int size,
 	if (!range_readable_user(buf, size))
 		return;
 
-	for (i = 0; i < desc->num_fields; i++) {
-		const struct struct_field *f = &desc->fields[i];
-		const struct struct_desc *target;
-		unsigned long ptr;
+	/*
+	 * Arg-derived variant: FILL writes variant->fields[] in place of
+	 * desc->fields[].  Mirror exactly -- scrubbing desc->fields[] here
+	 * would walk a field set that was never populated by FILL.
+	 */
+	variant = struct_desc_resolve_variant(desc, rec, NULL);
+	if (variant != NULL) {
+		scrub_field_array(buf, size, variant->fields,
+				  variant->num_fields, rec, depth);
+		scrub_variant_overlay_nested(buf, size, variant, rec, depth);
+		return;
+	}
 
-		if (f->offset + f->size > size)
-			continue;
+	/*
+	 * No arg-derived variant.  FILL runs desc->fields[] first; if the
+	 * descriptor carries a buffer-derived discriminator the resolved
+	 * variant is then overlaid on top.  Mirror exactly.
+	 */
+	scrub_field_array(buf, size, desc->fields, desc->num_fields,
+			  rec, depth);
 
-		switch (f->tag) {
-		case FT_ADDRESS: {
-			/*
-			 * Scrub at the field's natural pointer width.
-			 * Sub-pointer-sized FT_ADDRESS fields cannot hold a
-			 * useful address; skip them rather than scribble
-			 * adjacent bytes.
-			 */
-			if (f->size != sizeof(unsigned long))
-				break;
-			avoid_shared_buffer_out(
-				(unsigned long *)(buf + f->offset), page_size);
-			break;
-		}
-		case FT_PTR_STRUCT:
-			ptr = (unsigned long) read_field_uint(buf, f);
-			if (ptr == 0)
-				break;
-			target = struct_catalog_lookup(f->u.ptr_struct.struct_name);
-			if (target == NULL || target->struct_size == 0)
-				break;
-			if (nested_scrub_base_unsafe(ptr))
-				break;
-			scrub_struct_addresses((unsigned char *) ptr,
-					       target->struct_size,
-					       target, depth + 1);
-			break;
-		case FT_PTR_ARRAY: {
-			unsigned long count = 0;
-			unsigned long cap;
-			int paired;
-			unsigned long j;
+	if (desc->buffer_discrim_size == 0)
+		return;
 
-			ptr = (unsigned long) read_field_uint(buf, f);
-			if (ptr == 0)
-				break;
-			target = struct_catalog_lookup(f->u.ptr_array.elem_struct);
-			if (target == NULL || target->struct_size == 0)
-				break;
-			if (nested_scrub_base_unsafe(ptr))
-				break;
-
-			paired = find_field_index_in(desc->fields,
-						     desc->num_fields,
-						     f->u.ptr_array.len_field);
-			if (paired >= 0)
-				count = (unsigned long) read_field_uint(
-					buf, &desc->fields[paired]);
-
-			/*
-			 * Cap the iteration at the catalog's declared
-			 * max_count (or PTR_ARRAY_DEFAULT_MAX) so a sibling-
-			 * scribbled len field cannot drive a walk past the
-			 * allocation's tail and SEGV the sanitiser.
-			 */
-			cap = f->u.ptr_array.max_count;
-			if (cap == 0)
-				cap = PTR_ARRAY_DEFAULT_MAX;
-			if (count > cap)
-				count = cap;
-
-			for (j = 0; j < count; j++) {
-				unsigned char *elem = (unsigned char *) ptr
-					+ j * target->struct_size;
-
-				scrub_struct_addresses(elem,
-						       target->struct_size,
-						       target, depth + 1);
-			}
-			break;
-		}
-		default:
-			break;
-		}
+	variant = struct_desc_resolve_variant(desc, rec, buf);
+	if (variant != NULL) {
+		scrub_field_array(buf, size, variant->fields,
+				  variant->num_fields, rec, depth);
+		scrub_variant_overlay_nested(buf, size, variant, rec, depth);
 	}
 }
 
@@ -4621,7 +4872,8 @@ static void nested_address_scrub(struct syscallentry *entry,
 		if (slot != 0 && desc != NULL &&
 		    !nested_scrub_base_unsafe(slot))
 			scrub_struct_addresses((unsigned char *) slot,
-					       desc->struct_size, desc, 0);
+					       desc->struct_size, desc,
+					       rec, 0);
 		mask &= (uint8_t)(mask - 1);
 	}
 }
