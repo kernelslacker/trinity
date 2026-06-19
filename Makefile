@@ -192,3 +192,15 @@ coverity:
 	@cov-build --dir cov-int make -j $(NR_CPUS)
 	@tar cJvf trinity-coverity.tar.xz cov-int
 
+# Grant the file capability the parent watchdog needs to read
+# /proc/<pid>/stack for the D-state diagnostic snapshot.  setcap needs
+# root (CAP_SETFCAP), so this is a standalone target:
+#   make && sudo make setcap
+# Re-run after every rebuild -- the security.capability xattr is stripped
+# on recompile.  Needs an xattr-capable, non-nosuid fs (ext4/xfs/btrfs/
+# recent tmpfs; not nfs/overlayfs).
+# Depends on the child capability-drop in child.c: forked fuzz children
+# must shed CAP_SYS_ADMIN before the fuzz loop, or they run privileged.
+setcap:
+	setcap cap_sys_admin+ep ./trinity
+
