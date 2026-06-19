@@ -1457,6 +1457,12 @@ static void periodic_work(struct childdata *child, unsigned long op_nr)
 
 	divergence_sentinel_tick(child);
 
+	/* Sampled invariant asserting the init_child_setup_sandbox()
+	 * capset()-to-empty drop held.  Self-gates on ONE_IN(N) so the
+	 * four bare-syscall probes (bpf, mount, setsockopt, capget) pay
+	 * their cost only on the sample tick.  See child-capdrop-oracle.c. */
+	capdrop_oracle_tick();
+
 	/* Global VMA-pressure watchdog: sample the child's live VMA count
 	 * every VMA_PRESSURE_SAMPLE_PERIOD ops and latch a per-child
 	 * flag the heavy-VMA childops poll at iteration top.  Cadence and
