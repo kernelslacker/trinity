@@ -3,6 +3,7 @@
 	 const struct rlimit64 __user *, new_rlim,
 	 struct rlimit64 __user *, old_rlim)
  */
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/resource.h>
@@ -56,6 +57,23 @@ static unsigned long rlimit_resources[] = {
 #endif
 };
 
+/*
+ * Trinity-owned pid set.  prlimit64 treats pid 0 as "current process",
+ * mypid() / cached_pid is the explicit self path, mainpid is the
+ * trinity main process, and pids[] holds every sibling fuzz child.
+ * Lowering a fragile rlimit against any of these self-poisons us; the
+ * kernel's per-resource legality gate does not catch it because the
+ * call is genuinely legal -- the damage lands on our own runtime, not
+ * the kernel.  setrlimit has no pid argument (always self), so this
+ * helper stays local to prlimit64.
+ */
+static bool pid_is_harness_owned(pid_t pid)
+{
+	if (pid == 0 || pid == mypid() || pid == mainpid)
+		return true;
+	return find_childno(pid) != CHILD_NOT_FOUND;
+}
+
 static rlim64_t random_rlim64(void)
 {
 	switch (rnd_modulo_u32(5)) {
@@ -82,6 +100,41 @@ static void sanitise_prlimit64(struct syscallrecord *rec)
 		return;
 
 	/*
+	 * pid (a1): ARG_PID via get_pid() already biases self/child heavy.
+	 * A small bucket retargets at a "random nearby pid" so the kernel's
+	 * privilege-check path (ptrace_may_access -> __ptrace_may_access)
+	 * stays exercised against PIDs we are unlikely to own.  Resolve
+	 * this before resource selection so the harness-owned guard below
+	 * sees the real target.
+	 */
+	if (ONE_IN(20))
+		rec->a1 = (unsigned long)(int)(mypid() +
+			(int) rnd_modulo_u32(128) - 64);
+
+	/*
+	 * Self-poison guard.  prlimit64 against a trinity-owned pid with a
+	 * harness-fragile resource lowers our own NOFILE / AS / DATA /
+	 * STACK / RSS / MEMLOCK -- the kernel accepts the call as legal
+	 * (the safe-dictionary draws are cur<=max + within per-resource
+	 * bounds), but the immediate downstream effect on the harness
+	 * child is mprotect-RW returning ENOMEM in deferred_free and the
+	 * heap_bounds_init /proc/self/maps open returning EMFILE.  The
+	 * child does not crash; it limps on with broken heap-tracking and
+	 * fd machinery for the rest of its life (silent coverage loss).
+	 * Re-roll the resource to a non-fragile one for harness targets,
+	 * keeping the full safe/random value range against CPU / FSIZE /
+	 * NPROC / NICE / RTPRIO / LOCKS / SIGPENDING / MSGQUEUE / CORE.
+	 * Full-range fragile-resource fuzzing is preserved for the
+	 * non-harness "random nearby pid" bucket above, where the
+	 * tiny-limit kernel coverage path actually wants to land.
+	 */
+	if (pid_is_harness_owned((pid_t) rec->a1) &&
+	    resource_is_fragile(rec->a2))
+		rec->a2 = pick_nonfragile_rlimit_resource(
+				rlimit_resources,
+				ARRAY_SIZE(rlimit_resources));
+
+	/*
 	 * Per-resource safe-limit bias.  The framework picks rec->a2 from
 	 * rlimit_resources[] (a real RLIMIT_*); fold in three buckets:
 	 *
@@ -95,11 +148,14 @@ static void sanitise_prlimit64(struct syscallrecord *rec)
 	 *        exercised.
 	 *   ~10% pure-random resource and values: long-tail coverage for the
 	 *        RLIMIT_* enum boundary and the early `resource >= RLIM_NLIMITS`
-	 *        rejection.
+	 *        rejection.  Bucket-7/9 re-pick the resource; gate those
+	 *        picks through the harness-fragile filter too so a re-roll
+	 *        does not undo the self-poison guard above.
 	 */
 	{
 		unsigned int bucket = rnd_modulo_u32(10);
 		unsigned long long safe_cur, safe_max;
+		bool harness_target = pid_is_harness_owned((pid_t) rec->a1);
 
 		if (bucket < 7 &&
 		    rlimit_pick_safe_pair((unsigned int) rec->a2,
@@ -108,10 +164,19 @@ static void sanitise_prlimit64(struct syscallrecord *rec)
 			rlim->rlim_max = (rlim64_t) safe_max;
 		} else {
 			if (bucket >= 9)
-				rec->a2 = rand32();
+				rec->a2 = harness_target
+					? pick_nonfragile_rlimit_resource(
+						rlimit_resources,
+						ARRAY_SIZE(rlimit_resources))
+					: rand32();
 			else if (bucket >= 7)
-				rec->a2 = random_rlimit_resource(rlimit_resources,
-								 ARRAY_SIZE(rlimit_resources));
+				rec->a2 = harness_target
+					? pick_nonfragile_rlimit_resource(
+						rlimit_resources,
+						ARRAY_SIZE(rlimit_resources))
+					: random_rlimit_resource(
+						rlimit_resources,
+						ARRAY_SIZE(rlimit_resources));
 
 			rlim->rlim_cur = random_rlim64();
 			rlim->rlim_max = random_rlim64();
@@ -123,16 +188,6 @@ static void sanitise_prlimit64(struct syscallrecord *rec)
 	}
 
 	rec->a3 = (unsigned long) rlim;
-
-	/*
-	 * pid (a1): ARG_PID via get_pid() already biases self/child heavy.
-	 * A small bucket retargets at a "random nearby pid" so the kernel's
-	 * privilege-check path (ptrace_may_access -> __ptrace_may_access)
-	 * stays exercised against PIDs we are unlikely to own.
-	 */
-	if (ONE_IN(20))
-		rec->a1 = (unsigned long)(int)(mypid() +
-			(int) rnd_modulo_u32(128) - 64);
 
 	/*
 	 * old_rlim (a4) is the kernel's writeback target for the previous

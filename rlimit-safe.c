@@ -13,6 +13,7 @@
 #include <sys/resource.h>
 #include "rlimit-safe.h"
 #include "rnd.h"
+#include "utils.h"
 
 #ifndef RLIM_INFINITY
 #define RLIM_INFINITY (~0ULL)
@@ -186,6 +187,40 @@ static const struct {
 	[RLIMIT_RTTIME]		= PAIR_LIST(rttime_pairs),
 #endif
 };
+
+static const unsigned long rlimit_fragile_resources[] = {
+	RLIMIT_NOFILE, RLIMIT_AS, RLIMIT_DATA,
+	RLIMIT_STACK, RLIMIT_RSS, RLIMIT_MEMLOCK,
+};
+
+bool resource_is_fragile(unsigned long resource)
+{
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(rlimit_fragile_resources); i++)
+		if (rlimit_fragile_resources[i] == resource)
+			return true;
+	return false;
+}
+
+unsigned long pick_nonfragile_rlimit_resource(const unsigned long *table,
+					      unsigned int count)
+{
+	unsigned int start;
+	unsigned int i;
+
+	if (count == 0)
+		return RLIMIT_CPU;
+
+	start = rnd_modulo_u32(count);
+	for (i = 0; i < count; i++) {
+		unsigned long r = table[(start + i) % count];
+
+		if (!resource_is_fragile(r))
+			return r;
+	}
+	return RLIMIT_CPU;
+}
 
 int rlimit_pick_safe_pair(unsigned int resource,
 			  unsigned long long *cur_out,
