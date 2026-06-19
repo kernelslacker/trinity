@@ -17,6 +17,8 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <sys/prctl.h>
+#include <sys/syscall.h>
+#include <linux/capability.h>
 
 #include "arch.h"
 #include "child.h"
@@ -1027,6 +1029,30 @@ static void init_child_setup_sandbox(struct childdata *child, int childno)
 
 	if (orig_uid == 0)
 		drop_privs();
+
+	/*
+	 * Drop every capability before the fuzz loop.  The trinity binary
+	 * may carry CAP_SYS_ADMIN as a file capability (granted via
+	 * `make setcap` so the parent/watchdog can read /proc/<pid>/stack);
+	 * fork() preserves that across the permitted+effective sets, so a
+	 * naive child would fuzz with CAP_SYS_ADMIN — a broader, more
+	 * privileged surface than the deliberate non-root model.  Clear
+	 * permitted+effective+inheritable here, unconditionally: the
+	 * non-root path is exactly the one that inherits the file cap.
+	 * Bare syscall(__NR_capset, ...) on purpose — trinity_raw_syscall()
+	 * honours -x exclusions, which must not skip a security op.
+	 * Ambient is already empty (file caps never populate it).
+	 * Best-effort: ignore the return; if no file cap was applied the
+	 * child has no caps anyway and this is a harmless no-op.
+	 */
+	{
+		struct __user_cap_header_struct hdr = {
+			.version = _LINUX_CAPABILITY_VERSION_3,
+			.pid = 0,
+		};
+		struct __user_cap_data_struct data[2] = { {0}, {0} };
+		(void) syscall(__NR_capset, &hdr, data);
+	}
 
 	munge_process();
 }
