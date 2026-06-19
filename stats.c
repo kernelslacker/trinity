@@ -1850,6 +1850,7 @@ static const struct stat_field oracle_fields[] = {
 	STAT_FIELD_JSON(times_oracle, anomalies, "times_anomalies"),
 	STAT_FIELD_JSON(clock_getres_oracle, anomalies, "clock_getres_anomalies"),
 	STAT_FIELD_JSON(capget_oracle, anomalies, "capget_anomalies"),
+	STAT_FIELD_JSON(capdrop_oracle, anomalies, "capdrop_anomalies"),
 	STAT_FIELD_JSON(newlstat_oracle, anomalies, "newlstat_anomalies"),
 	STAT_FIELD_JSON(newstat_oracle, anomalies, "newstat_anomalies"),
 	STAT_FIELD_JSON(newfstat_oracle, anomalies, "newfstat_anomalies"),
@@ -6302,6 +6303,9 @@ static void dump_stats_oracle_anomalies(void)
 	if (shm->stats.capget_oracle_anomalies)
 		stat_row("oracle", "capget_anomalies",
 			 shm->stats.capget_oracle_anomalies);
+	if (shm->stats.capdrop_oracle_anomalies)
+		stat_row("oracle", "capdrop_anomalies",
+			 shm->stats.capdrop_oracle_anomalies);
 	if (shm->stats.newlstat_oracle_anomalies)
 		stat_row("oracle", "newlstat_anomalies",
 			 shm->stats.newlstat_oracle_anomalies);

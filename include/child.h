@@ -993,6 +993,16 @@ void child_syscall_ring_push(struct child_syscall_ring *ring,
  */
 void divergence_sentinel_tick(struct childdata *child);
 
+/*
+ * Periodic-work cap-drop oracle.  Sampled (ONE_IN(1024)) invariant
+ * asserting that the capset()-to-empty in init_child_setup_sandbox
+ * actually held: bpf(PROG_LOAD) / mount() / setsockopt(SO_RCVBUFFORCE)
+ * each expect EPERM, and capget(self) expects empty masks across both
+ * v3 data slots.  Any deviation bumps shm->stats.capdrop_oracle_anomalies
+ * and emits an output(0, ...) line.  See child-capdrop-oracle.c.
+ */
+void capdrop_oracle_tick(void);
+
 void init_child_mappings(void);
 
 void child_process(struct childdata *child, int childno);

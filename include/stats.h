@@ -181,6 +181,11 @@ struct stats_s {
 	unsigned long times_oracle_anomalies;
 	unsigned long clock_getres_oracle_anomalies;
 	unsigned long capget_oracle_anomalies;
+	/* Sampled cap-drop invariant fired from periodic_work(): bumped when
+	 * a probe that should EPERM under a cap-dropped child instead
+	 * succeeds, returns an unexpected errno, or capget(self) reads back
+	 * non-empty masks.  See child-capdrop-oracle.c. */
+	unsigned long capdrop_oracle_anomalies;
 	unsigned long newlstat_oracle_anomalies;
 	unsigned long newstat_oracle_anomalies;
 	unsigned long newfstat_oracle_anomalies;
