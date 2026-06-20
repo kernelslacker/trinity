@@ -57,16 +57,12 @@ static void sanitise_sched_getaffinity(struct syscallrecord *rec)
 	{
 		unsigned int roll = rnd_modulo_u32(100);
 		unsigned int aligned;
-		long online = sysconf(_SC_NPROCESSORS_ONLN);
-
-		if (online <= 0)
-			online = 1;
 
 		if (roll < 70) {
 			if (RAND_BOOL()) {
 				rec->a2 = sizeof(*mask);
 			} else {
-				aligned = (unsigned int) ((online + 7) / 8);
+				aligned = (cached_online_cpus() + 7) / 8;
 				aligned = (aligned + sizeof(long) - 1) &
 					~(sizeof(long) - 1);
 				if (aligned == 0)
