@@ -34,12 +34,34 @@
  */
 static void post_setpgid(struct syscallrecord *rec)
 {
-	unsigned long a2 = rec->a2;
+	unsigned long a1, a2;
 	pid_t expected, got;
 
 	if ((long) rec->retval == -1L)
 		return;
-	if ((pid_t) rec->a1 != 0)
+
+	/*
+	 * Read pid/pgid via the arg_shadow accessor: the oracle is gated
+	 * on pid (a1) being 0 -- self-call -- and the expected getpgrp()
+	 * value is selected per-case from pgid (a2: a2 == 0 folds to
+	 * getpid(), otherwise the kernel set pgrp to a2 verbatim).
+	 * Reading live rec->aN would let a sibling stomp between syscall
+	 * return and this handler flip the gate or swing the per-case
+	 * expected branch, mis-attributing the getpgrp() check against a
+	 * value the kernel never wrote: a stomp of non-zero -> 0 on a1
+	 * fires the oracle on a call where the kernel set some other
+	 * task's pgid, and a stomp of a2 picks the wrong arm (either
+	 * comparing getpgrp() against getpid() when the kernel committed
+	 * a2, or against a fabricated a2 value when the kernel folded to
+	 * getpid()) -- both produce a spurious oracle mismatch.
+	 * arg_snapshot_mask on syscall_setpgid opts a1/a2 into the
+	 * shadow; get_arg_snapshot() returns the dispatch-time value and
+	 * bumps arg_shadow_stomp from inside the accessor on mismatch.
+	 */
+	a1 = get_arg_snapshot(rec, 1);
+	a2 = get_arg_snapshot(rec, 2);
+
+	if ((pid_t) a1 != 0)
 		return;
 	if (!ONE_IN(100))
 		return;
@@ -67,4 +89,14 @@ struct syscallentry syscall_setpgid = {
 	.argname = { [0] = "pid", [1] = "pgid" },
 	.post = post_setpgid,
 	.rettype = RET_ZERO_SUCCESS,
+	/* a1/a2 (pid/pgid) both feed post_setpgid's oracle: a1 == 0 gates
+	 * the oracle to self-calls, and a2 selects which expected pgid the
+	 * getpgrp() result is compared against (getpid() when a2 == 0, a2
+	 * verbatim otherwise).  Shadow both so a sibling stomp between
+	 * dispatch and post cannot flip the gate or swing the per-case
+	 * expected branch, mis-attributing the oracle against a value the
+	 * kernel never wrote -- mismatch bumps arg_shadow_stomp from inside
+	 * get_arg_snapshot() and the oracle still compares against the
+	 * (pid, pgid) the kernel actually executed against. */
+	.arg_snapshot_mask = (1u << 0) | (1u << 1),
 };

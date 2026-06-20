@@ -281,7 +281,7 @@ syscalls/setgroups.c:226:post_setgroups
 syscalls/setgroups.c:252:post_setgroups
 syscalls/setgroups.c:273:post_setgroups
 syscalls/setgroups.c:297:post_setgroups
-syscalls/setpgid.c:54:post_setpgid
+syscalls/setpgid.c:76:post_setpgid
 syscalls/setpriority.c:130:post_setpriority
 syscalls/setregid.c:29:post_setregid
 syscalls/setresgid.c:31:post_setresgid
