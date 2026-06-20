@@ -184,4 +184,5 @@ struct syscallentry syscall_newlstat = {
 	.post = post_newlstat,
 	.group = GROUP_VFS,
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = REEXEC_SANITISE_OK,
 };
