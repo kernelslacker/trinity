@@ -214,6 +214,7 @@ struct syscallentry syscall_statfs = {
 #endif
 	.group = GROUP_VFS,
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = REEXEC_SANITISE_OK,
 };
 
 /*
@@ -406,4 +407,5 @@ struct syscallentry syscall_statfs64 = {
 #endif
 	.group = GROUP_VFS,
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = REEXEC_SANITISE_OK,
 };
