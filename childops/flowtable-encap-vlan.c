@@ -19,9 +19,19 @@
  * Sequence (per BUDGETED + JITTER outer iteration, 200 ms wall cap,
  * fresh netns + topology per iteration):
  *
- *   1.  unshare(CLONE_NEWNET) (one-time per child).  EPERM falls through
- *       to the host netns; the cap-gate latches on the first NEWFLOWTABLE
- *       rejection if structural support is missing.
+ *   1.  Enter a private net namespace via userns_run_in_ns(): a
+ *       transient grandchild fork installs an identity user namespace
+ *       plus a fresh CLONE_NEWNET, runs the body below, and _exit()s
+ *       so the kernel reaps every interface, rule, address and socket
+ *       with the grandchild's netns.  The persistent fuzz child never
+ *       changes its own credentials or namespace stack, so the
+ *       cap-drop oracle keeps observing the host credential profile.
+ *       Helper -EPERM (hardened userns policy refused CLONE_NEWUSER)
+ *       latches the childop off for the remainder of this child's
+ *       lifetime; -1 (transient setup failure: fork, id-map write,
+ *       secondary unshare) skips the invocation without latching.
+ *       The cap-gate still latches on the first NEWFLOWTABLE rejection
+ *       inside the grandchild if structural support is missing.
  *   2.  Open NETLINK_ROUTE and NETLINK_NETFILTER sockets, both
  *       SO_RCVTIMEO 1s.
  *   3.  RTM_NEWLINK type=veth pair vp_a / vp_b.
@@ -123,6 +133,7 @@
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
+#include "userns-bootstrap.h"
 
 #ifndef IFLA_VLAN_ID
 #define IFLA_VLAN_ID			1
@@ -217,8 +228,25 @@
 #define FEV_GSO_PAYLOAD			(64U * 1024U)
 #define FEV_MTU_BORDER_PAYLOAD		1496U
 
+/* Latched per-child by two paths:
+ *   - userns_run_in_ns() returned -EPERM: the grandchild's
+ *     unshare(CLONE_NEWUSER) was refused by a hardened policy
+ *     (user.max_user_namespaces=0 or kernel.unprivileged_userns_clone=0).
+ *     Set in the wrapper, persists across invocations.  Without a
+ *     private netns we MUST NOT touch the host's main flowtable / vlan
+ *     / veth tables, so the op stays disabled for the remainder of this
+ *     child's lifetime.
+ *   - NFT_MSG_NEWFLOWTABLE returned EOPNOTSUPP / EAFNOSUPPORT /
+ *     EPROTONOSUPPORT inside the grandchild's iter_install()
+ *     (CONFIG_NF_FLOW_TABLE absent at runtime).  Set inside the
+ *     grandchild's address space, so the latch short-circuits the rest
+ *     of that grandchild's outer loop; the persistent child's copy is
+ *     unchanged, and subsequent invocations re-discover the CONFIG-
+ *     absent state via one NEWFLOWTABLE round-trip per outer-loop iter.
+ * Helper return -1 (transient grandchild setup failure: fork, id-map
+ * write, secondary unshare) does NOT set this latch -- the failure is
+ * not policy and may not recur on the next invocation. */
 static bool ns_unsupported_flowtable_vlan;
-static bool fev_unshared;
 static bool fev_ip_forward_set;
 
 static size_t nla_put_be32(unsigned char *buf, size_t off, size_t cap,
@@ -843,34 +871,29 @@ out:
 	nl_close(&rtnl);
 }
 
-bool flowtable_encap_vlan(struct childdata *child)
+/*
+ * Per-invocation state handed to the in-ns callback so it can keep
+ * accounting against the right childop slot.
+ */
+struct flowtable_encap_vlan_ctx {
+	struct childdata *child;
+};
+
+/*
+ * Per-invocation body that must run inside the private net namespace.
+ * Executed in a transient grandchild forked by userns_run_in_ns(); the
+ * grandchild's userns + netns are torn down on _exit() so any links,
+ * addrs, nft objects or sockets left behind are reaped by the kernel
+ * along with the namespace.  Return value is ignored by the helper.
+ */
+static int flowtable_encap_vlan_in_ns(void *arg)
 {
+	struct flowtable_encap_vlan_ctx *cctx =
+		(struct flowtable_encap_vlan_ctx *)arg;
+	struct childdata *child = cctx->child;
 	struct timespec t_outer;
 	unsigned int outer_iters, i;
 
-	__atomic_add_fetch(&shm->stats.flowtable_vlan_runs, 1,
-			   __ATOMIC_RELAXED);
-
-	if (ns_unsupported_flowtable_vlan) {
-		__atomic_add_fetch(&shm->stats.flowtable_vlan_unsupported_latched,
-				   1, __ATOMIC_RELAXED);
-		return true;
-	}
-
-	if (!fev_unshared) {
-		if (unshare(CLONE_NEWNET) < 0) {
-			if (errno != EPERM) {
-				ns_unsupported_flowtable_vlan = true;
-				__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-						 CHILDOP_LATCH_NS_UNSUPPORTED,
-						 __ATOMIC_RELAXED);
-				__atomic_add_fetch(&shm->stats.flowtable_vlan_setup_failed,
-						   1, __ATOMIC_RELAXED);
-				return true;
-			}
-		}
-		fev_unshared = true;
-	}
 	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
 			   1, __ATOMIC_RELAXED);
 
@@ -898,6 +921,42 @@ bool flowtable_encap_vlan(struct childdata *child)
 					 __ATOMIC_RELAXED);
 			break;
 		}
+	}
+
+	return 0;
+}
+
+bool flowtable_encap_vlan(struct childdata *child)
+{
+	struct flowtable_encap_vlan_ctx cctx = { .child = child };
+	int rc;
+
+	__atomic_add_fetch(&shm->stats.flowtable_vlan_runs, 1,
+			   __ATOMIC_RELAXED);
+
+	if (ns_unsupported_flowtable_vlan) {
+		__atomic_add_fetch(&shm->stats.flowtable_vlan_unsupported_latched,
+				   1, __ATOMIC_RELAXED);
+		return true;
+	}
+
+	rc = userns_run_in_ns(CLONE_NEWNET, flowtable_encap_vlan_in_ns, &cctx);
+	if (rc == -EPERM) {
+		ns_unsupported_flowtable_vlan = true;
+		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+				 CHILDOP_LATCH_NS_UNSUPPORTED,
+				 __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.flowtable_vlan_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return true;
+	}
+	if (rc < 0) {
+		/* Transient grandchild setup failure (fork, id-map write,
+		 * secondary unshare).  Skip this iteration without latching
+		 * -- the failure is not policy and may not recur. */
+		__atomic_add_fetch(&shm->stats.flowtable_vlan_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return true;
 	}
 
 	return true;
