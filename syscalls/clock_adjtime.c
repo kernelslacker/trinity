@@ -95,7 +95,7 @@ struct syscallentry syscall_clock_adjtime = {
 	.argtype = { [0] = ARG_OP, [1] = ARG_ADDRESS },
 	.argname = { [0] = "which_clock", [1] = "utx" },
 	.arg_params[0].list = ARGLIST(clock_ids),
-	.flags = NEEDS_ROOT,
+	.flags = NEEDS_ROOT | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_clock_adjtime,
 	.post = post_clock_adjtime,
 	.rettype = RET_BORING,
