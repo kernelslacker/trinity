@@ -391,6 +391,9 @@ struct iouring_send_zc_iter_ctx {
 	unsigned int	submitted;
 	bool		ring_ok;
 	bool		bufs_registered;
+	/* Caller's struct childdata so the iter phase helpers can
+	 * attribute per-childop yield counters to child->op_type. */
+	struct childdata *child;
 };
 
 /*
@@ -421,8 +424,12 @@ static int iouring_send_zc_iter_setup(struct iouring_send_zc_iter_ctx *it)
 			 * the strict-submission flags -- that may clear
 			 * on the next attempt, and ENOMEM definitely
 			 * will. */
-			if (st == IOUR_UNSUPPORTED)
+			if (st == IOUR_UNSUPPORTED) {
 				ns_unsupported_iouring_send_zc_churn = true;
+				__atomic_store_n(&shm->stats.childop_latch_reason[it->child->op_type],
+						 CHILDOP_LATCH_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
+			}
 			__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_setup_failed,
 					   1, __ATOMIC_RELAXED);
 			return -1;
@@ -479,8 +486,12 @@ static int iouring_send_zc_iter_socket(struct iouring_send_zc_iter_ctx *it)
 	if (setsockopt(it->sock_fd, SOL_SOCKET, SO_ZEROCOPY,
 		       &one, sizeof(one)) < 0) {
 		if (errno == EOPNOTSUPP || errno == ENOPROTOOPT ||
-		    errno == EPERM)
+		    errno == EPERM) {
 			ns_unsupported_iouring_send_zc_churn = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[it->child->op_type],
+					 CHILDOP_LATCH_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		}
 		__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
@@ -614,7 +625,7 @@ static void iouring_send_zc_iter_drive(struct iouring_send_zc_iter_ctx *it,
 }
 
 /* One full sequence on a freshly-created ring + loopback TCP socket. */
-static void iter_one(const struct timespec *t_outer)
+static void iter_one(const struct timespec *t_outer, struct childdata *child)
 {
 	struct iouring_send_zc_iter_ctx it;
 	unsigned int i;
@@ -623,6 +634,7 @@ static void iter_one(const struct timespec *t_outer)
 	it.replacement = MAP_FAILED;
 	it.acceptor    = -1;
 	it.sock_fd     = -1;
+	it.child       = child;
 	for (i = 0; i < ZC_BUF_COUNT; i++)
 		it.pages[i] = MAP_FAILED;
 
@@ -637,7 +649,11 @@ static void iter_one(const struct timespec *t_outer)
 
 	if (iouring_send_zc_iter_socket(&it) != 0)
 		goto out;
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	iouring_send_zc_iter_submit(&it);
 
 	if ((unsigned long long)ns_since(t_outer) >= ZC_WALL_CAP_NS)
@@ -667,8 +683,6 @@ bool iouring_send_zc_churn(struct childdata *child)
 	struct timespec t_outer;
 	unsigned int outer_iters, i;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_runs,
 			   1, __ATOMIC_RELAXED);
 
@@ -693,7 +707,7 @@ bool iouring_send_zc_churn(struct childdata *child)
 	for (i = 0; i < outer_iters; i++) {
 		if ((unsigned long long)ns_since(&t_outer) >= ZC_WALL_CAP_NS)
 			break;
-		iter_one(&t_outer);
+		iter_one(&t_outer, child);
 		if (ns_unsupported_iouring_send_zc_churn)
 			break;
 	}

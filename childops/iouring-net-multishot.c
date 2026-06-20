@@ -612,8 +612,6 @@ bool iouring_net_multishot(struct childdata *child)
 {
 	struct iouring_multishot_iter_ctx it;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.iouring_multishot_runs, 1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported)
@@ -630,8 +628,12 @@ bool iouring_net_multishot(struct childdata *child)
 		memset(&p, 0, sizeof(p));
 		st = iour_ring_setup(&p, RING_ENTRIES, &it.ms);
 		if (st != IOUR_SUPPORTED) {
-			if (st == IOUR_UNSUPPORTED)
+			if (st == IOUR_UNSUPPORTED) {
 				ns_unsupported = true;
+				__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+						 CHILDOP_LATCH_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
+			}
 			__atomic_add_fetch(&shm->stats.iouring_multishot_setup_failed,
 					   1, __ATOMIC_RELAXED);
 			return true;
@@ -648,7 +650,11 @@ bool iouring_net_multishot(struct childdata *child)
 
 	if (iouring_multishot_iter_arm_recv(&it) != 0)
 		goto out;
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	iouring_multishot_iter_traffic(&it);
 	iouring_multishot_iter_cancel(&it);
 

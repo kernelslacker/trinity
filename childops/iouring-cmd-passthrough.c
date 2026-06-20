@@ -525,7 +525,7 @@ out:
  * uniformly across the available set.
  * ------------------------------------------------------------------ */
 
-bool iouring_cmd_passthrough(struct childdata *child __unused__)
+bool iouring_cmd_passthrough(struct childdata *child)
 {
 	struct iour_ring ctx;
 	struct io_uring_params p;
@@ -559,12 +559,20 @@ bool iouring_cmd_passthrough(struct childdata *child __unused__)
 		 * / EMFILE / overflow-rejected hostile return / mmap
 		 * blip) skips this invocation but leaves siblings free
 		 * to retry on the next dispatch. */
-		if (st == IOUR_UNSUPPORTED)
+		if (st == IOUR_UNSUPPORTED) {
 			__atomic_store_n(&shm->iouring_enosys, true,
 					 __ATOMIC_RELAXED);
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		}
 		return true;
 	}
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	switch (avail[rnd_modulo_u32((unsigned int)navail)]) {
 #ifndef TRINITY_COMPAT_BACKFILLED_SOCKET_URING_OP
 	case V_SOCKET:
