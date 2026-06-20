@@ -204,7 +204,7 @@ static unsigned long pick_flags(void)
 	return flags;
 }
 
-static bool ensure_private_ns(void)
+static bool ensure_private_ns(struct childdata *child)
 {
 	if (ns_ready)
 		return true;
@@ -227,11 +227,17 @@ static bool ensure_private_ns(void)
 	 * execution case and latches the op off for this child. */
 	if (unshare(CLONE_NEWNS) != 0) {
 		ns_unsupported = true;
+		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+				 CHILDOP_LATCH_INIT_FAILED,
+				 __ATOMIC_RELAXED);
 		return false;
 	}
 
 	if (mount("none", "/", NULL, MS_REC | MS_PRIVATE, NULL) != 0) {
 		ns_unsupported = true;
+		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+				 CHILDOP_LATCH_INIT_FAILED,
+				 __ATOMIC_RELAXED);
 		outputerr("mount_churn: MS_PRIVATE remount failed (errno=%d), disabling\n",
 		          errno);
 		return false;
@@ -395,12 +401,12 @@ bool mount_churn(struct childdata *child)
 	bool ext4_available = false;
 	pid_t pid = mypid();
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.mount_churn_runs, 1, __ATOMIC_RELAXED);
 
-	if (!ensure_private_ns())
+	if (!ensure_private_ns(child))
 		return true;
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	/* Probe the scratch_block pool once per invocation: when the
 	 * parent provisioned mnt_ready AND a loop-backed ext4 image
@@ -422,6 +428,8 @@ bool mount_churn(struct childdata *child)
 #endif
 	cycles = 1 + rnd_modulo_u32(MAX_CYCLES);
 
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	for (i = 0; i < cycles; i++) {
 		const char *fstype;
 		const char *source;
@@ -499,6 +507,9 @@ bool mount_churn(struct childdata *child)
 			 * iter and try a different one next time. */
 			if (errno == EPERM && !ns_inherited) {
 				ns_unsupported = true;
+				__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 				(void)rmdir(path);
 				return true;
 			}
