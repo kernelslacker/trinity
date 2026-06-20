@@ -52,6 +52,28 @@ struct nl_ctx {
 	int	recv_timeo_s;	/* SO_RCVTIMEO seconds; 0 = no timeout */
 };
 
+/*
+ * Safe closed-state initializer for a stack/static nl_ctx.  fd must be
+ * -1 so a premature nl_close() is a no-op; a plain { 0 } would leave
+ * fd == 0 and close(stdin).  The remaining members read sensibly as
+ * zero (no seq, no groups, no timeout) until nl_open() stamps them.
+ *
+ *   struct nl_ctx ctx = NL_CTX_INIT;
+ *   if (nl_open(&ctx, &opts) < 0)
+ *           goto out;          // nl_close(&ctx) below stays a no-op
+ *   ...
+ *   out:
+ *           nl_close(&ctx);
+ */
+#define NL_CTX_INIT	{ .fd = -1 }
+
+/*
+ * Companion initializer for struct genl_ctx (defined in
+ * include/childops-genl.h).  Mirrors NL_CTX_INIT for the embedded
+ * nl_ctx so genl_close() on an unopened ctx is a no-op.
+ */
+#define GENL_CTX_INIT	{ .nl = NL_CTX_INIT }
+
 struct nl_open_opts {
 	int	proto;		/* required */
 	__u32	groups;		/* default 0 */
@@ -61,14 +83,17 @@ struct nl_open_opts {
 
 /*
  * Open a NETLINK_<proto> SOCK_RAW|SOCK_CLOEXEC socket, bind it to the
- * kernel, and set SO_RCVTIMEO if requested.  Initialises *ctx on
- * success.  Returns 0 on success, -1 on failure with errno preserved
- * from socket()/bind().
+ * kernel, and set SO_RCVTIMEO if requested.  ctx->fd is stamped to -1
+ * before the first failing syscall, so a partial or failed open leaves
+ * a ctx that nl_close() can safely no-op on.  Returns 0 on success,
+ * -1 on failure with errno preserved from socket()/bind().
  */
 int nl_open(struct nl_ctx *ctx, const struct nl_open_opts *opts);
 
 /*
- * Close ctx->fd and zero the ctx.  Idempotent on a -1 fd.
+ * Close ctx->fd and zero the ctx.  Idempotent on a -1 fd; safe to call
+ * on a ctx initialised with NL_CTX_INIT even if nl_open() was never
+ * invoked.
  */
 void nl_close(struct nl_ctx *ctx);
 

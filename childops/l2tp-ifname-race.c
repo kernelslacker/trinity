@@ -196,7 +196,7 @@ static bool ns_unshare_failed_l2tp_ifname_race;
  */
 static void probe_l2tp_family(struct childdata *child)
 {
-	struct genl_ctx gctx = { 0 };
+	struct genl_ctx gctx = GENL_CTX_INIT;
 	struct genl_open_opts opts = {
 		.family_name = L2TP_GENL_NAME,
 		.version = 1,
@@ -445,7 +445,7 @@ static void pick_variant(struct l2tp_variant *v)
 static __attribute__((noreturn)) void l2tp_creator_child(struct l2tp_variant v)
 {
 	unsigned char buf[512];
-	struct genl_ctx gctx = { 0 };
+	struct genl_ctx gctx = GENL_CTX_INIT;
 	struct genl_open_opts opts = {
 		.family_name = L2TP_GENL_NAME,
 		.version = 1,
@@ -498,7 +498,7 @@ static __attribute__((noreturn)) void l2tp_creator_child(struct l2tp_variant v)
 static __attribute__((noreturn)) void l2tp_racer_child(struct l2tp_variant v)
 {
 	unsigned char buf[512];
-	struct genl_ctx gctx = { 0 };
+	struct genl_ctx gctx = GENL_CTX_INIT;
 	struct genl_open_opts opts = {
 		.family_name = L2TP_GENL_NAME,
 		.version = 1,
@@ -661,7 +661,7 @@ out_delete:
 
 bool l2tp_ifname_race(struct childdata *child)
 {
-	struct genl_ctx parent_gctx = { 0 };
+	struct genl_ctx parent_gctx = GENL_CTX_INIT;
 	struct genl_open_opts opts = {
 		.family_name = L2TP_GENL_NAME,
 		.version = 1,

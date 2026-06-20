@@ -68,6 +68,14 @@ int nl_open(struct nl_ctx *ctx, const struct nl_open_opts *opts)
 		return -1;
 	}
 
+	/*
+	 * Stamp the safe-closed sentinel before the first failing op.
+	 * A bare { 0 } caller leaves fd == 0; if socket() fails below
+	 * the caller's subsequent nl_close() would otherwise close
+	 * stdin (fd 0).  nl_close() treats fd < 0 as a no-op.
+	 */
+	ctx->fd = -1;
+
 	fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, opts->proto);
 	if (fd < 0)
 		return -1;
