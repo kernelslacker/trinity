@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <sys/stat.h>
 #include "arch.h"
+#include "files.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -112,6 +113,12 @@ static void sanitise_sync_file_range(struct syscallrecord *rec)
 {
 	loff_t off, nbytes;
 	unsigned int flags;
+
+	if (rnd_modulo_u32(100) < 25) {
+		int fd = get_rand_pagecache_fd();
+		if (fd >= 0)
+			rec->a1 = fd;
+	}
 
 	pick_range((int) rec->a1, &off, &nbytes);
 	flags = pick_flags();
