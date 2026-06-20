@@ -34,7 +34,7 @@ static void post_sched_getscheduler(struct syscallrecord *rec)
 	long ret = (long) retval;
 	int current_policy;
 
-	if (rec->a1 != 0)
+	if (get_arg_snapshot(rec, 1) != 0)
 		return;
 	if (ret < 0)
 		return;
@@ -78,4 +78,13 @@ struct syscallentry syscall_sched_getscheduler = {
 	.argname = { [0] = "pid" },
 	.rettype = RET_ZERO_SUCCESS,
 	.post = post_sched_getscheduler,
+	/* a1 (pid) gates the self-query re-call oracle -- snapshot so a
+	 * sibling stomp between BEFORE and AFTER cannot flip the gate
+	 * from "skip (queried other task)" to "run (self-policy)" or vice
+	 * versa.  Without the snapshot, a stomp from non-zero to 0 would
+	 * compare a foreign task's policy against the local
+	 * sched_getscheduler(0) re-call and fire a spurious oracle
+	 * anomaly; the reverse stomp would suppress a real corruption
+	 * signal for the 1-in-100 sample window. */
+	.arg_snapshot_mask = (1u << 0),
 };
