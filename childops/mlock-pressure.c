@@ -99,8 +99,6 @@ bool mlock_pressure(struct childdata *child)
 	struct object *obj;
 	struct map *map;
 
-	(void)child;
-
 	/* Global VMA-pressure backoff.  mlock on a page-aligned sub-range
 	 * splits the underlying VMA at the lock boundary; the mlockall
 	 * branch below can also split via MCL_FUTURE intercepts on the
@@ -119,6 +117,9 @@ bool mlock_pressure(struct childdata *child)
 			flags |= MCL_FUTURE;
 		if (RAND_BOOL())
 			flags |= MCL_ONFAULT;
+
+		__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+				   1, __ATOMIC_RELAXED);
 
 		if (mlockall(flags) == 0 && (flags & MCL_FUTURE)) {
 			/*
@@ -169,6 +170,9 @@ bool mlock_pressure(struct childdata *child)
 	/* Safety: never mlock shared memory. */
 	if (range_overlaps_shared((unsigned long)map->ptr, map->size))
 		return true;
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	/*
 	 * Bias toward lock (60%) to build pressure, but always

@@ -136,8 +136,6 @@ bool memory_pressure(struct childdata *child)
 	volatile unsigned char *p;
 	size_t stride, i;
 
-	(void)child;
-
 	/*
 	 * Draw the region from the parent's inherited mapping pool instead
 	 * of mmap()ing a fresh private allocation per invocation.  The pool
@@ -157,6 +155,8 @@ bool memory_pressure(struct childdata *child)
 		return false;
 
 	__atomic_add_fetch(&shm->stats.memory_pressure_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	/* Setup is outside the wrap.  region/len/p/stride are derived from
 	 * pointer arithmetic that cannot fault on the pool mapping itself,
@@ -204,6 +204,10 @@ bool memory_pressure(struct childdata *child)
 				  &memory_pressure_pool_race_old_segv);
 			sigaction(SIGBUS,  &sa,
 				  &memory_pressure_pool_race_old_bus);
+
+			__atomic_add_fetch(
+				&shm->stats.childop_data_path[child->op_type],
+				1, __ATOMIC_RELAXED);
 
 			/*
 			 * Dirty each page so MADV_PAGEOUT has real work to do.

@@ -210,8 +210,6 @@ bool mmap_lifecycle(struct childdata *child)
 	struct objhead *head;
 	unsigned int nr_maps;
 
-	(void)child;
-
 	/* Global VMA-pressure backoff.  Skip the whole dispatch when
 	 * latched: do_create / do_mremap can only add VMAs from here, and
 	 * do_dirty / do_teardown alone aren't worth the dispatcher slot --
@@ -224,6 +222,9 @@ bool mmap_lifecycle(struct childdata *child)
 	if (head == NULL)
 		return false;
 	nr_maps = head->num_entries;
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	/*
 	 * Bias toward creation when we have few maps,

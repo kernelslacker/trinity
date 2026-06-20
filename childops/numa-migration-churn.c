@@ -445,10 +445,13 @@ bool numa_migration_churn(struct childdata *child)
 	enum migration_op op_idx;
 	unsigned int calls = 0, failed = 0;
 
-	(void) child;
-
-	if (!numa_inited)
+	if (!numa_inited) {
 		init_numa_state();
+		if (ns_unsupported_numa)
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+	}
 
 	if (ns_unsupported_numa) {
 		__atomic_add_fetch(&shm->stats.numa_migration_no_numa,
@@ -470,9 +473,15 @@ bool numa_migration_churn(struct childdata *child)
 	if (region_len < page_size)
 		return true;
 
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
+
 	clock_gettime(CLOCK_MONOTONIC, &start);
 
 	op_idx = (enum migration_op) rnd_modulo_u32(NR_MIGRATION_OPS);
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	for (iter = 0; iter < iters; iter++) {
 		calls += do_one_op(op_idx, region, region_len, &failed);
