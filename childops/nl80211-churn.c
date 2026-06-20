@@ -1295,8 +1295,8 @@ static void nl80211_iter_teardown(struct genl_ctx *ctx, int ifindex)
  * created-iface ring catches the leak case where a NEW_INTERFACE landed
  * but the per-iter DEL_INTERFACE was skipped (jump-out / wall cap hit).
  */
-static void iter_one(struct genl_ctx *ctx, unsigned int iter_idx,
-		     const struct timespec *t_outer)
+static void iter_one(struct genl_ctx *ctx, struct childdata *child,
+		     unsigned int iter_idx, const struct timespec *t_outer)
 {
 	char ifname[IFNAMSIZ];
 	int ifindex;
@@ -1305,6 +1305,9 @@ static void iter_one(struct genl_ctx *ctx, unsigned int iter_idx,
 
 	if (nl80211_iter_setup(ctx, ifname, &ifindex, t_outer) < 0)
 		return;
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	nl80211_iter_scan_connect(ctx, ifindex, ifname, t_outer);
 	nl80211_iter_races(ctx, ifindex);
@@ -1320,8 +1323,6 @@ bool nl80211_churn(struct childdata *child)
 	struct timespec t_outer;
 	unsigned int outer_iters, i;
 	int rc;
-
-	(void)child;
 
 	__atomic_add_fetch(&shm->stats.nl80211_runs, 1, __ATOMIC_RELAXED);
 
@@ -1339,6 +1340,9 @@ bool nl80211_churn(struct childdata *child)
 			if (errno == EPERM)
 				ns_unsupported_nl80211 = true;
 			ns_setup_failed = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_INIT_FAILED,
+					 __ATOMIC_RELAXED);
 			__atomic_add_fetch(&shm->stats.nl80211_setup_failed,
 					   1, __ATOMIC_RELAXED);
 			return true;
@@ -1375,6 +1379,9 @@ bool nl80211_churn(struct childdata *child)
 		nl80211_phy0_cached = true;
 	}
 
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
+
 	if (clock_gettime(CLOCK_MONOTONIC, &t_outer) < 0) {
 		t_outer.tv_sec  = 0;
 		t_outer.tv_nsec = 0;
@@ -1391,7 +1398,7 @@ bool nl80211_churn(struct childdata *child)
 		if ((unsigned long long)ns_since(&t_outer) >=
 		    NL80211_WALL_CAP_NS)
 			break;
-		iter_one(&ctx, i, &t_outer);
+		iter_one(&ctx, child, i, &t_outer);
 		if (ns_unsupported_nl80211)
 			break;
 	}

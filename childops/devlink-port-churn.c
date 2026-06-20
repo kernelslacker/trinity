@@ -336,7 +336,7 @@ static int sysfs_write(const char *path, const char *s)
  * read+write to test, so we stat() it: if the path is missing or not
  * writable by us, latch the unsupported flag.
  */
-static bool netdevsim_available(void)
+static bool netdevsim_available(struct childdata *child)
 {
 	struct stat st;
 
@@ -344,10 +344,16 @@ static bool netdevsim_available(void)
 		return false;
 	if (stat(NETDEVSIM_NEW_DEVICE, &st) < 0) {
 		ns_unsupported_netdevsim = true;
+		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+				 CHILDOP_LATCH_NS_UNSUPPORTED,
+				 __ATOMIC_RELAXED);
 		return false;
 	}
 	if (access(NETDEVSIM_NEW_DEVICE, W_OK) < 0) {
 		ns_unsupported_netdevsim = true;
+		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+				 CHILDOP_LATCH_NS_UNSUPPORTED,
+				 __ATOMIC_RELAXED);
 		return false;
 	}
 	return true;
@@ -412,7 +418,8 @@ static void churn_sendto_burst(int sock)
  * we couldn't even create the device — the latter is a transient that
  * shouldn't burn the iter counter but isn't worth latching.
  */
-static bool devlink_port_churn_one(struct genl_ctx *ctx, __u32 bus_id)
+static bool devlink_port_churn_one(struct genl_ctx *ctx,
+				   struct childdata *child, __u32 bus_id)
 {
 	char dev_name[32];
 	char create_payload[64];
@@ -431,8 +438,12 @@ static bool devlink_port_churn_one(struct genl_ctx *ctx, __u32 bus_id)
 		/* Most likely ENODEV (module gone), EBUSY (sysfs racing
 		 * a concurrent del), or EPERM.  Latch on hard absence
 		 * via netdevsim_available() at next entry. */
-		if (rc == -ENODEV || rc == -ENOENT)
+		if (rc == -ENODEV || rc == -ENOENT) {
 			ns_unsupported_netdevsim = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		}
 		return false;
 	}
 
@@ -498,9 +509,7 @@ bool devlink_port_churn(struct childdata *child)
 	unsigned int i;
 	int rc;
 
-	(void)child;
-
-	if (!netdevsim_available()) {
+	if (!netdevsim_available(child)) {
 		__atomic_add_fetch(&shm->stats.devlink_port_churn_create_skipped,
 				   1, __ATOMIC_RELAXED);
 		return true;
@@ -516,10 +525,17 @@ bool devlink_port_churn(struct childdata *child)
 
 	rc = genl_open(&ctx, &opts);
 	if (rc != 0) {
-		if (rc == -ENOENT)
+		if (rc == -ENOENT) {
 			ns_unsupported_devlink_genl = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		}
 		return true;
 	}
+
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	budget = BUDGETED(CHILD_OP_DEVLINK_PORT_CHURN,
 			  JITTER_RANGE(DEVLINK_CHURN_ITERS_BASE));
@@ -527,10 +543,13 @@ bool devlink_port_churn(struct childdata *child)
 	if (iters == 0U)
 		iters = 1U;
 
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
+
 	for (i = 0; i < iters; i++) {
 		__u32 bus_id = alloc_bus_id();
 
-		if (devlink_port_churn_one(&ctx, bus_id))
+		if (devlink_port_churn_one(&ctx, child, bus_id))
 			__atomic_add_fetch(&shm->stats.devlink_port_churn_iterations,
 					   1, __ATOMIC_RELAXED);
 		else if (ns_unsupported_netdevsim)
