@@ -582,7 +582,8 @@ static int xdp_netlink_set_fd(struct nl_ctx *rtnl, unsigned int ifindex,
  * baseline layout — the rest of the iteration is still useful coverage.
  * Outputs want_sg / want_tx_md / want_tun for the downstream phases.
  */
-static int afxdp_iter_setup_umem(struct xsk_state *st,
+static int afxdp_iter_setup_umem(struct childdata *child,
+				 struct xsk_state *st,
 				 bool *want_sg_out,
 				 bool *want_tx_md_out,
 				 bool *want_tun_out)
@@ -594,8 +595,12 @@ static int afxdp_iter_setup_umem(struct xsk_state *st,
 	st->xsk_fd = socket(AF_XDP, SOCK_RAW | SOCK_CLOEXEC, 0);
 	if (st->xsk_fd < 0) {
 		if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT ||
-		    errno == EPERM || errno == EACCES)
+		    errno == EPERM || errno == EACCES) {
 			ns_unsupported_afxdp = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		}
 		__atomic_add_fetch(&shm->stats.afxdp_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
@@ -1084,7 +1089,8 @@ static void afxdp_iter_run_races(struct xsk_state *st)
 }
 
 /* One full setup + race + teardown cycle on a fresh AF_XDP socket. */
-static void iter_one(unsigned int idx, const struct timespec *t_outer)
+static void iter_one(struct childdata *child, unsigned int idx,
+		     const struct timespec *t_outer)
 {
 	struct xsk_state st;
 	char tun_name[IFNAMSIZ];
@@ -1098,7 +1104,7 @@ static void iter_one(unsigned int idx, const struct timespec *t_outer)
 
 	xsk_init(&st);
 
-	if (afxdp_iter_setup_umem(&st, &want_sg, &want_tx_md, &want_tun) < 0)
+	if (afxdp_iter_setup_umem(child, &st, &want_sg, &want_tx_md, &want_tun) < 0)
 		goto out;
 
 	if (afxdp_iter_setup_rings(&st) < 0)
@@ -1111,8 +1117,22 @@ static void iter_one(unsigned int idx, const struct timespec *t_outer)
 			    &target_ifindex) < 0)
 		goto out;
 
+	/* Per-iter acceptance / data-path counters: only credit an iter that
+	 * reached a bound xsk — without bind() the downstream attach / tx /
+	 * race phases all no-op internally, so neither counter applies.  Gating
+	 * both on st.bound preserves the data_path <= setup_accepted invariant
+	 * (either both bump together or neither does). */
+	if (st.bound) {
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+				   1, __ATOMIC_RELAXED);
+	}
+
 	afxdp_iter_attach_prog(&st, target_ifindex);
 
+	if (st.bound) {
+		__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+				   1, __ATOMIC_RELAXED);
+	}
 	afxdp_iter_tx_burst(&st, want_sg, want_tx_md);
 
 	afxdp_iter_run_races(&st);
@@ -1125,8 +1145,6 @@ bool afxdp_churn(struct childdata *child)
 {
 	struct timespec t_outer;
 	unsigned int outer_iters, i;
-
-	(void)child;
 
 	__atomic_add_fetch(&shm->stats.afxdp_churn_runs,
 			   1, __ATOMIC_RELAXED);
@@ -1153,7 +1171,7 @@ bool afxdp_churn(struct childdata *child)
 		if ((unsigned long long)ns_since(&t_outer) >= AFXDP_WALL_CAP_NS)
 			break;
 
-		iter_one(i, &t_outer);
+		iter_one(child, i, &t_outer);
 
 		if (ns_unsupported_afxdp)
 			break;
