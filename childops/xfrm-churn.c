@@ -1201,7 +1201,8 @@ static const __be32 v6_loopback_be[4] = {
  * because the existing xfrm_algos[] rotation doesn't combine all three
  * at once.
  */
-static void install_ah_esn_async_sa(struct nl_ctx *ctx, int udp)
+static void install_ah_esn_async_sa(struct nl_ctx *ctx, int udp,
+				    struct childdata *child)
 {
 	unsigned char buf[XFRM_BUF_BYTES];
 	unsigned char abuf[sizeof(struct xfrm_algo_auth) + 32];
@@ -1290,8 +1291,12 @@ static void install_ah_esn_async_sa(struct nl_ctx *ctx, int udp)
 	if (rc != 0) {
 		__atomic_add_fetch(&shm->stats.xfrm_ah_esn_setup_fail, 1,
 				   __ATOMIC_RELAXED);
-		if (rc == -EOPNOTSUPP || rc == -ENOPROTOOPT || rc == -ENOENT)
+		if (rc == -EOPNOTSUPP || rc == -ENOPROTOOPT || rc == -ENOENT) {
 			ns_unsupported_xfrm_ah_esn = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		}
 		return;
 	}
 	__atomic_add_fetch(&shm->stats.xfrm_ah_esn_setup_ok, 1,
@@ -1342,7 +1347,7 @@ static void install_ah_esn_async_sa(struct nl_ctx *ctx, int udp)
  * share the SAD / SPD with the netlink_xfrm side.  Latched on first
  * EAFNOSUPPORT / EPROTONOSUPPORT (kernel without CONFIG_NET_KEY).
  */
-static void pfkey_flush_burst(void)
+static void pfkey_flush_burst(struct childdata *child)
 {
 	struct sadb_msg msg;
 	int s;
@@ -1352,8 +1357,12 @@ static void pfkey_flush_burst(void)
 
 	s = socket(AF_KEY, SOCK_RAW | SOCK_CLOEXEC, PF_KEY_V2);
 	if (s < 0) {
-		if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT)
+		if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT) {
 			ns_unsupported_pfkey = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		}
 		return;
 	}
 
@@ -1561,6 +1570,7 @@ struct xfrm_churn_iter_ctx {
 	__be32 spi;
 	__u8 mode;
 	__u32 seq;
+	struct childdata *child;
 };
 
 /*
@@ -1581,6 +1591,9 @@ static int xfrm_churn_iter_setup_netns(struct xfrm_churn_iter_ctx *ctx)
 	if (!ns_unshared) {
 		if (unshare(CLONE_NEWNET) < 0) {
 			ns_setup_failed = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[ctx->child->op_type],
+					 CHILDOP_LATCH_INIT_FAILED,
+					 __ATOMIC_RELAXED);
 			__atomic_add_fetch(&shm->stats.xfrm_churn_setup_failed,
 					   1, __ATOMIC_RELAXED);
 			return -1;
@@ -1600,8 +1613,12 @@ static int xfrm_churn_iter_setup_netns(struct xfrm_churn_iter_ctx *ctx)
 	}
 
 	if (nl_open(&ctx->nl, &opts) < 0) {
-		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT)
+		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT) {
 			ns_unsupported_xfrm = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[ctx->child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		}
 		__atomic_add_fetch(&shm->stats.xfrm_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
@@ -1672,6 +1689,9 @@ static int xfrm_churn_iter_install_sa(struct xfrm_churn_iter_ctx *ctx)
 			 * off, leave the algo latch alone so transport /
 			 * tunnel AEAD installs keep working. */
 			ns_unsupported_iptfs = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[ctx->child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 			return -1;
 		}
 		if (is_unsupported_err(rc))
@@ -1714,8 +1734,12 @@ static void xfrm_churn_iter_setup_udp(struct xfrm_churn_iter_ctx *ctx)
 
 	ctx->udp = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
 	if (ctx->udp < 0) {
-		if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT)
+		if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT) {
 			ns_unsupported_inet = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[ctx->child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		}
 		return;
 	}
 
@@ -1850,13 +1874,13 @@ static void xfrm_churn_iter_teardown_sa(struct xfrm_churn_iter_ctx *ctx)
 	 * auth name) trifecta required to reach the codepath upstream
 	 * commit ec54093e6a8f patches. */
 	if ((rand32() & 3U) == 0)
-		install_ah_esn_async_sa(&ctx->nl, ctx->udp);
+		install_ah_esn_async_sa(&ctx->nl, ctx->udp, ctx->child);
 
 	/* PF_KEYv2 alt path: ~1 in 8 invocations exercises the parallel
 	 * af_key dispatch + flush paths that share the SAD/SPD with
 	 * netlink_xfrm. */
 	if ((rand32() & 7U) == 0)
-		pfkey_flush_burst();
+		pfkey_flush_burst(ctx->child);
 
 	/* Compat-table off-end-read sweep: ~1 in 8 invocations iterates
 	 * the full XFRM_MSG_BASE..XFRM_MSG_MAX opcode range against the
@@ -1870,11 +1894,10 @@ static void xfrm_churn_iter_teardown_sa(struct xfrm_churn_iter_ctx *ctx)
 bool xfrm_churn(struct childdata *child)
 {
 	struct xfrm_churn_iter_ctx ctx = {
-		.nl  = { .fd = -1 },
-		.udp = -1,
+		.nl    = { .fd = -1 },
+		.udp   = -1,
+		.child = child,
 	};
-
-	(void)child;
 
 	__atomic_add_fetch(&shm->stats.xfrm_churn_runs, 1, __ATOMIC_RELAXED);
 
@@ -1898,9 +1921,13 @@ bool xfrm_churn(struct childdata *child)
 
 	if (xfrm_churn_iter_install_sa(&ctx) != 0)
 		goto out;
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	xfrm_churn_iter_setup_udp(&ctx);
 
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	xfrm_churn_iter_drive_burst(&ctx);
 	xfrm_churn_iter_rekey(&ctx);
 	xfrm_churn_iter_drive_burst(&ctx);
