@@ -7129,6 +7129,32 @@ static void dump_stats_childop_ranked_tables(void)
 			}
 		}
 
+		/* Per-childop missing Step-B yield producer map: emit a row
+		 * for each op that has been dispatched at least once but
+		 * still has no setup-accepted producer wired -- i.e.
+		 * childop_invocations[op] > 0 AND
+		 * childop_setup_accepted[op] == 0.  These are the ops that
+		 * silently skip the setup/data-path scorecards because no
+		 * Step-B producer is bumping setup_accepted on the hot path.
+		 * The value rendered is the invocations count so the
+		 * operator can see how much dispatch pressure the missing
+		 * producer is masking.  Self-maintains as Step-B producers
+		 * land: rows disappear once setup_accepted[op] starts
+		 * moving.  CHILD_OP_SYSCALL is skipped for the same reason
+		 * as the sibling tables. */
+		for (op = CHILD_OP_SYSCALL + 1;
+		     op < NR_CHILD_OP_TYPES; op++) {
+			unsigned long inv =
+				shm->stats.childop_invocations[op];
+			if (inv == 0)
+				continue;
+			if (shm->stats.childop_setup_accepted[op] != 0)
+				continue;
+			snprintf(metric, sizeof(metric), "%s",
+				 alt_op_name((enum child_op_type)op));
+			stat_row("childop_missing_producer", metric, inv);
+		}
+
 		/* Per-childop one-shot latch reason: rendered as the integer
 		 * enum childop_latch_reason code (see include/child.h).  No
 		 * string table is materialised at the dump layer -- the
