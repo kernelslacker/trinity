@@ -148,4 +148,5 @@ struct syscallentry syscall_sched_getparam = {
 	.sanitise = sanitise_sched_getparam,
 	.rettype = RET_ZERO_SUCCESS,
 	.post = post_sched_getparam,
+	.flags = REEXEC_SANITISE_OK,
 };
