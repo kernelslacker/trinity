@@ -616,7 +616,7 @@ static void issue_one_statmount(int mnt_fd, void *buf,
  * One outer iteration: build a carrier userns, build a detached
  * tmpfs, install the idmap, sweep bufsizes, tear it all down.
  */
-static void iter_one(void *scratch_buf, unsigned long scratch_cap)
+static void iter_one(int op_type, void *scratch_buf, unsigned long scratch_cap)
 {
 	int userns_fd, mnt_fd;
 	size_t i;
@@ -645,6 +645,20 @@ static void iter_one(void *scratch_buf, unsigned long scratch_cap)
 	__atomic_add_fetch(&shm->stats.statmount_idmap_setattr_ok,
 			   1, __ATOMIC_RELAXED);
 
+	/* Per-iter setup gate passed: carrier built, detached tmpfs built,
+	 * idmap installed.  Bump setup_accepted before any statmount() call
+	 * so the delta against data_path attributes any pre-syscall bail
+	 * (none currently, but future early-returns before the sweep would
+	 * land here). */
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[op_type],
+			   1, __ATOMIC_RELAXED);
+
+	/* About to enter the kernel-exercising bufsize sweep.  Bump once
+	 * per iter (not per statmount call) so setup_accepted == data_path
+	 * is the steady-state. */
+	__atomic_add_fetch(&shm->stats.childop_data_path[op_type],
+			   1, __ATOMIC_RELAXED);
+
 	for (i = 0; i < ARRAY_SIZE(statmount_idmap_bufsizes); i++) {
 		unsigned long sz = statmount_idmap_bufsizes[i];
 
@@ -661,13 +675,14 @@ static void iter_one(void *scratch_buf, unsigned long scratch_cap)
 
 bool statmount_idmap_overflow(struct childdata *child)
 {
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.statmount_idmap_runs,
 			   1, __ATOMIC_RELAXED);
 
 #ifndef HAVE_STATMOUNT_IDMAP_SYSCALLS
 	statmount_idmap_unsupported = true;
+	__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+			 CHILDOP_LATCH_UNSUPPORTED,
+			 __ATOMIC_RELAXED);
 	__atomic_add_fetch(&shm->stats.statmount_idmap_setup_failed,
 			   1, __ATOMIC_RELAXED);
 	return true;
@@ -689,6 +704,10 @@ bool statmount_idmap_overflow(struct childdata *child)
 	if (!statmount_idmap_probed) {
 		probe_statmount_idmap();
 		if (statmount_idmap_unsupported) {
+			__atomic_store_n(
+				&shm->stats.childop_latch_reason[child->op_type],
+				CHILDOP_LATCH_UNSUPPORTED,
+				__ATOMIC_RELAXED);
 			__atomic_add_fetch(
 				&shm->stats.statmount_idmap_setup_failed,
 				1, __ATOMIC_RELAXED);
@@ -698,6 +717,10 @@ bool statmount_idmap_overflow(struct childdata *child)
 
 	unshare_ns_once();
 	if (ns_unshare_failed_statmount_idmap) {
+		__atomic_store_n(
+			&shm->stats.childop_latch_reason[child->op_type],
+			CHILDOP_LATCH_NS_UNSUPPORTED,
+			__ATOMIC_RELAXED);
 		__atomic_add_fetch(
 			&shm->stats.statmount_idmap_setup_failed,
 			1, __ATOMIC_RELAXED);
@@ -728,7 +751,7 @@ bool statmount_idmap_overflow(struct childdata *child)
 		if (budget_elapsed_ns(&t_outer,
 				      STATMOUNT_IDMAP_WALL_CAP_NS))
 			break;
-		iter_one(scratch_buf, scratch_cap);
+		iter_one(child->op_type, scratch_buf, scratch_cap);
 	}
 
 	free(scratch_buf);
