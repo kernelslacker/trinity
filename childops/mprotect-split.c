@@ -124,8 +124,6 @@ bool mprotect_split(struct childdata *child)
 	enum prot_mode mode;
 	unsigned int iter;
 
-	(void)child;
-
 	obj = get_random_object(OBJ_MMAP_ANON, OBJ_LOCAL);
 	if (obj == NULL)
 		return true;
@@ -141,6 +139,9 @@ bool mprotect_split(struct childdata *child)
 		return true;
 
 	mode = (enum prot_mode)rnd_modulo_u32(NR_PROT_MODES);
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	for (iter = 0; iter < PROT_MODE_ITERS; iter++) {
 		unsigned long offset, len;

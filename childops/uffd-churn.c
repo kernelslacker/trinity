@@ -127,8 +127,6 @@ bool uffd_churn(struct childdata *child)
 	unsigned int cycles;
 	unsigned int i;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.uffd_runs, 1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported)
@@ -159,6 +157,10 @@ bool uffd_churn(struct childdata *child)
 			 * invocations no-op. */
 			if (errno == EPERM || errno == ENOSYS) {
 				ns_unsupported = true;
+				__atomic_store_n(
+					&shm->stats.childop_latch_reason[child->op_type],
+					CHILDOP_LATCH_NS_UNSUPPORTED,
+					__ATOMIC_RELAXED);
 				return true;
 			}
 			__atomic_add_fetch(&shm->stats.uffd_failed,
@@ -188,10 +190,18 @@ bool uffd_churn(struct childdata *child)
 			continue;
 		}
 
+		__atomic_add_fetch(
+			&shm->stats.childop_setup_accepted[child->op_type],
+			1, __ATOMIC_RELAXED);
+
 		memset(&reg, 0, sizeof(reg));
 		reg.range.start = (uintptr_t)region;
 		reg.range.len = len;
 		reg.mode = pick_register_mode(api.ioctls);
+
+		__atomic_add_fetch(
+			&shm->stats.childop_data_path[child->op_type],
+			1, __ATOMIC_RELAXED);
 
 		if (ioctl(fd, UFFDIO_REGISTER, &reg) == 0) {
 			__atomic_add_fetch(&shm->stats.uffd_registers,

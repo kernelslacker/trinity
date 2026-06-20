@@ -506,8 +506,6 @@ bool pagecache_canary_check(struct childdata *child)
 	int open_flags;
 	int fd;
 
-	(void)child;
-
 	pool_size = canary_pool_size();
 	if (pool_size == 0)
 		return true;
@@ -535,6 +533,9 @@ bool pagecache_canary_check(struct childdata *child)
 	if (fd < 0)
 		return true;
 
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
+
 	if (rnd_modulo_u32(100) < FADVISE_DONTNEED_PCT) {
 		(void)posix_fadvise(fd, 0, (off_t)info->size,
 				    POSIX_FADV_DONTNEED);
@@ -550,6 +551,9 @@ bool pagecache_canary_check(struct childdata *child)
 	if ((open_flags & O_DIRECT) && (mode == RM_MMAP || mode == RM_READV)) {
 		mode = RM_READ;
 	}
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	switch (mode) {
 	case RM_READ:	  mode_read(fd, idx, info->size, info->path);     break;

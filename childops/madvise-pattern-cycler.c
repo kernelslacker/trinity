@@ -432,8 +432,6 @@ bool madvise_cycler(struct childdata *child)
 	volatile unsigned int iter_cap;
 	int rc;
 
-	(void) child;
-
 	__atomic_add_fetch(&shm->stats.madvise_cycler_runs, 1, __ATOMIC_RELAXED);
 
 	rc = madvise_cycler_iter_pick_region(&ictx);
@@ -441,6 +439,9 @@ bool madvise_cycler(struct childdata *child)
 		return false;
 	if (rc > 0)
 		return true;
+
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	madvise_cycler_iter_setup_budget(&ictx);
 
@@ -452,6 +453,9 @@ bool madvise_cycler(struct childdata *child)
 		bool aborted = false;
 
 		madvise_cycler_iter_arm_guard(&ictx, &old_segv, &old_bus);
+
+		__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+				   1, __ATOMIC_RELAXED);
 
 		if (sigsetjmp(madvise_cycler_pool_race_jmp, 1) == 0)
 			madvise_cycler_iter_run_cycle(&ictx, iter_cap);

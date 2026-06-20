@@ -113,14 +113,19 @@ bool vma_split_storm(struct childdata *child)
 	unsigned long region_bytes = VMA_SPLIT_STORM_REGION_BYTES;
 	unsigned int iters, i;
 
-	(void)child;
-
 	base = mmap(NULL, region_bytes, PROT_READ | PROT_WRITE,
 		    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (base == MAP_FAILED)
 		return true;
 
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
+
 	iters = BUDGETED(CHILD_OP_VMA_SPLIT_STORM, VMA_SPLIT_STORM_ITERS_BASE);
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
+
 	for (i = 0; i < iters; i++) {
 		uint32_t pick = rnd_modulo_u32(100U);
 		unsigned long off, len;

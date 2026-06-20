@@ -322,16 +322,24 @@ bool vdso_mremap_race(struct childdata *child)
 	struct timespec start, now;
 	long elapsed_ns;
 
-	(void) child;
-
-	if (!vdso_inited)
+	if (!vdso_inited) {
 		find_vdso();
+		if (!vdso_present)
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+	}
 	if (!vdso_present)
 		return true;
 
 	__atomic_add_fetch(&shm->stats.vdso_race_runs, 1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	clock_gettime(CLOCK_MONOTONIC, &start);
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	for (iter = 0; iter < iters; iter++) {
 		pid_t spinner_pid, mutator_pid;
