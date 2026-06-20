@@ -137,8 +137,6 @@ bool tcp_md5_listener_race(struct childdata *child)
 	unsigned int i, j;
 	int rc;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.tcp_md5_listener_race_runs, 1,
 			   __ATOMIC_RELAXED);
 
@@ -157,8 +155,12 @@ bool tcp_md5_listener_race(struct childdata *child)
 	fill_md5(&md5, &srv_addr, 16);
 	rc = setsockopt(listener, IPPROTO_TCP, TCP_MD5SIG, &md5, sizeof(md5));
 	if (rc < 0) {
-		if (errno == EOPNOTSUPP || errno == EINVAL || errno == EPERM)
+		if (errno == EOPNOTSUPP || errno == EINVAL || errno == EPERM) {
 			ns_unsupported_tcp_md5 = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		}
 		__atomic_add_fetch(&shm->stats.tcp_md5_listener_race_md5_set_failed,
 				   1, __ATOMIC_RELAXED);
 		close(listener);
@@ -166,9 +168,13 @@ bool tcp_md5_listener_race(struct childdata *child)
 	}
 	__atomic_add_fetch(&shm->stats.tcp_md5_listener_race_md5_set_ok, 1,
 			   __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	iters = BUDGETED(CHILD_OP_TCP_MD5_LISTENER_RACE,
 			 JITTER_RANGE(MD5_OUTER_BASE));
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	for (i = 0; i < iters; i++) {
 		/* Burst N zero-linger clients into the listener.  Each
 		 * close() drives RST and races tcp_child_process()'s

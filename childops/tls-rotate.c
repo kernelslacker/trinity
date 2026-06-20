@@ -186,8 +186,6 @@ bool tls_rotate(struct childdata *child)
 	int rc;
 	bool srv_ulp = false;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.tls_rotate_runs, 1, __ATOMIC_RELAXED);
 
 	if (make_loopback_pair(&cli, &srv) < 0) {
@@ -219,9 +217,12 @@ bool tls_rotate(struct childdata *child)
 	/* Step 4a: client TX install. */
 	clen = fill_cinfo(c1, cinfo, v1);
 	rc = setsockopt(cli, SOL_TLS, TLS_TX, cinfo, clen);
-	if (rc == 0)
+	if (rc == 0) {
 		__atomic_add_fetch(&shm->stats.tls_rotate_installs,
 				   1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+				   1, __ATOMIC_RELAXED);
+	}
 
 	/* Step 4b: server RX install with the SAME params (matching peer).
 	 * If the kernel rejects (cipher mismatch with what the client
@@ -233,6 +234,8 @@ bool tls_rotate(struct childdata *child)
 	}
 
 	/* Step 5: drive tls_sw_sendmsg through the just-installed TX. */
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	generate_rand_bytes(payload, sizeof(payload));
 	(void)send(cli, payload, 1 + rnd_modulo_u32(sizeof(payload)),
 		   MSG_DONTWAIT);

@@ -215,14 +215,18 @@ static int sockmap_del(int map_fd, __u32 key)
 /* Install TCP_ULP "tls" plus a SOL_TLS TLS_RX cipher_info on a fd.
  * Returns 0 if BOTH installed, -1 otherwise (still treated as coverage
  * by the caller — the rejection path is itself a code-path edge). */
-static int install_tls_rx(int fd)
+static int install_tls_rx(int fd, struct childdata *child)
 {
 	struct tls12_crypto_info_aes_gcm_128 ci;
 
 	if (setsockopt(fd, IPPROTO_TCP, TCP_ULP, "tls", 3) < 0) {
-		if (errno == ENOENT)
+		if (errno == ENOENT) {
 			__atomic_store_n(&sock_ulp_layering_tls_off, 1,
 					 __ATOMIC_RELAXED);
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		}
 		return -1;
 	}
 
@@ -244,8 +248,6 @@ bool sock_ulp_sockmap_layering(struct childdata *child)
 	int i;
 	bool layered_a = false, layered_b = false;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.sock_ulp_sockmap_layering_runs, 1,
 			   __ATOMIC_RELAXED);
 
@@ -261,9 +263,13 @@ bool sock_ulp_sockmap_layering(struct childdata *child)
 
 	map_fd = create_sockmap();
 	if (map_fd < 0) {
-		if (errno == ENOSYS || errno == EPERM || errno == EINVAL)
+		if (errno == ENOSYS || errno == EPERM || errno == EINVAL) {
 			__atomic_store_n(&sock_ulp_layering_bpf_off, 1,
 					 __ATOMIC_RELAXED);
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		}
 		__atomic_add_fetch(&shm->stats.sock_ulp_sockmap_layering_map_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
@@ -271,9 +277,13 @@ bool sock_ulp_sockmap_layering(struct childdata *child)
 
 	prog_fd = load_sk_skb_verdict_prog();
 	if (prog_fd < 0) {
-		if (errno == ENOSYS || errno == EPERM)
+		if (errno == ENOSYS || errno == EPERM) {
 			__atomic_store_n(&sock_ulp_layering_bpf_off, 1,
 					 __ATOMIC_RELAXED);
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		}
 		__atomic_add_fetch(&shm->stats.sock_ulp_sockmap_layering_prog_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
@@ -286,13 +296,15 @@ bool sock_ulp_sockmap_layering(struct childdata *child)
 		 * BPF_STREAM_PARSER off) without invalidating the BOTH-
 		 * orderings probe of the install-side state machines. */
 	}
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	/* Pair A: ulp-then-sockmap.  Install TLS RX FIRST on the cli
 	 * side; THEN add to the sockmap, so the sockmap psock attach
 	 * lands on a socket whose sk_prot has already been swapped to
 	 * tls_prots.  This is the path where sk_psock_init must detect
 	 * the ULP and bail / re-route. */
-	if (install_tls_rx(cli_a) == 0)
+	if (install_tls_rx(cli_a, child) == 0)
 		layered_a = true;
 	(void)sockmap_add(map_fd, 0, cli_a);
 	(void)sockmap_add(map_fd, 1, srv_a);
@@ -303,7 +315,7 @@ bool sock_ulp_sockmap_layering(struct childdata *child)
 	 * a socket whose sk_data_ready isn't the vanilla one. */
 	(void)sockmap_add(map_fd, 2, cli_b);
 	(void)sockmap_add(map_fd, 3, srv_b);
-	if (install_tls_rx(cli_b) == 0)
+	if (install_tls_rx(cli_b, child) == 0)
 		layered_b = true;
 
 	if (layered_a || layered_b)
@@ -314,6 +326,8 @@ bool sock_ulp_sockmap_layering(struct childdata *child)
 	 * pairs so tls_strp_read and sk_psock_strp_read race on the
 	 * loopback enqueue path.  Every send/recv may return -1 with
 	 * EAGAIN/EPIPE/EINVAL; all are coverage, none are failure. */
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	generate_rand_bytes(payload, sizeof(payload));
 	for (i = 0; i < 4; i++) {
 		size_t n = 1 + rnd_modulo_u32(sizeof(payload));

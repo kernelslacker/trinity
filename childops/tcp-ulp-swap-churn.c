@@ -342,15 +342,19 @@ static void ifname_probe(int sock)
  * reject RX install on a client-side fd when no peer ChangeCipherSpec
  * has fired yet, itself a coverage edge).  Returns 0 on success, -1
  * when iter_one should bail to its out: cleanup. */
-static int tcp_ulp_swap_iter_install_tls(int s)
+static int tcp_ulp_swap_iter_install_tls(int s, struct childdata *child)
 {
 	struct tls12_crypto_info_aes_gcm_128 cinfo;
 	unsigned short version;
 
 	if (install_tls_ulp(s) < 0) {
 		if (errno == EAFNOSUPPORT || errno == ENOPROTOOPT ||
-		    errno == EPERM)
+		    errno == EPERM) {
 			ns_unsupported_tcp_ulp_swap = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		}
 		__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn_install_failed,
 				   1, __ATOMIC_RELAXED);
 		__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn_setup_failed,
@@ -438,7 +442,7 @@ static void tcp_ulp_swap_iter_cycle_uninstall_reinstall(int s)
 }
 
 /* One full sequence on a freshly-created loopback TCP socket. */
-static void iter_one(const struct timespec *t_outer)
+static void iter_one(const struct timespec *t_outer, struct childdata *child)
 {
 	pid_t acceptor = -1;
 	int s;
@@ -454,13 +458,17 @@ static void iter_one(const struct timespec *t_outer)
 	}
 
 	/* Steps 3+4: install kTLS, then TLS_TX / TLS_RX cinfo. */
-	if (tcp_ulp_swap_iter_install_tls(s) != 0)
+	if (tcp_ulp_swap_iter_install_tls(s, child) != 0)
 		goto out;
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	if ((unsigned long long)ns_since(t_outer) >= ULP_SWAP_WALL_CAP_NS)
 		goto out;
 
 	/* Step 5: drive live tls_sw send + recv on the ULP. */
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	tcp_ulp_swap_iter_traffic_burst(s);
 
 	/* Steps 6-8: illegal swap attempts + ifname round-trip. */
@@ -482,8 +490,6 @@ bool tcp_ulp_swap_churn(struct childdata *child)
 {
 	struct timespec t_outer;
 	unsigned int outer_iters, i;
-
-	(void)child;
 
 	__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn_runs,
 			   1, __ATOMIC_RELAXED);
@@ -510,7 +516,7 @@ bool tcp_ulp_swap_churn(struct childdata *child)
 		if ((unsigned long long)ns_since(&t_outer) >=
 		    ULP_SWAP_WALL_CAP_NS)
 			break;
-		iter_one(&t_outer);
+		iter_one(&t_outer, child);
 		if (ns_unsupported_tcp_ulp_swap)
 			break;
 	}
