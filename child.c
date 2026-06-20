@@ -1406,6 +1406,28 @@ static void init_child(struct childdata *child, int childno)
 	 * table is fully populated by the time dlsym runs.
 	 */
 	(void)mallopt(M_CHECK_ACTION, 3);
+
+	/*
+	 * Pin glibc to a single arena so heap_bounds_init()'s one-shot
+	 * /proc/self/maps snapshot covers ALL glibc allocations.  Glibc
+	 * normally spawns secondary mmap'd arenas on demand (per-thread,
+	 * under allocation pressure, large mallocs that bypass
+	 * MMAP_THRESHOLD); range_overlaps_libc_heap() only sees the
+	 * snapshotted brk + the arenas present at snapshot time and has
+	 * a live re-test for the brk arm but not the mmap-arena arm, so
+	 * a post-snapshot secondary arena is a blind spot.  A fuzzed
+	 * pointer landing in that arena then passes the sanitiser, the
+	 * kernel writes through it and scribbles glibc chunk metadata,
+	 * surfacing later as `free(): invalid size` / check_uid aborts
+	 * with no obvious proximate cause.  M_ARENA_MAX=1 forbids
+	 * spawning a second arena and M_ARENA_TEST=1 disables the
+	 * contention-growth heuristic that would otherwise try.  The
+	 * child is effectively single-threaded in the syscall loop, so
+	 * arena-contention cost is ~zero.
+	 */
+	(void)mallopt(M_ARENA_MAX, 1);
+	(void)mallopt(M_ARENA_TEST, 1);
+
 	init_abort_msg_capture();
 }
 
