@@ -2054,6 +2054,18 @@ struct kcov_pc_result {
 	unsigned long distinct_edges;
 	unsigned long local_distinct_pcs;
 	unsigned long transition_edges_real_local;
+	/* Per-call PC trace length post-cap (count of PCs the kernel wrote
+	 * into trace_buf this call, clamped at KCOV_TRACE_SIZE - 1 when the
+	 * buffer filled).  Exposed so post-collect bookkeeping can recognise
+	 * near-truncation calls -- a syscall whose trace approached the
+	 * buffer ceiling executed a meaningful amount of kernel code even
+	 * when bucket_bits / distinct_edges came back zero, the "deep but
+	 * warm" shape the per_syscall_diag[].max_trace_size high-water mark
+	 * tracks across the run.  Same cost discipline as the other fields:
+	 * the value is the same `count` the trace_truncated / max_trace_size
+	 * accounting above already computed, so populating it costs one
+	 * extra store. */
+	unsigned long trace_size;
 };
 
 /* After disabling, collect PCs and update the global bitmap.

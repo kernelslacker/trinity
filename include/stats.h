@@ -2611,6 +2611,52 @@ struct stats_s {
 	unsigned long frontier_silent_cmp_baseline[MAX_NR_SYSCALL];
 	unsigned long frontier_silent_errno_success_baseline[MAX_NR_SYSCALL];
 
+	/* SHADOW-ONLY "deep but warm" call accounting.  A call qualifies
+	 * when the post-collect signals show no new coverage of either
+	 * kind -- new_edges == 0 AND new_cmp == 0 -- yet the call still
+	 * executed a meaningful amount of kernel code, gauged by either:
+	 *
+	 *   (a) per-call local_distinct_pcs (dedup_inc first-sightings
+	 *       walked in this trace) at least DEEP_WARM_PCS_MEAN_MULT
+	 *       times the syscall's lifetime mean local_distinct_pcs, the
+	 *       running mean being computed cheaply from the existing
+	 *       per_syscall_diag[].distinct_pcs (sum across both arch
+	 *       slots) divided by per_syscall_calls[nr].  Gated by a
+	 *       warmup floor of DEEP_WARM_PCS_MIN_CALLS so the first
+	 *       handful of calls on a syscall do not all qualify against
+	 *       their own zero-mean.
+	 *   (b) per-call PC trace length at least DEEP_WARM_TRACE_NUM /
+	 *       DEEP_WARM_TRACE_DEN of the KCOV_TRACE_SIZE buffer cap --
+	 *       a call that filled to 90% of the trace buffer ran a deep
+	 *       slice of kernel even when bucket dedup zeroed out the
+	 *       novelty signals.
+	 *
+	 * The two clauses are OR'd: either the per-call PC density
+	 * outranks the syscall's own baseline, or the call approached
+	 * raw trace truncation.  Both are population predicates that flag
+	 * "warm but expensive" calls a future capped-reserve experiment
+	 * (the STAGE B follow-up) would want to retain for replay.  This
+	 * commit only counts them.
+	 *
+	 *  warm_reserve_candidates_total
+	 *      Cumulative count across all syscalls.  Headline number for
+	 *      "how often does the deep-but-warm predicate fire" once the
+	 *      run has been going long enough for the per-syscall warmup
+	 *      floor to clear on the hot syscalls.
+	 *  warm_reserve_candidates[nr]
+	 *      Per-syscall breakdown, indexed by raw syscall nr the same
+	 *      shape as edges_per_syscall_bandit / frontier_picks_per_syscall.
+	 *      Surfaced via a top_syscalls_periodic_dump() top-N row so the
+	 *      operator can see which syscalls dominate the candidate set.
+	 *
+	 * SHADOW: no live-path code reads either counter.  The picker
+	 * distribution, the per-strategy reward attribution, the bandit
+	 * arms, the frontier-blend A/B path are all byte-identical to the
+	 * pre-commit baseline -- this commit only adds two relaxed adds
+	 * on the deep-but-warm tail of the post-collect path. */
+	unsigned long warm_reserve_candidates_total;
+	unsigned long warm_reserve_candidates[MAX_NR_SYSCALL];
+
 	/* SHADOW-ONLY decay-candidate accounting, paired with the silent-
 	 * streak counter and the no-novelty baselines above.  Tighter
 	 * variant of frontier_shadow_decay_candidates: the threshold-
