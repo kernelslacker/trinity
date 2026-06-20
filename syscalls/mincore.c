@@ -104,4 +104,5 @@ struct syscallentry syscall_mincore = {
 	.group = GROUP_VM,
 	.sanitise = sanitise_mincore,
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = REEXEC_SANITISE_OK,
 };
