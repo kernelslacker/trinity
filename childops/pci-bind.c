@@ -146,7 +146,7 @@ static bool is_bdf_name(const char *name)
  * in shm->stats, which the parent's periodic stat_row dump surfaces
  * for the operator.
  */
-static void pci_bind_probe(void)
+static void pci_bind_probe(struct childdata *child)
 {
 	char path[160];
 	struct stat st;
@@ -157,6 +157,9 @@ static void pci_bind_probe(void)
 
 	if (stat(PCI_BIND_BUS_DIR, &st) < 0 || !S_ISDIR(st.st_mode)) {
 		pci_bind_unsupported = true;
+		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+				 CHILDOP_LATCH_UNSUPPORTED,
+				 __ATOMIC_RELAXED);
 		return;
 	}
 
@@ -172,8 +175,12 @@ static void pci_bind_probe(void)
 	__atomic_store_n(&shm->stats.pci_bind_drivers_available,
 			 found, __ATOMIC_RELAXED);
 
-	if (pci_bind_avail_mask == 0U)
+	if (pci_bind_avail_mask == 0U) {
 		pci_bind_unsupported = true;
+		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+				 CHILDOP_LATCH_UNSUPPORTED,
+				 __ATOMIC_RELAXED);
+	}
 }
 
 /*
@@ -293,12 +300,10 @@ bool pci_bind(struct childdata *child)
 	bool ran_unbind;
 	bool ran_bind;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.pci_bind_runs, 1, __ATOMIC_RELAXED);
 
 	if (!pci_bind_probed)
-		pci_bind_probe();
+		pci_bind_probe(child);
 	if (pci_bind_unsupported)
 		return true;
 
@@ -312,8 +317,14 @@ bool pci_bind(struct childdata *child)
 		return true;
 	}
 
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
+
 	pick = rnd_modulo_u32(n_devs);
 	bdf = devs[pick];
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	ran_unbind = pci_bind_write_bdf(drv, "unbind", bdf, &err_unbind);
 	ran_bind  = pci_bind_write_bdf(drv, "bind",   bdf, &err_bind);
