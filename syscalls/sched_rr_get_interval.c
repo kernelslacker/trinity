@@ -158,4 +158,5 @@ struct syscallentry syscall_sched_rr_get_interval = {
 	.sanitise = sanitise_sched_rr_get_interval,
 	.post = post_sched_rr_get_interval,
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = REEXEC_SANITISE_OK,
 };
