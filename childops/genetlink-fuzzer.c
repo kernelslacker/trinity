@@ -262,7 +262,7 @@ static int do_discovery(struct nl_ctx *ctx)
  * discovery_failed and become a noop forever for this child.  Returns
  * true if the catalog is usable.
  */
-static bool ensure_discovery(void)
+static bool ensure_discovery(struct childdata *child)
 {
 	static const struct nl_open_opts opts = {
 		.proto         = NETLINK_GENERIC,
@@ -279,6 +279,9 @@ static bool ensure_discovery(void)
 			discovery_failed = true;
 			if (!warned_unsupported) {
 				warned_unsupported = true;
+				__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+						 CHILDOP_LATCH_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 				outputerr("genetlink_fuzzer: nl_open(NETLINK_GENERIC) failed (errno=%d), disabling\n",
 				          errno);
 			}
@@ -294,6 +297,9 @@ static bool ensure_discovery(void)
 		genl_ctx_open = false;
 		if (!warned_unsupported) {
 			warned_unsupported = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_INIT_FAILED,
+					 __ATOMIC_RELAXED);
 			outputerr("genetlink_fuzzer: GETFAMILY discovery yielded %u families, disabling\n",
 			          catalog_count);
 		}
@@ -394,10 +400,10 @@ bool genetlink_fuzzer(struct childdata *child)
 	int idx = 0;
 	int attempts;
 
-	(void)child;
-
-	if (!ensure_discovery())
+	if (!ensure_discovery(child))
 		return true;
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	/* Pick a non-priv family.  After a few attempts, give up rather
 	 * than spinning in a kernel that has marked everything priv-only. */
@@ -410,6 +416,8 @@ bool genetlink_fuzzer(struct childdata *child)
 	if (fam->needs_priv)
 		return true;
 
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	send_fuzzed_msg(&genl_ctx, fam);
 	return true;
 }

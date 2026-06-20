@@ -296,7 +296,8 @@ struct altname_iter_ctx {
  * invocations skip the failing subsystem).  On -1 the teardown helper
  * is still safe to call: it gates on ctx->nl_opened / ctx->dummy_added.
  */
-static int altname_thrash_iter_setup(struct altname_iter_ctx *ctx)
+static int altname_thrash_iter_setup(struct altname_iter_ctx *ctx,
+				     struct childdata *child)
 {
 	struct nl_open_opts opts = {
 		.proto = NETLINK_ROUTE,
@@ -307,6 +308,9 @@ static int altname_thrash_iter_setup(struct altname_iter_ctx *ctx)
 	if (!ns_unshared_altname_thrash) {
 		if (unshare(CLONE_NEWNET) < 0) {
 			ns_setup_failed_altname_thrash = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_INIT_FAILED,
+					 __ATOMIC_RELAXED);
 			__atomic_add_fetch(&shm->stats.altname_thrash_unshare_failed,
 					   1, __ATOMIC_RELAXED);
 			return -1;
@@ -315,8 +319,12 @@ static int altname_thrash_iter_setup(struct altname_iter_ctx *ctx)
 	}
 
 	if (nl_open(&ctx->nl, &opts) < 0) {
-		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT)
+		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT) {
 			ns_unsupported_altname_thrash = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		}
 		return -1;
 	}
 	ctx->nl_opened = true;
@@ -326,8 +334,12 @@ static int altname_thrash_iter_setup(struct altname_iter_ctx *ctx)
 
 	rc = build_dummy_create(&ctx->nl, ctx->dummy_name);
 	if (rc != 0) {
-		if (is_unsupported_err(rc))
+		if (is_unsupported_err(rc)) {
 			ns_unsupported_dummy_altname_thrash = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		}
 		return -1;
 	}
 	ctx->dummy_added = true;
@@ -435,8 +447,6 @@ bool altname_thrash(struct childdata *child)
 {
 	struct altname_iter_ctx ctx = { .nl = { .fd = -1 } };
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.altname_thrash_invocations, 1,
 			   __ATOMIC_RELAXED);
 
@@ -445,8 +455,13 @@ bool altname_thrash(struct childdata *child)
 	    ns_unsupported_dummy_altname_thrash)
 		return true;
 
-	if (altname_thrash_iter_setup(&ctx) == 0)
+	if (altname_thrash_iter_setup(&ctx, child) == 0) {
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+				   1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+				   1, __ATOMIC_RELAXED);
 		altname_thrash_iter_burst(&ctx);
+	}
 
 	altname_thrash_iter_teardown(&ctx);
 	return true;
