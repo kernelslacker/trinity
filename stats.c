@@ -1,10 +1,12 @@
 #include <errno.h>
+#include <fcntl.h>
 #include <inttypes.h>
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/utsname.h>
 #include <time.h>
 #include <unistd.h>
 #include "arch.h"
@@ -27,6 +29,7 @@
 #include "taint.h"
 #include "trinity.h"
 #include "utils.h"
+#include "version.h"
 
 /*
  * Linker-provided bounds of the running binary's executable text.  Used
@@ -6090,6 +6093,286 @@ static void kcov_diag_emit_truncation_topn(void)
 	}
 }
 
+/* --------------------------------------------------------------------
+ * Run-identity block: provenance + post-warm-load start baseline +
+ * shutdown deltas.  Closes the stale-cache-key trap from the 2026-06-14
+ * triage where comparing two final cache snapshots made a fully
+ * productive cold run look like zero growth (the warm cache had been
+ * silently reused under a stale key).  The own-start delta is immune
+ * to that: it is the work this process actually did, regardless of
+ * what the carrier looked like before the run started.
+ * -------------------------------------------------------------------- */
+
+struct run_start_baseline {
+	bool captured;
+	time_t monotonic_at_start;
+	unsigned long edges_found;
+	unsigned long distinct_edges;
+	unsigned long edges_warm_loaded;
+	unsigned long distinct_edges_warm_loaded;
+	unsigned long corpus_entries;
+	unsigned long cmp_records_collected;
+};
+
+static struct run_start_baseline run_start;
+
+/* CLOCK_MONOTONIC second counter -- duplicate of child-canary.c's
+ * file-static helper (kept private to avoid exposing it through a
+ * widely-included header for two callers).  Wall-clock-skew-immune,
+ * so a negative duration cannot trip a spurious panic on an NTP
+ * step. */
+static time_t runid_monotonic_seconds(void)
+{
+	struct timespec ts;
+
+	(void)clock_gettime(CLOCK_MONOTONIC, &ts);
+	return ts.tv_sec;
+}
+
+/* Sum every per-syscall ring's entry count to get the parent's view
+ * of total corpus size.  Reads each ring's count with __ATOMIC_RELAXED
+ * since the snapshot is observability-only -- a torn read against a
+ * concurrent writer at most miscounts by one entry per syscall, well
+ * inside the noise floor of a "did this run grow the corpus" check. */
+static unsigned long runid_corpus_entries_total(void)
+{
+	unsigned long total = 0;
+	unsigned int i;
+
+	if (minicorpus_shm == NULL)
+		return 0;
+
+	for (i = 0; i < MAX_NR_SYSCALL; i++) {
+		total += __atomic_load_n(&minicorpus_shm->rings[i].count,
+					 __ATOMIC_RELAXED);
+	}
+	return total;
+}
+
+/* Render the 32-byte kallsyms fingerprint as a short hex prefix
+ * suitable for an at-a-glance identity line; truncated to 16 hex
+ * chars (8 bytes of entropy) is far past what a human eyeballs but
+ * short enough to fit on one line beside the other identity fields.
+ * Returns true iff the fingerprint was available -- a v5+ kcov path
+ * that cannot resolve _text leaves it unavailable on this run. */
+static bool runid_kallsyms_hex(char *out, size_t outlen)
+{
+	uint8_t fp[32];
+	size_t i, want;
+
+	if (outlen < 17)
+		return false;
+	if (!kcov_get_kernel_fp(fp))
+		return false;
+	want = 8;
+	for (i = 0; i < want; i++)
+		snprintf(out + (i * 2), outlen - (i * 2), "%02x", fp[i]);
+	out[want * 2] = '\0';
+	return true;
+}
+
+/* Read /proc/sys/kernel/random/boot_id into a NUL-terminated string
+ * (the on-disk value is a 36-char UUID followed by a newline).
+ * Returns true on success.  The boot_id is no longer used as a
+ * cache-key guard (KCOV bitmap moved to canonicalised PCs at file
+ * version 5), but it remains the single most useful "did the kernel
+ * reboot between these two runs" anchor for the run-identity block. */
+static bool runid_read_boot_id(char *out, size_t outlen)
+{
+	int fd;
+	ssize_t n;
+
+	if (outlen < 37)
+		return false;
+
+	fd = open("/proc/sys/kernel/random/boot_id", O_RDONLY);
+	if (fd < 0)
+		return false;
+	n = read(fd, out, outlen - 1);
+	close(fd);
+	if (n <= 0)
+		return false;
+	out[n] = '\0';
+	/* Strip the trailing newline so the value renders inline. */
+	if (n > 0 && out[n - 1] == '\n')
+		out[n - 1] = '\0';
+	return true;
+}
+
+void __cold stats_runid_snapshot_start(void)
+{
+	if (run_start.captured)
+		return;
+
+	run_start.monotonic_at_start = runid_monotonic_seconds();
+	if (kcov_shm != NULL) {
+		run_start.edges_found = __atomic_load_n(
+			&kcov_shm->edges_found, __ATOMIC_RELAXED);
+		run_start.distinct_edges = __atomic_load_n(
+			&kcov_shm->distinct_edges, __ATOMIC_RELAXED);
+		run_start.edges_warm_loaded = __atomic_load_n(
+			&kcov_shm->edges_warm_loaded, __ATOMIC_RELAXED);
+		run_start.distinct_edges_warm_loaded = __atomic_load_n(
+			&kcov_shm->distinct_edges_warm_loaded,
+			__ATOMIC_RELAXED);
+		run_start.cmp_records_collected = __atomic_load_n(
+			&kcov_shm->cmp_records_collected, __ATOMIC_RELAXED);
+	}
+	run_start.corpus_entries = runid_corpus_entries_total();
+	run_start.captured = true;
+}
+
+static const char *runid_warm_state(bool gated_off, unsigned long start_value)
+{
+	if (gated_off)
+		return "disabled";
+	return start_value > 0 ? "warm" : "cold";
+}
+
+static const char *runid_transition_coverage_name(void)
+{
+	switch (kcov_transition_coverage_mode) {
+	case KCOV_TRANSITION_COVERAGE_OFF:    return "off";
+	case KCOV_TRANSITION_COVERAGE_SHADOW: return "shadow";
+	}
+	return "?";
+}
+
+static const char *runid_transition_reward_name(void)
+{
+	switch (kcov_transition_reward_mode) {
+	case KCOV_TRANSITION_REWARD_OFF:         return "off";
+	case KCOV_TRANSITION_REWARD_SHADOW_ONLY: return "shadow_only";
+	case KCOV_TRANSITION_REWARD_COMBINED:    return "combined";
+	}
+	return "?";
+}
+
+void __cold stats_runid_render(void)
+{
+	unsigned long end_edges = 0;
+	unsigned long end_distinct = 0;
+	unsigned long end_corpus = 0;
+	unsigned long edges_delta = 0;
+	unsigned long distinct_delta = 0;
+	unsigned long corpus_delta = 0;
+	time_t now = runid_monotonic_seconds();
+	long elapsed = 0;
+	struct utsname uts;
+	bool have_uname;
+	char kallsyms_hex[17] = "(unavailable)";
+	char boot_id[64] = "(unavailable)";
+	const char *kcov_state;
+	const char *corpus_state;
+	const char *cmp_state;
+
+	have_uname = (uname(&uts) == 0);
+	(void)runid_kallsyms_hex(kallsyms_hex, sizeof(kallsyms_hex));
+	(void)runid_read_boot_id(boot_id, sizeof(boot_id));
+
+	if (kcov_shm != NULL) {
+		end_edges = __atomic_load_n(&kcov_shm->edges_found,
+					    __ATOMIC_RELAXED);
+		end_distinct = __atomic_load_n(&kcov_shm->distinct_edges,
+					       __ATOMIC_RELAXED);
+	}
+	end_corpus = runid_corpus_entries_total();
+
+	output(0, "\n");
+	output(0, "===== run identity =====\n");
+
+	/* Identity / provenance triple: the three values that together
+	 * decide whether a persisted warm cache will load on the next run.
+	 * Cache-key drift across runs is the failure mode the 2026-06-14
+	 * triage chased; printing the triple at shutdown makes the drift
+	 * visible without needing the loader's verbose path. */
+	output(0, "run-id provenance: build=%s kernel=%s%s%s kallsyms=%s "
+		  "boot_id=%s asan=%s\n",
+	       GIT_HASH,
+	       have_uname ? uts.release : "(uname-failed)",
+	       have_uname ? " " : "",
+	       have_uname ? uts.version : "",
+	       kallsyms_hex,
+	       boot_id,
+#ifdef __SANITIZE_ADDRESS__
+	       "on"
+#else
+	       "off"
+#endif
+	       );
+
+	/* Cohort + the parent-side knobs that change selection at the
+	 * coarse level.  Per-child A/B stamps (redqueen_enabled,
+	 * cmp_hint_inject_arm_b, ...) are not parent-visible globals and
+	 * are intentionally omitted -- they belong in the per-child
+	 * attribution dumps, not this identity line. */
+	output(0, "run-id cohort: children=%u alt_op_children=%u "
+		  "canary_slots=%u canary_window_iters=%u canary_queue=%s "
+		  "transition_coverage=%s transition_reward=%s\n",
+	       max_children, alt_op_children,
+	       canary_slots, canary_window_iters,
+	       canary_queue_disabled ? "off" : "on",
+	       runid_transition_coverage_name(),
+	       runid_transition_reward_name());
+
+	/* Cold/warm classification of each cross-run carrier.  "disabled"
+	 * means the --no-*-warm-start opt-out is in effect (no save and no
+	 * load this run); "warm" means the carrier had a non-zero starting
+	 * baseline at snapshot time (a prior run's state survived into
+	 * this one); "cold" means the carrier started empty (genuine
+	 * first-run-on-this-cache-key). */
+	kcov_state = runid_warm_state(no_kcov_warm_start,
+				      run_start.edges_warm_loaded);
+	corpus_state = runid_warm_state(no_warm_start,
+					run_start.corpus_entries);
+	cmp_state = runid_warm_state(no_cmp_hints_warm_start,
+				     run_start.cmp_records_collected);
+	output(0, "run-id carriers: kcov=%s minicorpus=%s cmp_hints=%s "
+		  "kcov_warm_loaded_edges=%lu kcov_warm_loaded_distinct=%lu\n",
+	       kcov_state, corpus_state, cmp_state,
+	       run_start.edges_warm_loaded,
+	       run_start.distinct_edges_warm_loaded);
+
+	if (!run_start.captured) {
+		/* Reached the shutdown render without ever taking the
+		 * start snapshot (early-exit dump path or a regression
+		 * in the main_loop hook).  Print the end values alone so
+		 * the operator still has the identity block, but suppress
+		 * the deltas rather than emit a misleading "start=0
+		 * end=N delta=N" line that would re-create the exact
+		 * 2026-06-14 trap (mistaking a known-prior carrier for
+		 * coverage this run discovered). */
+		output(0, "run-id baseline: NOT CAPTURED -- deltas suppressed; "
+			  "end edges_found=%lu distinct_edges=%lu "
+			  "corpus_entries=%lu\n",
+		       end_edges, end_distinct, end_corpus);
+		output(0, "===== end run identity =====\n");
+		return;
+	}
+
+	if (end_edges >= run_start.edges_found)
+		edges_delta = end_edges - run_start.edges_found;
+	if (end_distinct >= run_start.distinct_edges)
+		distinct_delta = end_distinct - run_start.distinct_edges;
+	if (end_corpus >= run_start.corpus_entries)
+		corpus_delta = end_corpus - run_start.corpus_entries;
+	if (now >= run_start.monotonic_at_start)
+		elapsed = (long)(now - run_start.monotonic_at_start);
+
+	output(0, "run-id baseline: start edges_found=%lu distinct_edges=%lu "
+		  "corpus_entries=%lu\n",
+	       run_start.edges_found, run_start.distinct_edges,
+	       run_start.corpus_entries);
+	output(0, "run-id shutdown: end   edges_found=%lu distinct_edges=%lu "
+		  "corpus_entries=%lu elapsed=%lds\n",
+	       end_edges, end_distinct, end_corpus, elapsed);
+	output(0, "run-id own-start deltas: edges_found=+%lu "
+		  "distinct_edges=+%lu corpus_entries=+%lu\n",
+	       edges_delta, distinct_delta, corpus_delta);
+
+	output(0, "===== end run identity =====\n");
+}
+
 static void dump_stats_runtime_header(void)
 {
 	time_t start = shm->start_time;
@@ -8842,6 +9125,13 @@ void __cold dump_stats(void)
 		dump_stats_json();
 		return;
 	}
+
+	/* Lead the shutdown report with the run-identity block so the
+	 * provenance triple + cold/warm carrier state + own-start deltas
+	 * are the first thing an operator sees -- the post-mortem hook a
+	 * "did this run actually advance coverage" check needs before
+	 * any of the downstream tables can be interpreted. */
+	stats_runid_render();
 
 	dump_stats_runtime_header();
 

@@ -3587,6 +3587,26 @@ unsigned int stats_syscall_category(const char *name);
 
 void dump_stats(void) __cold;
 
+/* Run-identity baseline snapshot.  Captured once at parent start, AFTER
+ * warm_start_all() has loaded the persisted KCOV bitmap / minicorpus /
+ * cmp-hints carriers, so the stored {edges_found, distinct_edges,
+ * corpus_entries, monotonic_seconds} are the post-warm-load "where this
+ * run picked up from" baseline.  Idempotent: extra calls (e.g. each
+ * epoch_loop iteration re-entering main_loop) are silently ignored so
+ * the baseline reflects the very first entry only.  No-op when the
+ * relevant shm carriers are unmapped (early-exit dump modes). */
+void stats_runid_snapshot_start(void) __cold;
+
+/* Print the run-identity block: build/kernel/cache-key provenance, the
+ * cohort/knob configuration this run booted with, the cold-vs-warm
+ * carrier state, and the start->shutdown deltas for edges_found /
+ * distinct_edges / corpus_entries (computed against the baseline
+ * captured by stats_runid_snapshot_start above).  Called from
+ * dump_stats() so the block leads the shutdown report; safe to call
+ * without a prior start snapshot (the deltas are then suppressed and
+ * an explanatory line is printed in their place). */
+void stats_runid_render(void) __cold;
+
 /* Per-tick scan: emits a WARNING when parent_stats.post_handler_corrupt_ptr
  * advances by a threshold count over a one-minute window. */
 void corrupt_ptr_spike_check(void);
