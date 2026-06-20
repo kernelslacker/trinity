@@ -32,4 +32,5 @@ struct syscallentry syscall_getpriority = {
 	.group = GROUP_SCHED,
 	.post = post_getpriority,
 	.rettype = RET_BORING,
+	.flags = REEXEC_SANITISE_OK,
 };
