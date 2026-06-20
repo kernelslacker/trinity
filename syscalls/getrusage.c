@@ -245,5 +245,6 @@ struct syscallentry syscall_getrusage = {
 	.sanitise = sanitise_getrusage,
 	.group = GROUP_PROCESS,
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = REEXEC_SANITISE_OK,
 	.post = post_getrusage,
 };
