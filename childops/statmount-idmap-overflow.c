@@ -34,11 +34,21 @@
  *
  * Shape (per outer iteration, BUDGETED+capped):
  *   1. First call per process probes statmount() / mount_setattr() /
- *      fsopen() / fsmount() availability (the new-mount-API quartet)
- *      and unshares (CLONE_NEWNS | CLONE_NEWUSER) so all mount work
- *      lands in a private namespace pair the kernel destroys when
- *      this trinity child exits.  Any probe failure latches the op
- *      off for the rest of the child's life.
+ *      fsopen() / fsmount() availability (the new-mount-API quartet);
+ *      a missing syscall (ENOSYS) latches the op off for the rest of
+ *      the child's life.  Per invocation, the outer bufsize-sweep
+ *      loop runs inside a transient grandchild forked by
+ *      userns_run_in_ns(): the helper installs an identity user
+ *      namespace plus a fresh CLONE_NEWNS, runs the loop, and
+ *      _exit()s -- the kernel reaps every mount, fd, and sibling
+ *      fork (the carrier in step 2) with the grandchild's namespace
+ *      stack.  The persistent fuzz child never mutates its own
+ *      credentials or namespaces, so the cap-drop oracle keeps
+ *      observing the host credential profile.  Helper -EPERM
+ *      (hardened userns policy refused CLONE_NEWUSER) latches the
+ *      op off uniformly; helper -1 (transient setup failure: fork,
+ *      id-map write, secondary CLONE_NEWNS unshare) skips the
+ *      invocation without latching.
  *   2. Build a "carrier" child userns: fork a sibling that unshares
  *      CLONE_NEWUSER and pauses; the parent writes "deny" to the
  *      sibling's setgroups, then a one-line uid_map and gid_map
@@ -71,20 +81,29 @@
  *     new-mount-API quartet; a missing syscall (ENOSYS) or a
  *     persistent ENOSYS from statmount itself latches the op off
  *     uniformly.  Same shape as the qrtr / pfkey / l2tp latches.
- *   - ns_unshare_failed_statmount_idmap: the first invocation also
- *     issues unshare(CLONE_NEWNS | CLONE_NEWUSER) once per child;
- *     EPERM (caller lacks the privilege required to create a user
- *     namespace, e.g. /proc/sys/kernel/unprivileged_userns_clone=0)
- *     latches the op off uniformly.
+ *   - ns_unshare_failed_statmount_idmap: latched when
+ *     userns_run_in_ns() returns -EPERM, meaning the transient
+ *     grandchild's unshare(CLONE_NEWUSER) was refused by a hardened
+ *     userns policy (user.max_user_namespaces=0 or
+ *     kernel.unprivileged_userns_clone=0).  Helper -1 (transient
+ *     setup failure: fork, id-map write, secondary CLONE_NEWNS
+ *     unshare) does NOT set this latch -- the failure is not policy
+ *     and may not recur on the next invocation.
  *
- * Box-safety.  All mount work is confined to a freshly-unshared
- * (CLONE_NEWNS | CLONE_NEWUSER) pair; nothing touches the host
- * mount table, nothing is moved into the host hierarchy, and the
- * backing tmpfs is created via the detached new-mount-API
+ * Box-safety.  All mount work executes inside a transient grandchild
+ * forked by userns_run_in_ns(); the grandchild holds an identity
+ * user namespace plus a fresh CLONE_NEWNS and _exit()s when the
+ * outer-loop callback returns, so the kernel reaps every mount,
+ * file descriptor, and sibling fork the loop created with the
+ * grandchild's namespace stack.  The persistent fuzz child never
+ * mutates its own credentials or namespaces.  Nothing touches the
+ * host mount table, nothing is moved into the host hierarchy, and
+ * the backing tmpfs is created via the detached new-mount-API
  * (fsopen + fsmount) so the source mount lives only behind a file
- * descriptor we hold and close.  No module load, no rtnetlink, no
- * globally-reachable resource.  Bounded outer loop with a hard
- * wall-clock cap; per-iter bufsize sweep is a fixed small table.
+ * descriptor the grandchild holds for its lifetime.  No module
+ * load, no rtnetlink, no globally-reachable resource.  Bounded
+ * outer loop with a hard wall-clock cap; per-iter bufsize sweep is
+ * a fixed small table.
  *
  * Header compat.  Modern <linux/mount.h> ships struct mount_attr,
  * MOUNT_ATTR_IDMAP, the fsconfig enum, struct mnt_id_req, struct
@@ -115,6 +134,7 @@
 #include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
+#include "userns-bootstrap.h"
 
 #if __has_include(<linux/mount.h>)
 #include <linux/mount.h>
@@ -248,12 +268,18 @@ static const unsigned long statmount_idmap_bufsizes[] = {
 	0UL,
 };
 
-/* Per-process latches.  Same shape as pfkey_spd_walk: probe runs
- * once, unshare runs once.  Either latch makes the op a silent
- * no-op for the rest of the child's life. */
+/* Per-process latches.  The probe runs once; once any latch is set
+ * the op becomes a silent no-op for the rest of the child's life. */
 static bool statmount_idmap_probed;
 static bool statmount_idmap_unsupported;
-static bool ns_unshared_statmount_idmap;
+/* Latched per-child when userns_run_in_ns() reports -EPERM, meaning the
+ * transient grandchild's unshare(CLONE_NEWUSER) was refused by a
+ * hardened policy (user.max_user_namespaces=0 or
+ * kernel.unprivileged_userns_clone=0).  Without a private mount + user
+ * namespace pair we cannot install the idmap on the detached tmpfs, so
+ * the op stays disabled for the remainder of this child's lifetime.
+ * Helper return -1 (transient setup failure) does NOT set this -- the
+ * failure is not policy and may not recur on the next invocation. */
 static bool ns_unshare_failed_statmount_idmap;
 
 #if defined(__NR_statmount) && defined(__NR_mount_setattr) && \
@@ -329,27 +355,6 @@ static void probe_statmount_idmap(void)
 		statmount_idmap_unsupported = true;
 		return;
 	}
-}
-
-/*
- * Per-child unshare.  CLONE_NEWNS so mount mutations are private;
- * CLONE_NEWUSER so the caller has the privileges required to create
- * a child userns and to install MOUNT_ATTR_IDMAP.  EPERM (caller
- * lacks the right to create a user namespace) latches the op off
- * uniformly.
- */
-static void unshare_ns_once(void)
-{
-	if (ns_unshared_statmount_idmap || ns_unshare_failed_statmount_idmap)
-		return;
-	if (unshare(CLONE_NEWNS | CLONE_NEWUSER) < 0) {
-		ns_unshare_failed_statmount_idmap = true;
-		return;
-	}
-	/* MS_PRIVATE on / so anything we mount cannot propagate even
-	 * if the host's mount namespace had MS_SHARED propagation. */
-	(void)trinity_raw_syscall(__NR_mount, NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL);
-	ns_unshared_statmount_idmap = true;
 }
 
 /*
@@ -671,6 +676,53 @@ static void iter_one(int op_type, void *scratch_buf, unsigned long scratch_cap)
 	close(userns_fd);
 }
 
+/*
+ * Per-invocation context handed to the in-ns callback so it can drive
+ * the outer bufsize-sweep loop with the caller's op_type, BUDGETED
+ * iteration count, and pre-allocated scratch buffer.
+ */
+struct statmount_idmap_ctx {
+	int op_type;
+	unsigned int outer_iters;
+	void *scratch_buf;
+	unsigned long scratch_cap;
+};
+
+/*
+ * Body that must run inside the (CLONE_NEWUSER | CLONE_NEWNS) namespace
+ * stack.  Executed in a transient grandchild forked by
+ * userns_run_in_ns(); the grandchild's userns + mount ns are torn down
+ * on _exit() so the detached tmpfs mount, the carrier sibling fork, and
+ * any namespace-scoped resources iter_one() allocated are reaped by the
+ * kernel along with the namespace stack.  Return value is ignored by
+ * the helper.
+ */
+static int statmount_idmap_loop_in_ns(void *arg)
+{
+	struct statmount_idmap_ctx *ctx = (struct statmount_idmap_ctx *)arg;
+	struct timespec t_outer;
+	unsigned int i;
+
+	/* MS_PRIVATE on / so anything we mount cannot propagate even
+	 * if the host's mount namespace had MS_SHARED propagation. */
+	(void)trinity_raw_syscall(__NR_mount, NULL, "/", NULL,
+				  MS_REC | MS_PRIVATE, NULL);
+
+	if (clock_gettime(CLOCK_MONOTONIC, &t_outer) < 0) {
+		t_outer.tv_sec = 0;
+		t_outer.tv_nsec = 0;
+	}
+
+	for (i = 0; i < ctx->outer_iters; i++) {
+		if (budget_elapsed_ns(&t_outer,
+				      STATMOUNT_IDMAP_WALL_CAP_NS))
+			break;
+		iter_one(ctx->op_type, ctx->scratch_buf, ctx->scratch_cap);
+	}
+
+	return 0;
+}
+
 #endif /* HAVE_STATMOUNT_IDMAP_SYSCALLS */
 
 bool statmount_idmap_overflow(struct childdata *child)
@@ -688,10 +740,11 @@ bool statmount_idmap_overflow(struct childdata *child)
 	return true;
 #else
 	{
-	struct timespec t_outer;
-	unsigned int outer_iters, i;
+	struct statmount_idmap_ctx ctx;
+	unsigned int outer_iters;
 	void *scratch_buf;
 	const unsigned long scratch_cap = 16384UL;
+	int rc;
 
 	if (statmount_idmap_unsupported ||
 	    ns_unshare_failed_statmount_idmap) {
@@ -715,29 +768,12 @@ bool statmount_idmap_overflow(struct childdata *child)
 		}
 	}
 
-	unshare_ns_once();
-	if (ns_unshare_failed_statmount_idmap) {
-		__atomic_store_n(
-			&shm->stats.childop_latch_reason[child->op_type],
-			CHILDOP_LATCH_NS_UNSUPPORTED,
-			__ATOMIC_RELAXED);
-		__atomic_add_fetch(
-			&shm->stats.statmount_idmap_setup_failed,
-			1, __ATOMIC_RELAXED);
-		return true;
-	}
-
 	scratch_buf = malloc(scratch_cap);
 	if (scratch_buf == NULL) {
 		__atomic_add_fetch(
 			&shm->stats.statmount_idmap_setup_failed,
 			1, __ATOMIC_RELAXED);
 		return true;
-	}
-
-	if (clock_gettime(CLOCK_MONOTONIC, &t_outer) < 0) {
-		t_outer.tv_sec = 0;
-		t_outer.tv_nsec = 0;
 	}
 
 	outer_iters = BUDGETED(CHILD_OP_STATMOUNT_IDMAP_OVERFLOW,
@@ -747,14 +783,33 @@ bool statmount_idmap_overflow(struct childdata *child)
 	if (outer_iters > STATMOUNT_IDMAP_OUTER_CAP)
 		outer_iters = STATMOUNT_IDMAP_OUTER_CAP;
 
-	for (i = 0; i < outer_iters; i++) {
-		if (budget_elapsed_ns(&t_outer,
-				      STATMOUNT_IDMAP_WALL_CAP_NS))
-			break;
-		iter_one(child->op_type, scratch_buf, scratch_cap);
+	ctx.op_type = child->op_type;
+	ctx.outer_iters = outer_iters;
+	ctx.scratch_buf = scratch_buf;
+	ctx.scratch_cap = scratch_cap;
+
+	rc = userns_run_in_ns(CLONE_NEWNS, statmount_idmap_loop_in_ns, &ctx);
+	free(scratch_buf);
+
+	if (rc == -EPERM) {
+		ns_unshare_failed_statmount_idmap = true;
+		__atomic_store_n(
+			&shm->stats.childop_latch_reason[child->op_type],
+			CHILDOP_LATCH_NS_UNSUPPORTED,
+			__ATOMIC_RELAXED);
+		__atomic_add_fetch(
+			&shm->stats.statmount_idmap_setup_failed,
+			1, __ATOMIC_RELAXED);
+	} else if (rc < 0) {
+		/* Transient grandchild setup failure (fork, id-map
+		 * write, secondary CLONE_NEWNS unshare).  Skip this
+		 * invocation without latching -- the failure is not
+		 * policy and may not recur on the next call. */
+		__atomic_add_fetch(
+			&shm->stats.statmount_idmap_setup_failed,
+			1, __ATOMIC_RELAXED);
 	}
 
-	free(scratch_buf);
 	return true;
 	}
 #endif
