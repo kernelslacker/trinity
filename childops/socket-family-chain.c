@@ -419,7 +419,7 @@ static bool pick_alg_arm(void)
 	return rnd_modulo_u32(100) < SFG_AF_ALG_BIAS_PCT;
 }
 
-bool socket_family_chain(struct childdata *child __unused__)
+bool socket_family_chain(struct childdata *child)
 {
 	unsigned int inner;
 	unsigned int cycles;
@@ -466,18 +466,36 @@ bool socket_family_chain(struct childdata *child __unused__)
 
 	for (inner = 0; inner < cycles; inner++) {
 		if (use_alg) {
-			if (run_alg_chain(&alg_err_burst))
+			if (run_alg_chain(&alg_err_burst)) {
 				any_completed = true;
+				__atomic_add_fetch(
+					&shm->stats.childop_setup_accepted[child->op_type],
+					1, __ATOMIC_RELAXED);
+				__atomic_add_fetch(
+					&shm->stats.childop_data_path[child->op_type],
+					1, __ATOMIC_RELAXED);
+			}
 
 			if (alg_err_burst > ERR_BURST_LIMIT) {
 				__atomic_store_n(
 					&shm->socket_family_chain_unsupported,
 					true, __ATOMIC_RELAXED);
+				__atomic_store_n(
+					&shm->stats.childop_latch_reason[child->op_type],
+					CHILDOP_LATCH_UNSUPPORTED,
+					__ATOMIC_RELAXED);
 				break;
 			}
 		} else {
-			if (run_grammar_chain(sfg, &gram_err_burst))
+			if (run_grammar_chain(sfg, &gram_err_burst)) {
 				any_completed = true;
+				__atomic_add_fetch(
+					&shm->stats.childop_setup_accepted[child->op_type],
+					1, __ATOMIC_RELAXED);
+				__atomic_add_fetch(
+					&shm->stats.childop_data_path[child->op_type],
+					1, __ATOMIC_RELAXED);
+			}
 
 			if (gram_err_burst > ERR_BURST_LIMIT) {
 				sfg_mark_unsupported(sfg->family);
@@ -498,12 +516,14 @@ bool socket_family_chain(struct childdata *child __unused__)
 
 #else /* !USE_IF_ALG */
 
-bool socket_family_chain(struct childdata *child __unused__)
+bool socket_family_chain(struct childdata *child)
 {
 	__atomic_add_fetch(&shm->stats.socket_family_chain_runs, 1,
 			   __ATOMIC_RELAXED);
 	__atomic_store_n(&shm->socket_family_chain_unsupported, true,
 			 __ATOMIC_RELAXED);
+	__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+			 CHILDOP_LATCH_UNSUPPORTED, __ATOMIC_RELAXED);
 	__atomic_add_fetch(&shm->stats.socket_family_chain_failed, 1,
 			   __ATOMIC_RELAXED);
 	return true;
