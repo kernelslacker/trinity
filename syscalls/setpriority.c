@@ -145,4 +145,5 @@ struct syscallentry syscall_setpriority = {
 	.post = post_setpriority,
 	.group = GROUP_SCHED,
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = REEXEC_SANITISE_OK,
 };
