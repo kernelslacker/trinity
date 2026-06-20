@@ -478,8 +478,6 @@ bool iscsi_login_walker(struct childdata *child)
 	size_t pdu_len;
 	bool chaos;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.iscsi_walker_runs, 1,
 			   __ATOMIC_RELAXED);
 
@@ -503,6 +501,9 @@ bool iscsi_login_walker(struct childdata *child)
 		if (fd < 0) {
 			if (errno == ECONNREFUSED) {
 				ns_unsupported = true;
+				__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 				__atomic_add_fetch(&shm->stats.iscsi_walker_no_target,
 						   1, __ATOMIC_RELAXED);
 				return true;
@@ -513,6 +514,10 @@ bool iscsi_login_walker(struct childdata *child)
 		}
 		__atomic_add_fetch(&shm->stats.iscsi_walker_connected, 1,
 				   __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+				   1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+				   1, __ATOMIC_RELAXED);
 
 		if (chaos) {
 			unsigned int chaos_pdus = 1 + rnd_modulo_u32(CHAOS_PDUS_MAX);

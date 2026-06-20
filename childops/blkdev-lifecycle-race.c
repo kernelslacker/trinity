@@ -107,18 +107,25 @@ static int blkdev_loop_open(int n, int flags)
  * /dev/loop-control absent, pool fully tmpfs-only), and latches
  * ns_unsupported on first absence so subsequent invocations
  * short-circuit at the top of the entry point without re-querying.
+ * @child is the caller's struct childdata so the same NS_UNSUPPORTED
+ * verdict can be recorded in childop_latch_reason[op_type] alongside
+ * the static-bool latch.
  *
  * The pool is a process-wide singleton populated once in the parent
  * before fork(); a sentinel today is permanent for this process's
  * lifetime, so the latch is correct.
  */
-static int blkdev_pick_loop_num(void)
+static int blkdev_pick_loop_num(struct childdata *child)
 {
 	int n;
 
 	n = scratch_block_random_loop_num();
-	if (n < 0)
+	if (n < 0) {
 		ns_unsupported_blkdev_lifecycle = true;
+		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+				 CHILDOP_LATCH_NS_UNSUPPORTED,
+				 __ATOMIC_RELAXED);
+	}
 	return n;
 }
 
@@ -243,20 +250,20 @@ bool blkdev_lifecycle_race(struct childdata *child)
 	unsigned int iters, i;
 	struct timespec gap = { .tv_sec = 0, .tv_nsec = BLKDEV_RESCAN_NS };
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.blkdev_lifecycle_runs, 1,
 			   __ATOMIC_RELAXED);
 
 	if (ns_unsupported_blkdev_lifecycle)
 		return true;
 
-	ra.loop_n = blkdev_pick_loop_num();
+	ra.loop_n = blkdev_pick_loop_num(child);
 	if (ra.loop_n < 0) {
 		__atomic_add_fetch(&shm->stats.blkdev_lifecycle_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	atomic_store_explicit(&g_thread_b_stop, 0, memory_order_release);
 	if (pthread_create(&tid, NULL, blkdev_rescan_thread, &ra) == 0)
@@ -268,6 +275,8 @@ bool blkdev_lifecycle_race(struct childdata *child)
 	if (iters == 0U)
 		iters = 1U;
 
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	for (i = 0; i < iters; i++)
 		blkdev_lifecycle_cycle(ra.loop_n);
 

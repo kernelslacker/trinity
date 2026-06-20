@@ -598,8 +598,6 @@ bool iscsi_target_probe(struct childdata *child)
 	size_t pdu_len;
 	unsigned int arm;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.iscsi_target_probe_runs, 1,
 			   __ATOMIC_RELAXED);
 
@@ -624,6 +622,9 @@ bool iscsi_target_probe(struct childdata *child)
 				 * iscsi_target_probe_no_target counter is
 				 * the survivor signal. */
 				ns_unsupported = true;
+				__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 				__atomic_add_fetch(&shm->stats.iscsi_target_probe_no_target,
 						   1, __ATOMIC_RELAXED);
 				return true;
@@ -633,6 +634,10 @@ bool iscsi_target_probe(struct childdata *child)
 			continue;
 		}
 		__atomic_add_fetch(&shm->stats.iscsi_target_probe_connected,
+				   1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+				   1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
 				   1, __ATOMIC_RELAXED);
 
 		arm = rnd_modulo_u32(4);
