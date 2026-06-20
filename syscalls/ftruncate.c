@@ -2,7 +2,9 @@
  * SYSCALL_DEFINE2(ftruncate, unsigned int, fd, unsigned long, length)
  */
 #include "fd.h"
+#include "files.h"
 #include "maps.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "utils.h"
 
@@ -26,6 +28,18 @@ static void sanitise_ftruncate(struct syscallrecord *rec)
 	struct ftruncate_post_state *snap;
 
 	rec->post_state = 0;
+
+	/* Bias the fd toward the writable pagecache pool so the actual
+	 * regular-file truncate paths fire instead of bouncing off the
+	 * VFS prologue on pipes / sockets / read-only handles drawn from
+	 * the broad ARG_FD pool.  Mirrors the positioned-write bias added
+	 * in 5104a97f6dea.  Applied BEFORE the protected-fd reroll so the
+	 * reroll still has the last word on fd selection. */
+	if (rnd_modulo_u32(100) < 25) {
+		int fd = get_rand_writeable_pagecache_fd();
+		if (fd >= 0)
+			rec->a1 = fd;
+	}
 
 	/* Belt-and-suspenders: keep the stderr capture memfd (and other
 	 * protected fds) out of rec->a1 so a fuzz-induced ftruncate can't
