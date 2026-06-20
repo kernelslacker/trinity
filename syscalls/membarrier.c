@@ -128,4 +128,5 @@ struct syscallentry syscall_membarrier = {
 	.sanitise = sanitise_membarrier,
 	.group = GROUP_SCHED,
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = REEXEC_SANITISE_OK,
 };
