@@ -137,4 +137,5 @@ struct syscallentry syscall_getitimer = {
 	.sanitise = sanitise_getitimer,
 	.post = post_getitimer,
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = REEXEC_SANITISE_OK,
 };
