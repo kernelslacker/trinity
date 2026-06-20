@@ -417,8 +417,6 @@ bool barrier_racer(struct childdata *child)
 	pid_t pids[4];
 	int i, alive, status;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.barrier_racer_runs, 1, __ATOMIC_RELAXED);
 
 	nworkers = 2 + rnd_modulo_u32(3);	/* 2, 3, or 4 workers */
@@ -456,6 +454,9 @@ bool barrier_racer(struct childdata *child)
 	if (!target->setup(s))
 		goto out_barrier;
 
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
+
 	alive = 0;
 	for (i = 0; i < (int)nworkers; i++) {
 		pid_t pid = fork();
@@ -482,6 +483,9 @@ bool barrier_racer(struct childdata *child)
 			waitpid_eintr(pids[i], &status, 0);
 		goto out_cleanup;
 	}
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	for (i = 0; i < alive; i++) {
 		if (waitpid_eintr(pids[i], &status, 0) < 0)

@@ -239,11 +239,11 @@ bool fork_storm(struct childdata *child)
 	unsigned int rounds;
 	unsigned int i;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.fork_storm_runs, 1, __ATOMIC_RELAXED);
 
 	rounds = 1 + rnd_modulo_u32(MAX_ROUNDS);
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	for (i = 0; i < rounds; i++) {
 		if (run_round() == 0) {
 			/* Whole round produced zero reaped grandchildren —

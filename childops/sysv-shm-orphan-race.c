@@ -537,7 +537,7 @@ static void run_burst_parent_half(int shmid, unsigned int races)
  * before its own RMID landed (e.g. SIGKILL during the wait) and we
  * cleaned up the leak.
  */
-static void iter_one(void)
+static void iter_one(struct childdata *child)
 {
 	struct sysv_shm_race_shared *rs = NULL;
 	pid_t originator = -1;
@@ -583,6 +583,8 @@ static void iter_one(void)
 	}
 	__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race_shmget_ok,
 			   1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	attacher = spawn_sysv_shm_sibling(rs, sysv_shm_attacher_main);
 	if (attacher < 0) {
@@ -596,6 +598,8 @@ static void iter_one(void)
 	__atomic_store_n(&rs->go, 1U, __ATOMIC_RELEASE);
 	(void)raw_futex_wake(&rs->go, 2);
 
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	run_burst_parent_half(shmid, races);
 
 out:
@@ -650,8 +654,6 @@ bool sysv_shm_orphan_race(struct childdata *child)
 {
 	unsigned int outer_iters, i;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race_runs,
 			   1, __ATOMIC_RELAXED);
 
@@ -664,6 +666,9 @@ bool sysv_shm_orphan_race(struct childdata *child)
 	if (!sysv_shm_orphan_race_probed) {
 		probe_sysv_shm();
 		if (ns_unsupported_sysv_shm_orphan_race) {
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 			__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race_setup_failed,
 					   1, __ATOMIC_RELAXED);
 			return true;
@@ -678,7 +683,7 @@ bool sysv_shm_orphan_race(struct childdata *child)
 		outer_iters = 1U;
 
 	for (i = 0; i < outer_iters; i++)
-		iter_one();
+		iter_one(child);
 
 	return true;
 }
@@ -687,9 +692,10 @@ bool sysv_shm_orphan_race(struct childdata *child)
 
 bool sysv_shm_orphan_race(struct childdata *child)
 {
-	(void)child;
 	__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race_runs,
 			   1, __ATOMIC_RELAXED);
+	__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+			 CHILDOP_LATCH_UNSUPPORTED, __ATOMIC_RELAXED);
 	__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race_setup_failed,
 			   1, __ATOMIC_RELAXED);
 	return true;
