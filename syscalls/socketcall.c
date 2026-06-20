@@ -183,7 +183,7 @@ static void register_accepted_fd(int fd, int listener_fd)
 static void post_socketcall(struct syscallrecord *rec)
 {
 	unsigned long *args = (unsigned long *) rec->post_state;
-	unsigned long call = rec->a1;
+	unsigned long call = get_arg_snapshot(rec, 1);
 	long retval = (long) rec->retval;
 
 	if (args == NULL)
@@ -251,4 +251,13 @@ struct syscallentry syscall_socketcall = {
 	.flags = NEED_ALARM,
 	.sanitise = sanitise_socketcall,
 	.post = post_socketcall,
+	/* a1 (call) drives post_socketcall's multiplexer switch: it selects
+	 * the SYS_SOCKET / ACCEPT / ACCEPT4 / SOCKETPAIR arm that registers
+	 * the kernel-returned fd into trinity's OBJ_FD_SOCKET pool.  Shadow
+	 * it so a sibling stomp between dispatch and post cannot redirect
+	 * the switch into a different case and mis-register (or skip) the
+	 * fd against the wrong sub-call -- mismatch bumps arg_shadow_stomp
+	 * from inside get_arg_snapshot() and the handler still dispatches
+	 * on the sub-call the kernel actually executed. */
+	.arg_snapshot_mask = (1u << 0),
 };
