@@ -881,7 +881,7 @@ static void af_unix_scm_rights_gc_race_burst(struct af_unix_scm_rights_gc_iter_c
  * counters are best-effort -- iter_one returns void; the per-step bumps
  * carry the success signal.
  */
-static void iter_one(void)
+static void iter_one(struct childdata *child)
 {
 	struct af_unix_scm_rights_gc_iter_ctx it = {
 		.sv1 = { -1, -1 },
@@ -895,10 +895,14 @@ static void iter_one(void)
 
 	if (af_unix_scm_rights_gc_setup(&it) != 0)
 		goto out;
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	af_unix_scm_rights_gc_build_cycle(&it);
 	af_unix_scm_rights_gc_drop_refs(&it);
 	af_unix_scm_rights_gc_trigger_gc(&it);
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	af_unix_scm_rights_gc_race_burst(&it);
 
 out:
@@ -939,8 +943,6 @@ bool af_unix_scm_rights_gc_churn(struct childdata *child)
 {
 	unsigned int outer_iters, i;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc_runs,
 			   1, __ATOMIC_RELAXED);
 
@@ -953,6 +955,9 @@ bool af_unix_scm_rights_gc_churn(struct childdata *child)
 	if (!af_unix_scm_rights_gc_probed) {
 		probe_af_unix();
 		if (ns_unsupported_af_unix_scm_rights_gc) {
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 			__atomic_add_fetch(&shm->stats.af_unix_scm_rights_gc_setup_failed,
 					   1, __ATOMIC_RELAXED);
 			return true;
@@ -967,7 +972,7 @@ bool af_unix_scm_rights_gc_churn(struct childdata *child)
 		outer_iters = 1U;
 
 	for (i = 0; i < outer_iters; i++)
-		iter_one();
+		iter_one(child);
 
 	return true;
 }

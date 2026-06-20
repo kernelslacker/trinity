@@ -497,7 +497,7 @@ static void run_race_burst_parent_half(int sv[2],
  * signal "ownership transferred / fd closed" simply by writing -1 back
  * into the slot.
  */
-static void iter_one(void)
+static void iter_one(struct childdata *child)
 {
 	int sv[2] = { -1, -1 };
 	int peek_off;
@@ -514,6 +514,8 @@ static void iter_one(void)
 	}
 	__atomic_add_fetch(&shm->stats.af_unix_peek_race_pair_open_ok,
 			   1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	races = BUDGETED(CHILD_OP_AF_UNIX_PEEK_RACE,
 			 UNIX_PEEK_RACE_ITERS_BASE);
@@ -528,6 +530,9 @@ static void iter_one(void)
 		rs->race_budget = races;
 		sibling = spawn_race_sibling(rs);
 	}
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	if (sibling < 0) {
 		__atomic_add_fetch(&shm->stats.af_unix_peek_race_sibling_spawn_failed,
@@ -577,8 +582,6 @@ bool af_unix_peek_race(struct childdata *child)
 {
 	unsigned int outer_iters, i;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.af_unix_peek_race_runs,
 			   1, __ATOMIC_RELAXED);
 
@@ -591,6 +594,9 @@ bool af_unix_peek_race(struct childdata *child)
 	if (!af_unix_peek_race_probed) {
 		probe_af_unix_stream();
 		if (ns_unsupported_af_unix_peek_race) {
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 			__atomic_add_fetch(&shm->stats.af_unix_peek_race_setup_failed,
 					   1, __ATOMIC_RELAXED);
 			return true;
@@ -605,7 +611,7 @@ bool af_unix_peek_race(struct childdata *child)
 		outer_iters = 1U;
 
 	for (i = 0; i < outer_iters; i++)
-		iter_one();
+		iter_one(child);
 
 	return true;
 }
