@@ -308,16 +308,18 @@ bool xattr_thrash(struct childdata *child)
 	unsigned int iters = BUDGETED(CHILD_OP_XATTR_THRASH,
 				      JITTER_RANGE(MAX_ITERATIONS));
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.xattr_thrash_runs, 1, __ATOMIC_RELAXED);
 
 	opened = xattr_thrash_iter_setup_fds(slots);
 	if (opened == 0)
 		return true;
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	clock_gettime(CLOCK_MONOTONIC, &start);
 
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	for (iter = 0; iter < iters; iter++) {
 		struct xattr_slot *s = &slots[rnd_modulo_u32(opened)];
 		const char *name = xattr_names[rnd_modulo_u32(NR_XATTR_NAMES)];

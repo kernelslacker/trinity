@@ -622,7 +622,7 @@ out:
 	(void) unlink(path);
 }
 
-static void run_iter(unsigned int iter)
+static void run_iter(struct childdata *child, unsigned int iter)
 {
 	enum splice_proto_setup setup;
 	int sock_fd = -1, src_fd = -1;
@@ -676,6 +676,8 @@ static void run_iter(unsigned int iter)
 
 	if (pipe2(pfd, O_CLOEXEC | O_NONBLOCK) < 0)
 		goto out;
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	maybe_vmsplice_header(pfd[1]);
 
@@ -683,6 +685,8 @@ static void run_iter(unsigned int iter)
 	flags_in  = pick_flags();
 	flags_out = pick_flags();
 
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	in_n = splice(src_fd, NULL, pfd[1], NULL, len, flags_in);
 	if (in_n > 0) {
 		__atomic_add_fetch(&shm->stats.splice_protocols_in_bytes,
@@ -730,7 +734,7 @@ out:
 		close(sock_fd);
 }
 
-bool splice_protocols(struct childdata *child __unused__)
+bool splice_protocols(struct childdata *child)
 {
 	unsigned int iters, i, start;
 	bool any_supported = false;
@@ -750,6 +754,8 @@ bool splice_protocols(struct childdata *child __unused__)
 		}
 	}
 	if (!any_supported) {
+		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+				 CHILDOP_LATCH_UNSUPPORTED, __ATOMIC_RELAXED);
 		__atomic_add_fetch(&shm->stats.splice_protocols_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
@@ -763,7 +769,7 @@ bool splice_protocols(struct childdata *child __unused__)
 
 	start = rnd_u32();
 	for (i = 0; i < iters; i++)
-		run_iter(start + i);
+		run_iter(child, start + i);
 
 	return true;
 }

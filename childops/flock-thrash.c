@@ -286,17 +286,19 @@ bool flock_thrash(struct childdata *child)
 	unsigned int iter, iter_cap, phase_split;
 	enum thrash_order order;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.flock_thrash_runs, 1, __ATOMIC_RELAXED);
 
 	opened = flock_thrash_iter_open_slots(slots);
 	if (opened == 0)
 		return true;
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	iter_cap = BUDGETED(CHILD_OP_FLOCK_THRASH, JITTER_RANGE(MAX_ITERATIONS));
 	order = (enum thrash_order)rnd_modulo_u32(NR_THRASH_ORDERS);
 	phase_split = iter_cap / 2;
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	for (iter = 0; iter < iter_cap; iter++) {
 		struct flock_slot *s = &slots[rnd_modulo_u32(opened)];
 		bool skip;
