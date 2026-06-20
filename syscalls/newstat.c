@@ -194,4 +194,5 @@ struct syscallentry syscall_newstat = {
 	.post = post_newstat,
 	.group = GROUP_VFS,
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = REEXEC_SANITISE_OK,
 };
