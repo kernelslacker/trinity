@@ -293,6 +293,18 @@ static void sanitise_openat2(struct syscallrecord *rec)
 	rec->a4 = buf.usize;
 
 	/*
+	 * a3 is ARG_ADDRESS, so the blanket address scrub in
+	 * generate_syscall_args() would otherwise relocate the slot to a
+	 * fresh writable-pool page without copying the curated open_how
+	 * bytes, and the kernel would read a zeroed struct.  Move the
+	 * buffer into the pool ourselves via the copy-preserving inout
+	 * relocate so the bytes follow the pointer and the later blanket
+	 * pass no-ops on the slot.  post_state still owns the original
+	 * libc-heap how for cleanup_release_post_state to free.
+	 */
+	avoid_shared_buffer_inout(&rec->a3, buf.usize);
+
+	/*
 	 * Stash the csfu buffer in rec->post_state so the unconditional
 	 * .cleanup hook frees it regardless of whether .post ran (when
 	 * reject_corrupt_retfd() flags retfd, handle_syscall_ret() skips
