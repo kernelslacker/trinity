@@ -1044,7 +1044,8 @@ static void psp_key_rotate_iter_teardown(unsigned int iter_idx, int sockfd,
 	}
 }
 
-static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
+static void iter_one(unsigned int iter_idx, const struct timespec *t_outer,
+		     struct childdata *child)
 {
 	struct nl_ctx rtnl = { .fd = -1 };
 	struct genl_ctx psp_ctx = { .nl = { .fd = -1 } };
@@ -1064,10 +1065,20 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 	if (sockfd < 0)
 		goto out;
 
-	if (!ns_unsupported_psp_key_rotate)
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
+
+	if (!ns_unsupported_psp_key_rotate) {
+		__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+				   1, __ATOMIC_RELAXED);
 		psp_key_rotate_iter_traffic(sockfd, &psp_ctx, dev_id, t_outer);
+	}
 
 	psp_key_rotate_iter_teardown(iter_idx, sockfd, &psp_ctx, &rtnl);
+	if (ns_unsupported_psp_key_rotate)
+		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+				 CHILDOP_LATCH_NS_UNSUPPORTED,
+				 __ATOMIC_RELAXED);
 	return;
 
 out:
@@ -1077,14 +1088,16 @@ out:
 		genl_close(&psp_ctx);
 	if (rtnl.fd >= 0)
 		nl_close(&rtnl);
+	if (ns_unsupported_psp_key_rotate)
+		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+				 CHILDOP_LATCH_NS_UNSUPPORTED,
+				 __ATOMIC_RELAXED);
 }
 
 bool psp_key_rotate(struct childdata *child)
 {
 	struct timespec t_outer;
 	unsigned int outer_iters, i;
-
-	(void)child;
 
 	__atomic_add_fetch(&shm->stats.psp_key_rotate_runs,
 			   1, __ATOMIC_RELAXED);
@@ -1115,7 +1128,7 @@ bool psp_key_rotate(struct childdata *child)
 		    ONE_IN(PDPC_GATE_ONE_IN))
 			iter_devlink_port_churn(i, &t_outer);
 		else
-			iter_one(i, &t_outer);
+			iter_one(i, &t_outer, child);
 
 		if (ns_unsupported_psp_key_rotate)
 			break;
