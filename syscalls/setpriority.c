@@ -75,9 +75,9 @@ static void sanitise_setpriority(struct syscallrecord *rec)
 
 static void post_setpriority(struct syscallrecord *rec)
 {
-	int which_in = (int) rec->a1;
-	pid_t who_in = (pid_t)(int) rec->a2;
-	int nice_in = (int) rec->a3;
+	int which_in = (int) get_arg_snapshot(rec, 1);
+	pid_t who_in = (pid_t)(int) get_arg_snapshot(rec, 2);
+	int nice_in = (int) get_arg_snapshot(rec, 3);
 	char buf[8192];
 	const char *value;
 	int got;
@@ -146,4 +146,5 @@ struct syscallentry syscall_setpriority = {
 	.group = GROUP_SCHED,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = REEXEC_SANITISE_OK,
+	.arg_snapshot_mask = (1u << 0) | (1u << 1) | (1u << 2),
 };
