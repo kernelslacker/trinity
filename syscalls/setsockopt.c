@@ -607,9 +607,8 @@ static bool apply_sockopt_entry(struct sockopt *so, bool mismatch_len)
 	 * Catalog-first: if syscall_struct_args[] carries a
 	 * (level, optname) two-key row for ("setsockopt", arg 4) matching
 	 * the row we just picked, fill optval via the schema-aware path so
-	 * the per-field FT_ tags own the bytes and struct_field_for_cmp
-	 * can attribute KCOV CMP constants at named field slots.  optlen
-	 * is set from desc->struct_size; the proof batch is fixed-size
+	 * the per-field FT_ tags own the bytes.  optlen is set from
+	 * desc->struct_size; the proof batch is fixed-size
 	 * shapes only.  Variable-length tails (sctp / can_filter[]) keep
 	 * their bespoke builders until the catalog grows length-derivation
 	 * for them, at which point this fast path will start firing on
