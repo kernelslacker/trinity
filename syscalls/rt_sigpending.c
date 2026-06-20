@@ -148,4 +148,5 @@ struct syscallentry syscall_rt_sigpending = {
 	.sanitise = sanitise_rt_sigpending,
 	.post = post_rt_sigpending,
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = REEXEC_SANITISE_OK,
 };
