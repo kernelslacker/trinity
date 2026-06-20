@@ -97,6 +97,17 @@ static void sanitise_file_setattr(struct syscallrecord *rec)
 	rec->a4 = buf.usize;
 
 	/*
+	 * a3 is ARG_ADDRESS, so the post-sanitise blanket address scrub
+	 * would otherwise call avoid_shared_buffer_out() on it: that
+	 * relocates the slot to a fresh pool page WITHOUT copying the
+	 * libc-heap csfu bytes, so the kernel would read a zeroed page
+	 * and the curated fa_xflags coverage would be silently lost.
+	 * Move the input into the pool with the bytes intact; the
+	 * blanket pass then no-ops on this slot.
+	 */
+	avoid_shared_buffer_inout(&rec->a3, buf.usize);
+
+	/*
 	 * Stash the canonical fa pointer in rec->post_state so the .cleanup
 	 * hook can release it unconditionally -- .cleanup runs on every
 	 * dispatch outcome, including paths that skip .post (retfd_rejected
