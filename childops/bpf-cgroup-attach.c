@@ -211,8 +211,6 @@ bool bpf_cgroup_attach(struct childdata *child)
 	uint32_t attach_flags;
 	unsigned int sent;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.bpf_cgroup_attach_runs, 1,
 			   __ATOMIC_RELAXED);
 
@@ -224,6 +222,9 @@ bool bpf_cgroup_attach(struct childdata *child)
 	cgroup_fd = open(path, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
 	if (cgroup_fd < 0) {
 		latched_off = true;
+		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+				 CHILDOP_LATCH_NS_UNSUPPORTED,
+				 __ATOMIC_RELAXED);
 		__atomic_add_fetch(&shm->stats.bpf_cgroup_attach_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
@@ -233,8 +234,12 @@ bool bpf_cgroup_attach(struct childdata *child)
 
 	prog_fd = load_allow_prog(c);
 	if (prog_fd < 0) {
-		if (errno == EPERM || errno == EACCES)
+		if (errno == EPERM || errno == EACCES) {
 			latched_off = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		}
 		__atomic_add_fetch(&shm->stats.bpf_cgroup_attach_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
@@ -250,8 +255,12 @@ bool bpf_cgroup_attach(struct childdata *child)
 	attr.attach_type = c->attach_type;
 	attr.attach_flags = attach_flags;
 	if (sys_bpf(BPF_PROG_ATTACH, &attr, sizeof(attr)) < 0) {
-		if (errno == EPERM || errno == EACCES)
+		if (errno == EPERM || errno == EACCES) {
 			latched_off = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		}
 		__atomic_add_fetch(&shm->stats.bpf_cgroup_attach_attach_rejected,
 				   1, __ATOMIC_RELAXED);
 		goto out;
@@ -259,10 +268,14 @@ bool bpf_cgroup_attach(struct childdata *child)
 	attached = true;
 	__atomic_add_fetch(&shm->stats.bpf_cgroup_attach_attached, 1,
 			   __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	/* Drive the hook in-burst.  Sibling children fuzzing in the same
 	 * cgroup at the same time supply the cross-process concurrency
 	 * the dispatch-vs-detach race window needs. */
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	sent = udp_burst(c->attach_type);
 	__atomic_add_fetch(&shm->stats.bpf_cgroup_attach_packets_sent,
 			   sent, __ATOMIC_RELAXED);
