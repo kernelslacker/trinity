@@ -122,12 +122,12 @@ bool pipe_thrash(struct childdata *child)
 	unsigned int iter;
 	unsigned int iters = BUDGETED(CHILD_OP_PIPE_THRASH, JITTER_RANGE(MAX_ITERATIONS));
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.pipe_thrash_runs, 1, __ATOMIC_RELAXED);
 
 	clock_gettime(CLOCK_MONOTONIC, &start);
 
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	for (iter = 0; iter < iters; iter++) {
 		int pair[2] = { -1, -1 };
 		int rc;

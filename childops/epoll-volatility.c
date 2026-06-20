@@ -327,12 +327,15 @@ bool epoll_volatility(struct childdata *child)
 		.n_target_fds = 0,
 	};
 
-	(void) child;
-
 	__atomic_add_fetch(&shm->stats.epoll_volatility_runs, 1, __ATOMIC_RELAXED);
 
-	if (epoll_volatility_iter_setup(&ctx) == 0)
+	if (epoll_volatility_iter_setup(&ctx) == 0) {
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+				   1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+				   1, __ATOMIC_RELAXED);
 		epoll_volatility_iter_drive(&ctx);
+	}
 
 	epoll_volatility_iter_teardown(&ctx);
 	return true;
