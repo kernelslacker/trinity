@@ -372,8 +372,6 @@ bool ipv6_ndisc_proxy(struct childdata *child)
 	int raw;
 	unsigned int iters, i;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.ipv6_ndisc_proxy_runs, 1,
 			   __ATOMIC_RELAXED);
 
@@ -384,6 +382,9 @@ bool ipv6_ndisc_proxy(struct childdata *child)
 		if (ns_setup_failed_latched || !do_setup()) {
 			ns_setup_failed_latched = true;
 			ns_unsupported_ipv6_ndisc_proxy = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 			__atomic_add_fetch(&shm->stats.ipv6_ndisc_proxy_setup_failed,
 					   1, __ATOMIC_RELAXED);
 			return true;
@@ -407,10 +408,16 @@ bool ipv6_ndisc_proxy(struct childdata *child)
 		(void)bind(raw, (struct sockaddr *)&bnd, sizeof(bnd));
 	}
 
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
+
 	iters = BUDGETED(CHILD_OP_IPV6_NDISC_PROXY,
 			 JITTER_RANGE(NDP_OUTER_BASE));
 	if (iters > NDP_OUTER_CAP)
 		iters = NDP_OUTER_CAP;
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	(void)clock_gettime(CLOCK_MONOTONIC, &t0);
 	for (i = 0; i < iters; i++) {

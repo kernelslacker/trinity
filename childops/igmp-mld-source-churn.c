@@ -339,6 +339,7 @@ struct igmp_source_iter_v4_ctx {
 	struct group_filter    *gf;
 	unsigned int		iter_idx;
 	unsigned int		salt;
+	int			op_type;
 };
 
 /*
@@ -421,8 +422,12 @@ static int igmp_source_iter_v4_join(struct igmp_source_iter_v4_ctx *it)
 		       &it->gsr_a, sizeof(it->gsr_a)) < 0) {
 		int e = errno;
 
-		if (is_syscall_unsupported(e) || is_proto_family_unsupported(e))
+		if (is_syscall_unsupported(e) || is_proto_family_unsupported(e)) {
 			ns_unsupported_igmp_mld_source_churn = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[it->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		}
 		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
@@ -521,7 +526,8 @@ static void igmp_source_iter_v4_teardown(struct igmp_source_iter_v4_ctx *it)
  * gate has latched.  Updates ns_unsupported_igmp_mld_source_churn on
  * structural failures from the first MCAST_JOIN_SOURCE_GROUP probe.
  */
-static void iter_one_v4(unsigned int iter_idx, const struct timespec *t_outer)
+static void iter_one_v4(int op_type, unsigned int iter_idx,
+			const struct timespec *t_outer)
 {
 	struct igmp_source_iter_v4_ctx it = {
 		.send_s   = -1,
@@ -529,6 +535,7 @@ static void iter_one_v4(unsigned int iter_idx, const struct timespec *t_outer)
 		.gf       = NULL,
 		.iter_idx = iter_idx,
 		.salt     = (unsigned int)(rand32() & 0xffu),
+		.op_type  = op_type,
 	};
 
 	if ((unsigned long long)ns_since(t_outer) >= IMC_WALL_CAP_NS)
@@ -546,6 +553,11 @@ static void iter_one_v4(unsigned int iter_idx, const struct timespec *t_outer)
 	if (igmp_source_iter_v4_join(&it) != 0)
 		goto out;
 
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[op_type],
+			   1, __ATOMIC_RELAXED);
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[op_type],
+			   1, __ATOMIC_RELAXED);
 	send_burst(it.send_s, 2);
 
 	if ((unsigned long long)ns_since(t_outer) >= IMC_WALL_CAP_NS)
@@ -585,6 +597,7 @@ struct mld_source_iter_v6_ctx {
 	struct group_filter    *gf;
 	unsigned int		iter_idx;
 	unsigned int		salt;
+	int			op_type;
 };
 
 /*
@@ -665,8 +678,12 @@ static int mld_source_iter_v6_join(struct mld_source_iter_v6_ctx *it)
 		       &it->gsr_a, sizeof(it->gsr_a)) < 0) {
 		int e = errno;
 
-		if (is_syscall_unsupported(e) || is_proto_family_unsupported(e))
+		if (is_syscall_unsupported(e) || is_proto_family_unsupported(e)) {
 			ns_unsupported_igmp_mld_source_churn = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[it->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		}
 		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
@@ -792,7 +809,8 @@ static void mld_source_iter_v6_compute_addrs(struct mld_source_iter_v6_ctx *it)
  * IPv6 mirror of iter_one_v4.  Hits ip6_mc_source / ip6_mc_msfilter
  * (net/ipv6/mcast.c) instead of the v4 paths.  SSM group ff3e::42:salt.
  */
-static void iter_one_v6(unsigned int iter_idx, const struct timespec *t_outer)
+static void iter_one_v6(int op_type, unsigned int iter_idx,
+			const struct timespec *t_outer)
 {
 	struct mld_source_iter_v6_ctx it = {
 		.send_s   = -1,
@@ -800,6 +818,7 @@ static void iter_one_v6(unsigned int iter_idx, const struct timespec *t_outer)
 		.gf       = NULL,
 		.iter_idx = iter_idx,
 		.salt     = (unsigned int)(rand32() & 0xffu),
+		.op_type  = op_type,
 	};
 
 	if ((unsigned long long)ns_since(t_outer) >= IMC_WALL_CAP_NS)
@@ -814,6 +833,11 @@ static void iter_one_v6(unsigned int iter_idx, const struct timespec *t_outer)
 	if (mld_source_iter_v6_join(&it) != 0)
 		goto out;
 
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[op_type],
+			   1, __ATOMIC_RELAXED);
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[op_type],
+			   1, __ATOMIC_RELAXED);
 	send_burst(it.send_s, 2);
 
 	if ((unsigned long long)ns_since(t_outer) >= IMC_WALL_CAP_NS)
@@ -839,8 +863,6 @@ bool igmp_mld_source_churn(struct childdata *child)
 {
 	struct timespec t_outer;
 	unsigned int outer_iters, i;
-
-	(void)child;
 
 	__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_runs,
 			   1, __ATOMIC_RELAXED);
@@ -868,9 +890,9 @@ bool igmp_mld_source_churn(struct childdata *child)
 			break;
 
 		if ((i & 1U) == 0U)
-			iter_one_v4(i, &t_outer);
+			iter_one_v4(child->op_type, i, &t_outer);
 		else
-			iter_one_v6(i, &t_outer);
+			iter_one_v6(child->op_type, i, &t_outer);
 
 		if (ns_unsupported_igmp_mld_source_churn)
 			break;

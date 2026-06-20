@@ -287,8 +287,6 @@ bool vrf_fib_churn(struct childdata *child)
 	bool link_added = false;
 	int rc;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.vrf_fib_churn_runs, 1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported)
@@ -297,6 +295,9 @@ bool vrf_fib_churn(struct childdata *child)
 	if (!ns_unshared) {
 		if (unshare(CLONE_NEWNET) < 0) {
 			ns_unsupported = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 			__atomic_add_fetch(&shm->stats.vrf_fib_churn_setup_failed,
 					   1, __ATOMIC_RELAXED);
 			return true;
@@ -320,6 +321,8 @@ bool vrf_fib_churn(struct childdata *child)
 		goto out;
 	link_added = true;
 	__atomic_add_fetch(&shm->stats.vrf_fib_churn_link_ok,
+			   1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
 			   1, __ATOMIC_RELAXED);
 
 	ifindex = (int)if_nametoindex(vrf_name);
@@ -363,6 +366,8 @@ bool vrf_fib_churn(struct childdata *child)
 		dst.sin_addr.s_addr = htonl(0xf0000000u |
 					    (rand32() & 0x0fffffffu));
 		dst.sin_port = htons(53);
+		__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+				   1, __ATOMIC_RELAXED);
 		n = sendto(udp, "x", 1, MSG_DONTWAIT,
 			   (struct sockaddr *)&dst, sizeof(dst));
 		if (n >= 0)

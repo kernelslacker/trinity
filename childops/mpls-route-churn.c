@@ -564,12 +564,15 @@ static int build_iptunnel_delete(struct nl_ctx *ctx, __be32 dst, int lo_ifindex)
  *
  * arm = 'A' (label install) or 'B' (iptunnel install).
  */
-static void map_rc_to_latch(int rc, char arm)
+static void map_rc_to_latch(int op_type, int rc, char arm)
 {
 	if (rc >= 0)
 		return;
 
 	if (rc == -EAFNOSUPPORT || rc == -ENOPROTOOPT) {
+		__atomic_store_n(&shm->stats.childop_latch_reason[op_type],
+				 CHILDOP_LATCH_NS_UNSUPPORTED,
+				 __ATOMIC_RELAXED);
 		if (arm == 'A')
 			latch_ns_unsupported_mpls(rc);
 		else
@@ -578,8 +581,12 @@ static void map_rc_to_latch(int rc, char arm)
 	}
 
 	if (rc == -EOPNOTSUPP) {
-		if (arm == 'B')
+		if (arm == 'B') {
+			__atomic_store_n(&shm->stats.childop_latch_reason[op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 			latch_ns_unsupported_lwtunnel(rc);
+		}
 		return;
 	}
 
@@ -598,8 +605,6 @@ bool mpls_route_churn(struct childdata *child)
 	};
 	int lo_ifindex;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.mpls_route_churn_runs,
 			   1, __ATOMIC_RELAXED);
 
@@ -609,6 +614,9 @@ bool mpls_route_churn(struct childdata *child)
 	if (!mpls_rc_unshared) {
 		if (unshare(CLONE_NEWNET) < 0) {
 			if (errno != EPERM) {
+				__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 				latch_ns_unsupported_mpls(-errno);
 				latch_ns_unsupported_lwtunnel(-errno);
 				return true;
@@ -625,6 +633,9 @@ bool mpls_route_churn(struct childdata *child)
 	if (nl_open(&ctx, &opts) < 0)
 		return true;
 
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
+
 	lo_ifindex = (int)if_nametoindex("lo");
 
 	if (clock_gettime(CLOCK_MONOTONIC, &t_outer) < 0) {
@@ -638,6 +649,9 @@ bool mpls_route_churn(struct childdata *child)
 		outer_iters = MPLS_RC_OUTER_FLOOR;
 	if (outer_iters > MPLS_RC_OUTER_CAP)
 		outer_iters = MPLS_RC_OUTER_CAP;
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	for (i = 0; i < outer_iters; i++) {
 		bool pick_arm_a;
@@ -663,7 +677,7 @@ bool mpls_route_churn(struct childdata *child)
 						&shm->stats.mpls_route_churn_delete_ok,
 						1, __ATOMIC_RELAXED);
 			} else {
-				map_rc_to_latch(rc, 'A');
+				map_rc_to_latch(child->op_type, rc, 'A');
 			}
 		} else if (!pick_arm_a && !ns_unsupported_lwtunnel) {
 			__be32 dst = 0;
@@ -680,7 +694,7 @@ bool mpls_route_churn(struct childdata *child)
 						&shm->stats.mpls_route_churn_delete_ok,
 						1, __ATOMIC_RELAXED);
 			} else {
-				map_rc_to_latch(rc, 'B');
+				map_rc_to_latch(child->op_type, rc, 'B');
 			}
 		}
 
