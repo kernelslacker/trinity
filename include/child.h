@@ -1095,6 +1095,15 @@ int dormant_op_slot_for(enum child_op_type op);
 const char *alt_op_name(enum child_op_type op);
 enum child_op_type alt_op_lookup_by_name(const char *name);
 
+/* Structural predicate: does this op participate in the per-call outer
+ * KCOV bracket that publishes childop_edges_clean[op]?  Returns false
+ * for ops whose dispatch shape cannot carry the bracket (e.g.
+ * CHILD_OP_SYSCALL, CHILD_OP_SCHED_CYCLER); these ops' clean-edge
+ * slot stays at zero regardless of attribution mode, so any consumer
+ * that reads childop_edges_clean[op] to derive a yield signal must
+ * gate the read on this predicate (see canary queue close_window). */
+bool op_uses_outer_bracket(enum child_op_type op);
+
 /* ---- Canary queue (child-canary.c) ---------------------------------
  *
  * Promotes dormant childops by reserving a small number of canary
