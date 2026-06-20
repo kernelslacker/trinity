@@ -106,6 +106,9 @@ bool mlock_pressure(struct childdata *child)
 	if (vma_pressure_is_high())
 		return true;
 
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
+
 	/*
 	 * 5% of the time, do a whole-process mlockall/munlockall cycle.
 	 * This is expensive but exercises a very different kernel path.

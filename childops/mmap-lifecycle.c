@@ -223,6 +223,8 @@ bool mmap_lifecycle(struct childdata *child)
 		return false;
 	nr_maps = head->num_entries;
 
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
 			   1, __ATOMIC_RELAXED);
 

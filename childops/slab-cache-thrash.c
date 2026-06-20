@@ -331,6 +331,8 @@ bool slab_cache_thrash(struct childdata *child)
 	__atomic_add_fetch(&shm->stats.slab_cache_thrash_runs[t],
 			   1, __ATOMIC_RELAXED);
 
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
 			   1, __ATOMIC_RELAXED);
 	run_burst(t, n);

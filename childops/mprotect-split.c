@@ -138,6 +138,9 @@ bool mprotect_split(struct childdata *child)
 	if (map->size < page_size)
 		return true;
 
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
+
 	mode = (enum prot_mode)rnd_modulo_u32(NR_PROT_MODES);
 
 	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
