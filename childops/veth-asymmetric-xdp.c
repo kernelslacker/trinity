@@ -185,6 +185,7 @@ static bool *const kind_latch[PK_NR] = {
  * load_xdp; raw by drive_burst. */
 struct veth_xdp_iter_ctx {
 	struct nl_ctx	ctx;
+	struct childdata *child;
 	char		a_name[IFNAMSIZ];
 	char		b_name[IFNAMSIZ];
 	enum pair_kind	pk;
@@ -576,6 +577,9 @@ static int veth_xdp_iter_create_pair(struct veth_xdp_iter_ctx *ictx)
 	if (rc != 0) {
 		if (rc == -ENOENT || rc == -EOPNOTSUPP || rc == -EAFNOSUPPORT) {
 			*kind_latch[ictx->pk] = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[ictx->child->op_type],
+					 CHILDOP_LATCH_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 			__atomic_add_fetch(&shm->stats.veth_asym_unsupported,
 					   1, __ATOMIC_RELAXED);
 		} else if (rc == -EPERM) {
@@ -619,6 +623,9 @@ static void veth_xdp_iter_load_xdp(struct veth_xdp_iter_ctx *ictx)
 		if (errno == EPERM || errno == EACCES ||
 		    errno == EINVAL || errno == EOPNOTSUPP) {
 			ns_unsupported_xdp = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[ictx->child->op_type],
+					 CHILDOP_LATCH_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 			__atomic_add_fetch(&shm->stats.veth_asym_unsupported,
 					   1, __ATOMIC_RELAXED);
 		}
@@ -711,6 +718,7 @@ bool veth_asymmetric_xdp(struct childdata *child)
 {
 	struct veth_xdp_iter_ctx ictx = {
 		.ctx = { .fd = -1 },
+		.child = child,
 		.prog_fd = -1,
 		.raw = -1,
 	};
@@ -718,8 +726,6 @@ bool veth_asymmetric_xdp(struct childdata *child)
 		.proto = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
 	};
-
-	(void)child;
 
 	__atomic_add_fetch(&shm->stats.veth_asym_iters, 1, __ATOMIC_RELAXED);
 
@@ -736,6 +742,9 @@ bool veth_asymmetric_xdp(struct childdata *child)
 				ns_unsupported_vxcan = true;
 				ns_unsupported_ipvlan = true;
 				ns_unsupported_macvlan = true;
+				__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 				__atomic_add_fetch(&shm->stats.veth_asym_eperm,
 						   1, __ATOMIC_RELAXED);
 			}
@@ -751,9 +760,13 @@ bool veth_asymmetric_xdp(struct childdata *child)
 
 	if (veth_xdp_iter_create_pair(&ictx) != 0)
 		goto out;
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	veth_xdp_iter_load_xdp(&ictx);
 
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	veth_xdp_iter_drive_burst(&ictx);
 
 out:
