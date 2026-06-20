@@ -22,5 +22,6 @@ struct syscallentry syscall_oldreaddir = {
 	.argtype = { [0] = ARG_FD, [1] = ARG_NON_NULL_ADDRESS, [2] = ARG_LEN },
 	.argname = { [0] = "fd", [1] = "dirent", [2] = "count" },
 	.sanitise = sanitise_oldreaddir,
+	.flags = REEXEC_SANITISE_OK,
 	.group = GROUP_VFS,
 };
