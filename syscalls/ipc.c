@@ -348,7 +348,7 @@ static void sanitise_ipc(struct syscallrecord *rec)
  */
 static void post_ipc(struct syscallrecord *rec)
 {
-	unsigned long call = rec->a1;
+	unsigned long call = get_arg_snapshot(rec, 1);
 	unsigned long retval = rec->retval;
 	long ret = (long) retval;
 	int id;
@@ -406,4 +406,5 @@ struct syscallentry syscall_ipc = {
 	.flags = IGNORE_ENOSYS,
 	.sanitise = sanitise_ipc,
 	.post = post_ipc,
+	.arg_snapshot_mask = (1u << 0),
 };
