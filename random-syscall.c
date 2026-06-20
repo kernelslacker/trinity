@@ -738,8 +738,9 @@ static unsigned long frontier_cold_weight(unsigned int nr,
  * the caller threads that through the per-child Arm A/B gate so Arm A
  * stays byte-identical to the static policy.
  *
- * Two dispositions can fire, mutually exclusive on the
- * (entry->flags & KCOV_REMOTE_HEAVY) axis:
+ * Three dispositions can fire, mutually exclusive on the
+ * (entry->flags & KCOV_REMOTE_HEAVY) axis (DEMOTE on the HEAVY path,
+ * PROMOTE and FORCE on the non-HEAVY path; PROMOTE pre-empts FORCE):
  *
  *   DEMOTE  fires only on HEAVY-flagged syscalls whose static decision
  *           was remote_mode==true and whose lifetime remote_pc_calls
@@ -774,11 +775,26 @@ static unsigned long frontier_cold_weight(unsigned int nr,
  *           agree with static) so a long run with very large counters
  *           cannot silently wrap into a false promote.
  *
+ *   FORCE   fires only when the parent-published plateau hypothesis
+ *           is PLATEAU_HYPOTHESIS_REMOTE_DOMINANT AND the unflagged-
+ *           path PROMOTE disposition did NOT already fire on this
+ *           call AND the syscall's lifetime remote sample has crossed
+ *           the looser REMOTE_ADAPTIVE_PLATEAU_FORCE_MIN_REMOTE_CALLS
+ *           floor AND its lifetime remote_pc_edge_calls is at least
+ *           REMOTE_ADAPTIVE_PLATEAU_FORCE_MIN_EDGES (ever yielded).
+ *           Widens promote during the plateau emergency: a remote-
+ *           dominant plateau is direct evidence the fleet is making
+ *           forward progress via remote sampling, so a proven remote
+ *           yielder is worth keeping in the remote pool even before
+ *           its rate has cleared the PROMOTE_MARGIN bar.  The HEAVY
+ *           DEMOTE branch is intentionally NOT widened (see the
+ *           constant block in include/kcov.h for the rationale).
+ *
  * SHADOW: bump one of remote_adaptive_{would_demote, would_promote,
- * agree} per call and bump remote_adaptive_samples once.  The bumps
- * happen unconditionally on the helper entry path so both A/B arms
- * contribute to the same denominator and the would-be divergence
- * stays observable on Arm A (the control cohort) too.
+ * would_force, agree} per call and bump remote_adaptive_samples once.
+ * The bumps happen unconditionally on the helper entry path so both
+ * A/B arms contribute to the same denominator and the would-be
+ * divergence stays observable on Arm A (the control cohort) too.
  *
  * Returns the static decision verbatim when kcov_shm is unavailable or
  * nr is out of range -- matches the kcov-less fallback the rest of the
@@ -790,7 +806,7 @@ static bool remote_adaptive_decide(unsigned int nr,
 				   bool static_remote)
 {
 	unsigned long rcalls, redgec, lcalls, ledgec;
-	bool would_demote = false, would_promote = false;
+	bool would_demote = false, would_promote = false, would_force = false;
 	bool would_gate_promote = false;
 	bool adaptive_remote = static_remote;
 
@@ -870,6 +886,26 @@ static bool remote_adaptive_decide(unsigned int nr,
 					would_gate_promote = true;
 			}
 		}
+
+		/* Plateau-aware widening of the promote branch.  Only
+		 * runs when the regular promote check did NOT already
+		 * fire on this call (would_promote == false) so the
+		 * disposition counters stay mutually exclusive; the
+		 * mid-call sample of the parent-published plateau
+		 * hypothesis matches the shadow-gate read above so the
+		 * two predicates see the same hypothesis value.  Sample
+		 * floors are deliberately looser than the regular
+		 * promote rule's: see the constant block in
+		 * include/kcov.h for the per-floor justification. */
+		if (!would_promote &&
+		    rcalls >= REMOTE_ADAPTIVE_PLATEAU_FORCE_MIN_REMOTE_CALLS &&
+		    redgec >= REMOTE_ADAPTIVE_PLATEAU_FORCE_MIN_EDGES &&
+		    __atomic_load_n(&shm->plateau_current_hypothesis,
+				    __ATOMIC_RELAXED) ==
+		    PLATEAU_HYPOTHESIS_REMOTE_DOMINANT) {
+			adaptive_remote = true;
+			would_force = true;
+		}
 	}
 
 	__atomic_fetch_add(&shm->stats.remote_adaptive_samples, 1UL,
@@ -879,6 +915,9 @@ static bool remote_adaptive_decide(unsigned int nr,
 				   1UL, __ATOMIC_RELAXED);
 	else if (would_promote)
 		__atomic_fetch_add(&shm->stats.remote_adaptive_would_promote,
+				   1UL, __ATOMIC_RELAXED);
+	else if (would_force)
+		__atomic_fetch_add(&shm->stats.remote_adaptive_would_force,
 				   1UL, __ATOMIC_RELAXED);
 	else
 		__atomic_fetch_add(&shm->stats.remote_adaptive_agree, 1UL,

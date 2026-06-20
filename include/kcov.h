@@ -392,6 +392,53 @@ enum kcov_child_mode {
 #define REMOTE_ADAPTIVE_PROMOTE_MARGIN_NUM	5UL
 #define REMOTE_ADAPTIVE_PROMOTE_MARGIN_DEN	4UL
 
+/* Plateau-aware widening of the promote disposition.  When the
+ * parent-published plateau hypothesis is PLATEAU_HYPOTHESIS_REMOTE_
+ * DOMINANT the fleet is already discovering most of its forward edges
+ * via remote sampling (rule PHC_REMOTE_DOMINANT in strategy.c demands
+ * delta.remote_calls > 2 * inline_calls with a floor of 100), so an
+ * unflagged syscall that has demonstrated ANY remote yield is worth
+ * keeping in the remote sampling pool even when its remote edge rate
+ * has not (yet) beaten its local edge rate by the
+ * PROMOTE_MARGIN_NUM/DEN relative margin the non-plateau promote rule
+ * requires.  The plateau-force disposition fires on the non-HEAVY +
+ * static_remote==false path AFTER the regular promote check has run
+ * and produced no flip; if it fires it sets adaptive_remote to true
+ * unconditionally on Arm B (Arm A still ignores the disposition and
+ * keeps the static decision, matching the existing arm contract).
+ *
+ * MIN_REMOTE_CALLS is the per-syscall sample-size floor before the
+ * plateau-force can fire.  Lower than REMOTE_ADAPTIVE_MIN_REMOTE_CALLS
+ * (512) because a remote-dominant plateau is the operator's signal
+ * that forward progress is coming from remote sampling and the normal
+ * MIN floor is too patient to widen promote at plateau speed; a
+ * single under-justified force costs one extra KCOV_REMOTE_ENABLE/
+ * disable round-trip per call (the same cost a HEAVY-flagged syscall
+ * pays unconditionally), so the downside of acting on weaker evidence
+ * is bounded.  128 lands roughly halfway between "single-digit
+ * samples is noise" and "the conservative MIN bar".
+ *
+ * MIN_EDGES is the minimum lifetime remote_pc_edge_calls bumps for
+ * the syscall to qualify as a "proven yielder" under plateau-force.
+ * 1 is the smallest signal-bearing value -- the syscall has at least
+ * once produced an edge under remote sampling.  A higher floor would
+ * gate plateau-force on a stronger "yields more than luck" signal at
+ * the cost of waiting longer to act on a marginal yielder during the
+ * plateau emergency.  MIN_REMOTE_CALLS above already gates "the
+ * syscall has been sampled enough to mean anything"; this second
+ * floor's only job is to distinguish "ever yielded" from "sampled
+ * enough but never yielded".
+ *
+ * Demote branch is intentionally NOT widened by the plateau: a HEAVY-
+ * flagged syscall whose lifetime remote sample has crossed
+ * REMOTE_ADAPTIVE_MIN_REMOTE_CALLS without producing a single edge
+ * has empirical evidence that remote sampling on this specific call
+ * is wasted regardless of the fleet-wide plateau classification, and
+ * relaxing the demote rule under plateau would re-introduce the
+ * 1-in-2 cost the demote disposition exists to recover. */
+#define REMOTE_ADAPTIVE_PLATEAU_FORCE_MIN_REMOTE_CALLS	128UL
+#define REMOTE_ADAPTIVE_PLATEAU_FORCE_MIN_EDGES		1UL
+
 #define CHILDOP_KCOV_NR_BASE  0x10000UL
 /*
  * Childops borrow the kcov_collect() nr parameter to bypass

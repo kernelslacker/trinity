@@ -2814,12 +2814,31 @@ struct stats_s {
 	 *      a live promote?" so the gate-on-by-default decision can
 	 *      be made against measured impact rather than hypothesis.
 	 *      Demote branch is intentionally unconditional and is NOT
-	 *      covered by this counter. */
+	 *      covered by this counter.
+	 *  remote_adaptive_would_force
+	 *      Per-call disposition: adaptive policy widens the promote
+	 *      branch under PLATEAU_HYPOTHESIS_REMOTE_DOMINANT and flips
+	 *      remote_mode from false to true on an unflagged syscall
+	 *      whose static decision was local, whose lifetime remote
+	 *      sample has crossed REMOTE_ADAPTIVE_PLATEAU_FORCE_MIN_REMOTE
+	 *      _CALLS (the looser plateau-emergency floor, 128 vs the
+	 *      regular 512), and whose lifetime remote_pc_edge_calls has
+	 *      crossed REMOTE_ADAPTIVE_PLATEAU_FORCE_MIN_EDGES (1 -- ever
+	 *      yielded once).  Mutually exclusive with _would_promote on
+	 *      the same call: the regular promote rule (rate beats local
+	 *      by PROMOTE_MARGIN_NUM/DEN) is evaluated first, the force
+	 *      rule only runs if that didn't fire.  Bumped from BOTH arms
+	 *      in lock-step; the live remote_mode diverges only on Arm B,
+	 *      same contract as the existing _would_promote/_would_demote
+	 *      counters.  Adds a fourth slot to the disposition ladder so
+	 *      the sum _would_demote + _would_promote + _would_force +
+	 *      _agree continues to equal _samples by construction. */
 	unsigned long remote_adaptive_samples;
 	unsigned long remote_adaptive_would_demote;
 	unsigned long remote_adaptive_would_promote;
 	unsigned long remote_adaptive_agree;
 	unsigned long remote_adaptive_would_gate_promote;
+	unsigned long remote_adaptive_would_force;
 
 	/* Coverage-plateau detector transition counters, bumped from
 	 * kcov_plateau_check() on the rising edge (healthy -> plateau, when

@@ -3672,6 +3672,8 @@ static const struct {
 	  offsetof(struct stats_s, remote_adaptive_would_demote) },
 	{ "remote_adaptive_would_promote",
 	  offsetof(struct stats_s, remote_adaptive_would_promote) },
+	{ "remote_adaptive_would_force",
+	  offsetof(struct stats_s, remote_adaptive_would_force) },
 	{ "remote_adaptive_agree",
 	  offsetof(struct stats_s, remote_adaptive_agree) },
 	/* Picks the explorer pool forced to STRATEGY_RANDOM.  Rate-of-change
@@ -5086,6 +5088,7 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	unsigned long cur_remote_adaptive_samples, delta_remote_adaptive_samples;
 	unsigned long cur_remote_adaptive_would_demote;
 	unsigned long cur_remote_adaptive_would_promote;
+	unsigned long cur_remote_adaptive_would_force;
 	unsigned long cur_remote_adaptive_agree;
 	unsigned int  cur_remote_adaptive_arm_a_children, cur_remote_adaptive_arm_b_children;
 	unsigned long cur_mut_structured_shadow_samples;
@@ -5167,6 +5170,7 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	cur_remote_adaptive_samples         = __atomic_load_n(&shm->stats.remote_adaptive_samples,        __ATOMIC_RELAXED);
 	cur_remote_adaptive_would_demote    = __atomic_load_n(&shm->stats.remote_adaptive_would_demote,   __ATOMIC_RELAXED);
 	cur_remote_adaptive_would_promote   = __atomic_load_n(&shm->stats.remote_adaptive_would_promote,  __ATOMIC_RELAXED);
+	cur_remote_adaptive_would_force     = __atomic_load_n(&shm->stats.remote_adaptive_would_force,    __ATOMIC_RELAXED);
 	cur_remote_adaptive_agree           = __atomic_load_n(&shm->stats.remote_adaptive_agree,          __ATOMIC_RELAXED);
 	cur_remote_adaptive_arm_a_children  = __atomic_load_n(&kcov_shm->remote_adaptive_arm_a_children,  __ATOMIC_RELAXED);
 	cur_remote_adaptive_arm_b_children  = __atomic_load_n(&kcov_shm->remote_adaptive_arm_b_children,  __ATOMIC_RELAXED);
@@ -5693,6 +5697,9 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 			stats_log_write("  %-32s total %lu\n",
 					"remote_adaptive_would_promote",
 					cur_remote_adaptive_would_promote);
+			stats_log_write("  %-32s total %lu\n",
+					"remote_adaptive_would_force",
+					cur_remote_adaptive_would_force);
 			stats_log_write("  %-32s total %lu\n",
 					"remote_adaptive_agree",
 					cur_remote_adaptive_agree);
