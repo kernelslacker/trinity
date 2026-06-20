@@ -3725,6 +3725,14 @@ static const struct {
 	 * noop_forever for the rest of the run. */
 	{ "nl80211_runs",
 	  offsetof(struct stats_s, nl80211_runs) },
+	/* SHADOW-ONLY cumulative count of "deep but warm" calls -- no PC-edge
+	 * novelty and no CMP-bloom novelty, yet either a per-call PC walk
+	 * meaningfully deeper than the syscall's lifetime mean or a trace
+	 * that approached the KCOV_TRACE_SIZE buffer cap.  Periodic stats
+	 * dump only; the per-syscall warm_reserve_candidates[] breakdown
+	 * surfaces via top_syscalls_periodic_dump()'s warm-reserve row. */
+	{ "warm_reserve_candidates_total",
+	  offsetof(struct stats_s, warm_reserve_candidates_total) },
 };
 
 static unsigned long defense_counter_load(unsigned int i)
@@ -4432,12 +4440,14 @@ void __cold top_syscalls_periodic_dump(void)
 	static unsigned long prev_frontier_picks[MAX_NR_SYSCALL];
 	static unsigned long prev_rq_saves[MAX_NR_SYSCALL];
 	static unsigned long prev_rq_wins[MAX_NR_SYSCALL];
+	static unsigned long prev_warm_reserve[MAX_NR_SYSCALL];
 	static struct timespec last_dump;
 	unsigned long cur_bandit[MAX_NR_SYSCALL];
 	unsigned long cur_explorer[MAX_NR_SYSCALL];
 	unsigned long cur_frontier_picks[MAX_NR_SYSCALL];
 	unsigned long cur_rq_saves[MAX_NR_SYSCALL];
 	unsigned long cur_rq_wins[MAX_NR_SYSCALL];
+	unsigned long cur_warm_reserve[MAX_NR_SYSCALL];
 	struct timespec now;
 	long elapsed;
 	unsigned int nr_to_scan;
@@ -4467,6 +4477,9 @@ void __cold top_syscalls_periodic_dump(void)
 			prev_rq_wins[i] = __atomic_load_n(
 				&shm->stats.rq_sourced_pcedge_wins_per_syscall[i],
 				__ATOMIC_RELAXED);
+			prev_warm_reserve[i] = __atomic_load_n(
+				&shm->stats.warm_reserve_candidates[i],
+				__ATOMIC_RELAXED);
 		}
 		return;
 	}
@@ -4490,6 +4503,9 @@ void __cold top_syscalls_periodic_dump(void)
 			__ATOMIC_RELAXED);
 		cur_rq_wins[i] = __atomic_load_n(
 			&shm->stats.rq_sourced_pcedge_wins_per_syscall[i],
+			__ATOMIC_RELAXED);
+		cur_warm_reserve[i] = __atomic_load_n(
+			&shm->stats.warm_reserve_candidates[i],
 			__ATOMIC_RELAXED);
 	}
 
@@ -4543,12 +4559,25 @@ void __cold top_syscalls_periodic_dump(void)
 	top_syscalls_emit_pool("rq-pcedge-wins", cur_rq_wins, prev_rq_wins,
 			       nr_to_scan, table, false);
 
+	/* SHADOW deep-but-warm candidate accounting (see the warm_reserve_
+	 * candidates* comment in include/stats.h for the predicate).  Same
+	 * top-N shape and zero-total skip as the pools above; an empty
+	 * distribution (no syscall fired the deep-but-warm predicate this
+	 * window) collapses to no row via the emitter's gate. */
+	stats_log_write("Top %u syscalls by deep-but-warm candidates "
+			"in last %lds:\n",
+			TOP_SYSCALLS_DUMP_TOPN, elapsed);
+	top_syscalls_emit_pool("warm-reserve", cur_warm_reserve,
+			       prev_warm_reserve, nr_to_scan, table, false);
+
 	memcpy(prev_bandit,   cur_bandit,   sizeof(prev_bandit));
 	memcpy(prev_explorer, cur_explorer, sizeof(prev_explorer));
 	memcpy(prev_frontier_picks, cur_frontier_picks,
 	       sizeof(prev_frontier_picks));
 	memcpy(prev_rq_saves, cur_rq_saves, sizeof(prev_rq_saves));
 	memcpy(prev_rq_wins,  cur_rq_wins,  sizeof(prev_rq_wins));
+	memcpy(prev_warm_reserve, cur_warm_reserve,
+	       sizeof(prev_warm_reserve));
 
 	last_dump = now;
 }

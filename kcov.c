@@ -1818,6 +1818,7 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 		result->distinct_edges = 0;
 		result->local_distinct_pcs = 0;
 		result->transition_edges_real_local = 0;
+		result->trace_size = 0;
 	}
 
 	if (!kc->active)
@@ -2254,6 +2255,14 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 		result->bucket_bits = edges_this_call;
 		result->distinct_edges = distinct_edges_this_call;
 		result->local_distinct_pcs = local_distinct_pcs;
+		/* Post-cap PC count from the trace header above (already
+		 * clamped to KCOV_TRACE_SIZE - 1 when the buffer filled),
+		 * surfaced so post-collect callers can recognise calls whose
+		 * trace approached the buffer ceiling without re-reading
+		 * trace_buf[0].  Same value the trace_truncated /
+		 * max_trace_size accounting consumed; this is a single store
+		 * with no new load. */
+		result->trace_size = count;
 		/* Zeroed for remote-mode traces (the live-reward path
 		 * excludes them -- see the kcov_transition_reward_mode
 		 * remote-mode contract in include/kcov.h) and for OFF mode

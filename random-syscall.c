@@ -374,6 +374,44 @@ retry:
 #define ANTI_PRIOR_RETRY_CAP 64U
 
 /*
+ * SHADOW deep-but-warm candidate predicate tunables -- consumed by the
+ * post-collect bookkeeping in dispatch_step() that bumps shm->stats.
+ * warm_reserve_candidates*.  Static defaults; no runtime knob exists
+ * yet because the live STAGE B reserve+replay consumer is not built.
+ *
+ * DEEP_WARM_PCS_MIN_CALLS
+ *     Warmup floor on the running-mean clause: a syscall whose lifetime
+ *     invocation count is below this threshold cannot trip the
+ *     "per-call PCs >= MULT * mean" check.  Keeps the first handful of
+ *     calls on a syscall from all qualifying against their own zero or
+ *     near-zero baseline mean.  Sized to the same order of magnitude as
+ *     the bandit / remote-adaptive sample floors elsewhere; large
+ *     enough to filter cold-start noise, small enough that any syscall
+ *     that gets routine traffic clears it inside a single periodic
+ *     dump window.
+ * DEEP_WARM_PCS_MEAN_MULT
+ *     High-side multiplier on the running mean for the per-call PC-
+ *     density clause: a call's local_distinct_pcs must reach at least
+ *     MULT * mean to qualify.  2 is the "noticeably deeper than this
+ *     syscall's own typical trace" cutoff -- aggressive enough to
+ *     catch the long-tail expensive calls without flagging every call
+ *     that randomly lands above the mean.  Picked over a true quartile
+ *     mechanism so the predicate stays cheap (one integer cross-
+ *     product, no per-syscall sorted-sample buffer) -- noted as the
+ *     STAGE A default in the dispatchable plan.
+ * DEEP_WARM_TRACE_NUM / DEEP_WARM_TRACE_DEN
+ *     Threshold on the per-call PC trace length as a fraction of the
+ *     KCOV_TRACE_SIZE buffer cap: a call's trace_size must reach at
+ *     least NUM/DEN of the buffer to qualify under the near-truncation
+ *     clause.  9/10 matches the dispatchable plan's 0.9 default; the
+ *     ratio is applied as a cross-product to avoid the runtime divide.
+ */
+#define DEEP_WARM_PCS_MIN_CALLS 16UL
+#define DEEP_WARM_PCS_MEAN_MULT 2UL
+#define DEEP_WARM_TRACE_NUM 9UL
+#define DEEP_WARM_TRACE_DEN 10UL
+
+/*
  * Pick the syscall to run under STRATEGY_RANDOM: uniform draw from
  * active_syscalls with no further biasing.  The "shake the dust off"
  * pass — useless on its own, but exposes paths the heuristic biases
@@ -2070,6 +2108,91 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	 * CMP-source events would silently bias the bandit reward and
 	 * corrupt the plateau diagnostics. */
 	bool found_something = new_edges || (new_cmp > 0);
+
+	/* SHADOW "deep but warm" candidate accounting.  Fires only when
+	 * the call produced no PC-edge novelty AND no CMP-bloom novelty
+	 * (the union of corpus-save reasons above), yet still executed
+	 * either:
+	 *   - a per-call PC walk meaningfully deeper than this syscall's
+	 *     own lifetime mean local_distinct_pcs (warmup-gated so the
+	 *     first few calls on a syscall do not compare against their
+	 *     own zero mean), OR
+	 *   - a trace that approached the KCOV_TRACE_SIZE buffer cap,
+	 *     i.e. the kernel ran enough code that the tail of the trace
+	 *     was at risk of truncation.
+	 * Gated to the PC-mode path: CMP-mode children do not populate
+	 * pcres, do not return a local_distinct_pcs / trace_size, and
+	 * their new_cmp branch already carries its own novelty
+	 * accounting.  Validator-rejected calls also short-circuit
+	 * (pcres stays zero, kcov never ran) so the predicate naturally
+	 * does not fire on them.
+	 *
+	 * Both stores are RELAXED -- cumulative diagnostic, no event-
+	 * ordering consumer.  No live-path code reads either counter; the
+	 * picker, the per-strategy attribution and the frontier-blend
+	 * shadow path are byte-identical to the pre-row baseline.  See the
+	 * warm_reserve_candidates* comment in include/stats.h for the
+	 * predicate rationale. */
+	if (child->kcov.mode == KCOV_MODE_PC && !new_edges && new_cmp == 0 &&
+	    rec->nr < MAX_NR_SYSCALL && kcov_shm != NULL) {
+		bool deep_pcs = false;
+		bool near_truncation = false;
+
+		/* Per-call PC count vs the syscall's lifetime running mean.
+		 * distinct_sum is the cross-arch sum of per_syscall_diag[].
+		 * distinct_pcs (the lifetime sum of per-call dedup-inc
+		 * first-sightings); calls is the lifetime invocation count.
+		 * mean = distinct_sum / calls; guard against zero-divide and
+		 * apply DEEP_WARM_PCS_MIN_CALLS as a warmup floor so a
+		 * syscall whose first few calls all happen to be its own
+		 * deepest does not flood the counter.  The compare is
+		 * pcs * DEN >= mean_unrolled (pcs >= mean * MULT) folded into
+		 * an integer cross-product so no division per call. */
+		if (pcres.local_distinct_pcs > 0) {
+			unsigned long calls = __atomic_load_n(
+				&kcov_shm->per_syscall_calls[rec->nr],
+				__ATOMIC_RELAXED);
+			if (calls >= DEEP_WARM_PCS_MIN_CALLS) {
+				unsigned long distinct_sum =
+					__atomic_load_n(&kcov_shm->per_syscall_diag[rec->nr][0].distinct_pcs,
+						__ATOMIC_RELAXED) +
+					__atomic_load_n(&kcov_shm->per_syscall_diag[rec->nr][1].distinct_pcs,
+						__ATOMIC_RELAXED);
+				/* pcres.local_distinct_pcs * calls is the
+				 * per-call value scaled by the denominator
+				 * of the mean (distinct_sum / calls); the
+				 * predicate "pcs >= MULT * mean" becomes
+				 * "pcs * calls >= MULT * distinct_sum"
+				 * without ever performing the division.
+				 * Overflow needs pcs * calls > ULONG_MAX, i.e.
+				 * a single trace with ~2^32 PCs AND ~2^32
+				 * lifetime calls on the same syscall, both
+				 * orders of magnitude past the realised
+				 * envelope; the OLD branch in frontier_cold_
+				 * weight() relies on the same shape. */
+				if (pcres.local_distinct_pcs * calls >=
+				    DEEP_WARM_PCS_MEAN_MULT * distinct_sum)
+					deep_pcs = true;
+			}
+		}
+
+		/* Per-call PC trace length vs the KCOV_TRACE_SIZE buffer cap.
+		 * pcres.trace_size is the post-cap PC count kcov_collect()
+		 * already computed (clamped at KCOV_TRACE_SIZE - 1 on
+		 * truncation -- a saturated call satisfies the inequality
+		 * trivially).  Cross-multiplied to avoid the runtime divide.
+		 */
+		if (pcres.trace_size * DEEP_WARM_TRACE_DEN >=
+		    (unsigned long)KCOV_TRACE_SIZE * DEEP_WARM_TRACE_NUM)
+			near_truncation = true;
+
+		if (deep_pcs || near_truncation) {
+			__atomic_fetch_add(&shm->stats.warm_reserve_candidates_total,
+					   1UL, __ATOMIC_RELAXED);
+			__atomic_fetch_add(&shm->stats.warm_reserve_candidates[rec->nr],
+					   1UL, __ATOMIC_RELAXED);
+		}
+	}
 
 	/* If the win signal came from CMP novelty rather than PC novelty,
 	 * tag the pending mutator attribution.  Tag-before-commit + the
