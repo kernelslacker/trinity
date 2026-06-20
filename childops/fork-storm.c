@@ -242,6 +242,8 @@ bool fork_storm(struct childdata *child)
 	__atomic_add_fetch(&shm->stats.fork_storm_runs, 1, __ATOMIC_RELAXED);
 
 	rounds = 1 + rnd_modulo_u32(MAX_ROUNDS);
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
 			   1, __ATOMIC_RELAXED);
 	for (i = 0; i < rounds; i++) {
