@@ -48,6 +48,7 @@
 #include <linux/rtnetlink.h>
 
 #include "childops-netlink.h"
+#include "shm.h"
 
 /*
  * Bounded retry budget for nl_send_recv_retry().  Matches the per-file
@@ -266,6 +267,7 @@ int nl_send_recv_dump_cb(struct nl_ctx *ctx, void *msg, size_t len,
 }
 
 int nl_send_drain_errors(struct nl_ctx *ctx, void *msg, size_t len,
+			 __u32 expect_seq,
 			 void (*on_err)(int err, void *arg),
 			 void *arg)
 {
@@ -299,8 +301,25 @@ int nl_send_drain_errors(struct nl_ctx *ctx, void *msg, size_t len,
 				struct nlmsgerr *err =
 					(struct nlmsgerr *)NLMSG_DATA(nlh);
 
-				if (on_err)
-					on_err(err->error, arg);
+				/*
+				 * Stale acks from an earlier request (a
+				 * prior family or even a prior childop)
+				 * may still be queued on this socket.
+				 * Attributing them to the current send
+				 * misroutes -EPERM/-EACCES decisions
+				 * (e.g. latching needs_priv on the wrong
+				 * family).  Only fire on_err for an ack
+				 * that matches the seq we just sent;
+				 * count and drop the rest so the queue
+				 * still drains.
+				 */
+				if (nlh->nlmsg_seq == expect_seq) {
+					if (on_err)
+						on_err(err->error, arg);
+				} else {
+					__atomic_add_fetch(&shm->stats.genetlink_stale_seq_drops,
+							   1, __ATOMIC_RELAXED);
+				}
 			}
 			nlh = NLMSG_NEXT(nlh, remaining);
 		}

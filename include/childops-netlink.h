@@ -142,12 +142,17 @@ int nl_send_recv_dump_cb(struct nl_ctx *ctx, void *msg, size_t len,
 
 /*
  * Send msg/len, then drain every queued reply with MSG_DONTWAIT.
- * For every NLMSG_ERROR in the stream, invoke on_err(err, arg).
- * Returns 0 once the queue is drained (EAGAIN / EWOULDBLOCK from
- * recv).  on_err return value is ignored — drain always runs to
- * completion so the socket queue is clean before the next send.
+ * For every NLMSG_ERROR whose nlmsg_seq matches @expect_seq, invoke
+ * on_err(err, arg).  NLMSG_ERROR entries with a different seq are
+ * stale acks left in the socket queue by an earlier request (often
+ * for a different family) and must not be attributed to this send;
+ * they are counted and dropped without firing on_err.  Returns 0
+ * once the queue is drained (EAGAIN / EWOULDBLOCK from recv).
+ * on_err return value is ignored — drain always runs to completion
+ * so the socket queue is clean before the next send.
  */
 int nl_send_drain_errors(struct nl_ctx *ctx, void *msg, size_t len,
+			 __u32 expect_seq,
 			 void (*on_err)(int err, void *arg),
 			 void *arg);
 

@@ -683,6 +683,13 @@ struct stats_s {
 	unsigned long genetlink_families_discovered;	/* cumulative across children */
 	unsigned long genetlink_msgs_sent;		/* successful send() to a family */
 	unsigned long genetlink_eperm;			/* family rejected with EPERM/EACCES */
+	/* NLMSG_ERROR entry whose nlmsg_seq did not match the seq the
+	 * caller passed to nl_send_drain_errors() -- a stale ack left
+	 * in the socket queue by an earlier request, possibly from a
+	 * different family.  Counted so the queue-hygiene rate stays
+	 * visible; the drop suppresses the on_err callback so a stale
+	 * -EPERM/-EACCES cannot latch the wrong family's needs_priv. */
+	unsigned long genetlink_stale_seq_drops;
 
 	/* netlink message generator: NLA_F_NESTED containers emitted */
 	unsigned long netlink_nested_attrs_emitted;
