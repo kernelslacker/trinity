@@ -126,6 +126,8 @@ bool pipe_thrash(struct childdata *child)
 
 	clock_gettime(CLOCK_MONOTONIC, &start);
 
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
 			   1, __ATOMIC_RELAXED);
 	for (iter = 0; iter < iters; iter++) {
