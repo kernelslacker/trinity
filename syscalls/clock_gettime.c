@@ -185,6 +185,7 @@ struct syscallentry syscall_clock_gettime = {
 	.arg_params[0].list = ARGLIST(clock_ids),
 	.sanitise = sanitise_clock_gettime,
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = REEXEC_SANITISE_OK,
 #if defined(SYS_clock_gettime) || defined(__NR_clock_gettime)
 	.post = post_clock_gettime,
 #endif
