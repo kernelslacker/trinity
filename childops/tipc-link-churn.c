@@ -404,8 +404,6 @@ bool tipc_link_churn(struct childdata *child)
 	__u32 cluster;
 	int rc;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.tipc_link_churn_runs, 1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported_tipc || ns_unsupported_genetlink_tipc) {
@@ -425,6 +423,9 @@ bool tipc_link_churn(struct childdata *child)
 			rdm = socket(AF_TIPC, SOCK_RDM | SOCK_CLOEXEC, 0);
 			if (rdm < 0) {
 				ns_unsupported_tipc = true;
+				__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+						 CHILDOP_LATCH_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 				__atomic_add_fetch(&shm->stats.tipc_link_churn_setup_failed,
 						   1, __ATOMIC_RELAXED);
 				return true;
@@ -445,15 +446,23 @@ bool tipc_link_churn(struct childdata *child)
 
 	rc = genl_open(&ctx, &opts);
 	if (rc != 0) {
-		if (rc == -ENOENT)
+		if (rc == -ENOENT) {
 			ns_unsupported_genetlink_tipc = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		}
 		__atomic_add_fetch(&shm->stats.tipc_link_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
 	ctx_open = true;
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	cluster = TIPC_CLUSTER_ID_MIN + (rand32() % TIPC_CLUSTER_ID_RANGE);
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	(void)build_net_set(&ctx, cluster);
 
 	(void)snprintf(bearer_name, sizeof(bearer_name),
