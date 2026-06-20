@@ -188,7 +188,10 @@ static void ring_drain(struct iour_ring *r)
  * Lives on the orchestrator's stack and is fresh per invocation.  Lifted
  * only the fields read across helper boundaries -- per-phase scratch
  * (ublksrv_ctrl_cmd payload, io_cmd payload, SQE, qpath, ublk_lc_ctrl_dev_info)
- * stays local to its phase. */
+ * stays local to its phase.  @child is the caller's struct childdata so
+ * the setup helper can record the per-op latch reason in
+ * shm->stats.childop_latch_reason[op_type] at the same site that latches
+ * the static ns_unsupported_ublk bool. */
 struct ublk_lifecycle_iter_ctx {
 	struct iour_ring	ctrl_ring;
 	struct iour_ring	io_ring;
@@ -198,6 +201,7 @@ struct ublk_lifecycle_iter_ctx {
 	bool			ctrl_ring_up;
 	bool			io_ring_up;
 	bool			fetch_in_flight;
+	struct childdata	*child;
 };
 
 /* Open /dev/ublk-control and stand up both io_urings.  Splits the two
@@ -215,6 +219,9 @@ static bool ublk_lifecycle_iter_setup(struct ublk_lifecycle_iter_ctx *ctx)
 		if (errno == EPERM || errno == ENOENT || errno == ENXIO ||
 		    errno == EACCES) {
 			ns_unsupported_ublk = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[ctx->child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 			__atomic_add_fetch(&shm->stats.ublk_lifecycle_eperm,
 					   1, __ATOMIC_RELAXED);
 		}
@@ -392,9 +399,8 @@ bool ublk_lifecycle(struct childdata *child)
 		.ctrl_fd = -1,
 		.q_fd    = -1,
 		.dev_id  = -1,
+		.child   = child,
 	};
-
-	(void)child;
 
 	__atomic_add_fetch(&shm->stats.ublk_lifecycle_iters, 1,
 			   __ATOMIC_RELAXED);
@@ -407,7 +413,11 @@ bool ublk_lifecycle(struct childdata *child)
 
 	if (!ublk_lifecycle_iter_add_dev(&ctx))
 		goto out;
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	ublk_lifecycle_iter_arm_fetch(&ctx);
 	ublk_lifecycle_iter_del_dev(&ctx);
 
