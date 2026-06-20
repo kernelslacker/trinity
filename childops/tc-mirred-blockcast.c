@@ -500,8 +500,6 @@ bool tc_mirred_blockcast(struct childdata *child)
 	int rc;
 	int eaction;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.tc_mirred_blockcast_runs, 1,
 			   __ATOMIC_RELAXED);
 
@@ -512,6 +510,9 @@ bool tc_mirred_blockcast(struct childdata *child)
 
 	if (tc_mirred_setup_netns(&nl) != 0)
 		return true;
+
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	/* Random suffix per iteration so concurrent children (and our
 	 * own cleanup races) don't collide on names. */
@@ -615,6 +616,9 @@ bool tc_mirred_blockcast(struct childdata *child)
 			iters = MIRRED_PACKET_FLOOR;
 		if (iters > MIRRED_PACKET_CAP)
 			iters = MIRRED_PACKET_CAP;
+
+		__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+				   1, __ATOMIC_RELAXED);
 
 		for (i = 0; i < iters; i++) {
 			unsigned char payload[64];
