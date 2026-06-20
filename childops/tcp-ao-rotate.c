@@ -171,7 +171,9 @@ static const char * const ao_algs[] = {
  * fields default to -1 so the teardown helper can close them
  * unconditionally regardless of which earlier phase bailed.  srv_addr
  * is populated by open_loopback_listener; cli_addr by the client
- * getsockname; alg by install_keys (used again by rotate_loop). */
+ * getsockname; alg by install_keys (used again by rotate_loop).  child
+ * is the caller's struct childdata so phase helpers can attribute
+ * per-childop yield counters to child->op_type. */
 struct tcp_ao_rotate_iter_ctx {
 	int listener;
 	int cli;
@@ -179,6 +181,7 @@ struct tcp_ao_rotate_iter_ctx {
 	struct sockaddr_in srv_addr;
 	struct sockaddr_in cli_addr;
 	const char *alg;
+	struct childdata *child;
 };
 
 /*
@@ -345,8 +348,12 @@ static int tcp_ao_rotate_iter_install_keys(struct tcp_ao_rotate_iter_ctx *ctx)
 	rc = setsockopt(ctx->listener, IPPROTO_TCP, TCP_AO_ADD_KEY,
 			&ao_add, sizeof(ao_add));
 	if (rc < 0) {
-		if (errno == ENOPROTOOPT || errno == EPERM)
+		if (errno == ENOPROTOOPT || errno == EPERM) {
 			ns_unsupported = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[ctx->child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		}
 		__atomic_add_fetch(&shm->stats.tcp_ao_rotate_addkey_rejected,
 				   1, __ATOMIC_RELAXED);
 		return -1;
@@ -539,9 +546,8 @@ bool tcp_ao_rotate(struct childdata *child)
 		.listener = -1,
 		.cli      = -1,
 		.srv_acc  = -1,
+		.child    = child,
 	};
-
-	(void)child;
 
 	__atomic_add_fetch(&shm->stats.tcp_ao_rotate_runs, 1, __ATOMIC_RELAXED);
 
@@ -553,10 +559,14 @@ bool tcp_ao_rotate(struct childdata *child)
 
 	if (tcp_ao_rotate_iter_install_keys(&ctx) != 0)
 		goto out;
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	if (tcp_ao_rotate_iter_connect(&ctx) != 0)
 		goto out;
 
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	tcp_ao_rotate_iter_rotate_loop(&ctx);
 
 out:
