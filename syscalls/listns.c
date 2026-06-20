@@ -345,4 +345,5 @@ struct syscallentry syscall_listns = {
 	.group = GROUP_PROCESS,
 	.bound_arg = 3,
 	.rettype = RET_NUM_BYTES,
+	.flags = REEXEC_SANITISE_OK,
 };
