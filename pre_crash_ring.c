@@ -188,6 +188,21 @@ void pre_crash_ring_reset(struct pre_crash_ring *ring)
 	if (ring == NULL || pagesize <= 0)
 		return;
 
+	/* Reset head BEFORE dropping the pages.  Most callers satisfy the
+	 * "child fully gone" precondition documented in the header, but the
+	 * deferred-reap path runs reset while the kernel may still resume the
+	 * task to finish its in-flight syscall -- one more producer call can
+	 * land between the madvise and the head store.  Publishing head=0
+	 * first means any such late producer reloads head as 0, writes slot 0,
+	 * and republishes head=1 on top of a slot the madvise is about to
+	 * drop; the dumper then sees either an empty ring or that single slot
+	 * in a fresh page.  Doing this in the other order would let the
+	 * producer write at the old (high) head into a freshly-faulted zero
+	 * page, then have the reset stomp head back to 0, leaving the next
+	 * occupant's ring with a stranded high-offset entry visible to the
+	 * dumper once head wraps back around. */
+	__atomic_store_n(&ring->base.head, 0, __ATOMIC_RELEASE);
+
 	/* Drop the rolling-history entries pages.  The childdata mapping is
 	 * MAP_ANON | MAP_SHARED, so MADV_DONTNEED frees the resident pages
 	 * and the next producer faults clean zero pages on demand -- the
@@ -195,7 +210,7 @@ void pre_crash_ring_reset(struct pre_crash_ring *ring)
 	 * recycled child for the rest of the run.  Only the page-aligned
 	 * interior of entries[] is dropped; bytes sharing the head/tail
 	 * boundary pages with other childdata fields stay resident but are
-	 * unreachable once head is reset to 0 below. */
+	 * unreachable once head is reset to 0 above. */
 	start = (uintptr_t) ring->entries;
 	end = start + sizeof(ring->entries);
 	aligned_start = (start + (uintptr_t) pagesize - 1) &
@@ -206,11 +221,6 @@ void pre_crash_ring_reset(struct pre_crash_ring *ring)
 			       (size_t) (aligned_end - aligned_start),
 			       MADV_DONTNEED);
 	}
-
-	/* Reset head so the post-mortem dumper walks back zero slots until
-	 * the next producer publishes a fresh entry; any partial-page tail
-	 * bytes left resident above are then unreachable by the dumper. */
-	__atomic_store_n(&ring->base.head, 0, __ATOMIC_RELEASE);
 }
 
 void pre_crash_ring_dump(struct childdata *child, pre_crash_emit_fn emit)
