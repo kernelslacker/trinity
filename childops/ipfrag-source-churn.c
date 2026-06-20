@@ -245,8 +245,6 @@ bool ipfrag_source_churn(struct childdata *child)
 	struct timespec t_outer;
 	unsigned int outer_iters, i;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.ipfrag_source_runs, 1,
 			   __ATOMIC_RELAXED);
 
@@ -256,15 +254,24 @@ bool ipfrag_source_churn(struct childdata *child)
 	if (!setup_done) {
 		if (unshare(CLONE_NEWNET) < 0) {
 			ns_unsupported_ipfrag = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 			return true;
 		}
 		if (bring_lo_up_with_addr() < 0) {
 			ns_unsupported_ipfrag = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 			return true;
 		}
 		ipfrag_send_fd = open_sender();
 		if (ipfrag_send_fd < 0) {
 			ns_unsupported_ipfrag = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 			return true;
 		}
 		ipfrag_listen_fd = open_listener(&ipfrag_listen_port_be);
@@ -272,11 +279,17 @@ bool ipfrag_source_churn(struct childdata *child)
 			close(ipfrag_send_fd);
 			ipfrag_send_fd = -1;
 			ns_unsupported_ipfrag = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 			return true;
 		}
 		ipfrag_rot_base = (rand32() & 0xffU) << 16;
 		setup_done = true;
 	}
+
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	if (clock_gettime(CLOCK_MONOTONIC, &t_outer) < 0) {
 		t_outer.tv_sec = 0;
@@ -287,6 +300,9 @@ bool ipfrag_source_churn(struct childdata *child)
 			       JITTER_RANGE(IPF_OUTER_BASE));
 	if (outer_iters > IPF_OUTER_CAP)
 		outer_iters = IPF_OUTER_CAP;
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	for (i = 0; i < outer_iters; i++) {
 		uint32_t src_be;
