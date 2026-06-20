@@ -6806,7 +6806,8 @@ static void dump_stats_childop_ranked_tables(void)
 		for (op = 0; op < NR_CHILD_OP_TYPES; op++) {
 			if (shm->stats.taint_transitions[op] == 0)
 				continue;
-			snprintf(metric, sizeof(metric), "op_type_%u", op);
+			snprintf(metric, sizeof(metric), "%s",
+				 alt_op_name((enum child_op_type)op));
 			stat_row("taint_transitions", metric,
 				 shm->stats.taint_transitions[op]);
 		}
@@ -6814,7 +6815,8 @@ static void dump_stats_childop_ranked_tables(void)
 		for (op = 0; op < NR_CHILD_OP_TYPES; op++) {
 			if (shm->stats.pool_race_aborted[op] == 0)
 				continue;
-			snprintf(metric, sizeof(metric), "op_type_%u", op);
+			snprintf(metric, sizeof(metric), "%s",
+				 alt_op_name((enum child_op_type)op));
 			stat_row("pool_race_aborted", metric,
 				 shm->stats.pool_race_aborted[op]);
 		}
@@ -6852,8 +6854,8 @@ static void dump_stats_childop_ranked_tables(void)
 				}
 			}
 			for (ri = 0; ri < nranked; ri++) {
-				snprintf(metric, sizeof(metric),
-					 "op_type_%u", ranked[ri].op);
+				snprintf(metric, sizeof(metric), "%s",
+					 alt_op_name((enum child_op_type)ranked[ri].op));
 				stat_row("childop_edges_discovered",
 					 metric, ranked[ri].count);
 			}
@@ -6894,8 +6896,8 @@ static void dump_stats_childop_ranked_tables(void)
 				}
 			}
 			for (ri = 0; ri < nranked; ri++) {
-				snprintf(metric, sizeof(metric),
-					 "op_type_%u", ranked[ri].op);
+				snprintf(metric, sizeof(metric), "%s",
+					 alt_op_name((enum child_op_type)ranked[ri].op));
 				stat_row("childop_calls_with_edges",
 					 metric, ranked[ri].count);
 			}
@@ -6942,8 +6944,8 @@ static void dump_stats_childop_ranked_tables(void)
 				}
 			}
 			for (ri = 0; ri < nranked; ri++) {
-				snprintf(metric, sizeof(metric),
-					 "op_type_%u", ranked[ri].op);
+				snprintf(metric, sizeof(metric), "%s",
+					 alt_op_name((enum child_op_type)ranked[ri].op));
 				stat_row("childop_last_success_ts",
 					 metric, ranked[ri].count);
 			}
@@ -6984,8 +6986,8 @@ static void dump_stats_childop_ranked_tables(void)
 				}
 			}
 			for (ri = 0; ri < nranked; ri++) {
-				snprintf(metric, sizeof(metric),
-					 "op_type_%u", ranked[ri].op);
+				snprintf(metric, sizeof(metric), "%s",
+					 alt_op_name((enum child_op_type)ranked[ri].op));
 				stat_row("childop_setup_accepted",
 					 metric, ranked[ri].count);
 			}
@@ -7024,8 +7026,8 @@ static void dump_stats_childop_ranked_tables(void)
 				}
 			}
 			for (ri = 0; ri < nranked; ri++) {
-				snprintf(metric, sizeof(metric),
-					 "op_type_%u", ranked[ri].op);
+				snprintf(metric, sizeof(metric), "%s",
+					 alt_op_name((enum child_op_type)ranked[ri].op));
 				stat_row("childop_data_path",
 					 metric, ranked[ri].count);
 			}
@@ -7044,8 +7046,8 @@ static void dump_stats_childop_ranked_tables(void)
 				shm->stats.childop_latch_reason[op];
 			if (v == 0)
 				continue;
-			snprintf(metric, sizeof(metric),
-				 "op_type_%u", op);
+			snprintf(metric, sizeof(metric), "%s",
+				 alt_op_name((enum child_op_type)op));
 			stat_row("childop_latch_reason", metric, v);
 		}
 	}
@@ -8394,8 +8396,8 @@ static void __cold dump_stats_kcov_block(void)
 						&kcov_shm->childop_remote_pc_edge_count[op_id],
 						__ATOMIC_RELAXED);
 
-					snprintf(opname, sizeof(opname),
-						 "op_type_%u", op_id);
+					snprintf(opname, sizeof(opname), "%s",
+						 alt_op_name((enum child_op_type)op_id));
 					output(0, "  %-24s %10lu %10lu %10lu %10lu %10lu %10lu\n",
 					       opname, lc, lec, len_, rc, rec, ren);
 				}
