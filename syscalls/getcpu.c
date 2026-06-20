@@ -292,6 +292,7 @@ struct syscallentry syscall_getcpu = {
 	.sanitise = sanitise_getcpu,
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_PROCESS,
+	.flags = REEXEC_SANITISE_OK,
 #ifdef HAVE_SYS_GETCPU
 	.post = post_getcpu,
 #endif
