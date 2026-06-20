@@ -213,8 +213,6 @@ bool rtnl_vf_broadcast_getlink(struct childdata *child)
 			return true;
 		}
 		ns_setup_done = true;
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-				   1, __ATOMIC_RELAXED);
 	}
 
 	iters = BUDGETED(CHILD_OP_RTNL_VF_BROADCAST_GETLINK,
@@ -222,6 +220,8 @@ bool rtnl_vf_broadcast_getlink(struct childdata *child)
 	if (iters > VFB_OUTER_CAP)
 		iters = VFB_OUTER_CAP;
 
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
 			   1, __ATOMIC_RELAXED);
 
