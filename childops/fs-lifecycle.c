@@ -591,10 +591,24 @@ out_rmdir:
 
 /* ------------------------------------------------------------------ */
 
-bool fs_lifecycle(struct childdata *child __unused__)
+bool fs_lifecycle(struct childdata *child)
 {
+	bool was_unsupported = ns_unsupported;
+
 	if (!ensure_private_ns())
-		return true;
+		goto out_latch;
+
+	/* Past the per-invocation eligibility gate (private mount ns is in
+	 * place).  Bump setup_accepted before data_path so the invariant
+	 * data_path <= setup_accepted holds at every observation point.  No
+	 * bail path runs between the two bumps here -- the switch dispatches
+	 * unconditionally -- so the healthy baseline is equality, matching
+	 * the NO-setup signature of a linear archetype-A childop. */
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	switch (rnd_modulo_u32(6)) {
 	case 0: do_tmpfs_lifecycle();   break;
@@ -604,6 +618,17 @@ bool fs_lifecycle(struct childdata *child __unused__)
 	case 4: do_quota_lifecycle();   break;
 	case 5: do_bind_lifecycle();    break;
 	}
+
+out_latch:
+	/* Single store site for the per-childop latch reason: if this
+	 * invocation is the one that flipped ns_unsupported (either via
+	 * unshare/MS_PRIVATE in ensure_private_ns() or via an EPERM from
+	 * the variant's mount() call), record NS_UNSUPPORTED so the per-arm
+	 * yield dump attributes the disable to a namespace/capability denial
+	 * rather than a generic init failure. */
+	if (!was_unsupported && ns_unsupported)
+		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+				 CHILDOP_LATCH_NS_UNSUPPORTED, __ATOMIC_RELAXED);
 
 	return true;
 }
