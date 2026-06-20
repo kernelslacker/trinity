@@ -194,7 +194,8 @@ static void sanitise_mmap(struct syscallrecord *rec)
 	 * rather than punching, so leave it alone.
 	 */
 	if ((rec->a4 & MAP_FIXED) &&
-	    range_overlaps_shared(rec->a1, rec->a2)) {
+	    (range_overlaps_shared(rec->a1, rec->a2) ||
+	     range_overlaps_libc_heap(rec->a1, rec->a2))) {
 		rec->a4 &= ~MAP_FIXED;
 		rec->a1 = 0;
 	}

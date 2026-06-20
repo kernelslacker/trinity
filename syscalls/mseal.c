@@ -7,7 +7,8 @@
 
 static void sanitise_mseal(struct syscallrecord *rec)
 {
-	if (range_overlaps_shared(rec->a1, rec->a2)) {
+	if (range_overlaps_shared(rec->a1, rec->a2) ||
+	    range_overlaps_libc_heap(rec->a1, rec->a2)) {
 		rec->a1 = 0;
 		rec->a2 = 0;
 	}
