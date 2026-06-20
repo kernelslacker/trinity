@@ -1459,8 +1459,6 @@ bool tc_qdisc_churn(struct childdata *child)
 		.udp = -1,
 	};
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.tc_qdisc_churn_runs, 1,
 			   __ATOMIC_RELAXED);
 
@@ -1470,8 +1468,14 @@ bool tc_qdisc_churn(struct childdata *child)
 	if (tc_qdisc_setup_netns(&it.nl) != 0)
 		return true;
 
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
+
 	if (tc_qdisc_add_link(&it) != 0)
 		goto out;
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	/*
 	 * One iteration in four runs the deliberate peek-x-peek stack
