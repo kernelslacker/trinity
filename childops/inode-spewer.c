@@ -233,7 +233,11 @@ static bool do_link_dance(void)
 
 bool inode_spewer(struct childdata *child)
 {
-	(void)child;
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	switch (rnd_modulo_u32(10)) {
 	case 0 ... 5:	do_create_and_destroy();	break;
