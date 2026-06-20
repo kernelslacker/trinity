@@ -245,4 +245,5 @@ struct syscallentry syscall_sched_getaffinity = {
 	.post = post_sched_getaffinity,
 	.bound_arg = 2,
 	.rettype = RET_NUM_BYTES,
+	.flags = REEXEC_SANITISE_OK,
 };
