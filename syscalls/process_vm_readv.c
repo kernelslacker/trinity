@@ -59,4 +59,5 @@ struct syscallentry syscall_process_vm_readv = {
 	.sanitise = sanitise_process_vm_readv,
 	.post = post_process_vm_readv,
 	.rettype = RET_NUM_BYTES,
+	.flags = REEXEC_SANITISE_OK,
 };
