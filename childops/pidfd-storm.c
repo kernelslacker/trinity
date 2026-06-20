@@ -356,14 +356,17 @@ bool pidfd_storm(struct childdata *child)
 	struct pidfd_slot slots[NR_CHILDREN];
 	unsigned int active;
 
-	(void) child;
-
 	__atomic_add_fetch(&shm->stats.pidfd_storm_runs, 1, __ATOMIC_RELAXED);
 
 	active = pidfd_storm_iter_spawn(slots, NR_CHILDREN);
 	if (active == 0)
 		return true;
 
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	pidfd_storm_iter_drive(slots, active, JITTER_RANGE(MAX_ITERATIONS));
 	pidfd_storm_iter_reap(slots, active);
 

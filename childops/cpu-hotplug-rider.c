@@ -269,17 +269,24 @@ bool cpu_hotplug_rider(struct childdata *child)
 	unsigned int real_offlines = 0;
 	bool did_real_offline = false;
 
-	(void) child;
-
 	if (!cpu_inited)
 		init_cpu_state();
 
-	if (no_cpus_to_play)
+	if (no_cpus_to_play) {
+		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+				 CHILDOP_LATCH_UNSUPPORTED, __ATOMIC_RELAXED);
 		return false;
+	}
 
 	__atomic_add_fetch(&shm->stats.cpu_hotplug_runs, 1, __ATOMIC_RELAXED);
 
 	clock_gettime(CLOCK_MONOTONIC, &start);
+
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	for (iter = 0; iter < iters; iter++) {
 		unsigned int pick = rnd_modulo_u32(4);

@@ -312,8 +312,6 @@ bool signal_storm(struct childdata *child)
 {
 	struct signal_storm_iter_ctx ictx = { 0 };
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.signal_storm_runs, 1, __ATOMIC_RELAXED);
 
 	signal_storm_iter_collect_targets(&ictx);
@@ -325,6 +323,12 @@ bool signal_storm(struct childdata *child)
 	}
 
 	signal_storm_iter_pick_mode(&ictx);
+
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	switch (ictx.order) {
 	case ORDER_SAME_TARGET_BURST:

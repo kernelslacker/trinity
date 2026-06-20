@@ -464,8 +464,6 @@ bool futex_storm(struct childdata *child)
 {
 	struct futex_storm_iter_ctx ctx = { .s = NULL };
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.futex_storm_runs, 1, __ATOMIC_RELAXED);
 
 	if (futex_storm_iter_setup_region(&ctx) != 0)
@@ -474,6 +472,11 @@ bool futex_storm(struct childdata *child)
 	if (futex_storm_iter_spawn_workers(&ctx) != 0)
 		goto out;
 
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	futex_storm_iter_drive_burst(&ctx);
 	futex_storm_iter_reap(&ctx);
 

@@ -323,14 +323,15 @@ bool keyring_spam(struct childdata *child)
 	unsigned int iters = JITTER_RANGE(MAX_ITERATIONS);
 	unsigned char payload[KEYRING_PAYLOAD_BYTES];
 
-	(void) child;
-
 	__atomic_add_fetch(&shm->stats.keyring_spam_runs, 1, __ATOMIC_RELAXED);
 
 	memset(live, 0, sizeof(live));
 	memset(payload, 0xa5, sizeof(payload));
 
 	clock_gettime(CLOCK_MONOTONIC, &start);
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	for (iter = 0; iter < iters; iter++) {
 		enum keyring_op op;

@@ -258,10 +258,11 @@ bool perf_event_chains(struct childdata *child)
 	unsigned int nr_members;
 	unsigned int i;
 
-	(void)child;
-
-	if (pmu_count == 0)
+	if (pmu_count == 0) {
+		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+				 CHILDOP_LATCH_UNSUPPORTED, __ATOMIC_RELAXED);
 		return true;
+	}
 
 	__atomic_add_fetch(&shm->stats.perf_chains_runs, 1, __ATOMIC_RELAXED);
 
@@ -276,6 +277,9 @@ bool perf_event_chains(struct childdata *child)
 
 	__atomic_add_fetch(&shm->stats.perf_chains_groups_created, 1,
 			   __ATOMIC_RELAXED);
+
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	/* Open 0 to MAX_GROUP_MEMBERS-1 member events in this group. */
 	nr_members = rnd_modulo_u32(MAX_GROUP_MEMBERS);
@@ -296,6 +300,8 @@ bool perf_event_chains(struct childdata *child)
 		}
 	}
 
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	fuzz_group_ioctls(leader_fd, member_fds, nr_members);
 
 	for (i = 0; i < nr_members; i++)
