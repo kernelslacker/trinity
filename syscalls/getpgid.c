@@ -55,7 +55,7 @@ static void post_getpgid(struct syscallrecord *rec)
 	if (!ONE_IN(100))
 		return;
 
-	if (rec->a1 != 0)
+	if (get_arg_snapshot(rec, 1) != 0)
 		return;
 
 	got = (pid_t) retval;
@@ -85,4 +85,12 @@ struct syscallentry syscall_getpgid = {
 	.argname = { [0] = "pid" },
 	.rettype = RET_PID_T,
 	.post = post_getpgid,
+	/* a1 (pid) gates the procfs NSpgid cross-check oracle -- snapshot
+	 * so a sibling stomp between BEFORE and AFTER cannot flip the gate
+	 * from "skip (queried other task)" to "run (self-pgid)" or vice
+	 * versa.  Without the snapshot, a stomp from non-zero to 0 would
+	 * mis-attribute the retval (a different task's pgid) against
+	 * /proc/self/status NSpgid and fire a spurious oracle anomaly;
+	 * the reverse stomp would suppress a real corruption signal. */
+	.arg_snapshot_mask = (1u << 0),
 };
