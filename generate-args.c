@@ -1621,31 +1621,6 @@ static unsigned long gen_arg_nodemask(struct syscallentry *entry __unused__,
 }
 
 /*
- * Online-CPU count snapshotted on first use.  The kernel rejects
- * sched_setaffinity masks with no bits in cpu_online_mask, so a
- * random CPU_SETSIZE-wide draw misses every legality test path
- * unless we constrain it to the real online range.  File-local until
- * the bespoke duplicate in syscalls/sched_setaffinity.c is folded
- * away by its conversion row.
- */
-static unsigned int cached_online_cpus(void)
-{
-	static unsigned int n;
-	long v;
-
-	if (n != 0)
-		return n;
-
-	v = sysconf(_SC_NPROCESSORS_ONLN);
-	if (v <= 0)
-		v = 1;
-	if (v > CPU_SETSIZE)
-		v = CPU_SETSIZE;
-	n = (unsigned int) v;
-	return n;
-}
-
-/*
  * ARG_CPUMASK: a writable pool buffer filled with a valid-ish CPU
  * affinity mask (cpu_set_t -- CPU_SETSIZE bits / 128 bytes on glibc).
  *
