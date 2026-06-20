@@ -2790,11 +2790,29 @@ struct stats_s {
 	 *      decision (neither demote nor promote fires).  Sum of
 	 *      {_would_demote, _would_promote, _agree} equals _samples by
 	 *      construction (the three dispositions are mutually exclusive
-	 *      and exhaustive on the adaptive-helper entry path). */
+	 *      and exhaustive on the adaptive-helper entry path).
+	 *  remote_adaptive_would_gate_promote
+	 *      Shadow disposition for the proposed plateau gate on the
+	 *      promote branch: bumped from BOTH arms in lock-step whenever
+	 *      the cross-multiplied edge-rate margin fires (i.e. the
+	 *      _would_promote condition holds) AND the parent-published
+	 *      plateau hypothesis is NOT PLATEAU_HYPOTHESIS_REMOTE_DOMINANT
+	 *      at the time of the decision.  Strict subset of
+	 *      _would_promote -- it counts the would-be divergence between
+	 *      today's always-promote behaviour and a future
+	 *      "promote only under a remote-dominant plateau" rule, before
+	 *      that rule is flipped on by default.  Live disposition is
+	 *      not touched (adaptive_remote still flips to true); the
+	 *      counter answers "how often would a plateau gate suppress
+	 *      a live promote?" so the gate-on-by-default decision can
+	 *      be made against measured impact rather than hypothesis.
+	 *      Demote branch is intentionally unconditional and is NOT
+	 *      covered by this counter. */
 	unsigned long remote_adaptive_samples;
 	unsigned long remote_adaptive_would_demote;
 	unsigned long remote_adaptive_would_promote;
 	unsigned long remote_adaptive_agree;
+	unsigned long remote_adaptive_would_gate_promote;
 
 	/* Coverage-plateau detector transition counters, bumped from
 	 * kcov_plateau_check() on the rising edge (healthy -> plateau, when
