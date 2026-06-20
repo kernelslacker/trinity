@@ -111,4 +111,5 @@ struct syscallentry syscall_time = {
 	.sanitise = sanitise_time,
 	.post = post_time,
 	.rettype = RET_BORING,
+	.flags = REEXEC_SANITISE_OK,
 };
