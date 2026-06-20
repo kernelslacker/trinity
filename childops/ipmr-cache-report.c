@@ -213,8 +213,6 @@ bool ipmr_cache_report(struct childdata *child)
 	unsigned int iters;
 	unsigned int i;
 
-	(void)child;
-
 	if (ns_setup_failed_ipmr_cache_report ||
 	    ns_unsupported_ipmr_cache_report ||
 	    ns_eperm_ipmr_cache_report)
@@ -227,6 +225,9 @@ bool ipmr_cache_report(struct childdata *child)
 		}
 		ns_unshared_ipmr_cache_report = true;
 	}
+
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	bring_lo_up();
 
@@ -276,6 +277,9 @@ bool ipmr_cache_report(struct childdata *child)
 		iters = IPMR_LOOP_FLOOR;
 	if (iters > IPMR_LOOP_CAP)
 		iters = IPMR_LOOP_CAP;
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	for (i = 0; i < iters; i++) {
 		const char payload[8] = { 'i','p','m','r','c','r','p','t' };
