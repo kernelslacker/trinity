@@ -595,14 +595,18 @@ static void v6pmtu_iter_reap_workers(pid_t a, pid_t b)
  * subsequent invocations rather than risk leaking us into the doomed
  * netns.  Always runs, even on the failure-bail paths from iter_one.
  */
-static void v6pmtu_iter_exit_netns(int nsfd)
+static void v6pmtu_iter_exit_netns(int op_type, int nsfd)
 {
-	if (setns(nsfd, CLONE_NEWNET) < 0)
+	if (setns(nsfd, CLONE_NEWNET) < 0) {
 		ns_unsupported_ipv6_pmtu_race = true;
+		__atomic_store_n(&shm->stats.childop_latch_reason[op_type],
+				 CHILDOP_LATCH_NS_UNSUPPORTED,
+				 __ATOMIC_RELAXED);
+	}
 	(void)close(nsfd);
 }
 
-static void iter_one(void)
+static void iter_one(int op_type)
 {
 	int nsfd;
 	char names[V6PMTU_NUM_PAIRS][8];
@@ -615,8 +619,14 @@ static void iter_one(void)
 	if (v6pmtu_iter_setup_network(names) != 0)
 		goto out_setns;
 
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[op_type],
+			   1, __ATOMIC_RELAXED);
+
 	if (v6pmtu_iter_spawn_workers(names, &a, &b) != 0)
 		goto out_setns;
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[op_type],
+			   1, __ATOMIC_RELAXED);
 
 	v6pmtu_iter_reap_workers(a, b);
 
@@ -624,10 +634,10 @@ static void iter_one(void)
 			   1, __ATOMIC_RELAXED);
 
 out_setns:
-	v6pmtu_iter_exit_netns(nsfd);
+	v6pmtu_iter_exit_netns(op_type, nsfd);
 }
 
-static void probe_v6_pmtu(void)
+static void probe_v6_pmtu(int op_type)
 {
 	int probe_fd;
 
@@ -636,23 +646,31 @@ static void probe_v6_pmtu(void)
 	probe_fd = open("/proc/self/ns/net", O_RDONLY | O_CLOEXEC);
 	if (probe_fd < 0) {
 		ns_unsupported_ipv6_pmtu_race = true;
+		__atomic_store_n(&shm->stats.childop_latch_reason[op_type],
+				 CHILDOP_LATCH_NS_UNSUPPORTED,
+				 __ATOMIC_RELAXED);
 		return;
 	}
 	if (unshare(CLONE_NEWNET) < 0) {
 		ns_unsupported_ipv6_pmtu_race = true;
+		__atomic_store_n(&shm->stats.childop_latch_reason[op_type],
+				 CHILDOP_LATCH_NS_UNSUPPORTED,
+				 __ATOMIC_RELAXED);
 		(void)close(probe_fd);
 		return;
 	}
-	if (setns(probe_fd, CLONE_NEWNET) < 0)
+	if (setns(probe_fd, CLONE_NEWNET) < 0) {
 		ns_unsupported_ipv6_pmtu_race = true;
+		__atomic_store_n(&shm->stats.childop_latch_reason[op_type],
+				 CHILDOP_LATCH_NS_UNSUPPORTED,
+				 __ATOMIC_RELAXED);
+	}
 	(void)close(probe_fd);
 }
 
 bool ipv6_pmtu_teardown_race(struct childdata *child)
 {
 	unsigned int outer, i;
-
-	(void)child;
 
 	__atomic_add_fetch(&shm->stats.ipv6_pmtu_race_runs,
 			   1, __ATOMIC_RELAXED);
@@ -664,7 +682,7 @@ bool ipv6_pmtu_teardown_race(struct childdata *child)
 	}
 
 	if (!ipv6_pmtu_race_probed) {
-		probe_v6_pmtu();
+		probe_v6_pmtu(child->op_type);
 		if (ns_unsupported_ipv6_pmtu_race) {
 			__atomic_add_fetch(&shm->stats.ipv6_pmtu_race_setup_failed,
 					   1, __ATOMIC_RELAXED);
@@ -680,7 +698,7 @@ bool ipv6_pmtu_teardown_race(struct childdata *child)
 		outer = 1U;
 
 	for (i = 0; i < outer; i++)
-		iter_one();
+		iter_one(child->op_type);
 
 	return true;
 }
