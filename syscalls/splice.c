@@ -105,7 +105,7 @@ static void sanitise_splice(struct syscallrecord *rec)
 
 	/* ~20%: regular-file fd_out routes through iter_file_splice_write. */
 	if ((rnd_modulo_u32(100)) < 20) {
-		int fd = get_rand_pagecache_fd();
+		int fd = get_rand_writeable_pagecache_fd();
 
 		if (fd >= 0) {
 			rec->a3 = fd;
