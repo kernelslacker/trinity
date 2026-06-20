@@ -145,4 +145,5 @@ struct syscallentry syscall_cachestat = {
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_VFS,
 	.sanitise = sanitise_cachestat,
+	.flags = REEXEC_SANITISE_OK,
 };
