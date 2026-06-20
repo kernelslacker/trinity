@@ -52,4 +52,5 @@ struct syscallentry syscall_kcmp = {
 	.sanitise = sanitise_kcmp,
 	.post = post_kcmp,
 	.rettype = RET_BORING,
+	.flags = REEXEC_SANITISE_OK,
 };
