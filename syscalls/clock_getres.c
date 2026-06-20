@@ -172,4 +172,5 @@ struct syscallentry syscall_clock_getres = {
 	.sanitise = sanitise_clock_getres,
 	.post = post_clock_getres,
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = REEXEC_SANITISE_OK,
 };
