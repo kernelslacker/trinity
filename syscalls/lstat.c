@@ -18,6 +18,7 @@ struct syscallentry syscall_lstat = {
 	.sanitise = sanitise_lstat_buf,
 	.group = GROUP_VFS,
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = REEXEC_SANITISE_OK,
 };
 
 
@@ -34,4 +35,5 @@ struct syscallentry syscall_lstat64 = {
 	.sanitise = sanitise_lstat_buf,
 	.group = GROUP_VFS,
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = REEXEC_SANITISE_OK,
 };
