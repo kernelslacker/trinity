@@ -28,6 +28,7 @@ struct syscallentry syscall_stat = {
 	.argname = { [0] = "filename", [1] = "statbuf" },
 	.sanitise = sanitise_statbuf_a2,
 	.group = GROUP_VFS,
+	.flags = REEXEC_SANITISE_OK,
 };
 
 
@@ -42,6 +43,7 @@ struct syscallentry syscall_stat64 = {
 	.argname = { [0] = "filename", [1] = "statbuf" },
 	.sanitise = sanitise_statbuf_a2,
 	.group = GROUP_VFS,
+	.flags = REEXEC_SANITISE_OK,
 };
 
 /*
