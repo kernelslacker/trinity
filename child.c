@@ -1772,7 +1772,7 @@ static const enum child_op_type alt_op_rotation[] = {
  * Compiler folds the switch into a constant-time check at
  * the future call site.
  */
-static bool op_uses_outer_bracket(enum child_op_type op)
+bool op_uses_outer_bracket(enum child_op_type op)
 {
 	switch (op) {
 	case CHILD_OP_SYSCALL:

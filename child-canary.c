@@ -611,6 +611,36 @@ static void leave_canarying_demote(enum child_op_type op,
 		window_iters, (unsigned int)CANARY_BACKOFF_TIME);
 }
 
+/* Terminal exit for structurally canary-ineligible ops: those for
+ * which op_uses_outer_bracket(op) is false and therefore whose
+ * childop_edges_clean[op] slot is permanently zero (the outer KCOV
+ * bracket cannot wrap their dispatch shape).  Reading the clean
+ * counter at window close yields no signal -- not "zero yield" --
+ * so this path is distinct from leave_canarying_demote("zero_edges"):
+ * it is NOT a verdict on the op's usefulness, just an acknowledgement
+ * that the canary mechanism's signal source is unavailable for it.
+ *
+ * Transition to CONFIG_BLOCKED (terminal, never re-picked) so the
+ * queue does not loop the op back through the same false-signal
+ * window every CANARY_BACKOFF_TIME seconds.  total_demotions is NOT
+ * bumped (no penalty).  The dormant gate is restored to off, undoing
+ * enter_canarying()'s turn-on -- without a yield signal we have no
+ * justification to leave the op active by default. */
+static void leave_canarying_ineligible(enum child_op_type op,
+				       unsigned long window_iters,
+				       unsigned long window_edges)
+{
+	struct canary_op_state *s = &canary_ops[op];
+
+	s->state = CANARY_STATE_CONFIG_BLOCKED;
+	s->last_state_transition = monotonic_seconds();
+
+	dormant_op_set(op, true);
+
+	output(0, "canary: %s canary-ineligible (reason: no outer bracket; edges=%lu crashes=%u in %lu iters; terminal, no backoff retry; effective for new children at next respawn)\n",
+		s->name, window_edges, s->window_crashes, window_iters);
+}
+
 /* --------------------------------------------------------------------
  * Picker.
  * -------------------------------------------------------------------- */
@@ -730,6 +760,19 @@ static void close_window_and_decide(enum child_op_type op)
 
 	if (edges >= CANARY_EDGE_THRESHOLD) {
 		leave_canarying_promote(op, iters, edges);
+		return;
+	}
+
+	/* Invariant: an op cannot be demoted on childop_edges_clean[]
+	 * unless it is eligible to populate it.  Ops whose dispatch
+	 * shape carries no outer KCOV bracket (e.g. CHILD_OP_SCHED_CYCLER;
+	 * CHILD_OP_SYSCALL is already filtered upstream by the picker)
+	 * have a permanently zero clean-edge slot, so the zero_edges
+	 * comparison above would unconditionally false-demote them
+	 * regardless of their actual usefulness.  Route them through
+	 * the canary-ineligible exit instead. */
+	if (!op_uses_outer_bracket(op)) {
+		leave_canarying_ineligible(op, iters, edges);
 		return;
 	}
 
