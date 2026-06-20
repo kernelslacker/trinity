@@ -190,9 +190,11 @@ static bool ns_unshare_failed_l2tp_ifname_race;
 /*
  * Resolve the "l2tp" genl family id once per process.  Failure
  * (family absent on this kernel, l2tp_netlink module unloaded, no
- * CONFIG_L2TP) latches the op off uniformly.
+ * CONFIG_L2TP) latches the op off uniformly.  child is the caller's
+ * struct childdata so the latch-off site can record the per-childop
+ * latch reason next to the boolean it sets.
  */
-static void probe_l2tp_family(void)
+static void probe_l2tp_family(struct childdata *child)
 {
 	struct genl_ctx gctx = { 0 };
 	struct genl_open_opts opts = {
@@ -204,6 +206,9 @@ static void probe_l2tp_family(void)
 	l2tp_family_probed = true;
 	if (genl_open(&gctx, &opts) != 0) {
 		ns_unsupported_l2tp_ifname_race = true;
+		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+				 CHILDOP_LATCH_NS_UNSUPPORTED,
+				 __ATOMIC_RELAXED);
 		return;
 	}
 	l2tp_family_id = gctx.family_id;
@@ -214,14 +219,19 @@ static void probe_l2tp_family(void)
  * Per-child netns unshare.  All L2TP state lands in this private
  * netns so we never touch host tunnels even if the kernel happens to
  * accept the message.  EPERM (no CAP_SYS_ADMIN) latches the op off
- * uniformly.
+ * uniformly.  child is the caller's struct childdata so the latch-off
+ * site can record the per-childop latch reason next to the boolean it
+ * sets.
  */
-static void unshare_netns_once(void)
+static void unshare_netns_once(struct childdata *child)
 {
 	if (ns_unshared_l2tp_ifname_race || ns_unshare_failed_l2tp_ifname_race)
 		return;
 	if (unshare(CLONE_NEWNET) < 0) {
 		ns_unshare_failed_l2tp_ifname_race = true;
+		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+				 CHILDOP_LATCH_NS_UNSUPPORTED,
+				 __ATOMIC_RELAXED);
 		return;
 	}
 	ns_unshared_l2tp_ifname_race = true;
@@ -660,8 +670,6 @@ bool l2tp_ifname_race(struct childdata *child)
 	struct timespec t_outer;
 	unsigned int outer_iters, i;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.l2tp_ifname_race_runs,
 			   1, __ATOMIC_RELAXED);
 
@@ -673,7 +681,7 @@ bool l2tp_ifname_race(struct childdata *child)
 	}
 
 	if (!l2tp_family_probed) {
-		probe_l2tp_family();
+		probe_l2tp_family(child);
 		if (ns_unsupported_l2tp_ifname_race) {
 			__atomic_add_fetch(&shm->stats.l2tp_ifname_race_setup_failed,
 					   1, __ATOMIC_RELAXED);
@@ -681,7 +689,7 @@ bool l2tp_ifname_race(struct childdata *child)
 		}
 	}
 
-	unshare_netns_once();
+	unshare_netns_once(child);
 	if (ns_unshare_failed_l2tp_ifname_race) {
 		__atomic_add_fetch(&shm->stats.l2tp_ifname_race_setup_failed,
 				   1, __ATOMIC_RELAXED);
@@ -693,6 +701,8 @@ bool l2tp_ifname_race(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	if (clock_gettime(CLOCK_MONOTONIC, &t_outer) < 0) {
 		t_outer.tv_sec = 0;
@@ -705,6 +715,8 @@ bool l2tp_ifname_race(struct childdata *child)
 	if (outer_iters > L2TP_OUTER_CAP)
 		outer_iters = L2TP_OUTER_CAP;
 
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	for (i = 0; i < outer_iters; i++) {
 		if (budget_elapsed_ns(&t_outer, L2TP_WALL_CAP_NS))
 			break;

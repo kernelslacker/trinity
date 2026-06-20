@@ -141,7 +141,9 @@ static const uint32_t loopback_pool[NR_LOOPBACK_ADDRS] = {
  * unconditionally regardless of which earlier phase bailed.  sock_type
  * is picked in setup_server and consumed downstream by setup_client
  * and connect; srv_port_n is the kernel-assigned ephemeral port the
- * connect helper packs into the CONNECTX address list. */
+ * connect helper packs into the CONNECTX address list.  child is the
+ * caller's struct childdata so phase helpers can attribute per-childop
+ * yield counters to child->op_type. */
 struct sctp_assoc_churn_iter_ctx {
 	int srv;
 	int cli;
@@ -151,6 +153,7 @@ struct sctp_assoc_churn_iter_ctx {
 	uint16_t srv_port_n;
 	uint16_t cli_port_n;
 	sctp_assoc_t_compat assoc_id;
+	struct childdata *child;
 };
 
 static void fill_sin(struct sockaddr_in *sa, uint32_t addr_h, uint16_t port_n)
@@ -235,8 +238,12 @@ static int sctp_assoc_churn_iter_setup_server(struct sctp_assoc_churn_iter_ctx *
 
 	ctx->srv = socket(AF_INET, ctx->sock_type | SOCK_CLOEXEC, IPPROTO_SCTP);
 	if (ctx->srv < 0) {
-		if (errno == EPROTONOSUPPORT || errno == ESOCKTNOSUPPORT)
+		if (errno == EPROTONOSUPPORT || errno == ESOCKTNOSUPPORT) {
 			ns_unsupported = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[ctx->child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		}
 		__atomic_add_fetch(&shm->stats.sctp_assoc_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
@@ -512,9 +519,8 @@ bool sctp_assoc_churn(struct childdata *child)
 		.cli = -1,
 		.srv_acc = -1,
 		.peeled = -1,
+		.child = child,
 	};
-
-	(void)child;
 
 	__atomic_add_fetch(&shm->stats.sctp_assoc_churn_runs,
 			   1, __ATOMIC_RELAXED);
@@ -527,10 +533,14 @@ bool sctp_assoc_churn(struct childdata *child)
 
 	if (sctp_assoc_churn_iter_setup_client(&ctx) != 0)
 		goto out;
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	if (sctp_assoc_churn_iter_connect(&ctx) != 0)
 		goto out;
 
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	sctp_assoc_churn_iter_churn_loop(&ctx);
 
 	sctp_assoc_churn_iter_peeloff(&ctx);
