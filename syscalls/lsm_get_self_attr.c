@@ -319,6 +319,7 @@ struct syscallentry syscall_lsm_get_self_attr = {
 	.arg_params[3].list = ARGLIST(lsm_get_flags),
 	.sanitise = sanitise_lsm_get_self_attr,
 	.group = GROUP_PROCESS,
+	.flags = REEXEC_SANITISE_OK,
 #ifdef HAVE_SYS_LSM_GET_SELF_ATTR
 	.post = post_lsm_get_self_attr,
 #endif
