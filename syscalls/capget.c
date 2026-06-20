@@ -235,6 +235,7 @@ struct syscallentry syscall_capget = {
 	.argtype = { [0] = ARG_NON_NULL_ADDRESS, [1] = ARG_ADDRESS },
 	.argname = { [0] = "header", [1] = "dataptr" },
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = REEXEC_SANITISE_OK,
 	.group = GROUP_PROCESS,
 	.sanitise = sanitise_capget,
 	.post = post_capget,
