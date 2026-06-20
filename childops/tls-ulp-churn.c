@@ -268,11 +268,15 @@ fail:
  * per-process cap-gate and bump setup_failed on either errno.  Returns
  * 0 on success or -1 when tls_ulp_churn should bail to its out: cleanup
  * (s closed, acceptor reaped). */
-static int tls_ulp_churn_iter_install_tls_ulp(int s)
+static int tls_ulp_churn_iter_install_tls_ulp(int s, struct childdata *child)
 {
 	if (setsockopt(s, IPPROTO_TCP, TCP_ULP, "tls", 3) < 0) {
-		if (errno == ENOPROTOOPT || errno == EPERM)
+		if (errno == ENOPROTOOPT || errno == EPERM) {
 			ns_unsupported_tls_ulp = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		}
 		__atomic_add_fetch(&shm->stats.tls_ulp_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
@@ -291,7 +295,8 @@ static int tls_ulp_churn_iter_install_tls_ulp(int s)
  * comes up alongside the TX path) or fails harmlessly.  Writes the
  * chosen version into *version_out so the subsequent rekey burst can
  * stay on the same record-format variant. */
-static int tls_ulp_churn_iter_install_keys(int s, unsigned short *version_out)
+static int tls_ulp_churn_iter_install_keys(int s, unsigned short *version_out,
+					   struct childdata *child)
 {
 	struct tls12_crypto_info_aes_gcm_128 cinfo;
 	unsigned short version;
@@ -302,10 +307,17 @@ static int tls_ulp_churn_iter_install_keys(int s, unsigned short *version_out)
 
 	rc = setsockopt(s, SOL_TLS, TLS_TX, &cinfo, sizeof(cinfo));
 	if (rc < 0) {
-		if (errno == ENOPROTOOPT || errno == EOPNOTSUPP)
+		if (errno == ENOPROTOOPT || errno == EOPNOTSUPP) {
 			ns_unsupported_tls_tx = true;
-		else if (errno == EINVAL)
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		} else if (errno == EINVAL) {
 			ns_unsupported_aes_gcm_128 = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		}
 		__atomic_add_fetch(&shm->stats.tls_ulp_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
@@ -456,8 +468,6 @@ bool tls_ulp_churn(struct childdata *child)
 	int s = -1;
 	unsigned short version;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.tls_ulp_churn_runs, 1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported_tls_ulp || ns_unsupported_tls_tx ||
@@ -479,12 +489,16 @@ bool tls_ulp_churn(struct childdata *child)
 		return true;
 	}
 
-	if (tls_ulp_churn_iter_install_tls_ulp(s) != 0)
+	if (tls_ulp_churn_iter_install_tls_ulp(s, child) != 0)
 		goto out;
 
-	if (tls_ulp_churn_iter_install_keys(s, &version) != 0)
+	if (tls_ulp_churn_iter_install_keys(s, &version, child) != 0)
 		goto out;
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	tls_ulp_churn_iter_initial_traffic(s);
 
 	tls_ulp_churn_iter_rekey_burst(s, version, &t0);

@@ -252,8 +252,6 @@ bool handshake_req_abort(struct childdata *child)
 	unsigned int i;
 	int rc;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.handshake_req_abort_runs,
 			   1, __ATOMIC_RELAXED);
 
@@ -270,8 +268,12 @@ bool handshake_req_abort(struct childdata *child)
 
 	rc = genl_open(&ctx, &opts);
 	if (rc != 0) {
-		if (rc == -ENOENT)
+		if (rc == -ENOENT) {
 			ns_unsupported_handshake = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		}
 		__atomic_add_fetch(&shm->stats.handshake_req_abort_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
@@ -284,10 +286,14 @@ bool handshake_req_abort(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	/* 3) Non-blocking ACCEPT probe — exercises the per-net request-
 	 *    table walk under hs_lock.  Counted regardless of ack errno
 	 *    (EAGAIN is the ordinary outcome). */
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	(void)handshake_accept(&ctx);
 	__atomic_add_fetch(&shm->stats.handshake_req_abort_accept_ok,
 			   1, __ATOMIC_RELAXED);
