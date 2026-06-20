@@ -139,7 +139,8 @@ static unsigned int pick_setup_flags(void)
  * propagated status on failure (ctx left fully zeroed by the helper
  * so an accidental teardown call no-ops).
  */
-static enum iour_setup_status iouring_flood_iter_setup_ring(struct iour_ring *ctx)
+static enum iour_setup_status iouring_flood_iter_setup_ring(struct iour_ring *ctx,
+							    struct childdata *child)
 {
 	struct io_uring_params p;
 	enum iour_setup_status st;
@@ -158,11 +159,15 @@ static enum iour_setup_status iouring_flood_iter_setup_ring(struct iour_ring *ct
 	if (st == IOUR_SUPPORTED)
 		return IOUR_SUPPORTED;
 
-	if (st == IOUR_UNSUPPORTED)
+	if (st == IOUR_UNSUPPORTED) {
 		ns_unsupported = true;
-	else
+		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+				 CHILDOP_LATCH_UNSUPPORTED,
+				 __ATOMIC_RELAXED);
+	} else {
 		__atomic_add_fetch(&shm->stats.iouring_failed, 1,
 				   __ATOMIC_RELAXED);
+	}
 	return st;
 }
 
@@ -320,8 +325,6 @@ bool iouring_flood(struct childdata *child)
 	int dev_null_rd = -1;
 	int dev_null_wr = -1;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.iouring_runs, 1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported)
@@ -376,7 +379,7 @@ bool iouring_flood(struct childdata *child)
 		struct iour_ring ctx;
 		unsigned int n_subs;
 
-		if (iouring_flood_iter_setup_ring(&ctx) != IOUR_SUPPORTED) {
+		if (iouring_flood_iter_setup_ring(&ctx, child) != IOUR_SUPPORTED) {
 			/* setup_ring already categorised the failure --
 			 * IOUR_UNSUPPORTED latched ns_unsupported, any
 			 * other status was charged to iouring_failed.
@@ -386,6 +389,8 @@ bool iouring_flood(struct childdata *child)
 				break;
 			continue;
 		}
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+				   1, __ATOMIC_RELAXED);
 
 		n_subs = iouring_flood_iter_submit_burst(&ctx, dev_null_rd,
 							 dev_null_wr, burst);
@@ -394,6 +399,8 @@ bool iouring_flood(struct childdata *child)
 			continue;
 		}
 
+		__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+				   1, __ATOMIC_RELAXED);
 		iouring_flood_iter_reap_cqes(&ctx, n_subs);
 
 		iour_ring_teardown(&ctx);
