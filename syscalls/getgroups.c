@@ -108,6 +108,7 @@ struct syscallentry syscall_getgroups = {
 	.argname = { [0] = "gidsetsize", [1] = "grouplist" },
 	.sanitise = sanitise_getgroups,
 	.rettype = RET_BORING,
+	.flags = REEXEC_SANITISE_OK,
 	.group = GROUP_PROCESS,
 	.post = post_getgroups,
 };
@@ -124,5 +125,6 @@ struct syscallentry syscall_getgroups16 = {
 	.argname = { [0] = "gidsetsize", [1] = "grouplist" },
 	.sanitise = sanitise_getgroups,
 	.rettype = RET_BORING,
+	.flags = REEXEC_SANITISE_OK,
 	.group = GROUP_PROCESS,
 };
