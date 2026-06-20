@@ -390,10 +390,21 @@ static void post_fcntl(struct syscallrecord *rec)
 	if ((long) rec->retval < 0)
 		return;
 
+	/*
+	 * Read cmd/args via the arg_shadow accessor: the post-oracle
+	 * dispatches on the cmd the kernel actually saw and validates
+	 * retval against bounds derived from that cmd.  Reading live
+	 * rec->aN would let a sibling stomp between syscall return and
+	 * this handler swing the switch into a different case and
+	 * mis-attribute the retval check against the wrong cmd's bound.
+	 * arg_snapshot_mask on syscall_fcntl opts a1/a2/a3 into the
+	 * shadow; get_arg_snapshot() returns the dispatch-time value and
+	 * bumps arg_shadow_stomp from inside the accessor on mismatch.
+	 */
 	retval = rec->retval;
-	a2 = rec->a2;
-	a1 = rec->a1;
-	a3 = rec->a3;
+	a2 = get_arg_snapshot(rec, 2);
+	a1 = get_arg_snapshot(rec, 1);
+	a3 = get_arg_snapshot(rec, 3);
 
 	switch (a2) {
 	case F_DUPFD:
@@ -564,4 +575,14 @@ struct syscallentry syscall_fcntl = {
 	.group = GROUP_VFS,
 	.sanitise = sanitise_fcntl,
 	.post = post_fcntl,
+	/* a1/a2/a3 (fd/cmd/arg) all feed post_fcntl's oracle: the cmd
+	 * selects the switch arm, the fd is logged on F_SETFL anomalies
+	 * and recorded into the lease/setlk rings, and arg carries the
+	 * lease type / SETFL flag set the oracle round-trips against.
+	 * Shadow all three so a sibling stomp between dispatch and post
+	 * cannot redirect the oracle to a different cmd or a fabricated
+	 * fd/arg value -- mismatch bumps arg_shadow_stomp from inside
+	 * get_arg_snapshot() and the handler still sees the dispatch
+	 * values the kernel actually executed against. */
+	.arg_snapshot_mask = (1u << 0) | (1u << 1) | (1u << 2),
 };
