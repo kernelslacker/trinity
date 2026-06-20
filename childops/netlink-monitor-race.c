@@ -493,15 +493,17 @@ bool netlink_monitor_race(struct childdata *child)
 		.mut = { .fd = -1 },
 	};
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.netlink_monitor_race_runs, 1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported)
 		return true;
 
-	if (netlink_monitor_race_iter_setup_netns() != 0)
+	if (netlink_monitor_race_iter_setup_netns() != 0) {
+		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+				 CHILDOP_LATCH_NS_UNSUPPORTED,
+				 __ATOMIC_RELAXED);
 		return true;
+	}
 
 	if (netlink_monitor_race_iter_open_monitor(&ctx) != 0)
 		return true;
@@ -509,6 +511,11 @@ bool netlink_monitor_race(struct childdata *child)
 	if (netlink_monitor_race_iter_open_mutator(&ctx) != 0)
 		goto out;
 
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	netlink_monitor_race_iter_address_burst(&ctx);
 	netlink_monitor_race_iter_membership_churn(&ctx);
 	netlink_monitor_race_iter_final_burst(&ctx);
