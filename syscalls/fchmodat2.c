@@ -55,6 +55,7 @@ struct syscallentry syscall_fchmodat2 = {
 	.argname = { [0] = "dfd", [1] = "filename", [2] = "mode", [3] = "flags" },
 	.arg_params[3].list = ARGLIST(fchmodat2_flags),
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = REEXEC_SANITISE_OK,
 	.group = GROUP_VFS,
 	.sanitise = sanitise_fchmodat2,
 };
