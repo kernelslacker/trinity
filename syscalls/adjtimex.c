@@ -114,7 +114,7 @@ struct syscallentry syscall_adjtimex = {
 	.num_args = 1,
 	.argtype = { [0] = ARG_ADDRESS },
 	.argname = { [0] = "txc_p" },
-	.flags = NEEDS_ROOT,
+	.flags = NEEDS_ROOT | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_adjtimex,
 	.post = post_adjtimex,
 	.rettype = RET_BORING,
