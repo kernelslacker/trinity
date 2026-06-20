@@ -13,7 +13,18 @@
  * skb's nfct pointer disappears mid-traversal.
  *
  * Sequence (per invocation):
- *   1. unshare(CLONE_NEWNET) once per child; bring lo up.
+ *   1. Enter a private net namespace via userns_run_in_ns(): a
+ *      transient grandchild fork installs an identity user namespace
+ *      plus a fresh CLONE_NEWNET, runs the body below, and _exit()s
+ *      so the kernel reaps every interface, rule, address, hook and
+ *      socket with the grandchild's netns.  The persistent fuzz
+ *      child never changes its own credentials or namespace stack,
+ *      so the cap-drop oracle keeps observing the host credential
+ *      profile.  Helper -EPERM (hardened userns policy refused
+ *      CLONE_NEWUSER) latches the childop off for the remainder of
+ *      this child's lifetime; -1 (transient setup failure: fork,
+ *      id-map write, secondary unshare) skips the iteration without
+ *      latching.  Bring lo up inside the grandchild's netns.
  *   2. RTM_NEWLINK bridge br0 + veth pair v0/v1; enslave v0 to br0;
  *      up bridge + both veth ends.
  *   3. nf_tables transaction: NEWTABLE family=NFPROTO_BRIDGE
@@ -68,6 +79,7 @@
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
+#include "userns-bootstrap.h"
 
 #ifndef NFPROTO_BRIDGE
 #define NFPROTO_BRIDGE			7
@@ -131,12 +143,25 @@
 #define BRCT_RTNL_BUF_BYTES		2048
 #define BRCT_NFT_BUF_BYTES		1024
 
-static bool ns_unshared;
-static bool ns_setup_failed;
+/* Latched per-child: userns_run_in_ns() reported -EPERM, meaning the
+ * grandchild's unshare(CLONE_NEWUSER) was refused by a hardened policy
+ * (user.max_user_namespaces=0 or kernel.unprivileged_userns_clone=0).
+ * Without a private netns we MUST NOT touch the host's main routing
+ * table or netfilter tables, so the op stays disabled for the
+ * remainder of this child's lifetime.  Transient setup failures
+ * (helper return -1) do not set this — they may not recur on the
+ * next iteration. */
+static bool ns_unsupported;
 static bool lo_up_done;
 static bool ns_unsupported_bridge;
 static bool ns_unsupported_nf_tables;
 static bool ns_unsupported_ctnetlink;
+
+/* Per-invocation state handed to the in-ns callback so it can keep
+ * accounting against the right childop slot. */
+struct bridge_conntrack_churn_ctx {
+	struct childdata *child;
+};
 
 static size_t nla_put_be32(unsigned char *buf, size_t off, size_t cap,
 			   unsigned short type, __u32 v)
@@ -724,8 +749,18 @@ static void bridge_conntrack_iter_teardown(struct bridge_conntrack_iter_ctx *ctx
 	}
 }
 
-bool bridge_conntrack_churn(struct childdata *child)
+/*
+ * Per-invocation body that must run inside the private net namespace.
+ * Executed in a transient grandchild forked by userns_run_in_ns(); the
+ * grandchild's userns + netns are torn down on _exit() so any links,
+ * addrs, rules, hooks and sockets left behind are reaped by the kernel
+ * along with the namespace.  Return value is ignored by the helper.
+ */
+static int bridge_conntrack_churn_in_ns(void *arg)
 {
+	struct bridge_conntrack_churn_ctx *cctx =
+		(struct bridge_conntrack_churn_ctx *)arg;
+	struct childdata *child = cctx->child;
 	struct bridge_conntrack_iter_ctx ctx = {
 		.rtnl     = { .fd = -1 },
 		.nfnl_nft = { .nl = { .fd = -1 } },
@@ -733,26 +768,6 @@ bool bridge_conntrack_churn(struct childdata *child)
 		.raw      = -1,
 		.child    = child,
 	};
-
-	__atomic_add_fetch(&shm->stats.bridge_ct_runs, 1, __ATOMIC_RELAXED);
-
-	if (ns_setup_failed || ns_unsupported_bridge ||
-	    ns_unsupported_nf_tables || ns_unsupported_ctnetlink)
-		return true;
-
-	if (!ONE_IN(8))
-		return true;
-
-	if (!ns_unshared) {
-		if (unshare(CLONE_NEWNET) < 0) {
-			ns_setup_failed = true;
-			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-					 CHILDOP_LATCH_INIT_FAILED,
-					 __ATOMIC_RELAXED);
-			return true;
-		}
-		ns_unshared = true;
-	}
 
 	if (bridge_conntrack_iter_setup_names(&ctx) != 0)
 		goto out;
@@ -774,5 +789,37 @@ bool bridge_conntrack_churn(struct childdata *child)
 
 out:
 	bridge_conntrack_iter_teardown(&ctx);
+	return 0;
+}
+
+bool bridge_conntrack_churn(struct childdata *child)
+{
+	struct bridge_conntrack_churn_ctx cctx = { .child = child };
+	int rc;
+
+	__atomic_add_fetch(&shm->stats.bridge_ct_runs, 1, __ATOMIC_RELAXED);
+
+	if (ns_unsupported || ns_unsupported_bridge ||
+	    ns_unsupported_nf_tables || ns_unsupported_ctnetlink)
+		return true;
+
+	if (!ONE_IN(8))
+		return true;
+
+	rc = userns_run_in_ns(CLONE_NEWNET, bridge_conntrack_churn_in_ns, &cctx);
+	if (rc == -EPERM) {
+		ns_unsupported = true;
+		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+				 CHILDOP_LATCH_NS_UNSUPPORTED,
+				 __ATOMIC_RELAXED);
+		return true;
+	}
+	if (rc < 0) {
+		/* Transient grandchild setup failure (fork, id-map write,
+		 * secondary unshare).  Skip this iteration without latching
+		 * — the failure is not policy and may not recur. */
+		return true;
+	}
+
 	return true;
 }
