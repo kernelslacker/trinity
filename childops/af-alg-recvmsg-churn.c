@@ -327,9 +327,12 @@ struct alg_recvmsg_iter_ctx {
  * breaks early on the next iter.  Returns 0 on success or -1 to bail
  * to the orchestrator's out: teardown path; on the socket-fail bail
  * parent_fd has captured the -1 from the failed socket() call and the
- * teardown helper's >= 0 gate skips it.
+ * teardown helper's >= 0 gate skips it.  child is threaded in so the
+ * EAFNOSUPPORT latch transition records a CHILDOP_LATCH_UNSUPPORTED
+ * reason for child->op_type at the same site.
  */
-static int alg_recvmsg_iter_setup(struct alg_recvmsg_iter_ctx *ictx)
+static int alg_recvmsg_iter_setup(struct alg_recvmsg_iter_ctx *ictx,
+				  struct childdata *child)
 {
 	enum alg_type_idx type;
 	const char *name;
@@ -339,8 +342,12 @@ static int alg_recvmsg_iter_setup(struct alg_recvmsg_iter_ctx *ictx)
 
 	ictx->parent_fd = socket(AF_ALG, SOCK_SEQPACKET, 0);
 	if (ictx->parent_fd < 0) {
-		if (errno == EAFNOSUPPORT)
+		if (errno == EAFNOSUPPORT) {
 			alg_unsupported = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		}
 		return -1;
 	}
 
@@ -448,19 +455,25 @@ static void alg_recvmsg_iter_teardown(struct alg_recvmsg_iter_ctx *ictx)
 		close(ictx->parent_fd);
 }
 
-static void iter_one(struct alg_recvmsg_child_ctx *cctx)
+static void iter_one(struct alg_recvmsg_child_ctx *cctx,
+		     struct childdata *child)
 {
 	struct alg_recvmsg_iter_ctx ictx = {
 		.parent_fd = -1,
 		.child_fd = -1,
 	};
 
-	if (alg_recvmsg_iter_setup(&ictx) != 0)
+	if (alg_recvmsg_iter_setup(&ictx, child) != 0)
 		goto out;
 
 	if (alg_recvmsg_iter_arm(&ictx) != 0)
 		goto out;
 
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	alg_recvmsg_iter_drive(&ictx, cctx);
 	recv_rotating(ictx.child_fd, cctx);
 
@@ -482,8 +495,6 @@ bool af_alg_recvmsg_churn(struct childdata *child)
 	struct alg_recvmsg_child_ctx cctx;
 	struct timespec t0;
 	unsigned int outer_iters, i;
-
-	(void)child;
 
 	__atomic_add_fetch(&shm->stats.af_alg_recvmsg_runs, 1, __ATOMIC_RELAXED);
 
@@ -515,7 +526,7 @@ bool af_alg_recvmsg_churn(struct childdata *child)
 	for (i = 0; i < outer_iters; i++) {
 		if ((unsigned long long)ns_since(&t0) >= ARC_WALL_CAP_NS)
 			break;
-		iter_one(&cctx);
+		iter_one(&cctx, child);
 		if (alg_unsupported)
 			break;
 	}

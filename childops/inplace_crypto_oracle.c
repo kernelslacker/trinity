@@ -659,8 +659,6 @@ bool inplace_crypto_oracle(struct childdata *child)
 	unsigned int i;
 	int file_fd;
 
-	(void)child;
-
 	if (unsupported_inplace_crypto_oracle)
 		return true;
 
@@ -676,6 +674,9 @@ bool inplace_crypto_oracle(struct childdata *child)
 	}
 	if (chosen == TGT_NR) {
 		unsupported_inplace_crypto_oracle = true;
+		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+				 CHILDOP_LATCH_UNSUPPORTED,
+				 __ATOMIC_RELAXED);
 		return true;
 	}
 
@@ -683,6 +684,11 @@ bool inplace_crypto_oracle(struct childdata *child)
 				   baseline, &baseline_len);
 	if (file_fd < 0)
 		return true;
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	(void)target_fns[chosen](file_fd);
 	close(file_fd);
 

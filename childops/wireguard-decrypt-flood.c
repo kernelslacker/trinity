@@ -94,11 +94,13 @@ static __u16 g_wgdf_listen_port;
 static __u16 g_wgdf_peer_port;
 static __u64 g_wgdf_counter;
 
-static void wgdf_latch_unsupported(void)
+static void wgdf_latch_unsupported(struct childdata *child)
 {
 	ns_unsupported_wireguard_decrypt_flood = true;
 	__atomic_add_fetch(&shm->stats.wgdf_unsupported_latched, 1,
 			   __ATOMIC_RELAXED);
+	__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+			 CHILDOP_LATCH_UNSUPPORTED, __ATOMIC_RELAXED);
 }
 
 static bool wgdf_err_unsupported(int rc)
@@ -289,8 +291,10 @@ static int wgdf_open_udp(__u16 peer_port)
  * unsupported-shaped error latch the whole op off; everything else
  * bumps wgdf_setup_failed and returns false so the next iter retries
  * (the failure may be a bind() race against a concurrent wg0 in a
- * shared netns, etc.). */
-static bool wgdf_setup(void)
+ * shared netns, etc.).  child is threaded in so the latch-off paths
+ * can attribute the CHILDOP_LATCH_UNSUPPORTED reason to the running
+ * childop's slot. */
+static bool wgdf_setup(struct childdata *child)
 {
 	pid_t pid = mypid();
 	struct genl_ctx ctx;
@@ -311,7 +315,7 @@ static bool wgdf_setup(void)
 	rc = wgdf_create_wg0(&wgdf_rtnl, "wg0");
 	if (rc != 0) {
 		if (wgdf_err_unsupported(rc))
-			wgdf_latch_unsupported();
+			wgdf_latch_unsupported(child);
 		nl_close(&wgdf_rtnl);
 		return false;
 	}
@@ -329,7 +333,7 @@ static bool wgdf_setup(void)
 	rc = genl_open(&ctx, &opts);
 	if (rc != 0) {
 		if (rc == -ENOENT || wgdf_err_unsupported(rc))
-			wgdf_latch_unsupported();
+			wgdf_latch_unsupported(child);
 		nl_close(&wgdf_rtnl);
 		return false;
 	}
@@ -339,7 +343,7 @@ static bool wgdf_setup(void)
 	genl_close(&ctx);
 	if (rc != 0 && rc != -EEXIST) {
 		if (wgdf_err_unsupported(rc))
-			wgdf_latch_unsupported();
+			wgdf_latch_unsupported(child);
 		nl_close(&wgdf_rtnl);
 		return false;
 	}
@@ -399,26 +403,28 @@ bool wireguard_decrypt_flood(struct childdata *child)
 	unsigned char pkt[WGDF_PAYLOAD_MAX + 16];
 	unsigned int i;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.wgdf_runs, 1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported_wireguard_decrypt_flood)
 		return true;
 
 	if (!g_wgdf_setup_done) {
-		if (!wgdf_setup()) {
+		if (!wgdf_setup(child)) {
 			__atomic_add_fetch(&shm->stats.wgdf_setup_failed, 1,
 					   __ATOMIC_RELAXED);
 			return true;
 		}
 	}
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	memset(&dst, 0, sizeof(dst));
 	dst.sin_family      = AF_INET;
 	dst.sin_port        = htons(g_wgdf_listen_port);
 	dst.sin_addr.s_addr = WGDF_LO_ADDR;
 
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	for (i = 0; i < WGDF_BURST_MAX; i++) {
 		size_t len = wgdf_build_data_pkt(pkt, sizeof(pkt));
 

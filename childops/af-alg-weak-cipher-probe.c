@@ -193,9 +193,13 @@ static void bump_weak_bucket(enum probe_kind kind)
 /*
  * Drive one (type, name) entry through socket -> bind -> [setkey] ->
  * close.  Returns true if the top-level AF_ALG family probe latched
- * (caller should mark unsupported_af_alg_top_level and bail).
+ * (caller should mark unsupported_af_alg_top_level and bail).  child
+ * is threaded in so the per-childop yield counters
+ * (childop_setup_accepted / childop_data_path / childop_latch_reason)
+ * can be attributed to child->op_type; setup is "AF_ALG socket open",
+ * data_path is "about to issue the bind() probe".
  */
-static bool probe_one_entry(struct probe_entry *e)
+static bool probe_one_entry(struct probe_entry *e, struct childdata *child)
 {
 	struct sockaddr_alg sa;
 	unsigned char key[WEAK_CIPHER_PROBE_KEY_BYTES];
@@ -208,11 +212,16 @@ static bool probe_one_entry(struct probe_entry *e)
 		__atomic_add_fetch(&shm->stats.af_alg_weak_cipher_probe_socket_failed,
 				   1, __ATOMIC_RELAXED);
 		if (errno == EAFNOSUPPORT) {
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 			outputerr("af_alg_weak_cipher_probe: socket(AF_ALG) returned EAFNOSUPPORT, latching unsupported_af_alg_top_level\n");
 			return true;
 		}
 		return false;
 	}
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	memset(&sa, 0, sizeof(sa));
 	sa.salg_family = AF_ALG;
@@ -220,6 +229,8 @@ static bool probe_one_entry(struct probe_entry *e)
 	strncpy((char *)sa.salg_name, e->salg_name, sizeof(sa.salg_name) - 1);
 
 	__atomic_add_fetch(&shm->stats.af_alg_weak_cipher_probe_total_bind_attempts,
+			   1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
 			   1, __ATOMIC_RELAXED);
 
 retry:
@@ -276,8 +287,6 @@ bool af_alg_weak_cipher_probe(struct childdata *child)
 {
 	unsigned int i;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.af_alg_weak_cipher_probe_runs,
 			   1, __ATOMIC_RELAXED);
 
@@ -292,12 +301,14 @@ bool af_alg_weak_cipher_probe(struct childdata *child)
 			continue;
 
 		rotation_cursor = (idx + 1) % PROBE_TABLE_LEN;
-		if (probe_one_entry(e))
+		if (probe_one_entry(e, child))
 			unsupported_af_alg_top_level = true;
 		return true;
 	}
 
 	/* All entries latched -- nothing left to learn from this op. */
 	unsupported_af_alg_top_level = true;
+	__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+			 CHILDOP_LATCH_OTHER, __ATOMIC_RELAXED);
 	return true;
 }
