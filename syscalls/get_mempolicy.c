@@ -243,6 +243,7 @@ struct syscallentry syscall_get_mempolicy = {
 	.arg_params[4].list = ARGLIST(get_mempolicy_flags),
 	.sanitise = sanitise_get_mempolicy,
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = REEXEC_SANITISE_OK,
 	.group = GROUP_VM,
 #ifdef HAVE_SYS_GET_MEMPOLICY
 	.post = post_get_mempolicy,
