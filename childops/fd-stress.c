@@ -247,6 +247,9 @@ static bool fd_stress_cloexec_toggle(struct childdata *child __unused__)
 
 bool fd_stress(struct childdata *child)
 {
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
+
 	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
 			   1, __ATOMIC_RELAXED);
 
