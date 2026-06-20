@@ -791,6 +791,7 @@ static bool remote_adaptive_decide(unsigned int nr,
 {
 	unsigned long rcalls, redgec, lcalls, ledgec;
 	bool would_demote = false, would_promote = false;
+	bool would_gate_promote = false;
 	bool adaptive_remote = static_remote;
 
 	if (kcov_shm == NULL || nr >= MAX_NR_SYSCALL || entry == NULL)
@@ -846,6 +847,27 @@ static bool remote_adaptive_decide(unsigned int nr,
 			if (ok && lhs > rhs) {
 				adaptive_remote = true;
 				would_promote = true;
+
+				/* Shadow plateau-gate evaluation: the
+				 * proposed live gate would suppress this
+				 * promote unless the current plateau
+				 * hypothesis is REMOTE_DOMINANT.  Sample
+				 * the parent-published hypothesis via
+				 * shm (same read pattern as the
+				 * CMP_RISING_PC_FLAT consumer in
+				 * dispatch_step's REDQUEEN gate -- the
+				 * strategy.c-internal static is parent-
+				 * private and stays stale across the
+				 * fork boundary).  Live disposition is
+				 * not touched; the counter only records
+				 * how often the gate would diverge from
+				 * the current always-promote behaviour
+				 * once it is flipped on by default. */
+				if (__atomic_load_n(
+					    &shm->plateau_current_hypothesis,
+					    __ATOMIC_RELAXED) !=
+				    PLATEAU_HYPOTHESIS_REMOTE_DOMINANT)
+					would_gate_promote = true;
 			}
 		}
 	}
@@ -861,6 +883,11 @@ static bool remote_adaptive_decide(unsigned int nr,
 	else
 		__atomic_fetch_add(&shm->stats.remote_adaptive_agree, 1UL,
 				   __ATOMIC_RELAXED);
+
+	if (would_gate_promote)
+		__atomic_fetch_add(
+			&shm->stats.remote_adaptive_would_gate_promote,
+			1UL, __ATOMIC_RELAXED);
 
 	return adaptive_remote;
 }
