@@ -2075,7 +2075,7 @@ static void struct_fill_passes(unsigned char *buf, unsigned int size,
 				fill_field_raw(buf, f);
 				break;
 			}
-			span = (uint64_t) ((int64_t) hi - (int64_t) lo + 1);
+			span = (uint64_t) hi - (uint64_t) lo + 1;
 			v = (int64_t) lo +
 			    (int64_t) rnd_modulo_u64(span);
 			write_field_uint(buf, f, (uint64_t) v);
