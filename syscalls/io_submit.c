@@ -177,15 +177,30 @@ static void post_io_submit(struct syscallrecord *rec)
 	for (i = 0; i < ret; i++) {
 		struct iocb *iocb = iocbpp[i];
 		struct object *obj;
+		__u64 aio_data;
 
 		if (iocb == NULL)
 			continue;
 		if (looks_like_corrupted_ptr(rec, iocb))
 			continue;
 
+		/*
+		 * looks_like_corrupted_ptr is shape-only -- a heap-shaped
+		 * iocb whose iocbpp[i] slot was scribbled by a sibling to a
+		 * heap-band value pointing at unmapped memory, or whose
+		 * underlying iocbs[] region was torn down by a raw munmap
+		 * that bypassed trinity's get_writable_address bookkeeping,
+		 * still reaches the aio_data load below.  Range-probe + copy
+		 * through the post_snapshot_or_skip sigsetjmp window so the
+		 * .post sample is dropped instead of faulting on the load.
+		 */
+		if (!post_snapshot_or_skip(&aio_data, &iocb->aio_data,
+					   sizeof(aio_data)))
+			continue;
+
 		obj = alloc_object();
 		obj->aio_iocb_obj.ctx = rec->a1;
-		obj->aio_iocb_obj.aio_data = iocb->aio_data;
+		obj->aio_iocb_obj.aio_data = aio_data;
 		add_object(obj, OBJ_LOCAL, OBJ_AIO_IOCB);
 	}
 }
