@@ -395,7 +395,9 @@ static unsigned int sweep_unsupported_mask;
  * srv_port_n are populated by setup_sockets and consumed by connect_pair
  * for the client connect.  ctx + ctx_open are populated by genl_attach
  * and used by pm_ops_burst / teardown — ctx_open gates genl_close so a
- * bail before attach doesn't try to close an uninitialised ctx. */
+ * bail before attach doesn't try to close an uninitialised ctx.  child
+ * is the caller's struct childdata so phase helpers can attribute
+ * per-childop yield counters to child->op_type. */
 struct mptcp_pm_churn_iter_ctx {
 	int srv;
 	int cli;
@@ -404,6 +406,7 @@ struct mptcp_pm_churn_iter_ctx {
 	struct genl_ctx ctx;
 	struct sockaddr_in srv_addr;
 	uint16_t srv_port_n;
+	struct childdata *child;
 };
 
 /*
@@ -606,8 +609,12 @@ static int mptcp_pm_churn_iter_setup_sockets(struct mptcp_pm_churn_iter_ctx *ctx
 
 	ctx->srv = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_MPTCP);
 	if (ctx->srv < 0) {
-		if (errno == EPROTONOSUPPORT || errno == ESOCKTNOSUPPORT)
+		if (errno == EPROTONOSUPPORT || errno == ESOCKTNOSUPPORT) {
 			ns_unsupported_mptcp = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[ctx->child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		}
 		__atomic_add_fetch(&shm->stats.mptcp_pm_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
@@ -716,11 +723,15 @@ static int mptcp_pm_churn_iter_genl_attach(struct mptcp_pm_churn_iter_ctx *ctx)
 
 	rc = genl_open(&ctx->ctx, &opts);
 	if (rc != 0) {
-		if (rc == -ENOENT)
+		if (rc == -ENOENT) {
 			ns_unsupported_genetlink_mptcp = true;
-		else
+			__atomic_store_n(&shm->stats.childop_latch_reason[ctx->child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		} else {
 			__atomic_add_fetch(&shm->stats.mptcp_pm_churn_setup_failed,
 					   1, __ATOMIC_RELAXED);
+		}
 		return -1;
 	}
 	ctx->ctx_open = true;
@@ -866,9 +877,8 @@ bool mptcp_pm_churn(struct childdata *child)
 		.srv     = -1,
 		.cli     = -1,
 		.srv_acc = -1,
+		.child   = child,
 	};
-
-	(void)child;
 
 	__atomic_add_fetch(&shm->stats.mptcp_pm_churn_runs,
 			   1, __ATOMIC_RELAXED);
@@ -884,7 +894,11 @@ bool mptcp_pm_churn(struct childdata *child)
 
 	if (mptcp_pm_churn_iter_genl_attach(&ctx) != 0)
 		goto out;
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	mptcp_pm_churn_iter_pm_ops_burst(&ctx);
 
 out:
