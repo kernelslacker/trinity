@@ -355,7 +355,7 @@ static void run_inner_fuzzer(void)
  * that could touch trinity shared state from a context where caps
  * don't match what they expect.
  */
-static void inner_child_main(void)
+static void inner_child_main(struct childdata *child)
 {
 	stack_t disable_ss = { .ss_flags = SS_DISABLE };
 
@@ -382,7 +382,11 @@ static void inner_child_main(void)
 
 	if (!establish_root_in_userns())
 		_exit(2);
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	run_inner_fuzzer();
 	_exit(0);
 }
@@ -391,8 +395,6 @@ bool userns_fuzzer(struct childdata *child)
 {
 	pid_t pid;
 	int status;
-
-	(void)child;
 
 	if (userns_disabled)
 		return true;
@@ -404,7 +406,7 @@ bool userns_fuzzer(struct childdata *child)
 		return true;
 
 	if (pid == 0) {
-		inner_child_main();
+		inner_child_main(child);
 		_exit(0);	/* unreachable */
 	}
 
@@ -421,6 +423,9 @@ bool userns_fuzzer(struct childdata *child)
 		 * lost; userns_unsupported is the survivor signal.
 		 */
 		userns_disabled = true;
+		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+				 CHILDOP_LATCH_NS_UNSUPPORTED,
+				 __ATOMIC_RELAXED);
 		__atomic_add_fetch(&shm->stats.userns_unsupported,
 				   1, __ATOMIC_RELAXED);
 		return true;

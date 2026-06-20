@@ -331,7 +331,9 @@ static void reap_inflight_child(pid_t pid)
  * helpers.  Lifetime is exactly one iter_one() invocation; avoids
  * threading the anchor fd, the three socket fds, and the in-ns child
  * pid through every helper signature.  Sentinel values (-1) mark
- * "not established" so the recover path can act selectively.
+ * "not established" so the recover path can act selectively.  child
+ * is the caller's struct childdata so phase helpers can attribute
+ * per-childop yield counters to child->op_type.
  */
 struct netns_teardown_iter_ctx {
 	int	nsfd;
@@ -339,6 +341,7 @@ struct netns_teardown_iter_ctx {
 	int	s_conn;
 	int	s_accept;
 	pid_t	pid;
+	struct childdata *child;
 };
 
 /*
@@ -471,6 +474,9 @@ static int netns_teardown_iter_parent_setns_back(struct netns_teardown_iter_ctx 
 		 * subsequent invocation will re-enter the same broken
 		 * state, so latch off. */
 		ns_unsupported_netns_teardown = true;
+		__atomic_store_n(&shm->stats.childop_latch_reason[it->child->op_type],
+				 CHILDOP_LATCH_NS_UNSUPPORTED,
+				 __ATOMIC_RELAXED);
 		(void)kill(it->pid, SIGKILL);
 		reap_inflight_child(it->pid);
 		__atomic_add_fetch(&shm->stats.netns_teardown_setup_failed,
@@ -533,8 +539,12 @@ static void netns_teardown_iter_recover(struct netns_teardown_iter_ctx *it)
 	if (it->s_conn   >= 0) (void)close(it->s_conn);
 	if (it->s_listen >= 0) (void)close(it->s_listen);
 	if (it->nsfd >= 0) {
-		if (setns(it->nsfd, CLONE_NEWNET) < 0)
+		if (setns(it->nsfd, CLONE_NEWNET) < 0) {
 			ns_unsupported_netns_teardown = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[it->child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		}
 		(void)close(it->nsfd);
 	}
 }
@@ -545,11 +555,12 @@ static void netns_teardown_iter_recover(struct netns_teardown_iter_ctx *it)
  * carry the success signal.  Latches ns_unsupported on a probe-style
  * failure only (full-flow failures past the probe don't latch).
  */
-static void iter_one(void)
+static void iter_one(struct childdata *child)
 {
 	struct netns_teardown_iter_ctx it = {
 		.nsfd = -1, .s_listen = -1, .s_conn = -1, .s_accept = -1,
 		.pid = -1,
+		.child = child,
 	};
 
 	if (netns_teardown_iter_setup_ns(&it) != 0)
@@ -563,7 +574,11 @@ static void iter_one(void)
 
 	if (netns_teardown_iter_parent_setns_back(&it) != 0)
 		return;
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	netns_teardown_iter_drive_teardown(&it);
 	return;
 
@@ -577,7 +592,7 @@ recover:
  * a separate code path from iter_one so the probe cost is paid once
  * and the bulk path doesn't carry the probe scaffolding.
  */
-static void probe_netns(void)
+static void probe_netns(struct childdata *child)
 {
 	int probe_fd;
 
@@ -586,11 +601,17 @@ static void probe_netns(void)
 	probe_fd = open("/proc/self/ns/net", O_RDONLY | O_CLOEXEC);
 	if (probe_fd < 0) {
 		ns_unsupported_netns_teardown = true;
+		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+				 CHILDOP_LATCH_NS_UNSUPPORTED,
+				 __ATOMIC_RELAXED);
 		return;
 	}
 
 	if (unshare(CLONE_NEWNET) < 0) {
 		ns_unsupported_netns_teardown = true;
+		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+				 CHILDOP_LATCH_NS_UNSUPPORTED,
+				 __ATOMIC_RELAXED);
 		(void)close(probe_fd);
 		return;
 	}
@@ -600,6 +621,9 @@ static void probe_netns(void)
 		 * invocations short-circuit, and accept that this
 		 * trinity child will run in a private ns from now on. */
 		ns_unsupported_netns_teardown = true;
+		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+				 CHILDOP_LATCH_NS_UNSUPPORTED,
+				 __ATOMIC_RELAXED);
 	}
 	(void)close(probe_fd);
 }
@@ -607,8 +631,6 @@ static void probe_netns(void)
 bool netns_teardown_churn(struct childdata *child)
 {
 	unsigned int outer_iters, i;
-
-	(void)child;
 
 	__atomic_add_fetch(&shm->stats.netns_teardown_runs,
 			   1, __ATOMIC_RELAXED);
@@ -620,7 +642,7 @@ bool netns_teardown_churn(struct childdata *child)
 	}
 
 	if (!netns_teardown_probed) {
-		probe_netns();
+		probe_netns(child);
 		if (ns_unsupported_netns_teardown) {
 			__atomic_add_fetch(&shm->stats.netns_teardown_setup_failed,
 					   1, __ATOMIC_RELAXED);
@@ -636,7 +658,7 @@ bool netns_teardown_churn(struct childdata *child)
 		outer_iters = 1U;
 
 	for (i = 0; i < outer_iters; i++)
-		iter_one();
+		iter_one(child);
 
 	return true;
 }
