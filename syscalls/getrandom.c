@@ -97,4 +97,5 @@ struct syscallentry syscall_getrandom = {
 	.group = GROUP_PROCESS,
 	.bound_arg = 2,
 	.rettype = RET_NUM_BYTES,
+	.flags = REEXEC_SANITISE_OK,
 };
