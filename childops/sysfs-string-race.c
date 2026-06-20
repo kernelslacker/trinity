@@ -144,7 +144,7 @@ static uint16_t targets_writable_mask;
 _Static_assert(NR_TARGETS <= 16,
 	"targets_writable_mask must hold one bit per target");
 
-static void probe_targets(void)
+static void probe_targets(struct childdata *child)
 {
 	unsigned int i;
 
@@ -159,8 +159,12 @@ static void probe_targets(void)
 		targets_writable_mask |= (uint16_t)(1U << i);
 	}
 
-	if (targets_writable_mask == 0U)
+	if (targets_writable_mask == 0U) {
 		ns_unsupported_sysfs_string_race = true;
+		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+				 CHILDOP_LATCH_NS_UNSUPPORTED,
+				 __ATOMIC_RELAXED);
+	}
 }
 
 /*
@@ -229,8 +233,6 @@ bool sysfs_string_race(struct childdata *child)
 	int fd;
 	pid_t pa, pb;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.sysfs_string_race_runs,
 			   1, __ATOMIC_RELAXED);
 
@@ -238,7 +240,7 @@ bool sysfs_string_race(struct childdata *child)
 		return true;
 
 	if (!targets_probed) {
-		probe_targets();
+		probe_targets(child);
 		if (ns_unsupported_sysfs_string_race) {
 			__atomic_add_fetch(&shm->stats.sysfs_string_race_setup_failed,
 					   1, __ATOMIC_RELAXED);
@@ -282,6 +284,12 @@ bool sysfs_string_race(struct childdata *child)
 	} else {
 		cand_b = cand_a;
 	}
+
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	pa = fork();
 	if (pa == 0) {

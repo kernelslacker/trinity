@@ -305,8 +305,6 @@ void procfs_writer_init(void)
 
 bool procfs_writer(struct childdata *child)
 {
-	(void)child;
-
 	/* discover_targets() should have been called from the parent, but
 	 * keep the lazy fallback so a missing init does not break the op. */
 	if (discovery_done == false) {
@@ -314,9 +312,18 @@ bool procfs_writer(struct childdata *child)
 		discovery_done = true;
 	}
 
-	if (nr_entries == 0)
+	if (nr_entries == 0) {
+		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+				 CHILDOP_LATCH_INIT_FAILED,
+				 __ATOMIC_RELAXED);
 		return true;
+	}
 
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	do_one_write(&entries[rnd_modulo_u32(nr_entries)]);
 	return true;
 }
