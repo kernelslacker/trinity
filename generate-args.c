@@ -2065,6 +2065,22 @@ static void struct_fill_passes(unsigned char *buf, unsigned int size,
 			write_field_uint(buf, f, v);
 			break;
 		}
+		case FT_SRANGE: {
+			long lo = f->u.srange.lo;
+			long hi = f->u.srange.hi;
+			uint64_t span;
+			int64_t v;
+
+			if (hi <= lo) {
+				fill_field_raw(buf, f);
+				break;
+			}
+			span = (uint64_t) ((int64_t) hi - (int64_t) lo + 1);
+			v = (int64_t) lo +
+			    (int64_t) rnd_modulo_u64(span);
+			write_field_uint(buf, f, (uint64_t) v);
+			break;
+		}
 		case FT_MAGIC:
 		case FT_VERSION_MAGIC:
 		case FT_TAGGED_UNION:
@@ -2441,6 +2457,7 @@ static bool field_tag_is_mutable_c2b(enum field_tag tag)
 	case FT_ENUM:
 	case FT_VOCAB:
 	case FT_RANGE:
+	case FT_SRANGE:
 	case FT_RAW:
 		return true;
 	default:
@@ -2594,6 +2611,49 @@ static void mutate_field_range(unsigned char *buf, const struct struct_field *f)
 		next = current - 1;
 
 	write_field_uint(buf, f, next);
+}
+
+/*
+ * FT_SRANGE post-fill primitive: signed sibling of mutate_field_range.
+ * read_field_uint() zero-extends the raw bytes, so a negative in-range
+ * value would compare above hi as unsigned and the step would be
+ * skipped; sign-extend through f->size before the bound check so a
+ * field holding -3 is recognised as in [-5, 5].  Step arithmetic is
+ * done in int64_t so lo == LONG_MIN and hi == LONG_MAX edges don't
+ * overflow; write_field_uint() truncates to the field width identically
+ * to the unsigned path.
+ */
+static void mutate_field_srange(unsigned char *buf, const struct struct_field *f)
+{
+	long lo = f->u.srange.lo;
+	long hi = f->u.srange.hi;
+	int64_t current;
+	int64_t next;
+	uint64_t raw;
+	unsigned int sh;
+
+	if (hi <= lo)
+		return;
+	if (f->size == 0 || f->size > 8)
+		return;
+
+	raw = read_field_uint(buf, f);
+	sh = (unsigned int) (64 - f->size * 8);
+	current = (int64_t) (raw << sh) >> sh;
+
+	if (current < lo || current > hi)
+		return;
+
+	if (current == lo)
+		next = current + 1;
+	else if (current == hi)
+		next = current - 1;
+	else if (rnd_u32() & 1)
+		next = current + 1;
+	else
+		next = current - 1;
+
+	write_field_uint(buf, f, (uint64_t) next);
 }
 
 /*
@@ -2799,6 +2859,9 @@ static void mutate_dispatch_one(unsigned char *buf,
 		break;
 	case FT_RANGE:
 		mutate_field_range(buf, winner);
+		break;
+	case FT_SRANGE:
+		mutate_field_srange(buf, winner);
 		break;
 	case FT_RAW:
 		mutate_field_raw(buf, winner);
