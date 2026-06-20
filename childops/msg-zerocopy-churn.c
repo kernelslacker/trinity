@@ -368,15 +368,20 @@ static ssize_t zc_send_retry(int s, const void *pages, size_t len)
  * race window we want never opens.  Returns 0 on success with
  * *pages_out set; -1 on failure (counters bumped here).
  */
-static int msg_zerocopy_iter_setup(int s, void **pages_out)
+static int msg_zerocopy_iter_setup(int s, void **pages_out,
+				   struct childdata *child)
 {
 	int one = 1;
 	void *pages;
 
 	if (setsockopt(s, SOL_SOCKET, SO_ZEROCOPY, &one, sizeof(one)) < 0) {
 		if (errno == EOPNOTSUPP || errno == ENOPROTOOPT ||
-		    errno == EPERM)
+		    errno == EPERM) {
 			ns_unsupported_msg_zerocopy = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		}
 		__atomic_add_fetch(&shm->stats.msg_zerocopy_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
@@ -510,7 +515,7 @@ static void msg_zerocopy_iter_teardown(int s)
 }
 
 /* One full sequence on a freshly-created loopback TCP socket. */
-static void iter_one(const struct timespec *t_outer)
+static void iter_one(const struct timespec *t_outer, struct childdata *child)
 {
 	pid_t acceptor = -1;
 	int s = -1;
@@ -527,9 +532,13 @@ static void iter_one(const struct timespec *t_outer)
 		return;
 	}
 
-	if (msg_zerocopy_iter_setup(s, &pages) != 0)
+	if (msg_zerocopy_iter_setup(s, &pages, child) != 0)
 		goto out;
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	sent_count = msg_zerocopy_iter_send(s, pages, t_outer);
 
 	if ((unsigned long long)ns_since(t_outer) >= ZC_WALL_CAP_NS)
@@ -561,8 +570,6 @@ bool msg_zerocopy_churn(struct childdata *child)
 	struct timespec t_outer;
 	unsigned int outer_iters, i;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.msg_zerocopy_churn_runs,
 			   1, __ATOMIC_RELAXED);
 
@@ -588,7 +595,7 @@ bool msg_zerocopy_churn(struct childdata *child)
 		if ((unsigned long long)ns_since(&t_outer) >=
 		    ZC_WALL_CAP_NS)
 			break;
-		iter_one(&t_outer);
+		iter_one(&t_outer, child);
 		if (ns_unsupported_msg_zerocopy)
 			break;
 	}
