@@ -1613,6 +1613,18 @@ bool minicorpus_replay(struct syscallrecord *rec)
 		unsigned int count = __atomic_load_n(&ring->count,
 						     __ATOMIC_ACQUIRE);
 
+		/* Clamp to ring size before indexing.  count is an
+		 * unsynchronised invariant on the writer side -- writers
+		 * cap it at CORPUS_RING_SIZE -- but a torn or stomped
+		 * count load could in principle return a value larger
+		 * than the entries[] array.  The burst path above and
+		 * the file-save path below both bound their slot picks
+		 * by CORPUS_RING_SIZE; do the same here so a garbage
+		 * count can't drive entries[slot] off-array.  In normal
+		 * operation saves cap count at CORPUS_RING_SIZE, so this
+		 * is a no-op on the hot path. */
+		if (count > CORPUS_RING_SIZE)
+			count = CORPUS_RING_SIZE;
 		if (count == 0)
 			return false;
 		slot = rnd_modulo_u32(count);
