@@ -80,4 +80,5 @@ struct syscallentry syscall_llseek = {
 	.sanitise = sanitise_llseek,
 	.post = post_llseek,
 	.group = GROUP_VFS,
+	.flags = REEXEC_SANITISE_OK,
 };
