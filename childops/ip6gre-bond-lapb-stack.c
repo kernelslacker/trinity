@@ -110,13 +110,16 @@ static bool g_ns_unshared;
 static bool g_unsupported;
 static __u32 g_iter;
 
-static void latch_unsupported(const char *reason, int err)
+static void latch_unsupported(int op_type, const char *reason, int err)
 {
 	if (g_unsupported)
 		return;
 	g_unsupported = true;
 	outputerr("ip6gre_bond_lapb_stack: %s failed (errno=%d), latching unsupported\n",
 		  reason, err);
+	__atomic_store_n(&shm->stats.childop_latch_reason[op_type],
+			 CHILDOP_LATCH_UNSUPPORTED,
+			 __ATOMIC_RELAXED);
 }
 
 /* errnos that mean "kernel cannot do this op shape on this build" --
@@ -280,6 +283,7 @@ struct ip6gre_lapb_iter_ctx {
 	int		gre_idx;
 	char		bond_name[IFNAMSIZ];
 	char		gre_name[IFNAMSIZ];
+	struct childdata *child;
 };
 
 /*
@@ -289,13 +293,13 @@ struct ip6gre_lapb_iter_ctx {
  * on success; -1 means caller should return true immediately (no fds
  * were opened, so no cleanup is needed).
  */
-static int ip6gre_lapb_iter_setup_netns(void)
+static int ip6gre_lapb_iter_setup_netns(int op_type)
 {
 	if (g_ns_unshared)
 		return 0;
 
 	if (unshare(CLONE_NEWNET) < 0) {
-		latch_unsupported("unshare(CLONE_NEWNET)", errno);
+		latch_unsupported(op_type, "unshare(CLONE_NEWNET)", errno);
 		__atomic_add_fetch(&shm->stats.ip6gre_lapb_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
@@ -353,7 +357,8 @@ static int ip6gre_lapb_iter_create_bond(struct ip6gre_lapb_iter_ctx *ctx)
 	rc = ibls_newlink(&ctx->ctx, ctx->bond_name, "bond", NULL);
 	if (rc != 0) {
 		if (err_is_unsupported(rc))
-			latch_unsupported("NEWLINK type=bond", -rc);
+			latch_unsupported(ctx->child->op_type,
+					  "NEWLINK type=bond", -rc);
 		__atomic_add_fetch(&shm->stats.ip6gre_lapb_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
@@ -387,7 +392,8 @@ static int ip6gre_lapb_iter_attach_gre(struct ip6gre_lapb_iter_ctx *ctx)
 			  append_ip6gre_data);
 	if (rc != 0) {
 		if (err_is_unsupported(rc))
-			latch_unsupported("NEWLINK type=ip6gre", -rc);
+			latch_unsupported(ctx->child->op_type,
+					  "NEWLINK type=ip6gre", -rc);
 		__atomic_add_fetch(&shm->stats.ip6gre_lapb_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
@@ -399,7 +405,8 @@ static int ip6gre_lapb_iter_attach_gre(struct ip6gre_lapb_iter_ctx *ctx)
 	rc = ibls_setlink(&ctx->ctx, ctx->gre_idx, ctx->bond_idx, 0, 0);
 	if (rc != 0) {
 		if (err_is_unsupported(rc))
-			latch_unsupported("SETLINK IFLA_MASTER=bond", -rc);
+			latch_unsupported(ctx->child->op_type,
+					  "SETLINK IFLA_MASTER=bond", -rc);
 		__atomic_add_fetch(&shm->stats.ip6gre_lapb_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
@@ -427,11 +434,14 @@ static void ip6gre_lapb_iter_flag_cycles(struct ip6gre_lapb_iter_ctx *ctx)
 
 	lapb_idx = find_lapb_ifindex();
 	if (lapb_idx <= 0) {
-		latch_unsupported("find lapb%d", ENODEV);
+		latch_unsupported(ctx->child->op_type, "find lapb%d", ENODEV);
 		__atomic_add_fetch(&shm->stats.ip6gre_lapb_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[ctx->child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	cycles = (rand32() % (IBLS_FLAG_CYCLES_CAP - IBLS_FLAG_CYCLES_BASE + 1U))
 	         + IBLS_FLAG_CYCLES_BASE;
@@ -470,16 +480,15 @@ bool ip6gre_bond_lapb_stack(struct childdata *child)
 {
 	struct ip6gre_lapb_iter_ctx ictx = {
 		.ctx = { .fd = -1 },
+		.child = child,
 	};
-
-	(void)child;
 
 	__atomic_add_fetch(&shm->stats.ip6gre_lapb_runs, 1, __ATOMIC_RELAXED);
 
 	if (g_unsupported)
 		return true;
 
-	if (ip6gre_lapb_iter_setup_netns() != 0)
+	if (ip6gre_lapb_iter_setup_netns(child->op_type) != 0)
 		return true;
 
 	if (ip6gre_lapb_iter_open_netlink(&ictx) != 0)
@@ -490,6 +499,9 @@ bool ip6gre_bond_lapb_stack(struct childdata *child)
 
 	if (ip6gre_lapb_iter_attach_gre(&ictx) != 0)
 		goto out;
+
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	ip6gre_lapb_iter_flag_cycles(&ictx);
 
