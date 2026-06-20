@@ -233,10 +233,13 @@ bool tty_ldisc_churn(struct childdata *child)
 {
 	unsigned int iters, i;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.tty_ldisc_churn_runs, 1,
 			   __ATOMIC_RELAXED);
+
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	iters = BUDGETED(CHILD_OP_TTY_LDISC_CHURN, JITTER_RANGE(CHURN_ITERS_BASE));
 	for (i = 0; i < iters; i++)
