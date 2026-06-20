@@ -1059,6 +1059,23 @@ static void init_child_setup_sandbox(struct childdata *child, int childno)
 		(void) syscall(__NR_capset, &hdr, data);
 	}
 
+	/*
+	 * Stamp the per-child (st_dev, st_ino) of /proc/self/ns/{user,mnt,
+	 * net} as the cap-drop oracle's "init ns" anchors.  Done here, co-
+	 * located with the capset()-to-empty drop, so the anchors capture
+	 * the namespace identity the child was sandboxed in -- after the
+	 * per-child unshare() dance above and before the fuzz loop runs any
+	 * alt-op that may legitimately unshare again.  The oracle's
+	 * capget/mount/net_admin probes consult these anchors to skip ticks
+	 * during which the child has transitioned into a bootstrapped
+	 * userns/mntns/netns (statmount-idmap-overflow's in-place unshare,
+	 * the transient-fork capdrop helper) and would otherwise false-fire.
+	 * The bpf(KPROBE) probe stays unconditional -- its cap check pins to
+	 * the init userns and so remains correct across legitimate ns
+	 * transitions.
+	 */
+	capdrop_oracle_capture_init_ns_anchors();
+
 	munge_process();
 }
 
