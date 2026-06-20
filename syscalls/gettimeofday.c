@@ -172,4 +172,5 @@ struct syscallentry syscall_gettimeofday = {
 	.sanitise = sanitise_gettimeofday,
 	.rettype = RET_ZERO_SUCCESS,
 	.post = post_gettimeofday,
+	.flags = REEXEC_SANITISE_OK,
 };
