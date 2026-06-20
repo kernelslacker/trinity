@@ -176,4 +176,5 @@ struct syscallentry syscall_sigpending = {
 	.post = post_sigpending,
 #endif
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = REEXEC_SANITISE_OK,
 };
