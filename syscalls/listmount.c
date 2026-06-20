@@ -248,7 +248,7 @@ static void sanitise_listmount(struct syscallrecord *rec)
 	rec->a2 = (unsigned long) mnt_ids;
 	rec->a3 = nr;
 	rec->a4 = pick_listmount_flags();
-
+	avoid_shared_buffer_inout(&rec->a1, csfu.usize);
 	avoid_shared_buffer_out(&rec->a2, nr * sizeof(*mnt_ids));
 
 #ifdef HAVE_SYS_LISTMOUNT
