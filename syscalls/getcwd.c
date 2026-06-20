@@ -168,4 +168,5 @@ struct syscallentry syscall_getcwd = {
 	.rettype = RET_PATH,
 	.group = GROUP_VFS,
 	.bound_arg = 2,
+	.flags = REEXEC_SANITISE_OK,
 };
