@@ -1030,8 +1030,6 @@ bool nat_t_churn(struct childdata *child)
 	const struct nat_t_alg *auth, *crypt;
 	int rc;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.nat_t_churn_runs, 1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported_nat_t)
@@ -1039,6 +1037,9 @@ bool nat_t_churn(struct childdata *child)
 
 	if (!ns_unshared) {
 		if (unshare(CLONE_NEWNET) < 0) {
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 			warn_once_unsupported("unshare(CLONE_NEWNET)", errno);
 			return true;
 		}
@@ -1049,24 +1050,34 @@ bool nat_t_churn(struct childdata *child)
 		bring_lo_up();
 		lo_brought_up = true;
 	}
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	/* Sibling branch: half of invocations drive the AF_INET6 /
 	 * UDPv6-encap-ESP error path (xfrm6 dst-leak fix in upstream
 	 * bc0fcb9823cd).  Latched off if the kernel lacks ipv6 / xfrm6
 	 * so we don't burn syscalls on an unsupported config. */
 	if (!ns_unsupported_xfrm6 && ONE_IN(2)) {
+		__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+				   1, __ATOMIC_RELAXED);
 		nat_t_churn_v6();
 		return true;
 	}
 
 	if (nl_open(&ctx, &opts) < 0) {
 		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT ||
-		    errno == EPERM)
+		    errno == EPERM) {
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 			warn_once_unsupported("NETLINK_XFRM open", errno);
+		}
 		__atomic_add_fetch(&shm->stats.nat_t_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	mode  = (rand32() & 1U) ? XFRM_MODE_TUNNEL : XFRM_MODE_TRANSPORT;
 	esn   = (rand32() & 1U) != 0;

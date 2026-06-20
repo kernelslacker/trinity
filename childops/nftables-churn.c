@@ -6792,6 +6792,7 @@ struct nftables_churn_iter_ctx {
 	__u32			set_id;
 	__u32			verdict;
 	bool			table_created;
+	struct childdata	*child;
 };
 
 /*
@@ -6813,6 +6814,9 @@ static int nftables_churn_iter_setup_netns(struct nftables_churn_iter_ctx *ctx)
 	if (!ns_unshared) {
 		if (unshare(CLONE_NEWNET) < 0) {
 			ns_setup_failed = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[ctx->child->op_type],
+					 CHILDOP_LATCH_INIT_FAILED,
+					 __ATOMIC_RELAXED);
 			__atomic_add_fetch(&shm->stats.nftables_churn_setup_failed,
 					   1, __ATOMIC_RELAXED);
 			return -1;
@@ -6825,8 +6829,12 @@ static int nftables_churn_iter_setup_netns(struct nftables_churn_iter_ctx *ctx)
 		 * — latch and stop trying.  Other errors (ENOMEM,
 		 * EMFILE) are transient; fall through and re-try next
 		 * invocation. */
-		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT)
+		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT) {
 			ns_unsupported_nfnetlink = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[ctx->child->op_type],
+					 CHILDOP_LATCH_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		}
 		__atomic_add_fetch(&shm->stats.nftables_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
@@ -6961,8 +6969,12 @@ static int nftables_churn_iter_build_table(struct nftables_churn_iter_ctx *ctx)
 		 * absent.  Latch the whole op off; nothing else here
 		 * will work either. */
 		if (rc == -EOPNOTSUPP || rc == -EPROTONOSUPPORT ||
-		    rc == -EAFNOSUPPORT)
+		    rc == -EAFNOSUPPORT) {
 			ns_unsupported_nf_tables = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[ctx->child->op_type],
+					 CHILDOP_LATCH_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		}
 		return -1;
 	}
 	ctx->table_created = true;
@@ -7130,9 +7142,8 @@ bool nftables_churn(struct childdata *child)
 		.udp        = -1,
 		.base_chain = "chain_in",
 		.aux_chain  = "chain_aux",
+		.child      = child,
 	};
-
-	(void)child;
 
 	__atomic_add_fetch(&shm->stats.nftables_churn_runs, 1,
 			   __ATOMIC_RELAXED);
@@ -7146,7 +7157,11 @@ bool nftables_churn(struct childdata *child)
 
 	if (nftables_churn_iter_open_rtnl(&ctx) != 0)
 		goto out;
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	if (nftables_churn_iter_submode_dispatch(&ctx) != 0)
 		goto out;
 
