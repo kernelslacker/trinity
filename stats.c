@@ -7033,6 +7033,100 @@ static void dump_stats_childop_ranked_tables(void)
 			}
 		}
 
+		/* Per-childop setup-bound scorecard: for ops that were
+		 * invoked at all, rank ASCENDING by the setup-yield ratio
+		 * setup_accepted / invocations, rendered as a permille
+		 * (0..1000) integer to avoid float in the stats path.  A
+		 * low ratio means many invocations bailed before clearing
+		 * setup -- those ops want environment / capability / probe
+		 * attention.  Skip-zero is implicit via the
+		 * childop_invocations[op] > 0 filter, which also guards
+		 * the divide.  CHILD_OP_SYSCALL is skipped for the same
+		 * reason as the sibling tables. */
+		{
+			struct { unsigned int op; unsigned long ratio; }
+				ranked[NR_CHILD_OP_TYPES];
+			unsigned int nranked = 0, ri, rj;
+
+			for (op = CHILD_OP_SYSCALL + 1;
+			     op < NR_CHILD_OP_TYPES; op++) {
+				unsigned long inv =
+					shm->stats.childop_invocations[op];
+				unsigned long acc;
+
+				if (inv == 0)
+					continue;
+				acc = shm->stats.childop_setup_accepted[op];
+				ranked[nranked].op = op;
+				ranked[nranked].ratio = acc * 1000UL / inv;
+				nranked++;
+			}
+			for (ri = 1; ri < nranked; ri++) {
+				for (rj = ri; rj > 0 &&
+				     ranked[rj].ratio < ranked[rj - 1].ratio;
+				     rj--) {
+					unsigned int to = ranked[rj].op;
+					unsigned long tr = ranked[rj].ratio;
+					ranked[rj] = ranked[rj - 1];
+					ranked[rj - 1].op = to;
+					ranked[rj - 1].ratio = tr;
+				}
+			}
+			for (ri = 0; ri < nranked; ri++) {
+				snprintf(metric, sizeof(metric), "%s",
+					 alt_op_name((enum child_op_type)ranked[ri].op));
+				stat_row("childop_setup_bound_permille",
+					 metric, ranked[ri].ratio);
+			}
+		}
+
+		/* Per-childop data-path-cold scorecard: for ops that
+		 * reached the kernel data path at all, rank ASCENDING by
+		 * calls_with_edges / data_path, rendered as a permille
+		 * (0..1000) integer to avoid float in the stats path.  A
+		 * low ratio means many kernel-facing calls but no new
+		 * edges -- those ops want generator / state work or
+		 * demotion.  Skip-zero is implicit via the
+		 * childop_data_path[op] > 0 filter, which also guards the
+		 * divide.  CHILD_OP_SYSCALL is skipped for the same
+		 * reason as the sibling tables. */
+		{
+			struct { unsigned int op; unsigned long ratio; }
+				ranked[NR_CHILD_OP_TYPES];
+			unsigned int nranked = 0, ri, rj;
+
+			for (op = CHILD_OP_SYSCALL + 1;
+			     op < NR_CHILD_OP_TYPES; op++) {
+				unsigned long dp =
+					shm->stats.childop_data_path[op];
+				unsigned long ce;
+
+				if (dp == 0)
+					continue;
+				ce = shm->stats.childop_calls_with_edges[op];
+				ranked[nranked].op = op;
+				ranked[nranked].ratio = ce * 1000UL / dp;
+				nranked++;
+			}
+			for (ri = 1; ri < nranked; ri++) {
+				for (rj = ri; rj > 0 &&
+				     ranked[rj].ratio < ranked[rj - 1].ratio;
+				     rj--) {
+					unsigned int to = ranked[rj].op;
+					unsigned long tr = ranked[rj].ratio;
+					ranked[rj] = ranked[rj - 1];
+					ranked[rj - 1].op = to;
+					ranked[rj - 1].ratio = tr;
+				}
+			}
+			for (ri = 0; ri < nranked; ri++) {
+				snprintf(metric, sizeof(metric), "%s",
+					 alt_op_name((enum child_op_type)ranked[ri].op));
+				stat_row("childop_data_path_cold_permille",
+					 metric, ranked[ri].ratio);
+			}
+		}
+
 		/* Per-childop one-shot latch reason: rendered as the integer
 		 * enum childop_latch_reason code (see include/child.h).  No
 		 * string table is materialised at the dump layer -- the
