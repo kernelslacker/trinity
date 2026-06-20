@@ -150,12 +150,18 @@ bool fault_injector(struct childdata *child)
 	if (child->fail_nth_fd == -1)
 		return true;
 
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
+
 	/* N=0 disables fail-nth; pick from [1, 32]. */
 	n = 1 + rnd_modulo_u32(32);
 
 	arm_fail_nth(child->fail_nth_fd, n);
 
 	stats_ring_enqueue(child->stats_ring, STATS_FIELD_FAULT_INJECTED, 0, 1);
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	ret = do_alloc_syscall();
 	int saved_errno = errno;
