@@ -172,6 +172,7 @@ struct syscallentry syscall_getresuid = {
 	.group = GROUP_PROCESS,
 	.post = post_getresuid,
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = REEXEC_SANITISE_OK,
 	/* a1/a2/a3 (ruid/euid/suid) are the kernel's OUT-pointers; the
 	 * post oracle derefs through them.  Shadow them so a sibling stomp
 	 * between dispatch and post bumps arg_shadow_stomp from inside
@@ -192,4 +193,5 @@ struct syscallentry syscall_getresuid16 = {
 	.sanitise = sanitise_getresuid16,
 	.group = GROUP_PROCESS,
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = REEXEC_SANITISE_OK,
 };
