@@ -200,9 +200,9 @@ syscalls/pipe.c:150:post_pipe
 syscalls/pipe.c:168:post_pipe
 syscalls/pipe.c:182:post_pipe
 syscalls/pkey.c:127:post_pkey_alloc
-syscalls/poll.c:147:post_poll
-syscalls/poll.c:279:post_ppoll
-syscalls/poll.c:299:post_ppoll
+syscalls/poll.c:160:post_poll
+syscalls/poll.c:309:post_ppoll
+syscalls/poll.c:329:post_ppoll
 syscalls/prctl.c:477:post_prctl
 syscalls/prctl.c:509:post_prctl
 syscalls/prctl.c:517:post_prctl

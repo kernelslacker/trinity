@@ -130,7 +130,20 @@ static void sanitise_poll(struct syscallrecord *rec)
 
 static void post_poll(struct syscallrecord *rec)
 {
-	unsigned long nfds = rec->a2;
+	/*
+	 * Read nfds via the arg_shadow accessor: the bound check below
+	 * compares retval against the nfds the kernel actually saw.
+	 * Reading live rec->a2 would let a sibling stomp landing between
+	 * the syscall returning and this handler swing the bound -- a
+	 * lowered nfds manufactures a false-positive corruption bump
+	 * against a legitimate retval, and a raised nfds masks a real
+	 * structural ABI regression.  arg_snapshot_mask on syscall_poll
+	 * opts a2 (nfds) into the dispatch-time shadow captured in
+	 * __do_syscall() after the final blanket_address_scrub;
+	 * get_arg_snapshot() returns that value and bumps the
+	 * arg_shadow_stomp tripwire from inside the accessor on mismatch.
+	 */
+	unsigned long nfds = get_arg_snapshot(rec, 2);
 	unsigned long retval = rec->retval;
 
 	/*
@@ -162,6 +175,12 @@ struct syscallentry syscall_poll = {
 	.post = post_poll,
 	.group = GROUP_VFS,
 	.rettype = RET_BORING,
+	/* a2 (nfds) is the per-call retval bound the post-oracle compares
+	 * rec->retval against.  Shadow it so a sibling stomp between
+	 * dispatch and post cannot swing the bound -- mismatch bumps
+	 * arg_shadow_stomp from inside get_arg_snapshot() and the handler
+	 * still sees the nfds the kernel actually executed against. */
+	.arg_snapshot_mask = (1u << 1),
 };
 
 /*
@@ -259,7 +278,18 @@ static void sanitise_ppoll(struct syscallrecord *rec)
 static void post_ppoll(struct syscallrecord *rec)
 {
 	struct ppoll_post_state *snap;
-	unsigned long nfds = rec->a2;
+	/*
+	 * Read nfds via the arg_shadow accessor (mirrors post_poll above):
+	 * the bound check below compares retval against the nfds the
+	 * kernel actually saw, so a sibling stomp of rec->a2 between
+	 * dispatch and post must not be allowed to swing the bound and
+	 * either fabricate or hide a corruption signal.  The ppoll
+	 * post_state snap deliberately does not carry nfds -- the generic
+	 * arg_shadow path defends a2 directly and bumps arg_shadow_stomp
+	 * from inside get_arg_snapshot() on mismatch, so a separate
+	 * snap->nfds field would duplicate the defense.
+	 */
+	unsigned long nfds = get_arg_snapshot(rec, 2);
 	unsigned long retval = rec->retval;
 
 	/*
@@ -315,4 +345,10 @@ struct syscallentry syscall_ppoll = {
 	.post = post_ppoll,
 	.group = GROUP_VFS,
 	.rettype = RET_BORING,
+	/* Mirror syscall_poll: shadow a2 (nfds) so the post-oracle's
+	 * retval-vs-nfds bound reads the kernel-visible value via
+	 * get_arg_snapshot() instead of the sibling-stomp-vulnerable
+	 * rec->a2 slot.  The post_state snap defends the heap pointers
+	 * (fds/ts); arg_shadow defends the bound. */
+	.arg_snapshot_mask = (1u << 1),
 };
