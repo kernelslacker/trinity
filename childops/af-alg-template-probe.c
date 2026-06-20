@@ -165,15 +165,15 @@ bool af_alg_template_probe(struct childdata *child)
 	int sk;
 #endif
 
-	(void)child;
-
 	if (af_alg_probe_local_done)
 		return true;
 
 	/* Single-shot election across the fleet: only one child runs the
 	 * probe; the rest see done==1 and early-return.  CAS on the shm
 	 * latch with weak semantics — losers fall through to set the
-	 * local short-circuit so they don't re-race next time. */
+	 * local short-circuit so they don't re-race next time.  The CAS
+	 * itself is fleet self-election, not a kernel-feature latch, so
+	 * the CAS loser doesn't store a childop_latch_reason. */
 	if (!__atomic_compare_exchange_n(&shm->stats.af_alg_probe_done,
 					 &expected, 1U, false,
 					 __ATOMIC_ACQ_REL,
@@ -193,19 +193,28 @@ bool af_alg_template_probe(struct childdata *child)
 	if (sk < 0) {
 		__atomic_add_fetch(&shm->stats.af_alg_probe_unsupported,
 				   1, __ATOMIC_RELAXED);
+		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+				 CHILDOP_LATCH_UNSUPPORTED,
+				 __ATOMIC_RELAXED);
 		outputerr("[af_alg_probe] AF_ALG unavailable (errno=%d), "
 		          "skipping template enumeration\n", errno);
 		af_alg_probe_local_done = true;
 		return true;
 	}
 	close(sk);
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	for (i = 0; i < NR_AF_ALG_PROBE_TEMPLATES; i++)
 		run_one_template(i);
 #else
 	(void)i;
 	__atomic_add_fetch(&shm->stats.af_alg_probe_unsupported,
 			   1, __ATOMIC_RELAXED);
+	__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+			 CHILDOP_LATCH_UNSUPPORTED, __ATOMIC_RELAXED);
 	outputerr("[af_alg_probe] built without linux/if_alg.h, "
 	          "template enumeration disabled\n");
 #endif
