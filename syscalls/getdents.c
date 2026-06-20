@@ -36,7 +36,7 @@ static void sanitise_getdents(struct syscallrecord *rec)
 static void post_getdents(struct syscallrecord *rec)
 {
 	unsigned long retval = (unsigned long) rec->retval;
-	unsigned long count = rec->a3;
+	unsigned long count = get_arg_snapshot(rec, 3);
 
 	if (retval == (unsigned long)-1L)
 		return;
@@ -59,6 +59,14 @@ struct syscallentry syscall_getdents = {
 	.rettype = RET_NUM_BYTES,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
+	/* a3 (count) is the upper bound the post oracle compares retval
+	 * against to flag filldir() emitting past the declared buffer
+	 * size.  Shadow it so a sibling stomp of rec->a3 between dispatch
+	 * and post bumps arg_shadow_stomp from inside get_arg_snapshot()
+	 * and the oracle still validates retval against the count the
+	 * kernel actually saw, instead of a fabricated bound that could
+	 * mask or mis-flag a real ABI violation. */
+	.arg_snapshot_mask = (1u << 2),
 };
 
 
@@ -77,4 +85,8 @@ struct syscallentry syscall_getdents64 = {
 	.rettype = RET_NUM_BYTES,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
+	/* See syscall_getdents above: both entries feed the same
+	 * post_getdents oracle, so the a3 (count) shadow must be opted in
+	 * here too. */
+	.arg_snapshot_mask = (1u << 2),
 };
