@@ -2061,7 +2061,11 @@ static void struct_fill_passes(unsigned char *buf, unsigned int size,
 				fill_field_raw(buf, f);
 				break;
 			}
-			v = lo + (uint64_t) rnd_modulo_u64(hi - lo + 1);
+			/* Guard against overflow: if hi - lo == ULONG_MAX, hi - lo + 1 wraps to 0 */
+			if (hi - lo == ULONG_MAX)
+				v = lo + rnd_u64();
+			else
+				v = lo + rnd_modulo_u64(hi - lo + 1);
 			write_field_uint(buf, f, v);
 			break;
 		}
