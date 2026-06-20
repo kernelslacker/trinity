@@ -612,7 +612,8 @@ struct bridge_vlan_iter_ctx {
  * so subsequent invocations short-circuit.
  */
 static int bridge_vlan_iter_setup(struct bridge_vlan_iter_ctx *it,
-				  unsigned int iter_idx)
+				  unsigned int iter_idx,
+				  struct childdata *child)
 {
 	struct nl_open_opts nl_opts = {
 		.proto = NETLINK_ROUTE,
@@ -639,8 +640,12 @@ static int bridge_vlan_iter_setup(struct bridge_vlan_iter_ctx *it,
 	if (rc != 0) {
 		if (rc == -EPERM || rc == -ENOSYS ||
 		    rc == -EAFNOSUPPORT || rc == -EOPNOTSUPP ||
-		    rc == -EPROTONOSUPPORT)
+		    rc == -EPROTONOSUPPORT) {
 			ns_unsupported_bridge_vlan_churn = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		}
 		__atomic_add_fetch(&shm->stats.bridge_vlan_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
@@ -863,8 +868,12 @@ static void bridge_vlan_iter_teardown(struct bridge_vlan_iter_ctx *it)
 /*
  * One full create / load / race / teardown cycle on a freshly-named
  * bridge + 2 veth pairs.  Wall-clock cap inherited from the caller.
+ * child is threaded through purely for per-childop yield attribution
+ * (setup_accepted / data_path / latch_reason) -- the rest of the iter
+ * state still lives in the locally zero-initialised bridge_vlan_iter_ctx.
  */
-static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
+static void iter_one(unsigned int iter_idx, const struct timespec *t_outer,
+		     struct childdata *child)
 {
 	struct bridge_vlan_iter_ctx it = {
 		.nl  = { .fd = -1 },
@@ -874,9 +883,13 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer)
 	if ((unsigned long long)ns_since(t_outer) >= BVC_WALL_CAP_NS)
 		return;
 
-	if (bridge_vlan_iter_setup(&it, iter_idx) != 0)
+	if (bridge_vlan_iter_setup(&it, iter_idx, child) != 0)
 		goto out;
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	bridge_vlan_iter_add_vlan(&it);
 	bridge_vlan_iter_open_raw(&it);
 
@@ -898,8 +911,6 @@ bool bridge_vlan_churn(struct childdata *child)
 	struct timespec t_outer;
 	unsigned int outer_iters, i;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.bridge_vlan_churn_runs,
 			   1, __ATOMIC_RELAXED);
 
@@ -913,6 +924,9 @@ bool bridge_vlan_churn(struct childdata *child)
 		if (unshare(CLONE_NEWNET) < 0) {
 			if (errno != EPERM) {
 				ns_unsupported_bridge_vlan_churn = true;
+				__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 				__atomic_add_fetch(&shm->stats.bridge_vlan_churn_setup_failed,
 						   1, __ATOMIC_RELAXED);
 				return true;
@@ -941,7 +955,7 @@ bool bridge_vlan_churn(struct childdata *child)
 		    BVC_WALL_CAP_NS)
 			break;
 
-		iter_one(i, &t_outer);
+		iter_one(i, &t_outer, child);
 
 		if (ns_unsupported_bridge_vlan_churn)
 			break;
