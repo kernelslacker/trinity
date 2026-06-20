@@ -148,7 +148,7 @@ static void post_io_submit(struct syscallrecord *rec)
 
 	if (ret == -1L)
 		return;
-	if (ret < 0 || ret > (long) rec->a2) {
+	if (ret < 0 || ret > (long) get_arg_snapshot(rec, 2)) {
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		return;
 	}
@@ -199,4 +199,5 @@ struct syscallentry syscall_io_submit = {
 	.group = GROUP_VFS,
 	.sanitise = sanitise_io_submit,
 	.post = post_io_submit,
+	.arg_snapshot_mask = (1u << 1),
 };
