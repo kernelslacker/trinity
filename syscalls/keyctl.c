@@ -408,7 +408,7 @@ static void post_keyctl(struct syscallrecord *rec)
 	if (ret <= 0 || ret > INT32_MAX)
 		return;
 
-	switch (rec->a1) {
+	switch (get_arg_snapshot(rec, 1)) {
 	case KEYCTL_GET_KEYRING_ID:
 	case KEYCTL_JOIN_SESSION_KEYRING:
 	case KEYCTL_SEARCH:
@@ -429,4 +429,14 @@ struct syscallentry syscall_keyctl = {
 	.group = GROUP_IPC,
 	.sanitise = sanitise_keyctl,
 	.post = post_keyctl,
+	/* a1 (cmd) drives post_keyctl's switch -- it selects which
+	 * KEYCTL_* class the retval bound check attributes to, and only
+	 * the keyring/serial-minting commands feed register_key_serial().
+	 * Shadow it so a sibling stomp between dispatch and post cannot
+	 * swing the switch into a different case and either register a
+	 * fabricated serial under the wrong cmd or skip a legitimate one;
+	 * mismatch bumps arg_shadow_stomp from inside get_arg_snapshot()
+	 * and the handler still dispatches against the cmd the kernel
+	 * actually executed. */
+	.arg_snapshot_mask = (1u << 0),
 };
