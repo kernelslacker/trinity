@@ -281,6 +281,7 @@ static void sanitise_listns(struct syscallrecord *rec)
 	rec->a3 = nr;
 	rec->a4 = pick_listns_flags();
 
+	avoid_shared_buffer_inout(&rec->a1, csfu.usize);
 	avoid_shared_buffer_out(&rec->a2, nr * sizeof(*ns_ids));
 
 	/* Snapshot for the post handler -- a1 / a3 may be scribbled by a
