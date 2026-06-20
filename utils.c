@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <sched.h>
 #include <stdint.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
@@ -3726,4 +3727,27 @@ uint32_t crc32(const void *buf, size_t len)
 		crc = table[(crc ^ p[i]) & 0xff] ^ (crc >> 8);
 
 	return crc ^ 0xffffffffU;
+}
+
+/*
+ * Online-CPU count snapshotted on first use.  The kernel rejects
+ * sched_setaffinity masks with no bits in cpu_online_mask, so a
+ * random CPU_SETSIZE-wide draw misses every legality test path
+ * unless we constrain it to the real online range.
+ */
+unsigned int cached_online_cpus(void)
+{
+	static unsigned int n;
+	long v;
+
+	if (n != 0)
+		return n;
+
+	v = sysconf(_SC_NPROCESSORS_ONLN);
+	if (v <= 0)
+		v = 1;
+	if (v > CPU_SETSIZE)
+		v = CPU_SETSIZE;
+	n = (unsigned int) v;
+	return n;
 }

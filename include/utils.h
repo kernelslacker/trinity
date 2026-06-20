@@ -705,6 +705,13 @@ void heap_brk_maybe_refresh(void);
 int get_num_fds(void);
 
 /*
+ * Online-CPU count snapshotted on first use, clamped to CPU_SETSIZE so
+ * cpumask consumers (sched_setaffinity len picker, ARG_CPUMASK fill)
+ * stay within the legality window the kernel enforces on user masks.
+ */
+unsigned int cached_online_cpus(void);
+
+/*
  * Walk /proc/self/fd at parent startup and close any fd that wasn't
  * deliberately opened by trinity.  Run once, before trinity opens any
  * of its own fds — at that point the keep set is exactly {0, 1, 2}
