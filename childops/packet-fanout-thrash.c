@@ -137,9 +137,10 @@ bool packet_fanout_thrash(struct childdata *child)
 	unsigned int flags1;
 	int rc;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.packet_fanout_runs, 1, __ATOMIC_RELAXED);
+
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	fd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
 	if (fd < 0) {
@@ -202,6 +203,8 @@ bool packet_fanout_thrash(struct childdata *child)
 		flags1 |= (PACKET_FANOUT_FLAG_DEFRAG >> 8);
 
 	fanout1 = make_fanout_arg(group1, type1, flags1);
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	rc = setsockopt(fd, SOL_PACKET, PACKET_FANOUT,
 			&fanout1, sizeof(fanout1));
 	if (rc == 0)
