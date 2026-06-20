@@ -199,4 +199,5 @@ struct syscallentry syscall_uname = {
 	.post = post_uname,
 	.group = GROUP_PROCESS,
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = REEXEC_SANITISE_OK,
 };
