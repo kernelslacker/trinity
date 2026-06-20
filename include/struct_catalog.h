@@ -53,6 +53,7 @@ enum field_tag {
 	FT_TAGGED_UNION,	/* per-discriminator subset of fields */
 	FT_BPF_PROGRAM,		/* eBPF insn buffer; fill delegated to net/ebpf.c generator */
 	FT_VOCAB,		/* pick a NUL-padded byte string from u.vocab.vocab */
+	FT_SRANGE,		/* signed uniform [u.srange.lo, u.srange.hi] */
 
 	/*
 	 * Sentinel for per-tag-indexed counters (e.g.
@@ -73,6 +74,7 @@ struct struct_field {
 	union {
 		struct { const unsigned long *vals; unsigned int n; } enum_;
 		struct { unsigned long lo, hi; } range;
+		struct { long lo, hi; } srange;
 		struct { unsigned long mask; } flags;
 		/* FT_PTR_BYTES: pointer to a buffer of [1, max_bytes] bytes. */
 		struct {
