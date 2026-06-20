@@ -190,6 +190,7 @@ struct syscallentry syscall_getrlimit = {
 	.sanitise = sanitise_getrlimit,
 	.group = GROUP_PROCESS,
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = REEXEC_SANITISE_OK,
 #ifdef HAVE_SYS_GETRLIMIT
 	.post = post_getrlimit,
 #endif
