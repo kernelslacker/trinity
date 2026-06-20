@@ -991,8 +991,6 @@ bool bridge_fdb_stp(struct childdata *child)
 		.recv_timeo_s = 1,
 	};
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.bridge_fdb_stp_runs, 1,
 			   __ATOMIC_RELAXED);
 
@@ -1020,6 +1018,9 @@ bool bridge_fdb_stp(struct childdata *child)
 		lo_brought_up = true;
 	}
 
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
+
 	if (ONE_IN(8)) {
 		bridge_vlan_mass_add(&ictx.ctx);
 		nl_close(&ictx.ctx);
@@ -1032,6 +1033,9 @@ bool bridge_fdb_stp(struct childdata *child)
 		goto out;
 
 	bridge_fdb_stp_iter_veth_attach(&ictx);
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	bridge_fdb_stp_iter_traffic_burst(&ictx);
 
