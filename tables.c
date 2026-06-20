@@ -826,11 +826,23 @@ int munge_tables(void)
  * exists in the host's syscall table but the ACTIVE flag has been
  * cleared by deactivate_disabled_syscalls() during munge_tables().
  *
- * Returns false in every other case, including the common one:
+ * Returns false in every other case, including the common ones:
  *   - do_exclude_syscall is false (one load + branch, no table touch),
  *   - nr is negative or out of range for the host arch table,
  *   - the table slot is NULL (gaps for arch-specific syscalls),
- *   - the entry is still ACTIVE (not -x'd).
+ *   - a targeting mode (-c, -r, -g) is also active.
+ *
+ * The targeting-mode guard matters because decide_if_active() only
+ * calls mark_all_syscalls_active() when none of -c/-r/-g were given.
+ * Under any of those, only the targeted entries are flipped ACTIVE,
+ * and deactivate_disabled_syscalls() then clears ACTIVE on the
+ * -x'd subset of them.  Every non-targeted entry stays inactive
+ * for reasons unrelated to -x, so "inactive" no longer implies
+ * "excluded".  Without this guard, e.g. `-c foo -x bar` would have
+ * the helper report unrelated syscalls (io_uring_setup, bpf, fsopen,
+ * ...) as excluded to fd-provider .init() raw syscall sites, giving
+ * them spurious ENOSYS.  The inactive==excluded inference is only
+ * sound when -x is the sole selector.
  *
  * Biarch: trinity itself runs as the host's native (64bit) binary; a
  * raw syscall(__NR_X) from a childop / fd-provider invokes the 64bit
@@ -865,6 +877,20 @@ bool syscall_nr_is_excluded(int nr)
 
 	if (entry == NULL)
 		return false;
+
+	/*
+	 * Only -x is in effect, so the ACTIVE bit's state reflects
+	 * deactivate_disabled_syscalls() and nothing else.  Under any
+	 * targeting selector (-c/-r/-g) "inactive" just means "not
+	 * targeted" -- don't conflate that with excluded.
+	 */
+	if (do_specific_syscall == true)
+		return false;
+	if (random_selection == true)
+		return false;
+	if (desired_group != GROUP_NONE)
+		return false;
+
 	return (entry->flags & ACTIVE) == 0;
 }
 
