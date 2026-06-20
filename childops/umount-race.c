@@ -248,8 +248,6 @@ bool umount_race(struct childdata *child)
 	unsigned int cycles;
 	unsigned int i;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.umount_race_runs, 1, __ATOMIC_RELAXED);
 
 	/* Box-safety + degrade gate, mirroring mount-churn.c's
@@ -269,8 +267,13 @@ bool umount_race(struct childdata *child)
 			     __ATOMIC_RELAXED))
 		return true;
 
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
+
 	cycles = 1U + rnd_modulo_u32(MAX_CYCLES);
 
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	for (i = 0; i < cycles; i++)
 		one_cycle();
 
