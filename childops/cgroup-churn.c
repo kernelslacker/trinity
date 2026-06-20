@@ -219,11 +219,24 @@ bool cgroup_churn(struct childdata *child)
 	unsigned int i;
 	pid_t pid = mypid();
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.cgroup_churn_runs, 1, __ATOMIC_RELAXED);
 
+	/* No eligibility gate above the mkdir/rmdir hot loop -- this
+	 * invocation has committed to driving the op as soon as it
+	 * enters.  Bump setup_accepted here so the per-childop yield
+	 * dump attributes the invocation to cgroup_churn. */
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
+
 	cycles = 1 + rnd_modulo_u32(MAX_CYCLES);
+
+	/* Immediately before the mkdir/rmdir loop -- the kernel-exercising
+	 * work this childop exists to drive.  NO-setup childop: paired
+	 * one-to-one with the setup_accepted bump above (no bail path
+	 * between them) so the invariant data_path <= setup_accepted holds
+	 * with equality as the healthy baseline. */
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	for (i = 0; i < cycles; i++) {
 		char path[64];
