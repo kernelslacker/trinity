@@ -13,10 +13,17 @@
  * while-walk inside the rcu-protected rule walker.
  *
  * Sequence (per invocation):
- *   1. unshare(CLONE_NEWNET) into a private net namespace so any
- *      mutation we make never touches the host main routing table.
- *      Failure (EPERM, no user-namespace privilege) latches the
- *      childop off for the remainder of this child's lifetime.
+ *   1. Enter a private net namespace via userns_run_in_ns(): a
+ *      transient grandchild fork installs an identity user namespace
+ *      plus a fresh CLONE_NEWNET, runs the body below, and _exit()s
+ *      so the kernel reaps every interface, rule, address and socket
+ *      with the grandchild's netns.  The persistent fuzz child never
+ *      changes its own credentials or namespace stack, so the
+ *      cap-drop oracle keeps observing the host credential profile.
+ *      Helper -EPERM (hardened userns policy refused CLONE_NEWUSER)
+ *      latches the childop off for the remainder of this child's
+ *      lifetime; -1 (transient setup failure: fork, id-map write,
+ *      secondary unshare) skips the iteration without latching.
  *   2. RTM_NEWLINK kind="vrf" with IFLA_VRF_TABLE = N (random
  *      table id in [1024, 524287], well above the kernel's reserved
  *      main/local/default at 254/255/253).
@@ -74,6 +81,7 @@
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
+#include "userns-bootstrap.h"
 
 #ifndef IFLA_VRF_TABLE
 #define IFLA_VRF_TABLE	1
@@ -96,18 +104,20 @@
 
 #define RTNL_BUF_BYTES		2048
 
-/* Latched per-child: unshare(CLONE_NEWNET) returned EPERM (or any
- * other fatal error) once.  Trinity doesn't grant CAP_SYS_ADMIN
- * inside the host namespace under default execution, and we MUST
- * NOT touch the host's main routing table — so when we can't enter
- * a private netns we permanently disable the op for this child. */
+/* Latched per-child: userns_run_in_ns() reported -EPERM, meaning the
+ * grandchild's unshare(CLONE_NEWUSER) was refused by a hardened policy
+ * (user.max_user_namespaces=0 or kernel.unprivileged_userns_clone=0).
+ * Without a private netns we MUST NOT touch the host's main routing
+ * table, so the op stays disabled for the remainder of this child's
+ * lifetime.  Transient setup failures (helper return -1) do not set
+ * this — they may not recur on the next iteration. */
 static bool ns_unsupported;
 
-/* Latched once a successful unshare puts us in a private netns.
- * The trinity child process is long-lived; we only need to unshare
- * once and inherit the private namespace across subsequent
- * invocations.  Re-unsharing each call would just leak namespaces. */
-static bool ns_unshared;
+/* Per-invocation state handed to the in-ns callback so it can keep
+ * accounting against the right childop slot. */
+struct vrf_fib_churn_ctx {
+	struct childdata *child;
+};
 
 /*
  * Build & send RTM_NEWLINK creating a VRF dev named `name` bound to
@@ -270,8 +280,17 @@ static int build_rule(struct nl_ctx *ctx, int cmd, __u32 table, __u32 prio)
 	return nl_send_recv(ctx, buf, off);
 }
 
-bool vrf_fib_churn(struct childdata *child)
+/*
+ * Per-invocation body that must run inside the private net namespace.
+ * Executed in a transient grandchild forked by userns_run_in_ns(); the
+ * grandchild's userns + netns are torn down on _exit() so any links,
+ * addrs, rules or sockets left behind are reaped by the kernel along
+ * with the namespace.  Return value is ignored by the helper.
+ */
+static int vrf_fib_churn_in_ns(void *arg)
 {
+	struct vrf_fib_churn_ctx *cctx = (struct vrf_fib_churn_ctx *)arg;
+	struct childdata *child = cctx->child;
 	char vrf_name[IFNAMSIZ];
 	struct nl_ctx ctx = { .fd = -1 };
 	struct nl_open_opts opts = {
@@ -287,28 +306,10 @@ bool vrf_fib_churn(struct childdata *child)
 	bool link_added = false;
 	int rc;
 
-	__atomic_add_fetch(&shm->stats.vrf_fib_churn_runs, 1, __ATOMIC_RELAXED);
-
-	if (ns_unsupported)
-		return true;
-
-	if (!ns_unshared) {
-		if (unshare(CLONE_NEWNET) < 0) {
-			ns_unsupported = true;
-			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-					 CHILDOP_LATCH_NS_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.vrf_fib_churn_setup_failed,
-					   1, __ATOMIC_RELAXED);
-			return true;
-		}
-		ns_unshared = true;
-	}
-
 	if (nl_open(&ctx, &opts) < 0) {
 		__atomic_add_fetch(&shm->stats.vrf_fib_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
-		return true;
+		return 0;
 	}
 
 	snprintf(vrf_name, sizeof(vrf_name), "trvrf%u",
@@ -404,6 +405,38 @@ out:
 						   1, __ATOMIC_RELAXED);
 		}
 		nl_close(&ctx);
+	}
+
+	return 0;
+}
+
+bool vrf_fib_churn(struct childdata *child)
+{
+	struct vrf_fib_churn_ctx cctx = { .child = child };
+	int rc;
+
+	__atomic_add_fetch(&shm->stats.vrf_fib_churn_runs, 1, __ATOMIC_RELAXED);
+
+	if (ns_unsupported)
+		return true;
+
+	rc = userns_run_in_ns(CLONE_NEWNET, vrf_fib_churn_in_ns, &cctx);
+	if (rc == -EPERM) {
+		ns_unsupported = true;
+		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+				 CHILDOP_LATCH_NS_UNSUPPORTED,
+				 __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.vrf_fib_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return true;
+	}
+	if (rc < 0) {
+		/* Transient grandchild setup failure (fork, id-map write,
+		 * secondary unshare).  Skip this iteration without latching
+		 * — the failure is not policy and may not recur. */
+		__atomic_add_fetch(&shm->stats.vrf_fib_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return true;
 	}
 
 	return true;
