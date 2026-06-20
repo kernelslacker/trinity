@@ -3,6 +3,7 @@
  */
 #include <sys/stat.h>
 #include "arch.h"
+#include "files.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -25,6 +26,12 @@ static void sanitise_readahead(struct syscallrecord *rec)
 	unsigned long long off_pages;
 	loff_t off;
 	unsigned long long count;
+
+	if (rnd_modulo_u32(100) < 25) {
+		int fd = get_rand_pagecache_fd();
+		if (fd >= 0)
+			rec->a1 = fd;
+	}
 
 	if (fstat((int) rec->a1, &st) < 0 || !S_ISREG(st.st_mode) ||
 	    st.st_size <= 0)
