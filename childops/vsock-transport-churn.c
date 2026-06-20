@@ -209,7 +209,8 @@ static void apply_timeouts(int s)
  * ns_unsupported_vsock_transport_churn so subsequent invocations
  * short-circuit to a runs+setup_failed bump.
  */
-static int vsock_transport_iter_setup(int *listener_out, int *cli_out,
+static int vsock_transport_iter_setup(struct childdata *child,
+				      int *listener_out, int *cli_out,
 				      int *srv_out)
 {
 	struct sockaddr_vm addr;
@@ -223,8 +224,12 @@ static int vsock_transport_iter_setup(int *listener_out, int *cli_out,
 	listener = socket(AF_VSOCK, SOCK_STREAM, 0);
 	if (listener < 0) {
 		if (errno == EAFNOSUPPORT || errno == EPERM ||
-		    errno == ENOPROTOOPT || errno == ENOENT)
+		    errno == ENOPROTOOPT || errno == ENOENT) {
 			ns_unsupported_vsock_transport_churn = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		}
 		__atomic_add_fetch(&shm->stats.vsock_transport_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
@@ -240,8 +245,12 @@ static int vsock_transport_iter_setup(int *listener_out, int *cli_out,
 		/* EADDRNOTAVAIL here typically means CONFIG_VSOCKETS_LOOPBACK
 		 * isn't built; latch so we don't keep trying. */
 		if (errno == EADDRNOTAVAIL || errno == EAFNOSUPPORT ||
-		    errno == EPERM)
+		    errno == EPERM) {
 			ns_unsupported_vsock_transport_churn = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		}
 		__atomic_add_fetch(&shm->stats.vsock_transport_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
@@ -416,7 +425,7 @@ static void vsock_transport_iter_teardown(int cli, int srv)
 }
 
 /* One full sequence on a freshly-created loopback vsock pair. */
-static void iter_one(const struct timespec *t_outer)
+static void iter_one(struct childdata *child, const struct timespec *t_outer)
 {
 	int listener = -1;
 	int cli = -1;
@@ -425,7 +434,7 @@ static void iter_one(const struct timespec *t_outer)
 	if ((unsigned long long)ns_since(t_outer) >= VS_WALL_CAP_NS)
 		return;
 
-	if (vsock_transport_iter_setup(&listener, &cli, &srv) != 0)
+	if (vsock_transport_iter_setup(child, &listener, &cli, &srv) != 0)
 		goto out;
 
 	vsock_transport_iter_send_burst(cli, srv, t_outer);
@@ -450,23 +459,24 @@ out:
  * runs iter_one in a fresh CLONE_NEWNET, then setns-es back.  Mirrors the
  * pattern in netns_teardown_churn so the calling process never strands
  * itself in the doomed ns. */
-static void iter_one_in_fresh_netns(const struct timespec *t_outer)
+static void iter_one_in_fresh_netns(struct childdata *child,
+				    const struct timespec *t_outer)
 {
 	int anchor;
 
 	anchor = open("/proc/self/ns/net", O_RDONLY | O_CLOEXEC);
 	if (anchor < 0) {
-		iter_one(t_outer);
+		iter_one(child, t_outer);
 		return;
 	}
 
 	if (unshare(CLONE_NEWNET) < 0) {
 		close(anchor);
-		iter_one(t_outer);
+		iter_one(child, t_outer);
 		return;
 	}
 
-	iter_one(t_outer);
+	iter_one(child, t_outer);
 
 	if (setns(anchor, CLONE_NEWNET) < 0) {
 		/* Best-effort: if the setns-back fails we have no safe
@@ -474,6 +484,9 @@ static void iter_one_in_fresh_netns(const struct timespec *t_outer)
 		 * the doomed ns across iterations. */
 		close(anchor);
 		ns_unsupported_vsock_transport_churn = true;
+		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+				 CHILDOP_LATCH_OTHER,
+				 __ATOMIC_RELAXED);
 		return;
 	}
 	close(anchor);
@@ -592,8 +605,6 @@ bool vsock_transport_churn(struct childdata *child)
 	struct timespec t_outer;
 	unsigned int outer_iters, i;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.vsock_transport_churn_runs,
 			   1, __ATOMIC_RELAXED);
 
@@ -602,6 +613,9 @@ bool vsock_transport_churn(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
+
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	if (clock_gettime(CLOCK_MONOTONIC, &t_outer) < 0) {
 		t_outer.tv_sec = 0;
@@ -615,15 +629,18 @@ bool vsock_transport_churn(struct childdata *child)
 	if (outer_iters > VS_OUTER_CAP)
 		outer_iters = VS_OUTER_CAP;
 
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
+
 	for (i = 0; i < outer_iters; i++) {
 		if ((unsigned long long)ns_since(&t_outer) >=
 		    VS_WALL_CAP_NS)
 			break;
 
 		if (rnd_modulo_u32(100U) < VS_UNSHARE_VARIANT_PCT)
-			iter_one_in_fresh_netns(&t_outer);
+			iter_one_in_fresh_netns(child, &t_outer);
 		else
-			iter_one(&t_outer);
+			iter_one(child, &t_outer);
 
 		if (ns_unsupported_vsock_transport_churn)
 			break;

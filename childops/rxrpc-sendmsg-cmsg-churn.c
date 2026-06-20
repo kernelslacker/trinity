@@ -303,8 +303,6 @@ bool rxrpc_sendmsg_cmsg_churn(struct childdata *child)
 	int fd;
 	int rc;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.rxrpc_sendmsg_cmsg_runs,
 			   1, __ATOMIC_RELAXED);
 
@@ -317,8 +315,12 @@ bool rxrpc_sendmsg_cmsg_churn(struct childdata *child)
 		    v6 ? PF_INET6 : PF_INET);
 	if (fd < 0) {
 		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT ||
-		    errno == ENOPROTOOPT)
+		    errno == ENOPROTOOPT) {
 			ns_rxrpc_unsupported = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		}
 		__atomic_add_fetch(&shm->stats.rxrpc_sendmsg_cmsg_socket_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
@@ -349,6 +351,9 @@ bool rxrpc_sendmsg_cmsg_churn(struct childdata *child)
 		return true;
 	}
 
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
+
 	have_peer = RAND_BOOL();
 	if (have_peer) {
 		make_peer(&peer, v6);
@@ -363,6 +368,9 @@ bool rxrpc_sendmsg_cmsg_churn(struct childdata *child)
 
 	slot = (enum rxrpc_cmsg_slot)(rand32() % (unsigned int)NR_CMSG_SLOTS);
 	__atomic_add_fetch(&shm->stats.rxrpc_sendmsg_cmsg_sent[slot],
+			   1, __ATOMIC_RELAXED);
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
 			   1, __ATOMIC_RELAXED);
 
 	rc = send_one_cmsg(fd, &peer, have_peer, slot);
