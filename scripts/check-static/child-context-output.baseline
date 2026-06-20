@@ -304,8 +304,8 @@ syscalls/socketcall.c:193:post_socketcall
 syscalls/socketpair.c:191:post_socketpair
 syscalls/socketpair.c:209:post_socketpair
 syscalls/socketpair.c:222:post_socketpair
-syscalls/stat.c:413:post_statx
-syscalls/stat.c:476:post_statx
+syscalls/stat.c:415:post_statx
+syscalls/stat.c:478:post_statx
 syscalls/statfs.c:176:post_statfs
 syscalls/statfs.c:369:post_statfs64
 syscalls/statmount.c:475:post_statmount
