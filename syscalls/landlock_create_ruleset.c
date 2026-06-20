@@ -140,6 +140,7 @@ static void sanitise_landlock_create_ruleset(struct syscallrecord *rec)
 					   ARRAY_SIZE(landlock_scope_bits));
 
 	rec->a1 = (unsigned long) attr;
+	avoid_shared_buffer_inout(&rec->a1, buf.usize);
 	rec->a2 = buf.usize;
 
 	/*
