@@ -39,14 +39,14 @@ static void post_sched_get_priority_max(struct syscallrecord *rec)
 {
 	unsigned long retval = rec->retval;
 	long ret = (long) retval;
-	int got, expected;
+	int got, expected, policy = (int) get_arg_snapshot(rec, 1);
 
 	if (!ONE_IN(100))
 		return;
 	if ((int) ret == -1)
 		return;
 
-	switch ((int) rec->a1) {
+	switch (policy) {
 	case SCHED_OTHER:
 		expected = 0;
 		break;
@@ -72,7 +72,7 @@ static void post_sched_get_priority_max(struct syscallrecord *rec)
 	got = (int) ret;
 	if (got != expected) {
 		output(0, "sched_get_priority_max oracle: policy=%d returned %d but expected %d\n",
-		       (int) rec->a1, got, expected);
+		       policy, got, expected);
 		__atomic_add_fetch(&shm->stats.sched_get_priority_max_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
@@ -87,4 +87,14 @@ struct syscallentry syscall_sched_get_priority_max = {
 	.arg_params[0].list = ARGLIST(sched_policies),
 	.post = post_sched_get_priority_max,
 	.rettype = RET_BORING,
+	/* a1 (policy) drives post_sched_get_priority_max's switch -- it
+	 * selects the scheduling policy whose well-known priority-max
+	 * the returned value is bounded against, and is printed back in
+	 * the mismatch diagnostic.  Shadow it so a sibling stomp between
+	 * dispatch and post cannot swing the switch into a different
+	 * case and mis-attribute the bound check against the wrong
+	 * policy; mismatch bumps arg_shadow_stomp from inside
+	 * get_arg_snapshot() and the handler still dispatches against
+	 * the policy the kernel actually executed. */
+	.arg_snapshot_mask = (1u << 0),
 };
