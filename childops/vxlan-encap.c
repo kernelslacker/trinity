@@ -392,13 +392,16 @@ static int build_fdb_add(struct nl_ctx *ctx, int ifindex)
  * success; -1 means caller should return true without entering the
  * goto-out cleanup.
  */
-static int vxlan_encap_iter_setup_netns(void)
+static int vxlan_encap_iter_setup_netns(struct childdata *child)
 {
 	if (ns_unshared)
 		return 0;
 
 	if (unshare(CLONE_NEWNET) < 0) {
 		ns_setup_failed = true;
+		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+				 CHILDOP_LATCH_NS_UNSUPPORTED,
+				 __ATOMIC_RELAXED);
 		__atomic_add_fetch(&shm->stats.vxlan_encap_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
@@ -448,6 +451,7 @@ struct vxlan_encap_iter_ctx {
 	int		raw;		/* AF_PACKET fd, -1 until opened */
 	bool		nl_opened;	/* rtnl socket is open */
 	bool		link_added;	/* RTM_NEWLINK ack received */
+	struct childdata *child;
 };
 
 /*
@@ -502,8 +506,12 @@ static int vxlan_encap_iter_build_link(struct vxlan_encap_iter_ctx *ctx)
 			       ctx->vni_or_key);
 	if (rc != 0) {
 		if (rc == -EAFNOSUPPORT || rc == -EOPNOTSUPP ||
-		    rc == -ENOTSUP || rc == -ENOENT || rc == -EPROTONOSUPPORT)
+		    rc == -ENOTSUP || rc == -ENOENT || rc == -EPROTONOSUPPORT) {
 			*kind_latch(ctx->kind) = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[ctx->child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		}
 		return -1;
 	}
 	ctx->link_added = true;
@@ -625,9 +633,8 @@ bool vxlan_encap_churn(struct childdata *child)
 	struct vxlan_encap_iter_ctx ctx = {
 		.nl = { .fd = -1 },
 		.raw = -1,
+		.child = child,
 	};
-
-	(void)child;
 
 	__atomic_add_fetch(&shm->stats.vxlan_encap_churn_runs, 1,
 			   __ATOMIC_RELAXED);
@@ -635,7 +642,7 @@ bool vxlan_encap_churn(struct childdata *child)
 	if (ns_setup_failed)
 		return true;
 
-	if (vxlan_encap_iter_setup_netns() != 0)
+	if (vxlan_encap_iter_setup_netns(child) != 0)
 		return true;
 
 	ctx.kind = pick_kind();
@@ -643,8 +650,13 @@ bool vxlan_encap_churn(struct childdata *child)
 		return true;
 
 	if (vxlan_encap_iter_open_ctx(&ctx) == 0 &&
-	    vxlan_encap_iter_build_link(&ctx) == 0)
+	    vxlan_encap_iter_build_link(&ctx) == 0) {
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+				   1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+				   1, __ATOMIC_RELAXED);
 		vxlan_encap_iter_send_burst(&ctx);
+	}
 
 	vxlan_encap_iter_teardown(&ctx);
 	return true;

@@ -599,8 +599,12 @@ static bool ovs_one_time_setup(struct childdata *child)
 	opts.recv_timeo_s = OVS_RECV_TIMEO_S;
 	rc = genl_open(&ovs_dp_ctx, &opts);
 	if (rc != 0) {
-		if (rc == -ENOENT)
+		if (rc == -ENOENT) {
 			ns_unsupported_ovs_genl = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		}
 		ovs_setup_failed = true;
 		return false;
 	}
@@ -611,8 +615,12 @@ static bool ovs_one_time_setup(struct childdata *child)
 	opts.recv_timeo_s = OVS_RECV_TIMEO_S;
 	rc = genl_open(&ovs_vport_ctx, &opts);
 	if (rc != 0) {
-		if (rc == -ENOENT)
+		if (rc == -ENOENT) {
 			ns_unsupported_ovs_genl = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		}
 		ovs_setup_failed = true;
 		genl_close(&ovs_dp_ctx);
 		return false;
@@ -667,6 +675,9 @@ bool ovs_tunnel_vport_churn(struct childdata *child)
 	if (kind == OVS_TUN_NR)
 		return true;
 
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
+
 	dst_port = (__u16)RAND_RANGE(OVS_DST_PORT_MIN, OVS_DST_PORT_MAX);
 	iter = next_ovs_iter_id();
 
@@ -698,6 +709,8 @@ bool ovs_tunnel_vport_churn(struct childdata *child)
 		}
 	}
 
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	rc = ovs_create_vport(&ovs_vport_ctx, 0, kind, vname, dst_port);
 	if (rc != 0) {
 		/* Module-not-loaded / type-not-registered errors latch the
@@ -705,8 +718,12 @@ bool ovs_tunnel_vport_churn(struct childdata *child)
 		 * latch alone so the next iteration retries with a fresh
 		 * <port, name> pair. */
 		if (rc == -EOPNOTSUPP || rc == -EAFNOSUPPORT ||
-		    rc == -EPROTONOSUPPORT || rc == -ENOENT)
+		    rc == -EPROTONOSUPPORT || rc == -ENOENT) {
 			*ovs_kind_latch(kind) = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		}
 		if (racer_pid > 0) {
 			int wstatus;
 
