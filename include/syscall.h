@@ -674,6 +674,27 @@ struct syscalltable {
  * reexec_skipped_destructive counter.
  */
 #define AVOID_REEXEC		(1<<12)
+/*
+ * REEXEC_SANITISE_OK: opt this entry IN to the CMP RedQueen re-exec step
+ * even though it carries a .sanitise.  The blanket destructive-syscall
+ * gate in redqueen_reexec_step() excludes every sanitise-bearing entry
+ * because a generic .sanitise re-run can resurrect freed pointer slots
+ * or stomp the captured slot pin; this flag is the auditable opt-in for
+ * the small set of sanitisers whose ownership is well-understood --
+ * sanitisers that populate ONLY fixed-size input structs (or strings)
+ * with no nested pointer chains, no INOUT / output buffers, no shared-
+ * buffer relocation, and no bespoke deferred-free / post_state oracle.
+ *
+ * The re-exec contract for a flagged entry is unchanged from the
+ * sanitise-free path: generate_syscall_args() runs in full so the
+ * re-exec gets FRESH OWNED pointers, the parent's a1..a6 pointer values
+ * are NEVER reused in the child record, the RedQueen pin (slot or field)
+ * is applied AFTER sanitise so the pin lands on known input fields, and
+ * the inner dispatch_step's cleanup path owns the re-exec'd args (no
+ * manual free here).  The parent-record restore from the snapshot at the
+ * tail of redqueen_reexec_step() runs unchanged.
+ */
+#define REEXEC_SANITISE_OK	(1<<13)
 
 struct kcov_child;
 struct childdata;

@@ -43,6 +43,6 @@ struct syscallentry syscall_clock_settime = {
 	.argname = { [0] = "which_clock", [1] = "tp" },
 	.arg_params[0].list = ARGLIST(clock_ids),
 	.rettype = RET_ZERO_SUCCESS,
-	.flags = NEEDS_ROOT,
+	.flags = NEEDS_ROOT | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_clock_settime,
 };

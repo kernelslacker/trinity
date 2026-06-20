@@ -2782,7 +2782,8 @@ static bool redqueen_reexec_step(struct childdata *child,
 	 * replay_syscall_step uses for the same reason.  Layered with the
 	 * AVOID_REEXEC denylist for sanitise-free entries whose effects are
 	 * still destructive to the calling child or to global state. */
-	if (entry->sanitise != NULL || (entry->flags & AVOID_REEXEC)) {
+	if ((entry->sanitise != NULL && !(entry->flags & REEXEC_SANITISE_OK)) ||
+	    (entry->flags & AVOID_REEXEC)) {
 		if (kcov_shm != NULL)
 			__atomic_fetch_add(&kcov_shm->reexec_skipped_destructive,
 					   1UL, __ATOMIC_RELAXED);
