@@ -1045,8 +1045,18 @@ void divergence_sentinel_tick(struct childdata *child);
  * each expect EPERM, and capget(self) expects empty masks across both
  * v3 data slots.  Any deviation bumps shm->stats.capdrop_oracle_anomalies
  * and emits an output(0, ...) line.  See child-capdrop-oracle.c.
+ *
+ * capdrop_oracle_capture_init_ns_anchors() stamps the (st_dev, st_ino)
+ * identity of /proc/self/ns/{user,mnt,net} so subsequent ticks can skip
+ * the ns-scoped probes after a legitimate userns/mntns/netns transition
+ * (statmount-idmap-overflow's in-place unshare, transient-fork capdrop
+ * helper) that would otherwise false-fire them.  Call once at child
+ * sandbox setup, immediately after the capset()-to-empty drop.  The
+ * bpf(KPROBE) probe is never gated -- its cap check pins to the init
+ * userns and is the load-bearing init-ns invariant.
  */
 void capdrop_oracle_tick(void);
+void capdrop_oracle_capture_init_ns_anchors(void);
 
 void init_child_mappings(void);
 

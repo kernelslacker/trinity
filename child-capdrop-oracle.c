@@ -39,9 +39,12 @@
  */
 
 #include <errno.h>
+#include <stdbool.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/syscall.h>
+#include <sys/types.h>
 #include <unistd.h>
 #include <linux/capability.h>
 #include <netinet/in.h>
@@ -60,6 +63,79 @@
 #include "utils.h"
 
 #define CAPDROP_ORACLE_SAMPLE_DENOM	1024
+
+/*
+ * Per-child anchors capturing the (st_dev, st_ino) identity of the
+ * /proc/self/ns/{user,mnt,net} symlinks at child-sandbox-setup time --
+ * i.e. immediately after init_child_setup_sandbox()'s capset()-to-empty
+ * drop, after any per-child unshare() dance has already run.  Stamped by
+ * capdrop_oracle_capture_init_ns_anchors() and consulted by the per-
+ * probe gates below.
+ *
+ * Rationale: the capget/mount/net_admin probes assert "no caps in this
+ * task's userns / mntns / netns".  An alt-op that legitimately unshares
+ * into a fresh userns (statmount-idmap-overflow's Pattern-B in-place
+ * unshare; the transient-fork capdrop helper) makes those probes false-
+ * fire forever after, because the child now has full caps in the
+ * bootstrapped userns.  Re-stat at tick-time and skip the gated probe
+ * if the ns identity no longer matches the anchor: the oracle stays
+ * silent on legitimate ns transitions but still fires on a real cap-
+ * drop regression that leaves the child in its init ns.
+ *
+ * bpf(BPF_PROG_LOAD, KPROBE) is NOT gated: the verifier's KPROBE-load
+ * cap check is bound to the init user namespace specifically, so a
+ * bootstrapped userns cannot fool it.  That probe remains the oracle's
+ * load-bearing init-userns invariant and must keep firing on regression.
+ */
+struct capdrop_ns_anchor {
+	bool valid;
+	dev_t st_dev;
+	ino_t st_ino;
+};
+
+static struct capdrop_ns_anchor anchor_user;
+static struct capdrop_ns_anchor anchor_mnt;
+static struct capdrop_ns_anchor anchor_net;
+
+static void capdrop_capture_anchor(struct capdrop_ns_anchor *a, const char *path)
+{
+	struct stat st;
+
+	a->valid = false;
+	if (stat(path, &st) != 0)
+		return;
+	a->st_dev = st.st_dev;
+	a->st_ino = st.st_ino;
+	a->valid = true;
+}
+
+void capdrop_oracle_capture_init_ns_anchors(void)
+{
+	capdrop_capture_anchor(&anchor_user, "/proc/self/ns/user");
+	capdrop_capture_anchor(&anchor_mnt, "/proc/self/ns/mnt");
+	capdrop_capture_anchor(&anchor_net, "/proc/self/ns/net");
+}
+
+/*
+ * Returns true iff the anchor was captured AND the current ns at `path`
+ * matches it.  False on capture failure (anchor invalid), stat failure,
+ * or identity mismatch.  Callers use this to skip a ns-scoped probe when
+ * the child is no longer in the namespace it was sandboxed in -- the
+ * conservative side: missing the probe on this tick beats emitting a
+ * false-fire anomaly.  The bpf probe (the load-bearing init-userns
+ * invariant) is not gated through this helper.
+ */
+static bool capdrop_still_in_init_ns(const struct capdrop_ns_anchor *a,
+				     const char *path)
+{
+	struct stat st;
+
+	if (!a->valid)
+		return false;
+	if (stat(path, &st) != 0)
+		return false;
+	return st.st_dev == a->st_dev && st.st_ino == a->st_ino;
+}
 
 static void capdrop_bump_anomaly(void)
 {
@@ -220,14 +296,25 @@ static void capdrop_probe_capget_self(void)
  * Sampled invariant entry point.  Called from periodic_work() with a
  * ONE_IN gate around it; this function pays the four probes only on
  * the sample tick.
+ *
+ * The bpf KPROBE-load probe runs UNCONDITIONALLY -- its cap check is
+ * pinned to the init user namespace, so it remains correct even after a
+ * legitimate alt-op enters a bootstrapped userns and is the load-
+ * bearing invariant of this oracle.  The capget/mount/net_admin probes
+ * are skipped when the child has left its sandbox-time user / mnt / net
+ * namespace respectively, because each then legitimately succeeds in
+ * the new ns and would false-fire.
  */
 void capdrop_oracle_tick(void)
 {
 	if (!ONE_IN(CAPDROP_ORACLE_SAMPLE_DENOM))
 		return;
 
-	capdrop_probe_capget_self();
+	if (capdrop_still_in_init_ns(&anchor_user, "/proc/self/ns/user"))
+		capdrop_probe_capget_self();
 	capdrop_probe_bpf();
-	capdrop_probe_mount();
-	capdrop_probe_net_admin();
+	if (capdrop_still_in_init_ns(&anchor_mnt, "/proc/self/ns/mnt"))
+		capdrop_probe_mount();
+	if (capdrop_still_in_init_ns(&anchor_net, "/proc/self/ns/net"))
+		capdrop_probe_net_admin();
 }
