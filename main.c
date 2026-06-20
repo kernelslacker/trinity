@@ -2463,6 +2463,7 @@ static void print_stats_iteration_line(unsigned long op_count, unsigned long rat
 {
 	if (kcov_shm != NULL) {
 		static unsigned long last_edges = 0;
+		static unsigned long last_distinct = 0;
 		static unsigned long last_cmp_trunc = 0;
 		static unsigned long last_cmp_unique = 0;
 		unsigned long edges = __atomic_load_n(
@@ -2482,6 +2483,7 @@ static void print_stats_iteration_line(unsigned long op_count, unsigned long rat
 		unsigned int cmp_kids = __atomic_load_n(
 			&kcov_shm->cmp_mode_children, __ATOMIC_RELAXED);
 		long delta = edges - last_edges;
+		long distinct_delta = distinct - last_distinct;
 		long cmp_trunc_delta = cmp_trunc - last_cmp_trunc;
 		long cmp_unique_delta = cmp_unique - last_cmp_unique;
 
@@ -2499,19 +2501,23 @@ static void print_stats_iteration_line(unsigned long op_count, unsigned long rat
 		 * read cleanly.  trunc still gets its own trailing bracket
 		 * when non-zero (rare; per-syscall KCOV_CMP_RECORDS_MAX
 		 * overflow signal). */
-		char edges_delta_str[64] = "";
+		char distinct_delta_str[32] = "";
+		char bucket_delta_str[32] = "";
 		char warm_cold_str[48] = "";
 		char unique_str[80] = "";
 		char modes_str[48] = "";
 		char trunc_str[48] = "";
-		/* Print the bucket (edges_found) delta per window as
-		 * " (+M)" right after the bucket count -- the fine-
-		 * grained edges delta including churn on known edges.
-		 * Suppress the whole bracket on the first window and on
-		 * zero-delta windows so the line shape stays uncluttered. */
+		/* Print each count's per-window delta as " (+N)" right
+		 * after the count, suppressed when that delta is zero (and
+		 * on the first window, before last_* are seeded), so the
+		 * line shape stays uncluttered on quiet windows. */
+		if (last_edges > 0 && distinct_delta != 0)
+			snprintf(distinct_delta_str,
+				sizeof(distinct_delta_str),
+				" (%+ld)", distinct_delta);
 		if (last_edges > 0 && delta != 0)
-			snprintf(edges_delta_str,
-				sizeof(edges_delta_str),
+			snprintf(bucket_delta_str,
+				sizeof(bucket_delta_str),
 				" (%+ld)", delta);
 		/* Warm vs cold split: edges_warm_loaded is the count
 		 * the warm-start cache loader seeded at startup; the
@@ -2559,17 +2565,18 @@ static void print_stats_iteration_line(unsigned long op_count, unsigned long rat
 				snprintf(trunc_str, sizeof(trunc_str),
 					" [%lu trunc]", cmp_trunc);
 		}
-		output(0, "%ld iterations. [HI:%ld%s] %lu/sec  KCOV: [%lu distinct, %lu%s bucket%s%s%s]%s\n",
+		output(0, "%ld iterations. [HI:%ld%s] %lu/sec  KCOV: [%lu%s distinct, %lu%s bucket%s%s%s]%s\n",
 			op_count,
 			hiscore,
 			stall_count ? stalltxt : "",
 			rate,
-			distinct, edges, edges_delta_str,
+			distinct, distinct_delta_str, edges, bucket_delta_str,
 			warm_cold_str,
 			unique_str,
 			modes_str,
 			trunc_str);
 		last_edges = edges;
+		last_distinct = distinct;
 		last_cmp_trunc = cmp_trunc;
 		last_cmp_unique = cmp_unique;
 		print_kcov_cmp_diag();
