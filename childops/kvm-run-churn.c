@@ -305,7 +305,7 @@ static void run_memslot_race(int vmfd, int vcpufd,
 		(void)pthread_join(tid, NULL);
 }
 
-bool kvm_run_churn(struct childdata *child __attribute__((unused)))
+bool kvm_run_churn(struct childdata *child)
 {
 	struct object *obj;
 	int vcpufd, iters, i;
@@ -339,6 +339,12 @@ bool kvm_run_churn(struct childdata *child __attribute__((unused)))
 	 */
 	if (!range_in_tracked_shared((unsigned long)kr, kvm_run_size))
 		return true;
+
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	if (ONE_IN(8)) {
 		run_memslot_race(obj->kvmvcpuobj.parent_vmfd, vcpufd, kr,
