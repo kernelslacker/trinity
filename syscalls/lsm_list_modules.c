@@ -316,5 +316,6 @@ struct syscallentry syscall_lsm_list_modules = {
 	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_ADDRESS },
 	.sanitise = sanitise_lsm_list_modules,
 	.post = post_lsm_list_modules,
+	.flags = REEXEC_SANITISE_OK,
 	.group = GROUP_PROCESS,
 };
