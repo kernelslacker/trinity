@@ -848,8 +848,6 @@ bool flowtable_encap_vlan(struct childdata *child)
 	struct timespec t_outer;
 	unsigned int outer_iters, i;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.flowtable_vlan_runs, 1,
 			   __ATOMIC_RELAXED);
 
@@ -863,6 +861,9 @@ bool flowtable_encap_vlan(struct childdata *child)
 		if (unshare(CLONE_NEWNET) < 0) {
 			if (errno != EPERM) {
 				ns_unsupported_flowtable_vlan = true;
+				__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 				__atomic_add_fetch(&shm->stats.flowtable_vlan_setup_failed,
 						   1, __ATOMIC_RELAXED);
 				return true;
@@ -870,6 +871,8 @@ bool flowtable_encap_vlan(struct childdata *child)
 		}
 		fev_unshared = true;
 	}
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	if (clock_gettime(CLOCK_MONOTONIC, &t_outer) < 0) {
 		t_outer.tv_sec = 0;
@@ -883,12 +886,18 @@ bool flowtable_encap_vlan(struct childdata *child)
 	if (outer_iters > FEV_OUTER_CAP)
 		outer_iters = FEV_OUTER_CAP;
 
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	for (i = 0; i < outer_iters; i++) {
 		if ((unsigned long long)ns_since(&t_outer) >= FEV_WALL_CAP_NS)
 			break;
 		iter_one(i, &t_outer);
-		if (ns_unsupported_flowtable_vlan)
+		if (ns_unsupported_flowtable_vlan) {
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 			break;
+		}
 	}
 
 	return true;

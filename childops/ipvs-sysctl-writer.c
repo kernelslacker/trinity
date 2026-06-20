@@ -140,8 +140,6 @@ bool ipvs_sysctl_writer(struct childdata *child)
 	unsigned int iters, i;
 	int probe;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.ipvs_sysctl_writer_runs, 1,
 			   __ATOMIC_RELAXED);
 
@@ -151,6 +149,9 @@ bool ipvs_sysctl_writer(struct childdata *child)
 	if (!setup_done) {
 		if (unshare(CLONE_NEWNET) < 0) {
 			ns_unsupported_ipvs_sysctl = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 			__atomic_add_fetch(&shm->stats.ipvs_sysctl_writer_unsupported_latched,
 					   1, __ATOMIC_RELAXED);
 			return true;
@@ -163,6 +164,9 @@ bool ipvs_sysctl_writer(struct childdata *child)
 		probe = open(IPVS_CANONICAL_PATH, O_RDONLY);
 		if (probe < 0) {
 			ns_unsupported_ipvs_sysctl = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 			__atomic_add_fetch(&shm->stats.ipvs_sysctl_writer_unsupported_latched,
 					   1, __ATOMIC_RELAXED);
 			return true;
@@ -170,11 +174,15 @@ bool ipvs_sysctl_writer(struct childdata *child)
 		close(probe);
 		setup_done = true;
 	}
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	iters = BUDGETED(CHILD_OP_IPVS_SYSCTL_WRITER, JITTER_RANGE(IPVS_WRITE_BASE));
 	if (iters > IPVS_WRITE_CAP)
 		iters = IPVS_WRITE_CAP;
 
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	for (i = 0; i < iters; i++) {
 		const char *path = ipvs_sysctls[rnd_modulo_u32(NR_IPVS_SYSCTLS)];
 		char buf[128];

@@ -429,6 +429,7 @@ struct bridge_conntrack_iter_ctx {
 	bool			bridge_added;
 	bool			veth_added;
 	bool			sender_started;
+	struct childdata	*child;
 };
 
 static long brct_ns_since(const struct timespec *t0)
@@ -541,8 +542,12 @@ static int bridge_conntrack_iter_bridge_create(struct bridge_conntrack_iter_ctx 
 	rc = rtnl_create_bridge(&ctx->rtnl, ctx->br_name);
 	if (rc != 0) {
 		if (rc == -EAFNOSUPPORT || rc == -EOPNOTSUPP ||
-		    rc == -ENOTSUP || rc == -EPROTONOSUPPORT)
+		    rc == -ENOTSUP || rc == -EPROTONOSUPPORT) {
 			ns_unsupported_bridge = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[ctx->child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		}
 		return -1;
 	}
 	ctx->bridge_added = true;
@@ -603,8 +608,12 @@ static int bridge_conntrack_iter_nft_setup(struct bridge_conntrack_iter_ctx *ctx
 		return -1;
 	rc = nft_install_bridge_ct(&ctx->nfnl_nft, "br_ct", "in");
 	if (rc == -EAFNOSUPPORT || rc == -EPROTONOSUPPORT ||
-	    rc == -EOPNOTSUPP || rc == -ENOTSUP)
+	    rc == -EOPNOTSUPP || rc == -ENOTSUP) {
 		ns_unsupported_nf_tables = true;
+		__atomic_store_n(&shm->stats.childop_latch_reason[ctx->child->op_type],
+				 CHILDOP_LATCH_NS_UNSUPPORTED,
+				 __ATOMIC_RELAXED);
+	}
 	return 0;
 }
 
@@ -669,6 +678,9 @@ static void bridge_conntrack_iter_traffic_burst(struct bridge_conntrack_iter_ctx
 			if (rc == -EAFNOSUPPORT || rc == -EPROTONOSUPPORT ||
 			    rc == -EOPNOTSUPP || rc == -ENOTSUP) {
 				ns_unsupported_ctnetlink = true;
+				__atomic_store_n(&shm->stats.childop_latch_reason[ctx->child->op_type],
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 				break;
 			}
 			__atomic_add_fetch(&shm->stats.bridge_ct_flushes,
@@ -719,9 +731,8 @@ bool bridge_conntrack_churn(struct childdata *child)
 		.nfnl_nft = { .nl = { .fd = -1 } },
 		.nfnl_ct  = { .nl = { .fd = -1 } },
 		.raw      = -1,
+		.child    = child,
 	};
-
-	(void)child;
 
 	__atomic_add_fetch(&shm->stats.bridge_ct_runs, 1, __ATOMIC_RELAXED);
 
@@ -735,6 +746,9 @@ bool bridge_conntrack_churn(struct childdata *child)
 	if (!ns_unshared) {
 		if (unshare(CLONE_NEWNET) < 0) {
 			ns_setup_failed = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_INIT_FAILED,
+					 __ATOMIC_RELAXED);
 			return true;
 		}
 		ns_unshared = true;
@@ -751,7 +765,11 @@ bool bridge_conntrack_churn(struct childdata *child)
 
 	if (bridge_conntrack_iter_nft_setup(&ctx) != 0)
 		goto out;
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	bridge_conntrack_iter_traffic_burst(&ctx);
 
 out:
