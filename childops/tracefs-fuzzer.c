@@ -660,8 +660,11 @@ void tracefs_fuzzer_init(void)
 	bool events_subset_present;
 	unsigned int avail = 0;
 
-	if (access(TRACEFS_ROOT "/tracing_on", F_OK) != 0)
+	if (access(TRACEFS_ROOT "/tracing_on", F_OK) != 0) {
+		__atomic_store_n(&shm->stats.childop_latch_reason[CHILD_OP_TRACEFS_FUZZER],
+				 CHILDOP_LATCH_UNSUPPORTED, __ATOMIC_RELAXED);
 		return;
+	}
 
 	ftrace_subset_present = (access(TRACEFS_ROOT "/current_tracer", F_OK) == 0);
 	events_subset_present = (access(TRACEFS_ROOT "/available_events", F_OK) == 0);
@@ -670,8 +673,11 @@ void tracefs_fuzzer_init(void)
 		  ftrace_subset_present ? "yes" : "no",
 		  events_subset_present ? "yes" : "no");
 
-	if (!ftrace_subset_present && !events_subset_present)
+	if (!ftrace_subset_present && !events_subset_present) {
+		__atomic_store_n(&shm->stats.childop_latch_reason[CHILD_OP_TRACEFS_FUZZER],
+				 CHILDOP_LATCH_UNSUPPORTED, __ATOMIC_RELAXED);
 		return;
+	}
 
 	if (ftrace_subset_present) {
 		avail |= REQ_FTRACE;
@@ -689,11 +695,14 @@ void tracefs_fuzzer_init(void)
 
 bool tracefs_fuzzer(struct childdata *child)
 {
-	(void)child;
-
 	if (!tracefs_available)
 		return true;
 
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	pick_table[rnd_modulo_u32(nr_picks)]->fn();
 	return true;
 }
