@@ -350,6 +350,7 @@ static void send_fuzzed_msg(struct nl_ctx *ctx, struct genl_family_entry *fam)
 	size_t off;
 	int num_attrs;
 	uint8_t cmd;
+	__u32 seq;
 
 	memset(buf, 0, NLMSG_HDRLEN + GENL_HDRLEN);
 
@@ -358,11 +359,12 @@ static void send_fuzzed_msg(struct nl_ctx *ctx, struct genl_family_entry *fam)
 	else
 		cmd = (uint8_t)(rnd_u32() & 0xff);
 
+	seq = nl_seq_next(ctx);
 	nlh->nlmsg_type = fam->id;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
 	if (RAND_BOOL())
 		nlh->nlmsg_flags |= NLM_F_DUMP;
-	nlh->nlmsg_seq = nl_seq_next(ctx);
+	nlh->nlmsg_seq = seq;
 	nlh->nlmsg_pid = 0;
 
 	genl = (struct genlmsghdr *)NLMSG_DATA(nlh);
@@ -388,7 +390,7 @@ static void send_fuzzed_msg(struct nl_ctx *ctx, struct genl_family_entry *fam)
 
 	nlh->nlmsg_len = off;
 
-	if (nl_send_drain_errors(ctx, buf, off, genl_on_err, fam) < 0)
+	if (nl_send_drain_errors(ctx, buf, off, seq, genl_on_err, fam) < 0)
 		return;
 
 	__atomic_add_fetch(&shm->stats.genetlink_msgs_sent, 1, __ATOMIC_RELAXED);

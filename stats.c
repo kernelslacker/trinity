@@ -2167,6 +2167,7 @@ static const struct stat_field genetlink_fuzzer_fields[] = {
 	STAT_FIELD(genetlink, families_discovered),
 	STAT_FIELD(genetlink, msgs_sent),
 	STAT_FIELD(genetlink, eperm),
+	STAT_FIELD(genetlink, stale_seq_drops),
 };
 
 static const struct stat_category genetlink_fuzzer_category =
@@ -6450,6 +6451,7 @@ static void dump_stats_fuzzer_subsystems(void)
 		stat_row("genetlink_fuzzer", "families_discovered", shm->stats.genetlink_families_discovered);
 		stat_row("genetlink_fuzzer", "msgs_sent",           shm->stats.genetlink_msgs_sent);
 		stat_row("genetlink_fuzzer", "eperm",               shm->stats.genetlink_eperm);
+		stat_row("genetlink_fuzzer", "stale_seq_drops",     shm->stats.genetlink_stale_seq_drops);
 	}
 
 	if (shm->stats.genl_family_calls_devlink   ||
