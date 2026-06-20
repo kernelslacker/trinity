@@ -195,8 +195,6 @@ bool rtnl_vf_broadcast_getlink(struct childdata *child)
 	struct timespec t0;
 	unsigned int iters, i;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.rtnl_vf_broadcast_runs, 1,
 			   __ATOMIC_RELAXED);
 
@@ -207,17 +205,25 @@ bool rtnl_vf_broadcast_getlink(struct childdata *child)
 		if (ns_setup_failed_latched || !do_setup()) {
 			ns_setup_failed_latched = true;
 			ns_unsupported_rtnl_vf_broadcast = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 			__atomic_add_fetch(&shm->stats.rtnl_vf_broadcast_setup_failed,
 					   1, __ATOMIC_RELAXED);
 			return true;
 		}
 		ns_setup_done = true;
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+				   1, __ATOMIC_RELAXED);
 	}
 
 	iters = BUDGETED(CHILD_OP_RTNL_VF_BROADCAST_GETLINK,
 			 JITTER_RANGE(VFB_OUTER_BASE));
 	if (iters > VFB_OUTER_CAP)
 		iters = VFB_OUTER_CAP;
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	(void)clock_gettime(CLOCK_MONOTONIC, &t0);
 	for (i = 0; i < iters; i++) {
