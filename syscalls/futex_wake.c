@@ -54,7 +54,7 @@ static void sanitise_futex_wake(struct syscallrecord *rec)
 static void post_futex_wake(struct syscallrecord *rec)
 {
 	unsigned long retval = rec->retval;
-	unsigned long val_arg = rec->a3;
+	unsigned long val_arg = get_arg_snapshot(rec, 3);
 
 	if (retval == (unsigned long)-1L)
 		return;
@@ -77,4 +77,14 @@ struct syscallentry syscall_futex_wake = {
 	.sanitise = sanitise_futex_wake,
 	.post = post_futex_wake,
 	.group = GROUP_IPC,
+	/* a3 (nr) drives post_futex_wake's retval bound: the kernel ABI
+	 * caps the woken-count at the requested nr, and the post oracle
+	 * rejects any retval outside [0, nr] as a structural violation.
+	 * Reading a3 live from the shared rec would let a sibling stomp
+	 * between syscall return and the post handler swing the bound to
+	 * a fabricated value -- masking a real over-count or fabricating
+	 * a violation from a clean call.  Shadow a3 so the bound comes
+	 * from the dispatch-time value the kernel actually saw; mismatch
+	 * bumps arg_shadow_stomp from inside get_arg_snapshot(). */
+	.arg_snapshot_mask = (1u << 2),
 };
