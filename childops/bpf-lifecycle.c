@@ -260,7 +260,7 @@ static struct object *publish_prog_fd(int fd, uint32_t prog_type)
  * errors), false if a structural failure means we should not retry this
  * combo for this child.
  */
-static bool combo_socket_filter(void)
+static bool combo_socket_filter(struct childdata *child)
 {
 	int sv[2] = { -1, -1 };
 	int map_fd = -1;
@@ -274,6 +274,9 @@ static bool combo_socket_filter(void)
 
 	if (socket_filter_disabled)
 		return false;
+
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	map_fd = create_array_map();
 	if (map_fd < 0)
@@ -313,6 +316,9 @@ static bool combo_socket_filter(void)
 	}
 	__atomic_add_fetch(&shm->stats.bpf_lifecycle_attached, 1,
 			   __ATOMIC_RELAXED);
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	/*
 	 * Mutate-then-trigger interleaved.  Each iteration writes a fresh
@@ -396,7 +402,7 @@ static void cgroup_trigger(void)
  * one of the trinity{0..7} cgroup directories that munge_process()
  * already uses.  Latches off on EPERM/EACCES or missing cgroup.
  */
-static bool combo_cgroup_skb(void)
+static bool combo_cgroup_skb(struct childdata *child)
 {
 	int cgroup_fd = -1;
 	int map_fd = -1;
@@ -411,6 +417,9 @@ static bool combo_cgroup_skb(void)
 
 	if (cgroup_disabled)
 		return false;
+
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	snprintf(path, sizeof(path), "/sys/fs/cgroup/trinity%u",
 		 rnd_modulo_u32(8));
@@ -463,6 +472,9 @@ static bool combo_cgroup_skb(void)
 	attached = true;
 	__atomic_add_fetch(&shm->stats.bpf_lifecycle_attached, 1,
 			   __ATOMIC_RELAXED);
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	for (key = 0; key < MAP_ENTRIES; key++) {
 		update_elem(map_fd, key, rand32());
@@ -533,7 +545,7 @@ out:
  * CONFIG_BPF_SYSCALL=n / arena disabled), latch arena_unsupported and
  * bail cleanly — we must not crash trinity over a missing feature.
  */
-static bool combo_arena_fork(void)
+static bool combo_arena_fork(struct childdata *child)
 {
 	union bpf_attr attr;
 	unsigned int npages;
@@ -547,6 +559,9 @@ static bool combo_arena_fork(void)
 
 	if (arena_unsupported)
 		return false;
+
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	npages = rnd_modulo_u32(4) + 1;
 
@@ -575,6 +590,9 @@ static bool combo_arena_fork(void)
 		close(map_fd);
 		return false;
 	}
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	pid = fork();
 	if (pid < 0) {
@@ -628,8 +646,6 @@ static bool combo_arena_fork(void)
 
 bool bpf_lifecycle(struct childdata *child)
 {
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.bpf_lifecycle_runs, 1, __ATOMIC_RELAXED);
 
 	/*
@@ -638,7 +654,7 @@ bool bpf_lifecycle(struct childdata *child)
 	 * the running kernel or the combo decides not to run this turn.
 	 */
 	if (!arena_unsupported && RAND_RANGE(0, 9) < 2) {
-		if (combo_arena_fork())
+		if (combo_arena_fork(child))
 			return true;
 		/* fall through */
 	}
@@ -649,11 +665,11 @@ bool bpf_lifecycle(struct childdata *child)
 	 * cheap, and avoids busy-failing on a kernel without BPF support.
 	 */
 	if (!cgroup_disabled && RAND_RANGE(0, 9) < 3) {
-		if (combo_cgroup_skb())
+		if (combo_cgroup_skb(child))
 			return true;
 		/* fall through to socket combo on failure */
 	}
 
-	(void)combo_socket_filter();
+	(void)combo_socket_filter(child);
 	return true;
 }
