@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include "deferred-free.h"
 #include "fd.h"
+#include "files.h"
 #include "maps.h"
 #include "random.h"
 #include "rnd.h"
@@ -142,6 +143,22 @@ static void sanitise_fallocate(struct syscallrecord *rec)
 
 	rec->a3 = (unsigned long) offset;
 	rec->a4 = (unsigned long) len;
+
+	/*
+	 * Bias the fd toward the writable pagecache pool 25% of the time
+	 * so the in-extent allocate/punch/zero/collapse/insert arms actually
+	 * land on a regular file backed by the page cache instead of falling
+	 * through the fstat()+S_ISREG reject bucket on a pipe/socket draw.
+	 * MUTATING syscall, so use the O_RDWR getter.  Pool-empty returns
+	 * -1, in which case the swap is skipped and the existing pick
+	 * stands.  Done BEFORE reroll_protected_fd_arg() so the protected-fd
+	 * reroll still runs last.
+	 */
+	if (rnd_modulo_u32(100) < 25) {
+		int fd = get_rand_writeable_pagecache_fd();
+		if (fd >= 0)
+			rec->a1 = fd;
+	}
 
 	/* Belt-and-suspenders: keep the stderr capture memfd (and other
 	 * protected fds) out of rec->a1 so a fuzz-induced fallocate can't
