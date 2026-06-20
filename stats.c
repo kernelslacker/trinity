@@ -8505,7 +8505,7 @@ static void __cold dump_stats_kcov_block(void)
 				       "rem_calls", "rem_eCalls", "rem_eCount");
 				for (j = 0; j < lr_top_count; j++) {
 					unsigned int op_id = lr_top_op[j];
-					char opname[24];
+					char opname[64];
 					unsigned long lc = __atomic_load_n(
 						&kcov_shm->childop_local_pc_calls[op_id],
 						__ATOMIC_RELAXED);
