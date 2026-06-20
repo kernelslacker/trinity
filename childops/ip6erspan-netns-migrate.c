@@ -197,13 +197,17 @@ struct ip6erspan_migrate_iter_ctx {
 	int		ifindex;
 	bool		migrated;
 	char		ifname[IFNAMSIZ];
+	struct childdata *child;
 };
 
-static void warn_once_unsupported(void)
+static void warn_once_unsupported(struct childdata *child)
 {
 	if (ns_unsupported_ip6erspan)
 		return;
 	ns_unsupported_ip6erspan = true;
+	__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+			 CHILDOP_LATCH_NS_UNSUPPORTED,
+			 __ATOMIC_RELAXED);
 	/* init_child redirected stderr to /dev/null, so an outputerr
 	 * here would be lost.  Bump a shm counter under the same
 	 * one-shot gate so the unsupported-observation survives. */
@@ -395,17 +399,17 @@ static int inm_open_self_netns(void)
  * Returns true on success.  False latches ns_unsupported_ip6erspan via
  * warn_once_unsupported.
  */
-static bool inm_enter_orig_ns(void)
+static bool inm_enter_orig_ns(struct childdata *child)
 {
 	if (inm_unshared_orig)
 		return true;
 	if (unshare(CLONE_NEWNET) < 0) {
-		warn_once_unsupported();
+		warn_once_unsupported(child);
 		return false;
 	}
 	inm_orig_ns_fd = inm_open_self_netns();
 	if (inm_orig_ns_fd < 0) {
-		warn_once_unsupported();
+		warn_once_unsupported(child);
 		return false;
 	}
 	inm_unshared_orig = true;
@@ -459,6 +463,9 @@ static int ip6erspan_migrate_iter_create_link(struct ip6erspan_migrate_iter_ctx 
 			__atomic_add_fetch(&shm->stats.inm_eperm,
 					   1, __ATOMIC_RELAXED);
 			ns_unsupported_ip6erspan = true;
+			__atomic_store_n(&shm->stats.childop_latch_reason[ctx->child->op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 		} else if (rc == -ENOENT || rc == -EAFNOSUPPORT ||
 			   rc == -EPROTONOSUPPORT || rc == -EOPNOTSUPP) {
 			__atomic_add_fetch(&shm->stats.inm_unsupported,
@@ -496,17 +503,17 @@ static int ip6erspan_migrate_iter_migrate(struct ip6erspan_migrate_iter_ctx *ctx
 	int rc;
 
 	if (unshare(CLONE_NEWNET) < 0) {
-		warn_once_unsupported();
+		warn_once_unsupported(ctx->child);
 		return -1;
 	}
 	ctx->target_ns_fd = inm_open_self_netns();
 	if (ctx->target_ns_fd < 0) {
-		warn_once_unsupported();
+		warn_once_unsupported(ctx->child);
 		(void)setns(inm_orig_ns_fd, CLONE_NEWNET);
 		return -1;
 	}
 	if (setns(inm_orig_ns_fd, CLONE_NEWNET) < 0) {
-		warn_once_unsupported();
+		warn_once_unsupported(ctx->child);
 		close(ctx->target_ns_fd);
 		ctx->target_ns_fd = -1;
 		return -1;
@@ -544,7 +551,7 @@ static void ip6erspan_migrate_iter_changelink(struct ip6erspan_migrate_iter_ctx 
 	int rc;
 
 	if (setns(ctx->target_ns_fd, CLONE_NEWNET) < 0) {
-		warn_once_unsupported();
+		warn_once_unsupported(ctx->child);
 		return;
 	}
 	if (nl_open(&ctx->target_nl, opts) < 0)
@@ -605,20 +612,19 @@ bool ip6erspan_netns_migrate(struct childdata *child)
 		.nl = { .fd = -1 },
 		.target_nl = { .fd = -1 },
 		.target_ns_fd = -1,
+		.child = child,
 	};
 	struct nl_open_opts opts = {
 		.proto = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
 	};
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.inm_iters, 1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported_ip6erspan)
 		return true;
 
-	if (!inm_enter_orig_ns()) {
+	if (!inm_enter_orig_ns(child)) {
 		__atomic_add_fetch(&shm->stats.inm_eperm, 1, __ATOMIC_RELAXED);
 		return true;
 	}
@@ -631,7 +637,11 @@ bool ip6erspan_netns_migrate(struct childdata *child)
 
 	if (ip6erspan_migrate_iter_migrate(&ictx) != 0)
 		goto out;
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	ip6erspan_migrate_iter_changelink(&ictx, &opts);
 
 out:
