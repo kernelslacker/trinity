@@ -681,7 +681,7 @@ static void teardown_one(int32_t *ring)
 	}
 }
 
-bool rxrpc_key_install(struct childdata *child __unused__)
+bool rxrpc_key_install(struct childdata *child)
 {
 	int32_t live[LIVE_KEYS_RING];
 	struct timespec start;
@@ -692,11 +692,21 @@ bool rxrpc_key_install(struct childdata *child __unused__)
 			   1, __ATOMIC_RELAXED);
 
 	probe_rxrpc_key_supported();
-	if (unsupported_rxrpc_key_install)
+	if (unsupported_rxrpc_key_install) {
+		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+				 CHILDOP_LATCH_UNSUPPORTED,
+				 __ATOMIC_RELAXED);
 		return true;
+	}
+
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	memset(live, 0, sizeof(live));
 	clock_gettime(CLOCK_MONOTONIC, &start);
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	iters = JITTER_RANGE(MAX_ITERATIONS);
 	for (iter = 0; iter < iters; iter++) {
@@ -735,8 +745,12 @@ bool rxrpc_key_install(struct childdata *child __unused__)
 		if ((iter & 3) == 3)
 			teardown_one(live);
 
-		if (unsupported_rxrpc_key_install)
+		if (unsupported_rxrpc_key_install) {
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 			return true;
+		}
 		if (budget_elapsed_ns(&start, BUDGET_NS))
 			break;
 	}

@@ -95,7 +95,7 @@ static bool qrtr_probed;
  * with the qrtr module loaded; everything else (EAFNOSUPPORT /
  * EPROTONOSUPPORT / EACCES) latches the op off.
  */
-static void probe_qrtr(void)
+static void probe_qrtr(struct childdata *child)
 {
 	int fd;
 
@@ -105,6 +105,9 @@ static void probe_qrtr(void)
 		/* Any failure on the bare socket() probe means we can't
 		 * drive the race meaningfully; latch off uniformly. */
 		ns_unsupported_qrtr_bind_race = true;
+		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+				 CHILDOP_LATCH_UNSUPPORTED,
+				 __ATOMIC_RELAXED);
 		return;
 	}
 	close(fd);
@@ -248,8 +251,6 @@ bool qrtr_bind_race(struct childdata *child)
 	struct timespec t_outer;
 	unsigned int outer_iters, i;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.qrtr_bind_race_runs,
 			   1, __ATOMIC_RELAXED);
 
@@ -260,13 +261,16 @@ bool qrtr_bind_race(struct childdata *child)
 	}
 
 	if (!qrtr_probed) {
-		probe_qrtr();
+		probe_qrtr(child);
 		if (ns_unsupported_qrtr_bind_race) {
 			__atomic_add_fetch(&shm->stats.qrtr_bind_race_setup_failed,
 					   1, __ATOMIC_RELAXED);
 			return true;
 		}
 	}
+
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	if (clock_gettime(CLOCK_MONOTONIC, &t_outer) < 0) {
 		t_outer.tv_sec = 0;
@@ -278,6 +282,9 @@ bool qrtr_bind_race(struct childdata *child)
 		outer_iters = 1U;
 	if (outer_iters > QRTR_BIND_OUTER_CAP)
 		outer_iters = QRTR_BIND_OUTER_CAP;
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	for (i = 0; i < outer_iters; i++) {
 		if (budget_elapsed_ns(&t_outer, (long)QRTR_BIND_WALL_CAP_NS))

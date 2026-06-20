@@ -179,7 +179,7 @@ static const struct atm_ioctl_spec atm_ioctl_table[] = {
  * ns_atm_unsupported so subsequent calls bail at the top of the
  * outer entry point.
  */
-static int atm_open_one(int family, int proto)
+static int atm_open_one(struct childdata *child, int family, int proto)
 {
 	int fd;
 
@@ -189,6 +189,9 @@ static int atm_open_one(int family, int proto)
 			ns_atm_unsupported = true;
 			__atomic_add_fetch(&shm->stats.atm_vcc_churn_unsupported,
 					   1, __ATOMIC_RELAXED);
+			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+					 CHILDOP_LATCH_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 		}
 		return -1;
 	}
@@ -240,7 +243,7 @@ static void atm_fire_one(int fd, const struct atm_ioctl_spec *spec)
  * while the kernel is still walking the dispatch state from the
  * preceding ioctl.
  */
-static void atm_churn_cycle(void)
+static void atm_churn_cycle(struct childdata *child)
 {
 	const struct atm_ioctl_spec *spec;
 	unsigned int batch, j;
@@ -249,7 +252,7 @@ static void atm_churn_cycle(void)
 
 	family = RAND_BOOL() ? AF_ATMPVC : AF_ATMSVC;
 
-	fd = atm_open_one(family, ATMPROTO_AAL5);
+	fd = atm_open_one(child, family, ATMPROTO_AAL5);
 	if (fd < 0)
 		return;
 	__atomic_add_fetch(&shm->stats.atm_vcc_churn_socket_ok, 1,
@@ -272,17 +275,20 @@ bool atm_vcc_churn(struct childdata *child)
 {
 	unsigned int iters, i;
 
-	(void)child;
-
 	__atomic_add_fetch(&shm->stats.atm_vcc_churn_runs, 1,
 			   __ATOMIC_RELAXED);
 
 	if (ns_atm_unsupported)
 		return true;
 
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
+
 	iters = BUDGETED(CHILD_OP_ATM_VCC_CHURN, JITTER_RANGE(CHURN_ITERS_BASE));
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 	for (i = 0; i < iters; i++) {
-		atm_churn_cycle();
+		atm_churn_cycle(child);
 		if (ns_atm_unsupported)
 			break;
 	}

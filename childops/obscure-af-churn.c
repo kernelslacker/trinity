@@ -387,7 +387,7 @@ static void run_close_via_dup(const struct socket_triplet *t)
 	close(dup_fd);
 }
 
-bool obscure_af_churn(struct childdata *child __unused__)
+bool obscure_af_churn(struct childdata *child)
 {
 	struct socket_triplet triplet = { 0, 0, 0 };
 	int pf;
@@ -401,6 +401,12 @@ bool obscure_af_churn(struct childdata *child __unused__)
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
+
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	run_sendmsg_no_bind(&triplet);
 	run_bind_then_sendmsg(&triplet);
