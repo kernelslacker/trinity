@@ -204,7 +204,7 @@ static const tmpl_fn templates[NR_TEMPLATES] = {
 	tmpl_vlan_qinq, tmpl_bad_ethertype,
 };
 
-static bool ensure_socket(void)
+static bool ensure_socket(struct childdata *child)
 {
 	struct sockaddr_ll sll;
 	unsigned int idx;
@@ -234,6 +234,11 @@ static bool ensure_socket(void)
 	return true;
 disable:
 	eth_disabled = true;
+	__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+			 (errno == EPERM || errno == EACCES) ?
+				 CHILDOP_LATCH_NS_UNSUPPORTED :
+				 CHILDOP_LATCH_INIT_FAILED,
+			 __ATOMIC_RELAXED);
 	if (!warned_unsupported) {
 		warned_unsupported = true;
 		outputerr("eth_emitter: AF_PACKET setup failed (errno=%d), disabling\n",
@@ -250,14 +255,16 @@ bool eth_emitter(struct childdata *child)
 	size_t len;
 	ssize_t rc;
 
-	(void)child;
 	__atomic_add_fetch(&shm->stats.eth_emitter_runs, 1, __ATOMIC_RELAXED);
 
-	if (!ensure_socket()) {
+	if (!ensure_socket(child)) {
 		__atomic_add_fetch(&shm->stats.eth_emitter_setup_failed,
 		                   1, __ATOMIC_RELAXED);
 		return true;
 	}
+
+	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	pick = rnd_modulo_u32(NR_TEMPLATES);
 	len = templates[pick](frame);
@@ -272,6 +279,9 @@ bool eth_emitter(struct childdata *child)
 	sll.sll_ifindex = eth_ifindex;
 	sll.sll_halen = 6;
 	memcpy(sll.sll_addr, frame, 6);
+
+	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+			   1, __ATOMIC_RELAXED);
 
 	rc = sendto(eth_fd, frame, len, 0,
 	            (struct sockaddr *)&sll, sizeof(sll));

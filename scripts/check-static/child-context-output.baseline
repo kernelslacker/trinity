@@ -8,7 +8,7 @@
 childops/af-alg-template-probe.c:199:af_alg_template_probe
 childops/af-alg-template-probe.c:218:af_alg_template_probe
 childops/af-alg-weak-cipher-probe.c:218:probe_one_entry
-childops/eth-emitter.c:239:ensure_socket
+childops/eth-emitter.c:244:ensure_socket
 childops/fs-lifecycle.c:158:ensure_private_ns
 childops/genetlink-fuzzer.c:285:ensure_discovery
 childops/genetlink-fuzzer.c:303:ensure_discovery
