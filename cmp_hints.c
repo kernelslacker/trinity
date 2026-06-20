@@ -2175,6 +2175,105 @@ static void cmp_hints_stash_consumed(unsigned int nr, bool do32,
 				   __ATOMIC_RELAXED);
 }
 
+/*
+ * Per-child A/B stamp + weighted draw for the cmp-hints live-pick
+ * policy -- the header-anticipated follow-up to the SHADOW per-entry
+ * feedback loop ("weighted live-pick policy" in include/cmp_hints.h).
+ *
+ * Arm A (false) keeps the historical uniform draw at the two pick
+ * sites below; arm B (true) routes the same pick through
+ * cmp_hint_weighted_pick(), weighting each entry by
+ *
+ *      weight = CMP_HINT_LIVEPICK_FLOOR + wins * 4 - misses
+ *
+ * clamped to >= CMP_HINT_LIVEPICK_FLOOR so a single bad miss cannot
+ * extinguish a slot's exploration budget.  The SHADOW recording path
+ * (stash + dispatch-tail credit + per-entry .wins/.misses bumps + the
+ * flat cmp_hint_wins/cmp_hint_misses counters) is unmodified and
+ * fires identically from both arms: arm A is the control whose pick
+ * distribution stays uniform; arm B consumes the same fresh score
+ * snapshot the SHADOW recorder is producing.
+ *
+ * Stamp discipline: lazy-stamped on first read inside the child via
+ * ONE_IN(2).  The file-static lives in COW'd post-fork memory, so
+ * each forked child sees its own copy and the stamp persists for the
+ * life of that child process.  Parent context never reaches the pick
+ * path (this_child() == NULL on the parent side), so no parent-side
+ * stamp ever leaks into a freshly-forked child via COW.  Independent
+ * of the other A/B axes (cmp_hint_inject_arm_b / boring_filter_arm_b
+ * / frontier_blend_arm_b / ...) so the cohort comparison stays
+ * un-confounded.
+ *
+ * Race tolerance on the weight read: .wins / .misses are RELAXED
+ * uint16_t writes from the SHADOW credit drain; the weighted draw
+ * loads them with __atomic_load_n RELAXED.  A torn view (a sibling's
+ * mid-bump being half-visible) at worst nudges the draw by one weight
+ * unit -- the same tolerance the uniform draw already extends to a
+ * concurrent eviction of the picked triplet.  Hints are advisory; the
+ * next pull resamples.
+ */
+#define CMP_HINT_LIVEPICK_FLOOR	1U
+
+static bool cmp_hint_livepick_arm_stamped;
+static bool cmp_hint_livepick_arm_b;
+
+static bool cmp_hint_livepick_arm_b_active(void)
+{
+	if (!cmp_hint_livepick_arm_stamped) {
+		cmp_hint_livepick_arm_b = ONE_IN(2);
+		cmp_hint_livepick_arm_stamped = true;
+	}
+	return cmp_hint_livepick_arm_b;
+}
+
+static unsigned int cmp_hint_weighted_pick(struct cmp_hint_entry *entries,
+					   unsigned int count)
+{
+	uint32_t weights[CMP_HINTS_PER_SYSCALL];
+	uint64_t total = 0;
+	uint64_t acc = 0;
+	uint32_t draw;
+	unsigned int i;
+
+	/* Defensive clamp against a torn count snapshot reaching the
+	 * helper: the caller already passes a cmp_hints_pool_corrupted-
+	 * gated count, but bounding entries[] access here keeps the
+	 * weighted path self-contained against a future caller that
+	 * forgets the gate. */
+	if (count > CMP_HINTS_PER_SYSCALL)
+		count = CMP_HINTS_PER_SYSCALL;
+
+	for (i = 0; i < count; i++) {
+		uint16_t w_wins =
+			__atomic_load_n(&entries[i].wins, __ATOMIC_RELAXED);
+		uint16_t w_misses =
+			__atomic_load_n(&entries[i].misses, __ATOMIC_RELAXED);
+		int32_t w = (int32_t)CMP_HINT_LIVEPICK_FLOOR
+			  + (int32_t)w_wins * 4
+			  - (int32_t)w_misses;
+
+		if (w < (int32_t)CMP_HINT_LIVEPICK_FLOOR)
+			w = (int32_t)CMP_HINT_LIVEPICK_FLOOR;
+		weights[i] = (uint32_t)w;
+		total += weights[i];
+	}
+
+	/* total >= count * FLOOR > 0 for count > 0; bounded by
+	 * CMP_HINTS_PER_SYSCALL * (FLOOR + UINT16_MAX * 4) well under
+	 * 2^32 so the rnd_modulo_u32 cast is safe. */
+	draw = rnd_modulo_u32((uint32_t)total);
+
+	for (i = 0; i < count; i++) {
+		acc += weights[i];
+		if ((uint64_t)draw < acc)
+			return i;
+	}
+	/* Unreachable: draw < total and acc accumulates to total above.
+	 * Fall back to the last in-bounds slot if a future change drifts
+	 * the invariant rather than silently indexing off the array. */
+	return count - 1;
+}
+
 bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 			  unsigned long old, unsigned long *out)
 {
@@ -2333,7 +2432,18 @@ bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 	if (cmp_hints_pool_corrupted(pool, count))
 		return false;
 
-	picked = &pool->entries[rnd_modulo_u32(count)];
+	/* A/B-gated live-pick policy.  Arm A (control) keeps the
+	 * historical uniform draw; arm B routes the pick through the
+	 * weighted draw on the per-entry .wins/.misses score the SHADOW
+	 * credit drain maintains.  The stash + credit path below is
+	 * unchanged and fires identically from both arms, so the SHADOW
+	 * win/miss counters keep flowing as the cohort-rollup signal the
+	 * weighted draw is measured against. */
+	if (cmp_hint_livepick_arm_b_active())
+		picked = &pool->entries[
+			cmp_hint_weighted_pick(pool->entries, count)];
+	else
+		picked = &pool->entries[rnd_modulo_u32(count)];
 	/* Snapshot the entry triplet BEFORE the transform so the stash
 	 * carries the raw pool-entry identity (cmp_ip, value, size) -- the
 	 * tuple the credit drain uses to re-find the same entry.  Reading
@@ -2485,7 +2595,17 @@ bool cmp_hints_field_try_get(unsigned int nr, bool do32, unsigned int arg_idx,
 	if (!cmp_field_consumer_live_arm)
 		return false;
 
-	picked = &pool->entries[rnd_modulo_u32(count)];
+	/* A/B-gated live-pick policy, identical discipline to the
+	 * per-syscall pool pick above: arm A keeps the uniform draw, arm
+	 * B routes through the weighted draw on the per-entry score the
+	 * SHADOW credit drain maintains.  Both arms still stash the
+	 * consumed tuple below so the credit drain keeps populating the
+	 * .wins / .misses fields the weighted draw consumes. */
+	if (cmp_hint_livepick_arm_b_active())
+		picked = &pool->entries[
+			cmp_hint_weighted_pick(pool->entries, count)];
+	else
+		picked = &pool->entries[rnd_modulo_u32(count)];
 	/* Snapshot the triplet BEFORE the transform so the stash carries
 	 * the raw pool-entry identity (cmp_ip, value, size) -- the tuple
 	 * the credit drain uses to re-find the same entry.  Reading each
