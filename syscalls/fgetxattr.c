@@ -5,14 +5,27 @@
 #include <stddef.h>
 #include <string.h>
 #include <sys/syscall.h>
+#include <sys/xattr.h>
 #include <unistd.h>
 #include "arch.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "testfile.h"
 #include "trinity.h"
 #include "utils.h"
 #include "xattr.h"
+
+/*
+ * Curated name we plant ahead of the trinity-dispatched fgetxattr.
+ * user.* requires no privilege, is supported on every Linux fs that
+ * carries xattrs at all, and lives in the curated pool the
+ * ARG_XATTR_NAME draw already favours -- so the plant overlaps with
+ * the existing name distribution instead of introducing a fresh
+ * namespace the kernel rejects up front.
+ */
+static const char planted_xattr_name[] = "user.trinity_plant";
 
 #if defined(SYS_fgetxattr) || defined(__NR_fgetxattr)
 /*
@@ -50,6 +63,65 @@ static void sanitise_fgetxattr(struct syscallrecord *rec)
 	rec->post_state = 0;
 	pre_a3 = rec->a3;
 #endif
+
+	/*
+	 * ARG_FD plumbed a random fd into rec->a1 and ARG_XATTR_NAME
+	 * filled rec->a2 with a namespace-shaped name from the curated
+	 * pool.  But the fd is most often the wrong kind of object for
+	 * an xattr op (socket, pipe, eventfd, mq, ...) or, even when it
+	 * lands on a real file, the drawn name is not currently set --
+	 * vfs_getxattr returns ENOTSUP / ENODATA at the front of the
+	 * call before ever touching the per-fs handler dispatch or the
+	 * simple_xattr_get fast path that the per-inode i_xattrs rwsem
+	 * guards.  "high calls, low edges" cold-syscall shape that the
+	 * wall-lever shadow gate keeps re-flagging.
+	 *
+	 * Half the draws now repoint at a testfile fd and plant a known
+	 * user.* xattr there via fsetxattr() so the subsequent fgetxattr
+	 * lands inside the real per-inode lookup path.  The other half
+	 * preserves the slot exactly as the generic draw left it, so the
+	 * namespace-reject / ENODATA arms stay exercised.
+	 *
+	 * Plant runs BEFORE the post_state snapshot below so the oracle
+	 * re-walks the planted (fd, name) tuple, not the pre-plant one.
+	 *
+	 * Slow-path note: fsetxattr() inside sanitise is a real syscall.
+	 * syscalls/fgetxattr.c is outside the sanitiser-slow-path check's
+	 * FILES scope, so this is within budget for the precondition
+	 * payoff (zero per-inode-get edges -> real get edges).
+	 */
+	if (rnd_modulo_u32(2) == 0) {
+		int fd = get_rand_testfile_fd();
+
+		if (fd >= 0) {
+			char *name = (char *) rec->a2;
+
+			if (name != NULL) {
+				/* Overwrite the ARG_XATTR_NAME-allocated
+				 * buffer in place so the plant we make from
+				 * sanitise and the trinity-dispatched
+				 * fgetxattr that follows see the same byte
+				 * sequence.  Buffer is XATTR_NAME_BUFSZ
+				 * (256); planted_xattr_name fits with room
+				 * to spare. */
+				memcpy(name, planted_xattr_name,
+				       sizeof(planted_xattr_name));
+
+				/* Plant a small opaque value.  Failure here
+				 * (ENOSPC on full xattr list, EOPNOTSUPP on
+				 * an fs that bailed out of the user.* leg,
+				 * ...) is non-fatal: an earlier draw on the
+				 * same fd may still hold a stale
+				 * user.trinity_plant from a prior round, so
+				 * fgetxattr below may still land on the real
+				 * get path. */
+				(void) fsetxattr(fd, name, "trin", 4, 0);
+
+				rec->a1 = (unsigned long) fd;
+			}
+		}
+	}
+
 	xattr_pick_valuebuf_bucket(&rec->a3, &rec->a4);
 	avoid_shared_buffer_out(&rec->a3, rec->a4);
 
