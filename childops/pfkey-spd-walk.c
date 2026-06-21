@@ -672,6 +672,14 @@ bool pfkey_spd_walk(struct childdata *child)
 {
 	struct timespec t_outer;
 	unsigned int outer_iters, i;
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the stats
+	 * writes entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	__atomic_add_fetch(&shm->stats.pfkey_spd_walk_runs,
 			   1, __ATOMIC_RELAXED);
@@ -686,9 +694,10 @@ bool pfkey_spd_walk(struct childdata *child)
 	if (!pfkey_probed) {
 		probe_pfkey();
 		if (ns_unsupported_pfkey_spd_walk) {
-			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-					 CHILDOP_LATCH_NS_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			if (valid_op)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 			__atomic_add_fetch(&shm->stats.pfkey_spd_walk_setup_failed,
 					   1, __ATOMIC_RELAXED);
 			return true;
@@ -697,16 +706,18 @@ bool pfkey_spd_walk(struct childdata *child)
 
 	unshare_netns_once();
 	if (ns_unshare_failed_pfkey_spd_walk) {
-		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-				 CHILDOP_LATCH_NS_UNSUPPORTED,
-				 __ATOMIC_RELAXED);
+		if (valid_op)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 		__atomic_add_fetch(&shm->stats.pfkey_spd_walk_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
 
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
 
 	if (clock_gettime(CLOCK_MONOTONIC, &t_outer) < 0) {
 		t_outer.tv_sec = 0;
@@ -719,8 +730,9 @@ bool pfkey_spd_walk(struct childdata *child)
 	if (outer_iters > PFKEY_SPD_OUTER_CAP)
 		outer_iters = PFKEY_SPD_OUTER_CAP;
 
-	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
 
 	for (i = 0; i < outer_iters; i++) {
 		if (budget_elapsed_ns(&t_outer, (long)PFKEY_SPD_WALL_CAP_NS))
