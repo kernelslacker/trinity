@@ -218,10 +218,17 @@ static bool ublk_lifecycle_iter_setup(struct ublk_lifecycle_iter_ctx *ctx)
 	if (ctx->ctrl_fd < 0) {
 		if (errno == EPERM || errno == ENOENT || errno == ENXIO ||
 		    errno == EACCES) {
+			/* child->op_type lives in shared memory and can be
+			 * scribbled by a poisoned-arena write from a sibling;
+			 * bounds-check the snapshot before indexing the
+			 * NR_CHILD_OP_TYPES-sized stats array, same pattern
+			 * as 825305aed33d. */
+			const enum child_op_type op = ctx->child->op_type;
+			if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 			ns_unsupported_ublk = true;
-			__atomic_store_n(&shm->stats.childop_latch_reason[ctx->child->op_type],
-					 CHILDOP_LATCH_NS_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
 			__atomic_add_fetch(&shm->stats.ublk_lifecycle_eperm,
 					   1, __ATOMIC_RELAXED);
 		}
@@ -413,11 +420,23 @@ bool ublk_lifecycle(struct childdata *child)
 
 	if (!ublk_lifecycle_iter_add_dev(&ctx))
 		goto out;
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
 
-	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; same
+	 * pattern as 825305aed33d. */
+	{
+		const enum child_op_type op = child->op_type;
+		const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+					   1, __ATOMIC_RELAXED);
+
+		if (valid_op)
+			__atomic_add_fetch(&shm->stats.childop_data_path[op],
+					   1, __ATOMIC_RELAXED);
+	}
 	ublk_lifecycle_iter_arm_fetch(&ctx);
 	ublk_lifecycle_iter_del_dev(&ctx);
 
