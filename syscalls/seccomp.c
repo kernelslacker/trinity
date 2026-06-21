@@ -90,10 +90,10 @@ static const uint32_t seccomp_ret_actions[] = {
  * Note: for SECCOMP_SET_MODE_FILTER the post handler also reads
  * rec->a2 to decide whether SECCOMP_FILTER_FLAG_NEW_LISTENER set the
  * listener-fd return.  That flag word is a separate scribble vector
- * from the opcode and is left to a future change -- the worst-case
- * outcome of a flag scribble there is a wrongly-classified retval (an
- * extra close() of a non-fd or a missed close() of a real listener
- * fd), not a UAF.
+ * from the opcode and is snapshotted via the arg_shadow mechanism
+ * (entry->arg_snapshot_mask + get_arg_snapshot()) rather than this
+ * post_state slot, since the handler only consumes a single flag
+ * bit rather than a paired allocation pointer.
  */
 #define SECCOMP_POST_STATE_MAGIC	0x534543434F4D505FUL	/* "SECCOMP_" */
 struct seccomp_post_state {
@@ -287,7 +287,7 @@ static void post_seccomp(struct syscallrecord *rec)
 	case SECCOMP_SET_MODE_FILTER: {
 		struct sock_fprog *fprog = (struct sock_fprog *) snap->heap;
 
-		if (rec->a2 & SECCOMP_FILTER_FLAG_NEW_LISTENER) {
+		if (get_arg_snapshot(rec, 2) & SECCOMP_FILTER_FLAG_NEW_LISTENER) {
 			int fd = (int)rec->retval;
 
 			if (fd >= 0 && fd < (1 << 20)) {
@@ -367,4 +367,13 @@ struct syscallentry syscall_seccomp = {
 	.sanitise = sanitise_seccomp,
 	.post = post_seccomp,
 	.group = GROUP_PROCESS,
+	/* a2 (flags word) is read by post_seccomp to decide whether
+	 * SECCOMP_FILTER_FLAG_NEW_LISTENER caused the syscall to return a
+	 * listener fd that the handler must close.  Shadow it so a sibling
+	 * stomp of rec->a2 between dispatch and post bumps
+	 * arg_shadow_stomp from inside get_arg_snapshot() and the handler
+	 * still classifies retval against the flags the kernel actually
+	 * saw, instead of either leaking a real listener fd (stomp clears
+	 * the bit) or close()ing a non-fd return value (stomp sets it). */
+	.arg_snapshot_mask = (1u << 1),
 };
