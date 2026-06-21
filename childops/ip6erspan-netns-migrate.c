@@ -205,9 +205,17 @@ static void warn_once_unsupported(struct childdata *child)
 	if (ns_unsupported_ip6erspan)
 		return;
 	ns_unsupported_ip6erspan = true;
-	__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-			 CHILDOP_LATCH_NS_UNSUPPORTED,
-			 __ATOMIC_RELAXED);
+	/* child->op_type lives in shared memory and can be scribbled by a
+	 * poisoned-arena write from a sibling; bounds-check the snapshot
+	 * before indexing the NR_CHILD_OP_TYPES-sized stats array, same
+	 * pattern the child.c dispatch loop uses. */
+	{
+		const enum child_op_type op = child->op_type;
+		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+	}
 	/* init_child redirected stderr to /dev/null, so an outputerr
 	 * here would be lost.  Bump a shm counter under the same
 	 * one-shot gate so the unsupported-observation survives. */
@@ -463,9 +471,17 @@ static int ip6erspan_migrate_iter_create_link(struct ip6erspan_migrate_iter_ctx 
 			__atomic_add_fetch(&shm->stats.inm_eperm,
 					   1, __ATOMIC_RELAXED);
 			ns_unsupported_ip6erspan = true;
-			__atomic_store_n(&shm->stats.childop_latch_reason[ctx->child->op_type],
-					 CHILDOP_LATCH_NS_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			/* ctx->child->op_type lives in shared memory and can
+			 * be scribbled by a poisoned-arena write from a
+			 * sibling; bounds-check the snapshot before indexing
+			 * the NR_CHILD_OP_TYPES-sized stats array. */
+			{
+				const enum child_op_type op = ctx->child->op_type;
+				if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+					__atomic_store_n(&shm->stats.childop_latch_reason[op],
+							 CHILDOP_LATCH_NS_UNSUPPORTED,
+							 __ATOMIC_RELAXED);
+			}
 		} else if (rc == -ENOENT || rc == -EAFNOSUPPORT ||
 			   rc == -EPROTONOSUPPORT || rc == -EOPNOTSUPP) {
 			__atomic_add_fetch(&shm->stats.inm_unsupported,
@@ -637,11 +653,23 @@ bool ip6erspan_netns_migrate(struct childdata *child)
 
 	if (ip6erspan_migrate_iter_migrate(&ictx) != 0)
 		goto out;
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot. */
+	{
+		const enum child_op_type op = child->op_type;
+		const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-			   1, __ATOMIC_RELAXED);
+		if (valid_op)
+			__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+					   1, __ATOMIC_RELAXED);
+
+		if (valid_op)
+			__atomic_add_fetch(&shm->stats.childop_data_path[op],
+					   1, __ATOMIC_RELAXED);
+	}
 	ip6erspan_migrate_iter_changelink(&ictx, &opts);
 
 out:
