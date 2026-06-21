@@ -544,6 +544,14 @@ static void iter_one(struct childdata *child)
 	pid_t attacher = -1;
 	int shmid = -1;
 	unsigned int races;
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the stats
+	 * writes entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	races = BUDGETED(CHILD_OP_SYSV_SHM_ORPHAN_RACE,
 			 SYSV_SHM_RACE_ITERS_BASE);
@@ -583,8 +591,9 @@ static void iter_one(struct childdata *child)
 	}
 	__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race_shmget_ok,
 			   1, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
 
 	attacher = spawn_sysv_shm_sibling(rs, sysv_shm_attacher_main);
 	if (attacher < 0) {
@@ -598,8 +607,9 @@ static void iter_one(struct childdata *child)
 	__atomic_store_n(&rs->go, 1U, __ATOMIC_RELEASE);
 	(void)raw_futex_wake(&rs->go, 2);
 
-	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
 	run_burst_parent_half(shmid, races);
 
 out:
@@ -666,9 +676,19 @@ bool sysv_shm_orphan_race(struct childdata *child)
 	if (!sysv_shm_orphan_race_probed) {
 		probe_sysv_shm();
 		if (ns_unsupported_sysv_shm_orphan_race) {
-			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-					 CHILDOP_LATCH_NS_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			/* child->op_type lives in shared memory and can be
+			 * scribbled by a poisoned-arena write from a sibling;
+			 * bounds-check the snapshot before indexing the
+			 * NR_CHILD_OP_TYPES-sized stats array, same pattern
+			 * the child.c dispatch loop uses for the unguarded
+			 * write that motivated this guard. */
+			{
+				const enum child_op_type op = child->op_type;
+				if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+					__atomic_store_n(&shm->stats.childop_latch_reason[op],
+							 CHILDOP_LATCH_NS_UNSUPPORTED,
+							 __ATOMIC_RELAXED);
+			}
 			__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race_setup_failed,
 					   1, __ATOMIC_RELAXED);
 			return true;
@@ -692,10 +712,20 @@ bool sysv_shm_orphan_race(struct childdata *child)
 
 bool sysv_shm_orphan_race(struct childdata *child)
 {
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the stats
+	 * write entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race_runs,
 			   1, __ATOMIC_RELAXED);
-	__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-			 CHILDOP_LATCH_UNSUPPORTED, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				 CHILDOP_LATCH_UNSUPPORTED, __ATOMIC_RELAXED);
 	__atomic_add_fetch(&shm->stats.sysv_shm_orphan_race_setup_failed,
 			   1, __ATOMIC_RELAXED);
 	return true;
