@@ -17,10 +17,20 @@
  * produces.
  *
  * Sequence (per invocation):
- *   1. unshare(CLONE_NEWNET) once per child so MRT_INIT (which is
- *      exclusive per netns) can't conflict with anything on the host
- *      and so any VIF / MFC state we install is torn down by netns
- *      destroy on child exit.  Failure latches the whole op off.
+ *   1. Enter a private net namespace via userns_run_in_ns(): a
+ *      transient grandchild fork installs an identity user namespace
+ *      plus a fresh CLONE_NEWNET, runs the body below, and _exit()s
+ *      so the kernel reaps the VIF, MFC entries, raw IGMP socket,
+ *      netlink listener and lo address with the grandchild's netns.
+ *      MRT_INIT (exclusive per netns) therefore can't conflict with
+ *      anything on the host, and nothing strands across invocations.
+ *      The persistent fuzz child never changes its own credentials
+ *      or namespace stack, so the cap-drop oracle keeps observing
+ *      the host credential profile.  Helper -EPERM (hardened userns
+ *      policy refused CLONE_NEWUSER) latches the childop off for the
+ *      remainder of this child's lifetime; -EAGAIN (transient setup
+ *      failure: fork, id-map write, secondary unshare) skips the
+ *      iteration without latching.
  *   2. Open a NETLINK_ROUTE socket with nl_groups including
  *      RTNLGRP_IPV4_MROUTE_R, the multicast group the kernel uses to
  *      broadcast cache reports.  Best-effort — we don't require the
@@ -85,6 +95,7 @@
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
+#include "userns-bootstrap.h"
 
 /* RTNLGRP_IPV4_MROUTE_R is the cache-report multicast group, added to
  * UAPI relatively recently.  Stripped sysroots may predate it; the ID
@@ -105,10 +116,33 @@
 
 /* Per-child latched gates.  Set on the first failure of the
  * corresponding subsystem and never cleared. */
-static bool ns_unshared_ipmr_cache_report;
-static bool ns_setup_failed_ipmr_cache_report;
+
+/* Latched per-child: userns_run_in_ns() returned -EPERM, meaning the
+ * grandchild's unshare(CLONE_NEWUSER) was refused by a hardened policy
+ * (user.max_user_namespaces=0 or kernel.unprivileged_userns_clone=0).
+ * Without a private netns we MUST NOT touch the host's IPv4 mroute
+ * tables or install a VIF against the host's lo, so the op stays
+ * disabled for the remainder of this child's lifetime.  Transient
+ * setup failures (helper return -EAGAIN) do not set this -- they may
+ * not recur on the next iteration. */
+static bool ns_userns_unsupported_ipmr_cache_report;
+/* CONFIG-absent latches.  Set inside the grandchild's address space
+ * when the raw IGMP socket or MRT_INIT setsockopt returns a
+ * structural-unsupport errno (EAFNOSUPPORT / EPROTONOSUPPORT /
+ * EOPNOTSUPP / ENOPROTOOPT / EADDRINUSE).  Because the write happens
+ * in the grandchild, the persistent child's copy is unchanged and the
+ * CONFIG-absent state is re-discovered once per outer-loop iteration;
+ * userns cannot manufacture a missing kernel CONFIG so re-probing is
+ * correct.  The ns_eperm latch covers MRT_INIT / raw-socket EPERM
+ * (trinity has dropped CAP_NET_ADMIN before entering the grandchild). */
 static bool ns_unsupported_ipmr_cache_report;
 static bool ns_eperm_ipmr_cache_report;
+
+/* Per-invocation state handed to the in-ns callback so it can keep
+ * accounting against the right childop slot. */
+struct ipmr_cache_report_ctx {
+	struct childdata *child;
+};
 
 /*
  * Open NETLINK_ROUTE bound to the IPv4 mroute cache-report multicast
@@ -200,8 +234,19 @@ static __be32 pick_nocache_group(void)
 	return htonl((224U << 24) | (b1 << 16) | (b2 << 8) | b3);
 }
 
-bool ipmr_cache_report(struct childdata *child)
+/*
+ * Per-invocation body that must run inside the private net namespace.
+ * Executed in a transient grandchild forked by userns_run_in_ns(); the
+ * grandchild's userns + netns are torn down on _exit() so the VIF,
+ * MFC entries, raw IGMP socket, netlink listener and lo address are
+ * reaped by the kernel along with the namespace.  Return value is
+ * ignored by the helper.
+ */
+static int ipmr_cache_report_in_ns(void *arg)
 {
+	struct ipmr_cache_report_ctx *cctx =
+		(struct ipmr_cache_report_ctx *)arg;
+	struct childdata *child = cctx->child;
 	struct vifctl vc;
 	struct sockaddr_in dst;
 	struct in_addr lcl;
@@ -212,19 +257,6 @@ bool ipmr_cache_report(struct childdata *child)
 	struct timespec t0;
 	unsigned int iters;
 	unsigned int i;
-
-	if (ns_setup_failed_ipmr_cache_report ||
-	    ns_unsupported_ipmr_cache_report ||
-	    ns_eperm_ipmr_cache_report)
-		return true;
-
-	if (!ns_unshared_ipmr_cache_report) {
-		if (unshare(CLONE_NEWNET) < 0) {
-			ns_setup_failed_ipmr_cache_report = true;
-			return true;
-		}
-		ns_unshared_ipmr_cache_report = true;
-	}
 
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
@@ -335,6 +367,34 @@ out:
 		close(raw);
 	if (nl.fd >= 0)
 		nl_close(&nl);
+
+	return 0;
+}
+
+bool ipmr_cache_report(struct childdata *child)
+{
+	struct ipmr_cache_report_ctx cctx = { .child = child };
+	int rc;
+
+	if (ns_userns_unsupported_ipmr_cache_report ||
+	    ns_unsupported_ipmr_cache_report ||
+	    ns_eperm_ipmr_cache_report)
+		return true;
+
+	rc = userns_run_in_ns(CLONE_NEWNET, ipmr_cache_report_in_ns, &cctx);
+	if (rc == -EPERM) {
+		ns_userns_unsupported_ipmr_cache_report = true;
+		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+				 CHILDOP_LATCH_NS_UNSUPPORTED,
+				 __ATOMIC_RELAXED);
+		return true;
+	}
+	if (rc < 0) {
+		/* Transient grandchild setup failure (fork, id-map write,
+		 * secondary unshare).  Skip this iteration without latching
+		 * -- the failure is not policy and may not recur. */
+		return true;
+	}
 
 	return true;
 }
