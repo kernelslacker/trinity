@@ -660,6 +660,42 @@ bool plateau_anti_prior_accept(unsigned int nr);
 void plateau_anti_prior_refresh_baseline(void);
 
 /*
+ * Wall-lever shadow gate -- codex #6.  Returns true iff the candidate
+ * syscall is a high-call zero-yield slot during a warm-plateau window
+ * and a live wall-lever variant of the picker would suppress it to
+ * reclaim its pick budget for productive / cold syscalls.  Eligibility
+ * is precomputed per rotation by wall_lever_refresh_baseline(); the
+ * hot path here reduces to a relaxed plateau_active probe plus a
+ * single relaxed byte load from shm->wall_lever_suppress[nr].
+ *
+ * Returns false (do not suppress) when plateau_active is clear, when
+ * the baseline has not yet been refreshed, when kcov_shm is
+ * unavailable, or when nr is out of bounds, so the gate degrades
+ * gracefully to today's byte-identical picker outside the wall-lever
+ * operating window.  Safe to call from any picker path -- the function
+ * is the entire shadow surface, callers only bump the would_suppress
+ * stats counters on a true return.
+ */
+bool wall_lever_should_suppress_shadow(unsigned int nr);
+
+/*
+ * Recompute and publish the wall-lever baseline (mean of kcov_shm->
+ * per_syscall_calls across MAX_NR_SYSCALL) and the matching per-
+ * syscall suppression decision table wall_lever_should_suppress_shadow
+ * consumes.  Called by the orchestrator at every rotation while
+ * plateau_active is set, regardless of the chosen intervention mode,
+ * so the shadow gate adapts to the fleet's CURRENT calls distribution
+ * rather than freezing the eligibility set at a single moment.
+ * Cheap: two O(MAX_NR_SYSCALL) walks on the rotation path (one for
+ * the baseline sum, one for the per-syscall decision), never on the
+ * hot pick path.  Visibility of the decision table is published by
+ * the RELEASE-store of current_strategy that maybe_rotate_strategy
+ * emits after select_next_strategy returns, mirroring the existing
+ * plateau_anti_prior_refresh_baseline publish ordering.
+ */
+void wall_lever_refresh_baseline(void);
+
+/*
  * Human-readable name for the intervention mode, for the dump path and
  * the rotation log.  Returns "?" for out-of-range input.
  */
