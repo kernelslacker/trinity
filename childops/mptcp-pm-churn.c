@@ -606,14 +606,23 @@ static void mptcp_setsockopt_all_sf_recipe(struct genl_ctx *ctx)
 static int mptcp_pm_churn_iter_setup_sockets(struct mptcp_pm_churn_iter_ctx *ctx)
 {
 	socklen_t slen;
+	/* Snapshot ctx->child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the stats write
+	 * entirely when the snapshot is out of range. */
+	const enum child_op_type op = ctx->child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	ctx->srv = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_MPTCP);
 	if (ctx->srv < 0) {
 		if (errno == EPROTONOSUPPORT || errno == ESOCKTNOSUPPORT) {
 			ns_unsupported_mptcp = true;
-			__atomic_store_n(&shm->stats.childop_latch_reason[ctx->child->op_type],
-					 CHILDOP_LATCH_NS_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			if (valid_op)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 		}
 		__atomic_add_fetch(&shm->stats.mptcp_pm_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
@@ -715,6 +724,14 @@ static int mptcp_pm_churn_iter_genl_attach(struct mptcp_pm_churn_iter_ctx *ctx)
 {
 	struct genl_open_opts opts;
 	int rc;
+	/* Snapshot ctx->child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the stats write
+	 * entirely when the snapshot is out of range. */
+	const enum child_op_type op = ctx->child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	memset(&opts, 0, sizeof(opts));
 	opts.family_name  = MPTCP_PM_NAME;
@@ -725,9 +742,10 @@ static int mptcp_pm_churn_iter_genl_attach(struct mptcp_pm_churn_iter_ctx *ctx)
 	if (rc != 0) {
 		if (rc == -ENOENT) {
 			ns_unsupported_genetlink_mptcp = true;
-			__atomic_store_n(&shm->stats.childop_latch_reason[ctx->child->op_type],
-					 CHILDOP_LATCH_NS_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			if (valid_op)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 		} else {
 			__atomic_add_fetch(&shm->stats.mptcp_pm_churn_setup_failed,
 					   1, __ATOMIC_RELAXED);
@@ -879,6 +897,14 @@ bool mptcp_pm_churn(struct childdata *child)
 		.srv_acc = -1,
 		.child   = child,
 	};
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the stats writes
+	 * entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	__atomic_add_fetch(&shm->stats.mptcp_pm_churn_runs,
 			   1, __ATOMIC_RELAXED);
@@ -894,11 +920,13 @@ bool mptcp_pm_churn(struct childdata *child)
 
 	if (mptcp_pm_churn_iter_genl_attach(&ctx) != 0)
 		goto out;
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
 
-	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
 	mptcp_pm_churn_iter_pm_ops_burst(&ctx);
 
 out:
