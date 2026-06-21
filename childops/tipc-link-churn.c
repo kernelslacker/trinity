@@ -412,6 +412,15 @@ bool tipc_link_churn(struct childdata *child)
 		return true;
 	}
 
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the stats
+	 * writes entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	/* Probe AF_TIPC support before paying for modprobe.  EAFNOSUPPORT
 	 * means CONFIG_TIPC=n; ENOENT/EPROTONOSUPPORT means the family
 	 * isn't registered.  Either way, latch off. */
@@ -423,9 +432,10 @@ bool tipc_link_churn(struct childdata *child)
 			rdm = socket(AF_TIPC, SOCK_RDM | SOCK_CLOEXEC, 0);
 			if (rdm < 0) {
 				ns_unsupported_tipc = true;
-				__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-						 CHILDOP_LATCH_UNSUPPORTED,
-						 __ATOMIC_RELAXED);
+				if (valid_op)
+					__atomic_store_n(&shm->stats.childop_latch_reason[op],
+							 CHILDOP_LATCH_UNSUPPORTED,
+							 __ATOMIC_RELAXED);
 				__atomic_add_fetch(&shm->stats.tipc_link_churn_setup_failed,
 						   1, __ATOMIC_RELAXED);
 				return true;
@@ -448,21 +458,24 @@ bool tipc_link_churn(struct childdata *child)
 	if (rc != 0) {
 		if (rc == -ENOENT) {
 			ns_unsupported_genetlink_tipc = true;
-			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-					 CHILDOP_LATCH_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			if (valid_op)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 		}
 		__atomic_add_fetch(&shm->stats.tipc_link_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
 	ctx_open = true;
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
 
 	cluster = TIPC_CLUSTER_ID_MIN + (rand32() % TIPC_CLUSTER_ID_RANGE);
-	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
 	(void)build_net_set(&ctx, cluster);
 
 	(void)snprintf(bearer_name, sizeof(bearer_name),
