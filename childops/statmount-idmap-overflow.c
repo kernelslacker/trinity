@@ -625,6 +625,12 @@ static void iter_one(int op_type, void *scratch_buf, unsigned long scratch_cap)
 {
 	int userns_fd, mnt_fd;
 	size_t i;
+	/* op_type is copied from shared memory (child->op_type via
+	 * ctx->op_type) and can be scribbled by a sibling poisoned-arena
+	 * write; bounds-check before indexing the NR_CHILD_OP_TYPES-sized
+	 * stats arrays, same pattern the child.c dispatch loop uses. */
+	const bool valid_op = ((int) op_type >= 0 &&
+			       op_type < NR_CHILD_OP_TYPES);
 
 	__atomic_add_fetch(&shm->stats.statmount_idmap_iter,
 			   1, __ATOMIC_RELAXED);
@@ -655,14 +661,16 @@ static void iter_one(int op_type, void *scratch_buf, unsigned long scratch_cap)
 	 * so the delta against data_path attributes any pre-syscall bail
 	 * (none currently, but future early-returns before the sweep would
 	 * land here). */
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op_type],
+				   1, __ATOMIC_RELAXED);
 
 	/* About to enter the kernel-exercising bufsize sweep.  Bump once
 	 * per iter (not per statmount call) so setup_accepted == data_path
 	 * is the steady-state. */
-	__atomic_add_fetch(&shm->stats.childop_data_path[op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_data_path[op_type],
+				   1, __ATOMIC_RELAXED);
 
 	for (i = 0; i < ARRAY_SIZE(statmount_idmap_bufsizes); i++) {
 		unsigned long sz = statmount_idmap_bufsizes[i];
@@ -727,14 +735,22 @@ static int statmount_idmap_loop_in_ns(void *arg)
 
 bool statmount_idmap_overflow(struct childdata *child)
 {
+	/* child->op_type lives in shared memory and can be scribbled by a
+	 * sibling poisoned-arena write; snapshot once and bounds-check
+	 * before indexing the NR_CHILD_OP_TYPES-sized stats arrays, same
+	 * pattern the child.c dispatch loop uses. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	__atomic_add_fetch(&shm->stats.statmount_idmap_runs,
 			   1, __ATOMIC_RELAXED);
 
 #ifndef HAVE_STATMOUNT_IDMAP_SYSCALLS
 	statmount_idmap_unsupported = true;
-	__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-			 CHILDOP_LATCH_UNSUPPORTED,
-			 __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				 CHILDOP_LATCH_UNSUPPORTED,
+				 __ATOMIC_RELAXED);
 	__atomic_add_fetch(&shm->stats.statmount_idmap_setup_failed,
 			   1, __ATOMIC_RELAXED);
 	return true;
@@ -757,10 +773,11 @@ bool statmount_idmap_overflow(struct childdata *child)
 	if (!statmount_idmap_probed) {
 		probe_statmount_idmap();
 		if (statmount_idmap_unsupported) {
-			__atomic_store_n(
-				&shm->stats.childop_latch_reason[child->op_type],
-				CHILDOP_LATCH_UNSUPPORTED,
-				__ATOMIC_RELAXED);
+			if (valid_op)
+				__atomic_store_n(
+					&shm->stats.childop_latch_reason[op],
+					CHILDOP_LATCH_UNSUPPORTED,
+					__ATOMIC_RELAXED);
 			__atomic_add_fetch(
 				&shm->stats.statmount_idmap_setup_failed,
 				1, __ATOMIC_RELAXED);
@@ -793,10 +810,11 @@ bool statmount_idmap_overflow(struct childdata *child)
 
 	if (rc == -EPERM) {
 		ns_unshare_failed_statmount_idmap = true;
-		__atomic_store_n(
-			&shm->stats.childop_latch_reason[child->op_type],
-			CHILDOP_LATCH_NS_UNSUPPORTED,
-			__ATOMIC_RELAXED);
+		if (valid_op)
+			__atomic_store_n(
+				&shm->stats.childop_latch_reason[op],
+				CHILDOP_LATCH_NS_UNSUPPORTED,
+				__ATOMIC_RELAXED);
 		__atomic_add_fetch(
 			&shm->stats.statmount_idmap_setup_failed,
 			1, __ATOMIC_RELAXED);
