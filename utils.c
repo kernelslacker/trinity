@@ -3490,6 +3490,107 @@ static bool range_inside_libc_heap(unsigned long addr, unsigned long len)
 	return false;
 }
 
+/*
+ * Diagnostic helper for the mm-syscall arg sanitisers.  Called from each
+ * mm-syscall hook (madvise / mmap / mprotect / mremap / mseal /
+ * remap_file_pages) AFTER the brk-overlap gate
+ * (range_overlaps_libc_heap) has returned "not heap" for [addr, addr+len)
+ * and the per-syscall sanitiser has finished any further addr rewrites.
+ * Pays one fresh sbrk(0) and, if the address now proves to lie inside
+ * the live brk arena, bumps a counter and (rate-limited) logs the
+ * slipping syscall so the next live run pins exactly which call passed
+ * the gate with a stale snapshot.
+ *
+ * Two prior rounds widened the gate without pinning the slipping
+ * syscall directly: the first capped the re-test at HEAP_BRK_STALE_
+ * SLACK_BYTES (256 MiB) of slack above cached_brk_end, then the
+ * widening to HEAP_BRK_RETEST_CEILING raised the ceiling to the
+ * user/kernel split.  The live fleet kept faulting on RO-page writes
+ * and glibc check_uid SIGABRTs anyway, which means a path either still
+ * skips the re-test or there is a sanitise->syscall race the gate
+ * never sees.  This helper makes the next round of triage data-driven
+ * rather than another speculative widening.
+ *
+ * Pure observability -- does NOT rewrite the slipping addr (that would
+ * pre-judge which gate is at fault; the log lets a real audit make
+ * that call from fleet data).  Children inherit the rate-limiter via
+ * the file-static counter; per-process limiter is fine for diagnostic
+ * spam control.
+ *
+ *   @syscall_name : mm-syscall short name (madvise / mmap / ...).
+ *   @addr, @len   : the (post-sanitise) range about to be handed to
+ *                   the kernel.
+ *   @detail       : per-syscall context arg -- madvise advice, mprotect
+ *                   prot, mmap flags, etc.  Recorded verbatim in the
+ *                   log line so the post-hoc filter can split by class.
+ */
+#define MM_GATE_SLIP_LOG_BURST		8
+#define MM_GATE_SLIP_LOG_PERIOD		4096
+
+void log_mm_syscall_post_gate_heap_slip(const char *syscall_name,
+					unsigned long addr,
+					unsigned long len,
+					unsigned long detail)
+{
+	static unsigned int slip_log_count;
+	struct childdata *c;
+	unsigned long fresh_brk, end;
+	unsigned int my_count;
+
+	if (addr == 0 || len == 0)
+		return;
+	if (heap_start == 0)
+		return;
+
+	/* Wild-high / kernel-VA / non-canonical addrs cannot be heap. */
+	if (addr >= HEAP_BRK_RETEST_CEILING)
+		return;
+
+	/* Wrap guard: a wrapped range is its own bug, not a brk slip. */
+	if (addr > ULONG_MAX - len)
+		return;
+
+	/* Entirely below the brk base -- no way the gate is wrong here. */
+	if (addr + len <= heap_start)
+		return;
+
+	fresh_brk = (unsigned long) sbrk(0);
+	if (fresh_brk == (unsigned long) -1)
+		return;
+
+	end = fresh_brk;
+	if (heap_end > end)
+		end = heap_end;
+	if (cached_brk_end > end)
+		end = cached_brk_end;
+
+	/* Fresh resample agrees with the gate: addr is above the live
+	 * brk, so the gate was right to pass it through. */
+	if (addr >= end)
+		return;
+
+	/* Back-fill the cache: we paid the syscall, no reason not to. */
+	if (fresh_brk > cached_brk_end)
+		cached_brk_end = fresh_brk;
+
+	c = this_child();
+	if (c != NULL && c->stats_ring != NULL)
+		stats_ring_enqueue(c->stats_ring,
+				   STATS_FIELD_MM_GATE_POST_SLIP, 0, 1);
+	else
+		parent_stats.mm_gate_post_slip++;
+
+	my_count = __atomic_fetch_add(&slip_log_count, 1, __ATOMIC_RELAXED);
+	if (my_count < MM_GATE_SLIP_LOG_BURST ||
+	    ((my_count - MM_GATE_SLIP_LOG_BURST) %
+	     MM_GATE_SLIP_LOG_PERIOD) == 0)
+		outputerr("MM-GATE-POST-SLIP: %s addr=0x%lx len=0x%lx "
+			  "detail=0x%lx heap_start=0x%lx heap_end=0x%lx "
+			  "cached_brk_end=0x%lx fresh_sbrk=0x%lx\n",
+			  syscall_name, addr, len, detail, heap_start,
+			  heap_end, cached_brk_end, fresh_brk);
+}
+
 bool range_readable_user(const void *addr, size_t len)
 {
 	unsigned long a = (unsigned long) addr;

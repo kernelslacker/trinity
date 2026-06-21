@@ -159,6 +159,18 @@ static void sanitise_mremap(struct syscallrecord *rec)
 	rec->a6 = (unsigned long) map;
 
 	/*
+	 * Diagnostic: pin slips where range_overlaps_libc_heap() passed
+	 * either the old addr or the MREMAP_FIXED new addr but a fresh
+	 * sbrk(0) right here proves the addr lies inside the live brk
+	 * arena.  Pure observability.
+	 */
+	log_mm_syscall_post_gate_heap_slip("mremap-old", rec->a1, rec->a2,
+					   rec->a4);
+	if (rec->a4 & MREMAP_FIXED)
+		log_mm_syscall_post_gate_heap_slip("mremap-new", newaddr,
+						   rec->a3, rec->a4);
+
+	/*
 	 * Snapshot the two inputs the post handler reads.  Without this
 	 * the post handler reads rec->a3 and rec->a6 at post-time, when
 	 * a sibling syscall may have scribbled the slots.  rec->a6 is

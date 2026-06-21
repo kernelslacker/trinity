@@ -12,6 +12,7 @@
 #include "shm.h"
 #include "tables.h"
 #include "trinity.h"
+#include "utils.h"
 
 static void sanitise_remap_file_pages(struct syscallrecord *rec)
 {
@@ -117,6 +118,18 @@ static void sanitise_remap_file_pages(struct syscallrecord *rec)
 		rec->a1 = 0;
 		rec->a2 = 0;
 	}
+
+	/*
+	 * Diagnostic: pin slips where the early MAP_SHARED file-backed
+	 * filter and the shared-region gate above passed the addr but a
+	 * fresh sbrk(0) right here proves it lies inside the live brk
+	 * arena.  This syscall does not consult range_overlaps_libc_heap
+	 * by design (the kernel rejects -EINVAL on non-MAP_SHARED targets
+	 * and the brk arena is MAP_PRIVATE anon), so a non-zero slip
+	 * count here would indicate a deeper assumption breaking.
+	 */
+	log_mm_syscall_post_gate_heap_slip("remap_file_pages", rec->a1,
+					   rec->a2, rec->a3);
 }
 
 static unsigned long remap_file_pages_flags[] = {
