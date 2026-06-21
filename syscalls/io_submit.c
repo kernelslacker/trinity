@@ -3,7 +3,9 @@
 	 struct iocb __user * __user *, iocbpp)
  */
 #include <linux/aio_abi.h>
+#include <poll.h>
 #include <string.h>
+#include <sys/uio.h>
 #include "objects.h"
 #include "random.h"
 #include "rnd.h"
@@ -124,21 +126,101 @@ static void sanitise_io_submit(struct syscallrecord *rec)
 		return;
 	}
 
-	for (i = 0; i < nr; i++) {
-		iocbs[i].aio_fildes = get_random_fd();
-		iocbs[i].aio_lio_opcode = pick_iocb_opcode_for_fd(iocbs[i].aio_fildes);
-		iocbs[i].aio_buf = (__u64)(unsigned long) buf;
-		iocbs[i].aio_nbytes = 4096;
-		iocbs[i].aio_offset = rnd_modulo_u32(65536);
-		iocbs[i].aio_data = rnd_u64();
-		if (rnd_modulo_u32(100) < 30) {
-			int eventfd_fd = get_typed_fd(ARG_FD_EVENTFD);
-			if (eventfd_fd >= 0) {
-				iocbs[i].aio_flags |= IOCB_FLAG_RESFD;
-				iocbs[i].aio_resfd = eventfd_fd;
+	/*
+	 * Per-opcode aio_buf / aio_nbytes have different meanings inside the
+	 * kernel: PREAD/PWRITE want a byte buffer + byte count, PREADV/PWRITEV
+	 * want a struct iovec[] + iovec count, POLL packs the requested poll
+	 * events into the low 16 bits of aio_buf (kernel rejects with -EINVAL
+	 * if any high bit is set: see aio_poll() / aio_prep_rw()), and FSYNC
+	 * / FDSYNC / NOOP ignore both.  The previous unconditional
+	 * "aio_buf = buf, aio_nbytes = 4096" fill -EFAULT'd inside import_iovec
+	 * on PREADV/PWRITEV (4096 bogus iovecs interpreted from raw data)
+	 * and -EINVAL'd on POLL (a heap address has high bits set), so those
+	 * opcodes never reached the kernel's productive vectored-IO / poll
+	 * paths.  Build a small shared iovec[] scratch pool inside `buf` and
+	 * dispatch by opcode below.
+	 */
+	{
+		struct iovec *iovec_pool;
+		unsigned int j;
+		const unsigned int IOV_POOL_LEN = 4;
+		const unsigned int IOV_SLICE_SZ = 1024;
+
+		iovec_pool = (struct iovec *)
+			get_writable_address(IOV_POOL_LEN * sizeof(*iovec_pool));
+		if (iovec_pool != NULL) {
+			for (j = 0; j < IOV_POOL_LEN; j++) {
+				iovec_pool[j].iov_base = buf + j * IOV_SLICE_SZ;
+				iovec_pool[j].iov_len = IOV_SLICE_SZ;
 			}
 		}
-		iocbpp[i] = &iocbs[i];
+
+		for (i = 0; i < nr; i++) {
+			iocbs[i].aio_fildes = get_random_fd();
+			iocbs[i].aio_lio_opcode = pick_iocb_opcode_for_fd(iocbs[i].aio_fildes);
+			iocbs[i].aio_data = rnd_u64();
+
+			switch (iocbs[i].aio_lio_opcode) {
+			case IOCB_CMD_PREAD:
+			case IOCB_CMD_PWRITE:
+				iocbs[i].aio_buf = (__u64)(uintptr_t) buf;
+				iocbs[i].aio_nbytes = 4096;
+				iocbs[i].aio_offset = rnd_modulo_u32(65536);
+				break;
+			case IOCB_CMD_PREADV:
+			case IOCB_CMD_PWRITEV:
+				if (iovec_pool == NULL) {
+					/* No iovec scratch -- downgrade to NOOP
+					 * rather than feed import_iovec garbage. */
+					iocbs[i].aio_lio_opcode = IOCB_CMD_NOOP;
+					iocbs[i].aio_buf = 0;
+					iocbs[i].aio_nbytes = 0;
+					iocbs[i].aio_offset = 0;
+					break;
+				}
+				iocbs[i].aio_buf = (__u64)(uintptr_t) iovec_pool;
+				iocbs[i].aio_nbytes = 1 + rnd_modulo_u32(IOV_POOL_LEN);
+				iocbs[i].aio_offset = rnd_modulo_u32(65536);
+				break;
+			case IOCB_CMD_POLL: {
+				/* aio_poll reads the requested events as a
+				 * __poll_t (u16) from the low bits of aio_buf
+				 * and the kernel rejects any value that does
+				 * not fit in u16.  Pack a small mask. */
+				static const unsigned short poll_masks[] = {
+					POLLIN, POLLOUT, POLLIN | POLLOUT,
+					POLLPRI, POLLRDNORM, POLLWRNORM,
+					POLLERR, POLLHUP,
+				};
+				iocbs[i].aio_buf =
+					poll_masks[rnd_modulo_u32(ARRAY_SIZE(poll_masks))];
+				iocbs[i].aio_nbytes = 0;
+				iocbs[i].aio_offset = 0;
+				break;
+			}
+			case IOCB_CMD_FSYNC:
+			case IOCB_CMD_FDSYNC:
+			case IOCB_CMD_NOOP:
+			default:
+				/* aio_buf / aio_nbytes / aio_offset are
+				 * ignored by these opcodes; leave them zero
+				 * so a future opcode addition does not inherit
+				 * stale fields. */
+				iocbs[i].aio_buf = 0;
+				iocbs[i].aio_nbytes = 0;
+				iocbs[i].aio_offset = 0;
+				break;
+			}
+
+			if (rnd_modulo_u32(100) < 30) {
+				int eventfd_fd = get_typed_fd(ARG_FD_EVENTFD);
+				if (eventfd_fd >= 0) {
+					iocbs[i].aio_flags |= IOCB_FLAG_RESFD;
+					iocbs[i].aio_resfd = eventfd_fd;
+				}
+			}
+			iocbpp[i] = &iocbs[i];
+		}
 	}
 
 	rec->a2 = nr;
