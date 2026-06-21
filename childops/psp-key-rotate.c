@@ -1052,6 +1052,14 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer,
 	int sockfd = -1;
 	uint32_t dev_id = 0;
 
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	if ((unsigned long long)ns_since(t_outer) >= PKR_WALL_CAP_NS)
 		return;
 
@@ -1065,18 +1073,20 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer,
 	if (sockfd < 0)
 		goto out;
 
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
 
 	if (!ns_unsupported_psp_key_rotate) {
-		__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-				   1, __ATOMIC_RELAXED);
+		if (valid_op)
+			__atomic_add_fetch(&shm->stats.childop_data_path[op],
+					   1, __ATOMIC_RELAXED);
 		psp_key_rotate_iter_traffic(sockfd, &psp_ctx, dev_id, t_outer);
 	}
 
 	psp_key_rotate_iter_teardown(iter_idx, sockfd, &psp_ctx, &rtnl);
-	if (ns_unsupported_psp_key_rotate)
-		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+	if (ns_unsupported_psp_key_rotate && valid_op)
+		__atomic_store_n(&shm->stats.childop_latch_reason[op],
 				 CHILDOP_LATCH_NS_UNSUPPORTED,
 				 __ATOMIC_RELAXED);
 	return;
@@ -1088,8 +1098,8 @@ out:
 		genl_close(&psp_ctx);
 	if (rtnl.fd >= 0)
 		nl_close(&rtnl);
-	if (ns_unsupported_psp_key_rotate)
-		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+	if (ns_unsupported_psp_key_rotate && valid_op)
+		__atomic_store_n(&shm->stats.childop_latch_reason[op],
 				 CHILDOP_LATCH_NS_UNSUPPORTED,
 				 __ATOMIC_RELAXED);
 }
