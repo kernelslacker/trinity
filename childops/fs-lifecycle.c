@@ -434,7 +434,7 @@ static void do_overlay_lifecycle(void)
 
 	snprintf(lfile, sizeof(lfile), "%s/shared", lower);
 	fd = create_filled_file(lfile, 0x42, 4096);
-	if (fd >= 0) { close(fd); fd = -1; }
+	if (fd >= 0) close(fd);
 
 	snprintf(opt, sizeof(opt),
 		 "lowerdir=%s,upperdir=%s,workdir=%s", lower, upper, work);
@@ -450,7 +450,7 @@ static void do_overlay_lifecycle(void)
 		const char msg[] = "overlay-upper-write";
 		ssize_t n __unused__;
 		n = write(fd, msg, sizeof(msg) - 1);
-		close(fd); fd = -1;
+		close(fd);
 	}
 
 	/* New file created directly in upper via merged. */
@@ -560,7 +560,7 @@ static void do_bind_lifecycle(void)
 
 	snprintf(fpath, sizeof(fpath), "%s/testfile", src);
 	fd = create_filled_file(fpath, 0x77, 4096);
-	if (fd >= 0) { close(fd); fd = -1; }
+	if (fd >= 0) close(fd);
 
 	if (mount(src, dst, NULL, MS_BIND, NULL) != 0)
 		goto cleanup_src;
@@ -573,7 +573,7 @@ static void do_bind_lifecycle(void)
 		char buf[512];
 		ssize_t n __unused__;
 		n = read(fd, buf, sizeof(buf));
-		close(fd); fd = -1;
+		close(fd);
 	}
 
 	/* Unmount bind before original — exercises the two-phase teardown. */

@@ -2749,9 +2749,10 @@ static void kcov_covjump_breadcrumb_maybe(unsigned long call_nr)
 			if (n > 0) pos += (size_t)n;
 		}
 		if (mempress_hit && pos < sizeof(tag_buf)) {
-			n = snprintf(tag_buf + pos, sizeof(tag_buf) - pos,
-				     "%smempress", pos == 0 ? "" : ",");
-			if (n > 0) pos += (size_t)n;
+			/* Last tag in the chain -- no further appends, so we
+			 * neither capture snprintf's return nor advance pos. */
+			(void) snprintf(tag_buf + pos, sizeof(tag_buf) - pos,
+					"%smempress", pos == 0 ? "" : ",");
 		}
 	}
 	if (tag_buf[0] == '\0')

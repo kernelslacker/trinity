@@ -1853,7 +1853,8 @@ static void dump_fork_failure_snapshot(void)
 		off += snprintf(line + off, sizeof(line) - off,
 				" mem_oom:%llu", mem_oom);
 	if (have_mem_oom_kill && off < sizeof(line))
-		off += snprintf(line + off, sizeof(line) - off,
+		/* Last field appended -- no further uses of off afterwards. */
+		(void) snprintf(line + off, sizeof(line) - off,
 				" mem_oom_kill:%llu", mem_oom_kill);
 
 	outputerr("%s\n", line);

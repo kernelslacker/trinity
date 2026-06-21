@@ -430,11 +430,10 @@ static void reap_sysv_shm_sibling(pid_t sibling, struct sysv_shm_race_shared *rs
 static int wait_for_shmid_publish(struct sysv_shm_race_shared *rs)
 {
 	struct timespec ts;
-	uint32_t published;
 	int shmid;
 
-	while ((published = __atomic_load_n(&rs->originator_published,
-					    __ATOMIC_ACQUIRE)) == 0U) {
+	while (__atomic_load_n(&rs->originator_published,
+			       __ATOMIC_ACQUIRE) == 0U) {
 		ts.tv_sec  = 0;
 		ts.tv_nsec = SYSV_SHM_PUBLISH_WAIT_NS;
 		(void)trinity_raw_syscall(__NR_futex, &rs->originator_published, FUTEX_WAIT,
@@ -613,14 +612,10 @@ static void iter_one(struct childdata *child)
 	run_burst_parent_half(shmid, races);
 
 out:
-	if (attacher > 0) {
+	if (attacher > 0)
 		reap_sysv_shm_sibling(attacher, rs);
-		attacher = -1;
-	}
-	if (originator > 0) {
+	if (originator > 0)
 		reap_sysv_shm_sibling(originator, rs);
-		originator = -1;
-	}
 
 	/* Backstop RMID: must NEVER leak a SysV segment.  EIDRM/EINVAL
 	 * is the expected case when the originator's RMID + exit_shm

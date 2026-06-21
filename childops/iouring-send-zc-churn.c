@@ -315,7 +315,6 @@ static int open_loopback_pair(pid_t *out_pid)
 	if (connect(cli, (struct sockaddr *)&addr, sizeof(addr)) < 0 &&
 	    errno != EINPROGRESS) {
 		close(cli);
-		cli = -1;
 		close(listener);
 		goto reap;
 	}

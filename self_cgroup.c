@@ -1155,7 +1155,6 @@ void self_cgroup_drop_fds_in_child(void)
 void self_cgroup_events_check(void)
 {
 	char drain[4096];
-	ssize_t r;
 	bool any_event = false;
 	unsigned long high, max;
 
@@ -1180,7 +1179,7 @@ void self_cgroup_events_check(void)
 	 * (memory.events only carries IN_MODIFY for us) — only that
 	 * something fired.  EAGAIN on the trailing call is the normal
 	 * empty-queue signal under O_NONBLOCK. */
-	while ((r = read(events_inotify_fd, drain, sizeof(drain))) > 0)
+	while (read(events_inotify_fd, drain, sizeof(drain)) > 0)
 		any_event = true;
 
 	if (!any_event) {
