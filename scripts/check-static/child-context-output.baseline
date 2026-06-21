@@ -10,8 +10,8 @@ childops/af-alg-template-probe.c:218:af_alg_template_probe
 childops/af-alg-weak-cipher-probe.c:227:probe_one_entry
 childops/eth-emitter.c:253:ensure_socket
 childops/fs-lifecycle.c:158:ensure_private_ns
-childops/genetlink-fuzzer.c:285:ensure_discovery
-childops/genetlink-fuzzer.c:303:ensure_discovery
+childops/genetlink-fuzzer.c:294:ensure_discovery
+childops/genetlink-fuzzer.c:313:ensure_discovery
 childops/inplace_crypto_oracle.c:161:latch_target
 childops/inplace_crypto_oracle.c:271:log_corruption
 childops/inplace_crypto_oracle.c:273:log_corruption
