@@ -3,6 +3,7 @@
 	const struct itimerspec __user *, new_setting,
 	struct itimerspec __user *, old_setting)
  */
+#include <stdint.h>
 #include <time.h>
 #include "random.h"
 #include "sanitise.h"
@@ -21,6 +22,23 @@
  */
 static void sanitise_timer_settime(struct syscallrecord *rec)
 {
+	int32_t tid;
+
+	/*
+	 * Precondition: timer_id (a1) must reference a kernel-allocated
+	 * k_itimer or timer_settime short-circuits with -EINVAL inside
+	 * posix_timer_get_by_id() before the arm path runs.
+	 * gen_arg_timerid returns a value from OBJ_TIMERID when the pool
+	 * has entries, otherwise a random small int from
+	 * get_random_timerid()'s pool-empty fallback that almost never
+	 * matches a live id.  Seed one inline so timer_settime reaches
+	 * the productive kernel arm path (hrtimer / per-clock expiry
+	 * queue setup) on the very first call in the child.
+	 */
+	tid = seed_timerid_if_empty();
+	if (tid >= 0)
+		rec->a1 = (unsigned long) tid;
+
 	rec->a2 = 0;
 	if (ONE_IN(5))
 		rec->a2 = TIMER_ABSTIME;

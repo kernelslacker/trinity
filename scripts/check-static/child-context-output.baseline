@@ -316,10 +316,10 @@ syscalls/sysinfo.c:145:post_sysinfo
 syscalls/sysinfo.c:151:post_sysinfo
 syscalls/time.c:84:post_time
 syscalls/time.c:98:post_time
-syscalls/timer_create.c:275:post_timer_create
-syscalls/timer_create.c:282:post_timer_create
-syscalls/timer_create.c:289:post_timer_create
-syscalls/timer_create.c:320:post_timer_create
+syscalls/timer_create.c:314:post_timer_create
+syscalls/timer_create.c:321:post_timer_create
+syscalls/timer_create.c:328:post_timer_create
+syscalls/timer_create.c:359:post_timer_create
 syscalls/timerfd_gettime.c:104:post_timerfd_gettime
 syscalls/timer_getoverrun.c:17:post_timer_getoverrun
 syscalls/timer_gettime.c:104:post_timer_gettime
