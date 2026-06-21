@@ -217,14 +217,24 @@ bool bpf_cgroup_attach(struct childdata *child)
 	if (latched_off)
 		return true;
 
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the stats
+	 * writes entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	snprintf(path, sizeof(path), "/sys/fs/cgroup/trinity%u",
 		 rnd_modulo_u32(8));
 	cgroup_fd = open(path, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
 	if (cgroup_fd < 0) {
 		latched_off = true;
-		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-				 CHILDOP_LATCH_NS_UNSUPPORTED,
-				 __ATOMIC_RELAXED);
+		if (valid_op)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 		__atomic_add_fetch(&shm->stats.bpf_cgroup_attach_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
@@ -236,9 +246,10 @@ bool bpf_cgroup_attach(struct childdata *child)
 	if (prog_fd < 0) {
 		if (errno == EPERM || errno == EACCES) {
 			latched_off = true;
-			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-					 CHILDOP_LATCH_NS_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			if (valid_op)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 		}
 		__atomic_add_fetch(&shm->stats.bpf_cgroup_attach_setup_failed,
 				   1, __ATOMIC_RELAXED);
@@ -257,9 +268,10 @@ bool bpf_cgroup_attach(struct childdata *child)
 	if (sys_bpf(BPF_PROG_ATTACH, &attr, sizeof(attr)) < 0) {
 		if (errno == EPERM || errno == EACCES) {
 			latched_off = true;
-			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-					 CHILDOP_LATCH_NS_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			if (valid_op)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 		}
 		__atomic_add_fetch(&shm->stats.bpf_cgroup_attach_attach_rejected,
 				   1, __ATOMIC_RELAXED);
@@ -268,14 +280,16 @@ bool bpf_cgroup_attach(struct childdata *child)
 	attached = true;
 	__atomic_add_fetch(&shm->stats.bpf_cgroup_attach_attached, 1,
 			   __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
 
 	/* Drive the hook in-burst.  Sibling children fuzzing in the same
 	 * cgroup at the same time supply the cross-process concurrency
 	 * the dispatch-vs-detach race window needs. */
-	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
 	sent = udp_burst(c->attach_type);
 	__atomic_add_fetch(&shm->stats.bpf_cgroup_attach_packets_sent,
 			   sent, __ATOMIC_RELAXED);
