@@ -306,6 +306,16 @@ static int vrf_fib_churn_in_ns(void *arg)
 	bool link_added = false;
 	int rc;
 
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling, so
+	 * an out-of-range index would walk past the NR_CHILD_OP_TYPES-
+	 * sized backing store and silently scribble whatever sits next
+	 * to it.  Skip the stats writes entirely when the snapshot is
+	 * out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	if (nl_open(&ctx, &opts) < 0) {
 		__atomic_add_fetch(&shm->stats.vrf_fib_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
@@ -323,8 +333,9 @@ static int vrf_fib_churn_in_ns(void *arg)
 	link_added = true;
 	__atomic_add_fetch(&shm->stats.vrf_fib_churn_link_ok,
 			   1, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
 
 	ifindex = (int)if_nametoindex(vrf_name);
 	if (ifindex == 0)
@@ -367,8 +378,9 @@ static int vrf_fib_churn_in_ns(void *arg)
 		dst.sin_addr.s_addr = htonl(0xf0000000u |
 					    (rand32() & 0x0fffffffu));
 		dst.sin_port = htons(53);
-		__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-				   1, __ATOMIC_RELAXED);
+		if (valid_op)
+			__atomic_add_fetch(&shm->stats.childop_data_path[op],
+					   1, __ATOMIC_RELAXED);
 		n = sendto(udp, "x", 1, MSG_DONTWAIT,
 			   (struct sockaddr *)&dst, sizeof(dst));
 		if (n >= 0)
@@ -415,6 +427,14 @@ bool vrf_fib_churn(struct childdata *child)
 	struct vrf_fib_churn_ctx cctx = { .child = child };
 	int rc;
 
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op latch_reason array.  The field lives in shared
+	 * memory and can be scribbled by a poisoned-arena write from a
+	 * sibling; skip the latch write entirely when the snapshot is
+	 * out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	__atomic_add_fetch(&shm->stats.vrf_fib_churn_runs, 1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported)
@@ -423,9 +443,10 @@ bool vrf_fib_churn(struct childdata *child)
 	rc = userns_run_in_ns(CLONE_NEWNET, vrf_fib_churn_in_ns, &cctx);
 	if (rc == -EPERM) {
 		ns_unsupported = true;
-		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-				 CHILDOP_LATCH_NS_UNSUPPORTED,
-				 __ATOMIC_RELAXED);
+		if (valid_op)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 		__atomic_add_fetch(&shm->stats.vrf_fib_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
