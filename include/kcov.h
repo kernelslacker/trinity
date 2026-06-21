@@ -1959,6 +1959,100 @@ struct kcov_shared {
 	unsigned long cmp_field_consumer_key_absent;
 	unsigned long cmp_field_consumer_pool_corrupted;
 	unsigned long cmp_field_consumer_live_picks;
+
+	/*
+	 * Number of age-bucket slots for the CMP-hint staleness histogram
+	 * below.  Buckets are coarse-spaced log2 ranges of the durable
+	 * pool's LRU-clock delta at pick time (see cmp_hint_age_bucket()
+	 * in cmp_hints.c); 7 slots gives bucket-0 == hottest (delta == 0,
+	 * just-refreshed entry) through bucket-6 == staid tail (delta >=
+	 * 2048 pool mutations since refresh).  Defined here rather than in
+	 * cmp_hints.h because kcov.h must not include cmp_hints.h (see the
+	 * MAX_REEXEC_PENDING comment above for the dependency rationale).
+	 */
+#define CMP_HINT_AGE_BUCKETS	7U
+
+	/*
+	 * CMP-hint freshness / tier observability counters.
+	 *
+	 * A fuzz run that injects tens of thousands of unique hints but
+	 * credits only a handful of PC-wins suggests the durable pool is
+	 * saturated and its hot entries are stale -- the hints being
+	 * pulled at substitution time predate the kernel state the
+	 * current call is actually probing.  These counters expose the
+	 * per-call tier of the hint that was consumed (durable per-syscall
+	 * pool vs run-local recent ring) and the staleness of the durable
+	 * entry as measured by the gap between the pool's LRU clock at
+	 * pick time and the entry's last_used stamp at pick time, then
+	 * partition the PC-win / PC-miss credit drain by the same axes
+	 * so the conversion rate per (tier, age-bucket) is directly
+	 * observable.
+	 *
+	 * All counters RELAXED + flat per the SHADOW-first discipline:
+	 * the recording is active in every run regardless of consumer
+	 * arm so the freshness signal is legible from a default run with
+	 * no behaviour change.  Append-only at the struct tail per the
+	 * existing convention so consumer offsets stay stable.
+	 *
+	 *  cmp_hint_tier_recent_wins / cmp_hint_tier_recent_misses
+	 *      Bumped from cmp_hints_feedback_credit_pc(): for each
+	 *      stashed entry served from the recent ring, the outcome of
+	 *      the parent dispatch (new_edges true/false) bumps the
+	 *      matching wins/misses counter once per stash entry.
+	 *      Sibling of the existing flat cmp_hint_wins / cmp_hint_misses
+	 *      which count per parent dispatch (once); the per-stash
+	 *      partition here is what isolates the tier signal: a single
+	 *      parent dispatch may have stashed multiple hints from
+	 *      different tiers, and the conversion attribution lands on
+	 *      whichever tier sourced each individual stash entry.
+	 *  cmp_hint_tier_durable_wins / cmp_hint_tier_durable_misses
+	 *      Mirror of the recent tier above, bumped on stash entries
+	 *      served from the durable per-syscall pool or the field-
+	 *      scoped pool (both share the durable / saturating-LRU
+	 *      lineage).  recent_wins + durable_wins is the total per-
+	 *      stash-entry wins count, drained at the same site as the
+	 *      flat per-parent-dispatch counter.
+	 *  cmp_hint_durable_consumed_age[CMP_HINT_AGE_BUCKETS]
+	 *      Bumped once per cmp_hints_try_get_ex() / cmp_hints_field_try_get()
+	 *      return served from the durable per-syscall pool / field
+	 *      pool: indexed by cmp_hint_age_bucket() of the LRU clock
+	 *      delta (pool->last_used_stamp - picked->last_used) measured
+	 *      lock-free at pick time.  Bucket 0 == picked entry is the
+	 *      most recently refreshed in the pool; higher buckets ==
+	 *      the entry has been carried over many pool mutations
+	 *      without being refreshed.  Recent-ring picks bypass this
+	 *      counter (their freshness story is the tier itself; the
+	 *      ring has no per-entry LRU stamp).
+	 *  cmp_hint_durable_age_wins[CMP_HINT_AGE_BUCKETS]
+	 *  cmp_hint_durable_age_misses[CMP_HINT_AGE_BUCKETS]
+	 *      Outcome partition of cmp_hint_durable_consumed_age:
+	 *      bumped from cmp_hints_feedback_credit_pc() on each stashed
+	 *      durable-served entry, indexed by the same age bucket the
+	 *      pick path stored on the stash entry.  Per-bucket
+	 *      conversion rate = age_wins[b] / (age_wins[b] +
+	 *      age_misses[b]) and proves directly whether fresh entries
+	 *      (bucket 0..2) convert at higher rates than the stale tail
+	 *      (bucket 5..6).
+	 *  per_syscall_cmp_reject_cap[MAX_NR_SYSCALL]
+	 *      Per-syscall partition of the existing flat
+	 *      cmp_hints_save_reject_cap: every evict-replace in
+	 *      pools[nr] (durable pool saturated at CMP_HINTS_PER_SYSCALL,
+	 *      a fresh insert displaced an existing entry) bumps slot nr.
+	 *      Pair with the existing per_syscall_cmp_inserts[nr] to
+	 *      read per-syscall pool pressure: a syscall whose
+	 *      reject_cap rate dominates its inserts rate has a
+	 *      saturated pool churning the same 16 slots; the durable
+	 *      hints it produces drop to the recent ring (and decay
+	 *      from there) instead of carrying forward.
+	 */
+	unsigned long cmp_hint_tier_recent_wins;
+	unsigned long cmp_hint_tier_recent_misses;
+	unsigned long cmp_hint_tier_durable_wins;
+	unsigned long cmp_hint_tier_durable_misses;
+	unsigned long cmp_hint_durable_consumed_age[CMP_HINT_AGE_BUCKETS];
+	unsigned long cmp_hint_durable_age_wins[CMP_HINT_AGE_BUCKETS];
+	unsigned long cmp_hint_durable_age_misses[CMP_HINT_AGE_BUCKETS];
+	unsigned long per_syscall_cmp_reject_cap[MAX_NR_SYSCALL];
 };
 
 extern struct kcov_shared *kcov_shm;

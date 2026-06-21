@@ -8348,6 +8348,72 @@ static void __cold dump_stats_kcov_block(void)
 		if (kc_cmp_save_reject_cap > 0)
 			stat_row("kcov_coverage", "cmp_hints_save_reject_cap", kc_cmp_save_reject_cap);
 
+		/* CMP-hint freshness / tier observability rollup.  See the
+		 * counter-block comment in include/kcov.h next to
+		 * cmp_hint_tier_recent_wins for the per-counter semantics.
+		 * Gates on a non-zero summed value so a run that never
+		 * exercised the consumer path stays silent in stats.  Per-
+		 * bucket detail rendered as a compact tier_age_<n> row
+		 * family so a downstream stats consumer can index by
+		 * bucket without parsing a sub-structured value. */
+		{
+			unsigned long kc_tier_r_wins = __atomic_load_n(
+				&kcov_shm->cmp_hint_tier_recent_wins,
+				__ATOMIC_RELAXED);
+			unsigned long kc_tier_r_misses = __atomic_load_n(
+				&kcov_shm->cmp_hint_tier_recent_misses,
+				__ATOMIC_RELAXED);
+			unsigned long kc_tier_d_wins = __atomic_load_n(
+				&kcov_shm->cmp_hint_tier_durable_wins,
+				__ATOMIC_RELAXED);
+			unsigned long kc_tier_d_misses = __atomic_load_n(
+				&kcov_shm->cmp_hint_tier_durable_misses,
+				__ATOMIC_RELAXED);
+			unsigned long sum = kc_tier_r_wins + kc_tier_r_misses
+					  + kc_tier_d_wins + kc_tier_d_misses;
+			unsigned int b;
+
+			if (sum > 0) {
+				stat_row("kcov_coverage",
+					 "cmp_hint_tier_recent_wins",
+					 kc_tier_r_wins);
+				stat_row("kcov_coverage",
+					 "cmp_hint_tier_recent_misses",
+					 kc_tier_r_misses);
+				stat_row("kcov_coverage",
+					 "cmp_hint_tier_durable_wins",
+					 kc_tier_d_wins);
+				stat_row("kcov_coverage",
+					 "cmp_hint_tier_durable_misses",
+					 kc_tier_d_misses);
+
+				for (b = 0; b < CMP_HINT_AGE_BUCKETS; b++) {
+					char key[64];
+					unsigned long v_consumed =
+						__atomic_load_n(&kcov_shm->cmp_hint_durable_consumed_age[b],
+								__ATOMIC_RELAXED);
+					unsigned long v_wins =
+						__atomic_load_n(&kcov_shm->cmp_hint_durable_age_wins[b],
+								__ATOMIC_RELAXED);
+					unsigned long v_misses =
+						__atomic_load_n(&kcov_shm->cmp_hint_durable_age_misses[b],
+								__ATOMIC_RELAXED);
+
+					if ((v_consumed | v_wins | v_misses) == 0)
+						continue;
+					snprintf(key, sizeof(key),
+						 "cmp_hint_durable_consumed_age_%u", b);
+					stat_row("kcov_coverage", key, v_consumed);
+					snprintf(key, sizeof(key),
+						 "cmp_hint_durable_age_wins_%u", b);
+					stat_row("kcov_coverage", key, v_wins);
+					snprintf(key, sizeof(key),
+						 "cmp_hint_durable_age_misses_%u", b);
+					stat_row("kcov_coverage", key, v_misses);
+				}
+			}
+		}
+
 		{
 			/* total_warm_known_hits migrated off the kcov_shm
 			 * atomic onto the per-child staged counter drained

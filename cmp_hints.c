@@ -471,6 +471,34 @@ unsigned int cmp_hints_pool_safe_count(struct cmp_hint_pool *pool)
 }
 
 /*
+ * Bucket the lock-free LRU-clock delta (pool->last_used_stamp -
+ * picked->last_used) measured at pick time into CMP_HINT_AGE_BUCKETS
+ * coarse log2 ranges.  Bucket 0 == delta 0 (entry is the most recently
+ * refreshed in the pool); higher buckets == entry has been carried over
+ * many pool mutations since its last_used was bumped.  Static-asserted
+ * against the kcov_shm array width so a future widening of the
+ * histogram doesn't silently overflow the kcov_shm counter array.
+ */
+_Static_assert(CMP_HINT_AGE_BUCKETS == 7U,
+	       "cmp_hint_age_bucket() arms must match CMP_HINT_AGE_BUCKETS");
+static inline uint8_t cmp_hint_age_bucket(uint64_t age)
+{
+	if (age == 0)
+		return 0;
+	if (age < 8)
+		return 1;
+	if (age < 32)
+		return 2;
+	if (age < 128)
+		return 3;
+	if (age < 512)
+		return 4;
+	if (age < 2048)
+		return 5;
+	return 6;
+}
+
+/*
  * Insert (cmp_ip, val, size) into the entries[] array.  Dedups via linear
  * scan on the full (cmp_ip, value, size) key.  When the pool is full,
  * evicts the entry with the smallest last_used (least-recently-inserted)
@@ -490,6 +518,7 @@ unsigned int cmp_hints_pool_safe_count(struct cmp_hint_pool *pool)
  * is still the last thing the evictor will pick.
  */
 static bool pool_add_locked(struct cmp_hint_pool *pool,
+			    unsigned int nr,
 			    unsigned long cmp_ip,
 			    unsigned long val,
 			    unsigned int size)
@@ -575,6 +604,17 @@ static bool pool_add_locked(struct cmp_hint_pool *pool,
 		 * window once the per-syscall pool tops out. */
 		__atomic_fetch_add(&kcov_shm->cmp_hints_save_reject_cap, 1UL,
 				   __ATOMIC_RELAXED);
+		/* Per-syscall partition of the cap-pressure counter.
+		 * Sibling of per_syscall_cmp_inserts[nr] (bumped above
+		 * via cmp_hints_unique_inserts and again at the
+		 * cmp_hints_collect tail).  nr is gated to MAX_NR_SYSCALL
+		 * at cmp_hints_collect() entry; this insert path is only
+		 * ever reached through cmp_hints_flush_pending which
+		 * threads the same nr through unchanged, so the index is
+		 * in-bounds. */
+		if (nr < MAX_NR_SYSCALL)
+			__atomic_fetch_add(&kcov_shm->per_syscall_cmp_reject_cap[nr],
+					   1UL, __ATOMIC_RELAXED);
 	}
 	return true;
 }
@@ -729,7 +769,7 @@ static unsigned int cmp_hints_flush_pending(struct cmp_hint_pool *pool,
 		return 0;
 	pool_lock(pool);
 	for (j = 0; j < n; j++) {
-		if (pool_add_locked(pool, batch[j].ip, batch[j].val,
+		if (pool_add_locked(pool, nr, batch[j].ip, batch[j].val,
 				    batch[j].size)) {
 			inserted++;
 			/* Mirror every durable content change into the
@@ -2140,7 +2180,9 @@ static void cmp_hints_stash_consumed(unsigned int nr, bool do32,
 				     unsigned int size, enum cmp_hint_use use,
 				     unsigned int arg_idx,
 				     unsigned int field_idx,
-				     const struct struct_desc *desc)
+				     const struct struct_desc *desc,
+				     bool served_from_recent,
+				     uint8_t age_bucket)
 {
 	struct childdata *child = this_child();
 	struct cmp_hint_consumed_entry *e;
@@ -2166,9 +2208,14 @@ static void cmp_hints_stash_consumed(unsigned int nr, bool do32,
 	e->size = (uint8_t)size;
 	e->transform = (uint8_t)use;
 	e->arg_idx = (uint8_t)arg_idx;
+	e->served_from_recent = served_from_recent ? 1 : 0;
+	/* Defensive clamp -- a caller bug that passes an out-of-range bucket
+	 * would otherwise blow past the kcov_shm histogram array width.
+	 * The arms in cmp_hint_age_bucket() are bounded by construction;
+	 * this is belt-and-braces against a future caller. */
+	e->age_bucket = (age_bucket < CMP_HINT_AGE_BUCKETS) ?
+			age_bucket : (uint8_t)(CMP_HINT_AGE_BUCKETS - 1U);
 	e->pad[0] = 0;
-	e->pad[1] = 0;
-	e->pad[2] = 0;
 
 	if (kcov_shm != NULL)
 		__atomic_fetch_add(&kcov_shm->cmp_hints_consumed, 1UL,
@@ -2390,12 +2437,21 @@ bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 				 * tuple, while the flat cmp_hint_wins /
 				 * cmp_hint_misses counters still bump -- the
 				 * follow-up commit wires the recent-pool
-				 * conversion credit + promotion. */
+				 * conversion credit + promotion.
+				 *
+				 * served_from_recent=1, age_bucket=0: the
+				 * recent ring has no per-entry LRU stamp; its
+				 * freshness story IS the tier itself.  The
+				 * credit drain partitions PC-wins by tier so a
+				 * recent-served stash entry rolls up under
+				 * cmp_hint_tier_recent_wins / _misses; the
+				 * age-bucketed durable counters skip it. */
 				cmp_hints_stash_consumed(nr, do32,
 							 CMP_HINT_POOL_PER_SYSCALL,
 							 re_cmp_ip, re_value,
 							 re_size, use,
-							 0, 0, NULL);
+							 0, 0, NULL,
+							 true, 0);
 				return true;
 			}
 		} else if (kcov_shm != NULL) {
@@ -2455,31 +2511,54 @@ bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 	picked_value = picked->value;
 	picked_cmp_ip = picked->cmp_ip;
 	picked_size = picked->size;
+	/* Staleness sample for the freshness observability counters.
+	 * Lock-free reads on the two stamp fields: a torn read (a sibling
+	 * insert advancing pool->last_used_stamp between our two loads, or
+	 * a concurrent eviction overwriting picked->last_used with a fresh
+	 * stamp) at worst misbuckets a single sample, which is acceptable
+	 * shadow accounting -- the next pull resamples.  Guard the
+	 * unsigned subtraction against a torn read that would make the
+	 * entry stamp appear larger than the pool stamp; clamp to 0 per
+	 * the codified rule "ensure b <= a at the point of a - b". */
+	{
+		uint64_t cur_stamp = __atomic_load_n(&pool->last_used_stamp,
+						     __ATOMIC_RELAXED);
+		uint64_t entry_stamp = __atomic_load_n(&picked->last_used,
+						       __ATOMIC_RELAXED);
+		uint64_t age = (cur_stamp >= entry_stamp) ?
+				(cur_stamp - entry_stamp) : 0;
+		uint8_t bucket = cmp_hint_age_bucket(age);
 
-	*out = cmp_hint_apply_transform(picked_value, use, old);
+		if (kcov_shm != NULL)
+			__atomic_fetch_add(&kcov_shm->cmp_hint_durable_consumed_age[bucket],
+					   1UL, __ATOMIC_RELAXED);
 
-	if (kcov_shm != NULL) {
-		/* Mirror of the attempts ring path above: both the scalar
-		 * and per-nr returned counters drain into parent_stats via
-		 * the per-child stats_ring. */
-		struct childdata *return_child = this_child();
+		*out = cmp_hint_apply_transform(picked_value, use, old);
 
-		if (return_child != NULL) {
-			(void) stats_ring_enqueue(return_child->stats_ring,
-						  STATS_FIELD_CMP_HINTS_TRY_GET_RETURNED,
-						  0, 1);
-			/* per-nr partition of the producer-side pool-hit
-			 * counter.  Same in-bounds guard reasoning as the
-			 * attempts bump above. */
-			(void) stats_ring_enqueue(return_child->stats_ring,
-						  STATS_FIELD_PER_SYSCALL_CMP_RETURNED,
-						  (uint16_t)nr, 1);
+		if (kcov_shm != NULL) {
+			/* Mirror of the attempts ring path above: both the
+			 * scalar and per-nr returned counters drain into
+			 * parent_stats via the per-child stats_ring. */
+			struct childdata *return_child = this_child();
+
+			if (return_child != NULL) {
+				(void) stats_ring_enqueue(return_child->stats_ring,
+							  STATS_FIELD_CMP_HINTS_TRY_GET_RETURNED,
+							  0, 1);
+				/* per-nr partition of the producer-side
+				 * pool-hit counter.  Same in-bounds guard
+				 * reasoning as the attempts bump above. */
+				(void) stats_ring_enqueue(return_child->stats_ring,
+							  STATS_FIELD_PER_SYSCALL_CMP_RETURNED,
+							  (uint16_t)nr, 1);
+			}
 		}
-	}
 
-	cmp_hints_stash_consumed(nr, do32, CMP_HINT_POOL_PER_SYSCALL,
-				 picked_cmp_ip, picked_value, picked_size, use,
-				 0, 0, NULL);
+		cmp_hints_stash_consumed(nr, do32, CMP_HINT_POOL_PER_SYSCALL,
+					 picked_cmp_ip, picked_value, picked_size, use,
+					 0, 0, NULL,
+					 false, bucket);
+	}
 	return true;
 }
 
@@ -2617,16 +2696,36 @@ bool cmp_hints_field_try_get(unsigned int nr, bool do32, unsigned int arg_idx,
 	picked_value = picked->value;
 	picked_cmp_ip = picked->cmp_ip;
 	picked_size = picked->size;
+	/* Staleness sample.  Field pools share the same durable LRU
+	 * discipline as the per-syscall pool (cmp_field_pool_insert_locked
+	 * bumps pool->last_used_stamp on every insert/dedup-refresh and
+	 * stamps the entry's last_used at insert time), so the same
+	 * bucketing partition applies.  Same torn-read tolerance + b<=a
+	 * underflow guard as the per-syscall pick. */
+	{
+		uint64_t cur_stamp = __atomic_load_n(&pool->last_used_stamp,
+						     __ATOMIC_RELAXED);
+		uint64_t entry_stamp = __atomic_load_n(&picked->last_used,
+						       __ATOMIC_RELAXED);
+		uint64_t age = (cur_stamp >= entry_stamp) ?
+				(cur_stamp - entry_stamp) : 0;
+		uint8_t bucket = cmp_hint_age_bucket(age);
 
-	*out = cmp_hint_apply_transform(picked_value, use, old);
+		if (kcov_shm != NULL)
+			__atomic_fetch_add(&kcov_shm->cmp_hint_durable_consumed_age[bucket],
+					   1UL, __ATOMIC_RELAXED);
 
-	if (kcov_shm != NULL)
-		__atomic_fetch_add(&kcov_shm->cmp_field_consumer_live_picks,
-				   1UL, __ATOMIC_RELAXED);
+		*out = cmp_hint_apply_transform(picked_value, use, old);
 
-	cmp_hints_stash_consumed(nr, do32, CMP_HINT_POOL_FIELD,
-				 picked_cmp_ip, picked_value, picked_size, use,
-				 arg_idx, field_idx, desc);
+		if (kcov_shm != NULL)
+			__atomic_fetch_add(&kcov_shm->cmp_field_consumer_live_picks,
+					   1UL, __ATOMIC_RELAXED);
+
+		cmp_hints_stash_consumed(nr, do32, CMP_HINT_POOL_FIELD,
+					 picked_cmp_ip, picked_value, picked_size, use,
+					 arg_idx, field_idx, desc,
+					 false, bucket);
+	}
 	return true;
 }
 
@@ -2824,6 +2923,45 @@ void cmp_hints_feedback_credit_pc(bool outcome_win)
 		case CMP_HINT_POOL_KIND_NR:
 		default:
 			break;
+		}
+
+		/* Per-tier + per-age conversion partition.  The flat
+		 * cmp_hint_wins / cmp_hint_misses counters above bump once
+		 * per parent dispatch; the per-stash-entry partition here
+		 * is what isolates the freshness signal -- a single
+		 * dispatch may have stashed hints from multiple tiers /
+		 * age buckets and each lands the outcome on its own
+		 * sourcing channel.  Recent-served stash entries roll up
+		 * under the recent tier counter and skip the age
+		 * histogram (the ring has no per-entry LRU stamp).
+		 * Durable-served stash entries (both per-syscall and
+		 * field pools) roll up under the durable tier counter and
+		 * bump the age-bucketed wins/misses indexed by the bucket
+		 * stamped on the stash entry at pick time.  Defensive
+		 * clamp on age_bucket mirrors the clamp in
+		 * cmp_hints_stash_consumed for the same reason -- a
+		 * corrupted stash entry that survived the in-stash clamp
+		 * is harmlessly dropped onto the last bucket here. */
+		if (kcov_shm == NULL)
+			continue;
+		if (e->served_from_recent) {
+			__atomic_fetch_add(outcome_win ?
+					   &kcov_shm->cmp_hint_tier_recent_wins :
+					   &kcov_shm->cmp_hint_tier_recent_misses,
+					   1UL, __ATOMIC_RELAXED);
+		} else {
+			uint8_t bucket = e->age_bucket;
+
+			if (bucket >= CMP_HINT_AGE_BUCKETS)
+				bucket = (uint8_t)(CMP_HINT_AGE_BUCKETS - 1U);
+			__atomic_fetch_add(outcome_win ?
+					   &kcov_shm->cmp_hint_tier_durable_wins :
+					   &kcov_shm->cmp_hint_tier_durable_misses,
+					   1UL, __ATOMIC_RELAXED);
+			__atomic_fetch_add(outcome_win ?
+					   &kcov_shm->cmp_hint_durable_age_wins[bucket] :
+					   &kcov_shm->cmp_hint_durable_age_misses[bucket],
+					   1UL, __ATOMIC_RELAXED);
 		}
 	}
 
