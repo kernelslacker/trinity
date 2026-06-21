@@ -1222,6 +1222,15 @@ static void install_ah_esn_async_sa(struct nl_ctx *ctx, int udp,
 	int rc;
 	unsigned int sent;
 
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op latch slot.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the latch
+	 * store entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	if (ns_unsupported_xfrm_ah_esn)
 		return;
 
@@ -1293,9 +1302,10 @@ static void install_ah_esn_async_sa(struct nl_ctx *ctx, int udp,
 				   __ATOMIC_RELAXED);
 		if (rc == -EOPNOTSUPP || rc == -ENOPROTOOPT || rc == -ENOENT) {
 			ns_unsupported_xfrm_ah_esn = true;
-			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-					 CHILDOP_LATCH_NS_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			if (valid_op)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 		}
 		return;
 	}
@@ -1352,6 +1362,15 @@ static void pfkey_flush_burst(struct childdata *child)
 	struct sadb_msg msg;
 	int s;
 
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op latch slot.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the latch
+	 * store entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	if (ns_unsupported_pfkey)
 		return;
 
@@ -1359,9 +1378,10 @@ static void pfkey_flush_burst(struct childdata *child)
 	if (s < 0) {
 		if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT) {
 			ns_unsupported_pfkey = true;
-			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-					 CHILDOP_LATCH_NS_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			if (valid_op)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 		}
 		return;
 	}
@@ -1588,12 +1608,22 @@ static int xfrm_churn_iter_setup_netns(struct xfrm_churn_iter_ctx *ctx)
 		.recv_timeo_s = XFRM_RECV_TIMEO_S,
 	};
 
+	/* Snapshot ctx->child->op_type once and bounds-check before
+	 * indexing the per-op latch slot.  The field lives in shared
+	 * memory and can be scribbled by a poisoned-arena write from a
+	 * sibling; the child.c dispatch loop already gates its dispatch
+	 * + alt-op accounting on the same valid_op snapshot.  Skip the
+	 * latch store entirely when the snapshot is out of range. */
+	const enum child_op_type op = ctx->child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	if (!ns_unshared) {
 		if (unshare(CLONE_NEWNET) < 0) {
 			ns_setup_failed = true;
-			__atomic_store_n(&shm->stats.childop_latch_reason[ctx->child->op_type],
-					 CHILDOP_LATCH_INIT_FAILED,
-					 __ATOMIC_RELAXED);
+			if (valid_op)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_INIT_FAILED,
+						 __ATOMIC_RELAXED);
 			__atomic_add_fetch(&shm->stats.xfrm_churn_setup_failed,
 					   1, __ATOMIC_RELAXED);
 			return -1;
@@ -1615,9 +1645,10 @@ static int xfrm_churn_iter_setup_netns(struct xfrm_churn_iter_ctx *ctx)
 	if (nl_open(&ctx->nl, &opts) < 0) {
 		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT) {
 			ns_unsupported_xfrm = true;
-			__atomic_store_n(&shm->stats.childop_latch_reason[ctx->child->op_type],
-					 CHILDOP_LATCH_NS_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			if (valid_op)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 		}
 		__atomic_add_fetch(&shm->stats.xfrm_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
@@ -1639,6 +1670,15 @@ static int xfrm_churn_iter_setup_netns(struct xfrm_churn_iter_ctx *ctx)
 static int xfrm_churn_iter_install_sa(struct xfrm_churn_iter_ctx *ctx)
 {
 	int rc;
+
+	/* Snapshot ctx->child->op_type once and bounds-check before
+	 * indexing the per-op latch slot.  The field lives in shared
+	 * memory and can be scribbled by a poisoned-arena write from a
+	 * sibling; the child.c dispatch loop already gates its dispatch
+	 * + alt-op accounting on the same valid_op snapshot.  Skip the
+	 * latch store entirely when the snapshot is out of range. */
+	const enum child_op_type op = ctx->child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	ctx->aidx = pick_algo_idx();
 	if (ctx->aidx >= NR_XFRM_ALGOS)
@@ -1689,9 +1729,10 @@ static int xfrm_churn_iter_install_sa(struct xfrm_churn_iter_ctx *ctx)
 			 * off, leave the algo latch alone so transport /
 			 * tunnel AEAD installs keep working. */
 			ns_unsupported_iptfs = true;
-			__atomic_store_n(&shm->stats.childop_latch_reason[ctx->child->op_type],
-					 CHILDOP_LATCH_NS_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			if (valid_op)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 			return -1;
 		}
 		if (is_unsupported_err(rc))
@@ -1729,6 +1770,15 @@ static void xfrm_churn_iter_setup_udp(struct xfrm_churn_iter_ctx *ctx)
 	struct sockaddr_in src;
 	int one = 1;
 
+	/* Snapshot ctx->child->op_type once and bounds-check before
+	 * indexing the per-op latch slot.  The field lives in shared
+	 * memory and can be scribbled by a poisoned-arena write from a
+	 * sibling; the child.c dispatch loop already gates its dispatch
+	 * + alt-op accounting on the same valid_op snapshot.  Skip the
+	 * latch store entirely when the snapshot is out of range. */
+	const enum child_op_type op = ctx->child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	if (ns_unsupported_inet)
 		return;
 
@@ -1736,9 +1786,10 @@ static void xfrm_churn_iter_setup_udp(struct xfrm_churn_iter_ctx *ctx)
 	if (ctx->udp < 0) {
 		if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT) {
 			ns_unsupported_inet = true;
-			__atomic_store_n(&shm->stats.childop_latch_reason[ctx->child->op_type],
-					 CHILDOP_LATCH_NS_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			if (valid_op)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 		}
 		return;
 	}
@@ -1921,13 +1972,25 @@ bool xfrm_churn(struct childdata *child)
 
 	if (xfrm_churn_iter_install_sa(&ctx) != 0)
 		goto out;
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
+
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the stats
+	 * writes entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
 
 	xfrm_churn_iter_setup_udp(&ctx);
 
-	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
 	xfrm_churn_iter_drive_burst(&ctx);
 	xfrm_churn_iter_rekey(&ctx);
 	xfrm_churn_iter_drive_burst(&ctx);
