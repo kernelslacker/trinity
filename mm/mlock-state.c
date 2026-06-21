@@ -100,8 +100,17 @@ unsigned long mlock_state_clamp_len(unsigned long requested)
 	ensure_memlock_cache();
 	if (memlock_budget == ULONG_MAX)
 		return requested;
+	/*
+	 * Budget already burned through.  Returning 0 here turned the
+	 * subsequent mlock(addr, 0) into a no-op success the kernel
+	 * short-circuits before reaching mlock_check_rlimit/account_locked_vm
+	 * -- "high calls, low edges" cold-syscall shape.  Hand back
+	 * page_size so the call lands inside the rlimit accounting path
+	 * (EAGAIN at the cap) and the over-cap reject edges are retained
+	 * instead of every subsequent draw collapsing to len=0.
+	 */
 	if (memlock_used >= memlock_budget)
-		return 0;
+		return page_size;
 	avail = memlock_budget - memlock_used;
 	return requested > avail ? avail : requested;
 }
