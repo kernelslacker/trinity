@@ -1306,8 +1306,17 @@ static void iter_one(struct genl_ctx *ctx, struct childdata *child,
 	if (nl80211_iter_setup(ctx, ifname, &ifindex, t_outer) < 0)
 		return;
 
-	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	/* child->op_type lives in shared memory and can be scribbled by a
+	 * poisoned-arena write from a sibling; bounds-check the snapshot
+	 * before indexing the NR_CHILD_OP_TYPES-sized stats arrays, same
+	 * pattern the child.c dispatch loop uses for the unguarded write
+	 * that motivated this guard. */
+	{
+		const enum child_op_type op = child->op_type;
+		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+			__atomic_add_fetch(&shm->stats.childop_data_path[op],
+					   1, __ATOMIC_RELAXED);
+	}
 
 	nl80211_iter_scan_connect(ctx, ifindex, ifname, t_outer);
 	nl80211_iter_races(ctx, ifindex);
@@ -1323,6 +1332,14 @@ bool nl80211_churn(struct childdata *child)
 	struct timespec t_outer;
 	unsigned int outer_iters, i;
 	int rc;
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the stats
+	 * writes entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	__atomic_add_fetch(&shm->stats.nl80211_runs, 1, __ATOMIC_RELAXED);
 
@@ -1340,9 +1357,10 @@ bool nl80211_churn(struct childdata *child)
 			if (errno == EPERM)
 				ns_unsupported_nl80211 = true;
 			ns_setup_failed = true;
-			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-					 CHILDOP_LATCH_INIT_FAILED,
-					 __ATOMIC_RELAXED);
+			if (valid_op)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_INIT_FAILED,
+						 __ATOMIC_RELAXED);
 			__atomic_add_fetch(&shm->stats.nl80211_setup_failed,
 					   1, __ATOMIC_RELAXED);
 			return true;
@@ -1379,8 +1397,9 @@ bool nl80211_churn(struct childdata *child)
 		nl80211_phy0_cached = true;
 	}
 
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
 
 	if (clock_gettime(CLOCK_MONOTONIC, &t_outer) < 0) {
 		t_outer.tv_sec  = 0;
