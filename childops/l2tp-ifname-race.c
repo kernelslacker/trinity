@@ -202,13 +202,22 @@ static void probe_l2tp_family(struct childdata *child)
 		.version = 1,
 		.recv_timeo_s = 1,
 	};
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the stats write
+	 * entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	l2tp_family_probed = true;
 	if (genl_open(&gctx, &opts) != 0) {
 		ns_unsupported_l2tp_ifname_race = true;
-		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-				 CHILDOP_LATCH_NS_UNSUPPORTED,
-				 __ATOMIC_RELAXED);
+		if (valid_op)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 		return;
 	}
 	l2tp_family_id = gctx.family_id;
@@ -225,13 +234,23 @@ static void probe_l2tp_family(struct childdata *child)
  */
 static void unshare_netns_once(struct childdata *child)
 {
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the stats write
+	 * entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	if (ns_unshared_l2tp_ifname_race || ns_unshare_failed_l2tp_ifname_race)
 		return;
 	if (unshare(CLONE_NEWNET) < 0) {
 		ns_unshare_failed_l2tp_ifname_race = true;
-		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-				 CHILDOP_LATCH_NS_UNSUPPORTED,
-				 __ATOMIC_RELAXED);
+		if (valid_op)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 		return;
 	}
 	ns_unshared_l2tp_ifname_race = true;
@@ -669,6 +688,14 @@ bool l2tp_ifname_race(struct childdata *child)
 	};
 	struct timespec t_outer;
 	unsigned int outer_iters, i;
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the stats
+	 * writes entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	__atomic_add_fetch(&shm->stats.l2tp_ifname_race_runs,
 			   1, __ATOMIC_RELAXED);
@@ -701,8 +728,9 @@ bool l2tp_ifname_race(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
 
 	if (clock_gettime(CLOCK_MONOTONIC, &t_outer) < 0) {
 		t_outer.tv_sec = 0;
@@ -715,8 +743,9 @@ bool l2tp_ifname_race(struct childdata *child)
 	if (outer_iters > L2TP_OUTER_CAP)
 		outer_iters = L2TP_OUTER_CAP;
 
-	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
 	for (i = 0; i < outer_iters; i++) {
 		if (budget_elapsed_ns(&t_outer, L2TP_WALL_CAP_NS))
 			break;
