@@ -566,13 +566,21 @@ static int build_iptunnel_delete(struct nl_ctx *ctx, __be32 dst, int lo_ifindex)
  */
 static void map_rc_to_latch(int op_type, int rc, char arm)
 {
+	/* op_type is a snapshot of child->op_type from the caller; the
+	 * field lives in shared memory and can be scribbled by a
+	 * poisoned-arena write from a sibling, so bounds-check the
+	 * snapshot before indexing the NR_CHILD_OP_TYPES-sized stats
+	 * array and skip the write when it is out of range. */
+	const bool valid_op = (op_type >= 0 && op_type < NR_CHILD_OP_TYPES);
+
 	if (rc >= 0)
 		return;
 
 	if (rc == -EAFNOSUPPORT || rc == -ENOPROTOOPT) {
-		__atomic_store_n(&shm->stats.childop_latch_reason[op_type],
-				 CHILDOP_LATCH_NS_UNSUPPORTED,
-				 __ATOMIC_RELAXED);
+		if (valid_op)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 		if (arm == 'A')
 			latch_ns_unsupported_mpls(rc);
 		else
@@ -582,9 +590,10 @@ static void map_rc_to_latch(int op_type, int rc, char arm)
 
 	if (rc == -EOPNOTSUPP) {
 		if (arm == 'B') {
-			__atomic_store_n(&shm->stats.childop_latch_reason[op_type],
-					 CHILDOP_LATCH_NS_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			if (valid_op)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op_type],
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 			latch_ns_unsupported_lwtunnel(rc);
 		}
 		return;
@@ -611,12 +620,24 @@ bool mpls_route_churn(struct childdata *child)
 	if (ns_unsupported_mpls && ns_unsupported_lwtunnel)
 		return true;
 
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the stats
+	 * writes entirely when the snapshot is out of range, and pass the
+	 * snapshot through to map_rc_to_latch() instead of re-reading
+	 * child->op_type. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	if (!mpls_rc_unshared) {
 		if (unshare(CLONE_NEWNET) < 0) {
 			if (errno != EPERM) {
-				__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-						 CHILDOP_LATCH_NS_UNSUPPORTED,
-						 __ATOMIC_RELAXED);
+				if (valid_op)
+					__atomic_store_n(&shm->stats.childop_latch_reason[op],
+							 CHILDOP_LATCH_NS_UNSUPPORTED,
+							 __ATOMIC_RELAXED);
 				latch_ns_unsupported_mpls(-errno);
 				latch_ns_unsupported_lwtunnel(-errno);
 				return true;
@@ -633,8 +654,9 @@ bool mpls_route_churn(struct childdata *child)
 	if (nl_open(&ctx, &opts) < 0)
 		return true;
 
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
 
 	lo_ifindex = (int)if_nametoindex("lo");
 
@@ -650,8 +672,9 @@ bool mpls_route_churn(struct childdata *child)
 	if (outer_iters > MPLS_RC_OUTER_CAP)
 		outer_iters = MPLS_RC_OUTER_CAP;
 
-	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
 
 	for (i = 0; i < outer_iters; i++) {
 		bool pick_arm_a;
@@ -677,7 +700,7 @@ bool mpls_route_churn(struct childdata *child)
 						&shm->stats.mpls_route_churn_delete_ok,
 						1, __ATOMIC_RELAXED);
 			} else {
-				map_rc_to_latch(child->op_type, rc, 'A');
+				map_rc_to_latch(op, rc, 'A');
 			}
 		} else if (!pick_arm_a && !ns_unsupported_lwtunnel) {
 			__be32 dst = 0;
@@ -694,7 +717,7 @@ bool mpls_route_churn(struct childdata *child)
 						&shm->stats.mpls_route_churn_delete_ok,
 						1, __ATOMIC_RELAXED);
 			} else {
-				map_rc_to_latch(child->op_type, rc, 'B');
+				map_rc_to_latch(op, rc, 'B');
 			}
 		}
 
