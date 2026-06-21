@@ -139,8 +139,18 @@ bool packet_fanout_thrash(struct childdata *child)
 
 	__atomic_add_fetch(&shm->stats.packet_fanout_runs, 1, __ATOMIC_RELAXED);
 
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the stats
+	 * writes entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
 
 	fd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
 	if (fd < 0) {
@@ -203,8 +213,9 @@ bool packet_fanout_thrash(struct childdata *child)
 		flags1 |= (PACKET_FANOUT_FLAG_DEFRAG >> 8);
 
 	fanout1 = make_fanout_arg(group1, type1, flags1);
-	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
 	rc = setsockopt(fd, SOL_PACKET, PACKET_FANOUT,
 			&fanout1, sizeof(fanout1));
 	if (rc == 0)
