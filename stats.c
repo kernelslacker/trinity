@@ -3644,7 +3644,7 @@ static const struct {
 	  offsetof(struct stats_s, frontier_decay_would_skip) },
 	{ "frontier_silent_decay_live_rejects",
 	  offsetof(struct stats_s, frontier_silent_decay_live_rejects) },
-	/* SHADOW-ONLY wall-lever (codex #6) accounting.  Eligible_total is
+	/* SHADOW-ONLY wall-lever accounting.  Eligible_total is
 	 * the denominator (every plateau-active pick the lever saw); would_
 	 * suppress_total is the projected reclaim count a live variant would
 	 * produce.  See the struct-field comment in include/stats.h for the
@@ -7905,7 +7905,7 @@ static void dump_stats_strategy_summary(void)
 	if (shm->stats.plateau_forced_windows)
 		stat_row("strategy", "plateau_forced_windows",
 			 shm->stats.plateau_forced_windows);
-	/* SHADOW-ONLY wall-lever (codex #6).  eligible_total / would_suppress_
+	/* SHADOW-ONLY wall-lever.  eligible_total / would_suppress_
 	 * total expose the data-driven gate's projected reclaim share on every
 	 * plateau-active pick; baseline_calls is the fleet mean per_syscall_
 	 * calls the predicate scaled WALL_LEVER_HIGH_MULT against.  See the

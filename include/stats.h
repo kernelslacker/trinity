@@ -2657,7 +2657,7 @@ struct stats_s {
 	unsigned long warm_reserve_candidates_total;
 	unsigned long warm_reserve_candidates[MAX_NR_SYSCALL];
 
-	/* SHADOW-ONLY warm-plateau "wall lever" accounting -- codex #6
+	/* SHADOW-ONLY warm-plateau "wall lever" accounting -- the
 	 * shadow gate that identifies high-call zero-yield syscalls during a
 	 * warm-plateau window and projects the pick-budget those candidates
 	 * would free if a live suppression variant were enabled.  Predicate
@@ -2665,7 +2665,7 @@ struct stats_s {
 	 * eligibility set is recomputed at every plateau-active rotation by
 	 * wall_lever_refresh_baseline() so the gate adapts to the fleet's
 	 * own per-syscall calls distribution rather than relying on a static
-	 * denylist (the codex syscalls mq_timedsend, io_destroy, munlockall,
+	 * denylist (the candidate syscalls mq_timedsend, io_destroy, munlockall,
 	 * shmget, setsid, personality, unshare that motivated this lever
 	 * surface as members of the data-driven eligible set, not as named
 	 * constants).

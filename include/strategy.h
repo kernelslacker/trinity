@@ -660,7 +660,7 @@ bool plateau_anti_prior_accept(unsigned int nr);
 void plateau_anti_prior_refresh_baseline(void);
 
 /*
- * Wall-lever shadow gate -- codex #6.  Returns true iff the candidate
+ * Wall-lever shadow gate.  Returns true iff the candidate
  * syscall is a high-call zero-yield slot during a warm-plateau window
  * and a live wall-lever variant of the picker would suppress it to
  * reclaim its pick budget for productive / cold syscalls.  Eligibility

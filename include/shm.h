@@ -745,7 +745,7 @@ struct shm_s {
 	unsigned long plateau_intervention_mode_windows[NR_PIM_MODES];
 
 	/*
-	 * Wall-lever shadow gate (codex #6).  Identifies high-call zero-yield
+	 * Wall-lever shadow gate.  Identifies high-call zero-yield
 	 * syscalls during a warm-plateau window so a future live variant can
 	 * reclaim their pick budget for productive / cold syscalls.  Held in
 	 * shm next to the anti-prior cache because the publish ordering and

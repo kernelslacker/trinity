@@ -349,7 +349,7 @@ retry:
 	if (cred_throttle_should_reject(syscallnr, do32))
 		goto retry;
 
-	/* Wall-lever SHADOW gate (codex #6): the candidate has cleared every
+	/* Wall-lever SHADOW gate: the candidate has cleared every
 	 * live correctness + bias gate above, so this is the population a
 	 * live wall-lever variant would have to act on.  Bump the eligible
 	 * counter on every plateau-active pick (probe short-circuits to
@@ -534,11 +534,11 @@ retry:
 	if (cred_throttle_should_reject(syscallnr, do32))
 		goto retry;
 
-	/* Wall-lever SHADOW gate (codex #6).  Mirrors the call site in
+	/* Wall-lever SHADOW gate.  Mirrors the call site in
 	 * set_syscall_nr_heuristic above so plateau-active picks under both
 	 * the bandit-heuristic and uniform-random arms feed the same shadow
 	 * tally; the cold-skip-bypass logic that pulls the random arm into
-	 * the plateau intervention windows is exactly where the codex #6
+	 * the plateau intervention windows is exactly where the
 	 * dead-weight syscalls are most likely to be picked, so the random
 	 * arm's contribution is the headline data point.  Live picker is
 	 * byte-identical -- the lever does NOT reject here. */
