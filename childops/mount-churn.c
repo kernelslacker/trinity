@@ -206,6 +206,15 @@ static unsigned long pick_flags(void)
 
 static bool ensure_private_ns(struct childdata *child)
 {
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the stats
+	 * writes entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	if (ns_ready)
 		return true;
 	if (ns_unsupported)
@@ -227,17 +236,19 @@ static bool ensure_private_ns(struct childdata *child)
 	 * execution case and latches the op off for this child. */
 	if (unshare(CLONE_NEWNS) != 0) {
 		ns_unsupported = true;
-		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-				 CHILDOP_LATCH_INIT_FAILED,
-				 __ATOMIC_RELAXED);
+		if (valid_op)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					 CHILDOP_LATCH_INIT_FAILED,
+					 __ATOMIC_RELAXED);
 		return false;
 	}
 
 	if (mount("none", "/", NULL, MS_REC | MS_PRIVATE, NULL) != 0) {
 		ns_unsupported = true;
-		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-				 CHILDOP_LATCH_INIT_FAILED,
-				 __ATOMIC_RELAXED);
+		if (valid_op)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					 CHILDOP_LATCH_INIT_FAILED,
+					 __ATOMIC_RELAXED);
 		outputerr("mount_churn: MS_PRIVATE remount failed (errno=%d), disabling\n",
 		          errno);
 		return false;
@@ -400,13 +411,22 @@ bool mount_churn(struct childdata *child)
 	unsigned int fsopen_idx;
 	bool ext4_available = false;
 	pid_t pid = mypid();
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the stats
+	 * writes entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	__atomic_add_fetch(&shm->stats.mount_churn_runs, 1, __ATOMIC_RELAXED);
 
 	if (!ensure_private_ns(child))
 		return true;
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
 
 	/* Probe the scratch_block pool once per invocation: when the
 	 * parent provisioned mnt_ready AND a loop-backed ext4 image
@@ -428,8 +448,9 @@ bool mount_churn(struct childdata *child)
 #endif
 	cycles = 1 + rnd_modulo_u32(MAX_CYCLES);
 
-	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
 	for (i = 0; i < cycles; i++) {
 		const char *fstype;
 		const char *source;
@@ -507,9 +528,10 @@ bool mount_churn(struct childdata *child)
 			 * iter and try a different one next time. */
 			if (errno == EPERM && !ns_inherited) {
 				ns_unsupported = true;
-				__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-						 CHILDOP_LATCH_NS_UNSUPPORTED,
-						 __ATOMIC_RELAXED);
+				if (valid_op)
+					__atomic_store_n(&shm->stats.childop_latch_reason[op],
+							 CHILDOP_LATCH_NS_UNSUPPORTED,
+							 __ATOMIC_RELAXED);
 				(void)rmdir(path);
 				return true;
 			}
