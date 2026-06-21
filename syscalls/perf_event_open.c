@@ -1872,7 +1872,7 @@ static void post_perf_event_open(struct syscallrecord *rec)
 	int fd = rec->retval;
 
 	if (fd >= 0 && fd < (1 << 20)) {
-		unsigned long flags = rec->a5;
+		unsigned long flags = get_arg_snapshot(rec, 5);
 		bool needs_immediate_teardown =
 			(flags & (PERF_FLAG_PID_CGROUP | PERF_FLAG_FD_OUTPUT)) != 0;
 
@@ -1951,4 +1951,14 @@ struct syscallentry syscall_perf_event_open = {
 	.init = init_pmus,
 	.flags = NEED_ALARM | IGNORE_ENOSYS,
 	.group = GROUP_PROCESS,
+	/* a5 (flags) gates the synchronous-teardown decision in
+	 * post_perf_event_open: PERF_FLAG_PID_CGROUP / FD_OUTPUT mark
+	 * events whose kernel-side references outlive our fd and must
+	 * be walked off here (rec->retval forced -1), vs. plain events
+	 * left for the OBJ_FD_PERF pool to close at child teardown.
+	 * Shadow a5 so a sibling stomp between dispatch and post cannot
+	 * flip that gate -- leaking a pinned event into the pool, or
+	 * tearing down a plain fd the caller still owns.  Mismatch
+	 * bumps arg_shadow_stomp from inside get_arg_snapshot(). */
+	.arg_snapshot_mask = (1u << 4),
 };
