@@ -129,6 +129,14 @@ bool uffd_churn(struct childdata *child)
 
 	__atomic_add_fetch(&shm->stats.uffd_runs, 1, __ATOMIC_RELAXED);
 
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	if (ns_unsupported)
 		return true;
 
@@ -157,10 +165,11 @@ bool uffd_churn(struct childdata *child)
 			 * invocations no-op. */
 			if (errno == EPERM || errno == ENOSYS) {
 				ns_unsupported = true;
-				__atomic_store_n(
-					&shm->stats.childop_latch_reason[child->op_type],
-					CHILDOP_LATCH_NS_UNSUPPORTED,
-					__ATOMIC_RELAXED);
+				if (valid_op)
+					__atomic_store_n(
+						&shm->stats.childop_latch_reason[op],
+						CHILDOP_LATCH_NS_UNSUPPORTED,
+						__ATOMIC_RELAXED);
 				return true;
 			}
 			__atomic_add_fetch(&shm->stats.uffd_failed,
@@ -190,18 +199,20 @@ bool uffd_churn(struct childdata *child)
 			continue;
 		}
 
-		__atomic_add_fetch(
-			&shm->stats.childop_setup_accepted[child->op_type],
-			1, __ATOMIC_RELAXED);
+		if (valid_op)
+			__atomic_add_fetch(
+				&shm->stats.childop_setup_accepted[op],
+				1, __ATOMIC_RELAXED);
 
 		memset(&reg, 0, sizeof(reg));
 		reg.range.start = (uintptr_t)region;
 		reg.range.len = len;
 		reg.mode = pick_register_mode(api.ioctls);
 
-		__atomic_add_fetch(
-			&shm->stats.childop_data_path[child->op_type],
-			1, __ATOMIC_RELAXED);
+		if (valid_op)
+			__atomic_add_fetch(
+				&shm->stats.childop_data_path[op],
+				1, __ATOMIC_RELAXED);
 
 		if (ioctl(fd, UFFDIO_REGISTER, &reg) == 0) {
 			__atomic_add_fetch(&shm->stats.uffd_registers,
