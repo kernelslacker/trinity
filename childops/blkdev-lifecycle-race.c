@@ -122,9 +122,18 @@ static int blkdev_pick_loop_num(struct childdata *child)
 	n = scratch_block_random_loop_num();
 	if (n < 0) {
 		ns_unsupported_blkdev_lifecycle = true;
-		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-				 CHILDOP_LATCH_NS_UNSUPPORTED,
-				 __ATOMIC_RELAXED);
+		/* child->op_type lives in shared memory and can be scribbled
+		 * by a poisoned-arena write from a sibling; bounds-check the
+		 * snapshot before indexing the NR_CHILD_OP_TYPES-sized stats
+		 * array, same pattern the child.c dispatch loop uses for the
+		 * unguarded write that motivated this guard. */
+		{
+			const enum child_op_type op = child->op_type;
+			if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
+		}
 	}
 	return n;
 }
@@ -262,8 +271,18 @@ bool blkdev_lifecycle_race(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 		return true;
 	}
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the stats
+	 * writes entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
 
 	atomic_store_explicit(&g_thread_b_stop, 0, memory_order_release);
 	if (pthread_create(&tid, NULL, blkdev_rescan_thread, &ra) == 0)
@@ -275,8 +294,9 @@ bool blkdev_lifecycle_race(struct childdata *child)
 	if (iters == 0U)
 		iters = 1U;
 
-	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
 	for (i = 0; i < iters; i++)
 		blkdev_lifecycle_cycle(ra.loop_n);
 
