@@ -398,6 +398,10 @@ void clean_childdata(struct childdata *child)
 	__atomic_store_n(&child->kill_count, 0, __ATOMIC_RELAXED);
 	child->kill_in_flight = false;
 	child->dstate_diag_dumped = false;
+	child->wedge_accounted = false;
+	child->wedge_do32 = false;
+	child->wedge_nr = 0;
+	child->wedge_start_tp = (struct timespec){ .tv_sec = 0, .tv_nsec = 0 };
 	child->dontkillme = false;
 	child->xcpu_count = 0;
 	child->op_nr = 0;

@@ -6694,6 +6694,108 @@ static void dump_stats_per_syscall_tables(void)
 	stats_emit_header();
 }
 
+/*
+ * SHADOW-ONLY shutdown attribution for the per-syscall stuck-child
+ * accounting added in this commit (see the comment on
+ * shm->stats.syscall_wedge_count[] in include/stats.h).  Renders a
+ * top-N row sorted by cumulative wedged microseconds, with the per-
+ * syscall event count rendered alongside so the operator can
+ * distinguish "one rare syscall that wedges for ages" from "many
+ * short wedges in a hot syscall".  Read-only: no live-path decision
+ * is taken from either array yet; this dump exists so the next
+ * iteration has data to choose throttle / isolation targets from.
+ *
+ * Biarch table choice follows top_syscalls_periodic_dump() exactly --
+ * only the 64-bit table is iterated under biarch because 32-bit nrs
+ * collide with 64-bit ones in the same index space and would shadow
+ * them in the display.  Empty-block gate: if no wedge has ever been
+ * accounted (count_total == 0), the block is skipped entirely
+ * rather than emit an all-zero header.
+ */
+#define WEDGE_TOPN	10
+
+static void dump_stats_top_wedging_syscalls(void)
+{
+	struct wedge_top_entry {
+		unsigned int nr;
+		unsigned long count;
+		unsigned long long total_us;
+	} top[WEDGE_TOPN];
+	unsigned int top_count = 0;
+	unsigned long count_total = 0;
+	unsigned long long us_total = 0;
+	unsigned int nr_to_scan;
+	bool is32bit;
+	unsigned int i;
+	int j;
+
+	if (biarch) {
+		nr_to_scan = max_nr_64bit_syscalls;
+		is32bit = false;
+	} else {
+		nr_to_scan = max_nr_syscalls;
+		is32bit = false;
+	}
+	if (nr_to_scan > MAX_NR_SYSCALL)
+		nr_to_scan = MAX_NR_SYSCALL;
+
+	for (i = 0; i < nr_to_scan; i++) {
+		unsigned long c = __atomic_load_n(
+			&shm->stats.syscall_wedge_count[i],
+			__ATOMIC_RELAXED);
+		unsigned long long u = __atomic_load_n(
+			&shm->stats.syscall_wedge_total_us[i],
+			__ATOMIC_RELAXED);
+
+		if (c == 0 && u == 0)
+			continue;
+
+		count_total += c;
+		us_total += u;
+
+		/* Insertion sort, descending by total_us, capped at WEDGE_TOPN.
+		 * Ties on total_us are broken by event count so a hot syscall
+		 * with many quick wedges ranks above a single still-pending
+		 * wedge whose duration matches by accident. */
+		for (j = (int)top_count;
+		     j > 0 && (u > top[j - 1].total_us ||
+			       (u == top[j - 1].total_us &&
+				c > top[j - 1].count));
+		     j--) {
+			if (j < WEDGE_TOPN)
+				top[j] = top[j - 1];
+		}
+		if (j < WEDGE_TOPN) {
+			top[j].nr = i;
+			top[j].count = c;
+			top[j].total_us = u;
+			if (top_count < WEDGE_TOPN)
+				top_count++;
+		}
+	}
+
+	if (count_total == 0 && us_total == 0)
+		return;
+
+	output(0, "Top %u most-wedging syscalls (cumulative; %lu events, "
+		"%llu.%03llu s wedged total):\n",
+		top_count, count_total,
+		us_total / 1000000ULL, (us_total / 1000ULL) % 1000ULL);
+
+	for (j = 0; j < (int)top_count; j++) {
+		const char *name = print_syscall_name(top[j].nr, is32bit);
+		unsigned long long s = top[j].total_us / 1000000ULL;
+		unsigned long long ms = (top[j].total_us / 1000ULL) % 1000ULL;
+		unsigned long long avg_us = top[j].count > 0 ?
+			(top[j].total_us / top[j].count) : 0;
+		unsigned long long avg_s = avg_us / 1000000ULL;
+		unsigned long long avg_ms = (avg_us / 1000ULL) % 1000ULL;
+
+		output(0, "    %-24s events=%lu wedged=%llu.%03llus avg=%llu.%03llus\n",
+			name, top[j].count, s, ms, avg_s, avg_ms);
+	}
+}
+
 static void dump_stats_fd_tracking(void)
 {
 	if (parent_stats.fault_injected) {
@@ -9549,6 +9651,8 @@ void __cold dump_stats(void)
 	dump_stats_runtime_header();
 
 	dump_stats_per_syscall_tables();
+
+	dump_stats_top_wedging_syscalls();
 
 	dump_stats_fd_tracking();
 
