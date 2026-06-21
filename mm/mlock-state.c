@@ -21,6 +21,7 @@
 #include <limits.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 #include <sys/resource.h>
 #include "arch.h"
 #include "maps.h"
@@ -180,4 +181,22 @@ void mlock_state_record_unlocked(unsigned long len)
 		memlock_used = 0;
 	else
 		memlock_used -= len;
+}
+
+/*
+ * Bulk reset.  A successful munlockall cleared every VM_LOCKED vma
+ * for this mm, so the per-child cumulative-locked total and the
+ * recently-locked ring no longer reflect any real kernel state.
+ * Leaving them populated would (a) keep clamp_len pinned at page_size
+ * via the over-budget arm even though the budget is fully available
+ * again, and (b) feed pick_recent stale (start, len) pairs that the
+ * munlock sanitiser would then draw against ranges the kernel
+ * already cleared.  Header / ensure_memlock_cache invariants are
+ * untouched -- the cap value itself is process-stable.
+ */
+void mlock_state_reset(void)
+{
+	memlock_used = 0;
+	memset(mlock_ring, 0, sizeof(mlock_ring));
+	mlock_ring_head = 0;
 }

@@ -39,3 +39,14 @@ unsigned long mlock_state_clamp_len(unsigned long requested);
 void mlock_state_record_locked(unsigned long start, unsigned long len);
 bool mlock_state_pick_recent(unsigned long *startp, unsigned long *lenp);
 void mlock_state_record_unlocked(unsigned long len);
+
+/*
+ * Drop the per-child memlock_used tracker and the recently-locked
+ * ring back to the initial state.  Called from post_munlockall once
+ * the kernel reports the per-mm VM_LOCKED clear succeeded -- without
+ * this the tracker keeps an over-cap stuck-at value forever, which
+ * pins every subsequent mlock_state_clamp_len draw to page_size and
+ * routes the ring's stale entries into pick_recent so munlock targets
+ * ranges the kernel already cleared.
+ */
+void mlock_state_reset(void);
