@@ -521,7 +521,22 @@ struct cmp_hint_consumed_entry {
 	uint8_t size;
 	uint8_t transform;		/* enum cmp_hint_use */
 	uint8_t arg_idx;		/* 1-based, 0 for CMP_HINT_POOL_PER_SYSCALL */
-	uint8_t pad[3];
+	/* Freshness / tier breadcrumbs stamped at pick time and consumed
+	 * by cmp_hints_feedback_credit_pc() so the per-tier and per-age
+	 * cmp_hint_tier_*_wins / cmp_hint_durable_age_*_wins counters in
+	 * kcov_shm partition the PC-mode outcome by where the hint came
+	 * from and how stale it was when picked.  Recent-ring picks set
+	 * served_from_recent=1 and age_bucket=0 (the ring has no per-entry
+	 * LRU stamp; its freshness story is the tier itself).  Durable
+	 * picks (per-syscall pool, field pool) set served_from_recent=0
+	 * and age_bucket = cmp_hint_age_bucket(pool->last_used_stamp -
+	 * picked->last_used) measured lock-free at pick time, tolerant of
+	 * a torn read in exactly the same way the rest of the pick path
+	 * is: a single misbucketed sample is advisory shadow accounting,
+	 * not a correctness issue. */
+	uint8_t served_from_recent;	/* 1 == recent ring, 0 == durable */
+	uint8_t age_bucket;		/* 0..CMP_HINT_AGE_BUCKETS-1 */
+	uint8_t pad[1];
 };
 
 #define CMP_HINT_CONSUMED_STASH_MAX	8U
