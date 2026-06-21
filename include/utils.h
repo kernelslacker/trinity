@@ -702,6 +702,28 @@ bool post_snapshot_or_skip(void *dst, const void *src, size_t len);
  */
 void heap_brk_maybe_refresh(void);
 
+/*
+ * Diagnostic hook for the mm-syscall arg sanitisers.  Called at the
+ * tail of each mm-syscall sanitiser (madvise / mmap / mprotect /
+ * mremap / mseal / remap_file_pages) AFTER range_overlaps_libc_heap()
+ * has returned "not heap" for [addr, addr+len) and any per-syscall
+ * addr rewrites have settled.  Pays one fresh sbrk(0) and -- if the
+ * address now proves to lie inside the live brk arena -- bumps a
+ * counter and (rate-limited) logs the slipping syscall so the next
+ * live run pins exactly which call passed the gate with a stale
+ * cached_brk_end snapshot.
+ *
+ * Pure observability: does NOT rewrite the slipping addr.  The
+ * @detail arg carries the per-syscall context (madvise advice /
+ * mprotect prot / mmap flags / mremap newaddr / mseal flags /
+ * remap_file_pages prot) verbatim in the log line so post-hoc filters
+ * can split slips by class without re-running.
+ */
+void log_mm_syscall_post_gate_heap_slip(const char *syscall_name,
+					unsigned long addr,
+					unsigned long len,
+					unsigned long detail);
+
 int get_num_fds(void);
 
 /*

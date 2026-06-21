@@ -98,6 +98,17 @@ static void sanitise_mprotect(struct syscallrecord *rec)
 	}
 
 	/*
+	 * Diagnostic: pin slips where range_overlaps_libc_heap() passed
+	 * the addr but a fresh sbrk(0) right here proves it lies inside
+	 * the live brk arena.  Pure observability.  Covers both mprotect
+	 * and pkey_mprotect via the shared sanitiser.
+	 */
+	log_mm_syscall_post_gate_heap_slip(
+		rec->entry == &syscall_pkey_mprotect
+			? "pkey_mprotect" : "mprotect",
+		rec->a1, rec->a2, rec->a3);
+
+	/*
 	 * Snapshot the inputs the post handler reads.  Without this the
 	 * post handler reads rec->a1/a2/a3 at post-time, when a sibling
 	 * syscall may have scribbled the slots: a stomped prot caches the

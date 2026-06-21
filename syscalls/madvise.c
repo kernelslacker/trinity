@@ -131,6 +131,14 @@ static void sanitise_madvise(struct syscallrecord *rec)
 	}
 
 	/*
+	 * Diagnostic: pin slips where range_overlaps_libc_heap() passed
+	 * the addr but a fresh sbrk(0) right here proves it lies inside
+	 * the live brk arena.  Pure observability (no rewrite).
+	 */
+	log_mm_syscall_post_gate_heap_slip("madvise", rec->a1, rec->a2,
+					   rec->a3);
+
+	/*
 	 * Snapshot AFTER every rewrite above (range_overlaps_shared zero,
 	 * bucket advice override, GUARD_INSTALL zero) so the post handler
 	 * sees the final addr/len/advice the syscall actually ran with.

@@ -176,6 +176,14 @@ enum stats_field {
 	 * the dump path reads off parent_stats. */
 	STATS_FIELD_PER_SYSCALL_CMP_ATTEMPTS,	/* aux = syscall nr */
 	STATS_FIELD_PER_SYSCALL_CMP_RETURNED,	/* aux = syscall nr */
+	/* log_mm_syscall_post_gate_heap_slip() observed an mm-syscall arg
+	 * that passed range_overlaps_libc_heap() but a fresh sbrk(0)
+	 * proved to lie inside the live brk arena -- the gate's cached
+	 * snapshot was stale at the point the arg reached the kernel.
+	 * Non-zero rate signals that the brk-overlap widening is still
+	 * incomplete or that a sanitise->syscall race window the gate
+	 * never sees is the actual slip source. */
+	STATS_FIELD_MM_GATE_POST_SLIP,
 	STATS_FIELD_NR,
 };
 
@@ -319,6 +327,16 @@ struct stats_aggregate {
 	 * surface for diagnostic counters without changing any reader. */
 	unsigned long per_syscall_cmp_attempts[MAX_NR_SYSCALL];
 	unsigned long per_syscall_cmp_returned[MAX_NR_SYSCALL];
+
+	/* Drained from STATS_FIELD_MM_GATE_POST_SLIP.  Per-run total of
+	 * mm-syscall sanitiser slips: addrs that range_overlaps_libc_heap
+	 * passed but a fresh sbrk(0) at the tail of the sanitiser proved
+	 * to lie inside the live brk arena.  Each slip also emits an
+	 * MM-GATE-POST-SLIP outputerr line (rate-limited) carrying the
+	 * syscall name, addr, len and per-call detail (advice / prot /
+	 * flags) so the upstream gate gap can be pinned without another
+	 * speculative widening. */
+	unsigned long mm_gate_post_slip;
 
 	/* Visibility / health counters surfaced via dump_stats. */
 	unsigned long ring_overflow_total;	/* sum of dropped enqueues across all rings */

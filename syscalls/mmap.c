@@ -13,6 +13,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "arch.h"
+#include "utils.h"
 #include "compat.h"
 #include "deferred-free.h"
 #include "hugepages.h"
@@ -199,6 +200,15 @@ static void sanitise_mmap(struct syscallrecord *rec)
 		rec->a4 &= ~MAP_FIXED;
 		rec->a1 = 0;
 	}
+
+	/*
+	 * Diagnostic: pin slips where range_overlaps_libc_heap() passed
+	 * the MAP_FIXED addr but a fresh sbrk(0) right here proves it
+	 * lies inside the live brk arena.  Pure observability.
+	 */
+	if (rec->a4 & MAP_FIXED)
+		log_mm_syscall_post_gate_heap_slip("mmap", rec->a1, rec->a2,
+						   rec->a3);
 }
 
 static void post_mmap(struct syscallrecord *rec)

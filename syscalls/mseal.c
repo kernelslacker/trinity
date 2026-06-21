@@ -4,6 +4,7 @@
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
+#include "utils.h"
 
 static void sanitise_mseal(struct syscallrecord *rec)
 {
@@ -27,6 +28,14 @@ static void sanitise_mseal(struct syscallrecord *rec)
 	} else {
 		rec->a3 = 0;	/* no flags defined yet, must be zero */
 	}
+
+	/*
+	 * Diagnostic: pin slips where range_overlaps_libc_heap() passed
+	 * the addr but a fresh sbrk(0) right here proves it lies inside
+	 * the live brk arena.  Pure observability.
+	 */
+	log_mm_syscall_post_gate_heap_slip("mseal", rec->a1, rec->a2,
+					   rec->a3);
 }
 
 struct syscallentry syscall_mseal = {

@@ -215,6 +215,9 @@ static void apply_slot(const void *p, void *ctx __unused__)
 		if (aux < MAX_NR_SYSCALL)
 			parent_stats.per_syscall_cmp_returned[aux] += delta;
 		break;
+	case STATS_FIELD_MM_GATE_POST_SLIP:
+		parent_stats.mm_gate_post_slip += delta;
+		break;
 	case STATS_FIELD_CALL_COMPLETE: {
 		/* One slot, three logical bumps.  op_count is unconditional
 		 * (the SPSC slot wouldn't have made it past spsc_ring_drain
