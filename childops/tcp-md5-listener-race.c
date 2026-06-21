@@ -137,6 +137,15 @@ bool tcp_md5_listener_race(struct childdata *child)
 	unsigned int i, j;
 	int rc;
 
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the stats
+	 * writes entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	__atomic_add_fetch(&shm->stats.tcp_md5_listener_race_runs, 1,
 			   __ATOMIC_RELAXED);
 
@@ -157,9 +166,10 @@ bool tcp_md5_listener_race(struct childdata *child)
 	if (rc < 0) {
 		if (errno == EOPNOTSUPP || errno == EINVAL || errno == EPERM) {
 			ns_unsupported_tcp_md5 = true;
-			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-					 CHILDOP_LATCH_NS_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			if (valid_op)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 		}
 		__atomic_add_fetch(&shm->stats.tcp_md5_listener_race_md5_set_failed,
 				   1, __ATOMIC_RELAXED);
@@ -168,13 +178,15 @@ bool tcp_md5_listener_race(struct childdata *child)
 	}
 	__atomic_add_fetch(&shm->stats.tcp_md5_listener_race_md5_set_ok, 1,
 			   __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
 
 	iters = BUDGETED(CHILD_OP_TCP_MD5_LISTENER_RACE,
 			 JITTER_RANGE(MD5_OUTER_BASE));
-	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
 	for (i = 0; i < iters; i++) {
 		/* Burst N zero-linger clients into the listener.  Each
 		 * close() drives RST and races tcp_child_process()'s
