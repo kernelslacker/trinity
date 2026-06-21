@@ -21,6 +21,7 @@ static void sanitise_msgctl(struct syscallrecord *rec)
 {
 	void *buf;
 	unsigned long allocated_size;
+	bool input_buf = false;
 
 	rec->post_state = 0;
 
@@ -61,6 +62,7 @@ static void sanitise_msgctl(struct syscallrecord *rec)
 		ds->msg_perm.gid = getgid();
 		ds->msg_perm.mode =
 			mode_dict[rnd_modulo_u32(ARRAY_SIZE(mode_dict))] | 0400;
+		input_buf = true;
 		break;
 	}
 	default:
@@ -74,7 +76,19 @@ static void sanitise_msgctl(struct syscallrecord *rec)
 
 	ipcctl_post_state_alloc(rec, buf, allocated_size);
 
-	avoid_shared_buffer_out(&rec->a3, allocated_size);
+	/*
+	 * IPC_SET is the only input branch: the kernel reads msg_perm
+	 * from the buffer.  Relocate copy-preserving so the curated
+	 * uid/gid/mode survive the move into the writable pool; without
+	 * it the kernel reads pool zeros and EINVALs/EPERMs the call,
+	 * silently neutering IPC_SET coverage.  IPC_INFO / MSG_INFO /
+	 * IPC_STAT / MSG_STAT are pure outputs -- the kernel writes
+	 * them, so the cheaper relocate-only suffices.
+	 */
+	if (input_buf)
+		avoid_shared_buffer_inout(&rec->a3, allocated_size);
+	else
+		avoid_shared_buffer_out(&rec->a3, allocated_size);
 }
 
 static void post_msgctl(struct syscallrecord *rec)
