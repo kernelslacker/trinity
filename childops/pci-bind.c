@@ -152,14 +152,23 @@ static void pci_bind_probe(struct childdata *child)
 	struct stat st;
 	unsigned int i;
 	unsigned int found = 0;
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the stats
+	 * writes entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	pci_bind_probed = true;
 
 	if (stat(PCI_BIND_BUS_DIR, &st) < 0 || !S_ISDIR(st.st_mode)) {
 		pci_bind_unsupported = true;
-		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-				 CHILDOP_LATCH_UNSUPPORTED,
-				 __ATOMIC_RELAXED);
+		if (valid_op)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					 CHILDOP_LATCH_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 		return;
 	}
 
@@ -177,9 +186,10 @@ static void pci_bind_probe(struct childdata *child)
 
 	if (pci_bind_avail_mask == 0U) {
 		pci_bind_unsupported = true;
-		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-				 CHILDOP_LATCH_UNSUPPORTED,
-				 __ATOMIC_RELAXED);
+		if (valid_op)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					 CHILDOP_LATCH_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 	}
 }
 
@@ -299,6 +309,14 @@ bool pci_bind(struct childdata *child)
 	int err_bind = 0;
 	bool ran_unbind;
 	bool ran_bind;
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the stats
+	 * writes entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	__atomic_add_fetch(&shm->stats.pci_bind_runs, 1, __ATOMIC_RELAXED);
 
@@ -317,14 +335,16 @@ bool pci_bind(struct childdata *child)
 		return true;
 	}
 
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
 
 	pick = rnd_modulo_u32(n_devs);
 	bdf = devs[pick];
 
-	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
 
 	ran_unbind = pci_bind_write_bdf(drv, "unbind", bdf, &err_unbind);
 	ran_bind  = pci_bind_write_bdf(drv, "bind",   bdf, &err_bind);
