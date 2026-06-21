@@ -2354,7 +2354,8 @@ static void dump_stats_json_corruption_and_audit(void)
 			"\"get_writable_address_scribbled_mprotect_shm\":%lu,"
 			"\"get_writable_address_scribbled_postmp_mmap\":%lu,"
 			"\"get_writable_address_scribbled_postmp_shm\":%lu,"
-			"\"get_writable_address_enomem_exhausted\":%lu},",
+			"\"get_writable_address_enomem_exhausted\":%lu,"
+			"\"get_writable_address_bookkeeping_ro_fault\":%lu},",
 		shm->stats.fd_event_ring_corrupted,
 		shm->stats.fd_event_ring_overwritten,
 		shm->stats.fd_event_payload_corrupt,
@@ -2436,7 +2437,8 @@ static void dump_stats_json_corruption_and_audit(void)
 		parent_stats.get_writable_address_scribbled_mprotect_shm,
 		parent_stats.get_writable_address_scribbled_postmp_mmap,
 		parent_stats.get_writable_address_scribbled_postmp_shm,
-		parent_stats.get_writable_address_enomem_exhausted);
+		parent_stats.get_writable_address_enomem_exhausted,
+		parent_stats.get_writable_address_bookkeeping_ro_fault);
 }
 
 static void dump_stats_json_lifecycle_and_storms(void)
@@ -3310,6 +3312,8 @@ static const struct {
 	  offsetof(struct stats_aggregate, get_writable_address_scribbled_postmp_mmap), true },
 	{ "get_writable_address_scribbled_postmp_shm",
 	  offsetof(struct stats_aggregate, get_writable_address_scribbled_postmp_shm), true },
+	{ "get_writable_address_bookkeeping_ro_fault",
+	  offsetof(struct stats_aggregate, get_writable_address_bookkeeping_ro_fault), true },
 	{ "post_handler_corrupt_ptr",
 	  offsetof(struct stats_aggregate, post_handler_corrupt_ptr), true },
 	{ "deferred_free_reject",
@@ -7542,6 +7546,9 @@ static void dump_stats_shared_buffer_misc(void)
 	if (parent_stats.get_writable_address_enomem_exhausted)
 		stat_row("shared_buffer", "get_writable_address_enomem_exhausted",
 			 parent_stats.get_writable_address_enomem_exhausted);
+	if (parent_stats.get_writable_address_bookkeeping_ro_fault)
+		stat_row("shared_buffer", "get_writable_address_bookkeeping_ro_fault",
+			 parent_stats.get_writable_address_bookkeeping_ro_fault);
 	if (parent_stats.children_recycled_on_storm)
 		stat_row("corruption", "children_recycled_on_storm",
 			 parent_stats.children_recycled_on_storm);

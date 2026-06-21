@@ -139,6 +139,9 @@ static void apply_slot(const void *p, void *ctx __unused__)
 	case STATS_FIELD_GET_WRITABLE_ENOMEM_EXHAUSTED:
 		parent_stats.get_writable_address_enomem_exhausted += delta;
 		break;
+	case STATS_FIELD_GET_WRITABLE_BOOKKEEPING_RO_FAULT:
+		parent_stats.get_writable_address_bookkeeping_ro_fault += delta;
+		break;
 	case STATS_FIELD_CHILDREN_RECYCLED_ON_STORM:
 		parent_stats.children_recycled_on_storm += delta;
 		break;
