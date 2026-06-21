@@ -705,8 +705,8 @@ struct syscalltable {
  * a non-targeted entry is "inactive" because it was never enabled, so
  * the old ACTIVE-bit inference treated unrelated syscalls as excluded
  * (false positive) and the explicitly -x'd one as not (false negative,
- * the bug this flag fixes -- see codex finding B).  Set in toggle_sys-
- * call_n() / toggle_syscall_biarch_n() alongside TO_BE_DEACTIVATED, and
+ * the bug this flag fixes -- the targeting/exclusion interaction).
+ * Set in toggle_syscall_n() / toggle_syscall_biarch_n() alongside TO_BE_DEACTIVATED, and
  * never cleared -- the deactivate paths in tables-{uni,bi}arch.c mask
  * only ACTIVE|TO_BE_DEACTIVATED so this bit survives.
  */

@@ -841,7 +841,7 @@ int munge_tables(void)
  * avoid misreporting unrelated syscalls (a non-targeted entry is
  * inactive because it was never enabled, not because it was -x'd) --
  * but that workaround also silently dropped the legitimate -x exclusion
- * when targeting was active (codex finding B: e.g. `-c foo -x bar` left
+ * when targeting was active (targeting/exclusion bug: e.g. `-c foo -x bar` left
  * bar reachable from raw-syscall sites).  Reading the explicit bit
  * fixes both directions at once.
  *

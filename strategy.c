@@ -1339,7 +1339,7 @@ int select_next_strategy(int prev,
 			__ATOMIC_RELAXED);
 		pim = (enum plateau_intervention_mode)(rot % NR_PIM_MODES);
 
-		/* Wall-lever shadow gate (codex #6): refresh the eligibility
+		/* Wall-lever shadow gate: refresh the eligibility
 		 * set at every plateau-active rotation, BEFORE the mode-
 		 * specific arm dispatch below, so the per-pick shadow probe
 		 * in wall_lever_should_suppress_shadow always reads from a
@@ -2152,7 +2152,7 @@ void plateau_anti_prior_refresh_baseline(void)
 }
 
 /*
- * Wall-lever shadow gate tunables (codex #6).  The eligibility predicate
+ * Wall-lever shadow gate tunables.  The eligibility predicate
  * is "high calls, zero edges" measured against the fleet's current mean
  * per_syscall_calls, so the candidate set adapts to fleet state instead
  * of relying on a hardcoded denylist.
@@ -2160,7 +2160,7 @@ void plateau_anti_prior_refresh_baseline(void)
  * WALL_LEVER_HIGH_MULT
  *     Multiplier on the fleet mean for the high-calls clause: a syscall
  *     qualifies only when calls_total >= MULT * baseline.  4 is enough
- *     to single out the codex #6 tail (mq_timedsend / io_destroy /
+ *     to single out the dead-weight tail (mq_timedsend / io_destroy /
  *     munlockall / shmget / setsid / personality / unshare were all
  *     >4x mean per_syscall_calls in the run that motivated the lever)
  *     without sweeping up syscalls sitting at typical-active rates.
