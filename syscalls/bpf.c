@@ -604,6 +604,7 @@ static void post_bpf(struct syscallrecord *rec)
 	unsigned int cmd;
 	int fd = rec->retval;
 	unsigned long ret = rec->retval;
+	bool attr_readable;
 
 	rec->a2 = 0;
 
@@ -687,6 +688,25 @@ static void post_bpf(struct syscallrecord *rec)
 	attr = snap->attr_original;
 
 	/*
+	 * Wrapper-side readability gate before reading attr inner fields:
+	 * looks_like_corrupted_ptr above is shape-only (heap-band +
+	 * alignment), so a heap-shaped but unmapped snap->attr_original
+	 * would survive and an inner read (attr->map_type / attr->prog_type
+	 * / attr->insns / attr->link_create.attach_type / attr->target_fd
+	 * / attr->attach_bpf_fd / attr->attach_type) would fault the post
+	 * handler before the dispatch ever runs.  Require attr to be a
+	 * tracked allocation (one we produced via zmalloc_tracked at
+	 * sanitise) or readable for a union bpf_attr-sized window.  When
+	 * neither holds, the per-cmd cases below that read attr skip their
+	 * inner work; cases that only consume rec->retval still run, as
+	 * does the tail fd-closer and the unconditional deferred-free of
+	 * attr.  Mirrors post_seccomp SECCOMP_SET_MODE_FILTER, post_prctl
+	 * PR_SET_SECCOMP, and post_setsockopt SO_ATTACH_FILTER.
+	 */
+	attr_readable = alloc_track_lookup(attr) ||
+			range_readable_user(attr, sizeof(union bpf_attr));
+
+	/*
 	 * Per-cmd STRONG-VAL on retval for the *_GET_NEXT_ID dispatch.
 	 * BPF_{PROG,MAP,BTF,LINK}_GET_NEXT_ID all funnel through
 	 * bpf_obj_get_next_id() in kernel/bpf/syscall.c, which returns 0
@@ -738,13 +758,13 @@ static void post_bpf(struct syscallrecord *rec)
 
 	switch (cmd) {
 	case BPF_MAP_CREATE:
-		if (fd >= 0)
+		if (fd >= 0 && attr_readable)
 			publish_resource(OBJ_FD_BPF_MAP, fd,
 					 &(struct resource_meta){.subtype = attr->map_type});
 		break;
 
 	case BPF_PROG_LOAD:
-		if (fd >= 0)
+		if (fd >= 0 && attr_readable)
 			publish_resource(OBJ_FD_BPF_PROG, fd,
 					 &(struct resource_meta){.subtype = attr->prog_type});
 
@@ -756,7 +776,8 @@ static void post_bpf(struct syscallrecord *rec)
 		 * sees traffic; the resulting link fd, if any, joins the normal
 		 * link pool and releases on the standard schedule.
 		 */
-		if (fd >= 0 && attr->prog_type == BPF_PROG_TYPE_SK_LOOKUP)
+		if (fd >= 0 && attr_readable &&
+		    attr->prog_type == BPF_PROG_TYPE_SK_LOOKUP)
 			bpf_attach_sk_lookup(fd);
 
 		/* Two instruction-buffer allocators feed BPF_PROG_LOAD: the
@@ -782,13 +803,21 @@ static void post_bpf(struct syscallrecord *rec)
 		 * Routing the proven-ours eBPF buffer through
 		 * deferred_free_enqueue() keeps the bookkeeping in lock-step:
 		 * enqueue consumes alloc_track and admits to inflight_hash, and
-		 * the TTL-expiry free clears inflight_hash. */
-		if (snap->classic_bpf_insns) {
-			bpf_free_filter((struct sock_fprog *)(unsigned long)attr->insns);
-		} else {
-			void *ptr = (void *)(unsigned long)attr->insns;
-			if (ptr != NULL && alloc_track_lookup(ptr))
-				deferred_free_enqueue(ptr);
+		 * the TTL-expiry free clears inflight_hash.
+		 *
+		 * Outer attr_readable gates the attr->insns load itself: an
+		 * unmapped attr would fault before alloc_track_lookup ever ran
+		 * on the inner pointer.  When the wrapper gate fails the inner
+		 * buffers stay on the deferred-free tracker until LRU eviction,
+		 * a benign leak relative to the SIGSEGV the gate prevents. */
+		if (attr_readable) {
+			if (snap->classic_bpf_insns) {
+				bpf_free_filter((struct sock_fprog *)(unsigned long)attr->insns);
+			} else {
+				void *ptr = (void *)(unsigned long)attr->insns;
+				if (ptr != NULL && alloc_track_lookup(ptr))
+					deferred_free_enqueue(ptr);
+			}
 		}
 		break;
 
@@ -821,7 +850,7 @@ static void post_bpf(struct syscallrecord *rec)
 		 * dispatch paths instead of bouncing on EINVAL from a
 		 * type-confused map fd.
 		 */
-		if (fd >= 0)
+		if (fd >= 0 && attr_readable)
 			publish_resource(OBJ_FD_BPF_LINK, fd,
 					 &(struct resource_meta){.subtype = attr->link_create.attach_type});
 		break;
@@ -884,7 +913,7 @@ static void post_bpf(struct syscallrecord *rec)
 		 * the program ref drops at syscall return rather than at
 		 * child exit.
 		 */
-		if (ret == 0) {
+		if (ret == 0 && attr_readable) {
 			union bpf_attr detach;
 
 			memset(&detach, 0, sizeof(detach));
