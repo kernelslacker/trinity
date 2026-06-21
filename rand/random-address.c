@@ -25,11 +25,19 @@
 void * get_writable_address(unsigned long size)
 {
 	struct map_handle h;
-	struct map *map = NULL;
+	/* volatile on map and mincore_retries: both are written between
+	 * sigsetjmp(gwa_bookkeeping_recover) and its potential longjmp.
+	 * ISO C 7.13.2.1 only guarantees post-longjmp values for objects
+	 * with volatile-qualified type, and gcc -Wclobbered flags both
+	 * otherwise.  Volatile on the pointer (not the pointee) keeps
+	 * map->* field accesses non-volatile; the only cost is reloading
+	 * the map pointer from stack on each use, which is well below
+	 * the dominant per-call mprotect()/mincore() cost. */
+	struct map * volatile map = NULL;
 	struct object *obj;
 	void *addr = NULL;
 	int tries = 0;
-	int mincore_retries = 0;
+	volatile int mincore_retries = 0;
 	bool from_mmap = false;
 	bool skip_mprotect = false;
 
@@ -47,6 +55,41 @@ retry:	tries++;
 	skip_mprotect = false;
 	if (tries == 100)
 		return NULL;
+
+	/*
+	 * Defense-in-depth recovery for the map-struct bookkeeping
+	 * stores below.  range_overlaps_libc_heap() guards against a
+	 * fuzzed mmap(MAP_FIXED, PROT_READ) landing on the brk arena,
+	 * but the cached_brk_end snapshot can lag the live break under
+	 * cmp-hint / RedQueen pressure; if a fuzzed PROT_READ overlay
+	 * slips through and lands on a brk page that hosts a map
+	 * struct, every map->known_rw / map->prot write later in this
+	 * function SEGV_ACCERRs the child.
+	 *
+	 * Install one sigsetjmp recovery point per retry iteration.  On
+	 * SIGSEGV/SIGBUS with si_code > 0 while gwa_bookkeeping_active
+	 * is set (set ONLY across each individual map-field store),
+	 * child_fault_handler longjmps back here.  Bump the counter so
+	 * the rate is visible -- a non-zero number means the brk-overlap
+	 * gate above missed a case and we silently survived something
+	 * that ought to have been caught upstream -- and goto retry to
+	 * pick a different pool slot.  The pre-existing tries == 100
+	 * cap above bounds the retry budget so a mostly-RO pool can't
+	 * spin here forever.
+	 */
+	if (sigsetjmp(gwa_bookkeeping_recover, 1) != 0) {
+		struct childdata *c;
+
+		gwa_bookkeeping_active = 0;
+		c = this_child();
+		if (c != NULL && c->stats_ring != NULL)
+			stats_ring_enqueue(c->stats_ring,
+					   STATS_FIELD_GET_WRITABLE_BOOKKEEPING_RO_FAULT,
+					   0, 1);
+		else
+			parent_stats.get_writable_address_bookkeeping_ro_fault++;
+		goto retry;
+	}
 
 	if (RAND_BOOL()) {
 		from_mmap = true;
@@ -257,8 +300,14 @@ retry:	tries++;
 		size_t mp_len = from_mmap ? (size_t) map->size : (size_t) size;
 
 	if (mprotect(mp_addr, mp_len, PROT_READ | PROT_WRITE) != 0) {
-		if (from_mmap)
+		if (from_mmap) {
+			/* See sigsetjmp install at retry: -- a fuzzed PROT_READ
+			 * overlay on the brk page hosting map turns this store
+			 * into SEGV_ACCERR; gwa_bookkeeping_recover catches it. */
+			gwa_bookkeeping_active = 1;
 			map->known_rw = false;
+			gwa_bookkeeping_active = 0;
+		}
 		log_mprotect_failure(mp_addr, mp_len,
 				     PROT_READ | PROT_WRITE,
 				     __builtin_return_address(0), errno);
@@ -303,8 +352,15 @@ retry:	tries++;
 	 * post-syscall hooks.
 	 */
 	if (from_mmap) {
+		/* See sigsetjmp install at retry: -- a fuzzed PROT_READ overlay
+		 * on the brk page hosting map turns these stores into
+		 * SEGV_ACCERR.  Companion commit widened the brk re-test gate
+		 * to close the upstream window; this wrap is the trip-wire if
+		 * a case still slips through. */
+		gwa_bookkeeping_active = 1;
 		map->prot |= PROT_READ | PROT_WRITE;
 		map->known_rw = true;
+		gwa_bookkeeping_active = 0;
 	}
 
 	/*
@@ -366,8 +422,13 @@ retry:	tries++;
 		 * now so future calls do not blindly trust the cache and
 		 * keep returning a pointer into the hole-punched region.
 		 */
-		if (from_mmap)
+		if (from_mmap) {
+			/* See sigsetjmp install at retry: -- guarded against
+			 * SEGV_ACCERR on a fuzzed PROT_READ overlay of map. */
+			gwa_bookkeeping_active = 1;
 			map->known_rw = false;
+			gwa_bookkeeping_active = 0;
+		}
 		goto retry;
 	}
 
@@ -414,8 +475,14 @@ retry:	tries++;
 			 * Invalidate the cache so future calls do not
 			 * keep returning the same hole-punched slot.
 			 */
-			if (from_mmap)
+			if (from_mmap) {
+				/* See sigsetjmp install at retry: -- guarded
+				 * against SEGV_ACCERR on a fuzzed PROT_READ
+				 * overlay of map. */
+				gwa_bookkeeping_active = 1;
 				map->known_rw = false;
+				gwa_bookkeeping_active = 0;
+			}
 			mincore_retries++;
 			if (mincore_retries < 4)
 				goto retry;

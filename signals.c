@@ -55,6 +55,21 @@ sigjmp_buf cmp_field_recover;
 volatile sig_atomic_t cmp_field_read_active;
 
 /*
+ * Recovery point for get_writable_address()'s map-struct bookkeeping
+ * stores.  See include/signals.h and rand/random-address.c::
+ * get_writable_address() for the full contract.  Definition lives
+ * here so the storage for the jmp_buf is colocated with the handler
+ * that reads gwa_bookkeeping_active.
+ *
+ * Inherited COW-private into every forked child; never touched by the
+ * parent.  Plain file-scope storage rather than __thread because
+ * trinity children are single-threaded processes -- no two threads in
+ * the same address space race on the slot.
+ */
+sigjmp_buf gwa_bookkeeping_recover;
+volatile sig_atomic_t gwa_bookkeeping_active;
+
+/*
  * Cached pointer to glibc's __abort_msg.  Resolved once at child init
  * so there is no link-time GLIBC_PRIVATE dependency: a glibc upgrade
  * that drops the symbol leaves this NULL and the SIGABRT handler
@@ -547,6 +562,25 @@ void child_fault_handler(int sig, siginfo_t *info, void *ctx)
 	if (cmp_field_read_active && info->si_code > 0 &&
 	    (sig == SIGSEGV || sig == SIGBUS)) {
 		siglongjmp(cmp_field_recover, 1);
+	}
+
+	/*
+	 * get_writable_address() map-struct bookkeeping-write recovery.
+	 * Same shape as the asb_copy / cmp_field edges above: a fuzzed
+	 * mmap(MAP_FIXED, PROT_READ) that survived the heap-overlap guard
+	 * can overlay the brk page hosting the map struct, turning the
+	 * known_rw / prot stores into SEGV_ACCERR.  Gated on SIGSEGV or
+	 * SIGBUS with si_code > 0 and gwa_bookkeeping_active set ONLY
+	 * across each map-field write so any other fault still reaches
+	 * the diagnostic + _exit path.  Counted by
+	 * STATS_FIELD_GET_WRITABLE_BOOKKEEPING_RO_FAULT (non-zero rate
+	 * means the brk-staleness gate above missed a case -- the
+	 * counter is the trip-wire that we silently survived something
+	 * that should have been caught upstream).
+	 */
+	if (gwa_bookkeeping_active && info->si_code > 0 &&
+	    (sig == SIGSEGV || sig == SIGBUS)) {
+		siglongjmp(gwa_bookkeeping_recover, 1);
 	}
 
 	if (info->si_code <= 0 && info->si_pid != mypid()) {
