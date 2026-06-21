@@ -223,9 +223,19 @@ static int install_tls_rx(int fd, struct childdata *child)
 		if (errno == ENOENT) {
 			__atomic_store_n(&sock_ulp_layering_tls_off, 1,
 					 __ATOMIC_RELAXED);
-			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-					 CHILDOP_LATCH_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			/* child->op_type lives in shared memory and can be
+			 * scribbled by a poisoned-arena write from a sibling;
+			 * bounds-check the snapshot before indexing the
+			 * NR_CHILD_OP_TYPES-sized stats array, same pattern
+			 * the child.c dispatch loop uses for the unguarded
+			 * write that motivated this guard. */
+			{
+				const enum child_op_type op = child->op_type;
+				if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+					__atomic_store_n(&shm->stats.childop_latch_reason[op],
+							 CHILDOP_LATCH_UNSUPPORTED,
+							 __ATOMIC_RELAXED);
+			}
 		}
 		return -1;
 	}
@@ -254,6 +264,15 @@ bool sock_ulp_sockmap_layering(struct childdata *child)
 	if (__atomic_load_n(&sock_ulp_layering_bpf_off, __ATOMIC_RELAXED))
 		return true;
 
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the stats
+	 * writes entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	if (make_loopback_pair(&cli_a, &srv_a) < 0 ||
 	    make_loopback_pair(&cli_b, &srv_b) < 0) {
 		__atomic_add_fetch(&shm->stats.sock_ulp_sockmap_layering_setup_failed,
@@ -266,9 +285,10 @@ bool sock_ulp_sockmap_layering(struct childdata *child)
 		if (errno == ENOSYS || errno == EPERM || errno == EINVAL) {
 			__atomic_store_n(&sock_ulp_layering_bpf_off, 1,
 					 __ATOMIC_RELAXED);
-			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-					 CHILDOP_LATCH_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			if (valid_op)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 		}
 		__atomic_add_fetch(&shm->stats.sock_ulp_sockmap_layering_map_failed,
 				   1, __ATOMIC_RELAXED);
@@ -280,9 +300,10 @@ bool sock_ulp_sockmap_layering(struct childdata *child)
 		if (errno == ENOSYS || errno == EPERM) {
 			__atomic_store_n(&sock_ulp_layering_bpf_off, 1,
 					 __ATOMIC_RELAXED);
-			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-					 CHILDOP_LATCH_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			if (valid_op)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 		}
 		__atomic_add_fetch(&shm->stats.sock_ulp_sockmap_layering_prog_failed,
 				   1, __ATOMIC_RELAXED);
@@ -296,8 +317,9 @@ bool sock_ulp_sockmap_layering(struct childdata *child)
 		 * BPF_STREAM_PARSER off) without invalidating the BOTH-
 		 * orderings probe of the install-side state machines. */
 	}
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
 
 	/* Pair A: ulp-then-sockmap.  Install TLS RX FIRST on the cli
 	 * side; THEN add to the sockmap, so the sockmap psock attach
@@ -326,8 +348,9 @@ bool sock_ulp_sockmap_layering(struct childdata *child)
 	 * pairs so tls_strp_read and sk_psock_strp_read race on the
 	 * loopback enqueue path.  Every send/recv may return -1 with
 	 * EAGAIN/EPIPE/EINVAL; all are coverage, none are failure. */
-	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
 	generate_rand_bytes(payload, sizeof(payload));
 	for (i = 0; i < 4; i++) {
 		size_t n = 1 + rnd_modulo_u32(sizeof(payload));
