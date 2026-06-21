@@ -216,6 +216,14 @@ static int vsock_transport_iter_setup(struct childdata *child,
 	struct sockaddr_vm addr;
 	socklen_t slen = sizeof(addr);
 	int listener, cli, srv;
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the stats
+	 * writes entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	*listener_out = -1;
 	*cli_out = -1;
@@ -226,9 +234,10 @@ static int vsock_transport_iter_setup(struct childdata *child,
 		if (errno == EAFNOSUPPORT || errno == EPERM ||
 		    errno == ENOPROTOOPT || errno == ENOENT) {
 			ns_unsupported_vsock_transport_churn = true;
-			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-					 CHILDOP_LATCH_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			if (valid_op)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 		}
 		__atomic_add_fetch(&shm->stats.vsock_transport_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
@@ -247,9 +256,10 @@ static int vsock_transport_iter_setup(struct childdata *child,
 		if (errno == EADDRNOTAVAIL || errno == EAFNOSUPPORT ||
 		    errno == EPERM) {
 			ns_unsupported_vsock_transport_churn = true;
-			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-					 CHILDOP_LATCH_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			if (valid_op)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 		}
 		__atomic_add_fetch(&shm->stats.vsock_transport_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
@@ -484,9 +494,17 @@ static void iter_one_in_fresh_netns(struct childdata *child,
 		 * the doomed ns across iterations. */
 		close(anchor);
 		ns_unsupported_vsock_transport_churn = true;
-		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-				 CHILDOP_LATCH_OTHER,
-				 __ATOMIC_RELAXED);
+		/* child->op_type lives in shared memory and can be scribbled
+		 * by a poisoned-arena write from a sibling; bounds-check the
+		 * snapshot before indexing the NR_CHILD_OP_TYPES-sized stats
+		 * array, mirroring the child.c dispatch loop guard. */
+		{
+			const enum child_op_type op = child->op_type;
+			if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_OTHER,
+						 __ATOMIC_RELAXED);
+		}
 		return;
 	}
 	close(anchor);
@@ -604,6 +622,14 @@ bool vsock_transport_churn(struct childdata *child)
 {
 	struct timespec t_outer;
 	unsigned int outer_iters, i;
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the stats
+	 * writes entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	__atomic_add_fetch(&shm->stats.vsock_transport_churn_runs,
 			   1, __ATOMIC_RELAXED);
@@ -614,8 +640,9 @@ bool vsock_transport_churn(struct childdata *child)
 		return true;
 	}
 
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
 
 	if (clock_gettime(CLOCK_MONOTONIC, &t_outer) < 0) {
 		t_outer.tv_sec = 0;
@@ -629,8 +656,9 @@ bool vsock_transport_churn(struct childdata *child)
 	if (outer_iters > VS_OUTER_CAP)
 		outer_iters = VS_OUTER_CAP;
 
-	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
 
 	for (i = 0; i < outer_iters; i++) {
 		if ((unsigned long long)ns_since(&t_outer) >=
