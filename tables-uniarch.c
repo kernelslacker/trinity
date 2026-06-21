@@ -54,7 +54,11 @@ void toggle_syscall_n(int calln, bool state, const char *arg, const char *arg_na
 		if (shm != NULL)
 			activate_syscall(calln);
 	} else {
-		entry->flags |= TO_BE_DEACTIVATED;
+		/* EXPLICITLY_EXCLUDED is the persistent record of "-x named this".
+		 * It must survive deactivate_disabled_syscalls() (which only clears
+		 * ACTIVE|TO_BE_DEACTIVATED) so syscall_nr_is_excluded() can honor
+		 * -x at raw syscall sites under any targeting selector. */
+		entry->flags |= TO_BE_DEACTIVATED | EXPLICITLY_EXCLUDED;
 	}
 
 	output(0, "Marking syscall %s (%d) as to be %sabled.\n",

@@ -95,7 +95,11 @@ static void toggle_syscall_biarch_n(int calln, const struct syscalltable *table,
 			if (shm != NULL)
 				(*activate)(calln);
 		} else {
-			entry->flags |= TO_BE_DEACTIVATED;
+			/* EXPLICITLY_EXCLUDED is the persistent record of "-x named this".
+			 * It must survive deactivate_disabled_syscalls_biarch() (which only
+			 * clears ACTIVE|TO_BE_DEACTIVATED) so syscall_nr_is_excluded() can
+			 * honor -x at raw syscall sites under any targeting selector. */
+			entry->flags |= TO_BE_DEACTIVATED | EXPLICITLY_EXCLUDED;
 		}
 	}
 
