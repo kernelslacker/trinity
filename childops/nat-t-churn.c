@@ -15,10 +15,21 @@
  * payload back through xfrm_input.
  *
  * Per invocation:
- *   1. unshare(CLONE_NEWNET) once per child.  EPERM (no
- *      CAP_SYS_ADMIN, no CONFIG_NET_NS) latches the whole op off.
+ *   1. Enter a private net namespace via userns_run_in_ns(): a
+ *      transient grandchild fork installs an identity user namespace
+ *      plus a fresh CLONE_NEWNET, runs the body below, and _exit()s
+ *      so the kernel reaps every interface, address, xfrm SA, UDP
+ *      encap binding and socket with the grandchild's netns.  The
+ *      persistent fuzz child never changes its own credentials or
+ *      namespace stack, so the cap-drop oracle keeps observing the
+ *      host credential profile.  Helper -EPERM (hardened userns
+ *      policy refused CLONE_NEWUSER) latches the childop off for the
+ *      remainder of this child's lifetime; -1 (transient setup
+ *      failure: fork, id-map write, secondary unshare) skips the
+ *      iteration without latching.
  *   2. Bring lo up via SIOCSIFFLAGS so any UDP we send to 127.0.0.0/8
- *      reaches the input path.  Done once per child.
+ *      reaches the input path.  Done once per grandchild (its own
+ *      fresh netns starts with lo down).
  *   3. Open NETLINK_XFRM and bind.  EPROTONOSUPPORT (no CONFIG_XFRM)
  *      latches the op off for the rest of the child's lifetime.
  *   4. Build XFRM_MSG_NEWSA with attributes:
@@ -83,11 +94,23 @@
  * the same XFRMA_ALG_* parser branch.
  *
  * Per-process unsupported latches (one-shot outputerr on transition):
- *   ns_unsupported_nat_t -- the master gate; set when unshare,
- *                           NETLINK_XFRM open, or AF_INET socket
- *                           creation hits a structural rejection
- *                           (EPERM / EAFNOSUPPORT / EPROTONOSUPPORT).
- *                           Subsequent invocations early-return.
+ *   ns_unsupported_nat_t -- the master gate.  Set in the wrapper when
+ *                           userns_run_in_ns() returns -EPERM (a
+ *                           hardened userns policy refused
+ *                           CLONE_NEWUSER); the wrapper-set bit
+ *                           persists across invocations and short-
+ *                           circuits the op for the remainder of the
+ *                           child's lifetime.  Also set inside the
+ *                           in-ns callback on the first NETLINK_XFRM
+ *                           open or AF_INET socket structural
+ *                           rejection (EPROTONOSUPPORT / EAFNOSUPPORT)
+ *                           -- that write lives in the grandchild's
+ *                           address space and dies with the grand-
+ *                           child, so a CONFIG-absent kernel re-
+ *                           discovers the rejection once per
+ *                           invocation rather than once per child.
+ *                           Subsequent invocations early-return when
+ *                           the wrapper-set bit is set.
  *
  * Self-bounding: one full SA install + send + DELSA cycle per
  * invocation.  All netlink and socket I/O is MSG_DONTWAIT or carries
@@ -127,6 +150,7 @@
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
+#include "userns-bootstrap.h"
 #include "utils.h"
 
 /*
@@ -334,12 +358,27 @@ static const __u32 esn_seq_hi_edges[] = {
 	0xffffffffU,
 };
 
-/* Per-process master latch.  Set on the first structural rejection
- * (unshare EPERM, NETLINK_XFRM bind EPROTONOSUPPORT, AF_INET socket
- * EAFNOSUPPORT) and never cleared -- kernel config presence is static
- * for the child's lifetime, so we pay the EFAIL once and skip the op
- * on subsequent invocations.  The transition false->true emits a
- * single outputerr line via the warn_once_unsupported helper. */
+/* Per-process master latch.  Set by two paths:
+ *
+ *   - the wrapper, on userns_run_in_ns() returning -EPERM (the
+ *     grandchild's unshare(CLONE_NEWUSER) was refused by a hardened
+ *     policy: user.max_user_namespaces=0 or
+ *     kernel.unprivileged_userns_clone=0).  This write persists across
+ *     invocations -- without a private netns we MUST NOT touch the
+ *     host's xfrm SAD or NETLINK_XFRM state, so the op stays disabled
+ *     for the remainder of this child's lifetime.
+ *
+ *   - the in-ns callback, on the first NETLINK_XFRM open or AF_INET
+ *     socket structural rejection (EPROTONOSUPPORT / EAFNOSUPPORT)
+ *     observed inside the grandchild -- CONFIG_XFRM / CONFIG_INET
+ *     missing at runtime.  That write lives in the grandchild's
+ *     address space and dies with the grandchild, so the rejection is
+ *     re-discovered once per invocation; userns cannot manufacture an
+ *     absent kernel CONFIG, so cross-invocation persistence of that
+ *     path is not in scope.
+ *
+ * The transition false->true emits a single outputerr line via the
+ * warn_once_unsupported helper. */
 static bool ns_unsupported_nat_t;
 
 /* Sub-latch covering only the AF_INET6 / xfrm6 / UDPv6 branch.  Set on
@@ -349,7 +388,13 @@ static bool ns_unsupported_nat_t;
  * while leaving the v4 path running. */
 static bool ns_unsupported_xfrm6;
 
-static bool ns_unshared;
+/* Per-grandchild bookkeeping.  Inherited as false at grandchild fork
+ * time (the persistent child never sets it -- the in-ns callback runs
+ * exclusively in transient grandchildren), set to true after the
+ * grandchild's first bring_lo_up() call in its own fresh netns.  Dies
+ * with the grandchild on _exit(), so each subsequent grandchild
+ * correctly re-runs bring_lo_up() once in its own netns.  The kernel
+ * side of SIOCSIFFLAGS is idempotent if lo is already up. */
 static bool lo_brought_up;
 static __u32 g_iter;
 
@@ -1014,8 +1059,26 @@ out:
 	nl_close(&ctx);
 }
 
-bool nat_t_churn(struct childdata *child)
+/*
+ * Per-invocation state handed to the in-ns callback so it can keep
+ * accounting against the right childop slot.
+ */
+struct nat_t_churn_ctx {
+	struct childdata *child;
+};
+
+/*
+ * Per-invocation body that must run inside the private net namespace.
+ * Executed in a transient grandchild forked by userns_run_in_ns(); the
+ * grandchild's userns + netns are torn down on _exit() so any links,
+ * addrs, xfrm SAs, UDP encap bindings and sockets left behind are
+ * reaped by the kernel along with the namespace.  Return value is
+ * ignored by the helper.
+ */
+static int nat_t_churn_in_ns(void *arg)
 {
+	struct nat_t_churn_ctx *cctx = (struct nat_t_churn_ctx *)arg;
+	struct childdata *child = cctx->child;
 	struct nl_ctx ctx = { .fd = -1 };
 	struct nl_open_opts opts = {
 		.proto = NETLINK_XFRM,
@@ -1029,22 +1092,6 @@ bool nat_t_churn(struct childdata *child)
 	__u8 replay_window;
 	const struct nat_t_alg *auth, *crypt;
 	int rc;
-
-	__atomic_add_fetch(&shm->stats.nat_t_churn_runs, 1, __ATOMIC_RELAXED);
-
-	if (ns_unsupported_nat_t)
-		return true;
-
-	if (!ns_unshared) {
-		if (unshare(CLONE_NEWNET) < 0) {
-			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-					 CHILDOP_LATCH_NS_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
-			warn_once_unsupported("unshare(CLONE_NEWNET)", errno);
-			return true;
-		}
-		ns_unshared = true;
-	}
 
 	if (!lo_brought_up) {
 		bring_lo_up();
@@ -1061,7 +1108,7 @@ bool nat_t_churn(struct childdata *child)
 		__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
 				   1, __ATOMIC_RELAXED);
 		nat_t_churn_v6();
-		return true;
+		return 0;
 	}
 
 	if (nl_open(&ctx, &opts) < 0) {
@@ -1074,7 +1121,7 @@ bool nat_t_churn(struct childdata *child)
 		}
 		__atomic_add_fetch(&shm->stats.nat_t_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
-		return true;
+		return 0;
 	}
 	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
 			   1, __ATOMIC_RELAXED);
@@ -1122,6 +1169,36 @@ out:
 	if (udp >= 0)
 		close(udp);
 	nl_close(&ctx);
+
+	return 0;
+}
+
+bool nat_t_churn(struct childdata *child)
+{
+	struct nat_t_churn_ctx cctx = { .child = child };
+	int rc;
+
+	__atomic_add_fetch(&shm->stats.nat_t_churn_runs, 1, __ATOMIC_RELAXED);
+
+	if (ns_unsupported_nat_t)
+		return true;
+
+	rc = userns_run_in_ns(CLONE_NEWNET, nat_t_churn_in_ns, &cctx);
+	if (rc == -EPERM) {
+		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+				 CHILDOP_LATCH_NS_UNSUPPORTED,
+				 __ATOMIC_RELAXED);
+		warn_once_unsupported("userns_run_in_ns(CLONE_NEWNET)", EPERM);
+		return true;
+	}
+	if (rc < 0) {
+		/* Transient grandchild setup failure (fork, id-map write,
+		 * secondary unshare).  Skip this iteration without latching
+		 * -- the failure is not policy and may not recur. */
+		__atomic_add_fetch(&shm->stats.nat_t_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return true;
+	}
 
 	return true;
 }
