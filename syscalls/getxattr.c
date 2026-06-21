@@ -3,13 +3,17 @@
 	 const char __user *, name, void __user *, value, size_t, size)
  */
 #include <stddef.h>
+#include <stdio.h>
 #include <string.h>
 #include <sys/syscall.h>
+#include <sys/xattr.h>
 #include <unistd.h>
 #include <linux/limits.h>
 #include "arch.h"
 #include "deferred-free.h"
+#include "pathnames.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
@@ -42,6 +46,23 @@ struct getxattr_post_state {
 };
 #endif
 
+/*
+ * Mirrors the MAX_TESTFILES bound in fds/testfiles.c so we land inside
+ * the same trinity-testfile<N> inodes the rest of the fuzzer touches
+ * (xattr-thrash, flock-thrash, fremovexattr, lremovexattr, llistxattr,
+ * lgetxattr); cross-process contention concentrates on the same
+ * per-inode i_xattrs rwsem.
+ */
+#define GETXATTR_NR_TESTFILES	4
+
+/*
+ * Curated name we plant ahead of the trinity-dispatched getxattr.
+ * Matches planted_xattr_name in fremovexattr / lremovexattr /
+ * llistxattr / lgetxattr so a single round of testfile xattrs is
+ * shared across the whole xattr-family precondition surface.
+ */
+static const char getxattr_planted_name[] = "user.trinity_plant";
+
 static void sanitise_getxattr(struct syscallrecord *rec)
 {
 #if defined(SYS_getxattr) || defined(__NR_getxattr)
@@ -51,6 +72,69 @@ static void sanitise_getxattr(struct syscallrecord *rec)
 
 	rec->post_state = 0;
 #endif
+
+	/*
+	 * ARG_PATHNAME plumbed a random pathname into rec->a1 and
+	 * ARG_XATTR_NAME filled rec->a2 with a namespace-shaped name
+	 * from the curated pool, but the random path is most often not
+	 * a real file (ENOENT) or, even when it does land on a real
+	 * file, the drawn name is not currently set on that inode --
+	 * vfs_getxattr returns ENOTSUP / ENODATA at the front of the
+	 * call before ever touching the per-fs handler dispatch or the
+	 * simple_xattr_get fast path that the per-inode i_xattrs rwsem
+	 * guards.  Same "high calls, low edges" cold-syscall shape that
+	 * fremovexattr / lremovexattr / llistxattr / lgetxattr were in
+	 * before their precondition fixes.
+	 *
+	 * Half the draws now repoint at one of the trinity-testfile<N>
+	 * absolute paths and plant a known user.* xattr there via
+	 * setxattr() so the subsequent getxattr lands inside the real
+	 * per-inode read path.  The plant runs BEFORE the post-state
+	 * snapshot below so snap->pathname and snap->name capture the
+	 * planted byte sequences -- the post oracle's re-call then
+	 * re-walks the planted (path, name) tuple and compares its
+	 * returned value against the first call's payload exactly as
+	 * the existing oracle expects, including the snap_len equality
+	 * gate that drops benign sibling-induced drift (e.g. a
+	 * concurrent setxattr that swapped the value out).
+	 *
+	 * The other half preserves rec->a1 / rec->a2 exactly as the
+	 * generic draw left them so the namespace-reject / ENODATA arms
+	 * stay exercised; the buffer-overwrite path is in-place so the
+	 * trinity dispatch, the plant, and the post-oracle re-call all
+	 * see the same byte sequence.  Plant failure (ENOSPC, EOPNOTSUPP
+	 * on a fs that bailed out of the user.* leg, ENOENT if the
+	 * testfile slot was never opened, ...) is non-fatal: an earlier
+	 * draw on the same inode may still hold a stale
+	 * user.trinity_plant from a prior round, so getxattr below may
+	 * still land on the real read path.
+	 *
+	 * Slow-path note: the setxattr() in sanitise is one real
+	 * syscall.  syscalls/getxattr.c is outside the
+	 * sanitiser-slow-path check's FILES scope, so this is within
+	 * budget for the precondition payoff.
+	 */
+	if (rnd_modulo_u32(2) == 0) {
+		char *path = (char *) rec->a1;
+		char *name = (char *) rec->a2;
+
+		if (path != NULL && name != NULL) {
+			/*
+			 * Overwrite the ARG_PATHNAME / ARG_XATTR_NAME
+			 * buffers in place.  generate_pathname() zmallocs
+			 * MAX_PATH_LEN (4096) bytes; the xattr name buffer
+			 * is XATTR_NAME_BUFSZ (256) bytes; both comfortably
+			 * fit the planted values.
+			 */
+			snprintf(path, MAX_PATH_LEN,
+				 "%s/trinity-testfile%u",
+				 trinity_tmpdir_abs(),
+				 1 + rnd_modulo_u32(GETXATTR_NR_TESTFILES));
+			memcpy(name, getxattr_planted_name,
+			       sizeof(getxattr_planted_name));
+			(void) setxattr(path, name, "trin", 4, 0);
+		}
+	}
 
 #if defined(SYS_getxattr) || defined(__NR_getxattr)
 	pre_a3 = rec->a3;
