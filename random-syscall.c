@@ -349,6 +349,27 @@ retry:
 	if (cred_throttle_should_reject(syscallnr, do32))
 		goto retry;
 
+	/* Wall-lever SHADOW gate (codex #6): the candidate has cleared every
+	 * live correctness + bias gate above, so this is the population a
+	 * live wall-lever variant would have to act on.  Bump the eligible
+	 * counter on every plateau-active pick (probe short-circuits to
+	 * false outside the plateau, so the conditional is cheap) and bump
+	 * the would_suppress family when the data-driven predicate fires.
+	 * Live picker is byte-identical -- the lever does NOT reject here. */
+	if (kcov_shm != NULL &&
+	    __atomic_load_n(&kcov_shm->plateau_active, __ATOMIC_ACQUIRE)) {
+		__atomic_fetch_add(&shm->stats.wall_lever_eligible_total, 1UL,
+				   __ATOMIC_RELAXED);
+		if (wall_lever_should_suppress_shadow(syscallnr)) {
+			__atomic_fetch_add(
+				&shm->stats.wall_lever_would_suppress_total,
+				1UL, __ATOMIC_RELAXED);
+			__atomic_fetch_add(
+				&shm->stats.wall_lever_would_suppress[syscallnr],
+				1UL, __ATOMIC_RELAXED);
+		}
+	}
+
 	/* publish (nr, do32bit) as a coherent pair. */
 	srec_publish_begin(rec);
 	rec->do32bit = do32;
@@ -512,6 +533,28 @@ retry:
 	 * flag is off, and the outer_attempts budget absorbs the retries. */
 	if (cred_throttle_should_reject(syscallnr, do32))
 		goto retry;
+
+	/* Wall-lever SHADOW gate (codex #6).  Mirrors the call site in
+	 * set_syscall_nr_heuristic above so plateau-active picks under both
+	 * the bandit-heuristic and uniform-random arms feed the same shadow
+	 * tally; the cold-skip-bypass logic that pulls the random arm into
+	 * the plateau intervention windows is exactly where the codex #6
+	 * dead-weight syscalls are most likely to be picked, so the random
+	 * arm's contribution is the headline data point.  Live picker is
+	 * byte-identical -- the lever does NOT reject here. */
+	if (kcov_shm != NULL &&
+	    __atomic_load_n(&kcov_shm->plateau_active, __ATOMIC_ACQUIRE)) {
+		__atomic_fetch_add(&shm->stats.wall_lever_eligible_total, 1UL,
+				   __ATOMIC_RELAXED);
+		if (wall_lever_should_suppress_shadow(syscallnr)) {
+			__atomic_fetch_add(
+				&shm->stats.wall_lever_would_suppress_total,
+				1UL, __ATOMIC_RELAXED);
+			__atomic_fetch_add(
+				&shm->stats.wall_lever_would_suppress[syscallnr],
+				1UL, __ATOMIC_RELAXED);
+		}
+	}
 
 	srec_publish_begin(rec);
 	rec->do32bit = do32;

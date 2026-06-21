@@ -1339,6 +1339,19 @@ int select_next_strategy(int prev,
 			__ATOMIC_RELAXED);
 		pim = (enum plateau_intervention_mode)(rot % NR_PIM_MODES);
 
+		/* Wall-lever shadow gate (codex #6): refresh the eligibility
+		 * set at every plateau-active rotation, BEFORE the mode-
+		 * specific arm dispatch below, so the per-pick shadow probe
+		 * in wall_lever_should_suppress_shadow always reads from a
+		 * fleet-mean computed under the current rotation window
+		 * regardless of which intervention mode is chosen.  The call
+		 * is cheap (two O(MAX_NR_SYSCALL) walks, off the hot pick
+		 * path) and the publish ordering rides on the same RELEASE-
+		 * store of current_strategy that publishes the anti-prior
+		 * weight table just below -- see the wall_lever_suppress
+		 * comment in include/shm.h for the visibility contract. */
+		wall_lever_refresh_baseline();
+
 		/* Cold-ring deweight: PIM_COVERAGE_FRONTIER is a near-no-op
 		 * when the per-syscall frontier rings have aged out everywhere
 		 * (frontier_max_weight_cached == 0), the defining state of a
@@ -2135,6 +2148,124 @@ void plateau_anti_prior_refresh_baseline(void)
 	}
 
 	__atomic_store_n(&shm->plateau_anti_prior_baseline_calls, baseline,
+			 __ATOMIC_RELAXED);
+}
+
+/*
+ * Wall-lever shadow gate tunables (codex #6).  The eligibility predicate
+ * is "high calls, zero edges" measured against the fleet's current mean
+ * per_syscall_calls, so the candidate set adapts to fleet state instead
+ * of relying on a hardcoded denylist.
+ *
+ * WALL_LEVER_HIGH_MULT
+ *     Multiplier on the fleet mean for the high-calls clause: a syscall
+ *     qualifies only when calls_total >= MULT * baseline.  4 is enough
+ *     to single out the codex #6 tail (mq_timedsend / io_destroy /
+ *     munlockall / shmget / setsid / personality / unshare were all
+ *     >4x mean per_syscall_calls in the run that motivated the lever)
+ *     without sweeping up syscalls sitting at typical-active rates.
+ * WALL_LEVER_MIN_FLOOR
+ *     Absolute lower bound on calls_total before the predicate can
+ *     fire, so a cold-start window where mean is still tiny does not
+ *     have a fleet-of-three-calls syscall qualify against a 0.5 mean.
+ *     Sized 1 step above KCOV_SAT_CAP_CALLS (200) so the wall lever
+ *     is strictly downstream of the existing saturation cap -- a
+ *     syscall this lever targets has already proven itself dead under
+ *     the cap's own evidence floor.
+ */
+#define WALL_LEVER_HIGH_MULT	4UL
+#define WALL_LEVER_MIN_FLOOR	((unsigned long)KCOV_SAT_CAP_CALLS + 1UL)
+
+bool wall_lever_should_suppress_shadow(unsigned int nr)
+{
+	unsigned long baseline;
+
+	if (kcov_shm == NULL || nr >= MAX_NR_SYSCALL)
+		return false;
+	/* ACQUIRE pairs with the parent's RELEASE-store of plateau_active in
+	 * kcov_plateau_check(); the per-syscall byte the picker reads below
+	 * is published under the rotation's RELEASE-store of current_strategy
+	 * but plateau_active gates that entire publish, so an ACQUIRE here
+	 * lets the gate degrade gracefully (return false) when the plateau
+	 * detector is off and the suppress table is stale or never written. */
+	if (!__atomic_load_n(&kcov_shm->plateau_active, __ATOMIC_ACQUIRE))
+		return false;
+	baseline = __atomic_load_n(&shm->wall_lever_baseline_calls,
+				   __ATOMIC_RELAXED);
+	if (baseline == 0)
+		return false;
+	return __atomic_load_n(&shm->wall_lever_suppress[nr],
+			       __ATOMIC_RELAXED) != 0;
+}
+
+void wall_lever_refresh_baseline(void)
+{
+	unsigned long calls_snapshot[MAX_NR_SYSCALL];
+	unsigned long edges_snapshot[MAX_NR_SYSCALL];
+	unsigned long sum = 0;
+	unsigned long baseline, qualify_at;
+	unsigned int i;
+
+	if (kcov_shm == NULL) {
+		__atomic_store_n(&shm->wall_lever_baseline_calls, 0UL,
+				 __ATOMIC_RELAXED);
+		return;
+	}
+
+	/* Snapshot calls AND edges per slot, folding warm-loaded priors so
+	 * the eligibility test fires on cross-session evidence the
+	 * cold-skip path would otherwise have to re-accumulate from scratch
+	 * every run (mirrors the prior-fold in kcov_syscall_cold_skip_pct
+	 * for the same reason).  Each slot is snapshotted exactly once so
+	 * the baseline sum below and the per-slot decision pass that
+	 * follows are derived from the SAME observation; a concurrent
+	 * mid-rotation bump cannot skew one pass relative to the other. */
+	for (i = 0; i < MAX_NR_SYSCALL; i++) {
+		unsigned long c, e;
+
+		c = __atomic_load_n(&kcov_shm->per_syscall_calls[i],
+				    __ATOMIC_RELAXED) +
+		    kcov_shm->per_syscall_calls_prior[i];
+		e = __atomic_load_n(&kcov_shm->per_syscall_edges[i],
+				    __ATOMIC_RELAXED) +
+		    kcov_shm->per_syscall_edges_prior[i];
+		calls_snapshot[i] = c;
+		edges_snapshot[i] = e;
+		sum += c;
+	}
+	baseline = sum / MAX_NR_SYSCALL;
+
+	/* Publish at least 1 when the mean truncates to zero so the picker
+	 * gate's "baseline==0 short-circuit to not-suppressed" branch only
+	 * fires before any plateau-active rotation has populated the cache,
+	 * not when the fleet is genuinely too young for any syscall to have
+	 * averaged a full call.  Mirrors plateau_anti_prior_refresh_baseline's
+	 * floor for the same reason. */
+	if (baseline == 0 && sum > 0)
+		baseline = 1;
+
+	/* qualify_at is the integer threshold for the high-calls clause,
+	 * hoisted out of the per-slot loop so the inner pass reduces to one
+	 * compare + one zero-edges branch per slot.  WALL_LEVER_MIN_FLOOR
+	 * keeps cold-start windows from flagging a tiny-mean fleet's
+	 * single moderately-busy syscall; the max() between the two terms
+	 * means whichever floor is currently tighter wins. */
+	qualify_at = WALL_LEVER_HIGH_MULT * baseline;
+	if (qualify_at < WALL_LEVER_MIN_FLOOR)
+		qualify_at = WALL_LEVER_MIN_FLOOR;
+
+	for (i = 0; i < MAX_NR_SYSCALL; i++) {
+		uint8_t suppress = 0;
+
+		if (baseline > 0 &&
+		    edges_snapshot[i] == 0 &&
+		    calls_snapshot[i] >= qualify_at)
+			suppress = 1;
+		__atomic_store_n(&shm->wall_lever_suppress[i], suppress,
+				 __ATOMIC_RELAXED);
+	}
+
+	__atomic_store_n(&shm->wall_lever_baseline_calls, baseline,
 			 __ATOMIC_RELAXED);
 }
 

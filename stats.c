@@ -3644,6 +3644,15 @@ static const struct {
 	  offsetof(struct stats_s, frontier_decay_would_skip) },
 	{ "frontier_silent_decay_live_rejects",
 	  offsetof(struct stats_s, frontier_silent_decay_live_rejects) },
+	/* SHADOW-ONLY wall-lever (codex #6) accounting.  Eligible_total is
+	 * the denominator (every plateau-active pick the lever saw); would_
+	 * suppress_total is the projected reclaim count a live variant would
+	 * produce.  See the struct-field comment in include/stats.h for the
+	 * predicate contract. */
+	{ "wall_lever_eligible_total",
+	  offsetof(struct stats_s, wall_lever_eligible_total) },
+	{ "wall_lever_would_suppress_total",
+	  offsetof(struct stats_s, wall_lever_would_suppress_total) },
 	/* SHADOW + per-child A/B accounting for the errno-plateau decay at
 	 * the coverage-frontier picker's silent-regime accept site.  See the
 	 * struct-field comments in include/stats.h and the FRONTIER_ERRNO_
@@ -7896,6 +7905,20 @@ static void dump_stats_strategy_summary(void)
 	if (shm->stats.plateau_forced_windows)
 		stat_row("strategy", "plateau_forced_windows",
 			 shm->stats.plateau_forced_windows);
+	/* SHADOW-ONLY wall-lever (codex #6).  eligible_total / would_suppress_
+	 * total expose the data-driven gate's projected reclaim share on every
+	 * plateau-active pick; baseline_calls is the fleet mean per_syscall_
+	 * calls the predicate scaled WALL_LEVER_HIGH_MULT against.  See the
+	 * struct-field comment in include/stats.h. */
+	if (shm->stats.wall_lever_eligible_total) {
+		stat_row("strategy", "wall_lever_eligible_total",
+			 shm->stats.wall_lever_eligible_total);
+		stat_row("strategy", "wall_lever_would_suppress_total",
+			 shm->stats.wall_lever_would_suppress_total);
+		stat_row("strategy", "wall_lever_baseline_calls",
+			 __atomic_load_n(&shm->wall_lever_baseline_calls,
+					 __ATOMIC_RELAXED));
+	}
 	if (shm->stats.strategy_explorer_picks)
 		stat_row("strategy", "strategy_explorer_picks",
 			 shm->stats.strategy_explorer_picks);

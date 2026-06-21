@@ -745,6 +745,35 @@ struct shm_s {
 	unsigned long plateau_intervention_mode_windows[NR_PIM_MODES];
 
 	/*
+	 * Wall-lever shadow gate (codex #6).  Identifies high-call zero-yield
+	 * syscalls during a warm-plateau window so a future live variant can
+	 * reclaim their pick budget for productive / cold syscalls.  Held in
+	 * shm next to the anti-prior cache because the publish ordering and
+	 * the rotation-boundary refresh discipline are identical.
+	 *
+	 * wall_lever_baseline_calls: cached mean of kcov_shm->per_syscall_
+	 *   calls across MAX_NR_SYSCALL.  Refreshed by wall_lever_refresh_
+	 *   baseline() on every rotation where plateau_active is set, BEFORE
+	 *   the mode-specific arm dispatch.  Zero means "no baseline yet"
+	 *   (no plateau-active rotation has fired) and the shadow predicate
+	 *   short-circuits to "not suppressed" in that state so warm-up runs
+	 *   and the cold-start window degrade to today's pure picker.
+	 *
+	 * wall_lever_suppress[MAX_NR_SYSCALL]: per-syscall pre-computed
+	 *   suppression decision in {0, 1}, populated alongside the baseline
+	 *   at every plateau-active rotation.  Picker-side shadow gate reads
+	 *   a single relaxed byte per candidate -- the clamp / multiply /
+	 *   compare math lives in the refresh path so the per-pick cost is
+	 *   one load and one branch.  uint8_t suffices because the field is
+	 *   a boolean carrier.  Visibility hand-off rides on the same
+	 *   RELEASE store of current_strategy that publishes plateau_
+	 *   intervention_mode_current -- mirrors plateau_anti_prior_accept_
+	 *   weight's publish ordering.
+	 */
+	unsigned long wall_lever_baseline_calls;
+	uint8_t wall_lever_suppress[MAX_NR_SYSCALL];
+
+	/*
 	 * Phase 2 plateau intervention: shm mirror of strategy.c's
 	 * parent-private hypothesis_current.  Published by
 	 * strategy_plateau_hypothesis_tick() (parent only) at every stats

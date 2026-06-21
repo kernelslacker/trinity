@@ -2657,6 +2657,48 @@ struct stats_s {
 	unsigned long warm_reserve_candidates_total;
 	unsigned long warm_reserve_candidates[MAX_NR_SYSCALL];
 
+	/* SHADOW-ONLY warm-plateau "wall lever" accounting -- codex #6
+	 * shadow gate that identifies high-call zero-yield syscalls during a
+	 * warm-plateau window and projects the pick-budget those candidates
+	 * would free if a live suppression variant were enabled.  Predicate
+	 * lives in wall_lever_should_suppress_shadow() in strategy.c; the
+	 * eligibility set is recomputed at every plateau-active rotation by
+	 * wall_lever_refresh_baseline() so the gate adapts to the fleet's
+	 * own per-syscall calls distribution rather than relying on a static
+	 * denylist (the codex syscalls mq_timedsend, io_destroy, munlockall,
+	 * shmget, setsid, personality, unshare that motivated this lever
+	 * surface as members of the data-driven eligible set, not as named
+	 * constants).
+	 *
+	 *  wall_lever_eligible_total
+	 *      Cumulative: one bump per pick where the shadow predicate was
+	 *      evaluated (i.e. plateau_active and the per-syscall data was
+	 *      readable) regardless of whether the candidate actually
+	 *      qualified for suppression.  Provides the denominator against
+	 *      which would_suppress_total reads as a fraction.
+	 *  wall_lever_would_suppress_total
+	 *      Cumulative: one bump per pick where the suppression predicate
+	 *      (per_syscall_edges_total == 0 AND per_syscall_calls_total
+	 *      >= WALL_LEVER_HIGH_MULT * wall_lever_baseline_calls AND calls
+	 *      >= WALL_LEVER_MIN_FLOOR) fires under plateau_active -- the
+	 *      projected pick share a live wall-lever variant would reclaim
+	 *      for productive / cold syscalls.  Strictly <= eligible_total.
+	 *  wall_lever_would_suppress[nr]
+	 *      Per-syscall split of would_suppress_total.  Surfaces which
+	 *      syscalls dominate the projected reclamation so a follow-up
+	 *      live-variant rollout can be diff'd against the shadow tally.
+	 *
+	 * Observability only: live pickers in set_syscall_nr_heuristic /
+	 * set_syscall_nr_random remain byte-identical to today's behaviour;
+	 * the bumps fire AFTER the existing cold-skip / anti-prior gates so
+	 * the candidate population is exactly the picks the wall lever would
+	 * have to act on if it went live.  Mirrors the off-by-construction
+	 * discipline the sibling frontier_decay_* / frontier_blend_* counters
+	 * use. */
+	unsigned long wall_lever_eligible_total;
+	unsigned long wall_lever_would_suppress_total;
+	unsigned long wall_lever_would_suppress[MAX_NR_SYSCALL];
+
 	/* SHADOW-ONLY decay-candidate accounting, paired with the silent-
 	 * streak counter and the no-novelty baselines above.  Tighter
 	 * variant of frontier_shadow_decay_candidates: the threshold-
