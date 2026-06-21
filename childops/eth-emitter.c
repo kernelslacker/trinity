@@ -234,11 +234,20 @@ static bool ensure_socket(struct childdata *child)
 	return true;
 disable:
 	eth_disabled = true;
-	__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-			 (errno == EPERM || errno == EACCES) ?
-				 CHILDOP_LATCH_NS_UNSUPPORTED :
-				 CHILDOP_LATCH_INIT_FAILED,
-			 __ATOMIC_RELAXED);
+	/* child->op_type lives in shared memory and can be scribbled by a
+	 * poisoned-arena write from a sibling; bounds-check the snapshot
+	 * before indexing the NR_CHILD_OP_TYPES-sized stats arrays, same
+	 * pattern the child.c dispatch loop uses for the unguarded write
+	 * that motivated this guard. */
+	{
+		const enum child_op_type op = child->op_type;
+		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					 (errno == EPERM || errno == EACCES) ?
+						 CHILDOP_LATCH_NS_UNSUPPORTED :
+						 CHILDOP_LATCH_INIT_FAILED,
+					 __ATOMIC_RELAXED);
+	}
 	if (!warned_unsupported) {
 		warned_unsupported = true;
 		outputerr("eth_emitter: AF_PACKET setup failed (errno=%d), disabling\n",
@@ -263,8 +272,17 @@ bool eth_emitter(struct childdata *child)
 		return true;
 	}
 
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
 
 	pick = rnd_modulo_u32(NR_TEMPLATES);
 	len = templates[pick](frame);
@@ -280,8 +298,9 @@ bool eth_emitter(struct childdata *child)
 	sll.sll_halen = 6;
 	memcpy(sll.sll_addr, frame, 6);
 
-	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
 
 	rc = sendto(eth_fd, frame, len, 0,
 	            (struct sockaddr *)&sll, sizeof(sll));
