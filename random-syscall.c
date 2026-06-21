@@ -2594,73 +2594,60 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 
 			if (plateau_burst ||
 			    ONE_IN(REDQUEEN_REEXEC_GATE_DENOM)) {
-				/* Per-call cap C-1: drain a single
-				 * attribution per parent dispatch.  The
-				 * --redqueen-pending-pick A/B flag
-				 * (params.c) selects which entry of the
-				 * per-call reexec_pending[] census to
-				 * drain:
-				 *   FIRST  -- always entry 0, the first-
-				 *             emitted (earliest CMP
-				 *             record's first-matching arg
-				 *             slot).  Prior behaviour;
-				 *             biases hard toward early
-				 *             validation checks.
-				 *   RANDOM -- uniform pick over
-				 *             [0, reexec_pending_count)
-				 *             via trinity's Lemire-debiased
-				 *             rnd_modulo_u32() (NEVER libc
-				 *             rand()).  Surfaces signal
-				 *             from any pending entry, not
-				 *             just the trace-order winner.
-				 * The reexec_pending_count==0 short-
-				 * circuit above guarantees count > 0 here,
-				 * so the rnd_modulo_u32(count) argument is
-				 * safe (and the helper's own n==0 guard
-				 * would just return 0 anyway).
-				 * Per-pending-index success counters
+				/* Drain ALL staged reexec_pending entries
+				 * for this parent dispatch (bounded by the
+				 * producer-side MAX_REEXEC_PENDING cap).
+				 * Each entry was independently
+				 * attribution-scanned by cmp_hints_collect
+				 * from the parent's CMP records, so each is
+				 * an equally valid re-exec candidate; the
+				 * prior single-drain rule discarded
+				 * (count - 1) entries per dispatch even
+				 * though every discarded entry had already
+				 * cleared the parent's full outer-gate
+				 * sequence (in_reexec, redqueen_enabled,
+				 * kcov_mode, chain_mid, new_cmp, rate gate
+				 * / plateau_burst).
+				 *
+				 * Per-entry safety is enforced inside
+				 * redqueen_reexec_step (destructive-syscall
+				 * denylist, validate_specific_syscall_silent,
+				 * p->slot bounds, REDQUEEN_REEXEC_WINDOW_CAP);
+				 * the window cap naturally bounds the
+				 * per-window total attempts even when
+				 * multiple drains fire per parent dispatch.
+				 *
+				 * in_reexec brackets the whole drain so each
+				 * inner dispatch_step short-circuits at the
+				 * outer in_reexec gate and cannot recurse
+				 * into this drain.
+				 *
+				 * The --redqueen-pending-pick A/B flag is
+				 * a no-op for this code path now (every
+				 * staged entry is drained regardless of
+				 * pick order); the per-pending-index
+				 * success counters
 				 * (kcov_shm->reexec_pending_pick_success[])
-				 * are bumped inside redqueen_reexec_step
-				 * on inner_new_cmp > 0 in BOTH modes, so
-				 * an A/B run reads directly whether
-				 * entry-0's trace-order bias under FIRST
-				 * actually costs signal vs RANDOM. */
-				unsigned int pending_idx;
-				struct reexec_pending p;
+				 * still get bumped inside
+				 * redqueen_reexec_step at the entry's true
+				 * index, so per-slot/per-index lift remains
+				 * directly readable.  MAX_REEXEC_PENDING
+				 * clamp on the loop bound is defence in
+				 * depth against a corrupted count reaching
+				 * the array index. */
+				unsigned int count = child->reexec_pending_count;
+				unsigned int i;
 
-				/* Per-call cap C-1 wastage accounting
-				 * (PHASE 0 measurement): bump the unused-
-				 * entry counter by (count - 1) BEFORE the
-				 * pick fires.  The single pick that follows
-				 * drains exactly ONE entry, and the per-call
-				 * scratch reset at the end of dispatch_step
-				 * discards the other (count - 1) entries
-				 * the producer staged.  In FIRST pick mode
-				 * those discarded entries all sit at indices
-				 * >= 1 -- the trace-order bias guarantees
-				 * they could never have been chosen for this
-				 * parent call.  count > 0 is guaranteed by
-				 * the reexec_pending_count == 0 short-
-				 * circuit one gate above, so count - 1 does
-				 * not underflow. */
-				if (kcov_shm != NULL &&
-				    child->reexec_pending_count > 1)
-					__atomic_fetch_add(
-						&kcov_shm->reexec_pending_drain_unused,
-						(unsigned long)(child->reexec_pending_count - 1),
-						__ATOMIC_RELAXED);
-
-				if (redqueen_pending_pick_mode_arg ==
-				    REDQUEEN_PENDING_PICK_RANDOM)
-					pending_idx = rnd_modulo_u32(
-						child->reexec_pending_count);
-				else
-					pending_idx = 0;
-
-				p = child->reexec_pending[pending_idx];
+				if (count > MAX_REEXEC_PENDING)
+					count = MAX_REEXEC_PENDING;
 
 				child->in_reexec = true;
-				redqueen_reexec_step(child, &p, pending_idx);
+				for (i = 0; i < count; i++) {
+					struct reexec_pending p =
+						child->reexec_pending[i];
+
+					redqueen_reexec_step(child, &p, i);
+				}
 				child->in_reexec = false;
 				gate_passed = true;
 			} else {
