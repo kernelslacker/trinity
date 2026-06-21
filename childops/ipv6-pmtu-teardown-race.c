@@ -599,9 +599,16 @@ static void v6pmtu_iter_exit_netns(int op_type, int nsfd)
 {
 	if (setns(nsfd, CLONE_NEWNET) < 0) {
 		ns_unsupported_ipv6_pmtu_race = true;
-		__atomic_store_n(&shm->stats.childop_latch_reason[op_type],
-				 CHILDOP_LATCH_NS_UNSUPPORTED,
-				 __ATOMIC_RELAXED);
+		/* op_type is a snapshot of child->op_type passed in by
+		 * value; the field lives in shared memory and can be
+		 * scribbled by a poisoned-arena write from a sibling, so
+		 * bounds-check before indexing the NR_CHILD_OP_TYPES-sized
+		 * stats array, same pattern the child.c dispatch loop uses
+		 * for its dispatch and alt-op accounting. */
+		if (op_type >= 0 && op_type < NR_CHILD_OP_TYPES)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 	}
 	(void)close(nsfd);
 }
@@ -611,6 +618,12 @@ static void iter_one(int op_type)
 	int nsfd;
 	char names[V6PMTU_NUM_PAIRS][8];
 	pid_t a, b;
+	/* op_type is a snapshot of child->op_type passed in by value; the
+	 * field lives in shared memory and can be scribbled by a
+	 * poisoned-arena write from a sibling.  Bounds-check the snapshot
+	 * once and gate each per-op stats write, same pattern the child.c
+	 * dispatch loop uses for its dispatch and alt-op accounting. */
+	const bool valid_op = (op_type >= 0 && op_type < NR_CHILD_OP_TYPES);
 
 	nsfd = v6pmtu_iter_enter_netns();
 	if (nsfd < 0)
@@ -619,14 +632,16 @@ static void iter_one(int op_type)
 	if (v6pmtu_iter_setup_network(names) != 0)
 		goto out_setns;
 
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op_type],
+				   1, __ATOMIC_RELAXED);
 
 	if (v6pmtu_iter_spawn_workers(names, &a, &b) != 0)
 		goto out_setns;
 
-	__atomic_add_fetch(&shm->stats.childop_data_path[op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_data_path[op_type],
+				   1, __ATOMIC_RELAXED);
 
 	v6pmtu_iter_reap_workers(a, b);
 
@@ -640,30 +655,39 @@ out_setns:
 static void probe_v6_pmtu(int op_type)
 {
 	int probe_fd;
+	/* op_type is a snapshot of child->op_type passed in by value; the
+	 * field lives in shared memory and can be scribbled by a
+	 * poisoned-arena write from a sibling.  Bounds-check the snapshot
+	 * once and gate each per-op stats write, same pattern the child.c
+	 * dispatch loop uses for its dispatch and alt-op accounting. */
+	const bool valid_op = (op_type >= 0 && op_type < NR_CHILD_OP_TYPES);
 
 	ipv6_pmtu_race_probed = true;
 
 	probe_fd = open("/proc/self/ns/net", O_RDONLY | O_CLOEXEC);
 	if (probe_fd < 0) {
 		ns_unsupported_ipv6_pmtu_race = true;
-		__atomic_store_n(&shm->stats.childop_latch_reason[op_type],
-				 CHILDOP_LATCH_NS_UNSUPPORTED,
-				 __ATOMIC_RELAXED);
+		if (valid_op)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 		return;
 	}
 	if (unshare(CLONE_NEWNET) < 0) {
 		ns_unsupported_ipv6_pmtu_race = true;
-		__atomic_store_n(&shm->stats.childop_latch_reason[op_type],
-				 CHILDOP_LATCH_NS_UNSUPPORTED,
-				 __ATOMIC_RELAXED);
+		if (valid_op)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 		(void)close(probe_fd);
 		return;
 	}
 	if (setns(probe_fd, CLONE_NEWNET) < 0) {
 		ns_unsupported_ipv6_pmtu_race = true;
-		__atomic_store_n(&shm->stats.childop_latch_reason[op_type],
-				 CHILDOP_LATCH_NS_UNSUPPORTED,
-				 __ATOMIC_RELAXED);
+		if (valid_op)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op_type],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 	}
 	(void)close(probe_fd);
 }
