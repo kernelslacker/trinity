@@ -83,21 +83,23 @@ static int pick_semnum(int semid)
 }
 
 /*
- * Build the union semun shape per cmd.  Today's sanitiser only does
- * avoid_shared_buffer_out() on rec->a4, which keeps any random pool
- * pointer from landing in shared memory but does nothing to make the
- * cmd-specific payload legal -- SETVAL never sees a value in
- * [0, SEMVMX], SETALL never has a populated unsigned-short array,
- * IPC_SET/IPC_STAT get a random pool pointer instead of a struct
- * semid_ds-shaped buffer, etc.  So the kernel semctl validator only
- * exercises the early-EINVAL paths.
+ * Build the union semun shape per cmd.  SETVAL puts a value in
+ * [0, SEMVMX] in rec->a4 directly.  SETALL fills a fresh
+ * unsigned-short array with values in that same range, IPC_SET
+ * populates sem_perm.uid/.gid/.mode in a fresh semid_ds, and the
+ * pure-output cmds (GETALL, IPC_STAT, SEM_STAT, SEM_STAT_ANY,
+ * IPC_INFO, SEM_INFO) hand the kernel a zeroed destination buffer.
  *
  * On x86-64 the union semun is passed by value in a single register,
  * so storing the per-cmd value through rec->a4 is sufficient -- no
  * separate type slot to track.  The pointer-typed buffers are
- * zmalloc_tracked so the per-call lifetime matches the syscall's,
- * and avoid_shared_buffer_out() then keeps a stray fuzzed pointer
- * out of any alloc_shared region.
+ * zmalloc_tracked so the per-call lifetime matches the syscall's.
+ * For the kernel-READ cmds (SETALL, IPC_SET) we then run
+ * avoid_shared_buffer_inout() so the relocation away from any
+ * shared-mem overlap preserves the curated payload; for the
+ * kernel-WRITTEN cmds and the ignored-arg default we use
+ * avoid_shared_buffer_out(), which relocates without copying (the
+ * kernel is about to overwrite the buffer anyway).
  */
 static void build_semun_arg(struct syscallrecord *rec)
 {
@@ -120,8 +122,8 @@ static void build_semun_arg(struct syscallrecord *rec)
 			array[i] = (unsigned short) rnd_modulo_u32(SEMVMX + 1);
 		u.array = array;
 		rec->a4 = (unsigned long) u.array;
-		avoid_shared_buffer_out(&rec->a4,
-					SEMCTL_ARRAY_SLOTS * sizeof(*array));
+		avoid_shared_buffer_inout(&rec->a4,
+					  SEMCTL_ARRAY_SLOTS * sizeof(*array));
 		return;
 
 	case GETALL:
@@ -165,7 +167,7 @@ static void build_semun_arg(struct syscallrecord *rec)
 		}
 		u.buf = ds;
 		rec->a4 = (unsigned long) u.buf;
-		avoid_shared_buffer_out(&rec->a4, sizeof(*ds));
+		avoid_shared_buffer_inout(&rec->a4, sizeof(*ds));
 		return;
 
 	case IPC_INFO:
