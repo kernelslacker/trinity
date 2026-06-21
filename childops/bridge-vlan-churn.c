@@ -622,6 +622,14 @@ static int bridge_vlan_iter_setup(struct bridge_vlan_iter_ctx *it,
 	__u16 vid_bases[3] = { 10, 100, 4000 };
 	unsigned int rng;
 	int rc;
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the stats
+	 * write entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	if (nl_open(&it->nl, &nl_opts) < 0) {
 		__atomic_add_fetch(&shm->stats.bridge_vlan_churn_setup_failed,
@@ -642,9 +650,10 @@ static int bridge_vlan_iter_setup(struct bridge_vlan_iter_ctx *it,
 		    rc == -EAFNOSUPPORT || rc == -EOPNOTSUPP ||
 		    rc == -EPROTONOSUPPORT) {
 			ns_unsupported_bridge_vlan_churn = true;
-			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-					 CHILDOP_LATCH_NS_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			if (valid_op)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 		}
 		__atomic_add_fetch(&shm->stats.bridge_vlan_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
@@ -879,17 +888,27 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer,
 		.nl  = { .fd = -1 },
 		.raw = -1,
 	};
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the stats
+	 * writes entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	if ((unsigned long long)ns_since(t_outer) >= BVC_WALL_CAP_NS)
 		return;
 
 	if (bridge_vlan_iter_setup(&it, iter_idx, child) != 0)
 		goto out;
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
 
-	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
 	bridge_vlan_iter_add_vlan(&it);
 	bridge_vlan_iter_open_raw(&it);
 
@@ -910,6 +929,14 @@ bool bridge_vlan_churn(struct childdata *child)
 {
 	struct timespec t_outer;
 	unsigned int outer_iters, i;
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the stats
+	 * write entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	__atomic_add_fetch(&shm->stats.bridge_vlan_churn_runs,
 			   1, __ATOMIC_RELAXED);
@@ -924,9 +951,10 @@ bool bridge_vlan_churn(struct childdata *child)
 		if (unshare(CLONE_NEWNET) < 0) {
 			if (errno != EPERM) {
 				ns_unsupported_bridge_vlan_churn = true;
-				__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-						 CHILDOP_LATCH_NS_UNSUPPORTED,
-						 __ATOMIC_RELAXED);
+				if (valid_op)
+					__atomic_store_n(&shm->stats.childop_latch_reason[op],
+							 CHILDOP_LATCH_NS_UNSUPPORTED,
+							 __ATOMIC_RELAXED);
 				__atomic_add_fetch(&shm->stats.bridge_vlan_churn_setup_failed,
 						   1, __ATOMIC_RELAXED);
 				return true;
