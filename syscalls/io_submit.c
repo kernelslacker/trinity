@@ -94,7 +94,21 @@ static void sanitise_io_submit(struct syscallrecord *rec)
 	struct iocb **iocbpp;
 	struct iocb *iocbs;
 	char *buf;
+	unsigned long ctx;
 	unsigned int nr, i;
+
+	/*
+	 * Precondition: ctx_id (a1) must be a live aio_context_t the kernel
+	 * has on hand or io_submit short-circuits with -EINVAL inside
+	 * lookup_ioctx() before the iocb import / queueing path runs.
+	 * gen_arg_aio_ctx returns 0 (or 1/8 of the time a raw rand64) until
+	 * a real io_setup has published into OBJ_AIO_CTX; seed one inline so
+	 * io_submit reaches the productive kernel path even on the very
+	 * first call in the child.
+	 */
+	ctx = seed_aio_ctx_if_empty();
+	if (ctx != 0)
+		rec->a1 = ctx;
 
 	nr = 1 + (rnd_modulo_u32(4));
 	iocbs = (struct iocb *) get_writable_address(nr * sizeof(*iocbs));
