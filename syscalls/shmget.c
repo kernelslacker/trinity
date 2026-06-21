@@ -75,10 +75,25 @@ int get_random_sysv_shm(void)
 {
 	struct object *obj;
 
-	if (objects_empty(OBJ_SYSV_SHM) == true)
-		return 0;
+	/*
+	 * Prefer a segment this child actually produced via shmget
+	 * (OBJ_LOCAL); fall back to the create_sysv_shms() startup
+	 * segments (OBJ_GLOBAL) when the per-child pool is empty.
+	 *
+	 * The previous gate -- objects_empty(OBJ_SYSV_SHM) -- only
+	 * checks OBJ_GLOBAL and so is effectively never true once the
+	 * startup pool has been populated, yet the subsequent draw
+	 * read OBJ_LOCAL.  In a fresh child whose LOCAL pool was still
+	 * empty the gate passed but the draw returned NULL, so this
+	 * helper handed 0 to shmat/shmctl argument generation and the
+	 * resulting calls EINVAL'd out despite live global segments
+	 * being available the whole time.
+	 */
+	if (!objects_pool_empty(OBJ_LOCAL, OBJ_SYSV_SHM))
+		obj = get_random_object(OBJ_SYSV_SHM, OBJ_LOCAL);
+	else
+		obj = get_random_object(OBJ_SYSV_SHM, OBJ_GLOBAL);
 
-	obj = get_random_object(OBJ_SYSV_SHM, OBJ_LOCAL);
 	if (obj == NULL)
 		return 0;
 	return obj->sysv_shm.id;
