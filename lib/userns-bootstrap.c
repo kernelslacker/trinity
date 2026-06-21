@@ -127,11 +127,11 @@ int userns_run_in_ns(int target_ns_flags, int (*fn)(void *), void *arg)
 	int status;
 
 	if (fn == NULL)
-		return -1;
+		return -EAGAIN;
 
 	pid = fork();
 	if (pid < 0)
-		return -1;
+		return -EAGAIN;
 
 	if (pid == 0) {
 		grandchild_body(target_ns_flags, fn, arg);
@@ -139,7 +139,7 @@ int userns_run_in_ns(int target_ns_flags, int (*fn)(void *), void *arg)
 	}
 
 	if (waitpid_eintr(pid, &status, 0) < 0)
-		return -1;
+		return -EAGAIN;
 
 	if (WIFEXITED(status)) {
 		switch (WEXITSTATUS(status)) {
@@ -151,10 +151,10 @@ int userns_run_in_ns(int target_ns_flags, int (*fn)(void *), void *arg)
 		case UBS_EXIT_MAP_WRITE_FAIL:
 		case UBS_EXIT_TARGET_UNSHARE:
 		default:
-			return -1;
+			return -EAGAIN;
 		}
 	}
 
 	/* Signalled or stopped -- treat as transient failure, no latch. */
-	return -1;
+	return -EAGAIN;
 }
