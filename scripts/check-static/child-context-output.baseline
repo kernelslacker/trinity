@@ -133,8 +133,8 @@ syscalls/gettimeofday.c:156:post_gettimeofday
 syscalls/getuid.c:38:post_getuid
 syscalls/getuid.c:59:post_getuid
 syscalls/getxattrat.c:187:post_getxattrat
-syscalls/getxattr.c:213:post_getxattr
-syscalls/getxattr.c:285:post_getxattr
+syscalls/getxattr.c:297:post_getxattr
+syscalls/getxattr.c:369:post_getxattr
 syscalls/inotify_add_watch.c:26:post_inotify_add_watch
 syscalls/ioprio_get.c:21:post_ioprio_get
 syscalls/io_setup.c:236:post_io_setup
