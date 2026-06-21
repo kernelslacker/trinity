@@ -273,9 +273,19 @@ static int tls_ulp_churn_iter_install_tls_ulp(int s, struct childdata *child)
 	if (setsockopt(s, IPPROTO_TCP, TCP_ULP, "tls", 3) < 0) {
 		if (errno == ENOPROTOOPT || errno == EPERM) {
 			ns_unsupported_tls_ulp = true;
-			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-					 CHILDOP_LATCH_NS_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			/* child->op_type lives in shared memory and can be
+			 * scribbled by a poisoned-arena write from a sibling;
+			 * bounds-check the snapshot before indexing the
+			 * NR_CHILD_OP_TYPES-sized stats arrays, same pattern
+			 * the child.c dispatch loop uses for the unguarded
+			 * write that motivated this guard. */
+			{
+				const enum child_op_type op = child->op_type;
+				if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+					__atomic_store_n(&shm->stats.childop_latch_reason[op],
+							 CHILDOP_LATCH_NS_UNSUPPORTED,
+							 __ATOMIC_RELAXED);
+			}
 		}
 		__atomic_add_fetch(&shm->stats.tls_ulp_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
@@ -307,16 +317,26 @@ static int tls_ulp_churn_iter_install_keys(int s, unsigned short *version_out,
 
 	rc = setsockopt(s, SOL_TLS, TLS_TX, &cinfo, sizeof(cinfo));
 	if (rc < 0) {
+		/* child->op_type lives in shared memory and can be scribbled
+		 * by a poisoned-arena write from a sibling; bounds-check the
+		 * snapshot before indexing the NR_CHILD_OP_TYPES-sized stats
+		 * arrays, same pattern the child.c dispatch loop uses for
+		 * the unguarded write that motivated this guard. */
+		const enum child_op_type op = child->op_type;
+		const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 		if (errno == ENOPROTOOPT || errno == EOPNOTSUPP) {
 			ns_unsupported_tls_tx = true;
-			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-					 CHILDOP_LATCH_NS_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			if (valid_op)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 		} else if (errno == EINVAL) {
 			ns_unsupported_aes_gcm_128 = true;
-			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-					 CHILDOP_LATCH_NS_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			if (valid_op)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 		}
 		__atomic_add_fetch(&shm->stats.tls_ulp_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
@@ -494,11 +514,23 @@ bool tls_ulp_churn(struct childdata *child)
 
 	if (tls_ulp_churn_iter_install_keys(s, &version, child) != 0)
 		goto out;
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
 
-	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
+
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
+
 	tls_ulp_churn_iter_initial_traffic(s);
 
 	tls_ulp_churn_iter_rekey_burst(s, version, &t0);
