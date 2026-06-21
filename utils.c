@@ -2860,21 +2860,33 @@ static unsigned long cached_brk_end;
 static unsigned int brk_refresh_counter;
 
 /*
- * Slack ceiling above the cached brk upper bound for the
- * self-correcting near-edge re-test in is_in_glibc_heap() and
- * range_overlaps_libc_heap().  An address that sits in
- * [cached_upper, cached_upper + SLACK) is plausibly in a brk
- * extension that grew between BRK_REFRESH_INTERVAL ticks (heavy
- * non-alloc_object() allocator traffic can outrun the alloc-driven
- * refresh cadence), so it's worth one sbrk(0) to confirm.  Wild-high
- * pointers (stack, mmap regions, libasan shadow at 0x511000000000+,
- * kernel addresses) sit far above the ceiling and skip the syscall
- * -- cached_brk_end exists precisely to avoid per-call sbrk(0) on
- * the heap-check hot path.  256 MiB is generous enough to cover any
- * realistic brk grow between refreshes while keeping clearly-not-heap
- * pointers off the syscall path.
+ * Upper VA at which the self-correcting brk re-test in
+ * is_in_glibc_heap() and range_overlaps_libc_heap() stops paying
+ * one sbrk(0) to resample the live break.  Any addr that sits at or
+ * above the cached upper bound AND below this ceiling is plausibly
+ * inside a brk extension that the cache hasn't caught up with;
+ * addr >= ceiling is unambiguously not-heap (kernel VA, non-canonical)
+ * and skips the syscall.
+ *
+ * Prior revisions capped the re-test with a fixed 256 MiB slack above
+ * cached_brk_end.  That ceiling was tight enough that non-alloc_object()
+ * traffic -- cmp-hint / RedQueen pool inflation, sequence record growth
+ * -- could extend live brk past cached_brk_end + 256 MiB between
+ * BRK_REFRESH_INTERVAL ticks, opening a window where a fuzzed
+ * mmap(MAP_FIXED, PROT_READ) landing in the live-brk extension sailed
+ * past the guard and stamped a read-only page on brk arena bookkeeping.
+ * The downstream get_writable_address() upgrade then stored
+ * map->known_rw=true on the now-RO page and the child took SEGV_ACCERR.
+ *
+ * The new ceiling is the user/kernel split (0x800000000000UL on
+ * x86_64): below it, an address is canonical userspace and the
+ * resample is cheap insurance against the staleness window; at or
+ * above it, the address is kernel-VA or non-canonical and no sbrk(0)
+ * will ever vouch for it.  The resampled live_brk back-fills
+ * cached_brk_end so a workload that keeps hammering similar addresses
+ * benefits from the freshly-refreshed cache on subsequent calls.
  */
-#define HEAP_BRK_STALE_SLACK_BYTES (256UL << 20)
+#define HEAP_BRK_RETEST_CEILING		0x800000000000UL
 
 static void heap_brk_refresh(void)
 {
@@ -3208,7 +3220,7 @@ bool is_in_glibc_heap(const void *p)
 			return true;
 
 		/*
-		 * Mirror of the self-correcting near-edge re-test in
+		 * Mirror of the self-correcting brk re-test in
 		 * range_overlaps_libc_heap().  The cached snapshot just
 		 * judged this pointer not-heap, but brk may have grown past
 		 * cached_brk_end since the last heap_brk_maybe_refresh()
@@ -3216,14 +3228,16 @@ bool is_in_glibc_heap(const void *p)
 		 * the alloc-driven refresh cadence).  Without the re-test, a
 		 * deferred-free backstop that lands in [cached_brk_end,
 		 * live_brk) marks a real heap chunk as not-heap and silently
-		 * drops the free.  Pay one sbrk(0) when the pointer sits in
-		 * the staleness slack above the cached bound, refresh the
-		 * cache, and re-check; return true if it now falls in the
-		 * live arena.  Same slack ceiling
-		 * (HEAP_BRK_STALE_SLACK_BYTES) so wild-high pointers skip
-		 * the syscall.
+		 * drops the free.  Pay one sbrk(0) when the pointer sits at
+		 * or above the cached bound but below the user/kernel split
+		 * (HEAP_BRK_RETEST_CEILING -- wild-high / kernel-VA / non-
+		 * canonical pointers skip the syscall), refresh the cache,
+		 * and re-check; return true if it now falls in the live
+		 * arena.  The fixed 256 MiB slack the prior revision used
+		 * was tight enough that cmp-hint / RedQueen traffic could
+		 * outrun it between refreshes -- see HEAP_BRK_RETEST_CEILING.
 		 */
-		if (v >= end && v < end + HEAP_BRK_STALE_SLACK_BYTES) {
+		if (v >= end && v < HEAP_BRK_RETEST_CEILING) {
 			unsigned long live_brk = (unsigned long) sbrk(0);
 
 			if (live_brk != (unsigned long) -1) {
@@ -3308,28 +3322,33 @@ bool range_overlaps_libc_heap(unsigned long addr, unsigned long len)
 			return true;
 
 		/*
-		 * Self-correcting near-edge re-test.  The cached snapshot
-		 * just judged this address not-heap, but brk may have grown
-		 * past cached_brk_end since the last
-		 * heap_brk_maybe_refresh() tick.  Heavy non-alloc_object()
-		 * allocator traffic (cmp-hint / RedQueen tables, sequence
-		 * record growth) extends the real brk without ticking the
-		 * alloc-driven refresh, opening a window where glibc's top
-		 * chunk sits in [cached_brk_end, live_brk) and a fuzzed
-		 * output pointer in that band gets handed to the kernel
-		 * instead of being relocated -- the kernel scribbles
-		 * top->size and the next malloc anywhere in the child aborts
-		 * with "malloc(): corrupted top size".  Pay one sbrk(0) when
-		 * the address sits in the staleness slack above the cached
-		 * bound, refresh the cache, and re-test the brk arm; if the
+		 * Self-correcting brk re-test.  The cached snapshot just
+		 * judged this address not-heap, but brk may have grown past
+		 * cached_brk_end since the last heap_brk_maybe_refresh()
+		 * tick.  Heavy non-alloc_object() allocator traffic
+		 * (cmp-hint / RedQueen tables, sequence record growth)
+		 * extends the real brk without ticking the alloc-driven
+		 * refresh, opening a window where glibc's top chunk -- or a
+		 * brk-arena bookkeeping page -- sits in [cached_brk_end,
+		 * live_brk) and a fuzzed output / MAP_FIXED address in that
+		 * band gets handed to the kernel instead of being
+		 * relocated.  Symptoms: the kernel scribbles top->size and
+		 * the next malloc anywhere in the child aborts with
+		 * "malloc(): corrupted top size"; or a fuzzed
+		 * mmap(MAP_FIXED, PROT_READ) lands on brk arena and the
+		 * next get_writable_address() upgrade SEGV_ACCERRs on the
+		 * known_rw=true store.  Pay one sbrk(0) when the address
+		 * sits at or above the cached bound but below the
+		 * user/kernel split (HEAP_BRK_RETEST_CEILING -- wild-high /
+		 * kernel-VA / non-canonical addresses skip the syscall),
+		 * refresh the cache, and re-test the brk arm; if the
 		 * address now falls in the live arena, redirect it (return
-		 * true).  Gated by HEAP_BRK_STALE_SLACK_BYTES so wild-high
-		 * pointers (kernel addresses, libasan shadow, far mmap) skip
-		 * the syscall and the common path stays cached_brk_end-only.
-		 * The counter, kept in place, now signals the fix firing
-		 * (was: observability-only).
+		 * true).  Prior revision capped this at a fixed 256 MiB
+		 * slack above hend, which the cmp-hint / RedQueen traffic
+		 * outran between refreshes -- see HEAP_BRK_RETEST_CEILING.
+		 * The counter, kept in place, signals the fix firing.
 		 */
-		if (addr >= hend && addr < hend + HEAP_BRK_STALE_SLACK_BYTES) {
+		if (addr >= hend && addr < HEAP_BRK_RETEST_CEILING) {
 			unsigned long live_brk = (unsigned long) sbrk(0);
 
 			if (live_brk != (unsigned long) -1) {
