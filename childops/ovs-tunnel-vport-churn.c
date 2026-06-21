@@ -588,6 +588,15 @@ static bool ovs_one_time_setup(struct childdata *child)
 	if (ovs_setup_failed)
 		return false;
 
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the latch
+	 * writes entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	ovs_try_modprobe("openvswitch");
 	ovs_try_modprobe("geneve");
 	ovs_try_modprobe("vxlan");
@@ -601,9 +610,10 @@ static bool ovs_one_time_setup(struct childdata *child)
 	if (rc != 0) {
 		if (rc == -ENOENT) {
 			ns_unsupported_ovs_genl = true;
-			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-					 CHILDOP_LATCH_NS_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			if (valid_op)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 		}
 		ovs_setup_failed = true;
 		return false;
@@ -617,9 +627,10 @@ static bool ovs_one_time_setup(struct childdata *child)
 	if (rc != 0) {
 		if (rc == -ENOENT) {
 			ns_unsupported_ovs_genl = true;
-			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-					 CHILDOP_LATCH_NS_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			if (valid_op)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 		}
 		ovs_setup_failed = true;
 		genl_close(&ovs_dp_ctx);
@@ -675,8 +686,18 @@ bool ovs_tunnel_vport_churn(struct childdata *child)
 	if (kind == OVS_TUN_NR)
 		return true;
 
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the stats
+	 * writes entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
 
 	dst_port = (__u16)RAND_RANGE(OVS_DST_PORT_MIN, OVS_DST_PORT_MAX);
 	iter = next_ovs_iter_id();
@@ -709,8 +730,9 @@ bool ovs_tunnel_vport_churn(struct childdata *child)
 		}
 	}
 
-	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
 	rc = ovs_create_vport(&ovs_vport_ctx, 0, kind, vname, dst_port);
 	if (rc != 0) {
 		/* Module-not-loaded / type-not-registered errors latch the
@@ -720,9 +742,10 @@ bool ovs_tunnel_vport_churn(struct childdata *child)
 		if (rc == -EOPNOTSUPP || rc == -EAFNOSUPPORT ||
 		    rc == -EPROTONOSUPPORT || rc == -ENOENT) {
 			*ovs_kind_latch(kind) = true;
-			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-					 CHILDOP_LATCH_NS_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			if (valid_op)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 		}
 		if (racer_pid > 0) {
 			int wstatus;
