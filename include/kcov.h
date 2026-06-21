@@ -1298,6 +1298,18 @@ struct kcov_shared {
 	 * reexec_pending[] is therefore (reexec_attribution_found +
 	 * reexec_attribution_width_match). */
 	unsigned long reexec_attempts;
+	/*
+	 * Discrete count of re-exec attempts that produced
+	 * inner_new_cmp > 0.  Sibling of reexec_attempts (denominator)
+	 * and reexec_new_cmps_total (the SUM of inner_new_cmp across
+	 * winning attempts).  Bumped from redqueen_reexec_step() inside
+	 * the existing inner_new_cmp > 0 success block, once per winning
+	 * attempt.  Lets a Phase-0 funnel read pair the two ratios:
+	 *   - hit-rate           = reexec_attempts_with_new_cmp / reexec_attempts
+	 *   - mean novelty/win   = reexec_new_cmps_total / reexec_attempts_with_new_cmp
+	 * the existing pair (sum / attempts) conflates them.
+	 */
+	unsigned long reexec_attempts_with_new_cmp;
 	unsigned long reexec_attribution_found;
 	unsigned long reexec_attribution_ambiguous;
 	unsigned long reexec_attribution_width_match;
@@ -1525,6 +1537,19 @@ struct kcov_shared {
 	unsigned long reexec_attribution_slot_hist[CMP_REDQUEEN_SLOT_HIST_NR];
 	unsigned long reexec_success_by_slot[CMP_REDQUEEN_SLOT_HIST_NR];
 	unsigned long reexec_pending_dropped;
+	/*
+	 * Per-call cap C-1 wastage: at every gate-pass the dispatch_step
+	 * tail drains exactly ONE reexec_pending[] entry, so the other
+	 * (reexec_pending_count - 1) entries the producer staged are
+	 * silently discarded with the per-call attribution scratch reset.
+	 * Bumped at the gate-pass site in random_syscall_step's re-exec
+	 * tail by (reexec_pending_count - 1) BEFORE the pick fires, in
+	 * both FIRST and RANDOM pick modes.  In FIRST mode this is the
+	 * "drain-only-[0]" loss signal: every bump is an entry at
+	 * index >= 1 that the trace-order bias guaranteed would never
+	 * be drained for this parent call.
+	 */
+	unsigned long reexec_pending_drain_unused;
 	unsigned long reexec_pending_pick_success[REEXEC_PENDING_PICK_HIST_NR];
 
 	/* RedQueen A/B cohort denominators.  The existing reexec_* family
