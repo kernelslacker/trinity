@@ -207,21 +207,31 @@ static bool probe_one_entry(struct probe_entry *e, struct childdata *child)
 	int outcome;
 	bool retried = false;
 
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	fd = socket(AF_ALG, SOCK_SEQPACKET, 0);
 	if (fd < 0) {
 		__atomic_add_fetch(&shm->stats.af_alg_weak_cipher_probe_socket_failed,
 				   1, __ATOMIC_RELAXED);
 		if (errno == EAFNOSUPPORT) {
-			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-					 CHILDOP_LATCH_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			if (valid_op)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 			outputerr("af_alg_weak_cipher_probe: socket(AF_ALG) returned EAFNOSUPPORT, latching unsupported_af_alg_top_level\n");
 			return true;
 		}
 		return false;
 	}
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
 
 	memset(&sa, 0, sizeof(sa));
 	sa.salg_family = AF_ALG;
@@ -230,8 +240,9 @@ static bool probe_one_entry(struct probe_entry *e, struct childdata *child)
 
 	__atomic_add_fetch(&shm->stats.af_alg_weak_cipher_probe_total_bind_attempts,
 			   1, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
 
 retry:
 	bind_rc = bind(fd, (struct sockaddr *)&sa, sizeof(sa));
@@ -308,7 +319,16 @@ bool af_alg_weak_cipher_probe(struct childdata *child)
 
 	/* All entries latched -- nothing left to learn from this op. */
 	unsupported_af_alg_top_level = true;
-	__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-			 CHILDOP_LATCH_OTHER, __ATOMIC_RELAXED);
+	/* child->op_type lives in shared memory and can be scribbled by a
+	 * poisoned-arena write from a sibling; bounds-check the snapshot
+	 * before indexing the NR_CHILD_OP_TYPES-sized stats arrays, same
+	 * pattern the child.c dispatch loop uses for the unguarded write
+	 * that motivated this guard. */
+	{
+		const enum child_op_type op = child->op_type;
+		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					 CHILDOP_LATCH_OTHER, __ATOMIC_RELAXED);
+	}
 	return true;
 }
