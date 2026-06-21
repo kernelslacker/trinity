@@ -421,6 +421,13 @@ static bool pick_alg_arm(void)
 
 bool socket_family_chain(struct childdata *child)
 {
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 	unsigned int inner;
 	unsigned int cycles;
 	unsigned int alg_err_burst = 0;
@@ -468,33 +475,38 @@ bool socket_family_chain(struct childdata *child)
 		if (use_alg) {
 			if (run_alg_chain(&alg_err_burst)) {
 				any_completed = true;
-				__atomic_add_fetch(
-					&shm->stats.childop_setup_accepted[child->op_type],
-					1, __ATOMIC_RELAXED);
-				__atomic_add_fetch(
-					&shm->stats.childop_data_path[child->op_type],
-					1, __ATOMIC_RELAXED);
+				if (valid_op) {
+					__atomic_add_fetch(
+						&shm->stats.childop_setup_accepted[op],
+						1, __ATOMIC_RELAXED);
+					__atomic_add_fetch(
+						&shm->stats.childop_data_path[op],
+						1, __ATOMIC_RELAXED);
+				}
 			}
 
 			if (alg_err_burst > ERR_BURST_LIMIT) {
 				__atomic_store_n(
 					&shm->socket_family_chain_unsupported,
 					true, __ATOMIC_RELAXED);
-				__atomic_store_n(
-					&shm->stats.childop_latch_reason[child->op_type],
-					CHILDOP_LATCH_UNSUPPORTED,
-					__ATOMIC_RELAXED);
+				if (valid_op)
+					__atomic_store_n(
+						&shm->stats.childop_latch_reason[op],
+						CHILDOP_LATCH_UNSUPPORTED,
+						__ATOMIC_RELAXED);
 				break;
 			}
 		} else {
 			if (run_grammar_chain(sfg, &gram_err_burst)) {
 				any_completed = true;
-				__atomic_add_fetch(
-					&shm->stats.childop_setup_accepted[child->op_type],
-					1, __ATOMIC_RELAXED);
-				__atomic_add_fetch(
-					&shm->stats.childop_data_path[child->op_type],
-					1, __ATOMIC_RELAXED);
+				if (valid_op) {
+					__atomic_add_fetch(
+						&shm->stats.childop_setup_accepted[op],
+						1, __ATOMIC_RELAXED);
+					__atomic_add_fetch(
+						&shm->stats.childop_data_path[op],
+						1, __ATOMIC_RELAXED);
+				}
 			}
 
 			if (gram_err_burst > ERR_BURST_LIMIT) {
@@ -518,12 +530,21 @@ bool socket_family_chain(struct childdata *child)
 
 bool socket_family_chain(struct childdata *child)
 {
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	__atomic_add_fetch(&shm->stats.socket_family_chain_runs, 1,
 			   __ATOMIC_RELAXED);
 	__atomic_store_n(&shm->socket_family_chain_unsupported, true,
 			 __ATOMIC_RELAXED);
-	__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-			 CHILDOP_LATCH_UNSUPPORTED, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_store_n(&shm->stats.childop_latch_reason[op],
+				 CHILDOP_LATCH_UNSUPPORTED, __ATOMIC_RELAXED);
 	__atomic_add_fetch(&shm->stats.socket_family_chain_failed, 1,
 			   __ATOMIC_RELAXED);
 	return true;
