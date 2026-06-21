@@ -21,10 +21,10 @@ childops/mount-churn.c:241:ensure_private_ns
 childops/mpls-route-churn.c:206:maybe_modprobe_once
 childops/mpls-route-churn.c:217:latch_ns_unsupported_mpls
 childops/mpls-route-churn.c:229:latch_ns_unsupported_lwtunnel
-childops/nat-t-churn.c:384:warn_once_unsupported
-childops/nat-t-churn.c:818:open_encap_udp6
-childops/nat-t-churn.c:839:open_encap_udp6
-childops/nat-t-churn.c:931:nat_t_churn_v6
+childops/nat-t-churn.c:429:warn_once_unsupported
+childops/nat-t-churn.c:863:open_encap_udp6
+childops/nat-t-churn.c:884:open_encap_udp6
+childops/nat-t-churn.c:976:nat_t_churn_v6
 childops/numa-migration-churn.c:183:parse_online_nodes
 childops/numa-migration-churn.c:191:parse_online_nodes
 childops/pagecache-canary-check.c:179:log_corruption
