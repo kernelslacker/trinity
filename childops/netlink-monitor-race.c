@@ -495,13 +495,22 @@ bool netlink_monitor_race(struct childdata *child)
 
 	__atomic_add_fetch(&shm->stats.netlink_monitor_race_runs, 1, __ATOMIC_RELAXED);
 
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	if (ns_unsupported)
 		return true;
 
 	if (netlink_monitor_race_iter_setup_netns() != 0) {
-		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-				 CHILDOP_LATCH_NS_UNSUPPORTED,
-				 __ATOMIC_RELAXED);
+		if (valid_op)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 		return true;
 	}
 
@@ -511,11 +520,13 @@ bool netlink_monitor_race(struct childdata *child)
 	if (netlink_monitor_race_iter_open_mutator(&ctx) != 0)
 		goto out;
 
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
 
-	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
 	netlink_monitor_race_iter_address_burst(&ctx);
 	netlink_monitor_race_iter_membership_churn(&ctx);
 	netlink_monitor_race_iter_final_burst(&ctx);
