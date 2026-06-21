@@ -631,6 +631,11 @@ static int iter_pmu_dir(struct dirent *entry, int pmu_num)
 	return 0;
 }
 
+/* Forward decl: the definition lives later in the file alongside the rest
+ * of the tracepoint-pool helpers (random_tracepoint_config et al.) so the
+ * pool, its scanner, and its picker stay co-located. */
+static void init_tracepoint_ids(void);
+
 static int init_pmus(void)
 {
 	DIR *dir;
@@ -638,6 +643,12 @@ static int init_pmus(void)
 	int pmu_num = 0;
 	int result = -1;
 	int rc;
+
+	/* Seed the live tracepoint id pool used by random_tracepoint_config().
+	 * Independent of PMU enumeration: a failure here (no tracefs mounted,
+	 * empty events tree) is silently fine -- the pool stays empty and the
+	 * picker drops to its random fallback. */
+	init_tracepoint_ids();
 
 	/* Count number of PMUs */
 	/* This may break if PMUs are ever added/removed on the fly? */
@@ -775,6 +786,114 @@ static long long random_sysfs_config(__u32 *type,
 out:
 	*config1=rnd_modulo_u32(64);
 	return rnd_modulo_u32(64);
+}
+
+/*
+ * Live tracepoint id pool, populated once at init time by walking
+ * /sys/kernel/tracing/events (or the legacy /sys/kernel/debug/tracing
+ * mount) and recording the integer in each event's "id" file.  The
+ * random_event_config(PERF_TYPE_TRACEPOINT) path used to roll
+ * rnd_u32() & 0xfff, which virtually never names a live tracepoint --
+ * perf_tracepoint_event_init() bounces every random id with -ENOENT
+ * before perf_trace_event_init() does anything interesting, so the
+ * deep tracepoint init / perf_trace_buf_alloc / kprobe / uprobe paths
+ * never see fuzz traffic.  Seeding from the live id pool lets
+ * ~7/8 of TRACEPOINT picks resolve to a real event id; the remaining
+ * 1/8 falls back to the random roll so the EINVAL/ENOENT validator
+ * arms still get exercised.
+ */
+#define TRACEPOINT_POOL_CAP 4096
+
+static unsigned int tracepoint_ids[TRACEPOINT_POOL_CAP];
+static unsigned int num_tracepoint_ids;
+
+static const char * const tracefs_roots[] = {
+	"/sys/kernel/tracing/events",
+	"/sys/kernel/debug/tracing/events",
+};
+
+static void scan_tracepoint_subsystem(const char *root, const char *subsys)
+{
+	char subsys_path[BUFSIZ];
+	/* BUFSIZ*2: subsys_path (up to BUFSIZ) + "/" + d_name (up to NAME_MAX
+	 * = 255) + "/id" + NUL fits comfortably; sized to match the rest of
+	 * this file's path-building scratch buffers and silence FORTIFY's
+	 * -Wformat-truncation on the snprintf below. */
+	char id_path[BUFSIZ * 2];
+	char read_buf[BUFSIZ];
+	DIR *event_dir;
+	struct dirent *event_entry;
+	int id;
+
+	snprintf(subsys_path, sizeof(subsys_path), "%s/%s", root, subsys);
+	event_dir = opendir(subsys_path);
+	if (event_dir == NULL)
+		return;
+
+	while (num_tracepoint_ids < TRACEPOINT_POOL_CAP) {
+		event_entry = readdir(event_dir);
+		if (event_entry == NULL)
+			break;
+		if (!strcmp(".", event_entry->d_name))
+			continue;
+		if (!strcmp("..", event_entry->d_name))
+			continue;
+
+		snprintf(id_path, sizeof(id_path), "%s/%s/id",
+			subsys_path, event_entry->d_name);
+		if (read_sysfs_value(id_path, read_buf, sizeof(read_buf)) < 0)
+			continue;
+		if (sscanf(read_buf, "%d", &id) != 1)
+			continue;
+		/* Tracepoint ids are small positive ints; the kernel rejects
+		 * negative/huge values upstream, no point planting them. */
+		if (id <= 0)
+			continue;
+		tracepoint_ids[num_tracepoint_ids++] = (unsigned int) id;
+	}
+	closedir(event_dir);
+}
+
+static void init_tracepoint_ids(void)
+{
+	DIR *root_dir;
+	struct dirent *entry;
+	size_t r;
+
+	for (r = 0; r < ARRAY_SIZE(tracefs_roots); r++) {
+		root_dir = opendir(tracefs_roots[r]);
+		if (root_dir == NULL)
+			continue;
+
+		while (num_tracepoint_ids < TRACEPOINT_POOL_CAP) {
+			entry = readdir(root_dir);
+			if (entry == NULL)
+				break;
+			if (!strcmp(".", entry->d_name))
+				continue;
+			if (!strcmp("..", entry->d_name))
+				continue;
+			scan_tracepoint_subsystem(tracefs_roots[r], entry->d_name);
+		}
+		closedir(root_dir);
+		/* Found a tracefs mount and walked it -- no need to walk the
+		 * legacy debugfs path too (they expose the same id space). */
+		if (num_tracepoint_ids > 0)
+			return;
+	}
+}
+
+static unsigned long long random_tracepoint_config(void)
+{
+	/* ~7/8 from the live pool when populated.  Empty pool (no tracefs,
+	 * no CONFIG_TRACING, or the walk found zero events) drops straight
+	 * through to the random fallback so this stays usable everywhere. */
+	if (num_tracepoint_ids > 0 && rnd_modulo_u32(8) != 0)
+		return tracepoint_ids[rnd_modulo_u32(num_tracepoint_ids)];
+
+	if (RAND_BOOL())
+		return rnd_u32() & 0xfff;
+	return rand64();
 }
 
 /* arbitrary high number unlikely to be used by perf_event */
@@ -980,21 +1099,11 @@ static long long random_event_config(__u32 *event_type,
 		}
 		break;
 	case PERF_TYPE_TRACEPOINT:
-		/* Actual values to use can be found under */
-		/* debugfs tracing/events/?*?/?*?/id       */
-		/* usually a small < 4096 number           */
-		switch(rnd_modulo_u32(2)) {
-		case 0:
-			/* Try a value < 4096 */
-			config = rnd_u32()&0xfff;
-			break;
-		case 1:
-			config = rand64();
-			break;
-		default:
-			config = rand64();
-			break;
-		}
+		/* Live ids enumerated once from /sys/kernel/tracing/events/...
+		 * by init_tracepoint_ids(); random_tracepoint_config() draws
+		 * from that pool ~7/8 of the time and falls back to the
+		 * legacy random/rand64 roll for novelty coverage. */
+		config = random_tracepoint_config();
 		break;
 	case PERF_TYPE_HW_CACHE:
 		config = random_cache_config();
