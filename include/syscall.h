@@ -695,6 +695,22 @@ struct syscalltable {
  * tail of redqueen_reexec_step() runs unchanged.
  */
 #define REEXEC_SANITISE_OK	(1<<13)
+/*
+ * EXPLICITLY_EXCLUDED: this entry was named in -x at parse time and the
+ * exclusion must outlive deactivate_disabled_syscalls(), which clears
+ * ACTIVE|TO_BE_DEACTIVATED off the entry once it has been removed from
+ * the active table.  syscall_nr_is_excluded() (tables.c) consults this
+ * bit at every trinity_raw_syscall(__NR_X) site to honor -x even when a
+ * targeting selector (-c / -r / -g) is also active -- under those modes
+ * a non-targeted entry is "inactive" because it was never enabled, so
+ * the old ACTIVE-bit inference treated unrelated syscalls as excluded
+ * (false positive) and the explicitly -x'd one as not (false negative,
+ * the bug this flag fixes -- see codex finding B).  Set in toggle_sys-
+ * call_n() / toggle_syscall_biarch_n() alongside TO_BE_DEACTIVATED, and
+ * never cleared -- the deactivate paths in tables-{uni,bi}arch.c mask
+ * only ACTIVE|TO_BE_DEACTIVATED so this bit survives.
+ */
+#define EXPLICITLY_EXCLUDED	(1<<14)
 
 struct kcov_child;
 struct childdata;
