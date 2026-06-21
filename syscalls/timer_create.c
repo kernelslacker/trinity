@@ -5,6 +5,7 @@
  */
 #include <signal.h>
 #include <stdint.h>
+#include <string.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <time.h>
@@ -73,6 +74,44 @@ int32_t get_random_timerid(void)
 	if (obj == NULL)
 		return (int32_t) (rnd_modulo_u32(32));
 	return obj->timeridobj.tid;
+}
+
+/*
+ * Sanitise-time fallback called from timer_settime sanitiser when the
+ * OBJ_TIMERID pool is empty (no timer_create has landed yet in this
+ * child).  Calls the real timer_create(2) directly to mint one fresh
+ * timer_t with SIGEV_NONE (no signal delivery, no thread spawn,
+ * cheapest disposition), registers it in the per-child OBJ_TIMERID
+ * pool so the per-child destructor will real-timer_delete() it on
+ * shutdown, and returns the new id for the caller to use as rec->a1.
+ * Without this, get_random_timerid()'s pool-empty fallback returns a
+ * random small int that almost never matches a kernel-allocated
+ * timer_t and short-circuits with -EINVAL inside
+ * posix_timer_get_by_id() before the k_itimer arm path runs.
+ */
+int32_t seed_timerid_if_empty(void)
+{
+	struct sigevent sev;
+	timer_t tid = (timer_t) 0;
+	intptr_t tid_int;
+
+	if (objects_pool_empty(OBJ_LOCAL, OBJ_TIMERID) == false)
+		return get_random_timerid();
+
+	memset(&sev, 0, sizeof(sev));
+	sev.sigev_notify = SIGEV_NONE;
+
+	if (timer_create(CLOCK_MONOTONIC, &sev, &tid) != 0)
+		return (int32_t) (rnd_modulo_u32(32));
+
+	tid_int = (intptr_t) tid;
+	if (tid_int < 0 || tid_int > 65535) {
+		(void) timer_delete(tid);
+		return (int32_t) (rnd_modulo_u32(32));
+	}
+
+	register_timerid((int32_t) tid_int);
+	return (int32_t) tid_int;
 }
 
 static int pick_signo_avoiding_sigint(void)
