@@ -26,6 +26,25 @@ struct timer_gettime_post_state {
 static void sanitise_timer_gettime(struct syscallrecord *rec)
 {
 	struct timer_gettime_post_state *snap;
+	int32_t tid;
+
+	/*
+	 * Precondition: timer_id (a1) must reference a kernel-allocated
+	 * k_itimer or timer_gettime short-circuits with -EINVAL inside
+	 * posix_timer_get_by_id() before the hrtimer remaining-time path
+	 * runs.  gen_arg_timerid returns a value from OBJ_TIMERID when the
+	 * pool has entries, otherwise a random small int from
+	 * get_random_timerid()'s pool-empty fallback that almost never
+	 * matches a live id.  Seed one inline so timer_gettime reaches the
+	 * productive kernel read path (hrtimer_get_remaining / per-clock
+	 * sample) on the very first call in the child.  This is a
+	 * non-destructive peek of the timer state, so sharing the pool with
+	 * other timer_t consumers is safe -- no destructor double-free risk
+	 * of the timer_delete shape.
+	 */
+	tid = seed_timerid_if_empty();
+	if (tid >= 0)
+		rec->a1 = (unsigned long) tid;
 
 	/*
 	 * Clear post_state up front so an early return below leaves the
