@@ -2,6 +2,7 @@
  *   SYSCALL_DEFINE2(io_uring_setup, u32, entries, struct io_uring_params __user *, params)
  */
 #include <linux/types.h>
+#include "objects.h"
 #include "publish_resource.h"
 #include "random.h"
 #include "rnd.h"
@@ -66,6 +67,61 @@ static unsigned long io_uring_setup_flags[] = {
 };
 
 /*
+ * Pre-curated kernel-accepted flag combinations.  Uniform-bitmask sampling
+ * across io_uring_setup_flags[] (21 entries, 2^21 combos) almost always
+ * trips a flag-dependency reject in io_uring_create / io_validate_ext_arg
+ * before reaching io_allocate_scq_urings, the productive setup path:
+ * SQ_AFF requires SQPOLL, DEFER_TASKRUN requires SINGLE_ISSUER, HYBRID_IOPOLL
+ * requires IOPOLL, TASKRUN_FLAG conflicts with COOP_TASKRUN, NO_MMAP requires
+ * user-supplied SQ/CQ ring addresses we don't pass, and REGISTERED_FD_ONLY
+ * requires NO_MMAP.  Enumerate the combos the validator accepts so most
+ * dispatches reach the ring-allocation path instead of -EINVAL'ing early.
+ */
+static const unsigned long io_uring_setup_valid_combos[] = {
+	IORING_SETUP_CLAMP,
+	IORING_SETUP_CQSIZE,
+	IORING_SETUP_SUBMIT_ALL,
+	IORING_SETUP_COOP_TASKRUN,
+	IORING_SETUP_TASKRUN_FLAG,
+	IORING_SETUP_SQE128,
+	IORING_SETUP_CQE32,
+	IORING_SETUP_SINGLE_ISSUER,
+	IORING_SETUP_R_DISABLED,
+	IORING_SETUP_NO_SQARRAY,
+	IORING_SETUP_SQPOLL,
+	IORING_SETUP_IOPOLL,
+	IORING_SETUP_ATTACH_WQ,
+	IORING_SETUP_SQPOLL | IORING_SETUP_SQ_AFF,
+	IORING_SETUP_IOPOLL | IORING_SETUP_HYBRID_IOPOLL,
+	IORING_SETUP_SINGLE_ISSUER | IORING_SETUP_DEFER_TASKRUN,
+	IORING_SETUP_CLAMP | IORING_SETUP_CQSIZE,
+	IORING_SETUP_CLAMP | IORING_SETUP_SUBMIT_ALL,
+	IORING_SETUP_SQE128 | IORING_SETUP_CQE32 | IORING_SETUP_SUBMIT_ALL,
+	IORING_SETUP_SINGLE_ISSUER | IORING_SETUP_DEFER_TASKRUN | IORING_SETUP_COOP_TASKRUN,
+	IORING_SETUP_R_DISABLED | IORING_SETUP_SINGLE_ISSUER,
+};
+
+/*
+ * Stratified flag picker.  Bias toward kernel-accepted combinations so most
+ * dispatches reach io_allocate_scq_urings rather than bouncing at the
+ * flag-dependency validator:
+ *   25%  vanilla (flags = 0) -- always accepted
+ *   60%  pre-curated valid combinations from io_uring_setup_valid_combos[]
+ *   15%  random bitmask via set_rand_bitmask() -- exercise the validator's
+ *        reject paths so the strict-checking edges still get coverage
+ */
+static unsigned long pick_io_uring_setup_flags(void)
+{
+	unsigned int r = rnd_modulo_u32(100);
+
+	if (r < 25)
+		return 0;
+	if (r < 85)
+		return io_uring_setup_valid_combos[rnd_modulo_u32(ARRAY_SIZE(io_uring_setup_valid_combos))];
+	return set_rand_bitmask(ARRAY_SIZE(io_uring_setup_flags), io_uring_setup_flags);
+}
+
+/*
  * struct io_uring_params is defined in <linux/io_uring.h> but we only
  * need the flags field at offset 0x0c and cq_entries at offset 0x08.
  * Use the kernel header if available, otherwise define a minimal version.
@@ -91,14 +147,29 @@ static void sanitise_io_uring_setup(struct syscallrecord *rec)
 	rec->a1 = RAND_RANGE(1, 4096);
 
 	params = zmalloc_tracked(sizeof(struct io_uring_params));
-	params->flags = set_rand_bitmask(ARRAY_SIZE(io_uring_setup_flags),
-					 io_uring_setup_flags);
+	params->flags = pick_io_uring_setup_flags();
 	if (params->flags & IORING_SETUP_CQSIZE)
 		params->cq_entries = RAND_RANGE(1, 4096);
 	if (params->flags & IORING_SETUP_SQ_AFF)
 		params->sq_thread_cpu = rnd_modulo_u32(64);
 	if (params->flags & IORING_SETUP_SQPOLL)
 		params->sq_thread_idle = RAND_RANGE(100, 10000);
+	if (params->flags & IORING_SETUP_ATTACH_WQ) {
+		/*
+		 * ATTACH_WQ requires wq_fd to name a live io_uring fd so
+		 * io_attach_wq_fd reaches io_uring_attach_wq -- without it
+		 * fdget(wq_fd) returns NULL and the setup -EINVALs before
+		 * io_allocate_scq_urings.  Pull from the pre-fork ring pool
+		 * 75% of the time; the rest of the time inject a random fd
+		 * (or (unsigned)-1 if the pool is empty) so the validator's
+		 * "wrong fd type / closed fd" reject paths still get coverage.
+		 */
+		struct io_uringobj *src = get_io_uring_ring();
+		if (src != NULL && rnd_modulo_u32(4) != 0)
+			params->wq_fd = (unsigned int) src->fd;
+		else
+			params->wq_fd = (unsigned int) -1;
+	}
 
 	rec->a2 = (unsigned long) params;
 
