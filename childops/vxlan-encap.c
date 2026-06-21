@@ -399,9 +399,18 @@ static int vxlan_encap_iter_setup_netns(struct childdata *child)
 
 	if (unshare(CLONE_NEWNET) < 0) {
 		ns_setup_failed = true;
-		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-				 CHILDOP_LATCH_NS_UNSUPPORTED,
-				 __ATOMIC_RELAXED);
+		/* child->op_type lives in shared memory and can be scribbled
+		 * by a poisoned-arena write from a sibling; bounds-check the
+		 * snapshot before indexing the NR_CHILD_OP_TYPES-sized stats
+		 * arrays, same pattern the child.c dispatch loop uses for
+		 * the unguarded write that motivated this guard. */
+		{
+			const enum child_op_type op = child->op_type;
+			if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
+		}
 		__atomic_add_fetch(&shm->stats.vxlan_encap_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return -1;
@@ -508,9 +517,19 @@ static int vxlan_encap_iter_build_link(struct vxlan_encap_iter_ctx *ctx)
 		if (rc == -EAFNOSUPPORT || rc == -EOPNOTSUPP ||
 		    rc == -ENOTSUP || rc == -ENOENT || rc == -EPROTONOSUPPORT) {
 			*kind_latch(ctx->kind) = true;
-			__atomic_store_n(&shm->stats.childop_latch_reason[ctx->child->op_type],
-					 CHILDOP_LATCH_NS_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			/* ctx->child->op_type lives in shared memory and can be
+			 * scribbled by a poisoned-arena write from a sibling;
+			 * bounds-check the snapshot before indexing the
+			 * NR_CHILD_OP_TYPES-sized stats array, same pattern the
+			 * child.c dispatch loop uses for the unguarded write
+			 * that motivated this guard. */
+			{
+				const enum child_op_type op = ctx->child->op_type;
+				if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+					__atomic_store_n(&shm->stats.childop_latch_reason[op],
+							 CHILDOP_LATCH_NS_UNSUPPORTED,
+							 __ATOMIC_RELAXED);
+			}
 		}
 		return -1;
 	}
@@ -651,10 +670,21 @@ bool vxlan_encap_churn(struct childdata *child)
 
 	if (vxlan_encap_iter_open_ctx(&ctx) == 0 &&
 	    vxlan_encap_iter_build_link(&ctx) == 0) {
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-				   1, __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-				   1, __ATOMIC_RELAXED);
+		/* Snapshot child->op_type once and bounds-check before
+		 * indexing the per-op stats arrays.  The field lives in
+		 * shared memory and can be scribbled by a poisoned-arena
+		 * write from a sibling; the child.c dispatch loop already
+		 * gates its dispatch + alt-op accounting on the same
+		 * valid_op snapshot. */
+		const enum child_op_type op = child->op_type;
+		const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+					   1, __ATOMIC_RELAXED);
+		if (valid_op)
+			__atomic_add_fetch(&shm->stats.childop_data_path[op],
+					   1, __ATOMIC_RELAXED);
 		vxlan_encap_iter_send_burst(&ctx);
 	}
 
