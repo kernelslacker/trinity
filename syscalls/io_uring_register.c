@@ -1213,7 +1213,7 @@ static void post_io_uring_register(struct syscallrecord *rec)
 {
 	struct io_uring_register_post_state *snap;
 	unsigned long ret = rec->retval;
-	unsigned long a4 = rec->a4;
+	unsigned long a4 = get_arg_snapshot(rec, 4);
 
 	rec->a3 = 0;
 
@@ -1304,4 +1304,16 @@ struct syscallentry syscall_io_uring_register = {
 	.flags = NEED_ALARM | KCOV_REMOTE_HEAVY,
 	.sanitise = sanitise_io_uring_register,
 	.post = post_io_uring_register,
+	/* a4 (nr_args) is the upper bound the post oracle compares retval
+	 * against for IORING_REGISTER_RING_FDS / IORING_UNREGISTER_RING_FDS
+	 * ("rejected count retval=... > nr_args=...").  The opcode itself
+	 * is already snapshot-protected via the io_uring_register_post_state
+	 * magic-cookie record, but the count operand a4 was left on the
+	 * live cross-child shm slot -- a sibling stomp landing between the
+	 * syscall returning and the post handler running could swing the
+	 * bound and either spuriously flag a legitimate retval as a corrupt
+	 * pointer or mask a real out-of-range return.  Shadow a4 so
+	 * get_arg_snapshot(rec, 4) bumps arg_shadow_stomp on mismatch and
+	 * the oracle validates against the count the kernel actually saw. */
+	.arg_snapshot_mask = (1u << 3),
 };
