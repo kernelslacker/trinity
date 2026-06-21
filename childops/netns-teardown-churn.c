@@ -466,6 +466,15 @@ static int netns_teardown_iter_fork_child(struct netns_teardown_iter_ctx *it)
  */
 static int netns_teardown_iter_parent_setns_back(struct netns_teardown_iter_ctx *it)
 {
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats array.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the stats
+	 * write entirely when the snapshot is out of range. */
+	const enum child_op_type op = it->child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	if (setns(it->nsfd, CLONE_NEWNET) < 0) {
 		/* setns failure leaves us stuck in the doomed ns.  Best
 		 * effort: kill the child to release one ref so the
@@ -474,9 +483,10 @@ static int netns_teardown_iter_parent_setns_back(struct netns_teardown_iter_ctx 
 		 * subsequent invocation will re-enter the same broken
 		 * state, so latch off. */
 		ns_unsupported_netns_teardown = true;
-		__atomic_store_n(&shm->stats.childop_latch_reason[it->child->op_type],
-				 CHILDOP_LATCH_NS_UNSUPPORTED,
-				 __ATOMIC_RELAXED);
+		if (valid_op)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 		(void)kill(it->pid, SIGKILL);
 		reap_inflight_child(it->pid);
 		__atomic_add_fetch(&shm->stats.netns_teardown_setup_failed,
@@ -533,6 +543,11 @@ static void netns_teardown_iter_drive_teardown(struct netns_teardown_iter_ctx *i
  */
 static void netns_teardown_iter_recover(struct netns_teardown_iter_ctx *it)
 {
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats array.  See setns_back for the rationale. */
+	const enum child_op_type op = it->child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	__atomic_add_fetch(&shm->stats.netns_teardown_setup_failed,
 			   1, __ATOMIC_RELAXED);
 	if (it->s_accept >= 0) (void)close(it->s_accept);
@@ -541,9 +556,10 @@ static void netns_teardown_iter_recover(struct netns_teardown_iter_ctx *it)
 	if (it->nsfd >= 0) {
 		if (setns(it->nsfd, CLONE_NEWNET) < 0) {
 			ns_unsupported_netns_teardown = true;
-			__atomic_store_n(&shm->stats.childop_latch_reason[it->child->op_type],
-					 CHILDOP_LATCH_NS_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			if (valid_op)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 		}
 		(void)close(it->nsfd);
 	}
@@ -562,6 +578,10 @@ static void iter_one(struct childdata *child)
 		.pid = -1,
 		.child = child,
 	};
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  See setns_back for the rationale. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	if (netns_teardown_iter_setup_ns(&it) != 0)
 		return;
@@ -574,11 +594,13 @@ static void iter_one(struct childdata *child)
 
 	if (netns_teardown_iter_parent_setns_back(&it) != 0)
 		return;
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
 
-	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
 	netns_teardown_iter_drive_teardown(&it);
 	return;
 
@@ -595,23 +617,29 @@ recover:
 static void probe_netns(struct childdata *child)
 {
 	int probe_fd;
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats array.  See setns_back for the rationale. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	netns_teardown_probed = true;
 
 	probe_fd = open("/proc/self/ns/net", O_RDONLY | O_CLOEXEC);
 	if (probe_fd < 0) {
 		ns_unsupported_netns_teardown = true;
-		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-				 CHILDOP_LATCH_NS_UNSUPPORTED,
-				 __ATOMIC_RELAXED);
+		if (valid_op)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 		return;
 	}
 
 	if (unshare(CLONE_NEWNET) < 0) {
 		ns_unsupported_netns_teardown = true;
-		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-				 CHILDOP_LATCH_NS_UNSUPPORTED,
-				 __ATOMIC_RELAXED);
+		if (valid_op)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 		(void)close(probe_fd);
 		return;
 	}
@@ -621,9 +649,10 @@ static void probe_netns(struct childdata *child)
 		 * invocations short-circuit, and accept that this
 		 * trinity child will run in a private ns from now on. */
 		ns_unsupported_netns_teardown = true;
-		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-				 CHILDOP_LATCH_NS_UNSUPPORTED,
-				 __ATOMIC_RELAXED);
+		if (valid_op)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 	}
 	(void)close(probe_fd);
 }
