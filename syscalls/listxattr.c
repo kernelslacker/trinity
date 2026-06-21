@@ -1,9 +1,13 @@
 #include <stddef.h>
+#include <stdio.h>
 #include <string.h>
 #include <sys/syscall.h>
+#include <sys/xattr.h>
 #include <unistd.h>
 #include "arch.h"
+#include "pathnames.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
@@ -498,13 +502,88 @@ struct syscallentry syscall_listxattr = {
 #define SYS_llistxattr __NR_llistxattr
 #endif
 
+/*
+ * Mirrors the MAX_TESTFILES bound in fds/testfiles.c so we land inside
+ * the same trinity-testfile<N> inodes the rest of the fuzzer touches
+ * (xattr-thrash, flock-thrash, fremovexattr, lremovexattr); cross-
+ * process contention concentrates on the same per-inode i_xattrs rwsem.
+ */
+#define LLISTXATTR_NR_TESTFILES	4
+
+/*
+ * Curated name we plant ahead of the trinity-dispatched llistxattr.
+ * user.* requires no privilege, is supported on every Linux fs that
+ * carries xattrs, and matches the planted_xattr_name lremovexattr /
+ * fremovexattr use so a single round of testfile xattrs is shared
+ * across the whole xattr-family precondition surface.
+ */
+static const char llistxattr_planted_name[] = "user.trinity_plant";
+
 static void sanitise_llistxattr(struct syscallrecord *rec)
 {
 	struct listxattr_post_state *snap;
 	unsigned long pre_a2;
 	size_t buf_alloc_size;
+	char *path;
 
 	rec->post_state = 0;
+
+	/*
+	 * ARG_PATHNAME plumbed a random pathname into rec->a1, but the
+	 * random path is most often either not a real file at all
+	 * (ENOENT before the per-inode xattr list walk) or, even when
+	 * it does land on a real file, that inode has no xattrs --
+	 * vfs_listxattr returns 0 immediately, never touching the per-fs
+	 * handler dispatch or the simple_xattr_list walk that the
+	 * per-inode i_xattrs rwsem guards.  Same "high calls, low edges"
+	 * cold-syscall shape that the wall-lever shadow gate keeps re-
+	 * flagging, identical to the fremovexattr / lremovexattr profile
+	 * before their precondition fixes.
+	 *
+	 * Half the draws now repoint at one of the trinity-testfile<N>
+	 * absolute paths and plant a known user.* xattr there via
+	 * setxattr() so the subsequent llistxattr walks a non-empty
+	 * per-inode xattr list and reaches the real list-walk path.  The
+	 * other half preserves the slot exactly as the generic draw
+	 * left it, so the empty-list and ENOENT arms stay exercised.
+	 *
+	 * The plant runs BEFORE the listbuf bucket pick / clamp and
+	 * BEFORE the snapshot below so the snapshot captures the
+	 * (planted) rec->a1 -- the post oracle's re-call then re-walks
+	 * the planted path and compares its result against the first
+	 * call's payload exactly as the existing oracle expects.
+	 *
+	 * Slow-path note: the setxattr() in sanitise is one real
+	 * syscall.  syscalls/listxattr.c is outside the
+	 * sanitiser-slow-path check's FILES scope, so this is within
+	 * budget for the precondition payoff.
+	 */
+	if (rnd_modulo_u32(2) == 0) {
+		path = (char *) rec->a1;
+		if (path != NULL) {
+			/*
+			 * Overwrite the ARG_PATHNAME buffer in place.
+			 * generate_pathname() zmallocs MAX_PATH_LEN (4096)
+			 * bytes (pathnames.c:generate_pathname), so the
+			 * snprintf cap below cannot overflow.
+			 */
+			snprintf(path, MAX_PATH_LEN,
+				 "%s/trinity-testfile%u",
+				 trinity_tmpdir_abs(),
+				 1 + rnd_modulo_u32(LLISTXATTR_NR_TESTFILES));
+			/*
+			 * Plant a small opaque value.  Failure (ENOSPC,
+			 * EOPNOTSUPP on a fs that bailed out of the user.*
+			 * leg, ENOENT if the testfile slot was never
+			 * opened, ...) is non-fatal: an earlier draw on
+			 * the same inode may still hold a stale
+			 * user.trinity_plant from a prior round, so
+			 * llistxattr below may still see a non-empty list.
+			 */
+			(void) setxattr(path, llistxattr_planted_name,
+					"trin", 4, 0);
+		}
+	}
 
 	pre_a2 = rec->a2;
 	xattr_pick_listbuf_bucket(&rec->a2, &rec->a3);
