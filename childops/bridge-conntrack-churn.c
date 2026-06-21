@@ -564,14 +564,24 @@ static int bridge_conntrack_iter_bridge_create(struct bridge_conntrack_iter_ctx 
 {
 	int rc;
 
+	/* Snapshot ctx->child->op_type once and bounds-check before
+	 * indexing the per-op latch slot.  The field lives in shared
+	 * memory and can be scribbled by a poisoned-arena write from a
+	 * sibling; the child.c dispatch loop already gates its dispatch
+	 * + alt-op accounting on the same valid_op snapshot.  Skip the
+	 * latch store entirely when the snapshot is out of range. */
+	const enum child_op_type op = ctx->child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	rc = rtnl_create_bridge(&ctx->rtnl, ctx->br_name);
 	if (rc != 0) {
 		if (rc == -EAFNOSUPPORT || rc == -EOPNOTSUPP ||
 		    rc == -ENOTSUP || rc == -EPROTONOSUPPORT) {
 			ns_unsupported_bridge = true;
-			__atomic_store_n(&shm->stats.childop_latch_reason[ctx->child->op_type],
-					 CHILDOP_LATCH_NS_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			if (valid_op)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 		}
 		return -1;
 	}
@@ -629,15 +639,25 @@ static int bridge_conntrack_iter_nft_setup(struct bridge_conntrack_iter_ctx *ctx
 	};
 	int rc;
 
+	/* Snapshot ctx->child->op_type once and bounds-check before
+	 * indexing the per-op latch slot.  The field lives in shared
+	 * memory and can be scribbled by a poisoned-arena write from a
+	 * sibling; the child.c dispatch loop already gates its dispatch
+	 * + alt-op accounting on the same valid_op snapshot.  Skip the
+	 * latch store entirely when the snapshot is out of range. */
+	const enum child_op_type op = ctx->child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	if (nfnl_open(&ctx->nfnl_nft, &nfnl_opts) < 0)
 		return -1;
 	rc = nft_install_bridge_ct(&ctx->nfnl_nft, "br_ct", "in");
 	if (rc == -EAFNOSUPPORT || rc == -EPROTONOSUPPORT ||
 	    rc == -EOPNOTSUPP || rc == -ENOTSUP) {
 		ns_unsupported_nf_tables = true;
-		__atomic_store_n(&shm->stats.childop_latch_reason[ctx->child->op_type],
-				 CHILDOP_LATCH_NS_UNSUPPORTED,
-				 __ATOMIC_RELAXED);
+		if (valid_op)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 	}
 	return 0;
 }
@@ -660,6 +680,15 @@ static void bridge_conntrack_iter_traffic_burst(struct bridge_conntrack_iter_ctx
 	};
 	unsigned int iters, i;
 	int rc;
+
+	/* Snapshot ctx->child->op_type once and bounds-check before
+	 * indexing the per-op latch slot.  The field lives in shared
+	 * memory and can be scribbled by a poisoned-arena write from a
+	 * sibling; the child.c dispatch loop already gates its dispatch
+	 * + alt-op accounting on the same valid_op snapshot.  Skip the
+	 * latch store entirely when the snapshot is out of range. */
+	const enum child_op_type op = ctx->child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	ctx->raw = socket(AF_PACKET, SOCK_RAW | SOCK_CLOEXEC, htons(ETH_P_ALL));
 	if (ctx->raw >= 0) {
@@ -703,9 +732,10 @@ static void bridge_conntrack_iter_traffic_burst(struct bridge_conntrack_iter_ctx
 			if (rc == -EAFNOSUPPORT || rc == -EPROTONOSUPPORT ||
 			    rc == -EOPNOTSUPP || rc == -ENOTSUP) {
 				ns_unsupported_ctnetlink = true;
-				__atomic_store_n(&shm->stats.childop_latch_reason[ctx->child->op_type],
-						 CHILDOP_LATCH_NS_UNSUPPORTED,
-						 __ATOMIC_RELAXED);
+				if (valid_op)
+					__atomic_store_n(&shm->stats.childop_latch_reason[op],
+							 CHILDOP_LATCH_NS_UNSUPPORTED,
+							 __ATOMIC_RELAXED);
 				break;
 			}
 			__atomic_add_fetch(&shm->stats.bridge_ct_flushes,
@@ -769,6 +799,15 @@ static int bridge_conntrack_churn_in_ns(void *arg)
 		.child    = child,
 	};
 
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the stats
+	 * writes entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	if (bridge_conntrack_iter_setup_names(&ctx) != 0)
 		goto out;
 
@@ -780,11 +819,13 @@ static int bridge_conntrack_churn_in_ns(void *arg)
 
 	if (bridge_conntrack_iter_nft_setup(&ctx) != 0)
 		goto out;
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
 
-	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
 	bridge_conntrack_iter_traffic_burst(&ctx);
 
 out:
@@ -796,6 +837,15 @@ bool bridge_conntrack_churn(struct childdata *child)
 {
 	struct bridge_conntrack_churn_ctx cctx = { .child = child };
 	int rc;
+
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op latch slot.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the latch
+	 * store entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	__atomic_add_fetch(&shm->stats.bridge_ct_runs, 1, __ATOMIC_RELAXED);
 
@@ -809,9 +859,10 @@ bool bridge_conntrack_churn(struct childdata *child)
 	rc = userns_run_in_ns(CLONE_NEWNET, bridge_conntrack_churn_in_ns, &cctx);
 	if (rc == -EPERM) {
 		ns_unsupported = true;
-		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-				 CHILDOP_LATCH_NS_UNSUPPORTED,
-				 __ATOMIC_RELAXED);
+		if (valid_op)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 		return true;
 	}
 	if (rc < 0) {
