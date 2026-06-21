@@ -426,9 +426,19 @@ static int iouring_send_zc_iter_setup(struct iouring_send_zc_iter_ctx *it)
 			 * will. */
 			if (st == IOUR_UNSUPPORTED) {
 				ns_unsupported_iouring_send_zc_churn = true;
-				__atomic_store_n(&shm->stats.childop_latch_reason[it->child->op_type],
-						 CHILDOP_LATCH_UNSUPPORTED,
-						 __ATOMIC_RELAXED);
+				/* it->child->op_type lives in shared memory
+				 * and can be scribbled by a poisoned-arena
+				 * write from a sibling; bounds-check the
+				 * snapshot before indexing the
+				 * NR_CHILD_OP_TYPES-sized stats array, same
+				 * pattern as 825305aed33d. */
+				{
+					const enum child_op_type op = it->child->op_type;
+					if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+						__atomic_store_n(&shm->stats.childop_latch_reason[op],
+								 CHILDOP_LATCH_UNSUPPORTED,
+								 __ATOMIC_RELAXED);
+				}
 			}
 			__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_setup_failed,
 					   1, __ATOMIC_RELAXED);
@@ -488,9 +498,18 @@ static int iouring_send_zc_iter_socket(struct iouring_send_zc_iter_ctx *it)
 		if (errno == EOPNOTSUPP || errno == ENOPROTOOPT ||
 		    errno == EPERM) {
 			ns_unsupported_iouring_send_zc_churn = true;
-			__atomic_store_n(&shm->stats.childop_latch_reason[it->child->op_type],
-					 CHILDOP_LATCH_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			/* it->child->op_type lives in shared memory and
+			 * can be scribbled by a poisoned-arena write from
+			 * a sibling; bounds-check the snapshot before
+			 * indexing the NR_CHILD_OP_TYPES-sized stats array,
+			 * same pattern as 825305aed33d. */
+			{
+				const enum child_op_type op = it->child->op_type;
+				if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+					__atomic_store_n(&shm->stats.childop_latch_reason[op],
+							 CHILDOP_LATCH_UNSUPPORTED,
+							 __ATOMIC_RELAXED);
+			}
 		}
 		__atomic_add_fetch(&shm->stats.iouring_send_zc_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
@@ -649,11 +668,23 @@ static void iter_one(const struct timespec *t_outer, struct childdata *child)
 
 	if (iouring_send_zc_iter_socket(&it) != 0)
 		goto out;
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
 
-	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling, same
+	 * pattern as 825305aed33d. */
+	{
+		const enum child_op_type op = child->op_type;
+		const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
+		if (valid_op)
+			__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+					   1, __ATOMIC_RELAXED);
+
+		if (valid_op)
+			__atomic_add_fetch(&shm->stats.childop_data_path[op],
+					   1, __ATOMIC_RELAXED);
+	}
 	iouring_send_zc_iter_submit(&it);
 
 	if ((unsigned long long)ns_since(t_outer) >= ZC_WALL_CAP_NS)
