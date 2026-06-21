@@ -67,6 +67,35 @@ unsigned long get_random_aio_ctx(void)
 }
 
 /*
+ * Sanitise-time fallback called from io_submit/io_getevents/io_pgetevents
+ * sanitisers when the OBJ_AIO_CTX pool is empty (no io_setup has landed
+ * yet in this child).  Calls the real io_setup(2) directly to mint one
+ * fresh aio_context_t, registers it in the per-child pool so the per-child
+ * destructor will real-io_destroy() it on shutdown, and returns the new
+ * ctx for the caller to use as rec->a1.  Without this, every io_submit /
+ * io_getevents / io_pgetevents call before the fuzzer happens to pick
+ * io_setup gets ctx=0 (or, 1/8 of the time, a raw rand64) and short-
+ * circuits with -EINVAL inside the kernel's lookup_ioctx() -- never
+ * reaching the kernel's iocb import path or the per-ring event-queue
+ * drain path the syscall is supposed to exercise.
+ */
+unsigned long seed_aio_ctx_if_empty(void)
+{
+	aio_context_t ctx = 0;
+
+	if (objects_pool_empty(OBJ_LOCAL, OBJ_AIO_CTX) == false)
+		return get_random_aio_ctx();
+
+	if (syscall(SYS_io_setup, 32, &ctx) != 0)
+		return 0;
+	if (ctx == 0)
+		return 0;
+
+	register_aio_ctx((unsigned long) ctx);
+	return (unsigned long) ctx;
+}
+
+/*
  * Snapshot for the post handler.  Mirrors the pipe/socketpair shape:
  *
  *   1. The snap struct carries a magic cookie that the post handler
