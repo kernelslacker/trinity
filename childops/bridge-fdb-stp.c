@@ -14,10 +14,20 @@
  * net/bridge/br_fdb.c and net/bridge/br_stp_*.c stay cold.
  *
  * Sequence (per invocation):
- *   1. unshare(CLONE_NEWNET) once per child into a private net
- *      namespace so no host bridge / fdb table is touched.  Failure
- *      latches the whole op off.
- *   2. Bring lo up inside the netns (one-time).
+ *   1. Enter a private net namespace via userns_run_in_ns(): a
+ *      transient grandchild fork installs an identity user namespace
+ *      plus a fresh CLONE_NEWNET, runs the body below, and _exit()s
+ *      so the kernel reaps every bridge, veth pair, fdb entry,
+ *      AF_PACKET socket and sysfs handle with the grandchild's
+ *      netns.  The persistent fuzz child never touches its own
+ *      credentials or namespace stack, so the cap-drop oracle keeps
+ *      observing the host credential profile.  Helper -EPERM
+ *      (hardened userns policy refused CLONE_NEWUSER) latches the
+ *      childop off for the remainder of this child's lifetime;
+ *      -EAGAIN (transient setup failure: fork, id-map write,
+ *      secondary unshare) skips the iteration without latching.
+ *   2. Bring lo up inside the grandchild's netns (one-time per
+ *      grandchild).
  *   3. RTM_NEWLINK type=bridge to create a bridge dev.  Failure of
  *      this first NEWLINK latches ns_unsupported_bridge — a kernel
  *      without CONFIG_BRIDGE pays the EOPNOTSUPP once.
@@ -107,6 +117,7 @@
 #include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
+#include "userns-bootstrap.h"
 
 /* if_bridge.h on stripped sysroots may not have BRIDGE_FLAGS_* / the
  * IFLA_BRIDGE_* enum.  These IDs are stable in the UAPI; redefine the
@@ -227,8 +238,15 @@ static bool ns_unsupported_bridge;
 static bool ns_unsupported_veth;
 static bool ns_unsupported_sysfs_stp;
 
-static bool ns_unshared;
-static bool ns_setup_failed;
+/* Latched per-child: userns_run_in_ns() reported -EPERM, meaning the
+ * grandchild's unshare(CLONE_NEWUSER) was refused by a hardened policy
+ * (user.max_user_namespaces=0 or kernel.unprivileged_userns_clone=0).
+ * Without a private netns we MUST NOT touch the host's main bridge /
+ * fdb / veth tables, so the op stays disabled for the remainder of
+ * this child's lifetime.  Transient setup failures (helper return
+ * -EAGAIN) do not set this — they may not recur on the next
+ * iteration. */
+static bool ns_unsupported;
 static bool lo_brought_up;
 
 /* Per-invocation state shared across the extracted phase helpers.  Fd
@@ -980,8 +998,26 @@ static void bridge_fdb_stp_iter_teardown(struct bridge_fdb_stp_iter_ctx *ctx)
 	}
 }
 
-bool bridge_fdb_stp(struct childdata *child)
+/*
+ * Per-invocation state handed to the in-ns callback so it can keep
+ * accounting against the right childop slot.
+ */
+struct bridge_fdb_stp_ctx {
+	struct childdata *child;
+};
+
+/*
+ * Per-invocation body that must run inside the private net namespace.
+ * Executed in a transient grandchild forked by userns_run_in_ns(); the
+ * grandchild's userns + netns are torn down on _exit() so any bridges,
+ * veth pairs, fdb entries, sockets and sysfs handles left behind are
+ * reaped by the kernel along with the namespace.  Return value is
+ * ignored by the helper.
+ */
+static int bridge_fdb_stp_in_ns(void *arg)
 {
+	struct bridge_fdb_stp_ctx *cctx = (struct bridge_fdb_stp_ctx *)arg;
+	struct childdata *child = cctx->child;
 	struct bridge_fdb_stp_iter_ctx ictx = {
 		.ctx = { .fd = -1 },
 		.raw = -1,
@@ -991,26 +1027,10 @@ bool bridge_fdb_stp(struct childdata *child)
 		.recv_timeo_s = 1,
 	};
 
-	__atomic_add_fetch(&shm->stats.bridge_fdb_stp_runs, 1,
-			   __ATOMIC_RELAXED);
-
-	if (ns_setup_failed || ns_unsupported_bridge)
-		return true;
-
-	if (!ns_unshared) {
-		if (unshare(CLONE_NEWNET) < 0) {
-			ns_setup_failed = true;
-			__atomic_add_fetch(&shm->stats.bridge_fdb_stp_setup_failed,
-					   1, __ATOMIC_RELAXED);
-			return true;
-		}
-		ns_unshared = true;
-	}
-
 	if (nl_open(&ictx.ctx, &nl_opts) < 0) {
 		__atomic_add_fetch(&shm->stats.bridge_fdb_stp_setup_failed,
 				   1, __ATOMIC_RELAXED);
-		return true;
+		return 0;
 	}
 
 	if (!lo_brought_up) {
@@ -1024,7 +1044,7 @@ bool bridge_fdb_stp(struct childdata *child)
 	if (ONE_IN(8)) {
 		bridge_vlan_mass_add(&ictx.ctx);
 		nl_close(&ictx.ctx);
-		return true;
+		return 0;
 	}
 
 	bridge_fdb_stp_iter_setup_names(&ictx);
@@ -1043,5 +1063,38 @@ bool bridge_fdb_stp(struct childdata *child)
 
 out:
 	bridge_fdb_stp_iter_teardown(&ictx);
+	return 0;
+}
+
+bool bridge_fdb_stp(struct childdata *child)
+{
+	struct bridge_fdb_stp_ctx cctx = { .child = child };
+	int rc;
+
+	__atomic_add_fetch(&shm->stats.bridge_fdb_stp_runs, 1,
+			   __ATOMIC_RELAXED);
+
+	if (ns_unsupported || ns_unsupported_bridge)
+		return true;
+
+	rc = userns_run_in_ns(CLONE_NEWNET, bridge_fdb_stp_in_ns, &cctx);
+	if (rc == -EPERM) {
+		ns_unsupported = true;
+		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+				 CHILDOP_LATCH_NS_UNSUPPORTED,
+				 __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.bridge_fdb_stp_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return true;
+	}
+	if (rc < 0) {
+		/* Transient grandchild setup failure (fork, id-map write,
+		 * secondary unshare).  Skip this iteration without latching
+		 * -- the failure is not policy and may not recur. */
+		__atomic_add_fetch(&shm->stats.bridge_fdb_stp_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return true;
+	}
+
 	return true;
 }
