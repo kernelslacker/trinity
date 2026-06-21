@@ -30,7 +30,7 @@
  * target_ns_flags: zero or more CLONE_NEW* flags to be passed to a
  * second unshare() call after the userns is up.  Zero is accepted and
  * means "userns only".  Any flags rejected by the kernel collapse the
- * call to a transient setup failure (return -1).
+ * call to a transient setup failure (return -EAGAIN).
  *
  * fn / arg: the callback runs once inside the namespace stack.  Its
  * return value is ignored -- the caller already knows what work it
@@ -47,7 +47,7 @@
  *           kernel.unprivileged_userns_clone=0).  The caller should
  *           latch CHILDOP_LATCH_NS_UNSUPPORTED and stop retrying for
  *           the lifetime of the trinity child.
- *   -1      transient setup failure -- fork() failed, an id-map or
+ *   -EAGAIN transient setup failure -- fork() failed, an id-map or
  *           setgroups write failed, the secondary unshare() failed,
  *           or the grandchild died unexpectedly.  Caller should skip
  *           this iteration but must NOT latch; the failure is not
