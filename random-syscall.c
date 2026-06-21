@@ -2628,6 +2628,28 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 				unsigned int pending_idx;
 				struct reexec_pending p;
 
+				/* Per-call cap C-1 wastage accounting
+				 * (PHASE 0 measurement): bump the unused-
+				 * entry counter by (count - 1) BEFORE the
+				 * pick fires.  The single pick that follows
+				 * drains exactly ONE entry, and the per-call
+				 * scratch reset at the end of dispatch_step
+				 * discards the other (count - 1) entries
+				 * the producer staged.  In FIRST pick mode
+				 * those discarded entries all sit at indices
+				 * >= 1 -- the trace-order bias guarantees
+				 * they could never have been chosen for this
+				 * parent call.  count > 0 is guaranteed by
+				 * the reexec_pending_count == 0 short-
+				 * circuit one gate above, so count - 1 does
+				 * not underflow. */
+				if (kcov_shm != NULL &&
+				    child->reexec_pending_count > 1)
+					__atomic_fetch_add(
+						&kcov_shm->reexec_pending_drain_unused,
+						(unsigned long)(child->reexec_pending_count - 1),
+						__ATOMIC_RELAXED);
+
 				if (redqueen_pending_pick_mode_arg ==
 				    REDQUEEN_PENDING_PICK_RANDOM)
 					pending_idx = rnd_modulo_u32(
@@ -3058,6 +3080,14 @@ static bool redqueen_reexec_step(struct childdata *child,
 		if (kcov_shm != NULL && inner_new_cmp > 0) {
 			unsigned int op_type = (unsigned int)child->op_type;
 
+			/* Discrete count of attempts that produced novelty
+			 * (PHASE 0 measurement).  Sibling of reexec_attempts
+			 * (the denominator) and reexec_new_cmps_total (the
+			 * SUM of inner_new_cmp).  The existing sum / attempts
+			 * pair conflates hit-rate with mean-novelty-per-win;
+			 * this discrete bump splits them. */
+			__atomic_fetch_add(&kcov_shm->reexec_attempts_with_new_cmp,
+					   1UL, __ATOMIC_RELAXED);
 			__atomic_fetch_add(&kcov_shm->reexec_new_cmps_total,
 					   inner_new_cmp, __ATOMIC_RELAXED);
 			if (rec->nr < MAX_NR_SYSCALL)

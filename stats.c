@@ -5042,6 +5042,7 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	static unsigned long prev_canary_pre;
 	static unsigned long prev_canary_post;
 	static unsigned long prev_reexec_attempts;
+	static unsigned long prev_reexec_attempts_with_new_cmp;
 	static unsigned long prev_reexec_attribution_found;
 	static unsigned long prev_reexec_attribution_ambiguous;
 	static unsigned long prev_reexec_attribution_width_match;
@@ -5050,6 +5051,7 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	static unsigned long prev_reexec_skipped_validate_silent;
 	static unsigned long prev_reexec_window_cap_hit;
 	static unsigned long prev_reexec_pending_dropped;
+	static unsigned long prev_reexec_pending_drain_unused;
 	static unsigned long prev_cmp_parent_calls_enabled;
 	static unsigned long prev_cmp_parent_calls_control;
 	static unsigned long prev_cmp_parent_new_cmps_enabled;
@@ -5083,11 +5085,13 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	unsigned long cur_chaos_suppressed;
 	unsigned long cur_count_oob, cur_canary_lock_post, cur_canary_pre, cur_canary_post;
 	unsigned long cur_reexec_attempts, cur_reexec_attribution_found;
+	unsigned long cur_reexec_attempts_with_new_cmp;
 	unsigned long cur_reexec_attribution_ambiguous, cur_reexec_new_cmps_total;
 	unsigned long cur_reexec_attribution_width_match;
 	unsigned long cur_reexec_skipped_destructive, cur_reexec_skipped_validate_silent;
 	unsigned long cur_reexec_window_cap_hit;
 	unsigned long cur_reexec_pending_dropped;
+	unsigned long cur_reexec_pending_drain_unused;
 	unsigned long cur_cmp_parent_calls_enabled, cur_cmp_parent_calls_control;
 	unsigned long cur_cmp_parent_new_cmps_enabled, cur_cmp_parent_new_cmps_control;
 	unsigned long cur_cmp_hint_callsite[CMP_HINT_CALLSITE_NR];
@@ -5102,11 +5106,13 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	unsigned long delta_chaos_suppressed;
 	unsigned long delta_count_oob, delta_canary_lock_post, delta_canary_pre, delta_canary_post;
 	unsigned long delta_reexec_attempts, delta_reexec_attribution_found;
+	unsigned long delta_reexec_attempts_with_new_cmp;
 	unsigned long delta_reexec_attribution_ambiguous, delta_reexec_new_cmps_total;
 	unsigned long delta_reexec_attribution_width_match;
 	unsigned long delta_reexec_skipped_destructive, delta_reexec_skipped_validate_silent;
 	unsigned long delta_reexec_window_cap_hit;
 	unsigned long delta_reexec_pending_dropped;
+	unsigned long delta_reexec_pending_drain_unused;
 	unsigned long delta_cmp_parent_calls_enabled, delta_cmp_parent_calls_control;
 	unsigned long delta_cmp_parent_new_cmps_enabled, delta_cmp_parent_new_cmps_control;
 	unsigned long delta_cmp_hint_callsite[CMP_HINT_CALLSITE_NR];
@@ -5161,6 +5167,7 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	cur_canary_pre       = __atomic_load_n(&kcov_shm->cmp_hints_canary_pre_corrupt,      __ATOMIC_RELAXED);
 	cur_canary_post      = __atomic_load_n(&kcov_shm->cmp_hints_canary_post_corrupt,     __ATOMIC_RELAXED);
 	cur_reexec_attempts                = __atomic_load_n(&kcov_shm->reexec_attempts,                __ATOMIC_RELAXED);
+	cur_reexec_attempts_with_new_cmp   = __atomic_load_n(&kcov_shm->reexec_attempts_with_new_cmp,   __ATOMIC_RELAXED);
 	cur_reexec_attribution_found       = __atomic_load_n(&kcov_shm->reexec_attribution_found,       __ATOMIC_RELAXED);
 	cur_reexec_attribution_ambiguous   = __atomic_load_n(&kcov_shm->reexec_attribution_ambiguous,   __ATOMIC_RELAXED);
 	cur_reexec_attribution_width_match = __atomic_load_n(&kcov_shm->reexec_attribution_width_match, __ATOMIC_RELAXED);
@@ -5169,6 +5176,7 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	cur_reexec_skipped_validate_silent = __atomic_load_n(&kcov_shm->reexec_skipped_validate_silent, __ATOMIC_RELAXED);
 	cur_reexec_window_cap_hit          = __atomic_load_n(&kcov_shm->reexec_window_cap_hit,          __ATOMIC_RELAXED);
 	cur_reexec_pending_dropped         = __atomic_load_n(&kcov_shm->reexec_pending_dropped,         __ATOMIC_RELAXED);
+	cur_reexec_pending_drain_unused    = __atomic_load_n(&kcov_shm->reexec_pending_drain_unused,    __ATOMIC_RELAXED);
 	cur_cmp_parent_calls_enabled       = __atomic_load_n(&kcov_shm->cmp_parent_calls_enabled,       __ATOMIC_RELAXED);
 	cur_cmp_parent_calls_control       = __atomic_load_n(&kcov_shm->cmp_parent_calls_control,       __ATOMIC_RELAXED);
 	cur_cmp_parent_new_cmps_enabled    = __atomic_load_n(&kcov_shm->cmp_parent_new_cmps_enabled,    __ATOMIC_RELAXED);
@@ -5252,6 +5260,7 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 		prev_canary_pre       = cur_canary_pre;
 		prev_canary_post      = cur_canary_post;
 		prev_reexec_attempts                = cur_reexec_attempts;
+		prev_reexec_attempts_with_new_cmp   = cur_reexec_attempts_with_new_cmp;
 		prev_reexec_attribution_found       = cur_reexec_attribution_found;
 		prev_reexec_attribution_ambiguous   = cur_reexec_attribution_ambiguous;
 		prev_reexec_attribution_width_match = cur_reexec_attribution_width_match;
@@ -5260,6 +5269,7 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 		prev_reexec_skipped_validate_silent = cur_reexec_skipped_validate_silent;
 		prev_reexec_window_cap_hit          = cur_reexec_window_cap_hit;
 		prev_reexec_pending_dropped         = cur_reexec_pending_dropped;
+		prev_reexec_pending_drain_unused    = cur_reexec_pending_drain_unused;
 		prev_cmp_parent_calls_enabled       = cur_cmp_parent_calls_enabled;
 		prev_cmp_parent_calls_control       = cur_cmp_parent_calls_control;
 		prev_cmp_parent_new_cmps_enabled    = cur_cmp_parent_new_cmps_enabled;
@@ -5309,6 +5319,7 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	delta_canary_pre       = cur_canary_pre       - prev_canary_pre;
 	delta_canary_post      = cur_canary_post      - prev_canary_post;
 	delta_reexec_attempts                = cur_reexec_attempts                - prev_reexec_attempts;
+	delta_reexec_attempts_with_new_cmp   = cur_reexec_attempts_with_new_cmp   - prev_reexec_attempts_with_new_cmp;
 	delta_reexec_attribution_found       = cur_reexec_attribution_found       - prev_reexec_attribution_found;
 	delta_reexec_attribution_ambiguous   = cur_reexec_attribution_ambiguous   - prev_reexec_attribution_ambiguous;
 	delta_reexec_attribution_width_match = cur_reexec_attribution_width_match - prev_reexec_attribution_width_match;
@@ -5317,6 +5328,7 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	delta_reexec_skipped_validate_silent = cur_reexec_skipped_validate_silent - prev_reexec_skipped_validate_silent;
 	delta_reexec_window_cap_hit          = cur_reexec_window_cap_hit          - prev_reexec_window_cap_hit;
 	delta_reexec_pending_dropped         = cur_reexec_pending_dropped         - prev_reexec_pending_dropped;
+	delta_reexec_pending_drain_unused    = cur_reexec_pending_drain_unused    - prev_reexec_pending_drain_unused;
 	delta_cmp_parent_calls_enabled       = cur_cmp_parent_calls_enabled       - prev_cmp_parent_calls_enabled;
 	delta_cmp_parent_calls_control       = cur_cmp_parent_calls_control       - prev_cmp_parent_calls_control;
 	delta_cmp_parent_new_cmps_enabled    = cur_cmp_parent_new_cmps_enabled    - prev_cmp_parent_new_cmps_enabled;
@@ -5355,11 +5367,13 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	     delta_chaos_suppressed | delta_count_oob |
 	     delta_canary_lock_post |
 	     delta_canary_pre | delta_canary_post |
-	     delta_reexec_attempts | delta_reexec_attribution_found |
+	     delta_reexec_attempts | delta_reexec_attempts_with_new_cmp |
+	     delta_reexec_attribution_found |
 	     delta_reexec_attribution_ambiguous | delta_reexec_attribution_width_match |
 	     delta_reexec_new_cmps_total |
 	     delta_reexec_skipped_destructive | delta_reexec_skipped_validate_silent |
 	     delta_reexec_window_cap_hit | delta_reexec_pending_dropped |
+	     delta_reexec_pending_drain_unused |
 	     delta_cmp_parent_calls_enabled | delta_cmp_parent_calls_control |
 	     delta_cmp_parent_new_cmps_enabled | delta_cmp_parent_new_cmps_control |
 	     delta_save_reject_nonconst | delta_save_reject_uninteresting |
@@ -5502,6 +5516,12 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 					"reexec_attempts", delta_reexec_attempts,
 					rate_milli / 1000, rate_milli % 1000, cur_reexec_attempts);
 		}
+		if (delta_reexec_attempts_with_new_cmp) {
+			unsigned long rate_milli = (delta_reexec_attempts_with_new_cmp * 1000UL) / (unsigned long)elapsed;
+			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+					"reexec_attempts_with_new_cmp", delta_reexec_attempts_with_new_cmp,
+					rate_milli / 1000, rate_milli % 1000, cur_reexec_attempts_with_new_cmp);
+		}
 		if (delta_reexec_attribution_found) {
 			unsigned long rate_milli = (delta_reexec_attribution_found * 1000UL) / (unsigned long)elapsed;
 			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
@@ -5549,6 +5569,12 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
 					"reexec_pending_dropped", delta_reexec_pending_dropped,
 					rate_milli / 1000, rate_milli % 1000, cur_reexec_pending_dropped);
+		}
+		if (delta_reexec_pending_drain_unused) {
+			unsigned long rate_milli = (delta_reexec_pending_drain_unused * 1000UL) / (unsigned long)elapsed;
+			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+					"reexec_pending_drain_unused", delta_reexec_pending_drain_unused,
+					rate_milli / 1000, rate_milli % 1000, cur_reexec_pending_drain_unused);
 		}
 		if (delta_cmp_parent_calls_enabled) {
 			unsigned long rate_milli = (delta_cmp_parent_calls_enabled * 1000UL) / (unsigned long)elapsed;
@@ -5842,6 +5868,7 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	prev_canary_pre       = cur_canary_pre;
 	prev_canary_post      = cur_canary_post;
 	prev_reexec_attempts                = cur_reexec_attempts;
+	prev_reexec_attempts_with_new_cmp   = cur_reexec_attempts_with_new_cmp;
 	prev_reexec_attribution_found       = cur_reexec_attribution_found;
 	prev_reexec_attribution_ambiguous   = cur_reexec_attribution_ambiguous;
 	prev_reexec_attribution_width_match = cur_reexec_attribution_width_match;
@@ -5850,6 +5877,7 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	prev_reexec_skipped_validate_silent = cur_reexec_skipped_validate_silent;
 	prev_reexec_window_cap_hit          = cur_reexec_window_cap_hit;
 	prev_reexec_pending_dropped         = cur_reexec_pending_dropped;
+	prev_reexec_pending_drain_unused    = cur_reexec_pending_drain_unused;
 	prev_cmp_parent_calls_enabled       = cur_cmp_parent_calls_enabled;
 	prev_cmp_parent_calls_control       = cur_cmp_parent_calls_control;
 	prev_cmp_parent_new_cmps_enabled    = cur_cmp_parent_new_cmps_enabled;
