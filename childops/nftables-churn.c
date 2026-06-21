@@ -6810,13 +6810,23 @@ static int nftables_churn_iter_setup_netns(struct nftables_churn_iter_ctx *ctx)
 	struct nfnl_open_opts nfnl_opts = {
 		.recv_timeo_s  = NFNL_RECV_TIMEO_S,
 	};
+	/* Snapshot ctx->child->op_type once and bounds-check before
+	 * indexing the per-op stats arrays.  The field lives in shared
+	 * memory and can be scribbled by a poisoned-arena write from a
+	 * sibling; the child.c dispatch loop already gates its dispatch
+	 * + alt-op accounting on the same valid_op snapshot.  Skip the
+	 * latch-reason writes entirely when the snapshot is out of
+	 * range. */
+	const enum child_op_type op = ctx->child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	if (!ns_unshared) {
 		if (unshare(CLONE_NEWNET) < 0) {
 			ns_setup_failed = true;
-			__atomic_store_n(&shm->stats.childop_latch_reason[ctx->child->op_type],
-					 CHILDOP_LATCH_INIT_FAILED,
-					 __ATOMIC_RELAXED);
+			if (valid_op)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_INIT_FAILED,
+						 __ATOMIC_RELAXED);
 			__atomic_add_fetch(&shm->stats.nftables_churn_setup_failed,
 					   1, __ATOMIC_RELAXED);
 			return -1;
@@ -6831,9 +6841,10 @@ static int nftables_churn_iter_setup_netns(struct nftables_churn_iter_ctx *ctx)
 		 * invocation. */
 		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT) {
 			ns_unsupported_nfnetlink = true;
-			__atomic_store_n(&shm->stats.childop_latch_reason[ctx->child->op_type],
-					 CHILDOP_LATCH_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			if (valid_op)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 		}
 		__atomic_add_fetch(&shm->stats.nftables_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
@@ -6971,9 +6982,20 @@ static int nftables_churn_iter_build_table(struct nftables_churn_iter_ctx *ctx)
 		if (rc == -EOPNOTSUPP || rc == -EPROTONOSUPPORT ||
 		    rc == -EAFNOSUPPORT) {
 			ns_unsupported_nf_tables = true;
-			__atomic_store_n(&shm->stats.childop_latch_reason[ctx->child->op_type],
-					 CHILDOP_LATCH_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			/* ctx->child->op_type lives in shared memory and
+			 * can be scribbled by a poisoned-arena write from
+			 * a sibling; bounds-check the snapshot before
+			 * indexing the NR_CHILD_OP_TYPES-sized stats
+			 * array, same pattern the child.c dispatch loop
+			 * uses for the unguarded write that motivated
+			 * this guard. */
+			{
+				const enum child_op_type op = ctx->child->op_type;
+				if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+					__atomic_store_n(&shm->stats.childop_latch_reason[op],
+							 CHILDOP_LATCH_UNSUPPORTED,
+							 __ATOMIC_RELAXED);
+			}
 		}
 		return -1;
 	}
@@ -7157,11 +7179,23 @@ bool nftables_churn(struct childdata *child)
 
 	if (nftables_churn_iter_open_rtnl(&ctx) != 0)
 		goto out;
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
 
-	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the stats
+	 * writes entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
+
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
 	if (nftables_churn_iter_submode_dispatch(&ctx) != 0)
 		goto out;
 
