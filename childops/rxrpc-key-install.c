@@ -691,22 +691,34 @@ bool rxrpc_key_install(struct childdata *child)
 	__atomic_add_fetch(&shm->stats.rxrpc_key_install_runs,
 			   1, __ATOMIC_RELAXED);
 
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip every per-op
+	 * stats write when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	probe_rxrpc_key_supported();
 	if (unsupported_rxrpc_key_install) {
-		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-				 CHILDOP_LATCH_UNSUPPORTED,
-				 __ATOMIC_RELAXED);
+		if (valid_op)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					 CHILDOP_LATCH_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 		return true;
 	}
 
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
 
 	memset(live, 0, sizeof(live));
 	clock_gettime(CLOCK_MONOTONIC, &start);
 
-	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
 
 	iters = JITTER_RANGE(MAX_ITERATIONS);
 	for (iter = 0; iter < iters; iter++) {
@@ -746,9 +758,10 @@ bool rxrpc_key_install(struct childdata *child)
 			teardown_one(live);
 
 		if (unsupported_rxrpc_key_install) {
-			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-					 CHILDOP_LATCH_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			if (valid_op)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 			return true;
 		}
 		if (budget_elapsed_ns(&start, BUDGET_NS))
