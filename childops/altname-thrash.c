@@ -338,11 +338,21 @@ static int altname_thrash_iter_setup(struct altname_iter_ctx *ctx)
 	};
 	int rc;
 
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op latch slot.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the latch
+	 * store entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	if (nl_open(&ctx->nl, &opts) < 0) {
 		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT) {
-			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-					 CHILDOP_LATCH_NS_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			if (valid_op)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 		}
 		return -1;
 	}
@@ -354,9 +364,10 @@ static int altname_thrash_iter_setup(struct altname_iter_ctx *ctx)
 	rc = build_dummy_create(&ctx->nl, ctx->dummy_name);
 	if (rc != 0) {
 		if (is_unsupported_err(rc)) {
-			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-					 CHILDOP_LATCH_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			if (valid_op)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 		}
 		return -1;
 	}
@@ -475,11 +486,22 @@ static int altname_thrash_in_ns(void *arg)
 	struct altname_iter_ctx *ctx = (struct altname_iter_ctx *)arg;
 	struct childdata *child = ctx->child;
 
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the stats
+	 * writes entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	if (altname_thrash_iter_setup(ctx) == 0) {
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-				   1, __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-				   1, __ATOMIC_RELAXED);
+		if (valid_op)
+			__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+					   1, __ATOMIC_RELAXED);
+		if (valid_op)
+			__atomic_add_fetch(&shm->stats.childop_data_path[op],
+					   1, __ATOMIC_RELAXED);
 		altname_thrash_iter_burst(ctx);
 	}
 
@@ -495,6 +517,15 @@ bool altname_thrash(struct childdata *child)
 	};
 	int rc;
 
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op latch slot.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the latch
+	 * load/store entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	__atomic_add_fetch(&shm->stats.altname_thrash_invocations, 1,
 			   __ATOMIC_RELAXED);
 
@@ -506,16 +537,18 @@ bool altname_thrash(struct childdata *child)
 	 * a file-local bool would be lost across the transient fork.  Read
 	 * the shared slot here to honour those latches on subsequent
 	 * invocations without re-spending a userns_run_in_ns() round-trip. */
-	if (__atomic_load_n(&shm->stats.childop_latch_reason[child->op_type],
+	if (valid_op &&
+	    __atomic_load_n(&shm->stats.childop_latch_reason[op],
 			    __ATOMIC_RELAXED) != CHILDOP_LATCH_NONE)
 		return true;
 
 	rc = userns_run_in_ns(CLONE_NEWNET, altname_thrash_in_ns, &cctx);
 	if (rc == -EPERM) {
 		ns_unsupported_altname_thrash = true;
-		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-				 CHILDOP_LATCH_NS_UNSUPPORTED,
-				 __ATOMIC_RELAXED);
+		if (valid_op)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
 		__atomic_add_fetch(&shm->stats.altname_thrash_unshare_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
