@@ -208,6 +208,7 @@ void sfg_default_walk_setsockopts(int fd, struct socket_triplet *triplet,
 				  unsigned int n)
 {
 	const struct netproto *proto;
+	void *scratch;
 	unsigned int i;
 
 	if (triplet->family == 0 || triplet->family >= TRINITY_PF_MAX)
@@ -217,10 +218,13 @@ void sfg_default_walk_setsockopts(int fd, struct socket_triplet *triplet,
 	if (proto == NULL || proto->setsockopt == NULL)
 		return;
 
+	scratch = zmalloc(page_size);
+
 	for (i = 0; i < n; i++) {
 		struct sockopt so = { 0, 0, 0, 0 };
 
-		so.optval = (unsigned long) zmalloc(page_size);
+		memset(scratch, 0, page_size);
+		so.optval = (unsigned long) scratch;
 		so.optlen = sockoptlen(0);
 		proto->setsockopt(&so, triplet);
 		/* Defensive clamp: the per-proto callback is contracted to
@@ -231,8 +235,9 @@ void sfg_default_walk_setsockopts(int fd, struct socket_triplet *triplet,
 			so.optlen = page_size;
 		(void) setsockopt(fd, so.level, so.optname,
 				  (const void *) so.optval, so.optlen);
-		free((void *) so.optval);
 	}
+
+	free(scratch);
 }
 
 void sfg_default_data_leg(int data_fd,
