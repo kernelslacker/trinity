@@ -161,9 +161,18 @@ static enum iour_setup_status iouring_flood_iter_setup_ring(struct iour_ring *ct
 
 	if (st == IOUR_UNSUPPORTED) {
 		ns_unsupported = true;
-		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-				 CHILDOP_LATCH_UNSUPPORTED,
-				 __ATOMIC_RELAXED);
+		/* child->op_type lives in shared memory and can be scribbled
+		 * by a poisoned-arena write from a sibling; bounds-check the
+		 * snapshot before indexing the NR_CHILD_OP_TYPES-sized stats
+		 * array, same pattern the child.c dispatch loop uses for the
+		 * unguarded write that motivated this guard. */
+		{
+			const enum child_op_type op = child->op_type;
+			if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
+		}
 	} else {
 		__atomic_add_fetch(&shm->stats.iouring_failed, 1,
 				   __ATOMIC_RELAXED);
@@ -375,6 +384,15 @@ bool iouring_flood(struct childdata *child)
 
 	cycles = 1 + rnd_modulo_u32(MAX_CYCLES);
 
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the stats
+	 * writes entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	for (i = 0; i < cycles; i++) {
 		struct iour_ring ctx;
 		unsigned int n_subs;
@@ -389,8 +407,9 @@ bool iouring_flood(struct childdata *child)
 				break;
 			continue;
 		}
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-				   1, __ATOMIC_RELAXED);
+		if (valid_op)
+			__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+					   1, __ATOMIC_RELAXED);
 
 		n_subs = iouring_flood_iter_submit_burst(&ctx, dev_null_rd,
 							 dev_null_wr, burst);
@@ -399,8 +418,9 @@ bool iouring_flood(struct childdata *child)
 			continue;
 		}
 
-		__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-				   1, __ATOMIC_RELAXED);
+		if (valid_op)
+			__atomic_add_fetch(&shm->stats.childop_data_path[op],
+					   1, __ATOMIC_RELAXED);
 		iouring_flood_iter_reap_cqes(&ctx, n_subs);
 
 		iour_ring_teardown(&ctx);
