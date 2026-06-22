@@ -680,9 +680,12 @@ bool wall_lever_should_suppress_shadow(unsigned int nr);
 
 /*
  * Recompute and publish the wall-lever baseline (mean of kcov_shm->
- * per_syscall_calls across MAX_NR_SYSCALL) and the matching per-
- * syscall suppression decision table wall_lever_should_suppress_shadow
- * consumes.  Called by the orchestrator at every rotation while
+ * per_syscall_calls across the CURRENTLY ACTIVE syscalls -- biarch
+ * sums the per-arch nr_active_* counts; uniarch reads nr_active_
+ * syscalls -- so the dead-slot tail of the MAX_NR_SYSCALL array does
+ * not deflate the threshold WALL_LEVER_HIGH_MULT scales against) and
+ * the matching per-syscall suppression decision table
+ * wall_lever_should_suppress_shadow consumes.  Called by the orchestrator at every rotation while
  * plateau_active is set, regardless of the chosen intervention mode,
  * so the shadow gate adapts to the fleet's CURRENT calls distribution
  * rather than freezing the eligibility set at a single moment.

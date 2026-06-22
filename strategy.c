@@ -2204,6 +2204,7 @@ void wall_lever_refresh_baseline(void)
 	unsigned long edges_snapshot[MAX_NR_SYSCALL];
 	unsigned long sum = 0;
 	unsigned long baseline, qualify_at;
+	unsigned int nr_active;
 	unsigned int i;
 
 	if (kcov_shm == NULL) {
@@ -2233,7 +2234,34 @@ void wall_lever_refresh_baseline(void)
 		edges_snapshot[i] = e;
 		sum += c;
 	}
-	baseline = sum / MAX_NR_SYSCALL;
+
+	/* Denominator is the count of CURRENTLY ACTIVE syscalls -- mirrors
+	 * the (biarch ? nr_active_32 + nr_active_64 : nr_active_syscalls)
+	 * pattern in no_syscalls_enabled().  The per_syscall_calls[] array
+	 * is dimensioned for MAX_NR_SYSCALL (=1024) slots but only the
+	 * active subset can ever contribute observation; dividing the sum
+	 * by the full slot dimension deflates the mean by the dead-slot
+	 * count and silently lowers the WALL_LEVER_HIGH_MULT threshold
+	 * below what the comment block above advertises.  A cold-start
+	 * window with no active table yet leaves baseline=0; the picker's
+	 * "baseline==0 -> not-suppressed" short-circuit in wall_lever_
+	 * should_suppress_shadow covers that path. */
+	if (biarch)
+		nr_active = __atomic_load_n(&shm->nr_active_32bit_syscalls,
+					    __ATOMIC_RELAXED) +
+			    __atomic_load_n(&shm->nr_active_64bit_syscalls,
+					    __ATOMIC_RELAXED);
+	else
+		nr_active = __atomic_load_n(&shm->nr_active_syscalls,
+					    __ATOMIC_RELAXED);
+
+	if (nr_active == 0) {
+		__atomic_store_n(&shm->wall_lever_baseline_calls, 0UL,
+				 __ATOMIC_RELAXED);
+		return;
+	}
+
+	baseline = sum / nr_active;
 
 	/* Publish at least 1 when the mean truncates to zero so the picker
 	 * gate's "baseline==0 short-circuit to not-suppressed" branch only
