@@ -47,10 +47,10 @@
  *              GET_LOG_PAGE).  No IO opcodes, no _VEC variants.
  *              Currently a stub: NVMe URING_CMD requires a 72-byte
  *              nvme_uring_cmd struct in the SQE's inline cmd[] tail,
- *              which only fits in an SQE128-sized ring.  This commit
+ *              which only fits in an SQE128-sized ring.  This driver
  *              uses the standard 64-byte SQE form (see TODO below),
- *              so the nvme variant is detected-but-skipped pending a
- *              follow-up that adds SQE128 support.
+ *              so the nvme variant is detected-but-skipped pending
+ *              SQE128 support.
  *
  *   blockdev — only /dev/loopN where /sys/block/loopN/loop/backing_file
  *              is absent (loop is unbound).  An unbound loop returns

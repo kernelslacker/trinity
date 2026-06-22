@@ -106,8 +106,7 @@ static void sanitise_newstat(struct syscallrecord *rec)
  * Compare each field individually with no early-return so multi-field
  * corruption surfaces in a single sample, but bump the anomaly counter
  * only once per sample.  Sample one in a hundred to stay in line with
- * the rest of the oracle family and complement the just-landed newlstat
- * oracle.
+ * the rest of the oracle family and complement the newlstat oracle.
  */
 static void post_newstat(struct syscallrecord *rec)
 {

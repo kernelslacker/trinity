@@ -24,12 +24,6 @@
  * page-cache write path is the whole point, so no O_DIRECT / O_DSYNC
  * / O_SYNC — the testfile pool already varies through those modes
  * for the broader filesystem coverage matrix.
- *
- * real-kernel-run validation owed: this commit was build-, static-
- * and dry-run-validated only.  The write-side bias that feeds these
- * fds into pwrite64/pwritev/pwritev2 lands separately and needs a
- * real fuzz session to confirm the positioned-write paths now light
- * up under coverage.
  */
 
 #include <errno.h>
