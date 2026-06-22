@@ -506,6 +506,14 @@ bool pagecache_canary_check(struct childdata *child)
 	int open_flags;
 	int fd;
 
+	/* Snapshot child->op_type once: a sibling poisoned-arena write
+	 * can scribble shared childdata between reads, and an out-of-
+	 * range op_type used as an array index turns into a wild write
+	 * into adjacent shm.  Gate the per-op_type stats on the same
+	 * valid_op snapshot. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	pool_size = canary_pool_size();
 	if (pool_size == 0)
 		return true;
@@ -533,8 +541,9 @@ bool pagecache_canary_check(struct childdata *child)
 	if (fd < 0)
 		return true;
 
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
 
 	if (rnd_modulo_u32(100) < FADVISE_DONTNEED_PCT) {
 		(void)posix_fadvise(fd, 0, (off_t)info->size,
@@ -552,8 +561,9 @@ bool pagecache_canary_check(struct childdata *child)
 		mode = RM_READ;
 	}
 
-	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
 
 	switch (mode) {
 	case RM_READ:	  mode_read(fd, idx, info->size, info->path);     break;
