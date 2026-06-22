@@ -50,6 +50,7 @@ static void sanitise_msgsnd(struct syscallrecord *rec)
 	msgp = zmalloc_tracked(sizeof(struct msgbuf) + msgsz);
 	msgp->mtype = (rnd_modulo_u32(255)) + 1;	/* mtype must be > 0 */
 	rec->a2 = (unsigned long) msgp;
+	avoid_shared_buffer_inout(&rec->a2, sizeof(struct msgbuf) + msgsz);
 	rec->a3 = msgsz;
 	/* Capture the genuine tracked pointer now: a2 may be scribbled by a
 	 * sibling syscall before the owned-list drain runs. */
