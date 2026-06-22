@@ -37,6 +37,7 @@ static void sanitise_sched_setparam(struct syscallrecord *rec)
 		rec->a1 = 0;
 
 	rec->a2 = (unsigned long) sp;
+	avoid_shared_buffer_inout(&rec->a2, sizeof(struct sched_param));
 }
 
 struct syscallentry syscall_sched_setparam = {
