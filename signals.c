@@ -970,7 +970,7 @@ skip_buglog:
 	}
 }
 
-static void sigalrm_handler(__unused__ int sig)
+void sigalrm_handler(__unused__ int sig)
 {
 	sigalrm_pending = 1;
 	/* Don't siglongjmp here.  SIGALRM is installed without
@@ -984,7 +984,7 @@ static void sigalrm_handler(__unused__ int sig)
 	 * deadlock or heap corruption on the next allocation. */
 }
 
-static void sigxcpu_handler(__unused__ int sig)
+void sigxcpu_handler(__unused__ int sig)
 {
 	xcpu_pending = 1;
 	/* Don't siglongjmp here.  The signal interrupts the syscall

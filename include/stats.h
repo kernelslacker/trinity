@@ -999,6 +999,33 @@ struct stats_s {
 	 * array and faulted on an unmapped page. */
 	unsigned long iouring_enter_mask_corrupt;
 
+	/* SHADOW diagnostic: bumped immediately before each alarm(1) arm
+	 * (alt-op dispatch and NEED_ALARM syscall paths) when a
+	 * sigaction(SIGALRM, NULL, &cur) probe reads back sa_handler !=
+	 * sigalrm_handler -- i.e. a fuzzed rt_sigaction call in this child
+	 * has overwritten the internal-watchdog disposition before the
+	 * watchdog gets armed.  SIGALRM appears in settable_signals[], so a
+	 * child can disarm its own 1-second inner watchdog by installing
+	 * SIG_IGN / SIG_DFL / an arbitrary dummy; subsequent blocking ops
+	 * then ride only the ~30-second outer watchdog, which is the
+	 * dominant late-run wedge mechanism.  Read-only probe -- the
+	 * handler is NOT reinstalled here, and arming is unchanged: this
+	 * row measures the clobber rate so a follow-up can decide whether
+	 * to reinstall or to curate SIGALRM out of settable_signals[].
+	 * RELAXED add-fetch: coarse anomaly counter, not an event log. */
+	unsigned long watchdog_sigalrm_clobbered;
+
+	/* SHADOW diagnostic mirror of watchdog_sigalrm_clobbered for
+	 * SIGXCPU.  SIGXCPU also lives in settable_signals[] and shares
+	 * the same disarm-by-fuzzed-rt_sigaction class; the inner-watchdog
+	 * SIGXCPU disposition (sigxcpu_handler) is installed once per
+	 * child in mask_signals_child() and never reinstalled.  Sampled
+	 * from the same arm sites as the SIGALRM probe -- the probe is
+	 * effectively free (one extra rt_sigaction read) and surfacing
+	 * SIGXCPU separately keeps the SIGALRM signal clean.  Read-only;
+	 * RELAXED add-fetch; same caveat as the SIGALRM row above. */
+	unsigned long watchdog_sigxcpu_clobbered;
+
 	/* close_racer childop counters */
 	unsigned long close_racer_runs;			/* total close_racer invocations */
 	unsigned long close_racer_pairs;		/* cycles where close+join completed */
