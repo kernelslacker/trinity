@@ -405,6 +405,14 @@ bool close_racer(struct childdata *child)
 	int deferred_fds[DEFERRED_FD_MAX];
 	unsigned int deferred_n = 0;
 
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	__atomic_add_fetch(&shm->stats.close_racer_runs, 1, __ATOMIC_RELAXED);
 
 	cycles = 1 + rnd_modulo_u32(MAX_CYCLES);
@@ -430,11 +438,13 @@ bool close_racer(struct childdata *child)
 			continue;
 		}
 		spawn_fail_streak = 0;
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-				   1, __ATOMIC_RELAXED);
+		if (valid_op)
+			__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+					   1, __ATOMIC_RELAXED);
 
-		__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-				   1, __ATOMIC_RELAXED);
+		if (valid_op)
+			__atomic_add_fetch(&shm->stats.childop_data_path[op],
+					   1, __ATOMIC_RELAXED);
 		close_racer_iter_close_phase(&ctx, deferred_fds, &deferred_n);
 		close_racer_iter_join_racers(&ctx);
 	}
