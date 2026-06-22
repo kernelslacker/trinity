@@ -87,9 +87,9 @@ static void sanitise_request_key(struct syscallrecord *rec)
 	/* logon-type keys require a "<subtype>:" prefix on the description; mirror the
 	 * shape add_key uses for that type so request_key("logon", ...) also matches. */
 	if (!strcmp(type, "logon"))
-		snprintf(desc_buf, 96, "trinity:%s_%08x", prefix, rand32());
+		snprintf(desc_buf, 96, "trinity:%s_%08x", prefix, rnd_u32());
 	else
-		snprintf(desc_buf, 96, "%s_%08x", prefix, rand32());
+		snprintf(desc_buf, 96, "%s_%08x", prefix, rnd_u32());
 	rec->a2 = (unsigned long) desc_buf;
 
 	/* callout_info NULL means "lookup-only, don't upcall"; non-NULL drives
@@ -104,7 +104,7 @@ static void sanitise_request_key(struct syscallrecord *rec)
 			rec->a3 = 0;
 			break;
 		}
-		snprintf(callout_buf, 32, "trinity_%08x", rand32());
+		snprintf(callout_buf, 32, "trinity_%08x", rnd_u32());
 		rec->a3 = (unsigned long) callout_buf;
 		break;
 	}
