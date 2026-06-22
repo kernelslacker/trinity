@@ -34,6 +34,7 @@ static void sanitise_stime(struct syscallrecord *rec)
 	}
 
 	rec->a1 = (unsigned long) t;
+	avoid_shared_buffer_inout(&rec->a1, sizeof(*t));
 }
 
 struct syscallentry syscall_stime = {
