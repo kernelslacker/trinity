@@ -118,6 +118,11 @@ static void sanitise_capset(struct syscallrecord *rec)
 	 */
 	hdr->pid = RAND_BOOL() ? 0 : mypid();
 	rec->a1 = (unsigned long) hdr;
+	/* Relocate + memcpy the curated header bytes (version, pid) onto a
+	 * fresh pool page so the post-sanitise blanket address scrub no-ops on
+	 * this slot.  Must precede the snap->header = rec->a1 capture below so
+	 * the oracle snapshots the relocated pointer the kernel will see. */
+	avoid_shared_buffer_inout(&rec->a1, sizeof(*hdr));
 
 	/* v1 uses 1 data struct, v2/v3 use 2.  Bogus version sizes the
 	 * buffer at 2 -- the kernel rejects with -EINVAL before reading
@@ -135,6 +140,13 @@ static void sanitise_capset(struct syscallrecord *rec)
 		fill_cap_datum(&data[1]);
 	}
 	rec->a2 = (unsigned long) data;
+	/* Relocate + memcpy the curated cap_data bytes onto a fresh pool page
+	 * so the post-sanitise blanket address scrub no-ops on this slot.
+	 * Size mirrors the v1 vs v2/v3 alloc above.  Must precede the
+	 * snap->data = rec->a2 capture below so the oracle snapshots the
+	 * relocated pointer the kernel will see. */
+	avoid_shared_buffer_inout(&rec->a2,
+		(version == _LINUX_CAPABILITY_VERSION_1 ? 1 : 2) * sizeof(*data));
 
 	/*
 	 * Snapshot the two input args for the post oracle.  Without this
