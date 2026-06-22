@@ -755,12 +755,15 @@ struct shm_s {
 	 * the rotation-boundary refresh discipline are identical.
 	 *
 	 * wall_lever_baseline_calls: cached mean of kcov_shm->per_syscall_
-	 *   calls across MAX_NR_SYSCALL.  Refreshed by wall_lever_refresh_
-	 *   baseline() on every rotation where plateau_active is set, BEFORE
-	 *   the mode-specific arm dispatch.  Zero means "no baseline yet"
-	 *   (no plateau-active rotation has fired) and the shadow predicate
-	 *   short-circuits to "not suppressed" in that state so warm-up runs
-	 *   and the cold-start window degrade to today's pure picker.
+	 *   calls across the active syscall count (biarch ? nr_active_32 +
+	 *   nr_active_64 : nr_active_syscalls; mirrors no_syscalls_enabled).
+	 *   Refreshed by wall_lever_refresh_baseline() on every rotation
+	 *   where plateau_active is set, BEFORE the mode-specific arm
+	 *   dispatch.  Zero means "no baseline yet" (no plateau-active
+	 *   rotation has fired, or no syscalls are active) and the shadow
+	 *   predicate short-circuits to "not suppressed" in that state so
+	 *   warm-up runs and the cold-start window degrade to today's pure
+	 *   picker.
 	 *
 	 * wall_lever_suppress[MAX_NR_SYSCALL]: per-syscall pre-computed
 	 *   suppression decision in {0, 1}, populated alongside the baseline
