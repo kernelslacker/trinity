@@ -147,11 +147,20 @@ bool fault_injector(struct childdata *child)
 	unsigned int n;
 	long ret;
 
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	if (child->fail_nth_fd == -1)
 		return true;
 
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
 
 	/* N=0 disables fail-nth; pick from [1, 32]. */
 	n = 1 + rnd_modulo_u32(32);
@@ -160,8 +169,9 @@ bool fault_injector(struct childdata *child)
 
 	stats_ring_enqueue(child->stats_ring, STATS_FIELD_FAULT_INJECTED, 0, 1);
 
-	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
 
 	ret = do_alloc_syscall();
 	int saved_errno = errno;
