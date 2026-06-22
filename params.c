@@ -409,13 +409,13 @@ bool no_startup_isolation = false;
 char *stats_log_path = NULL;
 
 /*
- * Default = RANDOM per the "start simple" A/B baseline (PHASE 4
- * pending-entry selection): a uniform pick over the per-call
- * reexec_pending[] census reveals whether the prior-behaviour
- * always-entry-0 pick was costing signal.  FIRST is available as the
- * baseline control arm so the two policies are directly comparable on
- * the same host.  See enum redqueen_pending_pick_mode_t in
- * include/params.h for the long-form rationale.
+ * Retained for compatibility; no-op.  The dispatch_step-tail RedQueen
+ * re-exec consumer (random-syscall.c) now drains every staged
+ * reexec_pending[] entry per parent dispatch, so neither
+ * REDQUEEN_PENDING_PICK_RANDOM nor REDQUEEN_PENDING_PICK_FIRST alters
+ * which entries (or how many) get re-executed -- both modes drain all.
+ * Default stays RANDOM so the dump_stats policy label
+ * (redqueen_pending_pick_name) reads the same as before in default runs.
  */
 enum redqueen_pending_pick_mode_t redqueen_pending_pick_mode_arg =
 	REDQUEEN_PENDING_PICK_RANDOM;
@@ -568,7 +568,7 @@ static const struct option_help option_descs[] = {
 	{ "print-disabled-syscalls", 0, "print syscalls disabled via AVOID_SYSCALL or NEED_ALARM and exit" },
 	{ "quiet",		'q', "suppress the per-second progress line (other output unchanged)" },
 	{ "random",		'r', "pick N syscalls at random and just fuzz those" },
-	{ "redqueen-pending-pick", 0, "A/B selection policy for the RedQueen re-exec consumer at the dispatch_step tail.  Accepts 'random' (default) -- uniform pick from the per-call reexec_pending[] attribution census via rnd_modulo_u32 -- or 'first', which always drains entry 0 (the prior-behaviour trace-order winner).  Per-pending-index success counters are active in BOTH modes for direct A/B comparison." },
+	{ "redqueen-pending-pick", 0, "Retained for compatibility; no-op.  The RedQueen re-exec consumer at the dispatch_step tail now drains every staged reexec_pending[] entry per parent dispatch, so the 'random' vs 'first' selection no longer alters behaviour.  Still parsed (accepts 'random' or 'first') so existing invocations do not break; per-pending-index success counters (kcov_shm->reexec_pending_pick_success[]) are still bumped at each entry's true index inside redqueen_reexec_step(), so per-slot / per-index re-exec lift remains directly readable." },
 	{ "show-unannotated",	 0,  "show unannotated syscalls" },
 	{ "stats",		 0,  "show errno distribution per syscall before exiting" },
 	{ "stats-json",		 0,  "emit dump_stats output as a single JSON object on stdout (machine-readable)" },
