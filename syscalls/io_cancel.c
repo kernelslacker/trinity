@@ -50,6 +50,7 @@ static void sanitise_io_cancel(struct syscallrecord *rec)
 	memset(result, 0, sizeof(*result));
 
 	rec->a2 = (unsigned long) iocb;
+	avoid_shared_buffer_inout(&rec->a2, sizeof(struct iocb));
 	rec->a3 = (unsigned long) result;
 
 	avoid_shared_buffer_out(&rec->a3, sizeof(struct io_event));
