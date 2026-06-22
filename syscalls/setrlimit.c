@@ -101,6 +101,7 @@ static void sanitise_setrlimit(struct syscallrecord *rec)
 	}
 
 	rec->a2 = (unsigned long) rlim;
+	avoid_shared_buffer_inout(&rec->a2, sizeof(*rlim));
 }
 
 struct syscallentry syscall_setrlimit = {
