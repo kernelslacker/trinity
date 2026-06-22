@@ -66,6 +66,37 @@ static unsigned int nr_entries;
 static bool discovery_done;
 
 /*
+ * Per-child cache of inherited entries that the dropped-privilege child
+ * cannot actually open.  Discovery in the parent uses access(W_OK), but
+ * childops execute after the uid+caps drop, so the inherited table is
+ * dominated by paths the child is forbidden to touch.  Without a child-
+ * side prune the draws keep picking those paths for the child's whole
+ * lifetime, open() failures dominate, and the existing open/write
+ * counters report a write coverage far higher than what reaches a
+ * kernel parser.
+ *
+ * The array is plain process-local memory: fork() gives each child its
+ * own COW copy, so a mark made by one child never escapes to a sibling
+ * or back to the parent and no locking is required.  Indexing matches
+ * entries[]; a torn or missed update only costs one extra open attempt
+ * on the next draw.
+ */
+static unsigned char inaccessible[MAX_DISCOVERY_ENTRIES];
+static unsigned int nr_inaccessible;
+
+static void mark_inaccessible(const struct discovered_entry *e)
+{
+	unsigned int idx = (unsigned int)(e - entries);
+
+	if (idx >= MAX_DISCOVERY_ENTRIES)
+		return;
+	if (inaccessible[idx])
+		return;
+	inaccessible[idx] = 1;
+	nr_inaccessible++;
+}
+
+/*
  * Paths whose write handler would corrupt trinity itself, change panic
  * policy, drown dmesg, or fire sysrq from random bytes.  Covers
  * /proc/self/mem AND /proc/<self_pid>/mem via the trailing-component
@@ -289,6 +320,16 @@ static void do_one_write(const struct discovered_entry *e)
 
 	fd = open(e->path, O_WRONLY | O_NONBLOCK);
 	if (fd < 0) {
+		/*
+		 * EACCES/EPERM here are the steady-state signal that the
+		 * dropped-privilege child can never open this path, so
+		 * remember it and let future draws skip past.  Transient
+		 * errors (ENOENT from a vanishing /proc/<pid>/ entry,
+		 * EBUSY from an in-flight handler) are NOT cached — those
+		 * paths may succeed on the next attempt.
+		 */
+		if (errno == EACCES || errno == EPERM)
+			mark_inaccessible(e);
 		bump_tree_counter(e->tree, OUTCOME_OPEN_FAIL);
 		return;
 	}
@@ -359,6 +400,24 @@ bool procfs_writer(struct childdata *child)
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop_data_path[op],
 				   1, __ATOMIC_RELAXED);
-	do_one_write(&entries[rnd_modulo_u32(nr_entries)]);
+
+	/*
+	 * Draw a target the child believes it can still open.  Bounded
+	 * retries — if every draw lands on a cached-inaccessible entry we
+	 * fall through to whatever the last draw produced; the open will
+	 * fail and bump OUTCOME_OPEN_FAIL, which keeps the existing
+	 * accounting honest when nr_inaccessible has saturated.
+	 */
+	unsigned int idx = rnd_modulo_u32(nr_entries);
+	if (inaccessible[idx]) {
+		unsigned int attempts;
+
+		for (attempts = 0; attempts < 8; attempts++) {
+			idx = rnd_modulo_u32(nr_entries);
+			if (!inaccessible[idx])
+				break;
+		}
+	}
+	do_one_write(&entries[idx]);
 	return true;
 }
