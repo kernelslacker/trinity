@@ -12,11 +12,26 @@
  * the br_vlan_get_pvid / br_handle_vlan / br_vlan_tunnel_lookup /
  * br_mst_set_state windows never co-fire.
  *
- * Sequence (per BUDGETED + JITTER iteration, 200 ms wall cap, fresh
- * topology per iteration):
+ * Sequence (per invocation):
  *
- *   1.  unshare(CLONE_NEWNET) (one-time per child; failure latches the
- *       op off, EPERM is not fatal -- the cap-gate handles it).
+ *   1.  Enter a private net namespace via userns_run_in_ns(): a
+ *       transient grandchild fork installs an identity user namespace
+ *       plus a fresh CLONE_NEWNET, runs the BUDGETED+JITTER outer
+ *       loop body below, and _exit()s so the kernel reaps every
+ *       bridge, veth, vlan-info entry, AF_PACKET socket and netlink
+ *       socket left behind with the grandchild's netns.  The
+ *       persistent fuzz child never touches its own credentials or
+ *       namespace stack, so the cap-drop oracle keeps observing the
+ *       host credential profile.  Helper -EPERM (hardened userns
+ *       policy refused CLONE_NEWUSER: user.max_user_namespaces=0 or
+ *       kernel.unprivileged_userns_clone=0) latches the childop off
+ *       for the remainder of this child's lifetime; -EAGAIN
+ *       (transient setup failure: fork, id-map write, secondary
+ *       unshare) skips the invocation without latching.
+ *
+ * Inner BUDGETED + JITTER loop (200 ms wall cap, fresh topology per
+ * iteration), running inside the grandchild's netns:
+ *
  *   2.  Open a NETLINK_ROUTE socket; first invocation probes
  *       RTM_NEWLINK type=bridge with IFLA_BR_VLAN_FILTERING=1.  If the
  *       kernel returns -EPERM / -ENOSYS / -EAFNOSUPPORT / -EOPNOTSUPP,
@@ -56,11 +71,16 @@
  *   fires first rotates iter % 4 so no single race predominates.
  *
  * Per-process cap-gate latch: ns_unsupported_bridge_vlan_churn fires
- * on -EPERM / -ENOSYS / -EAFNOSUPPORT / -EOPNOTSUPP from the first
- * RTM_NEWLINK type=bridge probe.  Once latched, every subsequent
- * invocation just bumps runs+setup_failed and returns.  Mirrors the
- * other CHURN childops (vsock_transport_churn / msg_zerocopy_churn /
- * netns_teardown_churn).
+ * when userns_run_in_ns() returns -EPERM (the persistent fuzz child
+ * cannot get a private user namespace under hardened policy).  Once
+ * latched, every subsequent invocation just bumps runs+setup_failed
+ * and returns.  Inside the grandchild, the same static also short-
+ * circuits the remainder of an outer loop on -ENOSYS /
+ * -EAFNOSUPPORT / -EOPNOTSUPP / -EPROTONOSUPPORT from the bridge
+ * create probe (CONFIG_BRIDGE absent); that intra-invocation latch
+ * dies with the grandchild's COW copy on _exit(), so a
+ * CONFIG-absent kernel re-probes once per invocation rather than
+ * permanently.
  *
  * Brick-safety:
  *   - All work happens inside a private netns -- the host bridge /
@@ -111,6 +131,7 @@
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
+#include "userns-bootstrap.h"
 
 /* if_link.h on stripped sysroots may omit IFLA_BR_VLAN_FILTERING -- the
  * UAPI integer (7) is stable. */
@@ -198,8 +219,18 @@
 #define BVC_RAW_TIMEO_MS		100
 #define BVC_RTNL_BUF			2048
 
+/* Latched per-child: userns_run_in_ns() reported -EPERM, meaning the
+ * grandchild's unshare(CLONE_NEWUSER) was refused by a hardened
+ * policy (user.max_user_namespaces=0 or
+ * kernel.unprivileged_userns_clone=0).  Without a private user+net
+ * namespace we MUST NOT touch the host bridge / veth / vlan tables,
+ * so the op stays disabled for the remainder of this child's
+ * lifetime.  Transient helper failures (-EAGAIN) do not set this --
+ * they may not recur on the next iteration.  Also set inside the
+ * grandchild on a CONFIG-absent bridge create probe; that write dies
+ * with the grandchild's COW copy on _exit() and only short-circuits
+ * the rest of the current invocation's outer loop. */
 static bool ns_unsupported_bridge_vlan_churn;
-static bool bvc_unshared;
 
 /*
  * RTM_NEWLINK type=bridge with IFLA_BR_VLAN_FILTERING=1 inside
@@ -924,46 +955,28 @@ out:
 	nl_close(&it.nl);
 }
 
-bool bridge_vlan_churn(struct childdata *child)
+/*
+ * Per-invocation state handed to the in-ns callback so iter_one's
+ * stats writes keep landing against the right childop slot.
+ */
+struct bridge_vlan_churn_ctx {
+	struct childdata *child;
+};
+
+/*
+ * Per-invocation body that must run inside the private net namespace.
+ * Executed in a transient grandchild forked by userns_run_in_ns(); the
+ * grandchild's userns + netns are torn down on _exit() so every
+ * bridge, veth, vlan-info entry, AF_PACKET socket and netlink socket
+ * the BUDGETED outer loop opens is reaped by the kernel along with
+ * the namespace.  Return value is ignored by the helper.
+ */
+static int bridge_vlan_churn_in_ns(void *arg)
 {
+	struct bridge_vlan_churn_ctx *cctx = arg;
+	struct childdata *child = cctx->child;
 	struct timespec t_outer;
 	unsigned int outer_iters, i;
-	/* Snapshot child->op_type once and bounds-check before indexing
-	 * the per-op stats arrays.  The field lives in shared memory and
-	 * can be scribbled by a poisoned-arena write from a sibling; the
-	 * child.c dispatch loop already gates its dispatch + alt-op
-	 * accounting on the same valid_op snapshot.  Skip the stats
-	 * write entirely when the snapshot is out of range. */
-	const enum child_op_type op = child->op_type;
-	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
-
-	__atomic_add_fetch(&shm->stats.bridge_vlan_churn_runs,
-			   1, __ATOMIC_RELAXED);
-
-	if (ns_unsupported_bridge_vlan_churn) {
-		__atomic_add_fetch(&shm->stats.bridge_vlan_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		return true;
-	}
-
-	if (!bvc_unshared) {
-		if (unshare(CLONE_NEWNET) < 0) {
-			if (errno != EPERM) {
-				ns_unsupported_bridge_vlan_churn = true;
-				if (valid_op)
-					__atomic_store_n(&shm->stats.childop_latch_reason[op],
-							 CHILDOP_LATCH_NS_UNSUPPORTED,
-							 __ATOMIC_RELAXED);
-				__atomic_add_fetch(&shm->stats.bridge_vlan_churn_setup_failed,
-						   1, __ATOMIC_RELAXED);
-				return true;
-			}
-			/* EPERM: keep going in the host netns -- the cap
-			 * gate on the first bridge create will catch any
-			 * remaining structural unsupported case. */
-		}
-		bvc_unshared = true;
-	}
 
 	if (clock_gettime(CLOCK_MONOTONIC, &t_outer) < 0) {
 		t_outer.tv_sec = 0;
@@ -986,6 +999,50 @@ bool bridge_vlan_churn(struct childdata *child)
 
 		if (ns_unsupported_bridge_vlan_churn)
 			break;
+	}
+
+	return 0;
+}
+
+bool bridge_vlan_churn(struct childdata *child)
+{
+	struct bridge_vlan_churn_ctx cctx = { .child = child };
+	int rc;
+
+	__atomic_add_fetch(&shm->stats.bridge_vlan_churn_runs,
+			   1, __ATOMIC_RELAXED);
+
+	if (ns_unsupported_bridge_vlan_churn) {
+		__atomic_add_fetch(&shm->stats.bridge_vlan_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return true;
+	}
+
+	rc = userns_run_in_ns(CLONE_NEWNET, bridge_vlan_churn_in_ns, &cctx);
+	if (rc == -EPERM) {
+		ns_unsupported_bridge_vlan_churn = true;
+		/* child->op_type lives in shared memory and can be scribbled
+		 * by a poisoned-arena write from a sibling; bounds-check the
+		 * snapshot before indexing the NR_CHILD_OP_TYPES-sized stats
+		 * array. */
+		{
+			const enum child_op_type op = child->op_type;
+			if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
+		}
+		__atomic_add_fetch(&shm->stats.bridge_vlan_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return true;
+	}
+	if (rc < 0) {
+		/* Transient grandchild setup failure (fork, id-map write,
+		 * secondary unshare).  Skip this iteration without latching
+		 * -- the failure is not policy and may not recur. */
+		__atomic_add_fetch(&shm->stats.bridge_vlan_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return true;
 	}
 
 	return true;
