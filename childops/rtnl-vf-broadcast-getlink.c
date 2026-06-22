@@ -201,13 +201,22 @@ bool rtnl_vf_broadcast_getlink(struct childdata *child)
 	if (ns_unsupported_rtnl_vf_broadcast)
 		return true;
 
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	if (!ns_setup_done) {
 		if (ns_setup_failed_latched || !do_setup()) {
 			ns_setup_failed_latched = true;
 			ns_unsupported_rtnl_vf_broadcast = true;
-			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-					 CHILDOP_LATCH_NS_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			if (valid_op)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 			__atomic_add_fetch(&shm->stats.rtnl_vf_broadcast_setup_failed,
 					   1, __ATOMIC_RELAXED);
 			return true;
@@ -220,10 +229,12 @@ bool rtnl_vf_broadcast_getlink(struct childdata *child)
 	if (iters > VFB_OUTER_CAP)
 		iters = VFB_OUTER_CAP;
 
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
 
 	(void)clock_gettime(CLOCK_MONOTONIC, &t0);
 	for (i = 0; i < iters; i++) {
