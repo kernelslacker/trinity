@@ -5261,15 +5261,57 @@ static const struct struct_field ip_mreq_source_fields[] = {
  * struct ipv6_mreq -- IPPROTO_IPV6 / IPV6_{ADD,DROP}_MEMBERSHIP.
  * Bespoke build_ipv6_mreq() set ipv6mr_multiaddr to a link-local
  * solicited-node address (ff02::xx) and zeroed ipv6mr_interface.
- * ipv6mr_multiaddr is struct in6_addr (16 bytes); fill_field_raw
- * leaves wider-than-4-byte fields at the buffer's initial fill, which
- * is zero from zmalloc, so the schema fill produces the IPv6 "any"
- * address rather than a link-local multicast group.  Same FT_MAGIC
- * follow-up applies; for the proof the row registers and we accept
- * that 16-byte multicast biasing is on the schema-fill TODO list.
+ * ipv6mr_multiaddr is struct in6_addr (16 bytes), wider than the
+ * 1/2/4 widths fill_field_raw() handles, so a plain FT_RAW slot is
+ * left at the zmalloc zero fill -- the IPv6 "any" address rather
+ * than a real multicast group.  FT_MAGIC carries a curated set of
+ * well-known IPv6 multicast destinations (all-nodes, all-routers,
+ * MLDv2, solicited-node, site-local routers) in network byte order;
+ * the pass-1 dispatch memcpy's one chosen 16-byte entry into the
+ * field so the join/leave path names a real ff0x:: group.
+ * ipv6mr_interface stays FT_RAW: the bespoke builder zeroed it and
+ * the kernel accepts any small ifindex (or zero = default).
  */
+static const unsigned char ipv6_mcast_all_nodes[16] = {
+	0xff, 0x02, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x01,
+};
+
+static const unsigned char ipv6_mcast_all_routers[16] = {
+	0xff, 0x02, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x02,
+};
+
+static const unsigned char ipv6_mcast_mldv2_reports[16] = {
+	0xff, 0x02, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x16,
+};
+
+/* ff02::1:ff00:0001 -- solicited-node prefix sample */
+static const unsigned char ipv6_mcast_solicited_node[16] = {
+	0xff, 0x02, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x01,  0xff, 0x00, 0x00, 0x01,
+};
+
+/* ff05::2 -- all-routers, site-local scope */
+static const unsigned char ipv6_mcast_site_routers[16] = {
+	0xff, 0x05, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00,  0x00, 0x00, 0x00, 0x02,
+};
+
+static const unsigned char *const ipv6_mreq_multiaddr_vocab[] = {
+	ipv6_mcast_all_nodes,
+	ipv6_mcast_all_routers,
+	ipv6_mcast_mldv2_reports,
+	ipv6_mcast_solicited_node,
+	ipv6_mcast_site_routers,
+};
+
 static const struct struct_field ipv6_mreq_fields[] = {
-	FIELD(struct ipv6_mreq, ipv6mr_multiaddr),
+	FIELDX(struct ipv6_mreq, ipv6mr_multiaddr, FT_MAGIC,
+	       .u.magic = { ipv6_mreq_multiaddr_vocab,
+			    ARRAY_SIZE(ipv6_mreq_multiaddr_vocab),
+			    sizeof(((struct ipv6_mreq *)NULL)->ipv6mr_multiaddr) }),
 	FIELD(struct ipv6_mreq, ipv6mr_interface),
 };
 

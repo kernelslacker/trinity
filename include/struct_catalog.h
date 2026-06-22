@@ -130,7 +130,22 @@ struct struct_field {
 			unsigned int	   vocab_len;
 			unsigned int	   element_stride;
 		} vocab;
-		const unsigned long *vals;		/* FT_MAGIC, FT_VERSION_MAGIC */
+		const unsigned long *vals;		/* FT_VERSION_MAGIC */
+		/*
+		 * FT_MAGIC: pick one fixed-size byte pattern from a curated
+		 * list and splat it into the field at stride bytes.  Supports
+		 * widths beyond the 1/2/4/8 scalar range -- the original
+		 * motivation is struct in6_addr-shaped multicast fields where
+		 * fill_field_raw() leaves a 16-byte slot at the zmalloc zero
+		 * fill.  Entries may contain embedded NULs, which is why this
+		 * is distinct from FT_VOCAB's strnlen / NUL-pad path.  stride
+		 * must equal f->size; mismatches fall through to FT_RAW.
+		 */
+		struct {
+			const unsigned char *const *vals;
+			unsigned int		    n;
+			unsigned int		    stride;
+		} magic;
 	} u;
 };
 
