@@ -8157,6 +8157,63 @@ static void dump_stats_strategy_summary(void)
 		stat_row("strategy", "wall_lever_baseline_calls",
 			 __atomic_load_n(&shm->wall_lever_baseline_calls,
 					 __ATOMIC_RELAXED));
+
+		/* Top-N per-syscall would-suppress breakdown.  The aggregate
+		 * total above is the headline reclaim projection a live
+		 * variant would produce; this block exposes WHICH syscalls
+		 * the projection is attributable to, so the budget can be
+		 * audited by-syscall (against the existing top edge / pick
+		 * blocks) BEFORE any live suppression is enabled.  Mirrors
+		 * the absolute-totals top-N shape and biarch table choice
+		 * the per-syscall edge top-N in dump_stats() already uses:
+		 * under biarch only the 64-bit table is iterated -- 32-bit
+		 * nrs collide with 64-bit ones in the same index space and
+		 * would shadow them in the display. */
+		{
+			unsigned int top_nr[TOP_SYSCALLS_DUMP_TOPN];
+			unsigned long top_vals[TOP_SYSCALLS_DUMP_TOPN];
+			unsigned int top_count = 0;
+			unsigned int nr_to_scan;
+			const struct syscalltable *table;
+			unsigned int i;
+			int j;
+
+			if (biarch) {
+				nr_to_scan = max_nr_64bit_syscalls;
+				table = syscalls_64bit;
+			} else {
+				nr_to_scan = max_nr_syscalls;
+				table = syscalls;
+			}
+			if (nr_to_scan > MAX_NR_SYSCALL)
+				nr_to_scan = MAX_NR_SYSCALL;
+
+			memset(top_vals, 0, sizeof(top_vals));
+			for (i = 0; i < nr_to_scan; i++) {
+				unsigned long v = __atomic_load_n(
+					&shm->stats.wall_lever_would_suppress[i],
+					__ATOMIC_RELAXED);
+
+				if (v == 0)
+					continue;
+				topn_push(top_vals, top_nr, &top_count,
+					  TOP_SYSCALLS_DUMP_TOPN, v, i);
+			}
+
+			if (top_count > 0) {
+				output(0, "Top wall-lever would-suppress "
+					  "syscalls (shadow-only):\n");
+				for (j = 0; j < (int)top_count; j++) {
+					struct syscallentry *entry =
+						table[top_nr[j]].entry;
+					const char *name = entry ? entry->name
+								 : "???";
+
+					output(0, "  %-24s %lu\n",
+					       name, top_vals[j]);
+				}
+			}
+		}
 	}
 	if (shm->stats.strategy_explorer_picks)
 		stat_row("strategy", "strategy_explorer_picks",
