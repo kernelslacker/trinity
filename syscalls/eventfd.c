@@ -99,7 +99,6 @@ struct syscallentry syscall_eventfd2 = {
 	.argname = { [0] = "count", [1] = "flags" },
 	.arg_params[1].list = ARGLIST(eventfd2_flags),
 	.sanitise = sanitise_eventfd2,
-	.flags = REEXEC_SANITISE_OK,
 	.rettype = RET_FD,
 	.ret_objtype = OBJ_FD_EVENTFD,
 	.post = post_eventfd_create,
