@@ -618,7 +618,7 @@ static bool apply_sockopt_entry(struct sockopt *so, bool mismatch_len)
 	 * not rec->a2/a3: do_setsockopt() has not yet published the values
 	 * to rec and may still mangle optname on the random/legacy arm
 	 * (so->optname |= 1 << rand at line ~664), so the explicit-key
-	 * lookup reads the authoritative pre-commit state directly.
+	 * lookup reads the authoritative picked state directly.
 	 *
 	 * Catalog miss: fall back to the bespoke build_*() in the row.
 	 * That keeps the int/bool/string/scalar entries (no struct shape,

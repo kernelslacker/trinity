@@ -1364,8 +1364,8 @@ static long long random_branch_sample_type(void)
  * Deliberately left to the legacy fallback:
  *   PERF_TYPE_TRACEPOINT       - config is a live tracepoint id read
  *                                from /sys/kernel/debug/tracing/...
- *                                Runtime enumeration is out of scope
- *                                for this commit.
+ *                                Runtime enumeration of the tracepoint
+ *                                set is out of scope here.
  *   PERF_TYPE_RAW              - config is a uarch-specific raw event
  *                                code.  A hardcoded subset would bias
  *                                coverage toward whatever CPU this

@@ -33,9 +33,7 @@
  * branch the oracle bumps shm->stats.capdrop_oracle_anomalies, emits
  * an output(0, ...) anomaly line, and does NOT retry the privileged
  * action.  The bpf success branch closes the unexpectedly-loaded
- * prog fd.  Real-kernel-run validation owed: confirm the oracle stays
- * silent under the cap-dropped child and fires if the drop is
- * reverted.
+ * prog fd.
  */
 
 #include <errno.h>
