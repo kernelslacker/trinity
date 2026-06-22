@@ -226,14 +226,17 @@ static void build_tmpfs_data(struct syscallrecord *rec)
 		"uid=0", "gid=0", "nr_inodes=64",
 		"size=1M,mode=0755", "size=4k,uid=0,gid=0",
 	};
+	const char *opts;
 	char *data;
 
 	if (RAND_BOOL()) {
 		rec->a5 = 0;
 		return;
 	}
-	data = write_str(tmpfs_data[rnd_modulo_u32(ARRAY_SIZE(tmpfs_data))]);
+	opts = tmpfs_data[rnd_modulo_u32(ARRAY_SIZE(tmpfs_data))];
+	data = write_str(opts);
 	rec->a5 = (unsigned long) data;
+	avoid_shared_buffer_inout(&rec->a5, strlen(opts) + 1);
 }
 
 static void sanitise_mount(struct syscallrecord *rec)
