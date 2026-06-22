@@ -29,6 +29,7 @@ static void sanitise_mq_getsetattr(struct syscallrecord *rec)
 	rec->a2 = (unsigned long) mqstat;
 	rec->a3 = (unsigned long) omqstat;
 
+	avoid_shared_buffer_inout(&rec->a2, sizeof(struct mq_attr));
 	avoid_shared_buffer_out(&rec->a3, sizeof(struct mq_attr));
 }
 
