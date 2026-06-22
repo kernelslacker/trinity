@@ -1254,7 +1254,7 @@ static const struct struct_field perf_event_attr_fields[] = {
  *   SOFTWARE   -> config = perf_sw_ids (PERF_COUNT_SW_*)
  *   HW_CACHE   -> config = packed (cache_id, op_id, result_id) triple
  *   BREAKPOINT -> config ignored; bp_type / bp_addr / bp_len are live
- *   TRACEPOINT -> config = runtime tracefs event id (not catalog-able)
+ *   TRACEPOINT -> config = tracefs event id (live tracepoint-id pool)
  *   RAW        -> config = vendor-specific PMU counter id
  *
  * Variants override the corresponding shared fields[] entries; fields
