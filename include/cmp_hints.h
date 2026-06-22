@@ -415,11 +415,25 @@ struct cmp_hypothesis {
 	uint64_t exemplar;
 	uint64_t seen_count;
 	uint64_t consumed_count;
+	/*
+	 * Per-hypothesis SHADOW outcome counters.  Bumped by
+	 * cmp_hyp_credit_outcome() on the would-have-been-chosen hypothesis
+	 * resolved from a (cmp_ip, value, width) tuple at credit time.  Per
+	 * the [11-feedback-loop] discipline cmp_novelty_wins is kept
+	 * SEPARATE from pc_wins so harvested-but-flat CMP novelty cannot
+	 * masquerade as a PC-edge conversion.  Saturating semantics: bumps
+	 * are RELAXED, a u64 cannot realistically wrap inside any single
+	 * fuzz run.  All fields are zero until a credit fires; the live
+	 * pick path does NOT read them.
+	 */
 	uint64_t pc_wins;
 	uint64_t transition_wins;
 	uint64_t cmp_novelty_wins;
+	uint64_t corpus_save_wins;
 	uint64_t misses;
 	uint64_t disabled_skips;
+	uint64_t destructive_skips;
+	uint64_t context_skips;
 	uint64_t last_used_generation;
 };
 
@@ -496,6 +510,52 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32);
  */
 void cmp_hyp_observe(unsigned int nr, bool do32, unsigned long cmp_ip,
 		     unsigned long value, unsigned int size);
+
+/*
+ * SHADOW per-hypothesis feedback outcome menu.  Each enumerator names a
+ * channel cmp_hyp_credit_outcome() can credit to the would-have-been-
+ * chosen hypothesis at the matching (nr, do32, cmp_ip, value, width)
+ * tuple.  CMP_NOVELTY is deliberately a peer of PC_WIN rather than a
+ * variant: harvested-but-flat novelty must never be folded into PC-edge
+ * conversion accounting ([11-feedback-loop] discipline).  CORPUS_SAVE /
+ * DESTRUCTIVE_SKIP / CONTEXT_SKIP are part of the published menu so the
+ * struct is laid out for the consumer + skip-site wiring that lands in
+ * follow-up units; until then those channels never fire and the per-
+ * hypothesis counters stay zero.
+ */
+enum cmp_hyp_outcome {
+	CMP_HYP_OUTCOME_PC_WIN,
+	CMP_HYP_OUTCOME_TRANSITION_WIN,
+	CMP_HYP_OUTCOME_CMP_NOVELTY,
+	CMP_HYP_OUTCOME_CORPUS_SAVE,
+	CMP_HYP_OUTCOME_MISS,
+	CMP_HYP_OUTCOME_DISABLED,
+	CMP_HYP_OUTCOME_DESTRUCTIVE_SKIP,
+	CMP_HYP_OUTCOME_CONTEXT_SKIP,
+	CMP_HYP_OUTCOME_NR,
+};
+
+/*
+ * SHADOW per-hypothesis feedback credit.
+ *
+ * Resolve the would-have-been-chosen hypothesis at hyp_pools[nr][do32]
+ * from the (cmp_ip, value, width) tuple via the same EXACT > ENUM_FAMILY
+ * > BITMASK > RANGE specificity ladder the consumer side will use, then
+ * bump the matching per-hypothesis outcome counter and the matching
+ * cmp_hyp_* flat counter in kcov_shm.  Out-of-range nr / unsupported
+ * size / NULL shm / no-matching-hypothesis are bailed silently (advisory
+ * shadow accounting -- a credit that finds no hypothesis is just an
+ * unobserved value, never a correctness issue).
+ *
+ * Does NOT influence injection or the live cmp-hint pick: the function
+ * is a write-only sink against the parallel hyp_pools[] grid.  Callers
+ * pass the same (cmp_ip, value, size) tuple they stashed at hint-pull
+ * time so the credit lands on the hypothesis whose typed inference
+ * explains the picked value.
+ */
+void cmp_hyp_credit_outcome(unsigned int nr, bool do32, unsigned long cmp_ip,
+			    unsigned long value, unsigned int size,
+			    enum cmp_hyp_outcome outcome);
 
 /*
  * Use-case taxonomy for the cmp-hint consumer.  cmp_hints_try_get_ex()
