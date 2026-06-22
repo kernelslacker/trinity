@@ -456,6 +456,9 @@ struct sockaddr_nfc {
 #ifndef MSG_PROBE
 #define MSG_PROBE 0x10
 #endif
+#ifndef MSG_NOSIGNAL
+#define MSG_NOSIGNAL 0x4000
+#endif
 #ifndef MSG_FASTOPEN
 #define MSG_FASTOPEN 0x20000000
 #endif

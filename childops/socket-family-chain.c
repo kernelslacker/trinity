@@ -82,10 +82,6 @@
 #define ALG_SET_AEAD_AUTHSIZE	5
 #endif
 
-#ifndef MSG_NOSIGNAL
-#define MSG_NOSIGNAL		0x4000
-#endif
-
 #define INNER_MIN		1
 #define INNER_MAX_ALG		4	/* AF_ALG arm preserves v1's 1..4 */
 #define INNER_MAX_GRAMMAR	3	/* grammar walks are longer; cap at 3 */

@@ -128,10 +128,6 @@ const struct netproto proto_kcm = {
  * dispatcher and only touches the parent_fd that flows through the chain.
  */
 
-#ifndef MSG_NOSIGNAL
-#define MSG_NOSIGNAL	0x4000
-#endif
-
 /* Per-process probe + BPF cache.  -1 untested, 0 unsupported, 1 supported. */
 static int kcm_supported = -1;
 static int kcm_bpf_prog_fd = -1;

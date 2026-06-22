@@ -139,10 +139,6 @@ const struct netproto proto_mctp = {
  * per-family unsupported latch shared with other grammars.
  */
 
-#ifndef MSG_NOSIGNAL
-#define MSG_NOSIGNAL	0x4000
-#endif
-
 /* Per-process probe cache.  -1 untested, 0 unsupported, 1 supported. */
 static int mctp_supported = -1;
 
