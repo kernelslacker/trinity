@@ -44,6 +44,7 @@ static void sanitise_mq_unlink(struct syscallrecord *rec)
 
 			memcpy(name, obj->mqobj.name, sizeof(obj->mqobj.name));
 			rec->a1 = (unsigned long) name;
+			avoid_shared_buffer_inout(&rec->a1, sizeof(((struct mqobj *)0)->name));
 			return;
 		}
 		/* Pool repeatedly came back empty/stale -- fall through. */
@@ -59,6 +60,7 @@ static void sanitise_mq_unlink(struct syscallrecord *rec)
 	name[6] = '\0';
 
 	rec->a1 = (unsigned long) name;
+	avoid_shared_buffer_inout(&rec->a1, sizeof(((struct mqobj *)0)->name));
 }
 
 struct syscallentry syscall_mq_unlink = {
