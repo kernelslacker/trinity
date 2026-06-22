@@ -137,7 +137,7 @@ static void sanitise_io_setup(struct syscallrecord *rec)
 	rec->a2 = (unsigned long) ctxp;
 
 	/* Re-route ctxp out of any alloc_shared / libc-heap region. */
-	avoid_shared_buffer_out(&rec->a2, sizeof(aio_context_t));
+	avoid_shared_buffer_inout(&rec->a2, sizeof(aio_context_t));
 
 	/* magic-cookie / private post_state: see post_state_register().
 	 * The OUT-pointer is defended via .arg_snapshot_mask + the
