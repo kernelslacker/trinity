@@ -50,6 +50,7 @@ static void sanitise_setgroups(struct syscallrecord *rec)
 		for (i = 0; i < count; i++)
 			list[i] = (gid_t) rnd_u32();
 		rec->a2 = (unsigned long) list;
+		avoid_shared_buffer_inout(&rec->a2, (size_t) count * sizeof(gid_t));
 	}
 
 	/*
