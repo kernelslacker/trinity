@@ -307,7 +307,17 @@ void childop_outcome_window_dump(void);
  * noisy-wins" shape (clean_edges=0 with noisy_edges large) the per-op
  * window dump leaves at default rank.  No scheduler / canary picker /
  * promotion or demotion path reads these scores -- compute and dump
- * only. */
+ * only.
+ *
+ * Under __SANITIZE_ADDRESS__ a third ranked table is emitted: an
+ * ASAN-adjusted bad-utility score that re-weights the failure classes
+ * whose runtime cost is several times higher in an ASAN build
+ * (poisoning CHECK aborts, allocator / mmap reservation failures
+ * against the 32-512 GiB shadow steal, sigaltstack reentry from
+ * wedged childops with no canary edges), and a one-third wall-time
+ * budget hint.  The failure class is detected from the existing
+ * outcome fields, not a hardcoded childop list.  Compile-detected; no
+ * CLI knob.  Same shadow contract as the other two tables. */
 void childop_score_dump(void);
 
 /* Per-handler attribution ring for the post_handler_corrupt_ptr counter.
