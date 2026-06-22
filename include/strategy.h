@@ -645,15 +645,17 @@ bool plateau_anti_prior_accept(unsigned int nr);
 
 /*
  * Recompute and publish the anti-prior baseline -- the mean of
- * kcov_shm->per_syscall_calls across the full MAX_NR_SYSCALL slot
- * range -- and the matching per-syscall acceptance weight table
- * plateau_anti_prior_accept consumes.  Called by the orchestrator at
- * every rotation that selects PIM_ANTI_PRIOR so the bias targets the
- * picker's CURRENT distribution rather than a snapshot frozen at the
- * start of the run.  Cheap: two O(MAX_NR_SYSCALL) walks on the
- * rotation path (one for the baseline sum, one for the per-syscall
- * weight), never on the hot pick path.  Visibility of the weight
- * table is published by the RELEASE-store of current_strategy that
+ * kcov_shm->per_syscall_calls across the currently-active syscall
+ * set (biarch: nr_active_32bit_syscalls + nr_active_64bit_syscalls;
+ * uniarch: nr_active_syscalls) -- and the matching per-syscall
+ * acceptance weight table plateau_anti_prior_accept consumes.
+ * Called by the orchestrator at every rotation that selects
+ * PIM_ANTI_PRIOR so the bias targets the picker's CURRENT
+ * distribution rather than a snapshot frozen at the start of the
+ * run.  Cheap: two O(MAX_NR_SYSCALL) walks on the rotation path
+ * (one for the baseline sum, one for the per-syscall weight), never
+ * on the hot pick path.  Visibility of the weight table is
+ * published by the RELEASE-store of current_strategy that
  * maybe_rotate_strategy emits after select_next_strategy returns;
  * see the weight-array comment in struct shm_s.
  */

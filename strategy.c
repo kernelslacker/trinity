@@ -2052,6 +2052,7 @@ void plateau_anti_prior_refresh_baseline(void)
 	unsigned long calls_snapshot[MAX_NR_SYSCALL];
 	unsigned long sum = 0;
 	unsigned int i;
+	unsigned int nr_active;
 	unsigned long baseline;
 	unsigned long floor_calls, ceil_calls;
 
@@ -2061,9 +2062,9 @@ void plateau_anti_prior_refresh_baseline(void)
 		return;
 	}
 
-	/* Mean across the full per_syscall_calls slot range.  Indexing by
+	/* Sum per_syscall_calls across the full slot range.  Indexing by
 	 * MAX_NR_SYSCALL (not max_nr_syscalls) matches the array
-	 * dimension and keeps the baseline stable across biarch builds
+	 * dimension and keeps the snapshot stable across biarch builds
 	 * where the per_syscall_calls slot is shared by both arches.
 	 * O(MAX_NR_SYSCALL) walk on the rotation path, never on the hot
 	 * pick path.  Snapshot each slot into calls_snapshot[] so the
@@ -2075,7 +2076,34 @@ void plateau_anti_prior_refresh_baseline(void)
 			__ATOMIC_RELAXED);
 		sum += calls_snapshot[i];
 	}
-	baseline = sum / MAX_NR_SYSCALL;
+
+	/* Denominator is the count of CURRENTLY ACTIVE syscalls -- mirrors
+	 * the (biarch ? nr_active_32 + nr_active_64 : nr_active_syscalls)
+	 * pattern in no_syscalls_enabled() and wall_lever_refresh_baseline().
+	 * The per_syscall_calls[] array is dimensioned for MAX_NR_SYSCALL
+	 * (=1024) slots but only the active subset can ever contribute
+	 * observation; dividing the sum by the full slot dimension deflates
+	 * the mean by the dead-slot count, makes average-active syscalls
+	 * look hot to the accept gate, and lets the per-syscall ceil clamp
+	 * fire early.  A cold-start window with no active table yet leaves
+	 * baseline=0; the picker gate's "baseline==0 short-circuit to pass"
+	 * branch in plateau_anti_prior_accept covers that path. */
+	if (biarch)
+		nr_active = __atomic_load_n(&shm->nr_active_32bit_syscalls,
+					    __ATOMIC_RELAXED) +
+			    __atomic_load_n(&shm->nr_active_64bit_syscalls,
+					    __ATOMIC_RELAXED);
+	else
+		nr_active = __atomic_load_n(&shm->nr_active_syscalls,
+					    __ATOMIC_RELAXED);
+
+	if (nr_active == 0) {
+		__atomic_store_n(&shm->plateau_anti_prior_baseline_calls, 0UL,
+				 __ATOMIC_RELAXED);
+		return;
+	}
+
+	baseline = sum / nr_active;
 
 	/* Publish at least 1 when the mean truncates to zero so the accept
 	 * gate's "baseline=0 short-circuit to pass" branch only fires
@@ -2462,7 +2490,7 @@ static void dump_strategy_stats_intervention_modes(void)
 				&shm->plateau_anti_prior_baseline_calls,
 				__ATOMIC_RELAXED);
 			if (ap_baseline > 0)
-				output(0, "  anti-prior baseline: %lu calls/syscall (mean across MAX_NR_SYSCALL at last refresh)\n",
+				output(0, "  anti-prior baseline: %lu calls/syscall (mean across active syscalls at last refresh)\n",
 				       ap_baseline);
 		}
 

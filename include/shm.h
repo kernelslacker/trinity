@@ -693,11 +693,14 @@ struct shm_s {
 	 *   gate latched on after the plateau lifts.
 	 *
 	 * plateau_anti_prior_baseline_calls: cached mean of
-	 *   kcov_shm->per_syscall_calls across MAX_NR_SYSCALL, refreshed by
-	 *   plateau_anti_prior_refresh_baseline() at every rotation that
-	 *   selects PIM_ANTI_PRIOR.  Read once per pick on the hot path
-	 *   inside plateau_anti_prior_accept().  Zero means "no baseline
-	 *   yet" (no anti-prior rotation has fired) and the accept gate
+	 *   kcov_shm->per_syscall_calls across the currently-active
+	 *   syscall set (biarch: nr_active_32bit_syscalls +
+	 *   nr_active_64bit_syscalls; uniarch: nr_active_syscalls),
+	 *   refreshed by plateau_anti_prior_refresh_baseline() at every
+	 *   rotation that selects PIM_ANTI_PRIOR.  Read once per pick on
+	 *   the hot path inside plateau_anti_prior_accept().  Zero means
+	 *   "no baseline yet" (no anti-prior rotation has fired, kcov_shm
+	 *   unavailable, or the active pool is empty) and the accept gate
 	 *   short-circuits to "pass" in that state so cold-start picks
 	 *   degenerate to uniform.
 	 *
