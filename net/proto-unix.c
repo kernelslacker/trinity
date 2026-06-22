@@ -19,10 +19,6 @@
 #define SO_PEEK_OFF	42
 #endif
 
-#ifndef SO_PASSPIDFD
-#define SO_PASSPIDFD	77
-#endif
-
 #ifndef SO_PASSSEC
 #define SO_PASSSEC	34
 #endif
