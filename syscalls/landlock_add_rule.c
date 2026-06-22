@@ -38,6 +38,7 @@ static void sanitise_landlock_add_rule(struct syscallrecord *rec)
 		pb->allowed_access = rand32() & ((1ULL << 16) - 1);
 		pb->parent_fd = get_random_fd();
 		rec->a3 = (unsigned long) pb;
+		avoid_shared_buffer_inout(&rec->a3, sizeof(*pb));
 		break;
 	}
 	case LANDLOCK_RULE_NET_PORT_COMPAT: {
@@ -56,6 +57,7 @@ static void sanitise_landlock_add_rule(struct syscallrecord *rec)
 		default: np->port = 1024 + (rnd_modulo_u32(64512)); break; /* unprivileged */
 		}
 		rec->a3 = (unsigned long) np;
+		avoid_shared_buffer_inout(&rec->a3, sizeof(*np));
 		break;
 	}
 	}
