@@ -432,6 +432,15 @@ bool madvise_cycler(struct childdata *child)
 	volatile unsigned int iter_cap;
 	int rc;
 
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the stats
+	 * writes entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	__atomic_add_fetch(&shm->stats.madvise_cycler_runs, 1, __ATOMIC_RELAXED);
 
 	rc = madvise_cycler_iter_pick_region(&ictx);
@@ -440,8 +449,9 @@ bool madvise_cycler(struct childdata *child)
 	if (rc > 0)
 		return true;
 
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
 
 	madvise_cycler_iter_setup_budget(&ictx);
 
@@ -454,8 +464,9 @@ bool madvise_cycler(struct childdata *child)
 
 		madvise_cycler_iter_arm_guard(&ictx, &old_segv, &old_bus);
 
-		__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-				   1, __ATOMIC_RELAXED);
+		if (valid_op)
+			__atomic_add_fetch(&shm->stats.childop_data_path[op],
+					   1, __ATOMIC_RELAXED);
 
 		if (sigsetjmp(madvise_cycler_pool_race_jmp, 1) == 0)
 			madvise_cycler_iter_run_cycle(&ictx, iter_cap);
