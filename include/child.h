@@ -239,6 +239,66 @@ enum childop_latch_reason {
 	CHILDOP_LATCH_OTHER,
 };
 
+/* Unified per-childop outcome record (AGGREGATED across the run, NOT a
+ * per-invocation event).  One coherent snapshot for consumers that want
+ * a single record per op instead of scraping a dozen parallel
+ * shm->stats.childop_* arrays.
+ *
+ * Telemetry-only.  No policy decision reads this record; no field has
+ * back-pressure on the picker, canary queue, or promote / demote
+ * heuristic.  Fields without a backing per-childop counter today
+ * (wall_ns, direct_syscalls, transition_edges, crashes, dstate_wedges,
+ * timeout_observed, timeout_missed, asan_runtime_failure) stay at 0 /
+ * false until producers are wired, mirroring the skip-zero convention
+ * the existing per-childop dumps use.
+ *
+ * Counter mapping for the populated fields (see include/stats.h):
+ *   clean_edges      shm->stats.childop_edges_clean[op]
+ *   noisy_edges      shm->stats.childop_edges_discovered[op] - clean_edges
+ *   wedges           shm->stats.childop_wedge_count[op]
+ *   setup_failures   shm->stats.childop_invocations[op]
+ *                    - shm->stats.childop_setup_accepted[op]
+ *   taint_transition shm->stats.taint_transitions[op] > 0
+ *
+ * Subtractions are clamped at zero: the source counters race under
+ * RELAXED add-fetch from multiple producers, and a few childops bump
+ * setup_accepted more than once per dispatch (the existing setup-yield
+ * permille dump in dump_stats clamps for the same reason), so the
+ * minuend can momentarily trail the subtrahend across a non-atomic pair
+ * of reads. */
+struct childop_outcome {
+	enum child_op_type op;
+	uint64_t wall_ns;
+	uint64_t direct_syscalls;
+	uint64_t clean_edges;
+	uint64_t noisy_edges;
+	uint64_t transition_edges;
+	uint32_t crashes;
+	uint32_t wedges;
+	uint32_t dstate_wedges;
+	uint32_t setup_failures;
+	uint32_t timeout_observed;
+	uint32_t timeout_missed;
+	bool asan_runtime_failure;
+	bool taint_transition;
+};
+
+/* Snapshot the aggregated outcome record for one childop.  Reads shm
+ * counters under RELAXED loads; the resulting record is a coincident-
+ * point-in-time view, not a transactional one (sibling producers can
+ * advance any source counter between two field reads).  Safe to call
+ * from any context that already has shm mapped; never modifies shm. */
+void childop_outcome_snapshot(enum child_op_type op,
+			      struct childop_outcome *out);
+
+/* Render a per-childop window summary line via output(1, ...) for every
+ * op that has been invoked at least once this run.  Skips
+ * CHILD_OP_SYSCALL (the syscall path attributes its work through the
+ * per-strategy counters, matching the surrounding per-childop tables)
+ * and skips never-invoked ops (skip-zero convention).  No-op until a
+ * caller is wired in. */
+void childop_outcome_window_dump(void);
+
 /* Per-handler attribution ring for the post_handler_corrupt_ptr counter.
  * Sized to comfortably hold the long tail of distinct handlers without
  * inflating the per-child footprint -- 32 entries cover the unique
