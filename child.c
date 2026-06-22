@@ -1109,12 +1109,10 @@ static void init_child_runtime_config(struct childdata *child, int childno)
 {
 	kcov_init_child(&child->kcov, child->num);
 
-	/* Per-child staging buffer for the kcov global counters.  Pure
-	 * plumbing in this commit -- nothing bumps these fields yet and
-	 * kcov_child_flush_stats() is a no-op stub.  calloc post-fork
-	 * keeps the allocation child-private (matches kc->dedup); an
-	 * alloc failure leaves the pointer NULL and the future bumpers
-	 * / flush path will gate on local_stats != NULL. */
+	/* Per-child staging buffer for the kcov global counters.  calloc
+	 * post-fork keeps the allocation child-private (matches kc->dedup);
+	 * an alloc failure leaves the pointer NULL and the bumper / flush
+	 * paths gate on local_stats != NULL. */
 	child->local_stats = calloc(1, sizeof(*child->local_stats));
 
 	/* Uniarch: pin the active-syscalls pointer once.  Biarch leaves
