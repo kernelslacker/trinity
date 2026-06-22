@@ -155,8 +155,19 @@ bool memory_pressure(struct childdata *child)
 		return false;
 
 	__atomic_add_fetch(&shm->stats.memory_pressure_runs, 1, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
+
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the stats
+	 * writes entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
 
 	/* Setup is outside the wrap.  region/len/p/stride are derived from
 	 * pointer arithmetic that cannot fault on the pool mapping itself,
@@ -205,9 +216,10 @@ bool memory_pressure(struct childdata *child)
 			sigaction(SIGBUS,  &sa,
 				  &memory_pressure_pool_race_old_bus);
 
-			__atomic_add_fetch(
-				&shm->stats.childop_data_path[child->op_type],
-				1, __ATOMIC_RELAXED);
+			if (valid_op)
+				__atomic_add_fetch(
+					&shm->stats.childop_data_path[op],
+					1, __ATOMIC_RELAXED);
 
 			/*
 			 * Dirty each page so MADV_PAGEOUT has real work to do.
