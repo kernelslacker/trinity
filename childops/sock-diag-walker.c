@@ -71,9 +71,6 @@
 #ifndef AF_VSOCK
 #define AF_VSOCK 40
 #endif
-#ifndef IPPROTO_MPTCP
-#define IPPROTO_MPTCP 262
-#endif
 
 #define SD_BUF_BYTES		2048
 #define SD_RECV_TIMEO_S		1
