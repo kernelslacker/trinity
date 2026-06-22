@@ -780,23 +780,20 @@ static void kcov_init_child_remote_probe(struct kcov_child *kc,
  * Per-CMP-child cost: one extra fd plus KCOV_CMP_BUFFER_SIZE *
  * sizeof(unsigned long) (~2MB) of mmap.
  *
- * Returns true when the cmp setup failed deep enough that the
- * cmp_fd teardown ran -- the caller then skips the F_DUPFD relocate
- * block and goes straight to mode selection (matches the original
- * err_close_cmp -> goto select_mode shortcut).  Returns false on cmp
- * setup success and on cmp-open failure -- both paths originally
- * fell through to the F_DUPFD relocate block.
+ * On any failure path the cmp fd is torn down and kc->cmp_fd is left
+ * at -1; the PC fd is untouched.  The caller relocates the PC fd
+ * unconditionally and the CMP fd only when it survived the probe.
  */
-static bool kcov_init_child_cmp_fd(struct kcov_child *kc)
+static void kcov_init_child_cmp_fd(struct kcov_child *kc)
 {
 	if (!kc->active)
-		return false;
+		return;
 
 	kc->cmp_fd = open("/sys/kernel/debug/kcov", O_RDWR);
 	if (kc->cmp_fd < 0) {
 		kcov_diag_record(&kcov_shm->cmp_diag.init_open_errno,
 			&kcov_shm->cmp_diag.init_open_count, errno);
-		return false;
+		return;
 	}
 
 	if (ioctl(kc->cmp_fd, KCOV_INIT_TRACE,
@@ -834,7 +831,7 @@ static bool kcov_init_child_cmp_fd(struct kcov_child *kc)
 	kc->cmp_capable = true;
 	track_shared_region((unsigned long)kc->cmp_trace_buf,
 		KCOV_CMP_BUFFER_SIZE * sizeof(unsigned long));
-	return false;
+	return;
 
 err_unmap_cmp:
 	munmap(kc->cmp_trace_buf,
@@ -851,7 +848,6 @@ err_close_cmp:
 	 * support is broken.  cmp_capable is false here, so the
 	 * random-pick branch will deterministically choose KCOV_MODE_PC.
 	 */
-	return true;
 }
 
 /*
@@ -918,40 +914,41 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 		track_shared_region((unsigned long)kc->trace_buf,
 				    KCOV_TRACE_SIZE * sizeof(unsigned long));
 
+	kcov_init_child_cmp_fd(kc);
+
 	/*
 	 * Both fds are now stable (remote-probe re-mmap dance done, cmp
-	 * setup done).  Relocate them to KCOV_FD_HIGH_BASE so the low
-	 * slots they were handed (3, 4, ...) are out of the way of the
-	 * fuzzer's pickers.  The mmap regions stay valid across the
-	 * close-of-old because they are anchored to the underlying open
-	 * file description, not the fd number: a subsequent KCOV_ENABLE
-	 * on the new fd reads/writes the same trace buffer.
+	 * setup done or torn down).  Relocate them to KCOV_FD_HIGH_BASE
+	 * so the low slots they were handed (3, 4, ...) are out of the
+	 * way of the fuzzer's pickers.  The mmap regions stay valid
+	 * across the close-of-old because they are anchored to the
+	 * underlying open file description, not the fd number: a
+	 * subsequent KCOV_ENABLE on the new fd reads/writes the same
+	 * trace buffer.
 	 *
-	 * Done only on the cmp-setup success path -- the cmp-helper
-	 * deeper-failure return skips this block, which just means
-	 * kc->fd keeps its original low number for that child and the
-	 * registry covers it.  Per-fd failure (EMFILE etc.) is silently
-	 * best-effort: keep the original fd and let the registry catch
-	 * any picker that targets it.
+	 * The PC fd is always relocated; the CMP fd is relocated only
+	 * when the CMP probe left one behind (kernels without
+	 * KCOV_TRACE_CMP tear it down and leave cmp_fd at -1).  Per-fd
+	 * failure (EMFILE etc.) is silently best-effort: keep the
+	 * original fd and let the registry catch any picker that
+	 * targets it.
 	 */
-	if (!kcov_init_child_cmp_fd(kc)) {
-		if (kc->fd >= 0 && (unsigned int) kc->fd < KCOV_FD_HIGH_BASE) {
-			int new_fd = fcntl(kc->fd, F_DUPFD_CLOEXEC,
-					   (int) KCOV_FD_HIGH_BASE);
+	if (kc->fd >= 0 && (unsigned int) kc->fd < KCOV_FD_HIGH_BASE) {
+		int new_fd = fcntl(kc->fd, F_DUPFD_CLOEXEC,
+				   (int) KCOV_FD_HIGH_BASE);
 
-			if (new_fd >= 0) {
-				close(kc->fd);
-				kc->fd = new_fd;
-			}
+		if (new_fd >= 0) {
+			close(kc->fd);
+			kc->fd = new_fd;
 		}
-		if (kc->cmp_fd >= 0 && (unsigned int) kc->cmp_fd < KCOV_FD_HIGH_BASE) {
-			int new_fd = fcntl(kc->cmp_fd, F_DUPFD_CLOEXEC,
-					   (int) KCOV_FD_HIGH_BASE);
+	}
+	if (kc->cmp_fd >= 0 && (unsigned int) kc->cmp_fd < KCOV_FD_HIGH_BASE) {
+		int new_fd = fcntl(kc->cmp_fd, F_DUPFD_CLOEXEC,
+				   (int) KCOV_FD_HIGH_BASE);
 
-			if (new_fd >= 0) {
-				close(kc->cmp_fd);
-				kc->cmp_fd = new_fd;
-			}
+		if (new_fd >= 0) {
+			close(kc->cmp_fd);
+			kc->cmp_fd = new_fd;
 		}
 	}
 
