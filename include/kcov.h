@@ -1520,34 +1520,32 @@ struct kcov_shared {
 	 *      slot) tuples beyond the cap are silently dropped.
 	 *  reexec_pending_pick_success[REEXEC_PENDING_PICK_HIST_NR]
 	 *      Per-pending-buffer-index success counter.  The
-	 *      --redqueen-pending-pick={random,first} A/B selection at the
-	 *      dispatch_step tail picks ONE entry from the per-call
-	 *      reexec_pending[] census (index 0..reexec_pending_count) to
-	 *      drain into a re-exec; this counter bumps the chosen index
-	 *      when the inner re-exec dispatch returned inner_new_cmp > 0
-	 *      (i.e., the re-exec produced bloom-novel CMP records).
-	 *      Active in BOTH pick modes so an A/B run can read
-	 *      directly whether entry-0's trace-order bias under FIRST
-	 *      mode actually costs signal vs the uniform RANDOM pick.
-	 *      Bumped from redqueen_reexec_step() inside the existing
-	 *      inner_new_cmp > 0 success block; the chosen index is
-	 *      clamped to REEXEC_PENDING_PICK_HIST_NR before use. */
+	 *      dispatch_step-tail RedQueen consumer drains every staged
+	 *      reexec_pending[] entry per parent dispatch
+	 *      (--redqueen-pending-pick is a no-op); this counter bumps the
+	 *      entry's true index (0..reexec_pending_count) inside
+	 *      redqueen_reexec_step() when the inner re-exec dispatch
+	 *      returned inner_new_cmp > 0 (i.e., the re-exec produced
+	 *      bloom-novel CMP records), so per-slot / per-index re-exec
+	 *      lift remains directly readable.  Bumped from
+	 *      redqueen_reexec_step() inside the existing inner_new_cmp > 0
+	 *      success block; the entry index is clamped to
+	 *      REEXEC_PENDING_PICK_HIST_NR before use. */
 	unsigned long reexec_attempts_by_syscall[MAX_NR_SYSCALL];
 	unsigned long reexec_ambiguous_by_syscall[MAX_NR_SYSCALL];
 	unsigned long reexec_attribution_slot_hist[CMP_REDQUEEN_SLOT_HIST_NR];
 	unsigned long reexec_success_by_slot[CMP_REDQUEEN_SLOT_HIST_NR];
 	unsigned long reexec_pending_dropped;
 	/*
-	 * Per-call cap C-1 wastage: at every gate-pass the dispatch_step
-	 * tail drains exactly ONE reexec_pending[] entry, so the other
-	 * (reexec_pending_count - 1) entries the producer staged are
-	 * silently discarded with the per-call attribution scratch reset.
-	 * Bumped at the gate-pass site in random_syscall_step's re-exec
-	 * tail by (reexec_pending_count - 1) BEFORE the pick fires, in
-	 * both FIRST and RANDOM pick modes.  In FIRST mode this is the
-	 * "drain-only-[0]" loss signal: every bump is an entry at
-	 * index >= 1 that the trace-order bias guaranteed would never
-	 * be drained for this parent call.
+	 * Obsolete wastage counter.  Originally bumped at the gate-pass
+	 * site by (reexec_pending_count - 1) under the prior single-drain
+	 * rule (consumer drained exactly ONE entry, the rest were
+	 * discarded with the per-call scratch reset).  The dispatch_step
+	 * tail now drains every staged reexec_pending[] entry per parent
+	 * dispatch, so no entries are wasted per gate-pass and the
+	 * counter is no longer incremented.  Field kept so the shm
+	 * layout and existing stats consumers do not need to regenerate;
+	 * current value is always zero in live runs.
 	 */
 	unsigned long reexec_pending_drain_unused;
 	unsigned long reexec_pending_pick_success[REEXEC_PENDING_PICK_HIST_NR];

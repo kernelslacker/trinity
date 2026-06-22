@@ -210,23 +210,17 @@ extern bool no_startup_isolation;
 extern char *stats_log_path;
 
 /*
- * --redqueen-pending-pick={random,first}: A/B selection policy for the
- * RedQueen re-exec consumer at the dispatch_step tail.  The consumer
- * picks ONE entry from the per-call reexec_pending[] attribution
- * census (0..reexec_pending_count) to drain into a re-exec:
- *   RANDOM (default) -- uniform pick over [0, reexec_pending_count) via
- *                       rnd_modulo_u32(); surfaces signal from any
- *                       attributed entry, not just the trace-order
- *                       winner.
- *   FIRST            -- always pick reexec_pending[0] (the first
- *                       attributed record in trace order, the prior
- *                       behaviour).  Stable but biases hard toward
- *                       early validation checks, starving later
- *                       attributions.
- *
- * Per-pending-index success counters (kcov_shm->reexec_pending_pick_success[])
- * are active in BOTH modes so an A/B run can directly read
- * whether the entry-0 trace-order bias actually costs signal.
+ * --redqueen-pending-pick={random,first}: retained for compatibility,
+ * no-op.  The RedQueen re-exec consumer at the dispatch_step tail
+ * (random-syscall.c) drains every staged reexec_pending[] entry per
+ * parent dispatch -- there is no per-call selection between entries
+ * anymore, so neither mode alters which entries (or how many) get
+ * re-executed.  Parsing is preserved so existing invocations do not
+ * break; the enum, parser and name helper are kept for the
+ * dump_stats policy label only.  Per-pending-index success counters
+ * (kcov_shm->reexec_pending_pick_success[]) are still bumped at each
+ * entry's true index inside redqueen_reexec_step(), so per-slot /
+ * per-index re-exec lift remains directly readable.
  */
 enum redqueen_pending_pick_mode_t {
 	REDQUEEN_PENDING_PICK_RANDOM = 0,
