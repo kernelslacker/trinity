@@ -181,6 +181,22 @@ static void timer_create_sanitise(struct syscallrecord *rec)
 	rec->a2 = (unsigned long)sigev;
 
 	/*
+	 * sigevent (a2) is curated INPUT: sigev_notify / sigev_signo / _tid
+	 * above pick a deliberate disposition the kernel must validate.
+	 * argtype[1] = ARG_ADDRESS, so the post-sanitise blanket_address_scrub
+	 * relocates the slot to a fresh pool page without copying the curated
+	 * bytes -- the kernel then reads pool garbage at the replacement
+	 * address and -EINVALs in posix_timer_event() before any sigev_notify
+	 * branch runs.  The _inout helper relocates AND memcpys, so the
+	 * blanket pass no-ops on this slot and the curated disposition
+	 * survives into the kernel.  Guarded on non-NULL: a get_writable_address
+	 * failure legitimately leaves a2 == 0 to exercise the kernel's NULL
+	 * path.
+	 */
+	if (sigev != NULL)
+		avoid_shared_buffer_inout(&rec->a2, sizeof(struct sigevent));
+
+	/*
 	 * created_timer_id (a3) is the kernel's output: timer_create writes
 	 * the new timer_t there on success.  Random pool can land it inside
 	 * an alloc_shared region, so scrub.
