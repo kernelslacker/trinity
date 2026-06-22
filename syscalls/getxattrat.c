@@ -5,10 +5,14 @@
  */
 #include <fcntl.h>
 #include <stdbool.h>
+#include <stdio.h>
+#include <string.h>
 #include "arch.h"
 #include "csfu.h"
 #include "deferred-free.h"
+#include "pathnames.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
@@ -17,6 +21,35 @@
 #include "compat.h"
 #ifdef USE_XATTR_ARGS
 #include <linux/xattr.h>
+#endif
+/*
+ * <sys/xattr.h> AFTER <linux/xattr.h>: glibc's sys/xattr.h trips
+ * linux/libc-compat.h into setting __UAPI_DEF_XATTR=0, which then
+ * suppresses struct xattr_args in linux/xattr.h.  Including the
+ * kernel UAPI header first lets it define the struct, and the libc
+ * header that follows defers to __USE_KERNEL_XATTR_DEFS.
+ */
+#include <sys/xattr.h>
+
+/*
+ * Mirrors the MAX_TESTFILES bound in fds/testfiles.c so we land inside
+ * the same trinity-testfile<N> inodes the rest of the xattr-family
+ * (getxattr, lgetxattr, fgetxattr, fremovexattr, lremovexattr,
+ * llistxattr) touches; cross-process contention concentrates on the
+ * same per-inode i_xattrs rwsem.
+ */
+#define GETXATTRAT_NR_TESTFILES	4
+
+/*
+ * Curated name we plant ahead of the trinity-dispatched getxattrat.
+ * Matches planted_xattr_name in fremovexattr / lremovexattr /
+ * llistxattr / lgetxattr / getxattr so a single round of testfile
+ * xattrs is shared across the whole xattr-family precondition
+ * surface.
+ */
+static const char getxattrat_planted_name[] = "user.trinity_plant";
+
+#ifdef USE_XATTR_ARGS
 
 /*
  * Single-version ABI today: struct xattr_args has only one
@@ -57,6 +90,72 @@ static void sanitise_getxattrat(struct syscallrecord *rec)
 #endif
 
 	rec->post_state = 0;
+
+	/*
+	 * ARG_PATHNAME plumbed a random pathname into rec->a2 and
+	 * ARG_XATTR_NAME filled rec->a4 with a namespace-shaped name
+	 * from the curated pool, but the random path is most often not
+	 * a real file (ENOENT) or, even when it does land on a real
+	 * file, the drawn name is not currently set on that inode --
+	 * path_getxattrat -> vfs_getxattr returns ENOTSUP / ENODATA at
+	 * the front of the call before ever touching the per-fs handler
+	 * dispatch or the simple_xattr_get fast path that the per-inode
+	 * i_xattrs rwsem guards.  Same "high calls, low edges" cold-
+	 * syscall shape that the non-at getxattr / lgetxattr /
+	 * fremovexattr / lremovexattr / llistxattr were in before their
+	 * precondition fixes.
+	 *
+	 * Half the draws now repoint pathname (a2) at one of the
+	 * trinity-testfile<N> absolute paths and overwrite the name
+	 * (a4) buffer in place with the curated user.* token, then
+	 * plant the value on disk via setxattr() so the subsequent
+	 * getxattrat lands inside the real per-inode read path.  An
+	 * absolute pathname makes dfd irrelevant -- the kernel ignores
+	 * rec->a1 when pathname is absolute -- so this composes cleanly
+	 * with the AT_FDCWD-pin / random-fd dfd logic and the at_flags
+	 * sanitiser below; the planted testfiles are regular files so
+	 * AT_SYMLINK_NOFOLLOW is a no-op on them, and the absolute
+	 * non-empty path makes AT_EMPTY_PATH irrelevant too.  The plant
+	 * runs BEFORE post_state_install so the size snapshot the .post
+	 * handler validates retval against is captured on the same draw
+	 * that asks the kernel to populate it.
+	 *
+	 * The other half preserves rec->a2 / rec->a4 exactly as the
+	 * generic draw left them so the namespace-reject / ENODATA arms
+	 * stay exercised.  Plant failure (ENOSPC on a full xattr list,
+	 * EOPNOTSUPP on a fs that bailed out of the user.* leg, ENOENT
+	 * if the testfile slot was never opened, ...) is non-fatal: an
+	 * earlier draw on the same inode may still hold a stale
+	 * user.trinity_plant from a prior round, so the trinity-
+	 * dispatched getxattrat below may still land on the real read
+	 * path.
+	 *
+	 * Slow-path note: the setxattr() in sanitise is one real
+	 * syscall.  syscalls/getxattrat.c is outside the sanitiser-
+	 * slow-path check's FILES scope, so this is within budget for
+	 * the precondition payoff.
+	 */
+	if (rnd_modulo_u32(2) == 0) {
+		char *path = (char *) rec->a2;
+		char *name = (char *) rec->a4;
+
+		if (path != NULL && name != NULL) {
+			/*
+			 * Overwrite the ARG_PATHNAME / ARG_XATTR_NAME
+			 * buffers in place.  generate_pathname() zmallocs
+			 * MAX_PATH_LEN (4096) bytes; the xattr name buffer
+			 * is XATTR_NAME_BUFSZ (256) bytes; both comfortably
+			 * fit the planted values.
+			 */
+			snprintf(path, MAX_PATH_LEN,
+				 "%s/trinity-testfile%u",
+				 trinity_tmpdir_abs(),
+				 1 + rnd_modulo_u32(GETXATTRAT_NR_TESTFILES));
+			memcpy(name, getxattrat_planted_name,
+			       sizeof(getxattrat_planted_name));
+			(void) setxattr(path, name, "trin", 4, 0);
+		}
+	}
 
 #ifdef USE_XATTR_ARGS
 	{
