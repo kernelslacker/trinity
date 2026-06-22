@@ -594,6 +594,13 @@ out_rmdir:
 bool fs_lifecycle(struct childdata *child)
 {
 	bool was_unsupported = ns_unsupported;
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	if (!ensure_private_ns())
 		goto out_latch;
@@ -604,11 +611,13 @@ bool fs_lifecycle(struct childdata *child)
 	 * bail path runs between the two bumps here -- the switch dispatches
 	 * unconditionally -- so the healthy baseline is equality, matching
 	 * the NO-setup signature of a linear archetype-A childop. */
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
 
-	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
 
 	switch (rnd_modulo_u32(6)) {
 	case 0: do_tmpfs_lifecycle();   break;
@@ -626,8 +635,8 @@ out_latch:
 	 * the variant's mount() call), record NS_UNSUPPORTED so the per-arm
 	 * yield dump attributes the disable to a namespace/capability denial
 	 * rather than a generic init failure. */
-	if (!was_unsupported && ns_unsupported)
-		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
+	if (!was_unsupported && ns_unsupported && valid_op)
+		__atomic_store_n(&shm->stats.childop_latch_reason[op],
 				 CHILDOP_LATCH_NS_UNSUPPORTED, __ATOMIC_RELAXED);
 
 	return true;
