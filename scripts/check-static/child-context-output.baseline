@@ -12,10 +12,10 @@ childops/eth-emitter.c:253:ensure_socket
 childops/fs-lifecycle.c:158:ensure_private_ns
 childops/genetlink-fuzzer.c:294:ensure_discovery
 childops/genetlink-fuzzer.c:313:ensure_discovery
-childops/inplace_crypto_oracle.c:161:latch_target
+childops/inplace_crypto_oracle.c:159:latch_target
+childops/inplace_crypto_oracle.c:269:log_corruption
 childops/inplace_crypto_oracle.c:271:log_corruption
-childops/inplace_crypto_oracle.c:273:log_corruption
-childops/inplace_crypto_oracle.c:274:log_corruption
+childops/inplace_crypto_oracle.c:272:log_corruption
 childops/ip6gre-bond-lapb-stack.c:118:latch_unsupported
 childops/mount-churn.c:252:ensure_private_ns
 childops/mpls-route-churn.c:206:maybe_modprobe_once

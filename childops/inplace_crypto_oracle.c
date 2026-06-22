@@ -90,6 +90,7 @@
 #endif
 
 #include "child.h"
+#include "compat.h"
 #include "syscall-gate.h"
 #include "childops-genl.h"
 #include "childops-util.h"
@@ -108,9 +109,6 @@
 #endif
 #ifndef SOL_ALG
 # define SOL_ALG			279
-#endif
-#ifndef SOL_TLS
-# define SOL_TLS			282
 #endif
 #ifndef MSG_SPLICE_PAGES
 # define MSG_SPLICE_PAGES		0x8000000
