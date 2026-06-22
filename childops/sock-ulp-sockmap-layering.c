@@ -66,10 +66,6 @@
 #include "tls.h"
 #include "trinity.h"
 
-#ifndef SOL_TLS
-# define SOL_TLS		282
-#endif
-
 #ifndef BPF_PROG_TYPE_SK_SKB
 # define BPF_PROG_TYPE_SK_SKB	17
 #endif

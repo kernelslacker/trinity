@@ -110,15 +110,6 @@
 #include <net/if.h>
 #include <linux/sockios.h>
 
-/* SOL_TLS lives in <linux/tls.h> on the kernel side; some libc trees
- * don't surface it via the standard socket headers.  282 is the UAPI
- * value (matches include/uapi/linux/tls.h) and is stable across every
- * kernel that ships kTLS.  Same fallback shape used in other childops
- * that talk to net/tls/. */
-#ifndef SOL_TLS
-#define SOL_TLS			282
-#endif
-
 /* Per-process latched gates.  Module / config / capability state is
  * static for a child's lifetime, so once we've paid the EFAIL we stop
  * probing.  Mirrors tls_ulp_churn / handshake_req_abort. */
