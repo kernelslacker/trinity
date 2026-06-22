@@ -156,6 +156,7 @@ static void sanitise_seccomp(struct syscallrecord *rec)
 
 		bpf_gen_seccomp(&addr, &len);
 		rec->a3 = (unsigned long) addr;
+		avoid_shared_buffer_inout(&rec->a3, sizeof(struct sock_fprog));
 		heap = addr;
 #endif
 	}
