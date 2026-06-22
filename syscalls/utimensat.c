@@ -118,6 +118,20 @@ static void sanitise_utimensat(struct syscallrecord *rec)
 	}
 
 	rec->a3 = (unsigned long) ts;
+
+	/*
+	 * utimes (a3) is the curated input the kernel reads: the timespec
+	 * pair above encodes UTIME_NOW/UTIME_OMIT, near-now, far past/future,
+	 * and the invalid-nsec edges we want to push at the syscall.  a3 is
+	 * ARG_ADDRESS, so the post-sanitise blanket address scrub relocates
+	 * the slot to a fresh pool page; the plain _out variant would publish
+	 * the new pointer without the curated bytes and the kernel would read
+	 * pool garbage for (tv_sec, tv_nsec).  _inout relocates AND memcpys
+	 * the payload, so the scrub no-ops on a3 and the kernel sees the real
+	 * timespec[2] we built above.  The NULL-utimes early-return branch
+	 * above does not reach here, so this only fires on the curated path.
+	 */
+	avoid_shared_buffer_inout(&rec->a3, sizeof(struct timespec) * 2);
 }
 
 struct syscallentry syscall_utimensat = {
