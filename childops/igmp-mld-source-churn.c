@@ -569,13 +569,12 @@ static void iter_one_v4(int op_type, unsigned int iter_idx,
 	 * snapshot is out of range. */
 	const bool valid_op = ((int) op_type >= 0 && op_type < NR_CHILD_OP_TYPES);
 
-	if (valid_op)
+	if (valid_op) {
 		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op_type],
 				   1, __ATOMIC_RELAXED);
-
-	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop_data_path[op_type],
 				   1, __ATOMIC_RELAXED);
+	}
 	send_burst(it.send_s, 2);
 
 	if ((unsigned long long)ns_since(t_outer) >= IMC_WALL_CAP_NS)
@@ -867,13 +866,12 @@ static void iter_one_v6(int op_type, unsigned int iter_idx,
 	 * snapshot is out of range. */
 	const bool valid_op = ((int) op_type >= 0 && op_type < NR_CHILD_OP_TYPES);
 
-	if (valid_op)
+	if (valid_op) {
 		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op_type],
 				   1, __ATOMIC_RELAXED);
-
-	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop_data_path[op_type],
 				   1, __ATOMIC_RELAXED);
+	}
 	send_burst(it.send_s, 2);
 
 	if ((unsigned long long)ns_since(t_outer) >= IMC_WALL_CAP_NS)
