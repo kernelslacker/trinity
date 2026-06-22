@@ -218,15 +218,20 @@ bool mmap_lifecycle(struct childdata *child)
 	if (vma_pressure_is_high())
 		return true;
 
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	head = get_objhead(OBJ_LOCAL, OBJ_MMAP_ANON);
 	if (head == NULL)
 		return false;
 	nr_maps = head->num_entries;
 
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op) {
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
+	}
 
 	/*
 	 * Bias toward creation when we have few maps,
