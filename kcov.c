@@ -200,7 +200,7 @@ int kcov_cmp_diag_format(char *buf, size_t bufsz, enum kcov_cmp_diag_part part)
 {
 	struct kcov_cmp_diag *d;
 	unsigned int open_c, init_trace_c, mmap_c;
-	unsigned int enable_c, disable_c, rt_enable_c;
+	unsigned int enable_c, disable_c, rt_enable_c, rt_disable_c;
 	bool want_init, want_rt;
 	int n = 0;
 
@@ -220,6 +220,7 @@ int kcov_cmp_diag_format(char *buf, size_t bufsz, enum kcov_cmp_diag_part part)
 	enable_c     = __atomic_load_n(&d->init_enable_count,     __ATOMIC_RELAXED);
 	disable_c    = __atomic_load_n(&d->init_disable_count,    __ATOMIC_RELAXED);
 	rt_enable_c  = __atomic_load_n(&d->runtime_enable_count,  __ATOMIC_RELAXED);
+	rt_disable_c = __atomic_load_n(&d->runtime_disable_count, __ATOMIC_RELAXED);
 
 	/* Each token is gated on (size_t)n < bufsz so once snprintf has
 	 * filled (or its would-have-written return drove n past) the
@@ -263,6 +264,11 @@ int kcov_cmp_diag_format(char *buf, size_t bufsz, enum kcov_cmp_diag_part part)
 			int e = __atomic_load_n(&d->runtime_enable_errno, __ATOMIC_RELAXED);
 			n += snprintf(buf + n, bufsz - n, " runtime_enable=%s(%d)/%u",
 				errno_name_or("?", e), e, rt_enable_c);
+		}
+		if (rt_disable_c && (size_t)n < bufsz) {
+			int e = __atomic_load_n(&d->runtime_disable_errno, __ATOMIC_RELAXED);
+			n += snprintf(buf + n, bufsz - n, " runtime_disable=%s(%d)/%u",
+				errno_name_or("?", e), e, rt_disable_c);
 		}
 	}
 
@@ -1472,8 +1478,8 @@ void kcov_disable(struct kcov_child *kc)
 		 * knows not to fire on an fd the kernel never enabled. */
 		if (ioctl(kc->cmp_fd, KCOV_DISABLE, 0) < 0)
 			kcov_diag_record(
-				&kcov_shm->pc_diag.pc_disable_errno,
-				&kcov_shm->pc_diag.pc_disable_count,
+				&kcov_shm->cmp_diag.runtime_disable_errno,
+				&kcov_shm->cmp_diag.runtime_disable_count,
 				errno);
 		kc->cmp_enabled_this_call = false;
 	}

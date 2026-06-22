@@ -517,12 +517,14 @@ struct kcov_cmp_diag {
 	int init_enable_errno;
 	int init_disable_errno;
 	int runtime_enable_errno;
+	int runtime_disable_errno;
 	unsigned int init_open_count;
 	unsigned int init_init_trace_count;
 	unsigned int init_mmap_count;
 	unsigned int init_enable_count;
 	unsigned int init_disable_count;
 	unsigned int runtime_enable_count;
+	unsigned int runtime_disable_count;
 };
 
 /* EINTR retry budget for KCOV_ENABLE / KCOV_REMOTE_ENABLE.  Eight is
