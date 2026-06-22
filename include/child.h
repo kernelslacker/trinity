@@ -299,6 +299,17 @@ void childop_outcome_snapshot(enum child_op_type op,
  * caller is wired in. */
 void childop_outcome_window_dump(void);
 
+/* SHADOW telemetry: derive utility + penalty scores from the outcome
+ * record and emit two ranked tables -- top by good-utility (clean and
+ * noisy edges per second of wall time, fixed-point integer) and top
+ * by bad-utility (sum of wedge / dstate / crash / setup-failure /
+ * asan-failure accumulators).  Surfaces the "clean-canary-zero but
+ * noisy-wins" shape (clean_edges=0 with noisy_edges large) the per-op
+ * window dump leaves at default rank.  No scheduler / canary picker /
+ * promotion or demotion path reads these scores -- compute and dump
+ * only. */
+void childop_score_dump(void);
+
 /* Per-handler attribution ring for the post_handler_corrupt_ptr counter.
  * Sized to comfortably hold the long tail of distinct handlers without
  * inflating the per-child footprint -- 32 entries cover the unique

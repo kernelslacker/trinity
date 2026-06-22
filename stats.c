@@ -10076,6 +10076,8 @@ void __cold dump_stats(void)
 
 	dump_stats_childop_ranked_tables();
 
+	childop_score_dump();
+
 	dump_stats_shared_buffer_misc();
 
 	dump_stats_strategy_summary();
