@@ -54,6 +54,7 @@ enum field_tag {
 	FT_BPF_PROGRAM,		/* eBPF insn buffer; fill delegated to net/ebpf.c generator */
 	FT_VOCAB,		/* pick a NUL-padded byte string from u.vocab.vocab */
 	FT_SRANGE,		/* signed uniform [u.srange.lo, u.srange.hi] */
+	FT_PICKER,		/* call u.picker.pick() for the value (runtime-populated pool) */
 
 	/*
 	 * Sentinel for per-tag-indexed counters (e.g.
@@ -146,6 +147,18 @@ struct struct_field {
 			unsigned int		    n;
 			unsigned int		    stride;
 		} magic;
+		/*
+		 * FT_PICKER: call pick() and write the returned u64 into the
+		 * field slot at the field's natural width (1/2/4/8).  The
+		 * picker owns its own empty-pool fallback so the fill path
+		 * never wedges: pickers fronted by a live-resource pool
+		 * (tracepoint ids, fd typed-pool, etc.) must roll a random
+		 * value internally when the pool is empty, so the structured
+		 * fill keeps producing usable bytes on every dispatch.
+		 */
+		struct {
+			unsigned long long (*pick)(void);
+		} picker;
 	} u;
 };
 

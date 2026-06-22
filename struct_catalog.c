@@ -134,6 +134,7 @@
 #include <asm/ldt.h>		/* struct user_desc -- modify_ldt arg2 */
 #endif
 #include "debug.h"
+#include "perf.h"		/* random_tracepoint_config -- FT_PICKER for TRACEPOINT.config */
 #include "perf_event.h"
 #include "random.h"
 #include "tables.h"
@@ -1448,32 +1449,33 @@ static const struct struct_field perf_event_attr_breakpoint_variant_fields[] = {
 };
 
 /*
- * PERF_TYPE_TRACEPOINT and PERF_TYPE_RAW: config stays at FT_RAW.
+ * PERF_TYPE_TRACEPOINT: config is sourced via FT_PICKER from the
+ * runtime tracepoint-id pool seeded by init_tracepoint_ids() from
+ * /sys/kernel/tracing/events/<subsys>/<event>/id.  random_tracepoint_
+ * config() draws a live id ~7/8 of the time when the pool is
+ * non-empty and falls back to a random u32/u64 internally on every
+ * other path (pool empty, no tracefs mounted, no CONFIG_TRACING),
+ * so the structured fill always produces a usable u64 and never
+ * wedges the slot.  Naming a live id lets the call land past
+ * perf_tracepoint_event_init()'s -ENOENT gate so the deep
+ * perf_trace_event_init / perf_trace_buf_alloc / kprobe / uprobe
+ * paths actually receive fuzz traffic.
  *
- * TRACEPOINT's config is a runtime-allocated tracepoint id read from
- * /sys/kernel/tracing/events/<subsys>/<event>/id; the legal value
- * set is not enumerable at compile time and varies per running
- * kernel.  The hand-rolled sanitise_perf_event_open() does not
- * enumerate tracepoint ids either -- the gap is identical on both
- * paths and is a known deficiency that would need a tracefs scanner
- * to close, not a static enum table.
- *
- * RAW's config is a vendor-specific PMU counter id (Intel/AMD/ARM
- * /POWER per-uarch raw event encoding).  There is no portable enum;
- * FT_RAW is the right tag.  config1 / config2 may also carry
- * vendor-specific extension bytes -- also FT_RAW.
- *
- * Both variants are declared with NULL fields[] / num_fields=0:
- * struct_fill_passes() short-circuits on n==0 so the shared
- * fields[]' FT_RAW config survives unchanged.  The variant entries
- * exist so the resolver returns a named variant (rather than
- * NULL == "unknown type") for these two PERF_TYPE_*s; future
- * CMP-attribution scoping can then identify the variant by name
- * when the cmp_hints recording-path lift arrives.  Treat the entries
- * as ABI documentation: "yes, TRACEPOINT and RAW were considered
- * and FT_RAW is the right tag for config" -- the comment trail is
- * load-bearing, the array entries are inert.
+ * PERF_TYPE_RAW: config is a vendor-specific PMU counter id
+ * (Intel/AMD/ARM/POWER per-uarch raw event encoding).  There is no
+ * portable enum; the shared fields[]' FT_RAW config survives
+ * unchanged, and the variant stays declared with NULL fields[] /
+ * num_fields=0 so the resolver still returns a named variant
+ * (rather than NULL == "unknown type") for future CMP-attribution
+ * scoping.  config1 / config2 may also carry vendor-specific
+ * extension bytes -- also FT_RAW.
  */
+
+static const struct struct_field perf_event_attr_tracepoint_variant_fields[] = {
+	FIELDX(struct perf_event_attr, config, FT_PICKER,
+	       .u.picker.pick = random_tracepoint_config,
+	       .mutate_weight = 120),
+};
 
 static const struct union_variant perf_event_attr_variants[] = {
 	{
@@ -1503,8 +1505,8 @@ static const struct union_variant perf_event_attr_variants[] = {
 	{
 		.discrim_value	= PERF_TYPE_TRACEPOINT,
 		.name		= "TRACEPOINT",
-		.fields		= NULL,
-		.num_fields	= 0,
+		.fields		= perf_event_attr_tracepoint_variant_fields,
+		.num_fields	= ARRAY_SIZE(perf_event_attr_tracepoint_variant_fields),
 	},
 	{
 		.discrim_value	= PERF_TYPE_RAW,
