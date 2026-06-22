@@ -148,6 +148,7 @@ static void sanitise_pselect6(struct syscallrecord *rec)
 		ts->tv_sec = 0;
 		ts->tv_nsec = 10000;
 		rec->a5 = (unsigned long) ts;
+		avoid_shared_buffer_inout(&rec->a5, sizeof(struct timespec));
 	}
 
 	/*
@@ -162,6 +163,7 @@ static void sanitise_pselect6(struct syscallrecord *rec)
 	} else {
 		memset(sigmask, 0, sizeof(sigset_t));
 		rec->a6 = (unsigned long) sigmask;
+		avoid_shared_buffer_inout(&rec->a6, sizeof(sigset_t));
 	}
 
 	/*
