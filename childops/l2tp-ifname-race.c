@@ -46,29 +46,45 @@
  *   5.  Parent reaps both via waitpid_eintr().  WIFSIGNALED on
  *       either bumps the forensic sibling_crashed counter.
  *   6.  Parent issues a best-effort L2TP_CMD_TUNNEL_DELETE so a
- *       stuck tunnel doesn't accumulate across iters; the netns
- *       itself is reaped when this trinity child exits, so leftover
- *       state is bounded.
+ *       stuck tunnel doesn't accumulate across iters within this
+ *       invocation; the grandchild's netns is reaped on its _exit(),
+ *       so any leftover state cannot survive the invocation.
  *
- * Self-gating.  Three latches.
- *   - l2tp_family_probed: first invocation per process resolves the
- *     "l2tp" genl family via CTRL_CMD_GETFAMILY.  Any failure
- *     (family absent, kernel without CONFIG_L2TP=y/m, l2tp_netlink
- *     module not loaded) latches the op off for the rest of this
- *     child's life.  Same shape as the qrtr / pfkey latches.
- *   - ns_unsupported_l2tp_ifname_race: probe / open failure on the
- *     genl socket itself latches the op off.
- *   - ns_unshare_failed_l2tp_ifname_race: first invocation issues
- *     unshare(CLONE_NEWNET) once per child so every tunnel/session
- *     stays in a private netns the kernel destroys when this trinity
- *     child exits.  EPERM (no CAP_SYS_ADMIN) latches the op off.
+ * Per-invocation netns: every call dispatches the tunnel/session body
+ * via userns_run_in_ns(CLONE_NEWNET, ...).  The helper forks a
+ * transient grandchild that installs an identity user namespace plus
+ * a fresh CLONE_NEWNET, runs the body, and _exit()s -- the kernel
+ * reaps the UDP socket, the tunnel, every per-session netdevice and
+ * any forked-sibling state with the grandchild's netns.  The
+ * persistent fuzz child never touches its own credentials or
+ * namespace stack, so the cap-drop oracle keeps observing the host
+ * credential profile, and no state can leak between invocations.
  *
- * Brick-safety.  All tunnel/session creates land in a freshly-
- * unshared netns; the UDP socket is bound to 127.0.0.1; on failure
- * to unshare we latch off rather than mutate the host L2TP state.
- * No module load, no rtnetlink-on-host, no globally-reachable
- * resource.  Bounded outer loop with a hard wall-clock cap; each
- * sibling caps its own create burst at 32 messages or 150 ms.
+ * Self-gating.  Two latches.
+ *   - l2tp_family_probed / ns_unsupported_l2tp_ifname_race: first
+ *     invocation per process resolves the "l2tp" genl family via
+ *     CTRL_CMD_GETFAMILY.  Any failure (family absent, kernel
+ *     without CONFIG_L2TP=y/m, l2tp_netlink module not loaded)
+ *     latches the op off for the rest of this child's life.  The
+ *     family registry is global to the genl subsystem, so probing
+ *     once outside the per-invocation netns is sufficient.
+ *   - ns_userns_unsupported_l2tp_ifname_race: userns_run_in_ns()
+ *     reported -EPERM, meaning the grandchild's
+ *     unshare(CLONE_NEWUSER) was refused by a hardened policy
+ *     (user.max_user_namespaces=0 or
+ *     kernel.unprivileged_userns_clone=0).  Without a private netns
+ *     we MUST NOT touch host L2TP state, so the op stays disabled
+ *     for the remainder of this child's lifetime.  Transient
+ *     grandchild setup failures (helper -EAGAIN: fork, id-map write,
+ *     secondary unshare) do not latch -- the failure is not policy
+ *     and may not recur.
+ *
+ * Brick-safety.  All tunnel/session creates land in the grandchild's
+ * private netns; the UDP socket is bound to 127.0.0.1; on userns
+ * refusal we latch off rather than mutate the host L2TP state.  No
+ * module load, no rtnetlink-on-host, no globally-reachable resource.
+ * Bounded outer loop with a hard wall-clock cap; each sibling caps
+ * its own create burst at 32 messages or 150 ms.
  *
  * Header compat.  <linux/l2tp.h> ships the L2TP_CMD_* / L2TP_ATTR_* /
  * L2TP_PWTYPE_* / L2TP_ENCAPTYPE_* enums and the family-name macro
@@ -107,6 +123,7 @@
 #include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
+#include "userns-bootstrap.h"
 
 #if __has_include(<linux/l2tp.h>)
 #include <linux/l2tp.h>
@@ -177,15 +194,15 @@
 #define L2TP_INNER_WALL_NS		(150L * 1000L * 1000L)
 
 /*
- * Per-process latches.  Same shape as pfkey_spd_walk: the genl
- * family probe runs once; the netns unshare runs once.  Either latch
- * makes the op a silent no-op for the rest of the child's life.
+ * Per-process latches.  The genl family probe runs once and caches
+ * the family id; userns_run_in_ns() -EPERM latches the op off for
+ * the rest of the child's life.  Either latch makes the op a silent
+ * no-op.
  */
 static bool l2tp_family_probed;
 static __u16 l2tp_family_id;
 static bool ns_unsupported_l2tp_ifname_race;
-static bool ns_unshared_l2tp_ifname_race;
-static bool ns_unshare_failed_l2tp_ifname_race;
+static bool ns_userns_unsupported_l2tp_ifname_race;
 
 /*
  * Resolve the "l2tp" genl family id once per process.  Failure
@@ -222,38 +239,6 @@ static void probe_l2tp_family(struct childdata *child)
 	}
 	l2tp_family_id = gctx.family_id;
 	genl_close(&gctx);
-}
-
-/*
- * Per-child netns unshare.  All L2TP state lands in this private
- * netns so we never touch host tunnels even if the kernel happens to
- * accept the message.  EPERM (no CAP_SYS_ADMIN) latches the op off
- * uniformly.  child is the caller's struct childdata so the latch-off
- * site can record the per-childop latch reason next to the boolean it
- * sets.
- */
-static void unshare_netns_once(struct childdata *child)
-{
-	/* Snapshot child->op_type once and bounds-check before indexing
-	 * the per-op stats arrays.  The field lives in shared memory and
-	 * can be scribbled by a poisoned-arena write from a sibling; the
-	 * child.c dispatch loop already gates its dispatch + alt-op
-	 * accounting on the same valid_op snapshot.  Skip the stats write
-	 * entirely when the snapshot is out of range. */
-	const enum child_op_type op = child->op_type;
-	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
-
-	if (ns_unshared_l2tp_ifname_race || ns_unshare_failed_l2tp_ifname_race)
-		return;
-	if (unshare(CLONE_NEWNET) < 0) {
-		ns_unshare_failed_l2tp_ifname_race = true;
-		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
-					 CHILDOP_LATCH_NS_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
-		return;
-	}
-	ns_unshared_l2tp_ifname_race = true;
 }
 
 /*
@@ -678,8 +663,26 @@ out_delete:
 		close(udp);
 }
 
-bool l2tp_ifname_race(struct childdata *child)
+/*
+ * Per-invocation state handed to the in-ns callback so per-op stats
+ * stay indexed against the right childop slot.
+ */
+struct l2tp_ifname_race_ctx {
+	struct childdata *child;
+};
+
+/*
+ * Per-invocation body that must run inside the private net namespace.
+ * Executed in a transient grandchild forked by userns_run_in_ns(); the
+ * grandchild's userns + netns are torn down on _exit() so the UDP
+ * transport socket, the tunnel, every per-session netdevice and any
+ * forked-sibling state are reaped by the kernel along with the
+ * namespace.  Return value is ignored by the helper.
+ */
+static int l2tp_ifname_race_in_ns(void *arg)
 {
+	struct l2tp_ifname_race_ctx *cctx = arg;
+	struct childdata *child = cctx->child;
 	struct genl_ctx parent_gctx = GENL_CTX_INIT;
 	struct genl_open_opts opts = {
 		.family_name = L2TP_GENL_NAME,
@@ -697,36 +700,10 @@ bool l2tp_ifname_race(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.l2tp_ifname_race_runs,
-			   1, __ATOMIC_RELAXED);
-
-	if (ns_unsupported_l2tp_ifname_race ||
-	    ns_unshare_failed_l2tp_ifname_race) {
-		__atomic_add_fetch(&shm->stats.l2tp_ifname_race_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		return true;
-	}
-
-	if (!l2tp_family_probed) {
-		probe_l2tp_family(child);
-		if (ns_unsupported_l2tp_ifname_race) {
-			__atomic_add_fetch(&shm->stats.l2tp_ifname_race_setup_failed,
-					   1, __ATOMIC_RELAXED);
-			return true;
-		}
-	}
-
-	unshare_netns_once(child);
-	if (ns_unshare_failed_l2tp_ifname_race) {
-		__atomic_add_fetch(&shm->stats.l2tp_ifname_race_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		return true;
-	}
-
 	if (genl_open(&parent_gctx, &opts) != 0) {
 		__atomic_add_fetch(&shm->stats.l2tp_ifname_race_setup_failed,
 				   1, __ATOMIC_RELAXED);
-		return true;
+		return 0;
 	}
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
@@ -753,5 +730,60 @@ bool l2tp_ifname_race(struct childdata *child)
 	}
 
 	genl_close(&parent_gctx);
+	return 0;
+}
+
+bool l2tp_ifname_race(struct childdata *child)
+{
+	struct l2tp_ifname_race_ctx cctx = { .child = child };
+	int rc;
+
+	__atomic_add_fetch(&shm->stats.l2tp_ifname_race_runs,
+			   1, __ATOMIC_RELAXED);
+
+	if (ns_unsupported_l2tp_ifname_race ||
+	    ns_userns_unsupported_l2tp_ifname_race) {
+		__atomic_add_fetch(&shm->stats.l2tp_ifname_race_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return true;
+	}
+
+	if (!l2tp_family_probed) {
+		probe_l2tp_family(child);
+		if (ns_unsupported_l2tp_ifname_race) {
+			__atomic_add_fetch(&shm->stats.l2tp_ifname_race_setup_failed,
+					   1, __ATOMIC_RELAXED);
+			return true;
+		}
+	}
+
+	rc = userns_run_in_ns(CLONE_NEWNET, l2tp_ifname_race_in_ns, &cctx);
+	if (rc == -EPERM) {
+		ns_userns_unsupported_l2tp_ifname_race = true;
+		/* child->op_type lives in shared memory and can be scribbled
+		 * by a poisoned-arena write from a sibling; bounds-check the
+		 * snapshot before indexing the NR_CHILD_OP_TYPES-sized stats
+		 * array, same pattern l2tp_ifname_race_in_ns uses for its
+		 * per-op writes. */
+		{
+			const enum child_op_type op = child->op_type;
+			if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
+		}
+		__atomic_add_fetch(&shm->stats.l2tp_ifname_race_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return true;
+	}
+	if (rc < 0) {
+		/* Transient grandchild setup failure (fork, id-map write,
+		 * secondary unshare).  Skip this iteration without latching
+		 * -- the failure is not policy and may not recur. */
+		__atomic_add_fetch(&shm->stats.l2tp_ifname_race_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return true;
+	}
+
 	return true;
 }
