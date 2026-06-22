@@ -37,7 +37,7 @@ static unsigned long memfd_create_modes[] = {
  * for) while still covering the empty-string, slash-contains,
  * near-max-length and high-bit-byte edge shapes.
  */
-static char *memfd_create_pick_uname(void)
+static char *memfd_create_pick_uname(size_t *alloc_len)
 {
 	char *name;
 	size_t name_len;
@@ -45,29 +45,34 @@ static char *memfd_create_pick_uname(void)
 
 	switch (rnd_modulo_u32(8)) {
 	case 0: /* empty string — kernel rejects with -EINVAL */
-		name = zmalloc_tracked(1);
+		*alloc_len = 1;
+		name = zmalloc_tracked(*alloc_len);
 		name[0] = '\0';
 		break;
 	case 1: /* slash-containing — kernel rejects with -EINVAL */
-		name = zmalloc_tracked(8);
-		snprintf(name, 8, "a/%c", 'a' + (char)rnd_modulo_u32(26));
+		*alloc_len = 8;
+		name = zmalloc_tracked(*alloc_len);
+		snprintf(name, *alloc_len, "a/%c", 'a' + (char)rnd_modulo_u32(26));
 		break;
 	case 2: /* near-max-length basename */
 		name_len = 240 + rnd_modulo_u32(16);
-		name = zmalloc_tracked(name_len + 1);
+		*alloc_len = name_len + 1;
+		name = zmalloc_tracked(*alloc_len);
 		for (i = 0; i < name_len; i++)
 			name[i] = 'a' + (char)rnd_modulo_u32(26);
 		name[name_len] = '\0';
 		break;
 	case 3: /* high-bit bytes — exercises strndup_user UTF-8 paths */
-		name = zmalloc_tracked(8);
+		*alloc_len = 8;
+		name = zmalloc_tracked(*alloc_len);
 		for (i = 0; i < 7; i++)
 			name[i] = (char)(0x80 | rnd_modulo_u32(0x80));
 		name[7] = '\0';
 		break;
 	default: /* short ASCII basename — most common, kernel accepts */
 		name_len = 1 + rnd_modulo_u32(15);
-		name = zmalloc_tracked(name_len + 1);
+		*alloc_len = name_len + 1;
+		name = zmalloc_tracked(*alloc_len);
 		for (i = 0; i < name_len; i++)
 			name[i] = 'a' + (char)rnd_modulo_u32(26);
 		name[name_len] = '\0';
@@ -78,13 +83,24 @@ static char *memfd_create_pick_uname(void)
 
 static void sanitise_memfd_create(struct syscallrecord *rec)
 {
+	size_t uname_len;
+
 	/*
 	 * Override the ARG_NON_NULL_ADDRESS uname with a curated buffer
 	 * so the kernel ingest path doesn't reject the call up front on
 	 * a missing NUL within NAME_MAX bytes.  ARG_NON_NULL_ADDRESS
 	 * stays in the argtype as a fallback against a NULL rec->a1.
 	 */
-	rec->a1 = (unsigned long) memfd_create_pick_uname();
+	rec->a1 = (unsigned long) memfd_create_pick_uname(&uname_len);
+
+	/*
+	 * The post-sanitise blanket_address_scrub() relocates a1 to a
+	 * fresh shared-pool slot without copying the curated bytes, so
+	 * the kernel would strndup_user() garbage instead of the name we
+	 * just built.  Relocate-and-copy up front so the blanket pass
+	 * no-ops on this slot.
+	 */
+	avoid_shared_buffer_inout(&rec->a1, uname_len);
 
 	/*
 	 * Defence in depth: even though memfd_create_flags no longer
