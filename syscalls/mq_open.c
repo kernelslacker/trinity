@@ -94,7 +94,21 @@ static void sanitise_mq_open(struct syscallrecord *rec)
 		attr->mq_flags = O_NONBLOCK;
 
 	rec->a1 = (unsigned long) name;
+	/* Relocate + memcpy the curated mq name bytes onto a fresh pool page
+	 * so the post-sanitise blanket address scrub no-ops on this slot.
+	 * Must precede the snap->name = rec->a1 capture below so the oracle
+	 * snapshots the relocated pointer the kernel will see, and so the
+	 * post_mq_open mq_unlink(snap->name) call operates on the protected
+	 * pool page the kernel actually read the name from rather than the
+	 * pre-relocation buffer the blanket scrub abandoned. */
+	avoid_shared_buffer_inout(&rec->a1, 32);
+
 	rec->a4 = (unsigned long) attr;
+	/* Relocate + memcpy the curated mq_attr bytes onto a fresh pool page
+	 * so the post-sanitise blanket address scrub no-ops on this slot.
+	 * Must precede the snap->attr = rec->a4 capture below so the oracle
+	 * snapshots the relocated pointer the kernel will see. */
+	avoid_shared_buffer_inout(&rec->a4, sizeof(*attr));
 
 	/*
 	 * Snapshot the four input args for the post handler.  Without this
