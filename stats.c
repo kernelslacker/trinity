@@ -5817,11 +5817,11 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 		}
 		/* SHADOW per-entry feedback scoring counters
 		 * ([11-feedback-loop] PHASE 4).  Live pool selection is
-		 * UNCHANGED this commit; these counters record outcomes for
-		 * the follow-up A/B-gated live-pick weight to read.
-		 * cmp_hint_wins / cmp_hint_misses are PC-edge only;
-		 * cmp_hint_cmp_novelty_wins is the SEPARATE CMP-mode novelty
-		 * channel (kept out of the PC-edge score per spec). */
+		 * uniform here -- these counters record outcomes for a future
+		 * A/B-gated live-pick weight to read.  cmp_hint_wins /
+		 * cmp_hint_misses are PC-edge only; cmp_hint_cmp_novelty_wins
+		 * is the SEPARATE CMP-mode novelty channel (kept out of the
+		 * PC-edge score). */
 		if (delta_cmp_hints_consumed) {
 			unsigned long rate_milli = (delta_cmp_hints_consumed * 1000UL) / (unsigned long)elapsed;
 			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
@@ -6803,8 +6803,8 @@ static void dump_stats_per_syscall_tables(void)
 
 /*
  * SHADOW-ONLY shutdown attribution for the per-syscall stuck-child
- * accounting added in this commit (see the comment on
- * shm->stats.syscall_wedge_count[] in include/stats.h).  Renders a
+ * accounting (see the comment on shm->stats.syscall_wedge_count[]
+ * in include/stats.h).  Renders a
  * top-N row sorted by cumulative wedged microseconds, with the per-
  * syscall event count rendered alongside so the operator can
  * distinguish "one rare syscall that wedges for ages" from "many
