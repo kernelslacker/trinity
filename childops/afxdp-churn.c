@@ -597,9 +597,19 @@ static int afxdp_iter_setup_umem(struct childdata *child,
 		if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT ||
 		    errno == EPERM || errno == EACCES) {
 			ns_unsupported_afxdp = true;
-			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-					 CHILDOP_LATCH_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			/* child->op_type lives in shared memory and can be
+			 * scribbled by a poisoned-arena write from a sibling;
+			 * bounds-check the snapshot before indexing the
+			 * NR_CHILD_OP_TYPES-sized stats arrays, same pattern
+			 * the child.c dispatch loop uses for the unguarded
+			 * write that motivated this guard. */
+			{
+				const enum child_op_type op = child->op_type;
+				if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+					__atomic_store_n(&shm->stats.childop_latch_reason[op],
+							 CHILDOP_LATCH_UNSUPPORTED,
+							 __ATOMIC_RELAXED);
+			}
 		}
 		__atomic_add_fetch(&shm->stats.afxdp_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
@@ -1122,15 +1132,25 @@ static void iter_one(struct childdata *child, unsigned int idx,
 	 * race phases all no-op internally, so neither counter applies.  Gating
 	 * both on st.bound preserves the data_path <= setup_accepted invariant
 	 * (either both bump together or neither does). */
-	if (st.bound) {
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
+
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the stats
+	 * writes entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
+	if (st.bound && valid_op) {
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 	}
 
 	afxdp_iter_attach_prog(&st, target_ifindex);
 
-	if (st.bound) {
-		__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
+	if (st.bound && valid_op) {
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
 				   1, __ATOMIC_RELAXED);
 	}
 	afxdp_iter_tx_burst(&st, want_sg, want_tx_md);
