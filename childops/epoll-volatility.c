@@ -327,13 +327,23 @@ bool epoll_volatility(struct childdata *child)
 		.n_target_fds = 0,
 	};
 
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	__atomic_add_fetch(&shm->stats.epoll_volatility_runs, 1, __ATOMIC_RELAXED);
 
 	if (epoll_volatility_iter_setup(&ctx) == 0) {
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-				   1, __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-				   1, __ATOMIC_RELAXED);
+		if (valid_op)
+			__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+					   1, __ATOMIC_RELAXED);
+		if (valid_op)
+			__atomic_add_fetch(&shm->stats.childop_data_path[op],
+					   1, __ATOMIC_RELAXED);
 		epoll_volatility_iter_drive(&ctx);
 	}
 
