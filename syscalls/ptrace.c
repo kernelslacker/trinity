@@ -16,6 +16,15 @@
 #include "compat.h"
 
 /* Requests added after trinity's original definitions */
+#ifndef PTRACE_SEIZE
+#define PTRACE_SEIZE			0x4206
+#endif
+#ifndef PTRACE_INTERRUPT
+#define PTRACE_INTERRUPT		0x4207
+#endif
+#ifndef PTRACE_LISTEN
+#define PTRACE_LISTEN			0x4208
+#endif
 #ifndef PTRACE_SECCOMP_GET_FILTER
 #define PTRACE_SECCOMP_GET_FILTER	0x420c
 #endif
@@ -36,7 +45,7 @@
  * the post path is immune to a sibling syscall scribbling rec->a1 or
  * rec->a4 between the syscall returning and the post handler running.
  *
- * Per-op allocation matrix.  Of the 29 PTRACE_* requests this generator
+ * Per-op allocation matrix.  Of the 32 PTRACE_* requests this generator
  * knows about, only four allocate a heap buffer that the post handler
  * has to free:
  *
@@ -45,7 +54,7 @@
  *   PTRACE_SETSIGMASK  -> sigset_t *
  *   PTRACE_GETSIGMASK  -> sigset_t *
  *
- * The other 25 requests feed rec->a4 with non-heap values -- signals,
+ * The other 28 requests feed rec->a4 with non-heap values -- signals,
  * immediate bitmasks, addresses from get_address() / get_writable_-
  * address(), or zero -- and leave snap->data NULL.  The post handler
  * dispatches off the snapshot, not rec->a1, so a sibling scribble of
@@ -113,6 +122,7 @@ static const unsigned long ptrace_reqs_control[] = {
 	PTRACE_CONT, PTRACE_SYSCALL, PTRACE_SINGLESTEP,
 	PTRACE_SYSEMU, PTRACE_SYSEMU_SINGLESTEP,
 	PTRACE_DETACH, PTRACE_KILL,
+	PTRACE_SEIZE, PTRACE_INTERRUPT, PTRACE_LISTEN,
 };
 
 static unsigned long pick_ptrace_req(void)
@@ -142,6 +152,7 @@ static void sanitise_ptrace(struct syscallrecord *rec)
 	 * rarely exercises real code paths).
 	 */
 	switch (rec->a1) {
+	case PTRACE_SEIZE:
 	case PTRACE_SETOPTIONS:
 		/* Bitmask of PTRACE_O_* flags */
 		rec->a4 = set_rand_bitmask(ARRAY_SIZE(ptrace_o_flags),
@@ -244,6 +255,8 @@ static void sanitise_ptrace(struct syscallrecord *rec)
 	case PTRACE_TRACEME:
 	case PTRACE_KILL:
 	case PTRACE_ATTACH:
+	case PTRACE_INTERRUPT:
+	case PTRACE_LISTEN:
 		/* These ignore data */
 		rec->a4 = 0;
 		break;
@@ -320,6 +333,7 @@ static unsigned long ptrace_reqs[] = {
 	PTRACE_SYSCALL, PTRACE_SINGLESTEP, PTRACE_SYSEMU, PTRACE_SYSEMU_SINGLESTEP,
 	PTRACE_KILL, PTRACE_ATTACH, PTRACE_DETACH, PTRACE_GETSIGMASK,
 	PTRACE_SETSIGMASK,
+	PTRACE_SEIZE, PTRACE_INTERRUPT, PTRACE_LISTEN,
 	PTRACE_SECCOMP_GET_FILTER, PTRACE_SECCOMP_GET_METADATA,
 	PTRACE_GET_SYSCALL_INFO, PTRACE_GET_RSEQ_CONFIGURATION,
 };
