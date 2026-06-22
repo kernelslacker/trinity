@@ -2147,14 +2147,20 @@ static void dump_stats_json_oracle(void)
  * text-side wiring onto these tables will need to revisit .name.
  */
 static const struct stat_field vfs_writes_fields[] = {
-	STAT_FIELD_JSON(procfs, writes, "procfs"),
-	STAT_FIELD_JSON(sysfs, writes, "sysfs"),
-	STAT_FIELD_JSON(debugfs, writes, "debugfs"),
+	STAT_FIELD_JSON(procfs_writes, open_fail,  "procfs_open_fail"),
+	STAT_FIELD_JSON(procfs_writes, write_fail, "procfs_write_fail"),
+	STAT_FIELD_JSON(procfs_writes, write_ok,   "procfs_write_ok"),
+	STAT_FIELD_JSON(sysfs_writes, open_fail,   "sysfs_open_fail"),
+	STAT_FIELD_JSON(sysfs_writes, write_fail,  "sysfs_write_fail"),
+	STAT_FIELD_JSON(sysfs_writes, write_ok,    "sysfs_write_ok"),
+	STAT_FIELD_JSON(debugfs_writes, open_fail, "debugfs_open_fail"),
+	STAT_FIELD_JSON(debugfs_writes, write_fail,"debugfs_write_fail"),
+	STAT_FIELD_JSON(debugfs_writes, write_ok,  "debugfs_write_ok"),
 };
 
 static const struct stat_category vfs_writes_category =
 	STAT_CATEGORY("vfs_writes",
-	              procfs_writes,
+	              procfs_writes_open_fail,
 	              vfs_writes_fields);
 
 static const struct stat_field memory_pressure_fields[] = {
@@ -7229,11 +7235,21 @@ static void dump_stats_oracle_anomalies(void)
 
 static void dump_stats_fuzzer_subsystems(void)
 {
-	if (shm->stats.procfs_writes || shm->stats.sysfs_writes ||
-	    shm->stats.debugfs_writes) {
-		stat_row("vfs_writes", "procfs",  shm->stats.procfs_writes);
-		stat_row("vfs_writes", "sysfs",   shm->stats.sysfs_writes);
-		stat_row("vfs_writes", "debugfs", shm->stats.debugfs_writes);
+	if (shm->stats.procfs_writes_open_fail || shm->stats.procfs_writes_write_fail ||
+	    shm->stats.procfs_writes_write_ok ||
+	    shm->stats.sysfs_writes_open_fail || shm->stats.sysfs_writes_write_fail ||
+	    shm->stats.sysfs_writes_write_ok ||
+	    shm->stats.debugfs_writes_open_fail || shm->stats.debugfs_writes_write_fail ||
+	    shm->stats.debugfs_writes_write_ok) {
+		stat_row("vfs_writes", "procfs_open_fail",   shm->stats.procfs_writes_open_fail);
+		stat_row("vfs_writes", "procfs_write_fail",  shm->stats.procfs_writes_write_fail);
+		stat_row("vfs_writes", "procfs_write_ok",    shm->stats.procfs_writes_write_ok);
+		stat_row("vfs_writes", "sysfs_open_fail",    shm->stats.sysfs_writes_open_fail);
+		stat_row("vfs_writes", "sysfs_write_fail",   shm->stats.sysfs_writes_write_fail);
+		stat_row("vfs_writes", "sysfs_write_ok",     shm->stats.sysfs_writes_write_ok);
+		stat_row("vfs_writes", "debugfs_open_fail",  shm->stats.debugfs_writes_open_fail);
+		stat_row("vfs_writes", "debugfs_write_fail", shm->stats.debugfs_writes_write_fail);
+		stat_row("vfs_writes", "debugfs_write_ok",   shm->stats.debugfs_writes_write_ok);
 	}
 
 	if (shm->stats.memory_pressure_runs)

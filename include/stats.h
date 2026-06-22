@@ -658,10 +658,21 @@ struct stats_s {
 
 	/* ---- Group C: per-childop ---- */
 
-	/* procfs_writer childop: per-tree write counts */
-	unsigned long procfs_writes __attribute__((aligned(64)));
-	unsigned long sysfs_writes;
-	unsigned long debugfs_writes;
+	/* procfs_writer childop: per-tree write counts, split by outcome.
+	 * Discovery happens in the parent under root privileges (access(W_OK)
+	 * succeeds), but writes happen in privilege-dropped children, so a
+	 * large fraction of open() / write() calls fail.  Counting only
+	 * "open succeeded" hides this; split into open-fail / write-fail /
+	 * write-ok so the dump shows real reach into each tree. */
+	unsigned long procfs_writes_open_fail __attribute__((aligned(64)));
+	unsigned long procfs_writes_write_fail;
+	unsigned long procfs_writes_write_ok;
+	unsigned long sysfs_writes_open_fail;
+	unsigned long sysfs_writes_write_fail;
+	unsigned long sysfs_writes_write_ok;
+	unsigned long debugfs_writes_open_fail;
+	unsigned long debugfs_writes_write_fail;
+	unsigned long debugfs_writes_write_ok;
 
 	/* memory_pressure childop: MADV_PAGEOUT + refault cycles */
 	unsigned long memory_pressure_runs;

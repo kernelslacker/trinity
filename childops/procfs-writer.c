@@ -29,6 +29,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -236,22 +237,41 @@ static void discover_targets(void)
 	add_per_task_files(per_pid);
 }
 
-static void bump_tree_counter(enum tree_kind tree)
+/*
+ * Per-tree write outcomes.  Discovery in the parent walks under root and
+ * keeps every node access(W_OK) accepts, but writes happen in the child
+ * after uid+caps drop, so many opens and writes fail.  Counting these
+ * separately turns the dump from "attempts" into "did we actually land
+ * any bytes in the kernel parser, and where did the rest fall off?"
+ */
+enum write_outcome {
+	OUTCOME_OPEN_FAIL = 0,
+	OUTCOME_WRITE_FAIL,
+	OUTCOME_WRITE_OK,
+};
+
+static void bump_tree_counter(enum tree_kind tree, enum write_outcome outcome)
 {
-	switch (tree) {
-	case TREE_PROC:
-		__atomic_add_fetch(&shm->stats.procfs_writes,
-				   1, __ATOMIC_RELAXED);
-		break;
-	case TREE_SYS:
-		__atomic_add_fetch(&shm->stats.sysfs_writes,
-				   1, __ATOMIC_RELAXED);
-		break;
-	case TREE_DEBUGFS:
-		__atomic_add_fetch(&shm->stats.debugfs_writes,
-				   1, __ATOMIC_RELAXED);
-		break;
-	}
+	static const size_t offsets[3][3] = {
+		[TREE_PROC] = {
+			[OUTCOME_OPEN_FAIL]  = offsetof(struct stats_s, procfs_writes_open_fail),
+			[OUTCOME_WRITE_FAIL] = offsetof(struct stats_s, procfs_writes_write_fail),
+			[OUTCOME_WRITE_OK]   = offsetof(struct stats_s, procfs_writes_write_ok),
+		},
+		[TREE_SYS] = {
+			[OUTCOME_OPEN_FAIL]  = offsetof(struct stats_s, sysfs_writes_open_fail),
+			[OUTCOME_WRITE_FAIL] = offsetof(struct stats_s, sysfs_writes_write_fail),
+			[OUTCOME_WRITE_OK]   = offsetof(struct stats_s, sysfs_writes_write_ok),
+		},
+		[TREE_DEBUGFS] = {
+			[OUTCOME_OPEN_FAIL]  = offsetof(struct stats_s, debugfs_writes_open_fail),
+			[OUTCOME_WRITE_FAIL] = offsetof(struct stats_s, debugfs_writes_write_fail),
+			[OUTCOME_WRITE_OK]   = offsetof(struct stats_s, debugfs_writes_write_ok),
+		},
+	};
+	unsigned long *p = (unsigned long *)((char *)&shm->stats + offsets[tree][outcome]);
+
+	__atomic_add_fetch(p, 1, __ATOMIC_RELAXED);
 }
 
 static void do_one_write(const struct discovered_entry *e)
@@ -264,12 +284,14 @@ static void do_one_write(const struct discovered_entry *e)
 	 */
 	char text_buf[4096];
 	unsigned int len;
-	ssize_t ret __unused__;
+	ssize_t ret;
 	int fd;
 
 	fd = open(e->path, O_WRONLY | O_NONBLOCK);
-	if (fd < 0)
+	if (fd < 0) {
+		bump_tree_counter(e->tree, OUTCOME_OPEN_FAIL);
 		return;
+	}
 
 	if (ONE_IN(4)) {
 		len = gen_text_payload(text_buf, sizeof(text_buf));
@@ -282,7 +304,8 @@ static void do_one_write(const struct discovered_entry *e)
 
 	close(fd);
 
-	bump_tree_counter(e->tree);
+	bump_tree_counter(e->tree,
+			  ret < 0 ? OUTCOME_WRITE_FAIL : OUTCOME_WRITE_OK);
 }
 
 /*
