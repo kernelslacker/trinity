@@ -78,6 +78,7 @@ static void sanitise_mbind(struct syscallrecord *rec)
 		break;
 	}
 	rec->a4 = (unsigned long) mask;
+	avoid_shared_buffer_inout(&rec->a4, nbytes);
 
 	/* Mode flags live in the high bits of the mode arg.  OR in
 	 * MPOL_F_NUMA_BALANCING occasionally; only valid with MPOL_BIND
