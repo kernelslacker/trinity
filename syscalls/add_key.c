@@ -95,7 +95,7 @@ static const struct {
 static void build_description(char *buf, size_t bufsz, const char *ns_prefix)
 {
 	const char *prefix = desc_prefixes[rnd_modulo_u32(ARRAY_SIZE(desc_prefixes))];
-	unsigned int suffix = rand32();
+	unsigned int suffix = rnd_u32();
 
 	if (ns_prefix)
 		snprintf(buf, bufsz, "%s%s_%08x", ns_prefix, prefix, suffix);
@@ -190,7 +190,7 @@ static void set_encrypted_payload(struct syscallrecord *rec)
 		rec->a4 = 0;
 		return;
 	}
-	len = snprintf(buf, 256, "new user:trinity_master_%08x ", rand32());
+	len = snprintf(buf, 256, "new user:trinity_master_%08x ", rnd_u32());
 	for (i = 0; i < hex_bytes && len < 255; i++)
 		len += snprintf(buf + len, 256 - len, "%02x", RAND_BYTE());
 	rec->a3 = (unsigned long) buf;
