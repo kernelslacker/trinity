@@ -41,15 +41,10 @@ struct syscallentry syscall_faccessat = {
 
 #define AT_RECURSIVE            0x8000  /* Apply to the entire subtree */
 
-#ifndef AT_EXECVE_CHECK
-#define AT_EXECVE_CHECK         0x10000 /* Check execve permission without executing */
-#endif
-
 static unsigned long faccessat2_flags[] = {
 	AT_SYMLINK_NOFOLLOW, AT_EACCESS, AT_REMOVEDIR,
 	AT_SYMLINK_FOLLOW, AT_NO_AUTOMOUNT, AT_EMPTY_PATH, AT_STATX_SYNC_TYPE,
 	AT_STATX_SYNC_AS_STAT, AT_STATX_FORCE_SYNC, AT_STATX_DONT_SYNC, AT_RECURSIVE,
-	AT_EXECVE_CHECK,
 };
 
 struct syscallentry syscall_faccessat2 = {
