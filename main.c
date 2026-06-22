@@ -298,20 +298,33 @@ void reap_child(struct childdata *child, int childno)
 	pid = __atomic_load_n(&pids[childno], __ATOMIC_ACQUIRE);
 	if (pid == EMPTY_PIDSLOT)
 		return;
-	/* SHADOW-ONLY per-syscall wedge accounting close-out.  If this
-	 * child was latched as wedged by is_child_making_progress(), add
-	 * the wall-clock interval the slot was unreusable into
-	 * syscall_wedge_total_us[wedge_nr] before the slot is recycled.
-	 * CLOCK_MONOTONIC start and end so an NTP step can't regress the
-	 * elapsed; the (end <= start) clamp covers a torn read of the
-	 * start timestamp under any future reorder.  Clear the latch so a
-	 * reap that races a half-published wedge cannot double-account on
-	 * a subsequent path (clean_childdata clears it again for the next
-	 * occupant; clearing here is the conservative belt-and-braces). */
+	/* SHADOW-ONLY wedge accounting close-out.  If this child was
+	 * latched as wedged by is_child_making_progress(), add the
+	 * wall-clock interval the slot was unreusable into BOTH
+	 * syscall_wedge_total_us[wedge_nr] and
+	 * childop_wedge_total_us[wedge_op_type] before the slot is
+	 * recycled.  ONE duration definition feeds both arrays: the
+	 * elapsed from child->tp (last child-side progress, captured into
+	 * wedge_start_tp at latch time) up to the reap-time read of
+	 * CLOCK_MONOTONIC -- the full window the slot was unreusable, not
+	 * just the post-detection tail.  CLOCK_MONOTONIC start and end so
+	 * an NTP step can't regress the elapsed; the (end <= start) clamp
+	 * leaves elapsed_us at 0 if a torn read of the two-long start
+	 * timestamp samples a future-looking start, so the unsigned
+	 * subtraction can never wrap to a huge bogus duration (the
+	 * monotonic-clock rule).  The childop index is range-checked
+	 * against NR_CHILD_OP_TYPES to defuse an out-of-range op_type
+	 * read (the latch already clamps to CHILD_OP_SYSCALL on capture,
+	 * this is belt-and-braces against any future field reuse).
+	 * Clear the latch so a reap that races a half-published wedge
+	 * cannot double-account on a subsequent path (clean_childdata
+	 * clears it again for the next occupant; clearing here is the
+	 * conservative belt-and-braces). */
 	if (child->wedge_accounted &&
 	    child->wedge_nr < MAX_NR_SYSCALL) {
 		struct timespec now;
 		unsigned long long elapsed_us = 0;
+		unsigned int wop;
 
 		clock_gettime(CLOCK_MONOTONIC, &now);
 		if (now.tv_sec > child->wedge_start_tp.tv_sec ||
@@ -326,6 +339,12 @@ void reap_child(struct childdata *child, int childno)
 		}
 		__atomic_add_fetch(&shm->stats.syscall_wedge_total_us[child->wedge_nr],
 				   elapsed_us, __ATOMIC_RELAXED);
+
+		wop = (unsigned int)child->wedge_op_type;
+		if (wop < NR_CHILD_OP_TYPES) {
+			__atomic_add_fetch(&shm->stats.childop_wedge_total_us[wop],
+					   elapsed_us, __ATOMIC_RELAXED);
+		}
 		child->wedge_accounted = false;
 	}
 
@@ -1401,20 +1420,45 @@ static bool is_child_making_progress(struct childdata *child, int childno)
 		child->dstate_diag_dumped = true;
 	}
 
-	/* SHADOW-ONLY per-syscall wedge accounting (see comment on
-	 * shm->stats.syscall_wedge_count[] in include/stats.h).  Latched
-	 * via wedge_accounted so a child that stays wedged across many
-	 * watchdog ticks counts as one event.  Snapshot the syscall nr and
-	 * arch via SREC_SNAPSHOT (the same lockless seq-counter primitive
-	 * the dstate_diag / stuck_syscall_info paths use); a snapshot
-	 * give-up under writer churn skips the bump for this child but
-	 * leaves the latch unset so a subsequent tick can retry.  The bump
-	 * itself is gated on state >= BEFORE: a child wedged before it
-	 * has published its first syscall record has no nr to attribute
-	 * the time to, and counting it against nr=0 would alias every
-	 * such wedge to whatever sits at index 0 of the syscall table.
-	 * Pairs with the reap_child() close-out that adds (now -
-	 * wedge_start_tp) to syscall_wedge_total_us[wedge_nr]. */
+	/* SHADOW-ONLY wedge accounting -- both the per-syscall pair (see
+	 * comment on shm->stats.syscall_wedge_count[] in include/stats.h)
+	 * and the per-childop pair (see childop_wedge_count[] in the same
+	 * header).  Latched via wedge_accounted so a child that stays
+	 * wedged across many watchdog ticks counts as one event on both
+	 * axes.  Snapshot the syscall nr and arch via SREC_SNAPSHOT (the
+	 * same lockless seq-counter primitive the dstate_diag /
+	 * stuck_syscall_info paths use); a snapshot give-up under writer
+	 * churn skips the bump for this child but leaves the latch unset
+	 * so a subsequent tick can retry.  The bump itself is gated on
+	 * state >= BEFORE: a child wedged before it has published its
+	 * first syscall record has no nr to attribute the time to, and
+	 * counting it against nr=0 would alias every such wedge to
+	 * whatever sits at index 0 of the syscall table.
+	 *
+	 * wedge_start_tp is seeded from child->tp -- the child's
+	 * last-progress timestamp, written by the child each loop
+	 * iteration and the same field the diff>=30s check above samples.
+	 * Anchoring the start at last-progress rather than at the
+	 * detection moment means the accumulated wedged duration covers
+	 * the FULL window the slot was unreusable (the watchdog's 30 s
+	 * grace period included), so the per-syscall and per-childop
+	 * top-N renders share one consistent, operator-meaningful
+	 * duration definition.  child->tp is CLOCK_MONOTONIC at the
+	 * child's write site so the reap-time clamp (now > start) covers
+	 * any torn read of the two-long timespec without depending on
+	 * wall-clock monotonicity.  The early `if (old == 0)` return above
+	 * has already pinned child->tp.tv_sec > 0 at this point, so the
+	 * seeded start is never the zero sentinel.
+	 *
+	 * op_type is captured from childdata at latch time so the
+	 * per-childop close-out in reap_child() attributes the wedge to
+	 * the childop that was running when the stall began, even if the
+	 * slot is later (post-reap) reused by a different childop -- the
+	 * latch and the post-fork clean_childdata() are sequenced on the
+	 * parent.  Pairs with the reap_child() close-out that adds
+	 * (now - wedge_start_tp) to BOTH
+	 * syscall_wedge_total_us[wedge_nr] and
+	 * childop_wedge_total_us[wedge_op_type]. */
 	if (!child->wedge_accounted) {
 		struct syscallrecord *wrec = &child->syscall;
 		unsigned int wnr;
@@ -1429,11 +1473,19 @@ static bool is_child_making_progress(struct childdata *child, int childno)
 		}, wgot);
 
 		if (wgot && wstate >= BEFORE && wnr < MAX_NR_SYSCALL) {
+			enum child_op_type wop = child->op_type;
+
+			if ((unsigned int)wop >= NR_CHILD_OP_TYPES)
+				wop = CHILD_OP_SYSCALL;
+
 			child->wedge_nr = wnr;
 			child->wedge_do32 = wdo32;
-			child->wedge_start_tp = tp;
+			child->wedge_op_type = wop;
+			child->wedge_start_tp = child->tp;
 			child->wedge_accounted = true;
 			__atomic_add_fetch(&shm->stats.syscall_wedge_count[wnr],
+					   1UL, __ATOMIC_RELAXED);
+			__atomic_add_fetch(&shm->stats.childop_wedge_count[wop],
 					   1UL, __ATOMIC_RELAXED);
 		}
 	}

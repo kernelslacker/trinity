@@ -3713,6 +3713,37 @@ struct stats_s {
 	 * syscall which also stay text-only). */
 	unsigned long syscall_wedge_count[MAX_NR_SYSCALL];
 	unsigned long long syscall_wedge_total_us[MAX_NR_SYSCALL];
+
+	/* SHADOW-ONLY per-childop stuck-child accounting.  Sister of the
+	 * syscall_wedge_* pair above but keyed by enum child_op_type
+	 * (childdata.op_type captured at latch time) instead of by syscall
+	 * nr.  Wedging on this fleet is dominated by long-lived non-syscall
+	 * childops (flock_thrash, futex_storm, memory_pressure, ...) whose
+	 * inner sites cycle through many syscalls; the per-syscall top-N
+	 * names whichever syscall happened to be in flight at detection,
+	 * which mis-attributes the wedge cost to that syscall instead of to
+	 * the childop that is actually parked.  This array gives the
+	 * shutdown render a second top-N keyed by the childop, so the
+	 * dominant wedgers surface by name.
+	 *
+	 *  childop_wedge_count[op]
+	 *      Bumped once per stuck-child detection event, alongside
+	 *      syscall_wedge_count[] in is_child_making_progress().  RELAXED
+	 *      add-fetch -- diagnostic, not an event log.
+	 *  childop_wedge_total_us[op]
+	 *      Cumulative microseconds of unreusable-slot time across all
+	 *      wedge events for this childop, added in reap_child() using
+	 *      the same (now - wedge_start_tp) interval that feeds
+	 *      syscall_wedge_total_us[] -- the two arrays share ONE duration
+	 *      definition (full unreusable-slot time, watchdog grace
+	 *      included; CLOCK_MONOTONIC; clamped >= 0 at the read site so a
+	 *      reordered start-timestamp read cannot underflow).  RELAXED
+	 *      add-fetch.
+	 *
+	 * Surfaced via dump_stats_top_wedging_childops() at shutdown only;
+	 * not on the JSON path, matching the syscall_wedge_* siblings. */
+	unsigned long childop_wedge_count[NR_CHILD_OP_TYPES];
+	unsigned long long childop_wedge_total_us[NR_CHILD_OP_TYPES];
 };
 
 unsigned int stats_syscall_category(const char *name);

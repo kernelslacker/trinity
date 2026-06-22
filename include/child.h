@@ -399,22 +399,30 @@ struct childdata {
 	 * un-throttle the snapshot. */
 	bool dstate_diag_dumped;
 
-	/* SHADOW-ONLY per-syscall stuck-child accounting latch.  Set true
-	 * by is_child_making_progress() on the first detection of diff>=30s
-	 * for this child, alongside an increment of
-	 * shm->stats.syscall_wedge_count[wedge_nr].  reap_child() then adds
-	 * the CLOCK_MONOTONIC elapsed (now - wedge_start_tp) into
-	 * shm->stats.syscall_wedge_total_us[wedge_nr] before the slot is
-	 * recycled.  Latched per-child so a child that survives many
-	 * watchdog ticks contributes one event with a real duration, not one
-	 * event per tick with zero duration.  Cleared in clean_childdata so
-	 * the next occupant of the slot starts fresh.  Diagnostic-only --
-	 * no live-path decision reads either field.  See the comment on
-	 * shm->stats.syscall_wedge_count[] in include/stats.h for the
-	 * exit_reason=19 motivation. */
+	/* SHADOW-ONLY stuck-child accounting latch.  Set true by
+	 * is_child_making_progress() on the first detection of diff>=30s for
+	 * this child, alongside an increment of
+	 * shm->stats.syscall_wedge_count[wedge_nr] and
+	 * shm->stats.childop_wedge_count[wedge_op_type].  reap_child() then
+	 * adds the CLOCK_MONOTONIC elapsed (now - wedge_start_tp) into
+	 * shm->stats.syscall_wedge_total_us[wedge_nr] and
+	 * shm->stats.childop_wedge_total_us[wedge_op_type] before the slot
+	 * is recycled.  wedge_start_tp is seeded from child->tp (the child's
+	 * last-progress timestamp) rather than from the detection moment so
+	 * the accumulated duration covers the FULL window the slot was
+	 * unreusable -- the watchdog's 30 s grace period included -- and
+	 * matches the semantics the operator expects when reading "wedged
+	 * total".  Latched per-child so a child that survives many watchdog
+	 * ticks contributes one event with a real duration, not one event
+	 * per tick with zero duration.  Cleared in clean_childdata so the
+	 * next occupant of the slot starts fresh.  Diagnostic-only -- no
+	 * live-path decision reads either array yet.  See the comments on
+	 * shm->stats.syscall_wedge_count[] / childop_wedge_count[] in
+	 * include/stats.h for the exit_reason=19 motivation. */
 	bool wedge_accounted;
 	bool wedge_do32;
 	unsigned int wedge_nr;
+	enum child_op_type wedge_op_type;
 	struct timespec wedge_start_tp;
 
 	bool dontkillme;	/* provide temporary protection from the reaper. */
