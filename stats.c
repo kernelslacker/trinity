@@ -8611,6 +8611,36 @@ static void dump_stats_childop_ranked_tables(void)
 				 alt_op_name((enum child_op_type)op));
 			stat_row("childop_latch_reason", metric, v);
 		}
+
+		/* SHADOW score-driven recommendation counters bumped from
+		 * close_window_and_decide() in child-canary.c.  Divergence
+		 * between these and the live promote/demote count
+		 * (canary_op_state.total_demotions / total_promotions, surfaced
+		 * via canary_queue_summary()) is the signal the 75.2.B
+		 * enforcement work needs before it can take over the picker;
+		 * surfacing them here keeps the dump self-contained.  Skip-
+		 * zero, CHILD_OP_SYSCALL-skipped (matches the surrounding
+		 * per-childop arrays). */
+		for (op = CHILD_OP_SYSCALL + 1;
+		     op < NR_CHILD_OP_TYPES; op++) {
+			unsigned long v =
+				shm->stats.childop_would_demote[op];
+			if (v == 0)
+				continue;
+			snprintf(metric, sizeof(metric), "%s",
+				 alt_op_name((enum child_op_type)op));
+			stat_row("childop_would_demote", metric, v);
+		}
+		for (op = CHILD_OP_SYSCALL + 1;
+		     op < NR_CHILD_OP_TYPES; op++) {
+			unsigned long v =
+				shm->stats.childop_would_promote[op];
+			if (v == 0)
+				continue;
+			snprintf(metric, sizeof(metric), "%s",
+				 alt_op_name((enum child_op_type)op));
+			stat_row("childop_would_promote", metric, v);
+		}
 	}
 }
 
