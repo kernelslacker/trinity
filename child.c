@@ -2532,9 +2532,39 @@ void childop_outcome_window_dump(void)
  * bad_score sums the wedge / dstate / crash / setup-failure /
  * asan-failure accumulators.  These have producers today, so the
  * bad-utility table surfaces immediately.
+ *
+ * Under __SANITIZE_ADDRESS__ a third "asan" table is emitted that
+ * re-weights bad_score against the failure classes whose runtime cost
+ * is several times higher in an ASAN build, and pairs each row with a
+ * one-third wall-time budget hint (ASAN runs typically take 2-3x the
+ * walltime per syscall).  Class detection reads only existing
+ * childop_outcome fields, so no hardcoded childop list is needed and
+ * the weighting tracks observed behaviour rather than a hand-curated
+ * deny-list:
+ *
+ *   asan_runtime_failure         -> poisoning CHECK abort (weight x8)
+ *   setup_failures > 0           -> allocator / mmap reservation fail
+ *                                   against the shadow steal (x3)
+ *   wedges && clean_edges == 0   -> no-return-from-sigaltstack, the
+ *                                   child wedged without producing
+ *                                   any canary edge (per-wedge x4)
+ *
+ * The non-ASAN weights for wedge / dstate / crash / setup-failure are
+ * 1 / 1 / 1 / 1 (matching bad_score); the ASAN profile is strictly an
+ * additive re-weight on top.  Under a non-ASAN build this entire
+ * compute-and-emit block is omitted, the bad_score table is unchanged,
+ * and there is no behavioural difference from before this commit.
  */
 #define CHILDOP_SCORE_SCALE	1000000000ULL
 #define CHILDOP_SCORE_TOPN	10
+
+#ifdef __SANITIZE_ADDRESS__
+#define CHILDOP_ASAN_W_WEDGE_NOEDGE	4UL
+#define CHILDOP_ASAN_W_CRASH		2UL
+#define CHILDOP_ASAN_W_SETUP_FAIL	3UL
+#define CHILDOP_ASAN_W_RUNTIME_FAIL	8UL
+#define CHILDOP_ASAN_WALL_BUDGET_DIV	3ULL
+#endif
 
 void childop_score_dump(void)
 {
@@ -2552,11 +2582,18 @@ void childop_score_dump(void)
 		unsigned int crashes;
 		unsigned int setup_failures;
 		bool asan_runtime_failure;
+#ifdef __SANITIZE_ADDRESS__
+		unsigned long asan_bad_score;
+		uint64_t asan_wall_budget_ns;
+#endif
 	} rows[NR_CHILD_OP_TYPES];
 	unsigned int nrows = 0;
 	enum child_op_type op;
 	unsigned int i, j, n;
 	bool any_good = false, any_bad = false;
+#ifdef __SANITIZE_ADDRESS__
+	bool any_asan = false;
+#endif
 
 	for (op = CHILD_OP_SYSCALL + 1; op < NR_CHILD_OP_TYPES; op++) {
 		struct childop_outcome rec;
@@ -2595,10 +2632,32 @@ void childop_score_dump(void)
 		r->setup_failures = rec.setup_failures;
 		r->asan_runtime_failure = rec.asan_runtime_failure;
 
+#ifdef __SANITIZE_ADDRESS__
+		{
+			unsigned long wedge_w = (rec.clean_edges == 0)
+				? CHILDOP_ASAN_W_WEDGE_NOEDGE : 1UL;
+			r->asan_bad_score =
+				(unsigned long)rec.wedges * wedge_w +
+				rec.dstate_wedges +
+				(unsigned long)rec.crashes *
+					CHILDOP_ASAN_W_CRASH +
+				(unsigned long)rec.setup_failures *
+					CHILDOP_ASAN_W_SETUP_FAIL +
+				(rec.asan_runtime_failure
+					? CHILDOP_ASAN_W_RUNTIME_FAIL : 0UL);
+			r->asan_wall_budget_ns =
+				rec.wall_ns / CHILDOP_ASAN_WALL_BUDGET_DIV;
+		}
+#endif
+
 		if (r->good_score > 0)
 			any_good = true;
 		if (r->bad_score > 0)
 			any_bad = true;
+#ifdef __SANITIZE_ADDRESS__
+		if (r->asan_bad_score > 0)
+			any_asan = true;
+#endif
 	}
 
 	if (nrows == 0)
@@ -2646,6 +2705,31 @@ void childop_score_dump(void)
 			       rows[i].bad_score);
 		}
 	}
+
+#ifdef __SANITIZE_ADDRESS__
+	if (any_asan) {
+		for (i = 1; i < nrows; i++) {
+			struct score_row tmp = rows[i];
+			for (j = i; j > 0 &&
+			     rows[j - 1].asan_bad_score <
+			     tmp.asan_bad_score; j--)
+				rows[j] = rows[j - 1];
+			rows[j] = tmp;
+		}
+		n = nrows < CHILDOP_SCORE_TOPN ? nrows : CHILDOP_SCORE_TOPN;
+		for (i = 0; i < n && rows[i].asan_bad_score > 0; i++) {
+			output(1,
+			       "childop_score_asan %s: wedges=%u dstate_wedges=%u crashes=%u setup_failures=%u asan_runtime_failure=%d clean_edges=%lu wall_budget_ns=%lu total=%lu\n",
+			       alt_op_name(rows[i].op),
+			       rows[i].wedges, rows[i].dstate_wedges,
+			       rows[i].crashes, rows[i].setup_failures,
+			       rows[i].asan_runtime_failure ? 1 : 0,
+			       (unsigned long)rows[i].clean_edges,
+			       (unsigned long)rows[i].asan_wall_budget_ns,
+			       rows[i].asan_bad_score);
+		}
+	}
+#endif
 }
 
 /*
