@@ -192,6 +192,17 @@ static void sanitise_prlimit64(struct syscallrecord *rec)
 	rec->a3 = (unsigned long) rlim;
 
 	/*
+	 * new_rlim (a3) is the curated input the kernel reads.  ARG_ADDRESS
+	 * slots are subject to the post-sanitise blanket address scrub, which
+	 * relocates the pointer to a fresh pool page; the plain _out variant
+	 * would publish the new pointer without the curated bytes and the
+	 * kernel would read pool garbage.  _inout relocates AND memcpys the
+	 * payload, so the scrub no-ops on a3 and the kernel sees the real
+	 * (rlim_cur, rlim_max) pair we built above.
+	 */
+	avoid_shared_buffer_inout(&rec->a3, sizeof(struct rlimit64));
+
+	/*
 	 * old_rlim (a4) is the kernel's writeback target for the previous
 	 * limit values: ARG_ADDRESS draws from the random pool, so a fuzzed
 	 * pointer can land inside an alloc_shared region.  Scrub it.
