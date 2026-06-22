@@ -923,7 +923,7 @@ static bool remote_adaptive_decide(unsigned int nr,
 		if (rcalls >= REMOTE_ADAPTIVE_MIN_REMOTE_CALLS &&
 		    lcalls >= REMOTE_ADAPTIVE_MIN_LOCAL_CALLS &&
 		    redgec > 0) {
-			unsigned long lhs, rhs;
+			unsigned long lhs, rhs = 0;
 			bool ok;
 
 			ok = !__builtin_mul_overflow(redgec, lcalls, &lhs);
