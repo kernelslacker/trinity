@@ -4,18 +4,30 @@
  *		const struct xattr_args __user *, uargs, size_t, usize)
  */
 #include <fcntl.h>
+#include <stdio.h>
 #include "arch.h"
 #include "csfu.h"
 #include "deferred-free.h"
+#include "pathnames.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
+#include "trinity.h"
 #include "utils.h"
 #include "xattr.h"
 #include "compat.h"
 #ifdef USE_XATTR_ARGS
 #include <linux/xattr.h>
 #endif
+
+/*
+ * Mirrors the MAX_TESTFILES bound in fds/testfiles.c so the pinned
+ * arm lands inside the same trinity-testfile<N> inodes the rest of
+ * the fuzzer (xattr-thrash, flock-thrash, fremovexattr, lremovexattr,
+ * llistxattr) touches; cross-process contention concentrates on the
+ * same per-inode i_xattrs rwsem.
+ */
+#define NR_TESTFILES 4
 
 static unsigned long setxattrat_at_flags[] = {
 	AT_SYMLINK_NOFOLLOW, AT_EMPTY_PATH,
@@ -137,6 +149,37 @@ static void sanitise_setxattrat(struct syscallrecord *rec)
 	 */
 	if (ONE_IN(3))
 		rec->a1 = (unsigned long)(long) AT_FDCWD;
+
+	/*
+	 * pathname (a2): ARG_PATHNAME plumbed a random pathname into the
+	 * slot, but the random path is most often not a real file at all
+	 * (ENOENT before any vfs_setxattr work) or, even when it lands on
+	 * a real file, path_setxattrat bounces it before the per-fs xattr
+	 * handler dispatch and the per-inode i_xattrs rwsem the set would
+	 * have grabbed.  Same "high calls, low edges" cold-syscall shape
+	 * the rest of the xattr family had before their testfile
+	 * precondition repoints (fremovexattr / lremovexattr / llistxattr).
+	 *
+	 * Half the draws now repoint at one of the trinity-testfile<N>
+	 * absolute paths so the set lands on a real per-inode xattr list
+	 * and exercises the per-fs handler dispatch.  The other half
+	 * preserves the slot exactly as ARG_PATHNAME left it so the
+	 * ENOENT / random-path reject arms stay warm.  The absolute path
+	 * makes the dfd choice irrelevant for the pinned arm, so this
+	 * composes cleanly with the AT_FDCWD pin above.
+	 *
+	 * setxattrat is itself the set, so no separate plant is needed --
+	 * the syscall populates the per-inode xattr list directly.  This
+	 * is path-pin only, no sanitiser-slow-path setxattr() call.
+	 */
+	if (rnd_modulo_u32(2) == 0) {
+		char *path = (char *) rec->a2;
+		if (path != NULL)
+			snprintf(path, MAX_PATH_LEN,
+				 "%s/trinity-testfile%u",
+				 trinity_tmpdir_abs(),
+				 1 + rnd_modulo_u32(NR_TESTFILES));
+	}
 }
 
 #ifdef USE_XATTR_ARGS
