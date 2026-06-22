@@ -24,7 +24,7 @@
  *      the cap-drop oracle keeps observing the host credential
  *      profile.  Helper -EPERM (hardened userns policy refused
  *      CLONE_NEWUSER) latches the childop off for the remainder of
- *      this child's lifetime; -1 (transient setup failure: fork,
+ *      this child's lifetime; -EAGAIN (transient setup failure: fork,
  *      id-map write, secondary unshare) skips the iteration without
  *      latching.
  *   2. Open NETLINK_ROUTE.  EPROTONOSUPPORT / EAFNOSUPPORT records a
@@ -146,7 +146,7 @@ static unsigned int alt_ring_count;	/* min(written, ALT_RING_SZ) */
  * Without a private netns we MUST NOT touch the host's main routing
  * table or interface table, so the op stays disabled for the remainder
  * of this child's lifetime.  Transient setup failures (helper return
- * -1) do not set this — they may not recur on the next iteration.
+ * -EAGAIN) do not set this — they may not recur on the next iteration.
  *
  * Secondary CONFIG-absent latches (NETLINK_ROUTE EPROTONOSUPPORT /
  * EAFNOSUPPORT and dummy-create EOPNOTSUPP / ENOPKG) fire inside the

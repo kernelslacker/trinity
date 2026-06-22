@@ -28,7 +28,7 @@
  *       cap-drop oracle keeps observing the host credential profile.
  *       Helper -EPERM (hardened userns policy refused CLONE_NEWUSER)
  *       latches the childop off for the remainder of this child's
- *       lifetime; -1 (transient setup failure: fork, id-map write,
+ *       lifetime; -EAGAIN (transient setup failure: fork, id-map write,
  *       secondary unshare) skips the invocation without latching.
  *       The cap-gate still latches on the first NEWFLOWTABLE rejection
  *       inside the grandchild if structural support is missing.
@@ -243,7 +243,7 @@
  *     of that grandchild's outer loop; the persistent child's copy is
  *     unchanged, and subsequent invocations re-discover the CONFIG-
  *     absent state via one NEWFLOWTABLE round-trip per outer-loop iter.
- * Helper return -1 (transient grandchild setup failure: fork, id-map
+ * Helper return -EAGAIN (transient grandchild setup failure: fork, id-map
  * write, secondary unshare) does NOT set this latch -- the failure is
  * not policy and may not recur on the next invocation. */
 static bool ns_unsupported_flowtable_vlan;
