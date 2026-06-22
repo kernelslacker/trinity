@@ -258,9 +258,19 @@ bool perf_event_chains(struct childdata *child)
 	unsigned int nr_members;
 	unsigned int i;
 
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the stats
+	 * writes entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	if (pmu_count == 0) {
-		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-				 CHILDOP_LATCH_UNSUPPORTED, __ATOMIC_RELAXED);
+		if (valid_op)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					 CHILDOP_LATCH_UNSUPPORTED, __ATOMIC_RELAXED);
 		return true;
 	}
 
@@ -278,8 +288,9 @@ bool perf_event_chains(struct childdata *child)
 	__atomic_add_fetch(&shm->stats.perf_chains_groups_created, 1,
 			   __ATOMIC_RELAXED);
 
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
 
 	/* Open 0 to MAX_GROUP_MEMBERS-1 member events in this group. */
 	nr_members = rnd_modulo_u32(MAX_GROUP_MEMBERS);
@@ -300,8 +311,9 @@ bool perf_event_chains(struct childdata *child)
 		}
 	}
 
-	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
 	fuzz_group_ioctls(leader_fd, member_fds, nr_members);
 
 	for (i = 0; i < nr_members; i++)
