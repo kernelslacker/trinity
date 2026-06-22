@@ -324,15 +324,17 @@ void lock(lock_t *lk)
 		if (pid == mainpid) {
 			check_lock(lk);
 		} else {
+			enum exit_reasons reason = __atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED);
+
 			/* Child-side spin bailout: if the run hit its syscall
 			 * count, exit cleanly rather than wait on a lock. */
-			if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) == EXIT_REACHED_COUNT)
+			if (reason == EXIT_REACHED_COUNT)
 				_exit(EXIT_SUCCESS);
 
 			/* Honor global exit state instead of spinning
 			 * indefinitely while the run is shutting down. */
-			if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) != STILL_RUNNING)
-				_exit(__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED));
+			if (reason != STILL_RUNNING)
+				_exit(reason);
 
 			/* After spinning a long time, check if the holder
 			 * died. Children can't rely on parent's check_lock()
