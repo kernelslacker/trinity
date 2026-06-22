@@ -11,6 +11,10 @@
 #include "sanitise.h"
 #include "compat.h"
 
+#ifndef LANDLOCK_ADD_RULE_QUIET
+#define LANDLOCK_ADD_RULE_QUIET		(1U << 0)
+#endif
+
 enum landlock_rule_type_compat {
 	LANDLOCK_RULE_PATH_BENEATH_COMPAT = 1,
 	LANDLOCK_RULE_NET_PORT_COMPAT,
@@ -48,7 +52,7 @@ static void sanitise_landlock_add_rule(struct syscallrecord *rec)
 		if (np == NULL)
 			break;
 		memset(np, 0, sizeof(*np));
-		np->allowed_access = rnd_modulo_u32(4);
+		np->allowed_access = rnd_modulo_u32(16);
 
 		switch (rnd_modulo_u32(4)) {
 		case 0: np->port = 0; break;		/* ephemeral */
@@ -62,7 +66,7 @@ static void sanitise_landlock_add_rule(struct syscallrecord *rec)
 	}
 	}
 
-	rec->a4 = 0;	/* flags must be zero */
+	rec->a4 = rnd_modulo_u32(2) ? LANDLOCK_ADD_RULE_QUIET : 0;
 }
 
 struct syscallentry syscall_landlock_add_rule = {
