@@ -280,16 +280,16 @@ bool bpf_cgroup_attach(struct childdata *child)
 	attached = true;
 	__atomic_add_fetch(&shm->stats.bpf_cgroup_attach_attached, 1,
 			   __ATOMIC_RELAXED);
-	if (valid_op)
+	if (valid_op) {
 		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
+	}
 
 	/* Drive the hook in-burst.  Sibling children fuzzing in the same
 	 * cgroup at the same time supply the cross-process concurrency
 	 * the dispatch-vs-detach race window needs. */
-	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
-				   1, __ATOMIC_RELAXED);
 	sent = udp_burst(c->attach_type);
 	__atomic_add_fetch(&shm->stats.bpf_cgroup_attach_packets_sent,
 			   sent, __ATOMIC_RELAXED);
