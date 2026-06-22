@@ -883,11 +883,14 @@ static void init_tracepoint_ids(void)
 	}
 }
 
-static unsigned long long random_tracepoint_config(void)
+unsigned long long random_tracepoint_config(void)
 {
 	/* ~7/8 from the live pool when populated.  Empty pool (no tracefs,
 	 * no CONFIG_TRACING, or the walk found zero events) drops straight
-	 * through to the random fallback so this stays usable everywhere. */
+	 * through to the random fallback so this stays usable everywhere
+	 * -- the structured perf_event_attr fill's TRACEPOINT variant
+	 * plants this as an FT_PICKER, so a wedged picker would freeze the
+	 * config slot to whatever the prior pass wrote. */
 	if (num_tracepoint_ids > 0 && rnd_modulo_u32(8) != 0)
 		return tracepoint_ids[rnd_modulo_u32(num_tracepoint_ids)];
 

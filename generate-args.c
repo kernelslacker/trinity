@@ -2075,6 +2075,25 @@ static void struct_fill_passes(unsigned char *buf, unsigned int size,
 			memcpy(buf + f->offset, pick, stride);
 			break;
 		}
+		case FT_PICKER: {
+			/*
+			 * Delegate to a per-field callback that owns its own
+			 * value source (typically a runtime-populated live
+			 * pool, e.g. tracepoint ids from tracefs).  The picker
+			 * contract -- always return a usable u64, fall back
+			 * internally on empty pool -- keeps this case wedge-
+			 * free; an unset callback drops to the raw splat so a
+			 * partially-initialised FIELDX doesn't silently zero
+			 * the slot.
+			 */
+			if (f->u.picker.pick == NULL) {
+				fill_field_raw(buf, f);
+				break;
+			}
+			write_field_uint(buf, f,
+					 (uint64_t) f->u.picker.pick());
+			break;
+		}
 		case FT_VERSION_MAGIC:
 		case FT_TAGGED_UNION:
 		case FT_RAW:

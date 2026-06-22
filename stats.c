@@ -9781,6 +9781,7 @@ static void dump_stats_corpus_and_taint_tail(void)
 				[FT_TAGGED_UNION]	= "tagged_union",
 				[FT_BPF_PROGRAM]	= "bpf_program",
 				[FT_VOCAB]		= "vocab",
+				[FT_PICKER]		= "picker",
 			};
 			unsigned long sf_total = 0;
 			unsigned int t;
