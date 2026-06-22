@@ -424,9 +424,18 @@ static int igmp_source_iter_v4_join(struct igmp_source_iter_v4_ctx *it)
 
 		if (is_syscall_unsupported(e) || is_proto_family_unsupported(e)) {
 			ns_unsupported_igmp_mld_source_churn = true;
-			__atomic_store_n(&shm->stats.childop_latch_reason[it->op_type],
-					 CHILDOP_LATCH_NS_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			/* it->op_type was copied from child->op_type, which
+			 * lives in shared memory and can be scribbled by a
+			 * poisoned-arena write from a sibling; bounds-check
+			 * the snapshot before indexing the NR_CHILD_OP_TYPES-
+			 * sized stats array. */
+			{
+				const enum child_op_type op = it->op_type;
+				if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+					__atomic_store_n(&shm->stats.childop_latch_reason[op],
+							 CHILDOP_LATCH_NS_UNSUPPORTED,
+							 __ATOMIC_RELAXED);
+			}
 		}
 		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
@@ -553,11 +562,20 @@ static void iter_one_v4(int op_type, unsigned int iter_idx,
 	if (igmp_source_iter_v4_join(&it) != 0)
 		goto out;
 
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[op_type],
-			   1, __ATOMIC_RELAXED);
+	/* op_type was passed in from child->op_type, which lives in shared
+	 * memory and can be scribbled by a poisoned-arena write from a
+	 * sibling; bounds-check before indexing the NR_CHILD_OP_TYPES-sized
+	 * per-childop stats arrays.  Skip the stats writes entirely when the
+	 * snapshot is out of range. */
+	const bool valid_op = ((int) op_type >= 0 && op_type < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.childop_data_path[op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op_type],
+				   1, __ATOMIC_RELAXED);
+
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_data_path[op_type],
+				   1, __ATOMIC_RELAXED);
 	send_burst(it.send_s, 2);
 
 	if ((unsigned long long)ns_since(t_outer) >= IMC_WALL_CAP_NS)
@@ -680,9 +698,18 @@ static int mld_source_iter_v6_join(struct mld_source_iter_v6_ctx *it)
 
 		if (is_syscall_unsupported(e) || is_proto_family_unsupported(e)) {
 			ns_unsupported_igmp_mld_source_churn = true;
-			__atomic_store_n(&shm->stats.childop_latch_reason[it->op_type],
-					 CHILDOP_LATCH_NS_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			/* it->op_type was copied from child->op_type, which
+			 * lives in shared memory and can be scribbled by a
+			 * poisoned-arena write from a sibling; bounds-check
+			 * the snapshot before indexing the NR_CHILD_OP_TYPES-
+			 * sized stats array. */
+			{
+				const enum child_op_type op = it->op_type;
+				if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+					__atomic_store_n(&shm->stats.childop_latch_reason[op],
+							 CHILDOP_LATCH_NS_UNSUPPORTED,
+							 __ATOMIC_RELAXED);
+			}
 		}
 		__atomic_add_fetch(&shm->stats.igmp_mld_source_churn_setup_failed,
 				   1, __ATOMIC_RELAXED);
@@ -833,11 +860,20 @@ static void iter_one_v6(int op_type, unsigned int iter_idx,
 	if (mld_source_iter_v6_join(&it) != 0)
 		goto out;
 
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[op_type],
-			   1, __ATOMIC_RELAXED);
+	/* op_type was passed in from child->op_type, which lives in shared
+	 * memory and can be scribbled by a poisoned-arena write from a
+	 * sibling; bounds-check before indexing the NR_CHILD_OP_TYPES-sized
+	 * per-childop stats arrays.  Skip the stats writes entirely when the
+	 * snapshot is out of range. */
+	const bool valid_op = ((int) op_type >= 0 && op_type < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.childop_data_path[op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op_type],
+				   1, __ATOMIC_RELAXED);
+
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_data_path[op_type],
+				   1, __ATOMIC_RELAXED);
 	send_burst(it.send_s, 2);
 
 	if ((unsigned long long)ns_since(t_outer) >= IMC_WALL_CAP_NS)
