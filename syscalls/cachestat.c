@@ -122,6 +122,7 @@ static void sanitise_cachestat(struct syscallrecord *rec)
 		return;
 
 	rec->a2 = (unsigned long) range;
+	avoid_shared_buffer_inout(&rec->a2, sizeof(*range));
 	rec->a3 = (unsigned long) cs;
 
 	/*
