@@ -124,6 +124,14 @@ bool mprotect_split(struct childdata *child)
 	enum prot_mode mode;
 	unsigned int iter;
 
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	obj = get_random_object(OBJ_MMAP_ANON, OBJ_LOCAL);
 	if (obj == NULL)
 		return true;
@@ -138,13 +146,15 @@ bool mprotect_split(struct childdata *child)
 	if (map->size < page_size)
 		return true;
 
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
 
 	mode = (enum prot_mode)rnd_modulo_u32(NR_PROT_MODES);
 
-	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
 
 	for (iter = 0; iter < PROT_MODE_ITERS; iter++) {
 		unsigned long offset, len;
