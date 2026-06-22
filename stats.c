@@ -1578,6 +1578,21 @@ static const struct stat_category fork_storm_category =
 	              fork_storm_runs,
 	              fork_storm_fields);
 
+static const struct stat_field cpu_hotplug_rider_fields[] = {
+	STAT_FIELD(cpu_hotplug, runs),
+	STAT_FIELD(cpu_hotplug, affinity_calls),
+	STAT_FIELD(cpu_hotplug, sysfs_writes),
+	STAT_FIELD(cpu_hotplug, open_eperm),
+	STAT_FIELD(cpu_hotplug, write_eperm),
+	STAT_FIELD(cpu_hotplug, write_ok),
+	STAT_FIELD(cpu_hotplug, actual_offlines),
+};
+
+static const struct stat_category cpu_hotplug_rider_category =
+	STAT_CATEGORY("cpu_hotplug_rider",
+	              cpu_hotplug_runs,
+	              cpu_hotplug_rider_fields);
+
 static const struct stat_field pidfd_storm_fields[] = {
 	STAT_FIELD(pidfd_storm, runs),
 	STAT_FIELD(pidfd_storm, signals),
@@ -2977,6 +2992,9 @@ static void __cold dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&fork_storm_category);
+
+	printf(",");
+	stat_category_emit_json(&cpu_hotplug_rider_category);
 
 	printf(",");
 	stat_category_emit_json(&pidfd_storm_category);
@@ -8293,6 +8311,8 @@ static void dump_stats_childop_runs_local(void)
 	stat_category_emit_text(&pipe_thrash_category);
 
 	stat_category_emit_text(&fork_storm_category);
+
+	stat_category_emit_text(&cpu_hotplug_rider_category);
 
 	stat_category_emit_text(&pidfd_storm_category);
 
