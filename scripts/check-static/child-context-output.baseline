@@ -189,10 +189,10 @@ syscalls/newstat.c:162:post_newstat
 syscalls/newuname.c:169:post_newuname
 syscalls/nice.c:56:post_nice
 syscalls/olduname.c:210:post_olduname
-syscalls/open.c:136:post_openat
-syscalls/open.c:149:post_openat
-syscalls/open.c:335:post_openat2
-syscalls/open.c:93:post_open
+syscalls/open.c:141:post_openat
+syscalls/open.c:154:post_openat
+syscalls/open.c:340:post_openat2
+syscalls/open.c:98:post_open
 syscalls/pause.c:22:post_pause
 syscalls/perf_event_open.c:2031:post_perf_event_open
 syscalls/personality.c:25:post_personality
