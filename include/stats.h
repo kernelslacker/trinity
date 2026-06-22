@@ -3205,6 +3205,21 @@ struct stats_s {
 	 */
 	unsigned long minicorpus_last_snapshot_time;
 
+	/*
+	 * Bumped from runid_corpus_entries_total() each time a per-syscall
+	 * minicorpus ring is observed with count > CORPUS_RING_SIZE.  Every
+	 * save path (in-run minicorpus_save_with_reason() and the on-disk
+	 * loader) caps count at CORPUS_RING_SIZE before publishing, and the
+	 * picker / snapshot readers also clamp before indexing entries[];
+	 * a value above the cap is therefore not reachable through the
+	 * documented writer flow and is a zero-false-positive signal that
+	 * a sibling wild write has scribbled the ring's count word.  The
+	 * sum reader silently clamped before this counter existed, which
+	 * surfaced as a wildly inflated corpus_entries headline at run-end
+	 * (e.g. 5,178,716 vs the real 1,565) with no other breadcrumb.
+	 */
+	unsigned long corpus_count_overcap_caught;
+
 	/* rxrpc_sendmsg_cmsg_churn childop counters */
 	unsigned long rxrpc_sendmsg_cmsg_runs;			/* total rxrpc_sendmsg_cmsg_churn invocations */
 	unsigned long rxrpc_sendmsg_cmsg_socket_failed;		/* socket()/bind() rejected (incl EPROTONOSUPPORT-latch trip) */
