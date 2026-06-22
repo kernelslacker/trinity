@@ -322,6 +322,7 @@ set_control:
 	}
 
 	rec->a2 = (unsigned long) msg;
+	avoid_shared_buffer_inout(&rec->a2, sizeof(struct msghdr));
 
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = SENDMSG_POST_STATE_MAGIC;
@@ -584,6 +585,7 @@ static void sanitise_sendmmsg(struct syscallrecord *rec)
 	}
 
 	rec->a2 = (unsigned long) msgs;
+	avoid_shared_buffer_inout(&rec->a2, vlen * sizeof(struct mmsghdr));
 	rec->a3 = vlen;
 	rec->post_state = (unsigned long) snap;
 	post_state_register(snap);
