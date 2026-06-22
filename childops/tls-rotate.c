@@ -214,14 +214,24 @@ bool tls_rotate(struct childdata *child)
 	c1 = (enum tls_cipher_choice)rnd_modulo_u32(NR_TLS_CHOICES);
 	v1 = RAND_BOOL() ? TLS_1_2_VERSION : TLS_1_3_VERSION;
 
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the stats
+	 * writes entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	/* Step 4a: client TX install. */
 	clen = fill_cinfo(c1, cinfo, v1);
 	rc = setsockopt(cli, SOL_TLS, TLS_TX, cinfo, clen);
 	if (rc == 0) {
 		__atomic_add_fetch(&shm->stats.tls_rotate_installs,
 				   1, __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-				   1, __ATOMIC_RELAXED);
+		if (valid_op)
+			__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+					   1, __ATOMIC_RELAXED);
 	}
 
 	/* Step 4b: server RX install with the SAME params (matching peer).
@@ -234,8 +244,9 @@ bool tls_rotate(struct childdata *child)
 	}
 
 	/* Step 5: drive tls_sw_sendmsg through the just-installed TX. */
-	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
 	generate_rand_bytes(payload, sizeof(payload));
 	(void)send(cli, payload, 1 + rnd_modulo_u32(sizeof(payload)),
 		   MSG_DONTWAIT);
