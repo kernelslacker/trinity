@@ -189,6 +189,56 @@ static unsigned int nr_discovered_tracers;
 static bool tracefs_available;
 
 /*
+ * Per-target child-side inaccessibility cache.
+ *
+ * The parent runs as the invoking user (typically root) and discovers
+ * write targets with access(..., W_OK).  Children then drop uid + caps
+ * before dispatching ops, so most tracefs files the parent waved through
+ * fail open() with EACCES/EPERM in the child.  Without a cache, every
+ * dispatch wastes a syscall on the same denied path -- "attempted"
+ * write counters dominated by paths the child can never open.
+ *
+ * On the first post-drop open() denial of a given target, the child
+ * latches the corresponding slot.  Subsequent dispatches either redraw
+ * (list-backed ops -- event_enable, ftrace_filter) or short-circuit
+ * (single-path ops).  Latching is per-process (COW from the parent),
+ * so each child accumulates its own picture as it makes attempts and
+ * the dispatcher converges on targets it can actually write.
+ *
+ * EROFS is intentionally not latched: a remount can restore writability
+ * mid-run; EACCES/EPERM are the privilege-mismatch cases.
+ */
+static bool event_enable_inaccessible[MAX_EVENTS];
+
+enum single_path_id {
+	SP_KPROBE_EVENTS = 0,
+	SP_UPROBE_EVENTS,
+	SP_TRACE_OPTIONS,
+	SP_CURRENT_TRACER,
+	SP_TRACING_ON,
+	SP_BUFFER_SIZE_KB,
+	NR_SINGLE_PATHS,
+};
+static bool single_path_inaccessible[NR_SINGLE_PATHS];
+/* Sized to match filter_files[] -- one slot per ftrace function-filter target. */
+static bool filter_file_inaccessible[3];
+
+/*
+ * Open a tracefs file for writing.  On EACCES/EPERM (the post-drop
+ * privilege-mismatch errnos), latch *bad so the caller's dispatch path
+ * stops drawing this target on future calls.  bad == NULL is supported
+ * for the rare callsite without a cache slot.
+ */
+static int open_write_target(const char *path, bool *bad)
+{
+	int fd = open(path, O_WRONLY | O_NONBLOCK);
+
+	if (fd < 0 && bad != NULL && (errno == EACCES || errno == EPERM))
+		*bad = true;
+	return fd;
+}
+
+/*
  * Recurse into tracefs_root/events/ at depth 1-2 and collect paths ending
  * in "/enable".  Depth 1 gives per-subsystem enable; depth 2 gives
  * per-event enable -- both are interesting targets.
@@ -370,14 +420,14 @@ static void bump_arm_counter(enum tracefs_arm arm, enum write_outcome outcome)
 	__atomic_add_fetch(p, 1, __ATOMIC_RELAXED);
 }
 
-static enum write_outcome write_text_payload(const char *path)
+static enum write_outcome write_text_payload(const char *path, bool *bad)
 {
 	char buf[256];
 	unsigned int len;
 	int fd;
 	ssize_t ret;
 
-	fd = open(path, O_WRONLY | O_NONBLOCK);
+	fd = open_write_target(path, bad);
 	if (fd < 0)
 		return OUTCOME_OPEN_FAIL;
 	len = gen_text_payload(buf, sizeof(buf));
@@ -386,9 +436,9 @@ static enum write_outcome write_text_payload(const char *path)
 	return ret < 0 ? OUTCOME_WRITE_FAIL : OUTCOME_WRITE_OK;
 }
 
-static enum write_outcome write_str(const char *path, const char *str)
+static enum write_outcome write_str(const char *path, const char *str, bool *bad)
 {
-	int fd = open(path, O_WRONLY | O_NONBLOCK);
+	int fd = open_write_target(path, bad);
 	ssize_t ret;
 
 	if (fd < 0)
@@ -410,10 +460,14 @@ static void do_kprobe_events(void)
 {
 	char path[TRACEFS_MAX_PATH];
 	char spec[256];
+	bool *bad = &single_path_inaccessible[SP_KPROBE_EVENTS];
 	const char *sym;
 	unsigned int probe_num;
 	int fd;
 	ssize_t ret;
+
+	if (*bad)
+		return;
 
 	snprintf(path, sizeof(path), "%s/kprobe_events", tracefs_root);
 
@@ -447,11 +501,11 @@ static void do_kprobe_events(void)
 		 * and long strings reach deeper into the parser than random bytes
 		 * that fail at the first character.
 		 */
-		bump_arm_counter(ARM_KPROBE, write_text_payload(path));
+		bump_arm_counter(ARM_KPROBE, write_text_payload(path, bad));
 		return;
 	}
 
-	fd = open(path, O_WRONLY | O_NONBLOCK);
+	fd = open_write_target(path, bad);
 	if (fd < 0) {
 		bump_arm_counter(ARM_KPROBE, OUTCOME_OPEN_FAIL);
 		return;
@@ -472,10 +526,14 @@ static void do_uprobe_events(void)
 {
 	char path[TRACEFS_MAX_PATH];
 	char spec[256];
+	bool *bad = &single_path_inaccessible[SP_UPROBE_EVENTS];
 	unsigned int probe_num;
 	unsigned long offset;
 	int fd;
 	ssize_t ret;
+
+	if (*bad)
+		return;
 
 	snprintf(path, sizeof(path), "%s/uprobe_events", tracefs_root);
 
@@ -500,11 +558,11 @@ static void do_uprobe_events(void)
 		snprintf(spec, sizeof(spec), "-:trinity_u%u", probe_num);
 		break;
 	default:
-		bump_arm_counter(ARM_UPROBE, write_text_payload(path));
+		bump_arm_counter(ARM_UPROBE, write_text_payload(path, bad));
 		return;
 	}
 
-	fd = open(path, O_WRONLY | O_NONBLOCK);
+	fd = open_write_target(path, bad);
 	if (fd < 0) {
 		bump_arm_counter(ARM_UPROBE, OUTCOME_OPEN_FAIL);
 		return;
@@ -536,18 +594,38 @@ static void do_ftrace_filter(void)
 		"alloc*",
 		"__*",
 	};
-	const char *path = RAND_ARRAY(filter_files);
+	const char *path;
+	bool *bad;
+	unsigned int idx;
+	unsigned int attempt;
 	char spec[128];
 	enum write_outcome outcome;
 	int fd;
 	ssize_t ret;
+
+	/*
+	 * Pick a filter file the child hasn't already latched as denied.
+	 * With only three slots we can afford a small bounded retry rather
+	 * than scanning the array; if all three are latched, bail this
+	 * dispatch.
+	 */
+	idx = rnd_modulo_u32(ARRAY_SIZE(filter_files));
+	for (attempt = 0; attempt < ARRAY_SIZE(filter_files); attempt++) {
+		if (!filter_file_inaccessible[idx])
+			break;
+		idx = (idx + 1) % ARRAY_SIZE(filter_files);
+	}
+	if (filter_file_inaccessible[idx])
+		return;
+	path = filter_files[idx];
+	bad = &filter_file_inaccessible[idx];
 
 	switch (rnd_modulo_u32(4)) {
 	case 0: {
 		/* Named glob */
 		const char *s = RAND_ARRAY(globs);
 
-		fd = open(path, O_WRONLY | O_NONBLOCK);
+		fd = open_write_target(path, bad);
 		if (fd < 0) {
 			outcome = OUTCOME_OPEN_FAIL;
 			break;
@@ -561,7 +639,7 @@ static void do_ftrace_filter(void)
 		/* A known symbol from our kprobe target list */
 		const char *s = RAND_ARRAY(kprobe_targets);
 
-		fd = open(path, O_WRONLY | O_NONBLOCK);
+		fd = open_write_target(path, bad);
 		if (fd < 0) {
 			outcome = OUTCOME_OPEN_FAIL;
 			break;
@@ -573,7 +651,7 @@ static void do_ftrace_filter(void)
 	}
 	case 2:
 		/* Clear filter by writing empty string */
-		outcome = write_str(path, "");
+		outcome = write_str(path, "", bad);
 		break;
 	default:
 		/*
@@ -586,9 +664,9 @@ static void do_ftrace_filter(void)
 				 'a' + rnd_modulo_u32(26),
 				 'a' + rnd_modulo_u32(26),
 				 'a' + rnd_modulo_u32(26));
-			outcome = write_str(path, spec);
+			outcome = write_str(path, spec, bad);
 		} else {
-			outcome = write_text_payload(path);
+			outcome = write_text_payload(path, bad);
 		}
 		break;
 	}
@@ -600,14 +678,32 @@ static void do_ftrace_filter(void)
 static void do_event_enable(void)
 {
 	const char *val;
+	unsigned int idx;
+	unsigned int attempt;
 
 	if (nr_event_enables == 0)
 		return;
 
+	/*
+	 * Linear-probe a small bounded window from a random start, skipping
+	 * entries the child has latched as denied.  Bounded so a heavily
+	 * winnowed table doesn't spin a child loop on each dispatch; if no
+	 * accessible slot is found in the window, bail and rely on the next
+	 * dispatch to try a fresh start.
+	 */
+	idx = rnd_modulo_u32(nr_event_enables);
+	for (attempt = 0; attempt < 8; attempt++) {
+		if (!event_enable_inaccessible[idx])
+			break;
+		idx = (idx + 1) % nr_event_enables;
+	}
+	if (event_enable_inaccessible[idx])
+		return;
+
 	val = RAND_BOOL() ? "1" : "0";
 	bump_arm_counter(ARM_EVENT_ENABLE,
-			 write_str(event_enable_paths[rnd_modulo_u32(nr_event_enables)],
-				   val));
+			 write_str(event_enable_paths[idx], val,
+				   &event_enable_inaccessible[idx]));
 }
 
 /* Write a trace_option name (with optional "no" prefix) to trace_options. */
@@ -615,6 +711,10 @@ static void do_trace_options(void)
 {
 	char path[TRACEFS_MAX_PATH];
 	char option[64];
+	bool *bad = &single_path_inaccessible[SP_TRACE_OPTIONS];
+
+	if (*bad)
+		return;
 
 	snprintf(path, sizeof(path), "%s/trace_options", tracefs_root);
 
@@ -625,22 +725,27 @@ static void do_trace_options(void)
 		snprintf(option, sizeof(option), "no%s",
 			 RAND_ARRAY(trace_option_names));
 
-	bump_arm_counter(ARM_MISC, write_str(path, option));
+	bump_arm_counter(ARM_MISC, write_str(path, option, bad));
 }
 
 /* Switch the current tracer -- exercises the tracer registration path. */
 static void do_current_tracer(void)
 {
 	char path[TRACEFS_MAX_PATH];
+	bool *bad = &single_path_inaccessible[SP_CURRENT_TRACER];
 	enum write_outcome outcome;
+
+	if (*bad)
+		return;
 
 	snprintf(path, sizeof(path), "%s/current_tracer", tracefs_root);
 
 	if (nr_discovered_tracers > 0 && !ONE_IN(8))
 		outcome = write_str(path,
-				    discovered_tracers[rnd_modulo_u32(nr_discovered_tracers)]);
+				    discovered_tracers[rnd_modulo_u32(nr_discovered_tracers)],
+				    bad);
 	else
-		outcome = write_str(path, RAND_ARRAY(tracer_names));
+		outcome = write_str(path, RAND_ARRAY(tracer_names), bad);
 
 	bump_arm_counter(ARM_MISC, outcome);
 }
@@ -649,9 +754,14 @@ static void do_current_tracer(void)
 static void do_tracing_on(void)
 {
 	char path[TRACEFS_MAX_PATH];
+	bool *bad = &single_path_inaccessible[SP_TRACING_ON];
+
+	if (*bad)
+		return;
 
 	snprintf(path, sizeof(path), "%s/tracing_on", tracefs_root);
-	bump_arm_counter(ARM_MISC, write_str(path, RAND_BOOL() ? "1" : "0"));
+	bump_arm_counter(ARM_MISC,
+			 write_str(path, RAND_BOOL() ? "1" : "0", bad));
 }
 
 /* Resize the ring buffer -- exercises the buffer reallocation path. */
@@ -659,13 +769,17 @@ static void do_buffer_size(void)
 {
 	char path[TRACEFS_MAX_PATH];
 	char val[32];
+	bool *bad = &single_path_inaccessible[SP_BUFFER_SIZE_KB];
 	static const unsigned int sizes[] = {
 		0, 1, 4, 16, 64, 128, 256, 512, 1024, 4096,
 	};
 
+	if (*bad)
+		return;
+
 	snprintf(path, sizeof(path), "%s/buffer_size_kb", tracefs_root);
 	snprintf(val, sizeof(val), "%u", RAND_ARRAY(sizes));
-	bump_arm_counter(ARM_MISC, write_str(path, val));
+	bump_arm_counter(ARM_MISC, write_str(path, val, bad));
 }
 
 /*
