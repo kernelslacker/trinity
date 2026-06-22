@@ -7748,10 +7748,21 @@ static void dump_stats_childop_ranked_tables(void)
 				}
 			}
 			for (ri = 0; ri < nranked; ri++) {
+				unsigned long r = ranked[ri].ratio;
+
+				/* Some childops bump setup_accepted more than
+				 * once per dispatch, so acc can exceed inv and
+				 * the raw ratio can exceed 1000.  Clamp at the
+				 * render site to preserve the documented
+				 * 0..1000 permille invariant; the ordering
+				 * across over-the-cap ops is not meaningful
+				 * (they are all "setup never bailed"). */
+				if (r > 1000UL)
+					r = 1000UL;
 				snprintf(metric, sizeof(metric), "%s",
 					 alt_op_name((enum child_op_type)ranked[ri].op));
 				stat_row("childop_setup_bound_permille",
-					 metric, ranked[ri].ratio);
+					 metric, r);
 			}
 		}
 
