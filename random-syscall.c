@@ -703,11 +703,11 @@ static unsigned long frontier_cold_weight(unsigned int nr,
 	 * discovers both kinds of novelty correctly contributes to both
 	 * terms because two distinct novelty events happened -- there is
 	 * no double-counting.  Composition with the PC-edge backbone
-	 * coordinated with 86ee2986cec8 ("random-syscall: shadow-score
-	 * blended frontier cold weight"), which landed the bucket-bits
-	 * and distinct-pcs terms; this commit adds the disjoint
-	 * transition term and returns blend_weight under COMBINED mode
-	 * instead of always returning old_weight.
+	 * is coordinated with 86ee2986cec8 ("random-syscall: shadow-score
+	 * blended frontier cold weight"), which introduced the bucket-bits
+	 * and distinct-pcs terms; the disjoint transition term layered on
+	 * top is what makes blend_weight differ from old_weight under
+	 * COMBINED mode.
 	 *
 	 * Diag counters are split by [nr][do32]; sum both arch slots so
 	 * the blend's productivity numerator pairs against the unsplit
@@ -731,9 +731,8 @@ static unsigned long frontier_cold_weight(unsigned int nr,
 	 * blend_weight (so the A/B counters below measure the divergence
 	 * the COMBINED switch would activate); the function still returns
 	 * old_weight, so live selection stays byte-identical.  Under OFF
-	 * the term is zeroed so blend_weight reproduces the pre-commit
-	 * formula exactly, keeping the A/B counters comparable to runs
-	 * recorded before this commit landed. */
+	 * the term is zeroed so blend_weight reproduces the legacy formula
+	 * exactly, keeping the A/B counters comparable to baseline runs. */
 	trew_mode = __atomic_load_n(&kcov_transition_reward_mode,
 				    __ATOMIC_RELAXED);
 
@@ -2268,10 +2267,10 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	 *    (PC-mode score is undefined for a CMP-mode call, and CMP
 	 *    novelty did not fire).
 	 *
-	 * SHADOW: live pool selection in cmp_hints_try_get is UNCHANGED
-	 * this commit; only the per-entry scores and the flat counters
-	 * record outcomes.  The follow-up A/B-gated commit will turn the
-	 * scores into the weighted live pick.
+	 * SHADOW: live pool selection in cmp_hints_try_get is uniform
+	 * here -- only the per-entry scores and the flat counters record
+	 * outcomes.  A future A/B-gated path will turn the scores into a
+	 * weighted live pick.
 	 *
 	 * Gated on !child->in_reexec so the inner re-exec dispatch does
 	 * not credit the outer parent's stash a second time.  The outer

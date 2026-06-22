@@ -662,9 +662,9 @@ void frontier_record_new_edge(unsigned int nr)
  * the same per-syscall frontier-edge ring + cached max + silent-streak
  * reset triple, treating a transition-slot flip as evidence that the
  * syscall is currently producing fresh control-flow coverage.  The
- * canonical signal pattern this commit promotes is "PC-edge discovery
- * plateaued while transition discovery still moves" -- so under
- * COMBINED mode the frontier ring needs to be pushed up for syscalls
+ * canonical signal pattern is "PC-edge discovery plateaued while
+ * transition discovery still moves" -- so under COMBINED mode the
+ * frontier ring needs to be pushed up for syscalls
  * producing transitions but no fresh PC bucket bits, otherwise the
  * silent-regime picker steers away from exactly the syscalls that are
  * still earning the post-plateau coverage.
