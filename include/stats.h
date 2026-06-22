@@ -656,6 +656,26 @@ struct stats_s {
 	 * the array stays at 0 and the per-op dump simply omits the row. */
 	unsigned long childop_latch_reason[NR_CHILD_OP_TYPES];
 
+	/* SHADOW recommendation counters, indexed by enum child_op_type.
+	 * Bumped from close_window_and_decide() in child-canary.c whenever
+	 * the score-driven recommended-state computation would respectively
+	 * demote (THROTTLED / QUARANTINED / CONFIG_BLOCKED) or promote
+	 * (PROMOTED_CLEAN / PROMOTED_INTERFERENCE) the just-closed canary
+	 * window.  The live promote/demote decision is byte-identical to the
+	 * pre-shadow baseline: these counters only record what the new
+	 * score-driven policy WOULD do, alongside whatever the live
+	 * heuristic actually did.  Divergence between the two (e.g. live
+	 * "zero_edges" demote vs shadow PROMOTED_INTERFERENCE because noisy
+	 * edges accrued during the window) is the signal the 75.2.B
+	 * enforcement work needs before it can take over the picker.
+	 * CHILD_OP_SYSCALL is skipped at the bump site for the same reason
+	 * as the surrounding per-childop arrays.  Single-writer (the canary
+	 * tick runs in parent context); RELAXED add-fetch matches the
+	 * surrounding per-childop counters' contract -- a cumulative
+	 * diagnostic, not an event log. */
+	unsigned long childop_would_demote[NR_CHILD_OP_TYPES];
+	unsigned long childop_would_promote[NR_CHILD_OP_TYPES];
+
 	/* ---- Group C: per-childop ---- */
 
 	/* procfs_writer childop: per-tree write counts, split by outcome.

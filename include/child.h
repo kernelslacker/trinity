@@ -1242,6 +1242,43 @@ enum canary_state {
 	CANARY_STATE_CONFIG_BLOCKED,	/* terminal: kconfig/prereq absent */
 };
 
+/* SHADOW state machine: the seven recommended-state slots the rewritten
+ * childop policy will eventually drive (see the rewrite plan's state
+ * list).  Today these names are emitted in the per-window canary shadow
+ * log only -- no canary_op_state.state setter assigns from this enum,
+ * no picker / promote / demote path reads it, no map exists from this
+ * enum back to the live enum canary_state.  Telemetry-only naming.
+ *
+ *   DORMANT                 queued, not currently a canary candidate.
+ *   CANARY_CLEAN            window closed clean; keep canarying.
+ *   PROMOTED_CLEAN          window crossed the clean-edge threshold;
+ *                           promote on the strength of the clean signal.
+ *   PROMOTED_INTERFERENCE   clean signal weak, but noisy/interference
+ *                           edges accrued -- the op is still valuable
+ *                           even if the outer bracket cannot prove it.
+ *                           THIS is the new state the rewrite adds; the
+ *                           live decision would demote on "zero_edges".
+ *   THROTTLED               one expensive wedge / crash window; cool off.
+ *   QUARANTINED             repeated bad windows with no wins; exponential
+ *                           backoff before re-canary.
+ *   CONFIG_BLOCKED          dispatch shape has no outer KCOV bracket
+ *                           (matches the live canary-ineligible exit).
+ */
+enum childop_recommended_state {
+	CHILDOP_REC_DORMANT = 0,
+	CHILDOP_REC_CANARY_CLEAN,
+	CHILDOP_REC_PROMOTED_CLEAN,
+	CHILDOP_REC_PROMOTED_INTERFERENCE,
+	CHILDOP_REC_THROTTLED,
+	CHILDOP_REC_QUARANTINED,
+	CHILDOP_REC_CONFIG_BLOCKED,
+};
+
+/* Render the recommended-state enum as its uppercase name (e.g.
+ * "PROMOTED_INTERFERENCE") for the canary shadow log line.  Returns a
+ * pointer to a static string with run lifetime; never NULL. */
+const char *childop_recommended_state_name(enum childop_recommended_state s);
+
 struct canary_op_state {
 	/* identity */
 	enum child_op_type op;		/* keyed by op enum */
@@ -1268,6 +1305,18 @@ struct canary_op_state {
 	unsigned long window_start_post_handler_corrupt_ptr;
 	unsigned long window_start_deferred_free_reject;
 	unsigned long window_start_kcov_first_ebadf_op_nr;
+
+	/* Per-window snapshots for the SHADOW recommended-state computation
+	 * (see enum childop_recommended_state).  The live decision in
+	 * close_window_and_decide() runs off the clean-edge delta only and
+	 * is unaffected; these snapshots feed the parallel score-driven
+	 * recommendation that bumps childop_would_demote[] / childop_would_
+	 * promote[] and emits the canary_shadow log line.  Owner-only writes
+	 * from parent context, no atomics needed. */
+	unsigned long window_start_noisy_edges;
+	unsigned long window_start_wedges;
+	unsigned long window_start_setup_accepted;
+	unsigned long window_start_setup_failures;
 
 	/* cumulative diagnostics */
 	unsigned int  canary_iterations;	/* lifetime windows entered */
