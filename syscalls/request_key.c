@@ -76,6 +76,15 @@ static void sanitise_request_key(struct syscallrecord *rec)
 	strncpy(type_buf, type, 31);
 	type_buf[31] = '\0';
 	rec->a1 = (unsigned long) type_buf;
+	/* get_writable_address() draws from the tracked map pool, which
+	 * overlaps the shared-region range; the post-sanitise blanket
+	 * scrub would otherwise relocate this ARG_ADDRESS slot WITHOUT
+	 * copying the curated bytes, leaving the kernel's strndup_user()
+	 * to read pool garbage and the key_type lookup to bounce on
+	 * -EINVAL before request_key_and_link() ever runs.  Move the
+	 * input into a fresh pool slot with the curated bytes intact; the
+	 * blanket pass then no-ops on this slot. */
+	avoid_shared_buffer_inout(&rec->a1, 32);
 
 	desc_buf = (char *) get_writable_address(96);
 	if (desc_buf == NULL) {
@@ -91,6 +100,7 @@ static void sanitise_request_key(struct syscallrecord *rec)
 	else
 		snprintf(desc_buf, 96, "%s_%08x", prefix, rnd_u32());
 	rec->a2 = (unsigned long) desc_buf;
+	avoid_shared_buffer_inout(&rec->a2, 96);
 
 	/* callout_info NULL means "lookup-only, don't upcall"; non-NULL drives
 	 * the call_sbin_request_key() path and the keyring search retry. */
@@ -106,6 +116,7 @@ static void sanitise_request_key(struct syscallrecord *rec)
 		}
 		snprintf(callout_buf, 32, "trinity_%08x", rnd_u32());
 		rec->a3 = (unsigned long) callout_buf;
+		avoid_shared_buffer_inout(&rec->a3, 32);
 		break;
 	}
 
