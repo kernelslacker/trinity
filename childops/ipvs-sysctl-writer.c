@@ -55,18 +55,30 @@
 #define IPVS_BURN_BASE		6U
 #define IPVS_BURN_CAP		32U
 
-static const char * const ipvs_sysctls[] = {
-	"/proc/sys/net/ipv4/vs/conn_tab_bits",
-	"/proc/sys/net/ipv4/vs/am_droprate",
-	"/proc/sys/net/ipv4/vs/expire_nodest_conn",
-	"/proc/sys/net/ipv4/vs/expire_quiescent_template",
-	"/proc/sys/net/ipv4/vs/sync_threshold",
-	"/proc/sys/net/ipv4/vs/sync_qlen_max",
-	"/proc/sys/net/ipv4/vs/drop_packet",
-	"/proc/sys/net/ipv4/vs/sloppy_tcp",
-	"/proc/sys/net/ipv4/vs/sloppy_sctp",
+/* sync_threshold takes a "thresh maxlen" pair, not a single int — flag the
+ * row so the writer routes it through the two-value payload below. */
+static const struct {
+	const char *path;
+	bool sync_threshold;
+} ipvs_sysctls[] = {
+	{ "/proc/sys/net/ipv4/vs/conn_tab_bits",		false },
+	{ "/proc/sys/net/ipv4/vs/am_droprate",			false },
+	{ "/proc/sys/net/ipv4/vs/expire_nodest_conn",		false },
+	{ "/proc/sys/net/ipv4/vs/expire_quiescent_template",	false },
+	{ "/proc/sys/net/ipv4/vs/sync_threshold",		true  },
+	{ "/proc/sys/net/ipv4/vs/sync_qlen_max",		false },
+	{ "/proc/sys/net/ipv4/vs/drop_packet",			false },
+	{ "/proc/sys/net/ipv4/vs/sloppy_tcp",			false },
+	{ "/proc/sys/net/ipv4/vs/sloppy_sctp",			false },
 };
 #define NR_IPVS_SYSCTLS		ARRAY_SIZE(ipvs_sysctls)
+
+/* One writable fd per row, opened once after the per-net sysctl table is
+ * registered.  Reused for every write in the burst so the per-iter open()
+ * (and its dentry/permission walk) is paid once.  -1 means the open failed
+ * — likely the path doesn't exist or write is denied — and is sticky so a
+ * repeatedly-chosen broken path stops burning syscalls. */
+static int ipvs_sysctl_fds[NR_IPVS_SYSCTLS];
 
 static bool ns_unsupported_ipvs_sysctl;
 static bool setup_done;
@@ -182,6 +194,10 @@ bool ipvs_sysctl_writer(struct childdata *child)
 			return true;
 		}
 		close(probe);
+
+		for (i = 0; i < NR_IPVS_SYSCTLS; i++)
+			ipvs_sysctl_fds[i] = open(ipvs_sysctls[i].path,
+						  O_WRONLY | O_NONBLOCK | O_CLOEXEC);
 		setup_done = true;
 	}
 	if (valid_op)
@@ -196,28 +212,29 @@ bool ipvs_sysctl_writer(struct childdata *child)
 		__atomic_add_fetch(&shm->stats.childop_data_path[op],
 				   1, __ATOMIC_RELAXED);
 	for (i = 0; i < iters; i++) {
-		const char *path = ipvs_sysctls[rnd_modulo_u32(NR_IPVS_SYSCTLS)];
+		unsigned int idx = rnd_modulo_u32(NR_IPVS_SYSCTLS);
+		int fd = ipvs_sysctl_fds[idx];
 		char buf[128];
 		unsigned int len;
 		ssize_t n;
-		int fd;
 
-		fd = open(path, O_WRONLY | O_NONBLOCK);
 		if (fd < 0) {
 			__atomic_add_fetch(&shm->stats.ipvs_sysctl_writer_writes_failed,
 					   1, __ATOMIC_RELAXED);
 			continue;
 		}
 
-		if (strcmp(path, "/proc/sys/net/ipv4/vs/sync_threshold") == 0) {
+		if (ipvs_sysctls[idx].sync_threshold) {
 			len = (unsigned int)snprintf(buf, sizeof(buf), "%d %d",
 						     (int)rand32(), (int)rand32());
 		} else {
 			len = gen_text_payload(buf, sizeof(buf));
 		}
 
+		/* Rewind to offset 0 so each write re-enters the sysctl handler
+		 * — most proc_handler write paths short-circuit when *ppos > 0. */
+		(void)lseek(fd, 0, SEEK_SET);
 		n = write(fd, buf, len);
-		close(fd);
 
 		if (n > 0)
 			__atomic_add_fetch(&shm->stats.ipvs_sysctl_writer_writes_ok,
