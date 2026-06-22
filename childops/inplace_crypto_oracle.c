@@ -116,9 +116,6 @@
 #ifndef AF_BLUETOOTH
 # define AF_BLUETOOTH			31
 #endif
-#ifndef IPPROTO_MPTCP
-# define IPPROTO_MPTCP			262
-#endif
 #ifndef TCP_AO_ADD_KEY
 # define TCP_AO_ADD_KEY			38
 #endif
