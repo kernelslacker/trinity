@@ -80,6 +80,7 @@ static void sanitise_sched_setscheduler(struct syscallrecord *rec)
 		rec->a1 = 0;
 
 	rec->a3 = (unsigned long) sp;
+	avoid_shared_buffer_inout(&rec->a3, sizeof(*sp));
 }
 
 struct syscallentry syscall_sched_setscheduler = {
