@@ -52,9 +52,34 @@
 #include "trinity.h"
 #include "utils.h"
 
-#define TRACEFS_ROOT	"/sys/kernel/debug/tracing"
 #define MAX_EVENTS	512
 #define TRACEFS_MAX_PATH	256
+
+/*
+ * Tracefs mount roots, in preferred order.  Modern kernels expose tracefs
+ * directly at /sys/kernel/tracing; older systems (or those where tracefs
+ * piggy-backs on debugfs) keep it at /sys/kernel/debug/tracing.  Same file
+ * tree either way -- pick the first one that's actually present.  Mirrors
+ * the resolver in syscalls/perf_event_open.c.
+ */
+static const char * const tracefs_roots[] = {
+	"/sys/kernel/tracing",
+	"/sys/kernel/debug/tracing",
+};
+
+/*
+ * Cached root chosen by tracefs_fuzzer_init() in the parent; children
+ * inherit it via COW.  NULL until init finds a usable mount, after which
+ * every snprintf() in this file builds paths beneath it.
+ */
+static const char *tracefs_root;
+
+/*
+ * Function-filter target files.  Built once in tracefs_fuzzer_init() from
+ * the resolved tracefs_root so do_ftrace_filter()'s RAND_ARRAY pick stays
+ * a single indexed load.
+ */
+static char filter_files[3][TRACEFS_MAX_PATH];
 
 /*
  * Stable kernel symbols likely to exist on any kernel build.  Used as
@@ -144,7 +169,7 @@ static const char * const trace_option_names[] = {
 
 /*
  * Event enable-file cache.  Discovered once in the parent from
- * TRACEFS_ROOT/events/; children inherit the table via COW.
+ * tracefs_root/events/; children inherit the table via COW.
  */
 static char event_enable_paths[MAX_EVENTS][TRACEFS_MAX_PATH];
 static unsigned int nr_event_enables;
@@ -163,7 +188,7 @@ static unsigned int nr_discovered_tracers;
 static bool tracefs_available;
 
 /*
- * Recurse into TRACEFS_ROOT/events/ at depth 1-2 and collect paths ending
+ * Recurse into tracefs_root/events/ at depth 1-2 and collect paths ending
  * in "/enable".  Depth 1 gives per-subsystem enable; depth 2 gives
  * per-event enable -- both are interesting targets.
  */
@@ -173,7 +198,7 @@ static void discover_event_enables(void)
 	DIR *d1;
 	struct dirent *de1;
 
-	snprintf(events_root, sizeof(events_root), "%s/events", TRACEFS_ROOT);
+	snprintf(events_root, sizeof(events_root), "%s/events", tracefs_root);
 
 	d1 = opendir(events_root);
 	if (d1 == NULL)
@@ -240,7 +265,7 @@ static void discover_tracers(void)
 	ssize_t n;
 	int fd;
 
-	snprintf(path, sizeof(path), "%s/available_tracers", TRACEFS_ROOT);
+	snprintf(path, sizeof(path), "%s/available_tracers", tracefs_root);
 	/* Raw open/read instead of fopen/fscanf/fclose: avoid stdio's
 	 * per-call malloc of the FILE struct + IO buffer.  available_tracers
 	 * is a single short line of whitespace-separated tracer names; one
@@ -323,7 +348,7 @@ static void do_kprobe_events(void)
 	int fd;
 	ssize_t ret __unused__;
 
-	snprintf(path, sizeof(path), "%s/kprobe_events", TRACEFS_ROOT);
+	snprintf(path, sizeof(path), "%s/kprobe_events", tracefs_root);
 
 	probe_num = rnd_modulo_u32(64);
 	sym = RAND_ARRAY(kprobe_targets);
@@ -385,7 +410,7 @@ static void do_uprobe_events(void)
 	int fd;
 	ssize_t ret __unused__;
 
-	snprintf(path, sizeof(path), "%s/uprobe_events", TRACEFS_ROOT);
+	snprintf(path, sizeof(path), "%s/uprobe_events", tracefs_root);
 
 	probe_num = rnd_modulo_u32(64);
 	offset = (unsigned long)rnd_modulo_u32(0x100000) & ~0xful;
@@ -430,11 +455,6 @@ static void do_uprobe_events(void)
  */
 static void do_ftrace_filter(void)
 {
-	static const char * const filter_files[] = {
-		TRACEFS_ROOT "/set_ftrace_filter",
-		TRACEFS_ROOT "/set_ftrace_notrace",
-		TRACEFS_ROOT "/set_graph_function",
-	};
 	static const char * const globs[] = {
 		"*",
 		"schedule*",
@@ -524,7 +544,7 @@ static void do_trace_options(void)
 	char path[TRACEFS_MAX_PATH];
 	char option[64];
 
-	snprintf(path, sizeof(path), "%s/trace_options", TRACEFS_ROOT);
+	snprintf(path, sizeof(path), "%s/trace_options", tracefs_root);
 
 	if (RAND_BOOL())
 		snprintf(option, sizeof(option), "%s",
@@ -543,7 +563,7 @@ static void do_current_tracer(void)
 {
 	char path[TRACEFS_MAX_PATH];
 
-	snprintf(path, sizeof(path), "%s/current_tracer", TRACEFS_ROOT);
+	snprintf(path, sizeof(path), "%s/current_tracer", tracefs_root);
 
 	if (nr_discovered_tracers > 0 && !ONE_IN(8))
 		write_str(path,
@@ -560,7 +580,7 @@ static void do_tracing_on(void)
 {
 	char path[TRACEFS_MAX_PATH];
 
-	snprintf(path, sizeof(path), "%s/tracing_on", TRACEFS_ROOT);
+	snprintf(path, sizeof(path), "%s/tracing_on", tracefs_root);
 	write_str(path, RAND_BOOL() ? "1" : "0");
 
 	__atomic_add_fetch(&shm->stats.tracefs_misc_writes,
@@ -576,7 +596,7 @@ static void do_buffer_size(void)
 		0, 1, 4, 16, 64, 128, 256, 512, 1024, 4096,
 	};
 
-	snprintf(path, sizeof(path), "%s/buffer_size_kb", TRACEFS_ROOT);
+	snprintf(path, sizeof(path), "%s/buffer_size_kb", tracefs_root);
 	snprintf(val, sizeof(val), "%u", RAND_ARRAY(sizes));
 	write_str(path, val);
 
@@ -658,18 +678,38 @@ void tracefs_fuzzer_init(void)
 {
 	bool ftrace_subset_present;
 	bool events_subset_present;
+	char path[TRACEFS_MAX_PATH];
 	unsigned int avail = 0;
+	size_t r;
 
-	if (access(TRACEFS_ROOT "/tracing_on", F_OK) != 0) {
+	/*
+	 * Probe each candidate root in order and latch the first one whose
+	 * tracing_on file exists.  Preferring /sys/kernel/tracing means we
+	 * actually hit the mount on modern kernels where the legacy debugfs
+	 * tracing dir is absent (or just a symlinked-in secondary).
+	 */
+	for (r = 0; r < ARRAY_SIZE(tracefs_roots); r++) {
+		snprintf(path, sizeof(path), "%s/tracing_on",
+			 tracefs_roots[r]);
+		if (access(path, F_OK) == 0) {
+			tracefs_root = tracefs_roots[r];
+			break;
+		}
+	}
+
+	if (tracefs_root == NULL) {
 		__atomic_store_n(&shm->stats.childop_latch_reason[CHILD_OP_TRACEFS_FUZZER],
 				 CHILDOP_LATCH_UNSUPPORTED, __ATOMIC_RELAXED);
 		return;
 	}
 
-	ftrace_subset_present = (access(TRACEFS_ROOT "/current_tracer", F_OK) == 0);
-	events_subset_present = (access(TRACEFS_ROOT "/available_events", F_OK) == 0);
+	snprintf(path, sizeof(path), "%s/current_tracer", tracefs_root);
+	ftrace_subset_present = (access(path, F_OK) == 0);
+	snprintf(path, sizeof(path), "%s/available_events", tracefs_root);
+	events_subset_present = (access(path, F_OK) == 0);
 
-	outputstd("tracefs-fuzzer: ftrace_subset=%s events_subset=%s\n", /* check-static: child-output-ok */
+	outputstd("tracefs-fuzzer: root=%s ftrace_subset=%s events_subset=%s\n", /* check-static: child-output-ok */
+		  tracefs_root,
 		  ftrace_subset_present ? "yes" : "no",
 		  events_subset_present ? "yes" : "no");
 
@@ -687,6 +727,13 @@ void tracefs_fuzzer_init(void)
 		avail |= REQ_EVENTS;
 		discover_event_enables();
 	}
+
+	snprintf(filter_files[0], sizeof(filter_files[0]),
+		 "%s/set_ftrace_filter", tracefs_root);
+	snprintf(filter_files[1], sizeof(filter_files[1]),
+		 "%s/set_ftrace_notrace", tracefs_root);
+	snprintf(filter_files[2], sizeof(filter_files[2]),
+		 "%s/set_graph_function", tracefs_root);
 
 	build_pick_table(avail);
 
