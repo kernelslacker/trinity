@@ -28,23 +28,10 @@ struct syscallentry syscall_faccessat = {
 #define AT_SYMLINK_NOFOLLOW     0x100   /* Do not follow symbolic links.  */
 #define AT_EACCESS              0x200   /* Test access permitted for
                                            effective IDs, not real IDs.  */
-#define AT_REMOVEDIR            0x200   /* Remove directory instead of
-                                           unlinking file.  */
-#define AT_SYMLINK_FOLLOW       0x400   /* Follow symbolic links.  */
-#define AT_NO_AUTOMOUNT         0x800   /* Suppress terminal automount traversal */
 #define AT_EMPTY_PATH           0x1000  /* Allow empty relative pathname */
 
-#define AT_STATX_SYNC_TYPE      0x6000  /* Type of synchronisation required from statx() */
-#define AT_STATX_SYNC_AS_STAT   0x0000  /* - Do whatever stat() does */
-#define AT_STATX_FORCE_SYNC     0x2000  /* - Force the attributes to be sync'd with the server */
-#define AT_STATX_DONT_SYNC      0x4000  /* - Don't sync attributes with the server */
-
-#define AT_RECURSIVE            0x8000  /* Apply to the entire subtree */
-
 static unsigned long faccessat2_flags[] = {
-	AT_SYMLINK_NOFOLLOW, AT_EACCESS, AT_REMOVEDIR,
-	AT_SYMLINK_FOLLOW, AT_NO_AUTOMOUNT, AT_EMPTY_PATH, AT_STATX_SYNC_TYPE,
-	AT_STATX_SYNC_AS_STAT, AT_STATX_FORCE_SYNC, AT_STATX_DONT_SYNC, AT_RECURSIVE,
+	AT_SYMLINK_NOFOLLOW, AT_EACCESS, AT_EMPTY_PATH,
 };
 
 struct syscallentry syscall_faccessat2 = {
