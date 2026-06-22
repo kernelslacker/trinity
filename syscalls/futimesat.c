@@ -86,6 +86,21 @@ static void sanitise_futimesat(struct syscallrecord *rec)
 	}
 
 	rec->a3 = (unsigned long) tv;
+
+	/*
+	 * utimes (a3) is the curated [atime, mtime] pair the kernel reads.
+	 * ARG_ADDRESS slots are subject to the post-sanitise blanket address
+	 * scrub, which relocates the pointer to a fresh pool page; the plain
+	 * _out variant would publish the new pointer without the curated
+	 * bytes and the kernel would read pool garbage for tv_sec/tv_usec,
+	 * defeating the near-now / far / invalid-usec buckets above.  _inout
+	 * relocates AND memcpys the payload, so the scrub no-ops on a3 and
+	 * the kernel sees the real timeval pair we built.  Only reached on
+	 * the curated branch -- the NULL-utimes early-return and the
+	 * gwa-failure early-return both bail before this point, so a3 == 0
+	 * and a3 == unwritten paths are untouched.
+	 */
+	avoid_shared_buffer_inout(&rec->a3, sizeof(struct timeval) * 2);
 }
 
 struct syscallentry syscall_futimesat = {
