@@ -153,6 +153,9 @@ static void sanitise_ptrace(struct syscallrecord *rec)
 	 */
 	switch (rec->a1) {
 	case PTRACE_SEIZE:
+		/* SEIZE rejects addr != 0 with -EIO before attach */
+		rec->a3 = 0;
+		/* fall through */
 	case PTRACE_SETOPTIONS:
 		/* Bitmask of PTRACE_O_* flags */
 		rec->a4 = set_rand_bitmask(ARRAY_SIZE(ptrace_o_flags),
