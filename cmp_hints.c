@@ -364,24 +364,241 @@ void cmp_hints_init(void)
 }
 
 /*
- * SHADOW typed-hypothesis observation hook -- skeleton.
+ * SHADOW typed-hypothesis inference.
  *
- * Wired into cmp_hints_flush_pending() once per fresh durable-pool
- * insert (the same place cmp_recent_insert() is called).  The body is
- * intentionally empty: this skeleton commit lands the storage layout
- * + counter slots + call-site wiring with ZERO behaviour change, so the
- * follow-up inference unit only has to fill the body in.  The argument
- * names match the consumer-side contract the inference pass will rely
- * on so the call sites do not need to be touched again.
+ * Called from cmp_hints_flush_pending() once per fresh durable-pool
+ * insert, still under that pool's lock -- so writes into
+ * hyp_pools[nr][do32 ? 1 : 0] are serialised per-(nr, do32) without a
+ * second lock of our own.  Every observation drives one or more typed
+ * lanes (EXACT / BITMASK / ENUM_FAMILY / RANGE), subject to the
+ * per-kind + per-syscall caps the skeleton reserved.  The resulting
+ * hypotheses stay in CMP_HYP_STATE_OBSERVED: no consumer reads them
+ * and no injection path substitutes a hypothesis-derived value -- the
+ * candidate-API + feedback wiring lands in the follow-up units.
  */
+static struct cmp_hypothesis *cmp_hyp_find(struct cmp_hyp_pool *pool,
+					   enum cmp_hypothesis_kind kind,
+					   unsigned long cmp_ip, uint8_t width)
+{
+	unsigned int i, n = pool->count;
+
+	if (n > CMP_HYP_PER_SYSCALL)
+		return NULL;
+	for (i = 0; i < n; i++) {
+		struct cmp_hypothesis *h = &pool->entries[i];
+
+		if (h->kind == kind && h->cmp_ip == cmp_ip && h->width == width)
+			return h;
+	}
+	return NULL;
+}
+
+static struct cmp_hypothesis *cmp_hyp_find_exact(struct cmp_hyp_pool *pool,
+						 unsigned long cmp_ip,
+						 uint8_t width, uint64_t value)
+{
+	unsigned int i, n = pool->count;
+
+	if (n > CMP_HYP_PER_SYSCALL)
+		return NULL;
+	for (i = 0; i < n; i++) {
+		struct cmp_hypothesis *h = &pool->entries[i];
+
+		if (h->kind == CMP_HYP_EXACT && h->cmp_ip == cmp_ip
+		    && h->width == width && h->exemplar == value)
+			return h;
+	}
+	return NULL;
+}
+
+/*
+ * Allocate a fresh hypothesis slot honouring the per-kind sub-cap and
+ * the per-syscall total cap.  Returns NULL when either is exhausted
+ * and bumps the matching kcov_shm saturation counter so the rejection
+ * is visible.  The slot is memset and pre-stamped with identity
+ * fields the caller does not have to re-write.
+ */
+static struct cmp_hypothesis *cmp_hyp_alloc(struct cmp_hyp_pool *pool,
+					    enum cmp_hypothesis_kind kind,
+					    unsigned int nr, bool do32,
+					    unsigned long cmp_ip, uint8_t width)
+{
+	struct cmp_hypothesis *h;
+
+	if (pool->count >= CMP_HYP_PER_SYSCALL) {
+		if (kcov_shm != NULL)
+			__atomic_fetch_add(&kcov_shm->cmp_hyp_pool_full, 1UL,
+					   __ATOMIC_RELAXED);
+		return NULL;
+	}
+	if (pool->per_kind_count[kind] >= CMP_HYP_PER_KIND) {
+		if (kcov_shm != NULL)
+			__atomic_fetch_add(&kcov_shm->cmp_hyp_kind_full, 1UL,
+					   __ATOMIC_RELAXED);
+		return NULL;
+	}
+
+	h = &pool->entries[pool->count];
+	memset(h, 0, sizeof(*h));
+	h->nr = nr;
+	h->do32 = do32;
+	h->width = width;
+	h->kind = (uint8_t)kind;
+	h->state = CMP_HYP_STATE_OBSERVED;
+	h->cmp_ip = (uint64_t)cmp_ip;
+	pool->per_kind_count[kind]++;
+	pool->count++;
+	if (kcov_shm != NULL)
+		__atomic_fetch_add(&kcov_shm->cmp_hyp_inserted, 1UL,
+				   __ATOMIC_RELAXED);
+	return h;
+}
+
 void cmp_hyp_observe(unsigned int nr, bool do32, unsigned long cmp_ip,
 		     unsigned long value, unsigned int size)
 {
-	(void) nr;
-	(void) do32;
-	(void) cmp_ip;
-	(void) value;
-	(void) size;
+	struct cmp_hyp_pool *pool;
+	struct cmp_hypothesis *h, *e;
+	uint64_t val = (uint64_t)value;
+	uint64_t generation = 0;
+	uint8_t width;
+	bool single_bit;
+
+	if (cmp_hints_shm == NULL || nr >= MAX_NR_SYSCALL)
+		return;
+	if (size != 1 && size != 2 && size != 4 && size != 8)
+		return;
+
+	width = (uint8_t)size;
+	pool = &cmp_hints_shm->hyp_pools[nr][do32 ? 1 : 0];
+
+	if (kcov_shm != NULL)
+		__atomic_fetch_add(&kcov_shm->cmp_hyp_observations, 1UL,
+				   __ATOMIC_RELAXED);
+
+	/* Wild-write defence: a stomp past the per-syscall cap would let
+	 * the find/alloc scans walk off entries[].  Bail and surface it as
+	 * pool-full so the saturation lane stays the single visible signal. */
+	if (pool->count > CMP_HYP_PER_SYSCALL) {
+		if (kcov_shm != NULL)
+			__atomic_fetch_add(&kcov_shm->cmp_hyp_pool_full, 1UL,
+					   __ATOMIC_RELAXED);
+		return;
+	}
+
+	/* The durable pool's generation, advanced in lock-step with the
+	 * insert that triggered this observation, is a stable monotonic
+	 * clock to stamp last_used_generation against.  Same lock window,
+	 * so a plain read is consistent. */
+	generation = cmp_hints_shm->pools[nr][do32 ? 1 : 0].generation;
+
+	/*
+	 * EXACT lane: per-value identity.  A repeat observation refreshes
+	 * seen_count + last_used_generation; a fresh value tries to take a
+	 * slot (subject to the per-kind cap of 2).
+	 */
+	h = cmp_hyp_find_exact(pool, cmp_ip, width, val);
+	if (h != NULL) {
+		h->seen_count++;
+		h->last_used_generation = generation;
+	} else {
+		h = cmp_hyp_alloc(pool, CMP_HYP_EXACT, nr, do32, cmp_ip, width);
+		if (h != NULL) {
+			h->exemplar = val;
+			h->lo = val;
+			h->hi = val;
+			h->seen_count = 1;
+			h->last_used_generation = generation;
+		}
+	}
+
+	/* BITMASK lane: only single-bit observations contribute.  A zero
+	 * carries no bit; a multi-bit value would conflate single-bit
+	 * evidence with combined-flag exemplars -- those belong to ENUM_FAMILY
+	 * below so the consumer side can keep the two scoring families
+	 * separate (one-unknown-bit probes vs combination probes). */
+	single_bit = (val != 0) && ((val & (val - 1)) == 0);
+	if (single_bit) {
+		h = cmp_hyp_find(pool, CMP_HYP_BITMASK, cmp_ip, width);
+		if (h != NULL) {
+			h->mask |= val;
+			h->seen_count++;
+			if (val < h->lo)
+				h->lo = val;
+			if (val > h->hi)
+				h->hi = val;
+			h->exemplar = val;
+			h->last_used_generation = generation;
+		} else {
+			h = cmp_hyp_alloc(pool, CMP_HYP_BITMASK, nr, do32,
+					  cmp_ip, width);
+			if (h != NULL) {
+				h->mask = val;
+				h->lo = val;
+				h->hi = val;
+				h->exemplar = val;
+				h->seen_count = 1;
+				h->last_used_generation = generation;
+			}
+		}
+	}
+
+	/*
+	 * ENUM_FAMILY lane: every observation at (cmp_ip, width) folds into
+	 * the per-key cluster summary (lo/hi/mask/seen_count, exemplar =
+	 * most-recent).  Distinct from EXACT (per-value dedup) and from
+	 * BITMASK (single-bit-only), and deliberately NOT collapsed into
+	 * RANGE -- {1, 2, 3} may be three independent modes, not an interval,
+	 * so promotion is left to the feedback unit's outcome scoring.
+	 */
+	e = cmp_hyp_find(pool, CMP_HYP_ENUM_FAMILY, cmp_ip, width);
+	if (e != NULL) {
+		e->seen_count++;
+		e->mask |= val;
+		if (val < e->lo)
+			e->lo = val;
+		if (val > e->hi)
+			e->hi = val;
+		e->exemplar = val;
+		e->last_used_generation = generation;
+	} else {
+		e = cmp_hyp_alloc(pool, CMP_HYP_ENUM_FAMILY, nr, do32,
+				  cmp_ip, width);
+		if (e != NULL) {
+			e->lo = val;
+			e->hi = val;
+			e->mask = val;
+			e->exemplar = val;
+			e->seen_count = 1;
+			e->last_used_generation = generation;
+		}
+	}
+
+	/*
+	 * RANGE lane: synthesised only once the ENUM_FAMILY summary at the
+	 * same key has accumulated enough observations to suggest a dense
+	 * small interval (>= 3 hits, span 2..32).  The entry stays in
+	 * CMP_HYP_STATE_OBSERVED -- the spec's promotion trap requires an
+	 * interior non-constant pass OR an outside-reject + multiple
+	 * inside-passes, which only the outcome-credited feedback unit can
+	 * supply.  The probe ladder (lo-1, lo, lo+1, midpoint, hi-1, hi,
+	 * hi+1, plus exponential probing when the high side is unknown) is
+	 * implicit in {lo, hi}; the consumer derives it at pick time so the
+	 * shadow store does not need to materialise it.
+	 */
+	if (e == NULL || e->seen_count < 3 || e->hi <= e->lo
+	    || (e->hi - e->lo) > 32)
+		return;
+	h = cmp_hyp_find(pool, CMP_HYP_RANGE, cmp_ip, width);
+	if (h == NULL)
+		h = cmp_hyp_alloc(pool, CMP_HYP_RANGE, nr, do32, cmp_ip, width);
+	if (h != NULL) {
+		h->lo = e->lo;
+		h->hi = e->hi;
+		h->exemplar = e->exemplar;
+		h->seen_count = e->seen_count;
+		h->last_used_generation = generation;
+	}
 }
 
 static void pool_lock(struct cmp_hint_pool *pool)
@@ -800,11 +1017,11 @@ static unsigned int cmp_hints_flush_pending(struct cmp_hint_pool *pool,
 			 * writes recent_pools[nr][do32] is this exact path. */
 			cmp_recent_insert(nr, do32, batch[j].ip, batch[j].val,
 					  batch[j].size);
-			/* SHADOW typed-hypothesis observation hook.  No-op
-			 * skeleton: stays here so the next unit's inference
-			 * pass picks up every (nr, do32, ip, val, size) tuple
-			 * that landed in the canonical durable pool, without
-			 * a second walk over the trace buffer. */
+			/* SHADOW typed-hypothesis inference fed every
+			 * fresh (nr, do32, ip, val, size) tuple under the
+			 * same lock window, so the hyp_pools writes
+			 * serialise per-(nr, do32) without a second lock
+			 * and no second walk over the trace buffer. */
 			cmp_hyp_observe(nr, do32, batch[j].ip, batch[j].val,
 					batch[j].size);
 		}

@@ -2055,15 +2055,10 @@ struct kcov_shared {
 	unsigned long per_syscall_cmp_reject_cap[MAX_NR_SYSCALL];
 
 	/*
-	 * SHADOW typed-CMP-hypothesis store counters (skeleton).
+	 * SHADOW typed-CMP-hypothesis store counters.  Append-only at the
+	 * struct tail per the existing convention.
 	 *
-	 * Storage + counter slots only -- the observation hook is a no-op
-	 * and the inference pass has not landed yet, so every counter here
-	 * stays at zero in this commit.  Append-only at the struct tail per
-	 * the existing convention.
-	 *
-	 *  cmp_hyp_observations    -- one bump per cmp_hyp_observe() call
-	 *                             (the inference pass will populate).
+	 *  cmp_hyp_observations    -- one bump per cmp_hyp_observe() call.
 	 *  cmp_hyp_inserted        -- typed hypothesis added to the store.
 	 *  cmp_hyp_pool_full       -- hyp_pool saturated (per-syscall cap).
 	 *  cmp_hyp_kind_full       -- per-kind sub-cap exhausted for a kind.
@@ -2071,17 +2066,21 @@ struct kcov_shared {
 	 *                          -- bumped on every state edge into the
 	 *                             indexed terminal state (OBSERVED ->
 	 *                             TESTING / PROMOTED / DEMOTED / RETIRED).
+	 *                             Zero until the feedback unit lands.
 	 *  cmp_hyp_consumed        -- typed hypothesis selected for injection
 	 *                             (shadow: counts would-have-been picks).
+	 *                             Zero until the consumer unit lands.
 	 *  cmp_hyp_pc_wins / cmp_hyp_transition_wins / cmp_hyp_cmp_novelty_wins
 	 *                          -- per-outcome credit drained against the
 	 *                             matching hypothesis.  Kept SEPARATE so
 	 *                             CMP novelty cannot masquerade as a
 	 *                             PC-edge conversion (same discipline as
 	 *                             the raw-hint cmp_hint_* counters above).
+	 *                             Zero until the feedback unit lands.
 	 *  cmp_hyp_misses / cmp_hyp_disabled_skips
 	 *                          -- drained against the matching hypothesis
 	 *                             on a no-outcome / chaos-suppressed pick.
+	 *                             Zero until the feedback unit lands.
 	 */
 	unsigned long cmp_hyp_observations;
 	unsigned long cmp_hyp_inserted;

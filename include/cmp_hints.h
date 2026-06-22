@@ -352,7 +352,7 @@ struct cmp_recent_pool {
 };
 
 /*
- * SHADOW typed-CMP-hypothesis store (skeleton).
+ * SHADOW typed-CMP-hypothesis store.
  *
  * Layered on top of the raw cmp-hint pools above as a PARALLEL table:
  * the raw pools stay the canonical (cmp_ip, value, size) ledger and
@@ -361,10 +361,11 @@ struct cmp_recent_pool {
  * raw-hint lookup path stays cache-tight and so hypothesis layout churn
  * during the rewrite cannot perturb the recording-side fast path.
  *
- * This header carries STORAGE + EMPTY hooks only.  No consumer reads
- * the store, no injection path substitutes a hypothesis-derived value,
- * and the cmp_hyp_* counters in kcov_shm stay at zero until inference,
- * feedback, and live-pick land in follow-up commits.
+ * Populated by cmp_hyp_observe() out of cmp_hints_flush_pending(); no
+ * consumer reads the store and no injection path substitutes a
+ * hypothesis-derived value -- the candidate-API + feedback wiring lands
+ * in follow-up units.  Until then the live pick stays byte-for-byte
+ * unchanged and every entry sits in CMP_HYP_STATE_OBSERVED.
  */
 enum cmp_hypothesis_kind {
 	CMP_HYP_EXACT,
@@ -427,8 +428,10 @@ struct cmp_hypothesis {
  * worst-case fuzz workload: a single syscall whose comparisons explode
  * across every kind can populate at most CMP_HYP_KIND_NR *
  * CMP_HYP_PER_KIND entries, and no single kind can starve the others
- * out of its slots.  Per-kind partitioning is enforced by the inference
- * pass (next unit); the skeleton just reserves the headroom.
+ * out of its slots.  cmp_hyp_observe() honours the partition via
+ * per_kind_count[]: an exhausted kind bumps cmp_hyp_kind_full and
+ * leaves the other kinds free, while an exhausted total bumps
+ * cmp_hyp_pool_full.
  */
 #define CMP_HYP_PER_KIND	2U
 #define CMP_HYP_PER_SYSCALL	(CMP_HYP_KIND_NR * CMP_HYP_PER_KIND)
@@ -464,9 +467,9 @@ struct cmp_hints_shared {
 	 * cmp_hints_save_file (the save path only writes pools[]). */
 	struct cmp_recent_pool recent_pools[MAX_NR_SYSCALL][2];
 	/* SHADOW typed-hypothesis store.  Zero-initialised by the same
-	 * memset that clears the rest of cmp_hints_shared; no consumer reads
-	 * it and no inference path writes it in this skeleton -- the
-	 * follow-up unit lands the observation-to-hypothesis inference. */
+	 * memset that clears the rest of cmp_hints_shared; written by
+	 * cmp_hyp_observe() under the matching durable cmp_hint_pool lock
+	 * and not yet read by any consumer or injection path. */
 	struct cmp_hyp_pool hyp_pools[MAX_NR_SYSCALL][2];
 };
 _Static_assert(MAX_NR_SYSCALL == 1024,
@@ -482,16 +485,14 @@ void cmp_hints_init(void);
 void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32);
 
 /*
- * SHADOW typed-hypothesis observation hook (skeleton).
+ * SHADOW typed-hypothesis observation hook.
  *
  * Called from cmp_hints_flush_pending() once per fresh insert into the
- * durable per-syscall pool -- the same point cmp_recent_insert() is
- * called -- so the hypothesis store sees every observation that landed
- * in the canonical raw-hint ledger.  This skeleton is a NO-OP: it does
- * not write the hyp_pools[] grid, does not bump cmp_hyp_* counters, and
- * does not influence injection.  The follow-up inference unit drops
- * the typed-hypothesis build inside this same call so observation-side
- * wiring is decided once.
+ * durable per-syscall pool, still under that pool's lock.  Drives the
+ * typed inference lanes (EXACT / BITMASK / ENUM_FAMILY / RANGE) and
+ * bumps the cmp_hyp_* shadow counters; does NOT influence injection or
+ * the live cmp-hint pick.  Out-of-range nr / unsupported size / NULL
+ * shm are bailed early.
  */
 void cmp_hyp_observe(unsigned int nr, bool do32, unsigned long cmp_ip,
 		     unsigned long value, unsigned int size);
