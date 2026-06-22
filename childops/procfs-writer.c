@@ -393,13 +393,12 @@ bool procfs_writer(struct childdata *child)
 		return true;
 	}
 
-	if (valid_op)
+	if (valid_op) {
 		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
-
-	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop_data_path[op],
 				   1, __ATOMIC_RELAXED);
+	}
 
 	/*
 	 * Draw a target the child believes it can still open.  Bounded

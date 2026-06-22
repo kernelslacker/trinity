@@ -643,12 +643,12 @@ bool iscsi_target_probe(struct childdata *child)
 		}
 		__atomic_add_fetch(&shm->stats.iscsi_target_probe_connected,
 				   1, __ATOMIC_RELAXED);
-		if (valid_op)
+		if (valid_op) {
 			__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
 					   1, __ATOMIC_RELAXED);
-		if (valid_op)
 			__atomic_add_fetch(&shm->stats.childop_data_path[op],
 					   1, __ATOMIC_RELAXED);
+		}
 
 		arm = rnd_modulo_u32(4);
 		switch (arm) {

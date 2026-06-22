@@ -920,13 +920,12 @@ bool mptcp_pm_churn(struct childdata *child)
 
 	if (mptcp_pm_churn_iter_genl_attach(&ctx) != 0)
 		goto out;
-	if (valid_op)
+	if (valid_op) {
 		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
-
-	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop_data_path[op],
 				   1, __ATOMIC_RELAXED);
+	}
 	mptcp_pm_churn_iter_pm_ops_burst(&ctx);
 
 out:

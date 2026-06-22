@@ -902,13 +902,12 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer,
 
 	if (bridge_vlan_iter_setup(&it, iter_idx, child) != 0)
 		goto out;
-	if (valid_op)
+	if (valid_op) {
 		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
-
-	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop_data_path[op],
 				   1, __ATOMIC_RELAXED);
+	}
 	bridge_vlan_iter_add_vlan(&it);
 	bridge_vlan_iter_open_raw(&it);
 

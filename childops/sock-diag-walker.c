@@ -488,12 +488,12 @@ bool sock_diag_walker(struct childdata *child)
 		return true;
 	}
 
-	if (valid_op)
+	if (valid_op) {
 		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
-	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop_data_path[op],
 				   1, __ATOMIC_RELAXED);
+	}
 
 	v = (enum sd_variant)(rand32() % NR_SD_VARIANTS);
 	switch (v) {
