@@ -80,6 +80,7 @@ static void pick_sigmask(struct syscallrecord *rec)
 			return;
 		sigemptyset(mask);
 		rec->a5 = (unsigned long) mask;
+		avoid_shared_buffer_inout(&rec->a5, sizeof(sigset_t));
 		rec->a6 = sizeof(sigset_t);
 		return;
 	case 5:
@@ -92,6 +93,7 @@ static void pick_sigmask(struct syscallrecord *rec)
 		sigaddset(mask, SIGUSR1);
 		sigaddset(mask, SIGUSR2);
 		rec->a5 = (unsigned long) mask;
+		avoid_shared_buffer_inout(&rec->a5, sizeof(sigset_t));
 		rec->a6 = sizeof(sigset_t);
 		return;
 	case 7:
@@ -101,6 +103,7 @@ static void pick_sigmask(struct syscallrecord *rec)
 			return;
 		sigemptyset(mask);
 		rec->a5 = (unsigned long) mask;
+		avoid_shared_buffer_inout(&rec->a5, sizeof(sigset_t));
 		rec->a6 = 0;
 		return;
 	case 8:
@@ -109,6 +112,7 @@ static void pick_sigmask(struct syscallrecord *rec)
 			return;
 		sigemptyset(mask);
 		rec->a5 = (unsigned long) mask;
+		avoid_shared_buffer_inout(&rec->a5, sizeof(sigset_t));
 		rec->a6 = sizeof(sigset_t) * 2;
 		return;
 	default:

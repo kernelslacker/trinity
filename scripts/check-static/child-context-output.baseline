@@ -53,7 +53,7 @@ syscalls/clock_nanosleep.c:61:post_clock_nanosleep
 syscalls/clone3.c:256:post_clone3
 syscalls/clone3.c:272:post_clone3
 syscalls/clone.c:113:post_clone
-syscalls/epoll_pwait.c:160:post_epoll_pwait
+syscalls/epoll_pwait.c:164:post_epoll_pwait
 syscalls/epoll_wait.c:98:post_epoll_wait
 syscalls/execve.c:266:post_execve
 syscalls/execve.c:294:post_execve
