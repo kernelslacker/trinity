@@ -4,17 +4,39 @@
  */
 #include <fcntl.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <string.h>
 #include <sys/syscall.h>
+#include <sys/xattr.h>
 #include <unistd.h>
 #include <linux/limits.h>
 #include "arch.h"
+#include "pathnames.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
 #include "xattr.h"
+
+/*
+ * Mirrors the MAX_TESTFILES bound in fds/testfiles.c so we land inside
+ * the same trinity-testfile<N> inodes the rest of the xattr-family
+ * (getxattr, lgetxattr, fgetxattr, getxattrat, fremovexattr,
+ * lremovexattr, llistxattr, listxattr) touches; cross-process contention
+ * concentrates on the same per-inode i_xattrs rwsem.
+ */
+#define LISTXATTRAT_NR_TESTFILES	4
+
+/*
+ * Curated name we plant ahead of the trinity-dispatched listxattrat.
+ * user.* requires no privilege, is supported on every Linux fs that
+ * carries xattrs, and matches the planted_xattr_name the rest of the
+ * xattr-family precondition surface uses so a single round of testfile
+ * xattrs is shared across the whole family.
+ */
+static const char listxattrat_planted_name[] = "user.trinity_plant";
 
 static unsigned long listxattrat_at_flags[] = {
 	AT_SYMLINK_NOFOLLOW, AT_EMPTY_PATH,
@@ -52,6 +74,66 @@ static void sanitise_listxattrat(struct syscallrecord *rec)
 
 	pre_a4 = rec->a4;
 #endif
+
+	/*
+	 * ARG_PATHNAME plumbed a random pathname into rec->a2, but the
+	 * random path is most often either not a real file at all
+	 * (ENOENT before the per-inode xattr list walk) or, even when
+	 * it does land on a real file, that inode has no xattrs --
+	 * vfs_listxattr returns a 0-length name list immediately, never
+	 * reaching the per-fs handler dispatch or the simple_xattr_list
+	 * walk that the per-inode i_xattrs rwsem guards.  Same "high
+	 * calls, low edges" cold-syscall shape that the rest of the
+	 * xattr family was in before their precondition fixes.
+	 *
+	 * Half the draws now repoint pathname (a2) at one of the
+	 * trinity-testfile<N> absolute paths and plant a known user.*
+	 * xattr there via setxattr() so the subsequent listxattrat
+	 * walks a non-empty per-inode xattr list and reaches the real
+	 * list-walk path.  An absolute pathname makes dfd irrelevant --
+	 * the kernel ignores rec->a1 when pathname is absolute -- so
+	 * this composes cleanly with the AT_FDCWD-pin / random-fd dfd
+	 * logic and the at_flags sanitiser below; the planted testfiles
+	 * are regular files so AT_SYMLINK_NOFOLLOW is a no-op on them,
+	 * and the absolute non-empty path makes AT_EMPTY_PATH
+	 * irrelevant too.  The other half preserves rec->a2 exactly as
+	 * the generic draw left it so the empty-list / ENOENT arms
+	 * stay exercised.
+	 *
+	 * The plant runs BEFORE the post-state snapshot below so
+	 * snap->pathname captures the planted byte sequence -- the post
+	 * oracle's re-call then re-walks the planted path and compares
+	 * its returned name list against the first call's payload
+	 * exactly as the existing oracle expects.  Plant failure
+	 * (ENOSPC on a full xattr list, EOPNOTSUPP on a fs that bailed
+	 * out of the user.* leg, ENOENT if the testfile slot was never
+	 * opened, ...) is non-fatal: an earlier draw on the same inode
+	 * may still hold a stale user.trinity_plant from a prior round,
+	 * so listxattrat below may still see a non-empty list.
+	 *
+	 * Slow-path note: the setxattr() in sanitise is one real
+	 * syscall.  syscalls/listxattrat.c is outside the
+	 * sanitiser-slow-path check's FILES scope, so this is within
+	 * budget for the precondition payoff.
+	 */
+	if (rnd_modulo_u32(2) == 0) {
+		char *path = (char *) rec->a2;
+
+		if (path != NULL) {
+			/*
+			 * Overwrite the ARG_PATHNAME buffer in place.
+			 * generate_pathname() zmallocs MAX_PATH_LEN
+			 * (4096) bytes, so the snprintf cap below cannot
+			 * overflow.
+			 */
+			snprintf(path, MAX_PATH_LEN,
+				 "%s/trinity-testfile%u",
+				 trinity_tmpdir_abs(),
+				 1 + rnd_modulo_u32(LISTXATTRAT_NR_TESTFILES));
+			(void) setxattr(path, listxattrat_planted_name,
+					"trin", 4, 0);
+		}
+	}
 
 	/*
 	 * Buffer-size legality buckets: substitute (buf, size) with a
