@@ -2729,9 +2729,9 @@ struct stats_s {
 	 *
 	 * SHADOW: no live-path code reads either counter.  The picker
 	 * distribution, the per-strategy reward attribution, the bandit
-	 * arms, the frontier-blend A/B path are all byte-identical to the
-	 * pre-commit baseline -- this commit only adds two relaxed adds
-	 * on the deep-but-warm tail of the post-collect path. */
+	 * arms and the frontier-blend A/B path are byte-identical to the
+	 * baseline -- only two relaxed adds run on the deep-but-warm tail
+	 * of the post-collect path. */
 	unsigned long warm_reserve_candidates_total;
 	unsigned long warm_reserve_candidates[MAX_NR_SYSCALL];
 
@@ -3747,8 +3747,7 @@ struct stats_s {
 	 *     the existing pc_edge_count_at_window_start / bandit_cmp_at_
 	 *     window_start cadence.  Read at the top of bandit_record_pull
 	 *     to compute the per-window transition delta the COMBINED-mode
-	 *     reward folds in.  Lives here (not in shm_s) so this commit
-	 *     can stay within the scoped file list — semantically
+	 *     reward folds in.  Lives here (not in shm_s) — semantically
 	 *     equivalent to the shm-side window-start snapshots since the
 	 *     rotation handler is the single writer.
 	 *
@@ -3769,12 +3768,11 @@ struct stats_s {
 	 * memfd_secret, pwritev2, shmdt, ...): edge discovery stalls because
 	 * the slots cannot be recycled.  These two arrays attribute that loss
 	 * to the syscall the wedged child was running, so the next iteration
-	 * has data to throttle / isolate the worst offenders on.  This commit
-	 * adds the accounting and a top-N shutdown row only -- no
-	 * throttle/isolation decision is taken from either array yet, so the
-	 * picker, the bandit, the canary queue, the fleet sizing, every
-	 * existing live-path decision stays byte-identical to the pre-commit
-	 * baseline.
+	 * has data to throttle / isolate the worst offenders on.  Accounting
+	 * and a top-N shutdown row only -- no throttle/isolation decision
+	 * is taken from either array yet, so the picker, the bandit, the
+	 * canary queue, the fleet sizing and every other live-path decision
+	 * stay byte-identical to the baseline.
 	 *
 	 * Indexed by raw syscall nr conflated across the do32 dimension, the
 	 * same shape edges_per_syscall_bandit[] / frontier_picks_per_syscall[]
