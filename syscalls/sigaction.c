@@ -201,6 +201,7 @@ static void sanitise_rt_sigaction(struct syscallrecord *rec)
 {
 	rec->a1 = pick_signal_target();
 	rec->a2 = RAND_BOOL() ? 0 : (unsigned long) alloc_sigaction();
+	avoid_shared_buffer_inout(&rec->a2, sizeof(struct sigaction));
 	rec->a3 = RAND_BOOL() ? 0 : (unsigned long) alloc_sigaction();
 	rec->a4 = sizeof(sigset_t);
 

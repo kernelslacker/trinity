@@ -295,7 +295,7 @@ syscalls/setsockopt.c:1056:post_setsockopt
 syscalls/setsockopt.c:1071:post_setsockopt
 syscalls/setuid.c:39:post_setuid
 syscalls/setuid.c:54:post_setuid
-syscalls/sigaction.c:246:post_rt_sigaction
+syscalls/sigaction.c:247:post_rt_sigaction
 syscalls/sigaltstack.c:250:post_sigaltstack
 syscalls/sigaltstack.c:259:post_sigaltstack
 syscalls/sigaltstack.c:268:post_sigaltstack
