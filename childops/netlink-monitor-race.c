@@ -13,21 +13,23 @@
  * never exercised against a live subscriber list.
  *
  * Sequence (per invocation):
- *   1. Enter a private net namespace so any mutation we make never
- *      touches the host's main routing table.  When the parent
- *      already provisioned one (shm->isolation.net_ready set --
- *      root-started, --no-startup-isolation unset, parent unshare +
- *      lo-up succeeded) we inherit it via fork() and skip the per-
- *      childop unshare entirely; loopback is already UP with
- *      127.0.0.1/::1 assigned, so the address/route control surface
- *      is reachable.  Otherwise we fall back to a per-childop
- *      unshare(CLONE_NEWNET); EPERM (the post-drop_privs non-root
- *      case) latches the op off for the rest of this child's
- *      lifetime, exactly as before the gate existed.  lo-only (no
- *      veth peer day 1) keeps real two-endpoint datapaths out of
- *      reach -- this op is single-socket control-plane churn and is
- *      not affected; a veth-pair follow-up will lift the limit for
- *      datapath-driven ops.
+ *   1. Enter a private net namespace via userns_run_in_ns(): a
+ *      transient grandchild fork installs an identity user namespace
+ *      plus a fresh CLONE_NEWNET, runs the body below, and _exit()s
+ *      so the kernel reaps the dummy interface, addresses, monitor
+ *      socket, mutator socket and any in-flight broadcast queues
+ *      with the grandchild's netns.  The persistent fuzz child never
+ *      touches its own credentials or namespace stack, so the
+ *      cap-drop oracle keeps observing the host credential profile.
+ *      Helper -EPERM (hardened userns policy refused CLONE_NEWUSER:
+ *      user.max_user_namespaces=0 or
+ *      kernel.unprivileged_userns_clone=0) latches the childop off
+ *      for the remainder of this child's lifetime; -EAGAIN
+ *      (transient setup failure: fork, id-map write, secondary
+ *      unshare) skips the iteration without latching.  Loopback is
+ *      not required for this op -- it is single-socket
+ *      control-plane churn; the broadcast path fires from netlink
+ *      event emission, not from a datapath frame.
  *   2. Open `mon` socket: AF_NETLINK / NETLINK_ROUTE, O_CLOEXEC,
  *      SO_RCVTIMEO=1s, bind with nl_groups carrying a random subset
  *      of RTMGRP_LINK | RTMGRP_IPV4_IFADDR | RTMGRP_IPV6_IFADDR |
@@ -61,9 +63,9 @@
  * Self-bounding: NETLINK_MUT_BURST (8) mutations per invocation, one
  * cycle per call.  All sockets are O_CLOEXEC and SO_RCVTIMEO=1s so an
  * unresponsive netlink path can't wedge the child past the alarm(1)
- * cap.  Failure on every step (EPERM in the host namespace, ENODEV,
- * EINVAL, ENOPROTOOPT on older kernels lacking LISTEN_ALL_NSID) is
- * benign coverage rather than childop failure.
+ * cap.  Failure on every step (ENODEV, EINVAL, ENOPROTOOPT on older
+ * kernels lacking LISTEN_ALL_NSID) is benign coverage rather than
+ * childop failure.
  */
 
 #include <errno.h>
@@ -90,6 +92,7 @@
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
+#include "userns-bootstrap.h"
 
 #ifndef NETLINK_BROADCAST_ERROR
 #define NETLINK_BROADCAST_ERROR	4
@@ -125,24 +128,14 @@ static const __u32 monitor_group_ids[] = {
 };
 #define NR_MONITOR_GROUPS	(sizeof(monitor_group_ids) / sizeof(monitor_group_ids[0]))
 
-/* Latched per-child on the fallback path only: shm->isolation.net_ready
- * was false and the per-childop unshare(CLONE_NEWNET) then returned
- * EPERM (or any other fatal error).  Trinity doesn't grant
- * CAP_SYS_ADMIN inside the host namespace under default execution, and
- * we MUST NOT touch the host's main routing table -- so when we can't
- * enter a private netns we permanently disable the op for this child.
- * Never latches when the parent provisioned the netns up front (we
- * already inherit it via fork() and never attempt the per-childop
- * unshare). */
+/* Latched per-child: userns_run_in_ns() reported -EPERM, meaning the
+ * grandchild's unshare(CLONE_NEWUSER) was refused by a hardened policy
+ * (user.max_user_namespaces=0 or kernel.unprivileged_userns_clone=0).
+ * Without a private netns we MUST NOT touch the host's main routing
+ * table, so the op stays disabled for the remainder of this child's
+ * lifetime.  Transient setup failures (helper return -EAGAIN) do not
+ * set this -- they may not recur on the next iteration. */
 static bool ns_unsupported;
-
-/* Latched once this child has a private netns to operate in -- either
- * inherited from the parent (shm->isolation.net_ready) or obtained via
- * a successful per-childop unshare(CLONE_NEWNET) on the fallback path.
- * The trinity child process is long-lived; we only need to confirm the
- * private namespace once and reuse it across subsequent invocations.
- * Re-unsharing each call would just leak namespaces. */
-static bool ns_ready;
 
 /*
  * Build & send RTM_NEWLINK creating a dummy dev named `name`.  Returns
@@ -282,37 +275,6 @@ struct netlink_monitor_race_iter_ctx {
 	bool		link_added;
 	bool		addr_added;
 };
-
-/*
- * Phase: per-child netns setup.  Gated on shm->isolation.net_ready:
- * when the parent provisioned the netns at startup we inherit it via
- * fork() (lo already UP, 127.0.0.1/::1 already assigned) and just
- * latch ns_ready.  Otherwise we fall back to a per-childop
- * unshare(CLONE_NEWNET) -- the pre-isolation code path, unchanged
- * byte-for-byte: EPERM (post-drop_privs non-root) latches
- * ns_unsupported so the rest of the child's lifetime pays the EFAIL
- * once.  Returns 0 on success; -1 means caller should return true
- * immediately (no fds were opened, so no cleanup is needed).
- */
-static int netlink_monitor_race_iter_setup_netns(void)
-{
-	if (ns_ready)
-		return 0;
-
-	if (__atomic_load_n(&shm->isolation.net_ready, __ATOMIC_RELAXED)) {
-		ns_ready = true;
-		return 0;
-	}
-
-	if (unshare(CLONE_NEWNET) < 0) {
-		ns_unsupported = true;
-		__atomic_add_fetch(&shm->stats.netlink_monitor_race_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		return -1;
-	}
-	ns_ready = true;
-	return 0;
-}
 
 /*
  * Phase: open the monitor netlink socket with a randomised RTMGRP_*
@@ -486,14 +448,30 @@ static void netlink_monitor_race_iter_final_burst(struct netlink_monitor_race_it
 				   drained, __ATOMIC_RELAXED);
 }
 
-bool netlink_monitor_race(struct childdata *child)
+/*
+ * Per-invocation state handed to the in-ns callback so it can keep
+ * accounting against the right childop slot.
+ */
+struct netlink_monitor_race_ctx {
+	struct childdata *child;
+};
+
+/*
+ * Per-invocation body that must run inside the private net namespace.
+ * Executed in a transient grandchild forked by userns_run_in_ns(); the
+ * grandchild's userns + netns are torn down on _exit() so any sockets,
+ * dummy interfaces, addresses and in-flight broadcast queues left
+ * behind are reaped by the kernel along with the namespace.  Return
+ * value is ignored by the helper.
+ */
+static int netlink_monitor_race_in_ns(void *arg)
 {
+	struct netlink_monitor_race_ctx *cctx = arg;
+	struct childdata *child = cctx->child;
 	struct netlink_monitor_race_iter_ctx ctx = {
 		.mon = { .fd = -1 },
 		.mut = { .fd = -1 },
 	};
-
-	__atomic_add_fetch(&shm->stats.netlink_monitor_race_runs, 1, __ATOMIC_RELAXED);
 
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
@@ -503,19 +481,8 @@ bool netlink_monitor_race(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	if (ns_unsupported)
-		return true;
-
-	if (netlink_monitor_race_iter_setup_netns() != 0) {
-		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
-					 CHILDOP_LATCH_NS_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
-		return true;
-	}
-
 	if (netlink_monitor_race_iter_open_monitor(&ctx) != 0)
-		return true;
+		return 0;
 
 	if (netlink_monitor_race_iter_open_mutator(&ctx) != 0)
 		goto out;
@@ -539,6 +506,46 @@ out:
 		nl_close(&ctx.mut);
 	}
 	nl_close(&ctx.mon);
+	return 0;
+}
+
+bool netlink_monitor_race(struct childdata *child)
+{
+	struct netlink_monitor_race_ctx cctx = { .child = child };
+	int rc;
+
+	__atomic_add_fetch(&shm->stats.netlink_monitor_race_runs, 1, __ATOMIC_RELAXED);
+
+	if (ns_unsupported)
+		return true;
+
+	rc = userns_run_in_ns(CLONE_NEWNET, netlink_monitor_race_in_ns, &cctx);
+	if (rc == -EPERM) {
+		ns_unsupported = true;
+		/* child->op_type lives in shared memory and can be scribbled
+		 * by a poisoned-arena write from a sibling; bounds-check the
+		 * snapshot before indexing the NR_CHILD_OP_TYPES-sized stats
+		 * array, same pattern the child.c dispatch loop uses for the
+		 * unguarded write that motivated this guard. */
+		{
+			const enum child_op_type op = child->op_type;
+			if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
+		}
+		__atomic_add_fetch(&shm->stats.netlink_monitor_race_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return true;
+	}
+	if (rc < 0) {
+		/* Transient grandchild setup failure (fork, id-map write,
+		 * secondary unshare).  Skip this iteration without latching
+		 * -- the failure is not policy and may not recur. */
+		__atomic_add_fetch(&shm->stats.netlink_monitor_race_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return true;
+	}
 
 	return true;
 }
