@@ -601,6 +601,188 @@ void cmp_hyp_observe(unsigned int nr, bool do32, unsigned long cmp_ip,
 	}
 }
 
+/*
+ * Resolve the would-have-been-chosen hypothesis for a (cmp_ip, width,
+ * value) tuple against the SHADOW hyp_pool at (nr, do32).  Walks the
+ * pool once and returns the most-specific kind whose stored shape
+ * explains the value: EXACT (exemplar == value) > ENUM_FAMILY (lo..hi
+ * cluster containing value) > BITMASK (single-bit value set in mask)
+ * > RANGE (lo..hi interval containing value).  Returns NULL if no
+ * hypothesis at the matching (cmp_ip, width) explains the value -- the
+ * picked constant pre-dates the inference layer or sits in a slot the
+ * observer never fired, both of which are unobservable from the credit
+ * side.  Same RELAXED-load discipline as the rest of the SHADOW reader
+ * path: torn fields tolerate the consumer-side advisory contract.
+ */
+static struct cmp_hypothesis *cmp_hyp_find_for_credit(struct cmp_hyp_pool *pool,
+						      unsigned long cmp_ip,
+						      uint8_t width,
+						      uint64_t value)
+{
+	struct cmp_hypothesis *enum_match = NULL;
+	struct cmp_hypothesis *bitmask_match = NULL;
+	struct cmp_hypothesis *range_match = NULL;
+	unsigned int i, n = pool->count;
+	bool single_bit = (value != 0) && ((value & (value - 1)) == 0);
+
+	if (n > CMP_HYP_PER_SYSCALL)
+		return NULL;
+	for (i = 0; i < n; i++) {
+		struct cmp_hypothesis *h = &pool->entries[i];
+
+		if (h->cmp_ip != (uint64_t)cmp_ip || h->width != width)
+			continue;
+		switch (h->kind) {
+		case CMP_HYP_EXACT:
+			if (h->exemplar == value)
+				return h;
+			break;
+		case CMP_HYP_ENUM_FAMILY:
+			if (value >= h->lo && value <= h->hi && enum_match == NULL)
+				enum_match = h;
+			break;
+		case CMP_HYP_BITMASK:
+			if (single_bit && (h->mask & value) != 0
+			    && bitmask_match == NULL)
+				bitmask_match = h;
+			break;
+		case CMP_HYP_RANGE:
+			if (value >= h->lo && value <= h->hi && range_match == NULL)
+				range_match = h;
+			break;
+		default:
+			break;
+		}
+	}
+	if (enum_match != NULL)
+		return enum_match;
+	if (bitmask_match != NULL)
+		return bitmask_match;
+	return range_match;
+}
+
+/*
+ * Per-outcome counter selector.  Returns the per-hypothesis u64 field
+ * to bump for OUTCOME; a returned NULL means the outcome falls outside
+ * the published menu (caller treats as a no-op so a future enumerator
+ * addition that forgets a matching arm here surfaces as a quiet skip
+ * rather than an out-of-bounds write).
+ */
+static uint64_t *cmp_hyp_outcome_field(struct cmp_hypothesis *h,
+				       enum cmp_hyp_outcome outcome)
+{
+	switch (outcome) {
+	case CMP_HYP_OUTCOME_PC_WIN:		return &h->pc_wins;
+	case CMP_HYP_OUTCOME_TRANSITION_WIN:	return &h->transition_wins;
+	case CMP_HYP_OUTCOME_CMP_NOVELTY:	return &h->cmp_novelty_wins;
+	case CMP_HYP_OUTCOME_CORPUS_SAVE:	return &h->corpus_save_wins;
+	case CMP_HYP_OUTCOME_MISS:		return &h->misses;
+	case CMP_HYP_OUTCOME_DISABLED:		return &h->disabled_skips;
+	case CMP_HYP_OUTCOME_DESTRUCTIVE_SKIP:	return &h->destructive_skips;
+	case CMP_HYP_OUTCOME_CONTEXT_SKIP:	return &h->context_skips;
+	case CMP_HYP_OUTCOME_NR:
+	default:
+		return NULL;
+	}
+}
+
+/*
+ * Map an outcome onto the matching kcov_shm flat counter so the
+ * fleet-level rollup tracks the per-hypothesis credit.  Only outcomes
+ * whose flat counter already exists in struct kcov_shm are returned;
+ * the new corpus_save / destructive_skip / context_skip channels live
+ * only in the per-hypothesis store today and rely on the stats-side
+ * walk to surface their aggregate.
+ */
+static unsigned long *cmp_hyp_outcome_flat(enum cmp_hyp_outcome outcome)
+{
+	if (kcov_shm == NULL)
+		return NULL;
+	switch (outcome) {
+	case CMP_HYP_OUTCOME_PC_WIN:		return &kcov_shm->cmp_hyp_pc_wins;
+	case CMP_HYP_OUTCOME_TRANSITION_WIN:	return &kcov_shm->cmp_hyp_transition_wins;
+	case CMP_HYP_OUTCOME_CMP_NOVELTY:	return &kcov_shm->cmp_hyp_cmp_novelty_wins;
+	case CMP_HYP_OUTCOME_MISS:		return &kcov_shm->cmp_hyp_misses;
+	case CMP_HYP_OUTCOME_DISABLED:		return &kcov_shm->cmp_hyp_disabled_skips;
+	default:
+		return NULL;
+	}
+}
+
+void cmp_hyp_credit_outcome(unsigned int nr, bool do32, unsigned long cmp_ip,
+			    unsigned long value, unsigned int size,
+			    enum cmp_hyp_outcome outcome)
+{
+	struct cmp_hyp_pool *pool;
+	struct cmp_hypothesis *h;
+	uint64_t *field;
+	unsigned long *flat;
+	uint8_t width;
+
+	if (cmp_hints_shm == NULL || nr >= MAX_NR_SYSCALL)
+		return;
+	if (size != 1 && size != 2 && size != 4 && size != 8)
+		return;
+	if ((unsigned int)outcome >= CMP_HYP_OUTCOME_NR)
+		return;
+
+	width = (uint8_t)size;
+	pool = &cmp_hints_shm->hyp_pools[nr][do32 ? 1 : 0];
+
+	/* Lock-free read against the parallel hyp_pool grid.  Writers
+	 * (cmp_hyp_observe) run under the matching durable cmp_hint_pool
+	 * lock so a torn count or a half-written entry is possible from
+	 * this side; the find walk tolerates both -- a misread kind /
+	 * exemplar at worst drops the credit, never indexes off the
+	 * array thanks to the count > cap bail. */
+	h = cmp_hyp_find_for_credit(pool, cmp_ip, width, (uint64_t)value);
+	if (h == NULL)
+		return;
+
+	field = cmp_hyp_outcome_field(h, outcome);
+	if (field == NULL)
+		return;
+	__atomic_fetch_add(field, 1UL, __ATOMIC_RELAXED);
+
+	flat = cmp_hyp_outcome_flat(outcome);
+	if (flat != NULL)
+		__atomic_fetch_add(flat, 1UL, __ATOMIC_RELAXED);
+}
+
+/*
+ * SHADOW per-hypothesis credit at hint-pull (consume) time.  Resolved
+ * via the same EXACT > ENUM_FAMILY > BITMASK > RANGE specificity
+ * ladder as cmp_hyp_credit_outcome(); on a hit, bumps the per-
+ * hypothesis consumed_count and the flat cmp_hyp_consumed kcov_shm
+ * counter so the fleet sees the typed-consumer denominator the
+ * follow-up live-pick will weigh outcomes against.
+ */
+static void cmp_hyp_credit_consume(unsigned int nr, bool do32,
+				   unsigned long cmp_ip, unsigned long value,
+				   unsigned int size)
+{
+	struct cmp_hyp_pool *pool;
+	struct cmp_hypothesis *h;
+	uint8_t width;
+
+	if (cmp_hints_shm == NULL || nr >= MAX_NR_SYSCALL)
+		return;
+	if (size != 1 && size != 2 && size != 4 && size != 8)
+		return;
+
+	width = (uint8_t)size;
+	pool = &cmp_hints_shm->hyp_pools[nr][do32 ? 1 : 0];
+
+	h = cmp_hyp_find_for_credit(pool, cmp_ip, width, (uint64_t)value);
+	if (h == NULL)
+		return;
+
+	__atomic_fetch_add(&h->consumed_count, 1UL, __ATOMIC_RELAXED);
+	if (kcov_shm != NULL)
+		__atomic_fetch_add(&kcov_shm->cmp_hyp_consumed, 1UL,
+				   __ATOMIC_RELAXED);
+}
+
 static void pool_lock(struct cmp_hint_pool *pool)
 {
 	if (cmp_hints_shm != NULL)
@@ -2465,6 +2647,15 @@ static void cmp_hints_stash_consumed(unsigned int nr, bool do32,
 	if (kcov_shm != NULL)
 		__atomic_fetch_add(&kcov_shm->cmp_hints_consumed, 1UL,
 				   __ATOMIC_RELAXED);
+
+	/* SHADOW hypothesis-layer consume credit.  Resolves the would-have-
+	 * been-chosen hypothesis from the same (cmp_ip, value, size) tuple
+	 * the per-entry pool credit drain will use later; bumps the typed
+	 * consumed_count + flat cmp_hyp_consumed so the typed denominator
+	 * tracks the per-pool denominator already established above.  No-op
+	 * when no hypothesis explains the value -- the credit lands only
+	 * where the parallel inference layer has standing. */
+	cmp_hyp_credit_consume(nr, do32, cmp_ip, value, size);
 }
 
 /*
@@ -3170,6 +3361,17 @@ void cmp_hints_feedback_credit_pc(bool outcome_win)
 			break;
 		}
 
+		/* SHADOW hypothesis-layer outcome credit.  Layered on top of
+		 * the per-pool credit above so a PC-edge win / miss attributed
+		 * to a pool entry also lands on the would-have-been-chosen
+		 * hypothesis at the matching (cmp_ip, value, width) tuple.
+		 * Same SHADOW discipline: a credit that finds no explaining
+		 * hypothesis silently drops, never steers the live pick. */
+		cmp_hyp_credit_outcome(e->nr, e->do32 != 0, e->cmp_ip,
+				       e->value, e->size,
+				       outcome_win ? CMP_HYP_OUTCOME_PC_WIN
+						   : CMP_HYP_OUTCOME_MISS);
+
 		/* Per-tier + per-age conversion partition.  The flat
 		 * cmp_hint_wins / cmp_hint_misses counters above bump once
 		 * per parent dispatch; the per-stash-entry partition here
@@ -3216,10 +3418,12 @@ void cmp_hints_feedback_credit_pc(bool outcome_win)
 void cmp_hints_feedback_credit_cmp_novelty(void)
 {
 	struct childdata *child = this_child();
+	unsigned int i, n;
 
 	if (child == NULL)
 		return;
-	if (child->cmp_hints_consumed_count == 0)
+	n = child->cmp_hints_consumed_count;
+	if (n == 0)
 		return;
 
 	if (kcov_shm != NULL)
@@ -3231,7 +3435,22 @@ void cmp_hints_feedback_credit_cmp_novelty(void)
 	 * bump per-entry wins/misses here -- those are the PC-edge
 	 * shadow score the follow-up live-pick will weigh by.  The flat
 	 * cmp_hint_cmp_novelty_wins counter is the diagnostic channel
-	 * for the CMP-mode signal. */
+	 * for the CMP-mode signal.
+	 *
+	 * SHADOW hypothesis layer: credit CMP_NOVELTY against the would-
+	 * have-been-chosen hypothesis for every stashed pull.  The typed
+	 * cmp_novelty_wins is a peer of pc_wins in struct cmp_hypothesis
+	 * for the same reason -- the consumer side must not collapse the
+	 * two when ranking hypotheses.
+	 */
+	for (i = 0; i < n; i++) {
+		const struct cmp_hint_consumed_entry *e =
+			&child->cmp_hints_consumed_stash[i];
+
+		cmp_hyp_credit_outcome(e->nr, e->do32 != 0, e->cmp_ip,
+				       e->value, e->size,
+				       CMP_HYP_OUTCOME_CMP_NOVELTY);
+	}
 
 	child->cmp_hints_consumed_count = 0;
 }
