@@ -2965,7 +2965,7 @@ static const struct struct_field xattr_args_fields[] = {
  * vocabulary.  fa_extsize / fa_nextents / fa_projid / fa_cowextsize are
  * free u32 slots the kernel reads as raw values.  Mirrors the
  * attribution-only treatment of timer_create's sigevent, rseq, and
- * the just-landed xattr_args entries.
+ * xattr_args entries.
  */
 #define FILE_ATTR_XFLAGS_MASK						\
 	(FS_XFLAG_REALTIME    | FS_XFLAG_PREALLOC    | FS_XFLAG_IMMUTABLE | \
@@ -7572,8 +7572,8 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * apply_sockopt_entry().  discrim_arg_idx=2 is level (a2) and
 	 * discrim2_arg_idx=3 is optname (a3); the explicit-key consumer
 	 * passes them directly off the picked sockopt_table[] row so the
-	 * lookup runs against the authoritative pre-commit values, not
-	 * the post-mangle rec->a2/a3 the kernel would see.
+	 * lookup runs against the authoritative picked values, not the
+	 * post-mangle rec->a2/a3 the kernel would see.
 	 *
 	 * argtype[3] is not ARG_STRUCT_PTR_*, so the rec-based
 	 * struct_arg_lookup() never resolves these rows -- which is the
