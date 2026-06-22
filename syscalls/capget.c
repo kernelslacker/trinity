@@ -71,6 +71,11 @@ static void sanitise_capget(struct syscallrecord *rec)
 	hdr->pid = get_pid();
 
 	rec->a1 = (unsigned long) hdr;
+	/* Relocate + memcpy the curated header bytes (version, pid) onto a
+	 * fresh pool page so the post-sanitise blanket address scrub no-ops on
+	 * this slot.  Must precede the snap->header = rec->a1 capture below so
+	 * the oracle snapshots the relocated pointer the kernel will see. */
+	avoid_shared_buffer_inout(&rec->a1, sizeof(*hdr));
 	avoid_shared_buffer_out(&rec->a2, 2 * sizeof(struct __user_cap_data_struct));
 
 	/*
