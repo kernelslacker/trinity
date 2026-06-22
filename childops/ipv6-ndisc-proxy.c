@@ -13,24 +13,33 @@
  * rather than a no-op.  Random netlink/socket fuzzing hits none of
  * those preconditions in combination, so this op assembles the lot.
  *
- * Sequence (per child, latched once):
- *   1. unshare(CLONE_NEWNET) into a private netns.
- *   2. RTM_NEWLINK kind=veth pair vp0/vp1; addr fc00::1 on vp0,
- *      fc00::2 on vp1; bring lo, vp0, vp1 up.
+ * Sequence (per invocation):
+ *   1. Enter a private net namespace via userns_run_in_ns(): a
+ *      transient grandchild fork installs an identity user namespace
+ *      plus a fresh CLONE_NEWNET, runs the body below, and _exit()s
+ *      so the kernel reaps the veth pair, proxy_ndp pneigh entry,
+ *      raw AF_PACKET socket and the sysfs handles with the
+ *      grandchild's netns.  The persistent fuzz child never touches
+ *      its own credentials or namespace stack, so the cap-drop oracle
+ *      keeps observing the host credential profile.  Helper -EPERM
+ *      (hardened userns policy refused CLONE_NEWUSER) latches the
+ *      childop off for the remainder of this child's lifetime;
+ *      -EAGAIN (transient setup failure: fork, id-map write,
+ *      secondary unshare) skips the iteration without latching.
+ *   2. Bring lo up inside the grandchild's netns, then RTM_NEWLINK
+ *      kind=veth pair vp0/vp1; addr fc00::1 on vp0, fc00::2 on vp1;
+ *      bring vp0/vp1 up.
  *   3. Write '1' to /proc/sys/net/ipv6/conf/vp0/proxy_ndp to enable
  *      the per-dev proxy.
  *   4. RTM_NEWNEIGH NTF_PROXY for fc00::3 dev vp0 — installs the
  *      pneigh entry that ip6_forward_proxy_check consults.
- *
- * Per outer iteration (BUDGETED + JITTER, base 6, ~200ms wall cap):
- *   - Open AF_PACKET / SOCK_RAW / ETH_P_IPV6 bound to vp1.
- *   - Build an Ethernet+IPv6+HBH+ICMPv6 NS frame for target fc00::3.
- *     The HBH pad option length is rotated each iteration so the IPv6
- *     payload_len varies across the linear/non-linear pull boundary,
- *     forcing pskb_may_pull to actually realloc skb->head on the
- *     receiver side rather than no-op out.
- *   - sendto() onto vp1; vp0 receives and the kernel walks
- *     ip6_forward_proxy_check / ndisc_recv_ns.
+ *   5. Open AF_PACKET / SOCK_RAW / ETH_P_IPV6 bound to vp1, then run a
+ *      BUDGETED+JITTER (base 6, ~200 ms wall cap) loop emitting
+ *      Ethernet+IPv6+HBH+ICMPv6 NS frames for target fc00::3.  The
+ *      HBH pad option length is rotated each iteration so the IPv6
+ *      payload_len varies across the linear/non-linear pull boundary,
+ *      forcing pskb_may_pull to actually realloc skb->head on the
+ *      receiver side rather than no-op out.
  *
  * Self-bounding: rtnl recv has SO_RCVTIMEO=1s, AF_PACKET sends are
  * MSG_DONTWAIT, the inner loop wall-caps via clock_gettime on
@@ -66,6 +75,7 @@
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
+#include "userns-bootstrap.h"
 
 #ifndef VETH_INFO_PEER
 #define VETH_INFO_PEER		1
@@ -84,10 +94,15 @@
 #define NDP_OUTER_CAP		32U
 #define NDP_STORM_BUDGET_NS	200000000L
 
-static bool ns_unsupported_ipv6_ndisc_proxy;
-static bool ns_setup_done;
-static bool ns_setup_failed_latched;
-static int g_vp1_ifindex;
+/* Latched per-child: userns_run_in_ns() reported -EPERM, meaning the
+ * grandchild's unshare(CLONE_NEWUSER) was refused by a hardened policy
+ * (user.max_user_namespaces=0 or kernel.unprivileged_userns_clone=0).
+ * Without a private netns we MUST NOT touch the host's main veth /
+ * neighbour / proxy_ndp tables, so the op stays disabled for the
+ * remainder of this child's lifetime.  Transient setup failures
+ * (helper return -EAGAIN) do not set this — they may not recur on the
+ * next iteration. */
+static bool ns_userns_unsupported_ipv6_ndisc_proxy;
 
 /*
  * RTM_NEWLINK kind=veth with VETH_INFO_PEER carrying the peer name.
@@ -225,69 +240,6 @@ static bool sysfs_write_one(const char *path, const char *val)
 }
 
 /*
- * One-shot per-child setup: unshare, build the veth pair, addrs and
- * proxy state.  Latches ns_unsupported_ipv6_ndisc_proxy on any
- * structural failure so subsequent invocations short-circuit.  Stores
- * vp1's ifindex in g_vp1_ifindex so the per-iteration sender can bind
- * AF_PACKET without re-resolving the name on every call.
- */
-static bool do_setup(void)
-{
-	struct in6_addr a1, a2, target;
-	struct nl_ctx ctx = { .fd = -1 };
-	struct nl_open_opts opts = {
-		.proto = NETLINK_ROUTE,
-		.recv_timeo_s = 1,
-	};
-	int lo_idx, vp0_idx, vp1_idx;
-	bool ok = false;
-
-	if (unshare(CLONE_NEWNET) < 0)
-		return false;
-	if (nl_open(&ctx, &opts) < 0)
-		return false;
-
-	lo_idx = (int)if_nametoindex("lo");
-	if (lo_idx > 0)
-		(void)link_up(&ctx, lo_idx);
-
-	if (veth_create(&ctx, "vp0", "vp1") != 0)
-		goto out;
-	vp0_idx = (int)if_nametoindex("vp0");
-	vp1_idx = (int)if_nametoindex("vp1");
-	if (vp0_idx <= 0 || vp1_idx <= 0)
-		goto out;
-
-	memset(&a1, 0, sizeof(a1));
-	a1.s6_addr[0] = 0xfc; a1.s6_addr[15] = 0x01;
-	memset(&a2, 0, sizeof(a2));
-	a2.s6_addr[0] = 0xfc; a2.s6_addr[15] = 0x02;
-	memset(&target, 0, sizeof(target));
-	target.s6_addr[0] = 0xfc; target.s6_addr[15] = 0x03;
-
-	(void)addr6_add(&ctx, vp0_idx, &a1);
-	(void)addr6_add(&ctx, vp1_idx, &a2);
-	(void)link_up(&ctx, vp0_idx);
-	(void)link_up(&ctx, vp1_idx);
-
-	/* Both arms of the proxy_ndp gate: per-dev knob (vp0) plus the
-	 * /all/ knob — kernels differ on which one ip6_forward consults
-	 * for the proxy check, so flip both. */
-	if (sysfs_write_one("/proc/sys/net/ipv6/conf/vp0/proxy_ndp", "1") ||
-	    sysfs_write_one("/proc/sys/net/ipv6/conf/all/proxy_ndp", "1"))
-		__atomic_add_fetch(&shm->stats.ipv6_ndisc_proxy_proxy_enable_ok,
-				   1, __ATOMIC_RELAXED);
-
-	(void)proxy_neigh_add(&ctx, vp0_idx, &target);
-
-	g_vp1_ifindex = vp1_idx;
-	ok = true;
-out:
-	nl_close(&ctx);
-	return ok;
-}
-
-/*
  * Build and inject one Ethernet+IPv6+HBH+ICMPv6 NS frame into vp1.
  * The HBH pad length is rotated so the receiver-side pskb_may_pull
  * span varies across iterations — the realloc-inducing pull is what
@@ -366,17 +318,101 @@ static bool send_one_ns(int raw, int ifindex, unsigned int rot)
 	return n > 0;
 }
 
-bool ipv6_ndisc_proxy(struct childdata *child)
+/*
+ * Per-invocation state handed to the in-ns callback so per-op stats
+ * stay indexed against the right childop slot.
+ */
+struct ipv6_ndisc_proxy_ctx {
+	struct childdata *child;
+};
+
+/*
+ * Per-invocation body that must run inside the private net namespace.
+ * Executed in a transient grandchild forked by userns_run_in_ns(); the
+ * grandchild's userns + netns are torn down on _exit() so the veth
+ * pair, proxy_ndp pneigh entry, raw AF_PACKET socket and any sysfs
+ * handles left behind are reaped by the kernel along with the
+ * namespace.  Return value is ignored by the helper.
+ */
+static int ipv6_ndisc_proxy_in_ns(void *arg)
 {
+	struct ipv6_ndisc_proxy_ctx *cctx = (struct ipv6_ndisc_proxy_ctx *)arg;
+	struct childdata *child = cctx->child;
+	struct nl_ctx ctx = NL_CTX_INIT;
+	struct nl_open_opts opts = {
+		.proto = NETLINK_ROUTE,
+		.recv_timeo_s = 1,
+	};
+	struct in6_addr a1, a2, target;
 	struct timespec t0;
-	int raw;
+	int lo_idx, vp0_idx, vp1_idx;
+	int raw = -1;
 	unsigned int iters, i;
 
-	__atomic_add_fetch(&shm->stats.ipv6_ndisc_proxy_runs, 1,
-			   __ATOMIC_RELAXED);
+	if (nl_open(&ctx, &opts) < 0) {
+		__atomic_add_fetch(&shm->stats.ipv6_ndisc_proxy_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return 0;
+	}
 
-	if (ns_unsupported_ipv6_ndisc_proxy)
-		return true;
+	lo_idx = (int)if_nametoindex("lo");
+	if (lo_idx > 0)
+		(void)link_up(&ctx, lo_idx);
+
+	if (veth_create(&ctx, "vp0", "vp1") != 0) {
+		__atomic_add_fetch(&shm->stats.ipv6_ndisc_proxy_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		nl_close(&ctx);
+		return 0;
+	}
+	vp0_idx = (int)if_nametoindex("vp0");
+	vp1_idx = (int)if_nametoindex("vp1");
+	if (vp0_idx <= 0 || vp1_idx <= 0) {
+		__atomic_add_fetch(&shm->stats.ipv6_ndisc_proxy_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		nl_close(&ctx);
+		return 0;
+	}
+
+	memset(&a1, 0, sizeof(a1));
+	a1.s6_addr[0] = 0xfc; a1.s6_addr[15] = 0x01;
+	memset(&a2, 0, sizeof(a2));
+	a2.s6_addr[0] = 0xfc; a2.s6_addr[15] = 0x02;
+	memset(&target, 0, sizeof(target));
+	target.s6_addr[0] = 0xfc; target.s6_addr[15] = 0x03;
+
+	(void)addr6_add(&ctx, vp0_idx, &a1);
+	(void)addr6_add(&ctx, vp1_idx, &a2);
+	(void)link_up(&ctx, vp0_idx);
+	(void)link_up(&ctx, vp1_idx);
+
+	/* Both arms of the proxy_ndp gate: per-dev knob (vp0) plus the
+	 * /all/ knob — kernels differ on which one ip6_forward consults
+	 * for the proxy check, so flip both. */
+	if (sysfs_write_one("/proc/sys/net/ipv6/conf/vp0/proxy_ndp", "1") ||
+	    sysfs_write_one("/proc/sys/net/ipv6/conf/all/proxy_ndp", "1"))
+		__atomic_add_fetch(&shm->stats.ipv6_ndisc_proxy_proxy_enable_ok,
+				   1, __ATOMIC_RELAXED);
+
+	(void)proxy_neigh_add(&ctx, vp0_idx, &target);
+
+	nl_close(&ctx);
+
+	raw = socket(AF_PACKET, SOCK_RAW | SOCK_CLOEXEC, htons(ETH_P_IPV6));
+	if (raw < 0) {
+		__atomic_add_fetch(&shm->stats.ipv6_ndisc_proxy_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return 0;
+	}
+	{
+		struct sockaddr_ll bnd;
+
+		memset(&bnd, 0, sizeof(bnd));
+		bnd.sll_family   = AF_PACKET;
+		bnd.sll_protocol = htons(ETH_P_IPV6);
+		bnd.sll_ifindex  = vp1_idx;
+		(void)bind(raw, (struct sockaddr *)&bnd, sizeof(bnd));
+	}
 
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
@@ -386,37 +422,6 @@ bool ipv6_ndisc_proxy(struct childdata *child)
 	 * writes entirely when the snapshot is out of range. */
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
-
-	if (!ns_setup_done) {
-		if (ns_setup_failed_latched || !do_setup()) {
-			ns_setup_failed_latched = true;
-			ns_unsupported_ipv6_ndisc_proxy = true;
-			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
-						 CHILDOP_LATCH_NS_UNSUPPORTED,
-						 __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.ipv6_ndisc_proxy_setup_failed,
-					   1, __ATOMIC_RELAXED);
-			return true;
-		}
-		ns_setup_done = true;
-	}
-
-	raw = socket(AF_PACKET, SOCK_RAW | SOCK_CLOEXEC, htons(ETH_P_IPV6));
-	if (raw < 0) {
-		__atomic_add_fetch(&shm->stats.ipv6_ndisc_proxy_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		return true;
-	}
-	{
-		struct sockaddr_ll bnd;
-
-		memset(&bnd, 0, sizeof(bnd));
-		bnd.sll_family   = AF_PACKET;
-		bnd.sll_protocol = htons(ETH_P_IPV6);
-		bnd.sll_ifindex  = g_vp1_ifindex;
-		(void)bind(raw, (struct sockaddr *)&bnd, sizeof(bnd));
-	}
 
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
@@ -435,11 +440,53 @@ bool ipv6_ndisc_proxy(struct childdata *child)
 	for (i = 0; i < iters; i++) {
 		if (ns_since(&t0) >= NDP_STORM_BUDGET_NS)
 			break;
-		if (send_one_ns(raw, g_vp1_ifindex, rand32()))
+		if (send_one_ns(raw, vp1_idx, rand32()))
 			__atomic_add_fetch(&shm->stats.ipv6_ndisc_proxy_ns_sent_ok,
 					   1, __ATOMIC_RELAXED);
 	}
 
 	close(raw);
+	return 0;
+}
+
+bool ipv6_ndisc_proxy(struct childdata *child)
+{
+	struct ipv6_ndisc_proxy_ctx cctx = { .child = child };
+	int rc;
+
+	__atomic_add_fetch(&shm->stats.ipv6_ndisc_proxy_runs, 1,
+			   __ATOMIC_RELAXED);
+
+	if (ns_userns_unsupported_ipv6_ndisc_proxy)
+		return true;
+
+	rc = userns_run_in_ns(CLONE_NEWNET, ipv6_ndisc_proxy_in_ns, &cctx);
+	if (rc == -EPERM) {
+		ns_userns_unsupported_ipv6_ndisc_proxy = true;
+		/* child->op_type lives in shared memory and can be scribbled
+		 * by a poisoned-arena write from a sibling; bounds-check the
+		 * snapshot before indexing the NR_CHILD_OP_TYPES-sized stats
+		 * array, same pattern ipv6_ndisc_proxy_in_ns above uses for
+		 * its per-op writes. */
+		{
+			const enum child_op_type op = child->op_type;
+			if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
+		}
+		__atomic_add_fetch(&shm->stats.ipv6_ndisc_proxy_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return true;
+	}
+	if (rc < 0) {
+		/* Transient grandchild setup failure (fork, id-map write,
+		 * secondary unshare).  Skip this iteration without latching
+		 * -- the failure is not policy and may not recur. */
+		__atomic_add_fetch(&shm->stats.ipv6_ndisc_proxy_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return true;
+	}
+
 	return true;
 }
