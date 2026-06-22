@@ -384,9 +384,18 @@ bool ipmr_cache_report(struct childdata *child)
 	rc = userns_run_in_ns(CLONE_NEWNET, ipmr_cache_report_in_ns, &cctx);
 	if (rc == -EPERM) {
 		ns_userns_unsupported_ipmr_cache_report = true;
-		__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-				 CHILDOP_LATCH_NS_UNSUPPORTED,
-				 __ATOMIC_RELAXED);
+		/* child->op_type lives in shared memory and can be scribbled
+		 * by a poisoned-arena write from a sibling; bounds-check the
+		 * snapshot before indexing the NR_CHILD_OP_TYPES-sized stats
+		 * array, same pattern ipmr_cache_report_in_ns above uses for
+		 * its per-op writes. */
+		{
+			const enum child_op_type op = child->op_type;
+			if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
+		}
 		return true;
 	}
 	if (rc < 0) {
