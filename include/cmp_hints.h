@@ -352,6 +352,94 @@ struct cmp_recent_pool {
 };
 
 /*
+ * SHADOW typed-CMP-hypothesis store (skeleton).
+ *
+ * Layered on top of the raw cmp-hint pools above as a PARALLEL table:
+ * the raw pools stay the canonical (cmp_ip, value, size) ledger and
+ * the hypothesis store represents typed inferences built FROM those
+ * observations.  Kept outside struct cmp_hint_entry deliberately so the
+ * raw-hint lookup path stays cache-tight and so hypothesis layout churn
+ * during the rewrite cannot perturb the recording-side fast path.
+ *
+ * This header carries STORAGE + EMPTY hooks only.  No consumer reads
+ * the store, no injection path substitutes a hypothesis-derived value,
+ * and the cmp_hyp_* counters in kcov_shm stay at zero until inference,
+ * feedback, and live-pick land in follow-up commits.
+ */
+enum cmp_hypothesis_kind {
+	CMP_HYP_EXACT,
+	CMP_HYP_RANGE,
+	CMP_HYP_BOUNDARY,
+	CMP_HYP_BITMASK,
+	CMP_HYP_ENUM_FAMILY,
+	CMP_HYP_ALIGNMENT,
+	CMP_HYP_LENGTH,
+	CMP_HYP_FOREIGN_VALUE,
+	CMP_HYP_KIND_NR,
+};
+
+enum cmp_hypothesis_state {
+	CMP_HYP_STATE_OBSERVED,		/* inferred from observations, never injected */
+	CMP_HYP_STATE_TESTING,		/* selected for injection / RedQueen re-exec */
+	CMP_HYP_STATE_PROMOTED,		/* produced a PC-edge / transition / corpus win */
+	CMP_HYP_STATE_DEMOTED,		/* repeatedly consumed without useful outcome */
+	CMP_HYP_STATE_RETIRED,		/* stale, invalid, or superseded */
+	CMP_HYP_STATE_NR,
+};
+
+/*
+ * Common shape across every hypothesis kind.  Fields not relevant to a
+ * given kind are zero (e.g. mask is unused by CMP_HYP_EXACT, lo/hi by
+ * CMP_HYP_BITMASK).  Counters are saturating uint64_t for shadow-phase
+ * accumulation -- the active inference + feedback layers will land in
+ * the follow-up units and bound the lifetime + decay policy.
+ *
+ * cmp_ip is current-kernel-only and optional: cross-kernel persistence
+ * drops it on load (the kallsyms fingerprint on the on-disk file
+ * already invalidates IP keys across rebuilds), so consumers must
+ * tolerate a zero ip on a warm-started entry.
+ */
+struct cmp_hypothesis {
+	unsigned int nr;
+	bool do32;
+	uint8_t width;			/* operand width in bytes: 1, 2, 4, or 8 */
+	uint8_t kind;			/* enum cmp_hypothesis_kind */
+	uint8_t state;			/* enum cmp_hypothesis_state */
+	uint8_t score_bucket;
+	uint8_t pad[3];
+	uint64_t cmp_ip;
+	uint64_t lo;
+	uint64_t hi;
+	uint64_t mask;
+	uint64_t exemplar;
+	uint64_t seen_count;
+	uint64_t consumed_count;
+	uint64_t pc_wins;
+	uint64_t transition_wins;
+	uint64_t cmp_novelty_wins;
+	uint64_t misses;
+	uint64_t disabled_skips;
+	uint64_t last_used_generation;
+};
+
+/*
+ * Hard caps per syscall + per kind.  Keeps the store bounded under the
+ * worst-case fuzz workload: a single syscall whose comparisons explode
+ * across every kind can populate at most CMP_HYP_KIND_NR *
+ * CMP_HYP_PER_KIND entries, and no single kind can starve the others
+ * out of its slots.  Per-kind partitioning is enforced by the inference
+ * pass (next unit); the skeleton just reserves the headroom.
+ */
+#define CMP_HYP_PER_KIND	2U
+#define CMP_HYP_PER_SYSCALL	(CMP_HYP_KIND_NR * CMP_HYP_PER_KIND)
+
+struct cmp_hyp_pool {
+	unsigned int count;
+	unsigned int per_kind_count[CMP_HYP_KIND_NR];
+	struct cmp_hypothesis entries[CMP_HYP_PER_SYSCALL];
+};
+
+/*
  * Pool grid indexed by [syscall_nr][do32 ? 1 : 0].  Mirrors the arch
  * dimension already carried by cmp_hints_strip[2][MAX_NR_SYSCALL]:
  * under biarch, syscall nr=N under the 32-bit table and syscall nr=N
@@ -375,6 +463,11 @@ struct cmp_hints_shared {
 	 * init alongside the rest of the shm allocation; not persisted by
 	 * cmp_hints_save_file (the save path only writes pools[]). */
 	struct cmp_recent_pool recent_pools[MAX_NR_SYSCALL][2];
+	/* SHADOW typed-hypothesis store.  Zero-initialised by the same
+	 * memset that clears the rest of cmp_hints_shared; no consumer reads
+	 * it and no inference path writes it in this skeleton -- the
+	 * follow-up unit lands the observation-to-hypothesis inference. */
+	struct cmp_hyp_pool hyp_pools[MAX_NR_SYSCALL][2];
 };
 _Static_assert(MAX_NR_SYSCALL == 1024,
 	"cmp_hints_shared layout assumes MAX_NR_SYSCALL == 1024");
@@ -387,6 +480,21 @@ void cmp_hints_init(void);
 /* Extract comparison operands from a CMP-mode trace buffer and
  * add interesting constants to the hint pool for syscall nr. */
 void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32);
+
+/*
+ * SHADOW typed-hypothesis observation hook (skeleton).
+ *
+ * Called from cmp_hints_flush_pending() once per fresh insert into the
+ * durable per-syscall pool -- the same point cmp_recent_insert() is
+ * called -- so the hypothesis store sees every observation that landed
+ * in the canonical raw-hint ledger.  This skeleton is a NO-OP: it does
+ * not write the hyp_pools[] grid, does not bump cmp_hyp_* counters, and
+ * does not influence injection.  The follow-up inference unit drops
+ * the typed-hypothesis build inside this same call so observation-side
+ * wiring is decided once.
+ */
+void cmp_hyp_observe(unsigned int nr, bool do32, unsigned long cmp_ip,
+		     unsigned long value, unsigned int size);
 
 /*
  * Use-case taxonomy for the cmp-hint consumer.  cmp_hints_try_get_ex()

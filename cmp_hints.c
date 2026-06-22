@@ -363,6 +363,27 @@ void cmp_hints_init(void)
 	cmp_hints_field_record_self_check();
 }
 
+/*
+ * SHADOW typed-hypothesis observation hook -- skeleton.
+ *
+ * Wired into cmp_hints_flush_pending() once per fresh durable-pool
+ * insert (the same place cmp_recent_insert() is called).  The body is
+ * intentionally empty: this skeleton commit lands the storage layout
+ * + counter slots + call-site wiring with ZERO behaviour change, so the
+ * follow-up inference unit only has to fill the body in.  The argument
+ * names match the consumer-side contract the inference pass will rely
+ * on so the call sites do not need to be touched again.
+ */
+void cmp_hyp_observe(unsigned int nr, bool do32, unsigned long cmp_ip,
+		     unsigned long value, unsigned int size)
+{
+	(void) nr;
+	(void) do32;
+	(void) cmp_ip;
+	(void) value;
+	(void) size;
+}
+
 static void pool_lock(struct cmp_hint_pool *pool)
 {
 	if (cmp_hints_shm != NULL)
@@ -779,6 +800,13 @@ static unsigned int cmp_hints_flush_pending(struct cmp_hint_pool *pool,
 			 * writes recent_pools[nr][do32] is this exact path. */
 			cmp_recent_insert(nr, do32, batch[j].ip, batch[j].val,
 					  batch[j].size);
+			/* SHADOW typed-hypothesis observation hook.  No-op
+			 * skeleton: stays here so the next unit's inference
+			 * pass picks up every (nr, do32, ip, val, size) tuple
+			 * that landed in the canonical durable pool, without
+			 * a second walk over the trace buffer. */
+			cmp_hyp_observe(nr, do32, batch[j].ip, batch[j].val,
+					batch[j].size);
 		}
 	}
 	pool_unlock(pool);

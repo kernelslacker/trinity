@@ -6035,6 +6035,121 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	}
 
 	/*
+	 * SHADOW typed-CMP-hypothesis store render block.
+	 *
+	 * Self-contained mini-section so the skeleton's all-zero counters do
+	 * not need to be folded into the giant delta-gate above.  All eleven
+	 * counters read zero in this commit: the observation hook is a no-op
+	 * and no inference / consumer / feedback path bumps any of them yet.
+	 * The renders fire once the follow-up units land and the deltas
+	 * become non-zero; the section header itself is gated on any-delta
+	 * so the log stays quiet in the meantime.
+	 */
+	{
+		static unsigned long prev_hyp_observations;
+		static unsigned long prev_hyp_inserted;
+		static unsigned long prev_hyp_pool_full;
+		static unsigned long prev_hyp_kind_full;
+		static unsigned long prev_hyp_consumed;
+		static unsigned long prev_hyp_pc_wins;
+		static unsigned long prev_hyp_transition_wins;
+		static unsigned long prev_hyp_cmp_novelty_wins;
+		static unsigned long prev_hyp_misses;
+		static unsigned long prev_hyp_disabled_skips;
+		unsigned long cur_hyp_observations =
+			__atomic_load_n(&kcov_shm->cmp_hyp_observations, __ATOMIC_RELAXED);
+		unsigned long cur_hyp_inserted =
+			__atomic_load_n(&kcov_shm->cmp_hyp_inserted, __ATOMIC_RELAXED);
+		unsigned long cur_hyp_pool_full =
+			__atomic_load_n(&kcov_shm->cmp_hyp_pool_full, __ATOMIC_RELAXED);
+		unsigned long cur_hyp_kind_full =
+			__atomic_load_n(&kcov_shm->cmp_hyp_kind_full, __ATOMIC_RELAXED);
+		unsigned long cur_hyp_consumed =
+			__atomic_load_n(&kcov_shm->cmp_hyp_consumed, __ATOMIC_RELAXED);
+		unsigned long cur_hyp_pc_wins =
+			__atomic_load_n(&kcov_shm->cmp_hyp_pc_wins, __ATOMIC_RELAXED);
+		unsigned long cur_hyp_transition_wins =
+			__atomic_load_n(&kcov_shm->cmp_hyp_transition_wins, __ATOMIC_RELAXED);
+		unsigned long cur_hyp_cmp_novelty_wins =
+			__atomic_load_n(&kcov_shm->cmp_hyp_cmp_novelty_wins, __ATOMIC_RELAXED);
+		unsigned long cur_hyp_misses =
+			__atomic_load_n(&kcov_shm->cmp_hyp_misses, __ATOMIC_RELAXED);
+		unsigned long cur_hyp_disabled_skips =
+			__atomic_load_n(&kcov_shm->cmp_hyp_disabled_skips, __ATOMIC_RELAXED);
+		unsigned long delta_hyp_observations = cur_hyp_observations - prev_hyp_observations;
+		unsigned long delta_hyp_inserted = cur_hyp_inserted - prev_hyp_inserted;
+		unsigned long delta_hyp_pool_full = cur_hyp_pool_full - prev_hyp_pool_full;
+		unsigned long delta_hyp_kind_full = cur_hyp_kind_full - prev_hyp_kind_full;
+		unsigned long delta_hyp_consumed = cur_hyp_consumed - prev_hyp_consumed;
+		unsigned long delta_hyp_pc_wins = cur_hyp_pc_wins - prev_hyp_pc_wins;
+		unsigned long delta_hyp_transition_wins = cur_hyp_transition_wins - prev_hyp_transition_wins;
+		unsigned long delta_hyp_cmp_novelty_wins = cur_hyp_cmp_novelty_wins - prev_hyp_cmp_novelty_wins;
+		unsigned long delta_hyp_misses = cur_hyp_misses - prev_hyp_misses;
+		unsigned long delta_hyp_disabled_skips = cur_hyp_disabled_skips - prev_hyp_disabled_skips;
+		unsigned long delta_hyp_state[CMP_HYP_STATE_NR];
+		unsigned long cur_hyp_state[CMP_HYP_STATE_NR];
+		static unsigned long prev_hyp_state[CMP_HYP_STATE_NR];
+		bool any_state_delta = false;
+		unsigned int s;
+
+		for (s = 0; s < CMP_HYP_STATE_NR; s++) {
+			cur_hyp_state[s] = __atomic_load_n(
+				&kcov_shm->cmp_hyp_state_transitions[s],
+				__ATOMIC_RELAXED);
+			delta_hyp_state[s] = cur_hyp_state[s] - prev_hyp_state[s];
+			if (delta_hyp_state[s] != 0)
+				any_state_delta = true;
+		}
+
+		if ((delta_hyp_observations | delta_hyp_inserted | delta_hyp_pool_full |
+		     delta_hyp_kind_full | delta_hyp_consumed | delta_hyp_pc_wins |
+		     delta_hyp_transition_wins | delta_hyp_cmp_novelty_wins |
+		     delta_hyp_misses | delta_hyp_disabled_skips) != 0 || any_state_delta) {
+			stats_log_write("KCOV CMP hyp shadow stats over last %lds:\n", elapsed);
+			stats_log_write("  %-32s +%lu  (total %lu)\n",
+					"cmp_hyp_observations", delta_hyp_observations, cur_hyp_observations);
+			stats_log_write("  %-32s +%lu  (total %lu)\n",
+					"cmp_hyp_inserted", delta_hyp_inserted, cur_hyp_inserted);
+			stats_log_write("  %-32s +%lu  (total %lu)\n",
+					"cmp_hyp_pool_full", delta_hyp_pool_full, cur_hyp_pool_full);
+			stats_log_write("  %-32s +%lu  (total %lu)\n",
+					"cmp_hyp_kind_full", delta_hyp_kind_full, cur_hyp_kind_full);
+			stats_log_write("  %-32s +%lu  (total %lu)\n",
+					"cmp_hyp_consumed", delta_hyp_consumed, cur_hyp_consumed);
+			stats_log_write("  %-32s +%lu  (total %lu)\n",
+					"cmp_hyp_pc_wins", delta_hyp_pc_wins, cur_hyp_pc_wins);
+			stats_log_write("  %-32s +%lu  (total %lu)\n",
+					"cmp_hyp_transition_wins",
+					delta_hyp_transition_wins, cur_hyp_transition_wins);
+			stats_log_write("  %-32s +%lu  (total %lu)\n",
+					"cmp_hyp_cmp_novelty_wins",
+					delta_hyp_cmp_novelty_wins, cur_hyp_cmp_novelty_wins);
+			stats_log_write("  %-32s +%lu  (total %lu)\n",
+					"cmp_hyp_misses", delta_hyp_misses, cur_hyp_misses);
+			stats_log_write("  %-32s +%lu  (total %lu)\n",
+					"cmp_hyp_disabled_skips",
+					delta_hyp_disabled_skips, cur_hyp_disabled_skips);
+			for (s = 0; s < CMP_HYP_STATE_NR; s++) {
+				stats_log_write("  cmp_hyp_state_transitions[%u]    +%lu  (total %lu)\n",
+						s, delta_hyp_state[s], cur_hyp_state[s]);
+			}
+		}
+
+		prev_hyp_observations = cur_hyp_observations;
+		prev_hyp_inserted = cur_hyp_inserted;
+		prev_hyp_pool_full = cur_hyp_pool_full;
+		prev_hyp_kind_full = cur_hyp_kind_full;
+		prev_hyp_consumed = cur_hyp_consumed;
+		prev_hyp_pc_wins = cur_hyp_pc_wins;
+		prev_hyp_transition_wins = cur_hyp_transition_wins;
+		prev_hyp_cmp_novelty_wins = cur_hyp_cmp_novelty_wins;
+		prev_hyp_misses = cur_hyp_misses;
+		prev_hyp_disabled_skips = cur_hyp_disabled_skips;
+		for (s = 0; s < CMP_HYP_STATE_NR; s++)
+			prev_hyp_state[s] = cur_hyp_state[s];
+	}
+
+	/*
 	 * Standalone grep-friendly cumulative lines for counters whose only
 	 * stat output above is delta-gated (skipped at zero) and whose bare
 	 * tokens recur in narrative -- JSON dumps, header comments, atomic
