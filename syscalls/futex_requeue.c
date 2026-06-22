@@ -51,6 +51,7 @@ static void sanitise_futex_requeue(struct syscallrecord *rec)
 	waiters[1].flags = waitv_flags;
 
 	rec->a1 = (unsigned long) waiters;
+	avoid_shared_buffer_inout(&rec->a1, 2 * sizeof(*waiters));
 	rec->a2 = 0;	/* no flags defined yet */
 }
 
