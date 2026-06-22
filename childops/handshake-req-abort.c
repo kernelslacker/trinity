@@ -252,6 +252,14 @@ bool handshake_req_abort(struct childdata *child)
 	unsigned int i;
 	int rc;
 
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	__atomic_add_fetch(&shm->stats.handshake_req_abort_runs,
 			   1, __ATOMIC_RELAXED);
 
@@ -270,9 +278,10 @@ bool handshake_req_abort(struct childdata *child)
 	if (rc != 0) {
 		if (rc == -ENOENT) {
 			ns_unsupported_handshake = true;
-			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-					 CHILDOP_LATCH_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			if (valid_op)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 		}
 		__atomic_add_fetch(&shm->stats.handshake_req_abort_setup_failed,
 				   1, __ATOMIC_RELAXED);
@@ -286,14 +295,16 @@ bool handshake_req_abort(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 		goto out;
 	}
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
 
 	/* 3) Non-blocking ACCEPT probe — exercises the per-net request-
 	 *    table walk under hs_lock.  Counted regardless of ack errno
 	 *    (EAGAIN is the ordinary outcome). */
-	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
 	(void)handshake_accept(&ctx);
 	__atomic_add_fetch(&shm->stats.handshake_req_abort_accept_ok,
 			   1, __ATOMIC_RELAXED);
