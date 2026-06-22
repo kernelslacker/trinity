@@ -101,6 +101,7 @@ static void sanitise_futex_waitv(struct syscallrecord *rec)
 	}
 
 	rec->a1 = (unsigned long) waiters;
+	avoid_shared_buffer_inout(&rec->a1, nr * sizeof(*waiters));
 	rec->a2 = nr;
 	rec->a3 = 0;
 
