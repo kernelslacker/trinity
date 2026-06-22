@@ -36,6 +36,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -305,30 +306,96 @@ static void discover_tracers(void)
 	}
 }
 
-static void write_text_payload(const char *path)
+/*
+ * Per-ARM write outcomes.  Each do_*() handler attributes its single
+ * dispatch attempt to exactly one of:
+ *
+ *   OUTCOME_OPEN_FAIL   - open(O_WRONLY|O_NONBLOCK) returned < 0
+ *                         (tracefs not mounted, EACCES after uid/cap drop,
+ *                         ENOENT on a per-event enable unloaded mid-run, ...)
+ *   OUTCOME_WRITE_FAIL  - open() succeeded, write() returned < 0
+ *                         (EINVAL on a malformed probe spec, EBUSY, ...)
+ *   OUTCOME_WRITE_OK    - open() succeeded, write() returned >= 0
+ *                         (the byte actually reached the kernel parser)
+ *
+ * write_fail + write_ok == old per-ARM counter; open_fail is information
+ * that was previously dropped on the floor.
+ */
+enum write_outcome {
+	OUTCOME_OPEN_FAIL = 0,
+	OUTCOME_WRITE_FAIL,
+	OUTCOME_WRITE_OK,
+};
+
+enum tracefs_arm {
+	ARM_KPROBE = 0,
+	ARM_UPROBE,
+	ARM_FILTER,
+	ARM_EVENT_ENABLE,
+	ARM_MISC,
+	NR_TRACEFS_ARMS,
+};
+
+static void bump_arm_counter(enum tracefs_arm arm, enum write_outcome outcome)
+{
+	static const size_t offsets[NR_TRACEFS_ARMS][3] = {
+		[ARM_KPROBE] = {
+			[OUTCOME_OPEN_FAIL]  = offsetof(struct stats_s, tracefs_kprobe_writes_open_fail),
+			[OUTCOME_WRITE_FAIL] = offsetof(struct stats_s, tracefs_kprobe_writes_write_fail),
+			[OUTCOME_WRITE_OK]   = offsetof(struct stats_s, tracefs_kprobe_writes_write_ok),
+		},
+		[ARM_UPROBE] = {
+			[OUTCOME_OPEN_FAIL]  = offsetof(struct stats_s, tracefs_uprobe_writes_open_fail),
+			[OUTCOME_WRITE_FAIL] = offsetof(struct stats_s, tracefs_uprobe_writes_write_fail),
+			[OUTCOME_WRITE_OK]   = offsetof(struct stats_s, tracefs_uprobe_writes_write_ok),
+		},
+		[ARM_FILTER] = {
+			[OUTCOME_OPEN_FAIL]  = offsetof(struct stats_s, tracefs_filter_writes_open_fail),
+			[OUTCOME_WRITE_FAIL] = offsetof(struct stats_s, tracefs_filter_writes_write_fail),
+			[OUTCOME_WRITE_OK]   = offsetof(struct stats_s, tracefs_filter_writes_write_ok),
+		},
+		[ARM_EVENT_ENABLE] = {
+			[OUTCOME_OPEN_FAIL]  = offsetof(struct stats_s, tracefs_event_enable_writes_open_fail),
+			[OUTCOME_WRITE_FAIL] = offsetof(struct stats_s, tracefs_event_enable_writes_write_fail),
+			[OUTCOME_WRITE_OK]   = offsetof(struct stats_s, tracefs_event_enable_writes_write_ok),
+		},
+		[ARM_MISC] = {
+			[OUTCOME_OPEN_FAIL]  = offsetof(struct stats_s, tracefs_misc_writes_open_fail),
+			[OUTCOME_WRITE_FAIL] = offsetof(struct stats_s, tracefs_misc_writes_write_fail),
+			[OUTCOME_WRITE_OK]   = offsetof(struct stats_s, tracefs_misc_writes_write_ok),
+		},
+	};
+	unsigned long *p = (unsigned long *)((char *)&shm->stats + offsets[arm][outcome]);
+
+	__atomic_add_fetch(p, 1, __ATOMIC_RELAXED);
+}
+
+static enum write_outcome write_text_payload(const char *path)
 {
 	char buf[256];
 	unsigned int len;
 	int fd;
-	ssize_t ret __unused__;
+	ssize_t ret;
 
 	fd = open(path, O_WRONLY | O_NONBLOCK);
 	if (fd < 0)
-		return;
+		return OUTCOME_OPEN_FAIL;
 	len = gen_text_payload(buf, sizeof(buf));
 	ret = write(fd, buf, len);
 	close(fd);
+	return ret < 0 ? OUTCOME_WRITE_FAIL : OUTCOME_WRITE_OK;
 }
 
-static void write_str(const char *path, const char *str)
+static enum write_outcome write_str(const char *path, const char *str)
 {
 	int fd = open(path, O_WRONLY | O_NONBLOCK);
-	ssize_t ret __unused__;
+	ssize_t ret;
 
 	if (fd < 0)
-		return;
+		return OUTCOME_OPEN_FAIL;
 	ret = write(fd, str, strlen(str));
 	close(fd);
+	return ret < 0 ? OUTCOME_WRITE_FAIL : OUTCOME_WRITE_OK;
 }
 
 
@@ -346,7 +413,7 @@ static void do_kprobe_events(void)
 	const char *sym;
 	unsigned int probe_num;
 	int fd;
-	ssize_t ret __unused__;
+	ssize_t ret;
 
 	snprintf(path, sizeof(path), "%s/kprobe_events", tracefs_root);
 
@@ -380,20 +447,20 @@ static void do_kprobe_events(void)
 		 * and long strings reach deeper into the parser than random bytes
 		 * that fail at the first character.
 		 */
-		write_text_payload(path);
-		__atomic_add_fetch(&shm->stats.tracefs_kprobe_writes,
-				   1, __ATOMIC_RELAXED);
+		bump_arm_counter(ARM_KPROBE, write_text_payload(path));
 		return;
 	}
 
 	fd = open(path, O_WRONLY | O_NONBLOCK);
-	if (fd < 0)
+	if (fd < 0) {
+		bump_arm_counter(ARM_KPROBE, OUTCOME_OPEN_FAIL);
 		return;
+	}
 	ret = write(fd, spec, strlen(spec));
 	close(fd);
 
-	__atomic_add_fetch(&shm->stats.tracefs_kprobe_writes,
-			   1, __ATOMIC_RELAXED);
+	bump_arm_counter(ARM_KPROBE,
+			 ret < 0 ? OUTCOME_WRITE_FAIL : OUTCOME_WRITE_OK);
 }
 
 /*
@@ -408,7 +475,7 @@ static void do_uprobe_events(void)
 	unsigned int probe_num;
 	unsigned long offset;
 	int fd;
-	ssize_t ret __unused__;
+	ssize_t ret;
 
 	snprintf(path, sizeof(path), "%s/uprobe_events", tracefs_root);
 
@@ -433,20 +500,20 @@ static void do_uprobe_events(void)
 		snprintf(spec, sizeof(spec), "-:trinity_u%u", probe_num);
 		break;
 	default:
-		write_text_payload(path);
-		__atomic_add_fetch(&shm->stats.tracefs_uprobe_writes,
-				   1, __ATOMIC_RELAXED);
+		bump_arm_counter(ARM_UPROBE, write_text_payload(path));
 		return;
 	}
 
 	fd = open(path, O_WRONLY | O_NONBLOCK);
-	if (fd < 0)
+	if (fd < 0) {
+		bump_arm_counter(ARM_UPROBE, OUTCOME_OPEN_FAIL);
 		return;
+	}
 	ret = write(fd, spec, strlen(spec));
 	close(fd);
 
-	__atomic_add_fetch(&shm->stats.tracefs_uprobe_writes,
-			   1, __ATOMIC_RELAXED);
+	bump_arm_counter(ARM_UPROBE,
+			 ret < 0 ? OUTCOME_WRITE_FAIL : OUTCOME_WRITE_OK);
 }
 
 /*
@@ -471,8 +538,9 @@ static void do_ftrace_filter(void)
 	};
 	const char *path = RAND_ARRAY(filter_files);
 	char spec[128];
+	enum write_outcome outcome;
 	int fd;
-	ssize_t ret __unused__;
+	ssize_t ret;
 
 	switch (rnd_modulo_u32(4)) {
 	case 0: {
@@ -480,10 +548,13 @@ static void do_ftrace_filter(void)
 		const char *s = RAND_ARRAY(globs);
 
 		fd = open(path, O_WRONLY | O_NONBLOCK);
-		if (fd < 0)
+		if (fd < 0) {
+			outcome = OUTCOME_OPEN_FAIL;
 			break;
+		}
 		ret = write(fd, s, strlen(s));
 		close(fd);
+		outcome = ret < 0 ? OUTCOME_WRITE_FAIL : OUTCOME_WRITE_OK;
 		break;
 	}
 	case 1: {
@@ -491,15 +562,18 @@ static void do_ftrace_filter(void)
 		const char *s = RAND_ARRAY(kprobe_targets);
 
 		fd = open(path, O_WRONLY | O_NONBLOCK);
-		if (fd < 0)
+		if (fd < 0) {
+			outcome = OUTCOME_OPEN_FAIL;
 			break;
+		}
 		ret = write(fd, s, strlen(s));
 		close(fd);
+		outcome = ret < 0 ? OUTCOME_WRITE_FAIL : OUTCOME_WRITE_OK;
 		break;
 	}
 	case 2:
 		/* Clear filter by writing empty string */
-		write_str(path, "");
+		outcome = write_str(path, "");
 		break;
 	default:
 		/*
@@ -512,15 +586,14 @@ static void do_ftrace_filter(void)
 				 'a' + rnd_modulo_u32(26),
 				 'a' + rnd_modulo_u32(26),
 				 'a' + rnd_modulo_u32(26));
-			write_str(path, spec);
+			outcome = write_str(path, spec);
 		} else {
-			write_text_payload(path);
+			outcome = write_text_payload(path);
 		}
 		break;
 	}
 
-	__atomic_add_fetch(&shm->stats.tracefs_filter_writes,
-			   1, __ATOMIC_RELAXED);
+	bump_arm_counter(ARM_FILTER, outcome);
 }
 
 /* Write to an events subsystem enable file -- toggles tracing for a subsystem. */
@@ -532,10 +605,9 @@ static void do_event_enable(void)
 		return;
 
 	val = RAND_BOOL() ? "1" : "0";
-	write_str(event_enable_paths[rnd_modulo_u32(nr_event_enables)], val);
-
-	__atomic_add_fetch(&shm->stats.tracefs_event_enable_writes,
-			   1, __ATOMIC_RELAXED);
+	bump_arm_counter(ARM_EVENT_ENABLE,
+			 write_str(event_enable_paths[rnd_modulo_u32(nr_event_enables)],
+				   val));
 }
 
 /* Write a trace_option name (with optional "no" prefix) to trace_options. */
@@ -553,26 +625,24 @@ static void do_trace_options(void)
 		snprintf(option, sizeof(option), "no%s",
 			 RAND_ARRAY(trace_option_names));
 
-	write_str(path, option);
-	__atomic_add_fetch(&shm->stats.tracefs_misc_writes,
-			   1, __ATOMIC_RELAXED);
+	bump_arm_counter(ARM_MISC, write_str(path, option));
 }
 
 /* Switch the current tracer -- exercises the tracer registration path. */
 static void do_current_tracer(void)
 {
 	char path[TRACEFS_MAX_PATH];
+	enum write_outcome outcome;
 
 	snprintf(path, sizeof(path), "%s/current_tracer", tracefs_root);
 
 	if (nr_discovered_tracers > 0 && !ONE_IN(8))
-		write_str(path,
-			  discovered_tracers[rnd_modulo_u32(nr_discovered_tracers)]);
+		outcome = write_str(path,
+				    discovered_tracers[rnd_modulo_u32(nr_discovered_tracers)]);
 	else
-		write_str(path, RAND_ARRAY(tracer_names));
+		outcome = write_str(path, RAND_ARRAY(tracer_names));
 
-	__atomic_add_fetch(&shm->stats.tracefs_misc_writes,
-			   1, __ATOMIC_RELAXED);
+	bump_arm_counter(ARM_MISC, outcome);
 }
 
 /* Toggle tracing on/off. */
@@ -581,10 +651,7 @@ static void do_tracing_on(void)
 	char path[TRACEFS_MAX_PATH];
 
 	snprintf(path, sizeof(path), "%s/tracing_on", tracefs_root);
-	write_str(path, RAND_BOOL() ? "1" : "0");
-
-	__atomic_add_fetch(&shm->stats.tracefs_misc_writes,
-			   1, __ATOMIC_RELAXED);
+	bump_arm_counter(ARM_MISC, write_str(path, RAND_BOOL() ? "1" : "0"));
 }
 
 /* Resize the ring buffer -- exercises the buffer reallocation path. */
@@ -598,10 +665,7 @@ static void do_buffer_size(void)
 
 	snprintf(path, sizeof(path), "%s/buffer_size_kb", tracefs_root);
 	snprintf(val, sizeof(val), "%u", RAND_ARRAY(sizes));
-	write_str(path, val);
-
-	__atomic_add_fetch(&shm->stats.tracefs_misc_writes,
-			   1, __ATOMIC_RELAXED);
+	bump_arm_counter(ARM_MISC, write_str(path, val));
 }
 
 /*

@@ -766,12 +766,31 @@ struct stats_s {
 	unsigned long perf_chains_groups_created;	/* group leader fd opened successfully */
 	unsigned long perf_chains_ioctl_ops;	/* PERF_EVENT_IOC_* calls made */
 
-	/* tracefs_fuzzer childop counters */
-	unsigned long tracefs_kprobe_writes;		/* writes to kprobe_events */
-	unsigned long tracefs_uprobe_writes;		/* writes to uprobe_events */
-	unsigned long tracefs_filter_writes;		/* writes to set_ftrace_filter/notrace/graph */
-	unsigned long tracefs_event_enable_writes;	/* writes to events subsystem enable files */
-	unsigned long tracefs_misc_writes;		/* trace_options, current_tracer, etc. */
+	/* tracefs_fuzzer childop counters, per-ARM, split by outcome.
+	 * The single per-ARM counter only recorded which ARM was selected;
+	 * it could not distinguish open-fail (tracefs not mounted, EACCES,
+	 * ENOENT on a per-event enable that was unloaded mid-run) from
+	 * write-fail (EINVAL on a malformed probe spec, EBUSY, ...) from
+	 * write-OK (the bytes actually reached the kernel parser).  Split
+	 * into open-fail / write-fail / write-OK so the dump shows real
+	 * reach into each tracefs surface.
+	 * write_fail + write_ok == old per-ARM counter; open_fail is
+	 * information that was previously dropped. */
+	unsigned long tracefs_kprobe_writes_open_fail;		/* writes to kprobe_events */
+	unsigned long tracefs_kprobe_writes_write_fail;
+	unsigned long tracefs_kprobe_writes_write_ok;
+	unsigned long tracefs_uprobe_writes_open_fail;		/* writes to uprobe_events */
+	unsigned long tracefs_uprobe_writes_write_fail;
+	unsigned long tracefs_uprobe_writes_write_ok;
+	unsigned long tracefs_filter_writes_open_fail;		/* writes to set_ftrace_filter/notrace/graph */
+	unsigned long tracefs_filter_writes_write_fail;
+	unsigned long tracefs_filter_writes_write_ok;
+	unsigned long tracefs_event_enable_writes_open_fail;	/* writes to events subsystem enable files */
+	unsigned long tracefs_event_enable_writes_write_fail;
+	unsigned long tracefs_event_enable_writes_write_ok;
+	unsigned long tracefs_misc_writes_open_fail;		/* trace_options, current_tracer, etc. */
+	unsigned long tracefs_misc_writes_write_fail;
+	unsigned long tracefs_misc_writes_write_ok;
 
 	/* bpf_lifecycle childop counters */
 	unsigned long bpf_lifecycle_runs;		/* total bpf_lifecycle invocations */
