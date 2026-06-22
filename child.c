@@ -2440,6 +2440,79 @@ static void adapt_budget(enum child_op_type op_type,
 }
 
 /*
+ * Aggregated per-childop outcome record (see struct childop_outcome in
+ * include/child.h for the field contract).  Snapshots existing shm
+ * counters into one coherent view so downstream policy units (clean /
+ * noisy scores, WOULD-DEMOTE recommendations) consume a single record
+ * instead of scraping a dozen parallel arrays.
+ *
+ * Telemetry-only: no scheduler decision currently reads this snapshot.
+ * Fields whose producer is not yet wired stay at 0 / false; the
+ * subtraction-derived slots clamp at zero because the source counters
+ * race under multi-producer RELAXED updates and a few childops bump
+ * setup_accepted more than once per dispatch (the existing setup-yield
+ * permille dump in dump_stats() clamps for the same reason).
+ */
+void childop_outcome_snapshot(enum child_op_type op,
+			      struct childop_outcome *out)
+{
+	unsigned long invocations, setup_accepted, discovered, clean;
+
+	memset(out, 0, sizeof(*out));
+	out->op = op;
+
+	if (op >= NR_CHILD_OP_TYPES)
+		return;
+
+	invocations = __atomic_load_n(&shm->stats.childop_invocations[op],
+				      __ATOMIC_RELAXED);
+	setup_accepted = __atomic_load_n(&shm->stats.childop_setup_accepted[op],
+					 __ATOMIC_RELAXED);
+	discovered = __atomic_load_n(&shm->stats.childop_edges_discovered[op],
+				     __ATOMIC_RELAXED);
+	clean = __atomic_load_n(&shm->stats.childop_edges_clean[op],
+				__ATOMIC_RELAXED);
+
+	out->clean_edges = clean;
+	out->noisy_edges = (discovered > clean) ? (discovered - clean) : 0;
+	out->wedges = (uint32_t)__atomic_load_n(
+			&shm->stats.childop_wedge_count[op], __ATOMIC_RELAXED);
+	out->setup_failures = (invocations > setup_accepted)
+		? (uint32_t)(invocations - setup_accepted) : 0;
+	out->taint_transition = __atomic_load_n(
+			&shm->stats.taint_transitions[op], __ATOMIC_RELAXED) > 0;
+}
+
+void childop_outcome_window_dump(void)
+{
+	enum child_op_type op;
+
+	for (op = CHILD_OP_SYSCALL + 1; op < NR_CHILD_OP_TYPES; op++) {
+		struct childop_outcome rec;
+		unsigned long invocations, latch;
+
+		invocations = __atomic_load_n(
+				&shm->stats.childop_invocations[op],
+				__ATOMIC_RELAXED);
+		if (invocations == 0)
+			continue;
+
+		childop_outcome_snapshot(op, &rec);
+		latch = __atomic_load_n(
+				&shm->stats.childop_latch_reason[op],
+				__ATOMIC_RELAXED);
+
+		output(1,
+		       "childop_window %s: invocations=%lu wall_ns=%lu clean_edges=%lu noisy_edges=%lu wedges=%u crashes=%u setup_failures=%u latch=%lu\n",
+		       alt_op_name(op), invocations,
+		       (unsigned long)rec.wall_ns,
+		       (unsigned long)rec.clean_edges,
+		       (unsigned long)rec.noisy_edges,
+		       rec.wedges, rec.crashes, rec.setup_failures, latch);
+	}
+}
+
+/*
  * Dispatch table for the per-iteration childop call.  Indexed by
  * enum child_op_type; a NULL slot means "fall through to the
  * sequence-chain path" (CHILD_OP_SYSCALL is handled by the 95% fast
