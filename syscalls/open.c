@@ -19,11 +19,16 @@ static unsigned long open_o_flags_base[] = {
 	O_RDONLY, O_WRONLY, O_RDWR, O_CREAT,
 };
 
+#ifndef O_EMPTYPATH
+#define O_EMPTYPATH 0x4000000
+#endif
+
 static const unsigned long o_flags[] = {
 	O_EXCL, O_NOCTTY, O_TRUNC, O_APPEND,
 	O_NONBLOCK, O_SYNC, O_ASYNC, O_DIRECTORY,
 	O_NOFOLLOW, O_CLOEXEC, O_DIRECT, O_NOATIME,
 	O_PATH, O_DSYNC, O_LARGEFILE, O_TMPFILE,
+	O_EMPTYPATH,
 };
 
 /*
