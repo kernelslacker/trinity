@@ -2649,9 +2649,19 @@ static void cmp_hints_stash_consumed(unsigned int nr, bool do32,
 			age_bucket : (uint8_t)(CMP_HINT_AGE_BUCKETS - 1U);
 	e->pad[0] = 0;
 
-	if (kcov_shm != NULL)
+	if (kcov_shm != NULL) {
 		__atomic_fetch_add(&kcov_shm->cmp_hints_consumed, 1UL,
 				   __ATOMIC_RELAXED);
+		/* SHADOW old-flat-pool by-kind partition.  Bumped here next
+		 * to the flat consumed counter so the per-pool denominator is
+		 * tracked in lock-step with the global denominator the
+		 * existing dump path already exposes.  pool_kind has already
+		 * been clamped into enum range by the assignment above. */
+		if ((unsigned int)pool_kind < CMP_HINT_POOL_KIND_NR)
+			__atomic_fetch_add(
+				&kcov_shm->cmp_hint_consumed_by_pool[pool_kind],
+				1UL, __ATOMIC_RELAXED);
+	}
 
 	/* SHADOW hypothesis-layer consume credit.  Resolves the would-have-
 	 * been-chosen hypothesis from the same (cmp_ip, value, size) tuple
@@ -3366,6 +3376,19 @@ void cmp_hints_feedback_credit_pc(bool outcome_win)
 			break;
 		}
 
+		/* SHADOW old-flat-pool by-kind PC outcome partition.  Per-
+		 * stash-entry bump (the flat cmp_hint_wins / cmp_hint_misses
+		 * counters above bump once per parent dispatch) so a dispatch
+		 * that stashed hints from both per-syscall and field pools
+		 * lands its PC outcome on each kind's column.  Matches the
+		 * per-tier discipline already used by cmp_hint_tier_*_wins. */
+		if (kcov_shm != NULL &&
+		    e->pool_kind < CMP_HINT_POOL_KIND_NR)
+			__atomic_fetch_add(outcome_win ?
+				&kcov_shm->cmp_hint_pc_wins_by_pool[e->pool_kind] :
+				&kcov_shm->cmp_hint_misses_by_pool[e->pool_kind],
+				1UL, __ATOMIC_RELAXED);
+
 		/* SHADOW hypothesis-layer outcome credit.  Layered on top of
 		 * the per-pool credit above so a PC-edge win / miss attributed
 		 * to a pool entry also lands on the would-have-been-chosen
@@ -3455,6 +3478,17 @@ void cmp_hints_feedback_credit_cmp_novelty(void)
 		cmp_hyp_credit_outcome(e->nr, e->do32 != 0, e->cmp_ip,
 				       e->value, e->size,
 				       CMP_HYP_OUTCOME_CMP_NOVELTY);
+
+		/* SHADOW old-flat-pool by-kind CMP-novelty partition.  Kept
+		 * SEPARATE from the PC-outcome partition above so harvested-
+		 * but-flat novelty cannot masquerade as PC-edge conversion --
+		 * mirrors the flat cmp_hint_cmp_novelty_wins vs cmp_hint_wins
+		 * split and the typed cmp_hyp_cmp_novelty_wins discipline. */
+		if (kcov_shm != NULL &&
+		    e->pool_kind < CMP_HINT_POOL_KIND_NR)
+			__atomic_fetch_add(
+				&kcov_shm->cmp_hint_cmp_novelty_wins_by_pool[e->pool_kind],
+				1UL, __ATOMIC_RELAXED);
 	}
 
 	child->cmp_hints_consumed_count = 0;

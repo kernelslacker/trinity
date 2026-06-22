@@ -2142,6 +2142,51 @@ struct kcov_shared {
 	 * when cmp_hyp_kind_full dominates.  SHADOW telemetry only -- no
 	 * consumer reads it. */
 	unsigned long cmp_hyp_kind_full_by_kind[CMP_HYP_KIND_NR];
+
+	/*
+	 * SHADOW old-flat-pool conversion baseline counters, partitioned by
+	 * pool kind so the per-syscall pool and the field-scoped pool are
+	 * directly comparable to each other and to the typed-hypothesis store
+	 * above.  Together with the per-syscall cmp_hint_* arrays already in
+	 * this struct, this is the proof side of the t75 row: "does the typed
+	 * store predict better-converting picks than the flat pool".  Live
+	 * inject path is unchanged -- these counters bump alongside the
+	 * existing flat cmp_hint_* / cmp_hints_consumed credit drains using
+	 * the pool_kind already carried on each stash entry.
+	 *
+	 * Semantics differ from the flat cmp_hint_wins / cmp_hint_misses by
+	 * design: the flat counters bump ONCE per parent dispatch (the
+	 * call-level outcome); the by-pool partitions bump ONCE PER STASHED
+	 * ENTRY, mirroring the per-tier cmp_hint_tier_* discipline.  A
+	 * dispatch that stashed two hints from different pool kinds bumps
+	 * both kinds' counters once each, so SUM(by_pool[*]) for a given
+	 * outcome can exceed the matching flat counter.  Consumers compute
+	 * conversion as
+	 *     pc_wins_by_pool[k] / (pc_wins_by_pool[k] + misses_by_pool[k])
+	 * which is per-pool-kind and per-stash-entry, the cohort the
+	 * follow-up live-pick weight would actually score.
+	 *
+	 *  cmp_hint_consumed_by_pool[k]
+	 *      Per-pool-kind partition of cmp_hints_consumed.  Bumped from
+	 *      cmp_hints_stash_consumed() once per successful try_get pull
+	 *      using the pool_kind argument the caller already provides.
+	 *      Denominator for the per-pool conversion ratio above.
+	 *  cmp_hint_pc_wins_by_pool[k] / cmp_hint_misses_by_pool[k]
+	 *      Per-pool-kind partition of cmp_hint_wins / cmp_hint_misses,
+	 *      bumped per stashed entry from cmp_hints_feedback_credit_pc()
+	 *      using the stashed entry's pool_kind.  PC-edge only.
+	 *  cmp_hint_cmp_novelty_wins_by_pool[k]
+	 *      Per-pool-kind partition of cmp_hint_cmp_novelty_wins, bumped
+	 *      per stashed entry from cmp_hints_feedback_credit_cmp_novelty().
+	 *      Kept SEPARATE from the PC partition so CMP novelty cannot
+	 *      masquerade as PC-edge conversion (same discipline as the flat
+	 *      cmp_hint_cmp_novelty_wins counter and the typed
+	 *      cmp_hyp_cmp_novelty_wins counter).
+	 */
+	unsigned long cmp_hint_consumed_by_pool[CMP_HINT_POOL_KIND_NR];
+	unsigned long cmp_hint_pc_wins_by_pool[CMP_HINT_POOL_KIND_NR];
+	unsigned long cmp_hint_misses_by_pool[CMP_HINT_POOL_KIND_NR];
+	unsigned long cmp_hint_cmp_novelty_wins_by_pool[CMP_HINT_POOL_KIND_NR];
 };
 
 extern struct kcov_shared *kcov_shm;
