@@ -122,20 +122,30 @@ bool pipe_thrash(struct childdata *child)
 	unsigned int iter;
 	unsigned int iters = BUDGETED(CHILD_OP_PIPE_THRASH, JITTER_RANGE(MAX_ITERATIONS));
 
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
 	__atomic_add_fetch(&shm->stats.pipe_thrash_runs, 1, __ATOMIC_RELAXED);
 
 	clock_gettime(CLOCK_MONOTONIC, &start);
 
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
 	for (iter = 0; iter < iters; iter++) {
 		int pair[2] = { -1, -1 };
 		int rc;
-		unsigned int op = rnd_modulo_u32(3);
+		unsigned int which = rnd_modulo_u32(3);
 
-		switch (op) {
+		switch (which) {
 		case 0:
 			rc = pipe(pair);
 			if (rc == 0)
