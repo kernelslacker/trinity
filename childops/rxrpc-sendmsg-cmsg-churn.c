@@ -302,6 +302,13 @@ bool rxrpc_sendmsg_cmsg_churn(struct childdata *child)
 	bool have_peer;
 	int fd;
 	int rc;
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	__atomic_add_fetch(&shm->stats.rxrpc_sendmsg_cmsg_runs,
 			   1, __ATOMIC_RELAXED);
@@ -317,9 +324,10 @@ bool rxrpc_sendmsg_cmsg_churn(struct childdata *child)
 		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT ||
 		    errno == ENOPROTOOPT) {
 			ns_rxrpc_unsupported = true;
-			__atomic_store_n(&shm->stats.childop_latch_reason[child->op_type],
-					 CHILDOP_LATCH_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
+			if (valid_op)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
 		}
 		__atomic_add_fetch(&shm->stats.rxrpc_sendmsg_cmsg_socket_failed,
 				   1, __ATOMIC_RELAXED);
@@ -351,8 +359,9 @@ bool rxrpc_sendmsg_cmsg_churn(struct childdata *child)
 		return true;
 	}
 
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
 
 	have_peer = RAND_BOOL();
 	if (have_peer) {
@@ -370,8 +379,9 @@ bool rxrpc_sendmsg_cmsg_churn(struct childdata *child)
 	__atomic_add_fetch(&shm->stats.rxrpc_sendmsg_cmsg_sent[slot],
 			   1, __ATOMIC_RELAXED);
 
-	__atomic_add_fetch(&shm->stats.childop_data_path[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
 
 	rc = send_one_cmsg(fd, &peer, have_peer, slot);
 	if (rc == 0)
