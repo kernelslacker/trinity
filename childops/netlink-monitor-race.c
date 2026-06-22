@@ -520,13 +520,12 @@ bool netlink_monitor_race(struct childdata *child)
 	if (netlink_monitor_race_iter_open_mutator(&ctx) != 0)
 		goto out;
 
-	if (valid_op)
+	if (valid_op) {
 		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
-
-	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop_data_path[op],
 				   1, __ATOMIC_RELAXED);
+	}
 	netlink_monitor_race_iter_address_burst(&ctx);
 	netlink_monitor_race_iter_membership_churn(&ctx);
 	netlink_monitor_race_iter_final_burst(&ctx);

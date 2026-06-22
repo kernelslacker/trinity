@@ -6,7 +6,7 @@
 # NEVER grow.  Refreshed for line-drift after the 2026-06-05 review waves.
 #
 childops/af-alg-template-probe.c:208:af_alg_template_probe
-childops/af-alg-template-probe.c:230:af_alg_template_probe
+childops/af-alg-template-probe.c:229:af_alg_template_probe
 childops/af-alg-weak-cipher-probe.c:227:probe_one_entry
 childops/eth-emitter.c:253:ensure_socket
 childops/fs-lifecycle.c:158:ensure_private_ns

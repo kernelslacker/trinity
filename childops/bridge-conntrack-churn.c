@@ -819,13 +819,12 @@ static int bridge_conntrack_churn_in_ns(void *arg)
 
 	if (bridge_conntrack_iter_nft_setup(&ctx) != 0)
 		goto out;
-	if (valid_op)
+	if (valid_op) {
 		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
-
-	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop_data_path[op],
 				   1, __ATOMIC_RELAXED);
+	}
 	bridge_conntrack_iter_traffic_burst(&ctx);
 
 out:

@@ -611,13 +611,12 @@ bool fs_lifecycle(struct childdata *child)
 	 * bail path runs between the two bumps here -- the switch dispatches
 	 * unconditionally -- so the healthy baseline is equality, matching
 	 * the NO-setup signature of a linear archetype-A childop. */
-	if (valid_op)
+	if (valid_op) {
 		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
-
-	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop_data_path[op],
 				   1, __ATOMIC_RELAXED);
+	}
 
 	switch (rnd_modulo_u32(6)) {
 	case 0: do_tmpfs_lifecycle();   break;

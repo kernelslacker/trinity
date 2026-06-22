@@ -438,13 +438,12 @@ bool close_racer(struct childdata *child)
 			continue;
 		}
 		spawn_fail_streak = 0;
-		if (valid_op)
+		if (valid_op) {
 			__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
 					   1, __ATOMIC_RELAXED);
-
-		if (valid_op)
 			__atomic_add_fetch(&shm->stats.childop_data_path[op],
 					   1, __ATOMIC_RELAXED);
+		}
 		close_racer_iter_close_phase(&ctx, deferred_fds, &deferred_n);
 		close_racer_iter_join_racers(&ctx);
 	}

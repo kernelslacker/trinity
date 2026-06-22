@@ -659,13 +659,12 @@ bool iouring_net_multishot(struct childdata *child)
 
 	if (iouring_multishot_iter_arm_recv(&it) != 0)
 		goto out;
-	if (valid_op)
+	if (valid_op) {
 		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
-
-	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop_data_path[op],
 				   1, __ATOMIC_RELAXED);
+	}
 	iouring_multishot_iter_traffic(&it);
 	iouring_multishot_iter_cancel(&it);
 

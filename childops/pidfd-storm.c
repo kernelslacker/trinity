@@ -371,13 +371,12 @@ bool pidfd_storm(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	if (valid_op)
+	if (valid_op) {
 		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
-
-	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop_data_path[op],
 				   1, __ATOMIC_RELAXED);
+	}
 	pidfd_storm_iter_drive(slots, active, JITTER_RANGE(MAX_ITERATIONS));
 	pidfd_storm_iter_reap(slots, active);
 

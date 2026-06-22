@@ -229,12 +229,12 @@ bool rtnl_vf_broadcast_getlink(struct childdata *child)
 	if (iters > VFB_OUTER_CAP)
 		iters = VFB_OUTER_CAP;
 
-	if (valid_op)
+	if (valid_op) {
 		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
-	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop_data_path[op],
 				   1, __ATOMIC_RELAXED);
+	}
 
 	(void)clock_gettime(CLOCK_MONOTONIC, &t0);
 	for (i = 0; i < iters; i++) {

@@ -303,13 +303,12 @@ bool cpu_hotplug_rider(struct childdata *child)
 
 	clock_gettime(CLOCK_MONOTONIC, &start);
 
-	if (valid_op)
+	if (valid_op) {
 		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
-
-	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop_data_path[op],
 				   1, __ATOMIC_RELAXED);
+	}
 
 	for (iter = 0; iter < iters; iter++) {
 		unsigned int pick = rnd_modulo_u32(4);

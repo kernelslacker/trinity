@@ -522,12 +522,12 @@ bool iscsi_login_walker(struct childdata *child)
 		}
 		__atomic_add_fetch(&shm->stats.iscsi_walker_connected, 1,
 				   __ATOMIC_RELAXED);
-		if (valid_op)
+		if (valid_op) {
 			__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
 					   1, __ATOMIC_RELAXED);
-		if (valid_op)
 			__atomic_add_fetch(&shm->stats.childop_data_path[op],
 					   1, __ATOMIC_RELAXED);
+		}
 
 		if (chaos) {
 			unsigned int chaos_pdus = 1 + rnd_modulo_u32(CHAOS_PDUS_MAX);

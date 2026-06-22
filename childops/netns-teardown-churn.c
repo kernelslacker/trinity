@@ -594,13 +594,12 @@ static void iter_one(struct childdata *child)
 
 	if (netns_teardown_iter_parent_setns_back(&it) != 0)
 		return;
-	if (valid_op)
+	if (valid_op) {
 		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
-
-	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop_data_path[op],
 				   1, __ATOMIC_RELAXED);
+	}
 	netns_teardown_iter_drive_teardown(&it);
 	return;
 
