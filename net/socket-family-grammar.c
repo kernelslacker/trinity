@@ -34,10 +34,6 @@
 #include "rnd.h"
 #include "xdp-umem-track.h"
 
-#ifndef MSG_NOSIGNAL
-#define MSG_NOSIGNAL	0x4000
-#endif
-
 /*
  * Registry filled in by per-family commits.  The trailing NULL is a
  * sentinel that lets the framework commit land before any family

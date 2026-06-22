@@ -202,10 +202,6 @@ const struct netproto proto_netbeui = {
  * doesn't auto-clear if the module loads mid-run.
  */
 
-#ifndef MSG_NOSIGNAL
-#define MSG_NOSIGNAL	0x4000
-#endif
-
 /* Per-process probe cache.  -1 untested, 0 unsupported, 1 supported. */
 static int llc_supported = -1;
 

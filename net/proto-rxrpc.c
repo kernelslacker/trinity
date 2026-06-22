@@ -150,10 +150,6 @@ const struct netproto proto_rxrpc = {
  * shared with other grammars.
  */
 
-#ifndef MSG_NOSIGNAL
-#define MSG_NOSIGNAL	0x4000
-#endif
-
 /* Per-process probe cache.  -1 untested, 0 unsupported, 1 supported. */
 static int rxrpc_v4_state = -1;
 static int rxrpc_v6_state = -1;

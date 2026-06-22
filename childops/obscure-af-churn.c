@@ -91,10 +91,6 @@
 #include "trinity.h"
 #include "utils.h"
 
-#ifndef MSG_NOSIGNAL
-#define MSG_NOSIGNAL	0x4000
-#endif
-
 #ifndef SIOCGSTAMP
 # ifdef SIOCGSTAMP_OLD
 #  define SIOCGSTAMP	SIOCGSTAMP_OLD

@@ -112,10 +112,6 @@ const struct netproto proto_mpls = {
  * socket; leaving gen_cmsg NULL keeps the data leg minimal.
  */
 
-#ifndef MSG_NOSIGNAL
-#define MSG_NOSIGNAL	0x4000
-#endif
-
 /* Per-process probe cache.  -1 untested, 0 unsupported, 1 supported.
  * On stock upstream kernels this stays at 0 after the first probe
  * because no sock_register() exists for PF_MPLS. */
