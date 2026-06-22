@@ -20,7 +20,7 @@ struct syscallentry syscall_fstat64 = {
 	.argname = { [0] = "fd", [1] = "statbuf" },
 	.sanitise = sanitise_fstat64,
 	.rettype = RET_ZERO_SUCCESS,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_VFS,
 };
 
@@ -49,6 +49,6 @@ struct syscallentry syscall_fstatat64 = {
 	.arg_params[3].list = ARGLIST(fstatat_flags),
 	.sanitise = sanitise_fstatat64,
 	.rettype = RET_ZERO_SUCCESS,
-	.flags = NEED_ALARM,
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_VFS,
 };
