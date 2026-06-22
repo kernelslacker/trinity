@@ -6832,6 +6832,96 @@ static void dump_stats_top_wedging_syscalls(void)
 	}
 }
 
+/*
+ * Sister of dump_stats_top_wedging_syscalls() above, keyed by enum
+ * child_op_type instead of syscall nr.  Wedging on this fleet is
+ * dominated by long-lived non-syscall childops (flock_thrash,
+ * futex_storm, memory_pressure, ...) whose inner sites cycle through
+ * many syscalls; the per-syscall top-N attributes the wedge cost to
+ * whichever syscall happened to be in flight at detection, which
+ * mis-names the dominant wedgers.  This block surfaces them by the
+ * childop that was running when the stall began.
+ *
+ * Shares the same duration definition as the per-syscall block --
+ * full unreusable-slot time (watchdog grace included), CLOCK_MONOTONIC,
+ * clamped >= 0 at the accumulator site (see reap_child() in main.c) --
+ * so the per-syscall total and the per-childop total over the run are
+ * the same number; the two top-N rows just slice it differently.
+ *
+ * Empty-block gate: skipped entirely if no wedge has ever been
+ * accounted on this axis, so a clean run emits nothing.
+ */
+static void dump_stats_top_wedging_childops(void)
+{
+	struct childop_wedge_top_entry {
+		unsigned int op;
+		unsigned long count;
+		unsigned long long total_us;
+	} top[WEDGE_TOPN];
+	unsigned int top_count = 0;
+	unsigned long count_total = 0;
+	unsigned long long us_total = 0;
+	unsigned int i;
+	int j;
+
+	for (i = 0; i < NR_CHILD_OP_TYPES; i++) {
+		unsigned long c = __atomic_load_n(
+			&shm->stats.childop_wedge_count[i],
+			__ATOMIC_RELAXED);
+		unsigned long long u = __atomic_load_n(
+			&shm->stats.childop_wedge_total_us[i],
+			__ATOMIC_RELAXED);
+
+		if (c == 0 && u == 0)
+			continue;
+
+		count_total += c;
+		us_total += u;
+
+		/* Insertion sort, descending by total_us, capped at
+		 * WEDGE_TOPN.  Ties on total_us broken by event count so a
+		 * hot childop with many quick wedges ranks above a single
+		 * still-pending wedge whose duration matches by accident. */
+		for (j = (int)top_count;
+		     j > 0 && (u > top[j - 1].total_us ||
+			       (u == top[j - 1].total_us &&
+				c > top[j - 1].count));
+		     j--) {
+			if (j < WEDGE_TOPN)
+				top[j] = top[j - 1];
+		}
+		if (j < WEDGE_TOPN) {
+			top[j].op = i;
+			top[j].count = c;
+			top[j].total_us = u;
+			if (top_count < WEDGE_TOPN)
+				top_count++;
+		}
+	}
+
+	if (count_total == 0 && us_total == 0)
+		return;
+
+	output(0, "Top %u most-wedging childops (cumulative; %lu events, "
+		"%llu.%03llu s wedged total):\n",
+		top_count, count_total,
+		us_total / 1000000ULL, (us_total / 1000ULL) % 1000ULL);
+
+	for (j = 0; j < (int)top_count; j++) {
+		const char *name = alt_op_name(
+			(enum child_op_type) top[j].op);
+		unsigned long long s = top[j].total_us / 1000000ULL;
+		unsigned long long ms = (top[j].total_us / 1000ULL) % 1000ULL;
+		unsigned long long avg_us = top[j].count > 0 ?
+			(top[j].total_us / top[j].count) : 0;
+		unsigned long long avg_s = avg_us / 1000000ULL;
+		unsigned long long avg_ms = (avg_us / 1000ULL) % 1000ULL;
+
+		output(0, "    %-32s events=%lu wedged=%llu.%03llus avg=%llu.%03llus\n",
+			name ? name : "?", top[j].count, s, ms, avg_s, avg_ms);
+	}
+}
+
 static void dump_stats_fd_tracking(void)
 {
 	if (parent_stats.fault_injected) {
@@ -9700,6 +9790,8 @@ void __cold dump_stats(void)
 	dump_stats_per_syscall_tables();
 
 	dump_stats_top_wedging_syscalls();
+
+	dump_stats_top_wedging_childops();
 
 	dump_stats_fd_tracking();
 
