@@ -62,9 +62,13 @@
  *       (a) recvmsg(sv2[1]) to drain the SCM_RIGHTS msg queued on the
  *           sv2 peer that holds sv1[0] -- races unix_gc's snapshot of
  *           inflight counts.
- *       (b) open("/dev/null") and sendmsg the new fd on a remaining
- *           unix sock -- exercises unix_attach_fds() while gc may be
- *           walking the same socket table.
+ *       (b) sendmsg a held /dev/null fd on a remaining unix sock --
+ *           exercises unix_attach_fds() while gc may be walking the
+ *           same socket table.  The fd is opened once per burst and
+ *           reused; gc sees the same SCM_RIGHTS skb queue and the
+ *           same number of attach calls regardless of fd identity,
+ *           and /dev/null is not a unix sock so it never threads the
+ *           gc cycle walk.
  *   6.  Variant (low probability): replace one of the cycle fds with
  *       an io_uring fd carrying a registered files table.  Drives the
  *       multi-hop graph extension shape from the CVE-2025-21712
@@ -614,15 +618,24 @@ static void reap_race_sibling(pid_t sibling)
 }
 
 /*
- * Single-task race burst: alternating peek + drain on sv2[1] and fresh
- * SCM_RIGHTS attach on sv4.  Used when sibling spawn fails (clone3
- * unavailable, EAGAIN under cgroup-MAX, etc.) -- preserves the Phase 1
- * coverage so a failed sibling spawn does not turn into a wasted iter.
+ * Single-task race burst: alternating peek + drain on sv2[1] and repeated
+ * SCM_RIGHTS attach on sv4.  The /dev/null fd carried by the sv4 attach is
+ * opened once before the loop and reused across iters: gc sees the same
+ * per-iter SCM_RIGHTS skb queued on sv4_recv and the same unix_attach_fds()
+ * call regardless of whether fd identity rotates, and /dev/null is not a
+ * unix sock so it never participates in gc's cycle walk.  Dropping the
+ * per-iter open()/close() pair tightens the contention window against
+ * unix_gc.  Used when sibling spawn fails (clone3 unavailable, EAGAIN
+ * under cgroup-MAX, etc.) -- preserves the Phase 1 coverage so a failed
+ * sibling spawn does not turn into a wasted iter.
  */
 static void run_race_burst_solo(int sv2_recv, int sv4_recv, unsigned int races)
 {
 	unsigned int r;
-	int extra_fd;
+	int extra_fd = -1;
+
+	if (sv4_recv >= 0)
+		extra_fd = open("/dev/null", O_RDWR | O_CLOEXEC);
 
 	for (r = 0; r < races; r++) {
 		if (sv2_recv >= 0) {
@@ -636,23 +649,25 @@ static void run_race_burst_solo(int sv2_recv, int sv4_recv, unsigned int races)
 			}
 		}
 
-		if (sv4_recv >= 0) {
-			extra_fd = open("/dev/null", O_RDWR | O_CLOEXEC);
-			if (extra_fd >= 0) {
-				(void)send_scm_fd(sv4_recv, extra_fd);
-				(void)close(extra_fd);
-			}
-		}
+		if (extra_fd >= 0)
+			(void)send_scm_fd(sv4_recv, extra_fd);
 	}
+
+	if (extra_fd >= 0)
+		(void)close(extra_fd);
 }
 
 /*
  * Parent's half of the cross-task race: drain sv2[1] (races the sibling's
  * MSG_PEEK on the same queue + races unix_gc's inflight snapshot) and
- * fresh SCM_RIGHTS attach on sv4 (races unix_gc's socket-table walk).
+ * repeated SCM_RIGHTS attach on sv4 (races unix_gc's socket-table walk).
  * The sibling is concurrently running its peek loop against sv2[1] via
  * the shared fd table; the resulting two-task contention on a single
  * struct unix_sock's queue is the race shape Phase 2 buys.
+ *
+ * The /dev/null fd carried by the sv4 attach is opened once before the
+ * loop and reused -- see the run_race_burst_solo comment for why fd
+ * identity does not matter to the gc-walk race shape.
  *
  * peek_ok is bumped by the sibling's iterations conceptually, but the
  * sibling does not touch shm; instead the parent's pre-spawn
@@ -664,7 +679,10 @@ static void run_race_burst_parent_half(int sv2_recv, int sv4_recv,
 				       unsigned int races)
 {
 	unsigned int r;
-	int extra_fd;
+	int extra_fd = -1;
+
+	if (sv4_recv >= 0)
+		extra_fd = open("/dev/null", O_RDWR | O_CLOEXEC);
 
 	for (r = 0; r < races; r++) {
 		if (sv2_recv >= 0) {
@@ -674,14 +692,12 @@ static void run_race_burst_parent_half(int sv2_recv, int sv4_recv,
 			}
 		}
 
-		if (sv4_recv >= 0) {
-			extra_fd = open("/dev/null", O_RDWR | O_CLOEXEC);
-			if (extra_fd >= 0) {
-				(void)send_scm_fd(sv4_recv, extra_fd);
-				(void)close(extra_fd);
-			}
-		}
+		if (extra_fd >= 0)
+			(void)send_scm_fd(sv4_recv, extra_fd);
 	}
+
+	if (extra_fd >= 0)
+		(void)close(extra_fd);
 }
 
 /*
