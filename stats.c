@@ -6392,7 +6392,13 @@ struct run_start_baseline {
 	unsigned long edges_warm_loaded;
 	unsigned long distinct_edges_warm_loaded;
 	unsigned long corpus_entries;
-	unsigned long cmp_records_collected;
+	/* Snapshot of the persisted cmp-hints pool taken AFTER the loader
+	 * has populated cmp_hints_shm but BEFORE the fuzz loop starts.
+	 * The carrier warm/cold classification has to read this -- not the
+	 * runtime cmp_records_collected counter, which is zero at snapshot
+	 * time and would label a warm-loaded run "cold". */
+	unsigned long cmp_hints_loaded_values;
+	unsigned long cmp_hints_loaded_syscalls;
 };
 
 static struct run_start_baseline run_start;
@@ -6496,10 +6502,32 @@ void __cold stats_runid_snapshot_start(void)
 		run_start.distinct_edges_warm_loaded = __atomic_load_n(
 			&kcov_shm->distinct_edges_warm_loaded,
 			__ATOMIC_RELAXED);
-		run_start.cmp_records_collected = __atomic_load_n(
-			&kcov_shm->cmp_records_collected, __ATOMIC_RELAXED);
 	}
 	run_start.corpus_entries = runid_corpus_entries_total();
+
+	/* Sum the persisted cmp-hints pool as it stands right after the
+	 * loader has finished -- this is the authoritative "did a prior
+	 * run hand us a warm cache" answer for the cmp_hints carrier.
+	 * Per-arch slots count individually, matching the JSON / text
+	 * pool histograms emitted elsewhere in this file. */
+	run_start.cmp_hints_loaded_values = 0;
+	run_start.cmp_hints_loaded_syscalls = 0;
+	if (cmp_hints_shm != NULL) {
+		unsigned int i, a;
+
+		for (i = 0; i < MAX_NR_SYSCALL; i++) {
+			for (a = 0; a < 2; a++) {
+				unsigned int n = cmp_hints_pool_safe_count(
+					&cmp_hints_shm->pools[i][a]);
+
+				if (n > 0) {
+					run_start.cmp_hints_loaded_values += n;
+					run_start.cmp_hints_loaded_syscalls++;
+				}
+			}
+		}
+	}
+
 	run_start.captured = true;
 }
 
@@ -6606,13 +6634,21 @@ void __cold stats_runid_render(void)
 				      run_start.edges_warm_loaded);
 	corpus_state = runid_warm_state(no_warm_start,
 					run_start.corpus_entries);
+	/* Classify cmp_hints from the post-load pool snapshot, not from
+	 * the runtime cmp_records_collected counter -- the latter is zero
+	 * at start-snapshot time and would mislabel a warm-loaded run
+	 * (e.g. 4636 entries / 290 syscalls reloaded by the persistence
+	 * layer) as "cold". */
 	cmp_state = runid_warm_state(no_cmp_hints_warm_start,
-				     run_start.cmp_records_collected);
+				     run_start.cmp_hints_loaded_values);
 	output(0, "run-id carriers: kcov=%s minicorpus=%s cmp_hints=%s "
-		  "kcov_warm_loaded_edges=%lu kcov_warm_loaded_distinct=%lu\n",
+		  "kcov_warm_loaded_edges=%lu kcov_warm_loaded_distinct=%lu "
+		  "cmp_hints_loaded_values=%lu cmp_hints_loaded_syscalls=%lu\n",
 	       kcov_state, corpus_state, cmp_state,
 	       run_start.edges_warm_loaded,
-	       run_start.distinct_edges_warm_loaded);
+	       run_start.distinct_edges_warm_loaded,
+	       run_start.cmp_hints_loaded_values,
+	       run_start.cmp_hints_loaded_syscalls);
 
 	if (!run_start.captured) {
 		/* Reached the shutdown render without ever taking the
