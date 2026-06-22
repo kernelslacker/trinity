@@ -718,13 +718,11 @@ struct kcov_child {
  * (kcov_shared::total_calls / remote_calls / total_pcs).  Bumped on
  * the hot per-syscall path inside the owning child and flushed in
  * batches into the shared atomics via kcov_child_flush_stats() so the
- * shared cacheline stops bouncing on every call.  Pure plumbing in
- * this commit -- no migration of bumpers yet, the flush stub is a
- * no-op, and nothing reads these counters.  Lives behind a pointer on
- * struct childdata (NOT inside struct kcov_child, which is pinned to
- * 48 bytes by the static_assert on offsetof(childdata, op_nr) < 64 --
- * folding scalar counters in would push op_nr out of the leading hot
- * cacheline). */
+ * shared cacheline stops bouncing on every call.  Lives behind a
+ * pointer on struct childdata (NOT inside struct kcov_child, which is
+ * pinned to 48 bytes by the static_assert on
+ * offsetof(childdata, op_nr) < 64 -- folding scalar counters in would
+ * push op_nr out of the leading hot cacheline). */
 struct kcov_child_local_stats {
 	unsigned long total_calls;
 	unsigned long remote_calls;
@@ -1429,10 +1427,11 @@ struct kcov_shared {
 
 	/* SHADOW feedback scoring counters ([11-feedback-loop] PHASE 4).
 	 *
-	 * These are SHADOW / measurement-only this commit: cmp_hints_try_get
-	 * pool selection stays uniform; the follow-up commit gates a
-	 * weighted live pick (`weight = floor + wins*4 - misses`, clamped,
-	 * keep random exploration) on these counters showing a real signal.
+	 * These are SHADOW / measurement-only: cmp_hints_try_get pool
+	 * selection stays uniform.  A future live-pick path is intended to
+	 * read these counters and gate a weighted live pick
+	 * (`weight = floor + wins*4 - misses`, clamped, keeping random
+	 * exploration) once a real signal is visible.
 	 *
 	 *  cmp_hints_consumed
 	 *      Bumped from cmp_hints_try_get_ex right before the true return,
@@ -1857,8 +1856,8 @@ struct kcov_shared {
 	 * eviction floor.  The A/B flag (--cmp-recent-pool) gates
 	 * whether cmp_hints_try_get_ex() samples the recent ring first
 	 * during a CMP_RISING_PC_FLAT plateau; the default keeps the
-	 * historical durable-first behaviour so this commit is
-	 * behaviour-neutral until the flag is flipped.  Every counter
+	 * historical durable-first behaviour, so the recent-ring tier
+	 * is behaviour-neutral until the flag is flipped.  Every counter
 	 * below is RELAXED + flat per the SHADOW-first discipline:
 	 * recording active in BOTH arms so an A/B run reads the same
 	 * shadow rates the live arm will eventually consume.
@@ -2074,11 +2073,9 @@ void kcov_cleanup_child(struct kcov_child *kc);
 struct childdata;
 
 /* Drain the per-child kcov_child_local_stats counters into the
- * shared kcov_shared atomics.  No-op stub today -- this commit is
- * pure plumbing for the per-child local-counter staging path; no
- * bumper has been migrated to the staging counters yet, so the flush
- * has nothing to publish.  Callers will be added incrementally in
- * follow-up commits. */
+ * shared kcov_shared atomics.  No-op stub today -- no bumper has been
+ * migrated to the staging counters yet, so the flush has nothing to
+ * publish. */
 void kcov_child_flush_stats(struct childdata *child);
 
 /* Bracket the actual syscall() call with these. No-ops if !active. */

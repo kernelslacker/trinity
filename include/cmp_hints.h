@@ -157,9 +157,9 @@ struct cmp_hint_entry {
 	 * wins on the matching pool entry; a no-win bumps misses; CMP-mode
 	 * novelty is credited to a SEPARATE flat counter (kept out of the
 	 * per-entry score so CMP novelty cannot masquerade as PC-edge
-	 * conversion -- the spec's measurement-first discipline).  The
-	 * follow-up live-pick commit will weigh entries by these counters;
-	 * today they are SHADOW only and do not steer pool selection.
+	 * conversion -- measurement-first discipline).  These per-entry
+	 * counters are SHADOW only and do not steer pool selection; a
+	 * future live-pick path will weigh entries by them.
 	 *
 	 * Saturating uint16_t (cap 65535) is enough headroom for the
 	 * shadow window: a per-entry score that high already conclusively
@@ -480,10 +480,11 @@ bool cmp_hints_field_try_get(unsigned int nr, bool do32, unsigned int arg_idx,
  * then resets it.  Today the credit is OBSERVATION-ONLY: it updates
  * the cmp_hint_wins / cmp_hint_misses / cmp_hint_cmp_novelty_wins flat
  * counters in kcov_shm and the per-entry wins/misses on the matching
- * pool entry.  The follow-up A/B-gated commit will turn this score
- * into a weighted live-pick policy (`weight = floor + wins*4 - misses`
- * clamped, keeping random exploration); the SHADOW phase here is the
- * measurement-first prerequisite -- live pool selection stays uniform.
+ * pool entry.  The SHADOW phase is measurement-first: live pool
+ * selection stays uniform while these counters accumulate.  A future
+ * A/B-gated weighted live-pick policy
+ * (`weight = floor + wins*4 - misses` clamped, keeping random
+ * exploration) will consume the score.
  *
  * pool_kind partitions the stash by which pool the hint came from so
  * the follow-up can score per-kind independently.  Both pools now have
