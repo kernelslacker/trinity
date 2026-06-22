@@ -276,11 +276,11 @@ syscalls/setfsgid.c:24:post_setfsgid
 syscalls/setfsuid.c:36:post_setfsuid
 syscalls/setgid.c:37:post_setgid
 syscalls/setgid.c:52:post_setgid
-syscalls/setgroups.c:216:post_setgroups
-syscalls/setgroups.c:226:post_setgroups
-syscalls/setgroups.c:252:post_setgroups
-syscalls/setgroups.c:273:post_setgroups
-syscalls/setgroups.c:297:post_setgroups
+syscalls/setgroups.c:217:post_setgroups
+syscalls/setgroups.c:227:post_setgroups
+syscalls/setgroups.c:253:post_setgroups
+syscalls/setgroups.c:274:post_setgroups
+syscalls/setgroups.c:298:post_setgroups
 syscalls/setpgid.c:76:post_setpgid
 syscalls/setpriority.c:130:post_setpriority
 syscalls/setregid.c:29:post_setregid
