@@ -47,6 +47,12 @@ static unsigned long landlock_create_ruleset_flags[] = {
 #ifndef LANDLOCK_ACCESS_NET_CONNECT_TCP
 #define LANDLOCK_ACCESS_NET_CONNECT_TCP	(1ULL << 1)
 #endif
+#ifndef LANDLOCK_ACCESS_NET_BIND_UDP
+#define LANDLOCK_ACCESS_NET_BIND_UDP	(1ULL << 2)
+#endif
+#ifndef LANDLOCK_ACCESS_NET_CONNECT_SEND_UDP
+#define LANDLOCK_ACCESS_NET_CONNECT_SEND_UDP	(1ULL << 3)
+#endif
 #ifndef LANDLOCK_SCOPE_ABSTRACT_UNIX_SOCKET
 #define LANDLOCK_SCOPE_ABSTRACT_UNIX_SOCKET	(1ULL << 0)
 #endif
@@ -83,6 +89,8 @@ static const __u64 landlock_access_fs_bits[] = {
 static const __u64 landlock_access_net_bits[] = {
 	LANDLOCK_ACCESS_NET_BIND_TCP,
 	LANDLOCK_ACCESS_NET_CONNECT_TCP,
+	LANDLOCK_ACCESS_NET_BIND_UDP,
+	LANDLOCK_ACCESS_NET_CONNECT_SEND_UDP,
 };
 
 static const __u64 landlock_scope_bits[] = {
