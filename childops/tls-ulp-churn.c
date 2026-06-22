@@ -401,7 +401,14 @@ static void tls_ulp_churn_iter_rekey_burst(int s, unsigned short version,
 	struct tls12_crypto_info_aes_gcm_128 cinfo;
 	unsigned char payload[64];
 	unsigned int iters, i;
-	int rc;
+	int rc, sp_src;
+
+	/* Splice source is reused across the whole burst: the coverage
+	 * target is the splice path against the rotated key, not a fresh
+	 * struct file per iteration.  off_in is passed by pointer so the
+	 * fd's f_pos is not consumed; resetting off_in to 0 inside the
+	 * loop keeps every splice rooted at the start of the file. */
+	sp_src = open(SPLICE_SRC_PATH, O_RDONLY | O_CLOEXEC);
 
 	iters = BUDGETED(CHILD_OP_TLS_ULP_CHURN,
 			 JITTER_RANGE(ULP_CHURN_ITERS_BASE));
@@ -433,9 +440,10 @@ static void tls_ulp_churn_iter_rekey_burst(int s, unsigned short version,
 		 * absorb the whole splice in one go.  1/8 cadence keeps the
 		 * per-iter cost bounded; the rekey burst itself is the
 		 * hot path. */
-		if (ONE_IN(8)) {
+		if (sp_src >= 0 && ONE_IN(8)) {
 			int snd = 8192;
-			int sp_src;
+			off_t off_in = 0;
+			ssize_t n;
 
 			/* SO_SNDBUFFORCE bypasses wmem_max with CAP_NET_ADMIN;
 			 * non-privileged callers fall back to SO_SNDBUF where
@@ -446,21 +454,17 @@ static void tls_ulp_churn_iter_rekey_burst(int s, unsigned short version,
 				(void)setsockopt(s, SOL_SOCKET, SO_SNDBUF,
 						 &snd, sizeof(snd));
 
-			sp_src = open(SPLICE_SRC_PATH, O_RDONLY | O_CLOEXEC);
-			if (sp_src >= 0) {
-				off_t off_in = 0;
-				ssize_t n;
-
-				n = splice(sp_src, &off_in, s, NULL,
-					   SPLICE_MAX_BYTES,
-					   SPLICE_F_NONBLOCK | SPLICE_F_MORE);
-				if (n > 0)
-					__atomic_add_fetch(&shm->stats.tls_ulp_churn_splice_ok,
-							   1, __ATOMIC_RELAXED);
-				close(sp_src);
-			}
+			n = splice(sp_src, &off_in, s, NULL,
+				   SPLICE_MAX_BYTES,
+				   SPLICE_F_NONBLOCK | SPLICE_F_MORE);
+			if (n > 0)
+				__atomic_add_fetch(&shm->stats.tls_ulp_churn_splice_ok,
+						   1, __ATOMIC_RELAXED);
 		}
 	}
+
+	if (sp_src >= 0)
+		close(sp_src);
 }
 
 /* Step 8 + Step 9: drain the RX queue once (recv on the TLS-armed RX
