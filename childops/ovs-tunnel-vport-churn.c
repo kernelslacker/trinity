@@ -59,10 +59,11 @@
  * Self-bounding: SO_RCVTIMEO=1s on every netlink socket so an
  * unresponsive OVS family can't wedge us past the SIGALRM(1s) cap
  * inherited from child.c.  All sends use the per-family genl ctx bound
- * to the child's pid; the per-iteration rtnl racer socket is opened
- * fresh, fired once with NLM_F_REQUEST (no ack), and closed.  Every
- * kind has its own latch so a kernel without GENEVE / VXLAN / GRE pays
- * the EFAIL once and skips that kind on subsequent invocations.
+ * to the child's pid; the rtnl racer opens one route socket for its
+ * whole bounded-deadline lifetime and fires NLM_F_REQUEST (no ack)
+ * each iteration.  Every kind has its own latch so a kernel without
+ * GENEVE / VXLAN / GRE pays the EFAIL once and skips that kind on
+ * subsequent invocations.
  */
 
 #include <errno.h>
@@ -484,79 +485,73 @@ static int ovs_delete_vport(struct genl_ctx *ctx, int dp_ifindex,
  * time CMD_NEW returns NLM_F_ACK -- the racer has to be in flight
  * during the kernel handler, not after it.
  *
- * Loop body keeps the original fresh-socket + fire-and-forget shape: a
- * missing helper / refused ifindex / send failure just costs one wasted
- * iteration.  Exit conditions: deadline reached, hard iteration cap
- * tripped, or clock_gettime failure.  sched_yield() at the tail of each
- * iteration keeps the parent (and the kernel handler) scheduled.
+ * One route socket + one RTM_DELLINK envelope are stamped before the
+ * loop; the body only re-resolves the helper ifindex, updates
+ * nlmsg_seq + ifi_index, and sendmsg(MSG_DONTWAIT)s.  Fire-and-forget:
+ * a missing helper / refused ifindex / send failure just costs one
+ * wasted iteration.  Exit conditions: deadline reached, hard iteration
+ * cap tripped, or clock_gettime failure.  sched_yield() at the tail
+ * of each iteration keeps the parent (and the kernel handler)
+ * scheduled.
  */
 #define OVS_RACE_DELLINK_MAX_ITERS	50U
 
 static void ovs_race_dellink_loop(const char *helper_name,
 				  unsigned int deadline_ms)
 {
+	struct nl_ctx racer_ctx;
+	struct nl_open_opts ropts;
+	struct sockaddr_nl dst;
 	struct timespec start, now;
+	unsigned char buf[256];
+	struct nlmsghdr *nlh;
+	struct ifinfomsg *ifi;
+	struct iovec iov;
+	struct msghdr mh;
 	unsigned int iter;
-	/* Racer runs in a forked child after the parent's shared genl
-	 * ctx has been opened; talks rtnetlink (not genl) on its own
-	 * nl_ctx so seq numbers via nl_seq_next() stay independent of
-	 * the parent's ovs_dp_ctx / ovs_vport_ctx, and never expects
-	 * an ack — NLM_F_ACK is not set so the kernel won't reply, and
-	 * we sendmsg(MSG_DONTWAIT) on ctx->fd to keep the per-iteration
-	 * fire-and-forget shape that the bounded-deadline loop relies
-	 * on.  The seq stamp via nl_seq_next() is cosmetic but rides
-	 * the shared scaffolding counter so the racer aligns with the
-	 * rest of the childops-netlink tree. */
 
 	if (clock_gettime(CLOCK_MONOTONIC, &start) != 0)
 		return;
 
+	memset(&ropts, 0, sizeof(ropts));
+	ropts.proto = NETLINK_ROUTE;
+	ropts.recv_timeo_s = OVS_RECV_TIMEO_S;
+	if (nl_open(&racer_ctx, &ropts) != 0)
+		return;
+
+	memset(buf, 0, sizeof(buf));
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_type  = RTM_DELLINK;
+	nlh->nlmsg_flags = NLM_F_REQUEST;
+	nlh->nlmsg_len   = (__u32)(NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi)));
+
+	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
+	ifi->ifi_family = AF_UNSPEC;
+
+	memset(&dst, 0, sizeof(dst));
+	dst.nl_family = AF_NETLINK;
+
+	iov.iov_base = buf;
+	iov.iov_len  = nlh->nlmsg_len;
+
+	memset(&mh, 0, sizeof(mh));
+	mh.msg_name    = &dst;
+	mh.msg_namelen = sizeof(dst);
+	mh.msg_iov     = &iov;
+	mh.msg_iovlen  = 1;
+
 	for (iter = 0; iter < OVS_RACE_DELLINK_MAX_ITERS; iter++) {
-		struct nl_ctx racer_ctx;
-		struct nl_open_opts ropts;
-		struct sockaddr_nl dst;
-		unsigned char buf[256];
-		struct nlmsghdr *nlh;
-		struct ifinfomsg *ifi;
-		struct iovec iov;
-		struct msghdr mh;
 		long elapsed_ms;
 		int ifindex;
 
+		/* Re-resolve every iter: the helper netdev is racing into
+		 * existence as the kernel's CMD_NEW handler runs, so a
+		 * cached ifindex would skip the registration window. */
 		ifindex = (int)if_nametoindex(helper_name);
 		if (ifindex > 0) {
-			memset(&ropts, 0, sizeof(ropts));
-			ropts.proto = NETLINK_ROUTE;
-			ropts.recv_timeo_s = OVS_RECV_TIMEO_S;
-			if (nl_open(&racer_ctx, &ropts) == 0) {
-				memset(buf, 0, sizeof(buf));
-				nlh = (struct nlmsghdr *)buf;
-				nlh->nlmsg_type  = RTM_DELLINK;
-				nlh->nlmsg_flags = NLM_F_REQUEST;
-				nlh->nlmsg_seq   = nl_seq_next(&racer_ctx);
-
-				ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
-				ifi->ifi_family = AF_UNSPEC;
-				ifi->ifi_index  = ifindex;
-
-				nlh->nlmsg_len = (__u32)(NLMSG_HDRLEN +
-					NLMSG_ALIGN(sizeof(*ifi)));
-
-				memset(&dst, 0, sizeof(dst));
-				dst.nl_family = AF_NETLINK;
-
-				iov.iov_base = buf;
-				iov.iov_len  = nlh->nlmsg_len;
-
-				memset(&mh, 0, sizeof(mh));
-				mh.msg_name    = &dst;
-				mh.msg_namelen = sizeof(dst);
-				mh.msg_iov     = &iov;
-				mh.msg_iovlen  = 1;
-
-				(void)sendmsg(racer_ctx.fd, &mh, MSG_DONTWAIT);
-				nl_close(&racer_ctx);
-			}
+			nlh->nlmsg_seq = nl_seq_next(&racer_ctx);
+			ifi->ifi_index = ifindex;
+			(void)sendmsg(racer_ctx.fd, &mh, MSG_DONTWAIT);
 		}
 
 		sched_yield();
@@ -568,6 +563,8 @@ static void ovs_race_dellink_loop(const char *helper_name,
 		if (elapsed_ms >= 0 && (unsigned long)elapsed_ms >= deadline_ms)
 			break;
 	}
+
+	nl_close(&racer_ctx);
 }
 
 /*
