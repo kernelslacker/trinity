@@ -2842,8 +2842,28 @@ void child_process(struct childdata *child, int childno)
 		 * SIGALRM-based stall detection can fire if the op hangs.
 		 * random_syscall() arms alarm internally for NEED_ALARM syscalls.
 		 */
-		if (is_alt_op)
+		if (is_alt_op) {
+			/*
+			 * SHADOW probe: see if a fuzzed rt_sigaction call has
+			 * overwritten the inner-watchdog SIGALRM/SIGXCPU
+			 * dispositions before we arm the alarm.  Both signals
+			 * are in settable_signals[], so a child can swap the
+			 * handler out for SIG_IGN/SIG_DFL/an arbitrary stub
+			 * and silently disarm the 1-second timeout; the op
+			 * then rides the ~30-second outer watchdog instead.
+			 * Read-only -- the handler is NOT reinstalled.
+			 */
+			struct sigaction cur;
+			if (sigaction(SIGALRM, NULL, &cur) == 0 &&
+			    cur.sa_handler != sigalrm_handler)
+				__atomic_add_fetch(&shm->stats.watchdog_sigalrm_clobbered,
+						   1, __ATOMIC_RELAXED);
+			if (sigaction(SIGXCPU, NULL, &cur) == 0 &&
+			    cur.sa_handler != sigxcpu_handler)
+				__atomic_add_fetch(&shm->stats.watchdog_sigxcpu_clobbered,
+						   1, __ATOMIC_RELAXED);
 			alarm(1);
+		}
 
 		/* Snapshot the global edge counter to feed the diagnostic
 		 * childop_edges_discovered[] / childop_calls_with_edges[]

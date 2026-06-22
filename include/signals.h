@@ -123,6 +123,23 @@ void init_abort_msg_capture(void);
 void init_stderr_memfd(void);
 
 /*
+ * The internal-watchdog handlers installed once by mask_signals_child().
+ * Exposed only so an arm site (alarm(1) or RLIMIT_CPU) can read back
+ * the live sa_handler with sigaction(_, NULL, &cur) and detect that a
+ * fuzzed rt_sigaction call has overwritten the watchdog disposition
+ * before the alarm fires.  SIGALRM/SIGXCPU appear in settable_signals[]
+ * and a child fuzzing rt_sigaction(SIGALRM, ...) can disarm the
+ * 1-second inner watchdog -- subsequent blocking ops then ride the
+ * ~30-second outer watchdog instead, accounting for most of the
+ * tail-latency in the late-run childop wedge.
+ *
+ * No caller should ever invoke these handlers directly or take their
+ * address for anything other than the sa_handler equality check.
+ */
+void sigalrm_handler(int sig);
+void sigxcpu_handler(int sig);
+
+/*
  * The numeric fd returned by memfd_create() inside init_stderr_memfd().
  * The fd is kept open past the dup2(STDERR_FILENO) so child_fault_handler
  * can lseek+read the buffered pre-crash text into the bug log; until that
