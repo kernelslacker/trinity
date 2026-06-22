@@ -2513,6 +2513,142 @@ void childop_outcome_window_dump(void)
 }
 
 /*
+ * Derived utility + penalty scores from struct childop_outcome (see
+ * include/child.h for the field contract), surfaced as two ranked
+ * tables.  The score derivation is shadow-only: no scheduler / canary
+ * picker / promotion / demotion path reads these numbers; the function
+ * snapshots shm, computes, and emits via output(1, ...) -- nothing
+ * else.
+ *
+ * clean_score = clean_edges * SCALE / wall_ns -- good-utility, i.e.
+ * canary-path edges per nanosecond of wall time, scaled up by SCALE so
+ * the ratio fits in an integer (edges-per-second when SCALE=1e9 and
+ * wall_ns is in nanoseconds).  noisy_score is the same shape over
+ * noisy_edges.  Both clamp to 0 when wall_ns is 0 (the producer for
+ * the per-childop wall_ns field is not yet wired -- see the field doc
+ * in include/child.h -- so this branch currently fires for every op
+ * and leaves the good-utility table empty until the producer lands).
+ *
+ * bad_score sums the wedge / dstate / crash / setup-failure /
+ * asan-failure accumulators.  These have producers today, so the
+ * bad-utility table surfaces immediately.
+ */
+#define CHILDOP_SCORE_SCALE	1000000000ULL
+#define CHILDOP_SCORE_TOPN	10
+
+void childop_score_dump(void)
+{
+	struct score_row {
+		enum child_op_type op;
+		uint64_t clean_score;
+		uint64_t noisy_score;
+		uint64_t good_score;
+		unsigned long bad_score;
+		uint64_t clean_edges;
+		uint64_t noisy_edges;
+		uint64_t wall_ns;
+		unsigned int wedges;
+		unsigned int dstate_wedges;
+		unsigned int crashes;
+		unsigned int setup_failures;
+		bool asan_runtime_failure;
+	} rows[NR_CHILD_OP_TYPES];
+	unsigned int nrows = 0;
+	enum child_op_type op;
+	unsigned int i, j, n;
+	bool any_good = false, any_bad = false;
+
+	for (op = CHILD_OP_SYSCALL + 1; op < NR_CHILD_OP_TYPES; op++) {
+		struct childop_outcome rec;
+		unsigned long invocations;
+		struct score_row *r;
+
+		invocations = __atomic_load_n(
+				&shm->stats.childop_invocations[op],
+				__ATOMIC_RELAXED);
+		if (invocations == 0)
+			continue;
+
+		childop_outcome_snapshot(op, &rec);
+
+		r = &rows[nrows++];
+		r->op = op;
+		/* __uint128_t intermediate so a long-running op whose
+		 * cumulative edge count approaches UINT64_MAX / SCALE
+		 * does not overflow the multiply before the divide. */
+		r->clean_score = rec.wall_ns ?
+			(uint64_t)(((__uint128_t)rec.clean_edges *
+				    CHILDOP_SCORE_SCALE) / rec.wall_ns) : 0;
+		r->noisy_score = rec.wall_ns ?
+			(uint64_t)(((__uint128_t)rec.noisy_edges *
+				    CHILDOP_SCORE_SCALE) / rec.wall_ns) : 0;
+		r->good_score = r->clean_score + r->noisy_score;
+		r->bad_score = (unsigned long)rec.wedges + rec.dstate_wedges +
+			       rec.crashes + rec.setup_failures +
+			       (rec.asan_runtime_failure ? 1UL : 0UL);
+		r->clean_edges = rec.clean_edges;
+		r->noisy_edges = rec.noisy_edges;
+		r->wall_ns = rec.wall_ns;
+		r->wedges = rec.wedges;
+		r->dstate_wedges = rec.dstate_wedges;
+		r->crashes = rec.crashes;
+		r->setup_failures = rec.setup_failures;
+		r->asan_runtime_failure = rec.asan_runtime_failure;
+
+		if (r->good_score > 0)
+			any_good = true;
+		if (r->bad_score > 0)
+			any_bad = true;
+	}
+
+	if (nrows == 0)
+		return;
+
+	if (any_good) {
+		/* Insertion sort descending by good_score (nrows is
+		 * bounded by NR_CHILD_OP_TYPES, ~60). */
+		for (i = 1; i < nrows; i++) {
+			struct score_row tmp = rows[i];
+			for (j = i; j > 0 &&
+			     rows[j - 1].good_score < tmp.good_score; j--)
+				rows[j] = rows[j - 1];
+			rows[j] = tmp;
+		}
+		n = nrows < CHILDOP_SCORE_TOPN ? nrows : CHILDOP_SCORE_TOPN;
+		for (i = 0; i < n && rows[i].good_score > 0; i++) {
+			output(1,
+			       "childop_score_good %s: clean_score=%lu noisy_score=%lu clean_edges=%lu noisy_edges=%lu wall_ns=%lu\n",
+			       alt_op_name(rows[i].op),
+			       (unsigned long)rows[i].clean_score,
+			       (unsigned long)rows[i].noisy_score,
+			       (unsigned long)rows[i].clean_edges,
+			       (unsigned long)rows[i].noisy_edges,
+			       (unsigned long)rows[i].wall_ns);
+		}
+	}
+
+	if (any_bad) {
+		for (i = 1; i < nrows; i++) {
+			struct score_row tmp = rows[i];
+			for (j = i; j > 0 &&
+			     rows[j - 1].bad_score < tmp.bad_score; j--)
+				rows[j] = rows[j - 1];
+			rows[j] = tmp;
+		}
+		n = nrows < CHILDOP_SCORE_TOPN ? nrows : CHILDOP_SCORE_TOPN;
+		for (i = 0; i < n && rows[i].bad_score > 0; i++) {
+			output(1,
+			       "childop_score_bad %s: wedges=%u dstate_wedges=%u crashes=%u setup_failures=%u asan_runtime_failure=%d total=%lu\n",
+			       alt_op_name(rows[i].op),
+			       rows[i].wedges, rows[i].dstate_wedges,
+			       rows[i].crashes, rows[i].setup_failures,
+			       rows[i].asan_runtime_failure ? 1 : 0,
+			       rows[i].bad_score);
+		}
+	}
+}
+
+/*
  * Dispatch table for the per-iteration childop call.  Indexed by
  * enum child_op_type; a NULL slot means "fall through to the
  * sequence-chain path" (CHILD_OP_SYSCALL is handled by the 95% fast
