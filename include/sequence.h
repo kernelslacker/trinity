@@ -84,9 +84,9 @@ struct chain_step {
  *   way we hadn't observed" signal.
  * CHAIN_SAVE_CMP: at least one step in the chain produced new bloom-novel
  *   KCOV_CMP_CONST records (per-step new_cmp from kcov_collect_cmp).
- * CHAIN_SAVE_ERRNO_SHIFT / CHAIN_SAVE_RETVAL_LINK: reserved for follow-up
- *   rows in the same track; not wired by this commit.  Counters exist
- *   so future patches can flip the gate without an enum reshuffle.
+ * CHAIN_SAVE_ERRNO_SHIFT / CHAIN_SAVE_RETVAL_LINK: reserved enum slots,
+ *   not currently wired into the save-decision predicate.  Counters
+ *   exist so future predicates flip the gate without an enum reshuffle.
  */
 enum chain_save_reason {
 	CHAIN_SAVE_PC = 0,
