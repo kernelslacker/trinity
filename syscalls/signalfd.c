@@ -53,6 +53,7 @@ static void sanitise_signalfd(struct syscallrecord *rec)
 	fill_signalfd_mask(set);
 
 	rec->a2 = (unsigned long) set;
+	avoid_shared_buffer_inout(&rec->a2, sizeof(sigset_t));
 	rec->a3 = sizeof(sigset_t);
 
 	/* Occasionally pass an undersized sizemask to hit the EINVAL gate
@@ -124,6 +125,7 @@ static void sanitise_signalfd4(struct syscallrecord *rec)
 	fill_signalfd_mask(set);
 
 	rec->a2 = (unsigned long) set;
+	avoid_shared_buffer_inout(&rec->a2, sizeof(sigset_t));
 	rec->a3 = sizeof(sigset_t);
 
 	if (rnd_modulo_u32(10) == 0)
