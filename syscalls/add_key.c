@@ -117,6 +117,7 @@ static void set_user_payload(struct syscallrecord *rec)
 	generate_rand_bytes(buf, len);
 	rec->a3 = (unsigned long) buf;
 	rec->a4 = len;
+	avoid_shared_buffer_inout(&rec->a3, len);
 }
 
 static void set_keyring_payload(struct syscallrecord *rec)
@@ -145,11 +146,13 @@ static void set_big_key_payload(struct syscallrecord *rec)
 		generate_rand_bytes(buf, 64);
 		rec->a3 = (unsigned long) buf;
 		rec->a4 = 64;
+		avoid_shared_buffer_inout(&rec->a3, 64);
 		return;
 	}
 	generate_rand_bytes(buf, len);
 	rec->a3 = (unsigned long) buf;
 	rec->a4 = len;
+	avoid_shared_buffer_inout(&rec->a3, len);
 }
 
 static void set_asymmetric_payload(struct syscallrecord *rec)
@@ -167,6 +170,7 @@ static void set_asymmetric_payload(struct syscallrecord *rec)
 	memcpy(buf, asym_blobs[idx].data, len);
 	rec->a3 = (unsigned long) buf;
 	rec->a4 = len;
+	avoid_shared_buffer_inout(&rec->a3, len);
 }
 
 static void set_encrypted_payload(struct syscallrecord *rec)
@@ -191,6 +195,7 @@ static void set_encrypted_payload(struct syscallrecord *rec)
 		len += snprintf(buf + len, 256 - len, "%02x", RAND_BYTE());
 	rec->a3 = (unsigned long) buf;
 	rec->a4 = len;
+	avoid_shared_buffer_inout(&rec->a3, 256);
 }
 
 /* Weighted type picker.  Weights sum to 100; tweak as coverage data
@@ -247,6 +252,14 @@ static void sanitise_add_key(struct syscallrecord *rec)
 	strncpy(type_buf, type, 31);
 	type_buf[31] = '\0';
 	rec->a1 = (unsigned long) type_buf;
+	/* get_writable_address() draws from the tracked map pool, which
+	 * overlaps the shared-region range; the post-sanitise blanket
+	 * scrub would otherwise relocate this ARG_ADDRESS slot WITHOUT
+	 * copying the curated bytes, leaving the kernel's strndup_user()
+	 * to read pool garbage and the key_type lookup to bounce on
+	 * -EINVAL.  Move each input into a fresh pool slot with the
+	 * curated bytes intact; the blanket pass then no-ops here. */
+	avoid_shared_buffer_inout(&rec->a1, 32);
 
 	desc_buf = (char *) get_writable_address(128);
 	if (desc_buf == NULL) {
@@ -255,6 +268,7 @@ static void sanitise_add_key(struct syscallrecord *rec)
 	}
 	build_description(desc_buf, 128, ns_prefix);
 	rec->a2 = (unsigned long) desc_buf;
+	avoid_shared_buffer_inout(&rec->a2, 128);
 }
 
 static unsigned long addkey_ringids[] = {
