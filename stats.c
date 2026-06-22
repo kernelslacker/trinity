@@ -3386,6 +3386,8 @@ static const struct {
 	  offsetof(struct stats_s, arena_ptr_stale_caught_post_state) },
 	{ "execve_self_exec_blocked",
 	  offsetof(struct stats_s, execve_self_exec_blocked) },
+	{ "corpus_count_overcap_caught",
+	  offsetof(struct stats_s, corpus_count_overcap_caught) },
 	{ "sibling_mprotect_failed",
 	  offsetof(struct stats_s, sibling_mprotect_failed) },
 	{ "sibling_refreeze_count",
@@ -6454,9 +6456,24 @@ static time_t runid_monotonic_seconds(void)
  * of total corpus size.  Reads each ring's count with __ATOMIC_RELAXED
  * since the snapshot is observability-only -- a torn read against a
  * concurrent writer at most miscounts by one entry per syscall, well
- * inside the noise floor of a "did this run grow the corpus" check. */
+ * inside the noise floor of a "did this run grow the corpus" check.
+ *
+ * Each per-ring count is clamped to CORPUS_RING_SIZE before contributing
+ * to the sum, matching the picker (minicorpus.c) and the snapshot
+ * walker.  Both save paths (in-run minicorpus_save_with_reason and the
+ * on-disk loader) cap count at CORPUS_RING_SIZE before publishing, so
+ * count > CORPUS_RING_SIZE is structurally impossible through the
+ * documented writer flow -- a value above the cap is a zero-false-
+ * positive signal that the ring's count word has been scribbled by a
+ * sibling wild write.  Without the clamp a single garbage count word
+ * inflated the headline corpus_entries figure into the millions and
+ * masked the underlying corruption.  On detection, bump the per-event
+ * counter and (once per run) emit a first-witness line naming the ring
+ * nr and the unclamped count value so the next triage pass can
+ * attribute the scribbler. */
 static unsigned long runid_corpus_entries_total(void)
 {
+	static bool overcap_warned;
 	unsigned long total = 0;
 	unsigned int i;
 
@@ -6464,8 +6481,24 @@ static unsigned long runid_corpus_entries_total(void)
 		return 0;
 
 	for (i = 0; i < MAX_NR_SYSCALL; i++) {
-		total += __atomic_load_n(&minicorpus_shm->rings[i].count,
-					 __ATOMIC_RELAXED);
+		unsigned int count = __atomic_load_n(
+			&minicorpus_shm->rings[i].count, __ATOMIC_RELAXED);
+
+		if (unlikely(count > CORPUS_RING_SIZE)) {
+			__atomic_add_fetch(
+				&shm->stats.corpus_count_overcap_caught,
+				1UL, __ATOMIC_RELAXED);
+			if (!overcap_warned) {
+				overcap_warned = true;
+				output(0,
+				       "[main] WARNING corpus_count_overcap "
+				       "nr=%u count=%u clamped_to=%u "
+				       "(first witness)\n",
+				       i, count, CORPUS_RING_SIZE);
+			}
+			count = CORPUS_RING_SIZE;
+		}
+		total += count;
 	}
 	return total;
 }
