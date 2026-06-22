@@ -28,6 +28,7 @@ static void sanitise_settimeofday(struct syscallrecord *rec)
 			tz->tz_dsttime = (int) rnd_modulo_u32(4);
 		}
 		rec->a2 = (unsigned long) tz;
+		avoid_shared_buffer_inout(&rec->a2, sizeof(*tz));
 	} else {
 		rec->a2 = 0;
 	}
