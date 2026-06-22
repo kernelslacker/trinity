@@ -199,17 +199,30 @@ static void build_random_affinity(cpu_set_t *set)
 }
 
 /*
- * Try to write '0' or '1' to /sys/.../cpuN/online.  Returns true on
- * success, false on failure.  *was_eperm is set when the failure is
- * the expected non-root case; the caller counts those separately.
+ * Per-attempt sysfs write outcome.  Each case-3 dispatch is attributed
+ * to exactly one of these, except OUTCOME_OTHER which is left silent --
+ * the gap between cpu_hotplug_sysfs_writes and the sum of the named
+ * buckets is the count of "rare other errno" attempts (open ENOENT
+ * mid-unplug, write EBUSY, ...).
  */
-static bool sysfs_online_write(int cpu, char val, bool *was_eperm)
+enum hotplug_write_outcome {
+	HOTPLUG_OPEN_EPERM = 0,	/* open(O_WRONLY) returned -EACCES/-EPERM */
+	HOTPLUG_WRITE_EPERM,	/* open OK, write returned -EACCES/-EPERM */
+	HOTPLUG_WRITE_OK,	/* write() to cpuN/online succeeded */
+	HOTPLUG_OTHER,		/* any other open/write failure */
+};
+
+/*
+ * Try to write '0' or '1' to /sys/.../cpuN/online.  Returns which
+ * outcome bucket the attempt fell into; the caller decides whether
+ * to credit it (case-3 does; the second write inside real_offline_cycle
+ * is a best-effort restore and is not separately accounted).
+ */
+static enum hotplug_write_outcome sysfs_online_write(int cpu, char val)
 {
 	char path[128];
 	int fd;
 	ssize_t w;
-
-	*was_eperm = false;
 
 	snprintf(path, sizeof(path),
 		 "/sys/devices/system/cpu/cpu%d/online", cpu);
@@ -217,19 +230,18 @@ static bool sysfs_online_write(int cpu, char val, bool *was_eperm)
 	fd = open(path, O_WRONLY);
 	if (fd < 0) {
 		if (errno == EACCES || errno == EPERM)
-			*was_eperm = true;
-		return false;
+			return HOTPLUG_OPEN_EPERM;
+		return HOTPLUG_OTHER;
 	}
 
 	w = write(fd, &val, 1);
+	close(fd);
 	if (w != 1) {
 		if (errno == EACCES || errno == EPERM)
-			*was_eperm = true;
-		close(fd);
-		return false;
+			return HOTPLUG_WRITE_EPERM;
+		return HOTPLUG_OTHER;
 	}
-	close(fd);
-	return true;
+	return HOTPLUG_WRITE_OK;
 }
 
 /*
@@ -240,19 +252,17 @@ static bool sysfs_online_write(int cpu, char val, bool *was_eperm)
  */
 static bool real_offline_cycle(int cpu)
 {
-	bool eperm;
-
 	if (cpu <= 0)
 		return false;
 
-	if (!sysfs_online_write(cpu, '0', &eperm))
+	if (sysfs_online_write(cpu, '0') != HOTPLUG_WRITE_OK)
 		return false;
 
 	/* Bring it back up immediately.  If this write fails we've left
 	 * the host with one fewer CPU; nothing useful we can do beyond
 	 * counting it — the parent's heartbeat will eventually notice
 	 * the host is degraded. */
-	(void) sysfs_online_write(cpu, '1', &eperm);
+	(void) sysfs_online_write(cpu, '1');
 	return true;
 }
 
@@ -265,7 +275,9 @@ bool cpu_hotplug_rider(struct childdata *child)
 	unsigned int iters = JITTER_RANGE(MAX_ITERATIONS);
 	unsigned int affinity_calls = 0;
 	unsigned int sysfs_writes = 0;
-	unsigned int eperm_count = 0;
+	unsigned int open_eperm = 0;
+	unsigned int write_eperm = 0;
+	unsigned int write_ok = 0;
 	unsigned int real_offlines = 0;
 	bool did_real_offline = false;
 
@@ -321,12 +333,16 @@ bool cpu_hotplug_rider(struct childdata *child)
 		case 3: {
 			int cpu = pick_hotpluggable_cpu();
 			char val = RAND_BOOL() ? '1' : '0';
-			bool eperm;
+			enum hotplug_write_outcome outcome;
 
-			(void) sysfs_online_write(cpu, val, &eperm);
+			outcome = sysfs_online_write(cpu, val);
 			sysfs_writes++;
-			if (eperm)
-				eperm_count++;
+			switch (outcome) {
+			case HOTPLUG_OPEN_EPERM:  open_eperm++;  break;
+			case HOTPLUG_WRITE_EPERM: write_eperm++; break;
+			case HOTPLUG_WRITE_OK:    write_ok++;    break;
+			case HOTPLUG_OTHER:                      break;
+			}
 
 			/* Root-only real offline cycle.  At most one per
 			 * invocation; CPU 0 is excluded inside
@@ -366,9 +382,15 @@ bool cpu_hotplug_rider(struct childdata *child)
 	if (sysfs_writes)
 		__atomic_add_fetch(&shm->stats.cpu_hotplug_sysfs_writes,
 				   sysfs_writes, __ATOMIC_RELAXED);
-	if (eperm_count)
-		__atomic_add_fetch(&shm->stats.cpu_hotplug_eperm,
-				   eperm_count, __ATOMIC_RELAXED);
+	if (open_eperm)
+		__atomic_add_fetch(&shm->stats.cpu_hotplug_open_eperm,
+				   open_eperm, __ATOMIC_RELAXED);
+	if (write_eperm)
+		__atomic_add_fetch(&shm->stats.cpu_hotplug_write_eperm,
+				   write_eperm, __ATOMIC_RELAXED);
+	if (write_ok)
+		__atomic_add_fetch(&shm->stats.cpu_hotplug_write_ok,
+				   write_ok, __ATOMIC_RELAXED);
 	if (real_offlines)
 		__atomic_add_fetch(&shm->stats.cpu_hotplug_actual_offlines,
 				   real_offlines, __ATOMIC_RELAXED);
