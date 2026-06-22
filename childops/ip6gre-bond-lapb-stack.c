@@ -117,9 +117,18 @@ static void latch_unsupported(int op_type, const char *reason, int err)
 	g_unsupported = true;
 	outputerr("ip6gre_bond_lapb_stack: %s failed (errno=%d), latching unsupported\n",
 		  reason, err);
-	__atomic_store_n(&shm->stats.childop_latch_reason[op_type],
-			 CHILDOP_LATCH_UNSUPPORTED,
-			 __ATOMIC_RELAXED);
+	/* op_type originates in shared memory (child->op_type) and can be
+	 * scribbled by a poisoned-arena write from a sibling; bounds-check
+	 * the snapshot before indexing the NR_CHILD_OP_TYPES-sized stats
+	 * array, same pattern the child.c dispatch loop uses for the
+	 * unguarded write that motivated this guard. */
+	{
+		const enum child_op_type op = op_type;
+		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					 CHILDOP_LATCH_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+	}
 }
 
 /* errnos that mean "kernel cannot do this op shape on this build" --
@@ -440,8 +449,17 @@ static void ip6gre_lapb_iter_flag_cycles(struct ip6gre_lapb_iter_ctx *ctx)
 		return;
 	}
 
-	__atomic_add_fetch(&shm->stats.childop_data_path[ctx->child->op_type],
-			   1, __ATOMIC_RELAXED);
+	/* Snapshot ctx->child->op_type once and bounds-check before
+	 * indexing the per-op stats array.  The field lives in shared
+	 * memory and can be scribbled by a poisoned-arena write from a
+	 * sibling; the child.c dispatch loop already gates its dispatch +
+	 * alt-op accounting on the same valid_op snapshot. */
+	{
+		const enum child_op_type op = ctx->child->op_type;
+		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+			__atomic_add_fetch(&shm->stats.childop_data_path[op],
+					   1, __ATOMIC_RELAXED);
+	}
 
 	cycles = (rand32() % (IBLS_FLAG_CYCLES_CAP - IBLS_FLAG_CYCLES_BASE + 1U))
 	         + IBLS_FLAG_CYCLES_BASE;
@@ -500,8 +518,17 @@ bool ip6gre_bond_lapb_stack(struct childdata *child)
 	if (ip6gre_lapb_iter_attach_gre(&ictx) != 0)
 		goto out;
 
-	__atomic_add_fetch(&shm->stats.childop_setup_accepted[child->op_type],
-			   1, __ATOMIC_RELAXED);
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats array.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot. */
+	{
+		const enum child_op_type op = child->op_type;
+		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+			__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+					   1, __ATOMIC_RELAXED);
+	}
 
 	ip6gre_lapb_iter_flag_cycles(&ictx);
 
