@@ -110,6 +110,7 @@ static void sanitise_sigaltstack(struct syscallrecord *rec)
 	}
 
 	rec->a1 = (unsigned long) ss;
+	avoid_shared_buffer_inout(&rec->a1, sizeof(stack_t));
 
 choose_uoss:
 	/*
