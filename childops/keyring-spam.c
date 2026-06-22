@@ -339,13 +339,12 @@ bool keyring_spam(struct childdata *child)
 	const enum child_op_type op_type = child->op_type;
 	const bool valid_op = ((int) op_type >= 0 && op_type < NR_CHILD_OP_TYPES);
 
-	if (valid_op)
+	if (valid_op) {
 		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op_type],
 				   1, __ATOMIC_RELAXED);
-
-	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop_data_path[op_type],
 				   1, __ATOMIC_RELAXED);
+	}
 
 	for (iter = 0; iter < iters; iter++) {
 		enum keyring_op op;
