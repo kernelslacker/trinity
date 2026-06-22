@@ -2060,7 +2060,21 @@ static void struct_fill_passes(unsigned char *buf, unsigned int size,
 			write_field_uint(buf, f, (uint64_t) v);
 			break;
 		}
-		case FT_MAGIC:
+		case FT_MAGIC: {
+			const unsigned char *const *vals = f->u.magic.vals;
+			unsigned int nv = f->u.magic.n;
+			unsigned int stride = f->u.magic.stride;
+			const unsigned char *pick;
+
+			if (vals == NULL || nv == 0 ||
+			    stride == 0 || stride != f->size) {
+				fill_field_raw(buf, f);
+				break;
+			}
+			pick = vals[rnd_modulo_u32(nv)];
+			memcpy(buf + f->offset, pick, stride);
+			break;
+		}
 		case FT_VERSION_MAGIC:
 		case FT_TAGGED_UNION:
 		case FT_RAW:
