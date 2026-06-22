@@ -78,6 +78,7 @@ static void sanitise_rt_sigtimedwait(struct syscallrecord *rec)
 		return;
 	build_sigset(set);
 	rec->a1 = (unsigned long) set;
+	avoid_shared_buffer_inout(&rec->a1, sizeof(sigset_t));
 
 	/*
 	 * a3 (uts) is typed ARG_TIMESPEC; the generator publishes a
