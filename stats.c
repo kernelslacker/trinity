@@ -6429,27 +6429,13 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 		unsigned long delta_hyp_corpus_save = cur_hyp_corpus_save - prev_hyp_corpus_save;
 		unsigned long delta_hyp_destructive = cur_hyp_destructive - prev_hyp_destructive;
 		unsigned long delta_hyp_context_skip = cur_hyp_context_skip - prev_hyp_context_skip;
-		unsigned long delta_hyp_state[CMP_HYP_STATE_NR];
-		unsigned long cur_hyp_state[CMP_HYP_STATE_NR];
-		static unsigned long prev_hyp_state[CMP_HYP_STATE_NR];
-		bool any_state_delta = false;
-		unsigned int s;
-
-		for (s = 0; s < CMP_HYP_STATE_NR; s++) {
-			cur_hyp_state[s] = __atomic_load_n(
-				&kcov_shm->cmp_hyp_state_transitions[s],
-				__ATOMIC_RELAXED);
-			delta_hyp_state[s] = cur_hyp_state[s] - prev_hyp_state[s];
-			if (delta_hyp_state[s] != 0)
-				any_state_delta = true;
-		}
 
 		if ((delta_hyp_observations | delta_hyp_inserted | delta_hyp_pool_full |
 		     delta_hyp_kind_full | delta_hyp_consumed | delta_hyp_pc_wins |
 		     delta_hyp_transition_wins | delta_hyp_cmp_novelty_wins |
 		     delta_hyp_misses | delta_hyp_disabled_skips |
 		     delta_hyp_corpus_save | delta_hyp_destructive |
-		     delta_hyp_context_skip) != 0 || any_state_delta) {
+		     delta_hyp_context_skip) != 0) {
 			stats_log_write("KCOV CMP hyp shadow stats over last %lds:\n", elapsed);
 			stats_log_write("  %-32s +%lu  (total %lu)\n",
 					"cmp_hyp_observations", delta_hyp_observations, cur_hyp_observations);
@@ -6483,10 +6469,6 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 			stats_log_write("  %-32s +%lu  (total %lu)\n",
 					"cmp_hyp_context_skip",
 					delta_hyp_context_skip, cur_hyp_context_skip);
-			for (s = 0; s < CMP_HYP_STATE_NR; s++) {
-				stats_log_write("  cmp_hyp_state_transitions[%u]    +%lu  (total %lu)\n",
-						s, delta_hyp_state[s], cur_hyp_state[s]);
-			}
 
 			/* Per-kind census: accepted (inserted_by_kind) vs dropped
 			 * at the per-kind sub-cap (kind_full_by_kind).  Surfaces
@@ -6534,8 +6516,6 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 		prev_hyp_corpus_save = cur_hyp_corpus_save;
 		prev_hyp_destructive = cur_hyp_destructive;
 		prev_hyp_context_skip = cur_hyp_context_skip;
-		for (s = 0; s < CMP_HYP_STATE_NR; s++)
-			prev_hyp_state[s] = cur_hyp_state[s];
 	}
 
 	/*
