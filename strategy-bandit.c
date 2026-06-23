@@ -29,7 +29,6 @@
 #include <math.h>
 #include <stdbool.h>
 
-#include "debug.h"
 #include "kcov.h"
 #include "shm.h"
 #include "stats.h"
