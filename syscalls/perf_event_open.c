@@ -1010,6 +1010,100 @@ static int random_event_type(void)
 	return type;
 }
 
+static long long random_hw_config(void)
+{
+	unsigned long long config = 0;
+
+	switch (rnd_modulo_u32(11)) {
+	case 0:
+		config = PERF_COUNT_HW_CPU_CYCLES;
+		break;
+	case 1:
+		config = PERF_COUNT_HW_INSTRUCTIONS;
+		break;
+	case 2:
+		config = PERF_COUNT_HW_CACHE_REFERENCES;
+		break;
+	case 3:
+		config = PERF_COUNT_HW_CACHE_MISSES;
+		break;
+	case 4:
+		config = PERF_COUNT_HW_BRANCH_INSTRUCTIONS;
+		break;
+	case 5:
+		config = PERF_COUNT_HW_BRANCH_MISSES;
+		break;
+	case 6:
+		config = PERF_COUNT_HW_BUS_CYCLES;
+		break;
+	case 7:
+		config = PERF_COUNT_HW_STALLED_CYCLES_FRONTEND;
+		break;
+	case 8:
+		config = PERF_COUNT_HW_STALLED_CYCLES_BACKEND;
+		break;
+	case 9:
+		config = PERF_COUNT_HW_REF_CPU_CYCLES;
+		break;
+	case 10:
+		config = rand64();
+		break;
+	default:
+		break;
+	}
+	return config;
+}
+
+static long long random_sw_config(void)
+{
+	unsigned long long config = 0;
+
+	switch (rnd_modulo_u32(13)) {
+	case 0:
+		config = PERF_COUNT_SW_CPU_CLOCK;
+		break;
+	case 1:
+		config = PERF_COUNT_SW_TASK_CLOCK;
+		break;
+	case 2:
+		config = PERF_COUNT_SW_PAGE_FAULTS;
+		break;
+	case 3:
+		config = PERF_COUNT_SW_CONTEXT_SWITCHES;
+		break;
+	case 4:
+		config = PERF_COUNT_SW_CPU_MIGRATIONS;
+		break;
+	case 5:
+		config = PERF_COUNT_SW_PAGE_FAULTS_MIN;
+		break;
+	case 6:
+		config = PERF_COUNT_SW_PAGE_FAULTS_MAJ;
+		break;
+	case 7:
+		config = PERF_COUNT_SW_ALIGNMENT_FAULTS;
+		break;
+	case 8:
+		config = PERF_COUNT_SW_EMULATION_FAULTS;
+		break;
+	case 9:
+		config = PERF_COUNT_SW_DUMMY;
+		break;
+	case 10:
+		config = PERF_COUNT_SW_BPF_OUTPUT;
+		break;
+	case 11:
+		config = PERF_COUNT_SW_CGROUP_SWITCHES;
+		break;
+	case 12:
+		config = rand64();
+		break;
+	default:
+		break;
+	}
+	return config;
+}
+
 static long long random_event_config(__u32 *event_type,
 					__u64 *config1,
 					__u64 *config2)
@@ -1018,88 +1112,10 @@ static long long random_event_config(__u32 *event_type,
 
 	switch (*event_type) {
 	case PERF_TYPE_HARDWARE:
-		switch (rnd_modulo_u32(11)) {
-		case 0:
-			config = PERF_COUNT_HW_CPU_CYCLES;
-			break;
-		case 1:
-			config = PERF_COUNT_HW_INSTRUCTIONS;
-			break;
-		case 2:
-			config = PERF_COUNT_HW_CACHE_REFERENCES;
-			break;
-		case 3:
-			config = PERF_COUNT_HW_CACHE_MISSES;
-			break;
-		case 4:
-			config = PERF_COUNT_HW_BRANCH_INSTRUCTIONS;
-			break;
-		case 5:
-			config = PERF_COUNT_HW_BRANCH_MISSES;
-			break;
-		case 6:
-			config = PERF_COUNT_HW_BUS_CYCLES;
-			break;
-		case 7:
-			config = PERF_COUNT_HW_STALLED_CYCLES_FRONTEND;
-			break;
-		case 8:
-			config = PERF_COUNT_HW_STALLED_CYCLES_BACKEND;
-			break;
-		case 9:
-			config = PERF_COUNT_HW_REF_CPU_CYCLES;
-			break;
-		case 10:
-			config = rand64();
-			break;
-		default:
-			break;
-		}
+		config = random_hw_config();
 		break;
 	case PERF_TYPE_SOFTWARE:
-		switch (rnd_modulo_u32(13)) {
-		case 0:
-			config = PERF_COUNT_SW_CPU_CLOCK;
-			break;
-		case 1:
-			config = PERF_COUNT_SW_TASK_CLOCK;
-			break;
-		case 2:
-			config = PERF_COUNT_SW_PAGE_FAULTS;
-			break;
-		case 3:
-			config = PERF_COUNT_SW_CONTEXT_SWITCHES;
-			break;
-		case 4:
-			config = PERF_COUNT_SW_CPU_MIGRATIONS;
-			break;
-		case 5:
-			config = PERF_COUNT_SW_PAGE_FAULTS_MIN;
-			break;
-		case 6:
-			config = PERF_COUNT_SW_PAGE_FAULTS_MAJ;
-			break;
-		case 7:
-			config = PERF_COUNT_SW_ALIGNMENT_FAULTS;
-			break;
-		case 8:
-			config = PERF_COUNT_SW_EMULATION_FAULTS;
-			break;
-		case 9:
-			config = PERF_COUNT_SW_DUMMY;
-			break;
-		case 10:
-			config = PERF_COUNT_SW_BPF_OUTPUT;
-			break;
-		case 11:
-			config = PERF_COUNT_SW_CGROUP_SWITCHES;
-			break;
-		case 12:
-			config = rand64();
-			break;
-		default:
-			break;
-		}
+		config = random_sw_config();
 		break;
 	case PERF_TYPE_TRACEPOINT:
 		/* Live ids enumerated once from /sys/kernel/tracing/events/...
