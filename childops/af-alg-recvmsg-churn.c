@@ -58,6 +58,7 @@
 
 #include "child.h"
 #include "childops-netlink.h"
+#include "compat.h"
 #include "jitter.h"
 #include "proto-alg-dict.h"
 #include "random.h"
@@ -67,12 +68,6 @@
 #include "trinity.h"
 #include "utils.h"
 
-#ifndef AF_ALG
-# define AF_ALG				38
-#endif
-#ifndef ALG_SET_KEY
-# define ALG_SET_KEY			1
-#endif
 #ifndef ALG_SET_IV
 # define ALG_SET_IV			2
 #endif

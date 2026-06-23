@@ -5,9 +5,9 @@
 # (migrate to a parent-visible path or suppress with the in-line marker),
 # NEVER grow.  Refreshed for line-drift after the 2026-06-05 review waves.
 #
-childops/af-alg-template-probe.c:208:af_alg_template_probe
-childops/af-alg-template-probe.c:229:af_alg_template_probe
-childops/af-alg-weak-cipher-probe.c:225:probe_one_entry
+childops/af-alg-template-probe.c:205:af_alg_template_probe
+childops/af-alg-template-probe.c:226:af_alg_template_probe
+childops/af-alg-weak-cipher-probe.c:218:probe_one_entry
 childops/eth-emitter.c:253:ensure_socket
 childops/fs-lifecycle.c:158:ensure_private_ns
 childops/genetlink-fuzzer.c:294:ensure_discovery

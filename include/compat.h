@@ -308,6 +308,9 @@ enum {
 #ifndef AF_ALG
 #define AF_ALG		PF_ALG
 #endif
+#ifndef ALG_SET_KEY
+#define ALG_SET_KEY	1
+#endif
 
 #ifndef PF_NFC
 #define PF_NFC		39
