@@ -837,6 +837,16 @@ struct sockaddr_nfc {
 
 /* linux/io_uring.h
  *
+ * IORING_OFF_SQ_RING: mmap offset for the submission-queue ring
+ * region returned by io_uring_setup().  ABI-stable since the syscall
+ * landed in 5.1, but absent from very old kernel-headers packages.
+ */
+#ifndef IORING_OFF_SQ_RING
+#define IORING_OFF_SQ_RING	0ULL
+#endif
+
+/* linux/io_uring.h
+ *
  * IORING_OP_* enum values added after the v6.6 LTS cut.  The enum is
  * append-only and never renumbered, so each value below is stable
  * across kernels.  Trinity references these unconditionally from
