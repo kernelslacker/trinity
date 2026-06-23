@@ -1638,6 +1638,10 @@ enum kcmp_type {
 #define SOL_MPTCP	284
 #endif
 
+#ifndef SOL_UDP
+#define SOL_UDP		17
+#endif
+
 /* linux/mptcp.h - SOL_MPTCP optnames (getsockopt only in current kernels;
  * setsockopt at SOL_MPTCP returns -EOPNOTSUPP, but the dispatch path still
  * runs, and getsockopt re-uses do_setsockopt to populate level/optname).

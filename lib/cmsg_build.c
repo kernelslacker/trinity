@@ -32,9 +32,6 @@
 #ifndef SCM_TIMESTAMPING
 #define SCM_TIMESTAMPING	37
 #endif
-#ifndef SOL_UDP
-#define SOL_UDP			17
-#endif
 
 enum cmsg_kind pick_cmsg_kind(void)
 {
