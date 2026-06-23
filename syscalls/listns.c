@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include "compat.h"
 #include "csfu.h"
 #include "random.h"
 #include "rnd.h"
@@ -37,10 +38,6 @@ struct ns_id_req {
 
 #ifndef LISTNS_CURRENT_USER
 #define LISTNS_CURRENT_USER	0xffffffffffffffffULL
-#endif
-
-#ifndef CLONE_NEWCGROUP
-#define CLONE_NEWCGROUP		0x02000000
 #endif
 
 #ifndef CLONE_NEWTIME

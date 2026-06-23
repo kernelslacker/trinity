@@ -8,15 +8,12 @@
 #include <linux/sched.h>
 #include "child.h"
 #include "clone.h"
+#include "compat.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "stats_ring.h"
 #include "trinity.h"
 #include "utils.h"
-
-#ifndef CLONE_NEWCGROUP
-#define CLONE_NEWCGROUP                0x02000000      /* New cgroup namespace */
-#endif
 
 /*
  * Mirrors the convention in syscalls/unshare.c: when sanitise admits
