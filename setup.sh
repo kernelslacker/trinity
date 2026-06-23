@@ -46,6 +46,10 @@ setup_iscsi() {
 chmod 777 /sys/kernel/debug/
 chmod 666 /sys/kernel/debug/kcov
 
+# Sysctls trinity needs for uffd + perf_event_open childop coverage.
+write_if_changed /proc/sys/vm/unprivileged_userfaultfd 1
+write_if_changed /proc/sys/kernel/perf_event_paranoid -1
+
 if ! mountpoint -q /sys/kernel/config; then
     mount -t configfs none /sys/kernel/config
 fi
