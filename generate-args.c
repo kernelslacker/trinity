@@ -359,6 +359,8 @@ static unsigned long handle_arg_op(struct syscallentry *entry,
 						   1UL, __ATOMIC_RELAXED);
 				__atomic_fetch_add(&kcov_shm->propagation_injected,
 						   1UL, __ATOMIC_RELAXED);
+				__atomic_fetch_add(&kcov_shm->propagation_injected_callsite[PROP_INJECTED_CALLSITE_ARG_OP],
+						   1UL, __ATOMIC_RELAXED);
 			}
 			return val;
 		}
@@ -592,9 +594,12 @@ static unsigned long gen_undefined_arg(struct syscallentry *entry __unused__,
 		unsigned long val;
 
 		if (child != NULL && prop_ring_try_get(child, rec, &val)) {
-			if (kcov_shm != NULL)
+			if (kcov_shm != NULL) {
 				__atomic_fetch_add(&kcov_shm->propagation_injected,
 						   1UL, __ATOMIC_RELAXED);
+				__atomic_fetch_add(&kcov_shm->propagation_injected_callsite[PROP_INJECTED_CALLSITE_ARG_UNDEFINED],
+						   1UL, __ATOMIC_RELAXED);
+			}
 			return val;
 		}
 	}
