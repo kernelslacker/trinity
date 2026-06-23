@@ -5,10 +5,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <stdlib.h>
-#include <sys/prctl.h>
 #include <sys/ptrace.h>
-#include <sys/resource.h>
-#include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -17,30 +14,22 @@
 
 #include "child.h"
 #include "childops-util.h"
-#include "cmp_hints.h"
 #include "debug.h"
 #include "fd.h"
-#include "fd-event.h"
 #include "kcov.h"
 #include "kmsg-monitor.h"
-#include "minicorpus.h"
 #include "objects.h"
 #include "params.h"
 #include "pids.h"
-#include "post-mortem.h"
 #include "pre_crash_ring.h"
 #include "random.h"
-#include "self_cgroup.h"
 #include "shm.h"
 #include "stats.h"
 #include "stats_ring.h"
-#include "strategy.h"
 #include "syscall.h"
 #include "syscall_record.h"
 #include "tables.h"
-#include "taint.h"
 #include "trinity.h"
-#include "uid.h"
 #include "utils.h"
 #include "main-internal.h"
 
