@@ -14,7 +14,6 @@
 #include <errno.h>
 #include <malloc.h>
 #include <signal.h>
-#include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -22,7 +21,6 @@
 #include <sys/mount.h>
 #include <sys/personality.h>
 #include <sys/stat.h>
-#include <sys/time.h>
 #include <sys/resource.h>
 #include <sys/prctl.h>
 #include <sys/syscall.h>
