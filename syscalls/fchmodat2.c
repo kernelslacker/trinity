@@ -3,17 +3,11 @@
  *		umode_t, mode, unsigned int, flags)
  */
 #include <fcntl.h>
+#include "compat.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
-
-#ifndef AT_SYMLINK_NOFOLLOW
-#define AT_SYMLINK_NOFOLLOW	0x100
-#endif
-#ifndef AT_EMPTY_PATH
-#define AT_EMPTY_PATH		0x1000
-#endif
 
 static unsigned long fchmodat2_flags[] = {
 	AT_SYMLINK_NOFOLLOW,

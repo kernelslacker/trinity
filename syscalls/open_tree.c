@@ -1,6 +1,7 @@
 /*
  *  SYSCALL_DEFINE3(open_tree, int, dfd, const char *, filename, unsigned, flags)
  */
+#include "compat.h"
 #include "object-types.h"
 #include "sanitise.h"
 #include <fcntl.h>
@@ -13,10 +14,6 @@
 
 #ifndef OPEN_TREE_NAMESPACE
 #define OPEN_TREE_NAMESPACE	2		/* Clone into new mount namespace */
-#endif
-
-#ifndef AT_RECURSIVE
-#define AT_RECURSIVE            0x8000  /* Apply to the entire subtree */
 #endif
 
 static unsigned long open_tree_flags[] = {

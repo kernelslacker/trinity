@@ -9,6 +9,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include "arch.h"
+#include "compat.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -55,14 +56,8 @@ struct syscallentry syscall_stat64 = {
 #define AT_STATX_FORCE_SYNC     0x2000  /* - Force the attributes to be sync'd with the server */
 #define AT_STATX_DONT_SYNC      0x4000  /* - Don't sync attributes with the server */
 
-#ifndef AT_SYMLINK_NOFOLLOW
-#define AT_SYMLINK_NOFOLLOW     0x100   /* Do not follow symbolic links */
-#endif
 #ifndef AT_NO_AUTOMOUNT
 #define AT_NO_AUTOMOUNT         0x800   /* Suppress terminal automount traversal */
-#endif
-#ifndef AT_EMPTY_PATH
-#define AT_EMPTY_PATH           0x1000  /* Allow empty relative pathname (resolve dfd alone) */
 #endif
 
 static unsigned long statx_flags[] = {

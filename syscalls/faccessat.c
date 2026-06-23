@@ -5,6 +5,7 @@
  * On error, -1 is returned and errno is set to indicate the error.
  */
 #include <unistd.h>
+#include "compat.h"
 #include "sanitise.h"
 
 static unsigned long access_modes[] = {
@@ -25,10 +26,8 @@ struct syscallentry syscall_faccessat = {
 #define AT_FDCWD                -100    /* Special value used to indicate
                                            openat should use the current
                                            working directory. */
-#define AT_SYMLINK_NOFOLLOW     0x100   /* Do not follow symbolic links.  */
 #define AT_EACCESS              0x200   /* Test access permitted for
                                            effective IDs, not real IDs.  */
-#define AT_EMPTY_PATH           0x1000  /* Allow empty relative pathname */
 
 static unsigned long faccessat2_flags[] = {
 	AT_SYMLINK_NOFOLLOW, AT_EACCESS, AT_EMPTY_PATH,
