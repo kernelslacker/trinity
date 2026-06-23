@@ -3334,11 +3334,46 @@ bool kcov_get_kernel_fp(uint8_t out[32])
  */
 static unsigned long kcov_bitmap_edges_at_last_save = ULONG_MAX;
 
+/*
+ * Recount the warm-cache edge counters from a bucket_seen[] blob.
+ * The bitmap is the authoritative state: edges_found bumps once per
+ * (edge, bucket) bit-flip and so equals the popcount of the whole
+ * bitmap; distinct_edges bumps only on the all-zero -> first-bit
+ * transition and so equals the count of nonzero bytes.  Bits in
+ * bucket_seen[] never clear, so these identities hold by
+ * construction at every instant in a single process.
+ *
+ * Used at save so the on-disk counters and the CRC'd bitmap payload
+ * are a coherent pair, and at load so a header written without the
+ * save-side recount cannot import a frozen skew.
+ */
+static void kcov_bitmap_recount(const unsigned char *bm, size_t n,
+				unsigned long *edges,
+				unsigned long *distinct)
+{
+	unsigned long e = 0;
+	unsigned long d = 0;
+	size_t i;
+
+	for (i = 0; i < n; i++) {
+		unsigned char b = bm[i];
+
+		if (b != 0) {
+			e += (unsigned long)__builtin_popcount(b);
+			d++;
+		}
+	}
+	*edges = e;
+	*distinct = d;
+}
+
 bool kcov_bitmap_save_file(const char *path)
 {
 	struct kcov_bitmap_file_header hdr;
 	struct kcov_strat_ondisk strat_blob;
 	unsigned long edges_now;
+	unsigned long recount_edges;
+	unsigned long recount_distinct;
 	unsigned char *priors_blob;
 	unsigned char *bucket_seen_blob;
 	struct kcov_per_syscall_diag_ondisk *diag_blob;
@@ -3454,9 +3489,17 @@ bool kcov_bitmap_save_file(const char *path)
 	hdr.version = KCOV_BITMAP_FILE_VERSION;
 	hdr.num_edges = KCOV_NUM_EDGES;
 	hdr.num_buckets = KCOV_NUM_BUCKETS;
-	hdr.edges_found = edges_now;
-	hdr.distinct_edges = __atomic_load_n(&kcov_shm->distinct_edges,
-					     __ATOMIC_RELAXED);
+	/* Stamp edges_found / distinct_edges from a recount over the
+	 * bucket_seen snapshot rather than from the running atomics:
+	 * sampling kcov_shm->{edges_found, distinct_edges} here would
+	 * race the memcpy above and could leave the header pair one or
+	 * more (edge, bucket) bit-flips out of step with the bytes the
+	 * payload_crc32 below covers.  The recount makes the on-disk
+	 * (counter, bitmap) pair coherent by construction. */
+	kcov_bitmap_recount(bucket_seen_blob, KCOV_NUM_EDGES,
+			    &recount_edges, &recount_distinct);
+	hdr.edges_found = recount_edges;
+	hdr.distinct_edges = recount_distinct;
 	hdr.payload_crc32 = crc32(bucket_seen_blob, KCOV_NUM_EDGES);
 	hdr.max_nr_syscall = MAX_NR_SYSCALL;
 	hdr.priors_crc32 = crc32(priors_blob, priors_blob_size);
@@ -3545,6 +3588,8 @@ bool kcov_bitmap_load_file(const char *path)
 	uint8_t cur_fp[32];
 	unsigned char *scratch;
 	uint32_t want_crc;
+	unsigned long recount_edges;
+	unsigned long recount_distinct;
 	ssize_t n;
 	int fd;
 
@@ -3821,26 +3866,43 @@ bool kcov_bitmap_load_file(const char *path)
 	}
 
 	(void)close(fd);
-	__atomic_store_n(&kcov_shm->edges_found, hdr.edges_found,
+	/* Recount counters from the just-loaded bitmap instead of
+	 * trusting the header values verbatim.  Headers written without
+	 * the save-side recount can carry a skewed pair (counters were
+	 * sampled at a different instant than the bitmap snapshot they
+	 * summarise); restoring those values straight into the running
+	 * atomics would import the skew and round-trip it across every
+	 * subsequent save/load cycle.  The bitmap is authoritative --
+	 * popcount and nonzero-byte count are the by-construction
+	 * definitions of these two counters. */
+	kcov_bitmap_recount(kcov_shm->bucket_seen, KCOV_NUM_EDGES,
+			    &recount_edges, &recount_distinct);
+	if (recount_edges != hdr.edges_found ||
+	    recount_distinct != hdr.distinct_edges) {
+		output(0, "kcov-bitmap: header counters {edges=%lu, distinct=%lu} disagree with bitmap recount {edges=%lu, distinct=%lu} at %s -- using recount\n",
+		       (unsigned long)hdr.edges_found,
+		       (unsigned long)hdr.distinct_edges,
+		       recount_edges, recount_distinct, path);
+	}
+	__atomic_store_n(&kcov_shm->edges_found, recount_edges,
 			 __ATOMIC_RELAXED);
-	__atomic_store_n(&kcov_shm->distinct_edges, hdr.distinct_edges,
+	__atomic_store_n(&kcov_shm->distinct_edges, recount_distinct,
 			 __ATOMIC_RELAXED);
 	/* Snapshot the warm-loaded count so print_stats() can split
 	 * displayed coverage into the warm-vs-cold contribution.  Set
-	 * exactly here — after the bitmap + edges_found are in place and
-	 * before any child has had a chance to discover new coverage — so
-	 * a later (edges_found - edges_warm_loaded) subtraction is the
-	 * count of edges this run actually discovered itself. */
-	__atomic_store_n(&kcov_shm->edges_warm_loaded, hdr.edges_found,
+	 * exactly here -- after the bitmap is in place and before any
+	 * child has had a chance to discover new coverage -- so a later
+	 * (edges_found - edges_warm_loaded) subtraction is the count of
+	 * edges this run actually discovered itself. */
+	__atomic_store_n(&kcov_shm->edges_warm_loaded, recount_edges,
 			 __ATOMIC_RELAXED);
 	__atomic_store_n(&kcov_shm->distinct_edges_warm_loaded,
-			 hdr.distinct_edges, __ATOMIC_RELAXED);
+			 recount_distinct, __ATOMIC_RELAXED);
 	/* Seed the dirty-bit baseline so a load-then-immediate-exit cycle
 	 * skips the redundant end-of-run save. */
-	kcov_bitmap_edges_at_last_save = hdr.edges_found;
+	kcov_bitmap_edges_at_last_save = recount_edges;
 	output(0, "kcov-bitmap: loaded %lu edges (%lu distinct) from %s\n",
-	       (unsigned long)hdr.edges_found,
-	       (unsigned long)hdr.distinct_edges, path);
+	       recount_edges, recount_distinct, path);
 	return true;
 }
 
