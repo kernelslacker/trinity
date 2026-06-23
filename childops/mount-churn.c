@@ -82,6 +82,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "compat.h"
 #include "pids.h"
 #include "random.h"
 #include "rnd.h"
@@ -108,9 +109,6 @@
 #endif
 #ifndef FSCONFIG_CMD_CREATE
 #define FSCONFIG_CMD_CREATE	6
-#endif
-#ifndef MOVE_MOUNT_F_EMPTY_PATH
-#define MOVE_MOUNT_F_EMPTY_PATH	0x00000004
 #endif
 #ifndef MOUNT_ATTR_RDONLY
 #define MOUNT_ATTR_RDONLY	0x00000001
