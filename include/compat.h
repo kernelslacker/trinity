@@ -503,6 +503,9 @@ struct sockaddr_nfc {
 #ifndef NETLINK_SOCK_DIAG
 #define NETLINK_SOCK_DIAG 4
 #endif
+#ifndef NETLINK_XFRM
+#define NETLINK_XFRM 6
+#endif
 #ifndef RTNLGRP_DCB
 #define RTNLGRP_DCB 23
 #endif

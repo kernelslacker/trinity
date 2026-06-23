@@ -165,10 +165,6 @@
  * __has_include guard above prevents redefinition when the real
  * header is present.
  */
-#ifndef NETLINK_XFRM
-#define NETLINK_XFRM			6
-#endif
-
 #ifndef SOL_NETLINK
 #define SOL_NETLINK			270
 #endif
