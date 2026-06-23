@@ -4974,6 +4974,8 @@ void blanket_address_scrub(struct syscallentry *entry, struct syscallrecord *rec
 		}
 		if (slot != NULL)
 			avoid_shared_buffer_out(slot, page_size);
+		__atomic_add_fetch(&shm->stats.blanket_address_scrub_slots_walked,
+				   1, __ATOMIC_RELAXED);
 		mask &= (uint8_t)(mask - 1);
 	}
 
