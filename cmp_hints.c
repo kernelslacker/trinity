@@ -486,11 +486,13 @@ void cmp_hyp_observe(unsigned int nr, bool do32, unsigned long cmp_ip,
 				   __ATOMIC_RELAXED);
 
 	/* Wild-write defence: a stomp past the per-syscall cap would let
-	 * the find/alloc scans walk off entries[].  Bail and surface it as
-	 * pool-full so the saturation lane stays the single visible signal. */
+	 * the find/alloc scans walk off entries[].  Bail and surface it on
+	 * the sibling cmp_hyp_pool_overflow counter -- distinct from the
+	 * cmp_hyp_pool_full saturation lane so a corruption channel cannot
+	 * hide inside legitimate back-pressure. */
 	if (pool->count > CMP_HYP_PER_SYSCALL) {
 		if (kcov_shm != NULL)
-			__atomic_fetch_add(&kcov_shm->cmp_hyp_pool_full, 1UL,
+			__atomic_fetch_add(&kcov_shm->cmp_hyp_pool_overflow, 1UL,
 					   __ATOMIC_RELAXED);
 		return;
 	}
