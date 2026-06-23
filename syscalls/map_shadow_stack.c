@@ -49,7 +49,7 @@ static void post_map_shadow_stack(struct syscallrecord *rec)
 		return;
 	}
 
-	munmap(p, rec->a2);
+	munmap(p, get_arg_snapshot(rec, 2));
 }
 
 struct syscallentry syscall_map_shadow_stack = {
@@ -62,4 +62,14 @@ struct syscallentry syscall_map_shadow_stack = {
 	.post = post_map_shadow_stack,
 	.group = GROUP_VM,
 	.rettype = RET_ADDRESS,
+	/* a2 (size) is consumed by the post handler's munmap of the
+	 * kernel-returned shadow stack base.  Reading a2 live from the
+	 * shared rec would let a sibling stomp between syscall return and
+	 * the post handler hand munmap a fabricated length, unmapping an
+	 * unrelated VMA covering rec->retval and producing a phantom VMA
+	 * bug attributable to map_shadow_stack rather than the stomper.
+	 * Shadow a2 so the unmap length comes from the dispatch-time
+	 * value the kernel actually saw; mismatch bumps arg_shadow_stomp
+	 * from inside get_arg_snapshot(). */
+	.arg_snapshot_mask = (1u << 1),
 };
