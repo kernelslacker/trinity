@@ -426,9 +426,12 @@ static struct cmp_hypothesis *cmp_hyp_alloc(struct cmp_hyp_pool *pool,
 	struct cmp_hypothesis *h;
 
 	if (pool->count >= CMP_HYP_PER_SYSCALL) {
-		if (kcov_shm != NULL)
+		if (kcov_shm != NULL) {
 			__atomic_fetch_add(&kcov_shm->cmp_hyp_pool_full, 1UL,
 					   __ATOMIC_RELAXED);
+			__atomic_fetch_add(&kcov_shm->cmp_hyp_pool_full_by_kind[kind],
+					   1UL, __ATOMIC_RELAXED);
+		}
 		return NULL;
 	}
 	if (pool->per_kind_count[kind] >= CMP_HYP_PER_KIND) {

@@ -2192,6 +2192,18 @@ struct kcov_shared {
 	unsigned long cmp_hyp_would_miss_by_kind[CMP_HYP_KIND_NR];
 	unsigned long cmp_hyp_would_value_differs;
 
+	/* Per-kind flat census of typed CMP hypothesis insert rejections
+	 * caused by the per-syscall total cap (CMP_HYP_PER_SYSCALL).  Bumped
+	 * in lock-step with the scalar cmp_hyp_pool_full from cmp_hyp_alloc()'s
+	 * per-syscall-exhausted branch only; the cmp_hyp_observe() wild-write
+	 * bail that also bumps the scalar has no kind in scope, so the sum
+	 * across kinds here is a documented subset of cmp_hyp_pool_full
+	 * (sum <= scalar).  Paired with cmp_hyp_inserted_by_kind this shows,
+	 * per kind, which kind is consuming the per-syscall budget when
+	 * cmp_hyp_pool_full dominates.  SHADOW telemetry only -- no consumer
+	 * reads it. */
+	unsigned long cmp_hyp_pool_full_by_kind[CMP_HYP_KIND_NR];
+
 	/*
 	 * SHADOW old-flat-pool conversion baseline counters, partitioned by
 	 * pool kind so the per-syscall pool and the field-scoped pool are
