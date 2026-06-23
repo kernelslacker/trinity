@@ -2475,6 +2475,8 @@ void childop_outcome_snapshot(enum child_op_type op,
 
 	out->clean_edges = clean;
 	out->noisy_edges = (discovered > clean) ? (discovered - clean) : 0;
+	out->wall_ns = __atomic_load_n(&shm->stats.childop_wall_ns[op],
+				       __ATOMIC_RELAXED);
 	out->wedges = (uint32_t)__atomic_load_n(
 			&shm->stats.childop_wedge_count[op], __ATOMIC_RELAXED);
 	out->setup_failures = (invocations > setup_accepted)
@@ -2524,10 +2526,8 @@ void childop_outcome_window_dump(void)
  * canary-path edges per nanosecond of wall time, scaled up by SCALE so
  * the ratio fits in an integer (edges-per-second when SCALE=1e9 and
  * wall_ns is in nanoseconds).  noisy_score is the same shape over
- * noisy_edges.  Both clamp to 0 when wall_ns is 0 (the producer for
- * the per-childop wall_ns field is not yet wired -- see the field doc
- * in include/child.h -- so this branch currently fires for every op
- * and leaves the good-utility table empty until the producer lands).
+ * noisy_edges.  Both clamp to 0 when wall_ns is 0 (an op that has
+ * never run yet).
  *
  * bad_score sums the wedge / dstate / crash / setup-failure /
  * asan-failure accumulators.  These have producers today, so the
@@ -3248,6 +3248,8 @@ void child_process(struct childdata *child, int childno)
 				ns = 0;
 			if (is_alt_op) {
 				__atomic_add_fetch(&shm->stats.childop_walltime_ns,
+						   (unsigned long)ns, __ATOMIC_RELAXED);
+				__atomic_add_fetch(&shm->stats.childop_wall_ns[op],
 						   (unsigned long)ns, __ATOMIC_RELAXED);
 			} else if (op == CHILD_OP_SYSCALL) {
 				__atomic_add_fetch(&shm->stats.syscall_walltime_ns,

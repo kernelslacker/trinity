@@ -3609,6 +3609,7 @@ struct stats_s {
 	 * so are not counted here -- the wall-time and iteration metrics
 	 * cover them. */
 	unsigned long childop_walltime_ns;
+	unsigned long childop_wall_ns[NR_CHILD_OP_TYPES];
 	unsigned long syscall_walltime_ns;
 	unsigned long syscalls_in_childops;
 	unsigned long syscalls_random;
