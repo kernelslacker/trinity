@@ -2985,8 +2985,12 @@ static bool redqueen_reexec_step(struct childdata *child,
 	}
 
 	entry = get_syscall_entry(rec->nr, rec->do32bit);
-	if (entry == NULL)
+	if (entry == NULL) {
+		if (kcov_shm != NULL)
+			__atomic_fetch_add(&kcov_shm->reexec_step_skip_entry_null,
+					   1UL, __ATOMIC_RELAXED);
 		return FAIL;
+	}
 
 	/* Destructive-syscall gate: sanitise-bearing entries replay would
 	 * either re-allocate (and leak) heap state for slots whose previous
@@ -3013,8 +3017,12 @@ static bool redqueen_reexec_step(struct childdata *child,
 		return FAIL;
 	}
 
-	if (p->slot == 0 || p->slot > entry->num_args)
+	if (p->slot == 0 || p->slot > entry->num_args) {
+		if (kcov_shm != NULL)
+			__atomic_fetch_add(&kcov_shm->reexec_step_skip_bad_slot,
+					   1UL, __ATOMIC_RELAXED);
 		return FAIL;
+	}
 
 	/* Snapshot the rec fields the re-exec's dispatch_step will rewrite.
 	 * Restore on exit so a caller that reads rec after the helper
