@@ -104,6 +104,7 @@
 #include <linux/netlink.h>
 
 #include "childops-genl.h"
+#include "compat.h"
 #include "jitter.h"
 #include "random.h"
 #include "rnd.h"
@@ -339,16 +340,6 @@ static const struct mptcp_sf_optspec mptcp_sf_opts[] = {
 	{ "TCP_USER_TIMEOUT",	TCP_USER_TIMEOUT,	genval_user_to },
 	{ "TCP_DEFER_ACCEPT",	TCP_DEFER_ACCEPT,	genval_defer },
 };
-
-/* Local shims so the sweep sub-mode below compiles on sysroots whose
- * <netinet/tcp.h> / <linux/mptcp.h> predate these constants.  Values
- * match the kernel UAPI; same defines live in include/compat.h. */
-#ifndef SOL_MPTCP
-#define SOL_MPTCP	284
-#endif
-#ifndef MPTCP_INFO
-#define MPTCP_INFO	1
-#endif
 
 /*
  * Curated sweep table for the sockopt-inheritance sub-mode below.
