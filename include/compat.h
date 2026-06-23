@@ -881,6 +881,35 @@ struct sockaddr_nfc {
 #define BLOCK_URING_CMD_DISCARD		_IO(0x12, 0)
 #endif
 
+/* linux/futex.h — FUTEX2_* flag bits for sys_futex_wait/wake/waitv/requeue
+ * and the futex_waitv.flags field.  These landed in 6.7 (FUTEX2_SIZE_*,
+ * FUTEX2_NUMA, FUTEX2_PRIVATE) and 6.13 (FUTEX2_MPOL); older kernel-headers
+ * packages predate the names.  Values mirror the upstream uapi
+ * <linux/futex.h> literals exactly: FUTEX2_PRIVATE (0x80) collides with
+ * FUTEX_PRIVATE_FLAG by design so the per-mm hash routing matches the
+ * classic futex op encoding. */
+#ifndef FUTEX2_SIZE_U8
+#define FUTEX2_SIZE_U8		0x00
+#endif
+#ifndef FUTEX2_SIZE_U16
+#define FUTEX2_SIZE_U16		0x01
+#endif
+#ifndef FUTEX2_SIZE_U32
+#define FUTEX2_SIZE_U32		0x02
+#endif
+#ifndef FUTEX2_SIZE_U64
+#define FUTEX2_SIZE_U64		0x03
+#endif
+#ifndef FUTEX2_NUMA
+#define FUTEX2_NUMA		0x04
+#endif
+#ifndef FUTEX2_MPOL
+#define FUTEX2_MPOL		0x08
+#endif
+#ifndef FUTEX2_PRIVATE
+#define FUTEX2_PRIVATE		0x80
+#endif
+
 /* linux/prctl.h */
 #ifndef PR_MCE_KILL_GET
 #define PR_MCE_KILL_GET 34

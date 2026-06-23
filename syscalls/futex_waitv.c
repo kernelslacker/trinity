@@ -13,27 +13,8 @@
 #include "sanitise.h"
 #include "compat.h"
 
-#ifndef FUTEX2_SIZE_U8
-#define FUTEX2_SIZE_U8		0x00
-#define FUTEX2_SIZE_U16		0x01
-#define FUTEX2_SIZE_U32		0x02
-#define FUTEX2_SIZE_U64		0x03
-#endif
-
-#ifndef FUTEX2_NUMA
-#define FUTEX2_NUMA		0x04
-#endif
-
-#ifndef FUTEX2_MPOL
-#define FUTEX2_MPOL		0x08
-#endif
-
 #ifndef FUTEX_32
 #define FUTEX_32		FUTEX2_SIZE_U32
-#endif
-
-#ifndef FUTEX2_PRIVATE
-#define FUTEX2_PRIVATE		FUTEX_PRIVATE_FLAG
 #endif
 
 /* Sentinel for "no NUMA node preference" in FUTEX2_MPOL waiters. */
