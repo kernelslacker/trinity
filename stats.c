@@ -572,6 +572,8 @@ static void json_emit_minicorpus_section(void)
 	{
 		unsigned long xp_hits = __atomic_load_n(
 			&minicorpus_shm->xprop_hits, __ATOMIC_RELAXED);
+		unsigned long xp_wins = __atomic_load_n(
+			&minicorpus_shm->xprop_wins, __ATOMIC_RELAXED);
 		/* xprop attempt/reject breakdown so the
 		 * hit-rate xp_hits / xp_attempts and the dominant
 		 * reject cause are directly readable from the
@@ -588,11 +590,11 @@ static void json_emit_minicorpus_section(void)
 			&minicorpus_shm->xprop_reject_src_empty,
 			__ATOMIC_RELAXED);
 
-		printf(",\"xprop\":{\"hits\":%lu,\"attempts\":%lu,"
+		printf(",\"xprop\":{\"hits\":%lu,\"wins\":%lu,\"attempts\":%lu,"
 		       "\"reject_target_not_fdarg\":%lu,"
 		       "\"reject_src_self\":%lu,"
 		       "\"reject_src_empty\":%lu}",
-		       xp_hits, xp_attempts, xp_r_target,
+		       xp_hits, xp_wins, xp_attempts, xp_r_target,
 		       xp_r_self, xp_r_empty);
 	}
 
@@ -10314,9 +10316,14 @@ static void dump_stats_corpus_and_taint_tail(void)
 		{
 			unsigned long xp_hits = __atomic_load_n(
 				&minicorpus_shm->xprop_hits, __ATOMIC_RELAXED);
+			unsigned long xp_wins = __atomic_load_n(
+				&minicorpus_shm->xprop_wins, __ATOMIC_RELAXED);
 
-			if (xp_hits > 0)
-				output(0, "Xprop: %lu hits\n", xp_hits);
+			if (xp_hits > 0) {
+				pct10 = xp_wins * 1000UL / xp_hits;
+				output(0, "Xprop: %lu hits  %lu wins (%lu.%lu%%)\n",
+				       xp_hits, xp_wins, pct10 / 10, pct10 % 10);
+			}
 		}
 
 		/* Lockless-reader torn-read validator firings (aggregate over

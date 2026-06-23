@@ -486,6 +486,7 @@ static unsigned int mut_structured_attrib[MUT_NUM_OPS];
  */
 static bool this_replay_ran;
 static bool this_replay_spliced;
+static bool this_replay_xprop;
 
 /*
  * Process-local per-syscall-replay source pointer.
@@ -904,6 +905,13 @@ void minicorpus_mut_attrib_commit(bool found_new)
 			__atomic_fetch_add(&minicorpus_shm->splice_wins,
 					   1UL, __ATOMIC_RELAXED);
 		this_replay_spliced = false;
+	}
+
+	if (this_replay_xprop) {
+		if (found_new)
+			__atomic_fetch_add(&minicorpus_shm->xprop_wins,
+					   1UL, __ATOMIC_RELAXED);
+		this_replay_xprop = false;
 	}
 
 	/* CMP-source wins counter.  Bumped at most once per commit so its
@@ -1460,8 +1468,10 @@ void minicorpus_mutate_args(unsigned long args[6], struct syscallentry *entry,
 			unsigned long xval;
 
 			if (minicorpus_pick_from_other_syscall(nr,
-					entry->argtype[i], &xval))
+					entry->argtype[i], &xval)) {
 				val = xval;
+				this_replay_xprop = true;
+			}
 		}
 
 		/* ~25% chance to mutate each arg.  When we do mutate, apply

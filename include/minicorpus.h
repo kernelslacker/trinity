@@ -191,6 +191,7 @@ struct minicorpus_shared {
 	 * splice shuffles values within one snapshot, xprop shuffles them
 	 * across syscalls.  RELAXED atomic. */
 	unsigned long xprop_hits;
+	unsigned long xprop_wins;		/* replays with xprop that found new coverage */
 	/* xprop source/target type-hit rate accounting.
 	 * xprop_attempts is the denominator (bumped at every entry into
 	 * minicorpus_pick_from_other_syscall regardless of outcome); the
