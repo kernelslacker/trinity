@@ -264,9 +264,6 @@ static const char *bpf_misc_vars_name[] = {
 #ifndef SECCOMP_RET_ERRNO
 #define SECCOMP_RET_ERRNO	0x00050000U
 #endif
-#ifndef SECCOMP_RET_USER_NOTIF
-#define SECCOMP_RET_USER_NOTIF	0x7fc00000U
-#endif
 #ifndef SECCOMP_RET_TRACE
 #define SECCOMP_RET_TRACE	0x7ff00000U
 #endif
