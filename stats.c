@@ -6681,9 +6681,15 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	 * values.  The pair (gate_passed, injected) separates "the arm
 	 * fired and there was nothing in the typed store" from "the arm
 	 * fired and substituted a derived value", which is what bounds
-	 * the achievable conversion ceiling.  Rendered alongside the
-	 * would-pick shadow block so the SHADOW (would-have-picked) vs
-	 * LIVE (actually-substituted) rates can be compared in one frame.
+	 * the achievable conversion ceiling; the explicit no_pick gap
+	 * (gate_passed - injected) names that empty-site case directly.
+	 * Rendered every window with no delta gate so a quiet arm reads
+	 * as zeros rather than silence -- the validation question is "did
+	 * a typed-derived pick lift cmp_hyp_pc_wins" and that requires
+	 * being able to tell "fired with zero wins" from "never fired".
+	 * Conversion outcomes (pc_wins/misses) are credited only to
+	 * live-arm entries and render in the cmp_hyp shadow stats block
+	 * above; not duplicated here.
 	 */
 	{
 		static const char * const kind_labels[CMP_HYP_KIND_NR] = {
@@ -6694,6 +6700,16 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 		static unsigned long prev_hyp_live_injected;
 		static unsigned long prev_hyp_live_gate_passed;
 		static unsigned long prev_hyp_live_injected_kind[CMP_HYP_KIND_NR];
+		/*
+		 * Load injected before gate_passed.  cmp_hints_try_get_ex()
+		 * bumps gate_passed first and only later bumps injected on a
+		 * successful pick+derive, so producer-side gate_passed >=
+		 * injected always.  Reading injected first means a paired
+		 * (gate_passed, injected) increment in flight between the two
+		 * loads gets snapshotted as a gate_passed-only bump (over-
+		 * counting no_pick by 1) rather than as an injected-only bump
+		 * (which would make cur gap go negative under RELAXED).
+		 */
 		unsigned long cur_hyp_live_injected = __atomic_load_n(
 			&kcov_shm->cmp_hyp_live_injected, __ATOMIC_RELAXED);
 		unsigned long cur_hyp_live_gate_passed = __atomic_load_n(
@@ -6704,38 +6720,50 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 			cur_hyp_live_injected - prev_hyp_live_injected;
 		unsigned long delta_hyp_live_gate_passed =
 			cur_hyp_live_gate_passed - prev_hyp_live_gate_passed;
-		unsigned long any_live_delta =
-			delta_hyp_live_injected | delta_hyp_live_gate_passed;
+		unsigned long cur_hyp_live_inject_no_pick =
+			cur_hyp_live_gate_passed - cur_hyp_live_injected;
+		/*
+		 * delta_gate_passed - delta_injected can wrap when the over-
+		 * count drift in the previous sample exceeded the over-count
+		 * drift in this sample (cur gap < prev gap), even though the
+		 * underlying no_pick total is monotone non-decreasing.  Clamp.
+		 */
+		unsigned long delta_hyp_live_inject_no_pick =
+			(delta_hyp_live_gate_passed >= delta_hyp_live_injected)
+				? (delta_hyp_live_gate_passed - delta_hyp_live_injected)
+				: 0;
 		unsigned int k;
 
 		for (k = 0; k < CMP_HYP_KIND_NR; k++) {
 			cur_hyp_live_injected_kind[k] = __atomic_load_n(
 				&kcov_shm->cmp_hyp_live_injected_by_kind[k],
 				__ATOMIC_RELAXED);
-			any_live_delta |= (cur_hyp_live_injected_kind[k] -
-					   prev_hyp_live_injected_kind[k]);
 		}
 
-		if (any_live_delta != 0) {
-			stats_log_write("KCOV CMP hyp live inject stats over last %lds:\n",
-					elapsed);
-			stats_log_write("  %-32s +%lu  (total %lu)\n",
-					"cmp_hyp_live_inject_gate_passed",
-					delta_hyp_live_gate_passed,
-					cur_hyp_live_gate_passed);
-			stats_log_write("  %-32s +%lu  (total %lu)\n",
-					"cmp_hyp_live_injected",
-					delta_hyp_live_injected,
-					cur_hyp_live_injected);
-			for (k = 0; k < CMP_HYP_KIND_NR; k++) {
-				stats_log_write(
-					"  cmp_hyp_live_inject[%-13s] +%lu (total %lu)\n",
-					kind_labels[k],
-					cur_hyp_live_injected_kind[k] -
-						prev_hyp_live_injected_kind[k],
-					cur_hyp_live_injected_kind[k]);
-			}
+		stats_log_write("KCOV CMP hyp live inject stats over last %lds:\n",
+				elapsed);
+		stats_log_write("  %-32s +%lu  (total %lu)\n",
+				"cmp_hyp_live_inject_gate_passed",
+				delta_hyp_live_gate_passed,
+				cur_hyp_live_gate_passed);
+		stats_log_write("  %-32s +%lu  (total %lu)\n",
+				"cmp_hyp_live_injected",
+				delta_hyp_live_injected,
+				cur_hyp_live_injected);
+		stats_log_write("  %-32s +%lu  (total %lu)\n",
+				"cmp_hyp_live_inject_no_pick",
+				delta_hyp_live_inject_no_pick,
+				cur_hyp_live_inject_no_pick);
+		for (k = 0; k < CMP_HYP_KIND_NR; k++) {
+			stats_log_write(
+				"  cmp_hyp_live_inject[%-13s] +%lu (total %lu)\n",
+				kind_labels[k],
+				cur_hyp_live_injected_kind[k] -
+					prev_hyp_live_injected_kind[k],
+				cur_hyp_live_injected_kind[k]);
 		}
+		stats_log_write(
+			"  (conversion outcomes: see cmp_hyp_pc_wins / cmp_hyp_misses in cmp_hyp shadow stats above)\n");
 
 		prev_hyp_live_injected = cur_hyp_live_injected;
 		prev_hyp_live_gate_passed = cur_hyp_live_gate_passed;
