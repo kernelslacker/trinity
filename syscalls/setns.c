@@ -4,12 +4,10 @@
 #include <fcntl.h>
 #include <sched.h>
 #include <unistd.h>
+#include "compat.h"
 #include "random.h"
 #include "sanitise.h"
 
-#ifndef CLONE_NEWCGROUP
-#define CLONE_NEWCGROUP 0x02000000
-#endif
 #ifndef CLONE_NEWTIME
 #define CLONE_NEWTIME 0x00000080
 #endif

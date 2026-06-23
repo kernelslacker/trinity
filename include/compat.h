@@ -1904,6 +1904,14 @@ struct kvm_get_htab_fd {
 #define SCHED_IDLE 5
 #endif
 
+/* linux/sched.h — CLONE_NEWCGROUP selects the cgroup namespace for
+ * clone(2)/clone3(2)/unshare(2)/setns(2)/listns(2).  Older kernel-headers
+ * packages predate the constant; the UAPI value (0x02000000) is fixed
+ * since the cgroup namespace landed in 4.6. */
+#ifndef CLONE_NEWCGROUP
+#define CLONE_NEWCGROUP 0x02000000
+#endif
+
 /* signal.h */
 #ifndef SS_AUTODISARM
 #define SS_AUTODISARM (1U << 31)
