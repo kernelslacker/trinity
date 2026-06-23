@@ -125,17 +125,15 @@
 #include "bpf.h"
 #include "bpf-syscall.h"
 #include "child.h"
+#include "compat.h"
 #include "jitter.h"
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 
-/* AF_XDP / SOL_XDP -- present in modern glibc but #define-fallback for
- * stripped sysroots.  Stable values from <bits/socket.h>. */
-#ifndef AF_XDP
-#define AF_XDP			44
-#endif
+/* SOL_XDP -- present in modern glibc but #define-fallback for stripped
+ * sysroots.  Stable value from <bits/socket.h>. */
 #ifndef SOL_XDP
 #define SOL_XDP			283
 #endif
