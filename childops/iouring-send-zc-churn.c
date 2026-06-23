@@ -99,7 +99,6 @@
 #if __has_include(<linux/io_uring.h>)
 
 #include <errno.h>
-#include <fcntl.h>
 #include <netinet/in.h>
 #include <signal.h>
 #include <stdbool.h>
