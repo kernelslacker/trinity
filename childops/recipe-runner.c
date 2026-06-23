@@ -24,66 +24,16 @@
  * default CHILD_OP_SYSCALL path.
  */
 
-#include <errno.h>
-#include <fcntl.h>
-#include <limits.h>
-#include <mqueue.h>
-#include <netinet/in.h>
-#include <poll.h>
-#include <pthread.h>
-#include <sched.h>
-#include <signal.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/epoll.h>
-#include <sys/eventfd.h>
-#include <sys/fanotify.h>
-#include <sys/inotify.h>
-#include <sys/ioctl.h>
-#include <sys/ipc.h>
-#include <sys/mman.h>
-#include <sys/mount.h>
-#include <sys/msg.h>
-#include <sys/prctl.h>
-#include <sys/ptrace.h>
-#include <sys/sem.h>
-#include <sys/shm.h>
-#include <sys/signalfd.h>
-#include <sys/socket.h>
-#include <sys/stat.h>
-#include <sys/syscall.h>
-#include <sys/timerfd.h>
-#include <sys/types.h>
-#include <sys/utsname.h>
-#include <sys/wait.h>
-#include <time.h>
-#include <unistd.h>
-#include <linux/bpf.h>
-#include <linux/filter.h>
-#include <linux/futex.h>
-#include <linux/io_uring.h>
-#include <linux/keyctl.h>
-#include <linux/memfd.h>
-#include <linux/perf_event.h>
-#include <linux/seccomp.h>
-#include <linux/userfaultfd.h>
 
-#include "arch.h"
-#include "syscall-gate.h"
 #include "child.h"
-#include "childops-util.h"
-#include "childops/iouring-recipes.h"
 #include "compat.h"
-#include "maps.h"
-#include "random.h"
 #include "rnd.h"
 #include "shm.h"
 #include "stats.h"
 #include "trinity.h"
 #include "utils.h"
-#include "pids.h"
 
 #include "childops/recipe-runner-internal.h"
 
