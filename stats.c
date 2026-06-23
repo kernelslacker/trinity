@@ -5434,6 +5434,7 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	static unsigned long prev_cmp_parent_new_cmps_enabled;
 	static unsigned long prev_cmp_parent_new_cmps_control;
 	static unsigned long prev_cmp_hint_callsite[CMP_HINT_CALLSITE_NR];
+	static unsigned long prev_prop_injected_callsite[PROP_INJECTED_CALLSITE_NR];
 	static unsigned long prev_save_reject_nonconst;
 	static unsigned long prev_save_reject_uninteresting;
 	static unsigned long prev_save_reject_sentinel;
@@ -5485,6 +5486,7 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	unsigned long cur_cmp_parent_calls_enabled, cur_cmp_parent_calls_control;
 	unsigned long cur_cmp_parent_new_cmps_enabled, cur_cmp_parent_new_cmps_control;
 	unsigned long cur_cmp_hint_callsite[CMP_HINT_CALLSITE_NR];
+	unsigned long cur_prop_injected_callsite[PROP_INJECTED_CALLSITE_NR];
 	unsigned long cur_save_reject_nonconst, cur_save_reject_uninteresting;
 	unsigned long cur_save_reject_sentinel, cur_save_reject_dup, cur_save_reject_cap;
 	unsigned long delta_save_reject_nonconst, delta_save_reject_uninteresting;
@@ -5513,6 +5515,7 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	unsigned long delta_cmp_parent_calls_enabled, delta_cmp_parent_calls_control;
 	unsigned long delta_cmp_parent_new_cmps_enabled, delta_cmp_parent_new_cmps_control;
 	unsigned long delta_cmp_hint_callsite[CMP_HINT_CALLSITE_NR];
+	unsigned long delta_prop_injected_callsite[PROP_INJECTED_CALLSITE_NR];
 	unsigned long cur_cmp_hints_consumed, cur_cmp_hint_wins, cur_cmp_hint_misses;
 	unsigned long cur_cmp_hint_cmp_novelty_wins;
 	unsigned long cur_cmp_hint_stash_overflow, cur_cmp_hint_credit_entry_evicted;
@@ -5551,6 +5554,7 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	unsigned long delta_mut_structured_shadow_divergences;
 	unsigned int  cur_mut_structured_arm_a_children, cur_mut_structured_arm_b_children;
 	bool any_callsite_delta = false;
+	bool any_prop_callsite_delta = false;
 	unsigned int pc_kids, cmp_kids;
 
 	if (kcov_shm == NULL)
@@ -5607,6 +5611,13 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 		for (cs = 0; cs < CMP_HINT_CALLSITE_NR; cs++)
 			cur_cmp_hint_callsite[cs] = __atomic_load_n(
 				&kcov_shm->cmp_hint_callsite_injected[cs],
+				__ATOMIC_RELAXED);
+	}
+	{
+		unsigned int cs;
+		for (cs = 0; cs < PROP_INJECTED_CALLSITE_NR; cs++)
+			cur_prop_injected_callsite[cs] = __atomic_load_n(
+				&kcov_shm->propagation_injected_callsite[cs],
 				__ATOMIC_RELAXED);
 	}
 	cur_cmp_hints_consumed             = __atomic_load_n(&kcov_shm->cmp_hints_consumed,             __ATOMIC_RELAXED);
@@ -5719,6 +5730,11 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 			for (cs = 0; cs < CMP_HINT_CALLSITE_NR; cs++)
 				prev_cmp_hint_callsite[cs] = cur_cmp_hint_callsite[cs];
 		}
+		{
+			unsigned int cs;
+			for (cs = 0; cs < PROP_INJECTED_CALLSITE_NR; cs++)
+				prev_prop_injected_callsite[cs] = cur_prop_injected_callsite[cs];
+		}
 		prev_cmp_hints_consumed             = cur_cmp_hints_consumed;
 		prev_cmp_hint_wins                  = cur_cmp_hint_wins;
 		prev_cmp_hint_misses                = cur_cmp_hint_misses;
@@ -5795,6 +5811,15 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 				any_callsite_delta = true;
 		}
 	}
+	{
+		unsigned int cs;
+		for (cs = 0; cs < PROP_INJECTED_CALLSITE_NR; cs++) {
+			delta_prop_injected_callsite[cs] =
+				cur_prop_injected_callsite[cs] - prev_prop_injected_callsite[cs];
+			if (delta_prop_injected_callsite[cs] != 0)
+				any_prop_callsite_delta = true;
+		}
+	}
 	delta_cmp_hints_consumed             = cur_cmp_hints_consumed             - prev_cmp_hints_consumed;
 	delta_cmp_hint_wins                  = cur_cmp_hint_wins                  - prev_cmp_hint_wins;
 	delta_cmp_hint_misses                = cur_cmp_hint_misses                - prev_cmp_hint_misses;
@@ -5848,7 +5873,7 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	     delta_prop_ring_argop_arm_b_fires |
 	     delta_remote_adaptive_samples |
 	     delta_mut_structured_shadow_divergences) != 0 ||
-	    any_callsite_delta) {
+	    any_callsite_delta || any_prop_callsite_delta) {
 		stats_log_write("KCOV CMP stats over last %lds:\n", elapsed);
 
 		if (delta_records) {
@@ -6133,6 +6158,24 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 						callsite_names[cs],
 						delta_cmp_hint_callsite[cs],
 						cur_cmp_hint_callsite[cs]);
+			}
+		}
+		if (any_prop_callsite_delta) {
+			static const char * const prop_callsite_names[PROP_INJECTED_CALLSITE_NR] = {
+				[PROP_INJECTED_CALLSITE_ARG_OP]        = "ARG_OP",
+				[PROP_INJECTED_CALLSITE_ARG_UNDEFINED] = "ARG_UNDEFINED",
+			};
+			unsigned int cs;
+
+			stats_log_write("  propagation_injected_callsite (per-callsite delta / cumulative):\n");
+			for (cs = 0; cs < PROP_INJECTED_CALLSITE_NR; cs++) {
+				if (delta_prop_injected_callsite[cs] == 0 &&
+				    cur_prop_injected_callsite[cs] == 0)
+					continue;
+				stats_log_write("    %-20s +%lu  (total %lu)\n",
+						prop_callsite_names[cs],
+						delta_prop_injected_callsite[cs],
+						cur_prop_injected_callsite[cs]);
 			}
 		}
 		/* SHADOW per-entry feedback scoring counters

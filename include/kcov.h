@@ -754,6 +754,20 @@ enum cmp_hint_callsite {
 	CMP_HINT_CALLSITE_NR,
 };
 
+/* observability: the two generate-args.c callsites that pull a value via
+ * prop_ring_try_get() are partitioned into fixed buckets so the
+ * per-callsite propagation-injection split is visible alongside the flat
+ * propagation_injected scalar.  Ordering is pinned (the slot index is the
+ * bucket id) -- append-only.  Distinct from cmp_hint_callsite above: that
+ * one buckets cmp_hints_try_get() consumers (kernel KCOV_TRACE_CMP value
+ * source), this one buckets prop_ring_try_get() consumers (trinity-
+ * observed syscall-return value source). */
+enum prop_injected_callsite {
+	PROP_INJECTED_CALLSITE_ARG_OP = 0,
+	PROP_INJECTED_CALLSITE_ARG_UNDEFINED,
+	PROP_INJECTED_CALLSITE_NR,
+};
+
 /* RedQueen attribution arg-slot histogram width.  Syscalls have at most
  * 6 args (a1..a6), so the histogram has 6 entries indexed by
  * (slot - 1).  Pinned here so the kcov_shared field, the bump sites,
@@ -884,6 +898,17 @@ struct kcov_shared {
 	 * vs kernel KCOV_TRACE_CMP).  Cumulative; stats.c reports the
 	 * per-window delta alongside the cmp_hints counters. */
 	unsigned long propagation_injected;
+	/* Per-callsite split of the flat propagation_injected scalar above,
+	 * indexed by enum prop_injected_callsite.  Bumped in lock-step with
+	 * the flat counter at each of the two producer sites in
+	 * generate-args.c (handle_arg_op -> ARG_OP, gen_undefined_arg ->
+	 * ARG_UNDEFINED).  Aggregated across all syscalls; the "which
+	 * argtype-handler is responsible for the bulk of prop_ring
+	 * deliveries" question is callsite-shaped, not syscall-shaped, so
+	 * the flat scalar above answers the rate question and this array
+	 * answers the attribution question.  Shape mirrors
+	 * cmp_hint_callsite_injected[] below. */
+	unsigned long propagation_injected_callsite[PROP_INJECTED_CALLSITE_NR];
 	/* cmp_hints_try_get() calls that the chaos-mode gate forced to
 	 * return false.  Bumped after the shm/nr guard, before the pool
 	 * lookup, when cmp_hints_chaos_active() is true for the current
