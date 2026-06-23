@@ -1009,25 +1009,35 @@ static void sanitise_snd_compress(struct syscallrecord *rec)
 }
 #endif /* USE_SNDDRV_COMPRESS_OFFLOAD */
 
-static void sound_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
+/* snd-hwdep */
+static int dispatch_snd_hwdep(struct syscallrecord *rec)
 {
-	pick_random_ioctl(grp, rec);
-
 	switch (rec->a2) {
-	/* snd-hwdep */
 	case SNDRV_HWDEP_IOCTL_INFO:
 	case SNDRV_HWDEP_IOCTL_DSP_STATUS:
 	case SNDRV_HWDEP_IOCTL_DSP_LOAD:
 		sanitise_snd_hwdep(rec);
-		break;
+		return 1;
+	}
+	return 0;
+}
 
-	/* snd-hda-codec hwdep verb interface */
+/* snd-hda-codec hwdep verb interface */
+static int dispatch_snd_hda_verb(struct syscallrecord *rec)
+{
+	switch (rec->a2) {
 	case HDA_IOCTL_VERB_WRITE:
 	case HDA_IOCTL_GET_WCAP:
 		sanitise_snd_hda_verb(rec);
-		break;
+		return 1;
+	}
+	return 0;
+}
 
-	/* snd-control */
+/* snd-control */
+static int dispatch_snd_ctl(struct syscallrecord *rec)
+{
+	switch (rec->a2) {
 	case SNDRV_CTL_IOCTL_CARD_INFO:
 	case SNDRV_CTL_IOCTL_ELEM_LIST:
 	case SNDRV_CTL_IOCTL_ELEM_INFO:
@@ -1052,9 +1062,15 @@ static void sound_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 	case SNDRV_CTL_IOCTL_POWER:
 	case SNDRV_CTL_IOCTL_SUBSCRIBE_EVENTS:
 		sanitise_snd_ctl(rec);
-		break;
+		return 1;
+	}
+	return 0;
+}
 
-	/* snd-pcm */
+/* snd-pcm */
+static int dispatch_snd_pcm(struct syscallrecord *rec)
+{
+	switch (rec->a2) {
 	case SNDRV_PCM_IOCTL_INFO:
 	case SNDRV_PCM_IOCTL_TSTAMP:
 	case SNDRV_PCM_IOCTL_TTSTAMP:
@@ -1075,18 +1091,30 @@ static void sound_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 	case SNDRV_PCM_IOCTL_REWIND:
 	case SNDRV_PCM_IOCTL_FORWARD:
 		sanitise_snd_pcm(rec);
-		break;
+		return 1;
+	}
+	return 0;
+}
 
-	/* snd-rawmidi */
+/* snd-rawmidi */
+static int dispatch_snd_rawmidi(struct syscallrecord *rec)
+{
+	switch (rec->a2) {
 	case SNDRV_RAWMIDI_IOCTL_INFO:
 	case SNDRV_RAWMIDI_IOCTL_PARAMS:
 	case SNDRV_RAWMIDI_IOCTL_STATUS:
 	case SNDRV_RAWMIDI_IOCTL_DROP:
 	case SNDRV_RAWMIDI_IOCTL_DRAIN:
 		sanitise_snd_rawmidi(rec);
-		break;
+		return 1;
+	}
+	return 0;
+}
 
-	/* snd-ump (also reachable via /dev/snd/controlC* with the SNDRV_CTL_* aliases) */
+/* snd-ump (also reachable via /dev/snd/controlC* with the SNDRV_CTL_* aliases) */
+static int dispatch_snd_ump(struct syscallrecord *rec)
+{
+	switch (rec->a2) {
 	case SNDRV_UMP_IOCTL_ENDPOINT_INFO:
 	case SNDRV_UMP_IOCTL_BLOCK_INFO:
 #ifdef SNDRV_CTL_IOCTL_UMP_NEXT_DEVICE
@@ -1095,9 +1123,15 @@ static void sound_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 	case SNDRV_CTL_IOCTL_UMP_BLOCK_INFO:
 #endif
 		sanitise_snd_ump(rec);
-		break;
+		return 1;
+	}
+	return 0;
+}
 
-	/* snd-timer */
+/* snd-timer */
+static int dispatch_snd_timer(struct syscallrecord *rec)
+{
+	switch (rec->a2) {
 	case SNDRV_TIMER_IOCTL_NEXT_DEVICE:
 	case SNDRV_TIMER_IOCTL_TREAD:
 #if defined(SNDRV_TIMER_IOCTL_TREAD64) && __BITS_PER_LONG == 64
@@ -1114,9 +1148,15 @@ static void sound_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 	case SNDRV_TIMER_IOCTL_PARAMS:
 	case SNDRV_TIMER_IOCTL_STATUS:
 		sanitise_snd_timer(rec);
-		break;
+		return 1;
+	}
+	return 0;
+}
 
-	/* OSS PCM (/dev/dsp, type 'P') */
+/* OSS PCM (/dev/dsp, type 'P') */
+static int dispatch_oss_dsp(struct syscallrecord *rec)
+{
+	switch (rec->a2) {
 	case SNDCTL_DSP_SPEED:
 	case SNDCTL_DSP_STEREO:
 	case SNDCTL_DSP_GETBLKSIZE:
@@ -1149,9 +1189,15 @@ static void sound_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 	case SNDCTL_DSP_PROFILE:
 #endif
 		sanitise_oss_dsp(rec);
-		break;
+		return 1;
+	}
+	return 0;
+}
 
-	/* OSS mixer (/dev/mixer, type 'M') */
+/* OSS mixer (/dev/mixer, type 'M') */
+static int dispatch_oss_mixer(struct syscallrecord *rec)
+{
+	switch (rec->a2) {
 	case SOUND_MIXER_READ_VOLUME:
 	case SOUND_MIXER_READ_BASS:
 	case SOUND_MIXER_READ_TREBLE:
@@ -1210,9 +1256,15 @@ static void sound_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 	case OSS_GETVERSION:
 #endif
 		sanitise_oss_mixer(rec);
-		break;
+		return 1;
+	}
+	return 0;
+}
 
-	/* snd-hdspm (RME HDSPe MADI/AES/RayDAT/AIO) — newer ioctls only */
+/* snd-hdspm (RME HDSPe MADI/AES/RayDAT/AIO) — newer ioctls only */
+static int dispatch_snd_hdspm(struct syscallrecord *rec)
+{
+	switch (rec->a2) {
 #ifdef SNDRV_HDSPM_IOCTL_GET_PEAK_RMS
 	case SNDRV_HDSPM_IOCTL_GET_PEAK_RMS:
 #endif
@@ -1230,11 +1282,17 @@ static void sound_sanitise(const struct ioctl_group *grp, struct syscallrecord *
     defined(SNDRV_HDSPM_IOCTL_GET_LTC)     || \
     defined(SNDRV_HDSPM_IOCTL_GET_STATUS)
 		sanitise_snd_hdspm(rec);
-		break;
+		return 1;
 #endif
+	}
+	return 0;
+}
 
-	/* OSS DSP coprocessor (legacy SoundBlaster) */
 #ifdef SNDCTL_COPR_LOAD
+/* OSS DSP coprocessor (legacy SoundBlaster) */
+static int dispatch_oss_copr(struct syscallrecord *rec)
+{
+	switch (rec->a2) {
 	case SNDCTL_COPR_LOAD:
 	case SNDCTL_COPR_RDATA:
 	case SNDCTL_COPR_RCODE:
@@ -1245,11 +1303,17 @@ static void sound_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 	case SNDCTL_COPR_SENDMSG:
 	case SNDCTL_COPR_RCVMSG:
 		sanitise_oss_copr(rec);
-		break;
+		return 1;
+	}
+	return 0;
+}
 #endif
 
 #ifdef USE_SNDDRV_COMPRESS_OFFLOAD
-	/* snd-compress (compressed audio offload) */
+/* snd-compress (compressed audio offload) */
+static int dispatch_snd_compress(struct syscallrecord *rec)
+{
+	switch (rec->a2) {
 	case SNDRV_COMPRESS_GET_CAPS:
 	case SNDRV_COMPRESS_GET_CODEC_CAPS:
 	case SNDRV_COMPRESS_SET_PARAMS:
@@ -1257,10 +1321,16 @@ static void sound_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 	case SNDRV_COMPRESS_TSTAMP:
 	case SNDRV_COMPRESS_AVAIL:
 		sanitise_snd_compress(rec);
-		break;
+		return 1;
+	}
+	return 0;
+}
 #endif
 
-	/* snd-seq */
+/* snd-seq */
+static int dispatch_snd_seq(struct syscallrecord *rec)
+{
+	switch (rec->a2) {
 	case SNDRV_SEQ_IOCTL_SYSTEM_INFO:
 	case SNDRV_SEQ_IOCTL_RUNNING_MODE:
 	case SNDRV_SEQ_IOCTL_GET_CLIENT_INFO:
@@ -1295,11 +1365,32 @@ static void sound_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 	case SNDRV_SEQ_IOCTL_SET_CLIENT_UMP_INFO:
 #endif
 		sanitise_snd_seq(rec);
-		break;
-
-	default:
-		break;
+		return 1;
 	}
+	return 0;
+}
+
+static void sound_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
+{
+	pick_random_ioctl(grp, rec);
+
+	if (dispatch_snd_hwdep(rec))    return;
+	if (dispatch_snd_hda_verb(rec)) return;
+	if (dispatch_snd_ctl(rec))      return;
+	if (dispatch_snd_pcm(rec))      return;
+	if (dispatch_snd_rawmidi(rec))  return;
+	if (dispatch_snd_ump(rec))      return;
+	if (dispatch_snd_timer(rec))    return;
+	if (dispatch_oss_dsp(rec))      return;
+	if (dispatch_oss_mixer(rec))    return;
+	if (dispatch_snd_hdspm(rec))    return;
+#ifdef SNDCTL_COPR_LOAD
+	if (dispatch_oss_copr(rec))     return;
+#endif
+#ifdef USE_SNDDRV_COMPRESS_OFFLOAD
+	if (dispatch_snd_compress(rec)) return;
+#endif
+	if (dispatch_snd_seq(rec))      return;
 }
 
 static const struct ioctl sound_ioctls[] = {
