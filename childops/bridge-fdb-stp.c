@@ -173,9 +173,6 @@ struct bridge_vlan_info {
 #define NDA_MASTER		9
 #endif
 
-#ifndef NUD_PERMANENT
-#define NUD_PERMANENT		0x80
-#endif
 #ifndef NUD_REACHABLE
 #define NUD_REACHABLE		0x02
 #endif

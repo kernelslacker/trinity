@@ -113,6 +113,7 @@
 #include "child.h"
 #include "childops-netlink.h"
 #include "childops-util.h"
+#include "compat.h"
 #include "jitter.h"
 #include "random.h"
 #include "shm.h"
@@ -153,10 +154,6 @@
 
 #ifndef NTF_SELF
 #define NTF_SELF		(1 << 1)
-#endif
-
-#ifndef NUD_PERMANENT
-#define NUD_PERMANENT		0x80
 #endif
 
 /* Reasonable ceiling on a single rtnl message + payload.  vxlan link

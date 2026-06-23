@@ -826,6 +826,15 @@ struct sockaddr_nfc {
 #define VETH_INFO_PEER		1
 #endif
 
+/* linux/neighbour.h — NUD (Neighbour Unreachability Detection) state bits
+ * used in ndmsg.ndm_state for RTM_NEWNEIGH / RTM_DELNEIGH / RTM_GETNEIGH.
+ * NUD_PERMANENT marks a static entry that won't age out.  Sysroots without
+ * <linux/neighbour.h> (or whose copy predates the bit) miss the constant
+ * even though the kernel UAPI value has been fixed at 0x80 forever. */
+#ifndef NUD_PERMANENT
+#define NUD_PERMANENT		0x80
+#endif
+
 /* linux/io_uring.h
  *
  * IORING_OP_* enum values added after the v6.6 LTS cut.  The enum is
