@@ -5,6 +5,7 @@
 #include <linux/io_uring.h>
 
 #include "arch.h"
+#include "compat.h"
 #include "fd.h"
 #include "objects.h"
 #include "random.h"
@@ -13,12 +14,6 @@
 #include "shm.h"
 
 /* io_uring opcodes added in Linux v6.15 — not in older kernel headers. */
-#ifndef IORING_OP_RECV_ZC
-#define IORING_OP_RECV_ZC	58
-#endif
-#ifndef IORING_OP_EPOLL_WAIT
-#define IORING_OP_EPOLL_WAIT	59
-#endif
 #ifndef IORING_OP_READV_FIXED
 #define IORING_OP_READV_FIXED	60
 #endif
