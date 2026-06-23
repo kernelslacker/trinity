@@ -489,11 +489,357 @@ static void sanitise_prctl(struct syscallrecord *rec)
 	}
 }
 
+static void post_set_seccomp(struct prctl_post_state *snap)
+{
+	struct sock_fprog *bpf = snap->bpf;
+
+	if (bpf == NULL)
+		return;
+
+	/*
+	 * Wrapper-side gate before reading bpf->filter:
+	 * looks_like_corrupted_ptr() above is shape-only
+	 * (heap-band + alignment), so a heap-shaped but
+	 * unmapped snap->bpf survives and the bpf->filter
+	 * read here would fault the post handler before the
+	 * inner-free dispatch ever runs.  Require the
+	 * wrapper to be a tracked allocation (one we
+	 * produced via do_set_seccomp) or readable for a
+	 * sock_fprog-sized window.  When neither holds,
+	 * skip the inner-free dispatch; the outer wrapper
+	 * still enqueues.  Mirrors the bpf_free_filter()
+	 * inner-filter gate.
+	 *
+	 * Inner-filter free is alloc_track_lookup()-gated
+	 * and routed through deferred_free_enqueue() rather
+	 * than a shape-only gate + direct free().  A
+	 * scribbled bpf->filter that aliases a chunk
+	 * admitted to the deferred ring by another site
+	 * passes any shape check (the alias is a valid
+	 * aligned heap address) but misses the ownership
+	 * check -- ring admission drained the chunk from
+	 * alloc_track -- so the inner free is skipped.  A
+	 * shape-only gate would have landed an out-of-band
+	 * free on the ring-pinned chunk, and the original
+	 * site's later ring_evict_oldest_safe would surface
+	 * as an ASAN bad-free.  Mirrors bpf_free_filter()
+	 * and syscalls/bpf.c BPF_PROG_LOAD eBPF cleanup.
+	 */
+	if (alloc_track_lookup(bpf) ||
+	    range_readable_user(bpf, sizeof(struct sock_fprog))) {
+		if (bpf->filter != NULL &&
+		    alloc_track_lookup(bpf->filter))
+			deferred_free_enqueue(bpf->filter);
+	}
+	deferred_free_enqueue(bpf);
+}
+
+static void post_set_no_new_privs(unsigned long retval)
+{
+	long got;
+
+	/*
+	 * Oracle: PR_SET_NO_NEW_PRIVS is sticky and one-way.  After a
+	 * successful set the read-back via PR_GET_NO_NEW_PRIVS must
+	 * return 1.  A different value is silent corruption of a
+	 * security-critical task flag — this is the bit that gates
+	 * suid-binary execve and seccomp filter installation.
+	 */
+	if ((long) retval != 0)
+		return;
+	if (!ONE_IN(20))
+		return;
+	got = prctl(PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0);
+	if (got != 1) {
+		output(0, "cred oracle: prctl(PR_SET_NO_NEW_PRIVS) "
+		       "succeeded but PR_GET_NO_NEW_PRIVS=%ld\n", got);
+		__atomic_add_fetch(&shm->stats.cred_oracle_anomalies, 1,
+				   __ATOMIC_RELAXED);
+	}
+}
+
+static void post_set_name(const struct prctl_post_state *snap,
+			  unsigned long retval)
+{
+	/*
+	 * Oracle: PR_SET_NAME stores into task->comm; PR_GET_NAME
+	 * reads it back.  Compare against the byte snapshot we took
+	 * at sanitise time -- not the userspace buffer at rec->a2,
+	 * which a sibling thread may have scribbled between the SET
+	 * and the readback.
+	 */
+	char readback[16] = { 0 };
+
+	if ((long) retval != 0)
+		return;
+	if (!ONE_IN(20))
+		return;
+	if (prctl(PR_GET_NAME, (unsigned long) readback, 0, 0, 0) != 0)
+		return;
+	if (strncmp(readback, (const char *) snap->set_name, 16) != 0) {
+		output(0, "cred oracle: prctl(PR_SET_NAME) succeeded "
+		       "but PR_GET_NAME readback differs from snapshot\n");
+		__atomic_add_fetch(&shm->stats.cred_oracle_anomalies, 1,
+				   __ATOMIC_RELAXED);
+	}
+}
+
+static void post_set_dumpable(const struct prctl_post_state *snap,
+			      unsigned long retval)
+{
+	long got;
+
+	/*
+	 * Oracle: PR_SET_DUMPABLE only accepts SUID_DUMP_DISABLE (0)
+	 * or SUID_DUMP_USER (1); a successful SET means the kernel
+	 * stored that value.  PR_GET_DUMPABLE must read it back.
+	 */
+	if ((long) retval != 0)
+		return;
+	if (!ONE_IN(20))
+		return;
+	got = prctl(PR_GET_DUMPABLE, 0, 0, 0, 0);
+	if ((unsigned long) got != snap->set_arg) {
+		output(0, "cred oracle: prctl(PR_SET_DUMPABLE %lu) "
+		       "succeeded but PR_GET_DUMPABLE=%ld\n",
+		       snap->set_arg, got);
+		__atomic_add_fetch(&shm->stats.cred_oracle_anomalies, 1,
+				   __ATOMIC_RELAXED);
+	}
+}
+
+static void post_set_keepcaps(const struct prctl_post_state *snap,
+			      unsigned long retval)
+{
+	long got;
+
+	/*
+	 * Oracle: PR_SET_KEEPCAPS only accepts 0 or 1.  A successful
+	 * SET means the kernel stored that single bit;
+	 * PR_GET_KEEPCAPS must read it back.
+	 */
+	if ((long) retval != 0)
+		return;
+	if (!ONE_IN(20))
+		return;
+	got = prctl(PR_GET_KEEPCAPS, 0, 0, 0, 0);
+	if ((unsigned long) got != snap->set_arg) {
+		output(0, "cred oracle: prctl(PR_SET_KEEPCAPS %lu) "
+		       "succeeded but PR_GET_KEEPCAPS=%ld\n",
+		       snap->set_arg, got);
+		__atomic_add_fetch(&shm->stats.cred_oracle_anomalies, 1,
+				   __ATOMIC_RELAXED);
+	}
+}
+
+static void post_set_pdeathsig(const struct prctl_post_state *snap,
+			       unsigned long retval)
+{
+	/*
+	 * Oracle: PR_SET_PDEATHSIG accepts 0 or a valid signal
+	 * number.  PR_GET_PDEATHSIG writes the stored value to the
+	 * int* at arg2; compare against the snapshot.
+	 */
+	int sig = -1;
+
+	if ((long) retval != 0)
+		return;
+	if (!ONE_IN(20))
+		return;
+	if (prctl(PR_GET_PDEATHSIG, (unsigned long) &sig, 0, 0, 0) != 0)
+		return;
+	if ((unsigned long) sig != snap->set_arg) {
+		output(0, "cred oracle: prctl(PR_SET_PDEATHSIG %lu) "
+		       "succeeded but PR_GET_PDEATHSIG=%d\n",
+		       snap->set_arg, sig);
+		__atomic_add_fetch(&shm->stats.cred_oracle_anomalies, 1,
+				   __ATOMIC_RELAXED);
+	}
+}
+
+static void post_get_pdeathsig(struct syscallrecord *rec, unsigned long retval)
+{
+	/*
+	 * Kernel ABI: writes the parent-death signal number to the
+	 * out-arg at arg2; the syscall return slot itself is just
+	 * 0/-1.  Anything else on the return path is a -errno leak
+	 * or a copy_to_user retval tear bleeding into the slot.
+	 */
+	if (retval != 0 && retval != (unsigned long)-1L) {
+		output(0, "post_prctl: rejected PR_GET_PDEATHSIG retval 0x%lx outside {0, -1}\n",
+		       retval);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+	}
+}
+
+static void post_get_keepcaps(struct syscallrecord *rec, unsigned long retval)
+{
+	/*
+	 * Kernel ABI: returns task->keep_capabilities — a single bit,
+	 * value 0 or 1.  A larger value is a torn read of the cred
+	 * flags word or a dispatch into the wrong getter.
+	 */
+	if (retval > 1UL && retval != (unsigned long)-1L) {
+		output(0, "post_prctl: rejected PR_GET_KEEPCAPS retval 0x%lx outside {0, 1, -1}\n",
+		       retval);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+	}
+}
+
+static void post_get_dumpable(struct syscallrecord *rec, unsigned long retval)
+{
+	/*
+	 * Kernel ABI: returns mm->flags & MMF_DUMPABLE_MASK — value 0
+	 * (SUID_DUMP_DISABLE), 1 (SUID_DUMP_USER) or 2 (SUID_DUMP_ROOT).
+	 * A larger value is a torn read of mm_struct->flags or a leak
+	 * of the upper MMF_* bits past the dumpable mask.
+	 */
+	if (retval > 2UL && retval != (unsigned long)-1L) {
+		output(0, "post_prctl: rejected PR_GET_DUMPABLE retval 0x%lx outside {0, 1, 2, -1}\n",
+		       retval);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+	}
+}
+
+static void post_get_name(struct syscallrecord *rec, unsigned long retval)
+{
+	/*
+	 * Kernel ABI: copies task->comm into the out-arg at arg2; the
+	 * return slot is just 0/-1.  Anything else on the return path
+	 * is a -errno leak or a bytes-copied count bleeding into the
+	 * slot from a wrong copy_to_user dispatch.
+	 */
+	if (retval != 0 && retval != (unsigned long)-1L) {
+		output(0, "post_prctl: rejected PR_GET_NAME retval 0x%lx outside {0, -1}\n",
+		       retval);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+	}
+}
+
+static void post_get_no_new_privs(struct syscallrecord *rec, unsigned long retval)
+{
+	/*
+	 * Kernel ABI: returns task->no_new_privs — a single bit,
+	 * value 0 or 1.  A larger value is silent corruption of a
+	 * security-critical task flag (suid-binary execve gating).
+	 */
+	if (retval > 1UL && retval != (unsigned long)-1L) {
+		output(0, "post_prctl: rejected PR_GET_NO_NEW_PRIVS retval 0x%lx outside {0, 1, -1}\n",
+		       retval);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+	}
+}
+
+static void post_capbset_read(struct syscallrecord *rec, unsigned long retval)
+{
+	/*
+	 * Kernel ABI: returns whether the queried capability bit is
+	 * set in cred->cap_bset — value 0 or 1.  A larger value is a
+	 * torn read of the kernel_cap_t bitmask or a leak of the
+	 * underlying word past the queried bit.
+	 */
+	if (retval > 1UL && retval != (unsigned long)-1L) {
+		output(0, "post_prctl: rejected PR_CAPBSET_READ retval 0x%lx outside {0, 1, -1}\n",
+		       retval);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+	}
+}
+
+static void post_get_timing(struct syscallrecord *rec, unsigned long retval)
+{
+	/*
+	 * Kernel ABI: returns one of PR_TIMING_STATISTICAL (0) or
+	 * PR_TIMING_TIMESTAMP (1).  Anything else is a torn read of
+	 * the timing mode or a dispatch into the wrong getter.
+	 */
+	if (retval > 1UL && retval != (unsigned long)-1L) {
+		output(0, "post_prctl: rejected PR_GET_TIMING retval 0x%lx outside {STATISTICAL, TIMESTAMP, -1}\n",
+		       retval);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+	}
+}
+
+static void post_get_fp_exc_emu(struct syscallrecord *rec, unsigned long retval)
+{
+	/*
+	 * Kernel ABI (PowerPC / IA-64): returns a small bitmask of
+	 * PR_FP_EXC_* / PR_FP_EMU_* flags, all of which fit in a byte.
+	 * Anything above 0xff is a sign-extension tear or a leak of
+	 * upper bits from the source field.
+	 */
+	if (retval > 0xffUL && retval != (unsigned long)-1L) {
+		output(0, "post_prctl: rejected PR_GET_FP{EXC,EMU} retval 0x%lx above byte-wide bitmask\n",
+		       retval);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+	}
+}
+
+static void post_get_tsc(struct syscallrecord *rec, unsigned long retval)
+{
+	/*
+	 * Kernel ABI (x86): returns one of PR_TSC_ENABLE (1) or
+	 * PR_TSC_SIGSEGV (2).  Note 0 is NOT valid here -- the TSC
+	 * mode field is initialised to PR_TSC_ENABLE.  Any other
+	 * value is a torn read of thread->flags or a dispatch into
+	 * the wrong getter.
+	 */
+	if (retval != 1UL && retval != 2UL &&
+	    retval != (unsigned long)-1L) {
+		output(0, "post_prctl: rejected PR_GET_TSC retval 0x%lx outside {ENABLE, SIGSEGV, -1}\n",
+		       retval);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+	}
+}
+
+static void post_get_thp_disable(struct syscallrecord *rec, unsigned long retval)
+{
+	/*
+	 * Kernel ABI: returns the MMF_DISABLE_THP bit from mm->flags
+	 * -- a single bit, value 0 or 1.  A larger value is a torn
+	 * read of mm_struct->flags or a leak of adjacent MMF_* bits
+	 * past the THP-disable mask.
+	 */
+	if (retval > 1UL && retval != (unsigned long)-1L) {
+		output(0, "post_prctl: rejected PR_GET_THP_DISABLE retval 0x%lx outside {0, 1, -1}\n",
+		       retval);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+	}
+}
+
+static void post_get_child_subreaper(struct syscallrecord *rec, unsigned long retval)
+{
+	/*
+	 * Kernel ABI: returns task->signal->is_child_subreaper -- a
+	 * single bit, value 0 or 1.  A larger value is a torn read
+	 * of signal_struct or a dispatch into the wrong getter.
+	 */
+	if (retval > 1UL && retval != (unsigned long)-1L) {
+		output(0, "post_prctl: rejected PR_GET_CHILD_SUBREAPER retval 0x%lx outside {0, 1, -1}\n",
+		       retval);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+	}
+}
+
+static void post_get_seccomp(struct syscallrecord *rec, unsigned long retval)
+{
+	/*
+	 * Kernel ABI: returns task->seccomp.mode -- one of
+	 * SECCOMP_MODE_DISABLED (0), SECCOMP_MODE_STRICT (1) or
+	 * SECCOMP_MODE_FILTER (2).  A larger value is silent
+	 * corruption of a security-critical task field that gates
+	 * filter installation and syscall dispatch.
+	 */
+	if (retval > 2UL && retval != (unsigned long)-1L) {
+		output(0, "post_prctl: rejected PR_GET_SECCOMP retval 0x%lx outside {DISABLED, STRICT, FILTER, -1}\n",
+		       retval);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+	}
+}
+
 static void post_prctl(struct syscallrecord *rec)
 {
 	struct prctl_post_state *snap = (struct prctl_post_state *) rec->post_state;
-	struct sock_fprog *bpf;
-	long got;
+	unsigned long retval;
 
 	rec->a3 = 0;
 
@@ -569,327 +915,63 @@ static void post_prctl(struct syscallrecord *rec)
 		return;
 	}
 
-	unsigned long retval = rec->retval;
+	retval = rec->retval;
 
 	switch (snap->option) {
 	case PR_SET_SECCOMP:
-		bpf = snap->bpf;
-		if (bpf != NULL) {
-			/*
-			 * Wrapper-side gate before reading bpf->filter:
-			 * looks_like_corrupted_ptr() above is shape-only
-			 * (heap-band + alignment), so a heap-shaped but
-			 * unmapped snap->bpf survives and the bpf->filter
-			 * read here would fault the post handler before the
-			 * inner-free dispatch ever runs.  Require the
-			 * wrapper to be a tracked allocation (one we
-			 * produced via do_set_seccomp) or readable for a
-			 * sock_fprog-sized window.  When neither holds,
-			 * skip the inner-free dispatch; the outer wrapper
-			 * still enqueues.  Mirrors the bpf_free_filter()
-			 * inner-filter gate.
-			 *
-			 * Inner-filter free is alloc_track_lookup()-gated
-			 * and routed through deferred_free_enqueue() rather
-			 * than a shape-only gate + direct free().  A
-			 * scribbled bpf->filter that aliases a chunk
-			 * admitted to the deferred ring by another site
-			 * passes any shape check (the alias is a valid
-			 * aligned heap address) but misses the ownership
-			 * check -- ring admission drained the chunk from
-			 * alloc_track -- so the inner free is skipped.  A
-			 * shape-only gate would have landed an out-of-band
-			 * free on the ring-pinned chunk, and the original
-			 * site's later ring_evict_oldest_safe would surface
-			 * as an ASAN bad-free.  Mirrors bpf_free_filter()
-			 * and syscalls/bpf.c BPF_PROG_LOAD eBPF cleanup.
-			 */
-			if (alloc_track_lookup(bpf) ||
-			    range_readable_user(bpf, sizeof(struct sock_fprog))) {
-				if (bpf->filter != NULL &&
-				    alloc_track_lookup(bpf->filter))
-					deferred_free_enqueue(bpf->filter);
-			}
-			deferred_free_enqueue(bpf);
-		}
+		post_set_seccomp(snap);
 		break;
-
 	case PR_SET_NO_NEW_PRIVS:
-		/*
-		 * Oracle: PR_SET_NO_NEW_PRIVS is sticky and one-way.  After a
-		 * successful set the read-back via PR_GET_NO_NEW_PRIVS must
-		 * return 1.  A different value is silent corruption of a
-		 * security-critical task flag — this is the bit that gates
-		 * suid-binary execve and seccomp filter installation.
-		 */
-		if ((long) retval != 0)
-			break;
-		if (!ONE_IN(20))
-			break;
-		got = prctl(PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0);
-		if (got != 1) {
-			output(0, "cred oracle: prctl(PR_SET_NO_NEW_PRIVS) "
-			       "succeeded but PR_GET_NO_NEW_PRIVS=%ld\n", got);
-			__atomic_add_fetch(&shm->stats.cred_oracle_anomalies, 1,
-					   __ATOMIC_RELAXED);
-		}
+		post_set_no_new_privs(retval);
 		break;
-
-	case PR_SET_NAME: {
-		/*
-		 * Oracle: PR_SET_NAME stores into task->comm; PR_GET_NAME
-		 * reads it back.  Compare against the byte snapshot we took
-		 * at sanitise time -- not the userspace buffer at rec->a2,
-		 * which a sibling thread may have scribbled between the SET
-		 * and the readback.
-		 */
-		char readback[16] = { 0 };
-
-		if ((long) retval != 0)
-			break;
-		if (!ONE_IN(20))
-			break;
-		if (prctl(PR_GET_NAME, (unsigned long) readback, 0, 0, 0) != 0)
-			break;
-		if (strncmp(readback, (const char *) snap->set_name, 16) != 0) {
-			output(0, "cred oracle: prctl(PR_SET_NAME) succeeded "
-			       "but PR_GET_NAME readback differs from snapshot\n");
-			__atomic_add_fetch(&shm->stats.cred_oracle_anomalies, 1,
-					   __ATOMIC_RELAXED);
-		}
+	case PR_SET_NAME:
+		post_set_name(snap, retval);
 		break;
-	}
-
 	case PR_SET_DUMPABLE:
-		/*
-		 * Oracle: PR_SET_DUMPABLE only accepts SUID_DUMP_DISABLE (0)
-		 * or SUID_DUMP_USER (1); a successful SET means the kernel
-		 * stored that value.  PR_GET_DUMPABLE must read it back.
-		 */
-		if ((long) retval != 0)
-			break;
-		if (!ONE_IN(20))
-			break;
-		got = prctl(PR_GET_DUMPABLE, 0, 0, 0, 0);
-		if ((unsigned long) got != snap->set_arg) {
-			output(0, "cred oracle: prctl(PR_SET_DUMPABLE %lu) "
-			       "succeeded but PR_GET_DUMPABLE=%ld\n",
-			       snap->set_arg, got);
-			__atomic_add_fetch(&shm->stats.cred_oracle_anomalies, 1,
-					   __ATOMIC_RELAXED);
-		}
+		post_set_dumpable(snap, retval);
 		break;
-
 	case PR_SET_KEEPCAPS:
-		/*
-		 * Oracle: PR_SET_KEEPCAPS only accepts 0 or 1.  A successful
-		 * SET means the kernel stored that single bit;
-		 * PR_GET_KEEPCAPS must read it back.
-		 */
-		if ((long) retval != 0)
-			break;
-		if (!ONE_IN(20))
-			break;
-		got = prctl(PR_GET_KEEPCAPS, 0, 0, 0, 0);
-		if ((unsigned long) got != snap->set_arg) {
-			output(0, "cred oracle: prctl(PR_SET_KEEPCAPS %lu) "
-			       "succeeded but PR_GET_KEEPCAPS=%ld\n",
-			       snap->set_arg, got);
-			__atomic_add_fetch(&shm->stats.cred_oracle_anomalies, 1,
-					   __ATOMIC_RELAXED);
-		}
+		post_set_keepcaps(snap, retval);
 		break;
-
-	case PR_SET_PDEATHSIG: {
-		/*
-		 * Oracle: PR_SET_PDEATHSIG accepts 0 or a valid signal
-		 * number.  PR_GET_PDEATHSIG writes the stored value to the
-		 * int* at arg2; compare against the snapshot.
-		 */
-		int sig = -1;
-
-		if ((long) retval != 0)
-			break;
-		if (!ONE_IN(20))
-			break;
-		if (prctl(PR_GET_PDEATHSIG, (unsigned long) &sig, 0, 0, 0) != 0)
-			break;
-		if ((unsigned long) sig != snap->set_arg) {
-			output(0, "cred oracle: prctl(PR_SET_PDEATHSIG %lu) "
-			       "succeeded but PR_GET_PDEATHSIG=%d\n",
-			       snap->set_arg, sig);
-			__atomic_add_fetch(&shm->stats.cred_oracle_anomalies, 1,
-					   __ATOMIC_RELAXED);
-		}
+	case PR_SET_PDEATHSIG:
+		post_set_pdeathsig(snap, retval);
 		break;
-	}
-
 	case PR_GET_PDEATHSIG:
-		/*
-		 * Kernel ABI: writes the parent-death signal number to the
-		 * out-arg at arg2; the syscall return slot itself is just
-		 * 0/-1.  Anything else on the return path is a -errno leak
-		 * or a copy_to_user retval tear bleeding into the slot.
-		 */
-		if (retval != 0 && retval != (unsigned long)-1L) {
-			output(0, "post_prctl: rejected PR_GET_PDEATHSIG retval 0x%lx outside {0, -1}\n",
-			       retval);
-			post_handler_corrupt_ptr_bump(rec, NULL);
-		}
+		post_get_pdeathsig(rec, retval);
 		break;
-
 	case PR_GET_KEEPCAPS:
-		/*
-		 * Kernel ABI: returns task->keep_capabilities — a single bit,
-		 * value 0 or 1.  A larger value is a torn read of the cred
-		 * flags word or a dispatch into the wrong getter.
-		 */
-		if (retval > 1UL && retval != (unsigned long)-1L) {
-			output(0, "post_prctl: rejected PR_GET_KEEPCAPS retval 0x%lx outside {0, 1, -1}\n",
-			       retval);
-			post_handler_corrupt_ptr_bump(rec, NULL);
-		}
+		post_get_keepcaps(rec, retval);
 		break;
-
 	case PR_GET_DUMPABLE:
-		/*
-		 * Kernel ABI: returns mm->flags & MMF_DUMPABLE_MASK — value 0
-		 * (SUID_DUMP_DISABLE), 1 (SUID_DUMP_USER) or 2 (SUID_DUMP_ROOT).
-		 * A larger value is a torn read of mm_struct->flags or a leak
-		 * of the upper MMF_* bits past the dumpable mask.
-		 */
-		if (retval > 2UL && retval != (unsigned long)-1L) {
-			output(0, "post_prctl: rejected PR_GET_DUMPABLE retval 0x%lx outside {0, 1, 2, -1}\n",
-			       retval);
-			post_handler_corrupt_ptr_bump(rec, NULL);
-		}
+		post_get_dumpable(rec, retval);
 		break;
-
 	case PR_GET_NAME:
-		/*
-		 * Kernel ABI: copies task->comm into the out-arg at arg2; the
-		 * return slot is just 0/-1.  Anything else on the return path
-		 * is a -errno leak or a bytes-copied count bleeding into the
-		 * slot from a wrong copy_to_user dispatch.
-		 */
-		if (retval != 0 && retval != (unsigned long)-1L) {
-			output(0, "post_prctl: rejected PR_GET_NAME retval 0x%lx outside {0, -1}\n",
-			       retval);
-			post_handler_corrupt_ptr_bump(rec, NULL);
-		}
+		post_get_name(rec, retval);
 		break;
-
 	case PR_GET_NO_NEW_PRIVS:
-		/*
-		 * Kernel ABI: returns task->no_new_privs — a single bit,
-		 * value 0 or 1.  A larger value is silent corruption of a
-		 * security-critical task flag (suid-binary execve gating).
-		 */
-		if (retval > 1UL && retval != (unsigned long)-1L) {
-			output(0, "post_prctl: rejected PR_GET_NO_NEW_PRIVS retval 0x%lx outside {0, 1, -1}\n",
-			       retval);
-			post_handler_corrupt_ptr_bump(rec, NULL);
-		}
+		post_get_no_new_privs(rec, retval);
 		break;
-
 	case PR_CAPBSET_READ:
-		/*
-		 * Kernel ABI: returns whether the queried capability bit is
-		 * set in cred->cap_bset — value 0 or 1.  A larger value is a
-		 * torn read of the kernel_cap_t bitmask or a leak of the
-		 * underlying word past the queried bit.
-		 */
-		if (retval > 1UL && retval != (unsigned long)-1L) {
-			output(0, "post_prctl: rejected PR_CAPBSET_READ retval 0x%lx outside {0, 1, -1}\n",
-			       retval);
-			post_handler_corrupt_ptr_bump(rec, NULL);
-		}
+		post_capbset_read(rec, retval);
 		break;
-
 	case PR_GET_TIMING:
-		/*
-		 * Kernel ABI: returns one of PR_TIMING_STATISTICAL (0) or
-		 * PR_TIMING_TIMESTAMP (1).  Anything else is a torn read of
-		 * the timing mode or a dispatch into the wrong getter.
-		 */
-		if (retval > 1UL && retval != (unsigned long)-1L) {
-			output(0, "post_prctl: rejected PR_GET_TIMING retval 0x%lx outside {STATISTICAL, TIMESTAMP, -1}\n",
-			       retval);
-			post_handler_corrupt_ptr_bump(rec, NULL);
-		}
+		post_get_timing(rec, retval);
 		break;
-
 	case PR_GET_FPEXC:
 	case PR_GET_FPEMU:
-		/*
-		 * Kernel ABI (PowerPC / IA-64): returns a small bitmask of
-		 * PR_FP_EXC_* / PR_FP_EMU_* flags, all of which fit in a byte.
-		 * Anything above 0xff is a sign-extension tear or a leak of
-		 * upper bits from the source field.
-		 */
-		if (retval > 0xffUL && retval != (unsigned long)-1L) {
-			output(0, "post_prctl: rejected PR_GET_FP{EXC,EMU} retval 0x%lx above byte-wide bitmask\n",
-			       retval);
-			post_handler_corrupt_ptr_bump(rec, NULL);
-		}
+		post_get_fp_exc_emu(rec, retval);
 		break;
-
 	case PR_GET_TSC:
-		/*
-		 * Kernel ABI (x86): returns one of PR_TSC_ENABLE (1) or
-		 * PR_TSC_SIGSEGV (2).  Note 0 is NOT valid here -- the TSC
-		 * mode field is initialised to PR_TSC_ENABLE.  Any other
-		 * value is a torn read of thread->flags or a dispatch into
-		 * the wrong getter.
-		 */
-		if (retval != 1UL && retval != 2UL &&
-		    retval != (unsigned long)-1L) {
-			output(0, "post_prctl: rejected PR_GET_TSC retval 0x%lx outside {ENABLE, SIGSEGV, -1}\n",
-			       retval);
-			post_handler_corrupt_ptr_bump(rec, NULL);
-		}
+		post_get_tsc(rec, retval);
 		break;
-
 	case PR_GET_THP_DISABLE:
-		/*
-		 * Kernel ABI: returns the MMF_DISABLE_THP bit from mm->flags
-		 * -- a single bit, value 0 or 1.  A larger value is a torn
-		 * read of mm_struct->flags or a leak of adjacent MMF_* bits
-		 * past the THP-disable mask.
-		 */
-		if (retval > 1UL && retval != (unsigned long)-1L) {
-			output(0, "post_prctl: rejected PR_GET_THP_DISABLE retval 0x%lx outside {0, 1, -1}\n",
-			       retval);
-			post_handler_corrupt_ptr_bump(rec, NULL);
-		}
+		post_get_thp_disable(rec, retval);
 		break;
-
 	case PR_GET_CHILD_SUBREAPER:
-		/*
-		 * Kernel ABI: returns task->signal->is_child_subreaper -- a
-		 * single bit, value 0 or 1.  A larger value is a torn read
-		 * of signal_struct or a dispatch into the wrong getter.
-		 */
-		if (retval > 1UL && retval != (unsigned long)-1L) {
-			output(0, "post_prctl: rejected PR_GET_CHILD_SUBREAPER retval 0x%lx outside {0, 1, -1}\n",
-			       retval);
-			post_handler_corrupt_ptr_bump(rec, NULL);
-		}
+		post_get_child_subreaper(rec, retval);
 		break;
-
 	case PR_GET_SECCOMP:
-		/*
-		 * Kernel ABI: returns task->seccomp.mode -- one of
-		 * SECCOMP_MODE_DISABLED (0), SECCOMP_MODE_STRICT (1) or
-		 * SECCOMP_MODE_FILTER (2).  A larger value is silent
-		 * corruption of a security-critical task field that gates
-		 * filter installation and syscall dispatch.
-		 */
-		if (retval > 2UL && retval != (unsigned long)-1L) {
-			output(0, "post_prctl: rejected PR_GET_SECCOMP retval 0x%lx outside {DISABLED, STRICT, FILTER, -1}\n",
-			       retval);
-			post_handler_corrupt_ptr_bump(rec, NULL);
-		}
+		post_get_seccomp(rec, retval);
 		break;
 	}
 
