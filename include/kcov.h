@@ -1918,12 +1918,6 @@ struct kcov_shared {
 	 *      actually served from the recent ring.  Stays at zero
 	 *      under the default A/B arm; non-zero once the operator
 	 *      flips --cmp-recent-pool=recent-first.
-	 *  cmp_recent_promotions
-	 *      Bumped from the feedback drain when a recent-ring
-	 *      sample converts (PC-edge / CMP-novel / errno-shift) --
-	 *      the conversion event that the follow-up commit will
-	 *      route into a real recent->durable promotion.  Today
-	 *      the recording-only path; no entry is moved.
 	 *
 	 * Append-only at the tail per the existing convention so
 	 * consumer offsets stay stable. */
@@ -1932,7 +1926,6 @@ struct kcov_shared {
 	unsigned long cmp_recent_would_pick;
 	unsigned long cmp_recent_would_miss;
 	unsigned long cmp_recent_live_picks;
-	unsigned long cmp_recent_promotions;
 
 	/*
 	 * SHADOW counters for the field-scoped CMP hint consumer.
