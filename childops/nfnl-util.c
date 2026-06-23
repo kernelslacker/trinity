@@ -45,12 +45,10 @@
 
 #include "childops-netlink.h"
 #include "childops-nfnl.h"
+#include "compat.h"
 
 #ifndef NETLINK_NETFILTER
 #define NETLINK_NETFILTER		12
-#endif
-#ifndef NFNETLINK_V0
-#define NFNETLINK_V0			0
 #endif
 #ifndef NFNL_MSG_BATCH_BEGIN
 #define NFNL_MSG_BATCH_BEGIN		16

@@ -525,6 +525,11 @@ struct sockaddr_nfc {
 #define RTNLGRP_MPLS_NETCONF 29
 #endif
 
+/* linux/netfilter/nfnetlink.h */
+#ifndef NFNETLINK_V0
+#define NFNETLINK_V0 0
+#endif
+
 /* linux/wireguard.h
  *
  * Userspace kernel-headers packages routinely lag the running kernel by

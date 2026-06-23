@@ -134,9 +134,6 @@
  * a few of these constants; keep us building cleanly.  IDs come from
  * the in-tree UAPI and have been stable for many years.
  */
-#ifndef NFNETLINK_V0
-#define NFNETLINK_V0			0
-#endif
 #ifndef NFNL_SUBSYS_CTNETLINK
 #define NFNL_SUBSYS_CTNETLINK		1
 #endif
