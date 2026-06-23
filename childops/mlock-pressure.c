@@ -13,6 +13,7 @@
 
 #include "arch.h"
 #include "child.h"
+#include "compat.h"
 #include "maps.h"
 #include "objects.h"
 #include "random.h"
@@ -21,10 +22,6 @@
 #include "trinity.h"
 #include "utils.h"
 #include "vma-pressure.h"
-
-#ifndef MLOCK_ONFAULT
-#define MLOCK_ONFAULT 1
-#endif
 
 /*
  * Pick a page-aligned sub-range of a mapping for partial lock/unlock.
