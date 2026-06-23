@@ -142,9 +142,6 @@
 #ifndef NFNL_SUBSYS_NFTABLES
 #define NFNL_SUBSYS_NFTABLES		10
 #endif
-#ifndef NFNETLINK_V0
-#define NFNETLINK_V0			0
-#endif
 
 #ifndef NFT_MSG_NEWTABLE
 #define NFT_MSG_NEWTABLE		0
