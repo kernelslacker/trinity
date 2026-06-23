@@ -48,14 +48,11 @@
 #endif
 
 #include "child.h"
+#include "compat.h"
 #include "shm.h"
 #include "stats.h"
 #include "trinity.h"
 #include "utils.h"
-
-#ifndef AF_ALG
-#define AF_ALG	38
-#endif
 
 struct af_alg_probe_entry {
 	const char	*type;	/* salg_type, e.g. "skcipher", "hash" */

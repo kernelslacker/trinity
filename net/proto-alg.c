@@ -242,7 +242,6 @@ static void alg_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct s
 	*addrlen = sizeof(struct sockaddr_alg);
 }
 
-#define ALG_SET_KEY		1
 #define ALG_SET_IV		2
 #define ALG_SET_OP		3
 #define ALG_SET_AEAD_ASSOCLEN	4

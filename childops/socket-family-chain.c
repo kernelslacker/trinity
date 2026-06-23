@@ -72,9 +72,6 @@
 #include "trinity.h"
 #include "utils.h"
 
-#ifndef ALG_SET_KEY
-#define ALG_SET_KEY		1
-#endif
 #ifndef ALG_SET_AEAD_AUTHSIZE
 #define ALG_SET_AEAD_AUTHSIZE	5
 #endif
