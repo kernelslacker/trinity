@@ -8,8 +8,6 @@
  * translation units.
  */
 
-#include <stdbool.h>
-
 #include "child.h"		/* struct childdata */
 #include "cmp_hints.h"		/* cmp_hints_shm, cmp_hints_pool_safe_count */
 #include "shm.h"
