@@ -172,6 +172,231 @@ struct io_uring_register_post_state {
 	unsigned long arg_len;
 };
 
+/*
+ * Per-opcode payload returned by the family helpers below.  The dispatch
+ * switch in sanitise_io_uring_register copies these straight into
+ * rec->a3 / rec->a4 and the local arg_len.
+ */
+struct ioring_register_payload {
+	unsigned long arg;
+	unsigned int nr;
+	unsigned long len;
+};
+
+/*
+ * IORING_REGISTER_BUFFERS: arg = struct iovec[], nr_args = count.
+ * Kernel iterates the array copying each iovec from userspace.
+ * IORING_UNREGISTER_BUFFERS takes no arg.
+ */
+static struct ioring_register_payload ioring_reg_buffers_payload(unsigned int opcode)
+{
+	struct ioring_register_payload p = { 0, 0, 0 };
+	unsigned int nr;
+
+	if (opcode == IORING_UNREGISTER_BUFFERS)
+		return p;
+
+	nr = 1 + (rnd_modulo_u32(8));
+	p.arg = (unsigned long) alloc_iovec(nr, IOV_KERNEL_WRITE);
+	p.nr = nr;
+	p.len = nr * sizeof(struct iovec);
+	return p;
+}
+
+/*
+ * IORING_REGISTER_FILES: arg = int[] of fds, nr_args = count.
+ * Use -1 as placeholder; kernel accepts sparse sets with -1 holes.
+ * IORING_UNREGISTER_FILES takes no arg.
+ */
+static struct ioring_register_payload ioring_reg_files_payload(unsigned int opcode)
+{
+	struct ioring_register_payload p = { 0, 0, 0 };
+	unsigned int nr;
+	void *buf;
+
+	if (opcode == IORING_UNREGISTER_FILES)
+		return p;
+
+	nr = 1 + (rnd_modulo_u32(16));
+	buf = get_writable_struct(nr * sizeof(int));
+	if (buf)
+		memset(buf, 0xff, nr * sizeof(int));  /* fill with -1 */
+	p.arg = (unsigned long) buf;
+	p.nr = nr;
+	p.len = nr * sizeof(int);
+	return p;
+}
+
+/*
+ * IORING_REGISTER_EVENTFD / IORING_REGISTER_EVENTFD_ASYNC:
+ * arg = int *eventfd_fd, nr_args = 1.  Seed *u with a real eventfd
+ * from the OBJ_FD_EVENTFD pool ~75% of the time so io_eventfd_register
+ * reaches eventfd_ctx_fdget() rather than -EBADF'ing on a garbage fd;
+ * the rest of the time inject a random int32 to walk the validator's
+ * "wrong fd type / closed fd" reject paths.  IORING_UNREGISTER_EVENTFD
+ * takes no arg.
+ */
+static struct ioring_register_payload ioring_reg_eventfd_payload(unsigned int opcode)
+{
+	struct ioring_register_payload p = { 0, 0, 0 };
+	int *u;
+
+	if (opcode == IORING_UNREGISTER_EVENTFD)
+		return p;
+
+	u = (int *) get_writable_struct(sizeof(int));
+	if (u) {
+		if ((rnd_modulo_u32(4)) != 0) {
+			int efd = get_typed_fd(ARG_FD_EVENTFD);
+			*u = (efd >= 0) ? efd : (int) rnd_u32();
+		} else {
+			*u = (int) rnd_u32();
+		}
+	}
+	p.arg = (unsigned long) u;
+	p.nr = 1;
+	p.len = sizeof(int);
+	return p;
+}
+
+/*
+ * IORING_REGISTER_PROBE: arg = struct io_uring_probe with trailing
+ * ops[], nr_args = number of op slots.
+ */
+static struct ioring_register_payload ioring_reg_probe_payload(void)
+{
+	struct ioring_register_payload p;
+	struct io_uring_probe *probe;
+	unsigned int nr = IORING_OP_LAST;
+
+	probe = (struct io_uring_probe *)
+		get_writable_struct(sizeof(*probe) +
+				    nr * sizeof(probe->ops[0]));
+	if (probe)
+		memset(probe, 0, sizeof(*probe) + nr * sizeof(probe->ops[0]));
+	p.arg = (unsigned long) probe;
+	p.nr = nr;
+	p.len = sizeof(*probe) + nr * sizeof(probe->ops[0]);
+	return p;
+}
+
+/*
+ * IORING_REGISTER_PERSONALITY / IORING_UNREGISTER_PERSONALITY: no arg.
+ */
+static struct ioring_register_payload ioring_reg_personality_payload(void)
+{
+	struct ioring_register_payload p = { 0, 0, 0 };
+	return p;
+}
+
+/*
+ * IORING_REGISTER_RESTRICTIONS (task-scoped via the blind fd == -1
+ * path): arg = struct io_uring_task_restriction with a flex-array of
+ * struct io_uring_restriction[nr_res], nr_args = 1.  flags must be 0
+ * and the resv slot must be all-zero or io_register_restrictions_task
+ * bails at -EINVAL.  Allocate room for a small nr_res so
+ * io_parse_restrictions actually iterates the array; zeroed entries
+ * still walk the parser.  The real-fd RESTRICTIONS path takes a flat
+ * array shape and reaches this case too -- a zeroed io_uring_task_-
+ * restriction overlays cleanly onto a single zero io_uring_restriction
+ * (both paths read sane payloads from the same buffer).
+ */
+static struct ioring_register_payload ioring_reg_restrictions_payload(void)
+{
+	struct ioring_register_payload p;
+	struct trinity_io_uring_task_restriction *tr;
+	unsigned int nr_res = min(rnd_modulo_u32(4),
+			(unsigned int) TRINITY_IO_URING_NR_RES_MAX);
+	size_t sz = sizeof(*tr) +
+		nr_res * sizeof(struct trinity_io_uring_restriction);
+
+	tr = (struct trinity_io_uring_task_restriction *)
+		get_writable_struct(sz);
+	if (tr) {
+		memset(tr, 0, sz);
+		tr->nr_res = nr_res;
+	}
+	p.arg = (unsigned long) tr;
+	p.nr = 1;
+	p.len = sz;
+	return p;
+}
+
+/*
+ * IORING_REGISTER_IOWQ_AFF: arg = cpu_set_t *, nr_args = sizeof(cpu_set_t).
+ * Build a small valid affinity mask (a couple of bits set on online CPUs)
+ * so io_register_iowq_aff's cpumask_parse / cpumask_subset checks pass
+ * and the call reaches io_wq_cpu_affinity().  Skip memset -- the
+ * cpu_set_t bit layout matters for the cpumask validator.
+ *
+ * IORING_REGISTER_IOWQ_MAX_WORKERS: arg = uint[2] (bounded/unbounded),
+ * nr_args = 2.
+ *
+ * IORING_UNREGISTER_IOWQ_AFF: no arg.
+ */
+static struct ioring_register_payload ioring_reg_iowq_payload(unsigned int opcode)
+{
+	struct ioring_register_payload p = { 0, 0, 0 };
+	void *buf;
+
+	switch (opcode) {
+	case IORING_UNREGISTER_IOWQ_AFF:
+		return p;
+
+	case IORING_REGISTER_IOWQ_MAX_WORKERS:
+		buf = get_writable_struct(2 * sizeof(unsigned int));
+		if (buf)
+			memset(buf, 0, 2 * sizeof(unsigned int));
+		p.arg = (unsigned long) buf;
+		p.nr = 2;
+		p.len = 2 * sizeof(unsigned int);
+		return p;
+
+	case IORING_REGISTER_IOWQ_AFF: {
+		cpu_set_t *cs = (cpu_set_t *) get_writable_address(sizeof(cpu_set_t));
+		if (cs) {
+			unsigned int n = num_online_cpus ? num_online_cpus : 1;
+			unsigned int i, k = 1 + (rnd_modulo_u32(3));
+			CPU_ZERO(cs);
+			for (i = 0; i < k; i++)
+				CPU_SET(rnd_modulo_u32(n), cs);
+		}
+		p.arg = (unsigned long) cs;
+		p.nr = sizeof(cpu_set_t);
+		p.len = sizeof(cpu_set_t);
+		return p;
+	}
+	}
+	return p;
+}
+
+/*
+ * IORING_REGISTER_NAPI / IORING_UNREGISTER_NAPI:
+ * arg = struct io_uring_napi, nr_args = 0.  Default opcode field
+ * to IO_URING_NAPI_REGISTER_OP (0) so io_register_napi reaches
+ * io_napi_register_napi() rather than rejecting at the opcode
+ * switch.  Occasionally fuzz the opcode/tracking-strategy fields.
+ */
+static struct ioring_register_payload ioring_reg_napi_payload(void)
+{
+	struct ioring_register_payload p;
+	struct trinity_io_uring_napi *n;
+
+	n = (struct trinity_io_uring_napi *)
+		get_writable_struct(sizeof(*n));
+	if (n) {
+		memset(n, 0, sizeof(*n));
+		n->busy_poll_to = rnd_modulo_u32(1000);
+		n->prefer_busy_poll = rnd_u32() & 1;
+		n->opcode = (rnd_modulo_u32(8) == 0) ? rnd_u32() & 0xff : 0;
+		n->op_param = rnd_u32();
+	}
+	p.arg = (unsigned long) n;
+	p.nr = 0;
+	p.len = sizeof(*n);
+	return p;
+}
+
 static void sanitise_io_uring_register(struct syscallrecord *rec)
 {
 	struct io_uring_register_post_state *snap;
@@ -221,121 +446,84 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 	opcode = rec->a2;
 
 	switch (opcode) {
-	/* Opcodes that take no arg — clear both to avoid early EFAULT. */
-	case IORING_UNREGISTER_BUFFERS:
-	case IORING_UNREGISTER_FILES:
-	case IORING_UNREGISTER_EVENTFD:
-	case IORING_REGISTER_ENABLE_RINGS:
+	case IORING_REGISTER_BUFFERS:
+	case IORING_UNREGISTER_BUFFERS: {
+		struct ioring_register_payload p = ioring_reg_buffers_payload(opcode);
+		rec->a3 = p.arg;
+		rec->a4 = p.nr;
+		arg_len = p.len;
+		break;
+	}
+
+	case IORING_REGISTER_FILES:
+	case IORING_UNREGISTER_FILES: {
+		struct ioring_register_payload p = ioring_reg_files_payload(opcode);
+		rec->a3 = p.arg;
+		rec->a4 = p.nr;
+		arg_len = p.len;
+		break;
+	}
+
+	case IORING_REGISTER_EVENTFD:
+	case IORING_REGISTER_EVENTFD_ASYNC:
+	case IORING_UNREGISTER_EVENTFD: {
+		struct ioring_register_payload p = ioring_reg_eventfd_payload(opcode);
+		rec->a3 = p.arg;
+		rec->a4 = p.nr;
+		arg_len = p.len;
+		break;
+	}
+
+	case IORING_REGISTER_PROBE: {
+		struct ioring_register_payload p = ioring_reg_probe_payload();
+		rec->a3 = p.arg;
+		rec->a4 = p.nr;
+		arg_len = p.len;
+		break;
+	}
+
 	case IORING_REGISTER_PERSONALITY:
-	case IORING_UNREGISTER_PERSONALITY:
+	case IORING_UNREGISTER_PERSONALITY: {
+		struct ioring_register_payload p = ioring_reg_personality_payload();
+		rec->a3 = p.arg;
+		rec->a4 = p.nr;
+		arg_len = p.len;
+		break;
+	}
+
+	case IORING_REGISTER_RESTRICTIONS: {
+		struct ioring_register_payload p = ioring_reg_restrictions_payload();
+		rec->a3 = p.arg;
+		rec->a4 = p.nr;
+		arg_len = p.len;
+		break;
+	}
+
+	case IORING_REGISTER_IOWQ_AFF:
 	case IORING_UNREGISTER_IOWQ_AFF:
+	case IORING_REGISTER_IOWQ_MAX_WORKERS: {
+		struct ioring_register_payload p = ioring_reg_iowq_payload(opcode);
+		rec->a3 = p.arg;
+		rec->a4 = p.nr;
+		arg_len = p.len;
+		break;
+	}
+
+	case IORING_REGISTER_NAPI:
+	case IORING_UNREGISTER_NAPI: {
+		struct ioring_register_payload p = ioring_reg_napi_payload();
+		rec->a3 = p.arg;
+		rec->a4 = p.nr;
+		arg_len = p.len;
+		break;
+	}
+
+	/* IORING_REGISTER_ENABLE_RINGS: no arg. */
+	case IORING_REGISTER_ENABLE_RINGS:
 		rec->a3 = 0;
 		rec->a4 = 0;
 		arg_len = 0;
 		break;
-
-	/*
-	 * IORING_REGISTER_BUFFERS: arg = struct iovec[], nr_args = count.
-	 * Kernel iterates the array copying each iovec from userspace.
-	 */
-	case IORING_REGISTER_BUFFERS:
-		nr = 1 + (rnd_modulo_u32(8));
-		rec->a3 = (unsigned long) alloc_iovec(nr, IOV_KERNEL_WRITE);
-		rec->a4 = nr;
-		arg_len = nr * sizeof(struct iovec);
-		break;
-
-	/*
-	 * IORING_REGISTER_FILES: arg = int[] of fds, nr_args = count.
-	 * Use -1 as placeholder; kernel accepts sparse sets with -1 holes.
-	 */
-	case IORING_REGISTER_FILES:
-		nr = 1 + (rnd_modulo_u32(16));
-		buf = get_writable_struct(nr * sizeof(int));
-		if (buf)
-			memset(buf, 0xff, nr * sizeof(int));  /* fill with -1 */
-		rec->a3 = (unsigned long) buf;
-		rec->a4 = nr;
-		arg_len = nr * sizeof(int);
-		break;
-
-	/*
-	 * IORING_REGISTER_EVENTFD / IORING_REGISTER_EVENTFD_ASYNC:
-	 * arg = int *eventfd_fd, nr_args = 1.  Seed *u with a real eventfd
-	 * from the OBJ_FD_EVENTFD pool ~75% of the time so io_eventfd_register
-	 * reaches eventfd_ctx_fdget() rather than -EBADF'ing on a garbage fd;
-	 * the rest of the time inject a random int32 to walk the validator's
-	 * "wrong fd type / closed fd" reject paths.
-	 */
-	case IORING_REGISTER_EVENTFD:
-	case IORING_REGISTER_EVENTFD_ASYNC: {
-		int *u = (int *) get_writable_struct(sizeof(int));
-		if (u) {
-			if ((rnd_modulo_u32(4)) != 0) {
-				int efd = get_typed_fd(ARG_FD_EVENTFD);
-				*u = (efd >= 0) ? efd : (int) rnd_u32();
-			} else {
-				*u = (int) rnd_u32();
-			}
-		}
-		rec->a3 = (unsigned long) u;
-		rec->a4 = 1;
-		arg_len = sizeof(int);
-		break;
-	}
-
-	/*
-	 * IORING_REGISTER_PROBE: arg = struct io_uring_probe with trailing
-	 * ops[], nr_args = number of op slots.
-	 */
-	case IORING_REGISTER_PROBE: {
-		struct io_uring_probe *probe;
-		nr = IORING_OP_LAST;
-		probe = (struct io_uring_probe *)
-			get_writable_struct(sizeof(*probe) +
-					    nr * sizeof(probe->ops[0]));
-		if (probe)
-			memset(probe, 0, sizeof(*probe) + nr * sizeof(probe->ops[0]));
-		rec->a3 = (unsigned long) probe;
-		rec->a4 = nr;
-		arg_len = sizeof(*probe) + nr * sizeof(probe->ops[0]);
-		break;
-	}
-
-	/*
-	 * IORING_REGISTER_IOWQ_MAX_WORKERS: arg = uint[2] (bounded/unbounded),
-	 * nr_args = 2.
-	 */
-	case IORING_REGISTER_IOWQ_MAX_WORKERS:
-		buf = get_writable_struct(2 * sizeof(unsigned int));
-		if (buf)
-			memset(buf, 0, 2 * sizeof(unsigned int));
-		rec->a3 = (unsigned long) buf;
-		rec->a4 = 2;
-		arg_len = 2 * sizeof(unsigned int);
-		break;
-
-	/*
-	 * IORING_REGISTER_IOWQ_AFF: arg = cpu_set_t *, nr_args = sizeof(cpu_set_t).
-	 * Build a small valid affinity mask (a couple of bits set on online CPUs)
-	 * so io_register_iowq_aff's cpumask_parse / cpumask_subset checks pass
-	 * and the call reaches io_wq_cpu_affinity().  Skip memset -- the
-	 * cpu_set_t bit layout matters for the cpumask validator.
-	 */
-	case IORING_REGISTER_IOWQ_AFF: {
-		cpu_set_t *cs = (cpu_set_t *) get_writable_address(sizeof(cpu_set_t));
-		if (cs) {
-			unsigned int n = num_online_cpus ? num_online_cpus : 1;
-			unsigned int i, k = 1 + (rnd_modulo_u32(3));
-			CPU_ZERO(cs);
-			for (i = 0; i < k; i++)
-				CPU_SET(rnd_modulo_u32(n), cs);
-		}
-		rec->a3 = (unsigned long) cs;
-		rec->a4 = sizeof(cpu_set_t);
-		arg_len = sizeof(cpu_set_t);
-		break;
-	}
 
 	/*
 	 * IORING_REGISTER_FILE_ALLOC_RANGE: arg = struct io_uring_file_index_range,
@@ -498,31 +686,6 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 		rec->a3 = (unsigned long) s;
 		rec->a4 = 1;
 		arg_len = sizeof(*s);
-		break;
-	}
-
-	/*
-	 * IORING_REGISTER_NAPI / IORING_UNREGISTER_NAPI:
-	 * arg = struct io_uring_napi, nr_args = 0.  Default opcode field
-	 * to IO_URING_NAPI_REGISTER_OP (0) so io_register_napi reaches
-	 * io_napi_register_napi() rather than rejecting at the opcode
-	 * switch.  Occasionally fuzz the opcode/tracking-strategy fields.
-	 */
-	case IORING_REGISTER_NAPI:
-	case IORING_UNREGISTER_NAPI: {
-		struct trinity_io_uring_napi *n;
-		n = (struct trinity_io_uring_napi *)
-			get_writable_struct(sizeof(*n));
-		if (n) {
-			memset(n, 0, sizeof(*n));
-			n->busy_poll_to = rnd_modulo_u32(1000);
-			n->prefer_busy_poll = rnd_u32() & 1;
-			n->opcode = (rnd_modulo_u32(8) == 0) ? rnd_u32() & 0xff : 0;
-			n->op_param = rnd_u32();
-		}
-		rec->a3 = (unsigned long) n;
-		rec->a4 = 0;
-		arg_len = sizeof(*n);
 		break;
 	}
 
@@ -827,36 +990,6 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 		rec->a3 = (unsigned long) sqe;
 		rec->a4 = 1;
 		arg_len = sizeof(*sqe);
-		break;
-	}
-
-	/*
-	 * IORING_REGISTER_RESTRICTIONS (task-scoped via the blind fd == -1
-	 * path): arg = struct io_uring_task_restriction with a flex-array of
-	 * struct io_uring_restriction[nr_res], nr_args = 1.  flags must be 0
-	 * and the resv slot must be all-zero or io_register_restrictions_task
-	 * bails at -EINVAL.  Allocate room for a small nr_res so
-	 * io_parse_restrictions actually iterates the array; zeroed entries
-	 * still walk the parser.  The real-fd RESTRICTIONS path takes a flat
-	 * array shape and reaches this case too -- a zeroed io_uring_task_-
-	 * restriction overlays cleanly onto a single zero io_uring_restriction
-	 * (both paths read sane payloads from the same buffer).
-	 */
-	case IORING_REGISTER_RESTRICTIONS: {
-		struct trinity_io_uring_task_restriction *tr;
-		unsigned int nr_res = min(rnd_modulo_u32(4),
-				(unsigned int) TRINITY_IO_URING_NR_RES_MAX);
-		size_t sz = sizeof(*tr) +
-			nr_res * sizeof(struct trinity_io_uring_restriction);
-		tr = (struct trinity_io_uring_task_restriction *)
-			get_writable_struct(sz);
-		if (tr) {
-			memset(tr, 0, sz);
-			tr->nr_res = nr_res;
-		}
-		rec->a3 = (unsigned long) tr;
-		rec->a4 = 1;
-		arg_len = sz;
 		break;
 	}
 
