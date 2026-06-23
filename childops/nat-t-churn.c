@@ -146,6 +146,7 @@
 
 #include "child.h"
 #include "childops-netlink.h"
+#include "compat.h"
 #include "jitter.h"
 #include "random.h"
 #include "shm.h"
@@ -159,10 +160,6 @@
  * defines keep the file compilable if the build host strips the
  * headers down.  Layouts match the upstream kernel UAPI.
  */
-#ifndef NETLINK_XFRM
-#define NETLINK_XFRM			6
-#endif
-
 #ifndef XFRM_MSG_NEWSA
 #define XFRM_MSG_NEWSA			0x10
 #define XFRM_MSG_DELSA			0x11

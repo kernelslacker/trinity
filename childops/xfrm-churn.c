@@ -137,10 +137,6 @@
  * in sync with linux/xfrm.h as of Linux 6.18 (no breaking changes
  * since the UAPI stabilised in 2.6.x).
  */
-#ifndef NETLINK_XFRM
-#define NETLINK_XFRM		6
-#endif
-
 #ifndef XFRM_MSG_NEWSA
 #define XFRM_MSG_NEWSA		0x10
 #define XFRM_MSG_DELSA		0x11

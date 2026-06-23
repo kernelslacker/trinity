@@ -116,12 +116,9 @@
 #include <linux/if.h>
 
 #include "childops-netlink.h"
+#include "compat.h"
 #include "jitter.h"
 #include "random.h"
-
-#ifndef NETLINK_XFRM
-#define NETLINK_XFRM			6
-#endif
 
 /* Per-process latched gate: namespace ops returned EPERM/ENOSYS in
  * the probe.  Once latched, every subsequent invocation short-
