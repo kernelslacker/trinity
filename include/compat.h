@@ -1649,6 +1649,14 @@ enum kcmp_type {
 #define MPTCP_FULL_INFO		4
 #endif
 
+/* linux/udp.h -- UDP_SEGMENT is the SOL_UDP setsockopt/cmsg knob that
+ * configures UDP GSO segment size on a sending socket.  Older kernel-
+ * headers packages predate the constant; the UAPI value (103) is fixed
+ * since UDP GSO landed in 4.18. */
+#ifndef UDP_SEGMENT
+#define UDP_SEGMENT		103
+#endif
+
 /* net/bluetooth/hci.h */
 #ifndef HCI_DATA_DIR
 #define HCI_DATA_DIR    1

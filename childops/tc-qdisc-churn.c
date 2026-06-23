@@ -191,9 +191,6 @@
 #ifndef SOL_UDP
 #define SOL_UDP			17
 #endif
-#ifndef UDP_SEGMENT
-#define UDP_SEGMENT		103
-#endif
 
 /* Reasonable ceiling on a single rtnl message + payload.  The
  * NEWTFILTER message with TCA_KIND + TCA_OPTIONS (empty) is the
