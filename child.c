@@ -2479,6 +2479,10 @@ void childop_outcome_snapshot(enum child_op_type op,
 				       __ATOMIC_RELAXED);
 	out->wedges = (uint32_t)__atomic_load_n(
 			&shm->stats.childop_wedge_count[op], __ATOMIC_RELAXED);
+	out->timeout_observed = (uint32_t)__atomic_load_n(
+			&shm->stats.childop_timeout_observed[op], __ATOMIC_RELAXED);
+	out->timeout_missed = (uint32_t)__atomic_load_n(
+			&shm->stats.childop_timeout_missed[op], __ATOMIC_RELAXED);
 	out->setup_failures = (invocations > setup_accepted)
 		? (uint32_t)(invocations - setup_accepted) : 0;
 	out->taint_transition = __atomic_load_n(
@@ -2505,12 +2509,13 @@ void childop_outcome_window_dump(void)
 				__ATOMIC_RELAXED);
 
 		output(1,
-		       "childop_window %s: invocations=%lu wall_ns=%lu clean_edges=%lu noisy_edges=%lu wedges=%u crashes=%u setup_failures=%u latch=%lu\n",
+		       "childop_window %s: invocations=%lu wall_ns=%lu clean_edges=%lu noisy_edges=%lu wedges=%u crashes=%u setup_failures=%u timeout_observed=%u timeout_missed=%u latch=%lu\n",
 		       alt_op_name(op), invocations,
 		       (unsigned long)rec.wall_ns,
 		       (unsigned long)rec.clean_edges,
 		       (unsigned long)rec.noisy_edges,
-		       rec.wedges, rec.crashes, rec.setup_failures, latch);
+		       rec.wedges, rec.crashes, rec.setup_failures,
+		       rec.timeout_observed, rec.timeout_missed, latch);
 	}
 }
 
@@ -2999,6 +3004,21 @@ void child_process(struct childdata *child, int childno)
 		 * Check for stalled-on-fd, detect stalls, and
 		 * count the timeout as an op. */
 		if (sigalrm_pending) {
+			/* Per-op timeout_observed bump.  pick_op_type() runs
+			 * further down the iter, so child->op_type here still
+			 * holds the prior iter's pick -- i.e. the op whose
+			 * `alarm(1)` is firing.  CHILD_OP_SYSCALL is skipped:
+			 * NEED_ALARM syscalls arm their alarm inside
+			 * random_syscall(), not at the alt-op site, so they
+			 * have no per-op childop_outcome bucket.  Bounds-
+			 * checked because op_type lives in shm and a
+			 * scribbled-arena writer could land out of range. */
+			enum child_op_type armed = child->op_type;
+			if ((int)armed >= 0 && armed < NR_CHILD_OP_TYPES &&
+			    armed != CHILD_OP_SYSCALL)
+				__atomic_add_fetch(
+					&shm->stats.childop_timeout_observed[armed],
+					1, __ATOMIC_RELAXED);
 			sigalrm_pending = 0;
 			alarm(0);
 			if (check_stall(child))
@@ -3280,6 +3300,17 @@ void child_process(struct childdata *child, int childno)
 		}
 
 		if (is_alt_op) {
+			/* Per-op timeout_missed bump: the op returned before
+			 * the alarm armed above could fire.  sigalrm_pending
+			 * is cleared by the iter-top SIGALRM block and only
+			 * re-set by the handler, so == 0 here means no fire
+			 * inside this iter's arm/disarm window; the fired
+			 * case credits timeout_observed at the next iter's
+			 * top instead. */
+			if (sigalrm_pending == 0)
+				__atomic_add_fetch(
+					&shm->stats.childop_timeout_missed[op],
+					1, __ATOMIC_RELAXED);
 			alarm(0);
 			stats_ring_enqueue(child->stats_ring,
 					   STATS_FIELD_OP_COUNT, 0, 1);

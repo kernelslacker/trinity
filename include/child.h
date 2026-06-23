@@ -247,18 +247,21 @@ enum childop_latch_reason {
  * Telemetry-only.  No policy decision reads this record; no field has
  * back-pressure on the picker, canary queue, or promote / demote
  * heuristic.  Fields without a backing per-childop counter today
- * (wall_ns, direct_syscalls, transition_edges, crashes, dstate_wedges,
- * timeout_observed, timeout_missed, asan_runtime_failure) stay at 0 /
- * false until producers are wired, mirroring the skip-zero convention
- * the existing per-childop dumps use.
+ * (direct_syscalls, transition_edges, crashes, dstate_wedges,
+ * asan_runtime_failure) stay at 0 / false until producers are wired,
+ * mirroring the skip-zero convention the existing per-childop dumps
+ * use.
  *
  * Counter mapping for the populated fields (see include/stats.h):
- *   clean_edges      shm->stats.childop_edges_clean[op]
- *   noisy_edges      shm->stats.childop_edges_discovered[op] - clean_edges
- *   wedges           shm->stats.childop_wedge_count[op]
- *   setup_failures   shm->stats.childop_invocations[op]
- *                    - shm->stats.childop_setup_accepted[op]
- *   taint_transition shm->stats.taint_transitions[op] > 0
+ *   clean_edges       shm->stats.childop_edges_clean[op]
+ *   noisy_edges       shm->stats.childop_edges_discovered[op] - clean_edges
+ *   wall_ns           shm->stats.childop_wall_ns[op]
+ *   wedges            shm->stats.childop_wedge_count[op]
+ *   timeout_observed  shm->stats.childop_timeout_observed[op]
+ *   timeout_missed    shm->stats.childop_timeout_missed[op]
+ *   setup_failures    shm->stats.childop_invocations[op]
+ *                     - shm->stats.childop_setup_accepted[op]
+ *   taint_transition  shm->stats.taint_transitions[op] > 0
  *
  * Subtractions are clamped at zero: the source counters race under
  * RELAXED add-fetch from multiple producers, and a few childops bump
