@@ -5521,6 +5521,12 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	unsigned long cur_remote_adaptive_would_promote;
 	unsigned long cur_remote_adaptive_would_force;
 	unsigned long cur_remote_adaptive_agree;
+	unsigned long cur_arg_meta_addr_with_meta;
+	unsigned long cur_arg_meta_addr_without_meta;
+	unsigned long cur_arg_meta_argtype_stale;
+	unsigned long cur_arg_meta_scrub_would_destroy_in;
+	unsigned long cur_arg_meta_scrub_would_preserve_out;
+	unsigned long cur_blanket_address_scrub_slots_walked;
 	unsigned int  cur_remote_adaptive_arm_a_children, cur_remote_adaptive_arm_b_children;
 	unsigned long cur_mut_structured_shadow_samples;
 	unsigned long cur_mut_structured_shadow_divergences;
@@ -5620,6 +5626,12 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	cur_remote_adaptive_agree           = __atomic_load_n(&shm->stats.remote_adaptive_agree,          __ATOMIC_RELAXED);
 	cur_remote_adaptive_arm_a_children  = __atomic_load_n(&kcov_shm->remote_adaptive_arm_a_children,  __ATOMIC_RELAXED);
 	cur_remote_adaptive_arm_b_children  = __atomic_load_n(&kcov_shm->remote_adaptive_arm_b_children,  __ATOMIC_RELAXED);
+	cur_arg_meta_addr_with_meta            = __atomic_load_n(&shm->stats.arg_meta_addr_with_meta,            __ATOMIC_RELAXED);
+	cur_arg_meta_addr_without_meta         = __atomic_load_n(&shm->stats.arg_meta_addr_without_meta,         __ATOMIC_RELAXED);
+	cur_arg_meta_argtype_stale             = __atomic_load_n(&shm->stats.arg_meta_argtype_stale,             __ATOMIC_RELAXED);
+	cur_arg_meta_scrub_would_destroy_in    = __atomic_load_n(&shm->stats.arg_meta_scrub_would_destroy_in,    __ATOMIC_RELAXED);
+	cur_arg_meta_scrub_would_preserve_out  = __atomic_load_n(&shm->stats.arg_meta_scrub_would_preserve_out,  __ATOMIC_RELAXED);
+	cur_blanket_address_scrub_slots_walked = __atomic_load_n(&shm->stats.blanket_address_scrub_slots_walked, __ATOMIC_RELAXED);
 	/* SHADOW structure-aware picker A/B cohort + divergence counters live
 	 * in minicorpus_shm rather than kcov_shm because the picker is a
 	 * mutate_arg concern, not a kcov-cmp concern.  Guard the load so a
@@ -6302,6 +6314,35 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 					"remote_adaptive_agree",
 					cur_remote_adaptive_agree);
 		}
+		/* SHADOW per-arg ownership-metadata sidecar + blanket-scrub
+		 * contradiction census.  Telemetry only -- the arg_meta_init
+		 * seed pass and blanket_address_scrub walk are byte-unchanged;
+		 * no live decision reads dir/owner/flags.  Cumulative totals
+		 * (no per-window delta) match the remote_adaptive_would_*
+		 * neighbours above: the shadow PROOF here is the ratio between
+		 * the with_meta / without_meta rows and the destroy_in /
+		 * preserve_out skew the operator is sizing future metadata-
+		 * aware scrub coverage against.  Unconditional render so the
+		 * baseline (all zero until per-generator coverage populates
+		 * dir/owner) is itself visible. */
+		stats_log_write("  %-32s total %lu\n",
+				"blanket_address_scrub_slots_walked",
+				cur_blanket_address_scrub_slots_walked);
+		stats_log_write("  %-32s total %lu\n",
+				"arg_meta_addr_with_meta",
+				cur_arg_meta_addr_with_meta);
+		stats_log_write("  %-32s total %lu\n",
+				"arg_meta_addr_without_meta",
+				cur_arg_meta_addr_without_meta);
+		stats_log_write("  %-32s total %lu\n",
+				"arg_meta_argtype_stale",
+				cur_arg_meta_argtype_stale);
+		stats_log_write("  %-32s total %lu\n",
+				"arg_meta_scrub_would_destroy_in",
+				cur_arg_meta_scrub_would_destroy_in);
+		stats_log_write("  %-32s total %lu\n",
+				"arg_meta_scrub_would_preserve_out",
+				cur_arg_meta_scrub_would_preserve_out);
 		/* SHADOW structure-aware picker A/B cohort (Arm A = no shadow
 		 * draw / RNG byte-identical to pre-shadow control, Arm B =
 		 * doubled-pool shadow draw on structured-eligible slots).  Print
