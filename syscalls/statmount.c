@@ -503,7 +503,7 @@ struct syscallentry syscall_statmount = {
 	.argname = { [0] = "req", [1] = "buf", [2] = "bufsize", [3] = "flags" },
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_VFS,
-	.flags = KCOV_REMOTE_HEAVY,
+	.flags = KCOV_REMOTE_HEAVY | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_statmount,
 	.post = post_statmount,
 	.bound_arg = 3,
