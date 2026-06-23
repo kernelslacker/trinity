@@ -6056,6 +6056,9 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 		static unsigned long prev_hyp_cmp_novelty_wins;
 		static unsigned long prev_hyp_misses;
 		static unsigned long prev_hyp_disabled_skips;
+		static unsigned long prev_hyp_corpus_save;
+		static unsigned long prev_hyp_destructive;
+		static unsigned long prev_hyp_context_skip;
 		unsigned long cur_hyp_observations =
 			__atomic_load_n(&kcov_shm->cmp_hyp_observations, __ATOMIC_RELAXED);
 		unsigned long cur_hyp_inserted =
@@ -6076,6 +6079,12 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 			__atomic_load_n(&kcov_shm->cmp_hyp_misses, __ATOMIC_RELAXED);
 		unsigned long cur_hyp_disabled_skips =
 			__atomic_load_n(&kcov_shm->cmp_hyp_disabled_skips, __ATOMIC_RELAXED);
+		unsigned long cur_hyp_corpus_save =
+			__atomic_load_n(&kcov_shm->cmp_hyp_corpus_save, __ATOMIC_RELAXED);
+		unsigned long cur_hyp_destructive =
+			__atomic_load_n(&kcov_shm->cmp_hyp_destructive, __ATOMIC_RELAXED);
+		unsigned long cur_hyp_context_skip =
+			__atomic_load_n(&kcov_shm->cmp_hyp_context_skip, __ATOMIC_RELAXED);
 		unsigned long delta_hyp_observations = cur_hyp_observations - prev_hyp_observations;
 		unsigned long delta_hyp_inserted = cur_hyp_inserted - prev_hyp_inserted;
 		unsigned long delta_hyp_pool_full = cur_hyp_pool_full - prev_hyp_pool_full;
@@ -6086,6 +6095,9 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 		unsigned long delta_hyp_cmp_novelty_wins = cur_hyp_cmp_novelty_wins - prev_hyp_cmp_novelty_wins;
 		unsigned long delta_hyp_misses = cur_hyp_misses - prev_hyp_misses;
 		unsigned long delta_hyp_disabled_skips = cur_hyp_disabled_skips - prev_hyp_disabled_skips;
+		unsigned long delta_hyp_corpus_save = cur_hyp_corpus_save - prev_hyp_corpus_save;
+		unsigned long delta_hyp_destructive = cur_hyp_destructive - prev_hyp_destructive;
+		unsigned long delta_hyp_context_skip = cur_hyp_context_skip - prev_hyp_context_skip;
 		unsigned long delta_hyp_state[CMP_HYP_STATE_NR];
 		unsigned long cur_hyp_state[CMP_HYP_STATE_NR];
 		static unsigned long prev_hyp_state[CMP_HYP_STATE_NR];
@@ -6104,7 +6116,9 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 		if ((delta_hyp_observations | delta_hyp_inserted | delta_hyp_pool_full |
 		     delta_hyp_kind_full | delta_hyp_consumed | delta_hyp_pc_wins |
 		     delta_hyp_transition_wins | delta_hyp_cmp_novelty_wins |
-		     delta_hyp_misses | delta_hyp_disabled_skips) != 0 || any_state_delta) {
+		     delta_hyp_misses | delta_hyp_disabled_skips |
+		     delta_hyp_corpus_save | delta_hyp_destructive |
+		     delta_hyp_context_skip) != 0 || any_state_delta) {
 			stats_log_write("KCOV CMP hyp shadow stats over last %lds:\n", elapsed);
 			stats_log_write("  %-32s +%lu  (total %lu)\n",
 					"cmp_hyp_observations", delta_hyp_observations, cur_hyp_observations);
@@ -6129,6 +6143,15 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 			stats_log_write("  %-32s +%lu  (total %lu)\n",
 					"cmp_hyp_disabled_skips",
 					delta_hyp_disabled_skips, cur_hyp_disabled_skips);
+			stats_log_write("  %-32s +%lu  (total %lu)\n",
+					"cmp_hyp_corpus_save",
+					delta_hyp_corpus_save, cur_hyp_corpus_save);
+			stats_log_write("  %-32s +%lu  (total %lu)\n",
+					"cmp_hyp_destructive",
+					delta_hyp_destructive, cur_hyp_destructive);
+			stats_log_write("  %-32s +%lu  (total %lu)\n",
+					"cmp_hyp_context_skip",
+					delta_hyp_context_skip, cur_hyp_context_skip);
 			for (s = 0; s < CMP_HYP_STATE_NR; s++) {
 				stats_log_write("  cmp_hyp_state_transitions[%u]    +%lu  (total %lu)\n",
 						s, delta_hyp_state[s], cur_hyp_state[s]);
@@ -6145,6 +6168,9 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 		prev_hyp_cmp_novelty_wins = cur_hyp_cmp_novelty_wins;
 		prev_hyp_misses = cur_hyp_misses;
 		prev_hyp_disabled_skips = cur_hyp_disabled_skips;
+		prev_hyp_corpus_save = cur_hyp_corpus_save;
+		prev_hyp_destructive = cur_hyp_destructive;
+		prev_hyp_context_skip = cur_hyp_context_skip;
 		for (s = 0; s < CMP_HYP_STATE_NR; s++)
 			prev_hyp_state[s] = cur_hyp_state[s];
 	}
