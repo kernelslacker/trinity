@@ -5110,6 +5110,8 @@ static void kcov_cmp_oldpool_vs_shadow_block_render(long elapsed __unused__)
 	unsigned long top_injected_cum[10];
 	uint64_t top_hyp_pc_wins_cum[10];
 	uint64_t top_hyp_pc_wins_delta[10];
+	uint64_t top_hyp_consumed_cum[10];
+	uint64_t top_hyp_misses_cum[10];
 	unsigned int top_count = 0;
 
 	unsigned int nr_syscalls_to_scan;
@@ -5247,6 +5249,8 @@ static void kcov_cmp_oldpool_vs_shadow_block_render(long elapsed __unused__)
 	memset(top_injected_cum, 0, sizeof(top_injected_cum));
 	memset(top_hyp_pc_wins_cum, 0, sizeof(top_hyp_pc_wins_cum));
 	memset(top_hyp_pc_wins_delta, 0, sizeof(top_hyp_pc_wins_delta));
+	memset(top_hyp_consumed_cum, 0, sizeof(top_hyp_consumed_cum));
+	memset(top_hyp_misses_cum, 0, sizeof(top_hyp_misses_cum));
 
 	for (i = 0; i < nr_syscalls_to_scan; i++) {
 		unsigned long cur_injected = __atomic_load_n(
@@ -5256,6 +5260,8 @@ static void kcov_cmp_oldpool_vs_shadow_block_render(long elapsed __unused__)
 			&kcov_shm->per_syscall_cmp_hint_pc_wins[i],
 			__ATOMIC_RELAXED);
 		uint64_t cur_hyp_pc_wins_nr = 0;
+		uint64_t cur_hyp_consumed_nr = 0;
+		uint64_t cur_hyp_misses_nr = 0;
 		unsigned long delta_injected;
 		unsigned long delta_pc_wins;
 		uint64_t delta_hyp_pc_wins_nr;
@@ -5270,10 +5276,16 @@ static void kcov_cmp_oldpool_vs_shadow_block_render(long elapsed __unused__)
 
 				if (n > CMP_HYP_PER_SYSCALL)
 					n = CMP_HYP_PER_SYSCALL;
-				for (e_i = 0; e_i < n; e_i++)
+				for (e_i = 0; e_i < n; e_i++) {
+					struct cmp_hypothesis *h = &p->entries[e_i];
+
 					cur_hyp_pc_wins_nr += __atomic_load_n(
-						&p->entries[e_i].pc_wins,
-						__ATOMIC_RELAXED);
+						&h->pc_wins, __ATOMIC_RELAXED);
+					cur_hyp_consumed_nr += __atomic_load_n(
+						&h->consumed_count, __ATOMIC_RELAXED);
+					cur_hyp_misses_nr += __atomic_load_n(
+						&h->misses, __ATOMIC_RELAXED);
+				}
 			}
 		}
 
@@ -5299,6 +5311,8 @@ static void kcov_cmp_oldpool_vs_shadow_block_render(long elapsed __unused__)
 				top_injected_cum[j]      = top_injected_cum[j - 1];
 				top_hyp_pc_wins_cum[j]   = top_hyp_pc_wins_cum[j - 1];
 				top_hyp_pc_wins_delta[j] = top_hyp_pc_wins_delta[j - 1];
+				top_hyp_consumed_cum[j]  = top_hyp_consumed_cum[j - 1];
+				top_hyp_misses_cum[j]    = top_hyp_misses_cum[j - 1];
 				top_nr[j]                = top_nr[j - 1];
 			}
 		}
@@ -5312,6 +5326,8 @@ static void kcov_cmp_oldpool_vs_shadow_block_render(long elapsed __unused__)
 				top_injected_cum[kk]      = cur_injected;
 				top_hyp_pc_wins_cum[kk]   = cur_hyp_pc_wins_nr;
 				top_hyp_pc_wins_delta[kk] = delta_hyp_pc_wins_nr;
+				top_hyp_consumed_cum[kk]  = cur_hyp_consumed_nr;
+				top_hyp_misses_cum[kk]    = cur_hyp_misses_nr;
 				top_nr[kk]                = i;
 				if (top_count < 10)
 					top_count++;
@@ -5323,9 +5339,9 @@ static void kcov_cmp_oldpool_vs_shadow_block_render(long elapsed __unused__)
 		return;
 
 	stats_log_write("KCOV CMP per-syscall old-pool vs shadow-hyp pc-wins (top by injected delta):\n");
-	stats_log_write("  %-24s %10s %10s %8s %10s %10s\n",
+	stats_log_write("  %-24s %10s %10s %8s %10s %10s %10s %10s\n",
 			"syscall", "inj+", "old-pc+", "old-pc%",
-			"hyp-pc+", "hyp-pc-tot");
+			"hyp-pc+", "hyp-pc-tot", "consume", "miss");
 	for (j = 0; j < top_count; j++) {
 		struct syscallentry *entry = table[top_nr[j]].entry;
 		const char *name = entry ? entry->name : "???";
@@ -5333,13 +5349,15 @@ static void kcov_cmp_oldpool_vs_shadow_block_render(long elapsed __unused__)
 			(unsigned int)((top_pc_wins_cum[j] * 100UL) /
 				       top_injected_cum[j]) : 0;
 
-		stats_log_write("  %-24s %10lu %10lu %7u%% %10lu %10lu\n",
+		stats_log_write("  %-24s %10lu %10lu %7u%% %10lu %10lu %10lu %10lu\n",
 				name,
 				top_injected[j],
 				top_pc_wins[j],
 				pct,
 				(unsigned long)top_hyp_pc_wins_delta[j],
-				(unsigned long)top_hyp_pc_wins_cum[j]);
+				(unsigned long)top_hyp_pc_wins_cum[j],
+				(unsigned long)top_hyp_consumed_cum[j],
+				(unsigned long)top_hyp_misses_cum[j]);
 	}
 }
 
