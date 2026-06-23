@@ -30,9 +30,6 @@
 #include "rnd.h"
 
 /* workaround for <linux/in.h> vs. <netinet/in.h> */
-#ifndef IP_MULTICAST_ALL
-#define IP_MULTICAST_ALL 49
-#endif
 #ifndef IP_LOCAL_PORT_RANGE
 #define IP_LOCAL_PORT_RANGE 51
 #endif
