@@ -110,18 +110,6 @@
 #ifndef FSCONFIG_CMD_CREATE
 #define FSCONFIG_CMD_CREATE	6
 #endif
-#ifndef MOUNT_ATTR_RDONLY
-#define MOUNT_ATTR_RDONLY	0x00000001
-#endif
-#ifndef MOUNT_ATTR_NOSUID
-#define MOUNT_ATTR_NOSUID	0x00000002
-#endif
-#ifndef MOUNT_ATTR_NODEV
-#define MOUNT_ATTR_NODEV	0x00000004
-#endif
-#ifndef MOUNT_ATTR_NOEXEC
-#define MOUNT_ATTR_NOEXEC	0x00000008
-#endif
 
 #if defined(__NR_fsopen) && defined(__NR_fsconfig) && \
     defined(__NR_fsmount) && defined(__NR_move_mount)

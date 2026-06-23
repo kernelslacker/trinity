@@ -2,6 +2,7 @@
  *  SYSCALL_DEFINE3(fsmount, int, fs_fd, unsigned int, flags, unsigned int, attr_flags)
  */
 #include <unistd.h>
+#include "compat.h"
 #include "object-types.h"
 #include "sanitise.h"
 
@@ -15,18 +16,6 @@ static unsigned long fsmount_flags[] = {
 	FSMOUNT_CLOEXEC,
 	FSMOUNT_NAMESPACE,
 };
-
-#ifndef MOUNT_ATTR_RDONLY
-#define MOUNT_ATTR_RDONLY	0x00000001
-#define MOUNT_ATTR_NOSUID	0x00000002
-#define MOUNT_ATTR_NODEV	0x00000004
-#define MOUNT_ATTR_NOEXEC	0x00000008
-#define MOUNT_ATTR_NOATIME	0x00000010
-#define MOUNT_ATTR_STRICTATIME	0x00000020
-#define MOUNT_ATTR_NODIRATIME	0x00000080
-#define MOUNT_ATTR_IDMAP	0x00100000
-#define MOUNT_ATTR_NOSYMFOLLOW	0x00200000
-#endif
 
 static unsigned long fsmount_attr_flags[] = {
 	MOUNT_ATTR_RDONLY,
