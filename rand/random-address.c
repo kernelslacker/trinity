@@ -25,10 +25,12 @@
 void * get_writable_address(unsigned long size)
 {
 	struct map_handle h;
-	/* volatile on map and mincore_retries: both are written between
-	 * sigsetjmp(gwa_bookkeeping_recover) and its potential longjmp.
+	/* volatile on map, mincore_retries, tries and skip_mprotect: all
+	 * four are written between sigsetjmp(gwa_bookkeeping_recover) and
+	 * its potential longjmp (tries++ and the skip_mprotect reset at the
+	 * retry: label, mincore_retries in the from_mmap branch).
 	 * ISO C 7.13.2.1 only guarantees post-longjmp values for objects
-	 * with volatile-qualified type, and gcc -Wclobbered flags both
+	 * with volatile-qualified type, and gcc -Wclobbered flags them
 	 * otherwise.  Volatile on the pointer (not the pointee) keeps
 	 * map->* field accesses non-volatile; the only cost is reloading
 	 * the map pointer from stack on each use, which is well below
@@ -36,10 +38,10 @@ void * get_writable_address(unsigned long size)
 	struct map * volatile map = NULL;
 	struct object *obj;
 	void *addr = NULL;
-	int tries = 0;
+	volatile int tries = 0;
 	volatile int mincore_retries = 0;
 	bool from_mmap = false;
-	bool skip_mprotect = false;
+	volatile bool skip_mprotect = false;
 
 retry:	tries++;
 	/*
