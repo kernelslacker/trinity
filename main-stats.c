@@ -1,7 +1,4 @@
-#include <inttypes.h>
-#include <stdint.h>
 #include <string.h>
-#include <sys/types.h>
 
 #include <time.h>
 
@@ -9,7 +6,6 @@
 #include "minicorpus.h"
 #include "params.h"
 #include "shm.h"
-#include "stats.h"
 #include "stats_ring.h"
 #include "strategy.h"
 #include "trinity.h"
