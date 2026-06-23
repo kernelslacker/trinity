@@ -688,11 +688,7 @@ static uint64_t *cmp_hyp_outcome_field(struct cmp_hypothesis *h,
 
 /*
  * Map an outcome onto the matching kcov_shm flat counter so the
- * fleet-level rollup tracks the per-hypothesis credit.  Only outcomes
- * whose flat counter already exists in struct kcov_shm are returned;
- * the new corpus_save / destructive_skip / context_skip channels live
- * only in the per-hypothesis store today and rely on the stats-side
- * walk to surface their aggregate.
+ * fleet-level rollup tracks the per-hypothesis credit.
  */
 static unsigned long *cmp_hyp_outcome_flat(enum cmp_hyp_outcome outcome)
 {
@@ -702,8 +698,11 @@ static unsigned long *cmp_hyp_outcome_flat(enum cmp_hyp_outcome outcome)
 	case CMP_HYP_OUTCOME_PC_WIN:		return &kcov_shm->cmp_hyp_pc_wins;
 	case CMP_HYP_OUTCOME_TRANSITION_WIN:	return &kcov_shm->cmp_hyp_transition_wins;
 	case CMP_HYP_OUTCOME_CMP_NOVELTY:	return &kcov_shm->cmp_hyp_cmp_novelty_wins;
+	case CMP_HYP_OUTCOME_CORPUS_SAVE:	return &kcov_shm->cmp_hyp_corpus_save;
 	case CMP_HYP_OUTCOME_MISS:		return &kcov_shm->cmp_hyp_misses;
 	case CMP_HYP_OUTCOME_DISABLED:		return &kcov_shm->cmp_hyp_disabled_skips;
+	case CMP_HYP_OUTCOME_DESTRUCTIVE_SKIP:	return &kcov_shm->cmp_hyp_destructive;
+	case CMP_HYP_OUTCOME_CONTEXT_SKIP:	return &kcov_shm->cmp_hyp_context_skip;
 	default:
 		return NULL;
 	}
