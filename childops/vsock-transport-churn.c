@@ -125,13 +125,6 @@
 
 #if __has_include(<linux/vm_sockets.h>)
 
-/* AF_VSOCK has been a fixed UAPI value since 3.9; some toolchains still
- * don't surface it via <sys/socket.h>.  Stable across every kernel that
- * ships AF_VSOCK. */
-#ifndef AF_VSOCK
-#define AF_VSOCK			40
-#endif
-
 /* VMADDR_CID_LOCAL was added in 5.6.  Older headers omit it; on a
  * kernel that doesn't recognise it the bind returns EADDRNOTAVAIL and
  * the cap-gate latches.  UAPI value (1) is stable. */
