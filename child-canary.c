@@ -47,14 +47,11 @@
 #include <unistd.h>
 
 #include "child.h"
-#include "childops-util.h"
 #include "kcov.h"
 #include "params.h"
 #include "pids.h"
 #include "shm.h"
-#include "stats.h"
 #include "stats_ring.h"
-#include "syscall.h"
 #include "trinity.h"
 #include "utils.h"
 
