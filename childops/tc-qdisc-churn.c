@@ -183,15 +183,6 @@
 #define ETH_P_ALL		0x0003
 #endif
 
-/* UDP GSO setsockopt (linux/udp.h ~4.18+; uapi number stable).  Used
- * by send_udp_gso_burst to force the kernel to build a single
- * super-skb with skb_is_gso(skb)==true, so qdisc enqueue takes the
- * GSO-accounting branch through qdisc_pkt_len_segs_init -- the path
- * the bridge-slave-dellink race targets. */
-#ifndef SOL_UDP
-#define SOL_UDP			17
-#endif
-
 /* Reasonable ceiling on a single rtnl message + payload.  The
  * NEWTFILTER message with TCA_KIND + TCA_OPTIONS (empty) is the
  * largest we emit; well under 512 B.  2 KiB leaves headroom for

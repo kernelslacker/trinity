@@ -86,9 +86,6 @@
 #include "shm.h"
 #include "trinity.h"
 
-#ifndef SOL_UDP
-# define SOL_UDP			17
-#endif
 #ifndef UDP_ENCAP
 # define UDP_ENCAP			100
 #endif

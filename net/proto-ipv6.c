@@ -28,9 +28,6 @@
 #ifndef SOL_TCP
 #define SOL_TCP 6
 #endif
-#ifndef SOL_UDP
-#define SOL_UDP 17
-#endif
 #ifndef SOL_SCTP
 #define SOL_SCTP 132
 #endif

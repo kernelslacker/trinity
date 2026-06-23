@@ -100,9 +100,6 @@
 #include "trinity.h"
 
 /* UAPI fallbacks -- every value below is stable kernel UAPI. */
-#ifndef SOL_UDP
-# define SOL_UDP			17
-#endif
 #ifndef UDP_ENCAP
 # define UDP_ENCAP			100
 # define UDP_ENCAP_ESPINUDP		2
