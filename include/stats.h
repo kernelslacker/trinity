@@ -3610,6 +3610,18 @@ struct stats_s {
 	 * cover them. */
 	unsigned long childop_walltime_ns;
 	unsigned long childop_wall_ns[NR_CHILD_OP_TYPES];
+	/* Per-op SIGALRM-timeout counters for the 1-second alt-op stall
+	 * watchdog (arm at child.c is_alt_op `alarm(1)`, fire in the
+	 * sigalrm_pending block at the top of the next iter, disarm at
+	 * the post-dispatch `alarm(0)`).  childop_timeout_observed[op]
+	 * is bumped when the alarm fired before the op returned;
+	 * childop_timeout_missed[op] is bumped when the op returned
+	 * before the alarm fired.  Bump-only at the existing arm/fire/
+	 * disarm sites: no change to whether the alarm fires or to the
+	 * reap path.  Both populate struct childop_outcome's
+	 * timeout_observed / timeout_missed slots. */
+	unsigned long childop_timeout_observed[NR_CHILD_OP_TYPES];
+	unsigned long childop_timeout_missed[NR_CHILD_OP_TYPES];
 	unsigned long syscall_walltime_ns;
 	unsigned long syscalls_in_childops;
 	unsigned long syscalls_random;
