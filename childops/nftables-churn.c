@@ -1372,6 +1372,11 @@ static void nft_dormant_abort_sweep(struct nfnl_ctx *ctx)
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
+	if (rc == -EPERM) {
+		__atomic_add_fetch(&shm->stats.nft_dormant_abort_eperm,
+				   1, __ATOMIC_RELAXED);
+		return;
+	}
 
 	__atomic_add_fetch(&shm->stats.nft_dormant_abort_ok,
 			   1, __ATOMIC_RELAXED);
