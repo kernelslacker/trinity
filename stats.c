@@ -10602,6 +10602,8 @@ void __cold dump_stats(void)
 
 	childop_score_dump();
 
+	childop_outcome_window_dump();
+
 	dump_stats_shared_buffer_misc();
 
 	dump_stats_strategy_summary();
