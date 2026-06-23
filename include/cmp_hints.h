@@ -625,7 +625,15 @@ enum cmp_hint_use {
  * / corrupted pool / out-of-range nr.  do32 selects between the 64-bit
  * and 32-bit syscall-table pools so biarch builds do not contend for
  * the same per-nr dedup slots.  old is consumed only by
- * CMP_HINT_FLAG_MASK; pass 0 from other call sites. */
+ * CMP_HINT_FLAG_MASK; pass 0 from other call sites.
+ *
+ * On every successful return a SHADOW would-pick resolver is invoked
+ * over the typed hypothesis store for the same (nr, do32, cmp_ip,
+ * width), bumping the cmp_hyp_would_pick_by_kind / would_miss_by_kind
+ * / would_value_differs counters in kcov_shm.  The shadow is pure
+ * observation: the returned value and the bool return are byte-for-
+ * byte identical to a build without the shadow, and there is no CLI
+ * knob to flip. */
 bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 			  unsigned long old, unsigned long *out);
 
