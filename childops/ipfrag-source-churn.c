@@ -20,17 +20,26 @@
  * is whatever the route lookup picks, so a generic fuzzer churns one
  * peer entry, not thousands.
  *
- * Per child (latched once on first invocation):
- *   - unshare(CLONE_NEWNET) into a private netns; bring lo up and
- *     assign 127.0.0.1/8 so the loopback route exists.
+ * Per invocation (driven by userns_run_in_ns):
+ *   - Enter a private net namespace via a transient grandchild that
+ *     installs an identity user namespace plus a fresh CLONE_NEWNET,
+ *     runs the body below, and _exit()s so the kernel reaps the netns
+ *     and every fd opened against it.  The persistent fuzz child
+ *     never changes its own credentials or namespace stack, so the
+ *     cap-drop oracle keeps observing the host credential profile.
+ *     Helper -EPERM (hardened userns policy refused CLONE_NEWUSER)
+ *     latches the childop off for the rest of the child's lifetime;
+ *     a transient setup failure skips the iteration without latching.
+ *   - In the grandchild: bring lo up and assign 127.0.0.1/8 so the
+ *     loopback route exists.
  *   - SOCK_DGRAM listener bound to 127.0.0.1:0 — destination port for
  *     the synthetic UDP fragment pairs.  Receive buffer pinned small;
  *     we never drain it, the kernel drops on overrun.
  *   - Raw sender: SOCK_RAW with IPPROTO_RAW (IP_HDRINCL implicit) so
  *     the source IPv4 address in each emitted header is what the
- *     kernel ultimately keys inet_getpeer on.  EPERM / EACCES on the
- *     raw socket open latches ns_unsupported_ipfrag for the rest of
- *     the child's life.
+ *     kernel ultimately keys inet_getpeer on.  CAP_NET_RAW in the
+ *     grandchild's user namespace lets the raw open succeed regardless
+ *     of the persistent child's cap-drop state.
  *
  * Per outer iteration (BUDGETED, base 8, cap 64, 250 ms wall cap):
  *   - src_ip = 10.<rot>.<i>.<i&0xff>: a rotating /16 base XORed with
@@ -77,6 +86,7 @@
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
+#include "userns-bootstrap.h"
 
 #ifndef IP_MF
 #define IP_MF			0x2000
@@ -93,13 +103,20 @@
 #define IPF_LISTEN_RCVBUF	4096
 
 static bool ns_unsupported_ipfrag;
-static bool setup_done;
-static int ipfrag_send_fd = -1;
-static int ipfrag_listen_fd = -1;
-static uint16_t ipfrag_listen_port_be;
 static uint16_t ipfrag_id_counter;
 static uint32_t ipfrag_inner_idx;
 static uint32_t ipfrag_rot_base;
+static bool ipfrag_rot_base_init;
+
+static void warn_once_unsupported_ipfrag(const char *reason, int err)
+{
+	if (ns_unsupported_ipfrag)
+		return;
+	ns_unsupported_ipfrag = true;
+	/* check-static: child-output-ok */
+	outputerr("ipfrag_source_churn: %s failed (errno=%d), latching unsupported_ipfrag\n",
+		  reason, err);
+}
 
 /* Bring lo up and bind 127.0.0.1/8 so the loopback route exists in
  * the freshly-unshared netns.  Returns 0 on success, -1 otherwise. */
@@ -198,7 +215,8 @@ static void build_iphdr(struct iphdr *ip, uint32_t saddr_be, uint32_t daddr_be,
 	ip->check    = 0;	/* kernel fills the IPv4 checksum on raw send */
 }
 
-static void send_frag_pair(uint32_t saddr_be, uint16_t id_he)
+static void send_frag_pair(int send_fd, uint16_t listen_port_be,
+			   uint32_t saddr_be, uint16_t id_he)
 {
 	uint8_t pkt1[sizeof(struct iphdr) + IPF_FRAG1_PAYLOAD];
 	uint8_t pkt2[sizeof(struct iphdr) + IPF_FRAG2_PAYLOAD];
@@ -219,9 +237,9 @@ static void send_frag_pair(uint32_t saddr_be, uint16_t id_he)
 	memset(&dst, 0, sizeof(dst));
 	dst.sin_family = AF_INET;
 	dst.sin_addr.s_addr = daddr_be;
-	dst.sin_port = ipfrag_listen_port_be;
+	dst.sin_port = listen_port_be;
 
-	n = sendto(ipfrag_send_fd, pkt1, sizeof(pkt1), MSG_DONTWAIT,
+	n = sendto(send_fd, pkt1, sizeof(pkt1), MSG_DONTWAIT,
 		   (struct sockaddr *)&dst, sizeof(dst));
 	if (n > 0)
 		__atomic_add_fetch(&shm->stats.ipfrag_packets_sent_ok, 1,
@@ -230,7 +248,7 @@ static void send_frag_pair(uint32_t saddr_be, uint16_t id_he)
 		__atomic_add_fetch(&shm->stats.ipfrag_send_failed, 1,
 				   __ATOMIC_RELAXED);
 
-	n = sendto(ipfrag_send_fd, pkt2, sizeof(pkt2), MSG_DONTWAIT,
+	n = sendto(send_fd, pkt2, sizeof(pkt2), MSG_DONTWAIT,
 		   (struct sockaddr *)&dst, sizeof(dst));
 	if (n > 0)
 		__atomic_add_fetch(&shm->stats.ipfrag_packets_sent_ok, 1,
@@ -240,65 +258,49 @@ static void send_frag_pair(uint32_t saddr_be, uint16_t id_he)
 				   __ATOMIC_RELAXED);
 }
 
-bool ipfrag_source_churn(struct childdata *child)
+/*
+ * Per-invocation state handed to the in-ns callback so it can build
+ * source addresses + ids from the same rotating pool the persistent
+ * child tracks, without needing the rotation counters to be visible
+ * across the fork boundary.
+ */
+struct ipfrag_source_churn_ctx {
+	struct childdata *child;
+	uint32_t inner_idx_start;
+	uint16_t id_counter_start;
+	uint32_t rot_base;
+	unsigned int outer_iters;
+};
+
+/*
+ * Per-invocation body that must run inside the private net namespace.
+ * Executed in a transient grandchild forked by userns_run_in_ns(); the
+ * grandchild's userns + netns are torn down on _exit() so the loopback
+ * address, raw sender socket and UDP listener are reaped along with the
+ * namespace.  Return value is ignored by the helper.
+ */
+static int ipfrag_source_churn_in_ns(void *arg)
 {
+	struct ipfrag_source_churn_ctx *cctx = (struct ipfrag_source_churn_ctx *)arg;
+	struct childdata *child = cctx->child;
 	struct timespec t_outer;
-	unsigned int outer_iters, i;
-
-	__atomic_add_fetch(&shm->stats.ipfrag_source_runs, 1,
-			   __ATOMIC_RELAXED);
-
-	/* Snapshot child->op_type once and bounds-check before indexing
-	 * the per-op stats arrays.  The field lives in shared memory and
-	 * can be scribbled by a poisoned-arena write from a sibling; the
-	 * child.c dispatch loop already gates its dispatch + alt-op
-	 * accounting on the same valid_op snapshot.  Skip the stats
-	 * writes entirely when the snapshot is out of range. */
+	int send_fd, listen_fd;
+	uint16_t listen_port_be = 0;
+	unsigned int i;
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	if (ns_unsupported_ipfrag)
-		return true;
+	if (bring_lo_up_with_addr() < 0)
+		return 0;
 
-	if (!setup_done) {
-		if (unshare(CLONE_NEWNET) < 0) {
-			ns_unsupported_ipfrag = true;
-			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
-						 CHILDOP_LATCH_NS_UNSUPPORTED,
-						 __ATOMIC_RELAXED);
-			return true;
-		}
-		if (bring_lo_up_with_addr() < 0) {
-			ns_unsupported_ipfrag = true;
-			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
-						 CHILDOP_LATCH_NS_UNSUPPORTED,
-						 __ATOMIC_RELAXED);
-			return true;
-		}
-		ipfrag_send_fd = open_sender();
-		if (ipfrag_send_fd < 0) {
-			ns_unsupported_ipfrag = true;
-			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
-						 CHILDOP_LATCH_NS_UNSUPPORTED,
-						 __ATOMIC_RELAXED);
-			return true;
-		}
-		ipfrag_listen_fd = open_listener(&ipfrag_listen_port_be);
-		if (ipfrag_listen_fd < 0) {
-			close(ipfrag_send_fd);
-			ipfrag_send_fd = -1;
-			ns_unsupported_ipfrag = true;
-			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
-						 CHILDOP_LATCH_NS_UNSUPPORTED,
-						 __ATOMIC_RELAXED);
-			return true;
-		}
-		ipfrag_rot_base = (rand32() & 0xffU) << 16;
-		setup_done = true;
+	send_fd = open_sender();
+	if (send_fd < 0)
+		return 0;
+
+	listen_fd = open_listener(&listen_port_be);
+	if (listen_fd < 0) {
+		close(send_fd);
+		return 0;
 	}
 
 	if (valid_op)
@@ -310,36 +312,86 @@ bool ipfrag_source_churn(struct childdata *child)
 		t_outer.tv_nsec = 0;
 	}
 
-	outer_iters = BUDGETED(CHILD_OP_IPFRAG_SOURCE_CHURN,
-			       JITTER_RANGE(IPF_OUTER_BASE));
-	if (outer_iters > IPF_OUTER_CAP)
-		outer_iters = IPF_OUTER_CAP;
-
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop_data_path[op],
 				   1, __ATOMIC_RELAXED);
 
-	for (i = 0; i < outer_iters; i++) {
+	for (i = 0; i < cctx->outer_iters; i++) {
+		uint32_t inner = cctx->inner_idx_start + i;
 		uint32_t src_be;
 		uint16_t id_he;
 
 		if ((unsigned long long)ns_since(&t_outer) >= IPF_WALL_CAP_NS)
 			break;
 
-		/* Re-roll the /16 base every 65536 inner steps so the child
-		 * sweeps several /16 swathes of 10.0.0.0/8 across its life. */
-		if ((ipfrag_inner_idx & 0xffffU) == 0U)
-			ipfrag_rot_base = (rand32() & 0xffU) << 16;
+		src_be = htonl(0x0a000000U | cctx->rot_base |
+			       (inner & 0xffffU));
+		id_he  = (uint16_t)(cctx->id_counter_start + i);
 
-		src_be = htonl(0x0a000000U | ipfrag_rot_base |
-			       (ipfrag_inner_idx & 0xffffU));
-		id_he  = (uint16_t)(ipfrag_id_counter++);
-
-		send_frag_pair(src_be, id_he);
+		send_frag_pair(send_fd, listen_port_be, src_be, id_he);
 		__atomic_add_fetch(&shm->stats.ipfrag_unique_srcs, 1,
 				   __ATOMIC_RELAXED);
-		ipfrag_inner_idx++;
 	}
+
+	close(listen_fd);
+	close(send_fd);
+	return 0;
+}
+
+bool ipfrag_source_churn(struct childdata *child)
+{
+	struct ipfrag_source_churn_ctx cctx = { .child = child };
+	unsigned int outer_iters;
+	int rc;
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
+	__atomic_add_fetch(&shm->stats.ipfrag_source_runs, 1,
+			   __ATOMIC_RELAXED);
+
+	if (ns_unsupported_ipfrag)
+		return true;
+
+	/* Re-roll the /16 base on first use and every 65536 inner steps so
+	 * the child sweeps several /16 swathes of 10.0.0.0/8 across its
+	 * life. */
+	if (!ipfrag_rot_base_init || (ipfrag_inner_idx & 0xffffU) == 0U) {
+		ipfrag_rot_base = (rand32() & 0xffU) << 16;
+		ipfrag_rot_base_init = true;
+	}
+
+	outer_iters = BUDGETED(CHILD_OP_IPFRAG_SOURCE_CHURN,
+			       JITTER_RANGE(IPF_OUTER_BASE));
+	if (outer_iters > IPF_OUTER_CAP)
+		outer_iters = IPF_OUTER_CAP;
+
+	cctx.inner_idx_start  = ipfrag_inner_idx;
+	cctx.id_counter_start = ipfrag_id_counter;
+	cctx.rot_base         = ipfrag_rot_base;
+	cctx.outer_iters      = outer_iters;
+
+	rc = userns_run_in_ns(CLONE_NEWNET, ipfrag_source_churn_in_ns, &cctx);
+	if (rc == -EPERM) {
+		if (valid_op)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		warn_once_unsupported_ipfrag("userns_run_in_ns(CLONE_NEWNET)",
+					     EPERM);
+		return true;
+	}
+	if (rc < 0) {
+		/* Transient grandchild setup failure (fork, id-map write,
+		 * secondary unshare).  Skip this iteration without latching
+		 * -- the failure is not policy and may not recur. */
+		return true;
+	}
+
+	/* Advance the rotation counters to keep distinct source addresses
+	 * flowing through the per-net inetpeer rbtree across invocations.
+	 * The grandchild ran with a snapshot; its writes died with it. */
+	ipfrag_inner_idx  += outer_iters;
+	ipfrag_id_counter += (uint16_t)outer_iters;
 
 	return true;
 }
