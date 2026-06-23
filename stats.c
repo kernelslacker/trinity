@@ -6156,6 +6156,38 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 				stats_log_write("  cmp_hyp_state_transitions[%u]    +%lu  (total %lu)\n",
 						s, delta_hyp_state[s], cur_hyp_state[s]);
 			}
+
+			/* Per-kind census: accepted (inserted_by_kind) vs dropped
+			 * at the per-kind sub-cap (kind_full_by_kind).  Surfaces
+			 * which hypothesis kind dominates cmp_hyp_kind_full so the
+			 * CMP_HYP_PER_KIND cap can be tuned at the right kind. */
+			{
+				static const char * const kind_labels[CMP_HYP_KIND_NR] = {
+					"exact", "range", "boundary", "bitmask",
+					"enum_family", "alignment", "length",
+					"foreign_value",
+				};
+				static unsigned long prev_hyp_ins_kind[CMP_HYP_KIND_NR];
+				static unsigned long prev_hyp_full_kind[CMP_HYP_KIND_NR];
+				unsigned int k;
+
+				for (k = 0; k < CMP_HYP_KIND_NR; k++) {
+					unsigned long cur_ins = __atomic_load_n(
+						&kcov_shm->cmp_hyp_inserted_by_kind[k],
+						__ATOMIC_RELAXED);
+					unsigned long cur_full = __atomic_load_n(
+						&kcov_shm->cmp_hyp_kind_full_by_kind[k],
+						__ATOMIC_RELAXED);
+
+					stats_log_write(
+						"  cmp_hyp[%-13s] inserted +%lu (total %lu)  kind_full +%lu (total %lu)\n",
+						kind_labels[k],
+						cur_ins - prev_hyp_ins_kind[k], cur_ins,
+						cur_full - prev_hyp_full_kind[k], cur_full);
+					prev_hyp_ins_kind[k] = cur_ins;
+					prev_hyp_full_kind[k] = cur_full;
+				}
+			}
 		}
 
 		prev_hyp_observations = cur_hyp_observations;
