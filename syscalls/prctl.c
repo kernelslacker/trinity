@@ -170,6 +170,140 @@ static struct sock_fprog *do_set_seccomp(__unused__ struct syscallrecord *rec)
 }
 #endif
 
+static void sanitise_set_syscall_user_dispatch(struct syscallrecord *rec)
+{
+	/*
+	 * Pin SUD to PR_SYS_DISPATCH_OFF.  ON installs a per-task
+	 * selector that traps every syscall whose PC is outside
+	 * [offset, offset+len) -- or inside the range with the
+	 * selector byte != ALLOW -- to SIGSYS.  The generic
+	 * arg-fill can land mode=PR_SYS_DISPATCH_ON via the
+	 * boundary-value pool (which includes 1) paired with a
+	 * writable selector address from get_writable_address()
+	 * (one branch of gen_undefined_arg), at which point the
+	 * next syscall the fuzz child issues -- libc PC, random
+	 * range, random selector byte -- traps SIGSYS and the
+	 * child dies before the post handler can run.  OFF mode
+	 * requires offset/len/selector all zero per the kernel's
+	 * task_set_syscall_user_dispatch input validation; pinning
+	 * them keeps that input-validation path exercised without
+	 * the ON-side self-break.
+	 */
+	rec->a2 = PR_SYS_DISPATCH_OFF;
+	rec->a3 = 0;
+	rec->a4 = 0;
+	rec->a5 = 0;
+}
+
+static void sanitise_set_tsc(struct syscallrecord *rec)
+{
+	/*
+	 * Pin TSC mode to PR_TSC_ENABLE.  The other legal value,
+	 * PR_TSC_SIGSEGV (2), is reachable from the boundary-value
+	 * pool the generic arg-fill draws from.  Landing it sets
+	 * CR4.TSD on the task, after which any user-mode rdtsc /
+	 * rdtscp raises #GP and the kernel turns it into SIGSEGV
+	 * per the prctl ABI.  The fuzz child calls clock_gettime
+	 * (CLOCK_MONOTONIC) from its inner loop and elsewhere;
+	 * glibc 2.17+ routes that through the vDSO's
+	 * __vdso_clock_gettime fast path, which reads the TSC in
+	 * user mode.  A landed PR_TSC_SIGSEGV therefore SIGSEGV-
+	 * kills the child on its next clock_gettime call, before
+	 * the post handler can run, and the death is mis-
+	 * attributed by the reaper.  Setting one's own TSC mode
+	 * requires no capability, so the child's cap-clear does
+	 * not defang this the way it does PR_SET_MM /
+	 * PR_SET_SECUREBITS.  PR_TSC_ENABLE is the boot default
+	 * and matches the task's initial state, so pinning it
+	 * keeps the input-validation path exercised (the kernel
+	 * still walks the legal-mode switch) without flipping the
+	 * self-breaking bit.  Zero a3-a5; prctl ignores them for
+	 * PR_SET_TSC but the kernel ABI reserves them for
+	 * possible future use.
+	 */
+	rec->a2 = PR_TSC_ENABLE;
+	rec->a3 = 0;
+	rec->a4 = 0;
+	rec->a5 = 0;
+}
+
+static void sanitise_set_shadow_stack_status(struct syscallrecord *rec)
+{
+	/*
+	 * Pin shadow-stack status to 0 (all feature bits clear).
+	 * The argument is a bitmask of PR_SHADOW_STACK_ENABLE
+	 * (1<<0), PR_SHADOW_STACK_WRITE (1<<1) and
+	 * PR_SHADOW_STACK_PUSH (1<<2); the generic arg-fill draws
+	 * a2 from the boundary-value pool and from rnd_u64(), so
+	 * any combination of those bits -- crucially the ENABLE
+	 * bit -- is reachable.  Setting ENABLE installs a shadow
+	 * stack for the calling thread and turns on CET CALL/RET
+	 * enforcement: the very next RET checks SSP against the
+	 * shadow copy, and trinity's own call frames -- pushed
+	 * before the prctl returned -- have no matching shadow
+	 * entries, so the child takes a control-protection
+	 * exception (SIGSEGV with si_code=SEGV_CPERR on x86) on
+	 * the first RET out of the syscall wrapper.  The WRITE
+	 * and PUSH bits widen the attack surface further by
+	 * exposing WRSS / shadow-stack-PUSH to userspace, both of
+	 * which can scribble the shadow stack and produce the
+	 * same self-break on a later RET.  Setting one's own
+	 * shadow-stack status requires no capability, so the
+	 * child's unconditional cap-clear does not defang this --
+	 * same shape as the recent PR_SET_TSC and
+	 * PR_SET_SYSCALL_USER_DISPATCH pins.  Zero is a legal
+	 * argument (all features disabled, matching the task's
+	 * initial state when CET is not in use) and exercises the
+	 * kernel's input-validation path without flipping any
+	 * self-breaking bit.  Zero a3-a5; prctl ignores them for
+	 * this option but the ABI reserves them.
+	 */
+	rec->a2 = 0;
+	rec->a3 = 0;
+	rec->a4 = 0;
+	rec->a5 = 0;
+}
+
+#ifdef PR_TAGGED_ADDR_ENABLE
+static void sanitise_set_tagged_addr_ctrl(struct syscallrecord *rec)
+{
+	static const unsigned long tagged_addr_flags[] = {
+		0,
+		PR_TAGGED_ADDR_ENABLE,
+		PR_TAGGED_ADDR_ENABLE | PR_MTE_TCF_SYNC,
+		PR_TAGGED_ADDR_ENABLE | PR_MTE_TCF_ASYNC,
+		PR_TAGGED_ADDR_ENABLE | PR_MTE_TCF_SYNC  | PR_MTE_TAG_MASK,
+		PR_TAGGED_ADDR_ENABLE | PR_MTE_TCF_ASYNC | PR_MTE_TAG_MASK,
+	};
+	rec->a2 = tagged_addr_flags[rnd_modulo_u32(ARRAY_SIZE(tagged_addr_flags))];
+}
+#endif
+
+#ifdef PR_PAC_APIAKEY
+static void sanitise_pac_set_enabled_keys(struct syscallrecord *rec)
+{
+	static const unsigned long pac_keys[] = {
+		PR_PAC_APIAKEY, PR_PAC_APIBKEY, PR_PAC_APDAKEY,
+		PR_PAC_APDBKEY, PR_PAC_APGAKEY,
+	};
+	unsigned long mask = 0;
+	size_t i;
+
+	for (i = 0; i < ARRAY_SIZE(pac_keys); i++)
+		if (RAND_BOOL())
+			mask |= pac_keys[i];
+	rec->a2 = mask;
+	rec->a3 = mask & rnd_u64();
+}
+#endif
+
+static void sanitise_get_auxv(struct syscallrecord *rec)
+{
+	if (rec->a3 == 0 || rec->a3 > page_size)
+		rec->a3 = page_size;
+	avoid_shared_buffer_out(&rec->a2, rec->a3);
+}
+
 /* We already got a generic_sanitise at this point */
 static void sanitise_prctl(struct syscallrecord *rec)
 {
@@ -210,94 +344,15 @@ static void sanitise_prctl(struct syscallrecord *rec)
 		break;
 
 	case PR_SET_SYSCALL_USER_DISPATCH:
-		/*
-		 * Pin SUD to PR_SYS_DISPATCH_OFF.  ON installs a per-task
-		 * selector that traps every syscall whose PC is outside
-		 * [offset, offset+len) -- or inside the range with the
-		 * selector byte != ALLOW -- to SIGSYS.  The generic
-		 * arg-fill can land mode=PR_SYS_DISPATCH_ON via the
-		 * boundary-value pool (which includes 1) paired with a
-		 * writable selector address from get_writable_address()
-		 * (one branch of gen_undefined_arg), at which point the
-		 * next syscall the fuzz child issues -- libc PC, random
-		 * range, random selector byte -- traps SIGSYS and the
-		 * child dies before the post handler can run.  OFF mode
-		 * requires offset/len/selector all zero per the kernel's
-		 * task_set_syscall_user_dispatch input validation; pinning
-		 * them keeps that input-validation path exercised without
-		 * the ON-side self-break.
-		 */
-		rec->a2 = PR_SYS_DISPATCH_OFF;
-		rec->a3 = 0;
-		rec->a4 = 0;
-		rec->a5 = 0;
+		sanitise_set_syscall_user_dispatch(rec);
 		break;
 
 	case PR_SET_TSC:
-		/*
-		 * Pin TSC mode to PR_TSC_ENABLE.  The other legal value,
-		 * PR_TSC_SIGSEGV (2), is reachable from the boundary-value
-		 * pool the generic arg-fill draws from.  Landing it sets
-		 * CR4.TSD on the task, after which any user-mode rdtsc /
-		 * rdtscp raises #GP and the kernel turns it into SIGSEGV
-		 * per the prctl ABI.  The fuzz child calls clock_gettime
-		 * (CLOCK_MONOTONIC) from its inner loop and elsewhere;
-		 * glibc 2.17+ routes that through the vDSO's
-		 * __vdso_clock_gettime fast path, which reads the TSC in
-		 * user mode.  A landed PR_TSC_SIGSEGV therefore SIGSEGV-
-		 * kills the child on its next clock_gettime call, before
-		 * the post handler can run, and the death is mis-
-		 * attributed by the reaper.  Setting one's own TSC mode
-		 * requires no capability, so the child's cap-clear does
-		 * not defang this the way it does PR_SET_MM /
-		 * PR_SET_SECUREBITS.  PR_TSC_ENABLE is the boot default
-		 * and matches the task's initial state, so pinning it
-		 * keeps the input-validation path exercised (the kernel
-		 * still walks the legal-mode switch) without flipping the
-		 * self-breaking bit.  Zero a3-a5; prctl ignores them for
-		 * PR_SET_TSC but the kernel ABI reserves them for
-		 * possible future use.
-		 */
-		rec->a2 = PR_TSC_ENABLE;
-		rec->a3 = 0;
-		rec->a4 = 0;
-		rec->a5 = 0;
+		sanitise_set_tsc(rec);
 		break;
 
 	case PR_SET_SHADOW_STACK_STATUS:
-		/*
-		 * Pin shadow-stack status to 0 (all feature bits clear).
-		 * The argument is a bitmask of PR_SHADOW_STACK_ENABLE
-		 * (1<<0), PR_SHADOW_STACK_WRITE (1<<1) and
-		 * PR_SHADOW_STACK_PUSH (1<<2); the generic arg-fill draws
-		 * a2 from the boundary-value pool and from rnd_u64(), so
-		 * any combination of those bits -- crucially the ENABLE
-		 * bit -- is reachable.  Setting ENABLE installs a shadow
-		 * stack for the calling thread and turns on CET CALL/RET
-		 * enforcement: the very next RET checks SSP against the
-		 * shadow copy, and trinity's own call frames -- pushed
-		 * before the prctl returned -- have no matching shadow
-		 * entries, so the child takes a control-protection
-		 * exception (SIGSEGV with si_code=SEGV_CPERR on x86) on
-		 * the first RET out of the syscall wrapper.  The WRITE
-		 * and PUSH bits widen the attack surface further by
-		 * exposing WRSS / shadow-stack-PUSH to userspace, both of
-		 * which can scribble the shadow stack and produce the
-		 * same self-break on a later RET.  Setting one's own
-		 * shadow-stack status requires no capability, so the
-		 * child's unconditional cap-clear does not defang this --
-		 * same shape as the recent PR_SET_TSC and
-		 * PR_SET_SYSCALL_USER_DISPATCH pins.  Zero is a legal
-		 * argument (all features disabled, matching the task's
-		 * initial state when CET is not in use) and exercises the
-		 * kernel's input-validation path without flipping any
-		 * self-breaking bit.  Zero a3-a5; prctl ignores them for
-		 * this option but the ABI reserves them.
-		 */
-		rec->a2 = 0;
-		rec->a3 = 0;
-		rec->a4 = 0;
-		rec->a5 = 0;
+		sanitise_set_shadow_stack_status(rec);
 		break;
 
 	case PR_SET_NAME:
@@ -309,36 +364,15 @@ static void sanitise_prctl(struct syscallrecord *rec)
 		break;
 
 #ifdef PR_TAGGED_ADDR_ENABLE
-	case PR_SET_TAGGED_ADDR_CTRL: {
-		static const unsigned long tagged_addr_flags[] = {
-			0,
-			PR_TAGGED_ADDR_ENABLE,
-			PR_TAGGED_ADDR_ENABLE | PR_MTE_TCF_SYNC,
-			PR_TAGGED_ADDR_ENABLE | PR_MTE_TCF_ASYNC,
-			PR_TAGGED_ADDR_ENABLE | PR_MTE_TCF_SYNC  | PR_MTE_TAG_MASK,
-			PR_TAGGED_ADDR_ENABLE | PR_MTE_TCF_ASYNC | PR_MTE_TAG_MASK,
-		};
-		rec->a2 = tagged_addr_flags[rnd_modulo_u32(ARRAY_SIZE(tagged_addr_flags))];
+	case PR_SET_TAGGED_ADDR_CTRL:
+		sanitise_set_tagged_addr_ctrl(rec);
 		break;
-	}
 #endif
 
 #ifdef PR_PAC_APIAKEY
-	case PR_PAC_SET_ENABLED_KEYS: {
-		static const unsigned long pac_keys[] = {
-			PR_PAC_APIAKEY, PR_PAC_APIBKEY, PR_PAC_APDAKEY,
-			PR_PAC_APDBKEY, PR_PAC_APGAKEY,
-		};
-		unsigned long mask = 0;
-		size_t i;
-
-		for (i = 0; i < ARRAY_SIZE(pac_keys); i++)
-			if (RAND_BOOL())
-				mask |= pac_keys[i];
-		rec->a2 = mask;
-		rec->a3 = mask & rnd_u64();
+	case PR_PAC_SET_ENABLED_KEYS:
+		sanitise_pac_set_enabled_keys(rec);
 		break;
-	}
 #endif
 
 #ifdef PR_SVE_VL_INHERIT
@@ -378,9 +412,7 @@ static void sanitise_prctl(struct syscallrecord *rec)
 		break;
 
 	case PR_GET_AUXV:
-		if (rec->a3 == 0 || rec->a3 > page_size)
-			rec->a3 = page_size;
-		avoid_shared_buffer_out(&rec->a2, rec->a3);
+		sanitise_get_auxv(rec);
 		break;
 
 	default:
