@@ -2093,6 +2093,24 @@ struct kcov_shared {
 	unsigned long cmp_hyp_cmp_novelty_wins;
 	unsigned long cmp_hyp_misses;
 	unsigned long cmp_hyp_disabled_skips;
+
+	/* Per-entry early-FAIL skip counters inside redqueen_reexec_step.
+	 * Sibling family to the per-call reexec_gate_skip_* buckets, but
+	 * scoped to the entry-resolution bails that fire AFTER the per-call
+	 * gate has already passed.  Closes the per-entry skip partition so
+	 * the gap between reexec_gate_pass and (reexec_attempts +
+	 * reexec_skipped_destructive + reexec_skipped_validate_silent +
+	 * reexec_window_cap_hit) is fully attributed.
+	 *
+	 *  reexec_step_skip_entry_null
+	 *      get_syscall_entry(rec->nr, rec->do32bit) returned NULL --
+	 *      parent rec carried a syscall nr the table cannot resolve.
+	 *  reexec_step_skip_bad_slot
+	 *      Pending slot is zero or past entry->num_args -- attribution
+	 *      staged a slot that the resolved entry's arg count cannot
+	 *      accommodate (stale pending vs current entry resolution). */
+	unsigned long reexec_step_skip_entry_null;
+	unsigned long reexec_step_skip_bad_slot;
 };
 
 extern struct kcov_shared *kcov_shm;
