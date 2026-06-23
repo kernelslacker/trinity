@@ -6646,6 +6646,76 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	}
 
 	/*
+	 * LIVE typed-hypothesis inject arm telemetry.  Fleet-level view of
+	 * the conservative inject arm rate from cmp_hints_try_get_ex():
+	 * how often the gate passed, how often the resolver produced a
+	 * derived value, and the per-kind partition of those produced
+	 * values.  The pair (gate_passed, injected) separates "the arm
+	 * fired and there was nothing in the typed store" from "the arm
+	 * fired and substituted a derived value", which is what bounds
+	 * the achievable conversion ceiling.  Rendered alongside the
+	 * would-pick shadow block so the SHADOW (would-have-picked) vs
+	 * LIVE (actually-substituted) rates can be compared in one frame.
+	 */
+	{
+		static const char * const kind_labels[CMP_HYP_KIND_NR] = {
+			"exact", "range", "boundary", "bitmask",
+			"enum_family", "alignment", "length",
+			"foreign_value",
+		};
+		static unsigned long prev_hyp_live_injected;
+		static unsigned long prev_hyp_live_gate_passed;
+		static unsigned long prev_hyp_live_injected_kind[CMP_HYP_KIND_NR];
+		unsigned long cur_hyp_live_injected = __atomic_load_n(
+			&kcov_shm->cmp_hyp_live_injected, __ATOMIC_RELAXED);
+		unsigned long cur_hyp_live_gate_passed = __atomic_load_n(
+			&kcov_shm->cmp_hyp_live_inject_gate_passed,
+			__ATOMIC_RELAXED);
+		unsigned long cur_hyp_live_injected_kind[CMP_HYP_KIND_NR];
+		unsigned long delta_hyp_live_injected =
+			cur_hyp_live_injected - prev_hyp_live_injected;
+		unsigned long delta_hyp_live_gate_passed =
+			cur_hyp_live_gate_passed - prev_hyp_live_gate_passed;
+		unsigned long any_live_delta =
+			delta_hyp_live_injected | delta_hyp_live_gate_passed;
+		unsigned int k;
+
+		for (k = 0; k < CMP_HYP_KIND_NR; k++) {
+			cur_hyp_live_injected_kind[k] = __atomic_load_n(
+				&kcov_shm->cmp_hyp_live_injected_by_kind[k],
+				__ATOMIC_RELAXED);
+			any_live_delta |= (cur_hyp_live_injected_kind[k] -
+					   prev_hyp_live_injected_kind[k]);
+		}
+
+		if (any_live_delta != 0) {
+			stats_log_write("KCOV CMP hyp live inject stats over last %lds:\n",
+					elapsed);
+			stats_log_write("  %-32s +%lu  (total %lu)\n",
+					"cmp_hyp_live_inject_gate_passed",
+					delta_hyp_live_gate_passed,
+					cur_hyp_live_gate_passed);
+			stats_log_write("  %-32s +%lu  (total %lu)\n",
+					"cmp_hyp_live_injected",
+					delta_hyp_live_injected,
+					cur_hyp_live_injected);
+			for (k = 0; k < CMP_HYP_KIND_NR; k++) {
+				stats_log_write(
+					"  cmp_hyp_live_inject[%-13s] +%lu (total %lu)\n",
+					kind_labels[k],
+					cur_hyp_live_injected_kind[k] -
+						prev_hyp_live_injected_kind[k],
+					cur_hyp_live_injected_kind[k]);
+			}
+		}
+
+		prev_hyp_live_injected = cur_hyp_live_injected;
+		prev_hyp_live_gate_passed = cur_hyp_live_gate_passed;
+		for (k = 0; k < CMP_HYP_KIND_NR; k++)
+			prev_hyp_live_injected_kind[k] = cur_hyp_live_injected_kind[k];
+	}
+
+	/*
 	 * SHADOW per-hypothesis outcome aggregates that have no kcov_shm
 	 * flat-counter twin (corpus_save_wins / destructive_skips /
 	 * context_skips).  Walk the hyp_pools[][] grid once per window and

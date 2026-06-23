@@ -2197,6 +2197,37 @@ struct kcov_shared {
 	unsigned long cmp_hyp_would_miss_by_kind[CMP_HYP_KIND_NR];
 	unsigned long cmp_hyp_would_value_differs;
 
+	/*
+	 * LIVE typed-hypothesis inject counters.  Bumped from the inject
+	 * arm in cmp_hints_try_get_ex() so the inject rate is legible
+	 * alongside the would-pick / would-value-differs shadow rates
+	 * above.  Pure observability -- the inject arm's gate
+	 * (plateau == CMP_RISING_PC_FLAT AND ONE_IN(32)) and the
+	 * typed-safe caller opt-in are what actually scope the rate.
+	 *
+	 *  cmp_hyp_live_injected
+	 *      Total stash entries the live inject arm produced.  The
+	 *      ratio cmp_hyp_live_injected / cmp_hints_consumed is the
+	 *      fleet-level fraction of consumed hints whose value came
+	 *      from a typed hypothesis rather than the raw pool.
+	 *  cmp_hyp_live_injected_by_kind[k]
+	 *      Per-kind partition of the above.  Sum across kinds
+	 *      equals cmp_hyp_live_injected modulo concurrent sampling.
+	 *      Only the four ladder kinds (EXACT, ENUM_FAMILY, BITMASK,
+	 *      RANGE) ever populate; the other CMP_HYP_KIND_NR slots
+	 *      stay zero by construction.
+	 *  cmp_hyp_live_inject_gate_passed
+	 *      Total times the conservative gate (plateau AND ONE_IN(32))
+	 *      passed.  Paired with cmp_hyp_live_injected gives the
+	 *      gate-passed-but-no-hypothesis rate (gate_passed minus
+	 *      injected = empty-resolver bails), separating "the arm
+	 *      did not fire" from "the arm fired but the store had
+	 *      nothing to say at the served site".
+	 */
+	unsigned long cmp_hyp_live_injected;
+	unsigned long cmp_hyp_live_injected_by_kind[CMP_HYP_KIND_NR];
+	unsigned long cmp_hyp_live_inject_gate_passed;
+
 	/* Per-kind flat census of typed CMP hypothesis insert rejections
 	 * caused by the per-syscall total cap (CMP_HYP_PER_SYSCALL).  Bumped
 	 * in lock-step with the scalar cmp_hyp_pool_full from cmp_hyp_alloc()'s
