@@ -56,9 +56,6 @@ struct syscallentry syscall_stat64 = {
 #define AT_STATX_FORCE_SYNC     0x2000  /* - Force the attributes to be sync'd with the server */
 #define AT_STATX_DONT_SYNC      0x4000  /* - Don't sync attributes with the server */
 
-#ifndef AT_NO_AUTOMOUNT
-#define AT_NO_AUTOMOUNT         0x800   /* Suppress terminal automount traversal */
-#endif
 
 static unsigned long statx_flags[] = {
 	AT_STATX_SYNC_TYPE, AT_STATX_SYNC_AS_STAT, AT_STATX_FORCE_SYNC, AT_STATX_DONT_SYNC,
