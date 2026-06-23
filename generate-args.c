@@ -272,10 +272,17 @@ static unsigned long handle_arg_range(struct syscallentry *entry,
 	 * consumers, so a hint that falls outside that interval is rejected
 	 * and we fall through to the existing distribution unchanged.  No
 	 * hint, an out-of-range hint, or chaos-gate suppression all leave the
-	 * historical mix in place. */
+	 * historical mix in place.
+	 *
+	 * Opts into the typed-hypothesis live inject arm: ARG_RANGE is on
+	 * the typed-safe consumer set because the declared [low, high]
+	 * re-validation below catches any derived value that strays
+	 * outside the consumer's hard bound, so the worst case of an
+	 * out-of-bound derived constant is the same fall-through as an
+	 * out-of-bound raw pool constant. */
 	if (cmp_hint_baseline_should_inject() &&
 	    cmp_hints_try_get_ex(rec->nr, rec->do32bit,
-				 CMP_HINT_BOUNDARY, 0, &hint) &&
+				 CMP_HINT_BOUNDARY, 0, true, &hint) &&
 	    hint >= low && hint <= high) {
 		credit_cmp_hint_injection(rec, CMP_HINT_CALLSITE_OTHER);
 		return hint;
@@ -4057,8 +4064,12 @@ static unsigned long gen_arg_struct_size(struct syscallentry *entry,
 	unsigned long hint;
 	unsigned int roll;
 
+	/* Opts into the typed-hypothesis live inject arm: ARG_STRUCT_SIZE
+	 * is a learned-size scalar slot, the same shape as the typed-safe
+	 * size/count/range scalar set the typed store is calibrated for. */
 	if (ONE_IN(cmp_hint_inject_denom(10)) &&
-	    cmp_hints_try_get(rec->nr, rec->do32bit, &hint)) {
+	    cmp_hints_try_get_ex(rec->nr, rec->do32bit,
+				 CMP_HINT_BOUNDARY, 0, true, &hint)) {
 		credit_cmp_hint_injection(rec, CMP_HINT_CALLSITE_ARG_STRUCT_SIZE);
 		return hint;
 	}

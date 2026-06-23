@@ -630,17 +630,33 @@ enum cmp_hint_use {
  * On every successful return a SHADOW would-pick resolver is invoked
  * over the typed hypothesis store for the same (nr, do32, cmp_ip,
  * width), bumping the cmp_hyp_would_pick_by_kind / would_miss_by_kind
- * / would_value_differs counters in kcov_shm.  The shadow is pure
- * observation: the returned value and the bool return are byte-for-
- * byte identical to a build without the shadow, and there is no CLI
- * knob to flip. */
+ * / would_value_differs counters in kcov_shm.  The shadow walk runs
+ * regardless of arm so the would-pick rate stays comparable across
+ * runs.
+ *
+ * allow_hyp_inject opts the caller into the LIVE typed-hypothesis
+ * inject arm: a callsite whose argtype is on the typed-safe set
+ * (ARG_RANGE, ARG_STRUCT_SIZE, cataloged size/count/range scalars,
+ * timespec-bounded) passes true and, when the conservative gate
+ * (plateau == CMP_RISING_PC_FLAT AND ONE_IN(32)) fires AND the
+ * resolver has a hypothesis at the same (cmp_ip, width), the raw
+ * pool value the pick step computed is replaced by a value derived
+ * from that hypothesis (EXACT exemplar / ENUM_FAMILY exemplar or
+ * lo/hi / BITMASK single set-bit / RANGE lo/hi/mid).  Callers that
+ * are NOT typed-safe (broad ARG_OP / ARG_LIST / ARG_UNDEFINED,
+ * fd/pid/handle slots, pointer-shaped slots, flags except via
+ * BITMASK) pass false and keep the historical raw-pool behaviour
+ * byte-for-byte. */
 bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
-			  unsigned long old, unsigned long *out);
+			  unsigned long old, bool allow_hyp_inject,
+			  unsigned long *out);
 
-/* Back-compat wrapper.  Routes to CMP_HINT_BOUNDARY with old == 0 so
- * the four existing call sites in generate-args.c retain the pre-split
+/* Back-compat wrapper.  Routes to CMP_HINT_BOUNDARY with old == 0 and
+ * keeps the live typed-hypothesis inject arm OFF so the existing
+ * non-typed-safe call sites in generate-args.c retain the pre-split
  * {C-1, C, C+1} rotation byte-for-byte until each is individually
- * migrated to the use case that fits its consumer slot. */
+ * migrated to the use case (and inject opt-in) that fits its
+ * consumer slot. */
 bool cmp_hints_try_get(unsigned int nr, bool do32, unsigned long *out);
 
 /*
@@ -730,7 +746,17 @@ struct cmp_hint_consumed_entry {
 	 * not a correctness issue. */
 	uint8_t served_from_recent;	/* 1 == recent ring, 0 == durable */
 	uint8_t age_bucket;		/* 0..CMP_HINT_AGE_BUCKETS-1 */
-	uint8_t pad[1];
+	/* 1 == value came from the live typed-hypothesis inject arm at
+	 * pick time, 0 == raw pool value (the unchanged historical
+	 * path).  Read by the credit drain to gate
+	 * cmp_hyp_credit_outcome(): under shadow, the drain credited
+	 * the hyp store on every pull, so cmp_hyp_pc_wins counted raw
+	 * replays that coincidentally matched a stored hypothesis.
+	 * Under the live arm, the drain credits cmp_hyp_pc_wins ONLY
+	 * for stash entries the live inject produced, so the counter
+	 * finally measures real hypothesis-derived conversion rather
+	 * than coincidence. */
+	uint8_t hyp_injected;
 };
 
 #define CMP_HINT_CONSUMED_STASH_MAX	8U

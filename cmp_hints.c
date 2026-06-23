@@ -914,6 +914,171 @@ static void cmp_hyp_would_pick(unsigned int nr, bool do32,
 	}
 }
 
+/*
+ * Conservative inject rate for the LIVE typed-hypothesis arm.  ~3 %
+ * baseline, strictly more conservative than the raw cmp-hint baseline
+ * (1/16) so a regression on the unproven typed arm cannot drown the
+ * measured raw signal.  Lifts to the existing amplified denom (4) only
+ * under the CMP_RISING_PC_FLAT plateau where the raw path is already
+ * amplified -- the gate below couples the two so the arm only ever
+ * fires alongside the raw amplification.
+ */
+#define CMP_HYP_LIVE_INJECT_DENOM	32U
+
+/*
+ * Derive ONE candidate value from PICKED via the spec's ladder.  Every
+ * derived value is constructed so cmp_hyp_find_for_credit() will
+ * re-resolve back to a hypothesis at the same (cmp_ip, width) at
+ * credit time (EXACT.exemplar matches EXACT; ENUM_FAMILY exemplar /
+ * lo / hi all lie in [lo, hi]; BITMASK single set-bit is single-bit
+ * AND set in mask; RANGE lo / hi / midpoint all lie in [lo, hi]).
+ * Boundary probes (lo-1, hi+1) are deliberately NOT emitted -- they
+ * fall outside [lo, hi] and so are unreachable by the value-keyed
+ * credit walk, which would silently drop their attribution.
+ *
+ * Bug-pattern rules applied:
+ *   * midpoint computed as lo + ((hi - lo) >> 1) so (lo + hi) cannot
+ *     overflow.
+ *   * RANGE rejects hi < lo (a torn read of an in-flight RANGE entry
+ *     would otherwise underflow).
+ *   * BITMASK with mask == 0 falls back to exemplar so the
+ *     popcount-walk loop is never entered with an empty mask.
+ *   * popcount-walk bounds via __builtin_popcountll so the bit-pick
+ *     index is in [0, popcount); the for-loop's bit shift terminates
+ *     on the uint64_t high-bit wrap and the seen counter exits
+ *     deterministically.
+ */
+static bool cmp_hyp_derive_value(const struct cmp_hypothesis *picked,
+				 unsigned long *out)
+{
+	uint64_t lo, hi, mask;
+	unsigned int popcount, pick, seen;
+	uint64_t bit;
+
+	if (picked == NULL || out == NULL)
+		return false;
+	switch (picked->kind) {
+	case CMP_HYP_EXACT:
+		*out = (unsigned long)picked->exemplar;
+		return true;
+	case CMP_HYP_ENUM_FAMILY:
+		switch (rnd_modulo_u32(3)) {
+		case 0:
+			*out = (unsigned long)picked->exemplar;
+			return true;
+		case 1:
+			*out = (unsigned long)picked->lo;
+			return true;
+		default:
+			*out = (unsigned long)picked->hi;
+			return true;
+		}
+	case CMP_HYP_BITMASK:
+		mask = picked->mask;
+		if (mask == 0) {
+			*out = (unsigned long)picked->exemplar;
+			return true;
+		}
+		popcount = (unsigned int)__builtin_popcountll(mask);
+		pick = rnd_modulo_u32(popcount);
+		seen = 0;
+		for (bit = 1; bit != 0; bit <<= 1) {
+			if ((mask & bit) == 0)
+				continue;
+			if (seen == pick) {
+				*out = (unsigned long)bit;
+				return true;
+			}
+			seen++;
+		}
+		/* Unreachable: popcount of a non-zero mask is in
+		 * [1, 64], and pick < popcount.  Fall back to exemplar so
+		 * a future bit-shape change cannot strand the inject. */
+		*out = (unsigned long)picked->exemplar;
+		return true;
+	case CMP_HYP_RANGE:
+		lo = picked->lo;
+		hi = picked->hi;
+		if (hi < lo)
+			return false;
+		switch (rnd_modulo_u32(3)) {
+		case 0:
+			*out = (unsigned long)lo;
+			return true;
+		case 1:
+			*out = (unsigned long)hi;
+			return true;
+		default:
+			*out = (unsigned long)(lo + ((hi - lo) >> 1));
+			return true;
+		}
+	default:
+		return false;
+	}
+}
+
+/*
+ * LIVE typed-hypothesis inject try.  Composes the conservative gate
+ * (plateau == CMP_RISING_PC_FLAT AND ONE_IN(32)) with the shadow
+ * resolver and the derive helper above.  On a fire the raw pool's
+ * (cmp_ip, value, width) tuple the pick step computed is replaced by
+ * (cmp_ip, derived, width) -- cmp_ip and width are unchanged because
+ * the inject targets the SAME comparison site, just substituting a
+ * typed-derived value for the raw replay.
+ *
+ * The caller (cmp_hints_try_get_ex) only invokes this on a typed-safe
+ * argtype; gating that here would conflate the gate's "did not fire"
+ * with the caller's "not eligible" cohort.
+ */
+static bool cmp_hyp_try_live_inject(unsigned int nr, bool do32,
+				    unsigned long cmp_ip, unsigned int size,
+				    unsigned long *out)
+{
+	struct cmp_hyp_pool *pool;
+	struct cmp_hypothesis *picked;
+	bool present[CMP_HYP_KIND_NR];
+	uint8_t width;
+	unsigned long derived;
+
+	if (cmp_hints_shm == NULL || nr >= MAX_NR_SYSCALL)
+		return false;
+	if (size != 1 && size != 2 && size != 4 && size != 8)
+		return false;
+	if (shm == NULL)
+		return false;
+	if (__atomic_load_n(&shm->plateau_current_hypothesis,
+			    __ATOMIC_RELAXED) !=
+	    (int)PLATEAU_HYPOTHESIS_CMP_RISING_PC_FLAT)
+		return false;
+	if (!ONE_IN(CMP_HYP_LIVE_INJECT_DENOM))
+		return false;
+
+	if (kcov_shm != NULL)
+		__atomic_fetch_add(&kcov_shm->cmp_hyp_live_inject_gate_passed,
+				   1UL, __ATOMIC_RELAXED);
+
+	width = (uint8_t)size;
+	pool = &cmp_hints_shm->hyp_pools[nr][do32 ? 1 : 0];
+
+	picked = cmp_hyp_would_pick_locked(pool, cmp_ip, width, present);
+	if (picked == NULL)
+		return false;
+
+	if (!cmp_hyp_derive_value(picked, &derived))
+		return false;
+
+	*out = derived;
+
+	if (kcov_shm != NULL) {
+		__atomic_fetch_add(&kcov_shm->cmp_hyp_live_injected,
+				   1UL, __ATOMIC_RELAXED);
+		__atomic_fetch_add(
+			&kcov_shm->cmp_hyp_live_injected_by_kind[picked->kind],
+			1UL, __ATOMIC_RELAXED);
+	}
+	return true;
+}
+
 static void pool_lock(struct cmp_hint_pool *pool)
 {
 	if (cmp_hints_shm != NULL)
@@ -2740,7 +2905,8 @@ static void cmp_hints_stash_consumed(unsigned int nr, bool do32,
 				     unsigned int field_idx,
 				     const struct struct_desc *desc,
 				     bool served_from_recent,
-				     uint8_t age_bucket)
+				     uint8_t age_bucket,
+				     bool hyp_injected)
 {
 	struct childdata *child = this_child();
 	struct cmp_hint_consumed_entry *e;
@@ -2773,7 +2939,7 @@ static void cmp_hints_stash_consumed(unsigned int nr, bool do32,
 	 * this is belt-and-braces against a future caller. */
 	e->age_bucket = (age_bucket < CMP_HINT_AGE_BUCKETS) ?
 			age_bucket : (uint8_t)(CMP_HINT_AGE_BUCKETS - 1U);
-	e->pad[0] = 0;
+	e->hyp_injected = hyp_injected ? 1 : 0;
 
 	if (kcov_shm != NULL) {
 		__atomic_fetch_add(&kcov_shm->cmp_hints_consumed, 1UL,
@@ -2899,7 +3065,8 @@ static unsigned int cmp_hint_weighted_pick(struct cmp_hint_entry *entries,
 }
 
 bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
-			  unsigned long old, unsigned long *out)
+			  unsigned long old, bool allow_hyp_inject,
+			  unsigned long *out)
 {
 	struct cmp_hint_pool *pool;
 	struct cmp_hint_entry *picked;
@@ -3028,7 +3195,7 @@ bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 							 re_cmp_ip, re_value,
 							 re_size, use,
 							 0, 0, NULL,
-							 true, 0);
+							 true, 0, false);
 				cmp_hyp_would_pick(nr, do32, re_cmp_ip,
 						   re_size, re_value);
 				return true;
@@ -3107,12 +3274,38 @@ bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 		uint64_t age = (cur_stamp >= entry_stamp) ?
 				(cur_stamp - entry_stamp) : 0;
 		uint8_t bucket = cmp_hint_age_bucket(age);
+		unsigned long stash_value = picked_value;
+		bool hyp_injected = false;
 
 		if (kcov_shm != NULL)
 			__atomic_fetch_add(&kcov_shm->cmp_hint_durable_consumed_age[bucket],
 					   1UL, __ATOMIC_RELAXED);
 
-		*out = cmp_hint_apply_transform(picked_value, use, old);
+		/* LIVE typed-hypothesis inject arm.  Runs only for callers
+		 * that opted in (the typed-safe argtype set).  When the
+		 * conservative gate fires AND the typed store has a
+		 * hypothesis at the same (cmp_ip, width) the raw pick just
+		 * served, the raw value is replaced by a value derived from
+		 * that hypothesis.  Bypasses cmp_hint_apply_transform so the
+		 * derived constant reaches the kernel verbatim -- a +/-1
+		 * BOUNDARY shift on top of the derived value would dodge the
+		 * value-keyed credit re-resolution path in
+		 * cmp_hyp_find_for_credit, silently dropping the conversion
+		 * attribution this arm exists to measure.  Raw pool stays
+		 * the fallback on any gate miss / empty resolver / derive
+		 * bail. */
+		if (allow_hyp_inject) {
+			unsigned long derived;
+
+			if (cmp_hyp_try_live_inject(nr, do32, picked_cmp_ip,
+						    picked_size, &derived)) {
+				*out = derived;
+				stash_value = derived;
+				hyp_injected = true;
+			}
+		}
+		if (!hyp_injected)
+			*out = cmp_hint_apply_transform(picked_value, use, old);
 
 		if (kcov_shm != NULL) {
 			/* Mirror of the attempts ring path above: both the
@@ -3134,9 +3327,9 @@ bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 		}
 
 		cmp_hints_stash_consumed(nr, do32, CMP_HINT_POOL_PER_SYSCALL,
-					 picked_cmp_ip, picked_value, picked_size, use,
+					 picked_cmp_ip, stash_value, picked_size, use,
 					 0, 0, NULL,
-					 false, bucket);
+					 false, bucket, hyp_injected);
 	}
 	cmp_hyp_would_pick(nr, do32, picked_cmp_ip, picked_size, picked_value);
 	return true;
@@ -3144,7 +3337,7 @@ bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 
 bool cmp_hints_try_get(unsigned int nr, bool do32, unsigned long *out)
 {
-	return cmp_hints_try_get_ex(nr, do32, CMP_HINT_BOUNDARY, 0, out);
+	return cmp_hints_try_get_ex(nr, do32, CMP_HINT_BOUNDARY, 0, false, out);
 }
 
 /*
@@ -3304,7 +3497,7 @@ bool cmp_hints_field_try_get(unsigned int nr, bool do32, unsigned int arg_idx,
 		cmp_hints_stash_consumed(nr, do32, CMP_HINT_POOL_FIELD,
 					 picked_cmp_ip, picked_value, picked_size, use,
 					 arg_idx, field_idx, desc,
-					 false, bucket);
+					 false, bucket, false);
 	}
 	return true;
 }
@@ -3518,16 +3711,28 @@ void cmp_hints_feedback_credit_pc(bool outcome_win)
 				&kcov_shm->cmp_hint_misses_by_pool[e->pool_kind],
 				1UL, __ATOMIC_RELAXED);
 
-		/* SHADOW hypothesis-layer outcome credit.  Layered on top of
-		 * the per-pool credit above so a PC-edge win / miss attributed
-		 * to a pool entry also lands on the would-have-been-chosen
-		 * hypothesis at the matching (cmp_ip, value, width) tuple.
-		 * Same SHADOW discipline: a credit that finds no explaining
-		 * hypothesis silently drops, never steers the live pick. */
-		cmp_hyp_credit_outcome(e->nr, e->do32 != 0, e->cmp_ip,
-				       e->value, e->size,
-				       outcome_win ? CMP_HYP_OUTCOME_PC_WIN
-						   : CMP_HYP_OUTCOME_MISS);
+		/* Typed-hypothesis outcome credit, gated on hyp_injected.
+		 *
+		 * Before this gate the credit fired on every drained entry,
+		 * which meant cmp_hyp_pc_wins counted raw-pool replays whose
+		 * value coincidentally matched a stored hypothesis at the
+		 * same (cmp_ip, width).  That coincidental credit conflated
+		 * "the typed store would have steered toward a converting
+		 * value" with "the raw pool happened to serve a value the
+		 * typed store also knows about", erasing the signal the
+		 * counter exists to surface.
+		 *
+		 * Under the live arm the gate restricts the credit to stash
+		 * entries the inject arm produced.  cmp_hyp_pc_wins now
+		 * counts converting calls whose served value was derived
+		 * from a typed hypothesis (against the cmp_hyp_live_injected
+		 * denominator), so the conversion ratio finally measures
+		 * what the typed store earns over the raw replay baseline. */
+		if (e->hyp_injected)
+			cmp_hyp_credit_outcome(e->nr, e->do32 != 0, e->cmp_ip,
+					       e->value, e->size,
+					       outcome_win ? CMP_HYP_OUTCOME_PC_WIN
+							   : CMP_HYP_OUTCOME_MISS);
 
 		/* Per-tier + per-age conversion partition.  The flat
 		 * cmp_hint_wins / cmp_hint_misses counters above bump once
@@ -3604,9 +3809,15 @@ void cmp_hints_feedback_credit_cmp_novelty(void)
 		const struct cmp_hint_consumed_entry *e =
 			&child->cmp_hints_consumed_stash[i];
 
-		cmp_hyp_credit_outcome(e->nr, e->do32 != 0, e->cmp_ip,
-				       e->value, e->size,
-				       CMP_HYP_OUTCOME_CMP_NOVELTY);
+		/* Same hyp_injected gate as the PC drain above: only stash
+		 * entries the live inject arm produced credit the typed
+		 * hypothesis layer, so cmp_hyp_cmp_novelty_wins measures
+		 * typed-arm-driven CMP novelty rather than coincidental
+		 * raw-replay overlap with the hypothesis store. */
+		if (e->hyp_injected)
+			cmp_hyp_credit_outcome(e->nr, e->do32 != 0, e->cmp_ip,
+					       e->value, e->size,
+					       CMP_HYP_OUTCOME_CMP_NOVELTY);
 
 		/* SHADOW old-flat-pool by-kind CMP-novelty partition.  Kept
 		 * SEPARATE from the PC-outcome partition above so harvested-
