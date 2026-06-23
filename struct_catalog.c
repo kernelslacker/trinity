@@ -5218,21 +5218,65 @@ static const struct struct_field linger_fields[] = {
 
 /*
  * struct ip_mreqn -- IPPROTO_IP / IP_{ADD,DROP}_MEMBERSHIP and
- * IP_MULTICAST_IF.  Bespoke build_ip_mreqn() seeded imr_multiaddr in
- * the 224.0.0.0/4 multicast range and zeroed imr_address / imr_ifindex
- * (kernel-default interface).  The three fields stay FT_RAW for the
- * proof: imr_multiaddr is __be32, so schema fill in host byte order
- * produces a multicast address only ~1/16 of the time vs the bespoke
- * builder's 100%, and FT_MAGIC -- the natural tag for curated
- * be32 vocab -- still falls through to FT_RAW in the fill switch
- * today.  The miss-fallback option is GONE for
- * the cataloged (level, optname) tuples once this row registers, so
- * the multicast-bias regression is the price of the proof; a follow-up
- * implementing FT_MAGIC (or a be32-aware range tag) restores it
- * without touching this entry.
+ * IP_MULTICAST_IF.  imr_multiaddr is __be32 selecting the multicast
+ * group; FT_MAGIC carries a curated set of well-known IPv4 multicast
+ * destinations (all-hosts, all-routers, IGMPv3, mDNS, NTP, SSM, SSDP)
+ * in network byte order, so the join/leave path names a real
+ * 224.0.0.0/4 group on every dispatch.  imr_address and imr_ifindex
+ * stay FT_RAW: the bespoke builder zeroed both and the kernel accepts
+ * any small ifindex (or zero = default interface).
  */
+
+/* 224.0.0.1 -- all-hosts */
+static const unsigned char ipv4_mcast_all_hosts[4] = {
+	0xe0, 0x00, 0x00, 0x01,
+};
+
+/* 224.0.0.2 -- all-routers */
+static const unsigned char ipv4_mcast_all_routers[4] = {
+	0xe0, 0x00, 0x00, 0x02,
+};
+
+/* 224.0.0.22 -- IGMPv3 */
+static const unsigned char ipv4_mcast_igmpv3[4] = {
+	0xe0, 0x00, 0x00, 0x16,
+};
+
+/* 224.0.0.251 -- mDNS */
+static const unsigned char ipv4_mcast_mdns[4] = {
+	0xe0, 0x00, 0x00, 0xfb,
+};
+
+/* 224.0.1.1 -- NTP */
+static const unsigned char ipv4_mcast_ntp[4] = {
+	0xe0, 0x00, 0x01, 0x01,
+};
+
+/* 232.0.0.1 -- SSM (source-specific multicast) sample */
+static const unsigned char ipv4_mcast_ssm[4] = {
+	0xe8, 0x00, 0x00, 0x01,
+};
+
+/* 239.255.255.250 -- SSDP */
+static const unsigned char ipv4_mcast_ssdp[4] = {
+	0xef, 0xff, 0xff, 0xfa,
+};
+
+static const unsigned char *const ipv4_mcast_vocab[] = {
+	ipv4_mcast_all_hosts,
+	ipv4_mcast_all_routers,
+	ipv4_mcast_igmpv3,
+	ipv4_mcast_mdns,
+	ipv4_mcast_ntp,
+	ipv4_mcast_ssm,
+	ipv4_mcast_ssdp,
+};
+
 static const struct struct_field ip_mreqn_fields[] = {
-	FIELD(struct ip_mreqn, imr_multiaddr),
+	FIELDX(struct ip_mreqn, imr_multiaddr, FT_MAGIC,
+	       .u.magic = { ipv4_mcast_vocab,
+			    ARRAY_SIZE(ipv4_mcast_vocab),
+			    sizeof(((struct ip_mreqn *)NULL)->imr_multiaddr) }),
 	FIELD(struct ip_mreqn, imr_address),
 	FIELD(struct ip_mreqn, imr_ifindex),
 };
@@ -5315,16 +5359,13 @@ static const struct struct_field ipv6_mreq_fields[] = {
 
 /*
  * struct packet_mreq -- SOL_PACKET / PACKET_{ADD,DROP}_MEMBERSHIP.
- * Bespoke build_packet_mreq() set mr_ifindex=1 (default-ish), mr_type
- * in [1..4] (which over-shoots PACKET_MR_UNICAST=3 and under-shoots
- * PACKET_MR_MULTICAST=0), mr_alen=6 (ethernet), and random bytes in
- * mr_address[8].  FT_ENUM on mr_type pins it to the four actually-
- * valid PACKET_MR_* values -- a strict improvement over the bespoke
- * draw.  mr_ifindex / mr_alen go FT_RANGE so the schema fill stays
- * close to the bespoke window.  mr_address[8] keeps FT_RAW and falls
- * to "left at initial fill" (zero) the same way ipv6_mreq's 16-byte
- * addr does; bespoke set random bytes there, so this is a regression
- * for that field specifically and the same FT_MAGIC follow-up applies.
+ * FT_ENUM pins mr_type to the four valid PACKET_MR_* values.
+ * mr_ifindex and mr_alen go FT_RANGE over a small window matching
+ * the bespoke builder.  mr_address[8] stays FT_RAW: the meaningful
+ * vocab is the 6-byte Ethernet multicast MAC (01:00:5e:xx:xx:xx),
+ * which has no clean stride-8 encoding, and the FT_MAGIC fill path
+ * requires the vocab stride to equal the field size.  A 6-byte-aware
+ * tag is a follow-up.
  */
 static const unsigned long packet_mreq_type_values[] = {
 	PACKET_MR_MULTICAST,
