@@ -5383,7 +5383,6 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	static unsigned long prev_reexec_skipped_validate_silent;
 	static unsigned long prev_reexec_window_cap_hit;
 	static unsigned long prev_reexec_pending_dropped;
-	static unsigned long prev_reexec_pending_drain_unused;
 	static unsigned long prev_reexec_gate_skip_in_reexec;
 	static unsigned long prev_reexec_gate_skip_disabled;
 	static unsigned long prev_reexec_gate_skip_mode;
@@ -5437,7 +5436,6 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	unsigned long cur_reexec_skipped_destructive, cur_reexec_skipped_validate_silent;
 	unsigned long cur_reexec_window_cap_hit;
 	unsigned long cur_reexec_pending_dropped;
-	unsigned long cur_reexec_pending_drain_unused;
 	unsigned long cur_reexec_gate_skip_in_reexec;
 	unsigned long cur_reexec_gate_skip_disabled;
 	unsigned long cur_reexec_gate_skip_mode;
@@ -5466,7 +5464,6 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	unsigned long delta_reexec_skipped_destructive, delta_reexec_skipped_validate_silent;
 	unsigned long delta_reexec_window_cap_hit;
 	unsigned long delta_reexec_pending_dropped;
-	unsigned long delta_reexec_pending_drain_unused;
 	unsigned long delta_reexec_gate_skip_in_reexec;
 	unsigned long delta_reexec_gate_skip_disabled;
 	unsigned long delta_reexec_gate_skip_mode;
@@ -5544,7 +5541,6 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	cur_reexec_skipped_validate_silent = __atomic_load_n(&kcov_shm->reexec_skipped_validate_silent, __ATOMIC_RELAXED);
 	cur_reexec_window_cap_hit          = __atomic_load_n(&kcov_shm->reexec_window_cap_hit,          __ATOMIC_RELAXED);
 	cur_reexec_pending_dropped         = __atomic_load_n(&kcov_shm->reexec_pending_dropped,         __ATOMIC_RELAXED);
-	cur_reexec_pending_drain_unused    = __atomic_load_n(&kcov_shm->reexec_pending_drain_unused,    __ATOMIC_RELAXED);
 	cur_reexec_gate_skip_in_reexec     = __atomic_load_n(&kcov_shm->reexec_gate_skip_in_reexec,     __ATOMIC_RELAXED);
 	cur_reexec_gate_skip_disabled      = __atomic_load_n(&kcov_shm->reexec_gate_skip_disabled,      __ATOMIC_RELAXED);
 	cur_reexec_gate_skip_mode          = __atomic_load_n(&kcov_shm->reexec_gate_skip_mode,          __ATOMIC_RELAXED);
@@ -5651,7 +5647,6 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 		prev_reexec_skipped_validate_silent = cur_reexec_skipped_validate_silent;
 		prev_reexec_window_cap_hit          = cur_reexec_window_cap_hit;
 		prev_reexec_pending_dropped         = cur_reexec_pending_dropped;
-		prev_reexec_pending_drain_unused    = cur_reexec_pending_drain_unused;
 		prev_reexec_gate_skip_in_reexec     = cur_reexec_gate_skip_in_reexec;
 		prev_reexec_gate_skip_disabled      = cur_reexec_gate_skip_disabled;
 		prev_reexec_gate_skip_mode          = cur_reexec_gate_skip_mode;
@@ -5724,7 +5719,6 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	delta_reexec_skipped_validate_silent = cur_reexec_skipped_validate_silent - prev_reexec_skipped_validate_silent;
 	delta_reexec_window_cap_hit          = cur_reexec_window_cap_hit          - prev_reexec_window_cap_hit;
 	delta_reexec_pending_dropped         = cur_reexec_pending_dropped         - prev_reexec_pending_dropped;
-	delta_reexec_pending_drain_unused    = cur_reexec_pending_drain_unused    - prev_reexec_pending_drain_unused;
 	delta_reexec_gate_skip_in_reexec     = cur_reexec_gate_skip_in_reexec     - prev_reexec_gate_skip_in_reexec;
 	delta_reexec_gate_skip_disabled      = cur_reexec_gate_skip_disabled      - prev_reexec_gate_skip_disabled;
 	delta_reexec_gate_skip_mode          = cur_reexec_gate_skip_mode          - prev_reexec_gate_skip_mode;
@@ -5783,7 +5777,6 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	     delta_reexec_new_cmps_total |
 	     delta_reexec_skipped_destructive | delta_reexec_skipped_validate_silent |
 	     delta_reexec_window_cap_hit | delta_reexec_pending_dropped |
-	     delta_reexec_pending_drain_unused |
 	     delta_reexec_gate_skip_in_reexec | delta_reexec_gate_skip_disabled |
 	     delta_reexec_gate_skip_mode | delta_reexec_gate_skip_chain_mid |
 	     delta_reexec_gate_skip_no_new_cmp | delta_reexec_gate_skip_no_pending |
@@ -5986,12 +5979,6 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
 					"reexec_pending_dropped", delta_reexec_pending_dropped,
 					rate_milli / 1000, rate_milli % 1000, cur_reexec_pending_dropped);
-		}
-		if (delta_reexec_pending_drain_unused) {
-			unsigned long rate_milli = (delta_reexec_pending_drain_unused * 1000UL) / (unsigned long)elapsed;
-			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
-					"reexec_pending_drain_unused", delta_reexec_pending_drain_unused,
-					rate_milli / 1000, rate_milli % 1000, cur_reexec_pending_drain_unused);
 		}
 		/* Re-exec gate skip-reason breakdown.  Counters are mutually
 		 * exclusive: every dispatch_step that reaches the tail bumps
@@ -6650,7 +6637,6 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	prev_reexec_skipped_validate_silent = cur_reexec_skipped_validate_silent;
 	prev_reexec_window_cap_hit          = cur_reexec_window_cap_hit;
 	prev_reexec_pending_dropped         = cur_reexec_pending_dropped;
-	prev_reexec_pending_drain_unused    = cur_reexec_pending_drain_unused;
 	prev_reexec_gate_skip_in_reexec     = cur_reexec_gate_skip_in_reexec;
 	prev_reexec_gate_skip_disabled      = cur_reexec_gate_skip_disabled;
 	prev_reexec_gate_skip_mode          = cur_reexec_gate_skip_mode;
