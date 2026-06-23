@@ -15,10 +15,6 @@
 #include "pids.h"
 #include "rnd.h"
 
-#ifndef SO_PEEK_OFF
-#define SO_PEEK_OFF	42
-#endif
-
 #ifndef SO_PASSSEC
 #define SO_PASSSEC	34
 #endif
