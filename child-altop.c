@@ -16,20 +16,12 @@
 
 #include "child.h"
 #include "child-internal.h"
-#include "childops-genl.h"
-#include "childops-iouring.h"
-#include "childops-netlink.h"
-#include "childops-nfnl.h"
-#include "childops-util.h"
-#include "kcov.h"
 #include "params.h"
-#include "random.h"
 #include "rnd.h"
 #include "shm.h"
 #include "stats.h"
 #include "strategy.h"
-#include "tables.h"
-#include "trinity.h"	// ARRAY_SIZE
+#include "trinity.h"
 
 /*
  * Startup snapshot of the dormant-op gate consulted by init_altop_dispatch()
