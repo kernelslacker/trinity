@@ -107,9 +107,6 @@
 #ifndef AF_BLUETOOTH
 # define AF_BLUETOOTH			31
 #endif
-#ifndef TCP_AO_ADD_KEY
-# define TCP_AO_ADD_KEY			38
-#endif
 
 #define ORACLE_RCV_TIMEO_USEC	50000
 #define ORACLE_SPLICE_BYTES	2048U
