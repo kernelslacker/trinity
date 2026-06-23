@@ -900,6 +900,22 @@ static const struct stat_category userns_fuzzer_category =
 	              userns_runs,
 	              userns_fuzzer_fields);
 
+static const struct stat_field userns_bootstrap_fields[] = {
+	STAT_FIELD(userns_bootstrap, runs),
+	STAT_FIELD(userns_bootstrap, ran),
+	STAT_FIELD(userns_bootstrap, eperm),
+	STAT_FIELD(userns_bootstrap, userns_other),
+	STAT_FIELD(userns_bootstrap, map_write_fail),
+	STAT_FIELD(userns_bootstrap, target_unshare),
+	STAT_FIELD(userns_bootstrap, fork_fail),
+	STAT_FIELD(userns_bootstrap, signalled),
+};
+
+static const struct stat_category userns_bootstrap_category =
+	STAT_CATEGORY("userns_bootstrap",
+	              userns_bootstrap_runs,
+	              userns_bootstrap_fields);
+
 static const struct stat_field barrier_racer_fields[] = {
 	STAT_FIELD(barrier_racer, runs),
 	STAT_FIELD(barrier_racer, inner_crashed),
@@ -2976,6 +2992,9 @@ static void __cold dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&userns_fuzzer_category);
+
+	printf(",");
+	stat_category_emit_json(&userns_bootstrap_category);
 
 	printf(",");
 	stat_category_emit_json(&barrier_racer_category);
@@ -7948,6 +7967,8 @@ static void dump_stats_fuzzer_subsystems(void)
 	stat_category_emit_text(&sched_cycler_category);
 
 	stat_category_emit_text(&userns_fuzzer_category);
+
+	stat_category_emit_text(&userns_bootstrap_category);
 
 	stat_category_emit_text(&barrier_racer_category);
 

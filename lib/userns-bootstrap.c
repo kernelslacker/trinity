@@ -36,6 +36,7 @@
 #include <unistd.h>
 
 #include "childops-util.h"
+#include "shm.h"
 #include "userns-bootstrap.h"
 
 /*
@@ -129,9 +130,15 @@ int userns_run_in_ns(int target_ns_flags, int (*fn)(void *), void *arg)
 	if (fn == NULL)
 		return -EAGAIN;
 
+	__atomic_add_fetch(&shm->stats.userns_bootstrap_runs,
+	                   1, __ATOMIC_RELAXED);
+
 	pid = fork();
-	if (pid < 0)
+	if (pid < 0) {
+		__atomic_add_fetch(&shm->stats.userns_bootstrap_fork_fail,
+		                   1, __ATOMIC_RELAXED);
 		return -EAGAIN;
+	}
 
 	if (pid == 0) {
 		grandchild_body(target_ns_flags, fn, arg);
@@ -144,17 +151,34 @@ int userns_run_in_ns(int target_ns_flags, int (*fn)(void *), void *arg)
 	if (WIFEXITED(status)) {
 		switch (WEXITSTATUS(status)) {
 		case UBS_EXIT_RAN:
+			__atomic_add_fetch(&shm->stats.userns_bootstrap_ran,
+			                   1, __ATOMIC_RELAXED);
 			return 0;
 		case UBS_EXIT_USERNS_EPERM:
+			__atomic_add_fetch(&shm->stats.userns_bootstrap_eperm,
+			                   1, __ATOMIC_RELAXED);
 			return -EPERM;
 		case UBS_EXIT_USERNS_OTHER:
+			__atomic_add_fetch(&shm->stats.userns_bootstrap_userns_other,
+			                   1, __ATOMIC_RELAXED);
+			return -EAGAIN;
 		case UBS_EXIT_MAP_WRITE_FAIL:
+			__atomic_add_fetch(&shm->stats.userns_bootstrap_map_write_fail,
+			                   1, __ATOMIC_RELAXED);
+			return -EAGAIN;
 		case UBS_EXIT_TARGET_UNSHARE:
+			__atomic_add_fetch(&shm->stats.userns_bootstrap_target_unshare,
+			                   1, __ATOMIC_RELAXED);
+			return -EAGAIN;
 		default:
+			__atomic_add_fetch(&shm->stats.userns_bootstrap_userns_other,
+			                   1, __ATOMIC_RELAXED);
 			return -EAGAIN;
 		}
 	}
 
 	/* Signalled or stopped -- treat as transient failure, no latch. */
+	__atomic_add_fetch(&shm->stats.userns_bootstrap_signalled,
+	                   1, __ATOMIC_RELAXED);
 	return -EAGAIN;
 }
