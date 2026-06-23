@@ -446,8 +446,24 @@ struct cmp_hypothesis {
  * per_kind_count[]: an exhausted kind bumps cmp_hyp_kind_full and
  * leaves the other kinds free, while an exhausted total bumps
  * cmp_hyp_pool_full.
+ *
+ * CMP_HYP_PER_KIND was raised from 2 to 16 after first telemetry: at 2,
+ * cmp_hyp_kind_full ran ~2x cmp_hyp_observations (the EXACT and
+ * ENUM_FAMILY lanes fire on every observation and saturate their two
+ * slots almost immediately), so nearly every observation was dropped at
+ * insert and the parallel store stayed effectively empty.  16 gives each
+ * kind room for the distinct comparison sites a busy syscall exercises
+ * while staying memory-bounded.
+ *
+ * Footprint is sizeof(struct cmp_hypothesis) (144 B) * CMP_HYP_PER_KIND *
+ * CMP_HYP_KIND_NR per pool, over a hyp_pools[MAX_NR_SYSCALL][2] grid.  At
+ * 16 that is 144 * 16 * 8 = 18432 B of entries per pool, ~18472 B per
+ * pool with the header, and ~36 MiB across the 2048-pool grid (up from
+ * ~4.6 MiB at 2).  The grid is shared memory allocated once at init; the
+ * biarch [*][1] half is unused on uniarch builds, mirroring the existing
+ * cmp_hint_pool grid's identical waste.
  */
-#define CMP_HYP_PER_KIND	2U
+#define CMP_HYP_PER_KIND	16U
 #define CMP_HYP_PER_SYSCALL	(CMP_HYP_KIND_NR * CMP_HYP_PER_KIND)
 
 struct cmp_hyp_pool {
