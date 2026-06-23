@@ -10,7 +10,6 @@
 
 #include "child.h"		/* struct childdata */
 #include "cmp_hints.h"		/* cmp_hints_shm, cmp_hints_pool_safe_count */
-#include "shm.h"
 #include "strategy.h"
 #include "syscall.h"		/* MAX_NR_SYSCALL */
 
