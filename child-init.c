@@ -31,11 +31,9 @@
 #include "arch.h"
 #include "child.h"
 #include "child-internal.h"
-#include "fd.h"
 #include "futex.h"
 #include "fd-event.h"
 #include "kcov.h"
-#include "list.h"
 #include "maps.h"
 #include "minicorpus.h"
 #include "objects.h"
@@ -49,16 +47,10 @@
 #include "signals.h"
 #include "stats.h"
 #include "stats_ring.h"
-#include "strategy.h"
 #include "syscall.h"
-#include "tables.h"
 #include "trinity.h"	// ARRAY_SIZE
 #include "uid.h"
-#include "deferred-free.h"
-#include "sanitise.h"
-#include "sequence.h"
 #include "utils.h"	// zmalloc
-#include "vma-pressure.h"
 
 /*
  * Hard per-child virtual-memory cap.  A single runaway mmap/mremap (or the
