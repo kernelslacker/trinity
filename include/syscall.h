@@ -20,6 +20,47 @@ enum syscallstate {
 	AFTER,		/* returned from doing syscall. */
 };
 
+enum arg_ptr_dir {
+	ARG_DIR_NONE = 0,
+	ARG_DIR_IN,
+	ARG_DIR_OUT,
+	ARG_DIR_INOUT,
+	ARG_DIR_OPTIONAL_IN,
+	ARG_DIR_OPTIONAL_OUT,
+	ARG_DIR_OPAQUE,
+};
+
+enum arg_ptr_owner {
+	ARG_OWNER_NONE = 0,
+	ARG_OWNER_GENERIC,
+	ARG_OWNER_SANITISER,
+	ARG_OWNER_POST_STATE,
+	ARG_OWNER_EXTERNAL,
+};
+
+/*
+ * arg_slot_meta.flags bits.  Descriptive only in this row -- the live
+ * inject/scrub/cleanup paths do not consult any of them.
+ */
+#define ARG_META_FLAG_CURATED			(1u << 0)
+#define ARG_META_FLAG_ALLOW_NULL		(1u << 1)
+#define ARG_META_FLAG_MAY_ALIAS_USER		(1u << 2)
+#define ARG_META_FLAG_NEEDS_CLEANUP		(1u << 3)
+#define ARG_META_FLAG_POST_HANDLER_CONSUMES	(1u << 4)
+#define ARG_META_FLAG_MINICORPUS_REPLAY_SAFE	(1u << 5)
+#define ARG_META_FLAG_SKIP_BLANKET_SCRUB	(1u << 6)
+
+struct arg_slot_meta {
+	void		*alloc_base;
+	size_t		len;
+	size_t		alloc_len;
+	uint32_t	flags;
+	uint32_t	struct_tag;
+	uint32_t	generation;
+	uint8_t		dir;		/* enum arg_ptr_dir */
+	uint8_t		owner;		/* enum arg_ptr_owner */
+};
+
 struct syscallrecord {
 	unsigned int nr;
 
@@ -197,6 +238,20 @@ struct syscallrecord {
 #define REC_OWNED_MAX	8
 	void		*owned[REC_OWNED_MAX];
 	unsigned int	owned_count;
+
+	/*
+	 * SHADOW per-arg-slot ownership/direction descriptor.  Seeded from
+	 * the slot's argtype at the tail of generate_syscall_args() before
+	 * blanket_address_scrub runs.  Telemetry only: no consumer reads
+	 * dir/owner/flags/len to decide injection, scheduling, or scrub
+	 * policy.  Lives in the cold tail of the rec (after owned[]) so
+	 * the offset of every existing field stays put.  arg_meta_gen is
+	 * the per-rec dispatch sequence the seed stamps into each slot's
+	 * generation field so a stale sidecar inherited from a prior
+	 * dispatch (missed reset path) is detectable.
+	 */
+	struct arg_slot_meta arg_meta[6];
+	uint32_t	arg_meta_gen;
 };
 
 #define REC_CANARY_MAGIC	0xdeadbeefcafebabeULL
@@ -746,6 +801,13 @@ uint8_t compute_fd_arg_mask(const struct syscallentry *entry);
 uint8_t compute_len_arg_mask(const struct syscallentry *entry);
 uint8_t compute_nested_address_scrub_mask(const struct syscallentry *entry);
 void populate_arglist_all_bits(struct syscallentry *entry);
+
+/*
+ * Seed rec->arg_meta[] from entry->argtype[] just before
+ * blanket_address_scrub().  SHADOW telemetry: writes the per-slot
+ * dir/owner/flags/generation descriptor but does not feed any decision.
+ */
+void arg_meta_init(struct syscallentry *entry, struct syscallrecord *rec);
 
 /*
  * Tripwire bump for get_arg_snapshot() mismatches.  Out-of-line so the

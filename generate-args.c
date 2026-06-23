@@ -4953,6 +4953,106 @@ static void nested_address_scrub(struct syscallentry *entry,
 	}
 }
 
+/*
+ * Map a slot's argtype to a coarse default ownership/direction descriptor.
+ * Broad best-effort seed: the structurally clear argtypes (curated input
+ * buffers, the in/out/inout struct pointer trio, fd-backed handles) get a
+ * non-default classification; the truly generic address-family slots
+ * (ARG_ADDRESS / ARG_NON_NULL_ADDRESS / ARG_RANGE) and bare scalars stay at
+ * dir/owner == NONE so the central-generator-coverage row above this one
+ * can attribute the slots it fills.  SHADOW: no caller of arg_meta_init
+ * consults the result for a decision.
+ */
+static void argtype_default_meta(enum argtype t, uint8_t *dir, uint8_t *owner,
+				 uint32_t *flags)
+{
+	*dir = ARG_DIR_NONE;
+	*owner = ARG_OWNER_NONE;
+	*flags = 0;
+
+	switch (t) {
+	case ARG_STRUCT_PTR_IN:
+	case ARG_IOVEC_IN:
+	case ARG_PATHNAME:
+	case ARG_XATTR_NAME:
+	case ARG_FSTYPE_NAME:
+	case ARG_TIMESPEC:
+	case ARG_ITIMERVAL:
+	case ARG_ITIMERSPEC:
+	case ARG_TIMEVAL:
+	case ARG_NODEMASK:
+	case ARG_CPUMASK:
+		*dir = ARG_DIR_IN;
+		*owner = ARG_OWNER_GENERIC;
+		*flags = ARG_META_FLAG_CURATED;
+		break;
+	case ARG_STRUCT_PTR_OUT:
+		*dir = ARG_DIR_OUT;
+		*owner = ARG_OWNER_GENERIC;
+		*flags = ARG_META_FLAG_CURATED;
+		break;
+	case ARG_STRUCT_PTR_INOUT:
+	case ARG_IOVEC:
+	case ARG_BUF_SIZED:
+		*dir = ARG_DIR_INOUT;
+		*owner = ARG_OWNER_GENERIC;
+		*flags = ARG_META_FLAG_CURATED;
+		break;
+	case ARG_SOCKADDR:
+		*dir = ARG_DIR_OPTIONAL_IN;
+		*owner = ARG_OWNER_GENERIC;
+		*flags = ARG_META_FLAG_CURATED | ARG_META_FLAG_ALLOW_NULL;
+		break;
+	default:
+		if (is_fdarg(t))
+			*owner = ARG_OWNER_EXTERNAL;
+		break;
+	}
+}
+
+void arg_meta_init(struct syscallentry *entry, struct syscallrecord *rec)
+{
+	uint32_t generation = ++rec->arg_meta_gen;
+	uint32_t prev_generation = generation - 1;
+	unsigned int i;
+
+	for (i = 0; i < 6; i++) {
+		enum argtype t = (i < entry->num_args)
+				? entry->argtype[i] : ARG_UNDEFINED;
+		struct arg_slot_meta *m = &rec->arg_meta[i];
+		uint32_t stored_gen = m->generation;
+		uint8_t dir, owner;
+		uint32_t flags;
+
+		/* Stale-sidecar tripwire: a non-zero stored generation that
+		 * is not the previous dispatch's value means an init pass was
+		 * skipped (missed reset) or the rec was wholesale-stomped. */
+		if (stored_gen != 0 && stored_gen != prev_generation)
+			__atomic_add_fetch(&shm->stats.arg_meta_argtype_stale,
+					   1, __ATOMIC_RELAXED);
+
+		argtype_default_meta(t, &dir, &owner, &flags);
+
+		*m = (struct arg_slot_meta){
+			.dir = dir,
+			.owner = owner,
+			.flags = flags,
+			.generation = generation,
+		};
+
+		if (t == ARG_ADDRESS || t == ARG_NON_NULL_ADDRESS ||
+		    t == ARG_RANGE) {
+			if (dir != ARG_DIR_NONE || owner != ARG_OWNER_NONE ||
+			    flags != 0)
+				__atomic_add_fetch(&shm->stats.arg_meta_addr_with_meta,
+						   1, __ATOMIC_RELAXED);
+			else
+				__atomic_add_fetch(&shm->stats.arg_meta_addr_without_meta,
+						   1, __ATOMIC_RELAXED);
+		}
+	}
+}
+
 void blanket_address_scrub(struct syscallentry *entry, struct syscallrecord *rec)
 {
 	uint8_t mask = entry->address_scrub_mask;
@@ -5112,6 +5212,7 @@ void generate_syscall_args(struct syscallrecord *rec)
 	 * skip generic_sanitise — the args are already populated. */
 	if (entry->sanitise == NULL && minicorpus_replay(rec)) {
 		rec->rettype = entry->rettype;
+		arg_meta_init(entry, rec);
 		blanket_address_scrub(entry, rec);
 		srec_publish_end(rec);
 		return;
@@ -5121,6 +5222,7 @@ void generate_syscall_args(struct syscallrecord *rec)
 	rec->rettype = entry->rettype;
 	if (entry->sanitise)
 		entry->sanitise(rec);
+	arg_meta_init(entry, rec);
 	blanket_address_scrub(entry, rec);
 
 	srec_publish_end(rec);
