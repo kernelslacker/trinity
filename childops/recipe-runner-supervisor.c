@@ -438,9 +438,6 @@ bool recipe_mount_userns_dance(bool *unsupported)
 #ifndef SECCOMP_FILTER_FLAG_NEW_LISTENER
 #define SECCOMP_FILTER_FLAG_NEW_LISTENER	(1UL << 3)
 #endif
-#ifndef SECCOMP_RET_USER_NOTIF
-#define SECCOMP_RET_USER_NOTIF		0x7fc00000U
-#endif
 #ifndef SECCOMP_RET_ALLOW
 #define SECCOMP_RET_ALLOW		0x7fff0000U
 #endif

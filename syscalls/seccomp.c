@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <linux/filter.h>
+#include "compat.h"
 #include "net.h"
 #include "random.h"
 #include "rnd.h"
@@ -39,9 +40,6 @@
 #endif
 #ifndef SECCOMP_RET_ERRNO
 #define SECCOMP_RET_ERRNO		0x00050000U
-#endif
-#ifndef SECCOMP_RET_USER_NOTIF
-#define SECCOMP_RET_USER_NOTIF		0x7fc00000U
 #endif
 #ifndef SECCOMP_RET_TRACE
 #define SECCOMP_RET_TRACE		0x7ff00000U
