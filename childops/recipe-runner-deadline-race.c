@@ -12,7 +12,6 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
-#include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <time.h>
@@ -23,17 +22,9 @@
 
 #include "arch.h"
 #include "syscall-gate.h"
-#include "child.h"
-#include "childops-util.h"
-#include "childops/iouring-recipes.h"
-#include "compat.h"
-#include "maps.h"
-#include "random.h"
 #include "rnd.h"
 #include "shm.h"
-#include "stats.h"
 #include "trinity.h"
-#include "utils.h"
 #include "pids.h"
 
 #include "childops/recipe-runner-internal.h"

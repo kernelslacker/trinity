@@ -10,7 +10,6 @@
 #include <sched.h>
 #include <signal.h>
 #include <stdbool.h>
-#include <stdint.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/mount.h>
@@ -25,20 +24,13 @@
 #include <linux/filter.h>
 #include <linux/seccomp.h>
 
-#include "arch.h"
 #include "syscall-gate.h"
-#include "child.h"
 #include "childops-util.h"
-#include "childops/iouring-recipes.h"
 #include "compat.h"
-#include "maps.h"
-#include "random.h"
 #include "rnd.h"
 #include "shm.h"
-#include "stats.h"
 #include "trinity.h"
 #include "utils.h"
-#include "pids.h"
 
 #include "childops/recipe-runner-internal.h"
 
