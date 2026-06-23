@@ -115,10 +115,6 @@
 # define TPACKET_V3			2
 #endif
 
-#ifndef MSG_SPLICE_PAGES
-# define MSG_SPLICE_PAGES		0x8000000
-#endif
-
 #define SPLICE_SELFTEST_LEN		64U
 
 enum splice_proto_setup {
