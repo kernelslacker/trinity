@@ -788,9 +788,12 @@ static void cmp_hyp_credit_consume(unsigned int nr, bool do32,
 		return;
 
 	__atomic_fetch_add(&h->consumed_count, 1UL, __ATOMIC_RELAXED);
-	if (kcov_shm != NULL)
+	if (kcov_shm != NULL) {
 		__atomic_fetch_add(&kcov_shm->cmp_hyp_consumed, 1UL,
 				   __ATOMIC_RELAXED);
+		__atomic_fetch_add(&kcov_shm->cmp_hyp_consumed_by_kind[h->kind],
+				   1UL, __ATOMIC_RELAXED);
+	}
 }
 
 /*
