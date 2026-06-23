@@ -5451,7 +5451,6 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	static unsigned long prev_cmp_recent_would_pick;
 	static unsigned long prev_cmp_recent_would_miss;
 	static unsigned long prev_cmp_recent_live_picks;
-	static unsigned long prev_cmp_recent_promotions;
 	static unsigned long prev_cmp_inject_arm_a_baseline_fires;
 	static unsigned long prev_cmp_inject_arm_b_baseline_fires;
 	static unsigned long prev_cmp_inject_denom_diverged;
@@ -5521,13 +5520,13 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	unsigned long cur_cmp_hint_stash_overflow, cur_cmp_hint_credit_entry_evicted;
 	unsigned long cur_cmp_recent_inserts, cur_cmp_recent_evicts;
 	unsigned long cur_cmp_recent_would_pick, cur_cmp_recent_would_miss;
-	unsigned long cur_cmp_recent_live_picks, cur_cmp_recent_promotions;
+	unsigned long cur_cmp_recent_live_picks;
 	unsigned long delta_cmp_hints_consumed, delta_cmp_hint_wins, delta_cmp_hint_misses;
 	unsigned long delta_cmp_hint_cmp_novelty_wins;
 	unsigned long delta_cmp_hint_stash_overflow, delta_cmp_hint_credit_entry_evicted;
 	unsigned long delta_cmp_recent_inserts, delta_cmp_recent_evicts;
 	unsigned long delta_cmp_recent_would_pick, delta_cmp_recent_would_miss;
-	unsigned long delta_cmp_recent_live_picks, delta_cmp_recent_promotions;
+	unsigned long delta_cmp_recent_live_picks;
 	unsigned long cur_cmp_inject_arm_a_baseline_fires, cur_cmp_inject_arm_b_baseline_fires;
 	unsigned long cur_cmp_inject_denom_diverged;
 	unsigned long delta_cmp_inject_arm_a_baseline_fires, delta_cmp_inject_arm_b_baseline_fires;
@@ -5631,7 +5630,6 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	cur_cmp_recent_would_pick          = __atomic_load_n(&kcov_shm->cmp_recent_would_pick,          __ATOMIC_RELAXED);
 	cur_cmp_recent_would_miss          = __atomic_load_n(&kcov_shm->cmp_recent_would_miss,          __ATOMIC_RELAXED);
 	cur_cmp_recent_live_picks          = __atomic_load_n(&kcov_shm->cmp_recent_live_picks,          __ATOMIC_RELAXED);
-	cur_cmp_recent_promotions          = __atomic_load_n(&kcov_shm->cmp_recent_promotions,          __ATOMIC_RELAXED);
 	cur_cmp_inject_arm_a_baseline_fires = __atomic_load_n(&kcov_shm->cmp_inject_arm_a_baseline_fires, __ATOMIC_RELAXED);
 	cur_cmp_inject_arm_b_baseline_fires = __atomic_load_n(&kcov_shm->cmp_inject_arm_b_baseline_fires, __ATOMIC_RELAXED);
 	cur_cmp_inject_denom_diverged       = __atomic_load_n(&kcov_shm->cmp_inject_denom_diverged,       __ATOMIC_RELAXED);
@@ -5746,7 +5744,6 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 		prev_cmp_recent_would_pick          = cur_cmp_recent_would_pick;
 		prev_cmp_recent_would_miss          = cur_cmp_recent_would_miss;
 		prev_cmp_recent_live_picks          = cur_cmp_recent_live_picks;
-		prev_cmp_recent_promotions          = cur_cmp_recent_promotions;
 		prev_cmp_inject_arm_a_baseline_fires = cur_cmp_inject_arm_a_baseline_fires;
 		prev_cmp_inject_arm_b_baseline_fires = cur_cmp_inject_arm_b_baseline_fires;
 		prev_cmp_inject_denom_diverged       = cur_cmp_inject_denom_diverged;
@@ -5831,7 +5828,6 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	delta_cmp_recent_would_pick          = cur_cmp_recent_would_pick          - prev_cmp_recent_would_pick;
 	delta_cmp_recent_would_miss          = cur_cmp_recent_would_miss          - prev_cmp_recent_would_miss;
 	delta_cmp_recent_live_picks          = cur_cmp_recent_live_picks          - prev_cmp_recent_live_picks;
-	delta_cmp_recent_promotions          = cur_cmp_recent_promotions          - prev_cmp_recent_promotions;
 	delta_cmp_inject_arm_a_baseline_fires = cur_cmp_inject_arm_a_baseline_fires - prev_cmp_inject_arm_a_baseline_fires;
 	delta_cmp_inject_arm_b_baseline_fires = cur_cmp_inject_arm_b_baseline_fires - prev_cmp_inject_arm_b_baseline_fires;
 	delta_cmp_inject_denom_diverged       = cur_cmp_inject_denom_diverged       - prev_cmp_inject_denom_diverged;
@@ -5866,7 +5862,7 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	     delta_cmp_hint_credit_entry_evicted |
 	     delta_cmp_recent_inserts | delta_cmp_recent_evicts |
 	     delta_cmp_recent_would_pick | delta_cmp_recent_would_miss |
-	     delta_cmp_recent_live_picks | delta_cmp_recent_promotions |
+	     delta_cmp_recent_live_picks |
 	     delta_cmp_inject_arm_a_baseline_fires |
 	     delta_cmp_inject_arm_b_baseline_fires |
 	     delta_cmp_inject_denom_diverged |
@@ -6269,12 +6265,6 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
 					"cmp_recent_live_picks", delta_cmp_recent_live_picks,
 					rate_milli / 1000, rate_milli % 1000, cur_cmp_recent_live_picks);
-		}
-		if (delta_cmp_recent_promotions) {
-			unsigned long rate_milli = (delta_cmp_recent_promotions * 1000UL) / (unsigned long)elapsed;
-			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
-					"cmp_recent_promotions", delta_cmp_recent_promotions,
-					rate_milli / 1000, rate_milli % 1000, cur_cmp_recent_promotions);
 		}
 		/* A/B baseline inject denom (Arm A = 16, Arm B = 12).  Print
 		 * the realised cohort split + per-arm baseline-fire deltas +
@@ -6839,7 +6829,6 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	prev_cmp_recent_would_pick          = cur_cmp_recent_would_pick;
 	prev_cmp_recent_would_miss          = cur_cmp_recent_would_miss;
 	prev_cmp_recent_live_picks          = cur_cmp_recent_live_picks;
-	prev_cmp_recent_promotions          = cur_cmp_recent_promotions;
 	prev_cmp_inject_arm_a_baseline_fires = cur_cmp_inject_arm_a_baseline_fires;
 	prev_cmp_inject_arm_b_baseline_fires = cur_cmp_inject_arm_b_baseline_fires;
 	prev_cmp_inject_denom_diverged       = cur_cmp_inject_denom_diverged;
@@ -9860,7 +9849,6 @@ static void __cold dump_stats_kcov_block(void)
 			unsigned long rc_would_pick = __atomic_load_n(&kcov_shm->cmp_recent_would_pick, __ATOMIC_RELAXED);
 			unsigned long rc_would_miss = __atomic_load_n(&kcov_shm->cmp_recent_would_miss, __ATOMIC_RELAXED);
 			unsigned long rc_live_picks = __atomic_load_n(&kcov_shm->cmp_recent_live_picks, __ATOMIC_RELAXED);
-			unsigned long rc_promotions = __atomic_load_n(&kcov_shm->cmp_recent_promotions, __ATOMIC_RELAXED);
 
 			if (rc_inserts > 0)
 				stat_row("kcov_coverage", "cmp_recent_inserts", rc_inserts);
@@ -9872,8 +9860,6 @@ static void __cold dump_stats_kcov_block(void)
 				stat_row("kcov_coverage", "cmp_recent_would_miss", rc_would_miss);
 			if (rc_live_picks > 0)
 				stat_row("kcov_coverage", "cmp_recent_live_picks", rc_live_picks);
-			if (rc_promotions > 0)
-				stat_row("kcov_coverage", "cmp_recent_promotions", rc_promotions);
 		}
 
 		/* Find top 10 edge-producing syscalls via insertion sort. */
