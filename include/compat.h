@@ -2149,3 +2149,8 @@ struct file_attr {
 #ifndef MOVE_MOUNT_BENEATH
 #define MOVE_MOUNT_BENEATH		0x00000200
 #endif
+
+/* linux/socket.h */
+#ifndef MSG_SPLICE_PAGES
+#define MSG_SPLICE_PAGES		0x8000000
+#endif

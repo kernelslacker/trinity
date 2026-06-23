@@ -28,10 +28,6 @@
 # define UIO_MAXIOV 1024
 #endif
 
-#ifndef MSG_SPLICE_PAGES
-# define MSG_SPLICE_PAGES		0x8000000
-#endif
-
 static void sanitise_send(struct syscallrecord *rec)
 {
 	struct socketinfo *si = (struct socketinfo *) rec->a1;

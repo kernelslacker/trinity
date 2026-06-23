@@ -104,9 +104,6 @@
 # define UDP_ENCAP			100
 # define UDP_ENCAP_ESPINUDP		2
 #endif
-#ifndef MSG_SPLICE_PAGES
-# define MSG_SPLICE_PAGES		0x8000000
-#endif
 #ifndef AF_BLUETOOTH
 # define AF_BLUETOOTH			31
 #endif
