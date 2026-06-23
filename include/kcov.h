@@ -2131,6 +2131,17 @@ struct kcov_shared {
 	 * with the pool); this flat array is the persistent fleet
 	 * mirror.  SHADOW telemetry only -- no consumer reads it. */
 	unsigned long cmp_hyp_inserted_by_kind[CMP_HYP_KIND_NR];
+
+	/* Per-kind flat census of typed CMP hypothesis insert rejections
+	 * caused by the per-kind sub-cap (CMP_HYP_PER_KIND).  Bumped in
+	 * lock-step with the scalar cmp_hyp_kind_full from cmp_hyp_alloc()'s
+	 * per-kind-exhausted branch, so the sum across kinds equals
+	 * cmp_hyp_kind_full modulo concurrent sampling.  Paired with
+	 * cmp_hyp_inserted_by_kind above this shows, per kind, the
+	 * accepted-vs-dropped split -- i.e. which kind is eating the cap
+	 * when cmp_hyp_kind_full dominates.  SHADOW telemetry only -- no
+	 * consumer reads it. */
+	unsigned long cmp_hyp_kind_full_by_kind[CMP_HYP_KIND_NR];
 };
 
 extern struct kcov_shared *kcov_shm;
