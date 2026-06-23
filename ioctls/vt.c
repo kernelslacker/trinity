@@ -434,10 +434,9 @@ static void sanitise_vt_setactivate(struct syscallrecord *rec)
 	rec->a3 = (unsigned long) sa;
 }
 
-static void vt_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
+/* KD* family */
+static void vt_sanitise_kd(struct syscallrecord *rec)
 {
-	pick_random_ioctl(grp, rec);
-
 	switch (rec->a2) {
 	case KDFONTOP:
 		sanitise_vt_console_font_op(rec);
@@ -519,7 +518,15 @@ static void vt_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec
 		rec->a3 = rnd_modulo_u32(32) + 1;
 		break;
 
-	/* VT_* family */
+	default:
+		break;
+	}
+}
+
+/* VT_* family */
+static void vt_sanitise_vt(struct syscallrecord *rec)
+{
+	switch (rec->a2) {
 	case VT_GETMODE:
 	case VT_SETMODE:
 		sanitise_vt_vt_mode(rec);
@@ -575,7 +582,15 @@ static void vt_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec
 	}
 #endif
 
-	/* PIO/GIO font and screenmap family */
+	default:
+		break;
+	}
+}
+
+/* PIO/GIO font and screenmap family */
+static void vt_sanitise_font(struct syscallrecord *rec)
+{
+	switch (rec->a2) {
 	case GIO_FONT:
 	case PIO_FONT:
 		sanitise_vt_font_raw(rec);
@@ -601,7 +616,15 @@ static void vt_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec
 		sanitise_vt_cmap(rec);
 		break;
 
-	/* Unimap family */
+	default:
+		break;
+	}
+}
+
+/* Unimap family */
+static void vt_sanitise_unimap(struct syscallrecord *rec)
+{
+	switch (rec->a2) {
 	case GIO_UNIMAP:
 	case PIO_UNIMAP:
 		sanitise_vt_unimapdesc(rec);
@@ -611,7 +634,15 @@ static void vt_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec
 		sanitise_vt_unimapinit(rec);
 		break;
 
-	/* TIOC* and termios family */
+	default:
+		break;
+	}
+}
+
+/* TIOC* and termios family */
+static void vt_sanitise_tioc(struct syscallrecord *rec)
+{
+	switch (rec->a2) {
 	case TCGETS:
 	case TCSETS:
 	case TCSETSW:
@@ -705,6 +736,17 @@ static void vt_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec
 	default:
 		break;
 	}
+}
+
+static void vt_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
+{
+	pick_random_ioctl(grp, rec);
+
+	vt_sanitise_kd(rec);
+	vt_sanitise_vt(rec);
+	vt_sanitise_font(rec);
+	vt_sanitise_unimap(rec);
+	vt_sanitise_tioc(rec);
 }
 
 static const struct ioctl vt_ioctls[] = {
