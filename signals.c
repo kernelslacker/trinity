@@ -663,7 +663,37 @@ void child_fault_handler(int sig, siginfo_t *info, void *ctx)
 	{
 		struct childdata *me = this_child();
 
-		if (me != NULL) {
+		/*
+		 * Gate the first me-deref on me belonging to a tracked
+		 * shared region.  this_child() returns a raw pointer
+		 * into per-child shm childdata; a child whose shm
+		 * childdata mapping has been torn down or corrupted
+		 * yields a non-NULL but unmapped pointer, so the NULL
+		 * check alone is insufficient -- the first plain load
+		 * (me->syscall.state, &me->fault_beacon, ...)
+		 * re-faults inside this very handler and the kernel
+		 * escalates to SIGKILL, erasing the original crash
+		 * class entirely.
+		 *
+		 * range_overlaps_shared() reads shared_regions[] only
+		 * (no allocator, no stdio, no lock) -- the same async-
+		 * signal-safe property the guard_pages_classify call
+		 * further down already relies on.  It proves me lies
+		 * in a TRACKED region; it does NOT prove the under-
+		 * lying page is currently mapped/readable (a child
+		 * that munmap'd its own childdata while the region
+		 * stays registered would still pass this gate and
+		 * re-fault on the deref).  That residual is a
+		 * separate root-cause concern; this gate cleanly
+		 * catches the wild/stale/corrupt-me class.  On a miss
+		 * the beacon stamp is skipped (dropped-beacon,
+		 * surfaced by the parent's existing written==0 path)
+		 * so the kernel-side crash artefacts still land
+		 * instead of a silent handler double-fault.
+		 */
+		if (me != NULL &&
+		    range_overlaps_shared((unsigned long)me,
+					  sizeof(struct childdata))) {
 			struct child_fault_beacon *beacon = &me->fault_beacon;
 			struct child_fault_beacon local;
 			enum syscallstate st = me->syscall.state;
