@@ -5079,6 +5079,23 @@ void blanket_address_scrub(struct syscallentry *entry, struct syscallrecord *rec
 		mask &= (uint8_t)(mask - 1);
 	}
 
+	/* SHADOW: contradiction census between the blanket's coverage
+	 * (entry->address_scrub_mask) and the per-slot sidecar dir seeded
+	 * by arg_meta_init().  Telemetry only -- the live walk above is
+	 * byte-unchanged. */
+	for (unsigned int s = 0; s < entry->num_args && s < 6; s++) {
+		uint8_t dir = rec->arg_meta[s].dir;
+
+		if (entry->address_scrub_mask & (uint8_t)(1u << s)) {
+			if (dir == ARG_DIR_IN || dir == ARG_DIR_INOUT)
+				__atomic_add_fetch(&shm->stats.arg_meta_scrub_would_destroy_in,
+						   1, __ATOMIC_RELAXED);
+		} else if (dir == ARG_DIR_OUT) {
+			__atomic_add_fetch(&shm->stats.arg_meta_scrub_would_preserve_out,
+					   1, __ATOMIC_RELAXED);
+		}
+	}
+
 	nested_address_scrub(entry, rec);
 }
 
