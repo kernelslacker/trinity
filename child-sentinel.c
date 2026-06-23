@@ -33,11 +33,9 @@
  * not-dominant.
  */
 
-#include <stdatomic.h>
 #include <string.h>
 #include <sys/sysinfo.h>
 #include <sys/syscall.h>
-#include <sys/utsname.h>
 #include <time.h>
 #include <unistd.h>
 #include <linux/utsname.h>
@@ -46,7 +44,6 @@
 #include "pre_crash_ring.h"
 #include "shm.h"
 #include "syscall.h"
-#include "trinity.h"
 
 #ifndef SYS_uname
 #define SYS_uname __NR_uname
