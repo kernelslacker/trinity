@@ -2078,18 +2078,15 @@ struct stats_s {
 	 * destructor) and counted here. */
 	unsigned long destroy_object_idx_corrupt;
 
-	/* objpool_check() detected that the parent destroyed (or
-	 * replaced) the OBJ_GLOBAL slot the lockless child reader had
-	 * picked, between the slot sample and the would-be-deref.
-	 * Bumped by every consumer-side objpool_check() rejection of a
-	 * just-returned obj — the canonical defense wired up across the
-	 * fds/ providers (sockets, epoll, pipes, bpf, watch_queue, ...)
-	 * and syscalls/keyctl.c KEYCTL_WATCH_KEY.  The 30x SEGV cluster
-	 * at asan-poisoned addresses (si_addr=0x51900064f758 family,
-	 * SEGV_ACCERR — asan redzone) in the 2026-05-05 overnight run
-	 * was this race firing through get_map → consumer dereferences;
-	 * a non-zero counter here means the version-tag guard caught
-	 * the same race that previously crashed children. */
+	/* Bumped by objpool_check() on the bad-VA and wrong-type-tag
+	 * rejection paths — i.e. the picker resolved a slot to an
+	 * address that lies outside the user/heap VA window, or whose
+	 * obj_type does not match the type the caller asked for.  Both
+	 * shapes mean the consumer caught a wild or recycled obj
+	 * pointer (release_obj() zeroes the chunk, and the
+	 * deferred-free allocator can hand it back under the lockless
+	 * reader) before dereferencing it.  The NULL/empty-pool path
+	 * is not counted here. */
 	unsigned long global_obj_uaf_caught;
 
 	/* Bumped by childops/pagecache-canary-check.c when a verifier

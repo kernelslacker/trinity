@@ -565,18 +565,18 @@ struct object * get_random_object(enum objecttype type, enum obj_scope scope) __
 
 /*
  * Canonical shape check before dereferencing an obj returned by
- * get_random_object().  Defends the fds/ and adjacent consumer
- * sites from the wild-obj-pointer class of failure catalogued in the
- * 2026-05-18 objpool shape-check audit: a slot the lockless picker
- * resolved to an address that happens to land in the user/heap VA
- * window but doesn't actually name a live obj of the expected pool
- * (typically because the obj was destroyed and the deferred-free
- * allocator recycled the chunk underneath the reader, or because
- * memory corruption stomped a slot pointer).
+ * get_random_object().  Defends consumer sites from the wild-obj
+ * pointer class of failure: a slot the lockless picker resolved to an
+ * address that happens to land in the user/heap VA window but doesn't
+ * actually name a live obj of the expected pool (typically because the
+ * obj was destroyed and the deferred-free allocator recycled the
+ * chunk underneath the reader, or because memory corruption stomped a
+ * slot pointer).
  *
  * Three layers, cheapest first:
  *   1. NULL — the lockless picker can return NULL legitimately on an
- *      empty pool, and consumers must skip such picks.
+ *      empty pool, and consumers must skip such picks.  Not counted
+ *      as a wild-obj catch.
  *   2. VA-range — heap pointers land at >= 0x10000 and below the
  *      47-bit user/kernel boundary on every distro we exercise;
  *      anything outside that window can't be a real obj struct.
@@ -585,20 +585,12 @@ struct object * get_random_object(enum objecttype type, enum obj_scope scope) __
  *      cannot, and reads OBJ_NONE (== 0) for a free/zero'd chunk
  *      after release_obj()'s memset.
  *
- * Returns true if obj is safe to dereference as the expected type.
+ * Layers 2 and 3 bump shm->stats.global_obj_uaf_caught so the rate of
+ * caught wild/recycled obj resolutions is observable in the stats
+ * surface.  Returns true if obj is safe to dereference as the
+ * expected type.
  */
-static inline bool objpool_check(const struct object *obj,
-				 enum objecttype expected)
-{
-	if (obj == NULL)
-		return false;
-	if ((uintptr_t)obj < 0x10000UL ||
-	    (uintptr_t)obj >= 0x800000000000UL)
-		return false;
-	if (obj->obj_type != expected)
-		return false;
-	return true;
-}
+bool objpool_check(const struct object *obj, enum objecttype expected);
 
 /*
  * Identity check for obj pointers cached across a window in which the
