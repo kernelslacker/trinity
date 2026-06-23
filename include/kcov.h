@@ -2062,11 +2062,6 @@ struct kcov_shared {
 	 *  cmp_hyp_inserted        -- typed hypothesis added to the store.
 	 *  cmp_hyp_pool_full       -- hyp_pool saturated (per-syscall cap).
 	 *  cmp_hyp_kind_full       -- per-kind sub-cap exhausted for a kind.
-	 *  cmp_hyp_state_transitions[CMP_HYP_STATE_NR]
-	 *                          -- bumped on every state edge into the
-	 *                             indexed terminal state (OBSERVED ->
-	 *                             TESTING / PROMOTED / DEMOTED / RETIRED).
-	 *                             Zero until the feedback unit lands.
 	 *  cmp_hyp_consumed        -- typed hypothesis selected for injection
 	 *                             (shadow: counts would-have-been picks).
 	 *                             Zero until the consumer unit lands.
@@ -2094,7 +2089,6 @@ struct kcov_shared {
 	unsigned long cmp_hyp_inserted;
 	unsigned long cmp_hyp_pool_full;
 	unsigned long cmp_hyp_kind_full;
-	unsigned long cmp_hyp_state_transitions[CMP_HYP_STATE_NR];
 	unsigned long cmp_hyp_consumed;
 	unsigned long cmp_hyp_pc_wins;
 	unsigned long cmp_hyp_transition_wins;
