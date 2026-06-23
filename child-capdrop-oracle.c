@@ -56,7 +56,6 @@
 #include "child.h"
 #include "random.h"
 #include "shm.h"
-#include "stats.h"
 #include "trinity.h"
 #include "utils.h"
 
