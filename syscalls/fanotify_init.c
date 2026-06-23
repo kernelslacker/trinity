@@ -44,6 +44,7 @@
 #include "publish_resource.h"
 #include "random.h"
 #include "sanitise.h"
+#include "utils.h"
 
 static unsigned long fanotify_init_flags[] = {
 	FAN_CLOEXEC, FAN_NONBLOCK, FAN_UNLIMITED_QUEUE, FAN_UNLIMITED_MARKS,
@@ -119,24 +120,87 @@ static unsigned long sanitise_fanotify_init_flags(void)
 				fanotify_init_flags);
 }
 
+/*
+ * Snapshot of the (flags, event_f_flags) pair the post handler uses
+ * to publish the new OBJ_FD_FANOTIFY.  The old post handler read
+ * both fields directly off rec->a1 / rec->a2; a sibling child
+ * scribbling those slots between the syscall returning and the post
+ * handler running would mis-tag the published fanotify fd, so the
+ * downstream fanotify_mark sanitiser (which reads back
+ * fanotifyobj.flags to gate FAN_FS_ERROR / FAN_PRE_ACCESS on the
+ * init-fd's class) would OR in invalid combinations the kernel
+ * rejects or skip valid ones.  Stashing the snap in rec->post_state
+ * — a slot the syscall ABI does not expose — keeps the post handler
+ * immune to such scribbles.
+ */
+#define FANOTIFY_INIT_POST_STATE_MAGIC	0x46414e49UL	/* "FANI" */
+struct fanotify_init_post_state {
+	unsigned long magic;
+	unsigned long flags;
+	unsigned long event_f_flags;
+};
+
 static void sanitise_fanotify_init(struct syscallrecord *rec)
 {
+	struct fanotify_init_post_state *snap;
+
+	/*
+	 * Clear post_state up front so an early return below leaves the
+	 * post handler with a NULL snapshot to bail on rather than a stale
+	 * pointer carried over from an earlier syscall on this record.
+	 */
+	rec->post_state = 0;
+
 	rec->a1 = sanitise_fanotify_init_flags();
 	rec->a2 = get_fanotify_init_event_flags();
+
+	snap = zmalloc_tracked(sizeof(*snap));
+	snap->magic         = FANOTIFY_INIT_POST_STATE_MAGIC;
+	snap->flags         = rec->a1;
+	snap->event_f_flags = rec->a2;
+	post_state_install(rec, snap);
 }
 
 static void post_fanotify_init(struct syscallrecord *rec)
 {
-	int fd = rec->retval;
+	struct fanotify_init_post_state *snap;
+	unsigned long retval;
+	int fd;
 
-	if ((long)rec->retval < 0)
+	/*
+	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
+	 * in that order.  The helper has already cleared rec->post_state,
+	 * emitted any outputerr() diagnostic, and bumped the corruption
+	 * counter on failure -- callers just early-return on NULL.
+	 */
+	snap = post_state_claim_owned(rec, FANOTIFY_INIT_POST_STATE_MAGIC,
+				      __func__);
+	if (snap == NULL)
 		return;
 
-	struct resource_meta meta = {
-		.flags = rec->a1,
-		.aux = rec->a2,		/* event_f_flags */
-	};
-	publish_resource(OBJ_FD_FANOTIFY, fd, &meta);
+	/*
+	 * Snapshot rec->retval once.  rec lives in the child's shm
+	 * region; reading it twice (the int fd cast for publish_resource()
+	 * and the (long) < 0 success-vs-error guard) lets a sibling stomp
+	 * between the two reads tag OBJ_FD_FANOTIFY with an fd the kernel
+	 * never gave us, or silently drop a real fd.
+	 */
+	retval = rec->retval;
+	fd = (int) retval;
+
+	if ((long) retval < 0)
+		goto out_free;
+
+	{
+		struct resource_meta meta = {
+			.flags = snap->flags,
+			.aux = snap->event_f_flags,
+		};
+		publish_resource(OBJ_FD_FANOTIFY, fd, &meta);
+	}
+
+out_free:
+	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_fanotify_init = {
