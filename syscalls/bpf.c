@@ -249,6 +249,287 @@ static int bpf_random_token_fd(void)
 	return fd;
 }
 
+static void sanitise_bpf_map_create(union bpf_attr *attr, struct syscallrecord *rec)
+{
+	attr->map_type = bpf_map_types[rnd_modulo_u32(bpf_map_types_count)];
+	attr->key_size = rnd_modulo_u32(1024);
+	attr->value_size = rnd_modulo_u32((1024 * 64));
+	attr->max_entries = rnd_modulo_u32(1024);
+	attr->map_flags = RAND_RANGE(0, 4);
+	rec->a3 = 20;
+	if (ONE_IN(8)) {
+		/* BPF_F_TOKEN_FD in map_flags is the gate the kernel
+		 * uses to decide whether to resolve map_token_fd at
+		 * all; without it the token fd is ignored and
+		 * bpf_token_capable() never runs.  Bump rec->a3 to
+		 * cover map_token_fd so the kernel reads the slot
+		 * we just wrote. */
+		attr->map_token_fd = bpf_random_token_fd();
+		attr->map_flags |= BPF_F_TOKEN_FD;
+		rec->a3 = offsetof(union bpf_attr, map_token_fd) +
+			  sizeof(attr->map_token_fd);
+	}
+}
+
+static void sanitise_bpf_map_lookup(union bpf_attr *attr, struct syscallrecord *rec)
+{
+	attr->map_fd = get_rand_bpf_fd();
+	attr->key = RAND_RANGE(0, 10);
+	attr->value = rnd_u32();
+	rec->a3 = 32;
+}
+
+static void sanitise_bpf_map_update(union bpf_attr *attr, struct syscallrecord *rec)
+{
+	attr->map_fd = get_rand_bpf_fd();
+	attr->key = RAND_RANGE(0, 10);
+	attr->value = rnd_u32();
+	attr->next_key = rnd_u32();
+	attr->flags = RAND_RANGE(0, 4);
+	rec->a3 = 32;
+}
+
+static void sanitise_bpf_map_delete(union bpf_attr *attr, struct syscallrecord *rec)
+{
+	attr->map_fd = get_rand_bpf_fd();
+	attr->key = RAND_RANGE(0, 10);
+	rec->a3 = 32;
+}
+
+static void sanitise_bpf_map_get_next_key(union bpf_attr *attr, struct syscallrecord *rec)
+{
+	attr->map_fd = get_rand_bpf_fd();
+	attr->key = RAND_RANGE(0, 10);
+	attr->value = rnd_u32();
+	rec->a3 = 32;
+}
+
+static void sanitise_bpf_map_freeze(union bpf_attr *attr, struct syscallrecord *rec)
+{
+	attr->map_fd = get_rand_bpf_fd();
+	rec->a3 = 4;
+}
+
+static void sanitise_bpf_obj_get(union bpf_attr *attr, struct syscallrecord *rec)
+{
+	attr->map_fd = get_rand_bpf_fd();
+	rec->a3 = 32;
+}
+
+static bool sanitise_bpf_prog_load(union bpf_attr *attr, struct syscallrecord *rec)
+{
+	bool classic_bpf_insns = bpf_prog_load(attr);
+
+	rec->a3 = 48;
+	if (ONE_IN(8)) {
+		/* See the BPF_MAP_CREATE arm for why both the flag
+		 * bit and the fd matter, and why rec->a3 must grow
+		 * to cover prog_token_fd. */
+		attr->prog_token_fd = bpf_random_token_fd();
+		attr->prog_flags |= BPF_F_TOKEN_FD;
+		rec->a3 = offsetof(union bpf_attr, prog_token_fd) +
+			  sizeof(attr->prog_token_fd);
+	}
+	return classic_bpf_insns;
+}
+
+static void sanitise_bpf_prog_attach(union bpf_attr *attr, struct syscallrecord *rec)
+{
+	attr->target_fd = get_rand_bpf_fd();
+	attr->attach_bpf_fd = get_rand_bpf_prog_fd();
+	attr->attach_type = bpf_attach_types[rnd_modulo_u32(bpf_attach_types_count)];
+	rec->a3 = 16;
+}
+
+static void sanitise_bpf_prog_test_run(union bpf_attr *attr, struct syscallrecord *rec)
+{
+	attr->test.prog_fd = get_rand_bpf_prog_fd();
+	attr->test.data_size_in = rnd_modulo_u32(page_size);
+	attr->test.data_in = (u64) get_address();
+	attr->test.data_size_out = rnd_modulo_u32(page_size);
+	attr->test.data_out = (u64) get_writable_address(page_size);
+	{
+		unsigned long data_out_addr = attr->test.data_out;
+		avoid_shared_buffer_inout(&data_out_addr, page_size);
+		attr->test.data_out = data_out_addr;
+	}
+	attr->test.repeat = rnd_modulo_u32(256);
+	rec->a3 = sizeof(attr->test);
+}
+
+static void sanitise_bpf_get_next_id(union bpf_attr *attr, struct syscallrecord *rec)
+{
+	attr->start_id = rnd_u32();
+	rec->a3 = 8;
+}
+
+static void sanitise_bpf_get_fd_by_id(union bpf_attr *attr, struct syscallrecord *rec)
+{
+	attr->start_id = rnd_u32();
+	rec->a3 = 8;
+#ifdef HAVE_BPF_ATTR_FD_BY_ID_TOKEN_FD
+	if (ONE_IN(8)) {
+		/* fd_by_id_token_fd lives in the same anonymous
+		 * struct as start_id; the kernel resolves it when
+		 * non-zero without any flag bit gate, then routes
+		 * the per-cmd cap check through bpf_token_capable().
+		 * Bump rec->a3 so the kernel reads the slot. */
+		attr->fd_by_id_token_fd = bpf_random_token_fd();
+		rec->a3 = offsetof(union bpf_attr,
+				   fd_by_id_token_fd) +
+			  sizeof(attr->fd_by_id_token_fd);
+	}
+#endif
+}
+
+static void sanitise_bpf_btf_load(union bpf_attr *attr, struct syscallrecord *rec)
+{
+	/* Without an explicit case BTF_LOAD falls through to default
+	 * with an all-zero attr -- the kernel rejects the empty BTF
+	 * blob with -EINVAL at btf_parse(), but the cap check on
+	 * btf_token_fd runs before parsing.  Inject the token at the
+	 * usual rate so the bpf_token_capable() arm of btf_new_fd()
+	 * actually executes. */
+	rec->a3 = sizeof(union bpf_attr);
+	if (ONE_IN(8)) {
+		attr->btf_token_fd = bpf_random_token_fd();
+		attr->btf_flags |= BPF_F_TOKEN_FD;
+	}
+}
+
+static void sanitise_bpf_obj_get_info_by_fd(union bpf_attr *attr, struct syscallrecord *rec)
+{
+	/*
+	 * The kernel dispatches to a different obj_get_info_by_fd
+	 * implementation per fd type (map / prog / btf / link), each
+	 * with its own info struct layout and copy-out path.  Pick
+	 * one of the four pools at random, then fall through to any
+	 * other non-empty pool so we still produce an fd when the
+	 * preferred pool is empty.  All four fd kinds get coverage
+	 * once the link / btf pools start filling from the syscall
+	 * fuzz path.
+	 */
+	int fd = -1;
+	unsigned int start = rnd_modulo_u32(4);
+	unsigned int i;
+
+	for (i = 0; i < 4 && fd == -1; i++) {
+		switch ((start + i) % 4) {
+		case 0: fd = get_rand_bpf_prog_fd(); break;
+		case 1: fd = get_rand_bpf_fd(); break;
+		case 2: fd = get_rand_bpf_link_fd(); break;
+		case 3: fd = get_rand_bpf_btf_fd(); break;
+		}
+	}
+	attr->info.bpf_fd = fd;
+	attr->info.info_len = rnd_modulo_u32(page_size);
+	attr->info.info = (u64) get_writable_address(page_size);
+	{
+		unsigned long info_addr = attr->info.info;
+		avoid_shared_buffer_inout(&info_addr, page_size);
+		attr->info.info = info_addr;
+	}
+	rec->a3 = sizeof(attr->info);
+}
+
+static void sanitise_bpf_link_create(union bpf_attr *attr, struct syscallrecord *rec)
+{
+	attr->link_create.prog_fd = get_rand_bpf_prog_fd();
+	attr->link_create.target_fd = get_rand_bpf_fd();
+	attr->link_create.attach_type = bpf_attach_types[rnd_modulo_u32(bpf_attach_types_count)];
+	attr->link_create.flags = rnd_modulo_u32(16);
+	rec->a3 = sizeof(attr->link_create);
+}
+
+static void sanitise_bpf_link_update(union bpf_attr *attr, struct syscallrecord *rec)
+{
+	attr->link_update.link_fd = get_rand_bpf_link_fd();
+	attr->link_update.new_prog_fd = get_rand_bpf_prog_fd();
+	attr->link_update.flags = rnd_modulo_u32(4);
+	rec->a3 = sizeof(attr->link_update);
+}
+
+static void sanitise_bpf_link_detach(union bpf_attr *attr, struct syscallrecord *rec)
+{
+	attr->link_detach.link_fd = get_rand_bpf_link_fd();
+	rec->a3 = 4;
+}
+
+static void sanitise_bpf_enable_stats(union bpf_attr *attr, struct syscallrecord *rec)
+{
+	attr->enable_stats.type = rnd_modulo_u32(4);
+	rec->a3 = 4;
+}
+
+static void sanitise_bpf_iter_create(union bpf_attr *attr, struct syscallrecord *rec)
+{
+	attr->iter_create.link_fd = get_rand_bpf_link_fd();
+	attr->iter_create.flags = 0;
+	rec->a3 = sizeof(attr->iter_create);
+}
+
+static void sanitise_bpf_prog_bind_map(union bpf_attr *attr, struct syscallrecord *rec)
+{
+	attr->prog_bind_map.prog_fd = get_rand_bpf_prog_fd();
+	attr->prog_bind_map.map_fd = get_rand_bpf_fd();
+	attr->prog_bind_map.flags = 0;
+	rec->a3 = sizeof(attr->prog_bind_map);
+}
+
+static void sanitise_bpf_raw_tracepoint(union bpf_attr *attr, struct syscallrecord *rec)
+{
+	attr->raw_tracepoint.prog_fd = get_rand_bpf_prog_fd();
+	attr->raw_tracepoint.name = (u64) RAND_ARRAY(bpf_raw_tp_names);
+	rec->a3 = sizeof(attr->raw_tracepoint);
+}
+
+static void sanitise_bpf_default(union bpf_attr *attr, struct syscallrecord *rec)
+{
+	/*
+	 * Schema-aware floor for the ~15 cmds without a hand-rolled
+	 * arm above (BPF_PROG_QUERY, BPF_TASK_FD_QUERY, the MAP_*
+	 * batch ops, etc.).  struct_field_fill_schema_aware reads
+	 * the cmd discriminator off rec->a1 via bpf_attr's variant
+	 * table; annotated variants get FT_ENUM / FT_FLAGS / FT_FD
+	 * / FT_PTR_BYTES coherent fill instead of zero, and
+	 * unannotated cmds fall through to the zmalloc-zero shape
+	 * the old default produced.  rec->a3 prefers the variant's
+	 * effective_size when set so the kernel sees a per-cmd size
+	 * rather than the full union; unset effective_size keeps
+	 * the historical sizeof(union bpf_attr) default.
+	 */
+	const struct struct_desc *desc = struct_catalog_lookup("bpf_attr");
+	const struct union_variant *variant = NULL;
+	const struct union_variant *nested = NULL;
+
+	if (desc != NULL) {
+		variant = struct_desc_resolve_variant(desc, rec, NULL);
+		struct_field_fill_schema_aware((unsigned char *) attr,
+					       sizeof(union bpf_attr),
+					       desc, rec);
+		/*
+		 * Nested tagged-union: when the outer variant gates
+		 * a sub-union (e.g. link_create's attach_type), the
+		 * sub-variant's effective_size is the more specific
+		 * bound -- a TRACING arm's 28 bytes vs. the full 88
+		 * link_create struct.  Pick the nested size when it
+		 * resolves and is non-zero; otherwise the outer
+		 * variant's size still wins.
+		 */
+		if (variant != NULL && variant->nested_variants != NULL)
+			nested = struct_desc_resolve_nested_variant(
+				variant,
+				(const unsigned char *) attr,
+				sizeof(union bpf_attr));
+	}
+	if (nested != NULL && nested->effective_size != 0)
+		rec->a3 = nested->effective_size;
+	else if (variant != NULL && variant->effective_size != 0)
+		rec->a3 = variant->effective_size;
+	else
+		rec->a3 = sizeof(union bpf_attr);
+}
+
 static void sanitise_bpf(struct syscallrecord *rec)
 {
 	struct bpf_post_state *snap;
@@ -268,271 +549,79 @@ static void sanitise_bpf(struct syscallrecord *rec)
 
 	switch (cmd) {
 	case BPF_MAP_CREATE:
-		attr->map_type = bpf_map_types[rnd_modulo_u32(bpf_map_types_count)];
-		attr->key_size = rnd_modulo_u32(1024);
-		attr->value_size = rnd_modulo_u32((1024 * 64));
-		attr->max_entries = rnd_modulo_u32(1024);
-		attr->map_flags = RAND_RANGE(0, 4);
-		rec->a3 = 20;
-		if (ONE_IN(8)) {
-			/* BPF_F_TOKEN_FD in map_flags is the gate the kernel
-			 * uses to decide whether to resolve map_token_fd at
-			 * all; without it the token fd is ignored and
-			 * bpf_token_capable() never runs.  Bump rec->a3 to
-			 * cover map_token_fd so the kernel reads the slot
-			 * we just wrote. */
-			attr->map_token_fd = bpf_random_token_fd();
-			attr->map_flags |= BPF_F_TOKEN_FD;
-			rec->a3 = offsetof(union bpf_attr, map_token_fd) +
-				  sizeof(attr->map_token_fd);
-		}
+		sanitise_bpf_map_create(attr, rec);
 		break;
-
 	case BPF_MAP_LOOKUP_ELEM:
 	case BPF_MAP_LOOKUP_AND_DELETE_ELEM:
-		attr->map_fd = get_rand_bpf_fd();
-		attr->key = RAND_RANGE(0, 10);
-		attr->value = rnd_u32();
-		rec->a3 = 32;
+		sanitise_bpf_map_lookup(attr, rec);
 		break;
-
 	case BPF_MAP_UPDATE_ELEM:
-		attr->map_fd = get_rand_bpf_fd();
-		attr->key = RAND_RANGE(0, 10);
-		attr->value = rnd_u32();
-		attr->next_key = rnd_u32();
-		attr->flags = RAND_RANGE(0, 4);
-		rec->a3 = 32;
+		sanitise_bpf_map_update(attr, rec);
 		break;
-
 	case BPF_MAP_DELETE_ELEM:
-		attr->map_fd = get_rand_bpf_fd();
-		attr->key = RAND_RANGE(0, 10);
-		rec->a3 = 32;
+		sanitise_bpf_map_delete(attr, rec);
 		break;
-
 	case BPF_MAP_GET_NEXT_KEY:
-		attr->map_fd = get_rand_bpf_fd();
-		attr->key = RAND_RANGE(0, 10);
-		attr->value = rnd_u32();
-		rec->a3 = 32;
+		sanitise_bpf_map_get_next_key(attr, rec);
 		break;
-
 	case BPF_MAP_FREEZE:
-		attr->map_fd = get_rand_bpf_fd();
-		rec->a3 = 4;
+		sanitise_bpf_map_freeze(attr, rec);
 		break;
-
 	case BPF_OBJ_GET:
-		attr->map_fd = get_rand_bpf_fd();
-		rec->a3 = 32;
+		sanitise_bpf_obj_get(attr, rec);
 		break;
-
 	case BPF_PROG_LOAD:
-		classic_bpf_insns = bpf_prog_load(attr);
-		rec->a3 = 48;
-		if (ONE_IN(8)) {
-			/* See the BPF_MAP_CREATE arm for why both the flag
-			 * bit and the fd matter, and why rec->a3 must grow
-			 * to cover prog_token_fd. */
-			attr->prog_token_fd = bpf_random_token_fd();
-			attr->prog_flags |= BPF_F_TOKEN_FD;
-			rec->a3 = offsetof(union bpf_attr, prog_token_fd) +
-				  sizeof(attr->prog_token_fd);
-		}
+		classic_bpf_insns = sanitise_bpf_prog_load(attr, rec);
 		break;
-
 	case BPF_PROG_ATTACH:
 	case BPF_PROG_DETACH:
-		attr->target_fd = get_rand_bpf_fd();
-		attr->attach_bpf_fd = get_rand_bpf_prog_fd();
-		attr->attach_type = bpf_attach_types[rnd_modulo_u32(bpf_attach_types_count)];
-		rec->a3 = 16;
+		sanitise_bpf_prog_attach(attr, rec);
 		break;
-
 	case BPF_PROG_TEST_RUN:
-		attr->test.prog_fd = get_rand_bpf_prog_fd();
-		attr->test.data_size_in = rnd_modulo_u32(page_size);
-		attr->test.data_in = (u64) get_address();
-		attr->test.data_size_out = rnd_modulo_u32(page_size);
-		attr->test.data_out = (u64) get_writable_address(page_size);
-		{
-			unsigned long data_out_addr = attr->test.data_out;
-			avoid_shared_buffer_inout(&data_out_addr, page_size);
-			attr->test.data_out = data_out_addr;
-		}
-		attr->test.repeat = rnd_modulo_u32(256);
-		rec->a3 = sizeof(attr->test);
+		sanitise_bpf_prog_test_run(attr, rec);
 		break;
-
 	case BPF_PROG_GET_NEXT_ID:
 	case BPF_MAP_GET_NEXT_ID:
 	case BPF_BTF_GET_NEXT_ID:
 	case BPF_LINK_GET_NEXT_ID:
-		attr->start_id = rnd_u32();
-		rec->a3 = 8;
+		sanitise_bpf_get_next_id(attr, rec);
 		break;
-
 	case BPF_PROG_GET_FD_BY_ID:
 	case BPF_MAP_GET_FD_BY_ID:
 	case BPF_BTF_GET_FD_BY_ID:
 	case BPF_LINK_GET_FD_BY_ID:
-		attr->start_id = rnd_u32();
-		rec->a3 = 8;
-#ifdef HAVE_BPF_ATTR_FD_BY_ID_TOKEN_FD
-		if (ONE_IN(8)) {
-			/* fd_by_id_token_fd lives in the same anonymous
-			 * struct as start_id; the kernel resolves it when
-			 * non-zero without any flag bit gate, then routes
-			 * the per-cmd cap check through bpf_token_capable().
-			 * Bump rec->a3 so the kernel reads the slot. */
-			attr->fd_by_id_token_fd = bpf_random_token_fd();
-			rec->a3 = offsetof(union bpf_attr,
-					   fd_by_id_token_fd) +
-				  sizeof(attr->fd_by_id_token_fd);
-		}
-#endif
+		sanitise_bpf_get_fd_by_id(attr, rec);
 		break;
-
 	case BPF_BTF_LOAD:
-		/* Without an explicit case BTF_LOAD falls through to default
-		 * with an all-zero attr -- the kernel rejects the empty BTF
-		 * blob with -EINVAL at btf_parse(), but the cap check on
-		 * btf_token_fd runs before parsing.  Inject the token at the
-		 * usual rate so the bpf_token_capable() arm of btf_new_fd()
-		 * actually executes. */
-		rec->a3 = sizeof(union bpf_attr);
-		if (ONE_IN(8)) {
-			attr->btf_token_fd = bpf_random_token_fd();
-			attr->btf_flags |= BPF_F_TOKEN_FD;
-		}
+		sanitise_bpf_btf_load(attr, rec);
 		break;
-
-	case BPF_OBJ_GET_INFO_BY_FD: {
-		/*
-		 * The kernel dispatches to a different obj_get_info_by_fd
-		 * implementation per fd type (map / prog / btf / link), each
-		 * with its own info struct layout and copy-out path.  Pick
-		 * one of the four pools at random, then fall through to any
-		 * other non-empty pool so we still produce an fd when the
-		 * preferred pool is empty.  All four fd kinds get coverage
-		 * once the link / btf pools start filling from the syscall
-		 * fuzz path.
-		 */
-		int fd = -1;
-		unsigned int start = rnd_modulo_u32(4);
-		unsigned int i;
-
-		for (i = 0; i < 4 && fd == -1; i++) {
-			switch ((start + i) % 4) {
-			case 0: fd = get_rand_bpf_prog_fd(); break;
-			case 1: fd = get_rand_bpf_fd(); break;
-			case 2: fd = get_rand_bpf_link_fd(); break;
-			case 3: fd = get_rand_bpf_btf_fd(); break;
-			}
-		}
-		attr->info.bpf_fd = fd;
-		attr->info.info_len = rnd_modulo_u32(page_size);
-		attr->info.info = (u64) get_writable_address(page_size);
-		{
-			unsigned long info_addr = attr->info.info;
-			avoid_shared_buffer_inout(&info_addr, page_size);
-			attr->info.info = info_addr;
-		}
-		rec->a3 = sizeof(attr->info);
+	case BPF_OBJ_GET_INFO_BY_FD:
+		sanitise_bpf_obj_get_info_by_fd(attr, rec);
 		break;
-	}
-
 	case BPF_LINK_CREATE:
-		attr->link_create.prog_fd = get_rand_bpf_prog_fd();
-		attr->link_create.target_fd = get_rand_bpf_fd();
-		attr->link_create.attach_type = bpf_attach_types[rnd_modulo_u32(bpf_attach_types_count)];
-		attr->link_create.flags = rnd_modulo_u32(16);
-		rec->a3 = sizeof(attr->link_create);
+		sanitise_bpf_link_create(attr, rec);
 		break;
-
 	case BPF_LINK_UPDATE:
-		attr->link_update.link_fd = get_rand_bpf_link_fd();
-		attr->link_update.new_prog_fd = get_rand_bpf_prog_fd();
-		attr->link_update.flags = rnd_modulo_u32(4);
-		rec->a3 = sizeof(attr->link_update);
+		sanitise_bpf_link_update(attr, rec);
 		break;
-
 	case BPF_LINK_DETACH:
-		attr->link_detach.link_fd = get_rand_bpf_link_fd();
-		rec->a3 = 4;
+		sanitise_bpf_link_detach(attr, rec);
 		break;
-
 	case BPF_ENABLE_STATS:
-		attr->enable_stats.type = rnd_modulo_u32(4);
-		rec->a3 = 4;
+		sanitise_bpf_enable_stats(attr, rec);
 		break;
-
 	case BPF_ITER_CREATE:
-		attr->iter_create.link_fd = get_rand_bpf_link_fd();
-		attr->iter_create.flags = 0;
-		rec->a3 = sizeof(attr->iter_create);
+		sanitise_bpf_iter_create(attr, rec);
 		break;
-
 	case BPF_PROG_BIND_MAP:
-		attr->prog_bind_map.prog_fd = get_rand_bpf_prog_fd();
-		attr->prog_bind_map.map_fd = get_rand_bpf_fd();
-		attr->prog_bind_map.flags = 0;
-		rec->a3 = sizeof(attr->prog_bind_map);
+		sanitise_bpf_prog_bind_map(attr, rec);
 		break;
-
 	case BPF_RAW_TRACEPOINT_OPEN:
-		attr->raw_tracepoint.prog_fd = get_rand_bpf_prog_fd();
-		attr->raw_tracepoint.name = (u64) RAND_ARRAY(bpf_raw_tp_names);
-		rec->a3 = sizeof(attr->raw_tracepoint);
+		sanitise_bpf_raw_tracepoint(attr, rec);
 		break;
-
-	default: {
-		/*
-		 * Schema-aware floor for the ~15 cmds without a hand-rolled
-		 * arm above (BPF_PROG_QUERY, BPF_TASK_FD_QUERY, the MAP_*
-		 * batch ops, etc.).  struct_field_fill_schema_aware reads
-		 * the cmd discriminator off rec->a1 via bpf_attr's variant
-		 * table; annotated variants get FT_ENUM / FT_FLAGS / FT_FD
-		 * / FT_PTR_BYTES coherent fill instead of zero, and
-		 * unannotated cmds fall through to the zmalloc-zero shape
-		 * the old default produced.  rec->a3 prefers the variant's
-		 * effective_size when set so the kernel sees a per-cmd size
-		 * rather than the full union; unset effective_size keeps
-		 * the historical sizeof(union bpf_attr) default.
-		 */
-		const struct struct_desc *desc = struct_catalog_lookup("bpf_attr");
-		const struct union_variant *variant = NULL;
-		const struct union_variant *nested = NULL;
-
-		if (desc != NULL) {
-			variant = struct_desc_resolve_variant(desc, rec, NULL);
-			struct_field_fill_schema_aware((unsigned char *) attr,
-						       sizeof(union bpf_attr),
-						       desc, rec);
-			/*
-			 * Nested tagged-union: when the outer variant gates
-			 * a sub-union (e.g. link_create's attach_type), the
-			 * sub-variant's effective_size is the more specific
-			 * bound -- a TRACING arm's 28 bytes vs. the full 88
-			 * link_create struct.  Pick the nested size when it
-			 * resolves and is non-zero; otherwise the outer
-			 * variant's size still wins.
-			 */
-			if (variant != NULL && variant->nested_variants != NULL)
-				nested = struct_desc_resolve_nested_variant(
-					variant,
-					(const unsigned char *) attr,
-					sizeof(union bpf_attr));
-		}
-		if (nested != NULL && nested->effective_size != 0)
-			rec->a3 = nested->effective_size;
-		else if (variant != NULL && variant->effective_size != 0)
-			rec->a3 = variant->effective_size;
-		else
-			rec->a3 = sizeof(union bpf_attr);
+	default:
+		sanitise_bpf_default(attr, rec);
 		break;
-	}
 	}
 
 	avoid_shared_buffer_inout(&rec->a2, rec->a3);

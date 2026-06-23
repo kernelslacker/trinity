@@ -36,12 +36,12 @@ childops/rxrpc-key-install.c:203:probe_rxrpc_key_supported
 childops/rxrpc-key-install.c:349:do_add_rxrpc
 syscalls/alarm.c:67:post_alarm
 syscalls/alarm.c:83:post_alarm
-syscalls/bpf.c:622:post_bpf
-syscalls/bpf.c:645:post_bpf
-syscalls/bpf.c:663:post_bpf
-syscalls/bpf.c:680:post_bpf
+syscalls/bpf.c:711:post_bpf
 syscalls/bpf.c:734:post_bpf
-syscalls/bpf.c:749:post_bpf
+syscalls/bpf.c:752:post_bpf
+syscalls/bpf.c:769:post_bpf
+syscalls/bpf.c:823:post_bpf
+syscalls/bpf.c:838:post_bpf
 syscalls/capget.c:203:post_capget
 syscalls/capget.c:219:post_capget
 syscalls/capset.c:236:post_capset
