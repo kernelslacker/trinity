@@ -8,14 +8,6 @@
 #include "sanitise.h"
 #include "compat.h"
 
-#ifndef FUTEX2_SIZE_U32
-#define FUTEX2_SIZE_U32		0x02
-#endif
-
-#ifndef FUTEX2_PRIVATE
-#define FUTEX2_PRIVATE		FUTEX_PRIVATE_FLAG
-#endif
-
 static void sanitise_futex_requeue(struct syscallrecord *rec)
 {
 	struct futex_waitv *waiters;

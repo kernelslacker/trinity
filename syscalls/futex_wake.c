@@ -9,22 +9,6 @@
 #include "trinity.h"
 #include "utils.h"
 
-#ifndef FUTEX2_SIZE_U8
-#define FUTEX2_SIZE_U8		0x00
-#define FUTEX2_SIZE_U16		0x01
-#define FUTEX2_SIZE_U32		0x02
-#define FUTEX2_SIZE_U64		0x03
-#define FUTEX2_NUMA		0x04
-#endif
-
-#ifndef FUTEX2_PRIVATE
-#define FUTEX2_PRIVATE		0x80
-#endif
-
-#ifndef FUTEX2_MPOL
-#define FUTEX2_MPOL		0x08
-#endif
-
 static unsigned long futex2_flags[] = {
 	FUTEX2_SIZE_U8, FUTEX2_SIZE_U16, FUTEX2_SIZE_U32, FUTEX2_SIZE_U64,
 	FUTEX2_NUMA, FUTEX2_PRIVATE, FUTEX2_MPOL,
