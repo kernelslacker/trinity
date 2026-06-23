@@ -13,6 +13,7 @@ static void sanitise_fsetxattr(struct syscallrecord *rec)
 	int fd;
 
 	xattr_set_value((const char *) rec->a2, &rec->a3, &rec->a4);
+	avoid_shared_buffer_inout(&rec->a3, rec->a4);
 	xattr_pick_set_flags(&rec->a5);
 
 	/*
