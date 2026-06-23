@@ -1036,6 +1036,15 @@ struct sockaddr_nfc {
 #define PR_GET_AUXV			0x41555856
 #endif
 
+/* linux/seccomp.h — SECCOMP_RET_USER_NOTIF (added 5.0) returns to user space
+ * via a listener fd from SECCOMP_FILTER_FLAG_NEW_LISTENER, parking the
+ * trapped syscall until the supervisor responds with SECCOMP_IOCTL_NOTIF_SEND.
+ * Older kernel-headers packages predate the name; the upstream uapi value
+ * is fixed at 0x7fc00000U. */
+#ifndef SECCOMP_RET_USER_NOTIF
+#define SECCOMP_RET_USER_NOTIF		0x7fc00000U
+#endif
+
 /* linux/rds.h */
 #ifndef RDS_CANCEL_SENT_TO
 #define RDS_CANCEL_SENT_TO              1
