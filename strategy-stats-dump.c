@@ -12,7 +12,6 @@
 #include "stats.h"
 #include "strategy.h"
 #include "strategy-internal.h"
-#include "utils.h"		/* output */
 
 /*
  * Operator-facing summary, called from dump_stats() at end of run.
