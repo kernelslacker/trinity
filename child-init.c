@@ -943,28 +943,11 @@ static void init_child_setup_sandbox(struct childdata *child, int childno)
 }
 
 /*
- * Final phase of init_child: wire up runtime config that the
- * child_process() main loop relies on, then pin the per-lifetime
- * limits / dumpable state.  Six steps:
- *
- *   - kcov_init_child sets up the per-child coverage buffers,
- *   - the active-syscalls pointer is pinned for the uniarch case
- *     (biarch refreshes it lazily on the first picker call),
- *   - the explorer-pool slot flag is stamped from the child's
- *     slot index within the partition layout,
- *   - heap_bounds_init re-snapshots /proc/self/maps after the
- *     allocator-heavy setup above has settled,
- *   - RLIMIT_AS is pinned (skipped under ASAN whose shadow memory
- *     reservation would otherwise blow the cap),
- *   - disable_coredumps takes the debug-equivalent path once for
- *     the child's lifetime.
- *
- * Order matters: heap_bounds_init must run after the prior setup
- * has materialised its arenas, and the RLIMIT_AS pin must run
- * after heap_bounds_init's fopen() so that fopen() completes
- * under the inherited RLIM_INFINITY ceiling.
+ * Per-child kcov state and slot-role identity that downstream A/B and
+ * dispatch paths read: kcov fd / buffers, local_stats staging,
+ * uniarch active-syscalls pointer, explorer-pool slot flag.
  */
-static void init_child_runtime_config(struct childdata *child, int childno)
+static void init_child_runtime_basics(struct childdata *child, int childno)
 {
 	kcov_init_child(&child->kcov, child->num);
 
@@ -991,7 +974,20 @@ static void init_child_runtime_config(struct childdata *child, int childno)
 	child->is_explorer = (childno >= 0 &&
 			      (unsigned int)childno >= alt_op_children &&
 			      (unsigned int)childno < alt_op_children + explorer_children);
+}
 
+/*
+ * Per-child A/B-comparison coin flips for the various experiment
+ * cohorts.  Each row stamps one boolean field at fork (rather than
+ * rolling per-call) so per-window deltas of the arm counters can be
+ * cleanly attributed to a population split that doesn't drift with
+ * time-of-day environmental noise.  Rows whose harvest side population-
+ * normalises also bump the matching arm-A / arm-B child counter on the
+ * relevant shm region.  The axes are stamped independently so they can
+ * cross without confounding each other's cohort comparisons.
+ */
+static void init_child_ab_stamps(struct childdata *child)
+{
 	/* CMP RedQueen greedy re-exec A/B-comparison stamp.  Only CMP-mode
 	 * children produce CMP attribution in the first place (PC-mode kcov
 	 * never enables the cmp fd, so kcov_collect_cmp short-circuits), so
@@ -1161,7 +1157,20 @@ static void init_child_runtime_config(struct childdata *child, int childno)
 			__atomic_fetch_add(&kcov_shm->prop_ring_typed_arm_a_children,
 					   1U, __ATOMIC_RELAXED);
 	}
+}
 
+/*
+ * Post-setup hygiene and per-lifetime pins, run last so they see the
+ * steady state: re-snapshot the heap bounds, cap RLIMIT_AS for the
+ * child_process() main loop, disable core dumps once.
+ *
+ * Order matters: heap_bounds_init must run after the prior setup has
+ * materialised its arenas, and the RLIMIT_AS pin must run after
+ * heap_bounds_init's fopen() so that fopen() completes under the
+ * inherited RLIM_INFINITY ceiling.
+ */
+static void init_child_finalize(void)
+{
 	/*
 	 * Re-snapshot /proc/self/maps now that init_child's allocator-
 	 * heavy setup has settled.  Glibc spawns secondary mmap arenas
@@ -1226,6 +1235,35 @@ static void init_child_runtime_config(struct childdata *child, int childno)
 	 * matches the per-iter behaviour.
 	 */
 	disable_coredumps();
+}
+
+/*
+ * Final phase of init_child: wire up runtime config that the
+ * child_process() main loop relies on, then pin the per-lifetime
+ * limits / dumpable state.  Six steps:
+ *
+ *   - kcov_init_child sets up the per-child coverage buffers,
+ *   - the active-syscalls pointer is pinned for the uniarch case
+ *     (biarch refreshes it lazily on the first picker call),
+ *   - the explorer-pool slot flag is stamped from the child's
+ *     slot index within the partition layout,
+ *   - heap_bounds_init re-snapshots /proc/self/maps after the
+ *     allocator-heavy setup above has settled,
+ *   - RLIMIT_AS is pinned (skipped under ASAN whose shadow memory
+ *     reservation would otherwise blow the cap),
+ *   - disable_coredumps takes the debug-equivalent path once for
+ *     the child's lifetime.
+ *
+ * Order matters: heap_bounds_init must run after the prior setup
+ * has materialised its arenas, and the RLIMIT_AS pin must run
+ * after heap_bounds_init's fopen() so that fopen() completes
+ * under the inherited RLIM_INFINITY ceiling.
+ */
+static void init_child_runtime_config(struct childdata *child, int childno)
+{
+	init_child_runtime_basics(child, childno);
+	init_child_ab_stamps(child);
+	init_child_finalize();
 }
 
 /*
