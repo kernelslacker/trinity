@@ -2122,6 +2122,15 @@ struct kcov_shared {
 	 *      accommodate (stale pending vs current entry resolution). */
 	unsigned long reexec_step_skip_entry_null;
 	unsigned long reexec_step_skip_bad_slot;
+
+	/* Per-kind flat census of typed CMP hypothesis insertions.
+	 * Bumped in lock-step with the scalar cmp_hyp_inserted above
+	 * from the cmp_hyp_alloc() success path, so the sum across
+	 * kinds equals cmp_hyp_inserted modulo concurrent sampling.
+	 * The per-syscall pool->per_kind_count[] is ephemeral (reset
+	 * with the pool); this flat array is the persistent fleet
+	 * mirror.  SHADOW telemetry only -- no consumer reads it. */
+	unsigned long cmp_hyp_inserted_by_kind[CMP_HYP_KIND_NR];
 };
 
 extern struct kcov_shared *kcov_shm;

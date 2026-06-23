@@ -448,9 +448,12 @@ static struct cmp_hypothesis *cmp_hyp_alloc(struct cmp_hyp_pool *pool,
 	h->cmp_ip = (uint64_t)cmp_ip;
 	pool->per_kind_count[kind]++;
 	pool->count++;
-	if (kcov_shm != NULL)
+	if (kcov_shm != NULL) {
 		__atomic_fetch_add(&kcov_shm->cmp_hyp_inserted, 1UL,
 				   __ATOMIC_RELAXED);
+		__atomic_fetch_add(&kcov_shm->cmp_hyp_inserted_by_kind[kind],
+				   1UL, __ATOMIC_RELAXED);
+	}
 	return h;
 }
 
