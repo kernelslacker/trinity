@@ -788,6 +788,127 @@ static void cmp_hyp_credit_consume(unsigned int nr, bool do32,
 				   __ATOMIC_RELAXED);
 }
 
+/*
+ * SHADOW would-pick resolver.  Walks the typed-hypothesis pool for
+ * (cmp_ip, width) -- no value constraint, unlike cmp_hyp_find_for_credit
+ * which matches on (cmp_ip, width, value).  Records per-ladder-kind
+ * presence as it walks, then applies the SAME specificity ordering
+ * cmp_hyp_find_for_credit uses (EXACT > ENUM_FAMILY > BITMASK > RANGE)
+ * to choose the would-be pick.  Returns the chosen hypothesis or NULL,
+ * and writes the per-kind presence mask through *present_out so the
+ * caller can attribute per-kind misses without re-walking.
+ *
+ * Lock-free read against a parallel writer (cmp_hyp_observe under the
+ * matching durable cmp_hint_pool lock): a torn count or half-written
+ * entry tolerates the same way cmp_hyp_find_for_credit tolerates it --
+ * the count > cap bail bounds the walk and a misread kind / cmp_ip at
+ * worst drops the shadow attribution for one pull, never indexes off
+ * the array.
+ */
+static struct cmp_hypothesis *
+cmp_hyp_would_pick_locked(struct cmp_hyp_pool *pool, unsigned long cmp_ip,
+			  uint8_t width,
+			  bool present_out[CMP_HYP_KIND_NR])
+{
+	struct cmp_hypothesis *exact_match = NULL;
+	struct cmp_hypothesis *enum_match = NULL;
+	struct cmp_hypothesis *bitmask_match = NULL;
+	struct cmp_hypothesis *range_match = NULL;
+	unsigned int i, n = pool->count;
+	unsigned int k;
+
+	for (k = 0; k < CMP_HYP_KIND_NR; k++)
+		present_out[k] = false;
+
+	if (n > CMP_HYP_PER_SYSCALL)
+		return NULL;
+	for (i = 0; i < n; i++) {
+		struct cmp_hypothesis *h = &pool->entries[i];
+
+		if (h->cmp_ip != (uint64_t)cmp_ip || h->width != width)
+			continue;
+		switch (h->kind) {
+		case CMP_HYP_EXACT:
+			present_out[CMP_HYP_EXACT] = true;
+			if (exact_match == NULL)
+				exact_match = h;
+			break;
+		case CMP_HYP_ENUM_FAMILY:
+			present_out[CMP_HYP_ENUM_FAMILY] = true;
+			if (enum_match == NULL)
+				enum_match = h;
+			break;
+		case CMP_HYP_BITMASK:
+			present_out[CMP_HYP_BITMASK] = true;
+			if (bitmask_match == NULL)
+				bitmask_match = h;
+			break;
+		case CMP_HYP_RANGE:
+			present_out[CMP_HYP_RANGE] = true;
+			if (range_match == NULL)
+				range_match = h;
+			break;
+		default:
+			break;
+		}
+	}
+	if (exact_match != NULL)
+		return exact_match;
+	if (enum_match != NULL)
+		return enum_match;
+	if (bitmask_match != NULL)
+		return bitmask_match;
+	return range_match;
+}
+
+/*
+ * SHADOW would-pick wrapper invoked by cmp_hints_try_get_ex() on every
+ * successful raw-pool pick.  Pure observation: bumps the would-pick /
+ * would-miss / would-value-differs counters in kcov_shm and returns.
+ * The live pick (the *out value cmp_hints_try_get_ex already wrote and
+ * the bool true it is about to return) is byte-for-byte unchanged.
+ */
+static void cmp_hyp_would_pick(unsigned int nr, bool do32,
+			       unsigned long cmp_ip, unsigned int size,
+			       unsigned long live_value)
+{
+	struct cmp_hyp_pool *pool;
+	struct cmp_hypothesis *picked;
+	bool present[CMP_HYP_KIND_NR];
+	uint8_t width;
+	unsigned int k;
+	static const uint8_t ladder_kinds[] = {
+		CMP_HYP_EXACT, CMP_HYP_ENUM_FAMILY,
+		CMP_HYP_BITMASK, CMP_HYP_RANGE,
+	};
+
+	if (kcov_shm == NULL || cmp_hints_shm == NULL || nr >= MAX_NR_SYSCALL)
+		return;
+	if (size != 1 && size != 2 && size != 4 && size != 8)
+		return;
+
+	width = (uint8_t)size;
+	pool = &cmp_hints_shm->hyp_pools[nr][do32 ? 1 : 0];
+
+	picked = cmp_hyp_would_pick_locked(pool, cmp_ip, width, present);
+	if (picked != NULL) {
+		__atomic_fetch_add(
+			&kcov_shm->cmp_hyp_would_pick_by_kind[picked->kind],
+			1UL, __ATOMIC_RELAXED);
+		if (picked->exemplar != (uint64_t)live_value)
+			__atomic_fetch_add(&kcov_shm->cmp_hyp_would_value_differs,
+					   1UL, __ATOMIC_RELAXED);
+	}
+	for (k = 0; k < ARRAY_SIZE(ladder_kinds); k++) {
+		uint8_t lk = ladder_kinds[k];
+
+		if (!present[lk])
+			__atomic_fetch_add(
+				&kcov_shm->cmp_hyp_would_miss_by_kind[lk],
+				1UL, __ATOMIC_RELAXED);
+	}
+}
+
 static void pool_lock(struct cmp_hint_pool *pool)
 {
 	if (cmp_hints_shm != NULL)
@@ -2903,6 +3024,8 @@ bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 							 re_size, use,
 							 0, 0, NULL,
 							 true, 0);
+				cmp_hyp_would_pick(nr, do32, re_cmp_ip,
+						   re_size, re_value);
 				return true;
 			}
 		} else if (kcov_shm != NULL) {
@@ -3010,6 +3133,7 @@ bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 					 0, 0, NULL,
 					 false, bucket);
 	}
+	cmp_hyp_would_pick(nr, do32, picked_cmp_ip, picked_size, picked_value);
 	return true;
 }
 
