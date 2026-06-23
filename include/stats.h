@@ -3880,6 +3880,36 @@ struct stats_s {
 	 * avoid_shared_buffer_out and so is intentionally not landed here.
 	 * RELAXED add-fetch -- diagnostic, not an event log. */
 	unsigned long blanket_address_scrub_slots_walked;
+
+	/* SHADOW per-arg ownership-metadata sidecar census, bumped from
+	 * arg_meta_init() once per dispatch over the address-family slots
+	 * (ARG_ADDRESS / ARG_NON_NULL_ADDRESS / ARG_RANGE) the seed pass
+	 * touches.  Telemetry only: the sidecar is written + counted here
+	 * but no live decision (inject, schedule, sanitise, scrub) reads
+	 * dir/owner/flags.
+	 *
+	 *  arg_meta_addr_with_meta
+	 *      Address-family slot whose seeded sidecar carries a non-default
+	 *      classification after the per-argtype seed pass (dir != NONE,
+	 *      owner != NONE, or any flag bit set).  Seeded purely from
+	 *      argtype today, so the baseline for bare ARG_ADDRESS is zero
+	 *      until per-generator coverage starts populating dir/owner.
+	 *  arg_meta_addr_without_meta
+	 *      Address-family slot still at the zero-init sidecar state
+	 *      after the seed pass.  The shadow proof for this row: an
+	 *      ARG_ADDRESS slot has no per-slot ownership metadata today.
+	 *  arg_meta_argtype_stale
+	 *      Bumped when arg_meta_init() observes a slot's stored
+	 *      generation that does not match the dispatch sequence the
+	 *      previous init stamped (a stale sidecar from a missed reset
+	 *      path, or a wholesale stomp of the rec).  Foundation for the
+	 *      future recorded-vs-actual mismatch counter once a real
+	 *      consumer compares the sidecar to live state.
+	 *
+	 * RELAXED add-fetch -- diagnostic, not an event log. */
+	unsigned long arg_meta_addr_with_meta;
+	unsigned long arg_meta_addr_without_meta;
+	unsigned long arg_meta_argtype_stale;
 };
 
 unsigned int stats_syscall_category(const char *name);
