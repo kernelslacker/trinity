@@ -3910,6 +3910,32 @@ struct stats_s {
 	unsigned long arg_meta_addr_with_meta;
 	unsigned long arg_meta_addr_without_meta;
 	unsigned long arg_meta_argtype_stale;
+
+	/* SHADOW contradiction census between blanket_address_scrub()'s
+	 * coverage (entry->address_scrub_mask) and the per-slot sidecar
+	 * direction seeded by arg_meta_init().  Walked once per dispatch
+	 * from the tail of blanket_address_scrub() over the
+	 * entry->num_args slots; the live scrub walk above is byte-
+	 * unchanged.
+	 *
+	 *  arg_meta_scrub_would_destroy_in
+	 *      Slot bit set in entry->address_scrub_mask (the blanket
+	 *      walked and overwrote it via avoid_shared_buffer_out) AND
+	 *      sidecar dir is ARG_DIR_IN or ARG_DIR_INOUT.  Each bump is
+	 *      one curated input slot a metadata-aware scrub would have
+	 *      to skip to avoid clobbering it.  Zero today because the
+	 *      address-family argtypes in the scrub mask all seed dir =
+	 *      NONE; bumps appear as per-generator coverage starts
+	 *      classifying those slots.
+	 *  arg_meta_scrub_would_preserve_out
+	 *      Slot bit clear in entry->address_scrub_mask (the blanket
+	 *      skipped it) AND sidecar dir is ARG_DIR_OUT.  Each bump is
+	 *      one OUT slot the blanket leaves untouched today because
+	 *      the argtype sits outside the default_address_scrub domain.
+	 *
+	 * RELAXED add-fetch -- diagnostic, not an event log. */
+	unsigned long arg_meta_scrub_would_destroy_in;
+	unsigned long arg_meta_scrub_would_preserve_out;
 };
 
 unsigned int stats_syscall_category(const char *name);
