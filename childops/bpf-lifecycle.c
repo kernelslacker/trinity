@@ -84,6 +84,7 @@
 #include "bpf-syscall.h"
 #include "child.h"
 #include "childops-util.h"
+#include "compat.h"
 #include "objects.h"
 #include "publish_resource.h"
 #include "random.h"
@@ -91,9 +92,6 @@
 #include "shm.h"
 #include "trinity.h"
 
-#ifndef SO_ATTACH_BPF
-#define SO_ATTACH_BPF		50
-#endif
 #ifndef SO_DETACH_BPF
 #define SO_DETACH_BPF		SO_DETACH_FILTER
 #endif
