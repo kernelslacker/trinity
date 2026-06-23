@@ -140,6 +140,7 @@
 #include "child.h"
 #include "childops-netlink.h"
 #include "childops-util.h"
+#include "compat.h"
 #include "jitter.h"
 #include "random.h"
 #include "shm.h"
@@ -180,11 +181,6 @@
 
 #ifndef ETH_P_ALL
 #define ETH_P_ALL		0x0003
-#endif
-
-/* veth peer attribute (linux/veth.h, stable). */
-#ifndef VETH_INFO_PEER
-#define VETH_INFO_PEER		1
 #endif
 
 /* UDP GSO setsockopt (linux/udp.h ~4.18+; uapi number stable).  Used

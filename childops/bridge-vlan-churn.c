@@ -127,6 +127,7 @@
 
 #include "child.h"
 #include "childops-netlink.h"
+#include "compat.h"
 #include "jitter.h"
 #include "random.h"
 #include "shm.h"
@@ -196,10 +197,6 @@
 #endif
 #ifndef IFLA_BRIDGE_MST_ENTRY_STATE
 #define IFLA_BRIDGE_MST_ENTRY_STATE	2
-#endif
-
-#ifndef VETH_INFO_PEER
-#define VETH_INFO_PEER			1
 #endif
 
 /* BR_STATE_FORWARDING (3) is stable since the bridge UAPI shipped. */

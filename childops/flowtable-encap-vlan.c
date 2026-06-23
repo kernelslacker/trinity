@@ -129,6 +129,7 @@
 #include "child.h"
 #include "childops-netlink.h"
 #include "childops-nfnl.h"
+#include "compat.h"
 #include "jitter.h"
 #include "random.h"
 #include "shm.h"
@@ -137,9 +138,6 @@
 
 #ifndef IFLA_VLAN_ID
 #define IFLA_VLAN_ID			1
-#endif
-#ifndef VETH_INFO_PEER
-#define VETH_INFO_PEER			1
 #endif
 #ifndef NFNL_SUBSYS_NFTABLES
 #define NFNL_SUBSYS_NFTABLES		10
