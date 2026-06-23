@@ -71,15 +71,13 @@
 
 #include "child.h"
 #include "childops-netlink.h"
+#include "compat.h"
 #include "jitter.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
 #include "userns-bootstrap.h"
 
-#ifndef VETH_INFO_PEER
-#define VETH_INFO_PEER		1
-#endif
 #ifndef NDA_DST
 #define NDA_DST			1
 #endif

@@ -95,12 +95,10 @@
 #include <linux/veth.h>
 
 #include "childops-netlink.h"
+#include "compat.h"
 #include "jitter.h"
 #include "random.h"
 
-#ifndef VETH_INFO_PEER
-#define VETH_INFO_PEER			1
-#endif
 #ifndef ICMPV6_PKT_TOOBIG
 #define ICMPV6_PKT_TOOBIG		2
 #endif

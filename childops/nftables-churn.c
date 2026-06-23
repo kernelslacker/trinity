@@ -122,6 +122,7 @@
 #include "child.h"
 #include "childops-netlink.h"
 #include "childops-nfnl.h"
+#include "compat.h"
 #include "jitter.h"
 #include "random.h"
 #include "shm.h"
@@ -419,10 +420,6 @@
 
 #ifndef NF_NETDEV_INGRESS
 #define NF_NETDEV_INGRESS		0
-#endif
-
-#ifndef VETH_INFO_PEER
-#define VETH_INFO_PEER			1
 #endif
 
 #ifndef NFTA_RULE_TABLE

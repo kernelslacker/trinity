@@ -804,6 +804,14 @@ struct sockaddr_nfc {
 #define MACSEC_OFFLOAD_ATTR_TYPE	1
 #endif
 
+/* linux/veth.h — VETH_INFO_PEER carries an ifinfomsg + IFLA_IFNAME for the
+ * peer end of the veth pair inside IFLA_INFO_DATA.  Older kernel-headers
+ * packages predate <linux/veth.h>; the enum value (1) is fixed since the
+ * 2.6.24 veth merge. */
+#ifndef VETH_INFO_PEER
+#define VETH_INFO_PEER		1
+#endif
+
 /* linux/io_uring.h
  *
  * IORING_OP_* enum values added after the v6.6 LTS cut.  The enum is

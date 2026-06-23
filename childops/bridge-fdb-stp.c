@@ -112,6 +112,7 @@
 
 #include "child.h"
 #include "childops-netlink.h"
+#include "compat.h"
 #include "jitter.h"
 #include "random.h"
 #include "rnd.h"
@@ -160,12 +161,6 @@ struct bridge_vlan_info {
  * br_setlink for IFLA_BRPORT_*. */
 #ifndef IFLA_PROTINFO
 #define IFLA_PROTINFO		12
-#endif
-
-/* veth UAPI: VETH_INFO_PEER carries an ifinfomsg + IFLA_IFNAME for the
- * peer end of the pair inside IFLA_INFO_DATA. */
-#ifndef VETH_INFO_PEER
-#define VETH_INFO_PEER		1
 #endif
 
 #ifndef NDA_DST
