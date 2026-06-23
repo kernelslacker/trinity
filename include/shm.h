@@ -369,6 +369,28 @@ struct shm_s {
 	 * above. */
 	bool sfg_unsupported[TRINITY_PF_MAX];
 
+	/* Per-kind feature-absent latches for the vxlan_encap_churn
+	 * childop (childops/vxlan-encap.c).  Indexed by the file-local
+	 * enum tun_kind (0 = vxlan, 1 = gre, 2 = geneve); the indices
+	 * are stable and pinned by a _Static_assert in vxlan-encap.c.
+	 * Set when RTM_NEWLINK rejects the kind with rtnl_link_ops-not-
+	 * registered errno (absent module / CONFIG); subsequent picks
+	 * skip the kind so the unsupported attempt is paid once per
+	 * fleet rather than once per grandchild invocation.
+	 *
+	 * Must live in shm: the rejection is observed inside the
+	 * transient grandchild forked by userns_run_in_ns(), which
+	 * _exit()s after the body returns.  A process-local static
+	 * would die with the grandchild and the next invocation would
+	 * re-attempt the same unsupported kind every single time
+	 * (latch-in-grandchild bug).  No auto-clear; an absent kernel
+	 * CONFIG does not appear mid-run, same recovery story as the
+	 * sfg_unsupported gates above.  RELAXED atomic load/store from
+	 * multiple grandchildren is safe — the only transition is
+	 * false -> true and the write is idempotent. */
+#define VXLAN_ENCAP_NR_KINDS 3
+	bool vxlan_encap_kind_unsupported[VXLAN_ENCAP_NR_KINDS];
+
 	/*
 	 * Multi-strategy syscall picker — see include/strategy.h.
 	 *

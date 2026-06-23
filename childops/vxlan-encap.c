@@ -14,11 +14,23 @@
  * tx queue) never opens its window.
  *
  * Sequence (per invocation):
- *   1. unshare(CLONE_NEWNET) once per child into a private net
- *      namespace so the host's main routing table never sees any of
- *      this.  Failure latches the kind-specific gates off.
- *   2. Best-effort modprobe vxlan / ip_gre / geneve and bring lo up
- *      (one-time, latched after first success).
+ *   1. Enter a private net namespace via userns_run_in_ns(): a
+ *      transient grandchild fork installs an identity user namespace
+ *      plus a fresh CLONE_NEWNET, runs the body below, and _exit()s
+ *      so the kernel reaps every link, fdb entry, raw socket and
+ *      packet buffer left behind with the grandchild's netns.  The
+ *      persistent fuzz child never changes its own credentials or
+ *      namespace stack, so the cap-drop oracle keeps observing the
+ *      host credential profile.  Helper -EPERM (hardened userns
+ *      policy refused CLONE_NEWUSER) latches the op off for the
+ *      remainder of this child's lifetime; -1 (transient setup
+ *      failure: fork, id-map write, secondary unshare) skips the
+ *      iteration without latching.
+ *   2. Best-effort modprobe vxlan / ip_gre / geneve from the
+ *      persistent child (once per child, before the userns hop --
+ *      finit_module requires CAP_SYS_MODULE in init_user_ns, which
+ *      the grandchild does not hold) and bring lo up inside the
+ *      grandchild's fresh netns.
  *   3. Pick a kind (vxlan / gre / geneve) at random; if its latch is
  *      already tripped, fall through to the next kind.  All-tripped
  *      means every kind is structurally unsupported, return cheaply.
@@ -50,8 +62,31 @@
  * non-blocking, SO_RCVTIMEO=1s on the netlink ack socket so an
  * unresponsive rtnl can't wedge us past the SIGALRM(1s) cap inherited
  * from child.c.  Loopback only (peer addr 127.0.0.2 inside the
- * private netns).  Three latches (one per kind) so a kernel without a
- * given module pays the EFAIL once and skips that kind permanently.
+ * private netns).  Latches:
+ *
+ *   ns_unsupported_vxlan_encap -- master gate.  Set in the wrapper on
+ *                                 userns_run_in_ns() = -EPERM
+ *                                 (hardened userns policy refused
+ *                                 CLONE_NEWUSER); persists across
+ *                                 invocations and short-circuits the
+ *                                 op for the remainder of the child's
+ *                                 lifetime.
+ *   shm->vxlan_encap_kind_unsupported[] -- per-kind feature-absent
+ *                                 latches set when RTM_NEWLINK rejects
+ *                                 the kind with EAFNOSUPPORT /
+ *                                 EOPNOTSUPP / ENOTSUP / ENOENT /
+ *                                 EPROTONOSUPPORT (rtnl_link_ops not
+ *                                 registered -- absent kernel CONFIG
+ *                                 or module).  Must live in shm: the
+ *                                 rejection is observed inside the
+ *                                 transient grandchild forked by
+ *                                 userns_run_in_ns(); a process-local
+ *                                 static would die with the grandchild
+ *                                 on _exit() and the next invocation
+ *                                 would re-attempt the same kind
+ *                                 forever.  Indexed by enum tun_kind;
+ *                                 no auto-clear, since an absent kernel
+ *                                 CONFIG does not appear mid-run.
  */
 
 #include <errno.h>
@@ -66,7 +101,6 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
-#include <sys/wait.h>
 #include <unistd.h>
 
 #include <linux/if_ether.h>
@@ -83,6 +117,7 @@
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
+#include "userns-bootstrap.h"
 
 /* if_link.h on stripped sysroots may not have the full VXLAN/GENEVE/GRE
  * attribute enums.  Provide the minimal subset we actually emit: the
@@ -146,21 +181,37 @@
  * in tcpdump traces during triage. */
 #define INNER_DST_PORT		34567
 
-/* Latched per-child gates.  None of these flip during a child's
- * lifetime (kernel module presence is static), so once we've paid the
- * EFAIL we stop probing the kind on subsequent invocations and just
- * bump the runs+setup_failed pair. */
-static bool ns_unsupported_vxlan;
-static bool ns_unsupported_gre;
-static bool ns_unsupported_geneve;
+/* Per-child master latch.  Set by the wrapper on userns_run_in_ns()
+ * returning -EPERM (the grandchild's unshare(CLONE_NEWUSER) was
+ * refused by a hardened policy: user.max_user_namespaces=0 or
+ * kernel.unprivileged_userns_clone=0).  Without a private netns we
+ * MUST NOT touch the host's main routing / fdb / link tables, so the
+ * op stays disabled for the remainder of this child's lifetime. */
+static bool ns_unsupported_vxlan_encap;
 
-/* Latched once a successful unshare puts us in a private netns.  The
- * trinity child is long-lived; we only need to unshare once and
- * inherit the namespace across subsequent invocations.  Re-unsharing
- * each call would just leak namespaces. */
-static bool ns_unshared;
-static bool ns_setup_failed;
+/* Per-kind feature-absent gates live in shm
+ * (shm->vxlan_encap_kind_unsupported[], indexed by enum tun_kind).
+ * The write site is inside the userns_run_in_ns() grandchild --
+ * a process-local static would die with the grandchild on _exit()
+ * and the next invocation would re-attempt the same unsupported
+ * kind every call.  Set when RTM_NEWLINK rejects the kind with
+ * rtnl_link_ops-not-registered errno (absent module / CONFIG);
+ * persists fleet-wide via shm so the unsupported attempt is paid
+ * once per fleet rather than once per grandchild. */
+
+/* Per-grandchild bookkeeping.  Inherited as false at grandchild fork
+ * time (the persistent child never sets it -- the in-ns body runs
+ * exclusively in transient grandchildren), set to true after the
+ * grandchild's first rtnl_bring_lo_up() in its own fresh netns.  Dies
+ * with the grandchild on _exit(), so each subsequent grandchild
+ * correctly re-runs the bring-lo-up once in its own netns. */
 static bool lo_brought_up;
+
+/* Set once per persistent child after the best-effort modprobe burst
+ * runs.  modprobe needs CAP_SYS_MODULE in init_user_ns, which the
+ * grandchild does not hold, so the modprobes fire from the persistent
+ * child before the userns hop. */
+static bool modprobes_attempted;
 
 enum tun_kind {
 	TUN_VXLAN = 0,
@@ -168,6 +219,12 @@ enum tun_kind {
 	TUN_GENEVE,
 	TUN_NR,
 };
+
+/* The shm latch array is sized and indexed by enum tun_kind, so the
+ * enum values above must agree with VXLAN_ENCAP_NR_KINDS in shm.h.
+ * If a future kind is added, both sides must move together. */
+_Static_assert(TUN_NR == VXLAN_ENCAP_NR_KINDS,
+	       "enum tun_kind must match shm->vxlan_encap_kind_unsupported[] size");
 
 static const char *kind_name(enum tun_kind k)
 {
@@ -180,24 +237,18 @@ static const char *kind_name(enum tun_kind k)
 	return "unknown";
 }
 
-static bool *kind_latch(enum tun_kind k)
+static bool kind_unsupported(enum tun_kind k)
 {
-	switch (k) {
-	case TUN_VXLAN:		return &ns_unsupported_vxlan;
-	case TUN_GRE:		return &ns_unsupported_gre;
-	case TUN_GENEVE:	return &ns_unsupported_geneve;
-	case TUN_NR:		break;
-	}
-	return NULL;
+	return __atomic_load_n(&shm->vxlan_encap_kind_unsupported[k],
+			       __ATOMIC_RELAXED);
 }
 
-/*
- * Bring lo up inside the private netns.  Newly created netns has lo
- * present but DOWN; AF_PACKET sendto on a tunnel whose underlay is
- * lo silently drops if lo is down, defeating the encap-tx coverage.
- * Setlink errors are ignored — a kernel that refuses lo up is also
- * one where the rest of the sequence will fail visibly.
- */
+static void mark_kind_unsupported(enum tun_kind k)
+{
+	__atomic_store_n(&shm->vxlan_encap_kind_unsupported[k], true,
+			 __ATOMIC_RELAXED);
+}
+
 /*
  * Build & send RTM_NEWLINK creating a tunnel of the requested kind.
  * Local pinned to 127.0.0.1, remote to 127.0.0.2.  vni / keys are
@@ -384,47 +435,6 @@ static int build_fdb_add(struct nl_ctx *ctx, int ifindex)
 }
 
 /*
- * Phase: per-child netns setup.  Unshares CLONE_NEWNET the first time
- * through and best-effort modprobes the three tunnel modules so the
- * subsequent RTM_NEWLINK has a chance of finding a registered
- * rtnl_link_ops.  Latches ns_setup_failed if the unshare fails so the
- * rest of the child's lifetime pays the EFAIL once.  Returns 0 on
- * success; -1 means caller should return true without entering the
- * goto-out cleanup.
- */
-static int vxlan_encap_iter_setup_netns(struct childdata *child)
-{
-	if (ns_unshared)
-		return 0;
-
-	if (unshare(CLONE_NEWNET) < 0) {
-		ns_setup_failed = true;
-		/* child->op_type lives in shared memory and can be scribbled
-		 * by a poisoned-arena write from a sibling; bounds-check the
-		 * snapshot before indexing the NR_CHILD_OP_TYPES-sized stats
-		 * arrays, same pattern the child.c dispatch loop uses for
-		 * the unguarded write that motivated this guard. */
-		{
-			const enum child_op_type op = child->op_type;
-			if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
-						 CHILDOP_LATCH_NS_UNSUPPORTED,
-						 __ATOMIC_RELAXED);
-		}
-		__atomic_add_fetch(&shm->stats.vxlan_encap_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		return -1;
-	}
-	ns_unshared = true;
-	/* Best-effort module loads; failures latch via the subsequent
-	 * NEWLINK probe rather than here. */
-	try_modprobe("vxlan");
-	try_modprobe("ip_gre");
-	try_modprobe("geneve");
-	return 0;
-}
-
-/*
  * Pick a starting kind that isn't latched off.  Returns TUN_NR if
  * every kind's latch is tripped — caller treats that as "all kinds
  * structurally unsupported, return cheaply".
@@ -436,7 +446,7 @@ static enum tun_kind pick_kind(void)
 
 	for (i = 0; i < TUN_NR; i++) {
 		enum tun_kind k = (enum tun_kind)((start + i) % TUN_NR);
-		if (!*kind_latch(k))
+		if (!kind_unsupported(k))
 			return k;
 	}
 	return TUN_NR;
@@ -516,7 +526,7 @@ static int vxlan_encap_iter_build_link(struct vxlan_encap_iter_ctx *ctx)
 	if (rc != 0) {
 		if (rc == -EAFNOSUPPORT || rc == -EOPNOTSUPP ||
 		    rc == -ENOTSUP || rc == -ENOENT || rc == -EPROTONOSUPPORT) {
-			*kind_latch(ctx->kind) = true;
+			mark_kind_unsupported(ctx->kind);
 			/* ctx->child->op_type lives in shared memory and can be
 			 * scribbled by a poisoned-arena write from a sibling;
 			 * bounds-check the snapshot before indexing the
@@ -647,38 +657,45 @@ static void vxlan_encap_iter_teardown(struct vxlan_encap_iter_ctx *ctx)
 	nl_close(&ctx->nl);
 }
 
-bool vxlan_encap_churn(struct childdata *child)
+/*
+ * Per-invocation state handed to the in-ns callback so it can keep
+ * accounting against the right childop slot.
+ */
+struct vxlan_encap_ctx {
+	struct childdata *child;
+};
+
+/*
+ * Per-invocation body that must run inside the private net namespace.
+ * Executed in a transient grandchild forked by userns_run_in_ns(); the
+ * grandchild's userns + netns are torn down on _exit() so any tunnel
+ * devs, fdb entries, raw sockets and packet buffers left behind are
+ * reaped by the kernel along with the namespace.  Return value is
+ * ignored by the helper.
+ */
+static int vxlan_encap_in_ns(void *arg)
 {
+	struct vxlan_encap_ctx *cctx = (struct vxlan_encap_ctx *)arg;
+	struct childdata *child = cctx->child;
 	struct vxlan_encap_iter_ctx ctx = {
 		.nl = { .fd = -1 },
 		.raw = -1,
 		.child = child,
 	};
-
-	__atomic_add_fetch(&shm->stats.vxlan_encap_churn_runs, 1,
-			   __ATOMIC_RELAXED);
-
-	if (ns_setup_failed)
-		return true;
-
-	if (vxlan_encap_iter_setup_netns(child) != 0)
-		return true;
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	ctx.kind = pick_kind();
 	if (ctx.kind == TUN_NR)
-		return true;
+		return 0;
 
 	if (vxlan_encap_iter_open_ctx(&ctx) == 0 &&
 	    vxlan_encap_iter_build_link(&ctx) == 0) {
-		/* Snapshot child->op_type once and bounds-check before
-		 * indexing the per-op stats arrays.  The field lives in
-		 * shared memory and can be scribbled by a poisoned-arena
-		 * write from a sibling; the child.c dispatch loop already
-		 * gates its dispatch + alt-op accounting on the same
-		 * valid_op snapshot. */
-		const enum child_op_type op = child->op_type;
-		const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
-
 		if (valid_op) {
 			__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
 					   1, __ATOMIC_RELAXED);
@@ -689,5 +706,52 @@ bool vxlan_encap_churn(struct childdata *child)
 	}
 
 	vxlan_encap_iter_teardown(&ctx);
+	return 0;
+}
+
+bool vxlan_encap_churn(struct childdata *child)
+{
+	struct vxlan_encap_ctx cctx = { .child = child };
+	int rc;
+
+	__atomic_add_fetch(&shm->stats.vxlan_encap_churn_runs, 1,
+			   __ATOMIC_RELAXED);
+
+	if (ns_unsupported_vxlan_encap)
+		return true;
+
+	if (!modprobes_attempted) {
+		modprobes_attempted = true;
+		try_modprobe("vxlan");
+		try_modprobe("ip_gre");
+		try_modprobe("geneve");
+	}
+
+	rc = userns_run_in_ns(CLONE_NEWNET, vxlan_encap_in_ns, &cctx);
+	if (rc == -EPERM) {
+		ns_unsupported_vxlan_encap = true;
+		/* child->op_type lives in shared memory and can be scribbled
+		 * by a poisoned-arena write from a sibling; bounds-check the
+		 * snapshot before indexing the NR_CHILD_OP_TYPES-sized stats
+		 * array, same pattern the child.c dispatch loop uses for the
+		 * unguarded write that motivated this guard. */
+		const enum child_op_type op = child->op_type;
+		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.vxlan_encap_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return true;
+	}
+	if (rc < 0) {
+		/* Transient grandchild setup failure (fork, id-map write,
+		 * secondary unshare).  Skip this iteration without latching
+		 * -- the failure is not policy and may not recur. */
+		__atomic_add_fetch(&shm->stats.vxlan_encap_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return true;
+	}
+
 	return true;
 }
