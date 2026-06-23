@@ -3174,37 +3174,6 @@ static const unsigned long iocb_opcode_values[] = {
 #define IOCB_FLAGS_MASK \
 	(IOCB_FLAG_RESFD | IOCB_FLAG_IOPRIO)
 
-/*
- * RWF_* vocabulary for aio_rw_flags.  Host uapi headers vary on the
- * newer additions (NOAPPEND, ATOMIC, DONTCACHE) so the per-bit guards
- * keep the mask portable -- bits absent at build time are simply
- * omitted from the OR.
- */
-#ifndef RWF_HIPRI
-#define RWF_HIPRI	0x00000001
-#endif
-#ifndef RWF_DSYNC
-#define RWF_DSYNC	0x00000002
-#endif
-#ifndef RWF_SYNC
-#define RWF_SYNC	0x00000004
-#endif
-#ifndef RWF_NOWAIT
-#define RWF_NOWAIT	0x00000008
-#endif
-#ifndef RWF_APPEND
-#define RWF_APPEND	0x00000010
-#endif
-#ifndef RWF_NOAPPEND
-#define RWF_NOAPPEND	0x00000020
-#endif
-#ifndef RWF_ATOMIC
-#define RWF_ATOMIC	0x00000040
-#endif
-#ifndef RWF_DONTCACHE
-#define RWF_DONTCACHE	0x00000080
-#endif
-
 #define IOCB_RWF_MASK \
 	(RWF_HIPRI | RWF_DSYNC | RWF_SYNC | RWF_NOWAIT | RWF_APPEND | \
 	 RWF_NOAPPEND | RWF_ATOMIC | RWF_DONTCACHE)
