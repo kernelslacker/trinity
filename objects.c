@@ -1401,6 +1401,27 @@ struct object * get_random_object(enum objecttype type, enum obj_scope scope)
 	return objhead_indexed_read(head, rnd_modulo_u32(n));
 }
 
+bool objpool_check(const struct object *obj, enum objecttype expected)
+{
+	if (obj == NULL)
+		return false;
+
+	if ((uintptr_t)obj < 0x10000UL ||
+	    (uintptr_t)obj >= 0x800000000000UL) {
+		__atomic_add_fetch(&shm->stats.global_obj_uaf_caught, 1,
+				   __ATOMIC_RELAXED);
+		return false;
+	}
+
+	if (obj->obj_type != expected) {
+		__atomic_add_fetch(&shm->stats.global_obj_uaf_caught, 1,
+				   __ATOMIC_RELAXED);
+		return false;
+	}
+
+	return true;
+}
+
 bool objects_empty(enum objecttype type)
 {
 	struct objhead *head = get_objhead(OBJ_GLOBAL, type);
