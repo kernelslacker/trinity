@@ -3848,6 +3848,18 @@ struct stats_s {
 	 * not on the JSON path, matching the syscall_wedge_* siblings. */
 	unsigned long childop_wedge_count[NR_CHILD_OP_TYPES];
 	unsigned long long childop_wedge_total_us[NR_CHILD_OP_TYPES];
+
+	/* SHADOW-ONLY census of scrub-eligible address-family arg slots
+	 * walked by blanket_address_scrub() -- one bump per set bit in
+	 * entry->address_scrub_mask consumed by the ctz loop, i.e. once per
+	 * ARG_ADDRESS / ARG_NON_NULL_ADDRESS / ARG_RANGE slot the relocator
+	 * actually visits.  Telemetry only: the live inject/scrub path is
+	 * unchanged and avoid_shared_buffer_out() still fires for every
+	 * visited slot.  Denominator for a future per-slot "relocated vs
+	 * not" split, which needs a signature change on
+	 * avoid_shared_buffer_out and so is intentionally not landed here.
+	 * RELAXED add-fetch -- diagnostic, not an event log. */
+	unsigned long blanket_address_scrub_slots_walked;
 };
 
 unsigned int stats_syscall_category(const char *name);
