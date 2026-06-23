@@ -11,9 +11,6 @@
 #ifndef UDP_NO_CHECK6_RX
 #define UDP_NO_CHECK6_RX	102
 #endif
-#ifndef UDP_SEGMENT
-#define UDP_SEGMENT		103
-#endif
 #ifndef UDP_GRO
 #define UDP_GRO			104
 #endif

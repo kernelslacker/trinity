@@ -21,6 +21,7 @@
 #include <netinet/in.h>
 
 #include "cmsg_build.h"
+#include "compat.h"
 #include "fd.h"
 #include "random.h"
 #include "rnd.h"
@@ -33,9 +34,6 @@
 #endif
 #ifndef SOL_UDP
 #define SOL_UDP			17
-#endif
-#ifndef UDP_SEGMENT
-#define UDP_SEGMENT		103
 #endif
 
 enum cmsg_kind pick_cmsg_kind(void)
