@@ -675,6 +675,346 @@ static const struct option longopts[] = {
 	{ "corpus-save-errno-grad-live", no_argument, NULL, 0 },
 	{ NULL, 0, NULL, 0 } };
 
+/*
+ * Option-family dispatch helpers.  Each helper claims a related cluster
+ * of options out of the parse_args() getopt loop: it inspects the
+ * already-parsed (opt, name, arg) triple, applies side effects for any
+ * option it owns, and returns true to signal the option was consumed.
+ * For short options opt is the short char and name is NULL; for
+ * long-only options opt is 0 and name is longopts[opt_index].name.
+ * The longopts[] table itself remains the single source of truth for
+ * option definitions -- helpers only carry the dispatch strings.
+ */
+
+static bool parse_child_options(int opt, const char *name, char *arg)
+{
+	if (opt == 'C') {
+		unsigned long val;
+		enum max_children_binding b;
+		unsigned long cap;
+
+		if (!parse_unsigned(arg, "children", false, &val))
+			exit(EXIT_FAILURE);
+		cap = derive_max_children_cap(&b);
+		if (val > cap) {
+			outputerr("--children=%lu exceeds %s cap of %lu\n",
+				  val, binding_name(b), cap);
+			exit(EXIT_FAILURE);
+		}
+		user_specified_children = (unsigned int)val;
+		max_children = user_specified_children;
+		return true;
+	}
+
+	if (opt != 0)
+		return false;
+
+	if (strcmp("alt-op-children", name) == 0) {
+		unsigned long val;
+
+		if (!parse_unsigned(arg, "alt-op-children", true, &val))
+			exit(EXIT_FAILURE);
+		if (val > UINT_MAX) {
+			outputerr("--alt-op-children value %lu exceeds UINT_MAX\n", val);
+			exit(EXIT_FAILURE);
+		}
+		alt_op_children = (unsigned int)val;
+		user_specified_alt_op_children = true;
+		return true;
+	}
+
+	if (strcmp("explorer-children", name) == 0) {
+		unsigned long val;
+
+		if (!parse_unsigned(arg, "explorer-children", true, &val))
+			exit(EXIT_FAILURE);
+		if (val > UINT_MAX) {
+			outputerr("--explorer-children value %lu exceeds UINT_MAX\n", val);
+			exit(EXIT_FAILURE);
+		}
+		explorer_children = (unsigned int)val;
+		user_specified_explorer_children = true;
+		return true;
+	}
+
+	return false;
+}
+
+static bool parse_kcov_options(int opt, const char *name, char *arg)
+{
+	if (opt != 0)
+		return false;
+
+	if (strcmp("childop-kcov-attribution", name) == 0) {
+		if (strcmp(arg, "off") == 0) {
+			childop_kcov_attr_mode = CHILDOP_KCOV_ATTR_OFF;
+		} else if (strcmp(arg, "dual") == 0) {
+			childop_kcov_attr_mode = CHILDOP_KCOV_ATTR_DUAL;
+		} else if (strcmp(arg, "on") == 0) {
+			childop_kcov_attr_mode = CHILDOP_KCOV_ATTR_ON;
+		} else {
+			outputerr("--childop-kcov-attribution: unknown mode '%s' (expected off, dual, or on)\n",
+				arg);
+			exit(EXIT_FAILURE);
+		}
+		return true;
+	}
+
+	if (strcmp("kcov-transition-coverage", name) == 0) {
+		if (strcmp(arg, "off") == 0) {
+			kcov_transition_coverage_mode = KCOV_TRANSITION_COVERAGE_OFF;
+		} else if (strcmp(arg, "shadow") == 0) {
+			kcov_transition_coverage_mode = KCOV_TRANSITION_COVERAGE_SHADOW;
+		} else {
+			outputerr("--kcov-transition-coverage: unknown mode '%s' (expected off or shadow)\n",
+				arg);
+			exit(EXIT_FAILURE);
+		}
+		return true;
+	}
+
+	if (strcmp("kcov-transition-reward", name) == 0) {
+		if (strcmp(arg, "off") == 0) {
+			kcov_transition_reward_mode = KCOV_TRANSITION_REWARD_OFF;
+		} else if (strcmp(arg, "shadow-only") == 0) {
+			kcov_transition_reward_mode = KCOV_TRANSITION_REWARD_SHADOW_ONLY;
+		} else if (strcmp(arg, "combined") == 0) {
+			kcov_transition_reward_mode = KCOV_TRANSITION_REWARD_COMBINED;
+		} else {
+			outputerr("--kcov-transition-reward: unknown mode '%s' (expected off, shadow-only, or combined)\n",
+				arg);
+			exit(EXIT_FAILURE);
+		}
+		return true;
+	}
+
+	return false;
+}
+
+static bool parse_cmp_options(int opt, const char *name, char *arg)
+{
+	if (opt != 0)
+		return false;
+
+	if (strcmp("redqueen-pending-pick", name) == 0) {
+		if (!parse_redqueen_pending_pick(arg,
+						 &redqueen_pending_pick_mode_arg)) {
+			outputerr("--redqueen-pending-pick: unknown policy '%s' (try random or first)\n",
+				  arg);
+			exit(EXIT_FAILURE);
+		}
+		return true;
+	}
+
+	if (strcmp("cmp-recent-pool", name) == 0) {
+		if (!parse_cmp_recent_pool(arg, &cmp_recent_pool_mode_arg)) {
+			outputerr("--cmp-recent-pool: unknown policy '%s' (try off or recent-first)\n",
+				  arg);
+			exit(EXIT_FAILURE);
+		}
+		return true;
+	}
+
+	if (strcmp("corpus-save-errno-grad-live", name) == 0) {
+		corpus_save_errno_grad_live = true;
+		return true;
+	}
+
+	return false;
+}
+
+static bool parse_cache_options(int opt, const char *name, char *arg)
+{
+	if (opt != 0)
+		return false;
+
+	if (strcmp("no-warm-start", name) == 0) {
+		no_warm_start = true;
+		return true;
+	}
+
+	if (strcmp("warm-start-path", name) == 0) {
+		free(warm_start_path);
+		warm_start_path = strdup(arg);
+		if (!warm_start_path) {
+			outputerr("strdup failed\n");
+			exit(EXIT_FAILURE);
+		}
+		return true;
+	}
+
+	if (strcmp("no-kcov-warm-start", name) == 0) {
+		no_kcov_warm_start = true;
+		return true;
+	}
+
+	if (strcmp("no-cmp-hints-warm-start", name) == 0) {
+		no_cmp_hints_warm_start = true;
+		return true;
+	}
+
+	return false;
+}
+
+static bool parse_strategy_options(int opt, const char *name, char *arg)
+{
+	if (opt != 0)
+		return false;
+
+	if (strcmp("strategy", name) == 0) {
+		if (!parse_picker_mode(arg, &picker_mode_arg)) {
+			outputerr("--strategy: unknown picker '%s' (try bandit or round-robin)\n",
+				  arg);
+			exit(EXIT_FAILURE);
+		}
+		return true;
+	}
+
+	if (strcmp("group-bias", name) == 0) {
+		group_bias = true;
+		return true;
+	}
+
+	if (strcmp("cred-throttle", name) == 0) {
+		cred_throttle = true;
+		return true;
+	}
+
+	if (strcmp("canary-slots", name) == 0) {
+		unsigned long val;
+
+		if (!parse_unsigned(arg, "canary-slots", true, &val))
+			exit(EXIT_FAILURE);
+		if (val > UINT_MAX) {
+			outputerr("--canary-slots value %lu exceeds UINT_MAX\n", val);
+			exit(EXIT_FAILURE);
+		}
+		canary_slots = (unsigned int)val;
+		user_specified_canary_slots = true;
+		return true;
+	}
+
+	if (strcmp("canary-window", name) == 0) {
+		unsigned long val;
+
+		if (!parse_unsigned(arg, "canary-window", false, &val))
+			exit(EXIT_FAILURE);
+		if (val < 1000 || val > 1000000) {
+			outputerr("--canary-window=%lu out of range (1000..1000000)\n", val);
+			exit(EXIT_FAILURE);
+		}
+		canary_window_iters = (unsigned int)val;
+		return true;
+	}
+
+	if (strcmp("no-canary-queue", name) == 0) {
+		canary_queue_disabled = true;
+		return true;
+	}
+
+	if (strcmp("fork-pressure-drain", name) == 0) {
+		fork_pressure_drain = true;
+		return true;
+	}
+
+	if (strcmp("canary-seed", name) == 0) {
+		/* Parse a comma-separated list of childop names
+		 * into canary_seed_override[].  Names match
+		 * alt_op_name() output (e.g.
+		 * "genetlink_fuzzer,bpf_lifecycle").  Unknown
+		 * names are fatal -- the operator typed something
+		 * and we owe them a clean error, not a silent
+		 * skip that runs the wrong seed list. */
+		char *dup = strdup(arg);
+		char *tok, *save = NULL;
+
+		if (dup == NULL) {
+			outputerr("strdup failed\n");
+			exit(EXIT_FAILURE);
+		}
+		canary_seed_override_count = 0;
+		for (tok = strtok_r(dup, ",", &save);
+		     tok != NULL;
+		     tok = strtok_r(NULL, ",", &save)) {
+			enum child_op_type op;
+
+			if (canary_seed_override_count >=
+			    CANARY_SEED_OVERRIDE_MAX) {
+				outputerr("--canary-seed: too many entries (max %d)\n",
+					CANARY_SEED_OVERRIDE_MAX);
+				exit(EXIT_FAILURE);
+			}
+			op = alt_op_lookup_by_name(tok);
+			if (op == NR_CHILD_OP_TYPES ||
+			    op == CHILD_OP_SYSCALL) {
+				outputerr("--canary-seed: unknown childop name '%s'\n",
+					tok);
+				exit(EXIT_FAILURE);
+			}
+			canary_seed_override[canary_seed_override_count++] =
+				(unsigned char)op;
+		}
+		free(dup);
+		return true;
+	}
+
+	return false;
+}
+
+static bool parse_memory_options(int opt, const char *name, char *arg)
+{
+	if (opt != 0)
+		return false;
+
+	if (strcmp("memory-max", name) == 0) {
+		if (!validate_cgroup_size_arg("--memory-max", arg))
+			exit(EXIT_FAILURE);
+		free(memory_max_arg);
+		memory_max_arg = strdup(arg);
+		if (memory_max_arg == NULL) {
+			outputerr("strdup failed\n");
+			exit(EXIT_FAILURE);
+		}
+		return true;
+	}
+
+	if (strcmp("memory-high", name) == 0) {
+		if (!validate_cgroup_size_arg("--memory-high", arg))
+			exit(EXIT_FAILURE);
+		free(memory_high_arg);
+		memory_high_arg = strdup(arg);
+		if (memory_high_arg == NULL) {
+			outputerr("strdup failed\n");
+			exit(EXIT_FAILURE);
+		}
+		return true;
+	}
+
+	if (strcmp("memory-swap-max", name) == 0) {
+		if (!validate_cgroup_size_arg("--memory-swap-max", arg))
+			exit(EXIT_FAILURE);
+		free(memory_swap_max_arg);
+		memory_swap_max_arg = strdup(arg);
+		if (memory_swap_max_arg == NULL) {
+			outputerr("strdup failed\n");
+			exit(EXIT_FAILURE);
+		}
+		return true;
+	}
+
+	if (strcmp("no-cgroup", name) == 0) {
+		no_cgroup = true;
+		return true;
+	}
+
+	if (strcmp("no-startup-isolation", name) == 0) {
+		no_startup_isolation = true;
+		return true;
+	}
+
+	return false;
+}
+
 void parse_args(int argc, char *argv[])
 {
 	int opt;
@@ -682,6 +1022,21 @@ void parse_args(int argc, char *argv[])
 	bool epoch_timeout_set = false;
 
 	while ((opt = getopt_long(argc, argv, paramstr, longopts, &opt_index)) != -1) {
+		const char *long_name = (opt == 0) ? longopts[opt_index].name : NULL;
+
+		if (parse_child_options(opt, long_name, optarg))
+			continue;
+		if (parse_kcov_options(opt, long_name, optarg))
+			continue;
+		if (parse_cmp_options(opt, long_name, optarg))
+			continue;
+		if (parse_cache_options(opt, long_name, optarg))
+			continue;
+		if (parse_strategy_options(opt, long_name, optarg))
+			continue;
+		if (parse_memory_options(opt, long_name, optarg))
+			continue;
+
 		switch (opt) {
 		default:
 			if (opt == '?')
@@ -718,24 +1073,6 @@ void parse_args(int argc, char *argv[])
 			do_specific_syscall = true;
 			toggle_syscall(optarg, true);
 			break;
-
-		case 'C': {
-			unsigned long val;
-			enum max_children_binding b;
-			unsigned long cap;
-
-			if (!parse_unsigned(optarg, "children", false, &val))
-				exit(EXIT_FAILURE);
-			cap = derive_max_children_cap(&b);
-			if (val > cap) {
-				outputerr("--children=%lu exceeds %s cap of %lu\n",
-					  val, binding_name(b), cap);
-				exit(EXIT_FAILURE);
-			}
-			user_specified_children = (unsigned int)val;
-			max_children = user_specified_children;
-			break;
-		}
 
 		case 'd':
 			dangerous = true;
@@ -876,172 +1213,24 @@ void parse_args(int argc, char *argv[])
 			break;
 
 		case 0:
-			if (strcmp("alt-op-children", longopts[opt_index].name) == 0) {
-				unsigned long val;
-
-				if (!parse_unsigned(optarg, "alt-op-children", true, &val))
-					exit(EXIT_FAILURE);
-				if (val > UINT_MAX) {
-					outputerr("--alt-op-children value %lu exceeds UINT_MAX\n", val);
-					exit(EXIT_FAILURE);
-				}
-				alt_op_children = (unsigned int)val;
-				user_specified_alt_op_children = true;
-			}
-
-			if (strcmp("childop-kcov-attribution",
-				   longopts[opt_index].name) == 0) {
-				if (strcmp(optarg, "off") == 0) {
-					childop_kcov_attr_mode =
-						CHILDOP_KCOV_ATTR_OFF;
-				} else if (strcmp(optarg, "dual") == 0) {
-					childop_kcov_attr_mode =
-						CHILDOP_KCOV_ATTR_DUAL;
-				} else if (strcmp(optarg, "on") == 0) {
-					childop_kcov_attr_mode =
-						CHILDOP_KCOV_ATTR_ON;
-				} else {
-					outputerr("--childop-kcov-attribution: unknown mode '%s' (expected off, dual, or on)\n",
-						optarg);
-					exit(EXIT_FAILURE);
-				}
-			}
-
-			if (strcmp("kcov-transition-coverage",
-				   longopts[opt_index].name) == 0) {
-				if (strcmp(optarg, "off") == 0) {
-					kcov_transition_coverage_mode =
-						KCOV_TRANSITION_COVERAGE_OFF;
-				} else if (strcmp(optarg, "shadow") == 0) {
-					kcov_transition_coverage_mode =
-						KCOV_TRANSITION_COVERAGE_SHADOW;
-				} else {
-					outputerr("--kcov-transition-coverage: unknown mode '%s' (expected off or shadow)\n",
-						optarg);
-					exit(EXIT_FAILURE);
-				}
-			}
-
-			if (strcmp("kcov-transition-reward",
-				   longopts[opt_index].name) == 0) {
-				if (strcmp(optarg, "off") == 0) {
-					kcov_transition_reward_mode =
-						KCOV_TRANSITION_REWARD_OFF;
-				} else if (strcmp(optarg, "shadow-only") == 0) {
-					kcov_transition_reward_mode =
-						KCOV_TRANSITION_REWARD_SHADOW_ONLY;
-				} else if (strcmp(optarg, "combined") == 0) {
-					kcov_transition_reward_mode =
-						KCOV_TRANSITION_REWARD_COMBINED;
-				} else {
-					outputerr("--kcov-transition-reward: unknown mode '%s' (expected off, shadow-only, or combined)\n",
-						optarg);
-					exit(EXIT_FAILURE);
-				}
-			}
-
-			if (strcmp("clowntown", longopts[opt_index].name) == 0)
+			if (strcmp("clowntown", long_name) == 0)
 				clowntown = true;
 
-			if (strcmp("canary-slots", longopts[opt_index].name) == 0) {
-				unsigned long val;
-
-				if (!parse_unsigned(optarg, "canary-slots", true, &val))
-					exit(EXIT_FAILURE);
-				if (val > UINT_MAX) {
-					outputerr("--canary-slots value %lu exceeds UINT_MAX\n", val);
-					exit(EXIT_FAILURE);
-				}
-				canary_slots = (unsigned int)val;
-				user_specified_canary_slots = true;
-			}
-
-			if (strcmp("canary-window", longopts[opt_index].name) == 0) {
-				unsigned long val;
-
-				if (!parse_unsigned(optarg, "canary-window", false, &val))
-					exit(EXIT_FAILURE);
-				if (val < 1000 || val > 1000000) {
-					outputerr("--canary-window=%lu out of range (1000..1000000)\n", val);
-					exit(EXIT_FAILURE);
-				}
-				canary_window_iters = (unsigned int)val;
-			}
-
-			if (strcmp("no-canary-queue", longopts[opt_index].name) == 0)
-				canary_queue_disabled = true;
-
-			if (strcmp("fork-pressure-drain", longopts[opt_index].name) == 0)
-				fork_pressure_drain = true;
-
-			if (strcmp("canary-seed", longopts[opt_index].name) == 0) {
-				/* Parse a comma-separated list of childop names
-				 * into canary_seed_override[].  Names match
-				 * alt_op_name() output (e.g.
-				 * "genetlink_fuzzer,bpf_lifecycle").  Unknown
-				 * names are fatal -- the operator typed something
-				 * and we owe them a clean error, not a silent
-				 * skip that runs the wrong seed list. */
-				char *dup = strdup(optarg);
-				char *tok, *save = NULL;
-
-				if (dup == NULL) {
-					outputerr("strdup failed\n");
-					exit(EXIT_FAILURE);
-				}
-				canary_seed_override_count = 0;
-				for (tok = strtok_r(dup, ",", &save);
-				     tok != NULL;
-				     tok = strtok_r(NULL, ",", &save)) {
-					enum child_op_type op;
-
-					if (canary_seed_override_count >=
-					    CANARY_SEED_OVERRIDE_MAX) {
-						outputerr("--canary-seed: too many entries (max %d)\n",
-							CANARY_SEED_OVERRIDE_MAX);
-						exit(EXIT_FAILURE);
-					}
-					op = alt_op_lookup_by_name(tok);
-					if (op == NR_CHILD_OP_TYPES ||
-					    op == CHILD_OP_SYSCALL) {
-						outputerr("--canary-seed: unknown childop name '%s'\n",
-							tok);
-						exit(EXIT_FAILURE);
-					}
-					canary_seed_override[canary_seed_override_count++] =
-						(unsigned char)op;
-				}
-				free(dup);
-			}
-
-			if (strcmp("explorer-children", longopts[opt_index].name) == 0) {
-				unsigned long val;
-
-				if (!parse_unsigned(optarg, "explorer-children", true, &val))
-					exit(EXIT_FAILURE);
-				if (val > UINT_MAX) {
-					outputerr("--explorer-children value %lu exceeds UINT_MAX\n", val);
-					exit(EXIT_FAILURE);
-				}
-				explorer_children = (unsigned int)val;
-				user_specified_explorer_children = true;
-			}
-
-			if (strcmp("disable-fds", longopts[opt_index].name) == 0)
+			if (strcmp("disable-fds", long_name) == 0)
 				process_fds_param(optarg, false);
 
-			if (strcmp("dry-run", longopts[opt_index].name) == 0)
+			if (strcmp("dry-run", long_name) == 0)
 				dry_run = true;
 
-			if (strcmp("enable-fds", longopts[opt_index].name) == 0)
+			if (strcmp("enable-fds", long_name) == 0)
 				process_fds_param(optarg, true);
 
-			if (strcmp("epoch-iterations", longopts[opt_index].name) == 0) {
+			if (strcmp("epoch-iterations", long_name) == 0) {
 				if (!parse_unsigned(optarg, "epoch-iterations", false, &epoch_iterations))
 					exit(EXIT_FAILURE);
 			}
 
-			if (strcmp("epoch-timeout", longopts[opt_index].name) == 0) {
+			if (strcmp("epoch-timeout", long_name) == 0) {
 				if (max_runtime_set) {
 					outputerr("warning: --max-runtime takes precedence; ignoring --epoch-timeout\n");
 				} else {
@@ -1057,46 +1246,7 @@ void parse_args(int argc, char *argv[])
 				}
 			}
 
-			if (strcmp("memory-max", longopts[opt_index].name) == 0) {
-				if (!validate_cgroup_size_arg("--memory-max", optarg))
-					exit(EXIT_FAILURE);
-				free(memory_max_arg);
-				memory_max_arg = strdup(optarg);
-				if (memory_max_arg == NULL) {
-					outputerr("strdup failed\n");
-					exit(EXIT_FAILURE);
-				}
-			}
-
-			if (strcmp("memory-high", longopts[opt_index].name) == 0) {
-				if (!validate_cgroup_size_arg("--memory-high", optarg))
-					exit(EXIT_FAILURE);
-				free(memory_high_arg);
-				memory_high_arg = strdup(optarg);
-				if (memory_high_arg == NULL) {
-					outputerr("strdup failed\n");
-					exit(EXIT_FAILURE);
-				}
-			}
-
-			if (strcmp("memory-swap-max", longopts[opt_index].name) == 0) {
-				if (!validate_cgroup_size_arg("--memory-swap-max", optarg))
-					exit(EXIT_FAILURE);
-				free(memory_swap_max_arg);
-				memory_swap_max_arg = strdup(optarg);
-				if (memory_swap_max_arg == NULL) {
-					outputerr("strdup failed\n");
-					exit(EXIT_FAILURE);
-				}
-			}
-
-			if (strcmp("no-cgroup", longopts[opt_index].name) == 0)
-				no_cgroup = true;
-
-			if (strcmp("no-startup-isolation", longopts[opt_index].name) == 0)
-				no_startup_isolation = true;
-
-			if (strcmp("max-runtime", longopts[opt_index].name) == 0) {
+			if (strcmp("max-runtime", long_name) == 0) {
 				unsigned int seconds;
 				if (!parse_duration(optarg, &seconds)) {
 					outputerr("can't parse '%s' as a duration (use number with optional s/m/h/d suffix)\n", optarg);
@@ -1108,14 +1258,8 @@ void parse_args(int argc, char *argv[])
 				max_runtime_set = true;
 			}
 
-			if (strcmp("group-bias", longopts[opt_index].name) == 0)
-				group_bias = true;
-
-			if (strcmp("cred-throttle", longopts[opt_index].name) == 0)
-				cred_throttle = true;
-
 #ifdef CONFIG_GUARD_SHARED
-			if (strcmp("guard-shared", longopts[opt_index].name) == 0) {
+			if (strcmp("guard-shared", long_name) == 0) {
 				/* --guard-shared        -> pools (default)
 				 * --guard-shared=pools  -> pools
 				 * --guard-shared=all    -> all
@@ -1159,25 +1303,25 @@ void parse_args(int argc, char *argv[])
 			 * operator sees the configure step they need to
 			 * re-run.
 			 */
-			if (strcmp("guard-shared", longopts[opt_index].name) == 0) {
+			if (strcmp("guard-shared", long_name) == 0) {
 				outputerr("WARNING: --guard-shared ignored -- "
 					  "binary built without GUARD_SHARED=1; "
 					  "rebuild with GUARD_SHARED=1 ./configure && make\n");
 			}
 #endif
 
-			if (strcmp("show-unannotated", longopts[opt_index].name) == 0)
+			if (strcmp("show-unannotated", long_name) == 0)
 				show_unannotated = true;
 
-			if (strcmp("stats", longopts[opt_index].name) == 0)
+			if (strcmp("stats", long_name) == 0)
 				show_stats = true;
 
-			if (strcmp("stats-json", longopts[opt_index].name) == 0) {
+			if (strcmp("stats-json", long_name) == 0) {
 				stats_json = true;
 				show_stats = true;
 			}
 
-			if (strcmp("stats-log-file", longopts[opt_index].name) == 0) {
+			if (strcmp("stats-log-file", long_name) == 0) {
 				free(stats_log_path);
 				stats_log_path = strdup(optarg);
 				if (!stats_log_path) {
@@ -1186,62 +1330,8 @@ void parse_args(int argc, char *argv[])
 				}
 			}
 
-			if (strcmp("strategy", longopts[opt_index].name) == 0) {
-				if (!parse_picker_mode(optarg, &picker_mode_arg)) {
-					outputerr("--strategy: unknown picker '%s' (try bandit or round-robin)\n",
-						  optarg);
-					exit(EXIT_FAILURE);
-				}
-			}
-
-			if (strcmp("redqueen-pending-pick",
-				   longopts[opt_index].name) == 0) {
-				if (!parse_redqueen_pending_pick(
-						optarg,
-						&redqueen_pending_pick_mode_arg)) {
-					outputerr("--redqueen-pending-pick: unknown policy '%s' (try random or first)\n",
-						  optarg);
-					exit(EXIT_FAILURE);
-				}
-			}
-
-			if (strcmp("cmp-recent-pool",
-				   longopts[opt_index].name) == 0) {
-				if (!parse_cmp_recent_pool(
-						optarg,
-						&cmp_recent_pool_mode_arg)) {
-					outputerr("--cmp-recent-pool: unknown policy '%s' (try off or recent-first)\n",
-						  optarg);
-					exit(EXIT_FAILURE);
-				}
-			}
-
-			if (strcmp("no-warm-start", longopts[opt_index].name) == 0)
-				no_warm_start = true;
-
-			if (strcmp("print-disabled-syscalls", longopts[opt_index].name) == 0)
+			if (strcmp("print-disabled-syscalls", long_name) == 0)
 				show_disabled_syscalls = true;
-
-			if (strcmp("warm-start-path", longopts[opt_index].name) == 0) {
-				free(warm_start_path);
-				warm_start_path = strdup(optarg);
-				if (!warm_start_path) {
-					outputerr("strdup failed\n");
-					exit(EXIT_FAILURE);
-				}
-			}
-
-			if (strcmp("no-kcov-warm-start",
-				   longopts[opt_index].name) == 0)
-				no_kcov_warm_start = true;
-
-			if (strcmp("no-cmp-hints-warm-start",
-				   longopts[opt_index].name) == 0)
-				no_cmp_hints_warm_start = true;
-
-			if (strcmp("corpus-save-errno-grad-live",
-				   longopts[opt_index].name) == 0)
-				corpus_save_errno_grad_live = true;
 
 			break;
 		}
