@@ -1,0 +1,1240 @@
+/*
+ * Alt-op picker, dispatch table, and the scoring / dormancy
+ * machinery that drives the canary queue's observability.  Split
+ * out of child.c so make -j can compile this concurrently with the
+ * per-child setup and the main loop.
+ *
+ * pick_op_type, adapt_budget, and the op_dispatch[] table shed
+ * their `static` linkage at the TU split -- child_process() in
+ * child.c calls all three on the hot per-iteration path.  See
+ * include/child-internal.h for the extern declarations.
+ */
+
+#include <stdatomic.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "child.h"
+#include "child-internal.h"
+#include "childops-genl.h"
+#include "childops-iouring.h"
+#include "childops-netlink.h"
+#include "childops-nfnl.h"
+#include "childops-util.h"
+#include "kcov.h"
+#include "params.h"
+#include "random.h"
+#include "rnd.h"
+#include "shm.h"
+#include "stats.h"
+#include "strategy.h"
+#include "tables.h"
+#include "trinity.h"	// ARRAY_SIZE
+
+/*
+ * Startup snapshot of the dormant-op gate consulted by init_altop_dispatch()
+ * to build the dense enabled_altops[] vector.  Mutated at runtime by the
+ * parent's queue transition path (enter_canarying / close_window_and_decide);
+ * to check what's CURRENTLY active, read the periodic `canary queue:` log
+ * lines and see canary_queue_init() in child-canary.c, not this table.
+ *
+ * Slot ordering matches pick_op_type_table[]; the _Static_assert below
+ * pins ARRAY_SIZE equality between the two.
+ */
+static int dormant_op_disabled[117] = {
+	0, 0, 0, 0, 0,
+	0, 1, 1, 1, 1,
+	1, 1, 1, 0, 1,
+	1, 0, 0, 1, 1,
+	1, 1, 1, 1, 1,
+	1, 1, 1, 1, 1,
+	1, 1, 1, 1, 1,
+	1, 1, 1, 0, 1,
+	1, 1, 1, 1, 1,
+	1, 1, 1, 1, 1,
+	1, 1, 1, 1, 1,
+	1, 1, 1, 1, 1,
+	1, 1, 1, 1, 1,
+	1, 1, 1, 1, 0,
+	1, 1,
+	1, 1, 1, 1, 1, 1,
+	0,	/* pagecache_canary_check stays active: it's an in-tree verifier, not a fuzz target the queue should ever demote. */
+	1, 1, 1, 1, 1, 1, 1, 1, 1,
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+	1,
+	0,	/* eth_emitter is lightweight (one socket per child, fixed-size sendto) — promote at startup. */
+	1,	/* sysfs_string_race: dormant until canary-queue load-tests the .store() race burst. */
+	1,	/* pci_bind: dormant until canary-queue load-tests the driver attach/detach path on the conservative allowlist. */
+	1,	/* iscsi_login_walker: dormant until canary-queue load-tests the LIO Login state-machine walk. */
+	1,	/* vma_split_storm: dormant until canary-queue load-tests the heavy VMA-split mm pressure burst. */
+	1,	/* af_unix_peek_race: dormant until canary-queue load-tests the SO_PEEK_OFF + MSG_PEEK/recv/shutdown race burst. */
+	1,	/* sysv_shm_orphan_race: dormant until canary-queue load-tests the SysV SHM orphan-destroy attach/RMID race burst. */
+	1,	/* qrtr_bind_race: dormant until canary-queue load-tests the AF_QRTR same-port bind/close race burst. */
+	1,	/* tc_mirred_blockcast: dormant until canary-queue load-tests the clsact + shared egress block + mirred blockcast recursion burst. */
+	1,	/* pfkey_spd_walk: dormant until canary-queue load-tests the PF_KEYv2 SPDDUMP-vs-SPDADD walk-race burst. */
+	1,	/* l2tp_ifname_race: dormant until canary-queue load-tests the L2TP SESSION_CREATE same-ifname race burst. */
+	1,	/* statmount_idmap_overflow: dormant until canary-queue load-tests the statmount() idmap seq-buffer overflow sweep. */
+	1,	/* sock_ulp_sockmap_layering: dormant until canary-queue load-tests the TCP_ULP "tls" + sockmap STREAM_VERDICT layering burst. */
+	1,	/* umount_race: dormant until canary-queue load-tests the umount2(MNT_DETACH)-vs-accessor race against scratch_block-published mounts. */
+};
+
+/*
+ * Round-robin rotation for dedicated alt-op children.  The slow,
+ * pressure-style ops are listed first (mmap_lifecycle, mprotect_split,
+ * mlock_pressure, inode_spewer) because those are the paths the design
+ * brief explicitly calls out as too expensive to mix into the syscall
+ * hot loop even at 1%.  fork/futex/signal/pipe/flock storms come next,
+ * then the cgroup/mount/uffd/io_uring churners, and finally the heavier
+ * subsystem fuzzers (perf, tracefs, bpf, fault-injector, recipes).  The
+ * dispatch in child_process() already has cases for every entry below,
+ * so a dedicated child stamped with any of these op types runs straight
+ * through the existing per-op function on every iteration.
+ *
+ * Bypasses the dormant_op_disabled[] gate by design: random pickers stay
+ * gated until each op has been load-tested, but a child reserved for a
+ * specific op runs it deliberately.
+ */
+static const enum child_op_type alt_op_rotation[] = {
+	CHILD_OP_MMAP_LIFECYCLE,
+	CHILD_OP_MPROTECT_SPLIT,
+	CHILD_OP_VMA_SPLIT_STORM,
+	CHILD_OP_MADVISE_CYCLER,
+	CHILD_OP_NUMA_MIGRATION,
+	CHILD_OP_MLOCK_PRESSURE,
+	CHILD_OP_INODE_SPEWER,
+	CHILD_OP_FORK_STORM,
+	CHILD_OP_CPU_HOTPLUG_RIDER,
+	CHILD_OP_PIDFD_STORM,
+	CHILD_OP_FUTEX_STORM,
+	CHILD_OP_SIGNAL_STORM,
+	CHILD_OP_PIPE_THRASH,
+	CHILD_OP_FLOCK_THRASH,
+	CHILD_OP_XATTR_THRASH,
+	CHILD_OP_CGROUP_CHURN,
+	CHILD_OP_MOUNT_CHURN,
+	CHILD_OP_UFFD_CHURN,
+	CHILD_OP_IOURING_FLOOD,
+	CHILD_OP_CLOSE_RACER,
+	CHILD_OP_EPOLL_VOLATILITY,
+	CHILD_OP_KEYRING_SPAM,
+	CHILD_OP_VDSO_MREMAP_RACE,
+	CHILD_OP_MEMORY_PRESSURE,
+	CHILD_OP_SLAB_CACHE_THRASH,
+	CHILD_OP_TLS_ROTATE,
+	CHILD_OP_SOCK_ULP_SOCKMAP_LAYERING,
+	CHILD_OP_PACKET_FANOUT_THRASH,
+	CHILD_OP_ETH_EMITTER,
+	CHILD_OP_USERNS_FUZZER,
+	CHILD_OP_SCHED_CYCLER,
+	CHILD_OP_BARRIER_RACER,
+	CHILD_OP_GENETLINK_FUZZER,
+	CHILD_OP_PERF_CHAINS,
+	CHILD_OP_TRACEFS_FUZZER,
+	CHILD_OP_BPF_LIFECYCLE,
+	CHILD_OP_FAULT_INJECTOR,
+	CHILD_OP_RECIPE_RUNNER,
+	CHILD_OP_IOURING_RECIPES,
+	CHILD_OP_FD_STRESS,
+	CHILD_OP_REFCOUNT_AUDITOR,
+	CHILD_OP_FS_LIFECYCLE,
+	CHILD_OP_PROCFS_WRITER,
+	CHILD_OP_SOCKET_FAMILY_CHAIN,
+	CHILD_OP_IOURING_NET_MULTISHOT,
+	CHILD_OP_TCP_AO_ROTATE,
+	CHILD_OP_VRF_FIB_CHURN,
+	CHILD_OP_NETLINK_MONITOR_RACE,
+	CHILD_OP_TIPC_LINK_CHURN,
+	CHILD_OP_TLS_ULP_CHURN,
+	CHILD_OP_VXLAN_ENCAP_CHURN,
+	CHILD_OP_BRIDGE_FDB_STP,
+	CHILD_OP_NFTABLES_CHURN,
+	CHILD_OP_TC_QDISC_CHURN,
+	CHILD_OP_XFRM_CHURN,
+	CHILD_OP_BPF_CGROUP_ATTACH,
+	CHILD_OP_SCTP_ASSOC_CHURN,
+	CHILD_OP_MPTCP_PM_CHURN,
+	CHILD_OP_NL80211_CHURN,
+	CHILD_OP_NAT_T_CHURN,
+	CHILD_OP_SOCK_DIAG_WALKER,
+	CHILD_OP_ALTNAME_THRASH,
+	CHILD_OP_OVS_TUNNEL_VPORT_CHURN,
+	CHILD_OP_TTY_LDISC_CHURN,
+	CHILD_OP_UMOUNT_RACE,
+};
+#define NR_ALT_OP_ROTATION	ARRAY_SIZE(alt_op_rotation)
+
+/*
+ * KCOV bracketing opt-in.  Read by the childop dispatcher.
+ * Defaults to true for every op.
+ * CHILD_OP_SYSCALL falls through to run_sequence_chain
+ * which brackets per-syscall internally.  CHILD_OP_SCHED_CYCLER
+ * (childops/sched-cycler.c) calls random_syscall(child) in
+ * a tight loop; an outer bracket would double-call
+ * ioctl(KCOV_ENABLE) and the kernel returns -EBUSY which
+ * kcov_enable_trace currently treats as fatal.
+ *
+ * Expressed as an accessor so new enum members default to
+ * eligible without per-table maintenance and without the
+ * [0 ... N-1] = true designated-init override idiom, which
+ * trips -Woverride-init on this codebase's -Wextra build.
+ * Compiler folds the switch into a constant-time check at
+ * the future call site.
+ */
+bool op_uses_outer_bracket(enum child_op_type op)
+{
+	switch (op) {
+	case CHILD_OP_SYSCALL:
+	case CHILD_OP_SCHED_CYCLER:
+		return false;
+	default:
+		return true;
+	}
+}
+
+const char *alt_op_name(enum child_op_type op)
+{
+	switch (op) {
+	case CHILD_OP_SYSCALL:		return "syscall";
+	case CHILD_OP_MMAP_LIFECYCLE:	return "mmap_lifecycle";
+	case CHILD_OP_MPROTECT_SPLIT:	return "mprotect_split";
+	case CHILD_OP_MLOCK_PRESSURE:	return "mlock_pressure";
+	case CHILD_OP_INODE_SPEWER:	return "inode_spewer";
+	case CHILD_OP_PROCFS_WRITER:	return "procfs_writer";
+	case CHILD_OP_MEMORY_PRESSURE:	return "memory_pressure";
+	case CHILD_OP_USERNS_FUZZER:	return "userns_fuzzer";
+	case CHILD_OP_SCHED_CYCLER:	return "sched_cycler";
+	case CHILD_OP_BARRIER_RACER:	return "barrier_racer";
+	case CHILD_OP_GENETLINK_FUZZER:	return "genetlink_fuzzer";
+	case CHILD_OP_PERF_CHAINS:	return "perf_chains";
+	case CHILD_OP_TRACEFS_FUZZER:	return "tracefs_fuzzer";
+	case CHILD_OP_BPF_LIFECYCLE:	return "bpf_lifecycle";
+	case CHILD_OP_FAULT_INJECTOR:	return "fault_injector";
+	case CHILD_OP_RECIPE_RUNNER:	return "recipe_runner";
+	case CHILD_OP_IOURING_RECIPES:	return "iouring_recipes";
+	case CHILD_OP_FD_STRESS:	return "fd_stress";
+	case CHILD_OP_REFCOUNT_AUDITOR:	return "refcount_auditor";
+	case CHILD_OP_FS_LIFECYCLE:	return "fs_lifecycle";
+	case CHILD_OP_SIGNAL_STORM:	return "signal_storm";
+	case CHILD_OP_FUTEX_STORM:	return "futex_storm";
+	case CHILD_OP_PIPE_THRASH:	return "pipe_thrash";
+	case CHILD_OP_FORK_STORM:	return "fork_storm";
+	case CHILD_OP_FLOCK_THRASH:	return "flock_thrash";
+	case CHILD_OP_CGROUP_CHURN:	return "cgroup_churn";
+	case CHILD_OP_MOUNT_CHURN:	return "mount_churn";
+	case CHILD_OP_UFFD_CHURN:	return "uffd_churn";
+	case CHILD_OP_IOURING_FLOOD:	return "iouring_flood";
+	case CHILD_OP_CLOSE_RACER:	return "close_racer";
+	case CHILD_OP_SOCKET_FAMILY_CHAIN:	return "socket_family_chain";
+	case CHILD_OP_XATTR_THRASH:	return "xattr_thrash";
+	case CHILD_OP_PIDFD_STORM:	return "pidfd_storm";
+	case CHILD_OP_MADVISE_CYCLER:	return "madvise_cycler";
+	case CHILD_OP_EPOLL_VOLATILITY:	return "epoll_volatility";
+	case CHILD_OP_KEYRING_SPAM:	return "keyring_spam";
+	case CHILD_OP_VDSO_MREMAP_RACE:	return "vdso_mremap_race";
+	case CHILD_OP_NUMA_MIGRATION:	return "numa_migration";
+	case CHILD_OP_CPU_HOTPLUG_RIDER: return "cpu_hotplug_rider";
+	case CHILD_OP_SLAB_CACHE_THRASH: return "slab_cache_thrash";
+	case CHILD_OP_TLS_ROTATE:	return "tls_rotate";
+	case CHILD_OP_SOCK_ULP_SOCKMAP_LAYERING:	return "sock_ulp_sockmap_layering";
+	case CHILD_OP_PACKET_FANOUT_THRASH:	return "packet_fanout_thrash";
+	case CHILD_OP_IOURING_NET_MULTISHOT:	return "iouring_net_multishot";
+	case CHILD_OP_TCP_AO_ROTATE:	return "tcp_ao_rotate";
+	case CHILD_OP_VRF_FIB_CHURN:	return "vrf_fib_churn";
+	case CHILD_OP_NETLINK_MONITOR_RACE:	return "netlink_monitor_race";
+	case CHILD_OP_TIPC_LINK_CHURN:	return "tipc_link_churn";
+	case CHILD_OP_TLS_ULP_CHURN:	return "tls_ulp_churn";
+	case CHILD_OP_VXLAN_ENCAP_CHURN:	return "vxlan_encap_churn";
+	case CHILD_OP_BRIDGE_FDB_STP:	return "bridge_fdb_stp";
+	case CHILD_OP_NFTABLES_CHURN:	return "nftables_churn";
+	case CHILD_OP_TC_QDISC_CHURN:	return "tc_qdisc_churn";
+	case CHILD_OP_XFRM_CHURN:	return "xfrm_churn";
+	case CHILD_OP_BPF_CGROUP_ATTACH:	return "bpf_cgroup_attach";
+	case CHILD_OP_SCTP_ASSOC_CHURN:	return "sctp_assoc_churn";
+	case CHILD_OP_MPTCP_PM_CHURN:	return "mptcp_pm_churn";
+	case CHILD_OP_DEVLINK_PORT_CHURN:	return "devlink_port_churn";
+	case CHILD_OP_HANDSHAKE_REQ_ABORT:	return "handshake_req_abort";
+	case CHILD_OP_NF_CONNTRACK_HELPER:	return "nf_conntrack_helper_churn";
+	case CHILD_OP_AF_UNIX_SCM_RIGHTS_GC:	return "af_unix_scm_rights_gc_churn";
+	case CHILD_OP_NETNS_TEARDOWN_CHURN:	return "netns_teardown_churn";
+	case CHILD_OP_TCP_ULP_SWAP_CHURN:	return "tcp_ulp_swap_churn";
+	case CHILD_OP_MSG_ZEROCOPY_CHURN:	return "msg_zerocopy_churn";
+	case CHILD_OP_IOURING_SEND_ZC_CHURN:	return "iouring_send_zc_churn";
+	case CHILD_OP_VSOCK_TRANSPORT_CHURN:	return "vsock_transport_churn";
+	case CHILD_OP_BRIDGE_VLAN_CHURN:	return "bridge_vlan_churn";
+	case CHILD_OP_IGMP_MLD_SOURCE_CHURN:	return "igmp_mld_source_churn";
+	case CHILD_OP_PSP_KEY_ROTATE:	return "psp_key_rotate";
+	case CHILD_OP_AFXDP_CHURN:	return "afxdp_churn";
+	case CHILD_OP_KVM_RUN_CHURN:	return "kvm_run_churn";
+	case CHILD_OP_NL80211_CHURN:	return "nl80211_churn";
+	case CHILD_OP_NAT_T_CHURN:	return "nat_t_churn";
+	case CHILD_OP_SPLICE_PROTOCOLS:	return "splice_protocols";
+	case CHILD_OP_RXRPC_KEY_INSTALL:	return "rxrpc_key_install";
+	case CHILD_OP_INPLACE_CRYPTO_ORACLE:	return "inplace_crypto_oracle";
+	case CHILD_OP_AF_ALG_WEAK_CIPHER_PROBE:	return "af_alg_weak_cipher_probe";
+	case CHILD_OP_AF_ALG_TEMPLATE_PROBE:	return "af_alg_template_probe";
+	case CHILD_OP_AF_ALG_RECVMSG_CHURN:	return "af_alg_recvmsg_churn";
+	case CHILD_OP_IOURING_CMD_PASSTHROUGH:	return "iouring_cmd_passthrough";
+	case CHILD_OP_PAGECACHE_CANARY_CHECK:	return "pagecache_canary_check";
+	case CHILD_OP_MPLS_ROUTE_CHURN:	return "mpls_route_churn";
+	case CHILD_OP_SOCK_DIAG_WALKER:	return "sock_diag_walker";
+	case CHILD_OP_ALTNAME_THRASH:	return "altname_thrash";
+	case CHILD_OP_IPMR_CACHE_REPORT:	return "ipmr_cache_report";
+	case CHILD_OP_UBLK_LIFECYCLE:	return "ublk_lifecycle";
+	case CHILD_OP_VETH_ASYMMETRIC_XDP:	return "veth_asymmetric_xdp";
+	case CHILD_OP_IP6ERSPAN_NETNS_MIGRATE:	return "ip6erspan_netns_migrate";
+	case CHILD_OP_IPVS_SYSCTL_WRITER:	return "ipvs_sysctl_writer";
+	case CHILD_OP_TCP_MD5_LISTENER_RACE:	return "tcp_md5_listener_race";
+	case CHILD_OP_IPV6_NDISC_PROXY:	return "ipv6_ndisc_proxy";
+	case CHILD_OP_IPFRAG_SOURCE_CHURN:	return "ipfrag_source_churn";
+	case CHILD_OP_RTNL_VF_BROADCAST_GETLINK:	return "rtnl_vf_broadcast_getlink";
+	case CHILD_OP_OBSCURE_AF_CHURN:	return "obscure_af_churn";
+	case CHILD_OP_BRIDGE_CT_CHURN:	return "bridge_conntrack_churn";
+	case CHILD_OP_ATM_VCC_CHURN:	return "atm_vcc_churn";
+	case CHILD_OP_IP6GRE_BOND_LAPB_STACK:	return "ip6gre_bond_lapb_stack";
+	case CHILD_OP_FLOWTABLE_ENCAP_VLAN:	return "flowtable_encap_vlan";
+	case CHILD_OP_IPV6_PMTU_TEARDOWN_RACE:	return "ipv6_pmtu_teardown_race";
+	case CHILD_OP_RXRPC_SENDMSG_CMSG_CHURN:	return "rxrpc_sendmsg_cmsg_churn";
+	case CHILD_OP_OVS_TUNNEL_VPORT_CHURN:	return "ovs_tunnel_vport_churn";
+	case CHILD_OP_TTY_LDISC_CHURN:	return "tty_ldisc_churn";
+	case CHILD_OP_WIREGUARD_DECRYPT_FLOOD:	return "wireguard_decrypt_flood";
+	case CHILD_OP_BLKDEV_LIFECYCLE_RACE:	return "blkdev_lifecycle_race";
+	case CHILD_OP_ISCSI_TARGET_PROBE:	return "iscsi_target_probe";
+	case CHILD_OP_ISCSI_LOGIN_WALKER:	return "iscsi_login_walker";
+	case CHILD_OP_ETH_EMITTER:	return "eth_emitter";
+	case CHILD_OP_VMA_SPLIT_STORM:	return "vma_split_storm";
+	case CHILD_OP_SYSFS_STRING_RACE:	return "sysfs_string_race";
+	case CHILD_OP_PCI_BIND:		return "pci_bind";
+	case CHILD_OP_AF_UNIX_PEEK_RACE:	return "af_unix_peek_race";
+	case CHILD_OP_SYSV_SHM_ORPHAN_RACE:	return "sysv_shm_orphan_race";
+	case CHILD_OP_QRTR_BIND_RACE:	return "qrtr_bind_race";
+	case CHILD_OP_TC_MIRRED_BLOCKCAST:	return "tc_mirred_blockcast";
+	case CHILD_OP_PFKEY_SPD_WALK:	return "pfkey_spd_walk";
+	case CHILD_OP_L2TP_IFNAME_RACE:	return "l2tp_ifname_race";
+	case CHILD_OP_STATMOUNT_IDMAP_OVERFLOW:	return "statmount_idmap_overflow";
+	case CHILD_OP_UMOUNT_RACE:	return "umount_race";
+	case NR_CHILD_OP_TYPES:		break;
+	}
+	return "unknown";
+}
+
+/*
+ * Reverse of alt_op_name(): looks up an op by its string form (as
+ * emitted by alt_op_name) and returns the matching enum value.  Used
+ * by the --canary-seed CLI flag parser to translate operator-supplied
+ * op names into an override seed list.  Linear scan over
+ * NR_CHILD_OP_TYPES; called at most a few times at startup, never on
+ * the hot path.  Returns NR_CHILD_OP_TYPES when no match is found so
+ * the caller can distinguish "unknown name" from any real enum value.
+ */
+enum child_op_type alt_op_lookup_by_name(const char *name)
+{
+	unsigned int i;
+
+	if (name == NULL || *name == '\0')
+		return NR_CHILD_OP_TYPES;
+
+	for (i = 0; i < NR_CHILD_OP_TYPES; i++) {
+		const char *n = alt_op_name((enum child_op_type)i);
+		if (n != NULL && strcmp(n, name) == 0)
+			return (enum child_op_type)i;
+	}
+	return NR_CHILD_OP_TYPES;
+}
+
+void assign_dedicated_alt_op(struct childdata *child, int childno)
+{
+	if (alt_op_children == 0 || childno < 0)
+		return;
+	if ((unsigned int)childno >= alt_op_children)
+		return;
+
+	/* Canary slots are carved from the FRONT of the alt-op pool: the
+	 * first canary_slots slots get the canary queue's currently-
+	 * canarying op stamped here at spawn time, instead of the
+	 * alt_op_rotation[] entry they would otherwise use.  The
+	 * remaining alt-op slots continue with the rotation, shifted past
+	 * the canary carve so the rotation walk stays stable.  When the
+	 * queue is disabled (--no-canary-queue or canary_slots=0), or
+	 * before the first canarying op has been selected,
+	 * canary_slot_active() returns false and the rotation handles
+	 * every slot from index 0 as it did pre-queue. */
+	if (canary_slot_active(childno)) {
+		child->op_type = canary_active_op();
+		return;
+	}
+
+	unsigned int rotation_idx = (unsigned int)childno;
+	if (canary_slots > 0 && rotation_idx >= canary_slots)
+		rotation_idx -= canary_slots;
+	child->op_type = alt_op_rotation[rotation_idx % NR_ALT_OP_ROTATION];
+}
+
+void log_alt_op_config(void)
+{
+	char buf[512];
+	size_t off = 0;
+	unsigned int i;
+	unsigned int show;
+
+	if (alt_op_children == 0)
+		return;
+
+	/* Show the head of the rotation at -v so the assignment for the
+	 * first few slots is eyeballable.  Cap at 5 (or fewer if
+	 * alt_op_children itself is smaller) and append an ellipsis when
+	 * there are more rotation entries left. */
+	show = alt_op_children < 5 ? alt_op_children : 5;
+	if (show > NR_ALT_OP_ROTATION)
+		show = NR_ALT_OP_ROTATION;
+
+	for (i = 0; i < show; i++) {
+		int n = snprintf(buf + off, sizeof(buf) - off, "%s%s",
+				 off ? ", " : "",
+				 alt_op_name(alt_op_rotation[i]));
+		if (n <= 0 || (size_t)n >= sizeof(buf) - off)
+			break;
+		off += (size_t)n;
+	}
+	if (show < NR_ALT_OP_ROTATION && off < sizeof(buf) - 1)
+		(void) snprintf(buf + off, sizeof(buf) - off, ", ...");
+
+	output(1, "alt-op children: %u reserved, rotation = %s\n",
+		alt_op_children, buf);
+}
+
+/*
+ * Slot -> alt-op mapping.  Same indexing as dormant_op_disabled[]: slot N
+ * is enabled iff dormant_op_disabled[N] == 0.  Slot 53 was previously a hole
+ * left by a removed op; it now holds CHILD_OP_MPLS_ROUTE_CHURN.  The
+ * CHILD_OP_SYSCALL sentinel filter in init_altop_dispatch() stays as
+ * defensive coding for any future hole.
+ */
+static const enum child_op_type pick_op_type_table[117] = {
+	[0]  = CHILD_OP_MMAP_LIFECYCLE,
+	[1]  = CHILD_OP_MPROTECT_SPLIT,
+	[2]  = CHILD_OP_MLOCK_PRESSURE,
+	[3]  = CHILD_OP_INODE_SPEWER,
+	[4]  = CHILD_OP_PROCFS_WRITER,
+	[5]  = CHILD_OP_MEMORY_PRESSURE,
+	[6]  = CHILD_OP_USERNS_FUZZER,
+	[7]  = CHILD_OP_SCHED_CYCLER,
+	[8]  = CHILD_OP_BARRIER_RACER,
+	[9]  = CHILD_OP_GENETLINK_FUZZER,
+	[10] = CHILD_OP_PERF_CHAINS,
+	[11] = CHILD_OP_TRACEFS_FUZZER,
+	[12] = CHILD_OP_BPF_LIFECYCLE,
+	[13] = CHILD_OP_FAULT_INJECTOR,
+	[14] = CHILD_OP_RECIPE_RUNNER,
+	[15] = CHILD_OP_IOURING_RECIPES,
+	[16] = CHILD_OP_FD_STRESS,
+	[17] = CHILD_OP_REFCOUNT_AUDITOR,
+	[18] = CHILD_OP_FS_LIFECYCLE,
+	[19] = CHILD_OP_SIGNAL_STORM,
+	[20] = CHILD_OP_FUTEX_STORM,
+	[21] = CHILD_OP_PIPE_THRASH,
+	[22] = CHILD_OP_FORK_STORM,
+	[23] = CHILD_OP_FLOCK_THRASH,
+	[24] = CHILD_OP_CGROUP_CHURN,
+	[25] = CHILD_OP_MOUNT_CHURN,
+	[26] = CHILD_OP_UFFD_CHURN,
+	[27] = CHILD_OP_IOURING_FLOOD,
+	[28] = CHILD_OP_CLOSE_RACER,
+	[29] = CHILD_OP_SOCKET_FAMILY_CHAIN,
+	[30] = CHILD_OP_XATTR_THRASH,
+	[31] = CHILD_OP_PIDFD_STORM,
+	[32] = CHILD_OP_MADVISE_CYCLER,
+	[33] = CHILD_OP_EPOLL_VOLATILITY,
+	[34] = CHILD_OP_KEYRING_SPAM,
+	[35] = CHILD_OP_VDSO_MREMAP_RACE,
+	[36] = CHILD_OP_NUMA_MIGRATION,
+	[37] = CHILD_OP_CPU_HOTPLUG_RIDER,
+	[38] = CHILD_OP_SLAB_CACHE_THRASH,
+	[39] = CHILD_OP_TLS_ROTATE,
+	[40] = CHILD_OP_PACKET_FANOUT_THRASH,
+	[41] = CHILD_OP_IOURING_NET_MULTISHOT,
+	[42] = CHILD_OP_TCP_AO_ROTATE,
+	[43] = CHILD_OP_VRF_FIB_CHURN,
+	[44] = CHILD_OP_NETLINK_MONITOR_RACE,
+	[45] = CHILD_OP_TIPC_LINK_CHURN,
+	[46] = CHILD_OP_TLS_ULP_CHURN,
+	[47] = CHILD_OP_VXLAN_ENCAP_CHURN,
+	[48] = CHILD_OP_BRIDGE_FDB_STP,
+	[49] = CHILD_OP_NFTABLES_CHURN,
+	[50] = CHILD_OP_TC_QDISC_CHURN,
+	[51] = CHILD_OP_XFRM_CHURN,
+	[52] = CHILD_OP_BPF_CGROUP_ATTACH,
+	[53] = CHILD_OP_MPLS_ROUTE_CHURN,
+	[54] = CHILD_OP_SCTP_ASSOC_CHURN,
+	[55] = CHILD_OP_MPTCP_PM_CHURN,
+	[56] = CHILD_OP_DEVLINK_PORT_CHURN,
+	[57] = CHILD_OP_HANDSHAKE_REQ_ABORT,
+	[58] = CHILD_OP_NF_CONNTRACK_HELPER,
+	[59] = CHILD_OP_AF_UNIX_SCM_RIGHTS_GC,
+	[60] = CHILD_OP_NETNS_TEARDOWN_CHURN,
+	[61] = CHILD_OP_TCP_ULP_SWAP_CHURN,
+	[62] = CHILD_OP_MSG_ZEROCOPY_CHURN,
+	[63] = CHILD_OP_IOURING_SEND_ZC_CHURN,
+	[64] = CHILD_OP_VSOCK_TRANSPORT_CHURN,
+	[65] = CHILD_OP_BRIDGE_VLAN_CHURN,
+	[66] = CHILD_OP_IGMP_MLD_SOURCE_CHURN,
+	[67] = CHILD_OP_PSP_KEY_ROTATE,
+	[68] = CHILD_OP_AFXDP_CHURN,
+	[69] = CHILD_OP_KVM_RUN_CHURN,
+	[70] = CHILD_OP_NL80211_CHURN,
+	[71] = CHILD_OP_NAT_T_CHURN,
+	[72] = CHILD_OP_SPLICE_PROTOCOLS,
+	[73] = CHILD_OP_RXRPC_KEY_INSTALL,
+	[74] = CHILD_OP_INPLACE_CRYPTO_ORACLE,
+	[75] = CHILD_OP_AF_ALG_WEAK_CIPHER_PROBE,
+	[76] = CHILD_OP_AF_ALG_TEMPLATE_PROBE,
+	[77] = CHILD_OP_IOURING_CMD_PASSTHROUGH,
+	[78] = CHILD_OP_PAGECACHE_CANARY_CHECK,
+	[79] = CHILD_OP_SOCK_DIAG_WALKER,
+	[80] = CHILD_OP_ALTNAME_THRASH,
+	[81] = CHILD_OP_IPMR_CACHE_REPORT,
+	[82] = CHILD_OP_UBLK_LIFECYCLE,
+	[83] = CHILD_OP_VETH_ASYMMETRIC_XDP,
+	[84] = CHILD_OP_IP6ERSPAN_NETNS_MIGRATE,
+	[85] = CHILD_OP_IPVS_SYSCTL_WRITER,
+	[86] = CHILD_OP_TCP_MD5_LISTENER_RACE,
+	[87] = CHILD_OP_IPV6_NDISC_PROXY,
+	[88] = CHILD_OP_IPFRAG_SOURCE_CHURN,
+	[89] = CHILD_OP_RTNL_VF_BROADCAST_GETLINK,
+	[90] = CHILD_OP_OBSCURE_AF_CHURN,
+	[91] = CHILD_OP_AF_ALG_RECVMSG_CHURN,
+	[92] = CHILD_OP_BRIDGE_CT_CHURN,
+	[93] = CHILD_OP_ATM_VCC_CHURN,
+	[94] = CHILD_OP_IP6GRE_BOND_LAPB_STACK,
+	[95] = CHILD_OP_FLOWTABLE_ENCAP_VLAN,
+	[96] = CHILD_OP_IPV6_PMTU_TEARDOWN_RACE,
+	[97] = CHILD_OP_RXRPC_SENDMSG_CMSG_CHURN,
+	[98] = CHILD_OP_OVS_TUNNEL_VPORT_CHURN,
+	[99] = CHILD_OP_TTY_LDISC_CHURN,
+	[100] = CHILD_OP_WIREGUARD_DECRYPT_FLOOD,
+	[101] = CHILD_OP_BLKDEV_LIFECYCLE_RACE,
+	[102] = CHILD_OP_ISCSI_TARGET_PROBE,
+	[103] = CHILD_OP_ETH_EMITTER,
+	[104] = CHILD_OP_SYSFS_STRING_RACE,
+	[105] = CHILD_OP_PCI_BIND,
+	[106] = CHILD_OP_ISCSI_LOGIN_WALKER,
+	[107] = CHILD_OP_VMA_SPLIT_STORM,
+	[108] = CHILD_OP_AF_UNIX_PEEK_RACE,
+	[109] = CHILD_OP_SYSV_SHM_ORPHAN_RACE,
+	[110] = CHILD_OP_QRTR_BIND_RACE,
+	[111] = CHILD_OP_TC_MIRRED_BLOCKCAST,
+	[112] = CHILD_OP_PFKEY_SPD_WALK,
+	[113] = CHILD_OP_L2TP_IFNAME_RACE,
+	[114] = CHILD_OP_STATMOUNT_IDMAP_OVERFLOW,
+	[115] = CHILD_OP_SOCK_ULP_SOCKMAP_LAYERING,
+	[116] = CHILD_OP_UMOUNT_RACE,
+};
+_Static_assert(ARRAY_SIZE(pick_op_type_table) == ARRAY_SIZE(dormant_op_disabled),
+	"pick_op_type_table and dormant_op_disabled must have matching slot counts");
+/* One slot per non-sentinel child_op_type.  Adding a new CHILD_OP_* without
+ * also adding its slot to pick_op_type_table[] (and dormant_op_disabled[])
+ * leaves the op invisible to the random picker + canary queue; fail the
+ * build instead of silently dropping coverage. */
+_Static_assert(ARRAY_SIZE(pick_op_type_table) == NR_CHILD_OP_TYPES - 1,
+	"pick_op_type_table missing a slot for a CHILD_OP_* enum value");
+
+/*
+ * Reverse of pick_op_type_table[]: given a child_op_type, find the
+ * slot index in dormant_op_disabled[] whose pick_op_type_table[]
+ * entry points to that op.  Returns -1 if no slot matches (slot-53
+ * sentinel for CHILD_OP_SYSCALL would return -1 in current builds;
+ * the canary queue never asks for that mapping).  Linear scan over
+ * ~100 entries; called once per state transition, never on the hot
+ * path.
+ *
+ * Exists so child-canary.c can flip the gate for a specific op
+ * without taking a direct reference to pick_op_type_table[] / the
+ * dormant_op_disabled[] storage.  Keeps both arrays file-static.
+ */
+int dormant_op_slot_for(enum child_op_type op)
+{
+	unsigned int i;
+
+	if (op == CHILD_OP_SYSCALL || op >= NR_CHILD_OP_TYPES)
+		return -1;
+	for (i = 0; i < ARRAY_SIZE(pick_op_type_table); i++) {
+		if (pick_op_type_table[i] == op)
+			return (int)i;
+	}
+	return -1;
+}
+
+/*
+ * Mutate the dormant-op gate for `op` and rebuild the dense vector.
+ * Called from the canary queue's promote / demote transitions.
+ * Single store on the parent path (the parent is the sole writer);
+ * children re-read the rebuilt enabled_altops[] on their next pick.
+ * See the design note in init_altop_dispatch() about the deliberately
+ * non-atomic rebuild -- both gate states are safe to dispatch on.
+ *
+ * Phase 1 propagation contract: both dormant_op_disabled[] and
+ * enabled_altops[] are parent-private after fork() (COW), so the
+ * "children re-read" above means children spawned AFTER this call,
+ * not children already running.  Already-forked random children
+ * continue to consult their fork-time snapshot until the slot turns
+ * over.  Dedicated canary slots are re-stamped on respawn and so see
+ * the new state immediately on the next spawn cycle.  See the header
+ * block in child-canary.c for the full scope statement; the shm-
+ * published variant is Phase 2 work.
+ */
+void dormant_op_set(enum child_op_type op, bool dormant)
+{
+	int slot = dormant_op_slot_for(op);
+
+	if (slot < 0)
+		return;
+	dormant_op_disabled[slot] = dormant ? 1 : 0;
+	init_altop_dispatch();
+}
+
+/*
+ * Read-only view used by the canary queue's startup pass: it walks
+ * the dormant gate to figure out which ops are already promoted
+ * (gate == 0) at startup so the queue's PROMOTED state matches what
+ * the dispatcher will actually pick from t=0.
+ */
+bool dormant_op_is_active(enum child_op_type op)
+{
+	int slot = dormant_op_slot_for(op);
+
+	if (slot < 0)
+		return false;
+	return dormant_op_disabled[slot] == 0;
+}
+
+/*
+ * Dense vector of currently-enabled alt-ops, derived from
+ * dormant_op_disabled[] + pick_op_type_table[] by init_altop_dispatch().
+ *
+ * The previous implementation re-rolled into the full 71-slot space and
+ * rejected dormant slots inline, which collapsed the EFFECTIVE altop rate
+ * well below the nominal 5% (effective ≈ 5% × enabled/71).  Picking from
+ * the dense vector keeps effective ≈ nominal regardless of how many slots
+ * are gated off, while keeping dormant_op_disabled[] as the source of truth.
+ *
+ * Sized at NR_CHILD_OP_TYPES (one slot per enum value, more than enough to
+ * hold every non-sentinel slot in pick_op_type_table[]).
+ */
+static enum child_op_type enabled_altops[NR_CHILD_OP_TYPES];
+static unsigned int enabled_altop_count;
+
+/*
+ * Walk dormant_op_disabled[] + pick_op_type_table[] in parallel and
+ * populate enabled_altops[] / enabled_altop_count.  Skips dormant slots
+ * and the slot-53 sentinel hole.  Logs the resulting dispatch config so
+ * the operator can see at -v what the effective altop mix actually is.
+ *
+ * Called once from main_loop before fork_children; the dormant gates
+ * are compile-time constants so a single startup pass suffices.
+ * dormant_op_set() re-invokes this so runtime flips stay accurate.
+ */
+void init_altop_dispatch(void)
+{
+	char buf[1024];
+	size_t off = 0;
+	unsigned int i;
+	unsigned int count = 0;
+	bool truncated = false;
+
+	for (i = 0; i < ARRAY_SIZE(pick_op_type_table); i++) {
+		enum child_op_type op = pick_op_type_table[i];
+		int n;
+
+		if (dormant_op_disabled[i])
+			continue;
+		if (op == CHILD_OP_SYSCALL)	/* slot-53 sentinel */
+			continue;
+
+		enabled_altops[count++] = op;
+
+		if (truncated)
+			continue;
+
+		n = snprintf(buf + off, sizeof(buf) - off, "%s%s",
+			off ? ", " : "", alt_op_name(op));
+		if (n <= 0 || (size_t)n >= sizeof(buf) - off) {
+			/* Drop the partial write and stop appending --
+			 * keep walking the table so enabled_altops[]
+			 * still gets every non-dormant op. */
+			buf[off] = '\0';
+			truncated = true;
+			continue;
+		}
+		off += (size_t)n;
+	}
+	if (truncated && off + sizeof(", ...") <= sizeof(buf))
+		(void) snprintf(buf + off, sizeof(buf) - off, ", ...");
+	enabled_altop_count = count;
+
+	if (count == 0) {
+		output(1, "altop dispatch: nominal=5%% effective=0%% (all altops dormant, falling back to syscall)\n");
+		return;
+	}
+
+	output(1, "altop dispatch: nominal=5%% effective=5%% (%u enabled altops: %s)\n",
+		count, buf);
+}
+
+enum child_op_type pick_op_type(void)
+{
+	unsigned int threshold = 95;
+	unsigned int r;
+
+	/* Phase 2 plateau intervention: when the classifier has the
+	 * fleet in the childop_dominant regime (alt-op-driven edges
+	 * out-running generic-syscall edges by PHC_CHILDOP_DOMINANT_
+	 * RATIO), raise the non-dedicated-child alt-op share from 5%
+	 * to 25% for the plateau duration.  Leans into the channel
+	 * that's actually discovering edges instead of letting the
+	 * 95% generic-syscall mass dilute its yield.
+	 *
+	 * Dedicated alt-op children (alt_op_children + canary slots)
+	 * skip this picker entirely via the use_dedicated_op hoist in
+	 * child_process(), so the canary queue's measurement window is
+	 * untouched -- the burst only retargets the non-dedicated
+	 * child pool.
+	 *
+	 * Gate is a derived predicate over shm->plateau_current_
+	 * hypothesis (NOT a latched flag); deactivates automatically
+	 * when the tick driver writes NONE on plateau clear or when
+	 * the classifier transitions to a different hypothesis.
+	 *
+	 * The counter bump tracks predicate-active picker invocations
+	 * (not picks that resolved to an alt-op).  We want to validate
+	 * "did the burst predicate fire while childop_dominant was
+	 * live?"; the realised alt-op yield can be cross-checked via
+	 * the existing childop_invocations[] delta during plateau
+	 * windows.
+	 */
+	if (__atomic_load_n(&shm->plateau_current_hypothesis,
+			    __ATOMIC_RELAXED) ==
+	    (int)PLATEAU_HYPOTHESIS_CHILDOP_DOMINANT) {
+		threshold = 75;
+		__atomic_fetch_add(
+			&shm->stats.childop_burst_alt_picks_window,
+			1UL, __ATOMIC_RELAXED);
+	}
+
+	r = rnd_modulo_u32(100);
+
+	if (r < threshold || enabled_altop_count == 0)
+		return CHILD_OP_SYSCALL;
+
+	return enabled_altops[rnd_modulo_u32(enabled_altop_count)];
+}
+
+/*
+ * Post-invocation feedback for the per-childop budget multiplier.
+ *
+ * The caller hands us the per-call edge delta surfaced by the outer
+ * KCOV bracket (kcov_bracket_end's return value for this dispatch),
+ * i.e. the clean count of edges attributable to THIS op's invocation
+ * with no sibling-traffic noise mixed in.  If the delta clears
+ * ADAPT_BUDGET_THRESHOLD we treat the invocation as productive: bump
+ * the multiplier by 25% (Q8.8 *5/4) and clear the zero-streak.
+ * Otherwise increment the zero-streak; once it hits
+ * ADAPT_BUDGET_ZERO_STREAK the shrink ratchet fires (multiplier *4/5)
+ * and the streak resets.  Both moves clamp to [ADAPT_BUDGET_MIN,
+ * ADAPT_BUDGET_MAX].
+ *
+ * Caveats deliberately accepted:
+ *
+ *   - The caller only invokes adapt_budget when the outer bracket
+ *     fired (mode != OFF, op_uses_outer_bracket(op), and
+ *     kcov_bracket_begin succeeded).  Calls that did not bracket
+ *     leave the multiplier untouched -- a quiet "no signal this
+ *     iteration" rather than a ratchet driven by sibling noise.
+ *     Ops permanently excluded from the bracket (CHILD_OP_SYSCALL,
+ *     CHILD_OP_SCHED_CYCLER -- see op_uses_outer_bracket) therefore
+ *     stay at the unity multiplier, matching the no-KCOV degradation
+ *     path.  CHILD_OP_SYSCALL has its own cold-syscall heuristics
+ *     inside kcov.c that this loop must not fight for control of the
+ *     dominant ~95% path; the bracket exclusion already enforces that.
+ *
+ *   - Updates are RELAXED non-RMW stores.  Two children tail-racing on
+ *     the same op_type can lose an update; the worst case is the
+ *     ratchet converges a few invocations later than the strict-RMW
+ *     model would.  Ratchet caps make divergence bounded in either
+ *     direction.
+ */
+void adapt_budget(enum child_op_type op_type,
+			 unsigned long edges_this_call)
+{
+	uint16_t mult, new_mult;
+	uint16_t streak;
+	unsigned long delta;
+
+	if (op_type == CHILD_OP_SYSCALL || op_type >= NR_CHILD_OP_TYPES)
+		return;
+
+	mult = __atomic_load_n(&shm->stats.childop_budget_mult[op_type],
+			       __ATOMIC_RELAXED);
+	if (mult == 0)
+		mult = ADAPT_BUDGET_UNITY;
+
+	delta = edges_this_call;
+
+	if (delta >= ADAPT_BUDGET_THRESHOLD) {
+		/* Productive: boost by 25% (Q8.8 *5/4), clamped at the cap. */
+		new_mult = (uint16_t)((unsigned int)mult * 5U / 4U);
+		if (new_mult > ADAPT_BUDGET_MAX)
+			new_mult = ADAPT_BUDGET_MAX;
+		__atomic_store_n(&shm->stats.childop_zero_streak[op_type],
+				 0, __ATOMIC_RELAXED);
+	} else {
+		/* Hysteresis: only shrink after ADAPT_BUDGET_ZERO_STREAK
+		 * consecutive sub-threshold invocations, so a single noise
+		 * dip doesn't immediately cut the budget. */
+		streak = (uint16_t)__atomic_add_fetch(
+			&shm->stats.childop_zero_streak[op_type],
+			1, __ATOMIC_RELAXED);
+		if (streak < ADAPT_BUDGET_ZERO_STREAK)
+			return;
+		new_mult = (uint16_t)((unsigned int)mult * 4U / 5U);
+		if (new_mult < ADAPT_BUDGET_MIN)
+			new_mult = ADAPT_BUDGET_MIN;
+		__atomic_store_n(&shm->stats.childop_zero_streak[op_type],
+				 0, __ATOMIC_RELAXED);
+	}
+
+	if (new_mult != mult)
+		__atomic_store_n(&shm->stats.childop_budget_mult[op_type],
+				 new_mult, __ATOMIC_RELAXED);
+}
+
+/*
+ * Aggregated per-childop outcome record (see struct childop_outcome in
+ * include/child.h for the field contract).  Snapshots existing shm
+ * counters into one coherent view so downstream policy units (clean /
+ * noisy scores, WOULD-DEMOTE recommendations) consume a single record
+ * instead of scraping a dozen parallel arrays.
+ *
+ * Telemetry-only: no scheduler decision currently reads this snapshot.
+ * Fields whose producer is not yet wired stay at 0 / false; the
+ * subtraction-derived slots clamp at zero because the source counters
+ * race under multi-producer RELAXED updates and a few childops bump
+ * setup_accepted more than once per dispatch (the existing setup-yield
+ * permille dump in dump_stats() clamps for the same reason).
+ */
+void childop_outcome_snapshot(enum child_op_type op,
+			      struct childop_outcome *out)
+{
+	unsigned long invocations, setup_accepted, discovered, clean;
+
+	memset(out, 0, sizeof(*out));
+	out->op = op;
+
+	if (op >= NR_CHILD_OP_TYPES)
+		return;
+
+	invocations = __atomic_load_n(&shm->stats.childop_invocations[op],
+				      __ATOMIC_RELAXED);
+	setup_accepted = __atomic_load_n(&shm->stats.childop_setup_accepted[op],
+					 __ATOMIC_RELAXED);
+	discovered = __atomic_load_n(&shm->stats.childop_edges_discovered[op],
+				     __ATOMIC_RELAXED);
+	clean = __atomic_load_n(&shm->stats.childop_edges_clean[op],
+				__ATOMIC_RELAXED);
+
+	out->clean_edges = clean;
+	out->noisy_edges = (discovered > clean) ? (discovered - clean) : 0;
+	out->wall_ns = __atomic_load_n(&shm->stats.childop_wall_ns[op],
+				       __ATOMIC_RELAXED);
+	out->wedges = (uint32_t)__atomic_load_n(
+			&shm->stats.childop_wedge_count[op], __ATOMIC_RELAXED);
+	out->timeout_observed = (uint32_t)__atomic_load_n(
+			&shm->stats.childop_timeout_observed[op], __ATOMIC_RELAXED);
+	out->timeout_missed = (uint32_t)__atomic_load_n(
+			&shm->stats.childop_timeout_missed[op], __ATOMIC_RELAXED);
+	out->setup_failures = (invocations > setup_accepted)
+		? (uint32_t)(invocations - setup_accepted) : 0;
+	out->taint_transition = __atomic_load_n(
+			&shm->stats.taint_transitions[op], __ATOMIC_RELAXED) > 0;
+}
+
+void childop_outcome_window_dump(void)
+{
+	enum child_op_type op;
+
+	for (op = CHILD_OP_SYSCALL + 1; op < NR_CHILD_OP_TYPES; op++) {
+		struct childop_outcome rec;
+		unsigned long invocations, latch;
+
+		invocations = __atomic_load_n(
+				&shm->stats.childop_invocations[op],
+				__ATOMIC_RELAXED);
+		if (invocations == 0)
+			continue;
+
+		childop_outcome_snapshot(op, &rec);
+		latch = __atomic_load_n(
+				&shm->stats.childop_latch_reason[op],
+				__ATOMIC_RELAXED);
+
+		output(1,
+		       "childop_window %s: invocations=%lu wall_ns=%lu clean_edges=%lu noisy_edges=%lu wedges=%u crashes=%u setup_failures=%u timeout_observed=%u timeout_missed=%u latch=%lu\n",
+		       alt_op_name(op), invocations,
+		       (unsigned long)rec.wall_ns,
+		       (unsigned long)rec.clean_edges,
+		       (unsigned long)rec.noisy_edges,
+		       rec.wedges, rec.crashes, rec.setup_failures,
+		       rec.timeout_observed, rec.timeout_missed, latch);
+	}
+}
+
+/*
+ * Derived utility + penalty scores from struct childop_outcome (see
+ * include/child.h for the field contract), surfaced as two ranked
+ * tables.  The score derivation is shadow-only: no scheduler / canary
+ * picker / promotion / demotion path reads these numbers; the function
+ * snapshots shm, computes, and emits via output(1, ...) -- nothing
+ * else.
+ *
+ * clean_score = clean_edges * SCALE / wall_ns -- good-utility, i.e.
+ * canary-path edges per nanosecond of wall time, scaled up by SCALE so
+ * the ratio fits in an integer (edges-per-second when SCALE=1e9 and
+ * wall_ns is in nanoseconds).  noisy_score is the same shape over
+ * noisy_edges.  Both clamp to 0 when wall_ns is 0 (an op that has
+ * never run yet).
+ *
+ * bad_score sums the wedge / dstate / crash / setup-failure /
+ * asan-failure accumulators.  These have producers today, so the
+ * bad-utility table surfaces immediately.
+ *
+ * Under __SANITIZE_ADDRESS__ a third "asan" table is emitted that
+ * re-weights bad_score against the failure classes whose runtime cost
+ * is several times higher in an ASAN build, and pairs each row with a
+ * one-third wall-time budget hint (ASAN runs typically take 2-3x the
+ * walltime per syscall).  Class detection reads only existing
+ * childop_outcome fields, so no hardcoded childop list is needed and
+ * the weighting tracks observed behaviour rather than a hand-curated
+ * deny-list:
+ *
+ *   asan_runtime_failure         -> poisoning CHECK abort (weight x8)
+ *   setup_failures > 0           -> allocator / mmap reservation fail
+ *                                   against the shadow steal (x3)
+ *   wedges && clean_edges == 0   -> no-return-from-sigaltstack, the
+ *                                   child wedged without producing
+ *                                   any canary edge (per-wedge x4)
+ *
+ * The non-ASAN weights for wedge / dstate / crash / setup-failure are
+ * 1 / 1 / 1 / 1 (matching bad_score); the ASAN profile is strictly an
+ * additive re-weight on top.  Under a non-ASAN build this entire
+ * compute-and-emit block is omitted, the bad_score table is unchanged,
+ * and there is no behavioural difference from before this commit.
+ */
+#define CHILDOP_SCORE_SCALE	1000000000ULL
+#define CHILDOP_SCORE_TOPN	10
+
+#ifdef __SANITIZE_ADDRESS__
+#define CHILDOP_ASAN_W_WEDGE_NOEDGE	4UL
+#define CHILDOP_ASAN_W_CRASH		2UL
+#define CHILDOP_ASAN_W_SETUP_FAIL	3UL
+#define CHILDOP_ASAN_W_RUNTIME_FAIL	8UL
+#define CHILDOP_ASAN_WALL_BUDGET_DIV	3ULL
+#endif
+
+void childop_score_dump(void)
+{
+	struct score_row {
+		enum child_op_type op;
+		uint64_t clean_score;
+		uint64_t noisy_score;
+		uint64_t good_score;
+		unsigned long bad_score;
+		uint64_t clean_edges;
+		uint64_t noisy_edges;
+		uint64_t wall_ns;
+		unsigned int wedges;
+		unsigned int dstate_wedges;
+		unsigned int crashes;
+		unsigned int setup_failures;
+		bool asan_runtime_failure;
+#ifdef __SANITIZE_ADDRESS__
+		unsigned long asan_bad_score;
+		uint64_t asan_wall_budget_ns;
+#endif
+	} rows[NR_CHILD_OP_TYPES];
+	unsigned int nrows = 0;
+	enum child_op_type op;
+	unsigned int i, j, n;
+	bool any_good = false, any_bad = false;
+#ifdef __SANITIZE_ADDRESS__
+	bool any_asan = false;
+#endif
+
+	for (op = CHILD_OP_SYSCALL + 1; op < NR_CHILD_OP_TYPES; op++) {
+		struct childop_outcome rec;
+		unsigned long invocations;
+		struct score_row *r;
+
+		invocations = __atomic_load_n(
+				&shm->stats.childop_invocations[op],
+				__ATOMIC_RELAXED);
+		if (invocations == 0)
+			continue;
+
+		childop_outcome_snapshot(op, &rec);
+
+		r = &rows[nrows++];
+		r->op = op;
+		/* __uint128_t intermediate so a long-running op whose
+		 * cumulative edge count approaches UINT64_MAX / SCALE
+		 * does not overflow the multiply before the divide. */
+		r->clean_score = rec.wall_ns ?
+			(uint64_t)(((__uint128_t)rec.clean_edges *
+				    CHILDOP_SCORE_SCALE) / rec.wall_ns) : 0;
+		r->noisy_score = rec.wall_ns ?
+			(uint64_t)(((__uint128_t)rec.noisy_edges *
+				    CHILDOP_SCORE_SCALE) / rec.wall_ns) : 0;
+		r->good_score = r->clean_score + r->noisy_score;
+		r->bad_score = (unsigned long)rec.wedges + rec.dstate_wedges +
+			       rec.crashes + rec.setup_failures +
+			       (rec.asan_runtime_failure ? 1UL : 0UL);
+		r->clean_edges = rec.clean_edges;
+		r->noisy_edges = rec.noisy_edges;
+		r->wall_ns = rec.wall_ns;
+		r->wedges = rec.wedges;
+		r->dstate_wedges = rec.dstate_wedges;
+		r->crashes = rec.crashes;
+		r->setup_failures = rec.setup_failures;
+		r->asan_runtime_failure = rec.asan_runtime_failure;
+
+#ifdef __SANITIZE_ADDRESS__
+		{
+			unsigned long wedge_w = (rec.clean_edges == 0)
+				? CHILDOP_ASAN_W_WEDGE_NOEDGE : 1UL;
+			r->asan_bad_score =
+				(unsigned long)rec.wedges * wedge_w +
+				rec.dstate_wedges +
+				(unsigned long)rec.crashes *
+					CHILDOP_ASAN_W_CRASH +
+				(unsigned long)rec.setup_failures *
+					CHILDOP_ASAN_W_SETUP_FAIL +
+				(rec.asan_runtime_failure
+					? CHILDOP_ASAN_W_RUNTIME_FAIL : 0UL);
+			r->asan_wall_budget_ns =
+				rec.wall_ns / CHILDOP_ASAN_WALL_BUDGET_DIV;
+		}
+#endif
+
+		if (r->good_score > 0)
+			any_good = true;
+		if (r->bad_score > 0)
+			any_bad = true;
+#ifdef __SANITIZE_ADDRESS__
+		if (r->asan_bad_score > 0)
+			any_asan = true;
+#endif
+	}
+
+	if (nrows == 0)
+		return;
+
+	if (any_good) {
+		/* Insertion sort descending by good_score (nrows is
+		 * bounded by NR_CHILD_OP_TYPES, ~60). */
+		for (i = 1; i < nrows; i++) {
+			struct score_row tmp = rows[i];
+			for (j = i; j > 0 &&
+			     rows[j - 1].good_score < tmp.good_score; j--)
+				rows[j] = rows[j - 1];
+			rows[j] = tmp;
+		}
+		n = nrows < CHILDOP_SCORE_TOPN ? nrows : CHILDOP_SCORE_TOPN;
+		for (i = 0; i < n && rows[i].good_score > 0; i++) {
+			output(1,
+			       "childop_score_good %s: clean_score=%lu noisy_score=%lu clean_edges=%lu noisy_edges=%lu wall_ns=%lu\n",
+			       alt_op_name(rows[i].op),
+			       (unsigned long)rows[i].clean_score,
+			       (unsigned long)rows[i].noisy_score,
+			       (unsigned long)rows[i].clean_edges,
+			       (unsigned long)rows[i].noisy_edges,
+			       (unsigned long)rows[i].wall_ns);
+		}
+	}
+
+	if (any_bad) {
+		for (i = 1; i < nrows; i++) {
+			struct score_row tmp = rows[i];
+			for (j = i; j > 0 &&
+			     rows[j - 1].bad_score < tmp.bad_score; j--)
+				rows[j] = rows[j - 1];
+			rows[j] = tmp;
+		}
+		n = nrows < CHILDOP_SCORE_TOPN ? nrows : CHILDOP_SCORE_TOPN;
+		for (i = 0; i < n && rows[i].bad_score > 0; i++) {
+			output(1,
+			       "childop_score_bad %s: wedges=%u dstate_wedges=%u crashes=%u setup_failures=%u asan_runtime_failure=%d total=%lu\n",
+			       alt_op_name(rows[i].op),
+			       rows[i].wedges, rows[i].dstate_wedges,
+			       rows[i].crashes, rows[i].setup_failures,
+			       rows[i].asan_runtime_failure ? 1 : 0,
+			       rows[i].bad_score);
+		}
+	}
+
+#ifdef __SANITIZE_ADDRESS__
+	if (any_asan) {
+		for (i = 1; i < nrows; i++) {
+			struct score_row tmp = rows[i];
+			for (j = i; j > 0 &&
+			     rows[j - 1].asan_bad_score <
+			     tmp.asan_bad_score; j--)
+				rows[j] = rows[j - 1];
+			rows[j] = tmp;
+		}
+		n = nrows < CHILDOP_SCORE_TOPN ? nrows : CHILDOP_SCORE_TOPN;
+		for (i = 0; i < n && rows[i].asan_bad_score > 0; i++) {
+			output(1,
+			       "childop_score_asan %s: wedges=%u dstate_wedges=%u crashes=%u setup_failures=%u asan_runtime_failure=%d clean_edges=%lu wall_budget_ns=%lu total=%lu\n",
+			       alt_op_name(rows[i].op),
+			       rows[i].wedges, rows[i].dstate_wedges,
+			       rows[i].crashes, rows[i].setup_failures,
+			       rows[i].asan_runtime_failure ? 1 : 0,
+			       (unsigned long)rows[i].clean_edges,
+			       (unsigned long)rows[i].asan_wall_budget_ns,
+			       rows[i].asan_bad_score);
+		}
+	}
+#endif
+}
+
+/*
+ * Dispatch table for the per-iteration childop call.  Indexed by
+ * enum child_op_type; a NULL slot means "fall through to the
+ * sequence-chain path" (CHILD_OP_SYSCALL is handled by the 95% fast
+ * path in pick_op_type and reaches the dispatcher only when it ends
+ * up running random_syscall via run_sequence_chain).
+ *
+ * A dense table replaces what was a 38-case switch in the dispatch
+ * site: a single indirect call out of a cache-friendly array,
+ * instead of the jump-table the compiler emits per branch site.
+ */
+bool (*const op_dispatch[NR_CHILD_OP_TYPES])(struct childdata *) = {
+	[CHILD_OP_SYSCALL]		= NULL,
+	[CHILD_OP_MMAP_LIFECYCLE]	= mmap_lifecycle,
+	[CHILD_OP_MPROTECT_SPLIT]	= mprotect_split,
+	[CHILD_OP_MLOCK_PRESSURE]	= mlock_pressure,
+	[CHILD_OP_INODE_SPEWER]		= inode_spewer,
+	[CHILD_OP_PROCFS_WRITER]	= procfs_writer,
+	[CHILD_OP_MEMORY_PRESSURE]	= memory_pressure,
+	[CHILD_OP_USERNS_FUZZER]	= userns_fuzzer,
+	[CHILD_OP_SCHED_CYCLER]		= sched_cycler,
+	[CHILD_OP_BARRIER_RACER]	= barrier_racer,
+	[CHILD_OP_GENETLINK_FUZZER]	= genetlink_fuzzer,
+	[CHILD_OP_PERF_CHAINS]		= perf_event_chains,
+	[CHILD_OP_TRACEFS_FUZZER]	= tracefs_fuzzer,
+	[CHILD_OP_BPF_LIFECYCLE]	= bpf_lifecycle,
+	[CHILD_OP_FAULT_INJECTOR]	= fault_injector,
+	[CHILD_OP_RECIPE_RUNNER]	= recipe_runner,
+	[CHILD_OP_IOURING_RECIPES]	= iouring_recipes,
+	[CHILD_OP_FD_STRESS]		= fd_stress,
+	[CHILD_OP_REFCOUNT_AUDITOR]	= refcount_auditor,
+	[CHILD_OP_FS_LIFECYCLE]		= fs_lifecycle,
+	[CHILD_OP_SIGNAL_STORM]		= signal_storm,
+	[CHILD_OP_FUTEX_STORM]		= futex_storm,
+	[CHILD_OP_PIPE_THRASH]		= pipe_thrash,
+	[CHILD_OP_FORK_STORM]		= fork_storm,
+	[CHILD_OP_FLOCK_THRASH]		= flock_thrash,
+	[CHILD_OP_CGROUP_CHURN]		= cgroup_churn,
+	[CHILD_OP_MOUNT_CHURN]		= mount_churn,
+	[CHILD_OP_UFFD_CHURN]		= uffd_churn,
+	[CHILD_OP_IOURING_FLOOD]	= iouring_flood,
+	[CHILD_OP_CLOSE_RACER]		= close_racer,
+	[CHILD_OP_SOCKET_FAMILY_CHAIN]	= socket_family_chain,
+	[CHILD_OP_XATTR_THRASH]		= xattr_thrash,
+	[CHILD_OP_PIDFD_STORM]		= pidfd_storm,
+	[CHILD_OP_MADVISE_CYCLER]	= madvise_cycler,
+	[CHILD_OP_EPOLL_VOLATILITY]	= epoll_volatility,
+	[CHILD_OP_KEYRING_SPAM]		= keyring_spam,
+	[CHILD_OP_VDSO_MREMAP_RACE]	= vdso_mremap_race,
+	[CHILD_OP_NUMA_MIGRATION]	= numa_migration_churn,
+	[CHILD_OP_CPU_HOTPLUG_RIDER]	= cpu_hotplug_rider,
+	[CHILD_OP_SLAB_CACHE_THRASH]	= slab_cache_thrash,
+	[CHILD_OP_TLS_ROTATE]		= tls_rotate,
+	[CHILD_OP_SOCK_ULP_SOCKMAP_LAYERING]	= sock_ulp_sockmap_layering,
+	[CHILD_OP_PACKET_FANOUT_THRASH]	= packet_fanout_thrash,
+	[CHILD_OP_IOURING_NET_MULTISHOT] = iouring_net_multishot,
+	[CHILD_OP_TCP_AO_ROTATE]	= tcp_ao_rotate,
+	[CHILD_OP_VRF_FIB_CHURN]	= vrf_fib_churn,
+	[CHILD_OP_NETLINK_MONITOR_RACE]	= netlink_monitor_race,
+	[CHILD_OP_TIPC_LINK_CHURN]	= tipc_link_churn,
+	[CHILD_OP_TLS_ULP_CHURN]	= tls_ulp_churn,
+	[CHILD_OP_VXLAN_ENCAP_CHURN]	= vxlan_encap_churn,
+	[CHILD_OP_BRIDGE_FDB_STP]	= bridge_fdb_stp,
+	[CHILD_OP_NFTABLES_CHURN]	= nftables_churn,
+	[CHILD_OP_TC_QDISC_CHURN]	= tc_qdisc_churn,
+	[CHILD_OP_XFRM_CHURN]		= xfrm_churn,
+	[CHILD_OP_BPF_CGROUP_ATTACH]	= bpf_cgroup_attach,
+	[CHILD_OP_SCTP_ASSOC_CHURN]	= sctp_assoc_churn,
+	[CHILD_OP_MPTCP_PM_CHURN]	= mptcp_pm_churn,
+	[CHILD_OP_DEVLINK_PORT_CHURN]	= devlink_port_churn,
+	[CHILD_OP_HANDSHAKE_REQ_ABORT]	= handshake_req_abort,
+	[CHILD_OP_NF_CONNTRACK_HELPER]	= nf_conntrack_helper_churn,
+	[CHILD_OP_AF_UNIX_SCM_RIGHTS_GC]	= af_unix_scm_rights_gc_churn,
+	[CHILD_OP_NETNS_TEARDOWN_CHURN]	= netns_teardown_churn,
+	[CHILD_OP_TCP_ULP_SWAP_CHURN]	= tcp_ulp_swap_churn,
+	[CHILD_OP_MSG_ZEROCOPY_CHURN]	= msg_zerocopy_churn,
+	[CHILD_OP_IOURING_SEND_ZC_CHURN]	= iouring_send_zc_churn,
+	[CHILD_OP_VSOCK_TRANSPORT_CHURN]	= vsock_transport_churn,
+	[CHILD_OP_BRIDGE_VLAN_CHURN]	= bridge_vlan_churn,
+	[CHILD_OP_IGMP_MLD_SOURCE_CHURN]	= igmp_mld_source_churn,
+	[CHILD_OP_PSP_KEY_ROTATE]	= psp_key_rotate,
+	[CHILD_OP_AFXDP_CHURN]		= afxdp_churn,
+	[CHILD_OP_KVM_RUN_CHURN]	= kvm_run_churn,
+	[CHILD_OP_NL80211_CHURN]	= nl80211_churn,
+	[CHILD_OP_NAT_T_CHURN]		= nat_t_churn,
+	[CHILD_OP_SPLICE_PROTOCOLS]	= splice_protocols,
+	[CHILD_OP_RXRPC_KEY_INSTALL]	= rxrpc_key_install,
+	[CHILD_OP_INPLACE_CRYPTO_ORACLE]	= inplace_crypto_oracle,
+	[CHILD_OP_AF_ALG_WEAK_CIPHER_PROBE]	= af_alg_weak_cipher_probe,
+	[CHILD_OP_AF_ALG_TEMPLATE_PROBE]	= af_alg_template_probe,
+	[CHILD_OP_AF_ALG_RECVMSG_CHURN]		= af_alg_recvmsg_churn,
+	[CHILD_OP_IOURING_CMD_PASSTHROUGH]	= iouring_cmd_passthrough,
+	[CHILD_OP_PAGECACHE_CANARY_CHECK]	= pagecache_canary_check,
+	[CHILD_OP_MPLS_ROUTE_CHURN]	= mpls_route_churn,
+	[CHILD_OP_SOCK_DIAG_WALKER]	= sock_diag_walker,
+	[CHILD_OP_ALTNAME_THRASH]	= altname_thrash,
+	[CHILD_OP_IPMR_CACHE_REPORT]	= ipmr_cache_report,
+	[CHILD_OP_UBLK_LIFECYCLE]	= ublk_lifecycle,
+	[CHILD_OP_VETH_ASYMMETRIC_XDP]	= veth_asymmetric_xdp,
+	[CHILD_OP_IP6ERSPAN_NETNS_MIGRATE]	= ip6erspan_netns_migrate,
+	[CHILD_OP_IPVS_SYSCTL_WRITER]	= ipvs_sysctl_writer,
+	[CHILD_OP_TCP_MD5_LISTENER_RACE]	= tcp_md5_listener_race,
+	[CHILD_OP_IPV6_NDISC_PROXY]	= ipv6_ndisc_proxy,
+	[CHILD_OP_IPFRAG_SOURCE_CHURN]	= ipfrag_source_churn,
+	[CHILD_OP_RTNL_VF_BROADCAST_GETLINK]	= rtnl_vf_broadcast_getlink,
+	[CHILD_OP_OBSCURE_AF_CHURN]	= obscure_af_churn,
+	[CHILD_OP_BRIDGE_CT_CHURN]	= bridge_conntrack_churn,
+	[CHILD_OP_ATM_VCC_CHURN]	= atm_vcc_churn,
+	[CHILD_OP_IP6GRE_BOND_LAPB_STACK]	= ip6gre_bond_lapb_stack,
+	[CHILD_OP_FLOWTABLE_ENCAP_VLAN]	= flowtable_encap_vlan,
+	[CHILD_OP_IPV6_PMTU_TEARDOWN_RACE]	= ipv6_pmtu_teardown_race,
+	[CHILD_OP_RXRPC_SENDMSG_CMSG_CHURN]	= rxrpc_sendmsg_cmsg_churn,
+	[CHILD_OP_OVS_TUNNEL_VPORT_CHURN]	= ovs_tunnel_vport_churn,
+	[CHILD_OP_TTY_LDISC_CHURN]	= tty_ldisc_churn,
+	[CHILD_OP_WIREGUARD_DECRYPT_FLOOD]	= wireguard_decrypt_flood,
+	[CHILD_OP_BLKDEV_LIFECYCLE_RACE]	= blkdev_lifecycle_race,
+	[CHILD_OP_ISCSI_TARGET_PROBE]	= iscsi_target_probe,
+	[CHILD_OP_ISCSI_LOGIN_WALKER]	= iscsi_login_walker,
+	[CHILD_OP_ETH_EMITTER]		= eth_emitter,
+	[CHILD_OP_VMA_SPLIT_STORM]	= vma_split_storm,
+	[CHILD_OP_SYSFS_STRING_RACE]	= sysfs_string_race,
+	[CHILD_OP_PCI_BIND]		= pci_bind,
+	[CHILD_OP_AF_UNIX_PEEK_RACE]	= af_unix_peek_race,
+	[CHILD_OP_SYSV_SHM_ORPHAN_RACE]	= sysv_shm_orphan_race,
+	[CHILD_OP_QRTR_BIND_RACE]	= qrtr_bind_race,
+	[CHILD_OP_TC_MIRRED_BLOCKCAST]	= tc_mirred_blockcast,
+	[CHILD_OP_PFKEY_SPD_WALK]	= pfkey_spd_walk,
+	[CHILD_OP_L2TP_IFNAME_RACE]	= l2tp_ifname_race,
+	[CHILD_OP_STATMOUNT_IDMAP_OVERFLOW] = statmount_idmap_overflow,
+	[CHILD_OP_UMOUNT_RACE]		= umount_race,
+};
+
+_Static_assert(ARRAY_SIZE(op_dispatch) == NR_CHILD_OP_TYPES,
+	"op_dispatch must have one slot per enum child_op_type");
