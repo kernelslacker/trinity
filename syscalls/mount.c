@@ -451,10 +451,6 @@ static void sanitise_mount_setattr(struct syscallrecord *rec)
 	rec->post_state = (unsigned long) ma;
 }
 
-#ifndef AT_RECURSIVE
-#define AT_RECURSIVE            0x8000
-#endif
-
 static unsigned long mount_setattr_flags[] = {
 	AT_EMPTY_PATH, AT_RECURSIVE, AT_SYMLINK_NOFOLLOW, AT_NO_AUTOMOUNT,
 };

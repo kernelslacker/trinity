@@ -22,6 +22,9 @@
 #ifndef AT_SYMLINK_NOFOLLOW
 #define AT_SYMLINK_NOFOLLOW	0x100
 #endif
+#ifndef AT_RECURSIVE
+#define AT_RECURSIVE		0x8000
+#endif
 
 #ifndef O_PATH
 #define O_PATH        010000000 /* Resolve pathname but do not open file.  */

@@ -6,6 +6,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <linux/mount.h>
+#include "compat.h"
 #include "csfu.h"
 #include "deferred-free.h"
 #include "object-types.h"
@@ -17,10 +18,6 @@
 #ifndef OPEN_TREE_CLONE
 #define OPEN_TREE_CLONE		1
 #define OPEN_TREE_CLOEXEC	O_CLOEXEC
-#endif
-
-#ifndef AT_RECURSIVE
-#define AT_RECURSIVE		0x8000
 #endif
 
 /*
