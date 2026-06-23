@@ -7,6 +7,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 
+#include "compat.h"
 #include "fd.h"
 #include "syscall-gate.h"
 #include "objects.h"
@@ -18,9 +19,6 @@
 
 #ifndef OPEN_TREE_CLONE
 #define OPEN_TREE_CLONE		1
-#endif
-#ifndef AT_RECURSIVE
-#define AT_RECURSIVE		0x8000
 #endif
 
 static int do_open_tree(void)
