@@ -125,16 +125,12 @@
 #include "child.h"
 #include "childops-netlink.h"
 #include "childops-util.h"
+#include "compat.h"
 #include "jitter.h"
 #include "params.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
-
-/* AF_MPLS shipped in v4.1; older sysroots may omit it.  Stable UAPI int. */
-#ifndef AF_MPLS
-#define AF_MPLS				28
-#endif
 
 /* RTA_VIA / struct rtvia shipped in v4.5; supply stable values when
  * absent.  RTA_VIA is the IANA-assigned attribute number for the IPv4
