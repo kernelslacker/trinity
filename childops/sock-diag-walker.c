@@ -68,10 +68,6 @@
 #include "shm.h"
 #include "trinity.h"
 
-#ifndef AF_VSOCK
-#define AF_VSOCK 40
-#endif
-
 #define SD_BUF_BYTES		2048
 #define SD_RECV_TIMEO_S		1
 #define SD_BC_MAX_OPS		8
