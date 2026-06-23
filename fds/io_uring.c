@@ -8,6 +8,7 @@
 #include <sys/mman.h>
 #include <sys/syscall.h>
 
+#include "compat.h"
 #include "fd.h"
 #include "syscall-gate.h"
 #include "objects.h"
@@ -17,8 +18,7 @@
 #include "trinity.h"
 #include "utils.h"
 
-#ifndef IORING_OFF_SQ_RING
-#define IORING_OFF_SQ_RING	0ULL
+#ifndef IORING_OFF_SQES
 #define IORING_OFF_SQES		0x10000000ULL
 #endif
 

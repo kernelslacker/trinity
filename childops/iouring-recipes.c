@@ -78,9 +78,10 @@ struct iour_open_how {
 #define __NR_io_uring_register	427
 #endif
 
-#ifndef IORING_OFF_SQ_RING
-#define IORING_OFF_SQ_RING	0ULL
+#ifndef IORING_OFF_CQ_RING
 #define IORING_OFF_CQ_RING	0x8000000ULL
+#endif
+#ifndef IORING_OFF_SQES
 #define IORING_OFF_SQES		0x10000000ULL
 #endif
 
