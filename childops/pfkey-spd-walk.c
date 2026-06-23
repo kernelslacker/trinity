@@ -31,7 +31,11 @@
  *              racing SPDGET with SPDADD of the same id walks the
  *              ID hash while another task is splicing into it.
  *
- * Shape (per outer iteration, BUDGETED+capped):
+ * Shape.  The outer loop below runs inside a transient grandchild
+ * that holds an identity user namespace plus a fresh CLONE_NEWNET
+ * (via userns_run_in_ns()); the persistent trinity child keeps its
+ * host credentials so the cap-drop oracle stays valid.  Per outer
+ * iteration, BUDGETED+capped:
  *   1.  Pick a policy variant: direction (IN/OUT/FWD), type
  *       (DISCARD/BYPASS/NONE), priority (rotating 32-bit), and
  *       src/dst prefixlen (varies the SPD bucket the entry hashes
@@ -61,19 +65,24 @@
  *     probes socket(AF_KEY, SOCK_RAW, PF_KEY_V2).  Any failure
  *     (EAFNOSUPPORT, EPROTONOSUPPORT, EACCES) latches the op off
  *     for the rest of this child's life -- typical when
- *     CONFIG_NET_KEY=n or the af_key module isn't loaded.  Same
- *     shape as the qrtr / af_unix peek / netns_teardown latches.
- *   - ns_unshare_failed_pfkey_spd_walk: first invocation also
- *     issues unshare(CLONE_NEWNET) once per child so every SPD
- *     mutation stays in a private netns the kernel destroys when
- *     this trinity child exits.  EPERM (no CAP_SYS_ADMIN) latches
- *     the op off uniformly.
+ *     CONFIG_NET_KEY=n or the af_key module isn't loaded.
+ *   - ns_unsupported_userns: userns_run_in_ns() reported -EPERM
+ *     (hardened userns policy refused CLONE_NEWUSER:
+ *     user.max_user_namespaces=0 or
+ *     kernel.unprivileged_userns_clone=0).  Without a private netns
+ *     we MUST NOT touch the host SPD, so the op stays disabled for
+ *     the remainder of the child's lifetime.  Transient grandchild
+ *     setup failures (fork, id-map write, secondary unshare) skip
+ *     the iteration without latching.
  *
- * Brick-safety.  All SPD writes land in a freshly-unshared netns
- * (and SADB_X_SPDFLUSH between iters drains it anyway); on failure
- * to unshare we latch off rather than mutate the host SPD.  No
- * module load, no rtnetlink, no globally-reachable resource.
- * Bounded outer loop with a hard wall-clock cap.
+ * Brick-safety.  All SPD writes land inside a transient grandchild
+ * holding a fresh CLONE_NEWUSER + CLONE_NEWNET via the userns
+ * bootstrap helper; the grandchild _exit()s and the kernel reaps
+ * the namespace stack with every SPD entry, AF_KEY socket and
+ * forked sibling it created.  SADB_X_SPDFLUSH between iters drains
+ * any surviving SPD state.  No module load, no rtnetlink, no
+ * globally-reachable resource.  Bounded outer loop with a hard
+ * wall-clock cap.
  *
  * Header compat.  AF_KEY landed in mainline as 15 (RFC 2367).  The
  * sadb_msg / sadb_ext / sadb_address / sadb_x_policy layouts are
@@ -103,6 +112,7 @@
 #include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
+#include "userns-bootstrap.h"
 
 #if __has_include(<linux/pfkeyv2.h>)
 #include <linux/pfkeyv2.h>
@@ -218,14 +228,15 @@ struct sadb_x_policy {
 #define PFKEY_INNER_BURST_CAP		64U
 #define PFKEY_INNER_WALL_NS		(150ULL * 1000ULL * 1000ULL)
 
-/* Per-netns + per-process latches.  Same shape as qrtr-bind-race and
- * netns-teardown-churn: the AF_KEY socket probe runs once; the
- * netns unshare runs once.  Either latch makes the op a silent
- * no-op for the rest of the child's life. */
+/* Per-process latches.  pfkey_probed gates the one-shot AF_KEY socket
+ * probe in the persistent fuzz child; ns_unsupported_pfkey_spd_walk
+ * latches that probe's structural failure (CONFIG_NET_KEY=n);
+ * ns_unsupported_userns latches the userns_run_in_ns() -EPERM path
+ * (hardened userns policy).  Any latch makes the op a silent no-op
+ * for the rest of the child's life. */
 static bool pfkey_probed;
 static bool ns_unsupported_pfkey_spd_walk;
-static bool ns_unshared_pfkey_spd_walk;
-static bool ns_unshare_failed_pfkey_spd_walk;
+static bool ns_unsupported_userns;
 
 /*
  * Probe AF_KEY availability once per process.  Open succeeds on hosts
@@ -246,20 +257,16 @@ static void probe_pfkey(void)
 }
 
 /*
- * Per-child netns unshare.  All SPD writes land in this private
- * netns so we never touch the host SPD even if the kernel happens
- * to accept the message.  EPERM (no CAP_SYS_ADMIN) latches the
- * op off uniformly.
+ * One-shot outputerr on the userns latch transition false->true.
  */
-static void unshare_netns_once(void)
+static void warn_once_unsupported_userns(const char *reason, int err)
 {
-	if (ns_unshared_pfkey_spd_walk || ns_unshare_failed_pfkey_spd_walk)
+	if (ns_unsupported_userns)
 		return;
-	if (unshare(CLONE_NEWNET) < 0) {
-		ns_unshare_failed_pfkey_spd_walk = true;
-		return;
-	}
-	ns_unshared_pfkey_spd_walk = true;
+	ns_unsupported_userns = true;
+	/* check-static: child-output-ok */
+	outputerr("pfkey_spd_walk: %s failed (errno=%d), latching unsupported_userns\n",
+		  reason, err);
 }
 
 /*
@@ -668,8 +675,26 @@ static void iter_one(void)
 	spdflush_best_effort();
 }
 
-bool pfkey_spd_walk(struct childdata *child)
+/*
+ * Per-invocation state handed to the in-ns callback so it can keep
+ * accounting against the right childop slot.
+ */
+struct pfkey_spd_walk_ctx {
+	struct childdata *child;
+};
+
+/*
+ * Per-invocation body that must run inside the private user + net
+ * namespace.  Executed in a transient grandchild forked by
+ * userns_run_in_ns(); the grandchild's userns + netns are torn down
+ * on _exit() so any SPD entries, AF_KEY sockets and forked siblings
+ * left behind are reaped by the kernel along with the namespace.
+ * Return value is ignored by the helper.
+ */
+static int pfkey_spd_walk_in_ns(void *arg)
 {
+	struct pfkey_spd_walk_ctx *cctx = (struct pfkey_spd_walk_ctx *)arg;
+	struct childdata *child = cctx->child;
 	struct timespec t_outer;
 	unsigned int outer_iters, i;
 	/* Snapshot child->op_type once and bounds-check before indexing
@@ -680,40 +705,6 @@ bool pfkey_spd_walk(struct childdata *child)
 	 * writes entirely when the snapshot is out of range. */
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
-
-	__atomic_add_fetch(&shm->stats.pfkey_spd_walk_runs,
-			   1, __ATOMIC_RELAXED);
-
-	if (ns_unsupported_pfkey_spd_walk ||
-	    ns_unshare_failed_pfkey_spd_walk) {
-		__atomic_add_fetch(&shm->stats.pfkey_spd_walk_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		return true;
-	}
-
-	if (!pfkey_probed) {
-		probe_pfkey();
-		if (ns_unsupported_pfkey_spd_walk) {
-			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
-						 CHILDOP_LATCH_NS_UNSUPPORTED,
-						 __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.pfkey_spd_walk_setup_failed,
-					   1, __ATOMIC_RELAXED);
-			return true;
-		}
-	}
-
-	unshare_netns_once();
-	if (ns_unshare_failed_pfkey_spd_walk) {
-		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
-					 CHILDOP_LATCH_NS_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.pfkey_spd_walk_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		return true;
-	}
 
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
@@ -738,6 +729,64 @@ bool pfkey_spd_walk(struct childdata *child)
 		if (budget_elapsed_ns(&t_outer, (long)PFKEY_SPD_WALL_CAP_NS))
 			break;
 		iter_one();
+	}
+
+	return 0;
+}
+
+bool pfkey_spd_walk(struct childdata *child)
+{
+	struct pfkey_spd_walk_ctx cctx = { .child = child };
+	int rc;
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the stats
+	 * writes entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
+	__atomic_add_fetch(&shm->stats.pfkey_spd_walk_runs,
+			   1, __ATOMIC_RELAXED);
+
+	if (ns_unsupported_pfkey_spd_walk || ns_unsupported_userns) {
+		__atomic_add_fetch(&shm->stats.pfkey_spd_walk_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return true;
+	}
+
+	if (!pfkey_probed) {
+		probe_pfkey();
+		if (ns_unsupported_pfkey_spd_walk) {
+			if (valid_op)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
+			__atomic_add_fetch(&shm->stats.pfkey_spd_walk_setup_failed,
+					   1, __ATOMIC_RELAXED);
+			return true;
+		}
+	}
+
+	rc = userns_run_in_ns(CLONE_NEWNET, pfkey_spd_walk_in_ns, &cctx);
+	if (rc == -EPERM) {
+		if (valid_op)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		warn_once_unsupported_userns("userns_run_in_ns(CLONE_NEWNET)", EPERM);
+		__atomic_add_fetch(&shm->stats.pfkey_spd_walk_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return true;
+	}
+	if (rc < 0) {
+		/* Transient grandchild setup failure (fork, id-map write,
+		 * secondary unshare).  Skip this iteration without latching
+		 * -- the failure is not policy and may not recur. */
+		__atomic_add_fetch(&shm->stats.pfkey_spd_walk_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return true;
 	}
 
 	return true;
