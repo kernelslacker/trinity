@@ -2079,6 +2079,11 @@ struct kcov_shared {
 	 *  cmp_hyp_observations    -- one bump per cmp_hyp_observe() call.
 	 *  cmp_hyp_inserted        -- typed hypothesis added to the store.
 	 *  cmp_hyp_pool_full       -- hyp_pool saturated (per-syscall cap).
+	 *                             Bumped only from cmp_hyp_alloc()'s
+	 *                             pool->count >= CMP_HYP_PER_SYSCALL
+	 *                             reject; the cmp_hyp_observe() corruption
+	 *                             bail (count > cap) bumps the sibling
+	 *                             cmp_hyp_pool_overflow counter instead.
 	 *  cmp_hyp_kind_full       -- per-kind sub-cap exhausted for a kind.
 	 *  cmp_hyp_consumed        -- typed hypothesis selected for injection
 	 *                             (shadow: counts would-have-been picks).
@@ -2195,13 +2200,13 @@ struct kcov_shared {
 	/* Per-kind flat census of typed CMP hypothesis insert rejections
 	 * caused by the per-syscall total cap (CMP_HYP_PER_SYSCALL).  Bumped
 	 * in lock-step with the scalar cmp_hyp_pool_full from cmp_hyp_alloc()'s
-	 * per-syscall-exhausted branch only; the cmp_hyp_observe() wild-write
-	 * bail that also bumps the scalar has no kind in scope, so the sum
-	 * across kinds here is a documented subset of cmp_hyp_pool_full
-	 * (sum <= scalar).  Paired with cmp_hyp_inserted_by_kind this shows,
-	 * per kind, which kind is consuming the per-syscall budget when
-	 * cmp_hyp_pool_full dominates.  SHADOW telemetry only -- no consumer
-	 * reads it. */
+	 * per-syscall-exhausted branch, which is now the sole bumper of the
+	 * scalar, so the sum across kinds equals cmp_hyp_pool_full modulo
+	 * concurrent sampling (the cmp_hyp_observe() corruption bail moved
+	 * to the sibling cmp_hyp_pool_overflow counter).  Paired with
+	 * cmp_hyp_inserted_by_kind this shows, per kind, which kind is
+	 * consuming the per-syscall budget when cmp_hyp_pool_full dominates.
+	 * SHADOW telemetry only -- no consumer reads it. */
 	unsigned long cmp_hyp_pool_full_by_kind[CMP_HYP_KIND_NR];
 
 	/*
@@ -2248,6 +2253,17 @@ struct kcov_shared {
 	unsigned long cmp_hint_pc_wins_by_pool[CMP_HINT_POOL_KIND_NR];
 	unsigned long cmp_hint_misses_by_pool[CMP_HINT_POOL_KIND_NR];
 	unsigned long cmp_hint_cmp_novelty_wins_by_pool[CMP_HINT_POOL_KIND_NR];
+
+	/* Corruption-channel sibling of cmp_hyp_pool_full, split out so the
+	 * legitimate per-syscall saturation lane and the wild-write bail
+	 * become independently countable.  Bumped only from
+	 * cmp_hyp_observe()'s pool->count > CMP_HYP_PER_SYSCALL guard --
+	 * a value past the cap is a stomp signal, not back-pressure, and
+	 * any non-zero delta here means a writer scribbled the per-syscall
+	 * pool out of bounds.  cmp_hyp_pool_full now bumps ONLY from the
+	 * cmp_hyp_alloc() per-syscall-exhausted branch (legit saturation).
+	 * SHADOW telemetry only -- no consumer reads it. */
+	unsigned long cmp_hyp_pool_overflow;
 };
 
 extern struct kcov_shared *kcov_shm;

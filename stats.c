@@ -6431,6 +6431,7 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 		static unsigned long prev_hyp_observations;
 		static unsigned long prev_hyp_inserted;
 		static unsigned long prev_hyp_pool_full;
+		static unsigned long prev_hyp_pool_overflow;
 		static unsigned long prev_hyp_kind_full;
 		static unsigned long prev_hyp_consumed;
 		static unsigned long prev_hyp_pc_wins;
@@ -6447,6 +6448,8 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 			__atomic_load_n(&kcov_shm->cmp_hyp_inserted, __ATOMIC_RELAXED);
 		unsigned long cur_hyp_pool_full =
 			__atomic_load_n(&kcov_shm->cmp_hyp_pool_full, __ATOMIC_RELAXED);
+		unsigned long cur_hyp_pool_overflow =
+			__atomic_load_n(&kcov_shm->cmp_hyp_pool_overflow, __ATOMIC_RELAXED);
 		unsigned long cur_hyp_kind_full =
 			__atomic_load_n(&kcov_shm->cmp_hyp_kind_full, __ATOMIC_RELAXED);
 		unsigned long cur_hyp_consumed =
@@ -6470,6 +6473,7 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 		unsigned long delta_hyp_observations = cur_hyp_observations - prev_hyp_observations;
 		unsigned long delta_hyp_inserted = cur_hyp_inserted - prev_hyp_inserted;
 		unsigned long delta_hyp_pool_full = cur_hyp_pool_full - prev_hyp_pool_full;
+		unsigned long delta_hyp_pool_overflow = cur_hyp_pool_overflow - prev_hyp_pool_overflow;
 		unsigned long delta_hyp_kind_full = cur_hyp_kind_full - prev_hyp_kind_full;
 		unsigned long delta_hyp_consumed = cur_hyp_consumed - prev_hyp_consumed;
 		unsigned long delta_hyp_pc_wins = cur_hyp_pc_wins - prev_hyp_pc_wins;
@@ -6482,7 +6486,8 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 		unsigned long delta_hyp_context_skip = cur_hyp_context_skip - prev_hyp_context_skip;
 
 		if ((delta_hyp_observations | delta_hyp_inserted | delta_hyp_pool_full |
-		     delta_hyp_kind_full | delta_hyp_consumed | delta_hyp_pc_wins |
+		     delta_hyp_pool_overflow | delta_hyp_kind_full |
+		     delta_hyp_consumed | delta_hyp_pc_wins |
 		     delta_hyp_transition_wins | delta_hyp_cmp_novelty_wins |
 		     delta_hyp_misses | delta_hyp_disabled_skips |
 		     delta_hyp_corpus_save | delta_hyp_destructive |
@@ -6494,6 +6499,9 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 					"cmp_hyp_inserted", delta_hyp_inserted, cur_hyp_inserted);
 			stats_log_write("  %-32s +%lu  (total %lu)\n",
 					"cmp_hyp_pool_full", delta_hyp_pool_full, cur_hyp_pool_full);
+			stats_log_write("  %-32s +%lu  (total %lu)\n",
+					"cmp_hyp_pool_overflow",
+					delta_hyp_pool_overflow, cur_hyp_pool_overflow);
 			stats_log_write("  %-32s +%lu  (total %lu)\n",
 					"cmp_hyp_kind_full", delta_hyp_kind_full, cur_hyp_kind_full);
 			stats_log_write("  %-32s +%lu  (total %lu)\n",
@@ -6557,6 +6565,7 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 		prev_hyp_observations = cur_hyp_observations;
 		prev_hyp_inserted = cur_hyp_inserted;
 		prev_hyp_pool_full = cur_hyp_pool_full;
+		prev_hyp_pool_overflow = cur_hyp_pool_overflow;
 		prev_hyp_kind_full = cur_hyp_kind_full;
 		prev_hyp_consumed = cur_hyp_consumed;
 		prev_hyp_pc_wins = cur_hyp_pc_wins;
