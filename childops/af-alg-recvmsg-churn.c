@@ -70,9 +70,6 @@
 #ifndef AF_ALG
 # define AF_ALG				38
 #endif
-#ifndef SOL_ALG
-# define SOL_ALG			279
-#endif
 #ifndef ALG_SET_KEY
 # define ALG_SET_KEY			1
 #endif

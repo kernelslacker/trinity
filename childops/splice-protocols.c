@@ -118,10 +118,6 @@
 # define TPACKET_V3			2
 #endif
 
-#ifndef SOL_ALG
-# define SOL_ALG			279
-#endif
-
 #ifndef MSG_SPLICE_PAGES
 # define MSG_SPLICE_PAGES		0x8000000
 #endif

@@ -1582,6 +1582,14 @@ enum kcmp_type {
 #define SOL_RFCOMM      18
 #endif
 
+/* linux/socket.h -- SOL_ALG carries setsockopt/cmsg ops (ALG_SET_KEY,
+ * ALG_SET_IV, ALG_SET_AEAD_AUTHSIZE, ...) for AF_ALG sockets.  Older
+ * kernel-headers packages predate the constant; the UAPI value (279)
+ * is fixed since the AF_ALG protocol family landed in 2.6.38. */
+#ifndef SOL_ALG
+#define SOL_ALG		279
+#endif
+
 #ifndef SOL_TLS
 #define SOL_TLS		282
 #endif
