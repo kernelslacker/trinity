@@ -107,9 +107,6 @@
 # define UDP_ENCAP			100
 # define UDP_ENCAP_ESPINUDP		2
 #endif
-#ifndef SOL_ALG
-# define SOL_ALG			279
-#endif
 #ifndef MSG_SPLICE_PAGES
 # define MSG_SPLICE_PAGES		0x8000000
 #endif
