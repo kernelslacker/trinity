@@ -10,10 +10,6 @@
 #include "compat.h"
 #include "rnd.h"
 
-#ifndef AF_IB
-#define AF_IB 27
-#endif
-
 /* struct sockaddr_ib from <rdma/ib_user_sa.h> */
 struct sockaddr_ib {
 	unsigned short	sib_family;
