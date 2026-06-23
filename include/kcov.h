@@ -2160,6 +2160,17 @@ struct kcov_shared {
 	 * consumer reads it. */
 	unsigned long cmp_hyp_kind_full_by_kind[CMP_HYP_KIND_NR];
 
+	/* Per-kind flat census of typed CMP hypothesis consumes.
+	 * Bumped in lock-step with the scalar cmp_hyp_consumed above
+	 * from the cmp_hyp_credit_consume() hit path, so the sum across
+	 * kinds equals cmp_hyp_consumed modulo concurrent sampling.
+	 * The per-hypothesis consumed_count is per-entry; this flat
+	 * array is the persistent fleet mirror.  Paired with
+	 * cmp_hyp_inserted_by_kind this shows, per kind, the share of
+	 * insertions the typed consumer is actually pulling.  SHADOW
+	 * telemetry only -- no consumer reads it. */
+	unsigned long cmp_hyp_consumed_by_kind[CMP_HYP_KIND_NR];
+
 	/*
 	 * SHADOW would-pick telemetry resolved alongside each successful
 	 * raw cmp_hints_try_get_ex() return.  For the same (nr, do32,

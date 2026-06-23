@@ -6560,6 +6560,34 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 					prev_hyp_full_kind[k] = cur_full;
 				}
 			}
+
+			/* Per-kind census of typed-hypothesis consumes.  Bumped in
+			 * lock-step with the scalar cmp_hyp_consumed from
+			 * cmp_hyp_credit_consume(); sum across kinds equals
+			 * cmp_hyp_consumed modulo concurrent sampling.  Paired
+			 * with cmp_hyp_inserted_by_kind this shows, per kind, the
+			 * share of insertions the typed consumer is pulling. */
+			{
+				static const char * const kind_labels[CMP_HYP_KIND_NR] = {
+					"exact", "range", "boundary", "bitmask",
+					"enum_family", "alignment", "length",
+					"foreign_value",
+				};
+				static unsigned long prev_hyp_consumed_kind[CMP_HYP_KIND_NR];
+				unsigned int k;
+
+				for (k = 0; k < CMP_HYP_KIND_NR; k++) {
+					unsigned long cur_cons = __atomic_load_n(
+						&kcov_shm->cmp_hyp_consumed_by_kind[k],
+						__ATOMIC_RELAXED);
+
+					stats_log_write(
+						"  cmp_hyp[%-13s] consumed +%lu (total %lu)\n",
+						kind_labels[k],
+						cur_cons - prev_hyp_consumed_kind[k], cur_cons);
+					prev_hyp_consumed_kind[k] = cur_cons;
+				}
+			}
 		}
 
 		prev_hyp_observations = cur_hyp_observations;
