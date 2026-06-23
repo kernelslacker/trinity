@@ -420,252 +420,308 @@ static const char * const op_table[] = {
 	OP(BPF_RET,      "ret"),
 };
 
+static void decode_mem(const struct sock_filter f,
+		       const char **op, const char **fmt, int *val,
+		       char *tmp, size_t tmplen)
+{
+	switch (f.code) {
+	case BPF_ST:
+		*op = op_table[BPF_ST];
+		*fmt = "M[%d]";
+		return;
+	case BPF_STX:
+		*op = op_table[BPF_STX];
+		*fmt = "M[%d]";
+		return;
+	case BPF_LD_W | BPF_ABS:
+		*op = op_table[BPF_LD_W];
+		*fmt = "[%d]";
+		return;
+	case BPF_LD_H | BPF_ABS:
+		*op = op_table[BPF_LD_H];
+		*fmt = "[%d]";
+		return;
+	case BPF_LD_B | BPF_ABS:
+		*op = op_table[BPF_LD_B];
+		*fmt = "[%d]";
+		return;
+	case BPF_LD_W | BPF_LEN:
+		*op = op_table[BPF_LD_W];
+		*fmt = "#len";
+		return;
+	case BPF_LD_W | BPF_IND:
+		*op = op_table[BPF_LD_W];
+		*fmt = "[x+%d]";
+		return;
+	case BPF_LD_H | BPF_IND:
+		*op = op_table[BPF_LD_H];
+		*fmt = "[x+%d]";
+		return;
+	case BPF_LD_B | BPF_IND:
+		*op = op_table[BPF_LD_B];
+		*fmt = "[x+%d]";
+		return;
+	case BPF_LD | BPF_IMM:
+		*op = op_table[BPF_LD_W];
+		*fmt = "#%#x";
+		return;
+	case BPF_LDX | BPF_IMM:
+		*op = op_table[BPF_LDX];
+		*fmt = "#%#x";
+		return;
+	case BPF_LDX_B | BPF_MSH:
+		*op = op_table[BPF_LDX_B];
+		*fmt = "4*([%d]&0xf)";
+		return;
+	case BPF_LD | BPF_MEM:
+		*op = op_table[BPF_LD_W];
+		*fmt = "M[%d]";
+		return;
+	case BPF_LDX | BPF_MEM:
+		*op = op_table[BPF_LDX];
+		*fmt = "M[%d]";
+		return;
+	}
+	/* Lets decode it step by step. */
+	snprintf(tmp, tmplen, "inv[%s] %s %s %s",
+		 SAFE_NAME(bpf_class_vars_name, BPF_CLASS(f.code)),
+		 SAFE_NAME(bpf_size_vars_name, BPF_SIZE(f.code)),
+		 SAFE_NAME(bpf_mode_vars_name, BPF_MODE(f.code)),
+		 SAFE_NAME(bpf_src_vars_name, BPF_SRC(f.code)));
+	*op = tmp;
+	*fmt = "%#x";
+	*val = f.code;
+}
+
+static void decode_jmp(const struct sock_filter f, unsigned int i,
+		       const char **op, const char **fmt, int *val,
+		       char *tmp, size_t tmplen)
+{
+	switch (f.code) {
+	case BPF_JMP_JA:
+		*op = op_table[BPF_JMP_JA];
+		*fmt = "%d";
+		*val = i + 1 + f.k;
+		return;
+	case BPF_JMP_JGT | BPF_X:
+		*op = op_table[BPF_JMP_JGT];
+		*fmt = "x";
+		return;
+	case BPF_JMP_JGT | BPF_K:
+		*op = op_table[BPF_JMP_JGT];
+		*fmt = "#%#x";
+		return;
+	case BPF_JMP_JGE | BPF_X:
+		*op = op_table[BPF_JMP_JGE];
+		*fmt = "x";
+		return;
+	case BPF_JMP_JGE | BPF_K:
+		*op = op_table[BPF_JMP_JGE];
+		*fmt = "#%#x";
+		return;
+	case BPF_JMP_JEQ | BPF_X:
+		*op = op_table[BPF_JMP_JEQ];
+		*fmt = "x";
+		return;
+	case BPF_JMP_JEQ | BPF_K:
+		*op = op_table[BPF_JMP_JEQ];
+		*fmt = "#%#x";
+		return;
+	case BPF_JMP_JSET | BPF_X:
+		*op = op_table[BPF_JMP_JSET];
+		*fmt = "x";
+		return;
+	case BPF_JMP_JSET | BPF_K:
+		*op = op_table[BPF_JMP_JSET];
+		*fmt = "#%#x";
+		return;
+	}
+	snprintf(tmp, tmplen, "inv[%s] %s %s",
+		 SAFE_NAME(bpf_class_vars_name, BPF_CLASS(f.code)),
+		 SAFE_NAME(bpf_jmp_op_vars_name, BPF_OP(f.code)),
+		 SAFE_NAME(bpf_src_vars_name, BPF_SRC(f.code)));
+	*op = tmp;
+	*fmt = "%#x";
+	*val = f.code;
+}
+
+static void decode_alu(const struct sock_filter f,
+		       const char **op, const char **fmt, int *val,
+		       char *tmp, size_t tmplen)
+{
+	switch (f.code) {
+	case BPF_ALU_NEG:
+		*op = op_table[BPF_ALU_NEG];
+		*fmt = "";
+		return;
+	case BPF_ALU_LSH | BPF_X:
+		*op = op_table[BPF_ALU_LSH];
+		*fmt = "x";
+		return;
+	case BPF_ALU_LSH | BPF_K:
+		*op = op_table[BPF_ALU_LSH];
+		*fmt = "#%d";
+		return;
+	case BPF_ALU_RSH | BPF_X:
+		*op = op_table[BPF_ALU_RSH];
+		*fmt = "x";
+		return;
+	case BPF_ALU_RSH | BPF_K:
+		*op = op_table[BPF_ALU_RSH];
+		*fmt = "#%d";
+		return;
+	case BPF_ALU_ADD | BPF_X:
+		*op = op_table[BPF_ALU_ADD];
+		*fmt = "x";
+		return;
+	case BPF_ALU_ADD | BPF_K:
+		*op = op_table[BPF_ALU_ADD];
+		*fmt = "#%d";
+		return;
+	case BPF_ALU_SUB | BPF_X:
+		*op = op_table[BPF_ALU_SUB];
+		*fmt = "x";
+		return;
+	case BPF_ALU_SUB | BPF_K:
+		*op = op_table[BPF_ALU_SUB];
+		*fmt = "#%d";
+		return;
+	case BPF_ALU_MUL | BPF_X:
+		*op = op_table[BPF_ALU_MUL];
+		*fmt = "x";
+		return;
+	case BPF_ALU_MUL | BPF_K:
+		*op = op_table[BPF_ALU_MUL];
+		*fmt = "#%d";
+		return;
+	case BPF_ALU_DIV | BPF_X:
+		*op = op_table[BPF_ALU_DIV];
+		*fmt = "x";
+		return;
+	case BPF_ALU_DIV | BPF_K:
+		*op = op_table[BPF_ALU_DIV];
+		*fmt = "#%d";
+		return;
+	case BPF_ALU_MOD | BPF_X:
+		*op = op_table[BPF_ALU_MOD];
+		*fmt = "x";
+		return;
+	case BPF_ALU_MOD | BPF_K:
+		*op = op_table[BPF_ALU_MOD];
+		*fmt = "#%d";
+		return;
+	case BPF_ALU_AND | BPF_X:
+		*op = op_table[BPF_ALU_AND];
+		*fmt = "x";
+		return;
+	case BPF_ALU_AND | BPF_K:
+		*op = op_table[BPF_ALU_AND];
+		*fmt = "#%#x";
+		return;
+	case BPF_ALU_OR | BPF_X:
+		*op = op_table[BPF_ALU_OR];
+		*fmt = "x";
+		return;
+	case BPF_ALU_OR | BPF_K:
+		*op = op_table[BPF_ALU_OR];
+		*fmt = "#%#x";
+		return;
+	case BPF_ALU_XOR | BPF_X:
+		*op = op_table[BPF_ALU_XOR];
+		*fmt = "x";
+		return;
+	case BPF_ALU_XOR | BPF_K:
+		*op = op_table[BPF_ALU_XOR];
+		*fmt = "#%#x";
+		return;
+	}
+	snprintf(tmp, tmplen, "inv[%s] %s %s",
+		 SAFE_NAME(bpf_class_vars_name, BPF_CLASS(f.code)),
+		 SAFE_NAME(bpf_alu_op_vars_name, BPF_OP(f.code)),
+		 SAFE_NAME(bpf_src_vars_name, BPF_SRC(f.code)));
+	*op = tmp;
+	*fmt = "%#x";
+	*val = f.code;
+}
+
+static void decode_ret(const struct sock_filter f,
+		       const char **op, const char **fmt, int *val,
+		       char *tmp, size_t tmplen)
+{
+	switch (f.code) {
+	case BPF_RET | BPF_K:
+		*op = op_table[BPF_RET];
+		*fmt = "#%#x";
+		return;
+	case BPF_RET | BPF_A:
+		*op = op_table[BPF_RET];
+		*fmt = "a";
+		return;
+	case BPF_RET | BPF_X:
+		*op = op_table[BPF_RET];
+		*fmt = "x";
+		return;
+	}
+	snprintf(tmp, tmplen, "inv[%s] %s",
+		 SAFE_NAME(bpf_class_vars_name, BPF_CLASS(f.code)),
+		 SAFE_NAME(bpf_ret_vars_name, BPF_RVAL(f.code)));
+	*op = tmp;
+	*fmt = "%#x";
+	*val = f.code;
+}
+
+static void decode_misc(const struct sock_filter f,
+			const char **op, const char **fmt, int *val,
+			char *tmp, size_t tmplen)
+{
+	switch (f.code) {
+	case BPF_MISC_TAX:
+		*op = op_table[BPF_MISC_TAX];
+		*fmt = "";
+		return;
+	case BPF_MISC_TXA:
+		*op = op_table[BPF_MISC_TXA];
+		*fmt = "";
+		return;
+	}
+	snprintf(tmp, tmplen, "inv[%s] %s",
+		 SAFE_NAME(bpf_class_vars_name, BPF_CLASS(f.code)),
+		 SAFE_NAME(bpf_misc_vars_name, BPF_MISCOP(f.code)));
+	*op = tmp;
+	*fmt = "%#x";
+	*val = f.code;
+}
+
 static void bpf_disasm(const struct sock_filter f, unsigned int i)
 {
-	const char *op, *fmt;
+	const char *op = NULL, *fmt = NULL;
 	int val = f.k;
 	char buf[256], tmp[128];
 
 	memset(tmp, 0, sizeof(tmp));
 
-	switch (f.code) {
-	case BPF_RET | BPF_K:
-		op = op_table[BPF_RET];
-		fmt = "#%#x";
-		break;
-	case BPF_RET | BPF_A:
-		op = op_table[BPF_RET];
-		fmt = "a";
-		break;
-	case BPF_RET | BPF_X:
-		op = op_table[BPF_RET];
-		fmt = "x";
-		break;
-	case BPF_MISC_TAX:
-		op = op_table[BPF_MISC_TAX];
-		fmt = "";
-		break;
-	case BPF_MISC_TXA:
-		op = op_table[BPF_MISC_TXA];
-		fmt = "";
-		break;
+	switch (BPF_CLASS(f.code)) {
+	case BPF_LD:
+	case BPF_LDX:
 	case BPF_ST:
-		op = op_table[BPF_ST];
-		fmt = "M[%d]";
-		break;
 	case BPF_STX:
-		op = op_table[BPF_STX];
-		fmt = "M[%d]";
+		decode_mem(f, &op, &fmt, &val, tmp, sizeof(tmp));
 		break;
-	case BPF_LD_W | BPF_ABS:
-		op = op_table[BPF_LD_W];
-		fmt = "[%d]";
+	case BPF_JMP:
+		decode_jmp(f, i, &op, &fmt, &val, tmp, sizeof(tmp));
 		break;
-	case BPF_LD_H | BPF_ABS:
-		op = op_table[BPF_LD_H];
-		fmt = "[%d]";
+	case BPF_ALU:
+		decode_alu(f, &op, &fmt, &val, tmp, sizeof(tmp));
 		break;
-	case BPF_LD_B | BPF_ABS:
-		op = op_table[BPF_LD_B];
-		fmt = "[%d]";
+	case BPF_RET:
+		decode_ret(f, &op, &fmt, &val, tmp, sizeof(tmp));
 		break;
-	case BPF_LD_W | BPF_LEN:
-		op = op_table[BPF_LD_W];
-		fmt = "#len";
-		break;
-	case BPF_LD_W | BPF_IND:
-		op = op_table[BPF_LD_W];
-		fmt = "[x+%d]";
-		break;
-	case BPF_LD_H | BPF_IND:
-		op = op_table[BPF_LD_H];
-		fmt = "[x+%d]";
-		break;
-	case BPF_LD_B | BPF_IND:
-		op = op_table[BPF_LD_B];
-		fmt = "[x+%d]";
-		break;
-	case BPF_LD | BPF_IMM:
-		op = op_table[BPF_LD_W];
-		fmt = "#%#x";
-		break;
-	case BPF_LDX | BPF_IMM:
-		op = op_table[BPF_LDX];
-		fmt = "#%#x";
-		break;
-	case BPF_LDX_B | BPF_MSH:
-		op = op_table[BPF_LDX_B];
-		fmt = "4*([%d]&0xf)";
-		break;
-	case BPF_LD | BPF_MEM:
-		op = op_table[BPF_LD_W];
-		fmt = "M[%d]";
-		break;
-	case BPF_LDX | BPF_MEM:
-		op = op_table[BPF_LDX];
-		fmt = "M[%d]";
-		break;
-	case BPF_JMP_JA:
-		op = op_table[BPF_JMP_JA];
-		fmt = "%d";
-		val = i + 1 + f.k;
-		break;
-	case BPF_JMP_JGT | BPF_X:
-		op = op_table[BPF_JMP_JGT];
-		fmt = "x";
-		break;
-	case BPF_JMP_JGT | BPF_K:
-		op = op_table[BPF_JMP_JGT];
-		fmt = "#%#x";
-		break;
-	case BPF_JMP_JGE | BPF_X:
-		op = op_table[BPF_JMP_JGE];
-		fmt = "x";
-		break;
-	case BPF_JMP_JGE | BPF_K:
-		op = op_table[BPF_JMP_JGE];
-		fmt = "#%#x";
-		break;
-	case BPF_JMP_JEQ | BPF_X:
-		op = op_table[BPF_JMP_JEQ];
-		fmt = "x";
-		break;
-	case BPF_JMP_JEQ | BPF_K:
-		op = op_table[BPF_JMP_JEQ];
-		fmt = "#%#x";
-		break;
-	case BPF_JMP_JSET | BPF_X:
-		op = op_table[BPF_JMP_JSET];
-		fmt = "x";
-		break;
-	case BPF_JMP_JSET | BPF_K:
-		op = op_table[BPF_JMP_JSET];
-		fmt = "#%#x";
-		break;
-	case BPF_ALU_NEG:
-		op = op_table[BPF_ALU_NEG];
-		fmt = "";
-		break;
-	case BPF_ALU_LSH | BPF_X:
-		op = op_table[BPF_ALU_LSH];
-		fmt = "x";
-		break;
-	case BPF_ALU_LSH | BPF_K:
-		op = op_table[BPF_ALU_LSH];
-		fmt = "#%d";
-		break;
-	case BPF_ALU_RSH | BPF_X:
-		op = op_table[BPF_ALU_RSH];
-		fmt = "x";
-		break;
-	case BPF_ALU_RSH | BPF_K:
-		op = op_table[BPF_ALU_RSH];
-		fmt = "#%d";
-		break;
-	case BPF_ALU_ADD | BPF_X:
-		op = op_table[BPF_ALU_ADD];
-		fmt = "x";
-		break;
-	case BPF_ALU_ADD | BPF_K:
-		op = op_table[BPF_ALU_ADD];
-		fmt = "#%d";
-		break;
-	case BPF_ALU_SUB | BPF_X:
-		op = op_table[BPF_ALU_SUB];
-		fmt = "x";
-		break;
-	case BPF_ALU_SUB | BPF_K:
-		op = op_table[BPF_ALU_SUB];
-		fmt = "#%d";
-		break;
-	case BPF_ALU_MUL | BPF_X:
-		op = op_table[BPF_ALU_MUL];
-		fmt = "x";
-		break;
-	case BPF_ALU_MUL | BPF_K:
-		op = op_table[BPF_ALU_MUL];
-		fmt = "#%d";
-		break;
-	case BPF_ALU_DIV | BPF_X:
-		op = op_table[BPF_ALU_DIV];
-		fmt = "x";
-		break;
-	case BPF_ALU_DIV | BPF_K:
-		op = op_table[BPF_ALU_DIV];
-		fmt = "#%d";
-		break;
-	case BPF_ALU_MOD | BPF_X:
-		op = op_table[BPF_ALU_MOD];
-		fmt = "x";
-		break;
-	case BPF_ALU_MOD | BPF_K:
-		op = op_table[BPF_ALU_MOD];
-		fmt = "#%d";
-		break;
-	case BPF_ALU_AND | BPF_X:
-		op = op_table[BPF_ALU_AND];
-		fmt = "x";
-		break;
-	case BPF_ALU_AND | BPF_K:
-		op = op_table[BPF_ALU_AND];
-		fmt = "#%#x";
-		break;
-	case BPF_ALU_OR | BPF_X:
-		op = op_table[BPF_ALU_OR];
-		fmt = "x";
-		break;
-	case BPF_ALU_OR | BPF_K:
-		op = op_table[BPF_ALU_OR];
-		fmt = "#%#x";
-		break;
-	case BPF_ALU_XOR | BPF_X:
-		op = op_table[BPF_ALU_XOR];
-		fmt = "x";
-		break;
-	case BPF_ALU_XOR | BPF_K:
-		op = op_table[BPF_ALU_XOR];
-		fmt = "#%#x";
+	case BPF_MISC:
+		decode_misc(f, &op, &fmt, &val, tmp, sizeof(tmp));
 		break;
 	default:
-		/* Lets decode it step by step. */
-		switch (BPF_CLASS(f.code)) {
-		case BPF_LD:
-		case BPF_LDX:
-		case BPF_ST:
-		case BPF_STX:
-			snprintf(tmp, sizeof(tmp), "inv[%s] %s %s %s",
-				 SAFE_NAME(bpf_class_vars_name, BPF_CLASS(f.code)),
-				 SAFE_NAME(bpf_size_vars_name, BPF_SIZE(f.code)),
-				 SAFE_NAME(bpf_mode_vars_name, BPF_MODE(f.code)),
-				 SAFE_NAME(bpf_src_vars_name, BPF_SRC(f.code)));
-			goto cont;
-		case BPF_ALU:
-			snprintf(tmp, sizeof(tmp), "inv[%s] %s %s",
-				 SAFE_NAME(bpf_class_vars_name, BPF_CLASS(f.code)),
-				 SAFE_NAME(bpf_alu_op_vars_name, BPF_OP(f.code)),
-				 SAFE_NAME(bpf_src_vars_name, BPF_SRC(f.code)));
-			goto cont;
-		case BPF_JMP:
-			snprintf(tmp, sizeof(tmp), "inv[%s] %s %s",
-				 SAFE_NAME(bpf_class_vars_name, BPF_CLASS(f.code)),
-				 SAFE_NAME(bpf_jmp_op_vars_name, BPF_OP(f.code)),
-				 SAFE_NAME(bpf_src_vars_name, BPF_SRC(f.code)));
-			goto cont;
-		case BPF_RET:
-			snprintf(tmp, sizeof(tmp), "inv[%s] %s",
-				 SAFE_NAME(bpf_class_vars_name, BPF_CLASS(f.code)),
-				 SAFE_NAME(bpf_ret_vars_name, BPF_RVAL(f.code)));
-			goto cont;
-		case BPF_MISC:
-			snprintf(tmp, sizeof(tmp), "inv[%s] %s",
-				 SAFE_NAME(bpf_class_vars_name, BPF_CLASS(f.code)),
-				 SAFE_NAME(bpf_misc_vars_name, BPF_MISCOP(f.code)));
-			goto cont;
-		default:
-			snprintf(tmp, sizeof(tmp), "inv[??][%u,%u,%u,%u]",
-				 f.code, f.jt, f.jf, f.k);
-		}
-cont:
+		snprintf(tmp, sizeof(tmp), "inv[??][%u,%u,%u,%u]",
+			 f.code, f.jt, f.jf, f.k);
 		op = tmp;
 		fmt = "%#x";
 		val = f.code;
