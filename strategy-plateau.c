@@ -11,7 +11,6 @@
 #include <string.h>
 
 #include "kcov.h"
-#include "params.h"
 #include "rnd.h"
 #include "shm.h"
 #include "stats.h"		/* stats_log_write */
