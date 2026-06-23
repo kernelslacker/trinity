@@ -17,10 +17,6 @@
 #include "compat.h"
 #include "utils.h"
 
-#ifndef MREMAP_DONTUNMAP
-#define MREMAP_DONTUNMAP	4
-#endif
-
 static const unsigned long alignments[] = {
 	MB(1), MB(2), MB(4), MB(4),
 	MB(10), MB(100),
