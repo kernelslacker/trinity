@@ -1862,7 +1862,6 @@ struct stats_s {
 	unsigned long fd_stale_detected __attribute__((aligned(64)));
 	unsigned long fd_stale_by_generation;
 	unsigned long fd_closed_tracked;
-	unsigned long fd_regenerated;
 	unsigned long fd_duped;
 	unsigned long fd_events_processed;
 	unsigned long fd_events_dropped;

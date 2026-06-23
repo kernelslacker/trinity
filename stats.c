@@ -2069,7 +2069,6 @@ static const struct stat_field fd_lifecycle_fields[] = {
 	STAT_FIELD(fd, stale_detected),
 	STAT_FIELD(fd, stale_by_generation),
 	STAT_FIELD(fd, closed_tracked),
-	STAT_FIELD(fd, regenerated),
 	STAT_FIELD(fd, duped),
 	STAT_FIELD(fd, events_processed),
 	STAT_FIELD(fd, events_dropped),
@@ -2104,7 +2103,7 @@ static void dump_stats_json_fault_and_fd_lifecycle(void)
 {
 	printf("\"fault_injection\":{\"armed_fail_nth\":%lu,\"returned_enomem\":%lu},"
 		"\"fd_lifecycle\":{\"stale_detected\":%lu,\"stale_by_generation\":%lu,"
-			"\"closed_tracked\":%lu,\"regenerated\":%lu,\"duped\":%lu,"
+			"\"closed_tracked\":%lu,\"duped\":%lu,"
 			"\"events_processed\":%lu,\"events_dropped\":%lu,"
 			"\"event_close_count\":%lu,\"event_evict_count\":%lu,"
 			"\"hash_reinsert_dropped\":%lu,"
@@ -2123,7 +2122,7 @@ static void dump_stats_json_fault_and_fd_lifecycle(void)
 			"\"event_close_range_length_sum\":%lu},",
 		parent_stats.fault_injected, parent_stats.fault_consumed,
 		shm->stats.fd_stale_detected, shm->stats.fd_stale_by_generation,
-		shm->stats.fd_closed_tracked, shm->stats.fd_regenerated,
+		shm->stats.fd_closed_tracked,
 		shm->stats.fd_duped, shm->stats.fd_events_processed,
 		shm->stats.fd_events_dropped,
 		shm->stats.fd_event_close_count, shm->stats.fd_event_evict_count,
@@ -3776,8 +3775,8 @@ static const struct {
 	  offsetof(struct stats_s, bandit_pool_edges_discovered) },
 	/* Epoll lazy-arm wins: rate-of-change tracks fresh epfds reaching
 	 * children after the deferred-arm refactor.  A flat counter while
-	 * fd_regenerated keeps climbing means children aren't picking up
-	 * the regenerated epfds — i.e. the consumer wireup regressed. */
+	 * children are issuing epoll_wait suggests the consumer wireup
+	 * regressed. */
 	{ "epoll_lazy_armed",
 	  offsetof(struct stats_s, epoll_lazy_armed) },
 	/* Watch-set populations refused because the candidate fd belonged
@@ -7645,7 +7644,7 @@ static void dump_stats_fd_tracking(void)
 	}
 
 	if (shm->stats.fd_stale_detected || shm->stats.fd_closed_tracked ||
-	    shm->stats.fd_regenerated || shm->stats.fd_stale_by_generation ||
+	    shm->stats.fd_stale_by_generation ||
 	    shm->stats.fd_duped || shm->stats.fd_events_processed ||
 	    shm->stats.fd_hash_reinsert_dropped ||
 	    shm->stats.local_fd_hash_insert_dropped ||
@@ -7656,7 +7655,6 @@ static void dump_stats_fd_tracking(void)
 		stat_row("fd_lifecycle", "stale_detected",      shm->stats.fd_stale_detected);
 		stat_row("fd_lifecycle", "stale_by_generation", shm->stats.fd_stale_by_generation);
 		stat_row("fd_lifecycle", "closed_tracked",      shm->stats.fd_closed_tracked);
-		stat_row("fd_lifecycle", "regenerated",         shm->stats.fd_regenerated);
 		stat_row("fd_lifecycle", "duped",               shm->stats.fd_duped);
 		stat_row("fd_lifecycle", "events_processed",    shm->stats.fd_events_processed);
 		stat_row("fd_lifecycle", "events_dropped",      shm->stats.fd_events_dropped);
