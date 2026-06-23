@@ -1067,6 +1067,11 @@ struct sockaddr_nfc {
 #define TFD_NONBLOCK 04000
 #endif
 
+/* linux/memfd.h */
+#ifndef MFD_CLOEXEC
+#define MFD_CLOEXEC 0x0001U
+#endif
+
 /* linux/keyctl.h */
 #ifndef KEYCTL_GET_KEYRING_ID
 #define KEYCTL_GET_KEYRING_ID		0	/* ask for a keyring's ID */

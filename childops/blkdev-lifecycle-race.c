@@ -73,11 +73,8 @@
 #include <linux/fs.h>
 #include <linux/loop.h>
 
+#include "compat.h"
 #include "random.h"
-
-#ifndef MFD_CLOEXEC
-#define MFD_CLOEXEC	0x0001U
-#endif
 
 #define BLKDEV_BACKING_MIN	4096U	/* 4 KiB */
 #define BLKDEV_BACKING_MAX	(16U << 20)	/* 16 MiB */

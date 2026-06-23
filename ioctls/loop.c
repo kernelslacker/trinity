@@ -9,15 +9,12 @@
 #include <sys/sysmacros.h>
 #include <unistd.h>
 
+#include "compat.h"
 #include "ioctls.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
 #include "utils.h"
-
-#ifndef MFD_CLOEXEC
-#define MFD_CLOEXEC 0x0001U
-#endif
 
 /*
  * Cached memfd used as a backing file for LOOP_CONFIGURE.  Opened

@@ -50,10 +50,6 @@
 #include "syscall-gate.h"
 #include "pids.h"
 
-#ifndef MFD_CLOEXEC
-#define MFD_CLOEXEC	0x0001U
-#endif
-
 /* Local mirror of struct open_how — avoid a build-time dependency on
  * a kernel header that older distributions ship without. */
 struct iour_open_how {
