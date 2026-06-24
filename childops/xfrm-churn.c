@@ -679,13 +679,23 @@ static size_t append_algo_attrs(unsigned char *buf, size_t off, size_t cap,
 }
 
 /*
- * XFRM_MSG_NEWSA carrying a fully-populated xfrm_usersa_info plus
- * one or more XFRMA_ALG_* attributes appropriate for the algo.
- * reqid + spi + proto are captured by the caller for the matching
- * policy template and the later UPDSA / DELSA.
+ * Build and dispatch a NEWSA or UPDSA netlink request: a
+ * fully-populated xfrm_usersa_info plus one or more XFRMA_ALG_*
+ * attributes appropriate for the algo, plus XFRMA_SA_DIR.  The SA
+ * shell, attribute set, and ack/wait loop are identical across both
+ * opcodes; only the netlink opcode itself differs.
+ *
+ * NEWSA path: fresh install.  reqid + spi + proto are captured by
+ * the caller for the matching policy template and the later UPDSA /
+ * DELSA.
+ *
+ * UPDSA path: rebuild the same SA shell with a fresh random key (and
+ * same SPI by default).  Drives the UPDSA-vs-encrypt rekey race —
+ * the in-flight encrypt may still be holding the old key.
  */
-static int build_newsa(struct nl_ctx *ctx, const struct xfrm_algo_def *def,
-		       __u32 reqid, __be32 spi, __u8 mode, __u32 seq)
+static int build_sa_msg(struct nl_ctx *ctx, __u16 msg_type,
+			const struct xfrm_algo_def *def,
+			__u32 reqid, __be32 spi, __u8 mode, __u32 seq)
 {
 	unsigned char buf[XFRM_BUF_BYTES];
 	struct nlmsghdr *nlh;
@@ -695,7 +705,7 @@ static int build_newsa(struct nl_ctx *ctx, const struct xfrm_algo_def *def,
 
 	memset(buf, 0, sizeof(buf));
 	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_type  = XFRM_MSG_NEWSA;
+	nlh->nlmsg_type  = msg_type;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
 	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
@@ -708,12 +718,13 @@ static int build_newsa(struct nl_ctx *ctx, const struct xfrm_algo_def *def,
 	sa->id.proto       = def->proto;
 	sa->saddr.a4       = XFRM_SADDR_BE;
 	fill_lifetime(&sa->lft);
-	sa->seq            = seq;	/* link onto byseq when seq != 0 */
+	sa->seq            = seq;	/* link onto byseq when seq != 0; preserves linkage across rekey */
 	sa->reqid          = reqid;
 	sa->family         = AF_INET;
 	sa->mode           = mode;
-	/* Kernel rejects OUT SAs with a nonzero replay_window — keep
-	 * the two coupled so XFRMA_SA_DIR validation actually runs. */
+	/* Kernel rejects OUT SAs with a nonzero replay_window once
+	 * XFRMA_SA_DIR is present — keep the two coupled so the
+	 * validation actually runs. */
 	sa->replay_window  = (sa_dir == XFRM_SA_DIR_OUT) ? 0 : 32;
 	sa->flags          = 0;
 
@@ -732,63 +743,23 @@ static int build_newsa(struct nl_ctx *ctx, const struct xfrm_algo_def *def,
 }
 
 /*
- * XFRM_MSG_UPDSA: rebuild the same SA shell with a fresh random key
- * (and same SPI by default).  Drives the UPDSA-vs-encrypt rekey race
- * — the in-flight encrypt may still be holding the old key.
+ * Build and dispatch a netlink request keyed on xfrm_usersa_id
+ * (daddr + spi + proto + family).  Shared between DELSA and GETSA —
+ * both carry the same payload, only the netlink opcode differs.
+ * v4-only; install_ah_esn_async_sa keeps its own inline DELSA for v6.
+ *
+ * DELSA path: races the in-flight encrypt still draining from the
+ * post-UPDSA sendto burst; the SA refcount UAF window opens here.
+ *
+ * GETSA path: drives the __xfrm_state_lookup byspi walker on the
+ * netlink-visible read path — one of the lookup-side readers upstream
+ * commit 14acf9652e56 calls out (KASAN tag "Read in
+ * __xfrm_state_lookup").  Reply carries a full xfrm_usersa_info; we
+ * don't parse it — the bug window is the kernel-side hash walk, not
+ * the userland decode.
  */
-static int build_updsa(struct nl_ctx *ctx, const struct xfrm_algo_def *def,
-		       __u32 reqid, __be32 spi, __u8 mode, __u32 seq)
-{
-	unsigned char buf[XFRM_BUF_BYTES];
-	struct nlmsghdr *nlh;
-	struct xfrm_usersa_info *sa;
-	size_t off;
-	__u8 sa_dir;
-
-	memset(buf, 0, sizeof(buf));
-	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_type  = XFRM_MSG_UPDSA;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = nl_seq_next(ctx);
-
-	sa_dir = ONE_IN(2) ? XFRM_SA_DIR_OUT : XFRM_SA_DIR_IN;
-
-	sa = (struct xfrm_usersa_info *)NLMSG_DATA(nlh);
-	fill_selector(&sa->sel, IPPROTO_UDP);
-	sa->id.daddr.a4    = XFRM_DADDR_BE;
-	sa->id.spi         = spi;
-	sa->id.proto       = def->proto;
-	sa->saddr.a4       = XFRM_SADDR_BE;
-	fill_lifetime(&sa->lft);
-	sa->seq            = seq;	/* keep byseq linkage stable across rekey */
-	sa->reqid          = reqid;
-	sa->family         = AF_INET;
-	sa->mode           = mode;
-	/* OUT SAs must carry replay_window == 0; the kernel rejects
-	 * any other value once XFRMA_SA_DIR is present. */
-	sa->replay_window  = (sa_dir == XFRM_SA_DIR_OUT) ? 0 : 32;
-	sa->flags          = 0;
-
-	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*sa));
-
-	off = append_algo_attrs(buf, off, sizeof(buf), def);
-	if (!off)
-		return -EIO;
-
-	off = nla_put_u8(buf, off, sizeof(buf), XFRMA_SA_DIR, sa_dir);
-	if (!off)
-		return -EIO;
-
-	nlh->nlmsg_len = (__u32)off;
-	return nl_send_recv_retry(ctx, buf, off);
-}
-
-/*
- * XFRM_MSG_DELSA via xfrm_usersa_id (daddr + spi + proto + family).
- * Races the in-flight encrypt still draining from the post-UPDSA
- * sendto burst; the SA refcount UAF window opens here.
- */
-static int build_delsa(struct nl_ctx *ctx, __u8 proto, __be32 spi)
+static int build_sa_id_msg(struct nl_ctx *ctx, __u16 msg_type,
+			   __u8 proto, __be32 spi)
 {
 	unsigned char buf[256];
 	struct nlmsghdr *nlh;
@@ -797,7 +768,7 @@ static int build_delsa(struct nl_ctx *ctx, __u8 proto, __be32 spi)
 
 	memset(buf, 0, sizeof(buf));
 	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_type  = XFRM_MSG_DELSA;
+	nlh->nlmsg_type  = msg_type;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
 	nlh->nlmsg_seq   = nl_seq_next(ctx);
 
@@ -962,38 +933,6 @@ static int build_allocspi(struct nl_ctx *ctx, const struct xfrm_algo_def *def,
 	 * That's still acceptable as a counter signal — the kernel-side
 	 * walk has already happened by the time the reply is composed. */
 	return nl_send_recv_retry(ctx, buf, off);
-}
-
-/*
- * XFRM_MSG_GETSA via xfrm_usersa_id (daddr + spi + proto + family).
- * Drives __xfrm_state_lookup byspi walker on the netlink-visible read
- * path.  This is one of the lookup-side readers upstream commit
- * 14acf9652e56 calls out (KASAN tag "Read in __xfrm_state_lookup").
- * Reply carries a full xfrm_usersa_info; we don't parse it — the bug
- * window is the kernel-side hash walk, not the userland decode.
- */
-static int build_getsa_byspi(struct nl_ctx *ctx, __u8 proto, __be32 spi)
-{
-	unsigned char buf[256];
-	struct nlmsghdr *nlh;
-	struct xfrm_usersa_id *uid;
-	size_t off;
-
-	memset(buf, 0, sizeof(buf));
-	nlh = (struct nlmsghdr *)buf;
-	nlh->nlmsg_type  = XFRM_MSG_GETSA;
-	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
-	nlh->nlmsg_seq   = nl_seq_next(ctx);
-
-	uid = (struct xfrm_usersa_id *)NLMSG_DATA(nlh);
-	uid->daddr.a4 = XFRM_DADDR_BE;
-	uid->spi      = spi;
-	uid->family   = AF_INET;
-	uid->proto    = proto;
-
-	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*uid));
-	nlh->nlmsg_len = (__u32)off;
-	return nl_send_recv(ctx, buf, off);
 }
 
 /*
@@ -1323,7 +1262,7 @@ static void install_ah_esn_async_sa(struct nl_ctx *ctx, int udp,
 
 	/* DELSA racing the in-flight encrypt — the post-callback ICV
 	 * write window the bug-class lives in.  Inline because the
-	 * existing build_delsa() hardcodes AF_INET in xfrm_usersa_id
+	 * shared build_sa_id_msg() hardcodes AF_INET in xfrm_usersa_id
 	 * and would miss a v6 SA on lookup. */
 	memset(dbuf, 0, sizeof(dbuf));
 	nlh = (struct nlmsghdr *)dbuf;
@@ -1348,6 +1287,28 @@ static void install_ah_esn_async_sa(struct nl_ctx *ctx, int udp,
 }
 
 /*
+ * Build and send one SADB_FLUSH for the given satype on an already-open
+ * PF_KEYv2 socket.  PF_KEYv2 is not netlink, so the bumped g_pfkey_seq
+ * keeps message seq values varying without pretending to match
+ * request/response pairs (we never read the reply).
+ */
+static void pfkey_flush_one(int s, __u8 satype)
+{
+	struct sadb_msg msg;
+
+	memset(&msg, 0, sizeof(msg));
+	msg.sadb_msg_version  = PF_KEY_V2;
+	msg.sadb_msg_type     = SADB_FLUSH;
+	msg.sadb_msg_satype   = satype;
+	msg.sadb_msg_len      = sizeof(msg) / 8;
+	msg.sadb_msg_seq      = ++g_pfkey_seq;
+	msg.sadb_msg_pid      = (__u32)mypid();
+	if (send(s, &msg, sizeof(msg), MSG_DONTWAIT) > 0)
+		__atomic_add_fetch(&shm->stats.xfrm_churn_pfkey_send_ok,
+				   1, __ATOMIC_RELAXED);
+}
+
+/*
  * PF_KEYv2 alt path: open AF_KEY socket and emit a SADB_FLUSH for
  * ESP and AH.  Drives net/key/af_key.c dispatch + flush paths that
  * share the SAD / SPD with the netlink_xfrm side.  Latched on first
@@ -1355,7 +1316,6 @@ static void install_ah_esn_async_sa(struct nl_ctx *ctx, int udp,
  */
 static void pfkey_flush_burst(struct childdata *child)
 {
-	struct sadb_msg msg;
 	int s;
 
 	/* Snapshot child->op_type once and bounds-check before indexing
@@ -1382,27 +1342,8 @@ static void pfkey_flush_burst(struct childdata *child)
 		return;
 	}
 
-	memset(&msg, 0, sizeof(msg));
-	msg.sadb_msg_version  = PF_KEY_V2;
-	msg.sadb_msg_type     = SADB_FLUSH;
-	msg.sadb_msg_satype   = SADB_SATYPE_ESP;
-	msg.sadb_msg_len      = sizeof(msg) / 8;
-	msg.sadb_msg_seq      = ++g_pfkey_seq;
-	msg.sadb_msg_pid      = (__u32)mypid();
-	if (send(s, &msg, sizeof(msg), MSG_DONTWAIT) > 0)
-		__atomic_add_fetch(&shm->stats.xfrm_churn_pfkey_send_ok,
-				   1, __ATOMIC_RELAXED);
-
-	memset(&msg, 0, sizeof(msg));
-	msg.sadb_msg_version  = PF_KEY_V2;
-	msg.sadb_msg_type     = SADB_FLUSH;
-	msg.sadb_msg_satype   = SADB_SATYPE_AH;
-	msg.sadb_msg_len      = sizeof(msg) / 8;
-	msg.sadb_msg_seq      = ++g_pfkey_seq;
-	msg.sadb_msg_pid      = (__u32)mypid();
-	if (send(s, &msg, sizeof(msg), MSG_DONTWAIT) > 0)
-		__atomic_add_fetch(&shm->stats.xfrm_churn_pfkey_send_ok,
-				   1, __ATOMIC_RELAXED);
+	pfkey_flush_one(s, SADB_SATYPE_ESP);
+	pfkey_flush_one(s, SADB_SATYPE_AH);
 
 	close(s);
 }
@@ -1484,7 +1425,7 @@ static void xfrm_compat_msg_sweep(struct nl_ctx *ctx)
  *   3. unshare(CLONE_NEWNET) into a fresh sub-netns.
  *   4. Open NETLINK_XFRM, install one SA via NEWSA with non-zero
  *      seq + spi (so the SA links onto BOTH byseq and byspi), then
- *      back-to-back fire build_getsa_byspi (drives __xfrm_state_lookup
+ *      back-to-back fire build_sa_id_msg(GETSA) (drives __xfrm_state_lookup
  *      byspi walker) and build_allocspi (drives __xfrm_find_acq_byseq +
  *      xfrm_state_lookup_byspi during the SPI scan + a larval insert).
  *   5. close(xfrm_fd) so the only remaining sock_net ref drops, then
@@ -1550,10 +1491,11 @@ static bool xfrm_burn_netns(void)
 	seq   = (rand32() & 0xffffU) | 1U;
 
 	modprobe_algo(aidx);
-	if (build_newsa(&burn_ctx, def, reqid, spi, XFRM_MODE_TRANSPORT, seq) != 0)
+	if (build_sa_msg(&burn_ctx, XFRM_MSG_NEWSA, def, reqid, spi,
+			 XFRM_MODE_TRANSPORT, seq) != 0)
 		goto out;
 
-	(void)build_getsa_byspi(&burn_ctx, def->proto, spi);
+	(void)build_sa_id_msg(&burn_ctx, XFRM_MSG_GETSA, def->proto, spi);
 	(void)build_allocspi(&burn_ctx, def, reqid, XFRM_MODE_TRANSPORT, seq);
 
 	__atomic_add_fetch(&shm->stats.xfrm_churn_burn_completed, 1,
@@ -1694,7 +1636,7 @@ static int xfrm_churn_iter_install_sa(struct xfrm_churn_iter_ctx *ctx)
 	 * on 127.0.0.0/8 -- the kernel's automatic loopback route
 	 * covers tunnel-mode delivery without needing an explicit
 	 * route install.  Tunnel selected ~half the time so transport
-	 * coverage is preserved unchanged; build_newsa /
+	 * coverage is preserved unchanged; build_sa_msg /
 	 * build_newpolicy already take mode as a parameter and the
 	 * template's tmpl->mode mirrors it. */
 	ctx->mode  = ONE_IN(2) ? XFRM_MODE_TUNNEL : XFRM_MODE_TRANSPORT;
@@ -1714,8 +1656,8 @@ static int xfrm_churn_iter_install_sa(struct xfrm_churn_iter_ctx *ctx)
 		ctx->mode = XFRM_MODE_IPTFS;
 
 	modprobe_algo(ctx->aidx);
-	rc = build_newsa(&ctx->nl, ctx->def, ctx->reqid, ctx->spi,
-			 ctx->mode, ctx->seq);
+	rc = build_sa_msg(&ctx->nl, XFRM_MSG_NEWSA, ctx->def, ctx->reqid,
+			  ctx->spi, ctx->mode, ctx->seq);
 	if (rc != 0) {
 		if (ctx->mode == XFRM_MODE_IPTFS) {
 			/* iptfs reject says nothing about the AEAD algo's
@@ -1871,7 +1813,8 @@ static void xfrm_churn_iter_rekey(struct xfrm_churn_iter_ctx *ctx)
 	 * read still drives the bug-class window.
 	 */
 	if (ONE_IN(8))
-		(void)build_getsa_byspi(&ctx->nl, ctx->def->proto, ctx->spi);
+		(void)build_sa_id_msg(&ctx->nl, XFRM_MSG_GETSA,
+				      ctx->def->proto, ctx->spi);
 
 	/*
 	 * Second writer onto byspi: ALLOCSPI on a half-built SA with the
@@ -1884,8 +1827,8 @@ static void xfrm_churn_iter_rekey(struct xfrm_churn_iter_ctx *ctx)
 		(void)build_allocspi(&ctx->nl, ctx->def, ctx->reqid,
 				     ctx->mode, ctx->seq);
 
-	rc = build_updsa(&ctx->nl, ctx->def, ctx->reqid, ctx->spi,
-			 ctx->mode, ctx->seq);
+	rc = build_sa_msg(&ctx->nl, XFRM_MSG_UPDSA, ctx->def, ctx->reqid,
+			  ctx->spi, ctx->mode, ctx->seq);
 	if (rc == 0) {
 		__atomic_add_fetch(&shm->stats.xfrm_churn_sa_updated,
 				   1, __ATOMIC_RELAXED);
@@ -1908,7 +1851,8 @@ static void xfrm_churn_iter_teardown_sa(struct xfrm_churn_iter_ctx *ctx)
 	 * via xfrm_state_delete -> __xfrm_state_destroy — the primary
 	 * teardown-vs-traffic window the op exists to open.
 	 */
-	if (build_delsa(&ctx->nl, ctx->def->proto, ctx->spi) == 0)
+	if (build_sa_id_msg(&ctx->nl, XFRM_MSG_DELSA,
+			    ctx->def->proto, ctx->spi) == 0)
 		__atomic_add_fetch(&shm->stats.xfrm_churn_sa_deleted,
 				   1, __ATOMIC_RELAXED);
 
