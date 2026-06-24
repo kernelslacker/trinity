@@ -8,10 +8,6 @@
 #include "random.h"
 #include "sanitise.h"
 
-#ifndef CLONE_NEWTIME
-#define CLONE_NEWTIME 0x00000080
-#endif
-
 static const char *ns_entries[] = {
 	"/proc/self/ns/mnt",
 	"/proc/self/ns/pid",

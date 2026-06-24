@@ -2858,9 +2858,8 @@ static const struct struct_field mnt_id_req_fields[] = {
  * vocab bit makes listns return -EINVAL before any iterator runs, so
  * an FT_RAW splat almost never reaches the namespace lookup paths;
  * mask the field to the eight defined CLONE_NEW* bits so CMP-learned
- * constants attribute against a real selector.  CLONE_NEWTIME is
- * shimmed because older kernel headers may omit it; mirror the
- * listns sanitiser's shim value verbatim.
+ * constants attribute against a real selector.  CLONE_NEWTIME's
+ * fallback definition lives in compat.h for older kernel headers.
  */
 #ifndef NS_ID_REQ_SIZE_VER0
 struct ns_id_req {
@@ -2870,10 +2869,6 @@ struct ns_id_req {
 	__u64 user_ns_id;
 };
 #define NS_ID_REQ_SIZE_VER0	24
-#endif
-
-#ifndef CLONE_NEWTIME
-#define CLONE_NEWTIME		0x00000080
 #endif
 
 #define NS_ID_REQ_NS_TYPE_MASK \
