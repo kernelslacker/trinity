@@ -9454,6 +9454,64 @@ static void dump_stats_strategy_summary(void)
 			}
 		}
 	}
+	/* Unconditional wall-lever would-suppress observability.  The
+	 * sibling block above only renders when the predicate has
+	 * registered at least one eligible pick (wall_lever_eligible_total
+	 * != 0); this block surfaces the running would-suppress total and
+	 * its top-N per-syscall breakdown on EVERY dump so the projected
+	 * reclaim share + by-syscall attribution stay visible on runs
+	 * where the eligibility gate has not triggered yet.  Skip-zero on
+	 * the per-syscall scan + a top_count guard on the header suppress
+	 * the empty top-N; the scalar total renders unconditionally so a
+	 * 0 is an active "nothing accumulated" signal rather than silence.
+	 * Mirrors the biarch table choice + topn_push idiom used above. */
+	stat_row("strategy", "wall_lever_would_suppress_total",
+		 shm->stats.wall_lever_would_suppress_total);
+	{
+		unsigned int top_nr[TOP_SYSCALLS_DUMP_TOPN];
+		unsigned long top_vals[TOP_SYSCALLS_DUMP_TOPN];
+		unsigned int top_count = 0;
+		unsigned int nr_to_scan;
+		const struct syscalltable *table;
+		unsigned int i;
+		int j;
+
+		if (biarch) {
+			nr_to_scan = max_nr_64bit_syscalls;
+			table = syscalls_64bit;
+		} else {
+			nr_to_scan = max_nr_syscalls;
+			table = syscalls;
+		}
+		if (nr_to_scan > MAX_NR_SYSCALL)
+			nr_to_scan = MAX_NR_SYSCALL;
+
+		memset(top_vals, 0, sizeof(top_vals));
+		for (i = 0; i < nr_to_scan; i++) {
+			unsigned long v = __atomic_load_n(
+				&shm->stats.wall_lever_would_suppress[i],
+				__ATOMIC_RELAXED);
+
+			if (v == 0)
+				continue;
+			topn_push(top_vals, top_nr, &top_count,
+				  TOP_SYSCALLS_DUMP_TOPN, v, i);
+		}
+
+		if (top_count > 0) {
+			output(0, "Top wall-lever would-suppress "
+				  "syscalls (running, shadow-only):\n");
+			for (j = 0; j < (int)top_count; j++) {
+				struct syscallentry *entry =
+					table[top_nr[j]].entry;
+				const char *name = entry ? entry->name
+							 : "???";
+
+				output(0, "  %-24s %lu\n",
+				       name, top_vals[j]);
+			}
+		}
+	}
 	if (shm->stats.strategy_explorer_picks)
 		stat_row("strategy", "strategy_explorer_picks",
 			 shm->stats.strategy_explorer_picks);
