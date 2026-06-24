@@ -31,12 +31,12 @@
  *      EOPNOTSUPP / EAFNOSUPPORT / EPROTONOSUPPORT all latch
  *      ns_unsupported_nf_tables — the kernel's nf_tables module is
  *      unavailable, no point retrying.
- *   5. NFT_MSG_NEWSET creating an anonymous (NFT_SET_ANONYMOUS) +
- *      dynamic (NFT_SET_DYNAMIC) set keyed on ipv4_addr (key_len = 4).
- *      The anonymous flag is what the CVE-2023-32233 double-free
- *      window hangs off — anonymous sets are tied to the rule that
- *      owns them and torn down on rule removal, with a refcount
- *      arrangement that historically races commit vs abort.
+ *   5. NFT_MSG_NEWSET creating an anonymous (NFT_SET_ANONYMOUS) set
+ *      keyed on ipv4_addr (key_len = 4).  The anonymous flag is what
+ *      the CVE-2023-32233 double-free window hangs off — anonymous
+ *      sets are tied to the rule that owns them and torn down on
+ *      rule removal, with a refcount arrangement that historically
+ *      races commit vs abort.
  *   6. NFT_MSG_NEWCHAIN creating an auxiliary regular (no-hook) chain
  *      "chain_aux" — the jump target referenced by the rule's verdict
  *      in step 8.  Created before the base chain so the base-chain
@@ -183,10 +183,19 @@ static int build_deltable(struct nfnl_ctx *ctx, __u8 family,
 }
 
 /*
- * NFT_MSG_NEWSET, anonymous + dynamic, keyed on ipv4_addr (key_len 4).
+ * NFT_MSG_NEWSET, anonymous, keyed on ipv4_addr (key_len 4).
  * NFTA_SET_ID is a userspace-assigned cookie so subsequent in-batch
  * commands could reference the set; we don't reference it but the
  * kernel still expects the attr present for newer set-create paths.
+ *
+ * Only NFT_SET_ANONYMOUS is set in NFTA_SET_FLAGS.  Combining
+ * ANONYMOUS with any flag outside the {ANONYMOUS, CONSTANT, INTERVAL}
+ * triple is rejected by nf_tables_newset() with -EOPNOTSUPP, which
+ * silently disabled the entire NEWSET path for the lifetime of this
+ * childop -- the set never committed, the nftables_churn_set_create_ok
+ * stat never advanced, and every rule that bound a NFTA_LOOKUP_SET or
+ * NFTA_DYNSET_SET_NAME to this name failed at commit because the set
+ * did not exist.
  */
 static int build_newset(struct nfnl_ctx *ctx, __u8 family,
 			const char *table_name, const char *set_name,
@@ -209,7 +218,7 @@ static int build_newset(struct nfnl_ctx *ctx, __u8 family,
 	if (!off)
 		return -EIO;
 	off = nla_put_be32(buf, off, sizeof(buf), NFTA_SET_FLAGS,
-			   NFT_SET_ANONYMOUS | NFT_SET_DYNAMIC);
+			   NFT_SET_ANONYMOUS);
 	if (!off)
 		return -EIO;
 	off = nla_put_be32(buf, off, sizeof(buf), NFTA_SET_KEY_TYPE,
