@@ -137,7 +137,6 @@
 
 #if __has_include(<sched.h>) && __has_include(<linux/netlink.h>)
 
-#include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sched.h>
 
