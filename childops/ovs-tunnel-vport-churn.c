@@ -91,67 +91,10 @@
 #include "childops-netlink.h"
 #include "childops-util.h"
 #include "jitter.h"
+#include "kernel/openvswitch.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
-
-/*
- * uapi/linux/openvswitch.h is not always present on stripped sysroots.
- * Provide per-symbol fallback definitions of the OVS_* / OVS_TUNNEL_*
- * constants this childop emits.  IDs are stable in the UAPI so the
- * fallback values match what the kernel parser expects.
- */
-#ifndef OVS_DATAPATH_VERSION
-#define OVS_DATAPATH_VERSION	2
-#endif
-#ifndef OVS_VPORT_VERSION
-#define OVS_VPORT_VERSION	0x1
-#endif
-
-#ifndef OVS_DP_CMD_NEW
-#define OVS_DP_CMD_NEW		1
-#endif
-
-#ifndef OVS_DP_ATTR_NAME
-#define OVS_DP_ATTR_NAME	1
-#endif
-#ifndef OVS_DP_ATTR_UPCALL_PID
-#define OVS_DP_ATTR_UPCALL_PID	2
-#endif
-
-#ifndef OVS_VPORT_CMD_NEW
-#define OVS_VPORT_CMD_NEW	1
-#endif
-#ifndef OVS_VPORT_CMD_DEL
-#define OVS_VPORT_CMD_DEL	2
-#endif
-
-#ifndef OVS_VPORT_TYPE_GRE
-#define OVS_VPORT_TYPE_GRE	3
-#endif
-#ifndef OVS_VPORT_TYPE_VXLAN
-#define OVS_VPORT_TYPE_VXLAN	4
-#endif
-#ifndef OVS_VPORT_TYPE_GENEVE
-#define OVS_VPORT_TYPE_GENEVE	5
-#endif
-
-#ifndef OVS_VPORT_ATTR_TYPE
-#define OVS_VPORT_ATTR_TYPE	1
-#endif
-#ifndef OVS_VPORT_ATTR_NAME
-#define OVS_VPORT_ATTR_NAME	2
-#endif
-#ifndef OVS_VPORT_ATTR_OPTIONS
-#define OVS_VPORT_ATTR_OPTIONS	3
-#endif
-#ifndef OVS_VPORT_ATTR_UPCALL_PID
-#define OVS_VPORT_ATTR_UPCALL_PID	4
-#endif
-
-#ifndef OVS_TUNNEL_ATTR_DST_PORT
-#define OVS_TUNNEL_ATTR_DST_PORT	1
-#endif
 
 /* The IFLA_IFNAME-bearing rtnetlink racer is fire-and-forget; we never
  * wait for an ack so we don't need NLM_F_ACK in its flags.  The
