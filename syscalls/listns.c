@@ -40,10 +40,6 @@ struct ns_id_req {
 #define LISTNS_CURRENT_USER	0xffffffffffffffffULL
 #endif
 
-#ifndef CLONE_NEWTIME
-#define CLONE_NEWTIME		0x00000080
-#endif
-
 static const unsigned long ns_types[] = {
 	CLONE_NEWNS,
 	CLONE_NEWUTS,

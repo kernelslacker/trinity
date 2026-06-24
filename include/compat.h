@@ -2034,6 +2034,14 @@ struct kvm_get_htab_fd {
 #define CLONE_NEWCGROUP 0x02000000
 #endif
 
+/* linux/sched.h — CLONE_NEWTIME selects the time namespace for
+ * clone(2)/clone3(2)/unshare(2)/setns(2)/listns(2).  Older kernel-headers
+ * packages predate the constant; the UAPI value (0x00000080) has been
+ * fixed since the time namespace landed in 5.6. */
+#ifndef CLONE_NEWTIME
+#define CLONE_NEWTIME 0x00000080
+#endif
+
 /* signal.h */
 #ifndef SS_AUTODISARM
 #define SS_AUTODISARM (1U << 31)
