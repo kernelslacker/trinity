@@ -1148,6 +1148,10 @@ struct sockaddr_nfc {
 #define KEYCTL_INSTANTIATE_IOV		20	/* instantiate a partially constructed key */
 #endif
 
+#ifndef KEYCTL_INVALIDATE
+#define KEYCTL_INVALIDATE		21	/* invalidate a key */
+#endif
+
 #ifndef KCMP_TYPES
 enum kcmp_type {
 	KCMP_FILE,

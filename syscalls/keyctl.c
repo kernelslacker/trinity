@@ -15,9 +15,6 @@
 #include "trinity.h"
 #include "compat.h"
 
-#ifndef KEYCTL_INVALIDATE
-#define KEYCTL_INVALIDATE		21
-#endif
 #ifndef KEYCTL_GET_PERSISTENT
 #define KEYCTL_GET_PERSISTENT		22
 #endif
