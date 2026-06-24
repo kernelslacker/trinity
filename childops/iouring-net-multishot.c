@@ -77,13 +77,13 @@
 #include "syscall-gate.h"
 #include "childops-iouring.h"
 #include "childops/iouring-ring.h"
+#include "compat.h"
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 
-#ifndef __NR_io_uring_enter
-#define __NR_io_uring_enter	426
+#ifndef __NR_io_uring_register
 #define __NR_io_uring_register	427
 #endif
 

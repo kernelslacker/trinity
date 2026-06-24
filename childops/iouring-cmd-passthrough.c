@@ -120,10 +120,6 @@
 #include "trinity.h"
 #include "utils.h"
 
-#ifndef __NR_io_uring_enter
-#define __NR_io_uring_enter	426
-#endif
-
 /* Per-process variant availability cache.  Populated lazily by
  * probe_variants() on the first invocation in this child; subsequent
  * invocations hit the cached result.  Each child re-probes once
