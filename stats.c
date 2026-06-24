@@ -8770,6 +8770,41 @@ static void dump_stats_corruption_and_pool(void)
 	if (shm->stats.objpool_array_stale_caught)
 		stat_row("corruption", "objpool_array_stale_caught",
 			 shm->stats.objpool_array_stale_caught);
+
+	/* Derived ratio: avg get_map_handle() retry-loop attempts per
+	 * successful pick.  The counter-pair comment in include/stats.h
+	 * documents this as the realised cost the 1000-iter retry budget
+	 * exists to amortise -- a value approaching the budget means the
+	 * loop is dominated by the reject path and the side-index work is
+	 * justified.  Rendered separately for the general get_map_handle()
+	 * path and the get_map_with_prot() outer prot-filter retry, since
+	 * the prot filter compounds prot reject on top of pool-pick reject
+	 * and carries a different cost curve.  Skipped when the success
+	 * denominator is zero. */
+	{
+		unsigned long s  = shm->stats.maps_pick_successes;
+		unsigned long a  = shm->stats.maps_pick_attempts_sum;
+		unsigned long ps = shm->stats.maps_pick_with_prot_successes;
+		unsigned long pa = shm->stats.maps_pick_with_prot_attempts_sum;
+		char val[32];
+
+		if (s > 0) {
+			unsigned long milli = ((a % s) * 1000UL) / s;
+
+			snprintf(val, sizeof(val), "%lu.%03lu", a / s, milli);
+			output(0, STATS_HDR_FMT, "pool",
+			       "maps_pick_attempts_per_success", val);
+		}
+		if (ps > 0) {
+			unsigned long milli = ((pa % ps) * 1000UL) / ps;
+
+			snprintf(val, sizeof(val), "%lu.%03lu",
+				 pa / ps, milli);
+			output(0, STATS_HDR_FMT, "pool",
+			       "maps_pick_with_prot_attempts_per_success",
+			       val);
+		}
+	}
 }
 
 static void dump_stats_childop_ranked_tables(void)
