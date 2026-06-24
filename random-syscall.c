@@ -2208,9 +2208,55 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 				__ATOMIC_RELAXED);
 		} else if (child->frontier_pick_regime == FRONTIER_PICK_LIVE &&
 			   !rec->validator_rejected) {
+			unsigned long streak;
+
 			__atomic_fetch_add(
 				&shm->stats.frontier_live_misses_per_syscall[rec->nr],
 				1UL, __ATOMIC_RELAXED);
+
+			/* SHADOW-ONLY per-syscall LIVE-regime miss-streak
+			 * accounting.  Mirrors the silent-streak shadow
+			 * decay block at the silent-regime accept site: the
+			 * per-syscall counter advances strictly AFTER the
+			 * existing live_misses bump above, and the two
+			 * scalar companions edge-trigger and accumulate on
+			 * the threshold-crossing pick.  Frontier_record_new_
+			 * edge() / _record_transition_edge() reset the per-
+			 * syscall counter on any productive event, so the
+			 * streak captures the run-length of CONSECUTIVE
+			 * zero-edge LIVE-regime picks of this syscall since
+			 * it last earned coverage.
+			 *
+			 *  frontier_live_cooldown_candidates
+			 *      Edge bump: fires on the (streak ==
+			 *      FRONTIER_LIVE_MISS_COOLDOWN) crossing -- one
+			 *      bump per distinct cooldown episode for this
+			 *      syscall.
+			 *  frontier_live_would_skip
+			 *      Cumulative bump on every LIVE-regime miss
+			 *      that lands with the post-increment streak at
+			 *      or past the threshold -- the projected demote
+			 *      count a live cooldown variant of the picker
+			 *      would produce.
+			 *
+			 * Selection-byte-identical contract: the picker
+			 * accept/retry math at the LIVE accept site is
+			 * untouched; these bumps run strictly after the per-
+			 * call attribution decision and write only NEW
+			 * counters that no live-path code reads.  Same
+			 * MAX_NR_SYSCALL bound the surrounding per-syscall
+			 * arrays use. */
+			streak = __atomic_add_fetch(
+				&shm->stats.frontier_live_miss_streak_per_syscall[rec->nr],
+				1UL, __ATOMIC_RELAXED);
+			if (streak >= FRONTIER_LIVE_MISS_COOLDOWN)
+				__atomic_fetch_add(
+					&shm->stats.frontier_live_would_skip,
+					1UL, __ATOMIC_RELAXED);
+			if (streak == FRONTIER_LIVE_MISS_COOLDOWN)
+				__atomic_fetch_add(
+					&shm->stats.frontier_live_cooldown_candidates,
+					1UL, __ATOMIC_RELAXED);
 		}
 	}
 

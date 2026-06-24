@@ -3704,6 +3704,17 @@ static const struct {
 	  offsetof(struct stats_s, frontier_decay_would_skip) },
 	{ "frontier_silent_decay_live_rejects",
 	  offsetof(struct stats_s, frontier_silent_decay_live_rejects) },
+	/* SHADOW-ONLY LIVE-regime cooldown projections, paired with
+	 * frontier_live_miss_streak_per_syscall[].  Candidates is edge-
+	 * triggered at FRONTIER_LIVE_MISS_COOLDOWN crossings; would_skip is
+	 * cumulative across every LIVE-regime miss past the threshold.  See
+	 * the struct-field comments in include/stats.h and the
+	 * FRONTIER_LIVE_MISS_COOLDOWN comment in include/strategy.h for the
+	 * predicate contract. */
+	{ "frontier_live_cooldown_candidates",
+	  offsetof(struct stats_s, frontier_live_cooldown_candidates) },
+	{ "frontier_live_would_skip",
+	  offsetof(struct stats_s, frontier_live_would_skip) },
 	/* SHADOW-ONLY wall-lever accounting.  Eligible_total is
 	 * the denominator (every plateau-active pick the lever saw); would_
 	 * suppress_total is the projected reclaim count a live variant would
@@ -9581,6 +9592,23 @@ static void dump_stats_strategy_summary(void)
 	if (shm->stats.frontier_silent_decay_live_rejects)
 		stat_row("strategy", "frontier_silent_decay_live_rejects",
 			 shm->stats.frontier_silent_decay_live_rejects);
+	/* SHADOW-ONLY LIVE-regime cooldown projections.  Sibling block to
+	 * the silent-streak decay rows above: candidates is the distinct
+	 * cooldown-episode count (one bump per FRONTIER_LIVE_MISS_COOLDOWN
+	 * crossing per syscall); would_skip is the projected demote count a
+	 * live cooldown variant of the picker would produce, normalised
+	 * against frontier_live_picks for the projected reclaim fraction.
+	 * The threshold is emitted alongside so the operator can interpret
+	 * the candidate count without consulting the source, matching the
+	 * frontier_shadow_decay_streak_threshold row above. */
+	if (shm->stats.frontier_live_cooldown_candidates)
+		stat_row("strategy", "frontier_live_cooldown_candidates",
+			 shm->stats.frontier_live_cooldown_candidates);
+	if (shm->stats.frontier_live_would_skip)
+		stat_row("strategy", "frontier_live_would_skip",
+			 shm->stats.frontier_live_would_skip);
+	stat_row("strategy", "frontier_live_miss_cooldown_threshold",
+		 FRONTIER_LIVE_MISS_COOLDOWN);
 	/* SHADOW + per-child A/B errno-plateau decay (silent-regime accept
 	 * site): would_skip is the both-arms shadow demote count, live_
 	 * rejects is the arm-B-only actual demote count, overlap_silent is

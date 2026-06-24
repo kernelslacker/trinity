@@ -109,6 +109,33 @@ enum strategy_t {
 #define FRONTIER_SHADOW_DECAY_STREAK 64UL
 
 /*
+ * Per-syscall LIVE-regime miss-streak cooldown threshold (shadow).
+ * Counts CONSECUTIVE LIVE-regime frontier picks of the same syscall that
+ * earned no new PC edge -- the per-syscall counterpart to the global
+ * frontier_live_misses_per_syscall[] kill-list signal.  Reset to zero on
+ * any productive event (PC edge or transition slot flip) via the
+ * existing frontier_record_new_edge / _record_transition_edge hooks, so
+ * the streak captures the run-length of zero-edge LIVE-regime picks
+ * since the syscall last earned coverage.
+ *
+ * When the streak transitions through this threshold the global
+ * frontier_live_cooldown_candidates counter edge-bumps once for this
+ * episode; every subsequent LIVE-regime miss past the threshold bumps
+ * frontier_live_would_skip cumulatively.  Together they project the
+ * pick-budget a future LIVE-regime cooldown variant of the picker would
+ * reclaim from warm zero-edge syscalls (mlock / unshare / mincore et al)
+ * without changing what the live picker selects today.
+ *
+ * NOT read by any picker accept/retry / scoring / weight math.  Adjusting
+ * the value cannot perturb the live frontier distribution.  Conservative
+ * default of 4: four consecutive zero-edge LIVE-regime picks of the same
+ * syscall is a clear "the live ring keeps biasing here but it never
+ * converts" signal -- the cooldown candidate set the future suppression
+ * lever scores against.
+ */
+#define FRONTIER_LIVE_MISS_COOLDOWN 4UL
+
+/*
  * Silent-streak decay live-reject denom (Arm B only).  Companion to the
  * shadow predicate gated on FRONTIER_SHADOW_DECAY_STREAK + the no-CMP-
  * and-no-SUCCESS-errno-shift UNLESS clause.  REJECT_DENOM-1 / REJECT_DENOM

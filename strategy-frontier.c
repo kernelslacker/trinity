@@ -100,6 +100,23 @@ void frontier_record_new_edge(unsigned int nr)
 		&shm->stats.frontier_silent_streak_per_syscall[nr],
 		0UL, __ATOMIC_RELAXED);
 
+	/* SHADOW-ONLY LIVE-regime miss-streak reset, paired with the
+	 * silent-streak reset above.  Same productive-event semantics: this
+	 * function is the canonical per-syscall new-edge productive-event
+	 * hook, so a fresh bucket bit on this syscall releases the LIVE-
+	 * regime cooldown streak just as it releases the silent-streak
+	 * decay.  Without this reset the per-syscall LIVE-miss streak would
+	 * latch high after a single productive run of zero-edge LIVE picks
+	 * and the frontier_live_cooldown_candidates / frontier_live_would_
+	 * skip projections would be permanently inflated.
+	 *
+	 * Same observability-only contract as the silent-streak reset
+	 * above; no live-path code reads either counter or its companion
+	 * scalars. */
+	__atomic_store_n(
+		&shm->stats.frontier_live_miss_streak_per_syscall[nr],
+		0UL, __ATOMIC_RELAXED);
+
 	/* SHADOW-ONLY no-novelty baseline snapshot, paired with the streak
 	 * reset above.  Snapshots the current value of the two non-PC-edge
 	 * novelty signals (per-syscall CMP-pool inserts and per-syscall
@@ -192,6 +209,18 @@ void frontier_record_transition_edge(unsigned int nr)
 
 	__atomic_store_n(
 		&shm->stats.frontier_silent_streak_per_syscall[nr],
+		0UL, __ATOMIC_RELAXED);
+
+	/* SHADOW-ONLY LIVE-regime miss-streak reset.  Sibling of the reset
+	 * in frontier_record_new_edge(): a transition-edge discovery is a
+	 * productive event the LIVE-regime cooldown streak must release on,
+	 * same as the silent-streak decay above and for the same reason.
+	 * Leaving this out would let the LIVE-miss streak latch high on
+	 * syscalls that are earning post-plateau transition coverage but no
+	 * fresh PC bucket bits, inflating the cooldown projections on
+	 * exactly the syscalls a live variant should NOT cool down. */
+	__atomic_store_n(
+		&shm->stats.frontier_live_miss_streak_per_syscall[nr],
 		0UL, __ATOMIC_RELAXED);
 
 	/* SHADOW-ONLY no-novelty baseline snapshot.  Mirror of the snapshot
