@@ -3,7 +3,6 @@
 	fd_set __user *, exp, struct timespec __user *, tsp,
 	void __user *, sig)
  */
-#include <sys/time.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
