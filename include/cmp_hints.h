@@ -619,13 +619,30 @@ enum cmp_hint_use {
 	CMP_HINT_FIELD,
 };
 
+/* Caller-supplied hard accept range for the value the consumer is
+ * about to commit.  When non-NULL, cmp_hints_try_get_ex() applies an
+ * inclusive [lo, hi] gate at the served-value site of each tier and
+ * fails the pull on a miss without bumping any per-pull counter or
+ * stashing for credit.  NULL means accept-all (the historical
+ * behaviour).  ARG_RANGE is the only current caller that uses a
+ * non-NULL range; without the gate the durable-tier inject path
+ * credited and counted the derived value before the caller's
+ * post-return range check could reject it, contaminating
+ * cmp_hyp_live_injected (the denominator) and cmp_hyp_pc_wins (the
+ * arm-verdict numerator) with values that never reached the
+ * kernel. */
+struct cmp_accept_range {
+	unsigned long lo;
+	unsigned long hi;
+};
+
 /* Extract a random hint value for the given syscall and apply the
  * use-case-driven output transform.  Returns true with the transformed
  * hint written to *out, or false on chaos-gate suppression / empty pool
- * / corrupted pool / out-of-range nr.  do32 selects between the 64-bit
- * and 32-bit syscall-table pools so biarch builds do not contend for
- * the same per-nr dedup slots.  old is consumed only by
- * CMP_HINT_FLAG_MASK; pass 0 from other call sites.
+ * / corrupted pool / out-of-range nr / accept-range miss.  do32 selects
+ * between the 64-bit and 32-bit syscall-table pools so biarch builds
+ * do not contend for the same per-nr dedup slots.  old is consumed
+ * only by CMP_HINT_FLAG_MASK; pass 0 from other call sites.
  *
  * On every successful return a SHADOW would-pick resolver is invoked
  * over the typed hypothesis store for the same (nr, do32, cmp_ip,
@@ -646,9 +663,18 @@ enum cmp_hint_use {
  * are NOT typed-safe (broad ARG_OP / ARG_LIST / ARG_UNDEFINED,
  * fd/pid/handle slots, pointer-shaped slots, flags except via
  * BITMASK) pass false and keep the historical raw-pool behaviour
- * byte-for-byte. */
+ * byte-for-byte.
+ *
+ * accept is the caller-supplied hard accept range (see struct
+ * cmp_accept_range).  NULL means accept-all; non-NULL gates the
+ * post-transform / post-inject value against [lo, hi] inclusive and
+ * fails the pull on a miss before any per-pull counter or stash
+ * fires, so a rejected value cannot contaminate either the
+ * cmp_hyp_live_injected denominator or the cmp_hyp_pc_wins numerator
+ * downstream. */
 bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 			  unsigned long old, bool allow_hyp_inject,
+			  const struct cmp_accept_range *accept,
 			  unsigned long *out);
 
 /* Back-compat wrapper.  Routes to CMP_HINT_BOUNDARY with old == 0 and
