@@ -70,6 +70,7 @@
 #include "child.h"
 #include "syscall-gate.h"
 #include "childops-util.h"
+#include "compat.h"
 #include "pids.h"
 #include "jitter.h"
 #include "random.h"
@@ -77,13 +78,6 @@
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
-
-/* KEYCTL_INVALIDATE was added in 3.5; older libc/header builds may
- * lack it even though the running kernel supports it.  Define the
- * canonical value locally so the call still compiles. */
-#ifndef KEYCTL_INVALIDATE
-#define KEYCTL_INVALIDATE	21
-#endif
 
 /* Wall-clock ceiling for the inner cycle loop.  Same band as
  * madvise_cycler / pidfd_storm so dump_stats keeps ticking and SIGALRM
