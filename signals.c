@@ -486,6 +486,293 @@ static void *fault_beacon_extract_sp(const void *ctx)
 }
 
 /*
+ * Stamp the per-child fault beacon (see include/bug_backtrace.h::
+ * child_fault_beacon for the field contract and the release-store /
+ * acquire-load handoff that orders the stamp into the parent's view).
+ *
+ * Carries the same no_sanitize attribute as child_fault_handler because
+ * the first plain load of me->syscall.state intentionally bypasses
+ * ASAN's shadow check -- a torn-down shm childdata mapping must not
+ * escalate to SIGKILL inside this very handler.
+ */
+static __attribute__((no_sanitize("address")))
+void stamp_fault_beacon(int sig, siginfo_t *info, void *ctx)
+{
+	struct childdata *me = this_child();
+
+	/*
+	 * Gate the first me-deref on me belonging to a tracked
+	 * shared region.  this_child() returns a raw pointer
+	 * into per-child shm childdata; a child whose shm
+	 * childdata mapping has been torn down or corrupted
+	 * yields a non-NULL but unmapped pointer, so the NULL
+	 * check alone is insufficient -- the first plain load
+	 * (me->syscall.state, &me->fault_beacon, ...)
+	 * re-faults inside this very handler and the kernel
+	 * escalates to SIGKILL, erasing the original crash
+	 * class entirely.
+	 *
+	 * range_overlaps_shared() reads shared_regions[] only
+	 * (no allocator, no stdio, no lock) -- the same async-
+	 * signal-safe property the guard_pages_classify call
+	 * further down already relies on.  It proves me lies
+	 * in a TRACKED region; it does NOT prove the under-
+	 * lying page is currently mapped/readable (a child
+	 * that munmap'd its own childdata while the region
+	 * stays registered would still pass this gate and
+	 * re-fault on the deref).  That residual is a
+	 * separate root-cause concern; this gate cleanly
+	 * catches the wild/stale/corrupt-me class.  On a miss
+	 * the beacon stamp is skipped (dropped-beacon,
+	 * surfaced by the parent's existing written==0 path)
+	 * so the kernel-side crash artefacts still land
+	 * instead of a silent handler double-fault.
+	 */
+	if (me != NULL &&
+	    range_overlaps_shared((unsigned long)me,
+				  sizeof(struct childdata))) {
+		struct child_fault_beacon *beacon = &me->fault_beacon;
+		struct child_fault_beacon local;
+		enum syscallstate st = me->syscall.state;
+		int32_t snr;
+
+		if (st == PREP || st == BEFORE || st == GOING_AWAY)
+			snr = (int32_t)me->syscall.nr;
+		else
+			snr = -1;
+		/*
+		 * Build the stamp on the stack first, then publish
+		 * the whole record via a single struct assignment.
+		 *
+		 * fault_sa in mask_signals_child() installs this
+		 * handler with sa_mask = empty and no SA_NODEFER on
+		 * SIGABRT/SIGBUS/SIGILL, so a different fatal signal
+		 * delivered mid-stamp can run an inner copy of this
+		 * handler to completion.  If we stamped field-by-
+		 * field directly into the shared slot, the inner
+		 * handler would publish a full record (its own
+		 * release-store of .written = 1) and the outer
+		 * handler's resumed plain stores would then overwrite
+		 * the shared fields piecemeal, leaving a torn
+		 * forensic line (signo from one fault, ip/sp from
+		 * another) for the parent's acquire-load to read.
+		 *
+		 * With local-then-publish: an inner handler that
+		 * runs to completion publishes its own self-
+		 * consistent record; when the outer handler resumes,
+		 * the single struct assignment from this stack
+		 * snapshot rewrites the shared slot with a self-
+		 * consistent outer record before the trailing
+		 * release-store of .written = 1 seals it.  Either
+		 * way the parent never observes a mixed record.
+		 *
+		 * .written is left zero in the local so the struct
+		 * assignment transiently clears the published bit;
+		 * the release-store below is the real publish edge.
+		 */
+		local.written = 0;
+		local.signo = (int32_t)sig;
+		local.sig_code = (int32_t)info->si_code;
+		local.fault_addr = info->si_addr;
+		local.fault_ip = fault_beacon_extract_ip(ctx);
+		local.fault_sp = fault_beacon_extract_sp(ctx);
+		local.op_nr = me->op_nr;
+		local.last_syscall_nr = snr;
+		*beacon = local;
+		/* Release-store seals every preceding plain store
+		 * into view of any parent that acquire-loads
+		 * .written and sees 1. */
+		__atomic_store_n(&beacon->written, 1U,
+				 __ATOMIC_RELEASE);
+	}
+}
+
+/*
+ * Open the per-pid bug log, drain any buffered pre-crash stderr text
+ * into it, then dup2 it onto STDERR_FILENO so the in-handler
+ * backtrace + siginfo writes below land in the same on-disk file.
+ *
+ * Carries no_sanitize for parity with child_fault_handler -- not
+ * strictly required (no childdata deref here), but matches the
+ * attribute every other extracted helper carries so ASAN behaviour
+ * is uniform across the post-extraction handler.
+ */
+static __attribute__((no_sanitize("address")))
+void open_buglog_and_drain_stderr(int sig)
+{
+	int bug_fd;
+
+	bug_fd = open(buglog_path, O_WRONLY | O_CREAT | O_APPEND, 0644);
+	if (bug_fd >= 0) {
+		/*
+		 * Capture __abort_msg directly into the per-pid bug
+		 * log BEFORE the shared-memfd drain.  The memfd is
+		 * fork-shared (one struct file, one offset) so the
+		 * writev() that glibc's __libc_message emitted to
+		 * STDERR_FILENO almost certainly raced with a sibling
+		 * child's drain.  __abort_msg lives in this child's
+		 * private address space and has no such race -- read
+		 * it now while we are guaranteed exclusive access to
+		 * our own per-pid bug_fd.  See
+		 * capture_abort_msg_to_buglog() above for the full
+		 * rationale and the raw-syscall justification.
+		 */
+		if (sig == SIGABRT)
+			capture_abort_msg_to_buglog(bug_fd);
+
+		if (stderr_memfd >= 0) {
+			char drain_buf[4096];
+			ssize_t n, w;
+			size_t drained = 0;
+			static const size_t STDERR_DRAIN_MAX = 1u << 20;	/* 1 MiB */
+
+			/*
+			 * Cap the drain.  A fuzzed child can extend the
+			 * stderr memfd to a huge sparse size; an
+			 * uncapped read/write loop materialises the NUL
+			 * holes as real bytes on tmpfs and can produce
+			 * multi-GB bug logs (log-DoS).  Bound the copy
+			 * at 1 MiB -- well past any plausible real
+			 * diagnostic payload.
+			 */
+			(void)lseek(stderr_memfd, 0, SEEK_SET);
+			while (drained < STDERR_DRAIN_MAX &&
+			       (n = read(stderr_memfd, drain_buf,
+					 sizeof(drain_buf))) > 0) {
+				size_t want = (size_t)n;
+				if (want > STDERR_DRAIN_MAX - drained)
+					want = STDERR_DRAIN_MAX - drained;
+				w = write(bug_fd, drain_buf, want);
+				(void)w;	/* dying anyway; short write irrelevant */
+				drained += want;
+			}
+		}
+		dup2(bug_fd, STDERR_FILENO);
+		close(bug_fd);
+	}
+}
+
+#ifdef CONFIG_GUARD_SHARED
+/*
+ * Decode a CONFIG_GUARD_SHARED guard-page trip and emit a one-line
+ * attribution naming the overflowed region, direction (leading vs
+ * trailing), distance past the edge, and writer PC.  Gated on
+ * SIGSEGV at function entry so a SIGBUS/SIGABRT/SIGILL still reaches
+ * the in-handler diagnostic path below but is not decoded as a
+ * guard trip (it isn't, by construction).
+ */
+static __attribute__((no_sanitize("address")))
+void emit_guard_page_attribution(int sig, siginfo_t *info, void *ctx)
+{
+	if (sig == SIGSEGV) {
+		uintptr_t region_addr;
+		size_t region_size;
+		bool trailing;
+		unsigned long delta;
+
+		if (guard_pages_classify((uintptr_t)info->si_addr,
+					 &region_addr, &region_size,
+					 &trailing, &delta)) {
+			char buf[256];
+			struct sigsafe_buf b = { buf, sizeof(buf) };
+			size_t used;
+			ssize_t w;
+
+			sigsafe_puts(&b, "GUARD TRAP: region=");
+			sigsafe_putp(&b, (void *)region_addr);
+			sigsafe_puts(&b, " size=");
+			sigsafe_putu(&b, (unsigned long)region_size);
+			sigsafe_puts(&b, trailing ? " trailing" : " leading");
+			sigsafe_puts(&b, " overflow delta=");
+			sigsafe_putu(&b, delta);
+			sigsafe_puts(&b, " writer=");
+			sigsafe_putp(&b, fault_beacon_extract_ip(ctx));
+			sigsafe_puts(&b, " si_addr=");
+			sigsafe_putp(&b, info->si_addr);
+			sigsafe_putc(&b, '\n');
+
+			used = sizeof(buf) - b.left;
+			w = write(STDERR_FILENO, buf, used);
+			(void)w;	/* dying anyway; short write irrelevant */
+		}
+	}
+}
+#endif
+
+/*
+ * Format and emit the currently-running childop's identity
+ * ("childop=<name> op_nr=<n> last_syscall_nr=<n>\n") to the
+ * inherited stderr (the per-pid bug log after the dup2 above).
+ *
+ * Mirrors write_siginfo_safely's hand-rolled formatter: byte stores
+ * into a stack buffer via the sigsafe_* helpers, single write(),
+ * no stdio, no allocator, no lock.  Gates on me->syscall.state so a
+ * signal that hit between syscalls emits -1 rather than the stale
+ * previous-call number.
+ */
+static __attribute__((no_sanitize("address")))
+void stamp_childop_identity(void)
+{
+	struct childdata *me = this_child();
+	const char *opname;
+	unsigned long opnr;
+	int last_syscall_nr;
+	char buf[160];
+
+	if (me != NULL) {
+		enum syscallstate st = me->syscall.state;
+
+		opname = alt_op_name(me->op_type);
+		opnr = me->op_nr;
+		if (opname == NULL)
+			opname = "unknown";
+		if (st == PREP || st == BEFORE || st == GOING_AWAY)
+			last_syscall_nr = (int)me->syscall.nr;
+		else
+			last_syscall_nr = -1;
+	} else {
+		opname = "unknown";
+		opnr = 0;
+		last_syscall_nr = -1;
+	}
+	{
+		struct sigsafe_buf b = { buf, sizeof(buf) };
+		size_t used;
+		ssize_t w;
+
+		sigsafe_puts(&b, "childop=");
+		sigsafe_puts(&b, opname);
+		sigsafe_puts(&b, " op_nr=");
+		sigsafe_putu(&b, opnr);
+		sigsafe_puts(&b, " last_syscall_nr=");
+		sigsafe_puti(&b, (long)last_syscall_nr);
+		sigsafe_putc(&b, '\n');
+
+		used = sizeof(buf) - b.left;
+		w = write(STDERR_FILENO, buf, used);
+		(void)w;	/* dying anyway; nothing to do on short write */
+	}
+}
+
+/*
+ * Final escalation step.  In debug mode restore the default
+ * disposition and re-raise so the kernel emits a core file (the
+ * RLIMIT_CORE bump in child.c::disable_coredumps was -D-only).
+ * In non-debug, _exit(EXIT_SUCCESS) so the parent's reaper sees a
+ * normal exit and respawns without crash-loop noise.
+ */
+static __attribute__((no_sanitize("address")))
+void escalate_fault(int sig)
+{
+	if (shm->debug == true) {
+		(void)signal(sig, SIG_DFL);
+		raise(sig);
+	} else {
+		_exit(EXIT_SUCCESS);
+	}
+}
+
+/*
  * Child-side fault handler.  Mirrors main_fault_handler in spirit but
  * preserves the existing non-debug clean-exit behaviour:
  *
@@ -660,95 +947,7 @@ void child_fault_handler(int sig, siginfo_t *info, void *ctx)
 	 * contract and the release-store / acquire-load handoff that
 	 * orders the stamp into the parent's view.
 	 */
-	{
-		struct childdata *me = this_child();
-
-		/*
-		 * Gate the first me-deref on me belonging to a tracked
-		 * shared region.  this_child() returns a raw pointer
-		 * into per-child shm childdata; a child whose shm
-		 * childdata mapping has been torn down or corrupted
-		 * yields a non-NULL but unmapped pointer, so the NULL
-		 * check alone is insufficient -- the first plain load
-		 * (me->syscall.state, &me->fault_beacon, ...)
-		 * re-faults inside this very handler and the kernel
-		 * escalates to SIGKILL, erasing the original crash
-		 * class entirely.
-		 *
-		 * range_overlaps_shared() reads shared_regions[] only
-		 * (no allocator, no stdio, no lock) -- the same async-
-		 * signal-safe property the guard_pages_classify call
-		 * further down already relies on.  It proves me lies
-		 * in a TRACKED region; it does NOT prove the under-
-		 * lying page is currently mapped/readable (a child
-		 * that munmap'd its own childdata while the region
-		 * stays registered would still pass this gate and
-		 * re-fault on the deref).  That residual is a
-		 * separate root-cause concern; this gate cleanly
-		 * catches the wild/stale/corrupt-me class.  On a miss
-		 * the beacon stamp is skipped (dropped-beacon,
-		 * surfaced by the parent's existing written==0 path)
-		 * so the kernel-side crash artefacts still land
-		 * instead of a silent handler double-fault.
-		 */
-		if (me != NULL &&
-		    range_overlaps_shared((unsigned long)me,
-					  sizeof(struct childdata))) {
-			struct child_fault_beacon *beacon = &me->fault_beacon;
-			struct child_fault_beacon local;
-			enum syscallstate st = me->syscall.state;
-			int32_t snr;
-
-			if (st == PREP || st == BEFORE || st == GOING_AWAY)
-				snr = (int32_t)me->syscall.nr;
-			else
-				snr = -1;
-			/*
-			 * Build the stamp on the stack first, then publish
-			 * the whole record via a single struct assignment.
-			 *
-			 * fault_sa in mask_signals_child() installs this
-			 * handler with sa_mask = empty and no SA_NODEFER on
-			 * SIGABRT/SIGBUS/SIGILL, so a different fatal signal
-			 * delivered mid-stamp can run an inner copy of this
-			 * handler to completion.  If we stamped field-by-
-			 * field directly into the shared slot, the inner
-			 * handler would publish a full record (its own
-			 * release-store of .written = 1) and the outer
-			 * handler's resumed plain stores would then overwrite
-			 * the shared fields piecemeal, leaving a torn
-			 * forensic line (signo from one fault, ip/sp from
-			 * another) for the parent's acquire-load to read.
-			 *
-			 * With local-then-publish: an inner handler that
-			 * runs to completion publishes its own self-
-			 * consistent record; when the outer handler resumes,
-			 * the single struct assignment from this stack
-			 * snapshot rewrites the shared slot with a self-
-			 * consistent outer record before the trailing
-			 * release-store of .written = 1 seals it.  Either
-			 * way the parent never observes a mixed record.
-			 *
-			 * .written is left zero in the local so the struct
-			 * assignment transiently clears the published bit;
-			 * the release-store below is the real publish edge.
-			 */
-			local.written = 0;
-			local.signo = (int32_t)sig;
-			local.sig_code = (int32_t)info->si_code;
-			local.fault_addr = info->si_addr;
-			local.fault_ip = fault_beacon_extract_ip(ctx);
-			local.fault_sp = fault_beacon_extract_sp(ctx);
-			local.op_nr = me->op_nr;
-			local.last_syscall_nr = snr;
-			*beacon = local;
-			/* Release-store seals every preceding plain store
-			 * into view of any parent that acquire-loads
-			 * .written and sees 1. */
-			__atomic_store_n(&beacon->written, 1U,
-					 __ATOMIC_RELEASE);
-		}
-	}
+	stamp_fault_beacon(sig, info, ctx);
 	/*
 	 * Reset the umask before creating any files.  The umask syscall is
 	 * itself fuzzed, so a child that drew umask(0777) and then crashed
@@ -790,58 +989,7 @@ void child_fault_handler(int sig, siginfo_t *info, void *ctx)
 	 * the tmp dir, ENOSPC, ...) there is nothing to be done; the
 	 * child dies silently as it would have anyway.
 	 */
-	{
-		int bug_fd;
-
-		bug_fd = open(buglog_path, O_WRONLY | O_CREAT | O_APPEND, 0644);
-		if (bug_fd >= 0) {
-			/*
-			 * Capture __abort_msg directly into the per-pid bug
-			 * log BEFORE the shared-memfd drain.  The memfd is
-			 * fork-shared (one struct file, one offset) so the
-			 * writev() that glibc's __libc_message emitted to
-			 * STDERR_FILENO almost certainly raced with a sibling
-			 * child's drain.  __abort_msg lives in this child's
-			 * private address space and has no such race -- read
-			 * it now while we are guaranteed exclusive access to
-			 * our own per-pid bug_fd.  See
-			 * capture_abort_msg_to_buglog() above for the full
-			 * rationale and the raw-syscall justification.
-			 */
-			if (sig == SIGABRT)
-				capture_abort_msg_to_buglog(bug_fd);
-
-			if (stderr_memfd >= 0) {
-				char drain_buf[4096];
-				ssize_t n, w;
-				size_t drained = 0;
-				static const size_t STDERR_DRAIN_MAX = 1u << 20;	/* 1 MiB */
-
-				/*
-				 * Cap the drain.  A fuzzed child can extend the
-				 * stderr memfd to a huge sparse size; an
-				 * uncapped read/write loop materialises the NUL
-				 * holes as real bytes on tmpfs and can produce
-				 * multi-GB bug logs (log-DoS).  Bound the copy
-				 * at 1 MiB -- well past any plausible real
-				 * diagnostic payload.
-				 */
-				(void)lseek(stderr_memfd, 0, SEEK_SET);
-				while (drained < STDERR_DRAIN_MAX &&
-				       (n = read(stderr_memfd, drain_buf,
-						 sizeof(drain_buf))) > 0) {
-					size_t want = (size_t)n;
-					if (want > STDERR_DRAIN_MAX - drained)
-						want = STDERR_DRAIN_MAX - drained;
-					w = write(bug_fd, drain_buf, want);
-					(void)w;	/* dying anyway; short write irrelevant */
-					drained += want;
-				}
-			}
-			dup2(bug_fd, STDERR_FILENO);
-			close(bug_fd);
-		}
-	}
+	open_buglog_and_drain_stderr(sig);
 skip_buglog:
 #if defined(USE_BACKTRACE) && !defined(__SANITIZE_ADDRESS__)
 	{
@@ -880,38 +1028,7 @@ skip_buglog:
 	 * offsets offline against the binary's load base, same idiom as
 	 * fault_beacon's stored fault_ip.
 	 */
-	if (sig == SIGSEGV) {
-		uintptr_t region_addr;
-		size_t region_size;
-		bool trailing;
-		unsigned long delta;
-
-		if (guard_pages_classify((uintptr_t)info->si_addr,
-					 &region_addr, &region_size,
-					 &trailing, &delta)) {
-			char buf[256];
-			struct sigsafe_buf b = { buf, sizeof(buf) };
-			size_t used;
-			ssize_t w;
-
-			sigsafe_puts(&b, "GUARD TRAP: region=");
-			sigsafe_putp(&b, (void *)region_addr);
-			sigsafe_puts(&b, " size=");
-			sigsafe_putu(&b, (unsigned long)region_size);
-			sigsafe_puts(&b, trailing ? " trailing" : " leading");
-			sigsafe_puts(&b, " overflow delta=");
-			sigsafe_putu(&b, delta);
-			sigsafe_puts(&b, " writer=");
-			sigsafe_putp(&b, fault_beacon_extract_ip(ctx));
-			sigsafe_puts(&b, " si_addr=");
-			sigsafe_putp(&b, info->si_addr);
-			sigsafe_putc(&b, '\n');
-
-			used = sizeof(buf) - b.left;
-			w = write(STDERR_FILENO, buf, used);
-			(void)w;	/* dying anyway; short write irrelevant */
-		}
-	}
+	emit_guard_page_attribution(sig, info, ctx);
 #endif
 	write_siginfo_safely(sig, info, "trinity child");
 
@@ -950,54 +1067,9 @@ skip_buglog:
 	 * "no syscall in flight".  In those cases we emit -1 rather than a
 	 * misleading number that points at the *previous* call.
 	 */
-	{
-		struct childdata *me = this_child();
-		const char *opname;
-		unsigned long opnr;
-		int last_syscall_nr;
-		char buf[160];
+	stamp_childop_identity();
 
-		if (me != NULL) {
-			enum syscallstate st = me->syscall.state;
-
-			opname = alt_op_name(me->op_type);
-			opnr = me->op_nr;
-			if (opname == NULL)
-				opname = "unknown";
-			if (st == PREP || st == BEFORE || st == GOING_AWAY)
-				last_syscall_nr = (int)me->syscall.nr;
-			else
-				last_syscall_nr = -1;
-		} else {
-			opname = "unknown";
-			opnr = 0;
-			last_syscall_nr = -1;
-		}
-		{
-			struct sigsafe_buf b = { buf, sizeof(buf) };
-			size_t used;
-			ssize_t w;
-
-			sigsafe_puts(&b, "childop=");
-			sigsafe_puts(&b, opname);
-			sigsafe_puts(&b, " op_nr=");
-			sigsafe_putu(&b, opnr);
-			sigsafe_puts(&b, " last_syscall_nr=");
-			sigsafe_puti(&b, (long)last_syscall_nr);
-			sigsafe_putc(&b, '\n');
-
-			used = sizeof(buf) - b.left;
-			w = write(STDERR_FILENO, buf, used);
-			(void)w;	/* dying anyway; nothing to do on short write */
-		}
-	}
-
-	if (shm->debug == true) {
-		(void)signal(sig, SIG_DFL);
-		raise(sig);
-	} else {
-		_exit(EXIT_SUCCESS);
-	}
+	escalate_fault(sig);
 }
 
 void sigalrm_handler(__unused__ int sig)
