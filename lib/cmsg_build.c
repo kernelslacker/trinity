@@ -18,7 +18,6 @@
 #include <sys/types.h>
 #include <linux/if_packet.h>
 #include <linux/udp.h>
-#include <netinet/in.h>
 
 #include "cmsg_build.h"
 #include "compat.h"
