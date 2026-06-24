@@ -11,12 +11,24 @@
  * once into a local and null-checking before deref; the fuzz target is
  * the pre-fix race window.
  *
- * Setup (latched, per process):
- *   1. unshare(CLONE_NEWNET) probe.  EPERM/ENOSYS latches the op off
- *      for the rest of the trinity child's life.
- *
  * Per outer iteration (BUDGETED, base 2, cap 6):
- *   1. open /proc/self/ns/net anchor; unshare(CLONE_NEWNET).
+ *   1. Enter a private net namespace via userns_run_in_ns(): a
+ *      transient grandchild fork installs an identity user namespace
+ *      plus a fresh CLONE_NEWNET, runs the iteration body below, and
+ *      _exit()s so the kernel reaps every veth, route, raw socket and
+ *      netlink socket left behind with the grandchild's netns.  The
+ *      persistent fuzz child never touches its own credentials or
+ *      namespace stack, so the cap-drop oracle keeps observing the
+ *      host credential profile.  Helper -EPERM (hardened userns policy
+ *      refused CLONE_NEWUSER: user.max_user_namespaces=0 or
+ *      kernel.unprivileged_userns_clone=0) latches the childop off for
+ *      the remainder of this child's lifetime; transient setup failure
+ *      (helper return < 0 but not -EPERM) skips the iteration without
+ *      latching.  Per-iter dispatch (rather than wrapping the whole
+ *      outer loop) preserves the original per-iter netns isolation:
+ *      each outer iteration runs in its own fresh grandchild netns, so
+ *      a partial teardown in one iter can't leak veth / route state
+ *      into the next.
  *   2. Bring lo up.  Create N=4 veth pairs rN/pN via rtnetlink:
  *      RTM_NEWLINK type=veth + IFLA_LINKINFO/IFLA_INFO_DATA/VETH_INFO_PEER.
  *   3. Per pair: RTM_NEWADDR ipv6 fc01::N/64 on rN; RTM_NEWLINK setlink
@@ -39,25 +51,29 @@
  *   6. Both workers self-bound to 200ms wall-clock via clock_gettime
  *      checks inside their inner loops; the parent waits up to ~250ms
  *      then SIGKILLs any laggard and waitpid-reaps both.
- *   7. setns back to the anchor; close anchor fd.  The doomed netns
- *      cleans up via cleanup_net once the worker fds drop.
+ *   7. Grandchild _exit() collapses the userns + netns; cleanup_net
+ *      reaps the doomed netns once the worker fds drop.
  *
  * Latch:
- *   ns_unsupported_ipv6_pmtu_race -- master gate; set on first failure
- *   of the probe-phase unshare or the per-iter anchor open.  Mirrors
- *   the latch shape used by netns_teardown_churn / handshake_req_abort.
+ *   ns_unsupported_ipv6_pmtu_race -- master gate; set when
+ *   userns_run_in_ns() returns -EPERM (hardened userns policy refused
+ *   CLONE_NEWUSER in the grandchild).  Once latched, every subsequent
+ *   invocation just bumps runs + setup_failed and returns.  Transient
+ *   helper failures (return < 0 but not -EPERM) do NOT set this -- the
+ *   failure is not policy and may not recur on the next iteration.
  *
- * Brick safety: every netlink and socket op runs inside a private
- * netns the child just unshared; the host's network state is untouched.
- * The doomed netns is collected by cleanup_net once iter_one's setns
- * back to anchor drops the last ref from this trinity child.
+ * Brick safety: every netlink and socket op runs inside the
+ * grandchild's private netns; the host's network state is untouched.
+ * The doomed netns is collected by cleanup_net once the grandchild
+ * _exit()s and the last fd drops.
  *
  * Stats:
  *   ipv6_pmtu_race_runs        - total invocations
- *   ipv6_pmtu_race_setup_failed- probe / anchor / unshare / worker fork failed
+ *   ipv6_pmtu_race_setup_failed- userns -EPERM / helper transient /
+ *                                network setup / worker fork failed
  *   ipv6_pmtu_race_ptb_sent_ok - sendto(ICMPV6_PKT_TOOBIG) returned >=0
  *   ipv6_pmtu_race_dellink_ok  - RTM_DELLINK ack 0 from worker B
- *   ipv6_pmtu_race_completed_ok- iter_one reached setns-back + close cleanly
+ *   ipv6_pmtu_race_completed_ok- iteration reached reap-workers cleanly
  */
 
 #include <errno.h>
@@ -98,13 +114,23 @@
 #include "compat.h"
 #include "jitter.h"
 #include "random.h"
+#include "userns-bootstrap.h"
 
 #ifndef ICMPV6_PKT_TOOBIG
 #define ICMPV6_PKT_TOOBIG		2
 #endif
 
+/*
+ * Latched per-child: userns_run_in_ns() reported -EPERM, meaning the
+ * grandchild's unshare(CLONE_NEWUSER) was refused by a hardened policy
+ * (user.max_user_namespaces=0 or kernel.unprivileged_userns_clone=0).
+ * Without a private user+net namespace we MUST NOT touch the host
+ * netdev / route / addr tables, so the op stays disabled for the
+ * remainder of this child's lifetime.  Transient helper failures
+ * (return < 0 but not -EPERM) do not set this -- they may not recur
+ * on the next iteration.
+ */
 static bool ns_unsupported_ipv6_pmtu_race;
-static bool ipv6_pmtu_race_probed;
 
 #define V6PMTU_OUTER_BASE		1U
 #define V6PMTU_OUTER_CAP		3U
@@ -481,31 +507,6 @@ static void reap_with_deadline(pid_t pid, struct timespec *deadline)
 }
 
 /*
- * Anchor the caller's netns via /proc/self/ns/net then unshare into a
- * fresh CLONE_NEWNET.  Returns the anchor fd on success, -1 on failure
- * (with setup_failed bumped and the anchor fd closed if it was opened).
- */
-static int v6pmtu_iter_enter_netns(void)
-{
-	int nsfd;
-
-	nsfd = open("/proc/self/ns/net", O_RDONLY | O_CLOEXEC);
-	if (nsfd < 0) {
-		__atomic_add_fetch(&shm->stats.ipv6_pmtu_race_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		return -1;
-	}
-
-	if (unshare(CLONE_NEWNET) < 0) {
-		__atomic_add_fetch(&shm->stats.ipv6_pmtu_race_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		(void)close(nsfd);
-		return -1;
-	}
-	return nsfd;
-}
-
-/*
  * Open a private rtnetlink socket, bring lo up, and install the four
  * veth pairs + addresses + routes via setup_pairs().  Returns 0 on
  * success, -1 (with setup_failed bumped) if the rtnl socket open
@@ -536,7 +537,7 @@ static int v6pmtu_iter_setup_network(char names[V6PMTU_NUM_PAIRS][8])
  * child B runs worker_dellink (never returns).  On a successful B
  * fork the parent returns 0 with the two pids written through.  If
  * fork B fails after A was spawned, A is SIGKILLed and reaped here
- * so iter_one's failure bail doesn't leak a stray child.
+ * so the caller's failure bail doesn't leak a stray child.
  */
 static int v6pmtu_iter_spawn_workers(char names[V6PMTU_NUM_PAIRS][8],
 				     pid_t *a, pid_t *b)
@@ -588,32 +589,26 @@ static void v6pmtu_iter_reap_workers(pid_t a, pid_t b)
 }
 
 /*
- * Restore the caller's netns from the anchor fd and close the anchor.
- * setns failure latches ns_unsupported_ipv6_pmtu_race so the op skips
- * subsequent invocations rather than risk leaking us into the doomed
- * netns.  Always runs, even on the failure-bail paths from iter_one.
+ * Per-invocation state handed to the in-ns callback so iter-time stats
+ * writes keep landing against the right childop slot.
  */
-static void v6pmtu_iter_exit_netns(int op_type, int nsfd)
-{
-	if (setns(nsfd, CLONE_NEWNET) < 0) {
-		ns_unsupported_ipv6_pmtu_race = true;
-		/* op_type is a snapshot of child->op_type passed in by
-		 * value; the field lives in shared memory and can be
-		 * scribbled by a poisoned-arena write from a sibling, so
-		 * bounds-check before indexing the NR_CHILD_OP_TYPES-sized
-		 * stats array, same pattern the child.c dispatch loop uses
-		 * for its dispatch and alt-op accounting. */
-		if (op_type >= 0 && op_type < NR_CHILD_OP_TYPES)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op_type],
-					 CHILDOP_LATCH_NS_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
-	}
-	(void)close(nsfd);
-}
+struct ipv6_pmtu_race_ctx {
+	int op_type;
+};
 
-static void iter_one(int op_type)
+/*
+ * One outer iteration's body, executed inside the grandchild's
+ * userns + CLONE_NEWNET stack by userns_run_in_ns().  Setup the four
+ * veth pairs + addresses + routes, fork the PTB sender and DELLINK
+ * round-robin workers, reap them under the parent wall-clock
+ * deadline.  Return value is ignored by the helper; the grandchild
+ * _exit()s after this returns and the kernel reaps every veth,
+ * route, raw socket and netlink socket along with the netns.
+ */
+static int iter_one_in_ns(void *arg)
 {
-	int nsfd;
+	struct ipv6_pmtu_race_ctx *ctx = arg;
+	const int op_type = ctx->op_type;
 	char names[V6PMTU_NUM_PAIRS][8];
 	pid_t a, b;
 	/* op_type is a snapshot of child->op_type passed in by value; the
@@ -623,19 +618,15 @@ static void iter_one(int op_type)
 	 * dispatch loop uses for its dispatch and alt-op accounting. */
 	const bool valid_op = (op_type >= 0 && op_type < NR_CHILD_OP_TYPES);
 
-	nsfd = v6pmtu_iter_enter_netns();
-	if (nsfd < 0)
-		return;
-
 	if (v6pmtu_iter_setup_network(names) != 0)
-		goto out_setns;
+		return 0;
 
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op_type],
 				   1, __ATOMIC_RELAXED);
 
 	if (v6pmtu_iter_spawn_workers(names, &a, &b) != 0)
-		goto out_setns;
+		return 0;
 
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop_data_path[op_type],
@@ -645,53 +636,12 @@ static void iter_one(int op_type)
 
 	__atomic_add_fetch(&shm->stats.ipv6_pmtu_race_completed_ok,
 			   1, __ATOMIC_RELAXED);
-
-out_setns:
-	v6pmtu_iter_exit_netns(op_type, nsfd);
-}
-
-static void probe_v6_pmtu(int op_type)
-{
-	int probe_fd;
-	/* op_type is a snapshot of child->op_type passed in by value; the
-	 * field lives in shared memory and can be scribbled by a
-	 * poisoned-arena write from a sibling.  Bounds-check the snapshot
-	 * once and gate each per-op stats write, same pattern the child.c
-	 * dispatch loop uses for its dispatch and alt-op accounting. */
-	const bool valid_op = (op_type >= 0 && op_type < NR_CHILD_OP_TYPES);
-
-	ipv6_pmtu_race_probed = true;
-
-	probe_fd = open("/proc/self/ns/net", O_RDONLY | O_CLOEXEC);
-	if (probe_fd < 0) {
-		ns_unsupported_ipv6_pmtu_race = true;
-		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op_type],
-					 CHILDOP_LATCH_NS_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
-		return;
-	}
-	if (unshare(CLONE_NEWNET) < 0) {
-		ns_unsupported_ipv6_pmtu_race = true;
-		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op_type],
-					 CHILDOP_LATCH_NS_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
-		(void)close(probe_fd);
-		return;
-	}
-	if (setns(probe_fd, CLONE_NEWNET) < 0) {
-		ns_unsupported_ipv6_pmtu_race = true;
-		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op_type],
-					 CHILDOP_LATCH_NS_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
-	}
-	(void)close(probe_fd);
+	return 0;
 }
 
 bool ipv6_pmtu_teardown_race(struct childdata *child)
 {
+	struct ipv6_pmtu_race_ctx ctx = { .op_type = child->op_type };
 	unsigned int outer, i;
 
 	__atomic_add_fetch(&shm->stats.ipv6_pmtu_race_runs,
@@ -703,15 +653,6 @@ bool ipv6_pmtu_teardown_race(struct childdata *child)
 		return true;
 	}
 
-	if (!ipv6_pmtu_race_probed) {
-		probe_v6_pmtu(child->op_type);
-		if (ns_unsupported_ipv6_pmtu_race) {
-			__atomic_add_fetch(&shm->stats.ipv6_pmtu_race_setup_failed,
-					   1, __ATOMIC_RELAXED);
-			return true;
-		}
-	}
-
 	outer = BUDGETED(CHILD_OP_IPV6_PMTU_TEARDOWN_RACE,
 			 JITTER_RANGE(V6PMTU_OUTER_BASE));
 	if (outer > V6PMTU_OUTER_CAP)
@@ -719,8 +660,35 @@ bool ipv6_pmtu_teardown_race(struct childdata *child)
 	if (outer == 0U)
 		outer = 1U;
 
-	for (i = 0; i < outer; i++)
-		iter_one(child->op_type);
+	for (i = 0; i < outer; i++) {
+		int rc = userns_run_in_ns(CLONE_NEWNET, iter_one_in_ns, &ctx);
+
+		if (rc == -EPERM) {
+			/* Hardened userns policy refused CLONE_NEWUSER in
+			 * the grandchild.  Latch the op off for the
+			 * remainder of this child's lifetime. */
+			ns_unsupported_ipv6_pmtu_race = true;
+			{
+				const int op = child->op_type;
+				if (op >= 0 && op < NR_CHILD_OP_TYPES)
+					__atomic_store_n(&shm->stats.childop_latch_reason[op],
+							 CHILDOP_LATCH_NS_UNSUPPORTED,
+							 __ATOMIC_RELAXED);
+			}
+			__atomic_add_fetch(&shm->stats.ipv6_pmtu_race_setup_failed,
+					   1, __ATOMIC_RELAXED);
+			return true;
+		}
+		if (rc < 0) {
+			/* Transient grandchild setup failure (fork, id-map
+			 * write, secondary CLONE_NEWNET unshare).  Skip this
+			 * iteration without latching -- the failure is not
+			 * policy and may not recur on the next iteration. */
+			__atomic_add_fetch(&shm->stats.ipv6_pmtu_race_setup_failed,
+					   1, __ATOMIC_RELAXED);
+			continue;
+		}
+	}
 
 	return true;
 }
