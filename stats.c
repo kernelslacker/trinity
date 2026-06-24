@@ -3715,6 +3715,12 @@ static const struct {
 	  offsetof(struct stats_s, frontier_live_cooldown_candidates) },
 	{ "frontier_live_would_skip",
 	  offsetof(struct stats_s, frontier_live_would_skip) },
+	/* Live reject count for the blanket LIVE-regime probabilistic
+	 * pick-reject gate.  See the struct-field comment in
+	 * include/stats.h and the FRONTIER_LIVE_DECAY_REJECT_DENOM comment
+	 * in include/strategy.h for the probabilistic-reject contract. */
+	{ "frontier_live_decay_live_rejects",
+	  offsetof(struct stats_s, frontier_live_decay_live_rejects) },
 	/* SHADOW-ONLY wall-lever accounting.  Eligible_total is
 	 * the denominator (every plateau-active pick the lever saw); would_
 	 * suppress_total is the projected reclaim count a live variant would
@@ -9609,6 +9615,16 @@ static void dump_stats_strategy_summary(void)
 			 shm->stats.frontier_live_would_skip);
 	stat_row("strategy", "frontier_live_miss_cooldown_threshold",
 		 FRONTIER_LIVE_MISS_COOLDOWN);
+	/* Blanket LIVE-regime probabilistic pick-reject (safe down-
+	 * payment).  Reclaims ~1 / FRONTIER_LIVE_DECAY_REJECT_DENOM of
+	 * LIVE-ring picks unconditionally; the reject rate against
+	 * accepted picks is rejects / (rejects + frontier_live_picks)
+	 * and should converge to 1 / REJECT_DENOM.  Read alongside
+	 * frontier_live_would_skip (the F3 SHADOW projection) to gauge
+	 * the headroom a targeted variant of this reject would unlock. */
+	if (shm->stats.frontier_live_decay_live_rejects)
+		stat_row("strategy", "frontier_live_decay_live_rejects",
+			 shm->stats.frontier_live_decay_live_rejects);
 	/* SHADOW + per-child A/B errno-plateau decay (silent-regime accept
 	 * site): would_skip is the both-arms shadow demote count, live_
 	 * rejects is the arm-B-only actual demote count, overlap_silent is

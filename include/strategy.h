@@ -149,6 +149,34 @@ enum strategy_t {
 #define FRONTIER_SILENT_DECAY_REJECT_DENOM 32U
 
 /*
+ * LIVE-regime probabilistic pick-reject denom (blanket safe down-
+ * payment).  Companion to FRONTIER_SILENT_DECAY_REJECT_DENOM above but
+ * inverted: the silent gate fires only on decay-classified syscalls
+ * with REJECT_DENOM-1 / REJECT_DENOM probability, this gate fires
+ * UNCONDITIONALLY on every LIVE-regime pick with 1 / REJECT_DENOM
+ * probability so the live ring reclaims ~3% of its wasted budget
+ * without depending on any per-syscall classification.
+ *
+ * The blanket reject is intentionally isolated from the per-syscall
+ * cooldown signal (frontier_live_miss_streak_per_syscall[] and its
+ * scalar companions): the targeted variant that gates on the cooldown
+ * predicate is a SEPARATE later commit, because the cooldown predicate
+ * indirectly depends on the LIVE-regime ring shape (a syscall the
+ * picker stops sampling stops accumulating misses) and bootstrapping
+ * the two together would compound risk on the first ramp.  This
+ * commit's reject reclaims live-ring budget WITHOUT touching the cached
+ * weight, the ring-decay loop, or the cooldown predicate -- the
+ * smallest possible behaviour change that produces the desired reclaim.
+ *
+ * Denominator value matches FRONTIER_SILENT_DECAY_REJECT_DENOM /
+ * FRONTIER_ERRNO_PLATEAU_REJECT_DENOM / CRED_THROTTLE_REJECT_DENOM so
+ * the three live-rejection gates share a single tunable shape; the
+ * inversion is in the rnd_modulo_u32 comparison at the call site
+ * (== 0 here vs != 0 in the silent gate), not in the denominator.
+ */
+#define FRONTIER_LIVE_DECAY_REJECT_DENOM 32U
+
+/*
  * Errno-plateau decay predicate constants for the coverage-frontier
  * picker's silent-regime accept path.  A syscall whose lifetime call
  * count has accumulated past FRONTIER_ERRNO_PLATEAU_MIN_CALLS without
