@@ -112,7 +112,7 @@ syscalls/getpid.c:34:post_getpid
 syscalls/getpid.c:50:post_getpid
 syscalls/getppid.c:37:post_getppid
 syscalls/getppid.c:52:post_getppid
-syscalls/getpriority.c:22:post_getpriority
+syscalls/getpriority.c:21:post_getpriority
 syscalls/getresgid.c:135:post_getresgid
 syscalls/getresgid.c:151:post_getresgid
 syscalls/getresuid.c:135:post_getresuid
