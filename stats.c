@@ -10849,6 +10849,78 @@ static void __cold dump_stats_kcov_block(void)
 			}
 		}
 
+		/* Per-syscall view of slots whose edge-producing calls
+		 * arrived EXCLUSIVELY on the remote arm (loc_eCalls == 0
+		 * && rem_eCalls > 0), sorted by remote edges per remote
+		 * edge-producing call.  The rem_eCount-ranked block above
+		 * pulls in any slot the remote arm produces on, including
+		 * the ones the local arm also finds, so a slot whose
+		 * entire edge signal comes from remote sampling can be
+		 * drowned out there.  This block lists those slots in
+		 * isolation and orders by yield density (rem_eCount /
+		 * rem_eCalls), giving a direct read on which
+		 * exclusively-remote syscalls are paying for the cost of
+		 * remote-mode collection.  Render-only over the existing
+		 * per-syscall local|remote counters; no new shm. */
+		{
+			unsigned int ro_top_nr[10];
+			unsigned long ro_top_rate[10];
+			unsigned int ro_top_count = 0;
+
+			memset(ro_top_rate, 0, sizeof(ro_top_rate));
+
+			for (i = 0; i < nr_syscalls_to_scan; i++) {
+				unsigned long lec = __atomic_load_n(
+					&kcov_shm->local_pc_edge_calls[i],
+					__ATOMIC_RELAXED);
+				unsigned long rec = __atomic_load_n(
+					&kcov_shm->remote_pc_edge_calls[i],
+					__ATOMIC_RELAXED);
+				unsigned long ren, rate;
+
+				if (lec != 0 || rec == 0)
+					continue;
+				ren = __atomic_load_n(
+					&kcov_shm->remote_pc_edge_count[i],
+					__ATOMIC_RELAXED);
+				/* rec > 0 here; ren >= rec by
+				 * construction so rate is >= 1.000. */
+				rate = (ren * 1000UL) / rec;
+				topn_push(ro_top_rate, ro_top_nr,
+					  &ro_top_count, 10, rate, i);
+			}
+
+			if (ro_top_count > 0) {
+				output(0, "Remote-only edge winners (by rem_eCount/rem_eCalls):\n");
+				output(0, "  %-24s %10s %10s %10s %10s %8s\n",
+				       "syscall", "loc_calls", "rem_calls",
+				       "rem_eCalls", "rem_eCount", "rate");
+				for (j = 0; j < ro_top_count; j++) {
+					struct syscallentry *entry =
+						table[ro_top_nr[j]].entry;
+					const char *name = entry ? entry->name : "???";
+					unsigned int nr = ro_top_nr[j];
+					unsigned long milli = ro_top_rate[j];
+					unsigned long lc = __atomic_load_n(
+						&kcov_shm->local_pc_calls[nr],
+						__ATOMIC_RELAXED);
+					unsigned long rc = __atomic_load_n(
+						&kcov_shm->remote_pc_calls[nr],
+						__ATOMIC_RELAXED);
+					unsigned long rec = __atomic_load_n(
+						&kcov_shm->remote_pc_edge_calls[nr],
+						__ATOMIC_RELAXED);
+					unsigned long ren = __atomic_load_n(
+						&kcov_shm->remote_pc_edge_count[nr],
+						__ATOMIC_RELAXED);
+
+					output(0, "  %-24s %10lu %10lu %10lu %10lu %4lu.%03lu\n",
+					       name, lc, rc, rec, ren,
+					       milli / 1000, milli % 1000);
+				}
+			}
+		}
+
 		/* combined top-N
 		 * trace_truncated + cmp_trace_truncated + max_trace_size
 		 * table plus a dedup-probe-overflow summary line.  Lets
