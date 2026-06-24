@@ -38,59 +38,9 @@
 
 #if __has_include(<linux/ila.h>)
 
-#include <linux/ila.h>
-
+#include "kernel/ila.h"
 #include "netlink-genl-families.h"
 #include "utils.h"
-
-/*
- * Per-symbol shims for ILA_ATTR_* / ILA_CMD_* ids.  Build hosts whose
- * <linux/ila.h> predates a given attribute (the post-4.10 CSUM_MODE,
- * the post-4.18 IDENT_TYPE / HOOK_TYPE pair) silently miss it from the
- * validator coverage; the fallback values match the upstream uapi enum
- * ordering so the wire-format ids the kernel parses match the ones the
- * generator emits.
- */
-#ifndef ILA_ATTR_LOCATOR
-#define ILA_ATTR_LOCATOR		1
-#endif
-#ifndef ILA_ATTR_IDENTIFIER
-#define ILA_ATTR_IDENTIFIER		2
-#endif
-#ifndef ILA_ATTR_LOCATOR_MATCH
-#define ILA_ATTR_LOCATOR_MATCH		3
-#endif
-#ifndef ILA_ATTR_IFINDEX
-#define ILA_ATTR_IFINDEX		4
-#endif
-#ifndef ILA_ATTR_DIR
-#define ILA_ATTR_DIR			5
-#endif
-#ifndef ILA_ATTR_PAD
-#define ILA_ATTR_PAD			6
-#endif
-#ifndef ILA_ATTR_CSUM_MODE
-#define ILA_ATTR_CSUM_MODE		7
-#endif
-#ifndef ILA_ATTR_IDENT_TYPE
-#define ILA_ATTR_IDENT_TYPE		8
-#endif
-#ifndef ILA_ATTR_HOOK_TYPE
-#define ILA_ATTR_HOOK_TYPE		9
-#endif
-
-#ifndef ILA_CMD_ADD
-#define ILA_CMD_ADD			1
-#endif
-#ifndef ILA_CMD_DEL
-#define ILA_CMD_DEL			2
-#endif
-#ifndef ILA_CMD_GET
-#define ILA_CMD_GET			3
-#endif
-#ifndef ILA_CMD_FLUSH
-#define ILA_CMD_FLUSH			4
-#endif
 
 static const struct genl_cmd_grammar ila_cmds[] = {
 	{ ILA_CMD_ADD,		"ILA_CMD_ADD" },
