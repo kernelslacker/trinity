@@ -6879,8 +6879,19 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 			cur_hyp_live_injected - prev_hyp_live_injected;
 		unsigned long delta_hyp_live_gate_passed =
 			cur_hyp_live_gate_passed - prev_hyp_live_gate_passed;
+		/*
+		 * gate_passed and injected are loaded separately with RELAXED
+		 * ordering.  injected-first keeps the gap non-negative for the
+		 * common steady state, but once the live-inject arm fires a
+		 * sample can observe injected > gate_passed (the gate counter
+		 * is bumped slightly after the inject counter on the producer
+		 * side).  An unguarded unsigned subtraction wraps to ~ULONG_MAX
+		 * in the rendered total; clamp.
+		 */
 		unsigned long cur_hyp_live_inject_no_pick =
-			cur_hyp_live_gate_passed - cur_hyp_live_injected;
+			(cur_hyp_live_gate_passed >= cur_hyp_live_injected)
+				? (cur_hyp_live_gate_passed - cur_hyp_live_injected)
+				: 0;
 		/*
 		 * delta_gate_passed - delta_injected can wrap when the over-
 		 * count drift in the previous sample exceeded the over-count
