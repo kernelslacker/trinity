@@ -1039,30 +1039,36 @@ static bool cmp_hyp_derive_value(const struct cmp_hypothesis *picked,
 	uint64_t lo, hi, mask;
 	unsigned int popcount, pick, seen;
 	uint64_t bit;
+	enum cmp_hyp_probe_class cls;
 
 	if (picked == NULL || out == NULL)
 		return false;
 	switch (picked->kind) {
 	case CMP_HYP_EXACT:
 		*out = (unsigned long)picked->exemplar;
-		return true;
+		cls = CMP_HYP_PROBE_CLASS_EXACT_EXEMPLAR;
+		goto out_bump;
 	case CMP_HYP_ENUM_FAMILY:
 		switch (rnd_modulo_u32(3)) {
 		case 0:
 			*out = (unsigned long)picked->exemplar;
-			return true;
+			cls = CMP_HYP_PROBE_CLASS_ENUM_EXEMPLAR;
+			goto out_bump;
 		case 1:
 			*out = (unsigned long)picked->lo;
-			return true;
+			cls = CMP_HYP_PROBE_CLASS_ENUM_LO;
+			goto out_bump;
 		default:
 			*out = (unsigned long)picked->hi;
-			return true;
+			cls = CMP_HYP_PROBE_CLASS_ENUM_HI;
+			goto out_bump;
 		}
 	case CMP_HYP_BITMASK:
 		mask = picked->mask;
 		if (mask == 0) {
 			*out = (unsigned long)picked->exemplar;
-			return true;
+			cls = CMP_HYP_PROBE_CLASS_EXEMPLAR_FALLBACK;
+			goto out_bump;
 		}
 		popcount = (unsigned int)__builtin_popcountll(mask);
 		pick = rnd_modulo_u32(popcount);
@@ -1072,7 +1078,8 @@ static bool cmp_hyp_derive_value(const struct cmp_hypothesis *picked,
 				continue;
 			if (seen == pick) {
 				*out = (unsigned long)bit;
-				return true;
+				cls = CMP_HYP_PROBE_CLASS_BITMASK_SINGLE_BIT;
+				goto out_bump;
 			}
 			seen++;
 		}
@@ -1080,7 +1087,8 @@ static bool cmp_hyp_derive_value(const struct cmp_hypothesis *picked,
 		 * [1, 64], and pick < popcount.  Fall back to exemplar so
 		 * a future bit-shape change cannot strand the inject. */
 		*out = (unsigned long)picked->exemplar;
-		return true;
+		cls = CMP_HYP_PROBE_CLASS_EXEMPLAR_FALLBACK;
+		goto out_bump;
 	case CMP_HYP_RANGE:
 		lo = picked->lo;
 		hi = picked->hi;
@@ -1089,17 +1097,29 @@ static bool cmp_hyp_derive_value(const struct cmp_hypothesis *picked,
 		switch (rnd_modulo_u32(3)) {
 		case 0:
 			*out = (unsigned long)lo;
-			return true;
+			cls = CMP_HYP_PROBE_CLASS_RANGE_LO;
+			goto out_bump;
 		case 1:
 			*out = (unsigned long)hi;
-			return true;
+			cls = CMP_HYP_PROBE_CLASS_RANGE_HI;
+			goto out_bump;
 		default:
 			*out = (unsigned long)(lo + ((hi - lo) >> 1));
-			return true;
+			cls = CMP_HYP_PROBE_CLASS_RANGE_MIDPOINT;
+			goto out_bump;
 		}
 	default:
 		return false;
 	}
+
+out_bump:
+	/* SHADOW: census which probe class the derivation just emitted.
+	 * Pure observation -- *out is unchanged from the pre-census ladder,
+	 * the live inject arm receives the same byte-identical value. */
+	if (kcov_shm != NULL)
+		__atomic_fetch_add(&kcov_shm->cmp_hyp_probe_class_hist[cls],
+				   1UL, __ATOMIC_RELAXED);
+	return true;
 }
 
 /*
