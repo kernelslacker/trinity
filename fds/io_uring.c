@@ -18,10 +18,6 @@
 #include "trinity.h"
 #include "utils.h"
 
-#ifndef IORING_OFF_SQES
-#define IORING_OFF_SQES		0x10000000ULL
-#endif
-
 #ifndef IORING_SETUP_IOPOLL
 #define IORING_SETUP_IOPOLL	(1U << 0)
 #endif
