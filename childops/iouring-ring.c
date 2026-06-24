@@ -14,6 +14,7 @@
 #include <linux/io_uring.h>
 
 #include "childops/iouring-ring.h"
+#include "compat.h"
 #include "syscall-gate.h"
 #include "errno-classify.h"
 
