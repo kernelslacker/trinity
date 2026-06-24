@@ -9,8 +9,6 @@
 #include <stdbool.h>
 #include <string.h>
 
-#include <linux/netlink.h>
-
 #include "compat.h"
 #include "proto-netlink-xfrm-internal.h"
 #include "random.h"
