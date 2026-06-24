@@ -7343,6 +7343,13 @@ struct kcov_diag_trunc_entry {
 	uint64_t trace_truncated;
 	uint64_t cmp_trace_truncated;
 	uint64_t max_trace_size;
+	/* per_syscall_calls[] and per_syscall_edges[] are indexed by nr
+	 * only, not by arch; under biarch both rows for the same nr show
+	 * the same denominator.  The ratio still answers "what share of
+	 * this syscall's calls produced an arch-N trunc" / "how many
+	 * edge-winning calls landed for each truncation on this syscall". */
+	uint64_t calls;
+	uint64_t edge_wins;
 	uint64_t rank;
 };
 
@@ -7382,6 +7389,12 @@ static void kcov_diag_emit_truncation_topn(void)
 						      __ATOMIC_RELAXED);
 			uint64_t dpo = __atomic_load_n(&d->dedup_probe_overflow,
 						       __ATOMIC_RELAXED);
+			uint64_t calls = __atomic_load_n(
+				&kcov_shm->per_syscall_calls[i],
+				__ATOMIC_RELAXED);
+			uint64_t ew = __atomic_load_n(
+				&kcov_shm->per_syscall_edges[i],
+				__ATOMIC_RELAXED);
 			uint64_t rank;
 
 			if (dpo > 0) {
@@ -7406,6 +7419,8 @@ static void kcov_diag_emit_truncation_topn(void)
 				top[j].trace_truncated = tt;
 				top[j].cmp_trace_truncated = ct;
 				top[j].max_trace_size = mt;
+				top[j].calls = calls;
+				top[j].edge_wins = ew;
 				top[j].rank = rank;
 				if (top_count < KCOV_DIAG_TRUNC_TOPN)
 					top_count++;
@@ -7416,26 +7431,50 @@ static void kcov_diag_emit_truncation_topn(void)
 	if (top_count > 0) {
 		output(0, "Top syscalls by trace truncation / max trace (KCOV_TRACE_SIZE=%u longs):\n",
 		       (unsigned int)KCOV_TRACE_SIZE);
-		output(0, "  %5s %-24s %-4s %14s %14s %14s %7s\n",
+		output(0, "  %5s %-24s %-4s %14s %14s %14s %7s %8s %8s\n",
 		       "nr", "name", "arch",
 		       "trace_trunc", "cmp_trace_tr", "max_trace",
-		       "pct_max");
+		       "pct_max", "tt/call", "ew/tt");
 		for (j = 0; j < (int)top_count; j++) {
 			const char *name = print_syscall_name(top[j].nr,
 							      top[j].do32);
 			unsigned int pct10 = (unsigned int)
 				((top[j].max_trace_size * 1000ULL) /
 				 (uint64_t)KCOV_TRACE_SIZE);
+			char tt_call_str[32];
+			char ew_tt_str[32];
+
+			if (top[j].calls > 0) {
+				uint64_t p = (top[j].trace_truncated * 1000ULL) /
+					     top[j].calls;
+				snprintf(tt_call_str, sizeof(tt_call_str),
+					 "%5" PRIu64 ".%" PRIu64 "%%",
+					 p / 10, p % 10);
+			} else {
+				snprintf(tt_call_str, sizeof(tt_call_str),
+					 "%8s", "-");
+			}
+			if (top[j].trace_truncated > 0) {
+				uint64_t p = (top[j].edge_wins * 1000ULL) /
+					     top[j].trace_truncated;
+				snprintf(ew_tt_str, sizeof(ew_tt_str),
+					 "%5" PRIu64 ".%" PRIu64 "%%",
+					 p / 10, p % 10);
+			} else {
+				snprintf(ew_tt_str, sizeof(ew_tt_str),
+					 "%8s", "-");
+			}
 
 			output(0, "  %5u %-24s %-4s %14" PRIu64
 				  " %14" PRIu64 " %14" PRIu64
-				  " %4u.%u%%\n",
+				  " %4u.%u%% %8s %8s\n",
 			       top[j].nr, name,
 			       top[j].do32 ? "32" : "64",
 			       top[j].trace_truncated,
 			       top[j].cmp_trace_truncated,
 			       top[j].max_trace_size,
-			       pct10 / 10, pct10 % 10);
+			       pct10 / 10, pct10 % 10,
+			       tt_call_str, ew_tt_str);
 		}
 	}
 
