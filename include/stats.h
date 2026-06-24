@@ -2770,6 +2770,65 @@ struct stats_s {
 	unsigned long frontier_live_misses_per_syscall[MAX_NR_SYSCALL];
 	unsigned long frontier_last_productive_window_per_syscall[MAX_NR_SYSCALL];
 
+	/* SHADOW-ONLY per-syscall LIVE-regime miss-streak counter.  Bumped
+	 * at the post-call frontier yield attribution path in
+	 * random_syscall_step (alongside the existing
+	 * frontier_live_misses_per_syscall[] bump) whenever a LIVE-regime
+	 * frontier pick of this syscall earned zero PC edges; reset to zero
+	 * by frontier_record_new_edge() / frontier_record_transition_edge()
+	 * on the per-syscall productive-event hooks already established for
+	 * the silent-streak counter above.  Carries the run-length of
+	 * CONSECUTIVE zero-edge LIVE-regime picks since the syscall last
+	 * earned coverage.
+	 *
+	 * Read by no production-path code -- observability only; the picker
+	 * accept/retry math at the bump site does not consume this value, so
+	 * any drift in it cannot perturb selection.  Crossing the
+	 * FRONTIER_LIVE_MISS_COOLDOWN threshold edge-triggers a one-time
+	 * bump of the global frontier_live_cooldown_candidates counter; every
+	 * pick past the threshold bumps frontier_live_would_skip
+	 * cumulatively.  The per-syscall array is kept for top-N attribution
+	 * of which syscalls are the cooldown candidates.
+	 *
+	 * Sized and bounds-guarded the same way the sibling
+	 * frontier_silent_streak_per_syscall[] above is.  Surfaced only via
+	 * the periodic stats dump alongside that array. */
+	unsigned long frontier_live_miss_streak_per_syscall[MAX_NR_SYSCALL];
+
+	/* SHADOW-ONLY LIVE-regime cooldown accounting, paired with the
+	 * frontier_live_miss_streak_per_syscall[] counter above.  Mirrors
+	 * the SHADOW silent-streak decay scalars (frontier_decay_candidates
+	 * / frontier_decay_would_skip) for the LIVE-regime cooldown lever:
+	 * the threshold-crossing edge bumps frontier_live_cooldown_candidates
+	 * once per episode, and frontier_live_would_skip tallies every
+	 * subsequent LIVE-regime miss past the threshold that a live
+	 * cooldown variant of the picker would have rejected.  Used together
+	 * with the frontier_live_misses_per_syscall[] kill-list signal so
+	 * the operator can A/B compare the streak-based predicate against
+	 * the raw miss-count predicate before any change to the live picker.
+	 *
+	 *  frontier_live_cooldown_candidates
+	 *      Edge-triggered: one bump per (syscallnr) crossing of
+	 *      FRONTIER_LIVE_MISS_COOLDOWN at the post-call attribution
+	 *      path.  Counts distinct cooldown episodes since startup -- a
+	 *      syscall whose streak grows back to threshold after a
+	 *      productive event contributes a fresh bump.
+	 *  frontier_live_would_skip
+	 *      Cumulative: one bump per LIVE-regime miss that finds the
+	 *      streak already at-or-past FRONTIER_LIVE_MISS_COOLDOWN after
+	 *      the post-call increment -- the projected demote count a live
+	 *      cooldown variant of the picker would produce.  Read alongside
+	 *      frontier_live_picks to read the projected saving fraction.
+	 *
+	 * Observability only: live frontier selection in
+	 * set_syscall_nr_coverage_frontier() is byte-identical to today's
+	 * behaviour; these counters bump strictly AFTER the per-call
+	 * attribution decision (in random_syscall_step) and no live-path
+	 * code reads them.  Mirrors the off-by-construction discipline the
+	 * sibling frontier_decay_* / frontier_blend_* counters use. */
+	unsigned long frontier_live_cooldown_candidates;
+	unsigned long frontier_live_would_skip;
+
 	/* SHADOW-ONLY "deep but warm" call accounting.  A call qualifies
 	 * when the post-collect signals show no new coverage of either
 	 * kind -- new_edges == 0 AND new_cmp == 0 -- yet the call still
