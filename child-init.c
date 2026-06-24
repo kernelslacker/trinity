@@ -287,6 +287,13 @@ void clean_childdata(struct childdata *child)
 	 * stamp read for clarity. */
 	child->strategy_at_pick = -1;
 
+	/* Pair with the per-call top-of-set_syscall_nr() reset that gates
+	 * non-frontier strategy picks out of the post-call attribution.  A
+	 * fresh slot occupant must start from NONE so the first post-call
+	 * read after fork does not credit the previous occupant's stale
+	 * regime to its own attribution. */
+	child->frontier_pick_regime = FRONTIER_PICK_NONE;
+
 	/* Reset per-child storm-containment counters and reseed the
 	 * sliding-window snapshot to "right now, all zeros" so the first
 	 * check after fork has a clean baseline rather than measuring a

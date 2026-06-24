@@ -239,6 +239,38 @@ enum childop_latch_reason {
 	CHILDOP_LATCH_OTHER,
 };
 
+/* Per-pick regime stamp written by set_syscall_nr_coverage_frontier at the
+ * two accept sites and consumed by the post-call attribution path in
+ * random_syscall_step.  Lets the post-call yield attribution
+ * (frontier_productive_wins_per_syscall, frontier_live_misses_per_syscall
+ * in include/stats.h) know which accept regime owned the pick that
+ * produced the call -- the same regime split the scalar frontier_live_
+ * picks / frontier_silent_picks counters surface fleet-wide, but kept
+ * per-call instead of per-window so the productive_win / live_miss
+ * decision can be attributed against the live-vs-silent split.
+ *
+ *   FRONTIER_PICK_NONE    Reset value, written at the top of
+ *                         set_syscall_nr() before strategy dispatch so a
+ *                         non-frontier strategy pick (RANDOM / HEURISTIC)
+ *                         naturally leaves the slot at NONE and the
+ *                         post-call attribution path skips it.
+ *   FRONTIER_PICK_LIVE    Live-ring regime: max_weight > 2 in
+ *                         set_syscall_nr_coverage_frontier, the picker is
+ *                         biasing off frontier_recent_count.
+ *   FRONTIER_PICK_SILENT  Silent-ring regime: max_weight <= 2, the
+ *                         plateau-fallback cold-weight path is steering
+ *                         the pick.
+ *
+ * Owner-only writes from inside the child; no cross-process coherence
+ * needed.  Read by no live-path code -- the per-call attribution path is
+ * the sole consumer, and the picker accept/retry math does not consume
+ * this stamp, so any drift cannot perturb live selection. */
+enum frontier_pick_regime {
+	FRONTIER_PICK_NONE = 0,
+	FRONTIER_PICK_LIVE,
+	FRONTIER_PICK_SILENT,
+};
+
 /* Unified per-childop outcome record (AGGREGATED across the run, NOT a
  * per-invocation event).  One coherent snapshot for consumers that want
  * a single record per op instead of scraping a dozen parallel
@@ -917,6 +949,19 @@ struct childdata {
 	 * only after stamp; owner-only writes; no cross-process coherence
 	 * needed. */
 	bool frontier_silent_decay_arm_b;
+	/* Per-pick frontier accept-regime stamp.  Written by set_syscall_nr_
+	 * coverage_frontier at the two accept sites (LIVE for max_weight > 2,
+	 * SILENT for max_weight <= 2) and consumed by random_syscall_step's
+	 * post-call attribution path so the per-syscall frontier_productive_
+	 * wins / frontier_live_misses arrays (include/stats.h) can attribute
+	 * the outcome to the accept regime that owned the pick.  Reset to
+	 * FRONTIER_PICK_NONE at the top of set_syscall_nr() before strategy
+	 * dispatch so non-frontier strategy picks naturally leave the slot
+	 * unstamped and the post-call attribution gate skips them.  Cleared
+	 * in clean_childdata() so a fresh slot occupant starts from NONE.
+	 * Owner-only writes from inside the child; no cross-process coherence
+	 * needed.  See enum frontier_pick_regime above for the contract. */
+	enum frontier_pick_regime frontier_pick_regime;
 	/* A/B-comparison stamp for the adaptive remote-KCOV mode decision in
 	 * dispatch_step.  Arm A (false) is the control: the static policy
 	 * (per-syscall KCOV_REMOTE_HEAVY flag + ONE_IN(remote_reciprocal))

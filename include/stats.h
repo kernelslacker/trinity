@@ -2705,6 +2705,71 @@ struct stats_s {
 	unsigned long frontier_silent_cmp_baseline[MAX_NR_SYSCALL];
 	unsigned long frontier_silent_errno_success_baseline[MAX_NR_SYSCALL];
 
+	/* Per-syscall frontier yield accounting (kill-list feedstock).  The
+	 * scalar siblings frontier_live_picks / frontier_silent_picks above
+	 * tell the operator the fleet-wide regime split; these per-syscall
+	 * arrays tell them WHICH syscalls eat the picks under each regime and
+	 * whether those picks ever earn a new edge.  Surfaces the "warm but
+	 * zero-edge" syscalls (mlock / unshare / mincore et al) the live
+	 * picker repeatedly accepts under the live regime but which never
+	 * convert -- a kill-list candidate set the future suppression lever
+	 * scores against.
+	 *
+	 *  frontier_live_picks_per_syscall[nr]
+	 *      Per-syscall split of the scalar frontier_live_picks counter.
+	 *      Bumped at the live-regime accept site in set_syscall_nr_
+	 *      coverage_frontier alongside the scalar bump, indexed by the
+	 *      resolved syscall nr.  Same MAX_NR_SYSCALL bound the sibling
+	 *      frontier_picks_per_syscall[] uses.
+	 *  frontier_silent_picks_per_syscall[nr]
+	 *      Per-syscall split of the scalar frontier_silent_picks counter.
+	 *      Bumped at the silent-regime accept site in the same picker,
+	 *      same bound.  Together with the live array sums to exactly
+	 *      frontier_picks_per_syscall[nr] (modulo the brief race between
+	 *      the live/silent bump and the regime-agnostic bump that follows
+	 *      the two accept branches).
+	 *  frontier_productive_wins_per_syscall[nr]
+	 *      Per-syscall count of frontier picks (any regime) that earned
+	 *      at least one new PC edge.  Bumped from the dispatch_step
+	 *      post-call attribution path on the new_edge_count > 0 branch
+	 *      when the per-call child->frontier_pick_regime stamp shows the
+	 *      pick came from the frontier strategy (NONE leaves the slot
+	 *      untouched, so non-frontier strategy picks do not contribute).
+	 *      The conversion-rate denominator is frontier_picks_per_syscall.
+	 *  frontier_live_misses_per_syscall[nr]
+	 *      Per-syscall count of LIVE-regime frontier picks that produced
+	 *      zero PC edges (the headline kill-list signal: a syscall the
+	 *      live ring keeps biasing toward but that never converts).  Bumped
+	 *      from the same post-call path on the no-edge branch when the
+	 *      stamp is FRONTIER_PICK_LIVE.  Silent-regime misses are NOT
+	 *      tallied here -- silent picks are by definition operating in the
+	 *      plateau-fallback regime where low yield is the expected
+	 *      baseline; rolling them into the same counter would bury the
+	 *      live-regime signal under the silent-regime steady-state noise.
+	 *  frontier_last_productive_window_per_syscall[nr]
+	 *      Snapshot of shm->bandit_window_count taken at the moment a
+	 *      productive_win was attributed to this syscall.  Compared
+	 *      against the current bandit_window_count by the kill-list
+	 *      analyser to gauge "windows since last productive frontier pick
+	 *      on this syscall" without having to retain a per-window time
+	 *      series.  Monotonically non-decreasing per slot under the
+	 *      RELAXED store; the readers tolerate the brief race the same
+	 *      way the surrounding RELAXED add-fetch counters do.
+	 *
+	 * ADDITIVE / SHADOW: no production-path code reads any of the five
+	 * arrays -- the picker's accept/retry math is byte-identical to the
+	 * pre-row baseline, the bumps fire strictly AFTER accept (at the two
+	 * accept sites) and strictly AFTER the per-call attribution decision
+	 * (at the post-call site), and the per-child frontier_pick_regime
+	 * stamp is owner-only.  Sized and bounds-guarded the same way the
+	 * sibling frontier_picks_per_syscall[] above is.  shm cost is
+	 * 5 * MAX_NR_SYSCALL * sizeof(unsigned long) ~= 40 KiB. */
+	unsigned long frontier_live_picks_per_syscall[MAX_NR_SYSCALL];
+	unsigned long frontier_silent_picks_per_syscall[MAX_NR_SYSCALL];
+	unsigned long frontier_productive_wins_per_syscall[MAX_NR_SYSCALL];
+	unsigned long frontier_live_misses_per_syscall[MAX_NR_SYSCALL];
+	unsigned long frontier_last_productive_window_per_syscall[MAX_NR_SYSCALL];
+
 	/* SHADOW-ONLY "deep but warm" call accounting.  A call qualifies
 	 * when the post-collect signals show no new coverage of either
 	 * kind -- new_edges == 0 AND new_cmp == 0 -- yet the call still
