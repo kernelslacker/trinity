@@ -6861,6 +6861,8 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	{ "capget",		1, &struct_catalog[SC_USER_CAP_HEADER] },
 	/* futex_waitv(struct futex_waitv *waiters, unsigned int nr, unsigned int flags, struct timespec *timo, clockid_t clockid) */
 	{ "futex_waitv",	1, &struct_catalog[SC_FUTEX_WAITV] },
+	/* futex_requeue(struct futex_waitv *waiters, unsigned int flags, int nr_wake, int nr_requeue) */
+	{ "futex_requeue",	1, &struct_catalog[SC_FUTEX_WAITV] },
 	/* sigaltstack(const stack_t *ss, stack_t *old_ss) */
 	{ "sigaltstack",	1, &struct_catalog[SC_STACK_T] },
 	/*
