@@ -115,7 +115,6 @@
 #if __has_include(<linux/devlink.h>)
 
 #include <netinet/in.h>
-#include <arpa/inet.h>
 #include <linux/devlink.h>
 #include <linux/netlink.h>
 #include <net/if.h>
