@@ -27,6 +27,278 @@
 static void clone_global_mmap_pool(enum objecttype type);
 
 /*
+ * Restrict the per-iteration pool pick to OBJ_LOCAL pools the
+ * owning child has marked nonempty.  Without the mask, type was
+ * chosen uniformly from all three regardless of occupancy, so
+ * each empty pool burnt one in three iterations on a
+ * get_random_object() == NULL reject -- a steady-state cost
+ * paid every draw post-fork until FILE/TESTFILE picked up
+ * entries via lazy mmap shapes.  The mask filters those
+ * guaranteed misses out entirely; the post-1000-iter refill
+ * arm below still runs on real exhaustion (mask==0).
+ *
+ * The pick is uniform across the SET bits in popmask, not
+ * weighted by num_entries -- intentionally preserves the
+ * pre-mask equal-pool bias (each nonempty pool sampled at
+ * 1/popcount) so consumer mix over {ANON, FILE, TESTFILE}
+ * stays unchanged for the common all-nonempty case and
+ * collapses sensibly to the surviving subset when one or two
+ * pools drain.  Weighting by num_entries would change the mix
+ * and is explicitly out of scope.
+ *
+ * OBJ_GLOBAL keeps the uniform 1-of-3 pick: the mask lives in
+ * childdata and is owner-only; the parent-side path through
+ * this function (child == NULL) has no per-pool occupancy
+ * shadow and just picks across all three pool types as before.
+ */
+static enum objecttype pick_mmap_pool_type(struct childdata *child,
+					   enum obj_scope scope,
+					   bool *all_empty)
+{
+	static const enum objecttype map_pool_types[3] = {
+		OBJ_MMAP_ANON, OBJ_MMAP_FILE, OBJ_MMAP_TESTFILE
+	};
+	unsigned int popmask, popcount, pick, bit;
+	enum objecttype type;
+
+	*all_empty = false;
+
+	if (scope == OBJ_LOCAL && child != NULL) {
+		popmask = child->mmap_pool_nonempty_mask & 0x7u;
+		if (popmask == 0) {
+			*all_empty = true;
+			return map_pool_types[0];
+		}
+	} else {
+		popmask = 0x7u;
+	}
+
+	popcount = (unsigned int) __builtin_popcount(popmask);
+	pick = rnd_modulo_u32(popcount);
+	type = map_pool_types[0];
+	for (bit = 0; bit < 3; bit++) {
+		if ((popmask & (1u << bit)) == 0)
+			continue;
+		if (pick == 0) {
+			type = map_pool_types[bit];
+			break;
+		}
+		pick--;
+	}
+	return type;
+}
+
+static void account_pool_empty_reject(enum objecttype type)
+{
+	__atomic_add_fetch(&shm->stats.maps_reject_pool_empty, 1, __ATOMIC_RELAXED);
+	/* Per-type sub-attribution.  The aggregate
+	 * above is bumped per NULL-pool iteration without
+	 * recording which OBJ_MMAP_* pool returned NULL; the
+	 * three counters below split it so the TESTFILE-share
+	 * of interest post-fork is directly visible. */
+	switch (type) {
+	case OBJ_MMAP_ANON:
+		__atomic_add_fetch(&shm->stats.maps_reject_pool_empty_anon,
+				   1, __ATOMIC_RELAXED);
+		break;
+	case OBJ_MMAP_FILE:
+		__atomic_add_fetch(&shm->stats.maps_reject_pool_empty_file,
+				   1, __ATOMIC_RELAXED);
+		break;
+	case OBJ_MMAP_TESTFILE:
+		__atomic_add_fetch(&shm->stats.maps_reject_pool_empty_testfile,
+				   1, __ATOMIC_RELAXED);
+		break;
+	default:
+		break;
+	}
+}
+
+/*
+ * Defend against stale or corrupted slot pointers leaking
+ * out of the OBJ_MMAP pool.  Heap pointers land at
+ * >= 0x10000 and below the 47-bit user/kernel boundary;
+ * any obj pointer outside that window can't be a real obj
+ * struct, and dereferencing it via &obj->map then map->ptr
+ * scribbles garbage into whatever syscall arg buffer the
+ * caller is filling (alloc_iovec via the iovec generator
+ * was the trigger — its iov_base ended up at sub-page
+ * addresses like 0x1d8).  Skip the slot and try again.
+ */
+static bool obj_ptr_in_user_va_band(struct object *obj,
+				    enum objecttype type,
+				    enum obj_scope scope)
+{
+	if ((uintptr_t)obj < 0x10000UL ||
+	    (uintptr_t)obj >= 0x800000000000UL) {
+		__atomic_add_fetch(&shm->stats.maps_reject_bogus_obj_ptr, 1, __ATOMIC_RELAXED);
+		outputerr("get_map_handle: bogus obj %p in OBJ_MMAP "
+			  "pool (type %u, scope %d)\n",
+			  obj, type, scope);
+		return false;
+	}
+	return true;
+}
+
+/*
+ * Ground-truth check before the first deref: obj pointers
+ * for OBJ_LOCAL pools come back through __zmalloc(), which
+ * registers them in the alloc-track ring.  A stomped slot
+ * can hand back a value that passes the heap-range guard
+ * above (8-byte aligned, inside user VA) yet doesn't match
+ * any allocation we ever made -- the first obj->map.size
+ * read then returns garbage and downstream consumers
+ * (gen_xattr_name, generate_syscall_args, alloc_iovec)
+ * walk into unmapped memory.  Skip the slot when the obj
+ * isn't in the live malloc-result set.  This guard is gated
+ * on OBJ_LOCAL: those live pointers belong to this child's
+ * own tracked malloc set.  OBJ_GLOBAL objs are the parent's
+ * pre-fork allocations inherited via COW (or cloned into the
+ * child), so they aren't in this child's alloc-track ring and
+ * need a separate validity rule.
+ */
+static bool obj_alloc_track_check(struct object *obj,
+				  enum objecttype type,
+				  enum obj_scope scope)
+{
+	if (scope == OBJ_LOCAL && !alloc_track_lookup(obj)) {
+		__atomic_add_fetch(&shm->stats.maps_reject_alloc_track_miss, 1, __ATOMIC_RELAXED);
+		/*
+		 * Per-type sub-attribution of the alloc-track-miss
+		 * reject.  Aggregate above stays bumped for historical
+		 * comparability; these tell which OBJ_MMAP_* pool's
+		 * slots are the dominant false-rejected source so a
+		 * 153M-class miss spike can be attributed to one pool
+		 * instead of pooled across all three.  `type` is the
+		 * pool the draw landed on this iteration and is the
+		 * only contextual axis available at this site without
+		 * new plumbing; `scope` is gated to OBJ_LOCAL by the
+		 * if-condition above so splitting on it would be inert.
+		 */
+		switch (type) {
+		case OBJ_MMAP_ANON:
+			__atomic_add_fetch(&shm->stats.maps_reject_alloc_track_miss_anon,
+					   1, __ATOMIC_RELAXED);
+			break;
+		case OBJ_MMAP_FILE:
+			__atomic_add_fetch(&shm->stats.maps_reject_alloc_track_miss_file,
+					   1, __ATOMIC_RELAXED);
+			break;
+		case OBJ_MMAP_TESTFILE:
+			__atomic_add_fetch(&shm->stats.maps_reject_alloc_track_miss_testfile,
+					   1, __ATOMIC_RELAXED);
+			break;
+		default:
+			break;
+		}
+		outputerr("get_map_handle: obj %p not in alloc_track "
+			  "(stomped slot, type %u, scope %d)\n",
+			  obj, type, scope);
+		return false;
+	}
+	return true;
+}
+
+/*
+ * Even when the obj pointer is sane, the map struct itself
+ * may have been stomped on by a stray syscall write, leaving
+ * a believable ptr but a wildly wrong size.  Consumers like
+ * gen_xattr_name's snprintf, generate_syscall_args, and
+ * alloc_iovec then read/write past the real mapping and we
+ * SEGV/SIGBUS at fixed-pattern addresses.
+ *
+ * Legitimate allocations top out at GB(1) (mapping_sizes[8]
+ * in maps-initial.c, pick_size in mmap-lifecycle.c).  Cap at
+ * GB(4) so the live 1GB tier passes cleanly while ASCII
+ * patterns and stomped pointers (which land in the TB+ range)
+ * are rejected.  Zero is also bogus — a real mapping always
+ * has at least one page.
+ */
+static bool map_size_in_range(struct object *obj,
+			      enum objecttype type,
+			      enum obj_scope scope)
+{
+	if (obj->map.size == 0) {
+		/*
+		 * Legitimate post-clamp state from mmap_fd:
+		 * empty file, fstat failure, or offset past EOF.
+		 * mmap_fd now drops these at seed time, but a
+		 * pre-clamp pool entry from an earlier startup
+		 * may still surface here.  Skip silently.
+		 */
+		__atomic_add_fetch(&shm->stats.maps_reject_size_zero, 1, __ATOMIC_RELAXED);
+		return false;
+	}
+	if (obj->map.size > GB(4UL)) {
+		__atomic_add_fetch(&shm->stats.maps_reject_size_too_large, 1, __ATOMIC_RELAXED);
+		outputerr("get_map_handle: bogus map->size %lu for "
+			  "obj %p (type %u, scope %d)\n",
+			  obj->map.size, obj, type, scope);
+		return false;
+	}
+	return true;
+}
+
+/* Pick-cost + per-type pool-chosen
+ * accounting.  `i + 1` is the 1-indexed retry count
+ * that landed this successful pick; attempts_sum /
+ * successes is the realised average attempts-per-pick
+ * the 1000-iter budget exists to amortise.  The
+ * per-type pool_chosen split lets the dispatch mix be
+ * cross-checked against pool occupancy. */
+static void account_pool_pick_success(enum objecttype type, int retry_index)
+{
+	__atomic_add_fetch(&shm->stats.maps_pick_attempts_sum,
+			   (unsigned long)(retry_index + 1), __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.maps_pick_successes,
+			   1, __ATOMIC_RELAXED);
+	switch (type) {
+	case OBJ_MMAP_ANON:
+		__atomic_add_fetch(&shm->stats.maps_pool_chosen_anon,
+				   1, __ATOMIC_RELAXED);
+		break;
+	case OBJ_MMAP_FILE:
+		__atomic_add_fetch(&shm->stats.maps_pool_chosen_file,
+				   1, __ATOMIC_RELAXED);
+		break;
+	case OBJ_MMAP_TESTFILE:
+		__atomic_add_fetch(&shm->stats.maps_pool_chosen_testfile,
+				   1, __ATOMIC_RELAXED);
+		break;
+	default:
+		break;
+	}
+}
+
+/*
+ * Lazy top-up.  Under sustained ARG_ADDRESS pressure the per-
+ * child OBJ_LOCAL ANON pool can drain entries faster than
+ * post_mmap refills it (entries leave on every munmap that hits
+ * an INITIAL_ANON or CHILD_ANON slot).  Re-cloning the
+ * OBJ_GLOBAL ANON snapshot here gives the next draw live
+ * entries to pick from instead of the consumer falling through
+ * to its NULL/EFAULT path on every ARG_ADDRESS slot.
+ *
+ * Rate-limited to once per MAPS_LOCAL_REFILL_PERIOD exhaustion
+ * events per child so the (re-walk-the-global-pool, strdup
+ * every name) cost stays bounded.  FILE/TESTFILE are
+ * deliberately not topped up here: their OBJ_GLOBAL sources
+ * can also drain (mmap_fd is the only producer for FILE; the
+ * testfiles seed runs once at startup for TESTFILE), so the
+ * fork-time seed is the right warm-up for those pools.
+ */
+static void maybe_refill_local_anon_pool(struct childdata *child,
+					 enum obj_scope scope)
+{
+	if (scope == OBJ_LOCAL && child != NULL) {
+		if (++child->maps_local_refill_credit >= MAPS_LOCAL_REFILL_PERIOD) {
+			child->maps_local_refill_credit = 0;
+			clone_global_mmap_pool(OBJ_MMAP_ANON);
+		}
+	}
+}
+
+/*
  * Populate a handle for a randomly-picked entry in the
  * OBJ_MMAP_ANON / OBJ_MMAP_FILE / OBJ_MMAP_TESTFILE pools.  Same
  * pick-and-deref flow as get_map() (heap-range guard, size guard);
@@ -52,256 +324,43 @@ bool get_map_handle(struct map_handle *h)
 
 	for (int i = 0; i < 1000; i++) {
 		struct object *obj;
-		unsigned int popmask, popcount, pick, bit;
+		bool all_empty;
 
-		static const enum objecttype map_pool_types[3] = {
-			OBJ_MMAP_ANON, OBJ_MMAP_FILE, OBJ_MMAP_TESTFILE
-		};
-
-		/*
-		 * Restrict the per-iteration pool pick to OBJ_LOCAL pools the
-		 * owning child has marked nonempty.  Without the mask, type was
-		 * chosen uniformly from all three regardless of occupancy, so
-		 * each empty pool burnt one in three iterations on a
-		 * get_random_object() == NULL reject -- a steady-state cost
-		 * paid every draw post-fork until FILE/TESTFILE picked up
-		 * entries via lazy mmap shapes.  The mask filters those
-		 * guaranteed misses out entirely; the post-1000-iter refill
-		 * arm below still runs on real exhaustion (mask==0).
-		 *
-		 * The pick is uniform across the SET bits in popmask, not
-		 * weighted by num_entries -- intentionally preserves the
-		 * pre-mask equal-pool bias (each nonempty pool sampled at
-		 * 1/popcount) so consumer mix over {ANON, FILE, TESTFILE}
-		 * stays unchanged for the common all-nonempty case and
-		 * collapses sensibly to the surviving subset when one or two
-		 * pools drain.  Weighting by num_entries would change the mix
-		 * and is explicitly out of scope.
-		 *
-		 * OBJ_GLOBAL keeps the uniform 1-of-3 pick: the mask lives in
-		 * childdata and is owner-only; the parent-side path through
-		 * this function (child == NULL) has no per-pool occupancy
-		 * shadow and just picks across all three pool types as before.
-		 */
-		if (scope == OBJ_LOCAL && child != NULL) {
-			popmask = child->mmap_pool_nonempty_mask & 0x7u;
-			if (popmask == 0) {
-				/*
-				 * All three OBJ_LOCAL mmap pools are empty.
-				 * Further draws this call cannot succeed; exit
-				 * the retry loop early and let the post-loop
-				 * lazy refill arm decide whether to top up.
-				 */
-				break;
-			}
-		} else {
-			popmask = 0x7u;
-		}
-
-		popcount = (unsigned int) __builtin_popcount(popmask);
-		pick = rnd_modulo_u32(popcount);
-		type = map_pool_types[0];
-		for (bit = 0; bit < 3; bit++) {
-			if ((popmask & (1u << bit)) == 0)
-				continue;
-			if (pick == 0) {
-				type = map_pool_types[bit];
-				break;
-			}
-			pick--;
+		type = pick_mmap_pool_type(child, scope, &all_empty);
+		if (all_empty) {
+			/*
+			 * All three OBJ_LOCAL mmap pools are empty.
+			 * Further draws this call cannot succeed; exit
+			 * the retry loop early and let the post-loop
+			 * lazy refill arm decide whether to top up.
+			 */
+			break;
 		}
 
 		obj = get_random_object(type, scope);
 		if (obj == NULL) {
-			__atomic_add_fetch(&shm->stats.maps_reject_pool_empty, 1, __ATOMIC_RELAXED);
-			/* Per-type sub-attribution.  The aggregate
-			 * above is bumped per NULL-pool iteration without
-			 * recording which OBJ_MMAP_* pool returned NULL; the
-			 * three counters below split it so the TESTFILE-share
-			 * of interest post-fork is directly visible. */
-			switch (type) {
-			case OBJ_MMAP_ANON:
-				__atomic_add_fetch(&shm->stats.maps_reject_pool_empty_anon,
-						   1, __ATOMIC_RELAXED);
-				break;
-			case OBJ_MMAP_FILE:
-				__atomic_add_fetch(&shm->stats.maps_reject_pool_empty_file,
-						   1, __ATOMIC_RELAXED);
-				break;
-			case OBJ_MMAP_TESTFILE:
-				__atomic_add_fetch(&shm->stats.maps_reject_pool_empty_testfile,
-						   1, __ATOMIC_RELAXED);
-				break;
-			default:
-				break;
-			}
+			account_pool_empty_reject(type);
 			continue;
 		}
 
-		/*
-		 * Defend against stale or corrupted slot pointers leaking
-		 * out of the OBJ_MMAP pool.  Heap pointers land at
-		 * >= 0x10000 and below the 47-bit user/kernel boundary;
-		 * any obj pointer outside that window can't be a real obj
-		 * struct, and dereferencing it via &obj->map then map->ptr
-		 * scribbles garbage into whatever syscall arg buffer the
-		 * caller is filling (alloc_iovec via the iovec generator
-		 * was the trigger — its iov_base ended up at sub-page
-		 * addresses like 0x1d8).  Skip the slot and try again.
-		 */
-		if ((uintptr_t)obj < 0x10000UL ||
-		    (uintptr_t)obj >= 0x800000000000UL) {
-			__atomic_add_fetch(&shm->stats.maps_reject_bogus_obj_ptr, 1, __ATOMIC_RELAXED);
-			outputerr("get_map_handle: bogus obj %p in OBJ_MMAP "
-				  "pool (type %u, scope %d)\n",
-				  obj, type, scope);
+		if (!obj_ptr_in_user_va_band(obj, type, scope))
 			continue;
-		}
 
-		/*
-		 * Ground-truth check before the first deref: obj pointers
-		 * for OBJ_LOCAL pools come back through __zmalloc(), which
-		 * registers them in the alloc-track ring.  A stomped slot
-		 * can hand back a value that passes the heap-range guard
-		 * above (8-byte aligned, inside user VA) yet doesn't match
-		 * any allocation we ever made -- the first obj->map.size
-		 * read then returns garbage and downstream consumers
-		 * (gen_xattr_name, generate_syscall_args, alloc_iovec)
-		 * walk into unmapped memory.  Skip the slot when the obj
-		 * isn't in the live malloc-result set.  This guard is gated
-		 * on OBJ_LOCAL: those live pointers belong to this child's
-		 * own tracked malloc set.  OBJ_GLOBAL objs are the parent's
-		 * pre-fork allocations inherited via COW (or cloned into the
-		 * child), so they aren't in this child's alloc-track ring and
-		 * need a separate validity rule.
-		 */
-		if (scope == OBJ_LOCAL && !alloc_track_lookup(obj)) {
-			__atomic_add_fetch(&shm->stats.maps_reject_alloc_track_miss, 1, __ATOMIC_RELAXED);
-			/*
-			 * Per-type sub-attribution of the alloc-track-miss
-			 * reject.  Aggregate above stays bumped for historical
-			 * comparability; these tell which OBJ_MMAP_* pool's
-			 * slots are the dominant false-rejected source so a
-			 * 153M-class miss spike can be attributed to one pool
-			 * instead of pooled across all three.  `type` is the
-			 * pool the draw landed on this iteration and is the
-			 * only contextual axis available at this site without
-			 * new plumbing; `scope` is gated to OBJ_LOCAL by the
-			 * if-condition above so splitting on it would be inert.
-			 */
-			switch (type) {
-			case OBJ_MMAP_ANON:
-				__atomic_add_fetch(&shm->stats.maps_reject_alloc_track_miss_anon,
-						   1, __ATOMIC_RELAXED);
-				break;
-			case OBJ_MMAP_FILE:
-				__atomic_add_fetch(&shm->stats.maps_reject_alloc_track_miss_file,
-						   1, __ATOMIC_RELAXED);
-				break;
-			case OBJ_MMAP_TESTFILE:
-				__atomic_add_fetch(&shm->stats.maps_reject_alloc_track_miss_testfile,
-						   1, __ATOMIC_RELAXED);
-				break;
-			default:
-				break;
-			}
-			outputerr("get_map_handle: obj %p not in alloc_track "
-				  "(stomped slot, type %u, scope %d)\n",
-				  obj, type, scope);
+		if (!obj_alloc_track_check(obj, type, scope))
 			continue;
-		}
 
-		/*
-		 * Even when the obj pointer is sane, the map struct itself
-		 * may have been stomped on by a stray syscall write, leaving
-		 * a believable ptr but a wildly wrong size.  Consumers like
-		 * gen_xattr_name's snprintf, generate_syscall_args, and
-		 * alloc_iovec then read/write past the real mapping and we
-		 * SEGV/SIGBUS at fixed-pattern addresses.
-		 *
-		 * Legitimate allocations top out at GB(1) (mapping_sizes[8]
-		 * in maps-initial.c, pick_size in mmap-lifecycle.c).  Cap at
-		 * GB(4) so the live 1GB tier passes cleanly while ASCII
-		 * patterns and stomped pointers (which land in the TB+ range)
-		 * are rejected.  Zero is also bogus — a real mapping always
-		 * has at least one page.
-		 */
-		if (obj->map.size == 0) {
-			/*
-			 * Legitimate post-clamp state from mmap_fd:
-			 * empty file, fstat failure, or offset past EOF.
-			 * mmap_fd now drops these at seed time, but a
-			 * pre-clamp pool entry from an earlier startup
-			 * may still surface here.  Skip silently.
-			 */
-			__atomic_add_fetch(&shm->stats.maps_reject_size_zero, 1, __ATOMIC_RELAXED);
+		if (!map_size_in_range(obj, type, scope))
 			continue;
-		}
-		if (obj->map.size > GB(4UL)) {
-			__atomic_add_fetch(&shm->stats.maps_reject_size_too_large, 1, __ATOMIC_RELAXED);
-			outputerr("get_map_handle: bogus map->size %lu for "
-				  "obj %p (type %u, scope %d)\n",
-				  obj->map.size, obj, type, scope);
-			continue;
-		}
 
 		h->map = &obj->map;
 		h->type = type;
 		h->scope = scope;
 
-		/* Pick-cost + per-type pool-chosen
-		 * accounting.  `i + 1` is the 1-indexed retry count
-		 * that landed this successful pick; attempts_sum /
-		 * successes is the realised average attempts-per-pick
-		 * the 1000-iter budget exists to amortise.  The
-		 * per-type pool_chosen split lets the dispatch mix be
-		 * cross-checked against pool occupancy. */
-		__atomic_add_fetch(&shm->stats.maps_pick_attempts_sum,
-				   (unsigned long)(i + 1), __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.maps_pick_successes,
-				   1, __ATOMIC_RELAXED);
-		switch (type) {
-		case OBJ_MMAP_ANON:
-			__atomic_add_fetch(&shm->stats.maps_pool_chosen_anon,
-					   1, __ATOMIC_RELAXED);
-			break;
-		case OBJ_MMAP_FILE:
-			__atomic_add_fetch(&shm->stats.maps_pool_chosen_file,
-					   1, __ATOMIC_RELAXED);
-			break;
-		case OBJ_MMAP_TESTFILE:
-			__atomic_add_fetch(&shm->stats.maps_pool_chosen_testfile,
-					   1, __ATOMIC_RELAXED);
-			break;
-		default:
-			break;
-		}
+		account_pool_pick_success(type, i);
 		return true;
 	}
 
-	/*
-	 * Lazy top-up.  Under sustained ARG_ADDRESS pressure the per-
-	 * child OBJ_LOCAL ANON pool can drain entries faster than
-	 * post_mmap refills it (entries leave on every munmap that hits
-	 * an INITIAL_ANON or CHILD_ANON slot).  Re-cloning the
-	 * OBJ_GLOBAL ANON snapshot here gives the next draw live
-	 * entries to pick from instead of the consumer falling through
-	 * to its NULL/EFAULT path on every ARG_ADDRESS slot.
-	 *
-	 * Rate-limited to once per MAPS_LOCAL_REFILL_PERIOD exhaustion
-	 * events per child so the (re-walk-the-global-pool, strdup
-	 * every name) cost stays bounded.  FILE/TESTFILE are
-	 * deliberately not topped up here: their OBJ_GLOBAL sources
-	 * can also drain (mmap_fd is the only producer for FILE; the
-	 * testfiles seed runs once at startup for TESTFILE), so the
-	 * fork-time seed is the right warm-up for those pools.
-	 */
-	if (scope == OBJ_LOCAL && child != NULL) {
-		if (++child->maps_local_refill_credit >= MAPS_LOCAL_REFILL_PERIOD) {
-			child->maps_local_refill_credit = 0;
-			clone_global_mmap_pool(OBJ_MMAP_ANON);
-		}
-	}
+	maybe_refill_local_anon_pool(child, scope);
 
 	__atomic_add_fetch(&shm->stats.maps_pool_draw_exhausted, 1, __ATOMIC_RELAXED);
 	return false;
