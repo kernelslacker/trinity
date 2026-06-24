@@ -53,7 +53,6 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/sendfile.h>
-#include <sys/stat.h>
 #include <sys/uio.h>
 #include <unistd.h>
 
