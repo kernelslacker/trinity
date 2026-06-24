@@ -1,7 +1,6 @@
 /*
  *  SYSCALL_DEFINE3(fsmount, int, fs_fd, unsigned int, flags, unsigned int, attr_flags)
  */
-#include <unistd.h>
 #include "compat.h"
 #include "object-types.h"
 #include "sanitise.h"
