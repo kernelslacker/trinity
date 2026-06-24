@@ -2,7 +2,6 @@
  * SYSCALL_DEFINE2(getpriority, int, which, int, who)
  */
 
-#include <sys/time.h>
 #include <sys/resource.h>
 #include "sanitise.h"
 #include "trinity.h"
