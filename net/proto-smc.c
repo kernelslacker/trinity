@@ -1,5 +1,4 @@
 #include <netinet/in.h>
-#include <arpa/inet.h>
 #include <stdlib.h>
 #include "net.h"
 #include "random.h"
