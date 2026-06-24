@@ -75,7 +75,6 @@
 #include <sys/syscall.h>
 #include <sys/wait.h>
 #include <netinet/in.h>
-#include <arpa/inet.h>
 #include <linux/bpf.h>
 #include <unistd.h>
 
