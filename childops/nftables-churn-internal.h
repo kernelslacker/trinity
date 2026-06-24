@@ -1460,9 +1460,10 @@
 
 /*
  * Small netlink-attribute helpers.  Originally file-static in
- * nftables-churn.c; promoted to static-inline so both TUs in the
- * split (nftables-churn.c and nftables-churn-exprs.c) can call
- * them without changing observable linkage.
+ * nftables-churn.c; promoted to static-inline so every TU in the
+ * split (nftables-churn.c plus the nftables-churn-exprs-*.c
+ * per-family builders) can call them without changing observable
+ * linkage.
  */
 static inline size_t nla_put_be32(unsigned char *buf, size_t off, size_t cap,
 			   unsigned short type, __u32 v)
@@ -1490,12 +1491,13 @@ static inline size_t nla_put_be64(unsigned char *buf, size_t off, size_t cap,
 }
 
 /*
- * build_nft_*_expr family.  Definitions live in
- * nftables-churn-exprs.c.  Linkage widened from static to extern
- * so the nft_expr_table dispatch array in nftables-churn.c can
- * reference them across the TU split.  None of these helpers
- * touch nftables-churn.c file-scope state; they only consume
- * caller-provided buffers and netlink helpers.
+ * build_nft_*_expr family.  Definitions live in the per-family
+ * nftables-churn-exprs-{data,set,stateful,hash,nat,conn}.c TUs.
+ * Linkage widened from static to extern so the nft_expr_table
+ * dispatch array in nftables-churn.c can reference them across
+ * the TU split.  None of these helpers touch nftables-churn.c
+ * file-scope state; they only consume caller-provided buffers
+ * and netlink helpers.
  */
 size_t build_nft_payload_expr(unsigned char *buf, size_t off, size_t cap);
 size_t build_nft_meta_expr(unsigned char *buf, size_t off, size_t cap);
