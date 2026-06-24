@@ -2216,6 +2216,11 @@ struct file_attr {
 #define MSG_SPLICE_PAGES		0x8000000
 #endif
 
+/* linux/bpf.h */
+#ifndef BPF_TRACE_FSESSION
+#define BPF_TRACE_FSESSION		58
+#endif
+
 /* asm/unistd.h */
 #ifndef __NR_io_uring_enter
 #define __NR_io_uring_enter	426

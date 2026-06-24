@@ -23,6 +23,7 @@
 #include "struct_catalog.h"
 #include "trinity.h"
 #include "utils.h"
+#include "compat.h"
 
 static __u32 get_kern_version(void)
 {
@@ -172,9 +173,6 @@ static bool bpf_prog_load(union bpf_attr *attr)
 #endif
 #ifndef BPF_TRACE_UPROBE_SESSION
 #define BPF_TRACE_UPROBE_SESSION	57
-#endif
-#ifndef BPF_TRACE_FSESSION
-#define BPF_TRACE_FSESSION		58
 #endif
 
 /*

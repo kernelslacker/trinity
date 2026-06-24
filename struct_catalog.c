@@ -3854,9 +3854,6 @@ const unsigned int bpf_prog_types_count = ARRAY_SIZE(bpf_prog_types);
 #ifndef BPF_TRACE_UPROBE_SESSION
 #define BPF_TRACE_UPROBE_SESSION	57
 #endif
-#ifndef BPF_TRACE_FSESSION
-#define BPF_TRACE_FSESSION		58
-#endif
 
 const unsigned long bpf_attach_types[] = {
 	BPF_CGROUP_INET_INGRESS, BPF_CGROUP_INET_EGRESS,
@@ -4501,10 +4498,6 @@ static const struct union_variant bpf_attr_LINK_CREATE_base = {
  * tracing-link path, all of which share the (target_btf_id, cookie)
  * tail shape on top of the BASE arm's target_btf_id slot.
  */
-#ifndef BPF_TRACE_FSESSION
-#define BPF_TRACE_FSESSION		58
-#endif
-
 static const unsigned long bpf_attach_types_tracing[] = {
 	BPF_TRACE_FENTRY, BPF_TRACE_FEXIT, BPF_MODIFY_RETURN,
 	BPF_LSM_MAC, BPF_LSM_CGROUP, BPF_TRACE_RAW_TP,
