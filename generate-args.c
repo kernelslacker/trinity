@@ -4630,11 +4630,14 @@ void populate_arglist_all_bits(struct syscallentry *entry)
 static unsigned long fill_arg(struct syscallentry *entry, struct syscallrecord *rec, unsigned int argnum)
 {
 	const struct argtype_ops *ops;
+	enum argtype t;
+	unsigned long val;
 
 	if (argnum > entry->num_args)
 		return 0;
 
-	ops = argtype_get_ops(get_argtype(entry, argnum));
+	t = get_argtype(entry, argnum);
+	ops = argtype_get_ops(t);
 
 	/* Pre-generate bias: for fd-typed args, occasionally re-pick a low
 	 * fd that previously succeeded for this exact (syscall, argnum)
@@ -4648,7 +4651,40 @@ static unsigned long fill_arg(struct syscallentry *entry, struct syscallrecord *
 			return (unsigned long) fd;
 	}
 
-	return ops->generate(entry, rec, argnum);
+	val = ops->generate(entry, rec, argnum);
+
+	/* Central-generator coverage for the address-family argtypes.
+	 *
+	 * ARG_NON_NULL_ADDRESS routes through get_non_null_address() ->
+	 * get_writable_address() and always returns a trinity-owned RW
+	 * scratch page.  ARG_ADDRESS routes through get_address(): the
+	 * ~1%-rate NULL arm, the writable-page arm (also via
+	 * get_writable_address), and a previous-slot-reuse path whose
+	 * +1 / +sizeof() offsets stay within the same RW page after a
+	 * non-zero find_previous_arg_address result.  Any non-zero return
+	 * therefore points into RW scratch, so stamp dir/owner to promote
+	 * the slot out of arg_meta_addr_without_meta.
+	 *
+	 * Other argtypes stay at the seed defaults: NULL get_address()
+	 * results carry no buffer to describe; ARG_RANGE is numeric in
+	 * [low, high], not an address; ARG_UNDEFINED mints a writable
+	 * address on only one of nine arms and the disambiguation is not
+	 * visible from here.
+	 *
+	 * Publish generation == rec->arg_meta_gen + 1 so arg_meta_init's
+	 * preservation gate can distinguish a fresh stamp from stale
+	 * residue left by a prior dispatch whose argtype happened to
+	 * write the same dir/owner bits.
+	 */
+	if (val != 0 && (t == ARG_ADDRESS || t == ARG_NON_NULL_ADDRESS)) {
+		struct arg_slot_meta *m = &rec->arg_meta[argnum - 1];
+
+		m->dir = ARG_DIR_INOUT;
+		m->owner = ARG_OWNER_GENERIC;
+		m->generation = rec->arg_meta_gen + 1;
+	}
+
+	return val;
 }
 
 /* Default-on scrub: any argtype with default_address_scrub set in the
@@ -5039,15 +5075,34 @@ void arg_meta_init(struct syscallentry *entry, struct syscallrecord *rec)
 		uint32_t stored_gen = m->generation;
 		uint8_t dir, owner;
 		uint32_t flags;
+		bool prestamped = (stored_gen == generation);
 
 		/* Stale-sidecar tripwire: a non-zero stored generation that
-		 * is not the previous dispatch's value means an init pass was
-		 * skipped (missed reset) or the rec was wholesale-stomped. */
-		if (stored_gen != 0 && stored_gen != prev_generation)
+		 * is neither the previous dispatch's value nor this dispatch's
+		 * own generation (which fill_arg stamps when its central-
+		 * generator coverage classifies an address-family slot) means
+		 * an init pass was skipped (missed reset) or the rec was
+		 * wholesale-stomped. */
+		if (stored_gen != 0 && stored_gen != prev_generation &&
+		    !prestamped)
 			__atomic_add_fetch(&shm->stats.arg_meta_argtype_stale,
 					   1, __ATOMIC_RELAXED);
 
 		argtype_default_meta(t, &dir, &owner, &flags);
+
+		/* Adopt fill_arg's central-generator stamp for the address-
+		 * family argtypes when the prestamp signal proves the slot's
+		 * dir/owner came from this dispatch's mint, not stale residue
+		 * from a prior dispatch's argtype.  ARG_RANGE is in the gate
+		 * for symmetry with the credit set below; fill_arg never
+		 * stamps it (returns a numeric value, not an address) so the
+		 * prestamped branch is never taken. */
+		if (prestamped &&
+		    (t == ARG_ADDRESS || t == ARG_NON_NULL_ADDRESS ||
+		     t == ARG_RANGE)) {
+			dir = m->dir;
+			owner = m->owner;
+		}
 
 		*m = (struct arg_slot_meta){
 			.dir = dir,
