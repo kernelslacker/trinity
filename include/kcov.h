@@ -1215,6 +1215,38 @@ struct kcov_shared {
 	unsigned long childop_remote_pc_edge_calls[KCOV_CHILDOP_NR_MAX];
 	unsigned long childop_local_pc_edge_count[KCOV_CHILDOP_NR_MAX];
 	unsigned long childop_remote_pc_edge_count[KCOV_CHILDOP_NR_MAX];
+	/* Per-syscall accounting of the KCOV_REMOTE_ENABLE attempt path.
+	 * The local_pc_calls / remote_pc_calls split above attributes calls
+	 * by the mode the kernel ultimately produced coverage in, which
+	 * folds "remote was attempted and the kernel refused" into the
+	 * local-mode column -- a HEAVY-flagged syscall whose
+	 * KCOV_REMOTE_ENABLE consistently returns EBADF reads as "zero
+	 * remote yield" through the yield-side counters, indistinguishable
+	 * from "remote was sampled and the kernel actually ran the work on
+	 * the calling task".  These four counters partition the enable path
+	 * itself so a genuinely zero-yield remote syscall (kernel ran
+	 * remote, found nothing) can be told apart from one where remote
+	 * was never actually enabled (EBADF losses, EINVAL, etc.):
+	 *   remote_enable_requested  -- entered kcov_enable_remote() and
+	 *                               about to attempt the ioctl.
+	 *   remote_enable_succeeded  -- the KCOV_REMOTE_ENABLE ioctl
+	 *                               returned 0; the call genuinely
+	 *                               sampled remote coverage.
+	 *   remote_enable_failed     -- the KCOV_REMOTE_ENABLE ioctl
+	 *                               exhausted its EINTR retries or
+	 *                               returned a non-EINTR error and
+	 *                               flipped remote_capable=false.
+	 *   remote_fallback_to_local -- after a failed remote enable, the
+	 *                               PC-mode fallback ioctl in turn
+	 *                               succeeded, so the child finished
+	 *                               the syscall in local mode.
+	 * All bumped inside kcov_enable_remote() keyed on the nr it now
+	 * takes as a parameter; childop callers (nr >= CHILDOP_KCOV_NR_BASE)
+	 * bypass the bumps via the standard nr < MAX_NR_SYSCALL gate. */
+	unsigned long remote_enable_requested[MAX_NR_SYSCALL];
+	unsigned long remote_enable_succeeded[MAX_NR_SYSCALL];
+	unsigned long remote_enable_failed[MAX_NR_SYSCALL];
+	unsigned long remote_fallback_to_local[MAX_NR_SYSCALL];
 	/* Per-syscall 8-bucket errno histogram.  Sibling to the
 	 * per_syscall_edges/calls counters above: those track coverage-side
 	 * activity per syscall; this tracks the shape of what the kernel
@@ -2416,7 +2448,7 @@ void kcov_child_flush_stats(struct childdata *child);
 /* Bracket the actual syscall() call with these. No-ops if !active. */
 void kcov_enable_trace(struct kcov_child *kc);
 void kcov_enable_cmp(struct kcov_child *kc);
-void kcov_enable_remote(struct kcov_child *kc, unsigned int child_id);
+void kcov_enable_remote(struct kcov_child *kc, unsigned int child_id, unsigned int nr);
 void kcov_disable(struct kcov_child *kc);
 
 /* Zero the trace count header at trace_buf[0] (or cmp_trace_buf[0]

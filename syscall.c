@@ -378,7 +378,7 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 		if (kc != NULL && kc->mode == KCOV_MODE_CMP) {
 			kcov_enable_cmp(kc);
 		} else if (kc != NULL && kc->remote_mode) {
-			kcov_enable_remote(kc, child != NULL ? child->num : 0);
+			kcov_enable_remote(kc, child != NULL ? child->num : 0, rec->nr);
 		} else {
 			kcov_enable_trace(kc);
 		}
@@ -390,7 +390,7 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 		if (kc != NULL && kc->mode == KCOV_MODE_CMP) {
 			kcov_enable_cmp(kc);
 		} else if (kc != NULL && kc->remote_mode) {
-			kcov_enable_remote(kc, child != NULL ? child->num : 0);
+			kcov_enable_remote(kc, child != NULL ? child->num : 0, rec->nr);
 		} else {
 			kcov_enable_trace(kc);
 		}
