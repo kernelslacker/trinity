@@ -757,6 +757,88 @@ void cmp_hyp_credit_outcome(unsigned int nr, bool do32, unsigned long cmp_ip,
 	flat = cmp_hyp_outcome_flat(outcome);
 	if (flat != NULL)
 		__atomic_fetch_add(flat, 1UL, __ATOMIC_RELAXED);
+
+	/*
+	 * SHADOW scoring pass.  Recompute h->score_bucket from the per-hyp
+	 * evidence counters just bumped above, and evaluate the would-
+	 * promote / would-demote predicate the live state machine will
+	 * eventually own.  Pure observation: h->state is NOT mutated and
+	 * remains CMP_HYP_STATE_OBSERVED for every entry.  The bucket
+	 * write is u8 and never read by the pick/inject path; the kcov_shm
+	 * arrays are SHADOW telemetry.
+	 *
+	 * Counters are loaded RELAXED -- they race with concurrent
+	 * credit_outcome() calls on the same hyp from sibling children.
+	 * A torn read at worst computes a slightly stale bucket / mis-
+	 * attributes one promote-vs-demote bump; both lanes converge as
+	 * subsequent credits land.
+	 *
+	 *   wins = pc_wins + transition_wins + corpus_save_wins
+	 *   pen  = misses + disabled_skips + destructive_skips + context_skips
+	 *
+	 * cmp_novelty_wins is intentionally excluded from both sides per the
+	 * [11-feedback-loop] discipline that keeps CMP-novelty separate from
+	 * PC-edge conversion.
+	 *
+	 * Bucketing (8 bands, fits in u8):
+	 *   0  idle  (wins == 0 && pen == 0)
+	 *   1  penalty-only (wins == 0, pen >= 1)
+	 *   2  heavy net-negative (pen >= wins + 4)
+	 *   3  slight net-negative (wins < pen < wins + 4)
+	 *   4  break-even (wins == pen, both >= 1)
+	 *   5  small net-positive (1 <= wins - pen < 4)
+	 *   6  moderate net-positive (4 <= wins - pen < 16)
+	 *   7  strong net-positive (wins - pen >= 16)
+	 *
+	 * Underflow on `wins - pen` is guarded by the pen-side branches
+	 * above it -- bands 5..7 only execute when wins > pen.
+	 */
+	{
+		uint64_t pc = __atomic_load_n(&h->pc_wins, __ATOMIC_RELAXED);
+		uint64_t tr = __atomic_load_n(&h->transition_wins,
+					      __ATOMIC_RELAXED);
+		uint64_t cs = __atomic_load_n(&h->corpus_save_wins,
+					      __ATOMIC_RELAXED);
+		uint64_t ms = __atomic_load_n(&h->misses, __ATOMIC_RELAXED);
+		uint64_t ds = __atomic_load_n(&h->disabled_skips,
+					      __ATOMIC_RELAXED);
+		uint64_t xs = __atomic_load_n(&h->destructive_skips,
+					      __ATOMIC_RELAXED);
+		uint64_t ks = __atomic_load_n(&h->context_skips,
+					      __ATOMIC_RELAXED);
+		uint64_t wins = pc + tr + cs;
+		uint64_t pen = ms + ds + xs + ks;
+		uint8_t bucket;
+		bool would_promote = (pc | tr | cs) != 0;
+		bool would_demote = !would_promote && ms >= 8;
+
+		if (wins == 0)
+			bucket = (pen == 0) ? 0 : 1;
+		else if (pen >= wins + 4)
+			bucket = 2;
+		else if (pen > wins)
+			bucket = 3;
+		else if (pen == wins)
+			bucket = 4;
+		else if (wins - pen < 4)
+			bucket = 5;
+		else if (wins - pen < 16)
+			bucket = 6;
+		else
+			bucket = 7;
+		__atomic_store_n(&h->score_bucket, bucket, __ATOMIC_RELAXED);
+
+		if (kcov_shm != NULL && h->kind < CMP_HYP_KIND_NR) {
+			if (would_promote)
+				__atomic_fetch_add(
+					&kcov_shm->cmp_hyp_would_promote_by_kind[h->kind],
+					1UL, __ATOMIC_RELAXED);
+			else if (would_demote)
+				__atomic_fetch_add(
+					&kcov_shm->cmp_hyp_would_demote_by_kind[h->kind],
+					1UL, __ATOMIC_RELAXED);
+		}
+	}
 }
 
 /*

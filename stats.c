@@ -6772,6 +6772,61 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	}
 
 	/*
+	 * SHADOW would-promote / would-demote eval from
+	 * cmp_hyp_credit_outcome().  Bumped per credit landing after the
+	 * per-hyp outcome counter is updated: would_promote when any of
+	 * (pc_wins, transition_wins, corpus_save_wins) is set, would_demote
+	 * when misses >= 8 and none of the win counters are set.  Pure
+	 * observation -- h->state stays CMP_HYP_STATE_OBSERVED.  Render
+	 * gated on any-delta so the section stays quiet until credit sites
+	 * start firing.
+	 */
+	{
+		static const char * const kind_labels[CMP_HYP_KIND_NR] = {
+			"exact", "range", "boundary", "bitmask",
+			"enum_family", "alignment", "length",
+			"foreign_value",
+		};
+		static unsigned long prev_hyp_would_promote_kind[CMP_HYP_KIND_NR];
+		static unsigned long prev_hyp_would_demote_kind[CMP_HYP_KIND_NR];
+		unsigned long cur_hyp_would_promote_kind[CMP_HYP_KIND_NR];
+		unsigned long cur_hyp_would_demote_kind[CMP_HYP_KIND_NR];
+		unsigned long any_delta = 0;
+		unsigned int k;
+
+		for (k = 0; k < CMP_HYP_KIND_NR; k++) {
+			cur_hyp_would_promote_kind[k] = __atomic_load_n(
+				&kcov_shm->cmp_hyp_would_promote_by_kind[k],
+				__ATOMIC_RELAXED);
+			cur_hyp_would_demote_kind[k] = __atomic_load_n(
+				&kcov_shm->cmp_hyp_would_demote_by_kind[k],
+				__ATOMIC_RELAXED);
+			any_delta |=
+				(cur_hyp_would_promote_kind[k] - prev_hyp_would_promote_kind[k]) |
+				(cur_hyp_would_demote_kind[k] - prev_hyp_would_demote_kind[k]);
+		}
+
+		if (any_delta != 0) {
+			stats_log_write("KCOV CMP hyp would-promote/demote shadow stats over last %lds:\n",
+					elapsed);
+			for (k = 0; k < CMP_HYP_KIND_NR; k++) {
+				stats_log_write(
+					"  cmp_hyp_would[%-13s] promote +%lu (total %lu)  demote +%lu (total %lu)\n",
+					kind_labels[k],
+					cur_hyp_would_promote_kind[k] - prev_hyp_would_promote_kind[k],
+					cur_hyp_would_promote_kind[k],
+					cur_hyp_would_demote_kind[k] - prev_hyp_would_demote_kind[k],
+					cur_hyp_would_demote_kind[k]);
+			}
+		}
+
+		for (k = 0; k < CMP_HYP_KIND_NR; k++) {
+			prev_hyp_would_promote_kind[k] = cur_hyp_would_promote_kind[k];
+			prev_hyp_would_demote_kind[k] = cur_hyp_would_demote_kind[k];
+		}
+	}
+
+	/*
 	 * SHADOW per-hypothesis outcome aggregates that have no kcov_shm
 	 * flat-counter twin (corpus_save_wins / destructive_skips /
 	 * context_skips).  Walk the hyp_pools[][] grid once per window and
