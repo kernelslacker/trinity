@@ -5375,6 +5375,34 @@ static const struct struct_field group_source_req_fields[] = {
 	FIELD(struct group_source_req, gsr_source),
 };
 
+/* ------------------------------------------------------------------ */
+/* struct msgbuf (msgsnd)                                              */
+/* ------------------------------------------------------------------ */
+
+/*
+ * msgsnd(int msqid, const struct msgbuf __user *msgp, size_t msgsz,
+ *        int msgflg) hands the kernel an mtype/mtext header at a2.
+ * argtype[1] is ARG_ADDRESS (not ARG_STRUCT_PTR_*), so the bespoke
+ * sanitise_msgsnd() keeps owning the live fill: it zmalloc's a
+ * sizeof(struct msgbuf) + msgsz buffer, draws msgsz from a bucketed
+ * (empty / small / page-sized / near-MSGMAX / random-tail) distribution,
+ * and stamps mtype in [1, 255] (the kernel rejects mtype <= 0).  The
+ * variable mtext[] tail is owned by that sanitiser and intentionally
+ * not modelled here: FT_RAW would need a per-call effective_size for
+ * the trailing flexible array, and the bespoke fill already covers it.
+ *
+ * Registration is attribution-only, mirroring the in-tree timer_create /
+ * utimbuf / flock entries: the bespoke sanitiser keeps owning the live
+ * fill -- this only feeds the CMP-attribution path.  mtype is left
+ * FT_RAW so the bespoke [1, 255] band is preserved verbatim; the win is
+ * letting struct_field_for_cmp() steer KCOV CMP-learned constants at
+ * the named mtype slot rather than at a coincidentally-same-width
+ * neighbour.
+ */
+static const struct struct_field msgbuf_fields[] = {
+	FIELD(struct msgbuf, mtype),
+};
+
 #ifdef USE_TCP_REPAIR_OPT
 /*
  * struct tcp_repair_opt -- IPPROTO_TCP / TCP_REPAIR_OPTIONS.  The kernel
@@ -6423,6 +6451,12 @@ const struct struct_desc struct_catalog[] = {
 		.struct_size	= sizeof(struct ip_mreq_source),
 		.fields		= ip_mreq_source_fields,
 		.num_fields	= ARRAY_SIZE(ip_mreq_source_fields),
+	},
+	[SC_MSGBUF] = {
+		.name		= "msgbuf",
+		.struct_size	= sizeof(struct msgbuf),
+		.fields		= msgbuf_fields,
+		.num_fields	= ARRAY_SIZE(msgbuf_fields),
 	},
 #ifdef USE_TCP_REPAIR_OPT
 	[SC_TCP_REPAIR_OPT] = {
@@ -7846,6 +7880,19 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	{ "process_vm_readv",	4, &struct_catalog[SC_IOVEC] },
 	{ "process_vm_writev",	2, &struct_catalog[SC_IOVEC] },
 	{ "process_vm_writev",	4, &struct_catalog[SC_IOVEC] },
+	/*
+	 * msgsnd(int msqid, const struct msgbuf __user *msgp, size_t msgsz,
+	 *        int msgflg)
+	 * a2 is ARG_ADDRESS (not ARG_STRUCT_PTR_*), so the bespoke
+	 * sanitise_msgsnd() keeps owning the live fill: a zmalloc'd
+	 * sizeof(struct msgbuf) + msgsz buffer with mtype in [1, 255] and
+	 * the variable mtext[] tail covered by the bespoke sizing.
+	 * Attribution-only registration lets struct_field_for_cmp() steer
+	 * CMP-learned constants at the named mtype slot rather than at a
+	 * coincidentally-same-width slot.  msgrcv's a2 is a kernel-written
+	 * output buffer and is intentionally not mapped.
+	 */
+	{ "msgsnd",		2, &struct_catalog[SC_MSGBUF] },
 	/* sentinel */
 	{ NULL, 0, NULL },
 };
