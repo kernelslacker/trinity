@@ -8,7 +8,6 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <netinet/udp.h>
-#include <arpa/inet.h>
 #include <linux/filter.h>
 #include <linux/if_packet.h>
 #include <linux/netlink.h>
