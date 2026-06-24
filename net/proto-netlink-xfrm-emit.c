@@ -9,14 +9,12 @@
 
 #include <stdbool.h>
 #include <string.h>
-#include <unistd.h>
 #include <errno.h>
 
 #include <netinet/in.h>
 #include <linux/netlink.h>
 
 #include "compat.h"
-#include "net.h"
 #include "proto-netlink-xfrm-internal.h"
 #include "random.h"
 #include "utils.h"
