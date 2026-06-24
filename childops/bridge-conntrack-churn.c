@@ -49,7 +49,6 @@
  * SIGALRM(1s) cap.  Loopback only (private netns).
  */
 
-#include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <net/if.h>
