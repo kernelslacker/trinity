@@ -9,7 +9,6 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#include <arpa/inet.h>
 #include <netinet/in.h>
 
 #include <linux/if_addr.h>
