@@ -47,9 +47,6 @@
 #ifndef SECCOMP_RET_LOG
 #define SECCOMP_RET_LOG			0x7ffc0000U
 #endif
-#ifndef SECCOMP_RET_ALLOW
-#define SECCOMP_RET_ALLOW		0x7fff0000U
-#endif
 
 static const uint32_t seccomp_ret_actions[] = {
 	SECCOMP_RET_KILL_PROCESS,
