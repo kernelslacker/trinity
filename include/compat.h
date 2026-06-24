@@ -2203,3 +2203,8 @@ struct file_attr {
 #ifndef MSG_SPLICE_PAGES
 #define MSG_SPLICE_PAGES		0x8000000
 #endif
+
+/* asm/unistd.h */
+#ifndef __NR_io_uring_enter
+#define __NR_io_uring_enter	426
+#endif

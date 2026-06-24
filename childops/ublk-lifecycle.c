@@ -59,13 +59,10 @@
 #include "child.h"
 #include "syscall-gate.h"
 #include "childops/iouring-ring.h"
+#include "compat.h"
 #include "shm.h"
 #include "stats.h"
 #include "trinity.h"
-
-#ifndef __NR_io_uring_enter
-#define __NR_io_uring_enter	426
-#endif
 
 /*
  * ublk uAPI shims.  Per-symbol #ifndef so a sysroot that ships only a
