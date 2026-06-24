@@ -3263,8 +3263,13 @@ bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 			if (kcov_shm != NULL)
 				__atomic_fetch_add(&kcov_shm->cmp_recent_would_pick,
 						   1UL, __ATOMIC_RELAXED);
+			/* Typed-inject callsites must reach the inject arm on
+			 * the durable path, not be shadowed by the recent-first
+			 * early-return.
+			 */
 			if (cmp_recent_pool_mode_arg ==
-			    CMP_RECENT_POOL_RECENT_FIRST) {
+			    CMP_RECENT_POOL_RECENT_FIRST &&
+			    !allow_hyp_inject) {
 				struct cmp_recent_entry *re =
 					&rp->entries[rnd_modulo_u32(rcount)];
 				unsigned long re_value = re->value;
