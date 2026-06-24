@@ -66,9 +66,6 @@
 #ifndef IORING_OFF_CQ_RING
 #define IORING_OFF_CQ_RING	0x8000000ULL
 #endif
-#ifndef IORING_OFF_SQES
-#define IORING_OFF_SQES		0x10000000ULL
-#endif
 
 /*
  * Ring lifecycle moved to childops/iouring-ring.{c,h}.  Callers in

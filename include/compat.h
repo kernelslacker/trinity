@@ -851,12 +851,16 @@ struct sockaddr_nfc {
 
 /* linux/io_uring.h
  *
- * IORING_OFF_SQ_RING: mmap offset for the submission-queue ring
- * region returned by io_uring_setup().  ABI-stable since the syscall
- * landed in 5.1, but absent from very old kernel-headers packages.
+ * IORING_OFF_SQ_RING / IORING_OFF_SQES: mmap offsets for the
+ * submission-queue ring and SQE array regions returned by
+ * io_uring_setup().  ABI-stable since the syscall landed in 5.1, but
+ * absent from very old kernel-headers packages.
  */
 #ifndef IORING_OFF_SQ_RING
 #define IORING_OFF_SQ_RING	0ULL
+#endif
+#ifndef IORING_OFF_SQES
+#define IORING_OFF_SQES		0x10000000ULL
 #endif
 
 /* linux/io_uring.h
