@@ -1066,12 +1066,16 @@ static void arena_liveness_probe(struct syscallentry *entry,
 	}
 }
 
-void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
+/* Phase 1 of handle_syscall_ret: pre-dispatch validation gates.
+ * Runs the wholesale rec-canary stomp check, the RET_ZERO_SUCCESS
+ * retval-contract bound, and the RET_FD shape rejection.  Reports
+ * the two rejection flags via out-params so the post phase can gate
+ * entry->post and the ret_objtype_via_post registrar on them. */
+static void syscall_ret_validate_phase(struct syscallrecord *rec,
+				       struct syscallentry *entry,
+				       bool *retfd_rejected,
+				       bool *rzs_rejected)
 {
-	unsigned int call = rec->nr;
-	bool retfd_rejected;
-	bool rzs_rejected = false;
-
 	/* Wholesale-stomp check: if anything overwrote the rec while the
 	 * kernel had control, the canary won't match.  Catches the rarer
 	 * class the per-arg snapshot pattern can't shadow (bookkeeping
@@ -1141,7 +1145,7 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 			  rec->retval, entry->name);
 		rec->retval = (unsigned long)-1L;
 		rec->errno_post = EINVAL;
-		rzs_rejected = true;
+		*rzs_rejected = true;
 	}
 
 	/* Validate RET_FD shape before success/failure dispatch.  A
@@ -1166,11 +1170,23 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 	 * ring from inside reject_corrupt_retfd(), so this counter is
 	 * the headline tally and the per-handler ring carries the
 	 * per-syscall breakdown. */
-	retfd_rejected = reject_corrupt_retfd(entry, rec);
-	if (retfd_rejected)
+	*retfd_rejected = reject_corrupt_retfd(entry, rec);
+	if (*retfd_rejected)
 		__atomic_add_fetch(&shm->stats.retfd_blanket_reject, 1,
 				   __ATOMIC_RELAXED);
+}
 
+/* Phase 2 of handle_syscall_ret: success/failure result dispatch.
+ * Both branches gate on state == AFTER -- an EXTRA_FORK grandchild
+ * may die / get SIGKILL'd before publishing AFTER, in which case
+ * rec->retval and rec->errno_post are stale shm noise.  Failure
+ * branch handles ENOSYS deactivation, handle_failure(), and the
+ * per-errno classification; success branch routes through
+ * handle_success() + entry->successes. */
+static void syscall_ret_dispatch_phase(struct syscallrecord *rec,
+				       struct syscallentry *entry,
+				       unsigned int call)
+{
 	if (rec->retval == -1UL) {
 		int err = rec->errno_post;
 
@@ -1232,7 +1248,23 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 		handle_success(rec);	// Believe me folks, you'll never get bored with winning
 		__atomic_add_fetch(&entry->successes, 1, __ATOMIC_RELAXED);
 	}
+}
 
+/* Phase 3 of handle_syscall_ret: post-dispatch stats, hooks, and
+ * cleanup.  Bumps the per-syscall errno-bucket histogram and the
+ * unconditional entry->attempted counter, then under state == AFTER
+ * runs the count-bound checks, the ret_objtype_via_post / entry->post
+ * hooks, register_returned_fd, and prop_ring_push.  Finally runs
+ * check_uid, entry->cleanup, rec_owned_drain, and generic_free_arg
+ * unconditionally (teardown MUST run on every dispatched call,
+ * including validator-rejected, --dry-run synthesised, and
+ * SIGKILL'd-before-AFTER paths). */
+static void syscall_ret_post_phase(struct syscallrecord *rec,
+				   struct syscallentry *entry,
+				   unsigned int call,
+				   bool retfd_rejected,
+				   bool rzs_rejected)
+{
 	/* Per-syscall errno-bucket histogram bump.  Sibling to the
 	 * per_syscall_edges/calls counters in kcov_shm — those track
 	 * coverage-side activity per syscall; this tracks return shape
@@ -1449,4 +1481,15 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 	rec_owned_drain(rec);
 
 	generic_free_arg(entry, rec);
+}
+
+void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
+{
+	unsigned int call = rec->nr;
+	bool retfd_rejected;
+	bool rzs_rejected = false;
+
+	syscall_ret_validate_phase(rec, entry, &retfd_rejected, &rzs_rejected);
+	syscall_ret_dispatch_phase(rec, entry, call);
+	syscall_ret_post_phase(rec, entry, call, retfd_rejected, rzs_rejected);
 }
