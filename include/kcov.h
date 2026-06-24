@@ -783,6 +783,25 @@ enum prop_injected_callsite {
  * (which includes both headers) catches any drift between the two. */
 #define REEXEC_PENDING_PICK_HIST_NR 8U
 
+/* Probe-class buckets for the cmp_hyp_probe_class_hist[] census at the
+ * tail of struct kcov_shared.  One entry per branch cmp_hyp_derive_value()
+ * ACTUALLY emits a value through today; keep this in lock-step with that
+ * switch.  The set deliberately excludes boundary probes the derive
+ * ladder does not produce (lo-1, hi+1) and the false-return rejects
+ * (hi < lo, default kind) which emit no value. */
+enum cmp_hyp_probe_class {
+	CMP_HYP_PROBE_CLASS_EXACT_EXEMPLAR,
+	CMP_HYP_PROBE_CLASS_ENUM_EXEMPLAR,
+	CMP_HYP_PROBE_CLASS_ENUM_LO,
+	CMP_HYP_PROBE_CLASS_ENUM_HI,
+	CMP_HYP_PROBE_CLASS_BITMASK_SINGLE_BIT,
+	CMP_HYP_PROBE_CLASS_EXEMPLAR_FALLBACK,
+	CMP_HYP_PROBE_CLASS_RANGE_LO,
+	CMP_HYP_PROBE_CLASS_RANGE_HI,
+	CMP_HYP_PROBE_CLASS_RANGE_MIDPOINT,
+	CMP_HYP_PROBE_CLASS_NR,
+};
+
 /* Shared coverage state, allocated in shared memory. */
 struct kcov_shared {
 	/* Per-edge bucket-seen mask.  See KCOV_NUM_BUCKETS comment above for
@@ -2338,6 +2357,36 @@ struct kcov_shared {
 	 */
 	unsigned long cmp_hyp_would_promote_by_kind[CMP_HYP_KIND_NR];
 	unsigned long cmp_hyp_would_demote_by_kind[CMP_HYP_KIND_NR];
+
+	/*
+	 * SHADOW census of which probe class cmp_hyp_derive_value() emits
+	 * each time it converts a resolved hypothesis to a concrete value
+	 * for the LIVE typed-inject arm.  Bumped once per successful
+	 * derivation, at the branch the function ACTUALLY takes today --
+	 * boundary probes (lo-1, hi+1) are deliberately not emitted by the
+	 * derive ladder (see the comment above cmp_hyp_derive_value) and
+	 * have no class here; adding them would lie about the producer.
+	 *
+	 *  EXACT_EXEMPLAR            -- CMP_HYP_EXACT path
+	 *  ENUM_EXEMPLAR/LO/HI       -- CMP_HYP_ENUM_FAMILY 3-way pick
+	 *  BITMASK_SINGLE_BIT        -- CMP_HYP_BITMASK popcount-walk hit
+	 *  EXEMPLAR_FALLBACK         -- BITMASK conservative fallback
+	 *                               (mask == 0, and the popcount-walk
+	 *                               post-loop guard).  Counted as its
+	 *                               own class rather than folded into
+	 *                               BITMASK_SINGLE_BIT so the share of
+	 *                               derivations that degrade to the
+	 *                               exemplar is directly visible.
+	 *  RANGE_LO/HI/MIDPOINT      -- CMP_HYP_RANGE 3-way pick
+	 *
+	 * The hi < lo reject and the default-kind reject return false
+	 * without emitting a value, so nothing bumps for those.
+	 *
+	 * Write-only telemetry: no consumer reads this array yet, no CLI
+	 * knob gates the derivation, and the derived value the live inject
+	 * arm receives is byte-identical to the pre-census path.
+	 */
+	unsigned long cmp_hyp_probe_class_hist[CMP_HYP_PROBE_CLASS_NR];
 };
 
 extern struct kcov_shared *kcov_shm;
