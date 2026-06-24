@@ -63,7 +63,6 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include <arpa/inet.h>
 
 #include "child.h"
 #include "debug.h"
