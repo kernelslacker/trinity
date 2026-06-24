@@ -1145,6 +1145,44 @@ retry:
 		if (roll >= w + 1UL)
 			goto retry;
 
+		/* Blanket LIVE-regime probabilistic pick-reject.  Reclaims
+		 * ~1 / FRONTIER_LIVE_DECAY_REJECT_DENOM of LIVE-ring picks
+		 * unconditionally via the SAME goto-retry mechanism the
+		 * frontier-weight roll above already uses, so the picker's
+		 * inner retry budget absorbs the rejected pick the same way
+		 * it absorbs a weight-loss reject and the counters past this
+		 * point stay consistent.
+		 *
+		 * Placed AFTER the frontier-weight accept decision and
+		 * BEFORE the frontier_live_picks bump so a rejected pick is
+		 * counted only in frontier_live_decay_live_rejects, not in
+		 * frontier_live_picks / frontier_live_picks_per_syscall.
+		 * That keeps the documented (live_picks + silent_picks ~=
+		 * frontier_picks_per_syscall) contract intact for the LIVE
+		 * side: a rejected pick does not consume any per-syscall
+		 * pick budget on either side of that identity.  The rejects
+		 * counter sits next to frontier_live_picks in the stats
+		 * dump for the projected reclaim fraction.
+		 *
+		 * Isolated from the F3 SHADOW cooldown signal
+		 * (frontier_live_miss_streak_per_syscall[] +
+		 * frontier_live_cooldown_candidates / _would_skip): this
+		 * gate is unconditional, the cooldown signal is per-syscall.
+		 * The targeted variant that gates the reject on the cooldown
+		 * predicate is a SEPARATE later commit and explicitly does
+		 * NOT try to reach the silent-decay path -- bootstrapping
+		 * the two together would compound risk on the first ramp.
+		 *
+		 * Does NOT touch the cached frontier weight, the ring decay
+		 * loop, or the per-syscall ring -- the smallest possible
+		 * behaviour change that produces the desired reclaim. */
+		if (rnd_modulo_u32(FRONTIER_LIVE_DECAY_REJECT_DENOM) == 0) {
+			__atomic_fetch_add(
+				&shm->stats.frontier_live_decay_live_rejects,
+				1UL, __ATOMIC_RELAXED);
+			goto retry;
+		}
+
 		__atomic_fetch_add(&shm->stats.frontier_live_picks, 1UL,
 				   __ATOMIC_RELAXED);
 

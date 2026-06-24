@@ -2829,6 +2829,33 @@ struct stats_s {
 	unsigned long frontier_live_cooldown_candidates;
 	unsigned long frontier_live_would_skip;
 
+	/* Live reject count for the blanket LIVE-regime probabilistic
+	 * pick-reject gate (FRONTIER_LIVE_DECAY_REJECT_DENOM).  One bump
+	 * per LIVE-regime pick that passed the frontier-weight roll above
+	 * but lost the 1 / FRONTIER_LIVE_DECAY_REJECT_DENOM probabilistic
+	 * filter and fell through to retry -- the headline behaviour
+	 * delta for the safe down-payment that reclaims ~3% of live-ring
+	 * picks without depending on the per-syscall cooldown predicate.
+	 *
+	 * Counted strictly AFTER the frontier-weight accept decision so
+	 * the value is the projected reclaim on accepted-by-weight picks;
+	 * frontier-weight rejections fall through to retry before this
+	 * gate fires and do not contribute.  Read alongside
+	 * frontier_live_picks (which excludes rejected picks, see the
+	 * call-site comment) for the reject rate against accepted picks:
+	 * the ratio reject / (reject + live_picks) should converge to
+	 * 1 / FRONTIER_LIVE_DECAY_REJECT_DENOM.
+	 *
+	 * Counter is independent of the F3 shadow streak / cooldown
+	 * candidate signal: this gate is unconditional, the cooldown
+	 * signal is per-syscall.  The targeted variant that gates the
+	 * reject on the cooldown predicate is a SEPARATE later commit;
+	 * comparing this reject's rate against frontier_live_would_skip
+	 * gives the operator the headroom estimate for that variant
+	 * (would_skip / (live_picks + reject) vs the blanket
+	 * 1 / REJECT_DENOM rate). */
+	unsigned long frontier_live_decay_live_rejects;
+
 	/* SHADOW-ONLY "deep but warm" call accounting.  A call qualifies
 	 * when the post-collect signals show no new coverage of either
 	 * kind -- new_edges == 0 AND new_cmp == 0 -- yet the call still
