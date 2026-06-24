@@ -238,6 +238,7 @@ const char *strategy_plateau_hypothesis_name(enum plateau_hypothesis h)
  * Either way the operator-meaningful signal is "CMP says progress,
  * PC says stalled". */
 #define PHC_CMP_RISING_DELTA		1000UL
+#define PHC_CMP_PC_RATIO		1000UL
 
 /* Rule 2: childop alt-op invocations are out-discovering generic
  * syscall picks by 2:1 on the per-pool new-edge attribution.
@@ -281,9 +282,12 @@ enum plateau_hypothesis strategy_plateau_hypothesis_check(
 
 	plateau_snapshot_delta(&delta, entry, now);
 
-	/* Rule 1: CMP climbing, PC flat. */
+	/* Rule 1: CMP climbing, PC flat.  delta is cumulative since
+	 * plateau entry, so pc_edges == 0 was unsatisfiable for any
+	 * non-trivial window; a cmp:pc ratio is duration-invariant. */
 	if (delta.cmp_unique > PHC_CMP_RISING_DELTA &&
-	    delta.pc_edges == 0)
+	    (delta.pc_edges == 0 ||
+	     delta.cmp_unique / delta.pc_edges >= PHC_CMP_PC_RATIO))
 		return PLATEAU_HYPOTHESIS_CMP_RISING_PC_FLAT;
 
 	/* Rule 2: childop alt-ops dominate.  Call-count vs call-count;
