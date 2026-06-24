@@ -14,10 +14,15 @@
  * enqueue.  Random fuzzing assembles that set ~never.
  *
  * Sequence (per invocation):
- *   1. unshare(CLONE_NEWNET) once per child into a private net
- *      namespace so no host qdisc / class / filter table is touched.
- *      Failure latches the whole op off.
- *   2. Bring lo up inside the netns (one-time).
+ *   1. userns_run_in_ns(CLONE_NEWNET) forks a transient grandchild
+ *      into an owned user namespace + private net namespace.  The
+ *      whole rest of the sequence runs inside that grandchild; its
+ *      _exit() tears down both namespaces along with any qdisc,
+ *      class, filter, dummy or socket left behind.  Helper -EPERM
+ *      (hardened userns policy refused CLONE_NEWUSER) latches the
+ *      whole op off; transient setup failure (-EAGAIN) skips the
+ *      iteration without latching.
+ *   2. Bring lo up inside the netns (per-grandchild one-time).
  *   3. RTM_NEWLINK type=dummy creating a fresh dummy device per
  *      iteration (random suffix).  Failure latches
  *      ns_unsupported_dummy — a kernel without CONFIG_DUMMY pays the
@@ -142,6 +147,7 @@
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
+#include "userns-bootstrap.h"
 
 /*
  * UAPI fallbacks.  pkt_sched.h / pkt_cls.h on stripped sysroots may
@@ -247,30 +253,53 @@ static const char * const cls_kinds[] = {
 };
 #define NR_CLS_KINDS	ARRAY_SIZE(cls_kinds)
 
-/* Per-child latched gates.  Set on the first failure of the
- * corresponding subsystem and never cleared — kernel module /
- * config presence is static for the child's lifetime, so we pay the
- * EFAIL once and skip the path on subsequent invocations. */
+/* Per-grandchild latched gates.  Inherited as false at grandchild
+ * fork time (the persistent child never sets them -- the in-ns
+ * callback runs exclusively in transient grandchildren) and flipped
+ * on the first config-absent rejection from the corresponding
+ * subsystem.  Die with the grandchild on _exit(); each subsequent
+ * grandchild re-discovers the latch in its own fresh netns.  The
+ * EOPNOTSUPP / EAFNOSUPPORT / EPROTONOSUPPORT detection arms are
+ * preserved because a fresh user namespace cannot manufacture an
+ * absent kernel CONFIG -- the gate still short-circuits the rest
+ * of the grandchild's iteration once it fires. */
 static bool ns_unsupported_rtnl;
 static bool ns_unsupported_dummy;
 static bool ns_unsupported_inet;
 static bool ns_unsupported_bridge;
 
-/* Per-kind latches: indexed by qdisc_kinds[] / cls_kinds[].  Set
- * on first NEWQDISC / NEWTFILTER rejection with EOPNOTSUPP /
- * EAFNOSUPPORT / ENOENT / ENOMODULE — the next iteration skips
- * that kind in the rotation. */
+/* Per-kind latches: indexed by qdisc_kinds[] / cls_kinds[].  Set on
+ * first NEWQDISC / NEWTFILTER rejection with EOPNOTSUPP /
+ * EAFNOSUPPORT / ENOENT / ENOMODULE -- the rest of that grandchild's
+ * rotation skips the kind. */
 static bool ns_unsupported_qdisc_kind[NR_QDISC_KINDS];
 static bool ns_unsupported_cls_kind[NR_CLS_KINDS];
 
 /* Per-kind modprobe latch: prevents re-spawning modprobe every
- * iteration for the same kind. */
+ * iteration for the same kind inside one grandchild. */
 static bool modprobe_tried_qdisc[NR_QDISC_KINDS];
 static bool modprobe_tried_cls[NR_CLS_KINDS];
 
-static bool ns_unshared;
-static bool ns_setup_failed;
 static bool lo_brought_up;
+
+/* Master gate: persistent across iterations in the persistent
+ * child.  Set when userns_run_in_ns returns -EPERM (hardened userns
+ * policy refused CLONE_NEWUSER -- typically
+ * user.max_user_namespaces=0 or
+ * kernel.unprivileged_userns_clone=0).  The per-grandchild gates
+ * above die with the grandchild; helper-EPERM is the only signal
+ * that survives long enough to short-circuit subsequent
+ * invocations. */
+static bool ns_unsupported_tc_qdisc;
+
+static void warn_once_unsupported_tc_qdisc(const char *reason, int err)
+{
+	if (ns_unsupported_tc_qdisc)
+		return;
+	ns_unsupported_tc_qdisc = true;
+	outputerr("tc_qdisc_churn: %s failed (errno=%d), latching unsupported_tc_qdisc\n",
+		  reason, err);
+}
 
 static void modprobe_qdisc(unsigned int idx)
 {
@@ -1034,8 +1063,10 @@ static void do_peek_stack(struct nl_ctx *ctx, int ifindex, const char *dev_name)
 
 /*
  * Per-iteration scratchpad shared across the tc_qdisc_<phase> helpers.
- * Lifetime is exactly one tc_qdisc_churn() invocation; avoids
+ * Lifetime is exactly one tc_qdisc_churn_in_ns() invocation; avoids
  * threading half a dozen out-parameters through the phase helpers.
+ * `child` is carried in so the in-ns callback can credit the per-op
+ * stats arrays against the same op_type slot the wrapper sampled.
  */
 struct tc_qdisc_iter_ctx {
 	struct nl_ctx	nl;
@@ -1052,46 +1083,8 @@ struct tc_qdisc_iter_ctx {
 	__u32		handle;
 	__u32		class1;
 	__u32		class2;
+	struct childdata *child;
 };
-
-/*
- * Per-child one-time setup: unshare a fresh netnamespace, open the
- * rtnl socket, and bring lo up inside the ns.  Latched failures shut
- * the whole op off via the ns_* gates checked in the orchestrator on
- * subsequent invocations.  Returns 0 on success; nonzero means the
- * caller should bail without entering the cleanup path.
- */
-static int tc_qdisc_setup_netns(struct nl_ctx *ctx)
-{
-	struct nl_open_opts nl_opts = {
-		.proto = NETLINK_ROUTE,
-		.recv_timeo_s = 1,
-	};
-
-	if (!ns_unshared) {
-		if (unshare(CLONE_NEWNET) < 0) {
-			ns_setup_failed = true;
-			__atomic_add_fetch(&shm->stats.tc_qdisc_churn_setup_failed,
-					   1, __ATOMIC_RELAXED);
-			return -1;
-		}
-		ns_unshared = true;
-	}
-
-	if (nl_open(ctx, &nl_opts) < 0) {
-		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT)
-			ns_unsupported_rtnl = true;
-		__atomic_add_fetch(&shm->stats.tc_qdisc_churn_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		return -1;
-	}
-
-	if (!lo_brought_up) {
-		rtnl_bring_lo_up(ctx);
-		lo_brought_up = true;
-	}
-	return 0;
-}
 
 /*
  * Build the per-iteration parent netdev.  Default path: RTM_NEWLINK
@@ -1433,22 +1426,24 @@ static void tc_qdisc_churn_loop(struct tc_qdisc_iter_ctx *it)
 	}
 }
 
-bool tc_qdisc_churn(struct childdata *child)
+/*
+ * Per-invocation body that must run inside the private net namespace.
+ * Executed in a transient grandchild forked by userns_run_in_ns(); the
+ * grandchild's userns + netns are torn down on _exit() so any qdisc,
+ * class, filter, dummy / veth / bridge link and socket left behind is
+ * reaped along with the namespace.  Explicit DELLINK / close() calls
+ * are still issued so the in-ns stats counters (link_del_ok etc.)
+ * move on the success path; correctness does not depend on them.
+ * Return value is ignored by the helper.
+ */
+static int tc_qdisc_churn_in_ns(void *arg)
 {
-	struct tc_qdisc_iter_ctx it = {
-		.nl  = { .fd = -1 },
-		.udp = -1,
+	struct tc_qdisc_iter_ctx *it = (struct tc_qdisc_iter_ctx *)arg;
+	struct childdata *child = it->child;
+	struct nl_open_opts nl_opts = {
+		.proto = NETLINK_ROUTE,
+		.recv_timeo_s = 1,
 	};
-
-	__atomic_add_fetch(&shm->stats.tc_qdisc_churn_runs, 1,
-			   __ATOMIC_RELAXED);
-
-	if (ns_setup_failed || ns_unsupported_rtnl || ns_unsupported_dummy)
-		return true;
-
-	if (tc_qdisc_setup_netns(&it.nl) != 0)
-		return true;
-
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
 	 * can be scribbled by a poisoned-arena write from a sibling; the
@@ -1458,11 +1453,24 @@ bool tc_qdisc_churn(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
+	if (nl_open(&it->nl, &nl_opts) < 0) {
+		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT)
+			ns_unsupported_rtnl = true;
+		__atomic_add_fetch(&shm->stats.tc_qdisc_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return 0;
+	}
+
+	if (!lo_brought_up) {
+		rtnl_bring_lo_up(&it->nl);
+		lo_brought_up = true;
+	}
+
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
-	if (tc_qdisc_add_link(&it) != 0)
+	if (tc_qdisc_add_link(it) != 0)
 		goto out;
 
 	if (valid_op)
@@ -1477,30 +1485,73 @@ bool tc_qdisc_churn(struct childdata *child)
 	 * cascaded down via dev_qdisc_destroy when the link goes.
 	 */
 	if (ONE_IN(4)) {
-		do_peek_stack(&it.nl, it.dummy_idx, it.dummy_name);
+		do_peek_stack(&it->nl, it->dummy_idx, it->dummy_name);
 		goto out;
 	}
 
-	if (tc_qdisc_add_qdisc(&it) != 0)
+	if (tc_qdisc_add_qdisc(it) != 0)
 		goto out;
 
-	tc_qdisc_add_filter_class(&it);
-	tc_qdisc_churn_loop(&it);
+	tc_qdisc_add_filter_class(it);
+	tc_qdisc_churn_loop(it);
 
 out:
-	if (it.udp >= 0)
-		close(it.udp);
+	if (it->udp >= 0)
+		close(it->udp);
 
-	if (it.nl.fd >= 0) {
-		if (it.dummy_added && it.dummy_idx > 0 && !it.slave_dellinked) {
-			if (rtnl_dellink(&it.nl, it.dummy_idx) == 0)
+	if (it->nl.fd >= 0) {
+		if (it->dummy_added && it->dummy_idx > 0 && !it->slave_dellinked) {
+			if (rtnl_dellink(&it->nl, it->dummy_idx) == 0)
 				__atomic_add_fetch(&shm->stats.tc_qdisc_churn_link_del_ok,
 						   1, __ATOMIC_RELAXED);
 		}
-		if (it.bridge_idx > 0)
-			(void)rtnl_dellink(&it.nl, it.bridge_idx);
-		nl_close(&it.nl);
+		if (it->bridge_idx > 0)
+			(void)rtnl_dellink(&it->nl, it->bridge_idx);
+		nl_close(&it->nl);
 	}
 
+	return 0;
+}
+
+bool tc_qdisc_churn(struct childdata *child)
+{
+	struct tc_qdisc_iter_ctx it = {
+		.nl    = { .fd = -1 },
+		.udp   = -1,
+		.child = child,
+	};
+	int rc;
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the stats
+	 * writes entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
+	__atomic_add_fetch(&shm->stats.tc_qdisc_churn_runs, 1,
+			   __ATOMIC_RELAXED);
+
+	if (ns_unsupported_tc_qdisc)
+		return true;
+
+	rc = userns_run_in_ns(CLONE_NEWNET, tc_qdisc_churn_in_ns, &it);
+	if (rc == -EPERM) {
+		if (valid_op)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		warn_once_unsupported_tc_qdisc("userns_run_in_ns(CLONE_NEWNET)",
+					       EPERM);
+		return true;
+	}
+	if (rc < 0) {
+		/* Transient grandchild setup failure (fork, id-map write,
+		 * secondary unshare).  Skip this iteration without
+		 * latching -- the failure is not policy and may not
+		 * recur. */
+		return true;
+	}
 	return true;
 }
