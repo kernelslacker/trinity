@@ -54,7 +54,7 @@ void plateau_snapshot_capture(struct plateau_window_snapshot *snap)
 	memset(snap, 0, sizeof(*snap));
 
 	if (kcov_shm != NULL) {
-		snap->pc_edges = __atomic_load_n(&kcov_shm->edges_found,
+		snap->pc_edges = __atomic_load_n(&kcov_shm->distinct_edges,
 						 __ATOMIC_RELAXED);
 		snap->cmp_unique = __atomic_load_n(
 			&kcov_shm->cmp_hints_unique_inserts, __ATOMIC_RELAXED);
