@@ -10,14 +10,20 @@
  * almost never lines up with a real registered family ID, so the actual
  * per-family parsers — where the bugs live — stay cold.
  *
- * This childop closes the gap.  At the first invocation per child we
- * enumerate the registered families via CTRL_CMD_GETFAMILY/NLM_F_DUMP and
- * cache a small catalog of {family_id, name, version, ops[]}.  Each
- * subsequent call picks a random family, a random op from its registered
- * command list, and constructs a message with the matching nlmsghdr type
- * and genlmsghdr cmd.  The kernel's family demuxer accepts the type, the
- * version check passes, and we land directly in the family's command
- * dispatch table — exactly the surface trinity has historically missed.
+ * This childop closes the gap.  Per invocation we enter a private net
+ * namespace via userns_run_in_ns(): a transient grandchild fork installs
+ * an identity user namespace plus a fresh CLONE_NEWNET, runs the body
+ * below, and _exit()s so the kernel reaps the genetlink socket along
+ * with the grandchild's netns.  The persistent fuzz child never changes
+ * its own credentials or namespace stack, so the cap-drop oracle keeps
+ * observing the host credential profile.  Inside the grandchild we
+ * enumerate the registered families via CTRL_CMD_GETFAMILY/NLM_F_DUMP,
+ * build a small catalog of {family_id, name, version, ops[]}, pick a
+ * random family + a random op from its registered command list, and
+ * construct a message with the matching nlmsghdr type and genlmsghdr
+ * cmd.  The kernel's family demuxer accepts the type, the version check
+ * passes, and we land directly in the family's command dispatch table —
+ * exactly the surface trinity has historically missed.
  *
  * Important families this catches automatically when present:
  *   nl80211 (WiFi config), devlink, ethtool, dpll, mptcp_pm, ovs (OVS),
@@ -33,6 +39,7 @@
  */
 
 #include <errno.h>
+#include <sched.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -48,6 +55,7 @@
 #include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
+#include "userns-bootstrap.h"
 #include "utils.h"
 
 /*
@@ -63,24 +71,44 @@ struct genl_family_entry {
 	uint16_t id;
 	uint8_t version;
 	uint8_t op_count;
-	bool needs_priv;	/* set when the family rejected us with EPERM/EACCES */
 	char name[GENL_NAMSIZ];
 	uint8_t ops[MAX_OPS_PER_FAMILY];
 };
 
 /*
- * Per-child static state.  Each trinity child does its own discovery
- * because it may have unshared into its own netns (see init_child:
- * unshare(CLONE_NEWNET)) where a different set of families is visible.
- * The catalog lives in BSS; ~15KB per child is cheap.
+ * Per-grandchild discovery scratch.  Stack-allocated in the in-ns
+ * callback and torn down with the grandchild on _exit(), so each
+ * invocation discovers fresh in its own private netns rather than
+ * carrying a stale catalog across reaped namespaces.
  */
-static struct genl_family_entry catalog[MAX_FAMILIES];
-static unsigned int catalog_count;
-static struct nl_ctx genl_ctx;
-static bool genl_ctx_open;
-static bool discovery_done;
-static bool discovery_failed;
-static bool warned_unsupported;
+struct genl_catalog {
+	struct genl_family_entry entries[MAX_FAMILIES];
+	unsigned int count;
+};
+
+/*
+ * Latched per-process: userns_run_in_ns() reported -EPERM, meaning the
+ * grandchild's unshare(CLONE_NEWUSER) was refused by a hardened policy
+ * (user.max_user_namespaces=0 or kernel.unprivileged_userns_clone=0).
+ * Without a private netns we can't safely enumerate families against
+ * the host, so the op stays disabled for the remainder of this child's
+ * lifetime.  Transient setup failures (helper return < 0 but not
+ * -EPERM) do not set this — they may not recur on the next iteration.
+ */
+static bool ns_unsupported_genetlink_fuzzer;
+
+/*
+ * One-shot outputerr on the userns latch transition false->true.
+ */
+static void warn_once_unsupported_userns(const char *reason, int err)
+{
+	if (ns_unsupported_genetlink_fuzzer)
+		return;
+	ns_unsupported_genetlink_fuzzer = true;
+	/* check-static: child-output-ok */
+	outputerr("genetlink_fuzzer: %s failed (errno=%d), latching unsupported_userns\n",
+		  reason, err);
+}
 
 /* Strip the NLA_F_NESTED / NLA_F_NET_BYTEORDER flag bits from nla_type. */
 static unsigned short nla_type_id(const struct nlattr *nla)
@@ -139,7 +167,8 @@ static void parse_ops_container(struct genl_family_entry *entry,
  * our CTRL_CMD_GETFAMILY/NLM_F_DUMP request.  Skips the entry if the
  * mandatory ID/name fields are missing.
  */
-static void parse_family_response(const struct nlmsghdr *nlh)
+static void parse_family_response(struct genl_catalog *cat,
+				  const struct nlmsghdr *nlh)
 {
 	struct genl_family_entry entry;
 	const struct genlmsghdr *genl;
@@ -147,7 +176,7 @@ static void parse_family_response(const struct nlmsghdr *nlh)
 	size_t attrs_off;
 	size_t attrs_len;
 
-	if (catalog_count >= MAX_FAMILIES)
+	if (cat->count >= MAX_FAMILIES)
 		return;
 	if (nlh->nlmsg_len < NLMSG_HDRLEN + GENL_HDRLEN)
 		return;
@@ -206,7 +235,7 @@ static void parse_family_response(const struct nlmsghdr *nlh)
 	if (entry.id == 0 || entry.name[0] == '\0')
 		return;
 
-	catalog[catalog_count++] = entry;
+	cat->entries[cat->count++] = entry;
 }
 
 /*
@@ -217,9 +246,10 @@ static void parse_family_response(const struct nlmsghdr *nlh)
  */
 static int parse_family_cb(const struct nlmsghdr *nlh, void *arg)
 {
-	(void)arg;
+	struct genl_catalog *cat = (struct genl_catalog *)arg;
+
 	if (nlh->nlmsg_type == GENL_ID_CTRL)
-		parse_family_response(nlh);
+		parse_family_response(cat, nlh);
 	return 0;
 }
 
@@ -229,12 +259,11 @@ static int parse_family_cb(const struct nlmsghdr *nlh, void *arg)
  * via parse_family_cb().  The helper returns 0 on NLMSG_DONE, the
  * negated NLMSG_ERROR errno on a mid-dump error, and -EIO on local I/O
  * failure (including recv timeout).  We ignore the return value: the
- * downstream catalog_count > 0 check in ensure_discovery() is the
- * single source of truth for "do we have a usable catalog", same as
- * the prior open-coded loop which also treated NLMSG_ERROR and recv
- * timeout as clean walks.
+ * downstream cat->count > 0 check in the caller is the single source of
+ * truth for "do we have a usable catalog", same as the prior open-coded
+ * loop which also treated NLMSG_ERROR and recv timeout as clean walks.
  */
-static int do_discovery(struct nl_ctx *ctx)
+static void do_discovery(struct nl_ctx *ctx, struct genl_catalog *cat)
 {
 	struct {
 		struct nlmsghdr nlh;
@@ -251,93 +280,22 @@ static int do_discovery(struct nl_ctx *ctx)
 	req.genl.version = 1;
 
 	(void)nl_send_recv_dump_cb(ctx, &req, req.nlh.nlmsg_len,
-				   parse_family_cb, NULL);
-	return 0;
+				   parse_family_cb, cat);
 }
 
 /*
- * One-shot setup: open the socket via the shared scaffolding (which
- * applies the 250ms recv timeout so a misbehaving kernel can't wedge
- * us), run discovery, latch the result.  On any failure we set
- * discovery_failed and become a noop forever for this child.  Returns
- * true if the catalog is usable.
- */
-static bool ensure_discovery(struct childdata *child)
-{
-	static const struct nl_open_opts opts = {
-		.proto         = NETLINK_GENERIC,
-		.recv_timeo_us = 250000,
-	};
-	/* Snapshot child->op_type once and bounds-check before indexing
-	 * the per-op stats arrays.  The field lives in shared memory and
-	 * can be scribbled by a poisoned-arena write from a sibling; the
-	 * child.c dispatch loop already gates its dispatch + alt-op
-	 * accounting on the same valid_op snapshot.  Skip the stats write
-	 * entirely when the snapshot is out of range. */
-	const enum child_op_type op = child->op_type;
-	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
-
-	if (discovery_failed)
-		return false;
-	if (discovery_done)
-		return true;
-
-	if (!genl_ctx_open) {
-		if (nl_open(&genl_ctx, &opts) < 0) {
-			discovery_failed = true;
-			if (!warned_unsupported) {
-				warned_unsupported = true;
-				if (valid_op)
-					__atomic_store_n(&shm->stats.childop_latch_reason[op],
-							 CHILDOP_LATCH_UNSUPPORTED,
-							 __ATOMIC_RELAXED);
-				outputerr("genetlink_fuzzer: nl_open(NETLINK_GENERIC) failed (errno=%d), disabling\n",
-				          errno);
-			}
-			return false;
-		}
-		genl_ctx_open = true;
-	}
-
-	(void)do_discovery(&genl_ctx);
-	if (catalog_count == 0) {
-		discovery_failed = true;
-		nl_close(&genl_ctx);
-		genl_ctx_open = false;
-		if (!warned_unsupported) {
-			warned_unsupported = true;
-			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
-						 CHILDOP_LATCH_INIT_FAILED,
-						 __ATOMIC_RELAXED);
-			outputerr("genetlink_fuzzer: GETFAMILY discovery yielded %u families, disabling\n",
-			          catalog_count);
-		}
-		return false;
-	}
-
-	/* genl_ctx stays open for this child's lifetime; send_fuzzed_msg()
-	 * uses it on every subsequent call. */
-	discovery_done = true;
-	__atomic_add_fetch(&shm->stats.genetlink_families_discovered,
-			   catalog_count, __ATOMIC_RELAXED);
-	return true;
-}
-
-/*
- * Per-NLMSG_ERROR callback for nl_send_drain_errors().  Latches
- * fam->needs_priv when the kernel rejects an op with -EPERM/-EACCES so
- * the picker in genetlink_fuzzer() stops choosing that family.
+ * Per-NLMSG_ERROR callback for nl_send_drain_errors(): bump the
+ * genetlink_eperm stat when the kernel rejects an op with -EPERM /
+ * -EACCES.  arg is unused — each grandchild only sends one message, so
+ * there is no cross-message family-needs-priv state to maintain.
  */
 static void genl_on_err(int err, void *arg)
 {
-	struct genl_family_entry *fam = arg;
+	(void)arg;
 
-	if (err == -EPERM || err == -EACCES) {
-		fam->needs_priv = true;
+	if (err == -EPERM || err == -EACCES)
 		__atomic_add_fetch(&shm->stats.genetlink_eperm, 1,
 				   __ATOMIC_RELAXED);
-	}
 }
 
 /*
@@ -349,8 +307,7 @@ static void genl_on_err(int err, void *arg)
  * walks them rather than rejecting on the first NLA_HDRLEN check.
  *
  * The post-send drain (NLMSG_ERROR inspection + receive-queue cleanup)
- * lives in nl_send_drain_errors(); genl_on_err() latches
- * fam->needs_priv on -EPERM/-EACCES.
+ * lives in nl_send_drain_errors(); genl_on_err() bumps the EPERM stat.
  */
 static void send_fuzzed_msg(struct nl_ctx *ctx, struct genl_family_entry *fam)
 {
@@ -400,17 +357,39 @@ static void send_fuzzed_msg(struct nl_ctx *ctx, struct genl_family_entry *fam)
 
 	nlh->nlmsg_len = off;
 
-	if (nl_send_drain_errors(ctx, buf, off, seq, genl_on_err, fam) < 0)
+	if (nl_send_drain_errors(ctx, buf, off, seq, genl_on_err, NULL) < 0)
 		return;
 
 	__atomic_add_fetch(&shm->stats.genetlink_msgs_sent, 1, __ATOMIC_RELAXED);
 }
 
-bool genetlink_fuzzer(struct childdata *child)
+/*
+ * Per-invocation state handed to the in-ns callback so it can keep
+ * accounting against the right childop slot.
+ */
+struct genetlink_fuzzer_ctx {
+	struct childdata *child;
+};
+
+/*
+ * Per-invocation body that must run inside the private user + net
+ * namespace.  Executed in a transient grandchild forked by
+ * userns_run_in_ns(); the grandchild's userns + netns are torn down on
+ * _exit() so the genetlink socket and the in-flight catalog are reaped
+ * by the kernel along with the namespace.  Return value is ignored by
+ * the helper.
+ */
+static int genetlink_fuzzer_in_ns(void *arg)
 {
+	struct genetlink_fuzzer_ctx *cctx = (struct genetlink_fuzzer_ctx *)arg;
+	struct childdata *child = cctx->child;
+	static const struct nl_open_opts opts = {
+		.proto         = NETLINK_GENERIC,
+		.recv_timeo_us = 250000,
+	};
+	struct nl_ctx ctx = { .fd = -1 };
+	struct genl_catalog cat;
 	struct genl_family_entry *fam;
-	int idx = 0;
-	int attempts;
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
 	 * can be scribbled by a poisoned-arena write from a sibling; the
@@ -420,26 +399,73 @@ bool genetlink_fuzzer(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	if (!ensure_discovery(child))
-		return true;
+	if (nl_open(&ctx, &opts) < 0) {
+		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT) {
+			if (valid_op)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
+			/* check-static: child-output-ok */
+			outputerr("genetlink_fuzzer: nl_open(NETLINK_GENERIC) failed (errno=%d), disabling\n",
+				  errno);
+		}
+		return 0;
+	}
+
+	memset(&cat, 0, sizeof(cat));
+	do_discovery(&ctx, &cat);
+	if (cat.count == 0) {
+		nl_close(&ctx);
+		return 0;
+	}
+
+	__atomic_add_fetch(&shm->stats.genetlink_families_discovered,
+			   cat.count, __ATOMIC_RELAXED);
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
-	/* Pick a non-priv family.  After a few attempts, give up rather
-	 * than spinning in a kernel that has marked everything priv-only. */
-	for (attempts = 0; attempts < 8; attempts++) {
-		idx = (int)rnd_modulo_u32(catalog_count);
-		if (!catalog[idx].needs_priv)
-			break;
-	}
-	fam = &catalog[idx];
-	if (fam->needs_priv)
-		return true;
+	fam = &cat.entries[rnd_modulo_u32(cat.count)];
 
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop_data_path[op],
 				   1, __ATOMIC_RELAXED);
-	send_fuzzed_msg(&genl_ctx, fam);
+	send_fuzzed_msg(&ctx, fam);
+
+	nl_close(&ctx);
+	return 0;
+}
+
+bool genetlink_fuzzer(struct childdata *child)
+{
+	struct genetlink_fuzzer_ctx cctx = { .child = child };
+	int rc;
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op latch_reason array.  The field lives in shared
+	 * memory and can be scribbled by a poisoned-arena write from a
+	 * sibling; skip the latch write entirely when the snapshot is
+	 * out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
+	if (ns_unsupported_genetlink_fuzzer)
+		return true;
+
+	rc = userns_run_in_ns(CLONE_NEWNET, genetlink_fuzzer_in_ns, &cctx);
+	if (rc == -EPERM) {
+		if (valid_op)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		warn_once_unsupported_userns("userns_run_in_ns(CLONE_NEWNET)", EPERM);
+		return true;
+	}
+	if (rc < 0) {
+		/* Transient grandchild setup failure (fork, id-map write,
+		 * secondary unshare).  Skip this iteration without latching
+		 * — the failure is not policy and may not recur. */
+		return true;
+	}
+
 	return true;
 }
