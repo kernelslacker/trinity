@@ -20,10 +20,26 @@
  *     with mpls_destroy_state as the rcu-deferred dtor; bug class is
  *     concurrent install/replace racing the rcu free.
  *
- * Sequence (per BUDGETED + JITTER iteration, 200 ms wall cap):
+ * Sequence (per invocation):
  *
- *   1.  unshare(CLONE_NEWNET) one-time per child; failure latches the
- *       op off when not EPERM (cap-gate handles EPERM the next way).
+ *   1.  Enter a private net namespace via userns_run_in_ns(): a
+ *       transient grandchild fork installs an identity user namespace
+ *       plus a fresh CLONE_NEWNET, runs the BUDGETED+JITTER outer
+ *       loop body below, and _exit()s so the kernel reaps the
+ *       NETLINK_ROUTE socket and any MPLS / IPv4 routes left in the
+ *       grandchild's netns.  The persistent fuzz child never touches
+ *       its own credentials or namespace stack, so the cap-drop
+ *       oracle keeps observing the host credential profile.  Helper
+ *       -EPERM (hardened userns policy refused CLONE_NEWUSER:
+ *       user.max_user_namespaces=0 or kernel.unprivileged_userns_clone=0)
+ *       latches the childop off for the remainder of this child's
+ *       lifetime; -EAGAIN (transient setup failure: fork, id-map
+ *       write, secondary unshare) skips the invocation without
+ *       latching.
+ *
+ * Inner BUDGETED + JITTER loop (200 ms wall cap), running inside the
+ * grandchild's netns:
+ *
  *   2.  Open a NETLINK_ROUTE socket with SOCK_CLOEXEC + 1 s recvtimeo.
  *   3.  Pick arm A (AF_MPLS label install) or arm B (IPv4 lwtunnel
  *       MPLS encap install) 50/50 per iteration.
@@ -60,15 +76,36 @@
  *
  * Per-process latches:
  *
+ *   - ns_unsupported_userns_mpls_route_churn
+ *                                 : set on userns_run_in_ns() -EPERM
+ *                                   (hardened userns policy refused
+ *                                   CLONE_NEWUSER in the grandchild).
+ *                                   Without a private user+net
+ *                                   namespace we MUST NOT touch the
+ *                                   host MPLS / IPv4 routing tables,
+ *                                   so the op stays disabled for the
+ *                                   remainder of this child's
+ *                                   lifetime.  Transient helper
+ *                                   failures (-EAGAIN) do not set
+ *                                   this -- they may not recur.
  *   - ns_unsupported_mpls         : set on first -EAFNOSUPPORT /
  *                                   -ENOPROTOOPT from arm A.  AF_MPLS
  *                                   is unreachable without
  *                                   CONFIG_MPLS_ROUTING and the
- *                                   mpls_router module loaded.
+ *                                   mpls_router module loaded.  Set
+ *                                   inside the grandchild; the COW
+ *                                   copy dies on _exit(), so a
+ *                                   CONFIG-absent kernel re-probes
+ *                                   arm A once per invocation rather
+ *                                   than permanently.  Userns cannot
+ *                                   manufacture an absent CONFIG, so
+ *                                   the per-arm latch stays.
  *   - ns_unsupported_lwtunnel     : set on first -EOPNOTSUPP from arm
  *                                   B's RTA_ENCAP path (LWT not
  *                                   compiled or mpls_iptunnel module
  *                                   unloaded after registration).
+ *                                   Same in-grandchild semantics as
+ *                                   ns_unsupported_mpls above.
  *   - modprobe_tried_mpls_router  : one-shot best-effort modprobe of
  *                                   "mpls_router" + "mpls_iptunnel"
  *                                   on first -ENETDOWN /
@@ -76,7 +113,12 @@
  *                                   pattern from xfrm-churn -- failure
  *                                   (no /sbin/modprobe, lockdown,
  *                                   no module) is harmless, the latch
- *                                   prevents repeated attempts.
+ *                                   prevents repeated attempts.  Set
+ *                                   inside the grandchild; the COW
+ *                                   copy dies on _exit(), so each
+ *                                   invocation gets one fresh attempt
+ *                                   if the kernel keeps returning
+ *                                   -ENETDOWN / -EPROTONOSUPPORT.
  *
  * Brick-safety:
  *   - All work happens inside CLONE_NEWNET; the host MPLS table is
@@ -131,6 +173,7 @@
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
+#include "userns-bootstrap.h"
 
 /* RTA_VIA / struct rtvia shipped in v4.5; supply stable values when
  * absent.  RTA_VIA is the IANA-assigned attribute number for the IPv4
@@ -185,11 +228,28 @@ struct rtvia_compat {
 #define MPLS_RC_LABEL_RANGE		(0x100000U - 16U)	/* [16, 0xFFFFF] */
 
 /* Per-child latches.  All start cleared; transitions are one-way
- * within a child's lifetime. */
+ * within a child's lifetime.  ns_unsupported_userns_mpls_route_churn
+ * is the master latch set on userns_run_in_ns() -EPERM and gates the
+ * outer dispatcher; the rest are set inside the grandchild and only
+ * short-circuit the rest of one invocation's outer loop before the
+ * COW copies die on _exit(). */
+static bool ns_unsupported_userns_mpls_route_churn;
 static bool ns_unsupported_mpls;
 static bool ns_unsupported_lwtunnel;
 static bool modprobe_tried_mpls_router;
-static bool mpls_rc_unshared;
+
+/*
+ * One-shot outputerr on the userns latch transition false->true.
+ */
+static void warn_once_unsupported_userns(const char *reason, int err)
+{
+	if (ns_unsupported_userns_mpls_route_churn)
+		return;
+	ns_unsupported_userns_mpls_route_churn = true;
+	/* check-static: child-output-ok */
+	outputerr("mpls_route_churn: %s failed (errno=%d), latching unsupported_userns\n",
+		  reason, err);
+}
 
 static void maybe_modprobe_once(void)
 {
@@ -599,8 +659,26 @@ static void map_rc_to_latch(int op_type, int rc, char arm)
 		maybe_modprobe_once();
 }
 
-bool mpls_route_churn(struct childdata *child)
+/*
+ * Per-invocation state handed to the in-ns callback so its stats
+ * writes keep landing against the right childop slot.
+ */
+struct mpls_route_churn_ctx {
+	struct childdata *child;
+};
+
+/*
+ * Per-invocation body that must run inside the private net namespace.
+ * Executed in a transient grandchild forked by userns_run_in_ns(); the
+ * grandchild's userns + netns are torn down on _exit() so the
+ * NETLINK_ROUTE socket and any MPLS / IPv4 routes the BUDGETED outer
+ * loop installs are reaped by the kernel along with the namespace.
+ * Return value is ignored by the helper.
+ */
+static int mpls_route_churn_in_ns(void *arg)
 {
+	struct mpls_route_churn_ctx *cctx = (struct mpls_route_churn_ctx *)arg;
+	struct childdata *child = cctx->child;
 	struct timespec t_outer;
 	unsigned int outer_iters, i;
 	struct nl_ctx ctx = { .fd = -1 };
@@ -609,13 +687,6 @@ bool mpls_route_churn(struct childdata *child)
 		.recv_timeo_s = 1,
 	};
 	int lo_ifindex;
-
-	__atomic_add_fetch(&shm->stats.mpls_route_churn_runs,
-			   1, __ATOMIC_RELAXED);
-
-	if (ns_unsupported_mpls && ns_unsupported_lwtunnel)
-		return true;
-
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
 	 * can be scribbled by a poisoned-arena write from a sibling; the
@@ -627,28 +698,8 @@ bool mpls_route_churn(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	if (!mpls_rc_unshared) {
-		if (unshare(CLONE_NEWNET) < 0) {
-			if (errno != EPERM) {
-				if (valid_op)
-					__atomic_store_n(&shm->stats.childop_latch_reason[op],
-							 CHILDOP_LATCH_NS_UNSUPPORTED,
-							 __ATOMIC_RELAXED);
-				latch_ns_unsupported_mpls(-errno);
-				latch_ns_unsupported_lwtunnel(-errno);
-				return true;
-			}
-			/* EPERM: stay in the host netns -- the per-arm
-			 * cap-gates will catch the structural unsupported
-			 * cases without scribbling on the main MPLS table
-			 * (which on a build host without mpls_router loaded
-			 * doesn't exist anyway). */
-		}
-		mpls_rc_unshared = true;
-	}
-
 	if (nl_open(&ctx, &opts) < 0)
-		return true;
+		return 0;
 
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
@@ -722,6 +773,47 @@ bool mpls_route_churn(struct childdata *child)
 	}
 
 	nl_close(&ctx);
+	return 0;
+}
+
+bool mpls_route_churn(struct childdata *child)
+{
+	struct mpls_route_churn_ctx cctx = { .child = child };
+	int rc;
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op latch_reason array.  The field lives in shared
+	 * memory and can be scribbled by a poisoned-arena write from a
+	 * sibling; skip the latch write entirely when the snapshot is
+	 * out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
+	__atomic_add_fetch(&shm->stats.mpls_route_churn_runs,
+			   1, __ATOMIC_RELAXED);
+
+	if (ns_unsupported_userns_mpls_route_churn)
+		return true;
+
+	if (ns_unsupported_mpls && ns_unsupported_lwtunnel)
+		return true;
+
+	rc = userns_run_in_ns(CLONE_NEWNET, mpls_route_churn_in_ns, &cctx);
+	if (rc == -EPERM) {
+		if (valid_op)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		warn_once_unsupported_userns("userns_run_in_ns(CLONE_NEWNET)",
+					     EPERM);
+		return true;
+	}
+	if (rc < 0) {
+		/* Transient grandchild setup failure (fork, id-map write,
+		 * secondary unshare).  Skip this iteration without latching
+		 * -- the failure is not policy and may not recur. */
+		return true;
+	}
+
 	return true;
 }
 
