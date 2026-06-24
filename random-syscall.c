@@ -1147,6 +1147,19 @@ retry:
 
 		__atomic_fetch_add(&shm->stats.frontier_live_picks, 1UL,
 				   __ATOMIC_RELAXED);
+
+		/* Per-syscall split of the scalar bump above + per-call
+		 * regime stamp consumed by the post-call attribution path in
+		 * random_syscall_step.  ADDITIVE: the picker accept/retry math
+		 * above is byte-identical to the pre-row baseline; the bump
+		 * and stamp run strictly AFTER the accept decision and no
+		 * live-path code reads either site.  Same MAX_NR_SYSCALL
+		 * bound the sibling frontier_picks_per_syscall[] uses. */
+		if (syscallnr < MAX_NR_SYSCALL)
+			__atomic_fetch_add(
+				&shm->stats.frontier_live_picks_per_syscall[syscallnr],
+				1UL, __ATOMIC_RELAXED);
+		child->frontier_pick_regime = FRONTIER_PICK_LIVE;
 	} else {
 		unsigned long w = frontier_cold_weight(syscallnr, child);
 		unsigned long denom = (unsigned long)FRONTIER_COLD_SCALE + 1UL;
@@ -1157,6 +1170,19 @@ retry:
 
 		__atomic_fetch_add(&shm->stats.frontier_silent_picks, 1UL,
 				   __ATOMIC_RELAXED);
+
+		/* Per-syscall split of the scalar bump above + per-call
+		 * regime stamp consumed by the post-call attribution path in
+		 * random_syscall_step.  ADDITIVE: the picker accept/retry math
+		 * above is byte-identical to the pre-row baseline; the bump
+		 * and stamp run strictly AFTER the accept decision and no
+		 * live-path code reads either site.  Same MAX_NR_SYSCALL
+		 * bound the sibling frontier_picks_per_syscall[] uses. */
+		if (syscallnr < MAX_NR_SYSCALL)
+			__atomic_fetch_add(
+				&shm->stats.frontier_silent_picks_per_syscall[syscallnr],
+				1UL, __ATOMIC_RELAXED);
+		child->frontier_pick_regime = FRONTIER_PICK_SILENT;
 
 		/* SHADOW-ONLY silent-streak accounting.  Mirrors the
 		 * frontier_silent_picks bump above; counts CONSECUTIVE
@@ -1390,6 +1416,15 @@ retry:
 static bool set_syscall_nr(struct syscallrecord *rec, struct childdata *child)
 {
 	int strat;
+
+	/* Clear the per-pick frontier accept-regime stamp before the
+	 * strategy dispatcher fires.  The frontier picker re-stamps LIVE or
+	 * SILENT at its accept sites; any other strategy leaves the slot at
+	 * NONE so the post-call attribution path (random_syscall_step) does
+	 * not credit a non-frontier pick to the per-syscall frontier yield
+	 * arrays.  Mirrors the strategy_at_pick clear below; same owner-only
+	 * write semantics. */
+	child->frontier_pick_regime = FRONTIER_PICK_NONE;
 
 	/* Explorer-pool children bypass the bandit's current pick and run
 	 * STRATEGY_RANDOM unconditionally -- including when the bandit has
@@ -2131,6 +2166,52 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 			: shm->stats.edges_per_syscall_bandit;
 		__atomic_fetch_add(&bucket[rec->nr], new_edge_count,
 				   __ATOMIC_RELAXED);
+	}
+
+	/* Per-syscall frontier yield attribution (kill-list feedstock).  Read
+	 * the per-call frontier_pick_regime stamp the picker wrote at one of
+	 * the two coverage-frontier accept sites; non-frontier strategy picks
+	 * leave the stamp at NONE and naturally skip this whole block.  The
+	 * decision is keyed off the live new_edge_count count -- a frontier
+	 * pick that earned at least one PC edge bumps the regime-agnostic
+	 * productive_wins counter and stamps the current rotation window into
+	 * frontier_last_productive_window so the kill-list analyser can read
+	 * "windows since last productive frontier pick on this syscall"
+	 * without retaining a per-window time series; a LIVE-regime frontier
+	 * pick that earned zero edges bumps the live_misses counter, the
+	 * headline kill-list signal for "the live ring keeps biasing toward
+	 * this syscall but it never converts".  Silent-regime misses are NOT
+	 * tallied -- silent picks are by definition operating in the plateau-
+	 * fallback regime where low yield is the expected baseline and folding
+	 * them into the same counter would bury the live-regime signal.
+	 *
+	 * ADDITIVE / SHADOW: no live-path code reads any of the per-syscall
+	 * frontier yield arrays; the bumps run strictly AFTER the per-call
+	 * new-edge attribution decision and the picker accept/retry math is
+	 * byte-identical to the pre-row baseline.  Validator-rejected calls
+	 * (rec->validator_rejected = true, kcov never ran) reach here with
+	 * new_edge_count = 0 forced above; treating those as live_misses
+	 * would over-count the kill-list signal with picks the kernel never
+	 * actually saw, so the live_miss branch additionally gates on
+	 * !rec->validator_rejected.  Same MAX_NR_SYSCALL bound the sibling
+	 * edges_per_syscall_bandit[] block above uses. */
+	if (child->frontier_pick_regime != FRONTIER_PICK_NONE &&
+	    rec->nr < MAX_NR_SYSCALL) {
+		if (new_edge_count > 0) {
+			__atomic_fetch_add(
+				&shm->stats.frontier_productive_wins_per_syscall[rec->nr],
+				1UL, __ATOMIC_RELAXED);
+			__atomic_store_n(
+				&shm->stats.frontier_last_productive_window_per_syscall[rec->nr],
+				__atomic_load_n(&shm->bandit_window_count,
+						__ATOMIC_RELAXED),
+				__ATOMIC_RELAXED);
+		} else if (child->frontier_pick_regime == FRONTIER_PICK_LIVE &&
+			   !rec->validator_rejected) {
+			__atomic_fetch_add(
+				&shm->stats.frontier_live_misses_per_syscall[rec->nr],
+				1UL, __ATOMIC_RELAXED);
+		}
 	}
 
 	/* Surface this step's new-coverage signal to the chain executor
