@@ -1183,10 +1183,20 @@ static bool cmp_hyp_try_live_inject(unsigned int nr, bool do32,
 		return false;
 	if (__atomic_load_n(&shm->plateau_current_hypothesis,
 			    __ATOMIC_RELAXED) !=
-	    (int)PLATEAU_HYPOTHESIS_CMP_RISING_PC_FLAT)
+	    (int)PLATEAU_HYPOTHESIS_CMP_RISING_PC_FLAT) {
+		if (kcov_shm != NULL)
+			__atomic_fetch_add(
+				&kcov_shm->cmp_hyp_live_inject_reason[CMP_HYP_LIVE_INJECT_REASON_NOT_PLATEAU],
+				1UL, __ATOMIC_RELAXED);
 		return false;
-	if (!ONE_IN(CMP_HYP_LIVE_INJECT_DENOM))
+	}
+	if (!ONE_IN(CMP_HYP_LIVE_INJECT_DENOM)) {
+		if (kcov_shm != NULL)
+			__atomic_fetch_add(
+				&kcov_shm->cmp_hyp_live_inject_reason[CMP_HYP_LIVE_INJECT_REASON_DICE_MISS],
+				1UL, __ATOMIC_RELAXED);
 		return false;
+	}
 
 	*out_gate_fired = true;
 
@@ -1194,11 +1204,21 @@ static bool cmp_hyp_try_live_inject(unsigned int nr, bool do32,
 	pool = &cmp_hints_shm->hyp_pools[nr][do32 ? 1 : 0];
 
 	picked = cmp_hyp_would_pick_locked(pool, cmp_ip, width, present);
-	if (picked == NULL)
+	if (picked == NULL) {
+		if (kcov_shm != NULL)
+			__atomic_fetch_add(
+				&kcov_shm->cmp_hyp_live_inject_reason[CMP_HYP_LIVE_INJECT_REASON_NO_MATCH],
+				1UL, __ATOMIC_RELAXED);
 		return false;
+	}
 
-	if (!cmp_hyp_derive_value(picked, &derived))
+	if (!cmp_hyp_derive_value(picked, &derived)) {
+		if (kcov_shm != NULL)
+			__atomic_fetch_add(
+				&kcov_shm->cmp_hyp_live_inject_reason[CMP_HYP_LIVE_INJECT_REASON_DERIVE_FAIL],
+				1UL, __ATOMIC_RELAXED);
 		return false;
+	}
 
 	*out = derived;
 	*out_kind = picked->kind;
@@ -3470,8 +3490,19 @@ bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 		 * kernel, biasing both arm-verdict numerator and
 		 * denominator. */
 		if (accept != NULL &&
-		    (*out < accept->lo || *out > accept->hi))
+		    (*out < accept->lo || *out > accept->hi)) {
+			/* Additive reason-counter for the LIVE inject path:
+			 * only bump when the rejected value came from the
+			 * typed hypothesis (hyp_injected), so the per-reason
+			 * partition matches the existing accept-gated denom
+			 * (a raw-pool value getting accept-rejected belongs
+			 * to a different cohort and is not counted here). */
+			if (hyp_injected && kcov_shm != NULL)
+				__atomic_fetch_add(
+					&kcov_shm->cmp_hyp_live_inject_reason[CMP_HYP_LIVE_INJECT_REASON_ACCEPT_REJECT],
+					1UL, __ATOMIC_RELAXED);
 			return false;
+		}
 
 		if (kcov_shm != NULL) {
 			__atomic_fetch_add(&kcov_shm->cmp_hint_durable_consumed_age[bucket],

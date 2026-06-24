@@ -2304,6 +2304,20 @@ struct kcov_shared {
 	unsigned long cmp_hyp_live_injected_by_kind[CMP_HYP_KIND_NR];
 	unsigned long cmp_hyp_live_inject_gate_passed;
 
+	/*
+	 * Per-reason close counters for the LIVE inject path.  Indexed by
+	 * enum cmp_hyp_live_inject_reason (include/cmp_hints.h).  Each
+	 * early-return / reject site on the inject path bumps exactly one
+	 * slot, so the sum across slots + cmp_hyp_live_injected equals the
+	 * total times the inject arm was entered with a typed-eligible
+	 * caller.  Disambiguates "gate_passed=0" between "plateau never
+	 * sat at CMP_RISING_PC_FLAT", "dice never won", "no hypothesis at
+	 * the served site", "derive bailed", and "accept range rejected
+	 * the derived value".  Pure observability; the gate logic itself
+	 * is unchanged.
+	 */
+	unsigned long cmp_hyp_live_inject_reason[CMP_HYP_LIVE_INJECT_REASON_NR];
+
 	/* Per-kind flat census of typed CMP hypothesis insert rejections
 	 * caused by the per-syscall total cap (CMP_HYP_PER_SYSCALL).  Bumped
 	 * in lock-step with the scalar cmp_hyp_pool_full from cmp_hyp_alloc()'s

@@ -6942,6 +6942,54 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	}
 
 	/*
+	 * Per-reason gate-close partition for the LIVE inject path.  Each
+	 * slot names a distinct early-return / reject site so a
+	 * gate_passed=0 diagnosis can be attributed to a specific gate
+	 * rather than stay opaque.  Pure observability -- mirrors the
+	 * counters bumped from cmp_hyp_try_live_inject() and its
+	 * accept-gated caller in cmp_hints.c.  Section stays quiet until
+	 * something on the inject path actually fires.
+	 */
+	{
+		static const char * const reason_labels[CMP_HYP_LIVE_INJECT_REASON_NR] = {
+			"not_plateau",
+			"dice_miss",
+			"no_match",
+			"derive_fail",
+			"accept_reject",
+		};
+		static unsigned long prev_hyp_live_inject_reason[CMP_HYP_LIVE_INJECT_REASON_NR];
+		unsigned long cur_hyp_live_inject_reason[CMP_HYP_LIVE_INJECT_REASON_NR];
+		unsigned long any_delta = 0;
+		unsigned int r;
+
+		for (r = 0; r < CMP_HYP_LIVE_INJECT_REASON_NR; r++) {
+			cur_hyp_live_inject_reason[r] = __atomic_load_n(
+				&kcov_shm->cmp_hyp_live_inject_reason[r],
+				__ATOMIC_RELAXED);
+			any_delta |=
+				(cur_hyp_live_inject_reason[r] -
+				 prev_hyp_live_inject_reason[r]);
+		}
+
+		if (any_delta != 0) {
+			stats_log_write("KCOV CMP live-inject gate-close reasons over last %lds:\n",
+					elapsed);
+			for (r = 0; r < CMP_HYP_LIVE_INJECT_REASON_NR; r++) {
+				stats_log_write(
+					"  cmp_hyp_live_inject_reason[%-13s] +%lu (total %lu)\n",
+					reason_labels[r],
+					cur_hyp_live_inject_reason[r] -
+						prev_hyp_live_inject_reason[r],
+					cur_hyp_live_inject_reason[r]);
+			}
+		}
+
+		for (r = 0; r < CMP_HYP_LIVE_INJECT_REASON_NR; r++)
+			prev_hyp_live_inject_reason[r] = cur_hyp_live_inject_reason[r];
+	}
+
+	/*
 	 * SHADOW would-promote / would-demote eval from
 	 * cmp_hyp_credit_outcome().  Bumped per credit landing after the
 	 * per-hyp outcome counter is updated: would_promote when any of
