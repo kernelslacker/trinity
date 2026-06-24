@@ -73,6 +73,7 @@
 #include "syscall-gate.h"
 #include "child.h"
 #include "childops-util.h"
+#include "compat.h"
 #include "jitter.h"
 #include "maps.h"
 #include "random.h"
@@ -80,14 +81,6 @@
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
-
-/* Recent policies that older libc / kernel headers may not define. */
-#ifndef MPOL_PREFERRED_MANY
-#define MPOL_PREFERRED_MANY	5
-#endif
-#ifndef MPOL_WEIGHTED_INTERLEAVE
-#define MPOL_WEIGHTED_INTERLEAVE 6
-#endif
 
 /* Wall-clock ceiling for the inner loop.  300ms — slightly higher than
  * the typical thrash band because each migration op walks ptes and can

@@ -25,8 +25,8 @@ childops/nat-t-churn.c:426:warn_once_unsupported
 childops/nat-t-churn.c:860:open_encap_udp6
 childops/nat-t-churn.c:881:open_encap_udp6
 childops/nat-t-churn.c:973:nat_t_churn_v6
-childops/numa-migration-churn.c:183:parse_online_nodes
-childops/numa-migration-churn.c:191:parse_online_nodes
+childops/numa-migration-churn.c:176:parse_online_nodes
+childops/numa-migration-churn.c:184:parse_online_nodes
 childops/pagecache-canary-check.c:179:log_corruption
 childops/refcount-auditor.c:147:audit_fd_bucket
 childops/refcount-auditor.c:195:audit_mmap_bucket

@@ -14,12 +14,6 @@
 #define MPOL_INTERLEAVE		3
 #define MPOL_LOCAL		4
 #endif
-#ifndef MPOL_PREFERRED_MANY
-#define MPOL_PREFERRED_MANY	5	/* 5.15+ */
-#endif
-#ifndef MPOL_WEIGHTED_INTERLEAVE
-#define MPOL_WEIGHTED_INTERLEAVE 6	/* 6.9+ */
-#endif
 #ifndef MPOL_F_NUMA_BALANCING
 #define MPOL_F_NUMA_BALANCING (1 << 13)	/* 5.12+ */
 #endif
