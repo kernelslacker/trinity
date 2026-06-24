@@ -11053,6 +11053,91 @@ static void __cold dump_stats_kcov_block(void)
 			}
 		}
 
+		/* Per-syscall remote-enable health, sorted by the
+		 * req - succ gap.  The four counters partition the
+		 * kcov_enable_remote() path itself: requested is
+		 * bumped once control is past the early-out and the
+		 * KCOV_REMOTE_ENABLE ioctl is about to be attempted;
+		 * succeeded once that ioctl returns 0; failed once
+		 * it exhausts its EINTR retries or returns a
+		 * non-EINTR error and flips remote_capable=false;
+		 * remote_fallback_to_local once the PC-mode fallback
+		 * ioctl that follows such a failure itself
+		 * succeeds.  The yield-side local|remote split
+		 * blocks above can only fold a refused remote enable
+		 * into the local-mode column (the same child still
+		 * produced PC-mode coverage via fallback), so a
+		 * HEAVY-flagged slot whose KCOV_REMOTE_ENABLE
+		 * consistently fails reads there as "zero remote
+		 * yield" indistinguishable from "remote was sampled
+		 * and the kernel ran the work on the calling task".
+		 * Looking at req - succ directly per syscall surfaces
+		 * the refusal surface the yield columns hide.
+		 * Render-only over the existing per-syscall counters
+		 * declared in include/kcov.h; no new shm, no
+		 * behaviour change. */
+		{
+			unsigned int re_top_nr[10];
+			unsigned long re_top_gap[10];
+			unsigned int re_top_count = 0;
+
+			memset(re_top_gap, 0, sizeof(re_top_gap));
+
+			for (i = 0; i < nr_syscalls_to_scan; i++) {
+				unsigned long req = __atomic_load_n(
+					&kcov_shm->remote_enable_requested[i],
+					__ATOMIC_RELAXED);
+				unsigned long succ;
+				unsigned long gap;
+
+				if (req == 0)
+					continue;
+				succ = __atomic_load_n(
+					&kcov_shm->remote_enable_succeeded[i],
+					__ATOMIC_RELAXED);
+				/* req and succ are bumped on separate
+				 * RELAXED stores in kcov_enable_remote();
+				 * under pressure a reader can sample
+				 * succ ahead of its matching req bump.
+				 * Clamp the unsigned subtraction so a
+				 * torn sample never wraps to ~ULONG_MAX. */
+				gap = succ >= req ? 0 : req - succ;
+				topn_push(re_top_gap, re_top_nr,
+					  &re_top_count, 10, gap, i);
+			}
+
+			if (re_top_count > 0) {
+				output(0, "Per-syscall remote-enable health (by req-succ gap):\n");
+				output(0, "  %-24s %10s %10s %10s %10s %10s %8s\n",
+				       "syscall", "req", "succ", "fail",
+				       "fb_loc", "gap", "gRate");
+				for (j = 0; j < re_top_count; j++) {
+					struct syscallentry *entry =
+						table[re_top_nr[j]].entry;
+					const char *name = entry ? entry->name : "???";
+					unsigned int nr = re_top_nr[j];
+					unsigned long req = __atomic_load_n(
+						&kcov_shm->remote_enable_requested[nr],
+						__ATOMIC_RELAXED);
+					unsigned long succ = __atomic_load_n(
+						&kcov_shm->remote_enable_succeeded[nr],
+						__ATOMIC_RELAXED);
+					unsigned long fail = __atomic_load_n(
+						&kcov_shm->remote_enable_failed[nr],
+						__ATOMIC_RELAXED);
+					unsigned long fbl = __atomic_load_n(
+						&kcov_shm->remote_fallback_to_local[nr],
+						__ATOMIC_RELAXED);
+					unsigned long gap = succ >= req ? 0 : req - succ;
+					unsigned long milli = (gap * 1000UL) / req;
+
+					output(0, "  %-24s %10lu %10lu %10lu %10lu %10lu %4lu.%03lu\n",
+					       name, req, succ, fail, fbl, gap,
+					       milli / 1000, milli % 1000);
+				}
+			}
+		}
+
 		/* combined top-N
 		 * trace_truncated + cmp_trace_truncated + max_trace_size
 		 * table plus a dedup-probe-overflow summary line.  Lets
