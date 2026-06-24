@@ -1075,6 +1075,11 @@ struct sockaddr_nfc {
 #ifndef SECCOMP_RET_USER_NOTIF
 #define SECCOMP_RET_USER_NOTIF		0x7fc00000U
 #endif
+/* SECCOMP_SET_MODE_FILTER (added 3.17) is the seccomp(2) operation
+ * that installs a classic-BPF filter program; the uapi value is 1. */
+#ifndef SECCOMP_SET_MODE_FILTER
+#define SECCOMP_SET_MODE_FILTER		1
+#endif
 
 /* linux/rds.h */
 #ifndef RDS_CANCEL_SENT_TO

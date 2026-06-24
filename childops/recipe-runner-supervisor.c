@@ -432,9 +432,6 @@ bool recipe_mount_userns_dance(bool *unsupported)
  * syscall itself, which returns EINVAL on kernels without the feature
  * and is caught by the unsupported latch below.
  */
-#ifndef SECCOMP_SET_MODE_FILTER
-#define SECCOMP_SET_MODE_FILTER		1
-#endif
 #ifndef SECCOMP_FILTER_FLAG_NEW_LISTENER
 #define SECCOMP_FILTER_FLAG_NEW_LISTENER	(1UL << 3)
 #endif
