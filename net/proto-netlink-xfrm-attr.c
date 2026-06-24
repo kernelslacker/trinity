@@ -12,10 +12,8 @@
 #include <linux/netlink.h>
 
 #include "compat.h"
-#include "net.h"
 #include "proto-netlink-xfrm-internal.h"
 #include "random.h"
-#include "utils.h"
 
 /*
  * Algorithm rotation tables.  Names include deliberately-mistyped
