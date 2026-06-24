@@ -255,11 +255,11 @@ syscalls/sched_getscheduler.c:55:post_sched_getscheduler
 syscalls/sched_getscheduler.c:66:post_sched_getscheduler
 syscalls/sched_rr_get_interval.c:140:post_sched_rr_get_interval
 syscalls/sched_yield.c:35:post_sched_yield
-syscalls/seccomp.c:219:post_seccomp
-syscalls/seccomp.c:244:post_seccomp
-syscalls/seccomp.c:261:post_seccomp
-syscalls/seccomp.c:277:post_seccomp
-syscalls/seccomp.c:295:post_seccomp
+syscalls/seccomp.c:216:post_seccomp
+syscalls/seccomp.c:241:post_seccomp
+syscalls/seccomp.c:258:post_seccomp
+syscalls/seccomp.c:274:post_seccomp
+syscalls/seccomp.c:292:post_seccomp
 syscalls/select.c:209:post_select
 syscalls/send.c:348:post_sendmsg
 syscalls/send.c:368:post_sendmsg
