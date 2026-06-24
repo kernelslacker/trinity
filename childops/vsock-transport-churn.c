@@ -52,13 +52,16 @@
  *   7.  shutdown(SHUT_RDWR); close(client); close(listener).  Per-cpu
  *       loopback worker drains as the last skb refs go.
  *
- *   Variant 1/4: wrap the entire iteration in unshare(CLONE_NEWNET)
- *   with a setns-back anchor.  vsock_loopback maintains per-netns
- *   transport state, so the unshare exercises vsock_transport_assign
- *   on a fresh ns, and the setns-back closes it -- the historical UAF
- *   surface is the vsk->transport pointer outliving the per-ns
- *   teardown.  Anchor pattern mirrors netns_teardown_churn so the
- *   process never strands itself in the doomed ns.
+ *   Variant 1/4: wrap the entire iteration in a private user + net
+ *   namespace via userns_run_in_ns(CLONE_NEWNET).  vsock_loopback
+ *   maintains per-netns transport state, so the fresh ns exercises
+ *   vsock_transport_assign, and the grandchild's _exit() tears the ns
+ *   stack down -- the historical UAF surface is the vsk->transport
+ *   pointer outliving the per-ns teardown.  The helper forks a
+ *   transient grandchild, installs CLONE_NEWUSER (gaining CAP_NET_ADMIN
+ *   in the owned ns so an unprivileged trinity child can actually drive
+ *   the netns path) and then CLONE_NEWNET, so the persistent child
+ *   never strands itself in a doomed ns.
  *
  * Per-process cap-gate latch: ns_unsupported_vsock_transport_churn
  * fires on EAFNOSUPPORT / EPERM / ENOPROTOOPT / ENOENT from the very
@@ -75,9 +78,10 @@
  *   - Inner send/recv loop is BUDGETED (base 4 / floor 8 / cap 16)
  *     with JITTER and a 200 ms wall-clock cap; SO_RCVTIMEO / SO_SNDTIMEO
  *     of 100 ms on every fd.
- *   - The unshare-variant uses the anchor-fd setns-back pattern from
- *     netns_teardown_churn so the calling process never persists a
- *     namespace switch across iterations.
+ *   - The fresh-netns variant runs inside a transient grandchild forked
+ *     by userns_run_in_ns(); the persistent child never changes its
+ *     own credentials or namespaces, and the grandchild's _exit() tears
+ *     the whole ns stack down on every iteration.
  *   - BPF vsock_bpf hook (BPF_PROG_TYPE_SOCK_OPS attach to a vsock
  *     cgroup) is intentionally deferred; loading a runtime BPF prog
  *     adds a CAP_BPF requirement and a cgroup state machine that
@@ -95,7 +99,6 @@
  */
 
 #include <errno.h>
-#include <fcntl.h>
 #include <netinet/in.h>
 #include <sched.h>
 #include <signal.h>
@@ -122,6 +125,7 @@
 #include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
+#include "userns-bootstrap.h"
 
 #if __has_include(<linux/vm_sockets.h>)
 
@@ -458,34 +462,43 @@ out:
 		close(listener);
 }
 
-/* Anchor-fd unshare wrapper.  Saves the current netns via /proc/self/ns/net,
- * runs iter_one in a fresh CLONE_NEWNET, then setns-es back.  Mirrors the
- * pattern in netns_teardown_churn so the calling process never strands
- * itself in the doomed ns. */
+/* Per-invocation state handed to the in-ns callback so iter_one can
+ * see the same childdata + wall-clock anchor the persistent child
+ * tracks, without relying on globals visible across the grandchild
+ * fork. */
+struct vsock_netns_ctx {
+	struct childdata *child;
+	const struct timespec *t_outer;
+};
+
+/* Executed inside a transient grandchild forked by userns_run_in_ns();
+ * the grandchild's userns + netns are torn down on _exit(), so every
+ * vsock socket, loopback transport reference and per-cpu skb opened by
+ * iter_one is reaped by the kernel along with the namespace stack.
+ * Return value is ignored by the helper. */
+static int iter_one_in_fresh_netns_fn(void *arg)
+{
+	struct vsock_netns_ctx *ctx = arg;
+
+	iter_one(ctx->child, ctx->t_outer);
+	return 0;
+}
+
+/* Drive one iter_one inside a fresh private CLONE_NEWUSER+CLONE_NEWNET
+ * stack so the unprivileged trinity child gains CAP_NET_ADMIN in the
+ * owned netns and the vsock_loopback per-ns teardown actually runs. */
 static void iter_one_in_fresh_netns(struct childdata *child,
 				    const struct timespec *t_outer)
 {
-	int anchor;
+	struct vsock_netns_ctx ctx = { .child = child, .t_outer = t_outer };
+	int rc;
 
-	anchor = open("/proc/self/ns/net", O_RDONLY | O_CLOEXEC);
-	if (anchor < 0) {
-		iter_one(child, t_outer);
-		return;
-	}
-
-	if (unshare(CLONE_NEWNET) < 0) {
-		close(anchor);
-		iter_one(child, t_outer);
-		return;
-	}
-
-	iter_one(child, t_outer);
-
-	if (setns(anchor, CLONE_NEWNET) < 0) {
-		/* Best-effort: if the setns-back fails we have no safe
-		 * way to recover.  Bail the child rather than persisting
-		 * the doomed ns across iterations. */
-		close(anchor);
+	rc = userns_run_in_ns(CLONE_NEWNET, iter_one_in_fresh_netns_fn, &ctx);
+	if (rc == -EPERM) {
+		/* Hardened policy refused CLONE_NEWUSER
+		 * (user.max_user_namespaces=0 or
+		 * kernel.unprivileged_userns_clone=0).  Latch so the outer
+		 * loop stops retrying for the rest of this child's life. */
 		ns_unsupported_vsock_transport_churn = true;
 		/* child->op_type lives in shared memory and can be scribbled
 		 * by a poisoned-arena write from a sibling; bounds-check the
@@ -495,12 +508,15 @@ static void iter_one_in_fresh_netns(struct childdata *child,
 			const enum child_op_type op = child->op_type;
 			if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
 				__atomic_store_n(&shm->stats.childop_latch_reason[op],
-						 CHILDOP_LATCH_OTHER,
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
 		return;
 	}
-	close(anchor);
+	/* rc < 0 (other): transient grandchild setup failure -- fork,
+	 * id-map write, or secondary CLONE_NEWNET unshare refused.  Skip
+	 * this iteration without latching; the failure is not policy and
+	 * may not recur. */
 }
 
 /* Sub-mode: drive the VIRTIO_VSOCK_SEQ_EOM unbounded-queue path with a
