@@ -99,7 +99,6 @@
  */
 
 #include <errno.h>
-#include <netinet/in.h>
 #include <sched.h>
 #include <signal.h>
 #include <stdbool.h>
