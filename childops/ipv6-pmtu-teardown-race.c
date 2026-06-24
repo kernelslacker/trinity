@@ -77,7 +77,6 @@
  */
 
 #include <errno.h>
-#include <fcntl.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -97,7 +96,6 @@
 #if __has_include(<sched.h>) && __has_include(<linux/netlink.h>) && \
     __has_include(<linux/rtnetlink.h>) && __has_include(<linux/veth.h>)
 
-#include <arpa/inet.h>
 #include <net/if.h>
 #include <netinet/in.h>
 #include <netinet/icmp6.h>
