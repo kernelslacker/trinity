@@ -7,6 +7,7 @@
 #include <string.h>
 #include <linux/mempolicy.h>
 #include "arch.h"
+#include "compat.h"
 #include "maps.h"
 #include "random.h"
 #include "rnd.h"
@@ -17,12 +18,6 @@
 #define MPOL_F_STATIC_NODES     (1 << 15)
 #define MPOL_F_RELATIVE_NODES   (1 << 14)
 
-#ifndef MPOL_PREFERRED_MANY
-#define MPOL_PREFERRED_MANY	5	/* 5.15+ */
-#endif
-#ifndef MPOL_WEIGHTED_INTERLEAVE
-#define MPOL_WEIGHTED_INTERLEAVE 6	/* 6.9+ */
-#endif
 #ifndef MPOL_F_NUMA_BALANCING
 #define MPOL_F_NUMA_BALANCING (1 << 13)	/* 5.12+ */
 #endif
