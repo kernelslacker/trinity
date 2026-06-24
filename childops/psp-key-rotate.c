@@ -120,35 +120,7 @@
 #include "trinity.h"
 #include "pids.h"
 
-/* PSP UAPI integers (mainlined in 6.10).  Values mirror
- * include/uapi/linux/psp.h: enum { PSP_CMD_DEV_GET = 1, ... } and
- * enum { PSP_A_DEV_ID = 1, ... }.  Supplied as fallbacks for stripped
- * sysroots that omit <linux/psp.h>; the kernel returns -EOPNOTSUPP /
- * -ENOPROTOOPT on an unknown command and the cap-gate latches. */
-#ifndef PSP_FAMILY_NAME
-#define PSP_FAMILY_NAME			"psp"
-#endif
-#ifndef PSP_CMD_DEV_GET
-#define PSP_CMD_DEV_GET			1
-#endif
-#ifndef PSP_CMD_KEY_ROTATE
-#define PSP_CMD_KEY_ROTATE		6
-#endif
-#ifndef PSP_CMD_TX_ASSOC
-#define PSP_CMD_TX_ASSOC		9
-#endif
-#ifndef PSP_A_DEV_ID
-#define PSP_A_DEV_ID			1
-#endif
-#ifndef PSP_A_ASSOC_DEV_ID
-#define PSP_A_ASSOC_DEV_ID		1
-#endif
-#ifndef PSP_A_ASSOC_VERSION
-#define PSP_A_ASSOC_VERSION		2
-#endif
-#ifndef PSP_A_ASSOC_SOCK_FD
-#define PSP_A_ASSOC_SOCK_FD		5
-#endif
+#include "kernel/psp.h"
 
 /* netdevsim is the in-tree PSP probe vehicle.  Brought up via
  * IFLA_INFO_KIND="netdevsim" -- the kernel returns -ENODEV /
