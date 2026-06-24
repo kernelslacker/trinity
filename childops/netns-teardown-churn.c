@@ -19,53 +19,83 @@
  *   - CVE-2024-1085  nft pernet exit racing nft_del_chain
  *   - CVE-2025-21684 tcp_metrics pernet exit vs concurrent metrics
  *
- * Sequence (per outer-loop iteration, BUDGETED):
- *   1.  Save anchor net namespace via open("/proc/self/ns/net", O_RDONLY).
- *   2.  unshare(CLONE_NEWNET) — parent enters a fresh net ns.
- *   3.  rtnetlink: bring lo up + assign 127.0.0.1 (best-effort; the
+ * Sequence (per invocation):
+ *
+ *   1.  Enter a private user + net namespace via userns_run_in_ns(): a
+ *       transient grandchild fork installs an identity user namespace
+ *       plus a fresh CLONE_NEWNET, runs the BUDGETED outer loop body
+ *       below, and _exit()s.  The persistent fuzz child never touches
+ *       its own credentials or namespace stack, so the cap-drop oracle
+ *       keeps observing the host credential profile.  The
+ *       unshare(CLONE_NEWNET) and setns(anchor) dance the per-iter
+ *       body performs against the grandchild's starting netns now runs
+ *       with full caps inside the grandchild's user namespace, so
+ *       cap-dropped persistent children no longer silently EPERM out
+ *       of the race entirely.  Helper -EPERM (hardened userns policy
+ *       refused CLONE_NEWUSER: user.max_user_namespaces=0 or
+ *       kernel.unprivileged_userns_clone=0) latches the childop off
+ *       for the remainder of this child's lifetime; -EAGAIN (transient
+ *       setup failure: fork, id-map write, secondary CLONE_NEWNET
+ *       unshare) skips the invocation without latching.
+ *
+ * Inner BUDGETED outer loop (per outer iteration), running inside the
+ * grandchild's userns + netns:
+ *
+ *   a.  Save anchor net namespace via open("/proc/self/ns/net", O_RDONLY)
+ *       — captures the grandchild's starting netns (the one
+ *       userns_run_in_ns supplied).
+ *   b.  unshare(CLONE_NEWNET) — grandchild enters a nested doomed ns.
+ *   c.  rtnetlink: bring lo up + assign 127.0.0.1 (best-effort; the
  *       send/recv burst still exercises pernet hooks even without
  *       a routable loopback because the sockets bind 127.0.0.1
  *       which the kernel always recognises in the v4 zero-config path).
- *   4.  s_listen = socket(AF_INET, SOCK_STREAM); bind 127.0.0.1:0;
+ *   d.  s_listen = socket(AF_INET, SOCK_STREAM); bind 127.0.0.1:0;
  *       listen(); s_conn = socket(AF_INET, SOCK_STREAM); connect to
  *       s_listen's port — loopback completes the 3-way handshake on
  *       the listen queue without an accept().
- *   5.  s_accept = accept(s_listen) — pulls the connection off the
- *       queue so child has a true bidirectional pair.
- *   6.  fork() the in-ns child.
- *       Child:
- *         a) close anchor nsfd (child stays in doomed ns).
- *         b) opens AF_INET/SOCK_RAW/IPPROTO_ICMP — exercises raw
- *            pernet exit hook on the doomed net.
- *         c) opens AF_NETLINK/NETLINK_XFRM if the build supports it
- *            — exercises xfrm6/xfrm4 pernet exit hooks.
- *         d) tight send/recv loop on (s_conn ↔ s_accept), BUDGETED
- *            with JITTER and a 200ms wall-clock cap.
- *         e) keeps every fd open until SIGKILL.
- *       Parent:
- *         a) setns(nsfd, CLONE_NEWNET) — leaves the doomed ns.
- *         b) close its own copies of s_listen / s_conn / s_accept
- *            so only the in-ns child holds the doomed-net refs.
- *         c) brief usleep jitter so cleanup_net may or may not have
- *            already started.
- *         d) kill(child, SIGKILL) — last user of doomed ns dies.
- *         e) waitpid(child).
- *   7.  close anchor nsfd.
+ *   e.  s_accept = accept(s_listen) — pulls the connection off the
+ *       queue so the in-ns great-grandchild has a true bidirectional
+ *       pair.
+ *   f.  fork() the in-ns great-grandchild.
+ *       Great-grandchild:
+ *         - close anchor nsfd (stays in doomed ns).
+ *         - opens AF_INET/SOCK_RAW/IPPROTO_ICMP — exercises raw
+ *           pernet exit hook on the doomed net.
+ *         - opens AF_NETLINK/NETLINK_XFRM if the build supports it
+ *           — exercises xfrm6/xfrm4 pernet exit hooks.
+ *         - tight send/recv loop on (s_conn ↔ s_accept), BUDGETED
+ *           with JITTER and a 200ms wall-clock cap.
+ *         - keeps every fd open until SIGKILL.
+ *       Grandchild (parent of great-grandchild):
+ *         - setns(nsfd, CLONE_NEWNET) — leaves the doomed ns.
+ *         - close its own copies of s_listen / s_conn / s_accept
+ *           so only the in-ns great-grandchild holds doomed-net refs.
+ *         - brief usleep jitter so cleanup_net may or may not have
+ *           already started.
+ *         - kill(great-grandchild, SIGKILL) — last user of doomed ns
+ *           dies.
+ *         - waitpid(great-grandchild).
+ *   g.  close anchor nsfd.
  *
- * Brick-safety: every operation runs inside a private net ns we just
- * unshared — no host-visible mutation possible.  The doomed ns is
- * cleaned up by the kernel within a few jiffies of the SIGKILL via
- * cleanup_net.  No persistent state left behind.  The raw socket and
- * xfrm netlink socket are best-effort; failure is benign.
+ * When the BUDGETED outer loop completes, the grandchild _exit()s and
+ * the kernel reaps its starting netns (no callers left) along with the
+ * grandchild's user namespace.
  *
- * Cap-gate latch: first invocation per process probes
- *   nsfd = open("/proc/self/ns/net")
- *   unshare(CLONE_NEWNET)
- *   setns(nsfd, CLONE_NEWNET)
- * and latches ns_unsupported_netns_teardown on EPERM/ENOSYS from
- * either of the namespace ops.  Once latched, every subsequent
- * invocation just bumps setup_failed and returns — same shape as
- * the AF_UNIX SCM_RIGHTS / nf_conntrack_helper latches.
+ * Brick-safety: every operation runs inside a private user+net ns the
+ * helper just installed — no host-visible mutation possible.  The
+ * doomed ns is cleaned up by the kernel within a few jiffies of the
+ * SIGKILL via cleanup_net.  No persistent state left behind.  The raw
+ * socket and xfrm netlink socket are best-effort; failure is benign.
+ *
+ * Cap-gate latch: ns_unsupported_netns_teardown is set in the
+ * persistent fuzz child when userns_run_in_ns() returns -EPERM (the
+ * kernel refused unshare(CLONE_NEWUSER) under hardened policy).  Once
+ * latched, every subsequent invocation just bumps setup_failed and
+ * returns — same shape as the bridge_vlan_churn / genetlink_fuzzer
+ * userns-adoption latches.  The CHILDOP_LATCH_NS_UNSUPPORTED write
+ * inside the grandchild's setns-back failure path is preserved as a
+ * debug signal in shm (latch_reason is process-shared) even though
+ * the grandchild's COW copy of the master bool dies with _exit().
  *
  * Bound costs:
  *   - Outer loop: BUDGETED with base NETNS_TD_OUTER_BASE and
@@ -103,6 +133,7 @@
 #include "childops-util.h"
 #include "shm.h"
 #include "trinity.h"
+#include "userns-bootstrap.h"
 
 #if __has_include(<sched.h>) && __has_include(<linux/netlink.h>)
 
@@ -120,15 +151,17 @@
 #include "jitter.h"
 #include "random.h"
 
-/* Per-process latched gate: namespace ops returned EPERM/ENOSYS in
- * the probe.  Once latched, every subsequent invocation short-
- * circuits with setup_failed bump.  Mirrors the af_unix_scm_rights_gc
- * / nf_conntrack_helper / handshake_req_abort latches. */
+/* Per-process latched gate: userns_run_in_ns() returned -EPERM,
+ * meaning the grandchild's unshare(CLONE_NEWUSER) was refused by a
+ * hardened policy (user.max_user_namespaces=0 or
+ * kernel.unprivileged_userns_clone=0).  Without a private user+net
+ * namespace we cannot race pernet teardown at all (the persistent
+ * fuzz child runs cap-dropped and would silently EPERM out of the
+ * inline unshare too), so the op stays disabled for the remainder of
+ * this child's lifetime.  Transient helper failures (-EAGAIN) do not
+ * set this -- they may not recur on the next iteration.  Mirrors the
+ * bridge_vlan_churn / genetlink_fuzzer userns-adoption latch. */
 static bool ns_unsupported_netns_teardown;
-
-/* Per-process probe-once latch: false until the first invocation has
- * confirmed the unshare+setns roundtrip works. */
-static bool netns_teardown_probed;
 
 #define NETNS_TD_OUTER_BASE		1U
 #define NETNS_TD_OUTER_CAP		3U
@@ -605,75 +638,27 @@ recover:
 }
 
 /*
- * One-time probe: open anchor, unshare, setns back, close.  Latches
- * ns_unsupported on EPERM / ENOSYS / EINVAL from either ns op.  Uses
- * a separate code path from iter_one so the probe cost is paid once
- * and the bulk path doesn't carry the probe scaffolding.
+ * Per-invocation state handed to the in-ns callback so iter_one's
+ * stats writes keep landing against the right childop slot.
  */
-static void probe_netns(struct childdata *child)
+struct netns_teardown_churn_ctx {
+	struct childdata *child;
+};
+
+/*
+ * Per-invocation body that must run inside a private user + net
+ * namespace.  Executed in a transient grandchild forked by
+ * userns_run_in_ns(); the grandchild's userns + netns are torn down
+ * on _exit() so every socket, ns anchor fd, and in-ns great-grandchild
+ * left behind by the BUDGETED outer loop is reaped by the kernel
+ * along with the namespace stack.  Return value is ignored by the
+ * helper.
+ */
+static int netns_teardown_churn_in_ns(void *arg)
 {
-	int probe_fd;
-	/* Snapshot child->op_type once and bounds-check before indexing
-	 * the per-op stats array.  See setns_back for the rationale. */
-	const enum child_op_type op = child->op_type;
-	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
-
-	netns_teardown_probed = true;
-
-	probe_fd = open("/proc/self/ns/net", O_RDONLY | O_CLOEXEC);
-	if (probe_fd < 0) {
-		ns_unsupported_netns_teardown = true;
-		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
-					 CHILDOP_LATCH_NS_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
-		return;
-	}
-
-	if (unshare(CLONE_NEWNET) < 0) {
-		ns_unsupported_netns_teardown = true;
-		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
-					 CHILDOP_LATCH_NS_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
-		(void)close(probe_fd);
-		return;
-	}
-
-	if (setns(probe_fd, CLONE_NEWNET) < 0) {
-		/* Stuck in fresh ns; mark unsupported so subsequent
-		 * invocations short-circuit, and accept that this
-		 * trinity child will run in a private ns from now on. */
-		ns_unsupported_netns_teardown = true;
-		if (valid_op)
-			__atomic_store_n(&shm->stats.childop_latch_reason[op],
-					 CHILDOP_LATCH_NS_UNSUPPORTED,
-					 __ATOMIC_RELAXED);
-	}
-	(void)close(probe_fd);
-}
-
-bool netns_teardown_churn(struct childdata *child)
-{
+	struct netns_teardown_churn_ctx *cctx = arg;
+	struct childdata *child = cctx->child;
 	unsigned int outer_iters, i;
-
-	__atomic_add_fetch(&shm->stats.netns_teardown_runs,
-			   1, __ATOMIC_RELAXED);
-
-	if (ns_unsupported_netns_teardown) {
-		__atomic_add_fetch(&shm->stats.netns_teardown_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		return true;
-	}
-
-	if (!netns_teardown_probed) {
-		probe_netns(child);
-		if (ns_unsupported_netns_teardown) {
-			__atomic_add_fetch(&shm->stats.netns_teardown_setup_failed,
-					   1, __ATOMIC_RELAXED);
-			return true;
-		}
-	}
 
 	outer_iters = BUDGETED(CHILD_OP_NETNS_TEARDOWN_CHURN,
 			       JITTER_RANGE(NETNS_TD_OUTER_BASE));
@@ -684,6 +669,51 @@ bool netns_teardown_churn(struct childdata *child)
 
 	for (i = 0; i < outer_iters; i++)
 		iter_one(child);
+
+	return 0;
+}
+
+bool netns_teardown_churn(struct childdata *child)
+{
+	struct netns_teardown_churn_ctx cctx = { .child = child };
+	int rc;
+
+	__atomic_add_fetch(&shm->stats.netns_teardown_runs,
+			   1, __ATOMIC_RELAXED);
+
+	if (ns_unsupported_netns_teardown) {
+		__atomic_add_fetch(&shm->stats.netns_teardown_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return true;
+	}
+
+	rc = userns_run_in_ns(CLONE_NEWNET, netns_teardown_churn_in_ns, &cctx);
+	if (rc == -EPERM) {
+		ns_unsupported_netns_teardown = true;
+		/* child->op_type lives in shared memory and can be scribbled
+		 * by a poisoned-arena write from a sibling; bounds-check the
+		 * snapshot before indexing the NR_CHILD_OP_TYPES-sized stats
+		 * array. */
+		{
+			const enum child_op_type op = child->op_type;
+			if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
+				__atomic_store_n(&shm->stats.childop_latch_reason[op],
+						 CHILDOP_LATCH_NS_UNSUPPORTED,
+						 __ATOMIC_RELAXED);
+		}
+		__atomic_add_fetch(&shm->stats.netns_teardown_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return true;
+	}
+	if (rc < 0) {
+		/* Transient grandchild setup failure (fork, id-map write,
+		 * secondary CLONE_NEWNET unshare).  Skip this iteration
+		 * without latching -- the failure is not policy and may not
+		 * recur. */
+		__atomic_add_fetch(&shm->stats.netns_teardown_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return true;
+	}
 
 	return true;
 }
