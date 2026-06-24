@@ -13,7 +13,6 @@
 #include <linux/seccomp.h>
 #endif
 #include <sys/prctl.h>
-#include <sys/socket.h>
 
 #include "deferred-free.h"
 #include "net.h"
