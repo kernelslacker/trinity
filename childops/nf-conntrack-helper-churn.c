@@ -117,7 +117,6 @@
 #if __has_include(<linux/netfilter/nfnetlink.h>) && \
     __has_include(<linux/netfilter/nfnetlink_conntrack.h>)
 
-#include <arpa/inet.h>
 #include <netinet/in.h>
 #include <linux/netlink.h>
 #include <linux/netfilter.h>
