@@ -389,6 +389,25 @@ enum cmp_hypothesis_state {
 };
 
 /*
+ * Reason partition for the LIVE typed-hypothesis inject path.  Each
+ * value names a distinct early-return / reject site on the path from
+ * cmp_hyp_try_live_inject() through the caller's accept-range gate.
+ * The sum across reasons + the successful-inject count
+ * (cmp_hyp_live_injected) gives the total typed-eligible invocations of
+ * the inject arm; the per-reason partition tells which gate is closing
+ * when gate_passed stays at zero.  Pure observability -- the inject
+ * arm's gate logic is unchanged.
+ */
+enum cmp_hyp_live_inject_reason {
+	CMP_HYP_LIVE_INJECT_REASON_NOT_PLATEAU,	  /* plateau_current_hypothesis != CMP_RISING_PC_FLAT */
+	CMP_HYP_LIVE_INJECT_REASON_DICE_MISS,	  /* ONE_IN(CMP_HYP_LIVE_INJECT_DENOM) lost the roll */
+	CMP_HYP_LIVE_INJECT_REASON_NO_MATCH,	  /* no hypothesis at this (cmp_ip, width) */
+	CMP_HYP_LIVE_INJECT_REASON_DERIVE_FAIL,	  /* cmp_hyp_derive_value() bailed */
+	CMP_HYP_LIVE_INJECT_REASON_ACCEPT_REJECT, /* caller's accept-range gate rejected derived value */
+	CMP_HYP_LIVE_INJECT_REASON_NR,
+};
+
+/*
  * Common shape across every hypothesis kind.  Fields not relevant to a
  * given kind are zero (e.g. mask is unused by CMP_HYP_EXACT, lo/hi by
  * CMP_HYP_BITMASK).  Counters are saturating uint64_t for shadow-phase
