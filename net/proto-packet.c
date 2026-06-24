@@ -15,20 +15,11 @@
 #include "compat.h"
 #include "rnd.h"
 
-/* Older <linux/if_packet.h> may predate the PACKET_FANOUT_FLAG_*
- * additions.  Define the bits locally so the fuzzer can name them
- * even when building against an old UAPI header. */
-#ifndef PACKET_FANOUT_FLAG_ROLLOVER
-#define PACKET_FANOUT_FLAG_ROLLOVER		0x1000
-#endif
-#ifndef PACKET_FANOUT_FLAG_UNIQUEID
-#define PACKET_FANOUT_FLAG_UNIQUEID		0x2000
-#endif
+/* Older <linux/if_packet.h> may predate PACKET_FANOUT_FLAG_IGNORE_OUTGOING.
+ * Define the bit locally so the fuzzer can name it even when building against
+ * an old UAPI header. */
 #ifndef PACKET_FANOUT_FLAG_IGNORE_OUTGOING
 #define PACKET_FANOUT_FLAG_IGNORE_OUTGOING	0x4000
-#endif
-#ifndef PACKET_FANOUT_FLAG_DEFRAG
-#define PACKET_FANOUT_FLAG_DEFRAG		0x8000
 #endif
 
 /* ETH_P_* values are big-endian Ethernet types; socket() for PF_PACKET
