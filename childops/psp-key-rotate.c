@@ -99,9 +99,7 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/types.h>
-#include <sys/wait.h>
 #include <netinet/in.h>
-#include <arpa/inet.h>
 #include <net/if.h>
 #include <time.h>
 #include <unistd.h>
