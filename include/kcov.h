@@ -393,6 +393,20 @@ enum kcov_child_mode {
 #define REMOTE_ADAPTIVE_PROMOTE_MARGIN_NUM	5UL
 #define REMOTE_ADAPTIVE_PROMOTE_MARGIN_DEN	4UL
 
+/* Sample-size floor for the stats render that highlights syscalls
+ * whose remote-mode enable was attempted enough times to be
+ * statistically meaningful but produced zero remote edges.  The
+ * remote_pc_calls counter the yield blocks already render counts
+ * only SUCCESSFUL KCOV_REMOTE_ENABLE round-trips, so a syscall
+ * whose enable failed often reads there as low-remote-traffic and
+ * falls below any rem_calls threshold the wasted view might use;
+ * the wasted-remote view therefore gates on remote_enable_requested
+ * (bumped before the ioctl outcome is known) so the verdict is
+ * indifferent to fallback rate.  512 matches
+ * REMOTE_ADAPTIVE_MIN_REMOTE_CALLS so the stats view and the (later)
+ * demote rule share a single "sampled enough to act on" floor. */
+#define REMOTE_WASTE_FLOOR			512UL
+
 /* Plateau-aware widening of the promote disposition.  When the
  * parent-published plateau hypothesis is PLATEAU_HYPOTHESIS_REMOTE_
  * DOMINANT the fleet is already discovering most of its forward edges
