@@ -29,7 +29,6 @@
 #include <linux/connector.h>
 #include <string.h>
 #include <stdlib.h>
-#include <arpa/inet.h>
 #include "net.h"
 #include "netlink-attrs.h"
 #include "netlink-genl-families.h"
