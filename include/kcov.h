@@ -2306,6 +2306,38 @@ struct kcov_shared {
 	 * cmp_hyp_alloc() per-syscall-exhausted branch (legit saturation).
 	 * SHADOW telemetry only -- no consumer reads it. */
 	unsigned long cmp_hyp_pool_overflow;
+
+	/*
+	 * SHADOW promotion-rule eval per cmp_hyp_credit_outcome() landing.
+	 * After the per-hyp outcome counter and its kcov_shm flat twin are
+	 * bumped, the credited hypothesis is evaluated against a fixed rule
+	 * and one of the two arrays is bumped at index h->kind:
+	 *
+	 *  cmp_hyp_would_promote_by_kind[k]
+	 *      Bumped when (pc_wins || transition_wins || corpus_save_wins)
+	 *      on the credited hyp -- the hyp has produced at least one
+	 *      attributable conversion and the live promotion path would
+	 *      mark it CMP_HYP_STATE_PROMOTED.
+	 *  cmp_hyp_would_demote_by_kind[k]
+	 *      Bumped when (misses >= 8) AND none of the three win counters
+	 *      above are set -- repeated consumption with no payoff, which
+	 *      the live demotion path would mark CMP_HYP_STATE_DEMOTED.
+	 *      The K=8 threshold matches the per-kind sub-cap order of
+	 *      magnitude (CMP_HYP_PER_KIND==16); high enough to ignore a
+	 *      handful of noise misses, low enough to fire inside a single
+	 *      fuzz window on a genuinely dead hyp.
+	 *
+	 * Per credit landing at most one of the two arrays bumps (the two
+	 * predicates are mutually exclusive); a hyp credited with neither
+	 * (e.g. a single MISS, or a SKIP family outcome with no wins yet)
+	 * bumps nothing.  Only the four ladder kinds (EXACT, ENUM_FAMILY,
+	 * BITMASK, RANGE) ever populate, mirroring the existing _by_kind
+	 * shadow arrays; the other CMP_HYP_KIND_NR slots stay zero by
+	 * construction.  SHADOW telemetry only -- the h->state field is
+	 * NOT mutated; no consumer reads either the array or the state.
+	 */
+	unsigned long cmp_hyp_would_promote_by_kind[CMP_HYP_KIND_NR];
+	unsigned long cmp_hyp_would_demote_by_kind[CMP_HYP_KIND_NR];
 };
 
 extern struct kcov_shared *kcov_shm;
