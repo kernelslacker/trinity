@@ -33,8 +33,17 @@
  *                 the parent.
  *   PK_MACVLAN -- as above with IFLA_MACVLAN_MODE=MACVLAN_MODE_BRIDGE.
  *
- * Per iteration:
- *   (a) unshare(CLONE_NEWNET) once per child.  EPERM latches off.
+ * Per iteration (driven by userns_run_in_ns):
+ *   Enter a private net namespace via a transient grandchild that
+ *   installs an identity user namespace plus a fresh CLONE_NEWNET, runs
+ *   phases (b)..(h) below inside, and _exit()s so the kernel reaps the
+ *   netns and every link / fd opened against it.  The persistent fuzz
+ *   child never changes its own credentials or namespace stack, so the
+ *   cap-drop oracle keeps observing the host credential profile.
+ *   Helper -EPERM (hardened userns policy refused CLONE_NEWUSER)
+ *   latches the childop off for the rest of the child's lifetime;
+ *   transient setup failure skips the iteration without latching.
+ *
  *   (b) Pick a non-latched pair kind (round-robin from random start).
  *   (c) Create the pair/slave with random asymmetric queue counts.
  *   (d) RTM_NEWLINK SET IFF_UP on both ends.
@@ -98,6 +107,7 @@
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
+#include "userns-bootstrap.h"
 #include "utils.h"
 
 #ifndef IFLA_NUM_TX_QUEUES
@@ -159,12 +169,12 @@ static const char * const kind_to_str[PK_NR] = {
 	[PK_MACVLAN] = "macvlan",
 };
 
+static bool ns_unsupported;
 static bool ns_unsupported_veth;
 static bool ns_unsupported_vxcan;
 static bool ns_unsupported_ipvlan;
 static bool ns_unsupported_macvlan;
 static bool ns_unsupported_xdp;
-static bool vax_unshared;
 static __u32 g_iter;
 
 static bool *const kind_latch[PK_NR] = {
@@ -733,6 +743,45 @@ static void veth_xdp_iter_teardown(struct veth_xdp_iter_ctx *ictx)
 	}
 }
 
+/*
+ * Per-invocation body that must run inside the private net namespace.
+ * Executed in a transient grandchild forked by userns_run_in_ns(); the
+ * grandchild's userns + netns are torn down on _exit() so any links,
+ * XDP attachments, raw sockets and netlink ctxs the phase helpers
+ * leave behind are reaped by the kernel along with the namespace.
+ * Return value is ignored by the helper.
+ */
+static int veth_asymmetric_xdp_in_ns(void *arg)
+{
+	struct veth_xdp_iter_ctx *ictx = (struct veth_xdp_iter_ctx *)arg;
+	struct nl_open_opts opts = {
+		.proto = NETLINK_ROUTE,
+		.recv_timeo_s = 1,
+	};
+	const enum child_op_type op = ictx->child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
+	if (nl_open(&ictx->ctx, &opts) < 0)
+		goto out;
+
+	if (veth_xdp_iter_create_pair(ictx) != 0)
+		goto out;
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
+
+	veth_xdp_iter_load_xdp(ictx);
+
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
+	veth_xdp_iter_drive_burst(ictx);
+
+out:
+	veth_xdp_iter_teardown(ictx);
+	return 0;
+}
+
 bool veth_asymmetric_xdp(struct childdata *child)
 {
 	struct veth_xdp_iter_ctx ictx = {
@@ -741,10 +790,7 @@ bool veth_asymmetric_xdp(struct childdata *child)
 		.prog_fd = -1,
 		.raw = -1,
 	};
-	struct nl_open_opts opts = {
-		.proto = NETLINK_ROUTE,
-		.recv_timeo_s = 1,
-	};
+	int rc;
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
 	 * can be scribbled by a poisoned-arena write from a sibling; the
@@ -756,51 +802,37 @@ bool veth_asymmetric_xdp(struct childdata *child)
 
 	__atomic_add_fetch(&shm->stats.veth_asym_iters, 1, __ATOMIC_RELAXED);
 
+	if (ns_unsupported)
+		return true;
+
 	ictx.pk = pick_kind();
 	if (ictx.pk == PK_NR)
 		return true;
 
-	if (!vax_unshared) {
-		if (unshare(CLONE_NEWNET) < 0) {
-			if (errno == EPERM || errno == EACCES) {
-				/* netns creation refused -- latch every
-				 * kind off, no point retrying any of them. */
-				ns_unsupported_veth = true;
-				ns_unsupported_vxcan = true;
-				ns_unsupported_ipvlan = true;
-				ns_unsupported_macvlan = true;
-				if (valid_op)
-					__atomic_store_n(&shm->stats.childop_latch_reason[op],
-							 CHILDOP_LATCH_NS_UNSUPPORTED,
-							 __ATOMIC_RELAXED);
-				__atomic_add_fetch(&shm->stats.veth_asym_eperm,
-						   1, __ATOMIC_RELAXED);
-			}
-			return true;
-		}
-		vax_unshared = true;
-	}
-
-	if (nl_open(&ictx.ctx, &opts) < 0)
-		goto out;
-
+	/* Roll names + asymmetric queue counts in the persistent child so
+	 * g_iter advances across iterations regardless of how the
+	 * grandchild exits; the COW-snapshotted ictx carries the values
+	 * into the in-ns callback. */
 	veth_xdp_iter_setup(&ictx);
 
-	if (veth_xdp_iter_create_pair(&ictx) != 0)
-		goto out;
-	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
-				   1, __ATOMIC_RELAXED);
+	rc = userns_run_in_ns(CLONE_NEWNET, veth_asymmetric_xdp_in_ns, &ictx);
+	if (rc == -EPERM) {
+		ns_unsupported = true;
+		if (valid_op)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.veth_asym_eperm, 1,
+				   __ATOMIC_RELAXED);
+		return true;
+	}
+	if (rc < 0) {
+		/* Transient grandchild setup failure (fork, id-map write,
+		 * secondary unshare).  Skip this iteration without latching
+		 * -- the failure is not policy and may not recur. */
+		return true;
+	}
 
-	veth_xdp_iter_load_xdp(&ictx);
-
-	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
-				   1, __ATOMIC_RELAXED);
-	veth_xdp_iter_drive_burst(&ictx);
-
-out:
-	veth_xdp_iter_teardown(&ictx);
 	return true;
 }
 
