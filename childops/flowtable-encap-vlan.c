@@ -101,7 +101,6 @@
     __has_include(<linux/netfilter/nf_tables.h>) && \
     __has_include(<linux/netfilter/nfnetlink.h>)
 
-#include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <net/if.h>
