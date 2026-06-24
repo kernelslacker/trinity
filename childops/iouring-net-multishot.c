@@ -71,7 +71,6 @@
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include <arpa/inet.h>
 #include <linux/io_uring.h>
 
 #include "child.h"
