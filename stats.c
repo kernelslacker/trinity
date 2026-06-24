@@ -5380,6 +5380,165 @@ static void kcov_cmp_oldpool_vs_shadow_block_render(long elapsed __unused__)
 }
 
 /*
+ * Per-syscall typed-hypothesis store SATURATION: top-N (nr, do32) pools
+ * ranked by pool->count, with the per_kind_count[] breakdown so the
+ * (nr, kind) cells that crowd the store are visible.
+ *
+ * pool->count and pool->per_kind_count[] have no kcov_shm scalar twin:
+ * the cumulative cmp_hyp_kind_full / inserted_by_kind producer counters
+ * never surface the live occupancy, so an exhausted (nr, kind) cell is
+ * invisible from the cumulative producer view alone.
+ *
+ * Read-side only: relaxed loads against lockless observe / scrub bumps,
+ * count clamped to CMP_HYP_PER_SYSCALL and per_kind to CMP_HYP_PER_KIND
+ * so a torn load cannot drive a downstream divide or fixed-width column
+ * past its cap.  Gated on any-occupancy so an empty store stays quiet.
+ */
+static void kcov_cmp_hyp_saturation_block_render(long elapsed __unused__)
+{
+#define KCOV_CMP_HYP_SAT_TOPN	32
+	static const char * const kind_labels[CMP_HYP_KIND_NR] = {
+		"exact", "range", "boundary", "bitmask",
+		"enum_family", "alignment", "length",
+		"foreign_value",
+	};
+	struct sat_row {
+		unsigned int nr;
+		unsigned int do32;
+		unsigned int count;
+		unsigned int per_kind[CMP_HYP_KIND_NR];
+	};
+	struct sat_row top[KCOV_CMP_HYP_SAT_TOPN];
+	unsigned int top_count = 0;
+	unsigned int nr_scan[2];
+	unsigned int nr_i, do32_i, k, j;
+	unsigned long occupied_pools = 0;
+	unsigned long total_entries = 0;
+
+	if (cmp_hints_shm == NULL)
+		return;
+
+	nr_scan[0] = biarch ? max_nr_64bit_syscalls : max_nr_syscalls;
+	nr_scan[1] = biarch ? max_nr_32bit_syscalls : 0;
+	for (do32_i = 0; do32_i < 2; do32_i++)
+		if (nr_scan[do32_i] > MAX_NR_SYSCALL)
+			nr_scan[do32_i] = MAX_NR_SYSCALL;
+
+	for (do32_i = 0; do32_i < 2; do32_i++) {
+		for (nr_i = 0; nr_i < nr_scan[do32_i]; nr_i++) {
+			struct cmp_hyp_pool *p =
+				&cmp_hints_shm->hyp_pools[nr_i][do32_i];
+			unsigned int count = __atomic_load_n(
+				&p->count, __ATOMIC_RELAXED);
+			struct sat_row cand;
+
+			if (count == 0)
+				continue;
+			if (count > CMP_HYP_PER_SYSCALL)
+				count = CMP_HYP_PER_SYSCALL;
+
+			occupied_pools++;
+			total_entries += count;
+
+			cand.nr = nr_i;
+			cand.do32 = do32_i;
+			cand.count = count;
+			for (k = 0; k < CMP_HYP_KIND_NR; k++) {
+				unsigned int pk = __atomic_load_n(
+					&p->per_kind_count[k], __ATOMIC_RELAXED);
+
+				if (pk > CMP_HYP_PER_KIND)
+					pk = CMP_HYP_PER_KIND;
+				cand.per_kind[k] = pk;
+			}
+
+			for (j = top_count;
+			     j > 0 && count > top[j - 1].count;
+			     j--) {
+				if (j < KCOV_CMP_HYP_SAT_TOPN)
+					top[j] = top[j - 1];
+			}
+			if (j < KCOV_CMP_HYP_SAT_TOPN) {
+				top[j] = cand;
+				if (top_count < KCOV_CMP_HYP_SAT_TOPN)
+					top_count++;
+			}
+		}
+	}
+
+	if (top_count == 0)
+		return;
+
+	stats_log_write("KCOV CMP hyp store per-syscall saturation over last %lds (top-%u of %lu occupied pools, %lu entries, cap %u/pool):\n",
+			elapsed, top_count, occupied_pools,
+			total_entries, CMP_HYP_PER_SYSCALL);
+	{
+		char hdr[CMP_HYP_KIND_NR * 12 + 1];
+		int off = 0;
+
+		hdr[0] = '\0';
+		for (k = 0; k < CMP_HYP_KIND_NR; k++) {
+			int w = snprintf(hdr + off, sizeof(hdr) - off,
+					 " %11s", kind_labels[k]);
+			if (w < 0 || (size_t)w >= sizeof(hdr) - (size_t)off)
+				break;
+			off += w;
+		}
+		stats_log_write("  %-24s %4s %9s %5s%s\n",
+				"syscall", "arch", "count/cap", "fill%", hdr);
+	}
+
+	for (j = 0; j < top_count; j++) {
+		const struct sat_row *r = &top[j];
+		const struct syscalltable *tab;
+		struct syscallentry *entry;
+		const char *name;
+		const char *arch_tag;
+		unsigned int nr_max;
+		unsigned int pct;
+		char count_buf[16];
+		char row[CMP_HYP_KIND_NR * 12 + 1];
+		int off = 0;
+
+		if (biarch) {
+			if (r->do32) {
+				tab = syscalls_32bit;
+				nr_max = max_nr_32bit_syscalls;
+				arch_tag = "32";
+			} else {
+				tab = syscalls_64bit;
+				nr_max = max_nr_64bit_syscalls;
+				arch_tag = "64";
+			}
+		} else {
+			tab = syscalls;
+			nr_max = max_nr_syscalls;
+			arch_tag = "-";
+		}
+		entry = (r->nr < nr_max) ? tab[r->nr].entry : NULL;
+		name = entry ? entry->name : "???";
+		pct = (unsigned int)(((unsigned long)r->count * 100UL) /
+				     CMP_HYP_PER_SYSCALL);
+
+		snprintf(count_buf, sizeof(count_buf), "%u/%u",
+			 r->count, CMP_HYP_PER_SYSCALL);
+
+		row[0] = '\0';
+		for (k = 0; k < CMP_HYP_KIND_NR; k++) {
+			int w = snprintf(row + off, sizeof(row) - off,
+					 " %11u", r->per_kind[k]);
+			if (w < 0 || (size_t)w >= sizeof(row) - (size_t)off)
+				break;
+			off += w;
+		}
+
+		stats_log_write("  %-24s %4s %9s %4u%%%s\n",
+				name, arch_tag, count_buf, pct, row);
+	}
+#undef KCOV_CMP_HYP_SAT_TOPN
+}
+
+/*
  * Surface the KCOV CMP counters in the same 600s periodic stats-log-file
  * dump as defense_counters_periodic_dump.  Without this the cmp counters
  * are only visible from dump_stats() (run shutdown) and the JSON dump
@@ -6961,6 +7120,7 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	kcov_cmp_observability_block_render(elapsed);
 	kcov_redqueen_observability_block_render(elapsed);
 	kcov_cmp_oldpool_vs_shadow_block_render(elapsed);
+	kcov_cmp_hyp_saturation_block_render(elapsed);
 
 	prev_records       = cur_records;
 	prev_truncated     = cur_truncated;
