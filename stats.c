@@ -11138,6 +11138,95 @@ static void __cold dump_stats_kcov_block(void)
 			}
 		}
 
+		/* Per-syscall view of slots whose remote-mode enable was
+		 * attempted at least REMOTE_WASTE_FLOOR times yet produced
+		 * zero remote edges, sorted by remote-enable requested.
+		 * The rem_eCount-ranked and remote-only views above pull
+		 * in slots that DO yield on the remote arm; this block is
+		 * the inverse cut, lifting out the slots where remote
+		 * sampling has paid its KCOV_REMOTE_ENABLE / disable
+		 * round-trip cost enough times to be statistically
+		 * meaningful and earned nothing back, so the operator can
+		 * read the demote-candidate list directly.  HEAVY is
+		 * surfaced in its own column because the same condition
+		 * on a HEAVY-flagged syscall is the loudest signal: the
+		 * syscall is paying the heavier sampling rate and still
+		 * carrying zero remote yield.  The waste verdict gates on
+		 * remote_enable_requested (bumped on entry to the
+		 * KCOV_REMOTE_ENABLE attempt) rather than remote_pc_calls
+		 * (bumped only on a successful collect) so a syscall whose
+		 * enable consistently falls back to local-mode PC coverage
+		 * is not hidden by its own refusal surface; succ and fail
+		 * are printed alongside so a "wasted" reading can be split
+		 * into "sampled enough and produced no edge" vs "rarely
+		 * even successfully sampled".  Render-only over the
+		 * existing per-syscall counters declared in include/kcov.h;
+		 * no new shm, no behaviour change to the collection or
+		 * fuzzing path.  No childop variant: the per-childop
+		 * remote-enable counters the verdict needs do not exist
+		 * (childop enable accounting was intentionally deferred). */
+		{
+			unsigned int w_top_nr[10];
+			unsigned long w_top_req[10];
+			unsigned int w_top_count = 0;
+
+			memset(w_top_req, 0, sizeof(w_top_req));
+
+			for (i = 0; i < nr_syscalls_to_scan; i++) {
+				unsigned long req = __atomic_load_n(
+					&kcov_shm->remote_enable_requested[i],
+					__ATOMIC_RELAXED);
+				unsigned long rec;
+
+				if (req < REMOTE_WASTE_FLOOR)
+					continue;
+				rec = __atomic_load_n(
+					&kcov_shm->remote_pc_edge_calls[i],
+					__ATOMIC_RELAXED);
+				if (rec != 0)
+					continue;
+				topn_push(w_top_req, w_top_nr,
+					  &w_top_count, 10, req, i);
+			}
+
+			if (w_top_count > 0) {
+				output(0, "Wasted-remote syscalls (req >= %lu, rem_eCalls == 0):\n",
+				       REMOTE_WASTE_FLOOR);
+				output(0, "  %-2s %-24s %10s %10s %10s %10s %10s %10s\n",
+				       "fl", "syscall",
+				       "req", "succ", "fail", "fb_loc",
+				       "rem_calls", "rem_eCount");
+				for (j = 0; j < w_top_count; j++) {
+					struct syscallentry *entry =
+						table[w_top_nr[j]].entry;
+					const char *name = entry ? entry->name : "???";
+					unsigned int nr = w_top_nr[j];
+					unsigned long req = w_top_req[j];
+					unsigned long succ = __atomic_load_n(
+						&kcov_shm->remote_enable_succeeded[nr],
+						__ATOMIC_RELAXED);
+					unsigned long fail = __atomic_load_n(
+						&kcov_shm->remote_enable_failed[nr],
+						__ATOMIC_RELAXED);
+					unsigned long fbl = __atomic_load_n(
+						&kcov_shm->remote_fallback_to_local[nr],
+						__ATOMIC_RELAXED);
+					unsigned long rc = __atomic_load_n(
+						&kcov_shm->remote_pc_calls[nr],
+						__ATOMIC_RELAXED);
+					unsigned long ren = __atomic_load_n(
+						&kcov_shm->remote_pc_edge_count[nr],
+						__ATOMIC_RELAXED);
+					bool heavy = entry &&
+						(entry->flags & KCOV_REMOTE_HEAVY);
+
+					output(0, "  %-2s %-24s %10lu %10lu %10lu %10lu %10lu %10lu\n",
+					       heavy ? "H" : "-", name,
+					       req, succ, fail, fbl, rc, ren);
+				}
+			}
+		}
+
 		/* combined top-N
 		 * trace_truncated + cmp_trace_truncated + max_trace_size
 		 * table plus a dedup-probe-overflow summary line.  Lets
