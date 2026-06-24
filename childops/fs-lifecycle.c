@@ -44,26 +44,19 @@
 #include <sys/xattr.h>
 #include <unistd.h>
 
+#ifdef __linux__
+#include <linux/falloc.h>
+#include <linux/stat.h>
+#endif
+
 #include "child.h"
+#include "compat.h"
 #include "syscall-gate.h"
 #include "pids.h"
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
-
-#ifdef __linux__
-#include <linux/falloc.h>
-#include <linux/stat.h>
-#endif
-
-#ifndef FALLOC_FL_KEEP_SIZE
-#define FALLOC_FL_KEEP_SIZE 0x01
-#endif
-
-#ifndef FALLOC_FL_PUNCH_HOLE
-#define FALLOC_FL_PUNCH_HOLE 0x02
-#endif
 
 /* Latched per-child: private mount namespace is in place */
 static bool ns_unshared;

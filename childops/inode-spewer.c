@@ -26,26 +26,19 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#ifdef __linux__
+#include <linux/falloc.h>
+#endif
+
 #include "arch.h"
 #include "pids.h"
 #include "child.h"
+#include "compat.h"
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
-
-#ifdef __linux__
-#include <linux/falloc.h>
-#endif
-
-#ifndef FALLOC_FL_KEEP_SIZE
-#define FALLOC_FL_KEEP_SIZE 0x01
-#endif
-
-#ifndef FALLOC_FL_PUNCH_HOLE
-#define FALLOC_FL_PUNCH_HOLE 0x02
-#endif
 
 static unsigned long file_counter;
 static bool spew_dir_created;
