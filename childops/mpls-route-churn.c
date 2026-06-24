@@ -143,7 +143,6 @@
 	__has_include(<linux/mpls_iptunnel.h>) && __has_include(<linux/rtnetlink.h>)
 
 #include <errno.h>
-#include <fcntl.h>
 #include <net/if.h>
 #include <netinet/in.h>
 #include <sched.h>
