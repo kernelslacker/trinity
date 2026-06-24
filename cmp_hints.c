@@ -1134,16 +1134,46 @@ out_bump:
  * The caller (cmp_hints_try_get_ex) only invokes this on a typed-safe
  * argtype; gating that here would conflate the gate's "did not fire"
  * with the caller's "not eligible" cohort.
+ *
+ * Per-pull accounting is deferred to the caller's accept-gated commit
+ * point so a hint the caller's accept range subsequently rejects does
+ * not contaminate cmp_hyp_live_inject_gate_passed /
+ * cmp_hyp_live_injected[/_by_kind].  This helper bumps nothing, and
+ * signals back through two out-params:
+ *
+ *   *out_gate_fired -- the conservative gate passed (plateau + dice +
+ *                      size + shm); the caller bumps gate_passed when
+ *                      its accept gate also passes.  Preserves the
+ *                      "gate fired but the typed store had nothing"
+ *                      observability the gate_passed - live_injected
+ *                      delta currently surfaces, just gated on the
+ *                      value actually reaching the consumer.
+ *   *out_kind       -- picked->kind, valid iff the function returns
+ *                      true (i.e. picked != NULL AND derive
+ *                      succeeded).  The caller bumps live_injected /
+ *                      live_injected_by_kind[*out_kind] under the
+ *                      same accept-gate.
+ *
+ * Both out-params are written on every entry: out_gate_fired starts
+ * at false and only flips true once the gate passes, out_kind is left
+ * at 0 unless the function returns true.  Callers can therefore key
+ * their accounting off the bool return alone for live_injected and off
+ * *out_gate_fired for gate_passed without re-checking helper inputs.
  */
 static bool cmp_hyp_try_live_inject(unsigned int nr, bool do32,
 				    unsigned long cmp_ip, unsigned int size,
-				    unsigned long *out)
+				    unsigned long *out,
+				    uint8_t *out_kind,
+				    bool *out_gate_fired)
 {
 	struct cmp_hyp_pool *pool;
 	struct cmp_hypothesis *picked;
 	bool present[CMP_HYP_KIND_NR];
 	uint8_t width;
 	unsigned long derived;
+
+	*out_gate_fired = false;
+	*out_kind = 0;
 
 	if (cmp_hints_shm == NULL || nr >= MAX_NR_SYSCALL)
 		return false;
@@ -1158,9 +1188,7 @@ static bool cmp_hyp_try_live_inject(unsigned int nr, bool do32,
 	if (!ONE_IN(CMP_HYP_LIVE_INJECT_DENOM))
 		return false;
 
-	if (kcov_shm != NULL)
-		__atomic_fetch_add(&kcov_shm->cmp_hyp_live_inject_gate_passed,
-				   1UL, __ATOMIC_RELAXED);
+	*out_gate_fired = true;
 
 	width = (uint8_t)size;
 	pool = &cmp_hints_shm->hyp_pools[nr][do32 ? 1 : 0];
@@ -1173,14 +1201,7 @@ static bool cmp_hyp_try_live_inject(unsigned int nr, bool do32,
 		return false;
 
 	*out = derived;
-
-	if (kcov_shm != NULL) {
-		__atomic_fetch_add(&kcov_shm->cmp_hyp_live_injected,
-				   1UL, __ATOMIC_RELAXED);
-		__atomic_fetch_add(
-			&kcov_shm->cmp_hyp_live_injected_by_kind[picked->kind],
-			1UL, __ATOMIC_RELAXED);
-	}
+	*out_kind = picked->kind;
 	return true;
 }
 
@@ -3171,6 +3192,7 @@ static unsigned int cmp_hint_weighted_pick(struct cmp_hint_entry *entries,
 
 bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 			  unsigned long old, bool allow_hyp_inject,
+			  const struct cmp_accept_range *accept,
 			  unsigned long *out)
 {
 	struct cmp_hint_pool *pool;
@@ -3279,6 +3301,19 @@ bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 				*out = cmp_hint_apply_transform(re_value,
 								use, old);
 
+				/* Caller accept-range gate.  Miss-exit:
+				 * NO live_picks bump, NO stash, NO
+				 * would_pick -- the value never reached
+				 * the consumer so it must not show up
+				 * in any per-pull counter or in the
+				 * SHADOW would-pick resolver, which
+				 * would otherwise re-credit a value the
+				 * caller threw away. */
+				if (accept != NULL &&
+				    (*out < accept->lo ||
+				     *out > accept->hi))
+					return false;
+
 				if (kcov_shm != NULL)
 					__atomic_fetch_add(&kcov_shm->cmp_recent_live_picks,
 							   1UL, __ATOMIC_RELAXED);
@@ -3386,10 +3421,8 @@ bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 		uint8_t bucket = cmp_hint_age_bucket(age);
 		unsigned long stash_value = picked_value;
 		bool hyp_injected = false;
-
-		if (kcov_shm != NULL)
-			__atomic_fetch_add(&kcov_shm->cmp_hint_durable_consumed_age[bucket],
-					   1UL, __ATOMIC_RELAXED);
+		bool inject_gate_fired = false;
+		uint8_t inject_kind = 0;
 
 		/* LIVE typed-hypothesis inject arm.  Runs only for callers
 		 * that opted in (the typed-safe argtype set).  When the
@@ -3403,12 +3436,20 @@ bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 		 * cmp_hyp_find_for_credit, silently dropping the conversion
 		 * attribution this arm exists to measure.  Raw pool stays
 		 * the fallback on any gate miss / empty resolver / derive
-		 * bail. */
+		 * bail.
+		 *
+		 * Per-pull inject counters (gate_passed, live_injected,
+		 * live_injected_by_kind) are NOT bumped inside the helper:
+		 * deferring them to the accept-gated commit point below
+		 * keeps a hint the caller's accept range subsequently
+		 * rejects from contaminating the denominator. */
 		if (allow_hyp_inject) {
 			unsigned long derived;
 
 			if (cmp_hyp_try_live_inject(nr, do32, picked_cmp_ip,
-						    picked_size, &derived)) {
+						    picked_size, &derived,
+						    &inject_kind,
+						    &inject_gate_fired)) {
 				*out = derived;
 				stash_value = derived;
 				hyp_injected = true;
@@ -3417,22 +3458,63 @@ bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 		if (!hyp_injected)
 			*out = cmp_hint_apply_transform(picked_value, use, old);
 
+		/* Caller accept-range gate.  Miss-exit: NO consume-age
+		 * bump, NO returned counters, NO gate_passed /
+		 * live_injected denominator, NO stash, NO would_pick --
+		 * the value never reached the consumer.  Without this gate
+		 * a derived value the caller subsequently rejects (today
+		 * ARG_RANGE; same shape for any future typed-safe consumer
+		 * with a hard bound) was credited and counted as
+		 * cmp_hyp_live_injected (+ stash-eligible for
+		 * cmp_hyp_pc_wins) even though it never reached the
+		 * kernel, biasing both arm-verdict numerator and
+		 * denominator. */
+		if (accept != NULL &&
+		    (*out < accept->lo || *out > accept->hi))
+			return false;
+
 		if (kcov_shm != NULL) {
+			__atomic_fetch_add(&kcov_shm->cmp_hint_durable_consumed_age[bucket],
+					   1UL, __ATOMIC_RELAXED);
+
+			/* Inject-arm denominator + per-kind partition,
+			 * deferred from cmp_hyp_try_live_inject() to here so
+			 * an accept-rejected derived value does not
+			 * contaminate the counters.  gate_passed counts
+			 * "dice gate fired AND value reached the consumer";
+			 * live_injected counts "gate fired AND derive
+			 * succeeded AND value reached the consumer".  The
+			 * gate_passed - live_injected delta keeps the
+			 * "gate fired but the typed store had nothing"
+			 * observability the kcov_shm doc describes. */
+			if (inject_gate_fired)
+				__atomic_fetch_add(&kcov_shm->cmp_hyp_live_inject_gate_passed,
+						   1UL, __ATOMIC_RELAXED);
+			if (hyp_injected) {
+				__atomic_fetch_add(&kcov_shm->cmp_hyp_live_injected,
+						   1UL, __ATOMIC_RELAXED);
+				__atomic_fetch_add(
+					&kcov_shm->cmp_hyp_live_injected_by_kind[inject_kind],
+					1UL, __ATOMIC_RELAXED);
+			}
+
 			/* Mirror of the attempts ring path above: both the
 			 * scalar and per-nr returned counters drain into
 			 * parent_stats via the per-child stats_ring. */
-			struct childdata *return_child = this_child();
+			{
+				struct childdata *return_child = this_child();
 
-			if (return_child != NULL) {
-				(void) stats_ring_enqueue(return_child->stats_ring,
-							  STATS_FIELD_CMP_HINTS_TRY_GET_RETURNED,
-							  0, 1);
-				/* per-nr partition of the producer-side
-				 * pool-hit counter.  Same in-bounds guard
-				 * reasoning as the attempts bump above. */
-				(void) stats_ring_enqueue(return_child->stats_ring,
-							  STATS_FIELD_PER_SYSCALL_CMP_RETURNED,
-							  (uint16_t)nr, 1);
+				if (return_child != NULL) {
+					(void) stats_ring_enqueue(return_child->stats_ring,
+								  STATS_FIELD_CMP_HINTS_TRY_GET_RETURNED,
+								  0, 1);
+					/* per-nr partition of the producer-side
+					 * pool-hit counter.  Same in-bounds guard
+					 * reasoning as the attempts bump above. */
+					(void) stats_ring_enqueue(return_child->stats_ring,
+								  STATS_FIELD_PER_SYSCALL_CMP_RETURNED,
+								  (uint16_t)nr, 1);
+				}
 			}
 		}
 
@@ -3447,7 +3529,8 @@ bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 
 bool cmp_hints_try_get(unsigned int nr, bool do32, unsigned long *out)
 {
-	return cmp_hints_try_get_ex(nr, do32, CMP_HINT_BOUNDARY, 0, false, out);
+	return cmp_hints_try_get_ex(nr, do32, CMP_HINT_BOUNDARY, 0, false,
+				    NULL, out);
 }
 
 /*

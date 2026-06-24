@@ -276,16 +276,23 @@ static unsigned long handle_arg_range(struct syscallentry *entry,
 	 *
 	 * Opts into the typed-hypothesis live inject arm: ARG_RANGE is on
 	 * the typed-safe consumer set because the declared [low, high]
-	 * re-validation below catches any derived value that strays
-	 * outside the consumer's hard bound, so the worst case of an
-	 * out-of-bound derived constant is the same fall-through as an
-	 * out-of-bound raw pool constant. */
-	if (cmp_hint_baseline_should_inject() &&
-	    cmp_hints_try_get_ex(rec->nr, rec->do32bit,
-				 CMP_HINT_BOUNDARY, 0, true, &hint) &&
-	    hint >= low && hint <= high) {
-		credit_cmp_hint_injection(rec, CMP_HINT_CALLSITE_OTHER);
-		return hint;
+	 * accept-range pushed into cmp_hints_try_get_ex() catches any
+	 * derived value that strays outside the consumer's hard bound, so
+	 * the worst case of an out-of-bound derived constant is the same
+	 * fall-through as an out-of-bound raw pool constant -- but now
+	 * the rejected value also stops bumping the inject-arm denominator
+	 * and stash, which previously fired before the callsite's
+	 * post-return range check ran. */
+	{
+		struct cmp_accept_range range = { low, high };
+
+		if (cmp_hint_baseline_should_inject() &&
+		    cmp_hints_try_get_ex(rec->nr, rec->do32bit,
+					 CMP_HINT_BOUNDARY, 0, true,
+					 &range, &hint)) {
+			credit_cmp_hint_injection(rec, CMP_HINT_CALLSITE_OTHER);
+			return hint;
+		}
 	}
 
 	/* ~1 in 8: bias toward the range boundaries where off-by-one bugs hide */
@@ -4066,10 +4073,14 @@ static unsigned long gen_arg_struct_size(struct syscallentry *entry,
 
 	/* Opts into the typed-hypothesis live inject arm: ARG_STRUCT_SIZE
 	 * is a learned-size scalar slot, the same shape as the typed-safe
-	 * size/count/range scalar set the typed store is calibrated for. */
+	 * size/count/range scalar set the typed store is calibrated for.
+	 *
+	 * No accept range: this consumer has no declared upper bound to
+	 * gate against; the fallback random scalar below clamps at
+	 * ARG_STRUCT_SIZE_FALLBACK_CAP only for the no-catalog path. */
 	if (ONE_IN(cmp_hint_inject_denom(10)) &&
 	    cmp_hints_try_get_ex(rec->nr, rec->do32bit,
-				 CMP_HINT_BOUNDARY, 0, true, &hint)) {
+				 CMP_HINT_BOUNDARY, 0, true, NULL, &hint)) {
 		credit_cmp_hint_injection(rec, CMP_HINT_CALLSITE_ARG_STRUCT_SIZE);
 		return hint;
 	}
