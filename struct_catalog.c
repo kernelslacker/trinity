@@ -6704,16 +6704,7 @@ static const unsigned long quotactl_fs_disk_quota_subcmds[] = {
  * are not registered -- attributing CMP-learned constants against
  * sock_fprog fields on those dispatches would steer them at bytes the
  * kernel never reads as filter program.
- *
- * SECCOMP_SET_MODE_FILTER fallback mirrors the shims in
- * childops/recipe-runner.c and fds/seccomp_notif.c so the descriptor
- * registers even on toolchain headers that predate linux/seccomp.h
- * carrying the enum.
  */
-#ifndef SECCOMP_SET_MODE_FILTER
-#define SECCOMP_SET_MODE_FILTER		1
-#endif
-
 static const unsigned long seccomp_set_mode_filter_ops[] = {
 	SECCOMP_SET_MODE_FILTER,
 };
