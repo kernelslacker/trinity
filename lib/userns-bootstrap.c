@@ -78,11 +78,9 @@ static bool write_one_line(const char *path, const char *line)
  * setgroups must be denied BEFORE gid_map can be written by an
  * unprivileged writer.
  */
-static bool install_identity_maps(void)
+static bool install_identity_maps(uid_t uid, gid_t gid)
 {
 	char buf[64];
-	uid_t uid = getuid();
-	gid_t gid = getgid();
 
 	snprintf(buf, sizeof(buf), "0 %u 1\n", (unsigned int)uid);
 	if (!write_one_line("/proc/self/uid_map", buf))
@@ -106,13 +104,23 @@ static bool install_identity_maps(void)
 static void grandchild_body(int target_ns_flags,
 			    int (*fn)(void *), void *arg)
 {
+	/*
+	 * Capture the parent-ns real uid/gid BEFORE unshare(CLONE_NEWUSER).
+	 * After the unshare and before any map is written, getuid()/getgid()
+	 * return the overflow id (65534); the kernel's single-line unprivileged
+	 * idmap rule requires the mapped id to equal the opener's real euid in
+	 * the parent ns, so writing the overflow id yields EPERM.
+	 */
+	uid_t uid = getuid();
+	gid_t gid = getgid();
+
 	if (unshare(CLONE_NEWUSER) != 0) {
 		if (errno == EPERM)
 			_exit(UBS_EXIT_USERNS_EPERM);
 		_exit(UBS_EXIT_USERNS_OTHER);
 	}
 
-	if (!install_identity_maps())
+	if (!install_identity_maps(uid, gid))
 		_exit(UBS_EXIT_MAP_WRITE_FAIL);
 
 	if (target_ns_flags != 0 && unshare(target_ns_flags) != 0)
