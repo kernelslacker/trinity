@@ -10839,6 +10839,22 @@ static void __cold dump_stats_kcov_block(void)
 				stat_row("kcov_coverage", "cmp_recent_live_picks", rc_live_picks);
 		}
 
+		{
+			unsigned long plateau_entered_v = __atomic_load_n(&shm->stats.plateau_entered, __ATOMIC_RELAXED);
+			unsigned long plateau_exited_v = __atomic_load_n(&shm->stats.plateau_exited, __ATOMIC_RELAXED);
+			unsigned long bucket_canary_checks_v = __atomic_load_n(&shm->stats.bucket_canary_checks, __ATOMIC_RELAXED);
+			unsigned long bucket_canary_deficits_v = __atomic_load_n(&shm->stats.bucket_canary_deficits, __ATOMIC_RELAXED);
+
+			if (plateau_entered_v > 0)
+				stat_row("kcov_coverage", "plateau_entered", plateau_entered_v);
+			if (plateau_exited_v > 0)
+				stat_row("kcov_coverage", "plateau_exited", plateau_exited_v);
+			if (bucket_canary_checks_v > 0)
+				stat_row("kcov_coverage", "bucket_canary_checks", bucket_canary_checks_v);
+			if (bucket_canary_deficits_v > 0)
+				stat_row("kcov_coverage", "bucket_canary_deficits", bucket_canary_deficits_v);
+		}
+
 		/* Find top 10 edge-producing syscalls via insertion sort. */
 		unsigned int nr_syscalls_to_scan = biarch ? max_nr_64bit_syscalls : max_nr_syscalls;
 		if (nr_syscalls_to_scan > MAX_NR_SYSCALL)
