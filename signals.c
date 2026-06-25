@@ -512,25 +512,40 @@ void stamp_fault_beacon(int sig, siginfo_t *info, void *ctx)
 	 * escalates to SIGKILL, erasing the original crash
 	 * class entirely.
 	 *
-	 * range_overlaps_shared() reads shared_regions[] only
-	 * (no allocator, no stdio, no lock) -- the same async-
-	 * signal-safe property the guard_pages_classify call
-	 * further down already relies on.  It proves me lies
-	 * in a TRACKED region; it does NOT prove the under-
-	 * lying page is currently mapped/readable (a child
-	 * that munmap'd its own childdata while the region
-	 * stays registered would still pass this gate and
-	 * re-fault on the deref).  That residual is a
-	 * separate root-cause concern; this gate cleanly
-	 * catches the wild/stale/corrupt-me class.  On a miss
-	 * the beacon stamp is skipped (dropped-beacon,
-	 * surfaced by the parent's existing written==0 path)
-	 * so the kernel-side crash artefacts still land
-	 * instead of a silent handler double-fault.
+	 * range_in_tracked_shared() walks shared_regions[]
+	 * (and the overflow tail) linearly -- no allocator,
+	 * no stdio, no lock, no this_child(), no stats_ring
+	 * enqueue, no global mutation -- which is the
+	 * async-signal-safe property this handler requires.
+	 * range_overlaps_shared() is NOT used here: on its
+	 * confirmed-overlap path it calls this_child(),
+	 * stats_ring_enqueue() twice, output() under
+	 * verbosity, and writes the last_reject_* globals --
+	 * exactly the re-entrant / async-signal-unsafe class
+	 * this gate exists to keep out of the fault handler.
+	 * Containment polarity (fully inside one tracked
+	 * region) also matches the shape of the probe: each
+	 * childdata is registered as a single shared_regions[]
+	 * entry covering its full sizeof, so a valid me
+	 * passes; a wild me that merely shares a 2 MiB bitmap
+	 * chunk with some tracked region is correctly
+	 * rejected here where range_overlaps_shared() would
+	 * over-accept.  This proves me lies in a TRACKED
+	 * region; it does NOT prove the underlying page is
+	 * currently mapped/readable (a child that munmap'd
+	 * its own childdata while the region stays registered
+	 * would still pass this gate and re-fault on the
+	 * deref).  That residual is a separate root-cause
+	 * concern; this gate cleanly catches the wild/stale/
+	 * corrupt-me class.  On a miss the beacon stamp is
+	 * skipped (dropped-beacon, surfaced by the parent's
+	 * existing written==0 path) so the kernel-side crash
+	 * artefacts still land instead of a silent handler
+	 * double-fault.
 	 */
 	if (me != NULL &&
-	    range_overlaps_shared((unsigned long)me,
-				  sizeof(struct childdata))) {
+	    range_in_tracked_shared((unsigned long)me,
+				    sizeof(struct childdata))) {
 		struct child_fault_beacon *beacon = &me->fault_beacon;
 		struct child_fault_beacon local;
 		enum syscallstate st = me->syscall.state;
