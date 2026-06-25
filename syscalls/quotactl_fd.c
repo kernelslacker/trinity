@@ -4,7 +4,6 @@
  */
 #include <linux/quota.h>
 #include <string.h>
-#include <sys/types.h>
 #include <unistd.h>
 #include "random.h"
 #include "rnd.h"
