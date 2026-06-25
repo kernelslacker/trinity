@@ -796,6 +796,148 @@ void adapt_budget(enum child_op_type op_type,
 				 new_mult, __ATOMIC_RELAXED);
 }
 
+_Static_assert((CHILDOP_DECAY_WINDOWS &
+		(CHILDOP_DECAY_WINDOWS - 1)) == 0,
+	       "CHILDOP_DECAY_WINDOWS must be a power of two");
+
+/*
+ * Per-childop decaying-ring producer: bump the active slot's edge count
+ * by `edges` and bump the cached running sum in lockstep.  See the
+ * include/stats.h comment on childop_edge_history[][] for the shape
+ * contract; the prototype block in include/child.h covers the multi-
+ * producer race envelope.  No-op on out-of-range op (defensive: the
+ * producer site in child.c already filters CHILD_OP_SYSCALL via the
+ * is_alt_op gate, but the test costs nothing and keeps the helper safe
+ * to drop into other call sites) and on a zero delta (a clean-edge
+ * dispatch that returned no fresh edges should not perturb the cached
+ * sum or burn an atomic).
+ */
+void childop_decay_record_edges(enum child_op_type op, unsigned long edges)
+{
+	unsigned int slot;
+
+	if (op >= NR_CHILD_OP_TYPES || edges == 0)
+		return;
+
+	slot = __atomic_load_n(&shm->stats.childop_decay_slot,
+			       __ATOMIC_RELAXED) &
+	       (CHILDOP_DECAY_WINDOWS - 1);
+	__atomic_fetch_add(&shm->stats.childop_edge_history[op][slot],
+			   edges, __ATOMIC_RELAXED);
+	__atomic_fetch_add(&shm->stats.childop_edge_recent_cached[op],
+			   edges, __ATOMIC_RELAXED);
+}
+
+/*
+ * Sister of childop_decay_record_edges(): bump the active slot's wall-
+ * time accumulator (nanoseconds) and the matching cached running sum.
+ * The producer site in child.c already clamps `ns` to >= 0 (see the
+ * CLOCK_MONOTONIC subtraction at child.c:796-799), so a backward clock
+ * step cannot drive the cached sum negative here; the >= 0 clamp lives
+ * in the producer, not in this helper, matching the existing childop_
+ * wall_ns[] add-fetch pattern at child.c:803-804.
+ */
+void childop_decay_record_wall(enum child_op_type op, unsigned long ns)
+{
+	unsigned int slot;
+
+	if (op >= NR_CHILD_OP_TYPES || ns == 0)
+		return;
+
+	slot = __atomic_load_n(&shm->stats.childop_decay_slot,
+			       __ATOMIC_RELAXED) &
+	       (CHILDOP_DECAY_WINDOWS - 1);
+	__atomic_fetch_add(&shm->stats.childop_wall_history[op][slot],
+			   ns, __ATOMIC_RELAXED);
+	__atomic_fetch_add(&shm->stats.childop_wall_recent_cached[op],
+			   ns, __ATOMIC_RELAXED);
+}
+
+/*
+ * Window-advance rotator for the per-childop decaying recency ring.
+ * Clear-then-publish, mirroring frontier_window_advance()'s ordering
+ * fix: compute the next slot index without publishing it, exchange the
+ * next slot to zero on every per-op edge AND wall history row while
+ * producers are still targeting the previous slot, subtract the just-
+ * cleared slot's contribution from the cached running sums under a CAS
+ * loop (saturating-subtract guard against a racing producer fetch-add
+ * that lands between our exchange and our subtract), and only then bump
+ * childop_decay_slot.  A producer racing the rotation keeps adding into
+ * the previous slot for a handful of instructions -- a bounded window-
+ * boundary attribution error -- instead of having its addition silently
+ * dropped or inverting the cached sum.
+ *
+ * SHADOW: nothing in the picker / canary path reads the ring; the only
+ * reader is dump_stats_childop_decay_recency() at shutdown, so the
+ * rotation cadence only affects which window appears as "recent" in the
+ * dump.  Driven from defense_counters_periodic_dump() (stats.c) at the
+ * same 600 s tick as the other operator-visibility dumps so the recency
+ * horizon is on the order of one dump interval x CHILDOP_DECAY_WINDOWS.
+ */
+void childop_window_advance(void)
+{
+	unsigned int cur, next;
+	enum child_op_type op;
+
+	cur = __atomic_load_n(&shm->stats.childop_decay_slot,
+			      __ATOMIC_RELAXED);
+	next = (cur + 1U) & (CHILDOP_DECAY_WINDOWS - 1);
+
+	for (op = CHILD_OP_SYSCALL + 1; op < NR_CHILD_OP_TYPES; op++) {
+		unsigned long old_edge_slot, old_wall_slot;
+		unsigned long old_cached;
+
+		old_edge_slot = __atomic_exchange_n(
+				&shm->stats.childop_edge_history[op][next],
+				0UL, __ATOMIC_RELAXED);
+		old_wall_slot = __atomic_exchange_n(
+				&shm->stats.childop_wall_history[op][next],
+				0UL, __ATOMIC_RELAXED);
+
+		/* Edge cached: CAS-clamped subtract.  Producers should not be
+		 * racing this op at this point (childop_decay_slot still names
+		 * the previous slot) but the loop costs at most a handful of
+		 * retries and removes the underflow case unconditionally; the
+		 * saturating-subtract guard is required even with the reorder
+		 * because a producer that landed in the freshly-cleared slot
+		 * before our exchange landed its cached add too. */
+		old_cached = __atomic_load_n(
+				&shm->stats.childop_edge_recent_cached[op],
+				__ATOMIC_RELAXED);
+		for (;;) {
+			unsigned long new_sum;
+
+			new_sum = (old_cached >= old_edge_slot)
+				? (old_cached - old_edge_slot) : 0UL;
+			if (__atomic_compare_exchange_n(
+				    &shm->stats.childop_edge_recent_cached[op],
+				    &old_cached, new_sum, false,
+				    __ATOMIC_RELAXED, __ATOMIC_RELAXED))
+				break;
+		}
+
+		old_cached = __atomic_load_n(
+				&shm->stats.childop_wall_recent_cached[op],
+				__ATOMIC_RELAXED);
+		for (;;) {
+			unsigned long new_sum;
+
+			new_sum = (old_cached >= old_wall_slot)
+				? (old_cached - old_wall_slot) : 0UL;
+			if (__atomic_compare_exchange_n(
+				    &shm->stats.childop_wall_recent_cached[op],
+				    &old_cached, new_sum, false,
+				    __ATOMIC_RELAXED, __ATOMIC_RELAXED))
+				break;
+		}
+	}
+
+	/* Publish the new slot only after every per-op clear has landed.
+	 * From this point producers see the freshly-zeroed slot. */
+	__atomic_store_n(&shm->stats.childop_decay_slot, cur + 1U,
+			 __ATOMIC_RELAXED);
+}
+
 /*
  * Aggregated per-childop outcome record (see struct childop_outcome in
  * include/child.h for the field contract).  Snapshots existing shm

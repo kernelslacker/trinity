@@ -19,6 +19,17 @@
 #define ADAPT_BUDGET_MAX	1024	/* 4.0x */
 
 /*
+ * Width of the per-childop decaying edge+wall recency ring
+ * (childop_edge_history[][] / childop_wall_history[][] in struct stats_s).
+ * Matches FRONTIER_DECAY_WINDOWS so the per-syscall and per-childop
+ * recency horizons stay aligned -- a window rotation on either side ages
+ * out the same wall-clock slice of history.  Must be a power of two; the
+ * bump path masks the cursor with (CHILDOP_DECAY_WINDOWS - 1) to derive
+ * the active slot.
+ */
+#define CHILDOP_DECAY_WINDOWS	8
+
+/*
  * Edge-delta floor that classifies an invocation as productive.  Reads
  * the GLOBAL kcov_shm->edges_found counter, so a fleet running with N
  * children adds baseline noise on every dispatch — the threshold has to
@@ -4033,6 +4044,41 @@ struct stats_s {
 	unsigned long childop_wedge_count[NR_CHILD_OP_TYPES];
 	unsigned long long childop_wedge_total_us[NR_CHILD_OP_TYPES];
 
+	/* SHADOW-ONLY per-childop decaying edge+wall recency ring.  Sister
+	 * shape to the per-syscall frontier_history[][] / frontier_recent_
+	 * count_cached[] pair (include/shm.h) but keyed by enum child_op_type
+	 * and with SEPARATE storage -- the syscall ring is not aliased.  The
+	 * ring is a fixed-width window of CHILDOP_DECAY_WINDOWS slots per op;
+	 * the slot currently being filled is (childop_decay_slot &
+	 * (CHILDOP_DECAY_WINDOWS - 1)).  Producers (child_process()'s per-
+	 * dispatch wall and clean-edge accumulation sites in child.c) bump
+	 * the active slot with the same delta they feed into
+	 * childop_wall_ns[] / childop_edges_clean[], and bump the matching
+	 * recent_cached counter in lockstep.  Window advance is driven by
+	 * childop_window_advance() (child-altop.c) from the same periodic
+	 * tick that runs the operator-visibility dumps; the rotator clears
+	 * the next slot before publishing the new index, subtracts the just-
+	 * cleared slot's contribution from the cached sum under a CAS retry
+	 * (saturating-subtract guard against a racing producer fetch-add),
+	 * and bumps the cursor only after every per-op clear has landed --
+	 * matches frontier_window_advance()'s clear-then-publish discipline.
+	 *
+	 * SHADOW: no scheduler / picker / canary code reads either array;
+	 * the only reader is stats.c's dump_stats_childop_decay_recency()
+	 * at shutdown.  RELAXED add-fetch on the per-slot bumps and the
+	 * cached counter -- multi-producer (one writer per child), lost-
+	 * update races are tolerated and bounded by per-window child counts.
+	 * Sum across the ring is the op's "recent" edge or wall total over
+	 * the last CHILDOP_DECAY_WINDOWS rotations -- the input the future
+	 * util-table reader (spec row C2's recent-ratio extension) will
+	 * prefer over the cumulative childop_wall_ns[] / childop_edges_
+	 * clean[] when the ring has signal. */
+	unsigned long childop_edge_history[NR_CHILD_OP_TYPES][CHILDOP_DECAY_WINDOWS];
+	unsigned long childop_wall_history[NR_CHILD_OP_TYPES][CHILDOP_DECAY_WINDOWS];
+	unsigned long childop_edge_recent_cached[NR_CHILD_OP_TYPES];
+	unsigned long childop_wall_recent_cached[NR_CHILD_OP_TYPES];
+	unsigned int childop_decay_slot;
+
 	/* SHADOW-ONLY census of scrub-eligible address-family arg slots
 	 * walked by blanket_address_scrub() -- one bump per set bit in
 	 * entry->address_scrub_mask consumed by the ctz loop, i.e. once per
@@ -4150,6 +4196,15 @@ struct stats_s {
 unsigned int stats_syscall_category(const char *name);
 
 void dump_stats(void) __cold;
+
+/* SHADOW: render the per-childop decaying edge+wall recency ring as a
+ * "childop_decay:" line per op with non-zero invocations.  Pure reader;
+ * walks shm->stats.childop_edge_recent_cached[] / childop_wall_recent_
+ * cached[] (maintained in lockstep with the per-slot bumps by the
+ * child.c producer sites and aged out by childop_window_advance()).
+ * Surfaces the recent-yield horizon the future util-table reader will
+ * consume; no scheduler or picker path reads either array. */
+void dump_stats_childop_decay_recency(void) __cold;
 
 /* Run-identity baseline snapshot.  Captured once at parent start, AFTER
  * warm_start_all() has loaded the persisted KCOV bitmap / minicorpus /

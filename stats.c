@@ -4463,6 +4463,14 @@ void __cold defense_counters_periodic_dump(void)
 
 	childop_split_dump();
 
+	/* Advance the per-childop decaying recency ring on the same tick
+	 * that drives the other operator-visibility dumps so the recent-
+	 * edge / recent-wall view ages out over a wall-clock horizon of
+	 * roughly CHILDOP_DECAY_WINDOWS * DEFENSE_DUMP_INTERVAL_SEC.
+	 * SHADOW: no picker / canary code reads the ring; rotation cadence
+	 * only affects what the shutdown dump labels "recent". */
+	childop_window_advance();
+
 	last_dump = now;
 }
 
@@ -11841,6 +11849,67 @@ static void dump_stats_corpus_and_taint_tail(void)
 	}
 }
 
+/*
+ * SHADOW reader for the per-childop decaying edge+wall recency ring.
+ * Emits one "childop_decay:" line per op that has been invoked at least
+ * once this run, carrying the cached recent-edge and recent-wall totals
+ * across the last CHILDOP_DECAY_WINDOWS rotations alongside the
+ * cumulative childop_edges_clean[] / childop_wall_ns[] denominators so
+ * the operator can read recent vs lifetime yield in the same row.  No
+ * scheduler / picker / canary path reads either ring -- the dump is the
+ * only consumer today; the C2 spec's future util-table extension is the
+ * next consumer.  Skips CHILD_OP_SYSCALL (the syscall path attributes
+ * its work through the per-strategy counters, matching the surrounding
+ * per-childop dumps) and skips never-invoked ops (skip-zero convention).
+ */
+void __cold dump_stats_childop_decay_recency(void)
+{
+	enum child_op_type op;
+	unsigned int slot;
+	bool any = false;
+
+	slot = __atomic_load_n(&shm->stats.childop_decay_slot,
+			       __ATOMIC_RELAXED);
+
+	for (op = CHILD_OP_SYSCALL + 1; op < NR_CHILD_OP_TYPES; op++) {
+		unsigned long invocations, recent_edges, recent_wall;
+		unsigned long cum_edges, cum_wall;
+
+		invocations = __atomic_load_n(
+				&shm->stats.childop_invocations[op],
+				__ATOMIC_RELAXED);
+		if (invocations == 0)
+			continue;
+
+		recent_edges = __atomic_load_n(
+				&shm->stats.childop_edge_recent_cached[op],
+				__ATOMIC_RELAXED);
+		recent_wall = __atomic_load_n(
+				&shm->stats.childop_wall_recent_cached[op],
+				__ATOMIC_RELAXED);
+		cum_edges = __atomic_load_n(
+				&shm->stats.childop_edges_clean[op],
+				__ATOMIC_RELAXED);
+		cum_wall = __atomic_load_n(
+				&shm->stats.childop_wall_ns[op],
+				__ATOMIC_RELAXED);
+
+		if (!any) {
+			output(1,
+			       "childop_decay: per-op recent edges+wall over "
+			       "last %u windows (slot=%u)\n",
+			       (unsigned int)CHILDOP_DECAY_WINDOWS,
+			       slot & (CHILDOP_DECAY_WINDOWS - 1));
+			any = true;
+		}
+
+		output(1,
+		       "childop_decay %s: invocations=%lu recent_edges=%lu recent_wall_ns=%lu cum_edges=%lu cum_wall_ns=%lu\n",
+		       alt_op_name(op), invocations,
+		       recent_edges, recent_wall, cum_edges, cum_wall);
+	}
+}
+
 void __cold dump_stats(void)
 {
 	if (stats_json) {
@@ -11876,6 +11945,8 @@ void __cold dump_stats(void)
 	childop_score_dump();
 
 	childop_outcome_window_dump();
+
+	dump_stats_childop_decay_recency();
 
 	dump_stats_shared_buffer_misc();
 

@@ -802,6 +802,11 @@ void child_process(struct childdata *child, int childno)
 						   (unsigned long)ns, __ATOMIC_RELAXED);
 				__atomic_add_fetch(&shm->stats.childop_wall_ns[op],
 						   (unsigned long)ns, __ATOMIC_RELAXED);
+				/* SHADOW: feed the decaying-recency ring with
+				 * the same delta.  No reader on the picker path;
+				 * the ring is aged out by childop_window_advance()
+				 * from the periodic-surface tick. */
+				childop_decay_record_wall(op, (unsigned long)ns);
 			} else if (op == CHILD_OP_SYSCALL) {
 				__atomic_add_fetch(&shm->stats.syscall_walltime_ns,
 						   (unsigned long)ns, __ATOMIC_RELAXED);
@@ -894,6 +899,10 @@ void child_process(struct childdata *child, int childno)
 				__atomic_fetch_add(
 					&shm->stats.childop_edges_clean[op],
 					edges_this_call, __ATOMIC_RELAXED);
+				/* SHADOW: feed the decaying-recency ring with
+				 * the bracketed clean-edge delta.  Sibling of
+				 * the wall bump above; same shadow contract. */
+				childop_decay_record_edges(op, edges_this_call);
 			}
 		}
 
