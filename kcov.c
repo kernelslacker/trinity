@@ -4115,3 +4115,80 @@ void kcov_bitmap_maybe_snapshot(void)
 		kcov_bitmap_last_snapshot_time = now;
 	}
 }
+
+/*
+ * Self-rate-limited timestamp for kcov_bitmap_canary_check().  Stamped
+ * from CLOCK_MONOTONIC so an NTP step backwards can't suppress an
+ * otherwise-due check (the dual to the kcov_plateau_check clock
+ * audit -- both share the codebase's "elapsed time uses MONOTONIC,
+ * never time()/REALTIME" invariant).  Parent-only state; never read
+ * from a child.
+ */
+static time_t kcov_bitmap_canary_last_check_mono;
+
+void kcov_bitmap_canary_check(void)
+{
+	struct timespec ts;
+	time_t now;
+	unsigned long edges_before;
+	unsigned long popcount;
+	unsigned long ignored_distinct;
+	unsigned long deficit;
+
+	if (kcov_shm == NULL)
+		return;
+
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	now = ts.tv_sec;
+
+	/*
+	 * First call seeds the gate without scanning -- there's nothing
+	 * to compare against yet and the operator-visible 0/0 ratio
+	 * carries no signal.  Subsequent calls scan no more than once
+	 * per KCOV_BITMAP_CANARY_INTERVAL_SEC.
+	 */
+	if (kcov_bitmap_canary_last_check_mono == 0) {
+		kcov_bitmap_canary_last_check_mono = now;
+		return;
+	}
+	if ((unsigned long)(now - kcov_bitmap_canary_last_check_mono) <
+	    KCOV_BITMAP_CANARY_INTERVAL_SEC)
+		return;
+	kcov_bitmap_canary_last_check_mono = now;
+
+	/*
+	 * Sample edges_found BEFORE the popcount so any bits set after
+	 * the sample are excluded from the deficit math: edges_before
+	 * counts bit-flips committed strictly before the load, and
+	 * every one of those flips set a bucket_seen byte that bits-
+	 * never-clear keeps set forever.  popcount < edges_before is
+	 * therefore strict evidence of cleared bits, modulo the
+	 * KCOV_BITMAP_CANARY_DEFICIT memory-ordering tolerance below.
+	 *
+	 * popcount > edges_before is fine and expected on a busy run
+	 * (new bits set during the scan show up in the count); the
+	 * canary only treats the deficit direction as an alarm.
+	 */
+	edges_before = __atomic_load_n(&kcov_shm->edges_found,
+				       __ATOMIC_RELAXED);
+
+	kcov_bitmap_recount(kcov_shm->bucket_seen, KCOV_NUM_EDGES,
+			    &popcount, &ignored_distinct);
+	(void)ignored_distinct;
+
+	__atomic_fetch_add(&shm->stats.bucket_canary_checks, 1,
+			   __ATOMIC_RELAXED);
+
+	if (popcount >= edges_before)
+		return;
+
+	deficit = edges_before - popcount;
+	if (deficit <= KCOV_BITMAP_CANARY_DEFICIT)
+		return;
+
+	__atomic_fetch_add(&shm->stats.bucket_canary_deficits, 1,
+			   __ATOMIC_RELAXED);
+	stats_log_write("CANARY: kcov bucket_seen deficit=%lu (popcount=%lu, edges_before=%lu, threshold=%lu) -- bits cleared since last check, wild writer in shm\n",
+			deficit, popcount, edges_before,
+			KCOV_BITMAP_CANARY_DEFICIT);
+}
