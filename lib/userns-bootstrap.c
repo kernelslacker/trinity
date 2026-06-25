@@ -105,14 +105,20 @@ static void grandchild_body(int target_ns_flags,
 			    int (*fn)(void *), void *arg)
 {
 	/*
-	 * Capture the parent-ns real uid/gid BEFORE unshare(CLONE_NEWUSER).
-	 * After the unshare and before any map is written, getuid()/getgid()
-	 * return the overflow id (65534); the kernel's single-line unprivileged
-	 * idmap rule requires the mapped id to equal the opener's real euid in
-	 * the parent ns, so writing the overflow id yields EPERM.
+	 * Capture the parent-ns effective uid/gid BEFORE unshare(CLONE_NEWUSER).
+	 * After the unshare and before any map is written, the geteuid and
+	 * getegid getters return the overflow id (65534); the single-line
+	 * unprivileged idmap rule requires the mapped outside id to equal the
+	 * opener's effective uid/gid in the parent ns, so writing anything else
+	 * yields EPERM.  Trinity's setuid-family fuzz (setreuid/setresuid/
+	 * setfsuid/...) can leave ruid != euid in the persistent child; the
+	 * grandchild inherits that, so reading getuid()/getgid() and comparing
+	 * against the kernel's euid check is racy.  geteuid()/getegid() are
+	 * tautologically correct: write our current euid, kernel checks our
+	 * current euid.
 	 */
-	uid_t uid = getuid();
-	gid_t gid = getgid();
+	uid_t uid = geteuid();
+	gid_t gid = getegid();
 
 	if (unshare(CLONE_NEWUSER) != 0) {
 		if (errno == EPERM)
