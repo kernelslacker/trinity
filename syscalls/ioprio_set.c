@@ -2,7 +2,6 @@
  * SYSCALL_DEFINE3(ioprio_set, int, which, int, who, int, ioprio)
  */
 #include <linux/ioprio.h>
-#include <sys/types.h>
 #include <unistd.h>
 #include "pids.h"
 #include "random.h"
