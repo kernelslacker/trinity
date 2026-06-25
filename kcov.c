@@ -3554,15 +3554,28 @@ bool kcov_bitmap_save_file(const char *path)
 	{
 		unsigned long floor = __atomic_load_n(
 			&kcov_shm->edges_warm_loaded, __ATOMIC_RELAXED);
+		unsigned long distinct_floor = __atomic_load_n(
+			&kcov_shm->distinct_edges_warm_loaded,
+			__ATOMIC_RELAXED);
 		bool below_floor = recount_edges < floor;
 		bool below_atomic = (edges_now > recount_edges) &&
 				    (edges_now - recount_edges >
 				     KCOV_BITMAP_PERSIST_TOL);
+		/* distinct_edges is bounded by KCOV_NUM_EDGES (much smaller
+		 * than the bucket-transition counter), so torn-load slack is
+		 * negligible and a strict regression below the set-once
+		 * warm-load baseline is a real loss of a distinct edge bit
+		 * -- no tolerance window needed.  Closes the hole where a
+		 * scribble that page-clears a bucket_seen byte drops a
+		 * distinct edge while staying inside edges-tolerance and the
+		 * corrupt snapshot would otherwise persist. */
+		bool below_distinct = recount_distinct < distinct_floor;
 
-		if (below_floor || below_atomic) {
+		if (below_floor || below_atomic || below_distinct) {
 			kcov_bitmap_persist_refused_corrupt++;
-			output(0, "kcov-bitmap: REFUSING persist -- bitmap recount %lu < floor %lu / atomic %lu (scribble?) -- keeping prior on-disk state (refused=%lu)\n",
+			output(0, "kcov-bitmap: REFUSING persist -- bitmap recount %lu < floor %lu / atomic %lu, distinct recount %lu < distinct floor %lu (scribble?) -- keeping prior on-disk state (refused=%lu)\n",
 			       recount_edges, floor, edges_now,
+			       recount_distinct, distinct_floor,
 			       kcov_bitmap_persist_refused_corrupt);
 			free(bucket_seen_blob);
 			free(diag_blob);
