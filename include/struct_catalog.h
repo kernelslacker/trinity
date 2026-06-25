@@ -415,6 +415,7 @@ enum struct_catalog_idx {
 	SC_IP_MREQ_SOURCE,
 	SC_MSGBUF,
 	SC_SIGSET_T,
+	SC_LSM_CTX,
 
 	SC_NR_ENTRIES,		/* sentinel; equals ARRAY_SIZE(struct_catalog) once both stay in lockstep */
 };
