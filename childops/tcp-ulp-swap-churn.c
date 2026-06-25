@@ -130,15 +130,14 @@ static bool ns_unsupported_ifname_probe;
  * explicitly allows local inlining over a cross-childop factor-out).
  */
 static void fill_cinfo_aes_gcm_128(struct tls12_crypto_info_aes_gcm_128 *ci,
-				   unsigned short version)
+				   unsigned short version,
+				   int urandom_fd)
 {
-	int fd;
 	bool filled = false;
 
 	memset(ci, 0, sizeof(*ci));
 
-	fd = open("/dev/urandom", O_RDONLY | O_CLOEXEC);
-	if (fd >= 0) {
+	if (urandom_fd >= 0) {
 		size_t want = sizeof(ci->iv) + sizeof(ci->key) +
 			      sizeof(ci->salt) + sizeof(ci->rec_seq);
 		unsigned char buf[sizeof(ci->iv) + sizeof(ci->key) +
@@ -146,12 +145,11 @@ static void fill_cinfo_aes_gcm_128(struct tls12_crypto_info_aes_gcm_128 *ci,
 		size_t off = 0;
 
 		while (off < want) {
-			ssize_t n = read(fd, buf + off, want - off);
+			ssize_t n = read(urandom_fd, buf + off, want - off);
 			if (n <= 0)
 				break;
 			off += (size_t)n;
 		}
-		close(fd);
 		if (off == want) {
 			memcpy(ci->iv,      buf, sizeof(ci->iv));
 			memcpy(ci->key,     buf + sizeof(ci->iv),
@@ -333,7 +331,8 @@ static void ifname_probe(int sock)
  * reject RX install on a client-side fd when no peer ChangeCipherSpec
  * has fired yet, itself a coverage edge).  Returns 0 on success, -1
  * when iter_one should bail to its out: cleanup. */
-static int tcp_ulp_swap_iter_install_tls(int s, struct childdata *child)
+static int tcp_ulp_swap_iter_install_tls(int s, struct childdata *child,
+					 int urandom_fd)
 {
 	struct tls12_crypto_info_aes_gcm_128 cinfo;
 	unsigned short version;
@@ -364,12 +363,12 @@ static int tcp_ulp_swap_iter_install_tls(int s, struct childdata *child)
 			   1, __ATOMIC_RELAXED);
 
 	version = RAND_BOOL() ? TLS_1_2_VERSION : TLS_1_3_VERSION;
-	fill_cinfo_aes_gcm_128(&cinfo, version);
+	fill_cinfo_aes_gcm_128(&cinfo, version, urandom_fd);
 	if (setsockopt(s, SOL_TLS, TLS_TX, &cinfo, sizeof(cinfo)) == 0)
 		__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn_tx_install_ok,
 				   1, __ATOMIC_RELAXED);
 
-	fill_cinfo_aes_gcm_128(&cinfo, version);
+	fill_cinfo_aes_gcm_128(&cinfo, version, urandom_fd);
 	(void)setsockopt(s, SOL_TLS, TLS_RX, &cinfo, sizeof(cinfo));
 
 	return 0;
@@ -441,7 +440,8 @@ static void tcp_ulp_swap_iter_cycle_uninstall_reinstall(int s)
 }
 
 /* One full sequence on a freshly-created loopback TCP socket. */
-static void iter_one(const struct timespec *t_outer, struct childdata *child)
+static void iter_one(const struct timespec *t_outer, struct childdata *child,
+		     int urandom_fd)
 {
 	pid_t acceptor = -1;
 	int s;
@@ -465,7 +465,7 @@ static void iter_one(const struct timespec *t_outer, struct childdata *child)
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	/* Steps 3+4: install kTLS, then TLS_TX / TLS_RX cinfo. */
-	if (tcp_ulp_swap_iter_install_tls(s, child) != 0)
+	if (tcp_ulp_swap_iter_install_tls(s, child, urandom_fd) != 0)
 		goto out;
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
@@ -499,6 +499,7 @@ bool tcp_ulp_swap_churn(struct childdata *child)
 {
 	struct timespec t_outer;
 	unsigned int outer_iters, i;
+	int urandom_fd;
 
 	__atomic_add_fetch(&shm->stats.tcp_ulp_swap_churn_runs,
 			   1, __ATOMIC_RELAXED);
@@ -521,14 +522,19 @@ bool tcp_ulp_swap_churn(struct childdata *child)
 	if (outer_iters > ULP_SWAP_OUTER_CAP)
 		outer_iters = ULP_SWAP_OUTER_CAP;
 
+	urandom_fd = open("/dev/urandom", O_RDONLY | O_CLOEXEC);
+
 	for (i = 0; i < outer_iters; i++) {
 		if ((unsigned long long)ns_since(&t_outer) >=
 		    ULP_SWAP_WALL_CAP_NS)
 			break;
-		iter_one(&t_outer, child);
+		iter_one(&t_outer, child, urandom_fd);
 		if (ns_unsupported_tcp_ulp_swap)
 			break;
 	}
+
+	if (urandom_fd >= 0)
+		close(urandom_fd);
 
 	return true;
 }
