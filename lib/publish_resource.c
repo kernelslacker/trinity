@@ -13,25 +13,20 @@
 #include "objects.h"
 #include "publish_resource.h"
 
-struct object *publish_resource(enum objecttype type, unsigned long id,
-				const struct resource_meta *meta)
+/*
+ * Routing-acceptance gate.  Reject unsupported types BEFORE
+ * alloc_object() so the fall-through caller (which then takes
+ * the legacy alloc_object()/add_object() path) doesn't leave
+ * an orphaned object behind us.
+ *
+ * mmap/sockinfo/watch_queue/pipe/epoll/kvm_vm/kvm_vcpu and
+ * the futex/sysv_shm/aio_iocb families need pool-specific
+ * state the unified shape can't carry.  Return NULL so the
+ * caller falls back to the legacy alloc_object()/add_object()
+ * pair.
+ */
+static bool publish_resource_type_supported(enum objecttype type)
 {
-	static const struct resource_meta zero_meta;
-	const struct resource_meta *m = meta ? meta : &zero_meta;
-	struct object *obj;
-
-	/*
-	 * Routing-acceptance gate.  Reject unsupported types BEFORE
-	 * alloc_object() so the fall-through caller (which then takes
-	 * the legacy alloc_object()/add_object() path) doesn't leave
-	 * an orphaned object behind us.
-	 *
-	 * mmap/sockinfo/watch_queue/pipe/epoll/kvm_vm/kvm_vcpu and
-	 * the futex/sysv_shm/aio_iocb families need pool-specific
-	 * state the unified shape can't carry.  Return NULL so the
-	 * caller falls back to the legacy alloc_object()/add_object()
-	 * pair.
-	 */
 	switch (type) {
 	case OBJ_FD_PIPE:
 	case OBJ_FD_DEVFILE:
@@ -74,25 +69,26 @@ struct object *publish_resource(enum objecttype type, unsigned long id,
 	case OBJ_PID:
 	case OBJ_SYSV_SEM:
 	case OBJ_SYSV_MSG:
-		break;
+		return true;
 	default:
-		return NULL;
+		return false;
 	}
+}
 
-	obj = alloc_object();
-	if (obj == NULL)
-		return NULL;
-
-	/*
-	 * Stamp the type-specific primary handle.  FD pools route
-	 * through set_object_fd() so the per-pool union-member
-	 * mapping stays in exactly one place (objects.c).  Non-fd
-	 * pools each have a one-line typed assignment below — these
-	 * are the only id-only OBJ types in the enum and the cost of
-	 * stamping them inline is one switch arm each.  The default
-	 * arm is unreachable: the routing gate above already rejected
-	 * any type not enumerated here.
-	 */
+/*
+ * Stamp the type-specific primary handle.  FD pools route
+ * through set_object_fd() so the per-pool union-member
+ * mapping stays in exactly one place (objects.c).  Non-fd
+ * pools each have a one-line typed assignment below — these
+ * are the only id-only OBJ types in the enum and the cost of
+ * stamping them inline is one switch arm each.  The default
+ * arm is unreachable: the routing gate above already rejected
+ * any type not enumerated here.
+ */
+static void publish_resource_stamp_primary(struct object *obj,
+					   enum objecttype type,
+					   unsigned long id)
+{
 	switch (type) {
 	case OBJ_FD_PIPE:
 	case OBJ_FD_DEVFILE:
@@ -140,15 +136,20 @@ struct object *publish_resource(enum objecttype type, unsigned long id,
 	default:
 		break;
 	}
+}
 
-	/*
-	 * Stamp secondary metadata fields.  Pools not listed here
-	 * either take id only or fall under the default-return-NULL
-	 * arm above.  Pools listed here but called with meta == NULL
-	 * get the zero-meta defaults from the static const sentinel,
-	 * matching the existing producers that leave these fields at
-	 * implicit zero after alloc_object().
-	 */
+/*
+ * Stamp secondary metadata fields.  Pools not listed here
+ * either take id only or fall under the default-return-NULL
+ * arm above.  Pools listed here but called with meta == NULL
+ * get the zero-meta defaults from the static const sentinel,
+ * matching the existing producers that leave these fields at
+ * implicit zero after alloc_object().
+ */
+static void publish_resource_stamp_metadata(struct object *obj,
+					    enum objecttype type,
+					    const struct resource_meta *m)
+{
 	switch (type) {
 	case OBJ_FD_EVENTFD:
 		obj->eventfdobj.flags = m->flags;
@@ -196,6 +197,24 @@ struct object *publish_resource(enum objecttype type, unsigned long id,
 	default:
 		break;
 	}
+}
+
+struct object *publish_resource(enum objecttype type, unsigned long id,
+				const struct resource_meta *meta)
+{
+	static const struct resource_meta zero_meta;
+	const struct resource_meta *m = meta ? meta : &zero_meta;
+	struct object *obj;
+
+	if (!publish_resource_type_supported(type))
+		return NULL;
+
+	obj = alloc_object();
+	if (obj == NULL)
+		return NULL;
+
+	publish_resource_stamp_primary(obj, type, id);
+	publish_resource_stamp_metadata(obj, type, m);
 
 	add_object(obj, OBJ_LOCAL, type);
 	return obj;
