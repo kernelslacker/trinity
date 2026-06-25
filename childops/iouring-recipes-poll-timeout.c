@@ -25,7 +25,6 @@
 #include <sys/eventfd.h>
 #include <sys/mman.h>
 #include <sys/wait.h>
-#include <unistd.h>
 #include <linux/futex.h>
 #include <linux/io_uring.h>
 
