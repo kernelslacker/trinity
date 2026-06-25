@@ -3260,6 +3260,21 @@ struct stats_s {
 	unsigned long bucket_canary_checks;
 	unsigned long bucket_canary_deficits;
 
+	/* Mutation-attribution win/trial inversion canary, bumped from
+	 * minicorpus_mut_attrib_canary_check() on the parent's periodic
+	 * tick.  The win bump is lexically nested under the trial bump
+	 * in minicorpus.c and gated on (found_new && baseline_established),
+	 * so mut_wins[i] <= mut_trials[i] (and the structured equivalent)
+	 * is a by-construction identity at every instant.  A stray writer
+	 * scribbling a wins[] counter word silently inverts the ratio and
+	 * misleads the bandit's per-op weighting until the next stats
+	 * dump notices.  Bumped once per inverted op per scan; non-zero
+	 * is evidence the wins/trials counter region took a hit in the
+	 * current run, with the matching stats.log CANARY line carrying
+	 * the witnessed op + counts.  Parent-only writer; the RELAXED
+	 * add-fetch is for read-side ordering hygiene only. */
+	unsigned long mut_attrib_inversion_caught;
+
 	/* Number of windows the orchestrator above the strategy picker
 	 * forced STRATEGY_RANDOM in response to plateau_active, i.e. windows
 	 * with selection_reason == SR_PLATEAU_FORCE.  Excluded from the

@@ -261,6 +261,14 @@ static void run_periodic_surfaces(void)
 	 * writes that land inside it. */
 	kcov_bitmap_canary_check();
 
+	/* Periodic walk of the per-op mut_trials/mut_wins (and structured)
+	 * pairs verifying the by-construction wins <= trials inequality.
+	 * O(MUT_NUM_OPS) and self-gated on MUT_ATTRIB_CANARY_INTERVAL_SEC.
+	 * Catches scribbled-counter-word inversions that would silently
+	 * mislead the bandit's per-op weighting until the next stats dump
+	 * notices. */
+	minicorpus_mut_attrib_canary_check();
+
 	cmp_hints_maybe_snapshot();
 
 	print_stats();
