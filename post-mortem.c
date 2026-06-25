@@ -14,6 +14,7 @@
 #include "arch.h"
 #include "child.h"
 #include "kcov.h"
+#include "params.h"
 #include "pids.h"
 #include "shm.h"
 #include "stats_ring.h"
@@ -449,9 +450,10 @@ static void __cold dump_kcov_state(FILE *fp)
 	fprintf(fp, "KCOV: %lu unique edges, %lu total PCs, %lu calls (%lu remote)\n",
 		edges, pcs, calls, remote);
 	if (truncated > 0)
-		fprintf(fp, "KCOV: %lu calls truncated trace buffer (%.2f%% of calls) — consider raising KCOV_TRACE_SIZE\n",
+		fprintf(fp, "KCOV: %lu calls truncated trace buffer (%.2f%% of calls) — consider raising --kcov-trace-size (currently %u longs)\n",
 			truncated,
-			calls > 0 ? (100.0 * truncated) / calls : 0.0);
+			calls > 0 ? (100.0 * truncated) / calls : 0.0,
+			kcov_trace_size);
 	fprintf(fp, "KCOV: %lu CMP records collected\n", cmp_records);
 	if (cmp_truncated > 0)
 		fprintf(fp, "KCOV: %lu calls truncated cmp buffer (%.2f%% of calls) — consider raising KCOV_CMP_BUFFER_SIZE\n",

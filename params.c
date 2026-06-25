@@ -399,6 +399,12 @@ char *warm_start_path = NULL;
 bool no_kcov_warm_start = false;
 bool no_cmp_hints_warm_start = false;
 
+/* Default tracks the compile-time KCOV_TRACE_SIZE so a default run is
+ * byte-identical to a build without this knob (init / mmap / munmap /
+ * truncation-clamp all read the same value the #define would have
+ * substituted).  Operator override comes via --kcov-trace-size=N. */
+unsigned int kcov_trace_size = KCOV_TRACE_SIZE;
+
 bool corpus_save_errno_grad_live = false;
 
 char *memory_max_arg = NULL;
@@ -552,6 +558,7 @@ static const struct option_help option_descs[] = {
 	{ "group-bias",		 0,  "bias syscall selection toward the same group as the previous call" },
 	{ "help",		'h', "show this help" },
 	{ "ioctls",		'I', "list all ioctls" },
+	{ "kcov-trace-size", 0, "per-child KCOV PC-trace buffer size in number of unsigned longs (default: KCOV_TRACE_SIZE = 262144 longs = 2 MB on 64-bit). Must be a power of 2 in [KCOV_TRACE_SIZE, KCOV_TRACE_SIZE_MAX] (max 4M longs = 32 MB). A/B knob for testing whether the hot syscalls (mincore/mlock/writev/shmget/shmat) that today saturate trace_buf[0] at KCOV_TRACE_SIZE-1 are dropping real tail edges; default value is byte-identical to a build without this flag." },
 	{ "kcov-transition-coverage", 0, "shadow transition-coverage map mode: shadow (default; hash consecutive canonical PCs into a separate 16M-slot map and surface a transition top-N beside the PC top-N in the stats dump, with no effect on reward/frontier/plateau steering) or off (skip the per-PC transition hash entirely)." },
 	{ "kcov-transition-reward", 0, "transition-edge reward mode (requires --kcov-transition-coverage=shadow): combined (default; feed the capped transition delta into frontier_cold_weight, bandit_record_pull, and the frontier-edge ring so syscalls producing only transitions earn frontier credit), shadow-only (compute the transition reward and bump per-strategy attribution counters in shm->stats but leave live picker behaviour byte-identical to the pre-knob baseline -- rollback path), or off (skip the reward path entirely). Remote-mode transitions are excluded from live reward under combined until ordering quality is checked." },
 	{ "kernel_taint",	'T', "controls which kernel taint flags should be considered (see README)" },
@@ -626,6 +633,7 @@ static const struct option longopts[] = {
 	{ "canary-slots", required_argument, NULL, 0 },
 	{ "canary-window", required_argument, NULL, 0 },
 	{ "childop-kcov-attribution", required_argument, NULL, 0 },
+	{ "kcov-trace-size", required_argument, NULL, 0 },
 	{ "kcov-transition-coverage", required_argument, NULL, 0 },
 	{ "kcov-transition-reward", required_argument, NULL, 0 },
 	{ "children", required_argument, NULL, 'C' },
@@ -760,6 +768,32 @@ static bool parse_kcov_options(int opt, const char *name, char *arg)
 				arg);
 			exit(EXIT_FAILURE);
 		}
+		return true;
+	}
+
+	if (strcmp("kcov-trace-size", name) == 0) {
+		unsigned long val;
+
+		if (!parse_unsigned(arg, "kcov-trace-size", false, &val))
+			exit(EXIT_FAILURE);
+		if (val < (unsigned long)KCOV_TRACE_SIZE) {
+			outputerr("--kcov-trace-size=%lu below the lower bound %u (KCOV_TRACE_SIZE)\n",
+				val, (unsigned int)KCOV_TRACE_SIZE);
+			exit(EXIT_FAILURE);
+		}
+		if (val > KCOV_TRACE_SIZE_MAX) {
+			outputerr("--kcov-trace-size=%lu exceeds upper bound %lu (KCOV_TRACE_SIZE_MAX)\n",
+				val, (unsigned long)KCOV_TRACE_SIZE_MAX);
+			exit(EXIT_FAILURE);
+		}
+		/* Power-of-2: matches the historical KCOV_TRACE_SIZE shape
+		 * (and keeps the kernel's mmap-page alignment trivial). */
+		if ((val & (val - 1)) != 0) {
+			outputerr("--kcov-trace-size=%lu is not a power of 2\n",
+				val);
+			exit(EXIT_FAILURE);
+		}
+		kcov_trace_size = (unsigned int)val;
 		return true;
 	}
 

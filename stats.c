@@ -7697,8 +7697,8 @@ static void kcov_diag_emit_truncation_topn(void)
 	}
 
 	if (top_count > 0) {
-		output(0, "Top syscalls by trace truncation / max trace (KCOV_TRACE_SIZE=%u longs):\n",
-		       (unsigned int)KCOV_TRACE_SIZE);
+		output(0, "Top syscalls by trace truncation / max trace (kcov_trace_size=%u longs):\n",
+		       kcov_trace_size);
 		output(0, "  %5s %-24s %-4s %14s %14s %14s %7s %8s %8s\n",
 		       "nr", "name", "arch",
 		       "trace_trunc", "cmp_trace_tr", "max_trace",
@@ -7708,7 +7708,7 @@ static void kcov_diag_emit_truncation_topn(void)
 							      top[j].do32);
 			unsigned int pct10 = (unsigned int)
 				((top[j].max_trace_size * 1000ULL) /
-				 (uint64_t)KCOV_TRACE_SIZE);
+				 (uint64_t)kcov_trace_size);
 			char tt_call_str[32];
 			char ew_tt_str[32];
 

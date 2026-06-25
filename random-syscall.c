@@ -2383,14 +2383,15 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 			}
 		}
 
-		/* Per-call PC trace length vs the KCOV_TRACE_SIZE buffer cap.
-		 * pcres.trace_size is the post-cap PC count kcov_collect()
-		 * already computed (clamped at KCOV_TRACE_SIZE - 1 on
-		 * truncation -- a saturated call satisfies the inequality
-		 * trivially).  Cross-multiplied to avoid the runtime divide.
-		 */
+		/* Per-call PC trace length vs the kcov_trace_size buffer
+		 * cap (the runtime --kcov-trace-size value; defaults to
+		 * KCOV_TRACE_SIZE).  pcres.trace_size is the post-cap PC
+		 * count kcov_collect() already computed (clamped at
+		 * kcov_trace_size - 1 on truncation -- a saturated call
+		 * satisfies the inequality trivially).  Cross-multiplied
+		 * to avoid the runtime divide. */
 		if (pcres.trace_size * DEEP_WARM_TRACE_DEN >=
-		    (unsigned long)KCOV_TRACE_SIZE * DEEP_WARM_TRACE_NUM)
+		    (unsigned long)kcov_trace_size * DEEP_WARM_TRACE_NUM)
 			near_truncation = true;
 
 		if (deep_pcs || near_truncation) {

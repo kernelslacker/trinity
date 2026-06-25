@@ -678,14 +678,14 @@ static bool kcov_init_child_pc_fd(struct kcov_child *kc)
 	if (kc->fd < 0)
 		goto err_free_dedup;
 
-	if (ioctl(kc->fd, KCOV_INIT_TRACE, KCOV_TRACE_SIZE) < 0) {
+	if (ioctl(kc->fd, KCOV_INIT_TRACE, (unsigned long)kcov_trace_size) < 0) {
 		close(kc->fd);
 		kc->fd = -1;
 		goto err_free_dedup;
 	}
 
 	kc->trace_buf = mmap(NULL,
-		KCOV_TRACE_SIZE * sizeof(unsigned long),
+		(size_t)kcov_trace_size * sizeof(unsigned long),
 		PROT_READ | PROT_WRITE, MAP_SHARED,
 		kc->fd, 0);
 
@@ -726,7 +726,7 @@ static void kcov_init_child_remote_probe(struct kcov_child *kc,
 		return;
 
 	arg->trace_mode = KCOV_TRACE_PC;
-	arg->area_size = KCOV_TRACE_SIZE;
+	arg->area_size = kcov_trace_size;
 	arg->num_handles = 0;
 	arg->common_handle = KCOV_SUBSYSTEM_COMMON | (child_id + 1);
 	if (ioctl(kc->fd, KCOV_REMOTE_ENABLE, arg) == 0) {
@@ -737,11 +737,12 @@ static void kcov_init_child_remote_probe(struct kcov_child *kc,
 			 * and reopen to reset. */
 			close(kc->fd);
 			munmap(kc->trace_buf,
-				KCOV_TRACE_SIZE * sizeof(unsigned long));
+				(size_t)kcov_trace_size * sizeof(unsigned long));
 			kc->trace_buf = NULL;
 			kc->fd = open("/sys/kernel/debug/kcov", O_RDWR);
 			if (kc->fd < 0 ||
-			    ioctl(kc->fd, KCOV_INIT_TRACE, KCOV_TRACE_SIZE) < 0) {
+			    ioctl(kc->fd, KCOV_INIT_TRACE,
+				  (unsigned long)kcov_trace_size) < 0) {
 				if (kc->fd >= 0) {
 					close(kc->fd);
 					kc->fd = -1;
@@ -749,7 +750,7 @@ static void kcov_init_child_remote_probe(struct kcov_child *kc,
 				kc->active = false;
 			} else {
 				kc->trace_buf = mmap(NULL,
-					KCOV_TRACE_SIZE * sizeof(unsigned long),
+					(size_t)kcov_trace_size * sizeof(unsigned long),
 					PROT_READ | PROT_WRITE, MAP_SHARED,
 					kc->fd, 0);
 				if (kc->trace_buf == MAP_FAILED) {
@@ -912,7 +913,7 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 	 */
 	if (kc->trace_buf != NULL)
 		track_shared_region((unsigned long)kc->trace_buf,
-				    KCOV_TRACE_SIZE * sizeof(unsigned long));
+				    (size_t)kcov_trace_size * sizeof(unsigned long));
 
 	kcov_init_child_cmp_fd(kc);
 
@@ -1066,7 +1067,8 @@ void kcov_cleanup_child(struct kcov_child *kc)
 			outputerr("kcov_cleanup_child: skipping munmap on shape-corrupt trace_buf=%p\n",
 				  kc->trace_buf);
 		else
-			munmap(kc->trace_buf, KCOV_TRACE_SIZE * sizeof(unsigned long));
+			munmap(kc->trace_buf,
+				(size_t)kcov_trace_size * sizeof(unsigned long));
 		kc->trace_buf = NULL;
 	}
 	if (kc->fd >= 0) {
@@ -1133,7 +1135,7 @@ static bool kcov_recover_fd(struct kcov_child *kc, bool is_cmp)
 {
 	unsigned long buf_entries = is_cmp
 		? (unsigned long)KCOV_CMP_BUFFER_SIZE
-		: (unsigned long)KCOV_TRACE_SIZE;
+		: (unsigned long)kcov_trace_size;
 	unsigned long buf_bytes = buf_entries * sizeof(unsigned long);
 	int *fd_slot = is_cmp ? &kc->cmp_fd : &kc->fd;
 	unsigned long **buf_slot = is_cmp ? &kc->cmp_trace_buf : &kc->trace_buf;
@@ -1382,7 +1384,7 @@ void kcov_enable_remote(struct kcov_child *kc, unsigned int child_id, unsigned i
 	__atomic_store_n(&kc->trace_buf[0], 0, __ATOMIC_RELAXED);
 
 	arg.trace_mode = KCOV_TRACE_PC;
-	arg.area_size = KCOV_TRACE_SIZE;
+	arg.area_size = kcov_trace_size;
 	arg.num_handles = 0;
 	arg.common_handle = KCOV_SUBSYSTEM_COMMON | (child_id + 1);
 
@@ -1875,11 +1877,12 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 	}
 
 	count = __atomic_load_n(&kc->trace_buf[0], __ATOMIC_RELAXED);
-	if (count >= KCOV_TRACE_SIZE - 1) {
+	if (count >= (unsigned long)kcov_trace_size - 1) {
 		/* Kernel wanted to record more PCs than the buffer holds; the
 		 * tail of this call's coverage was dropped.  Bump a counter so
-		 * the post-mortem can show whether KCOV_TRACE_SIZE needs to
-		 * grow again. */
+		 * the post-mortem can show whether kcov_trace_size needs to
+		 * grow again (raise it via --kcov-trace-size; the compile-time
+		 * KCOV_TRACE_SIZE is just the default). */
 		__atomic_fetch_add(&kcov_shm->trace_truncated, 1,
 			__ATOMIC_RELAXED);
 		if (nr < MAX_NR_SYSCALL) {
@@ -1892,7 +1895,7 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 					&kcov_shm->childop_kcov_trace_truncated[op],
 					1, __ATOMIC_RELAXED);
 		}
-		count = KCOV_TRACE_SIZE - 1;
+		count = (unsigned long)kcov_trace_size - 1;
 	}
 
 	/* CAS-loop-up the per-syscall trace-size high-water mark using the
@@ -2274,7 +2277,7 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 		result->distinct_edges = distinct_edges_this_call;
 		result->local_distinct_pcs = local_distinct_pcs;
 		/* Post-cap PC count from the trace header above (already
-		 * clamped to KCOV_TRACE_SIZE - 1 when the buffer filled),
+		 * clamped to kcov_trace_size - 1 when the buffer filled),
 		 * surfaced so post-collect callers can recognise calls whose
 		 * trace approached the buffer ceiling without re-reading
 		 * trace_buf[0].  Same value the trace_truncated /

@@ -37,13 +37,27 @@ enum errno_bucket {
  * skipped when not.
  */
 
-/* Size of the per-child KCOV trace buffer (number of unsigned longs).
- * 256K entries is 2MB on 64-bit.  Deep kernel paths (long io_uring
- * chains, deep btrfs ops, multi-level fs walks, large genetlink
- * families) can blow past the previous 64K-entry budget and silently
- * truncate the tail of the trace, dropping uncounted edge coverage
- * on exactly the syscalls the fuzzer would learn the most from. */
+/* Default size of the per-child KCOV trace buffer (number of unsigned
+ * longs).  256K entries is 2MB on 64-bit.  Deep kernel paths (long
+ * io_uring chains, deep btrfs ops, multi-level fs walks, large
+ * genetlink families) can blow past the previous 64K-entry budget and
+ * silently truncate the tail of the trace, dropping uncounted edge
+ * coverage on exactly the syscalls the fuzzer would learn the most
+ * from.
+ *
+ * This is the compile-time DEFAULT and lower bound for the runtime
+ * --kcov-trace-size knob (see kcov_trace_size in params.h).  Every
+ * KCOV_INIT_TRACE / KCOV_REMOTE_ENABLE area_size / mmap / munmap /
+ * truncation-clamp site reads kcov_trace_size; KCOV_TRACE_SIZE itself
+ * still names the static default a caller falls back to before
+ * parse_args has run, and is the unit the operator-facing help text
+ * and the per-syscall truncation diagnostics name. */
 #define KCOV_TRACE_SIZE (256 << 10)
+
+/* Upper bound on --kcov-trace-size.  4M longs = 32MB per child;
+ * Trinity's per-fleet child count makes this the realistic A/B-test
+ * headroom without turning a typo into an OOM. */
+#define KCOV_TRACE_SIZE_MAX (4UL << 20)
 
 /* Size of the per-child KCOV comparison-operand buffer (number of
  * unsigned longs).  Each CMP record is 4 u64 (type, arg1, arg2, ip),

@@ -191,6 +191,20 @@ extern char *warm_start_path;
 extern bool no_kcov_warm_start;
 extern bool no_cmp_hints_warm_start;
 
+/*
+ * --kcov-trace-size=N: per-child KCOV PC-trace buffer size, in number
+ * of unsigned longs.  Default = KCOV_TRACE_SIZE (see include/kcov.h).
+ * Validated by parse_args() to be a power-of-2 within
+ * [KCOV_TRACE_SIZE, KCOV_TRACE_SIZE_MAX] so the lower bound preserves
+ * the historical baseline (an under-sized buffer would just reintroduce
+ * the truncation problem this knob exists to A/B against) and the upper
+ * bound caps the per-child memory blast radius.  Read on the cold init
+ * / cleanup / recovery paths and on the per-call truncation-clamp; not
+ * mutated after parse_args, so no atomic / barrier discipline is
+ * needed.
+ */
+extern unsigned int kcov_trace_size;
+
 /* errno-gradient-save A/B flag: when true, the errno-gradient
  * trigger in handle_syscall_ret() admits CORPUS_SAVE_REASON_ERRNO
  * entries to the minicorpus ring (live distribution change).  Default
