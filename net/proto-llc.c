@@ -1,9 +1,7 @@
-#include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/ioctl.h>
 #include <sys/uio.h>
 #include <sys/un.h>
-#include <netinet/in.h>
 #include <net/if.h>
 #include <net/if_arp.h>
 #include <linux/llc.h>
