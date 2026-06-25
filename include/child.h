@@ -1362,6 +1362,10 @@ struct canary_op_state {
 	unsigned long window_start_wedges;
 	unsigned long window_start_setup_accepted;
 	unsigned long window_start_setup_failures;
+	unsigned long window_start_wall_ns;	/* shm->stats.childop_wall_ns[op] snapshot at window
+						 * open; close - open is the per-window wall delta
+						 * reported in the canary_shadow line.  Telemetry
+						 * only, no live decision reads it. */
 
 	/* cumulative diagnostics */
 	unsigned int  canary_iterations;	/* lifetime windows entered */
