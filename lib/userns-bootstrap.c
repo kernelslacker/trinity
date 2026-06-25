@@ -43,32 +43,70 @@
  * Grandchild exit codes.  Each setup failure gets a distinct value so
  * a post-mortem debugger can recover the failure mode from the wait
  * status, even though the parent collapses 2-4 into a single -1.
+ *
+ * MAP_WRITE_FAIL is split into per-errno buckets so a post-geteuid
+ * residual failure (EPERM from a still-mismatched mapping, EINVAL
+ * from a malformed line or a writer that lost the unprivileged single-
+ * line rule, open() of a missing file, short write) is diagnosable
+ * from stats alone instead of collapsing into one opaque slot.  The
+ * historical UBS_EXIT_MAP_WRITE_FAIL value (3) is the "other" bucket
+ * so existing post-mortem readers do not need a value remap.
  */
-#define UBS_EXIT_RAN              0
-#define UBS_EXIT_USERNS_EPERM     1
-#define UBS_EXIT_USERNS_OTHER     2
-#define UBS_EXIT_MAP_WRITE_FAIL   3
-#define UBS_EXIT_TARGET_UNSHARE   4
+#define UBS_EXIT_RAN                    0
+#define UBS_EXIT_USERNS_EPERM           1
+#define UBS_EXIT_USERNS_OTHER           2
+#define UBS_EXIT_MAP_WRITE_FAIL_OTHER   3
+#define UBS_EXIT_TARGET_UNSHARE         4
+#define UBS_EXIT_MAP_WRITE_FAIL_EPERM   5
+#define UBS_EXIT_MAP_WRITE_FAIL_EINVAL  6
+
+/*
+ * Translate the errno captured at the failing id-map write site into
+ * the matching grandchild exit code.  Bucketed to keep the exit-code
+ * alphabet small and stable: EPERM and EINVAL cover the kernel's two
+ * documented rejections of the unprivileged single-line idmap rule;
+ * everything else (open() ENOENT/EACCES, short write, EIO, ...) lands
+ * in the OTHER bucket which retains the historical value.
+ */
+static int map_write_exit_code(int saved_errno)
+{
+	switch (saved_errno) {
+	case EPERM:
+		return UBS_EXIT_MAP_WRITE_FAIL_EPERM;
+	case EINVAL:
+		return UBS_EXIT_MAP_WRITE_FAIL_EINVAL;
+	default:
+		return UBS_EXIT_MAP_WRITE_FAIL_OTHER;
+	}
+}
 
 /*
  * Write a single short line to one of the proc id-map files.  The
  * kernel consumes the whole buffer or rejects it atomically, so a
- * short write is treated as failure.
+ * short write is treated as failure.  Returns 0 on success, otherwise
+ * the errno of the failing open()/write() so the caller can route it
+ * to the matching per-errno exit bucket.  A short write that does not
+ * set errno is reported as EIO.
  */
-static bool write_one_line(const char *path, const char *line)
+static int write_one_line(const char *path, const char *line)
 {
 	ssize_t wlen;
 	size_t len;
-	int fd;
+	int fd, saved;
 
 	fd = open(path, O_WRONLY);
 	if (fd < 0)
-		return false;
+		return errno ? errno : EIO;
 
 	len = strlen(line);
 	wlen = write(fd, line, len);
+	saved = errno;
 	close(fd);
-	return wlen == (ssize_t)len;
+	if (wlen == (ssize_t)len)
+		return 0;
+	if (wlen < 0)
+		return saved ? saved : EIO;
+	return EIO;
 }
 
 /*
@@ -76,24 +114,26 @@ static bool write_one_line(const char *path, const char *line)
  * Single-line "0 <real> 1" maps cover the one identity we need and
  * keep the writer out of the newuidmap / subuid range path entirely.
  * setgroups must be denied BEFORE gid_map can be written by an
- * unprivileged writer.
+ * unprivileged writer.  Returns 0 on success, otherwise the errno of
+ * the first failing write so the grandchild can encode it into its
+ * exit code.
  */
-static bool install_identity_maps(uid_t uid, gid_t gid)
+static int install_identity_maps(uid_t uid, gid_t gid)
 {
 	char buf[64];
+	int err;
 
 	snprintf(buf, sizeof(buf), "0 %u 1\n", (unsigned int)uid);
-	if (!write_one_line("/proc/self/uid_map", buf))
-		return false;
+	err = write_one_line("/proc/self/uid_map", buf);
+	if (err != 0)
+		return err;
 
-	if (!write_one_line("/proc/self/setgroups", "deny\n"))
-		return false;
+	err = write_one_line("/proc/self/setgroups", "deny\n");
+	if (err != 0)
+		return err;
 
 	snprintf(buf, sizeof(buf), "0 %u 1\n", (unsigned int)gid);
-	if (!write_one_line("/proc/self/gid_map", buf))
-		return false;
-
-	return true;
+	return write_one_line("/proc/self/gid_map", buf);
 }
 
 /*
@@ -104,6 +144,8 @@ static bool install_identity_maps(uid_t uid, gid_t gid)
 static void grandchild_body(int target_ns_flags,
 			    int (*fn)(void *), void *arg)
 {
+	int map_err;
+
 	/*
 	 * Capture the parent-ns effective uid/gid BEFORE unshare(CLONE_NEWUSER).
 	 * After the unshare and before any map is written, the geteuid and
@@ -126,8 +168,9 @@ static void grandchild_body(int target_ns_flags,
 		_exit(UBS_EXIT_USERNS_OTHER);
 	}
 
-	if (!install_identity_maps(uid, gid))
-		_exit(UBS_EXIT_MAP_WRITE_FAIL);
+	map_err = install_identity_maps(uid, gid);
+	if (map_err != 0)
+		_exit(map_write_exit_code(map_err));
 
 	if (target_ns_flags != 0 && unshare(target_ns_flags) != 0)
 		_exit(UBS_EXIT_TARGET_UNSHARE);
@@ -176,8 +219,22 @@ int userns_run_in_ns(int target_ns_flags, int (*fn)(void *), void *arg)
 			__atomic_add_fetch(&shm->stats.userns_bootstrap_userns_other,
 			                   1, __ATOMIC_RELAXED);
 			return -EAGAIN;
-		case UBS_EXIT_MAP_WRITE_FAIL:
+		case UBS_EXIT_MAP_WRITE_FAIL_OTHER:
 			__atomic_add_fetch(&shm->stats.userns_bootstrap_map_write_fail,
+			                   1, __ATOMIC_RELAXED);
+			__atomic_add_fetch(&shm->stats.userns_bootstrap_map_write_fail_other,
+			                   1, __ATOMIC_RELAXED);
+			return -EAGAIN;
+		case UBS_EXIT_MAP_WRITE_FAIL_EPERM:
+			__atomic_add_fetch(&shm->stats.userns_bootstrap_map_write_fail,
+			                   1, __ATOMIC_RELAXED);
+			__atomic_add_fetch(&shm->stats.userns_bootstrap_map_write_fail_eperm,
+			                   1, __ATOMIC_RELAXED);
+			return -EAGAIN;
+		case UBS_EXIT_MAP_WRITE_FAIL_EINVAL:
+			__atomic_add_fetch(&shm->stats.userns_bootstrap_map_write_fail,
+			                   1, __ATOMIC_RELAXED);
+			__atomic_add_fetch(&shm->stats.userns_bootstrap_map_write_fail_einval,
 			                   1, __ATOMIC_RELAXED);
 			return -EAGAIN;
 		case UBS_EXIT_TARGET_UNSHARE:
