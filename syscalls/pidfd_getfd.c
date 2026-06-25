@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE3(pidfd_getfd, int, pidfd, int, fd, unsigned int, flags)
  */
-#include <unistd.h>
 #include <linux/pidfd.h>
 #include "random.h"
 #include "rnd.h"
