@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE3(msync, unsigned long, start, size_t, len, int, flags)
  */
-#include <stdlib.h>
 #include "maps.h"
 #include "rnd.h"
 #include "sanitise.h"
