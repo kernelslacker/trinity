@@ -10,20 +10,33 @@
  * almost never lines up with a real registered family ID, so the actual
  * per-family parsers — where the bugs live — stay cold.
  *
- * This childop closes the gap.  Per invocation we enter a private net
- * namespace via userns_run_in_ns(): a transient grandchild fork installs
- * an identity user namespace plus a fresh CLONE_NEWNET, runs the body
- * below, and _exit()s so the kernel reaps the genetlink socket along
- * with the grandchild's netns.  The persistent fuzz child never changes
- * its own credentials or namespace stack, so the cap-drop oracle keeps
- * observing the host credential profile.  Inside the grandchild we
- * enumerate the registered families via CTRL_CMD_GETFAMILY/NLM_F_DUMP,
- * build a small catalog of {family_id, name, version, ops[]}, pick a
- * random family + a random op from its registered command list, and
- * construct a message with the matching nlmsghdr type and genlmsghdr
- * cmd.  The kernel's family demuxer accepts the type, the version check
- * passes, and we land directly in the family's command dispatch table —
- * exactly the surface trinity has historically missed.
+ * This childop closes the gap.  The per-invocation shape is:
+ *   1. In the persistent fuzz child, in the HOST net namespace,
+ *      enumerate the registered families via
+ *      CTRL_CMD_GETFAMILY/NLM_F_DUMP and build a small catalog of
+ *      {family_id, name, version, ops[]}.  This MUST happen before the
+ *      grandchild's unshare(CLONE_NEWNET) -- a freshly-unshared netns
+ *      starts out with essentially no registered families (only the
+ *      always-present GENL_ID_CTRL), so dumping the controller from
+ *      inside the fresh netns produces an empty catalog and the op
+ *      silently bails without ever sending fuzz traffic.
+ *   2. Enter a private net namespace via userns_run_in_ns(): a
+ *      transient grandchild fork installs an identity user namespace
+ *      plus a fresh CLONE_NEWNET, runs the body below, and _exit()s so
+ *      the kernel reaps the genetlink socket along with the
+ *      grandchild's netns.  The persistent fuzz child never changes
+ *      its own credentials or namespace stack, so the cap-drop oracle
+ *      keeps observing the host credential profile.
+ *   3. Inside the grandchild, pick a random family from the
+ *      parent-built catalog + a random op from its registered command
+ *      list, and construct a message with the matching nlmsghdr type
+ *      and genlmsghdr cmd.  Family IDs are kernel-global -- routing on
+ *      type=family_id reaches the family's dispatch code from any
+ *      netns, and per-netns presence is enforced inside the family
+ *      handlers, which is precisely the surface we want to fuzz.  The
+ *      kernel's family demuxer accepts the type, the version check
+ *      passes, and we land directly in the family's command dispatch
+ *      table -- exactly the surface trinity has historically missed.
  *
  * Important families this catches automatically when present:
  *   nl80211 (WiFi config), devlink, ethtool, dpll, mptcp_pm, ovs (OVS),
@@ -76,10 +89,12 @@ struct genl_family_entry {
 };
 
 /*
- * Per-grandchild discovery scratch.  Stack-allocated in the in-ns
- * callback and torn down with the grandchild on _exit(), so each
- * invocation discovers fresh in its own private netns rather than
- * carrying a stale catalog across reaped namespaces.
+ * Per-invocation discovery scratch.  Stack-allocated in the persistent
+ * fuzz child's genetlink_fuzzer() frame and inherited by the
+ * userns_run_in_ns() grandchild via the post-fork CoW address space, so
+ * the grandchild reads the catalog the parent built in the HOST netns
+ * without re-running CTRL_CMD_GETFAMILY against the fresh netns (where
+ * the result would be essentially empty).
  */
 struct genl_catalog {
 	struct genl_family_entry entries[MAX_FAMILIES];
@@ -256,14 +271,15 @@ static int parse_family_cb(const struct nlmsghdr *nlh, void *arg)
 /*
  * Send CTRL_CMD_GETFAMILY/NLM_F_DUMP and let nl_send_recv_dump_cb()
  * walk the responses, feeding each NEWFAMILY to parse_family_response()
- * via parse_family_cb().  The helper returns 0 on NLMSG_DONE, the
- * negated NLMSG_ERROR errno on a mid-dump error, and -EIO on local I/O
- * failure (including recv timeout).  We ignore the return value: the
- * downstream cat->count > 0 check in the caller is the single source of
- * truth for "do we have a usable catalog", same as the prior open-coded
- * loop which also treated NLMSG_ERROR and recv timeout as clean walks.
+ * via parse_family_cb().  Returns the helper's return code verbatim so
+ * the caller can tell a clean walk (0; cat->count==0 then means a
+ * genuinely empty registry) from a mid-dump NLMSG_ERROR (negated errno)
+ * and from a local I/O failure (-EIO, which also covers recv timeout).
+ * The previous (void)-cast collapsed all three cases into a single
+ * silent return path -- without the rc the empty-catalog stat could
+ * not distinguish transport breakage from a real empty registry.
  */
-static void do_discovery(struct nl_ctx *ctx, struct genl_catalog *cat)
+static int do_discovery(struct nl_ctx *ctx, struct genl_catalog *cat)
 {
 	struct {
 		struct nlmsghdr nlh;
@@ -279,8 +295,8 @@ static void do_discovery(struct nl_ctx *ctx, struct genl_catalog *cat)
 	req.genl.cmd = CTRL_CMD_GETFAMILY;
 	req.genl.version = 1;
 
-	(void)nl_send_recv_dump_cb(ctx, &req, req.nlh.nlmsg_len,
-				   parse_family_cb, cat);
+	return nl_send_recv_dump_cb(ctx, &req, req.nlh.nlmsg_len,
+				    parse_family_cb, cat);
 }
 
 /*
@@ -309,7 +325,7 @@ static void genl_on_err(int err, void *arg)
  * The post-send drain (NLMSG_ERROR inspection + receive-queue cleanup)
  * lives in nl_send_drain_errors(); genl_on_err() bumps the EPERM stat.
  */
-static void send_fuzzed_msg(struct nl_ctx *ctx, struct genl_family_entry *fam)
+static void send_fuzzed_msg(struct nl_ctx *ctx, const struct genl_family_entry *fam)
 {
 	unsigned char buf[2048];
 	struct nlmsghdr *nlh = (struct nlmsghdr *)buf;
@@ -365,31 +381,39 @@ static void send_fuzzed_msg(struct nl_ctx *ctx, struct genl_family_entry *fam)
 
 /*
  * Per-invocation state handed to the in-ns callback so it can keep
- * accounting against the right childop slot.
+ * accounting against the right childop slot.  The parent fills in
+ * @cat in the host net namespace before forking the grandchild; the
+ * grandchild reads it without re-running CTRL_CMD_GETFAMILY -- the
+ * fresh netns it runs in would return an essentially empty catalog
+ * and the op would silently bail.
  */
 struct genetlink_fuzzer_ctx {
 	struct childdata *child;
+	const struct genl_catalog *cat;
 };
 
 /*
  * Per-invocation body that must run inside the private user + net
  * namespace.  Executed in a transient grandchild forked by
  * userns_run_in_ns(); the grandchild's userns + netns are torn down on
- * _exit() so the genetlink socket and the in-flight catalog are reaped
- * by the kernel along with the namespace.  Return value is ignored by
- * the helper.
+ * _exit() so the genetlink socket is reaped by the kernel along with
+ * the namespace.  The catalog itself is built by the parent (in the
+ * host netns) and read here through cctx->cat; we do NOT redo
+ * CTRL_CMD_GETFAMILY in the fresh netns, since that registry is
+ * effectively empty and the dump would silently fail us out.  Return
+ * value is ignored by the helper.
  */
 static int genetlink_fuzzer_in_ns(void *arg)
 {
 	struct genetlink_fuzzer_ctx *cctx = (struct genetlink_fuzzer_ctx *)arg;
 	struct childdata *child = cctx->child;
+	const struct genl_catalog *cat = cctx->cat;
 	static const struct nl_open_opts opts = {
 		.proto         = NETLINK_GENERIC,
 		.recv_timeo_us = 250000,
 	};
 	struct nl_ctx ctx = { .fd = -1 };
-	struct genl_catalog cat;
-	struct genl_family_entry *fam;
+	const struct genl_family_entry *fam;
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
 	 * can be scribbled by a poisoned-arena write from a sibling; the
@@ -412,20 +436,13 @@ static int genetlink_fuzzer_in_ns(void *arg)
 		return 0;
 	}
 
-	memset(&cat, 0, sizeof(cat));
-	do_discovery(&ctx, &cat);
-	if (cat.count == 0) {
-		nl_close(&ctx);
-		return 0;
-	}
-
 	__atomic_add_fetch(&shm->stats.genetlink_families_discovered,
-			   cat.count, __ATOMIC_RELAXED);
+			   cat->count, __ATOMIC_RELAXED);
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
-	fam = &cat.entries[rnd_modulo_u32(cat.count)];
+	fam = &cat->entries[rnd_modulo_u32(cat->count)];
 
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop_data_path[op],
@@ -436,9 +453,54 @@ static int genetlink_fuzzer_in_ns(void *arg)
 	return 0;
 }
 
+/*
+ * Build a catalog of registered genetlink families by talking to the
+ * controller from the persistent fuzz child, in the host net
+ * namespace.  Returns true with @cat populated (count > 0) on success;
+ * otherwise bumps the appropriate diagnostic counter and returns false
+ * so the caller can skip the grandchild fork entirely.  Splitting the
+ * empty-catalog cause across three counters
+ * (missing_producer / discovery_io_err / discovery_nlerr) keeps a
+ * genuinely empty kernel registry separable from a recv timeout and
+ * from a controller-side NLMSG_ERROR -- previously all three collapsed
+ * into a single silent return and showed only as derived setup_fail.
+ */
+static bool build_catalog(struct genl_catalog *cat)
+{
+	static const struct nl_open_opts opts = {
+		.proto         = NETLINK_GENERIC,
+		.recv_timeo_us = 250000,
+	};
+	struct nl_ctx ctx = { .fd = -1 };
+	int rc;
+
+	memset(cat, 0, sizeof(*cat));
+
+	if (nl_open(&ctx, &opts) < 0)
+		return false;
+
+	rc = do_discovery(&ctx, cat);
+	nl_close(&ctx);
+
+	if (cat->count > 0)
+		return true;
+
+	if (rc == -EIO)
+		__atomic_add_fetch(&shm->stats.genetlink_discovery_io_err,
+				   1, __ATOMIC_RELAXED);
+	else if (rc < 0)
+		__atomic_add_fetch(&shm->stats.genetlink_discovery_nlerr,
+				   1, __ATOMIC_RELAXED);
+	else
+		__atomic_add_fetch(&shm->stats.genetlink_missing_producer,
+				   1, __ATOMIC_RELAXED);
+	return false;
+}
+
 bool genetlink_fuzzer(struct childdata *child)
 {
-	struct genetlink_fuzzer_ctx cctx = { .child = child };
+	struct genl_catalog cat;
+	struct genetlink_fuzzer_ctx cctx = { .child = child, .cat = &cat };
 	int rc;
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op latch_reason array.  The field lives in shared
@@ -449,6 +511,15 @@ bool genetlink_fuzzer(struct childdata *child)
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	if (ns_unsupported_genetlink_fuzzer)
+		return true;
+
+	/* Discovery runs HERE -- in the persistent fuzz child, in the
+	 * host net namespace -- so the catalog is non-empty before the
+	 * grandchild's unshare(CLONE_NEWNET).  The fresh netns would
+	 * report essentially no registered families, so dumping the
+	 * controller inside it (the prior shape) produced an empty
+	 * catalog and bailed silently. */
+	if (!build_catalog(&cat))
 		return true;
 
 	rc = userns_run_in_ns(CLONE_NEWNET, genetlink_fuzzer_in_ns, &cctx);
@@ -463,7 +534,7 @@ bool genetlink_fuzzer(struct childdata *child)
 	if (rc < 0) {
 		/* Transient grandchild setup failure (fork, id-map write,
 		 * secondary unshare).  Skip this iteration without latching
-		 * — the failure is not policy and may not recur. */
+		 * -- the failure is not policy and may not recur. */
 		return true;
 	}
 
