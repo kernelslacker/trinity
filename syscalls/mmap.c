@@ -211,6 +211,179 @@ static void sanitise_mmap(struct syscallrecord *rec)
 						   rec->a3);
 }
 
+/*
+ * Oracle: a successful mmap return must be page-aligned.  A
+ * misaligned address indicates the kernel handed back a value
+ * that cannot be a real VMA base — feeding it into the object
+ * pool would cache a bogus map->ptr that later munmap /
+ * mprotect / memory-pressure consumers walk into.
+ */
+static bool post_mmap_oracle_aligned(char *p)
+{
+	if ((unsigned long) p & (page_size - 1)) {
+		output(0, "mmap oracle: returned addr %p is not page-aligned (page_size=%u)\n",
+		       p, page_size);
+		__atomic_add_fetch(&shm->stats.mmap_oracle_anomalies, 1,
+				   __ATOMIC_RELAXED);
+		return false;
+	}
+	return true;
+}
+
+/*
+ * sanitise_mmap picks rec->a2 from a fixed mapping_sizes[]
+ * table without bounding it against the chosen fd's actual
+ * file size.  The kernel happily creates a VMA covering pages
+ * past EOF, but accessing them SIGBUSes with BUS_ADRERR --
+ * dirty_mapping (and later get_map() consumers reading from
+ * the OBJ_LOCAL pool entry) walk the recorded size and burn
+ * the child before it can contribute to coverage.  Clamp
+ * map->size to the in-bounds extent so subsequent walks stay
+ * inside real backing.  st_size == 0 on a non-regular file
+ * covers /dev/zero, /dev/mem, hugetlb fds, memfd_secret,
+ * kcov and any other special fd whose mappable extent is
+ * not reflected in stat -- leave the requested size alone
+ * for those (they don't SIGBUS the way a short file mmap
+ * does).  st_size == 0 on a regular file (a fresh testfile
+ * or empty memfd) has no backing at all, so zero map->size
+ * to keep the dirty walker off it.  If fstat itself
+ * fails (fd was closed or replaced between the syscall and
+ * the post handler) the extent is unknown, so zero the size
+ * to gate dirty_mapping off rather than walking past EOF.
+ */
+static void post_mmap_clamp_filebacked(struct object *new, struct syscallrecord *rec)
+{
+	struct stat st;
+
+	if (rec->a5 != (unsigned long) -1) {
+		if (fstat((int) rec->a5, &st) == 0) {
+			if (st.st_size > 0) {
+				off_t off_bytes = 0;
+				bool pgoff_overflows = false;
+
+				/*
+				 * sanitise_mmap stores mmap2's pgoff in
+				 * page-size units, but the clamp below
+				 * works in bytes.  Scale before subtracting
+				 * from st_size, otherwise backed is off by
+				 * a page_size factor for any mmap2 with
+				 * non-zero pgoff.
+				 *
+				 * rec->a6 is fuzz-controlled and the
+				 * multiply can overflow signed off_t.
+				 * Reject scales that exceed OFF_T_MAX /
+				 * page_size and treat them the same as the
+				 * fstat-fails / !S_ISREG && size == 0 arms
+				 * below -- zero map.size and bump the
+				 * existing clamp stat.
+				 */
+				if (current_entry_is_mmap2()) {
+					unsigned long long off_max =
+						(1ULL << (sizeof(off_t) * 8 - 1)) - 1;
+					unsigned long max_pgoff =
+						(unsigned long) off_max / page_size;
+
+					if (rec->a6 > max_pgoff)
+						pgoff_overflows = true;
+					else
+						off_bytes = (off_t) rec->a6 * (off_t) page_size;
+				} else {
+					off_bytes = (off_t) rec->a6;
+				}
+
+				if (pgoff_overflows) {
+					new->map.size = 0;
+					__atomic_add_fetch(&shm->stats.mmap_size_clamped,
+							   1, __ATOMIC_RELAXED);
+				} else {
+					off_t backed = (off_t) st.st_size - off_bytes;
+
+					if (backed <= 0)
+						new->map.size = 0;
+					else if ((unsigned long) backed < new->map.size)
+						new->map.size = (unsigned long) backed & PAGE_MASK;
+
+					if (new->map.size != rec->a2)
+						__atomic_add_fetch(&shm->stats.mmap_size_clamped,
+								   1, __ATOMIC_RELAXED);
+				}
+			} else if (S_ISREG(st.st_mode)) {
+				new->map.size = 0;
+				__atomic_add_fetch(&shm->stats.mmap_size_clamped,
+						   1, __ATOMIC_RELAXED);
+			}
+		} else {
+			new->map.size = 0;
+			__atomic_add_fetch(&shm->stats.mmap_size_clamped,
+					   1, __ATOMIC_RELAXED);
+		}
+	}
+}
+
+/*
+ * Sometimes dirty the mapping.
+ *
+ * Window A: between the post-mmap fstat clamp above (which pinned
+ * new->map.size to st_size at allocation time) and this dirty walk,
+ * any sibling holding the same fd can ftruncate() it shorter,
+ * fallocate(FALLOC_FL_PUNCH_HOLE) it, or fallocate(FALLOC_FL_
+ * COLLAPSE_RANGE) it.  Walking the now-stale stored size SIGBUSes
+ * BUS_ADRERR on the first page past the new EOF, killing the child
+ * before it contributes to coverage (3x ba67bbc7 + 2x 899fc9d9
+ * cluster, post_mmap → memcpy SIGBUS).
+ *
+ * Re-snapshot into a stack-local and re-fstat right before the
+ * dirty walk, mirroring dirty_random_mapping (mm/maps.c).  The
+ * obj's stored map is left at its post-allocation extent — other
+ * consumers (the OBJ_LOCAL pool walker, get_map() readers from
+ * later syscalls in this child) reuse that value and may race with
+ * us, but mutating it would leak this narrowed view to anyone
+ * holding the same handle.
+ *
+ * fstat failure (EBADF after a sibling close) drops the dirty walk
+ * entirely; falling back to the stale stored size is exactly what
+ * this clamp exists to avoid.
+ */
+static void post_mmap_dirty(struct object *new)
+{
+	if (new->map.size > 0 && RAND_BOOL()) {
+		struct map local = new->map;
+		bool walk = true;
+
+		if (local.type == MMAPED_FILE && local.fd >= 0) {
+			struct stat st2;
+
+			if (fstat(local.fd, &st2) != 0 || st2.st_size == 0) {
+				walk = false;
+			} else if ((unsigned long) st2.st_size < local.size) {
+				local.size = (unsigned long) st2.st_size & PAGE_MASK;
+			}
+		}
+
+		if (walk && local.size > 0)
+			dirty_mapping(&local);
+	}
+}
+
+/*
+ * Oracle: 1-in-100 chance — verify the new mapping is visible in
+ * /proc/self/maps with the expected prot bits.  A missing or
+ * mismatched entry means the kernel's VMA tree is inconsistent
+ * with what it handed back as a successful mmap return address.
+ */
+static void post_mmap_oracle_proc_maps(char *p, struct syscallrecord *rec)
+{
+	if (ONE_IN(100)) {
+		if (!proc_maps_check((unsigned long) p, rec->a2, rec->a3, true)) {
+			output(0, "mmap oracle: mapping at %p size %lu prot 0x%lx "
+			       "not visible in /proc/self/maps with expected prot\n",
+			       p, rec->a2, rec->a3);
+			__atomic_add_fetch(&shm->stats.mmap_oracle_anomalies, 1,
+					   __ATOMIC_RELAXED);
+		}
+	}
+}
+
 static void post_mmap(struct syscallrecord *rec)
 {
 	char *p;
@@ -221,20 +394,8 @@ static void post_mmap(struct syscallrecord *rec)
 	if (p == MAP_FAILED)
 		return;
 
-	/*
-	 * Oracle: a successful mmap return must be page-aligned.  A
-	 * misaligned address indicates the kernel handed back a value
-	 * that cannot be a real VMA base — feeding it into the object
-	 * pool would cache a bogus map->ptr that later munmap /
-	 * mprotect / memory-pressure consumers walk into.
-	 */
-	if ((unsigned long) p & (page_size - 1)) {
-		output(0, "mmap oracle: returned addr %p is not page-aligned (page_size=%u)\n",
-		       p, page_size);
-		__atomic_add_fetch(&shm->stats.mmap_oracle_anomalies, 1,
-				   __ATOMIC_RELAXED);
+	if (!post_mmap_oracle_aligned(p))
 		return;
-	}
 
 	is_anon = !!(rec->a4 & MAP_ANONYMOUS);
 
@@ -280,156 +441,17 @@ static void post_mmap(struct syscallrecord *rec)
 		new->map.type = CHILD_ANON;
 		add_object(new, OBJ_LOCAL, OBJ_MMAP_ANON);
 	} else {
-		struct stat st;
-
 		new->map.fd = rec->a5;
 		new->map.type = MMAPED_FILE;
 
-		/*
-		 * sanitise_mmap picks rec->a2 from a fixed mapping_sizes[]
-		 * table without bounding it against the chosen fd's actual
-		 * file size.  The kernel happily creates a VMA covering pages
-		 * past EOF, but accessing them SIGBUSes with BUS_ADRERR --
-		 * dirty_mapping (and later get_map() consumers reading from
-		 * the OBJ_LOCAL pool entry) walk the recorded size and burn
-		 * the child before it can contribute to coverage.  Clamp
-		 * map->size to the in-bounds extent so subsequent walks stay
-		 * inside real backing.  st_size == 0 on a non-regular file
-		 * covers /dev/zero, /dev/mem, hugetlb fds, memfd_secret,
-		 * kcov and any other special fd whose mappable extent is
-		 * not reflected in stat -- leave the requested size alone
-		 * for those (they don't SIGBUS the way a short file mmap
-		 * does).  st_size == 0 on a regular file (a fresh testfile
-		 * or empty memfd) has no backing at all, so zero map->size
-		 * to keep the dirty walker off it.  If fstat itself
-		 * fails (fd was closed or replaced between the syscall and
-		 * the post handler) the extent is unknown, so zero the size
-		 * to gate dirty_mapping off rather than walking past EOF.
-		 */
-		if (rec->a5 != (unsigned long) -1) {
-			if (fstat((int) rec->a5, &st) == 0) {
-				if (st.st_size > 0) {
-					off_t off_bytes = 0;
-					bool pgoff_overflows = false;
-
-					/*
-					 * sanitise_mmap stores mmap2's pgoff in
-					 * page-size units, but the clamp below
-					 * works in bytes.  Scale before subtracting
-					 * from st_size, otherwise backed is off by
-					 * a page_size factor for any mmap2 with
-					 * non-zero pgoff.
-					 *
-					 * rec->a6 is fuzz-controlled and the
-					 * multiply can overflow signed off_t.
-					 * Reject scales that exceed OFF_T_MAX /
-					 * page_size and treat them the same as the
-					 * fstat-fails / !S_ISREG && size == 0 arms
-					 * below -- zero map.size and bump the
-					 * existing clamp stat.
-					 */
-					if (current_entry_is_mmap2()) {
-						unsigned long long off_max =
-							(1ULL << (sizeof(off_t) * 8 - 1)) - 1;
-						unsigned long max_pgoff =
-							(unsigned long) off_max / page_size;
-
-						if (rec->a6 > max_pgoff)
-							pgoff_overflows = true;
-						else
-							off_bytes = (off_t) rec->a6 * (off_t) page_size;
-					} else {
-						off_bytes = (off_t) rec->a6;
-					}
-
-					if (pgoff_overflows) {
-						new->map.size = 0;
-						__atomic_add_fetch(&shm->stats.mmap_size_clamped,
-								   1, __ATOMIC_RELAXED);
-					} else {
-						off_t backed = (off_t) st.st_size - off_bytes;
-
-						if (backed <= 0)
-							new->map.size = 0;
-						else if ((unsigned long) backed < new->map.size)
-							new->map.size = (unsigned long) backed & PAGE_MASK;
-
-						if (new->map.size != rec->a2)
-							__atomic_add_fetch(&shm->stats.mmap_size_clamped,
-									   1, __ATOMIC_RELAXED);
-					}
-				} else if (S_ISREG(st.st_mode)) {
-					new->map.size = 0;
-					__atomic_add_fetch(&shm->stats.mmap_size_clamped,
-							   1, __ATOMIC_RELAXED);
-				}
-			} else {
-				new->map.size = 0;
-				__atomic_add_fetch(&shm->stats.mmap_size_clamped,
-						   1, __ATOMIC_RELAXED);
-			}
-		}
+		post_mmap_clamp_filebacked(new, rec);
 
 		add_object(new, OBJ_LOCAL, OBJ_MMAP_FILE);
 	}
 
-	/*
-	 * Sometimes dirty the mapping.
-	 *
-	 * Window A: between the post-mmap fstat clamp above (which pinned
-	 * new->map.size to st_size at allocation time) and this dirty walk,
-	 * any sibling holding the same fd can ftruncate() it shorter,
-	 * fallocate(FALLOC_FL_PUNCH_HOLE) it, or fallocate(FALLOC_FL_
-	 * COLLAPSE_RANGE) it.  Walking the now-stale stored size SIGBUSes
-	 * BUS_ADRERR on the first page past the new EOF, killing the child
-	 * before it contributes to coverage (3x ba67bbc7 + 2x 899fc9d9
-	 * cluster, post_mmap → memcpy SIGBUS).
-	 *
-	 * Re-snapshot into a stack-local and re-fstat right before the
-	 * dirty walk, mirroring dirty_random_mapping (mm/maps.c).  The
-	 * obj's stored map is left at its post-allocation extent — other
-	 * consumers (the OBJ_LOCAL pool walker, get_map() readers from
-	 * later syscalls in this child) reuse that value and may race with
-	 * us, but mutating it would leak this narrowed view to anyone
-	 * holding the same handle.
-	 *
-	 * fstat failure (EBADF after a sibling close) drops the dirty walk
-	 * entirely; falling back to the stale stored size is exactly what
-	 * this clamp exists to avoid.
-	 */
-	if (new->map.size > 0 && RAND_BOOL()) {
-		struct map local = new->map;
-		bool walk = true;
+	post_mmap_dirty(new);
 
-		if (local.type == MMAPED_FILE && local.fd >= 0) {
-			struct stat st2;
-
-			if (fstat(local.fd, &st2) != 0 || st2.st_size == 0) {
-				walk = false;
-			} else if ((unsigned long) st2.st_size < local.size) {
-				local.size = (unsigned long) st2.st_size & PAGE_MASK;
-			}
-		}
-
-		if (walk && local.size > 0)
-			dirty_mapping(&local);
-	}
-
-	/*
-	 * Oracle: 1-in-100 chance — verify the new mapping is visible in
-	 * /proc/self/maps with the expected prot bits.  A missing or
-	 * mismatched entry means the kernel's VMA tree is inconsistent
-	 * with what it handed back as a successful mmap return address.
-	 */
-	if (ONE_IN(100)) {
-		if (!proc_maps_check((unsigned long) p, rec->a2, rec->a3, true)) {
-			output(0, "mmap oracle: mapping at %p size %lu prot 0x%lx "
-			       "not visible in /proc/self/maps with expected prot\n",
-			       p, rec->a2, rec->a3);
-			__atomic_add_fetch(&shm->stats.mmap_oracle_anomalies, 1,
-					   __ATOMIC_RELAXED);
-		}
-	}
+	post_mmap_oracle_proc_maps(p, rec);
 }
 
 static char * decode_mmap(struct syscallrecord *rec, unsigned int argnum)
