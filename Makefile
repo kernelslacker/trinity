@@ -145,17 +145,9 @@ trinity: test $(OBJS) $(HEADERS)
 	$(QUIET_CC)$(CC) $(CFLAGS) $(LDFLAGS) -o trinity $(OBJS) $(LDLIBS)
 	@mkdir -p tmp
 
-df = $(DEPDIR)/$(*D)/$(*F)
-
 %.o : %.c | $(VERSION_H)
-	$(QUIET_CC)$(CC) $(CFLAGS) -o $@ -c $<
 	@mkdir -p $(DEPDIR)/$(*D)
-	@$(CC) -MM $(CFLAGS) $*.c > $(df).d
-	@mv -f $(df).d $(df).d.tmp
-	@sed -e 's|.*:|$*.o:|' <$(df).d.tmp > $(df).d
-	@sed -e 's/.*://' -e 's/\\$$//' < $(df).d.tmp | fmt -1 | \
-	  sed -e 's/^ *//' -e 's/$$/:/' >> $(df).d
-	@rm -f $(df).d.tmp
+	$(QUIET_CC)$(CC) $(CFLAGS) -MMD -MF $(DEPDIR)/$*.d -o $@ -c $<
 
 clean:
 	@rm -f $(OBJS)
