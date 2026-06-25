@@ -1,7 +1,5 @@
-#include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
-#include <netinet/in.h>
 #include <linux/can.h>
 #include <linux/can/raw.h>
 #include <linux/can/isotp.h>
