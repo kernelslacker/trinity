@@ -1,7 +1,6 @@
 /*
  *  SYSCALL_DEFINE3(fspick, int, dfd, const char __user *, path, unsigned int, flags)
  */
-#include <unistd.h>
 #include "object-types.h"
 #include "sanitise.h"
 
