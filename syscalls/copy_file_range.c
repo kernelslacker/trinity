@@ -5,7 +5,6 @@
  */
 #include <linux/fs.h>
 #include <fcntl.h>
-#include <string.h>
 #include <stdlib.h>
 #include "arch.h"
 #include "fd.h"
