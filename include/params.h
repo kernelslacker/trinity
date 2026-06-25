@@ -64,6 +64,21 @@ extern bool group_bias;
  * (oracle counters) is independent of this flag.
  */
 extern bool cred_throttle;
+/*
+ * --frontier-live-cooldown: gate for the LIVE-regime early ring-decay
+ * variant of frontier_window_advance().  When set, syscalls whose
+ * per-syscall LIVE-regime miss-streak has crossed
+ * FRONTIER_LIVE_MISS_COOLDOWN have their cached frontier_recent_count
+ * halved on the next rotation -- driving the per-nr ring sum toward
+ * zero faster than the trailing-K-window subtraction alone, so the
+ * cached frontier_max_weight falls and the picker reaches the silent
+ * decay path on the cooled-off syscalls.  DEFAULT OFF: the rotation
+ * arithmetic is byte-identical to the pre-flag baseline when this
+ * stays false; the F3 shadow miss-streak counters and the
+ * frontier_live_cooldown_decays observability counter are always-on
+ * regardless.  Read RELAXED on the rotation hot path.
+ */
+extern bool frontier_live_cooldown;
 extern bool user_set_seed;
 extern char *victim_paths[];
 extern unsigned int nr_victim_paths;

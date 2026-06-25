@@ -2829,6 +2829,23 @@ struct stats_s {
 	unsigned long frontier_live_cooldown_candidates;
 	unsigned long frontier_live_would_skip;
 
+	/* Did-decay counter for the LIVE-regime early ring-decay variant of
+	 * frontier_window_advance() (--frontier-live-cooldown).  One bump per
+	 * (nr, rotation) where the per-syscall LIVE-regime miss-streak was
+	 * at-or-past FRONTIER_LIVE_MISS_COOLDOWN AND the rotation actually
+	 * reduced the cached frontier_recent_count for that nr (i.e. the new
+	 * sum was non-zero before the halving step).  The flag-off baseline
+	 * leaves this counter at zero; flag-on it tallies how often the
+	 * early decay actually moved the wall, paired with the F3
+	 * frontier_live_would_skip projection to measure the live behaviour
+	 * delta the cooldown lever is producing.
+	 *
+	 * Observability only: the bump happens inside the rotation hot path
+	 * but no selection or scoring code reads it.  Mirrors the off-by-
+	 * construction discipline the sibling frontier_underflow_prevented
+	 * counter uses for its rotation-loop bump. */
+	unsigned long frontier_live_cooldown_decays;
+
 	/* Live reject count for the blanket LIVE-regime probabilistic
 	 * pick-reject gate (FRONTIER_LIVE_DECAY_REJECT_DENOM).  One bump
 	 * per LIVE-regime pick that passed the frontier-weight roll above

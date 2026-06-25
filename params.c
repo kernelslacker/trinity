@@ -87,6 +87,7 @@ bool stats_json = false;
 bool quiet = false;
 bool group_bias = false;
 bool cred_throttle = false;
+bool frontier_live_cooldown = false;
 
 unsigned long epoch_iterations = 0;
 unsigned int epoch_timeout = 0;
@@ -535,6 +536,7 @@ static const struct option_help option_descs[] = {
 	{ "cmp-recent-pool", 0, "A/B selection policy for the run-local CMP recent-pool tier.  Accepts 'off' (default; cmp_hints_try_get_ex samples the durable per-syscall pool exactly as before) or 'recent-first' (during a CMP_RISING_PC_FLAT plateau, sample the recent ring first and fall through to the durable pool on an empty ring or off-plateau).  Shadow counters (cmp_recent_inserts / would_pick / would_miss) are active in BOTH modes so the would-be-pick rate is observable from a default run before the live arm is flipped." },
 	{ "corpus-save-errno-grad-live", 0, "DEFAULT OFF. Enable the errno-gradient corpus save trigger (CORPUS_SAVE_REASON_ERRNO): when a syscall returns a non-EFAULT errno bucket for the first time this run, admit its args to the per-syscall ring. Flag off keeps the corpus admission distribution byte-identical to a build without this trigger; the errno_grad_save_would_save shadow counter is bumped regardless of this flag so the would-be-save volume is measurable before flipping live." },
 	{ "cred-throttle",	 0,  "DEFAULT OFF. Enable the credential-syscall throttle: when a credential class (setregid/setreuid/setresuid/setresgid/setgid/setuid/setfsuid/setfsgid/setgroups) has accumulated >=64 attempts with zero successes and EPERM+EINVAL dominating >=90% of returns, downweight the class by rejecting 31/32 of subsequent picks. Flag off keeps the picker distribution byte-identical to a build without this row; the per-class observability counters are bumped regardless of this flag." },
+	{ "frontier-live-cooldown", 0, "DEFAULT OFF. Enable the LIVE-regime early ring-decay: on every window rotation, syscalls whose per-syscall LIVE-regime miss-streak has crossed FRONTIER_LIVE_MISS_COOLDOWN have their cached frontier_recent_count halved so the cached max weight falls and the picker reaches the silent decay path on the cooled-off syscalls. The halving is folded into the existing CAS-clamped per-nr rotation loop and uses the same underflow-safe arithmetic. Flag off keeps the rotation byte-identical to a build without this row; the frontier_live_cooldown_decays observability counter and the F3 miss-streak counters are bumped regardless." },
 	{ "dangerous",		'd', "enable dangerous mode" },
 	{ "debug",		'D', "enable debug" },
 	{ "disable-fds",	 0,  NULL },	/* handled separately */
@@ -640,6 +642,7 @@ static const struct option longopts[] = {
 	{ "group", required_argument, NULL, 'g' },
 	{ "group-bias", no_argument, NULL, 0 },
 	{ "cred-throttle", no_argument, NULL, 0 },
+	{ "frontier-live-cooldown", no_argument, NULL, 0 },
 	{ "guard-shared", optional_argument, NULL, 0 },
 	{ "kernel_taint", required_argument, NULL, 'T' },
 	{ "help", no_argument, NULL, 'h' },
@@ -877,6 +880,11 @@ static bool parse_strategy_options(int opt, const char *name, char *arg)
 
 	if (strcmp("cred-throttle", name) == 0) {
 		cred_throttle = true;
+		return true;
+	}
+
+	if (strcmp("frontier-live-cooldown", name) == 0) {
+		frontier_live_cooldown = true;
 		return true;
 	}
 
