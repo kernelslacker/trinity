@@ -379,10 +379,160 @@ static unsigned long fcntl_flags[] = {
 	F_GETDELEG, F_SETDELEG,
 };
 
+static void post_fcntl_dupfd(unsigned long retval)
+{
+	if ((long) retval < 0 || (long) retval >= (1 << 20))
+		return;
+	__atomic_add_fetch(&shm->stats.fd_duped, 1, __ATOMIC_RELAXED);
+}
+
+static void post_fcntl_getfd(struct syscallrecord *rec, unsigned long retval)
+{
+	/*
+	 * Kernel ABI: returns the FD_CLOEXEC bit only — value 0 or 1.
+	 * Anything else is a torn read of fdtable->close_on_exec or a
+	 * sign-extension shape leaking upper bits into the success path.
+	 */
+	if (retval > 1UL) {
+		output(0, "post_fcntl: F_GETFD rejected retval 0x%lx outside [0, 1]\n",
+		       retval);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+	}
+}
+
+static void post_fcntl_getfl(struct syscallrecord *rec, unsigned long retval)
+{
+	/*
+	 * Kernel ABI: returns file->f_flags via an unsigned int — the
+	 * upper 32 bits of the syscall return must be zero on success.
+	 * Anything above 0xFFFFFFFF is a -errno leak through the return
+	 * path or a wider read of the file_struct field.
+	 */
+	if (retval > 0xFFFFFFFFUL) {
+		output(0, "post_fcntl: F_GETFL rejected retval 0x%lx with bits above 32\n",
+		       retval);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+	}
+}
+
+static void post_fcntl_getlease(struct syscallrecord *rec, unsigned long retval)
+{
+	/*
+	 * Kernel ABI: returns one of F_RDLCK (0), F_WRLCK (1) or
+	 * F_UNLCK (2) — the fl_type field on the active file_lease.
+	 * A larger value means a torn read, dispatch into the wrong
+	 * getter, or a clobbered fl_type.
+	 */
+	if (retval > 2UL) {
+		output(0, "post_fcntl: F_GETLEASE rejected retval 0x%lx outside {F_RDLCK, F_WRLCK, F_UNLCK}\n",
+		       retval);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+	}
+}
+
+static void post_fcntl_setlk(unsigned long a1, unsigned long a3)
+{
+	/*
+	 * Record so a sibling SETLK can target this fd's fl_list.
+	 * F_UNLCK and F_CANCELLK remove the lock state that sibling
+	 * SETLK calls would otherwise target, so do not register them
+	 * as interesting lock holders.
+	 */
+	struct flock *fl = (struct flock *) a3;
+	if (fl && fl->l_type != F_UNLCK)
+		setlk_ring_record((int) a1);
+}
+
+#ifdef HAVE_LK64
+static void post_fcntl_setlk64(unsigned long a1, unsigned long a3)
+{
+	struct flock64 *fl = (struct flock64 *) a3;
+	if (fl && fl->l_type != F_UNLCK)
+		setlk_ring_record((int) a1);
+}
+#endif
+
+static void post_fcntl_getsig(struct syscallrecord *rec, unsigned long retval)
+{
+	/*
+	 * Kernel ABI: returns 0 (default SIGIO behaviour) or a signal
+	 * number bounded by _NSIG (64 on Linux). A larger value means
+	 * fown->signum was clobbered or the wrong fasync field was read.
+	 */
+	if (retval > 64UL) {
+		output(0, "post_fcntl: F_GETSIG rejected retval 0x%lx outside [0, _NSIG=64]\n",
+		       retval);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+	}
+}
+
+static void post_fcntl_getpipesz(struct syscallrecord *rec, unsigned long retval)
+{
+	/*
+	 * Kernel ABI: returns pipe->max_usage * PAGE_SIZE — a positive
+	 * int bounded by the pipe-max-size sysctl, which itself caps to
+	 * fit in a signed int. The failure path is filtered above by
+	 * the (long)<0 guard, so success retvals must fit in INT_MAX.
+	 */
+	if (retval > 0x7FFFFFFFUL) {
+		output(0, "post_fcntl: F_GETPIPE_SZ rejected retval 0x%lx outside [0, INT_MAX]\n",
+		       retval);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+	}
+}
+
+static void post_fcntl_getseals(struct syscallrecord *rec, unsigned long retval)
+{
+	/*
+	 * Kernel ABI: returns the shmem inode's ->seals field — a small
+	 * bitmask of F_SEAL_* flags. Even with future additions the
+	 * field stays well under a byte; anything above 0xFF is a torn
+	 * read or a dispatch into the wrong getter.
+	 */
+	if (retval > 0xFFUL) {
+		output(0, "post_fcntl: F_GET_SEALS rejected retval 0x%lx outside seal bitmask\n",
+		       retval);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+	}
+}
+
+static void post_fcntl_ofdgetlk(struct syscallrecord *rec, unsigned long retval)
+{
+	/*
+	 * Kernel ABI: returns 0 on success — the lock info is written
+	 * into the caller's struct flock. Any non-zero non-error retval
+	 * is a dispatch / sign-extension shape, not a real ABI value.
+	 */
+	if (retval != 0UL) {
+		output(0, "post_fcntl: F_OFD_GETLK rejected retval 0x%lx (must be 0 on success)\n",
+		       retval);
+		post_handler_corrupt_ptr_bump(rec, NULL);
+	}
+}
+
+static void post_fcntl_setfl(unsigned long a1, unsigned long a3)
+{
+	long got;
+
+	/*
+	 * Oracle: flags we just set must survive a round-trip through
+	 * F_GETFL.  A missing bit means the kernel silently dropped a
+	 * status flag — a sign of fd-table or file-struct corruption.
+	 */
+	got = fcntl((int) a1, F_GETFL);
+	if (got >= 0 && (got & a3) != a3) {
+		output(0, "fd oracle: fcntl(%lu, F_SETFL, 0x%lx) "
+		       "but F_GETFL=0x%lx (missing bits: 0x%lx)\n",
+		       a1, a3, (unsigned long) got,
+		       a3 & ~(unsigned long) got);
+		__atomic_add_fetch(&shm->stats.fd_oracle_anomalies, 1,
+				   __ATOMIC_RELAXED);
+	}
+}
+
 static void post_fcntl(struct syscallrecord *rec)
 {
 	unsigned long retval, a2, a1, a3;
-	long got;
 
 	if ((long) rec->retval < 0)
 		return;
@@ -406,53 +556,19 @@ static void post_fcntl(struct syscallrecord *rec)
 	switch (a2) {
 	case F_DUPFD:
 	case F_DUPFD_CLOEXEC:
-		if ((long) retval < 0 || (long) retval >= (1 << 20))
-			break;
-		__atomic_add_fetch(&shm->stats.fd_duped, 1, __ATOMIC_RELAXED);
+		post_fcntl_dupfd(retval);
 		break;
 
 	case F_GETFD:
-		/*
-		 * Kernel ABI: returns the FD_CLOEXEC bit only — value 0 or 1.
-		 * Anything else is a torn read of fdtable->close_on_exec or a
-		 * sign-extension shape leaking upper bits into the success path.
-		 */
-		if (retval > 1UL) {
-			output(0, "post_fcntl: F_GETFD rejected retval 0x%lx outside [0, 1]\n",
-			       retval);
-			post_handler_corrupt_ptr_bump(rec, NULL);
-			return;
-		}
+		post_fcntl_getfd(rec, retval);
 		break;
 
 	case F_GETFL:
-		/*
-		 * Kernel ABI: returns file->f_flags via an unsigned int — the
-		 * upper 32 bits of the syscall return must be zero on success.
-		 * Anything above 0xFFFFFFFF is a -errno leak through the return
-		 * path or a wider read of the file_struct field.
-		 */
-		if (retval > 0xFFFFFFFFUL) {
-			output(0, "post_fcntl: F_GETFL rejected retval 0x%lx with bits above 32\n",
-			       retval);
-			post_handler_corrupt_ptr_bump(rec, NULL);
-			return;
-		}
+		post_fcntl_getfl(rec, retval);
 		break;
 
 	case F_GETLEASE:
-		/*
-		 * Kernel ABI: returns one of F_RDLCK (0), F_WRLCK (1) or
-		 * F_UNLCK (2) — the fl_type field on the active file_lease.
-		 * A larger value means a torn read, dispatch into the wrong
-		 * getter, or a clobbered fl_type.
-		 */
-		if (retval > 2UL) {
-			output(0, "post_fcntl: F_GETLEASE rejected retval 0x%lx outside {F_RDLCK, F_WRLCK, F_UNLCK}\n",
-			       retval);
-			post_handler_corrupt_ptr_bump(rec, NULL);
-			return;
-		}
+		post_fcntl_getlease(rec, retval);
 		break;
 
 	case F_SETLEASE:
@@ -463,101 +579,34 @@ static void post_fcntl(struct syscallrecord *rec)
 	case F_SETLK:
 	case F_SETLKW:
 	case F_OFD_SETLK:
-	case F_OFD_SETLKW: {
-		/*
-		 * Record so a sibling SETLK can target this fd's fl_list.
-		 * F_UNLCK and F_CANCELLK remove the lock state that sibling
-		 * SETLK calls would otherwise target, so do not register them
-		 * as interesting lock holders.
-		 */
-		struct flock *fl = (struct flock *) a3;
-		if (fl && fl->l_type != F_UNLCK)
-			setlk_ring_record((int) a1);
+	case F_OFD_SETLKW:
+		post_fcntl_setlk(a1, a3);
 		break;
-	}
 #ifdef HAVE_LK64
 	case F_SETLK64:
-	case F_SETLKW64: {
-		struct flock64 *fl = (struct flock64 *) a3;
-		if (fl && fl->l_type != F_UNLCK)
-			setlk_ring_record((int) a1);
+	case F_SETLKW64:
+		post_fcntl_setlk64(a1, a3);
 		break;
-	}
 #endif
 
 	case F_GETSIG:
-		/*
-		 * Kernel ABI: returns 0 (default SIGIO behaviour) or a signal
-		 * number bounded by _NSIG (64 on Linux). A larger value means
-		 * fown->signum was clobbered or the wrong fasync field was read.
-		 */
-		if (retval > 64UL) {
-			output(0, "post_fcntl: F_GETSIG rejected retval 0x%lx outside [0, _NSIG=64]\n",
-			       retval);
-			post_handler_corrupt_ptr_bump(rec, NULL);
-			return;
-		}
+		post_fcntl_getsig(rec, retval);
 		break;
 
 	case F_GETPIPE_SZ:
-		/*
-		 * Kernel ABI: returns pipe->max_usage * PAGE_SIZE — a positive
-		 * int bounded by the pipe-max-size sysctl, which itself caps to
-		 * fit in a signed int. The failure path is filtered above by
-		 * the (long)<0 guard, so success retvals must fit in INT_MAX.
-		 */
-		if (retval > 0x7FFFFFFFUL) {
-			output(0, "post_fcntl: F_GETPIPE_SZ rejected retval 0x%lx outside [0, INT_MAX]\n",
-			       retval);
-			post_handler_corrupt_ptr_bump(rec, NULL);
-			return;
-		}
+		post_fcntl_getpipesz(rec, retval);
 		break;
 
 	case F_GET_SEALS:
-		/*
-		 * Kernel ABI: returns the shmem inode's ->seals field — a small
-		 * bitmask of F_SEAL_* flags. Even with future additions the
-		 * field stays well under a byte; anything above 0xFF is a torn
-		 * read or a dispatch into the wrong getter.
-		 */
-		if (retval > 0xFFUL) {
-			output(0, "post_fcntl: F_GET_SEALS rejected retval 0x%lx outside seal bitmask\n",
-			       retval);
-			post_handler_corrupt_ptr_bump(rec, NULL);
-			return;
-		}
+		post_fcntl_getseals(rec, retval);
 		break;
 
 	case F_OFD_GETLK:
-		/*
-		 * Kernel ABI: returns 0 on success — the lock info is written
-		 * into the caller's struct flock. Any non-zero non-error retval
-		 * is a dispatch / sign-extension shape, not a real ABI value.
-		 */
-		if (retval != 0UL) {
-			output(0, "post_fcntl: F_OFD_GETLK rejected retval 0x%lx (must be 0 on success)\n",
-			       retval);
-			post_handler_corrupt_ptr_bump(rec, NULL);
-			return;
-		}
+		post_fcntl_ofdgetlk(rec, retval);
 		break;
 
 	case F_SETFL:
-		/*
-		 * Oracle: flags we just set must survive a round-trip through
-		 * F_GETFL.  A missing bit means the kernel silently dropped a
-		 * status flag — a sign of fd-table or file-struct corruption.
-		 */
-		got = fcntl((int) a1, F_GETFL);
-		if (got >= 0 && (got & a3) != a3) {
-			output(0, "fd oracle: fcntl(%lu, F_SETFL, 0x%lx) "
-			       "but F_GETFL=0x%lx (missing bits: 0x%lx)\n",
-			       a1, a3, (unsigned long) got,
-			       a3 & ~(unsigned long) got);
-			__atomic_add_fetch(&shm->stats.fd_oracle_anomalies, 1,
-					   __ATOMIC_RELAXED);
-		}
+		post_fcntl_setfl(a1, a3);
 		break;
 	}
 }
