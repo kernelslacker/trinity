@@ -1,7 +1,6 @@
 
 #ifdef USE_BTRFS
 
-#include <stdlib.h>
 #include <linux/btrfs.h>
 
 #include "utils.h"
