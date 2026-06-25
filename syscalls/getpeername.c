@@ -185,23 +185,20 @@ static void sanitise_getpeername(struct syscallrecord *rec)
  * size-class drift rather than corruption.
  */
 #ifdef HAVE_SYS_GETPEERNAME
-static void post_getpeername(struct syscallrecord *rec)
+/*
+ * Phase 1 (snap ownership): shape -> ownership -> magic gate on the
+ * post_state pointer.  Returns true when snap is proven to be the
+ * snapshot this attempt installed and is safe to dereference and
+ * release; false when any gate rejected it, in which case the helper
+ * has already emitted the diagnostic, bumped the corrupt_ptr counter
+ * where appropriate, and cleared rec->post_state so the caller must
+ * return without touching snap.  Mirrors prctl.c / recv.c
+ * post_recvmsg for the canonical ordering and the rationale for each
+ * gate.
+ */
+static bool getpeername_validate_snap(struct syscallrecord *rec,
+				      struct getpeername_post_state *snap)
 {
-	unsigned long retval = rec->retval;
-	struct getpeername_post_state *snap =
-		(struct getpeername_post_state *) rec->post_state;
-	struct sockaddr_storage first_addr;
-	struct sockaddr_storage recheck_addr;
-	socklen_t first_len;
-	socklen_t recheck_len;
-	sa_family_t family;
-	bool diverged;
-	int fd;
-	int rc;
-
-	if (snap == NULL)
-		return;
-
 	/*
 	 * post_state is private to the post handler, but the whole
 	 * syscallrecord can still be wholesale-stomped, so guard the
@@ -211,7 +208,7 @@ static void post_getpeername(struct syscallrecord *rec)
 		outputerr("post_getpeername: rejected suspicious post_state=%p (pid-scribbled?)\n",
 			  snap);
 		rec->post_state = 0;
-		return;
+		return false;
 	}
 
 	/*
@@ -231,7 +228,7 @@ static void post_getpeername(struct syscallrecord *rec)
 		outputerr("post_getpeername: rejected post_state=%p not in ownership table "
 			  "(post_state-redirected?)\n", snap);
 		rec->post_state = 0;
-		return;
+		return false;
 	}
 
 	/*
@@ -247,8 +244,73 @@ static void post_getpeername(struct syscallrecord *rec)
 			  snap->magic);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->post_state = 0;
-		return;
+		return false;
 	}
+
+	return true;
+}
+
+/*
+ * Phase 3 (divergence report): hex-dump the first 8 bytes of each
+ * sockaddr and emit the [oracle:getpeername] line, then bump the
+ * anomaly counter.  Family is derived from first_addr->ss_family --
+ * the recheck phase only invokes this on the AF_UNIX / AF_INET /
+ * AF_INET6 paths whose family field is byte-equal across re-reads.
+ */
+static void getpeername_report_divergence(socklen_t first_len,
+					  const struct sockaddr_storage *first_addr,
+					  const struct sockaddr_storage *recheck_addr)
+{
+	const unsigned char *first_bytes = (const unsigned char *) first_addr;
+	const unsigned char *recheck_bytes = (const unsigned char *) recheck_addr;
+	char first_hex[8 * 3 + 1];
+	char recheck_hex[8 * 3 + 1];
+	size_t off;
+	unsigned int nbytes;
+	unsigned int i;
+
+	nbytes = first_len < 8 ? first_len : 8;
+
+	off = 0;
+	for (i = 0; i < nbytes; i++)
+		off += snprintf(first_hex + off, sizeof(first_hex) - off,
+				"%02x ", first_bytes[i]);
+	first_hex[off > 0 ? off - 1 : 0] = '\0';
+
+	off = 0;
+	for (i = 0; i < nbytes; i++)
+		off += snprintf(recheck_hex + off, sizeof(recheck_hex) - off,
+				"%02x ", recheck_bytes[i]);
+	recheck_hex[off > 0 ? off - 1 : 0] = '\0';
+
+	output(0,
+	       "[oracle:getpeername] family=%u len=%u [%s] vs [%s]\n",
+	       (unsigned int) first_addr->ss_family, (unsigned int) first_len,
+	       first_hex, recheck_hex);
+	__atomic_add_fetch(&shm->stats.getpeername_oracle_anomalies,
+			   1, __ATOMIC_RELAXED);
+}
+
+/*
+ * Phase 2 (recheck oracle): ABI-validate the retval, sample 1/100,
+ * snapshot the user-side post-call address/length, re-issue
+ * getpeername against fresh private buffers, and run the family-aware
+ * compare.  Every gate-fail / sibling-stomp / sample-miss path returns
+ * silently and lets the caller's release phase run.  On divergence
+ * dispatches to getpeername_report_divergence() for the log/stats.
+ */
+static void getpeername_recheck(struct syscallrecord *rec,
+				struct getpeername_post_state *snap)
+{
+	unsigned long retval = rec->retval;
+	struct sockaddr_storage first_addr;
+	struct sockaddr_storage recheck_addr;
+	socklen_t first_len;
+	socklen_t recheck_len;
+	sa_family_t family;
+	bool diverged;
+	int fd;
+	int rc;
 
 	/*
 	 * Kernel ABI: getpeername returns 0 on success and -1UL (errno style)
@@ -265,17 +327,17 @@ static void post_getpeername(struct syscallrecord *rec)
 		outputerr("post_getpeername: rejected retval 0x%lx outside {0, -1} (kernel ABI: status code only)\n",
 			  retval);
 		post_handler_corrupt_ptr_bump(rec, NULL);
-		goto out_free;
+		return;
 	}
 
 	if (!ONE_IN(100))
-		goto out_free;
+		return;
 
 	if ((long) retval != 0)
-		goto out_free;
+		return;
 
 	if (snap->usockaddr == 0 || snap->usockaddr_len == 0)
-		goto out_free;
+		return;
 
 	fd = (int) snap->fd;
 
@@ -290,7 +352,7 @@ static void post_getpeername(struct syscallrecord *rec)
 		if (looks_like_corrupted_ptr(rec, len_p)) {
 			outputerr("post_getpeername: rejected suspicious usockaddr_len=%p (post_state-scribbled?)\n",
 				  len_p);
-			goto out_free;
+			return;
 		}
 	}
 
@@ -303,24 +365,24 @@ static void post_getpeername(struct syscallrecord *rec)
 	 */
 	if (!post_snapshot_or_skip(&first_len, (const void *) snap->usockaddr_len,
 				   sizeof(socklen_t)))
-		goto out_free;
+		return;
 	if (first_len == 0 || first_len > sizeof(struct sockaddr_storage))
-		goto out_free;
+		return;
 
 	memset(&first_addr, 0, sizeof(first_addr));
 	if (!post_snapshot_or_skip(&first_addr,
 				   (const void *) snap->usockaddr, first_len))
-		goto out_free;
+		return;
 
 	recheck_len = sizeof(struct sockaddr_storage);
 	memset(&recheck_addr, 0, sizeof(recheck_addr));
 	rc = syscall(SYS_getpeername, fd, (struct sockaddr *) &recheck_addr,
 		     &recheck_len);
 	if (rc != 0)
-		goto out_free;
+		return;
 
 	if (recheck_len != first_len)
-		goto out_free;
+		return;
 
 	family = first_addr.ss_family;
 	diverged = false;
@@ -349,44 +411,42 @@ static void post_getpeername(struct syscallrecord *rec)
 		break;
 	}
 	default:
-		goto out_free;
+		return;
 	}
 
-	if (diverged) {
-		const unsigned char *first_bytes = (const unsigned char *) &first_addr;
-		const unsigned char *recheck_bytes = (const unsigned char *) &recheck_addr;
-		char first_hex[8 * 3 + 1];
-		char recheck_hex[8 * 3 + 1];
-		size_t off;
-		unsigned int nbytes;
-		unsigned int i;
+	if (diverged)
+		getpeername_report_divergence(first_len, &first_addr, &recheck_addr);
+}
 
-		nbytes = first_len < 8 ? first_len : 8;
-
-		off = 0;
-		for (i = 0; i < nbytes; i++)
-			off += snprintf(first_hex + off, sizeof(first_hex) - off,
-					"%02x ", first_bytes[i]);
-		first_hex[off > 0 ? off - 1 : 0] = '\0';
-
-		off = 0;
-		for (i = 0; i < nbytes; i++)
-			off += snprintf(recheck_hex + off, sizeof(recheck_hex) - off,
-					"%02x ", recheck_bytes[i]);
-		recheck_hex[off > 0 ? off - 1 : 0] = '\0';
-
-		output(0,
-		       "[oracle:getpeername] family=%u len=%u [%s] vs [%s]\n",
-		       (unsigned int) family, (unsigned int) first_len,
-		       first_hex, recheck_hex);
-		__atomic_add_fetch(&shm->stats.getpeername_oracle_anomalies,
-				   1, __ATOMIC_RELAXED);
-	}
-
-out_free:
+/*
+ * Phase 4 (release): unregister the ownership-table slot then queue
+ * the snap for deferred free.  Unregister-before-free is load-bearing
+ * -- a registered-but-freed slot poisons the next allocation that
+ * hashes to the same bucket and post_state_is_owned() would then
+ * return true for memory that is no longer ours.
+ */
+static void getpeername_release(struct syscallrecord *rec,
+				struct getpeername_post_state *snap)
+{
 	valresult_free(&snap->vrb);
 	post_state_unregister(snap);
 	deferred_freeptr(&rec->post_state);
+}
+
+static void post_getpeername(struct syscallrecord *rec)
+{
+	struct getpeername_post_state *snap =
+		(struct getpeername_post_state *) rec->post_state;
+
+	if (snap == NULL)
+		return;
+
+	if (!getpeername_validate_snap(rec, snap))
+		return;
+
+	getpeername_recheck(rec, snap);
+
+	getpeername_release(rec, snap);
 }
 #endif
 
