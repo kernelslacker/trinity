@@ -3,7 +3,6 @@
 	 unsigned long __user *, user_mask_ptr)
  */
 #include <sched.h>
-#include <unistd.h>
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
