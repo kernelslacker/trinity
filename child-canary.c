@@ -654,10 +654,21 @@ static void leave_canarying_promote(enum child_op_type op,
 		ebadf_in_window ? 1 : 0);
 }
 
+/* noisy_edges_delta is the window's accrual of sibling-attributed /
+ * unattributable edges (childop_edges_discovered[op] -
+ * childop_edges_clean[op] delta over the window).  Surfaced in the
+ * demote log so a reader can tell a "ran and produced nothing"
+ * zero_edges close (clean=0, noisy=0) apart from a "ran and only saw
+ * sibling interference" close (clean=0, noisy>0) -- the latter is the
+ * shadow-policy PROMOTED_INTERFERENCE shape that the live decision
+ * still demotes under "zero_edges".  The two outcomes warrant different
+ * triage but the legacy log line collapsed them.  Reason-agnostic so
+ * the crash_threshold path also surfaces the value for context. */
 static void leave_canarying_demote(enum child_op_type op,
 				   const char *reason,
 				   unsigned long window_iters,
-				   unsigned long window_edges)
+				   unsigned long window_edges,
+				   unsigned long noisy_edges_delta)
 {
 	struct canary_op_state *s = &canary_ops[op];
 
@@ -669,9 +680,10 @@ static void leave_canarying_demote(enum child_op_type op,
 	 * including this op. */
 	dormant_op_set(op, true);
 
-	output(0, "canary: %s demoted (reason: %s; edges=%lu crashes=%u in %lu iters; backoff=%us; effective for new children at next respawn)\n",
-		s->name, reason, window_edges, s->window_crashes,
-		window_iters, (unsigned int)CANARY_BACKOFF_TIME);
+	output(0, "canary: %s demoted (reason: %s; edges=%lu noisy_edges_seen=%lu crashes=%u in %lu iters; backoff=%us; effective for new children at next respawn)\n",
+		s->name, reason, window_edges, noisy_edges_delta,
+		s->window_crashes, window_iters,
+		(unsigned int)CANARY_BACKOFF_TIME);
 }
 
 /* Early-bail demote: the op has burned CANARY_SETUP_BROKEN_FAILS setup
@@ -997,7 +1009,8 @@ static void close_window_and_decide(enum child_op_type op)
 		childop_recommended_state_name(rec));
 
 	if (s->window_crashes >= CANARY_CRASH_THRESHOLD) {
-		leave_canarying_demote(op, "crash_threshold", iters, edges);
+		leave_canarying_demote(op, "crash_threshold", iters, edges,
+				       noisy_delta);
 		return;
 	}
 
@@ -1019,7 +1032,7 @@ static void close_window_and_decide(enum child_op_type op)
 		return;
 	}
 
-	leave_canarying_demote(op, "zero_edges", iters, edges);
+	leave_canarying_demote(op, "zero_edges", iters, edges, noisy_delta);
 }
 
 /* --------------------------------------------------------------------
