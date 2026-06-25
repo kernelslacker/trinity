@@ -49,292 +49,346 @@ static int shm_cmds[] = {
 	SHM_INFO, SHM_STAT, SHM_STAT_ANY, SHM_LOCK, SHM_UNLOCK,
 };
 
+static void sanitise_ipc_semop(struct syscallrecord *rec, unsigned long call)
+{
+	/*
+	 * first=semid, second=nsops, ptr=struct sembuf[],
+	 * fifth=timeout (SEMTIMEDOP only)
+	 */
+	struct sembuf *sops;
+	unsigned int nsops, i;
+
+	nsops = 1 + (rnd_modulo_u32(8));
+	sops = (struct sembuf *) get_writable_struct(nsops * sizeof(*sops));
+	if (!sops)
+		return;
+	for (i = 0; i < nsops; i++) {
+		sops[i].sem_num = rnd_modulo_u32(32);
+		sops[i].sem_op = (rnd_modulo_u32(5)) - 2;	/* -2..2 */
+		sops[i].sem_flg = 0;
+		if (RAND_BOOL())
+			sops[i].sem_flg |= IPC_NOWAIT;
+		if (RAND_BOOL())
+			sops[i].sem_flg |= SEM_UNDO;
+	}
+	rec->a2 = rnd_modulo_u32(1000);	/* semid */
+	rec->a3 = nsops;
+	rec->a5 = (unsigned long) sops;
+
+	if (call == SEMTIMEDOP) {
+		struct timespec *ts;
+		ts = (struct timespec *) get_writable_struct(sizeof(*ts));
+		if (!ts)
+			return;
+		ts->tv_sec = 0;
+		ts->tv_nsec = rnd_modulo_u32(1000000);	/* up to 1ms */
+		rec->a6 = (unsigned long) ts;
+	}
+}
+
+static void sanitise_ipc_semget(struct syscallrecord *rec)
+{
+	/* first=key, second=nsems, third=semflg */
+	rec->a2 = RAND_BOOL() ? IPC_PRIVATE : rand32();
+	rec->a3 = 1 + (rnd_modulo_u32(32));
+	rec->a4 = 0666;
+	if (RAND_BOOL())
+		rec->a4 |= IPC_CREAT;
+	if (RAND_BOOL())
+		rec->a4 |= IPC_EXCL;
+}
+
+static void sanitise_semctl_cmd_stat(struct syscallrecord *rec)
+{
+	struct semid_ds *buf;
+	buf = (struct semid_ds *) get_writable_struct(sizeof(*buf));
+	if (!buf)
+		return;
+	memset(buf, 0, sizeof(*buf));
+	rec->a5 = (unsigned long) buf;
+	avoid_shared_buffer_inout(&rec->a5, sizeof(*buf));
+}
+
+static void sanitise_semctl_cmd_setval(struct syscallrecord *rec)
+{
+	/* ptr is the value directly for old-style ipc() */
+	rec->a5 = rnd_modulo_u32(32768);
+}
+
+static void sanitise_semctl_cmd_getall(struct syscallrecord *rec)
+{
+	unsigned short *arr;
+	unsigned int nsems = 1 + (rnd_modulo_u32(32));
+	unsigned int j;
+	arr = (unsigned short *) get_writable_struct(nsems * sizeof(*arr));
+	if (!arr)
+		return;
+	for (j = 0; j < nsems; j++)
+		arr[j] = rnd_modulo_u32(32768);
+	rec->a5 = (unsigned long) arr;
+	avoid_shared_buffer_inout(&rec->a5, nsems * sizeof(*arr));
+}
+
+static void sanitise_semctl_cmd_info(struct syscallrecord *rec)
+{
+	/* Kernel writes struct seminfo */
+	void *buf;
+	buf = get_writable_struct(256);
+	if (!buf)
+		return;
+	memset(buf, 0, 256);
+	rec->a5 = (unsigned long) buf;
+	avoid_shared_buffer_inout(&rec->a5, 256);
+}
+
+static void sanitise_ipc_semctl(struct syscallrecord *rec)
+{
+	/*
+	 * first=semid, second=semnum, third=cmd,
+	 * ptr=union semun (for IPC_SET/GETALL/SETALL/SETVAL)
+	 */
+	int cmd;
+
+	rec->a2 = rnd_modulo_u32(1000);	/* semid */
+	rec->a3 = rnd_modulo_u32(32);		/* semnum */
+	cmd = sem_cmds[rnd_modulo_u32(ARRAY_SIZE(sem_cmds))];
+	rec->a4 = cmd;
+
+	switch (cmd) {
+	case IPC_STAT:
+	case IPC_SET:
+	case SEM_STAT:
+		sanitise_semctl_cmd_stat(rec);
+		break;
+	case SETVAL:
+		sanitise_semctl_cmd_setval(rec);
+		break;
+	case GETALL:
+	case SETALL:
+		sanitise_semctl_cmd_getall(rec);
+		break;
+	case IPC_INFO:
+	case SEM_INFO:
+		sanitise_semctl_cmd_info(rec);
+		break;
+	}
+}
+
+static void sanitise_ipc_msgsnd(struct syscallrecord *rec)
+{
+	/*
+	 * first=msqid, ptr=msgbuf, second=msgsz, third=msgflg
+	 */
+	struct msgbuf *mb;
+	size_t msgsz;
+
+	msgsz = 1 + (rnd_modulo_u32(256));
+	mb = (struct msgbuf *) get_writable_struct(sizeof(long) + msgsz);
+	if (!mb)
+		return;
+	mb->mtype = 1 + (rnd_modulo_u32(100));
+	memset(mb->mtext, 'A', msgsz);
+
+	rec->a2 = rnd_modulo_u32(1000);	/* msqid */
+	rec->a3 = msgsz;
+	rec->a4 = RAND_BOOL() ? IPC_NOWAIT : 0;
+	rec->a5 = (unsigned long) mb;
+}
+
+static void sanitise_ipc_msgrcv(struct syscallrecord *rec)
+{
+	/*
+	 * first=msqid, ptr=struct { msgbuf*, msgtyp },
+	 * second=msgsz, third=msgflg
+	 *
+	 * The ipc() mux wraps msgrcv args in a tmp struct.
+	 * Kernel extracts ptr->msgp and ptr->msgtyp from it.
+	 */
+	struct {
+		struct msgbuf *msgp;
+		long msgtyp;
+	} *tmp;
+	struct msgbuf *mb;
+	unsigned long mb_addr;
+
+	mb = (struct msgbuf *) get_writable_struct(sizeof(long) + 256);
+	if (!mb)
+		return;
+	memset(mb, 0, sizeof(long) + 256);
+
+	/* Redirect mb away from the shared/heap arenas before we
+	 * publish it through tmp->msgp -- the kernel writes the
+	 * received message into *tmp->msgp. */
+	mb_addr = (unsigned long) mb;
+	avoid_shared_buffer_out(&mb_addr, sizeof(long) + 256);
+	mb = (struct msgbuf *) mb_addr;
+
+	tmp = (void *) get_writable_struct(sizeof(*tmp));
+	if (!tmp)
+		return;
+	tmp->msgp = mb;
+	tmp->msgtyp = rnd_modulo_u32(10);	/* 0=any type */
+
+	rec->a2 = rnd_modulo_u32(1000);	/* msqid */
+	rec->a3 = 256;			/* msgsz */
+	rec->a4 = RAND_BOOL() ? IPC_NOWAIT : 0;
+	rec->a5 = (unsigned long) tmp;
+	avoid_shared_buffer_inout(&rec->a5, sizeof(*tmp));
+}
+
+static void sanitise_ipc_msgget(struct syscallrecord *rec)
+{
+	/* first=key, second=msgflg */
+	rec->a2 = RAND_BOOL() ? IPC_PRIVATE : rand32();
+	rec->a3 = 0666;
+	if (RAND_BOOL())
+		rec->a3 |= IPC_CREAT;
+	if (RAND_BOOL())
+		rec->a3 |= IPC_EXCL;
+}
+
+static void sanitise_ipc_msgctl(struct syscallrecord *rec)
+{
+	/* first=msqid, second=cmd, ptr=struct msqid_ds */
+	int cmd;
+
+	rec->a2 = rnd_modulo_u32(1000);
+	cmd = msg_cmds[rnd_modulo_u32(ARRAY_SIZE(msg_cmds))];
+	rec->a3 = cmd;
+
+	switch (cmd) {
+	case IPC_STAT:
+	case IPC_SET:
+	case MSG_STAT: {
+		struct msqid_ds *buf;
+		buf = (struct msqid_ds *) get_writable_struct(sizeof(*buf));
+		if (!buf)
+			break;
+		memset(buf, 0, sizeof(*buf));
+		rec->a5 = (unsigned long) buf;
+		avoid_shared_buffer_inout(&rec->a5, sizeof(*buf));
+		break;
+	}
+	case IPC_INFO:
+	case MSG_INFO: {
+		void *buf;
+		buf = get_writable_struct(256);
+		if (!buf)
+			break;
+		memset(buf, 0, 256);
+		rec->a5 = (unsigned long) buf;
+		avoid_shared_buffer_inout(&rec->a5, 256);
+		break;
+	}
+	}
+}
+
+static void sanitise_ipc_shmat(struct syscallrecord *rec)
+{
+	/* first=shmid, ptr=shmaddr, second=shmflg */
+	rec->a2 = rnd_modulo_u32(1000);	/* shmid */
+	rec->a3 = 0;			/* let kernel pick */
+	rec->a5 = 0;			/* shmaddr=NULL */
+	if (RAND_BOOL())
+		rec->a3 |= SHM_RDONLY;
+}
+
+static void sanitise_ipc_shmdt(struct syscallrecord *rec)
+{
+	/* ptr=shmaddr — use a valid writable page */
+	void *addr = get_writable_struct(4096);
+
+	if (addr)
+		rec->a5 = (unsigned long) addr;
+}
+
+static void sanitise_ipc_shmget(struct syscallrecord *rec)
+{
+	/* first=key, second=size, third=shmflg */
+	rec->a2 = RAND_BOOL() ? IPC_PRIVATE : rand32();
+	rec->a3 = 4096 * (1 + (rnd_modulo_u32(16)));	/* 4K-64K */
+	rec->a4 = 0666;
+	if (RAND_BOOL())
+		rec->a4 |= IPC_CREAT;
+	if (RAND_BOOL())
+		rec->a4 |= IPC_EXCL;
+}
+
+static void sanitise_ipc_shmctl(struct syscallrecord *rec)
+{
+	/* first=shmid, second=cmd, ptr=struct shmid_ds */
+	int cmd;
+
+	rec->a2 = rnd_modulo_u32(1000);
+	cmd = shm_cmds[rnd_modulo_u32(ARRAY_SIZE(shm_cmds))];
+	rec->a3 = cmd;
+
+	switch (cmd) {
+	case IPC_STAT:
+	case IPC_SET:
+	case SHM_STAT: {
+		struct shmid_ds *buf;
+		buf = (struct shmid_ds *) get_writable_struct(sizeof(*buf));
+		if (!buf)
+			break;
+		memset(buf, 0, sizeof(*buf));
+		rec->a5 = (unsigned long) buf;
+		avoid_shared_buffer_inout(&rec->a5, sizeof(*buf));
+		break;
+	}
+	case IPC_INFO:
+	case SHM_INFO: {
+		void *buf;
+		buf = get_writable_struct(256);
+		if (!buf)
+			break;
+		memset(buf, 0, 256);
+		rec->a5 = (unsigned long) buf;
+		avoid_shared_buffer_inout(&rec->a5, 256);
+		break;
+	}
+	}
+}
+
 static void sanitise_ipc(struct syscallrecord *rec)
 {
 	unsigned long call = rec->a1;
 
 	switch (call) {
 	case SEMOP:
-	case SEMTIMEDOP: {
-		/*
-		 * first=semid, second=nsops, ptr=struct sembuf[],
-		 * fifth=timeout (SEMTIMEDOP only)
-		 */
-		struct sembuf *sops;
-		unsigned int nsops, i;
-
-		nsops = 1 + (rnd_modulo_u32(8));
-		sops = (struct sembuf *) get_writable_struct(nsops * sizeof(*sops));
-		if (!sops)
-			break;
-		for (i = 0; i < nsops; i++) {
-			sops[i].sem_num = rnd_modulo_u32(32);
-			sops[i].sem_op = (rnd_modulo_u32(5)) - 2;	/* -2..2 */
-			sops[i].sem_flg = 0;
-			if (RAND_BOOL())
-				sops[i].sem_flg |= IPC_NOWAIT;
-			if (RAND_BOOL())
-				sops[i].sem_flg |= SEM_UNDO;
-		}
-		rec->a2 = rnd_modulo_u32(1000);	/* semid */
-		rec->a3 = nsops;
-		rec->a5 = (unsigned long) sops;
-
-		if (call == SEMTIMEDOP) {
-			struct timespec *ts;
-			ts = (struct timespec *) get_writable_struct(sizeof(*ts));
-			if (!ts)
-				break;
-			ts->tv_sec = 0;
-			ts->tv_nsec = rnd_modulo_u32(1000000);	/* up to 1ms */
-			rec->a6 = (unsigned long) ts;
-		}
+	case SEMTIMEDOP:
+		sanitise_ipc_semop(rec, call);
 		break;
-	}
-
 	case SEMGET:
-		/* first=key, second=nsems, third=semflg */
-		rec->a2 = RAND_BOOL() ? IPC_PRIVATE : rand32();
-		rec->a3 = 1 + (rnd_modulo_u32(32));
-		rec->a4 = 0666;
-		if (RAND_BOOL())
-			rec->a4 |= IPC_CREAT;
-		if (RAND_BOOL())
-			rec->a4 |= IPC_EXCL;
+		sanitise_ipc_semget(rec);
 		break;
-
-	case SEMCTL: {
-		/*
-		 * first=semid, second=semnum, third=cmd,
-		 * ptr=union semun (for IPC_SET/GETALL/SETALL/SETVAL)
-		 */
-		int cmd;
-
-		rec->a2 = rnd_modulo_u32(1000);	/* semid */
-		rec->a3 = rnd_modulo_u32(32);		/* semnum */
-		cmd = sem_cmds[rnd_modulo_u32(ARRAY_SIZE(sem_cmds))];
-		rec->a4 = cmd;
-
-		switch (cmd) {
-		case IPC_STAT:
-		case IPC_SET:
-		case SEM_STAT: {
-			struct semid_ds *buf;
-			buf = (struct semid_ds *) get_writable_struct(sizeof(*buf));
-			if (!buf)
-				break;
-			memset(buf, 0, sizeof(*buf));
-			rec->a5 = (unsigned long) buf;
-			avoid_shared_buffer_inout(&rec->a5, sizeof(*buf));
-			break;
-		}
-		case SETVAL:
-			/* ptr is the value directly for old-style ipc() */
-			rec->a5 = rnd_modulo_u32(32768);
-			break;
-		case GETALL:
-		case SETALL: {
-			unsigned short *arr;
-			unsigned int nsems = 1 + (rnd_modulo_u32(32));
-			unsigned int j;
-			arr = (unsigned short *) get_writable_struct(nsems * sizeof(*arr));
-			if (!arr)
-				break;
-			for (j = 0; j < nsems; j++)
-				arr[j] = rnd_modulo_u32(32768);
-			rec->a5 = (unsigned long) arr;
-			avoid_shared_buffer_inout(&rec->a5, nsems * sizeof(*arr));
-			break;
-		}
-		case IPC_INFO:
-		case SEM_INFO: {
-			/* Kernel writes struct seminfo */
-			void *buf;
-			buf = get_writable_struct(256);
-			if (!buf)
-				break;
-			memset(buf, 0, 256);
-			rec->a5 = (unsigned long) buf;
-			avoid_shared_buffer_inout(&rec->a5, 256);
-			break;
-		}
-		}
+	case SEMCTL:
+		sanitise_ipc_semctl(rec);
 		break;
-	}
-
-	case MSGSND: {
-		/*
-		 * first=msqid, ptr=msgbuf, second=msgsz, third=msgflg
-		 */
-		struct msgbuf *mb;
-		size_t msgsz;
-
-		msgsz = 1 + (rnd_modulo_u32(256));
-		mb = (struct msgbuf *) get_writable_struct(sizeof(long) + msgsz);
-		if (!mb)
-			break;
-		mb->mtype = 1 + (rnd_modulo_u32(100));
-		memset(mb->mtext, 'A', msgsz);
-
-		rec->a2 = rnd_modulo_u32(1000);	/* msqid */
-		rec->a3 = msgsz;
-		rec->a4 = RAND_BOOL() ? IPC_NOWAIT : 0;
-		rec->a5 = (unsigned long) mb;
+	case MSGSND:
+		sanitise_ipc_msgsnd(rec);
 		break;
-	}
-
-	case MSGRCV: {
-		/*
-		 * first=msqid, ptr=struct { msgbuf*, msgtyp },
-		 * second=msgsz, third=msgflg
-		 *
-		 * The ipc() mux wraps msgrcv args in a tmp struct.
-		 * Kernel extracts ptr->msgp and ptr->msgtyp from it.
-		 */
-		struct {
-			struct msgbuf *msgp;
-			long msgtyp;
-		} *tmp;
-		struct msgbuf *mb;
-		unsigned long mb_addr;
-
-		mb = (struct msgbuf *) get_writable_struct(sizeof(long) + 256);
-		if (!mb)
-			break;
-		memset(mb, 0, sizeof(long) + 256);
-
-		/* Redirect mb away from the shared/heap arenas before we
-		 * publish it through tmp->msgp -- the kernel writes the
-		 * received message into *tmp->msgp. */
-		mb_addr = (unsigned long) mb;
-		avoid_shared_buffer_out(&mb_addr, sizeof(long) + 256);
-		mb = (struct msgbuf *) mb_addr;
-
-		tmp = (void *) get_writable_struct(sizeof(*tmp));
-		if (!tmp)
-			break;
-		tmp->msgp = mb;
-		tmp->msgtyp = rnd_modulo_u32(10);	/* 0=any type */
-
-		rec->a2 = rnd_modulo_u32(1000);	/* msqid */
-		rec->a3 = 256;			/* msgsz */
-		rec->a4 = RAND_BOOL() ? IPC_NOWAIT : 0;
-		rec->a5 = (unsigned long) tmp;
-		avoid_shared_buffer_inout(&rec->a5, sizeof(*tmp));
+	case MSGRCV:
+		sanitise_ipc_msgrcv(rec);
 		break;
-	}
-
 	case MSGGET:
-		/* first=key, second=msgflg */
-		rec->a2 = RAND_BOOL() ? IPC_PRIVATE : rand32();
-		rec->a3 = 0666;
-		if (RAND_BOOL())
-			rec->a3 |= IPC_CREAT;
-		if (RAND_BOOL())
-			rec->a3 |= IPC_EXCL;
+		sanitise_ipc_msgget(rec);
 		break;
-
-	case MSGCTL: {
-		/* first=msqid, second=cmd, ptr=struct msqid_ds */
-		int cmd;
-
-		rec->a2 = rnd_modulo_u32(1000);
-		cmd = msg_cmds[rnd_modulo_u32(ARRAY_SIZE(msg_cmds))];
-		rec->a3 = cmd;
-
-		switch (cmd) {
-		case IPC_STAT:
-		case IPC_SET:
-		case MSG_STAT: {
-			struct msqid_ds *buf;
-			buf = (struct msqid_ds *) get_writable_struct(sizeof(*buf));
-			if (!buf)
-				break;
-			memset(buf, 0, sizeof(*buf));
-			rec->a5 = (unsigned long) buf;
-			avoid_shared_buffer_inout(&rec->a5, sizeof(*buf));
-			break;
-		}
-		case IPC_INFO:
-		case MSG_INFO: {
-			void *buf;
-			buf = get_writable_struct(256);
-			if (!buf)
-				break;
-			memset(buf, 0, 256);
-			rec->a5 = (unsigned long) buf;
-			avoid_shared_buffer_inout(&rec->a5, 256);
-			break;
-		}
-		}
+	case MSGCTL:
+		sanitise_ipc_msgctl(rec);
 		break;
-	}
-
-	case SHMAT: {
-		/* first=shmid, ptr=shmaddr, second=shmflg */
-		rec->a2 = rnd_modulo_u32(1000);	/* shmid */
-		rec->a3 = 0;			/* let kernel pick */
-		rec->a5 = 0;			/* shmaddr=NULL */
-		if (RAND_BOOL())
-			rec->a3 |= SHM_RDONLY;
+	case SHMAT:
+		sanitise_ipc_shmat(rec);
 		break;
-	}
-
-	case SHMDT: {
-		/* ptr=shmaddr — use a valid writable page */
-		void *addr = get_writable_struct(4096);
-
-		if (addr)
-			rec->a5 = (unsigned long) addr;
+	case SHMDT:
+		sanitise_ipc_shmdt(rec);
 		break;
-	}
-
 	case SHMGET:
-		/* first=key, second=size, third=shmflg */
-		rec->a2 = RAND_BOOL() ? IPC_PRIVATE : rand32();
-		rec->a3 = 4096 * (1 + (rnd_modulo_u32(16)));	/* 4K-64K */
-		rec->a4 = 0666;
-		if (RAND_BOOL())
-			rec->a4 |= IPC_CREAT;
-		if (RAND_BOOL())
-			rec->a4 |= IPC_EXCL;
+		sanitise_ipc_shmget(rec);
 		break;
-
-	case SHMCTL: {
-		/* first=shmid, second=cmd, ptr=struct shmid_ds */
-		int cmd;
-
-		rec->a2 = rnd_modulo_u32(1000);
-		cmd = shm_cmds[rnd_modulo_u32(ARRAY_SIZE(shm_cmds))];
-		rec->a3 = cmd;
-
-		switch (cmd) {
-		case IPC_STAT:
-		case IPC_SET:
-		case SHM_STAT: {
-			struct shmid_ds *buf;
-			buf = (struct shmid_ds *) get_writable_struct(sizeof(*buf));
-			if (!buf)
-				break;
-			memset(buf, 0, sizeof(*buf));
-			rec->a5 = (unsigned long) buf;
-			avoid_shared_buffer_inout(&rec->a5, sizeof(*buf));
-			break;
-		}
-		case IPC_INFO:
-		case SHM_INFO: {
-			void *buf;
-			buf = get_writable_struct(256);
-			if (!buf)
-				break;
-			memset(buf, 0, 256);
-			rec->a5 = (unsigned long) buf;
-			avoid_shared_buffer_inout(&rec->a5, 256);
-			break;
-		}
-		}
+	case SHMCTL:
+		sanitise_ipc_shmctl(rec);
 		break;
-	}
 	}
 }
 
