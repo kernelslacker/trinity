@@ -181,25 +181,145 @@ static void sanitise_fw_send_stream_packet(struct syscallrecord *rec)
 	rec->a3 = (unsigned long) pkt;
 }
 
+static void sanitise_fw_get_info(struct syscallrecord *rec)
+{
+	struct fw_cdev_get_info *info;
+
+	/* mostly output; just allocate and let kernel fill it */
+	info = (struct fw_cdev_get_info *) get_writable_struct(sizeof(*info));
+	if (!info)
+		return;
+	/* rom and bus_reset are __user pointers consumed by the
+	 * kernel's copy_to_user; zero the struct so we don't
+	 * hand it uninitialised garbage. */
+	memset(info, 0, sizeof(*info));
+	info->version = rnd_modulo_u32(6) + 1;
+	info->bus_reset_closure = rand64();
+	rec->a3 = (unsigned long) info;
+}
+
+static void sanitise_fw_initiate_bus_reset(struct syscallrecord *rec)
+{
+	struct fw_cdev_initiate_bus_reset *r;
+
+	r = (struct fw_cdev_initiate_bus_reset *) get_writable_struct(sizeof(*r));
+	if (!r)
+		return;
+	r->type = rnd_modulo_u32(2);	/* FW_CDEV_LONG_RESET or FW_CDEV_SHORT_RESET */
+	rec->a3 = (unsigned long) r;
+}
+
+static void sanitise_fw_remove_descriptor(struct syscallrecord *rec)
+{
+	struct fw_cdev_remove_descriptor *d;
+
+	d = (struct fw_cdev_remove_descriptor *) get_writable_struct(sizeof(*d));
+	if (!d)
+		return;
+	d->handle = rand32();
+	rec->a3 = (unsigned long) d;
+}
+
+static void sanitise_fw_stop_iso(struct syscallrecord *rec)
+{
+	struct fw_cdev_stop_iso *s;
+
+	s = (struct fw_cdev_stop_iso *) get_writable_struct(sizeof(*s));
+	if (!s)
+		return;
+	s->handle = rand32();
+	rec->a3 = (unsigned long) s;
+}
+
+static void sanitise_fw_get_cycle_timer(struct syscallrecord *rec)
+{
+	struct fw_cdev_get_cycle_timer *ct;
+
+	/* output only */
+	ct = (struct fw_cdev_get_cycle_timer *) get_writable_struct(sizeof(*ct));
+	if (!ct)
+		return;
+	rec->a3 = (unsigned long) ct;
+}
+
+#ifdef FW_CDEV_IOC_GET_CYCLE_TIMER2
+static void sanitise_fw_get_cycle_timer2(struct syscallrecord *rec)
+{
+	struct fw_cdev_get_cycle_timer2 *ct2;
+
+	ct2 = (struct fw_cdev_get_cycle_timer2 *) get_writable_struct(sizeof(*ct2));
+	if (!ct2)
+		return;
+	/* clk_id is an input field; 0=REALTIME 1=MONOTONIC */
+	ct2->clk_id = rnd_modulo_u32(2);
+	rec->a3 = (unsigned long) ct2;
+}
+#endif
+
+#ifdef FW_CDEV_IOC_SEND_PHY_PACKET
+static void sanitise_fw_send_phy_packet(struct syscallrecord *rec)
+{
+	struct fw_cdev_send_phy_packet *p;
+
+	p = (struct fw_cdev_send_phy_packet *) get_writable_struct(sizeof(*p));
+	if (!p)
+		return;
+	p->closure = rand64();
+	p->data[0] = rand32();
+	p->data[1] = ~p->data[0];	/* standard PHY packet encoding */
+	p->generation = rand32();
+	rec->a3 = (unsigned long) p;
+}
+#endif
+
+#ifdef FW_CDEV_IOC_RECEIVE_PHY_PACKETS
+static void sanitise_fw_receive_phy_packets(struct syscallrecord *rec)
+{
+	struct fw_cdev_receive_phy_packets *p;
+
+	p = (struct fw_cdev_receive_phy_packets *) get_writable_struct(sizeof(*p));
+	if (!p)
+		return;
+	p->closure = rand64();
+	rec->a3 = (unsigned long) p;
+}
+#endif
+
+#ifdef FW_CDEV_IOC_SET_ISO_CHANNELS
+static void sanitise_fw_set_iso_channels(struct syscallrecord *rec)
+{
+	struct fw_cdev_set_iso_channels *sc;
+
+	sc = (struct fw_cdev_set_iso_channels *) get_writable_struct(sizeof(*sc));
+	if (!sc)
+		return;
+	sc->channels = 1ULL << (rnd_modulo_u32(64));
+	sc->handle = rand32();
+	rec->a3 = (unsigned long) sc;
+}
+#endif
+
+#ifdef FW_CDEV_IOC_FLUSH_ISO
+static void sanitise_fw_flush_iso(struct syscallrecord *rec)
+{
+	struct fw_cdev_flush_iso *f;
+
+	f = (struct fw_cdev_flush_iso *) get_writable_struct(sizeof(*f));
+	if (!f)
+		return;
+	f->handle = rand32();
+	rec->a3 = (unsigned long) f;
+}
+#endif
+
 static void firewire_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
 {
 	pick_random_ioctl(grp, rec);
 
 	switch (rec->a2) {
-	case FW_CDEV_IOC_GET_INFO: {
-		/* mostly output; just allocate and let kernel fill it */
-		struct fw_cdev_get_info *info = get_writable_struct(sizeof(*info));
-		if (info) {
-			/* rom and bus_reset are __user pointers consumed by the
-			 * kernel's copy_to_user; zero the struct so we don't
-			 * hand it uninitialised garbage. */
-			memset(info, 0, sizeof(*info));
-			info->version = rnd_modulo_u32(6) + 1;
-			info->bus_reset_closure = rand64();
-			rec->a3 = (unsigned long) info;
-		}
+	case FW_CDEV_IOC_GET_INFO:
+		sanitise_fw_get_info(rec);
 		break;
-	}
 
 	case FW_CDEV_IOC_SEND_REQUEST:
 	case FW_CDEV_IOC_SEND_BROADCAST_REQUEST:
@@ -219,27 +339,17 @@ static void firewire_sanitise(const struct ioctl_group *grp, struct syscallrecor
 		sanitise_fw_send_response(rec);
 		break;
 
-	case FW_CDEV_IOC_INITIATE_BUS_RESET: {
-		struct fw_cdev_initiate_bus_reset *r = get_writable_struct(sizeof(*r));
-		if (r) {
-			r->type = rnd_modulo_u32(2);	/* FW_CDEV_LONG_RESET or FW_CDEV_SHORT_RESET */
-			rec->a3 = (unsigned long) r;
-		}
+	case FW_CDEV_IOC_INITIATE_BUS_RESET:
+		sanitise_fw_initiate_bus_reset(rec);
 		break;
-	}
 
 	case FW_CDEV_IOC_ADD_DESCRIPTOR:
 		sanitise_fw_add_descriptor(rec);
 		break;
 
-	case FW_CDEV_IOC_REMOVE_DESCRIPTOR: {
-		struct fw_cdev_remove_descriptor *d = get_writable_struct(sizeof(*d));
-		if (d) {
-			d->handle = rand32();
-			rec->a3 = (unsigned long) d;
-		}
+	case FW_CDEV_IOC_REMOVE_DESCRIPTOR:
+		sanitise_fw_remove_descriptor(rec);
 		break;
-	}
 
 	case FW_CDEV_IOC_CREATE_ISO_CONTEXT:
 		sanitise_fw_create_iso_context(rec);
@@ -253,22 +363,13 @@ static void firewire_sanitise(const struct ioctl_group *grp, struct syscallrecor
 		sanitise_fw_start_iso(rec);
 		break;
 
-	case FW_CDEV_IOC_STOP_ISO: {
-		struct fw_cdev_stop_iso *s = get_writable_struct(sizeof(*s));
-		if (s) {
-			s->handle = rand32();
-			rec->a3 = (unsigned long) s;
-		}
+	case FW_CDEV_IOC_STOP_ISO:
+		sanitise_fw_stop_iso(rec);
 		break;
-	}
 
-	case FW_CDEV_IOC_GET_CYCLE_TIMER: {
-		/* output only */
-		struct fw_cdev_get_cycle_timer *ct = get_writable_struct(sizeof(*ct));
-		if (ct)
-			rec->a3 = (unsigned long) ct;
+	case FW_CDEV_IOC_GET_CYCLE_TIMER:
+		sanitise_fw_get_cycle_timer(rec);
 		break;
-	}
 
 	case FW_CDEV_IOC_ALLOCATE_ISO_RESOURCE:
 	case FW_CDEV_IOC_ALLOCATE_ISO_RESOURCE_ONCE:
@@ -285,63 +386,33 @@ static void firewire_sanitise(const struct ioctl_group *grp, struct syscallrecor
 		break;
 
 #ifdef FW_CDEV_IOC_GET_CYCLE_TIMER2
-	case FW_CDEV_IOC_GET_CYCLE_TIMER2: {
-		struct fw_cdev_get_cycle_timer2 *ct2 = get_writable_struct(sizeof(*ct2));
-		if (ct2) {
-			/* clk_id is an input field; 0=REALTIME 1=MONOTONIC */
-			ct2->clk_id = rnd_modulo_u32(2);
-			rec->a3 = (unsigned long) ct2;
-		}
+	case FW_CDEV_IOC_GET_CYCLE_TIMER2:
+		sanitise_fw_get_cycle_timer2(rec);
 		break;
-	}
 #endif
 
 #ifdef FW_CDEV_IOC_SEND_PHY_PACKET
-	case FW_CDEV_IOC_SEND_PHY_PACKET: {
-		struct fw_cdev_send_phy_packet *p = get_writable_struct(sizeof(*p));
-		if (p) {
-			p->closure = rand64();
-			p->data[0] = rand32();
-			p->data[1] = ~p->data[0];	/* standard PHY packet encoding */
-			p->generation = rand32();
-			rec->a3 = (unsigned long) p;
-		}
+	case FW_CDEV_IOC_SEND_PHY_PACKET:
+		sanitise_fw_send_phy_packet(rec);
 		break;
-	}
 #endif
 
 #ifdef FW_CDEV_IOC_RECEIVE_PHY_PACKETS
-	case FW_CDEV_IOC_RECEIVE_PHY_PACKETS: {
-		struct fw_cdev_receive_phy_packets *p = get_writable_struct(sizeof(*p));
-		if (p) {
-			p->closure = rand64();
-			rec->a3 = (unsigned long) p;
-		}
+	case FW_CDEV_IOC_RECEIVE_PHY_PACKETS:
+		sanitise_fw_receive_phy_packets(rec);
 		break;
-	}
 #endif
 
 #ifdef FW_CDEV_IOC_SET_ISO_CHANNELS
-	case FW_CDEV_IOC_SET_ISO_CHANNELS: {
-		struct fw_cdev_set_iso_channels *sc = get_writable_struct(sizeof(*sc));
-		if (sc) {
-			sc->channels = 1ULL << (rnd_modulo_u32(64));
-			sc->handle = rand32();
-			rec->a3 = (unsigned long) sc;
-		}
+	case FW_CDEV_IOC_SET_ISO_CHANNELS:
+		sanitise_fw_set_iso_channels(rec);
 		break;
-	}
 #endif
 
 #ifdef FW_CDEV_IOC_FLUSH_ISO
-	case FW_CDEV_IOC_FLUSH_ISO: {
-		struct fw_cdev_flush_iso *f = get_writable_struct(sizeof(*f));
-		if (f) {
-			f->handle = rand32();
-			rec->a3 = (unsigned long) f;
-		}
+	case FW_CDEV_IOC_FLUSH_ISO:
+		sanitise_fw_flush_iso(rec);
 		break;
-	}
 #endif
 
 	default:
