@@ -253,6 +253,14 @@ static void run_periodic_surfaces(void)
 
 	kcov_bitmap_maybe_snapshot();
 
+	/* Periodic popcount-vs-edges_found audit of bucket_seen[].  Self-
+	 * gated on KCOV_BITMAP_CANARY_INTERVAL_SEC so the 8 MB scan only
+	 * runs at the snapshot cadence.  Catches wild-writer scribbles
+	 * that the guard-shared armour cannot see -- guard pages only
+	 * fault on writes that miss the kcov_shm region entirely, not on
+	 * writes that land inside it. */
+	kcov_bitmap_canary_check();
+
 	cmp_hints_maybe_snapshot();
 
 	print_stats();

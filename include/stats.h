@@ -3234,6 +3234,32 @@ struct stats_s {
 	unsigned long plateau_entered;
 	unsigned long plateau_exited;
 
+	/* bucket_seen[] integrity-canary counters, bumped from
+	 * kcov_bitmap_canary_check() on the parent's periodic tick.
+	 * kcov_collect() sets bucket_seen bits monotonically and bumps
+	 * edges_found once per bit-flip, so popcount(bucket_seen) ==
+	 * edges_found is a by-construction identity (see the comment on
+	 * kcov_bitmap_recount).  A wild writer that scribbles bucket_seen
+	 * mid-run silently breaks the identity until the next save path
+	 * notices.  The canary samples and popcount-compares against an
+	 * in-source deficit threshold (KCOV_BITMAP_CANARY_DEFICIT) chosen
+	 * to clear realistic per-scan memory-ordering jitter while still
+	 * catching the page-class scribbles operators have seen.  Stats:
+	 *   bucket_canary_checks   - every successful sample, the
+	 *                            denominator for the deficit rate.
+	 *   bucket_canary_deficits - samples where (edges_before -
+	 *                            popcount) exceeded the threshold,
+	 *                            i.e. the alarm fired.  Non-zero
+	 *                            means the wild-writer hypothesis
+	 *                            has direct evidence in the current
+	 *                            run; cross-reference the matching
+	 *                            stats.log CANARY line for the
+	 *                            deficit magnitude.
+	 * Both fields are parent-only writers; the RELAXED add-fetch is
+	 * for read-side ordering hygiene only. */
+	unsigned long bucket_canary_checks;
+	unsigned long bucket_canary_deficits;
+
 	/* Number of windows the orchestrator above the strategy picker
 	 * forced STRATEGY_RANDOM in response to plateau_active, i.e. windows
 	 * with selection_reason == SR_PLATEAU_FORCE.  Excluded from the

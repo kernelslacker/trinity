@@ -2795,3 +2795,38 @@ void kcov_bitmap_enable_snapshots(const char *path);
  * from the parent's stats tick and from kcov_plateau_check() when a
  * plateau is first entered. */
 void kcov_bitmap_maybe_snapshot(void);
+
+/* Mid-run cadence for kcov_bitmap_canary_check(): how often the parent
+ * popcount-scans bucket_seen[] to verify the by-construction identity
+ * popcount(bucket_seen) == edges_found.  Bits in bucket_seen[] never
+ * clear in healthy operation, so a measurable deficit is evidence of a
+ * stray writer scribbling bits and the operator wants to see it surface
+ * near the corruption window instead of at the next save.  300s mirrors
+ * the bitmap snapshot interval -- the canary is a cheap (~ms) prefix to
+ * the same write the snapshot path will run -- and the in-source
+ * threshold KCOV_BITMAP_CANARY_DEFICIT below keeps memory-ordering
+ * noise from being mistaken for damage.  Hardcoded; no operator knob. */
+#define KCOV_BITMAP_CANARY_INTERVAL_SEC		300UL
+
+/* Per-check tolerance for the popcount-vs-edges_found deficit.  The
+ * kcov_collect() hot path bumps edges_found RELAXED after the matching
+ * fetch_or on bucket_seen[], so a canary scan racing with steady-state
+ * writers can observe a small short-lived skew without any corruption
+ * present (writes still propagating across CPUs, store-buffer fold-in,
+ * scan cursor passing a byte before the bit transition becomes visible).
+ * 1024 sits well above the realistic per-scan jitter on a busy fleet
+ * host (high ~10s of bits) and well below any plausible wild-write
+ * blast radius (a single page-clear is 32k bits), so the threshold
+ * distinguishes the two without arming a false-positive alarm. */
+#define KCOV_BITMAP_CANARY_DEFICIT		1024UL
+
+/* Self-rate-limited integrity probe: sample edges_found, popcount the
+ * full bucket_seen[] table, alarm when the deficit (edges_before -
+ * popcount) exceeds KCOV_BITMAP_CANARY_DEFICIT.  Always bumps the
+ * per-check denominator stat; bumps the deficit-alarm numerator on
+ * mismatch and emits a one-line CANARY warning to stats.log with the
+ * deficit magnitude so the operator can correlate against the wild-
+ * write window.  Called once per main_loop tick alongside the other
+ * periodic samplers; the KCOV_BITMAP_CANARY_INTERVAL_SEC gate keeps
+ * the 8 MB scan from running on every tick. */
+void kcov_bitmap_canary_check(void);
