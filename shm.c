@@ -361,7 +361,7 @@ static void init_shm_per_child_rings(void)
 		 * (expected_fd_event_rings); the ring CONTENTS are necessarily
 		 * child-writable.
 		 */
-		child->fd_event_ring = alloc_shared(sizeof(struct fd_event_ring));
+		child->fd_event_ring = alloc_shared_pool(sizeof(struct fd_event_ring));
 		fd_event_ring_init(child->fd_event_ring);
 
 		/* Record the ring address in the canary array. */
@@ -374,7 +374,7 @@ static void init_shm_per_child_rings(void)
 		 * drain if a wild write or recycled-zombie store swapped it;
 		 * record the address in the canary array so
 		 * stats_ring_drain_all() can spot the swap before deref. */
-		child->stats_ring = alloc_shared(sizeof(struct stats_ring));
+		child->stats_ring = alloc_shared_pool(sizeof(struct stats_ring));
 		stats_ring_init(child->stats_ring);
 
 		/* Record the ring address in the canary array. */
