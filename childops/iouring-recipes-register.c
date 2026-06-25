@@ -52,7 +52,7 @@
  * per-syscall get_user_pages and reads directly into the pre-pinned
  * region.  Unregister before teardown to exercise the unpin path.
  * ------------------------------------------------------------------ */
-bool recipe_fixed_buffer_read(struct iour_recipe_state *s, bool *unsupported __unused__)
+bool recipe_fixed_buffer_read(struct iour_recipe_state *s, bool *unsupported)
 {
 	struct iour_ring *ctx = s->ctx;
 	struct iovec iov;
@@ -84,8 +84,18 @@ bool recipe_fixed_buffer_read(struct iour_recipe_state *s, bool *unsupported __u
 	 * copy.  Either way the recipe never reaches the fixed-buffer
 	 * fast path it's meant to exercise. */
 	m = get_map_with_prot(PROT_WRITE);
-	if (m == NULL)
+	if (m == NULL) {
+		/* Parent's mapping pool has no PROT_WRITE entry available
+		 * (siblings hold them all, or the pool was never populated
+		 * with a writable entry on this host).  Without a writable
+		 * backing buffer the REGISTER_BUFFERS pin can't even be
+		 * attempted, so latch the recipe off — leaving it live just
+		 * has the dispatcher re-pick us forever on partial. */
+		*unsupported = true;
+		__atomic_add_fetch(&shm->stats.iouring_recipes_enosys, 1,
+				   __ATOMIC_RELAXED);
 		goto out;
+	}
 	buf = m->ptr;
 	buf_sz = m->size;
 
@@ -101,8 +111,19 @@ bool recipe_fixed_buffer_read(struct iour_recipe_state *s, bool *unsupported __u
 
 	r = (int)trinity_raw_syscall(__NR_io_uring_register, ctx->fd,
 			 IORING_REGISTER_BUFFERS, &iov, 1);
-	if (r < 0)
+	if (r < 0) {
+		/* EPERM: no CAP_IPC_LOCK and RLIMIT_MEMLOCK is too small
+		 * to pin the buffer.  ENOMEM: memlock pressure (every
+		 * sibling ring's registered pages count against the same
+		 * accounting bucket).  Neither will resolve mid-run on
+		 * this host. */
+		if (errno == EPERM || errno == ENOMEM) {
+			*unsupported = true;
+			__atomic_add_fetch(&shm->stats.iouring_recipes_enosys,
+					   1, __ATOMIC_RELAXED);
+		}
 		goto out;
+	}
 	s->registered_buf = true;
 
 	s->open_fd = open("/dev/zero", O_RDONLY | O_CLOEXEC);
@@ -138,7 +159,7 @@ out:
  * submitted as a linked pair.  This exercises the fixed-buffer fast
  * path in both directions within a structured sequence.
  * ------------------------------------------------------------------ */
-bool recipe_write_read_fixed(struct iour_recipe_state *s, bool *unsupported __unused__)
+bool recipe_write_read_fixed(struct iour_recipe_state *s, bool *unsupported)
 {
 	struct iour_ring *ctx = s->ctx;
 	struct io_uring_sqe sqes[2];
@@ -167,8 +188,16 @@ bool recipe_write_read_fixed(struct iour_recipe_state *s, bool *unsupported __un
 	 * directions and the register pin all have to succeed for the linked
 	 * pair to actually exercise the fixed-buffer fast path. */
 	m = get_map_with_prot(PROT_READ | PROT_WRITE);
-	if (m == NULL)
+	if (m == NULL) {
+		/* No PROT_READ|PROT_WRITE pool entry to draw — same
+		 * reasoning as recipe_fixed_buffer_read above: without a
+		 * suitable backing buffer the recipe can't make progress
+		 * on this host, so latch it off instead of looping. */
+		*unsupported = true;
+		__atomic_add_fetch(&shm->stats.iouring_recipes_enosys, 1,
+				   __ATOMIC_RELAXED);
 		goto out;
+	}
 	buf = m->ptr;
 	buf_sz = m->size;
 
@@ -182,8 +211,16 @@ bool recipe_write_read_fixed(struct iour_recipe_state *s, bool *unsupported __un
 
 	r = (int)trinity_raw_syscall(__NR_io_uring_register, ctx->fd,
 			 IORING_REGISTER_BUFFERS, &iov, 1);
-	if (r < 0)
+	if (r < 0) {
+		/* Same EPERM/ENOMEM latching as recipe_fixed_buffer_read:
+		 * memlock policy / pressure won't resolve mid-run. */
+		if (errno == EPERM || errno == ENOMEM) {
+			*unsupported = true;
+			__atomic_add_fetch(&shm->stats.iouring_recipes_enosys,
+					   1, __ATOMIC_RELAXED);
+		}
 		goto out;
+	}
 	s->registered_buf = true;
 
 	if (pipe(s->pipefd) < 0)
@@ -337,11 +374,24 @@ bool recipe_msg_ring(struct iour_recipe_state *s, bool *unsupported)
 
 	{
 		struct io_uring_params p;
+		enum iour_setup_status st;
 
 		memset(&p, 0, sizeof(p));
-		if (iour_ring_setup(&p, (unsigned int)RAND_NEGATIVE_OR(8),
-				    &s->inner) != IOUR_SUPPORTED)
+		st = iour_ring_setup(&p, (unsigned int)RAND_NEGATIVE_OR(8),
+				     &s->inner);
+		if (st != IOUR_SUPPORTED) {
+			/* IOUR_UNSUPPORTED is the "kernel won't ever stand
+			 * up a second ring here" verdict — latch the recipe
+			 * off.  IOUR_TRANSIENT (ENOMEM/EAGAIN/EMFILE/mmap
+			 * blip) skips this invocation but leaves the recipe
+			 * live for the next dispatch. */
+			if (st == IOUR_UNSUPPORTED) {
+				*unsupported = true;
+				__atomic_add_fetch(&shm->stats.iouring_recipes_enosys,
+						   1, __ATOMIC_RELAXED);
+			}
 			goto out;
+		}
 		s->inner_active = true;
 	}
 
