@@ -5435,6 +5435,54 @@ static const struct struct_field sigset_t_fields[] = {
 	FIELD(sigset_t, __val),
 };
 
+/* ------------------------------------------------------------------ */
+/* struct lsm_ctx (lsm_set_self_attr)                                  */
+/* ------------------------------------------------------------------ */
+
+/*
+ * struct lsm_ctx from include/uapi/linux/lsm.h.  Defined locally under
+ * the header's include-guard probe so the translation unit builds
+ * against older kernel headers that predate the lsm.h UAPI.  The shape
+ * MUST match the kernel header -- a future bump that grows the fixed
+ * head needs both copies updated.  The flexible ctx[] tail is
+ * intentionally omitted: only the fixed 4-u64 head is cataloged; the
+ * variable payload stays owned by the bespoke sanitiser.
+ */
+#ifndef _LINUX_LSM_H
+struct lsm_ctx {
+	__u64 id;
+	__u64 flags;
+	__u64 len;
+	__u64 ctx_len;
+};
+#endif
+
+/*
+ * lsm_set_self_attr(unsigned int attr, struct lsm_ctx __user *ctx,
+ *                   u32 size, u32 flags) hands the kernel an LSM
+ * context descriptor at a2.  argtype[1] is ARG_ADDRESS (not
+ * ARG_STRUCT_PTR_*), so sanitise_lsm_set_self_attr() keeps owning the
+ * live fill: a page_size + 64 buffer with id drawn from a small LSM
+ * pool and size bucketed across the kernel's security_setselfattr()
+ * size-validation arms (zero / undersized / oversized / variable
+ * payload / current).  The variable ctx[] tail is owned by that
+ * sanitiser and intentionally not modelled here.
+ *
+ * Registration is attribution-only, mirroring the in-tree msgbuf /
+ * sigset_t entries: the bespoke sanitiser keeps owning the live fill
+ * -- this only feeds the CMP-attribution path.  All four head fields
+ * stay FT_RAW so the bespoke fill is preserved verbatim; the win is
+ * letting struct_field_for_cmp() steer KCOV CMP-learned constants at
+ * the named id / flags / len / ctx_len slots rather than at
+ * coincidentally-same-width neighbours.
+ */
+static const struct struct_field lsm_ctx_fields[] = {
+	FIELD(struct lsm_ctx, id),
+	FIELD(struct lsm_ctx, flags),
+	FIELD(struct lsm_ctx, len),
+	FIELD(struct lsm_ctx, ctx_len),
+};
+
 #ifdef USE_TCP_REPAIR_OPT
 /*
  * struct tcp_repair_opt -- IPPROTO_TCP / TCP_REPAIR_OPTIONS.  The kernel
@@ -6495,6 +6543,12 @@ const struct struct_desc struct_catalog[] = {
 		.struct_size	= sizeof(sigset_t),
 		.fields		= sigset_t_fields,
 		.num_fields	= ARRAY_SIZE(sigset_t_fields),
+	},
+	[SC_LSM_CTX] = {
+		.name		= "lsm_ctx",
+		.struct_size	= sizeof(struct lsm_ctx),
+		.fields		= lsm_ctx_fields,
+		.num_fields	= ARRAY_SIZE(lsm_ctx_fields),
 	},
 #ifdef USE_TCP_REPAIR_OPT
 	[SC_TCP_REPAIR_OPT] = {
@@ -7963,6 +8017,22 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * unaffected.
 	 */
 	{ "epoll_pwait2",	5, &struct_catalog[SC_SIGSET_T] },
+	/*
+	 * lsm_set_self_attr(unsigned int attr, struct lsm_ctx __user *ctx,
+	 *                   u32 size, u32 flags)
+	 * a2 is ARG_ADDRESS (not ARG_STRUCT_PTR_*), so the bespoke
+	 * sanitise_lsm_set_self_attr() keeps owning the live fill: a
+	 * page_size+64 buffer with id drawn from {SELINUX, SMACK, APPARMOR,
+	 * LANDLOCK} and size bucketed across the kernel's
+	 * security_setselfattr() validation arms.  Attribution-only
+	 * registration lets struct_field_for_cmp() steer CMP-learned
+	 * constants at the named id / flags / len / ctx_len slots rather
+	 * than at coincidentally-same-width neighbours; id is the prime
+	 * dispatch target (the kernel selects a single LSM hook from it).
+	 * lsm_get_self_attr's lsm_ctx a1 is a kernel-written output buffer
+	 * and is intentionally not mapped.
+	 */
+	{ "lsm_set_self_attr",	2, &struct_catalog[SC_LSM_CTX] },
 	/* sentinel */
 	{ NULL, 0, NULL },
 };
