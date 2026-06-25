@@ -83,6 +83,24 @@
  * a single multi-hour fuzz run gets to re-test misjudged ops. */
 #define CANARY_BACKOFF_TIME		1800
 
+/* Per-window setup-failure count above which a canary op with zero
+ * setup successes is treated as structurally broken (vs. low-yield)
+ * and the window is aborted early.  500 = enough to filter the slow
+ * start of a transient EAGAIN/ENOMEM burst, well below the full
+ * 10000-iter window so a re-test costs ~500 invocations not ~10000.
+ * Tied to setup_ok_delta == 0: an op with any setup success at all
+ * is not "broken at setup", just bad at it. */
+#define CANARY_SETUP_BROKEN_FAILS	500U
+
+/* Backoff for an op demoted with reason setup_broken.  Much longer
+ * than CANARY_BACKOFF_TIME because a 100%-setup-failure shape will
+ * not self-heal in 30 minutes -- it needs a code fix to the op's
+ * setup path (missing kconfig probe, stale capability check, wrong
+ * netns scope).  Re-canarying before then just burns another window
+ * rediscovering the same broken setup.  4 h is still inside a single
+ * long fuzz session, so a fix that lands mid-run does get re-evaluated. */
+#define CANARY_SETUP_BROKEN_BACKOFF_TIME	(4 * 3600)
+
 /* Width of the small ring of recently-promoted op names rendered by
  * canary_queue_summary().  Fixed at 5; spec verbatim. */
 #define CANARY_PROMOTION_RING_SIZE	5
@@ -249,6 +267,14 @@ static time_t canary_last_summary = 0;
  * new epoch (or emit a spurious one if the flag flipped while the queue
  * was reinitialising). */
 static bool canary_last_plateau = false;
+
+/* Per-op latch set by leave_canarying_demote_setup_broken() to mark an op
+ * whose last demotion was for 100%-setup-failure shape.  Read by the
+ * picker's DEMOTED-state backoff check, which then uses
+ * CANARY_SETUP_BROKEN_BACKOFF_TIME instead of CANARY_BACKOFF_TIME.
+ * Cleared in enter_canarying() so a re-canary that survives (or hits a
+ * different demote reason) drops back to the normal backoff schedule. */
+static bool canary_op_setup_broken[NR_CHILD_OP_TYPES];
 
 /* --------------------------------------------------------------------
  * Helpers.
@@ -461,6 +487,12 @@ static void enter_canarying(enum child_op_type op)
 	if (op == CHILD_OP_SYSCALL || op >= NR_CHILD_OP_TYPES)
 		return;
 
+	/* Re-canary: drop any prior setup-broken latch so this window is
+	 * scored on its own outcome.  If setup is still broken the flag
+	 * gets re-set by leave_canarying_demote_setup_broken(); if not,
+	 * any later demote falls back to the normal CANARY_BACKOFF_TIME. */
+	canary_op_setup_broken[op] = false;
+
 	s = &canary_ops[op];
 	s->state = CANARY_STATE_CANARYING;
 	s->window_crashes = 0;
@@ -642,6 +674,44 @@ static void leave_canarying_demote(enum child_op_type op,
 		window_iters, (unsigned int)CANARY_BACKOFF_TIME);
 }
 
+/* Early-bail demote: the op has burned CANARY_SETUP_BROKEN_FAILS setup
+ * failures inside the current window without a single setup success, so
+ * its setup path is structurally broken (a code-fix problem, not a
+ * coverage one).  Demote with a louder log and the longer
+ * CANARY_SETUP_BROKEN_BACKOFF_TIME so the picker stops re-spending
+ * window budget on it every 30 minutes.  The op stays in DEMOTED state
+ * (the picker honours the longer backoff via canary_op_setup_broken[]),
+ * so a re-canary path still exists -- a fix that lands while the run
+ * continues will be re-evaluated at the longer cadence.
+ *
+ * Distinction from "zero_edges": zero_edges means the op RAN to
+ * completion and produced no new clean edges (low-value, may self-heal);
+ * SETUP_BROKEN means the op NEVER ran a successful setup (broken, needs
+ * code fix).  Keeping the reasons separate lets the operator triage them
+ * differently. */
+static void leave_canarying_demote_setup_broken(enum child_op_type op,
+						unsigned long window_iters,
+						unsigned long setup_failures)
+{
+	struct canary_op_state *s = &canary_ops[op];
+
+	s->state = CANARY_STATE_DEMOTED;
+	s->last_state_transition = monotonic_seconds();
+	s->total_demotions++;
+	canary_op_setup_broken[op] = true;
+
+	/* Flip the gate back to dormant so the random picker stops
+	 * including this op. */
+	dormant_op_set(op, true);
+
+	/* Loud log: operator-facing call to action, distinct from the
+	 * routine "demoted (reason: zero_edges ...)" line so a grep for
+	 * BROKEN-SETUP surfaces only the structural-failure cases. */
+	output(0, "canary: %s BROKEN-SETUP: 100%% setup failure (setup_failures=%lu, setup_ok=0 in %lu iters) -- fix this op; backoff=%us before re-test; effective for new children at next respawn\n",
+		s->name, setup_failures, window_iters,
+		(unsigned int)CANARY_SETUP_BROKEN_BACKOFF_TIME);
+}
+
 /* Terminal exit for structurally canary-ineligible ops: those for
  * which op_uses_outer_bracket(op) is false and therefore whose
  * childop_edges_clean[op] slot is permanently zero (the outer KCOV
@@ -736,8 +806,17 @@ static bool pick_next_canary(enum child_op_type *out)
 		if (canary_ops[op].state == CANARY_STATE_CANARYING)
 			continue;
 		if (canary_ops[op].state == CANARY_STATE_DEMOTED) {
+			/* A setup-broken op carries a longer backoff than a
+			 * routine zero-edges demotion: its failure shape
+			 * needs a code fix, not a wait.  The flag is
+			 * cleared in enter_canarying() so a recovered op
+			 * falls back to the normal cadence on its next
+			 * demote (if any). */
+			time_t backoff = canary_op_setup_broken[op]
+				? (time_t)CANARY_SETUP_BROKEN_BACKOFF_TIME
+				: (time_t)CANARY_BACKOFF_TIME;
 			if (now - canary_ops[op].last_state_transition <
-			    CANARY_BACKOFF_TIME)
+			    backoff)
 				continue;
 			/* Backoff elapsed -- promote back to DORMANT
 			 * and re-enter the picker pool.  Log the
@@ -955,6 +1034,7 @@ void canary_queue_init(void)
 	unsigned int config_blocked = 0;
 
 	memset(canary_ops, 0, sizeof(canary_ops));
+	memset(canary_op_setup_broken, 0, sizeof(canary_op_setup_broken));
 	for (i = 0; i < NR_CHILD_OP_TYPES; i++) {
 		canary_ops[i].op = (enum child_op_type)i;
 		canary_ops[i].name = alt_op_name((enum child_op_type)i);
@@ -1125,11 +1205,17 @@ static bool retry_parked_slot(void)
  * picker via retry_parked_slot() at the top of canary_queue_tick();
  * if pick_next_canary() still fails the slot stays parked until
  * then. */
-static void close_window_or_park(enum child_op_type op)
+/* Tail shared between the full-window close path and the early-bail
+ * path: pick the next eligible canary candidate, or park the slot(s)
+ * if the picker is exhausted.  Mirrors the parking rationale on
+ * close_window_or_park() above -- without parking, a just-demoted op
+ * keeps running on the slot until its dedicated child respawns
+ * naturally (which on a parked queue is "never"), and crashes from
+ * it get dropped because canary_active_op_set is false. */
+static void stage_next_or_park(void)
 {
 	enum child_op_type next;
 
-	close_window_and_decide(op);
 	if (pick_next_canary(&next)) {
 		enter_canarying(next);
 		return;
@@ -1141,6 +1227,12 @@ static void close_window_or_park(enum child_op_type op)
 	canary_slots_parked = true;
 	output(0, "canary queue: picker exhausted, parking slot(s) until next eligible op\n");
 	kill_canary_slot_children();
+}
+
+static void close_window_or_park(enum child_op_type op)
+{
+	close_window_and_decide(op);
+	stage_next_or_park();
 }
 
 /* Edge-triggered visibility for the plateau-driven window shrink.
@@ -1201,6 +1293,40 @@ void canary_queue_tick(void)
 		output(1, "canary: %s in window %lu/%u iters (edges=%lu crashes=%u)\n",
 			canary_ops[op].name, iters, budget,
 			edges, canary_ops[op].window_crashes);
+	}
+
+	/* EARLY-BAIL on a structurally broken setup path.  An op whose
+	 * setup_ok stays at zero while setup_failures climbs past
+	 * CANARY_SETUP_BROKEN_FAILS is broken at the dispatch boundary
+	 * (missing kconfig, capability, netns) -- it will not produce
+	 * any edges no matter how long the window runs, so close the
+	 * window now with the SETUP_BROKEN demote reason and recycle
+	 * the slot.  Distinct from the zero_edges close below: that
+	 * one means the op RAN but produced nothing; this one means
+	 * the op never ran successfully at all.
+	 *
+	 * The deltas are read from the same shm counters
+	 * close_window_and_decide()'s shadow path uses, so the two
+	 * sites stay consistent on the broken-vs-barren distinction. */
+	{
+		unsigned long now_setup_accepted = __atomic_load_n(
+			&shm->stats.childop_setup_accepted[op], __ATOMIC_RELAXED);
+		unsigned long setup_ok_delta =
+			(now_setup_accepted > canary_ops[op].window_start_setup_accepted)
+			? (now_setup_accepted - canary_ops[op].window_start_setup_accepted) : 0;
+		unsigned long now_setup_failures =
+			(now_invocations > now_setup_accepted)
+			? (now_invocations - now_setup_accepted) : 0;
+		unsigned long setup_fail_delta =
+			(now_setup_failures > canary_ops[op].window_start_setup_failures)
+			? (now_setup_failures - canary_ops[op].window_start_setup_failures) : 0;
+
+		if (setup_ok_delta == 0 &&
+		    setup_fail_delta >= (unsigned long)CANARY_SETUP_BROKEN_FAILS) {
+			leave_canarying_demote_setup_broken(op, iters, setup_fail_delta);
+			stage_next_or_park();
+			return;
+		}
 	}
 
 	if (iters >= (unsigned long)budget)
