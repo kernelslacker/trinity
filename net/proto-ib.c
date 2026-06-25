@@ -1,10 +1,8 @@
 /* InfiniBand socket (AF_IB=27) handler */
 
-#include <sys/types.h>
 #include <sys/socket.h>
 #include <stdint.h>
 #include <stdlib.h>
-#include <string.h>
 #include "net.h"
 #include "random.h"
 #include "compat.h"
