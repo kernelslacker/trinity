@@ -4237,8 +4237,21 @@ struct stats_s {
 	 *  userns_other      UBS_EXIT_USERNS_OTHER -- unshare(CLONE_NEWUSER)
 	 *                    failed for a non-EPERM reason (also catches any
 	 *                    unknown WEXITSTATUS via the switch default)
-	 *  map_write_fail    UBS_EXIT_MAP_WRITE_FAIL -- uid_map / setgroups
-	 *                    / gid_map write rejected by the kernel
+	 *  map_write_fail    Any UBS_EXIT_MAP_WRITE_FAIL_* -- uid_map /
+	 *                    setgroups / gid_map write rejected by the
+	 *                    kernel.  Rollup total; the three _eperm /
+	 *                    _einval / _other slots below decompose it.
+	 *  map_write_fail_eperm   write returned EPERM.  Post-geteuid this
+	 *                    means the kernel still rejected the unprivi-
+	 *                    leged single-line mapping (cred mismatch
+	 *                    survived, capability profile lost, ...).
+	 *  map_write_fail_einval  write returned EINVAL.  Line malformed
+	 *                    or rule violated (e.g. multi-line write, range
+	 *                    overlap), distinct from a permission failure.
+	 *  map_write_fail_other   anything else -- open() ENOENT/EACCES,
+	 *                    short write, EIO, ENOMEM, ...  Bucketed so
+	 *                    novel errnos do not vanish into the EPERM
+	 *                    slot.
 	 *  target_unshare    UBS_EXIT_TARGET_UNSHARE -- secondary
 	 *                    unshare(target_ns_flags) failed
 	 *  fork_fail         fork() in the parent returned -1
@@ -4250,6 +4263,9 @@ struct stats_s {
 	unsigned long userns_bootstrap_eperm;
 	unsigned long userns_bootstrap_userns_other;
 	unsigned long userns_bootstrap_map_write_fail;
+	unsigned long userns_bootstrap_map_write_fail_eperm;
+	unsigned long userns_bootstrap_map_write_fail_einval;
+	unsigned long userns_bootstrap_map_write_fail_other;
 	unsigned long userns_bootstrap_target_unshare;
 	unsigned long userns_bootstrap_fork_fail;
 	unsigned long userns_bootstrap_signalled;
