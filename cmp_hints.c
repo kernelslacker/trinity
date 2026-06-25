@@ -598,8 +598,9 @@ void cmp_hyp_observe(unsigned int nr, bool do32, unsigned long cmp_ip,
 	 * shadow store does not need to materialise it.
 	 */
 	if (e == NULL || e->seen_count < 3 || e->hi <= e->lo
-	    || (e->hi - e->lo) > 32)
-		return;
+	    || (e->hi - e->lo) > 32) {
+		goto boundary;
+	}
 	h = cmp_hyp_find(pool, CMP_HYP_RANGE, cmp_ip, width);
 	if (h == NULL)
 		h = cmp_hyp_alloc(pool, CMP_HYP_RANGE, nr, do32, cmp_ip, width);
@@ -609,6 +610,50 @@ void cmp_hyp_observe(unsigned int nr, bool do32, unsigned long cmp_ip,
 		h->exemplar = e->exemplar;
 		h->seen_count = e->seen_count;
 		h->last_used_generation = generation;
+	}
+
+boundary:
+	/*
+	 * BOUNDARY lane: per-(cmp_ip, width) summary populated from a
+	 * SINGLE const observation -- explicitly NOT gated on RANGE's
+	 * seen_count >= 3 / span 2..32 rule, which is what starves the
+	 * single-boundary inequality case (one inequality `x < N` at one
+	 * site sees the same const N every fire -> span 0 -> RANGE never
+	 * synthesises, even though N+/-1 is the value that passes).
+	 * Shape mirrors ENUM_FAMILY's bookkeeping (exemplar = most-recent
+	 * const, lo/hi = running min/max over consts seen at this key)
+	 * but the BOUNDARY derive arm emits a neighbourhood ladder rather
+	 * than interior members, hitting the strict-inequality boundary
+	 * EXACT and RANGE both refuse to produce.
+	 */
+	{
+		bool fresh_boundary = false;
+
+		h = cmp_hyp_find(pool, CMP_HYP_BOUNDARY, cmp_ip, width);
+		if (h == NULL) {
+			h = cmp_hyp_alloc(pool, CMP_HYP_BOUNDARY, nr, do32,
+					  cmp_ip, width);
+			fresh_boundary = (h != NULL);
+		}
+		if (h != NULL) {
+			if (fresh_boundary) {
+				h->lo = val;
+				h->hi = val;
+				h->seen_count = 1;
+			} else {
+				if (val < h->lo)
+					h->lo = val;
+				if (val > h->hi)
+					h->hi = val;
+				h->seen_count++;
+			}
+			h->exemplar = val;
+			h->last_used_generation = generation;
+			if (fresh_boundary && kcov_shm != NULL)
+				__atomic_fetch_add(
+					&kcov_shm->cmp_hyp_boundary_inserted,
+					1UL, __ATOMIC_RELAXED);
+		}
 	}
 }
 
@@ -625,6 +670,16 @@ void cmp_hyp_observe(unsigned int nr, bool do32, unsigned long cmp_ip,
  * side.  Same RELAXED-load discipline as the rest of the SHADOW reader
  * path: torn fields tolerate the consumer-side advisory contract.
  */
+/*
+ * BOUNDARY credit window: |value - exemplar| <= 2 explains values the
+ * N-1 / N+1 / N+/-2 derive ladder produces.  The strict-inequality case
+ * the lane is built for needs +/-1; the wider +/-2 slot covers the
+ * sweep arm without inflating the window so far that an unrelated
+ * value-near-N collision is plausibly attributable.  Matches the same
+ * order of magnitude as the derive ladder.
+ */
+#define CMP_HYP_BOUNDARY_CREDIT_WINDOW 2U
+
 static struct cmp_hypothesis *cmp_hyp_find_for_credit(struct cmp_hyp_pool *pool,
 						      unsigned long cmp_ip,
 						      uint8_t width,
@@ -633,6 +688,7 @@ static struct cmp_hypothesis *cmp_hyp_find_for_credit(struct cmp_hyp_pool *pool,
 	struct cmp_hypothesis *enum_match = NULL;
 	struct cmp_hypothesis *bitmask_match = NULL;
 	struct cmp_hypothesis *range_match = NULL;
+	struct cmp_hypothesis *boundary_match = NULL;
 	unsigned int i, n = pool->count;
 	bool single_bit = (value != 0) && ((value & (value - 1)) == 0);
 
@@ -661,6 +717,17 @@ static struct cmp_hypothesis *cmp_hyp_find_for_credit(struct cmp_hyp_pool *pool,
 			if (value >= h->lo && value <= h->hi && range_match == NULL)
 				range_match = h;
 			break;
+		case CMP_HYP_BOUNDARY:
+			if (boundary_match == NULL) {
+				uint64_t ex = h->exemplar;
+				uint64_t d = (value >= ex)
+					? (value - ex)
+					: (ex - value);
+
+				if (d <= CMP_HYP_BOUNDARY_CREDIT_WINDOW)
+					boundary_match = h;
+			}
+			break;
 		default:
 			break;
 		}
@@ -669,7 +736,12 @@ static struct cmp_hypothesis *cmp_hyp_find_for_credit(struct cmp_hyp_pool *pool,
 		return enum_match;
 	if (bitmask_match != NULL)
 		return bitmask_match;
-	return range_match;
+	if (range_match != NULL)
+		return range_match;
+	if (boundary_match != NULL && kcov_shm != NULL)
+		__atomic_fetch_add(&kcov_shm->cmp_hyp_boundary_credit_window_hits,
+				   1UL, __ATOMIC_RELAXED);
+	return boundary_match;
 }
 
 /*
@@ -904,6 +976,7 @@ cmp_hyp_would_pick_locked(struct cmp_hyp_pool *pool, unsigned long cmp_ip,
 	struct cmp_hypothesis *enum_match = NULL;
 	struct cmp_hypothesis *bitmask_match = NULL;
 	struct cmp_hypothesis *range_match = NULL;
+	struct cmp_hypothesis *boundary_match = NULL;
 	unsigned int i, n = pool->count;
 	unsigned int k;
 
@@ -938,6 +1011,11 @@ cmp_hyp_would_pick_locked(struct cmp_hyp_pool *pool, unsigned long cmp_ip,
 			if (range_match == NULL)
 				range_match = h;
 			break;
+		case CMP_HYP_BOUNDARY:
+			present_out[CMP_HYP_BOUNDARY] = true;
+			if (boundary_match == NULL)
+				boundary_match = h;
+			break;
 		default:
 			break;
 		}
@@ -948,7 +1026,9 @@ cmp_hyp_would_pick_locked(struct cmp_hyp_pool *pool, unsigned long cmp_ip,
 		return enum_match;
 	if (bitmask_match != NULL)
 		return bitmask_match;
-	return range_match;
+	if (range_match != NULL)
+		return range_match;
+	return boundary_match;
 }
 
 /*
@@ -970,6 +1050,7 @@ static void cmp_hyp_would_pick(unsigned int nr, bool do32,
 	static const uint8_t ladder_kinds[] = {
 		CMP_HYP_EXACT, CMP_HYP_ENUM_FAMILY,
 		CMP_HYP_BITMASK, CMP_HYP_RANGE,
+		CMP_HYP_BOUNDARY,
 	};
 
 	if (kcov_shm == NULL || cmp_hints_shm == NULL || nr >= MAX_NR_SYSCALL)
@@ -997,6 +1078,22 @@ static void cmp_hyp_would_pick(unsigned int nr, bool do32,
 				&kcov_shm->cmp_hyp_would_miss_by_kind[lk],
 				1UL, __ATOMIC_RELAXED);
 	}
+	/*
+	 * Decoupled BOUNDARY availability census.  Bumped whenever a
+	 * BOUNDARY entry is populated at the served (cmp_ip, width) AND
+	 * the derive arm would not bail (the guards inside the BOUNDARY
+	 * case of cmp_hyp_derive_value always succeed for a non-corrupted
+	 * entry, so presence is the binding condition).  Independent of
+	 * the EXACT > ENUM > BITMASK > RANGE > BOUNDARY precedence above:
+	 * EXACT is populated at every observation and outranks BOUNDARY,
+	 * so cmp_hyp_would_pick_by_kind[BOUNDARY] stays structurally near
+	 * zero -- the counter below is the lane's headline shadow metric
+	 * (how often BOUNDARY would have a neighbour to inject if the
+	 * precedence let it through).
+	 */
+	if (present[CMP_HYP_BOUNDARY])
+		__atomic_fetch_add(&kcov_shm->cmp_hyp_boundary_candidate_available,
+				   1UL, __ATOMIC_RELAXED);
 }
 
 /*
@@ -1108,6 +1205,103 @@ static bool cmp_hyp_derive_value(const struct cmp_hypothesis *picked,
 			cls = CMP_HYP_PROBE_CLASS_RANGE_MIDPOINT;
 			goto out_bump;
 		}
+	case CMP_HYP_BOUNDARY: {
+		/*
+		 * Neighbourhood ladder around the exemplar N: the strict-
+		 * inequality boundary EXACT cannot pass (the passing value
+		 * for `x < N` is N-1, for `x > N` is N+1) and RANGE refuses
+		 * to emit (the comment at RANGE bans lo-1 / hi+1 because the
+		 * value-keyed credit walk cannot re-resolve them; the lane
+		 * here owns that emission and the BOUNDARY arm of
+		 * cmp_hyp_find_for_credit() owns the matching credit walk).
+		 *
+		 * Bug-pattern guards from the audit batch:
+		 *   * unsigned underflow: emit N-1 / N-2 only when N >= 1
+		 *     / N >= 2; arg1 is u64, N=0 - 1 would otherwise land at
+		 *     ULONG_MAX.
+		 *   * width overflow: skip the + arms when N is at the
+		 *     width's max (1 << (width*8) - 1) so a u8/u16 boundary
+		 *     does not wrap to 0 (or, worse, leak high-bit garbage
+		 *     past the operand width that the accept gate would then
+		 *     reject anyway).
+		 *   * mask the derived value to the operand width so an u8
+		 *     boundary at value 255 with the +1 arm gated off still
+		 *     yields a well-formed 8-bit value when the sweep arm
+		 *     touches it.
+		 * The accept-range gate in cmp_hints_try_get_ex (and the
+		 * caller's own range check) is the second line of defence:
+		 * a derived neighbour past the caller's bounds is rejected
+		 * cleanly and counted under
+		 * CMP_HYP_LIVE_INJECT_REASON_ACCEPT_REJECT.
+		 */
+		uint64_t n = picked->exemplar;
+		uint64_t width_mask = (picked->width >= 8)
+			? ~(uint64_t)0
+			: ((uint64_t)1 << (picked->width * 8)) - 1;
+		uint64_t width_max = width_mask;
+		uint64_t cand;
+		bool have_cand = false;
+
+		switch (rnd_modulo_u32(4)) {
+		case 0:
+			if (n >= 1) {
+				cand = n - 1;
+				cls = CMP_HYP_PROBE_CLASS_BOUNDARY_MINUS1;
+				have_cand = true;
+				break;
+			}
+			/* N=0: N-1 would underflow.  Fall through to the +1
+			 * arm which is well-defined for N=0 at any width. */
+			/* fallthrough */
+		case 1:
+			if (n < width_max) {
+				cand = n + 1;
+				cls = CMP_HYP_PROBE_CLASS_BOUNDARY_PLUS1;
+				have_cand = true;
+				break;
+			}
+			/* N == width_max: N+1 would overflow the operand
+			 * width.  Fall through to the exemplar arm, which
+			 * always fits. */
+			/* fallthrough */
+		case 2:
+			cand = n;
+			cls = CMP_HYP_PROBE_CLASS_BOUNDARY_EXACT;
+			have_cand = true;
+			break;
+		default:
+			/* Widen-by-one sweep for off-by-one chains.  Random
+			 * direction; the same underflow / overflow guards as
+			 * the +/-1 arms apply at the wider step. */
+			if (rnd_modulo_u32(2) == 0) {
+				if (n >= 2) {
+					cand = n - 2;
+					cls = CMP_HYP_PROBE_CLASS_BOUNDARY_SWEEP;
+					have_cand = true;
+					break;
+				}
+			} else {
+				if (n + 2 > n && n + 2 <= width_max) {
+					cand = n + 2;
+					cls = CMP_HYP_PROBE_CLASS_BOUNDARY_SWEEP;
+					have_cand = true;
+					break;
+				}
+			}
+			/* Both sweep directions strand the value at this
+			 * width.  Fall back to the exemplar so the lane never
+			 * emits "no value" -- the find_for_credit BOUNDARY
+			 * window covers exemplar matches too. */
+			cand = n;
+			cls = CMP_HYP_PROBE_CLASS_BOUNDARY_EXACT;
+			have_cand = true;
+			break;
+		}
+		if (!have_cand)
+			return false;
+		*out = (unsigned long)(cand & width_mask);
+		goto out_bump;
+	}
 	default:
 		return false;
 	}
