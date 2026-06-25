@@ -212,8 +212,15 @@ bool recipe_futex_wait_wake(struct iour_recipe_state *s, bool *unsupported)
 	 * PROT_NONE pool entries would SEGV on the value-word store before
 	 * the SQE is ever submitted. */
 	m = get_map_with_prot(PROT_READ | PROT_WRITE);
-	if (m == NULL)
+	if (m == NULL) {
+		/* No PROT_READ|PROT_WRITE pool entry to back the futex
+		 * word — without it the recipe can't even reach SQE
+		 * submission.  Latch off rather than re-pick forever. */
+		*unsupported = true;
+		__atomic_add_fetch(&shm->stats.iouring_recipes_enosys, 1,
+				   __ATOMIC_RELAXED);
 		goto out;
+	}
 	addr = (uint32_t *)m->ptr;
 
 	/* Publish drawn pool range — see recipe_fixed_buffer_read for the
