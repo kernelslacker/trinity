@@ -67,11 +67,9 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <sys/eventfd.h>
 #include <sys/inotify.h>
 #include <sys/signalfd.h>
-#include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/timerfd.h>
 #include <unistd.h>
