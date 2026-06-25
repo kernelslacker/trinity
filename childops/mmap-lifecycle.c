@@ -11,7 +11,6 @@
 #include <sys/syscall.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
 #include "arch.h"
 #include "child.h"
