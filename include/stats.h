@@ -888,7 +888,7 @@ struct stats_s {
 	unsigned long fs_lifecycle_overlay;	/* overlayfs variant */
 	unsigned long fs_lifecycle_quota;	/* tmpfs size= / ENOSPC variant */
 	unsigned long fs_lifecycle_bind;	/* bind-mount teardown variant */
-	unsigned long fs_lifecycle_unsupported;	/* unshare/mount denied (EPERM) */
+	unsigned long fs_lifecycle_unsupported;	/* CLONE_NEWUSER refused (helper -EPERM) */
 
 	/* signal_storm childop counters */
 	unsigned long signal_storm_runs;	/* total signal_storm invocations */

@@ -8,12 +8,25 @@
  * code paths are a persistent source of upstream CI bugs precisely because
  * they're unreachable through isolated syscall fuzzing.
  *
- * Each call to fs_lifecycle() picks one of six variants and runs it to
- * completion inside the child's private mount namespace.  The namespace
- * is obtained once via unshare(CLONE_NEWNS) on first entry and latched
- * for the life of the child process.  If the kernel denies the unshare
- * or the first mount() call returns EPERM, a per-process flag is set
- * and all subsequent invocations become no-ops.
+ * Each call to fs_lifecycle() picks one of six variants and runs it
+ * inside a transient grandchild forked by userns_run_in_ns(), which
+ * installs an identity-mapped CLONE_NEWUSER and a fresh CLONE_NEWNS.
+ * The grandchild holds CAP_SYS_ADMIN scoped to its own userns -- the
+ * persistent fuzz child's credentials are unchanged.  When the
+ * callback returns the grandchild _exit()s and the namespace stack
+ * (plus any leftover mounts) is torn down by the kernel along with
+ * the process.
+ *
+ * Latch policy: userns_run_in_ns() returning -EPERM means the kernel
+ * refused CLONE_NEWUSER (user.max_user_namespaces=0 or
+ * kernel.unprivileged_userns_clone=0).  That's a policy denial that
+ * will not change for the life of this child, so ns_unsupported is
+ * latched and every subsequent invocation short-circuits.  A return
+ * of -EAGAIN (transient grandchild setup failure -- fork, id-map
+ * write, secondary CLONE_NEWNS) is treated as a per-invocation skip
+ * with no latch.  Per-fstype ENODEV inside a variant (CONFIG_RAMFS
+ * or CONFIG_OVERLAY_FS off) is also a non-latching skip -- only the
+ * helper -EPERM flips ns_unsupported.
  *
  * Variants:
  *   TMPFS   — fallocate/punch-hole, xattr, cross-dir rename,
@@ -57,10 +70,9 @@
 #include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
+#include "userns-bootstrap.h"
 
-/* Latched per-child: private mount namespace is in place */
-static bool ns_unshared;
-/* Latched per-child: namespace or first mount denied with EPERM */
+/* Latched per-child: kernel refused CLONE_NEWUSER (helper -EPERM) */
 static bool ns_unsupported;
 
 /* Per-child invocation counter: keeps directory names unique */
@@ -124,39 +136,6 @@ static int create_filled_file(const char *path, unsigned char fill, size_t sz)
 	return fd;
 }
 
-/*
- * Ensure this child has a private mount namespace.  On first call the
- * namespace is created via unshare() and the root is made recursively
- * private so mounts cannot propagate back to the parent ns.  Subsequent
- * calls return immediately.
- */
-static bool ensure_private_ns(void)
-{
-	if (ns_unshared)
-		return true;
-	if (ns_unsupported)
-		return false;
-
-	if (unshare(CLONE_NEWNS) != 0) {
-		ns_unsupported = true;
-		__atomic_add_fetch(&shm->stats.fs_lifecycle_unsupported,
-				   1, __ATOMIC_RELAXED);
-		return false;
-	}
-
-	if (mount("none", "/", NULL, MS_REC | MS_PRIVATE, NULL) != 0) {
-		ns_unsupported = true;
-		__atomic_add_fetch(&shm->stats.fs_lifecycle_unsupported,
-				   1, __ATOMIC_RELAXED);
-		outputerr("fs_lifecycle: MS_PRIVATE remount failed (errno=%d), disabling\n",
-		          errno);
-		return false;
-	}
-
-	ns_unshared = true;
-	return true;
-}
-
 /* ------------------------------------------------------------------ */
 
 /*
@@ -179,14 +158,8 @@ static void do_tmpfs_lifecycle(void)
 	if (mkdir(base, 0755) != 0)
 		return;
 
-	if (mount("tmpfs", base, "tmpfs", 0, NULL) != 0) {
-		if (errno == EPERM) {
-			ns_unsupported = true;
-			__atomic_add_fetch(&shm->stats.fs_lifecycle_unsupported,
-					   1, __ATOMIC_RELAXED);
-		}
+	if (mount("tmpfs", base, "tmpfs", 0, NULL) != 0)
 		goto out_rmdir;
-	}
 	mounted = true;
 
 	snprintf(dira,  sizeof(dira),  "%s/a",       base);
@@ -275,11 +248,8 @@ static void do_ramfs_lifecycle(void)
 	if (mkdir(base, 0755) != 0)
 		return;
 
-	if (mount("ramfs", base, "ramfs", 0, NULL) != 0) {
-		if (errno == EPERM)
-			ns_unsupported = true;
+	if (mount("ramfs", base, "ramfs", 0, NULL) != 0)
 		goto out_rmdir;
-	}
 	mounted = true;
 
 	snprintf(subdir,   sizeof(subdir),   "%s/sub",      base);
@@ -357,11 +327,8 @@ static void do_rdonly_lifecycle(void)
 	if (mkdir(base, 0755) != 0)
 		return;
 
-	if (mount(fstype, base, fstype, MS_RDONLY, NULL) != 0) {
-		if (errno == EPERM)
-			ns_unsupported = true;
+	if (mount(fstype, base, fstype, MS_RDONLY, NULL) != 0)
 		goto out_rmdir;
-	}
 	mounted = true;
 
 	snprintf(probepath, sizeof(probepath), "%s/%s", base, probe);
@@ -408,11 +375,8 @@ static void do_overlay_lifecycle(void)
 	if (mkdir(base, 0755) != 0)
 		return;
 
-	if (mount("tmpfs", base, "tmpfs", 0, NULL) != 0) {
-		if (errno == EPERM)
-			ns_unsupported = true;
+	if (mount("tmpfs", base, "tmpfs", 0, NULL) != 0)
 		goto out_rmdir;
-	}
 	base_mounted = true;
 
 	snprintf(lower,  sizeof(lower),  "%s/lower",  base);
@@ -484,11 +448,8 @@ static void do_quota_lifecycle(void)
 	if (mkdir(base, 0755) != 0)
 		return;
 
-	if (mount("tmpfs", base, "tmpfs", 0, "size=512k") != 0) {
-		if (errno == EPERM)
-			ns_unsupported = true;
+	if (mount("tmpfs", base, "tmpfs", 0, "size=512k") != 0)
 		goto out_rmdir;
-	}
 	mounted = true;
 
 	snprintf(fpath, sizeof(fpath), "%s/bigfile", base);
@@ -544,11 +505,8 @@ static void do_bind_lifecycle(void)
 		return;
 	}
 
-	if (mount("tmpfs", src, "tmpfs", 0, NULL) != 0) {
-		if (errno == EPERM)
-			ns_unsupported = true;
+	if (mount("tmpfs", src, "tmpfs", 0, NULL) != 0)
 		goto out_rmdir;
-	}
 	src_mounted = true;
 
 	snprintf(fpath, sizeof(fpath), "%s/testfile", src);
@@ -584,34 +542,33 @@ out_rmdir:
 
 /* ------------------------------------------------------------------ */
 
-bool fs_lifecycle(struct childdata *child)
+/*
+ * Per-invocation context handed to the in-ns callback.  Only the
+ * variant index needs to cross the fork boundary -- everything else
+ * the variants reach for (shm stats counters, tmpdir path) is either
+ * shared-memory or world-readable and survives the namespace change.
+ */
+struct fs_lifecycle_ctx {
+	unsigned int variant;
+};
+
+/*
+ * Body that must run inside the (CLONE_NEWUSER | CLONE_NEWNS) namespace
+ * stack.  Executed in a transient grandchild forked by
+ * userns_run_in_ns(); the grandchild's userns + mount ns are torn down
+ * on _exit() so any tmpfs/ramfs/overlay/bind mounts the variant set up
+ * are reaped by the kernel along with the namespace stack.  Return
+ * value is ignored by the helper.
+ */
+static int fs_lifecycle_in_ns(void *arg)
 {
-	bool was_unsupported = ns_unsupported;
-	/* Snapshot child->op_type once and bounds-check before indexing
-	 * the per-op stats arrays.  The field lives in shared memory and
-	 * can be scribbled by a poisoned-arena write from a sibling; the
-	 * child.c dispatch loop already gates its dispatch + alt-op
-	 * accounting on the same valid_op snapshot. */
-	const enum child_op_type op = child->op_type;
-	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+	struct fs_lifecycle_ctx *ctx = (struct fs_lifecycle_ctx *)arg;
 
-	if (!ensure_private_ns())
-		goto out_latch;
+	/* MS_PRIVATE on / so anything we mount cannot propagate even
+	 * if the host's mount namespace had MS_SHARED propagation. */
+	(void)mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL);
 
-	/* Past the per-invocation eligibility gate (private mount ns is in
-	 * place).  Bump setup_accepted before data_path so the invariant
-	 * data_path <= setup_accepted holds at every observation point.  No
-	 * bail path runs between the two bumps here -- the switch dispatches
-	 * unconditionally -- so the healthy baseline is equality, matching
-	 * the NO-setup signature of a linear archetype-A childop. */
-	if (valid_op) {
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
-				   1, __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
-				   1, __ATOMIC_RELAXED);
-	}
-
-	switch (rnd_modulo_u32(6)) {
+	switch (ctx->variant) {
 	case 0: do_tmpfs_lifecycle();   break;
 	case 1: do_ramfs_lifecycle();   break;
 	case 2: do_rdonly_lifecycle();  break;
@@ -620,16 +577,61 @@ bool fs_lifecycle(struct childdata *child)
 	case 5: do_bind_lifecycle();    break;
 	}
 
-out_latch:
-	/* Single store site for the per-childop latch reason: if this
-	 * invocation is the one that flipped ns_unsupported (either via
-	 * unshare/MS_PRIVATE in ensure_private_ns() or via an EPERM from
-	 * the variant's mount() call), record NS_UNSUPPORTED so the per-arm
-	 * yield dump attributes the disable to a namespace/capability denial
-	 * rather than a generic init failure. */
-	if (!was_unsupported && ns_unsupported && valid_op)
-		__atomic_store_n(&shm->stats.childop_latch_reason[op],
-				 CHILDOP_LATCH_NS_UNSUPPORTED, __ATOMIC_RELAXED);
+	return 0;
+}
+
+bool fs_lifecycle(struct childdata *child)
+{
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+	struct fs_lifecycle_ctx ctx;
+	int rc;
+
+	if (ns_unsupported)
+		return true;
+
+	ctx.variant = rnd_modulo_u32(6);
+
+	rc = userns_run_in_ns(CLONE_NEWNS, fs_lifecycle_in_ns, &ctx);
+
+	if (rc == -EPERM) {
+		/* CLONE_NEWUSER refused by kernel policy
+		 * (user.max_user_namespaces=0 or
+		 * kernel.unprivileged_userns_clone=0).  Latch and stop
+		 * retrying for the lifetime of this trinity child. */
+		ns_unsupported = true;
+		__atomic_add_fetch(&shm->stats.fs_lifecycle_unsupported,
+				   1, __ATOMIC_RELAXED);
+		if (valid_op)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		return true;
+	}
+
+	if (rc < 0) {
+		/* Transient grandchild setup failure (fork, id-map write,
+		 * secondary CLONE_NEWNS unshare).  Skip this invocation
+		 * without latching -- the failure is not policy and may
+		 * not recur on the next call. */
+		return true;
+	}
+
+	/* rc == 0: the in-ns callback ran to completion.  Bump
+	 * setup_accepted before data_path so the invariant
+	 * data_path <= setup_accepted holds at every observation point;
+	 * no bail path runs between the two bumps here. */
+	if (valid_op) {
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
+	}
 
 	return true;
 }
