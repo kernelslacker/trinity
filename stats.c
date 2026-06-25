@@ -7479,6 +7479,79 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	last_dump = now;
 }
 
+void __cold minicorpus_mut_attrib_canary_check(void)
+{
+	static time_t last_check_mono;
+	static bool first_witness_emitted;
+	struct timespec ts;
+	time_t now;
+	unsigned int i;
+
+	if (minicorpus_shm == NULL)
+		return;
+
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	now = ts.tv_sec;
+
+	/* First call seeds the gate without scanning -- mirrors the
+	 * kcov_bitmap_canary_check() first-call seed.  Subsequent calls
+	 * scan no more than once per MUT_ATTRIB_CANARY_INTERVAL_SEC, with
+	 * the timestamp stamped from CLOCK_MONOTONIC so a backward NTP
+	 * step cannot suppress an otherwise-due check. */
+	if (last_check_mono == 0) {
+		last_check_mono = now;
+		return;
+	}
+	if ((unsigned long)(now - last_check_mono) <
+	    MUT_ATTRIB_CANARY_INTERVAL_SEC)
+		return;
+	last_check_mono = now;
+
+	/* Sample trials BEFORE wins for each pair so any in-flight
+	 * producer that bumps both between the two loads biases the
+	 * observed (wins - trials) DOWNWARD (the matching trial bump is
+	 * already in the trials sample, the matching win bump may not
+	 * be in the wins sample yet) and cannot manufacture a false
+	 * inversion.  The opposite order is the one with the per-CPU
+	 * skew window, hence the load order. */
+	for (i = 0; i < MUT_NUM_OPS; i++) {
+		unsigned long t  = __atomic_load_n(&minicorpus_shm->mut_trials[i],
+						   __ATOMIC_RELAXED);
+		unsigned long w  = __atomic_load_n(&minicorpus_shm->mut_wins[i],
+						   __ATOMIC_RELAXED);
+		unsigned long st = __atomic_load_n(
+			&minicorpus_shm->mut_structured_trials[i],
+			__ATOMIC_RELAXED);
+		unsigned long sw = __atomic_load_n(
+			&minicorpus_shm->mut_structured_wins[i],
+			__ATOMIC_RELAXED);
+
+		if (w > t + MUT_ATTRIB_INVERSION_TOL) {
+			__atomic_fetch_add(&shm->stats.mut_attrib_inversion_caught,
+					   1UL, __ATOMIC_RELAXED);
+			if (!first_witness_emitted) {
+				stats_log_write("CANARY: minicorpus mut_wins[%u]=%lu > mut_trials[%u]=%lu (tol=%lu, op=%s) -- counter word scribbled\n",
+						i, w, i, t,
+						MUT_ATTRIB_INVERSION_TOL,
+						op_names[i]);
+				first_witness_emitted = true;
+			}
+		}
+
+		if (sw > st + MUT_ATTRIB_INVERSION_TOL) {
+			__atomic_fetch_add(&shm->stats.mut_attrib_inversion_caught,
+					   1UL, __ATOMIC_RELAXED);
+			if (!first_witness_emitted) {
+				stats_log_write("CANARY: minicorpus mut_structured_wins[%u]=%lu > mut_structured_trials[%u]=%lu (tol=%lu, op=%s) -- counter word scribbled\n",
+						i, sw, i, st,
+						MUT_ATTRIB_INVERSION_TOL,
+						op_names[i]);
+				first_witness_emitted = true;
+			}
+		}
+	}
+}
+
 /* Per-syscall KCOV diagnostic blocks.  One block per counter in
  * struct kcov_per_syscall_diag, emitted as a top-20-non-zero list
  * sorted descending by counter value.  The block is skipped entirely
@@ -8959,6 +9032,9 @@ static void dump_stats_corruption_and_pool(void)
 		stat_row("corruption", "lock_held_scribble",    shm->stats.lock_held_scribble);
 	if (shm->stats.rec_canary_stomped)
 		stat_row("corruption", "rec_canary_stomped",     shm->stats.rec_canary_stomped);
+	if (shm->stats.mut_attrib_inversion_caught)
+		stat_row("corruption", "mut_attrib_inversion_caught",
+			 shm->stats.mut_attrib_inversion_caught);
 	if (shm->stats.rzs_blanket_reject)
 		stat_row("corruption", "rzs_blanket_reject",     shm->stats.rzs_blanket_reject);
 	if (shm->stats.retfd_blanket_reject)

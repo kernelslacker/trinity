@@ -510,3 +510,42 @@ void minicorpus_enable_snapshots(const char *path);
  * a comparison).  Safe to call from any child after every kcov edge
  * event. */
 void minicorpus_maybe_snapshot(void);
+
+/* Mid-run cadence for minicorpus_mut_attrib_canary_check(): how often
+ * the parent scans the MUT_NUM_OPS mutation-attribution counters to
+ * verify the by-construction inequality mut_wins[i] <= mut_trials[i]
+ * (and the structured equivalent).  300s mirrors
+ * KCOV_BITMAP_CANARY_INTERVAL_SEC -- a stray writer scribbling a
+ * wins[] word silently inverts the ratio until the next stats dump
+ * notices, and the scan itself is O(MUT_NUM_OPS) so there is no
+ * reason to run it any more often than the other periodic integrity
+ * probes.  Hardcoded; no operator knob. */
+#define MUT_ATTRIB_CANARY_INTERVAL_SEC		300UL
+
+/* Per-op tolerance for the wins-vs-trials inequality.  The win bump
+ * is lexically nested under the trial bump in minicorpus.c, both
+ * RELAXED, so a reader can observe a producer's wins[] increment
+ * before its matching trials[] increment becomes visible -- at most
+ * one such in-flight pair per CPU thread per op.  512 sits well
+ * above the realistic per-scan skew on the fleet's hottest hosts
+ * (hundreds of hw threads, only a small fraction inside the
+ * trial->win window at any instant) and well below any plausible
+ * scribbled-word inflation (a stray store into a counter word
+ * manufactures thousands of counts), so the threshold distinguishes
+ * memory-ordering noise from damage without arming a false-positive
+ * alarm. */
+#define MUT_ATTRIB_INVERSION_TOL		512UL
+
+/* Self-rate-limited integrity probe: walk the per-op
+ * mut_trials/mut_wins (and mut_structured_trials/mut_structured_wins)
+ * pairs and alarm when wins exceed trials by more than
+ * MUT_ATTRIB_INVERSION_TOL.  Bumps stats.mut_attrib_inversion_caught
+ * once per inverted op per scan and emits a one-line CANARY witness
+ * to stats.log the first time the canary trips in a run, naming the
+ * op, the observed counts, and the tolerance so the operator can
+ * correlate against the wild-write window.  Read-only with respect
+ * to the bandit's own RELAXED loads of the same counters.  Called
+ * once per main_loop tick alongside the other periodic samplers;
+ * the MUT_ATTRIB_CANARY_INTERVAL_SEC gate keeps the tiny scan from
+ * running on every tick. */
+void minicorpus_mut_attrib_canary_check(void);
