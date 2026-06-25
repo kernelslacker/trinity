@@ -142,9 +142,9 @@ syscalls/io_setup.c:236:post_io_setup
 syscalls/io_setup.c:243:post_io_setup
 syscalls/io_setup.c:250:post_io_setup
 syscalls/io_setup.c:274:post_io_setup
-syscalls/io_uring_register.c:1241:post_io_uring_register
-syscalls/io_uring_register.c:1248:post_io_uring_register
-syscalls/io_uring_register.c:1255:post_io_uring_register
+syscalls/io_uring_register.c:448:post_io_uring_register
+syscalls/io_uring_register.c:455:post_io_uring_register
+syscalls/io_uring_register.c:462:post_io_uring_register
 syscalls/ipc.c:431:post_ipc
 syscalls/kcmp.c:39:post_kcmp
 syscalls/lgetxattr.c:293:post_lgetxattr
