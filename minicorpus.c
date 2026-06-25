@@ -96,8 +96,18 @@ void minicorpus_init(void)
 	 * saves/replays stall).  The mut_attrib counters can be skewed
 	 * but the weight floor (MUT_WEIGHT_FLOOR=50) keeps the scheduler
 	 * operational.  No parent crash surface.
+	 *
+	 * Route through alloc_shared_pool so the default --guard-shared
+	 * scope (pools) wraps this long-lived ~1.8 MB region in
+	 * PROT_NONE guard pages.  A stray writer that over- or under-
+	 * runs the region then faults at the write PC instead of
+	 * silently corrupting saved snapshots and propagating the
+	 * scribble into the next replay window.  Sibling kcov_shm has
+	 * been pool-routed since the guard-armour landed; this lifts
+	 * the same coverage to the corpus pool, which prior triages
+	 * identified as a comparable wild-writer target.
 	 */
-	minicorpus_shm = alloc_shared(sizeof(struct minicorpus_shared));
+	minicorpus_shm = alloc_shared_pool(sizeof(struct minicorpus_shared));
 	memset(minicorpus_shm, 0, sizeof(struct minicorpus_shared));
 	output(0, "KCOV: mini-corpus allocated (%lu KB, %d entries/syscall)\n",
 		(unsigned long) sizeof(struct minicorpus_shared) / 1024,
