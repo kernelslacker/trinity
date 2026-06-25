@@ -244,19 +244,7 @@ enum {
 #define MADV_GUARD_REMOVE 103
 #endif
 
-/* linux/mempolicy.h — MPOL_PREFERRED_MANY and MPOL_WEIGHTED_INTERLEAVE are
- * enum members of the mempolicy mode enum, not preprocessor macros, so the
- * #ifndef guards always fire and the fallback values must match the upstream
- * enum literal-for-literal.  Older kernel-headers packages stop the enum at
- * MPOL_LOCAL = 4; MPOL_PREFERRED_MANY (5) landed in 5.15, MPOL_WEIGHTED_INTERLEAVE
- * (6) in 6.9.  Include this header AFTER <linux/mempolicy.h> so the macro
- * definition does not preprocess the enum body. */
-#ifndef MPOL_PREFERRED_MANY
-#define MPOL_PREFERRED_MANY		5
-#endif
-#ifndef MPOL_WEIGHTED_INTERLEAVE
-#define MPOL_WEIGHTED_INTERLEAVE	6
-#endif
+#include "kernel/mempolicy.h"
 
 
 /* bits/socket.h */
