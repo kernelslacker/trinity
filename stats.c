@@ -1736,6 +1736,25 @@ static const struct stat_category umount_race_category =
 	              umount_race_runs,
 	              umount_race_fields);
 
+static const struct stat_field statmount_idmap_fields[] = {
+	STAT_FIELD(statmount_idmap, runs),
+	STAT_FIELD(statmount_idmap, setup_failed),
+	STAT_FIELD(statmount_idmap, iter),
+	STAT_FIELD(statmount_idmap, fork_failed),
+	STAT_FIELD(statmount_idmap, carrier_ok),
+	STAT_FIELD(statmount_idmap, carrier_fail),
+	STAT_FIELD(statmount_idmap, setattr_ok),
+	STAT_FIELD(statmount_idmap, setattr_fail),
+	STAT_FIELD(statmount_idmap, statmount_call),
+	STAT_FIELD(statmount_idmap, statmount_ok),
+	STAT_FIELD(statmount_idmap, statmount_overflow),
+};
+
+static const struct stat_category statmount_idmap_category =
+	STAT_CATEGORY("statmount_idmap",
+	              statmount_idmap_runs,
+	              statmount_idmap_fields);
+
 static const struct stat_field uffd_churn_fields[] = {
 	STAT_FIELD(uffd, runs),
 	STAT_FIELD(uffd, registers),
@@ -3058,6 +3077,9 @@ static void __cold dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&umount_race_category);
+
+	printf(",");
+	stat_category_emit_json(&statmount_idmap_category);
 
 	printf(",");
 	stat_category_emit_json(&uffd_churn_category);
@@ -9977,6 +9999,8 @@ static void dump_stats_childop_runs_local(void)
 	stat_category_emit_text(&mount_churn_category);
 
 	stat_category_emit_text(&umount_race_category);
+
+	stat_category_emit_text(&statmount_idmap_category);
 
 	stat_category_emit_text(&uffd_churn_category);
 
