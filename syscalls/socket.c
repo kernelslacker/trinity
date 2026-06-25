@@ -2,7 +2,6 @@
  * SYSCALL_DEFINE3(socket, int, family, int, type, int, protocol)
  */
 #include <stdlib.h>
-#include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <unistd.h>
