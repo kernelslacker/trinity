@@ -286,7 +286,7 @@ static void init_shm_alloc_children(void)
 			  max_children);
 		exit(EXIT_FAILURE);
 	}
-	expected_fd_event_rings = alloc_shared(fd_event_ring_arr_bytes);
+	expected_fd_event_rings = alloc_shared_pool(fd_event_ring_arr_bytes);
 
 	/*
 	 * Same shape for the stats_ring canary -- one pointer per child slot,
@@ -301,7 +301,7 @@ static void init_shm_alloc_children(void)
 				  max_children);
 			exit(EXIT_FAILURE);
 		}
-		expected_stats_rings = alloc_shared(stats_ring_arr_bytes);
+		expected_stats_rings = alloc_shared_pool(stats_ring_arr_bytes);
 	}
 }
 
