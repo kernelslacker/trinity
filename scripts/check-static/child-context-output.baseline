@@ -34,7 +34,7 @@ childops/refcount-auditor.c:480:audit_socket_bucket
 childops/refcount-auditor.c:517:audit_socket_bucket
 childops/rxrpc-key-install.c:203:probe_rxrpc_key_supported
 childops/rxrpc-key-install.c:349:do_add_rxrpc
-childops/tc-qdisc-churn.c:300:warn_once_unsupported_tc_qdisc
+childops/tc-qdisc-churn.c:243:warn_once_unsupported_tc_qdisc
 syscalls/alarm.c:67:post_alarm
 syscalls/alarm.c:83:post_alarm
 syscalls/bpf.c:719:bpf_post_state_owned_and_valid_magic
