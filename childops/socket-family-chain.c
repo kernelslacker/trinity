@@ -45,7 +45,6 @@
 
 #include <errno.h>
 #include <fcntl.h>
-#include <netinet/in.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdint.h>
