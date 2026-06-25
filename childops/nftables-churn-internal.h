@@ -60,6 +60,7 @@
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
+#include "userns-bootstrap.h"
 
 /*
  * UAPI fallbacks.  The header on stripped sysroots may not have
