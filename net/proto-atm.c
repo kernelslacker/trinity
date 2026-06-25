@@ -1,10 +1,8 @@
 #include <stdlib.h>
 #include <linux/atmdev.h>
 #include <linux/atm.h>
-#include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
-#include <netinet/in.h>
 #include "net.h"
 #include "random.h"
 #include "compat.h"
