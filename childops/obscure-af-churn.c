@@ -76,7 +76,6 @@
 #include <unistd.h>
 
 #include <linux/sockios.h>
-#include <netinet/in.h>
 #include <netinet/tcp.h>
 
 #include "child.h"
