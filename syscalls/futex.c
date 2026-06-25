@@ -6,7 +6,6 @@
 #include <limits.h>
 #include <sys/time.h>
 #include <sys/resource.h>
-#include <sys/types.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <inttypes.h>
