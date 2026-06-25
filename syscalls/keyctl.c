@@ -172,205 +172,306 @@ static unsigned long pick_keyctl_cmd(void)
 	return (unsigned long) rand32();
 }
 
+static void sanitise_keyctl_get_keyring_id(struct syscallrecord *rec)
+{
+	/* arg2=key, arg3=create flag */
+	rec->a2 = (unsigned long) random_key_id();
+	rec->a3 = RAND_BOOL();
+}
+
+static void sanitise_keyctl_join_session_keyring(struct syscallrecord *rec)
+{
+	char *buf;
+
+	/* arg2=name (or NULL to join anonymous) */
+	if (RAND_BOOL()) {
+		rec->a2 = 0;
+	} else {
+		buf = (char *) get_writable_address(32);
+		if (buf == NULL)
+			return;
+		strncpy(buf, "trinity_sess", 31);
+		buf[31] = '\0';
+		rec->a2 = (unsigned long) buf;
+	}
+}
+
+static void sanitise_keyctl_update(struct syscallrecord *rec)
+{
+	char *buf;
+
+	/* arg2=key, arg3=payload, arg4=plen */
+	rec->a2 = (unsigned long) random_key_id();
+	buf = (char *) get_writable_address(64);
+	if (buf == NULL)
+		return;
+	strncpy(buf, "test_payload", 63);
+	buf[63] = '\0';
+	rec->a3 = (unsigned long) buf;
+	rec->a4 = strlen("test_payload");
+}
+
+static void sanitise_keyctl_key_only(struct syscallrecord *rec)
+{
+	/* arg2=key */
+	rec->a2 = (unsigned long) random_key_id();
+}
+
+static void sanitise_keyctl_chown(struct syscallrecord *rec)
+{
+	/* arg2=key, arg3=uid, arg4=gid (-1 = no change) */
+	rec->a2 = (unsigned long) random_key_id();
+	rec->a3 = RAND_BOOL() ? (unsigned long) -1 : (unsigned long)(rnd_modulo_u32(65536));
+	rec->a4 = RAND_BOOL() ? (unsigned long) -1 : (unsigned long)(rnd_modulo_u32(65536));
+}
+
+static void sanitise_keyctl_setperm(struct syscallrecord *rec)
+{
+	/* arg2=key, arg3=perm mask */
+	rec->a2 = (unsigned long) random_key_id();
+	rec->a3 = rand32();
+}
+
+static void sanitise_keyctl_read_like(struct syscallrecord *rec)
+{
+	char *buf;
+
+	/* arg2=key, arg3=buffer, arg4=buflen */
+	rec->a2 = (unsigned long) random_key_id();
+	buf = (char *) get_writable_address(256);
+	if (buf == NULL)
+		return;
+	rec->a3 = (unsigned long) buf;
+	rec->a4 = 256;
+	avoid_shared_buffer_out(&rec->a3, rec->a4);
+}
+
+static void sanitise_keyctl_link(struct syscallrecord *rec)
+{
+	/* arg2=key, arg3=keyring */
+	rec->a2 = (unsigned long) random_key_id();
+	rec->a3 = (unsigned long) random_key_id();
+}
+
+static void sanitise_keyctl_search(struct syscallrecord *rec)
+{
+	char *buf;
+
+	/* arg2=keyring, arg3=type, arg4=description, arg5=dest_keyring */
+	rec->a2 = (unsigned long) random_key_id();
+	buf = (char *) get_writable_address(32);
+	if (buf == NULL)
+		return;
+	strncpy(buf, "user", 31);
+	buf[31] = '\0';
+	rec->a3 = (unsigned long) buf;
+	buf = (char *) get_writable_address(32);
+	if (buf == NULL)
+		return;
+	strncpy(buf, "trinity_key", 31);
+	buf[31] = '\0';
+	rec->a4 = (unsigned long) buf;
+	rec->a5 = (unsigned long) random_key_id();
+}
+
+static void sanitise_keyctl_set_reqkey_keyring(struct syscallrecord *rec)
+{
+	/* arg2=reqkey destination */
+	rec->a2 = rnd_modulo_u32(8);	/* KEY_REQKEY_DEFL_* range */
+}
+
+static void sanitise_keyctl_set_timeout(struct syscallrecord *rec)
+{
+	/* arg2=key, arg3=timeout_secs */
+	rec->a2 = (unsigned long) random_key_id();
+	rec->a3 = rnd_modulo_u32(3600);
+}
+
+static void sanitise_keyctl_instantiate(struct syscallrecord *rec)
+{
+	char *buf;
+
+	/* arg2=key, arg3=payload, arg4=plen, arg5=dest_keyring */
+	rec->a2 = (unsigned long) random_key_id();
+	buf = (char *) get_writable_address(64);
+	rec->a3 = (unsigned long) buf;
+	rec->a4 = 1 + (rnd_modulo_u32(63));
+	rec->a5 = (unsigned long) random_key_id();
+}
+
+static void sanitise_keyctl_negate(struct syscallrecord *rec)
+{
+	/* arg2=key, arg3=timeout, arg4=dest_keyring */
+	rec->a2 = (unsigned long) random_key_id();
+	rec->a3 = rnd_modulo_u32(60);
+	rec->a4 = (unsigned long) random_key_id();
+}
+
+static void sanitise_keyctl_reject(struct syscallrecord *rec)
+{
+	/* arg2=key, arg3=timeout, arg4=error, arg5=dest_keyring */
+	rec->a2 = (unsigned long) random_key_id();
+	rec->a3 = rnd_modulo_u32(60);
+	rec->a4 = 1 + (rnd_modulo_u32(4095));	/* errno range: 1..MAX_ERRNO */
+	rec->a5 = (unsigned long) random_key_id();
+}
+
+static void sanitise_keyctl_move(struct syscallrecord *rec)
+{
+	/* arg2=key, arg3=from_keyring, arg4=to_keyring, arg5=flags */
+	rec->a2 = (unsigned long) random_key_id();
+	rec->a3 = (unsigned long) random_key_id();
+	rec->a4 = (unsigned long) random_key_id();
+	rec->a5 = RAND_BOOL() ? KEYCTL_MOVE_EXCL : 0;
+}
+
+static void sanitise_keyctl_get_persistent(struct syscallrecord *rec)
+{
+	/* arg2=uid, arg3=dest_keyring */
+	rec->a2 = RAND_BOOL() ? (unsigned long) -1 : (unsigned long)(rnd_modulo_u32(65536));
+	rec->a3 = (unsigned long) random_key_id();
+}
+
+static void sanitise_keyctl_capabilities(struct syscallrecord *rec)
+{
+	char *buf;
+
+	/* arg2=buffer, arg3=buflen */
+	buf = (char *) get_writable_address(64);
+	rec->a2 = (unsigned long) buf;
+	rec->a3 = 64;
+	avoid_shared_buffer_out(&rec->a2, rec->a3);
+}
+
+static void sanitise_keyctl_watch_key(struct syscallrecord *rec)
+{
+	char *buf;
+	/* arg2=key, arg3=watch_queue_fd, arg4=filter (NULL=remove) */
+	int fd = -1;
+
+	/*
+	 * Same OBJ_GLOBAL lockless-reader UAF class that the
+	 * fds/sockets.c get_rand_socketinfo() wireup defends against
+	 * (sanitise-hook-audit-2026-05-05 row 9): the parent can
+	 * destroy and recycle the OBJ_FD_WATCH_QUEUE slot between the
+	 * lockless pick and our deref of obj->watch_queueobj.fd,
+	 * leaving a stale or recycled obj pointer that would feed
+	 * garbage into rec->a3 as the watch_queue fd argument to
+	 * KEYCTL_WATCH_KEY.  Mirror the wireup shape used by
+	 * get_rand_socketinfo() — versioned pick + slot-version
+	 * handle re-validation immediately before the deref — but
+	 * keep it inline since this is the only sanitise-hook
+	 * consumer of obj->watch_queueobj.
+	 */
+	if (objects_empty(OBJ_FD_WATCH_QUEUE) == false) {
+		for (int i = 0; i < 1000; i++) {
+			struct object *obj;
+
+			obj = get_random_object(OBJ_FD_WATCH_QUEUE, OBJ_GLOBAL);
+			if (!objpool_check(obj, OBJ_FD_WATCH_QUEUE))
+				continue;
+
+			fd = obj->watch_queueobj.fd;
+			break;
+		}
+	}
+	rec->a2 = (unsigned long) random_key_id();
+	rec->a3 = (unsigned long) fd;
+	if (RAND_BOOL()) {
+		rec->a4 = 0;
+	} else {
+		buf = (char *) get_writable_address(64);
+		rec->a4 = (unsigned long) buf;
+	}
+	if (rec->a4)
+		avoid_shared_buffer_out(&rec->a4, 64);
+}
+
 static void sanitise_keyctl(struct syscallrecord *rec)
 {
 	unsigned long cmd;
-	char *buf;
 
 	rec->a1 = pick_keyctl_cmd();
 	cmd = rec->a1;
 
 	switch (cmd) {
 	case KEYCTL_GET_KEYRING_ID:
-		/* arg2=key, arg3=create flag */
-		rec->a2 = (unsigned long) random_key_id();
-		rec->a3 = RAND_BOOL();
+		sanitise_keyctl_get_keyring_id(rec);
 		break;
 
 	case KEYCTL_JOIN_SESSION_KEYRING:
-		/* arg2=name (or NULL to join anonymous) */
-		if (RAND_BOOL()) {
-			rec->a2 = 0;
-		} else {
-			buf = (char *) get_writable_address(32);
-			if (buf == NULL)
-				break;
-			strncpy(buf, "trinity_sess", 31);
-			buf[31] = '\0';
-			rec->a2 = (unsigned long) buf;
-		}
+		sanitise_keyctl_join_session_keyring(rec);
 		break;
 
 	case KEYCTL_UPDATE:
-		/* arg2=key, arg3=payload, arg4=plen */
-		rec->a2 = (unsigned long) random_key_id();
-		buf = (char *) get_writable_address(64);
-		if (buf == NULL)
-			break;
-		strncpy(buf, "test_payload", 63);
-		buf[63] = '\0';
-		rec->a3 = (unsigned long) buf;
-		rec->a4 = strlen("test_payload");
+		sanitise_keyctl_update(rec);
 		break;
 
 	case KEYCTL_REVOKE:
 	case KEYCTL_CLEAR:
 	case KEYCTL_INVALIDATE:
 	case KEYCTL_ASSUME_AUTHORITY:
-		/* arg2=key */
-		rec->a2 = (unsigned long) random_key_id();
+		sanitise_keyctl_key_only(rec);
 		break;
 
 	case KEYCTL_CHOWN:
-		/* arg2=key, arg3=uid, arg4=gid (-1 = no change) */
-		rec->a2 = (unsigned long) random_key_id();
-		rec->a3 = RAND_BOOL() ? (unsigned long) -1 : (unsigned long)(rnd_modulo_u32(65536));
-		rec->a4 = RAND_BOOL() ? (unsigned long) -1 : (unsigned long)(rnd_modulo_u32(65536));
+		sanitise_keyctl_chown(rec);
 		break;
 
 	case KEYCTL_SETPERM:
-		/* arg2=key, arg3=perm mask */
-		rec->a2 = (unsigned long) random_key_id();
-		rec->a3 = rand32();
+		sanitise_keyctl_setperm(rec);
 		break;
 
 	case KEYCTL_DESCRIBE:
 	case KEYCTL_READ:
 	case KEYCTL_GET_SECURITY:
-		/* arg2=key, arg3=buffer, arg4=buflen */
-		rec->a2 = (unsigned long) random_key_id();
-		buf = (char *) get_writable_address(256);
-		if (buf == NULL)
-			break;
-		rec->a3 = (unsigned long) buf;
-		rec->a4 = 256;
-		avoid_shared_buffer_out(&rec->a3, rec->a4);
+		sanitise_keyctl_read_like(rec);
 		break;
 
 	case KEYCTL_LINK:
 	case KEYCTL_UNLINK:
-		/* arg2=key, arg3=keyring */
-		rec->a2 = (unsigned long) random_key_id();
-		rec->a3 = (unsigned long) random_key_id();
+		sanitise_keyctl_link(rec);
 		break;
 
 	case KEYCTL_SEARCH:
-		/* arg2=keyring, arg3=type, arg4=description, arg5=dest_keyring */
-		rec->a2 = (unsigned long) random_key_id();
-		buf = (char *) get_writable_address(32);
-		if (buf == NULL)
-			break;
-		strncpy(buf, "user", 31);
-		buf[31] = '\0';
-		rec->a3 = (unsigned long) buf;
-		buf = (char *) get_writable_address(32);
-		if (buf == NULL)
-			break;
-		strncpy(buf, "trinity_key", 31);
-		buf[31] = '\0';
-		rec->a4 = (unsigned long) buf;
-		rec->a5 = (unsigned long) random_key_id();
+		sanitise_keyctl_search(rec);
 		break;
 
 	case KEYCTL_SET_REQKEY_KEYRING:
-		/* arg2=reqkey destination */
-		rec->a2 = rnd_modulo_u32(8);	/* KEY_REQKEY_DEFL_* range */
+		sanitise_keyctl_set_reqkey_keyring(rec);
 		break;
 
 	case KEYCTL_SET_TIMEOUT:
-		/* arg2=key, arg3=timeout_secs */
-		rec->a2 = (unsigned long) random_key_id();
-		rec->a3 = rnd_modulo_u32(3600);
+		sanitise_keyctl_set_timeout(rec);
 		break;
 
 	case KEYCTL_INSTANTIATE:
-		/* arg2=key, arg3=payload, arg4=plen, arg5=dest_keyring */
-		rec->a2 = (unsigned long) random_key_id();
-		buf = (char *) get_writable_address(64);
-		rec->a3 = (unsigned long) buf;
-		rec->a4 = 1 + (rnd_modulo_u32(63));
-		rec->a5 = (unsigned long) random_key_id();
+		sanitise_keyctl_instantiate(rec);
 		break;
 
 	case KEYCTL_NEGATE:
-		/* arg2=key, arg3=timeout, arg4=dest_keyring */
-		rec->a2 = (unsigned long) random_key_id();
-		rec->a3 = rnd_modulo_u32(60);
-		rec->a4 = (unsigned long) random_key_id();
+		sanitise_keyctl_negate(rec);
 		break;
 
 	case KEYCTL_REJECT:
-		/* arg2=key, arg3=timeout, arg4=error, arg5=dest_keyring */
-		rec->a2 = (unsigned long) random_key_id();
-		rec->a3 = rnd_modulo_u32(60);
-		rec->a4 = 1 + (rnd_modulo_u32(4095));	/* errno range: 1..MAX_ERRNO */
-		rec->a5 = (unsigned long) random_key_id();
+		sanitise_keyctl_reject(rec);
 		break;
 
 	case KEYCTL_MOVE:
-		/* arg2=key, arg3=from_keyring, arg4=to_keyring, arg5=flags */
-		rec->a2 = (unsigned long) random_key_id();
-		rec->a3 = (unsigned long) random_key_id();
-		rec->a4 = (unsigned long) random_key_id();
-		rec->a5 = RAND_BOOL() ? KEYCTL_MOVE_EXCL : 0;
+		sanitise_keyctl_move(rec);
 		break;
 
 	case KEYCTL_GET_PERSISTENT:
-		/* arg2=uid, arg3=dest_keyring */
-		rec->a2 = RAND_BOOL() ? (unsigned long) -1 : (unsigned long)(rnd_modulo_u32(65536));
-		rec->a3 = (unsigned long) random_key_id();
+		sanitise_keyctl_get_persistent(rec);
 		break;
 
 	case KEYCTL_CAPABILITIES:
-		/* arg2=buffer, arg3=buflen */
-		buf = (char *) get_writable_address(64);
-		rec->a2 = (unsigned long) buf;
-		rec->a3 = 64;
-		avoid_shared_buffer_out(&rec->a2, rec->a3);
+		sanitise_keyctl_capabilities(rec);
 		break;
 
-	case KEYCTL_WATCH_KEY: {
-		/* arg2=key, arg3=watch_queue_fd, arg4=filter (NULL=remove) */
-		int fd = -1;
-
-		/*
-		 * Same OBJ_GLOBAL lockless-reader UAF class that the
-		 * fds/sockets.c get_rand_socketinfo() wireup defends against
-		 * (sanitise-hook-audit-2026-05-05 row 9): the parent can
-		 * destroy and recycle the OBJ_FD_WATCH_QUEUE slot between the
-		 * lockless pick and our deref of obj->watch_queueobj.fd,
-		 * leaving a stale or recycled obj pointer that would feed
-		 * garbage into rec->a3 as the watch_queue fd argument to
-		 * KEYCTL_WATCH_KEY.  Mirror the wireup shape used by
-		 * get_rand_socketinfo() — versioned pick + slot-version
-		 * handle re-validation immediately before the deref — but
-		 * keep it inline since this is the only sanitise-hook
-		 * consumer of obj->watch_queueobj.
-		 */
-		if (objects_empty(OBJ_FD_WATCH_QUEUE) == false) {
-			for (int i = 0; i < 1000; i++) {
-				struct object *obj;
-
-				obj = get_random_object(OBJ_FD_WATCH_QUEUE, OBJ_GLOBAL);
-				if (!objpool_check(obj, OBJ_FD_WATCH_QUEUE))
-					continue;
-
-				fd = obj->watch_queueobj.fd;
-				break;
-			}
-		}
-		rec->a2 = (unsigned long) random_key_id();
-		rec->a3 = (unsigned long) fd;
-		if (RAND_BOOL()) {
-			rec->a4 = 0;
-		} else {
-			buf = (char *) get_writable_address(64);
-			rec->a4 = (unsigned long) buf;
-		}
-		if (rec->a4)
-			avoid_shared_buffer_out(&rec->a4, 64);
+	case KEYCTL_WATCH_KEY:
+		sanitise_keyctl_watch_key(rec);
 		break;
-	}
 
 	case KEYCTL_SESSION_TO_PARENT:
 		/* no args */
