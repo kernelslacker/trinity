@@ -2,7 +2,6 @@
  * SYSCALL_DEFINE4(msgsnd, int, msqid, struct msgbuf __user *, msgp, size_t, msgsz, int, msgflg)
  */
 #include <stddef.h>
-#include <sys/types.h>
 #include <linux/msg.h>
 #include "rnd.h"
 #include "sanitise.h"
