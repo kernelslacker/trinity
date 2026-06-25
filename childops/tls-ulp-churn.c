@@ -115,19 +115,17 @@ static bool ns_unsupported_aes_gcm_128;
 
 /* Fill an aes_gcm_128 cinfo with fresh urandom-derived material:
  * iv + salt + key + rec_seq are randomised together; version and
- * cipher_type are stamped in afterwards.  rand_bytes_or_zero falls
- * back to generate_rand_bytes if /dev/urandom isn't available — the
- * resulting key is still random enough to avoid colliding with any
- * fixed test vector inside the kernel. */
+ * cipher_type are stamped in afterwards.  The caller passes in an
+ * already-open /dev/urandom fd (or -1) so the open() doesn't repeat
+ * inside the rekey burst loop; we fall back to generate_rand_bytes if
+ * the fd is unavailable — the resulting key is still random enough to
+ * avoid colliding with any fixed test vector inside the kernel. */
 static void fill_cinfo_aes_gcm_128(struct tls12_crypto_info_aes_gcm_128 *ci,
-				   unsigned short version)
+				   unsigned short version, int urandom_fd)
 {
-	int fd;
-
 	memset(ci, 0, sizeof(*ci));
 
-	fd = open("/dev/urandom", O_RDONLY | O_CLOEXEC);
-	if (fd >= 0) {
+	if (urandom_fd >= 0) {
 		ssize_t off = 0;
 		size_t want = sizeof(ci->iv) + sizeof(ci->key) +
 			      sizeof(ci->salt) + sizeof(ci->rec_seq);
@@ -135,12 +133,11 @@ static void fill_cinfo_aes_gcm_128(struct tls12_crypto_info_aes_gcm_128 *ci,
 				  sizeof(ci->salt) + sizeof(ci->rec_seq)];
 
 		while ((size_t)off < want) {
-			ssize_t n = read(fd, buf + off, want - off);
+			ssize_t n = read(urandom_fd, buf + off, want - off);
 			if (n <= 0)
 				break;
 			off += n;
 		}
-		close(fd);
 		if ((size_t)off == want) {
 			memcpy(ci->iv,      buf, sizeof(ci->iv));
 			memcpy(ci->key,     buf + sizeof(ci->iv),
@@ -306,14 +303,15 @@ static int tls_ulp_churn_iter_install_tls_ulp(int s, struct childdata *child)
  * chosen version into *version_out so the subsequent rekey burst can
  * stay on the same record-format variant. */
 static int tls_ulp_churn_iter_install_keys(int s, unsigned short *version_out,
-					   struct childdata *child)
+					   struct childdata *child,
+					   int urandom_fd)
 {
 	struct tls12_crypto_info_aes_gcm_128 cinfo;
 	unsigned short version;
 	int rc;
 
 	version = RAND_BOOL() ? TLS_1_2_VERSION : TLS_1_3_VERSION;
-	fill_cinfo_aes_gcm_128(&cinfo, version);
+	fill_cinfo_aes_gcm_128(&cinfo, version, urandom_fd);
 
 	rc = setsockopt(s, SOL_TLS, TLS_TX, &cinfo, sizeof(cinfo));
 	if (rc < 0) {
@@ -345,7 +343,7 @@ static int tls_ulp_churn_iter_install_keys(int s, unsigned short *version_out,
 	__atomic_add_fetch(&shm->stats.tls_ulp_churn_tx_install_ok,
 			   1, __ATOMIC_RELAXED);
 
-	fill_cinfo_aes_gcm_128(&cinfo, version);
+	fill_cinfo_aes_gcm_128(&cinfo, version, urandom_fd);
 	(void)setsockopt(s, SOL_TLS, TLS_RX, &cinfo, sizeof(cinfo));
 
 	*version_out = version;
@@ -396,7 +394,8 @@ static void tls_ulp_churn_iter_initial_traffic(int s)
  * (kTLS historically returned EBUSY for in-place TX re-init) so neither
  * outcome triggers a caller-side branch. */
 static void tls_ulp_churn_iter_rekey_burst(int s, unsigned short version,
-					   const struct timespec *t0)
+					   const struct timespec *t0,
+					   int urandom_fd)
 {
 	struct tls12_crypto_info_aes_gcm_128 cinfo;
 	unsigned char payload[64];
@@ -416,7 +415,7 @@ static void tls_ulp_churn_iter_rekey_burst(int s, unsigned short version,
 		if (ns_since(t0) >= STORM_BUDGET_NS)
 			break;
 
-		fill_cinfo_aes_gcm_128(&cinfo, version);
+		fill_cinfo_aes_gcm_128(&cinfo, version, urandom_fd);
 		rc = setsockopt(s, SOL_TLS, TLS_TX, &cinfo, sizeof(cinfo));
 		if (rc == 0) {
 			__atomic_add_fetch(&shm->stats.tls_ulp_churn_rekey_ok,
@@ -490,6 +489,7 @@ bool tls_ulp_churn(struct childdata *child)
 	struct timespec t0;
 	pid_t acceptor = -1;
 	int s = -1;
+	int urandom_fd = -1;
 	unsigned short version;
 
 	__atomic_add_fetch(&shm->stats.tls_ulp_churn_runs, 1, __ATOMIC_RELAXED);
@@ -516,7 +516,9 @@ bool tls_ulp_churn(struct childdata *child)
 	if (tls_ulp_churn_iter_install_tls_ulp(s, child) != 0)
 		goto out;
 
-	if (tls_ulp_churn_iter_install_keys(s, &version, child) != 0)
+	urandom_fd = open("/dev/urandom", O_RDONLY | O_CLOEXEC);
+
+	if (tls_ulp_churn_iter_install_keys(s, &version, child, urandom_fd) != 0)
 		goto out;
 
 	/* Snapshot child->op_type once and bounds-check before indexing
@@ -536,11 +538,13 @@ bool tls_ulp_churn(struct childdata *child)
 
 	tls_ulp_churn_iter_initial_traffic(s);
 
-	tls_ulp_churn_iter_rekey_burst(s, version, &t0);
+	tls_ulp_churn_iter_rekey_burst(s, version, &t0, urandom_fd);
 
 	tls_ulp_churn_iter_recv_and_shutdown(s);
 
 out:
+	if (urandom_fd >= 0)
+		close(urandom_fd);
 	if (s >= 0)
 		close(s);
 	reap_acceptor(acceptor);
