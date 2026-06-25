@@ -3,7 +3,6 @@
  */
 #include <signal.h>
 #include <stdlib.h>
-#include <string.h>
 #include <linux/ptrace.h>
 #include "arch.h"
 #include "random.h"
