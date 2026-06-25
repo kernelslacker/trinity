@@ -2209,6 +2209,9 @@ static const struct stat_field genetlink_fuzzer_fields[] = {
 	STAT_FIELD(genetlink, msgs_sent),
 	STAT_FIELD(genetlink, eperm),
 	STAT_FIELD(genetlink, stale_seq_drops),
+	STAT_FIELD(genetlink, missing_producer),
+	STAT_FIELD(genetlink, discovery_io_err),
+	STAT_FIELD(genetlink, discovery_nlerr),
 };
 
 static const struct stat_category genetlink_fuzzer_category =
@@ -8679,11 +8682,17 @@ static void dump_stats_fuzzer_subsystems(void)
 	stat_category_emit_text(&barrier_racer_category);
 
 	if (shm->stats.genetlink_families_discovered ||
-	    shm->stats.genetlink_msgs_sent) {
+	    shm->stats.genetlink_msgs_sent              ||
+	    shm->stats.genetlink_missing_producer       ||
+	    shm->stats.genetlink_discovery_io_err       ||
+	    shm->stats.genetlink_discovery_nlerr) {
 		stat_row("genetlink_fuzzer", "families_discovered", shm->stats.genetlink_families_discovered);
 		stat_row("genetlink_fuzzer", "msgs_sent",           shm->stats.genetlink_msgs_sent);
 		stat_row("genetlink_fuzzer", "eperm",               shm->stats.genetlink_eperm);
 		stat_row("genetlink_fuzzer", "stale_seq_drops",     shm->stats.genetlink_stale_seq_drops);
+		stat_row("genetlink_fuzzer", "missing_producer",    shm->stats.genetlink_missing_producer);
+		stat_row("genetlink_fuzzer", "discovery_io_err",    shm->stats.genetlink_discovery_io_err);
+		stat_row("genetlink_fuzzer", "discovery_nlerr",     shm->stats.genetlink_discovery_nlerr);
 	}
 
 	if (shm->stats.genl_family_calls_devlink   ||

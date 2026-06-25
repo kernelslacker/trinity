@@ -732,6 +732,27 @@ struct stats_s {
 	 * visible; the drop suppresses the on_err callback so a stale
 	 * -EPERM/-EACCES cannot latch the wrong family's needs_priv. */
 	unsigned long genetlink_stale_seq_drops;
+	/* CTRL_CMD_GETFAMILY/NLM_F_DUMP completed cleanly (NLMSG_DONE)
+	 * but produced zero usable family entries.  Bumped at the
+	 * empty-catalog bail in the persistent fuzz child so a genuine
+	 * "kernel has no registered genetlink families" outcome is
+	 * counted explicitly instead of vanishing into a silent return
+	 * that only surfaces as derived setup_fail.  Separable from a
+	 * transport-side failure (genetlink_discovery_io_err) and a
+	 * controller-rejection (genetlink_discovery_nlerr). */
+	unsigned long genetlink_missing_producer;
+	/* CTRL_CMD_GETFAMILY dump failed with a local I/O error: short
+	 * recv, sendmsg failure, recv timeout, or a malformed reply
+	 * stream with no DONE/ERROR seen.  Bumped instead of
+	 * genetlink_missing_producer when the empty-catalog bail is
+	 * caused by transport rather than an empty kernel registry. */
+	unsigned long genetlink_discovery_io_err;
+	/* CTRL_CMD_GETFAMILY dump terminated with a mid-dump
+	 * NLMSG_ERROR (negated errno from the controller family).
+	 * Bumped instead of genetlink_missing_producer for that case
+	 * so a kernel-side rejection is distinguishable from both a
+	 * transport failure and a genuinely empty registry. */
+	unsigned long genetlink_discovery_nlerr;
 
 	/* netlink message generator: NLA_F_NESTED containers emitted */
 	unsigned long netlink_nested_attrs_emitted;
