@@ -920,6 +920,25 @@ void childop_outcome_window_dump(void)
 #define CHILDOP_SCORE_SCALE	1000000000ULL
 #define CHILDOP_SCORE_TOPN	10
 
+/*
+ * Wall-normalized utility kill-list thresholds.  An op is flagged
+ * "would_demote_utility" when its clean_score (clean_edges * SCALE /
+ * wall_ns -- i.e. clean edges per wall second) sits below FLOOR and it
+ * has consumed at least WALL_MIN nanoseconds of cumulative child time.
+ * The two halves are needed together: the floor on its own would flag
+ * ops that have barely run (a few hundred ns, no edges yet), and the
+ * wall-min on its own would flag the most productive long-running ops.
+ *
+ * Start conservative.  FLOOR=100 captures only ops producing fewer
+ * than ~100 clean edges per wall second -- well below typical altop
+ * yields, so a healthy op won't appear.  WALL_MIN=5s of accumulated
+ * wall time keeps newly-unblocked ops off the list until they've had
+ * a fair sample.  Telemetry-only: nothing reads either macro at
+ * runtime, the score dump is the sole consumer.
+ */
+#define CHILDOP_UTIL_FLOOR	100UL
+#define CHILDOP_UTIL_WALL_MIN	5000000000ULL
+
 #ifdef __SANITIZE_ADDRESS__
 #define CHILDOP_ASAN_W_WEDGE_NOEDGE	4UL
 #define CHILDOP_ASAN_W_CRASH		2UL
@@ -939,11 +958,14 @@ void childop_score_dump(void)
 		uint64_t clean_edges;
 		uint64_t noisy_edges;
 		uint64_t wall_ns;
+		uint64_t wall_per_clean_edge;
+		unsigned long long wedge_wall_us;
 		unsigned int wedges;
 		unsigned int dstate_wedges;
 		unsigned int crashes;
 		unsigned int setup_failures;
 		bool asan_runtime_failure;
+		bool would_demote_utility;
 #ifdef __SANITIZE_ADDRESS__
 		unsigned long asan_bad_score;
 		uint64_t asan_wall_budget_ns;
@@ -952,7 +974,7 @@ void childop_score_dump(void)
 	unsigned int nrows = 0;
 	enum child_op_type op;
 	unsigned int i, j, n;
-	bool any_good = false, any_bad = false;
+	bool any_good = false, any_bad = false, any_util = false;
 #ifdef __SANITIZE_ADDRESS__
 	bool any_asan = false;
 #endif
@@ -988,6 +1010,19 @@ void childop_score_dump(void)
 		r->clean_edges = rec.clean_edges;
 		r->noisy_edges = rec.noisy_edges;
 		r->wall_ns = rec.wall_ns;
+		/* Wall-normalized utility view.  When clean_edges == 0 the
+		 * ratio is undefined, so surface the raw wall_ns instead --
+		 * a "spent N ns, produced no edges at all" signal is the
+		 * worst-case utility outcome and should sort to the top
+		 * rather than being silently zeroed. */
+		r->wall_per_clean_edge = rec.clean_edges ?
+			(rec.wall_ns / rec.clean_edges) : rec.wall_ns;
+		r->wedge_wall_us = __atomic_load_n(
+				&shm->stats.childop_wedge_total_us[op],
+				__ATOMIC_RELAXED);
+		r->would_demote_utility =
+			(r->clean_score < CHILDOP_UTIL_FLOOR) &&
+			(rec.wall_ns >= CHILDOP_UTIL_WALL_MIN);
 		r->wedges = rec.wedges;
 		r->dstate_wedges = rec.dstate_wedges;
 		r->crashes = rec.crashes;
@@ -1016,6 +1051,8 @@ void childop_score_dump(void)
 			any_good = true;
 		if (r->bad_score > 0)
 			any_bad = true;
+		if (r->wall_per_clean_edge > 0)
+			any_util = true;
 #ifdef __SANITIZE_ADDRESS__
 		if (r->asan_bad_score > 0)
 			any_asan = true;
@@ -1065,6 +1102,37 @@ void childop_score_dump(void)
 			       rows[i].crashes, rows[i].setup_failures,
 			       rows[i].asan_runtime_failure ? 1 : 0,
 			       rows[i].bad_score);
+		}
+	}
+
+	/*
+	 * Wall-normalized utility table.  Ranks ops by ns spent per
+	 * clean edge produced (descending) so the least-productive
+	 * consumers of child wall time -- typically the wedge-prone
+	 * stress ops -- surface at the top.  would_demote_utility flags
+	 * the rows that meet both the floor and wall-min thresholds; it
+	 * is informational, no demote actually fires.
+	 */
+	if (any_util) {
+		for (i = 1; i < nrows; i++) {
+			struct score_row tmp = rows[i];
+			for (j = i; j > 0 &&
+			     rows[j - 1].wall_per_clean_edge <
+			     tmp.wall_per_clean_edge; j--)
+				rows[j] = rows[j - 1];
+			rows[j] = tmp;
+		}
+		n = nrows < CHILDOP_SCORE_TOPN ? nrows : CHILDOP_SCORE_TOPN;
+		for (i = 0; i < n && rows[i].wall_per_clean_edge > 0; i++) {
+			output(1,
+			       "childop_score_util %s: clean_score=%lu wall_per_clean_edge=%lu wedge_wall_us=%llu clean_edges=%lu wall_ns=%lu would_demote_utility=%d\n",
+			       alt_op_name(rows[i].op),
+			       (unsigned long)rows[i].clean_score,
+			       (unsigned long)rows[i].wall_per_clean_edge,
+			       rows[i].wedge_wall_us,
+			       (unsigned long)rows[i].clean_edges,
+			       (unsigned long)rows[i].wall_ns,
+			       rows[i].would_demote_utility ? 1 : 0);
 		}
 	}
 
