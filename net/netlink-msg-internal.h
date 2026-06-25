@@ -137,4 +137,21 @@ extern const size_t xfrm_family_offsets_n;
 extern const struct nla_attr_spec inet_diag_specs[];
 extern const size_t inet_diag_specs_n;
 
+/*
+ * Per-rtnetlink-group attribute payload builders.  Defined in
+ * netlink-msg-rtnl-payloads.c, dispatched from the gen_rta_payload
+ * switch in netlink-msg.c.  Each generator returns the payload length
+ * it wrote into p, or 0 to signal "fall back to a random blob".
+ */
+size_t gen_rta_route_payload(unsigned char *p, size_t avail,
+			     unsigned short nla_type, unsigned char family);
+size_t gen_rta_link_payload(unsigned char *p, size_t avail,
+			    unsigned short nla_type);
+size_t gen_rta_addr_payload(unsigned char *p, size_t avail,
+			    unsigned short nla_type, unsigned char family);
+size_t gen_rta_neigh_payload(unsigned char *p, size_t avail,
+			     unsigned short nla_type, unsigned char family);
+size_t gen_rta_dcb_payload(unsigned char *p, size_t avail,
+			   unsigned short nla_type);
+
 #endif /* NET_NETLINK_MSG_INTERNAL_H */
