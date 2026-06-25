@@ -42,7 +42,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/syscall.h>
-#include <sys/types.h>
 #include <unistd.h>
 #include <linux/io_uring.h>
 
