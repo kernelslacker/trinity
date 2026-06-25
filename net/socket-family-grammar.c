@@ -19,7 +19,6 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
-#include <netinet/in.h>
 #include <unistd.h>
 
 #include "arch.h"		/* page_size */
