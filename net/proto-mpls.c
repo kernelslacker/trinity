@@ -1,6 +1,5 @@
 /* MPLS socket (AF_MPLS=28) handler */
 
-#include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
 #include <linux/if_ether.h>
