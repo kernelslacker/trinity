@@ -3353,6 +3353,26 @@ bool kcov_get_kernel_fp(uint8_t out[32])
 static unsigned long kcov_bitmap_edges_at_last_save = ULONG_MAX;
 
 /*
+ * Persist-side scribble guard.  bucket_seen[] bits are set-once and the
+ * monotonic atomic kcov_shm->edges_found is bumped exactly once per
+ * (edge, bucket) bit-flip after the OR has landed, so by construction
+ *
+ *     popcount(bucket_seen) >= edges_found       (at the OR-then-bump moment)
+ *     popcount(bucket_seen) >= edges_warm_loaded (load floor never clears)
+ *
+ * Either inequality going the other way at save time is a clobber of the
+ * shared bitmap (ASAN-blind: mmap'd shm, not malloc heap).  KCOV_BITMAP_
+ * PERSIST_TOL absorbs the harmless case where the edges_found atomic was
+ * sampled before the bucket_seen memcpy and a few sibling bumps land on
+ * bytes the memcpy has already passed -- those are recount-HIGH and never
+ * trip the guard; the tolerance is a defence-in-depth slack for direction
+ * inversions that could in principle arise from torn loads of the atomic
+ * itself, not for an actual loss of set bits.
+ */
+#define KCOV_BITMAP_PERSIST_TOL 128UL
+static unsigned long kcov_bitmap_persist_refused_corrupt;
+
+/*
  * Recount the warm-cache edge counters from a bucket_seen[] blob.
  * The bitmap is the authoritative state: edges_found bumps once per
  * (edge, bucket) bit-flip and so equals the popcount of the whole
@@ -3516,6 +3536,41 @@ bool kcov_bitmap_save_file(const char *path)
 	 * (counter, bitmap) pair coherent by construction. */
 	kcov_bitmap_recount(bucket_seen_blob, KCOV_NUM_EDGES,
 			    &recount_edges, &recount_distinct);
+
+	/* Refuse to persist a recount that has regressed below the load
+	 * floor (this run loaded MORE bits than its own bitmap can now
+	 * account for) or that has fallen materially behind the monotonic
+	 * atomic that should equal popcount(bucket_seen) by construction
+	 * (a stray writer has cleared set bits in the shared bitmap).
+	 * Either condition means the snapshot we are about to rename over
+	 * the good on-disk cache is a clobbered view; persisting it would
+	 * rewind the cache floor below the warm-load baseline and force
+	 * the next run to re-discover edges this run already had.  Keep
+	 * the prior on-disk file, log a loud canary, and bump a counter
+	 * so the refusal rate is visible in run logs.  Runs into the same
+	 * guard from both end-of-run and kcov_bitmap_maybe_snapshot(), so
+	 * a mid-run scribble is caught at the first periodic save after
+	 * it happens, not just at exit. */
+	{
+		unsigned long floor = __atomic_load_n(
+			&kcov_shm->edges_warm_loaded, __ATOMIC_RELAXED);
+		bool below_floor = recount_edges < floor;
+		bool below_atomic = (edges_now > recount_edges) &&
+				    (edges_now - recount_edges >
+				     KCOV_BITMAP_PERSIST_TOL);
+
+		if (below_floor || below_atomic) {
+			kcov_bitmap_persist_refused_corrupt++;
+			output(0, "kcov-bitmap: REFUSING persist -- bitmap recount %lu < floor %lu / atomic %lu (scribble?) -- keeping prior on-disk state (refused=%lu)\n",
+			       recount_edges, floor, edges_now,
+			       kcov_bitmap_persist_refused_corrupt);
+			free(bucket_seen_blob);
+			free(diag_blob);
+			free(priors_blob);
+			return false;
+		}
+	}
+
 	hdr.edges_found = recount_edges;
 	hdr.distinct_edges = recount_distinct;
 	hdr.payload_crc32 = crc32(bucket_seen_blob, KCOV_NUM_EDGES);
