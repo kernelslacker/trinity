@@ -3715,6 +3715,11 @@ static const struct {
 	  offsetof(struct stats_s, frontier_live_cooldown_candidates) },
 	{ "frontier_live_would_skip",
 	  offsetof(struct stats_s, frontier_live_would_skip) },
+	/* Did-decay counter for --frontier-live-cooldown.  Bumped per (nr,
+	 * rotation) where the early ring-decay in frontier_window_advance
+	 * actually halved a non-zero cached sum.  Zero on flag-off runs. */
+	{ "frontier_live_cooldown_decays",
+	  offsetof(struct stats_s, frontier_live_cooldown_decays) },
 	/* Live reject count for the blanket LIVE-regime probabilistic
 	 * pick-reject gate.  See the struct-field comment in
 	 * include/stats.h and the FRONTIER_LIVE_DECAY_REJECT_DENOM comment
@@ -9615,6 +9620,16 @@ static void dump_stats_strategy_summary(void)
 			 shm->stats.frontier_live_would_skip);
 	stat_row("strategy", "frontier_live_miss_cooldown_threshold",
 		 FRONTIER_LIVE_MISS_COOLDOWN);
+	/* Did-decay observability counter for the --frontier-live-cooldown
+	 * lever.  One bump per (nr, rotation) where the early ring-decay
+	 * halved a non-zero cached sum.  Read alongside
+	 * frontier_live_would_skip (F3 projection) to compare the projected
+	 * vs the actually-applied cooldown volume; the ratio reflects how
+	 * often the rotation-time decay catches a syscall the per-pick F3
+	 * projection had already counted as a candidate. */
+	if (shm->stats.frontier_live_cooldown_decays)
+		stat_row("strategy", "frontier_live_cooldown_decays",
+			 shm->stats.frontier_live_cooldown_decays);
 	/* Blanket LIVE-regime probabilistic pick-reject (safe down-
 	 * payment).  Reclaims ~1 / FRONTIER_LIVE_DECAY_REJECT_DENOM of
 	 * LIVE-ring picks unconditionally; the reject rate against

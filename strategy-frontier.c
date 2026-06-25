@@ -11,6 +11,7 @@
 #include "child.h"		/* struct childdata */
 #include "cred_throttle.h"	/* cred_class_for_nr, CRED_CLASS_NR */
 #include "kcov.h"
+#include "params.h"		/* frontier_live_cooldown */
 #include "shm.h"
 #include "stats.h"
 #include "strategy.h"
@@ -374,6 +375,7 @@ void frontier_window_advance(void)
 	uint32_t cur, next;
 	unsigned int nr;
 	unsigned long max_weight = 0;
+	bool cooldown_enabled;
 
 	/* Clear-then-publish, the opposite of the previous order.  The old
 	 * code bumped frontier_slot first and then aged out the slot it had
@@ -407,37 +409,107 @@ void frontier_window_advance(void)
 	cur = __atomic_load_n(&shm->frontier_slot, __ATOMIC_RELAXED);
 	next = (cur + 1U) & (FRONTIER_DECAY_WINDOWS - 1);
 
+	/* --frontier-live-cooldown flag short-circuit.  Read once per
+	 * rotation rather than per-nr; the flag is set once at startup and
+	 * never flipped at runtime, so a single RELAXED load amortises
+	 * across the MAX_NR_SYSCALL inner loop.  Flag off keeps the
+	 * rotation arithmetic byte-identical to the pre-flag baseline:
+	 * cooldown_enabled gates the per-nr streak load AND the halving
+	 * step below, so neither extra cost is paid on the default-off
+	 * path. */
+	cooldown_enabled = __atomic_load_n(&frontier_live_cooldown,
+					   __ATOMIC_RELAXED);
+
 	for (nr = 0; nr < MAX_NR_SYSCALL; nr++) {
 		uint32_t old_slot;
 		uint32_t old_cached;
 		uint32_t new_sum;
+		bool cool_this_nr = false;
+		bool decayed_this_nr = false;
 
 		old_slot = __atomic_exchange_n(&shm->frontier_history[nr][next],
 					       0U, __ATOMIC_RELAXED);
+
+		/* F4(X) per-nr cooldown predicate.  Reuses the F3 per-syscall
+		 * LIVE-regime miss-streak (frontier_live_miss_streak_per_syscall
+		 * -- bumped strictly after a zero-edge LIVE-regime pick at the
+		 * random_syscall_step attribution path, reset on any productive
+		 * event via the existing frontier_record_new_edge() /
+		 * frontier_record_transition_edge() hooks): when the streak has
+		 * crossed FRONTIER_LIVE_MISS_COOLDOWN this nr is a wall-mover
+		 * candidate, and the halving step below drives its cached sum
+		 * toward zero so frontier_max_weight_cached falls and the
+		 * picker reaches the silent decay path on it.
+		 *
+		 * Loaded once per nr per rotation (NOT inside the CAS loop --
+		 * the streak does not change with our CAS retry; only the
+		 * cached running sum does) and only when the flag is on, so the
+		 * default-off path pays for nothing here.  A racing
+		 * random_syscall_step bump that raises the streak across the
+		 * threshold between this load and the cached-sum update is
+		 * picked up by the NEXT rotation -- bounded one-window lag,
+		 * same as every other rotation-boundary attribution. */
+		if (cooldown_enabled) {
+			unsigned long streak;
+
+			streak = __atomic_load_n(
+				&shm->stats.frontier_live_miss_streak_per_syscall[nr],
+				__ATOMIC_RELAXED);
+			if (streak >= FRONTIER_LIVE_MISS_COOLDOWN)
+				cool_this_nr = true;
+		}
 
 		/* CAS loop so a concurrent producer's fetch_add against the
 		 * cached counter cannot be lost and cannot underflow the
 		 * sum.  Producers should not be racing this nr at this
 		 * point (frontier_slot still names the previous slot) but
 		 * the loop costs at most a handful of retries and removes
-		 * the underflow case unconditionally. */
+		 * the underflow case unconditionally.
+		 *
+		 * F4(X) halving is folded into the SAME CAS retry so a racing
+		 * producer cannot land an add between our subtract and our
+		 * decay store.  The halving is a right-shift on a uint32_t
+		 * that is by construction <= old_cached (clamped above), so
+		 * it never wraps -- no extra underflow guard required, and
+		 * the existing if (old_cached < old_slot) clamp metric stays
+		 * scoped to the trailing-window subtract case it has always
+		 * counted.  decayed_this_nr fires only when the halving
+		 * actually reduced a non-zero sum, so a cool-marked nr whose
+		 * window already aged to zero through the trailing-K
+		 * subtraction does NOT inflate the did-decay observability
+		 * counter. */
 		old_cached = __atomic_load_n(
 			&shm->frontier_recent_count_cached[nr],
 			__ATOMIC_RELAXED);
 		for (;;) {
+			uint32_t after_decay;
+
 			if (old_cached >= old_slot)
 				new_sum = old_cached - old_slot;
 			else
 				new_sum = 0;
+			if (cool_this_nr && new_sum > 0) {
+				after_decay = new_sum >> 1;
+				decayed_this_nr = true;
+			} else {
+				after_decay = new_sum;
+				decayed_this_nr = false;
+			}
 			if (__atomic_compare_exchange_n(
 				    &shm->frontier_recent_count_cached[nr],
-				    &old_cached, new_sum, false,
-				    __ATOMIC_RELAXED, __ATOMIC_RELAXED))
+				    &old_cached, after_decay, false,
+				    __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
+				new_sum = after_decay;
 				break;
+			}
 		}
 		if (old_cached < old_slot)
 			__atomic_add_fetch(
 				&shm->stats.frontier_underflow_prevented,
+				1UL, __ATOMIC_RELAXED);
+		if (decayed_this_nr)
+			__atomic_add_fetch(
+				&shm->stats.frontier_live_cooldown_decays,
 				1UL, __ATOMIC_RELAXED);
 		if (new_sum > max_weight)
 			max_weight = new_sum;
