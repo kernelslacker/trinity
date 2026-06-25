@@ -7949,6 +7949,19 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	{ "rt_sigsuspend",	1, &struct_catalog[SC_SIGSET_T] },
 	{ "rt_sigtimedwait",	1, &struct_catalog[SC_SIGSET_T] },
 	{ "epoll_pwait",	5, &struct_catalog[SC_SIGSET_T] },
+	/*
+	 * epoll_pwait2(int epfd, struct epoll_event __user *events,
+	 *              int maxevents, const struct timespec __user *timeout,
+	 *              const sigset_t __user *sigmask, size_t sigsetsize)
+	 * a5 is ARG_ADDRESS (not ARG_STRUCT_PTR_*), so the bespoke
+	 * sanitise_epoll_pwait2() keeps owning the live fill via
+	 * pick_sigmask().  Attribution-only registration lets
+	 * struct_field_for_cmp() steer CMP-learned constants at the named
+	 * sigset_t __val slot rather than at a coincidentally-same-width
+	 * neighbour.  a4 (timeout) is mapped to SC_TIMESPEC above and is
+	 * unaffected.
+	 */
+	{ "epoll_pwait2",	5, &struct_catalog[SC_SIGSET_T] },
 	/* sentinel */
 	{ NULL, 0, NULL },
 };
