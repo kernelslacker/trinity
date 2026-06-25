@@ -355,6 +355,33 @@ void childop_outcome_window_dump(void);
  * CLI knob.  Same shadow contract as the other two tables. */
 void childop_score_dump(void);
 
+/* SHADOW per-childop decaying edge+wall recency ring helpers.  The bump
+ * helpers add into the active ring slot
+ * (childop_edge_history[op][childop_decay_slot & mask] /
+ * childop_wall_history[op][...]) and bump the matching cached running
+ * sum in lockstep, mirroring the multi-producer frontier_record_new_
+ * edge() discipline (RELAXED add-fetch; per-window child-count drift
+ * tolerated).  Called from child_process()'s per-dispatch wall and
+ * clean-edge accumulation sites in child.c.  No-op for op values
+ * outside [0, NR_CHILD_OP_TYPES) and for zero deltas, so the producer
+ * sites need no extra guards.
+ *
+ * childop_window_advance() ages the oldest slot out of the ring and
+ * recomputes the cached running sums; runs from the periodic-surface
+ * tick that drives the operator-visibility dumps.  Clear-then-publish:
+ * the next slot is exchanged to zero under the old cursor, the cached
+ * sums are subtracted under a CAS retry (saturating-subtract guard
+ * against a racing producer fetch-add), and only then is
+ * childop_decay_slot bumped -- a producer racing the rotation keeps
+ * bumping the previous slot for a handful of instructions (bounded
+ * window-boundary attribution error), never has its addition silently
+ * dropped, and never drives the cached sum negative.  Deliberately not
+ * borrowing strategy-frontier.c's frontier_window_advance() -- the two
+ * ring lifecycles stay disjoint, per the C2 spec. */
+void childop_decay_record_edges(enum child_op_type op, unsigned long edges);
+void childop_decay_record_wall(enum child_op_type op, unsigned long ns);
+void childop_window_advance(void);
+
 /* Per-handler attribution ring for the post_handler_corrupt_ptr counter.
  * Sized to comfortably hold the long tail of distinct handlers without
  * inflating the per-child footprint -- 32 entries cover the unique
