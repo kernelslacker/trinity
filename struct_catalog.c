@@ -7947,6 +7947,7 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	{ "signalfd",		2, &struct_catalog[SC_SIGSET_T] },
 	{ "signalfd4",		2, &struct_catalog[SC_SIGSET_T] },
 	{ "rt_sigsuspend",	1, &struct_catalog[SC_SIGSET_T] },
+	{ "rt_sigtimedwait",	1, &struct_catalog[SC_SIGSET_T] },
 	/* sentinel */
 	{ NULL, 0, NULL },
 };
