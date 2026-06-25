@@ -814,9 +814,11 @@ enum prop_injected_callsite {
 /* Probe-class buckets for the cmp_hyp_probe_class_hist[] census at the
  * tail of struct kcov_shared.  One entry per branch cmp_hyp_derive_value()
  * ACTUALLY emits a value through today; keep this in lock-step with that
- * switch.  The set deliberately excludes boundary probes the derive
- * ladder does not produce (lo-1, hi+1) and the false-return rejects
- * (hi < lo, default kind) which emit no value. */
+ * switch.  The set deliberately excludes the false-return rejects
+ * (hi < lo, default kind) which emit no value.  The BOUNDARY_* classes
+ * are the neighbourhood ladder the CMP_HYP_BOUNDARY arm walks --
+ * inequality-gate-friendly probes RANGE deliberately refuses to emit
+ * because the value-keyed credit walk can only reach interior members. */
 enum cmp_hyp_probe_class {
 	CMP_HYP_PROBE_CLASS_EXACT_EXEMPLAR,
 	CMP_HYP_PROBE_CLASS_ENUM_EXEMPLAR,
@@ -827,6 +829,10 @@ enum cmp_hyp_probe_class {
 	CMP_HYP_PROBE_CLASS_RANGE_LO,
 	CMP_HYP_PROBE_CLASS_RANGE_HI,
 	CMP_HYP_PROBE_CLASS_RANGE_MIDPOINT,
+	CMP_HYP_PROBE_CLASS_BOUNDARY_MINUS1,
+	CMP_HYP_PROBE_CLASS_BOUNDARY_PLUS1,
+	CMP_HYP_PROBE_CLASS_BOUNDARY_EXACT,
+	CMP_HYP_PROBE_CLASS_BOUNDARY_SWEEP,
 	CMP_HYP_PROBE_CLASS_NR,
 };
 
@@ -2461,6 +2467,53 @@ struct kcov_shared {
 	 * arm receives is byte-identical to the pre-census path.
 	 */
 	unsigned long cmp_hyp_probe_class_hist[CMP_HYP_PROBE_CLASS_NR];
+
+	/*
+	 * SHADOW BOUNDARY-lane counters for the inequality-gate angle.
+	 * EXACT-inject is dead because strict inequalities (x < N, x >= N)
+	 * cannot pass on the const N itself; the passing value is N+/-1,
+	 * which neither EXACT nor RANGE will derive.  CMP_HYP_BOUNDARY
+	 * populates from a SINGLE const observation (no RANGE-style
+	 * seen>=3 / span<=32 gate) and derives a neighbourhood ladder
+	 * {N-1, N+1, N, N+/-2} so the boundary-adjacent values reach the
+	 * kernel.  Pure observability here -- the existing live inject
+	 * arm's would_pick_locked precedence is unchanged, so BOUNDARY
+	 * only sees live air when nothing else explains the served site;
+	 * the counters below are how we measure whether that ever fires.
+	 *
+	 *  cmp_hyp_boundary_inserted
+	 *      Bumped once per fresh CMP_HYP_BOUNDARY allocation in
+	 *      cmp_hyp_observe().  Proves the population path fires for
+	 *      single-const inequality sites; staying zero means the lane
+	 *      is dead before it starts and there is nothing to measure.
+	 *  cmp_hyp_boundary_candidate_available
+	 *      Bumped at each successful raw cmp_hints_try_get_ex() pick
+	 *      where a CMP_HYP_BOUNDARY entry exists at the served
+	 *      (cmp_ip, width) AND the derive arm would not bail.
+	 *      Decoupled from the value-keyed would_pick / find_for_credit
+	 *      resolvers per the spec's Q3 analysis -- a counter that just
+	 *      counted "BOUNDARY won the precedence ladder" would stay
+	 *      structurally near zero (EXACT is populated at every
+	 *      observation and always outranks).  This is the headline
+	 *      shadow metric: it estimates how often the boundary arm
+	 *      WOULD have something to inject if precedence let it.
+	 *  cmp_hyp_boundary_credit_window_hits
+	 *      Bumped in cmp_hyp_find_for_credit()'s BOUNDARY arm each
+	 *      time a credited value resolves to BOUNDARY via the
+	 *      |v - exemplar| <= 2 window (EXACT / ENUM / BITMASK / RANGE
+	 *      having all missed first).  This is the conversion proof
+	 *      for the lane: a credited PC / transition win at a value
+	 *      nothing else explains is a boundary-adjacent neighbour the
+	 *      derive ladder produced.
+	 *
+	 * Kill criterion (same bar that killed exact-inject): if a
+	 * representative run shows cmp_hyp_live_injected_by_kind[BOUNDARY]
+	 * in the hundreds with cmp_hyp_pc_wins / cmp_hyp_transition_wins
+	 * credited to BOUNDARY ~= 0, the lane is dead -- strip it.
+	 */
+	unsigned long cmp_hyp_boundary_inserted;
+	unsigned long cmp_hyp_boundary_candidate_available;
+	unsigned long cmp_hyp_boundary_credit_window_hits;
 };
 
 extern struct kcov_shared *kcov_shm;
