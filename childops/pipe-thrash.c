@@ -34,7 +34,6 @@
 #include <stdlib.h>
 #include <sys/socket.h>
 #include <sys/syscall.h>
-#include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
 
