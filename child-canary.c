@@ -503,6 +503,9 @@ static void enter_canarying(enum child_op_type op)
 		s->window_start_setup_accepted = setup_accepted;
 		s->window_start_setup_failures = (invocations_now > setup_accepted)
 			? (invocations_now - setup_accepted) : 0;
+		s->window_start_wall_ns = __atomic_load_n(
+			&shm->stats.childop_wall_ns[op],
+			__ATOMIC_RELAXED);
 	}
 
 	s->last_canary_window_start = now;
@@ -886,6 +889,10 @@ static void close_window_and_decide(enum child_op_type op)
 	unsigned long setup_fail_delta =
 		(now_setup_failures > s->window_start_setup_failures)
 		? (now_setup_failures - s->window_start_setup_failures) : 0;
+	unsigned long now_wall_ns = __atomic_load_n(
+		&shm->stats.childop_wall_ns[op], __ATOMIC_RELAXED);
+	unsigned long wall_ns_delta = (now_wall_ns > s->window_start_wall_ns)
+		? (now_wall_ns - s->window_start_wall_ns) : 0;
 	enum childop_recommended_state rec = canary_recommend_state(
 		op, edges, noisy_delta, wedges_delta, s->window_crashes,
 		s->total_demotions);
@@ -901,14 +908,13 @@ static void close_window_and_decide(enum child_op_type op)
 				1, __ATOMIC_RELAXED);
 	}
 
-	/* SHADOW telemetry: extended per-window summary.  Producer for the
-	 * per-childop wall_ns slot is not yet wired (see the field doc in
-	 * include/child.h), so the wall_ns=0 placeholder matches the
-	 * good-utility table the foundation score dump leaves empty until
-	 * the producer lands. */
-	output(0, "canary_shadow: %s window-close clean_edges=%lu noisy_edges_seen=%lu wall_ns=0 wedges=%lu setup_ok=%lu setup_failures=%lu crashes=%u recommended_state=%s\n",
-		s->name, edges, noisy_delta, wedges_delta, setup_ok_delta,
-		setup_fail_delta, s->window_crashes,
+	/* SHADOW telemetry: extended per-window summary.  wall_ns is the
+	 * (close - open) delta of shm->stats.childop_wall_ns[op] for this
+	 * window; producer is the child measured-syscall path that bumps
+	 * the cumulative slot. */
+	output(0, "canary_shadow: %s window-close clean_edges=%lu noisy_edges_seen=%lu wall_ns=%lu wedges=%lu setup_ok=%lu setup_failures=%lu crashes=%u recommended_state=%s\n",
+		s->name, edges, noisy_delta, wall_ns_delta, wedges_delta,
+		setup_ok_delta, setup_fail_delta, s->window_crashes,
 		childop_recommended_state_name(rec));
 
 	if (s->window_crashes >= CANARY_CRASH_THRESHOLD) {
