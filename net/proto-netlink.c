@@ -1,8 +1,5 @@
-#include <sys/types.h>
 #include <sys/socket.h> /* old netlink.h is broken */
 #include <sys/un.h>
-/* For sa_family_t needed by <linux/netlink.h> */
-#include <netinet/in.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 #include <fcntl.h>
