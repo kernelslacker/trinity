@@ -17,10 +17,15 @@
  * nft_set_rbtree, CVE-2023-3390 nft_chain) stays cold.
  *
  * Sequence (per invocation):
- *   1. unshare(CLONE_NEWNET) once per child into a private net
- *      namespace so no host nftables ruleset is touched.  Failure
- *      latches the whole op off.
- *   2. Bring lo up inside the netns (one-time).
+ *   1. userns_run_in_ns(CLONE_NEWNET) forks a transient grandchild
+ *      into an owned user namespace + private net namespace.  The
+ *      whole rest of the sequence runs inside that grandchild; its
+ *      _exit() tears down both namespaces along with any table,
+ *      chain, rule, set and socket left behind, so no host nftables
+ *      ruleset is touched.  Helper -EPERM (hardened userns policy
+ *      refused CLONE_NEWUSER) latches the whole op off; transient
+ *      setup failure (-EAGAIN) skips the iteration without latching.
+ *   2. Bring lo up inside the netns (per-grandchild one-time).
  *   3. socket(AF_NETLINK, NETLINK_NETFILTER).  EPROTONOSUPPORT here
  *      means CONFIG_NF_NETLINK is off — latch ns_unsupported_nfnetlink
  *      and skip permanently.
@@ -110,10 +115,16 @@
  * identifiable in a tcpdump trace during triage. */
 #define NFT_INNER_PORT			34568
 
-/* Per-child latched gates.  Set on the first failure of the
- * corresponding subsystem and never cleared — kernel module / config
- * presence is static for the child's lifetime, so we pay the EFAIL
- * once and skip the path on subsequent invocations. */
+/* Per-grandchild latched gates.  Inherited as false at grandchild
+ * fork time (the persistent child never writes them -- the in-ns
+ * callback runs exclusively in transient grandchildren) and flipped
+ * on the first config-absent rejection from the corresponding
+ * subsystem.  Die with the grandchild on _exit(); each subsequent
+ * grandchild re-discovers the latch in its own fresh netns.  The
+ * EPROTONOSUPPORT / EAFNOSUPPORT / EOPNOTSUPP detection arms are
+ * preserved because a fresh user namespace cannot manufacture an
+ * absent kernel CONFIG -- the gate still short-circuits the rest of
+ * the grandchild's iteration once it fires. */
 static bool ns_unsupported_nfnetlink;
 static bool ns_unsupported_nf_tables;
 static bool ns_unsupported_inet;
@@ -121,9 +132,24 @@ static bool ns_unsupported_nft_compat_validate;
 static bool ns_unsupported_xt_ct;
 static bool ns_unsupported_nft_fwd_netdev_loop;
 
-static bool ns_unshared;
-static bool ns_setup_failed;
 static bool lo_brought_up;
+
+/* Master gate: persistent across iterations in the persistent child.
+ * Set when userns_run_in_ns returns -EPERM (hardened userns policy
+ * refused CLONE_NEWUSER -- typically user.max_user_namespaces=0 or
+ * kernel.unprivileged_userns_clone=0).  The per-grandchild gates
+ * above die with the grandchild; helper-EPERM is the only signal
+ * that survives long enough to short-circuit subsequent invocations. */
+static bool ns_unsupported_nftables;
+
+static void warn_once_unsupported_nftables(const char *reason, int err)
+{
+	if (ns_unsupported_nftables)
+		return;
+	ns_unsupported_nftables = true;
+	outputerr("nftables_churn: %s failed (errno=%d), latching unsupported_nftables\n",
+		  reason, err);
+}
 
 /*
  * Bring lo up inside the private netns.  A freshly-unshared netns
@@ -1971,14 +1997,14 @@ struct nftables_churn_iter_ctx {
 };
 
 /*
- * Phase: per-child netns unshare + NETLINK_NETFILTER socket open.
- * Unshares CLONE_NEWNET the first time through (latched off via
- * ns_setup_failed on EPERM/failure) and opens the nfnetlink fd every
- * later phase batches commits over (latched off via
- * ns_unsupported_nfnetlink on the EPROTONOSUPPORT / EAFNOSUPPORT
- * CONFIG_NF_NETLINK-absent shape).  Returns 0 on success; -1 means
- * caller should return true immediately -- no other fd was opened so
- * the out: cleanup path has nothing useful to run.
+ * Phase: NETLINK_NETFILTER socket open inside the grandchild's
+ * private netns.  The netns itself is set up by userns_run_in_ns()
+ * before the in-ns callback runs, so this helper only has to bring
+ * up the nfnetlink fd that every later phase batches commits over
+ * (latched off via ns_unsupported_nfnetlink on the EPROTONOSUPPORT /
+ * EAFNOSUPPORT CONFIG_NF_NETLINK-absent shape).  Returns 0 on
+ * success; -1 means caller should return immediately -- no other fd
+ * was opened so the out: cleanup path has nothing useful to run.
  */
 static int nftables_churn_iter_setup_netns(struct nftables_churn_iter_ctx *ctx)
 {
@@ -1994,20 +2020,6 @@ static int nftables_churn_iter_setup_netns(struct nftables_churn_iter_ctx *ctx)
 	 * range. */
 	const enum child_op_type op = ctx->child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
-
-	if (!ns_unshared) {
-		if (unshare(CLONE_NEWNET) < 0) {
-			ns_setup_failed = true;
-			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
-						 CHILDOP_LATCH_INIT_FAILED,
-						 __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.nftables_churn_setup_failed,
-					   1, __ATOMIC_RELAXED);
-			return -1;
-		}
-		ns_unshared = true;
-	}
 
 	if (nfnl_open(&ctx->nfnl, &nfnl_opts) < 0) {
 		/* EPROTONOSUPPORT here means CONFIG_NF_NETLINK is off
@@ -2331,6 +2343,61 @@ static void nftables_churn_iter_teardown(struct nftables_churn_iter_ctx *ctx)
 	nl_close(&ctx->rtnl);
 }
 
+/*
+ * Per-invocation body that must run inside the private net namespace.
+ * Executed in a transient grandchild forked by userns_run_in_ns(); the
+ * grandchild's userns + netns are torn down on _exit() so any table,
+ * chain, rule, set, dummy / veth link and socket left behind is reaped
+ * along with the namespace.  Explicit DELTABLE / close() calls are
+ * still issued so the in-ns stats counters (table_del_ok etc.) move on
+ * the success path; correctness does not depend on them.  Per-grand-
+ * child latches set inside this callback die with the grandchild and
+ * the per-grandchild gates above are re-discovered on the next
+ * invocation -- helper-EPERM in the wrapper is the only signal that
+ * survives across iterations.  Return value is ignored by the helper.
+ */
+static int nftables_churn_in_ns(void *arg)
+{
+	struct nftables_churn_iter_ctx *ctx = (struct nftables_churn_iter_ctx *)arg;
+	struct childdata *child = ctx->child;
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the stats
+	 * writes entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
+	if (ns_unsupported_nfnetlink || ns_unsupported_nf_tables)
+		return 0;
+
+	if (nftables_churn_iter_setup_netns(ctx) != 0)
+		return 0;
+
+	if (nftables_churn_iter_open_rtnl(ctx) != 0)
+		goto out;
+
+	if (valid_op) {
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
+	}
+	if (nftables_churn_iter_submode_dispatch(ctx) != 0)
+		goto out;
+
+	if (nftables_churn_iter_build_table(ctx) != 0)
+		goto out;
+
+	nftables_churn_iter_drive_traffic(ctx);
+	nftables_churn_iter_mid_churn(ctx);
+
+out:
+	nftables_churn_iter_teardown(ctx);
+	return 0;
+}
+
 bool nftables_churn(struct childdata *child)
 {
 	struct nftables_churn_iter_ctx ctx = {
@@ -2341,45 +2408,41 @@ bool nftables_churn(struct childdata *child)
 		.aux_chain  = "chain_aux",
 		.child      = child,
 	};
+	int rc;
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op latch slot.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the latch
+	 * store entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	__atomic_add_fetch(&shm->stats.nftables_churn_runs, 1,
 			   __ATOMIC_RELAXED);
 
-	if (ns_setup_failed || ns_unsupported_nfnetlink ||
-	    ns_unsupported_nf_tables)
+	if (ns_unsupported_nftables)
 		return true;
 
-	if (nftables_churn_iter_setup_netns(&ctx) != 0)
+	rc = userns_run_in_ns(CLONE_NEWNET, nftables_churn_in_ns, &ctx);
+	if (rc == -EPERM) {
+		if (valid_op)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		warn_once_unsupported_nftables("userns_run_in_ns(CLONE_NEWNET)",
+					       EPERM);
 		return true;
-
-	if (nftables_churn_iter_open_rtnl(&ctx) != 0)
-		goto out;
-
-	/* Snapshot child->op_type once and bounds-check before indexing
-	 * the per-op stats arrays.  The field lives in shared memory and
-	 * can be scribbled by a poisoned-arena write from a sibling; the
-	 * child.c dispatch loop already gates its dispatch + alt-op
-	 * accounting on the same valid_op snapshot.  Skip the stats
-	 * writes entirely when the snapshot is out of range. */
-	const enum child_op_type op = child->op_type;
-	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
-
-	if (valid_op) {
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
-				   1, __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
-				   1, __ATOMIC_RELAXED);
 	}
-	if (nftables_churn_iter_submode_dispatch(&ctx) != 0)
-		goto out;
+	if (rc < 0) {
+		/* Transient grandchild setup failure (fork, id-map write,
+		 * secondary unshare).  Skip this iteration without
+		 * latching -- the failure is not policy and may not
+		 * recur. */
+		__atomic_add_fetch(&shm->stats.nftables_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return true;
+	}
 
-	if (nftables_churn_iter_build_table(&ctx) != 0)
-		goto out;
-
-	nftables_churn_iter_drive_traffic(&ctx);
-	nftables_churn_iter_mid_churn(&ctx);
-
-out:
-	nftables_churn_iter_teardown(&ctx);
 	return true;
 }
