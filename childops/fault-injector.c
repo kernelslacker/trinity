@@ -18,7 +18,6 @@
 #include <fcntl.h>
 #include <stdbool.h>
 #include <stdlib.h>
-#include <string.h>
 #include <sys/eventfd.h>
 #include <sys/ipc.h>
 #include <sys/mman.h>
