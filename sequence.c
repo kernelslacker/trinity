@@ -94,8 +94,20 @@ void chain_corpus_init(void)
 	 * stick the ring lock (chain saves and replays stall fleet-wide
 	 * until a kernel-side timeout reaps the holder).  No parent crash
 	 * surface.
+	 *
+	 * Route through alloc_shared_pool so the default --guard-shared
+	 * scope (pools) wraps this long-lived single-region ring in
+	 * PROT_NONE guard pages.  A stray writer that over- or under-runs
+	 * the region then faults at the write PC instead of silently
+	 * corrupting a stored chain (next replay tail-truncates on the
+	 * sanitise check but the scribble site is already lost) or stalling
+	 * the ring lock until the kernel-side timeout fires.  Sibling
+	 * minicorpus_shm, which is the analogous corpus-side wild-writer
+	 * target, has been pool-routed; this lifts the same coverage to
+	 * the chain-corpus ring without dragging a per-child VMA tail in
+	 * (allocation is once, no per-fork multiplication).
 	 */
-	chain_corpus_shm = alloc_shared(sizeof(struct chain_corpus_ring));
+	chain_corpus_shm = alloc_shared_pool(sizeof(struct chain_corpus_ring));
 	memset(chain_corpus_shm, 0, sizeof(struct chain_corpus_ring));
 	output(0, "Sequence chain corpus allocated (%u slots, %lu B per entry)\n",
 		CHAIN_CORPUS_RING_SIZE,
