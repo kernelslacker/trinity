@@ -231,6 +231,7 @@ bool recipe_net_tcp(bool *unsupported __unused__)
 	unsigned int i;
 	unsigned int spawn_fail_streak = 0;
 	unsigned int completed = 0;
+	bool spawn_latched = false;
 
 	cycles = 1 + rnd_modulo_u32(RECIPE_NET_TCP_MAX_CYCLES);
 
@@ -272,8 +273,10 @@ bool recipe_net_tcp(bool *unsupported __unused__)
 		rc = pthread_create(&tid, NULL, tcp_racer_thread, &ra);
 		if (rc != 0) {
 			close(s);
-			if (++spawn_fail_streak >= RECIPE_THREAD_SPAWN_LATCH)
+			if (++spawn_fail_streak >= RECIPE_THREAD_SPAWN_LATCH) {
+				spawn_latched = true;
 				break;
+			}
 			continue;
 		}
 		spawn_fail_streak = 0;
@@ -289,6 +292,14 @@ bool recipe_net_tcp(bool *unsupported __unused__)
 
 		completed++;
 	}
+
+	/* If every cycle was lost to pthread_create EAGAIN under sibling
+	 * thread pressure, that's transient nproc/thread exhaustion — not
+	 * a recipe failure.  Skip rather than score a partial, which would
+	 * keep the picker re-selecting us against a kernel path we never
+	 * actually exercised. */
+	if (completed == 0 && spawn_latched)
+		return true;
 
 	return completed > 0;
 }

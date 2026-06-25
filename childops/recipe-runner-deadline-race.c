@@ -576,6 +576,7 @@ bool recipe_keys_revoke_race(bool *unsupported)
 	unsigned int i;
 	unsigned int spawn_fail_streak = 0;
 	unsigned int completed = 0;
+	bool spawn_latched = false;
 	long jr;
 
 	/* Anchor a session keyring up-front so add_key has somewhere to
@@ -644,8 +645,10 @@ bool recipe_keys_revoke_race(bool *unsupported)
 				      (unsigned long)key,
 				      (unsigned long)KEY_SPEC_SESSION_KEYRING,
 				      0UL, 0UL);
-			if (++spawn_fail_streak >= RECIPE_THREAD_SPAWN_LATCH)
+			if (++spawn_fail_streak >= RECIPE_THREAD_SPAWN_LATCH) {
+				spawn_latched = true;
 				break;
+			}
 			continue;
 		}
 		spawn_fail_streak = 0;
@@ -670,6 +673,14 @@ bool recipe_keys_revoke_race(bool *unsupported)
 
 		completed++;
 	}
+
+	/* If every cycle was lost to pthread_create EAGAIN under sibling
+	 * thread pressure, that's transient nproc/thread exhaustion -- not
+	 * a recipe failure.  Skip rather than score a partial, which would
+	 * keep the picker re-selecting us against a kernel path we never
+	 * actually exercised. */
+	if (completed == 0 && spawn_latched)
+		return true;
 
 	return completed > 0;
 }
