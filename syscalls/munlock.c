@@ -2,7 +2,6 @@
  * SYSCALL_DEFINE2(munlock, unsigned long, start, size_t, len)
  */
 #include <stdbool.h>
-#include <stdlib.h>
 #include "arch.h"
 #include "maps.h"
 #include "mlock-state.h"
