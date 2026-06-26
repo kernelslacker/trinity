@@ -10,7 +10,6 @@
 #include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <string.h>
 #include <sys/mman.h>
 #include <time.h>
 #include <unistd.h>
