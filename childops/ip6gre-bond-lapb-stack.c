@@ -22,7 +22,14 @@
  *                 -> ip6gre_header   <-- global-OOB
  *
  * Sequence (per invocation, all inside a private netns):
- *   1. unshare(CLONE_NEWNET) once per child.  Failure latches the whole op.
+ *   1. userns_run_in_ns(CLONE_NEWNET) forks a transient grandchild into
+ *      an owned user namespace + private net namespace.  The whole
+ *      sequence below runs inside that grandchild; _exit() tears down
+ *      both namespaces along with any bond / gre / lapb device left
+ *      behind, so no host link is touched.  Helper -EPERM (hardened
+ *      userns policy refused CLONE_NEWUSER) latches the whole op off;
+ *      transient setup failure (-EAGAIN) skips the iteration without
+ *      latching.
  *   2. RTM_NEWLINK type=bond name=bondN.  bond is ARPHRD_ETHER at create
  *      time, so lapbether's NETDEV_REGISTER notifier auto-creates the
  *      paired lapb%d (typically "lapb0" in a fresh netns).
@@ -65,7 +72,6 @@
  */
 
 #include <errno.h>
-#include <fcntl.h>
 #include <net/if.h>
 #include <sched.h>
 #include <stdbool.h>
@@ -84,6 +90,7 @@
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
+#include "userns-bootstrap.h"
 
 #ifndef IFLA_GRE_LINK
 #define IFLA_GRE_LINK		1
@@ -104,9 +111,36 @@ static const __u8 ibls_v6_remote[16] = {
 	0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,2,
 };
 
-static bool g_ns_unshared;
+/* Per-grandchild latch.  Inherited as false at grandchild fork time
+ * (the persistent child never writes it -- the in-ns callback runs
+ * exclusively in transient grandchildren) and flipped on the first
+ * CONFIG-absent rejection from one of the bond / ip6gre / lapbether
+ * subsystems.  Dies with the grandchild on _exit(); the next grand-
+ * child re-discovers the latch in its own fresh netns.  The
+ * EAFNOSUPPORT / ENODEV / EOPNOTSUPP / EPROTONOSUPPORT detection
+ * arms are preserved because a fresh user namespace cannot
+ * manufacture an absent kernel CONFIG -- the gate still short-
+ * circuits the rest of the grandchild's iteration once it fires. */
 static bool g_unsupported;
+
+/* Master gate: persistent across iterations in the persistent child.
+ * Set when userns_run_in_ns returns -EPERM (hardened userns policy
+ * refused CLONE_NEWUSER -- typically user.max_user_namespaces=0 or
+ * kernel.unprivileged_userns_clone=0).  The per-grandchild gate
+ * above dies with the grandchild; helper-EPERM is the only signal
+ * that survives long enough to short-circuit subsequent invocations. */
+static bool g_ns_unsupported;
+
 static __u32 g_iter;
+
+static void warn_once_unsupported_ip6gre_lapb(const char *reason, int err)
+{
+	if (g_ns_unsupported)
+		return;
+	g_ns_unsupported = true;
+	outputerr("ip6gre_bond_lapb_stack: %s failed (errno=%d), latching unsupported_ns\n",
+		  reason, err);
+}
 
 static void latch_unsupported(int op_type, const char *reason, int err)
 {
@@ -294,34 +328,14 @@ struct ip6gre_lapb_iter_ctx {
 };
 
 /*
- * Phase: per-child netns setup.  Unshares CLONE_NEWNET the first time
- * through and latches g_unsupported via latch_unsupported() on failure
- * so the rest of the child's lifetime pays the EFAIL once.  Returns 0
- * on success; -1 means caller should return true immediately (no fds
- * were opened, so no cleanup is needed).
- */
-static int ip6gre_lapb_iter_setup_netns(int op_type)
-{
-	if (g_ns_unshared)
-		return 0;
-
-	if (unshare(CLONE_NEWNET) < 0) {
-		latch_unsupported(op_type, "unshare(CLONE_NEWNET)", errno);
-		__atomic_add_fetch(&shm->stats.ip6gre_lapb_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		return -1;
-	}
-	g_ns_unshared = true;
-	return 0;
-}
-
-/*
  * Phase: open the rtnetlink fd into ctx->ctx and roll the
- * per-iteration bond/gre device names off g_iter.  Splits out from
- * setup_netns because the nl_open failure path has no fd to clean up
- * (the orchestrator's out: cleanup only runs once ctx.fd >= 0), so a
- * failure here also wants to return true immediately rather than goto
- * out.  Returns 0 on success; -1 means caller should return true
+ * per-iteration bond/gre device names off g_iter.  The netns itself
+ * is set up by userns_run_in_ns() before the in-ns callback runs, so
+ * this helper only has to bring up the rtnetlink fd subsequent
+ * phases batch link work over.  nl_open failure has no fd to clean
+ * up (the orchestrator's out: cleanup only runs once ctx.fd >= 0),
+ * so a failure here also wants to return immediately rather than
+ * goto out.  Returns 0 on success; -1 means caller should return
  * immediately.
  */
 static int ip6gre_lapb_iter_open_netlink(struct ip6gre_lapb_iter_ctx *ctx)
@@ -492,28 +506,35 @@ static void ip6gre_lapb_iter_teardown(struct ip6gre_lapb_iter_ctx *ctx)
 	}
 }
 
-bool ip6gre_bond_lapb_stack(struct childdata *child)
+/*
+ * Per-invocation body that must run inside the private net namespace.
+ * Executed in a transient grandchild forked by userns_run_in_ns(); the
+ * grandchild's userns + netns are torn down on _exit() so the bond,
+ * ip6gre tunnel, lapbether device and any sockets they brought up are
+ * reaped along with the namespace.  Explicit RTM_DELLINK / nl_close
+ * calls in the teardown helper are still issued so the in-ns stats
+ * counters move on the success path; correctness does not depend on
+ * them.  Per-grandchild latches set inside this callback (g_unsupported
+ * via latch_unsupported()) die with the grandchild and the next
+ * invocation re-discovers them -- helper-EPERM in the wrapper is the
+ * only signal that survives across iterations.  Return value is
+ * ignored by the helper.
+ */
+static int ip6gre_bond_lapb_stack_in_ns(void *arg)
 {
-	struct ip6gre_lapb_iter_ctx ictx = {
-		.ctx = { .fd = -1 },
-		.child = child,
-	};
-
-	__atomic_add_fetch(&shm->stats.ip6gre_lapb_runs, 1, __ATOMIC_RELAXED);
+	struct ip6gre_lapb_iter_ctx *ictx = (struct ip6gre_lapb_iter_ctx *)arg;
+	struct childdata *child = ictx->child;
 
 	if (g_unsupported)
-		return true;
+		return 0;
 
-	if (ip6gre_lapb_iter_setup_netns(child->op_type) != 0)
-		return true;
+	if (ip6gre_lapb_iter_open_netlink(ictx) != 0)
+		return 0;
 
-	if (ip6gre_lapb_iter_open_netlink(&ictx) != 0)
-		return true;
-
-	if (ip6gre_lapb_iter_create_bond(&ictx) != 0)
+	if (ip6gre_lapb_iter_create_bond(ictx) != 0)
 		goto out;
 
-	if (ip6gre_lapb_iter_attach_gre(&ictx) != 0)
+	if (ip6gre_lapb_iter_attach_gre(ictx) != 0)
 		goto out;
 
 	/* Snapshot child->op_type once and bounds-check before indexing
@@ -528,9 +549,54 @@ bool ip6gre_bond_lapb_stack(struct childdata *child)
 					   1, __ATOMIC_RELAXED);
 	}
 
-	ip6gre_lapb_iter_flag_cycles(&ictx);
+	ip6gre_lapb_iter_flag_cycles(ictx);
 
 out:
-	ip6gre_lapb_iter_teardown(&ictx);
+	ip6gre_lapb_iter_teardown(ictx);
+	return 0;
+}
+
+bool ip6gre_bond_lapb_stack(struct childdata *child)
+{
+	struct ip6gre_lapb_iter_ctx ictx = {
+		.ctx = { .fd = -1 },
+		.child = child,
+	};
+	int rc;
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op latch slot.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the latch
+	 * store entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
+	__atomic_add_fetch(&shm->stats.ip6gre_lapb_runs, 1, __ATOMIC_RELAXED);
+
+	if (g_ns_unsupported)
+		return true;
+
+	rc = userns_run_in_ns(CLONE_NEWNET, ip6gre_bond_lapb_stack_in_ns,
+			      &ictx);
+	if (rc == -EPERM) {
+		if (valid_op)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		warn_once_unsupported_ip6gre_lapb("userns_run_in_ns(CLONE_NEWNET)",
+						  EPERM);
+		return true;
+	}
+	if (rc < 0) {
+		/* Transient grandchild setup failure (fork, id-map write,
+		 * secondary unshare).  Skip this iteration without
+		 * latching -- the failure is not policy and may not
+		 * recur. */
+		__atomic_add_fetch(&shm->stats.ip6gre_lapb_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return true;
+	}
+
 	return true;
 }
