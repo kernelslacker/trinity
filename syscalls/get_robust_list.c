@@ -4,7 +4,6 @@
 	size_t __user *, len_ptr)
  */
 #include <stddef.h>
-#include <string.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <unistd.h>
