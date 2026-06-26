@@ -8,7 +8,6 @@
 #include <string.h>
 #include <unistd.h>
 #include <linux/bpf.h>
-#include <sys/time.h>
 #include <sys/resource.h>
 #include <linux/unistd.h>
 #include <linux/perf_event.h>
