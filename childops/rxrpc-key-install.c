@@ -599,19 +599,27 @@ static int64_t pick_xrxgk_endtime(void)
 			+ (int64_t) rnd_modulo_u32(1u << 24);
 	case 4:
 	case 5:
-		/* Small negative -- minimal-magnitude expired. */
-		return -(int64_t)(1 + rnd_modulo_u32(1u << 24));
+		/* Small negative -- minimal-magnitude expired.  Floor at
+		 * 10^7 (== 1 second of 100ns ticks) so the kernel's
+		 * rxrpc_s64_to_time64 do_div(/10000000) yields >= 1 and the
+		 * returned time64_t is strictly negative; smaller magnitudes
+		 * would truncate to 0 and bypass the expired branch. */
+		return -(int64_t)(10000000u + rnd_modulo_u32(1u << 24));
 	case 6: {
-		/* Wide random negative across the s64 range.  Mask off the
-		 * sign bit before casting so the magnitude lives in
-		 * [0, INT64_MAX] -- otherwise a u64 with bit 63 set is
-		 * already a negative int64_t after the cast and the unary
-		 * minus flips it back to positive (and -(INT64_MIN) is
-		 * signed-overflow UB).  Result lives in [-INT64_MAX, 0]. */
+		/* Wide random negative across the s62 range.  Mask off the
+		 * top two bits before casting so the magnitude lives in
+		 * [0, 2^62 - 1] -- a u64 with bit 63 set would already be a
+		 * negative int64_t after the cast and the unary minus would
+		 * flip it back to positive (and -(INT64_MIN) is signed-
+		 * overflow UB); the extra bit of headroom keeps the +10^7
+		 * floor from overflowing int64_t.  Floor at 10^7 (== 1
+		 * second of 100ns ticks) so do_div(/10000000) yields >= 1
+		 * and the returned time64_t is strictly negative.  Result
+		 * lives in [-(2^62 - 1 + 10^7), -10^7]. */
 		uint64_t mag = (((uint64_t) rand32()) << 32)
 			       | (uint64_t) rand32();
-		mag &= (uint64_t) INT64_MAX;
-		return -(int64_t) mag;
+		mag &= ((uint64_t) 1 << 62) - 1;
+		return -(int64_t)(10000000ULL + mag);
 	}
 	default:
 		/* s64 extreme: INT64_MIN, INT64_MIN+1, or a near-min value. */
