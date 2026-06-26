@@ -114,6 +114,7 @@ bool recipe_ptrace_seize_exitkill(bool *unsupported)
 	unsigned int i;
 	unsigned int fork_fail_streak = 0;
 	unsigned int completed = 0;
+	bool fork_latched = false;
 
 	cycles = 1 + rnd_modulo_u32(RECIPE_PTRACE_SEIZE_MAX_CYCLES);
 
@@ -126,8 +127,10 @@ bool recipe_ptrace_seize_exitkill(bool *unsupported)
 		pid = fork();
 		if (pid < 0) {
 			if (++fork_fail_streak >=
-			    RECIPE_PTRACE_SEIZE_FORK_FAIL_LATCH)
+			    RECIPE_PTRACE_SEIZE_FORK_FAIL_LATCH) {
+				fork_latched = true;
 				break;
+			}
 			continue;
 		}
 		fork_fail_streak = 0;
@@ -215,6 +218,13 @@ bool recipe_ptrace_seize_exitkill(bool *unsupported)
 
 		completed++;
 	}
+
+	/* If every cycle was lost to fork() EAGAIN under sibling process
+	 * pressure, that's transient nproc/pid exhaustion -- not a recipe
+	 * failure.  Skip rather than score a partial, which would keep the
+	 * picker re-selecting us against a path we never exercised. */
+	if (completed == 0 && fork_latched)
+		return true;
 
 	return completed > 0;
 }
