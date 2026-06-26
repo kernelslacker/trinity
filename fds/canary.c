@@ -223,9 +223,24 @@ static int init_canary_fds(void)
 	head->destroy = &canary_destructor;
 	head->dump = &canary_dump;
 
-	canary_pool = alloc_shared(sizeof(*canary_pool));
+	/*
+	 * Route through alloc_shared_pool so the default --guard-shared
+	 * scope (pools) wraps this long-lived metadata region in
+	 * PROT_NONE guard pages.  A stray writer that over- or under-
+	 * runs the region then faults at the write PC instead of
+	 * silently corrupting entries[].path -- the shared-string
+	 * strdup pointer that pagecache_canary_check() dereferences on
+	 * every verify pass to reopen the file.  A scribble that swaps
+	 * .path for another plausible address reopens the wrong file
+	 * (the verifier then compares its read against the wrong
+	 * canary_sizes[] expectation); a scribble that lands NULL fails
+	 * the open and silently drops the slot from verify coverage.
+	 * Pool-routing closes both modes under the default scope
+	 * without forcing operators up to =all.
+	 */
+	canary_pool = alloc_shared_pool(sizeof(*canary_pool));
 	if (canary_pool == NULL) {
-		outputerr("canary: alloc_shared(canary_pool) failed\n");
+		outputerr("canary: alloc_shared_pool(canary_pool) failed\n");
 		return false;
 	}
 	memset(canary_pool, 0, sizeof(*canary_pool));
