@@ -11,7 +11,6 @@
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
-#include <fcntl.h>
 #include "arch.h"
 #include "bpf.h"
 #include "bpf-syscall.h"
