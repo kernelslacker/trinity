@@ -100,21 +100,29 @@ static bool write_one_line(const char *path, const char *line)
  * Establish uid 0 inside the freshly-entered userns.  setgroups must
  * be denied before gid_map can be written when the writer is
  * unprivileged, per Documentation/admin-guide/namespaces/user.rst.
+ *
+ * The kernel's new_idmap_permitted() check on an unprivileged
+ * single-line map write requires the outside id to equal the opener's
+ * effective id in the parent userns -- it tests f_cred->euid (resp.
+ * f_cred->egid), not f_cred->uid.  f_cred is captured at open() time
+ * and is not altered by the intervening unshare(CLONE_NEWUSER), so we
+ * need the writer's effective ids as numbered in the parent userns
+ * (i.e. sampled before the unshare).  After the unshare and before
+ * the map is installed, geteuid()/getegid() return the overflow id
+ * (65534), which would EPERM here for the same reason.
  */
-static bool establish_root_in_userns(void)
+static bool establish_root_in_userns(uid_t euid, gid_t egid)
 {
 	char buf[64];
-	uid_t uid = getuid();
-	gid_t gid = getgid();
 
-	snprintf(buf, sizeof(buf), "0 %u 1\n", (unsigned int)uid);
+	snprintf(buf, sizeof(buf), "0 %u 1\n", (unsigned int)euid);
 	if (!write_one_line("/proc/self/uid_map", buf))
 		return false;
 
 	if (!write_one_line("/proc/self/setgroups", "deny\n"))
 		return false;
 
-	snprintf(buf, sizeof(buf), "0 %u 1\n", (unsigned int)gid);
+	snprintf(buf, sizeof(buf), "0 %u 1\n", (unsigned int)egid);
 	if (!write_one_line("/proc/self/gid_map", buf))
 		return false;
 
@@ -377,10 +385,16 @@ static void inner_child_main(struct childdata *child)
 	 */
 	(void)sigaltstack(&disable_ss, NULL);
 
+	/* Sample effective ids in the parent userns before unshare(): the
+	 * uid_map / gid_map writes below need to be told the same effective
+	 * id the kernel will compare against (see establish_root_in_userns). */
+	const uid_t parent_euid = geteuid();
+	const gid_t parent_egid = getegid();
+
 	if (unshare(CLONE_NEWUSER) != 0)
 		_exit(1);
 
-	if (!establish_root_in_userns())
+	if (!establish_root_in_userns(parent_euid, parent_egid))
 		_exit(2);
 
 	/* Snapshot child->op_type once and bounds-check before indexing
