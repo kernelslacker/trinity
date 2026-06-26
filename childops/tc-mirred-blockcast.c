@@ -22,9 +22,15 @@
  * builder assembles the whole stack each iteration.
  *
  * Sequence (per invocation):
- *   1. unshare(CLONE_NEWNET) once per child into a private net
- *      namespace so no host clsact / shared block is touched.
- *      Failure latches the whole op off.
+ *   1. userns_run_in_ns(CLONE_NEWNET) forks a transient grandchild
+ *      into an owned user namespace + private net namespace.  The
+ *      whole rest of the sequence runs inside that grandchild; its
+ *      _exit() tears down both namespaces along with any dummy link,
+ *      qdisc, filter, shared block and socket left behind, so no
+ *      host clsact / shared block is touched.  Helper -EPERM
+ *      (hardened userns policy refused CLONE_NEWUSER) latches the
+ *      whole op off; transient setup failure (-EAGAIN) skips the
+ *      iteration without latching.
  *   2. Open NETLINK_ROUTE socket with SO_RCVTIMEO=1s once.
  *      Best-effort modprobe sch_ingress / cls_matchall / act_mirred
  *      once.  Each modprobe attempt is latched so a missing
@@ -117,6 +123,7 @@
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
+#include "userns-bootstrap.h"
 
 /*
  * UAPI fallbacks.  Stripped sysroots may not have the full
@@ -234,10 +241,16 @@ struct fallback_tc_mirred {
 
 #define MIRRED_INNER_PORT	34571
 
-/* Per-child latched gates.  Set on the first failure of the
- * corresponding subsystem and never cleared. */
-static bool ns_unshared;
-static bool ns_setup_failed;
+/* Per-grandchild latched gates.  Inherited as false at grandchild
+ * fork time (the persistent child never writes them -- the in-ns
+ * callback runs exclusively in transient grandchildren) and flipped
+ * on the first config-absent rejection from the corresponding
+ * subsystem.  Die with the grandchild on _exit(); each subsequent
+ * grandchild re-discovers the latch in its own fresh netns.  The
+ * EOPNOTSUPP / EAFNOSUPPORT / ENOENT detection arms stay because a
+ * fresh user namespace cannot manufacture an absent kernel CONFIG --
+ * the gate still short-circuits the rest of the grandchild's
+ * iteration once it fires. */
 static bool ns_unsupported_rtnl;
 static bool ns_unsupported_dummy;
 static bool ns_unsupported_clsact;
@@ -248,6 +261,25 @@ static bool lo_brought_up;
 static bool modprobe_tried_ingress;
 static bool modprobe_tried_matchall;
 static bool modprobe_tried_mirred;
+
+/* Master gate: persistent across iterations in the persistent fuzz
+ * child.  Set when userns_run_in_ns() returns -EPERM (hardened userns
+ * policy refused CLONE_NEWUSER -- typically user.max_user_namespaces=0
+ * or kernel.unprivileged_userns_clone=0) so subsequent invocations
+ * short-circuit instead of forking another doomed grandchild. */
+static bool ns_setup_failed;
+
+static void warn_once_setup_failed(int err)
+{
+	static bool warned;
+
+	if (warned)
+		return;
+	warned = true;
+	/* check-static: child-output-ok */
+	outputerr("tc_mirred_blockcast: userns_run_in_ns(CLONE_NEWNET) failed (errno=%d), latching ns_setup_failed\n",
+		  err);
+}
 
 static int build_dummy_create(struct nl_ctx *ctx, const char *name)
 {
@@ -433,12 +465,14 @@ static bool is_unsupported_err(int rc)
 }
 
 /*
- * Per-child one-time setup: unshare a fresh netns, open rtnl,
- * modprobe the modules clsact / matchall / act_mirred need, bring lo
- * up.  Latched failures shut the whole op off via the ns_* gates
- * checked in the orchestrator on subsequent invocations.  Returns 0
- * on success; nonzero means the caller should bail without entering
- * the cleanup path.
+ * Per-grandchild setup: open rtnl, modprobe the modules clsact /
+ * matchall / act_mirred need, bring lo up.  The fresh netns is set up
+ * by userns_run_in_ns() before the in-ns callback runs; this helper
+ * only has to bring up the rtnl fd and idempotent housekeeping inside
+ * it.  Latched failures shut subsequent operations off for this
+ * grandchild via the ns_* gates checked at the in-ns callback's entry.
+ * Returns 0 on success; nonzero means the caller should bail without
+ * entering the cleanup path.
  */
 static int tc_mirred_setup_netns(struct nl_ctx *ctx)
 {
@@ -446,16 +480,6 @@ static int tc_mirred_setup_netns(struct nl_ctx *ctx)
 		.proto = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
 	};
-
-	if (!ns_unshared) {
-		if (unshare(CLONE_NEWNET) < 0) {
-			ns_setup_failed = true;
-			__atomic_add_fetch(&shm->stats.tc_mirred_blockcast_setup_failed,
-					   1, __ATOMIC_RELAXED);
-			return -1;
-		}
-		ns_unshared = true;
-	}
 
 	if (nl_open(ctx, &nl_opts) < 0) {
 		if (errno == EPROTONOSUPPORT || errno == EAFNOSUPPORT)
@@ -485,8 +509,24 @@ static int tc_mirred_setup_netns(struct nl_ctx *ctx)
 	return 0;
 }
 
-bool tc_mirred_blockcast(struct childdata *child)
+struct tc_mirred_blockcast_iter_ctx {
+	struct childdata *child;
+};
+
+/*
+ * Per-invocation body that runs inside the grandchild's private
+ * netns.  userns_run_in_ns() has already entered the netns; this
+ * callback opens rtnl, builds the dummy A/B + clsact + shared-block
+ * matchall-mirred topology, drives the egress packet burst that
+ * triggers the tcf_blockcast() recursion path, and tears down.  Any
+ * resource left behind on a failure path is reaped by the
+ * grandchild's _exit() along with the netns.  Return value is ignored
+ * by the helper -- per-op stats counters carry the outcome.
+ */
+static int tc_mirred_blockcast_in_ns(void *arg)
 {
+	struct tc_mirred_blockcast_iter_ctx *ctx = arg;
+	struct childdata *child = ctx->child;
 	struct nl_ctx nl = { .fd = -1 };
 	char a_name[IFNAMSIZ];
 	char b_name[IFNAMSIZ];
@@ -497,16 +537,13 @@ bool tc_mirred_blockcast(struct childdata *child)
 	int rc;
 	int eaction;
 
-	__atomic_add_fetch(&shm->stats.tc_mirred_blockcast_runs, 1,
-			   __ATOMIC_RELAXED);
-
-	if (ns_setup_failed || ns_unsupported_rtnl || ns_unsupported_dummy ||
+	if (ns_unsupported_rtnl || ns_unsupported_dummy ||
 	    ns_unsupported_clsact || ns_unsupported_matchall ||
 	    ns_unsupported_mirred)
-		return true;
+		return 0;
 
 	if (tc_mirred_setup_netns(&nl) != 0)
-		return true;
+		return 0;
 
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
@@ -655,6 +692,50 @@ out:
 		if (b_added && b_idx > 0)
 			(void)rtnl_dellink(&nl, b_idx);
 		nl_close(&nl);
+	}
+
+	return 0;
+}
+
+bool tc_mirred_blockcast(struct childdata *child)
+{
+	struct tc_mirred_blockcast_iter_ctx ctx = { .child = child };
+	int rc;
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op latch slot.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the latch
+	 * store entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
+	__atomic_add_fetch(&shm->stats.tc_mirred_blockcast_runs, 1,
+			   __ATOMIC_RELAXED);
+
+	if (ns_setup_failed)
+		return true;
+
+	rc = userns_run_in_ns(CLONE_NEWNET, tc_mirred_blockcast_in_ns, &ctx);
+	if (rc == -EPERM) {
+		ns_setup_failed = true;
+		if (valid_op)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.tc_mirred_blockcast_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		warn_once_setup_failed(EPERM);
+		return true;
+	}
+	if (rc < 0) {
+		/* Transient grandchild setup failure (fork, id-map write,
+		 * secondary unshare).  Skip this iteration without
+		 * latching -- the failure is not policy and may not
+		 * recur. */
+		__atomic_add_fetch(&shm->stats.tc_mirred_blockcast_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return true;
 	}
 
 	return true;
