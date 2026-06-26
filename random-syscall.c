@@ -2460,6 +2460,84 @@ static void account_warm_reserve(struct childdata *child,
 	}
 }
 
+/* SHADOW cold-overflow would-save accounting.  Pure
+ * measurement -- the existing save call (back in dispatch_step) is
+ * byte-identical to the pre-row baseline, and no admission /
+ * scoring / picking / corpus path consumes any of the
+ * counters bumped here.  See the cold_overflow_would_
+ * save_* block in include/stats.h for the predicate
+ * composition and the SHADOW contract.
+ *
+ * MUST run BEFORE minicorpus_save_with_reason() below:
+ * the live save publishes a new entry into
+ * rings[rec->nr] and bumps its count from 0 to 1, which
+ * would race the "absent" snapshot to always-false for
+ * the headline first-admission case (the very event the
+ * absent subset is meant to capture).  Reading the count
+ * here, pre-save, pins absent to the pre-decision state
+ * the overflow lane would see.
+ *
+ * Mirrors the existing save gate (entry->sanitise == NULL)
+ * so the population matches the population the live save
+ * lane would admit -- a sanitise-bearing syscall is
+ * deliberately excluded by both lanes for the same
+ * reason (the pointer args may be stale at replay time).
+ *
+ * Gates, in cheapest-first order so the hot found_something
+ * arm short-circuits before touching the plateau /
+ * minicorpus loads on the dominant new_edges-only,
+ * non-plateau, in-corpus path:
+ *
+ *   entry->sanitise == NULL    -- match the live save lane
+ *   new_cmp > 0                -- nonzero CMP signal
+ *   rec->nr < MAX_NR_SYSCALL   -- bound the array index
+ *   plateau == CMP_RISING_PC_FLAT
+ *   cold OR corpus-absent      -- the overflow-tail
+ *                                 predicate
+ *
+ * RELAXED on the bumps; ACQUIRE on the per-nr ring count
+ * read so it pairs with the publishing release inside
+ * minicorpus_save_with_reason on the peer side.  A peer
+ * winning the first admission between our load and the
+ * local save below still leaves our local view at zero
+ * (we read first), so the over-count window collapses to
+ * the parent-thread-only ordering enforced by this
+ * "shadow-before-save" placement. */
+static void account_cold_overflow_would_save(struct syscallentry *entry,
+					     struct syscallrecord *rec,
+					     unsigned long new_cmp)
+{
+	bool cold, absent = false;
+
+	if (entry->sanitise != NULL || new_cmp == 0 ||
+	    rec->nr >= MAX_NR_SYSCALL ||
+	    __atomic_load_n(&shm->plateau_current_hypothesis,
+			    __ATOMIC_RELAXED) !=
+	    (int)PLATEAU_HYPOTHESIS_CMP_RISING_PC_FLAT)
+		return;
+
+	cold = kcov_syscall_cold_skip_pct(rec->nr) > 0;
+
+	if (minicorpus_shm != NULL)
+		absent = __atomic_load_n(
+			&minicorpus_shm->rings[rec->nr].count,
+			__ATOMIC_ACQUIRE) == 0;
+
+	if (cold || absent) {
+		__atomic_fetch_add(
+			&shm->stats.cold_overflow_would_save,
+			1UL, __ATOMIC_RELAXED);
+		if (cold)
+			__atomic_fetch_add(
+				&shm->stats.cold_overflow_would_save_cold,
+				1UL, __ATOMIC_RELAXED);
+		if (absent)
+			__atomic_fetch_add(
+				&shm->stats.cold_overflow_would_save_absent,
+				1UL, __ATOMIC_RELAXED);
+	}
+}
+
 static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 			  bool *found_new, unsigned long *new_cmp_out,
 			  unsigned long *new_transition_out)
@@ -2689,76 +2767,7 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	 * CMP-promoted entries; PC wins the tag on calls where both
 	 * signals fire so the historical accounting is preserved. */
 	if (unlikely(found_something)) {
-		/* SHADOW cold-overflow would-save accounting.  Pure
-		 * measurement -- the existing save call below is byte-
-		 * identical to the pre-row baseline, and no admission /
-		 * scoring / picking / corpus path consumes any of the
-		 * counters bumped here.  See the cold_overflow_would_
-		 * save_* block in include/stats.h for the predicate
-		 * composition and the SHADOW contract.
-		 *
-		 * MUST run BEFORE minicorpus_save_with_reason() below:
-		 * the live save publishes a new entry into
-		 * rings[rec->nr] and bumps its count from 0 to 1, which
-		 * would race the "absent" snapshot to always-false for
-		 * the headline first-admission case (the very event the
-		 * absent subset is meant to capture).  Reading the count
-		 * here, pre-save, pins absent to the pre-decision state
-		 * the overflow lane would see.
-		 *
-		 * Mirrors the existing save gate (entry->sanitise == NULL)
-		 * so the population matches the population the live save
-		 * lane would admit -- a sanitise-bearing syscall is
-		 * deliberately excluded by both lanes for the same
-		 * reason (the pointer args may be stale at replay time).
-		 *
-		 * Gates, in cheapest-first order so the hot found_something
-		 * arm short-circuits before touching the plateau /
-		 * minicorpus loads on the dominant new_edges-only,
-		 * non-plateau, in-corpus path:
-		 *
-		 *   entry->sanitise == NULL    -- match the live save lane
-		 *   new_cmp > 0                -- nonzero CMP signal
-		 *   rec->nr < MAX_NR_SYSCALL   -- bound the array index
-		 *   plateau == CMP_RISING_PC_FLAT
-		 *   cold OR corpus-absent      -- the overflow-tail
-		 *                                 predicate
-		 *
-		 * RELAXED on the bumps; ACQUIRE on the per-nr ring count
-		 * read so it pairs with the publishing release inside
-		 * minicorpus_save_with_reason on the peer side.  A peer
-		 * winning the first admission between our load and the
-		 * local save below still leaves our local view at zero
-		 * (we read first), so the over-count window collapses to
-		 * the parent-thread-only ordering enforced by this
-		 * "shadow-before-save" placement. */
-		if (entry->sanitise == NULL && new_cmp > 0 &&
-		    rec->nr < MAX_NR_SYSCALL &&
-		    __atomic_load_n(&shm->plateau_current_hypothesis,
-				    __ATOMIC_RELAXED) ==
-		    (int)PLATEAU_HYPOTHESIS_CMP_RISING_PC_FLAT) {
-			bool cold = kcov_syscall_cold_skip_pct(rec->nr) > 0;
-			bool absent = false;
-
-			if (minicorpus_shm != NULL)
-				absent = __atomic_load_n(
-					&minicorpus_shm->rings[rec->nr].count,
-					__ATOMIC_ACQUIRE) == 0;
-
-			if (cold || absent) {
-				__atomic_fetch_add(
-					&shm->stats.cold_overflow_would_save,
-					1UL, __ATOMIC_RELAXED);
-				if (cold)
-					__atomic_fetch_add(
-						&shm->stats.cold_overflow_would_save_cold,
-						1UL, __ATOMIC_RELAXED);
-				if (absent)
-					__atomic_fetch_add(
-						&shm->stats.cold_overflow_would_save_absent,
-						1UL, __ATOMIC_RELAXED);
-			}
-		}
+		account_cold_overflow_would_save(entry, rec, new_cmp);
 
 		if (entry->sanitise == NULL)
 			minicorpus_save_with_reason(rec,
