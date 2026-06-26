@@ -52,6 +52,7 @@
 #define NR_FUTEX_WORDS	8	/* small enough that workers collide hard */
 #define MAX_WORKERS	6
 #define STORM_BUDGET_NS	200000000L	/* 200 ms wall-clock per round */
+#define STORM_SLICE_NS	5000000L	/* 5 ms per shutdown-poll slice */
 
 /*
  * Per-invocation op-selection mode.  All workers in a single futex_storm()
@@ -159,7 +160,16 @@ static void inner_worker(struct futex_storm_shared *s)
 {
 	pthread_barrier_wait(&s->barrier);
 
-	while (!__atomic_load_n(&s->done, __ATOMIC_RELAXED)) {
+	/*
+	 * Second predicate handles orphaned-worker shutdown: if the parent
+	 * orchestrator is killed mid-budget before it sets s->done, the
+	 * worker would otherwise loop forever (s->done stuck at 0).  Match
+	 * the main child dispatch loop's exit gate (child.c: while
+	 * exit_reason == STILL_RUNNING) so a SIGINT propagated via
+	 * shm->exit_reason drains the herd within one iteration.
+	 */
+	while (!__atomic_load_n(&s->done, __ATOMIC_RELAXED) &&
+	       __atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) == STILL_RUNNING) {
 		unsigned int r = rnd_u32();
 		unsigned int op;
 		int idx1, idx2;
@@ -389,11 +399,28 @@ static int futex_storm_iter_spawn_workers(struct futex_storm_iter_ctx *ctx)
  */
 static void futex_storm_iter_drive_burst(struct futex_storm_iter_ctx *ctx)
 {
-	struct timespec budget;
+	struct timespec slice;
+	long elapsed_ns;
 
-	budget.tv_sec  = 0;
-	budget.tv_nsec = STORM_BUDGET_NS;
-	nanosleep(&budget, NULL);
+	/*
+	 * Slice the budget so a shutdown signal (Ctrl-C -> exit_reason flip)
+	 * is honoured within ~one slice instead of dragging on for the full
+	 * STORM_BUDGET_NS.  Each slice nanosleeps for STORM_SLICE_NS then
+	 * polls shm->exit_reason; on shutdown we flip done + broadcast a wake
+	 * and return early so the orchestrator proceeds straight to reap.
+	 * The no-shutdown path still consumes the full budget, preserving
+	 * the storm's intended wall-clock pressure.
+	 */
+	slice.tv_sec = 0;
+	for (elapsed_ns = 0; elapsed_ns < STORM_BUDGET_NS; elapsed_ns += STORM_SLICE_NS) {
+		long remaining = STORM_BUDGET_NS - elapsed_ns;
+
+		slice.tv_nsec = (remaining < STORM_SLICE_NS) ? remaining : STORM_SLICE_NS;
+		nanosleep(&slice, NULL);
+
+		if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) != STILL_RUNNING)
+			break;
+	}
 
 	__atomic_store_n(&ctx->s->done, 1, __ATOMIC_RELAXED);
 	broadcast_wake(ctx->s);
