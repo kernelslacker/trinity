@@ -2718,6 +2718,21 @@ static const struct stat_category xfrm_churn_category =
 	              xfrm_churn_runs,
 	              xfrm_churn_fields);
 
+static const struct stat_field sysfs_string_race_fields[] = {
+	STAT_FIELD(sysfs_string_race, runs),
+	STAT_FIELD(sysfs_string_race, setup_failed),
+	STAT_FIELD(sysfs_string_race, target_missing),
+	STAT_FIELD(sysfs_string_race, target_used),
+	STAT_FIELD(sysfs_string_race, fork_failed),
+	STAT_FIELD(sysfs_string_race, writes_ok),
+	STAT_FIELD(sysfs_string_race, writes_failed),
+};
+
+static const struct stat_category sysfs_string_race_category =
+	STAT_CATEGORY("sysfs_string_race",
+	              sysfs_string_race_runs,
+	              sysfs_string_race_fields);
+
 static const struct stat_field atm_vcc_churn_fields[] = {
 	STAT_FIELD(atm_vcc_churn, runs),
 	STAT_FIELD(atm_vcc_churn, unsupported),
@@ -2853,6 +2868,8 @@ static void dump_stats_json_netfilter_and_xfrm(void)
 	stat_category_emit_json(&tc_mirred_blockcast_category);
 	putchar(',');
 	stat_category_emit_json(&xfrm_churn_category);
+	putchar(',');
+	stat_category_emit_json(&sysfs_string_race_category);
 	putchar(',');
 	stat_category_emit_json(&atm_vcc_churn_category);
 	putchar(',');
@@ -10580,6 +10597,8 @@ static void __cold dump_stats_childop_runs_network(void)
 	stat_category_emit_text(&rxrpc_key_install_category);
 
 	stat_category_emit_text(&af_alg_weak_cipher_probe_category);
+
+	stat_category_emit_text(&sysfs_string_race_category);
 
 	if (shm->stats.af_alg_probe_runs || shm->stats.af_alg_probe_unsupported) {
 		unsigned int tmpl;
