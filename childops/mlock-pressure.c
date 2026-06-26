@@ -123,8 +123,19 @@ bool mlock_pressure(struct childdata *child)
 	if (ONE_IN(20)) {
 		int flags = MCL_CURRENT;
 
+#ifndef __SANITIZE_ADDRESS__
+		/*
+		 * MCL_FUTURE pins every later mmap with VM_LOCKED; under ASAN the
+		 * allocator's shadow-extension mmap then -EAGAINs once RLIMIT_MEMLOCK
+		 * is hit and libasan fatally aborts the child ("failed to allocate ...
+		 * error code: 11").  The probe loop below holds MCL_FUTURE across
+		 * several mmap/touch/munmap calls -- wide enough for ASAN to fall in.
+		 * The raw mlockall syscall path already drops MCL_FUTURE under ASAN
+		 * via post_mlockall() (syscalls/mlockall.c); mirror that here.
+		 */
 		if (RAND_BOOL())
 			flags |= MCL_FUTURE;
+#endif
 		if (RAND_BOOL())
 			flags |= MCL_ONFAULT;
 
