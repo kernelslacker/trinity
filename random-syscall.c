@@ -2688,6 +2688,35 @@ static void account_transition_reward(struct childdata *child,
 		capped, __ATOMIC_RELAXED);
 }
 
+/* FD leak tracking (count successful fd-creating and fd-closing
+ * syscalls per child for leak diagnosis), the live-fd ring push for
+ * preferential reuse in arg generation, and the group_bias-gated
+ * last_group stamp.  All three pieces are per-call child-state
+ * updates that key off the just-completed syscall's entry / rec and
+ * touch no shared region, so they collapse into one helper at the
+ * end of the dispatch_step bookkeeping tail. */
+static void account_fd_and_group(struct childdata *child,
+				 struct syscallentry *entry,
+				 struct syscallrecord *rec)
+{
+	if (rec->retval != -1UL) {
+		if (entry->rettype == RET_FD) {
+			child->fd_created++;
+			if (entry->group < NR_GROUPS)
+				child->fd_created_by_group[entry->group]++;
+			/* Track returned fd for preferential reuse in arg generation. */
+			if ((int)rec->retval > 2)
+				child_fd_ring_push(&child->live_fds, (int)rec->retval);
+		}
+		if (entry->is_close_syscall)
+			child->fd_closed++;
+	}
+
+	/* Track the group for biasing. */
+	if (group_bias)
+		child->last_group = entry->group;
+}
+
 static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 			  bool *found_new, unsigned long *new_cmp_out,
 			  unsigned long *new_transition_out)
@@ -3002,24 +3031,7 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 		}
 	}
 
-	/* FD leak tracking: count successful fd-creating and
-	 * fd-closing syscalls per child for leak diagnosis. */
-	if (rec->retval != -1UL) {
-		if (entry->rettype == RET_FD) {
-			child->fd_created++;
-			if (entry->group < NR_GROUPS)
-				child->fd_created_by_group[entry->group]++;
-			/* Track returned fd for preferential reuse in arg generation. */
-			if ((int)rec->retval > 2)
-				child_fd_ring_push(&child->live_fds, (int)rec->retval);
-		}
-		if (entry->is_close_syscall)
-			child->fd_closed++;
-	}
-
-	/* Track the group for biasing. */
-	if (group_bias)
-		child->last_group = entry->group;
+	account_fd_and_group(child, entry, rec);
 
 	/* Per-arm completion exposure: bump the arm this call was attributed
 	 * to.  Two distinct cases reach here with strategy_at_pick == -1:
