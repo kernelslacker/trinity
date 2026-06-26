@@ -5,8 +5,6 @@
 #include <string.h>
 #include <unistd.h>
 #include <asm/unistd.h>
-#include <sys/types.h>
-#include <sys/stat.h>
 
 #include "deferred-free.h"
 #include "fd.h"
