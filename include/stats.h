@@ -2951,6 +2951,42 @@ struct stats_s {
 	unsigned long warm_reserve_candidates_total;
 	unsigned long warm_reserve_candidates[MAX_NR_SYSCALL];
 
+	/* SHADOW-ONLY would-replay-demand counters, paired with the
+	 * warm_reserve_candidates* pair above.  A deep-but-warm candidate
+	 * is the population a STAGE B capped-reserve experiment would
+	 * retain for replay; the plateau hypothesis CMP_RISING_PC_FLAT is
+	 * the window in which that experiment would actually fire the
+	 * replay (the same window the cmp-recent-first arm and the
+	 * cmp-hyp live-inject path key off in cmp_hints.c).  These
+	 * counters intersect the two: how often the deep-but-warm
+	 * predicate fires AND the plateau is the CMP-rising-PC-flat
+	 * hypothesis at the same time, i.e. the would-replay rate the
+	 * STAGE B build needs to size its ring + dispatch path against.
+	 *
+	 *  warm_reserve_during_plateau_total
+	 *      Cumulative across all syscalls.  Headline number for
+	 *      "during a CMP_RISING_PC_FLAT plateau, how many deep-but-
+	 *      warm candidates does this run actually see".  Compared
+	 *      against warm_reserve_candidates_total it gives the
+	 *      plateau-share of the candidate population; compared
+	 *      against per-second dispatch volume it sizes the would-
+	 *      replay budget.
+	 *  warm_reserve_during_plateau[nr]
+	 *      Per-syscall breakdown, same shape as
+	 *      warm_reserve_candidates[].  Surfaces which syscalls would
+	 *      dominate the replay traffic via top_syscalls_periodic_dump's
+	 *      warm-reserve-plateau row.
+	 *
+	 * SHADOW: the live-pick / arg-gen / dispatch path is byte-
+	 * identical to the baseline.  The plateau read uses the same
+	 * RELAXED load + enum compare as the cmp_hyp_try_live_inject /
+	 * cmp_recent_first paths in cmp_hints.c; the increment is gated
+	 * inside the existing deep-but-warm predicate-fire block, so a
+	 * syscall that doesn't fire the warm-reserve predicate doesn't
+	 * even load the plateau field. */
+	unsigned long warm_reserve_during_plateau_total;
+	unsigned long warm_reserve_during_plateau[MAX_NR_SYSCALL];
+
 	/* SHADOW-ONLY warm-plateau "wall lever" accounting -- the
 	 * shadow gate that identifies high-call zero-yield syscalls during a
 	 * warm-plateau window and projects the pick-budget those candidates

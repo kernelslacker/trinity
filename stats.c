@@ -4048,6 +4048,15 @@ static const struct {
 	 * surfaces via top_syscalls_periodic_dump()'s warm-reserve row. */
 	{ "warm_reserve_candidates_total",
 	  offsetof(struct stats_s, warm_reserve_candidates_total) },
+	/* SHADOW-ONLY intersection of the deep-but-warm predicate above
+	 * with the CMP_RISING_PC_FLAT plateau hypothesis -- the would-
+	 * replay-demand signal a STAGE B capped-reserve experiment would
+	 * size its ring + dispatch path against.  Periodic stats dump
+	 * only; the per-syscall warm_reserve_during_plateau[] breakdown
+	 * surfaces via top_syscalls_periodic_dump()'s warm-reserve-plateau
+	 * row. */
+	{ "warm_reserve_during_plateau_total",
+	  offsetof(struct stats_s, warm_reserve_during_plateau_total) },
 };
 
 static unsigned long defense_counter_load(unsigned int i)
@@ -4897,6 +4906,7 @@ void __cold top_syscalls_periodic_dump(void)
 	static unsigned long prev_rq_saves[MAX_NR_SYSCALL];
 	static unsigned long prev_rq_wins[MAX_NR_SYSCALL];
 	static unsigned long prev_warm_reserve[MAX_NR_SYSCALL];
+	static unsigned long prev_warm_reserve_plateau[MAX_NR_SYSCALL];
 	static struct timespec last_dump;
 	unsigned long cur_bandit[MAX_NR_SYSCALL];
 	unsigned long cur_explorer[MAX_NR_SYSCALL];
@@ -4910,6 +4920,7 @@ void __cold top_syscalls_periodic_dump(void)
 	unsigned long cur_rq_saves[MAX_NR_SYSCALL];
 	unsigned long cur_rq_wins[MAX_NR_SYSCALL];
 	unsigned long cur_warm_reserve[MAX_NR_SYSCALL];
+	unsigned long cur_warm_reserve_plateau[MAX_NR_SYSCALL];
 	unsigned long bandit_window_now;
 	struct timespec now;
 	long elapsed;
@@ -4955,6 +4966,9 @@ void __cold top_syscalls_periodic_dump(void)
 			prev_warm_reserve[i] = __atomic_load_n(
 				&shm->stats.warm_reserve_candidates[i],
 				__ATOMIC_RELAXED);
+			prev_warm_reserve_plateau[i] = __atomic_load_n(
+				&shm->stats.warm_reserve_during_plateau[i],
+				__ATOMIC_RELAXED);
 		}
 		return;
 	}
@@ -4999,6 +5013,9 @@ void __cold top_syscalls_periodic_dump(void)
 			__ATOMIC_RELAXED);
 		cur_warm_reserve[i] = __atomic_load_n(
 			&shm->stats.warm_reserve_candidates[i],
+			__ATOMIC_RELAXED);
+		cur_warm_reserve_plateau[i] = __atomic_load_n(
+			&shm->stats.warm_reserve_during_plateau[i],
 			__ATOMIC_RELAXED);
 	}
 
@@ -5083,6 +5100,19 @@ void __cold top_syscalls_periodic_dump(void)
 	top_syscalls_emit_pool("warm-reserve", cur_warm_reserve,
 			       prev_warm_reserve, nr_to_scan, table, false);
 
+	/* SHADOW would-replay-demand accounting -- intersection of the
+	 * deep-but-warm predicate with the CMP_RISING_PC_FLAT plateau
+	 * window (see warm_reserve_during_plateau* in include/stats.h).
+	 * Same top-N shape and zero-total skip as the warm-reserve row
+	 * above; a window without a plateau, or a plateau window without
+	 * any deep-but-warm fires, collapses to no row. */
+	stats_log_write("Top %u syscalls by deep-but-warm candidates "
+			"during plateau in last %lds:\n",
+			TOP_SYSCALLS_DUMP_TOPN, elapsed);
+	top_syscalls_emit_pool("warm-reserve-plateau", cur_warm_reserve_plateau,
+			       prev_warm_reserve_plateau, nr_to_scan, table,
+			       false);
+
 	memcpy(prev_bandit,   cur_bandit,   sizeof(prev_bandit));
 	memcpy(prev_explorer, cur_explorer, sizeof(prev_explorer));
 	memcpy(prev_frontier_picks, cur_frontier_picks,
@@ -5099,6 +5129,8 @@ void __cold top_syscalls_periodic_dump(void)
 	memcpy(prev_rq_wins,  cur_rq_wins,  sizeof(prev_rq_wins));
 	memcpy(prev_warm_reserve, cur_warm_reserve,
 	       sizeof(prev_warm_reserve));
+	memcpy(prev_warm_reserve_plateau, cur_warm_reserve_plateau,
+	       sizeof(prev_warm_reserve_plateau));
 
 	last_dump = now;
 }
