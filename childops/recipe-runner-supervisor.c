@@ -268,8 +268,8 @@ static void mount_userns_dance_inner(void) __attribute__((noreturn));
 static void mount_userns_dance_inner(void)
 {
 	char buf[64];
-	uid_t uid = getuid();
-	gid_t gid = getgid();
+	uid_t uid = geteuid();
+	gid_t gid = getegid();
 
 	if (unshare(CLONE_NEWUSER | CLONE_NEWNS) != 0)
 		_exit(1);
