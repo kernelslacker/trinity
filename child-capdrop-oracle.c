@@ -45,7 +45,6 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <linux/capability.h>
-#include <netinet/in.h>
 
 #include "config.h"
 #ifdef USE_BPF
