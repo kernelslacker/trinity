@@ -2046,6 +2046,23 @@ static const struct stat_category aio_category =
 	              aio_submitted,
 	              aio_fields);
 
+/* fd_runtime_skipped: handle_retval_obj_fd's post-success classify of an
+ * fd retval against the per-child local-object table.  The two paths are
+ * mutually exclusive per call and both increment from the same site, so a
+ * run where neither bumped means no syscall ever produced a registerable
+ * fd; gating on _stdio (the dominant arm — retvals 0/1/2 from any
+ * fd-returning syscall) keeps a quiet window terse in the text dump.
+ * JSON renders unconditionally alongside aio for schema stability. */
+static const struct stat_field fd_runtime_skipped_fields[] = {
+	STAT_FIELD(fd_runtime_skipped, stdio),
+	STAT_FIELD(fd_runtime_skipped, already_registered),
+};
+
+static const struct stat_category fd_runtime_skipped_category =
+	STAT_CATEGORY("fd_runtime_skipped",
+	              fd_runtime_skipped_stdio,
+	              fd_runtime_skipped_fields);
+
 /* zombie_slots mixes two struct prefixes (zombie_slots_ for the gauge,
  * zombies_ for the counters); each STAT_FIELD picks its own prefix so the
  * JSON keys stay flat ("pending", "reaped", "timed_out"). */
@@ -2380,6 +2397,8 @@ static void dump_stats_json_iouring_and_zombies(void)
 	stat_category_emit_json(&iouring_eventfd_category);
 	putchar(',');
 	stat_category_emit_json(&aio_category);
+	putchar(',');
+	stat_category_emit_json(&fd_runtime_skipped_category);
 	putchar(',');
 	stat_category_emit_json(&zombie_slots_category);
 	putchar(',');
@@ -9098,6 +9117,8 @@ static void dump_stats_fuzzer_subsystems(void)
 	}
 
 	stat_category_emit_text(&aio_category);
+
+	stat_category_emit_text(&fd_runtime_skipped_category);
 
 	if (shm->stats.zombies_reaped || shm->stats.zombies_timed_out ||
 	    shm->stats.zombie_slots_pending) {
