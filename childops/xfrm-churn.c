@@ -864,7 +864,10 @@ static int xfrm_churn_iter_setup_netns(struct xfrm_churn_iter_ctx *ctx)
 
 	if (!lo_brought_up) {
 		struct nl_ctx rtnl = { .fd = -1 };
-		struct nl_open_opts rtnl_opts = { .proto = NETLINK_ROUTE };
+		struct nl_open_opts rtnl_opts = {
+			.proto        = NETLINK_ROUTE,
+			.recv_timeo_s = XFRM_RECV_TIMEO_S,
+		};
 
 		if (nl_open(&rtnl, &rtnl_opts) == 0) {
 			rtnl_bring_lo_up(&rtnl);
