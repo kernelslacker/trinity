@@ -19,7 +19,9 @@ prints proxies only, and labels them as such.
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import re
 import struct
 import sys
 import zlib
@@ -84,6 +86,16 @@ def load_syscall_names(arch: str) -> dict[int, str]:
     """Best-effort: parse ../include/syscalls-<arch>.h for an nr->name map.
 
     Returns {} when the table is unavailable; callers fall back to "nr=N".
+
+    NULL holes ({ .entry = NULL }) DO advance the syscall number on
+    archs like x86_64 -- bumping nr only for named entries would
+    silently shift every name past the first hole down, mislabelling
+    high-nr syscalls in both the text dump and the JSON output.
+
+    Preprocessor alternatives such as `#ifdef X { .entry = &foo } #else
+    { .entry = NULL } #endif` describe ONE slot, not two -- count the
+    #ifdef branch (so the name shows up when X is defined) and skip
+    the #else branch so it does not double-bump nr.
     """
     table = os.path.join(script_dir(), os.pardir, "include", f"syscalls-{arch}.h")
     table = os.path.normpath(table)
@@ -92,6 +104,7 @@ def load_syscall_names(arch: str) -> dict[int, str]:
     names: dict[int, str] = {}
     nr = 0
     started = False
+    in_else_branch = False
     with open(table) as fh:
         for line in fh:
             stripped = line.strip()
@@ -101,13 +114,24 @@ def load_syscall_names(arch: str) -> dict[int, str]:
                 continue
             if stripped.startswith("};"):
                 break
-            if ".entry" not in stripped or "syscall_" not in stripped:
+            if stripped.startswith("#else"):
+                in_else_branch = True
                 continue
-            sym_start = stripped.find("syscall_")
-            sym = stripped[sym_start + len("syscall_") :]
-            sym = sym.split()[0].rstrip(",}).;")
-            if sym:
-                names[nr] = sym
+            if stripped.startswith("#endif"):
+                in_else_branch = False
+                continue
+            if stripped.startswith("#"):
+                continue
+            if ".entry" not in stripped:
+                continue
+            if in_else_branch:
+                continue
+            if "syscall_" in stripped:
+                sym_start = stripped.find("syscall_")
+                sym = stripped[sym_start + len("syscall_") :]
+                sym = sym.split()[0].rstrip(",}).;")
+                if sym:
+                    names[nr] = sym
             nr += 1
     return names
 
@@ -881,6 +905,150 @@ def resolve_kernel(
     return newest
 
 
+def _slug(s: str) -> str:
+    """Make a string safe to drop into a filename: keep alnum/dot/dash/+,
+    collapse anything else to '_'.  Used to derive the default JSON
+    output path from the kernel label (which can contain '/'-ish chars
+    in unusual builds)."""
+    return re.sub(r"[^A-Za-z0-9.+\-]+", "_", s).strip("_") or "unknown"
+
+
+def effective_kernel_label(b: CacheBundle) -> str:
+    """Kernel label suitable for cross-version diffing.
+
+    load_bundle() prefers the corpus kernel_release but falls back to the
+    cache-dir basename when no corpus file is present.  Under the usual
+    per-kernel layout (kcov-bitmap/<arch>-<release>) two -k selections
+    against the same cache dir would otherwise share a label -- and a
+    default-path JSON for kernel B would overwrite the file for kernel
+    A.  Fall back to the selected kcov / cmp-hints artifact basename
+    when corpus is unavailable, which DOES carry the kernel substring.
+    """
+    if b.corpus is not None:
+        return b.kernel_label
+    for art in (b.kcov, b.cmp_hints):
+        if art is None:
+            continue
+        # Flat single-kernel layout (cache_dir/kcov-bitmap is itself the
+        # file): basename is the literal artifact name ("kcov-bitmap" /
+        # "corpus" / "cmp-hints") -- meaningless as a kernel label, and
+        # b.kernel_label (the cache-dir basename) is the right answer.
+        if os.path.basename(art.path) in ("kcov-bitmap", "corpus", "cmp-hints"):
+            continue
+        base = os.path.basename(art.path)
+        if base and base != os.path.basename(b.cache_dir.rstrip("/")):
+            # Strip the redundant '<arch>-' prefix that find_artifact
+            # already accounts for separately in the JSON filename.
+            if b.arch and base.startswith(b.arch + "-"):
+                base = base[len(b.arch) + 1:]
+            return base
+    return b.kernel_label
+
+
+def build_per_syscall_json(b: CacheBundle) -> dict:
+    """Assemble the cross-kernel-diff JSON payload for the kcov side.
+
+    Edge IDENTITIES are not cross-build comparable (the bucket bitmap is
+    fingerprint-gated), but per-syscall COUNTS are: two of these files
+    can be diffed nr-by-nr to ask "are we reaching as deep on syscall X
+    on the new kernel" and "where are we breaking new ground".
+
+    The header carries everything a downstream diff tool needs to refuse
+    a mismatched compare (arch / syscall-table-size / cache schema
+    version) plus the global totals for sanity.
+
+    Records are emitted for every syscall with ANY nonzero coverage
+    field; uniformly-zero rows are dropped to keep the file small.
+    do32 and do64 are summed for bucket_bits_real / distinct_pcs to
+    match the text 'top syscalls by edges' table (which the loader
+    already folds at parse time).  Per-syscall transition-edge counters
+    are tracked in kcov_shm but NOT persisted to the on-disk cache;
+    they are intentionally omitted here rather than emitted as zero.
+    """
+    label = effective_kernel_label(b)
+    # load_syscall_names() skips NULL holes in the parsed table, so
+    # len(b.syscall_names) under-counts the real table size on archs
+    # like x86_64 (it returns 383 even though valid syscall nrs go
+    # well past 400).  Expose the count of NAMED syscalls plus the
+    # highest known nr so downstream diff tools can refuse a mismatched
+    # compare without being misled into thinking the table is smaller
+    # than it is.
+    syscall_names_known = len(b.syscall_names)
+    max_known_nr = (max(b.syscall_names) if b.syscall_names else -1)
+    k = b.kcov
+    if k is None:
+        return {
+            "format": "trinity-per-syscall-stats",
+            "format_version": 1,
+            "kernel_label": label,
+            "arch": b.arch,
+            "syscall_names_known": syscall_names_known,
+            "max_known_nr": max_known_nr,
+            "max_nr_syscall_dim": MAX_NR_SYSCALL,
+            "kcov_present": False,
+            "per_syscall": [],
+        }
+    records: list[dict] = []
+    for nr in range(MAX_NR_SYSCALL):
+        bbr = k.diag_bucket_bits_real[nr] if k.diag_present else 0
+        dpcs = k.diag_distinct_pcs[nr] if k.diag_present else 0
+        edges_pc = k.per_syscall_edges[nr]
+        calls = k.per_syscall_calls[nr]
+        if not (bbr or dpcs or edges_pc or calls):
+            continue
+        rec = {
+            "nr": nr,
+            "name": b.syscall_names.get(nr),
+            "bucket_bits_real": bbr,
+            "distinct_pcs_first_sight": dpcs,
+            "per_syscall_edges": edges_pc,
+            "calls": calls,
+        }
+        records.append(rec)
+    payload: dict = {
+        "format": "trinity-per-syscall-stats",
+        "format_version": 1,
+        "kernel_label": label,
+        "arch": b.arch,
+        "syscall_names_known": syscall_names_known,
+        "max_known_nr": max_known_nr,
+        "max_nr_syscall_dim": MAX_NR_SYSCALL,
+        "kcov_max_nr_syscall": k.max_nr_syscall,
+        "kcov_present": True,
+        "kcov_path": k.path,
+        "kcov_cache_version": k.version,
+        "kcov_diag_present": k.diag_present,
+        "edges_found": k.edges_found,
+        "distinct_edges": k.distinct_edges,
+        "bitmap_popcount": k.bitmap_popcount,
+        "bitmap_nonzero_bytes": k.bitmap_nonzero,
+        "kcov_num_edges": KCOV_NUM_EDGES,
+        "kcov_num_buckets": KCOV_NUM_BUCKETS,
+        "kaslr_base": k.kaslr_base,
+        "crc_ok": k.crc_ok,
+        "transition_edges_persisted": False,
+        "per_syscall": records,
+    }
+    if k.strat_present:
+        payload["per_strategy"] = [
+            {
+                "strategy": name,
+                "productive_calls": k.strat_calls_by_strategy[s],
+                "edges_real": k.strat_count_by_strategy[s],
+            }
+            for s, name in enumerate(KCOV_STRATEGY_NAMES)
+        ]
+    return payload
+
+
+def default_json_path(b: CacheBundle) -> str:
+    arch = b.arch or "noarch"
+    return os.path.join(
+        b.cache_dir,
+        f"per-syscall-stats-{_slug(arch)}-{_slug(effective_kernel_label(b))}.json",
+    )
+
+
 def cmd_stats(args: argparse.Namespace) -> int:
     cache_dir = os.path.abspath(args.cache_dir)
     kernel = resolve_kernel(cache_dir, args.kernel)
@@ -894,6 +1062,15 @@ def cmd_stats(args: argparse.Namespace) -> int:
     print_kcov_stats(b, args.top)
     print_corpus_stats(b, args.top)
     print_cmp_hints_stats(b, args.top)
+
+    if args.json_path is not None or args.json_default_path:
+        out_path = args.json_path or default_json_path(b)
+        payload = build_per_syscall_json(b)
+        with open(out_path, "w") as fh:
+            json.dump(payload, fh, indent=2, sort_keys=False)
+            fh.write("\n")
+        print()
+        print(f"per-syscall JSON written: {out_path}")
     return 0
 
 
@@ -1057,6 +1234,26 @@ def build_parser() -> argparse.ArgumentParser:
         "--kernel",
         help="kernel substring to select when the cache holds several "
         "(e.g. -k 7.1.0-rc7); default: newest",
+    )
+    # Two flags rather than one nargs='?' to avoid argparse's
+    # well-known footgun where '--cache-stats-json <next-positional>'
+    # silently swallows the cache_dir as the optional PATH value.
+    p_stats.add_argument(
+        "--cache-stats-json",
+        dest="json_default_path",
+        action="store_true",
+        help="also emit the FULL per-syscall coverage table as JSON for "
+        "cross-kernel-version diffing, written to the default path "
+        "<cache>/per-syscall-stats-<arch>-<kernellabel>.json.  The "
+        "text dump is unaffected.",
+    )
+    p_stats.add_argument(
+        "--cache-stats-json-path",
+        dest="json_path",
+        default=None,
+        metavar="PATH",
+        help="like --cache-stats-json, but write the JSON to PATH "
+        "instead of the default location.",
     )
     p_stats.set_defaults(func=cmd_stats)
     p_diff = sub.add_parser("diff", help="cross-kernel proxies (not edges)")
