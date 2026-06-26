@@ -2399,6 +2399,30 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 					   1UL, __ATOMIC_RELAXED);
 			__atomic_fetch_add(&shm->stats.warm_reserve_candidates[rec->nr],
 					   1UL, __ATOMIC_RELAXED);
+
+			/* SHADOW would-replay-demand intersection: the
+			 * deep-but-warm candidate population AND the plateau
+			 * window in which a STAGE B capped-reserve replay
+			 * would actually fire (CMP_RISING_PC_FLAT, the same
+			 * hypothesis the cmp-recent-first arm and the
+			 * cmp_hyp_try_live_inject path in cmp_hints.c key off
+			 * -- the read here matches that contract: RELAXED
+			 * load of shm->plateau_current_hypothesis, compared
+			 * to the enum cast to int).  Gated INSIDE the
+			 * predicate-fire branch so the plateau field is only
+			 * loaded on the deep-but-warm tail; a syscall that
+			 * does not fire warm_reserve_candidates does not
+			 * touch the field.  No live consumer reads either
+			 * counter -- sizing/demand signal for the STAGE B
+			 * build only. */
+			if (__atomic_load_n(&shm->plateau_current_hypothesis,
+					    __ATOMIC_RELAXED) ==
+			    (int)PLATEAU_HYPOTHESIS_CMP_RISING_PC_FLAT) {
+				__atomic_fetch_add(&shm->stats.warm_reserve_during_plateau_total,
+						   1UL, __ATOMIC_RELAXED);
+				__atomic_fetch_add(&shm->stats.warm_reserve_during_plateau[rec->nr],
+						   1UL, __ATOMIC_RELAXED);
+			}
 		}
 	}
 
