@@ -10,6 +10,17 @@
  * registered lazily on first access from inside ip_vs_init_net(), and
  * the walker's bounded depth + access(W_OK) gate often skips it.  This
  * op forces the per-netns init then writes a curated path list.
+ *
+ * Runs the per-invocation body inside a transient grandchild forked by
+ * userns_run_in_ns(CLONE_NEWNET); the grandchild's userns + netns die
+ * on _exit() so the per-net ip_vs sysctl table, conn table, virtual
+ * service and writable fds are reaped along with the namespace.  The
+ * persistent fuzz child keeps the host credential profile that the
+ * cap-drop oracle observes.  Helper -EPERM (hardened userns policy
+ * refused CLONE_NEWUSER -- typically user.max_user_namespaces=0 or
+ * kernel.unprivileged_userns_clone=0) latches ns_unsupported_ipvs_sysctl
+ * via a one-shot warn_once; -EAGAIN (transient grandchild setup
+ * failure) skips the iteration without latching.
  */
 
 #include <arpa/inet.h>
@@ -35,6 +46,7 @@
 #include "shm.h"
 #include "text-payloads.h"
 #include "trinity.h"
+#include "userns-bootstrap.h"
 
 #define IPVS_CANONICAL_PATH	"/proc/sys/net/ipv4/vs/conn_tab_bits"
 #define IPVS_WRITE_BASE		4U
@@ -71,16 +83,51 @@ static const struct {
 };
 #define NR_IPVS_SYSCTLS		ARRAY_SIZE(ipvs_sysctls)
 
-/* One writable fd per row, opened once after the per-net sysctl table is
- * registered.  Reused for every write in the burst so the per-iter open()
- * (and its dentry/permission walk) is paid once.  -1 means the open failed
- * — likely the path doesn't exist or write is denied — and is sticky so a
- * repeatedly-chosen broken path stops burning syscalls. */
-static int ipvs_sysctl_fds[NR_IPVS_SYSCTLS];
-
+/* Master gate: persistent across iterations in the persistent fuzz
+ * child.  Set when userns_run_in_ns() returns -EPERM (hardened userns
+ * policy refused CLONE_NEWUSER) so subsequent invocations short-circuit
+ * instead of forking another doomed grandchild. */
 static bool ns_unsupported_ipvs_sysctl;
-static bool setup_done;
-static bool burn_setup_done;
+
+/* One-shot modprobe gate: kernel modules are global, not per-netns, so
+ * the load only has to happen once per persistent child and must run
+ * with the host's CAP_SYS_MODULE — i.e. before userns_run_in_ns() drops
+ * the grandchild into its scoped user namespace where CAP_SYS_MODULE is
+ * ineffective against init_user_ns. */
+static bool modprobe_tried_ip_vs;
+
+static void warn_once_unsupported_ipvs_sysctl(int err)
+{
+	static bool warned;
+
+	if (warned)
+		return;
+	warned = true;
+	outputerr("ipvs_sysctl_writer: userns_run_in_ns(CLONE_NEWNET) failed (errno=%d), latching ns_unsupported_ipvs_sysctl\n",
+		  err);
+}
+
+static void maybe_modprobe_ip_vs(void)
+{
+	if (modprobe_tried_ip_vs)
+		return;
+	modprobe_tried_ip_vs = true;
+	try_modprobe("ip_vs");
+	try_modprobe("ip_vs_rr");
+}
+
+/*
+ * Per-grandchild iteration state.  Lives on the grandchild's stack and
+ * dies when the grandchild _exit()s after the in-ns callback returns;
+ * no cross-iteration caching is possible because the netns (and the
+ * per-net ip_vs sysctl table, virtual service and writable fds inside
+ * it) is recreated on every call.
+ */
+struct ipvs_sysctl_iter_ctx {
+	struct childdata *child;
+	int sysctl_fds[NR_IPVS_SYSCTLS];
+	bool burn_setup_done;
+};
 
 static void try_ipvsadm(const char *const argv[])
 {
@@ -103,7 +150,7 @@ static void try_ipvsadm(const char *const argv[])
 	(void)waitpid_eintr(pid, &status, 0);
 }
 
-static void ipvs_conn_burn(void)
+static void ipvs_conn_burn(struct ipvs_sysctl_iter_ctx *ctx)
 {
 	struct sockaddr_in dst = {
 		.sin_family = AF_INET,
@@ -111,7 +158,7 @@ static void ipvs_conn_burn(void)
 	};
 	unsigned int i, iters;
 
-	if (!burn_setup_done) {
+	if (!ctx->burn_setup_done) {
 		const char *svc[] = { "ipvsadm", "-A", "-t", IPVS_BURN_VIP,
 				      "-s", "rr", NULL };
 		const char *rs[]  = { "ipvsadm", "-a", "-t", IPVS_BURN_VIP,
@@ -125,7 +172,7 @@ static void ipvs_conn_burn(void)
 		}
 		try_ipvsadm(svc);
 		try_ipvsadm(rs);
-		burn_setup_done = true;
+		ctx->burn_setup_done = true;
 	}
 
 	(void)inet_pton(AF_INET, "127.0.0.7", &dst.sin_addr);
@@ -145,8 +192,20 @@ static void ipvs_conn_burn(void)
 	}
 }
 
-bool ipvs_sysctl_writer(struct childdata *child)
+/*
+ * Per-invocation body that runs inside the grandchild's private
+ * netns.  userns_run_in_ns() has already entered the netns; this
+ * callback triggers per-net ip_vs sysctl registration via a canonical-
+ * path probe open, opens writable fds for every row in ipvs_sysctls[],
+ * drives the curated write storm, and optionally fires the conn-table
+ * burn.  Any partially-built state on a setup-failure path is reaped
+ * by the grandchild's _exit().  Return value is ignored by the helper
+ * -- per-op stats counters carry the outcome.
+ */
+static int ipvs_sysctl_writer_in_ns(void *arg)
 {
+	struct ipvs_sysctl_iter_ctx *ctx = (struct ipvs_sysctl_iter_ctx *)arg;
+	struct childdata *child = ctx->child;
 	unsigned int iters, i;
 	int probe;
 	/* Snapshot child->op_type once and bounds-check before indexing
@@ -158,60 +217,37 @@ bool ipvs_sysctl_writer(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	__atomic_add_fetch(&shm->stats.ipvs_sysctl_writer_runs, 1,
-			   __ATOMIC_RELAXED);
+	for (i = 0; i < NR_IPVS_SYSCTLS; i++)
+		ctx->sysctl_fds[i] = -1;
 
-	if (ns_unsupported_ipvs_sysctl)
-		return true;
-
-	if (!setup_done) {
-		if (unshare(CLONE_NEWNET) < 0) {
-			ns_unsupported_ipvs_sysctl = true;
-			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
-						 CHILDOP_LATCH_NS_UNSUPPORTED,
-						 __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.ipvs_sysctl_writer_unsupported_latched,
-					   1, __ATOMIC_RELAXED);
-			return true;
-		}
-		try_modprobe("ip_vs");
-		try_modprobe("ip_vs_rr");
-
-		/* First open of the canonical path triggers ip_vs_init_net()
-		 * which registers the per-net sysctl table. */
-		probe = open(IPVS_CANONICAL_PATH, O_RDONLY);
-		if (probe < 0) {
-			ns_unsupported_ipvs_sysctl = true;
-			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
-						 CHILDOP_LATCH_UNSUPPORTED,
-						 __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.ipvs_sysctl_writer_unsupported_latched,
-					   1, __ATOMIC_RELAXED);
-			return true;
-		}
-		close(probe);
-
-		for (i = 0; i < NR_IPVS_SYSCTLS; i++)
-			ipvs_sysctl_fds[i] = open(ipvs_sysctls[i].path,
-						  O_WRONLY | O_NONBLOCK | O_CLOEXEC);
-		setup_done = true;
+	/* First open of the canonical path triggers ip_vs_init_net()
+	 * which registers the per-net sysctl table. */
+	probe = open(IPVS_CANONICAL_PATH, O_RDONLY);
+	if (probe < 0) {
+		__atomic_add_fetch(&shm->stats.ipvs_sysctl_writer_unsupported_latched,
+				   1, __ATOMIC_RELAXED);
+		return 0;
 	}
-	if (valid_op)
+	close(probe);
+
+	for (i = 0; i < NR_IPVS_SYSCTLS; i++)
+		ctx->sysctl_fds[i] = open(ipvs_sysctls[i].path,
+					  O_WRONLY | O_NONBLOCK | O_CLOEXEC);
+
+	if (valid_op) {
 		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
+	}
 
 	iters = BUDGETED(CHILD_OP_IPVS_SYSCTL_WRITER, JITTER_RANGE(IPVS_WRITE_BASE));
 	if (iters > IPVS_WRITE_CAP)
 		iters = IPVS_WRITE_CAP;
 
-	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_data_path[op],
-				   1, __ATOMIC_RELAXED);
 	for (i = 0; i < iters; i++) {
 		unsigned int idx = rnd_modulo_u32(NR_IPVS_SYSCTLS);
-		int fd = ipvs_sysctl_fds[idx];
+		int fd = ctx->sysctl_fds[idx];
 		char buf[128];
 		unsigned int len;
 		ssize_t n;
@@ -243,7 +279,58 @@ bool ipvs_sysctl_writer(struct childdata *child)
 	}
 
 	if (ONE_IN(IPVS_BURN_FREQ))
-		ipvs_conn_burn();
+		ipvs_conn_burn(ctx);
+
+	for (i = 0; i < NR_IPVS_SYSCTLS; i++) {
+		if (ctx->sysctl_fds[i] >= 0)
+			close(ctx->sysctl_fds[i]);
+	}
+	return 0;
+}
+
+bool ipvs_sysctl_writer(struct childdata *child)
+{
+	struct ipvs_sysctl_iter_ctx ctx = {
+		.child = child,
+		.burn_setup_done = false,
+	};
+	int rc;
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op latch slot.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the latch
+	 * store entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
+	__atomic_add_fetch(&shm->stats.ipvs_sysctl_writer_runs, 1,
+			   __ATOMIC_RELAXED);
+
+	if (ns_unsupported_ipvs_sysctl)
+		return true;
+
+	maybe_modprobe_ip_vs();
+
+	rc = userns_run_in_ns(CLONE_NEWNET, ipvs_sysctl_writer_in_ns, &ctx);
+	if (rc == -EPERM) {
+		ns_unsupported_ipvs_sysctl = true;
+		if (valid_op)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		warn_once_unsupported_ipvs_sysctl(EPERM);
+		__atomic_add_fetch(&shm->stats.ipvs_sysctl_writer_unsupported_latched,
+				   1, __ATOMIC_RELAXED);
+		return true;
+	}
+	if (rc < 0) {
+		/* Transient grandchild setup failure (fork, id-map write,
+		 * secondary unshare).  Skip this iteration without
+		 * latching -- the failure is not policy and may not
+		 * recur. */
+		return true;
+	}
 
 	return true;
 }
