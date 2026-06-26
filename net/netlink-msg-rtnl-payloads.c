@@ -13,7 +13,6 @@
  * file-static here.  Only the five payload generators are widened to
  * external linkage and declared in netlink-msg-internal.h.
  */
-#include <sys/types.h>
 #include <sys/socket.h>
 #include <stddef.h>
 #include <netinet/in.h>
