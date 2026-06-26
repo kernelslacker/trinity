@@ -19,6 +19,24 @@
 #endif
 
 /*
+ * SCHED_FLAG_* fallbacks for build environments whose <linux/sched.h>
+ * pre-dates the upstream flag definitions.  The kernel's own bit
+ * positions are stable ABI, so the constants are safe to inline.
+ */
+#ifndef SCHED_FLAG_RESET_ON_FORK
+#define SCHED_FLAG_RESET_ON_FORK	0x01
+#endif
+#ifndef SCHED_FLAG_RECLAIM
+#define SCHED_FLAG_RECLAIM		0x02
+#endif
+#ifndef SCHED_FLAG_UTIL_CLAMP_MIN
+#define SCHED_FLAG_UTIL_CLAMP_MIN	0x20
+#endif
+#ifndef SCHED_FLAG_UTIL_CLAMP_MAX
+#define SCHED_FLAG_UTIL_CLAMP_MAX	0x40
+#endif
+
+/*
  * Pre-ksize ABI floors for the csfu UNDERSIZE bucket.  The kernel
  * accepts a sched_setattr call whose sa->size matches any prior ABI
  * version and zero-pads the remainder.  build_csfu_struct() draws
@@ -57,15 +75,21 @@ static void sanitise_sched_setattr(struct syscallrecord *rec)
 	sa->size = buf.usize;
 
 	/*
-	 * Non-EXACT buckets only care about size -- OVERSIZE_NONZERO and
-	 * TAIL_MISMATCH get rejected by the validator before any body
-	 * field is inspected, and UNDERSIZE / OVERSIZE_ZERO get a
-	 * zero-filled body that the per-policy logic below would just
-	 * overwrite with throwaway values.  Skip the structured fill on
-	 * those paths; the zmalloc_tracked() buffer is already zeroed.
+	 * Body fill runs across ALL csfu buckets, not just EXACT.  The
+	 * kernel-side EINVAL gates (sched_copy_attr size/-E2BIG, then
+	 * (int)sched_policy < 0, then ~SCHED_FLAG_ALL inside
+	 * __sched_setscheduler) reject every call whose prefix carries an
+	 * out-of-range policy or unknown flag bit, regardless of how the
+	 * size word and tail bytes are shaped.  Restricting the structured
+	 * policy/param fill to EXACT meant UNDERSIZE and OVERSIZE_ZERO --
+	 * which both have valid sizes the kernel accepts -- shipped a
+	 * permanent zero-body (policy=0, all zeros), so 20% of the bucket
+	 * mix only ever exercised SCHED_NORMAL with default params and
+	 * never the FIFO/RR/BATCH/IDLE/DEADLINE setscheduler paths.
+	 * OVERSIZE_NONZERO and TAIL_MISMATCH still get -E2BIG'd by the
+	 * tail-zero check independent of body content, so the body fill is
+	 * harmless on those paths.
 	 */
-	if (buf.bucket != CSFU_BUCKET_EXACT)
-		goto submit;
 
 	roll = rnd_modulo_u32(100);
 
@@ -146,6 +170,30 @@ static void sanitise_sched_setattr(struct syscallrecord *rec)
 		sa->sched_deadline = rnd_u64();
 		sa->sched_period   = rnd_u64();
 		sa->sched_flags    = rnd_u64();
+		goto submit;
+	}
+
+	/*
+	 * sched_flags fuzz, scoped to the valid / one-field-invalid paths
+	 * (the fully-random arm above already splatted its own rnd_u64()).
+	 * __sched_setscheduler rejects unknown bits with EINVAL via the
+	 * (~SCHED_FLAG_ALL) mask, so bias toward an always-safe subset:
+	 * RESET_ON_FORK costs nothing per-policy, RECLAIM is only honoured
+	 * for SCHED_DEADLINE but the gate doesn't reject it elsewhere.
+	 * UTIL_CLAMP_MIN/MAX additionally require buf.usize >= VER1 at
+	 * sched_copy_attr time, so gate them on the csfu-picked size.  A
+	 * small unknown-bit roll keeps the reject path warm.
+	 */
+	if (rnd_modulo_u32(100) < 85) {
+		if (RAND_BOOL())
+			sa->sched_flags |= SCHED_FLAG_RESET_ON_FORK;
+		if (sa->sched_policy == SCHED_DEADLINE && RAND_BOOL())
+			sa->sched_flags |= SCHED_FLAG_RECLAIM;
+		if (buf.usize >= SCHED_ATTR_SIZE_VER1 && ONE_IN(8))
+			sa->sched_flags |= SCHED_FLAG_UTIL_CLAMP_MIN |
+					   SCHED_FLAG_UTIL_CLAMP_MAX;
+	} else {
+		sa->sched_flags |= (1ULL << (rnd_modulo_u32(56) + 8));
 	}
 
 submit:
