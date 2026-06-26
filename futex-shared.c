@@ -53,11 +53,11 @@ static void create_shared_futex_pool(void)
 	head = get_objhead(OBJ_GLOBAL, OBJ_FUTEX_SHARED);
 	head->dump = dump_shared_futex;
 
-	shared_futex_words = alloc_shared(NR_SHARED_FUTEX_WORDS * sizeof(uint32_t));
+	shared_futex_words = alloc_shared_pool(NR_SHARED_FUTEX_WORDS * sizeof(uint32_t));
 	if (shared_futex_words == NULL)
-		return;	/* alloc_shared logs its own failure */
+		return;	/* alloc_shared_pool logs its own failure */
 
-	/* alloc_shared poisons the mapping with random bytes to expose
+	/* alloc_shared_pool poisons the mapping with random bytes to expose
 	 * uninitialised reads; zero every slot so each starts at the
 	 * canonical "unlocked, unowned" value for both regular and PI
 	 * futex ops.  Without this, FUTEX_WAIT hits EAGAIN and PI ops
