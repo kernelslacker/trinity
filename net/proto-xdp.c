@@ -8,7 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <linux/if_xdp.h>
+#include "kernel/if_xdp.h"
 #include "net.h"
 #include "random.h"
 #include "socket-family-grammar.h"
@@ -19,38 +19,6 @@
 
 #ifndef SOL_XDP
 #define SOL_XDP 283
-#endif
-
-#ifndef XDP_UMEM_REG
-#define XDP_UMEM_REG		4
-#endif
-#ifndef XDP_UMEM_FILL_RING
-#define XDP_UMEM_FILL_RING	5
-#endif
-#ifndef XDP_UMEM_COMPLETION_RING
-#define XDP_UMEM_COMPLETION_RING 6
-#endif
-#ifndef XDP_STATISTICS
-#define XDP_STATISTICS		7
-#endif
-#ifndef XDP_OPTIONS
-#define XDP_OPTIONS		8
-#endif
-
-#ifndef XDP_MMAP_OFFSETS
-#define XDP_MMAP_OFFSETS	1
-#endif
-#ifndef XDP_PGOFF_RX_RING
-#define XDP_PGOFF_RX_RING			  0
-#endif
-#ifndef XDP_PGOFF_TX_RING
-#define XDP_PGOFF_TX_RING		 0x80000000
-#endif
-#ifndef XDP_UMEM_PGOFF_FILL_RING
-#define XDP_UMEM_PGOFF_FILL_RING	0x100000000ULL
-#endif
-#ifndef XDP_UMEM_PGOFF_COMPLETION_RING
-#define XDP_UMEM_PGOFF_COMPLETION_RING	0x180000000ULL
 #endif
 
 #define XDP_UMEM_SIZE	(4096 * 64)
