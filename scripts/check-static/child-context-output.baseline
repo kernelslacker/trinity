@@ -255,7 +255,7 @@ syscalls/sched_get_priority_max.c:74:post_sched_get_priority_max
 syscalls/sched_get_priority_min.c:74:post_sched_get_priority_min
 syscalls/sched_getscheduler.c:55:post_sched_getscheduler
 syscalls/sched_getscheduler.c:66:post_sched_getscheduler
-syscalls/sched_rr_get_interval.c:140:post_sched_rr_get_interval
+syscalls/sched_rr_get_interval.c:139:post_sched_rr_get_interval
 syscalls/sched_yield.c:35:post_sched_yield
 syscalls/seccomp.c:216:post_seccomp
 syscalls/seccomp.c:241:post_seccomp
