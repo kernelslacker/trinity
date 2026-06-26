@@ -74,6 +74,7 @@
 #endif
 
 #define NETDEVSIM_NEW_DEVICE	"/sys/bus/netdevsim/new_device"
+#define NETDEVSIM_DEL_DEVICE	"/sys/bus/netdevsim/del_device"
 #define VFB_OUTER_BASE		6U
 #define VFB_OUTER_CAP		32U
 #define VFB_STORM_BUDGET_NS	200000000L
@@ -108,6 +109,8 @@ struct rtnl_vf_iter_ctx {
 	struct childdata *child;
 	struct nl_ctx nl;
 	int port_ifindex;
+	__u32 bus_id;
+	bool bus_id_owned;
 };
 
 static bool sysfs_write_str(const char *path, const char *val)
@@ -146,40 +149,36 @@ static int resolve_port_ifindex(__u32 bus_id)
 /*
  * Build the netdevsim topology inside the already-entered private
  * netns (userns_run_in_ns() has already done the CLONE_NEWNET unshare
- * inside the grandchild before calling the in-ns callback).  All
- * resources -- the netdevsim port, its sriov VFs and the netlink fd --
- * are scoped to ctx and to the grandchild's netns; the grandchild's
- * _exit() reaps them.
+ * inside the grandchild before calling the in-ns callback).  The
+ * netdev port lives in the grandchild's netns and is reaped on
+ * _exit(); the platform device on /sys/bus/netdevsim is host-global
+ * and MUST be explicitly del_device'd in the teardown path (the bus
+ * is not netns-scoped, so namespace exit alone leaks it -- and the
+ * 14-bit bus_id space saturates fast under per-iteration creation).
  */
 static bool do_setup(struct rtnl_vf_iter_ctx *ctx)
 {
-	struct stat st;
 	char path[128];
 	char payload[32];
-	__u32 bus_id;
 	struct nl_open_opts opts = {
 		.proto = NETLINK_ROUTE,
 		.recv_timeo_s = 1,
 	};
 
-	if (stat(NETDEVSIM_NEW_DEVICE, &st) < 0)
-		return false;
-	if (access(NETDEVSIM_NEW_DEVICE, W_OK) < 0)
-		return false;
-
-	bus_id = rand32() & 0x3fffU;	/* 14-bit bus id avoids collisions */
-	snprintf(payload, sizeof(payload), "%u 1", (unsigned int)bus_id);
+	ctx->bus_id = rand32() & 0x3fffU;	/* 14-bit bus id avoids collisions */
+	snprintf(payload, sizeof(payload), "%u 1", (unsigned int)ctx->bus_id);
 	if (!sysfs_write_str(NETDEVSIM_NEW_DEVICE, payload))
 		return false;
+	ctx->bus_id_owned = true;
 
 	snprintf(path, sizeof(path),
 		 "/sys/bus/netdevsim/devices/netdevsim%u/sriov_numvfs",
-		 (unsigned int)bus_id);
+		 (unsigned int)ctx->bus_id);
 	snprintf(payload, sizeof(payload), "%u", VFB_NUM_VFS);
 	if (!sysfs_write_str(path, payload))
 		return false;
 
-	ctx->port_ifindex = resolve_port_ifindex(bus_id);
+	ctx->port_ifindex = resolve_port_ifindex(ctx->bus_id);
 	if (ctx->port_ifindex <= 0)
 		return false;
 
@@ -189,6 +188,27 @@ static bool do_setup(struct rtnl_vf_iter_ctx *ctx)
 	__atomic_add_fetch(&shm->stats.rtnl_vf_broadcast_setup_ok, 1,
 			   __ATOMIC_RELAXED);
 	return true;
+}
+
+/*
+ * Release host-global netdevsim platform-device state acquired by
+ * do_setup().  The netdev port and its VFs die with the netns on
+ * grandchild _exit(), but the platform device on /sys/bus/netdevsim
+ * persists across namespace teardown and must be removed explicitly
+ * via /sys/bus/netdevsim/del_device.  Safe to call on any setup
+ * exit path -- ctx->bus_id_owned is the latch.
+ */
+static void do_teardown(struct rtnl_vf_iter_ctx *ctx)
+{
+	char payload[32];
+
+	nl_close(&ctx->nl);
+
+	if (!ctx->bus_id_owned)
+		return;
+	snprintf(payload, sizeof(payload), "%u", (unsigned int)ctx->bus_id);
+	(void)sysfs_write_str(NETDEVSIM_DEL_DEVICE, payload);
+	ctx->bus_id_owned = false;
 }
 
 /*
@@ -246,7 +266,7 @@ static int rtnl_vf_broadcast_in_ns(void *arg)
 	if (!do_setup(ctx)) {
 		__atomic_add_fetch(&shm->stats.rtnl_vf_broadcast_setup_failed,
 				   1, __ATOMIC_RELAXED);
-		nl_close(&ctx->nl);
+		do_teardown(ctx);
 		return 0;
 	}
 
@@ -273,17 +293,20 @@ static int rtnl_vf_broadcast_in_ns(void *arg)
 					   1, __ATOMIC_RELAXED);
 	}
 
-	nl_close(&ctx->nl);
+	do_teardown(ctx);
 	return 0;
 }
 
 bool rtnl_vf_broadcast_getlink(struct childdata *child)
 {
 	struct rtnl_vf_iter_ctx ctx = {
-		.child        = child,
-		.nl           = { .fd = -1 },
-		.port_ifindex = 0,
+		.child         = child,
+		.nl            = { .fd = -1 },
+		.port_ifindex  = 0,
+		.bus_id        = 0,
+		.bus_id_owned  = false,
 	};
+	struct stat st;
 	int rc;
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op latch slot.  The field lives in shared memory and
@@ -299,6 +322,22 @@ bool rtnl_vf_broadcast_getlink(struct childdata *child)
 
 	if (ns_unsupported_rtnl_vf_broadcast)
 		return true;
+
+	/* Parent-side fork-elision check.  When /sys/bus/netdevsim is
+	 * absent or unwritable the grandchild's do_setup() can only
+	 * fail; the in-ns callback's return value is discarded by
+	 * userns_run_in_ns() so we would otherwise pay one userns +
+	 * netns refork per invocation just to re-discover the same
+	 * absent path.  Skip without latching: on CONFIG_NETDEVSIM=m
+	 * the module can be loaded mid-run (e.g. by another op's
+	 * modprobe path), and a permanent latch here would lose this
+	 * op's coverage for the rest of the child's lifetime. */
+	if (stat(NETDEVSIM_NEW_DEVICE, &st) < 0 ||
+	    access(NETDEVSIM_NEW_DEVICE, W_OK) < 0) {
+		__atomic_add_fetch(&shm->stats.rtnl_vf_broadcast_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return true;
+	}
 
 	rc = userns_run_in_ns(CLONE_NEWNET, rtnl_vf_broadcast_in_ns, &ctx);
 	if (rc == -EPERM) {
