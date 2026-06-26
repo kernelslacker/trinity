@@ -2226,6 +2226,19 @@ static const struct stat_category memory_pressure_category =
 	              memory_pressure_runs,
 	              memory_pressure_fields);
 
+static const struct stat_field numa_migration_fields[] = {
+	STAT_FIELD(numa_migration, runs),
+	STAT_FIELD(numa_migration, calls),
+	STAT_FIELD(numa_migration, failed),
+	STAT_FIELD(numa_migration, no_numa),
+	STAT_FIELD(numa_migration, sysfs_unreadable),
+};
+
+static const struct stat_category numa_migration_category =
+	STAT_CATEGORY("numa_migration",
+	              numa_migration_runs,
+	              numa_migration_fields);
+
 static const struct stat_field genetlink_fuzzer_fields[] = {
 	STAT_FIELD(genetlink, families_discovered),
 	STAT_FIELD(genetlink, msgs_sent),
@@ -2328,6 +2341,8 @@ static void dump_stats_json_basic_subsystems(void)
 	stat_category_emit_json(&vfs_writes_category);
 	putchar(',');
 	stat_category_emit_json(&memory_pressure_category);
+	putchar(',');
+	stat_category_emit_json(&numa_migration_category);
 	putchar(',');
 	stat_category_emit_json(&genetlink_fuzzer_category);
 	putchar(',');
