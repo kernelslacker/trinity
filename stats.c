@@ -2066,6 +2066,25 @@ static const struct stat_category errno_gradient_category =
 	              errno_gradient_crossings,
 	              errno_gradient_fields);
 
+/* cold_overflow: SHADOW measurement of would-save events that fall on the
+ * cold-or-corpus-absent tail under a CMP_RISING_PC_FLAT plateau (no
+ * fuzzer-behaviour change -- see the cold_overflow_would_save_* block
+ * in include/stats.h for the predicate and the SHADOW contract).
+ * Aggregate scalars only.  Text render gates on cold_overflow_would_
+ * save so a run that never observed a qualifying event emits nothing
+ * in the text dump; JSON renders unconditionally for schema stability,
+ * matching the errno_gradient sibling above. */
+static const struct stat_field cold_overflow_fields[] = {
+	STAT_FIELD(cold_overflow, would_save),
+	STAT_FIELD(cold_overflow, would_save_cold),
+	STAT_FIELD(cold_overflow, would_save_absent),
+};
+
+static const struct stat_category cold_overflow_category =
+	STAT_CATEGORY("cold_overflow",
+	              cold_overflow_would_save,
+	              cold_overflow_fields);
+
 /* inplace_crypto_mutated: the inplace-crypto oracle childop overwrites a
  * plaintext slot mid-flight to catch handlers that read after the kernel
  * has copied; the per-mutation bump is the only positive signal that the
@@ -2434,6 +2453,8 @@ static void dump_stats_json_iouring_and_zombies(void)
 	stat_category_emit_json(&aio_category);
 	putchar(',');
 	stat_category_emit_json(&errno_gradient_category);
+	putchar(',');
+	stat_category_emit_json(&cold_overflow_category);
 	putchar(',');
 	stat_category_emit_json(&inplace_crypto_category);
 	putchar(',');
@@ -9281,6 +9302,8 @@ static void dump_stats_fuzzer_subsystems(void)
 	stat_category_emit_text(&aio_category);
 
 	stat_category_emit_text(&errno_gradient_category);
+
+	stat_category_emit_text(&cold_overflow_category);
 
 	stat_category_emit_text(&inplace_crypto_category);
 

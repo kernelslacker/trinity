@@ -2490,6 +2490,66 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 			minicorpus_save_with_reason(rec,
 				new_edges ? CORPUS_SAVE_REASON_PC
 					  : CORPUS_SAVE_REASON_CMP);
+
+		/* SHADOW cold-overflow would-save accounting.  Pure
+		 * measurement -- the existing save call above is byte-
+		 * identical to the pre-row baseline, and no admission /
+		 * scoring / picking / corpus path consumes any of the
+		 * counters bumped here.  See the cold_overflow_would_
+		 * save_* block in include/stats.h for the predicate
+		 * composition and the SHADOW contract.
+		 *
+		 * Mirrors the existing save gate (entry->sanitise == NULL)
+		 * so the population matches the population the live save
+		 * lane would admit -- a sanitise-bearing syscall is
+		 * deliberately excluded by both lanes for the same
+		 * reason (the pointer args may be stale at replay time).
+		 *
+		 * Gates, in cheapest-first order so the hot found_something
+		 * arm short-circuits before touching the plateau /
+		 * minicorpus loads on the dominant new_edges-only,
+		 * non-plateau, in-corpus path:
+		 *
+		 *   entry->sanitise == NULL    -- match the live save lane
+		 *   new_cmp > 0                -- nonzero CMP signal
+		 *   rec->nr < MAX_NR_SYSCALL   -- bound the array index
+		 *   plateau == CMP_RISING_PC_FLAT
+		 *   cold OR corpus-absent      -- the overflow-tail
+		 *                                 predicate
+		 *
+		 * RELAXED throughout: the per-nr ring count read is
+		 * paired with the ACQUIRE-release publish inside
+		 * minicorpus_save_with_reason, but a stale-zero read here
+		 * just over-counts the absent subset by one peer-win
+		 * pick, and we tolerate that race rather than serialise
+		 * a shadow read against the live save path. */
+		if (entry->sanitise == NULL && new_cmp > 0 &&
+		    rec->nr < MAX_NR_SYSCALL &&
+		    __atomic_load_n(&shm->plateau_current_hypothesis,
+				    __ATOMIC_RELAXED) ==
+		    (int)PLATEAU_HYPOTHESIS_CMP_RISING_PC_FLAT) {
+			bool cold = kcov_syscall_cold_skip_pct(rec->nr) > 0;
+			bool absent = false;
+
+			if (minicorpus_shm != NULL)
+				absent = __atomic_load_n(
+					&minicorpus_shm->rings[rec->nr].count,
+					__ATOMIC_ACQUIRE) == 0;
+
+			if (cold || absent) {
+				__atomic_fetch_add(
+					&shm->stats.cold_overflow_would_save,
+					1UL, __ATOMIC_RELAXED);
+				if (cold)
+					__atomic_fetch_add(
+						&shm->stats.cold_overflow_would_save_cold,
+						1UL, __ATOMIC_RELAXED);
+				if (absent)
+					__atomic_fetch_add(
+						&shm->stats.cold_overflow_would_save_absent,
+						1UL, __ATOMIC_RELAXED);
+			}
+		}
 	}
 
 	/* PC-edge-only bookkeeping below.  Deliberately separate from the
