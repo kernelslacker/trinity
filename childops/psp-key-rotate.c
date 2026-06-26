@@ -24,8 +24,16 @@
  * Per BUDGETED + JITTER iteration (200 ms wall cap; per-syscall 100 ms
  * SO_RCVTIMEO/SO_SNDTIMEO):
  *
- *   1.  unshare CLONE_NEWNET.  Latches ns_unsupported_psp_key_rotate on
- *       EPERM and short-circuits subsequent invocations.
+ *   1.  userns_run_in_ns(CLONE_NEWNET) forks a transient grandchild
+ *       into an owned user namespace + private net namespace.  The
+ *       whole rest of the per-iteration sequence runs inside that
+ *       grandchild; its _exit() tears the namespaces (and any
+ *       netdevsim, sockets, genl/rtnl fds left behind) back down.
+ *       Helper -EPERM (hardened userns policy refused CLONE_NEWUSER)
+ *       latches ns_unsupported_psp_key_rotate_master and stops
+ *       retrying for the lifetime of the trinity child; transient
+ *       setup failure (-EAGAIN) bumps psp_key_rotate_setup_failed
+ *       and skips the iteration without latching.
  *   2.  rtnl RTM_NEWLINK to spawn a netdevsim instance (best-effort: if
  *       the kernel module is not loaded the request returns -ENODEV /
  *       -EOPNOTSUPP and the cap-gate latches on the first PSP family
@@ -115,6 +123,7 @@
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
+#include "userns-bootstrap.h"
 #include "pids.h"
 
 #include "kernel/psp.h"
@@ -176,7 +185,34 @@
 #define PKR_TIMEO_MS			100
 #define PKR_NL_RX_BUF			4096
 
+/* Per-grandchild gate.  Inherited as false at grandchild fork time
+ * and flipped on the first config-absent rejection (genl_open of the
+ * PSP family, PSP_CMD_DEV_GET, or initial KEY_ROTATE) seen inside
+ * iter_one_in_ns().  Dies with the grandchild on _exit(); each
+ * subsequent grandchild re-discovers the latch in its own fresh
+ * netns.  The detection arms are preserved because a fresh user
+ * namespace cannot manufacture an absent kernel CONFIG -- the gate
+ * still short-circuits the rest of the grandchild's iteration once
+ * it fires. */
 static bool ns_unsupported_psp_key_rotate;
+
+/* Master gate: persistent across iterations in the persistent child.
+ * Set when userns_run_in_ns returns -EPERM (hardened userns policy
+ * refused CLONE_NEWUSER -- typically user.max_user_namespaces=0 or
+ * kernel.unprivileged_userns_clone=0).  The per-grandchild gate
+ * above dies with the grandchild; helper-EPERM is the only signal
+ * that survives long enough to short-circuit subsequent
+ * invocations. */
+static bool ns_unsupported_psp_key_rotate_master;
+
+static void warn_once_unsupported_psp_key_rotate(const char *reason, int err)
+{
+	if (ns_unsupported_psp_key_rotate_master)
+		return;
+	ns_unsupported_psp_key_rotate_master = true;
+	outputerr("psp_key_rotate: %s failed (errno=%d), latching unsupported_psp_key_rotate\n",
+		  reason, err);
+}
 
 static void apply_timeouts(int s)
 {
@@ -811,25 +847,19 @@ static int psp_dev_get_probe(struct genl_ctx *ctx)
 	return genl_send_recv(ctx, buf, off);
 }
 
-/* unshare CLONE_NEWNET, open the rtnl socket, then issue a best-effort
- * RTM_NEWLINK to spawn a netdevsim instance.  Returns 0 on success or
- * -1 if the iteration should bail to iter_one's out: cleanup path.
- * The netdev create is best-effort: even on -ENODEV / -EOPNOTSUPP /
- * -EEXIST the subsequent PSP family probe still runs and the cap-gate
- * latches there if PSP isn't built in. */
+/* Open the rtnl socket inside the grandchild's private netns (set up
+ * by userns_run_in_ns() before this callback runs), then issue a
+ * best-effort RTM_NEWLINK to spawn a netdevsim instance.  Returns 0
+ * on success or -1 if the iteration should bail to iter_one_in_ns'
+ * out: cleanup path.  The netdev create is best-effort: even on
+ * -ENODEV / -EOPNOTSUPP / -EEXIST the subsequent PSP family probe
+ * still runs and the per-grandchild gate latches there if PSP isn't
+ * built in. */
 static int psp_key_rotate_iter_setup(struct nl_ctx *rtnl)
 {
 	struct nl_open_opts nlopts;
 	char ifname[IFNAMSIZ];
 	int rc;
-
-	if (unshare(CLONE_NEWNET) < 0) {
-		if (errno == EPERM)
-			ns_unsupported_psp_key_rotate = true;
-		__atomic_add_fetch(&shm->stats.psp_key_rotate_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		return -1;
-	}
 
 	memset(&nlopts, 0, sizeof(nlopts));
 	nlopts.proto         = NETLINK_ROUTE;
@@ -1013,9 +1043,32 @@ static void psp_key_rotate_iter_teardown(unsigned int iter_idx, int sockfd,
 	}
 }
 
-static void iter_one(unsigned int iter_idx, const struct timespec *t_outer,
-		     struct childdata *child)
+struct iter_one_ctx {
+	unsigned int iter_idx;
+	const struct timespec *t_outer;
+	struct childdata *child;
+};
+
+/*
+ * Per-invocation body that must run inside the private net namespace.
+ * Executed in a transient grandchild forked by userns_run_in_ns(); the
+ * grandchild's userns + netns are torn down on _exit() so the
+ * netdevsim instance, rtnl/genl sockets and TCP socket left behind
+ * are reaped along with the namespace.  Explicit close() and the
+ * randomised teardown order are still issued so the in-ns stats
+ * counters move on the success path; correctness does not depend on
+ * them.  Writes to ns_unsupported_psp_key_rotate happen in the
+ * grandchild's COW memory and die with the grandchild -- the
+ * re-discovery cost is paid per invocation.  shm->stats writes (incl.
+ * the childop_latch_reason store) propagate because shm is MAP_SHARED.
+ * Return value is ignored by the helper.
+ */
+static int iter_one_in_ns(void *arg)
 {
+	struct iter_one_ctx *ictx = (struct iter_one_ctx *)arg;
+	unsigned int iter_idx = ictx->iter_idx;
+	const struct timespec *t_outer = ictx->t_outer;
+	struct childdata *child = ictx->child;
 	struct nl_ctx rtnl = { .fd = -1 };
 	struct genl_ctx psp_ctx = { .nl = { .fd = -1 } };
 	int sockfd = -1;
@@ -1028,9 +1081,6 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer,
 	 * accounting on the same valid_op snapshot. */
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
-
-	if ((unsigned long long)ns_since(t_outer) >= PKR_WALL_CAP_NS)
-		return;
 
 	if (psp_key_rotate_iter_setup(&rtnl) != 0)
 		goto out;
@@ -1058,7 +1108,7 @@ static void iter_one(unsigned int iter_idx, const struct timespec *t_outer,
 		__atomic_store_n(&shm->stats.childop_latch_reason[op],
 				 CHILDOP_LATCH_NS_UNSUPPORTED,
 				 __ATOMIC_RELAXED);
-	return;
+	return 0;
 
 out:
 	if (sockfd >= 0)
@@ -1071,6 +1121,43 @@ out:
 		__atomic_store_n(&shm->stats.childop_latch_reason[op],
 				 CHILDOP_LATCH_NS_UNSUPPORTED,
 				 __ATOMIC_RELAXED);
+	return 0;
+}
+
+static void iter_one(unsigned int iter_idx, const struct timespec *t_outer,
+		     struct childdata *child)
+{
+	struct iter_one_ctx ictx = {
+		.iter_idx = iter_idx,
+		.t_outer  = t_outer,
+		.child    = child,
+	};
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+	int rc;
+
+	if ((unsigned long long)ns_since(t_outer) >= PKR_WALL_CAP_NS)
+		return;
+
+	rc = userns_run_in_ns(CLONE_NEWNET, iter_one_in_ns, &ictx);
+	if (rc == -EPERM) {
+		if (valid_op)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		warn_once_unsupported_psp_key_rotate(
+			"userns_run_in_ns(CLONE_NEWNET)", EPERM);
+		return;
+	}
+	if (rc < 0) {
+		/* Transient grandchild setup failure (fork, id-map write,
+		 * secondary unshare).  Skip this iteration without
+		 * latching -- the failure is not policy and may not
+		 * recur. */
+		__atomic_add_fetch(&shm->stats.psp_key_rotate_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return;
+	}
 }
 
 bool psp_key_rotate(struct childdata *child)
@@ -1081,7 +1168,7 @@ bool psp_key_rotate(struct childdata *child)
 	__atomic_add_fetch(&shm->stats.psp_key_rotate_runs,
 			   1, __ATOMIC_RELAXED);
 
-	if (ns_unsupported_psp_key_rotate) {
+	if (ns_unsupported_psp_key_rotate_master) {
 		__atomic_add_fetch(&shm->stats.psp_key_rotate_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		return true;
@@ -1109,7 +1196,7 @@ bool psp_key_rotate(struct childdata *child)
 		else
 			iter_one(i, &t_outer, child);
 
-		if (ns_unsupported_psp_key_rotate)
+		if (ns_unsupported_psp_key_rotate_master)
 			break;
 	}
 

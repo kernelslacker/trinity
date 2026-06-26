@@ -27,6 +27,7 @@ childops/nftables-churn.c:150:warn_once_unsupported_nftables
 childops/numa-migration-churn.c:176:parse_online_nodes
 childops/numa-migration-churn.c:184:parse_online_nodes
 childops/pagecache-canary-check.c:178:log_corruption
+childops/psp-key-rotate.c:213:warn_once_unsupported_psp_key_rotate
 childops/refcount-auditor.c:147:audit_fd_bucket
 childops/refcount-auditor.c:195:audit_mmap_bucket
 childops/refcount-auditor.c:480:audit_socket_bucket
