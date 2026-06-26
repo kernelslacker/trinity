@@ -6,7 +6,6 @@
  */
 #include <signal.h>
 #include <stdlib.h>
-#include <string.h>
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
