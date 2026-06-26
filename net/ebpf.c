@@ -11,7 +11,6 @@
  */
 #include <stdlib.h>
 #include <stdint.h>
-#include <string.h>
 #include <linux/bpf.h>
 
 #include "bpf.h"
