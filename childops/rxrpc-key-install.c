@@ -655,9 +655,25 @@ static void arm_xdr_rxgk(int32_t *ring, unsigned int iter)
 	level = (rnd_modulo_u32(4) == 0)
 			? (int64_t)(int32_t) rand32()
 			: (int64_t) rnd_modulo_u32(4) - 1;
-	enctype = (rnd_modulo_u32(4) == 0)
-			? (int64_t) -1 - (int64_t) rnd_modulo_u32(8)
-			: (int64_t)(17 + rnd_modulo_u32(4));
+	switch (rnd_modulo_u32(8)) {
+	case 0:
+		enctype = (int64_t) -1 - (int64_t) rnd_modulo_u32(8);
+		break;
+	case 1: {
+		/* Drive the `tmp > UINT_MAX` upper-reject edge in
+		 * rxrpc_preparse_xdr_yfs_rxgk: emit a value in
+		 * (UINT_MAX, INT64_MAX].  hi is in [1, 0x7FFFFFFF] so the
+		 * top bit stays clear -- otherwise the s64 cast goes
+		 * negative and we'd take the `tmp < 0` side instead. */
+		uint64_t hi = 1u + rnd_modulo_u32(0x7FFFFFFFu);
+		uint64_t lo = rnd_u32();
+		enctype = (int64_t)((hi << 32) | lo);
+		break;
+	}
+	default:
+		enctype = (int64_t)(17 + rnd_modulo_u32(4));
+		break;
+	}
 
 	keylen = (rnd_modulo_u32(8) == 0)
 			? (uint32_t)(70 + rnd_modulo_u32(64))
