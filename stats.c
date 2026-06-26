@@ -2859,6 +2859,18 @@ static const struct stat_category ipmr_cache_report_category =
 	              ipmr_cache_report_iters,
 	              ipmr_cache_report_fields);
 
+static const struct stat_field fdstress_fields[] = {
+	STAT_FIELD(fdstress, close_reopen),
+	STAT_FIELD(fdstress, dup2_replace),
+	STAT_FIELD(fdstress, type_confusion),
+	STAT_FIELD(fdstress, cloexec_toggle),
+};
+
+static const struct stat_category fdstress_category =
+	STAT_CATEGORY("fdstress",
+	              fdstress_close_reopen,
+	              fdstress_fields);
+
 static void dump_stats_json_netfilter_and_xfrm(void)
 {
 	stat_category_emit_json(&nftables_churn_category);
@@ -3320,6 +3332,9 @@ static void __cold dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&rtnl_vf_broadcast_getlink_category);
+
+	printf(",");
+	stat_category_emit_json(&fdstress_category);
 
 	dump_stats_json_iouring_zc_and_kvm();
 	dump_stats_json_rxrpc_alg_ublk_block();
@@ -10599,6 +10614,8 @@ static void __cold dump_stats_childop_runs_network(void)
 	stat_category_emit_text(&af_alg_weak_cipher_probe_category);
 
 	stat_category_emit_text(&sysfs_string_race_category);
+
+	stat_category_emit_text(&fdstress_category);
 
 	if (shm->stats.af_alg_probe_runs || shm->stats.af_alg_probe_unsupported) {
 		unsigned int tmpl;
