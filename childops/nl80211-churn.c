@@ -20,8 +20,14 @@
  * Per BUDGETED + JITTER iteration of the outer churn loop (200 ms wall
  * cap; SIGALRM(1s) inherited from child.c):
  *
- *   1. unshare CLONE_NEWNET (once per child).  Latches ns_unsupported_
- *      nl80211 on EPERM.
+ *   1. userns_run_in_ns(CLONE_NEWNET) forks a transient grandchild
+ *      into an owned user namespace + private net namespace.  The
+ *      whole rest of the sequence runs inside that grandchild; its
+ *      _exit() tears down both namespaces along with any iface,
+ *      socket, scan / connect state left behind.  Helper -EPERM
+ *      (hardened userns policy refused CLONE_NEWUSER) latches the
+ *      whole op off via ns_unsupported_nl80211_userns; transient
+ *      setup failure (-EAGAIN) skips the iteration without latching.
  *   2. genl_open("nl80211", ...) -- the shared childops-genl wrapper
  *      opens NETLINK_GENERIC, applies SO_RCVTIMEO, and resolves the
  *      nl80211 family id via CTRL_CMD_GETFAMILY.  -ENOENT latches the
@@ -140,6 +146,7 @@
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
+#include "userns-bootstrap.h"
 
 /* Outer churn-loop budget knobs (per spec). */
 #define NL80211_OUTER_BASE		5U
@@ -175,13 +182,37 @@
  * 64 == NL80211_OUTER_CAP, the worst case if every iter leaks. */
 #define NL80211_IFACE_RING_CAP		NL80211_OUTER_CAP
 
-/* Per-child latched gates.  Set on the first failure of the
- * corresponding subsystem and never cleared -- kernel module / config /
- * netns capability is static for the child's lifetime. */
+/* Per-grandchild latched gates.  Inherited as false at grandchild
+ * fork time (the persistent child never writes them -- the in-ns
+ * callback runs exclusively in transient grandchildren) and flipped
+ * on the first config-absent rejection from the corresponding probe.
+ * Die with the grandchild on _exit(); each subsequent grandchild
+ * re-discovers the latch in its own fresh netns.  The EPERM / ENOSYS
+ * / EOPNOTSUPP / ENOPROTOOPT / EAFNOSUPPORT / EPROTONOSUPPORT /
+ * ENODEV detection arms are preserved because a fresh user namespace
+ * cannot manufacture an absent kernel CONFIG -- the gate still
+ * short-circuits the rest of the grandchild's iteration once it
+ * fires. */
 static bool ns_unsupported_nl80211;
-static bool ns_unshared;
-static bool ns_setup_failed;
 static bool modprobe_tried_mac80211_hwsim;
+
+/* Master gate: persistent across iterations in the persistent child.
+ * Set when userns_run_in_ns returns -EPERM (hardened userns policy
+ * refused CLONE_NEWUSER -- typically user.max_user_namespaces=0 or
+ * kernel.unprivileged_userns_clone=0).  The per-grandchild gates
+ * above die with the grandchild; helper-EPERM is the only signal
+ * that survives long enough to short-circuit subsequent invocations. */
+static bool ns_unsupported_nl80211_userns;
+
+static void warn_once_unsupported_nl80211_userns(const char *reason, int err)
+{
+	if (ns_unsupported_nl80211_userns)
+		return;
+	ns_unsupported_nl80211_userns = true;
+	/* check-static: child-output-ok */
+	outputerr("nl80211_churn: %s failed (errno=%d), latching unsupported_nl80211_userns\n",
+		  reason, err);
+}
 
 /* Per-child scratch state.  Family id is resolved per-ctx by genl_open
  * now (was a cached static); only the first-wiphy lookup result needs
@@ -1178,49 +1209,40 @@ static void iter_one(struct genl_ctx *ctx, struct childdata *child,
 	nl80211_iter_teardown(ctx, ifindex);
 }
 
-bool nl80211_churn(struct childdata *child)
+struct nl80211_churn_in_ns_ctx {
+	struct childdata *child;
+	enum child_op_type op;
+	bool valid_op;
+};
+
+/*
+ * Per-invocation body that must run inside the private net namespace.
+ * Executed in a transient grandchild forked by userns_run_in_ns(); the
+ * grandchild's userns + netns are torn down on _exit() so any STATION
+ * iface, scan / connect state, genl socket and FTM PMSR slot left
+ * behind is reaped along with the namespace.  Explicit DEL_INTERFACE
+ * calls are still issued via cleanup_ifaces() so the in-ns stats
+ * counters (nl80211_iface_destroyed etc.) move on the success path;
+ * correctness does not depend on them.  Per-grandchild latches set
+ * inside this callback die with the grandchild and the per-grandchild
+ * gate above is re-discovered on the next invocation -- helper-EPERM
+ * in the wrapper is the only signal that survives across iterations.
+ * Return value is ignored by the helper.
+ */
+static int nl80211_churn_in_ns(void *arg)
 {
+	struct nl80211_churn_in_ns_ctx *cctx =
+		(struct nl80211_churn_in_ns_ctx *)arg;
+	struct childdata *child = cctx->child;
 	struct genl_ctx ctx;
 	struct genl_open_opts opts;
 	bool ctx_open = false;
 	struct timespec t_outer;
 	unsigned int outer_iters, i;
 	int rc;
-	/* Snapshot child->op_type once and bounds-check before indexing
-	 * the per-op stats arrays.  The field lives in shared memory and
-	 * can be scribbled by a poisoned-arena write from a sibling; the
-	 * child.c dispatch loop already gates its dispatch + alt-op
-	 * accounting on the same valid_op snapshot.  Skip the stats
-	 * writes entirely when the snapshot is out of range. */
-	const enum child_op_type op = child->op_type;
-	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
-
-	__atomic_add_fetch(&shm->stats.nl80211_runs, 1, __ATOMIC_RELAXED);
 
 	if (ns_unsupported_nl80211)
-		return true;
-
-	if (ns_setup_failed) {
-		__atomic_add_fetch(&shm->stats.nl80211_setup_failed,
-				   1, __ATOMIC_RELAXED);
-		return true;
-	}
-
-	if (!ns_unshared) {
-		if (unshare(CLONE_NEWNET) < 0) {
-			if (errno == EPERM)
-				ns_unsupported_nl80211 = true;
-			ns_setup_failed = true;
-			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
-						 CHILDOP_LATCH_INIT_FAILED,
-						 __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.nl80211_setup_failed,
-					   1, __ATOMIC_RELAXED);
-			return true;
-		}
-		ns_unshared = true;
-	}
+		return 0;
 
 	memset(&opts, 0, sizeof(opts));
 	opts.family_name  = NL80211_GENL_NAME;
@@ -1237,7 +1259,7 @@ bool nl80211_churn(struct childdata *child)
 			ns_unsupported_nl80211 = true;
 		__atomic_add_fetch(&shm->stats.nl80211_setup_failed,
 				   1, __ATOMIC_RELAXED);
-		return true;
+		return 0;
 	}
 	ctx_open = true;
 
@@ -1251,8 +1273,8 @@ bool nl80211_churn(struct childdata *child)
 		nl80211_phy0_cached = true;
 	}
 
-	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+	if (cctx->valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[cctx->op],
 				   1, __ATOMIC_RELAXED);
 
 	if (clock_gettime(CLOCK_MONOTONIC, &t_outer) < 0) {
@@ -1281,6 +1303,51 @@ bool nl80211_churn(struct childdata *child)
 out:
 	if (ctx_open)
 		genl_close(&ctx);
+	return 0;
+}
+
+bool nl80211_churn(struct childdata *child)
+{
+	struct nl80211_churn_in_ns_ctx cctx;
+	int rc;
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op latch slot.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the latch
+	 * store entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
+	__atomic_add_fetch(&shm->stats.nl80211_runs, 1, __ATOMIC_RELAXED);
+
+	if (ns_unsupported_nl80211_userns)
+		return true;
+
+	cctx.child    = child;
+	cctx.op       = op;
+	cctx.valid_op = valid_op;
+
+	rc = userns_run_in_ns(CLONE_NEWNET, nl80211_churn_in_ns, &cctx);
+	if (rc == -EPERM) {
+		if (valid_op)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		warn_once_unsupported_nl80211_userns("userns_run_in_ns(CLONE_NEWNET)",
+						     EPERM);
+		return true;
+	}
+	if (rc < 0) {
+		/* Transient grandchild setup failure (fork, id-map write,
+		 * secondary unshare).  Skip this iteration without
+		 * latching -- the failure is not policy and may not
+		 * recur. */
+		__atomic_add_fetch(&shm->stats.nl80211_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return true;
+	}
+
 	return true;
 }
 
