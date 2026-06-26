@@ -3,10 +3,21 @@
 	 struct timespec __user *, utimes, int, flags)
  */
 #include <fcntl.h>
+#include <stdio.h>
 #include <time.h>
+#include "pathnames.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
+#include "trinity.h"
+
+/*
+ * Mirrors the MAX_TESTFILES bound in fds/testfiles.c so we land inside
+ * the same trinity-testfile<N> inodes the rest of the fuzzer
+ * (xattr-family pins, flock-thrash, ...) touches; cross-process
+ * contention concentrates on the same set of real inodes.
+ */
+#define NR_TESTFILES 4
 
 /* From linux/stat.h - special nsec values for utimensat */
 #ifndef UTIME_NOW
@@ -68,6 +79,45 @@ static void sanitise_utimensat(struct syscallrecord *rec)
 {
 	struct timespec *ts;
 	unsigned int bucket;
+
+	/*
+	 * ARG_PATHNAME plumbed a random pathname into rec->a2, but the
+	 * random path is most often not a real file at all -- utimensat
+	 * returns ENOENT at the path walk before ever reaching the
+	 * timestamp-update path (notify_change, the per-fs inode_operations
+	 * ->setattr, the i_rwsem on a real inode).  Measured reach stayed
+	 * pinned at the path-walk reject arm even after the curated
+	 * timespec[2] bucket below was wired in, since the kernel never
+	 * gets past the lookup to consume those bytes.
+	 *
+	 * Half the draws now repoint a2 at one of the trinity-testfile<N>
+	 * absolute paths so the subsequent utimensat lands on a real
+	 * inode and the curated (UTIME_NOW / UTIME_OMIT / near-now / far
+	 * past/future / invalid-nsec) timespec pair actually reaches the
+	 * setattr path.  An absolute pathname makes dfd irrelevant -- the
+	 * kernel ignores rec->a1 when pathname is absolute -- so this
+	 * composes cleanly with whatever the ARG_FD draw left in a1 and
+	 * with the AT_SYMLINK_NOFOLLOW flag logic below; the planted
+	 * testfiles are regular files so AT_SYMLINK_NOFOLLOW is a no-op
+	 * on them.  The other half preserves rec->a2 exactly as the
+	 * generic draw left it so the ENOENT reject arm stays exercised.
+	 */
+	if (rnd_modulo_u32(2) == 0) {
+		char *path = (char *) rec->a2;
+
+		if (path != NULL) {
+			/*
+			 * Overwrite the ARG_PATHNAME buffer in place.
+			 * generate_pathname() zmallocs MAX_PATH_LEN
+			 * (4096) bytes, so the snprintf cap below cannot
+			 * overflow.
+			 */
+			snprintf(path, MAX_PATH_LEN,
+				 "%s/trinity-testfile%u",
+				 trinity_tmpdir_abs(),
+				 1 + rnd_modulo_u32(NR_TESTFILES));
+		}
+	}
 
 	/* flags: AT_SYMLINK_NOFOLLOW on ~30%, off otherwise. */
 	if (rnd_modulo_u32(10) < 3)
