@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(newfstat, unsigned int, fd, struct stat __user *, statbuf)
  */
-#include <string.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <unistd.h>
