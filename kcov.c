@@ -3370,6 +3370,16 @@ static unsigned long kcov_bitmap_edges_at_last_save = ULONG_MAX;
  * itself, not for an actual loss of set bits.
  */
 #define KCOV_BITMAP_PERSIST_TOL 128UL
+/*
+ * Persist-refusal is correct (it preserves prior on-disk state when the
+ * live bitmap recount has regressed below its set-once warm-load floor),
+ * but the underlying scribble does not heal on its own: every subsequent
+ * save attempt recounts, refuses, and loops.  A long-lived run can burn
+ * CPU for hours doing this.  Once we have refused this many times in a
+ * row, request a clean shutdown via EXIT_SHM_CORRUPTION so the main loop
+ * tears the run down instead of spinning forever.
+ */
+#define KCOV_BITMAP_PERSIST_REFUSAL_EXIT_CAP 1000UL
 static unsigned long kcov_bitmap_persist_refused_corrupt;
 
 /*
@@ -3577,6 +3587,23 @@ bool kcov_bitmap_save_file(const char *path)
 			       recount_edges, floor, edges_now,
 			       recount_distinct, distinct_floor,
 			       kcov_bitmap_persist_refused_corrupt);
+			if (kcov_bitmap_persist_refused_corrupt ==
+			    KCOV_BITMAP_PERSIST_REFUSAL_EXIT_CAP) {
+				output(0, "kcov-bitmap: %lu persist refusals -- bitmap corruption is not self-healing; requesting shutdown (EXIT_SHM_CORRUPTION)\n",
+				       kcov_bitmap_persist_refused_corrupt);
+				/* Don't clobber an exit already in progress
+				 * (e.g. SIGINT, a prior shm-corruption bail
+				 * from another check).  Race-tolerant: the
+				 * canonical pattern across the tree is a
+				 * RELAXED load+store guarded by the
+				 * STILL_RUNNING sentinel. */
+				if (__atomic_load_n(&shm->exit_reason,
+						    __ATOMIC_RELAXED) ==
+				    STILL_RUNNING)
+					__atomic_store_n(&shm->exit_reason,
+							 EXIT_SHM_CORRUPTION,
+							 __ATOMIC_RELAXED);
+			}
 			free(bucket_seen_blob);
 			free(diag_blob);
 			free(priors_blob);
