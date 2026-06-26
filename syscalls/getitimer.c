@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(getitimer, int, which, struct itimerval __user *, value)
  */
-#include <string.h>
 #include <sys/time.h>
 #include "sanitise.h"
 #include "shm.h"
