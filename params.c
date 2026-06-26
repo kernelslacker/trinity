@@ -6,7 +6,6 @@
 #include <getopt.h>
 #include <limits.h>
 #include <sys/resource.h>
-#include <sys/types.h>
 
 #include "bdevs.h"
 #include "child.h"
