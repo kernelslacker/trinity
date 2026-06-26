@@ -9,7 +9,6 @@
 #define MPOL_MF_MOVE_ALL (1<<2) /* Move every page to conform to mapping */
 
 #include <malloc.h>
-#include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/types.h>
