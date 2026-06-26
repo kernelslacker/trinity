@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(sched_rr_get_interval, pid_t, pid, struct timespec __user *, interval)
  */
-#include <string.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <time.h>
