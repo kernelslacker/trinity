@@ -2703,6 +2703,20 @@ static const struct stat_category xfrm_churn_category =
 	              xfrm_churn_runs,
 	              xfrm_churn_fields);
 
+static const struct stat_field sock_ulp_sockmap_layering_fields[] = {
+	STAT_FIELD(sock_ulp_sockmap_layering, runs),
+	STAT_FIELD(sock_ulp_sockmap_layering, setup_failed),
+	STAT_FIELD(sock_ulp_sockmap_layering, map_failed),
+	STAT_FIELD(sock_ulp_sockmap_layering, prog_failed),
+	STAT_FIELD(sock_ulp_sockmap_layering, attach_failed),
+	STAT_FIELD(sock_ulp_sockmap_layering, layered_ok),
+};
+
+static const struct stat_category sock_ulp_sockmap_layering_category =
+	STAT_CATEGORY("sock_ulp_sockmap_layering",
+	              sock_ulp_sockmap_layering_runs,
+	              sock_ulp_sockmap_layering_fields);
+
 static const struct stat_field sock_diag_walker_fields[] = {
 	STAT_FIELD(sock_diag_walker, runs),
 	STAT_FIELD(sock_diag_walker, setup_failed),
@@ -2787,6 +2801,8 @@ static void dump_stats_json_netfilter_and_xfrm(void)
 	stat_category_emit_json(&tc_mirred_blockcast_category);
 	putchar(',');
 	stat_category_emit_json(&xfrm_churn_category);
+	putchar(',');
+	stat_category_emit_json(&sock_ulp_sockmap_layering_category);
 	putchar(',');
 	stat_category_emit_json(&sock_diag_walker_category);
 	putchar(',');
