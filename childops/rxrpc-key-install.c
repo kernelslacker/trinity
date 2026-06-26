@@ -288,10 +288,15 @@ static uint32_t build_xdr_rxkad_inner(unsigned char *buf, size_t *off,
  * level, lifetime, bytelife, enctype) then opaque key<> then opaque
  * ticket<>.  Lengths are length-prefixed and 4-padded.  Caller picks
  * keylen / tktlen so we can deliberately overshoot on some iterations.
+ * Caller also picks endtime (s64 100ns-units) to cover the four
+ * branches of the expiry check at net/rxrpc/key.c:232-237: zero (skip
+ * the whole block), positive (rxrpc_s64_to_time64 -> nonneg ->
+ * prep->expiry update), negative (rxrpc_s64_to_time64 -> negative ->
+ * goto expired), and s64 extremes near INT64_MIN.
  */
 static void build_xdr_rxgk_inner(unsigned char *buf, size_t *off,
 				 uint32_t keylen, uint32_t tktlen,
-				 int64_t level, int64_t enctype)
+				 int64_t level, int64_t enctype, int64_t endtime)
 {
 	uint32_t kpad = (keylen + 3) & ~3U;
 	uint32_t tpad = (tktlen + 3) & ~3U;
@@ -299,8 +304,8 @@ static void build_xdr_rxgk_inner(unsigned char *buf, size_t *off,
 
 	append_be32(buf, off, (uint32_t) (rand32() & 0x7fffffff));	/* begintime hi */
 	append_be32(buf, off, (uint32_t) rand32());			/* begintime lo */
-	append_be32(buf, off, 0);					/* endtime hi (=0 -> no expiry check) */
-	append_be32(buf, off, 0);					/* endtime lo */
+	append_be32(buf, off, (uint32_t) ((uint64_t) endtime >> 32));	/* endtime hi */
+	append_be32(buf, off, (uint32_t) ((uint64_t) endtime));		/* endtime lo */
 	append_be32(buf, off, (uint32_t) ((uint64_t) level >> 32));
 	append_be32(buf, off, (uint32_t) ((uint64_t) level));
 	append_be32(buf, off, 0);					/* lifetime hi */
@@ -556,6 +561,64 @@ static void arm_xdr_rxkad(int32_t *ring, unsigned int iter)
 		ring_insert(ring, serial);
 }
 
+/*
+ * Pick an endtime (s64, 100ns units) for an XDR-RXGK token.  Four
+ * sub-arms exercise the four reachable paths through the
+ * key.c:232-237 expiry block:
+ *
+ *   (a) zero -- skip the whole block.  Kept on ~25% of iterations so
+ *       the old behaviour (and the success path through
+ *       memcpy+key-install) still gets exercised.
+ *   (b) far future positive -- rxrpc_s64_to_time64 yields a non-
+ *       negative time64_t; "expiry < prep->expiry" branch runs and
+ *       prep->expiry is updated.  ~25%.
+ *   (c) negative -- rxrpc_s64_to_time64 yields a negative time64_t
+ *       (sign preserved through the do_div'd absolute value) so the
+ *       "expiry < 0" check fires and we hit "goto expired".  Covers
+ *       both small negatives and a wide random negative.  ~37%.
+ *   (d) s64 extremes near INT64_MIN -- the function unconditionally
+ *       does tmp = -time_in_100ns on the s64 negative branch; for
+ *       INT64_MIN this is signed-overflow UB in C but the kernel
+ *       builds with -fno-strict-overflow and the result is still a
+ *       negative time64_t, so it still hits the expired branch.  This
+ *       arm is the one most likely to trip a UBSAN sanitiser.  ~13%.
+ *
+ * Time scale: 100ns ticks.  10000000 ticks = 1 second.  ~2030 epoch
+ * (1.9e9 sec) in 100ns is ~1.9e16 -- fits in s64 with plenty of room.
+ */
+static int64_t pick_xrxgk_endtime(void)
+{
+	switch (rnd_modulo_u32(8)) {
+	case 0:
+	case 1:
+		return 0;
+	case 2:
+	case 3:
+		/* Far-future positive: a sensible epoch plus jitter. */
+		return (int64_t) 19000000000000000LL
+			+ (int64_t) rnd_modulo_u32(1u << 24);
+	case 4:
+	case 5:
+		/* Small negative -- minimal-magnitude expired. */
+		return -(int64_t)(1 + rnd_modulo_u32(1u << 24));
+	case 6:
+		/* Wide random negative across the s64 range. */
+		return -(int64_t)((((uint64_t) rand32()) << 32)
+				  | (uint64_t) rand32());
+	default:
+		/* s64 extreme: INT64_MIN, INT64_MIN+1, or a near-min value. */
+		switch (rnd_modulo_u32(3)) {
+		case 0:
+			return INT64_MIN;
+		case 1:
+			return INT64_MIN + 1;
+		default:
+			return -(int64_t)((uint64_t) 1 << 62)
+				- (int64_t) rnd_modulo_u32(1u << 16);
+		}
+	}
+}
+
 static void arm_xdr_rxgk(int32_t *ring, unsigned int iter)
 {
 	unsigned char buf[1024];
@@ -564,7 +627,7 @@ static void arm_xdr_rxgk(int32_t *ring, unsigned int iter)
 	uint32_t cell_len = 4;
 	uint32_t keylen, tktlen;
 	uint32_t toklen;
-	int64_t level, enctype;
+	int64_t level, enctype, endtime;
 	char desc[64];
 	int32_t serial;
 
@@ -587,6 +650,8 @@ static void arm_xdr_rxgk(int32_t *ring, unsigned int iter)
 			? (uint32_t)(17000 + rnd_modulo_u32(256))
 			: (uint32_t)(64 + rnd_modulo_u32(256));
 
+	endtime = pick_xrxgk_endtime();
+
 	toklen = 4 + 6 * 8 + 4 + ((keylen + 3) & ~3U)
 		 + 4 + ((tktlen + 3) & ~3U);
 
@@ -597,13 +662,23 @@ static void arm_xdr_rxgk(int32_t *ring, unsigned int iter)
 	if ((size_t)(6 * 8 + 8 + ((keylen + 3) & ~3U)
 		     + ((tktlen + 3) & ~3U)) > sizeof(buf) - inner_start)
 		tktlen = 16;
-	build_xdr_rxgk_inner(buf, &off, keylen, tktlen, level, enctype);
+	build_xdr_rxgk_inner(buf, &off, keylen, tktlen, level, enctype, endtime);
 
 	snprintf(desc, sizeof(desc), "trinity-rxrpc-xrxgk-%u-%u",
 		 (unsigned int) mypid(), iter);
 	serial = do_add_rxrpc(desc, buf, off);
-	if (serial != 0)
+	if (serial != 0) {
+		/* Penetration marker: only bumped when the kernel returned a
+		 * key serial, which means the XDR-RXGK token cleared every
+		 * length check, level/enctype validation, the expiry check,
+		 * and the kzalloc + memcpy(key) + memcpy(ticket) + key
+		 * install.  Without this we can't tell whether the arm is
+		 * just rattling the early length gates or actually fuzzing
+		 * the deep parser. */
+		__atomic_add_fetch(&shm->stats.rxrpc_key_install_xrxgk_accepted,
+				   1, __ATOMIC_RELAXED);
 		ring_insert(ring, serial);
+	}
 }
 
 static void arm_server_key(int32_t *ring, unsigned int iter __unused__)
