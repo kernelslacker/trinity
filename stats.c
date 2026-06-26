@@ -2046,6 +2046,21 @@ static const struct stat_category aio_category =
 	              aio_submitted,
 	              aio_fields);
 
+/* inplace_crypto_mutated: the inplace-crypto oracle childop overwrites a
+ * plaintext slot mid-flight to catch handlers that read after the kernel
+ * has copied; the per-mutation bump is the only positive signal that the
+ * oracle ran productively in a window.  A single-field category renders
+ * it in both JSON and text so a quiet "no mutations" window is
+ * distinguishable from a window where the childop never fired. */
+static const struct stat_field inplace_crypto_fields[] = {
+	STAT_FIELD(inplace_crypto, mutated),
+};
+
+static const struct stat_category inplace_crypto_category =
+	STAT_CATEGORY("inplace_crypto",
+	              inplace_crypto_mutated,
+	              inplace_crypto_fields);
+
 /* fd_runtime_skipped: handle_retval_obj_fd's post-success classify of an
  * fd retval against the per-child local-object table.  The two paths are
  * mutually exclusive per call and both increment from the same site, so a
@@ -2397,6 +2412,8 @@ static void dump_stats_json_iouring_and_zombies(void)
 	stat_category_emit_json(&iouring_eventfd_category);
 	putchar(',');
 	stat_category_emit_json(&aio_category);
+	putchar(',');
+	stat_category_emit_json(&inplace_crypto_category);
 	putchar(',');
 	stat_category_emit_json(&fd_runtime_skipped_category);
 	putchar(',');
@@ -9149,6 +9166,8 @@ static void dump_stats_fuzzer_subsystems(void)
 	}
 
 	stat_category_emit_text(&aio_category);
+
+	stat_category_emit_text(&inplace_crypto_category);
 
 	stat_category_emit_text(&fd_runtime_skipped_category);
 
