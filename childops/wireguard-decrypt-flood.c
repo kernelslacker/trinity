@@ -444,7 +444,22 @@ bool wireguard_decrypt_flood(struct childdata *child)
 		__atomic_add_fetch(&shm->stats.childop_data_path[op],
 				   1, __ATOMIC_RELAXED);
 	for (i = 0; i < WGDF_BURST_MAX; i++) {
-		size_t len = wgdf_build_data_pkt(pkt, sizeof(pkt));
+		size_t len;
+
+		/*
+		 * Poll the global shutdown gate per-iteration so a Ctrl-C
+		 * (shm->exit_reason flips away from STILL_RUNNING) drains
+		 * the burst within one sendto+gap instead of running the
+		 * full WGDF_BURST_MAX schedule.  Matches the main child
+		 * dispatch loop in child.c (while exit_reason ==
+		 * STILL_RUNNING).  No local fd/buffer to unwind: the UDP
+		 * socket is module-static and pkt is a stack buffer.
+		 */
+		if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) !=
+		    STILL_RUNNING)
+			break;
+
+		len = wgdf_build_data_pkt(pkt, sizeof(pkt));
 
 		if (sendto(g_wgdf_udp_fd, pkt, len, MSG_DONTWAIT,
 			   (struct sockaddr *)&dst, sizeof(dst)) > 0)
