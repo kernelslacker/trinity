@@ -2033,6 +2033,19 @@ static const struct stat_category iouring_eventfd_category =
 	              iouring_eventfd_register_ok,
 	              iouring_eventfd_fields);
 
+/* aio_submitted: iocbs the kernel accepted on io_submit's success branch
+ * (retval > 0 and within [0, nr]).  A single-field category sits next to
+ * its iouring siblings so a quiet success window is distinguishable from
+ * a quiet rejection window in both JSON and text dumps. */
+static const struct stat_field aio_fields[] = {
+	STAT_FIELD(aio, submitted),
+};
+
+static const struct stat_category aio_category =
+	STAT_CATEGORY("aio",
+	              aio_submitted,
+	              aio_fields);
+
 /* zombie_slots mixes two struct prefixes (zombie_slots_ for the gauge,
  * zombies_ for the counters); each STAT_FIELD picks its own prefix so the
  * JSON keys stay flat ("pending", "reaped", "timed_out"). */
@@ -2365,6 +2378,8 @@ static void dump_stats_json_iouring_and_zombies(void)
 	stat_category_emit_json(&iouring_recipes_category);
 	putchar(',');
 	stat_category_emit_json(&iouring_eventfd_category);
+	putchar(',');
+	stat_category_emit_json(&aio_category);
 	putchar(',');
 	stat_category_emit_json(&zombie_slots_category);
 	putchar(',');
@@ -9081,6 +9096,8 @@ static void dump_stats_fuzzer_subsystems(void)
 		stat_row("iouring_eventfd", "recursive_cqes",
 			 shm->stats.iouring_eventfd_recursive_cqes);
 	}
+
+	stat_category_emit_text(&aio_category);
 
 	if (shm->stats.zombies_reaped || shm->stats.zombies_timed_out ||
 	    shm->stats.zombie_slots_pending) {
