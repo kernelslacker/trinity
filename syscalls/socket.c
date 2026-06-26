@@ -3,7 +3,6 @@
  */
 #include <stdlib.h>
 #include <sys/socket.h>
-#include <netinet/in.h>
 #include <unistd.h>
 #ifdef USE_BLUETOOTH
 #include <bluetooth/bluetooth.h>
