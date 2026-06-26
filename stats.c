@@ -3981,6 +3981,21 @@ static const struct {
 	  offsetof(struct stats_s, frontier_decay_would_skip) },
 	{ "frontier_silent_decay_live_rejects",
 	  offsetof(struct stats_s, frontier_silent_decay_live_rejects) },
+	/* SHADOW-ONLY saturation-cooldown predicate accounting (gated by
+	 * --frontier-saturation-cooldown != off).  Sibling block of the
+	 * silent-streak decay scalars above; this one targets the same
+	 * wasteful-silent-pick shape but uses the windowed frontier-edge
+	 * ring for plateau and the first-success-TRANSITION + distinct-CMP
+	 * spare lanes for the struct-arg backlog.  See the struct-field
+	 * comment in include/stats.h for per-counter semantics. */
+	{ "frontier_satcool_candidates",
+	  offsetof(struct stats_s, frontier_satcool_candidates) },
+	{ "frontier_satcool_would_skip",
+	  offsetof(struct stats_s, frontier_satcool_would_skip) },
+	{ "frontier_satcool_spared_arggen",
+	  offsetof(struct stats_s, frontier_satcool_spared_arggen) },
+	{ "frontier_satcool_spared_objproducer",
+	  offsetof(struct stats_s, frontier_satcool_spared_objproducer) },
 	/* SHADOW-ONLY LIVE-regime cooldown projections, paired with
 	 * frontier_live_miss_streak_per_syscall[].  Candidates is edge-
 	 * triggered at FRONTIER_LIVE_MISS_COOLDOWN crossings; would_skip is
@@ -10103,6 +10118,27 @@ static void dump_stats_strategy_summary(void)
 	if (shm->stats.frontier_silent_decay_live_rejects)
 		stat_row("strategy", "frontier_silent_decay_live_rejects",
 			 shm->stats.frontier_silent_decay_live_rejects);
+	/* SHADOW-ONLY saturation-cooldown counters.  Gated by
+	 * --frontier-saturation-cooldown != off; zero on default-off runs
+	 * so the rows stay suppressed by the if-non-zero guard.  Read the
+	 * (would_skip / candidates) ratio for the spare-lane catch rate and
+	 * the per-syscall frontier_satcool_would_skip_per_syscall[] top-N
+	 * (rendered via the existing per-syscall dump pipeline) to confirm
+	 * the demote mass concentrates on syncfs / sendfile / semget /
+	 * writev and is ~0 on removexattrat / futex / io_uring_setup / bpf
+	 * before tuning C_min or wiring the COMBINED reject. */
+	if (shm->stats.frontier_satcool_candidates)
+		stat_row("strategy", "frontier_satcool_candidates",
+			 shm->stats.frontier_satcool_candidates);
+	if (shm->stats.frontier_satcool_would_skip)
+		stat_row("strategy", "frontier_satcool_would_skip",
+			 shm->stats.frontier_satcool_would_skip);
+	if (shm->stats.frontier_satcool_spared_arggen)
+		stat_row("strategy", "frontier_satcool_spared_arggen",
+			 shm->stats.frontier_satcool_spared_arggen);
+	if (shm->stats.frontier_satcool_spared_objproducer)
+		stat_row("strategy", "frontier_satcool_spared_objproducer",
+			 shm->stats.frontier_satcool_spared_objproducer);
 	/* SHADOW-ONLY LIVE-regime cooldown projections.  Sibling block to
 	 * the silent-streak decay rows above: candidates is the distinct
 	 * cooldown-episode count (one bump per FRONTIER_LIVE_MISS_COOLDOWN

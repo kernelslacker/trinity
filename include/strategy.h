@@ -211,6 +211,76 @@ enum strategy_t {
 #define FRONTIER_ERRNO_PLATEAU_REJECT_DENOM 32U
 
 /*
+ * Saturation-cooldown predicate magnitude gate.  A syscall the picker
+ * has tried fewer than this many times across its accumulated lifetime
+ * counters is treated as still under-explored and is spared from the
+ * cooldown regardless of plateau / spare-lane outcomes -- many of the
+ * struct-arg sanitiser backlog (removexattrat / listxattrat / futex /
+ * fcntl) sits in the 1k..4k lifetime-call range and looks identical to
+ * a saturated-rich syscall on PC-edges alone; gating on magnitude
+ * keeps the cooldown from demoting them before arg-gen has had time
+ * to break through.
+ *
+ * 10000 is ~4x uniform on the surface this picker sees (~2500
+ * calls / syscall / run at default rates), which clears every observed
+ * struct-arg backlog member while sitting well below the saturated-
+ * rich set's per-run pick budget (syncfs / sendfile / semget / writev
+ * all measured at 10k+ calls in the run-1439 baseline).  Tunable from
+ * the SHADOW-ONLY frontier_satcool_would_skip_per_syscall[] readout
+ * once that runs.
+ */
+#define FRONTIER_SATCOOL_CMIN 10000UL
+
+/*
+ * Saturation-cooldown mode (--frontier-saturation-cooldown).  Gates
+ * the corrected per-syscall plateau-cooldown predicate the
+ * coverage-frontier picker's silent-regime accept site evaluates --
+ * a sibling of the existing silent-streak (frontier_decay_*) and
+ * errno-plateau (frontier_errno_decay_*) shadow predicates, with the
+ * predicate semantics fixed against the structural blind-spot the
+ * existing silent-streak decay has on syncfs-class syscalls (raw
+ * ERRNO_BUCKET_SUCCESS count is monotonic on a perpetually-succeeding
+ * syscall, so the existing UNLESS clause's errno-baseline equality
+ * test never trips and the streak never reaches the decay).
+ *
+ *   OFF          - default, byte-identical to today.  The silent-
+ *                  regime accept site skips the satcool predicate
+ *                  evaluation entirely; no shadow counters bump, no
+ *                  syscall-entry lookup runs, no reject path exists.
+ *   SHADOW_ONLY  - compute the corrected predicate in shadow inside
+ *                  the silent-regime accept block and bump the
+ *                  frontier_satcool_* counters.  Selection stays
+ *                  byte-identical -- no goto-retry branch is gated on
+ *                  the predicate.  Read the per-syscall would-skip
+ *                  array to confirm the demote mass concentrates on
+ *                  the saturated-rich set (syncfs / sendfile / semget
+ *                  / writev) and is ~0 on the struct-arg backlog
+ *                  (removexattrat / futex / io_uring_setup / bpf)
+ *                  before tuning C_min or promoting COMBINED.
+ *   COMBINED     - reserved.  The enum value exists so future commits
+ *                  that wire the live reject can land without
+ *                  renumbering the enum, but THIS COMMIT does NOT
+ *                  implement the live reject -- selecting combined
+ *                  today behaves identically to shadow-only (the
+ *                  predicate is computed and counters bump, no
+ *                  goto-retry fires).  Wiring the live reject is a
+ *                  separate follow-up after SHADOW_ONLY validates
+ *                  C_min and the spare lanes against a real run.
+ *
+ * Param-settable from --frontier-saturation-cooldown=off|shadow-only|
+ * combined; mirrors the kcov_transition_reward_mode shape so a reader
+ * familiar with that knob (and its SHADOW->COMBINED ramp) recognises
+ * the rollout discipline.
+ */
+enum frontier_saturation_cooldown_mode {
+	FRONTIER_SATURATION_COOLDOWN_MODE_OFF = 0,
+	FRONTIER_SATURATION_COOLDOWN_MODE_SHADOW_ONLY = 1,
+	FRONTIER_SATURATION_COOLDOWN_MODE_COMBINED = 2,
+};
+
+extern enum frontier_saturation_cooldown_mode frontier_saturation_cooldown_mode;
+
+/*
  * Errno-plateau decay predicate.  Returns true when syscall nr (under
  * the do32 arch table) matches the wasteful-silent-pick shape described
  * above the FRONTIER_ERRNO_PLATEAU_* constants.  Called from the
