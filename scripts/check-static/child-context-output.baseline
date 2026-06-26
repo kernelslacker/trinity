@@ -30,6 +30,7 @@ childops/refcount-auditor.c:147:audit_fd_bucket
 childops/refcount-auditor.c:195:audit_mmap_bucket
 childops/refcount-auditor.c:480:audit_socket_bucket
 childops/refcount-auditor.c:517:audit_socket_bucket
+childops/rtnl-vf-broadcast-getlink.c:96:warn_once_unsupported_rtnl_vf_broadcast
 childops/rxrpc-key-install.c:203:probe_rxrpc_key_supported
 childops/rxrpc-key-install.c:349:do_add_rxrpc
 childops/tc-qdisc-churn.c:243:warn_once_unsupported_tc_qdisc

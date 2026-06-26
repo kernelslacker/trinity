@@ -19,9 +19,11 @@
  * fake bus, so a private netns + one netdevsim port + a non-zero VF
  * count synthesises the bug-required topology with no PCI hardware.
  *
- * Per child (latched once on first invocation):
+ * Per invocation (runs inside a transient grandchild forked by
+ * userns_run_in_ns(CLONE_NEWNET); the grandchild's userns + netns are
+ * torn down on _exit() so any netdevsim port, VFs and sockets left
+ * behind are reaped along with the namespace):
  *   - Confirm /sys/bus/netdevsim/new_device is writable.
- *   - unshare(CLONE_NEWNET) into a private netns.
  *   - Write "<bus_id> 1" to new_device to spawn netdevsim<bus_id>
  *     with one port.
  *   - Write "<NUM_VFS>" to .../sriov_numvfs to instantiate VFs.
@@ -39,7 +41,7 @@
  *
  * Self-bounding: BUDGETED outer loop with 200 ms CLOCK_MONOTONIC
  * wall cap, recvmsg uses SO_RCVTIMEO=1s, and the netns + sriov_numvfs
- * are torn down by CLONE_NEWNET teardown on child exit.  Loopback
+ * are torn down by CLONE_NEWNET teardown on grandchild exit.  Loopback
  * only - netdevsim has no path off-host.
  */
 
@@ -65,6 +67,7 @@
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
+#include "userns-bootstrap.h"
 
 #ifndef RTEXT_FILTER_VF
 #define RTEXT_FILTER_VF		(1U << 0)
@@ -76,11 +79,36 @@
 #define VFB_STORM_BUDGET_NS	200000000L
 #define VFB_NUM_VFS		3U	/* 2..4 sweet-spot per spec */
 
+/* Master gate: persistent across iterations in the persistent fuzz
+ * child.  Set when userns_run_in_ns() returns -EPERM (hardened userns
+ * policy refused CLONE_NEWUSER -- typically user.max_user_namespaces=0
+ * or kernel.unprivileged_userns_clone=0) so subsequent invocations
+ * short-circuit instead of forking another doomed grandchild. */
 static bool ns_unsupported_rtnl_vf_broadcast;
-static bool ns_setup_done;
-static bool ns_setup_failed_latched;
-static struct nl_ctx g_nl = { .fd = -1 };
-static int g_port_ifindex;
+
+static void warn_once_unsupported_rtnl_vf_broadcast(int err)
+{
+	static bool warned;
+
+	if (warned)
+		return;
+	warned = true;
+	outputerr("rtnl_vf_broadcast_getlink: userns_run_in_ns(CLONE_NEWNET) failed (errno=%d), latching ns_unsupported_rtnl_vf_broadcast\n",
+		  err);
+}
+
+/*
+ * Per-grandchild iteration state.  Lives on the grandchild's stack and
+ * dies when the grandchild _exit()s after the in-ns callback returns;
+ * no cross-iteration caching is possible because the netns (and the
+ * netdevsim port + VFs + netlink socket inside it) is recreated on
+ * every call.
+ */
+struct rtnl_vf_iter_ctx {
+	struct childdata *child;
+	struct nl_ctx nl;
+	int port_ifindex;
+};
 
 static bool sysfs_write_str(const char *path, const char *val)
 {
@@ -115,19 +143,28 @@ static int resolve_port_ifindex(__u32 bus_id)
 	return 0;
 }
 
-static bool do_setup(void)
+/*
+ * Build the netdevsim topology inside the already-entered private
+ * netns (userns_run_in_ns() has already done the CLONE_NEWNET unshare
+ * inside the grandchild before calling the in-ns callback).  All
+ * resources -- the netdevsim port, its sriov VFs and the netlink fd --
+ * are scoped to ctx and to the grandchild's netns; the grandchild's
+ * _exit() reaps them.
+ */
+static bool do_setup(struct rtnl_vf_iter_ctx *ctx)
 {
 	struct stat st;
 	char path[128];
 	char payload[32];
 	__u32 bus_id;
+	struct nl_open_opts opts = {
+		.proto = NETLINK_ROUTE,
+		.recv_timeo_s = 1,
+	};
 
 	if (stat(NETDEVSIM_NEW_DEVICE, &st) < 0)
 		return false;
 	if (access(NETDEVSIM_NEW_DEVICE, W_OK) < 0)
-		return false;
-
-	if (unshare(CLONE_NEWNET) < 0)
 		return false;
 
 	bus_id = rand32() & 0x3fffU;	/* 14-bit bus id avoids collisions */
@@ -142,19 +179,12 @@ static bool do_setup(void)
 	if (!sysfs_write_str(path, payload))
 		return false;
 
-	g_port_ifindex = resolve_port_ifindex(bus_id);
-	if (g_port_ifindex <= 0)
+	ctx->port_ifindex = resolve_port_ifindex(bus_id);
+	if (ctx->port_ifindex <= 0)
 		return false;
 
-	{
-		struct nl_open_opts opts = {
-			.proto = NETLINK_ROUTE,
-			.recv_timeo_s = 1,
-		};
-
-		if (nl_open(&g_nl, &opts) < 0)
-			return false;
-	}
+	if (nl_open(&ctx->nl, &opts) < 0)
+		return false;
 
 	__atomic_add_fetch(&shm->stats.rtnl_vf_broadcast_setup_ok, 1,
 			   __ATOMIC_RELAXED);
@@ -162,11 +192,11 @@ static bool do_setup(void)
 }
 
 /*
- * Build RTM_GETLINK targeted at g_port_ifindex with IFLA_EXT_MASK =
- * RTEXT_FILTER_VF, then drain the multipart response.  We only need
+ * Build RTM_GETLINK targeted at ctx->port_ifindex with IFLA_EXT_MASK
+ * = RTEXT_FILTER_VF, then drain the multipart response.  We only need
  * to know the dump walker ran; the leak is on the kernel WRITE side.
  */
-static bool issue_getlink_with_vf_filter(struct nl_ctx *ctx)
+static bool issue_getlink_with_vf_filter(struct rtnl_vf_iter_ctx *ctx)
 {
 	unsigned char buf[256];
 	struct nlmsghdr *nlh = (struct nlmsghdr *)buf;
@@ -176,10 +206,10 @@ static bool issue_getlink_with_vf_filter(struct nl_ctx *ctx)
 	memset(buf, 0, sizeof(buf));
 	nlh->nlmsg_type  = RTM_GETLINK;
 	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
-	nlh->nlmsg_seq   = nl_seq_next(ctx);
+	nlh->nlmsg_seq   = nl_seq_next(&ctx->nl);
 	ifi = (struct ifinfomsg *)NLMSG_DATA(nlh);
 	ifi->ifi_family = AF_UNSPEC;
-	ifi->ifi_index  = g_port_ifindex;
+	ifi->ifi_index  = ctx->port_ifindex;
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ifi));
 	off = nla_put_u32(buf, off, sizeof(buf), IFLA_EXT_MASK,
 			  RTEXT_FILTER_VF);
@@ -187,20 +217,24 @@ static bool issue_getlink_with_vf_filter(struct nl_ctx *ctx)
 		return false;
 	nlh->nlmsg_len = (__u32)off;
 
-	return nl_send_recv_dump(ctx, buf, off) == 0;
+	return nl_send_recv_dump(&ctx->nl, buf, off) == 0;
 }
 
-bool rtnl_vf_broadcast_getlink(struct childdata *child)
+/*
+ * Per-invocation body that runs inside the grandchild's private
+ * netns.  userns_run_in_ns() has already entered the netns; this
+ * callback builds the netdevsim topology, drives the GETLINK storm
+ * and tears down the netlink fd.  Any partially-built state on a
+ * setup-failure path is reaped by the grandchild's _exit().  Return
+ * value is ignored by the helper -- per-op stats counters carry the
+ * outcome.
+ */
+static int rtnl_vf_broadcast_in_ns(void *arg)
 {
+	struct rtnl_vf_iter_ctx *ctx = (struct rtnl_vf_iter_ctx *)arg;
+	struct childdata *child = ctx->child;
 	struct timespec t0;
 	unsigned int iters, i;
-
-	__atomic_add_fetch(&shm->stats.rtnl_vf_broadcast_runs, 1,
-			   __ATOMIC_RELAXED);
-
-	if (ns_unsupported_rtnl_vf_broadcast)
-		return true;
-
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
 	 * can be scribbled by a poisoned-arena write from a sibling; the
@@ -209,19 +243,11 @@ bool rtnl_vf_broadcast_getlink(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
-	if (!ns_setup_done) {
-		if (ns_setup_failed_latched || !do_setup()) {
-			ns_setup_failed_latched = true;
-			ns_unsupported_rtnl_vf_broadcast = true;
-			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
-						 CHILDOP_LATCH_NS_UNSUPPORTED,
-						 __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.rtnl_vf_broadcast_setup_failed,
-					   1, __ATOMIC_RELAXED);
-			return true;
-		}
-		ns_setup_done = true;
+	if (!do_setup(ctx)) {
+		__atomic_add_fetch(&shm->stats.rtnl_vf_broadcast_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		nl_close(&ctx->nl);
+		return 0;
 	}
 
 	iters = BUDGETED(CHILD_OP_RTNL_VF_BROADCAST_GETLINK,
@@ -242,9 +268,56 @@ bool rtnl_vf_broadcast_getlink(struct childdata *child)
 			break;
 		if (!ONE_IN(8))
 			continue;
-		if (issue_getlink_with_vf_filter(&g_nl))
+		if (issue_getlink_with_vf_filter(ctx))
 			__atomic_add_fetch(&shm->stats.rtnl_vf_broadcast_getlink_ok,
 					   1, __ATOMIC_RELAXED);
+	}
+
+	nl_close(&ctx->nl);
+	return 0;
+}
+
+bool rtnl_vf_broadcast_getlink(struct childdata *child)
+{
+	struct rtnl_vf_iter_ctx ctx = {
+		.child        = child,
+		.nl           = { .fd = -1 },
+		.port_ifindex = 0,
+	};
+	int rc;
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op latch slot.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the latch
+	 * store entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
+	__atomic_add_fetch(&shm->stats.rtnl_vf_broadcast_runs, 1,
+			   __ATOMIC_RELAXED);
+
+	if (ns_unsupported_rtnl_vf_broadcast)
+		return true;
+
+	rc = userns_run_in_ns(CLONE_NEWNET, rtnl_vf_broadcast_in_ns, &ctx);
+	if (rc == -EPERM) {
+		ns_unsupported_rtnl_vf_broadcast = true;
+		if (valid_op)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		warn_once_unsupported_rtnl_vf_broadcast(EPERM);
+		return true;
+	}
+	if (rc < 0) {
+		/* Transient grandchild setup failure (fork, id-map write,
+		 * secondary unshare).  Skip this iteration without
+		 * latching -- the failure is not policy and may not
+		 * recur. */
+		__atomic_add_fetch(&shm->stats.rtnl_vf_broadcast_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return true;
 	}
 
 	return true;
