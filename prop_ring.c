@@ -16,7 +16,6 @@
 #include <limits.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <string.h>
 
 #include "child.h"
 #include "kcov.h"
