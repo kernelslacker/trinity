@@ -2486,18 +2486,22 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	 * CMP-promoted entries; PC wins the tag on calls where both
 	 * signals fire so the historical accounting is preserved. */
 	if (unlikely(found_something)) {
-		if (entry->sanitise == NULL)
-			minicorpus_save_with_reason(rec,
-				new_edges ? CORPUS_SAVE_REASON_PC
-					  : CORPUS_SAVE_REASON_CMP);
-
 		/* SHADOW cold-overflow would-save accounting.  Pure
-		 * measurement -- the existing save call above is byte-
+		 * measurement -- the existing save call below is byte-
 		 * identical to the pre-row baseline, and no admission /
 		 * scoring / picking / corpus path consumes any of the
 		 * counters bumped here.  See the cold_overflow_would_
 		 * save_* block in include/stats.h for the predicate
 		 * composition and the SHADOW contract.
+		 *
+		 * MUST run BEFORE minicorpus_save_with_reason() below:
+		 * the live save publishes a new entry into
+		 * rings[rec->nr] and bumps its count from 0 to 1, which
+		 * would race the "absent" snapshot to always-false for
+		 * the headline first-admission case (the very event the
+		 * absent subset is meant to capture).  Reading the count
+		 * here, pre-save, pins absent to the pre-decision state
+		 * the overflow lane would see.
 		 *
 		 * Mirrors the existing save gate (entry->sanitise == NULL)
 		 * so the population matches the population the live save
@@ -2517,12 +2521,14 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 		 *   cold OR corpus-absent      -- the overflow-tail
 		 *                                 predicate
 		 *
-		 * RELAXED throughout: the per-nr ring count read is
-		 * paired with the ACQUIRE-release publish inside
-		 * minicorpus_save_with_reason, but a stale-zero read here
-		 * just over-counts the absent subset by one peer-win
-		 * pick, and we tolerate that race rather than serialise
-		 * a shadow read against the live save path. */
+		 * RELAXED on the bumps; ACQUIRE on the per-nr ring count
+		 * read so it pairs with the publishing release inside
+		 * minicorpus_save_with_reason on the peer side.  A peer
+		 * winning the first admission between our load and the
+		 * local save below still leaves our local view at zero
+		 * (we read first), so the over-count window collapses to
+		 * the parent-thread-only ordering enforced by this
+		 * "shadow-before-save" placement. */
 		if (entry->sanitise == NULL && new_cmp > 0 &&
 		    rec->nr < MAX_NR_SYSCALL &&
 		    __atomic_load_n(&shm->plateau_current_hypothesis,
@@ -2550,6 +2556,11 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 						1UL, __ATOMIC_RELAXED);
 			}
 		}
+
+		if (entry->sanitise == NULL)
+			minicorpus_save_with_reason(rec,
+				new_edges ? CORPUS_SAVE_REASON_PC
+					  : CORPUS_SAVE_REASON_CMP);
 	}
 
 	/* PC-edge-only bookkeeping below.  Deliberately separate from the
