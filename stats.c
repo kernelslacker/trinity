@@ -2760,6 +2760,19 @@ static const struct stat_category sock_diag_walker_category =
 	              sock_diag_walker_runs,
 	              sock_diag_walker_fields);
 
+static const struct stat_field altname_thrash_fields[] = {
+	STAT_FIELD(altname_thrash, invocations),
+	STAT_FIELD(altname_thrash, unshare_failed),
+	STAT_FIELD(altname_thrash, addprop_done),
+	STAT_FIELD(altname_thrash, delprop_done),
+	STAT_FIELD(altname_thrash, getlink_done),
+};
+
+static const struct stat_category altname_thrash_category =
+	STAT_CATEGORY("altname_thrash",
+	              altname_thrash_invocations,
+	              altname_thrash_fields);
+
 static const struct stat_field sctp_assoc_churn_fields[] = {
 	STAT_FIELD(sctp_assoc_churn, runs),
 	STAT_FIELD(sctp_assoc_churn, setup_failed),
@@ -2835,6 +2848,8 @@ static void dump_stats_json_netfilter_and_xfrm(void)
 	stat_category_emit_json(&sock_ulp_sockmap_layering_category);
 	putchar(',');
 	stat_category_emit_json(&sock_diag_walker_category);
+	putchar(',');
+	stat_category_emit_json(&altname_thrash_category);
 	putchar(',');
 	stat_category_emit_json(&sctp_assoc_churn_category);
 	putchar(',');
@@ -10242,6 +10257,8 @@ static void __cold dump_stats_childop_runs_network(void)
 		stat_row("xfrm_churn", "compat_sends_failed", shm->stats.xfrm_compat_sends_failed);
 		stat_row("xfrm_churn", "compat_replies_seen", shm->stats.xfrm_compat_replies_seen);
 	}
+
+	stat_category_emit_text(&altname_thrash_category);
 
 	stat_category_emit_text(&ublk_lifecycle_category);
 
