@@ -16,10 +16,15 @@
  * fuzzing assembles that set ~never.
  *
  * Sequence (per invocation):
- *   1. unshare(CLONE_NEWNET) once per child into a private net
- *      namespace so no host SAD / SPD entry is touched.  Failure
- *      latches the whole op off.
- *   2. Bring lo up inside the netns (one-time).  IPsec on lo with
+ *   1. userns_run_in_ns(CLONE_NEWNET) forks a transient grandchild
+ *      into an owned user namespace + private net namespace.  The
+ *      whole rest of the sequence runs inside that grandchild; its
+ *      _exit() tears down both namespaces along with any SA, SP,
+ *      bundle cache entry and socket left behind, so no host SAD /
+ *      SPD entry is touched.  Helper -EPERM (hardened userns policy
+ *      refused CLONE_NEWUSER) latches the whole op off; transient
+ *      setup failure (-EAGAIN) skips the iteration without latching.
+ *   2. Bring lo up inside the netns (per-grandchild one-time).  IPsec on lo with
  *      transport- or tunnel-mode SAs gives us a self-contained data
  *      plane that drives xfrm_lookup_with_ifid -> esp_output without
  *      needing any routes beyond the kernel's automatic 127.0.0.0/8
@@ -93,6 +98,7 @@
  */
 
 #include "xfrm-churn-internal.h"
+#include "userns-bootstrap.h"
 
 #define XFRM_RECV_TIMEO_S	1
 
@@ -128,23 +134,48 @@ static const struct xfrm_algo_def xfrm_algos[] = {
 };
 #define NR_XFRM_ALGOS	ARRAY_SIZE(xfrm_algos)
 
-/* Per-child latched gates.  Set on the first failure of the
- * corresponding subsystem and never cleared — kernel module / config
- * presence is static for the child's lifetime, so we pay the EFAIL
- * once and skip the path on subsequent invocations. */
+/* Per-grandchild latched gates.  Inherited as false at grandchild
+ * fork time (the persistent child never writes them -- the in-ns
+ * callback runs exclusively in transient grandchildren) and flipped
+ * on the first config-absent rejection from the corresponding
+ * subsystem.  Die with the grandchild on _exit(); each subsequent
+ * grandchild re-discovers the latch in its own fresh netns.  The
+ * EPROTONOSUPPORT / EAFNOSUPPORT detection arms are preserved
+ * because a fresh user namespace cannot manufacture an absent kernel
+ * CONFIG -- the gate still short-circuits the rest of the
+ * grandchild's iteration once it fires. */
 static bool ns_unsupported_xfrm;
 static bool ns_unsupported_inet;
 static bool ns_unsupported_pfkey;
 
 /* Per-algo latches: indexed by xfrm_algos[].  Set on first NEWSA
  * rejection with EOPNOTSUPP / EAFNOSUPPORT / ENOENT — the next
- * iteration skips that algo in the rotation. */
+ * iteration skips that algo in the rotation.  Per-grandchild like
+ * the gates above; modprobe_tried_algo[] is therefore re-armed in
+ * each fresh grandchild and each algo's modname pays at most one
+ * try_modprobe() per grandchild. */
 static bool ns_unsupported_algo[NR_XFRM_ALGOS];
 static bool modprobe_tried_algo[NR_XFRM_ALGOS];
 
-static bool ns_unshared;
-static bool ns_setup_failed;
 static bool lo_brought_up;
+
+/* Master gate: persistent across iterations in the persistent child.
+ * Set when userns_run_in_ns returns -EPERM (hardened userns policy
+ * refused CLONE_NEWUSER -- typically user.max_user_namespaces=0 or
+ * kernel.unprivileged_userns_clone=0).  The per-grandchild gates
+ * above die with the grandchild; helper-EPERM is the only signal
+ * that survives long enough to short-circuit subsequent invocations. */
+static bool ns_unsupported_xfrm_churn;
+
+static void warn_once_unsupported_xfrm_churn(const char *reason, int err)
+{
+	if (ns_unsupported_xfrm_churn)
+		return;
+	ns_unsupported_xfrm_churn = true;
+	/* check-static: child-output-ok */
+	outputerr("xfrm_churn: %s failed (errno=%d), latching unsupported_xfrm_churn\n",
+		  reason, err);
+}
 
 /*
  * Per-child latch for iptfs-mode SA support.  CONFIG_XFRM_IPTFS is
@@ -806,12 +837,14 @@ struct xfrm_churn_iter_ctx {
 };
 
 /*
- * Phase: per-child netns + netlink_xfrm setup.  Unshares CLONE_NEWNET
- * the first time through, brings lo up once inside the netns, and
- * opens NETLINK_XFRM.  Latches ns_setup_failed / ns_unsupported_xfrm
- * on the respective failure modes so the rest of the child's lifetime
+ * Phase: bring lo up and open NETLINK_XFRM inside the grandchild's
+ * private netns.  The netns itself is set up by userns_run_in_ns()
+ * before the in-ns callback runs, so this helper only has to bring
+ * lo up (per-grandchild one-time) and open the netlink_xfrm fd.
+ * Latches ns_unsupported_xfrm on the EPROTONOSUPPORT / EAFNOSUPPORT
+ * CONFIG_XFRM-absent shape so the rest of the grandchild's iteration
  * pays the EFAIL once.  Returns 0 on success; -1 means caller should
- * return true without entering the goto-out cleanup.
+ * return without entering the goto-out cleanup.
  */
 static int xfrm_churn_iter_setup_netns(struct xfrm_churn_iter_ctx *ctx)
 {
@@ -828,20 +861,6 @@ static int xfrm_churn_iter_setup_netns(struct xfrm_churn_iter_ctx *ctx)
 	 * latch store entirely when the snapshot is out of range. */
 	const enum child_op_type op = ctx->child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
-
-	if (!ns_unshared) {
-		if (unshare(CLONE_NEWNET) < 0) {
-			ns_setup_failed = true;
-			if (valid_op)
-				__atomic_store_n(&shm->stats.childop_latch_reason[op],
-						 CHILDOP_LATCH_INIT_FAILED,
-						 __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.xfrm_churn_setup_failed,
-					   1, __ATOMIC_RELAXED);
-			return -1;
-		}
-		ns_unshared = true;
-	}
 
 	if (!lo_brought_up) {
 		struct nl_ctx rtnl = { .fd = -1 };
@@ -1156,37 +1175,24 @@ static void xfrm_churn_iter_teardown_sa(struct xfrm_churn_iter_ctx *ctx)
 		xfrm_compat_msg_sweep(&ctx->nl);
 }
 
-bool xfrm_churn(struct childdata *child)
+/*
+ * Per-invocation body that must run inside the private net namespace.
+ * Executed in a transient grandchild forked by userns_run_in_ns(); the
+ * grandchild's userns + netns are torn down on _exit() so any SA, SP,
+ * bundle-cache entry, dummy / veth link and socket left behind is
+ * reaped along with the namespace.  Explicit DELSA / DELPOLICY /
+ * close() calls are still issued so the in-ns stats counters
+ * (xfrm_churn_sa_deleted etc.) move on the success path; correctness
+ * does not depend on them.  Per-grandchild latches set inside this
+ * callback die with the grandchild and the per-grandchild gates above
+ * are re-discovered on the next invocation -- helper-EPERM in the
+ * wrapper is the only signal that survives across iterations.  Return
+ * value is ignored by the helper.
+ */
+static int xfrm_churn_in_ns(void *arg)
 {
-	struct xfrm_churn_iter_ctx ctx = {
-		.nl    = { .fd = -1 },
-		.udp   = -1,
-		.child = child,
-	};
-
-	__atomic_add_fetch(&shm->stats.xfrm_churn_runs, 1, __ATOMIC_RELAXED);
-
-	if (ns_setup_failed || ns_unsupported_xfrm)
-		return true;
-
-	/*
-	 * Burn-this-netns mode: rare branch that races cleanup_net's
-	 * xfrm_state_flush against in-flight byseq/byspi readers
-	 * (Phase 1 reader paths populate the chains).  Bug class fixed
-	 * by upstream 14acf9652e56.  Self-contained sub-netns + setns
-	 * back to anchor; if launched, the rest of xfrm_churn is
-	 * skipped this iteration to avoid running the normal flow on
-	 * the just-burned ns.
-	 */
-	if (ONE_IN(XFRM_BURN_GATE_DENOM) && xfrm_burn_netns())
-		return true;
-
-	if (xfrm_churn_iter_setup_netns(&ctx) != 0)
-		return true;
-
-	if (xfrm_churn_iter_install_sa(&ctx) != 0)
-		goto out;
-
+	struct xfrm_churn_iter_ctx *ctx = (struct xfrm_churn_iter_ctx *)arg;
+	struct childdata *child = ctx->child;
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
 	 * can be scribbled by a poisoned-arena write from a sibling; the
@@ -1196,24 +1202,94 @@ bool xfrm_churn(struct childdata *child)
 	const enum child_op_type op = child->op_type;
 	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
+	if (ns_unsupported_xfrm)
+		return 0;
+
+	/*
+	 * Burn-this-netns mode: rare branch that races cleanup_net's
+	 * xfrm_state_flush against in-flight byseq/byspi readers
+	 * (Phase 1 reader paths populate the chains).  Bug class fixed
+	 * by upstream 14acf9652e56.  Self-contained sub-netns + setns
+	 * back to anchor (the anchor here is the grandchild's own netns,
+	 * not the persistent child's host netns); if launched, the rest
+	 * of xfrm_churn_in_ns is skipped this invocation to avoid
+	 * running the normal flow on the just-burned ns.  The
+	 * grandchild's _exit() afterwards still tears down its outer
+	 * netns, so cleanup_net runs once for the inner sub-netns at
+	 * setns-back and again for the grandchild's netns at exit.
+	 */
+	if (ONE_IN(XFRM_BURN_GATE_DENOM) && xfrm_burn_netns())
+		return 0;
+
+	if (xfrm_churn_iter_setup_netns(ctx) != 0)
+		return 0;
+
+	if (xfrm_churn_iter_install_sa(ctx) != 0)
+		goto out;
+
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
-	xfrm_churn_iter_setup_udp(&ctx);
+	xfrm_churn_iter_setup_udp(ctx);
 
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop_data_path[op],
 				   1, __ATOMIC_RELAXED);
-	xfrm_churn_iter_drive_burst(&ctx);
-	xfrm_churn_iter_rekey(&ctx);
-	xfrm_churn_iter_drive_burst(&ctx);
-	xfrm_churn_iter_teardown_sa(&ctx);
+	xfrm_churn_iter_drive_burst(ctx);
+	xfrm_churn_iter_rekey(ctx);
+	xfrm_churn_iter_drive_burst(ctx);
+	xfrm_churn_iter_teardown_sa(ctx);
 
 out:
-	if (ctx.udp >= 0)
-		close(ctx.udp);
-	nl_close(&ctx.nl);
+	if (ctx->udp >= 0)
+		close(ctx->udp);
+	nl_close(&ctx->nl);
+
+	return 0;
+}
+
+bool xfrm_churn(struct childdata *child)
+{
+	struct xfrm_churn_iter_ctx ctx = {
+		.nl    = { .fd = -1 },
+		.udp   = -1,
+		.child = child,
+	};
+	int rc;
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op latch slot.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot.  Skip the latch
+	 * store entirely when the snapshot is out of range. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
+
+	__atomic_add_fetch(&shm->stats.xfrm_churn_runs, 1, __ATOMIC_RELAXED);
+
+	if (ns_unsupported_xfrm_churn)
+		return true;
+
+	rc = userns_run_in_ns(CLONE_NEWNET, xfrm_churn_in_ns, &ctx);
+	if (rc == -EPERM) {
+		if (valid_op)
+			__atomic_store_n(&shm->stats.childop_latch_reason[op],
+					 CHILDOP_LATCH_NS_UNSUPPORTED,
+					 __ATOMIC_RELAXED);
+		warn_once_unsupported_xfrm_churn("userns_run_in_ns(CLONE_NEWNET)",
+						 EPERM);
+		return true;
+	}
+	if (rc < 0) {
+		/* Transient grandchild setup failure (fork, id-map write,
+		 * secondary unshare).  Skip this iteration without
+		 * latching -- the failure is not policy and may not
+		 * recur. */
+		__atomic_add_fetch(&shm->stats.xfrm_churn_setup_failed,
+				   1, __ATOMIC_RELAXED);
+		return true;
+	}
 
 	return true;
 }
