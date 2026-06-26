@@ -4,7 +4,6 @@
  * On success, zero is returned.
  * On error, an error number is returned.
  */
-#include <fcntl.h>
 #include <sys/stat.h>
 #include "arch.h"
 #include "files.h"
