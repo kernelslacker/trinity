@@ -4,7 +4,6 @@
  * On success, zero is returned.
  * On error, -1 is returned, and errno is set appropriately.
  */
-#include <string.h>
 #include <sys/statfs.h>
 #include <sys/syscall.h>
 #include <unistd.h>
