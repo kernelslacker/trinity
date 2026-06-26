@@ -2707,16 +2707,36 @@ static const struct stat_field xfrm_churn_fields[] = {
 	STAT_FIELD(xfrm_churn, burn_runs),
 	STAT_FIELD(xfrm_churn, burn_throttled),
 	STAT_FIELD(xfrm_churn, burn_completed),
-	STAT_FIELD(xfrm, ah_esn_setup_ok),
-	STAT_FIELD(xfrm, ah_esn_setup_fail),
-	STAT_FIELD(xfrm, ah_esn_async_runs),
-	STAT_FIELD(xfrm, ah_esn_delsa_races),
 };
 
 static const struct stat_category xfrm_churn_category =
 	STAT_CATEGORY("xfrm_churn",
 	              xfrm_churn_runs,
 	              xfrm_churn_fields);
+
+static const struct stat_field xfrm_ah_esn_fields[] = {
+	STAT_FIELD(xfrm_ah_esn, setup_ok),
+	STAT_FIELD(xfrm_ah_esn, setup_fail),
+	STAT_FIELD(xfrm_ah_esn, async_runs),
+	STAT_FIELD(xfrm_ah_esn, delsa_races),
+};
+
+static const struct stat_category xfrm_ah_esn_category =
+	STAT_CATEGORY("xfrm_ah_esn",
+	              xfrm_ah_esn_async_runs,
+	              xfrm_ah_esn_fields);
+
+static const struct stat_field xfrm_compat_fields[] = {
+	STAT_FIELD(xfrm_compat, sweep_runs),
+	STAT_FIELD(xfrm_compat, sends_ok),
+	STAT_FIELD(xfrm_compat, sends_failed),
+	STAT_FIELD(xfrm_compat, replies_seen),
+};
+
+static const struct stat_category xfrm_compat_category =
+	STAT_CATEGORY("xfrm_compat",
+	              xfrm_compat_sweep_runs,
+	              xfrm_compat_fields);
 
 static const struct stat_field sysfs_string_race_fields[] = {
 	STAT_FIELD(sysfs_string_race, runs),
@@ -2880,6 +2900,10 @@ static void dump_stats_json_netfilter_and_xfrm(void)
 	stat_category_emit_json(&tc_mirred_blockcast_category);
 	putchar(',');
 	stat_category_emit_json(&xfrm_churn_category);
+	putchar(',');
+	stat_category_emit_json(&xfrm_ah_esn_category);
+	putchar(',');
+	stat_category_emit_json(&xfrm_compat_category);
 	putchar(',');
 	stat_category_emit_json(&sysfs_string_race_category);
 	putchar(',');
