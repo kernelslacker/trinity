@@ -2635,6 +2635,59 @@ static void account_pc_edge_only(struct childdata *child,
 	}
 }
 
+/* Per-strategy transition-reward attribution.  Independent of the
+ * new_edges gate above: a call can flip transition slots (a new
+ * ordering between two PCs) without flipping any new bucket bit
+ * -- the canonical "transition fires on warm-known PCs through a
+ * new route" case is exactly the signal the operator wants
+ * separated from the PC-edge stream.  The kcov_collect path
+ * already filters pcres.transition_edges_real_local on
+ * !kc->remote_mode and on kcov_transition_reward_mode != OFF
+ * (see the result-population branch in kcov_collect), so a
+ * non-zero value here means a local-mode call earned a reward-
+ * eligible transition delta.
+ *
+ * Explorer-pool calls are skipped for the same reason PC-edge
+ * attribution skips them above: explorers always run STRATEGY_
+ * RANDOM, so crediting the active bandit arm here would either
+ * inflate a non-RANDOM arm's reward (when the bandit picked
+ * something else) or double-count when both pools picked RANDOM.
+ *
+ * The raw transition count is capped at TRANSITION_PER_CALL_
+ * REWARD_CAP before being added to transition_edge_count_by_
+ * strategy[] so a single pathological trace (e.g. a syscall that
+ * opens a brand-new control-flow region and flips thousands of
+ * transition slots in one call) cannot monopolize the per-window
+ * delta the bandit reads as reward.  The uncapped real-flip
+ * counter per_syscall_transition_edges_real keeps reporting the
+ * full magnitude for the stats-dump top-N; the cap only applies
+ * to the reward-attribution path. */
+static void account_transition_reward(struct childdata *child,
+				      struct syscallrecord *rec,
+				      const struct kcov_pc_result *pcres)
+{
+	int strat;
+	unsigned long capped;
+
+	if (pcres->transition_edges_real_local == 0 ||
+	    child->is_explorer || rec->nr >= MAX_NR_SYSCALL)
+		return;
+
+	strat = child->strategy_at_pick;
+	if (strat < 0 || strat >= NR_STRATEGIES)
+		return;
+
+	capped = pcres->transition_edges_real_local;
+	if (capped > TRANSITION_PER_CALL_REWARD_CAP)
+		capped = TRANSITION_PER_CALL_REWARD_CAP;
+	__atomic_fetch_add(
+		&shm->stats.transition_edge_calls_by_strategy[strat],
+		1UL, __ATOMIC_RELAXED);
+	__atomic_fetch_add(
+		&shm->stats.transition_edge_count_by_strategy[strat],
+		capped, __ATOMIC_RELAXED);
+}
+
 static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 			  bool *found_new, unsigned long *new_cmp_out,
 			  unsigned long *new_transition_out)
@@ -2876,51 +2929,7 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 		account_pc_edge_only(child, rec, new_edge_count,
 				     rescue_cold_skip_pct_before);
 
-	/* Per-strategy transition-reward attribution.  Independent of the
-	 * new_edges gate above: a call can flip transition slots (a new
-	 * ordering between two PCs) without flipping any new bucket bit
-	 * -- the canonical "transition fires on warm-known PCs through a
-	 * new route" case is exactly the signal the operator wants
-	 * separated from the PC-edge stream.  The kcov_collect path
-	 * already filters pcres.transition_edges_real_local on
-	 * !kc->remote_mode and on kcov_transition_reward_mode != OFF
-	 * (see the result-population branch in kcov_collect), so a
-	 * non-zero value here means a local-mode call earned a reward-
-	 * eligible transition delta.
-	 *
-	 * Explorer-pool calls are skipped for the same reason PC-edge
-	 * attribution skips them above: explorers always run STRATEGY_
-	 * RANDOM, so crediting the active bandit arm here would either
-	 * inflate a non-RANDOM arm's reward (when the bandit picked
-	 * something else) or double-count when both pools picked RANDOM.
-	 *
-	 * The raw transition count is capped at TRANSITION_PER_CALL_
-	 * REWARD_CAP before being added to transition_edge_count_by_
-	 * strategy[] so a single pathological trace (e.g. a syscall that
-	 * opens a brand-new control-flow region and flips thousands of
-	 * transition slots in one call) cannot monopolize the per-window
-	 * delta the bandit reads as reward.  The uncapped real-flip
-	 * counter per_syscall_transition_edges_real keeps reporting the
-	 * full magnitude for the stats-dump top-N; the cap only applies
-	 * to the reward-attribution path. */
-	if (pcres.transition_edges_real_local > 0 &&
-	    !child->is_explorer && rec->nr < MAX_NR_SYSCALL) {
-		int strat = child->strategy_at_pick;
-
-		if (strat >= 0 && strat < NR_STRATEGIES) {
-			unsigned long capped =
-				pcres.transition_edges_real_local;
-
-			if (capped > TRANSITION_PER_CALL_REWARD_CAP)
-				capped = TRANSITION_PER_CALL_REWARD_CAP;
-			__atomic_fetch_add(
-				&shm->stats.transition_edge_calls_by_strategy[strat],
-				1UL, __ATOMIC_RELAXED);
-			__atomic_fetch_add(
-				&shm->stats.transition_edge_count_by_strategy[strat],
-				capped, __ATOMIC_RELAXED);
-		}
-	}
+	account_transition_reward(child, rec, &pcres);
 
 	/* COMBINED-mode only: bump the per-syscall frontier-edge ring on
 	 * the transition-discovery path so syscalls producing transitions
