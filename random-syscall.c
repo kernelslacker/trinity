@@ -2222,6 +2222,127 @@ static void account_reexec_ab_cohort(struct childdata *child, unsigned long new_
 	}
 }
 
+/* Per-syscall new-edge attribution split by strategy pool, plus the
+ * companion frontier-yield (kill-list feedstock) accounting.  Both
+ * blocks key off rec->nr / new_edge_count / frontier_pick_regime and
+ * neither touches kcov_shm, so they collapse into a single helper that
+ * runs immediately after the kcov-collect path.  Behaviour is the
+ * sequential composition of the two original blocks.
+ *
+ * First block (strategy-pool split):
+ *   Skipped when the call produced no new edges (the dump only
+ *   consumes the positive delta side) and when rec->nr falls outside
+ *   the table.  Biarch attribution follows the same raw-rec->nr
+ *   indexing the existing kcov_shm->per_syscall_edges array uses; the
+ *   dump iterates only the active 64-bit table when biarch, so 32-bit
+ *   calls are effectively ignored there as they are everywhere else.
+ *
+ * Second block (frontier-yield kill-list feedstock):
+ *   Reads the per-call frontier_pick_regime stamp the picker wrote at
+ *   one of the two coverage-frontier accept sites; non-frontier
+ *   strategy picks leave the stamp at NONE and naturally skip this
+ *   whole block.  The decision is keyed off the live new_edge_count
+ *   count -- a frontier pick that earned at least one PC edge bumps
+ *   the regime-agnostic productive_wins counter and stamps the current
+ *   rotation window into frontier_last_productive_window so the kill-
+ *   list analyser can read "windows since last productive frontier
+ *   pick on this syscall" without retaining a per-window time series;
+ *   a LIVE-regime frontier pick that earned zero edges bumps the
+ *   live_misses counter, the headline kill-list signal for "the live
+ *   ring keeps biasing toward this syscall but it never converts".
+ *   Silent-regime misses are NOT tallied -- silent picks are by
+ *   definition operating in the plateau-fallback regime where low
+ *   yield is the expected baseline and folding them into the same
+ *   counter would bury the live-regime signal.
+ *
+ *   ADDITIVE / SHADOW: no live-path code reads any of the per-syscall
+ *   frontier yield arrays; the bumps run strictly AFTER the per-call
+ *   new-edge attribution decision and the picker accept/retry math is
+ *   byte-identical to the pre-row baseline.  Validator-rejected calls
+ *   (rec->validator_rejected = true, kcov never ran) reach here with
+ *   new_edge_count = 0 forced above; treating those as live_misses
+ *   would over-count the kill-list signal with picks the kernel never
+ *   actually saw, so the live_miss branch additionally gates on
+ *   !rec->validator_rejected.  Same MAX_NR_SYSCALL bound the sibling
+ *   edges_per_syscall_bandit[] block above uses. */
+static void account_per_syscall_new_edges(struct childdata *child,
+					  struct syscallrecord *rec,
+					  unsigned long new_edge_count)
+{
+	if (new_edge_count > 0 && rec->nr < MAX_NR_SYSCALL) {
+		unsigned long *bucket = child->is_explorer
+			? shm->stats.edges_per_syscall_explorer
+			: shm->stats.edges_per_syscall_bandit;
+		__atomic_fetch_add(&bucket[rec->nr], new_edge_count,
+				   __ATOMIC_RELAXED);
+	}
+
+	if (child->frontier_pick_regime != FRONTIER_PICK_NONE &&
+	    rec->nr < MAX_NR_SYSCALL) {
+		if (new_edge_count > 0) {
+			__atomic_fetch_add(
+				&shm->stats.frontier_productive_wins_per_syscall[rec->nr],
+				1UL, __ATOMIC_RELAXED);
+			__atomic_store_n(
+				&shm->stats.frontier_last_productive_window_per_syscall[rec->nr],
+				__atomic_load_n(&shm->bandit_window_count,
+						__ATOMIC_RELAXED),
+				__ATOMIC_RELAXED);
+		} else if (child->frontier_pick_regime == FRONTIER_PICK_LIVE &&
+			   !rec->validator_rejected) {
+			unsigned long streak;
+
+			__atomic_fetch_add(
+				&shm->stats.frontier_live_misses_per_syscall[rec->nr],
+				1UL, __ATOMIC_RELAXED);
+
+			/* SHADOW-ONLY per-syscall LIVE-regime miss-streak
+			 * accounting.  Mirrors the silent-streak shadow
+			 * decay block at the silent-regime accept site: the
+			 * per-syscall counter advances strictly AFTER the
+			 * existing live_misses bump above, and the two
+			 * scalar companions edge-trigger and accumulate on
+			 * the threshold-crossing pick.  Frontier_record_new_
+			 * edge() / _record_transition_edge() reset the per-
+			 * syscall counter on any productive event, so the
+			 * streak captures the run-length of CONSECUTIVE
+			 * zero-edge LIVE-regime picks of this syscall since
+			 * it last earned coverage.
+			 *
+			 *  frontier_live_cooldown_candidates
+			 *      Edge bump: fires on the (streak ==
+			 *      FRONTIER_LIVE_MISS_COOLDOWN) crossing -- one
+			 *      bump per distinct cooldown episode for this
+			 *      syscall.
+			 *  frontier_live_would_skip
+			 *      Cumulative bump on every LIVE-regime miss
+			 *      that lands with the post-increment streak at
+			 *      or past the threshold -- the projected demote
+			 *      count a live cooldown variant of the picker
+			 *      would produce.
+			 *
+			 * Selection-byte-identical contract: the picker
+			 * accept/retry math at the LIVE accept site is
+			 * untouched; these bumps run strictly after the per-
+			 * call attribution decision and write only NEW
+			 * counters that no live-path code reads.  Same
+			 * MAX_NR_SYSCALL bound the surrounding per-syscall
+			 * arrays use. */
+			streak = __atomic_add_fetch(
+				&shm->stats.frontier_live_miss_streak_per_syscall[rec->nr],
+				1UL, __ATOMIC_RELAXED);
+			if (streak >= FRONTIER_LIVE_MISS_COOLDOWN)
+				__atomic_fetch_add(
+					&shm->stats.frontier_live_would_skip,
+					1UL, __ATOMIC_RELAXED);
+			if (streak == FRONTIER_LIVE_MISS_COOLDOWN)
+				__atomic_fetch_add(
+					&shm->stats.frontier_live_cooldown_candidates,
+					1UL, __ATOMIC_RELAXED);
+		}
+	}
+}
+
 static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 			  bool *found_new, unsigned long *new_cmp_out,
 			  unsigned long *new_transition_out)
@@ -2369,112 +2490,7 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 		account_reexec_ab_cohort(child, new_cmp);
 	}
 
-	/* Per-syscall new-edge attribution split by strategy pool.  Skipped
-	 * when the call produced no new edges (the dump only consumes the
-	 * positive delta side) and when rec->nr falls outside the table.
-	 * Biarch attribution follows the same raw-rec->nr indexing the
-	 * existing kcov_shm->per_syscall_edges array uses; the dump iterates
-	 * only the active 64-bit table when biarch, so 32-bit calls are
-	 * effectively ignored there as they are everywhere else. */
-	if (new_edge_count > 0 && rec->nr < MAX_NR_SYSCALL) {
-		unsigned long *bucket = child->is_explorer
-			? shm->stats.edges_per_syscall_explorer
-			: shm->stats.edges_per_syscall_bandit;
-		__atomic_fetch_add(&bucket[rec->nr], new_edge_count,
-				   __ATOMIC_RELAXED);
-	}
-
-	/* Per-syscall frontier yield attribution (kill-list feedstock).  Read
-	 * the per-call frontier_pick_regime stamp the picker wrote at one of
-	 * the two coverage-frontier accept sites; non-frontier strategy picks
-	 * leave the stamp at NONE and naturally skip this whole block.  The
-	 * decision is keyed off the live new_edge_count count -- a frontier
-	 * pick that earned at least one PC edge bumps the regime-agnostic
-	 * productive_wins counter and stamps the current rotation window into
-	 * frontier_last_productive_window so the kill-list analyser can read
-	 * "windows since last productive frontier pick on this syscall"
-	 * without retaining a per-window time series; a LIVE-regime frontier
-	 * pick that earned zero edges bumps the live_misses counter, the
-	 * headline kill-list signal for "the live ring keeps biasing toward
-	 * this syscall but it never converts".  Silent-regime misses are NOT
-	 * tallied -- silent picks are by definition operating in the plateau-
-	 * fallback regime where low yield is the expected baseline and folding
-	 * them into the same counter would bury the live-regime signal.
-	 *
-	 * ADDITIVE / SHADOW: no live-path code reads any of the per-syscall
-	 * frontier yield arrays; the bumps run strictly AFTER the per-call
-	 * new-edge attribution decision and the picker accept/retry math is
-	 * byte-identical to the pre-row baseline.  Validator-rejected calls
-	 * (rec->validator_rejected = true, kcov never ran) reach here with
-	 * new_edge_count = 0 forced above; treating those as live_misses
-	 * would over-count the kill-list signal with picks the kernel never
-	 * actually saw, so the live_miss branch additionally gates on
-	 * !rec->validator_rejected.  Same MAX_NR_SYSCALL bound the sibling
-	 * edges_per_syscall_bandit[] block above uses. */
-	if (child->frontier_pick_regime != FRONTIER_PICK_NONE &&
-	    rec->nr < MAX_NR_SYSCALL) {
-		if (new_edge_count > 0) {
-			__atomic_fetch_add(
-				&shm->stats.frontier_productive_wins_per_syscall[rec->nr],
-				1UL, __ATOMIC_RELAXED);
-			__atomic_store_n(
-				&shm->stats.frontier_last_productive_window_per_syscall[rec->nr],
-				__atomic_load_n(&shm->bandit_window_count,
-						__ATOMIC_RELAXED),
-				__ATOMIC_RELAXED);
-		} else if (child->frontier_pick_regime == FRONTIER_PICK_LIVE &&
-			   !rec->validator_rejected) {
-			unsigned long streak;
-
-			__atomic_fetch_add(
-				&shm->stats.frontier_live_misses_per_syscall[rec->nr],
-				1UL, __ATOMIC_RELAXED);
-
-			/* SHADOW-ONLY per-syscall LIVE-regime miss-streak
-			 * accounting.  Mirrors the silent-streak shadow
-			 * decay block at the silent-regime accept site: the
-			 * per-syscall counter advances strictly AFTER the
-			 * existing live_misses bump above, and the two
-			 * scalar companions edge-trigger and accumulate on
-			 * the threshold-crossing pick.  Frontier_record_new_
-			 * edge() / _record_transition_edge() reset the per-
-			 * syscall counter on any productive event, so the
-			 * streak captures the run-length of CONSECUTIVE
-			 * zero-edge LIVE-regime picks of this syscall since
-			 * it last earned coverage.
-			 *
-			 *  frontier_live_cooldown_candidates
-			 *      Edge bump: fires on the (streak ==
-			 *      FRONTIER_LIVE_MISS_COOLDOWN) crossing -- one
-			 *      bump per distinct cooldown episode for this
-			 *      syscall.
-			 *  frontier_live_would_skip
-			 *      Cumulative bump on every LIVE-regime miss
-			 *      that lands with the post-increment streak at
-			 *      or past the threshold -- the projected demote
-			 *      count a live cooldown variant of the picker
-			 *      would produce.
-			 *
-			 * Selection-byte-identical contract: the picker
-			 * accept/retry math at the LIVE accept site is
-			 * untouched; these bumps run strictly after the per-
-			 * call attribution decision and write only NEW
-			 * counters that no live-path code reads.  Same
-			 * MAX_NR_SYSCALL bound the surrounding per-syscall
-			 * arrays use. */
-			streak = __atomic_add_fetch(
-				&shm->stats.frontier_live_miss_streak_per_syscall[rec->nr],
-				1UL, __ATOMIC_RELAXED);
-			if (streak >= FRONTIER_LIVE_MISS_COOLDOWN)
-				__atomic_fetch_add(
-					&shm->stats.frontier_live_would_skip,
-					1UL, __ATOMIC_RELAXED);
-			if (streak == FRONTIER_LIVE_MISS_COOLDOWN)
-				__atomic_fetch_add(
-					&shm->stats.frontier_live_cooldown_candidates,
-					1UL, __ATOMIC_RELAXED);
-		}
-	}
+	account_per_syscall_new_edges(child, rec, new_edge_count);
 
 	/* Surface this step's new-coverage signal to the chain executor
 	 * (when called via run_sequence_chain). */
