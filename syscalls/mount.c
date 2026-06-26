@@ -13,6 +13,7 @@
 #include <unistd.h>
 #include "csfu.h"
 #include "deferred-free.h"
+#include "pathnames.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -339,35 +340,111 @@ struct syscallentry syscall_mount = {
 };
 
 /*
- * MOUNT_ATTR_IDMAP intentionally excluded: build_mount_idmapped() needs
- * a paired userns_fd in attr->userns_fd, which we have no source for
- * yet, so the kernel EINVALs immediately on any random-OR pick that
- * includes the bit, wasting the iteration before the idmap-build arm
- * runs.  Re-enable once a userns_fd source is wired in.
+ * Non-atime attr bits.  Kept separate from atime modes because the
+ * kernel treats the MOUNT_ATTR__ATIME mask as a value-encoded enum,
+ * not free bits.  MOUNT_ATTR_IDMAP intentionally excluded:
+ * build_mount_idmapped() needs a paired userns_fd in attr->userns_fd,
+ * which we have no source for yet, so the kernel EINVALs immediately
+ * on any random-OR pick that includes the bit, wasting the iteration
+ * before the idmap-build arm runs.  Re-enable once a userns_fd source
+ * is wired in.
  */
-static unsigned long mount_attrs[] = {
+static unsigned long mount_attrs_nonatime[] = {
 	MOUNT_ATTR_RDONLY, MOUNT_ATTR_NOSUID, MOUNT_ATTR_NODEV,
-	MOUNT_ATTR_NOEXEC, MOUNT_ATTR_NOATIME, MOUNT_ATTR_STRICTATIME,
-	MOUNT_ATTR_NODIRATIME, MOUNT_ATTR_NOSYMFOLLOW,
+	MOUNT_ATTR_NOEXEC, MOUNT_ATTR_NODIRATIME, MOUNT_ATTR_NOSYMFOLLOW,
 };
 
 /*
- * The kernel's MOUNT_ATTR__ATIME mask treats NOATIME, RELATIME (==0) and
- * STRICTATIME as mutually exclusive — do_mount_setattr() EINVALs when more
- * than one ATIME-mode bit appears in attr_set.  Random-OR over the pool
- * makes the NOATIME|STRICTATIME pair common, so trim to a single bit.
+ * Valid attr_set atime values per build_mount_kattr()'s switch:
+ * RELATIME (==0), NOATIME, STRICTATIME.  Anything else (e.g. multiple
+ * bits, or NODIRATIME which is *not* in MOUNT_ATTR__ATIME) hits the
+ * switch's default and EINVALs.
  */
-static __u64 normalise_atime_bits(__u64 attrs)
-{
-	__u64 atime_mask = MOUNT_ATTR_NOATIME | MOUNT_ATTR_STRICTATIME;
-	__u64 picked = attrs & atime_mask;
+static __u64 mount_atime_set_modes[] = {
+	MOUNT_ATTR_RELATIME, MOUNT_ATTR_NOATIME, MOUNT_ATTR_STRICTATIME,
+};
 
-	if (picked && (picked & (picked - 1))) {
-		__u64 keep = RAND_BOOL() ?
-			MOUNT_ATTR_NOATIME : MOUNT_ATTR_STRICTATIME;
-		attrs = (attrs & ~atime_mask) | keep;
+/*
+ * Propagation field.  build_mount_kattr() EINVALs on unknown bits and
+ * also on hweight > 1, so pick at most one bit from the legal set.
+ */
+static __u64 mount_propagation_flags[] = {
+	MS_UNBINDABLE, MS_PRIVATE, MS_SLAVE, MS_SHARED,
+};
+
+/*
+ * Paths most likely to BE a mount-point root on a typical Linux host,
+ * so do_mount_setattr()'s path_mounted(path) check passes.  Random
+ * ARG_PATHNAME picks (mostly /proc and /sys leaves) almost never are
+ * mount roots and EINVAL out before any attr is applied.
+ */
+static const char * const mount_root_paths[] = {
+	"/", "/proc", "/sys", "/dev", "/dev/shm", "/dev/pts",
+	"/run", "/run/lock", "/tmp",
+	"/sys/fs/cgroup", "/sys/kernel/debug", "/sys/kernel/tracing",
+	"/sys/fs/bpf",
+};
+
+static void steer_mount_setattr_path(struct syscallrecord *rec)
+{
+	const char *src;
+	char *dst = (char *) rec->a2;
+
+	/*
+	 * ARG_PATHNAME has already handed us a tracked MAX_PATH_LEN buffer
+	 * in rec->a2 (gen_arg_pathname -> generate_pathname -> zmalloc_tracked).
+	 * The argtype's cleanup hook will deferred_free_enqueue() that exact
+	 * pointer after the call, so we must NOT swap in an alien allocation
+	 * (the writable-struct pool isn't tracked; cleanup would reject the
+	 * pointer and the tracked buffer would leak).  Overwrite in place.
+	 */
+	if (!dst)
+		return;
+	src = mount_root_paths[rnd_modulo_u32(ARRAY_SIZE(mount_root_paths))];
+	strncpy(dst, src, MAX_PATH_LEN - 1);
+	dst[MAX_PATH_LEN - 1] = '\0';
+}
+
+/*
+ * Build a valid-baseline mount_attr body.  Kernel rules
+ * (build_mount_kattr in fs/namespace.c):
+ *   - attr_set/attr_clr bits must lie inside MOUNT_SETATTR_VALID_FLAGS.
+ *   - attr_clr's atime portion must be either 0 or the FULL
+ *     MOUNT_ATTR__ATIME mask (partial -> EINVAL).
+ *   - If attr_set has any atime bit, attr_clr must contain the full
+ *     MOUNT_ATTR__ATIME mask.
+ *   - attr_set's atime portion, masked to MOUNT_ATTR__ATIME, must be
+ *     exactly one of {RELATIME=0, NOATIME, STRICTATIME}.
+ *   - propagation must be a single bit from MS_{UNBINDABLE,PRIVATE,SLAVE,SHARED}
+ *     (or zero).
+ */
+static void build_valid_mount_attr(struct mount_attr *ma)
+{
+	__u64 set_bits = 0, clr_bits = 0;
+	unsigned int i, nbits;
+
+	nbits = 1 + rnd_modulo_u32(ARRAY_SIZE(mount_attrs_nonatime));
+	for (i = 0; i < nbits; i++)
+		set_bits |= mount_attrs_nonatime[rnd_modulo_u32(ARRAY_SIZE(mount_attrs_nonatime))];
+
+	nbits = rnd_modulo_u32(ARRAY_SIZE(mount_attrs_nonatime) + 1);
+	for (i = 0; i < nbits; i++)
+		clr_bits |= mount_attrs_nonatime[rnd_modulo_u32(ARRAY_SIZE(mount_attrs_nonatime))];
+
+	/*
+	 * Atime: model the legal "clear all atime, then set one mode"
+	 * transition.  Roughly half the time, request an atime change.
+	 */
+	if (RAND_BOOL()) {
+		set_bits |= mount_atime_set_modes[rnd_modulo_u32(ARRAY_SIZE(mount_atime_set_modes))];
+		clr_bits |= MOUNT_ATTR__ATIME;
 	}
-	return attrs;
+
+	ma->attr_set = set_bits;
+	ma->attr_clr = clr_bits;
+
+	if (RAND_BOOL())
+		ma->propagation = mount_propagation_flags[rnd_modulo_u32(ARRAY_SIZE(mount_propagation_flags))];
 }
 
 #ifndef MOUNT_ATTR_SIZE_VER0
@@ -396,36 +473,29 @@ static void sanitise_mount_setattr(struct syscallrecord *rec)
 {
 	struct csfu_buf buf = build_csfu_struct(&desc_mount_setattr);
 	struct mount_attr *ma = buf.ptr;
-	unsigned int i, nbits;
-	__u64 attrs;
 
 	if (!ma)
 		return;
 
 	/*
+	 * Steer the path argument at a known mount-point root so the
+	 * kernel's path_mounted() check in do_mount_setattr() passes.
+	 * The path is absolute, so dfd (a1) is ignored by filename_lookup.
+	 */
+	steer_mount_setattr_path(rec);
+
+	/*
 	 * mount_setattr has a separate usize syscall arg (a5); the
 	 * csfu-picked usize is planted there.  Per-field attr_set /
-	 * attr_clr population is gated on CSFU_BUCKET_EXACT -- the
-	 * kernel rejects on usize before reading any body field for the
-	 * non-exact buckets, and OVERSIZE_NONZERO / TAIL_MISMATCH need
-	 * their tail garbage preserved.  zmalloc_tracked() already
-	 * zeroed the buffer where the kernel cares to look.
+	 * attr_clr / propagation population is gated on
+	 * CSFU_BUCKET_EXACT -- the kernel rejects on usize before
+	 * reading any body field for the non-exact buckets, and
+	 * OVERSIZE_NONZERO / TAIL_MISMATCH need their tail garbage
+	 * preserved.  zmalloc_tracked() already zeroed the buffer where
+	 * the kernel cares to look.
 	 */
-	if (buf.bucket == CSFU_BUCKET_EXACT) {
-		/* Build random attr_set (things to turn on). */
-		attrs = 0;
-		nbits = 1 + (rnd_modulo_u32(ARRAY_SIZE(mount_attrs)));
-		for (i = 0; i < nbits; i++)
-			attrs |= mount_attrs[rnd_modulo_u32(ARRAY_SIZE(mount_attrs))];
-		ma->attr_set = normalise_atime_bits(attrs);
-
-		/* Build random attr_clr (things to turn off) — non-overlapping with attr_set. */
-		attrs = 0;
-		nbits = rnd_modulo_u32(ARRAY_SIZE(mount_attrs));
-		for (i = 0; i < nbits; i++)
-			attrs |= mount_attrs[rnd_modulo_u32(ARRAY_SIZE(mount_attrs))];
-		ma->attr_clr = normalise_atime_bits(attrs) & ~ma->attr_set;
-	}
+	if (buf.bucket == CSFU_BUCKET_EXACT)
+		build_valid_mount_attr(ma);
 
 	rec->a4 = (unsigned long) ma;
 	rec->a5 = buf.usize;
