@@ -184,8 +184,8 @@ syscalls/mremap.c:238:post_mremap
 syscalls/munmap.c:198:post_munmap
 syscalls/munmap.c:261:post_munmap
 syscalls/nanosleep.c:13:post_nanosleep
-syscalls/newfstat.c:181:post_newfstat
-syscalls/newfstat.c:395:post_newfstatat
+syscalls/newfstat.c:180:post_newfstat
+syscalls/newfstat.c:394:post_newfstatat
 syscalls/newlstat.c:153:post_newlstat
 syscalls/newstat.c:162:post_newstat
 syscalls/newuname.c:169:post_newuname
