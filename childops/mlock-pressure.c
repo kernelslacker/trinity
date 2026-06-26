@@ -130,8 +130,8 @@ bool mlock_pressure(struct childdata *child)
 		 * is hit and libasan fatally aborts the child ("failed to allocate ...
 		 * error code: 11").  The probe loop below holds MCL_FUTURE across
 		 * several mmap/touch/munmap calls -- wide enough for ASAN to fall in.
-		 * The raw mlockall syscall path already drops MCL_FUTURE under ASAN
-		 * via post_mlockall() (syscalls/mlockall.c); mirror that here.
+		 * The raw mlockall syscall path source-gates MCL_FUTURE out of
+		 * its arg list under ASAN (syscalls/mlockall.c); mirror that here.
 		 */
 		if (RAND_BOOL())
 			flags |= MCL_FUTURE;

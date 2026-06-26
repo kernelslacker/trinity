@@ -18,12 +18,9 @@
 #define MCL_ONFAULT	4
 #endif
 
-static unsigned long mlockall_flags[] = {
-	MCL_CURRENT, MCL_FUTURE, MCL_ONFAULT,
-};
-
-#ifdef __SANITIZE_ADDRESS__
 /*
+ * MCL_FUTURE is excluded from the arg list under ASAN.
+ *
  * mlockall(MCL_FUTURE) sets VM_LOCKED on every subsequent mmap in this
  * child.  ASAN's allocator extends its shadow region via internal mmap
  * (no MAP_LOCKED of its own), but the inherited VM_LOCKED still routes
@@ -35,21 +32,23 @@ static unsigned long mlockall_flags[] = {
  * because libasan calls _exit() inside its allocator.
  *
  * Non-ASAN builds survive the same scenario via the malloc-NULL ->
- * munlockall+retry fallback in __zmalloc (utils.c).  That fallback
+ * munlockall+retry fallback in __zmalloc (utils.c); that fallback
  * cannot help under ASAN because the abort happens below malloc's
- * return point, so undo MCL_FUTURE here at the syscall boundary.
+ * return point.  Excluding MCL_FUTURE at the picker means the kernel
+ * never sees it on this path, so no post-hoc undo is needed.  MCL_CURRENT
+ * and MCL_ONFAULT lock only existing pages and do not block future
+ * mmaps, so they stay in.
  *
- * The mlock_pressure childop already exercises a tightly-scoped
- * MCL_FUTURE intercept cycle (mlockall(MCL_FUTURE) -> mmap probes ->
- * munlockall), so dropping the persistent MCL_FUTURE from the syscall
- * fuzz path under ASAN does not lose meaningful kernel coverage.
+ * The mlock_pressure childop applies the same source-gate around its
+ * own MCL_FUTURE OR-in (childops/mlock-pressure.c) -- when adjusting
+ * one path, mirror the other.
  */
-static void post_mlockall(struct syscallrecord *rec)
-{
-	(void) rec;
-	munlockall();
-}
+static unsigned long mlockall_flags[] = {
+#ifndef __SANITIZE_ADDRESS__
+	MCL_FUTURE,
 #endif
+	MCL_CURRENT, MCL_ONFAULT,
+};
 
 struct syscallentry syscall_mlockall = {
 	.name = "mlockall",
@@ -59,7 +58,4 @@ struct syscallentry syscall_mlockall = {
 	.arg_params[0].list = ARGLIST(mlockall_flags),
 	.group = GROUP_VM,
 	.rettype = RET_ZERO_SUCCESS,
-#ifdef __SANITIZE_ADDRESS__
-	.post = post_mlockall,
-#endif
 };
