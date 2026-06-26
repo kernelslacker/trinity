@@ -2718,6 +2718,19 @@ static const struct stat_category xfrm_churn_category =
 	              xfrm_churn_runs,
 	              xfrm_churn_fields);
 
+static const struct stat_field atm_vcc_churn_fields[] = {
+	STAT_FIELD(atm_vcc_churn, runs),
+	STAT_FIELD(atm_vcc_churn, unsupported),
+	STAT_FIELD(atm_vcc_churn, socket_ok),
+	STAT_FIELD(atm_vcc_churn, ioctls_sent),
+	STAT_FIELD(atm_vcc_churn, kernel_rejected),
+};
+
+static const struct stat_category atm_vcc_churn_category =
+	STAT_CATEGORY("atm_vcc_churn",
+	              atm_vcc_churn_runs,
+	              atm_vcc_churn_fields);
+
 static const struct stat_field sock_ulp_sockmap_layering_fields[] = {
 	STAT_FIELD(sock_ulp_sockmap_layering, runs),
 	STAT_FIELD(sock_ulp_sockmap_layering, setup_failed),
@@ -2816,6 +2829,8 @@ static void dump_stats_json_netfilter_and_xfrm(void)
 	stat_category_emit_json(&tc_mirred_blockcast_category);
 	putchar(',');
 	stat_category_emit_json(&xfrm_churn_category);
+	putchar(',');
+	stat_category_emit_json(&atm_vcc_churn_category);
 	putchar(',');
 	stat_category_emit_json(&sock_ulp_sockmap_layering_category);
 	putchar(',');
