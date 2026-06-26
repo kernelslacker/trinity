@@ -58,6 +58,17 @@
 enum picker_mode_t picker_mode_arg = PICKER_BANDIT_UCB1;
 
 /*
+ * Saturation-cooldown mode.  Default OFF keeps the silent-regime
+ * accept path byte-identical to today; SHADOW_ONLY enables the
+ * corrected predicate's shadow accounting without changing live
+ * selection.  See the enum comment in include/strategy.h for the
+ * mode contract and the ramp discipline.  Param-settable via
+ * --frontier-saturation-cooldown=off|shadow-only|combined.
+ */
+enum frontier_saturation_cooldown_mode frontier_saturation_cooldown_mode =
+	FRONTIER_SATURATION_COOLDOWN_MODE_OFF;
+
+/*
  * Translate the --strategy=NAME argument into a picker_mode_t.
  * Recognises the human-friendly aliases ("round-robin", "rr",
  * "bandit", "ucb1", "bandit-ucb1").  Returns false on unknown

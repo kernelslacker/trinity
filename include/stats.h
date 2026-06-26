@@ -2827,6 +2827,24 @@ struct stats_s {
 	 * the periodic stats dump alongside that array. */
 	unsigned long frontier_live_miss_streak_per_syscall[MAX_NR_SYSCALL];
 
+	/* SHADOW-ONLY per-syscall saturation-cooldown would-skip counter.
+	 * Bumped at the silent-regime accept site alongside the scalar
+	 * frontier_satcool_would_skip whenever the corrected predicate
+	 * (plateau AND magnitude AND no-spare-lane) fires for this syscall.
+	 * The headline diagnostic for SHADOW_ONLY: a single run's top
+	 * entries should be the saturated-rich set (syncfs / sendfile /
+	 * semget / writev) with the under-explored struct-arg backlog
+	 * (removexattrat / futex / io_uring_setup / bpf) reading ~0; if
+	 * removexattrat / futex / io_uring_setup / bpf show a nonzero
+	 * count the spare lanes (cmp / first-success / ret_objtype) are
+	 * mis-tuned and COMBINED MUST NOT be promoted.
+	 *
+	 * Sized and bounds-guarded the same way the sibling per-syscall
+	 * arrays above are.  Read by no live-path code -- observability
+	 * only, surfaced via the periodic stats dump's top-N attribution
+	 * for the saturation cooldown. */
+	unsigned long frontier_satcool_would_skip_per_syscall[MAX_NR_SYSCALL];
+
 	/* SHADOW-ONLY LIVE-regime cooldown accounting, paired with the
 	 * frontier_live_miss_streak_per_syscall[] counter above.  Mirrors
 	 * the SHADOW silent-streak decay scalars (frontier_decay_candidates
@@ -3076,6 +3094,66 @@ struct stats_s {
 	 * split (kcov_shm).  Mirrors the frontier_errno_decay_live_rejects
 	 * shape below so the two live-decay deltas read side by side. */
 	unsigned long frontier_silent_decay_live_rejects;
+
+	/* SHADOW-ONLY saturation-cooldown predicate accounting (gated by
+	 * frontier_saturation_cooldown_mode != OFF).  Sibling of the
+	 * frontier_decay_* / frontier_errno_decay_* shadow predicates above;
+	 * this one targets the same wasteful-silent-pick shape but uses the
+	 * windowed frontier-edge ring (frontier_recent_count, decays by
+	 * construction) for the plateau trigger AND the corrected
+	 * first-success-TRANSITION + distinct-CMP-insert spare lanes for the
+	 * under-explored struct-arg backlog.  See the enum
+	 * frontier_saturation_cooldown_mode comment in include/strategy.h and
+	 * the FRONTIER_SATCOOL_CMIN magnitude-gate comment for the predicate
+	 * contract.
+	 *
+	 *  frontier_satcool_candidates
+	 *      Cumulative: one bump per silent-regime pick where the plateau
+	 *      trigger (windowed frontier-edge ring sum == 0) AND the
+	 *      magnitude gate (lifetime per_syscall_calls > FRONTIER_SATCOOL_
+	 *      CMIN) BOTH hold for the picked syscall -- the candidate set
+	 *      the spare lanes get to peel from.  Sum of would_skip +
+	 *      spared_arggen + spared_objproducer.
+	 *  frontier_satcool_would_skip
+	 *      Cumulative: subset of candidates a live variant would actually
+	 *      reject (neither spare lane fired).  Ratio against frontier_
+	 *      silent_picks is the projected silent-regime pick share a
+	 *      live satcool reject would demote.
+	 *  frontier_satcool_spared_arggen
+	 *      Cumulative: subset of candidates spared because the per-
+	 *      syscall arg-gen-progress lane fired -- either a distinct
+	 *      CMP-insert landed since the streak's last reset (per_syscall_
+	 *      cmp_inserts advanced past frontier_silent_cmp_baseline), or
+	 *      a FIRST-SUCCESS transition fired (errno-SUCCESS bucket was
+	 *      zero at the last reset and is now > 0).  CRITICAL: this is
+	 *      NOT the existing decay's raw-success-count delta; it is a
+	 *      first-success-TRANSITION test (errno_base == 0 AND errno_now
+	 *      > 0) so a perpetually-succeeding syscall like syncfs cannot
+	 *      spare itself by raw success accumulation.
+	 *  frontier_satcool_spared_objproducer
+	 *      Cumulative: subset of candidates spared because the syscall
+	 *      entry's ret_objtype is != OBJ_NONE -- an object-producer
+	 *      (openat / socket / memfd_create / mmap / io_uring_setup /
+	 *      bpf) whose payoff is delayed and credited downstream to the
+	 *      consumer of the produced object, not to the producer's own
+	 *      PC-edge yield.  Evaluated after spared_arggen, so a
+	 *      candidate that fired both lanes is counted as spared_arggen
+	 *      (the more specific signal); spared_objproducer is the
+	 *      ret_objtype-only catch.
+	 *
+	 * Observability only in this commit: the predicate-evaluation block
+	 * is added inside the silent-regime accept path with NO live reject
+	 * wired, so live selection in set_syscall_nr_coverage_frontier()
+	 * stays byte-identical to today regardless of which mode is
+	 * selected.  COMBINED is reserved in the enum for a follow-up that
+	 * wires the live reject after SHADOW_ONLY validates the predicate
+	 * against a real run.  Mirrors the off-by-construction discipline
+	 * the sibling frontier_decay_* / frontier_errno_decay_* counters
+	 * use. */
+	unsigned long frontier_satcool_candidates;
+	unsigned long frontier_satcool_would_skip;
+	unsigned long frontier_satcool_spared_arggen;
+	unsigned long frontier_satcool_spared_objproducer;
 
 	/* SHADOW + per-child A/B accounting for the errno-plateau decay at the
 	 * coverage-frontier picker's silent-regime accept site.  Predicate is
