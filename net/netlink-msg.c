@@ -5,7 +5,6 @@
  * optional nlattr TLVs, and occasional deliberate corruption to test
  * both valid code paths and error handling in the kernel.
  */
-#include <sys/types.h>
 #include <sys/socket.h>
 #include <stddef.h>
 #include <netinet/in.h>
