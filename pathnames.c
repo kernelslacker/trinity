@@ -456,8 +456,11 @@ static void open_fds_from_path(const char *dirpath)
 
 /*
  * Build the fileindex from the namelist, storing all strings in a single
- * alloc_shared() slab so children inherit them via MAP_SHARED rather
- * than as COW heap pages.
+ * alloc_shared_pool() slab so children inherit them via MAP_SHARED rather
+ * than as COW heap pages.  Pool routing lets --guard-shared=pools wrap
+ * both the index array and the string slab in PROT_NONE guard pages so a
+ * wild child write past either end faults instead of silently corrupting
+ * the pathname set.
  */
 static const char ** list_to_index(struct namelist *namelist)
 {
@@ -483,9 +486,9 @@ static const char ** list_to_index(struct namelist *namelist)
 				  files_in_index);
 			exit(EXIT_FAILURE);
 		}
-		findex = alloc_shared(findex_bytes);
+		findex = alloc_shared_pool(findex_bytes);
 	}
-	slab = alloc_shared(total_str_bytes ? total_str_bytes : 1);
+	slab = alloc_shared_pool(total_str_bytes ? total_str_bytes : 1);
 
 	/* Second pass: copy strings into the slab and build the index. */
 	list_for_each_safe(node, tmp, &namelist->list) {
