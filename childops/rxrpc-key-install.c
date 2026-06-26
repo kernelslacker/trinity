@@ -601,10 +601,18 @@ static int64_t pick_xrxgk_endtime(void)
 	case 5:
 		/* Small negative -- minimal-magnitude expired. */
 		return -(int64_t)(1 + rnd_modulo_u32(1u << 24));
-	case 6:
-		/* Wide random negative across the s64 range. */
-		return -(int64_t)((((uint64_t) rand32()) << 32)
-				  | (uint64_t) rand32());
+	case 6: {
+		/* Wide random negative across the s64 range.  Mask off the
+		 * sign bit before casting so the magnitude lives in
+		 * [0, INT64_MAX] -- otherwise a u64 with bit 63 set is
+		 * already a negative int64_t after the cast and the unary
+		 * minus flips it back to positive (and -(INT64_MIN) is
+		 * signed-overflow UB).  Result lives in [-INT64_MAX, 0]. */
+		uint64_t mag = (((uint64_t) rand32()) << 32)
+			       | (uint64_t) rand32();
+		mag &= (uint64_t) INT64_MAX;
+		return -(int64_t) mag;
+	}
 	default:
 		/* s64 extreme: INT64_MIN, INT64_MIN+1, or a near-min value. */
 		switch (rnd_modulo_u32(3)) {
