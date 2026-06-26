@@ -143,6 +143,7 @@ bool recipe_bpf_htab_iter_del(bool *unsupported)
 	unsigned int i;
 	unsigned int spawn_fail_streak = 0;
 	unsigned int completed = 0;
+	bool spawn_latched = false;
 
 	cycles = 1 + rnd_modulo_u32(RECIPE_BPF_HTAB_MAX_CYCLES);
 
@@ -201,8 +202,10 @@ bool recipe_bpf_htab_iter_del(bool *unsupported)
 		rc = pthread_create(&tid, NULL, bpf_htab_racer_thread, &ra);
 		if (rc != 0) {
 			close(map_fd);
-			if (++spawn_fail_streak >= RECIPE_THREAD_SPAWN_LATCH)
+			if (++spawn_fail_streak >= RECIPE_THREAD_SPAWN_LATCH) {
+				spawn_latched = true;
 				break;
+			}
 			continue;
 		}
 		spawn_fail_streak = 0;
@@ -240,6 +243,14 @@ bool recipe_bpf_htab_iter_del(bool *unsupported)
 
 		completed++;
 	}
+
+	/* If every cycle was lost to pthread_create EAGAIN under sibling
+	 * thread pressure, that's transient nproc/thread exhaustion -- not
+	 * a recipe failure.  Skip rather than score a partial, which would
+	 * keep the picker re-selecting us against a kernel path we never
+	 * actually exercised. */
+	if (completed == 0 && spawn_latched)
+		return true;
 
 	return completed > 0;
 }
@@ -360,6 +371,7 @@ bool recipe_perf_mmap_close(bool *unsupported)
 	unsigned int i;
 	unsigned int spawn_fail_streak = 0;
 	unsigned int completed = 0;
+	bool spawn_latched = false;
 	size_t mmap_sz;
 
 	mmap_sz = (size_t)(1U + RECIPE_PERF_MMAP_DATA_PAGES) *
@@ -436,8 +448,10 @@ bool recipe_perf_mmap_close(bool *unsupported)
 		if (rc != 0) {
 			munmap(ring, mmap_sz);
 			close(perf_fd);
-			if (++spawn_fail_streak >= RECIPE_THREAD_SPAWN_LATCH)
+			if (++spawn_fail_streak >= RECIPE_THREAD_SPAWN_LATCH) {
+				spawn_latched = true;
 				break;
+			}
 			continue;
 		}
 		spawn_fail_streak = 0;
@@ -460,6 +474,14 @@ bool recipe_perf_mmap_close(bool *unsupported)
 
 		completed++;
 	}
+
+	/* If every cycle was lost to pthread_create EAGAIN under sibling
+	 * thread pressure, that's transient nproc/thread exhaustion -- not
+	 * a recipe failure.  Skip rather than score a partial, which would
+	 * keep the picker re-selecting us against a kernel path we never
+	 * actually exercised. */
+	if (completed == 0 && spawn_latched)
+		return true;
 
 	return completed > 0;
 }
