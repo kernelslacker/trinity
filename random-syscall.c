@@ -2538,6 +2538,103 @@ static void account_cold_overflow_would_save(struct syscallentry *entry,
 	}
 }
 
+/* PC-edge-only bookkeeping.  Deliberately separate from the
+ * found_something save block back in dispatch_step so CMP-source saves
+ * can't trigger snapshot cadence, per-strategy edge attribution, or
+ * pool edge counters -- see the new_edges/new_cmp gating comment for
+ * why those must stay PC-only.
+ *
+ * Gated on new_edges (caller short-circuits in the !new_edges hot
+ * path).  Three pieces, in execution order:
+ *   - minicorpus_maybe_snapshot()   -- coverage-delta-triggered
+ *                                       persistence cadence
+ *   - explorer/bandit pool split    -- per-strategy edge attribution
+ *                                       for the bandit arms, skipped
+ *                                       for explorer-pool children
+ *   - random-rescue classification  -- only meaningful under
+ *                                       SR_PLATEAU_FORCE windows */
+static void account_pc_edge_only(struct childdata *child,
+				 struct syscallrecord *rec,
+				 unsigned long new_edge_count,
+				 unsigned int rescue_cold_skip_pct_before)
+{
+	/* Coverage-delta-triggered persistence: snapshot the
+	 * minicorpus to disk every MINICORPUS_SNAPSHOT_EDGES
+	 * fleet-wide edges so a crash mid-run only loses the
+	 * last cadence window of state, not the whole run.
+	 * Cheap fast path when the gap isn't reached; only one
+	 * caller per window actually runs the save. */
+	minicorpus_maybe_snapshot();
+
+	if (child->is_explorer) {
+		/* Explorer-pool discoveries are real edges and count
+		 * toward the run-wide fleet totals, but skip the
+		 * per-strategy reward attribution: explorers always
+		 * run STRATEGY_RANDOM, so feeding their edges into
+		 * the bandit's current arm would either inflate a
+		 * non-RANDOM arm's reward (when the bandit picked
+		 * something else) or double-count when the bandit
+		 * also picked RANDOM. */
+		__atomic_fetch_add(&shm->stats.explorer_pool_edges_discovered,
+				   1, __ATOMIC_RELAXED);
+	} else {
+		/* Attribute this new-edge call to the strategy that
+		 * PICKED the syscall, not whichever strategy happens
+		 * to be shm->current_strategy by the time the syscall
+		 * has returned and we got around to scoring the
+		 * reward.  The two values can disagree any time a
+		 * rotation lands between set_syscall_nr() and here,
+		 * which is frequent for long or blocking syscalls;
+		 * reading the pick-time stamp keeps the bandit's
+		 * reward signal pointed at the arm that actually
+		 * earned the credit.
+		 *
+		 * Two parallel cumulative counters:
+		 * pc_edge_calls_by_strategy[] bumps by 1 (the
+		 * historical "edges_by_strategy[]" signal under its
+		 * honest name -- calls-with-≥1-edge) and
+		 * pc_edge_count_by_strategy[] bumps by the real
+		 * bucket-edge count from kcov_collect().  Window
+		 * deltas are computed by maybe_rotate_strategy against
+		 * the matching *_at_window_start snapshots. */
+		int strat = child->strategy_at_pick;
+		if (strat >= 0 && strat < NR_STRATEGIES) {
+			__atomic_fetch_add(&shm->pc_edge_calls_by_strategy[strat],
+					   1, __ATOMIC_RELAXED);
+			__atomic_fetch_add(&shm->pc_edge_count_by_strategy[strat],
+					   new_edge_count,
+					   __ATOMIC_RELAXED);
+		}
+		__atomic_fetch_add(&shm->stats.bandit_pool_edges_discovered,
+				   1, __ATOMIC_RELAXED);
+
+		/* Random-rescue classification.  Only meaningful when
+		 * the current window is a SR_PLATEAU_FORCE intervention
+		 * -- the classifier exists to explain why a forced
+		 * RANDOM rescue produced the edge a structured picker
+		 * missed.  Reading current_selection_reason rather than
+		 * stamping it at pick-time is fine here: the
+		 * intervention windows are long (~100 sec at 10K
+		 * iter/sec) and a child whose syscall straddled a
+		 * rotation boundary is rare enough that misattributing
+		 * a handful of rescues per rotation is below the
+		 * noise floor on the per-class counts.  The orchestrator
+		 * reads the cumulative distribution at the next
+		 * rotation boundary to decide which class to amplify. */
+		if (__atomic_load_n(&shm->current_selection_reason,
+				    __ATOMIC_RELAXED) ==
+		    SR_PLATEAU_FORCE) {
+			enum random_rescue_class rrc =
+				classify_random_rescue(rec, child,
+					rescue_cold_skip_pct_before);
+			if (rrc >= 0 && rrc < RRC_NR_CLASSES)
+				__atomic_fetch_add(
+					&shm->random_rescue_class_count[rrc],
+					1UL, __ATOMIC_RELAXED);
+		}
+	}
+}
+
 static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 			  bool *found_new, unsigned long *new_cmp_out,
 			  unsigned long *new_transition_out)
@@ -2775,88 +2872,9 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 					  : CORPUS_SAVE_REASON_CMP);
 	}
 
-	/* PC-edge-only bookkeeping below.  Deliberately separate from the
-	 * found_something save block above so CMP-source saves can't
-	 * trigger snapshot cadence, per-strategy edge attribution, or
-	 * pool edge counters -- see comment above on why those must
-	 * stay PC-only. */
-	if (unlikely(new_edges)) {
-		/* Coverage-delta-triggered persistence: snapshot the
-		 * minicorpus to disk every MINICORPUS_SNAPSHOT_EDGES
-		 * fleet-wide edges so a crash mid-run only loses the
-		 * last cadence window of state, not the whole run.
-		 * Cheap fast path when the gap isn't reached; only one
-		 * caller per window actually runs the save. */
-		minicorpus_maybe_snapshot();
-
-		if (child->is_explorer) {
-			/* Explorer-pool discoveries are real edges and count
-			 * toward the run-wide fleet totals, but skip the
-			 * per-strategy reward attribution: explorers always
-			 * run STRATEGY_RANDOM, so feeding their edges into
-			 * the bandit's current arm would either inflate a
-			 * non-RANDOM arm's reward (when the bandit picked
-			 * something else) or double-count when the bandit
-			 * also picked RANDOM. */
-			__atomic_fetch_add(&shm->stats.explorer_pool_edges_discovered,
-					   1, __ATOMIC_RELAXED);
-		} else {
-			/* Attribute this new-edge call to the strategy that
-			 * PICKED the syscall, not whichever strategy happens
-			 * to be shm->current_strategy by the time the syscall
-			 * has returned and we got around to scoring the
-			 * reward.  The two values can disagree any time a
-			 * rotation lands between set_syscall_nr() and here,
-			 * which is frequent for long or blocking syscalls;
-			 * reading the pick-time stamp keeps the bandit's
-			 * reward signal pointed at the arm that actually
-			 * earned the credit.
-			 *
-			 * Two parallel cumulative counters:
-			 * pc_edge_calls_by_strategy[] bumps by 1 (the
-			 * historical "edges_by_strategy[]" signal under its
-			 * honest name -- calls-with-≥1-edge) and
-			 * pc_edge_count_by_strategy[] bumps by the real
-			 * bucket-edge count from kcov_collect().  Window
-			 * deltas are computed by maybe_rotate_strategy against
-			 * the matching *_at_window_start snapshots. */
-			int strat = child->strategy_at_pick;
-			if (strat >= 0 && strat < NR_STRATEGIES) {
-				__atomic_fetch_add(&shm->pc_edge_calls_by_strategy[strat],
-						   1, __ATOMIC_RELAXED);
-				__atomic_fetch_add(&shm->pc_edge_count_by_strategy[strat],
-						   new_edge_count,
-						   __ATOMIC_RELAXED);
-			}
-			__atomic_fetch_add(&shm->stats.bandit_pool_edges_discovered,
-					   1, __ATOMIC_RELAXED);
-
-			/* Random-rescue classification.  Only meaningful when
-			 * the current window is a SR_PLATEAU_FORCE intervention
-			 * -- the classifier exists to explain why a forced
-			 * RANDOM rescue produced the edge a structured picker
-			 * missed.  Reading current_selection_reason rather than
-			 * stamping it at pick-time is fine here: the
-			 * intervention windows are long (~100 sec at 10K
-			 * iter/sec) and a child whose syscall straddled a
-			 * rotation boundary is rare enough that misattributing
-			 * a handful of rescues per rotation is below the
-			 * noise floor on the per-class counts.  The orchestrator
-			 * reads the cumulative distribution at the next
-			 * rotation boundary to decide which class to amplify. */
-			if (__atomic_load_n(&shm->current_selection_reason,
-					    __ATOMIC_RELAXED) ==
-			    SR_PLATEAU_FORCE) {
-				enum random_rescue_class rrc =
-					classify_random_rescue(rec, child,
-						rescue_cold_skip_pct_before);
-				if (rrc >= 0 && rrc < RRC_NR_CLASSES)
-					__atomic_fetch_add(
-						&shm->random_rescue_class_count[rrc],
-						1UL, __ATOMIC_RELAXED);
-			}
-		}
-	}
+	if (unlikely(new_edges))
+		account_pc_edge_only(child, rec, new_edge_count,
+				     rescue_cold_skip_pct_before);
 
 	/* Per-strategy transition-reward attribution.  Independent of the
 	 * new_edges gate above: a call can flip transition slots (a new
