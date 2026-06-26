@@ -2,7 +2,6 @@
  * SYSCALL_DEFINE2(newstat, const char __user *, filename, struct stat __user *, statbuf)
  */
 #include <limits.h>
-#include <string.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <unistd.h>
