@@ -1248,6 +1248,7 @@ static const struct stat_field rxrpc_key_install_fields[] = {
 	STAT_FIELD(rxrpc_key_install, revokes),
 	STAT_FIELD(rxrpc_key_install, quota_hits),
 	STAT_FIELD(rxrpc_key_install, unsupported),
+	STAT_FIELD(rxrpc_key_install, xrxgk_accepted),
 };
 
 static const struct stat_category rxrpc_key_install_category =

@@ -3425,6 +3425,7 @@ struct stats_s {
 	unsigned long rxrpc_key_install_revokes;	/* KEYCTL_REVOKE / KEYCTL_UNLINK accepted */
 	unsigned long rxrpc_key_install_quota_hits;	/* add_key returned -EDQUOT */
 	unsigned long rxrpc_key_install_unsupported;	/* per-process latch fired (no rxrpc key type) */
+	unsigned long rxrpc_key_install_xrxgk_accepted;	/* XDR-RXGK arm add_key returned a serial -- penetration into rxrpc_preparse_xdr_yfs_rxgk past the length/level/enctype/expiry gates and through the alloc + key install */
 
 	/* af_alg_weak_cipher_probe childop counters.  Enumerates which
 	 * crypto template names AF_ALG accepts via bind(); surfaces the
