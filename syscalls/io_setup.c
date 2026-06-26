@@ -2,7 +2,6 @@
  * SYSCALL_DEFINE2(io_setup, unsigned, nr_events, aio_context_t __user *, ctxp)
  */
 #include <linux/aio_abi.h>
-#include <string.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 #include "deferred-free.h"
