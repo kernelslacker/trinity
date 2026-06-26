@@ -187,7 +187,7 @@ syscalls/nanosleep.c:13:post_nanosleep
 syscalls/newfstat.c:180:post_newfstat
 syscalls/newfstat.c:394:post_newfstatat
 syscalls/newlstat.c:152:post_newlstat
-syscalls/newstat.c:162:post_newstat
+syscalls/newstat.c:161:post_newstat
 syscalls/newuname.c:169:post_newuname
 syscalls/nice.c:56:post_nice
 syscalls/olduname.c:210:post_olduname
