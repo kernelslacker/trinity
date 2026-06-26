@@ -7483,6 +7483,97 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	}
 
 	/*
+	 * BOUNDARY-arm scorecard.  Pulls the existing boundary-kind
+	 * shadow counters into one render so the operator can read the
+	 * inserted-vs-consumed ratio at a glance: how often a BOUNDARY
+	 * hypothesis was created, how often one was available at a
+	 * served pick site, how often the value-keyed would-pick ladder
+	 * picked it (expected near zero -- EXACT outranks), how often
+	 * the live inject arm derived from it, and how often a credited
+	 * PC / transition resolved to BOUNDARY via the |v - exemplar|
+	 * <= 2 window.  Gated on any-delta so a quiet run reads as
+	 * silence, matching the sibling cmp_hyp shadow blocks above.
+	 */
+	{
+		static unsigned long prev_b_inserted;
+		static unsigned long prev_b_candidate_available;
+		static unsigned long prev_b_credit_window_hits;
+		static unsigned long prev_b_would_pick;
+		static unsigned long prev_b_would_miss;
+		static unsigned long prev_b_live_injected;
+		static unsigned long prev_b_consumed;
+		unsigned long cur_b_inserted = __atomic_load_n(
+			&kcov_shm->cmp_hyp_boundary_inserted, __ATOMIC_RELAXED);
+		unsigned long cur_b_candidate_available = __atomic_load_n(
+			&kcov_shm->cmp_hyp_boundary_candidate_available,
+			__ATOMIC_RELAXED);
+		unsigned long cur_b_credit_window_hits = __atomic_load_n(
+			&kcov_shm->cmp_hyp_boundary_credit_window_hits,
+			__ATOMIC_RELAXED);
+		unsigned long cur_b_would_pick = __atomic_load_n(
+			&kcov_shm->cmp_hyp_would_pick_by_kind[CMP_HYP_BOUNDARY],
+			__ATOMIC_RELAXED);
+		unsigned long cur_b_would_miss = __atomic_load_n(
+			&kcov_shm->cmp_hyp_would_miss_by_kind[CMP_HYP_BOUNDARY],
+			__ATOMIC_RELAXED);
+		unsigned long cur_b_live_injected = __atomic_load_n(
+			&kcov_shm->cmp_hyp_live_injected_by_kind[CMP_HYP_BOUNDARY],
+			__ATOMIC_RELAXED);
+		unsigned long cur_b_consumed = __atomic_load_n(
+			&kcov_shm->cmp_hyp_consumed_by_kind[CMP_HYP_BOUNDARY],
+			__ATOMIC_RELAXED);
+		unsigned long any_delta =
+			(cur_b_inserted - prev_b_inserted) |
+			(cur_b_candidate_available - prev_b_candidate_available) |
+			(cur_b_credit_window_hits - prev_b_credit_window_hits) |
+			(cur_b_would_pick - prev_b_would_pick) |
+			(cur_b_would_miss - prev_b_would_miss) |
+			(cur_b_live_injected - prev_b_live_injected) |
+			(cur_b_consumed - prev_b_consumed);
+
+		if (any_delta != 0) {
+			stats_log_write("KCOV CMP hyp BOUNDARY-arm scorecard over last %lds:\n",
+					elapsed);
+			stats_log_write("  %-40s +%lu  (total %lu)\n",
+					"cmp_hyp_boundary_inserted",
+					cur_b_inserted - prev_b_inserted,
+					cur_b_inserted);
+			stats_log_write("  %-40s +%lu  (total %lu)\n",
+					"cmp_hyp_boundary_candidate_available",
+					cur_b_candidate_available - prev_b_candidate_available,
+					cur_b_candidate_available);
+			stats_log_write("  %-40s +%lu  (total %lu)\n",
+					"cmp_hyp_would_pick_by_kind[boundary]",
+					cur_b_would_pick - prev_b_would_pick,
+					cur_b_would_pick);
+			stats_log_write("  %-40s +%lu  (total %lu)\n",
+					"cmp_hyp_would_miss_by_kind[boundary]",
+					cur_b_would_miss - prev_b_would_miss,
+					cur_b_would_miss);
+			stats_log_write("  %-40s +%lu  (total %lu)\n",
+					"cmp_hyp_live_injected_by_kind[boundary]",
+					cur_b_live_injected - prev_b_live_injected,
+					cur_b_live_injected);
+			stats_log_write("  %-40s +%lu  (total %lu)\n",
+					"cmp_hyp_consumed_by_kind[boundary]",
+					cur_b_consumed - prev_b_consumed,
+					cur_b_consumed);
+			stats_log_write("  %-40s +%lu  (total %lu)\n",
+					"cmp_hyp_boundary_credit_window_hits",
+					cur_b_credit_window_hits - prev_b_credit_window_hits,
+					cur_b_credit_window_hits);
+		}
+
+		prev_b_inserted = cur_b_inserted;
+		prev_b_candidate_available = cur_b_candidate_available;
+		prev_b_credit_window_hits = cur_b_credit_window_hits;
+		prev_b_would_pick = cur_b_would_pick;
+		prev_b_would_miss = cur_b_would_miss;
+		prev_b_live_injected = cur_b_live_injected;
+		prev_b_consumed = cur_b_consumed;
+	}
+
+	/*
 	 * SHADOW would-promote / would-demote eval from
 	 * cmp_hyp_credit_outcome().  Bumped per credit landing after the
 	 * per-hyp outcome counter is updated: would_promote when any of
