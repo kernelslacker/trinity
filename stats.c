@@ -2833,6 +2833,17 @@ static const struct stat_category devlink_port_churn_category =
 	              devlink_port_churn_iterations,
 	              devlink_port_churn_fields);
 
+static const struct stat_field ipmr_cache_report_fields[] = {
+	STAT_FIELD(ipmr_cache_report, iters),
+	STAT_FIELD(ipmr_cache_report, eperm),
+	STAT_FIELD(ipmr_cache_report, emit_ok),
+};
+
+static const struct stat_category ipmr_cache_report_category =
+	STAT_CATEGORY("ipmr_cache_report",
+	              ipmr_cache_report_iters,
+	              ipmr_cache_report_fields);
+
 static void dump_stats_json_netfilter_and_xfrm(void)
 {
 	stat_category_emit_json(&nftables_churn_category);
@@ -2856,6 +2867,8 @@ static void dump_stats_json_netfilter_and_xfrm(void)
 	stat_category_emit_json(&mptcp_pm_churn_category);
 	putchar(',');
 	stat_category_emit_json(&devlink_port_churn_category);
+	putchar(',');
+	stat_category_emit_json(&ipmr_cache_report_category);
 }
 
 static void dump_stats_json_iouring_zc_and_kvm(void)
