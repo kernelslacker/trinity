@@ -1,7 +1,7 @@
 #ifdef USE_VSOCK
 #include <sys/time.h>
 #include <stdlib.h>
-#include <linux/vm_sockets.h>
+#include "kernel/vm_sockets.h"
 #include "net.h"
 #include "random.h"
 #include "compat.h"
@@ -9,28 +9,6 @@
 
 #ifndef SOL_VSOCK
 #define SOL_VSOCK 287
-#endif
-
-#ifndef SO_VM_SOCKETS_BUFFER_SIZE
-#define SO_VM_SOCKETS_BUFFER_SIZE	0
-#endif
-#ifndef SO_VM_SOCKETS_BUFFER_MIN_SIZE
-#define SO_VM_SOCKETS_BUFFER_MIN_SIZE	1
-#endif
-#ifndef SO_VM_SOCKETS_BUFFER_MAX_SIZE
-#define SO_VM_SOCKETS_BUFFER_MAX_SIZE	2
-#endif
-#ifndef SO_VM_SOCKETS_PEER_HOST_VM_ID
-#define SO_VM_SOCKETS_PEER_HOST_VM_ID	3
-#endif
-#ifndef SO_VM_SOCKETS_TRUSTED
-#define SO_VM_SOCKETS_TRUSTED		5
-#endif
-#ifndef SO_VM_SOCKETS_CONNECT_TIMEOUT
-#define SO_VM_SOCKETS_CONNECT_TIMEOUT	6
-#endif
-#ifndef SO_VM_SOCKETS_NONBLOCK_TXRX
-#define SO_VM_SOCKETS_NONBLOCK_TXRX	7
 #endif
 
 static void vsock_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct sockaddr **addr, socklen_t *addrlen)
