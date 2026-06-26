@@ -2046,6 +2046,26 @@ static const struct stat_category aio_category =
 	              aio_submitted,
 	              aio_fields);
 
+/* errno_gradient: SHADOW measurement of upward errno-class crossings (no
+ * fuzzer-behaviour change -- see the errno_gradient_* block in
+ * include/stats.h for the class axis and the SHADOW contract).  Aggregate
+ * scalars only; the per-syscall last-class array is deliberately
+ * unrendered (internal to the predicate, matching the other per-syscall
+ * shadow arrays).  Text render gates on errno_gradient_crossings so a
+ * run that never observed an upward transition emits nothing in the
+ * text dump; JSON renders unconditionally for schema stability,
+ * matching the aio sibling above. */
+static const struct stat_field errno_gradient_fields[] = {
+	STAT_FIELD(errno_gradient, crossings),
+	STAT_FIELD(errno_gradient, to_permstate),
+	STAT_FIELD(errno_gradient, to_success),
+};
+
+static const struct stat_category errno_gradient_category =
+	STAT_CATEGORY("errno_gradient",
+	              errno_gradient_crossings,
+	              errno_gradient_fields);
+
 /* inplace_crypto_mutated: the inplace-crypto oracle childop overwrites a
  * plaintext slot mid-flight to catch handlers that read after the kernel
  * has copied; the per-mutation bump is the only positive signal that the
@@ -2412,6 +2432,8 @@ static void dump_stats_json_iouring_and_zombies(void)
 	stat_category_emit_json(&iouring_eventfd_category);
 	putchar(',');
 	stat_category_emit_json(&aio_category);
+	putchar(',');
+	stat_category_emit_json(&errno_gradient_category);
 	putchar(',');
 	stat_category_emit_json(&inplace_crypto_category);
 	putchar(',');
@@ -9257,6 +9279,8 @@ static void dump_stats_fuzzer_subsystems(void)
 	}
 
 	stat_category_emit_text(&aio_category);
+
+	stat_category_emit_text(&errno_gradient_category);
 
 	stat_category_emit_text(&inplace_crypto_category);
 

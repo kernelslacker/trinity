@@ -1250,6 +1250,29 @@ static void syscall_ret_dispatch_phase(struct syscallrecord *rec,
 	}
 }
 
+/* Map (retval, errno) into the 3-class errno gradient consumed by the
+ * shadow gradient hook below.  See the errno_gradient_* block in
+ * include/stats.h for the class definitions and the SHADOW contract.
+ * Caller has already gated on state == AFTER, so rec->retval /
+ * rec->errno_post are the real post-call values, not the previous
+ * syscall's stale shm noise. */
+static inline unsigned int errno_gradient_class(unsigned long retval,
+						int err)
+{
+	if (retval != -1UL)
+		return 2;
+	switch (err) {
+	case EPERM:
+	case EACCES:
+	case EAGAIN:
+	case EBUSY:
+	case EOPNOTSUPP:
+		return 1;
+	default:
+		return 0;
+	}
+}
+
 /* Phase 3 of handle_syscall_ret: post-dispatch stats, hooks, and
  * cleanup.  Bumps the per-syscall errno-bucket histogram and the
  * unconditional entry->attempted counter, then under state == AFTER
@@ -1363,6 +1386,61 @@ static void syscall_ret_post_phase(struct syscallrecord *rec,
 					minicorpus_save_with_reason(rec,
 						CORPUS_SAVE_REASON_ERRNO);
 				}
+			}
+		}
+
+		/* SHADOW errno-class gradient observation.  Pure
+		 * measurement -- no admission / scoring / picking
+		 * path consumes these writes; the only effect outside
+		 * this block is the aggregate counters rendered by
+		 * stats.c.  See the errno_gradient_* block in
+		 * include/stats.h for the class axis and the SHADOW
+		 * contract.
+		 *
+		 * Strictly-greater compare-exchange on the per-
+		 * syscall last-class slot: only an upward transition
+		 * (e.g. 0 -> 1, 1 -> 2, 0 -> 2) publishes the new
+		 * class and bumps the aggregates.  Equal / downward
+		 * transitions leave the slot and the counters
+		 * untouched.  The CAS loop tolerates concurrent
+		 * producers racing the same nr: a peer that publishes
+		 * a larger class mid-loop refreshes `last` on the
+		 * failed CAS, and our (now-no-longer-strictly-greater)
+		 * observation drops out without a spurious bump.
+		 * RELAXED throughout -- shadow predicate, the worst
+		 * race outcome is a one-pick over/under-count of the
+		 * aggregates, and live selection is not a consumer. */
+		{
+			unsigned int cls =
+				errno_gradient_class(rec->retval,
+				                     rec->errno_post);
+			unsigned long last = __atomic_load_n(
+				&shm->stats.errno_gradient_last_class[call],
+				__ATOMIC_RELAXED);
+
+			while ((unsigned long)cls > last) {
+				if (__atomic_compare_exchange_n(
+					&shm->stats.errno_gradient_last_class[call],
+					&last, (unsigned long)cls,
+					false,
+					__ATOMIC_RELAXED,
+					__ATOMIC_RELAXED)) {
+					__atomic_fetch_add(
+						&shm->stats.errno_gradient_crossings,
+						1UL, __ATOMIC_RELAXED);
+					if (cls == 1)
+						__atomic_fetch_add(
+							&shm->stats.errno_gradient_to_permstate,
+							1UL, __ATOMIC_RELAXED);
+					else /* cls == 2 (success) */
+						__atomic_fetch_add(
+							&shm->stats.errno_gradient_to_success,
+							1UL, __ATOMIC_RELAXED);
+					break;
+				}
+				/* CAS failed: `last` was refreshed in
+				 * place to the peer's freshly-published
+				 * value; loop test re-evaluates. */
 			}
 		}
 	}
