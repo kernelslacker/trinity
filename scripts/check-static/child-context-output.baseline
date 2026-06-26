@@ -169,8 +169,8 @@ syscalls/lsm_list_modules.c:296:post_lsm_list_modules
 syscalls/map_shadow_stack.c:45:post_map_shadow_stack
 syscalls/mmap.c:224:post_mmap_oracle_aligned
 syscalls/mmap.c:378:post_mmap_oracle_proc_maps
-syscalls/move_pages.c:178:post_move_pages
-syscalls/move_pages.c:208:post_move_pages
+syscalls/move_pages.c:177:post_move_pages
+syscalls/move_pages.c:207:post_move_pages
 syscalls/mprotect.c:162:post_mprotect
 syscalls/mprotect.c:209:post_mprotect
 syscalls/mq_notify.c:86:post_mq_notify
