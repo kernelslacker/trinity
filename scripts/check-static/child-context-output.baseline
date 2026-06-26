@@ -95,7 +95,7 @@ syscalls/getgid.c:36:post_getgid
 syscalls/getgid.c:53:post_getgid
 syscalls/getgroups.c:54:post_getgroups
 syscalls/getgroups.c:94:post_getgroups
-syscalls/getitimer.c:118:post_getitimer
+syscalls/getitimer.c:117:post_getitimer
 syscalls/get_mempolicy.c:216:post_get_mempolicy
 syscalls/get_mempolicy.c:224:post_get_mempolicy
 syscalls/getpagesize.c:46:post_getpagesize
