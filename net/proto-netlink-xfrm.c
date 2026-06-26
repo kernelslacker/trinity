@@ -144,7 +144,6 @@
 #include <sys/uio.h>
 #include <unistd.h>
 
-#include <netinet/in.h>
 #include <linux/netlink.h>
 
 #if __has_include(<linux/xfrm.h>)
