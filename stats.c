@@ -7850,6 +7850,54 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	}
 
 	/*
+	 * SHADOW 8-band histogram of the per-hypothesis score_bucket value
+	 * computed in cmp_hyp_credit_outcome().  Bumped lock-step with the
+	 * h->score_bucket store, using the bucket value just written.
+	 * Bands: 0 idle, 1 penalty-only, 2 heavy net-neg, 3 slight net-neg,
+	 * 4 break-even, 5 small net-pos, 6 moderate net-pos, 7 strong net-pos.
+	 * Render gated on any-delta so the section stays quiet until credit
+	 * sites start firing.
+	 */
+	{
+		static const char * const bucket_labels[8] = {
+			"idle",
+			"penalty_only",
+			"heavy_net_neg",
+			"slight_net_neg",
+			"break_even",
+			"small_net_pos",
+			"moderate_net_pos",
+			"strong_net_pos",
+		};
+		static unsigned long prev_hyp_score_bucket[8];
+		unsigned long cur_hyp_score_bucket[8];
+		unsigned long any_delta = 0;
+		unsigned int k;
+
+		for (k = 0; k < 8; k++) {
+			cur_hyp_score_bucket[k] = __atomic_load_n(
+				&kcov_shm->cmp_hyp_score_bucket_census[k],
+				__ATOMIC_RELAXED);
+			any_delta |= cur_hyp_score_bucket[k] - prev_hyp_score_bucket[k];
+		}
+
+		if (any_delta != 0) {
+			stats_log_write("KCOV CMP hyp score-bucket distribution (bands 0..7) over last %lds:\n",
+					elapsed);
+			for (k = 0; k < 8; k++) {
+				stats_log_write(
+					"  cmp_hyp_score_bucket[%u %-16s] +%lu  (total %lu)\n",
+					k, bucket_labels[k],
+					cur_hyp_score_bucket[k] - prev_hyp_score_bucket[k],
+					cur_hyp_score_bucket[k]);
+			}
+		}
+
+		for (k = 0; k < 8; k++)
+			prev_hyp_score_bucket[k] = cur_hyp_score_bucket[k];
+	}
+
+	/*
 	 * SHADOW per-hypothesis outcome aggregates that have no kcov_shm
 	 * flat-counter twin (corpus_save_wins / destructive_skips /
 	 * context_skips).  Walk the hyp_pools[][] grid once per window and

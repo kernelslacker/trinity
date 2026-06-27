@@ -2439,6 +2439,28 @@ struct kcov_shared {
 	unsigned long cmp_hyp_would_demote_by_kind[CMP_HYP_KIND_NR];
 
 	/*
+	 * SHADOW histogram of the 8-band score_bucket value computed in
+	 * cmp_hyp_credit_outcome().  Bumped once per credit landing, in
+	 * lock-step with the h->score_bucket store, using the SAME bucket
+	 * value just written.  Index k corresponds to band k:
+	 *
+	 *   0 idle (wins == 0 && pen == 0)
+	 *   1 penalty-only       (wins == 0, pen >= 1)
+	 *   2 heavy net-negative (pen >= wins + 4)
+	 *   3 slight net-negative (wins < pen < wins + 4)
+	 *   4 break-even         (wins == pen, both >= 1)
+	 *   5 small net-positive  (1 <= wins - pen < 4)
+	 *   6 moderate net-positive (4 <= wins - pen < 16)
+	 *   7 strong net-positive   (wins - pen >= 16)
+	 *
+	 * The if/else ladder above the store is exhaustive over 0..7, so
+	 * the index is bounded by construction; no clamp is needed.  Pure
+	 * observability: the bucket value is unchanged, h->state is NOT
+	 * mutated.
+	 */
+	unsigned long cmp_hyp_score_bucket_census[8];
+
+	/*
 	 * SHADOW census of which probe class cmp_hyp_derive_value() emits
 	 * each time it converts a resolved hypothesis to a concrete value
 	 * for the LIVE typed-inject arm.  Bumped once per successful
