@@ -586,6 +586,27 @@ struct kcov_cmp_diag {
  * distinct even if enum exit_reasons grows. */
 #define KCOV_RECOVERY_EXHAUSTED_EXIT_CODE (NUM_EXIT_REASONS + 1)
 
+/* Bound for the chronicle snapshot captured into struct
+ * kcov_pc_diag::first_ebadf_chronicle[] at first-EBADF latch time.
+ * The owning child's child_syscall_ring is sized at
+ * CHILD_SYSCALL_RING_SIZE (16); we copy out a parallel structure
+ * here so include/kcov.h does not have to drag in include/child.h
+ * (child.h includes kcov.h, so the dependency would cycle).  The
+ * cap matches the source ring's size -- a smaller cap would let
+ * the closer further back scroll off the snapshot the same way
+ * it scrolls off the live ring, defeating the whole point of
+ * capturing it at the EBADF crime scene. */
+#define KCOV_EBADF_CHRONICLE_MAX 16U
+struct kcov_ebadf_chronicle_slot {
+	unsigned long a1, a2, a3;	/* post-sanitize args as the kernel saw. */
+	unsigned long retval;		/* return value the kernel reported. */
+	unsigned int  nr;		/* syscall table index. */
+	int           errno_post;	/* errno after return. */
+	unsigned char do32bit;		/* selects which table nr indexes. */
+	unsigned char valid;		/* false for zero-init slots the producer
+					 * had not filled by latch time. */
+};
+
 /* Bound for the /proc/self/fd snapshot captured into struct
  * kcov_pc_diag::first_ebadf_proc_fds[].  Sized small enough that the
  * snapshot fits comfortably inside the 256-byte buffer the periodic
@@ -705,6 +726,50 @@ struct kcov_pc_diag {
 	 * is rare AND this counter is non-zero, the guard is doing its
 	 * job and close_range is exonerated as the EBADF source. */
 	unsigned long close_range_protect_truncate_count;
+
+	/* First-EBADF trap: full per-child diagnostic snapshot taken in
+	 * kcov_latch_first_ebadf() so the operator can name the real
+	 * closer even when it scrolled off the 16-slot child_syscall_-
+	 * ring summarized by first_ebadf_last_closer_syscall_nr above.
+	 * All four fields share the same one-shot CAS gate
+	 * (first_ebadf_op_nr) as the existing latch fields -- readers
+	 * must load first_ebadf_op_nr first and only consult these if
+	 * it is non-zero.
+	 *
+	 *   recovery_attempts        -- kcov_child::recovery_attempts at
+	 *                               latch time (capped at
+	 *                               KCOV_RECOVERY_MAX == 3).  Non-
+	 *                               zero means at least one prior
+	 *                               kcov_recover_fd() succeeded for
+	 *                               this child, so the EBADF being
+	 *                               latched is on a REBUILT fd, not
+	 *                               the original from kcov_init_-
+	 *                               child.  Directly addresses the
+	 *                               "kcov_recover_fd race" suspect:
+	 *                               zero exonerates it.
+	 *   cmp_recovery_attempts    -- companion counter for the cmp fd.
+	 *   chronicle_count          -- number of valid slots actually
+	 *                               populated in the snapshot below
+	 *                               (the producer-side ring may have
+	 *                               fewer than KCOV_EBADF_CHRONICLE_MAX
+	 *                               valid slots if the child hadn't
+	 *                               finished its first 16 syscalls).
+	 *   chronicle[]              -- snapshot of the EBADF-observing
+	 *                               child's syscall_ring at latch
+	 *                               time, captured newest-first
+	 *                               (chronicle[0] is the most recent
+	 *                               retired syscall).  Lets a parent-
+	 *                               side dumper emit the full trail
+	 *                               so the operator can see the real
+	 *                               closer even when the broad/
+	 *                               closer walkers were defeated by
+	 *                               ring scroll.
+	 */
+	unsigned char first_ebadf_recovery_attempts;
+	unsigned char first_ebadf_cmp_recovery_attempts;
+	unsigned char first_ebadf_chronicle_count;
+	struct kcov_ebadf_chronicle_slot
+		first_ebadf_chronicle[KCOV_EBADF_CHRONICLE_MAX];
 };
 
 /* Selector for kcov_cmp_diag_format() — keeps stats.c's two-line split
@@ -733,6 +798,18 @@ int kcov_cmp_diag_format(char *buf, size_t bufsz, enum kcov_cmp_diag_part part);
  * Returns the number of bytes written (excluding the trailing
  * NUL); zero if every counter is zero or kcov_shm is NULL. */
 int kcov_pc_diag_format(char *buf, size_t bufsz);
+
+/* Drain the first-EBADF trap dump (recovery counters + full
+ * chronicle snapshot) once, the first time the caller observes a
+ * non-zero first_ebadf_op_nr.  Returns true and emits one or more
+ * output(0, ...) lines if a fresh trap is available, false if the
+ * trap is empty or has already been drained in this process.
+ * Parent-only call site: stats / main-stats periodic loop.  The
+ * one-shot guard is process-local (a static bool inside the helper)
+ * so a child that observed first_ebadf cannot accidentally fire the
+ * dump from its routed-to-/dev/null output(); only the parent's
+ * print loop ever sees the trap surface in the operator log. */
+bool kcov_first_ebadf_trap_drain(void);
 
 struct kcov_child {
 	/* Field order is constrained by the hot-cacheline budget in struct

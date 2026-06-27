@@ -599,6 +599,23 @@ int kcov_pc_diag_format(char *buf, size_t bufsz)
 				":closer=nr%u%s",
 				last_closer_nr,
 				closer_protected_touched ? "/prot" : "");
+		{
+			unsigned char recov = __atomic_load_n(
+				&d->first_ebadf_recovery_attempts,
+				__ATOMIC_RELAXED);
+			unsigned char cmp_recov = __atomic_load_n(
+				&d->first_ebadf_cmp_recovery_attempts,
+				__ATOMIC_RELAXED);
+
+			/* Always emit when EITHER counter is non-zero so the
+			 * "EBADF on a rebuilt fd" case is visible at a glance:
+			 * recov=0/0 means the original fd died (kcov_recover_fd
+			 * cannot be the cause), recov>0 means the EBADF was on
+			 * the post-recovery fd (the rebuilt path is the suspect). */
+			if ((recov || cmp_recov) && (size_t)n < bufsz)
+				n += snprintf(buf + n, bufsz - n,
+					":recov=%u/%u", recov, cmp_recov);
+		}
 		if (fd_count && (size_t)n < bufsz) {
 			unsigned int i;
 
@@ -618,6 +635,96 @@ int kcov_pc_diag_format(char *buf, size_t bufsz)
 	}
 
 	return n;
+}
+
+/*
+ * One-shot per-process drain of the first-EBADF trap dump.  The
+ * kcov_pc_diag_format() summary in the periodic stats line names
+ * the closer the chronicle walker found (or didn't); this dump
+ * complements it with the full chronicle snapshot + recovery
+ * counters captured at latch time, so the operator can name a
+ * closer even when ring scroll defeated both walkers.
+ *
+ * Process-local one-shot via a static bool inside the helper:
+ * once the parent's print loop emits the dump, subsequent calls
+ * are silent.  Children's print loops never reach here (no parent-
+ * side periodic stats inside children), so the one-shot does not
+ * need to be cross-process atomic.
+ *
+ * Returns true if a fresh trap was drained (one or more output()
+ * lines emitted), false if the trap is empty (first_ebadf_op_nr
+ * still zero) or already drained.
+ */
+bool kcov_first_ebadf_trap_drain(void)
+{
+	static bool drained;
+	struct kcov_pc_diag *d;
+	unsigned long op_nr;
+	unsigned long pid;
+	unsigned int  syscall_nr;
+	int           fd_value;
+	uint64_t      generation;
+	unsigned char recov, cmp_recov, count;
+	unsigned int  i;
+
+	if (drained)
+		return false;
+	if (kcov_shm == NULL)
+		return false;
+
+	d = &kcov_shm->pc_diag;
+	op_nr = __atomic_load_n(&d->first_ebadf_op_nr, __ATOMIC_RELAXED);
+	if (op_nr == 0)
+		return false;
+
+	/* Latch the one-shot first so a re-entrant or racing caller
+	 * cannot double-emit even if the loads below take a while. */
+	drained = true;
+
+	pid        = __atomic_load_n(&d->first_ebadf_pid,        __ATOMIC_RELAXED);
+	syscall_nr = __atomic_load_n(&d->first_ebadf_syscall_nr, __ATOMIC_RELAXED);
+	fd_value   = __atomic_load_n(&d->first_ebadf_fd_value,   __ATOMIC_RELAXED);
+	generation = __atomic_load_n(&d->first_ebadf_generation, __ATOMIC_RELAXED);
+	recov      = __atomic_load_n(&d->first_ebadf_recovery_attempts,
+				     __ATOMIC_RELAXED);
+	cmp_recov  = __atomic_load_n(&d->first_ebadf_cmp_recovery_attempts,
+				     __ATOMIC_RELAXED);
+	count      = __atomic_load_n(&d->first_ebadf_chronicle_count,
+				     __ATOMIC_RELAXED);
+
+	output(0, "KCOV-EBADF-TRAP: latched op=%lu pid=%lu nr=%u fd=%d gen=%lu recov=%u/%u chronicle=%u/%u\n",
+	       op_nr - 1, pid, syscall_nr, fd_value,
+	       (unsigned long) generation,
+	       (unsigned int) recov, (unsigned int) cmp_recov,
+	       (unsigned int) count, KCOV_EBADF_CHRONICLE_MAX);
+
+	if (count > KCOV_EBADF_CHRONICLE_MAX)
+		count = KCOV_EBADF_CHRONICLE_MAX;
+
+	/* Walk the full snapshot, newest first.  Slot 0 is the most
+	 * recent retired syscall; the real closer that scrolled off
+	 * the live ring's tail is somewhere in here even when both
+	 * walkers' "most recent <X>" answer disagreed with reality. */
+	for (i = 0; i < KCOV_EBADF_CHRONICLE_MAX; i++) {
+		const struct kcov_ebadf_chronicle_slot *s =
+			&d->first_ebadf_chronicle[i];
+		struct syscallentry *e;
+		const char *name;
+
+		if (!s->valid)
+			continue;
+		e = get_syscall_entry(s->nr, s->do32bit ? true : false);
+		name = (e != NULL && e->name != NULL) ? e->name : "?";
+
+		output(0, "KCOV-EBADF-TRAP:   [%u] nr=%u(%s%s) a1=0x%lx a2=0x%lx a3=0x%lx ret=0x%lx errno=%s(%d)\n",
+			i, s->nr, name,
+			s->do32bit ? "/32" : "",
+			s->a1, s->a2, s->a3, s->retval,
+			errno_name_or("?", s->errno_post),
+			s->errno_post);
+	}
+
+	return true;
 }
 
 /*
@@ -1343,6 +1450,49 @@ static void kcov_latch_first_ebadf(struct kcov_child *kc, struct childdata *c)
 		__atomic_store_n(
 			&kcov_shm->pc_diag.first_ebadf_closer_protected_touched,
 			closer_protected_touched, __ATOMIC_RELAXED);
+		__atomic_store_n(
+			&kcov_shm->pc_diag.first_ebadf_recovery_attempts,
+			(unsigned char) kc->recovery_attempts,
+			__ATOMIC_RELAXED);
+		__atomic_store_n(
+			&kcov_shm->pc_diag.first_ebadf_cmp_recovery_attempts,
+			(unsigned char) kc->cmp_recovery_attempts,
+			__ATOMIC_RELAXED);
+		/* Snapshot the owning child's chronicle ring newest-first
+		 * so the parent-side trap dumper can name the real closer
+		 * even when ring scroll defeated the closer walker above.
+		 * Plain stores -- this is the CAS winner inside the
+		 * owning child and no other context touches these slots. */
+		if (c != NULL) {
+			uint32_t head = c->syscall_ring.head;
+			unsigned int j;
+			unsigned int populated = 0;
+
+			for (j = 0; j < KCOV_EBADF_CHRONICLE_MAX; j++) {
+				uint32_t idx =
+					(head - 1 - j) &
+					(CHILD_SYSCALL_RING_SIZE - 1);
+				const struct chronicle_slot *s =
+					&c->syscall_ring.recent[idx];
+				struct kcov_ebadf_chronicle_slot *out =
+					&kcov_shm->pc_diag.first_ebadf_chronicle[j];
+
+				out->a1         = s->a1;
+				out->a2         = s->a2;
+				out->a3         = s->a3;
+				out->retval     = s->retval;
+				out->nr         = s->nr;
+				out->errno_post = s->errno_post;
+				out->do32bit    = s->do32bit ? 1 : 0;
+				out->valid      = s->valid ? 1 : 0;
+				if (s->valid)
+					populated++;
+			}
+			__atomic_store_n(
+				&kcov_shm->pc_diag.first_ebadf_chronicle_count,
+				(unsigned char) populated,
+				__ATOMIC_RELAXED);
+		}
 		for (i = 0; i < snap_count; i++)
 			__atomic_store_n(
 				&kcov_shm->pc_diag.first_ebadf_proc_fds[i],
