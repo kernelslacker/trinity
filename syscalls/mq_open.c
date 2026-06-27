@@ -6,6 +6,7 @@
 #include <string.h>
 #include <unistd.h>
 #include "deferred-free.h"
+#include "name-pool.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -58,10 +59,38 @@ static void sanitise_mq_open(struct syscallrecord *rec)
 	 */
 	rec->post_state = 0;
 
-	/* Generate a valid mq name: must start with '/' */
+	/*
+	 * mq name: must start with '/' and contain no other '/'.  On a
+	 * minority of draws, try the stateful pool so a later call can
+	 * reference an mq this child planted earlier; the pool returns
+	 * arbitrary mutated bytes, so validate the POSIX format and fall
+	 * back to a fresh "/trinN" on a draw that breaks it -- feeding
+	 * the kernel a guaranteed-EINVAL name on every draw would reduce
+	 * coverage rather than extend it.  The buffer is 32 bytes and
+	 * must be NUL-terminated, so cap the draw at 31 to leave room
+	 * for the terminator we plant below.
+	 */
 	name = (char *) get_writable_struct(32);
 	if (!name)
 		return;
+
+	if (ONE_IN(4)) {
+		size_t got = name_pool_draw_mutated(NAME_KIND_MQ_NAME,
+						    name, 31);
+		int ok = (got >= 2 && name[0] == '/');
+		size_t i;
+
+		for (i = 1; ok && i < got; i++) {
+			if (name[i] == '/')
+				ok = 0;
+		}
+		if (ok) {
+			name[got] = '\0';
+			goto have_name;
+		}
+		/* empty pool or draw broke the format: fall through */
+	}
+
 	name[0] = '/';
 	name[1] = 't';
 	name[2] = 'r';
@@ -69,6 +98,9 @@ static void sanitise_mq_open(struct syscallrecord *rec)
 	name[4] = 'n';
 	name[5] = '0' + (rnd_modulo_u32(10));
 	name[6] = '\0';
+	name_pool_record(NAME_KIND_MQ_NAME, name, 6);
+
+have_name:
 
 	attr = (struct mq_attr *) get_writable_struct(sizeof(*attr));
 	if (!attr)
