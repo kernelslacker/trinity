@@ -9,6 +9,7 @@
 #include "deferred-free.h"
 #include "fd.h"
 #include "files.h"
+#include "maps.h"
 #include "objects.h"
 #include "random.h"
 #include "rnd.h"
@@ -178,6 +179,50 @@ int get_rand_testfile_fd(void)
 	}
 
 	return -1;
+}
+
+void invalidate_testfile_mmaps_for_index(unsigned int index)
+{
+	char target[32];
+	struct objhead *head;
+	struct object *obj;
+	unsigned int idx;
+
+	/*
+	 * The pathname-pinning sanitiser passes a 1-based index in the
+	 * range it chose its target from -- silently ignore anything
+	 * outside that range so callers can hand us the snap field
+	 * unconditionally without bracketing the call.
+	 */
+	if (index == 0 || index > MAX_TESTFILES)
+		return;
+
+	/*
+	 * Rebuild the basename the sanitiser pinned the pathname to.
+	 * fds/testfiles.c records each fd's basename (not the absolute
+	 * path) on obj->testfileobj.filename, so we match against the
+	 * basename form here.  open_testfile_fds() rotates MAX_TESTFILE_FDS
+	 * fds across MAX_TESTFILES distinct inodes, so multiple OBJ_FD_TESTFILE
+	 * entries may match a single basename; walk every match and
+	 * dispatch a per-fd invalidate.
+	 */
+	snprintf(target, sizeof(target), "trinity-testfile%u", index);
+
+	head = get_objhead(OBJ_GLOBAL, OBJ_FD_TESTFILE);
+	if (head == NULL || head->array == NULL)
+		return;
+
+	for_each_obj(head, obj, idx) {
+		if (!objpool_check(obj, OBJ_FD_TESTFILE))
+			continue;
+		if (obj->testfileobj.filename == NULL)
+			continue;
+		if (strcmp(obj->testfileobj.filename, target) != 0)
+			continue;
+		if (obj->testfileobj.fd < 0)
+			continue;
+		invalidate_obj_mmap_by_fd(obj->testfileobj.fd);
+	}
 }
 
 static const struct fd_provider testfile_fd_provider = {
