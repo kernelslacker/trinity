@@ -39,7 +39,7 @@ fi
 # Count distinct call sites of the two producer functions across the
 # tree (excluding utils.c where the functions are defined and the
 # bookkeeping happens, and headers where declarations live).
-sites=$(grep -rEn '\b(alloc_shared|track_shared_region)[[:space:]]*\(' "$ROOT" \
+sites=$(grep -rEn '\b(alloc_shared(_pool)?|track_shared_region)[[:space:]]*\(' "$ROOT" \
 	--include='*.c' --include='*.h' 2>/dev/null \
 	| grep -v ':utils\.c:' \
 	| grep -v '/utils\.c:' \
