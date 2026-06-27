@@ -446,6 +446,8 @@ static void sanitise_futex(struct syscallrecord *rec)
 	case FUTEX_WAIT_REQUEUE_PI_PRIVATE:
 	case FUTEX_LOCK_PI:
 	case FUTEX_LOCK_PI_PRIVATE:
+	case FUTEX_LOCK_PI2:
+	case FUTEX_LOCK_PI2_PRIVATE:
 		utime_clamp.tv_sec = rnd_modulo_u32(2);
 		utime_clamp.tv_nsec = rnd_modulo_u32(5 * 1000 * 1000);
 		rec->a4 = (unsigned long) &utime_clamp;
