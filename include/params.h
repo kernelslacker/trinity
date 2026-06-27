@@ -92,6 +92,18 @@ extern bool frontier_live_cooldown;
  */
 extern bool writer_pin_sweep;
 extern unsigned int writer_pin_stride;
+
+/*
+ * --writer-watch=<hexaddr>: DEFAULT-OFF Stage-2 NAMER for the writer-
+ * pinning canary.  perf hardware WRITE breakpoint armed per-child after
+ * fork (writer-watch.c).  Synchronous trap in the writing child at the
+ * exact instruction; SIGTRAP handler in signals.c::writer_trap_handler
+ * dumps writer_pc + syscall nr + childop + op_nr + pid.  Zero =
+ * disabled.  Heavyweight debug tool -- only enable for a targeted
+ * corruption hunt; the perf fd has real cost and the handler _exit()s
+ * on hit.
+ */
+extern unsigned long writer_watch_addr;
 extern bool user_set_seed;
 extern char *victim_paths[];
 extern unsigned int nr_victim_paths;

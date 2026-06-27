@@ -47,6 +47,7 @@
 #include "stats_ring.h"
 #include "syscall.h"
 #include "trinity.h"	// ARRAY_SIZE
+#include "writer-watch.h"
 #include "uid.h"
 #include "utils.h"	// zmalloc
 
@@ -1363,4 +1364,16 @@ void init_child(struct childdata *child, int childno)
 	(void)mallopt(M_ARENA_TEST, 1);
 
 	init_abort_msg_capture();
+
+	/*
+	 * Arm the Stage-2 writer-pinning canary hardware breakpoint last.
+	 * Default-OFF: writer_watch_arm_child() short-circuits when
+	 * --writer-watch was not passed (writer_watch_addr == 0).  Runs
+	 * after mask_signals_child() has installed the SIGTRAP handler
+	 * (mask_signals_child is called earlier via init_child_setup_sandbox
+	 * -> ... -> the child fork-side init path), so a trap delivered
+	 * to this thread immediately after arming is dispatched to
+	 * writer_trap_handler instead of the kernel-default core-dump
+	 * behaviour. */
+	writer_watch_arm_child();
 }

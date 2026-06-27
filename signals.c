@@ -770,6 +770,97 @@ void stamp_childop_identity(void)
 }
 
 /*
+ * SIGTRAP handler for the Stage-2 writer-pinning canary (perf HW
+ * breakpoint armed by writer-watch.c with perf_event_attr.sigtrap=1).
+ * The kernel delivers SIGTRAP SYNCHRONOUSLY in the writing thread with
+ * si_code=TRAP_PERF; info->si_addr is the faulting instruction and the
+ * ucontext RIP is the writer's instruction pointer (just past the
+ * write on x86 hardware-data-breakpoints).  This handler dumps the
+ * writer's identity and _exit()s so the trap does not re-fire when
+ * the kernel resumes the interrupted thread.
+ *
+ * Synchronous delivery requires perf_event_attr.sigtrap=1 (kernel >=
+ * 5.13).  The earlier F_SETSIG/SIGIO route is asynchronous and would
+ * make info->si_addr meaningless -- explicitly NOT used.
+ *
+ * STRICTLY ASYNC-SIGNAL-SAFE: only write(2), the sigsafe_* helpers
+ * (byte stores into caller-owned stack buffer), and pure inline reads
+ * from caller-owned ucontext.  No libc malloc / stdio / locale / lock,
+ * no symbolization (dladdr is unsafe -- the WRITER-PINNED line emits
+ * the RAW PC; resolve it offline against the [load-bases] line
+ * log_load_bases() prints at startup, same convention as the FAULT!
+ * line).  The this_child() deref is gated by range_in_tracked_shared
+ * exactly like stamp_fault_beacon does, so a wild/torn-down me does
+ * not double-fault in this very handler.
+ *
+ * Caveat (documented spec limit): for a kernel-side value-result write
+ * (copy_to_user via a fuzzed pointer) the breakpoint may or may not
+ * trap from user-mode debug registers on every arch -- exclude_kernel=0
+ * is the best the perf interface offers, but the synchronous trap is
+ * not guaranteed for in-kernel writers on all configurations.  Trinity-
+ * userspace writers ARE caught synchronously with the exact RIP.
+ *
+ * carries no_sanitize("address") for the same reason child_fault_handler
+ * does: the gated me->syscall.state load intentionally bypasses ASAN's
+ * shadow check.
+ */
+static __attribute__((no_sanitize("address")))
+void writer_trap_handler(int sig, siginfo_t *info, void *ctx)
+{
+	char buf[256];
+	struct sigsafe_buf b = { buf, sizeof(buf) };
+	struct childdata *me;
+	const char *opname = "unknown";
+	unsigned long opnr = 0;
+	int last_syscall_nr = -1;
+	size_t used;
+	ssize_t w;
+
+	me = this_child();
+	if (me != NULL &&
+	    range_in_tracked_shared((unsigned long)me,
+				    sizeof(struct childdata))) {
+		enum syscallstate st = me->syscall.state;
+
+		opname = alt_op_name(me->op_type);
+		if (opname == NULL)
+			opname = "unknown";
+		opnr = me->op_nr;
+		if (st == PREP || st == BEFORE || st == GOING_AWAY)
+			last_syscall_nr = (int)me->syscall.nr;
+	}
+
+	sigsafe_puts(&b, "WRITER-PINNED: hardware write breakpoint fired");
+	sigsafe_puts(&b, " addr=");
+	sigsafe_putp(&b, info != NULL ? info->si_addr : NULL);
+	sigsafe_puts(&b, " writer_pc=");
+	sigsafe_putp(&b, fault_beacon_extract_ip(ctx));
+	sigsafe_puts(&b, " (RAW, resolve offline against [load-bases])");
+	sigsafe_puts(&b, " syscall_nr=");
+	sigsafe_puti(&b, (long)last_syscall_nr);
+	sigsafe_puts(&b, " childop=");
+	sigsafe_puts(&b, opname);
+	sigsafe_puts(&b, " op_nr=");
+	sigsafe_putu(&b, opnr);
+	sigsafe_puts(&b, " pid=");
+	sigsafe_puti(&b, (long)getpid());
+	sigsafe_putc(&b, '\n');
+
+	used = sizeof(buf) - b.left;
+	w = write(STDERR_FILENO, buf, used);
+	(void)w;	/* dying anyway; short write irrelevant */
+	(void)sig;
+
+	/*
+	 * _exit(), not return / raise.  The watched address has just been
+	 * scribbled and the instruction has NOT advanced; returning would
+	 * re-execute the write and re-fire SIGTRAP in a tight loop.  The
+	 * parent's reaper sees a normal exit and respawns the slot.
+	 */
+	_exit(EXIT_SUCCESS);
+}
+
+/*
  * Final escalation step.  In debug mode restore the default
  * disposition and re-raise so the kernel emits a core file (the
  * RLIMIT_CORE bump in child.c::disable_coredumps was -D-only).
@@ -1219,6 +1310,25 @@ void mask_signals_child(void)
 		(void)sigaction(SIGABRT, &fault_sa, NULL);
 		(void)sigaction(SIGBUS,  &fault_sa, NULL);
 		(void)sigaction(SIGILL,  &fault_sa, NULL);
+	}
+
+	/*
+	 * SIGTRAP handler for the Stage-2 writer-pinning canary HW
+	 * watchpoint (--writer-watch).  Installed unconditionally so the
+	 * disposition is the same shape regardless of whether the perf
+	 * event has been armed yet; writer_watch_arm_child() is what
+	 * actually opens the perf fd and routes SIGTRAP here via
+	 * F_SETSIG.  When --writer-watch is not in use the perf fd is
+	 * never opened, no SIGTRAP can fire, and the handler is dead
+	 * code.  SA_SIGINFO so the handler can read the ucontext for the
+	 * writer's RIP and the siginfo for the watched address.
+	 */
+	{
+		struct sigaction trap_sa;
+		sigemptyset(&trap_sa.sa_mask);
+		trap_sa.sa_flags = SA_SIGINFO;
+		trap_sa.sa_sigaction = writer_trap_handler;
+		(void)sigaction(SIGTRAP, &trap_sa, NULL);
 	}
 
 	/* trap ctrl-c — use SA_SIGINFO so we can ignore child-sent SIGINTs,

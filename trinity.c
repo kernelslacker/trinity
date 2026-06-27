@@ -941,6 +941,18 @@ int main(int argc, char* argv[])
 
 	init_pre_fork();
 
+	/* Writer-pinning canary banner.  Both flags are default-off; the
+	 * banner only fires when an operator has opted in, so a normal run
+	 * stays silent.  Emitting via output(0) so the line lands in the
+	 * top-of-log provenance section alongside guard-shared, build_hash
+	 * etc.  Heavyweight debug tool -- not for routine fuzzing. */
+	if (writer_pin_sweep || writer_watch_addr != 0)
+		output(0, "[writer-pin] sweep=%s watch=0x%lx stride=%u"
+		       " (debug, perf HW breakpoint)\n",
+		       writer_pin_sweep ? "on" : "off",
+		       writer_watch_addr,
+		       writer_pin_stride);
+
 #ifdef CONFIG_GUARD_SHARED
 	/* Announce guard-shared armour state once shared_regions[] has
 	 * settled (init_shm + the pool inits inside init_pre_fork have
