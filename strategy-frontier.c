@@ -37,6 +37,103 @@ _Static_assert((FRONTIER_DECAY_WINDOWS &
 		(FRONTIER_DECAY_WINDOWS - 1)) == 0,
 	       "FRONTIER_DECAY_WINDOWS must be a power of two");
 
+/*
+ * SHADOW-ONLY topology-pair latch + ring writer.  Invoked from the
+ * two productive-event hooks below
+ * (frontier_record_new_edge for new PC-edge bucket bits and
+ * frontier_record_transition_edge for new transition slots) so a single
+ * site owns the read-of-child-latch / packed-store-into-ring sequence
+ * and both reason codes share the same race contract.
+ *
+ * NR_CHILD_OP_TYPES must fit in the 8-bit setup_op slot of the packed
+ * entry, and TOPO_PAIR_RING_SIZE must be a power of two so the
+ * fetch-add'd head can be masked instead of modulo'd.  Both invariants
+ * are pinned at compile time below; a future bump to NR_CHILD_OP_TYPES
+ * past 256 entries (today: ~117) would silently truncate the recorded
+ * setup_op without these asserts, and a non-power-of-two ring size
+ * would invalidate the AND-mask address derivation in the producer.
+ *
+ * The writer chain:
+ *   1. Skip silently when called from parent context (this_child() ==
+ *      NULL); the productive-event hooks already tolerate this via the
+ *      existing per-syscall accounting blocks below.
+ *   2. If the firing child has not yet observed any setup childop on
+ *      this run (last_setup_op == NR_CHILD_OP_TYPES sentinel), bump
+ *      topo_pair_no_setup_observed instead -- the cumulative
+ *      "productive events with no prior setup" denominator the
+ *      aggregator surfaces alongside the per-setup_op breakdown.
+ *   3. Otherwise: compute age = op_nr - last_setup_op_nr (clamped at
+ *      TOPO_PAIR_AGE_MAX so a long-lived child does not overflow the
+ *      20-bit age field), pack the {setup_op, reason, syscall_nr, age}
+ *      tuple via topo_pair_pack(), claim a ring slot with a RELAXED
+ *      fetch-add of topo_pair_ring_head, and store the packed entry
+ *      with a single RELAXED 64-bit store.  Single-store discipline
+ *      means a reader observes either the prior slot's tuple or the
+ *      fresh one but never a torn mix -- the only race window is two
+ *      producers fetch-adding to the same modulo-equal head, which
+ *      simply collapses one of their writes into the older entry, an
+ *      outcome bounded by the overwrite-oldest semantics the ring
+ *      already accepts.
+ *
+ * Cumulative topo_pair_records bumps unconditionally on the write path
+ * so the aggregator can distinguish a sparsely-filled ring (records <
+ * TOPO_PAIR_RING_SIZE; tail slots still uninitialised) from a wrapped
+ * ring (records >= TOPO_PAIR_RING_SIZE; aggregator can scan the full
+ * width).  RELAXED add-fetch -- saturation past ULONG_MAX is bounded
+ * by the lifetime of a single fuzz run and the aggregator only reads
+ * the counter for the "is the ring fully populated" flag.
+ */
+_Static_assert(NR_CHILD_OP_TYPES <= 256,
+	       "NR_CHILD_OP_TYPES must fit in 8 bits for topo_pair packing");
+_Static_assert((TOPO_PAIR_RING_SIZE &
+		(TOPO_PAIR_RING_SIZE - 1u)) == 0,
+	       "TOPO_PAIR_RING_SIZE must be a power of two");
+
+void topo_pair_record_shadow(unsigned int nr, unsigned int reason)
+{
+	struct childdata *cc = this_child();
+	enum child_op_type setup_op;
+	unsigned long setup_op_nr, now_op_nr;
+	unsigned long age;
+	unsigned int slot;
+	uint64_t packed;
+
+	if (cc == NULL)
+		return;
+
+	setup_op = cc->last_setup_op;
+	if ((unsigned int)setup_op >= NR_CHILD_OP_TYPES) {
+		__atomic_fetch_add(&shm->stats.topo_pair_no_setup_observed,
+				   1UL, __ATOMIC_RELAXED);
+		return;
+	}
+
+	setup_op_nr = cc->last_setup_op_nr;
+	now_op_nr = cc->op_nr;
+	/* Age in child iterations.  op_nr is the child's per-iter counter;
+	 * the productive event fires inside iter now_op_nr (the post-call
+	 * bump at the bottom of child_process() has not yet run).  A wrap
+	 * or out-of-order read that yields setup_op_nr > now_op_nr clamps
+	 * to age=0 rather than underflowing to ~ULONG_MAX -- mirrors the
+	 * monotonic-clock guard pattern other shadow consumers use. */
+	if (now_op_nr < setup_op_nr)
+		age = 0;
+	else
+		age = now_op_nr - setup_op_nr;
+	if (age > (unsigned long)TOPO_PAIR_AGE_MAX)
+		age = (unsigned long)TOPO_PAIR_AGE_MAX;
+
+	packed = topo_pair_pack((unsigned int)setup_op, reason, nr,
+				(unsigned int)age);
+
+	slot = __atomic_fetch_add(&shm->stats.topo_pair_ring_head, 1u,
+				  __ATOMIC_RELAXED) & TOPO_PAIR_RING_MASK;
+	__atomic_store_n(&shm->stats.topo_pair_ring[slot], packed,
+			 __ATOMIC_RELAXED);
+	__atomic_fetch_add(&shm->stats.topo_pair_records, 1UL,
+			   __ATOMIC_RELAXED);
+}
+
 void frontier_record_new_edge(unsigned int nr)
 {
 	uint32_t slot;
@@ -165,6 +262,14 @@ void frontier_record_new_edge(unsigned int nr)
 	if ((unsigned int)w > cached)
 		__atomic_store_n(&shm->frontier_max_weight_cached,
 				 (unsigned int)w, __ATOMIC_RELAXED);
+
+	/* SHADOW-ONLY topology-pair sample.  See topo_pair_record_shadow()
+	 * for the full design contract.  Sits at the tail of the function
+	 * so the live new-edge bookkeeping above (frontier ring, RedQueen /
+	 * errno-source attribution, silent-streak resets, max-weight
+	 * ratchet) is byte-identical to the pre-shadow path -- this single
+	 * tail call is the only behavioural addition. */
+	topo_pair_record_shadow(nr, TOPO_PAIR_REASON_PC);
 }
 
 /*

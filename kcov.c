@@ -2230,6 +2230,22 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 					&kcov_shm->per_syscall_transition_edges_real_local[nr],
 					transitions_this_call,
 					__ATOMIC_RELAXED);
+
+			/* SHADOW-ONLY topology-pair sample, transition lane.
+			 * Co-located with the
+			 * unconditional per_syscall_transition_edges_real bump
+			 * above so the topology aggregate's transition lane
+			 * fires whenever a transition is discovered, regardless
+			 * of the kcov_transition_reward_mode rollback knob or
+			 * the local/remote split downstream gates apply.  The
+			 * PC-edge sibling tail call in frontier_record_new_edge
+			 * (below the found_new branch above) is similarly
+			 * unconditional on mode -- this co-location keeps the
+			 * PC and transition lanes drawing from the same child
+			 * population for the per-setup_op comparison the shadow
+			 * aggregator surfaces. */
+			topo_pair_record_shadow(nr,
+						TOPO_PAIR_REASON_TRANSITION);
 		}
 	} else if (nr >= CHILDOP_KCOV_NR_BASE) {
 		/* per-childop mirror

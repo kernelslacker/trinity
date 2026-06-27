@@ -663,6 +663,23 @@ void child_process(struct childdata *child, int childno)
 		 * and out of the alt-op-only stats paths below. */
 		const bool is_alt_op = valid_op && (op != CHILD_OP_SYSCALL);
 
+		/* SHADOW-ONLY topology-pair latch.
+		 * Stamp the most-recent setup childop type + op_nr on this
+		 * child before op_fn runs, so productive events fired during
+		 * this dispatch attribute to this setup (instead of inheriting
+		 * the previous setup's identity).  Stamped only when this iter
+		 * actually dispatches an alt-op; CHILD_OP_SYSCALL iters leave
+		 * the latch in place so subsequent random-syscall productivity
+		 * stays credited to whichever setup last preceded it.  The
+		 * NR_CHILD_OP_TYPES sentinel from clean_childdata persists
+		 * until the first alt-op iter runs.  Owner-only writes; the
+		 * frontier_record_new_edge / _transition_edge readers run on
+		 * the same child, so plain stores are sufficient. */
+		if (is_alt_op) {
+			child->last_setup_op = op;
+			child->last_setup_op_nr = child->op_nr;
+		}
+
 		/* Refresh the iteration-start timestamp every 16th pass.
 		 * vDSO clock_gettime is fast (~20 ns) but at ~700 ops/sec
 		 * across 32 children it adds up; rec->tp consumers (taint
