@@ -19,10 +19,10 @@ childops/ipvs-sysctl-writer.c:106:warn_once_unsupported_ipvs_sysctl
 childops/mpls-route-churn.c:261:maybe_modprobe_once
 childops/mpls-route-churn.c:272:latch_ns_unsupported_mpls
 childops/mpls-route-churn.c:284:latch_ns_unsupported_lwtunnel
-childops/nat-t-churn.c:426:warn_once_unsupported
-childops/nat-t-churn.c:860:open_encap_udp6
-childops/nat-t-churn.c:881:open_encap_udp6
-childops/nat-t-churn.c:973:nat_t_churn_v6
+childops/nat-t-churn.c:425:warn_once_unsupported
+childops/nat-t-churn.c:859:open_encap_udp6
+childops/nat-t-churn.c:880:open_encap_udp6
+childops/nat-t-churn.c:972:nat_t_churn_v6
 childops/nftables-churn.c:150:warn_once_unsupported_nftables
 childops/numa-migration-churn.c:176:parse_online_nodes
 childops/numa-migration-churn.c:184:parse_online_nodes
