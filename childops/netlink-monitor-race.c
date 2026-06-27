@@ -69,7 +69,6 @@
  */
 
 #include <errno.h>
-#include <fcntl.h>
 #include <net/if.h>
 #include <netinet/in.h>
 #include <sched.h>
