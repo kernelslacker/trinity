@@ -28,5 +28,9 @@ unsigned int gen_path_traversal(char *buf, unsigned int buflen);
 /* ASCII text interspersed with binary control characters \x01-\x1f. */
 unsigned int gen_binary_control_chars(char *buf, unsigned int buflen);
 
+/* cpu-list / bitmap-list strings: "0", "0-3", "0,2-5,7", "all", plus
+ * near-valid and malformed variants ("5-2", "0--3", " 0 , 1 "). */
+unsigned int gen_cpu_list_string(char *buf, unsigned int buflen);
+
 /* Pick one of the above generators at random. */
 unsigned int gen_text_payload(char *buf, unsigned int buflen);

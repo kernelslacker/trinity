@@ -11,6 +11,7 @@
  * exercise overflow and sign-extension paths, and so on.
  */
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -238,16 +239,111 @@ unsigned int gen_binary_control_chars(char *buf, unsigned int buflen)
 	return buflen;
 }
 
+/*
+ * cpu-list / bitmap-list strings.
+ *
+ * lib/bitmap.c's cpulist_parse() / bitmap_parselist() is a hand-rolled
+ * parser used by sysfs cpumask writes, the cpuset cgroup files, and the
+ * taskstats REGISTER_CPUMASK / DEREGISTER_CPUMASK netlink attributes.
+ * It accepts comma-separated ranges ("0,2-5,7"), the literal "all", and
+ * an optional ":used/group" stride suffix.  Random bytes fail at the
+ * first non-digit, so without a content-aware producer those parsers
+ * are effectively unreachable from a uniform fuzzer.
+ *
+ * The well-formed list mixes valid shapes with deliberately-fragile
+ * inputs (reversed ranges, empty fields, lone separators, trailing
+ * dashes, oversize cpu numbers, embedded whitespace) — the historical
+ * crop of bitmap_parselist() bugs has clustered around exactly those
+ * shapes.  Output is bounded by the caller's buflen; nothing here can
+ * overrun the on-wire attribute cap.
+ */
+unsigned int gen_cpu_list_string(char *buf, unsigned int buflen)
+{
+	static const char * const variants[] = {
+		"0",
+		"0-1",
+		"0-3",
+		"0,2-5,7",
+		"all",
+		"1,3,5-9",
+		"",
+		",",
+		"0,",
+		",0",
+		"5-2",                  /* reversed range */
+		"0-99999",              /* range past nr_cpu_ids */
+		"0--3",                 /* doubled dash */
+		" 0 , 1 ",              /* embedded whitespace */
+		"0-",                   /* dangling dash */
+		"-3",                   /* leading dash */
+		"4294967295",           /* UINT_MAX cpu index */
+		"0-4095",
+		"0-7:1/2",              /* stride suffix */
+	};
+	char scratch[128];
+	const char *s;
+	unsigned int n;
+
+	if (buflen == 0)
+		return 0;
+
+	if (ONE_IN(3)) {
+		/* Compose a fresh "a-b,c,d-e" of up to 4 parts. */
+		unsigned int parts = RAND_RANGE(1, 4);
+		unsigned int pos = 0;
+		unsigned int i;
+
+		for (i = 0; i < parts; i++) {
+			unsigned int a = rnd_modulo_u32(4096);
+			unsigned int avail;
+			int wrote;
+
+			if (i > 0) {
+				if (pos + 1 >= sizeof(scratch))
+					break;
+				scratch[pos++] = ',';
+			}
+			avail = (unsigned int)sizeof(scratch) - pos;
+			if (avail < 16)
+				break;
+			if (ONE_IN(2))
+				wrote = snprintf(scratch + pos, avail, "%u-%u",
+						 a, a + rnd_modulo_u32(32));
+			else
+				wrote = snprintf(scratch + pos, avail, "%u", a);
+			if (wrote <= 0 || (unsigned int)wrote >= avail)
+				break;
+			pos += (unsigned int)wrote;
+		}
+		if (pos == 0) {
+			scratch[0] = '0';
+			pos = 1;
+		}
+		s = scratch;
+		n = pos;
+	} else {
+		s = RAND_ARRAY(variants);
+		n = (unsigned int)strlen(s);
+	}
+
+	n = cap(n, buflen);
+	memcpy(buf, s, n);
+	if (n < buflen)
+		memset(buf + n, 0, buflen - n);
+	return n;
+}
+
 /* Pick one of the above generators at random. */
 unsigned int gen_text_payload(char *buf, unsigned int buflen)
 {
-	switch (rnd_modulo_u32(7)) {
+	switch (rnd_modulo_u32(8)) {
 	case 0: return gen_long_string(buf, buflen);
 	case 1: return gen_embedded_nul(buf, buflen);
 	case 2: return gen_format_string_attack(buf, buflen);
 	case 3: return gen_valid_prefix_garbage(buf, buflen);
 	case 4: return gen_numeric_boundary_string(buf, buflen);
 	case 5: return gen_path_traversal(buf, buflen);
+	case 6: return gen_cpu_list_string(buf, buflen);
 	default: return gen_binary_control_chars(buf, buflen);
 	}
 }

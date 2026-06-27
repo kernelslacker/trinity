@@ -40,8 +40,8 @@ static const struct genl_cmd_grammar taskstats_cmds[] = {
 static const struct nla_attr_spec taskstats_attrs[] = {
 	{ TASKSTATS_CMD_ATTR_PID,                  NLA_KIND_U32,    4 },
 	{ TASKSTATS_CMD_ATTR_TGID,                 NLA_KIND_U32,    4 },
-	{ TASKSTATS_CMD_ATTR_REGISTER_CPUMASK,     NLA_KIND_STRING, 256 },
-	{ TASKSTATS_CMD_ATTR_DEREGISTER_CPUMASK,   NLA_KIND_STRING, 256 },
+	{ TASKSTATS_CMD_ATTR_REGISTER_CPUMASK,     NLA_KIND_STRING_CPULIST, 256 },
+	{ TASKSTATS_CMD_ATTR_DEREGISTER_CPUMASK,   NLA_KIND_STRING_CPULIST, 256 },
 };
 
 struct genl_family_grammar fam_taskstats = {
