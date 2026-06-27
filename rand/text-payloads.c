@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "name-pool.h"
 #include "random.h"
 #include "rnd.h"
 #include "text-payloads.h"
@@ -333,10 +334,223 @@ unsigned int gen_cpu_list_string(char *buf, unsigned int buflen)
 	return n;
 }
 
+/*
+ * Per-kind stateful-name lane.
+ *
+ * The generators below produce shape-correct names for specific
+ * kernel object kinds (netdev, key-desc, xattr-name, bpf-obj-name,
+ * mq-name, netlink-table).  Each call either generates a fresh
+ * random name AND records it into the per-kind ring of the shared
+ * name pool, or -- on a minority arm (REUSE_DENOM-in-1 draws) --
+ * pulls a previously-recorded name out of the pool with one of the
+ * mutation ops in rand/name-pool.c (reuse-exactly, 1-byte-mutate,
+ * truncate, case-flip, suffix-near-max).
+ *
+ * The mix is deliberately MINORITY for the reuse arm: the goal is
+ * to ADD the stateful create-then-reference coverage arm without
+ * collapsing fresh-random diversity to a small ring of repeating
+ * names.  Diversity in fresh-random is what keeps the long tail of
+ * one-shot parser paths exercised.
+ *
+ * REUSE_DENOM=4 → reuse arm fires on ~25% of draws, fresh-random
+ * is the majority at ~75%.  Note that when the pool is empty for a
+ * given kind (early in a child's life), the reuse arm falls back to
+ * the fresh path -- so the effective reuse rate is below 25% during
+ * pool warmup and asymptotes at 25% once filled.
+ */
+#define REUSE_DENOM 4
+
+static unsigned int write_str(char *buf, unsigned int buflen,
+			      const char *src, unsigned int srclen)
+{
+	unsigned int n = cap(srclen, buflen);
+
+	memcpy(buf, src, n);
+	return n;
+}
+
+static unsigned int gen_netdev_fresh(char *buf, unsigned int buflen)
+{
+	/* IFNAMSIZ is 16 (incl NUL); cap names at 15 bytes here. */
+	static const char * const prefixes[] = {
+		"eth", "lo", "veth", "tap", "br", "wlan",
+		"tun", "bond", "vlan", "trinity",
+	};
+	char scratch[16];
+	const char *pfx = RAND_ARRAY(prefixes);
+	int wrote;
+
+	if (ONE_IN(2))
+		wrote = snprintf(scratch, sizeof(scratch), "%s%u",
+				 pfx, rnd_modulo_u32(10000));
+	else
+		wrote = snprintf(scratch, sizeof(scratch), "%s%x",
+				 pfx, rnd_u32() & 0xffff);
+	if (wrote <= 0)
+		return 0;
+	if ((size_t)wrote >= sizeof(scratch))
+		wrote = (int)sizeof(scratch) - 1;
+
+	name_pool_record(NAME_KIND_NETDEV, scratch, (size_t)wrote);
+	return write_str(buf, buflen, scratch, (unsigned int)wrote);
+}
+
+static unsigned int gen_key_desc_fresh(char *buf, unsigned int buflen)
+{
+	static const char * const prefixes[] = {
+		"trinity_key", "session_keyring", "user_session",
+		"logon", "asymmetric_key", "trusted_blob",
+	};
+	char scratch[48];
+	const char *pfx = RAND_ARRAY(prefixes);
+	int wrote;
+
+	if (ONE_IN(3))
+		wrote = snprintf(scratch, sizeof(scratch), "%s:%u",
+				 pfx, rnd_u32());
+	else
+		wrote = snprintf(scratch, sizeof(scratch), "%s_%x",
+				 pfx, rnd_u32());
+	if (wrote <= 0)
+		return 0;
+	if ((size_t)wrote >= sizeof(scratch))
+		wrote = (int)sizeof(scratch) - 1;
+
+	name_pool_record(NAME_KIND_KEY_DESC, scratch, (size_t)wrote);
+	return write_str(buf, buflen, scratch, (unsigned int)wrote);
+}
+
+static unsigned int gen_xattr_name_fresh(char *buf, unsigned int buflen)
+{
+	static const char * const namespaces[] = {
+		"user", "trusted", "security", "system",
+	};
+	static const char * const stems[] = {
+		"test", "data", "attr", "blob", "tag", "marker",
+	};
+	char scratch[64];
+	int wrote;
+
+	wrote = snprintf(scratch, sizeof(scratch), "%s.%s_%x",
+			 RAND_ARRAY(namespaces),
+			 RAND_ARRAY(stems),
+			 rnd_u32() & 0xffff);
+	if (wrote <= 0)
+		return 0;
+	if ((size_t)wrote >= sizeof(scratch))
+		wrote = (int)sizeof(scratch) - 1;
+
+	name_pool_record(NAME_KIND_XATTR_NAME, scratch, (size_t)wrote);
+	return write_str(buf, buflen, scratch, (unsigned int)wrote);
+}
+
+static unsigned int gen_bpf_obj_name_fresh(char *buf, unsigned int buflen)
+{
+	/* BPF_OBJ_NAME_LEN is 16 (incl NUL); produce at most 15 bytes. */
+	static const char alphabet[] =
+		"abcdefghijklmnopqrstuvwxyz0123456789_";
+	char scratch[16];
+	unsigned int n = 1 + rnd_modulo_u32(15);
+	unsigned int i;
+
+	for (i = 0; i < n; i++)
+		scratch[i] = alphabet[rnd_modulo_u32(sizeof(alphabet) - 1)];
+
+	name_pool_record(NAME_KIND_BPF_OBJ_NAME, scratch, n);
+	return write_str(buf, buflen, scratch, n);
+}
+
+static unsigned int gen_mq_name_fresh(char *buf, unsigned int buflen)
+{
+	/* POSIX mq names start with '/' and contain no further slashes. */
+	char scratch[32];
+	int wrote;
+
+	wrote = snprintf(scratch, sizeof(scratch), "/trinity_q_%x",
+			 rnd_u32() & 0xffffff);
+	if (wrote <= 0)
+		return 0;
+	if ((size_t)wrote >= sizeof(scratch))
+		wrote = (int)sizeof(scratch) - 1;
+
+	name_pool_record(NAME_KIND_MQ_NAME, scratch, (size_t)wrote);
+	return write_str(buf, buflen, scratch, (unsigned int)wrote);
+}
+
+static unsigned int gen_netlink_table_fresh(char *buf, unsigned int buflen)
+{
+	/* nftables table names: short identifiers; max 32-ish. */
+	static const char * const wellknown[] = {
+		"filter", "nat", "mangle", "raw", "security",
+	};
+	char scratch[32];
+	int wrote;
+
+	if (ONE_IN(3)) {
+		const char *w = RAND_ARRAY(wellknown);
+
+		wrote = snprintf(scratch, sizeof(scratch), "%s", w);
+	} else {
+		wrote = snprintf(scratch, sizeof(scratch), "trinity_t_%x",
+				 rnd_u32() & 0xffff);
+	}
+	if (wrote <= 0)
+		return 0;
+	if ((size_t)wrote >= sizeof(scratch))
+		wrote = (int)sizeof(scratch) - 1;
+
+	name_pool_record(NAME_KIND_NETLINK_TABLE, scratch,
+			 (size_t)wrote);
+	return write_str(buf, buflen, scratch, (unsigned int)wrote);
+}
+
+static unsigned int gen_kind(enum name_kind kind, char *buf,
+			     unsigned int buflen)
+{
+	if (buflen == 0)
+		return 0;
+
+	/*
+	 * Minority reuse arm: ~1-in-REUSE_DENOM draws try the pool.
+	 * Empty-pool draws return 0 and we fall through to fresh.
+	 */
+	if (ONE_IN(REUSE_DENOM)) {
+		size_t got = name_pool_draw_mutated(kind, buf, buflen);
+
+		if (got > 0)
+			return (unsigned int)got;
+	}
+
+	switch (kind) {
+	case NAME_KIND_NETDEV:		return gen_netdev_fresh(buf, buflen);
+	case NAME_KIND_KEY_DESC:	return gen_key_desc_fresh(buf, buflen);
+	case NAME_KIND_XATTR_NAME:	return gen_xattr_name_fresh(buf, buflen);
+	case NAME_KIND_BPF_OBJ_NAME:	return gen_bpf_obj_name_fresh(buf, buflen);
+	case NAME_KIND_MQ_NAME:		return gen_mq_name_fresh(buf, buflen);
+	case NAME_KIND_NETLINK_TABLE:	return gen_netlink_table_fresh(buf, buflen);
+	case NAME_KIND__MAX:		break;
+	}
+	return 0;
+}
+
+/*
+ * Pick a kind uniformly and produce a name for it.  Bridges the
+ * per-kind lane into the gen_text_payload() dispatcher used by
+ * generic ARG_STRING fuzzing so the stateful arm runs regardless of
+ * which syscall is currently selected; per-kind tagging in the pool
+ * itself prevents cross-kind contamination on the reuse side.
+ */
+static unsigned int gen_pool_name(char *buf, unsigned int buflen)
+{
+	enum name_kind k = (enum name_kind)rnd_modulo_u32(NAME_KIND__MAX);
+
+	return gen_kind(k, buf, buflen);
+}
+
 /* Pick one of the above generators at random. */
 unsigned int gen_text_payload(char *buf, unsigned int buflen)
 {
-	switch (rnd_modulo_u32(8)) {
+	switch (rnd_modulo_u32(9)) {
 	case 0: return gen_long_string(buf, buflen);
 	case 1: return gen_embedded_nul(buf, buflen);
 	case 2: return gen_format_string_attack(buf, buflen);
@@ -344,6 +558,7 @@ unsigned int gen_text_payload(char *buf, unsigned int buflen)
 	case 4: return gen_numeric_boundary_string(buf, buflen);
 	case 5: return gen_path_traversal(buf, buflen);
 	case 6: return gen_cpu_list_string(buf, buflen);
+	case 7: return gen_pool_name(buf, buflen);
 	default: return gen_binary_control_chars(buf, buflen);
 	}
 }
