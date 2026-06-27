@@ -11,6 +11,7 @@
 #include <linux/keyctl.h>
 #include <stdio.h>
 #include <string.h>
+#include "name-pool.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -94,13 +95,47 @@ static const struct {
  * for those. */
 static void build_description(char *buf, size_t bufsz, const char *ns_prefix)
 {
-	const char *prefix = desc_prefixes[rnd_modulo_u32(ARRAY_SIZE(desc_prefixes))];
-	unsigned int suffix = rnd_u32();
+	const char *prefix;
+	unsigned int suffix;
+	int wrote;
+	size_t len;
+
+	/* Minority arm: replay a previously-recorded description (possibly
+	 * mutated) so a later add_key call can collide with an earlier one
+	 * in keyring_search_iterator / __key_link_check_live_key paths --
+	 * those only light up when two descriptions share dcache slots,
+	 * which fresh "<prefix>_<8 hex>" almost never does.  logon keeps
+	 * the fresh path because the kernel requires its description to
+	 * begin with the "<subtype>:" ns_prefix and a raw pool draw would
+	 * not satisfy that. */
+	if (ns_prefix == NULL && ONE_IN(4)) {
+		size_t got = name_pool_draw_mutated(NAME_KIND_KEY_DESC,
+						    buf, bufsz);
+
+		if (got > 0) {
+			if (got >= bufsz)
+				got = bufsz - 1;
+			buf[got] = '\0';
+			return;
+		}
+		/* empty pool -- fall through to fresh generation */
+	}
+
+	prefix = desc_prefixes[rnd_modulo_u32(ARRAY_SIZE(desc_prefixes))];
+	suffix = rnd_u32();
 
 	if (ns_prefix)
-		snprintf(buf, bufsz, "%s%s_%08x", ns_prefix, prefix, suffix);
+		wrote = snprintf(buf, bufsz, "%s%s_%08x",
+				 ns_prefix, prefix, suffix);
 	else
-		snprintf(buf, bufsz, "%s_%08x", prefix, suffix);
+		wrote = snprintf(buf, bufsz, "%s_%08x", prefix, suffix);
+
+	if (wrote <= 0)
+		return;
+	len = (size_t)wrote;
+	if (len >= bufsz)
+		len = bufsz - 1;
+	name_pool_record(NAME_KIND_KEY_DESC, buf, len);
 }
 
 static void set_user_payload(struct syscallrecord *rec)
