@@ -98,6 +98,17 @@ bool frontier_live_cooldown = false;
 bool writer_pin_sweep = false;
 unsigned int writer_pin_stride = 1;
 
+/* --writer-watch=<hexaddr>
+ * Default-OFF debug-only writer-pinning canary, Stage-2 NAMER.  perf
+ * hardware WRITE breakpoint on the given 8-byte address; armed per-
+ * child after fork (writer-watch.c::writer_watch_arm_child()); SIGTRAP
+ * fires synchronously in the writing child at the exact instruction;
+ * the handler in signals.c::writer_trap_handler dumps writer_pc +
+ * syscall nr + childop + op_nr + pid -- the exact wild writer.  The
+ * address is typically the bad_addr surfaced by a prior Stage-1
+ * --writer-pin-sweep run.  Zero = disabled (default). */
+unsigned long writer_watch_addr = 0;
+
 unsigned long epoch_iterations = 0;
 unsigned int epoch_timeout = 0;
 bool max_runtime_set = false;
@@ -600,6 +611,7 @@ static const struct option_help option_descs[] = {
 	{ "warm-start-path",	 0,  "override the on-disk minicorpus path (default: $XDG_CACHE_HOME/trinity/corpus/<arch>)" },
 	{ "writer-pin-sweep",	 0,  "DEFAULT OFF. Heavyweight debug tool -- only enable for a targeted corruption hunt. Stage-1 detector for the writer-pinning canary: at every post-syscall validate phase, sweep the shared minicorpus rings for a stomped wp_canary or count>32 invariant violation. On the first hit, emit one SUSPECT line naming the observer context (NOT the wild writer) and the stomped address. The address is the deliverable for the Stage-2 --writer-watch=<addr>, which IS the synchronous writer-namer. Default-off path is byte-identical (one branch-predicted if test)." },
 	{ "writer-pin-stride",	 0,  "DEFAULT 1. Throughput escape hatch for --writer-pin-sweep: only sweep every Nth post-syscall validate phase. Default 1 = sweep every syscall, which keeps the writer-attribution window at one op. Values >1 widen the window past one op and degrade the sweep to 'some recent writer' -- documented escape hatch only; the writer-namer is Stage-2 --writer-watch, not the sweep." },
+	{ "writer-watch",	 0,  "DEFAULT OFF. Heavyweight debug tool -- only enable for a targeted corruption hunt. Stage-2 writer-namer for the writer-pinning canary: arm a perf_event_open hardware WRITE breakpoint (PERF_TYPE_BREAKPOINT, HW_BREAKPOINT_W, bp_len=8, exclude_kernel=0) on the given 8-byte address per-child after fork. A write to that address traps synchronously in the writing child at the exact instruction; the SIGTRAP handler dumps writer_pc (raw, resolve offline against [load-bases]), syscall nr, childop name, op_nr, pid -- the exact WILD WRITER, with no race. Up to 4 watchpoints are supported by hardware; this code arms ONE. Argument is a hex address (with or without 0x prefix), typically the bad_addr surfaced by a prior --writer-pin-sweep run." },
 	{ NULL,			 0,  NULL },
 };
 
@@ -701,6 +713,7 @@ static const struct option longopts[] = {
 	{ "corpus-save-errno-grad-live", no_argument, NULL, 0 },
 	{ "writer-pin-sweep", no_argument, NULL, 0 },
 	{ "writer-pin-stride", required_argument, NULL, 0 },
+	{ "writer-watch", required_argument, NULL, 0 },
 	{ NULL, 0, NULL, 0 } };
 
 /*
@@ -1449,6 +1462,31 @@ void parse_args(int argc, char *argv[])
 					exit(EXIT_FAILURE);
 				}
 				writer_pin_stride = (unsigned int)val;
+			}
+
+			if (strcmp("writer-watch", long_name) == 0) {
+				const char *p = optarg;
+				char *end = NULL;
+				unsigned long val;
+
+				/* Accept either bare hex or 0x-prefixed; strtoul
+				 * with base 16 handles a leading 0x but errno=0
+				 * + end==start is our only error signal. */
+				if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X'))
+					p += 2;
+				errno = 0;
+				val = strtoul(p, &end, 16);
+				if (errno != 0 || end == p ||
+				    (end != NULL && *end != '\0')) {
+					outputerr("--writer-watch: can't parse '%s' as hex address\n",
+						  optarg);
+					exit(EXIT_FAILURE);
+				}
+				if (val == 0) {
+					outputerr("--writer-watch=0 disables the watch; pass a non-zero address\n");
+					exit(EXIT_FAILURE);
+				}
+				writer_watch_addr = val;
 			}
 
 			break;
