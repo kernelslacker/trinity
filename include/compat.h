@@ -749,13 +749,7 @@ struct sockaddr_nfc {
 
 #include "kernel/macsec.h"
 
-/* linux/veth.h — VETH_INFO_PEER carries an ifinfomsg + IFLA_IFNAME for the
- * peer end of the veth pair inside IFLA_INFO_DATA.  Older kernel-headers
- * packages predate <linux/veth.h>; the enum value (1) is fixed since the
- * 2.6.24 veth merge. */
-#ifndef VETH_INFO_PEER
-#define VETH_INFO_PEER		1
-#endif
+#include "kernel/veth.h"
 
 /* linux/neighbour.h — NUD (Neighbour Unreachability Detection) state bits
  * used in ndmsg.ndm_state for RTM_NEWNEIGH / RTM_DELNEIGH / RTM_GETNEIGH.
