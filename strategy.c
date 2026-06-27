@@ -208,6 +208,196 @@ static int amplified_intervention_arm(enum random_rescue_class c)
 	return STRATEGY_RANDOM;
 }
 
+static int select_plateau_intervention_strategy(
+	enum strategy_selection_reason *reason_out)
+{
+	enum random_rescue_class amplified = RRC_NR_CLASSES;
+	enum plateau_intervention_mode pim;
+	unsigned long rot;
+	int arm;
+
+	/* Round-robin among the intervention modes.  The fetch_add
+	 * returns the PREVIOUS counter value, so each rotation
+	 * picks a mode cleanly without coordination between
+	 * concurrent rotations -- the CAS in maybe_rotate_strategy
+	 * already serialises which child runs select_next_strategy
+	 * in the first place, but the fetch_add semantics keep the
+	 * rotation correct even if a future refactor lets multiple
+	 * writers in.
+	 *
+	 * The counter only ticks during plateau windows, so a
+	 * fresh plateau picks up wherever the previous one left
+	 * off rather than always starting from PIM_UNIFORM_RANDOM
+	 * -- this matters when the plateau detector flaps between
+	 * active and inactive across consecutive rotations and an
+	 * always-from-zero counter would bias the early windows of
+	 * each plateau toward the same mode. */
+	rot = __atomic_fetch_add(
+		&shm->plateau_intervention_rotation_counter, 1UL,
+		__ATOMIC_RELAXED);
+	pim = (enum plateau_intervention_mode)(rot % NR_PIM_MODES);
+
+	/* Wall-lever shadow gate: refresh the eligibility
+	 * set at every plateau-active rotation, BEFORE the mode-
+	 * specific arm dispatch below, so the per-pick shadow probe
+	 * in wall_lever_should_suppress_shadow always reads from a
+	 * fleet-mean computed under the current rotation window
+	 * regardless of which intervention mode is chosen.  The call
+	 * is cheap (two O(MAX_NR_SYSCALL) walks, off the hot pick
+	 * path) and the publish ordering rides on the same RELEASE-
+	 * store of current_strategy that publishes the anti-prior
+	 * weight table just below -- see the wall_lever_suppress
+	 * comment in include/shm.h for the visibility contract. */
+	wall_lever_refresh_baseline();
+
+	/* Cold-ring deweight: PIM_COVERAGE_FRONTIER is a near-no-op
+	 * when the per-syscall frontier rings have aged out everywhere
+	 * (frontier_max_weight_cached == 0), the defining state of a
+	 * deep plateau.  set_syscall_nr_coverage_frontier still drives
+	 * forward via the silent-regime lifetime-ratio fallback, but
+	 * a real run that re-plateaued after the rescue fired observed
+	 * 9 childops self-demoting on "zero_edges" inside their canary
+	 * window -- the rescue's PIM rotation pinned ~25% of windows
+	 * on FRONTIER, the silent fallback found no new edges in the
+	 * canary horizon, the canary gate demoted the ops, throughput
+	 * collapsed to idle.  The rescue fired and did nothing.
+	 *
+	 * Substitute the cold FRONTIER slot with PIM_UNIFORM_RANDOM:
+	 * it needs no populated ring, runs the historical pre-
+	 * classifier baseline that does not feed the canary demote
+	 * gate, and breaks the demote-to-idle spiral.  PIM_ANTI_PRIOR
+	 * still occupies its own rotation slot, so each cold-ring
+	 * cycle still hits both no-ring-needed modes (the cycle
+	 * becomes UNIFORM:ANTI:RRC:UNIFORM-was-FRONTIER).
+	 *
+	 * Approach is skip-when-cold (single conditional substitution)
+	 * rather than weight-to-zero (per-rotation NR_PIM_MODES
+	 * remapping plus an active-modes mask).  Skip keeps the
+	 * per-mode windows array, mode-name tables, and check-static
+	 * gates stable -- substituting one enum value into another
+	 * cell costs no new surface.  Weight-to-zero would add a
+	 * second source of truth for "which modes are active" without
+	 * changing steady-state behaviour.
+	 *
+	 * Threshold is == 0 (strict) rather than the picker's <= 2
+	 * silent-regime threshold: at max_weight 1 or 2 the live
+	 * regime still has a trickle of signal and we want FRONTIER
+	 * to keep running on it.  Only the fully-aged-out case (no
+	 * ratchet at all this rotation) gets the substitution.
+	 *
+	 * RELAXED load: the cache is itself updated RELAXED on every
+	 * frontier_bump() and on each window-rotation recompute, and
+	 * the picker reads it RELAXED, so an in-flight bump is
+	 * acceptable here -- we read it once at the rotation boundary
+	 * and either choice (skip or run) is safe and self-corrects
+	 * on the next rotation when the cache settles.
+	 *
+	 * PIM_RRC_BIASED is deliberately NOT cold-deweighted: it can
+	 * dispatch to FRONTIER via the RRC_CMP_DERIVED leg of
+	 * amplified_intervention_arm(), but only when the classifier
+	 * has accumulated positive evidence that the kernel is
+	 * emitting comparison records the picker is not steering to.
+	 * The cold ring does not contradict that signal -- a syscall
+	 * with a populated cmp_hints pool and zero current frontier
+	 * weight is exactly the case CMP_DERIVED amplification exists
+	 * to escalate. */
+	if (pim == PIM_COVERAGE_FRONTIER &&
+	    __atomic_load_n(&shm->frontier_max_weight_cached,
+			    __ATOMIC_RELAXED) == 0) {
+		pim = PIM_UNIFORM_RANDOM;
+		__atomic_fetch_add(
+			&shm->stats.frontier_intervention_cold_skipped,
+			1UL, __ATOMIC_RELAXED);
+	}
+
+	switch (pim) {
+	case PIM_RRC_BIASED:
+		/* Random-rescue classifier dispatch path.  Reuses
+		 * the existing dominant_rescue_class +
+		 * amplified_intervention_arm pair so the classifier-
+		 * driven structured replay shape stays the same as
+		 * when amplification was the only intervention mode;
+		 * only the SCHEDULING of when it runs differs, not
+		 * the internals. */
+		amplified = dominant_rescue_class();
+		arm = amplified_intervention_arm(amplified);
+		break;
+	case PIM_ANTI_PRIOR:
+		/* Refresh the baseline at the rotation boundary so
+		 * the per-call accept gate inside set_syscall_nr_
+		 * random reads a value that matches the picker's
+		 * CURRENT distribution.  Recomputing every rotation
+		 * (rather than once-at-init) lets the bias track the
+		 * learned distribution as it drifts across the run.
+		 *
+		 * STRATEGY_RANDOM is the arm regardless of mode -- the
+		 * anti-prior bias rides per-call inside the random
+		 * picker, not at the strategy-selection layer. */
+		plateau_anti_prior_refresh_baseline();
+		arm = STRATEGY_RANDOM;
+		break;
+	case PIM_COVERAGE_FRONTIER:
+		/* Frontier-weighted picker, unconditional.  The
+		 * bandit is short-circuited for the duration of the
+		 * plateau, so without this rotation slot the
+		 * coverage-frontier arm cannot be selected at all
+		 * during a plateau window -- the exact windows where
+		 * chasing near-coverage edges is most likely to
+		 * unstick discovery.  No baseline refresh needed:
+		 * the frontier picker reads its own per-syscall
+		 * near-coverage ring on every pick. */
+		arm = STRATEGY_COVERAGE_FRONTIER;
+		break;
+	case PIM_UNIFORM_RANDOM:
+	default:
+		/* Baseline mode: STRATEGY_RANDOM with no per-call
+		 * bias.  Kept as a rotation slot so the A/B
+		 * comparison has an anchor -- without it,
+		 * "anti-prior helped" and "RRC-bias helped" both
+		 * reduce to comparisons against each other rather
+		 * than against the historical pre-classifier
+		 * intervention shape. */
+		arm = STRATEGY_RANDOM;
+		break;
+	}
+
+	/* Publish the amplified class and intervention mode BEFORE
+	 * the reason store on current_selection_reason in
+	 * maybe_rotate_strategy.  The rotation site stores
+	 * current_selection_reason with RELAXED ordering and pairs
+	 * it with the current_strategy RELEASE store, so a child
+	 * observing the new strategy also sees both freshly-
+	 * published fields on its next pick.  RRC_NR_CLASSES means
+	 * "no class dominant"; PIM_UNIFORM_RANDOM is published
+	 * outside the intervention branch below so the anti-prior
+	 * gate cannot stay latched on after the plateau lifts. */
+	__atomic_store_n(&shm->plateau_rescue_amplified_class,
+			 (int)amplified, __ATOMIC_RELAXED);
+	__atomic_store_n(&shm->plateau_intervention_mode_current,
+			 (int)pim, __ATOMIC_RELAXED);
+	__atomic_fetch_add(
+		&shm->plateau_intervention_mode_windows[pim], 1UL,
+		__ATOMIC_RELAXED);
+	__atomic_fetch_add(&shm->stats.plateau_forced_windows, 1UL,
+			   __ATOMIC_RELAXED);
+	/* Side-channel count of intervention-forced frontier picks.
+	 * Bumped here so both the unconditional PIM_COVERAGE_FRONTIER
+	 * slot AND the PIM_RRC_BIASED dispatch that maps RRC_CMP_
+	 * DERIVED to the frontier arm get attributed.  Deliberately
+	 * NOT a bandit_pulls[STRATEGY_COVERAGE_FRONTIER] bump: D-UCB's
+	 * exploration bonus assumes pulls reflect policy choice, not
+	 * an intervention rescue, and folding the forced window into
+	 * the learner's reward series would shift the arm's apparent
+	 * yield toward the intervention cohort for the rest of the
+	 * run. */
+	if (arm == STRATEGY_COVERAGE_FRONTIER)
+		__atomic_fetch_add(
+			&shm->stats.frontier_intervention_pulls,
+			1UL, __ATOMIC_RELAXED);
+	*reason_out = SR_PLATEAU_FORCE;
+	return arm;
+}
+
 int select_next_strategy(int prev,
 			 enum strategy_selection_reason *reason_out)
 {
@@ -217,193 +407,8 @@ int select_next_strategy(int prev,
 
 	if (mode == PICKER_BANDIT_UCB1 &&
 	    kcov_shm != NULL &&
-	    __atomic_load_n(&kcov_shm->plateau_active, __ATOMIC_ACQUIRE)) {
-		enum random_rescue_class amplified = RRC_NR_CLASSES;
-		enum plateau_intervention_mode pim;
-		unsigned long rot;
-		int arm;
-
-		/* Round-robin among the intervention modes.  The fetch_add
-		 * returns the PREVIOUS counter value, so each rotation
-		 * picks a mode cleanly without coordination between
-		 * concurrent rotations -- the CAS in maybe_rotate_strategy
-		 * already serialises which child runs select_next_strategy
-		 * in the first place, but the fetch_add semantics keep the
-		 * rotation correct even if a future refactor lets multiple
-		 * writers in.
-		 *
-		 * The counter only ticks during plateau windows, so a
-		 * fresh plateau picks up wherever the previous one left
-		 * off rather than always starting from PIM_UNIFORM_RANDOM
-		 * -- this matters when the plateau detector flaps between
-		 * active and inactive across consecutive rotations and an
-		 * always-from-zero counter would bias the early windows of
-		 * each plateau toward the same mode. */
-		rot = __atomic_fetch_add(
-			&shm->plateau_intervention_rotation_counter, 1UL,
-			__ATOMIC_RELAXED);
-		pim = (enum plateau_intervention_mode)(rot % NR_PIM_MODES);
-
-		/* Wall-lever shadow gate: refresh the eligibility
-		 * set at every plateau-active rotation, BEFORE the mode-
-		 * specific arm dispatch below, so the per-pick shadow probe
-		 * in wall_lever_should_suppress_shadow always reads from a
-		 * fleet-mean computed under the current rotation window
-		 * regardless of which intervention mode is chosen.  The call
-		 * is cheap (two O(MAX_NR_SYSCALL) walks, off the hot pick
-		 * path) and the publish ordering rides on the same RELEASE-
-		 * store of current_strategy that publishes the anti-prior
-		 * weight table just below -- see the wall_lever_suppress
-		 * comment in include/shm.h for the visibility contract. */
-		wall_lever_refresh_baseline();
-
-		/* Cold-ring deweight: PIM_COVERAGE_FRONTIER is a near-no-op
-		 * when the per-syscall frontier rings have aged out everywhere
-		 * (frontier_max_weight_cached == 0), the defining state of a
-		 * deep plateau.  set_syscall_nr_coverage_frontier still drives
-		 * forward via the silent-regime lifetime-ratio fallback, but
-		 * a real run that re-plateaued after the rescue fired observed
-		 * 9 childops self-demoting on "zero_edges" inside their canary
-		 * window -- the rescue's PIM rotation pinned ~25% of windows
-		 * on FRONTIER, the silent fallback found no new edges in the
-		 * canary horizon, the canary gate demoted the ops, throughput
-		 * collapsed to idle.  The rescue fired and did nothing.
-		 *
-		 * Substitute the cold FRONTIER slot with PIM_UNIFORM_RANDOM:
-		 * it needs no populated ring, runs the historical pre-
-		 * classifier baseline that does not feed the canary demote
-		 * gate, and breaks the demote-to-idle spiral.  PIM_ANTI_PRIOR
-		 * still occupies its own rotation slot, so each cold-ring
-		 * cycle still hits both no-ring-needed modes (the cycle
-		 * becomes UNIFORM:ANTI:RRC:UNIFORM-was-FRONTIER).
-		 *
-		 * Approach is skip-when-cold (single conditional substitution)
-		 * rather than weight-to-zero (per-rotation NR_PIM_MODES
-		 * remapping plus an active-modes mask).  Skip keeps the
-		 * per-mode windows array, mode-name tables, and check-static
-		 * gates stable -- substituting one enum value into another
-		 * cell costs no new surface.  Weight-to-zero would add a
-		 * second source of truth for "which modes are active" without
-		 * changing steady-state behaviour.
-		 *
-		 * Threshold is == 0 (strict) rather than the picker's <= 2
-		 * silent-regime threshold: at max_weight 1 or 2 the live
-		 * regime still has a trickle of signal and we want FRONTIER
-		 * to keep running on it.  Only the fully-aged-out case (no
-		 * ratchet at all this rotation) gets the substitution.
-		 *
-		 * RELAXED load: the cache is itself updated RELAXED on every
-		 * frontier_bump() and on each window-rotation recompute, and
-		 * the picker reads it RELAXED, so an in-flight bump is
-		 * acceptable here -- we read it once at the rotation boundary
-		 * and either choice (skip or run) is safe and self-corrects
-		 * on the next rotation when the cache settles.
-		 *
-		 * PIM_RRC_BIASED is deliberately NOT cold-deweighted: it can
-		 * dispatch to FRONTIER via the RRC_CMP_DERIVED leg of
-		 * amplified_intervention_arm(), but only when the classifier
-		 * has accumulated positive evidence that the kernel is
-		 * emitting comparison records the picker is not steering to.
-		 * The cold ring does not contradict that signal -- a syscall
-		 * with a populated cmp_hints pool and zero current frontier
-		 * weight is exactly the case CMP_DERIVED amplification exists
-		 * to escalate. */
-		if (pim == PIM_COVERAGE_FRONTIER &&
-		    __atomic_load_n(&shm->frontier_max_weight_cached,
-				    __ATOMIC_RELAXED) == 0) {
-			pim = PIM_UNIFORM_RANDOM;
-			__atomic_fetch_add(
-				&shm->stats.frontier_intervention_cold_skipped,
-				1UL, __ATOMIC_RELAXED);
-		}
-
-		switch (pim) {
-		case PIM_RRC_BIASED:
-			/* Random-rescue classifier dispatch path.  Reuses
-			 * the existing dominant_rescue_class +
-			 * amplified_intervention_arm pair so the classifier-
-			 * driven structured replay shape stays the same as
-			 * when amplification was the only intervention mode;
-			 * only the SCHEDULING of when it runs differs, not
-			 * the internals. */
-			amplified = dominant_rescue_class();
-			arm = amplified_intervention_arm(amplified);
-			break;
-		case PIM_ANTI_PRIOR:
-			/* Refresh the baseline at the rotation boundary so
-			 * the per-call accept gate inside set_syscall_nr_
-			 * random reads a value that matches the picker's
-			 * CURRENT distribution.  Recomputing every rotation
-			 * (rather than once-at-init) lets the bias track the
-			 * learned distribution as it drifts across the run.
-			 *
-			 * STRATEGY_RANDOM is the arm regardless of mode -- the
-			 * anti-prior bias rides per-call inside the random
-			 * picker, not at the strategy-selection layer. */
-			plateau_anti_prior_refresh_baseline();
-			arm = STRATEGY_RANDOM;
-			break;
-		case PIM_COVERAGE_FRONTIER:
-			/* Frontier-weighted picker, unconditional.  The
-			 * bandit is short-circuited for the duration of the
-			 * plateau, so without this rotation slot the
-			 * coverage-frontier arm cannot be selected at all
-			 * during a plateau window -- the exact windows where
-			 * chasing near-coverage edges is most likely to
-			 * unstick discovery.  No baseline refresh needed:
-			 * the frontier picker reads its own per-syscall
-			 * near-coverage ring on every pick. */
-			arm = STRATEGY_COVERAGE_FRONTIER;
-			break;
-		case PIM_UNIFORM_RANDOM:
-		default:
-			/* Baseline mode: STRATEGY_RANDOM with no per-call
-			 * bias.  Kept as a rotation slot so the A/B
-			 * comparison has an anchor -- without it,
-			 * "anti-prior helped" and "RRC-bias helped" both
-			 * reduce to comparisons against each other rather
-			 * than against the historical pre-classifier
-			 * intervention shape. */
-			arm = STRATEGY_RANDOM;
-			break;
-		}
-
-		/* Publish the amplified class and intervention mode BEFORE
-		 * the reason store on current_selection_reason in
-		 * maybe_rotate_strategy.  The rotation site stores
-		 * current_selection_reason with RELAXED ordering and pairs
-		 * it with the current_strategy RELEASE store, so a child
-		 * observing the new strategy also sees both freshly-
-		 * published fields on its next pick.  RRC_NR_CLASSES means
-		 * "no class dominant"; PIM_UNIFORM_RANDOM is published
-		 * outside the intervention branch below so the anti-prior
-		 * gate cannot stay latched on after the plateau lifts. */
-		__atomic_store_n(&shm->plateau_rescue_amplified_class,
-				 (int)amplified, __ATOMIC_RELAXED);
-		__atomic_store_n(&shm->plateau_intervention_mode_current,
-				 (int)pim, __ATOMIC_RELAXED);
-		__atomic_fetch_add(
-			&shm->plateau_intervention_mode_windows[pim], 1UL,
-			__ATOMIC_RELAXED);
-		__atomic_fetch_add(&shm->stats.plateau_forced_windows, 1UL,
-				   __ATOMIC_RELAXED);
-		/* Side-channel count of intervention-forced frontier picks.
-		 * Bumped here so both the unconditional PIM_COVERAGE_FRONTIER
-		 * slot AND the PIM_RRC_BIASED dispatch that maps RRC_CMP_
-		 * DERIVED to the frontier arm get attributed.  Deliberately
-		 * NOT a bandit_pulls[STRATEGY_COVERAGE_FRONTIER] bump: D-UCB's
-		 * exploration bonus assumes pulls reflect policy choice, not
-		 * an intervention rescue, and folding the forced window into
-		 * the learner's reward series would shift the arm's apparent
-		 * yield toward the intervention cohort for the rest of the
-		 * run. */
-		if (arm == STRATEGY_COVERAGE_FRONTIER)
-			__atomic_fetch_add(
-				&shm->stats.frontier_intervention_pulls,
-				1UL, __ATOMIC_RELAXED);
-		*reason_out = SR_PLATEAU_FORCE;
-		return arm;
-	}
+	    __atomic_load_n(&kcov_shm->plateau_active, __ATOMIC_ACQUIRE))
+		return select_plateau_intervention_strategy(reason_out);
 
 	/* Not in a plateau intervention -- clear the amplification AND the
 	 * mode so neither the RRC bias dispatch nor the anti-prior accept
