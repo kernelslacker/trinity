@@ -29,6 +29,7 @@
 #include <time.h>
 #include <utime.h>
 #include <netinet/in.h>
+#include <sys/prctl.h>
 #include <linux/filter.h>
 #include <linux/netlink.h>
 #include <linux/if_arp.h>
@@ -7715,18 +7716,16 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * match no variant and resolve to NULL, matching the iovec /
 	 * sembuf / pollfd attribution-only pattern.
 	 *
-	 * Not registered here on purpose: prctl(PR_SET_SECCOMP, mode, ...)
-	 * also reads a sock_fprog at a3, but only when a2 ==
-	 * SECCOMP_MODE_FILTER -- a two-arg discriminator that the catalog
-	 * now expresses via (discrim_arg_idx=1, discrim_value=PR_SET_SECCOMP,
-	 * discrim2_arg_idx=2, discrim2_value=SECCOMP_MODE_FILTER).  Left
-	 * unregistered in this batch by scope -- the proof targets the
-	 * setsockopt optval shapes; prctl/seccomp two-key rows follow.
-	 * setsockopt(fd, SOL_SOCKET, SO_ATTACH_FILTER, ...) is similarly
-	 * the SO_ATTACH_FILTER arm of the (level, optname) two-key family
-	 * the proof batch below exercises -- the BPF arms stay bespoke
-	 * because they REPLACE the optval allocation wholesale rather than
-	 * fill it (see socket_setsockopt() SO_ATTACH_FILTER branch), so a
+	 * prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, sock_fprog *, ...)
+	 * shares the cBPF install shape and is registered as a two-key row
+	 * immediately below (option at a1 == PR_SET_SECCOMP, mode at a2 ==
+	 * SECCOMP_MODE_FILTER, sock_fprog pointer at a3).
+	 *
+	 * setsockopt(fd, SOL_SOCKET, SO_ATTACH_FILTER, ...) is the
+	 * SO_ATTACH_FILTER arm of the (level, optname) two-key family the
+	 * proof batch below exercises -- it stays bespoke because the BPF
+	 * arm REPLACES the optval allocation wholesale rather than fills
+	 * it (see socket_setsockopt() SO_ATTACH_FILTER branch), so a
 	 * schema-fill row would race the bpf_gen_filter() replacement.
 	 */
 	{
@@ -7734,6 +7733,31 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 		.discrim_arg_idx	= 1,
 		.discrim_values		= seccomp_set_mode_filter_ops,
 		.num_discrim_values	= ARRAY_SIZE(seccomp_set_mode_filter_ops),
+	},
+	/*
+	 * prctl(option, arg2, arg3, arg4, arg5) cBPF install arm:
+	 * option == PR_SET_SECCOMP with arg2 == SECCOMP_MODE_FILTER points
+	 * arg3 at a struct sock_fprog the kernel reads to load the classic
+	 * BPF program (the cBPF arm; PR_SET_SECCOMP with arg2 ==
+	 * SECCOMP_MODE_STRICT ignores arg3, and other option values do not
+	 * touch a sock_fprog at all -- those dispatches match no variant
+	 * and resolve to NULL).  sanitise_prctl()'s PR_SET_SECCOMP arm
+	 * owns the live fill via bpf_gen_seccomp() and stays the sole
+	 * writer of rec->a3; the syscallentry leaves argtype[2] at the
+	 * default ARG_UNDEFINED, so the schema-aware fill path (gated on
+	 * ARG_STRUCT_PTR_*) never resolves this slot and cannot race the
+	 * heap sock_fprog.  Attribution-only registration so
+	 * struct_field_for_cmp() can steer CMP-learned constants at the
+	 * named len / filter slots (and at the cataloged sock_filter
+	 * elem_struct's code / jt / jf / k slots) rather than at a
+	 * coincidentally-same-width slot.
+	 */
+	{
+		"prctl", 3, &struct_catalog[SC_SOCK_FPROG],
+		.discrim_arg_idx	= 1,
+		.discrim_value		= PR_SET_SECCOMP,
+		.discrim2_arg_idx	= 2,
+		.discrim2_value		= SECCOMP_MODE_FILTER,
 	},
 	/*
 	 * ----------------------------------------------------------------
