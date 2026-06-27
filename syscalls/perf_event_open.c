@@ -4,7 +4,6 @@
 	 pid_t, pid, int, cpu, int, group_fd, unsigned long, flags)
  */
 
-#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>

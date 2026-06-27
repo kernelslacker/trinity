@@ -196,7 +196,7 @@ syscalls/open.c:154:post_openat
 syscalls/open.c:340:post_openat2
 syscalls/open.c:98:post_open
 syscalls/pause.c:22:post_pause
-syscalls/perf_event_open.c:1241:post_perf_event_open
+syscalls/perf_event_open.c:1240:post_perf_event_open
 syscalls/personality.c:25:post_personality
 syscalls/pipe.c:150:post_pipe
 syscalls/pipe.c:168:post_pipe
