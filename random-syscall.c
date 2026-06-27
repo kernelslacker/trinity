@@ -302,6 +302,141 @@ retry:
 	if (group_bias && child->last_group != GROUP_NONE) {
 		unsigned int dice = rnd_modulo_u32(100);
 
+		/* F-RSEQ SHADOW group-pin damper predicate.  Evaluated
+		 * BEFORE the dice roll so the candidate / would_skip
+		 * accounting is regime-agnostic: the windowed pin barren
+		 * test is a property of the pin, not of which dice arm
+		 * the upcoming pick would have taken.  Gated on the mode
+		 * outer guard so default OFF keeps this block byte-
+		 * identical to a build before the F-RSEQ row: no per-
+		 * child field is read, no atomic load fires, no shadow
+		 * counter is touched, no extra RNG is consumed (the
+		 * predicate is RNG-free by construction -- streak /
+		 * watermark / fd-warm reads only).  See the enum
+		 * frontier_group_antilock_mode comment in include/strategy.h
+		 * for the predicate contract and the FRONTIER_FRSEQ_MIN_
+		 * STREAK / FRONTIER_FRSEQ_COV_WINDOW comments for the
+		 * threshold rationale.
+		 *
+		 * THIS COMMIT IS SHADOW-ONLY by construction: the block
+		 * computes pin_stale && !pin_warm and bumps the
+		 * frontier_frseq_* shadow counters but never alters the
+		 * 70%-same-group dice arm below or any goto-retry path,
+		 * so the picker's accept distribution stays byte-
+		 * identical to the default-off baseline regardless of
+		 * which non-OFF mode is selected.  Wiring the COMBINED
+		 * live pin release is a deliberate follow-up after a
+		 * SHADOW_ONLY run validates the demote mass concentrates
+		 * on rseq_slice_yield / getpgrp / sched_yield and on
+		 * GROUP_PROCESS, and is ~0 on socket / sendto / openat
+		 * and on GROUP_NET / GROUP_VFS.
+		 *
+		 * Outer mode load is RELAXED -- the mode is parse-time
+		 * configured and never mutated at runtime, so a one-pick
+		 * tear is impossible.  Matches the satcool mode-load
+		 * shape exactly (random-syscall.c silent-regime
+		 * accept block). */
+		{
+			enum frontier_group_antilock_mode antilock_mode =
+				__atomic_load_n(
+					&frontier_group_antilock_mode,
+					__ATOMIC_RELAXED);
+
+			if (antilock_mode != FRONTIER_GROUP_ANTILOCK_MODE_OFF) {
+				/* Both pin_stale clauses must hold.
+				 * MIN_STREAK guards against the early-
+				 * pin window where every cluster looks
+				 * "barren" before it has had a chance
+				 * to produce; COV_WINDOW is the sliding
+				 * window inside the pin so a single
+				 * incidental edge does not make a junk-
+				 * drawer pin immortal (the whole-pin
+				 * cov>0 version would have).  Unsigned
+				 * subtraction guard: the streak_len >
+				 * last_cov_at_streak invariant holds by
+				 * construction because the bookkeeping
+				 * helper advances last_cov_at_streak
+				 * only to the CURRENT streak_len value
+				 * AFTER the streak_len bump, so the
+				 * subtraction never wraps.  We
+				 * additionally guard >= just in case a
+				 * future bookkeeping change loosens
+				 * that invariant. */
+				bool pin_stale = (child->group_streak_len >
+						  FRONTIER_FRSEQ_MIN_STREAK) &&
+						 (child->group_streak_len >=
+						  child->last_cov_at_streak) &&
+						 ((child->group_streak_len -
+						   child->last_cov_at_streak) >
+						  FRONTIER_FRSEQ_COV_WINDOW);
+				/* pin_warm spare: a pin holding live state
+				 * (warm setup chains that build objects
+				 * before the rare trigger) is preserved
+				 * even when coverage-barren.  Pure-getter
+				 * pins never produce fds and so are not
+				 * spared regardless of streak length --
+				 * which is exactly the lock-in target
+				 * this row reclaims. */
+				bool pin_warm = (child->group_fd_created_in_streak > 0);
+				bool pin_barren = pin_stale && !pin_warm;
+
+				__atomic_fetch_add(
+					&shm->stats.frontier_frseq_candidates,
+					1UL, __ATOMIC_RELAXED);
+
+				if (pin_barren) {
+					__atomic_fetch_add(
+						&shm->stats.frontier_frseq_would_skip,
+						1UL, __ATOMIC_RELAXED);
+					/* Per-syscall bucket keys on the
+					 * candidate syscallnr being evaluated
+					 * at the gate -- under live COMBINED
+					 * the pin would release and the
+					 * group_bias if-block would be
+					 * skipped, so this syscall would be
+					 * accepted regardless of group
+					 * membership.  Dominated by the
+					 * pure-getter / no-op yield set when
+					 * the picker is in a junk-drawer pin
+					 * (those are the most-drawn members
+					 * because they are the only ones
+					 * that pass every gate cheaply). */
+					if (syscallnr < MAX_NR_SYSCALL) {
+						__atomic_fetch_add(
+							&shm->stats.frontier_frseq_would_skip_per_syscall[syscallnr],
+							1UL, __ATOMIC_RELAXED);
+					}
+					/* Per-group bucket keys on
+					 * child->last_group (which pin is
+					 * being released).  Dominated by
+					 * GROUP_PROCESS (=5) when the
+					 * pathology fires; should be ~0 on
+					 * GROUP_NET / GROUP_VFS / GROUP_IO_
+					 * URING / etc. -- the stateful-
+					 * sequence groups whose locality
+					 * the bias exists to protect.  The
+					 * bound check is defensive; group
+					 * is a u8 in syscallentry and the
+					 * source values are <= GROUP_XATTR =
+					 * 11 < NR_GROUPS = 12. */
+					if (child->last_group < NR_GROUPS) {
+						__atomic_fetch_add(
+							&shm->stats.frontier_frseq_would_skip_per_group[child->last_group],
+							1UL, __ATOMIC_RELAXED);
+					}
+					/* COMBINED live pin release would
+					 * sit here gated on antilock_mode ==
+					 * COMBINED; intentionally NOT wired
+					 * in this commit.  The block is
+					 * observability-only regardless of
+					 * mode so the SHADOW_ONLY counters
+					 * can be validated against a real
+					 * run before any live divergence is
+					 * introduced. */
+				}
+			}
+		}
+
 		if (dice < 70) {
 			/* Try to pick from same group */
 			if (!syscall_in_group(syscallnr, do32, child->last_group)) {
