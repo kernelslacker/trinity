@@ -109,6 +109,20 @@ void minicorpus_init(void)
 	 */
 	minicorpus_shm = alloc_shared_pool(sizeof(struct minicorpus_shared));
 	memset(minicorpus_shm, 0, sizeof(struct minicorpus_shared));
+
+	/* Stamp the writer-pinning canary in every ring.  Only writer of
+	 * wp_canary, ever -- the per-syscall sweep (Stage 1) and the HW
+	 * watchpoint (Stage 2) detect any subsequent write as the wild
+	 * writer.  Stamp unconditionally so the field is initialised even
+	 * when neither flag is in use (a future operator switching the
+	 * flag on mid-stack would otherwise see a one-time false positive
+	 * against the zero memset). */
+	{
+		unsigned int i;
+		for (i = 0; i < MAX_NR_SYSCALL; i++)
+			minicorpus_shm->rings[i].wp_canary = WP_CANARY_MAGIC;
+	}
+
 	output(0, "KCOV: mini-corpus allocated (%lu KB, %d entries/syscall)\n",
 		(unsigned long) sizeof(struct minicorpus_shared) / 1024,
 		CORPUS_RING_SIZE);
@@ -318,6 +332,42 @@ static bool minicorpus_pick_from_other_syscall(unsigned int nr,
 	__atomic_fetch_add(&minicorpus_shm->xprop_hits, 1UL,
 			   __ATOMIC_RELAXED);
 	return true;
+}
+
+bool minicorpus_wp_sweep(unsigned long *bad_addr, uint64_t *bad_val)
+{
+	struct corpus_ring *ring;
+	unsigned int i;
+	uint64_t observed;
+	unsigned int cnt;
+
+	if (minicorpus_shm == NULL)
+		return false;
+
+	for (i = 0; i < MAX_NR_SYSCALL; i++) {
+		ring = &minicorpus_shm->rings[i];
+		observed = ring->wp_canary;
+		if (unlikely(observed != WP_CANARY_MAGIC)) {
+			if (bad_addr != NULL)
+				*bad_addr = (unsigned long) &ring->wp_canary;
+			if (bad_val != NULL)
+				*bad_val = observed;
+			return true;
+		}
+		/* Documented invariant: count is bounded by the ring size.
+		 * A scribble that lands in the count word (the count-word
+		 * scribble case) inflates this past 32; surface it the same
+		 * way. */
+		cnt = ring->count;
+		if (unlikely(cnt > CORPUS_RING_SIZE)) {
+			if (bad_addr != NULL)
+				*bad_addr = (unsigned long) &ring->count;
+			if (bad_val != NULL)
+				*bad_val = (uint64_t) cnt;
+			return true;
+		}
+	}
+	return false;
 }
 
 void minicorpus_save(struct syscallrecord *rec)
