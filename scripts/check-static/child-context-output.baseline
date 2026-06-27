@@ -7,7 +7,7 @@
 #
 childops/af-alg-template-probe.c:204:af_alg_template_probe
 childops/af-alg-template-probe.c:225:af_alg_template_probe
-childops/af-alg-weak-cipher-probe.c:218:probe_one_entry
+childops/af-alg-weak-cipher-probe.c:217:probe_one_entry
 childops/eth-emitter.c:253:ensure_socket
 childops/inplace_crypto_oracle.c:144:latch_target
 childops/inplace_crypto_oracle.c:254:log_corruption
