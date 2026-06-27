@@ -1077,10 +1077,17 @@ void rec_own(struct syscallrecord *rec, void *ptr)
 	if (rec->owned_count >= REC_OWNED_MAX) {
 		__atomic_add_fetch(&shm->stats.rec_owned_overflow_to_ring, 1,
 				   __ATOMIC_RELAXED);
-		outputerr("rec_own: rec->owned[] saturated at %u entries for %s; falling back to deferred_free_enqueue\n",
+		outputerr("rec_own: rec->owned[] saturated at %u entries for %s; falling back to deferred_free_enqueue_or_leak\n",
 			  REC_OWNED_MAX,
 			  rec->entry != NULL ? rec->entry->name : "(unknown)");
-		deferred_free_enqueue(ptr);
+		/*
+		 * Leak-on-pressure variant: rec_own holds buffers the kernel or
+		 * post handler may still consume, so a synchronous free under
+		 * ring pressure would be a pre-dispatch UAF.  The overflow is
+		 * unreachable in tree today (REC_OWNED_MAX=8, heaviest caller
+		 * uses 3) so leak rate is theoretical.
+		 */
+		deferred_free_enqueue_or_leak(ptr);
 		return;
 	}
 
