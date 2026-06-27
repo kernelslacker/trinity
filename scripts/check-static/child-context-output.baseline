@@ -16,9 +16,9 @@ childops/inplace_crypto_oracle.c:257:log_corruption
 childops/ip6gre-bond-lapb-stack.c:141:warn_once_unsupported_ip6gre_lapb
 childops/ip6gre-bond-lapb-stack.c:150:latch_unsupported
 childops/ipvs-sysctl-writer.c:106:warn_once_unsupported_ipvs_sysctl
-childops/mpls-route-churn.c:261:maybe_modprobe_once
-childops/mpls-route-churn.c:272:latch_ns_unsupported_mpls
-childops/mpls-route-churn.c:284:latch_ns_unsupported_lwtunnel
+childops/mpls-route-churn.c:260:maybe_modprobe_once
+childops/mpls-route-churn.c:271:latch_ns_unsupported_mpls
+childops/mpls-route-churn.c:283:latch_ns_unsupported_lwtunnel
 childops/nat-t-churn.c:425:warn_once_unsupported
 childops/nat-t-churn.c:859:open_encap_udp6
 childops/nat-t-churn.c:880:open_encap_udp6
