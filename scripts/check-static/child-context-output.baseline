@@ -322,7 +322,7 @@ syscalls/timer_create.c:330:post_timer_create
 syscalls/timer_create.c:337:post_timer_create
 syscalls/timer_create.c:344:post_timer_create
 syscalls/timer_create.c:375:post_timer_create
-syscalls/timerfd_gettime.c:104:post_timerfd_gettime
+syscalls/timerfd_gettime.c:103:post_timerfd_gettime
 syscalls/timer_getoverrun.c:37:post_timer_getoverrun
 syscalls/timer_gettime.c:122:post_timer_gettime
 syscalls/times.c:159:post_times
