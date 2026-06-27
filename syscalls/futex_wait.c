@@ -23,6 +23,7 @@ static unsigned long futex_wait_clockids[] = {
 static void sanitise_futex_wait(struct syscallrecord *rec)
 {
 	/* val: write a known value to uaddr so the comparison can succeed */
+	static __thread struct timespec timeout_clamp;
 	__u32 *futex_word;
 
 	futex_word = (__u32 *) get_writable_struct(sizeof(*futex_word));
@@ -40,17 +41,22 @@ static void sanitise_futex_wait(struct syscallrecord *rec)
 	default: rec->a3 = rand32(); break;	/* random mask */
 	}
 
-	/* timeout: sometimes provide a short timeout */
-	if (RAND_BOOL()) {
-		struct timespec *ts;
-
-		ts = (struct timespec *) get_writable_struct(sizeof(*ts));
-		if (!ts)
-			return;
-		ts->tv_sec = 0;
-		ts->tv_nsec = rnd_modulo_u32(1000000);	/* up to 1ms */
-		rec->a5 = (unsigned long) ts;
-	}
+	/*
+	 * timeout: futex2 treats this as an ABSOLUTE deadline.  Always
+	 * supply a clamped, already-expired timespec so the call exercises
+	 * the value-match + wait-entry + timeout-setup path and returns
+	 * immediately with ETIMEDOUT, instead of either (a) being rejected
+	 * with -EINVAL when get_timespec64() reads pool garbage with
+	 * tv_nsec >= 1e9, or (b) arming an hrtimer for a far-future
+	 * absolute deadline drawn from a residual valid pool timespec and
+	 * parking the child past the NEED_ALARM dodge until the parent's
+	 * 30s SIGKILL.  The static __thread storage is immune to the
+	 * blanket scrub (SKIP_BLANKET_SCRUB is set anyway) and never fails
+	 * to allocate.
+	 */
+	timeout_clamp.tv_sec = 0;
+	timeout_clamp.tv_nsec = rnd_modulo_u32(1000000);	/* up to 1ms */
+	rec->a5 = (unsigned long) &timeout_clamp;
 }
 
 struct syscallentry syscall_futex_wait = {
