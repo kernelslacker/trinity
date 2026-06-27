@@ -2466,10 +2466,14 @@ static void account_per_syscall_new_edges(struct childdata *child,
 			streak = __atomic_add_fetch(
 				&shm->stats.frontier_live_miss_streak_per_syscall[rec->nr],
 				1UL, __ATOMIC_RELAXED);
-			if (streak >= FRONTIER_LIVE_MISS_COOLDOWN)
+			if (streak >= FRONTIER_LIVE_MISS_COOLDOWN) {
 				__atomic_fetch_add(
 					&shm->stats.frontier_live_would_skip,
 					1UL, __ATOMIC_RELAXED);
+				__atomic_fetch_add(
+					&shm->stats.frontier_live_would_skip_per_syscall[rec->nr],
+					1UL, __ATOMIC_RELAXED);
+			}
 			if (streak == FRONTIER_LIVE_MISS_COOLDOWN)
 				__atomic_fetch_add(
 					&shm->stats.frontier_live_cooldown_candidates,

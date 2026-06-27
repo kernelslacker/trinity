@@ -2948,6 +2948,35 @@ struct stats_s {
 	unsigned long frontier_live_cooldown_candidates;
 	unsigned long frontier_live_would_skip;
 
+	/* SHADOW-ONLY per-syscall LIVE-regime cooldown would-skip counter.
+	 * Bumped at the post-call LIVE-regime miss attribution path
+	 * alongside the scalar frontier_live_would_skip whenever the post-
+	 * increment miss-streak for this syscall is at-or-past
+	 * FRONTIER_LIVE_MISS_COOLDOWN -- the per-syscall distribution of
+	 * the projected demote count a live cooldown variant of the picker
+	 * would produce.  The LIVE regime carries far more pick volume than
+	 * the silent regime, so this is the bigger reclaim lever; the top-N
+	 * exposes which syscalls drive the projection so a future live
+	 * cooldown variant can be tuned against the right set (and the
+	 * spare-lane and reject-rate decisions can be checked against the
+	 * same backlog the satcool per-syscall array surfaces).
+	 *
+	 * Sized and bounds-guarded the same way the sibling per-syscall
+	 * arrays above are; the bump shares the rec->nr < MAX_NR_SYSCALL
+	 * guard the surrounding LIVE-regime miss block already enforces.
+	 * Read by no live-path code -- observability only, surfaced via the
+	 * periodic stats dump's top-N attribution alongside the scalar
+	 * frontier_live_* rows.
+	 *
+	 * Unlike the satcool per-syscall counter, the writer here is NOT
+	 * gated by a mode flag: the scalar frontier_live_would_skip is
+	 * bumped unconditionally on every LIVE-regime miss past the
+	 * threshold (--frontier-live-cooldown gates only the rotation-time
+	 * halving in strategy-frontier.c, not the projection counter), so
+	 * the per-syscall array populates on every run regardless of the
+	 * flag and no run-mode flag is needed to surface the distribution. */
+	unsigned long frontier_live_would_skip_per_syscall[MAX_NR_SYSCALL];
+
 	/* Did-decay counter for the LIVE-regime early ring-decay variant of
 	 * frontier_window_advance() (--frontier-live-cooldown).  One bump per
 	 * (nr, rotation) where the per-syscall LIVE-regime miss-streak was
