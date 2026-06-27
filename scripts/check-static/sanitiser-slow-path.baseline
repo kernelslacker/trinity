@@ -33,4 +33,4 @@ rand/random-address.c:472:mincore
 # splitting the file is the follow-up that retires this entry; until
 # then the call is baselined rather than marker-suppressed so the two
 # slow paths get fixed together.
-utils.c:3042:fopen
+utils.c:3052:fopen

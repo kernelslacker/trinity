@@ -2222,7 +2222,17 @@ void post_state_release(struct syscallrecord *rec, void *snap)
 	}
 
 	e->released = true;
-	deferred_freeptr(&rec->post_state);
+	/*
+	 * Free the validated snap, not the live slot: rec->post_state lives
+	 * in shared childdata and a wild writer can redirect it to another
+	 * live tracked chunk between the gates above and this free.  If the
+	 * slot still matches snap, clear it; if it does not, leave the
+	 * scribbled value in place so the canary / bad-magic detectors keep
+	 * firing on the writer instead of being papered over here.
+	 */
+	if (rec->post_state == (unsigned long)(uintptr_t)snap)
+		rec->post_state = 0;
+	deferred_free_enqueue(snap);
 }
 
 void sizeunit(unsigned long size, char *buf, size_t buflen)
