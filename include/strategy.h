@@ -281,6 +281,19 @@ enum frontier_saturation_cooldown_mode {
 extern enum frontier_saturation_cooldown_mode frontier_saturation_cooldown_mode;
 
 /*
+ * Saturation-cooldown spare-lane helper, extracted from the silent-
+ * regime accept site in random-syscall.c so the predicate, the per-
+ * arch producer-observer bitmap, and the shadow-counter bumps live in
+ * one place.  No-op when frontier_saturation_cooldown_mode is OFF or
+ * kcov_shm is unavailable; otherwise evaluates the windowed-plateau +
+ * magnitude predicate and bumps the frontier_satcool_* shadow
+ * counters.  SHADOW-ONLY -- never returns a value, never gates picker
+ * selection; the COMBINED live-reject is a deliberate follow-up.
+ * See the implementation in strategy-frontier.c for the full contract.
+ */
+void frontier_satcool_spare(unsigned int syscallnr, bool do32);
+
+/*
  * Heuristic-arm group-bias anti-lock-in damper -- F-RSEQ.  Sibling of
  * the frontier-arm saturation cooldown above; the two cooldowns split
  * along the two picker arms (frontier vs heuristic) and reclaim the
