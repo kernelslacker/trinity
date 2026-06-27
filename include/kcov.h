@@ -643,15 +643,41 @@ struct kcov_pc_diag {
 	 *                              dup3 / close_range / fcntl(F_DUPFD*)
 	 *                              found in this child's
 	 *                              child_syscall_ring; 0 if the ring
-	 *                              held none.  Names the likely
-	 *                              closer when the chain-substitution
-	 *                              hypothesis holds.
+	 *                              held none.  Broad fd-mutator set
+	 *                              (allocators included), retained for
+	 *                              backward log compatibility -- prefer
+	 *                              last_closer_syscall_nr below for
+	 *                              EBADF root-cause work.
 	 *   protected_touched       -- 1 if the captured fd-mut syscall
 	 *                              targeted a protected fd (kcov PC /
 	 *                              cmp fd, stderr, the stderr capture
 	 *                              memfd).  0 means the closer was
 	 *                              the unaudited path the registry
 	 *                              cannot see.
+	 *   last_closer_syscall_nr  -- most recent close / close_range /
+	 *                              dup2 / dup3 found in this child's
+	 *                              child_syscall_ring; 0 if the ring
+	 *                              held none.  Strictly fd CLOSERS
+	 *                              (dup and fcntl F_DUPFD* are fd
+	 *                              ALLOCATORS and are excluded -- they
+	 *                              never close kc->fd, but they can
+	 *                              mask a real closer further back in
+	 *                              the ring when last_fd_mut_syscall_nr
+	 *                              walks the broad set).  Compare to
+	 *                              last_fd_mut_syscall_nr: if they
+	 *                              differ, a benign allocator was
+	 *                              masking the real closer.
+	 *   closer_protected_touched -- 1 if the captured closer's args
+	 *                              targeted a protected fd via the
+	 *                              fd_is_protected / lowest_protected_-
+	 *                              fd_in_range registry (close: a1;
+	 *                              close_range: [a1, a2]; dup2/dup3:
+	 *                              a1 || a2).  0 means the captured
+	 *                              closer did not name kc->fd at all
+	 *                              -- either it was a benign close on
+	 *                              an unrelated slot or the real
+	 *                              closer scrolled off the 16-slot
+	 *                              ring.
 	 *   proc_fd_count           -- entries populated in proc_fds[].
 	 *                              Capped at KCOV_FIRST_EBADF_PROC_FD_MAX
 	 *                              so a fleet running with thousands
@@ -666,6 +692,8 @@ struct kcov_pc_diag {
 	unsigned char first_ebadf_protected_touched;
 	unsigned char first_ebadf_proc_fd_count;
 	int           first_ebadf_proc_fds[KCOV_FIRST_EBADF_PROC_FD_MAX];
+	unsigned int  first_ebadf_last_closer_syscall_nr;
+	unsigned char first_ebadf_closer_protected_touched;
 };
 
 /* Selector for kcov_cmp_diag_format() — keeps stats.c's two-line split
