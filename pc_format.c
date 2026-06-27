@@ -98,6 +98,75 @@ const char *pc_to_string(void *pc, char *buf, size_t buflen)
 }
 
 /*
+ * Drain the pipe until addr2line closes its stdout (read() == 0)
+ * or the buffer is full.  A single read() can return a short count
+ * and leave the "file:line" tail of a long symbolized line behind
+ * in the pipe, producing a truncated render.  Each iteration is
+ * gated by poll() against the remaining deadline budget, so a
+ * mid-stream stall still triggers the SIGKILL path rather than
+ * blocking indefinitely.
+ *
+ * Returns the byte count drained (>= 0) on clean EOF / buffer-full
+ * exit, -1 if read() failed mid-drain, or -2 if the deadline expired
+ * -- in which case fd has already been closed and the child has been
+ * SIGKILLed and reaped, so the caller must propagate failure without
+ * re-cleaning the same fd / pid.
+ */
+static ssize_t addr2line_drain(int fd, pid_t pid,
+			       const struct timespec *deadline,
+			       char *buf, size_t buflen)
+{
+	struct pollfd pfd;
+	int pr;
+	int status;
+	ssize_t n = 0;
+
+	pfd.fd = fd;
+	pfd.events = POLLIN;
+
+	for (;;) {
+		struct timespec now;
+		long remaining_ms;
+		ssize_t r;
+
+		clock_gettime(CLOCK_MONOTONIC, &now);
+		remaining_ms =
+			(deadline->tv_sec  - now.tv_sec)  * 1000L +
+			(deadline->tv_nsec - now.tv_nsec) / 1000000L;
+		if (remaining_ms < 0)
+			remaining_ms = 0;
+
+		pfd.revents = 0;
+		do {
+			pr = poll(&pfd, 1, (int)remaining_ms);
+		} while (pr < 0 && errno == EINTR);
+		if (pr <= 0) {
+			close(fd);
+			(void)kill(pid, SIGKILL);
+			while (waitpid(pid, &status, 0) < 0 && errno == EINTR)
+				;
+			return -2;
+		}
+
+		r = read(fd, buf + n,
+			 buflen - 1 - (size_t)n);
+		if (r > 0) {
+			n += r;
+			if ((size_t)n >= buflen - 1)
+				break;
+			continue;
+		}
+		if (r == 0)
+			break;
+		if (errno == EINTR || errno == EAGAIN)
+			continue;
+		n = -1;
+		break;
+	}
+	return n;
+}
+
+/*
  * pc_to_source_line(): best-effort source-file:line resolution for a
  * captured PC by shelling out to addr2line(1).  Returns a pointer into
  * buf on success, NULL on any failure (no addr2line on PATH, dladdr
@@ -233,63 +302,9 @@ const char *pc_to_source_line(void *pc, char *buf, size_t buflen)
 		}
 	}
 
-	/*
-	 * Drain the pipe until addr2line closes its stdout (read() == 0)
-	 * or the buffer is full.  A single read() can return a short count
-	 * and leave the "file:line" tail of a long symbolized line behind
-	 * in the pipe, producing a truncated render.  Each iteration is
-	 * gated by poll() against the remaining deadline budget, so a
-	 * mid-stream stall still triggers the SIGKILL path rather than
-	 * blocking indefinitely.
-	 */
-	n = 0;
-	{
-		struct pollfd pfd;
-		int pr;
-
-		pfd.fd = pipefd[0];
-		pfd.events = POLLIN;
-
-		for (;;) {
-			struct timespec now;
-			long remaining_ms;
-			ssize_t r;
-
-			clock_gettime(CLOCK_MONOTONIC, &now);
-			remaining_ms =
-				(deadline.tv_sec  - now.tv_sec)  * 1000L +
-				(deadline.tv_nsec - now.tv_nsec) / 1000000L;
-			if (remaining_ms < 0)
-				remaining_ms = 0;
-
-			pfd.revents = 0;
-			do {
-				pr = poll(&pfd, 1, (int)remaining_ms);
-			} while (pr < 0 && errno == EINTR);
-			if (pr <= 0) {
-				close(pipefd[0]);
-				(void)kill(pid, SIGKILL);
-				while (waitpid(pid, &status, 0) < 0 && errno == EINTR)
-					;
-				return NULL;
-			}
-
-			r = read(pipefd[0], buf + n,
-				 buflen - 1 - (size_t)n);
-			if (r > 0) {
-				n += r;
-				if ((size_t)n >= buflen - 1)
-					break;
-				continue;
-			}
-			if (r == 0)
-				break;
-			if (errno == EINTR || errno == EAGAIN)
-				continue;
-			n = -1;
-			break;
-		}
-	}
+	n = addr2line_drain(pipefd[0], pid, &deadline, buf, buflen);
+	if (n == -2)
+		return NULL;
 	close(pipefd[0]);
 	{
 		pid_t w;
