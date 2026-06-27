@@ -302,7 +302,7 @@ syscalls/sigaltstack.c:250:post_sigaltstack
 syscalls/sigaltstack.c:259:post_sigaltstack
 syscalls/sigaltstack.c:268:post_sigaltstack
 syscalls/sigpending.c:154:post_sigpending
-syscalls/socketcall.c:193:post_socketcall
+syscalls/socketcall.c:192:post_socketcall
 syscalls/socketpair.c:191:post_socketpair
 syscalls/socketpair.c:209:post_socketpair
 syscalls/socketpair.c:222:post_socketpair

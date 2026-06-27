@@ -4,7 +4,6 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <linux/net.h>
-#include <sys/types.h>
 #include <sys/socket.h>
 #include "net.h"
 #include "objects.h"
