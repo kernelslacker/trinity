@@ -128,6 +128,18 @@ _Static_assert(NR_CHILD_OP_TYPES <= KCOV_CHILDOP_NR_MAX,
 enum childop_kcov_attribution_mode childop_kcov_attr_mode =
 	CHILDOP_KCOV_ATTR_DUAL;
 
+/* Default is OFF: the childop CMP harvest path is dormant and the
+ * childop dispatch surface is byte-identical to a build without the
+ * --childop-cmp-harvest knob.  Flipping to ON opens the §3.2 bracket
+ * on every CMP-mode child whose dispatch reaches the existing
+ * op_uses_outer_bracket gate (see child.c) so childop syscalls routed
+ * through trinity_cmp_syscall harvest their CMP operands into the
+ * quarantined childop_recent_pools[nr][do32] lane.  See the
+ * childop_cmp_harvest_mode enum in include/kcov.h for the per-mode
+ * contract. */
+enum childop_cmp_harvest_mode childop_cmp_harvest_mode =
+	CHILDOP_CMP_HARVEST_OFF;
+
 /* Default is SHADOW: collect into the transition map and surface it
  * through the stats dump, but do not feed deltas into any steering
  * consumer.  See the kcov_transition_coverage_mode enum in include/

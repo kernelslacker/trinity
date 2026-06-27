@@ -515,6 +515,27 @@ struct cmp_hints_shared {
 	 * init alongside the rest of the shm allocation; not persisted by
 	 * cmp_hints_save_file (the save path only writes pools[]). */
 	struct cmp_recent_pool recent_pools[MAX_NR_SYSCALL][2];
+	/*
+	 * Quarantined childop lane.  Identical shape to recent_pools
+	 * above; populated only when --childop-cmp-harvest=on and a
+	 * trinity_cmp_syscall() inside a kcov_cmp_bracket harvests CMP
+	 * records keyed by the wrapped syscall's real __NR_X.
+	 *
+	 * Source-tagged by storage (this dedicated grid -- NOT mixed
+	 * into the durable per-syscall pool grid above) so childop
+	 * constants cannot evict random-syscall constants out of the
+	 * 16-entry durable LRU.  Per the design
+	 * (projects/trinity/childop-cmp-integration-design.md §3.1),
+	 * promotion of a per-nr slice into the shared durable pool is a
+	 * separate quota-gated C6 step earned by the §4 conversion-chain
+	 * metrics; until then this lane is the only sink for childop CMP
+	 * constants.
+	 *
+	 * Not persisted by cmp_hints_save_file -- the save path only
+	 * writes pools[], identical to recent_pools[] above.  Memset to
+	 * zero at init alongside the rest of the shm allocation.
+	 */
+	struct cmp_recent_pool childop_recent_pools[MAX_NR_SYSCALL][2];
 	/* SHADOW typed-hypothesis store.  Zero-initialised by the same
 	 * memset that clears the rest of cmp_hints_shared; written by
 	 * cmp_hyp_observe() under the matching durable cmp_hint_pool lock
@@ -532,6 +553,33 @@ void cmp_hints_init(void);
 /* Extract comparison operands from a CMP-mode trace buffer and
  * add interesting constants to the hint pool for syscall nr. */
 void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32);
+
+/*
+ * Childop quarantine-lane insert.  Writes (cmp_ip, val, size) into
+ * cmp_hints_shared.childop_recent_pools[nr][do32] using the same
+ * head-advance + saturating-count ring discipline cmp_recent_insert()
+ * uses for the run-local recent ring.  Bumps kcov_shm
+ * ->childop_cmp_pool_inserts[nr] on every call and
+ * ->childop_cmp_pool_evicts[nr] when the ring slot being overwritten
+ * was already populated.
+ *
+ * Single-writer per (nr, do32): every caller is inside a
+ * trinity_cmp_syscall() under a kcov_cmp_bracket on a CMP-mode child,
+ * and a CMP-mode child holds exactly one bracket at a time, so the
+ * ring writes need no lock.  Readers in the eventual consume side
+ * tolerate a torn (cmp_ip, value, size) triplet identically to how
+ * cmp_hints_try_get_ex() reads the recent ring today -- advisory
+ * values, advisory pool.
+ *
+ * No dedup -- the ring deliberately accepts the same (cmp_ip, val,
+ * size) tuple again so "recent" semantics aren't diluted by
+ * collapsing a tuple the kernel saw twice into one slot.  Out-of-
+ * range nr / NULL shm / oversize ring head are silently dropped (the
+ * harvest path is advisory; see §3.1).
+ */
+void cmp_hints_childop_insert(unsigned int nr, bool do32,
+			      unsigned long cmp_ip, unsigned long val,
+			      unsigned int size);
 
 /*
  * SHADOW typed-hypothesis observation hook.
