@@ -1615,6 +1615,210 @@ unsigned long kcov_bracket_end(struct kcov_child *kc,
 }
 
 /*
+ * Per-bracket record / insert tallies for the §3.2 anti-domination
+ * caps.  File-scope statics, single-writer per child process
+ * (trinity children are separate processes; each has its own copy),
+ * reset to zero at every kcov_cmp_bracket_begin() and consulted by
+ * childop_cmp_collect().  Not stashed on struct kcov_child to keep
+ * its 48-byte hot-cacheline budget intact.
+ */
+static unsigned int childop_cmp_bracket_records_this;
+static unsigned int childop_cmp_bracket_inserts_this;
+
+/* KCOV CMP trace-buffer record format -- mirrors the constants in
+ * cmp_hints.c so this file is self-contained and the harvest path
+ * does not pull the cmp_hints.c hot-loop machinery into a wrapped
+ * syscall's critical section. */
+#define KCOV_CMP_REC_CONST		(1U << 0)
+#define KCOV_CMP_REC_SIZE_SHIFT		1
+#define KCOV_CMP_REC_SIZE_MASK		3U
+#define KCOV_CMP_REC_WORDS		4
+
+bool kcov_cmp_bracket_begin(struct kcov_child *kc)
+{
+	if (kc == NULL || !kc->active || kcov_shm == NULL) {
+		/* kcov_shm == NULL also gates the bump itself so a defensive
+		 * call before shm setup is a quiet no-op rather than a NULL
+		 * deref.  Mirrors the PC-bracket gate. */
+		if (kcov_shm != NULL)
+			__atomic_fetch_add(
+				&kcov_shm->childop_cmp_brackets_skipped_inactive,
+				1, __ATOMIC_RELAXED);
+		return false;
+	}
+	if (kc->mode != KCOV_MODE_CMP) {
+		__atomic_fetch_add(
+			&kcov_shm->childop_cmp_brackets_skipped_pc_mode,
+			1, __ATOMIC_RELAXED);
+		return false;
+	}
+	if (!kc->cmp_capable || kc->cmp_trace_buf == NULL) {
+		__atomic_fetch_add(
+			&kcov_shm->childop_cmp_brackets_skipped_incapable,
+			1, __ATOMIC_RELAXED);
+		return false;
+	}
+	if (kc->bracket_owned) {
+		__atomic_fetch_add(
+			&kcov_shm->childop_cmp_brackets_skipped_nested,
+			1, __ATOMIC_RELAXED);
+		return false;
+	}
+
+	kcov_enable_cmp(kc);
+	if (!kc->cmp_enabled_this_call) {
+		/* kcov_enable_cmp gave up (runtime EBADF / unsupported);
+		 * cmp_capable is now false.  Treat as the incapable reject
+		 * arm so the attempts == opened + sum(skipped) invariant
+		 * holds. */
+		__atomic_fetch_add(
+			&kcov_shm->childop_cmp_brackets_skipped_incapable,
+			1, __ATOMIC_RELAXED);
+		return false;
+	}
+
+	kc->bracket_owned = true;
+	childop_cmp_bracket_records_this = 0;
+	childop_cmp_bracket_inserts_this = 0;
+	__atomic_fetch_add(&kcov_shm->childop_cmp_brackets_opened, 1,
+			   __ATOMIC_RELAXED);
+	return true;
+}
+
+void kcov_cmp_bracket_end(struct kcov_child *kc)
+{
+	if (kc == NULL || !kc->bracket_owned)
+		return;
+	/* kcov_disable already gates on kc->mode and cmp_enabled_this_call,
+	 * so calling it on a CMP-mode child here issues exactly one
+	 * KCOV_DISABLE on cmp_fd and clears cmp_enabled_this_call. */
+	kcov_disable(kc);
+	kc->bracket_owned = false;
+}
+
+void childop_cmp_reset(struct kcov_child *kc)
+{
+	if (kc == NULL || !kc->bracket_owned)
+		return;
+	if (kc->mode != KCOV_MODE_CMP || kc->cmp_trace_buf == NULL)
+		return;
+	/* Reset the count word so the wrapped syscall's CMP records start
+	 * at slot 0 of cmp_trace_buf -- the kernel appends from the count
+	 * the same way KCOV_ENABLE does at bracket entry. */
+	__atomic_store_n(&kc->cmp_trace_buf[0], 0, __ATOMIC_RELAXED);
+}
+
+void childop_cmp_collect(struct kcov_child *kc, unsigned int nr)
+{
+	unsigned long count;
+	unsigned long i;
+	unsigned int kept = 0;
+	unsigned int truncated = 0;
+	unsigned long *trace_buf;
+
+	if (kc == NULL || !kc->bracket_owned)
+		return;
+	if (kc->mode != KCOV_MODE_CMP || kc->cmp_trace_buf == NULL)
+		return;
+	if (kcov_shm == NULL || nr >= MAX_NR_SYSCALL)
+		return;
+
+	trace_buf = kc->cmp_trace_buf;
+	count = __atomic_load_n(&trace_buf[0], __ATOMIC_RELAXED);
+
+	/* Clamp to KCOV_CMP_RECORDS_MAX and account the truncation
+	 * against the per-nr trace_truncated counter -- mirrors the
+	 * random-syscall path's cmp_trace_truncated row. */
+	if (count >= KCOV_CMP_RECORDS_MAX) {
+		count = KCOV_CMP_RECORDS_MAX;
+		truncated = 1;
+	}
+
+	__atomic_fetch_add(&kcov_shm->childop_cmp_syscalls_sampled[nr], 1UL,
+			   __ATOMIC_RELAXED);
+	if (truncated)
+		__atomic_fetch_add(&kcov_shm->childop_cmp_trace_truncated[nr],
+				   1UL, __ATOMIC_RELAXED);
+
+	if (count == 0)
+		return;
+
+	__atomic_fetch_add(&kcov_shm->childop_cmp_records_collected[nr],
+			   count, __ATOMIC_RELAXED);
+
+	for (i = 0; i < count; i++) {
+		unsigned long *rec;
+		unsigned long type, arg1, ip;
+		unsigned int size;
+
+		/* §3.2 anti-domination cap: drop further records on this
+		 * bracket once the cap is hit so one chatty childop cannot
+		 * dominate the lane (or burn cycles in this loop). */
+		if (childop_cmp_bracket_records_this >=
+		    CHILDOP_CMP_BRACKET_RECORDS_CAP) {
+			__atomic_fetch_add(
+				&kcov_shm->childop_cmp_record_cap_hits, 1UL,
+				__ATOMIC_RELAXED);
+			break;
+		}
+		childop_cmp_bracket_records_this++;
+
+		rec = &trace_buf[1 + i * KCOV_CMP_REC_WORDS];
+		type = rec[0];
+		arg1 = rec[1];
+		/* rec[2] is the runtime operand; feeding it back would
+		 * recycle trinity's own inputs.  rec[3] is the comparison
+		 * site PC. */
+		ip   = kcov_canon_cmp_ip(rec[3]);
+		size = 1U << ((type >> KCOV_CMP_REC_SIZE_SHIFT) &
+			      KCOV_CMP_REC_SIZE_MASK);
+
+		/* Only KCOV_CMP_CONST records expose a kernel-side
+		 * compile-time constant; both-runtime records would just
+		 * mirror values trinity already generated. */
+		if (!(type & KCOV_CMP_REC_CONST))
+			continue;
+
+		/* Mirror cmp_hints_collect()'s boring-constant filter (the
+		 * narrower ~3UL arm) so the quarantine lane is not flooded
+		 * with 0/1/2/3 and (unsigned long)-1 sentinels.  The
+		 * wider ~7UL arm is per-child A/B telemetry on the
+		 * random-syscall path and is intentionally not replicated
+		 * here -- this lane has no A/B yet. */
+		if ((arg1 & ~3UL) == 0)
+			continue;
+		if (arg1 == (unsigned long)-1)
+			continue;
+
+		if (childop_cmp_bracket_inserts_this >=
+		    CHILDOP_CMP_BRACKET_INSERTS_CAP) {
+			__atomic_fetch_add(
+				&kcov_shm->childop_cmp_insert_cap_hits, 1UL,
+				__ATOMIC_RELAXED);
+			break;
+		}
+		childop_cmp_bracket_inserts_this++;
+		kept++;
+
+		/* do32 = false: childops issue native 64-bit syscalls only. */
+		cmp_hints_childop_insert(nr, false, ip, arg1, size);
+	}
+
+	if (kept > 0) {
+		struct childdata *cc = this_child();
+
+		if (cc != NULL) {
+			unsigned int op = (unsigned int)cc->op_type;
+
+			if (op < KCOV_CHILDOP_NR_MAX)
+				__atomic_fetch_add(
+				    &kcov_shm->childop_cmp_syscalls_sampled_per_op[op],
+				    1UL, __ATOMIC_RELAXED);
+		}
+	}
+}
+
+/*
  * Strip the runtime KASLR base from a kernel PC so the bucket index for
  * a given instruction is invariant across reboots of the same kernel
  * build.  kcov_kaslr_base is populated by kcov_init_global from the

@@ -2629,6 +2629,60 @@ unsigned long kcov_bracket_end(struct kcov_child *kc,
 				unsigned long op_nr);
 
 /*
+ * CMP-mode childop dispatch bracket.  Mode-exclusive counterpart of
+ * the PC-side kcov_bracket_begin/end above: a child is PC-mode or
+ * CMP-mode for life (kcov_init_child fixes the split with
+ * KCOV_CMP_CHILD_RECIPROCAL), so on any single dispatch only one of
+ * the two brackets opens; they share kc->bracket_owned for nesting
+ * detection.
+ *
+ * kcov_cmp_bracket_begin returns true when the bracket took
+ * ownership of the cmp_fd (caller must pair with
+ * kcov_cmp_bracket_end), and false on every reject arm:
+ *
+ *   - kc inactive or shared state unavailable.  Bumps
+ *     childop_cmp_brackets_skipped_inactive.
+ *   - kc->mode != KCOV_MODE_CMP.  Bumps
+ *     childop_cmp_brackets_skipped_pc_mode -- PC-mode children land
+ *     on the PC bracket above; this one is the CMP-mode counterpart.
+ *   - !kc->cmp_capable (probe failed or runtime KCOV_ENABLE flipped
+ *     it false).  Bumps childop_cmp_brackets_skipped_incapable.
+ *   - kc->bracket_owned already set (an outer bracket -- PC or CMP
+ *     -- is in flight).  Bumps
+ *     childop_cmp_brackets_skipped_nested.
+ *
+ * On a successful begin the per-bracket record / insert counters in
+ * kcov.c are reset to zero so the §3.2 anti-domination caps measure
+ * one childop dispatch at a time.
+ */
+bool kcov_cmp_bracket_begin(struct kcov_child *kc);
+void kcov_cmp_bracket_end(struct kcov_child *kc);
+
+/*
+ * trinity_cmp_syscall() macro wraps a single childop syscall under
+ * an open kcov_cmp_bracket.  The macro calls childop_cmp_reset()
+ * immediately before the wrapped syscall (storing 0 to
+ * cmp_trace_buf[0] so the next syscall overwrites from slot 0 -- the
+ * kernel appends from the count word) and childop_cmp_collect()
+ * immediately after, attributing the harvested records to the
+ * supplied __NR_X.  Both helpers no-op on any child whose
+ * bracket_owned bit is not set, so a stray call outside a bracket is
+ * a counted skip rather than a misattribution.
+ */
+void childop_cmp_reset(struct kcov_child *kc);
+void childop_cmp_collect(struct kcov_child *kc, unsigned int nr);
+
+/* Per-bracket record + insert caps for the §3.2 anti-domination
+ * defence.  Records exceeding the cap on a single bracket are
+ * counted (kcov_shm->childop_cmp_record_cap_hits) and dropped from
+ * harvest; insert-cap hits bump the matching insert counter.  Sized
+ * generously vs typical childop fan-out (10..100 syscalls per
+ * dispatch) so a normal childop never hits the caps; the caps catch
+ * a runaway ioctl/sendmsg pulled into a childop. */
+#define CHILDOP_CMP_BRACKET_RECORDS_CAP 1024U
+#define CHILDOP_CMP_BRACKET_INSERTS_CAP 256U
+
+/*
  * Per-childop KCOV attribution mode (--childop-kcov-attribution).
  *
  *   OFF  - childop dispatch path is unchanged; nothing is bracketed
