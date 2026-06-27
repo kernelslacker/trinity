@@ -2536,6 +2536,53 @@ struct kcov_shared {
 	unsigned long cmp_hyp_boundary_inserted;
 	unsigned long cmp_hyp_boundary_candidate_available;
 	unsigned long cmp_hyp_boundary_credit_window_hits;
+
+	/*
+	 * Childop CMP harvest shadow counters.  Populated only when
+	 * --childop-cmp-harvest=on opens the kcov_cmp_bracket on a
+	 * CMP-mode child at the child.c childop dispatch gate; the OFF
+	 * default leaves every counter below at zero so the row is
+	 * directly observable as "harvest path is dormant on this build".
+	 *
+	 * Per the design (projects/trinity/childop-cmp-integration-design.md
+	 * sections 3.1 / 3.2 / 4):
+	 *   - Inserts feed the QUARANTINED childop lane
+	 *     (cmp_hints_shared.childop_recent_pools[nr][do32]), not the
+	 *     durable per-syscall pool, so no childop constant can evict a
+	 *     random-syscall constant out of the 16-entry LRU until a
+	 *     promotion phase (C6) is earned per-nr by the conversion-chain
+	 *     metrics that land alongside the consume side (C2/C4).
+	 *   - All bumps key on the real __NR_X carried by the wrapped
+	 *     childop syscall (do32=false; childops issue native 64-bit
+	 *     syscalls only) so the consumer-side resolver (when it lands)
+	 *     can look constants up under the same (nr, do32) coordinate
+	 *     the random-syscall picker uses.
+	 *   - window_contaminated[nr] is the §3.2 "all-routed invariant"
+	 *     debug counter: best-effort signal that a wrapped collect saw
+	 *     records when the kernel was not expected to run (some
+	 *     unwrapped helper syscall landed inside the reset/syscall/
+	 *     collect window and was misattributed to nr).  Pure
+	 *     observability -- the cap arms below are the actual
+	 *     domination defence.
+	 */
+	unsigned long childop_cmp_brackets_opened;
+	unsigned long childop_cmp_brackets_skipped_pc_mode;
+	unsigned long childop_cmp_brackets_skipped_incapable;
+	unsigned long childop_cmp_brackets_skipped_nested;
+	unsigned long childop_cmp_brackets_skipped_inactive;
+	unsigned long childop_cmp_record_cap_hits;
+	unsigned long childop_cmp_insert_cap_hits;
+	unsigned long childop_cmp_syscalls_sampled[MAX_NR_SYSCALL];
+	unsigned long childop_cmp_records_collected[MAX_NR_SYSCALL];
+	unsigned long childop_cmp_pool_inserts[MAX_NR_SYSCALL];
+	unsigned long childop_cmp_pool_evicts[MAX_NR_SYSCALL];
+	unsigned long childop_cmp_trace_truncated[MAX_NR_SYSCALL];
+	unsigned long childop_cmp_window_contaminated[MAX_NR_SYSCALL];
+	/* Per-childop syscall-sample census, indexed by enum child_op_type.
+	 * Lets the operator see which childop is dominating the lane before
+	 * the §3.2 noisy-syscall skip-list would need tuning.  Same
+	 * KCOV_CHILDOP_NR_MAX bound the PC-side childop_kcov_* arrays use. */
+	unsigned long childop_cmp_syscalls_sampled_per_op[KCOV_CHILDOP_NR_MAX];
 };
 
 extern struct kcov_shared *kcov_shm;
@@ -2609,6 +2656,44 @@ enum childop_kcov_attribution_mode {
 };
 
 extern enum childop_kcov_attribution_mode childop_kcov_attr_mode;
+
+/*
+ * Childop CMP harvest mode (--childop-cmp-harvest).  Mirrors the
+ * --kcov-transition-coverage / --frontier-saturation-cooldown A/B
+ * pattern: a default-OFF behaviour-neutral knob that opens the
+ * §3.2 hybrid bracket on a CMP-mode child at the childop dispatch
+ * gate when flipped on.
+ *
+ *   OFF  - default.  The childop dispatch path is byte-identical to
+ *          a build without this knob: kcov_cmp_bracket_begin is
+ *          never called from child.c, no KCOV_ENABLE/DISABLE ioctls
+ *          fire on the cmp_fd at childop boundaries, no
+ *          trinity_cmp_syscall wrapper writes to the quarantine
+ *          lane, and every childop_cmp_* shadow counter stays at
+ *          zero.
+ *   ON   - open the bracket on every CMP-mode child whose dispatch
+ *          reaches the existing op_uses_outer_bracket gate; childop
+ *          syscalls routed through trinity_cmp_syscall harvest
+ *          their CMP operands into the quarantined
+ *          childop_recent_pools[nr][do32] lane.  The lane is
+ *          non-persisted and does NOT evict the durable
+ *          per-syscall pool; promotion is a separate per-nr
+ *          quota-gated C6 step.  Migration of individual childops
+ *          to route through trinity_cmp_syscall is a per-childop
+ *          C5 step earned by the §4 conversion chain.
+ *
+ * The two modes are kept distinct from --childop-kcov-attribution
+ * (PC-side) -- a child is PC-mode OR CMP-mode for life
+ * (kcov_init_child fixes the assignment), so the PC bracket and the
+ * CMP bracket are mutually exclusive per child and dispatch from
+ * the same child.c gate selects on kc->mode.
+ */
+enum childop_cmp_harvest_mode {
+	CHILDOP_CMP_HARVEST_OFF = 0,
+	CHILDOP_CMP_HARVEST_ON,
+};
+
+extern enum childop_cmp_harvest_mode childop_cmp_harvest_mode;
 
 /* Per-call PC-edge result struct, optionally filled by kcov_collect().
  *

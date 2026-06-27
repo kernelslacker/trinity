@@ -557,6 +557,7 @@ static const struct option_help option_descs[] = {
 	{ "canary-slots",	 0,  "reserve N slots from the front of --alt-op-children to run the dormant-op canary queue (default: min(alt-op-children, 2) when unset). Clamped to min(N, alt_op_children); N=0 disables the queue identically to --no-canary-queue." },
 	{ "canary-window",	 0,  "invocations of the active canary op per window (default 10000, range 1000..1000000). Counted against the per-op invocation counter, not the fleet-wide op count, so window size is independent of -C and --canary-slots. Lower windows are too noisy to promote on; higher windows let a useless op squat a slot for too long." },
 	{ "childop-kcov-attribution", 0, "per-childop KCOV attribution mode: off (no bracketing, childop_edges_clean stays zero; budget multipliers stay at unity and canary windows always demote on zero_edges), dual (default; bracket every eligible alt-op and publish the per-call edge delta to childop_edges_clean -- adapt_budget and the canary queue consume this clean signal, the global-delta path keeps writing childop_edges_discovered as a diagnostic comparator), or on (reserved; identical to dual until the discovered counter is retired)." },
+	{ "childop-cmp-harvest", 0, "DEFAULT OFF. Open a per-childop KCOV_TRACE_CMP bracket on CMP-mode children at the child.c childop dispatch gate; childop syscalls routed through trinity_cmp_syscall harvest their CMP operands into the QUARANTINED childop_recent_pools[nr][do32] lane (non-persisted, does NOT evict the durable per-syscall cmp pool). Accepts 'off' (the bracket is never opened; trinity_cmp_syscall is a no-op wrapper around trinity_raw_syscall; every childop_cmp_* shadow counter stays at zero -- the childop dispatch surface is byte-identical to a build without this knob) or 'on' (the bracket opens on every CMP-mode child whose dispatch reaches the existing op_uses_outer_bracket gate; honour the §3.2 all-routed invariant on any childop migrated to trinity_cmp_syscall). Per-childop migration to the wrapper is a separate per-op step earned by the conversion-chain metrics; the OFF default ships the harvest path behaviour-neutral." },
 	{ "children",		'C', "specify number of child processes" },
 	{ "clowntown",		 0,  "enable clowntown mode" },
 	{ "cmp-recent-pool", 0, "A/B selection policy for the run-local CMP recent-pool tier.  Accepts 'off' (default; cmp_hints_try_get_ex samples the durable per-syscall pool exactly as before) or 'recent-first' (during a CMP_RISING_PC_FLAT plateau, sample the recent ring first and fall through to the durable pool on an empty ring or off-plateau).  Shadow counters (cmp_recent_inserts / would_pick / would_miss) are active in BOTH modes so the would-be-pick rate is observable from a default run before the live arm is flipped." },
@@ -658,6 +659,7 @@ static const struct option longopts[] = {
 	{ "canary-slots", required_argument, NULL, 0 },
 	{ "canary-window", required_argument, NULL, 0 },
 	{ "childop-kcov-attribution", required_argument, NULL, 0 },
+	{ "childop-cmp-harvest", required_argument, NULL, 0 },
 	{ "kcov-trace-size", required_argument, NULL, 0 },
 	{ "kcov-transition-coverage", required_argument, NULL, 0 },
 	{ "kcov-transition-reward", required_argument, NULL, 0 },
@@ -795,6 +797,19 @@ static bool parse_kcov_options(int opt, const char *name, char *arg)
 			childop_kcov_attr_mode = CHILDOP_KCOV_ATTR_ON;
 		} else {
 			outputerr("--childop-kcov-attribution: unknown mode '%s' (expected off, dual, or on)\n",
+				arg);
+			exit(EXIT_FAILURE);
+		}
+		return true;
+	}
+
+	if (strcmp("childop-cmp-harvest", name) == 0) {
+		if (strcmp(arg, "off") == 0) {
+			childop_cmp_harvest_mode = CHILDOP_CMP_HARVEST_OFF;
+		} else if (strcmp(arg, "on") == 0) {
+			childop_cmp_harvest_mode = CHILDOP_CMP_HARVEST_ON;
+		} else {
+			outputerr("--childop-cmp-harvest: unknown mode '%s' (expected off or on)\n",
 				arg);
 			exit(EXIT_FAILURE);
 		}

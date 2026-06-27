@@ -1806,6 +1806,62 @@ static void cmp_recent_insert(unsigned int nr, bool do32,
 		__atomic_store_n(&rp->count, count + 1U, __ATOMIC_RELEASE);
 }
 
+/*
+ * Childop quarantine-lane insert.  Mirrors cmp_recent_insert() above
+ * but writes to cmp_hints_shared.childop_recent_pools[nr][do32] --
+ * the source-tagged, non-persisted, non-LRU-displacing lane that
+ * the §3.2 trinity_cmp_syscall harvest feeds when
+ * --childop-cmp-harvest=on.
+ *
+ * Single-writer per (nr, do32): every caller runs inside a
+ * trinity_cmp_syscall() under a kcov_cmp_bracket on a CMP-mode
+ * child, and a CMP-mode child only ever holds one bracket at a
+ * time, so the head/count writes need no lock.  Lockless readers
+ * in the eventual consume side will tolerate a torn (cmp_ip, val,
+ * size) triplet the same way cmp_hints_try_get_ex() tolerates one
+ * against recent_pools[] today.
+ *
+ * Pool-insert / pool-evict bumps land in kcov_shm under the same
+ * per-nr keying the rest of the childop_cmp_* shadow counters use,
+ * so the eviction-pressure signal the §3.1 promotion gate consumes
+ * is observable per-nr from day one.
+ */
+void cmp_hints_childop_insert(unsigned int nr, bool do32,
+			      unsigned long cmp_ip, unsigned long val,
+			      unsigned int size)
+{
+	struct cmp_recent_pool *rp;
+	unsigned int head;
+	unsigned int count;
+
+	if (cmp_hints_shm == NULL || nr >= MAX_NR_SYSCALL)
+		return;
+
+	rp = &cmp_hints_shm->childop_recent_pools[nr][do32 ? 1 : 0];
+	head = rp->head;
+	if (head >= CMP_RECENT_PER_SYSCALL)
+		head = 0;	/* defensive: stomp on head indexed OOB */
+	count = rp->count;
+
+	if (kcov_shm != NULL) {
+		__atomic_fetch_add(&kcov_shm->childop_cmp_pool_inserts[nr],
+				   1UL, __ATOMIC_RELAXED);
+		if (count >= CMP_RECENT_PER_SYSCALL)
+			__atomic_fetch_add(&kcov_shm->childop_cmp_pool_evicts[nr],
+					   1UL, __ATOMIC_RELAXED);
+	}
+
+	rp->entries[head].value = val;
+	rp->entries[head].cmp_ip = cmp_ip;
+	rp->entries[head].size = size;
+	rp->entries[head].pad = 0;
+
+	head = (head + 1U) % CMP_RECENT_PER_SYSCALL;
+	__atomic_store_n(&rp->head, head, __ATOMIC_RELAXED);
+	if (count < CMP_RECENT_PER_SYSCALL)
+		__atomic_store_n(&rp->count, count + 1U, __ATOMIC_RELEASE);
+}
+
 static unsigned int cmp_hints_flush_pending(struct cmp_hint_pool *pool,
 					    unsigned int nr, bool do32,
 					    const struct cmp_hints_pending *batch,
