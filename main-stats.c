@@ -79,6 +79,14 @@ static void print_kcov_pc_diag(void)
 			snprintf(last_buf, sizeof(last_buf), "%s", buf);
 		}
 	}
+
+	/* One-shot trap dump: emits the full chronicle snapshot +
+	 * recovery counters captured by kcov_latch_first_ebadf() the
+	 * first time first_ebadf_op_nr surfaces non-zero.  Subsequent
+	 * calls are silent (process-local one-shot inside the helper).
+	 * Parent-only call site -- children's output() is routed to
+	 * /dev/null and would discard the dump. */
+	(void) kcov_first_ebadf_trap_drain();
 }
 
 static unsigned long print_stats_compute_op_rate(unsigned long ops_delta)
