@@ -249,6 +249,27 @@ static void use_fpu(void)
 	x += 1;
 	asm volatile("":"+m" (x));
 }
+
+/*
+ * Drop the previous occupant's __BUG() stamp and signal-time fault-beacon
+ * latches in lock-step with their parent-side dumper flags, so the fresh
+ * occupant's first BUG / fault re-triggers the dump path instead of being
+ * suppressed by the prior child's idempotency flag, and so the dumpers
+ * never observe stale backtrace / ip / sp / addr fields.
+ */
+static void reset_child_fault_beacons(struct childdata *child)
+{
+	child->hit_bug = false;
+	child->bug_dumped = false;
+	__atomic_store_n(&child->bug_backtrace.count, 0, __ATOMIC_RELAXED);
+	child->bug_text = NULL;
+	child->bug_func = NULL;
+	child->bug_lineno = 0;
+
+	__atomic_store_n(&child->fault_beacon.written, 0U, __ATOMIC_RELAXED);
+	child->fault_beacon_dumped = false;
+}
+
 /*
  * Wipe out any state left from a previous child running in this slot.
  */
@@ -443,29 +464,7 @@ void clean_childdata(struct childdata *child)
 	       sizeof(child->cmp_hints_consumed_stash));
 	child->cmp_hints_consumed_count = 0;
 
-	/* Clear any __BUG() stamp left by the prior occupant of this slot
-	 * so the parent's zombie-pending warning doesn't mis-attribute the
-	 * fresh child's eventual exit to the previous one's assertion.
-	 * bug_dumped + bug_backtrace.count must clear in lock-step so the
-	 * fresh occupant's first BUG re-triggers the parent's dump path
-	 * instead of being suppressed by the previous occupant's latched
-	 * flag, and so dump_child_bug doesn't see stale frames if the
-	 * fresh occupant BUGs before its own backtrace stamp lands. */
-	child->hit_bug = false;
-	child->bug_dumped = false;
-	__atomic_store_n(&child->bug_backtrace.count, 0, __ATOMIC_RELAXED);
-	child->bug_text = NULL;
-	child->bug_func = NULL;
-	child->bug_lineno = 0;
-
-	/* Same teardown for the signal-time fault beacon: clear the
-	 * .written edge-trigger and the parent-side fault_beacon_dumped
-	 * latch in lock-step so the fresh occupant's first fault
-	 * re-triggers dump_child_fault_beacon instead of being suppressed
-	 * by the previous occupant's idempotency flag, and so the dumper
-	 * doesn't observe stale ip/sp/addr fields. */
-	__atomic_store_n(&child->fault_beacon.written, 0U, __ATOMIC_RELAXED);
-	child->fault_beacon_dumped = false;
+	reset_child_fault_beacons(child);
 
 	if (child->fd_event_ring)
 		fd_event_ring_init(child->fd_event_ring);
