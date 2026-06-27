@@ -3,7 +3,6 @@
  */
 #include <sched.h>
 #include <string.h>
-#include <sys/types.h>
 #include <unistd.h>
 #include "deferred-free.h"
 #include "random.h"
