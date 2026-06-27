@@ -624,6 +624,56 @@ struct childdata {
 	unsigned long fd_closed;
 	unsigned long fd_created_by_group[NR_GROUPS];
 
+	/* Heuristic-arm group-bias anti-lock-in damper state -- F-RSEQ.
+	 * Per-pin streak + windowed coverage watermark + fd-warm flag the
+	 * SHADOW group-pin predicate reads at the group_bias gate.  Owner-
+	 * only writes from the dispatch_step tail (account_fd_and_group,
+	 * gated on frontier_group_antilock_mode != OFF and on group_bias);
+	 * read by the gate-site shadow predicate at random-syscall.c
+	 * heuristic-arm set_syscall_nr.  Bookkeeping order in the dispatch
+	 * tail: on entry->group != child->last_group (group changed) ->
+	 * reset all three to 0; ALWAYS group_streak_len++ after the
+	 * potential reset; ON found-local-coverage (new PC-edge OR new
+	 * local transition-edge) -> last_cov_at_streak = group_streak_len;
+	 * ON entry->rettype == RET_FD with rec->retval != -1UL ->
+	 * group_fd_created_in_streak++.  No cross-process coherence
+	 * needed; no shm, no atomics.
+	 *
+	 *  group_streak_len
+	 *      Heuristic picks since last_group last CHANGED.  Starts at
+	 *      0 after each group-change reset, bumped at the end of
+	 *      every per-call account_fd_and_group invocation so a pin's
+	 *      first member sees group_streak_len == 1 at the NEXT gate
+	 *      hit.  Unsigned-int sized; wraps at ~4G picks, well past
+	 *      any realistic fuzzer-run pin length.
+	 *  last_cov_at_streak
+	 *      Watermark: the group_streak_len value at the most recent
+	 *      coverage credit within this pin.  Reset to 0 on every
+	 *      group change so a fresh pin starts un-credited; advanced
+	 *      to the current streak_len whenever this call yielded a
+	 *      new PC-edge or a new LOCAL transition-edge (NOT remote,
+	 *      since remote-collected coverage can land on whichever
+	 *      syscall happened to harvest it and falsely productive-
+	 *      mark a pure observer -- the same _real_local lane satcool
+	 *      already isolates).  pin_stale = (streak_len > MIN_STREAK)
+	 *      && (streak_len - last_cov_at_streak > COV_WINDOW): the
+	 *      sliding window inside the pin so a single incidental
+	 *      edge does not make a junk-drawer pin immortal (the
+	 *      whole-pin cov>0 version would have).
+	 *  group_fd_created_in_streak
+	 *      Count of fds the pin's calls have returned since the
+	 *      last group change.  pin_warm = (group_fd_created_in_
+	 *      streak > 0): a pin building live state (warm setup
+	 *      socket->bind->sendmsg, openat->read->close) is spared
+	 *      from release even when coverage-barren, because the
+	 *      produced object is the locality the group bias is really
+	 *      protecting.  Pure getters never produce fds and so never
+	 *      set this -- pure-getter pins are not spared by the warm
+	 *      lane regardless of streak length. */
+	unsigned int group_streak_len;
+	unsigned int last_cov_at_streak;
+	unsigned int group_fd_created_in_streak;
+
 	/* Per-child storm-containment counters.  Bumped in lock-step with
 	 * the existing global stats.{post_handler_corrupt_ptr,
 	 * get_writable_address_scribbled_*} from the same call

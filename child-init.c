@@ -276,6 +276,17 @@ void clean_childdata(struct childdata *child)
 	child->fd_created = 0;
 	child->fd_closed = 0;
 	memset(child->fd_created_by_group, 0, sizeof(child->fd_created_by_group));
+	/* F-RSEQ group-pin damper state -- per-pin streak + watermark + fd-
+	 * warm counter.  Zeroed on every fresh occupant of this slot so the
+	 * predicate starts with no streak history; the dispatch_step
+	 * bookkeeping (gated on frontier_group_antilock_mode != OFF AND
+	 * group_bias) advances them per pick.  Under default mode=OFF
+	 * these fields are never read or written -- the clear here is the
+	 * one-shot init pattern the sibling fd_created* fields above use,
+	 * not a per-call cost. */
+	child->group_streak_len = 0;
+	child->last_cov_at_streak = 0;
+	child->group_fd_created_in_streak = 0;
 	clock_gettime(CLOCK_MONOTONIC, &child->tp);
 
 	/* -1 sentinel = "no syscall picked yet on this child".  Reward

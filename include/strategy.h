@@ -281,6 +281,115 @@ enum frontier_saturation_cooldown_mode {
 extern enum frontier_saturation_cooldown_mode frontier_saturation_cooldown_mode;
 
 /*
+ * Heuristic-arm group-bias anti-lock-in damper -- F-RSEQ.  Sibling of
+ * the frontier-arm saturation cooldown above; the two cooldowns split
+ * along the two picker arms (frontier vs heuristic) and reclaim the
+ * two halves of the no-input call budget that the run-1717 audit
+ * decomposed (one no-arg / never-fail GROUP_PROCESS member absorbing
+ * ~20-28k calls/run via the sticky last_group + 70%-same-group retry
+ * loop in random-syscall.c::set_syscall_nr_heuristic; rotates by seed
+ * but always collapses onto pure getters / no-op yields because those
+ * are the only GROUP_PROCESS members that pass every gate cheaply and
+ * re-arm the pin).  The damper releases a BARREN group pin (one
+ * whose windowed coverage productivity is flat AND which holds no
+ * live object mid-setup) so the draw escapes the junk-drawer, while
+ * preserving productive group clustering (NET socket->bind->sendto,
+ * VFS open->read->close) precisely because productive pins advance
+ * the coverage watermark on every yielding member and so never go
+ * stale within the window.  See the windowed-pin predicate body in
+ * random-syscall.c and the per-group / per-syscall would-skip
+ * counters in include/stats.h for the shape this evaluates and
+ * counts in shadow.
+ *
+ * Discriminator (the property that distinguishes productive
+ * clustering from one no-op monopolising the pin): the predicate
+ * keys on PER-PIN PRODUCTIVITY -- the watermark advances when this
+ * call found a new PC-edge or a new local transition-edge, so a
+ * group running a stateful sequence keeps producing within the
+ * window and is never released, while a pin dominated by pure
+ * observers (no edges, no transitions, no object) goes barren past
+ * the window and is released.  The pin_warm spare folds in the
+ * warm-setup case (NET/VFS/io_uring chains that run
+ * many edge-less known-setup calls before the rare trigger): a pin
+ * that produced an fd this streak is spared even when coverage-
+ * barren, because the produced object is the locality the bias is
+ * really protecting.  Per-syscall would-skip mass concentrating on
+ * rseq_slice_yield / getpgrp / sched_yield and per-group mass
+ * concentrating on GROUP_PROCESS (=5) is the SHADOW_ONLY headline
+ * confirming the predicate targets the documented pathology and
+ * leaves NET/VFS clusters untouched.
+ *
+ * Predicate state is PER-CHILD and PER-NR for the per-syscall
+ * shadow counter (last_group is already per-child, and the per-
+ * syscall would-skip array key is nr alone).  No (nr, context_id)
+ * re-keying in this row -- pools P2.5 introduces context_id later
+ * and the per-syscall would-skip key participates in that sweep
+ * along with cold-skip / cred-throttle / satcool.  Until then,
+ * context_id == regular for every child so the per-nr key is
+ * counter-identical to a (nr, regular) key.
+ *
+ *   OFF          - default, byte-identical to today.  The dispatch-
+ *                  step bookkeeping (group-change streak reset, fd-
+ *                  warm bump, coverage watermark advance) and the
+ *                  group_bias-gate shadow predicate evaluation are
+ *                  ALL gated on this mode; under OFF no per-child
+ *                  field is read or written, no atomic loads run,
+ *                  no shadow counters bump.
+ *   SHADOW_ONLY  - bookkeeping runs (per-child only, no shm) and
+ *                  the shadow predicate evaluates at the
+ *                  group_bias gate, bumping the frontier_frseq_*
+ *                  shadow counters.  Selection stays byte-
+ *                  identical -- no goto-retry branch is gated on
+ *                  the predicate.  Read the per-syscall and per-
+ *                  group would-skip arrays to confirm the demote
+ *                  mass concentrates on rseq_slice_yield /
+ *                  getpgrp / sched_yield and on GROUP_PROCESS
+ *                  before tuning MIN_STREAK / COV_WINDOW or
+ *                  promoting COMBINED.
+ *   COMBINED     - reserved.  The enum value exists so the live
+ *                  pin-release wire-up can land in a follow-up
+ *                  commit without renumbering the enum, but THIS
+ *                  COMMIT does NOT implement the live release --
+ *                  selecting combined today behaves identically
+ *                  to shadow-only (predicate computed, counters
+ *                  bump, gate unchanged).  Mirrors the OFF /
+ *                  SHADOW_ONLY / COMBINED ramp discipline the
+ *                  sibling frontier_saturation_cooldown_mode above
+ *                  uses.
+ *
+ * Param-settable from --frontier-group-antilock=off|shadow-only|
+ * combined; mirrors the frontier_saturation_cooldown_mode shape so
+ * a reader familiar with that knob (and its SHADOW->COMBINED ramp)
+ * recognises the rollout discipline.
+ */
+enum frontier_group_antilock_mode {
+	FRONTIER_GROUP_ANTILOCK_MODE_OFF = 0,
+	FRONTIER_GROUP_ANTILOCK_MODE_SHADOW_ONLY = 1,
+	FRONTIER_GROUP_ANTILOCK_MODE_COMBINED = 2,
+};
+
+extern enum frontier_group_antilock_mode frontier_group_antilock_mode;
+
+/*
+ * Group-pin anti-lock-in damper thresholds.  Tuned to protect
+ * legitimate warm-setup clustering: a pin needs at least
+ * FRONTIER_FRSEQ_MIN_STREAK heuristic picks before it can be
+ * considered for release, and within that pin the watermark gap
+ * (current streak position minus the most recent coverage credit
+ * within the pin) must exceed FRONTIER_FRSEQ_COV_WINDOW before the
+ * pin counts as stale.  The COV_WINDOW is intentionally generous
+ * (NET / VFS / io_uring chains can run many edge-less known-setup
+ * calls between a socket() / openat() and the rare trigger; that
+ * spare additionally lives in the pin_warm fd-liveness path); a
+ * GROUP_PROCESS pure-getter pin advances the watermark NEVER, so
+ * after MIN_STREAK + COV_WINDOW picks it goes stale regardless of
+ * how generous COV_WINDOW is.  Sweepable from the SHADOW_ONLY
+ * frontier_frseq_would_skip_per_syscall[] readout once that runs.
+ */
+#define FRONTIER_FRSEQ_MIN_STREAK 32U
+#define FRONTIER_FRSEQ_COV_WINDOW 24U
+
+/*
  * Errno-plateau decay predicate.  Returns true when syscall nr (under
  * the do32 arch table) matches the wasteful-silent-pick shape described
  * above the FRONTIER_ERRNO_PLATEAU_* constants.  Called from the

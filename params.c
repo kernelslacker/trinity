@@ -543,6 +543,7 @@ static const struct option_help option_descs[] = {
 	{ "cred-throttle",	 0,  "DEFAULT OFF. Enable the credential-syscall throttle: when a credential class (setregid/setreuid/setresuid/setresgid/setgid/setuid/setfsuid/setfsgid/setgroups) has accumulated >=64 attempts with zero successes and EPERM+EINVAL dominating >=90% of returns, downweight the class by rejecting 31/32 of subsequent picks. Flag off keeps the picker distribution byte-identical to a build without this row; the per-class observability counters are bumped regardless of this flag." },
 	{ "frontier-live-cooldown", 0, "DEFAULT OFF. Enable the LIVE-regime early ring-decay: on every window rotation, syscalls whose per-syscall LIVE-regime miss-streak has crossed FRONTIER_LIVE_MISS_COOLDOWN have their cached frontier_recent_count halved so the cached max weight falls and the picker reaches the silent decay path on the cooled-off syscalls. The halving is folded into the existing CAS-clamped per-nr rotation loop and uses the same underflow-safe arithmetic. Flag off keeps the rotation byte-identical to a build without this row; the frontier_live_cooldown_decays observability counter and the F3 miss-streak counters are bumped regardless." },
 	{ "frontier-saturation-cooldown", 0, "saturation-cooldown predicate mode for the coverage-frontier picker's silent-regime accept site (default off): off (skip the satcool predicate entirely, byte-identical to today; selection AND shadow counters both stay zero), shadow-only (compute the corrected windowed-edge plateau + FRONTIER_SATCOOL_CMIN magnitude + distinct-CMP / first-success / ret_objtype spare-lane predicate inside the silent-regime accept block and bump frontier_satcool_* shadow counters; selection stays byte-identical -- no goto-retry is gated on the predicate), or combined (RESERVED: the enum value exists for a future commit that wires the live reject; THIS BUILD treats combined identically to shadow-only -- predicate evaluates and counters bump, no live reject fires). Validate the per-syscall would-skip distribution against syncfs / sendfile / semget / writev (expected high) and removexattrat / futex / io_uring_setup / bpf (expected ~0) under shadow-only before tuning C_min or wiring the COMBINED reject." },
+	{ "frontier-group-antilock", 0, "group-bias anti-lock-in damper mode for the heuristic-arm picker's group_bias gate (default off): off (skip the windowed-pin predicate entirely, byte-identical to today; per-child streak / watermark / fd-warm bookkeeping AND shadow counters all stay dormant), shadow-only (run the dispatch-step per-child bookkeeping and compute the pin_stale && !pin_warm release predicate at the group_bias gate site, bumping frontier_frseq_* shadow counters; selection stays byte-identical -- no group-bias gate is skipped on the predicate), or combined (RESERVED: the enum value exists for a future commit that wires the live pin release; THIS BUILD treats combined identically to shadow-only -- predicate evaluates and counters bump, no live release fires). Validate the per-syscall would-skip distribution against rseq_slice_yield / getpgrp / sched_yield (expected high) and socket / sendto / openat (expected ~0) and the per-group distribution against GROUP_PROCESS (=5, expected high) vs GROUP_NET / GROUP_VFS (expected ~0) under shadow-only before tuning MIN_STREAK / COV_WINDOW or wiring the COMBINED release.  No-op unless --group-bias is also set; mirrors the F-RSEQ-5 caveat in the design note." },
 	{ "dangerous",		'd', "enable dangerous mode" },
 	{ "debug",		'D', "enable debug" },
 	{ "disable-fds",	 0,  NULL },	/* handled separately */
@@ -652,6 +653,7 @@ static const struct option longopts[] = {
 	{ "cred-throttle", no_argument, NULL, 0 },
 	{ "frontier-live-cooldown", no_argument, NULL, 0 },
 	{ "frontier-saturation-cooldown", required_argument, NULL, 0 },
+	{ "frontier-group-antilock", required_argument, NULL, 0 },
 	{ "guard-shared", optional_argument, NULL, 0 },
 	{ "kernel_taint", required_argument, NULL, 'T' },
 	{ "help", no_argument, NULL, 'h' },
@@ -935,6 +937,24 @@ static bool parse_strategy_options(int opt, const char *name, char *arg)
 				FRONTIER_SATURATION_COOLDOWN_MODE_COMBINED;
 		} else {
 			outputerr("--frontier-saturation-cooldown: unknown mode '%s' (expected off, shadow-only, or combined)\n",
+				arg);
+			exit(EXIT_FAILURE);
+		}
+		return true;
+	}
+
+	if (strcmp("frontier-group-antilock", name) == 0) {
+		if (strcmp(arg, "off") == 0) {
+			frontier_group_antilock_mode =
+				FRONTIER_GROUP_ANTILOCK_MODE_OFF;
+		} else if (strcmp(arg, "shadow-only") == 0) {
+			frontier_group_antilock_mode =
+				FRONTIER_GROUP_ANTILOCK_MODE_SHADOW_ONLY;
+		} else if (strcmp(arg, "combined") == 0) {
+			frontier_group_antilock_mode =
+				FRONTIER_GROUP_ANTILOCK_MODE_COMBINED;
+		} else {
+			outputerr("--frontier-group-antilock: unknown mode '%s' (expected off, shadow-only, or combined)\n",
 				arg);
 			exit(EXIT_FAILURE);
 		}
