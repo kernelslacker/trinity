@@ -764,6 +764,7 @@ void child_process(struct childdata *child, int childno)
 		 * circuits the whole block before kcov_bracket_begin is
 		 * called. */
 		bool bracketed = false;
+		bool cmp_bracketed = false;
 		unsigned long edges_this_call = 0;
 
 		if (have_kcov &&
@@ -778,6 +779,36 @@ void child_process(struct childdata *child, int childno)
 			__atomic_fetch_add(&kcov_shm->childop_kcov_attempts,
 				1, __ATOMIC_RELAXED);
 			bracketed = kcov_bracket_begin(&child->kcov);
+		}
+
+		/* Mode-selected CMP-harvest bracket.  kcov_bracket_begin
+		 * above unconditionally rejects KCOV_MODE_CMP children
+		 * (childop_kcov_skipped_cmp), so on a CMP-mode child the PC
+		 * `bracketed` path stays false and this block has exclusive
+		 * ownership of the cmp_fd for the duration of the dispatch.
+		 *
+		 * Gated on the dedicated --childop-cmp-harvest knob (default
+		 * off) so the OFF arm is byte-identical to a build without
+		 * the harvest path: no KCOV_ENABLE/DISABLE ioctls fire on
+		 * cmp_fd, no trinity_cmp_syscall wrapper writes to the
+		 * quarantine lane, every childop_cmp_* counter stays at
+		 * zero.
+		 *
+		 * Same op_uses_outer_bracket gate as the PC arm above for
+		 * the same reason: CHILD_OP_SYSCALL falls through to
+		 * random-syscall's own per-syscall CMP bracket (do_syscall)
+		 * and CHILD_OP_SCHED_CYCLER recurses into per-syscall
+		 * brackets that would otherwise drain the trace buffer
+		 * before this outer collect sees it.  kcov_cmp_bracket_begin
+		 * itself enforces mode == KCOV_MODE_CMP + cmp_capable +
+		 * !bracket_owned + active, with per-arm reject counters in
+		 * kcov_shm so the attempts == opened + sum(skipped)
+		 * invariant is directly observable. */
+		if (have_kcov &&
+		    childop_cmp_harvest_mode != CHILDOP_CMP_HARVEST_OFF &&
+		    valid_op &&
+		    op_uses_outer_bracket(op)) {
+			cmp_bracketed = kcov_cmp_bracket_begin(&child->kcov);
 		}
 
 		/* childop_split telemetry: bracket op_fn with a monotonic
@@ -805,6 +836,8 @@ void child_process(struct childdata *child, int childno)
 				&child->kcov,
 				CHILDOP_KCOV_NR_BASE + op);
 		}
+		if (cmp_bracketed)
+			kcov_cmp_bracket_end(&child->kcov);
 
 		{
 			long ns = (split_t1.tv_sec - split_t0.tv_sec) * 1000000000L
