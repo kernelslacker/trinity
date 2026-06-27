@@ -66,7 +66,6 @@
  * exotic configs) every invocation no-ops and returns true.
  */
 
-#include <fcntl.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
