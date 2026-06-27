@@ -1199,6 +1199,24 @@ struct childdata {
 		cmp_hints_consumed_stash[CMP_HINT_CONSUMED_STASH_MAX];
 	unsigned int cmp_hints_consumed_count;
 
+	/* SHADOW-ONLY topology-pair latch.
+	 * Tracks the most recent non-syscall childop ("setup") this child
+	 * has dispatched, plus the op_nr at which it was stamped.  Stamped
+	 * from child_process() at the top of the dispatch arm for is_alt_op
+	 * iterations (before op_fn runs, so a setup that itself produces
+	 * new coverage attributes to its own op rather than the prior one)
+	 * and read by frontier_record_new_edge() / _transition_edge() to
+	 * build a per-event {setup_op, age_in_syscalls, syscall_nr, reason}
+	 * tuple in shm->stats.topo_pair_ring[].  NR_CHILD_OP_TYPES is the
+	 * "no setup observed yet on this child" sentinel; productive events
+	 * that fire before any setup has run bump
+	 * topo_pair_no_setup_observed instead of being recorded.  Owner-only
+	 * writes from inside the child; no cross-process coherence needed.
+	 * Reset in clean_childdata so a fresh slot occupant does not inherit
+	 * the previous child's latched setup. */
+	enum child_op_type last_setup_op;
+	unsigned long last_setup_op_nr;
+
 	/* The actual syscall records each child uses.  Dominated by a 4 KiB
 	 * prebuffer + 128 B postbuffer used by -v rendering — only nr / a1..a6
 	 * / retval / lock / state are touched on the hot path, and those are

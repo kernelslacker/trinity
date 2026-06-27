@@ -12548,6 +12548,91 @@ void __cold dump_stats_childop_decay_recency(void)
 	}
 }
 
+void __cold dump_stats_topo_pair_shadow(void)
+{
+	/* Per-setup_op aggregates from the surviving ring entries.  Sized
+	 * by NR_CHILD_OP_TYPES so a corrupted setup_op byte that masks to
+	 * the sentinel value is still in-bounds; the loop skips
+	 * NR_CHILD_OP_TYPES at render time so the sentinel slot stays
+	 * inert.  Local-stack to avoid touching shm for the aggregate. */
+	unsigned long per_op_pc[NR_CHILD_OP_TYPES] = { 0 };
+	unsigned long per_op_trans[NR_CHILD_OP_TYPES] = { 0 };
+	unsigned long per_op_age_sum[NR_CHILD_OP_TYPES] = { 0 };
+	unsigned long total_records, no_setup, head, total_valid = 0;
+	unsigned int i;
+
+	total_records = __atomic_load_n(&shm->stats.topo_pair_records,
+					__ATOMIC_RELAXED);
+	no_setup = __atomic_load_n(&shm->stats.topo_pair_no_setup_observed,
+				   __ATOMIC_RELAXED);
+
+	/* Self-skip when no productive event has fired through the ring
+	 * AND no event has been dropped to the no-setup denominator -- in
+	 * that state the row would carry no signal at all, and emitting a
+	 * blank "shadow active, ring empty" line just adds noise to the
+	 * shutdown dump.  Matches the dump_stats_top_wedging_childops()
+	 * self-skip pattern. */
+	if (total_records == 0 && no_setup == 0)
+		return;
+
+	head = __atomic_load_n(&shm->stats.topo_pair_ring_head,
+			       __ATOMIC_RELAXED);
+
+	for (i = 0; i < TOPO_PAIR_RING_SIZE; i++) {
+		uint64_t packed;
+		unsigned int setup_op, reason, syscall_nr, age;
+
+		packed = __atomic_load_n(&shm->stats.topo_pair_ring[i],
+					 __ATOMIC_RELAXED);
+		if (!topo_pair_unpack(packed, &setup_op, &reason,
+				      &syscall_nr, &age))
+			continue;
+		/* Defensive bounds check: the producer's topo_pair_pack()
+		 * AND-masks setup_op to 8 bits, so a sentinel-or-corrupt
+		 * value cast from NR_CHILD_OP_TYPES would not be filtered
+		 * by the producer's branch alone.  Skip rather than scribble
+		 * past the per_op_* arrays. */
+		if (setup_op >= NR_CHILD_OP_TYPES)
+			continue;
+		if (reason == TOPO_PAIR_REASON_PC)
+			per_op_pc[setup_op]++;
+		else if (reason == TOPO_PAIR_REASON_TRANSITION)
+			per_op_trans[setup_op]++;
+		else
+			continue;
+		per_op_age_sum[setup_op] += age;
+		total_valid++;
+	}
+
+	output(0,
+	       "topo_pair_shadow: events_total=%lu sample_window=%u "
+	       "valid_in_ring=%lu no_setup_observed=%lu head=%lu wrapped=%s\n",
+	       total_records, (unsigned int)TOPO_PAIR_RING_SIZE,
+	       total_valid, no_setup, head,
+	       total_records >= (unsigned long)TOPO_PAIR_RING_SIZE
+	       ? "yes" : "no");
+
+	if (total_valid == 0)
+		return;
+
+	for (i = 0; i < NR_CHILD_OP_TYPES; i++) {
+		unsigned long n;
+		unsigned long mean_age;
+		const char *name;
+
+		n = per_op_pc[i] + per_op_trans[i];
+		if (n == 0)
+			continue;
+
+		mean_age = per_op_age_sum[i] / n;
+		name = alt_op_name((enum child_op_type)i);
+		output(0,
+		       "topo_pair_shadow %s: samples=%lu pc=%lu transition=%lu mean_age=%lu\n",
+		       name ? name : "?", n,
+		       per_op_pc[i], per_op_trans[i], mean_age);
+	}
+}
+
 void __cold dump_stats(void)
 {
 	if (stats_json) {
@@ -12585,6 +12670,8 @@ void __cold dump_stats(void)
 	childop_outcome_window_dump();
 
 	dump_stats_childop_decay_recency();
+
+	dump_stats_topo_pair_shadow();
 
 	dump_stats_shared_buffer_misc();
 

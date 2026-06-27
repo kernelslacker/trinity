@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stdint.h>
 #include "child.h"	/* NR_CHILD_OP_TYPES */
 #include "compiler.h"	/* __cold */
@@ -28,6 +29,74 @@
  * the active slot.
  */
 #define CHILDOP_DECAY_WINDOWS	8
+
+/*
+ * SHADOW-ONLY topology-pair sample ring sizing + packed-entry helpers.
+ * See the comment on
+ * stats_s::topo_pair_ring[] for the field semantics.  Size must be a
+ * power of two; the producer masks the fetch-added head with
+ * TOPO_PAIR_RING_MASK to derive the destination slot.
+ *
+ * TOPO_PAIR_REASON_PC / _TRANSITION are the two values written by the
+ * frontier_record_new_edge() / _transition_edge() producers; 0 is
+ * reserved for the uninitialised slot state so a half-populated ring
+ * can be distinguished from a recorded zero.
+ *
+ * TOPO_PAIR_AGE_MAX is the saturating upper bound on the
+ * age_in_syscalls field -- any older setup is clamped at this value so
+ * the 20-bit width is never overflowed.  At ~1k syscalls/sec/child this
+ * caps the visible age window at ~17 minutes per child, which is well
+ * past the point where a setup's effect is interesting.
+ */
+#define TOPO_PAIR_RING_SIZE	256u
+#define TOPO_PAIR_RING_MASK	(TOPO_PAIR_RING_SIZE - 1u)
+
+#define TOPO_PAIR_REASON_PC		1u
+#define TOPO_PAIR_REASON_TRANSITION	2u
+
+#define TOPO_PAIR_AGE_MAX		((1u << 20) - 1u)
+
+/*
+ * Packed-entry storage is uint64_t, not unsigned long, so 32-bit
+ * trinity builds (where unsigned long is 32 bits) still carry the full
+ * setup_op / reason / syscall_nr / age / valid layout below.  All
+ * single-store / single-load atomic accesses to the ring slot operate
+ * on uint64_t for the same reason -- a 32-bit __atomic_store_n on
+ * unsigned long would truncate everything above bit 31.
+ */
+static inline uint64_t topo_pair_pack(unsigned int setup_op,
+				      unsigned int reason,
+				      unsigned int syscall_nr,
+				      unsigned int age)
+{
+	uint64_t e = 0;
+
+	if (age > TOPO_PAIR_AGE_MAX)
+		age = TOPO_PAIR_AGE_MAX;
+	if (syscall_nr > 0xffffu)
+		syscall_nr = 0xffffu;
+	e |= (uint64_t)(setup_op & 0xffu);
+	e |= (uint64_t)(reason & 0x3u) << 8;
+	e |= (uint64_t)(syscall_nr & 0xffffu) << 10;
+	e |= (uint64_t)(age & TOPO_PAIR_AGE_MAX) << 26;
+	e |= (uint64_t)1 << 46;
+	return e;
+}
+
+static inline bool topo_pair_unpack(uint64_t e,
+				    unsigned int *setup_op,
+				    unsigned int *reason,
+				    unsigned int *syscall_nr,
+				    unsigned int *age)
+{
+	if (((e >> 46) & (uint64_t)1) == 0)
+		return false;
+	*setup_op = (unsigned int)(e & (uint64_t)0xff);
+	*reason = (unsigned int)((e >> 8) & (uint64_t)0x3);
+	*syscall_nr = (unsigned int)((e >> 10) & (uint64_t)0xffff);
+	*age = (unsigned int)((e >> 26) & (uint64_t)TOPO_PAIR_AGE_MAX);
+	return true;
+}
 
 /*
  * Edge-delta floor that classifies an invocation as productive.  Reads
@@ -4336,6 +4405,51 @@ struct stats_s {
 	unsigned long childop_wall_recent_cached[NR_CHILD_OP_TYPES];
 	unsigned int childop_decay_slot;
 
+	/* SHADOW-ONLY topology-pair sample ring.
+	 * When a syscall flips a new PC bucket bit or a new transition slot,
+	 * frontier_record_new_edge() / frontier_record_transition_edge()
+	 * looks at the firing child's latched last_setup_op + last_setup_op_nr
+	 * (stamped in child_process() at the top of every alt-op dispatch)
+	 * and packs a {setup_op, reason, syscall_nr, age_in_syscalls} tuple
+	 * into the slot at (topo_pair_ring_head & TOPO_PAIR_RING_MASK).  The
+	 * head is bumped with atomic_fetch_add so concurrent children claim
+	 * disjoint slots; the slot itself is written with a single 64-bit
+	 * RELAXED store so a reader observes either the prior entry or the
+	 * fresh entry but never a torn mix of the two.  Overwrite-oldest
+	 * once the ring wraps -- the aggregator does not depend on which
+	 * specific events survived, only on the distribution across setup
+	 * ops, and the cumulative topo_pair_records counter records how many
+	 * total events landed so an operator can tell whether the visible
+	 * sample fills the ring (records >= TOPO_PAIR_RING_SIZE) or not.
+	 *
+	 * Packed entry layout (bit positions, LSB first):
+	 *   [ 0.. 7]  setup_op       (uint8_t cast of enum child_op_type;
+	 *                              NR_CHILD_OP_TYPES sentinel never
+	 *                              recorded -- those events bump
+	 *                              topo_pair_no_setup_observed instead)
+	 *   [ 8.. 9]  reason         (1=PC-edge new bucket bit,
+	 *                              2=new transition; 0 reserved for
+	 *                              the uninitialised slot state)
+	 *   [10..25]  syscall_nr     (16 bits; MAX_NR_SYSCALL=1024 fits)
+	 *   [26..45]  age_in_syscalls (20 bits, saturated at (1<<20)-1)
+	 *   [46]      valid          (1 = written entry; 0 in unwritten
+	 *                              slots so the aggregator can skip
+	 *                              the uninitialised tail before the
+	 *                              ring has wrapped)
+	 *   [47..63]  reserved (must be zero on write)
+	 *
+	 * SHADOW: no scheduler / picker / scoring code reads either the
+	 * ring or any of the companion scalars; the only reader is stats.c's
+	 * dump_stats_topo_pair_shadow() at shutdown, which aggregates the
+	 * surviving ring entries into per-setup_op (count, mean-age, reason
+	 * split) summaries.  This render enables the 103·B go/no-go on a
+	 * LIVE topology-pair experiment that would actually save seeds /
+	 * replay pairs -- it is not a cosmetic surface. */
+	uint64_t topo_pair_ring[TOPO_PAIR_RING_SIZE];
+	unsigned int topo_pair_ring_head;
+	unsigned long topo_pair_records;
+	unsigned long topo_pair_no_setup_observed;
+
 	/* SHADOW-ONLY census of scrub-eligible address-family arg slots
 	 * walked by blanket_address_scrub() -- one bump per set bit in
 	 * entry->address_scrub_mask consumed by the ctz loop, i.e. once per
@@ -4622,6 +4736,37 @@ void dump_stats(void) __cold;
  * Surfaces the recent-yield horizon the future util-table reader will
  * consume; no scheduler or picker path reads either array. */
 void dump_stats_childop_decay_recency(void) __cold;
+
+/* SHADOW-ONLY topology-pair sample writer.
+ * Producers call this from a productive-coverage event site -- a new PC
+ * bucket bit or a new transition slot -- to record one packed
+ * {setup_op, reason, syscall_nr, age_in_syscalls} tuple into
+ * shm->stats.topo_pair_ring[].  Reads the firing child's last_setup_op /
+ * last_setup_op_nr latch (stamped from child_process() at every is_alt_op
+ * dispatch), bumps topo_pair_no_setup_observed instead when no setup has
+ * been observed yet on this child, and otherwise claims a slot via
+ * __atomic_fetch_add on topo_pair_ring_head + writes the packed entry
+ * with a single __atomic_store_n.  Skips silently when called from
+ * parent context (this_child() == NULL).  No live decision consumes the
+ * resulting ring -- the only reader is dump_stats_topo_pair_shadow()
+ * at shutdown.  reason is one of TOPO_PAIR_REASON_PC /
+ * TOPO_PAIR_REASON_TRANSITION; any other value still gets written but
+ * the aggregator drops the entry on the read side. */
+void topo_pair_record_shadow(unsigned int nr, unsigned int reason);
+
+/* SHADOW-ONLY topology-pair aggregator.
+ * Walks shm->stats.topo_pair_ring[] (capacity TOPO_PAIR_RING_SIZE; each
+ * slot a single packed 64-bit entry produced by frontier_record_new_
+ * edge() / frontier_record_transition_edge() via topo_pair_record_
+ * shadow() in strategy-frontier.c) and prints a per-setup_op summary:
+ * sample count, PC vs transition split, and mean age-in-syscalls.  The
+ * "no setup observed yet" denominator is rendered as a separate row so
+ * an operator can compare the productive-event population against the
+ * fraction of events that fired before any setup had run on the firing
+ * child.  Self-skips if topo_pair_records is zero (the ring has never
+ * been written).  Pure reader; no live decision consumes either the
+ * ring or any of the counters this function aggregates. */
+void dump_stats_topo_pair_shadow(void) __cold;
 
 /* Run-identity baseline snapshot.  Captured once at parent start, AFTER
  * warm_start_all() has loaded the persisted KCOV bitmap / minicorpus /

@@ -293,6 +293,14 @@ void clean_childdata(struct childdata *child)
 	child->last_group = GROUP_NONE;
 	child->in_chain_mid_step = false;
 	child->op_type = CHILD_OP_SYSCALL;
+	/* SHADOW-ONLY topology-pair latch.
+	 * NR_CHILD_OP_TYPES is the "no setup observed yet" sentinel so the
+	 * first productive event on a freshly-spawned child bumps the
+	 * no_setup denominator rather than crediting a stale setup that
+	 * belonged to the previous occupant of this slot.  Paired stamp
+	 * in child_process() at the start of every is_alt_op dispatch. */
+	child->last_setup_op = NR_CHILD_OP_TYPES;
+	child->last_setup_op_nr = 0;
 	child->stall_count = 0;
 	child->stall_last = 0;
 	child->fd_created = 0;
