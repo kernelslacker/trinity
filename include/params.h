@@ -79,6 +79,19 @@ extern bool cred_throttle;
  * regardless.  Read RELAXED on the rotation hot path.
  */
 extern bool frontier_live_cooldown;
+
+/*
+ * --writer-pin-sweep / --writer-pin-stride=N:
+ * DEFAULT-OFF debug-only Stage-1 detector for the writer-pinning
+ * canary.  Per-syscall sweep over the shared minicorpus rings; on hit,
+ * hands a stomped address off (does NOT name the wild writer -- Stage 2
+ * --writer-watch is the namer).  Inert at default; the hot path adds a
+ * single branch-predicted `if` test.  Heavyweight debug tool -- only
+ * enable for a targeted corruption hunt on a host that can absorb the
+ * per-syscall sweep cost.
+ */
+extern bool writer_pin_sweep;
+extern unsigned int writer_pin_stride;
 extern bool user_set_seed;
 extern char *victim_paths[];
 extern unsigned int nr_victim_paths;

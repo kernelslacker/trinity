@@ -88,6 +88,16 @@ bool group_bias = false;
 bool cred_throttle = false;
 bool frontier_live_cooldown = false;
 
+/* --writer-pin-sweep / --writer-pin-stride=N
+ * Default-OFF debug-only writer-pinning canary, Stage-1 detector.  Per-
+ * syscall sweep of the shared minicorpus rings for a stomped wp_canary
+ * or a count>32 invariant violation.  Hands a stomped address off; does
+ * NOT name the wild writer (Stage-2 --writer-watch is the namer).
+ * Heavyweight debug tool -- the sweep is a 1024-iteration strided load
+ * on the post-syscall hot path; default-off, not for routine fuzzing. */
+bool writer_pin_sweep = false;
+unsigned int writer_pin_stride = 1;
+
 unsigned long epoch_iterations = 0;
 unsigned int epoch_timeout = 0;
 bool max_runtime_set = false;
@@ -588,6 +598,8 @@ static const struct option_help option_descs[] = {
 	{ "verbose",		'v', "increase output verbosity. Repeat for more detail (-vv)" },
 	{ "victims",		'V', "path to victim files (may be repeated)" },
 	{ "warm-start-path",	 0,  "override the on-disk minicorpus path (default: $XDG_CACHE_HOME/trinity/corpus/<arch>)" },
+	{ "writer-pin-sweep",	 0,  "DEFAULT OFF. Heavyweight debug tool -- only enable for a targeted corruption hunt. Stage-1 detector for the writer-pinning canary: at every post-syscall validate phase, sweep the shared minicorpus rings for a stomped wp_canary or count>32 invariant violation. On the first hit, emit one SUSPECT line naming the observer context (NOT the wild writer) and the stomped address. The address is the deliverable for the Stage-2 --writer-watch=<addr>, which IS the synchronous writer-namer. Default-off path is byte-identical (one branch-predicted if test)." },
+	{ "writer-pin-stride",	 0,  "DEFAULT 1. Throughput escape hatch for --writer-pin-sweep: only sweep every Nth post-syscall validate phase. Default 1 = sweep every syscall, which keeps the writer-attribution window at one op. Values >1 widen the window past one op and degrade the sweep to 'some recent writer' -- documented escape hatch only; the writer-namer is Stage-2 --writer-watch, not the sweep." },
 	{ NULL,			 0,  NULL },
 };
 
@@ -687,6 +699,8 @@ static const struct option longopts[] = {
 	{ "no-kcov-warm-start", no_argument, NULL, 0 },
 	{ "no-cmp-hints-warm-start", no_argument, NULL, 0 },
 	{ "corpus-save-errno-grad-live", no_argument, NULL, 0 },
+	{ "writer-pin-sweep", no_argument, NULL, 0 },
+	{ "writer-pin-stride", required_argument, NULL, 0 },
 	{ NULL, 0, NULL, 0 } };
 
 /*
@@ -1413,6 +1427,29 @@ void parse_args(int argc, char *argv[])
 
 			if (strcmp("print-disabled-syscalls", long_name) == 0)
 				show_disabled_syscalls = true;
+
+			/* Writer-pinning canary (default-OFF, heavyweight debug
+			 * tool).  See include/params.h for the row description.
+			 * No range validation on writer_watch_addr: any non-zero
+			 * value is forwarded as-is to perf_event_open, which
+			 * is the canonical authority on whether the address is
+			 * acceptable as a hardware breakpoint target. */
+			if (strcmp("writer-pin-sweep", long_name) == 0)
+				writer_pin_sweep = true;
+
+			if (strcmp("writer-pin-stride", long_name) == 0) {
+				unsigned long val;
+
+				if (!parse_unsigned(optarg, "writer-pin-stride",
+						    false, &val))
+					exit(EXIT_FAILURE);
+				if (val == 0 || val > UINT_MAX) {
+					outputerr("--writer-pin-stride=%lu out of range (1..UINT_MAX)\n",
+						  val);
+					exit(EXIT_FAILURE);
+				}
+				writer_pin_stride = (unsigned int)val;
+			}
 
 			break;
 		}

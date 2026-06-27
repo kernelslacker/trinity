@@ -1100,6 +1100,46 @@ static void syscall_ret_validate_phase(struct syscallrecord *rec,
 		}
 	}
 
+	/* Writer-pinning canary, Stage 1 detector (--writer-pin-sweep).
+	 *
+	 * DEFAULT OFF.  When enabled, sweep the shared minicorpus rings for
+	 * a stomped wp_canary or a count>32 invariant violation, fire ONCE
+	 * per child on the first hit, and emit a single SUSPECT line that
+	 * names the observer context (this child / this syscall) plus the
+	 * stomped address.  The address is the deliverable: feed it to a
+	 * subsequent run's --writer-watch=<addr> to synchronously name the
+	 * wild writer via the Stage-2 HW breakpoint.
+	 *
+	 * Do NOT interpret the observer context as proof of who scribbled
+	 * the canary: the sweep is async polling, so a sibling child writing
+	 * via a value-result syscall might land the scribble while THIS
+	 * child sweeps -- the observer/victim is not the writer.  That is
+	 * exactly the reason Stage 2 exists; the sweep just hands off an
+	 * address. */
+	if (unlikely(writer_pin_sweep && minicorpus_shm != NULL)) {
+		static unsigned int wp_tick;
+		static bool wp_fired;
+		unsigned int n;
+
+		n = __atomic_add_fetch(&wp_tick, 1, __ATOMIC_RELAXED);
+		if (!wp_fired &&
+		    (writer_pin_stride <= 1 || (n % writer_pin_stride) == 0)) {
+			unsigned long bad_addr = 0;
+			uint64_t bad_val = 0;
+
+			if (minicorpus_wp_sweep(&bad_addr, &bad_val)) {
+				wp_fired = true;
+				outputerr("WRITER-PIN-SWEEP SUSPECT: minicorpus canary stomped"
+					  " bad_addr=0x%lx bad_val=0x%lx"
+					  " observer_syscall=%s observer_nr=%u observer_pid=%d"
+					  " -- feed bad_addr to --writer-watch=0x%lx"
+					  " to NAME the wild writer (sweep observer != writer)\n",
+					  bad_addr, (unsigned long)bad_val,
+					  entry->name, rec->nr, getpid(), bad_addr);
+			}
+		}
+	}
+
 	/* Blanket bound for RET_ZERO_SUCCESS handlers.  The contract for
 	 * this rettype is rec->retval ∈ {0, -1UL} -- success returns 0,
 	 * failure returns -1 with errno set.  Anything else means the

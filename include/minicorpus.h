@@ -108,7 +108,22 @@ struct corpus_ring {
 	unsigned int head;		/* next write slot (mod CORPUS_RING_SIZE) */
 	unsigned int count;		/* entries stored (max CORPUS_RING_SIZE) */
 	struct corpus_entry entries[CORPUS_RING_SIZE];
+	/* Writer-pinning canary (see --writer-pin-sweep).  Reserved
+	 * field, NOT padding: stamped once at minicorpus_init() with
+	 * WP_CANARY_MAGIC and never legitimately written again.  The
+	 * per-syscall sweep in syscall_ret_validate_phase() reads it
+	 * (and the count<=CORPUS_RING_SIZE invariant) to detect wild
+	 * writes into the shared minicorpus region; the address of the
+	 * violated word is the deliverable that feeds the Stage-2
+	 * --writer-watch HW breakpoint.  Default-off path is byte-
+	 * identical apart from the one-time init stamp (8 bytes per
+	 * ring, ~8 KB total). */
+	uint64_t wp_canary;
 };
+
+/* WPCANARY! (LE).  Picked for human-readability in a hexdump and so a
+ * random scribble is statistically very unlikely to forge it. */
+#define WP_CANARY_MAGIC	0x5750434e41525921ULL
 
 /* Number of distinct primitive mutator cases inside mutate_arg().
  * The numerical IDs (0=bit-flip, 1=add, 2=sub, 3=boundary, 4=byte-shuffle,
@@ -369,6 +384,23 @@ extern struct minicorpus_shared *minicorpus_shm;
 
 /* Called once from init_shm() to allocate shared corpus storage. */
 void minicorpus_init(void);
+
+/* Stage-1 detector for the writer-pinning canary (--writer-pin-sweep).
+ * Scans every ring's wp_canary against WP_CANARY_MAGIC and the
+ * documented count<=CORPUS_RING_SIZE invariant.  On the first
+ * violation, writes the violated word's address into *bad_addr and the
+ * observed bad value into *bad_val, then returns true.  Returns false
+ * if the region is intact (or minicorpus_shm is NULL).
+ *
+ * Cache-friendly: one strided pass, pure loads, no atomic ops.  Async-
+ * signal-safe (no libc, no allocator) -- called from
+ * syscall_ret_validate_phase() in normal child context, but the no-libc
+ * property keeps it usable from anywhere if a future caller wants it.
+ *
+ * NB: a sweep hit names the VICTIM/observer context, not the wild
+ * writer.  Stage-2 --writer-watch is the writer-namer; this sweep just
+ * hands an address to Stage 2. */
+bool minicorpus_wp_sweep(unsigned long *bad_addr, uint64_t *bad_val);
 
 /* Save a syscall's args into the corpus ring for its syscall number.
  * Only call when entry->sanitise == NULL.  Thin wrapper that records
