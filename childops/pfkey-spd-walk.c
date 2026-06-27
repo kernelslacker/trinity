@@ -91,7 +91,6 @@
  */
 
 #include <errno.h>
-#include <fcntl.h>
 #include <sched.h>
 #include <signal.h>
 #include <stdbool.h>
