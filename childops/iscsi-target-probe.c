@@ -54,7 +54,6 @@
  */
 
 #include <errno.h>
-#include <fcntl.h>
 #include <netinet/in.h>
 #include <poll.h>
 #include <stdbool.h>
