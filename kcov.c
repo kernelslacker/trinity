@@ -535,6 +535,16 @@ int kcov_pc_diag_format(char *buf, size_t bufsz)
 		n += snprintf(buf + n, bufsz - n, " remote_enable_eintr=%u", rem_eintr);
 	if (fb_pc_eintr && (size_t)n < bufsz)
 		n += snprintf(buf + n, bufsz - n, " remote_fallback_pc_enable_eintr=%u", fb_pc_eintr);
+	{
+		unsigned long cr_trunc = __atomic_load_n(
+			&d->close_range_protect_truncate_count,
+			__ATOMIC_RELAXED);
+
+		if (cr_trunc && (size_t)n < bufsz)
+			n += snprintf(buf + n, bufsz - n,
+				" close_range_protect_truncate=%lu",
+				cr_trunc);
+	}
 	if (first_op_nr && (size_t)n < bufsz) {
 		unsigned long pid = __atomic_load_n(&d->first_ebadf_pid,
 			__ATOMIC_RELAXED);
