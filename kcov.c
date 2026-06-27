@@ -342,6 +342,49 @@ kcov_find_last_fd_mut_slot(struct childdata *c)
 }
 
 /*
+ * Closer-only sibling of kcov_find_last_fd_mut_slot.  Same backward
+ * walk, but the match set is restricted to the four syscalls that
+ * actually close a fd (close / close_range / dup2 / dup3).  dup and
+ * fcntl(F_DUPFD*) allocate a new fd without closing an existing one,
+ * so the broad walker can return one of them and mask an older real
+ * closer further back in the ring -- not useful for naming what
+ * killed kc->fd.  This walker addresses that blind spot directly:
+ * compare its result to kcov_find_last_fd_mut_slot's and an
+ * allocator-mask is immediately obvious.
+ *
+ * Same single-producer-in-the-owning-child contract as the broad
+ * walker -- plain loads suffice.
+ */
+static const struct chronicle_slot *
+kcov_find_last_closer_slot(struct childdata *c)
+{
+	uint32_t head;
+	unsigned int i;
+
+	if (c == NULL)
+		return NULL;
+	head = c->syscall_ring.head;
+	for (i = 0; i < CHILD_SYSCALL_RING_SIZE; i++) {
+		uint32_t idx = (head - 1 - i) & (CHILD_SYSCALL_RING_SIZE - 1);
+		const struct chronicle_slot *s = &c->syscall_ring.recent[idx];
+		struct syscallentry *e;
+
+		if (!s->valid)
+			continue;
+		e = get_syscall_entry(s->nr, s->do32bit);
+		if (e == NULL || e->name == NULL)
+			continue;
+		if (e->is_close_syscall)
+			return s;
+		if (strcmp(e->name, "close_range") == 0 ||
+		    strcmp(e->name, "dup2") == 0 ||
+		    strcmp(e->name, "dup3") == 0)
+			return s;
+	}
+	return NULL;
+}
+
+/*
  * Did the captured fd-mut chronicle slot target a protected fd?
  * "Protected" follows the existing fd_is_protected() / lowest_-
  * protected_fd_in_range() registry (the kcov PC / cmp fds, stderr,
@@ -506,20 +549,32 @@ int kcov_pc_diag_format(char *buf, size_t bufsz)
 			__ATOMIC_RELAXED);
 		unsigned char protected_touched = __atomic_load_n(
 			&d->first_ebadf_protected_touched, __ATOMIC_RELAXED);
+		unsigned int last_closer_nr = __atomic_load_n(
+			&d->first_ebadf_last_closer_syscall_nr,
+			__ATOMIC_RELAXED);
+		unsigned char closer_protected_touched = __atomic_load_n(
+			&d->first_ebadf_closer_protected_touched,
+			__ATOMIC_RELAXED);
 		unsigned char fd_count = __atomic_load_n(
 			&d->first_ebadf_proc_fd_count, __ATOMIC_RELAXED);
 
 		/* op_nr was stored as child->op_nr + 1 so the empty-slot
 		 * sentinel (0) is distinguishable from a legitimate first-
 		 * syscall capture; undo that here for the operator.  The
-		 * trailing :gen<G>[:fdmut=nr<N>[/prot]][:fds=A,B,C[+]]
-		 * tokens are the t18-kcov-ebadf-dump richer fields -- gen
-		 * is always emitted because zero is a legitimate kcov-
-		 * collect epoch; the fdmut and fds tokens are gated on
-		 * non-empty so an EBADF that fired with an empty ring or
-		 * an unreadable /proc/self/fd doesn't pad the line.  The
+		 * trailing :gen<G>[:fdmut=nr<N>[/prot]][:closer=nr<N>[/prot]]
+		 * [:fds=A,B,C[+]] tokens are the t18-kcov-ebadf-dump richer
+		 * fields -- gen is always emitted because zero is a legitimate
+		 * kcov-collect epoch; the fdmut, closer and fds tokens are
+		 * gated on non-empty so an EBADF that fired with an empty ring
+		 * or an unreadable /proc/self/fd doesn't pad the line.  The
 		 * trailing "+" after the fd list signals truncation to
-		 * KCOV_FIRST_EBADF_PROC_FD_MAX entries. */
+		 * KCOV_FIRST_EBADF_PROC_FD_MAX entries.  fdmut and closer are
+		 * both emitted (when present) so an allocator-masked-closer
+		 * shape is visible at a glance: fdmut names the most recent
+		 * fd-mutator (broad set, includes dup / F_DUPFD), closer names
+		 * the most recent actual fd-closer (close / close_range /
+		 * dup2 / dup3).  fdmut != closer means a benign allocator
+		 * was masking the real closer in the broad walk. */
 		n += snprintf(buf + n, bufsz - n,
 			" first_ebadf=op%lu:pid%lu:nr%u:fd%d:gen%lu",
 			first_op_nr - 1, pid, syscall_nr, fd_value,
@@ -529,6 +584,11 @@ int kcov_pc_diag_format(char *buf, size_t bufsz)
 				":fdmut=nr%u%s",
 				last_fd_mut_nr,
 				protected_touched ? "/prot" : "");
+		if (last_closer_nr && (size_t)n < bufsz)
+			n += snprintf(buf + n, bufsz - n,
+				":closer=nr%u%s",
+				last_closer_nr,
+				closer_protected_touched ? "/prot" : "");
 		if (fd_count && (size_t)n < bufsz) {
 			unsigned int i;
 
@@ -1222,10 +1282,17 @@ static void kcov_latch_first_ebadf(struct kcov_child *kc, struct childdata *c)
 	{
 		const struct chronicle_slot *fdm =
 			kcov_find_last_fd_mut_slot(c);
+		const struct chronicle_slot *closer =
+			kcov_find_last_closer_slot(c);
 		unsigned int last_fd_mut_nr =
 			(fdm != NULL) ? fdm->nr : 0;
 		unsigned char protected_touched = (fdm != NULL &&
 			kcov_chronicle_slot_touched_protected(fdm))
+			? 1 : 0;
+		unsigned int last_closer_nr =
+			(closer != NULL) ? closer->nr : 0;
+		unsigned char closer_protected_touched = (closer != NULL &&
+			kcov_chronicle_slot_touched_protected(closer))
 			? 1 : 0;
 		int fd_snapshot[KCOV_FIRST_EBADF_PROC_FD_MAX];
 		unsigned int snap_count =
@@ -1260,6 +1327,12 @@ static void kcov_latch_first_ebadf(struct kcov_child *kc, struct childdata *c)
 		__atomic_store_n(
 			&kcov_shm->pc_diag.first_ebadf_protected_touched,
 			protected_touched, __ATOMIC_RELAXED);
+		__atomic_store_n(
+			&kcov_shm->pc_diag.first_ebadf_last_closer_syscall_nr,
+			last_closer_nr, __ATOMIC_RELAXED);
+		__atomic_store_n(
+			&kcov_shm->pc_diag.first_ebadf_closer_protected_touched,
+			closer_protected_touched, __ATOMIC_RELAXED);
 		for (i = 0; i < snap_count; i++)
 			__atomic_store_n(
 				&kcov_shm->pc_diag.first_ebadf_proc_fds[i],
