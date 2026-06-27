@@ -3155,6 +3155,86 @@ struct stats_s {
 	unsigned long frontier_satcool_spared_arggen;
 	unsigned long frontier_satcool_spared_objproducer;
 
+	/* SHADOW-ONLY group-bias anti-lock-in damper accounting (gated by
+	 * frontier_group_antilock_mode != OFF AND --group-bias on the
+	 * fleet invocation -- the predicate state only advances under the
+	 * existing group_bias-gated last_group write site).  Sibling of
+	 * the frontier_satcool_* counters above; this row targets the
+	 * heuristic-arm group_bias gate's barren-pin lock-in (one no-arg
+	 * / never-fail GROUP_PROCESS member absorbing ~20-28k calls/run
+	 * via the sticky last_group + shared retry budget defeating the
+	 * existing cold-skip), the partner reclaim site to the frontier-
+	 * arm windowed-edge cooldown the satcool row owns.  See the enum
+	 * frontier_group_antilock_mode comment in include/strategy.h for
+	 * the predicate contract and the FRONTIER_FRSEQ_MIN_STREAK /
+	 * FRONTIER_FRSEQ_COV_WINDOW comments for the threshold rationale.
+	 *
+	 * Why this counter row sits alongside the frontier_satcool_*
+	 * row: the two are the two-arm partition of the same no-input
+	 * call budget reclaim -- satcool reclaims the frontier-arm
+	 * windowed silent pick (each getter's ~2.1k/run frontier-floor
+	 * share) and frseq reclaims the heuristic-arm group_bias spike
+	 * (the ~20-28k single-syscall lock-in), with the same
+	 * windowed-productivity discriminator (last_cov_at_streak
+	 * watermark) keyed on per-pin state instead of per-nr state.
+	 * Both rows feed the same per-syscall top-N attribution shape so
+	 * the operator can read which reclaim site is doing the work
+	 * from one stats dump.
+	 *
+	 *  frontier_frseq_candidates
+	 *      Cumulative: one bump per heuristic-arm group_bias gate
+	 *      hit where the predicate is evaluable (last_group !=
+	 *      GROUP_NONE and frontier_group_antilock_mode != OFF) --
+	 *      the candidate set the windowed-pin predicate gets to
+	 *      peel from.  Sum of would_skip + (candidates - would_
+	 *      skip) where the difference is the population the
+	 *      predicate spared (pin_warm spare, pin still building
+	 *      live state) or where pin_stale did not yet hold (streak
+	 *      still inside MIN_STREAK / COV_WINDOW).
+	 *  frontier_frseq_would_skip
+	 *      Cumulative: subset of candidates where pin_stale &&
+	 *      !pin_warm both hold -- the projected pin-release count
+	 *      a live frseq damper would fire under COMBINED.  Ratio
+	 *      against frontier_frseq_candidates is the projected
+	 *      release rate; ratio against the heuristic-arm pick
+	 *      total is the projected reclaim share.
+	 *  frontier_frseq_would_skip_per_syscall[MAX_NR_SYSCALL]
+	 *      Cumulative per-nr: bumped at the gate keyed on the
+	 *      candidate syscall being evaluated at the would_skip
+	 *      event.  The headline SHADOW_ONLY diagnostic: a single
+	 *      run's top entries should be the pure-getter / no-op
+	 *      yield set (rseq_slice_yield / getpgrp / sched_yield /
+	 *      getppid / getegid / geteuid) with the stateful-sequence
+	 *      members (socket / sendto / openat / read / close)
+	 *      reading ~0; if socket / sendto / openat show a nonzero
+	 *      count the COV_WINDOW is too narrow / MIN_STREAK is too
+	 *      low / pin_warm spare is mis-detecting and COMBINED MUST
+	 *      NOT be promoted.
+	 *  frontier_frseq_would_skip_per_group[NR_GROUPS]
+	 *      Cumulative per-group: bumped at the gate keyed on the
+	 *      child->last_group value (which pin is being released)
+	 *      at the would_skip event.  Confirms the demote mass
+	 *      concentrates on GROUP_PROCESS (=5) and is ~0 on the
+	 *      stateful-sequence groups (GROUP_NET / GROUP_VFS /
+	 *      GROUP_IO_URING) before any live flip; if the
+	 *      stateful-sequence groups show meaningful release mass
+	 *      the predicate is mis-targeting and COMBINED MUST NOT be
+	 *      promoted.
+	 *
+	 * Observability only in this commit: the predicate-evaluation
+	 * block is added inside the group_bias gate (random-syscall.c
+	 * heuristic-arm set_syscall_nr) with NO live release wired, so
+	 * live selection stays byte-identical to today regardless of
+	 * which mode is selected.  COMBINED is reserved in the enum
+	 * for a follow-up that wires the live pin release after
+	 * SHADOW_ONLY validates the predicate against a real run.
+	 * Mirrors the off-by-construction discipline the sibling
+	 * frontier_satcool_* counters above use. */
+	unsigned long frontier_frseq_candidates;
+	unsigned long frontier_frseq_would_skip;
+	unsigned long frontier_frseq_would_skip_per_syscall[MAX_NR_SYSCALL];
+	unsigned long frontier_frseq_would_skip_per_group[NR_GROUPS];
+
 	/* SHADOW + per-child A/B accounting for the errno-plateau decay at the
 	 * coverage-frontier picker's silent-regime accept site.  Predicate is
 	 * frontier_errno_plateau_should_decay() in strategy.c -- see the

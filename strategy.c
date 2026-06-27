@@ -69,6 +69,20 @@ enum frontier_saturation_cooldown_mode frontier_saturation_cooldown_mode =
 	FRONTIER_SATURATION_COOLDOWN_MODE_OFF;
 
 /*
+ * Heuristic-arm group-bias anti-lock-in damper mode.  Default OFF
+ * keeps the dispatch-step per-child bookkeeping (group-change streak
+ * reset, fd-warm bump, coverage watermark advance) and the
+ * group_bias-gate shadow predicate evaluation entirely dormant -- no
+ * per-child field touched, no atomic loads, no shadow counters bump.
+ * SHADOW_ONLY engages the bookkeeping + predicate without changing
+ * live selection.  See the enum comment in include/strategy.h for the
+ * mode contract and the ramp discipline.  Param-settable via
+ * --frontier-group-antilock=off|shadow-only|combined.
+ */
+enum frontier_group_antilock_mode frontier_group_antilock_mode =
+	FRONTIER_GROUP_ANTILOCK_MODE_OFF;
+
+/*
  * Translate the --strategy=NAME argument into a picker_mode_t.
  * Recognises the human-friendly aliases ("round-robin", "rr",
  * "bandit", "ucb1", "bandit-ucb1").  Returns false on unknown
