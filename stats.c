@@ -3541,6 +3541,90 @@ static void dump_range_overlaps_shared_top_offenders(void)
 }
 
 /*
+ * Top-N per-syscall distribution dump for the shadow-only saturation
+ * cooldown.  Walks frontier_satcool_would_skip_per_syscall[] and emits
+ * the highest-bumping syscalls in descending order followed by a trailing
+ * total.  Called from dump_stats_strategy_summary() alongside the
+ * aggregate frontier_satcool_* rows so the operator can confirm the
+ * projected demote mass concentrates on the saturated-rich syscalls and
+ * stays near zero on the under-explored struct-arg backlog before any
+ * tuning of the magnitude threshold or promotion to a live reject.
+ *
+ * Render-only: never read by the silent-regime accept site or the
+ * predicate it gates.  Mode-OFF runs return before any output so the
+ * default-off behaviour stays byte-identical to today; under shadow-only
+ * or combined the header + total are always printed (even when the array
+ * is empty) so an operator running a short or under-populated session
+ * can confirm the wiring fired without having to grep for absence.
+ */
+#define SATCOOL_TOPN 30
+
+static void dump_satcool_would_skip_per_syscall_top(void)
+{
+	struct {
+		unsigned int nr;
+		unsigned long count;
+	} top[SATCOOL_TOPN];
+	unsigned int top_count = 0;
+	unsigned long total = 0;
+	unsigned int nr_to_scan;
+	unsigned int i;
+	int j;
+	enum frontier_saturation_cooldown_mode mode =
+		__atomic_load_n(&frontier_saturation_cooldown_mode,
+				__ATOMIC_RELAXED);
+
+	/* Mode == OFF: byte-identical to pre-shadow behaviour.  The writer
+	 * does not bump the array on OFF runs, so it would render an empty
+	 * block, but skip outright to keep the OFF stats output unchanged. */
+	if (mode == FRONTIER_SATURATION_COOLDOWN_MODE_OFF)
+		return;
+
+	/* Match the same biarch table-scan choice the existing per-syscall
+	 * top-N path in dump_stats uses: under biarch only the 64-bit table
+	 * is walked, since the silent-regime accept site writes the index
+	 * raw and the 32/64 slot alias is the established shape for the
+	 * sibling per-syscall counters. */
+	nr_to_scan = biarch ? max_nr_64bit_syscalls : max_nr_syscalls;
+	if (nr_to_scan > MAX_NR_SYSCALL)
+		nr_to_scan = MAX_NR_SYSCALL;
+
+	memset(top, 0, sizeof(top));
+
+	for (i = 0; i < nr_to_scan; i++) {
+		unsigned long c =
+			shm->stats.frontier_satcool_would_skip_per_syscall[i];
+
+		if (c == 0)
+			continue;
+
+		total += c;
+
+		/* Insertion sort, descending by count, capped at SATCOOL_TOPN. */
+		for (j = (int)top_count; j > 0 && c > top[j - 1].count; j--) {
+			if (j < SATCOOL_TOPN)
+				top[j] = top[j - 1];
+		}
+		if (j < SATCOOL_TOPN) {
+			top[j].nr = i;
+			top[j].count = c;
+			if (top_count < SATCOOL_TOPN)
+				top_count++;
+		}
+	}
+
+	output(0, "frontier_satcool_would_skip per-syscall top %u:\n",
+	       top_count);
+	for (j = 0; j < (int)top_count; j++) {
+		const char *sname = print_syscall_name(top[j].nr, false);
+
+		output(0, "  %s=%lu\n", sname, top[j].count);
+	}
+	output(0, "frontier_satcool_would_skip per-syscall total: %lu\n",
+	       total);
+}
+
+/*
  * Spike detector for parent_stats.post_handler_corrupt_ptr.  Called once
  * per main_loop tick from the parent.  Emits a single-line WARNING when
  * the counter advances by at least CORRUPT_PTR_SPIKE_THRESHOLD over a
@@ -10123,10 +10207,11 @@ static void dump_stats_strategy_summary(void)
 	 * so the rows stay suppressed by the if-non-zero guard.  Read the
 	 * (would_skip / candidates) ratio for the spare-lane catch rate and
 	 * the per-syscall frontier_satcool_would_skip_per_syscall[] top-N
-	 * (rendered via the existing per-syscall dump pipeline) to confirm
-	 * the demote mass concentrates on syncfs / sendfile / semget /
-	 * writev and is ~0 on removexattrat / futex / io_uring_setup / bpf
-	 * before tuning C_min or wiring the COMBINED reject. */
+	 * (rendered by dump_satcool_would_skip_per_syscall_top() below) to
+	 * confirm the demote mass concentrates on syncfs / sendfile /
+	 * semget / writev and is ~0 on removexattrat / futex /
+	 * io_uring_setup / bpf before tuning C_min or wiring the COMBINED
+	 * reject. */
 	if (shm->stats.frontier_satcool_candidates)
 		stat_row("strategy", "frontier_satcool_candidates",
 			 shm->stats.frontier_satcool_candidates);
@@ -10139,6 +10224,7 @@ static void dump_stats_strategy_summary(void)
 	if (shm->stats.frontier_satcool_spared_objproducer)
 		stat_row("strategy", "frontier_satcool_spared_objproducer",
 			 shm->stats.frontier_satcool_spared_objproducer);
+	dump_satcool_would_skip_per_syscall_top();
 	/* SHADOW-ONLY LIVE-regime cooldown projections.  Sibling block to
 	 * the silent-streak decay rows above: candidates is the distinct
 	 * cooldown-episode count (one bump per FRONTIER_LIVE_MISS_COOLDOWN
