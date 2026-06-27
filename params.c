@@ -7,6 +7,7 @@
 #include <limits.h>
 #include <sys/resource.h>
 
+#include "arg-len-semantics.h"
 #include "bdevs.h"
 #include "child.h"
 #include "fd.h"
@@ -552,6 +553,7 @@ struct option_help {
 static const struct option_help option_descs[] = {
 	{ "alt-op-children",	 0,  "reserve N children to run dedicated alt ops (mmap_lifecycle, mprotect_split, ...) round-robin instead of mixing them at 1% in every child (default: max(2, --children/8))" },
 	{ "arch",		'a', "selects syscalls for the specified architecture (32 or 64). Both by default." },
+	{ "arg-len-semantics",	 0,  "object-size-relative ARG_LEN draw mode (default off): off (gen_arg_len calls get_len() verbatim, no companion-arg lookup, no extra RNG draw -- byte-identical to a build without this flag), or on (when the slot before an ARG_LEN is an ARG_ADDRESS / ARG_NON_NULL_ADDRESS whose value falls in a tracked writable region, draw the length from a size-relative boundary set capped by the region's remaining extent so a kernel-WRITES-buffer syscall cannot scribble past the writable region; falls back to get_len() on no companion / unresolvable size)." },
 	{ "bdev",		'b', "Add /dev node to list of block devices to use for destructive tests." },
 	{ "canary-seed",	 0,  "comma-separated list of childop names to override the built-in priority canary seed list. Names match alt_op_name (e.g. 'genetlink_fuzzer,bpf_lifecycle'). Unknown names abort startup." },
 	{ "canary-slots",	 0,  "reserve N slots from the front of --alt-op-children to run the dormant-op canary queue (default: min(alt-op-children, 2) when unset). Clamped to min(N, alt_op_children); N=0 disables the queue identically to --no-canary-queue." },
@@ -654,6 +656,7 @@ static const char paramstr[] = "a:b:c:C:dDE:g:hILN:P:qr:s:ST:V:vx:";
 static const struct option longopts[] = {
 	{ "alt-op-children", required_argument, NULL, 0 },
 	{ "arch", required_argument, NULL, 'a' },
+	{ "arg-len-semantics", required_argument, NULL, 0 },
 	{ "bdev", required_argument, NULL, 'b' },
 	{ "canary-seed", required_argument, NULL, 0 },
 	{ "canary-slots", required_argument, NULL, 0 },
@@ -982,6 +985,22 @@ static bool parse_strategy_options(int opt, const char *name, char *arg)
 				arg);
 			exit(EXIT_FAILURE);
 		}
+		return true;
+	}
+
+	if (strcmp("arg-len-semantics", name) == 0) {
+		enum arg_len_semantics_mode mode;
+
+		if (strcmp(arg, "off") == 0) {
+			mode = ARG_LEN_SEMANTICS_OFF;
+		} else if (strcmp(arg, "on") == 0) {
+			mode = ARG_LEN_SEMANTICS_ON;
+		} else {
+			outputerr("--arg-len-semantics: unknown mode '%s' (expected off or on)\n",
+				arg);
+			exit(EXIT_FAILURE);
+		}
+		__atomic_store_n(&arg_len_semantics_mode, mode, __ATOMIC_RELAXED);
 		return true;
 	}
 

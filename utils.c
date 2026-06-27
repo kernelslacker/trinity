@@ -1767,6 +1767,45 @@ bool range_in_tracked_shared(unsigned long addr, unsigned long len)
 	return false;
 }
 
+/*
+ * Return the bytes remaining from @addr to the end of the tracked
+ * shared region that contains it, or 0 if @addr does not fall inside
+ * any tracked region.  Callers use the result as the writable extent
+ * available at @addr -- a kernel-WRITES-buffer caller that picks a
+ * length <= this value cannot make the kernel scribble past the
+ * region into the abutting page.
+ *
+ * The overflow tail is walked with the same shape so a region that
+ * arrived after shared_regions[] was full is no less lookup-able than
+ * one in the main array.  A zero return is the documented "no companion
+ * size resolvable" signal and the caller is expected to fall back to
+ * the size-agnostic get_len() rather than guessing.
+ */
+unsigned long shared_region_size_for(unsigned long addr)
+{
+	unsigned int i;
+
+	for (i = 0; i < nr_shared_regions; i++) {
+		unsigned long rstart = shared_regions[i].addr;
+		unsigned long rsize = shared_regions[i].size;
+
+		if (rsize == 0)
+			continue;
+		if (addr >= rstart && addr < rstart + rsize)
+			return rsize - (addr - rstart);
+	}
+	for (i = 0; i < nr_shared_regions_overflow; i++) {
+		unsigned long rstart = shared_regions_overflow[i].addr;
+		unsigned long rsize = shared_regions_overflow[i].size;
+
+		if (rsize == 0)
+			continue;
+		if (addr >= rstart && addr < rstart + rsize)
+			return rsize - (addr - rstart);
+	}
+	return 0;
+}
+
 void * __zmalloc(size_t size, const char *func)
 {
 	void *p;
