@@ -7,6 +7,7 @@
 #include <string.h>
 #include <linux/xattr.h>
 #include "arch.h"
+#include "name-pool.h"
 #include "random.h"
 #include "sanitise.h"
 #include "syscall.h"
@@ -72,18 +73,54 @@ static const char *xattr_pooled_names[] = {
  */
 void gen_xattr_name_pooled(char *buf, size_t len)
 {
-	unsigned int r = rnd_modulo_u32(10);
+	unsigned int r;
+	int wrote;
+	size_t wlen;
 
 	if (len > XATTR_NAME_BUFSZ)
 		len = XATTR_NAME_BUFSZ;
+	if (len == 0)
+		return;
+
+	/* Minority arm: replay a previously-recorded xattr name (possibly
+	 * mutated) so a later getxattr/removexattr/listxattr in the same
+	 * child can hit a name an earlier setxattr planted on an object.
+	 * The dentry-level xattr-list scan and the per-handler "is this
+	 * name already present?" branches only light up on a name match;
+	 * independent fresh draws ("user.foo" vs "user.r3187241") almost
+	 * never produce one.  Pool exhaustion returns 0 and we fall
+	 * through to the curated / fresh generator below so the
+	 * namespace-prefix coverage and any-prefix/any-suffix tail stay
+	 * exercised. */
+	if (ONE_IN(4)) {
+		size_t got = name_pool_draw_mutated(NAME_KIND_XATTR_NAME,
+						    buf, len);
+
+		if (got > 0) {
+			if (got >= len)
+				got = len - 1;
+			buf[got] = '\0';
+			return;
+		}
+	}
+
+	r = rnd_modulo_u32(10);
 
 	if (r < 7) {
-		snprintf(buf, len, "%s", RAND_ARRAY(xattr_pooled_names));
+		wrote = snprintf(buf, len, "%s", RAND_ARRAY(xattr_pooled_names));
 	} else if (r < 9) {
-		snprintf(buf, len, "user.r%u", rnd_u32());
+		wrote = snprintf(buf, len, "user.r%u", rnd_u32());
 	} else {
 		gen_xattr_name(buf, len);
+		wrote = (int) strnlen(buf, len);
 	}
+
+	if (wrote <= 0)
+		return;
+	wlen = (size_t) wrote;
+	if (wlen >= len)
+		wlen = len - 1;
+	name_pool_record(NAME_KIND_XATTR_NAME, buf, wlen);
 }
 
 bool sanitise_xattr_name_arg_pooled(struct syscallrecord *rec, unsigned int argno)
