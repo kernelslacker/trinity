@@ -5,7 +5,6 @@
 #include <limits.h>
 #include <linux/stat.h>
 #include <stdint.h>
-#include <string.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 #include "arch.h"
