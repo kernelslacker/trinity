@@ -10499,8 +10499,20 @@ static void dump_stats_strategy_summary(void)
 	if (shm->stats.frontier_live_cool_spared_objproducer)
 		stat_row("strategy", "frontier_live_cool_spared_objproducer",
 			 shm->stats.frontier_live_cool_spared_objproducer);
-	stat_row("strategy", "frontier_live_cool_cmin",
-		 FRONTIER_LIVE_COOL_CMIN);
+	/* Threshold companion to the scalar rows above.  Gated on the
+	 * discriminator mode rather than emitted unconditionally so a
+	 * default-off run does not grow a new stats row (the cmin
+	 * threshold is meaningful only when the discriminator is
+	 * actually evaluating); the sibling dump_live_cool_per_syscall_
+	 * top calls below already mode-OFF-early-return for the same
+	 * default-identity contract.  Sibling rows like frontier_live_
+	 * miss_cooldown_threshold above stay unconditional because
+	 * their counters predate this discriminator's mode flag. */
+	if (__atomic_load_n(&frontier_live_cooldown_mode,
+			    __ATOMIC_RELAXED) !=
+	    FRONTIER_LIVE_COOLDOWN_MODE_OFF)
+		stat_row("strategy", "frontier_live_cool_cmin",
+			 FRONTIER_LIVE_COOL_CMIN);
 	dump_live_cool_per_syscall_top(
 		shm->stats.frontier_live_cool_would_skip_per_syscall,
 		"frontier_live_cool_would_skip");
