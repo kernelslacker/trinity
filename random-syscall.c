@@ -2316,6 +2316,27 @@ static void account_per_syscall_new_edges(struct childdata *child,
 				__atomic_fetch_add(
 					&shm->stats.frontier_live_would_skip_per_syscall[rec->nr],
 					1UL, __ATOMIC_RELAXED);
+
+				/* SHADOW-ONLY LIVE-regime cooldown discriminator
+				 * (gated by --frontier-live-cooldown-mode != off).
+				 * Sits inside the same threshold-crossing branch as
+				 * the F3 frontier_live_would_skip bumps above so the
+				 * undiscriminated projection and the discriminated
+				 * projection share the candidate gate (post-increment
+				 * streak >= FRONTIER_LIVE_MISS_COOLDOWN) and the
+				 * (live_cool_would_skip / live_would_skip) ratio
+				 * reads off exactly how much over-cool the
+				 * discriminator removes -- the SHADOW_ONLY
+				 * measurement the ramp discipline needs before
+				 * flipping COMBINED.  Helper applies its own outer
+				 * mode gate, the FRONTIER_LIVE_COOL_CMIN low live
+				 * floor (NOT FRONTIER_SATCOOL_CMIN -- see the
+				 * include/strategy.h comment for the rationale), and
+				 * the spare-lane evaluation; the bumps land in the
+				 * frontier_live_cool_* shadow counter family and no
+				 * live-path code reads them.  Same MAX_NR_SYSCALL
+				 * bound the surrounding per-syscall arrays use. */
+				frontier_live_cool_spare(rec->nr, rec->do32bit);
 			}
 			if (streak == FRONTIER_LIVE_MISS_COOLDOWN)
 				__atomic_fetch_add(

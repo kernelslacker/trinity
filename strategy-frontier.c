@@ -773,6 +773,100 @@ static bool producer_observer_lookup(unsigned int nr,
 }
 
 /*
+ * Spare-lane decision shared by the silent-regime satcool helper
+ * (frontier_satcool_spare below) and the LIVE-regime cooldown helper
+ * (frontier_live_cool_spare further below).  Returns the FIRST matching
+ * spare reason, or FRONTIER_SPARE_NONE when no lane fires -- the caller
+ * applies its own outer mode gate, magnitude floor, and counter-bump
+ * cascade, so this routine is the bare predicate body the two siblings
+ * share.  Extracting it keeps the lane logic from drifting between the
+ * silent and LIVE call sites (one predicate body, two callers, zero
+ * duplication).
+ *
+ * Lane order encodes precedence -- the bpf-backstop windowed-edges
+ * spare wins over arggen, and arggen wins over the ret_objtype
+ * producer spare (the more specific signal beats the broader catch).
+ * Windowed-edges first: a syscall whose K-window ring is nonzero is
+ * recently productive regardless of every other signal, so the
+ * predicate stops there and the caller never reads cmp / errno
+ * baselines on the windowed-nonzero path -- matches the early-return
+ * shape the silent satcool wrapper used to have inline.
+ *
+ * All loads RELAXED: a mixed snapshot taken across non-atomic
+ * instants at most causes one rotation of mis-classification, the
+ * same one-window attribution lag the rotation loop already documents.
+ * The cmp_now / cmp_base / errno_now / errno_base comparisons are
+ * equality / ordering tests, never arithmetic, so a stale or torn
+ * read cannot drive an unsigned subtraction or latch permanent state.
+ * The producer-observer lookup is a single bit-test against the
+ * immutable-after-init bitmap, published release-acquire by
+ * ensure_producer_observer_built() above; the rotation-hot caller
+ * (frontier_live_cool_spare on every LIVE-regime miss) pays one
+ * lookup per call, no get_syscall_entry indirection.
+ */
+enum frontier_spare_reason {
+	FRONTIER_SPARE_NONE = 0,
+	FRONTIER_SPARE_WINDOWED_EDGES,
+	FRONTIER_SPARE_ARGGEN,
+	FRONTIER_SPARE_OBJPRODUCER,
+};
+
+static enum frontier_spare_reason
+frontier_spare_lane_decide(unsigned int syscallnr, bool do32)
+{
+	unsigned long cmp_now, cmp_base;
+	unsigned long errno_now, errno_base;
+
+	if (frontier_recent_count(syscallnr) != 0)
+		return FRONTIER_SPARE_WINDOWED_EDGES;
+
+	cmp_now = __atomic_load_n(
+		&kcov_shm->per_syscall_cmp_inserts[syscallnr],
+		__ATOMIC_RELAXED);
+	cmp_base = __atomic_load_n(
+		&shm->stats.frontier_silent_cmp_baseline[syscallnr],
+		__ATOMIC_RELAXED);
+	errno_now = __atomic_load_n(
+		&kcov_shm->per_syscall_errno[syscallnr][ERRNO_BUCKET_SUCCESS],
+		__ATOMIC_RELAXED);
+	errno_base = __atomic_load_n(
+		&shm->stats.frontier_silent_errno_success_baseline[syscallnr],
+		__ATOMIC_RELAXED);
+
+	/*
+	 * CRITICAL: first-success TRANSITION, NOT raw success-count delta.
+	 * A syscall that succeeds on every call (syncfs) has errno_base > 0
+	 * at every baseline snapshot and so CANNOT spare itself by raw
+	 * success accumulation; the spare fires only when the syscall
+	 * transitions from never-having-succeeded (errno_base == 0) to
+	 * producing its first success in the current window.  Distinct
+	 * CMP-inserts use the existing baseline machinery (refreshed at
+	 * every productive-event reset in frontier_record_new_edge() /
+	 * frontier_record_transition_edge()), which already counts only
+	 * first-inserts / evict-replaces in per_syscall_cmp_inserts -- the
+	 * "distinct hint additions" the design names.
+	 */
+	if ((cmp_now != cmp_base) || (errno_base == 0 && errno_now > 0))
+		return FRONTIER_SPARE_ARGGEN;
+
+	/*
+	 * Object-producer spare: ret_objtype != OBJ_NONE exempts the
+	 * producers whose payoff is delayed and credited downstream to the
+	 * consumer of the produced object.  Lookup is against the
+	 * precomputed producer-observer bitmap above -- the per-pick
+	 * get_syscall_entry() table indirection (and the biarch branch
+	 * inside it) the original inline shape paid for is collapsed to a
+	 * single bit-test.  Build is lazy with release/acquire publish so a
+	 * partially-built bitmap is NEVER visible to a concurrent reader.
+	 */
+	ensure_producer_observer_built();
+	if (producer_observer_lookup(syscallnr, do32))
+		return FRONTIER_SPARE_OBJPRODUCER;
+
+	return FRONTIER_SPARE_NONE;
+}
+
+/*
  * SHADOW-ONLY saturation-cooldown predicate, extracted from the silent-
  * regime accept site in random-syscall.c.  Gated by
  * --frontier-saturation-cooldown != off.  Sibling of the silent-streak
@@ -818,16 +912,21 @@ static bool producer_observer_lookup(unsigned int nr,
  * the single RELAXED mode read.  The MAX_NR_SYSCALL bound mirrors the
  * existing silent-streak block's bound at the call site so the per-
  * syscall would-skip array index is safe.
+ *
+ * Byte-identical to the pre-extraction inline shape: the candidate
+ * gate is (calls_total >= FRONTIER_SATCOOL_CMIN AND windowed_edges
+ * == 0); a windowed_edges != 0 nr early-returns from the shared
+ * spare-lane decide function with FRONTIER_SPARE_WINDOWED_EDGES, which
+ * this wrapper treats as the same "no bump" outcome the original
+ * candidate-gate early-return produced.  The arggen-wins-over-
+ * objproducer precedence in the bump cascade is preserved by the
+ * lane-order in frontier_spare_lane_decide above.
  */
 void frontier_satcool_spare(unsigned int syscallnr, bool do32)
 {
 	enum frontier_saturation_cooldown_mode satcool_mode;
+	enum frontier_spare_reason reason;
 	unsigned long calls_total;
-	unsigned long windowed_edges;
-	unsigned long cmp_now, cmp_base;
-	unsigned long errno_now, errno_base;
-	bool spared_arggen;
-	bool spared_objproducer;
 
 	satcool_mode = __atomic_load_n(&frontier_saturation_cooldown_mode,
 				       __ATOMIC_RELAXED);
@@ -841,60 +940,29 @@ void frontier_satcool_spare(unsigned int syscallnr, bool do32)
 	calls_total = __atomic_load_n(
 		&kcov_shm->per_syscall_calls[syscallnr],
 		__ATOMIC_RELAXED);
-	windowed_edges = frontier_recent_count(syscallnr);
-
-	if (calls_total < FRONTIER_SATCOOL_CMIN || windowed_edges != 0)
+	if (calls_total < FRONTIER_SATCOOL_CMIN)
 		return;
 
-	cmp_now = __atomic_load_n(
-		&kcov_shm->per_syscall_cmp_inserts[syscallnr],
-		__ATOMIC_RELAXED);
-	cmp_base = __atomic_load_n(
-		&shm->stats.frontier_silent_cmp_baseline[syscallnr],
-		__ATOMIC_RELAXED);
-	errno_now = __atomic_load_n(
-		&kcov_shm->per_syscall_errno[syscallnr][ERRNO_BUCKET_SUCCESS],
-		__ATOMIC_RELAXED);
-	errno_base = __atomic_load_n(
-		&shm->stats.frontier_silent_errno_success_baseline[syscallnr],
-		__ATOMIC_RELAXED);
+	reason = frontier_spare_lane_decide(syscallnr, do32);
 
 	/*
-	 * CRITICAL: first-success TRANSITION, NOT raw success-count delta.
-	 * A syscall that succeeds on every call (syncfs) has errno_base > 0
-	 * at every baseline snapshot and so CANNOT spare itself by raw
-	 * success accumulation; the spare fires only when the syscall
-	 * transitions from never-having-succeeded (errno_base == 0) to
-	 * producing its first success in the current window.  Distinct
-	 * CMP-inserts use the existing baseline machinery (refreshed at
-	 * every productive-event reset in frontier_record_new_edge() /
-	 * frontier_record_transition_edge()), which already counts only
-	 * first-inserts / evict-replaces in per_syscall_cmp_inserts -- the
-	 * "distinct hint additions" the design names.
+	 * Windowed-edges spare is folded into the early-return path the
+	 * pre-extraction shape used (the original candidate gate required
+	 * windowed_edges == 0).  Preserving that early-return keeps the
+	 * satcool counter cascade byte-identical: a windowed-nonzero nr
+	 * never bumped candidates / spared_arggen / spared_objproducer
+	 * before extraction and still does not after.
 	 */
-	spared_arggen = (cmp_now != cmp_base) ||
-			(errno_base == 0 && errno_now > 0);
-
-	/*
-	 * Object-producer spare: ret_objtype != OBJ_NONE exempts the
-	 * producers whose payoff is delayed and credited downstream to the
-	 * consumer of the produced object.  Lookup is against the
-	 * precomputed producer-observer bitmap above -- the per-pick
-	 * get_syscall_entry() table indirection (and the biarch branch
-	 * inside it) the original inline shape paid for is collapsed to a
-	 * single bit-test.  Build is lazy with release/acquire publish so a
-	 * partially-built bitmap is NEVER visible to a concurrent reader.
-	 */
-	ensure_producer_observer_built();
-	spared_objproducer = producer_observer_lookup(syscallnr, do32);
+	if (reason == FRONTIER_SPARE_WINDOWED_EDGES)
+		return;
 
 	__atomic_fetch_add(&shm->stats.frontier_satcool_candidates,
 			   1UL, __ATOMIC_RELAXED);
 
-	if (spared_arggen) {
+	if (reason == FRONTIER_SPARE_ARGGEN) {
 		__atomic_fetch_add(&shm->stats.frontier_satcool_spared_arggen,
 				   1UL, __ATOMIC_RELAXED);
-	} else if (spared_objproducer) {
+	} else if (reason == FRONTIER_SPARE_OBJPRODUCER) {
 		__atomic_fetch_add(
 			&shm->stats.frontier_satcool_spared_objproducer,
 			1UL, __ATOMIC_RELAXED);
@@ -912,5 +980,138 @@ void frontier_satcool_spare(unsigned int syscallnr, bool do32)
 		 * before any live divergence is introduced.  See the enum
 		 * comment in include/strategy.h for the ramp discipline.
 		 */
+	}
+}
+
+/*
+ * SHADOW-ONLY LIVE-regime cooldown discriminator, sibling of
+ * frontier_satcool_spare above.  Reuses the shared spare-lane decide
+ * function so the lane logic stays in one place; the differences are
+ * the outer mode gate (frontier_live_cooldown_mode), the magnitude
+ * floor (FRONTIER_LIVE_COOL_CMIN ~256, NOT FRONTIER_SATCOOL_CMIN
+ * 10000 -- see include/strategy.h for the low-floor rationale), and
+ * the shadow counter family the bumps land in (frontier_live_cool_*).
+ *
+ * Called from the LIVE-regime miss-attribution path in random-syscall.c
+ * inside the existing (streak >= FRONTIER_LIVE_MISS_COOLDOWN) branch,
+ * right next to the undiscriminated frontier_live_would_skip projection
+ * the existing F3 shadow row bumps.  The pairing puts the
+ * undiscriminated and discriminated demote-mass projections in the
+ * same stats dump so (live_cool_would_skip / live_would_skip) reads
+ * off exactly how much over-cool the discriminator removes -- the
+ * SHADOW_ONLY measurement the ramp discipline needs before flipping
+ * COMBINED.
+ *
+ * Windowed-edges spare is bumped explicitly (NOT folded into an early
+ * return like the satcool wrapper does) because the bpf-class backstop
+ * is exactly the LIVE-regime over-cool the discriminator is meant to
+ * catch: a syscall whose K-window ring is nonzero is recently
+ * productive even after a 4-pick miss-streak, and the per-syscall
+ * would-spare attribution needs to record THAT as a spare reason so
+ * the operator can see the bpf / openat / io_uring_setup productive
+ * set surfacing on the spare side of the partition.  See the design
+ * note's §3.2 (c) "frontier_recent_count > 0 bpf backstop" lane.
+ *
+ * SHADOW-ONLY by construction: the helper computes the discriminator
+ * and bumps the frontier_live_cool_* shadow counters but never reaches
+ * a live reject at the call site -- the existing F3 frontier_live_
+ * would_skip + frontier_live_would_skip_per_syscall[] bumps still run
+ * unconditionally regardless of this mode, so the LIVE-regime picker
+ * decision stays byte-identical to the pre-row baseline.  Wiring the
+ * COMBINED live divergence (rotation-loop halving in frontier_window_
+ * advance gated on the discriminator + per-syscall miss-attribution
+ * reject) is a deliberate follow-up after a SHADOW_ONLY run validates
+ * the demote mass concentrates on gettid / sched_get_priority_max and
+ * is ~0 on bpf / io_uring_setup / openat / io_setup / futex /
+ * setxattrat.
+ *
+ * Outer guard keeps the OFF path byte-identical to a build before the
+ * row: no kcov_shm load, no spare-lane evaluation, no atomic loads
+ * beyond the single RELAXED mode read.  The MAX_NR_SYSCALL bound
+ * matches the surrounding per-syscall arrays at the call site so the
+ * per-syscall would-skip / would-spare array indices are safe.
+ */
+void frontier_live_cool_spare(unsigned int syscallnr, bool do32)
+{
+	enum frontier_live_cooldown_mode live_mode;
+	enum frontier_spare_reason reason;
+	unsigned long calls_total;
+
+	live_mode = __atomic_load_n(&frontier_live_cooldown_mode,
+				    __ATOMIC_RELAXED);
+	if (live_mode == FRONTIER_LIVE_COOLDOWN_MODE_OFF)
+		return;
+	if (kcov_shm == NULL)
+		return;
+	if (syscallnr >= MAX_NR_SYSCALL)
+		return;
+
+	/*
+	 * Low live floor.  Productive syscalls the LIVE-regime cooldown
+	 * over-cools today (bpf / openat / io_uring_setup / io_setup /
+	 * futex / setxattrat) sit at 775..2813 calls/run -- far below the
+	 * satcool FRONTIER_SATCOOL_CMIN 10000, so reusing CMIN as the
+	 * gate here would filter them OUT of the spare-lane evaluation
+	 * (sparing them for the wrong reason -- low magnitude rather than
+	 * productivity) and would simultaneously leave the legitimately-
+	 * barren gettid (9.5k) UNDER the gate so the live cooldown could
+	 * never fire on it.  The low floor (~256) admits the gettid /
+	 * sched_get_priority_max getters into the discriminator while
+	 * keeping a syscall with only a handful of picks out -- the
+	 * spare lanes (NOT the magnitude) protect the producers.
+	 */
+	calls_total = __atomic_load_n(
+		&kcov_shm->per_syscall_calls[syscallnr],
+		__ATOMIC_RELAXED);
+	if (calls_total < FRONTIER_LIVE_COOL_CMIN)
+		return;
+
+	reason = frontier_spare_lane_decide(syscallnr, do32);
+
+	__atomic_fetch_add(&shm->stats.frontier_live_cool_candidates,
+			   1UL, __ATOMIC_RELAXED);
+
+	switch (reason) {
+	case FRONTIER_SPARE_WINDOWED_EDGES:
+		__atomic_fetch_add(
+			&shm->stats.frontier_live_cool_spared_windowed,
+			1UL, __ATOMIC_RELAXED);
+		__atomic_fetch_add(
+			&shm->stats.frontier_live_cool_would_spare_per_syscall[syscallnr],
+			1UL, __ATOMIC_RELAXED);
+		break;
+	case FRONTIER_SPARE_ARGGEN:
+		__atomic_fetch_add(
+			&shm->stats.frontier_live_cool_spared_arggen,
+			1UL, __ATOMIC_RELAXED);
+		__atomic_fetch_add(
+			&shm->stats.frontier_live_cool_would_spare_per_syscall[syscallnr],
+			1UL, __ATOMIC_RELAXED);
+		break;
+	case FRONTIER_SPARE_OBJPRODUCER:
+		__atomic_fetch_add(
+			&shm->stats.frontier_live_cool_spared_objproducer,
+			1UL, __ATOMIC_RELAXED);
+		__atomic_fetch_add(
+			&shm->stats.frontier_live_cool_would_spare_per_syscall[syscallnr],
+			1UL, __ATOMIC_RELAXED);
+		break;
+	case FRONTIER_SPARE_NONE:
+	default:
+		__atomic_fetch_add(&shm->stats.frontier_live_cool_would_skip,
+				   1UL, __ATOMIC_RELAXED);
+		__atomic_fetch_add(
+			&shm->stats.frontier_live_cool_would_skip_per_syscall[syscallnr],
+			1UL, __ATOMIC_RELAXED);
+		/*
+		 * COMBINED live cooldown divergence would sit here gated on
+		 * live_mode == COMBINED; intentionally NOT wired in this
+		 * commit.  The block is observability-only regardless of
+		 * mode so the SHADOW_ONLY counter distribution can be
+		 * validated against a real run before any live decision is
+		 * gated on the discriminator.  See the enum comment in
+		 * include/strategy.h for the ramp discipline.
+		 */
+		break;
 	}
 }

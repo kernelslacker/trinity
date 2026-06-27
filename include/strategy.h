@@ -294,6 +294,104 @@ extern enum frontier_saturation_cooldown_mode frontier_saturation_cooldown_mode;
 void frontier_satcool_spare(unsigned int syscallnr, bool do32);
 
 /*
+ * LIVE-regime cooldown discriminator magnitude floor (low live floor).
+ * Sibling of FRONTIER_SATCOOL_CMIN for the silent-regime satcool
+ * predicate; deliberately MUCH smaller because the productive syscalls
+ * the live cooldown over-cools today sit far below the satcool 10000
+ * mark (bpf / openat / io_uring_setup / io_setup at 775..2813 calls;
+ * futex / setxattrat in the same range as struct-arg backlog members).
+ * Reusing FRONTIER_SATCOOL_CMIN here would gate the spare lanes out
+ * for the entire productive set the discriminator is meant to spare,
+ * and would simultaneously leave the legitimately-barren gettid (9.5k)
+ * below the magnitude bar so the live cooldown could never fire on it
+ * either -- the opposite of the lever's intended split.  256 keeps the
+ * gettid / sched_get_priority_max getters (9.5k / 22.8k) cool-eligible
+ * while keeping the magnitude floor large enough that a syscall with
+ * only a handful of picks cannot be classified as cooled on a
+ * statistically-meaningless sample.  A/B-tunable from the SHADOW-only
+ * frontier_live_cool_would_skip_per_syscall[] readout once that runs.
+ */
+#define FRONTIER_LIVE_COOL_CMIN 256UL
+
+/*
+ * LIVE-regime cooldown discriminator mode (--frontier-live-cooldown-mode).
+ * Sibling of frontier_saturation_cooldown_mode above; ports the satcool
+ * spare-lane predicate INTO the LIVE-regime cooldown decision so the
+ * live cooldown cools only the truly-barren/saturated and SPARES the
+ * productive (object-producers + mid-breakthrough struct-args + bpf-
+ * class syscalls whose K-window ring is still nonzero).  The existing
+ * LIVE-regime cooldown gate (per-syscall miss-streak >= FRONTIER_LIVE_
+ * MISS_COOLDOWN) keys on a single signal -- a miss-streak of 4
+ * consecutive zero-edge LIVE picks is trivially reached by a productive
+ * syscall between its rare edge-finding picks, so the live cooldown
+ * over-demotes producers and mid-breakthrough struct-arg syscalls
+ * alongside the genuinely barren getters.  This mode adds the spare-
+ * lane discriminator (windowed-edges / arggen-progress / object-
+ * producer) to the cool decision so the split lands on the right axis.
+ *
+ *   OFF          - default, byte-identical to today.  The LIVE-regime
+ *                  miss-streak attribution path skips the discriminator
+ *                  evaluation entirely; no kcov_shm load, no spare-lane
+ *                  computation, no new shadow counters bump.
+ *   SHADOW_ONLY  - compute the discriminator at the LIVE-regime miss
+ *                  attribution path and bump the frontier_live_cool_*
+ *                  shadow counters split by spare reason.  Selection
+ *                  stays byte-identical -- the existing frontier_live_
+ *                  would_skip projection (undiscriminated) keeps
+ *                  bumping in parallel, so the (live_cool_would_skip /
+ *                  live_would_skip) ratio reads exactly how much over-
+ *                  cool the discriminator removes.  Read the per-
+ *                  syscall would_skip / would_spare arrays to confirm
+ *                  the demote mass concentrates on gettid /
+ *                  sched_get_priority_max and is ~0 on bpf /
+ *                  io_uring_setup / openat / io_setup / futex /
+ *                  setxattrat before promoting COMBINED.
+ *   COMBINED     - reserved.  The enum value exists so the live
+ *                  divergence wire-up (rotation-loop halving at
+ *                  strategy-frontier.c::frontier_window_advance and the
+ *                  per-syscall miss-attribution reject) can land in a
+ *                  follow-up commit without renumbering the enum, but
+ *                  THIS COMMIT does NOT implement the live divergence
+ *                  -- selecting combined today behaves identically to
+ *                  shadow-only (discriminator evaluates and counters
+ *                  bump, no live cooldown decision is gated on the
+ *                  discriminator).  Mirrors the OFF / SHADOW_ONLY /
+ *                  COMBINED ramp discipline the sibling
+ *                  frontier_saturation_cooldown_mode above uses.
+ *
+ * Param-settable from --frontier-live-cooldown-mode=off|shadow-only|
+ * combined; the existing boolean --frontier-live-cooldown remains the
+ * gate for the rotation-loop halving and is independent of this mode.
+ */
+enum frontier_live_cooldown_mode {
+	FRONTIER_LIVE_COOLDOWN_MODE_OFF = 0,
+	FRONTIER_LIVE_COOLDOWN_MODE_SHADOW_ONLY = 1,
+	FRONTIER_LIVE_COOLDOWN_MODE_COMBINED = 2,
+};
+
+extern enum frontier_live_cooldown_mode frontier_live_cooldown_mode;
+
+/*
+ * LIVE-regime cooldown spare-lane helper, sibling of
+ * frontier_satcool_spare above.  Shares the predicate body (windowed-
+ * edges plateau spare, distinct-CMP / first-success-TRANSITION arggen
+ * spare, ret_objtype producer-observer spare) and the per-arch
+ * producer-observer bitmap; differs in the outer gate (live mode), the
+ * magnitude floor (FRONTIER_LIVE_COOL_CMIN, NOT FRONTIER_SATCOOL_CMIN
+ * -- see the FRONTIER_LIVE_COOL_CMIN comment for the rationale), and
+ * the shadow counter family the bumps land in (frontier_live_cool_*).
+ * No-op when frontier_live_cooldown_mode is OFF or kcov_shm is
+ * unavailable; SHADOW-ONLY -- never returns a value, never gates picker
+ * selection; the COMBINED live divergence is a deliberate follow-up.
+ * Called from the LIVE-regime miss-attribution path in random-syscall.c
+ * (account_per_syscall_new_edges) immediately after the existing
+ * frontier_live_would_skip projection so the discriminated counters
+ * sit alongside the undiscriminated projection for direct comparison.
+ * See the implementation in strategy-frontier.c for the full contract.
+ */
+void frontier_live_cool_spare(unsigned int syscallnr, bool do32);
+
+/*
  * Heuristic-arm group-bias anti-lock-in damper -- F-RSEQ.  Sibling of
  * the frontier-arm saturation cooldown above; the two cooldowns split
  * along the two picker arms (frontier vs heuristic) and reclaim the
