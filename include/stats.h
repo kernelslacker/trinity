@@ -4436,7 +4436,9 @@ struct stats_s {
 
 	/* SHADOW-ONLY topology-pair sample ring.
 	 * When a syscall flips a new PC bucket bit or a new transition slot,
-	 * frontier_record_new_edge() / frontier_record_transition_edge()
+	 * frontier_record_new_edge() (PC lane, strategy-frontier.c) or the
+	 * ungated kcov_collect() transition block in kcov.c (transition lane,
+	 * co-located with the per_syscall_transition_edges_real bump)
 	 * looks at the firing child's latched last_setup_op + last_setup_op_nr
 	 * (stamped in child_process() at the top of every alt-op dispatch)
 	 * and packs a {setup_op, reason, syscall_nr, age_in_syscalls} tuple
@@ -4785,9 +4787,11 @@ void topo_pair_record_shadow(unsigned int nr, unsigned int reason);
 
 /* SHADOW-ONLY topology-pair aggregator.
  * Walks shm->stats.topo_pair_ring[] (capacity TOPO_PAIR_RING_SIZE; each
- * slot a single packed 64-bit entry produced by frontier_record_new_
- * edge() / frontier_record_transition_edge() via topo_pair_record_
- * shadow() in strategy-frontier.c) and prints a per-setup_op summary:
+ * slot a single packed 64-bit entry produced via topo_pair_record_
+ * shadow() from frontier_record_new_edge() in strategy-frontier.c (PC
+ * lane) and from the ungated kcov_collect() transition block in kcov.c
+ * (transition lane, co-located with per_syscall_transition_edges_real))
+ * and prints a per-setup_op summary:
  * sample count, PC vs transition split, and mean age-in-syscalls.  The
  * "no setup observed yet" denominator is rendered as a separate row so
  * an operator can compare the productive-event population against the

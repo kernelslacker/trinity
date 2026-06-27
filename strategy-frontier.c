@@ -39,11 +39,12 @@ _Static_assert((FRONTIER_DECAY_WINDOWS &
 
 /*
  * SHADOW-ONLY topology-pair latch + ring writer.  Invoked from the
- * two productive-event hooks below
- * (frontier_record_new_edge for new PC-edge bucket bits and
- * frontier_record_transition_edge for new transition slots) so a single
- * site owns the read-of-child-latch / packed-store-into-ring sequence
- * and both reason codes share the same race contract.
+ * two productive-event hooks: frontier_record_new_edge below for new
+ * PC-edge bucket bits, and the ungated kcov_collect() transition block
+ * in kcov.c (co-located with the per_syscall_transition_edges_real
+ * bump) for new transition slots, so a single site owns the
+ * read-of-child-latch / packed-store-into-ring sequence and both
+ * reason codes share the same race contract.
  *
  * NR_CHILD_OP_TYPES must fit in the 8-bit setup_op slot of the packed
  * entry, and TOPO_PAIR_RING_SIZE must be a power of two so the
