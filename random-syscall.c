@@ -1500,176 +1500,19 @@ retry:
 			}
 		}
 
-		/* SHADOW-ONLY saturation cooldown predicate (gated by
+		/*
+		 * SHADOW-ONLY saturation cooldown predicate (gated by
 		 * --frontier-saturation-cooldown != off).  Sibling of the
-		 * silent-streak decay block above and the errno-plateau block
-		 * below; this one targets the same wasteful-silent-pick shape
-		 * but uses the windowed frontier-edge ring (frontier_recent_
-		 * count, decays by construction via the per-rotation slot zero
-		 * + CAS-decrement of frontier_recent_count_cached in
-		 * frontier_window_advance) for the plateau trigger, and the
-		 * corrected first-success-TRANSITION + distinct-CMP-insert
-		 * spare lanes for the under-explored struct-arg backlog.  See
-		 * the enum frontier_saturation_cooldown_mode comment in
-		 * include/strategy.h for the predicate contract, the
-		 * FRONTIER_SATCOOL_CMIN comment for the magnitude-gate
-		 * rationale, and the struct-field comment in include/stats.h
-		 * for per-counter semantics.
-		 *
-		 * Why this gate exists alongside the silent-streak decay
-		 * above: that gate's UNLESS clause keys on raw ERRNO_BUCKET_
-		 * SUCCESS count, which advances on every successful return.
-		 * A syscall that succeeds on every call (syncfs / sendfile
-		 * with valid args / writev to /dev/null) bumps the success
-		 * bucket monotonically and the existing UNLESS clause's
-		 * baseline-equality test never trips -- the streak decay
-		 * cannot cool the single biggest reclaim target.  Keying
-		 * plateau on the windowed edge ring instead (which ages out
-		 * old productivity by construction) and gating the spare
-		 * lane on a first-success TRANSITION (errno_base == 0 AND
-		 * errno_now > 0) rather than a raw success-count delta
-		 * closes the gap; the magnitude gate + ret_objtype exemption
-		 * keep the under-explored struct-arg backlog
-		 * (removexattrat / futex / fcntl) and the object-producers
-		 * (openat / socket / memfd_create / mmap / io_uring_setup /
-		 * bpf) out of the demote set.
-		 *
-		 * THIS COMMIT IS SHADOW-ONLY by construction: the block
-		 * computes the predicate and bumps the frontier_satcool_*
-		 * shadow counters but never reaches a goto-retry, so the
-		 * picker's accept distribution stays byte-identical to the
-		 * default-off baseline regardless of which non-OFF mode is
-		 * selected.  Wiring the COMBINED live reject is a deliberate
-		 * follow-up after a SHADOW_ONLY run validates the demote mass
-		 * concentrates on syncfs / sendfile / semget / writev and is
-		 * ~0 on removexattrat / futex / io_uring_setup / bpf.
-		 *
-		 * Outer guard keeps the OFF path byte-identical to a build
-		 * before this commit: no kcov_shm load, no get_syscall_entry
-		 * call, no atomic loads.  The MAX_NR_SYSCALL bound mirrors
-		 * the existing silent-streak block's bound so the
-		 * per-syscall would-skip array index is safe. */
-		{
-			enum frontier_saturation_cooldown_mode satcool_mode =
-				__atomic_load_n(
-					&frontier_saturation_cooldown_mode,
-					__ATOMIC_RELAXED);
-
-			if (satcool_mode != FRONTIER_SATURATION_COOLDOWN_MODE_OFF &&
-			    kcov_shm != NULL &&
-			    syscallnr < MAX_NR_SYSCALL) {
-				unsigned long calls_total;
-				unsigned long windowed_edges;
-
-				calls_total = __atomic_load_n(
-					&kcov_shm->per_syscall_calls[syscallnr],
-					__ATOMIC_RELAXED);
-				windowed_edges = frontier_recent_count(syscallnr);
-
-				if (calls_total >= FRONTIER_SATCOOL_CMIN &&
-				    windowed_edges == 0) {
-					unsigned long cmp_now, cmp_base;
-					unsigned long errno_now, errno_base;
-					struct syscallentry *entry;
-					bool spared_arggen;
-					bool spared_objproducer;
-
-					cmp_now = __atomic_load_n(
-						&kcov_shm->per_syscall_cmp_inserts[syscallnr],
-						__ATOMIC_RELAXED);
-					cmp_base = __atomic_load_n(
-						&shm->stats.frontier_silent_cmp_baseline[syscallnr],
-						__ATOMIC_RELAXED);
-					errno_now = __atomic_load_n(
-						&kcov_shm->per_syscall_errno[syscallnr][ERRNO_BUCKET_SUCCESS],
-						__ATOMIC_RELAXED);
-					errno_base = __atomic_load_n(
-						&shm->stats.frontier_silent_errno_success_baseline[syscallnr],
-						__ATOMIC_RELAXED);
-
-					/* CRITICAL: first-success TRANSITION,
-					 * NOT raw success-count delta.  A
-					 * syscall that succeeds on every call
-					 * (syncfs) has errno_base > 0 at every
-					 * baseline snapshot and so CANNOT spare
-					 * itself by raw success accumulation;
-					 * the spare fires only when the syscall
-					 * transitions from never-having-
-					 * succeeded (errno_base == 0) to
-					 * producing its first success in the
-					 * current window.  Distinct CMP-inserts
-					 * use the existing baseline machinery
-					 * (refreshed at every productive-event
-					 * reset in frontier_record_new_edge() /
-					 * frontier_record_transition_edge()),
-					 * which already counts only first-
-					 * inserts / evict-replaces in
-					 * per_syscall_cmp_inserts -- the
-					 * "distinct hint additions" the design
-					 * names. */
-					spared_arggen = (cmp_now != cmp_base) ||
-						(errno_base == 0 && errno_now > 0);
-
-					/* Object-producer spare: ret_objtype
-					 * != OBJ_NONE exempts the producers
-					 * whose payoff is delayed and credited
-					 * downstream to the consumer of the
-					 * produced object.  The silent-regime
-					 * inner reject loop deliberately avoids
-					 * get_syscall_entry (the :1097
-					 * EXPENSIVE early-out below the
-					 * heuristic-arm comment); this call
-					 * lands inside the post-accept satcool
-					 * block, gated by plateau AND
-					 * magnitude, so it never enters the
-					 * inner retry hot path.  A NULL entry
-					 * falls back to spared so an unknown nr
-					 * cannot wrongly register as a would-
-					 * skip; in practice every nr that
-					 * reaches here already passed
-					 * validate_specific_syscall_silent
-					 * above so the NULL case is purely
-					 * defensive. */
-					entry = get_syscall_entry(syscallnr, do32);
-					spared_objproducer = (entry == NULL) ||
-						(entry->ret_objtype != OBJ_NONE);
-
-					__atomic_fetch_add(
-						&shm->stats.frontier_satcool_candidates,
-						1UL, __ATOMIC_RELAXED);
-
-					if (spared_arggen) {
-						__atomic_fetch_add(
-							&shm->stats.frontier_satcool_spared_arggen,
-							1UL, __ATOMIC_RELAXED);
-					} else if (spared_objproducer) {
-						__atomic_fetch_add(
-							&shm->stats.frontier_satcool_spared_objproducer,
-							1UL, __ATOMIC_RELAXED);
-					} else {
-						__atomic_fetch_add(
-							&shm->stats.frontier_satcool_would_skip,
-							1UL, __ATOMIC_RELAXED);
-						__atomic_fetch_add(
-							&shm->stats.frontier_satcool_would_skip_per_syscall[syscallnr],
-							1UL, __ATOMIC_RELAXED);
-						/* COMBINED live-reject would
-						 * sit here gated on
-						 * satcool_mode == COMBINED;
-						 * intentionally NOT wired in
-						 * this commit.  The block is
-						 * observability-only
-						 * regardless of mode so the
-						 * SHADOW_ONLY counters can be
-						 * validated against a real run
-						 * before any live divergence
-						 * is introduced.  See the enum
-						 * comment in include/strategy.h
-						 * for the ramp discipline. */
-					}
-				}
-			}
-		}
+		 * silent-streak decay block above and the errno-plateau
+		 * block below; targets the same wasteful-silent-pick shape
+		 * but keys plateau on the windowed frontier-edge ring and
+		 * spares the under-explored struct-arg backlog + the object-
+		 * producer set via distinct-CMP / first-success-TRANSITION /
+		 * precomputed producer-observer bitmap lanes.  See the full
+		 * contract above frontier_satcool_spare() in
+		 * strategy-frontier.c.
+		 */
+		frontier_satcool_spare(syscallnr, do32);
 
 		/* Errno-plateau decay (SHADOW + per-child A/B).  See the
 		 * FRONTIER_ERRNO_PLATEAU_* contract in include/strategy.h and the
