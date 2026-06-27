@@ -3253,6 +3253,115 @@ struct stats_s {
 	unsigned long frontier_satcool_spared_arggen;
 	unsigned long frontier_satcool_spared_objproducer;
 
+	/* SHADOW-ONLY LIVE-regime cooldown discriminator accounting
+	 * (gated by --frontier-live-cooldown-mode != off).  Sibling of
+	 * the frontier_satcool_* counters above; this row ports the
+	 * satcool spare-lane predicate INTO the LIVE-regime cooldown
+	 * decision so the live cooldown cools only the truly-barren /
+	 * saturated and SPARES the productive set (bpf / openat /
+	 * io_uring_setup / io_setup whose K-window ring is still
+	 * nonzero, futex / setxattrat mid-penetration of their struct
+	 * args, ret_objtype producers whose payoff is delayed and
+	 * credited downstream).  See the enum frontier_live_cooldown_
+	 * mode comment in include/strategy.h for the predicate
+	 * contract, the FRONTIER_LIVE_COOL_CMIN comment for the low-
+	 * floor magnitude rationale, and the implementation in
+	 * strategy-frontier.c::frontier_live_cool_spare for the full
+	 * lane semantics.
+	 *
+	 * Why this counter row sits alongside the frontier_live_would_
+	 * skip / frontier_live_would_skip_per_syscall[] block above:
+	 * those project the UNDISCRIMINATED LIVE-regime cooldown demote
+	 * mass (miss-streak alone, no spare lanes); this row projects
+	 * the DISCRIMINATED demote mass (miss-streak AND magnitude
+	 * floor AND no spare lane fires).  The (live_cool_would_skip /
+	 * live_would_skip) ratio reads off exactly how much over-cool
+	 * the discriminator removes -- the SHADOW_ONLY measurement the
+	 * ramp discipline needs before flipping COMBINED.
+	 *
+	 *  frontier_live_cool_candidates
+	 *      Cumulative: one bump per LIVE-regime miss-streak
+	 *      crossing (streak >= FRONTIER_LIVE_MISS_COOLDOWN) where
+	 *      the lifetime per_syscall_calls clears FRONTIER_LIVE_
+	 *      COOL_CMIN -- the candidate set the spare lanes get to
+	 *      peel from.  Sum of would_skip + spared_windowed +
+	 *      spared_arggen + spared_objproducer.
+	 *  frontier_live_cool_would_skip
+	 *      Cumulative: subset of candidates a live discriminator
+	 *      would actually demote (no spare lane fired).  Compare
+	 *      against the undiscriminated frontier_live_would_skip
+	 *      above for the over-cool reclaim.
+	 *  frontier_live_cool_spared_windowed
+	 *      Cumulative: subset of candidates spared because the per-
+	 *      syscall K-window frontier-edge ring (frontier_recent_
+	 *      count) is nonzero -- the bpf-class backstop the design
+	 *      note's §3.2 (c) names.  A syscall whose ring still
+	 *      holds edges is recently productive regardless of every
+	 *      other signal; the windowed lane wins over arggen /
+	 *      objproducer in the spare cascade.
+	 *  frontier_live_cool_spared_arggen
+	 *      Cumulative: subset of candidates spared because the per-
+	 *      syscall arg-gen-progress lane fired -- distinct CMP-
+	 *      insert landed since the streak's last reset or first-
+	 *      SUCCESS transition fired (errno_base == 0 AND errno_now
+	 *      > 0).  Catches futex / setxattrat mid-penetration of
+	 *      their struct args.  Same first-success-TRANSITION key
+	 *      the satcool sibling uses, NOT raw success-count delta,
+	 *      so a perpetually-succeeding syscall cannot spare itself
+	 *      by accumulation.
+	 *  frontier_live_cool_spared_objproducer
+	 *      Cumulative: subset of candidates spared because the
+	 *      syscall entry's ret_objtype is != OBJ_NONE -- an
+	 *      object-producer (openat / socket / memfd_create / mmap
+	 *      / io_uring_setup / bpf) whose payoff is delayed and
+	 *      credited downstream to the consumer of the produced
+	 *      object, not to the producer's own PC-edge yield.
+	 *      Evaluated AFTER spared_windowed and spared_arggen so a
+	 *      candidate that fires multiple lanes is attributed to
+	 *      the more specific signal first.
+	 *  frontier_live_cool_would_skip_per_syscall[MAX_NR_SYSCALL]
+	 *      Cumulative per-nr: bumped at the gate keyed on the
+	 *      candidate syscall being evaluated at the would_skip
+	 *      event.  The headline SHADOW_ONLY diagnostic: top
+	 *      entries should be the legitimately-barren getter set
+	 *      (gettid / sched_get_priority_max / sched_yield et al)
+	 *      with the productive set (bpf / io_uring_setup / openat
+	 *      / io_setup / futex / setxattrat) reading ~0; if those
+	 *      productive syscalls show meaningful would_skip mass the
+	 *      discriminator is mis-targeting and COMBINED MUST NOT be
+	 *      promoted.
+	 *  frontier_live_cool_would_spare_per_syscall[MAX_NR_SYSCALL]
+	 *      Cumulative per-nr: bumped at the gate keyed on the
+	 *      candidate syscall whenever ANY spare lane fired (the
+	 *      partition sum of spared_windowed / spared_arggen /
+	 *      spared_objproducer for this nr).  Compares directly
+	 *      against the per-syscall would_skip array above: a
+	 *      productive syscall the discriminator is sparing CORRECTLY
+	 *      reads as high would_spare AND zero would_skip; a getter
+	 *      the discriminator is COOLING correctly reads as zero
+	 *      would_spare AND nonzero would_skip; a productive syscall
+	 *      with nonzero would_skip indicates the discriminator is
+	 *      under-sparing it and the COMBINED ramp must wait.
+	 *
+	 * Observability only in this commit: the discriminator-
+	 * evaluation block is added inside the LIVE-regime miss
+	 * attribution path with NO live divergence wired, so live
+	 * selection in set_syscall_nr_coverage_frontier() and the
+	 * rotation-loop halving in frontier_window_advance stay byte-
+	 * identical to today regardless of which mode is selected.
+	 * COMBINED is reserved in the enum for a follow-up that wires
+	 * the live divergence after SHADOW_ONLY validates the demote
+	 * distribution against a real run.  Mirrors the off-by-
+	 * construction discipline the sibling frontier_satcool_*
+	 * counters above use. */
+	unsigned long frontier_live_cool_candidates;
+	unsigned long frontier_live_cool_would_skip;
+	unsigned long frontier_live_cool_spared_windowed;
+	unsigned long frontier_live_cool_spared_arggen;
+	unsigned long frontier_live_cool_spared_objproducer;
+	unsigned long frontier_live_cool_would_skip_per_syscall[MAX_NR_SYSCALL];
+	unsigned long frontier_live_cool_would_spare_per_syscall[MAX_NR_SYSCALL];
+
 	/* SHADOW-ONLY group-bias anti-lock-in damper accounting (gated by
 	 * frontier_group_antilock_mode != OFF AND --group-bias on the
 	 * fleet invocation -- the predicate state only advances under the

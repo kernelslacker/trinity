@@ -69,6 +69,20 @@ enum frontier_saturation_cooldown_mode frontier_saturation_cooldown_mode =
 	FRONTIER_SATURATION_COOLDOWN_MODE_OFF;
 
 /*
+ * LIVE-regime cooldown discriminator mode.  Default OFF keeps the
+ * LIVE-regime miss-attribution path byte-identical to today;
+ * SHADOW_ONLY enables the discriminator's shadow accounting (which
+ * spare lane fires per cool-eligible nr) without changing the live
+ * picker decision.  See the enum comment in include/strategy.h for
+ * the mode contract and the ramp discipline.  Param-settable via
+ * --frontier-live-cooldown-mode=off|shadow-only|combined.  Separate
+ * from the existing boolean --frontier-live-cooldown which gates the
+ * rotation-loop halving in frontier_window_advance.
+ */
+enum frontier_live_cooldown_mode frontier_live_cooldown_mode =
+	FRONTIER_LIVE_COOLDOWN_MODE_OFF;
+
+/*
  * Heuristic-arm group-bias anti-lock-in damper mode.  Default OFF
  * keeps the dispatch-step per-child bookkeeping (group-change streak
  * reset, fd-warm bump, coverage watermark advance) and the

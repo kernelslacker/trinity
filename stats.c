@@ -3703,6 +3703,92 @@ static void dump_live_cooldown_would_skip_per_syscall_top(void)
 }
 
 /*
+ * Top-N per-syscall distribution dumps for the SHADOW LIVE-regime
+ * cooldown discriminator.  Walks frontier_live_cool_would_skip_per_
+ * syscall[] and frontier_live_cool_would_spare_per_syscall[]
+ * separately so the operator can see, per-nr, both the projected
+ * demote mass the discriminator would produce AND the projected
+ * spare mass the discriminator is keeping out of the demote set.
+ * The headline SHADOW_ONLY ramp gate: would_skip top must
+ * concentrate on the legitimately-barren getter set (gettid /
+ * sched_get_priority_max) and would_spare top must concentrate on
+ * the productive set the over-cool was demoting (bpf /
+ * io_uring_setup / openat / io_setup / futex / setxattrat); if
+ * either distribution lands on the wrong axis COMBINED MUST NOT be
+ * promoted.
+ *
+ * Called from dump_stats_strategy_summary() alongside the aggregate
+ * frontier_live_cool_* scalar rows.  Render-only: never read by the
+ * LIVE accept site or the picker.  Mode == OFF returns before any
+ * output so the default-off behaviour stays byte-identical to today;
+ * the writer at the LIVE-regime miss attribution path also early-
+ * returns on OFF so the array stays empty there too.  Header +
+ * total are printed even when the array is empty so an operator
+ * running a short session can confirm the wiring fired without
+ * having to grep for absence, matching the satcool / live cooldown
+ * sibling discipline.
+ *
+ * The biarch table-scan choice mirrors the satcool / live cooldown
+ * siblings: under biarch only the 64-bit table is walked, matching
+ * the slot-alias shape the LIVE-regime miss writer site uses.
+ */
+#define LIVE_COOL_TOPN 30
+
+static void dump_live_cool_per_syscall_top(const unsigned long *arr,
+					   const char *label)
+{
+	struct {
+		unsigned int nr;
+		unsigned long count;
+	} top[LIVE_COOL_TOPN];
+	unsigned int top_count = 0;
+	unsigned long total = 0;
+	unsigned int nr_to_scan;
+	unsigned int i;
+	int j;
+	enum frontier_live_cooldown_mode mode =
+		__atomic_load_n(&frontier_live_cooldown_mode,
+				__ATOMIC_RELAXED);
+
+	if (mode == FRONTIER_LIVE_COOLDOWN_MODE_OFF)
+		return;
+
+	nr_to_scan = biarch ? max_nr_64bit_syscalls : max_nr_syscalls;
+	if (nr_to_scan > MAX_NR_SYSCALL)
+		nr_to_scan = MAX_NR_SYSCALL;
+
+	memset(top, 0, sizeof(top));
+
+	for (i = 0; i < nr_to_scan; i++) {
+		unsigned long c = arr[i];
+
+		if (c == 0)
+			continue;
+
+		total += c;
+
+		for (j = (int)top_count; j > 0 && c > top[j - 1].count; j--) {
+			if (j < LIVE_COOL_TOPN)
+				top[j] = top[j - 1];
+		}
+		if (j < LIVE_COOL_TOPN) {
+			top[j].nr = i;
+			top[j].count = c;
+			if (top_count < LIVE_COOL_TOPN)
+				top_count++;
+		}
+	}
+
+	output(0, "%s per-syscall top %u:\n", label, top_count);
+	for (j = 0; j < (int)top_count; j++) {
+		const char *sname = print_syscall_name(top[j].nr, false);
+
+		output(0, "  %s=%lu\n", sname, top[j].count);
+	}
+	output(0, "%s per-syscall total: %lu\n", label, total);
+}
+
+/*
  * Spike detector for parent_stats.post_handler_corrupt_ptr.  Called once
  * per main_loop tick from the parent.  Emits a single-line WARNING when
  * the counter advances by at least CORRUPT_PTR_SPIKE_THRESHOLD over a
@@ -4158,6 +4244,24 @@ static const struct {
 	  offsetof(struct stats_s, frontier_satcool_spared_arggen) },
 	{ "frontier_satcool_spared_objproducer",
 	  offsetof(struct stats_s, frontier_satcool_spared_objproducer) },
+	/* SHADOW-ONLY LIVE-regime cooldown discriminator scalars (gated
+	 * by --frontier-live-cooldown-mode != off).  Sibling of the
+	 * frontier_satcool_* scalars above; this row projects the
+	 * DISCRIMINATED LIVE-regime cooldown demote mass (miss-streak
+	 * AND magnitude floor AND no spare lane fires).  Compare against
+	 * the undiscriminated frontier_live_would_skip projection for
+	 * the over-cool the discriminator removes -- the SHADOW_ONLY
+	 * ramp gate. */
+	{ "frontier_live_cool_candidates",
+	  offsetof(struct stats_s, frontier_live_cool_candidates) },
+	{ "frontier_live_cool_would_skip",
+	  offsetof(struct stats_s, frontier_live_cool_would_skip) },
+	{ "frontier_live_cool_spared_windowed",
+	  offsetof(struct stats_s, frontier_live_cool_spared_windowed) },
+	{ "frontier_live_cool_spared_arggen",
+	  offsetof(struct stats_s, frontier_live_cool_spared_arggen) },
+	{ "frontier_live_cool_spared_objproducer",
+	  offsetof(struct stats_s, frontier_live_cool_spared_objproducer) },
 	/* SHADOW-ONLY LIVE-regime cooldown projections, paired with
 	 * frontier_live_miss_streak_per_syscall[].  Candidates is edge-
 	 * triggered at FRONTIER_LIVE_MISS_COOLDOWN crossings; would_skip is
@@ -10369,6 +10473,40 @@ static void dump_stats_strategy_summary(void)
 	stat_row("strategy", "frontier_live_miss_cooldown_threshold",
 		 FRONTIER_LIVE_MISS_COOLDOWN);
 	dump_live_cooldown_would_skip_per_syscall_top();
+	/* SHADOW-ONLY LIVE-regime cooldown discriminator (gated by
+	 * --frontier-live-cooldown-mode != off).  Sibling block to the
+	 * undiscriminated frontier_live_cooldown_candidates / frontier_
+	 * live_would_skip rows above; this row projects the DISCRIMINATED
+	 * LIVE-regime demote mass after the spare lanes peel productive
+	 * syscalls out of the cool set.  Compare (live_cool_would_skip /
+	 * live_would_skip) for the over-cool fraction the discriminator
+	 * removes.  The low live floor (FRONTIER_LIVE_COOL_CMIN) is
+	 * emitted alongside so the operator can interpret the candidate
+	 * count without consulting the source, matching the
+	 * frontier_live_miss_cooldown_threshold row above. */
+	if (shm->stats.frontier_live_cool_candidates)
+		stat_row("strategy", "frontier_live_cool_candidates",
+			 shm->stats.frontier_live_cool_candidates);
+	if (shm->stats.frontier_live_cool_would_skip)
+		stat_row("strategy", "frontier_live_cool_would_skip",
+			 shm->stats.frontier_live_cool_would_skip);
+	if (shm->stats.frontier_live_cool_spared_windowed)
+		stat_row("strategy", "frontier_live_cool_spared_windowed",
+			 shm->stats.frontier_live_cool_spared_windowed);
+	if (shm->stats.frontier_live_cool_spared_arggen)
+		stat_row("strategy", "frontier_live_cool_spared_arggen",
+			 shm->stats.frontier_live_cool_spared_arggen);
+	if (shm->stats.frontier_live_cool_spared_objproducer)
+		stat_row("strategy", "frontier_live_cool_spared_objproducer",
+			 shm->stats.frontier_live_cool_spared_objproducer);
+	stat_row("strategy", "frontier_live_cool_cmin",
+		 FRONTIER_LIVE_COOL_CMIN);
+	dump_live_cool_per_syscall_top(
+		shm->stats.frontier_live_cool_would_skip_per_syscall,
+		"frontier_live_cool_would_skip");
+	dump_live_cool_per_syscall_top(
+		shm->stats.frontier_live_cool_would_spare_per_syscall,
+		"frontier_live_cool_would_spare");
 	/* Did-decay observability counter for the --frontier-live-cooldown
 	 * lever.  One bump per (nr, rotation) where the early ring-decay
 	 * halved a non-zero cached sum.  Read alongside
