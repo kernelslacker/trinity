@@ -1,5 +1,4 @@
 #include <errno.h>
-#include <fcntl.h>
 #include <inttypes.h>
 #include <stdint.h>
 #include <unistd.h>
@@ -7,7 +6,6 @@
 #include <sys/prctl.h>
 #include <sys/ptrace.h>
 #include <sys/resource.h>
-#include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/wait.h>
