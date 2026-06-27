@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(timerfd_gettime, int, ufd, struct itimerspec __user *, otmr)
  */
-#include <string.h>
 #include <sys/timerfd.h>
 #include "sanitise.h"
 #include "shm.h"
