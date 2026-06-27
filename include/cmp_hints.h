@@ -408,6 +408,55 @@ enum cmp_hyp_live_inject_reason {
 };
 
 /*
+ * RANGE-identity discriminators.  Carried per-entry on CMP_HYP_RANGE
+ * hypotheses so dedup keys the entry by an inferred logical-probe
+ * identity rather than by literal compare operands -- value churn at
+ * any single comparison site, and multiple sites that observe the same
+ * logical range, both collapse to ONE entry.  Zero for non-RANGE
+ * kinds; their dedup keys are unchanged.
+ *
+ * KCOV records only operand values, NOT the compare OPERATOR, so
+ * direction is INFERRED heuristically from the accumulated cluster
+ * (exemplar position relative to lo/hi).  CMP_RANGE_DIR_UNKNOWN is
+ * the honest answer when no clear edge signal exists -- an
+ * un-inferable probe is keyed under UNKNOWN rather than force-fit to
+ * a guessed direction.
+ */
+enum cmp_range_direction {
+	CMP_RANGE_DIR_UNKNOWN = 0,
+	CMP_RANGE_DIR_ASCENDING,	/* most-recent exemplar at the high end */
+	CMP_RANGE_DIR_DESCENDING,	/* most-recent exemplar at the low end */
+};
+
+/*
+ * Signedness is part of identity (same discipline as the
+ * discriminated-arg width/sign handling): a 4-byte signed range whose
+ * bounds straddle the signed/unsigned boundary is NOT the same probe
+ * as an 8-byte unsigned range with the same numeric bounds.  Inferred
+ * from whether either bound has the sign bit of its width set.
+ */
+enum cmp_range_signedness {
+	CMP_RANGE_SIGN_UNSIGNED = 0,
+	CMP_RANGE_SIGN_SIGNED,
+};
+
+/*
+ * Relation class describes how the kernel-side compare uses the
+ * range.  KCOV records only matching observed operands, so every
+ * cluster the observer accumulates is INSIDE by construction; the
+ * other classes ship for the future consumer-side probe ladder
+ * (outside / single-bound / wrap-around arms) and stay populated
+ * by later inference passes.
+ */
+enum cmp_range_relation {
+	CMP_RANGE_REL_INSIDE = 0,	/* value lies within [lo, hi] */
+	CMP_RANGE_REL_OUTSIDE,
+	CMP_RANGE_REL_BOUND,
+	CMP_RANGE_REL_WRAP,
+	CMP_RANGE_REL_UNKNOWN,
+};
+
+/*
  * Common shape across every hypothesis kind.  Fields not relevant to a
  * given kind are zero (e.g. mask is unused by CMP_HYP_EXACT, lo/hi by
  * CMP_HYP_BITMASK).  Counters are saturating uint64_t for shadow-phase
@@ -418,6 +467,10 @@ enum cmp_hyp_live_inject_reason {
  * drops it on load (the kallsyms fingerprint on the on-disk file
  * already invalidates IP keys across rebuilds), so consumers must
  * tolerate a zero ip on a warm-started entry.
+ *
+ * range_direction / range_signedness / range_relation are populated
+ * only for CMP_HYP_RANGE entries and participate in their dedup key;
+ * for every other kind they are zero and ignored.
  */
 struct cmp_hypothesis {
 	unsigned int nr;
@@ -426,7 +479,9 @@ struct cmp_hypothesis {
 	uint8_t kind;			/* enum cmp_hypothesis_kind */
 	uint8_t state;			/* enum cmp_hypothesis_state */
 	uint8_t score_bucket;
-	uint8_t pad[3];
+	uint8_t range_direction;	/* enum cmp_range_direction (RANGE only) */
+	uint8_t range_signedness;	/* enum cmp_range_signedness (RANGE only) */
+	uint8_t range_relation;		/* enum cmp_range_relation (RANGE only) */
 	uint64_t cmp_ip;
 	uint64_t lo;
 	uint64_t hi;

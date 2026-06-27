@@ -412,6 +412,91 @@ static struct cmp_hypothesis *cmp_hyp_find_exact(struct cmp_hyp_pool *pool,
 }
 
 /*
+ * Infer the RANGE-identity discriminators (direction / signedness /
+ * relation-class) from an ENUM_FAMILY cluster summary at the same
+ * (cmp_ip, width).  KCOV does NOT expose the kernel-side compare
+ * operator -- direction is APPROXIMATE.  The heuristic: if the
+ * most-recent exemplar sits at the high end of the cluster, treat the
+ * probe as ASCENDING (kernel keeps comparing against a rising bound);
+ * at the low end, DESCENDING; otherwise UNKNOWN so an un-inferable
+ * probe is bucketed honestly rather than force-fit to a guess.
+ *
+ * Signedness: a bound whose sign bit (relative to its width) is set
+ * cannot legitimately share identity with an unsigned probe that
+ * happens to have the same numeric value -- a u8 hi=0xFF and an s8
+ * hi=-1 are different probes.  Conservative classifier: SIGNED if
+ * either bound has the width's sign bit set, else UNSIGNED.
+ *
+ * Relation: only INSIDE is reachable from the observer side -- KCOV
+ * gives us matching operand values, not edge-rejection events.  The
+ * OUTSIDE / BOUND / WRAP buckets exist for the future consumer-side
+ * probe ladder and stay zero here.
+ */
+static void cmp_hyp_range_identity_infer(uint64_t lo, uint64_t hi,
+					 uint8_t width,
+					 const struct cmp_hypothesis *src,
+					 uint8_t *out_dir, uint8_t *out_sign,
+					 uint8_t *out_rel)
+{
+	uint64_t sign_bit;
+
+	if (src != NULL && src->seen_count >= 3 && hi > lo) {
+		uint64_t ex = src->exemplar;
+
+		if (ex == hi)
+			*out_dir = CMP_RANGE_DIR_ASCENDING;
+		else if (ex == lo)
+			*out_dir = CMP_RANGE_DIR_DESCENDING;
+		else
+			*out_dir = CMP_RANGE_DIR_UNKNOWN;
+	} else {
+		*out_dir = CMP_RANGE_DIR_UNKNOWN;
+	}
+
+	sign_bit = 1ULL << (width * 8U - 1U);
+	if ((lo & sign_bit) != 0 || (hi & sign_bit) != 0)
+		*out_sign = CMP_RANGE_SIGN_SIGNED;
+	else
+		*out_sign = CMP_RANGE_SIGN_UNSIGNED;
+
+	*out_rel = CMP_RANGE_REL_INSIDE;
+}
+
+/*
+ * RANGE dedup by inferred identity, NOT cmp_ip: two comparison sites
+ * that observe the same logical range probe (same bounds, same
+ * inferred direction, same width / signedness / relation-class)
+ * collapse to ONE entry, and value churn at a single site that does
+ * not shift the bounds folds into the same slot.  Bounds are part of
+ * identity rather than payload, so a probe whose bounds drift even
+ * one step apart is keyed as a distinct hypothesis.
+ */
+static struct cmp_hypothesis *
+cmp_hyp_find_range_by_identity(struct cmp_hyp_pool *pool, uint64_t lo,
+			       uint64_t hi, uint8_t width, uint8_t dir,
+			       uint8_t sign, uint8_t rel)
+{
+	unsigned int i, n = pool->count;
+
+	if (n > CMP_HYP_PER_SYSCALL)
+		return NULL;
+	for (i = 0; i < n; i++) {
+		struct cmp_hypothesis *h = &pool->entries[i];
+
+		if (h->kind != CMP_HYP_RANGE || h->width != width)
+			continue;
+		if (h->lo != lo || h->hi != hi)
+			continue;
+		if (h->range_direction != dir
+		    || h->range_signedness != sign
+		    || h->range_relation != rel)
+			continue;
+		return h;
+	}
+	return NULL;
+}
+
+/*
  * Allocate a fresh hypothesis slot honouring the per-kind sub-cap and
  * the per-syscall total cap.  Returns NULL when either is exhausted
  * and bumps the matching kcov_shm saturation counter so the rejection
@@ -596,20 +681,54 @@ void cmp_hyp_observe(unsigned int nr, bool do32, unsigned long cmp_ip,
 	 * hi+1, plus exponential probing when the high side is unknown) is
 	 * implicit in {lo, hi}; the consumer derives it at pick time so the
 	 * shadow store does not need to materialise it.
+	 *
+	 * Dedup key is an inferred RANGE-IDENTITY tuple {lo, hi, direction,
+	 * width, signedness, relation-class}, NOT cmp_ip.  Two comparison
+	 * sites that produce the same logical range probe -- regardless of
+	 * the literal constants the kernel happened to compare against --
+	 * collapse to ONE entry.  Width and signedness are part of the
+	 * identity (per the discriminated-arg discipline): a u32 range and
+	 * a u64 range with the same numeric bounds are not the same probe.
+	 * Direction is APPROXIMATE -- KCOV cannot recover the operator --
+	 * and CMP_RANGE_DIR_UNKNOWN owns un-inferable probes so they are
+	 * keyed honestly instead of force-fit to a guess.
+	 *
+	 * Bound math safety: the > 32 / <= early-bail above guarantees
+	 * hi > lo at the subtraction site; the second-line check below
+	 * defends against a torn read of an in-flight ENUM entry under
+	 * the RELAXED reader discipline the rest of the shadow path uses.
 	 */
 	if (e == NULL || e->seen_count < 3 || e->hi <= e->lo
 	    || (e->hi - e->lo) > 32) {
 		goto boundary;
 	}
-	h = cmp_hyp_find(pool, CMP_HYP_RANGE, cmp_ip, width);
-	if (h == NULL)
-		h = cmp_hyp_alloc(pool, CMP_HYP_RANGE, nr, do32, cmp_ip, width);
-	if (h != NULL) {
-		h->lo = e->lo;
-		h->hi = e->hi;
-		h->exemplar = e->exemplar;
-		h->seen_count = e->seen_count;
-		h->last_used_generation = generation;
+	{
+		uint64_t r_lo = e->lo, r_hi = e->hi;
+		uint8_t dir, sign, rel;
+
+		if (r_hi < r_lo)
+			goto boundary;
+
+		cmp_hyp_range_identity_infer(r_lo, r_hi, width, e,
+					     &dir, &sign, &rel);
+		h = cmp_hyp_find_range_by_identity(pool, r_lo, r_hi, width,
+						   dir, sign, rel);
+		if (h == NULL) {
+			h = cmp_hyp_alloc(pool, CMP_HYP_RANGE, nr, do32,
+					  cmp_ip, width);
+			if (h != NULL) {
+				h->range_direction = dir;
+				h->range_signedness = sign;
+				h->range_relation = rel;
+				h->lo = r_lo;
+				h->hi = r_hi;
+			}
+		}
+		if (h != NULL) {
+			h->exemplar = e->exemplar;
+			h->seen_count = e->seen_count;
+			h->last_used_generation = generation;
+		}
 	}
 
 boundary:
