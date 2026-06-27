@@ -900,6 +900,11 @@ void cmp_hyp_credit_outcome(unsigned int nr, bool do32, unsigned long cmp_ip,
 			bucket = 7;
 		__atomic_store_n(&h->score_bucket, bucket, __ATOMIC_RELAXED);
 
+		if (kcov_shm != NULL)
+			__atomic_fetch_add(
+				&kcov_shm->cmp_hyp_score_bucket_census[bucket],
+				1UL, __ATOMIC_RELAXED);
+
 		if (kcov_shm != NULL && h->kind < CMP_HYP_KIND_NR) {
 			if (would_promote)
 				__atomic_fetch_add(
