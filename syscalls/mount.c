@@ -3,9 +3,11 @@
  *	 char __user *, type, unsigned long, flags, void __user *, data)
  */
 
+#include <dirent.h>
 #include <errno.h>
 #include <linux/fs.h>
 #include <linux/mount.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -56,9 +58,50 @@ static void cleanup_sacrificial_mount_paths(void)
 		(void) rmdir(sacrificial_mount_paths[i]);
 }
 
+/*
+ * Sweep /tmp for stale trinity-mount-<pid>-* dirs whose owning pid is gone.
+ * atexit only catches the clean-exit path -- SIGKILL, OOM and bare _exit()
+ * all skip it, so each abnormal trinity death leaks up to
+ * NR_SACRIFICIAL_MOUNT_PATHS dirs.  Self-heal on the next startup by
+ * rmdir'ing only the dirs whose pid no longer exists (kill(pid, 0) == ESRCH).
+ * Skip live pids (some other trinity is using them) and skip our own pid
+ * (we are about to mkdir those).
+ */
+static void sweep_dead_sacrificial_mount_paths(void)
+{
+	DIR *dir;
+	struct dirent *de;
+	pid_t self = getpid();
+
+	dir = opendir("/tmp");
+	if (!dir)
+		return;
+
+	while ((de = readdir(dir)) != NULL) {
+		int pid;
+		unsigned int idx;
+		char path[8 + 256];
+
+		if (sscanf(de->d_name, "trinity-mount-%d-%u", &pid, &idx) != 2)
+			continue;
+		if (pid <= 0 || pid == (int) self)
+			continue;
+		if (kill(pid, 0) == 0)
+			continue;
+		if (errno != ESRCH)
+			continue;
+		snprintf(path, sizeof(path), "/tmp/%s", de->d_name);
+		(void) rmdir(path);
+	}
+
+	closedir(dir);
+}
+
 static void __attribute__((constructor)) make_sacrificial_mount_paths(void)
 {
 	unsigned int i;
+
+	sweep_dead_sacrificial_mount_paths();
 
 	for (i = 0; i < NR_SACRIFICIAL_MOUNT_PATHS; i++) {
 		snprintf(sacrificial_mount_paths[i],
