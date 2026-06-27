@@ -6957,6 +6957,21 @@ static const unsigned long setsockopt_sctp_prim_optnames[] = {
 };
 #endif
 
+/*
+ * futex_timeout_ops: the op subset where a4 (utime) is a struct
+ * timespec pointer rather than the val2 integer overload.  Mirrors
+ * the kernel's futex_cmd_has_timeout() switch (kernel/futex/syscalls.c).
+ * Matched against rec->a2 masked by FUTEX_CMD_MASK so the PRIVATE /
+ * CLOCK_REALTIME / ROBUST flag bits don't perturb the dispatch.
+ */
+static const unsigned long futex_timeout_ops[] = {
+	FUTEX_WAIT,
+	FUTEX_LOCK_PI,
+	FUTEX_WAIT_BITSET,
+	FUTEX_WAIT_REQUEUE_PI,
+	FUTEX_LOCK_PI2,
+};
+
 /* ------------------------------------------------------------------ */
 /* Syscall -> struct arg mapping                                        */
 /* ------------------------------------------------------------------ */
@@ -7176,11 +7191,29 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 * a5 is the INPUT timeout timespec.  Attribution-only: the bespoke
 	 * sanitise_futex_wait (stamps the slot via get_writable_struct)
 	 * continues to own the live fill; this row only lets schema-aware
-	 * CMP attribution name the tv_sec / tv_nsec fields.  Plain futex()
-	 * is intentionally NOT registered: its a4 is op-multiplexed and is
-	 * a timespec* only for FUTEX_WAIT-family ops, val2 otherwise.
+	 * CMP attribution name the tv_sec / tv_nsec fields.
 	 */
 	{ "futex_wait",		5, &struct_catalog[SC_TIMESPEC] },
+	/*
+	 * futex(u32 *uaddr, int op, u32 val, struct timespec *utime,
+	 *       u32 *uaddr2, u32 val3)
+	 * a4 (utime) is a struct timespec pointer only for the WAIT-family
+	 * and LOCK_PI / LOCK_PI2 ops (kernel: futex_cmd_has_timeout); for
+	 * every other cmd it carries the val2 integer overload instead.
+	 * Discriminate on a2 masked by FUTEX_CMD_MASK so the row matches
+	 * only the timeout-taking ops, mirroring the kernel's own
+	 * `cmd = op & FUTEX_CMD_MASK` dispatch.  Attribution-only: the
+	 * bespoke sanitise_futex still owns the a4 fill via &utime_clamp;
+	 * this row only lets schema-aware CMP attribution name the
+	 * tv_sec / tv_nsec fields for the matching ops.
+	 */
+	{
+		"futex", 4, &struct_catalog[SC_TIMESPEC],
+		.discrim_arg_idx	= 2,
+		.discrim_mask		= FUTEX_CMD_MASK,
+		.discrim_values		= futex_timeout_ops,
+		.num_discrim_values	= ARRAY_SIZE(futex_timeout_ops),
+	},
 	/*
 	 * futex_waitv(struct futex_waitv *waiters, unsigned int nr_futexes,
 	 *             unsigned int flags, struct timespec *timeout,
