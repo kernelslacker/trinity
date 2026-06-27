@@ -3625,6 +3625,84 @@ static void dump_satcool_would_skip_per_syscall_top(void)
 }
 
 /*
+ * Top-N per-syscall distribution dump for the SHADOW LIVE-regime
+ * cooldown.  Walks frontier_live_would_skip_per_syscall[] and emits
+ * the highest-bumping syscalls in descending order followed by a
+ * trailing total.  Called from dump_stats_strategy_summary() alongside
+ * the aggregate frontier_live_cooldown_candidates / frontier_live_
+ * would_skip rows so the operator can see which syscalls drive the
+ * LIVE-regime projection -- the bigger reclaim lever, since the LIVE
+ * frontier regime carries far more pick volume than the silent regime
+ * the satcool sibling above attributes.
+ *
+ * Render-only: never read by the LIVE accept site or the picker.
+ * Unlike the satcool sibling there is no mode flag to gate on -- the
+ * writer at the LIVE-regime miss attribution path bumps the per-
+ * syscall counter (and the scalar it mirrors) unconditionally, so the
+ * dump emits on every run; the header + total are always printed even
+ * when the array is empty so an operator running a short or under-
+ * populated session can confirm the wiring fired without having to
+ * grep for absence, matching the satcool sibling's discipline.
+ *
+ * The biarch table-scan choice mirrors the satcool sibling and the
+ * other per-syscall top-N emitters: under biarch only the 64-bit
+ * table is walked, matching the slot-alias shape the LIVE-regime
+ * miss writer site uses.
+ */
+#define LIVE_COOLDOWN_TOPN 30
+
+static void dump_live_cooldown_would_skip_per_syscall_top(void)
+{
+	struct {
+		unsigned int nr;
+		unsigned long count;
+	} top[LIVE_COOLDOWN_TOPN];
+	unsigned int top_count = 0;
+	unsigned long total = 0;
+	unsigned int nr_to_scan;
+	unsigned int i;
+	int j;
+
+	nr_to_scan = biarch ? max_nr_64bit_syscalls : max_nr_syscalls;
+	if (nr_to_scan > MAX_NR_SYSCALL)
+		nr_to_scan = MAX_NR_SYSCALL;
+
+	memset(top, 0, sizeof(top));
+
+	for (i = 0; i < nr_to_scan; i++) {
+		unsigned long c =
+			shm->stats.frontier_live_would_skip_per_syscall[i];
+
+		if (c == 0)
+			continue;
+
+		total += c;
+
+		/* Insertion sort, descending by count, capped at LIVE_COOLDOWN_TOPN. */
+		for (j = (int)top_count; j > 0 && c > top[j - 1].count; j--) {
+			if (j < LIVE_COOLDOWN_TOPN)
+				top[j] = top[j - 1];
+		}
+		if (j < LIVE_COOLDOWN_TOPN) {
+			top[j].nr = i;
+			top[j].count = c;
+			if (top_count < LIVE_COOLDOWN_TOPN)
+				top_count++;
+		}
+	}
+
+	output(0, "frontier_live_would_skip per-syscall top %u:\n",
+	       top_count);
+	for (j = 0; j < (int)top_count; j++) {
+		const char *sname = print_syscall_name(top[j].nr, false);
+
+		output(0, "  %s=%lu\n", sname, top[j].count);
+	}
+	output(0, "frontier_live_would_skip per-syscall total: %lu\n",
+	       total);
+}
+
+/*
  * Spike detector for parent_stats.post_handler_corrupt_ptr.  Called once
  * per main_loop tick from the parent.  Emits a single-line WARNING when
  * the counter advances by at least CORRUPT_PTR_SPIKE_THRESHOLD over a
@@ -10242,6 +10320,7 @@ static void dump_stats_strategy_summary(void)
 			 shm->stats.frontier_live_would_skip);
 	stat_row("strategy", "frontier_live_miss_cooldown_threshold",
 		 FRONTIER_LIVE_MISS_COOLDOWN);
+	dump_live_cooldown_would_skip_per_syscall_top();
 	/* Did-decay observability counter for the --frontier-live-cooldown
 	 * lever.  One bump per (nr, rotation) where the early ring-decay
 	 * halved a non-zero cached sum.  Read alongside
