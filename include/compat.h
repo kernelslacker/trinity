@@ -1076,6 +1076,12 @@ struct sockaddr_nfc {
 #ifndef SECCOMP_SET_MODE_FILTER
 #define SECCOMP_SET_MODE_FILTER		1
 #endif
+/* SECCOMP_MODE_FILTER (added 3.5) is the mode value passed to
+ * prctl(PR_SET_SECCOMP, mode, ...) to install a classic-BPF filter
+ * program; the uapi value is 2. */
+#ifndef SECCOMP_MODE_FILTER
+#define SECCOMP_MODE_FILTER		2
+#endif
 
 /* linux/rds.h */
 #ifndef RDS_CANCEL_SENT_TO
