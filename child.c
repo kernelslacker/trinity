@@ -2,7 +2,6 @@
  * Each process that gets forked runs this code.
  */
 
-#include <fcntl.h>
 #include <errno.h>
 #include <malloc.h>
 #include <signal.h>
@@ -13,8 +12,6 @@
 #include <sched.h>
 #include <sys/mount.h>
 #include <sys/personality.h>
-#include <sys/stat.h>
-#include <sys/time.h>
 #include <sys/resource.h>
 #include <sys/prctl.h>
 #include <sys/syscall.h>
