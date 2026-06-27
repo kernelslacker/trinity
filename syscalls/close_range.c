@@ -244,6 +244,16 @@ static void sanitise_close_range(struct syscallrecord *rec)
 			} else {
 				rec->a2 = (unsigned long) lowest - 1UL;
 			}
+			/* Visible counter so the operator can SEE the guard
+			 * firing -- a denominator for the first_ebadf=...:
+			 * closer=nr<close_range>[/prot] diag readings.  Zero
+			 * means the picker never landed on a range covering a
+			 * protected fd; non-zero means the guard truncated N
+			 * calls and the kernel never saw the protected slot. */
+			if (kcov_shm != NULL)
+				__atomic_fetch_add(
+					&kcov_shm->pc_diag.close_range_protect_truncate_count,
+					1UL, __ATOMIC_RELAXED);
 		}
 	}
 
