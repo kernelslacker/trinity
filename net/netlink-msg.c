@@ -35,6 +35,7 @@
 #include "netlink-nfnl-subsystems.h"
 #include "random.h"
 #include "shm.h"
+#include "text-payloads.h"
 #include "trinity.h"
 #include "rnd.h"
 
@@ -1162,6 +1163,7 @@ static size_t spec_payload_len(const struct nla_attr_spec *spec)
 	case NLA_KIND_U64:	return 8;
 	case NLA_KIND_FLAG:	return 0;
 	case NLA_KIND_STRING:
+	case NLA_KIND_STRING_CPULIST:
 	case NLA_KIND_BINARY:
 		if (spec->max_len > 4)
 			return RAND_RANGE(4, spec->max_len);
@@ -1191,6 +1193,11 @@ static void spec_fill_payload(unsigned char *p, size_t len,
 
 		for (i = 0; i + 1 < len; i++)
 			p[i] = 'a' + (rnd_modulo_u32(26));
+		p[len - 1] = '\0';
+	} else if (spec->kind == NLA_KIND_STRING_CPULIST) {
+		gen_cpu_list_string((char *)p, (unsigned int)len);
+		/* Force NUL termination inside the on-wire payload so
+		 * cpulist_parse() can't run past the attribute. */
 		p[len - 1] = '\0';
 	} else {
 		generate_rand_bytes(p, len);

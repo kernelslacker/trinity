@@ -26,6 +26,12 @@ enum nla_kind {
 	 * fuzz budget there is wasted work that only flips -EINVAL on
 	 * the validate side. */
 	NLA_KIND_BINARY_FIXED2,
+	/* Sized the same way as NLA_KIND_STRING, but filled by the
+	 * cpu-list / bitmap-list generator (rand/text-payloads.c) so the
+	 * kernel-side cpulist_parse() / bitmap_parselist() path actually
+	 * sees plausibly-shaped input.  Use for attrs the kernel feeds
+	 * to those parsers — e.g. taskstats REGISTER_CPUMASK. */
+	NLA_KIND_STRING_CPULIST,
 };
 
 struct nla_attr_spec {
