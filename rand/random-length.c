@@ -1,9 +1,18 @@
 #include <stdlib.h>
 
 #include "arch.h"	// page_size
+#include "arg-len-semantics.h"
 #include "sanitise.h"
 #include "random.h"
 #include "rnd.h"
+
+/*
+ * Default OFF.  Until --arg-len-semantics flips this ON, gen_arg_len
+ * stays on its historical get_len() path and never enters
+ * get_len_relative(), so the per-call arg stream is byte-identical to
+ * a build without this knob.
+ */
+enum arg_len_semantics_mode arg_len_semantics_mode = ARG_LEN_SEMANTICS_OFF;
 
 unsigned long get_len(void)
 {
@@ -59,4 +68,67 @@ unsigned long get_len(void)
 	}
 
 	return i;
+}
+
+/*
+ * Object-size-relative length draw, capped at @objsize so a kernel-
+ * WRITES-buffer caller (read / pread / recv / ...) cannot pick a length
+ * that would make the kernel scribble past the writable region into
+ * the abutting page.
+ *
+ * Half the time the helper defers to get_len() so the broader random
+ * and sizeof coverage (UINT_MAX masks, sizeof(int/long), page_size
+ * boundary, get_boundary_value's full table) is preserved alongside
+ * the new object-edge boundary class.  When the relative arm fires it
+ * picks from {0, 1, objsize, objsize-1, objsize/2, min(page_size +/- 1,
+ * objsize)}: every value <= objsize, so the write-direction safety
+ * invariant in the caller's gen_arg_len comment holds by construction.
+ *
+ * The kernel checks length against the buffer the syscall describes
+ * (read's writable count, write's readable extent), so a relative draw
+ * here gives the kernel a boundary value it actually branches on,
+ * which the size-blind get_len() distribution rarely hits.
+ */
+unsigned long get_len_relative(unsigned long objsize)
+{
+	if (objsize == 0)
+		return get_len();
+
+	/* Half the time blend in the wider get_len() distribution (UINT_MAX
+	 * masks, sizeof(int/long), get_boundary_value's full table) so the
+	 * broader coverage is not lost.  Clamp to objsize so the safety
+	 * invariant holds: even on the fallback arm a kernel-WRITES-buffer
+	 * caller cannot pick a length that lets the kernel scribble past
+	 * the writable region. */
+	if (RAND_BOOL()) {
+		unsigned long v = get_len();
+
+		return v > objsize ? objsize : v;
+	}
+
+	switch (rnd_modulo_u32(8)) {
+	case 0:
+		return 0;
+	case 1:
+		return 1;
+	case 2:
+		return objsize;
+	case 3:
+		return objsize - 1;
+	case 4:
+		return objsize / 2;
+	case 5:
+		if (page_size > 0 && objsize >= page_size)
+			return page_size;
+		return objsize;
+	case 6:
+		if (page_size > 0 && objsize >= page_size + 1)
+			return page_size + 1;
+		return objsize;
+	case 7:
+		if (page_size > 1 && objsize >= page_size - 1)
+			return page_size - 1;
+		return objsize;
+	}
+	return objsize;
 }

@@ -58,6 +58,14 @@ enum iov_direction {
 };
 struct iovec * alloc_iovec(unsigned int num, enum iov_direction dir) __must_check;
 unsigned long get_len(void);
+/*
+ * Object-size-relative length draw.  Returns a value from a boundary
+ * set capped by objsize so a kernel-WRITES-buffer caller cannot ask
+ * the kernel to scribble past the writable region.  objsize == 0 is
+ * "no resolvable companion size", and the helper falls back to plain
+ * get_len() so the caller still produces a length value.
+ */
+unsigned long get_len_relative(unsigned long objsize);
 unsigned int get_pid(void);
 pid_t get_random_pid_from_pool(void);
 void register_returned_pid(pid_t pid);

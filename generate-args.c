@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "arch.h"
+#include "arg-len-semantics.h"
 #include "argtype-ops.h"
 #ifdef USE_BPF
 #include "bpf.h"
@@ -754,11 +755,53 @@ static unsigned long gen_arg_typed_fd(struct syscallentry *entry,
 	return (unsigned long) fd;
 }
 
-static unsigned long gen_arg_len(struct syscallentry *entry __unused__,
-				 struct syscallrecord *rec __unused__,
-				 unsigned int argnum __unused__)
+/*
+ * ARG_LEN generator.  Default-OFF: gen_arg_len calls get_len() verbatim
+ * and draws no extra RNG, so the per-call arg stream is byte-identical
+ * to a build without --arg-len-semantics.
+ *
+ * ON: if the immediately-preceding slot is ARG_ADDRESS / ARG_NON_NULL_
+ * ADDRESS, look up the writable extent at that address in the shared-
+ * region tracker and draw an object-size-relative boundary length
+ * capped by that extent.  The adjacency rule is the op-discriminator:
+ * a syscall whose ARG_LEN slot follows a buffer in its signature
+ * (read / pread / write / pwrite / send / recv / ...) pairs cleanly;
+ * a syscall whose ARG_LEN is in a different position (futex op-
+ * multiplexed semantics, ioctl-style scalar) falls through to the
+ * size-agnostic get_len() path because the preceding slot is not a
+ * buffer.  No companion / no resolvable region size -> same fallback,
+ * so the helper never produces a length larger than the writable
+ * region (the kernel-WRITES-buffer safety class).
+ */
+static unsigned long gen_arg_len(struct syscallentry *entry,
+				 struct syscallrecord *rec,
+				 unsigned int argnum)
 {
-	return (unsigned long) get_len();
+	enum arg_len_semantics_mode mode;
+	enum argtype prev_t;
+	unsigned long objaddr;
+	unsigned long objsize;
+
+	mode = __atomic_load_n(&arg_len_semantics_mode, __ATOMIC_RELAXED);
+	if (mode == ARG_LEN_SEMANTICS_OFF)
+		return (unsigned long) get_len();
+
+	if (entry == NULL || rec == NULL || argnum < 2 || argnum > 6)
+		return (unsigned long) get_len();
+
+	prev_t = entry->argtype[argnum - 2];
+	if (prev_t != ARG_ADDRESS && prev_t != ARG_NON_NULL_ADDRESS)
+		return (unsigned long) get_len();
+
+	objaddr = get_argval(rec, argnum - 1);
+	if (objaddr == 0)
+		return (unsigned long) get_len();
+
+	objsize = shared_region_size_for(objaddr);
+	if (objsize == 0)
+		return (unsigned long) get_len();
+
+	return get_len_relative(objsize);
 }
 
 static unsigned long gen_arg_non_null_address(struct syscallentry *entry __unused__,

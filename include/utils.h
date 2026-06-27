@@ -166,6 +166,13 @@ bool range_overlaps_shared(unsigned long addr, unsigned long len);
  * to a tracked mapping, not to score a sanitiser rejection.
  */
 bool range_in_tracked_shared(unsigned long addr, unsigned long len);
+/*
+ * Bytes remaining from @addr to the end of the tracked shared region
+ * containing it, or 0 if @addr is not inside any tracked region.  Used
+ * by the object-size-relative ARG_LEN generator to cap a length pick
+ * at the writable extent the kernel can legitimately scribble.
+ */
+unsigned long shared_region_size_for(unsigned long addr);
 void track_shared_region(unsigned long addr, unsigned long size);
 /*
  * Inverse of track_shared_region() / alloc_shared().  Removes the
