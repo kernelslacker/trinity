@@ -80,6 +80,12 @@ size_t gen_rta_prefix_payload(unsigned char *p, size_t avail,
 size_t gen_rta_nsid_payload(unsigned char *p, size_t avail,
 			    unsigned short nla_type);
 
+/* Same shape as gen_rta_neightbl_payload above: prototype kept here
+ * rather than in netlink-msg-internal.h to confine the rtnl_chain
+ * wire-up to the two TUs that actually need it. */
+size_t gen_rta_chain_payload(unsigned char *p, size_t avail,
+			     unsigned short nla_type);
+
 /*
  * Generate random IPv4 address, biased toward useful values.
  */
@@ -2085,6 +2091,84 @@ size_t gen_rta_nsid_payload(unsigned char *p, size_t avail,
 
 			memcpy(p, &val, 4);
 			return 4;
+		}
+		return 0;
+
+	default:
+		return 0;
+	}
+}
+
+/*
+ * Generate a structured payload for chain-template rtnetlink attributes.
+ * Covers the RTM_*CHAIN message group (21).  net/sched/cls_api.c's
+ * tc_ctl_chain shares rtm_tca_policy with the qdisc / tclass / tfilter
+ * handlers but only acts on a narrow slice of TCA_*: TCA_KIND selects a
+ * tcf_proto_ops vector via tcf_proto_lookup_ops (only the classifiers
+ * with a non-NULL .tmplt_create reach the per-kind template builder;
+ * the rest bounce at the EOPNOTSUPP gate, which is still useful
+ * coverage); TCA_OPTIONS carries the per-kind template options nest
+ * (TCA_FLOWER_* etc.); TCA_CHAIN is read as u32 via nla_get_u32 to pick
+ * the chain index; TCA_DUMP_FLAGS is the only other attr the chain
+ * dump path consults.  Random-byte payloads almost never land at the
+ * widths rtm_tca_policy demands (4 for the u32 / bitfield32 slots,
+ * NUL-terminated for TCA_KIND) so the message is rejected at nla_parse
+ * before tc_ctl_chain dispatches; sizing each slot to the policy gets
+ * past that gate.  Anything outside this subset returns 0 so the caller
+ * falls back to a random blob.
+ */
+size_t gen_rta_chain_payload(unsigned char *p, size_t avail,
+			     unsigned short nla_type)
+{
+	switch (nla_type) {
+	case TCA_KIND: {
+		/* String: classifier kind.  tcf_proto_lookup_ops resolves
+		 * this to a tcf_proto_ops vector; the per-kind .tmplt_create
+		 * (where present) runs over TCA_OPTIONS. */
+		static const char *kinds[] = {
+			"flower", "basic", "matchall", "u32", "fw",
+			"route", "tcindex", "cgroup", "bpf", "rsvp",
+		};
+		const char *name = RAND_ARRAY(kinds);
+		size_t slen = strlen(name) + 1;
+
+		if (avail >= slen) {
+			memcpy(p, name, slen);
+			return slen;
+		}
+		return 0;
+	}
+
+	case TCA_CHAIN:
+		if (avail >= 4) {
+			__u32 val = rnd_modulo_u32(64);
+
+			memcpy(p, &val, 4);
+			return 4;
+		}
+		return 0;
+
+	case TCA_OPTIONS:
+		/* Nested per-kind template options blob.  The sub-attr
+		 * namespace differs per classifier (TCA_FLOWER_*,
+		 * TCA_BASIC_*, ...); emit a generic small nest with valid
+		 * nlattr framing so the per-kind policy walker runs rather
+		 * than the message bouncing at nla_parse_nested. */
+		if (avail >= NLA_HDRLEN + 8) {
+			return build_nested_attrs(p, avail, tca_attrs,
+						  tca_attrs_n, 0);
+		}
+		return 0;
+
+	case TCA_DUMP_FLAGS:
+		/* NLA_BITFIELD32 gating the dump terse mode. */
+		if (avail >= sizeof(struct nla_bitfield32)) {
+			struct nla_bitfield32 bf;
+
+			bf.selector = TCA_DUMP_FLAGS_TERSE;
+			bf.value = rnd_modulo_u32(2) ? TCA_DUMP_FLAGS_TERSE : 0;
+			memcpy(p, &bf, sizeof(bf));
+			return sizeof(bf);
 		}
 		return 0;
 
