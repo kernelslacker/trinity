@@ -280,6 +280,7 @@ static bool expensive_accept(unsigned int nr, bool do32)
 	unsigned int n_adaptive;
 	unsigned int n_live;
 	unsigned long productivity_recip;
+	bool accept;
 
 	/* Not EXPENSIVE-flagged: accept unconditionally with no RNG
 	 * draw.  Mirrors the short-circuit half of the original
@@ -296,6 +297,14 @@ static bool expensive_accept(unsigned int nr, bool do32)
 	if (mode == EXPENSIVE_ADAPTIVE_MODE_OFF || kcov_shm == NULL ||
 	    nr >= MAX_NR_SYSCALL)
 		return ONE_IN(EXPENSIVE_ADAPTIVE_FLOOR);
+
+	/* Denominator for the adaptive-gate observability triad.  Bumped
+	 * once per entry past the OFF / NULL-kcov / out-of-range early-
+	 * return -- i.e. once per call into the adaptive compute path
+	 * under SHADOW_ONLY or COMBINED.  See the expensive_adaptive_*
+	 * field-comment block in include/stats.h. */
+	__atomic_fetch_add(&shm->stats.expensive_adaptive_samples, 1UL,
+			   __ATOMIC_RELAXED);
 
 	/* Sum current-run counters with the warm-loaded priors so the
 	 * adaptive math benefits from cross-session evidence (same shape
@@ -361,6 +370,7 @@ static bool expensive_accept(unsigned int nr, bool do32)
 			    n_adaptive < EXPENSIVE_ADAPTIVE_FLOOR) {
 				unsigned long steps = gap / KCOV_COLD_THRESHOLD;
 				unsigned long range, decay;
+				unsigned int n_pre = n_adaptive;
 
 				range = (unsigned long)EXPENSIVE_ADAPTIVE_FLOOR
 					- (unsigned long)n_adaptive;
@@ -373,6 +383,21 @@ static bool expensive_accept(unsigned int nr, bool do32)
 						((unsigned long)n_adaptive +
 						 decay);
 				}
+				/* Stale-decay re-cap actually fired: the
+				 * cheaper sub-floor n_adaptive was pushed
+				 * back up toward the floor.  Guard against
+				 * the integer-truncation no-op where range *
+				 * steps / DECAY_STEPS rounds to 0 (e.g.
+				 * n_adaptive close to the floor with a small
+				 * step count) -- a check that leaves N
+				 * unchanged is not a demote and must not
+				 * inflate the counter.  See the expensive_
+				 * adaptive_demotes field comment in include/
+				 * stats.h. */
+				if (n_adaptive != n_pre)
+					__atomic_fetch_add(
+						&shm->stats.expensive_adaptive_demotes,
+						1UL, __ATOMIC_RELAXED);
 			}
 		}
 	}
@@ -385,7 +410,28 @@ static bool expensive_accept(unsigned int nr, bool do32)
 	else
 		n_live = n_adaptive;
 
-	return ONE_IN(n_live);
+	/* Shadow-only mass: count sub-floor opportunities deterministically
+	 * (no extra RNG draw, so SHADOW_ONLY pick parity vs OFF is
+	 * preserved).  The live ONE_IN(FLOOR) below would have to be a
+	 * second draw against n_adaptive to give a per-event observation;
+	 * the field comment in include/stats.h explains the unit-of-
+	 * measure asymmetry vs the COMBINED bump below. */
+	if (mode == EXPENSIVE_ADAPTIVE_MODE_SHADOW_ONLY &&
+	    n_adaptive < EXPENSIVE_ADAPTIVE_FLOOR)
+		__atomic_fetch_add(&shm->stats.expensive_adaptive_extra_accepts,
+				   1UL, __ATOMIC_RELAXED);
+
+	accept = ONE_IN(n_live);
+
+	/* COMBINED: a real sub-floor accept just fired.  See the
+	 * expensive_adaptive_extra_accepts field comment in include/
+	 * stats.h for the convergence-to-true-extras semantics. */
+	if (accept && mode == EXPENSIVE_ADAPTIVE_MODE_COMBINED &&
+	    n_adaptive < EXPENSIVE_ADAPTIVE_FLOOR)
+		__atomic_fetch_add(&shm->stats.expensive_adaptive_extra_accepts,
+				   1UL, __ATOMIC_RELAXED);
+
+	return accept;
 }
 
 /*
