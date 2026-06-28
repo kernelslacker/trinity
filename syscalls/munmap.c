@@ -128,7 +128,7 @@ static void sanitise_munmap(struct syscallrecord *rec)
 	 * For WHOLE, also drop the action so post_munmap doesn't run the
 	 * destructor (which would munmap(map->ptr, map->size) regardless).
 	 */
-	if (range_overlaps_shared(rec->a1, rec->a2)) {
+	if (RANGE_OVERLAPS_SHARED_AUDITED("munmap", rec->a1, rec->a2)) {
 		rec->a1 = 0;
 		rec->a2 = 0;
 		action = 0;

@@ -117,6 +117,32 @@ extern volatile sig_atomic_t cmp_field_read_active;
 extern sigjmp_buf gwa_bookkeeping_recover;
 extern volatile sig_atomic_t gwa_bookkeeping_active;
 
+#ifdef CONFIG_GUARD_SHARED
+/*
+ * Per-child recovery point for the kcov_enable_trace() trace_buf[0]=0
+ * reset write.  Investigation-only: the kcov PC buffer is registered
+ * in the shared-region tracker (see track_shared_region_tagged
+ * "kcov-pc") yet some run path is intermittently stripping its
+ * PROT_WRITE, turning the reset store into SEGV_ACCERR/SIGBUS.  The
+ * existing sanitiser gates point fingers at each other and the
+ * register-time prot log says the buffer was writable at setup time,
+ * so this recovery flag/buffer pair lets the store run under a
+ * sigsetjmp and, on fault, dump a full diagnostic (live VMA prot from
+ * /proc/self/maps, shared_regions registration status, recent audit-
+ * ring history) before _exit()ing with a distinct exit code so the
+ * fault is visible in the reap statistics without crash-looping the
+ * worker.
+ *
+ * Scope is intentionally narrow: the flag is set ONLY across the
+ * single trace_buf[0] store and cleared immediately after.  Any other
+ * SIGSEGV/SIGBUS the child takes sees the flag clear and falls
+ * through to the existing crash-log path.  Gated on CONFIG_GUARD_-
+ * SHARED so the normal build is byte-unaffected.
+ */
+extern sigjmp_buf kcov_protect_recover;
+extern volatile sig_atomic_t kcov_protect_active;
+#endif
+
 void mask_signals_child(void);
 void setup_main_signals(void);
 void init_abort_msg_capture(void);

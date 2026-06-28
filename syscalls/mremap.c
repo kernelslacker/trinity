@@ -92,7 +92,7 @@ static void sanitise_mremap(struct syscallrecord *rec)
 		return;
 	}
 
-	if (range_overlaps_shared(rec->a1, rec->a2) ||
+	if (RANGE_OVERLAPS_SHARED_AUDITED("mremap-old", rec->a1, rec->a2) ||
 	    range_overlaps_libc_heap(rec->a1, rec->a2)) {
 		rec->a1 = 0;
 		rec->a2 = 0;
@@ -141,7 +141,7 @@ static void sanitise_mremap(struct syscallrecord *rec)
 		 * mapping there.  Reject if that range overlaps a
 		 * trinity-owned shared region — otherwise we silently
 		 * unmap our own bookkeeping. */
-		if (range_overlaps_shared(newaddr, rec->a3) ||
+		if (RANGE_OVERLAPS_SHARED_AUDITED("mremap-new", newaddr, rec->a3) ||
 		    range_overlaps_libc_heap(newaddr, rec->a3)) {
 			rec->a4 &= ~MREMAP_FIXED;
 			newaddr = 0;

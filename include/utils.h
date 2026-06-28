@@ -174,6 +174,103 @@ bool range_in_tracked_shared(unsigned long addr, unsigned long len);
  */
 unsigned long shared_region_size_for(unsigned long addr);
 void track_shared_region(unsigned long addr, unsigned long size);
+#ifdef CONFIG_GUARD_SHARED
+/*
+ * Tagged variant: registers a shared region together with a short
+ * origin string used by the diagnostic audit to name the offending
+ * region in fast-vs-slow disagreement logs and on-fault dumps.  The
+ * @origin pointer is stored verbatim, so callers must pass a string
+ * with static storage duration (a string literal).  Behaves
+ * identically to track_shared_region() otherwise.
+ */
+void track_shared_region_tagged(unsigned long addr, unsigned long size,
+				const char *origin);
+
+/*
+ * Pure linear scan over shared_regions[] and the overflow tail.
+ * Bypasses the bitmap / size-bucket accelerators entirely and answers
+ * the authoritative byte-overlap question.  range_overlaps_shared_-
+ * audited() pairs this against the fast path and logs any divergence
+ * via the per-child audit ring; the fault diagnostic re-uses the same
+ * scan to attribute the buffer it just SEGV'd on to a registered
+ * region (and its origin tag).  When @entry_addr / @entry_size /
+ * @entry_origin are non-NULL they are filled with the first matching
+ * region's fields.
+ */
+bool range_overlaps_shared_slow(unsigned long addr, unsigned long len,
+				unsigned long *entry_addr,
+				unsigned long *entry_size,
+				const char **entry_origin);
+
+/*
+ * Audited wrapper used by the mm-syscall sanitisers (mprotect / mmap /
+ * munmap / mremap).  Calls range_overlaps_shared() for the fast
+ * verdict, range_overlaps_shared_slow() for the authoritative verdict,
+ * and on mismatch logs both via outputerr() and pushes a one-line
+ * record onto the per-child audit ring so the on-fault diagnostic can
+ * recall the recent disagreement history.  Returns the fast verdict
+ * verbatim so the sanitiser's reject behaviour is unchanged.
+ */
+bool range_overlaps_shared_audited(const char *site,
+				   unsigned long addr, unsigned long len);
+
+/*
+ * Macro shim: keeps the no-CONFIG_GUARD_SHARED build byte-identical
+ * by collapsing back to the plain range_overlaps_shared() call.  Mm-
+ * sanitiser call sites read RANGE_OVERLAPS_SHARED_AUDITED("site",
+ * addr, len) verbatim; the @site label is preserved in the audit ring
+ * for attribution under the guard build, and discarded by the
+ * preprocessor without it.
+ */
+#define RANGE_OVERLAPS_SHARED_AUDITED(site, addr, len) \
+	range_overlaps_shared_audited((site), (addr), (len))
+
+/*
+ * Dump up to the last KCOV_AUDIT_RING_SIZE fast-vs-slow audit
+ * disagreement lines for the current child via outputerr().  Called
+ * from the kcov_enable_trace on-fault path so the immediate history
+ * of accelerator desync events is visible alongside the fault
+ * diagnostic.
+ */
+void kcov_audit_ring_dump(const char *prefix);
+
+/*
+ * Internal mprotect overlap check.  Walks shared_regions[] for entries
+ * whose origin starts with "kcov-" and warns when [addr, addr+len)
+ * intersects them.  Called from the three internal mprotect sites
+ * (freeze_sibling_childdata, init_child's pids[] freeze, get_writable_
+ * address's own mprotect) so an internal-protect path that strips a
+ * kcov buffer's PROT_WRITE is caught as a distinct mechanism from the
+ * externally-fuzzed mm-sanitiser route.  @prot is the requested
+ * protection bits (passed through to the log line).
+ */
+void internal_mprotect_audit_kcov(const char *who, unsigned long addr,
+				  unsigned long len, int prot);
+
+/*
+ * Parse /proc/self/maps for the entry covering @addr and outputerr()
+ * its protection bits (rwxp shape) alongside its VMA bounds.  Used at
+ * kcov registration time (to localise a setup-side strip) and from
+ * the on-fault diagnostic (to localise the runtime strip the SEGV is
+ * the symptom of).  Best-effort -- a missing /proc, a buffer
+ * boundary, or an addr that falls in a gap all degrade to a single
+ * outputerr() line rather than a hard failure.
+ */
+void log_buffer_prot_from_proc_maps(const char *who, unsigned long addr,
+				    unsigned long size);
+
+/*
+ * True iff [addr, addr+size) still maps to a registered shared_regions[]
+ * entry whose origin tag matches @origin exactly.  The on-fault path
+ * uses this to answer "has the kcov-pc registration been silently
+ * untracked since registration?" without re-deriving the slot.
+ */
+bool kcov_registration_still_present(unsigned long addr, unsigned long size,
+				     const char *origin);
+#else
+#define RANGE_OVERLAPS_SHARED_AUDITED(site, addr, len) \
+	range_overlaps_shared((addr), (len))
+#endif
 /*
  * Inverse of track_shared_region() / alloc_shared().  Removes the
  * matching shared_regions[] entry (exact addr+size) and undoes the
