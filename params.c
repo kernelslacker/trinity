@@ -626,7 +626,7 @@ static const struct option_help option_descs[] = {
 
 /* Short-only options that don't appear in longopts. */
 static const struct option_help shortonly_descs[] = {
-	{ NULL, 'c', "target specific syscall (name, optionally @32 or @64)" },
+	{ NULL, 'c', "target specific syscall(s): name or comma-list, each optionally @32 or @64" },
 	{ NULL, 'N', "do N syscalls then exit" },
 	{ NULL, 's', "use N as random seed" },
 	{ NULL,  0,  NULL },
@@ -1517,11 +1517,25 @@ void parse_args(int argc, char *argv[])
 			outputstd("--bdev doesn't do anything useful yet.\n");
 			exit(EXIT_SUCCESS);
 
-		case 'c':
-			/* syscalls are all disabled at this point. enable the syscall we care about. */
+		case 'c': {
+			/* enable the syscall(s) we care about; optarg may be a
+			 * single name or a comma-separated list, e.g.
+			 * -c read,write,mmap. */
+			char *dup = strdup(optarg), *tok, *save = NULL;
+
+			if (dup == NULL) {
+				outputerr("-c: strdup failed\n");
+				exit(EXIT_FAILURE);
+			}
 			do_specific_syscall = true;
-			toggle_syscall(optarg, true);
+			tok = strtok_r(dup, ",", &save);
+			while (tok != NULL) {
+				toggle_syscall(tok, true);
+				tok = strtok_r(NULL, ",", &save);
+			}
+			free(dup);
 			break;
+		}
 
 		case 'd':
 			dangerous = true;
