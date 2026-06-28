@@ -95,6 +95,7 @@
  */
 
 #include "nftables-churn-internal.h"
+#include "name-pool.h"
 
 #define NFNL_BUF_BYTES			2048
 #define NFNL_RECV_TIMEO_S		1
@@ -680,6 +681,58 @@ static __u8 pick_family(void)
 }
 
 /*
+ * Fill @out (capacity @cap) with a table name for the next netlink
+ * batch.  Minority arm (ONE_IN(4)) draws a previously-recorded name
+ * from the per-kind NAME_KIND_NETLINK_TABLE pool, optionally mutated
+ * (1-byte flip / truncate / case-flip / suffix-near-max) so a later
+ * netlink op can collide with an earlier op's NFTA_TABLE_NAME and
+ * reach past the kernel's "no such table" reject into the real
+ * commit/lookup handler path.  Majority arm generates a fresh
+ * "<prefix><16-bit-hex>" -- preserving fresh-random diversity is
+ * the dominant arm; over-narrowing to all-pool would delete the
+ * reject-path warmth this generator already produces.  Either way
+ * the chosen name is recorded into the pool so a sibling iteration
+ * (or a per-syscall fuzzer drawing the same kind) can collide with
+ * it.  The buffer is always NUL-terminated.
+ */
+static void nft_fill_table_name(char *out, size_t cap, const char *prefix)
+{
+	int wrote;
+	size_t len;
+
+	if (cap < 2) {
+		if (cap > 0)
+			out[0] = '\0';
+		return;
+	}
+
+	if (ONE_IN(4)) {
+		size_t got = name_pool_draw_mutated(NAME_KIND_NETLINK_TABLE,
+						    out, cap);
+
+		if (got > 0) {
+			if (got >= cap)
+				got = cap - 1;
+			out[got] = '\0';
+			name_pool_record(NAME_KIND_NETLINK_TABLE, out, got);
+			return;
+		}
+		/* empty pool -- fall through to fresh generation */
+	}
+
+	wrote = snprintf(out, cap, "%s%u", prefix,
+			 (unsigned int)(rand32() & 0xffffu));
+	if (wrote <= 0) {
+		out[0] = '\0';
+		return;
+	}
+	len = (size_t)wrote;
+	if (len >= cap)
+		len = cap - 1;
+	name_pool_record(NAME_KIND_NETLINK_TABLE, out, len);
+}
+
+/*
  * Drive the per-hook .validate path on xt-compat targets translated
  * through nft_compat.  Build a base chain at HOOKNUM and append a rule
  * carrying an NFTA_EXPR "target" wrapping TARGET_NAME with a zeroed
@@ -805,8 +858,7 @@ static void nft_compat_validate_sweep(struct nfnl_ctx *ctx)
 	size_t ti, hi;
 	int rc;
 
-	snprintf(table_name, sizeof(table_name), "trcompat%u",
-		 (unsigned int)(rand32() & 0xffffu));
+	nft_fill_table_name(table_name, sizeof(table_name), "trcompat");
 	rc = build_newtable(ctx, NFPROTO_IPV4, table_name);
 	if (rc != 0) {
 		if (rc == -EOPNOTSUPP || rc == -EPROTONOSUPPORT ||
@@ -1299,8 +1351,7 @@ static void nft_dormant_abort_sweep(struct nfnl_ctx *ctx)
 	__atomic_add_fetch(&shm->stats.nft_dormant_abort_iters,
 			   1, __ATOMIC_RELAXED);
 
-	snprintf(table_name, sizeof(table_name), "trdorm%u",
-		 (unsigned int)(rand32() & 0xffffu));
+	nft_fill_table_name(table_name, sizeof(table_name), "trdorm");
 	memset(buf, 0, sizeof(buf));
 
 	/* BATCH_BEGIN with res_id steering the batch at the nftables subsys */
@@ -1722,7 +1773,7 @@ static void nft_fwd_netdev_loop_sweep(struct nfnl_ctx *nfnl,
 	if (rc != 0)
 		goto fail;
 
-	snprintf(table_name, sizeof(table_name), "trfwdl%u", rng);
+	nft_fill_table_name(table_name, sizeof(table_name), "trfwdl");
 	rc = build_newtable(nfnl, NFPROTO_NETDEV, table_name);
 	if (rc != 0)
 		goto fail;
@@ -2152,8 +2203,7 @@ static int nftables_churn_iter_build_table(struct nftables_churn_iter_ctx *ctx)
 	int rc;
 
 	ctx->family = pick_family();
-	snprintf(ctx->table_name, sizeof(ctx->table_name), "trnft%u",
-		 (unsigned int)(rand32() & 0xffffu));
+	nft_fill_table_name(ctx->table_name, sizeof(ctx->table_name), "trnft");
 	snprintf(ctx->anon_set, sizeof(ctx->anon_set), "__set%u",
 		 (unsigned int)(rand32() & 0xffffu));
 	ctx->set_id = rand32();
