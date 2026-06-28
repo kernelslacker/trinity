@@ -58,7 +58,6 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdlib.h>
 #include <sys/epoll.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
