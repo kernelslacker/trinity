@@ -153,6 +153,7 @@ static void sanitise_sendmsg(struct syscallrecord *rec)
 	socklen_t salen = 0;
 	struct sendmsg_post_state *snap;
 	unsigned long iov_len_sum = 0;
+	unsigned int cmsg_family;
 
 	rec->a4 = 0;	/* sendmsg_used_gen_msg: set to 1 if gen_msg path taken */
 
@@ -164,6 +165,7 @@ static void sanitise_sendmsg(struct syscallrecord *rec)
 	generate_sockaddr((struct sockaddr **) &sa, (socklen_t *) &salen, si->triplet.family);
 
 skip_si:
+	cmsg_family = (si != NULL) ? (unsigned int) si->triplet.family : 0;
 	msg = zmalloc_tracked(sizeof(struct msghdr));
 	rec_own(rec, msg);
 	msg->msg_name = sa;
@@ -272,7 +274,8 @@ set_control:
 	 * the no-cmsg fast path).  Builder is a third of the time so
 	 * the existing random-bytes coverage is preserved.
 	 */
-	if (ONE_IN(3) && cmsg_build(msg, pick_cmsg_kind()) == 0) {
+	if (ONE_IN(3) && cmsg_build(msg, pick_cmsg_kind(cmsg_family),
+				    cmsg_family) == 0) {
 		/* msg_control / msg_controllen populated by cmsg_build */
 	} else if (RAND_BOOL()) {
 		msg->msg_controllen = rand32() % 20480;	// /proc/sys/net/core/optmem_max
@@ -533,6 +536,8 @@ static void sanitise_sendmmsg(struct syscallrecord *rec)
 		struct sockaddr *sa = NULL;
 		socklen_t salen = 0;
 		struct iovec *iov;
+		unsigned int family = (si != NULL) ?
+			(unsigned int) si->triplet.family : 0;
 
 		/*
 		 * alloc_iovec() returns a writable-pool slot; see
@@ -562,7 +567,8 @@ static void sanitise_sendmmsg(struct syscallrecord *rec)
 		 * builder path uses a writable-pool buffer that the pool
 		 * allocator recycles), so the branches stay symmetric.
 		 */
-		if (ONE_IN(3) && cmsg_build(msg, pick_cmsg_kind()) == 0) {
+		if (ONE_IN(3) && cmsg_build(msg, pick_cmsg_kind(family),
+					    family) == 0) {
 			/* msg_control / msg_controllen populated by cmsg_build */
 		} else if (RAND_BOOL()) {
 			msg->msg_controllen = rand32() % 20480;
