@@ -94,6 +94,9 @@ extern struct genl_family_grammar fam_tcmu;
 #if __has_include(<linux/nfsd_netlink.h>)
 extern struct genl_family_grammar fam_nfsd;
 #endif
+#if __has_include(<linux/sunrpc_netlink.h>)
+extern struct genl_family_grammar fam_sunrpc;
+#endif
 /* psp consumes include/kernel/psp.h, whose own <linux/psp.h> include is
  * __has_include-guarded with per-symbol shims for every PSP_CMD_ and
  * PSP_A_ id the grammar uses -- so fam_psp builds (and registers) on
@@ -221,6 +224,9 @@ static struct genl_family_grammar *registry[] = {
 #endif
 #if __has_include(<linux/nfsd_netlink.h>)
 	&fam_nfsd,
+#endif
+#if __has_include(<linux/sunrpc_netlink.h>)
+	&fam_sunrpc,
 #endif
 	&fam_psp,
 #if __has_include(<linux/net_dropmon.h>)
