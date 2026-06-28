@@ -111,6 +111,7 @@ unsigned long writer_watch_addr = 0;
 unsigned long epoch_iterations = 0;
 unsigned int epoch_timeout = 0;
 bool max_runtime_set = false;
+static bool epoch_timeout_set = false;
 
 /*
  * Parse a duration string with optional suffix:
@@ -1232,11 +1233,231 @@ static bool parse_memory_options(int opt, const char *name, char *arg)
 	return false;
 }
 
+static bool parse_runtime_options(int opt, const char *name, char *arg)
+{
+	if (opt != 0)
+		return false;
+
+	if (strcmp("epoch-iterations", name) == 0) {
+		if (!parse_unsigned(arg, "epoch-iterations", false, &epoch_iterations))
+			exit(EXIT_FAILURE);
+		return true;
+	}
+
+	if (strcmp("epoch-timeout", name) == 0) {
+		if (max_runtime_set) {
+			outputerr("warning: --max-runtime takes precedence; ignoring --epoch-timeout\n");
+		} else {
+			unsigned long val;
+			if (!parse_unsigned(arg, "epoch-timeout", false, &val))
+				exit(EXIT_FAILURE);
+			if (val > UINT_MAX) {
+				outputerr("--epoch-timeout: value %lu exceeds UINT_MAX\n", val);
+				exit(EXIT_FAILURE);
+			}
+			epoch_timeout = (unsigned int)val;
+			epoch_timeout_set = true;
+		}
+		return true;
+	}
+
+	if (strcmp("max-runtime", name) == 0) {
+		unsigned int seconds;
+		if (!parse_duration(arg, &seconds)) {
+			outputerr("can't parse '%s' as a duration (use number with optional s/m/h/d suffix)\n", arg);
+			exit(EXIT_FAILURE);
+		}
+		if (epoch_timeout_set)
+			outputerr("warning: --max-runtime overrides previously set --epoch-timeout\n");
+		epoch_timeout = seconds;
+		max_runtime_set = true;
+		return true;
+	}
+
+	return false;
+}
+
+static bool parse_stats_options(int opt, const char *name, char *arg)
+{
+	if (opt != 0)
+		return false;
+
+	if (strcmp("stats", name) == 0) {
+		show_stats = true;
+		return true;
+	}
+
+	if (strcmp("stats-json", name) == 0) {
+		stats_json = true;
+		show_stats = true;
+		return true;
+	}
+
+	if (strcmp("stats-log-file", name) == 0) {
+		free(stats_log_path);
+		stats_log_path = strdup(arg);
+		if (!stats_log_path) {
+			outputerr("strdup failed\n");
+			exit(EXIT_FAILURE);
+		}
+		return true;
+	}
+
+	return false;
+}
+
+/* Writer-pinning canary (default-OFF, heavyweight debug
+ * tool).  See include/params.h for the row description.
+ * No range validation on writer_watch_addr: any non-zero
+ * value is forwarded as-is to perf_event_open, which
+ * is the canonical authority on whether the address is
+ * acceptable as a hardware breakpoint target. */
+static bool parse_writer_pin_options(int opt, const char *name, char *arg)
+{
+	if (opt != 0)
+		return false;
+
+	if (strcmp("writer-pin-sweep", name) == 0) {
+		writer_pin_sweep = true;
+		return true;
+	}
+
+	if (strcmp("writer-pin-stride", name) == 0) {
+		unsigned long val;
+
+		if (!parse_unsigned(arg, "writer-pin-stride",
+				    false, &val))
+			exit(EXIT_FAILURE);
+		if (val == 0 || val > UINT_MAX) {
+			outputerr("--writer-pin-stride=%lu out of range (1..UINT_MAX)\n",
+				  val);
+			exit(EXIT_FAILURE);
+		}
+		writer_pin_stride = (unsigned int)val;
+		return true;
+	}
+
+	if (strcmp("writer-watch", name) == 0) {
+		const char *p = arg;
+		char *end = NULL;
+		unsigned long val;
+
+		/* Accept either bare hex or 0x-prefixed; strtoul
+		 * with base 16 handles a leading 0x but errno=0
+		 * + end==start is our only error signal. */
+		if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X'))
+			p += 2;
+		errno = 0;
+		val = strtoul(p, &end, 16);
+		if (errno != 0 || end == p ||
+		    (end != NULL && *end != '\0')) {
+			outputerr("--writer-watch: can't parse '%s' as hex address\n",
+				  arg);
+			exit(EXIT_FAILURE);
+		}
+		if (val == 0) {
+			outputerr("--writer-watch=0 disables the watch; pass a non-zero address\n");
+			exit(EXIT_FAILURE);
+		}
+		writer_watch_addr = val;
+		return true;
+	}
+
+	return false;
+}
+
+static bool parse_guard_shared_options(int opt, const char *name, char *arg)
+{
+	if (opt != 0)
+		return false;
+	if (strcmp("guard-shared", name) != 0)
+		return false;
+
+#ifdef CONFIG_GUARD_SHARED
+	/* --guard-shared        -> pools (default)
+	 * --guard-shared=pools  -> pools
+	 * --guard-shared=all    -> all
+	 * --guard-shared=off    -> off (explicit no-op)
+	 *
+	 * Decided defaults from the 2026-06-09 spec:
+	 * pools is the focused scope (kcov_shm, shared
+	 * str/obj heap, childdata) and is what an
+	 * operator wants the first time they reach for
+	 * the flag.  ALL is the wider sweep; warn the
+	 * operator that the VMA budget may need a
+	 * vm.max_map_count bump so a guarded fleet host
+	 * doesn't ENOMEM on its own mprotect splits.
+	 */
+	if (arg == NULL ||
+	    strcmp(arg, "pools") == 0) {
+		guard_shared_scope = GUARD_SCOPE_POOLS;
+	} else if (strcmp(arg, "all") == 0) {
+		guard_shared_scope = GUARD_SCOPE_ALL;
+		outputerr("--guard-shared=all: every alloc_shared region is guarded; "
+			  "consider raising vm.max_map_count if mprotect splits ENOMEM\n");
+	} else if (strcmp(arg, "off") == 0) {
+		guard_shared_scope = GUARD_SCOPE_OFF;
+	} else {
+		outputerr("--guard-shared: unknown scope '%s' (use pools|all|off)\n",
+			  arg);
+		exit(EXIT_FAILURE);
+	}
+#else
+	(void)arg;
+	/*
+	 * Build does NOT have CONFIG_GUARD_SHARED.  The
+	 * longopt entry above is unconditional (it has to
+	 * be, or getopt would reject --guard-shared with a
+	 * generic "unrecognised option" line that hides
+	 * what actually happened).  Without this branch the
+	 * flag is silently accepted and ignored, which has
+	 * already misled two corruption-hunt sessions into
+	 * believing armour was active when the binary was
+	 * built plain.  Loudly diagnose instead so the
+	 * operator sees the configure step they need to
+	 * re-run.
+	 */
+	outputerr("WARNING: --guard-shared ignored -- "
+		  "binary built without GUARD_SHARED=1; "
+		  "rebuild with GUARD_SHARED=1 ./configure && make\n");
+#endif
+	return true;
+}
+
+static void select_group_by_name(const char *name)
+{
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(group_names); i++) {
+		if (strcmp(name, group_names[i].name) == 0) {
+			desired_group = group_names[i].id;
+			return;
+		}
+	}
+
+	outputerr("unknown group '%s'. Valid groups are:", name);
+	for (i = 0; i < ARRAY_SIZE(group_names); i++)
+		outputerr(" %s", group_names[i].name);
+	outputerr("\n");
+	exit(EXIT_FAILURE);
+}
+
+static void reject_extra_positional_args(int argc, char *argv[])
+{
+	if (optind >= argc)
+		return;
+
+	outputerr("unexpected argument(s):");
+	while (optind < argc)
+		outputerr(" '%s'", argv[optind++]);
+	outputerr("\n");
+	exit(EXIT_FAILURE);
+}
+
 void parse_args(int argc, char *argv[])
 {
 	int opt;
 	int opt_index = 0;
-	bool epoch_timeout_set = false;
 
 	while ((opt = getopt_long(argc, argv, paramstr, longopts, &opt_index)) != -1) {
 		const char *long_name = (opt == 0) ? longopts[opt_index].name : NULL;
@@ -1252,6 +1473,14 @@ void parse_args(int argc, char *argv[])
 		if (parse_strategy_options(opt, long_name, optarg))
 			continue;
 		if (parse_memory_options(opt, long_name, optarg))
+			continue;
+		if (parse_runtime_options(opt, long_name, optarg))
+			continue;
+		if (parse_stats_options(opt, long_name, optarg))
+			continue;
+		if (parse_writer_pin_options(opt, long_name, optarg))
+			continue;
+		if (parse_guard_shared_options(opt, long_name, optarg))
 			continue;
 
 		switch (opt) {
@@ -1303,26 +1532,9 @@ void parse_args(int argc, char *argv[])
 			parse_exclude_domains(optarg);
 			break;
 
-		case 'g': {
-			unsigned int i;
-			bool matched = false;
-
-			for (i = 0; i < ARRAY_SIZE(group_names); i++) {
-				if (!strcmp(optarg, group_names[i].name)) {
-					desired_group = group_names[i].id;
-					matched = true;
-					break;
-				}
-			}
-			if (!matched) {
-				outputerr("unknown group '%s'. Valid groups are:", optarg);
-				for (i = 0; i < ARRAY_SIZE(group_names); i++)
-					outputerr(" %s", group_names[i].name);
-				outputerr("\n");
-				exit(EXIT_FAILURE);
-			}
+		case 'g':
+			select_group_by_name(optarg);
 			break;
-		}
 
 		/* Show help */
 		case 'h':
@@ -1442,173 +1654,17 @@ void parse_args(int argc, char *argv[])
 			if (strcmp("enable-fds", long_name) == 0)
 				process_fds_param(optarg, true);
 
-			if (strcmp("epoch-iterations", long_name) == 0) {
-				if (!parse_unsigned(optarg, "epoch-iterations", false, &epoch_iterations))
-					exit(EXIT_FAILURE);
-			}
-
-			if (strcmp("epoch-timeout", long_name) == 0) {
-				if (max_runtime_set) {
-					outputerr("warning: --max-runtime takes precedence; ignoring --epoch-timeout\n");
-				} else {
-					unsigned long val;
-					if (!parse_unsigned(optarg, "epoch-timeout", false, &val))
-						exit(EXIT_FAILURE);
-					if (val > UINT_MAX) {
-						outputerr("--epoch-timeout: value %lu exceeds UINT_MAX\n", val);
-						exit(EXIT_FAILURE);
-					}
-					epoch_timeout = (unsigned int)val;
-					epoch_timeout_set = true;
-				}
-			}
-
-			if (strcmp("max-runtime", long_name) == 0) {
-				unsigned int seconds;
-				if (!parse_duration(optarg, &seconds)) {
-					outputerr("can't parse '%s' as a duration (use number with optional s/m/h/d suffix)\n", optarg);
-					exit(EXIT_FAILURE);
-				}
-				if (epoch_timeout_set)
-					outputerr("warning: --max-runtime overrides previously set --epoch-timeout\n");
-				epoch_timeout = seconds;
-				max_runtime_set = true;
-			}
-
-#ifdef CONFIG_GUARD_SHARED
-			if (strcmp("guard-shared", long_name) == 0) {
-				/* --guard-shared        -> pools (default)
-				 * --guard-shared=pools  -> pools
-				 * --guard-shared=all    -> all
-				 * --guard-shared=off    -> off (explicit no-op)
-				 *
-				 * Decided defaults from the 2026-06-09 spec:
-				 * pools is the focused scope (kcov_shm, shared
-				 * str/obj heap, childdata) and is what an
-				 * operator wants the first time they reach for
-				 * the flag.  ALL is the wider sweep; warn the
-				 * operator that the VMA budget may need a
-				 * vm.max_map_count bump so a guarded fleet host
-				 * doesn't ENOMEM on its own mprotect splits.
-				 */
-				if (optarg == NULL ||
-				    strcmp(optarg, "pools") == 0) {
-					guard_shared_scope = GUARD_SCOPE_POOLS;
-				} else if (strcmp(optarg, "all") == 0) {
-					guard_shared_scope = GUARD_SCOPE_ALL;
-					outputerr("--guard-shared=all: every alloc_shared region is guarded; "
-						  "consider raising vm.max_map_count if mprotect splits ENOMEM\n");
-				} else if (strcmp(optarg, "off") == 0) {
-					guard_shared_scope = GUARD_SCOPE_OFF;
-				} else {
-					outputerr("--guard-shared: unknown scope '%s' (use pools|all|off)\n",
-						  optarg);
-					exit(EXIT_FAILURE);
-				}
-			}
-#else
-			/*
-			 * Build does NOT have CONFIG_GUARD_SHARED.  The
-			 * longopt entry above is unconditional (it has to
-			 * be, or getopt would reject --guard-shared with a
-			 * generic "unrecognised option" line that hides
-			 * what actually happened).  Without this branch the
-			 * flag is silently accepted and ignored, which has
-			 * already misled two corruption-hunt sessions into
-			 * believing armour was active when the binary was
-			 * built plain.  Loudly diagnose instead so the
-			 * operator sees the configure step they need to
-			 * re-run.
-			 */
-			if (strcmp("guard-shared", long_name) == 0) {
-				outputerr("WARNING: --guard-shared ignored -- "
-					  "binary built without GUARD_SHARED=1; "
-					  "rebuild with GUARD_SHARED=1 ./configure && make\n");
-			}
-#endif
-
 			if (strcmp("show-unannotated", long_name) == 0)
 				show_unannotated = true;
 
-			if (strcmp("stats", long_name) == 0)
-				show_stats = true;
-
-			if (strcmp("stats-json", long_name) == 0) {
-				stats_json = true;
-				show_stats = true;
-			}
-
-			if (strcmp("stats-log-file", long_name) == 0) {
-				free(stats_log_path);
-				stats_log_path = strdup(optarg);
-				if (!stats_log_path) {
-					outputerr("strdup failed\n");
-					exit(EXIT_FAILURE);
-				}
-			}
-
 			if (strcmp("print-disabled-syscalls", long_name) == 0)
 				show_disabled_syscalls = true;
-
-			/* Writer-pinning canary (default-OFF, heavyweight debug
-			 * tool).  See include/params.h for the row description.
-			 * No range validation on writer_watch_addr: any non-zero
-			 * value is forwarded as-is to perf_event_open, which
-			 * is the canonical authority on whether the address is
-			 * acceptable as a hardware breakpoint target. */
-			if (strcmp("writer-pin-sweep", long_name) == 0)
-				writer_pin_sweep = true;
-
-			if (strcmp("writer-pin-stride", long_name) == 0) {
-				unsigned long val;
-
-				if (!parse_unsigned(optarg, "writer-pin-stride",
-						    false, &val))
-					exit(EXIT_FAILURE);
-				if (val == 0 || val > UINT_MAX) {
-					outputerr("--writer-pin-stride=%lu out of range (1..UINT_MAX)\n",
-						  val);
-					exit(EXIT_FAILURE);
-				}
-				writer_pin_stride = (unsigned int)val;
-			}
-
-			if (strcmp("writer-watch", long_name) == 0) {
-				const char *p = optarg;
-				char *end = NULL;
-				unsigned long val;
-
-				/* Accept either bare hex or 0x-prefixed; strtoul
-				 * with base 16 handles a leading 0x but errno=0
-				 * + end==start is our only error signal. */
-				if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X'))
-					p += 2;
-				errno = 0;
-				val = strtoul(p, &end, 16);
-				if (errno != 0 || end == p ||
-				    (end != NULL && *end != '\0')) {
-					outputerr("--writer-watch: can't parse '%s' as hex address\n",
-						  optarg);
-					exit(EXIT_FAILURE);
-				}
-				if (val == 0) {
-					outputerr("--writer-watch=0 disables the watch; pass a non-zero address\n");
-					exit(EXIT_FAILURE);
-				}
-				writer_watch_addr = val;
-			}
 
 			break;
 		}
 	}
 
-	if (optind < argc) {
-		outputerr("unexpected argument(s):");
-		while (optind < argc)
-			outputerr(" '%s'", argv[optind++]);
-		outputerr("\n");
-		exit(EXIT_FAILURE);
-	}
+	reject_extra_positional_args(argc, argv);
 
 	if (verbosity > MAX_LOGLEVEL)
 		verbosity = MAX_LOGLEVEL;
