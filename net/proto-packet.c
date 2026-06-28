@@ -119,9 +119,15 @@ static void packet_setsockopt(struct sockopt *so, __unused__ struct socket_tripl
 		set_tpacket_version3(so);
 		break;
 
+	case PACKET_TX_RING:
 	case PACKET_RX_RING:
 		setup_tpacket_req3(req);
 		so->optlen = sizeof(struct tpacket_req3);
+		break;
+
+	case PACKET_FANOUT_DATA:
+		/* Multiplexed by PACKET_FANOUT type; intentional sizeof(int) rather than default fall-through. */
+		so->optlen = sizeof(int);
 		break;
 
 	case PACKET_FANOUT: {
