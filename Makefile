@@ -120,6 +120,7 @@ SRCS		:= $(wildcard *.c) \
 		   $(wildcard mm/*.c) \
 		   $(wildcard net/*.c) \
 		   $(wildcard rand/*.c) \
+		   $(wildcard stats/*.c) \
 		   $(wildcard syscalls/*.c) \
 		   $(SYSCALLS_ARCH)
 
@@ -131,6 +132,7 @@ OBJS		:= $(sort $(patsubst %.c,%.o,$(wildcard *.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard mm/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard net/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard rand/*.c))) \
+		   $(sort $(patsubst %.c,%.o,$(wildcard stats/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(SYSCALLS_ARCH)))
 
@@ -151,7 +153,7 @@ trinity: test $(OBJS) $(HEADERS)
 
 clean:
 	@rm -f $(OBJS)
-	@rm -f *.o lib/*.o net/*.o
+	@rm -f *.o lib/*.o net/*.o stats/*.o
 	@rm -f core.*
 	@rm -f trinity
 	@rm -f tags
