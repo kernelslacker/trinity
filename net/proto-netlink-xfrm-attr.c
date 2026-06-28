@@ -66,9 +66,6 @@ size_t append_auth_trunc(unsigned char *buf, size_t off, size_t cap)
 	unsigned int key_bits = 128 + ((rand32() & 3) * 64);	/* 128/192/256/320 */
 	unsigned int key_bytes = key_bits / 8;
 
-	if (key_bytes > 64)
-		key_bytes = 64;
-
 	memset(abuf, 0, sizeof(abuf));
 	au = (struct xfrm_algo_auth *)abuf;
 	strncpy(au->alg_name, name, sizeof(au->alg_name) - 1);
@@ -99,9 +96,6 @@ size_t append_crypt(unsigned char *buf, size_t off, size_t cap)
 	const char *name = RAND_ARRAY(crypt_names);
 	unsigned int key_bits = 128 + ((rand32() & 3) * 64);
 	unsigned int key_bytes = key_bits / 8;
-
-	if (key_bytes > 64)
-		key_bytes = 64;
 
 	memset(ebuf, 0, sizeof(ebuf));
 	enc = (struct xfrm_algo *)ebuf;
