@@ -48,6 +48,12 @@ size_t gen_rta_neightbl_payload(unsigned char *p, size_t avail,
 size_t gen_rta_addrlabel_payload(unsigned char *p, size_t avail,
 				 unsigned short nla_type);
 
+/* Same shape as gen_rta_neightbl_payload above: prototype kept here
+ * rather than in netlink-msg-internal.h to confine the rtnl_stats
+ * wire-up to the two TUs that actually need it. */
+size_t gen_rta_stats_payload(unsigned char *p, size_t avail,
+			     unsigned short nla_type);
+
 /*
  * Generate random IPv4 address, biased toward useful values.
  */
@@ -1561,6 +1567,38 @@ size_t gen_rta_addrlabel_payload(unsigned char *p, size_t avail,
 
 			memcpy(p, &val, 4);
 			return 4;
+		}
+		return 0;
+
+	default:
+		return 0;
+	}
+}
+
+/*
+ * Generate a structured payload for link-stats rtnetlink attributes
+ * (IFLA_STATS_*).  Covers the RTM_*STATS message group (19).  The
+ * IFLA_STATS_LINK_64 attr carries a fixed-width struct
+ * rtnl_link_stats64 -- a random-byte payload of length [0, 64) almost
+ * never lands at exactly sizeof(struct rtnl_link_stats64), so the attr
+ * is length-rejected at the policy gate before any consumer sees it.
+ * Size IFLA_STATS_LINK_64 to the struct width and fill with random
+ * counter values so the per-attr writer runs.  The remaining
+ * IFLA_STATS_* slots (LINK_XSTATS, LINK_XSTATS_SLAVE,
+ * LINK_OFFLOAD_XSTATS, AF_SPEC) are NLA_NESTED chains; let those fall
+ * through to the random-byte fallback.
+ */
+size_t gen_rta_stats_payload(unsigned char *p, size_t avail,
+			     unsigned short nla_type)
+{
+	switch (nla_type) {
+	case IFLA_STATS_LINK_64:
+		if (avail >= sizeof(struct rtnl_link_stats64)) {
+			struct rtnl_link_stats64 st;
+
+			generate_rand_bytes((unsigned char *)&st, sizeof(st));
+			memcpy(p, &st, sizeof(st));
+			return sizeof(st);
 		}
 		return 0;
 
