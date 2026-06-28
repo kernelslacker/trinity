@@ -24,6 +24,7 @@
 #include <linux/fib_rules.h>
 #include <linux/dcbnl.h>
 #include <linux/nexthop.h>
+#include <linux/netconf.h>
 #include <linux/pkt_sched.h>
 #include <string.h>
 #include "netlink-attrs.h"
@@ -916,6 +917,73 @@ size_t gen_rta_nexthop_payload(unsigned char *p, size_t avail,
 		}
 		return written;
 	}
+
+	default:
+		return 0;
+	}
+}
+
+/*
+ * Generate a structured payload for netconf rtnetlink attributes
+ * (NETCONFA_*).  Covers the RTM_*NETCONF message group (16).
+ * The kernel ipv4 / ipv6 devconf_{ipv4,ipv6}_policy walker pins
+ * NETCONFA_IFINDEX at nla_len == sizeof(int); a random-byte payload
+ * almost never lands exactly 4 bytes wide, so the message bounces on
+ * nla_parse before reaching inet_netconf_get_devconf / its ipv6
+ * sibling.  Sizing every NETCONFA_* to its s32 width gets the
+ * message past nla_parse into the per-attr handlers, where the
+ * meaningful sentinels NETCONFA_IFINDEX_ALL (-1) and
+ * NETCONFA_IFINDEX_DEFAULT (-2) pick the all-devices / default
+ * arms before the per-ifindex devinet lookup runs.
+ */
+size_t gen_rta_netconf_payload(unsigned char *p, size_t avail,
+			       unsigned short nla_type)
+{
+	switch (nla_type) {
+	case NETCONFA_IFINDEX:
+		/* s32 ifindex; the two negative sentinels are real
+		 * userland values the kernel handler special-cases
+		 * before the per-ifindex devinet lookup, so seed them
+		 * alongside small positive values that ride a sibling
+		 * ifindex's per-netns slot. */
+		if (avail >= 4) {
+			__s32 val;
+
+			switch (rnd_modulo_u32(4)) {
+			case 0: val = -1; break;
+			case 1: val = -2; break;
+			default: val = rnd_modulo_u32(64); break;
+			}
+			memcpy(p, &val, 4);
+			return 4;
+		}
+		return 0;
+
+	case NETCONFA_FORWARDING:
+	case NETCONFA_RP_FILTER:
+	case NETCONFA_MC_FORWARDING:
+	case NETCONFA_PROXY_NEIGH:
+	case NETCONFA_IGNORE_ROUTES_WITH_LINKDOWN:
+	case NETCONFA_INPUT:
+	case NETCONFA_BC_FORWARDING:
+		/* s32 toggle attrs the ipv4 / ipv6 fill paths emit via
+		 * nla_put_s32; the kernel stores them into per-netns /
+		 * per-ifa devconf as truthy / zero / negative, so mix
+		 * 0 / 1 / -1 / wider values to exercise sign-handling
+		 * and range-trim arms in the per-setting writers. */
+		if (avail >= 4) {
+			__s32 val;
+
+			switch (rnd_modulo_u32(4)) {
+			case 0: val = 0; break;
+			case 1: val = 1; break;
+			case 2: val = -1; break;
+			default: val = (__s32)rnd_u32(); break;
+			}
+			memcpy(p, &val, 4);
+			return 4;
+		}
+		return 0;
 
 	default:
 		return 0;
