@@ -177,6 +177,12 @@ size_t gen_rta_neightbl_payload(unsigned char *p, size_t avail,
 size_t gen_rta_addrlabel_payload(unsigned char *p, size_t avail,
 				 unsigned short nla_type);
 
+/* Same shape as gen_rta_neightbl_payload above: declaration inline
+ * here to keep the rtnl_stats wire-up confined to the two TUs that
+ * actually need it. */
+size_t gen_rta_stats_payload(unsigned char *p, size_t avail,
+			     unsigned short nla_type);
+
 /*
  * Generate a structured payload for a specific rtnetlink attribute.
  * Dispatches to the appropriate per-group generator based on the
@@ -204,6 +210,7 @@ static size_t gen_rta_payload(unsigned char *buf, size_t offset, size_t buflen,
 	case 15: return gen_rta_dcb_payload(p, avail, nla_type);
 	case 16: return gen_rta_netconf_payload(p, avail, nla_type);
 	case 17: return gen_rta_mdba_payload(p, avail, nla_type);
+	case 19: return gen_rta_stats_payload(p, avail, nla_type);
 	case 24: return gen_rta_vlandb_payload(p, avail, nla_type);
 	case 22:
 	case 25: return gen_rta_nexthop_payload(p, avail, nla_type);
@@ -348,6 +355,14 @@ static const unsigned short ndtbl_attrs[] = {
 	NDTA_CONFIG, NDTA_PARMS, NDTA_STATS, NDTA_GC_INTERVAL,
 };
 
+/* IFLA_STATS_* attr types for RTM_*STATS (rtnl group 19).  File-static
+ * here for the same reason as ndtbl_attrs above. */
+static const unsigned short ifla_stats_attrs[] = {
+	IFLA_STATS_LINK_64, IFLA_STATS_LINK_XSTATS,
+	IFLA_STATS_LINK_XSTATS_SLAVE, IFLA_STATS_LINK_OFFLOAD_XSTATS,
+	IFLA_STATS_AF_SPEC,
+};
+
 /* Pick an nlattr type appropriate for an rtnetlink message group.
  * Returns 0 for unknown groups (caller falls back to random). */
 static unsigned short pick_rtnl_attr_type(unsigned short nlmsg_type)
@@ -372,6 +387,7 @@ static unsigned short pick_rtnl_attr_type(unsigned short nlmsg_type)
 	case 15: return dcb_attrs[rnd_modulo_u32(dcb_attrs_n)];
 	case 16: return netconfa_attrs[rnd_modulo_u32(netconfa_attrs_n)];
 	case 17: return mdba_attrs[rnd_modulo_u32(mdba_attrs_n)];
+	case 19: return RAND_ARRAY(ifla_stats_attrs);
 	case 24: return bridge_vlandb_attrs[rnd_modulo_u32(bridge_vlandb_attrs_n)];
 	case 22:
 	case 25: return nha_attrs[rnd_modulo_u32(nha_attrs_n)];
