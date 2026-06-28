@@ -3,6 +3,7 @@
  */
 #include <linux/ipc.h>
 #include <linux/shm.h>
+#include <unistd.h>
 #include "ipc-common.h"
 #include "rnd.h"
 #include "sanitise.h"
