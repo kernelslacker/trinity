@@ -67,6 +67,12 @@ size_t gen_rta_action_payload(unsigned char *p, size_t avail,
 size_t gen_rta_tunnel_payload(unsigned char *p, size_t avail,
 			      unsigned short nla_type);
 
+/* Same shape as gen_rta_neightbl_payload above: prototype kept here
+ * rather than in netlink-msg-internal.h to confine the rtnl_prefix
+ * wire-up to the two TUs that actually need it. */
+size_t gen_rta_prefix_payload(unsigned char *p, size_t avail,
+			      unsigned short nla_type);
+
 /*
  * Generate random IPv4 address, biased toward useful values.
  */
@@ -1976,6 +1982,51 @@ size_t gen_rta_tunnel_payload(unsigned char *p, size_t avail,
 	case VXLAN_VNIFILTER_ENTRY:
 		if (avail >= NLA_HDRLEN + sizeof(__u32))
 			return build_vxlan_vni_entry_nested(p, avail);
+		return 0;
+
+	default:
+		return 0;
+	}
+}
+
+/*
+ * Generate a structured payload for prefix-information rtnetlink
+ * attributes (PREFIX_*).  Covers the RTM_*PREFIX message group (9),
+ * emitted by the kernel from net/ipv6/addrconf.c::inet6_prefix_notify
+ * on receipt of an IPv6 Router Advertisement carrying a Prefix
+ * Information option.  The two non-UNSPEC slots in the kernel's
+ * enum -- PREFIX_ADDRESS and PREFIX_CACHEINFO -- are fixed-width:
+ * PREFIX_ADDRESS is a 16-byte struct in6_addr (the advertised prefix)
+ * and PREFIX_CACHEINFO is a struct prefix_cacheinfo carrying two u32
+ * lifetimes (preferred_time, valid_time).  A random-byte payload of
+ * length [0, 64) almost never lands at exactly 16 / 8 bytes wide, so
+ * a length-checking parse would reject the message before the per-attr
+ * writers run.  Size both to the struct widths so the parse reaches
+ * the value-carrying path.
+ */
+size_t gen_rta_prefix_payload(unsigned char *p, size_t avail,
+			      unsigned short nla_type)
+{
+	switch (nla_type) {
+	case PREFIX_ADDRESS:
+		if (avail >= sizeof(struct in6_addr)) {
+			struct in6_addr addr;
+
+			rand_ipv6(&addr);
+			memcpy(p, &addr, sizeof(addr));
+			return sizeof(addr);
+		}
+		return 0;
+
+	case PREFIX_CACHEINFO:
+		if (avail >= sizeof(struct prefix_cacheinfo)) {
+			struct prefix_cacheinfo ci;
+
+			ci.preferred_time = rand32();
+			ci.valid_time = rand32();
+			memcpy(p, &ci, sizeof(ci));
+			return sizeof(ci);
+		}
 		return 0;
 
 	default:
