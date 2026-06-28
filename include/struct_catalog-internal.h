@@ -399,3 +399,19 @@ extern const struct struct_field io_uring_register_rsrc_register_fields[IO_URING
 extern const struct struct_field io_uring_register_rsrc_update2_fields[IO_URING_REGISTER_RSRC_UPDATE2_FIELDS_N];
 extern const struct struct_field io_uring_register_probe_fields[IO_URING_REGISTER_PROBE_FIELDS_N];
 extern const struct union_variant io_uring_register_variants[IO_URING_REGISTER_VARIANTS_N];
+
+/*
+ * quotactl / quotactl_fd leaf tables defined in struct_catalog/quota.c.
+ * The _N constants give the extern decls a complete array type so the
+ * spine's ARRAY_SIZE() at the reference site keeps folding to the same
+ * constant it did before the carve.
+ */
+enum {
+	IF_DQBLK_FIELDS_N	= 9,
+	IF_DQINFO_FIELDS_N	= 4,
+	FS_DISK_QUOTA_FIELDS_N	= 22,
+};
+
+extern const struct struct_field if_dqblk_fields[IF_DQBLK_FIELDS_N];
+extern const struct struct_field if_dqinfo_fields[IF_DQINFO_FIELDS_N];
+extern const struct struct_field fs_disk_quota_fields[FS_DISK_QUOTA_FIELDS_N];

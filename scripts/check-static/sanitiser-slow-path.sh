@@ -55,6 +55,7 @@ FILES=(
 	struct_catalog/sctp.c
 	struct_catalog/sockaddr.c
 	struct_catalog/bpf.c
+	struct_catalog/quota.c
 	arg-decoder.c
 	lib/cmsg_build.c
 	utils.c
