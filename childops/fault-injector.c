@@ -17,7 +17,6 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdbool.h>
-#include <stdlib.h>
 #include <sys/eventfd.h>
 #include <sys/ipc.h>
 #include <sys/mman.h>
