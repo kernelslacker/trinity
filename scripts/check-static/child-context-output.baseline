@@ -77,7 +77,7 @@ syscalls/fcntl.c:507:post_fcntl_ofdgetlk
 syscalls/fcntl.c:524:post_fcntl_setfl
 syscalls/fgetxattr.c:285:post_fgetxattr
 syscalls/fgetxattr.c:356:post_fgetxattr
-syscalls/file_getattr.c:338:post_file_getattr
+syscalls/file_getattr.c:376:post_file_getattr
 syscalls/fork.c:60:post_fork
 syscalls/fstatfs.c:150:post_fstatfs
 syscalls/fstatfs.c:326:post_fstatfs64
