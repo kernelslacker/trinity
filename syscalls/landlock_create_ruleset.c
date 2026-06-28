@@ -159,8 +159,11 @@ static void sanitise_landlock_create_ruleset(struct syscallrecord *rec)
 	flagpick = rnd_modulo_u32(20);
 	if (flagpick < 16)
 		rec->a3 = 0;
-	else if (flagpick < 19)
+	else if (flagpick < 19) {
 		rec->a3 = LANDLOCK_CREATE_RULESET_VERSION;
+		rec->a1 = 0;
+		rec->a2 = 0;
+	}
 	else
 		rec->a3 = rnd_u32();
 
