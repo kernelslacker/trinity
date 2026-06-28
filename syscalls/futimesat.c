@@ -2,16 +2,21 @@
  * SYSCALL_DEFINE3(futimesat, int, dfd, const char __user *, filename,
 	 struct timeval __user *, utimes)
  */
+#include <stdio.h>
 #include <sys/time.h>
+#include "pathnames.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
+#include "trinity.h"
 
 /* Roughly "near now" in seconds since the epoch -- chosen so the
  * value lands inside the kernel's valid tv_sec range without needing
  * a syscall to clock_gettime() at sanitise time. */
 #define NEAR_NOW_SEC	1700000000L
 #define FAR_FUTURE_SEC	4000000000L
+
+#define NR_TESTFILES 4		/* mirror fds/testfiles.c */
 
 static void fill_valid_tv(struct timeval *tv, int bucket)
 {
@@ -46,6 +51,23 @@ static void sanitise_futimesat(struct syscallrecord *rec)
 	struct timeval *tv;
 	unsigned int bucket;
 	unsigned int i;
+
+	/*
+	 * ARG_PATHNAME plumbed a random pathname into rec->a2, but it
+	 * is almost never a real file, so futimesat returns ENOENT at
+	 * the path walk before reaching the per-fs timestamp setattr.
+	 * Half the draws pin a2 to an absolute trinity-owned testfile
+	 * so the call penetrates the VFS path; an absolute path
+	 * ignores the dfd in a1, so no valid dirfd is needed.  The
+	 * other half preserves the random pathname so the ENOENT /
+	 * -ENOTDIR reject arms stay exercised.  The a3 timeval logic
+	 * below runs in both branches.
+	 */
+	if (rec->a2 && rnd_modulo_u32(2) == 0)
+		snprintf((char *) rec->a2, MAX_PATH_LEN,
+			 "%s/trinity-testfile%u",
+			 trinity_tmpdir_abs(),
+			 1 + rnd_modulo_u32(NR_TESTFILES));
 
 	bucket = rnd_modulo_u32(100);
 
