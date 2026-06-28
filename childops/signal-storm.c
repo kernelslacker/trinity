@@ -33,7 +33,6 @@
 #include <errno.h>
 #include <signal.h>
 #include <stdbool.h>
-#include <stdlib.h>
 #include <sys/types.h>
 #include <unistd.h>
 
