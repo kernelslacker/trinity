@@ -4322,6 +4322,33 @@ static const struct {
 	  offsetof(struct stats_s, frontier_blend_old_weight_sum) },
 	{ "frontier_blend_new_weight_sum",
 	  offsetof(struct stats_s, frontier_blend_new_weight_sum) },
+	/* Object-size-relative ARG_LEN draw observability.  All zero while
+	 * --arg-len-semantics is off (the default).  See the struct-field
+	 * comment block in include/stats.h for per-counter semantics. */
+	{ "arg_len_semantics_draws",
+	  offsetof(struct stats_s, arg_len_semantics_draws) },
+	{ "arg_len_objrelative_used",
+	  offsetof(struct stats_s, arg_len_objrelative_used) },
+	{ "arg_len_objrelative_nosize",
+	  offsetof(struct stats_s, arg_len_objrelative_nosize) },
+	{ "arg_len_objrel_blend_getlen",
+	  offsetof(struct stats_s, arg_len_objrel_blend_getlen) },
+	{ "arg_len_objrel_zero",
+	  offsetof(struct stats_s, arg_len_objrel_zero) },
+	{ "arg_len_objrel_one",
+	  offsetof(struct stats_s, arg_len_objrel_one) },
+	{ "arg_len_objrel_objsize",
+	  offsetof(struct stats_s, arg_len_objrel_objsize) },
+	{ "arg_len_objrel_objsize_minus_1",
+	  offsetof(struct stats_s, arg_len_objrel_objsize_minus_1) },
+	{ "arg_len_objrel_objsize_half",
+	  offsetof(struct stats_s, arg_len_objrel_objsize_half) },
+	{ "arg_len_objrel_pagesize",
+	  offsetof(struct stats_s, arg_len_objrel_pagesize) },
+	{ "arg_len_objrel_pagesize_plus_1",
+	  offsetof(struct stats_s, arg_len_objrel_pagesize_plus_1) },
+	{ "arg_len_objrel_pagesize_minus_1",
+	  offsetof(struct stats_s, arg_len_objrel_pagesize_minus_1) },
 	/* Adaptive remote-KCOV mode A/B disposition counters.  Bumped in
 	 * lock-step from BOTH arms in remote_adaptive_decide(); the live
 	 * remote_mode diverges only on Arm B.  See the struct-field
@@ -10641,6 +10668,36 @@ static void dump_stats_strategy_summary(void)
 			 shm->stats.frontier_blend_old_weight_sum);
 		stat_row("strategy", "frontier_blend_new_weight_sum",
 			 shm->stats.frontier_blend_new_weight_sum);
+	}
+	/* Object-size-relative ARG_LEN draw observability.  The gate scalar
+	 * arg_len_semantics_draws stays zero while --arg-len-semantics is
+	 * off (the default), so the whole block is silent on baseline
+	 * runs.  See the struct-field comment in include/stats.h. */
+	if (shm->stats.arg_len_semantics_draws) {
+		stat_row("strategy", "arg_len_semantics_draws",
+			 shm->stats.arg_len_semantics_draws);
+		stat_row("strategy", "arg_len_objrelative_used",
+			 shm->stats.arg_len_objrelative_used);
+		stat_row("strategy", "arg_len_objrelative_nosize",
+			 shm->stats.arg_len_objrelative_nosize);
+		stat_row("strategy", "arg_len_objrel_blend_getlen",
+			 shm->stats.arg_len_objrel_blend_getlen);
+		stat_row("strategy", "arg_len_objrel_zero",
+			 shm->stats.arg_len_objrel_zero);
+		stat_row("strategy", "arg_len_objrel_one",
+			 shm->stats.arg_len_objrel_one);
+		stat_row("strategy", "arg_len_objrel_objsize",
+			 shm->stats.arg_len_objrel_objsize);
+		stat_row("strategy", "arg_len_objrel_objsize_minus_1",
+			 shm->stats.arg_len_objrel_objsize_minus_1);
+		stat_row("strategy", "arg_len_objrel_objsize_half",
+			 shm->stats.arg_len_objrel_objsize_half);
+		stat_row("strategy", "arg_len_objrel_pagesize",
+			 shm->stats.arg_len_objrel_pagesize);
+		stat_row("strategy", "arg_len_objrel_pagesize_plus_1",
+			 shm->stats.arg_len_objrel_pagesize_plus_1);
+		stat_row("strategy", "arg_len_objrel_pagesize_minus_1",
+			 shm->stats.arg_len_objrel_pagesize_minus_1);
 	}
 	if (shm->stats.frontier_underflow_prevented)
 		stat_row("strategy", "frontier_underflow_prevented",
