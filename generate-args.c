@@ -786,22 +786,30 @@ static unsigned long gen_arg_len(struct syscallentry *entry,
 	if (mode == ARG_LEN_SEMANTICS_OFF)
 		return (unsigned long) get_len();
 
+	__atomic_add_fetch(&shm->stats.arg_len_semantics_draws, 1,
+			   __ATOMIC_RELAXED);
+
 	if (entry == NULL || rec == NULL || argnum < 2 || argnum > 6)
-		return (unsigned long) get_len();
+		goto fallback;
 
 	prev_t = entry->argtype[argnum - 2];
 	if (prev_t != ARG_ADDRESS && prev_t != ARG_NON_NULL_ADDRESS)
-		return (unsigned long) get_len();
+		goto fallback;
 
 	objaddr = get_argval(rec, argnum - 1);
 	if (objaddr == 0)
-		return (unsigned long) get_len();
+		goto fallback;
 
 	objsize = shared_region_size_for(objaddr);
 	if (objsize == 0)
-		return (unsigned long) get_len();
+		goto fallback;
 
 	return get_len_relative(objsize);
+
+fallback:
+	__atomic_add_fetch(&shm->stats.arg_len_objrelative_nosize, 1,
+			   __ATOMIC_RELAXED);
+	return (unsigned long) get_len();
 }
 
 static unsigned long gen_arg_non_null_address(struct syscallentry *entry __unused__,

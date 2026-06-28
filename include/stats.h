@@ -4862,6 +4862,59 @@ struct stats_s {
 	unsigned long cold_overflow_would_save;
 	unsigned long cold_overflow_would_save_cold;
 	unsigned long cold_overflow_would_save_absent;
+
+	/* Object-size-relative ARG_LEN draw observability.  All counters
+	 * stay at zero while --arg-len-semantics is off (the default): the
+	 * OFF arm in gen_arg_len() exits before any bump runs.  Under ON the
+	 * counters expose how often the new arm fires vs falls back, and
+	 * which boundary class the relative draw picks.
+	 *
+	 * Aggregates:
+	 *
+	 *  arg_len_semantics_draws
+	 *      Total ARG_LEN draws that entered the semantics path
+	 *      (mode != OFF).  Denominator for the other rates.
+	 *
+	 *  arg_len_objrelative_used
+	 *      Subset of _draws where get_len_relative() returned an
+	 *      object-relative boundary value (one of the per-class
+	 *      arms below fired).
+	 *
+	 *  arg_len_objrelative_nosize
+	 *      Subset of _draws where gen_arg_len() fell back to the
+	 *      legacy size-blind get_len() path -- no immediately
+	 *      preceding ARG_ADDRESS / ARG_NON_NULL_ADDRESS slot, the
+	 *      address was NULL, or the address resolved to no tracked
+	 *      writable region.  High share here means the adjacency rule
+	 *      is rejecting most candidate sites for this workload.
+	 *
+	 *  arg_len_objrel_blend_getlen
+	 *      Subset of get_len_relative() calls that took the half-
+	 *      time RAND_BOOL blend arm and deferred to get_len() (clamped
+	 *      to objsize).  Identity:
+	 *        arg_len_objrelative_used + arg_len_objrel_blend_getlen
+	 *        == calls to get_len_relative()
+	 *        == arg_len_semantics_draws - arg_len_objrelative_nosize
+	 *
+	 * Per-class breakdown of the eight object-relative arms drawn by
+	 * get_len_relative().  Sum equals arg_len_objrelative_used.  The
+	 * pagesize_* arms collapse to objsize when the writable region is
+	 * smaller than the page-size-derived value; the collapsed draws
+	 * still bump the pagesize_* counter for the arm that was rolled
+	 * (the per-class counters track the RNG arm, not the final value
+	 * after clamping). */
+	unsigned long arg_len_semantics_draws;
+	unsigned long arg_len_objrelative_used;
+	unsigned long arg_len_objrelative_nosize;
+	unsigned long arg_len_objrel_blend_getlen;
+	unsigned long arg_len_objrel_zero;
+	unsigned long arg_len_objrel_one;
+	unsigned long arg_len_objrel_objsize;
+	unsigned long arg_len_objrel_objsize_minus_1;
+	unsigned long arg_len_objrel_objsize_half;
+	unsigned long arg_len_objrel_pagesize;
+	unsigned long arg_len_objrel_pagesize_plus_1;
+	unsigned long arg_len_objrel_pagesize_minus_1;
 };
 
 unsigned int stats_syscall_category(const char *name);
