@@ -29,7 +29,6 @@ static const struct domain domains[] = {
 	{ "ROUTE",	PF_NETLINK },
 	{ "PACKET",	PF_PACKET },
 	{ "ASH",	PF_ASH },
-	{ "ATMSVC",	PF_ATMSVC },
 	{ "RDS",	PF_RDS },
 	{ "SNA",	PF_SNA },
 	{ "PPPOX",	PF_PPPOX },

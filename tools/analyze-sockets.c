@@ -43,7 +43,6 @@ static const struct family families[] = {
 	{ "PF_ROUTE",        PF_NETLINK },
 	{ "PF_PACKET",       17 },
 	{ "PF_ASH",          18 },
-	{ "PF_ATMSVC",       20 },
 	{ "PF_RDS",          21 },
 	{ "PF_SNA",          22 },
 	{ "PF_PPPOX",        24 },
