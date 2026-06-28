@@ -161,6 +161,9 @@ extern struct genl_family_grammar fam_nlbl_calipso;
 #if __has_include(<linux/lockd_netlink.h>)
 extern struct genl_family_grammar fam_lockd;
 #endif
+#if __has_include(<linux/dev_energymodel.h>)
+extern struct genl_family_grammar fam_dev_energymodel;
+#endif
 
 /*
  * Per-family grammar definitions live in net/netlink-genl-fam-*.c;
@@ -287,6 +290,9 @@ static struct genl_family_grammar *registry[] = {
 	&fam_nlbl_calipso,
 #if __has_include(<linux/lockd_netlink.h>)
 	&fam_lockd,
+#endif
+#if __has_include(<linux/dev_energymodel.h>)
+	&fam_dev_energymodel,
 #endif
 };
 
