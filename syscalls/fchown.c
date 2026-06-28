@@ -5,7 +5,11 @@
  * On error, -1 is returned, and errno is set appropriately.
  */
 #include <fcntl.h>
+#include <stdio.h>
+#include "pathnames.h"
+#include "rnd.h"
 #include "sanitise.h"
+#include "trinity.h"
 
 struct syscallentry syscall_fchown = {
 	.name = "fchown",
@@ -50,6 +54,23 @@ struct syscallentry syscall_fchown16 = {
  *  On error, -1 is returned and errno is set to indicate the error.
  */
 
+#define NR_TESTFILES 4		/* mirror fds/testfiles.c */
+
+static void sanitise_fchownat(struct syscallrecord *rec)
+{
+	char *path;
+
+	if (rnd_modulo_u32(2) != 0)
+		return;			/* half: keep the random path (reject arms) */
+
+	path = (char *) rec->a2;
+	if (path == NULL)
+		return;
+
+	snprintf(path, MAX_PATH_LEN, "%s/trinity-testfile%u",
+		 trinity_tmpdir_abs(), 1 + rnd_modulo_u32(NR_TESTFILES));
+}
+
 static unsigned long fchownat_flags[] = {
 	AT_EMPTY_PATH, AT_SYMLINK_NOFOLLOW, AT_NO_AUTOMOUNT,
 };
@@ -67,4 +88,5 @@ struct syscallentry syscall_fchownat = {
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM,
 	.group = GROUP_VFS,
+	.sanitise = sanitise_fchownat,
 };
