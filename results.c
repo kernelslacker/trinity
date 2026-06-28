@@ -3,7 +3,6 @@
  */
 
 #include <errno.h>
-#include <stdlib.h>
 #include <sys/resource.h>
 #include "debug.h"
 #include "locks.h"
