@@ -344,3 +344,58 @@ extern const unsigned long packet_mreq_type_values[];
 extern const struct struct_field packet_mreq_fields[PACKET_MREQ_FIELDS_N];
 extern const struct struct_field group_req_fields[GROUP_REQ_FIELDS_N];
 extern const struct struct_field group_source_req_fields[GROUP_SOURCE_REQ_FIELDS_N];
+
+/*
+ * io_uring_setup / io_uring_register leaf tables defined in
+ * struct_catalog/io_uring_register.c.  The _N constants give the
+ * extern decls a complete array type so the spine's ARRAY_SIZE() at
+ * the reference site keeps folding to the same constant it did before
+ * the carve.  iovec_fields lives in struct_catalog.c (referenced by
+ * several non-io_uring spine entries too); the io_uring_register
+ * variant table here references it via the same extern, so promoting
+ * iovec_fields to external linkage is enough to keep the variant
+ * .fields = iovec_fields initialiser resolving.
+ */
+enum {
+	IOVEC_FIELDS_N					= 2,
+	IO_URING_PARAMS_FIELDS_N			= 7,
+	IO_URING_REGISTER_EVENTFD_FIELDS_N		= 1,
+	IO_URING_REGISTER_FILES_UPDATE_FIELDS_N		= 3,
+	IO_URING_REGISTER_FILE_ALLOC_RANGE_FIELDS_N	= 3,
+	IO_URING_REGISTER_PBUF_RING_FIELDS_N		= 5,
+	IO_URING_REGISTER_SYNC_CANCEL_FIELDS_N		= 4,
+	IO_URING_RESTRICTION_OPCODES_N			= 4,
+	IO_URING_REGISTER_RESTRICTION_FIELDS_N		= 4,
+	IO_URING_NAPI_OPCODES_N				= 3,
+	IO_URING_NAPI_TRACKING_STRATEGIES_N		= 3,
+	IO_URING_REGISTER_NAPI_FIELDS_N			= 6,
+	IO_URING_CLOCK_IDS_N				= 2,
+	IO_URING_REGISTER_CLOCK_FIELDS_N		= 2,
+	IO_URING_REGISTER_CLONE_BUFFERS_FIELDS_N	= 6,
+	IO_URING_REGISTER_PBUF_STATUS_FIELDS_N		= 3,
+	IO_URING_REGISTER_RSRC_REGISTER_FIELDS_N	= 5,
+	IO_URING_REGISTER_RSRC_UPDATE2_FIELDS_N		= 6,
+	IO_URING_REGISTER_PROBE_FIELDS_N		= 4,
+	IO_URING_REGISTER_VARIANTS_N			= 24,
+};
+
+extern const struct struct_field iovec_fields[IOVEC_FIELDS_N];
+extern const struct struct_field io_uring_params_fields[IO_URING_PARAMS_FIELDS_N];
+extern const struct struct_field io_uring_register_eventfd_fields[IO_URING_REGISTER_EVENTFD_FIELDS_N];
+extern const struct struct_field io_uring_register_files_update_fields[IO_URING_REGISTER_FILES_UPDATE_FIELDS_N];
+extern const struct struct_field io_uring_register_file_alloc_range_fields[IO_URING_REGISTER_FILE_ALLOC_RANGE_FIELDS_N];
+extern const struct struct_field io_uring_register_pbuf_ring_fields[IO_URING_REGISTER_PBUF_RING_FIELDS_N];
+extern const struct struct_field io_uring_register_sync_cancel_fields[IO_URING_REGISTER_SYNC_CANCEL_FIELDS_N];
+extern const unsigned long io_uring_restriction_opcodes[IO_URING_RESTRICTION_OPCODES_N];
+extern const struct struct_field io_uring_register_restriction_fields[IO_URING_REGISTER_RESTRICTION_FIELDS_N];
+extern const unsigned long io_uring_napi_opcodes[IO_URING_NAPI_OPCODES_N];
+extern const unsigned long io_uring_napi_tracking_strategies[IO_URING_NAPI_TRACKING_STRATEGIES_N];
+extern const struct struct_field io_uring_register_napi_fields[IO_URING_REGISTER_NAPI_FIELDS_N];
+extern const unsigned long io_uring_clock_ids[IO_URING_CLOCK_IDS_N];
+extern const struct struct_field io_uring_register_clock_fields[IO_URING_REGISTER_CLOCK_FIELDS_N];
+extern const struct struct_field io_uring_register_clone_buffers_fields[IO_URING_REGISTER_CLONE_BUFFERS_FIELDS_N];
+extern const struct struct_field io_uring_register_pbuf_status_fields[IO_URING_REGISTER_PBUF_STATUS_FIELDS_N];
+extern const struct struct_field io_uring_register_rsrc_register_fields[IO_URING_REGISTER_RSRC_REGISTER_FIELDS_N];
+extern const struct struct_field io_uring_register_rsrc_update2_fields[IO_URING_REGISTER_RSRC_UPDATE2_FIELDS_N];
+extern const struct struct_field io_uring_register_probe_fields[IO_URING_REGISTER_PROBE_FIELDS_N];
+extern const struct union_variant io_uring_register_variants[IO_URING_REGISTER_VARIANTS_N];
