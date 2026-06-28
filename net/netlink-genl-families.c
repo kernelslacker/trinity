@@ -125,6 +125,9 @@ extern struct genl_family_grammar fam_dpll;
 #if __has_include(<linux/handshake.h>)
 extern struct genl_family_grammar fam_handshake;
 #endif
+#if __has_include(<linux/vdpa.h>)
+extern struct genl_family_grammar fam_vdpa;
+#endif
 extern struct genl_family_grammar fam_nlbl_mgmt;
 extern struct genl_family_grammar fam_nlbl_cipsov4;
 extern struct genl_family_grammar fam_nlbl_unlabel;
@@ -222,6 +225,9 @@ static struct genl_family_grammar *registry[] = {
 #endif
 #if __has_include(<linux/handshake.h>)
 	&fam_handshake,
+#endif
+#if __has_include(<linux/vdpa.h>)
+	&fam_vdpa,
 #endif
 	&fam_nlbl_mgmt,
 	&fam_nlbl_cipsov4,
