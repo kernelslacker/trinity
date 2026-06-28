@@ -39,6 +39,7 @@ extern struct nfnl_subsys_grammar sub_osf;
 extern struct nfnl_subsys_grammar sub_nfqueue;
 extern struct nfnl_subsys_grammar sub_cttimeout;
 extern struct nfnl_subsys_grammar sub_nft_compat;
+extern struct nfnl_subsys_grammar sub_hook;
 
 /*
  * Per-subsys grammar definitions live in net/netlink-nfnl-sub-*.c;
@@ -57,6 +58,7 @@ static struct nfnl_subsys_grammar *registry[] = {
 	&sub_nfqueue,
 	&sub_cttimeout,
 	&sub_nft_compat,
+	&sub_hook,
 };
 
 /*
