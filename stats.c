@@ -4122,6 +4122,8 @@ static const struct {
 	  offsetof(struct stats_s, genl_family_calls_fou) },
 	{ "genl_family_calls_psample",
 	  offsetof(struct stats_s, genl_family_calls_psample) },
+	{ "genl_family_calls_nfsd",
+	  offsetof(struct stats_s, genl_family_calls_nfsd) },
 	{ "genl_family_calls_ila",
 	  offsetof(struct stats_s, genl_family_calls_ila) },
 	{ "genl_family_calls_ioam6",
