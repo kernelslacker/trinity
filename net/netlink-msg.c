@@ -208,6 +208,12 @@ size_t gen_rta_prefix_payload(unsigned char *p, size_t avail,
 size_t gen_rta_nsid_payload(unsigned char *p, size_t avail,
 			    unsigned short nla_type);
 
+/* Same shape as gen_rta_neightbl_payload above: declaration inline
+ * here to keep the rtnl_chain wire-up confined to the two TUs that
+ * actually need it. */
+size_t gen_rta_chain_payload(unsigned char *p, size_t avail,
+			     unsigned short nla_type);
+
 /*
  * Generate a structured payload for a specific rtnetlink attribute.
  * Dispatches to the appropriate per-group generator based on the
@@ -239,6 +245,7 @@ static size_t gen_rta_payload(unsigned char *buf, size_t offset, size_t buflen,
 	case 17: return gen_rta_mdba_payload(p, avail, nla_type);
 	case 18: return gen_rta_nsid_payload(p, avail, nla_type);
 	case 19: return gen_rta_stats_payload(p, avail, nla_type);
+	case 21: return gen_rta_chain_payload(p, avail, nla_type);
 	case 24: return gen_rta_vlandb_payload(p, avail, nla_type);
 	case 22:
 	case 25: return gen_rta_nexthop_payload(p, avail, nla_type);
@@ -269,6 +276,9 @@ static size_t gen_rta_payload(unsigned char *buf, size_t offset, size_t buflen,
  *                   here: the dominant emission is a struct br_mdb_entry
  *                   leaf and the alt MDBA_MDB_ENTRY reply shape is a
  *                   minority arm not worth a misleading nested flag.
+ *   group 21 (chain): TCA_OPTIONS -- per-classifier-kind template
+ *                   options nest; tc_ctl_chain doesn't consult
+ *                   TCA_STAB / TCA_STATS2 so they stay flat here.
  *   group 24 (vlandb): BRIDGE_VLANDB_ENTRY and
  *                   BRIDGE_VLANDB_GLOBAL_OPTIONS -- both are
  *                   NLA_NESTED in br_vlan_db_policy and the generator
@@ -302,6 +312,8 @@ static int rta_payload_is_nested(int rtnl_group, unsigned short nla_type)
 		return nla_type == DCB_ATTR_IEEE;
 	case 17:
 		return nla_type == MDBA_ROUTER;
+	case 21:
+		return nla_type == TCA_OPTIONS;
 	case 24:
 		return nla_type == BRIDGE_VLANDB_ENTRY ||
 		       nla_type == BRIDGE_VLANDB_GLOBAL_OPTIONS;
@@ -411,6 +423,15 @@ static const unsigned short netnsa_attrs[] = {
 	NETNSA_TARGET_NSID, NETNSA_CURRENT_NSID,
 };
 
+/* TCA_* attr types the chain handler (rtnl group 21) actually consumes.
+ * tc_ctl_chain shares rtm_tca_policy with cases 5/6/7 but only reads
+ * this narrow subset; the rest of tca_attrs is silently ignored, so a
+ * focused hint list keeps gen_rta_chain_payload's structured arms hit
+ * instead of the random fallback. */
+static const unsigned short tca_chain_attrs[] = {
+	TCA_KIND, TCA_OPTIONS, TCA_CHAIN, TCA_DUMP_FLAGS,
+};
+
 /* Pick an nlattr type appropriate for an rtnetlink message group.
  * Returns 0 for unknown groups (caller falls back to random). */
 static unsigned short pick_rtnl_attr_type(unsigned short nlmsg_type)
@@ -437,6 +458,7 @@ static unsigned short pick_rtnl_attr_type(unsigned short nlmsg_type)
 	case 17: return mdba_attrs[rnd_modulo_u32(mdba_attrs_n)];
 	case 18: return RAND_ARRAY(netnsa_attrs);
 	case 19: return RAND_ARRAY(ifla_stats_attrs);
+	case 21: return RAND_ARRAY(tca_chain_attrs);
 	case 24: return bridge_vlandb_attrs[rnd_modulo_u32(bridge_vlandb_attrs_n)];
 	case 22:
 	case 25: return nha_attrs[rnd_modulo_u32(nha_attrs_n)];
