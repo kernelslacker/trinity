@@ -24,10 +24,6 @@
  * need EINVAL must spell it out:
  *
  *     if (is_syscall_unsupported(errno) || errno == EINVAL)
- *
- * The negative-rc wrappers exist for netlink-style callers that
- * propagate kernel-style negative returns (rc = -EOPNOTSUPP) end to
- * end rather than reading errno.
  */
 
 #include <errno.h>
@@ -47,14 +43,4 @@ static inline bool is_proto_family_unsupported(int err)
 {
 	return err == EAFNOSUPPORT || err == EPROTONOSUPPORT ||
 	       err == ESOCKTNOSUPPORT;
-}
-
-static inline bool is_syscall_unsupported_rc(int rc)
-{
-	return rc < 0 && is_syscall_unsupported(-rc);
-}
-
-static inline bool is_proto_family_unsupported_rc(int rc)
-{
-	return rc < 0 && is_proto_family_unsupported(-rc);
 }
