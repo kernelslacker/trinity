@@ -109,6 +109,16 @@ static void bluetooth_gen_sockaddr(__unused__ struct socket_triplet *triplet, st
 #ifndef BT_ISO_QOS
 #define BT_ISO_QOS	17
 #endif
+/*
+ * struct bt_iso_qos lives in include/net/bluetooth/bluetooth.h
+ * (kernel-internal, not exposed via libbluetooth), so size optlen
+ * as a fixed UAPI byte count -- the larger (bcast) arm of the
+ * union. iso_sock_setsockopt copies sizeof(struct bt_iso_qos)
+ * unconditionally via copy_safe_from_sockptr() and length-rejects
+ * smaller optlen with -EINVAL, so the zero-filled optval page is
+ * fine; the length is the killer.
+ */
+#define BT_ISO_QOS_WIRE_SIZE	60
 
 static const unsigned int bluetooth_opts[] = {
 	BT_SECURITY, BT_DEFER_SETUP, BT_FLUSHABLE, BT_POWER,
@@ -185,6 +195,9 @@ static void bluetooth_setsockopt(struct sockopt *so, __unused__ struct socket_tr
 			break;
 		case BT_VOICE:
 			so->optlen = sizeof(struct bt_voice);
+			break;
+		case BT_ISO_QOS:
+			so->optlen = BT_ISO_QOS_WIRE_SIZE;
 			break;
 		default:
 			so->optlen = sizeof(unsigned int);
