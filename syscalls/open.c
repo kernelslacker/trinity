@@ -1,10 +1,12 @@
 #include <errno.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include "csfu.h"
 #include "files.h"
+#include "pathnames.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -13,6 +15,13 @@
 #include "trinity.h"
 #include "utils.h"
 #include "compat.h"
+
+/*
+ * Mirrors the MAX_TESTFILES bound in fds/testfiles.c so the pin lands
+ * inside the same trinity-testfile<N> inodes the rest of the path-pinned
+ * sanitisers (chmod, stat, utime, xattr-thrash, ...) touch.
+ */
+#define NR_TESTFILES 4
 
 static unsigned long open_o_flags_base[] = {
 	O_RDONLY, O_WRONLY, O_RDWR, O_CREAT,
@@ -61,6 +70,41 @@ static void sanitise_open(struct syscallrecord *rec)
 static void sanitise_openat(struct syscallrecord *rec)
 {
 	unsigned long flags;
+
+	/*
+	 * ARG_PATHNAME plumbed a random pathname into rec->a2 and ARG_FD
+	 * left a random dirfd in rec->a1, so the post_openat O_PATH
+	 * inode-match oracle below (gated on a1 == AT_FDCWD and a
+	 * stat()able path) is effectively dormant: the random dirfd
+	 * almost never matches AT_FDCWD, and a stat() of the random
+	 * pathname almost always ENOENTs before the oracle can compare
+	 * inodes.
+	 *
+	 * Half the draws now repoint a2 at one of the trinity-testfile<N>
+	 * absolute paths and AT_FDCWD-pin a1, so when get_o_flags() below
+	 * happens to roll O_PATH the oracle has a real trinity-owned
+	 * inode to compare against and can actually fire on a kernel
+	 * file-struct/inode mismatch.  The other half preserves the
+	 * random a1/a2 draw so the pre-existing random-path coverage --
+	 * including the O_CREAT create-path on a random pathname -- stays
+	 * exercised.
+	 *
+	 * openat with O_PATH is read-only on the inode, and a non-O_PATH
+	 * open on an existing testfile only opens it (O_CREAT|O_EXCL
+	 * EEXISTs, plain O_CREAT no-ops on an existing inode), so the
+	 * pin cannot clobber the shared trinity-testfile pool that other
+	 * read-only sanitisers depend on.
+	 */
+	if (rnd_modulo_u32(2) == 0) {
+		char *path = (char *) rec->a2;
+
+		if (path != NULL) {
+			snprintf(path, MAX_PATH_LEN, "%s/trinity-testfile%u",
+				 trinity_tmpdir_abs(),
+				 1 + rnd_modulo_u32(NR_TESTFILES));
+			rec->a1 = (unsigned long) AT_FDCWD;
+		}
+	}
 
 	flags = get_o_flags();
 
