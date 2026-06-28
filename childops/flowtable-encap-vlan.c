@@ -130,6 +130,7 @@
 #include "childops-nfnl.h"
 #include "compat.h"
 #include "jitter.h"
+#include "name-pool.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
@@ -562,6 +563,58 @@ struct flowtable_vlan_iter_ctx {
 };
 
 /*
+ * Fill @out (capacity @cap) with the nft table name for this iter.
+ * Minority arm (ONE_IN(4)) draws a previously-recorded name from
+ * the per-kind NAME_KIND_NETLINK_TABLE pool, optionally mutated
+ * (1-byte flip / truncate / case-flip / suffix-near-max) so a
+ * later netlink op in this or a sibling iteration can collide
+ * with an earlier op's NFTA_TABLE_NAME and reach past the
+ * kernel's "no such table" reject into the real commit/lookup
+ * handler path.  Majority arm generates a fresh "ftv<rng>" --
+ * preserving fresh-random diversity is the dominant arm; over-
+ * narrowing to all-pool would delete the reject-path warmth.
+ * Either way the chosen name is recorded into the pool so a
+ * sibling iteration (or a per-syscall fuzzer drawing the same
+ * kind) can collide with it.  The buffer is always NUL-
+ * terminated.
+ */
+static void fill_tab_name(char *out, size_t cap, unsigned int rng)
+{
+	int wrote;
+	size_t len;
+
+	if (cap < 2) {
+		if (cap > 0)
+			out[0] = '\0';
+		return;
+	}
+
+	if (ONE_IN(4)) {
+		size_t got = name_pool_draw_mutated(NAME_KIND_NETLINK_TABLE,
+						    out, cap);
+
+		if (got > 0) {
+			if (got >= cap)
+				got = cap - 1;
+			out[got] = '\0';
+			name_pool_record(NAME_KIND_NETLINK_TABLE, out, got);
+			return;
+		}
+		/* empty pool -- fall through to fresh generation */
+	}
+
+	wrote = snprintf(out, cap, "ftv%u", rng);
+	if (wrote <= 0) {
+		out[0] = '\0';
+		return;
+	}
+	len = (size_t)wrote;
+	if (len >= cap)
+		len = cap - 1;
+	name_pool_record(NAME_KIND_NETLINK_TABLE, out, len);
+}
+
+/*
  * Phase 1: open the per-iter topology — veth pair, vlan children,
  * addresses, links up, and ip_forward.  Returns 0 on success.  On
  * partial failure the *_added / *_idx fields are still set so the
@@ -577,7 +630,7 @@ static int flowtable_vlan_iter_setup(struct nl_ctx *rtnl,
 	snprintf(c->vp_b, sizeof(c->vp_b), "tfv%ub", rng);
 	snprintf(c->vla,  sizeof(c->vla),  "tfv%ua.100", rng);
 	snprintf(c->vlb,  sizeof(c->vlb),  "tfv%ub.100", rng);
-	snprintf(c->tab,  sizeof(c->tab),  "ftv%u", rng);
+	fill_tab_name(c->tab, sizeof(c->tab), rng);
 	snprintf(c->ft,   sizeof(c->ft),   "ft%u",  rng);
 
 	if (build_veth_pair(rtnl, c->vp_a, c->vp_b) != 0) {
