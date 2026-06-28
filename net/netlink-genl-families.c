@@ -116,6 +116,9 @@ extern struct genl_family_grammar fam_net_shaper;
 #if __has_include(<linux/nbd-netlink.h>)
 extern struct genl_family_grammar fam_nbd;
 #endif
+#if __has_include(<linux/nfc.h>)
+extern struct genl_family_grammar fam_nfc;
+#endif
 extern struct genl_family_grammar fam_nlbl_mgmt;
 extern struct genl_family_grammar fam_nlbl_cipsov4;
 extern struct genl_family_grammar fam_nlbl_unlabel;
@@ -204,6 +207,9 @@ static struct genl_family_grammar *registry[] = {
 #endif
 #if __has_include(<linux/nbd-netlink.h>)
 	&fam_nbd,
+#endif
+#if __has_include(<linux/nfc.h>)
+	&fam_nfc,
 #endif
 	&fam_nlbl_mgmt,
 	&fam_nlbl_cipsov4,
