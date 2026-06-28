@@ -1331,6 +1331,27 @@ void dump_stats_strategy_summary(void)
 		stat_row("strategy", "frontier_blend_new_weight_sum",
 			 shm->stats.frontier_blend_new_weight_sum);
 	}
+	/* Per-band shadow counters for --reach-band.  Sibling of the
+	 * frontier_blend_* block above.  Silent on default (OFF) runs --
+	 * the gate in frontier_cold_weight() early-outs before the bumps,
+	 * so the per-band picks array stays at zero and the if-guard
+	 * suppresses the whole block.  See the reach_band_* field-comment
+	 * block in include/stats.h for the SHADOW_ONLY vs COMBINED reading
+	 * of would_demote_mid / would_boost_high. */
+	if (shm->stats.reach_band_picks_per_band[REACH_BAND_IDX_LOW] ||
+	    shm->stats.reach_band_picks_per_band[REACH_BAND_IDX_MID] ||
+	    shm->stats.reach_band_picks_per_band[REACH_BAND_IDX_HIGH]) {
+		stat_row("strategy", "reach_band_picks_low",
+			 shm->stats.reach_band_picks_per_band[REACH_BAND_IDX_LOW]);
+		stat_row("strategy", "reach_band_picks_mid",
+			 shm->stats.reach_band_picks_per_band[REACH_BAND_IDX_MID]);
+		stat_row("strategy", "reach_band_picks_high",
+			 shm->stats.reach_band_picks_per_band[REACH_BAND_IDX_HIGH]);
+		stat_row("strategy", "reach_band_would_demote_mid",
+			 shm->stats.reach_band_would_demote_mid);
+		stat_row("strategy", "reach_band_would_boost_high",
+			 shm->stats.reach_band_would_boost_high);
+	}
 	/* Adaptive expensive-syscall accept gate.  All zero while the
 	 * gate is in its default OFF mode (the early-return path skips
 	 * the bumps).  See the expensive_adaptive_* field-comment block
