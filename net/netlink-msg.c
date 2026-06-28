@@ -17,6 +17,7 @@
 #include <linux/neighbour.h>
 #include <linux/fib_rules.h>
 #include <linux/netconf.h>
+#include <linux/net_namespace.h>
 #include <linux/nexthop.h>
 #include <linux/dcbnl.h>
 #include <linux/genetlink.h>
@@ -201,6 +202,12 @@ size_t gen_rta_tunnel_payload(unsigned char *p, size_t avail,
 size_t gen_rta_prefix_payload(unsigned char *p, size_t avail,
 			      unsigned short nla_type);
 
+/* Same shape as gen_rta_neightbl_payload above: declaration inline
+ * here to keep the rtnl_nsid wire-up confined to the two TUs that
+ * actually need it. */
+size_t gen_rta_nsid_payload(unsigned char *p, size_t avail,
+			    unsigned short nla_type);
+
 /*
  * Generate a structured payload for a specific rtnetlink attribute.
  * Dispatches to the appropriate per-group generator based on the
@@ -230,6 +237,7 @@ static size_t gen_rta_payload(unsigned char *buf, size_t offset, size_t buflen,
 	case 15: return gen_rta_dcb_payload(p, avail, nla_type);
 	case 16: return gen_rta_netconf_payload(p, avail, nla_type);
 	case 17: return gen_rta_mdba_payload(p, avail, nla_type);
+	case 18: return gen_rta_nsid_payload(p, avail, nla_type);
 	case 19: return gen_rta_stats_payload(p, avail, nla_type);
 	case 24: return gen_rta_vlandb_payload(p, avail, nla_type);
 	case 22:
@@ -394,6 +402,15 @@ static const unsigned short ifla_stats_attrs[] = {
 	IFLA_STATS_AF_SPEC,
 };
 
+/* NETNSA_* attr types for RTM_*NSID (rtnl group 18).  File-static here
+ * for the same reason as ndtbl_attrs above.  NETNSA_CURRENT_NSID is
+ * reply-only in the kernel policy but is emitted so the policy
+ * walker's unknown-attr arm runs alongside the live slots. */
+static const unsigned short netnsa_attrs[] = {
+	NETNSA_NSID, NETNSA_PID, NETNSA_FD,
+	NETNSA_TARGET_NSID, NETNSA_CURRENT_NSID,
+};
+
 /* Pick an nlattr type appropriate for an rtnetlink message group.
  * Returns 0 for unknown groups (caller falls back to random). */
 static unsigned short pick_rtnl_attr_type(unsigned short nlmsg_type)
@@ -418,6 +435,7 @@ static unsigned short pick_rtnl_attr_type(unsigned short nlmsg_type)
 	case 15: return dcb_attrs[rnd_modulo_u32(dcb_attrs_n)];
 	case 16: return netconfa_attrs[rnd_modulo_u32(netconfa_attrs_n)];
 	case 17: return mdba_attrs[rnd_modulo_u32(mdba_attrs_n)];
+	case 18: return RAND_ARRAY(netnsa_attrs);
 	case 19: return RAND_ARRAY(ifla_stats_attrs);
 	case 24: return bridge_vlandb_attrs[rnd_modulo_u32(bridge_vlandb_attrs_n)];
 	case 22:
@@ -785,6 +803,7 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 	case 15: return gen_rtnl_body_dcb(body, buflen, out_family);
 	case 16: return gen_rtnl_body_netconf(body, buflen, out_family);
 	case 17: return gen_rtnl_body_mdb(body, buflen, out_family);
+	case 18: return gen_rtnl_body_gen(body, buflen, out_family);
 	case 24: return gen_rtnl_body_vlan(body, buflen, out_family);
 	case 19: return gen_rtnl_body_stats(body, buflen, out_family);
 	case 22: /* RTM_*NEXTHOP */
