@@ -16,6 +16,10 @@ static unsigned long fsmount_flags[] = {
 	FSMOUNT_NAMESPACE,
 };
 
+/* MOUNT_ATTR_IDMAP intentionally excluded: not in FSMOUNT_VALID_FLAGS
+ * (valid only for mount_setattr), so the kernel EINVALs immediately on
+ * any pick that sets the bit.
+ */
 static unsigned long fsmount_attr_flags[] = {
 	MOUNT_ATTR_RDONLY,
 	MOUNT_ATTR_NOSUID,
@@ -24,7 +28,6 @@ static unsigned long fsmount_attr_flags[] = {
 	MOUNT_ATTR_NOATIME,
 	MOUNT_ATTR_STRICTATIME,
 	MOUNT_ATTR_NODIRATIME,
-	MOUNT_ATTR_IDMAP,
 	MOUNT_ATTR_NOSYMFOLLOW,
 };
 
