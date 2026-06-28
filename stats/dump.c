@@ -46,230 +46,127 @@
  * stats.c until they get their own dedicated audit.
  */
 
+/*
+ * Per-row descriptor for the oracle anomalies text dump.  One entry per
+ * counter; the emitter loop below skips zero-valued rows so quiet runs
+ * stay terse, matching the per-field gating the hand-coded chain used.
+ *
+ * Most rows live under the "oracle" category and follow the
+ * <syscall>_oracle_anomalies -> "<syscall>_anomalies" naming pair, but
+ * the table keeps each row's category and metric explicit so the two
+ * outliers in the set -- post_handler_untouched_out_buf (no
+ * _oracle_anomalies suffix on the counter) and statmount_setup_fail
+ * (emitted under the "syscall" category, not "oracle") -- sit in line
+ * with their siblings instead of needing separate code paths.
+ */
+struct oracle_anomaly_row {
+	const char *category;
+	const char *metric;
+	size_t      offset;
+};
+
+#define ORACLE_ANOMALY_ROW(category_, field_, metric_) \
+	{ (category_), (metric_), offsetof(struct stats_s, field_) }
+
+static const struct oracle_anomaly_row oracle_anomaly_rows[] = {
+	ORACLE_ANOMALY_ROW("oracle",  fd_oracle_anomalies,                     "fd_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  mmap_oracle_anomalies,                   "mmap_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  cred_oracle_anomalies,                   "cred_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  sched_oracle_anomalies,                  "sched_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  uid_oracle_anomalies,                    "uid_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  gid_oracle_anomalies,                    "gid_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  setgroups_oracle_anomalies,              "setgroups_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  getegid_oracle_anomalies,                "getegid_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  getuid_oracle_anomalies,                 "getuid_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  getgid_oracle_anomalies,                 "getgid_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  getppid_oracle_anomalies,                "getppid_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  getcwd_oracle_anomalies,                 "getcwd_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  getpid_oracle_anomalies,                 "getpid_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  getpgid_oracle_anomalies,                "getpgid_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  getpgrp_oracle_anomalies,                "getpgrp_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  geteuid_oracle_anomalies,                "geteuid_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  getsid_oracle_anomalies,                 "getsid_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  gettid_oracle_anomalies,                 "gettid_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  setsid_oracle_anomalies,                 "setsid_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  setpgid_oracle_anomalies,                "setpgid_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  sched_getscheduler_oracle_anomalies,     "sched_getscheduler_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  getgroups_oracle_anomalies,              "getgroups_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  getresuid_oracle_anomalies,              "getresuid_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  getresgid_oracle_anomalies,              "getresgid_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  umask_oracle_anomalies,                  "umask_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  sched_get_priority_max_oracle_anomalies, "sched_get_priority_max_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  sched_get_priority_min_oracle_anomalies, "sched_get_priority_min_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  sched_yield_oracle_anomalies,            "sched_yield_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  getpagesize_oracle_anomalies,            "getpagesize_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  time_oracle_anomalies,                   "time_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  gettimeofday_oracle_anomalies,           "gettimeofday_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  newuname_oracle_anomalies,               "newuname_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  rt_sigpending_oracle_anomalies,          "rt_sigpending_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  rt_sigprocmask_oracle_anomalies,         "rt_sigprocmask_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  sched_getparam_oracle_anomalies,         "sched_getparam_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  sched_rr_get_interval_oracle_anomalies,  "sched_rr_get_interval_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  get_robust_list_oracle_anomalies,        "get_robust_list_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  getrlimit_oracle_anomalies,              "getrlimit_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  sysinfo_oracle_anomalies,                "sysinfo_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  times_oracle_anomalies,                  "times_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  clock_getres_oracle_anomalies,           "clock_getres_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  capget_oracle_anomalies,                 "capget_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  capdrop_oracle_anomalies,                "capdrop_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  newlstat_oracle_anomalies,               "newlstat_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  newstat_oracle_anomalies,                "newstat_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  newfstat_oracle_anomalies,               "newfstat_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  post_handler_untouched_out_buf,          "untouched_out_buf"),
+	ORACLE_ANOMALY_ROW("oracle",  newfstatat_oracle_anomalies,             "newfstatat_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  statx_oracle_anomalies,                  "statx_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  fstatfs_oracle_anomalies,                "fstatfs_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  fstatfs64_oracle_anomalies,              "fstatfs64_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  statfs_oracle_anomalies,                 "statfs_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  statfs64_oracle_anomalies,               "statfs64_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  uname_oracle_anomalies,                  "uname_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  lsm_list_modules_oracle_anomalies,       "lsm_list_modules_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  listmount_oracle_anomalies,              "listmount_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  statmount_oracle_anomalies,              "statmount_anomalies"),
+	ORACLE_ANOMALY_ROW("syscall", statmount_setup_fail,                    "statmount_setup_fail"),
+	ORACLE_ANOMALY_ROW("oracle",  getsockname_oracle_anomalies,            "getsockname_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  getpeername_oracle_anomalies,            "getpeername_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  file_getattr_oracle_anomalies,           "file_getattr_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  sched_getattr_oracle_anomalies,          "sched_getattr_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  getrusage_oracle_anomalies,              "getrusage_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  sigpending_oracle_anomalies,             "sigpending_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  getcpu_oracle_anomalies,                 "getcpu_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  clock_gettime_oracle_anomalies,          "clock_gettime_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  get_mempolicy_oracle_anomalies,          "get_mempolicy_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  lsm_get_self_attr_oracle_anomalies,      "lsm_get_self_attr_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  prlimit64_oracle_anomalies,              "prlimit64_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  sigaltstack_oracle_anomalies,            "sigaltstack_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  olduname_oracle_anomalies,               "olduname_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  lookup_dcookie_oracle_anomalies,         "lookup_dcookie_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  getxattr_oracle_anomalies,               "getxattr_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  lgetxattr_oracle_anomalies,              "lgetxattr_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  fgetxattr_oracle_anomalies,              "fgetxattr_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  listxattrat_oracle_anomalies,            "listxattrat_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  flistxattr_oracle_anomalies,             "flistxattr_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  listxattr_oracle_anomalies,              "listxattr_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  llistxattr_oracle_anomalies,             "llistxattr_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  readlink_oracle_anomalies,               "readlink_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  readlinkat_oracle_anomalies,             "readlinkat_anomalies"),
+	ORACLE_ANOMALY_ROW("oracle",  sysfs_oracle_anomalies,                  "sysfs_anomalies"),
+};
+
+#undef ORACLE_ANOMALY_ROW
+
 void dump_stats_oracle_anomalies(void)
 {
-	if (shm->stats.fd_oracle_anomalies)
-		stat_row("oracle", "fd_anomalies",   shm->stats.fd_oracle_anomalies);
-	if (shm->stats.mmap_oracle_anomalies)
-		stat_row("oracle", "mmap_anomalies", shm->stats.mmap_oracle_anomalies);
-	if (shm->stats.cred_oracle_anomalies)
-		stat_row("oracle", "cred_anomalies", shm->stats.cred_oracle_anomalies);
-	if (shm->stats.sched_oracle_anomalies)
-		stat_row("oracle", "sched_anomalies", shm->stats.sched_oracle_anomalies);
-	if (shm->stats.uid_oracle_anomalies)
-		stat_row("oracle", "uid_anomalies",   shm->stats.uid_oracle_anomalies);
-	if (shm->stats.gid_oracle_anomalies)
-		stat_row("oracle", "gid_anomalies",   shm->stats.gid_oracle_anomalies);
-	if (shm->stats.setgroups_oracle_anomalies)
-		stat_row("oracle", "setgroups_anomalies", shm->stats.setgroups_oracle_anomalies);
-	if (shm->stats.getegid_oracle_anomalies)
-		stat_row("oracle", "getegid_anomalies", shm->stats.getegid_oracle_anomalies);
-	if (shm->stats.getuid_oracle_anomalies)
-		stat_row("oracle", "getuid_anomalies", shm->stats.getuid_oracle_anomalies);
-	if (shm->stats.getgid_oracle_anomalies)
-		stat_row("oracle", "getgid_anomalies", shm->stats.getgid_oracle_anomalies);
-	if (shm->stats.getppid_oracle_anomalies)
-		stat_row("oracle", "getppid_anomalies", shm->stats.getppid_oracle_anomalies);
-	if (shm->stats.getcwd_oracle_anomalies)
-		stat_row("oracle", "getcwd_anomalies", shm->stats.getcwd_oracle_anomalies);
-	if (shm->stats.getpid_oracle_anomalies)
-		stat_row("oracle", "getpid_anomalies", shm->stats.getpid_oracle_anomalies);
-	if (shm->stats.getpgid_oracle_anomalies)
-		stat_row("oracle", "getpgid_anomalies", shm->stats.getpgid_oracle_anomalies);
-	if (shm->stats.getpgrp_oracle_anomalies)
-		stat_row("oracle", "getpgrp_anomalies", shm->stats.getpgrp_oracle_anomalies);
-	if (shm->stats.geteuid_oracle_anomalies)
-		stat_row("oracle", "geteuid_anomalies", shm->stats.geteuid_oracle_anomalies);
-	if (shm->stats.getsid_oracle_anomalies)
-		stat_row("oracle", "getsid_anomalies", shm->stats.getsid_oracle_anomalies);
-	if (shm->stats.gettid_oracle_anomalies)
-		stat_row("oracle", "gettid_anomalies", shm->stats.gettid_oracle_anomalies);
-	if (shm->stats.setsid_oracle_anomalies)
-		stat_row("oracle", "setsid_anomalies", shm->stats.setsid_oracle_anomalies);
-	if (shm->stats.setpgid_oracle_anomalies)
-		stat_row("oracle", "setpgid_anomalies", shm->stats.setpgid_oracle_anomalies);
-	if (shm->stats.sched_getscheduler_oracle_anomalies)
-		stat_row("oracle", "sched_getscheduler_anomalies",
-			 shm->stats.sched_getscheduler_oracle_anomalies);
-	if (shm->stats.getgroups_oracle_anomalies)
-		stat_row("oracle", "getgroups_anomalies", shm->stats.getgroups_oracle_anomalies);
-	if (shm->stats.getresuid_oracle_anomalies)
-		stat_row("oracle", "getresuid_anomalies", shm->stats.getresuid_oracle_anomalies);
-	if (shm->stats.getresgid_oracle_anomalies)
-		stat_row("oracle", "getresgid_anomalies", shm->stats.getresgid_oracle_anomalies);
-	if (shm->stats.umask_oracle_anomalies)
-		stat_row("oracle", "umask_anomalies", shm->stats.umask_oracle_anomalies);
-	if (shm->stats.sched_get_priority_max_oracle_anomalies)
-		stat_row("oracle", "sched_get_priority_max_anomalies",
-			 shm->stats.sched_get_priority_max_oracle_anomalies);
-	if (shm->stats.sched_get_priority_min_oracle_anomalies)
-		stat_row("oracle", "sched_get_priority_min_anomalies",
-			 shm->stats.sched_get_priority_min_oracle_anomalies);
-	if (shm->stats.sched_yield_oracle_anomalies)
-		stat_row("oracle", "sched_yield_anomalies",
-			 shm->stats.sched_yield_oracle_anomalies);
-	if (shm->stats.getpagesize_oracle_anomalies)
-		stat_row("oracle", "getpagesize_anomalies",
-			 shm->stats.getpagesize_oracle_anomalies);
-	if (shm->stats.time_oracle_anomalies)
-		stat_row("oracle", "time_anomalies",
-			 shm->stats.time_oracle_anomalies);
-	if (shm->stats.gettimeofday_oracle_anomalies)
-		stat_row("oracle", "gettimeofday_anomalies",
-			 shm->stats.gettimeofday_oracle_anomalies);
-	if (shm->stats.newuname_oracle_anomalies)
-		stat_row("oracle", "newuname_anomalies",
-			 shm->stats.newuname_oracle_anomalies);
-	if (shm->stats.rt_sigpending_oracle_anomalies)
-		stat_row("oracle", "rt_sigpending_anomalies",
-			 shm->stats.rt_sigpending_oracle_anomalies);
-	if (shm->stats.rt_sigprocmask_oracle_anomalies)
-		stat_row("oracle", "rt_sigprocmask_anomalies",
-			 shm->stats.rt_sigprocmask_oracle_anomalies);
-	if (shm->stats.sched_getparam_oracle_anomalies)
-		stat_row("oracle", "sched_getparam_anomalies",
-			 shm->stats.sched_getparam_oracle_anomalies);
-	if (shm->stats.sched_rr_get_interval_oracle_anomalies)
-		stat_row("oracle", "sched_rr_get_interval_anomalies",
-			 shm->stats.sched_rr_get_interval_oracle_anomalies);
-	if (shm->stats.get_robust_list_oracle_anomalies)
-		stat_row("oracle", "get_robust_list_anomalies",
-			 shm->stats.get_robust_list_oracle_anomalies);
-	if (shm->stats.getrlimit_oracle_anomalies)
-		stat_row("oracle", "getrlimit_anomalies",
-			 shm->stats.getrlimit_oracle_anomalies);
-	if (shm->stats.sysinfo_oracle_anomalies)
-		stat_row("oracle", "sysinfo_anomalies",
-			 shm->stats.sysinfo_oracle_anomalies);
-	if (shm->stats.times_oracle_anomalies)
-		stat_row("oracle", "times_anomalies",
-			 shm->stats.times_oracle_anomalies);
-	if (shm->stats.clock_getres_oracle_anomalies)
-		stat_row("oracle", "clock_getres_anomalies",
-			 shm->stats.clock_getres_oracle_anomalies);
-	if (shm->stats.capget_oracle_anomalies)
-		stat_row("oracle", "capget_anomalies",
-			 shm->stats.capget_oracle_anomalies);
-	if (shm->stats.capdrop_oracle_anomalies)
-		stat_row("oracle", "capdrop_anomalies",
-			 shm->stats.capdrop_oracle_anomalies);
-	if (shm->stats.newlstat_oracle_anomalies)
-		stat_row("oracle", "newlstat_anomalies",
-			 shm->stats.newlstat_oracle_anomalies);
-	if (shm->stats.newstat_oracle_anomalies)
-		stat_row("oracle", "newstat_anomalies",
-			 shm->stats.newstat_oracle_anomalies);
-	if (shm->stats.newfstat_oracle_anomalies)
-		stat_row("oracle", "newfstat_anomalies",
-			 shm->stats.newfstat_oracle_anomalies);
-	if (shm->stats.post_handler_untouched_out_buf)
-		stat_row("oracle", "untouched_out_buf",
-			 shm->stats.post_handler_untouched_out_buf);
-	if (shm->stats.newfstatat_oracle_anomalies)
-		stat_row("oracle", "newfstatat_anomalies",
-			 shm->stats.newfstatat_oracle_anomalies);
-	if (shm->stats.statx_oracle_anomalies)
-		stat_row("oracle", "statx_anomalies",
-			 shm->stats.statx_oracle_anomalies);
-	if (shm->stats.fstatfs_oracle_anomalies)
-		stat_row("oracle", "fstatfs_anomalies",
-			 shm->stats.fstatfs_oracle_anomalies);
-	if (shm->stats.fstatfs64_oracle_anomalies)
-		stat_row("oracle", "fstatfs64_anomalies",
-			 shm->stats.fstatfs64_oracle_anomalies);
-	if (shm->stats.statfs_oracle_anomalies)
-		stat_row("oracle", "statfs_anomalies",
-			 shm->stats.statfs_oracle_anomalies);
-	if (shm->stats.statfs64_oracle_anomalies)
-		stat_row("oracle", "statfs64_anomalies",
-			 shm->stats.statfs64_oracle_anomalies);
-	if (shm->stats.uname_oracle_anomalies)
-		stat_row("oracle", "uname_anomalies",
-			 shm->stats.uname_oracle_anomalies);
-	if (shm->stats.lsm_list_modules_oracle_anomalies)
-		stat_row("oracle", "lsm_list_modules_anomalies",
-			 shm->stats.lsm_list_modules_oracle_anomalies);
-	if (shm->stats.listmount_oracle_anomalies)
-		stat_row("oracle", "listmount_anomalies",
-			 shm->stats.listmount_oracle_anomalies);
-	if (shm->stats.statmount_oracle_anomalies)
-		stat_row("oracle", "statmount_anomalies",
-			 shm->stats.statmount_oracle_anomalies);
-	if (shm->stats.statmount_setup_fail)
-		stat_row("syscall", "statmount_setup_fail",
-			 shm->stats.statmount_setup_fail);
-	if (shm->stats.getsockname_oracle_anomalies)
-		stat_row("oracle", "getsockname_anomalies",
-			 shm->stats.getsockname_oracle_anomalies);
-	if (shm->stats.getpeername_oracle_anomalies)
-		stat_row("oracle", "getpeername_anomalies",
-			 shm->stats.getpeername_oracle_anomalies);
-	if (shm->stats.file_getattr_oracle_anomalies)
-		stat_row("oracle", "file_getattr_anomalies",
-			 shm->stats.file_getattr_oracle_anomalies);
-	if (shm->stats.sched_getattr_oracle_anomalies)
-		stat_row("oracle", "sched_getattr_anomalies",
-			 shm->stats.sched_getattr_oracle_anomalies);
-	if (shm->stats.getrusage_oracle_anomalies)
-		stat_row("oracle", "getrusage_anomalies",
-			 shm->stats.getrusage_oracle_anomalies);
-	if (shm->stats.sigpending_oracle_anomalies)
-		stat_row("oracle", "sigpending_anomalies",
-			 shm->stats.sigpending_oracle_anomalies);
-	if (shm->stats.getcpu_oracle_anomalies)
-		stat_row("oracle", "getcpu_anomalies",
-			 shm->stats.getcpu_oracle_anomalies);
-	if (shm->stats.clock_gettime_oracle_anomalies)
-		stat_row("oracle", "clock_gettime_anomalies",
-			 shm->stats.clock_gettime_oracle_anomalies);
-	if (shm->stats.get_mempolicy_oracle_anomalies)
-		stat_row("oracle", "get_mempolicy_anomalies",
-			 shm->stats.get_mempolicy_oracle_anomalies);
-	if (shm->stats.lsm_get_self_attr_oracle_anomalies)
-		stat_row("oracle", "lsm_get_self_attr_anomalies",
-			 shm->stats.lsm_get_self_attr_oracle_anomalies);
-	if (shm->stats.prlimit64_oracle_anomalies)
-		stat_row("oracle", "prlimit64_anomalies",
-			 shm->stats.prlimit64_oracle_anomalies);
-	if (shm->stats.sigaltstack_oracle_anomalies)
-		stat_row("oracle", "sigaltstack_anomalies",
-			 shm->stats.sigaltstack_oracle_anomalies);
-	if (shm->stats.olduname_oracle_anomalies)
-		stat_row("oracle", "olduname_anomalies",
-			 shm->stats.olduname_oracle_anomalies);
-	if (shm->stats.lookup_dcookie_oracle_anomalies)
-		stat_row("oracle", "lookup_dcookie_anomalies",
-			 shm->stats.lookup_dcookie_oracle_anomalies);
-	if (shm->stats.getxattr_oracle_anomalies)
-		stat_row("oracle", "getxattr_anomalies",
-			 shm->stats.getxattr_oracle_anomalies);
-	if (shm->stats.lgetxattr_oracle_anomalies)
-		stat_row("oracle", "lgetxattr_anomalies",
-			 shm->stats.lgetxattr_oracle_anomalies);
-	if (shm->stats.fgetxattr_oracle_anomalies)
-		stat_row("oracle", "fgetxattr_anomalies",
-			 shm->stats.fgetxattr_oracle_anomalies);
-	if (shm->stats.listxattrat_oracle_anomalies)
-		stat_row("oracle", "listxattrat_anomalies",
-			 shm->stats.listxattrat_oracle_anomalies);
-	if (shm->stats.flistxattr_oracle_anomalies)
-		stat_row("oracle", "flistxattr_anomalies",
-			 shm->stats.flistxattr_oracle_anomalies);
-	if (shm->stats.listxattr_oracle_anomalies)
-		stat_row("oracle", "listxattr_anomalies",
-			 shm->stats.listxattr_oracle_anomalies);
-	if (shm->stats.llistxattr_oracle_anomalies)
-		stat_row("oracle", "llistxattr_anomalies",
-			 shm->stats.llistxattr_oracle_anomalies);
-	if (shm->stats.readlink_oracle_anomalies)
-		stat_row("oracle", "readlink_anomalies",
-			 shm->stats.readlink_oracle_anomalies);
-	if (shm->stats.readlinkat_oracle_anomalies)
-		stat_row("oracle", "readlinkat_anomalies",
-			 shm->stats.readlinkat_oracle_anomalies);
-	if (shm->stats.sysfs_oracle_anomalies)
-		stat_row("oracle", "sysfs_anomalies",
-			 shm->stats.sysfs_oracle_anomalies);
+	size_t i;
+
+	for (i = 0; i < ARRAY_SIZE(oracle_anomaly_rows); i++) {
+		const struct oracle_anomaly_row *r = &oracle_anomaly_rows[i];
+		unsigned long v = *(const unsigned long *)
+			((const char *)&shm->stats + r->offset);
+
+		if (v)
+			stat_row(r->category, r->metric, v);
+	}
 }
 
 void dump_stats_fuzzer_subsystems(void)
