@@ -183,6 +183,12 @@ size_t gen_rta_addrlabel_payload(unsigned char *p, size_t avail,
 size_t gen_rta_stats_payload(unsigned char *p, size_t avail,
 			     unsigned short nla_type);
 
+/* Same shape as gen_rta_neightbl_payload above: declaration inline
+ * here to keep the rtnl_action wire-up confined to the two TUs that
+ * actually need it. */
+size_t gen_rta_action_payload(unsigned char *p, size_t avail,
+			      unsigned short nla_type);
+
 /*
  * Generate a structured payload for a specific rtnetlink attribute.
  * Dispatches to the appropriate per-group generator based on the
@@ -205,6 +211,7 @@ static size_t gen_rta_payload(unsigned char *buf, size_t offset, size_t buflen,
 	case 5:
 	case 6:
 	case 7: return gen_rta_tc_payload(p, avail, nla_type);
+	case 8: return gen_rta_action_payload(p, avail, nla_type);
 	case 12: return gen_rta_neightbl_payload(p, avail, nla_type);
 	case 14: return gen_rta_addrlabel_payload(p, avail, nla_type);
 	case 15: return gen_rta_dcb_payload(p, avail, nla_type);
@@ -231,6 +238,8 @@ static size_t gen_rta_payload(unsigned char *buf, size_t offset, size_t buflen,
  *   group 0 (link):  IFLA_LINKINFO, IFLA_AF_SPEC
  *   group 2 (route): RTA_METRICS, RTA_MULTIPATH
  *   groups 5/6/7 (tc): TCA_OPTIONS, TCA_STAB, TCA_STATS2
+ *   group 8 (action): TCA_ROOT_TAB -- nested per-action chain whose
+ *                   inner sub-attrs carry TCA_ACT_KIND etc.
  *   group 15 (dcb): DCB_ATTR_IEEE
  *   group 17 (mdb): MDBA_ROUTER -- always a NLA_NESTED chain (the
  *                   MDBE_ATTR_* request shape and the MDBA_ROUTER_PORT
@@ -259,6 +268,8 @@ static int rta_payload_is_nested(int rtnl_group, unsigned short nla_type)
 	case 7:
 		return nla_type == TCA_OPTIONS || nla_type == TCA_STAB ||
 		       nla_type == TCA_STATS2;
+	case 8:
+		return nla_type == TCA_ROOT_TAB;
 	case 12:
 		return nla_type == NDTA_PARMS;
 	case 15:
