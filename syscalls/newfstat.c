@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(newfstat, unsigned int, fd, struct stat __user *, statbuf)
  */
-#include <sys/stat.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 #include "arch.h"
@@ -219,7 +218,6 @@ struct syscallentry syscall_newfstat = {
  * SYSCALL_DEFINE4(newfstatat, int, dfd, const char __user *, filename,
                    struct stat __user *, statbuf, int, flag)
  */
-#include <fcntl.h>
 #include <limits.h>
 
 static unsigned long newfstatat_flags[] = {

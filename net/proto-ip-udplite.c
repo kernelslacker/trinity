@@ -1,4 +1,3 @@
-#include <stdlib.h>
 #include <linux/udp.h>
 #include "net.h"
 #include "random.h"

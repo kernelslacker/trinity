@@ -44,18 +44,14 @@
  */
 
 #include <errno.h>
-#include <fcntl.h>
 #include <limits.h>
 #include <sched.h>
 #include <stdbool.h>
-#include <stdio.h>
-#include <string.h>
 #include <sys/mount.h>
 #include <sys/sendfile.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/xattr.h>
-#include <unistd.h>
 
 #ifdef __linux__
 #include <linux/falloc.h>

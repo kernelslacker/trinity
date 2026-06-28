@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE3(madvise, unsigned long, start, size_t, len_in, int, behavior)
  */
-#include <stdlib.h>
 #include <sys/mman.h>
 #include "deferred-free.h"
 #include "maps.h"

@@ -4,7 +4,6 @@
  */
 #include <linux/aio_abi.h>
 #include <poll.h>
-#include <string.h>
 #include <sys/uio.h>
 #include "objects.h"
 #include "random.h"

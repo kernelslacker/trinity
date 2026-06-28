@@ -1,8 +1,6 @@
 /*
  * SYSCALL_DEFINE2(removexattr, const char __user *, pathname, const char __user *, name)
  */
-#include <stdio.h>
-#include <string.h>
 #include <sys/xattr.h>
 #include "pathnames.h"
 #include "rnd.h"

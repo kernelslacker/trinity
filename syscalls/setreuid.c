@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(setreuid, uid_t, ruid, uid_t, euid)
  */
-#include <sys/types.h>
 #include <unistd.h>
 #include "random.h"
 #include "shm.h"

@@ -7,10 +7,8 @@
 #include <signal.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <string.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
-#include <unistd.h>
 #include "arch.h"
 #include "maps.h"
 #include "random.h"

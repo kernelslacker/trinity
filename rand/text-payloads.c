@@ -11,9 +11,6 @@
  * exercise overflow and sign-extension paths, and so on.
  */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
 #include "name-pool.h"
 #include "random.h"

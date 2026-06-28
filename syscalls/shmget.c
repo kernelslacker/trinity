@@ -3,7 +3,6 @@
  */
 
 #include <limits.h>
-#include <stdlib.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
 #include "ipc-common.h"

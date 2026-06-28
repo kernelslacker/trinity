@@ -26,14 +26,9 @@
  */
 
 #include <errno.h>
-#include <fcntl.h>
 #include <sched.h>
 #include <stdbool.h>
-#include <stdio.h>
-#include <string.h>
-#include <sys/types.h>
 #include <sys/wait.h>
-#include <unistd.h>
 
 #include "childops-util.h"
 #include "shm.h"

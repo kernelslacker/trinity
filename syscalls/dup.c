@@ -1,8 +1,6 @@
 #include <limits.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
-#include <unistd.h>
-#include <fcntl.h>
 #include "child.h"
 #include "fd.h"
 #include "fd-event.h"

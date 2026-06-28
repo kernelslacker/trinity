@@ -1,8 +1,6 @@
 /*
  * SYSCALL_DEFINE3(lseek, unsigned int, fd, off_t, offset, unsigned int, whence)
  */
-#include <sys/types.h>
-#include <unistd.h>
 #include "fd.h"
 #include "objects.h"
 #include "random.h"

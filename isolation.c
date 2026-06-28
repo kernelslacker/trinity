@@ -1,15 +1,12 @@
 #include <errno.h>
-#include <fcntl.h>
 #include <net/if.h>
 #include <sched.h>
 #include <stdatomic.h>
 #include <stdbool.h>
-#include <string.h>
 #include <sys/mount.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
-#include <netinet/in.h>
 
 #include <linux/if_addr.h>
 #include <linux/netlink.h>

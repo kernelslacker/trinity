@@ -2,8 +2,6 @@
    int sys_fork(struct pt_regs *regs)
  */
 #include <sys/wait.h>
-#include <stdlib.h>
-#include <unistd.h>
 #include "maps.h"
 #include "pids.h"
 #include "random.h"

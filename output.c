@@ -1,5 +1,4 @@
 #include <errno.h>
-#include <stdio.h>
 #include <stdarg.h>
 #include "arg-decoder.h"
 #include "pids.h"

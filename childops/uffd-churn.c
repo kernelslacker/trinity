@@ -40,15 +40,11 @@
  */
 
 #include <errno.h>
-#include <fcntl.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
-#include <unistd.h>
 #include <linux/userfaultfd.h>
 
 #include "arch.h"		/* page_size */

@@ -5,7 +5,6 @@
  * On error, -1 is returned, and errno is set appropriately.
  */
 #include <fcntl.h>
-#include <stdio.h>
 #include "pathnames.h"
 #include "rnd.h"
 #include "sanitise.h"

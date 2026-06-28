@@ -2,9 +2,6 @@
  *  SYSCALL_DEFINE4(send, int, fd, void __user *, buff, size_t, len,
                 unsigned, flags)
  */
-#include <stdlib.h>
-#include <string.h>
-#include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
 #include "cmsg_build.h"

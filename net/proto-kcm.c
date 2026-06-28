@@ -1,15 +1,10 @@
-#include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/syscall.h>
 #include <sys/un.h>
 #include <sys/ioctl.h>
-#include <netinet/in.h>
 #include <linux/if_ether.h>
 #include <linux/bpf.h>
 #include <linux/sockios.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
 #include <errno.h>
 #include "arch.h"
 #include "bpf.h"

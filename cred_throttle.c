@@ -11,7 +11,6 @@
 #include <errno.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <string.h>
 
 #include "cred_throttle.h"
 #include "kcov.h"		/* ERRNO_BUCKET_* */

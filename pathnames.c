@@ -1,14 +1,8 @@
 #include <ftw.h>
 #include <ctype.h>
 #include <fnmatch.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <fcntl.h>
 #include <dirent.h>
 #include <errno.h>
-#include <sys/types.h>
-#include <sys/stat.h>
 
 #include "exit.h"
 #include "params.h"

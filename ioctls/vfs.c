@@ -1,5 +1,3 @@
-#include <stdio.h>
-#include <string.h>
 #include <linux/fiemap.h>
 #include <linux/fs.h>
 #include <linux/blktrace_api.h>

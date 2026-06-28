@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE3(syslog, int, type, char __user *, buf, int, len)
  */
-#include <stdlib.h>
 #include "arch.h"
 #include "maps.h"
 #include "random.h"

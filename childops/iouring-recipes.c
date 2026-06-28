@@ -32,10 +32,7 @@
 #include <signal.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/mman.h>
-#include <unistd.h>
 #include <linux/io_uring.h>
 
 #include "compat.h"

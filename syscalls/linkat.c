@@ -2,8 +2,6 @@
  * SYSCALL_DEFINE5(linkat, int, olddfd, const char __user *, oldname,
 	 int, newdfd, const char __user *, newname, int, flags)
  */
-#include <fcntl.h>
-#include <stdlib.h>
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"

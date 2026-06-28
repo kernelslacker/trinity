@@ -6,9 +6,6 @@
 #include <malloc.h>
 #include <signal.h>
 #include <stdatomic.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
 #include <sched.h>
 #include <sys/mount.h>
 #include <sys/personality.h>

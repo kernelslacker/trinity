@@ -10,7 +10,6 @@
 
 #include <sys/mman.h>
 #include <sys/syscall.h>
-#include <stdlib.h>
 
 #include "arch.h"
 #include "child.h"

@@ -61,16 +61,11 @@
  */
 
 #include <errno.h>
-#include <netinet/in.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/syscall.h>
-#include <sys/types.h>
-#include <unistd.h>
 #include <linux/io_uring.h>
 
 #include "child.h"

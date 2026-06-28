@@ -2,7 +2,6 @@
  *   SYSCALL_DEFINE4(pidfd_send_signal, int, pidfd, int, sig, siginfo_t __user *, info, unsigned int, flags)
  */
 #include <signal.h>
-#include <string.h>
 #include <linux/pidfd.h>
 #include "random.h"
 #include "rnd.h"

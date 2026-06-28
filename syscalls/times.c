@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE1(times, struct tms __user *, tbuf)
  */
-#include <string.h>
 #include <sys/times.h>
 #include "random.h"
 #include "sanitise.h"

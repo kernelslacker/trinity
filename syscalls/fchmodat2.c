@@ -2,8 +2,6 @@
  * SYSCALL_DEFINE4(fchmodat2, int, dfd, const char __user *, filename,
  *		umode_t, mode, unsigned int, flags)
  */
-#include <fcntl.h>
-#include <stdio.h>
 #include "compat.h"
 #include "pathnames.h"
 #include "random.h"

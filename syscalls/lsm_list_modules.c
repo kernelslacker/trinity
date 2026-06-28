@@ -4,7 +4,6 @@
  */
 #include <stdbool.h>
 #include <stdint.h>
-#include <string.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <asm/unistd.h>

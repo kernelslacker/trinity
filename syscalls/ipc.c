@@ -10,7 +10,6 @@
 #include <linux/sem.h>
 #include <linux/msg.h>
 #include <linux/shm.h>
-#include <string.h>
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"

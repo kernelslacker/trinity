@@ -2,10 +2,6 @@
  * SYSCALL_DEFINE2(setgroups, int, gidsetsize, gid_t __user *, grouplist)
  */
 #include <grp.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/types.h>
 #include <unistd.h>
 #include "deferred-free.h"
 #include "proc-status.h"

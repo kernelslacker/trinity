@@ -10,7 +10,6 @@
  * include/child-internal.h for the extern declarations.
  */
 
-#include <string.h>
 
 #include "child.h"
 #include "child-internal.h"

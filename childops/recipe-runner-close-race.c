@@ -5,21 +5,16 @@
  */
 
 #include <errno.h>
-#include <fcntl.h>
 #include <poll.h>
 #include <pthread.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <string.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include <sys/signalfd.h>
 #include <sys/syscall.h>
 #include <sys/timerfd.h>
-#include <sys/types.h>
-#include <time.h>
-#include <unistd.h>
 #include <linux/io_uring.h>
 
 #include "syscall-gate.h"

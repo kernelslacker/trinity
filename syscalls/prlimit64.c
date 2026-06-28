@@ -4,8 +4,6 @@
 	 struct rlimit64 __user *, old_rlim)
  */
 #include <stdbool.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/resource.h>
 #include <sys/syscall.h>
 #include <unistd.h>

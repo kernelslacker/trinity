@@ -3,10 +3,7 @@
 #include <linux/bpf.h>
 #include <linux/filter.h>
 #include <sys/socket.h>
-#include <stdlib.h>
 #include <stdint.h>
-#include <stdio.h>
-#include <string.h>
 
 #include "bpf.h"
 #include "bpf-internal.h"

@@ -81,14 +81,10 @@
  */
 
 #include <errno.h>
-#include <fcntl.h>
 #include <sched.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/socket.h>
-#include <sys/types.h>
 #include <unistd.h>
 
 #include "child.h"

@@ -36,7 +36,6 @@
 #include <sys/resource.h>
 #include <sys/wait.h>
 #include <time.h>
-#include <unistd.h>
 
 #include "pc_format.h"
 

@@ -2,7 +2,6 @@
  * SYSCALL_DEFINE2(setpgid, pid_t, pid, pid_t, pgid)
  */
 #include <sys/syscall.h>
-#include <sys/types.h>
 #include <unistd.h>
 #include "random.h"
 #include "shm.h"

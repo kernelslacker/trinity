@@ -33,10 +33,8 @@
  * not-dominant.
  */
 
-#include <string.h>
 #include <sys/sysinfo.h>
 #include <sys/syscall.h>
-#include <time.h>
 #include <unistd.h>
 #include <linux/utsname.h>
 

@@ -15,8 +15,6 @@
  */
 
 #include <errno.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
 #include <unistd.h>

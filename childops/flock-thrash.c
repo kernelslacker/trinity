@@ -30,10 +30,8 @@
  */
 
 #include <errno.h>
-#include <fcntl.h>
 #include <limits.h>
 #include <stdbool.h>
-#include <stdio.h>
 #include <sys/file.h>
 #include <unistd.h>
 

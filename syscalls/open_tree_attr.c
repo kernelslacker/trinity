@@ -3,8 +3,6 @@
  *		unsigned, flags, struct mount_attr __user *, uattr, size_t, usize)
  */
 #include <fcntl.h>
-#include <string.h>
-#include <unistd.h>
 #include <linux/mount.h>
 #include "compat.h"
 #include "csfu.h"

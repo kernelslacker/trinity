@@ -3,7 +3,6 @@
 	 unsigned long, nr_segs, unsigned int, flags)
  */
 
-#include <fcntl.h>
 #include <limits.h>
 #include <sys/uio.h>
 #include "sanitise.h"

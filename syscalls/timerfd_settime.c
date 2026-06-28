@@ -3,7 +3,6 @@
 	 const struct itimerspec __user *, utmr,
 	 struct itimerspec __user *, otmr)
  */
-#include <time.h>
 #include <sys/timerfd.h>
 #include "objects.h"
 #include "random.h"

@@ -2,11 +2,7 @@
  * Routines for parsing /proc/devices for use by the ioctl fuzzer.
  */
 #include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/stat.h>
-#include <sys/types.h>
 #include <linux/kdev_t.h>
 #include "files.h"
 #include "trinity.h"

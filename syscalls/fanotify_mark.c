@@ -2,7 +2,6 @@
  * SYSCALL_DEFINE(fanotify_mark)(int fanotify_fd, unsigned int flags,
 	__u64 mask, int dfd, const char  __user * pathname)
  */
-#include <stdlib.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 #include "kernel/fanotify.h"

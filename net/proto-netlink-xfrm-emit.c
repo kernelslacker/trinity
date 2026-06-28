@@ -8,10 +8,8 @@
  */
 
 #include <stdbool.h>
-#include <string.h>
 #include <errno.h>
 
-#include <netinet/in.h>
 #include <linux/netlink.h>
 
 #include "compat.h"

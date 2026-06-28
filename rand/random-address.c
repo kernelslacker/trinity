@@ -1,9 +1,5 @@
 #include <errno.h>
 #include <setjmp.h>	// sigsetjmp for asb_relocate copy-fault recovery
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <string.h>
 #include <sys/uio.h>
 #include <sys/socket.h>	// struct msghdr
 #include <sys/mman.h>	// mprotect

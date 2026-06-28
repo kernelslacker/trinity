@@ -31,7 +31,6 @@
 
 #include <linux/ioctl.h>
 #include <linux/pps.h>
-#include <string.h>
 
 #include "ioctls.h"
 #include "random.h"

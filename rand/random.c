@@ -1,7 +1,6 @@
 /*
  * Routines to get randomness.
  */
-#include <stdlib.h>
 #include <limits.h>
 #include "arch.h"
 #include "random.h"

@@ -9,13 +9,10 @@
  */
 
 #include <errno.h>
-#include <netinet/in.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <string.h>
 #include <sys/socket.h>
 #include <sys/un.h>
-#include <unistd.h>
 #include <linux/io_uring.h>
 
 #include "compat.h"

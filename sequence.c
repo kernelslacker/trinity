@@ -29,8 +29,6 @@
  */
 
 #include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
 
 #include "child.h"
 #include "kcov.h"

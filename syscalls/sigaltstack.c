@@ -2,10 +2,7 @@
    long sys_sigaltstack(const stack_t __user *uss, stack_t __user *uoss)
  */
 #include <signal.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/syscall.h>
-#include <unistd.h>
 #include "arch.h"
 #include "deferred-free.h"
 #include "maps.h"

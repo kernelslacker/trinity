@@ -48,15 +48,12 @@
  */
 
 #include <errno.h>
-#include <fcntl.h>
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <sys/ioctl.h>
 #include <sys/syscall.h>
-#include <sys/types.h>
-#include <unistd.h>
 
 #include "child.h"
 #include "syscall-gate.h"

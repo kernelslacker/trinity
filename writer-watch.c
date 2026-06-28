@@ -24,7 +24,6 @@
 
 #include <errno.h>
 #include <stdbool.h>
-#include <string.h>
 #include <sys/ioctl.h>
 #include <sys/syscall.h>
 #include <unistd.h>		/* close, getpid */

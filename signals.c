@@ -1,15 +1,11 @@
 #include <dlfcn.h>
-#include <fcntl.h>
 #include <limits.h>	// PATH_MAX
 #include <signal.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>	// strnlen
 #include <sys/mman.h>	// memfd_create, MFD_CLOEXEC
 #include <sys/stat.h>	// umask
 #include <sys/syscall.h>	// SYS_write (raw syscall, bypassing libc stdio)
 #include <ucontext.h>	// ucontext_t / REG_RIP &c for fault_beacon IP/SP capture
-#include <unistd.h>
 #if defined(USE_BACKTRACE) && !defined(__SANITIZE_ADDRESS__)
 #include <execinfo.h>
 #endif

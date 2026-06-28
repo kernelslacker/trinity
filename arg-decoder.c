@@ -2,7 +2,6 @@
  * Routines to take a syscallrecord and turn it into an ascii representation.
  */
 #include <stdarg.h>
-#include <stdio.h>
 #include "arch.h"	//PAGE_MASK
 #include "arg-decoder.h"
 #include "params.h"	// verbosity

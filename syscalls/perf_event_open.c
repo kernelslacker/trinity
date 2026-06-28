@@ -4,11 +4,8 @@
 	 pid_t, pid, int, cpu, int, group_fd, unsigned long, flags)
  */
 
-#include <stdio.h>
-#include <stdlib.h>
 #include <unistd.h>
 #include <sys/ioctl.h>
-#include <sys/types.h>
 #include <dirent.h>
 #include <errno.h>
 #include "cgroup.h"
@@ -27,7 +24,6 @@
 #include "trinity.h"
 #include "utils.h"
 #include "compat.h"
-#include <time.h>
 #include "pids.h"
 
 #include "perf_event_open-internal.h"

@@ -29,13 +29,9 @@
  * the op leaves no fd debt for the rest of the child.
  */
 
-#include <fcntl.h>
 #include <stdbool.h>
-#include <stdlib.h>
 #include <sys/socket.h>
 #include <sys/syscall.h>
-#include <time.h>
-#include <unistd.h>
 
 #include "child.h"
 #include "childops-util.h"

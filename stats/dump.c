@@ -1,14 +1,8 @@
 #include <errno.h>
-#include <fcntl.h>
 #include <inttypes.h>
 #include <stdarg.h>
 #include <stddef.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/utsname.h>
-#include <time.h>
-#include <unistd.h>
 #include "arch.h"
 #include "arg-len-semantics.h"
 #include "breadcrumb_ring.h"

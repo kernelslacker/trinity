@@ -5,13 +5,10 @@
 #include <errno.h>
 #include <limits.h>
 #include <stdint.h>
-#include <string.h>
 #include <signal.h>
-#include <unistd.h>
 #include <sys/prctl.h>
 #include <sys/resource.h>
 #include <sys/syscall.h>
-#include <sys/types.h>
 #include <sys/wait.h>
 
 #include "arch.h"

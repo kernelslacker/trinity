@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE3(membarrier, int, cmd, unsigned int, flags, int, cpu_id)
  */
-#include <stdlib.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 #include "random.h"

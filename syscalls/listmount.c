@@ -3,13 +3,10 @@
  *		u64 __user *, mnt_ids, size_t, nr_mnt_ids,
  *		unsigned int, flags)
  */
-#include <fcntl.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <linux/mount.h>
-#include <string.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <asm/unistd.h>

@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(getrusage, int, who, struct rusage __user *, ru)
  */
-#include <string.h>
 #include <sys/resource.h>
 #include <sys/syscall.h>
 #include "deferred-free.h"

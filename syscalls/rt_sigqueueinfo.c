@@ -2,9 +2,6 @@
  * SYSCALL_DEFINE3(rt_sigqueueinfo, pid_t, pid, int, sig, siginfo_t __user *, uinfo)
  */
 #include <signal.h>
-#include <string.h>
-#include <sys/types.h>
-#include <unistd.h>
 #include "pids.h"
 #include "random.h"
 #include "rnd.h"

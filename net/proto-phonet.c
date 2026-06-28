@@ -2,8 +2,6 @@
 #include <sys/uio.h>
 #include <sys/un.h>
 #include <linux/phonet.h>
-#include <stdlib.h>
-#include <string.h>
 #include "net.h"
 #include "random.h"
 #include "compat.h"

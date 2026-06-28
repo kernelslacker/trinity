@@ -14,9 +14,7 @@
  */
 #include <stdbool.h>
 #include <stddef.h>
-#include <string.h>
 #include <sys/syscall.h>
-#include <unistd.h>
 #include "arch.h"
 #include "sanitise.h"
 #include "shm.h"

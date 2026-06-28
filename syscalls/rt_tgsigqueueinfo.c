@@ -3,9 +3,6 @@
 	 siginfo_t __user *, uinfo)
  */
 #include <signal.h>
-#include <string.h>
-#include <sys/types.h>
-#include <unistd.h>
 #include "pids.h"
 #include "random.h"
 #include "rnd.h"

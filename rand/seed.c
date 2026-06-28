@@ -21,11 +21,8 @@
  */
 #include <syslog.h>
 #include <unistd.h>
-#include <stdlib.h>
-#include <sys/stat.h>
 #include <sys/time.h>
 #include <errno.h>
-#include <fcntl.h>
 #include <limits.h>
 #include "shm.h"
 #include "params.h"	// 'user_set_seed'

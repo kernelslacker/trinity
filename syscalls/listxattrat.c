@@ -2,13 +2,9 @@
  * SYSCALL_DEFINE5(listxattrat, int, dfd, const char __user *, pathname,
  *		unsigned int, at_flags, char __user *, list, size_t, size)
  */
-#include <fcntl.h>
 #include <stddef.h>
-#include <stdio.h>
-#include <string.h>
 #include <sys/syscall.h>
 #include <sys/xattr.h>
-#include <unistd.h>
 #include <linux/limits.h>
 #include "arch.h"
 #include "pathnames.h"

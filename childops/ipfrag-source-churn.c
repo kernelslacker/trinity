@@ -67,15 +67,12 @@
 
 #include <errno.h>
 #include <net/if.h>
-#include <netinet/in.h>
 #include <netinet/ip.h>
 #include <sched.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <string.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
-#include <time.h>
 #include <unistd.h>
 
 #include "child.h"

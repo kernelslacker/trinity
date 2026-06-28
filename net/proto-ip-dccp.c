@@ -1,4 +1,3 @@
-#include <stdlib.h>
 #include <linux/dccp.h>
 #include "net.h"
 #include "compat.h"

@@ -2,7 +2,6 @@
  * SYSCALL_DEFINE3(futimesat, int, dfd, const char __user *, filename,
 	 struct timeval __user *, utimes)
  */
-#include <stdio.h>
 #include <sys/time.h>
 #include "pathnames.h"
 #include "random.h"

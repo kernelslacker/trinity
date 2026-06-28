@@ -1,9 +1,7 @@
 /*
  * SYSCALL_DEFINE2(gettimeofday, struct timeval __user *, tv, struct timezone __user *, tz)
  */
-#include <string.h>
 #include <sys/time.h>
-#include <time.h>
 #include "arch.h"
 #include "deferred-free.h"
 #include "shm.h"

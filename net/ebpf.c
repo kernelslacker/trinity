@@ -9,7 +9,6 @@
  *   Tier 3 (chaos): Random corruption — invalid opcodes, backward jumps,
  *     OOB registers, malformed 128-bit loads.
  */
-#include <stdlib.h>
 #include <stdint.h>
 #include <linux/bpf.h>
 

@@ -1,4 +1,3 @@
-#include <stdlib.h>
 #include <linux/if_ether.h>
 #include "net.h"
 #include "random.h"

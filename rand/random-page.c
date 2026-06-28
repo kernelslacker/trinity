@@ -2,8 +2,6 @@
  * Routines to dirty a range of memory.
  */
 
-#include <string.h>
-#include <unistd.h>
 #include "arch.h"
 #include "random.h"
 #include "rnd.h"

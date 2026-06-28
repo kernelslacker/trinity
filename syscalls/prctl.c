@@ -3,8 +3,6 @@
 	 unsigned long, arg4, unsigned long, arg5)
  */
 
-#include <stdlib.h>
-#include <string.h>
 #include <signal.h>
 #include <linux/const.h>
 #include <linux/capability.h>

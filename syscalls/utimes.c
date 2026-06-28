@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(utimes, char __user *, filename, struct timeval __user *, utimes)
  */
-#include <stdio.h>
 #include "pathnames.h"
 #include "rnd.h"
 #include "sanitise.h"

@@ -8,10 +8,8 @@
 #endif
 #include <signal.h>		// SIGSEGV / SIGABRT / SIGBUS / SIGILL for fault_beacon dump
 #include <stdbool.h>
-#include <stdio.h>
 #include <stdarg.h>
 #include <syslog.h>
-#include <unistd.h>
 #include "child.h"
 #include "debug.h"
 #include "fd-event.h"

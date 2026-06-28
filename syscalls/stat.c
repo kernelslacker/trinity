@@ -1,13 +1,10 @@
 /*
  * SYSCALL_DEFINE2(newstat, const char __user *, filename, struct stat __user *, statbuf)
  */
-#include <fcntl.h>
 #include <limits.h>
 #include <linux/stat.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <sys/syscall.h>
-#include <unistd.h>
 #include "arch.h"
 #include "compat.h"
 #include "pathnames.h"

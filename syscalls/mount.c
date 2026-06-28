@@ -8,11 +8,6 @@
 #include <linux/fs.h>
 #include <linux/mount.h>
 #include <signal.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/stat.h>
-#include <unistd.h>
 #include "csfu.h"
 #include "deferred-free.h"
 #include "pathnames.h"

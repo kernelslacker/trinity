@@ -9,7 +9,6 @@
  * rather than generic arithmetic perturbation.
  */
 #include <limits.h>
-#include <stdlib.h>
 #include "arch.h"
 #include "random.h"
 #include "rnd.h"

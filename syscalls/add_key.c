@@ -9,8 +9,6 @@
  * On error, the value -1 will be returned and errno will have been set to an appropriate error.
  */
 #include <linux/keyctl.h>
-#include <stdio.h>
-#include <string.h>
 #include "name-pool.h"
 #include "random.h"
 #include "rnd.h"

@@ -1,4 +1,3 @@
-#include <stdlib.h>
 #include <linux/atmdev.h>
 #include <linux/atm.h>
 #include <sys/socket.h>

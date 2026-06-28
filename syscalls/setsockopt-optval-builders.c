@@ -12,7 +12,6 @@
  * not used.
  */
 
-#include <string.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <linux/if_packet.h>

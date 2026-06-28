@@ -2,10 +2,7 @@
  *
  * SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)
  */
-#include <fcntl.h>
-#include <stdio.h>
 #include <stddef.h>
-#include <string.h>
 #include <sys/utsname.h>
 #include <unistd.h>
 #include <linux/utsname.h>

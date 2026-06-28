@@ -8,7 +8,6 @@
  *  then it returns one of the positive error number listed in ERRORS.
  */
 
-#include <time.h>
 #include "pids.h"
 #include "random.h"
 #include "rnd.h"

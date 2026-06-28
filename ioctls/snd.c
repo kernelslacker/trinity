@@ -1,8 +1,5 @@
 
-#include <stdio.h>
-#include <stdlib.h>
 #include <inttypes.h>
-#include <time.h>
 #include <linux/types.h>
 #include <linux/ioctl.h>
 #include <linux/soundcard.h>

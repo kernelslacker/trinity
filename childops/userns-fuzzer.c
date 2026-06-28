@@ -39,19 +39,14 @@
  */
 
 #include <errno.h>
-#include <fcntl.h>
 #include <sched.h>
 #include <signal.h>
 #include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/ioctl.h>
 #include <sys/mount.h>
 #include <sys/prctl.h>
 #include <sys/syscall.h>
 #include <sys/wait.h>
-#include <unistd.h>
 #include <linux/bpf.h>
 #include <linux/capability.h>
 #include <linux/if.h>

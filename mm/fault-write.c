@@ -7,7 +7,6 @@
 #include <signal.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <string.h>
 #include <sys/mman.h>
 #include <unistd.h>	// getpagesize
 #include "arch.h"

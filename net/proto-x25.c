@@ -1,7 +1,6 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <linux/x25.h>
-#include <stdlib.h>
 #include "net.h"
 #include "random.h"
 #include "rnd.h"

@@ -2,7 +2,6 @@
  * SYSCALL_DEFINE2(memfd_create, const char __user *, uname, unsigned int, flag
  */
 
-#include <stdio.h>
 
 #include "publish_resource.h"
 #include "random.h"

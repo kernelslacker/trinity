@@ -2,7 +2,6 @@
  * SYSCALL_DEFINE4(ptrace, long, request, long, pid, long, addr, long, data)
  */
 #include <signal.h>
-#include <stdlib.h>
 #include <linux/ptrace.h>
 #include "arch.h"
 #include "random.h"

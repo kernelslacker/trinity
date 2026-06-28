@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE1(sysinfo, struct sysinfo __user *, info)
  */
-#include <string.h>
 #include <sys/sysinfo.h>
 #include "random.h"
 #include "sanitise.h"

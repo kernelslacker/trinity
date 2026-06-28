@@ -46,15 +46,11 @@
  */
 
 #include <errno.h>
-#include <fcntl.h>
 #include <net/if.h>
 #include <sched.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdio.h>
-#include <string.h>
 #include <sys/stat.h>
-#include <time.h>
 #include <unistd.h>
 
 #include <linux/if_link.h>

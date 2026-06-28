@@ -1,14 +1,9 @@
 #include <errno.h>
-#include <fcntl.h>
 #include <inttypes.h>
 #include <stdint.h>
 #include <unistd.h>
-#include <string.h>
-#include <stdlib.h>
 #include <sys/resource.h>
-#include <sys/types.h>
 
-#include <time.h>
 
 #include "child.h"
 #include "cmp_hints.h"

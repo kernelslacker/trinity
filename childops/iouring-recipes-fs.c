@@ -8,14 +8,10 @@
  */
 
 #include <errno.h>
-#include <fcntl.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/syscall.h>
 #include <sys/uio.h>
-#include <unistd.h>
 #include <linux/io_uring.h>
 
 #include "compat.h"

@@ -29,10 +29,7 @@
 #include <errno.h>
 #include <sched.h>
 #include <stdbool.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/syscall.h>
-#include <unistd.h>
 #include <linux/sched/types.h>
 
 #include "child.h"
