@@ -2,6 +2,7 @@
 
 #include <linux/ioctl.h>
 #include <linux/ptp_clock.h>
+#include <string.h>
 
 #include "ioctls.h"
 #include "random.h"

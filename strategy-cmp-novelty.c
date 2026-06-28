@@ -6,6 +6,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "kcov.h"		/* KCOV_CMP_RECORDS_MAX, kcov_shm */
 #include "shm.h"

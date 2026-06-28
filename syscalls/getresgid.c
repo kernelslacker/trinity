@@ -1,6 +1,7 @@
 /*
  * SYSCALL_DEFINE3(getresgid, gid_t __user *, rgid, gid_t __user *, egid, gid_t __user *, sgid)
  */
+#include <sys/types.h>
 #include "deferred-free.h"
 #include "proc-status.h"
 #include "random.h"

@@ -6,6 +6,7 @@
 #include <sys/syscall.h>
 #include <sys/xattr.h>
 #include <unistd.h>
+#include <string.h>
 #include "arch.h"
 #include "random.h"
 #include "rnd.h"

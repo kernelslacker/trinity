@@ -3,6 +3,7 @@
  */
 #include <unistd.h>
 #include <limits.h>
+#include <string.h>
 #include "arch.h"
 #include "sanitise.h"
 #include "shm.h"

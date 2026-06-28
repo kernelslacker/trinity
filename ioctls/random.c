@@ -4,6 +4,7 @@
 #include <linux/major.h>
 #include <linux/random.h>
 #include <sys/sysmacros.h>
+#include <sys/stat.h>
 
 #include "ioctls.h"
 #include "utils.h"

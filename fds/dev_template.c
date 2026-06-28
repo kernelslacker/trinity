@@ -19,6 +19,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <string.h>
 
 #include "dev_template.h"
 #include "fd.h"

@@ -2,6 +2,9 @@
 
 #include <errno.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <string.h>
 
 #include "deferred-free.h"
 #include "fd.h"

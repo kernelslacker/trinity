@@ -136,6 +136,8 @@
 
 #include <linux/netlink.h>
 #include <linux/sockios.h>
+#include <string.h>
+#include <time.h>
 
 #include "child.h"
 #include "childops-netlink.h"

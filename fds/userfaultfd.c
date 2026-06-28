@@ -3,6 +3,9 @@
 #include <errno.h>
 #include <sys/ioctl.h>
 #include <linux/userfaultfd.h>
+#include <fcntl.h>
+#include <string.h>
+#include <unistd.h>
 
 #include "fd.h"
 #include "syscall-gate.h"

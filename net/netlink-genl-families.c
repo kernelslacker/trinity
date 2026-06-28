@@ -28,6 +28,7 @@
 #include <unistd.h>
 #include <linux/netlink.h>
 #include <linux/genetlink.h>
+#include <string.h>
 
 #include "netlink-genl-families.h"
 #include "random.h"

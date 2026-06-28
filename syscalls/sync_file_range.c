@@ -4,6 +4,7 @@
  */
 #include <linux/fs.h>
 #include <sys/stat.h>
+#include <stdlib.h>
 #include "arch.h"
 #include "files.h"
 #include "random.h"

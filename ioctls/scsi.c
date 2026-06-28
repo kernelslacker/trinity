@@ -2,6 +2,7 @@
 #include <scsi/scsi.h>
 #include <scsi/scsi_ioctl.h>
 #include <scsi/sg.h>
+#include <string.h>
 
 #include "arch.h"	// page_size
 #include "ioctls.h"

@@ -12,6 +12,8 @@
  */
 
 
+#include <stdio.h>
+#include <string.h>
 #include "name-pool.h"
 #include "random.h"
 #include "rnd.h"

@@ -2,6 +2,7 @@
  * SYSCALL_DEFINE3(signalfd, int, ufd, sigset_t __user *, user_mask, size_t, sizemask)
  */
 #include <signal.h>
+#include <unistd.h>
 #include "publish_resource.h"
 #include "rnd.h"
 #include "sanitise.h"

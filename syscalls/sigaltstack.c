@@ -3,6 +3,7 @@
  */
 #include <signal.h>
 #include <sys/syscall.h>
+#include <string.h>
 #include "arch.h"
 #include "deferred-free.h"
 #include "maps.h"

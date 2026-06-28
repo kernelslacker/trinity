@@ -18,6 +18,7 @@
 
 #include <stddef.h>
 #include <linux/netfilter/nfnetlink.h>
+#include <string.h>
 
 #include "netlink-nfnl-subsystems.h"
 #include "random.h"

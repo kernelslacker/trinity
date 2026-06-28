@@ -7,6 +7,12 @@
 #include <sys/mman.h>
 #include <sys/syscall.h>
 #include <signal.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
+#include <unistd.h>
 #include "breadcrumb_ring.h"
 #include "child.h"
 #include "debug.h"

@@ -7,6 +7,7 @@
  */
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <string.h>
 #include "maps.h"
 #include "sanitise.h"
 #include "shm.h"

@@ -4,6 +4,8 @@
  */
 
 
+#include <stdlib.h>
+#include <string.h>
 #include "arch.h"
 #include "syscall.h"
 #include "params.h"

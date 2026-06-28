@@ -42,6 +42,10 @@
 #include <limits.h>
 #include <stdbool.h>
 #include <sys/xattr.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <time.h>
+#include <unistd.h>
 
 #include "child.h"
 #include "childops-util.h"

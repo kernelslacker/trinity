@@ -106,6 +106,10 @@
 #include <stdint.h>
 #include <sys/socket.h>
 #include <sys/time.h>
+#include <fcntl.h>
+#include <string.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #include "child.h"
 #include "syscall-gate.h"

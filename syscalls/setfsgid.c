@@ -2,6 +2,7 @@
  * SYSCALL_DEFINE1(setfsgid, gid_t, gid)
  */
 #include <sys/fsuid.h>
+#include <sys/types.h>
 #include "random.h"
 #include "shm.h"
 #include "sanitise.h"

@@ -31,6 +31,7 @@
 #include <stdbool.h>
 #include <sys/syscall.h>
 #include <linux/sched/types.h>
+#include <string.h>
 
 #include "child.h"
 #include "syscall-gate.h"

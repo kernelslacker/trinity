@@ -2,6 +2,7 @@
  * SYSCALL_DEFINE4(lsm_set_self_attr, unsigned int, attr,
  *		struct lsm_ctx __user *, ctx, u32, size, u32, flags)
  */
+#include <string.h>
 #include "arch.h"
 #include "random.h"
 #include "sanitise.h"

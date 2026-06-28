@@ -69,6 +69,12 @@
 #include <sys/uio.h>
 #include <sys/wait.h>
 #include <netinet/in.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #if __has_include(<linux/tcp.h>)
 # include <linux/tcp.h>

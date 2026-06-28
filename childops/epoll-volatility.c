@@ -58,6 +58,9 @@
 #include <stdint.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
+#include <string.h>
+#include <time.h>
+#include <unistd.h>
 
 #include "child.h"
 #include "childops-util.h"

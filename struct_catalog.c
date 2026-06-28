@@ -48,6 +48,9 @@
 #include <linux/quota.h>
 #include <linux/dqblk_xfs.h>
 #include <mqueue.h>
+#include <fcntl.h>
+#include <string.h>
+#include <time.h>
 
 #include "config.h"
 /*

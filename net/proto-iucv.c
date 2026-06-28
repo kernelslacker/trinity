@@ -1,5 +1,6 @@
 #include <sys/utsname.h>
 #include <netiucv/iucv.h>
+#include <string.h>
 #include "net.h"
 #include "compat.h"
 #include "rnd.h"

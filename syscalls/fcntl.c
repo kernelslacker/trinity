@@ -19,6 +19,7 @@
 
 #include <signal.h>
 #include <stdbool.h>
+#include <fcntl.h>
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"

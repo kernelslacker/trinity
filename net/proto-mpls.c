@@ -5,6 +5,7 @@
 #include <linux/if_ether.h>
 #include <stdint.h>
 #include <unistd.h>
+#include <string.h>
 #include "net.h"
 #include "random.h"
 #include "socket-family-grammar.h"

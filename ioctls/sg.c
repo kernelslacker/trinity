@@ -4,6 +4,7 @@
 #include <scsi/sg.h>
 
 #include <limits.h>
+#include <string.h>
 
 #include "arch.h"		// page_size
 #include "ioctls.h"

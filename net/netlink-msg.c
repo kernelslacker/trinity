@@ -26,6 +26,7 @@
 #include <linux/sock_diag.h>
 #include <linux/inet_diag.h>
 #include <linux/connector.h>
+#include <string.h>
 #include "net.h"
 #include "netlink-attrs.h"
 #include "netlink-genl-families.h"

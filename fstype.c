@@ -1,5 +1,7 @@
 /* Generate filesystem-type name strings for the fsopen/mount family. */
 #include <stddef.h>
+#include <stdio.h>
+#include <string.h>
 #include "fstype.h"
 #include "random.h"
 #include "rnd.h"

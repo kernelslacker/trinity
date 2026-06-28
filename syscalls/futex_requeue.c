@@ -3,6 +3,7 @@
  *		unsigned int, flags, int, nr_wake, int, nr_requeue)
  */
 #include <linux/futex.h>
+#include <string.h>
 #include "random.h"
 #include "sanitise.h"
 #include "compat.h"

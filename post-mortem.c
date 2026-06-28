@@ -4,6 +4,11 @@
 #include <stdatomic.h>
 #include <stdint.h>
 #include <syslog.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
+#include <time.h>
 #include "arch.h"
 #include "child.h"
 #include "kcov.h"

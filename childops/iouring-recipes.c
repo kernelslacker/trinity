@@ -34,6 +34,9 @@
 #include <stdint.h>
 #include <sys/mman.h>
 #include <linux/io_uring.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 
 #include "compat.h"
 #include "syscall-gate.h"

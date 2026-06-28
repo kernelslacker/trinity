@@ -34,6 +34,10 @@
 #include <stdbool.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "child.h"
 #include "maps.h"

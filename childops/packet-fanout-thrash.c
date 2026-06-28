@@ -49,6 +49,7 @@
 
 #include <linux/if_ether.h>
 #include <linux/if_packet.h>
+#include <string.h>
 
 #include "child.h"
 #include "compat.h"

@@ -15,6 +15,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <linux/if_packet.h>
+#include <string.h>
 #include "config.h"
 #ifdef USE_SCTP
 #include <linux/sctp.h>

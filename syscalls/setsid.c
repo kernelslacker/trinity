@@ -2,6 +2,7 @@
  * SYSCALL_DEFINE0(setsid)
  */
 #include <unistd.h>
+#include <sys/types.h>
 #include "random.h"
 #include "shm.h"
 #include "sanitise.h"

@@ -53,6 +53,10 @@
 #include <linux/if_tun.h>
 #include <linux/keyctl.h>
 #include <linux/perf_event.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
 
 #include "child.h"
 #include "syscall-gate.h"

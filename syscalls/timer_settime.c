@@ -4,6 +4,7 @@
 	struct itimerspec __user *, old_setting)
  */
 #include <stdint.h>
+#include <time.h>
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"

@@ -29,6 +29,7 @@
 #include <unistd.h>		/* close, getpid */
 #include <linux/perf_event.h>
 #include <linux/hw_breakpoint.h>
+#include <string.h>
 
 #include "params.h"
 #include "syscall-gate.h"	/* trinity_raw_syscall */

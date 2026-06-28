@@ -9,6 +9,7 @@
 #include <stdint.h>
 #include <sys/mman.h>
 #include <unistd.h>	// getpagesize
+#include <string.h>
 #include "arch.h"
 #include "maps.h"
 #include "random.h"

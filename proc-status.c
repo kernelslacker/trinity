@@ -7,6 +7,7 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#include <sys/types.h>
 
 #include "proc-status.h"
 

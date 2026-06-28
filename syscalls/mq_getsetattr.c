@@ -4,6 +4,8 @@
 	struct mq_attr __user *, u_omqstat)
  */
 #include <mqueue.h>
+#include <fcntl.h>
+#include <string.h>
 #include "random.h"
 #include "sanitise.h"
 

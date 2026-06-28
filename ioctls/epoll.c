@@ -2,6 +2,7 @@
 
 #include <linux/ioctl.h>
 #include <linux/types.h>
+#include <sys/stat.h>
 
 #include "ioctls.h"
 #include "objects.h"

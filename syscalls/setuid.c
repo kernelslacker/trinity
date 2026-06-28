@@ -2,6 +2,7 @@
  * SYSCALL_DEFINE1(setuid, uid_t, uid)
  */
 #include <unistd.h>
+#include <sys/types.h>
 #include "proc-status.h"
 #include "random.h"
 #include "shm.h"

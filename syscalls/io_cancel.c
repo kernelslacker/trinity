@@ -3,6 +3,7 @@
 	 struct io_event __user *, result)
  */
 #include <linux/aio_abi.h>
+#include <string.h>
 #include "objects.h"
 #include "random.h"
 #include "rnd.h"

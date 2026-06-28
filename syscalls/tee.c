@@ -1,6 +1,7 @@
 /*
  * SYSCALL_DEFINE4(tee, int, fdin, int, fdout, size_t, len, unsigned int, flags)
  */
+#include <fcntl.h>
 #include "sanitise.h"
 #include "trinity.h"
 #include "compat.h"

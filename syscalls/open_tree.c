@@ -1,6 +1,7 @@
 /*
  *  SYSCALL_DEFINE3(open_tree, int, dfd, const char *, filename, unsigned, flags)
  */
+#include <fcntl.h>
 #include "compat.h"
 #include "object-types.h"
 #include "sanitise.h"

@@ -37,6 +37,8 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <linux/utsname.h>
+#include <string.h>
+#include <time.h>
 
 #include "child.h"
 #include "pre_crash_ring.h"

@@ -4,6 +4,7 @@
  * On success, (all requested permissions granted) faccessat() returns 0.
  * On error, -1 is returned and errno is set to indicate the error.
  */
+#include <stdio.h>
 #include "compat.h"
 #include "pathnames.h"
 #include "rnd.h"

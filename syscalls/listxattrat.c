@@ -6,6 +6,9 @@
 #include <sys/syscall.h>
 #include <sys/xattr.h>
 #include <linux/limits.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <string.h>
 #include "arch.h"
 #include "pathnames.h"
 #include "random.h"

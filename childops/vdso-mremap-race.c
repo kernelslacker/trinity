@@ -70,6 +70,11 @@
 #include <stdbool.h>
 #include <sys/mman.h>
 #include <sys/wait.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/types.h>
+#include <time.h>
+#include <unistd.h>
 
 #include "child.h"
 #include "childops-util.h"

@@ -40,6 +40,9 @@
 #include <stdint.h>
 #include <sys/syscall.h>
 #include <linux/io_uring.h>
+#include <fcntl.h>
+#include <string.h>
+#include <unistd.h>
 
 #include "arch.h"		/* page_size */
 #include "syscall-gate.h"

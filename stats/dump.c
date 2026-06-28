@@ -3,6 +3,9 @@
 #include <stdarg.h>
 #include <stddef.h>
 #include <sys/utsname.h>
+#include <stdio.h>
+#include <string.h>
+#include <time.h>
 #include "arch.h"
 #include "arg-len-semantics.h"
 #include "breadcrumb_ring.h"

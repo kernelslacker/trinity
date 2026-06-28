@@ -4,6 +4,7 @@
 	 size_t, size, int, flags)
  */
 
+#include <stdio.h>
 #include "pathnames.h"
 #include "rnd.h"
 #include "sanitise.h"

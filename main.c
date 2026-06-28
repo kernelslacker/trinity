@@ -6,6 +6,9 @@
 #include <sys/resource.h>
 #include <sys/syscall.h>
 #include <sys/wait.h>
+#include <sys/types.h>
+#include <time.h>
+#include <unistd.h>
 
 
 #include "child.h"

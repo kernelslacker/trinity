@@ -43,6 +43,8 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <linux/capability.h>
+#include <string.h>
+#include <sys/types.h>
 
 #include "config.h"
 #ifdef USE_BPF

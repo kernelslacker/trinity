@@ -13,6 +13,9 @@
 
 #include <errno.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <sys/types.h>
 
 #include "arch.h"
 #include "deferred-free.h"

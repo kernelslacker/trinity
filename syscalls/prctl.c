@@ -11,6 +11,7 @@
 #include <linux/seccomp.h>
 #endif
 #include <sys/prctl.h>
+#include <string.h>
 
 #include "deferred-free.h"
 #include "net.h"

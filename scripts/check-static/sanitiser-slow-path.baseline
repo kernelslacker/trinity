@@ -24,8 +24,8 @@
 # every time a writable address is requested; both want to migrate to
 # a cached-permissions / cached-residency map maintained on the slow
 # side of the allocator.
-rand/random-address.c:300:mprotect
-rand/random-address.c:468:mincore
+rand/random-address.c:301:mprotect
+rand/random-address.c:469:mincore
 
 # utils.c: heap_bounds_init() is genuinely one-shot (called from the
 # parent during setup) and would normally be slow-ok.  It lives in a
@@ -33,4 +33,4 @@ rand/random-address.c:468:mincore
 # splitting the file is the follow-up that retires this entry; until
 # then the call is baselined rather than marker-suppressed so the two
 # slow paths get fixed together.
-utils.c:3085:fopen
+utils.c:3091:fopen

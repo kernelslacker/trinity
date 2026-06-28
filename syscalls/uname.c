@@ -14,6 +14,7 @@
 #include <unistd.h>
 #include <linux/utsname.h>
 #include <asm/unistd.h>
+#include <string.h>
 #include "deferred-free.h"
 #include "random.h"
 #include "sanitise.h"

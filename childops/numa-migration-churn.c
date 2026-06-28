@@ -63,6 +63,10 @@
 #include <stdbool.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
 
 #include "arch.h"
 #include "syscall-gate.h"

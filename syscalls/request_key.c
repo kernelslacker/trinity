@@ -23,6 +23,8 @@
  * resolves.
  */
 #include <linux/keyctl.h>
+#include <stdio.h>
+#include <string.h>
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"

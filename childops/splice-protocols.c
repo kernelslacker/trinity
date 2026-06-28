@@ -59,6 +59,10 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
 
 #if __has_include(<linux/udp.h>)
 # include <linux/udp.h>

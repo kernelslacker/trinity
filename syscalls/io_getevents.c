@@ -6,6 +6,7 @@
 	struct timespec __user *, timeout)
  */
 #include <linux/aio_abi.h>
+#include <string.h>
 #include "objects.h"
 #include "random.h"
 #include "rnd.h"

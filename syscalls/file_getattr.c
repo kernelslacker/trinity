@@ -7,6 +7,9 @@
 #include <sys/syscall.h>
 #include <asm/unistd.h>
 #include <linux/fs.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <string.h>
 #include "arch.h"
 #include "pathnames.h"
 #include "random.h"

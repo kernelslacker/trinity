@@ -79,6 +79,9 @@
 #include <stdint.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <string.h>
+#include <sys/types.h>
 
 #include "child.h"
 #include "compat.h"

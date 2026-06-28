@@ -1,6 +1,7 @@
 /*
  * SYSCALL_DEFINE2(truncate, const char __user *, path, long, length)
  */
+#include <stdio.h>
 #include "maps.h"
 #include "pathnames.h"
 #include "rnd.h"

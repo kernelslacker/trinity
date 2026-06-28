@@ -16,6 +16,11 @@
 #include <sys/syscall.h>
 #include <sys/timerfd.h>
 #include <linux/io_uring.h>
+#include <fcntl.h>
+#include <string.h>
+#include <sys/types.h>
+#include <time.h>
+#include <unistd.h>
 
 #include "syscall-gate.h"
 #include "childops/iouring-recipes.h"

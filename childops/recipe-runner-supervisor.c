@@ -19,6 +19,10 @@
 #include <sys/wait.h>
 #include <linux/filter.h>
 #include <linux/seccomp.h>
+#include <fcntl.h>
+#include <string.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #include "syscall-gate.h"
 #include "childops-util.h"

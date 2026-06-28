@@ -109,6 +109,10 @@
 
 #if __has_include(<linux/vm_sockets.h>)
 #include <linux/vm_sockets.h>
+#include <string.h>
+#include <sys/types.h>
+#include <time.h>
+#include <unistd.h>
 #endif
 
 #include "child.h"

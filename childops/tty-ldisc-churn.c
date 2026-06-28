@@ -75,6 +75,8 @@
 #include <stdint.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <sys/types.h>
 
 #include "child.h"
 #include "shm.h"

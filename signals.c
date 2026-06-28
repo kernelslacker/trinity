@@ -8,6 +8,9 @@
 #include <ucontext.h>	// ucontext_t / REG_RIP &c for fault_beacon IP/SP capture
 #if defined(USE_BACKTRACE) && !defined(__SANITIZE_ADDRESS__)
 #include <execinfo.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <unistd.h>
 #endif
 
 #include "trinity.h"	// __unused__

@@ -38,6 +38,9 @@
 #include <sys/resource.h>
 #include <sys/syscall.h>
 #include <sys/wait.h>
+#include <fcntl.h>
+#include <stdlib.h>
+#include <unistd.h>
 
 #include "child.h"
 #include "syscall-gate.h"

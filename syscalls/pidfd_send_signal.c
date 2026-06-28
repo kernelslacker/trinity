@@ -3,6 +3,7 @@
  */
 #include <signal.h>
 #include <linux/pidfd.h>
+#include <string.h>
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"

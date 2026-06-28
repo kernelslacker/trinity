@@ -14,6 +14,8 @@
 #include <linux/netfilter_arp/arp_tables.h>
 #include <linux/netfilter/ipset/ip_set.h>
 #include <linux/ip_vs.h>
+#include <stdio.h>
+#include <string.h>
 #include "compat.h"
 #include "arch.h"
 #include "net.h"

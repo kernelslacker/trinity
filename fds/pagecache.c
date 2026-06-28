@@ -17,6 +17,9 @@
 #include <errno.h>
 #include <sys/vfs.h>
 #include <linux/magic.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include "fd.h"
 #include "files.h"

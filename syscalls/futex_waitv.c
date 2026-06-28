@@ -6,6 +6,7 @@
 #include <linux/futex.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 #include "futex.h"
 #include "random.h"
 #include "rnd.h"

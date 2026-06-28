@@ -2,6 +2,8 @@
  * SYSCALL_DEFINE2(lremovexattr, const char __user *, pathname, const char __user *, name)
  */
 #include <sys/xattr.h>
+#include <stdio.h>
+#include <string.h>
 #include "pathnames.h"
 #include "rnd.h"
 #include "sanitise.h"

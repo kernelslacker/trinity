@@ -5,6 +5,7 @@
  */
 #include <sys/syscall.h>
 #include <unistd.h>
+#include <time.h>
 #include "deferred-free.h"
 #include "pids.h"
 #include "random.h"

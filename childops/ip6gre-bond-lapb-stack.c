@@ -81,6 +81,8 @@
 #include <linux/if_link.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
+#include <stdio.h>
+#include <string.h>
 
 #include "child.h"
 #include "childops-netlink.h"

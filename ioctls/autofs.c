@@ -1,5 +1,6 @@
 #include <linux/limits.h>
 #include <linux/auto_fs4.h>
+#include <string.h>
 
 #include "ioctls.h"
 #include "maps.h"

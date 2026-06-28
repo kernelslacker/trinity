@@ -52,6 +52,11 @@
 
 #ifdef USE_IF_ALG
 #include <linux/if_alg.h>
+#include <fcntl.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
+#include <unistd.h>
 #endif
 
 #include "child.h"

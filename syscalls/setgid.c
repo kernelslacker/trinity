@@ -2,6 +2,7 @@
  * SYSCALL_DEFINE1(setgid, gid_t, gid)
  */
 #include <unistd.h>
+#include <sys/types.h>
 #include "proc-status.h"
 #include "random.h"
 #include "shm.h"

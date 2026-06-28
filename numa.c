@@ -1,4 +1,6 @@
 #include <ctype.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 #include "numa.h"
 #include "random.h"

@@ -3,6 +3,9 @@
 #include <errno.h>
 #include <mqueue.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <string.h>
 
 #include "fd.h"
 #include "objects.h"

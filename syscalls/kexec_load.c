@@ -4,6 +4,7 @@
  */
 
 #include <linux/kexec.h>
+#include <string.h>
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"

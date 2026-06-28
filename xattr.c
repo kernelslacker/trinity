@@ -3,6 +3,8 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <linux/xattr.h>
+#include <stdio.h>
+#include <string.h>
 #include "arch.h"
 #include "name-pool.h"
 #include "random.h"

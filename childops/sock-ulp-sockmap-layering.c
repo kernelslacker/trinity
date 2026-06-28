@@ -49,6 +49,9 @@
 #include <sys/syscall.h>
 
 #include <linux/bpf.h>
+#include <fcntl.h>
+#include <string.h>
+#include <unistd.h>
 
 #include "bpf.h"
 #include "bpf-syscall.h"

@@ -8,6 +8,8 @@
 #include <sys/ioctl.h>
 #include <dirent.h>
 #include <errno.h>
+#include <sys/types.h>
+#include <time.h>
 #include "cgroup.h"
 #include "child.h"
 #include "csfu.h"

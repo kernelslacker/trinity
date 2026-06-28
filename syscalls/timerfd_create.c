@@ -1,6 +1,7 @@
 /*
  * SYSCALL_DEFINE2(timerfd_create, int, clockid, int, flags)
  */
+#include <time.h>
 #include "publish_resource.h"
 #include "random.h"
 #include "sanitise.h"

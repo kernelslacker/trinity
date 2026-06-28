@@ -24,6 +24,8 @@
 #include <sys/time.h>
 #include <errno.h>
 #include <limits.h>
+#include <fcntl.h>
+#include <stdlib.h>
 #include "shm.h"
 #include "params.h"	// 'user_set_seed'
 #include "pids.h"

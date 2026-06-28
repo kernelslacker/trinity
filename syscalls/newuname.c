@@ -6,6 +6,8 @@
 #include <sys/utsname.h>
 #include <unistd.h>
 #include <linux/utsname.h>
+#include <fcntl.h>
+#include <string.h>
 #include "random.h"
 #include "shm.h"
 #include "sanitise.h"

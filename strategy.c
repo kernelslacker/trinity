@@ -30,6 +30,7 @@
  */
 
 #include <stdbool.h>
+#include <string.h>
 
 #include "kcov.h"
 #include "shm.h"

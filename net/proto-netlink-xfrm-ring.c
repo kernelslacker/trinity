@@ -6,6 +6,7 @@
  */
 
 #include <stdbool.h>
+#include <string.h>
 
 #include "compat.h"
 #include "proto-netlink-xfrm-internal.h"

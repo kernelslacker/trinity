@@ -12,6 +12,7 @@
  */
 
 #include <dirent.h>
+#include <stdio.h>
 
 #include "compat.h"
 #include "hugepages.h"

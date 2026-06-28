@@ -6,6 +6,8 @@
 #include <sys/syscall.h>
 #include <sys/un.h>
 #include <unistd.h>
+#include <stdio.h>
+#include <string.h>
 #include "deferred-free.h"
 #include "net.h"
 #include "random.h"

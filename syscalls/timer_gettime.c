@@ -1,6 +1,7 @@
 /*
  * SYSCALL_DEFINE2(timer_gettime, timer_t, timer_id, struct itimerspec __user *, setting)
  */
+#include <time.h>
 #include "sanitise.h"
 #include "shm.h"
 #include "stats_ring.h"

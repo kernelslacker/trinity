@@ -3,6 +3,8 @@
  */
 #include <sys/resource.h>
 #include <unistd.h>
+#include <stdio.h>
+#include <sys/types.h>
 #include "proc-status.h"
 #include "random.h"
 #include "rnd.h"

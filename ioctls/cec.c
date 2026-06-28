@@ -2,6 +2,7 @@
 
 #include <linux/ioctl.h>
 #include <linux/cec.h>
+#include <string.h>
 
 #include "ioctls.h"
 #include "random.h"

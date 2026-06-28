@@ -6,6 +6,9 @@
 #include <linux/bpf.h>
 #include <linux/sockios.h>
 #include <errno.h>
+#include <string.h>
+#include <sys/types.h>
+#include <unistd.h>
 #include "arch.h"
 #include "bpf.h"
 #include "bpf-syscall.h"

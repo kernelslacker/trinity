@@ -48,6 +48,9 @@
 #include <stdint.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <string.h>
+#include <sys/types.h>
+#include <time.h>
 
 #include "child.h"
 #include "shm.h"

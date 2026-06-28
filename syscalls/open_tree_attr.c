@@ -4,6 +4,7 @@
  */
 #include <fcntl.h>
 #include <linux/mount.h>
+#include <string.h>
 #include "compat.h"
 #include "csfu.h"
 #include "deferred-free.h"

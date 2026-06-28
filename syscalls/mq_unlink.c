@@ -1,6 +1,7 @@
 /*
  * SYSCALL_DEFINE1(mq_unlink, const char __user *, u_name)
  */
+#include <string.h>
 #include "objects.h"
 #include "rnd.h"
 #include "sanitise.h"

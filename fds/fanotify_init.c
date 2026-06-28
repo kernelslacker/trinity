@@ -1,6 +1,7 @@
 /* fanotify FDs */
 
 #include <errno.h>
+#include <unistd.h>
 
 #include "fd.h"
 #include "syscall-gate.h"

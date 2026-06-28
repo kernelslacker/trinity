@@ -63,6 +63,9 @@
 #include <linux/neighbour.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
+#include <fcntl.h>
+#include <string.h>
+#include <time.h>
 
 #include "child.h"
 #include "childops-netlink.h"

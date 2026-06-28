@@ -61,6 +61,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <sys/syscall.h>
+#include <string.h>
+#include <time.h>
 
 #include "child.h"
 #include "syscall-gate.h"

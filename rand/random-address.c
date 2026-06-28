@@ -5,6 +5,7 @@
 #include <sys/mman.h>	// mprotect
 #include <sys/ipc.h>
 #include <sys/shm.h>
+#include <string.h>
 
 #include "arch.h"	// KERNEL_ADDR etc
 #include "child.h"	// this_child(), per-child storm counters

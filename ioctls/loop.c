@@ -6,6 +6,8 @@
 #include <sys/mman.h>
 #include <sys/sysmacros.h>
 #include <unistd.h>
+#include <string.h>
+#include <sys/stat.h>
 
 #include "compat.h"
 #include "ioctls.h"

@@ -10,6 +10,8 @@
 #include <stdbool.h>
 #include <stdarg.h>
 #include <syslog.h>
+#include <stdio.h>
+#include <unistd.h>
 #include "child.h"
 #include "debug.h"
 #include "fd-event.h"

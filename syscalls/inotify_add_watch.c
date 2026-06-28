@@ -3,6 +3,7 @@
  */
 #include <limits.h>
 #include <sys/inotify.h>
+#include <stdio.h>
 
 #include "pathnames.h"
 #include "rnd.h"

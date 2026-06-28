@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <linux/qrtr.h>
+#include <string.h>
 #include "net.h"
 #include "random.h"
 #include "socket-family-grammar.h"

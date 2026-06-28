@@ -22,6 +22,8 @@
 #include <sys/socket.h>
 #include <linux/if_packet.h>
 #include <linux/udp.h>
+#include <string.h>
+#include <sys/types.h>
 
 #include "cmsg-richness.h"
 #include "cmsg_build.h"

@@ -3,6 +3,8 @@
  */
 #include <sys/syscall.h>
 #include <unistd.h>
+#include <sys/types.h>
+#include <time.h>
 #include "deferred-free.h"
 #include "random.h"
 #include "sanitise.h"

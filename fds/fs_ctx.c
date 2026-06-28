@@ -2,6 +2,7 @@
 
 #include <errno.h>
 #include <sys/syscall.h>
+#include <unistd.h>
 
 #include "fd.h"
 #include "syscall-gate.h"

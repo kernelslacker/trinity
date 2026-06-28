@@ -118,6 +118,11 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <sys/socket.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/types.h>
+#include <time.h>
+#include <unistd.h>
 
 #include "child.h"
 #include "childops-util.h"

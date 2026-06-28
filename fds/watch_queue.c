@@ -4,6 +4,7 @@
 #include <linux/ioctl.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
+#include <fcntl.h>
 
 #include "fd.h"
 #include "objects.h"

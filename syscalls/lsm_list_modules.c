@@ -7,6 +7,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <asm/unistd.h>
+#include <string.h>
 #include "arch.h"
 #include "deferred-free.h"
 #include "random.h"

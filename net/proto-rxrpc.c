@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <linux/rxrpc.h>
+#include <string.h>
 #include "net.h"
 #include "random.h"
 #include "socket-family-grammar.h"

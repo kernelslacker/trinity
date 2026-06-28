@@ -2,6 +2,7 @@
  * SYSCALL_DEFINE3(tgkill, pid_t, tgid, pid_t, pid, int, sig)
  */
 #include <signal.h>
+#include <sys/types.h>
 #include "pids.h"
 #include "random.h"
 #include "rnd.h"

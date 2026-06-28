@@ -69,6 +69,9 @@
 #include <sys/signalfd.h>
 #include <sys/syscall.h>
 #include <sys/timerfd.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <unistd.h>
 
 #include "child.h"
 #include "syscall-gate.h"

@@ -46,6 +46,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include <linux/tcp.h>
+#include <string.h>
 
 #include "child.h"
 #include "jitter.h"

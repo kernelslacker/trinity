@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <sys/syscall.h>
 #include <unistd.h>
+#include <string.h>
 #include "arch.h"
 #include "maps.h"
 #include "random.h"

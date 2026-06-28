@@ -4,6 +4,7 @@
 	size_t, len, unsigned int, flags)
  */
 #include <stdbool.h>
+#include <fcntl.h>
 #include "files.h"
 #include "random.h"
 #include "rnd.h"
