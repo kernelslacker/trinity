@@ -7544,9 +7544,14 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 					delta_hyp_context_skip, cur_hyp_context_skip);
 
 			/* Per-kind census: accepted (inserted_by_kind) vs dropped
-			 * at the per-kind sub-cap (kind_full_by_kind).  Surfaces
-			 * which hypothesis kind dominates cmp_hyp_kind_full so the
-			 * CMP_HYP_PER_KIND cap can be tuned at the right kind. */
+			 * at the per-kind sub-cap (kind_full_by_kind) vs dropped
+			 * at the total pool cap (pool_full_by_kind -- an attempted
+			 * hypothesis of this kind was rejected because the TOTAL
+			 * pool was full, NOT that this kind filled the pool).
+			 * Surfaces which kind dominates cmp_hyp_kind_full so the
+			 * CMP_HYP_PER_KIND cap can be tuned at the right kind, and
+			 * which kinds are most often the would-be insertion when
+			 * CMP_HYP_PER_SYSCALL is reached. */
 			{
 				static const char * const kind_labels[CMP_HYP_KIND_NR] = {
 					"exact", "range", "boundary", "bitmask",
@@ -7555,6 +7560,7 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 				};
 				static unsigned long prev_hyp_ins_kind[CMP_HYP_KIND_NR];
 				static unsigned long prev_hyp_full_kind[CMP_HYP_KIND_NR];
+				static unsigned long prev_hyp_pool_full_kind[CMP_HYP_KIND_NR];
 				unsigned int k;
 
 				for (k = 0; k < CMP_HYP_KIND_NR; k++) {
@@ -7564,14 +7570,19 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 					unsigned long cur_full = __atomic_load_n(
 						&kcov_shm->cmp_hyp_kind_full_by_kind[k],
 						__ATOMIC_RELAXED);
+					unsigned long cur_pool_full = __atomic_load_n(
+						&kcov_shm->cmp_hyp_pool_full_by_kind[k],
+						__ATOMIC_RELAXED);
 
 					stats_log_write(
-						"  cmp_hyp[%-13s] inserted +%lu (total %lu)  kind_full +%lu (total %lu)\n",
+						"  cmp_hyp[%-13s] inserted +%lu (total %lu)  kind_full +%lu (total %lu)  pool_full +%lu (total %lu)\n",
 						kind_labels[k],
 						cur_ins - prev_hyp_ins_kind[k], cur_ins,
-						cur_full - prev_hyp_full_kind[k], cur_full);
+						cur_full - prev_hyp_full_kind[k], cur_full,
+						cur_pool_full - prev_hyp_pool_full_kind[k], cur_pool_full);
 					prev_hyp_ins_kind[k] = cur_ins;
 					prev_hyp_full_kind[k] = cur_full;
+					prev_hyp_pool_full_kind[k] = cur_pool_full;
 				}
 			}
 
