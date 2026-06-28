@@ -84,6 +84,11 @@ extern struct genl_family_grammar fam_fou;
 #if __has_include(<linux/psample.h>)
 extern struct genl_family_grammar fam_psample;
 #endif
+/* psp consumes include/kernel/psp.h, whose own <linux/psp.h> include is
+ * __has_include-guarded with per-symbol shims for every PSP_CMD_ and
+ * PSP_A_ id the grammar uses -- so fam_psp builds (and registers) on
+ * stripped sysroots that lack the upstream uapi header. */
+extern struct genl_family_grammar fam_psp;
 #if __has_include(<linux/net_dropmon.h>)
 extern struct genl_family_grammar fam_net_dm;
 #endif
@@ -191,6 +196,7 @@ static struct genl_family_grammar *registry[] = {
 #if __has_include(<linux/psample.h>)
 	&fam_psample,
 #endif
+	&fam_psp,
 #if __has_include(<linux/net_dropmon.h>)
 	&fam_net_dm,
 #endif
