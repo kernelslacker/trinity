@@ -861,6 +861,7 @@ struct stats_s {
 	unsigned long genl_family_calls_hsr;
 	unsigned long genl_family_calls_fou;
 	unsigned long genl_family_calls_psample;
+	unsigned long genl_family_calls_nfsd;
 	unsigned long genl_family_calls_ila;
 	unsigned long genl_family_calls_ioam6;
 	unsigned long genl_family_calls_seg6;

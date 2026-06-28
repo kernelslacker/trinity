@@ -325,6 +325,7 @@ void dump_stats_fuzzer_subsystems(void)
 	    shm->stats.genl_family_calls_hsr       ||
 	    shm->stats.genl_family_calls_fou       ||
 	    shm->stats.genl_family_calls_psample   ||
+	    shm->stats.genl_family_calls_nfsd      ||
 	    shm->stats.genl_family_calls_ila       ||
 	    shm->stats.genl_family_calls_ioam6     ||
 	    shm->stats.genl_family_calls_seg6      ||
@@ -342,6 +343,7 @@ void dump_stats_fuzzer_subsystems(void)
 		stat_row("genl_family_calls", "hsr",       shm->stats.genl_family_calls_hsr);
 		stat_row("genl_family_calls", "fou",       shm->stats.genl_family_calls_fou);
 		stat_row("genl_family_calls", "psample",   shm->stats.genl_family_calls_psample);
+		stat_row("genl_family_calls", "nfsd",      shm->stats.genl_family_calls_nfsd);
 		stat_row("genl_family_calls", "ila",       shm->stats.genl_family_calls_ila);
 		stat_row("genl_family_calls", "ioam6",     shm->stats.genl_family_calls_ioam6);
 		stat_row("genl_family_calls", "seg6",      shm->stats.genl_family_calls_seg6);

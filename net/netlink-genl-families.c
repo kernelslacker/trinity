@@ -84,6 +84,9 @@ extern struct genl_family_grammar fam_fou;
 #if __has_include(<linux/psample.h>)
 extern struct genl_family_grammar fam_psample;
 #endif
+#if __has_include(<linux/nfsd_netlink.h>)
+extern struct genl_family_grammar fam_nfsd;
+#endif
 /* psp consumes include/kernel/psp.h, whose own <linux/psp.h> include is
  * __has_include-guarded with per-symbol shims for every PSP_CMD_ and
  * PSP_A_ id the grammar uses -- so fam_psp builds (and registers) on
@@ -196,6 +199,9 @@ static struct genl_family_grammar *registry[] = {
 #if __has_include(<linux/psample.h>)
 	&fam_psample,
 #endif
+#if __has_include(<linux/nfsd_netlink.h>)
+	&fam_nfsd,
+#endif
 	&fam_psp,
 #if __has_include(<linux/net_dropmon.h>)
 	&fam_net_dm,
@@ -290,6 +296,7 @@ static const struct {
 	{ "hsr",           offsetof(struct stats_s, genl_family_calls_hsr) },
 	{ "fou",           offsetof(struct stats_s, genl_family_calls_fou) },
 	{ "psample",       offsetof(struct stats_s, genl_family_calls_psample) },
+	{ "nfsd",          offsetof(struct stats_s, genl_family_calls_nfsd) },
 	{ "ila",           offsetof(struct stats_s, genl_family_calls_ila) },
 	{ "IOAM6",         offsetof(struct stats_s, genl_family_calls_ioam6) },
 	{ "SEG6",          offsetof(struct stats_s, genl_family_calls_seg6) },
