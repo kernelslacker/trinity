@@ -14,12 +14,15 @@
 
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <net/if.h>
 #include <linux/if_packet.h>
 #include <string.h>
 #include "config.h"
 #ifdef USE_SCTP
 #include <linux/sctp.h>
 #endif
+#include "name-pool.h"
+#include "random.h"
 #include "rnd.h"
 #include "utils.h"	// ARRAY_SIZE
 #include "setsockopt-internal.h"
@@ -228,8 +231,33 @@ socklen_t build_sctp_prim(void *buf)
 socklen_t build_string_ifname(void *buf)
 {
 	static const char *names[] = { "lo", "eth0", "wlan0", "" };
-	const char *n = names[rnd_modulo_u32(ARRAY_SIZE(names))];
-	size_t len = strlen(n);
+	const char *n;
+	size_t len;
+
+	/*
+	 * Minority arm draws from the shared NAME_KIND_NETDEV pool so an
+	 * SO_BINDTODEVICE optval can pin to an ifname a concurrent
+	 * childop just planted (altname-thrash, l2tp-ifname-race, ...) --
+	 * exercising the dev-by-name resolve path and the bound-socket
+	 * vs netdev-teardown race the static names never reach.  Majority
+	 * arm keeps the well-known names so existing coverage stays warm;
+	 * empty-pool draws fall through to the same path.
+	 */
+	if (ONE_IN(2)) {
+		size_t got = name_pool_draw_mutated(NAME_KIND_NETDEV,
+						    (char *)buf, IFNAMSIZ);
+
+		if (got > 0) {
+			if (got >= IFNAMSIZ)
+				got = IFNAMSIZ - 1;
+			((char *)buf)[got] = '\0';
+			return (socklen_t)(got + 1);
+		}
+		/* empty pool -- fall through to static names */
+	}
+
+	n = names[rnd_modulo_u32(ARRAY_SIZE(names))];
+	len = strlen(n);
 
 	memcpy(buf, n, len);
 	((char *)buf)[len] = '\0';
