@@ -287,36 +287,4 @@ bool parse_redqueen_pending_pick(const char *name,
 				 enum redqueen_pending_pick_mode_t *out);
 const char *redqueen_pending_pick_name(enum redqueen_pending_pick_mode_t mode);
 
-/*
- * --cmp-recent-pool={off,recent-first}: A/B selection policy for the
- * run-local CMP "recent" tier.  The recent ring
- * absorbs every fresh pool_add_locked() insert into a small per-syscall
- * circular buffer that the durable pool's LRU never touches, so late-run
- * constants survive past the saturated-durable-pool eviction floor.
- *
- *   OFF (default)    -- cmp_hints_try_get_ex() samples the durable pool
- *                       exactly as before.  Shadow counters
- *                       (cmp_recent_inserts, cmp_recent_would_pick, ...)
- *                       are still active so the would-be-pick rate is
- *                       legible from a default run before the live
- *                       behaviour flips.  The commit ships
- *                       behaviour-neutral until this knob is moved.
- *   RECENT_FIRST     -- during a CMP_RISING_PC_FLAT plateau, sample the
- *                       recent ring first; fall through to the durable
- *                       pool on an empty ring or off-plateau.  Bumps
- *                       cmp_recent_live_picks on every recent-served
- *                       return so the live picker's rate is directly
- *                       comparable to the OFF arm's would_pick.
- */
-enum cmp_recent_pool_mode_t {
-	CMP_RECENT_POOL_OFF = 0,
-	CMP_RECENT_POOL_RECENT_FIRST,
-};
-
-extern enum cmp_recent_pool_mode_t cmp_recent_pool_mode_arg;
-
-bool parse_cmp_recent_pool(const char *name,
-			   enum cmp_recent_pool_mode_t *out);
-const char *cmp_recent_pool_name(enum cmp_recent_pool_mode_t mode);
-
 void enable_disable_fd_usage(void);

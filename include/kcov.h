@@ -2127,20 +2127,15 @@ struct kcov_shared {
 	unsigned long cmp_hints_boring_arm_b_drops;
 
 	/*
-	 * SHADOW counters for the run-local CMP "recent" pool tier.
-	 * The recent ring sits next to the
-	 * durable per-syscall pool and absorbs every fresh insert /
-	 * evict-replace pool_add_locked() observes -- a small lossy
-	 * window over constants the kernel has produced recently that
-	 * the saturated durable pool would otherwise drop on the
-	 * eviction floor.  The A/B flag (--cmp-recent-pool) gates
-	 * whether cmp_hints_try_get_ex() samples the recent ring first
-	 * during a CMP_RISING_PC_FLAT plateau; the default keeps the
-	 * historical durable-first behaviour, so the recent-ring tier
-	 * is behaviour-neutral until the flag is flipped.  Every counter
-	 * below is RELAXED + flat per the SHADOW-first discipline:
-	 * recording active in BOTH arms so an A/B run reads the same
-	 * shadow rates the live arm will eventually consume.
+	 * Observability counters for the run-local CMP "recent" pool
+	 * tier.  The recent ring sits next to the durable per-syscall
+	 * pool and absorbs every fresh insert / evict-replace
+	 * pool_add_locked() observes -- a small lossy window over
+	 * constants the kernel has produced recently that the
+	 * saturated durable pool would otherwise drop on the eviction
+	 * floor.  cmp_hints_try_get_ex() samples the recent ring first
+	 * during a CMP_RISING_PC_FLAT plateau (the unconditional rule).
+	 * Every counter below is RELAXED + flat.
 	 *
 	 *  cmp_recent_inserts
 	 *      Bumped once per pool_add_locked() success that also
@@ -2157,21 +2152,18 @@ struct kcov_shared {
 	 *  cmp_recent_would_pick
 	 *      Bumped once per cmp_hints_try_get_ex() call where the
 	 *      recent ring was non-empty AND the current plateau
-	 *      hypothesis is CMP_RISING_PC_FLAT -- i.e. the call where
-	 *      the recent-first arm would have sampled from the recent
-	 *      ring.  Active in BOTH arms so the would-be-pick rate is
-	 *      legible from the default durable-first run.
+	 *      hypothesis is CMP_RISING_PC_FLAT -- i.e. the recent-tier
+	 *      opportunity count.  Pairs with cmp_recent_live_picks for
+	 *      the served-vs-opportunity ratio.
 	 *  cmp_recent_would_miss
 	 *      Bumped once per cmp_hints_try_get_ex() call where the
 	 *      plateau hypothesis is CMP_RISING_PC_FLAT but the recent
-	 *      ring is empty (the recent-first arm would have fallen
-	 *      back to the durable pool).  would_pick + would_miss is
-	 *      the plateau-window try_get population.
+	 *      ring is empty (the consumer falls through to the durable
+	 *      pool).  would_pick + would_miss is the plateau-window
+	 *      try_get population.
 	 *  cmp_recent_live_picks
 	 *      Bumped once per cmp_hints_try_get_ex() return that was
-	 *      actually served from the recent ring.  Stays at zero
-	 *      under the default A/B arm; non-zero once the operator
-	 *      flips --cmp-recent-pool=recent-first.
+	 *      actually served from the recent ring.
 	 *
 	 * Append-only at the tail per the existing convention so
 	 * consumer offsets stay stable. */
