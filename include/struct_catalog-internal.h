@@ -415,3 +415,27 @@ enum {
 extern const struct struct_field if_dqblk_fields[IF_DQBLK_FIELDS_N];
 extern const struct struct_field if_dqinfo_fields[IF_DQINFO_FIELDS_N];
 extern const struct struct_field fs_disk_quota_fields[FS_DISK_QUOTA_FIELDS_N];
+
+/*
+ * time-shaped leaf tables defined in struct_catalog/time.c.  The _N
+ * constants give the extern decls a complete array type so the spine's
+ * ARRAY_SIZE() at the reference site keeps folding to the same constant
+ * it did before the carve.
+ */
+enum {
+	TIMEX_FIELDS_N		= 18,
+	ITIMERSPEC_FIELDS_N	= 4,
+	TIMESPEC_FIELDS_N	= 2,
+	ITIMERVAL_FIELDS_N	= 4,
+	UTIMBUF_FIELDS_N	= 2,
+	TIMEVAL_FIELDS_N	= 2,
+	TIMEZONE_FIELDS_N	= 2,
+};
+
+extern const struct struct_field timex_fields[TIMEX_FIELDS_N];
+extern const struct struct_field itimerspec_fields[ITIMERSPEC_FIELDS_N];
+extern const struct struct_field timespec_fields[TIMESPEC_FIELDS_N];
+extern const struct struct_field itimerval_fields[ITIMERVAL_FIELDS_N];
+extern const struct struct_field utimbuf_fields[UTIMBUF_FIELDS_N];
+extern const struct struct_field timeval_fields[TIMEVAL_FIELDS_N];
+extern const struct struct_field timezone_fields[TIMEZONE_FIELDS_N];
