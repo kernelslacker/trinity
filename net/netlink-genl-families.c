@@ -87,6 +87,9 @@ extern struct genl_family_grammar fam_psample;
 #if __has_include(<linux/ncsi.h>)
 extern struct genl_family_grammar fam_ncsi;
 #endif
+#if __has_include(<linux/target_core_user.h>)
+extern struct genl_family_grammar fam_tcmu;
+#endif
 #if __has_include(<linux/nfsd_netlink.h>)
 extern struct genl_family_grammar fam_nfsd;
 #endif
@@ -205,6 +208,9 @@ static struct genl_family_grammar *registry[] = {
 #if __has_include(<linux/ncsi.h>)
 	&fam_ncsi,
 #endif
+#if __has_include(<linux/target_core_user.h>)
+	&fam_tcmu,
+#endif
 #if __has_include(<linux/nfsd_netlink.h>)
 	&fam_nfsd,
 #endif
@@ -303,6 +309,7 @@ static const struct {
 	{ "fou",           offsetof(struct stats_s, genl_family_calls_fou) },
 	{ "psample",       offsetof(struct stats_s, genl_family_calls_psample) },
 	{ "NCSI",          offsetof(struct stats_s, genl_family_calls_ncsi) },
+	{ "TCM-USER",      offsetof(struct stats_s, genl_family_calls_tcmu) },
 	{ "nfsd",          offsetof(struct stats_s, genl_family_calls_nfsd) },
 	{ "ila",           offsetof(struct stats_s, genl_family_calls_ila) },
 	{ "IOAM6",         offsetof(struct stats_s, genl_family_calls_ioam6) },
