@@ -3221,7 +3221,7 @@ static void kcov_covjump_breadcrumb_maybe(unsigned long call_nr)
 
 		if (bridge_hit) {
 			n = snprintf(tag_buf + pos, sizeof(tag_buf) - pos,
-				     "%sbridge", pos == 0 ? "" : ",");
+				     "bridge");
 			if (n > 0) pos += (size_t)n;
 		}
 		if (conntrack_hit && pos < sizeof(tag_buf)) {
