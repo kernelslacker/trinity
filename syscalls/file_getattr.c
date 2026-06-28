@@ -12,6 +12,7 @@
 #include <asm/unistd.h>
 #include <linux/fs.h>
 #include "arch.h"
+#include "pathnames.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -19,6 +20,15 @@
 #include "trinity.h"
 #include "compat.h"
 #include "utils.h"
+
+/*
+ * Mirrors the MAX_TESTFILES bound in fds/testfiles.c so we land inside
+ * the same trinity-testfile<N> inodes the rest of the path-pinned
+ * sanitisers (chmod, utime, utimensat, xattr-thrash, ...) touch;
+ * cross-process contention concentrates on the same per-inode i_rwsem /
+ * vfs_fileattr_get path.
+ */
+#define NR_TESTFILES 4
 
 #if defined(SYS_file_getattr) || defined(__NR_file_getattr)
 #ifndef SYS_file_getattr
@@ -125,6 +135,34 @@ static void sanitise_file_getattr(struct syscallrecord *rec)
 	if (!ONE_IN(8))
 		rec->a5 &= (unsigned long)
 			   (AT_SYMLINK_NOFOLLOW | AT_EMPTY_PATH);
+
+	/*
+	 * ARG_PATHNAME plumbed a random pathname into rec->a2, but the
+	 * random path is most often not a real file at all -- file_getattr
+	 * returns ENOENT at the path walk before ever reaching
+	 * vfs_fileattr_get / the per-fs ->fileattr_get, and the
+	 * post_file_getattr byte-identity oracle bails out on the non-zero
+	 * retval so it almost never fires.
+	 *
+	 * Half the draws repoint a2 at one of the trinity-testfile<N>
+	 * absolute paths so the subsequent call lands on a real
+	 * trinity-owned inode and penetrates filename_lookup() into
+	 * vfs_fileattr_get -- the post oracle then re-issues against the
+	 * same inode and compares struct file_attr byte-for-byte.  The
+	 * absolute path means the kernel ignores the random dfd and walks
+	 * from root, so the pin works regardless of which fd dfd resolved
+	 * to.  The other half preserves the slot as the generic draw left
+	 * it so the ENOENT reject arm stays exercised.  Read-only -- no
+	 * mutation of the testfile contents, zero pool risk.
+	 */
+	if (rnd_modulo_u32(2) == 0) {
+		char *path = (char *) rec->a2;
+
+		if (path != NULL)
+			snprintf(path, MAX_PATH_LEN, "%s/trinity-testfile%u",
+				 trinity_tmpdir_abs(),
+				 1 + rnd_modulo_u32(NR_TESTFILES));
+	}
 
 	avoid_shared_buffer_out(&rec->a3, rec->a4);
 
