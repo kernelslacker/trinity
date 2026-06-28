@@ -197,6 +197,198 @@ static void note_validation_failure(unsigned int syscallnr, bool do32)
 }
 
 /*
+ * Default OFF: see the enum comment in include/kcov.h for the mode
+ * contract.  Read RELAXED at the helper site -- parse-time configured,
+ * never mutated at runtime, so a tear is impossible. */
+enum expensive_adaptive_mode expensive_adaptive_mode =
+	EXPENSIVE_ADAPTIVE_MODE_OFF;
+
+/* Static (today's) accept denominator for EXPENSIVE-flagged syscalls.
+ * In OFF / NULL-kcov / SHADOW_ONLY the live accept ALWAYS draws
+ * ONE_IN(EXPENSIVE_ADAPTIVE_FLOOR) so the pick stream matches the
+ * pre-helper `!ONE_IN(1000)` expression bit-for-bit. */
+#define EXPENSIVE_ADAPTIVE_FLOOR        1000U
+/* Most aggressive accept denominator under COMBINED.  1/50 is the
+ * tunable ceiling end of the productivity-to-N map -- a perfectly
+ * productive EXPENSIVE syscall earns ~20x its static rate; the floor
+ * still caps fleet wall-cost on the dead end. */
+#define EXPENSIVE_ADAPTIVE_CEILING      50U
+/* Cold-warmup gate: until cumulative calls (current run + warm-loaded
+ * prior) cross this, leave the rate at the floor.  Matches KCOV_SAT_
+ * CAP_CALLS so the warmup horizon and the saturation-cap horizon stay
+ * in lock-step. */
+#define EXPENSIVE_ADAPTIVE_WARMUP_CALLS 200UL
+/* Stale-decay step count: this many contiguous KCOV_COLD_THRESHOLD-
+ * sized gap steps slide n_adaptive all the way back to the floor.
+ * Matches the +10pct-per-step cadence of kcov_syscall_cold_skip_pct
+ * (its 50%->90% over four steps is the same one-tenth-per-step shape,
+ * just from a lower starting bias). */
+#define EXPENSIVE_ADAPTIVE_DECAY_STEPS  10U
+
+/*
+ * Adaptive accept-rate for the EXPENSIVE early-out gate -- factored
+ * out of the three set_syscall_nr_*() call sites so the policy lives
+ * in one place.  See the expensive_adaptive_mode enum in include/
+ * kcov.h for the OFF / SHADOW_ONLY / COMBINED contract.
+ *
+ * Returns true to ACCEPT the candidate (caller proceeds to validate),
+ * false to reject (caller does goto retry).
+ *
+ * Correctness invariants:
+ *
+ *   OFF byte-identity.  When mode is OFF the function MUST behave
+ *   exactly like `syscall_is_expensive(nr, do32) && !ONE_IN(1000)` --
+ *   same control flow AND same RNG draw order.  Specifically: if the
+ *   syscall is not EXPENSIVE, no RNG draw fires (matches the short-
+ *   circuit half of the original `&&`); if it is EXPENSIVE, exactly
+ *   one ONE_IN(EXPENSIVE_ADAPTIVE_FLOOR) call fires, consuming the
+ *   same number of rnd_u32() draws as the original.  The OFF / NULL-
+ *   kcov / bad-index branches short-circuit before any kcov_shm read
+ *   for that reason.
+ *
+ *   SHADOW_ONLY pick parity.  Under SHADOW_ONLY the adaptive compute
+ *   path runs (so the cost is exercised today and a follow-up row
+ *   adding shadow counters has somewhere to hook), but the LIVE accept
+ *   still draws ONE_IN(EXPENSIVE_ADAPTIVE_FLOOR) -- pick stream stays
+ *   identical to OFF for a given seed.  The compute path does not
+ *   consume RNG, so SHADOW_ONLY and OFF draw the same rnd_u32() count
+ *   at this site.
+ *
+ *   Unsigned-subtract / divide-by-zero guards.  per_syscall_edges /
+ *   per_syscall_calls are RELAXED separate loads; the semantic edges
+ *   <= calls invariant (see include/kcov.h) can be violated by a
+ *   load-tear across the two atomics, so the productivity divide
+ *   guards edges_total < calls_total before dividing.  The cold-
+ *   warmup branch guarantees calls_total >= WARMUP > 0 by the time
+ *   the divide is reached, so calls_total == 0 cannot underflow it
+ *   either.  total_calls -- last_edge_at is a similar RELAXED-RELAXED
+ *   subtract; guard total > last before subtracting.  EXPENSIVE_
+ *   ADAPTIVE_FLOOR -- n_adaptive is guarded by n_adaptive <
+ *   EXPENSIVE_ADAPTIVE_FLOOR.
+ *
+ *   Degrade-safe fallback.  When kcov_shm is unavailable (no-kcov
+ *   build / startup ordering / nr out of range), return the static
+ *   1/EXPENSIVE_ADAPTIVE_FLOOR rate -- matches the kcov-less fallback
+ *   the rest of the file already takes (frontier_cold_weight returns
+ *   FRONTIER_COLD_SCALE in the same shape).
+ */
+static bool expensive_accept(unsigned int nr, bool do32)
+{
+	enum expensive_adaptive_mode mode;
+	unsigned long edges, calls, edges_total, calls_total;
+	unsigned long total, last, gap;
+	unsigned int n_adaptive;
+	unsigned int n_live;
+	unsigned long productivity_recip;
+
+	/* Not EXPENSIVE-flagged: accept unconditionally with no RNG
+	 * draw.  Mirrors the short-circuit half of the original
+	 * `syscall_is_expensive && !ONE_IN(1000)` expression. */
+	if (!syscall_is_expensive(nr, do32))
+		return true;
+
+	mode = __atomic_load_n(&expensive_adaptive_mode, __ATOMIC_RELAXED);
+
+	/* OFF / NULL-kcov / bad-index: draw against the static floor.
+	 * Equivalent to `!ONE_IN(EXPENSIVE_ADAPTIVE_FLOOR)` being false,
+	 * i.e. `ONE_IN(FLOOR)` -- one rnd_modulo_u32(1000) draw, same
+	 * shape as the original expression's right-hand side. */
+	if (mode == EXPENSIVE_ADAPTIVE_MODE_OFF || kcov_shm == NULL ||
+	    nr >= MAX_NR_SYSCALL)
+		return ONE_IN(EXPENSIVE_ADAPTIVE_FLOOR);
+
+	/* Sum current-run counters with the warm-loaded priors so the
+	 * adaptive math benefits from cross-session evidence (same shape
+	 * kcov_syscall_cold_skip_pct uses for the saturation cap).  The
+	 * _prior arrays are frozen at warm-start (see include/kcov.h),
+	 * so a plain read is sufficient. */
+	edges = __atomic_load_n(&kcov_shm->per_syscall_edges[nr],
+				__ATOMIC_RELAXED);
+	calls = __atomic_load_n(&kcov_shm->per_syscall_calls[nr],
+				__ATOMIC_RELAXED);
+	edges_total = edges + kcov_shm->per_syscall_edges_prior[nr];
+	calls_total = calls + kcov_shm->per_syscall_calls_prior[nr];
+
+	/* Cold-warmup and barren both pin to the floor.  The warmup
+	 * branch also guarantees calls_total > 0 by the time the divide
+	 * below runs, so the productivity branch cannot hit a
+	 * divide-by-zero on calls_total. */
+	if (calls_total < EXPENSIVE_ADAPTIVE_WARMUP_CALLS ||
+	    edges_total == 0) {
+		n_adaptive = EXPENSIVE_ADAPTIVE_FLOOR;
+	} else {
+		/* Productive regime.  edges_total <= calls_total is a
+		 * semantic invariant (per_syscall_edges bumps by one per
+		 * call that discovered >=1 new edge), but the two RELAXED
+		 * atomic loads can tear across each other, so clamp before
+		 * dividing.  Smaller calls/edges = better productivity =
+		 * smaller N = higher accept rate. */
+		if (edges_total >= calls_total)
+			productivity_recip = 1UL;
+		else
+			productivity_recip = calls_total / edges_total;
+
+		if (productivity_recip <= EXPENSIVE_ADAPTIVE_CEILING)
+			n_adaptive = EXPENSIVE_ADAPTIVE_CEILING;
+		else if (productivity_recip >= EXPENSIVE_ADAPTIVE_FLOOR)
+			n_adaptive = EXPENSIVE_ADAPTIVE_FLOOR;
+		else
+			n_adaptive = (unsigned int)productivity_recip;
+
+		/* Stale-decay: once-productive but no recent edge slides
+		 * n_adaptive back toward the floor.  Re-uses kcov_syscall
+		 * _cold_skip_pct's total_calls -- last_edge_at gap shape:
+		 * each KCOV_COLD_THRESHOLD-sized step erases one tenth of
+		 * the remaining cheap-rate grant, so EXPENSIVE_ADAPTIVE_
+		 * DECAY_STEPS=10 contiguous steps fully demote.  Load-bearing:
+		 * the floor caps wall-cost, so the cheaper rate MUST decay
+		 * once productivity stops.
+		 *
+		 * Unsigned-subtract guard: total_calls and last_edge_at[]
+		 * are monotonic by construction (no decrement path in
+		 * kcov_collect), but the two RELAXED loads sample the
+		 * fields independently and can observe last > total under a
+		 * concurrent kcov_collect update.  Treat that case as zero
+		 * gap (skip the decay) instead of underflowing the
+		 * subtract. */
+		total = __atomic_load_n(&kcov_shm->total_calls,
+					__ATOMIC_RELAXED);
+		last = __atomic_load_n(&kcov_shm->last_edge_at[nr],
+				       __ATOMIC_RELAXED);
+		if (total > last) {
+			gap = total - last;
+			if (gap > KCOV_COLD_THRESHOLD &&
+			    n_adaptive < EXPENSIVE_ADAPTIVE_FLOOR) {
+				unsigned long steps = gap / KCOV_COLD_THRESHOLD;
+				unsigned long range, decay;
+
+				range = (unsigned long)EXPENSIVE_ADAPTIVE_FLOOR
+					- (unsigned long)n_adaptive;
+				if (steps >= EXPENSIVE_ADAPTIVE_DECAY_STEPS) {
+					n_adaptive = EXPENSIVE_ADAPTIVE_FLOOR;
+				} else {
+					decay = (range * steps) /
+						EXPENSIVE_ADAPTIVE_DECAY_STEPS;
+					n_adaptive = (unsigned int)
+						((unsigned long)n_adaptive +
+						 decay);
+				}
+			}
+		}
+	}
+
+	/* SHADOW_ONLY: compute path above ran, but the live accept stays
+	 * at the floor so the pick stream is identical to OFF.  COMBINED
+	 * is the only mode that lets n_adaptive drive the draw. */
+	if (mode == EXPENSIVE_ADAPTIVE_MODE_SHADOW_ONLY)
+		n_live = EXPENSIVE_ADAPTIVE_FLOOR;
+	else
+		n_live = n_adaptive;
+
+	return ONE_IN(n_live);
+}
+
+/*
  * Check if a syscall entry belongs to the target group.
  * Used by group biasing to filter candidates.
  */
@@ -272,10 +464,14 @@ retry:
 
 	/*
 	 * EXPENSIVE early-out: bitmap test before validate + entry fetch,
-	 * so the 999/1000 reject path skips the cache miss on the
-	 * syscallentry that the EXPENSIVE block below used to require.
+	 * so the reject path skips the cache miss on the syscallentry
+	 * that the EXPENSIVE block below used to require.  Helper
+	 * consolidates the policy; under the default --expensive-adaptive=
+	 * off it is byte-identical to the prior `syscall_is_expensive(...)
+	 * && !ONE_IN(1000)` expression (same control flow and same RNG
+	 * draw order).
 	 */
-	if (syscall_is_expensive(syscallnr, do32) && !ONE_IN(1000))
+	if (!expensive_accept(syscallnr, do32))
 		goto retry;
 
 	if (validate_specific_syscall_silent(syscalls, syscallnr) == false) {
@@ -636,9 +832,12 @@ retry:
 	syscallnr = val - 1;
 
 	/* EXPENSIVE early-out: bitmap test before validate + entry fetch,
-	 * so the 999/1000 reject path skips the cache miss on the
-	 * syscallentry that the EXPENSIVE block below used to require. */
-	if (syscall_is_expensive(syscallnr, do32) && !ONE_IN(1000))
+	 * so the reject path skips the cache miss on the syscallentry
+	 * that the EXPENSIVE block below used to require.  Helper
+	 * consolidates the policy; default --expensive-adaptive=off is
+	 * byte-identical to the prior `syscall_is_expensive(...) &&
+	 * !ONE_IN(1000)` expression. */
+	if (!expensive_accept(syscallnr, do32))
 		goto retry;
 
 	if (validate_specific_syscall_silent(syscalls, syscallnr) == false) {
@@ -1227,9 +1426,12 @@ retry:
 	syscallnr = val - 1;
 
 	/* EXPENSIVE early-out: bitmap test before validate + entry fetch,
-	 * so the 999/1000 reject path skips the cache miss on the
-	 * syscallentry that the EXPENSIVE block below used to require. */
-	if (syscall_is_expensive(syscallnr, do32) && !ONE_IN(1000))
+	 * so the reject path skips the cache miss on the syscallentry
+	 * that the EXPENSIVE block below used to require.  Helper
+	 * consolidates the policy; default --expensive-adaptive=off is
+	 * byte-identical to the prior `syscall_is_expensive(...) &&
+	 * !ONE_IN(1000)` expression. */
+	if (!expensive_accept(syscallnr, do32))
 		goto retry;
 
 	if (validate_specific_syscall_silent(syscalls, syscallnr) == false) {
