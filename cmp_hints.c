@@ -3644,21 +3644,21 @@ bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 	 * Recent-pool sampling tier.
 	 *
 	 * The recent ring carries fresh constants the durable pool's
-	 * saturated LRU floor would have dropped.  Sampling it first --
-	 * but only during a CMP_RISING_PC_FLAT plateau, when the
+	 * saturated LRU floor would have dropped.  During a
+	 * CMP_RISING_PC_FLAT plateau -- when the
 	 * cmp_hints_save_reject_cap dominance signal says the durable
-	 * pool is the bottleneck -- gives the consumer a window onto
-	 * the late-run constant stream without competing with the
-	 * durable pool's selection on the off-plateau steady state.
+	 * pool is the bottleneck -- sample the recent ring first; this
+	 * gives the consumer a window onto the late-run constant
+	 * stream without competing with the durable pool's selection
+	 * on the off-plateau steady state.  Typed-inject callsites are
+	 * exempted (allow_hyp_inject) so they reach the inject arm on
+	 * the durable path instead.
 	 *
-	 * SHADOW first: cmp_recent_would_pick / cmp_recent_would_miss
-	 * are bumped on every plateau call regardless of arm, so the
-	 * would-be-pick rate is observable from a default
-	 * (--cmp-recent-pool=off) run before the live arm is flipped.
-	 * cmp_recent_live_picks only bumps on a return actually served
-	 * from the recent ring (i.e. recent-first arm AND non-empty
-	 * ring), so the live-pick rate stays cleanly separable from
-	 * the shadow rate.
+	 * cmp_recent_would_pick / cmp_recent_would_miss continue to
+	 * bump on every plateau call so the recent-tier opportunity
+	 * rate stays observable alongside the served rate.
+	 * cmp_recent_live_picks bumps on a return actually served from
+	 * the recent ring.
 	 *
 	 * Lockless reads with ACQUIRE on count + RELAXED on entries[]
 	 * mirror the durable pool's lockless reader contract: torn
@@ -3683,9 +3683,7 @@ bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 			 * the durable path, not be shadowed by the recent-first
 			 * early-return.
 			 */
-			if (cmp_recent_pool_mode_arg ==
-			    CMP_RECENT_POOL_RECENT_FIRST &&
-			    !allow_hyp_inject) {
+			if (!allow_hyp_inject) {
 				struct cmp_recent_entry *re =
 					&rp->entries[rnd_modulo_u32(rcount)];
 				unsigned long re_value = re->value;
@@ -3942,9 +3940,8 @@ bool cmp_hints_try_get(unsigned int nr, bool do32, unsigned long *out)
  * SHADOW gate for the field-scoped pool consumer.  Defaults off so the
  * lookup, would-pick / would-miss counters, and the rest of the pick
  * path are wired end-to-end below without the in-buffer overwrite ever
- * firing -- the same shadow-vs-live discipline the recent-ring tier
- * (cmp_recent_pool_mode_arg) uses for its A/B introduction.  The
- * follow-up commit will expose this via a CLI flag; today the field
+ * firing -- shadow-first observability before the live arm is wired.
+ * The follow-up commit will expose this via a CLI flag; today the field
  * pool stays observation-only.
  */
 static bool cmp_field_consumer_live_arm;

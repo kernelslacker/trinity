@@ -9044,10 +9044,6 @@ static void runid_knob_manifest_render(void)
 		off = runid_knob_append(buf, sizeof(buf), off,
 					"expensive-adaptive",
 					runid_expensive_adaptive_mode_name());
-	if (cmp_recent_pool_mode_arg != CMP_RECENT_POOL_OFF)
-		off = runid_knob_append(buf, sizeof(buf), off,
-					"cmp-recent-pool",
-					cmp_recent_pool_name(cmp_recent_pool_mode_arg));
 	if (redqueen_pending_pick_mode_arg != REDQUEEN_PENDING_PICK_RANDOM)
 		off = runid_knob_append(buf, sizeof(buf), off,
 					"redqueen-pending-pick",

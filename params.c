@@ -476,42 +476,6 @@ const char *redqueen_pending_pick_name(enum redqueen_pending_pick_mode_t mode)
 	return "unknown";
 }
 
-/*
- * Default = OFF so the commit ships behaviour-neutral: cmp_hints_try_get_ex()
- * samples the durable pool exactly as before, while the shadow counters
- * around the recent ring (cmp_recent_inserts / would_pick / would_miss)
- * accumulate so an operator reading stats from a default run can already
- * see the would-be-pick rate before flipping the live arm.  Distribution
- * changes ship shadow-first: counters land before the live arm flips.
- */
-enum cmp_recent_pool_mode_t cmp_recent_pool_mode_arg = CMP_RECENT_POOL_OFF;
-
-bool parse_cmp_recent_pool(const char *name,
-			   enum cmp_recent_pool_mode_t *out)
-{
-	if (name == NULL || out == NULL)
-		return false;
-
-	if (strcmp(name, "off") == 0) {
-		*out = CMP_RECENT_POOL_OFF;
-		return true;
-	}
-	if (strcmp(name, "recent-first") == 0) {
-		*out = CMP_RECENT_POOL_RECENT_FIRST;
-		return true;
-	}
-	return false;
-}
-
-const char *cmp_recent_pool_name(enum cmp_recent_pool_mode_t mode)
-{
-	switch (mode) {
-	case CMP_RECENT_POOL_OFF:		return "off";
-	case CMP_RECENT_POOL_RECENT_FIRST:	return "recent-first";
-	}
-	return "unknown";
-}
-
 bool user_set_seed = false;
 
 unsigned char desired_group = GROUP_NONE;
@@ -564,7 +528,6 @@ static const struct option_help option_descs[] = {
 	{ "childop-cmp-harvest", 0, "DEFAULT OFF. Open a per-childop KCOV_TRACE_CMP bracket on CMP-mode children at the child.c childop dispatch gate; childop syscalls routed through trinity_cmp_syscall harvest their CMP operands into the QUARANTINED childop_recent_pools[nr][do32] lane (non-persisted, does NOT evict the durable per-syscall cmp pool). Accepts 'off' (the bracket is never opened; trinity_cmp_syscall is a no-op wrapper around trinity_raw_syscall; every childop_cmp_* shadow counter stays at zero -- the childop dispatch surface is byte-identical to a build without this knob) or 'on' (the bracket opens on every CMP-mode child whose dispatch reaches the existing op_uses_outer_bracket gate; honour the §3.2 all-routed invariant on any childop migrated to trinity_cmp_syscall). Per-childop migration to the wrapper is a separate per-op step earned by the conversion-chain metrics; the OFF default ships the harvest path behaviour-neutral." },
 	{ "children",		'C', "specify number of child processes" },
 	{ "clowntown",		 0,  "enable clowntown mode" },
-	{ "cmp-recent-pool", 0, "A/B selection policy for the run-local CMP recent-pool tier.  Accepts 'off' (default; cmp_hints_try_get_ex samples the durable per-syscall pool exactly as before) or 'recent-first' (during a CMP_RISING_PC_FLAT plateau, sample the recent ring first and fall through to the durable pool on an empty ring or off-plateau).  Shadow counters (cmp_recent_inserts / would_pick / would_miss) are active in BOTH modes so the would-be-pick rate is observable from a default run before the live arm is flipped." },
 	{ "cmsg-richness", 0, "extended sendmsg/sendmmsg control-message generator (default off): off (pick_cmsg_kind() draws from the original 5 base kinds with a single rnd_modulo_u32 call; the cmsg-build site is bit-for-bit identical to a build without this lever -- no extra RNG draws, no new kinds, no new arms), or on (extends the per-call cmsg pool with family-gated single-cmsg kinds -- IP_PKTINFO / IPV6_PKTINFO, IP_TOS / IP_TTL / IP_RETOPTS, IPV6_TCLASS / IPV6_HOPLIMIT / IPV6_RTHDR, SCM_TXTIME, TLS_SET_RECORD_TYPE -- and adds a ONE_IN(4) multi-cmsg packer that sizes the buffer by the sum of CMSG_SPACE(plen) across 2-3 distinct entries from a per-family pool, zero-fills the buffer up front, and walks CMSG_FIRSTHDR -> CMSG_NXTHDR with CMSG_LEN(plen) per entry)." },
 	{ "corpus-save-errno-grad-live", 0, "DEFAULT OFF. Enable the errno-gradient corpus save trigger (CORPUS_SAVE_REASON_ERRNO): when a syscall returns a non-EFAULT errno bucket for the first time this run, admit its args to the per-syscall ring. Flag off keeps the corpus admission distribution byte-identical to a build without this trigger; the errno_grad_save_would_save shadow counter is bumped regardless of this flag so the would-be-save volume is measurable before flipping live." },
 	{ "cred-throttle",	 0,  "DEFAULT OFF. Enable the credential-syscall throttle: when a credential class (setregid/setreuid/setresuid/setresgid/setgid/setuid/setfsuid/setfsgid/setgroups) has accumulated >=64 attempts with zero successes and EPERM+EINVAL dominating >=90% of returns, downweight the class by rejecting 31/32 of subsequent picks. Flag off keeps the picker distribution byte-identical to a build without this row; the per-class observability counters are bumped regardless of this flag." },
@@ -711,7 +674,6 @@ static const struct option longopts[] = {
 	{ "random", required_argument, NULL, 'r' },
 	{ "reach-band", required_argument, NULL, 0 },
 	{ "redqueen-pending-pick", required_argument, NULL, 0 },
-	{ "cmp-recent-pool", required_argument, NULL, 0 },
 	{ "cmsg-richness", required_argument, NULL, 0 },
 	{ "stats", no_argument, NULL, 0 },
 	{ "stats-json", no_argument, NULL, 0 },
@@ -912,15 +874,6 @@ static bool parse_cmp_options(int opt, const char *name, char *arg)
 		if (!parse_redqueen_pending_pick(arg,
 						 &redqueen_pending_pick_mode_arg)) {
 			outputerr("--redqueen-pending-pick: unknown policy '%s' (try random or first)\n",
-				  arg);
-			exit(EXIT_FAILURE);
-		}
-		return true;
-	}
-
-	if (strcmp("cmp-recent-pool", name) == 0) {
-		if (!parse_cmp_recent_pool(arg, &cmp_recent_pool_mode_arg)) {
-			outputerr("--cmp-recent-pool: unknown policy '%s' (try off or recent-first)\n",
 				  arg);
 			exit(EXIT_FAILURE);
 		}
