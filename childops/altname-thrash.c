@@ -76,6 +76,7 @@
 #include "child.h"
 #include "childops-netlink.h"
 #include "jitter.h"
+#include "name-pool.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
@@ -194,13 +195,51 @@ static int build_dummy_create(struct nl_ctx *ctx, const char *name)
 	return nl_send_recv(ctx, buf, off);
 }
 
-/* Generate one altname under the IFNAMSIZ-1 cap.  Format
- * "alt_XXXXXX" with XXXXXX hex-derived from rand32(); 10 bytes plus
- * NUL fits comfortably under 15. */
+/*
+ * Generate one altname under the IFNAMSIZ-1 cap.  Minority arm
+ * (ONE_IN(4)) draws a previously-recorded name from the per-kind
+ * NAME_KIND_NETDEV pool, optionally mutated (1-byte flip / truncate /
+ * case-flip / suffix-grow), so an altname add can collide with a
+ * netdev name an earlier syscall planted -- reaching the prop_list
+ * walker's RCU lifetime against a name the kernel already knows
+ * elsewhere, instead of the fresh-random near-miss space.  Majority
+ * arm generates a fresh "alt_<rand6>" (10 bytes plus NUL, comfortably
+ * under 15); preserving fresh-random diversity is the dominant arm
+ * so the existing add/del coverage stays warm.  Either way the chosen
+ * name is recorded into the NETDEV pool so subsequent draws (here or
+ * from another netdev-name generator) can collide with it.  The
+ * buffer is always NUL-terminated and the byte length is capped at
+ * ALT_NAME_MAX.
+ */
 static void gen_altname(char *out)
 {
-	(void)snprintf(out, ALT_NAME_MAX + 1, "alt_%06x",
-		       (unsigned int)(rand32() & 0xffffffu));
+	int wrote;
+	size_t len;
+
+	if (ONE_IN(4)) {
+		size_t got = name_pool_draw_mutated(NAME_KIND_NETDEV, out,
+						    ALT_NAME_MAX + 1);
+
+		if (got > 0) {
+			if (got >= (size_t)(ALT_NAME_MAX + 1))
+				got = ALT_NAME_MAX;
+			out[got] = '\0';
+			name_pool_record(NAME_KIND_NETDEV, out, got);
+			return;
+		}
+		/* empty pool -- fall through to fresh generation */
+	}
+
+	wrote = snprintf(out, ALT_NAME_MAX + 1, "alt_%06x",
+			 (unsigned int)(rand32() & 0xffffffu));
+	if (wrote <= 0) {
+		out[0] = '\0';
+		return;
+	}
+	len = (size_t)wrote;
+	if (len > ALT_NAME_MAX)
+		len = ALT_NAME_MAX;
+	name_pool_record(NAME_KIND_NETDEV, out, len);
 }
 
 static void ring_push(const char name[ALT_NAME_MAX + 1])
