@@ -195,6 +195,12 @@ size_t gen_rta_action_payload(unsigned char *p, size_t avail,
 size_t gen_rta_tunnel_payload(unsigned char *p, size_t avail,
 			      unsigned short nla_type);
 
+/* Same shape as gen_rta_neightbl_payload above: declaration inline
+ * here to keep the rtnl_prefix wire-up confined to the two TUs that
+ * actually need it. */
+size_t gen_rta_prefix_payload(unsigned char *p, size_t avail,
+			      unsigned short nla_type);
+
 /*
  * Generate a structured payload for a specific rtnetlink attribute.
  * Dispatches to the appropriate per-group generator based on the
@@ -218,6 +224,7 @@ static size_t gen_rta_payload(unsigned char *buf, size_t offset, size_t buflen,
 	case 6:
 	case 7: return gen_rta_tc_payload(p, avail, nla_type);
 	case 8: return gen_rta_action_payload(p, avail, nla_type);
+	case 9: return gen_rta_prefix_payload(p, avail, nla_type);
 	case 12: return gen_rta_neightbl_payload(p, avail, nla_type);
 	case 14: return gen_rta_addrlabel_payload(p, avail, nla_type);
 	case 15: return gen_rta_dcb_payload(p, avail, nla_type);
