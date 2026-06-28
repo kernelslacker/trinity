@@ -3532,6 +3532,57 @@ struct stats_s {
 	unsigned long frontier_blend_old_weight_sum;
 	unsigned long frontier_blend_new_weight_sum;
 
+	/* Observability for the adaptive expensive-syscall accept gate.
+	 * Bumped from expensive_accept() in random-syscall.c on the
+	 * adaptive compute path (mode != OFF, kcov_shm != NULL, nr in
+	 * range).  The OFF / NULL-kcov / out-of-range early-return path
+	 * MUST NOT bump any of these -- it is the byte-identity contract
+	 * documented on expensive_accept().  See the helper comment in
+	 * random-syscall.c for the SHADOW_ONLY / COMBINED mode contract
+	 * and the EXPENSIVE_ADAPTIVE_FLOOR / CEILING / WARMUP / DECAY_
+	 * STEPS constant block above the helper for the policy knobs.
+	 * The shape mirrors the sibling frontier_blend_* counter family
+	 * just above: per-call samples denominator + per-event dispositions.
+	 *
+	 *  expensive_adaptive_samples
+	 *      Total computations -- one bump per expensive_accept() entry
+	 *      past the OFF/NULL/out-of-range early-return, i.e. every
+	 *      call into the adaptive compute path under SHADOW_ONLY or
+	 *      COMBINED.  Denominator for the disposition counters below.
+	 *  expensive_adaptive_extra_accepts
+	 *      Mass of accepts the sub-floor n_adaptive rate is
+	 *      contributing over the static 1/FLOOR baseline:
+	 *
+	 *        COMBINED.  Per-call bump when n_adaptive < FLOOR AND the
+	 *        live ONE_IN(n_live=n_adaptive) draw returned true.  An
+	 *        accept granted on the sub-floor path; the baseline 1/FLOOR
+	 *        would have rejected on the corresponding draw with
+	 *        probability (FLOOR-n_adaptive)/FLOOR, so this counter
+	 *        upper-bounds the true "extra accept" count and converges
+	 *        to it as n_adaptive shrinks toward the ceiling.
+	 *
+	 *        SHADOW_ONLY.  Per-call bump when n_adaptive < FLOOR (the
+	 *        live accept stays at the floor and consumes no extra RNG,
+	 *        so a per-draw observation is not available).  Counts the
+	 *        opportunities -- multiplied by the average accept-rate
+	 *        delta (1/n_adaptive - 1/FLOOR) this gives the would-be
+	 *        extra-accept mass the COMBINED mode would unlock on the
+	 *        same workload.  The unit-of-measure difference vs the
+	 *        COMBINED bump is deliberate: SHADOW_ONLY's accept stream
+	 *        is identical to OFF for a given seed, so a true per-event
+	 *        shadow count is unavailable without additional RNG draws
+	 *        (which would break the SHADOW_ONLY pick-parity invariant).
+	 *  expensive_adaptive_demotes
+	 *      Per-call bump from the stale-decay branch when the
+	 *      total_calls -- last_edge_at[nr] gap pushed n_adaptive back
+	 *      up toward the floor (the productive->stale re-cap).
+	 *      Headline signal that the cheaper rate is being clawed back
+	 *      once productivity stops; pair against extra_accepts to read
+	 *      the net mass the lever is granting after decay. */
+	unsigned long expensive_adaptive_samples;
+	unsigned long expensive_adaptive_extra_accepts;
+	unsigned long expensive_adaptive_demotes;
+
 	/* Adaptive remote-KCOV mode A/B disposition counters, bumped from
 	 * dispatch_step in random-syscall.c on every productive-signal call
 	 * into the PC-mode + remote_capable path so the operator can A/B

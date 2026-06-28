@@ -4322,6 +4322,16 @@ static const struct {
 	  offsetof(struct stats_s, frontier_blend_old_weight_sum) },
 	{ "frontier_blend_new_weight_sum",
 	  offsetof(struct stats_s, frontier_blend_new_weight_sum) },
+	/* Observability for the adaptive expensive-syscall accept gate.
+	 * See the expensive_adaptive_* field-comment block in include/
+	 * stats.h and the expensive_accept() helper in random-syscall.c
+	 * for the OFF / SHADOW_ONLY / COMBINED mode contract. */
+	{ "expensive_adaptive_samples",
+	  offsetof(struct stats_s, expensive_adaptive_samples) },
+	{ "expensive_adaptive_extra_accepts",
+	  offsetof(struct stats_s, expensive_adaptive_extra_accepts) },
+	{ "expensive_adaptive_demotes",
+	  offsetof(struct stats_s, expensive_adaptive_demotes) },
 	/* Object-size-relative ARG_LEN draw observability.  All zero while
 	 * --arg-len-semantics is off (the default).  See the struct-field
 	 * comment block in include/stats.h for per-counter semantics. */
@@ -10668,6 +10678,18 @@ static void dump_stats_strategy_summary(void)
 			 shm->stats.frontier_blend_old_weight_sum);
 		stat_row("strategy", "frontier_blend_new_weight_sum",
 			 shm->stats.frontier_blend_new_weight_sum);
+	}
+	/* Adaptive expensive-syscall accept gate.  All zero while the
+	 * gate is in its default OFF mode (the early-return path skips
+	 * the bumps).  See the expensive_adaptive_* field-comment block
+	 * in include/stats.h for per-counter semantics. */
+	if (shm->stats.expensive_adaptive_samples) {
+		stat_row("strategy", "expensive_adaptive_samples",
+			 shm->stats.expensive_adaptive_samples);
+		stat_row("strategy", "expensive_adaptive_extra_accepts",
+			 shm->stats.expensive_adaptive_extra_accepts);
+		stat_row("strategy", "expensive_adaptive_demotes",
+			 shm->stats.expensive_adaptive_demotes);
 	}
 	/* Object-size-relative ARG_LEN draw observability.  The gate scalar
 	 * arg_len_semantics_draws stays zero while --arg-len-semantics is
