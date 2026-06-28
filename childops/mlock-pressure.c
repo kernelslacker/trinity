@@ -9,7 +9,6 @@
  */
 
 #include <sys/mman.h>
-#include <stdlib.h>
 
 #include "arch.h"
 #include "child.h"
