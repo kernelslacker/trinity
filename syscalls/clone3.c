@@ -182,8 +182,18 @@ static void sanitise_clone3(struct syscallrecord *rec)
 		args->set_tid_size = count;
 	}
 
-	if (args->flags & CLONE_INTO_CGROUP)
+	if (args->flags & CLONE_INTO_CGROUP) {
 		args->cgroup = (unsigned int) get_random_fd();
+		/*
+		 * cgroup lives at offset 80 in struct clone_args and is only
+		 * copied when usize >= CLONE_ARGS_SIZE_VER2. The csfu UNDERSIZE
+		 * bucket draws from {VER0, VER1, VER2}, so 2 of 3 undersize
+		 * picks would EINVAL here and never reach the kernel cgroup
+		 * path. Clamp up so this arm actually exercises it.
+		 */
+		if (buf.usize < CLONE_ARGS_SIZE_VER2)
+			buf.usize = CLONE_ARGS_SIZE_VER2;
+	}
 
 	if (args->flags & CLONE_CHILD_SETTID) {
 		void *child_tid = get_writable_address(sizeof(int));
