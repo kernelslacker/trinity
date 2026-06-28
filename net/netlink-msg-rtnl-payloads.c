@@ -61,6 +61,12 @@ size_t gen_rta_stats_payload(unsigned char *p, size_t avail,
 size_t gen_rta_action_payload(unsigned char *p, size_t avail,
 			      unsigned short nla_type);
 
+/* Same shape as gen_rta_neightbl_payload above: prototype kept here
+ * rather than in netlink-msg-internal.h to confine the rtnl_tunnel
+ * wire-up to the two TUs that actually need it. */
+size_t gen_rta_tunnel_payload(unsigned char *p, size_t avail,
+			      unsigned short nla_type);
+
 /*
  * Generate random IPv4 address, biased toward useful values.
  */
@@ -1850,6 +1856,127 @@ size_t gen_rta_action_payload(unsigned char *p, size_t avail,
 		}
 		return 0;
 	}
+
+	default:
+		return 0;
+	}
+}
+
+/*
+ * Build a single VXLAN_VNIFILTER_ENTRY nested payload, written at p
+ * and sized within cap.  Lays down a leading VXLAN_VNIFILTER_ENTRY_START
+ * sub-attr (the kernel's vxlan_process_vni_filter -EINVALs an entry
+ * whose START and END are both zero, so emit a non-zero VNI in
+ * [1, 0xFFFFFF] -- VNIs are 24-bit) then 0-3 optional siblings drawn
+ * from the inner VXLAN_VNIFILTER_ENTRY_* set sized to the widths the
+ * kernel's vni_filter_entry_policy walker expects: NLA_U32 for END,
+ * NLA_BINARY sizeof(struct in_addr) for GROUP, NLA_BINARY
+ * sizeof(struct in6_addr) for GROUP6.  Returns the inner payload
+ * length (excluding the outer per-entry header, which the caller
+ * writes); 0 on no-room.
+ */
+static size_t build_vxlan_vni_entry_nested(unsigned char *p, size_t avail)
+{
+	size_t off = 0;
+	size_t cap;
+	__u32 vni_start;
+	int siblings;
+
+	cap = avail;
+	if (cap > 96)
+		cap = 96;
+
+	if (off + NLA_ALIGN(NLA_HDRLEN + sizeof(__u32)) > cap)
+		return 0;
+	if (!start_nlattr(p, off, cap,
+			  VXLAN_VNIFILTER_ENTRY_START, sizeof(__u32)))
+		return 0;
+	vni_start = 1 + rnd_modulo_u32(0xFFFFFF);
+	memcpy(p + off + NLA_HDRLEN, &vni_start, sizeof(vni_start));
+	off += NLA_ALIGN(NLA_HDRLEN + sizeof(__u32));
+
+	siblings = RAND_RANGE(0, 3);
+	while (siblings-- > 0) {
+		unsigned short atype;
+		size_t plen;
+		size_t total;
+		unsigned char *payload;
+
+		switch (rnd_modulo_u32(3)) {
+		case 0:
+			atype = VXLAN_VNIFILTER_ENTRY_END;
+			plen = sizeof(__u32);
+			break;
+		case 1:
+			atype = VXLAN_VNIFILTER_ENTRY_GROUP;
+			plen = sizeof(struct in_addr);
+			break;
+		default:
+			atype = VXLAN_VNIFILTER_ENTRY_GROUP6;
+			plen = sizeof(struct in6_addr);
+			break;
+		}
+
+		total = NLA_ALIGN(NLA_HDRLEN + plen);
+		if (off + total > cap)
+			break;
+		if (!start_nlattr(p, off, cap, atype, plen))
+			break;
+		payload = p + off + NLA_HDRLEN;
+		if (atype == VXLAN_VNIFILTER_ENTRY_END) {
+			__u32 span = 0xFFFFFF - vni_start;
+			__u32 vni_end;
+
+			/* END must satisfy vni_start <= vni_end <= 0xFFFFFF;
+			 * keep the span small so a single message stays a
+			 * tractable range install rather than a 24-bit sweep. */
+			if (span > 63)
+				span = 63;
+			vni_end = vni_start + rnd_modulo_u32(span + 1);
+			memcpy(payload, &vni_end, sizeof(vni_end));
+		} else if (atype == VXLAN_VNIFILTER_ENTRY_GROUP) {
+			__u32 v4 = rand_ipv4();
+
+			memcpy(payload, &v4, sizeof(v4));
+		} else {
+			struct in6_addr v6;
+
+			rand_ipv6(&v6);
+			memcpy(payload, &v6, sizeof(v6));
+		}
+		off += total;
+	}
+
+	return off;
+}
+
+/*
+ * Generate a structured payload for vxlan vni-filter rtnetlink
+ * attributes carried in the RTM_*TUNNEL message family (group 26 in
+ * the gen_rta_payload switch).  The only kernel-side handler today is
+ * drivers/net/vxlan/vxlan_vnifilter.c::vxlan_vnifilter_process,
+ * registered for PF_BRIDGE; it walks the message via
+ * nlmsg_parse(..., vni_filter_policy, ...) which only declares the
+ * NLA_NESTED VXLAN_VNIFILTER_ENTRY top-level attr.  The kernel then
+ * iterates nlmsg_for_each_attr_type(VXLAN_VNIFILTER_ENTRY) and for
+ * each entry runs nla_parse_nested(..., vni_filter_entry_policy, ...)
+ * over { START, END, GROUP, GROUP6 } -- the sub-attrs
+ * build_vxlan_vni_entry_nested lays down.  Sizing this here means the
+ * inner per-entry parser actually runs instead of bouncing at the
+ * outer nlmsg_parse on a random-byte payload.
+ *
+ * VXLAN_VNIFILTER_ENTRY_STATS has no entry in vni_filter_entry_policy
+ * (it is dump-only, written via nla_nest_start in the reply path), so
+ * it is not emitted here.
+ */
+size_t gen_rta_tunnel_payload(unsigned char *p, size_t avail,
+			      unsigned short nla_type)
+{
+	switch (nla_type) {
+	case VXLAN_VNIFILTER_ENTRY:
+		if (avail >= NLA_HDRLEN + sizeof(__u32))
+			return build_vxlan_vni_entry_nested(p, avail);
+		return 0;
 
 	default:
 		return 0;

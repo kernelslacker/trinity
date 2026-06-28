@@ -189,6 +189,12 @@ size_t gen_rta_stats_payload(unsigned char *p, size_t avail,
 size_t gen_rta_action_payload(unsigned char *p, size_t avail,
 			      unsigned short nla_type);
 
+/* Same shape as gen_rta_neightbl_payload above: declaration inline
+ * here to keep the rtnl_tunnel wire-up confined to the two TUs that
+ * actually need it. */
+size_t gen_rta_tunnel_payload(unsigned char *p, size_t avail,
+			      unsigned short nla_type);
+
 /*
  * Generate a structured payload for a specific rtnetlink attribute.
  * Dispatches to the appropriate per-group generator based on the
@@ -221,6 +227,7 @@ static size_t gen_rta_payload(unsigned char *buf, size_t offset, size_t buflen,
 	case 24: return gen_rta_vlandb_payload(p, avail, nla_type);
 	case 22:
 	case 25: return gen_rta_nexthop_payload(p, avail, nla_type);
+	case 26: return gen_rta_tunnel_payload(p, avail, nla_type);
 	default: return 0;
 	}
 }
@@ -252,6 +259,10 @@ static size_t gen_rta_payload(unsigned char *buf, size_t offset, size_t buflen,
  *                   NLA_NESTED in br_vlan_db_policy and the generator
  *                   always emits a typed nested chain (ENTRY_INFO /
  *                   GOPTS_ID leader plus random-payload siblings).
+ *   group 26 (tunnel): VXLAN_VNIFILTER_ENTRY -- the only top-level
+ *                   attr declared in vni_filter_policy (NLA_NESTED);
+ *                   the inner walker drives vni_filter_entry_policy
+ *                   over START / END / GROUP / GROUP6.
  * The address (group 1), neigh (group 3) and rule (group 4) generators
  * only emit flat payloads today; add their nested entries here if that
  * changes.
@@ -279,6 +290,8 @@ static int rta_payload_is_nested(int rtnl_group, unsigned short nla_type)
 	case 24:
 		return nla_type == BRIDGE_VLANDB_ENTRY ||
 		       nla_type == BRIDGE_VLANDB_GLOBAL_OPTIONS;
+	case 26:
+		return nla_type == VXLAN_VNIFILTER_ENTRY;
 	default:
 		return 0;
 	}
