@@ -12,7 +12,6 @@
 #include "cred_throttle.h"	/* cred_class_for_nr, CRED_CLASS_NR */
 #include "kcov.h"
 #include "object-types.h"	/* OBJ_NONE */
-#include "params.h"		/* frontier_live_cooldown */
 #include "shm.h"
 #include "stats.h"
 #include "strategy.h"
@@ -483,7 +482,6 @@ void frontier_window_advance(void)
 	uint32_t cur, next;
 	unsigned int nr;
 	unsigned long max_weight = 0;
-	bool cooldown_enabled;
 
 	/* Clear-then-publish, the opposite of the previous order.  The old
 	 * code bumped frontier_slot first and then aged out the slot it had
@@ -517,17 +515,6 @@ void frontier_window_advance(void)
 	cur = __atomic_load_n(&shm->frontier_slot, __ATOMIC_RELAXED);
 	next = (cur + 1U) & (FRONTIER_DECAY_WINDOWS - 1);
 
-	/* --frontier-live-cooldown flag short-circuit.  Read once per
-	 * rotation rather than per-nr; the flag is set once at startup and
-	 * never flipped at runtime, so a single RELAXED load amortises
-	 * across the MAX_NR_SYSCALL inner loop.  Flag off keeps the
-	 * rotation arithmetic byte-identical to the pre-flag baseline:
-	 * cooldown_enabled gates the per-nr streak load AND the halving
-	 * step below, so neither extra cost is paid on the default-off
-	 * path. */
-	cooldown_enabled = __atomic_load_n(&frontier_live_cooldown,
-					   __ATOMIC_RELAXED);
-
 	for (nr = 0; nr < MAX_NR_SYSCALL; nr++) {
 		uint32_t old_slot;
 		uint32_t old_cached;
@@ -551,13 +538,12 @@ void frontier_window_advance(void)
 		 *
 		 * Loaded once per nr per rotation (NOT inside the CAS loop --
 		 * the streak does not change with our CAS retry; only the
-		 * cached running sum does) and only when the flag is on, so the
-		 * default-off path pays for nothing here.  A racing
-		 * random_syscall_step bump that raises the streak across the
-		 * threshold between this load and the cached-sum update is
-		 * picked up by the NEXT rotation -- bounded one-window lag,
-		 * same as every other rotation-boundary attribution. */
-		if (cooldown_enabled) {
+		 * cached running sum does).  A racing random_syscall_step bump
+		 * that raises the streak across the threshold between this
+		 * load and the cached-sum update is picked up by the NEXT
+		 * rotation -- bounded one-window lag, same as every other
+		 * rotation-boundary attribution. */
+		{
 			unsigned long streak;
 
 			streak = __atomic_load_n(
