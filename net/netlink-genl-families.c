@@ -155,6 +155,9 @@ extern struct genl_family_grammar fam_nlbl_mgmt;
 extern struct genl_family_grammar fam_nlbl_cipsov4;
 extern struct genl_family_grammar fam_nlbl_unlabel;
 extern struct genl_family_grammar fam_nlbl_calipso;
+#if __has_include(<linux/lockd_netlink.h>)
+extern struct genl_family_grammar fam_lockd;
+#endif
 
 /*
  * Per-family grammar definitions live in net/netlink-genl-fam-*.c;
@@ -276,6 +279,9 @@ static struct genl_family_grammar *registry[] = {
 	&fam_nlbl_cipsov4,
 	&fam_nlbl_unlabel,
 	&fam_nlbl_calipso,
+#if __has_include(<linux/lockd_netlink.h>)
+	&fam_lockd,
+#endif
 };
 
 static int discovery_done;
