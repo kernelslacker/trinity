@@ -34,6 +34,13 @@
 #include "trinity.h"
 #include "rnd.h"
 
+/* Prototype mirrored from the forward declaration in net/netlink-msg.c;
+ * kept here (rather than in netlink-msg-internal.h next to its
+ * gen_rta_* siblings) to keep the rtnl_neightbl wire-up confined to
+ * the two TUs that actually need it. */
+size_t gen_rta_neightbl_payload(unsigned char *p, size_t avail,
+				unsigned short nla_type);
+
 /*
  * Generate random IPv4 address, biased toward useful values.
  */
@@ -1330,6 +1337,183 @@ size_t gen_rta_vlandb_payload(unsigned char *p, size_t avail,
 		return build_vlandb_entry_nested(p, avail);
 	case BRIDGE_VLANDB_GLOBAL_OPTIONS:
 		return build_vlandb_gopts_nested(p, avail);
+	default:
+		return 0;
+	}
+}
+
+/*
+ * NDTPA_* u32 sub-attrs: lookup_neigh_parms + NEIGH_VAR_SET arms in
+ * net/core/neighbour.c:neightbl_set() length-check each one at
+ * sizeof(u32) via nl_ntbl_parm_policy, so sizing them at 4 bytes lets
+ * the inner per-attr walker reach the actual writer instead of bouncing
+ * at nla_validate.
+ */
+static const unsigned short ndtpa_u32_attrs[] = {
+	NDTPA_QUEUE_LEN, NDTPA_QUEUE_LENBYTES, NDTPA_PROXY_QLEN,
+	NDTPA_APP_PROBES, NDTPA_UCAST_PROBES, NDTPA_MCAST_PROBES,
+	NDTPA_MCAST_REPROBES,
+};
+
+/*
+ * NDTPA_* u64 sub-attrs: msec-valued timers the policy declares as
+ * NLA_U64 (BASE_REACHABLE_TIME / GC_STALETIME / DELAY_PROBE_TIME /
+ * RETRANS_TIME / ANYCAST_DELAY / PROXY_DELAY / LOCKTIME /
+ * INTERVAL_PROBE_TIME_MS).  Random-byte payloads at the wrong width
+ * length-reject at nla_validate; emit them at 8 bytes so the inner
+ * NEIGH_VAR_SET arm runs.  INTERVAL_PROBE_TIME_MS additionally has a
+ * .min = 1 policy gate; the random u64 payload trips that exactly 1
+ * in 2^64 of the time, which is fine — the other timers don't have
+ * that gate and exercise the writer regardless.
+ */
+static const unsigned short ndtpa_u64_attrs[] = {
+	NDTPA_BASE_REACHABLE_TIME, NDTPA_GC_STALETIME,
+	NDTPA_DELAY_PROBE_TIME, NDTPA_RETRANS_TIME,
+	NDTPA_ANYCAST_DELAY, NDTPA_PROXY_DELAY, NDTPA_LOCKTIME,
+	NDTPA_INTERVAL_PROBE_TIME_MS,
+};
+
+/*
+ * Build the NDTA_PARMS nested payload: a leading NDTPA_IFINDEX u32
+ * (ifindex == 0 selects the per-table base neigh_parms slot, anything
+ * else needs lookup_neigh_parms to match a per-device slot — bias
+ * toward 0 plus small ifindices so the lookup actually resolves)
+ * followed by 1-4 NDTPA_* u32/u64 siblings sized to the policy widths.
+ * The outer NDTA_PARMS header is written by append_nlattr.
+ */
+static size_t build_ndta_parms_nested(unsigned char *p, size_t avail)
+{
+	__u32 ifindex;
+	size_t off = 0;
+	size_t cap;
+	int children;
+
+	if (avail < NLA_HDRLEN + sizeof(ifindex))
+		return 0;
+
+	cap = avail;
+	if (cap > 192)
+		cap = 192;
+
+	if (!start_nlattr(p, off, cap, NDTPA_IFINDEX, sizeof(ifindex)))
+		return 0;
+	ifindex = ONE_IN(2) ? 0 : rnd_modulo_u32(64);
+	memcpy(p + off + NLA_HDRLEN, &ifindex, sizeof(ifindex));
+	off += NLA_ALIGN(NLA_HDRLEN + sizeof(ifindex));
+
+	children = RAND_RANGE(1, 4);
+	while (children-- > 0) {
+		unsigned short atype;
+		size_t plen;
+		size_t total;
+
+		if (RAND_BOOL()) {
+			atype = ndtpa_u32_attrs[rnd_modulo_u32(ARRAY_SIZE(ndtpa_u32_attrs))];
+			plen = sizeof(__u32);
+		} else {
+			atype = ndtpa_u64_attrs[rnd_modulo_u32(ARRAY_SIZE(ndtpa_u64_attrs))];
+			plen = sizeof(__u64);
+		}
+
+		total = NLA_ALIGN(NLA_HDRLEN + plen);
+		if (off + total > cap)
+			break;
+		if (!start_nlattr(p, off, cap, atype, plen))
+			break;
+		generate_rand_bytes(p + off + NLA_HDRLEN, plen);
+		off += total;
+	}
+	return off;
+}
+
+/*
+ * Generate a structured payload for neighbour-table rtnetlink
+ * attributes (NDTA_*).  Covers the RTM_*NEIGHTBL message group (12).
+ * The kernel net/core/neighbour.c:neightbl_set() handler walks
+ * nl_neightbl_policy and bounces NDTA_NAME (NLA_STRING — and the SET
+ * path additionally requires the string to nla_strcmp-equal a
+ * registered neigh_table .id, else -ENOENT), NDTA_THRESH[1-3] (u32),
+ * NDTA_GC_INTERVAL (u64) and NDTA_PARMS (nested NDTPA_*) on the
+ * wrong-width / wrong-shape gate before any of the per-attr writers
+ * run.  A random-byte payload of length [0, 64) almost never lands
+ * exactly the right width — and almost never matches a registered
+ * table name — so the message is rejected at nla_parse before the
+ * per-table SET path runs.  Seed NDTA_NAME from the {arp_cache,
+ * ndisc_cache} pair the kernel registers (dn_neigh_cache is a
+ * historical DECnet name that is harmless to emit — kernel just
+ * -ENOENTs it after the parse), size each scalar to its policy
+ * width, and build NDTA_PARMS as a typed NDTPA_* chain so the inner
+ * lookup_neigh_parms + NEIGH_VAR_SET arms run instead of failing at
+ * the outer parse.  NDTA_CONFIG / NDTA_STATS are dump-only (no
+ * policy entry; neightbl_set() ignores them), but include sized
+ * payloads so the nla walker doesn't bounce on a struct ndt_config /
+ * ndt_stats short-read if anyone emits them.
+ */
+size_t gen_rta_neightbl_payload(unsigned char *p, size_t avail,
+				unsigned short nla_type)
+{
+	switch (nla_type) {
+	case NDTA_NAME: {
+		/* Registered neigh_table .id strings.  neightbl_set walks
+		 * NEIGH_NR_TABLES rcu_dereference(neigh_tables[]) entries
+		 * and matches via nla_strcmp; missing the match -ENOENTs
+		 * before the per-table writers ever run. */
+		static const char * const names[] = {
+			"arp_cache", "ndisc_cache", "dn_neigh_cache",
+		};
+		const char *name = names[rnd_modulo_u32(ARRAY_SIZE(names))];
+		size_t slen = strlen(name) + 1;
+
+		if (avail >= slen) {
+			memcpy(p, name, slen);
+			return slen;
+		}
+		return 0;
+	}
+
+	case NDTA_THRESH1:
+	case NDTA_THRESH2:
+	case NDTA_THRESH3:
+		if (avail >= 4) {
+			__u32 val = rnd_modulo_u32(1024);
+			memcpy(p, &val, 4);
+			return 4;
+		}
+		return 0;
+
+	case NDTA_GC_INTERVAL:
+		if (avail >= 8) {
+			__u64 val = rnd_modulo_u32(1 << 16);
+			memcpy(p, &val, 8);
+			return 8;
+		}
+		return 0;
+
+	case NDTA_PARMS:
+		if (avail >= NLA_HDRLEN + 4)
+			return build_ndta_parms_nested(p, avail);
+		return 0;
+
+	case NDTA_CONFIG:
+		if (avail >= sizeof(struct ndt_config)) {
+			struct ndt_config cfg;
+
+			generate_rand_bytes((unsigned char *)&cfg, sizeof(cfg));
+			memcpy(p, &cfg, sizeof(cfg));
+			return sizeof(cfg);
+		}
+		return 0;
+
+	case NDTA_STATS:
+		if (avail >= sizeof(struct ndt_stats)) {
+			struct ndt_stats st;
+
+			generate_rand_bytes((unsigned char *)&st, sizeof(st));
+			memcpy(p, &st, sizeof(st));
+			return sizeof(st);
+		}
+		return 0;
+
 	default:
 		return 0;
 	}
