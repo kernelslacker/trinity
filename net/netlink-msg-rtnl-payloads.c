@@ -1182,3 +1182,155 @@ size_t gen_rta_mdba_payload(unsigned char *p, size_t avail,
 		return 0;
 	}
 }
+
+/*
+ * Fill a struct bridge_vlan_info with a vid in [1, VLAN_VID_MASK-1]
+ * (vid 0 and vid 4095 are rejected by br_validate_vlan_id) and a flags
+ * field drawn from the curated BRIDGE_VLAN_INFO_* bits the kernel
+ * br_vlan_process_one_opts / br_vlan_rtm_process_one walkers act on.
+ * Keeping the vid and flags inside the valid envelope lets the parse
+ * fall through to nbp_vlan_add / br_vlan_add instead of bouncing at
+ * the per-field gate.
+ */
+static void fill_bridge_vlan_info(struct bridge_vlan_info *info)
+{
+	static const __u16 valid_flags =
+		BRIDGE_VLAN_INFO_MASTER | BRIDGE_VLAN_INFO_PVID |
+		BRIDGE_VLAN_INFO_UNTAGGED |
+		BRIDGE_VLAN_INFO_RANGE_BEGIN |
+		BRIDGE_VLAN_INFO_RANGE_END |
+		BRIDGE_VLAN_INFO_BRENTRY |
+		BRIDGE_VLAN_INFO_ONLY_OPTS;
+
+	info->flags = rnd_u32() & valid_flags;
+	info->vid = 1 + rnd_modulo_u32(4094);
+}
+
+/*
+ * Build the BRIDGE_VLANDB_ENTRY container: a leading
+ * BRIDGE_VLANDB_ENTRY_INFO sub-attr (NLA_EXACT_LEN of struct
+ * bridge_vlan_info -- the kernel's br_vlan_db_dump_policy /
+ * br_vlandb_entry_policy length-reject any other size) followed by
+ * random-payload BRIDGE_VLANDB_ENTRY_* siblings (RANGE / STATE /
+ * TUNNEL_INFO / STATS / MCAST_ROUTER / MCAST_N_GROUPS /
+ * MCAST_MAX_GROUPS / NEIGH_SUPPRESS).  The outer BRIDGE_VLANDB_ENTRY
+ * header is written by append_nlattr.
+ */
+static size_t build_vlandb_entry_nested(unsigned char *p, size_t avail)
+{
+	static const unsigned short entry_attrs[] = {
+		BRIDGE_VLANDB_ENTRY_RANGE,
+		BRIDGE_VLANDB_ENTRY_STATE,
+		BRIDGE_VLANDB_ENTRY_TUNNEL_INFO,
+		BRIDGE_VLANDB_ENTRY_STATS,
+		BRIDGE_VLANDB_ENTRY_MCAST_ROUTER,
+		BRIDGE_VLANDB_ENTRY_MCAST_N_GROUPS,
+		BRIDGE_VLANDB_ENTRY_MCAST_MAX_GROUPS,
+		BRIDGE_VLANDB_ENTRY_NEIGH_SUPPRESS,
+	};
+	struct bridge_vlan_info info;
+	size_t off = 0;
+	size_t cap;
+
+	if (avail < NLA_HDRLEN + sizeof(info))
+		return 0;
+
+	cap = avail;
+	if (cap > 192)
+		cap = 192;
+
+	if (!start_nlattr(p, off, cap, BRIDGE_VLANDB_ENTRY_INFO,
+			  sizeof(info)))
+		return 0;
+	fill_bridge_vlan_info(&info);
+	memcpy(p + off + NLA_HDRLEN, &info, sizeof(info));
+	off += NLA_ALIGN(NLA_HDRLEN + sizeof(info));
+
+	if (off < cap)
+		off += build_nested_attrs(p + off, cap - off,
+					  entry_attrs,
+					  ARRAY_SIZE(entry_attrs), 0);
+
+	return off;
+}
+
+/*
+ * Build the BRIDGE_VLANDB_GLOBAL_OPTIONS container: a leading
+ * BRIDGE_VLANDB_GOPTS_ID sub-attr (NLA_U16 vid in the valid envelope)
+ * followed by random-payload BRIDGE_VLANDB_GOPTS_* siblings (RANGE /
+ * MCAST_SNOOPING / MCAST_IGMP_VERSION / ... / MSTI).  The outer
+ * BRIDGE_VLANDB_GLOBAL_OPTIONS header is written by append_nlattr.
+ */
+static size_t build_vlandb_gopts_nested(unsigned char *p, size_t avail)
+{
+	static const unsigned short gopts_attrs[] = {
+		BRIDGE_VLANDB_GOPTS_RANGE,
+		BRIDGE_VLANDB_GOPTS_MCAST_SNOOPING,
+		BRIDGE_VLANDB_GOPTS_MCAST_IGMP_VERSION,
+		BRIDGE_VLANDB_GOPTS_MCAST_MLD_VERSION,
+		BRIDGE_VLANDB_GOPTS_MCAST_LAST_MEMBER_CNT,
+		BRIDGE_VLANDB_GOPTS_MCAST_STARTUP_QUERY_CNT,
+		BRIDGE_VLANDB_GOPTS_MCAST_LAST_MEMBER_INTVL,
+		BRIDGE_VLANDB_GOPTS_MCAST_MEMBERSHIP_INTVL,
+		BRIDGE_VLANDB_GOPTS_MCAST_QUERIER_INTVL,
+		BRIDGE_VLANDB_GOPTS_MCAST_QUERY_INTVL,
+		BRIDGE_VLANDB_GOPTS_MCAST_QUERY_RESPONSE_INTVL,
+		BRIDGE_VLANDB_GOPTS_MCAST_STARTUP_QUERY_INTVL,
+		BRIDGE_VLANDB_GOPTS_MCAST_QUERIER,
+		BRIDGE_VLANDB_GOPTS_MCAST_ROUTER_PORTS,
+		BRIDGE_VLANDB_GOPTS_MSTI,
+	};
+	__u16 vid;
+	size_t off = 0;
+	size_t cap;
+
+	if (avail < NLA_HDRLEN + sizeof(vid))
+		return 0;
+
+	cap = avail;
+	if (cap > 192)
+		cap = 192;
+
+	if (!start_nlattr(p, off, cap, BRIDGE_VLANDB_GOPTS_ID, sizeof(vid)))
+		return 0;
+	vid = 1 + rnd_modulo_u32(4094);
+	memcpy(p + off + NLA_HDRLEN, &vid, sizeof(vid));
+	off += NLA_ALIGN(NLA_HDRLEN + sizeof(vid));
+
+	if (off < cap)
+		off += build_nested_attrs(p + off, cap - off,
+					  gopts_attrs,
+					  ARRAY_SIZE(gopts_attrs), 0);
+
+	return off;
+}
+
+/*
+ * Generate a structured payload for bridge VLAN database rtnetlink
+ * attributes.  Covers the RTM_*VLAN message group (18).
+ *
+ * Both top-level attrs are NLA_NESTED containers in br_vlan_db_policy:
+ *   BRIDGE_VLANDB_ENTRY            -> BRIDGE_VLANDB_ENTRY_*
+ *   BRIDGE_VLANDB_GLOBAL_OPTIONS   -> BRIDGE_VLANDB_GOPTS_*
+ * In each case the kernel parser requires a typed leading sub-attr
+ * (BRIDGE_VLANDB_ENTRY_INFO carrying struct bridge_vlan_info, or
+ * BRIDGE_VLANDB_GOPTS_ID carrying a u16 vid) and length-rejects the
+ * container at nla_parse_nested if it can't find a valid one.  Random
+ * outer bytes never satisfy either, so the message bounces before
+ * br_vlan_rtm_process / br_vlan_rtm_process_global_options ever runs.
+ * Lay down the typed leading sub-attr in the valid envelope, then
+ * append random-payload typed siblings so the inner per-attr walker
+ * reaches its own policy table instead of failing at the outer parse.
+ */
+size_t gen_rta_vlandb_payload(unsigned char *p, size_t avail,
+			      unsigned short nla_type)
+{
+	switch (nla_type) {
+	case BRIDGE_VLANDB_ENTRY:
+		return build_vlandb_entry_nested(p, avail);
+	case BRIDGE_VLANDB_GLOBAL_OPTIONS:
+		return build_vlandb_gopts_nested(p, avail);
+	default:
+		return 0;
+	}
+}

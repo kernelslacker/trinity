@@ -189,6 +189,7 @@ static size_t gen_rta_payload(unsigned char *buf, size_t offset, size_t buflen,
 	case 15: return gen_rta_dcb_payload(p, avail, nla_type);
 	case 16: return gen_rta_netconf_payload(p, avail, nla_type);
 	case 17: return gen_rta_mdba_payload(p, avail, nla_type);
+	case 18: return gen_rta_vlandb_payload(p, avail, nla_type);
 	case 22:
 	case 25: return gen_rta_nexthop_payload(p, avail, nla_type);
 	default: return 0;
@@ -215,6 +216,11 @@ static size_t gen_rta_payload(unsigned char *buf, size_t offset, size_t buflen,
  *                   here: the dominant emission is a struct br_mdb_entry
  *                   leaf and the alt MDBA_MDB_ENTRY reply shape is a
  *                   minority arm not worth a misleading nested flag.
+ *   group 18 (vlandb): BRIDGE_VLANDB_ENTRY and
+ *                   BRIDGE_VLANDB_GLOBAL_OPTIONS -- both are
+ *                   NLA_NESTED in br_vlan_db_policy and the generator
+ *                   always emits a typed nested chain (ENTRY_INFO /
+ *                   GOPTS_ID leader plus random-payload siblings).
  * The address (group 1), neigh (group 3) and rule (group 4) generators
  * only emit flat payloads today; add their nested entries here if that
  * changes.
@@ -235,6 +241,9 @@ static int rta_payload_is_nested(int rtnl_group, unsigned short nla_type)
 		return nla_type == DCB_ATTR_IEEE;
 	case 17:
 		return nla_type == MDBA_ROUTER;
+	case 18:
+		return nla_type == BRIDGE_VLANDB_ENTRY ||
+		       nla_type == BRIDGE_VLANDB_GLOBAL_OPTIONS;
 	default:
 		return 0;
 	}
