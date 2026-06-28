@@ -116,6 +116,8 @@
 #include "childops-genl.h"
 #include "childops-netlink.h"
 #include "childops-util.h"
+#include "name-pool.h"
+#include "random.h"
 #include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
@@ -421,6 +423,8 @@ struct l2tp_variant {
 static void pick_variant(struct l2tp_variant *v)
 {
 	__u32 cid;
+	int wrote;
+	size_t len;
 
 	/* CONN_ID 0 is reserved as a wildcard in l2tp; clamp to >=1
 	 * and away from the high u32 range that some kernels reject
@@ -430,10 +434,48 @@ static void pick_variant(struct l2tp_variant *v)
 	v->peer_conn_id = cid ^ 0xa5a5a5a5U;
 	v->session_id = (rnd_u32() & 0xffffffU) + 1U;
 	v->peer_session_id = v->session_id ^ 0x5a5a5a5aU;
-	/* ifname stays under IFNAMSIZ (16) and starts with "l2r" so
-	 * any leftover device is identifiable as ours. */
-	(void)snprintf(v->ifname, sizeof(v->ifname), "l2r%u",
-		       (unsigned int)(rnd_u32() & 0xffffU));
+	/*
+	 * ifname stays under IFNAMSIZ (16) and starts with "l2r" so
+	 * any leftover device is identifiable as ours.  Minority arm
+	 * (ONE_IN(4)) draws a previously-recorded name from the
+	 * NAME_KIND_NETDEV pool, optionally mutated (1-byte flip /
+	 * truncate / case-flip / suffix-grow), so a later outer iter's
+	 * SESSION_CREATE can hit an ifname an earlier iter planted --
+	 * reaching the per-netns name-uniqueness check against a name
+	 * the kernel already knows, instead of the fresh-random
+	 * near-miss space.  Majority arm stays fresh so the
+	 * fresh-suffix diversity that exercises register_netdevice on
+	 * an unseen name remains dominant.  Either way the chosen
+	 * name is recorded into the NETDEV pool so subsequent draws
+	 * (here or from another netdev-name generator) can collide
+	 * with it.  Buffer is always NUL-terminated; effective name
+	 * length is capped at IFNAMSIZ-1.
+	 */
+	if (ONE_IN(4)) {
+		size_t got = name_pool_draw_mutated(NAME_KIND_NETDEV,
+						    v->ifname,
+						    sizeof(v->ifname));
+
+		if (got > 0) {
+			if (got >= sizeof(v->ifname))
+				got = sizeof(v->ifname) - 1;
+			v->ifname[got] = '\0';
+			name_pool_record(NAME_KIND_NETDEV, v->ifname, got);
+			return;
+		}
+		/* empty pool -- fall through to fresh generation */
+	}
+
+	wrote = snprintf(v->ifname, sizeof(v->ifname), "l2r%u",
+			 (unsigned int)(rnd_u32() & 0xffffU));
+	if (wrote <= 0) {
+		v->ifname[0] = '\0';
+		return;
+	}
+	len = (size_t)wrote;
+	if (len >= sizeof(v->ifname))
+		len = sizeof(v->ifname) - 1;
+	name_pool_record(NAME_KIND_NETDEV, v->ifname, len);
 }
 
 /*
