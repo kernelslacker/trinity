@@ -103,14 +103,14 @@ static void ipv6_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct 
 
 static const struct sock_option inet6_opts[] = {
 	{ .name = IPV6_ADDRFORM, },
-	{ .name = IPV6_2292PKTINFO, },
+	{ .name = IPV6_2292PKTINFO, .len = sizeof(struct in6_pktinfo) },
 	{ .name = IPV6_2292HOPOPTS, },
 	{ .name = IPV6_2292DSTOPTS, },
 	{ .name = IPV6_2292RTHDR, },
 	{ .name = IPV6_2292PKTOPTIONS, },
 	{ .name = IPV6_CHECKSUM, },
 	{ .name = IPV6_2292HOPLIMIT, },
-	{ .name = IPV6_NEXTHOP, },
+	{ .name = IPV6_NEXTHOP, .len = sizeof(struct sockaddr_in6) },
 	{ .name = IPV6_AUTHHDR, },
 	{ .name = IPV6_FLOWINFO, },
 
@@ -211,6 +211,10 @@ static void __inet6_setsockopt(struct sockopt *so)
 	case IPV6_IPSEC_POLICY:
 	case IPV6_XFRM_POLICY:
 		so->optlen = rnd_modulo_u32(page_size);
+		break;
+	case MCAST_MSFILTER:
+		so->optlen = rnd_modulo_u32(page_size);
+		so->optlen |= GROUP_FILTER_SIZE(0);
 		break;
 	}
 }
