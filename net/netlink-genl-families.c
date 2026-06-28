@@ -104,6 +104,7 @@ extern struct genl_family_grammar fam_net_dm;
 #endif
 #if __has_include(<linux/smc.h>)
 extern struct genl_family_grammar fam_smc_pnetid;
+extern struct genl_family_grammar fam_smc_gen;
 #endif
 #if __has_include(<linux/ila.h>)
 extern struct genl_family_grammar fam_ila;
@@ -224,6 +225,7 @@ static struct genl_family_grammar *registry[] = {
 #endif
 #if __has_include(<linux/smc.h>)
 	&fam_smc_pnetid,
+	&fam_smc_gen,
 #endif
 #if __has_include(<linux/ila.h>)
 	&fam_ila,
