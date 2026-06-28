@@ -370,6 +370,9 @@ void dump_stats_fuzzer_subsystems(void)
 	if (shm->stats.kvm_vcpu_ioctls_dispatched)
 		stat_row("kvm", "vcpu_ioctls_dispatched", shm->stats.kvm_vcpu_ioctls_dispatched);
 
+	if (shm->stats.kvm_vm_ioctls_dispatched)
+		stat_row("kvm", "vm_ioctls_dispatched", shm->stats.kvm_vm_ioctls_dispatched);
+
 	stat_category_emit_text(&perf_event_chains_category);
 
 	if (shm->stats.tracefs_kprobe_writes_open_fail || shm->stats.tracefs_kprobe_writes_write_fail ||
