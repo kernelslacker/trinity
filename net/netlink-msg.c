@@ -187,6 +187,8 @@ static size_t gen_rta_payload(unsigned char *buf, size_t offset, size_t buflen,
 	case 6:
 	case 7: return gen_rta_tc_payload(p, avail, nla_type);
 	case 15: return gen_rta_dcb_payload(p, avail, nla_type);
+	case 22:
+	case 25: return gen_rta_nexthop_payload(p, avail, nla_type);
 	default: return 0;
 	}
 }

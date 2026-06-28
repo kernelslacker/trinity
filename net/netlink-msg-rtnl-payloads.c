@@ -23,6 +23,7 @@
 #include <linux/neighbour.h>
 #include <linux/fib_rules.h>
 #include <linux/dcbnl.h>
+#include <linux/nexthop.h>
 #include <linux/pkt_sched.h>
 #include <string.h>
 #include "netlink-attrs.h"
@@ -810,6 +811,111 @@ size_t gen_rta_tc_payload(unsigned char *p, size_t avail,
 						  tca_attrs_n, 0);
 		}
 		return 0;
+
+	default:
+		return 0;
+	}
+}
+
+/*
+ * Generate a structured payload for nexthop rtnetlink attributes (NHA_*).
+ * Covers RTM_*NEXTHOP / RTM_*NEXTHOPBUCKET message groups (22/25).
+ * The kernel's rtm_nh_policy_new walker rejects almost every random-byte
+ * NHA_* attr on length / mask / range before the message ever reaches
+ * nh_create_ipv4 / nh_create_group: NHA_ID / NHA_OIF / NHA_MASTER are
+ * fixed-width u32, NHA_GROUP_TYPE is NLA_U16 capped at
+ * NEXTHOP_GRP_TYPE_MAX, NHA_GROUP is an array of struct nexthop_grp
+ * sized to a multiple of the entry stride, NHA_OP_FLAGS is bitmask-
+ * validated against NHA_OP_FLAG_DUMP_{STATS,HW_STATS}.  Sizing each
+ * attr to its policy gets the message past nla_parse into those per-
+ * attr validators and onward into nh_check_attr_* / nexthop_create.
+ *
+ * Skipped on purpose:
+ *   NHA_GATEWAY     — kernel demands nla_len == 4 (AF_INET) or 16
+ *                     (AF_INET6); the dispatch signature doesn't carry
+ *                     nhmsg.nh_family, so the random fallback (which
+ *                     occasionally lands exactly on 4 or 16) is
+ *                     strictly better than guessing the wrong size.
+ *   NHA_ENCAP       — opaque per-encap-type payload (mpls labels, ila
+ *                     identifier, seg6 srh, …); only useful in lock-
+ *                     step with NHA_ENCAP_TYPE, deferred.
+ *   NHA_BLACKHOLE / NHA_GROUPS / NHA_FDB — NLA_FLAG attrs that need a
+ *                     zero-byte payload; the current generator->caller
+ *                     protocol treats a 0 return as "fall back to
+ *                     random", so these can't be expressed here.
+ *   NHA_RES_GROUP / NHA_RES_BUCKET / NHA_GROUP_STATS — nested sub-attr
+ *                     namespaces; would need their own tables to emit
+ *                     usefully, deferred.
+ */
+size_t gen_rta_nexthop_payload(unsigned char *p, size_t avail,
+			       unsigned short nla_type)
+{
+	switch (nla_type) {
+	case NHA_ID:
+	case NHA_OIF:
+	case NHA_MASTER:
+	case NHA_OP_FLAGS:
+	case NHA_HW_STATS_ENABLE:
+	case NHA_HW_STATS_USED:
+		/* u32 scalar attrs.  NHA_ID == 0 asks the kernel to
+		 * auto-assign; small ifindex / id values keep the per-
+		 * netns nh_table lookup in the range a sibling nexthop
+		 * could plausibly occupy. */
+		if (avail >= 4) {
+			__u32 val = rnd_modulo_u32(64);
+
+			memcpy(p, &val, 4);
+			return 4;
+		}
+		return 0;
+
+	case NHA_GROUP_TYPE:
+		/* u16; one of NEXTHOP_GRP_TYPE_{MPATH,RES}. */
+		if (avail >= 2) {
+			unsigned short val =
+				rnd_modulo_u32(NEXTHOP_GRP_TYPE_MAX + 1);
+
+			memcpy(p, &val, 2);
+			return 2;
+		}
+		return 0;
+
+	case NHA_ENCAP_TYPE:
+		/* u16; LWTUNNEL_ENCAP_* index.  Small range covers the
+		 * in-tree encap kinds (MPLS, IP, ILA, IP6, SEG6, BPF,
+		 * SEG6_LOCAL, RPL, IOAM6, XFRM) so
+		 * lwtunnel_valid_encap_type() resolves to a registered
+		 * ops vector instead of bouncing on -EOPNOTSUPP. */
+		if (avail >= 2) {
+			unsigned short val = rnd_modulo_u32(11);
+
+			memcpy(p, &val, 2);
+			return 2;
+		}
+		return 0;
+
+	case NHA_GROUP: {
+		/* Array of struct nexthop_grp entries.  The kernel walks
+		 * nla_len / sizeof(nexthop_grp) entries and resolves each
+		 * .id against the per-netns nh_table; small ids ride the
+		 * same lookup real userspace exercises and let the walker
+		 * reach nexthop_group_alloc / nh_grp_lookup. */
+		size_t written = 0;
+		int n_entries = RAND_RANGE(1, 4);
+
+		while (n_entries-- > 0 &&
+		       written + sizeof(struct nexthop_grp) <= avail) {
+			struct nexthop_grp grp;
+
+			grp.id = rnd_modulo_u32(64);
+			grp.weight = rnd_modulo_u32(256);
+			grp.weight_high = 0;
+			grp.resvd2 = 0;
+			memcpy(p + written, &grp, sizeof(grp));
+			written += sizeof(grp);
+		}
+		return written;
+	}
 
 	default:
 		return 0;
