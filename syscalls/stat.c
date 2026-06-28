@@ -287,6 +287,36 @@ static void sanitise_statx(struct syscallrecord *rec)
 	rec->a4 = generate_statx_mask();
 
 	/*
+	 * ARG_PATHNAME plumbed a random pathname into rec->a2, but the
+	 * random path is most often not a real file at all -- statx
+	 * returns ENOENT at the path walk before ever reaching
+	 * vfs_getattr / the per-fs inode_operations->getattr path that
+	 * the curated mask/flags above were chosen to exercise.
+	 *
+	 * Half the draws now repoint a2 at one of the trinity-testfile<N>
+	 * absolute paths so the call lands on a real trinity-owned inode
+	 * and penetrates the VFS path -- the namei walk to a real dentry,
+	 * the per-fs getattr, and the mask intersection logic the post
+	 * oracle relies on.  The other half preserves the slot exactly as
+	 * the generic draw left it, so the ENOENT reject arm stays
+	 * exercised.  AT_FDCWD-pin a1 on the same arm: the absolute path
+	 * ignores dfd, but a sane dfd keeps the call tidy.  statx is
+	 * read-only on the inode, so this cannot clobber the shared
+	 * trinity-testfile pool.  Must run BEFORE the post_state snapshot
+	 * below so the snapshot captures what the kernel actually sees.
+	 */
+	if (rnd_modulo_u32(2) == 0) {
+		char *path = (char *) rec->a2;
+
+		if (path != NULL) {
+			snprintf(path, MAX_PATH_LEN, "%s/trinity-testfile%u",
+				 trinity_tmpdir_abs(),
+				 1 + rnd_modulo_u32(NR_TESTFILES));
+			rec->a1 = (unsigned long) AT_FDCWD;
+		}
+	}
+
+	/*
 	 * Snapshot the five input args for the post oracle.  Without this
 	 * the post handler reads rec->a1..a5 at post-time, when a sibling
 	 * syscall may have scribbled the slots: looks_like_corrupted_ptr()
