@@ -49,18 +49,39 @@ static const unsigned int atmsvc_opts[] = {
 	SO_SETCLP, SO_CIRANGE, SO_ATMQOS, SO_ATMSAP, SO_MULTIPOINT,
 };
 
+/*
+ * vcc_setsockopt (net/atm/common.c) length-rejects the struct-shaped
+ * optnames with EINVAL when optlen < sizeof(the expected struct), so a
+ * blanket sizeof(unsigned int) never reaches the per-option handler.
+ * Size optlen per-optname; the zero-filled optval page already passes
+ * copy_from_user, length is the killer.
+ */
+static size_t atm_optlen_for(unsigned int optname)
+{
+	switch (optname) {
+	case SO_ATMQOS:
+		return sizeof(struct atm_qos);
+	case SO_ATMSAP:
+		return sizeof(struct atm_sap);
+	case SO_CIRANGE:
+		return sizeof(struct atm_cirange);
+	default:
+		return sizeof(unsigned int);
+	}
+}
+
 static void atmpvc_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	so->level = SOL_ATM;
 	so->optname = RAND_ARRAY(atmpvc_opts);
-	so->optlen = sizeof(unsigned int);
+	so->optlen = atm_optlen_for(so->optname);
 }
 
 static void atmsvc_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	so->level = SOL_ATM;
 	so->optname = RAND_ARRAY(atmsvc_opts);
-	so->optlen = sizeof(unsigned int);
+	so->optlen = atm_optlen_for(so->optname);
 }
 
 static struct socket_triplet atmpvc_triplet[] = {
