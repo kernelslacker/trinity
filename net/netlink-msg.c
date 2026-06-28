@@ -188,6 +188,7 @@ static size_t gen_rta_payload(unsigned char *buf, size_t offset, size_t buflen,
 	case 7: return gen_rta_tc_payload(p, avail, nla_type);
 	case 15: return gen_rta_dcb_payload(p, avail, nla_type);
 	case 16: return gen_rta_netconf_payload(p, avail, nla_type);
+	case 17: return gen_rta_mdba_payload(p, avail, nla_type);
 	case 22:
 	case 25: return gen_rta_nexthop_payload(p, avail, nla_type);
 	default: return 0;
@@ -208,6 +209,12 @@ static size_t gen_rta_payload(unsigned char *buf, size_t offset, size_t buflen,
  *   group 2 (route): RTA_METRICS, RTA_MULTIPATH
  *   groups 5/6/7 (tc): TCA_OPTIONS, TCA_STAB, TCA_STATS2
  *   group 15 (dcb): DCB_ATTR_IEEE
+ *   group 17 (mdb): MDBA_ROUTER -- always a NLA_NESTED chain (the
+ *                   MDBE_ATTR_* request shape and the MDBA_ROUTER_PORT
+ *                   reply shape are both nested). MDBA_MDB stays flat
+ *                   here: the dominant emission is a struct br_mdb_entry
+ *                   leaf and the alt MDBA_MDB_ENTRY reply shape is a
+ *                   minority arm not worth a misleading nested flag.
  * The address (group 1), neigh (group 3) and rule (group 4) generators
  * only emit flat payloads today; add their nested entries here if that
  * changes.
@@ -226,6 +233,8 @@ static int rta_payload_is_nested(int rtnl_group, unsigned short nla_type)
 		       nla_type == TCA_STATS2;
 	case 15:
 		return nla_type == DCB_ATTR_IEEE;
+	case 17:
+		return nla_type == MDBA_ROUTER;
 	default:
 		return 0;
 	}

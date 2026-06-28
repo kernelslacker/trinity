@@ -25,6 +25,7 @@
 #include <linux/dcbnl.h>
 #include <linux/nexthop.h>
 #include <linux/netconf.h>
+#include <linux/if_bridge.h>
 #include <linux/pkt_sched.h>
 #include <string.h>
 #include "netlink-attrs.h"
@@ -982,6 +983,198 @@ size_t gen_rta_netconf_payload(unsigned char *p, size_t avail,
 			}
 			memcpy(p, &val, 4);
 			return 4;
+		}
+		return 0;
+
+	default:
+		return 0;
+	}
+}
+
+/*
+ * Populate a struct br_mdb_entry that survives the kernel's
+ * rtnl_validate_mdb_entry gate: a non-zero ifindex, MDB_TEMPORARY /
+ * MDB_PERMANENT state, a vid below VLAN_VID_MASK (0xfff), and a group
+ * address consistent with addr.proto -- a global IPv4 multicast that is
+ * not link-local (224.0.0.0/24), an IPv6 site-local multicast that is
+ * not the all-nodes group, or an L2 multicast MAC (group bit set on the
+ * first octet).
+ */
+static void fill_mdb_entry(struct br_mdb_entry *e)
+{
+	memset(e, 0, sizeof(*e));
+	e->ifindex = 1 + rnd_modulo_u32(63);
+	e->state = RAND_BOOL() ? MDB_PERMANENT : MDB_TEMPORARY;
+	e->vid = RAND_BOOL() ? 0 : rnd_modulo_u32(0xfff);
+
+	switch (rnd_modulo_u32(3)) {
+	case 0:
+		e->addr.proto = htons(ETH_P_IP);
+		e->addr.u.ip4 = htonl(0xe1000000 |
+				      (rnd_u32() & 0x00ffffff));
+		break;
+	case 1:
+		e->addr.proto = htons(ETH_P_IPV6);
+		e->addr.u.ip6.s6_addr[0] = 0xff;
+		e->addr.u.ip6.s6_addr[1] = 0x05;
+		e->addr.u.ip6.s6_addr[15] = 1 + rnd_modulo_u32(254);
+		break;
+	default:
+		e->addr.proto = 0;
+		generate_rand_bytes(e->addr.u.mac_addr, ETH_ALEN);
+		e->addr.u.mac_addr[0] |= 0x01;
+		break;
+	}
+}
+
+/*
+ * Build the MDBA_MDB dump-reply payload: MDBA_MDB_ENTRY ->
+ * MDBA_MDB_ENTRY_INFO carrying a raw struct br_mdb_entry (the kernel
+ * emits it with nla_put_nohdr so no inner nlattr header wraps it)
+ * followed by random-payload MDBA_MDB_EATTR_* siblings.  The two outer
+ * MDBA_MDB_ENTRY / MDBA_MDB_ENTRY_INFO headers are laid down here; the
+ * caller writes the outer MDBA_MDB header in append_nlattr.
+ */
+static size_t build_mdba_mdb_nested(unsigned char *p, size_t avail)
+{
+	static const unsigned short eattrs[] = {
+		MDBA_MDB_EATTR_TIMER,    MDBA_MDB_EATTR_GROUP_MODE,
+		MDBA_MDB_EATTR_RTPROT,   MDBA_MDB_EATTR_SOURCE,
+		MDBA_MDB_EATTR_VNI,      MDBA_MDB_EATTR_SRC_VNI,
+		MDBA_MDB_EATTR_IFINDEX,  MDBA_MDB_EATTR_DST_PORT,
+	};
+	struct br_mdb_entry entry;
+	struct nlattr mid, info;
+	unsigned char *info_payload;
+	size_t info_off;
+	size_t info_cap;
+	size_t mid_payload;
+
+	if (avail < 2 * NLA_HDRLEN + sizeof(entry))
+		return 0;
+
+	info_payload = p + 2 * NLA_HDRLEN;
+	info_cap = avail - 2 * NLA_HDRLEN;
+	if (info_cap > 192)
+		info_cap = 192;
+
+	fill_mdb_entry(&entry);
+	memcpy(info_payload, &entry, sizeof(entry));
+	info_off = NLA_ALIGN(sizeof(entry));
+
+	if (info_off < info_cap)
+		info_off += build_nested_attrs(info_payload + info_off,
+					       info_cap - info_off,
+					       eattrs, ARRAY_SIZE(eattrs), 0);
+
+	info.nla_len = NLA_HDRLEN + info_off;
+	info.nla_type = MDBA_MDB_ENTRY_INFO | NLA_F_NESTED;
+	memcpy(p + NLA_HDRLEN, &info, NLA_HDRLEN);
+
+	mid_payload = NLA_ALIGN(NLA_HDRLEN + info_off);
+	mid.nla_len = NLA_HDRLEN + mid_payload;
+	mid.nla_type = MDBA_MDB_ENTRY | NLA_F_NESTED;
+	memcpy(p, &mid, NLA_HDRLEN);
+
+	return NLA_HDRLEN + mid_payload;
+}
+
+/*
+ * Build the MDBA_ROUTER dump-reply payload: one MDBA_ROUTER_PORT
+ * container that begins with a header-less u32 ifindex (the kernel
+ * emits it via nla_put_nohdr) and continues with random-payload
+ * MDBA_ROUTER_PATTR_* siblings.  The outer MDBA_ROUTER header is
+ * written by append_nlattr.
+ */
+static size_t build_mdba_router_nested(unsigned char *p, size_t avail)
+{
+	static const unsigned short pattrs[] = {
+		MDBA_ROUTER_PATTR_TIMER, MDBA_ROUTER_PATTR_TYPE,
+		MDBA_ROUTER_PATTR_INET_TIMER,
+		MDBA_ROUTER_PATTR_INET6_TIMER,
+		MDBA_ROUTER_PATTR_VID,
+	};
+	struct nlattr port;
+	unsigned char *port_payload;
+	size_t port_off = 0;
+	size_t port_cap;
+	__u32 ifindex;
+
+	if (avail < NLA_HDRLEN + sizeof(__u32))
+		return 0;
+
+	port_payload = p + NLA_HDRLEN;
+	port_cap = avail - NLA_HDRLEN;
+	if (port_cap > 128)
+		port_cap = 128;
+
+	ifindex = 1 + rnd_modulo_u32(63);
+	memcpy(port_payload, &ifindex, sizeof(ifindex));
+	port_off = NLA_ALIGN(sizeof(ifindex));
+
+	if (port_off < port_cap)
+		port_off += build_nested_attrs(port_payload + port_off,
+					       port_cap - port_off,
+					       pattrs, ARRAY_SIZE(pattrs), 0);
+
+	port.nla_len = NLA_HDRLEN + port_off;
+	port.nla_type = MDBA_ROUTER_PORT | NLA_F_NESTED;
+	memcpy(p, &port, NLA_HDRLEN);
+
+	return NLA_ALIGN(NLA_HDRLEN + port_off);
+}
+
+/*
+ * Generate a structured payload for bridge multicast database
+ * rtnetlink attributes.  Covers the RTM_*MDB message group (17).
+ *
+ * The MDBA_* and MDBA_SET_ENTRY_* / MDBA_GET_ENTRY_* enums alias each
+ * other on the wire: MDBA_MDB shares value 1 with MDBA_SET_ENTRY /
+ * MDBA_GET_ENTRY, and MDBA_ROUTER shares value 2 with
+ * MDBA_SET_ENTRY_ATTRS / MDBA_GET_ENTRY_ATTRS.  The kernel parses the
+ * request-side meaning (MDBA_SET_ENTRY = NLA_BINARY of struct
+ * br_mdb_entry, MDBA_SET_ENTRY_ATTRS = NLA_NESTED of MDBE_ATTR_*) via
+ * rtnl_validate_mdb_entry and br_mdbe_attrs_pol; the MDBA_MDB /
+ * MDBA_ROUTER nested layout is the dump-reply shape userspace receives
+ * from br_mdb_fill_info.  Bias toward the request-side shapes since
+ * those reach an actual handler, but occasionally emit the reply-side
+ * nested layout so nla_parse walks well-formed nested TLVs that no
+ * random-byte fallback would ever assemble.
+ */
+size_t gen_rta_mdba_payload(unsigned char *p, size_t avail,
+			    unsigned short nla_type)
+{
+	switch (nla_type) {
+	case MDBA_MDB:	/* aliases MDBA_SET_ENTRY / MDBA_GET_ENTRY (= 1) */
+		if (ONE_IN(4))
+			return build_mdba_mdb_nested(p, avail);
+		if (avail >= sizeof(struct br_mdb_entry)) {
+			struct br_mdb_entry entry;
+
+			fill_mdb_entry(&entry);
+			memcpy(p, &entry, sizeof(entry));
+			return sizeof(entry);
+		}
+		return 0;
+
+	case MDBA_ROUTER: /* aliases MDBA_SET_ENTRY_ATTRS / MDBA_GET_ENTRY_ATTRS (= 2) */
+		if (ONE_IN(4))
+			return build_mdba_router_nested(p, avail);
+		/* MDBE_ATTR_* chain that satisfies br_mdbe_attrs_pol --
+		 * random sub-attr payloads, valid type bytes; the per-attr
+		 * NLA_BINARY / NLA_U8 / NLA_NESTED policies will still
+		 * length-reject some sub-attrs, but the parse reaches the
+		 * inner walker instead of bouncing on the outer nlattr. */
+		if (avail >= NLA_HDRLEN + 4) {
+			static const unsigned short mdbe_attrs[] = {
+				MDBE_ATTR_SOURCE,    MDBE_ATTR_SRC_LIST,
+				MDBE_ATTR_GROUP_MODE, MDBE_ATTR_RTPROT,
+				MDBE_ATTR_DST,       MDBE_ATTR_DST_PORT,
+				MDBE_ATTR_VNI,       MDBE_ATTR_IFINDEX,
+				MDBE_ATTR_SRC_VNI,   MDBE_ATTR_STATE_MASK,
+			};
+			return build_nested_attrs(p, avail, mdbe_attrs,
+						  ARRAY_SIZE(mdbe_attrs), 0);
 		}
 		return 0;
 
