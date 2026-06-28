@@ -124,10 +124,6 @@ static void atm_sanitise(const struct ioctl_group *grp, struct syscallrecord *re
 	case ATM_GETLINKRATE:
 	case ATM_GETTYPE:
 	case ATM_GETESI:
-	case ATM_GETADDR:
-	case ATM_RSTADDR:
-	case ATM_ADDADDR:
-	case ATM_DELADDR:
 	case ATM_GETCIRANGE:
 	case ATM_SETESI:
 	case ATM_SETESIF:
@@ -241,10 +237,6 @@ static const struct ioctl atm_ioctls[] = {
 	IOCTL(ATM_GETNAMES),
 	IOCTL(ATM_GETTYPE),
 	IOCTL(ATM_GETESI),
-	IOCTL(ATM_GETADDR),
-	IOCTL(ATM_RSTADDR),
-	IOCTL(ATM_ADDADDR),
-	IOCTL(ATM_DELADDR),
 	IOCTL(ATM_GETCIRANGE),
 	IOCTL(ATM_SETCIRANGE),
 	IOCTL(ATM_SETESI),
