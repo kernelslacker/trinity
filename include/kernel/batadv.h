@@ -1,0 +1,258 @@
+#pragma once
+
+/*
+ * Wrapper around <linux/batman_adv.h> that ships the #ifndef-guarded
+ * fallbacks for BATADV_ATTR_* / BATADV_CMD_* ids added after the
+ * installed uapi header.  The .c side includes this from inside its
+ * `#if __has_include(<linux/batman_adv.h>)` gate, so the header itself
+ * can include <linux/batman_adv.h> unconditionally.
+ */
+#include <linux/batman_adv.h>
+
+/*
+ * Per-symbol shims for BATADV_ATTR_* / BATADV_CMD_* ids.  Build hosts
+ * whose <linux/batman_adv.h> predates a given attribute (the per-mesh
+ * SET_* tunables, the MULTICAST_FORCEFLOOD / MULTICAST_FANOUT additions,
+ * the VLAN GET/SET pair) silently miss it from the validator coverage;
+ * the fallback values match the upstream uapi enum ordering so the
+ * wire-format ids the kernel parses match the ones the generator emits.
+ */
+#ifndef BATADV_NL_NAME
+#define BATADV_NL_NAME				"batadv"
+#endif
+
+#ifndef BATADV_ATTR_VERSION
+#define BATADV_ATTR_VERSION			1
+#endif
+#ifndef BATADV_ATTR_ALGO_NAME
+#define BATADV_ATTR_ALGO_NAME			2
+#endif
+#ifndef BATADV_ATTR_MESH_IFINDEX
+#define BATADV_ATTR_MESH_IFINDEX		3
+#endif
+#ifndef BATADV_ATTR_MESH_IFNAME
+#define BATADV_ATTR_MESH_IFNAME			4
+#endif
+#ifndef BATADV_ATTR_MESH_ADDRESS
+#define BATADV_ATTR_MESH_ADDRESS		5
+#endif
+#ifndef BATADV_ATTR_HARD_IFINDEX
+#define BATADV_ATTR_HARD_IFINDEX		6
+#endif
+#ifndef BATADV_ATTR_HARD_IFNAME
+#define BATADV_ATTR_HARD_IFNAME			7
+#endif
+#ifndef BATADV_ATTR_HARD_ADDRESS
+#define BATADV_ATTR_HARD_ADDRESS		8
+#endif
+#ifndef BATADV_ATTR_ORIG_ADDRESS
+#define BATADV_ATTR_ORIG_ADDRESS		9
+#endif
+#ifndef BATADV_ATTR_TPMETER_RESULT
+#define BATADV_ATTR_TPMETER_RESULT		10
+#endif
+#ifndef BATADV_ATTR_TPMETER_TEST_TIME
+#define BATADV_ATTR_TPMETER_TEST_TIME		11
+#endif
+#ifndef BATADV_ATTR_TPMETER_BYTES
+#define BATADV_ATTR_TPMETER_BYTES		12
+#endif
+#ifndef BATADV_ATTR_TPMETER_COOKIE
+#define BATADV_ATTR_TPMETER_COOKIE		13
+#endif
+#ifndef BATADV_ATTR_PAD
+#define BATADV_ATTR_PAD				14
+#endif
+#ifndef BATADV_ATTR_ACTIVE
+#define BATADV_ATTR_ACTIVE			15
+#endif
+#ifndef BATADV_ATTR_TT_ADDRESS
+#define BATADV_ATTR_TT_ADDRESS			16
+#endif
+#ifndef BATADV_ATTR_TT_TTVN
+#define BATADV_ATTR_TT_TTVN			17
+#endif
+#ifndef BATADV_ATTR_TT_LAST_TTVN
+#define BATADV_ATTR_TT_LAST_TTVN		18
+#endif
+#ifndef BATADV_ATTR_TT_CRC32
+#define BATADV_ATTR_TT_CRC32			19
+#endif
+#ifndef BATADV_ATTR_TT_VID
+#define BATADV_ATTR_TT_VID			20
+#endif
+#ifndef BATADV_ATTR_TT_FLAGS
+#define BATADV_ATTR_TT_FLAGS			21
+#endif
+#ifndef BATADV_ATTR_FLAG_BEST
+#define BATADV_ATTR_FLAG_BEST			22
+#endif
+#ifndef BATADV_ATTR_LAST_SEEN_MSECS
+#define BATADV_ATTR_LAST_SEEN_MSECS		23
+#endif
+#ifndef BATADV_ATTR_NEIGH_ADDRESS
+#define BATADV_ATTR_NEIGH_ADDRESS		24
+#endif
+#ifndef BATADV_ATTR_TQ
+#define BATADV_ATTR_TQ				25
+#endif
+#ifndef BATADV_ATTR_THROUGHPUT
+#define BATADV_ATTR_THROUGHPUT			26
+#endif
+#ifndef BATADV_ATTR_BANDWIDTH_UP
+#define BATADV_ATTR_BANDWIDTH_UP		27
+#endif
+#ifndef BATADV_ATTR_BANDWIDTH_DOWN
+#define BATADV_ATTR_BANDWIDTH_DOWN		28
+#endif
+#ifndef BATADV_ATTR_ROUTER
+#define BATADV_ATTR_ROUTER			29
+#endif
+#ifndef BATADV_ATTR_BLA_OWN
+#define BATADV_ATTR_BLA_OWN			30
+#endif
+#ifndef BATADV_ATTR_BLA_ADDRESS
+#define BATADV_ATTR_BLA_ADDRESS			31
+#endif
+#ifndef BATADV_ATTR_BLA_VID
+#define BATADV_ATTR_BLA_VID			32
+#endif
+#ifndef BATADV_ATTR_BLA_BACKBONE
+#define BATADV_ATTR_BLA_BACKBONE		33
+#endif
+#ifndef BATADV_ATTR_BLA_CRC
+#define BATADV_ATTR_BLA_CRC			34
+#endif
+#ifndef BATADV_ATTR_DAT_CACHE_IP4ADDRESS
+#define BATADV_ATTR_DAT_CACHE_IP4ADDRESS	35
+#endif
+#ifndef BATADV_ATTR_DAT_CACHE_HWADDRESS
+#define BATADV_ATTR_DAT_CACHE_HWADDRESS		36
+#endif
+#ifndef BATADV_ATTR_DAT_CACHE_VID
+#define BATADV_ATTR_DAT_CACHE_VID		37
+#endif
+#ifndef BATADV_ATTR_MCAST_FLAGS
+#define BATADV_ATTR_MCAST_FLAGS			38
+#endif
+#ifndef BATADV_ATTR_MCAST_FLAGS_PRIV
+#define BATADV_ATTR_MCAST_FLAGS_PRIV		39
+#endif
+#ifndef BATADV_ATTR_VLANID
+#define BATADV_ATTR_VLANID			40
+#endif
+#ifndef BATADV_ATTR_AGGREGATED_OGMS_ENABLED
+#define BATADV_ATTR_AGGREGATED_OGMS_ENABLED	41
+#endif
+#ifndef BATADV_ATTR_AP_ISOLATION_ENABLED
+#define BATADV_ATTR_AP_ISOLATION_ENABLED	42
+#endif
+#ifndef BATADV_ATTR_ISOLATION_MARK
+#define BATADV_ATTR_ISOLATION_MARK		43
+#endif
+#ifndef BATADV_ATTR_ISOLATION_MASK
+#define BATADV_ATTR_ISOLATION_MASK		44
+#endif
+#ifndef BATADV_ATTR_BONDING_ENABLED
+#define BATADV_ATTR_BONDING_ENABLED		45
+#endif
+#ifndef BATADV_ATTR_BRIDGE_LOOP_AVOIDANCE_ENABLED
+#define BATADV_ATTR_BRIDGE_LOOP_AVOIDANCE_ENABLED	46
+#endif
+#ifndef BATADV_ATTR_DISTRIBUTED_ARP_TABLE_ENABLED
+#define BATADV_ATTR_DISTRIBUTED_ARP_TABLE_ENABLED	47
+#endif
+#ifndef BATADV_ATTR_FRAGMENTATION_ENABLED
+#define BATADV_ATTR_FRAGMENTATION_ENABLED	48
+#endif
+#ifndef BATADV_ATTR_GW_BANDWIDTH_DOWN
+#define BATADV_ATTR_GW_BANDWIDTH_DOWN		49
+#endif
+#ifndef BATADV_ATTR_GW_BANDWIDTH_UP
+#define BATADV_ATTR_GW_BANDWIDTH_UP		50
+#endif
+#ifndef BATADV_ATTR_GW_MODE
+#define BATADV_ATTR_GW_MODE			51
+#endif
+#ifndef BATADV_ATTR_GW_SEL_CLASS
+#define BATADV_ATTR_GW_SEL_CLASS		52
+#endif
+#ifndef BATADV_ATTR_HOP_PENALTY
+#define BATADV_ATTR_HOP_PENALTY			53
+#endif
+#ifndef BATADV_ATTR_LOG_LEVEL
+#define BATADV_ATTR_LOG_LEVEL			54
+#endif
+#ifndef BATADV_ATTR_MULTICAST_FORCEFLOOD_ENABLED
+#define BATADV_ATTR_MULTICAST_FORCEFLOOD_ENABLED	55
+#endif
+#ifndef BATADV_ATTR_NETWORK_CODING_ENABLED
+#define BATADV_ATTR_NETWORK_CODING_ENABLED	56
+#endif
+#ifndef BATADV_ATTR_ORIG_INTERVAL
+#define BATADV_ATTR_ORIG_INTERVAL		57
+#endif
+#ifndef BATADV_ATTR_ELP_INTERVAL
+#define BATADV_ATTR_ELP_INTERVAL		58
+#endif
+#ifndef BATADV_ATTR_THROUGHPUT_OVERRIDE
+#define BATADV_ATTR_THROUGHPUT_OVERRIDE		59
+#endif
+#ifndef BATADV_ATTR_MULTICAST_FANOUT
+#define BATADV_ATTR_MULTICAST_FANOUT		60
+#endif
+
+#ifndef BATADV_CMD_GET_MESH
+#define BATADV_CMD_GET_MESH			1
+#endif
+#ifndef BATADV_CMD_TP_METER
+#define BATADV_CMD_TP_METER			2
+#endif
+#ifndef BATADV_CMD_TP_METER_CANCEL
+#define BATADV_CMD_TP_METER_CANCEL		3
+#endif
+#ifndef BATADV_CMD_GET_ROUTING_ALGOS
+#define BATADV_CMD_GET_ROUTING_ALGOS		4
+#endif
+#ifndef BATADV_CMD_GET_HARDIF
+#define BATADV_CMD_GET_HARDIF			5
+#endif
+#ifndef BATADV_CMD_GET_TRANSTABLE_LOCAL
+#define BATADV_CMD_GET_TRANSTABLE_LOCAL		6
+#endif
+#ifndef BATADV_CMD_GET_TRANSTABLE_GLOBAL
+#define BATADV_CMD_GET_TRANSTABLE_GLOBAL	7
+#endif
+#ifndef BATADV_CMD_GET_ORIGINATORS
+#define BATADV_CMD_GET_ORIGINATORS		8
+#endif
+#ifndef BATADV_CMD_GET_NEIGHBORS
+#define BATADV_CMD_GET_NEIGHBORS		9
+#endif
+#ifndef BATADV_CMD_GET_GATEWAYS
+#define BATADV_CMD_GET_GATEWAYS			10
+#endif
+#ifndef BATADV_CMD_GET_BLA_CLAIM
+#define BATADV_CMD_GET_BLA_CLAIM		11
+#endif
+#ifndef BATADV_CMD_GET_BLA_BACKBONE
+#define BATADV_CMD_GET_BLA_BACKBONE		12
+#endif
+#ifndef BATADV_CMD_GET_DAT_CACHE
+#define BATADV_CMD_GET_DAT_CACHE		13
+#endif
+#ifndef BATADV_CMD_GET_MCAST_FLAGS
+#define BATADV_CMD_GET_MCAST_FLAGS		14
+#endif
+#ifndef BATADV_CMD_SET_MESH
+#define BATADV_CMD_SET_MESH			15
+#endif
+#ifndef BATADV_CMD_SET_HARDIF
+#define BATADV_CMD_SET_HARDIF			16
+#endif
+#ifndef BATADV_CMD_GET_VLAN
+#define BATADV_CMD_GET_VLAN			17
+#endif
+#ifndef BATADV_CMD_SET_VLAN
+#define BATADV_CMD_SET_VLAN			18
+#endif
