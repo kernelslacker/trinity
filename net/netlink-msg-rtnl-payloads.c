@@ -21,6 +21,7 @@
 #include <linux/if_addr.h>
 #include <linux/if_link.h>
 #include <linux/neighbour.h>
+#include <linux/fib_rules.h>
 #include <linux/dcbnl.h>
 #include <string.h>
 #include "netlink-attrs.h"
@@ -566,6 +567,79 @@ size_t gen_rta_neigh_payload(unsigned char *p, size_t avail,
 		return 0;
 
 	case NDA_PROTOCOL:
+		if (avail >= 1) {
+			*p = rnd_modulo_u32(256);
+			return 1;
+		}
+		return 0;
+
+	default:
+		return 0;
+	}
+}
+
+/*
+ * Generate a structured payload for fib-rule attributes (FRA_*).
+ * Mirrors the route generator's shape: addresses sized to family,
+ * ifnames as NUL-terminated strings, scalar attrs as the u32/u8 width
+ * the kernel's fib_rule_policy expects.  Anything outside this set
+ * returns 0 so the caller falls back to a random blob.
+ */
+size_t gen_rta_rule_payload(unsigned char *p, size_t avail,
+			    unsigned short nla_type, unsigned char family)
+{
+	switch (nla_type) {
+	case FRA_DST:
+	case FRA_SRC:
+		if (family == AF_INET6 && avail >= 16) {
+			struct in6_addr addr;
+			rand_ipv6(&addr);
+			memcpy(p, &addr, 16);
+			return 16;
+		}
+		if (avail >= 4) {
+			__u32 addr = rand_ipv4();
+			memcpy(p, &addr, 4);
+			return 4;
+		}
+		return 0;
+
+	case FRA_IIFNAME:
+	case FRA_OIFNAME: {
+		static const char *names[] = {
+			"eth0", "lo", "br0", "bond0", "veth0",
+			"dummy0", "wlan0", "tun0",
+		};
+		const char *name = RAND_ARRAY(names);
+		size_t slen = strlen(name) + 1;
+
+		if (avail >= slen) {
+			memcpy(p, name, slen);
+			return slen;
+		}
+		return 0;
+	}
+
+	case FRA_TABLE:
+		if (avail >= 4) {
+			__u32 val = rnd_modulo_u32(256);
+			memcpy(p, &val, 4);
+			return 4;
+		}
+		return 0;
+
+	case FRA_FWMARK:
+	case FRA_FWMASK:
+	case FRA_PRIORITY:
+	case FRA_GOTO:
+		if (avail >= 4) {
+			__u32 val = rand32();
+			memcpy(p, &val, 4);
+			return 4;
+		}
+		return 0;
+
+	case FRA_L3MDEV:
 		if (avail >= 1) {
 			*p = rnd_modulo_u32(256);
 			return 1;

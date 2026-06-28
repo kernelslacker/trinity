@@ -182,6 +182,7 @@ static size_t gen_rta_payload(unsigned char *buf, size_t offset, size_t buflen,
 	case 1: return gen_rta_addr_payload(p, avail, nla_type, family);
 	case 2: return gen_rta_route_payload(p, avail, nla_type, family);
 	case 3: return gen_rta_neigh_payload(p, avail, nla_type, family);
+	case 4: return gen_rta_rule_payload(p, avail, nla_type, family);
 	case 15: return gen_rta_dcb_payload(p, avail, nla_type);
 	default: return 0;
 	}
@@ -200,8 +201,9 @@ static size_t gen_rta_payload(unsigned char *buf, size_t offset, size_t buflen,
  *   group 0 (link):  IFLA_LINKINFO, IFLA_AF_SPEC
  *   group 2 (route): RTA_METRICS, RTA_MULTIPATH
  *   group 15 (dcb): DCB_ATTR_IEEE
- * The address (group 1) and neigh (group 3) generators only emit flat
- * payloads today; add their nested entries here if that changes.
+ * The address (group 1), neigh (group 3) and rule (group 4) generators
+ * only emit flat payloads today; add their nested entries here if that
+ * changes.
  */
 static int rta_payload_is_nested(int rtnl_group, unsigned short nla_type)
 {
