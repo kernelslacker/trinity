@@ -52,6 +52,7 @@ FILES=(
 	arg_coupling.c
 	mutate.c
 	struct_catalog.c
+	struct_catalog/sctp.c
 	arg-decoder.c
 	lib/cmsg_build.c
 	utils.c
