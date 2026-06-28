@@ -151,6 +151,8 @@ size_t gen_rta_addr_payload(unsigned char *p, size_t avail,
 			    unsigned short nla_type, unsigned char family);
 size_t gen_rta_neigh_payload(unsigned char *p, size_t avail,
 			     unsigned short nla_type, unsigned char family);
+size_t gen_rta_rule_payload(unsigned char *p, size_t avail,
+			    unsigned short nla_type, unsigned char family);
 size_t gen_rta_dcb_payload(unsigned char *p, size_t avail,
 			   unsigned short nla_type);
 
