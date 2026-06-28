@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include "arch.h"
 #include "random.h"
 #include "net.h"
 #include "compat.h"
@@ -256,20 +257,6 @@ static struct socket_triplet alg_triplet[] = {
 	{ .family = PF_ALG, .protocol = 0, .type = SOCK_SEQPACKET },
 };
 
-static void alg_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
-{
-	so->level = SOL_ALG;
-	so->optname = RAND_ARRAY(alg_opts);
-	so->optlen = sizeof(unsigned int);
-}
-
-/*
- * Set up the AF_ALG lifecycle on fd:
- * 1. bind() with a random algorithm type and name
- * 2. setsockopt(ALG_SET_KEY) to set a key on the parent fd
- * 3. accept() to get a child fd for crypto operations
- * 4. Close the child fd — we just want to exercise the kernel path
- */
 /*
  * Boundary keylens for ALG_SET_KEY.  Mixes valid sizes (16/24/32/64 for
  * AES/Camellia/HMAC ranges), exact off-by-ones around common per-cipher
@@ -308,6 +295,61 @@ static const unsigned int alg_boundary_authsizes[] = {
 	128, 256, 0xffff, 0x10000, 0x7fffffff, 0xffffffff,
 };
 
+static void alg_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
+{
+	unsigned int len, fill;
+
+	so->level = SOL_ALG;
+	so->optname = RAND_ARRAY(alg_opts);
+
+	switch (so->optname) {
+	case ALG_SET_KEY:
+		/*
+		 * Pick a keylen from the boundary table.  Fill is clamped to
+		 * the caller-provided page-sized buffer; optlen may deliberately
+		 * over-claim so the kernel's copy_from_user EFAULTs past the
+		 * buffer — the count-vs-capacity validation path we want to
+		 * exercise.
+		 */
+		len = alg_boundary_keylens[
+			rnd_modulo_u32(ARRAY_SIZE(alg_boundary_keylens))];
+		fill = len < page_size ? len : page_size;
+		generate_rand_bytes((unsigned char *) so->optval, fill);
+		so->optlen = len;
+		break;
+
+	case ALG_SET_AEAD_AUTHSIZE:
+		/* The authsize is encoded in optlen; the kernel ignores optval. */
+		so->optlen = alg_boundary_authsizes[
+			rnd_modulo_u32(ARRAY_SIZE(alg_boundary_authsizes))];
+		break;
+
+	case ALG_SET_DRBG_ENTROPY:
+		len = rnd_modulo_u32(512) + 1;
+		fill = len < page_size ? len : page_size;
+		generate_rand_bytes((unsigned char *) so->optval, fill);
+		so->optlen = len;
+		break;
+
+	default:
+		/*
+		 * ALG_SET_IV / ALG_SET_OP / ALG_SET_AEAD_ASSOCLEN are sendmsg
+		 * cmsg controls, not setsockopt optnames — the kernel rejects
+		 * them here with -ENOPROTOOPT regardless of the payload, so
+		 * leave the stub-sized optlen in place.
+		 */
+		so->optlen = sizeof(unsigned int);
+		break;
+	}
+}
+
+/*
+ * Set up the AF_ALG lifecycle on fd:
+ * 1. bind() with a random algorithm type and name
+ * 2. setsockopt(ALG_SET_KEY) to set a key on the parent fd
+ * 3. accept() to get a child fd for crypto operations
+ * 4. Close the child fd — we just want to exercise the kernel path
+ */
 #define KEY_BUF_BYTES 4096
 
 static void alg_socket_setup(int fd)
