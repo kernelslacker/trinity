@@ -75,9 +75,7 @@ enum frontier_saturation_cooldown_mode frontier_saturation_cooldown_mode =
  * spare lane fires per cool-eligible nr) without changing the live
  * picker decision.  See the enum comment in include/strategy.h for
  * the mode contract and the ramp discipline.  Param-settable via
- * --frontier-live-cooldown-mode=off|shadow-only|combined.  Separate
- * from the existing boolean --frontier-live-cooldown which gates the
- * rotation-loop halving in frontier_window_advance.
+ * --frontier-live-cooldown-mode=off|shadow-only|combined.
  */
 enum frontier_live_cooldown_mode frontier_live_cooldown_mode =
 	FRONTIER_LIVE_COOLDOWN_MODE_OFF;

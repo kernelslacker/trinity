@@ -360,8 +360,8 @@ void frontier_satcool_spare(unsigned int syscallnr, bool do32);
  *                  frontier_saturation_cooldown_mode above uses.
  *
  * Param-settable from --frontier-live-cooldown-mode=off|shadow-only|
- * combined; the existing boolean --frontier-live-cooldown remains the
- * gate for the rotation-loop halving and is independent of this mode.
+ * combined; independent of the LIVE-regime rotation-loop halving in
+ * frontier_window_advance(), which is always on.
  */
 enum frontier_live_cooldown_mode {
 	FRONTIER_LIVE_COOLDOWN_MODE_OFF = 0,

@@ -1281,9 +1281,9 @@ void dump_stats_strategy_summary(void)
 	dump_live_cool_per_syscall_top(
 		shm->stats.frontier_live_cool_would_spare_per_syscall,
 		"frontier_live_cool_would_spare");
-	/* Did-decay observability counter for the --frontier-live-cooldown
-	 * lever.  One bump per (nr, rotation) where the early ring-decay
-	 * halved a non-zero cached sum.  Read alongside
+	/* Did-decay observability counter for the LIVE-regime early ring-
+	 * decay path.  One bump per (nr, rotation) where the early ring-
+	 * decay halved a non-zero cached sum.  Read alongside
 	 * frontier_live_would_skip (F3 projection) to compare the projected
 	 * vs the actually-applied cooldown volume; the ratio reflects how
 	 * often the rotation-time decay catches a syscall the per-pick F3

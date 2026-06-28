@@ -2975,22 +2975,19 @@ struct stats_s {
 	 * Unlike the satcool per-syscall counter, the writer here is NOT
 	 * gated by a mode flag: the scalar frontier_live_would_skip is
 	 * bumped unconditionally on every LIVE-regime miss past the
-	 * threshold (--frontier-live-cooldown gates only the rotation-time
-	 * halving in strategy-frontier.c, not the projection counter), so
-	 * the per-syscall array populates on every run regardless of the
-	 * flag and no run-mode flag is needed to surface the distribution. */
+	 * threshold, so the per-syscall array populates on every run and
+	 * no run-mode flag is needed to surface the distribution. */
 	unsigned long frontier_live_would_skip_per_syscall[MAX_NR_SYSCALL];
 
-	/* Did-decay counter for the LIVE-regime early ring-decay variant of
-	 * frontier_window_advance() (--frontier-live-cooldown).  One bump per
-	 * (nr, rotation) where the per-syscall LIVE-regime miss-streak was
-	 * at-or-past FRONTIER_LIVE_MISS_COOLDOWN AND the rotation actually
-	 * reduced the cached frontier_recent_count for that nr (i.e. the new
-	 * sum was non-zero before the halving step).  The flag-off baseline
-	 * leaves this counter at zero; flag-on it tallies how often the
+	/* Did-decay counter for the LIVE-regime early ring-decay path in
+	 * frontier_window_advance().  One bump per (nr, rotation) where
+	 * the per-syscall LIVE-regime miss-streak was at-or-past
+	 * FRONTIER_LIVE_MISS_COOLDOWN AND the rotation actually reduced
+	 * the cached frontier_recent_count for that nr (i.e. the new sum
+	 * was non-zero before the halving step).  Tallies how often the
 	 * early decay actually moved the wall, paired with the F3
-	 * frontier_live_would_skip projection to measure the live behaviour
-	 * delta the cooldown lever is producing.
+	 * frontier_live_would_skip projection to measure the live
+	 * behaviour delta the cooldown path is producing.
 	 *
 	 * Observability only: the bump happens inside the rotation hot path
 	 * but no selection or scoring code reads it.  Mirrors the off-by-

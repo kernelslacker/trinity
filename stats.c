@@ -4239,9 +4239,9 @@ static const struct {
 	  offsetof(struct stats_s, frontier_live_cooldown_candidates) },
 	{ "frontier_live_would_skip",
 	  offsetof(struct stats_s, frontier_live_would_skip) },
-	/* Did-decay counter for --frontier-live-cooldown.  Bumped per (nr,
-	 * rotation) where the early ring-decay in frontier_window_advance
-	 * actually halved a non-zero cached sum.  Zero on flag-off runs. */
+	/* Did-decay counter for the LIVE-regime early ring-decay path.
+	 * Bumped per (nr, rotation) where the early ring-decay in
+	 * frontier_window_advance actually halved a non-zero cached sum. */
 	{ "frontier_live_cooldown_decays",
 	  offsetof(struct stats_s, frontier_live_cooldown_decays) },
 	/* Live reject count for the blanket LIVE-regime probabilistic
@@ -9013,9 +9013,6 @@ static void runid_knob_manifest_render(void)
 	if (cred_throttle)
 		off = runid_knob_append(buf, sizeof(buf), off,
 					"cred-throttle", "on");
-	if (frontier_live_cooldown)
-		off = runid_knob_append(buf, sizeof(buf), off,
-					"frontier-live-cooldown", "on");
 	if (frontier_live_cooldown_mode != FRONTIER_LIVE_COOLDOWN_MODE_OFF)
 		off = runid_knob_append(buf, sizeof(buf), off,
 					"frontier-live-cooldown-mode",

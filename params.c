@@ -88,7 +88,6 @@ bool stats_json = false;
 bool quiet = false;
 bool group_bias = false;
 bool cred_throttle = false;
-bool frontier_live_cooldown = false;
 
 /* --writer-pin-sweep / --writer-pin-stride=N
  * Default-OFF debug-only writer-pinning canary, Stage-1 detector.  Per-
@@ -531,7 +530,6 @@ static const struct option_help option_descs[] = {
 	{ "cmsg-richness", 0, "extended sendmsg/sendmmsg control-message generator (default off): off (pick_cmsg_kind() draws from the original 5 base kinds with a single rnd_modulo_u32 call; the cmsg-build site is bit-for-bit identical to a build without this lever -- no extra RNG draws, no new kinds, no new arms), or on (extends the per-call cmsg pool with family-gated single-cmsg kinds -- IP_PKTINFO / IPV6_PKTINFO, IP_TOS / IP_TTL / IP_RETOPTS, IPV6_TCLASS / IPV6_HOPLIMIT / IPV6_RTHDR, SCM_TXTIME, TLS_SET_RECORD_TYPE -- and adds a ONE_IN(4) multi-cmsg packer that sizes the buffer by the sum of CMSG_SPACE(plen) across 2-3 distinct entries from a per-family pool, zero-fills the buffer up front, and walks CMSG_FIRSTHDR -> CMSG_NXTHDR with CMSG_LEN(plen) per entry)." },
 	{ "corpus-save-errno-grad-live", 0, "DEFAULT OFF. Enable the errno-gradient corpus save trigger (CORPUS_SAVE_REASON_ERRNO): when a syscall returns a non-EFAULT errno bucket for the first time this run, admit its args to the per-syscall ring. Flag off keeps the corpus admission distribution byte-identical to a build without this trigger; the errno_grad_save_would_save shadow counter is bumped regardless of this flag so the would-be-save volume is measurable before flipping live." },
 	{ "cred-throttle",	 0,  "DEFAULT OFF. Enable the credential-syscall throttle: when a credential class (setregid/setreuid/setresuid/setresgid/setgid/setuid/setfsuid/setfsgid/setgroups) has accumulated >=64 attempts with zero successes and EPERM+EINVAL dominating >=90% of returns, downweight the class by rejecting 31/32 of subsequent picks. Flag off keeps the picker distribution byte-identical to a build without this row; the per-class observability counters are bumped regardless of this flag." },
-	{ "frontier-live-cooldown", 0, "DEFAULT OFF. Enable the LIVE-regime early ring-decay: on every window rotation, syscalls whose per-syscall LIVE-regime miss-streak has crossed FRONTIER_LIVE_MISS_COOLDOWN have their cached frontier_recent_count halved so the cached max weight falls and the picker reaches the silent decay path on the cooled-off syscalls. The halving is folded into the existing CAS-clamped per-nr rotation loop and uses the same underflow-safe arithmetic. Flag off keeps the rotation byte-identical to a build without this row; the frontier_live_cooldown_decays observability counter and the F3 miss-streak counters are bumped regardless." },
 	{ "frontier-live-cooldown-mode", 0, "LIVE-regime cooldown discriminator mode for the coverage-frontier picker's LIVE-regime miss-attribution path (default off): off (skip the discriminator entirely, byte-identical to today; selection AND the new frontier_live_cool_* shadow counters both stay zero), shadow-only (compute the spare-lane discriminator -- windowed-edges + distinct-CMP / first-success / ret_objtype lanes, gated by the FRONTIER_LIVE_COOL_CMIN low live floor -- inside the existing streak >= FRONTIER_LIVE_MISS_COOLDOWN branch and bump frontier_live_cool_* shadow counters; selection stays byte-identical -- the existing frontier_live_would_skip projection keeps bumping unchanged so the (live_cool_would_skip / live_would_skip) ratio reads the over-cool the discriminator would remove), or combined (RESERVED: the enum value exists for a future commit that wires the live divergence -- rotation-loop halving + per-syscall reject -- gated on the discriminator; THIS BUILD treats combined identically to shadow-only). Validate the per-syscall would-skip distribution against gettid / sched_get_priority_max (expected high) and bpf / io_uring_setup / openat / io_setup / futex / setxattrat (expected ~0) under shadow-only before tuning C_min or wiring the COMBINED divergence. Independent of the existing boolean --frontier-live-cooldown (which gates the rotation-loop halving)." },
 	{ "frontier-saturation-cooldown", 0, "saturation-cooldown predicate mode for the coverage-frontier picker's silent-regime accept site (default off): off (skip the satcool predicate entirely, byte-identical to today; selection AND shadow counters both stay zero), shadow-only (compute the corrected windowed-edge plateau + FRONTIER_SATCOOL_CMIN magnitude + distinct-CMP / first-success / ret_objtype spare-lane predicate inside the silent-regime accept block and bump frontier_satcool_* shadow counters; selection stays byte-identical -- no goto-retry is gated on the predicate), or combined (RESERVED: the enum value exists for a future commit that wires the live reject; THIS BUILD treats combined identically to shadow-only -- predicate evaluates and counters bump, no live reject fires). Validate the per-syscall would-skip distribution against syncfs / sendfile / semget / writev (expected high) and removexattrat / futex / io_uring_setup / bpf (expected ~0) under shadow-only before tuning C_min or wiring the COMBINED reject." },
 	{ "frontier-group-antilock", 0, "group-bias anti-lock-in damper mode for the heuristic-arm picker's group_bias gate (default off): off (skip the windowed-pin predicate entirely, byte-identical to today; per-child streak / watermark / fd-warm bookkeeping AND shadow counters all stay dormant), shadow-only (run the dispatch-step per-child bookkeeping and compute the pin_stale && !pin_warm release predicate at the group_bias gate site, bumping frontier_frseq_* shadow counters; selection stays byte-identical -- no group-bias gate is skipped on the predicate), or combined (RESERVED: the enum value exists for a future commit that wires the live pin release; THIS BUILD treats combined identically to shadow-only -- predicate evaluates and counters bump, no live release fires). Validate the per-syscall would-skip distribution against rseq_slice_yield / getpgrp / sched_yield (expected high) and socket / sendto / openat (expected ~0) and the per-group distribution against GROUP_PROCESS (=5, expected high) vs GROUP_NET / GROUP_VFS (expected ~0) under shadow-only before tuning MIN_STREAK / COV_WINDOW or wiring the COMBINED release.  No-op unless --group-bias is also set; mirrors the F-RSEQ-5 caveat in the design note." },
@@ -650,7 +648,6 @@ static const struct option longopts[] = {
 	{ "group", required_argument, NULL, 'g' },
 	{ "group-bias", no_argument, NULL, 0 },
 	{ "cred-throttle", no_argument, NULL, 0 },
-	{ "frontier-live-cooldown", no_argument, NULL, 0 },
 	{ "frontier-live-cooldown-mode", required_argument, NULL, 0 },
 	{ "frontier-saturation-cooldown", required_argument, NULL, 0 },
 	{ "frontier-group-antilock", required_argument, NULL, 0 },
@@ -942,11 +939,6 @@ static bool parse_strategy_options(int opt, const char *name, char *arg)
 
 	if (strcmp("cred-throttle", name) == 0) {
 		cred_throttle = true;
-		return true;
-	}
-
-	if (strcmp("frontier-live-cooldown", name) == 0) {
-		frontier_live_cooldown = true;
 		return true;
 	}
 
