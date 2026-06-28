@@ -16,6 +16,7 @@
 #include "params.h"
 #include "domains.h"
 #include "random.h"
+#include "reach-band.h"
 #include "self_cgroup.h"
 #include "strategy.h"
 #include "syscall.h"
@@ -604,6 +605,7 @@ static const struct option_help option_descs[] = {
 	{ "print-disabled-syscalls", 0, "print syscalls disabled via AVOID_SYSCALL or NEED_ALARM and exit" },
 	{ "quiet",		'q', "suppress the per-second progress line (other output unchanged)" },
 	{ "random",		'r', "pick N syscalls at random and just fuzz those" },
+	{ "reach-band", 0, "reach-banded silent-regime weight adjustment for the coverage-frontier picker's frontier_cold_weight() consumer (default off): off (skip the band classification entirely, byte-identical to today; no extra per_syscall_edges_prior / total_calls / last_edge_at loads, no demote/boost arithmetic, no weight change -- fixed-seed runs reproduce a pre-row build bit-for-bit), shadow-only (compute the LOW / MID / HIGH band classification and the would-demote / would-boost decision inside frontier_cold_weight but leave the returned weight unchanged; placeholder for a follow-up that adds per-band shadow counters), or combined (the band adjustment is applied to the live silent-regime weight -- a MID-reach stale slot has its weight halved on top of the cold-skip path's existing demote, a HIGH-reach fresh slot has a quarter of the FRONTIER_COLD_SCALE headroom lifted back onto its weight so the inverse-productivity transform does not starve the long-tail deep-reach discoverer).  Degrade-safe: frontier_cold_weight's kcov-less / out-of-range short-circuit fires before the band hook, matching the FRONTIER_COLD_SCALE fallback the rest of the picker file takes." },
 	{ "redqueen-pending-pick", 0, "Retained for compatibility; no-op.  The RedQueen re-exec consumer at the dispatch_step tail now drains every staged reexec_pending[] entry per parent dispatch, so the 'random' vs 'first' selection no longer alters behaviour.  Still parsed (accepts 'random' or 'first') so existing invocations do not break; per-pending-index success counters (kcov_shm->reexec_pending_pick_success[]) are still bumped at each entry's true index inside redqueen_reexec_step(), so per-slot / per-index re-exec lift remains directly readable." },
 	{ "show-unannotated",	 0,  "show unannotated syscalls" },
 	{ "stats",		 0,  "show errno distribution per syscall before exiting" },
@@ -705,6 +707,7 @@ static const struct option longopts[] = {
 	{ "print-disabled-syscalls", no_argument, NULL, 0 },
 	{ "quiet", no_argument, NULL, 'q' },
 	{ "random", required_argument, NULL, 'r' },
+	{ "reach-band", required_argument, NULL, 0 },
 	{ "redqueen-pending-pick", required_argument, NULL, 0 },
 	{ "cmp-recent-pool", required_argument, NULL, 0 },
 	{ "stats", no_argument, NULL, 0 },
@@ -1040,6 +1043,24 @@ static bool parse_strategy_options(int opt, const char *name, char *arg)
 			exit(EXIT_FAILURE);
 		}
 		__atomic_store_n(&arg_len_semantics_mode, mode, __ATOMIC_RELAXED);
+		return true;
+	}
+
+	if (strcmp("reach-band", name) == 0) {
+		enum reach_band_mode mode;
+
+		if (strcmp(arg, "off") == 0) {
+			mode = REACH_BAND_OFF;
+		} else if (strcmp(arg, "shadow-only") == 0) {
+			mode = REACH_BAND_SHADOW_ONLY;
+		} else if (strcmp(arg, "combined") == 0) {
+			mode = REACH_BAND_COMBINED;
+		} else {
+			outputerr("--reach-band: unknown mode '%s' (expected off, shadow-only, or combined)\n",
+				arg);
+			exit(EXIT_FAILURE);
+		}
+		__atomic_store_n(&reach_band_mode, mode, __ATOMIC_RELAXED);
 		return true;
 	}
 

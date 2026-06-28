@@ -26,6 +26,7 @@
 #include "pre_crash_ring.h"
 #include "prop_ring.h"
 #include "random.h"
+#include "reach-band.h"
 #include "rnd.h"
 #include "sequence.h"
 #include "shm.h"
@@ -202,6 +203,13 @@ static void note_validation_failure(unsigned int syscallnr, bool do32)
  * never mutated at runtime, so a tear is impossible. */
 enum expensive_adaptive_mode expensive_adaptive_mode =
 	EXPENSIVE_ADAPTIVE_MODE_OFF;
+
+/*
+ * Default OFF: see the enum comment in include/reach-band.h for the
+ * mode contract.  Read RELAXED at the frontier_cold_weight() hook --
+ * parse-time configured, never mutated at runtime, so a tear is
+ * impossible. */
+enum reach_band_mode reach_band_mode = REACH_BAND_OFF;
 
 /* Static (today's) accept denominator for EXPENSIVE-flagged syscalls.
  * In OFF / NULL-kcov / SHADOW_ONLY the live accept ALWAYS draws
@@ -1006,7 +1014,9 @@ static unsigned long frontier_cold_weight(unsigned int nr,
 	unsigned long transition_edges_real_local;
 	unsigned long old_weight, blend_weight;
 	unsigned long blend_productivity;
+	unsigned long picked_weight;
 	enum kcov_transition_reward_mode trew_mode;
+	enum reach_band_mode rb_mode;
 
 	if (kcov_shm == NULL || nr >= MAX_NR_SYSCALL)
 		return FRONTIER_COLD_SCALE;
@@ -1185,8 +1195,103 @@ static unsigned long frontier_cold_weight(unsigned int nr,
 	 * context, should not reach here under the FRONTIER picker)
 	 * falls back to the OLD weight to preserve baseline behaviour. */
 	if (child != NULL && child->frontier_blend_arm_b)
-		return blend_weight;
-	return old_weight;
+		picked_weight = blend_weight;
+	else
+		picked_weight = old_weight;
+
+	/* Reach-band picker weighting (default off).  Bands the syscall
+	 * by edges_total (per_syscall_edges + warm-loaded _prior) and
+	 * adjusts the silent-regime weight returned above so the MID
+	 * band's stale slot is demoted harder than the cold curve alone
+	 * gives it, while the HIGH band's productive slot earns a
+	 * protection bump that the inverse-productivity old/blend weight
+	 * formula otherwise sinks toward zero.  See include/reach-band.h
+	 * for the OFF / SHADOW_ONLY / COMBINED contract and the band-
+	 * boundary / multiplier rationale.
+	 *
+	 * OFF early-out: the mode load is the only work done under
+	 * default; the band classification, edges_prior / total_calls /
+	 * last_edge_at loads, and the demote/boost arithmetic are all
+	 * skipped, so a fixed-seed dry-run is byte-identical to a build
+	 * before this row.  The mode load consumes no RNG, matching the
+	 * mode-load shape kcov_transition_reward_mode and frontier_group_
+	 * antilock_mode use at their own hook sites.
+	 *
+	 * RELAXED-load guard: edges, kcov_shm->per_syscall_edges_prior,
+	 * total_calls, and last_edge_at[nr] are separate atomic loads
+	 * that can sample inconsistent snapshots; the (total > last) +
+	 * (total - last) > KCOV_COLD_THRESHOLD pair is the same shape
+	 * the cold-skip helper in kcov.c uses to keep the unsigned
+	 * subtract from wrapping when last momentarily reads larger
+	 * than total under a concurrent kcov_collect update.  Match
+	 * that idiom -- treat the inverted sample as "no stale gap"
+	 * rather than wrapping. */
+	rb_mode = __atomic_load_n(&reach_band_mode, __ATOMIC_RELAXED);
+	if (rb_mode != REACH_BAND_OFF) {
+		unsigned long reach;
+		unsigned long total, last;
+		unsigned long band_weight = picked_weight;
+		bool stale = false;
+
+		reach = edges + kcov_shm->per_syscall_edges_prior[nr];
+
+		total = __atomic_load_n(&kcov_shm->total_calls,
+					__ATOMIC_RELAXED);
+		last = __atomic_load_n(&kcov_shm->last_edge_at[nr],
+				       __ATOMIC_RELAXED);
+		if (total > last && (total - last) > KCOV_COLD_THRESHOLD)
+			stale = true;
+
+		if (reach >= REACH_BAND_HIGH_THRESHOLD) {
+			/* HIGH band, fresh edges: lift the silent-regime
+			 * weight back up by a fraction of the FRONTIER_
+			 * COLD_SCALE headroom so the long-tail deep-reach
+			 * discoverer is not starved by the inverse-
+			 * productivity transform.  A stale HIGH-reach slot
+			 * keeps its base weight -- the cold-skip path is
+			 * the right place to handle staleness on a slot
+			 * that has already earned its productivity. */
+			if (!stale) {
+				unsigned long headroom =
+					(unsigned long)FRONTIER_COLD_SCALE -
+					picked_weight;
+
+				band_weight = picked_weight +
+					      headroom /
+					      REACH_BAND_HIGH_FRESH_BOOST_DEN;
+				if (band_weight >
+				    (unsigned long)FRONTIER_COLD_SCALE)
+					band_weight =
+						(unsigned long)FRONTIER_COLD_SCALE;
+			}
+		} else if (reach >= REACH_BAND_MID_THRESHOLD) {
+			/* MID band, stale gap: halve the silent-regime
+			 * weight on top of whatever the cold-skip path
+			 * has already imposed at the heuristic gate.  A
+			 * MID-reach slot that has gone cold is the
+			 * primary call-budget consumer this row reclaims
+			 * -- a band_weight of 0 cleanly falls through to
+			 * the (w + 1)/(SCALE + 1) accept floor so the
+			 * slot is reachable, not unreachable. */
+			if (stale)
+				band_weight = picked_weight /
+					      REACH_BAND_MID_STALE_DEMOTE_DEN;
+		}
+		/* LOW band: no band action.  The graduated cold-skip path
+		 * already filters these via its KCOV_COLD_THRESHOLD gap
+		 * window; layering an extra demote on a reach < 10 slot
+		 * would push barely-tried syscalls below the live picker's
+		 * accept floor before they have had a chance to produce. */
+
+		if (rb_mode == REACH_BAND_COMBINED)
+			picked_weight = band_weight;
+		/* SHADOW_ONLY: band_weight computed (cost path exercised
+		 * so an A/B follow-up that adds counters has somewhere to
+		 * hook), live returned weight unchanged.  Per-band counter
+		 * bumps land in a separate stats.c follow-up. */
+	}
+
+	return picked_weight;
 }
 
 /*
