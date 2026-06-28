@@ -189,7 +189,7 @@ static size_t gen_rta_payload(unsigned char *buf, size_t offset, size_t buflen,
 	case 15: return gen_rta_dcb_payload(p, avail, nla_type);
 	case 16: return gen_rta_netconf_payload(p, avail, nla_type);
 	case 17: return gen_rta_mdba_payload(p, avail, nla_type);
-	case 18: return gen_rta_vlandb_payload(p, avail, nla_type);
+	case 24: return gen_rta_vlandb_payload(p, avail, nla_type);
 	case 22:
 	case 25: return gen_rta_nexthop_payload(p, avail, nla_type);
 	default: return 0;
@@ -216,7 +216,7 @@ static size_t gen_rta_payload(unsigned char *buf, size_t offset, size_t buflen,
  *                   here: the dominant emission is a struct br_mdb_entry
  *                   leaf and the alt MDBA_MDB_ENTRY reply shape is a
  *                   minority arm not worth a misleading nested flag.
- *   group 18 (vlandb): BRIDGE_VLANDB_ENTRY and
+ *   group 24 (vlandb): BRIDGE_VLANDB_ENTRY and
  *                   BRIDGE_VLANDB_GLOBAL_OPTIONS -- both are
  *                   NLA_NESTED in br_vlan_db_policy and the generator
  *                   always emits a typed nested chain (ENTRY_INFO /
@@ -241,7 +241,7 @@ static int rta_payload_is_nested(int rtnl_group, unsigned short nla_type)
 		return nla_type == DCB_ATTR_IEEE;
 	case 17:
 		return nla_type == MDBA_ROUTER;
-	case 18:
+	case 24:
 		return nla_type == BRIDGE_VLANDB_ENTRY ||
 		       nla_type == BRIDGE_VLANDB_GLOBAL_OPTIONS;
 	default:
@@ -345,7 +345,7 @@ static unsigned short pick_rtnl_attr_type(unsigned short nlmsg_type)
 	case 15: return dcb_attrs[rnd_modulo_u32(dcb_attrs_n)];
 	case 16: return netconfa_attrs[rnd_modulo_u32(netconfa_attrs_n)];
 	case 17: return mdba_attrs[rnd_modulo_u32(mdba_attrs_n)];
-	case 18: return bridge_vlandb_attrs[rnd_modulo_u32(bridge_vlandb_attrs_n)];
+	case 24: return bridge_vlandb_attrs[rnd_modulo_u32(bridge_vlandb_attrs_n)];
 	case 22:
 	case 25: return nha_attrs[rnd_modulo_u32(nha_attrs_n)];
 	default: return 0;
@@ -711,7 +711,7 @@ static size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 	case 15: return gen_rtnl_body_dcb(body, buflen, out_family);
 	case 16: return gen_rtnl_body_netconf(body, buflen, out_family);
 	case 17: return gen_rtnl_body_mdb(body, buflen, out_family);
-	case 18: return gen_rtnl_body_vlan(body, buflen, out_family);
+	case 24: return gen_rtnl_body_vlan(body, buflen, out_family);
 	case 19: return gen_rtnl_body_stats(body, buflen, out_family);
 	case 22: /* RTM_*NEXTHOP */
 	case 25: /* RTM_*NEXTHOPBUCKET */
