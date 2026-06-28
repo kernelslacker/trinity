@@ -625,6 +625,20 @@ struct kcov_cmp_diag {
  * distinct even if enum exit_reasons grows. */
 #define KCOV_RECOVERY_EXHAUSTED_EXIT_CODE (NUM_EXIT_REASONS + 1)
 
+#ifdef CONFIG_GUARD_SHARED
+/*
+ * Distinct exit code for the kcov_enable_trace() on-fault diagnostic:
+ * the trace_buf[0]=0 reset raised SEGV_ACCERR/SIGBUS, the recovery
+ * jmp_buf fired, the full diagnostic was dumped, and we _exit() with
+ * this code so the reap statistics distinguish a protection-strip
+ * fault from a clean exit or a recovery-budget exhaustion bail.
+ * Same selection rationale as KCOV_RECOVERY_EXHAUSTED_EXIT_CODE: non-
+ * zero so reap_entry_is_fast_die() sees it, and outside the named-
+ * exit-reason range so decode_exit() does not mislabel it.
+ */
+#define KCOV_PROT_FAULT_EXIT_CODE (NUM_EXIT_REASONS + 2)
+#endif
+
 /* Bound for the chronicle snapshot captured into struct
  * kcov_pc_diag::first_ebadf_chronicle[] at first-EBADF latch time.
  * The owning child's child_syscall_ring is sized at

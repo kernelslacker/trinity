@@ -612,6 +612,19 @@ void freeze_sibling_childdata(int my_childno)
 			continue;
 		if (children[i] == NULL)
 			continue;
+#ifdef CONFIG_GUARD_SHARED
+		/*
+		 * Investigation hook: warn if this internal protect's
+		 * range happens to overlap a registered kcov buffer.  An
+		 * internal-mprotect path that strips a kcov buffer's
+		 * PROT_WRITE is a distinct mechanism for the trace_buf
+		 * reset-fault from the externally-fuzzed mm-sanitiser
+		 * route, and the spec calls this site out explicitly.
+		 */
+		internal_mprotect_audit_kcov("freeze_sibling_childdata",
+			(unsigned long)children[i],
+			sizeof(struct childdata), PROT_READ);
+#endif
 		if (mprotect(children[i], sizeof(struct childdata), PROT_READ) != 0) {
 			outputerr("freeze_sibling_childdata: mprotect(sibling %u childdata) failed: %s\n",
 				  i, strerror(errno));
@@ -736,6 +749,10 @@ static void init_child_freeze_shared(struct childdata *child, int childno)
 	 * because pids[] is a single allocation that doesn't grow — one
 	 * mprotect at init time is enough; the per-loop refreeze path only
 	 * needs to chase newly-spawned childdata regions. */
+#ifdef CONFIG_GUARD_SHARED
+	internal_mprotect_audit_kcov("init_child:pids",
+		(unsigned long)pids, max_children * sizeof(*pids), PROT_READ);
+#endif
 	if (mprotect(pids, max_children * sizeof(*pids), PROT_READ) != 0) {
 		outputerr("init_child: mprotect(pids[]) failed: %s\n", strerror(errno));
 		__atomic_add_fetch(&shm->stats.sibling_mprotect_failed, 1,

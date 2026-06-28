@@ -298,6 +298,21 @@ retry:	tries++;
 		void *mp_addr = from_mmap ? map->ptr : addr;
 		size_t mp_len = from_mmap ? (size_t) map->size : (size_t) size;
 
+#ifdef CONFIG_GUARD_SHARED
+	/*
+	 * Investigation hook: get_writable_address upgrades the picked
+	 * pool slot to PROT_READ|PROT_WRITE, but a scribbled slot that
+	 * aliased onto a registered kcov buffer would mprotect that
+	 * buffer instead.  PROT_READ|PROT_WRITE is the requested prot
+	 * here, so an overlap warning surfaces the alias before the
+	 * syscall fires -- the spec calls this site out as a distinct
+	 * mechanism for the trace_buf protection-strip class.
+	 */
+	internal_mprotect_audit_kcov("get_writable_address",
+		(unsigned long)mp_addr, (unsigned long)mp_len,
+		PROT_READ | PROT_WRITE);
+#endif
+
 	if (mprotect(mp_addr, mp_len, PROT_READ | PROT_WRITE) != 0) {
 		if (from_mmap) {
 			/* See sigsetjmp install at retry: -- a fuzzed PROT_READ

@@ -67,7 +67,7 @@ static void sanitise_mprotect(struct syscallrecord *rec)
 	if (map == NULL)
 		return;
 
-	if (range_overlaps_shared(rec->a1, rec->a2) ||
+	if (RANGE_OVERLAPS_SHARED_AUDITED("mprotect", rec->a1, rec->a2) ||
 	    range_overlaps_libc_heap(rec->a1, rec->a2)) {
 		rec->a1 = 0;
 		rec->a2 = 0;

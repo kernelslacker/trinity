@@ -68,6 +68,21 @@ volatile sig_atomic_t cmp_field_read_active;
 sigjmp_buf gwa_bookkeeping_recover;
 volatile sig_atomic_t gwa_bookkeeping_active;
 
+#ifdef CONFIG_GUARD_SHARED
+/*
+ * Recovery point for the kcov_enable_trace() trace_buf[0]=0 reset.
+ * See include/signals.h and kcov.c::kcov_enable_trace() for the full
+ * contract.  Definition lives here so the storage for the jmp_buf is
+ * colocated with the handler that reads kcov_protect_active.
+ *
+ * COW-inherited into every forked child; never touched by the parent.
+ * Plain file-scope storage rather than __thread because trinity
+ * children are single-threaded.
+ */
+sigjmp_buf kcov_protect_recover;
+volatile sig_atomic_t kcov_protect_active;
+#endif
+
 /*
  * Cached pointer to glibc's __abort_msg.  Resolved once at child init
  * so there is no link-time GLIBC_PRIVATE dependency: a glibc upgrade
@@ -974,6 +989,26 @@ void child_fault_handler(int sig, siginfo_t *info, void *ctx)
 	    (sig == SIGSEGV || sig == SIGBUS)) {
 		siglongjmp(gwa_bookkeeping_recover, 1);
 	}
+
+#ifdef CONFIG_GUARD_SHARED
+	/*
+	 * kcov_enable_trace() trace_buf[0]=0 reset-fault recovery.  Same
+	 * shape as the gwa_bookkeeping edge above: the store is guarded
+	 * by track_shared_region_tagged("kcov-pc") at registration and
+	 * by the mm-sanitiser overlap gates at fuzz time, yet some path
+	 * is intermittently stripping the buffer's PROT_WRITE.  Gated on
+	 * SIGSEGV or SIGBUS with si_code > 0 and kcov_protect_active set
+	 * ONLY across the single trace_buf[0] store.  On longjmp the
+	 * caller logs the full diagnostic (live VMA prot, registration
+	 * status, recent audit ring) and _exit()s with a distinct code
+	 * so the fault is visible in reap statistics without crash-
+	 * looping the worker.
+	 */
+	if (kcov_protect_active && info->si_code > 0 &&
+	    (sig == SIGSEGV || sig == SIGBUS)) {
+		siglongjmp(kcov_protect_recover, 1);
+	}
+#endif
 
 	if (info->si_code <= 0 && info->si_pid != mypid()) {
 		/* Sibling spoof — ignore. */

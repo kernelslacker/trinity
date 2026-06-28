@@ -21,6 +21,7 @@
 
 #include <errno.h>
 #include <limits.h>
+#include <setjmp.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <sys/ioctl.h>
@@ -33,6 +34,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+
+#ifdef CONFIG_GUARD_SHARED
+#include "signals.h"	/* kcov_protect_recover / kcov_protect_active */
+#endif
 
 #include "arch.h"
 #include "child.h"
@@ -1019,8 +1024,18 @@ static void kcov_init_child_cmp_fd(struct kcov_child *kc)
 	}
 
 	kc->cmp_capable = true;
+#ifdef CONFIG_GUARD_SHARED
+	track_shared_region_tagged((unsigned long)kc->cmp_trace_buf,
+		KCOV_CMP_BUFFER_SIZE * sizeof(unsigned long),
+		"kcov-cmp");
+	log_buffer_prot_from_proc_maps(
+		"kcov_init_child:register-cmp",
+		(unsigned long)kc->cmp_trace_buf,
+		KCOV_CMP_BUFFER_SIZE * sizeof(unsigned long));
+#else
 	track_shared_region((unsigned long)kc->cmp_trace_buf,
 		KCOV_CMP_BUFFER_SIZE * sizeof(unsigned long));
+#endif
 	return;
 
 err_unmap_cmp:
@@ -1100,9 +1115,26 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 	 * Done after the remote-probe re-mmap dance so we register the
 	 * final, stable address.
 	 */
-	if (kc->trace_buf != NULL)
+	if (kc->trace_buf != NULL) {
+#ifdef CONFIG_GUARD_SHARED
+		track_shared_region_tagged((unsigned long)kc->trace_buf,
+			(size_t)kcov_trace_size * sizeof(unsigned long),
+			"kcov-pc");
+		/* Investigation hook: capture the PC buffer's live VMA
+		 * protection right after registration so a setup-side
+		 * strip (already non-writable before any sanitiser has
+		 * had a chance to fire) is localised to this site rather
+		 * than masked into the on-fault diagnostic that runs
+		 * much later. */
+		log_buffer_prot_from_proc_maps(
+			"kcov_init_child:register-pc",
+			(unsigned long)kc->trace_buf,
+			(size_t)kcov_trace_size * sizeof(unsigned long));
+#else
 		track_shared_region((unsigned long)kc->trace_buf,
 				    (size_t)kcov_trace_size * sizeof(unsigned long));
+#endif
+	}
 
 	kcov_init_child_cmp_fd(kc);
 
@@ -1370,7 +1402,12 @@ static bool kcov_recover_fd(struct kcov_child *kc, bool is_cmp)
 
 	*fd_slot = new_fd;
 	*buf_slot = new_buf;
+#ifdef CONFIG_GUARD_SHARED
+	track_shared_region_tagged((unsigned long)new_buf, buf_bytes,
+				   is_cmp ? "kcov-cmp" : "kcov-pc");
+#else
 	track_shared_region((unsigned long)new_buf, buf_bytes);
+#endif
 
 	return true;
 }
@@ -1511,14 +1548,112 @@ static void kcov_latch_first_ebadf(struct kcov_child *kc, struct childdata *c)
 	}
 }
 
+#ifdef CONFIG_GUARD_SHARED
+/*
+ * Run the on-fault diagnostic dump for a kcov_enable_trace() reset
+ * fault.  The reset store at the head of kcov_enable_trace runs under
+ * sigsetjmp(kcov_protect_recover); when child_fault_handler catches a
+ * SIGSEGV/SIGBUS with kcov_protect_active set it siglongjmp's back
+ * and we end up here.  The dump itemises everything the spec asked
+ * for so the post-hoc analysis can pin which actor stripped the
+ * buffer:
+ *
+ *   1. Buffer addr + size, both branches (PC vs CMP fallback).
+ *   2. Live VMA prot from /proc/self/maps -- the smoking-gun for any
+ *      caller (sanitiser miss, internal mprotect, external syscall)
+ *      that ended up actually flipping the page.
+ *   3. Registration-still-present check -- catches the path where an
+ *      untrack_shared_region() fired but the matching protection
+ *      restore did not.
+ *   4. The per-child audit ring's last ~16 disagreements -- the
+ *      accelerator desync history that immediately preceded the
+ *      fault, so the offending mm-sanitiser call site is named in
+ *      the same log block as the fault itself.
+ *
+ * Bumps a counter on the shared kcov diag and _exit()s with
+ * KCOV_PROT_FAULT_EXIT_CODE so the parent reaper distinguishes a
+ * protection-strip fault from a clean exit / recovery-exhausted
+ * bail.  Does NOT attempt silent recovery -- masking the fault is
+ * the exact behaviour the audit is here to expose.
+ */
+static void kcov_enable_trace_dump_fault(struct kcov_child *kc, bool is_cmp)
+{
+	unsigned long buf_addr = (unsigned long)
+		(is_cmp ? kc->cmp_trace_buf : kc->trace_buf);
+	unsigned long buf_bytes = is_cmp
+		? KCOV_CMP_BUFFER_SIZE * sizeof(unsigned long)
+		: (size_t)kcov_trace_size * sizeof(unsigned long);
+	const char *origin = is_cmp ? "kcov-cmp" : "kcov-pc";
+
+	outputerr("kcov_enable_trace: protection-strip fault on %s buffer "
+		  "addr=0x%lx size=0x%lx\n", origin, buf_addr, buf_bytes);
+	log_buffer_prot_from_proc_maps("kcov_enable_trace:on-fault",
+				       buf_addr, buf_bytes);
+	if (kcov_registration_still_present(buf_addr, buf_bytes, origin))
+		outputerr("kcov_enable_trace: %s registration STILL present "
+			  "in shared_regions[]\n", origin);
+	else
+		outputerr("kcov_enable_trace: %s registration MISSING from "
+			  "shared_regions[] -- untrack/munmap path took it\n",
+			  origin);
+	kcov_audit_ring_dump("kcov_enable_trace:on-fault");
+
+	if (kcov_shm != NULL)
+		__atomic_fetch_add(&kcov_shm->pc_diag.pc_enable_count, 1,
+				   __ATOMIC_RELAXED);
+
+	kc->active = false;
+	_exit(KCOV_PROT_FAULT_EXIT_CODE);
+}
+#endif	/* CONFIG_GUARD_SHARED */
+
 void kcov_enable_trace(struct kcov_child *kc)
 {
+	/*
+	 * volatile under CONFIG_GUARD_SHARED because the sigsetjmp/
+	 * longjmp pair inserted below crosses this scope; ISO C 7.13.2.1
+	 * only guarantees post-longjmp values for objects of volatile-
+	 * qualified type, and gcc -Wclobbered would otherwise flag it.
+	 * Cost is one stack reload per ioctl loop iteration, well below
+	 * the cost of the ioctl itself.  Plain unsigned int in the no-
+	 * guard build keeps the byte image unchanged.
+	 */
+#ifdef CONFIG_GUARD_SHARED
+	volatile unsigned int retries = 0;
+#else
 	unsigned int retries = 0;
+#endif
 
 	if (kc == NULL || !kc->active)
 		return;
 
+#ifdef CONFIG_GUARD_SHARED
+	/*
+	 * On-fault diagnostic.  The trace_buf[0]=0 reset below is
+	 * supposed to be safe: the buffer is registered with origin
+	 * "kcov-pc" in shared_regions[] and the mm-sanitiser overlap
+	 * gates are supposed to refuse fuzzed addresses that touch it.
+	 * Yet runs reproducibly take SEGV_ACCERR/SIGBUS on the store,
+	 * so some path is silently stripping PROT_WRITE between
+	 * registration and use.  Install a sigsetjmp before each store
+	 * attempt so child_fault_handler siglongjmp's back here on a
+	 * real (si_code > 0) SIGSEGV/SIGBUS while kcov_protect_active
+	 * is set -- the dump helper then logs everything the spec asks
+	 * for and _exit()s with KCOV_PROT_FAULT_EXIT_CODE.  No silent
+	 * recovery; masking the fault is the bug the audit is here to
+	 * find.
+	 */
+	if (sigsetjmp(kcov_protect_recover, 1) != 0) {
+		kcov_protect_active = 0;
+		kcov_enable_trace_dump_fault(kc, false);
+		/* not reached */
+	}
+	kcov_protect_active = 1;
 	__atomic_store_n(&kc->trace_buf[0], 0, __ATOMIC_RELAXED);
+	kcov_protect_active = 0;
+#else
+	__atomic_store_n(&kc->trace_buf[0], 0, __ATOMIC_RELAXED);
+#endif
 
 	while (ioctl(kc->fd, KCOV_ENABLE, KCOV_TRACE_PC) < 0) {
 		if (errno == EINTR && retries < KCOV_ENABLE_EINTR_MAX) {
