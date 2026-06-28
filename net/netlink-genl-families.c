@@ -113,6 +113,9 @@ extern struct genl_family_grammar fam_ovpn;
 #if __has_include(<linux/net_shaper.h>)
 extern struct genl_family_grammar fam_net_shaper;
 #endif
+#if __has_include(<linux/nbd-netlink.h>)
+extern struct genl_family_grammar fam_nbd;
+#endif
 extern struct genl_family_grammar fam_nlbl_mgmt;
 extern struct genl_family_grammar fam_nlbl_cipsov4;
 extern struct genl_family_grammar fam_nlbl_unlabel;
@@ -198,6 +201,9 @@ static struct genl_family_grammar *registry[] = {
 #endif
 #if __has_include(<linux/net_shaper.h>)
 	&fam_net_shaper,
+#endif
+#if __has_include(<linux/nbd-netlink.h>)
+	&fam_nbd,
 #endif
 	&fam_nlbl_mgmt,
 	&fam_nlbl_cipsov4,
