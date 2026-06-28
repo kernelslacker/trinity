@@ -373,12 +373,35 @@ size_t gen_rta_link_payload(unsigned char *p, size_t avail,
 	case IFLA_NEW_IFINDEX:
 	case IFLA_LINK:
 	case IFLA_MASTER:
-	case IFLA_EXT_MASK:
 	case IFLA_LINK_NETNSID:
 	case IFLA_NET_NS_PID:
 	case IFLA_NET_NS_FD:
 		if (avail >= 4) {
 			__u32 val = rnd_modulo_u32(64);
+			memcpy(p, &val, 4);
+			return 4;
+		}
+		return 0;
+
+	case IFLA_EXT_MASK:
+#ifndef RTEXT_FILTER_NAME_ONLY
+#define RTEXT_FILTER_NAME_ONLY (1 << 8)
+#endif
+		if (avail >= 4) {
+			static const unsigned long rtext_filter_bits[] = {
+				RTEXT_FILTER_VF,
+				RTEXT_FILTER_BRVLAN,
+				RTEXT_FILTER_BRVLAN_COMPRESSED,
+				RTEXT_FILTER_SKIP_STATS,
+				RTEXT_FILTER_MRP,
+				RTEXT_FILTER_CFM_CONFIG,
+				RTEXT_FILTER_CFM_STATUS,
+				RTEXT_FILTER_MST,
+				RTEXT_FILTER_NAME_ONLY,
+			};
+			__u32 val = (__u32) set_rand_bitmask(
+				sizeof(rtext_filter_bits) / sizeof(rtext_filter_bits[0]),
+				rtext_filter_bits);
 			memcpy(p, &val, 4);
 			return 4;
 		}
