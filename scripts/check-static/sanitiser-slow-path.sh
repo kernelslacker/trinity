@@ -53,6 +53,7 @@ FILES=(
 	mutate.c
 	struct_catalog.c
 	struct_catalog/sctp.c
+	struct_catalog/sockaddr.c
 	struct_catalog/bpf.c
 	arg-decoder.c
 	lib/cmsg_build.c
