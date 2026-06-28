@@ -86,6 +86,12 @@ size_t gen_rta_nsid_payload(unsigned char *p, size_t avail,
 size_t gen_rta_chain_payload(unsigned char *p, size_t avail,
 			     unsigned short nla_type);
 
+/* Same shape as gen_rta_neightbl_payload above: prototype kept here
+ * rather than in netlink-msg-internal.h to confine the rtnl_linkprop
+ * wire-up to the two TUs that actually need it. */
+size_t gen_rta_linkprop_payload(unsigned char *p, size_t avail,
+				unsigned short nla_type);
+
 /*
  * Generate random IPv4 address, biased toward useful values.
  */
@@ -2171,6 +2177,82 @@ size_t gen_rta_chain_payload(unsigned char *p, size_t avail,
 			return sizeof(bf);
 		}
 		return 0;
+
+	default:
+		return 0;
+	}
+}
+
+/*
+ * Build the IFLA_PROP_LIST container body: 1-3 IFLA_ALT_IFNAME string
+ * sub-attrs.  rtnl_linkprop only walks IFLA_ALT_IFNAME children of the
+ * prop list and ignores any other type, so emitting only that type
+ * here keeps every sub-attr on a live arm of rtnl_alt_ifname instead
+ * of bouncing in the nested walker.  Names are short fixed strings
+ * (NUL-terminated) so nla_strscpy / dev_valid_altname run; the kernel
+ * will -EEXIST a duplicate add and -ENOENT a missing del, both of
+ * which are useful coverage of the altname add/del paths.
+ */
+static size_t build_linkprop_nested(unsigned char *p, size_t avail)
+{
+	static const char * const alts[] = {
+		"altname0", "altname1", "renamed0", "renamed1", "fuzzname",
+	};
+	size_t off = 0;
+	int count = RAND_RANGE(1, 3);
+
+	while (count-- > 0) {
+		const char *name = RAND_ARRAY(alts);
+		size_t slen = strlen(name) + 1;
+		size_t total = NLA_ALIGN(NLA_HDRLEN + slen);
+
+		if (off + total > avail)
+			break;
+		if (!start_nlattr(p, off, avail, IFLA_ALT_IFNAME, slen))
+			break;
+		memcpy(p + off + NLA_HDRLEN, name, slen);
+		off += total;
+	}
+	return off;
+}
+
+/*
+ * Generate a structured payload for link-property rtnetlink attributes.
+ * Covers the RTM_*LINKPROP message group (23).  net/core/rtnetlink.c's
+ * rtnl_linkprop shares ifla_policy with the link handlers but only acts
+ * on a narrow slice: ifm->ifi_index in the body picks the target dev,
+ * and when that's zero IFLA_IFNAME / IFLA_ALT_IFNAME resolve it
+ * instead; the per-message work then walks IFLA_PROP_LIST (a required
+ * NLA_NESTED) for IFLA_ALT_IFNAME children that rtnl_alt_ifname adds
+ * or removes.  Random-byte payloads at IFLA_PROP_LIST almost never
+ * frame as a valid nested chain so nla_validate_nested bounces the
+ * outer attr before rtnl_alt_ifname ever runs; lay down a typed
+ * nested chain here to get past that gate.  Anything outside this
+ * subset returns 0 so the caller falls back to a random blob.
+ */
+size_t gen_rta_linkprop_payload(unsigned char *p, size_t avail,
+				unsigned short nla_type)
+{
+	switch (nla_type) {
+	case IFLA_PROP_LIST:
+		if (avail >= NLA_HDRLEN + 8)
+			return build_linkprop_nested(p, avail);
+		return 0;
+
+	case IFLA_IFNAME:
+	case IFLA_ALT_IFNAME: {
+		static const char * const names[] = {
+			"eth0", "lo", "br0", "altname0", "renamed1",
+		};
+		const char *name = RAND_ARRAY(names);
+		size_t slen = strlen(name) + 1;
+
+		if (avail >= slen) {
+			memcpy(p, name, slen);
+			return slen;
+		}
+		return 0;
+	}
 
 	default:
 		return 0;
