@@ -19,6 +19,7 @@
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 #include <linux/if_addr.h>
+#include <linux/if_addrlabel.h>
 #include <linux/if_link.h>
 #include <linux/neighbour.h>
 #include <linux/fib_rules.h>
@@ -40,6 +41,12 @@
  * the two TUs that actually need it. */
 size_t gen_rta_neightbl_payload(unsigned char *p, size_t avail,
 				unsigned short nla_type);
+
+/* Same shape as gen_rta_neightbl_payload above: prototype kept here
+ * rather than in netlink-msg-internal.h to confine the rtnl_addrlabel
+ * wire-up to the two TUs that actually need it. */
+size_t gen_rta_addrlabel_payload(unsigned char *p, size_t avail,
+				 unsigned short nla_type);
 
 /*
  * Generate random IPv4 address, biased toward useful values.
@@ -1511,6 +1518,49 @@ size_t gen_rta_neightbl_payload(unsigned char *p, size_t avail,
 			generate_rand_bytes((unsigned char *)&st, sizeof(st));
 			memcpy(p, &st, sizeof(st));
 			return sizeof(st);
+		}
+		return 0;
+
+	default:
+		return 0;
+	}
+}
+
+/*
+ * Generate a structured payload for address-label rtnetlink attributes
+ * (IFAL_*).  Covers the RTM_*ADDRLABEL message group (14).  The kernel
+ * net/ipv6/addrlabel.c:ip6addrlbl_newdel walker parses ifal_policy,
+ * which length-rejects IFAL_ADDRESS (.len = sizeof(struct in6_addr))
+ * and IFAL_LABEL (.len = sizeof(u32)) at the wrong-width gate before
+ * the per-attr writer runs -- a random-byte payload of length [0, 64)
+ * almost never lands at exactly 16 / 4 bytes wide, so the message is
+ * rejected at nla_parse before ip6addrlbl_{add,del} runs and the
+ * handler additionally requires both attrs present to dispatch.  Size
+ * IFAL_ADDRESS to 16 bytes via the existing rand_ipv6 helper
+ * (addrlabel is IPv6-only: ip6addrlbl_newdel -EINVALs unless
+ * ifal_family == AF_INET6) and IFAL_LABEL to 4 bytes so the parse
+ * reaches the per-attr writers.
+ */
+size_t gen_rta_addrlabel_payload(unsigned char *p, size_t avail,
+				 unsigned short nla_type)
+{
+	switch (nla_type) {
+	case IFAL_ADDRESS:
+		if (avail >= sizeof(struct in6_addr)) {
+			struct in6_addr addr;
+
+			rand_ipv6(&addr);
+			memcpy(p, &addr, sizeof(addr));
+			return sizeof(addr);
+		}
+		return 0;
+
+	case IFAL_LABEL:
+		if (avail >= 4) {
+			__u32 val = rnd_modulo_u32(64);
+
+			memcpy(p, &val, 4);
+			return 4;
 		}
 		return 0;
 
