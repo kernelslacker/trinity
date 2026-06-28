@@ -2,10 +2,12 @@
  * SYSCALL_DEFINE2(newstat, const char __user *, filename, struct stat __user *, statbuf)
  */
 #include <limits.h>
+#include <stdio.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 #include "arch.h"
+#include "pathnames.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -32,9 +34,18 @@ struct newstat_post_state {
 	char filename[PATH_MAX];
 };
 
+/*
+ * Mirrors the MAX_TESTFILES bound in fds/testfiles.c so the pin lands
+ * on an existing trinity-owned inode and concentrates cross-process
+ * contention on the same per-inode i_rwsem / getattr path the other
+ * path-pinned sanitisers already target.
+ */
+#define NR_TESTFILES 4
+
 static void sanitise_newstat(struct syscallrecord *rec)
 {
 	struct newstat_post_state *snap;
+	char *path;
 
 	rec->post_state = 0;
 
@@ -65,6 +76,33 @@ static void sanitise_newstat(struct syscallrecord *rec)
 			       (const char *)(unsigned long) rec->a1))
 		snap->filename[0] = '\0';
 	post_state_install(rec, snap);
+
+	/*
+	 * ARG_PATHNAME plumbed a random pathname into rec->a1, but the
+	 * random path is most often not a real file -- newstat ENOENT-
+	 * walls at the namei walk before reaching the per-fs
+	 * inode_operations->getattr path under i_rwsem.  Half the draws
+	 * now repoint rec->a1 at one of the trinity-testfile<N> absolute
+	 * paths so the call lands on a real trinity-owned inode and
+	 * penetrates the VFS path; the other half preserves the slot
+	 * exactly as the generic draw left it so the ENOENT reject arm
+	 * stays exercised.  generate_pathname() zmallocs MAX_PATH_LEN
+	 * (4096) bytes for the ARG_PATHNAME buffer, so the snprintf cap
+	 * below cannot overflow.  Pin runs after post_state_install so
+	 * the snapshot the oracle re-issues against is the pre-pin
+	 * filename; on pinned draws the re-call ENOENTs on the random
+	 * snapshot and the oracle safely bails -- the oracle/post path
+	 * is left additive and untouched.
+	 */
+	if (rnd_modulo_u32(2) != 0)
+		return;
+
+	path = (char *) rec->a1;
+	if (path == NULL)
+		return;
+
+	snprintf(path, MAX_PATH_LEN, "%s/trinity-testfile%u",
+		 trinity_tmpdir_abs(), 1 + rnd_modulo_u32(NR_TESTFILES));
 }
 
 /*
