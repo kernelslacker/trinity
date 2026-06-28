@@ -182,6 +182,45 @@ enum kcov_transition_reward_mode {
 
 extern enum kcov_transition_reward_mode kcov_transition_reward_mode;
 
+/* --expensive-adaptive: adaptive accept-rate mode for the EXPENSIVE
+ * early-out gate in random-syscall.c.
+ *
+ * The static gate is `syscall_is_expensive(nr, do32) && !ONE_IN(1000)`:
+ * EXPENSIVE-flagged syscalls take a fixed 999/1000 reject, so fleet
+ * wall-cost stays bounded but the gate cannot scale the rate based on
+ * what the syscall is producing.  This mode flag selects how the
+ * per-syscall productivity signal (per_syscall_edges /
+ * per_syscall_calls, plus the warm-loaded _prior arrays and a
+ * total_calls -- last_edge_at gap decay re-using the kcov_syscall_cold_
+ * skip_pct shape) influences the live accept denominator.
+ *
+ *   OFF          - default.  Byte-identical to the static expression:
+ *                  no kcov_shm reads, no adaptive math, the single
+ *                  ONE_IN(1000) RNG draw fires in the same conditions
+ *                  as the original `&&` short-circuit -- the pick
+ *                  stream is preserved bit-for-bit for a given seed.
+ *   SHADOW_ONLY  - compute the adaptive denominator (cost path active)
+ *                  but the LIVE accept still draws ONE_IN(1000); pick
+ *                  stream stays identical to OFF.  Placeholder for the
+ *                  follow-up row that adds shadow A/B counters.
+ *   COMBINED     - the adaptive denominator drives the live accept
+ *                  (ONE_IN(n_adaptive)).  Only mode that diverges from
+ *                  OFF.  The decay back toward the floor when a
+ *                  syscall stops producing edges is load-bearing: the
+ *                  floor caps wall-cost, so an adaptive grant MUST
+ *                  decay once productivity stops.
+ *
+ * Degrade-safe: helper falls back to the static 1/1000 rate when
+ * kcov_shm is unavailable, same fallback shape kcov_syscall_cold_skip_
+ * pct / frontier_cold_weight already take. */
+enum expensive_adaptive_mode {
+	EXPENSIVE_ADAPTIVE_MODE_OFF = 0,
+	EXPENSIVE_ADAPTIVE_MODE_SHADOW_ONLY = 1,
+	EXPENSIVE_ADAPTIVE_MODE_COMBINED = 2,
+};
+
+extern enum expensive_adaptive_mode expensive_adaptive_mode;
+
 /* Per-window transition delta divided by this reciprocal before being
  * folded into the bandit's per-arm reward total in bandit_record_pull
  * under COMBINED mode.  Matches the shape (and starting value) of
