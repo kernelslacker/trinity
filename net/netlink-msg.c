@@ -164,6 +164,13 @@ static unsigned short pick_nlmsg_type(int protocol)
 	}
 }
 
+/* Forward declaration — defined in net/netlink-msg-rtnl-payloads.c.
+ * Other gen_rta_* sibling declarations live in netlink-msg-internal.h;
+ * this one is inline here to keep the rtnl_neightbl wire-up confined
+ * to the two TUs that actually need it. */
+size_t gen_rta_neightbl_payload(unsigned char *p, size_t avail,
+				unsigned short nla_type);
+
 /*
  * Generate a structured payload for a specific rtnetlink attribute.
  * Dispatches to the appropriate per-group generator based on the
@@ -186,6 +193,7 @@ static size_t gen_rta_payload(unsigned char *buf, size_t offset, size_t buflen,
 	case 5:
 	case 6:
 	case 7: return gen_rta_tc_payload(p, avail, nla_type);
+	case 12: return gen_rta_neightbl_payload(p, avail, nla_type);
 	case 15: return gen_rta_dcb_payload(p, avail, nla_type);
 	case 16: return gen_rta_netconf_payload(p, avail, nla_type);
 	case 17: return gen_rta_mdba_payload(p, avail, nla_type);
@@ -237,6 +245,8 @@ static int rta_payload_is_nested(int rtnl_group, unsigned short nla_type)
 	case 7:
 		return nla_type == TCA_OPTIONS || nla_type == TCA_STAB ||
 		       nla_type == TCA_STATS2;
+	case 12:
+		return nla_type == NDTA_PARMS;
 	case 15:
 		return nla_type == DCB_ATTR_IEEE;
 	case 17:
@@ -322,6 +332,15 @@ static size_t append_nlattr(unsigned char *buf, size_t offset, size_t buflen,
 	return offset + NLA_ALIGN(NLA_HDRLEN + payload_len);
 }
 
+/* NDTA_* attr types for RTM_*NEIGHTBL (rtnl group 12).  File-static
+ * here rather than alongside ifla_attrs/etc. in netlink-msg-tables.c
+ * to keep the rtnl_neightbl wire-up confined to the two TUs that
+ * actually need it; matches the shape of the other per-group lists. */
+static const unsigned short ndtbl_attrs[] = {
+	NDTA_NAME, NDTA_THRESH1, NDTA_THRESH2, NDTA_THRESH3,
+	NDTA_CONFIG, NDTA_PARMS, NDTA_STATS, NDTA_GC_INTERVAL,
+};
+
 /* Pick an nlattr type appropriate for an rtnetlink message group.
  * Returns 0 for unknown groups (caller falls back to random). */
 static unsigned short pick_rtnl_attr_type(unsigned short nlmsg_type)
@@ -341,6 +360,7 @@ static unsigned short pick_rtnl_attr_type(unsigned short nlmsg_type)
 	case 5:
 	case 6:
 	case 7: return tca_attrs[rnd_modulo_u32(tca_attrs_n)];
+	case 12: return RAND_ARRAY(ndtbl_attrs);
 	case 14: return ifal_attrs[rnd_modulo_u32(ifal_attrs_n)];
 	case 15: return dcb_attrs[rnd_modulo_u32(dcb_attrs_n)];
 	case 16: return netconfa_attrs[rnd_modulo_u32(netconfa_attrs_n)];
