@@ -49,7 +49,9 @@
 # manually removed the init_child redirect while bisecting.
 #
 # Baseline: scripts/check-static/child-context-output.baseline lists
-# every grandfathered offender as `file:line:funcname`.  This check
+# every grandfathered offender as `file:funcname` -- keyed by the
+# function, not the line, so a callsite drifting lines never churns
+# the baseline (the grandfathered unit is the function).  This check
 # will fire on a large existing surface (every existing callsite is
 # baselined); the list should shrink over time, never grow.
 
@@ -234,11 +236,12 @@ BEGIN {
 		# a[2]=file a[3]=caller a[4]=callee
 		key = a[2] "|" a[3]
 		edges[key] = (edges[key] == "") ? a[4] : edges[key] " " a[4]
-	} else if (kind == "HIT") {
-		# a[2]=file a[3]=lineno a[4]=fn a[5]=callkind
-		key = a[2] "|" a[4]
-		hits[key] = (hits[key] == "") ? (a[3] " " a[5]) : hits[key] "\n" (a[3] " " a[5])
-	}
+		} else if (kind == "HIT") {
+			# a[2]=file a[4]=fn.  Record func-level presence only --
+			# the baseline is keyed file:funcname, so the line (a[3])
+			# and kind (a[5]) are not part of the key.
+			hits[a[2] "|" a[4]] = 1
+		}
 }
 END {
 	# Seed reachable[] with every .post handler that has a DEF in
@@ -266,15 +269,14 @@ END {
 			}
 		}
 	}
-	# Emit hits for every reachable function.
+	# Emit one entry per reachable function that has a hit. The
+	# baseline is keyed file:funcname (NOT file:line): the
+	# grandfathered unit is the function, so a callsite drifting
+	# lines does not churn the baseline.
 	for (k in reachable) {
 		if (k in hits) {
 			split(k, p, "|")
-			n = split(hits[k], hs, "\n")
-			for (i = 1; i <= n; i++) {
-				split(hs[i], hh, " ")
-				printf "syscalls|%s:%s:%s\n", p[1], hh[1], p[2]
-			}
+			printf "syscalls|%s:%s\n", p[1], p[2]
 		}
 	}
 }
@@ -286,7 +288,7 @@ while IFS= read -r srcfile; do
 	rel="${srcfile#"$ROOT"/}"
 	scan_file "$srcfile" "$rel" childop
 done < <(find "$ROOT/childops" -name '*.c' | sort) \
-	| awk -F'|' '$1=="HIT" { printf "childops|%s:%s:%s\n", $2, $3, $4 }' \
+		| awk -F'|' '$1=="HIT" { print "childops|" $2 ":" $4 }' \
 	>> "$HITS_FILE"
 
 # Classify hits against the baseline.
