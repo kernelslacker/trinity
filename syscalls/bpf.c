@@ -12,6 +12,7 @@
 #include <unistd.h>
 #include "arch.h"
 #include "bpf.h"
+#include "name-pool.h"
 #include "net.h"
 #include "objects.h"
 #include "random.h"
@@ -48,6 +49,39 @@ static const char *const bpf_raw_tp_names[] = {
 
 static const char license[] = "GPLv2";
 
+/*
+ * Fill a BPF_OBJ_NAME_LEN obj-name buffer (prog_name / map_name).
+ * Caller guarantees the buffer was zmalloc'd, so trailing bytes are
+ * already NUL and a draw shorter than the buffer leaves a valid
+ * terminator behind.  Blend a pool-drawn (possibly mutated) name from
+ * a prior bpf() call with fresh alphanumerics so a later bpf() op can
+ * pick up a name an earlier op planted -- reuse-exactly drives the
+ * kernel's per-name lookup paths (BPF_OBJ_GET_INFO_BY_FD's name copy,
+ * the prog_name dedup in trace dumps), and the mutated arms exercise
+ * bpf_obj_name_cpy()'s isalnum/'_'/'.' validator on near-valid input.
+ */
+static void bpf_fill_obj_name(char *name)
+{
+	static const char alphabet[] =
+		"abcdefghijklmnopqrstuvwxyz0123456789_";
+	unsigned int n, i;
+
+	if (ONE_IN(4)) {
+		size_t got = name_pool_draw_mutated(NAME_KIND_BPF_OBJ_NAME,
+						    name,
+						    BPF_OBJ_NAME_LEN - 1);
+
+		if (got > 0)
+			return;
+		/* empty pool -- fall through to fresh generation */
+	}
+
+	n = 1 + rnd_modulo_u32(BPF_OBJ_NAME_LEN - 1);
+	for (i = 0; i < n; i++)
+		name[i] = alphabet[rnd_modulo_u32(sizeof(alphabet) - 1)];
+	name_pool_record(NAME_KIND_BPF_OBJ_NAME, name, n);
+}
+
 static bool bpf_prog_load(union bpf_attr *attr)
 {
 	bool classic_filter = false;
@@ -80,6 +114,7 @@ static bool bpf_prog_load(union bpf_attr *attr)
 		attr->log_buf = log_buf_addr;
 	}
 	attr->kern_version = get_kern_version();
+	bpf_fill_obj_name(attr->prog_name);
 	return classic_filter;
 }
 
@@ -256,7 +291,13 @@ static void sanitise_bpf_map_create(union bpf_attr *attr, struct syscallrecord *
 	attr->value_size = rnd_modulo_u32((1024 * 64));
 	attr->max_entries = rnd_modulo_u32(1024);
 	attr->map_flags = RAND_RANGE(0, 4);
-	rec->a3 = 20;
+	bpf_fill_obj_name(attr->map_name);
+	/* Cover map_name so the fill above reaches the kernel; previous
+	 * rec->a3 = 20 stopped at map_flags.  The token-fd arm below
+	 * overrides this with a still-larger window that already
+	 * encompasses map_name. */
+	rec->a3 = offsetof(union bpf_attr, map_name) +
+		  sizeof(attr->map_name);
 	if (ONE_IN(8)) {
 		/* BPF_F_TOKEN_FD in map_flags is the gate the kernel
 		 * uses to decide whether to resolve map_token_fd at
@@ -320,7 +361,11 @@ static bool sanitise_bpf_prog_load(union bpf_attr *attr, struct syscallrecord *r
 {
 	bool classic_bpf_insns = bpf_prog_load(attr);
 
-	rec->a3 = 48;
+	/* Cover prog_name so bpf_fill_obj_name's bytes reach the kernel
+	 * verifier's bpf_obj_name_cpy(); without the bump rec->a3 = 48
+	 * stops one byte short of the name field. */
+	rec->a3 = offsetof(union bpf_attr, prog_name) +
+		  sizeof(attr->prog_name);
 	if (ONE_IN(8)) {
 		/* See the BPF_MAP_CREATE arm for why both the flag
 		 * bit and the fd matter, and why rec->a3 must grow
