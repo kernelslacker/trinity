@@ -86,6 +86,9 @@ extern struct genl_family_grammar fam_fou;
 #if __has_include(<linux/psample.h>)
 extern struct genl_family_grammar fam_psample;
 #endif
+#if __has_include(<linux/net_dropmon.h>)
+extern struct genl_family_grammar fam_net_dm;
+#endif
 #if __has_include(<linux/smc.h>)
 extern struct genl_family_grammar fam_smc_pnetid;
 #endif
@@ -189,6 +192,9 @@ static struct genl_family_grammar *registry[] = {
 #endif
 #if __has_include(<linux/psample.h>)
 	&fam_psample,
+#endif
+#if __has_include(<linux/net_dropmon.h>)
+	&fam_net_dm,
 #endif
 #if __has_include(<linux/smc.h>)
 	&fam_smc_pnetid,
