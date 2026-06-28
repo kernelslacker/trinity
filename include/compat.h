@@ -305,6 +305,13 @@ enum {
 #define AF_PHONET	PF_PHONET
 #endif
 
+#ifndef PF_IEEE802154
+#define PF_IEEE802154	36
+#endif
+#ifndef AF_IEEE802154
+#define AF_IEEE802154	PF_IEEE802154
+#endif
+
 #ifndef PF_CAIF
 #define PF_CAIF		37
 #endif
