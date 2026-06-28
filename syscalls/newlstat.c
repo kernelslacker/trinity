@@ -2,15 +2,26 @@
  * SYSCALL_DEFINE2(newlstat, const char __user *, filename, struct stat __user *, statbuf)
  */
 #include <limits.h>
+#include <stdio.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 #include "arch.h"
+#include "pathnames.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
+
+/*
+ * Mirrors the MAX_TESTFILES bound in fds/testfiles.c so we land inside
+ * the same trinity-testfile<N> inodes the rest of the path-pinned
+ * sanitisers (chmod, utime, stat, lstat, statfs, ...) touch;
+ * cross-process contention concentrates on the same per-inode i_rwsem /
+ * getattr path.
+ */
+#define NR_TESTFILES 4
 
 /*
  * Snapshot of the two newlstat input args read by the post oracle,
@@ -35,6 +46,46 @@ struct newlstat_post_state {
 static void sanitise_newlstat(struct syscallrecord *rec)
 {
 	struct newlstat_post_state *snap;
+
+	/*
+	 * ARG_PATHNAME plumbed a random pathname into rec->a1, but the
+	 * random path is most often not a real file at all -- newlstat
+	 * returns ENOENT at the path walk before ever reaching the
+	 * per-fs inode_operations->getattr path under i_rwsem.  Same
+	 * "high calls, low edges" cold-syscall shape stat / lstat /
+	 * statfs were in before their testfile-pin fixes.
+	 *
+	 * Half the draws now repoint at one of the trinity-testfile<N>
+	 * absolute paths so the subsequent newlstat lands on a real
+	 * trinity-owned inode and penetrates the VFS path -- the namei
+	 * walk to a real dentry, the permission check (trinity owns
+	 * these inodes so the ownership/permission gates pass), and the
+	 * per-fs getattr that the i_rwsem guards.  The other half
+	 * preserves the slot exactly as the generic draw left it, so the
+	 * ENOENT reject arm stays exercised.
+	 *
+	 * Done as an if-block rather than an early-return so the existing
+	 * rec->post_state init, avoid_shared_buffer_out(&rec->a2) and the
+	 * post_state snapshot below still run on both halves -- the path
+	 * pin is purely additive to the existing a2 / post-oracle work.
+	 * Placed before the snapshot so the snapshot captures the pinned
+	 * filename and the post oracle re-issues against the same path
+	 * the original syscall walked.
+	 */
+	if (rnd_modulo_u32(2) == 0) {
+		char *path = (char *) rec->a1;
+
+		/*
+		 * Overwrite the ARG_PATHNAME buffer in place.
+		 * generate_pathname() zmallocs MAX_PATH_LEN (4096) bytes,
+		 * so the snprintf cap below cannot overflow.
+		 */
+		if (path != NULL)
+			snprintf(path, MAX_PATH_LEN,
+				 "%s/trinity-testfile%u",
+				 trinity_tmpdir_abs(),
+				 1 + rnd_modulo_u32(NR_TESTFILES));
+	}
 
 	rec->post_state = 0;
 
