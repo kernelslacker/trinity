@@ -4,7 +4,6 @@
 #include <linux/atm.h>
 #include <linux/sonet.h>
 #include <linux/atmbr2684.h>
-#include <linux/atmsvc.h>
 #include <sys/socket.h>
 
 #include "ioctls.h"
@@ -26,9 +25,7 @@ static int atm_fd_test(int fd, const struct stat *st __attribute__((unused)))
 	for_each_obj(head, obj, idx) {
 		struct socketinfo *si = &obj->sockinfo;
 
-		if (si->fd == fd &&
-		    (si->triplet.family == PF_ATMPVC ||
-		     si->triplet.family == PF_ATMSVC))
+		if (si->fd == fd && si->triplet.family == PF_ATMPVC)
 			return 0;
 	}
 
@@ -264,10 +261,6 @@ static const struct ioctl atm_ioctls[] = {
 	IOCTL(ATM_DROPPARTY),
 	/* BR2684 bridged RFC2684 backend filter */
 	IOCTL(BR2684_SETFILT),
-	/* SVC signaling daemon control socket; _IO, no arg */
-#ifdef ATMSIGD_CTRL
-	IOCTL(ATMSIGD_CTRL),
-#endif
 	IOCTL(SONET_GETSTAT),
 	IOCTL(SONET_GETSTATZ),
 	IOCTL(SONET_SETDIAG),

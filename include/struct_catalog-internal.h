@@ -182,8 +182,7 @@ extern const struct union_variant bpf_attr_variants[BPF_ATTR_VARIANTS_N];
  *
  * sockaddr_storage_variants is the tagged-union dispatch table whose
  * entry count is configuration-dependent (one entry per #ifdef
- * USE_<AF> arm; USE_AX25 contributes two for AF_AX25/AF_NETROM and
- * USE_ATM contributes two for AF_ATMSVC/AF_ATMPVC).
+ * USE_<AF> arm; USE_AX25 contributes two for AF_AX25/AF_NETROM).
  * SOCKADDR_STORAGE_VARIANTS_N mirrors that arithmetic so the spine's
  * ARRAY_SIZE(sockaddr_storage_variants) still folds to the same
  * constant the static-table form did.  USE_* macros come from
@@ -228,11 +227,8 @@ enum {
 #ifdef USE_ROSE
 		+ 1
 #endif
-#ifdef USE_ATALK
-		+ 1
-#endif
 #ifdef USE_ATM
-		+ 2 /* AF_ATMSVC + AF_ATMPVC */
+		+ 1 /* AF_ATMPVC */
 #endif
 #ifdef USE_LLC
 		+ 1
@@ -286,11 +282,7 @@ extern const struct struct_field sockaddr_ax25_variant_fields[];
 #ifdef USE_ROSE
 extern const struct struct_field sockaddr_rose_variant_fields[];
 #endif
-#ifdef USE_ATALK
-extern const struct struct_field sockaddr_at_variant_fields[];
-#endif
 #ifdef USE_ATM
-extern const struct struct_field sockaddr_atmsvc_variant_fields[];
 extern const struct struct_field sockaddr_atmpvc_variant_fields[];
 #endif
 #ifdef USE_LLC

@@ -28,7 +28,6 @@ const struct protoptr net_protocols[TRINITY_PF_MAX] = {
 	[PF_NFC] = { .proto = &proto_nfc },
 	[PF_NETLINK] = { .proto = &proto_netlink },
 	[PF_ATMPVC] = { .proto = &proto_atmpvc },
-	[PF_ATMSVC] = { .proto = &proto_atmsvc },
 	[PF_NETBEUI] = { .proto = &proto_netbeui },
 	[PF_IEEE802154] = { .proto = &proto_ieee802154 },
 	[PF_PPPOX] = { .proto = &proto_pppol2tp },
