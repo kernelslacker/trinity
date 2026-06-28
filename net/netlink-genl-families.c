@@ -104,6 +104,9 @@ extern struct genl_family_grammar fam_ipvs;
 #if __has_include(<linux/batman_adv.h>)
 extern struct genl_family_grammar fam_batadv;
 #endif
+#if __has_include(<linux/tcp_metrics.h>)
+extern struct genl_family_grammar fam_tcp_metrics;
+#endif
 extern struct genl_family_grammar fam_nlbl_mgmt;
 extern struct genl_family_grammar fam_nlbl_cipsov4;
 extern struct genl_family_grammar fam_nlbl_unlabel;
@@ -180,6 +183,9 @@ static struct genl_family_grammar *registry[] = {
 #endif
 #if __has_include(<linux/batman_adv.h>)
 	&fam_batadv,
+#endif
+#if __has_include(<linux/tcp_metrics.h>)
+	&fam_tcp_metrics,
 #endif
 	&fam_nlbl_mgmt,
 	&fam_nlbl_cipsov4,
