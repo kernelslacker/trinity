@@ -53,7 +53,6 @@
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdlib.h>
 #include <sys/ioctl.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
