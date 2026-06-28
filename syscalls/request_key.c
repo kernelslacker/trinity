@@ -25,6 +25,7 @@
 #include <linux/keyctl.h>
 #include <stdio.h>
 #include <string.h>
+#include "name-pool.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -94,11 +95,42 @@ static void sanitise_request_key(struct syscallrecord *rec)
 	}
 	prefix = request_key_desc_prefixes[rnd_modulo_u32(ARRAY_SIZE(request_key_desc_prefixes))];
 	/* logon-type keys require a "<subtype>:" prefix on the description; mirror the
-	 * shape add_key uses for that type so request_key("logon", ...) also matches. */
-	if (!strcmp(type, "logon"))
+	 * shape add_key uses for that type so request_key("logon", ...) also matches.
+	 * The name-pool replay/record only runs on the non-logon arm: a raw mutated
+	 * draw would not satisfy logon's "<subtype>:" hard requirement, and the fresh
+	 * "<prefix>_<8 hex>" namespace there has ~0 collision odds with what add_key
+	 * planted, so the kernel's keyring search lookup always misses.  Replay a
+	 * recorded description (possibly mutated) at ONE_IN(4) so request_key actually
+	 * hits a key add_key previously linked, and otherwise record the fresh name
+	 * so add_key replays can later collide too. */
+	if (!strcmp(type, "logon")) {
 		snprintf(desc_buf, 96, "trinity:%s_%08x", prefix, rnd_u32());
-	else
-		snprintf(desc_buf, 96, "%s_%08x", prefix, rnd_u32());
+	} else {
+		int wrote;
+		size_t len;
+
+		if (ONE_IN(4)) {
+			size_t got = name_pool_draw_mutated(NAME_KIND_KEY_DESC,
+							    desc_buf, 96);
+
+			if (got > 0) {
+				if (got >= 96)
+					got = 95;
+				desc_buf[got] = '\0';
+				goto desc_done;
+			}
+			/* empty pool -- fall through to fresh generation */
+		}
+
+		wrote = snprintf(desc_buf, 96, "%s_%08x", prefix, rnd_u32());
+		if (wrote > 0) {
+			len = (size_t) wrote;
+			if (len >= 96)
+				len = 95;
+			name_pool_record(NAME_KIND_KEY_DESC, desc_buf, len);
+		}
+	}
+desc_done:
 	rec->a2 = (unsigned long) desc_buf;
 	avoid_shared_buffer_inout(&rec->a2, 96);
 
