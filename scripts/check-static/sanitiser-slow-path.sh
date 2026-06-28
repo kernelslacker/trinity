@@ -57,6 +57,7 @@ FILES=(
 	struct_catalog/bpf.c
 	struct_catalog/quota.c
 	struct_catalog/time.c
+	struct_catalog/perf.c
 	arg-decoder.c
 	lib/cmsg_build.c
 	utils.c
