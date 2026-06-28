@@ -3,13 +3,10 @@
  *		struct statmount __user *, buf, size_t, bufsize,
  *		unsigned int, flags)
  */
-#include <fcntl.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <linux/mount.h>
-#include <string.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <asm/unistd.h>

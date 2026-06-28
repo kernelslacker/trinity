@@ -37,7 +37,6 @@
 #include <errno.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
 

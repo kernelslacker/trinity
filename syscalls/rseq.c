@@ -3,7 +3,6 @@
  *                 int, flags, u32, sig)
  */
 #include <linux/rseq.h>
-#include <string.h>
 #include "random.h"
 #include "sanitise.h"
 

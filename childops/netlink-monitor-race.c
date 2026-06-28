@@ -70,15 +70,10 @@
 
 #include <errno.h>
 #include <net/if.h>
-#include <netinet/in.h>
 #include <sched.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/socket.h>
-#include <sys/types.h>
-#include <unistd.h>
 
 #include <linux/if_addr.h>
 #include <linux/if_link.h>

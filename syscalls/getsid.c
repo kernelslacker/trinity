@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE1(getsid, pid_t, pid)
  */
-#include <sys/types.h>
 #include <unistd.h>
 #include "random.h"
 #include "shm.h"

@@ -3,7 +3,6 @@
  * SYSCALL_DEFINE(sync_file_range2)(int fd, unsigned int flags, loff_t offset, loff_t nbytes)
  */
 #include <linux/fs.h>
-#include <stdlib.h>
 #include <sys/stat.h>
 #include "arch.h"
 #include "files.h"

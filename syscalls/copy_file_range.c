@@ -4,7 +4,6 @@
  * size_t, len, unsigned int, flags)
  */
 #include <linux/fs.h>
-#include <stdlib.h>
 #include "arch.h"
 #include "fd.h"
 #include "files.h"

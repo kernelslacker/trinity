@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE1(getpgid, pid_t, pid)
  */
-#include <sys/types.h>
 #include "proc-status.h"
 #include "random.h"
 #include "shm.h"

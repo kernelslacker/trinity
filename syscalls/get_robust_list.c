@@ -5,7 +5,6 @@
  */
 #include <stddef.h>
 #include <sys/syscall.h>
-#include <sys/types.h>
 #include <unistd.h>
 #include "random.h"
 #include "sanitise.h"

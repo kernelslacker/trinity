@@ -3,8 +3,6 @@
 #include <linux/ioctl.h>
 #include <linux/dma-buf.h>
 
-#include <stdio.h>
-#include <string.h>
 #include <unistd.h>
 
 #include "ioctls.h"

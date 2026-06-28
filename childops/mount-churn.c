@@ -73,17 +73,12 @@
  */
 
 #include <errno.h>
-#include <fcntl.h>
 #include <limits.h>
 #include <sched.h>
 #include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <sys/mount.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
-#include <sys/types.h>
-#include <unistd.h>
 
 #include "child.h"
 #include "compat.h"

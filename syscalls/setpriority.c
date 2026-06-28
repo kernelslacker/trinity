@@ -1,9 +1,7 @@
 /*
  * SYSCALL_DEFINE3(setpriority, int, which, int, who, int, niceval)
  */
-#include <stdio.h>
 #include <sys/resource.h>
-#include <sys/types.h>
 #include <unistd.h>
 #include "proc-status.h"
 #include "random.h"

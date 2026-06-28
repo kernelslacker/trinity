@@ -4,7 +4,6 @@
 	unsigned long, maxnode, unsigned, flags)
  */
 
-#include <string.h>
 #include <linux/mempolicy.h>
 #include "arch.h"
 #include "compat.h"

@@ -2,7 +2,6 @@
  * SYSCALL_DEFINE3(inotify_add_watch, int, fd, const char __user *, pathname, u32, mask)
  */
 #include <limits.h>
-#include <stdio.h>
 #include <sys/inotify.h>
 
 #include "pathnames.h"

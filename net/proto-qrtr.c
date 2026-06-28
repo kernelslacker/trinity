@@ -2,8 +2,6 @@
 #include <sys/uio.h>
 #include <endian.h>
 #include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
 #include <linux/qrtr.h>
 #include "net.h"

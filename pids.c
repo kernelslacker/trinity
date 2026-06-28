@@ -1,12 +1,6 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
 #include <errno.h>
-#include <fcntl.h>
 #include <stdint.h>
-#include <sys/types.h>
 #include <signal.h>
-#include <unistd.h>
 #include "arch.h"
 #include "objects.h"
 #include "params.h"	// dangerous

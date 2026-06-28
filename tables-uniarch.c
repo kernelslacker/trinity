@@ -3,10 +3,6 @@
  * These functions are only used by architectures that have either 32 or 64 bit syscalls, but not both.
  */
 
-#include <string.h>
-#include <stdio.h>
-#include <unistd.h>
-#include <stdlib.h>
 
 #include "arch.h"
 #include "syscall.h"

@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE1(umask, int, mask)
  */
-#include <stdio.h>
 #include "proc-status.h"
 #include "random.h"
 #include "shm.h"

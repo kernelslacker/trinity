@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE1(time, time_t __user *, tloc)
  */
-#include <time.h>
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"

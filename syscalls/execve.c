@@ -8,10 +8,6 @@
  * on error -1 is returned, and errno is set appropriately.
  */
 #include <errno.h>
-#include <fcntl.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
 #include <sys/stat.h>
 #include "arch.h"	// page_size

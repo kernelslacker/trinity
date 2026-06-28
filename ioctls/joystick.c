@@ -3,7 +3,6 @@
 #include <linux/ioctl.h>
 #include <linux/joystick.h>
 #include <linux/major.h>
-#include <sys/stat.h>
 #include <sys/sysmacros.h>
 
 #include "ioctls.h"

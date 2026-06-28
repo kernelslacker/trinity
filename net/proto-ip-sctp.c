@@ -1,8 +1,5 @@
 #include <sys/socket.h>
-#include <netinet/in.h>
 #include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
 #include <linux/sctp.h>
 #include "net.h"
 #include "random.h"

@@ -2,7 +2,6 @@
  * SYSCALL_DEFINE3(mincore, unsigned long, start, size_t, len, unsigned char __user *, vec)
  */
 #include <stdint.h>
-#include <stdlib.h>
 #include "arch.h"
 #include "maps.h"
 #include "rnd.h"

@@ -16,10 +16,7 @@
  */
 
 #include <errno.h>
-#include <fcntl.h>
 #include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
 #include <limits.h>
 #include <sys/mman.h>
 #include <unistd.h>

@@ -4,8 +4,6 @@
 #include "compat.h"
 #include "object-types.h"
 #include "sanitise.h"
-#include <fcntl.h>
-#include <unistd.h>
 
 #ifndef OPEN_TREE_CLONE
 #define OPEN_TREE_CLONE         1               /* Clone the target tree and attach the clone */

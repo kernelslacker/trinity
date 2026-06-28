@@ -2,9 +2,6 @@
  * SYSCALL_DEFINE4(removexattrat, int, dfd, const char __user *, pathname,
  *		unsigned int, at_flags, const char __user *, name)
  */
-#include <fcntl.h>
-#include <stdio.h>
-#include <string.h>
 #include <sys/xattr.h>
 #include "pathnames.h"
 #include "random.h"

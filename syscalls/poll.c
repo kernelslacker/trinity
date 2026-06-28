@@ -1,7 +1,6 @@
 /*
  * sys_poll(struct pollfd __user *ufds, unsigned int nfds, int timeout);
  */
-#include <stdlib.h>
 #include <signal.h>
 #include <asm/poll.h>
 #include "fd.h"

@@ -37,9 +37,7 @@
 
 #include <errno.h>
 #include <stddef.h>
-#include <string.h>
 #include <sys/socket.h>
-#include <sys/types.h>
 #include <sys/uio.h>
 
 #include <linux/genetlink.h>

@@ -63,9 +63,6 @@
 #include <sched.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdio.h>
-#include <string.h>
-#include <time.h>
 
 #include <linux/if_link.h>
 #include <linux/netlink.h>

@@ -1,6 +1,5 @@
 #include <sys/socket.h>
 #include <sys/un.h>
-#include <stdlib.h>
 #include "arch.h"	// page_size
 #include "net.h"
 #include "params.h"	// do_specific_domain

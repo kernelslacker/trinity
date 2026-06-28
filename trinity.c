@@ -1,14 +1,9 @@
 #include <errno.h>
-#include <fcntl.h>
 #include <limits.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <malloc.h>
 #include <sys/prctl.h>
 #include <sys/resource.h>
-#include <sys/types.h>
 #include <sys/wait.h>
-#include <unistd.h>
 
 #include "arch.h"
 #include "child.h"

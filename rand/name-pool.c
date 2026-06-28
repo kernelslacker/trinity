@@ -30,7 +30,6 @@
  */
 
 #include <stdint.h>
-#include <string.h>
 
 #include "name-pool.h"
 #include "random.h"

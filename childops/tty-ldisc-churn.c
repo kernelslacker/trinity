@@ -71,12 +71,9 @@
  */
 
 #include <errno.h>
-#include <fcntl.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdlib.h>
 #include <sys/ioctl.h>
-#include <sys/types.h>
 #include <unistd.h>
 
 #include "child.h"

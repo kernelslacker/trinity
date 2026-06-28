@@ -65,17 +65,13 @@
  */
 
 #include <errno.h>
-#include <fcntl.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <string.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/syscall.h>
 #include <sys/wait.h>
-#include <netinet/in.h>
 #include <linux/bpf.h>
-#include <unistd.h>
 
 #include "arch.h"
 #include "bpf.h"

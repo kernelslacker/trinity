@@ -1,11 +1,6 @@
-#include <stdio.h>
-#include <stdlib.h>
 #include <limits.h>
 #include <sched.h>
 #include <sys/time.h>
-#include <time.h>
-#include <unistd.h>
-#include <string.h>
 
 #include "arch.h"
 #include "arg-len-semantics.h"

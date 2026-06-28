@@ -3,7 +3,6 @@
 	 unsigned long, len, const char __user *, uargs)
  */
 #include <elf.h>
-#include <string.h>
 #include "arch.h"
 #include "random.h"
 #include "rnd.h"

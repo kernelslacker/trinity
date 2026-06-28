@@ -2,7 +2,6 @@
  * SYSCALL_DEFINE3(sysfs, int, option, unsigned long, arg1, unsigned long, arg2)
  */
 #include <stddef.h>
-#include <string.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 #include "arch.h"

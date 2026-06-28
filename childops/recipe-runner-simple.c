@@ -5,14 +5,11 @@
  */
 
 #include <errno.h>
-#include <fcntl.h>
 #include <limits.h>
 #include <mqueue.h>
-#include <netinet/in.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <string.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include <sys/fanotify.h>
@@ -27,9 +24,6 @@
 #include <sys/socket.h>
 #include <sys/syscall.h>
 #include <sys/timerfd.h>
-#include <sys/types.h>
-#include <time.h>
-#include <unistd.h>
 #include <linux/futex.h>
 #include <linux/memfd.h>
 #include <linux/userfaultfd.h>

@@ -2,7 +2,6 @@
  * SYSCALL_DEFINE1(setfsuid, uid_t, uid)
  */
 #include <sys/fsuid.h>
-#include <sys/types.h>
 #include "random.h"
 #include "shm.h"
 #include "sanitise.h"

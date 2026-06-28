@@ -2,8 +2,6 @@
  * SYSCALL_DEFINE1(memfd_secret, unsigned int, flags)
  */
 
-#include <fcntl.h>
-#include <unistd.h>
 #include "sanitise.h"
 #include "memfd.h"
 #include "compat.h"

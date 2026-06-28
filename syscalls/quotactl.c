@@ -3,7 +3,6 @@
 	 qid_t, id, void __user *, addr)
  */
 #include <linux/quota.h>
-#include <string.h>
 #include <unistd.h>
 #include "random.h"
 #include "rnd.h"

@@ -5,9 +5,6 @@
 #include <ctype.h>
 #include <sched.h>
 #include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/types.h>
 #include <unistd.h>
 #include "arch.h"
 #include "deferred-free.h"

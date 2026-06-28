@@ -3,10 +3,7 @@
  *		unsigned int, at_flags, const char __user *, name,
  *		struct xattr_args __user *, uargs, size_t, usize)
  */
-#include <fcntl.h>
 #include <stdbool.h>
-#include <stdio.h>
-#include <string.h>
 #include "arch.h"
 #include "csfu.h"
 #include "deferred-free.h"

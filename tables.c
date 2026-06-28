@@ -2,10 +2,6 @@
  * Functions for handling the system call tables.
  */
 
-#include <string.h>
-#include <stdio.h>
-#include <unistd.h>
-#include <stdlib.h>
 
 #include "arch.h"
 #include "arch-syscalls.h"

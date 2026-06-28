@@ -18,11 +18,8 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include <string.h>
 #include <unistd.h>
 #include <sys/socket.h>
-#include <sys/types.h>
-#include <netinet/in.h>
 #include <linux/if_packet.h>
 #include <linux/udp.h>
 

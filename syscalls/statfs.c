@@ -2,10 +2,8 @@
  * SYSCALL_DEFINE2(statfs, const char __user *, pathname, struct statfs __user *, buf)
  */
 #include <limits.h>
-#include <stdio.h>
 #include <sys/statfs.h>
 #include <sys/syscall.h>
-#include <unistd.h>
 #include "arch.h"
 #include "pathnames.h"
 #include "random.h"

@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE3(read, unsigned int, fd, char __user *, buf, size_t, count)
  */
-#include <stdlib.h>
 #include <sys/signalfd.h>
 #include <sys/uio.h>
 #include "arch.h"

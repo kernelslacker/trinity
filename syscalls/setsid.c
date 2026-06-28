@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE0(setsid)
  */
-#include <sys/types.h>
 #include <unistd.h>
 #include "random.h"
 #include "shm.h"

@@ -2,10 +2,7 @@
  * SYSCALL_DEFINE2(newlstat, const char __user *, filename, struct stat __user *, statbuf)
  */
 #include <limits.h>
-#include <stdio.h>
-#include <sys/stat.h>
 #include <sys/syscall.h>
-#include <unistd.h>
 #include "arch.h"
 #include "pathnames.h"
 #include "random.h"

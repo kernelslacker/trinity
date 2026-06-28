@@ -3,8 +3,6 @@
 	 struct timespec __user *, utimes, int, flags)
  */
 #include <fcntl.h>
-#include <stdio.h>
-#include <time.h>
 #include "pathnames.h"
 #include "random.h"
 #include "rnd.h"

@@ -1,16 +1,12 @@
 #include <errno.h>
 #include <inttypes.h>
 #include <stdint.h>
-#include <unistd.h>
-#include <stdlib.h>
 #include <sys/prctl.h>
 #include <sys/ptrace.h>
 #include <sys/resource.h>
 #include <sys/syscall.h>
-#include <sys/types.h>
 #include <sys/wait.h>
 
-#include <time.h>
 
 #include "child.h"
 #include "childops-util.h"

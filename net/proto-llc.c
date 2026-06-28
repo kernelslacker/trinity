@@ -6,8 +6,6 @@
 #include <net/if_arp.h>
 #include <linux/llc.h>
 #include <fcntl.h>
-#include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
 #include "net.h"
 #include "random.h"

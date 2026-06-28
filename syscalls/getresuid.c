@@ -1,8 +1,6 @@
 /*
  * SYSCALL_DEFINE3(getresuid, uid_t __user *, ruid, uid_t __user *, euid, uid_t __user *, suid)
  */
-#include <sys/types.h>
-#include <unistd.h>
 #include "deferred-free.h"
 #include "proc-status.h"
 #include "random.h"

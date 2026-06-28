@@ -10,8 +10,6 @@
  */
 
 #include <stddef.h>
-#include <string.h>
-#include <fcntl.h>
 #include <signal.h>
 #include <sys/time.h>
 #include <sys/timex.h>
@@ -26,7 +24,6 @@
 #include <sys/sem.h>
 #include <sys/shm.h>
 #include <sched.h>
-#include <time.h>
 #include <utime.h>
 #include <netinet/in.h>
 #include <sys/prctl.h>

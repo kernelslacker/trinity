@@ -1,5 +1,3 @@
-#include <stdlib.h>
-#include <string.h>
 #include <limits.h>
 #include <scsi/scsi.h>
 #include <scsi/scsi_ioctl.h>

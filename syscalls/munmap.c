@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(munmap, unsigned long, addr, size_t, len)
  */
-#include <stdlib.h>
 #include "arch.h"
 #include "maps.h"
 #include "object-types.h"

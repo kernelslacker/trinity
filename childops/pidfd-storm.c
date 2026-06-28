@@ -51,10 +51,7 @@
 #include <stdbool.h>
 #include <sys/prctl.h>
 #include <sys/syscall.h>
-#include <sys/types.h>
 #include <sys/wait.h>
-#include <time.h>
-#include <unistd.h>
 
 #include "child.h"
 #include "syscall-gate.h"

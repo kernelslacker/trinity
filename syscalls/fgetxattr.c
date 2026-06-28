@@ -3,7 +3,6 @@
 	 void __user *, value, size_t, size)
  */
 #include <stddef.h>
-#include <string.h>
 #include <sys/syscall.h>
 #include <sys/xattr.h>
 #include <unistd.h>

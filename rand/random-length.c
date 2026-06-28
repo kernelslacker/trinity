@@ -1,4 +1,3 @@
-#include <stdlib.h>
 
 #include "arch.h"	// page_size
 #include "arg-len-semantics.h"

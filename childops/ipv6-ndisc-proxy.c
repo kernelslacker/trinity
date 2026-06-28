@@ -48,17 +48,13 @@
  */
 
 #include <errno.h>
-#include <fcntl.h>
 #include <net/if.h>
-#include <netinet/in.h>
 #include <netinet/ip6.h>
 #include <netinet/icmp6.h>
 #include <sched.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <string.h>
 #include <sys/socket.h>
-#include <time.h>
 #include <unistd.h>
 
 #include <linux/if_ether.h>

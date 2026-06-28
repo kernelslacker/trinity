@@ -21,7 +21,6 @@
  * option, any later version, incorporated herein by reference.
  */
 
-#include <string.h>
 
 #define AUTOFS_DEVICE_NAME		"autofs"
 

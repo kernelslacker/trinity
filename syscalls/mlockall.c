@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE1(mlockall, int, flags)
  */
-#include <stdlib.h>
 #include <sys/mman.h>
 #include "random.h"
 #include "sanitise.h"

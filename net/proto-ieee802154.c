@@ -1,7 +1,5 @@
 #include <sys/socket.h>
 #include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
 #include "net.h"
 #include "random.h"
 #include "compat.h"

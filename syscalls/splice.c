@@ -3,7 +3,6 @@
 	int, fd_out, loff_t __user *, off_out,
 	size_t, len, unsigned int, flags)
  */
-#include <fcntl.h>
 #include <stdbool.h>
 #include "files.h"
 #include "random.h"

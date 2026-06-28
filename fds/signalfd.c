@@ -2,11 +2,8 @@
 
 #include <errno.h>
 #include <signal.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <sys/signalfd.h>
 #include <sys/syscall.h>
-#include <unistd.h>
 
 #include "fd.h"
 #include "syscall-gate.h"

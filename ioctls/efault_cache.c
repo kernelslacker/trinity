@@ -55,9 +55,7 @@
 
 #include <errno.h>
 #include <stdint.h>
-#include <string.h>
 #include <sys/ioctl.h>
-#include <unistd.h>
 
 #include "efault_cache.h"
 #include "ioctls.h"

@@ -1,10 +1,7 @@
 /*
  * SYSCALL_DEFINE3(sched_getattr, pid_t, pid, struct sched_attr __user *, uattr, unsigned int, size)
  */
-#include <stdlib.h>
-#include <string.h>
 #include <sys/syscall.h>
-#include <sys/types.h>
 #include <unistd.h>
 #include <asm/unistd.h>
 #include <linux/sched/types.h>

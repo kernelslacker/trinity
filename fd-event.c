@@ -10,7 +10,6 @@
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <string.h>
 #include "child.h"
 #include "fd.h"
 #include "fd-event.h"

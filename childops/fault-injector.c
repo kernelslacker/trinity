@@ -15,7 +15,6 @@
  */
 
 #include <errno.h>
-#include <fcntl.h>
 #include <stdbool.h>
 #include <sys/eventfd.h>
 #include <sys/ipc.h>
@@ -26,7 +25,6 @@
 #include <sys/socket.h>
 #include <sys/syscall.h>
 #include <sys/timerfd.h>
-#include <unistd.h>
 
 #include "child.h"
 #include "syscall-gate.h"

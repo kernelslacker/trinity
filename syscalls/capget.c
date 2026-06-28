@@ -5,7 +5,6 @@
  * On error, -1 is returned, and errno is set appropriately.
  */
 #include <linux/capability.h>
-#include <string.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 #include "deferred-free.h"

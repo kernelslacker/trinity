@@ -17,8 +17,6 @@
  */
 
 #include <stddef.h>
-#include <stdlib.h>
-#include <string.h>
 #include <linux/netfilter/nfnetlink.h>
 
 #include "netlink-nfnl-subsystems.h"

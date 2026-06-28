@@ -1,12 +1,9 @@
 #include <sys/socket.h>
 #include <sys/un.h>
-#include <netinet/in.h>
 #include <linux/if_packet.h>
 #include <linux/if_ether.h>
 #include <fcntl.h>
 #include <net/if.h>
-#include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
 #include "net.h"
 #include "random.h"

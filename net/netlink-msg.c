@@ -7,7 +7,6 @@
  */
 #include <sys/socket.h>
 #include <stddef.h>
-#include <netinet/in.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 #include <linux/if_addr.h>
@@ -27,8 +26,6 @@
 #include <linux/sock_diag.h>
 #include <linux/inet_diag.h>
 #include <linux/connector.h>
-#include <string.h>
-#include <stdlib.h>
 #include "net.h"
 #include "netlink-attrs.h"
 #include "netlink-genl-families.h"

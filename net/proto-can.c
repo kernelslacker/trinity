@@ -4,7 +4,6 @@
 #include <linux/can/raw.h>
 #include <linux/can/isotp.h>
 #include <linux/can/j1939.h>
-#include <stdlib.h>
 #include "net.h"
 #include "random.h"
 #include "compat.h"

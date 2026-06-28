@@ -1,8 +1,6 @@
 /* trinity ioctl() support routines */
 
 #include <linux/ioctl.h>
-#include <string.h>
-#include <stdio.h>
 
 #include "efault_cache.h"
 #include "files.h"

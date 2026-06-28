@@ -2,8 +2,6 @@
  * SYSCALL_DEFINE4(lsm_get_self_attr, unsigned int, attr,
  *		struct lsm_ctx __user *, ctx, u32 __user *, size, u32, flags)
  */
-#include <stdlib.h>
-#include <string.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 #include "arch.h"

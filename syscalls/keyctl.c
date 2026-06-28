@@ -4,7 +4,6 @@
  */
 #include <linux/keyctl.h>
 #include <stdint.h>
-#include <string.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 #include "objects.h"

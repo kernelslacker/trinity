@@ -2,7 +2,6 @@
  * SYSCALL_DEFINE5(remap_file_pages, unsigned long, start, unsigned long, size,
 	 unsigned long, prot, unsigned long, pgoff, unsigned long, flags)
  */
-#include <stdlib.h>
 #include <asm/mman.h>
 #include "arch.h"
 #include "maps.h"

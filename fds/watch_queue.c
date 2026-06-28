@@ -1,9 +1,6 @@
 /* Watch-queue notification pipe FDs (pipe2(O_NOTIFICATION_PIPE)). */
 
 #include <errno.h>
-#include <fcntl.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <linux/ioctl.h>
 #include <sys/ioctl.h>
 #include <unistd.h>

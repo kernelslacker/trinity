@@ -1,8 +1,6 @@
 /*
  * SYSCALL_DEFINE2(getrlimit, unsigned int, resource, struct rlimit __user *, rlim)
  */
-#include <stdlib.h>
-#include <string.h>
 #include <sys/resource.h>
 #include <sys/syscall.h>
 #include "deferred-free.h"

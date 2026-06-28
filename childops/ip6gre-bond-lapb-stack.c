@@ -76,10 +76,7 @@
 #include <sched.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdio.h>
-#include <string.h>
 #include <sys/socket.h>
-#include <unistd.h>
 
 #include <linux/if_link.h>
 #include <linux/netlink.h>

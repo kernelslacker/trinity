@@ -60,9 +60,7 @@
 #include <linux/keyctl.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <string.h>
 #include <sys/syscall.h>
-#include <time.h>
 
 #include "child.h"
 #include "syscall-gate.h"

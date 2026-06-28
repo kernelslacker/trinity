@@ -36,12 +36,9 @@
  */
 
 #include <errno.h>
-#include <fcntl.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <string.h>
 #include <sys/syscall.h>
-#include <unistd.h>
 #include <linux/io_uring.h>
 
 #include "arch.h"		/* page_size */

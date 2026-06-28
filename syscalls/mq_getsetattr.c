@@ -3,9 +3,7 @@
 	const struct mq_attr __user *, u_mqstat,
 	struct mq_attr __user *, u_omqstat)
  */
-#include <fcntl.h>
 #include <mqueue.h>
-#include <string.h>
 #include "random.h"
 #include "sanitise.h"
 

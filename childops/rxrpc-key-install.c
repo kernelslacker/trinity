@@ -82,13 +82,7 @@
 #include <linux/keyctl.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/syscall.h>
-#include <sys/types.h>
-#include <time.h>
-#include <unistd.h>
 
 #include "child.h"
 #include "childop-cmp.h"

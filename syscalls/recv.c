@@ -3,7 +3,6 @@
                             unsigned flags)
 
  */
-#include <stdlib.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
 #include "net.h"

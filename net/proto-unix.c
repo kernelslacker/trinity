@@ -1,8 +1,6 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <fcntl.h>
-#include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
 #include "net.h"
 #include "fd.h"

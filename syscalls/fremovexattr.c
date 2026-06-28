@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(fremovexattr, int, fd, const char __user *, name)
  */
-#include <string.h>
 #include <sys/xattr.h>
 #include "rnd.h"
 #include "sanitise.h"

@@ -39,14 +39,9 @@
  */
 
 #include <errno.h>
-#include <fcntl.h>
 #include <limits.h>
 #include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <sys/xattr.h>
-#include <time.h>
-#include <unistd.h>
 
 #include "child.h"
 #include "childops-util.h"

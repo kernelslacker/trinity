@@ -9,13 +9,9 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <string.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
-#include <sys/types.h>
-#include <time.h>
-#include <unistd.h>
 #include <linux/bpf.h>
 #include <linux/keyctl.h>
 #include <linux/perf_event.h>

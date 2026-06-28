@@ -28,19 +28,16 @@
  */
 
 #include <errno.h>
-#include <fcntl.h>
 #include <linux/futex.h>
 #include <pthread.h>
 #include <signal.h>
 #include <stdbool.h>
-#include <stdlib.h>
 #include <sys/epoll.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/resource.h>
 #include <sys/syscall.h>
 #include <sys/wait.h>
-#include <unistd.h>
 
 #include "child.h"
 #include "syscall-gate.h"

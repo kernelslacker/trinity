@@ -1,5 +1,3 @@
-#include <stdlib.h>
-#include <string.h>
 #include <linux/tcp.h>
 #include "net.h"
 #include "random.h"

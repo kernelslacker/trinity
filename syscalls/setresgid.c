@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE3(setresgid, gid_t, rgid, gid_t, egid, gid_t, sgid)
  */
-#include <sys/types.h>
 #include <unistd.h>
 #include "random.h"
 #include "shm.h"

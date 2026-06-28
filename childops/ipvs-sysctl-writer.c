@@ -25,17 +25,12 @@
 
 #include <arpa/inet.h>
 #include <errno.h>
-#include <fcntl.h>
 #include <net/if.h>
-#include <netinet/in.h>
 #include <sched.h>
 #include <stdbool.h>
-#include <stdio.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
-#include <sys/types.h>
 #include <sys/wait.h>
-#include <unistd.h>
 
 #include "child.h"
 #include "childops-util.h"

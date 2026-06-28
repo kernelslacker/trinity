@@ -3,7 +3,6 @@
  *		struct timex __user *, utx)
  */
 #include <sys/timex.h>
-#include <string.h>
 #include "pids.h"
 #include "random.h"
 #include "rnd.h"

@@ -1,8 +1,6 @@
 /*
  * SYSCALL_DEFINE2(getcwd, char __user *, buf, unsigned long, size)
  */
-#include <stdio.h>
-#include <string.h>
 #include <unistd.h>
 #include <limits.h>
 #include "arch.h"

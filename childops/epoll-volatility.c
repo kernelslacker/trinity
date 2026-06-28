@@ -56,11 +56,8 @@
 #include <errno.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <string.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
-#include <time.h>
-#include <unistd.h>
 
 #include "child.h"
 #include "childops-util.h"

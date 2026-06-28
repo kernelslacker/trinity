@@ -10,9 +10,6 @@
 
 #include <linux/gpio.h>
 #include <linux/ioctl.h>
-#include <stdio.h>
-#include <string.h>
-#include <sys/stat.h>
 #include <unistd.h>
 
 #include "ioctls.h"

@@ -1,6 +1,4 @@
 #include <limits.h>
-#include <stdlib.h>
-#include <string.h>
 #include <linux/cdrom.h>
 
 #include "ioctls.h"

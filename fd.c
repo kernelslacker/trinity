@@ -1,6 +1,5 @@
 #include <errno.h>
 #include <stdint.h>
-#include <sys/types.h>
 #include <unistd.h>
 
 #include "fd.h"

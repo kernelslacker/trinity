@@ -1,10 +1,6 @@
 /* pidfd FD provider. */
 
 #include <errno.h>
-#include <fcntl.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
 #include <sys/syscall.h>
 
 #include "child.h"

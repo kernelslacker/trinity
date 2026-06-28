@@ -3,12 +3,8 @@
  *		struct file_attr __user *, ufattr, size_t, usize,
  *		unsigned int, at_flags)
  */
-#include <fcntl.h>
 #include <limits.h>
-#include <stdio.h>
-#include <string.h>
 #include <sys/syscall.h>
-#include <unistd.h>
 #include <asm/unistd.h>
 #include <linux/fs.h>
 #include "arch.h"

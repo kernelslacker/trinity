@@ -1,9 +1,6 @@
 /*
  * SYSCALL_DEFINE1(pipe, int __user *, fildes)
  */
-#include <stdlib.h>
-#include <unistd.h>
-#include <fcntl.h>
 #include "objects.h"
 #include "sanitise.h"
 #include "deferred-free.h"

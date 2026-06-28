@@ -2,7 +2,6 @@
  * SYSCALL_DEFINE2(clone3, struct clone_args __user *, uargs, size_t, size)
  */
 
-#include <stdlib.h>
 #include <signal.h>
 #include <linux/sched.h>
 #include "arch.h"

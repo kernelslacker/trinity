@@ -1,11 +1,6 @@
 /*
  * SYSCALL_DEFINE2(getgroups, int, gidsetsize, gid_t __user *, grouplist)
  */
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/types.h>
-#include <unistd.h>
 #include "proc-status.h"
 #include "random.h"
 #include "shm.h"

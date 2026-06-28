@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE3(setresuid, uid_t, ruid, uid_t, euid, uid_t, suid)
  */
-#include <sys/types.h>
 #include <unistd.h>
 #include "random.h"
 #include "shm.h"

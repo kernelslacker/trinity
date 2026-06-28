@@ -3,9 +3,7 @@
 #include <linux/ioctl.h>
 #include <linux/loop.h>
 #include <linux/major.h>
-#include <string.h>
 #include <sys/mman.h>
-#include <sys/stat.h>
 #include <sys/sysmacros.h>
 #include <unistd.h>
 

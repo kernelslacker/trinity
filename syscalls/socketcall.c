@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE2(socketcall, int, call, unsigned long __user *, args)
  */
-#include <stdlib.h>
 #include <unistd.h>
 #include <linux/net.h>
 #include <sys/socket.h>

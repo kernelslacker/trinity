@@ -5,21 +5,16 @@
  */
 
 #include <errno.h>
-#include <fcntl.h>
-#include <netinet/in.h>
 #include <poll.h>
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <string.h>
 #include <sys/inotify.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
-#include <sys/types.h>
-#include <unistd.h>
 #include <linux/userfaultfd.h>
 
 #include "arch.h"

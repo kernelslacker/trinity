@@ -2,12 +2,9 @@
  * SYSCALL_DEFINE3(getsockname, int, fd, struct sockaddr __user *, usockaddr, int __user *, usockaddr_len)
  */
 #include <stdbool.h>
-#include <stdio.h>
-#include <string.h>
 #include <sys/socket.h>
 #include <sys/syscall.h>
 #include <sys/un.h>
-#include <netinet/in.h>
 #include <unistd.h>
 #include "deferred-free.h"
 #include "net.h"

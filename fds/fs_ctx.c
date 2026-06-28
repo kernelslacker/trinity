@@ -1,9 +1,6 @@
 /* fs_context FDs (fsopen). */
 
 #include <errno.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
 #include <sys/syscall.h>
 
 #include "fd.h"

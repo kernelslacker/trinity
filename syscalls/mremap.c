@@ -4,7 +4,6 @@
  *   unsigned long flags, unsigned long new_addr)
  */
 
-#include <stdlib.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include "arch.h"

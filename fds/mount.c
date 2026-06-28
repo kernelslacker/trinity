@@ -1,11 +1,7 @@
 /* Detached mount FDs (open_tree(OPEN_TREE_CLONE)). */
 
 #include <errno.h>
-#include <fcntl.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <sys/syscall.h>
-#include <unistd.h>
 
 #include "compat.h"
 #include "fd.h"

@@ -2,8 +2,6 @@
    int sys_vfork(struct pt_regs *regs)
  */
 #include <sys/wait.h>
-#include <stdlib.h>
-#include <unistd.h>
 #include "pids.h"
 #include "sanitise.h"
 #include "trinity.h"

@@ -5,7 +5,6 @@
  *		struct __kernel_timespec __user *, timeout,
  *		clockid_t, clockid)
  */
-#include <time.h>
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"

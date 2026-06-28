@@ -1,7 +1,6 @@
 /*
  * SYSCALL_DEFINE3(socket, int, family, int, type, int, protocol)
  */
-#include <stdlib.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #ifdef USE_BLUETOOTH

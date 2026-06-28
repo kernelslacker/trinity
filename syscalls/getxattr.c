@@ -3,11 +3,8 @@
 	 const char __user *, name, void __user *, value, size_t, size)
  */
 #include <stddef.h>
-#include <stdio.h>
-#include <string.h>
 #include <sys/syscall.h>
 #include <sys/xattr.h>
-#include <unistd.h>
 #include <linux/limits.h>
 #include "arch.h"
 #include "deferred-free.h"
