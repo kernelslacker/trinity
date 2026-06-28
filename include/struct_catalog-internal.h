@@ -101,3 +101,73 @@ extern const struct struct_field sctp_paddrparams_fields[SCTP_PADDRPARAMS_FIELDS
 extern const struct struct_field sctp_probeinterval_fields[SCTP_PROBEINTERVAL_FIELDS_N];
 extern const struct struct_field sctp_prim_fields[SCTP_PRIM_FIELDS_N];
 #endif /* USE_SCTP */
+
+#ifdef USE_BPF
+/*
+ * BPF leaf tables defined in struct_catalog/bpf.c.  The spine in
+ * struct_catalog.c references bpf_attr_variants and bpf_insn_fields
+ * by name with ARRAY_SIZE() at the use site, so those two carry
+ * explicit array bounds via _N constants -- a count mismatch fails
+ * at the leaf TU as "excess elements" / "too few".  The remaining
+ * tables are referenced only from within bpf.c (per-cmd field
+ * arrays threaded into bpf_attr_variants, nested-variant tails
+ * threaded into bpf_attr_LINK_CREATE_nested, and the attach-type
+ * value pools they pin), so their extern decls land here without
+ * sizes -- bpf.c sees the complete definition at every use site.
+ *
+ * bpf_map_types / bpf_prog_types / bpf_attach_types and their
+ * _count companions are declared in include/bpf.h (shared with
+ * syscalls/bpf.c) and intentionally not duplicated here.
+ */
+enum {
+	BPF_ATTR_VARIANTS_N	= 38,
+	BPF_INSN_FIELDS_N	= 3,
+};
+
+extern const struct struct_field bpf_attr_MAP_CREATE_fields[];
+extern const struct struct_field bpf_attr_PROG_LOAD_fields[];
+extern const struct struct_field bpf_attr_PROG_ATTACH_fields[];
+extern const struct struct_field bpf_attr_OBJ_fields[];
+extern const struct struct_field bpf_attr_MAP_ELEM_fields[];
+extern const struct struct_field bpf_attr_GET_ID_fields[];
+extern const struct struct_field bpf_attr_LINK_UPDATE_fields[];
+extern const struct struct_field bpf_attr_LINK_DETACH_fields[];
+extern const struct struct_field bpf_attr_ENABLE_STATS_fields[];
+extern const struct struct_field bpf_attr_ITER_CREATE_fields[];
+extern const struct struct_field bpf_attr_PROG_BIND_MAP_fields[];
+extern const struct struct_field bpf_attr_TOKEN_CREATE_fields[];
+extern const char *const bpf_attr_query_arrays[];
+extern const struct struct_field bpf_attr_QUERY_fields[];
+extern const struct struct_field bpf_attr_TASK_FD_QUERY_fields[];
+extern const struct struct_field bpf_attr_BTF_LOAD_fields[];
+extern const char *const bpf_attr_batch_arrays[];
+extern const struct struct_field bpf_attr_BATCH_fields[];
+extern const struct struct_field bpf_attr_TEST_fields[];
+extern const struct struct_field bpf_attr_INFO_fields[];
+extern const struct struct_field bpf_attr_RAW_TRACEPOINT_fields[];
+extern const struct struct_field bpf_attr_PROG_STREAM_READ_fields[];
+extern const struct struct_field bpf_attr_LINK_CREATE_fields[];
+extern const struct struct_field bpf_attr_LINK_CREATE_BASE_fields[];
+extern const struct union_variant bpf_attr_LINK_CREATE_base;
+extern const unsigned long bpf_attach_types_tracing[];
+extern const struct struct_field bpf_attr_LINK_CREATE_ITER_fields[];
+extern const struct struct_field bpf_attr_LINK_CREATE_PERF_EVENT_fields[];
+extern const struct struct_field bpf_attr_LINK_CREATE_TRACING_fields[];
+extern const unsigned long netfilter_pfs[];
+extern const struct struct_field bpf_attr_LINK_CREATE_NETFILTER_fields[];
+extern const struct struct_field bpf_attr_LINK_CREATE_TCX_fields[];
+extern const struct struct_field bpf_attr_LINK_CREATE_NETKIT_fields[];
+extern const struct struct_field bpf_attr_LINK_CREATE_CGROUP_fields[];
+extern const unsigned long bpf_attach_types_tcx[];
+extern const unsigned long bpf_attach_types_netkit[];
+extern const unsigned long bpf_attach_types_cgroup[];
+extern const unsigned long bpf_attach_types_kprobe_multi[];
+extern const char *const bpf_attr_link_create_kprobe_multi_arrays[];
+extern const struct struct_field bpf_attr_LINK_CREATE_KPROBE_MULTI_fields[];
+extern const unsigned long bpf_attach_types_uprobe_multi[];
+extern const char *const bpf_attr_link_create_uprobe_multi_arrays[];
+extern const struct struct_field bpf_attr_LINK_CREATE_UPROBE_MULTI_fields[];
+extern const struct union_variant bpf_attr_LINK_CREATE_nested[];
+extern const struct struct_field bpf_insn_fields[BPF_INSN_FIELDS_N];
+extern const struct union_variant bpf_attr_variants[BPF_ATTR_VARIANTS_N];
+#endif /* USE_BPF */
