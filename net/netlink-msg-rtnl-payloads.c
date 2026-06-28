@@ -27,6 +27,7 @@
 #include <linux/nexthop.h>
 #include <linux/netconf.h>
 #include <linux/if_bridge.h>
+#include <linux/net_namespace.h>
 #include <linux/pkt_sched.h>
 #include <linux/pkt_cls.h>
 #include <string.h>
@@ -72,6 +73,12 @@ size_t gen_rta_tunnel_payload(unsigned char *p, size_t avail,
  * wire-up to the two TUs that actually need it. */
 size_t gen_rta_prefix_payload(unsigned char *p, size_t avail,
 			      unsigned short nla_type);
+
+/* Same shape as gen_rta_neightbl_payload above: prototype kept here
+ * rather than in netlink-msg-internal.h to confine the rtnl_nsid
+ * wire-up to the two TUs that actually need it. */
+size_t gen_rta_nsid_payload(unsigned char *p, size_t avail,
+			    unsigned short nla_type);
 
 /*
  * Generate random IPv4 address, biased toward useful values.
@@ -2026,6 +2033,58 @@ size_t gen_rta_prefix_payload(unsigned char *p, size_t avail,
 			ci.valid_time = rand32();
 			memcpy(p, &ci, sizeof(ci));
 			return sizeof(ci);
+		}
+		return 0;
+
+	default:
+		return 0;
+	}
+}
+
+/*
+ * Generate a structured payload for network-namespace-id rtnetlink
+ * attributes (NETNSA_*).  Covers the RTM_*NSID message group (18).  The
+ * kernel net/core/net_namespace.c handlers rtnl_net_newid /
+ * rtnl_net_getid walk rtnl_net_policy, which length-rejects
+ * NETNSA_NSID / NETNSA_TARGET_NSID (.type = NLA_S32) and NETNSA_PID /
+ * NETNSA_FD (.type = NLA_U32) at the wrong-width gate before the doit
+ * handler runs -- a random-byte payload of length [0, 64) almost never
+ * lands at exactly 4 bytes wide, so the message is rejected at
+ * nla_parse before rtnl_net_{newid,getid} ever dispatches.  Size every
+ * slot to 4 bytes so the parse reaches the value-carrying path; the
+ * signed NSID slots bias toward small positive values (real allocated
+ * nsids are small) with the occasional NETNSA_NSID_NOT_ASSIGNED (-1)
+ * to exercise the "no id" gate.  NETNSA_CURRENT_NSID is reply-only in
+ * the kernel (it has no rtnl_net_policy entry and is only emitted via
+ * nla_put_s32 in the fill path) but is included in the emitted set so
+ * the policy walker's unknown-attr arm runs alongside the live slots.
+ */
+size_t gen_rta_nsid_payload(unsigned char *p, size_t avail,
+			    unsigned short nla_type)
+{
+	switch (nla_type) {
+	case NETNSA_NSID:
+	case NETNSA_TARGET_NSID:
+	case NETNSA_CURRENT_NSID:
+		if (avail >= 4) {
+			__s32 val;
+
+			if (ONE_IN(8))
+				val = NETNSA_NSID_NOT_ASSIGNED;
+			else
+				val = (__s32)rnd_modulo_u32(1024);
+			memcpy(p, &val, 4);
+			return 4;
+		}
+		return 0;
+
+	case NETNSA_PID:
+	case NETNSA_FD:
+		if (avail >= 4) {
+			__u32 val = rnd_modulo_u32(1 << 16);
+
+			memcpy(p, &val, 4);
+			return 4;
 		}
 		return 0;
 
