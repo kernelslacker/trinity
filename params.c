@@ -10,6 +10,7 @@
 #include "arg-len-semantics.h"
 #include "bdevs.h"
 #include "child.h"
+#include "cmsg-richness.h"
 #include "fd.h"
 #include "kcov.h"
 #include "net.h"
@@ -564,6 +565,7 @@ static const struct option_help option_descs[] = {
 	{ "children",		'C', "specify number of child processes" },
 	{ "clowntown",		 0,  "enable clowntown mode" },
 	{ "cmp-recent-pool", 0, "A/B selection policy for the run-local CMP recent-pool tier.  Accepts 'off' (default; cmp_hints_try_get_ex samples the durable per-syscall pool exactly as before) or 'recent-first' (during a CMP_RISING_PC_FLAT plateau, sample the recent ring first and fall through to the durable pool on an empty ring or off-plateau).  Shadow counters (cmp_recent_inserts / would_pick / would_miss) are active in BOTH modes so the would-be-pick rate is observable from a default run before the live arm is flipped." },
+	{ "cmsg-richness", 0, "extended sendmsg/sendmmsg control-message generator (default off): off (pick_cmsg_kind() draws from the original 5 base kinds with a single rnd_modulo_u32 call; the cmsg-build site is bit-for-bit identical to a build without this lever -- no extra RNG draws, no new kinds, no new arms), or on (extends the per-call cmsg pool with family-gated single-cmsg kinds -- IP_PKTINFO / IPV6_PKTINFO, IP_TOS / IP_TTL / IP_RETOPTS, IPV6_TCLASS / IPV6_HOPLIMIT / IPV6_RTHDR, SCM_TXTIME, TLS_SET_RECORD_TYPE -- and adds a ONE_IN(4) multi-cmsg packer that sizes the buffer by the sum of CMSG_SPACE(plen) across 2-3 distinct entries from a per-family pool, zero-fills the buffer up front, and walks CMSG_FIRSTHDR -> CMSG_NXTHDR with CMSG_LEN(plen) per entry)." },
 	{ "corpus-save-errno-grad-live", 0, "DEFAULT OFF. Enable the errno-gradient corpus save trigger (CORPUS_SAVE_REASON_ERRNO): when a syscall returns a non-EFAULT errno bucket for the first time this run, admit its args to the per-syscall ring. Flag off keeps the corpus admission distribution byte-identical to a build without this trigger; the errno_grad_save_would_save shadow counter is bumped regardless of this flag so the would-be-save volume is measurable before flipping live." },
 	{ "cred-throttle",	 0,  "DEFAULT OFF. Enable the credential-syscall throttle: when a credential class (setregid/setreuid/setresuid/setresgid/setgid/setuid/setfsuid/setfsgid/setgroups) has accumulated >=64 attempts with zero successes and EPERM+EINVAL dominating >=90% of returns, downweight the class by rejecting 31/32 of subsequent picks. Flag off keeps the picker distribution byte-identical to a build without this row; the per-class observability counters are bumped regardless of this flag." },
 	{ "frontier-live-cooldown", 0, "DEFAULT OFF. Enable the LIVE-regime early ring-decay: on every window rotation, syscalls whose per-syscall LIVE-regime miss-streak has crossed FRONTIER_LIVE_MISS_COOLDOWN have their cached frontier_recent_count halved so the cached max weight falls and the picker reaches the silent decay path on the cooled-off syscalls. The halving is folded into the existing CAS-clamped per-nr rotation loop and uses the same underflow-safe arithmetic. Flag off keeps the rotation byte-identical to a build without this row; the frontier_live_cooldown_decays observability counter and the F3 miss-streak counters are bumped regardless." },
@@ -710,6 +712,7 @@ static const struct option longopts[] = {
 	{ "reach-band", required_argument, NULL, 0 },
 	{ "redqueen-pending-pick", required_argument, NULL, 0 },
 	{ "cmp-recent-pool", required_argument, NULL, 0 },
+	{ "cmsg-richness", required_argument, NULL, 0 },
 	{ "stats", no_argument, NULL, 0 },
 	{ "stats-json", no_argument, NULL, 0 },
 	{ "stats-log-file", required_argument, NULL, 0 },
@@ -1061,6 +1064,22 @@ static bool parse_strategy_options(int opt, const char *name, char *arg)
 			exit(EXIT_FAILURE);
 		}
 		__atomic_store_n(&reach_band_mode, mode, __ATOMIC_RELAXED);
+		return true;
+	}
+
+	if (strcmp("cmsg-richness", name) == 0) {
+		enum cmsg_richness_mode mode;
+
+		if (strcmp(arg, "off") == 0) {
+			mode = CMSG_RICHNESS_OFF;
+		} else if (strcmp(arg, "on") == 0) {
+			mode = CMSG_RICHNESS_ON;
+		} else {
+			outputerr("--cmsg-richness: unknown mode '%s' (expected off or on)\n",
+				arg);
+			exit(EXIT_FAILURE);
+		}
+		__atomic_store_n(&cmsg_richness_mode, mode, __ATOMIC_RELAXED);
 		return true;
 	}
 
