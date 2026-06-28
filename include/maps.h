@@ -69,7 +69,6 @@ struct map {
 	bool known_rw;
 };
 
-extern unsigned int num_initial_mappings;
 extern struct map *initial_mappings;
 
 #define NR_MAPPING_SIZES 9
