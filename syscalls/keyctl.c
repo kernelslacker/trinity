@@ -7,6 +7,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <string.h>
+#include "name-pool.h"
 #include "objects.h"
 #include "publish_resource.h"
 #include "random.h"
@@ -268,8 +269,21 @@ static void sanitise_keyctl_search(struct syscallrecord *rec)
 	buf = (char *) get_writable_address(32);
 	if (buf == NULL)
 		return;
+	if (ONE_IN(4)) {
+		size_t got = name_pool_draw_mutated(NAME_KIND_KEY_DESC,
+						    buf, 32);
+
+		if (got > 0) {
+			if (got >= 32)
+				got = 31;
+			buf[got] = '\0';
+			goto desc_done;
+		}
+		/* empty pool -- fall through to constant */
+	}
 	strncpy(buf, "trinity_key", 31);
 	buf[31] = '\0';
+desc_done:
 	rec->a4 = (unsigned long) buf;
 	rec->a5 = (unsigned long) random_key_id();
 }
