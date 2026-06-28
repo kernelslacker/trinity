@@ -4,7 +4,6 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-extern unsigned int nr_file_fds;
 extern const char **fileindex;
 extern unsigned int files_in_index;
 
