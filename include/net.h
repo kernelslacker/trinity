@@ -98,6 +98,7 @@ extern const struct netproto proto_mctp;
 extern const struct netproto proto_key;
 extern const struct netproto proto_ib;
 extern const struct netproto proto_mpls;
+extern const struct netproto proto_ieee802154;
 
 /* bpf */
 struct sock_fprog;
