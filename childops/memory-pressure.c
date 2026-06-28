@@ -18,6 +18,7 @@
 #include <signal.h>
 #include <stdint.h>
 #include <sys/mman.h>
+#include <string.h>
 
 #include "arch.h"
 #include "pids.h"

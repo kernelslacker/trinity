@@ -29,6 +29,11 @@
 #include <sched.h>
 #include <stdbool.h>
 #include <sys/wait.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #include "childops-util.h"
 #include "shm.h"

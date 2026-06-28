@@ -1,6 +1,7 @@
 /*
  * SYSCALL_DEFINE2(link, const char __user *, oldname, const char __user *, newname)
  */
+#include <stdio.h>
 #include "pathnames.h"
 #include "rnd.h"
 #include "sanitise.h"

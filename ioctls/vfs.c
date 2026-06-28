@@ -6,6 +6,7 @@
 #endif
 #include <linux/ioctl.h>
 #include <asm/ioctls.h>
+#include <string.h>
 #include "ioctls.h"
 #include "net.h"
 #include "random.h"

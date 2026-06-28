@@ -1,5 +1,7 @@
 
 
+#include <string.h>
+#include <time.h>
 #include "kcov.h"
 #include "minicorpus.h"
 #include "params.h"

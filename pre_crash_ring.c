@@ -11,6 +11,8 @@
 #include <stdint.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#include <stdio.h>
+#include <time.h>
 
 #include "child.h"
 #include "pids.h"

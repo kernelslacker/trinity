@@ -3,6 +3,7 @@
  */
 #include <sys/resource.h>
 #include <sys/syscall.h>
+#include <string.h>
 #include "deferred-free.h"
 #include "random.h"
 #include "rlimit-safe.h"

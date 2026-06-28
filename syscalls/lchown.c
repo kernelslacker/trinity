@@ -1,6 +1,7 @@
 /*
  * SYSCALL_DEFINE3(lchown, const char __user *, filename, uid_t, user, gid_t, group)
  */
+#include <stdio.h>
 #include "pathnames.h"
 #include "rnd.h"
 #include "sanitise.h"

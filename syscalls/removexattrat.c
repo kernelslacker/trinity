@@ -3,6 +3,9 @@
  *		unsigned int, at_flags, const char __user *, name)
  */
 #include <sys/xattr.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <string.h>
 #include "pathnames.h"
 #include "random.h"
 #include "rnd.h"

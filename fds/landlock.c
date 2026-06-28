@@ -4,6 +4,9 @@
 #include <stddef.h>
 #include <sys/syscall.h>
 #include <linux/landlock.h>
+#include <fcntl.h>
+#include <string.h>
+#include <unistd.h>
 
 #include "fd.h"
 #include "syscall-gate.h"

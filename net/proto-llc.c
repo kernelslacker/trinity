@@ -7,6 +7,7 @@
 #include <linux/llc.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <string.h>
 #include "net.h"
 #include "random.h"
 #include "socket-family-grammar.h"

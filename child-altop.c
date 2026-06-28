@@ -11,6 +11,7 @@
  */
 
 
+#include <string.h>
 #include "child.h"
 #include "child-internal.h"
 #include "params.h"

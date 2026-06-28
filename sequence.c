@@ -29,6 +29,7 @@
  */
 
 #include <stdint.h>
+#include <string.h>
 
 #include "child.h"
 #include "kcov.h"

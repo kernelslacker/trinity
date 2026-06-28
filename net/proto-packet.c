@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <net/if.h>
 #include <unistd.h>
+#include <string.h>
 #include "net.h"
 #include "random.h"
 #include "socket-family-grammar.h"

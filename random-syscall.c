@@ -5,6 +5,9 @@
 #include <errno.h>
 #include <signal.h>
 #include <sys/wait.h>
+#include <string.h>
+#include <sys/types.h>
+#include <time.h>
 
 #include "arch.h"	// biarch
 #include "arg-decoder.h"

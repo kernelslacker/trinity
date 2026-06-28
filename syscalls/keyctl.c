@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <sys/syscall.h>
 #include <unistd.h>
+#include <string.h>
 #include "objects.h"
 #include "publish_resource.h"
 #include "random.h"

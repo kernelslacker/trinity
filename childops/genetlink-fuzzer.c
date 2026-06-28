@@ -58,6 +58,7 @@
 #include <sys/socket.h>
 #include <linux/netlink.h>
 #include <linux/genetlink.h>
+#include <string.h>
 
 #include "child.h"
 #include "childops-netlink.h"

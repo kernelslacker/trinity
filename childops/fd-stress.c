@@ -48,6 +48,7 @@
 #include <errno.h>
 #include <stdbool.h>
 #include <unistd.h>
+#include <fcntl.h>
 
 #include "child.h"
 #include "fd.h"

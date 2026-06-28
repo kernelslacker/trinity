@@ -18,6 +18,8 @@
 #include <sys/socket.h>
 #include <sys/uio.h>
 #include <unistd.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "arch.h"		/* page_size */
 #include "deferred-free.h"

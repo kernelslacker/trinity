@@ -10,6 +10,9 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <asm/unistd.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <string.h>
 #include "arch.h"
 #include "csfu.h"
 #include "deferred-free.h"

@@ -72,6 +72,9 @@
 #include <sys/syscall.h>
 #include <sys/wait.h>
 #include <linux/bpf.h>
+#include <fcntl.h>
+#include <string.h>
+#include <unistd.h>
 
 #include "arch.h"
 #include "bpf.h"

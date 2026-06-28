@@ -2,6 +2,8 @@
 
 #include <errno.h>
 #include <sys/syscall.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 #include "compat.h"
 #include "fd.h"

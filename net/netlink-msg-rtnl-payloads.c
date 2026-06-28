@@ -30,6 +30,7 @@
 #include <linux/net_namespace.h>
 #include <linux/pkt_sched.h>
 #include <linux/pkt_cls.h>
+#include <string.h>
 #include "netlink-attrs.h"
 #include "netlink-msg-internal.h"
 #include "random.h"

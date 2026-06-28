@@ -1,6 +1,8 @@
 #include <stddef.h>
 #include <sys/syscall.h>
 #include <sys/xattr.h>
+#include <stdio.h>
+#include <string.h>
 #include "arch.h"
 #include "pathnames.h"
 #include "random.h"

@@ -34,6 +34,8 @@
 #include <stdbool.h>
 #include <sys/file.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <stdio.h>
 
 #include "child.h"
 #include "jitter.h"

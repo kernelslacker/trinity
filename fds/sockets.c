@@ -1,6 +1,9 @@
 #include <unistd.h>
 #include <errno.h>
 #include <sys/socket.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <string.h>
 
 #include "child.h"
 #include "debug.h"

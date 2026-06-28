@@ -11,6 +11,7 @@
 #include <sys/mman.h>
 #include <sys/syscall.h>
 #include <linux/io_uring.h>
+#include <unistd.h>
 
 #include "childops/iouring-ring.h"
 #include "compat.h"

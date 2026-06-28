@@ -54,6 +54,12 @@
 #include <stdbool.h>
 #include <sys/syscall.h>
 #include <linux/sched/types.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#include <unistd.h>
 
 #include "child.h"
 #include "syscall-gate.h"

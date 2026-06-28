@@ -13,6 +13,9 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <dirent.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "perf.h"
 #include "perf_event_open-internal.h"

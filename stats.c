@@ -4,6 +4,11 @@
 #include <stddef.h>
 #include <sys/utsname.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
 #include "arch.h"
 #include "arg-len-semantics.h"
 #include "breadcrumb_ring.h"

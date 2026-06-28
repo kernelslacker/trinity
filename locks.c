@@ -1,6 +1,8 @@
 #include <errno.h>
 #include <sched.h>
 #include <signal.h>
+#include <sys/types.h>
+#include <unistd.h>
 #include "cmp_hints.h"
 #include "debug.h"
 #include "exit.h"

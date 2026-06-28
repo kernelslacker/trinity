@@ -73,6 +73,9 @@
 
 #include <linux/sockios.h>
 #include <netinet/tcp.h>
+#include <fcntl.h>
+#include <string.h>
+#include <sys/types.h>
 
 #include "child.h"
 #include "compat.h"

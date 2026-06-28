@@ -5,6 +5,7 @@
  * On error (at least one bit in mode asked for a permission that is denied,
  *  or some other error occurred), -1 is returned, and errno is set appropriately.
  */
+#include <stdio.h>
 #include "pathnames.h"
 #include "rnd.h"
 #include "sanitise.h"

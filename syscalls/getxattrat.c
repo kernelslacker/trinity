@@ -4,6 +4,9 @@
  *		struct xattr_args __user *, uargs, size_t, usize)
  */
 #include <stdbool.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <string.h>
 #include "arch.h"
 #include "csfu.h"
 #include "deferred-free.h"

@@ -19,6 +19,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <sys/mman.h>
+#include <string.h>
 
 #include "arch.h"		/* page_size, PAGE_MASK */
 #include "child.h"

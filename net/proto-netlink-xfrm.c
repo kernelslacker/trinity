@@ -145,6 +145,8 @@
 
 #if __has_include(<linux/xfrm.h>)
 #include <linux/xfrm.h>
+#include <fcntl.h>
+#include <string.h>
 #endif
 
 #include "net.h"

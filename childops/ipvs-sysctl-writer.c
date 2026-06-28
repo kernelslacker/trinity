@@ -31,6 +31,10 @@
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #include "child.h"
 #include "childops-util.h"

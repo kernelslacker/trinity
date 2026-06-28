@@ -2,6 +2,7 @@
  *   SYSCALL_DEFINE6(io_uring_enter, unsigned int, fd, u32, to_submit, u32, min_complete, u32, flags, const sigset_t __user *, sig, size_t, sigsz)
  */
 #include <linux/io_uring.h>
+#include <string.h>
 
 #include "arch.h"
 #include "compat.h"

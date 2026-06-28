@@ -8,6 +8,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <unistd.h>
+#include <stdio.h>
+#include <string.h>
 #include "compat.h"
 #include "csfu.h"
 #include "random.h"

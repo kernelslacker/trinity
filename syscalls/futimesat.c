@@ -3,6 +3,7 @@
 	 struct timeval __user *, utimes)
  */
 #include <sys/time.h>
+#include <stdio.h>
 #include "pathnames.h"
 #include "random.h"
 #include "rnd.h"

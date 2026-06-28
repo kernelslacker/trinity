@@ -48,6 +48,10 @@
 #include <stddef.h>
 #include <sys/prctl.h>
 #include <sys/wait.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #include "kcov.h"		/* kcov_shm */
 #include "kmsg-monitor.h"

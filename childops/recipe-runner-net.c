@@ -16,6 +16,10 @@
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <linux/userfaultfd.h>
+#include <fcntl.h>
+#include <string.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #include "arch.h"
 #include "syscall-gate.h"

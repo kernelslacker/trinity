@@ -3,6 +3,7 @@
  *
  * return 0 for success, or -1 for failure (in which case errno is set appropriately).
  */
+#include <time.h>
 #include "pids.h"
 #include "sanitise.h"
 #include "utils.h"

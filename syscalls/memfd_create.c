@@ -3,6 +3,7 @@
  */
 
 
+#include <stdio.h>
 #include "publish_resource.h"
 #include "random.h"
 #include "sanitise.h"

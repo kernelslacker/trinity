@@ -4,6 +4,7 @@
  * On success, zero is returned.
  * On error, -1 is returned, and errno is set appropriately.
  */
+#include <stdio.h>
 #include "pathnames.h"
 #include "rnd.h"
 #include "sanitise.h"

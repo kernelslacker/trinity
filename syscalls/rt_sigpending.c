@@ -4,6 +4,7 @@
 #include <signal.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 #include "deferred-free.h"
 #include "proc-status.h"
 #include "random.h"

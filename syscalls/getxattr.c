@@ -6,6 +6,8 @@
 #include <sys/syscall.h>
 #include <sys/xattr.h>
 #include <linux/limits.h>
+#include <stdio.h>
+#include <string.h>
 #include "arch.h"
 #include "deferred-free.h"
 #include "pathnames.h"

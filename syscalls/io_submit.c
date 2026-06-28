@@ -5,6 +5,7 @@
 #include <linux/aio_abi.h>
 #include <poll.h>
 #include <sys/uio.h>
+#include <string.h>
 #include "objects.h"
 #include "random.h"
 #include "rnd.h"

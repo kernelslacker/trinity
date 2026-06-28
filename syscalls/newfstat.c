@@ -3,6 +3,8 @@
  */
 #include <sys/syscall.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <sys/stat.h>
 #include "arch.h"
 #include "output-poison.h"
 #include "random.h"

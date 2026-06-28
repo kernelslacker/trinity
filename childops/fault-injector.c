@@ -25,6 +25,8 @@
 #include <sys/socket.h>
 #include <sys/syscall.h>
 #include <sys/timerfd.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 #include "child.h"
 #include "syscall-gate.h"

@@ -2,6 +2,7 @@
  *  SYSCALL_DEFINE5(fsconfig, int, fd, unsigned int, cmd, const char __user *, _key, const void __user *, _value, int, aux)
  */
 #include <fcntl.h>
+#include <string.h>
 #include "fd.h"
 #include "object-types.h"
 #include "objects.h"

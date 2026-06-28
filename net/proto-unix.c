@@ -2,6 +2,7 @@
 #include <sys/un.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <string.h>
 #include "net.h"
 #include "fd.h"
 #include "random.h"

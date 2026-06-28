@@ -11,6 +11,8 @@
 #include <linux/if_addr.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
+#include <fcntl.h>
+#include <string.h>
 
 #include "isolation.h"
 #include "params.h"

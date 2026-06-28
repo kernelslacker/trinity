@@ -6,6 +6,8 @@
 #include <asm/unistd.h>
 #include <linux/sched/types.h>
 #include <linux/types.h>
+#include <string.h>
+#include <sys/types.h>
 #include "arch.h"
 #include "deferred-free.h"
 #include "random.h"

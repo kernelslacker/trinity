@@ -68,6 +68,9 @@
 #include <sys/socket.h>
 #include <sys/syscall.h>
 #include <linux/bpf.h>
+#include <fcntl.h>
+#include <string.h>
+#include <unistd.h>
 
 #include "arch.h"
 #include "bpf.h"

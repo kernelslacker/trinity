@@ -2,6 +2,10 @@
 #include <unistd.h>
 #include <pwd.h>
 #include <grp.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
 #include "debug.h"
 #include "exit.h"
 #include "params.h"

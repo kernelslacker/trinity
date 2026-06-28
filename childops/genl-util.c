@@ -42,6 +42,8 @@
 
 #include <linux/genetlink.h>
 #include <linux/netlink.h>
+#include <string.h>
+#include <sys/types.h>
 
 #include "childops-genl.h"
 #include "childops-netlink.h"

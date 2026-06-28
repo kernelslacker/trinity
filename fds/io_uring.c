@@ -3,6 +3,8 @@
 #include <errno.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
+#include <string.h>
+#include <unistd.h>
 
 #include "compat.h"
 #include "fd.h"

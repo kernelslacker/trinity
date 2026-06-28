@@ -13,6 +13,10 @@
 #include <sys/syscall.h>
 #include <sys/uio.h>
 #include <linux/io_uring.h>
+#include <fcntl.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 
 #include "compat.h"
 #include "errno-classify.h"

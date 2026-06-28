@@ -4,6 +4,7 @@
  *                const void __user *const, rule_attr, const __u32, flags)
  */
 #include <linux/landlock.h>
+#include <string.h>
 #include "fd.h"
 #include "random.h"
 #include "rnd.h"

@@ -26,6 +26,7 @@
 #include <link.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <string.h>
 
 #include "trinity.h"
 #include "utils.h"

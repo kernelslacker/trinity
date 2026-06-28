@@ -54,6 +54,8 @@
 #include <linux/sock_diag.h>
 #include <linux/unix_diag.h>
 #include <linux/vm_sockets_diag.h>
+#include <string.h>
+#include <unistd.h>
 
 #include "child.h"
 #include "childops-netlink.h"

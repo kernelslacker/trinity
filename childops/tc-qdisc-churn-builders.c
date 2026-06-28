@@ -15,6 +15,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <sys/socket.h>
+#include <string.h>
 
 #include "tc-qdisc-churn-internal.h"
 

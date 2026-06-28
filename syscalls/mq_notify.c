@@ -3,6 +3,7 @@
  */
 #include <mqueue.h>
 #include <signal.h>
+#include <string.h>
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"

@@ -2,6 +2,7 @@
  * SYSCALL_DEFINE2(setregid, gid_t, rgid, gid_t, egid)
  */
 #include <unistd.h>
+#include <sys/types.h>
 #include "random.h"
 #include "shm.h"
 #include "sanitise.h"

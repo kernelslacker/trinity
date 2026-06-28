@@ -58,6 +58,8 @@
 #include <stdint.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
+#include <string.h>
+#include <time.h>
 
 #include "arch.h"
 #include "pids.h"

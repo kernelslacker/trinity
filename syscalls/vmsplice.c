@@ -5,6 +5,7 @@
 
 #include <limits.h>
 #include <sys/uio.h>
+#include <fcntl.h>
 #include "sanitise.h"
 #include "trinity.h"
 #include "compat.h"

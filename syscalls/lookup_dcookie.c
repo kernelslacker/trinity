@@ -13,6 +13,7 @@
 #include <stdint.h>
 #include <sys/syscall.h>
 #include <unistd.h>
+#include <string.h>
 #include "arch.h"
 #include "random.h"
 #include "sanitise.h"

@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include <linux/pfkeyv2.h>
 #include <linux/ipsec.h>
+#include <string.h>
 #include "net.h"
 #include "random.h"
 #include "compat.h"

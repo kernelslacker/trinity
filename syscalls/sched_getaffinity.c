@@ -6,6 +6,8 @@
 #include <sched.h>
 #include <stdint.h>
 #include <unistd.h>
+#include <stdlib.h>
+#include <string.h>
 #include "arch.h"
 #include "deferred-free.h"
 #include "proc-status.h"

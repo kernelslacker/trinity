@@ -18,6 +18,8 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
+#include <time.h>
 
 #include "breadcrumb_ring.h"
 #include "child.h"

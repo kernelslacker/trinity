@@ -4,6 +4,8 @@
  */
 #include <sys/socket.h>
 #include <sys/uio.h>
+#include <stdlib.h>
+#include <string.h>
 #include "cmsg_build.h"
 #include "maps.h"
 #include "net.h"

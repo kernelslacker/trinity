@@ -32,6 +32,9 @@
 #include <stdbool.h>
 #include <sys/socket.h>
 #include <sys/syscall.h>
+#include <fcntl.h>
+#include <time.h>
+#include <unistd.h>
 
 #include "child.h"
 #include "childops-util.h"

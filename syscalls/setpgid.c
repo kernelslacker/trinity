@@ -3,6 +3,7 @@
  */
 #include <sys/syscall.h>
 #include <unistd.h>
+#include <sys/types.h>
 #include "random.h"
 #include "shm.h"
 #include "sanitise.h"

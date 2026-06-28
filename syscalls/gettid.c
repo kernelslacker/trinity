@@ -1,6 +1,7 @@
 /*
  * SYSCALL_DEFINE0(gettid)
  */
+#include <sys/types.h>
 #include "proc-status.h"
 #include "random.h"
 #include "shm.h"

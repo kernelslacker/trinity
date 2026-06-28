@@ -3,6 +3,8 @@
  */
 #include <limits.h>
 #include <sys/syscall.h>
+#include <stdio.h>
+#include <sys/stat.h>
 #include "arch.h"
 #include "pathnames.h"
 #include "random.h"

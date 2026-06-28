@@ -15,6 +15,7 @@
 #include <sys/socket.h>
 #include <netinet/tcp.h>
 #include <unistd.h>
+#include <string.h>
 #include "arch.h"
 #include "compat.h"
 #include "net.h"

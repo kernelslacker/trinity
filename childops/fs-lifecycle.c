@@ -56,6 +56,10 @@
 #ifdef __linux__
 #include <linux/falloc.h>
 #include <linux/stat.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
 #endif
 
 #include "child.h"

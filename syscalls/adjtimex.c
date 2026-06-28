@@ -4,6 +4,7 @@
  * On success, adjtimex() returns the clock state: */
 
 #include <sys/timex.h>
+#include <string.h>
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"

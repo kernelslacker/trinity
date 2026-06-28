@@ -2,6 +2,8 @@
  * SYSCALL_DEFINE4(mq_open, const char __user *, u_name, int, oflag, mode_t, mode, struct mq_attr __user *, u_attr)
  */
 #include <mqueue.h>
+#include <fcntl.h>
+#include <string.h>
 #include "deferred-free.h"
 #include "name-pool.h"
 #include "random.h"

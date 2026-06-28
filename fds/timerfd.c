@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <sys/timerfd.h>
+#include <string.h>
 
 #include "fd.h"
 #include "objects.h"

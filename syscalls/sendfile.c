@@ -3,6 +3,7 @@
  */
 #include <stdbool.h>
 #include <stdint.h>
+#include <sys/types.h>
 #include "fd.h"
 #include "files.h"
 #include "random.h"

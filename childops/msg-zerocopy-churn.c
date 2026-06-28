@@ -122,6 +122,10 @@
 #include <sys/wait.h>
 
 #include <linux/errqueue.h>
+#include <string.h>
+#include <sys/types.h>
+#include <time.h>
+#include <unistd.h>
 
 #include "child.h"
 #include "childops-netlink.h"

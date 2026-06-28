@@ -49,6 +49,10 @@
 #include <sys/ioctl.h>
 #include <sys/syscall.h>
 #include <linux/io_uring.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
 
 #include "child.h"
 #include "syscall-gate.h"

@@ -1,6 +1,9 @@
 #include <errno.h>
 #include <stdatomic.h>
 #include <stdint.h>
+#include <fcntl.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "fd.h"
 #include "fd-event.h"

@@ -50,6 +50,9 @@
 #include <stdbool.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <sys/types.h>
 
 #include "child.h"
 #include "random.h"

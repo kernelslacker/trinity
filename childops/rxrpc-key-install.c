@@ -83,6 +83,9 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <sys/syscall.h>
+#include <stdio.h>
+#include <string.h>
+#include <time.h>
 
 #include "child.h"
 #include "childop-cmp.h"

@@ -67,6 +67,10 @@
 #include <sys/socket.h>
 #include <sys/syscall.h>
 #include <linux/io_uring.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #include "child.h"
 #include "syscall-gate.h"

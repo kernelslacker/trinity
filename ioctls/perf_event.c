@@ -1,4 +1,5 @@
 #include <linux/perf_event.h>
+#include <sys/stat.h>
 
 #include "bpf.h"
 #include "ioctls.h"

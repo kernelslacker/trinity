@@ -2,6 +2,7 @@
  * SYSCALL_DEFINE3(write, unsigned int, fd, const char __user *, buf, size_t, count)
  */
 #include <sys/uio.h>
+#include <string.h>
 #include "arch.h"	// page_size
 #include "fd.h"
 #include "files.h"

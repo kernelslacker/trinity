@@ -14,6 +14,8 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <linux/io_uring.h>
+#include <string.h>
+#include <unistd.h>
 
 #include "compat.h"
 #include "errno-classify.h"

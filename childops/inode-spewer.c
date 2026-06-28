@@ -23,6 +23,10 @@
 
 #ifdef __linux__
 #include <linux/falloc.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/types.h>
 #endif
 
 #include "arch.h"

@@ -10,6 +10,8 @@
 #include <errno.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <fcntl.h>
+#include <string.h>
 #include "arch.h"	// page_size
 #include "deferred-free.h"
 #include "random.h"	// generate_rand_bytes

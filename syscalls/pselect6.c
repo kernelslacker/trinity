@@ -4,6 +4,8 @@
 	void __user *, sig)
  */
 #include <signal.h>
+#include <string.h>
+#include <time.h>
 
 #include "fd.h"
 #include "random.h"

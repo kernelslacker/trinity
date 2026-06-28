@@ -3,6 +3,8 @@
 #include <errno.h>
 #include <unistd.h>
 #include <sys/epoll.h>
+#include <fcntl.h>
+#include <string.h>
 
 #include "fd.h"
 #include "objects.h"

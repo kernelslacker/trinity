@@ -37,6 +37,9 @@
 #include <sys/prctl.h>
 #include <sys/syscall.h>
 #include <sys/wait.h>
+#include <string.h>
+#include <time.h>
+#include <unistd.h>
 
 #include "child.h"
 #include "syscall-gate.h"

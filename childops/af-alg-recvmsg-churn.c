@@ -47,6 +47,9 @@
 #include <sys/socket.h>
 #include <sys/uio.h>
 #include <unistd.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
 
 #if __has_include(<linux/if_alg.h>)
 # include <linux/if_alg.h>

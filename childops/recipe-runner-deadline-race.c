@@ -15,6 +15,10 @@
 #include <linux/bpf.h>
 #include <linux/keyctl.h>
 #include <linux/perf_event.h>
+#include <string.h>
+#include <sys/types.h>
+#include <time.h>
+#include <unistd.h>
 
 #include "arch.h"
 #include "syscall-gate.h"

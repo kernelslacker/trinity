@@ -10,6 +10,7 @@
 
 #include <malloc.h>
 #include <unistd.h>
+#include <stdlib.h>
 #include "arch.h"
 #include "maps.h"
 #include "random.h"

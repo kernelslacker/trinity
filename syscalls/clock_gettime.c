@@ -4,6 +4,7 @@
  * return 0 for success, or -1 for failure (in which case errno is set appropriately).
  */
 #include <sys/syscall.h>
+#include <time.h>
 #include "deferred-free.h"
 #include "pids.h"
 #include "random.h"

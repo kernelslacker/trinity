@@ -26,6 +26,7 @@
 #include <sys/wait.h>
 #include <linux/futex.h>
 #include <linux/io_uring.h>
+#include <string.h>
 
 #include "compat.h"
 #include "errno-classify.h"

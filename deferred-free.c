@@ -20,6 +20,9 @@
 #include <limits.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "child.h"
 #include "deferred-free.h"

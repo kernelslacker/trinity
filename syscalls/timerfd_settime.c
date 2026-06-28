@@ -4,6 +4,7 @@
 	 struct itimerspec __user *, otmr)
  */
 #include <sys/timerfd.h>
+#include <time.h>
 #include "objects.h"
 #include "random.h"
 #include "rnd.h"

@@ -6,6 +6,7 @@
  */
 #include <limits.h>
 #include <sched.h>
+#include <string.h>
 #include "arch.h"
 #include "kernel/io_uring.h"
 #include "objects.h"

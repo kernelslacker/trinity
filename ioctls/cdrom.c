@@ -1,5 +1,6 @@
 #include <limits.h>
 #include <linux/cdrom.h>
+#include <string.h>
 
 #include "ioctls.h"
 #include "maps.h"

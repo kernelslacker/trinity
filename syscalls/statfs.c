@@ -4,6 +4,7 @@
 #include <limits.h>
 #include <sys/statfs.h>
 #include <sys/syscall.h>
+#include <stdio.h>
 #include "arch.h"
 #include "pathnames.h"
 #include "random.h"

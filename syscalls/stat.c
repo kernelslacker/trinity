@@ -5,6 +5,8 @@
 #include <linux/stat.h>
 #include <stdint.h>
 #include <sys/syscall.h>
+#include <fcntl.h>
+#include <stdio.h>
 #include "arch.h"
 #include "compat.h"
 #include "pathnames.h"

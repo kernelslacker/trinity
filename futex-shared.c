@@ -29,6 +29,7 @@
  */
 
 #include <stdint.h>
+#include <string.h>
 #include "futex.h"
 #include "objects.h"
 #include "shm.h"
