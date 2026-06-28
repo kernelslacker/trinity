@@ -155,5 +155,7 @@ size_t gen_rta_rule_payload(unsigned char *p, size_t avail,
 			    unsigned short nla_type, unsigned char family);
 size_t gen_rta_dcb_payload(unsigned char *p, size_t avail,
 			   unsigned short nla_type);
+size_t gen_rta_tc_payload(unsigned char *p, size_t avail,
+			  unsigned short nla_type);
 
 #endif /* NET_NETLINK_MSG_INTERNAL_H */

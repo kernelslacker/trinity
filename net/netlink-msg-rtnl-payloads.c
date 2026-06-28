@@ -23,6 +23,7 @@
 #include <linux/neighbour.h>
 #include <linux/fib_rules.h>
 #include <linux/dcbnl.h>
+#include <linux/pkt_sched.h>
 #include <string.h>
 #include "netlink-attrs.h"
 #include "netlink-msg-internal.h"
@@ -681,6 +682,132 @@ size_t gen_rta_dcb_payload(unsigned char *p, size_t avail,
 		if (avail >= NLA_HDRLEN + 8) {
 			return build_nested_attrs(p, avail, dcb_ieee_attrs,
 						  dcb_ieee_attrs_n, 0);
+		}
+		return 0;
+
+	default:
+		return 0;
+	}
+}
+
+/*
+ * Generate a structured payload for tc rtnetlink attributes (TCA_*).
+ * Covers RTM_*QDISC / RTM_*TCLASS / RTM_*TFILTER message groups (5/6/7).
+ * TCA_KIND is the single highest-leverage attr: it selects the
+ * Qdisc_ops / tcf_proto_ops the kernel demuxes to, so a real kind name
+ * is what gets the message past find_qdisc_kind() / tcf_proto_lookup()
+ * into the per-kind validator.  The fixed-size structs (tc_estimator,
+ * tc_stats) and scalar u32/u8 attrs follow the rtm_tca_policy widths
+ * so they survive the top-level NLA_BINARY / NLA_U32 / NLA_U8 length
+ * checks.  Anything outside this set returns 0 so the caller falls
+ * back to a random blob.
+ */
+size_t gen_rta_tc_payload(unsigned char *p, size_t avail,
+			  unsigned short nla_type)
+{
+	switch (nla_type) {
+	case TCA_KIND: {
+		/* String: qdisc / class / filter kind.  Picking a real kind
+		 * resolves a Qdisc_ops or tcf_proto_ops and reaches the
+		 * per-kind validator instead of bouncing off -ENOENT. */
+		static const char *kinds[] = {
+			"pfifo", "bfifo", "pfifo_fast", "fq", "fq_codel",
+			"codel", "htb", "hfsc", "tbf", "sfq", "red", "prio",
+			"noqueue", "ingress", "clsact", "netem", "drr",
+			"mqprio", "multiq", "etf", "taprio", "ets", "cake",
+			"u32", "fw", "route", "tcindex", "basic", "cgroup",
+			"matchall", "flower", "bpf", "rsvp",
+		};
+		const char *name = RAND_ARRAY(kinds);
+		size_t slen = strlen(name) + 1;
+
+		if (avail >= slen) {
+			memcpy(p, name, slen);
+			return slen;
+		}
+		return 0;
+	}
+
+	case TCA_RATE:
+		if (avail >= sizeof(struct tc_estimator)) {
+			struct tc_estimator est;
+
+			est.interval = rnd_modulo_u32(8);
+			est.ewma_log = rnd_modulo_u32(16);
+			memcpy(p, &est, sizeof(est));
+			return sizeof(est);
+		}
+		return 0;
+
+	case TCA_CHAIN:
+	case TCA_INGRESS_BLOCK:
+	case TCA_EGRESS_BLOCK:
+	case TCA_FCNT:
+		if (avail >= 4) {
+			__u32 val = rnd_modulo_u32(64);
+
+			memcpy(p, &val, 4);
+			return 4;
+		}
+		return 0;
+
+	case TCA_HW_OFFLOAD:
+		if (avail >= 1) {
+			*p = rnd_modulo_u32(2);
+			return 1;
+		}
+		return 0;
+
+	case TCA_DUMP_FLAGS:
+		/* NLA_BITFIELD32: u32 value + u32 selector mask. */
+		if (avail >= sizeof(struct nla_bitfield32)) {
+			struct nla_bitfield32 bf;
+
+			bf.selector = TCA_DUMP_FLAGS_TERSE;
+			bf.value = rnd_modulo_u32(2) ? TCA_DUMP_FLAGS_TERSE : 0;
+			memcpy(p, &bf, sizeof(bf));
+			return sizeof(bf);
+		}
+		return 0;
+
+	case TCA_EXT_WARN_MSG: {
+		static const char *msgs[] = {
+			"warn", "kind-mismatch", "bad-attr",
+		};
+		const char *msg = RAND_ARRAY(msgs);
+		size_t slen = strlen(msg) + 1;
+
+		if (avail >= slen) {
+			memcpy(p, msg, slen);
+			return slen;
+		}
+		return 0;
+	}
+
+	case TCA_STATS:
+		/* Legacy fixed-size struct tc_stats. */
+		if (avail >= sizeof(struct tc_stats)) {
+			struct tc_stats st;
+
+			generate_rand_bytes((unsigned char *)&st, sizeof(st));
+			memcpy(p, &st, sizeof(st));
+			return sizeof(st);
+		}
+		return 0;
+
+	case TCA_OPTIONS:
+	case TCA_STAB:
+	case TCA_STATS2:
+		/* Nested containers.  TCA_OPTIONS is the per-kind options
+		 * blob (cls_u32_policy, fq_codel_policy, …); TCA_STAB is
+		 * the size table; TCA_STATS2 is the modern stats nest.
+		 * The sub-attr namespaces differ per container, so emit a
+		 * generic small nest with valid nlattr framing — that gets
+		 * past nla_parse_nested into the per-kind / per-stat
+		 * policy walker. */
+		if (avail >= NLA_HDRLEN + 8) {
+			return build_nested_attrs(p, avail, tca_attrs,
+						  tca_attrs_n, 0);
 		}
 		return 0;
 
