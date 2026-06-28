@@ -4282,6 +4282,24 @@ static const struct {
 	  offsetof(struct stats_s, frontier_blend_old_weight_sum) },
 	{ "frontier_blend_new_weight_sum",
 	  offsetof(struct stats_s, frontier_blend_new_weight_sum) },
+	/* Shadow per-band counters for --reach-band.  All zero on default
+	 * (OFF) runs -- the gate in frontier_cold_weight() early-outs
+	 * before the bumps.  See the reach_band_* field-comment block in
+	 * include/stats.h for SHADOW_ONLY vs COMBINED reading and the
+	 * REACH_BAND_IDX_LOW/_MID/_HIGH band semantics. */
+	{ "reach_band_picks_low",
+	  offsetof(struct stats_s,
+		   reach_band_picks_per_band[REACH_BAND_IDX_LOW]) },
+	{ "reach_band_picks_mid",
+	  offsetof(struct stats_s,
+		   reach_band_picks_per_band[REACH_BAND_IDX_MID]) },
+	{ "reach_band_picks_high",
+	  offsetof(struct stats_s,
+		   reach_band_picks_per_band[REACH_BAND_IDX_HIGH]) },
+	{ "reach_band_would_demote_mid",
+	  offsetof(struct stats_s, reach_band_would_demote_mid) },
+	{ "reach_band_would_boost_high",
+	  offsetof(struct stats_s, reach_band_would_boost_high) },
 	/* Observability for the adaptive expensive-syscall accept gate.
 	 * See the expensive_adaptive_* field-comment block in include/
 	 * stats.h and the expensive_accept() helper in random-syscall.c

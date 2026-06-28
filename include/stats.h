@@ -5,6 +5,7 @@
 #include "child.h"	/* NR_CHILD_OP_TYPES */
 #include "compiler.h"	/* __cold */
 #include "cred_throttle.h"	/* CRED_CLASS_NR */
+#include "reach-band.h"	/* REACH_BAND_NR */
 #include "strategy.h"	/* NR_STRATEGIES */
 #include "syscall.h"	/* MAX_NR_SYSCALL */
 
@@ -3534,6 +3535,52 @@ struct stats_s {
 	unsigned long frontier_blend_new_equal;
 	unsigned long frontier_blend_old_weight_sum;
 	unsigned long frontier_blend_new_weight_sum;
+
+	/* Shadow per-band counters for the reach-banded silent-regime
+	 * picker weight adjustment.  Bumped from the band classification
+	 * gate in frontier_cold_weight() (random-syscall.c) under
+	 * SHADOW_ONLY or COMBINED mode; the REACH_BAND_OFF early-out at
+	 * the gate keeps the default-mode call path byte-identical to a
+	 * build before the row (the mode load is the only work done).
+	 *
+	 * The picker's selected weight is unchanged in every mode by the
+	 * bumps themselves -- these counters strictly OBSERVE the band
+	 * classification + would-demote/would-boost decisions.  Under
+	 * COMBINED the live weight adjustment is applied separately by
+	 * the gate, recorded by the existing frontier_silent_picks_per_
+	 * syscall throughput counter; the per-band split below tells the
+	 * operator how the call mass distributed across the three bands
+	 * and how often the MID/HIGH branches actually fired their would-
+	 * demote / would-boost arithmetic.
+	 *
+	 *  reach_band_picks_per_band[REACH_BAND_IDX_LOW / _MID / _HIGH]
+	 *      Per-band classification count.  One bump per
+	 *      frontier_cold_weight() call past the OFF early-out, indexed
+	 *      by the band the syscall classified into on this call.
+	 *      Sums to the total non-OFF entries to the gate (denominator
+	 *      for the would-demote/would-boost rates below).
+	 *  reach_band_would_demote_mid
+	 *      Subset of reach_band_picks_per_band[REACH_BAND_IDX_MID]:
+	 *      the MID-band calls where the staleness predicate fired and
+	 *      the band gate halved the silent-regime weight.  Under
+	 *      COMBINED this is the population the live demote acted on;
+	 *      under SHADOW_ONLY this is the would-be population the
+	 *      COMBINED switch would demote.
+	 *  reach_band_would_boost_high
+	 *      Subset of reach_band_picks_per_band[REACH_BAND_IDX_HIGH]:
+	 *      the HIGH-band calls where the freshness predicate fired
+	 *      (not stale) and the band gate lifted the silent-regime
+	 *      weight by a fraction of the FRONTIER_COLD_SCALE headroom.
+	 *      Same SHADOW_ONLY vs COMBINED reading as the demote
+	 *      counter above.
+	 *
+	 * Each addend is 1UL; overflow needs ~2^64 samples -- comfortable
+	 * for any fuzz horizon.  See include/reach-band.h for the band-
+	 * boundary / multiplier rationale and the OFF / SHADOW_ONLY /
+	 * COMBINED mode contract. */
+	unsigned long reach_band_picks_per_band[REACH_BAND_NR];
+	unsigned long reach_band_would_demote_mid;
+	unsigned long reach_band_would_boost_high;
 
 	/* Observability for the adaptive expensive-syscall accept gate.
 	 * Bumped from expensive_accept() in random-syscall.c on the

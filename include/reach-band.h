@@ -58,6 +58,18 @@ enum reach_band_mode {
 
 extern enum reach_band_mode reach_band_mode;
 
+/* Band index for the shadow per-band pick counters in
+ * shm->stats.reach_band_picks_per_band[].  Order matches the
+ * classification chain in frontier_cold_weight() -- LOW is the
+ * fall-through (reach < MID_THRESHOLD), MID is
+ * [MID_THRESHOLD, HIGH_THRESHOLD), HIGH is >= HIGH_THRESHOLD. */
+enum reach_band_idx {
+	REACH_BAND_IDX_LOW = 0,
+	REACH_BAND_IDX_MID = 1,
+	REACH_BAND_IDX_HIGH = 2,
+	REACH_BAND_NR = 3,
+};
+
 /* Band boundaries on edges_total (per_syscall_edges + _prior).  10
  * marks the floor above which the graduated cold-skip path has
  * already had a fair shot at filtering the slot via its KCOV_COLD_

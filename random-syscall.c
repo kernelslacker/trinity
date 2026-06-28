@@ -1246,11 +1246,17 @@ static unsigned long frontier_cold_weight(unsigned int nr,
 			 * keeps its base weight -- the cold-skip path is
 			 * the right place to handle staleness on a slot
 			 * that has already earned its productivity. */
+			__atomic_fetch_add(
+				&shm->stats.reach_band_picks_per_band[REACH_BAND_IDX_HIGH],
+				1UL, __ATOMIC_RELAXED);
 			if (!stale) {
 				unsigned long headroom =
 					(unsigned long)FRONTIER_COLD_SCALE -
 					picked_weight;
 
+				__atomic_fetch_add(
+					&shm->stats.reach_band_would_boost_high,
+					1UL, __ATOMIC_RELAXED);
 				band_weight = picked_weight +
 					      headroom /
 					      REACH_BAND_HIGH_FRESH_BOOST_DEN;
@@ -1268,22 +1274,37 @@ static unsigned long frontier_cold_weight(unsigned int nr,
 			 * -- a band_weight of 0 cleanly falls through to
 			 * the (w + 1)/(SCALE + 1) accept floor so the
 			 * slot is reachable, not unreachable. */
-			if (stale)
+			__atomic_fetch_add(
+				&shm->stats.reach_band_picks_per_band[REACH_BAND_IDX_MID],
+				1UL, __ATOMIC_RELAXED);
+			if (stale) {
+				__atomic_fetch_add(
+					&shm->stats.reach_band_would_demote_mid,
+					1UL, __ATOMIC_RELAXED);
 				band_weight = picked_weight /
 					      REACH_BAND_MID_STALE_DEMOTE_DEN;
+			}
+		} else {
+			/* LOW band: no band action.  The graduated cold-skip
+			 * path already filters these via its KCOV_COLD_
+			 * THRESHOLD gap window; layering an extra demote on
+			 * a reach < 10 slot would push barely-tried syscalls
+			 * below the live picker's accept floor before they
+			 * have had a chance to produce.  The pick is still
+			 * tallied so the per-band split sums to the gate's
+			 * non-OFF entry count. */
+			__atomic_fetch_add(
+				&shm->stats.reach_band_picks_per_band[REACH_BAND_IDX_LOW],
+				1UL, __ATOMIC_RELAXED);
 		}
-		/* LOW band: no band action.  The graduated cold-skip path
-		 * already filters these via its KCOV_COLD_THRESHOLD gap
-		 * window; layering an extra demote on a reach < 10 slot
-		 * would push barely-tried syscalls below the live picker's
-		 * accept floor before they have had a chance to produce. */
 
 		if (rb_mode == REACH_BAND_COMBINED)
 			picked_weight = band_weight;
-		/* SHADOW_ONLY: band_weight computed (cost path exercised
-		 * so an A/B follow-up that adds counters has somewhere to
-		 * hook), live returned weight unchanged.  Per-band counter
-		 * bumps land in a separate stats.c follow-up. */
+		/* SHADOW_ONLY: band_weight computed but discarded; the
+		 * per-band picks + would_demote_mid + would_boost_high
+		 * counters above record the COMBINED-mode decisions for
+		 * before-after measurement without perturbing the live
+		 * weight (which still returns the OLD/blend value). */
 	}
 
 	return picked_weight;
