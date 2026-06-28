@@ -10,6 +10,7 @@
 #include <time.h>
 #include <unistd.h>
 #include "arch.h"
+#include "arg-len-semantics.h"
 #include "breadcrumb_ring.h"
 #include "child.h"
 #include "cmp_hints.h"
@@ -20,6 +21,7 @@
 #include "params.h"
 #include "pc_format.h"
 #include "pids.h"
+#include "reach-band.h"
 #include "sequence.h"
 #include "shm.h"
 #include "stats.h"
@@ -8896,6 +8898,205 @@ static const char *runid_transition_reward_name(void)
 	return "?";
 }
 
+/*
+ * Append "<name>=<value>" to the manifest buffer, prefixed with a
+ * separating space when the buffer is non-empty.  Returns the new
+ * tail offset; on truncation the buffer stays NUL-terminated at its
+ * prior contents and the same offset is returned so subsequent
+ * appends become no-ops (the caller still sees off > 0 and prints
+ * what fit, not "all defaults").
+ */
+static size_t runid_knob_append(char *buf, size_t buflen, size_t off,
+				const char *name, const char *value)
+{
+	int n;
+
+	if (off >= buflen)
+		return off;
+	n = snprintf(buf + off, buflen - off, "%s%s=%s",
+		     off > 0 ? " " : "", name, value);
+	if (n < 0 || (size_t)n >= buflen - off) {
+		buf[off] = '\0';
+		return off;
+	}
+	return off + (size_t)n;
+}
+
+static const char *runid_frontier_live_cooldown_mode_name(void)
+{
+	switch (frontier_live_cooldown_mode) {
+	case FRONTIER_LIVE_COOLDOWN_MODE_OFF:         return "off";
+	case FRONTIER_LIVE_COOLDOWN_MODE_SHADOW_ONLY: return "shadow-only";
+	case FRONTIER_LIVE_COOLDOWN_MODE_COMBINED:    return "combined";
+	}
+	return "?";
+}
+
+static const char *runid_frontier_saturation_cooldown_mode_name(void)
+{
+	switch (frontier_saturation_cooldown_mode) {
+	case FRONTIER_SATURATION_COOLDOWN_MODE_OFF:         return "off";
+	case FRONTIER_SATURATION_COOLDOWN_MODE_SHADOW_ONLY: return "shadow-only";
+	case FRONTIER_SATURATION_COOLDOWN_MODE_COMBINED:    return "combined";
+	}
+	return "?";
+}
+
+static const char *runid_frontier_group_antilock_mode_name(void)
+{
+	switch (frontier_group_antilock_mode) {
+	case FRONTIER_GROUP_ANTILOCK_MODE_OFF:         return "off";
+	case FRONTIER_GROUP_ANTILOCK_MODE_SHADOW_ONLY: return "shadow-only";
+	case FRONTIER_GROUP_ANTILOCK_MODE_COMBINED:    return "combined";
+	}
+	return "?";
+}
+
+static const char *runid_expensive_adaptive_mode_name(void)
+{
+	switch (expensive_adaptive_mode) {
+	case EXPENSIVE_ADAPTIVE_MODE_OFF:         return "off";
+	case EXPENSIVE_ADAPTIVE_MODE_SHADOW_ONLY: return "shadow-only";
+	case EXPENSIVE_ADAPTIVE_MODE_COMBINED:    return "combined";
+	}
+	return "?";
+}
+
+static const char *runid_reach_band_mode_name(void)
+{
+	switch (__atomic_load_n(&reach_band_mode, __ATOMIC_RELAXED)) {
+	case REACH_BAND_OFF:         return "off";
+	case REACH_BAND_SHADOW_ONLY: return "shadow-only";
+	case REACH_BAND_COMBINED:    return "combined";
+	}
+	return "?";
+}
+
+static const char *runid_arg_len_semantics_mode_name(void)
+{
+	switch (__atomic_load_n(&arg_len_semantics_mode, __ATOMIC_RELAXED)) {
+	case ARG_LEN_SEMANTICS_OFF: return "off";
+	case ARG_LEN_SEMANTICS_ON:  return "on";
+	}
+	return "?";
+}
+
+static const char *runid_childop_kcov_attr_mode_name(void)
+{
+	switch (childop_kcov_attr_mode) {
+	case CHILDOP_KCOV_ATTR_OFF:  return "off";
+	case CHILDOP_KCOV_ATTR_DUAL: return "dual";
+	case CHILDOP_KCOV_ATTR_ON:   return "on";
+	}
+	return "?";
+}
+
+static const char *runid_childop_cmp_harvest_mode_name(void)
+{
+	switch (childop_cmp_harvest_mode) {
+	case CHILDOP_CMP_HARVEST_OFF: return "off";
+	case CHILDOP_CMP_HARVEST_ON:  return "on";
+	}
+	return "?";
+}
+
+/*
+ * Emit a single line listing every experimental knob whose current
+ * value differs from its compile-time default.  Knobs at their
+ * default value are intentionally omitted to keep the line scannable;
+ * a run with nothing overridden prints "all defaults" so the line
+ * still appears unconditionally and a downstream parser can rely on
+ * its presence.  Default-OFF booleans render as "<name>=on" so the
+ * value column is uniform with the enum knobs.
+ *
+ * Knobs whose default is not OFF (childop-kcov-attribution = dual,
+ * kcov-transition-coverage = shadow, kcov-transition-reward =
+ * combined, strategy = bandit-ucb1) compare against their actual
+ * default, not zero, so flipping COMBINED back to shadow_only shows
+ * up in the manifest rather than hiding behind an enum-zero check.
+ */
+static void runid_knob_manifest_render(void)
+{
+	char buf[1024];
+	size_t off = 0;
+
+	buf[0] = '\0';
+
+	if (picker_mode_arg != PICKER_BANDIT_UCB1)
+		off = runid_knob_append(buf, sizeof(buf), off,
+					"strategy",
+					picker_mode_name(picker_mode_arg));
+	if (group_bias)
+		off = runid_knob_append(buf, sizeof(buf), off,
+					"group-bias", "on");
+	if (cred_throttle)
+		off = runid_knob_append(buf, sizeof(buf), off,
+					"cred-throttle", "on");
+	if (frontier_live_cooldown)
+		off = runid_knob_append(buf, sizeof(buf), off,
+					"frontier-live-cooldown", "on");
+	if (frontier_live_cooldown_mode != FRONTIER_LIVE_COOLDOWN_MODE_OFF)
+		off = runid_knob_append(buf, sizeof(buf), off,
+					"frontier-live-cooldown-mode",
+					runid_frontier_live_cooldown_mode_name());
+	if (frontier_saturation_cooldown_mode !=
+	    FRONTIER_SATURATION_COOLDOWN_MODE_OFF)
+		off = runid_knob_append(buf, sizeof(buf), off,
+					"frontier-saturation-cooldown",
+					runid_frontier_saturation_cooldown_mode_name());
+	if (frontier_group_antilock_mode !=
+	    FRONTIER_GROUP_ANTILOCK_MODE_OFF)
+		off = runid_knob_append(buf, sizeof(buf), off,
+					"frontier-group-antilock",
+					runid_frontier_group_antilock_mode_name());
+	if (__atomic_load_n(&reach_band_mode, __ATOMIC_RELAXED) !=
+	    REACH_BAND_OFF)
+		off = runid_knob_append(buf, sizeof(buf), off,
+					"reach-band",
+					runid_reach_band_mode_name());
+	if (__atomic_load_n(&arg_len_semantics_mode, __ATOMIC_RELAXED) !=
+	    ARG_LEN_SEMANTICS_OFF)
+		off = runid_knob_append(buf, sizeof(buf), off,
+					"arg-len-semantics",
+					runid_arg_len_semantics_mode_name());
+	if (expensive_adaptive_mode != EXPENSIVE_ADAPTIVE_MODE_OFF)
+		off = runid_knob_append(buf, sizeof(buf), off,
+					"expensive-adaptive",
+					runid_expensive_adaptive_mode_name());
+	if (cmp_recent_pool_mode_arg != CMP_RECENT_POOL_OFF)
+		off = runid_knob_append(buf, sizeof(buf), off,
+					"cmp-recent-pool",
+					cmp_recent_pool_name(cmp_recent_pool_mode_arg));
+	if (redqueen_pending_pick_mode_arg != REDQUEEN_PENDING_PICK_RANDOM)
+		off = runid_knob_append(buf, sizeof(buf), off,
+					"redqueen-pending-pick",
+					redqueen_pending_pick_name(redqueen_pending_pick_mode_arg));
+	if (childop_kcov_attr_mode != CHILDOP_KCOV_ATTR_DUAL)
+		off = runid_knob_append(buf, sizeof(buf), off,
+					"childop-kcov-attribution",
+					runid_childop_kcov_attr_mode_name());
+	if (childop_cmp_harvest_mode != CHILDOP_CMP_HARVEST_OFF)
+		off = runid_knob_append(buf, sizeof(buf), off,
+					"childop-cmp-harvest",
+					runid_childop_cmp_harvest_mode_name());
+	if (kcov_transition_coverage_mode != KCOV_TRANSITION_COVERAGE_SHADOW)
+		off = runid_knob_append(buf, sizeof(buf), off,
+					"kcov-transition-coverage",
+					runid_transition_coverage_name());
+	if (kcov_transition_reward_mode != KCOV_TRANSITION_REWARD_COMBINED)
+		off = runid_knob_append(buf, sizeof(buf), off,
+					"kcov-transition-reward",
+					runid_transition_reward_name());
+	if (corpus_save_errno_grad_live)
+		off = runid_knob_append(buf, sizeof(buf), off,
+					"corpus-save-errno-grad-live", "on");
+	if (fork_pressure_drain)
+		off = runid_knob_append(buf, sizeof(buf), off,
+					"fork-pressure-drain", "on");
+
+	output(0, "run-id knobs: %s\n", off > 0 ? buf : "all defaults");
+}
+
 void __cold stats_runid_render(void)
 {
 	unsigned long end_edges = 0;
@@ -9002,6 +9203,7 @@ void __cold stats_runid_render(void)
 			  "end edges_found=%lu distinct_edges=%lu "
 			  "corpus_entries=%lu\n",
 		       end_edges, end_distinct, end_corpus);
+		runid_knob_manifest_render();
 		output(0, "===== end run identity =====\n");
 		return;
 	}
@@ -9025,6 +9227,8 @@ void __cold stats_runid_render(void)
 	output(0, "run-id own-start deltas: edges_found=+%lu "
 		  "distinct_edges=+%lu corpus_entries=+%lu\n",
 	       edges_delta, distinct_delta, corpus_delta);
+
+	runid_knob_manifest_render();
 
 	output(0, "===== end run identity =====\n");
 }
