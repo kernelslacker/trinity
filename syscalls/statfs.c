@@ -2,15 +2,26 @@
  * SYSCALL_DEFINE2(statfs, const char __user *, pathname, struct statfs __user *, buf)
  */
 #include <limits.h>
+#include <stdio.h>
 #include <sys/statfs.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 #include "arch.h"
+#include "pathnames.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
+
+/*
+ * Mirrors the MAX_TESTFILES bound in fds/testfiles.c so we land inside
+ * the same trinity-testfile<N> inodes the rest of the path-pinned
+ * sanitisers (chmod, utime, xattr-thrash, flock-thrash, ...) touch;
+ * cross-process contention concentrates on the same per-inode i_rwsem /
+ * statfs path.
+ */
+#define NR_TESTFILES 4
 
 #if defined(SYS_statfs) || defined(__NR_statfs)
 /*
@@ -36,6 +47,42 @@ struct statfs_post_state {
 
 static void sanitise_statfs(struct syscallrecord *rec)
 {
+	/*
+	 * ARG_PATHNAME plumbed a random pathname into rec->a1, but the
+	 * random path is most often not a real file at all -- statfs
+	 * returns ENOENT at the path walk before ever reaching the
+	 * per-fs ->statfs super_op and the mount-level statistics
+	 * gather.  Classic "high calls, low edges" cold-syscall shape
+	 * the chmod / utime / xattr families were in before their
+	 * testfile-pin fixes.
+	 *
+	 * Half the draws now repoint at one of the trinity-testfile<N>
+	 * absolute paths so the subsequent statfs lands on a real
+	 * trinity-owned inode and penetrates the path walk and the
+	 * per-fs ->statfs super_op.  The other half preserves the slot
+	 * exactly as the generic draw left it, so the ENOENT reject
+	 * arm stays exercised.
+	 *
+	 * Done as an if-block rather than an early-return so the
+	 * existing avoid_shared_buffer_out() on a2 and the post_state
+	 * snapshot below still run on both halves -- the path pin is
+	 * purely additive to the existing a2 / post-oracle work.
+	 */
+	if (rnd_modulo_u32(2) == 0) {
+		char *path = (char *) rec->a1;
+
+		/*
+		 * Overwrite the ARG_PATHNAME buffer in place.
+		 * generate_pathname() zmallocs MAX_PATH_LEN (4096) bytes,
+		 * so the snprintf cap below cannot overflow.
+		 */
+		if (path != NULL)
+			snprintf(path, MAX_PATH_LEN,
+				 "%s/trinity-testfile%u",
+				 trinity_tmpdir_abs(),
+				 1 + rnd_modulo_u32(NR_TESTFILES));
+	}
+
 	avoid_shared_buffer_out(&rec->a2, page_size);
 
 #if defined(SYS_statfs) || defined(__NR_statfs)
@@ -246,6 +293,26 @@ struct statfs64_post_state {
 
 static void sanitise_statfs64(struct syscallrecord *rec)
 {
+	/*
+	 * Same testfile pin as sanitise_statfs: ARG_PATHNAME at rec->a1
+	 * is otherwise a random pathname that ENOENT-walls before the
+	 * per-fs ->statfs super_op.  Pin to a trinity-testfile<N>
+	 * absolute path half the time so half the draws penetrate a
+	 * real inode and half preserve the ENOENT arm.  Placed as an
+	 * if-block (not an early return) so the existing a3 buffer
+	 * sanitise and the post_state snapshot below still run on both
+	 * halves.
+	 */
+	if (rnd_modulo_u32(2) == 0) {
+		char *path = (char *) rec->a1;
+
+		if (path != NULL)
+			snprintf(path, MAX_PATH_LEN,
+				 "%s/trinity-testfile%u",
+				 trinity_tmpdir_abs(),
+				 1 + rnd_modulo_u32(NR_TESTFILES));
+	}
+
 	avoid_shared_buffer_out(&rec->a3, rec->a2 ? rec->a2 : page_size);
 
 #ifdef SYS_statfs64

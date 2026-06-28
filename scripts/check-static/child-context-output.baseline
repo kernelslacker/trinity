@@ -308,8 +308,8 @@ syscalls/socketpair.c:209:post_socketpair
 syscalls/socketpair.c:222:post_socketpair
 syscalls/stat.c:451:post_statx
 syscalls/stat.c:514:post_statx
-syscalls/statfs.c:175:post_statfs
-syscalls/statfs.c:368:post_statfs64
+syscalls/statfs.c:222:post_statfs
+syscalls/statfs.c:435:post_statfs64
 syscalls/statmount.c:475:post_statmount
 syscalls/sysfs.c:191:post_sysfs
 syscalls/sysinfo.c:133:post_sysinfo
