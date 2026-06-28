@@ -5,10 +5,12 @@
 #include <limits.h>
 #include <linux/stat.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 #include "arch.h"
 #include "compat.h"
+#include "pathnames.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -16,9 +18,52 @@
 #include "trinity.h"
 #include "utils.h"
 
+/*
+ * Mirrors the MAX_TESTFILES bound in fds/testfiles.c so we land inside
+ * the same trinity-testfile<N> inodes the rest of the path-pinned
+ * sanitisers (chmod, utime, xattr-thrash, flock-thrash, ...) touch;
+ * cross-process contention concentrates on the same per-inode i_rwsem /
+ * getattr path.
+ */
+#define NR_TESTFILES 4
+
 static void sanitise_statbuf_a2(struct syscallrecord *rec)
 {
+	char *path;
+
 	avoid_shared_buffer_out(&rec->a2, page_size);
+
+	/*
+	 * ARG_PATHNAME plumbed a random pathname into rec->a1, but the
+	 * random path is most often not a real file at all -- stat
+	 * returns ENOENT at the path walk before ever reaching the
+	 * per-fs inode_operations->getattr path under i_rwsem.  Classic
+	 * "high calls, low edges" cold-syscall shape the chmod / utime
+	 * families were in before their testfile-pin fixes.
+	 *
+	 * Half the draws now repoint at one of the trinity-testfile<N>
+	 * absolute paths so the subsequent stat lands on a real
+	 * trinity-owned inode and penetrates the VFS path -- the
+	 * permission check (trinity owns these inodes so the
+	 * ownership/permission gates pass), the namei walk to a real
+	 * dentry, and the per-fs getattr that the i_rwsem guards.  The
+	 * other half preserves the slot exactly as the generic draw
+	 * left it, so the ENOENT reject arm stays exercised.
+	 */
+	if (rnd_modulo_u32(2) != 0)
+		return;
+
+	path = (char *) rec->a1;
+	if (path == NULL)
+		return;
+
+	/*
+	 * Overwrite the ARG_PATHNAME buffer in place.  generate_pathname()
+	 * zmallocs MAX_PATH_LEN (4096) bytes, so the snprintf cap below
+	 * cannot overflow.
+	 */
+	snprintf(path, MAX_PATH_LEN, "%s/trinity-testfile%u",
+		 trinity_tmpdir_abs(), 1 + rnd_modulo_u32(NR_TESTFILES));
 }
 
 struct syscallentry syscall_stat = {
