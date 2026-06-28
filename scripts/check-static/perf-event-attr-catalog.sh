@@ -20,7 +20,8 @@ set -u
 
 NAME="perf-event-attr-catalog"
 ROOT="${REPO_ROOT:-$(pwd)}"
-SRC="$ROOT/struct_catalog.c"
+SRC="$ROOT/struct_catalog/perf.c"
+SPINE="$ROOT/struct_catalog.c"
 
 fail() {
 	echo "FAIL: $NAME: $1" >&2
@@ -28,10 +29,13 @@ fail() {
 }
 
 [ -r "$SRC" ] || fail "cannot read $SRC"
+[ -r "$SPINE" ] || fail "cannot read $SPINE"
 
-# Slurp the perf_event_attr_fields[] initializer body.
+# Slurp the perf_event_attr_fields[] initializer body.  The carve
+# flipped the symbol from `static const` to `const` so the spine in
+# struct_catalog.c can reach it via the extern; match either form.
 block=$(awk '
-	/^static const struct struct_field perf_event_attr_fields\[\] = \{/ {
+	/^(static[[:space:]]+)?const struct struct_field perf_event_attr_fields\[.*\] = \{/ {
 		in_block = 1
 		next
 	}
@@ -105,7 +109,7 @@ checked=$((checked + 1))
 # empty (config stays FT_RAW) but still present so the resolver
 # returns a named variant for CMP-attribution scoping.
 variants_block=$(awk '
-	/^static const struct union_variant perf_event_attr_variants\[\] = \{/ {
+	/^(static[[:space:]]+)?const struct union_variant perf_event_attr_variants\[.*\] = \{/ {
 		in_block = 1
 		next
 	}
@@ -131,7 +135,7 @@ desc_block=$(awk '
 	/\.name[[:space:]]*=[[:space:]]*"perf_event_attr"/ { in_block = 1 }
 	in_block { print }
 	in_block && /^[[:space:]]*\},$/ { in_block = 0; exit }
-' "$SRC")
+' "$SPINE")
 if ! printf '%s\n' "$desc_block" \
      | grep -qE '\.buffer_discrim_offset[[:space:]]*='; then
 	problems+=("perf_event_attr desc: missing .buffer_discrim_offset")

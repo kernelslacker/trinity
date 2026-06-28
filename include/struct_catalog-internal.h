@@ -439,3 +439,20 @@ extern const struct struct_field itimerval_fields[ITIMERVAL_FIELDS_N];
 extern const struct struct_field utimbuf_fields[UTIMBUF_FIELDS_N];
 extern const struct struct_field timeval_fields[TIMEVAL_FIELDS_N];
 extern const struct struct_field timezone_fields[TIMEZONE_FIELDS_N];
+
+/*
+ * perf_event_attr leaf tables defined in struct_catalog/perf.c.  The
+ * _N constants give the extern decls a complete array type so the
+ * spine's ARRAY_SIZE() at the reference site keeps folding to the same
+ * constant it did before the carve.  Only the shared field table and
+ * the variant array are referenced from the spine; the per-PERF_TYPE_*
+ * variant field arrays and their value/vocab pools are file-private to
+ * struct_catalog/perf.c and stay static const.
+ */
+enum {
+	PERF_EVENT_ATTR_FIELDS_N	= 22,
+	PERF_EVENT_ATTR_VARIANTS_N	= 6,
+};
+
+extern const struct struct_field perf_event_attr_fields[PERF_EVENT_ATTR_FIELDS_N];
+extern const struct union_variant perf_event_attr_variants[PERF_EVENT_ATTR_VARIANTS_N];
