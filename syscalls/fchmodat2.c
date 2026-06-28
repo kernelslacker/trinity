@@ -3,11 +3,15 @@
  *		umode_t, mode, unsigned int, flags)
  */
 #include <fcntl.h>
+#include <stdio.h>
 #include "compat.h"
+#include "pathnames.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+
+#define NR_TESTFILES 4		/* mirror fds/testfiles.c */
 
 static unsigned long fchmodat2_flags[] = {
 	AT_SYMLINK_NOFOLLOW,
@@ -16,6 +20,20 @@ static unsigned long fchmodat2_flags[] = {
 
 static void sanitise_fchmodat2(struct syscallrecord *rec)
 {
+	/*
+	 * filename (a2): ARG_PATHNAME plumbed a random pathname into
+	 * rec->a2, but it is almost never a real file, so fchmodat2
+	 * returns ENOENT at the path walk before reaching the per-fs
+	 * setattr.  Half the draws pin a2 to an absolute trinity-owned
+	 * testfile so the call penetrates the VFS path; an absolute path
+	 * ignores the dfd in a1, so no valid dirfd is needed.  The other
+	 * half preserves the random pathname so the ENOENT / -ENOTDIR
+	 * reject arms stay exercised.
+	 */
+	if (rec->a2 && rnd_modulo_u32(2) == 0)
+		snprintf((char *) rec->a2, MAX_PATH_LEN, "%s/trinity-testfile%u",
+			 trinity_tmpdir_abs(), 1 + rnd_modulo_u32(NR_TESTFILES));
+
 	/*
 	 * flags (a4): do_fchmodat rejects any bit outside
 	 * (AT_SYMLINK_NOFOLLOW | AT_EMPTY_PATH) with -EINVAL before
