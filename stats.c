@@ -2988,7 +2988,7 @@ static void dump_stats_json_iouring_zc_and_kvm(void)
 		"\"vsock_transport_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bind_ok\":%lu,\"connect_ok\":%lu,\"send_ok\":%lu,\"buffer_size_ok\":%lu,\"timeout_ok\":%lu,\"get_cid_ok\":%lu,\"seq_eom_runs\":%lu,\"seq_eom_sends_ok\":%lu,\"seq_eom_sends_failed\":%lu,\"seq_eom_skipped\":%lu},"
 		"\"psp_key_rotate\":{\"runs\":%lu,\"setup_failed\":%lu,\"netdev_create_ok\":%lu,\"family_resolve_ok\":%lu,\"dev_get_ok\":%lu,\"key_install_ok\":%lu,\"spi_set_ok\":%lu,\"send_ok\":%lu,\"rotate_ok\":%lu,\"spi_switch_ok\":%lu,\"shutdown_ok\":%lu,\"devlink_port_churn_runs\":%lu,\"devlink_port_churn_port_add_ok\":%lu,\"devlink_port_churn_port_del_ok\":%lu,\"devlink_port_churn_vf_spawn_ok\":%lu,\"devlink_port_churn_unsupported_latched\":%lu},"
 		"\"afxdp_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"umem_reg_ok\":%lu,\"rings_setup_ok\":%lu,\"prog_load_ok\":%lu,\"map_create_ok\":%lu,\"map_update_ok\":%lu,\"bind_ok\":%lu,\"link_attach_ok\":%lu,\"netlink_attach_ok\":%lu,\"attach_failed\":%lu,\"send_ok\":%lu,\"recv_ok\":%lu,\"map_delete_ok\":%lu,\"munmap_race_ok\":%lu,\"xsg_iters\":%lu,\"tx_metadata_iters\":%lu,\"tun_bind_iters\":%lu,\"xsg_bind_failed\":%lu,\"tx_md_bind_failed\":%lu},"
-		"\"kvm\":{\"vcpu_ioctls_dispatched\":%lu},"
+		"\"kvm\":{\"vcpu_ioctls_dispatched\":%lu,\"vm_ioctls_dispatched\":%lu},"
 		"\"kvm_run_churn\":{\"invocations\":%lu,\"exit_io\":%lu,\"exit_mmio\":%lu,\"exit_hlt\":%lu,\"exit_shutdown\":%lu,\"exit_fail_entry\":%lu,\"exit_internal_error\":%lu,\"exit_intr\":%lu,\"exit_other\":%lu,\"errors\":%lu,\"gpc_memslot_race_runs\":%lu,\"gpc_memslot_race_deletes\":%lu,\"gpc_memslot_race_unsupported\":%lu},"
 		"\"nl80211\":{\"runs\":%lu,\"setup_failed\":%lu,\"scan_triggered\":%lu,\"connect_attempted\":%lu,\"connect_succeeded\":%lu,\"disconnect_attempted\":%lu,\"regdom_changed\":%lu,\"iface_created\":%lu,\"iface_destroyed\":%lu,\"bursts_sent\":%lu,\"pmsr_runs\":%lu,\"pmsr_ok\":%lu,\"admin_gate_runs\":%lu,\"admin_gate_eperm_ok\":%lu,\"admin_gate_unexpected\":%lu},"
 		"\"nat_t_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sa_added\":%lu,\"sa_deleted\":%lu,\"frames_sent\":%lu,\"xfrm6_setup_ok\":%lu,\"xfrm6_setup_fail\":%lu,\"xfrm6_sendto_runs\":%lu,\"xfrm6_delsa_races\":%lu},",
@@ -3041,6 +3041,7 @@ static void dump_stats_json_iouring_zc_and_kvm(void)
 		shm->stats.afxdp_xsg_bind_failed,
 		shm->stats.afxdp_tx_md_bind_failed,
 		shm->stats.kvm_vcpu_ioctls_dispatched,
+		shm->stats.kvm_vm_ioctls_dispatched,
 		shm->stats.kvm_run_invocations,
 		shm->stats.kvm_run_exit_io,
 		shm->stats.kvm_run_exit_mmio,
@@ -4354,6 +4355,8 @@ static const struct {
 	  offsetof(struct stats_s, remote_adaptive_would_promote) },
 	{ "remote_adaptive_would_force",
 	  offsetof(struct stats_s, remote_adaptive_would_force) },
+	{ "remote_adaptive_would_gate_promote",
+	  offsetof(struct stats_s, remote_adaptive_would_gate_promote) },
 	{ "remote_adaptive_agree",
 	  offsetof(struct stats_s, remote_adaptive_agree) },
 	/* Picks the explorer pool forced to STRATEGY_RANDOM.  Rate-of-change
@@ -4394,6 +4397,8 @@ static const struct {
 	 * by a fd that doesn't satisfy kvm_vcpu_fd_test. */
 	{ "kvm_vcpu_ioctls_dispatched",
 	  offsetof(struct stats_s, kvm_vcpu_ioctls_dispatched) },
+	{ "kvm_vm_ioctls_dispatched",
+	  offsetof(struct stats_s, kvm_vm_ioctls_dispatched) },
 	/* nl80211_churn invocation rate.  Periodic visibility lets an operator
 	 * confirm the cfg80211 state-machine fuzzer is making progress under the
 	 * mac80211_hwsim radio without waiting for the end-of-run summary; a
@@ -6536,6 +6541,7 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	unsigned long cur_remote_adaptive_would_demote;
 	unsigned long cur_remote_adaptive_would_promote;
 	unsigned long cur_remote_adaptive_would_force;
+	unsigned long cur_remote_adaptive_would_gate_promote;
 	unsigned long cur_remote_adaptive_agree;
 	unsigned long cur_arg_meta_addr_with_meta;
 	unsigned long cur_arg_meta_addr_without_meta;
@@ -6646,6 +6652,7 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	cur_remote_adaptive_would_demote    = __atomic_load_n(&shm->stats.remote_adaptive_would_demote,   __ATOMIC_RELAXED);
 	cur_remote_adaptive_would_promote   = __atomic_load_n(&shm->stats.remote_adaptive_would_promote,  __ATOMIC_RELAXED);
 	cur_remote_adaptive_would_force     = __atomic_load_n(&shm->stats.remote_adaptive_would_force,    __ATOMIC_RELAXED);
+	cur_remote_adaptive_would_gate_promote = __atomic_load_n(&shm->stats.remote_adaptive_would_gate_promote, __ATOMIC_RELAXED);
 	cur_remote_adaptive_agree           = __atomic_load_n(&shm->stats.remote_adaptive_agree,          __ATOMIC_RELAXED);
 	cur_remote_adaptive_arm_a_children  = __atomic_load_n(&kcov_shm->remote_adaptive_arm_a_children,  __ATOMIC_RELAXED);
 	cur_remote_adaptive_arm_b_children  = __atomic_load_n(&kcov_shm->remote_adaptive_arm_b_children,  __ATOMIC_RELAXED);
@@ -7357,6 +7364,9 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 			stats_log_write("  %-32s total %lu\n",
 					"remote_adaptive_would_force",
 					cur_remote_adaptive_would_force);
+			stats_log_write("  %-32s total %lu\n",
+					"remote_adaptive_would_gate_promote",
+					cur_remote_adaptive_would_gate_promote);
 			stats_log_write("  %-32s total %lu\n",
 					"remote_adaptive_agree",
 					cur_remote_adaptive_agree);
