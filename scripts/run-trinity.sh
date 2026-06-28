@@ -66,6 +66,43 @@ if [[ -z "${TRINITY_NO_DMESG:-}" ]]; then
     dmesg_pid=$!
 fi
 
+# Reap the entire trinity process tree AND the dmesg follower on wrapper
+# exit. The trap is installed HERE -- right after the dmesg follower is
+# launched and BEFORE the ~100 lines of cgroup setup below -- because the
+# follower runs in a systemd-owned transient scope that OUTLIVES this
+# wrapper. If the trap were installed only just before trinity launches (as
+# it was), a `set -e` failure or a signal during cgroup setup would exit
+# without reaping it, orphaning a `dmesg --follow-new | head -c 1G` pair per
+# run. scope_name/child are empty at this point, so an early fire reaps only
+# the dmesg scope; both are filled in below before they are used.
+#
+# Scoping is per-invocation: stop only this run's named scope, or signal
+# only this run's process group -- never a broad pkill that would also kill
+# concurrent trinity runs on the same host. D-state children can't be
+# force-killed until their in-flight syscall returns; scope-stop / pgid-kill
+# sends SIGKILL to every task, reaps everything killable immediately, and
+# the kernel releases the rest as their syscalls complete.
+scope_name=""
+child=""
+cleanup() {
+    local rc=$?
+    trap - EXIT INT TERM
+    if [[ -n "${scope_name}" ]]; then
+        systemctl --user stop "${scope_name}" >/dev/null 2>&1 || true
+    elif [[ -n "${child}" ]]; then
+        kill -KILL -- "-${child}" 2>/dev/null || true
+    fi
+    # Stop the dmesg follower after trinity so it captures teardown splats;
+    # line-buffered output means no extra flush is needed.
+    if [[ -n "${dmesg_scope}" ]]; then
+        systemctl --user stop "${dmesg_scope}" >/dev/null 2>&1 || true
+    elif [[ -n "${dmesg_pid}" ]]; then
+        kill "${dmesg_pid}" 2>/dev/null || true
+    fi
+    exit "${rc}"
+}
+trap cleanup EXIT INT TERM
+
 # Outer-scope memory containment via transient systemd scope, layered on
 # top of trinity's own self_cgroup (--memory-max etc., see self_cgroup.c).
 # The outer scope protects the brief startup window before trinity creates
@@ -89,7 +126,6 @@ ulimit -n 65536 2>/dev/null || true
 
 cmd=(./trinity "$@")
 
-scope_name=""
 if [[ -z "${TRINITY_NO_CGROUP:-}" ]]; then
     if ! command -v systemd-run >/dev/null 2>&1; then
         echo "NOTE: systemd-run not found; skipping outer scope (trinity's self_cgroup is still active unless --no-cgroup was passed)." >&2
@@ -129,40 +165,6 @@ if [[ -z "${TRINITY_NO_CGROUP:-}" ]]; then
         fi
     fi
 fi
-
-# Reap the entire trinity process tree on wrapper exit. Without this,
-# the parent, children, and any zombies/D-state stragglers out-live the
-# wrapper and accumulate over repeated runs (a relaunch loop on a fuzz
-# host was observed leaving 35+ orphaned -C16 parents pinning memory and
-# wedging subsequent runs).
-#
-# Scoping is per-invocation: stop only this run's named scope, or signal
-# only this run's process group -- never a broad pkill that would also
-# kill concurrent trinity runs on the same host.
-#
-# D-state children can't be force-killed until their in-flight syscall
-# returns; scope-stop / pgid-kill sends SIGKILL to every task in the
-# group, reaps everything killable immediately, and the kernel releases
-# the rest as their syscalls complete.
-child=""
-cleanup() {
-    local rc=$?
-    trap - EXIT INT TERM
-    if [[ -n "${scope_name}" ]]; then
-        systemctl --user stop "${scope_name}" >/dev/null 2>&1 || true
-    elif [[ -n "${child}" ]]; then
-        kill -KILL -- "-${child}" 2>/dev/null || true
-    fi
-    # Stop the dmesg follower after trinity so it captures teardown splats;
-    # line-buffered output means no extra flush is needed.
-    if [[ -n "${dmesg_scope}" ]]; then
-        systemctl --user stop "${dmesg_scope}" >/dev/null 2>&1 || true
-    elif [[ -n "${dmesg_pid}" ]]; then
-        kill "${dmesg_pid}" 2>/dev/null || true
-    fi
-    exit "${rc}"
-}
-trap cleanup EXIT INT TERM
 
 if [[ -n "${scope_name}" ]]; then
     # systemd-run places the command in the named scope's cgroup;
