@@ -308,8 +308,34 @@ static const struct csfu_desc desc_openat2 = {
  */
 static void sanitise_openat2(struct syscallrecord *rec)
 {
-	struct csfu_buf buf = build_csfu_struct(&desc_openat2);
-	struct open_how *how = buf.ptr;
+	struct csfu_buf buf;
+	struct open_how *how;
+
+	/*
+	 * ARG_PATHNAME plumbed a random pathname into rec->a2 and ARG_FD
+	 * left a random dirfd in rec->a1, so RESOLVE_BENEATH / RESOLVE_IN_ROOT
+	 * / O_PATH walks below almost always ENOENT in path lookup before the
+	 * resolve-scope machinery ever runs.
+	 *
+	 * Half the draws now repoint a2 at one of the trinity-testfile<N>
+	 * absolute paths and AT_FDCWD-pin a1, so the curated RESOLVE_* combos
+	 * and the O_PATH / chroot-scope code paths get exercised against a
+	 * real trinity-owned inode.  The other half preserves the random
+	 * a1/a2 draw so the pre-existing random-path coverage stays exercised.
+	 */
+	if (rnd_modulo_u32(2) == 0) {
+		char *path = (char *) rec->a2;
+
+		if (path != NULL) {
+			snprintf(path, MAX_PATH_LEN, "%s/trinity-testfile%u",
+				 trinity_tmpdir_abs(),
+				 1 + rnd_modulo_u32(NR_TESTFILES));
+			rec->a1 = (unsigned long) AT_FDCWD;
+		}
+	}
+
+	buf = build_csfu_struct(&desc_openat2);
+	how = buf.ptr;
 
 	how->flags = RAND_ARRAY(open_o_flags_base) | get_o_flags();
 
