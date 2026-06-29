@@ -191,8 +191,23 @@ static void sanitise_keyctl_join_session_keyring(struct syscallrecord *rec)
 		buf = (char *) get_writable_address(32);
 		if (buf == NULL)
 			return;
+		if (ONE_IN(4)) {
+			size_t got = name_pool_draw_mutated(NAME_KIND_KEY_DESC,
+							    buf, 32);
+
+			if (got > 0) {
+				if (got >= 32)
+					got = 31;
+				buf[got] = '\0';
+				goto sess_done;
+			}
+			/* empty pool -- fall through to constant */
+		}
 		strncpy(buf, "trinity_sess", 31);
 		buf[31] = '\0';
+		name_pool_record(NAME_KIND_KEY_DESC, buf,
+				 strlen("trinity_sess"));
+sess_done:
 		rec->a2 = (unsigned long) buf;
 	}
 }
