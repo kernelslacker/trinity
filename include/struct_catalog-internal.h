@@ -758,3 +758,20 @@ enum {
 
 extern const struct struct_field rlimit_fields[RLIMIT_FIELDS_N];
 extern const struct struct_field cachestat_range_fields[CACHESTAT_RANGE_FIELDS_N];
+
+/*
+ * poll-family leaf tables defined in struct_catalog/poll.c.  Covers
+ * struct pollfd (poll / ppoll) and struct epoll_event (epoll_ctl).
+ * Each _N constant gives the extern decl a complete array type so the
+ * spine's ARRAY_SIZE() at the reference site keeps folding to the
+ * same constant it did before the carve.  Neither table is
+ * config-gated -- both structs come from headers trinity already
+ * requires.
+ */
+enum {
+	POLLFD_FIELDS_N		= 3,
+	EPOLL_EVENT_FIELDS_N	= 1,
+};
+
+extern const struct struct_field pollfd_fields[POLLFD_FIELDS_N];
+extern const struct struct_field epoll_event_fields[EPOLL_EVENT_FIELDS_N];
