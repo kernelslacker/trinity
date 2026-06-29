@@ -85,6 +85,7 @@
 #include "child.h"
 #include "childops-netlink.h"
 #include "compat.h"
+#include "name-pool.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
@@ -350,6 +351,13 @@ static int netlink_monitor_race_iter_open_mutator(struct netlink_monitor_race_it
 	ctx->ifindex = (int)if_nametoindex(dev_name);
 	if (ctx->ifindex == 0)
 		return -1;
+
+	/* Kernel confirmed dev_name now names a real device; publish it
+	 * via the NETDEV name pool so sibling childops (and per-syscall
+	 * fuzzers drawing this kind) can collide with it on subsequent
+	 * invocations -- reaches "name a previous syscall planted" lookup
+	 * codepaths instead of always-fresh-random near-miss space. */
+	name_pool_record(NAME_KIND_NETDEV, dev_name, strlen(dev_name));
 
 	ctx->addr = htonl(0xa9fe0000u | (rand32() & 0x0000fffeu) | 1u);
 	return 0;
