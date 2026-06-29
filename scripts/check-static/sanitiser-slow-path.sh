@@ -59,6 +59,7 @@ FILES=(
 	struct_catalog/time.c
 	struct_catalog/perf.c
 	struct_catalog/landlock.c
+	struct_catalog/signal.c
 	arg-decoder.c
 	lib/cmsg_build.c
 	utils.c

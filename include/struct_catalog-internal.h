@@ -467,3 +467,42 @@ enum {
 extern const struct struct_field landlock_ruleset_attr_fields[LANDLOCK_RULESET_ATTR_FIELDS_N];
 extern const struct struct_field landlock_path_beneath_attr_fields[LANDLOCK_PATH_BENEATH_ATTR_FIELDS_N];
 extern const struct struct_field landlock_net_port_attr_fields[LANDLOCK_NET_PORT_ATTR_FIELDS_N];
+
+/*
+ * signal-shaped leaf tables defined in struct_catalog/signal.c.
+ * Covers struct sigevent (timer_create), struct sigaction (rt_sigaction),
+ * stack_t (sigaltstack), the siginfo_t header + its _rt / _kill variant
+ * arms (rt_sigqueueinfo / rt_tgsigqueueinfo / pidfd_send_signal), and
+ * sigset_t (signalfd / signalfd4).  Each _N constant gives the extern
+ * decl a complete array type so the spine's ARRAY_SIZE() at the
+ * reference site keeps folding to the same constant it did before the
+ * carve.  sigevent_notify_values / siginfo_t_si_code_vocab /
+ * siginfo_t_kill_discrim_values are private vocab pools referenced
+ * only by their own signal field arrays / variant entries and stay
+ * scoped to signal.c through this extern surface.
+ */
+enum {
+	SIGEVENT_NOTIFY_VALUES_N		= 4,
+	SIGEVENT_FIELDS_N			= 4,
+	SIGACTION_FIELDS_N			= 1,
+	STACK_T_FIELDS_N			= 3,
+	SIGINFO_T_SI_CODE_VOCAB_N		= 6,
+	SIGINFO_T_FIELDS_N			= 3,
+	SIGINFO_T_RT_VARIANT_FIELDS_N		= 3,
+	SIGINFO_T_KILL_VARIANT_FIELDS_N		= 2,
+	SIGINFO_T_KILL_DISCRIM_VALUES_N		= 2,
+	SIGINFO_T_VARIANTS_N			= 2,
+	SIGSET_T_FIELDS_N			= 1,
+};
+
+extern const unsigned long sigevent_notify_values[SIGEVENT_NOTIFY_VALUES_N];
+extern const struct struct_field sigevent_fields[SIGEVENT_FIELDS_N];
+extern const struct struct_field sigaction_fields[SIGACTION_FIELDS_N];
+extern const struct struct_field stack_t_fields[STACK_T_FIELDS_N];
+extern const unsigned long siginfo_t_si_code_vocab[SIGINFO_T_SI_CODE_VOCAB_N];
+extern const struct struct_field siginfo_t_fields[SIGINFO_T_FIELDS_N];
+extern const struct struct_field siginfo_t_rt_variant_fields[SIGINFO_T_RT_VARIANT_FIELDS_N];
+extern const struct struct_field siginfo_t_kill_variant_fields[SIGINFO_T_KILL_VARIANT_FIELDS_N];
+extern const unsigned long siginfo_t_kill_discrim_values[SIGINFO_T_KILL_DISCRIM_VALUES_N];
+extern const struct union_variant siginfo_t_variants[SIGINFO_T_VARIANTS_N];
+extern const struct struct_field sigset_t_fields[SIGSET_T_FIELDS_N];
