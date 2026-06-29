@@ -61,6 +61,7 @@ FILES=(
 	struct_catalog/landlock.c
 	struct_catalog/signal.c
 	struct_catalog/ipc.c
+	struct_catalog/fcntl.c
 	arg-decoder.c
 	lib/cmsg_build.c
 	utils.c
