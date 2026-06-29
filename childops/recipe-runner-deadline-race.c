@@ -22,6 +22,8 @@
 
 #include "arch.h"
 #include "syscall-gate.h"
+#include "name-pool.h"
+#include "random.h"
 #include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
@@ -627,9 +629,33 @@ bool recipe_keys_revoke_race(bool *unsupported)
 		long key;
 		int rc;
 
-		snprintf(desc, sizeof(desc),
-			 "trinity-keys-revoke-race-%u-%u",
-			 (unsigned int)mypid(), i);
+		{
+			size_t got = 0;
+
+			/* Minority arm: replay a previously-recorded
+			 * description (possibly mutated) so this add_key
+			 * collides with an earlier one in the keyring search
+			 * and key-link codepaths -- those only light up when
+			 * two descriptions share dcache slots, which the
+			 * always-fresh "<pid>-<iter>" form near-misses.  Fall
+			 * through to the fresh path (and record it) when the
+			 * pool is empty. */
+			if (ONE_IN(8))
+				got = name_pool_draw_mutated(NAME_KIND_KEY_DESC,
+							     desc, sizeof(desc));
+
+			if (got > 0) {
+				if (got >= sizeof(desc))
+					got = sizeof(desc) - 1;
+				desc[got] = '\0';
+			} else {
+				snprintf(desc, sizeof(desc),
+					 "trinity-keys-revoke-race-%u-%u",
+					 (unsigned int)mypid(), i);
+				name_pool_record(NAME_KIND_KEY_DESC,
+						 desc, strlen(desc));
+			}
+		}
 
 		key = trinity_raw_syscall(__NR_add_key, "user", desc,
 			      payload, (size_t)sizeof(payload),
