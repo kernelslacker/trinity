@@ -32,7 +32,7 @@
  * The three fields are u64 bitmasks over disjoint vocab spaces:
  *
  *   handled_access_fs  -> LANDLOCK_ACCESS_FS_*  (bits 0..15)
- *   handled_access_net -> LANDLOCK_ACCESS_NET_* (bits 0..1)
+ *   handled_access_net -> LANDLOCK_ACCESS_NET_* (bits 0..3)
  *   scoped             -> LANDLOCK_SCOPE_*      (bits 0..1)
  *
  * Anything outside its mask makes landlock_create_ruleset return
@@ -51,8 +51,24 @@
 	 LANDLOCK_ACCESS_FS_MAKE_SYM    | LANDLOCK_ACCESS_FS_REFER       | \
 	 LANDLOCK_ACCESS_FS_TRUNCATE    | LANDLOCK_ACCESS_FS_IOCTL_DEV)
 
-#define LANDLOCK_ACCESS_NET_MASK \
-	(LANDLOCK_ACCESS_NET_BIND_TCP | LANDLOCK_ACCESS_NET_CONNECT_TCP)
+/*
+ * Linux 7.2 adds UDP bind/connect-send bits to handled_access_net.
+ * Older uapi headers don't define them; fall back to the upstream
+ * bit assignments so the mask covers the new vocabulary even when
+ * built against a stale linux/landlock.h.
+ */
+#ifndef LANDLOCK_ACCESS_NET_BIND_UDP
+#define LANDLOCK_ACCESS_NET_BIND_UDP		(1ULL << 2)
+#endif
+#ifndef LANDLOCK_ACCESS_NET_CONNECT_SEND_UDP
+#define LANDLOCK_ACCESS_NET_CONNECT_SEND_UDP	(1ULL << 3)
+#endif
+
+#define LANDLOCK_ACCESS_NET_MASK					\
+	(LANDLOCK_ACCESS_NET_BIND_TCP	  |				\
+	 LANDLOCK_ACCESS_NET_CONNECT_TCP  |				\
+	 LANDLOCK_ACCESS_NET_BIND_UDP	  |				\
+	 LANDLOCK_ACCESS_NET_CONNECT_SEND_UDP)
 
 #define LANDLOCK_SCOPE_MASK \
 	(LANDLOCK_SCOPE_ABSTRACT_UNIX_SOCKET | LANDLOCK_SCOPE_SIGNAL)
