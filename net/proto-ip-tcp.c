@@ -73,6 +73,18 @@ void tcp_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triple
 		generate_rand_bytes((unsigned char *) so->optval, so->optlen);
 		break;
 
+	case TCP_REPAIR_WINDOW: {
+		struct tcp_repair_window *win = (struct tcp_repair_window *) so->optval;
+
+		win->snd_wl1 = rnd_u32();
+		win->snd_wnd = rnd_u32();
+		win->max_window = win->snd_wnd + rnd_u32();
+		win->rcv_wnd = rnd_u32();
+		win->rcv_wup = rnd_u32();
+		so->optlen = sizeof(struct tcp_repair_window);
+		break;
+	}
+
 	case TCP_REPAIR_OPTIONS: {
 		struct tcp_repair_opt *opt = (struct tcp_repair_opt *) so->optval;
 		unsigned int count = rnd_modulo_u32(4) + 1;
