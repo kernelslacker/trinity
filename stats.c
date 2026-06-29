@@ -766,6 +766,24 @@ void stat_category_emit_text(const struct stat_category *cat)
 		         stat_field_load(&cat->fields[i]));
 }
 
+/* --blob-mutator (default off): A/B observability for the ARG_BUF_SIZED
+ * content-authoring lane.  fills is the gate (total invocations that
+ * authored content), havoc_ops is the count of bounded byte-mutation
+ * ops applied on top of the FILL floor, dict_inserts is reserved for
+ * the Build 2 CMPDICT rung and stays at zero in this build.  When the
+ * mode is OFF the gate counter stays at zero so stat_category_emit_text
+ * suppresses the whole block (render-gap-aware). */
+static const struct stat_field blob_mutator_fields[] = {
+	STAT_FIELD(blob, fills),
+	STAT_FIELD(blob, havoc_ops),
+	STAT_FIELD(blob, dict_inserts),
+};
+
+const struct stat_category blob_mutator_category =
+	STAT_CATEGORY("blob_mutator",
+	              blob_fills,
+	              blob_mutator_fields);
+
 static const struct stat_field msg_zerocopy_churn_fields[] = {
 	STAT_FIELD(msg_zerocopy_churn, runs),
 	STAT_FIELD(msg_zerocopy_churn, setup_failed),
@@ -3214,6 +3232,9 @@ static void __cold dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&tcp_ulp_swap_churn_category);
+
+	printf(",");
+	stat_category_emit_json(&blob_mutator_category);
 
 	printf(",");
 	stat_category_emit_json(&msg_zerocopy_churn_category);
