@@ -4850,6 +4850,124 @@ void stats_log_close(void)
 	stats_log_fp = NULL;
 }
 
+/*
+ * Per-syscall timeseries log (--stats side-effect).
+ *
+ * When --stats is passed, append one JSON-Lines record per print_stats()
+ * window to stats-timeseries-<epoch>.jsonl in the operator's launch CWD
+ * (opened from main_init() before change_tmp_dir(), mirroring the
+ * --stats-log-file path-resolution rule).  Each line carries the
+ * current op_count, the parent's distinct-edge total, and a per-syscall
+ * {nr,edges,calls} array over enabled syscalls.  No flag of its own --
+ * the operator gets it whenever they ask for --stats.
+ *
+ * Same fd-leak hazard as stats_log_*: fopen() leaves an ordinary
+ * non-CLOEXEC fd in the table; fork() shares it; the syscall fuzzer in
+ * the child can reach it numerically.  stats_timeseries_drop_in_child()
+ * is called alongside stats_log_drop_in_child() from every fork()'d
+ * child entry point.
+ */
+static FILE *stats_timeseries_fp = NULL;
+
+void stats_timeseries_open(void)
+{
+	char path[64];
+	time_t now;
+
+	if (show_stats == false)
+		return;
+
+	now = time(NULL);
+	snprintf(path, sizeof(path),
+		 "stats-timeseries-%lld.jsonl", (long long)now);
+
+	stats_timeseries_fp = fopen(path, "a");
+	if (stats_timeseries_fp == NULL) {
+		outputerr("failed to open stats timeseries file %s: %s\n",
+			  path, strerror(errno));
+		return;
+	}
+}
+
+void stats_timeseries_close(void)
+{
+	if (stats_timeseries_fp == NULL)
+		return;
+	fclose(stats_timeseries_fp);
+	stats_timeseries_fp = NULL;
+}
+
+void stats_timeseries_drop_in_child(void)
+{
+	if (stats_timeseries_fp == NULL)
+		return;
+	close(fileno(stats_timeseries_fp));
+	stats_timeseries_fp = NULL;
+}
+
+/* Walk one syscall table and emit {"nr":N,"edges":E,"calls":C} entries
+ * for each enabled slot whose entry pointer is non-NULL.  *first tracks
+ * whether the next entry needs a leading comma so the caller can chain
+ * the 32-bit and 64-bit tables into a single array literal. */
+static void stats_timeseries_emit_table(const struct syscalltable *table,
+					unsigned int n, bool *first)
+{
+	unsigned int i;
+
+	for (i = 0; i < n; i++) {
+		struct syscallentry *entry = table[i].entry;
+		unsigned int nr, calls;
+		unsigned long edges = 0;
+
+		if (entry == NULL)
+			continue;
+		if (entry->active_number == 0)
+			continue;
+
+		nr = entry->number;
+		calls = entry->attempted;
+		if (nr < MAX_NR_SYSCALL && kcov_shm != NULL)
+			edges = __atomic_load_n(
+				&kcov_shm->per_syscall_edges[nr],
+				__ATOMIC_RELAXED);
+
+		fprintf(stats_timeseries_fp,
+			"%s{\"nr\":%u,\"edges\":%lu,\"calls\":%u}",
+			*first ? "" : ",", nr, edges, calls);
+		*first = false;
+	}
+}
+
+void stats_timeseries_emit_window(unsigned long op_count)
+{
+	unsigned long edges_total = 0;
+	bool first = true;
+
+	if (stats_timeseries_fp == NULL)
+		return;
+
+	if (kcov_shm != NULL)
+		edges_total = __atomic_load_n(&kcov_shm->distinct_edges,
+					      __ATOMIC_RELAXED);
+
+	fprintf(stats_timeseries_fp,
+		"{\"t\":%lu,\"edges_total\":%lu,\"per_syscall\":[",
+		op_count, edges_total);
+
+	if (biarch == true) {
+		stats_timeseries_emit_table(syscalls_64bit,
+					    max_nr_64bit_syscalls, &first);
+		stats_timeseries_emit_table(syscalls_32bit,
+					    max_nr_32bit_syscalls, &first);
+	} else {
+		stats_timeseries_emit_table(syscalls,
+					    max_nr_syscalls, &first);
+	}
+
+	fputs("]}\n", stats_timeseries_fp);
+	fflush(stats_timeseries_fp);
+}
+
 /* Drop the inherited stats-log fd from a fork()'d child.  fopen() on the
  * parent side leaves an ordinary fd in the table; fork shares it, and the
  * syscall fuzzer in the child can hit it numerically (fchmod / ftruncate /
