@@ -143,6 +143,7 @@
 #include "childops-genl.h"
 #include "childops-util.h"
 #include "jitter.h"
+#include "name-pool.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
@@ -1049,6 +1050,14 @@ static int nl80211_iter_setup(struct genl_ctx *ctx, char *ifname,
 		return -1;
 	}
 	*ifindex = rc;
+
+	/* Kernel confirmed @ifname now names a real STATION iface; publish
+	 * it via the NETDEV name pool so sibling childops (and per-syscall
+	 * fuzzers drawing this kind) can reach "name a previous syscall
+	 * planted" lookup codepaths instead of always-fresh-random near-miss
+	 * space. */
+	name_pool_record(NAME_KIND_NETDEV, ifname, strlen(ifname));
+
 	__atomic_add_fetch(&shm->stats.nl80211_iface_created,
 			   1, __ATOMIC_RELAXED);
 	if (created_count < NL80211_IFACE_RING_CAP)
