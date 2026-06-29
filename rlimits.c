@@ -26,6 +26,42 @@
 #define NPROC_BASE	128UL
 #define NPROC_PER_CHILD	8UL
 
+/*
+ * Raise RLIMIT_MEMLOCK to infinity for the trinity process tree.
+ * Children inherit rlimits across fork, so a single parent-side raise
+ * gives every fuzz child enough headroom for mlockall(MCL_CURRENT |
+ * MCL_FUTURE) under ASAN.  Without this, libasan's TB-scale shadow
+ * extension mmap -EAGAINs once the per-process MEMLOCK cap is hit
+ * while MCL_FUTURE is set, and the child aborts.
+ *
+ * Raising the hard limit needs CAP_SYS_RESOURCE; the trinity binary
+ * gets it via `make setcap`.  Best-effort: if the cap is absent the
+ * setrlimit fails EPERM, we log once and continue with the inherited
+ * limit.  Trinity must still run without setcap (the mlock_pressure
+ * childop's existing ASAN gate keeps coverage workable on the inherited
+ * limit).
+ *
+ * Co-located with the soft-cap helpers below despite being a *raise*:
+ * this is the single point where the process-tree's MEMLOCK limit is
+ * set before fork, and the raise reuses CAP_SYS_RESOURCE that the
+ * sibling caps don't need.  The cap is dropped along with everything
+ * else by the capset()-to-empty in init_child_setup_sandbox().
+ */
+static void raise_memlock_unlimited(void)
+{
+	struct rlimit rl = { RLIM_INFINITY, RLIM_INFINITY };
+
+	if (setrlimit(RLIMIT_MEMLOCK, &rl) != 0) {
+		output(0, "rlimit: setrlimit(MEMLOCK, unlimited) failed: %s "
+			  "(CAP_SYS_RESOURCE missing? run `make setcap`); "
+			  "continuing with inherited limit\n",
+			  strerror(errno));
+		return;
+	}
+
+	output(0, "rlimit: MEMLOCK=unlimited\n");
+}
+
 static void cap_one(int resource, const char *name, rlim_t target)
 {
 	struct rlimit rl;
@@ -58,6 +94,8 @@ static void cap_one(int resource, const char *name, rlim_t target)
 void init_rlimits(unsigned int nr_children)
 {
 	rlim_t nproc_target = (rlim_t) nr_children * NPROC_PER_CHILD + NPROC_BASE;
+
+	raise_memlock_unlimited();
 
 	cap_one(RLIMIT_NOFILE, "NOFILE", (rlim_t) NOFILE_TARGET);
 
