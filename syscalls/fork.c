@@ -1,6 +1,7 @@
 /*
    int sys_fork(struct pt_regs *regs)
  */
+#include <stdlib.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #include "maps.h"

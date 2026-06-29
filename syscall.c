@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <limits.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <signal.h>
 #include <sys/prctl.h>
 #include <sys/resource.h>

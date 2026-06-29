@@ -1,6 +1,7 @@
 #include <dlfcn.h>
 #include <limits.h>	// PATH_MAX
 #include <signal.h>
+#include <stdlib.h>
 #include <string.h>	// strnlen
 #include <sys/mman.h>	// memfd_create, MFD_CLOEXEC
 #include <sys/stat.h>	// umask

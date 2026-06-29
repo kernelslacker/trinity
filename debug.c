@@ -9,6 +9,7 @@
 #include <signal.h>		// SIGSEGV / SIGABRT / SIGBUS / SIGILL for fault_beacon dump
 #include <stdbool.h>
 #include <stdarg.h>
+#include <stdlib.h>
 #include <syslog.h>
 #include <stdio.h>
 #include <unistd.h>
