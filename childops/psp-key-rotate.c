@@ -120,6 +120,7 @@
 #include "childops-genl.h"
 #include "childops-util.h"
 #include "jitter.h"
+#include "name-pool.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
@@ -873,9 +874,11 @@ static int psp_key_rotate_iter_setup(struct nl_ctx *rtnl)
 	(void)snprintf(ifname, sizeof(ifname), "psp%u",
 		       (unsigned int)(rand32() & 0xffff));
 	rc = rtnl_make_netdevsim(rtnl, ifname);
-	if (rc == 0)
+	if (rc == 0) {
 		__atomic_add_fetch(&shm->stats.psp_key_rotate_netdev_create_ok,
 				   1, __ATOMIC_RELAXED);
+		name_pool_record(NAME_KIND_NETDEV, ifname, strlen(ifname));
+	}
 	return 0;
 }
 
