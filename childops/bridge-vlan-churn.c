@@ -127,6 +127,7 @@
 #include "childops-netlink.h"
 #include "compat.h"
 #include "jitter.h"
+#include "name-pool.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
@@ -692,6 +693,14 @@ static int bridge_vlan_iter_setup(struct bridge_vlan_iter_ctx *it,
 	it->br_idx = (int)if_nametoindex(it->br_name);
 	if (it->br_idx == 0)
 		return -1;
+
+	/* Kernel confirmed it->br_name now names a real bridge; publish it
+	 * via the NETDEV name pool so sibling childops (and per-syscall
+	 * fuzzers drawing this kind) can collide with it on subsequent
+	 * invocations.  Only the bridge master is recorded -- the per-kind
+	 * ring is 16 slots so flooding it with the four veth leaves would
+	 * thrash the pool. */
+	name_pool_record(NAME_KIND_NETDEV, it->br_name, strlen(it->br_name));
 
 	if (build_veth_create(&it->nl, it->v0a, it->v0b) == 0) {
 		it->veth0_added = true;
