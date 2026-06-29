@@ -70,6 +70,7 @@
 #include "compat.h"
 #include "pids.h"
 #include "jitter.h"
+#include "name-pool.h"
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
@@ -180,10 +181,29 @@ static void keyring_spam_iter_add_key(int32_t *live,
 {
 	char desc[64];
 	long rc;
+	size_t got = 0;
 
-	snprintf(desc, sizeof(desc),
-		 "trinity-keyring-spam-%u-%u",
-		 (unsigned int) mypid(), iter);
+	/* Minority arm: replay a previously-recorded description (possibly
+	 * mutated) so this add_key collides with an earlier one in
+	 * keyring_search_iterator / __key_link_check_live_key paths -- those
+	 * only light up when two descriptions share dcache slots, which the
+	 * fresh "<pid>-<iter>" form almost never does.  Fall through to the
+	 * fresh path (and record it) when the pool is empty. */
+	if (ONE_IN(8))
+		got = name_pool_draw_mutated(NAME_KIND_KEY_DESC,
+					     desc, sizeof(desc));
+
+	if (got > 0) {
+		if (got >= sizeof(desc))
+			got = sizeof(desc) - 1;
+		desc[got] = '\0';
+	} else {
+		snprintf(desc, sizeof(desc),
+			 "trinity-keyring-spam-%u-%u",
+			 (unsigned int) mypid(), iter);
+		name_pool_record(NAME_KIND_KEY_DESC, desc, strlen(desc));
+	}
+
 	rc = trinity_raw_syscall(__NR_add_key, "user", desc,
 		     payload, (size_t) KEYRING_PAYLOAD_BYTES,
 		     (unsigned long) anchor);
