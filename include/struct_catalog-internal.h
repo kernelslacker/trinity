@@ -620,6 +620,24 @@ extern const unsigned long iocb_opcode_values[IOCB_OPCODE_VALUES_N];
 extern const struct struct_field iocb_fields[IOCB_FIELDS_N];
 
 /*
+ * futex-shaped leaf tables defined in struct_catalog/futex.c.  Covers
+ * struct robust_list_head (set_robust_list), struct rseq (rseq), and
+ * struct futex_waitv (futex_waitv).  Each _N constant gives the extern
+ * decl a complete array type so the spine's ARRAY_SIZE() at the
+ * reference site keeps folding to the same constant it did before the
+ * carve.
+ */
+enum {
+	ROBUST_LIST_HEAD_FIELDS_N	= 3,
+	RSEQ_FIELDS_N			= 6,
+	FUTEX_WAITV_FIELDS_N		= 3,
+};
+
+extern const struct struct_field robust_list_head_fields[ROBUST_LIST_HEAD_FIELDS_N];
+extern const struct struct_field rseq_fields[RSEQ_FIELDS_N];
+extern const struct struct_field futex_waitv_fields[FUTEX_WAITV_FIELDS_N];
+
+/*
  * capability leaf tables defined in struct_catalog/cap.c.  Covers
  * struct __user_cap_header_struct and struct __user_cap_data_struct
  * (capset / capget).  Each _N constant gives the extern decl a complete
