@@ -116,7 +116,6 @@
 #include <time.h>
 #include <unistd.h>
 
-#include <linux/if_bridge.h>
 #include <linux/if_ether.h>
 #include <linux/if_link.h>
 #include <linux/if_packet.h>
@@ -125,8 +124,9 @@
 
 #include "child.h"
 #include "childops-netlink.h"
-#include "compat.h"
 #include "jitter.h"
+#include "kernel/if_bridge.h"
+#include "kernel/veth.h"
 #include "name-pool.h"
 #include "random.h"
 #include "shm.h"
@@ -137,70 +137,6 @@
  * UAPI integer (7) is stable. */
 #ifndef IFLA_BR_VLAN_FILTERING
 #define IFLA_BR_VLAN_FILTERING		7
-#endif
-
-/* if_bridge.h IFLA_BRIDGE_* enum members and BRIDGE_VLAN_INFO_* /
- * BRIDGE_FLAGS_* may be missing on older sysroots; redefine to the
- * stable UAPI integers. */
-#ifndef IFLA_BRIDGE_FLAGS
-#define IFLA_BRIDGE_FLAGS		0
-#endif
-#ifndef IFLA_BRIDGE_MODE
-#define IFLA_BRIDGE_MODE		1
-#endif
-#ifndef IFLA_BRIDGE_VLAN_INFO
-#define IFLA_BRIDGE_VLAN_INFO		2
-#endif
-#ifndef IFLA_BRIDGE_VLAN_TUNNEL_INFO
-#define IFLA_BRIDGE_VLAN_TUNNEL_INFO	3
-#endif
-#ifndef IFLA_BRIDGE_MST
-#define IFLA_BRIDGE_MST			6
-#endif
-
-#ifndef BRIDGE_FLAGS_MASTER
-#define BRIDGE_FLAGS_MASTER		1
-#endif
-#ifndef BRIDGE_FLAGS_SELF
-#define BRIDGE_FLAGS_SELF		2
-#endif
-
-#ifndef BRIDGE_VLAN_INFO_PVID
-#define BRIDGE_VLAN_INFO_PVID		(1 << 1)
-#endif
-#ifndef BRIDGE_VLAN_INFO_UNTAGGED
-#define BRIDGE_VLAN_INFO_UNTAGGED	(1 << 2)
-#endif
-#ifndef BRIDGE_VLAN_INFO_RANGE_BEGIN
-#define BRIDGE_VLAN_INFO_RANGE_BEGIN	(1 << 3)
-#endif
-#ifndef BRIDGE_VLAN_INFO_RANGE_END
-#define BRIDGE_VLAN_INFO_RANGE_END	(1 << 4)
-#endif
-
-#ifndef IFLA_BRIDGE_VLAN_TUNNEL_ID
-#define IFLA_BRIDGE_VLAN_TUNNEL_ID	1
-#endif
-#ifndef IFLA_BRIDGE_VLAN_TUNNEL_VID
-#define IFLA_BRIDGE_VLAN_TUNNEL_VID	2
-#endif
-#ifndef IFLA_BRIDGE_VLAN_TUNNEL_FLAGS
-#define IFLA_BRIDGE_VLAN_TUNNEL_FLAGS	3
-#endif
-
-#ifndef IFLA_BRIDGE_MST_ENTRY
-#define IFLA_BRIDGE_MST_ENTRY		1
-#endif
-#ifndef IFLA_BRIDGE_MST_ENTRY_MSTI
-#define IFLA_BRIDGE_MST_ENTRY_MSTI	1
-#endif
-#ifndef IFLA_BRIDGE_MST_ENTRY_STATE
-#define IFLA_BRIDGE_MST_ENTRY_STATE	2
-#endif
-
-/* BR_STATE_FORWARDING (3) is stable since the bridge UAPI shipped. */
-#ifndef BR_STATE_FORWARDING
-#define BR_STATE_FORWARDING		3
 #endif
 
 /* AF_BRIDGE = 7 across glibc / musl / kernel UAPI. */
