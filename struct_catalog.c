@@ -519,23 +519,6 @@ static const struct struct_field lsm_ctx_fields[] = {
 	FIELD(struct lsm_ctx, ctx_len),
 };
 
-#ifdef USE_TCP_REPAIR_OPT
-/*
- * struct tcp_repair_opt -- IPPROTO_TCP / TCP_REPAIR_OPTIONS.  The kernel
- * iterates optlen/sizeof(struct tcp_repair_opt) entries from optval and
- * switches on opt_code (TCPOPT_*) -- a small discrete opcode set.  Both
- * fields stay FT_RAW: opt_code is treated as an enum by the kernel (not
- * an unsigned contiguous window, so FT_RANGE would be wrong), and opt_val
- * is a per-opcode payload with no shared range.  Single-entry fill is
- * sufficient to exercise the path; a FT_PTR_ARRAY multi-entry follow-up
- * is the natural next step but does not block this proof.
- */
-static const struct struct_field tcp_repair_opt_fields[] = {
-	FIELD(struct tcp_repair_opt, opt_code),
-	FIELD(struct tcp_repair_opt, opt_val),
-};
-#endif
-
 /* ------------------------------------------------------------------ */
 /* The catalog itself                                                   */
 /* ------------------------------------------------------------------ */
