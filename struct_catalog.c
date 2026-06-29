@@ -631,25 +631,6 @@ static const struct struct_field file_attr_fields[] = {
 };
 
 /* ------------------------------------------------------------------ */
-/* struct __user_cap_header_struct (capset, capget)                    */
-/* ------------------------------------------------------------------ */
-
-static const struct struct_field user_cap_header_fields[] = {
-	FIELD(struct __user_cap_header_struct, version),
-	FIELD(struct __user_cap_header_struct, pid),
-};
-
-/* ------------------------------------------------------------------ */
-/* struct __user_cap_data_struct (capset, capget)                      */
-/* ------------------------------------------------------------------ */
-
-static const struct struct_field user_cap_data_fields[] = {
-	FIELD(struct __user_cap_data_struct, effective),
-	FIELD(struct __user_cap_data_struct, permitted),
-	FIELD(struct __user_cap_data_struct, inheritable),
-};
-
-/* ------------------------------------------------------------------ */
 /* struct futex_waitv (futex_waitv)                                    */
 /* ------------------------------------------------------------------ */
 
