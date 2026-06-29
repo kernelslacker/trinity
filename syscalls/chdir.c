@@ -9,6 +9,7 @@
 #include "rnd.h"
 #include "sanitise.h"
 #include "trinity.h"
+#include "utils.h"
 
 static void sanitise_chdir(struct syscallrecord *rec)
 {
@@ -37,16 +38,20 @@ static void sanitise_chdir(struct syscallrecord *rec)
 	if (rnd_modulo_u32(2) != 0)
 		return;
 
-	path = (char *) rec->a1;
+	/*
+	 * Allocate a fresh MAX_PATH_LEN buffer and repoint rec->a1 at it
+	 * instead of snprintf'ing into the slot in place.  ARG_PATHNAME
+	 * does not guarantee a >=MAX_PATH_LEN backing chunk for every
+	 * source (corpus/mutation paths can be much smaller), so an
+	 * in-place write would overrun a small heap chunk and corrupt
+	 * glibc metadata.
+	 */
+	path = zmalloc_tracked(MAX_PATH_LEN);
 	if (path == NULL)
 		return;
 
-	/*
-	 * Overwrite the ARG_PATHNAME buffer in place.  generate_pathname()
-	 * zmallocs MAX_PATH_LEN (4096) bytes, so the snprintf cap below
-	 * cannot overflow.
-	 */
 	snprintf(path, MAX_PATH_LEN, "%s", trinity_tmpdir_abs());
+	rec->a1 = (unsigned long) path;
 }
 
 struct syscallentry syscall_chdir = {
