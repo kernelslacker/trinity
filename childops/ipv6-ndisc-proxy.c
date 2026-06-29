@@ -71,6 +71,7 @@
 #include "childops-netlink.h"
 #include "compat.h"
 #include "jitter.h"
+#include "name-pool.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
@@ -366,6 +367,14 @@ static int ipv6_ndisc_proxy_in_ns(void *arg)
 		nl_close(&ctx);
 		return 0;
 	}
+
+	/* Kernel confirmed vp0 names a real device; publish it via the
+	 * NETDEV name pool so sibling childops and per-syscall fuzzers
+	 * drawing this kind can land a HIT on dev_get_by_name /
+	 * SO_BINDTODEVICE instead of always-fresh-random ENODEV.  Record
+	 * the pair primary only — the per-kind ring is 16 slots and
+	 * recording both leaves would thrash it. */
+	name_pool_record(NAME_KIND_NETDEV, "vp0", strlen("vp0"));
 
 	memset(&a1, 0, sizeof(a1));
 	a1.s6_addr[0] = 0xfc; a1.s6_addr[15] = 0x01;
