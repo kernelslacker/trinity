@@ -80,6 +80,7 @@
 
 #include "child.h"
 #include "childops-netlink.h"
+#include "name-pool.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
@@ -491,6 +492,14 @@ static int ip6erspan_migrate_iter_create_link(struct ip6erspan_migrate_iter_ctx 
 	ctx->ifindex = (int)if_nametoindex(ctx->ifname);
 	if (ctx->ifindex <= 0)
 		return -1;
+
+	/* Kernel confirmed ctx->ifname now names a real device; publish it
+	 * via the NETDEV name pool so sibling childops (and per-syscall
+	 * fuzzers drawing this kind) can collide with it on subsequent
+	 * invocations -- reaches "name a previous syscall planted" lookup
+	 * codepaths instead of always-fresh-random near-miss space. */
+	name_pool_record(NAME_KIND_NETDEV, ctx->ifname, strlen(ctx->ifname));
+
 	return 0;
 }
 
