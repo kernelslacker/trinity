@@ -4858,8 +4858,11 @@ void stats_log_close(void)
  * (opened from main_init() before change_tmp_dir(), mirroring the
  * --stats-log-file path-resolution rule).  Each line carries the
  * current op_count, the parent's distinct-edge total, and a per-syscall
- * {nr,edges,calls} array over enabled syscalls.  No flag of its own --
- * the operator gets it whenever they ask for --stats.
+ * {nr,edges,calls} array over enabled syscalls.  The per-syscall
+ * "edges" field is bucket_bits_real (the same real edge metric the
+ * full --stats dump reports per syscall), not the productive-call
+ * counter -- those are exposed separately as "calls".  No flag of its
+ * own -- the operator gets it whenever they ask for --stats.
  *
  * Same fd-leak hazard as stats_log_*: fopen() leaves an ordinary
  * non-CLOEXEC fd in the table; fork() shares it; the syscall fuzzer in
@@ -4908,9 +4911,12 @@ void stats_timeseries_drop_in_child(void)
 /* Walk one syscall table and emit {"nr":N,"edges":E,"calls":C} entries
  * for each enabled slot whose entry pointer is non-NULL.  *first tracks
  * whether the next entry needs a leading comma so the caller can chain
- * the 32-bit and 64-bit tables into a single array literal. */
+ * the 32-bit and 64-bit tables into a single array literal.  do32
+ * selects the arch dim into per_syscall_diag[][], matching the
+ * kcov_diag_emit_block() convention (false=64-bit, true=32-bit). */
 static void stats_timeseries_emit_table(const struct syscalltable *table,
-					unsigned int n, bool *first)
+					unsigned int n, bool do32,
+					bool *first)
 {
 	unsigned int i;
 
@@ -4928,7 +4934,7 @@ static void stats_timeseries_emit_table(const struct syscalltable *table,
 		calls = entry->attempted;
 		if (nr < MAX_NR_SYSCALL && kcov_shm != NULL)
 			edges = __atomic_load_n(
-				&kcov_shm->per_syscall_edges[nr],
+				&kcov_shm->per_syscall_diag[nr][do32 ? 1 : 0].bucket_bits_real,
 				__ATOMIC_RELAXED);
 
 		fprintf(stats_timeseries_fp,
@@ -4956,12 +4962,15 @@ void stats_timeseries_emit_window(unsigned long op_count)
 
 	if (biarch == true) {
 		stats_timeseries_emit_table(syscalls_64bit,
-					    max_nr_64bit_syscalls, &first);
+					    max_nr_64bit_syscalls,
+					    false, &first);
 		stats_timeseries_emit_table(syscalls_32bit,
-					    max_nr_32bit_syscalls, &first);
+					    max_nr_32bit_syscalls,
+					    true, &first);
 	} else {
 		stats_timeseries_emit_table(syscalls,
-					    max_nr_syscalls, &first);
+					    max_nr_syscalls,
+					    false, &first);
 	}
 
 	fputs("]}\n", stats_timeseries_fp);
