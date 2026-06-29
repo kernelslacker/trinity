@@ -173,12 +173,10 @@ static void sanitise_setxattrat(struct syscallrecord *rec)
 	 * is path-pin only, no sanitiser-slow-path setxattr() call.
 	 */
 	if (rnd_modulo_u32(2) == 0) {
-		char *path = (char *) rec->a2;
+		char *path = get_testfile_path();
+
 		if (path != NULL)
-			snprintf(path, MAX_PATH_LEN,
-				 "%s/trinity-testfile%u",
-				 trinity_tmpdir_abs(),
-				 1 + rnd_modulo_u32(NR_TESTFILES));
+			rec->a2 = (unsigned long) path;
 	}
 }
 

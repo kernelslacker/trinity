@@ -30,9 +30,12 @@ static void sanitise_fchmodat2(struct syscallrecord *rec)
 	 * half preserves the random pathname so the ENOENT / -ENOTDIR
 	 * reject arms stay exercised.
 	 */
-	if (rec->a2 && rnd_modulo_u32(2) == 0)
-		snprintf((char *) rec->a2, MAX_PATH_LEN, "%s/trinity-testfile%u",
-			 trinity_tmpdir_abs(), 1 + rnd_modulo_u32(NR_TESTFILES));
+	if (rec->a2 && rnd_modulo_u32(2) == 0) {
+		char *path = get_testfile_path();
+
+		if (path != NULL)
+			rec->a2 = (unsigned long) path;
+	}
 
 	/*
 	 * flags (a4): do_fchmodat rejects any bit outside

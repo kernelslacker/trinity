@@ -68,18 +68,10 @@ static void sanitise_statfs(struct syscallrecord *rec)
 	 * purely additive to the existing a2 / post-oracle work.
 	 */
 	if (rnd_modulo_u32(2) == 0) {
-		char *path = (char *) rec->a1;
+		char *path = get_testfile_path();
 
-		/*
-		 * Overwrite the ARG_PATHNAME buffer in place.
-		 * generate_pathname() zmallocs MAX_PATH_LEN (4096) bytes,
-		 * so the snprintf cap below cannot overflow.
-		 */
 		if (path != NULL)
-			snprintf(path, MAX_PATH_LEN,
-				 "%s/trinity-testfile%u",
-				 trinity_tmpdir_abs(),
-				 1 + rnd_modulo_u32(NR_TESTFILES));
+			rec->a1 = (unsigned long) path;
 	}
 
 	avoid_shared_buffer_out(&rec->a2, page_size);
@@ -303,13 +295,10 @@ static void sanitise_statfs64(struct syscallrecord *rec)
 	 * halves.
 	 */
 	if (rnd_modulo_u32(2) == 0) {
-		char *path = (char *) rec->a1;
+		char *path = get_testfile_path();
 
 		if (path != NULL)
-			snprintf(path, MAX_PATH_LEN,
-				 "%s/trinity-testfile%u",
-				 trinity_tmpdir_abs(),
-				 1 + rnd_modulo_u32(NR_TESTFILES));
+			rec->a1 = (unsigned long) path;
 	}
 
 	avoid_shared_buffer_out(&rec->a3, rec->a2 ? rec->a2 : page_size);

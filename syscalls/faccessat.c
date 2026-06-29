@@ -40,16 +40,11 @@ static void sanitise_faccessat(struct syscallrecord *rec)
 	if (rnd_modulo_u32(2) != 0)
 		return;
 
-	path = (char *) rec->a2;
+	path = get_testfile_path();
 	if (path == NULL)
 		return;
 
-	/*
-	 * generate_pathname() zmallocs MAX_PATH_LEN (4096) bytes, so the
-	 * snprintf cap below cannot overflow.
-	 */
-	snprintf(path, MAX_PATH_LEN, "%s/trinity-testfile%u",
-		 trinity_tmpdir_abs(), 1 + rnd_modulo_u32(NR_TESTFILES));
+	rec->a2 = (unsigned long) path;
 }
 
 /*

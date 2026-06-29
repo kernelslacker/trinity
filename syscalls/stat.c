@@ -52,17 +52,11 @@ static void sanitise_statbuf_a2(struct syscallrecord *rec)
 	if (rnd_modulo_u32(2) != 0)
 		return;
 
-	path = (char *) rec->a1;
+	path = get_testfile_path();
 	if (path == NULL)
 		return;
 
-	/*
-	 * Overwrite the ARG_PATHNAME buffer in place.  generate_pathname()
-	 * zmallocs MAX_PATH_LEN (4096) bytes, so the snprintf cap below
-	 * cannot overflow.
-	 */
-	snprintf(path, MAX_PATH_LEN, "%s/trinity-testfile%u",
-		 trinity_tmpdir_abs(), 1 + rnd_modulo_u32(NR_TESTFILES));
+	rec->a1 = (unsigned long) path;
 }
 
 struct syscallentry syscall_stat = {
@@ -305,12 +299,10 @@ static void sanitise_statx(struct syscallrecord *rec)
 	 * below so the snapshot captures what the kernel actually sees.
 	 */
 	if (rnd_modulo_u32(2) == 0) {
-		char *path = (char *) rec->a2;
+		char *path = get_testfile_path();
 
 		if (path != NULL) {
-			snprintf(path, MAX_PATH_LEN, "%s/trinity-testfile%u",
-				 trinity_tmpdir_abs(),
-				 1 + rnd_modulo_u32(NR_TESTFILES));
+			rec->a2 = (unsigned long) path;
 			rec->a1 = (unsigned long) AT_FDCWD;
 		}
 	}

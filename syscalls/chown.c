@@ -44,17 +44,11 @@ static void sanitise_chown(struct syscallrecord *rec)
 	if (rnd_modulo_u32(2) != 0)
 		return;
 
-	path = (char *) rec->a1;
+	path = get_testfile_path();
 	if (path == NULL)
 		return;
 
-	/*
-	 * Overwrite the ARG_PATHNAME buffer in place.  generate_pathname()
-	 * zmallocs MAX_PATH_LEN (4096) bytes, so the snprintf cap below
-	 * cannot overflow.
-	 */
-	snprintf(path, MAX_PATH_LEN, "%s/trinity-testfile%u",
-		 trinity_tmpdir_abs(), 1 + rnd_modulo_u32(NR_TESTFILES));
+	rec->a1 = (unsigned long) path;
 }
 
 struct syscallentry syscall_chown = {
