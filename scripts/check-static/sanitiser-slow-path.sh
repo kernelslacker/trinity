@@ -65,6 +65,7 @@ FILES=(
 	struct_catalog/socket.c
 	struct_catalog/aio.c
 	struct_catalog/tcp.c
+	struct_catalog/lsm.c
 	arg-decoder.c
 	lib/cmsg_build.c
 	utils.c

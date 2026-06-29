@@ -489,6 +489,23 @@ extern const struct struct_field landlock_path_beneath_attr_fields[LANDLOCK_PATH
 extern const struct struct_field landlock_net_port_attr_fields[LANDLOCK_NET_PORT_ATTR_FIELDS_N];
 
 /*
+ * LSM leaf table defined in struct_catalog/lsm.c.  Covers struct
+ * lsm_ctx (lsm_set_self_attr a2 head).  The _N constant gives the
+ * extern decl a complete array type so the spine's ARRAY_SIZE() at
+ * the reference site keeps folding to the same constant it did before
+ * the carve.  The struct lsm_ctx fallback shim lives in both
+ * struct_catalog.c and struct_catalog/lsm.c under the same
+ * #ifndef _LINUX_LSM_H guard -- the spine needs the type visible for
+ * sizeof(struct lsm_ctx) on its catalog entry, the leaf TU needs it
+ * for the FIELD() offsetof / sizeof initialisers.
+ */
+enum {
+	LSM_CTX_FIELDS_N	= 4,
+};
+
+extern const struct struct_field lsm_ctx_fields[LSM_CTX_FIELDS_N];
+
+/*
  * signal-shaped leaf tables defined in struct_catalog/signal.c.
  * Covers struct sigevent (timer_create), struct sigaction (rt_sigaction),
  * stack_t (sigaltstack), the siginfo_t header + its _rt / _kill variant
