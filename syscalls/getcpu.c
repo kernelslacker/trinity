@@ -3,6 +3,7 @@
                  struct getcpu_cache __user *, unused)
  */
 #include <dirent.h>
+#include <stdlib.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <fcntl.h>

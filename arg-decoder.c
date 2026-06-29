@@ -3,6 +3,7 @@
  */
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include "arch.h"	//PAGE_MASK
 #include "arg-decoder.h"
 #include "params.h"	// verbosity
