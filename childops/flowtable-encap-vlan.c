@@ -119,7 +119,6 @@
 #include <linux/if_ether.h>
 #include <linux/if_link.h>
 #include <linux/netfilter.h>
-#include <linux/netfilter/nf_tables.h>
 #include <linux/netfilter/nfnetlink.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
@@ -129,6 +128,7 @@
 #include "childops-nfnl.h"
 #include "compat.h"
 #include "jitter.h"
+#include "kernel/nf_tables.h"
 #include "name-pool.h"
 #include "random.h"
 #include "shm.h"
@@ -140,64 +140,6 @@
 #endif
 #ifndef NFNL_SUBSYS_NFTABLES
 #define NFNL_SUBSYS_NFTABLES		10
-#endif
-
-#ifndef NFT_MSG_NEWTABLE
-#define NFT_MSG_NEWTABLE		0
-#define NFT_MSG_DELTABLE		2
-#define NFT_MSG_NEWCHAIN		3
-#define NFT_MSG_DELCHAIN		5
-#define NFT_MSG_NEWRULE			6
-#define NFT_MSG_DELRULE			8
-#endif
-#ifndef NFT_MSG_NEWFLOWTABLE
-#define NFT_MSG_NEWFLOWTABLE		22
-#define NFT_MSG_DELFLOWTABLE		24
-#endif
-
-#ifndef NFTA_TABLE_NAME
-#define NFTA_TABLE_NAME			1
-#define NFTA_TABLE_FLAGS		2
-#endif
-#ifndef NFTA_CHAIN_TABLE
-#define NFTA_CHAIN_TABLE		1
-#define NFTA_CHAIN_NAME			3
-#define NFTA_CHAIN_HOOK			4
-#define NFTA_CHAIN_TYPE			7
-#endif
-#ifndef NFTA_HOOK_HOOKNUM
-#define NFTA_HOOK_HOOKNUM		1
-#define NFTA_HOOK_PRIORITY		2
-#define NFTA_HOOK_DEV			3
-#define NFTA_HOOK_DEVS			4
-#endif
-#ifndef NFTA_RULE_TABLE
-#define NFTA_RULE_TABLE			1
-#define NFTA_RULE_CHAIN			2
-#define NFTA_RULE_EXPRESSIONS		4
-#endif
-#ifndef NFTA_LIST_ELEM
-#define NFTA_LIST_ELEM			1
-#endif
-#ifndef NFTA_EXPR_NAME
-#define NFTA_EXPR_NAME			1
-#define NFTA_EXPR_DATA			2
-#endif
-#ifndef NFTA_FLOWTABLE_TABLE
-#define NFTA_FLOWTABLE_TABLE		1
-#define NFTA_FLOWTABLE_NAME		2
-#define NFTA_FLOWTABLE_HOOK		3
-#endif
-#ifndef NFTA_FLOWTABLE_HOOK_NUM
-#define NFTA_FLOWTABLE_HOOK_NUM		1
-#define NFTA_FLOWTABLE_HOOK_PRIORITY	2
-#define NFTA_FLOWTABLE_HOOK_DEVS	3
-#endif
-#ifndef NFTA_DEVICE_NAME
-#define NFTA_DEVICE_NAME		1
-#endif
-#ifndef NFTA_FLOW_TABLE_NAME
-#define NFTA_FLOW_TABLE_NAME		1
 #endif
 
 /* NF_INET_FORWARD = 2, NF_NETDEV_INGRESS = 0, NFPROTO_IPV4 = 2 — all
