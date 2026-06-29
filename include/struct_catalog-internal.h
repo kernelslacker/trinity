@@ -685,3 +685,20 @@ enum {
 };
 
 extern const struct struct_field kexec_segment_fields[KEXEC_SEGMENT_FIELDS_N];
+
+/*
+ * TCP leaf tables defined in struct_catalog/tcp.c.  Covers struct
+ * tcp_repair_opt (IPPROTO_TCP / TCP_REPAIR_OPTIONS setsockopt optval
+ * array element).  The _N constant gives the extern decl a complete
+ * array type so the spine's ARRAY_SIZE() at the reference site keeps
+ * folding to the same constant it did before the carve.  Gated by
+ * USE_TCP_REPAIR_OPT to mirror the existing guard on the spine
+ * reference and the struct's header availability.
+ */
+#ifdef USE_TCP_REPAIR_OPT
+enum {
+	TCP_REPAIR_OPT_FIELDS_N	= 2,
+};
+
+extern const struct struct_field tcp_repair_opt_fields[TCP_REPAIR_OPT_FIELDS_N];
+#endif /* USE_TCP_REPAIR_OPT */
