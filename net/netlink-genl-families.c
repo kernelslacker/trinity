@@ -164,6 +164,9 @@ extern struct genl_family_grammar fam_lockd;
 #if __has_include(<linux/dev_energymodel.h>)
 extern struct genl_family_grammar fam_dev_energymodel;
 #endif
+#if __has_include(<drm/drm_ras.h>)
+extern struct genl_family_grammar fam_drm_ras;
+#endif
 /* nl802154 vendors its CMD/ATTR ids in include/kernel/nl802154.h
  * because the kernel-side enum (include/net/nl802154.h) is not
  * shipped via uapi; the grammar registers unconditionally and
@@ -305,6 +308,9 @@ static struct genl_family_grammar *registry[] = {
 #endif
 #if __has_include(<linux/dev_energymodel.h>)
 	&fam_dev_energymodel,
+#endif
+#if __has_include(<drm/drm_ras.h>)
+	&fam_drm_ras,
 #endif
 	&fam_nl802154,
 	&fam_ieee802154,
