@@ -672,3 +672,16 @@ enum {
 
 extern const struct struct_field sock_filter_fields[SOCK_FILTER_FIELDS_N];
 extern const struct struct_field sock_fprog_fields[SOCK_FPROG_FIELDS_N];
+
+/*
+ * kexec leaf tables defined in struct_catalog/kexec.c.  Covers struct
+ * kexec_segment (the kexec_load segments array element).  The _N
+ * constant gives the extern decl a complete array type so the spine's
+ * ARRAY_SIZE() at the reference site keeps folding to the same
+ * constant it did before the carve.
+ */
+enum {
+	KEXEC_SEGMENT_FIELDS_N	= 4,
+};
+
+extern const struct struct_field kexec_segment_fields[KEXEC_SEGMENT_FIELDS_N];
