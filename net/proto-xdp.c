@@ -5,7 +5,6 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <net/if.h>
-#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include "kernel/if_xdp.h"

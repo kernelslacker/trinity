@@ -1,5 +1,4 @@
 #ifdef USE_BLUETOOTH
-#include <stdlib.h>
 #include <bluetooth/bluetooth.h>
 #include <bluetooth/hci.h>
 #include <bluetooth/l2cap.h>

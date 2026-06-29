@@ -40,7 +40,6 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdlib.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
 

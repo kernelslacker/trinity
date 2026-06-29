@@ -1,6 +1,5 @@
 
 #ifdef USE_IPV6
-#include <stdlib.h>
 #include <string.h>
 #include <linux/icmpv6.h>
 #include "net.h"

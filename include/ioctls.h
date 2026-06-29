@@ -1,6 +1,5 @@
 #pragma once
 
-#include <stdlib.h>
 #include <sys/stat.h>
 #include "syscall.h"
 
