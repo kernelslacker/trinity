@@ -68,6 +68,7 @@ FILES=(
 	struct_catalog/lsm.c
 	struct_catalog/resource.c
 	struct_catalog/poll.c
+	struct_catalog/ldt.c
 	arg-decoder.c
 	lib/cmsg_build.c
 	utils.c
