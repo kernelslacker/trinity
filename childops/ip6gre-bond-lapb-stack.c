@@ -86,6 +86,7 @@
 
 #include "child.h"
 #include "childops-netlink.h"
+#include "name-pool.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
@@ -389,6 +390,15 @@ static int ip6gre_lapb_iter_create_bond(struct ip6gre_lapb_iter_ctx *ctx)
 				   1, __ATOMIC_RELAXED);
 		return -1;
 	}
+
+	/* Kernel confirmed ctx->bond_name now names a real device; publish
+	 * it via the NETDEV name pool so sibling childops (and per-syscall
+	 * fuzzers drawing this kind) can reference it on subsequent
+	 * invocations -- reaches "name a previous syscall planted" lookup
+	 * codepaths (SO_BINDTODEVICE, generic ARG_STRING draws) instead of
+	 * always-fresh-random near-miss space. */
+	name_pool_record(NAME_KIND_NETDEV, ctx->bond_name,
+			 strlen(ctx->bond_name));
 	return 0;
 }
 
@@ -421,6 +431,14 @@ static int ip6gre_lapb_iter_attach_gre(struct ip6gre_lapb_iter_ctx *ctx)
 	ctx->gre_idx = (int)if_nametoindex(ctx->gre_name);
 	if (ctx->gre_idx <= 0)
 		return -1;
+
+	/* Kernel confirmed ctx->gre_name now names a real ip6gre device;
+	 * publish it via the NETDEV name pool before the enslave step so a
+	 * later SO_BINDTODEVICE / ARG_STRING draw can reference the primary
+	 * tunnel name -- recorded once on the create-success branch, not on
+	 * the request path, so a failed NEWLINK never plants a phantom. */
+	name_pool_record(NAME_KIND_NETDEV, ctx->gre_name,
+			 strlen(ctx->gre_name));
 
 	rc = ibls_setlink(&ctx->ctx, ctx->gre_idx, ctx->bond_idx, 0, 0);
 	if (rc != 0) {
