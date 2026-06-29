@@ -448,3 +448,22 @@ enum {
 
 extern const struct struct_field perf_event_attr_fields[PERF_EVENT_ATTR_FIELDS_N];
 extern const struct union_variant perf_event_attr_variants[PERF_EVENT_ATTR_VARIANTS_N];
+
+/*
+ * landlock attr leaf tables defined in struct_catalog/landlock.c.
+ * Three FT_FLAGS / FT_RANGE-tagged field arrays cataloging the attr
+ * structs passed to landlock_create_ruleset and the two rule_type
+ * arms of landlock_add_rule.  Only these arrays are referenced from
+ * the spine; the LANDLOCK_ACCESS_FS_MASK / LANDLOCK_ACCESS_NET_MASK
+ * / LANDLOCK_SCOPE_MASK helper macros they consume stay file-private
+ * to struct_catalog/landlock.c.
+ */
+enum {
+	LANDLOCK_RULESET_ATTR_FIELDS_N		= 3,
+	LANDLOCK_PATH_BENEATH_ATTR_FIELDS_N	= 2,
+	LANDLOCK_NET_PORT_ATTR_FIELDS_N		= 2,
+};
+
+extern const struct struct_field landlock_ruleset_attr_fields[LANDLOCK_RULESET_ATTR_FIELDS_N];
+extern const struct struct_field landlock_path_beneath_attr_fields[LANDLOCK_PATH_BENEATH_ATTR_FIELDS_N];
+extern const struct struct_field landlock_net_port_attr_fields[LANDLOCK_NET_PORT_ATTR_FIELDS_N];
