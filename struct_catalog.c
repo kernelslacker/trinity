@@ -170,41 +170,6 @@ struct open_how {
 #endif
 
 /* ------------------------------------------------------------------ */
-/* struct rlimit (setrlimit, getrlimit, prlimit64)                     */
-/* ------------------------------------------------------------------ */
-
-static const struct struct_field rlimit_fields[] = {
-	FIELD(struct rlimit, rlim_cur),
-	FIELD(struct rlimit, rlim_max),
-};
-
-/* ------------------------------------------------------------------ */
-/* struct cachestat_range (cachestat)                                  */
-/* ------------------------------------------------------------------ */
-
-/*
- * cachestat's input range struct: a (off, len) byte pair the kernel
- * walks across the file's address_space.  cachestat already carries a
- * strong bespoke sanitiser (pick_range() in syscalls/cachestat.c) that
- * picks a file-size-aware off/len -- the registration here is
- * attribution-only: cachestat's argtype slot is not ARG_STRUCT_PTR_*,
- * so the schema-aware fill path never fires and pick_range() continues
- * to own the live values.  FT_RANGE annotations exist so KCOV CMP
- * constants can be attributed to off or len rather than landing on a
- * coincidentally-same-width slot.  Bounds mirror the timespec
- * precedent's u32-fitting ceiling so the catalog stays portable on
- * 32-bit unsigned long builds.
- */
-static const struct struct_field cachestat_range_fields[] = {
-	FIELDX(struct cachestat_range, off, FT_RANGE,
-	       .u.range = { 0, 4000000000UL },
-	       .mutate_weight = 60),
-	FIELDX(struct cachestat_range, len, FT_RANGE,
-	       .u.range = { 0, 4000000000UL },
-	       .mutate_weight = 60),
-};
-
-/* ------------------------------------------------------------------ */
 /* struct pollfd (poll, ppoll)                                         */
 /* ------------------------------------------------------------------ */
 

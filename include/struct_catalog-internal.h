@@ -741,3 +741,20 @@ enum {
 
 extern const struct struct_field tcp_repair_opt_fields[TCP_REPAIR_OPT_FIELDS_N];
 #endif /* USE_TCP_REPAIR_OPT */
+
+/*
+ * resource-shaped leaf tables defined in struct_catalog/resource.c.
+ * Covers struct rlimit (setrlimit / getrlimit / prlimit64) and struct
+ * cachestat_range (cachestat).  Each _N constant gives the extern decl
+ * a complete array type so the spine's ARRAY_SIZE() at the reference
+ * site keeps folding to the same constant it did before the carve.
+ * Neither table is config-gated -- both structs come from headers
+ * trinity already requires.
+ */
+enum {
+	RLIMIT_FIELDS_N			= 2,
+	CACHESTAT_RANGE_FIELDS_N	= 2,
+};
+
+extern const struct struct_field rlimit_fields[RLIMIT_FIELDS_N];
+extern const struct struct_field cachestat_range_fields[CACHESTAT_RANGE_FIELDS_N];
