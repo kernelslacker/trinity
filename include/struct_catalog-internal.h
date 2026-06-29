@@ -633,3 +633,24 @@ enum {
 
 extern const struct struct_field user_cap_header_fields[USER_CAP_HEADER_FIELDS_N];
 extern const struct struct_field user_cap_data_fields[USER_CAP_DATA_FIELDS_N];
+
+/*
+ * Classic-BPF leaf tables defined in struct_catalog/bpf_classic.c.
+ * Covers struct sock_filter (the cBPF instruction word, referenced by
+ * sock_fprog.filter via FT_PTR_ARRAY.elem_struct) and struct sock_fprog
+ * (seccomp SET_MODE_FILTER, setsockopt(SO_ATTACH_FILTER), prctl(PR_SET_
+ * SECCOMP)).  The two ship in the same TU because sock_fprog names
+ * sock_filter as its element-struct: the pointer-fill pass dereferences
+ * that name through the catalog to size the sub-array, so the element
+ * descriptor has to be co-located with the container.  Each _N constant
+ * gives the extern decl a complete array type so the spine's
+ * ARRAY_SIZE() at the reference site keeps folding to the same constant
+ * it did before the carve.
+ */
+enum {
+	SOCK_FILTER_FIELDS_N	= 4,
+	SOCK_FPROG_FIELDS_N	= 2,
+};
+
+extern const struct struct_field sock_filter_fields[SOCK_FILTER_FIELDS_N];
+extern const struct struct_field sock_fprog_fields[SOCK_FPROG_FIELDS_N];
