@@ -20,6 +20,7 @@
 #include "params.h"
 #include "pids.h"
 #include "random.h"
+#include "sanitise.h"		// alloc_iovec_init
 #include "sequence.h"
 #include "shm.h"
 #include "strategy.h"
@@ -429,6 +430,17 @@ static void init_shm_publish_and_subsystems(void)
 	 * See deferred-free.c for the rationale on MAP_PRIVATE vs MAP_SHARED.
 	 */
 	deferred_free_init();
+
+	/*
+	 * Same pre-fork-allocate / register-once / inherit-via-COW pattern
+	 * for alloc_iovec()'s dedicated iov[] backing buffer.  Keeps the
+	 * iov array off the writable pool so a fuzzed
+	 * madvise(MADV_REMOVE) cannot SIGBUS the next iov fill, and the
+	 * shared-region registration steers the mm-syscall sanitisers off
+	 * its VMA so PROT_WRITE cannot be stripped either.  See alloc_
+	 * iovec_init() in rand/random-address.c for the full rationale.
+	 */
+	alloc_iovec_init();
 }
 
 void init_shm(void)

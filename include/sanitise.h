@@ -57,6 +57,18 @@ enum iov_direction {
 	IOV_KERNEL_WRITE,
 };
 struct iovec * alloc_iovec(unsigned int num, enum iov_direction dir) __must_check;
+/*
+ * One-shot parent-side allocator for alloc_iovec()'s iov[] backing
+ * buffer.  Allocates a dedicated UIO_MAXIOV-sized MAP_PRIVATE|MAP_ANON
+ * mapping and registers it with the shared-region tracker so the mm-
+ * syscall sanitisers refuse fuzzed addresses landing inside it.  Called
+ * once from init_shm before any child forks; every forked child
+ * inherits the mapping via COW and re-uses the same iov[] buffer for
+ * the lifetime of the run.  Exits on mmap failure -- without this
+ * buffer trinity cannot generate iovec args at all, matching the
+ * fail-loud posture of the other parent-side shared regions.
+ */
+void alloc_iovec_init(void);
 unsigned long get_len(void);
 /*
  * Object-size-relative length draw.  Returns a value from a boundary
