@@ -45,6 +45,28 @@ struct map {
 	int flags;
 	int fd;
 	unsigned char type;
+	/*
+	 * Hot-path skip-cache for get_writable_address(): set true on a
+	 * successful whole-mapping mprotect(PROT_READ|PROT_WRITE) upgrade
+	 * inside that function, false everywhere else.  Future calls that
+	 * hit the bit can skip both the mprotect upgrade syscall and the
+	 * mincore() VMA-presence probe -- the slot has been vouched RW
+	 * and no invalidation event has fired since.
+	 *
+	 * Cleared by every code path that can change the slot's prot or
+	 * VMA state out from under the cache:
+	 *   - post_munmap (slot's VMA was unmapped, in whole or in part)
+	 *   - post_mprotect (sibling mprotect changed the cached invariant)
+	 *   - mprotect-split childop (raw mprotect that bypasses post hooks)
+	 *   - the mprotect failure arm of get_writable_address itself
+	 *     (don't lie about a slot we just failed to upgrade)
+	 *
+	 * False-negative (cache misses when the slot is actually still RW)
+	 * is fine -- we eat one mprotect.  False-positive (vouching RW when
+	 * the VMA was torn down) hands the caller a pointer that SEGVs on
+	 * first store, so the invalidation hooks above must be exhaustive.
+	 */
+	bool known_rw;
 };
 
 extern struct map *initial_mappings;
