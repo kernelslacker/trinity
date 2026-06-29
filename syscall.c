@@ -603,6 +603,39 @@ void generic_post_close_fd(struct syscallrecord *rec)
 }
 
 /*
+ * Source of truth for the per-syscall return-type contract consumed by
+ * reject_corrupt_retfd, the RZS gate in syscall_ret_validate_phase, and
+ * validate_ret_bound below.
+ *
+ * Prefer entry->rettype: it is stamped once at table-init time in
+ * copy_syscall_table() and never rewritten after, so a sibling stomp
+ * targeting per-rec slots in shm cannot drift it.  rec->rettype lives
+ * inside struct syscallrecord alongside rec->retval / rec->errno_post,
+ * is rewritten on every dispatch from generate_syscall_args(), and is
+ * directly exposed to the same value-result sibling-stomp class the
+ * rzs/retfd validators are meant to catch against rec->retval.  When
+ * that stomp lands on rec->rettype itself the validator misattributes
+ * the corruption to a syscall whose static contract is unambiguous
+ * (e.g. getpgrp returning its own pid is gated as if it had been a
+ * zero-success syscall returning a non-zero value, because rec->rettype
+ * was scribbled from RET_PID_T to RET_ZERO_SUCCESS between dispatch and
+ * the gate).  Sourcing from entry sidesteps that class for every syscall
+ * that declares a static rettype.
+ *
+ * Op-multiplexed entries (fcntl, futex) leave entry->rettype unset
+ * (RET_NONE) and rely on their .sanitise hook to publish rec->rettype
+ * per cmd at dispatch time.  Fall through to rec for those so the
+ * per-cmd contract still drives the gate.
+ */
+static inline int effective_rettype(const struct syscallentry *entry,
+				    const struct syscallrecord *rec)
+{
+	if (entry->rettype != RET_NONE)
+		return entry->rettype;
+	return rec->rettype;
+}
+
+/*
  * Blanket retval bound for RET_FD handlers at the do_syscall layer.
  * Complements the add_object()-side check: that gate fires only on
  * RET_FD entries that declare a ret_objtype and reach the universal
@@ -624,9 +657,10 @@ void generic_post_close_fd(struct syscallrecord *rec)
  * handler treats an out-of-range value as anything but a kernel ABI
  * violation, so the validator firing IS the bug report.
  *
- * Read rec->rettype rather than entry->rettype: fcntl(F_DUPFD /
- * F_DUPFD_CLOEXEC) and futex(FUTEX_FD) only set RET_FD on the rec at
- * sanitise time; their syscallentries advertise something else.
+ * Rettype is read via effective_rettype(): static-contract entries are
+ * sourced from entry->rettype (immune to per-rec stomp), op-multiplexed
+ * entries (fcntl F_DUPFD*, futex FUTEX_FD) fall through to the
+ * sanitise-published rec->rettype so the per-cmd contract still applies.
  *
  * On rejection, coerce rec->retval = -1UL and rec->errno_post =
  * EINVAL.  Every existing .post handler short-circuits on
@@ -644,7 +678,7 @@ static bool reject_corrupt_retfd(const struct syscallentry *entry,
 {
 	long s;
 
-	if (rec->rettype != RET_FD)
+	if (effective_rettype(entry, rec) != RET_FD)
 		return false;
 
 	/* -1UL is the legitimate failure value; handle_failure path. */
@@ -766,7 +800,7 @@ static void validate_ret_bound(const struct syscallentry *entry,
 			       struct syscallrecord *rec)
 {
 	const struct ret_bound *b;
-	int rt = rec->rettype;
+	int rt = effective_rettype(entry, rec);
 	long s;
 
 	if (rt <= RET_NONE || rt > RET_LAST)
@@ -1152,15 +1186,16 @@ static void syscall_ret_validate_phase(struct syscallrecord *rec,
 	 * statically in the syscallentry or overridden per-cmd by a
 	 * sanitise hook (fcntl, futex) -- so we don't have to sprinkle
 	 * the same retval bound across the ~85 .post handlers individually.
-	 * Use rec->rettype, not entry->rettype, so per-cmd overrides apply
-	 * to the correct subset of calls.  rzs_blanket_reject is the
-	 * headline counter for this class: a dispatcher-level rettype-
-	 * contract violation (a sibling scribbled rec->retval after the
-	 * syscall returned), distinct from a .post handler rejecting a
-	 * pid-shaped pointer in rec->aN.  The two bug classes used to
-	 * share post_handler_corrupt_ptr, which inflated the headline
-	 * counter and smeared the per-handler attribution; they are
-	 * accounted separately now.
+	 * Rettype is sourced via effective_rettype(): static-contract entries
+	 * are read from the immutable entry, op-multiplexed entries from the
+	 * sanitise-published rec.  rzs_blanket_reject is the headline counter
+	 * for this class: a dispatcher-level rettype-contract violation
+	 * (a sibling scribbled rec->retval after the syscall returned),
+	 * distinct from a .post handler rejecting a pid-shaped pointer in
+	 * rec->aN.  The two bug classes used to share
+	 * post_handler_corrupt_ptr, which inflated the headline counter and
+	 * smeared the per-handler attribution; they are accounted separately
+	 * now.
 	 *
 	 * Coerce the impossible retval to -1UL / EINVAL and set
 	 * rzs_rejected so downstream handlers cannot act on the
@@ -1178,7 +1213,7 @@ static void syscall_ret_validate_phase(struct syscallrecord *rec,
 	 * gates only the post-derived registrar and entry->post (defence
 	 * in depth, matching the retfd_rejected pattern at the same
 	 * site). */
-	if (unlikely(rec->rettype == RET_ZERO_SUCCESS &&
+	if (unlikely(effective_rettype(entry, rec) == RET_ZERO_SUCCESS &&
 		     rec->retval != 0 && rec->retval != -1UL)) {
 		__atomic_add_fetch(&shm->stats.rzs_blanket_reject, 1,
 				   __ATOMIC_RELAXED);

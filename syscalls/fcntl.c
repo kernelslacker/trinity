@@ -354,13 +354,75 @@ static void sanitise_fcntl(struct syscallrecord *rec)
 		break;
 	}
 
+	/*
+	 * Per-cmd rec->rettype publication for the dispatcher-level
+	 * reject_corrupt_retfd / rzs gates.  The default for an op-
+	 * multiplexed syscall is to leave rec->rettype at the entry's
+	 * RET_NONE (set by generate_syscall_args() before sanitise runs)
+	 * so neither gate fires -- fcntl cmds whose retval is not a fd
+	 * and not constrained to 0 (F_GETOWN returns a pid, F_GETFD a
+	 * close-on-exec bit, F_GETFL a flags word, F_GETPIPE_SZ a byte
+	 * count, F_GETLEASE a 3-valued enum, F_GET_SEALS a bitmask,
+	 * F_SETPIPE_SZ the new pipe size, ...) carry their own .post
+	 * oracle for the value range and would mis-fire the rzs gate as
+	 * a "non-zero RET_ZERO_SUCCESS return" -- a false positive that
+	 * coerces a perfectly valid pid/flags/bitmask back to EINVAL.
+	 *
+	 * Only publish RET_FD for the two cmds that actually return a
+	 * fd, and RET_ZERO_SUCCESS for the enumerated set whose kernel-
+	 * side handler returns 0 on success (the F_SET* family plus the
+	 * value-result F_GET ops that write their answer into the user
+	 * buffer at *arg).  Anything else -- F_SETPIPE_SZ, F_GETFD,
+	 * F_GETFL, F_GETOWN, F_GETSIG, F_GETLEASE, F_GETPIPE_SZ,
+	 * F_GET_SEALS, F_DUPFD_QUERY, F_CREATED_QUERY, F_GETDELEG -- is
+	 * left at RET_NONE so the dispatcher gates skip it; per-cmd
+	 * post_fcntl already has bespoke value-range checks for the ops
+	 * whose return shape is well-defined enough to bound.
+	 */
 	switch (rec->a2) {
 	case F_DUPFD:
 	case F_DUPFD_CLOEXEC:
 		rec->rettype = RET_FD;
 		break;
-	default:
+	case F_SETFD:
+	case F_SETFL:
+	case F_SETLK:
+	case F_SETLKW:
+#ifdef HAVE_LK64
+	case F_SETLK64:
+	case F_SETLKW64:
+#endif
+	case F_OFD_SETLK:
+	case F_OFD_SETLKW:
+	case F_SETOWN:
+	case F_SETOWN_EX:
+	case F_SETSIG:
+	case F_SETLEASE:
+	case F_NOTIFY:
+	case F_ADD_SEALS:
+	case F_SET_RW_HINT:
+	case F_SET_FILE_RW_HINT:
+	case F_CANCELLK:
+	case F_SETDELEG:
+	/* F_GET* ops below return 0 on success and write their result into
+	 * the user buffer at *arg, so the kernel-side rettype IS zero-success. */
+	case F_GETLK:
+#ifdef HAVE_LK64
+	case F_GETLK64:
+#endif
+	case F_OFD_GETLK:
+	case F_GETOWN_EX:
+	case F_GETOWNER_UIDS:
+	case F_GET_RW_HINT:
+	case F_GET_FILE_RW_HINT:
 		rec->rettype = RET_ZERO_SUCCESS;
+		break;
+	default:
+		/* Leave rec->rettype at entry->rettype (RET_NONE) for value-
+		 * returning ops: F_GETFD (cloexec bit), F_GETFL (flags),
+		 * F_GETOWN (pid, possibly negative for pgrp), F_GETSIG, F_GETLEASE,
+		 * F_GETPIPE_SZ, F_GET_SEALS, F_DUPFD_QUERY, F_CREATED_QUERY,
+		 * F_SETPIPE_SZ (new pipe size), F_GETDELEG, ... */
 		break;
 	}
 }
