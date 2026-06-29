@@ -112,6 +112,7 @@
 #include "childops-util.h"
 #include "compat.h"
 #include "jitter.h"
+#include "name-pool.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
@@ -509,10 +510,33 @@ static int vxlan_encap_iter_open_ctx(struct vxlan_encap_iter_ctx *ctx)
  */
 static int vxlan_encap_iter_build_link(struct vxlan_encap_iter_ctx *ctx)
 {
+	bool name_from_pool = false;
 	int rc;
 
-	snprintf(ctx->ifname, sizeof(ctx->ifname), "trtun%u",
-		 (unsigned int)(rand32() & 0xffffu));
+	/* Minority arm: seed ctx->ifname from a previously-recorded NETDEV
+	 * pool entry (optionally mutated) instead of a fresh "trtun<rand>".
+	 * A drawn name may collide with an in-use ifname (RTM_NEWLINK rejects
+	 * EEXIST under NLM_F_EXCL) or carry a kernel-invalid byte (EINVAL);
+	 * both are caught on the build_tunnel_link rc != 0 path and neither
+	 * errno is in the rtnl_link_ops-not-registered latch set, so an
+	 * unproductive draw costs at most one iteration and never latches the
+	 * kind off.  Kept rare (ONE_IN(8)) so the dominant fresh-random arm
+	 * keeps the create/up/burst/destroy chain warm. */
+	if (ONE_IN(8)) {
+		size_t got = name_pool_draw_mutated(NAME_KIND_NETDEV,
+						    ctx->ifname,
+						    sizeof(ctx->ifname));
+		if (got > 0) {
+			if (got >= sizeof(ctx->ifname))
+				got = sizeof(ctx->ifname) - 1;
+			ctx->ifname[got] = '\0';
+			name_from_pool = true;
+		}
+	}
+	if (!name_from_pool) {
+		snprintf(ctx->ifname, sizeof(ctx->ifname), "trtun%u",
+			 (unsigned int)(rand32() & 0xffffu));
+	}
 	ctx->vni_or_key = rand32();
 
 	rc = build_tunnel_link(&ctx->nl, ctx->kind, ctx->ifname,
@@ -544,6 +568,13 @@ static int vxlan_encap_iter_build_link(struct vxlan_encap_iter_ctx *ctx)
 	ctx->ifindex = (int)if_nametoindex(ctx->ifname);
 	if (ctx->ifindex == 0)
 		return -1;
+
+	/* Kernel confirmed ctx->ifname now names a real device; publish it
+	 * via the NETDEV name pool so sibling childops (and per-syscall
+	 * fuzzers drawing this kind) can collide with it on subsequent
+	 * invocations -- reaches "name a previous syscall planted" lookup
+	 * codepaths instead of always-fresh-random near-miss space. */
+	name_pool_record(NAME_KIND_NETDEV, ctx->ifname, strlen(ctx->ifname));
 
 	if (ctx->kind == TUN_VXLAN) {
 		if (build_fdb_add(&ctx->nl, ctx->ifindex) == 0)
