@@ -541,7 +541,7 @@ static const struct option_help option_descs[] = {
 	{ "enable-fds",		 0,  NULL },	/* handled separately */
 	{ "epoch-iterations",	 0,  "syscalls per epoch before restarting (must be > 0; omit to disable)" },
 	{ "epoch-timeout",	 0,  "seconds per epoch before restarting (must be > 0; omit to disable)" },
-	{ "exclude",		'x', "don't call a specific syscall" },
+	{ "exclude",		'x', "exclude syscall(s): name or comma-list, each optionally @32 or @64" },
 	{ "explorer-children",	 0,  "reserve N children to always run STRATEGY_RANDOM as a strategy-independent explorer pool (default: max_children/4 under --strategy=bandit, 0 otherwise; max: max_children/2). Works in any picker mode; non-bandit modes get no explorer pool unless this is set." },
 	{ "fork-pressure-drain", 0, "opt-in: under sustained fork() failure (>=100 consecutive spawn_child failures), suppress canary picks of pid-heavy ops (pidfd_storm, qrtr_bind_race, pfkey_spd_walk, l2tp_ifname_race, statmount_idmap_overflow, sysfs_string_race) for 30 s so the canary picker stops piling new fork demand on a parent already losing the spawn race. fork_storm is always skipped via the risky-defer set. Default off." },
 	{ "group",		'g', "only run syscalls from a certain group (vfs,vm,net,ipc,process,signal,io_uring,bpf,sched,time,xattr)" },
@@ -1390,6 +1390,38 @@ static void select_group_by_name(const char *name)
 	exit(EXIT_FAILURE);
 }
 
+/* Walk a comma-separated syscall list (e.g. "read,write,mmap") and invoke
+ * cb() per token.  Shared by -c (enable) and -x (exclude); a single bare
+ * name still works because strtok_r returns the whole string as one token.
+ * flag is used only for the error message. */
+static void apply_syscall_csv(const char *arg, const char *flag,
+			      void (*cb)(char *name))
+{
+	char *dup, *tok, *save = NULL;
+
+	dup = strdup(arg);
+	if (dup == NULL) {
+		outputerr("%s: strdup failed\n", flag);
+		exit(EXIT_FAILURE);
+	}
+	tok = strtok_r(dup, ",", &save);
+	while (tok != NULL) {
+		cb(tok);
+		tok = strtok_r(NULL, ",", &save);
+	}
+	free(dup);
+}
+
+static void csv_enable_syscall(char *name)
+{
+	toggle_syscall(name, true);
+}
+
+static void csv_disable_syscall(char *name)
+{
+	toggle_syscall(name, false);
+}
+
 static void reject_extra_positional_args(int argc, char *argv[])
 {
 	if (optind >= argc)
@@ -1462,25 +1494,13 @@ void parse_args(int argc, char *argv[])
 			outputstd("--bdev doesn't do anything useful yet.\n");
 			exit(EXIT_SUCCESS);
 
-		case 'c': {
+		case 'c':
 			/* enable the syscall(s) we care about; optarg may be a
 			 * single name or a comma-separated list, e.g.
 			 * -c read,write,mmap. */
-			char *dup = strdup(optarg), *tok, *save = NULL;
-
-			if (dup == NULL) {
-				outputerr("-c: strdup failed\n");
-				exit(EXIT_FAILURE);
-			}
 			do_specific_syscall = true;
-			tok = strtok_r(dup, ",", &save);
-			while (tok != NULL) {
-				toggle_syscall(tok, true);
-				tok = strtok_r(NULL, ",", &save);
-			}
-			free(dup);
+			apply_syscall_csv(optarg, "-c", csv_enable_syscall);
 			break;
-		}
 
 		case 'd':
 			dangerous = true;
@@ -1599,8 +1619,10 @@ void parse_args(int argc, char *argv[])
 			break;
 
 		case 'x':
+			/* exclude syscall(s); optarg may be a single name or a
+			 * comma-separated list, e.g. -x read,write,mmap. */
 			do_exclude_syscall = true;
-			toggle_syscall(optarg, false);
+			apply_syscall_csv(optarg, "-x", csv_disable_syscall);
 			break;
 
 		case 0:
