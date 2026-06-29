@@ -118,6 +118,7 @@
 #include "childops-netlink.h"
 #include "childops-util.h"
 #include "jitter.h"
+#include "name-pool.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
@@ -573,6 +574,15 @@ static int tc_mirred_blockcast_in_ns(void *arg)
 	a_idx = (int)if_nametoindex(a_name);
 	if (a_idx <= 0)
 		goto out;
+
+	/* Kernel confirmed a_name now names a real device (the one the
+	 * UDP socket below binds via SO_BINDTODEVICE); publish it via the
+	 * NETDEV name pool so sibling childops and per-syscall fuzzers
+	 * drawing this kind can reference it on subsequent invocations --
+	 * reaches bind-success / dev_get_by_name HIT codepaths instead of
+	 * always-ENODEV near-miss space.  Record only the primary (A) to
+	 * keep the 16-slot per-kind ring from thrashing. */
+	name_pool_record(NAME_KIND_NETDEV, a_name, strlen(a_name));
 
 	rc = build_dummy_create(&nl, b_name);
 	if (rc != 0) {
