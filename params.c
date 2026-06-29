@@ -9,6 +9,7 @@
 #include "arg-len-semantics.h"
 #include "bdevs.h"
 #include "child.h"
+#include "blob_mutator.h"
 #include "cmp-frontier.h"
 #include "cmsg-richness.h"
 #include "fd.h"
@@ -519,6 +520,7 @@ struct option_help {
 static const struct option_help option_descs[] = {
 	{ "alt-op-children",	 0,  "reserve N children to run dedicated alt ops (mmap_lifecycle, mprotect_split, ...) round-robin instead of mixing them at 1% in every child (default: max(2, --children/8))" },
 	{ "arch",		'a', "selects syscalls for the specified architecture (32 or 64). Both by default." },
+	{ "blob-mutator",	 0,  "content-authoring lane for opaque ARG_BUF_SIZED args (default off): off (the ARG_BUF_SIZED hook skips blob_fill() entirely -- no mode-load past the early return, no RNG draw, no byte write; fixed-seed runs reproduce a pre-row build bit-for-bit and the mode load itself consumes no RNG), fill (generate_rand_bytes() the owned get_writable_struct(size) allocation so parsers reading byte 0 first see non-residue content), havoc (fill plus a bounded byte-mutation pass capped at BLOB_HAVOC_MAX_OPS -- bit-flip / byte-flip / set-interesting byte+word+dword drawn from get_boundary_value() / get_interesting_value()), or cmpdict (RESERVED for Build 2 cmp-pool dictionary inserts; THIS BUILD treats cmpdict identically to fill so the flag ladder is stable across the planned row). Every write is clamped inside the get_writable_struct(size) allocation; pure byte content, no pointer-like aliasing." },
 	{ "arg-len-semantics",	 0,  "object-size-relative ARG_LEN draw mode (default off): off (gen_arg_len calls get_len() verbatim, no companion-arg lookup, no extra RNG draw -- byte-identical to a build without this flag), or on (when the slot before an ARG_LEN is an ARG_ADDRESS / ARG_NON_NULL_ADDRESS whose value falls in a tracked writable region, draw the length from a size-relative boundary set capped by the region's remaining extent so a kernel-WRITES-buffer syscall cannot scribble past the writable region; falls back to get_len() on no companion / unresolvable size)." },
 	{ "bdev",		'b', "Add /dev node to list of block devices to use for destructive tests." },
 	{ "canary-seed",	 0,  "comma-separated list of childop names to override the built-in priority canary seed list. Names match alt_op_name (e.g. 'genetlink_fuzzer,bpf_lifecycle'). Unknown names abort startup." },
@@ -673,6 +675,7 @@ static const struct option longopts[] = {
 	{ "random", required_argument, NULL, 'r' },
 	{ "reach-band", required_argument, NULL, 0 },
 	{ "redqueen-pending-pick", required_argument, NULL, 0 },
+	{ "blob-mutator", required_argument, NULL, 0 },
 	{ "cmp-frontier", required_argument, NULL, 0 },
 	{ "cmsg-richness", required_argument, NULL, 0 },
 	{ "stats", no_argument, NULL, 0 },
@@ -1012,6 +1015,26 @@ static bool parse_strategy_options(int opt, const char *name, char *arg)
 			exit(EXIT_FAILURE);
 		}
 		__atomic_store_n(&reach_band_mode, mode, __ATOMIC_RELAXED);
+		return true;
+	}
+
+	if (strcmp("blob-mutator", name) == 0) {
+		enum blob_mutator_mode mode;
+
+		if (strcmp(arg, "off") == 0) {
+			mode = BLOB_MUTATOR_OFF;
+		} else if (strcmp(arg, "fill") == 0) {
+			mode = BLOB_MUTATOR_FILL;
+		} else if (strcmp(arg, "havoc") == 0) {
+			mode = BLOB_MUTATOR_HAVOC;
+		} else if (strcmp(arg, "cmpdict") == 0) {
+			mode = BLOB_MUTATOR_CMPDICT;
+		} else {
+			outputerr("--blob-mutator: unknown mode '%s' (expected off, fill, havoc, or cmpdict)\n",
+				arg);
+			exit(EXIT_FAILURE);
+		}
+		__atomic_store_n(&blob_mutator_mode, mode, __ATOMIC_RELAXED);
 		return true;
 	}
 
