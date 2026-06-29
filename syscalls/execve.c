@@ -154,21 +154,32 @@ static void block_self_exec(struct syscallrecord *rec)
 		return;
 
 	/*
-	 * The pathname buffer is a fresh MAX_PATH_LEN zmalloc allocation
-	 * from generate_pathname() -- writing 24 bytes into it is safe
-	 * and the post handler's deferred_free still gets a valid heap
-	 * pointer.  The execveat AT_EMPTY_PATH+NULL-path shape has no
-	 * real buffer to overwrite (we substituted the static "" literal
-	 * for fstatat above); strip AT_EMPTY_PATH instead so the kernel
-	 * reads the NULL pointer and returns -EFAULT before touching the
-	 * binary.
+	 * Allocate a fresh buffer for the poison string rather than
+	 * scribbling in place: ARG_PATHNAME's backing buffer is not
+	 * guaranteed to be >= sizeof(poison), and a small (8-byte) chunk
+	 * was already shown to clobber heap metadata via the same
+	 * debunked invariant fixed in pathnames.c:get_testfile_path.
+	 * cleanup_deferred_free reads the live arg slot after dispatch,
+	 * so reassigning rec->aN releases the new buffer; the original
+	 * ARG_PATHNAME allocation is left in alloc_track[] and freed
+	 * when the ring evicts it.
+	 *
+	 * The execveat AT_EMPTY_PATH+NULL-path shape has no real buffer
+	 * to overwrite (we substituted the static "" literal for fstatat
+	 * above); strip AT_EMPTY_PATH instead so the kernel reads the
+	 * NULL pointer and returns -EFAULT before touching the binary.
 	 */
-	if (is_execve)
-		memcpy((char *) rec->a1, poison, sizeof(poison));
-	else if (rec->a2 != 0)
-		memcpy((char *) rec->a2, poison, sizeof(poison));
-	else
+	if (is_execve || rec->a2 != 0) {
+		char *buf = zmalloc_tracked(sizeof(poison));
+
+		memcpy(buf, poison, sizeof(poison));
+		if (is_execve)
+			rec->a1 = (unsigned long) buf;
+		else
+			rec->a2 = (unsigned long) buf;
+	} else {
 		rec->a5 &= ~(unsigned long) AT_EMPTY_PATH;
+	}
 
 	__atomic_add_fetch(&shm->stats.execve_self_exec_blocked, 1,
 			   __ATOMIC_RELAXED);
