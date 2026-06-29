@@ -506,3 +506,26 @@ extern const struct struct_field siginfo_t_kill_variant_fields[SIGINFO_T_KILL_VA
 extern const unsigned long siginfo_t_kill_discrim_values[SIGINFO_T_KILL_DISCRIM_VALUES_N];
 extern const struct union_variant siginfo_t_variants[SIGINFO_T_VARIANTS_N];
 extern const struct struct_field sigset_t_fields[SIGSET_T_FIELDS_N];
+
+/*
+ * SysV / POSIX IPC leaf tables defined in struct_catalog/ipc.c.
+ * Covers struct sembuf (semop / semtimedop), struct mq_attr
+ * (mq_open / mq_getsetattr), struct msqid_ds (msgctl IPC_SET),
+ * struct shmid_ds (shmctl IPC_SET), and struct msgbuf (msgsnd).
+ * Each _N constant gives the extern decl a complete array type so
+ * the spine's ARRAY_SIZE() at the reference site keeps folding to
+ * the same constant it did before the carve.
+ */
+enum {
+	SEMBUF_FIELDS_N		= 3,
+	MQ_ATTR_FIELDS_N	= 4,
+	MSQID_DS_FIELDS_N	= 2,
+	SHMID_DS_FIELDS_N	= 3,
+	MSGBUF_FIELDS_N		= 1,
+};
+
+extern const struct struct_field sembuf_fields[SEMBUF_FIELDS_N];
+extern const struct struct_field mq_attr_fields[MQ_ATTR_FIELDS_N];
+extern const struct struct_field msqid_ds_fields[MSQID_DS_FIELDS_N];
+extern const struct struct_field shmid_ds_fields[SHMID_DS_FIELDS_N];
+extern const struct struct_field msgbuf_fields[MSGBUF_FIELDS_N];

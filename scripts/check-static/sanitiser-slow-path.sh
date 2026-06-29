@@ -60,6 +60,7 @@ FILES=(
 	struct_catalog/perf.c
 	struct_catalog/landlock.c
 	struct_catalog/signal.c
+	struct_catalog/ipc.c
 	arg-decoder.c
 	lib/cmsg_build.c
 	utils.c
