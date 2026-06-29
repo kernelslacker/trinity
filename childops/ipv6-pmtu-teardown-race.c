@@ -110,6 +110,7 @@
 #include "childops-netlink.h"
 #include "compat.h"
 #include "jitter.h"
+#include "name-pool.h"
 #include "random.h"
 #include "userns-bootstrap.h"
 
@@ -340,6 +341,18 @@ static void setup_pairs(struct nl_ctx *ctx, char names[V6PMTU_NUM_PAIRS][8])
 		rifx = if_nametoindex(names[n]);
 		if (rifx == 0)
 			continue;
+
+		/* Kernel confirmed names[n] is a real device; publish the
+		 * pair primary (n==0, tr6r0) via the NETDEV name pool so
+		 * sibling childops and per-syscall fuzzers drawing this
+		 * kind can land a HIT on dev_get_by_name /
+		 * SO_BINDTODEVICE instead of always-fresh-random ENODEV.
+		 * Primary only -- the per-kind ring is 16 slots and
+		 * recording all four r-end leaves per setup would thrash
+		 * it. */
+		if (n == 0)
+			name_pool_record(NAME_KIND_NETDEV, names[n],
+					 strlen(names[n]));
 
 		memset(&addr, 0, sizeof(addr));
 		addr.s6_addr[0] = 0xfc;
