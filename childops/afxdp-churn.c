@@ -125,6 +125,7 @@
 #include "child.h"
 #include "compat.h"
 #include "jitter.h"
+#include "name-pool.h"
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
@@ -475,10 +476,15 @@ static void xsk_teardown(struct xsk_state *st)
  * binding sw-csum TX metadata.  Returns fd on success and writes the
  * kernel-assigned name into @name_out (IFNAMSIZ buffer); -1 on failure.
  * Caller must keep the fd open while the xsk is bound to the device.
+ * The kernel-assigned name is also recorded into the NAME_KIND_NETDEV
+ * pool so later cross-syscall name draws can reference this live tunN
+ * instead of always synthesising a fresh-random name that the kernel
+ * has no entry for and that misses the name-keyed lookup branches.
  */
 static int tun_open_napi_frags(char *name_out)
 {
 	struct ifreq ifr;
+	size_t nlen;
 	int fd;
 
 	fd = open("/dev/net/tun", O_RDWR | O_NONBLOCK | O_CLOEXEC);
@@ -491,6 +497,9 @@ static int tun_open_napi_frags(char *name_out)
 		return -1;
 	}
 	memcpy(name_out, ifr.ifr_name, IFNAMSIZ);
+	nlen = strnlen(name_out, IFNAMSIZ);
+	if (nlen > 0)
+		name_pool_record(NAME_KIND_NETDEV, name_out, nlen);
 	return fd;
 }
 
