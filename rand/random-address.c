@@ -1,5 +1,6 @@
 #include <errno.h>
 #include <setjmp.h>	// sigsetjmp for asb_relocate copy-fault recovery
+#include <stdlib.h>	// exit / EXIT_FAILURE for alloc_iovec_init
 #include <sys/uio.h>
 #include <sys/socket.h>	// struct msghdr
 #include <sys/mman.h>	// mprotect
@@ -939,6 +940,67 @@ static inline void fill_iov_entry_map_backed(struct iovec *iov,
 	iov[i].iov_base = (void *) base;
 }
 
+/*
+ * Dedicated backing buffer for alloc_iovec()'s iov[] array.  Allocated
+ * once in the parent by alloc_iovec_init() and re-used by every forked
+ * child via COW.  See the comment at alloc_iovec_init() for the
+ * rationale on the dedicated mapping over a writable-pool slot.
+ */
+static struct iovec *iovec_pool;
+
+void alloc_iovec_init(void)
+{
+	const size_t bytes = UIO_MAXIOV * sizeof(struct iovec);
+	void *p;
+
+	/*
+	 * Dedicated MAP_PRIVATE|MAP_ANON mapping for the iov[] array.
+	 *
+	 * Earlier iterations of this code drew the buffer from
+	 * get_writable_address(), which hands back a slot from the
+	 * writable pool of MAP_SHARED / shmem-backed regions.  Those
+	 * slots are eligible targets for fuzzed madvise(MADV_REMOVE) /
+	 * ftruncate hole-punching, both of which strip the page's
+	 * physical backing without changing the VMA's protection bits.
+	 * The next write into the slot then SIGBUSes (BUS_ADRERR) at
+	 * the freshly-punched page even though the mapping looks fully
+	 * writable.  MAP_PRIVATE|MAP_ANON cannot be hole-punched
+	 * (MADV_REMOVE / fallocate(PUNCH_HOLE) both reject anonymous
+	 * VMAs with EINVAL) and the kernel always supplies a fresh zero
+	 * page on the first write to any page in the mapping, so the
+	 * SIGBUS class collapses entirely.
+	 *
+	 * The mapping is registered with the shared-region tracker so
+	 * the mm-syscall sanitisers (munmap / mremap / mprotect /
+	 * madvise / mmap with MAP_FIXED) refuse fuzzed addresses that
+	 * would land inside it -- the buffer's PROT_WRITE can never be
+	 * stripped and the VMA can never be torn out from under us, so
+	 * the dual SEGV_ACCERR class is killed at the same time.
+	 *
+	 * Done in the parent before any child forks so the address and
+	 * the shared_regions[] entry are inherited by every child via
+	 * COW; each child's first write to a page faults in its own
+	 * private zero page and subsequent writes stay child-local.
+	 * Allocated once and never freed -- this buffer is trinity's
+	 * own arg-gen scratch, not a fuzz target.
+	 *
+	 * Failure to allocate is fatal: without the buffer alloc_iovec()
+	 * cannot produce iov[] args at all, matching the fail-loud
+	 * posture of the other parent-side shared regions (deferred-
+	 * free ring, alloc_track[], inflight_hash, ...).
+	 */
+	p = mmap(NULL, bytes, PROT_READ | PROT_WRITE,
+		 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (p == MAP_FAILED) {
+		outputerr("alloc_iovec_init: mmap %zu failed: %s\n",
+			  bytes, strerror(errno));
+		exit(EXIT_FAILURE);
+	}
+	memset(p, 0, bytes);
+	track_shared_region((unsigned long)p, bytes);
+	iovec_pool = p;
+}
+
 struct iovec * alloc_iovec(unsigned int num, enum iov_direction dir)
 {
 	struct iovec *iov;
@@ -946,64 +1008,23 @@ struct iovec * alloc_iovec(unsigned int num, enum iov_direction dir)
 
 	/*
 	 * num == 0 is a legal bucket from handle_arg_iovec (the iov_iter
-	 * "no segments" arm).  zmalloc_tracked(0) glibc behaviour varies
-	 * by implementation; sidestep by returning NULL.  Both downstream
-	 * walkers -- scrub_iovec_for_kernel_write() and the deferred-free
-	 * path -- are already NULL-safe (see the early returns at
-	 * random-address.c:487 and the io_uring_register post-handler).
+	 * "no segments" arm).  Both downstream walkers --
+	 * scrub_iovec_for_kernel_write() and the deferred-free path --
+	 * are already NULL-safe (see the early returns at random-
+	 * address.c:487 and the io_uring_register post-handler).
 	 */
 	if (num == 0)
 		return NULL;
 
 	/*
-	 * Back the iovec array with a writable-pool slot rather than a
-	 * libc-heap zmalloc.  The preceding oversize-to-UIO_MAXIOV commit
-	 * bounds the sibling-scribble heap-overflow at the chunk edge,
-	 * but a scribble of the count field above UIO_MAXIOV still lets
-	 * the kernel's iov walk read past the allocation on the paths
-	 * that load M into the kernel iov_iter before checking the
-	 * UIO_MAXIOV cap.  Move the structural defense one step further:
-	 * take the iov array off the libc arena entirely.
-	 *
-	 * get_writable_address(UIO_MAXIOV * sizeof(struct iovec)) hands
-	 * back a 16 KB mmap-backed slot whose neighbours are other pool
-	 * slots, not glibc arena metadata, so an arbitrary-size kernel
-	 * iov walk past num cannot read libc free-list chunk metadata as
-	 * (iov_base, iov_len) pairs.  For IOV_KERNEL_WRITE callers the
-	 * phantom-pointer write target falls out of the arena that
-	 * glibc's corruption detector watches; for IOV_KERNEL_READ
-	 * callers the read target is bounded to pool pages.  Pool
-	 * allocations are also never released by trinity, so a kernel
-	 * scribble of an iov_base entry to a within-pool offset can no
-	 * longer turn into a free() abort either.
-	 *
-	 * process_madvise's MADV_PAGEOUT / MADV_COLLAPSE phantom-target
-	 * scenario (process_madvise.c:24-37) collapses with this: the
-	 * iov walk past sanitise-time num reads zeroed pool bytes, and
-	 * NULL iov_base + 0 iov_len pairs apply no advice.
-	 *
-	 * Return NULL on pool exhaustion -- generate-args.c hands NULL
-	 * to the kernel as a NULL iov pointer (EFAULT), the recv/send
-	 * sanitisers drop msg_iov / msg_iovlen to NULL / 0, and
-	 * io_uring_register's BUFFERS arm lets the kernel EFAULT past
-	 * io_sqe_buffers_register's user-pointer copy.  Pool slots are
-	 * never freed: drop the matching cleanup wiring at the ARG_IOVEC
-	 * / ARG_IOVEC_IN argtype-table entries and remove the per-caller
-	 * tracked_free_now / deferred_free_enqueue handoffs in the same
-	 * commit so no caller hands a pool address to free().
-	 */
-	iov = get_writable_address(UIO_MAXIOV * sizeof(struct iovec));
-	if (iov == NULL)
-		return NULL;
-
-	/*
-	 * The slot holds exactly UIO_MAXIOV entries.  generate-args hands
+	 * The pool holds exactly UIO_MAXIOV entries.  generate-args hands
 	 * num == UIO_MAXIOV + 1 to exercise the kernel's oversized-iovcnt
 	 * EINVAL arm; that count reaches the syscall via publish_paired_
-	 * length(), so cap the fill here -- writing iov[UIO_MAXIOV] runs off
-	 * the slot into the adjacent unwritable pool page (SEGV_ACCERR at the
-	 * page boundary).
+	 * length(), so cap the fill here -- writing iov[UIO_MAXIOV] runs
+	 * off the buffer into the adjacent unmapped page (SEGV_ACCERR at
+	 * the page boundary).
 	 */
+	iov = iovec_pool;
 	if (num > UIO_MAXIOV)
 		num = UIO_MAXIOV;
 
