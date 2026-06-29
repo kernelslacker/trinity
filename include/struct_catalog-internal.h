@@ -559,3 +559,21 @@ extern const unsigned long f_owner_ex_type_values[F_OWNER_EX_TYPE_VALUES_N];
 extern const struct struct_field f_owner_ex_fields[F_OWNER_EX_FIELDS_N];
 extern const struct struct_field open_how_fields[OPEN_HOW_FIELDS_N];
 extern const struct struct_field file_handle_fields[FILE_HANDLE_FIELDS_N];
+
+/*
+ * sched-shaped leaf tables defined in struct_catalog/sched.c.  Covers
+ * struct sched_attr (sched_setattr / sched_getattr), struct clone_args
+ * (clone3), and struct sched_param (sched_setparam / sched_setscheduler).
+ * Each _N constant gives the extern decl a complete array type so the
+ * spine's ARRAY_SIZE() at the reference site keeps folding to the same
+ * constant it did before the carve.
+ */
+enum {
+	SCHED_ATTR_FIELDS_N	= 10,
+	CLONE_ARGS_FIELDS_N	= 11,
+	SCHED_PARAM_FIELDS_N	= 1,
+};
+
+extern const struct struct_field sched_attr_fields[SCHED_ATTR_FIELDS_N];
+extern const struct struct_field clone_args_fields[CLONE_ARGS_FIELDS_N];
+extern const struct struct_field sched_param_fields[SCHED_PARAM_FIELDS_N];
