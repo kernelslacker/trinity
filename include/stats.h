@@ -3579,6 +3579,40 @@ struct stats_s {
 	unsigned long reach_band_would_demote_mid;
 	unsigned long reach_band_would_boost_high;
 
+	/* Observability for the CMP-weighted frontier picker arm
+	 * (--cmp-frontier=off|shadow-only|combined).  Bumped from the
+	 * silent-regime accept gate in set_syscall_nr_coverage_frontier()
+	 * on the non-OFF compute path; the OFF early-return MUST NOT
+	 * bump any of these -- it is the byte-identity contract
+	 * documented in include/cmp-frontier.h.
+	 *
+	 *  cmp_frontier_samples
+	 *      Per-call samples denominator: one bump per silent-regime
+	 *      entry past the cmp_frontier_mode OFF gate.  Sums to the
+	 *      total non-OFF entries to the gate (denominator for the
+	 *      plateau-hit and live-route rates below).
+	 *  cmp_frontier_would_route
+	 *      Subset of cmp_frontier_samples: the picks where the
+	 *      plateau classifier currently reads CMP_RISING_PC_FLAT --
+	 *      the would-be population the COMBINED switch would route
+	 *      to the CMP-weighted weight.  Under SHADOW_ONLY this is
+	 *      the projected route volume; under COMBINED it equals
+	 *      cmp_frontier_live_routes below (mode-gated, not
+	 *      condition-gated, so the two move in lock-step under
+	 *      COMBINED).
+	 *  cmp_frontier_live_routes
+	 *      Subset of cmp_frontier_would_route: the picks where mode
+	 *      is COMBINED AND the plateau gate fired, the population
+	 *      where w was actually replaced with cmp_frontier_weight()
+	 *      for the live accept roll.  Stays at zero under
+	 *      SHADOW_ONLY by construction.
+	 *
+	 * Each addend is 1UL; overflow needs ~2^64 samples -- comfortable
+	 * for any fuzz horizon. */
+	unsigned long cmp_frontier_samples;
+	unsigned long cmp_frontier_would_route;
+	unsigned long cmp_frontier_live_routes;
+
 	/* Observability for the adaptive expensive-syscall accept gate.
 	 * Bumped from expensive_accept() in random-syscall.c on the
 	 * adaptive compute path (mode != OFF, kcov_shm != NULL, nr in

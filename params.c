@@ -9,6 +9,7 @@
 #include "arg-len-semantics.h"
 #include "bdevs.h"
 #include "child.h"
+#include "cmp-frontier.h"
 #include "cmsg-richness.h"
 #include "fd.h"
 #include "kcov.h"
@@ -527,6 +528,7 @@ static const struct option_help option_descs[] = {
 	{ "childop-cmp-harvest", 0, "DEFAULT OFF. Open a per-childop KCOV_TRACE_CMP bracket on CMP-mode children at the child.c childop dispatch gate; childop syscalls routed through trinity_cmp_syscall harvest their CMP operands into the QUARANTINED childop_recent_pools[nr][do32] lane (non-persisted, does NOT evict the durable per-syscall cmp pool). Accepts 'off' (the bracket is never opened; trinity_cmp_syscall is a no-op wrapper around trinity_raw_syscall; every childop_cmp_* shadow counter stays at zero -- the childop dispatch surface is byte-identical to a build without this knob) or 'on' (the bracket opens on every CMP-mode child whose dispatch reaches the existing op_uses_outer_bracket gate; honour the §3.2 all-routed invariant on any childop migrated to trinity_cmp_syscall). Per-childop migration to the wrapper is a separate per-op step earned by the conversion-chain metrics; the OFF default ships the harvest path behaviour-neutral." },
 	{ "children",		'C', "specify number of child processes" },
 	{ "clowntown",		 0,  "enable clowntown mode" },
+	{ "cmp-frontier", 0, "CMP-weighted alternate picker arm for the silent regime of set_syscall_nr_coverage_frontier (default off): off (the silent gate skips the arm entirely -- no mode-load past the early return, no CMP-counter load, no plateau-hint load, no weight change; fixed-seed runs reproduce a pre-row build bit-for-bit and the mode load itself consumes no RNG), shadow-only (compute the CMP-weighted alternate weight from kcov_shm->per_syscall_cmp_inserts[nr] + kcov_shm->childop_cmp_pool_inserts[nr] via ilog2 clamps + the CMP_FRONTIER_SIGNAL_SCALE multiplier saturated at FRONTIER_COLD_SCALE, sample the plateau classifier, and bump the cmp_frontier_samples + would_route shadow counters in stats so the would-be route volume is measurable, but leave the live silent-regime weight at the PC-led value -- picks identical to OFF for a given seed), or combined (the live silent-regime weight is REPLACED with the CMP-weighted weight on picks where the plateau classifier reads PLATEAU_HYPOTHESIS_CMP_RISING_PC_FLAT, the 'rank the silent regime by CMP-derived signal instead' contract; off-plateau picks retain the PC-led weight, and the (w+1)/(SCALE+1) accept floor keeps a zero-CMP-signal syscall reachable rather than unreachable under the swap; the cmp_frontier_live_routes counter records the gated route volume).  Degrade-safe: kcov_shm-less / out-of-range short-circuits cmp_frontier_weight() to 0 before any CMP counter is touched, matching the FRONTIER_COLD_SCALE fallback the rest of the picker file takes." },
 	{ "cmsg-richness", 0, "extended sendmsg/sendmmsg control-message generator (default off): off (pick_cmsg_kind() draws from the original 5 base kinds with a single rnd_modulo_u32 call; the cmsg-build site is bit-for-bit identical to a build without this lever -- no extra RNG draws, no new kinds, no new arms), or on (extends the per-call cmsg pool with family-gated single-cmsg kinds -- IP_PKTINFO / IPV6_PKTINFO, IP_TOS / IP_TTL / IP_RETOPTS, IPV6_TCLASS / IPV6_HOPLIMIT / IPV6_RTHDR, SCM_TXTIME, TLS_SET_RECORD_TYPE -- and adds a ONE_IN(4) multi-cmsg packer that sizes the buffer by the sum of CMSG_SPACE(plen) across 2-3 distinct entries from a per-family pool, zero-fills the buffer up front, and walks CMSG_FIRSTHDR -> CMSG_NXTHDR with CMSG_LEN(plen) per entry)." },
 	{ "corpus-save-errno-grad-live", 0, "DEFAULT OFF. Enable the errno-gradient corpus save trigger (CORPUS_SAVE_REASON_ERRNO): when a syscall returns a non-EFAULT errno bucket for the first time this run, admit its args to the per-syscall ring. Flag off keeps the corpus admission distribution byte-identical to a build without this trigger; the errno_grad_save_would_save shadow counter is bumped regardless of this flag so the would-be-save volume is measurable before flipping live." },
 	{ "cred-throttle",	 0,  "DEFAULT OFF. Enable the credential-syscall throttle: when a credential class (setregid/setreuid/setresuid/setresgid/setgid/setuid/setfsuid/setfsgid/setgroups) has accumulated >=64 attempts with zero successes and EPERM+EINVAL dominating >=90% of returns, downweight the class by rejecting 31/32 of subsequent picks. Flag off keeps the picker distribution byte-identical to a build without this row; the per-class observability counters are bumped regardless of this flag." },
@@ -671,6 +673,7 @@ static const struct option longopts[] = {
 	{ "random", required_argument, NULL, 'r' },
 	{ "reach-band", required_argument, NULL, 0 },
 	{ "redqueen-pending-pick", required_argument, NULL, 0 },
+	{ "cmp-frontier", required_argument, NULL, 0 },
 	{ "cmsg-richness", required_argument, NULL, 0 },
 	{ "stats", no_argument, NULL, 0 },
 	{ "stats-json", no_argument, NULL, 0 },
@@ -1009,6 +1012,24 @@ static bool parse_strategy_options(int opt, const char *name, char *arg)
 			exit(EXIT_FAILURE);
 		}
 		__atomic_store_n(&reach_band_mode, mode, __ATOMIC_RELAXED);
+		return true;
+	}
+
+	if (strcmp("cmp-frontier", name) == 0) {
+		enum cmp_frontier_mode mode;
+
+		if (strcmp(arg, "off") == 0) {
+			mode = CMP_FRONTIER_OFF;
+		} else if (strcmp(arg, "shadow-only") == 0) {
+			mode = CMP_FRONTIER_SHADOW_ONLY;
+		} else if (strcmp(arg, "combined") == 0) {
+			mode = CMP_FRONTIER_COMBINED;
+		} else {
+			outputerr("--cmp-frontier: unknown mode '%s' (expected off, shadow-only, or combined)\n",
+				arg);
+			exit(EXIT_FAILURE);
+		}
+		__atomic_store_n(&cmp_frontier_mode, mode, __ATOMIC_RELAXED);
 		return true;
 	}
 
