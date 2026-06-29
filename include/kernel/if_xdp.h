@@ -41,3 +41,16 @@
 #ifndef XDP_UMEM_PGOFF_COMPLETION_RING
 #define XDP_UMEM_PGOFF_COMPLETION_RING	0x180000000ULL
 #endif
+
+/* Compat xdp_umem_reg with tx_metadata_len present.  The kernel
+ * setsockopt path is size-tolerant (xsk_setsockopt_xdp_umem_reg accepts
+ * either old or new layouts); using our own struct decouples from the
+ * toolchain header version while preserving the on-wire ABI. */
+struct afxdp_umem_reg_compat {
+	__u64 addr;
+	__u64 len;
+	__u32 chunk_size;
+	__u32 headroom;
+	__u32 flags;
+	__u32 tx_metadata_len;
+};

@@ -114,7 +114,6 @@
 #include <linux/bpf.h>
 #include <linux/if_link.h>
 #include <linux/if_tun.h>
-#include <linux/if_xdp.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 
@@ -123,8 +122,8 @@
 #include "bpf.h"
 #include "bpf-syscall.h"
 #include "child.h"
-#include "compat.h"
 #include "jitter.h"
+#include "kernel/if_xdp.h"
 #include "name-pool.h"
 #include "random.h"
 #include "rnd.h"
@@ -137,23 +136,14 @@
 #define SOL_XDP			283
 #endif
 
-/* if_xdp.h sockopt fallbacks (only used when the toolchain header is
- * missing entirely; the __has_include gate above keeps that path off,
- * but the #ifndefs are kept for header-version drift). */
-#ifndef XDP_MMAP_OFFSETS
-#define XDP_MMAP_OFFSETS		1
+/* XDP_RX_RING / XDP_TX_RING sockopt fallbacks (kept for header-version
+ * drift; the XDP_UMEM_* / XDP_STATISTICS / XDP_*_PGOFF / XDP_MMAP_OFFSETS
+ * fallbacks live in include/kernel/if_xdp.h). */
+#ifndef XDP_RX_RING
 #define XDP_RX_RING			2
-#define XDP_TX_RING			3
-#define XDP_UMEM_REG			4
-#define XDP_UMEM_FILL_RING		5
-#define XDP_UMEM_COMPLETION_RING	6
-#define XDP_STATISTICS			7
 #endif
-#ifndef XDP_PGOFF_RX_RING
-#define XDP_PGOFF_RX_RING		0
-#define XDP_PGOFF_TX_RING		0x80000000
-#define XDP_UMEM_PGOFF_FILL_RING	0x100000000ULL
-#define XDP_UMEM_PGOFF_COMPLETION_RING	0x180000000ULL
+#ifndef XDP_TX_RING
+#define XDP_TX_RING			3
 #endif
 #ifndef XDP_USE_NEED_WAKEUP
 #define XDP_USE_NEED_WAKEUP		(1 << 3)
@@ -232,19 +222,6 @@
 #ifndef IFF_NAPI_FRAGS
 #define IFF_NAPI_FRAGS			0x0020
 #endif
-
-/* Compat xdp_umem_reg with tx_metadata_len present.  The kernel
- * setsockopt path is size-tolerant (xsk_setsockopt_xdp_umem_reg accepts
- * either old or new layouts); using our own struct decouples from the
- * toolchain header version while preserving the on-wire ABI. */
-struct afxdp_umem_reg_compat {
-	__u64 addr;
-	__u64 len;
-	__u32 chunk_size;
-	__u32 headroom;
-	__u32 flags;
-	__u32 tx_metadata_len;
-};
 
 /* xsk_tx_metadata layout is fixed (16 bytes): u64 flags at off 0, then
  * a union — for sw checksum we use u16 csum_start at off 8 and u16
