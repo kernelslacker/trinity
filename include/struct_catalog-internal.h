@@ -704,6 +704,28 @@ enum {
 extern const struct struct_field kexec_segment_fields[KEXEC_SEGMENT_FIELDS_N];
 
 /*
+ * mount / namespace leaf tables defined in struct_catalog/mount.c.
+ * Covers struct mount_attr (mount_setattr / open_tree_attr), struct
+ * mnt_id_req (statmount / listmount), and struct ns_id_req (listns).
+ * Each _N constant gives the extern decl a complete array type so the
+ * spine's ARRAY_SIZE() at the reference site keeps folding to the same
+ * constant it did before the carve.  The struct ns_id_req fallback
+ * shim lives in both struct_catalog.c and struct_catalog/mount.c under
+ * the same #ifndef NS_ID_REQ_SIZE_VER0 guard -- the spine needs the
+ * type visible for sizeof(struct ns_id_req) on its catalog entry, the
+ * leaf TU needs it for the FIELD() offsetof / sizeof initialisers.
+ */
+enum {
+	MOUNT_ATTR_FIELDS_N	= 4,
+	MNT_ID_REQ_FIELDS_N	= 3,
+	NS_ID_REQ_FIELDS_N	= 4,
+};
+
+extern const struct struct_field mount_attr_fields[MOUNT_ATTR_FIELDS_N];
+extern const struct struct_field mnt_id_req_fields[MNT_ID_REQ_FIELDS_N];
+extern const struct struct_field ns_id_req_fields[NS_ID_REQ_FIELDS_N];
+
+/*
  * TCP leaf tables defined in struct_catalog/tcp.c.  Covers struct
  * tcp_repair_opt (IPPROTO_TCP / TCP_REPAIR_OPTIONS setsockopt optval
  * array element).  The _N constant gives the extern decl a complete

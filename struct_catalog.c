@@ -205,55 +205,6 @@ static const struct struct_field cachestat_range_fields[] = {
 };
 
 /* ------------------------------------------------------------------ */
-/* struct mount_attr (mount_setattr, open_tree_attr)                   */
-/* ------------------------------------------------------------------ */
-
-#define MOUNT_ATTR_ALL_MASK \
-	(MOUNT_ATTR_RDONLY | MOUNT_ATTR_NOSUID | MOUNT_ATTR_NODEV | \
-	 MOUNT_ATTR_NOEXEC | MOUNT_ATTR_NOATIME | MOUNT_ATTR_STRICTATIME | \
-	 MOUNT_ATTR_NODIRATIME | MOUNT_ATTR_IDMAP | MOUNT_ATTR_NOSYMFOLLOW)
-
-/*
- * propagation is effectively a 4-valued enum: do_change_type() EINVALs
- * the moment two propagation bits appear together, so FT_FLAGS would
- * be wrong here -- the mutator would happily OR a second bit in and
- * trip the validator.  FT_ENUM over the four MS_* propagation
- * constants keeps the mutator inside the legal one-bit shape.
- */
-static const unsigned long mount_attr_propagation_values[] = {
-	MS_SHARED, MS_PRIVATE, MS_SLAVE, MS_UNBINDABLE,
-};
-
-/*
- * mount_setattr / open_tree_attr already carry strong bespoke
- * sanitisers (build_mount_attr() in syscalls/open_tree_attr.c, mirrored
- * by sanitise_mount_setattr) that pick coherent attr_set / attr_clr /
- * propagation / userns_fd buckets and respect the kernel's mutually-
- * exclusive ATIME-mode and propagation rules.  Those sanitisers
- * overwrite rec->a4 wholesale after gen_arg_struct_ptr_in's schema-
- * aware fill, so the registration here is attribution-only --
- * struct_field_for_cmp() uses the FT_FLAGS / FT_ENUM / FT_FD tags to
- * steer KCOV-CMP learned constants at the right field rather than at a
- * coincidentally-same-width slot.  The bespoke fill stays live; this
- * entry never displaces it.  Same shape as cachestat_range above and
- * the io_uring_register_args entry below.
- */
-static const struct struct_field mount_attr_fields[] = {
-	FIELDX(struct mount_attr, attr_set, FT_FLAGS,
-	       .u.flags.mask = MOUNT_ATTR_ALL_MASK,
-	       .mutate_weight = 100),
-	FIELDX(struct mount_attr, attr_clr, FT_FLAGS,
-	       .u.flags.mask = MOUNT_ATTR_ALL_MASK,
-	       .mutate_weight = 80),
-	FIELDX(struct mount_attr, propagation, FT_ENUM,
-	       .u.enum_ = { mount_attr_propagation_values,
-			    ARRAY_SIZE(mount_attr_propagation_values) },
-	       .mutate_weight = 80),
-	FIELDX(struct mount_attr, userns_fd, FT_FD,
-	       .mutate_weight = 60),
-};
-
-/* ------------------------------------------------------------------ */
 /* struct pollfd (poll, ppoll)                                         */
 /* ------------------------------------------------------------------ */
 
@@ -349,16 +300,6 @@ static const struct struct_field user_desc_fields[] = {
 #endif
 
 /* ------------------------------------------------------------------ */
-/* struct mnt_id_req (statmount, listmount)                            */
-/* ------------------------------------------------------------------ */
-
-static const struct struct_field mnt_id_req_fields[] = {
-	FIELD(struct mnt_id_req, size),
-	FIELD(struct mnt_id_req, mnt_id),
-	FIELD(struct mnt_id_req, param),
-};
-
-/* ------------------------------------------------------------------ */
 /* struct ns_id_req (listns)                                           */
 /* ------------------------------------------------------------------ */
 
@@ -366,15 +307,11 @@ static const struct struct_field mnt_id_req_fields[] = {
  * struct ns_id_req from include/uapi/linux/nsfs.h.  Defined locally
  * under the same #ifndef guard the listns sanitiser uses so the
  * translation unit builds against kernel headers that predate the
- * struct.  The shape MUST match the one in syscalls/listns.c -- a
- * future header bump that grows the struct needs both copies updated.
- *
- * ns_type carries a single CLONE_NEW* namespace selector.  An out-of-
- * vocab bit makes listns return -EINVAL before any iterator runs, so
- * an FT_RAW splat almost never reaches the namespace lookup paths;
- * mask the field to the eight defined CLONE_NEW* bits so CMP-learned
- * constants attribute against a real selector.  CLONE_NEWTIME's
- * fallback definition lives in compat.h for older kernel headers.
+ * struct.  The shape MUST match the one in syscalls/listns.c and the
+ * matching shim in struct_catalog/mount.c -- the spine needs the type
+ * visible for sizeof(struct ns_id_req) on its catalog entry, the leaf
+ * TU needs it for the FIELD() offsetof / sizeof initialisers.  A
+ * future header bump that grows the struct needs all copies updated.
  */
 #ifndef NS_ID_REQ_SIZE_VER0
 struct ns_id_req {
@@ -385,18 +322,6 @@ struct ns_id_req {
 };
 #define NS_ID_REQ_SIZE_VER0	24
 #endif
-
-#define NS_ID_REQ_NS_TYPE_MASK \
-	(CLONE_NEWNS   | CLONE_NEWUTS  | CLONE_NEWIPC     | CLONE_NEWUSER | \
-	 CLONE_NEWPID  | CLONE_NEWNET  | CLONE_NEWCGROUP  | CLONE_NEWTIME)
-
-static const struct struct_field ns_id_req_fields[] = {
-	FIELD(struct ns_id_req, size),
-	FIELDX(struct ns_id_req, ns_type, FT_FLAGS,
-	       .u.flags.mask = NS_ID_REQ_NS_TYPE_MASK),
-	FIELD(struct ns_id_req, ns_id),
-	FIELD(struct ns_id_req, user_ns_id),
-};
 
 /* ------------------------------------------------------------------ */
 /* struct xattr_args (setxattrat, getxattrat)                          */
