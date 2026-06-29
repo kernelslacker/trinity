@@ -127,6 +127,7 @@
 #include "child.h"
 #include "childops-util.h"
 #include "jitter.h"
+#include "name-pool.h"
 #include "random.h"
 #include "shm.h"
 #include "tc-qdisc-churn-internal.h"
@@ -627,6 +628,15 @@ static int tc_qdisc_add_link(struct tc_qdisc_iter_ctx *it)
 
 	if (it->dummy_idx <= 0)
 		return -1;
+
+	/* Kernel confirmed it->dummy_name now names a real device (the
+	 * one tc_qdisc_churn_loop binds via SO_BINDTODEVICE); publish it
+	 * via the NETDEV name pool so sibling childops and per-syscall
+	 * fuzzers drawing this kind can reference it on subsequent
+	 * invocations -- reaches bind-success / dev_get_by_name HIT
+	 * codepaths instead of always-ENODEV near-miss space. */
+	name_pool_record(NAME_KIND_NETDEV, it->dummy_name,
+			 strlen(it->dummy_name));
 	return 0;
 }
 
