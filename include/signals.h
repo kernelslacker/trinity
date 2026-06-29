@@ -94,9 +94,9 @@ extern volatile sig_atomic_t cmp_field_read_active;
  * resamples live brk for any addr below the user/kernel split, but a
  * race window between the cached snapshot and the sbrk(0) refresh can
  * still let a fuzzed mmap(MAP_FIXED, PROT_READ) overlay a brk page
- * holding a map struct.  A subsequent map->prot write inside
- * get_writable_address() then faults SEGV_ACCERR on the now-RO page,
- * and the child dies on what is really an upstream gate miss.
+ * holding a map struct.  Subsequent map->known_rw / map->prot writes
+ * inside get_writable_address() then fault SEGV_ACCERR on the now-RO
+ * page, and the child dies on what is really an upstream gate miss.
  *
  * The flag/buffer pair lets each map-field write install a sigsetjmp
  * recovery point: child_fault_handler checks gwa_bookkeeping_active on

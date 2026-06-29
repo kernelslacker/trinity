@@ -149,6 +149,13 @@ static bool do_mremap(void)
 
 	map->ptr = p;
 	map->size = new_size;
+	/*
+	 * Invalidate the get_writable_address() known_rw skip-cache: the
+	 * slot's VMA was just relocated/resized, so any prior whole-mapping
+	 * mprotect upgrade no longer covers what's at map->ptr.  Matches
+	 * the clear post_mremap applies to mremap(2) callers.
+	 */
+	map->known_rw = false;
 	track_shared_region((unsigned long)p, new_size);
 	return true;
 }

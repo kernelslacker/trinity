@@ -1313,12 +1313,13 @@ bool proc_maps_check(unsigned long addr, unsigned long len,
 /*
  * Soft-invalidate every entry in one OBJ_LOCAL OBJ_MMAP_* pool whose
  * mapped extent overlaps [addr, addr+end_excl).  Clears map->prot so
- * get_map_with_prot() will skip the entry on subsequent picks -- letting
- * a tracked prot survive across a hole-punch hands a writer a pointer
- * into a SIGBUS-on-access region.  Returns the number of entries
- * touched.  Pool iteration is a plain forward walk: this is a soft
- * invalidate, no swap-with-last happens, so num_entries is stable for
- * the duration.
+ * get_map_with_prot() will skip the entry on subsequent picks and
+ * drops the known_rw skip-cache bit for the same reason post_munmap's
+ * sub-range branch documents -- letting either survive across a
+ * hole-punch hands a writer a pointer into a SIGBUS-on-access region.
+ * Returns the number of entries touched.  Pool iteration is a plain
+ * forward walk: this is a soft invalidate, no swap-with-last happens,
+ * so num_entries is stable for the duration.
  */
 static unsigned int
 invalidate_mmap_pool_range(enum objecttype type,
@@ -1346,6 +1347,7 @@ invalidate_mmap_pool_range(enum objecttype type,
 			continue;
 
 		m->prot = 0;
+		m->known_rw = false;
 		touched++;
 	}
 
@@ -1407,6 +1409,7 @@ unsigned int invalidate_obj_mmap_by_fd(int fd)
 				continue;
 
 			m->prot = 0;
+			m->known_rw = false;
 			touched++;
 		}
 	}
