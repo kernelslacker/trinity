@@ -104,6 +104,7 @@
 #include "bpf-syscall.h"
 #include "child.h"
 #include "childops-netlink.h"
+#include "name-pool.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
@@ -611,6 +612,15 @@ static int veth_xdp_iter_create_pair(struct veth_xdp_iter_ctx *ictx)
 		return -1;
 
 	__atomic_add_fetch(&shm->stats.veth_asym_pair_ok, 1, __ATOMIC_RELAXED);
+
+	/* Kernel confirmed ictx->a_name now names a real device (NEWLINK
+	 * ACK + if_nametoindex > 0); publish it via the NETDEV name pool
+	 * so sibling childops and per-syscall fuzzers drawing this kind
+	 * can collide with it on subsequent invocations.  Record only the
+	 * primary (a) side -- the per-kind ring is 16 slots so flooding
+	 * both pair leaves would churn the pool. */
+	name_pool_record(NAME_KIND_NETDEV, ictx->a_name,
+			 strlen(ictx->a_name));
 
 	(void)vax_setlink_up(&ictx->ctx, ictx->a_idx);
 	(void)vax_setlink_up(&ictx->ctx, ictx->b_idx);
