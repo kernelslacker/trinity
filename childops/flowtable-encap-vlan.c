@@ -644,6 +644,14 @@ static int flowtable_vlan_iter_setup(struct nl_ctx *rtnl,
 	if (c->vp_a_idx <= 0 || c->vp_b_idx <= 0)
 		return -1;
 
+	/* Kernel confirmed c->vp_a names a real device; publish it via the
+	 * NETDEV name pool so sibling childops and per-syscall fuzzers
+	 * drawing this kind can land a HIT on dev_get_by_name /
+	 * SO_BINDTODEVICE instead of always-fresh-random ENODEV.  Record
+	 * only the veth master -- the per-kind ring is 16 slots and
+	 * recording the peer + both vlan leaves would thrash it. */
+	name_pool_record(NAME_KIND_NETDEV, c->vp_a, strlen(c->vp_a));
+
 	if (build_vlan_child(rtnl, c->vla, c->vp_a_idx, 100) == 0) {
 		c->vla_added = true;
 		c->vla_idx = (int)if_nametoindex(c->vla);
