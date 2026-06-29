@@ -1,0 +1,288 @@
+#pragma once
+
+/*
+ * Vendored numeric ids for the nl802154 (IEEE 802.15.4 / 6LoWPAN
+ * subsystem) generic netlink family.  The kernel-side enum lives in
+ * net/nl802154.h which is explicitly NOT shipped via uapi (the
+ * upstream header comment reads: "currently we don't shipping this
+ * file via uapi, ignore the above one"), so the installed sysroot
+ * has no <linux/nl802154.h> that names these symbols -- the legacy
+ * <linux/nl802154.h> that does ship in the kernel tree is a
+ * different (and deprecated) family ("802.15.4 MAC") whose enum
+ * tags are IEEE802154_ATTR_* / IEEE802154_CMD_*.
+ *
+ * The fallback values below mirror the ordering of enum
+ * nl802154_commands and enum nl802154_attrs in
+ * include/net/nl802154.h.  The upstream header opens with the
+ * comment "don't change the order or add anything between, this is
+ * ABI!", so the wire ids are stable: a runtime kernel will accept
+ * the same numeric CMD_* / ATTR_* values regardless of whether the
+ * build host's sysroot has any of these tags.  If a value ever
+ * drifts the kernel returns -EOPNOTSUPP / -EINVAL on the relevant
+ * request and the per-family cap-gate latches.
+ */
+
+#ifndef NL802154_GENL_NAME
+#define NL802154_GENL_NAME			"nl802154"
+#endif
+#ifndef NL802154_FAMILY_VERSION
+#define NL802154_FAMILY_VERSION			1
+#endif
+
+/* enum nl802154_commands (include/net/nl802154.h) */
+#ifndef NL802154_CMD_GET_WPAN_PHY
+#define NL802154_CMD_GET_WPAN_PHY		1
+#endif
+#ifndef NL802154_CMD_SET_WPAN_PHY
+#define NL802154_CMD_SET_WPAN_PHY		2
+#endif
+#ifndef NL802154_CMD_NEW_WPAN_PHY
+#define NL802154_CMD_NEW_WPAN_PHY		3
+#endif
+#ifndef NL802154_CMD_DEL_WPAN_PHY
+#define NL802154_CMD_DEL_WPAN_PHY		4
+#endif
+#ifndef NL802154_CMD_GET_INTERFACE
+#define NL802154_CMD_GET_INTERFACE		5
+#endif
+#ifndef NL802154_CMD_SET_INTERFACE
+#define NL802154_CMD_SET_INTERFACE		6
+#endif
+#ifndef NL802154_CMD_NEW_INTERFACE
+#define NL802154_CMD_NEW_INTERFACE		7
+#endif
+#ifndef NL802154_CMD_DEL_INTERFACE
+#define NL802154_CMD_DEL_INTERFACE		8
+#endif
+#ifndef NL802154_CMD_SET_CHANNEL
+#define NL802154_CMD_SET_CHANNEL		9
+#endif
+#ifndef NL802154_CMD_SET_PAN_ID
+#define NL802154_CMD_SET_PAN_ID			10
+#endif
+#ifndef NL802154_CMD_SET_SHORT_ADDR
+#define NL802154_CMD_SET_SHORT_ADDR		11
+#endif
+#ifndef NL802154_CMD_SET_TX_POWER
+#define NL802154_CMD_SET_TX_POWER		12
+#endif
+#ifndef NL802154_CMD_SET_CCA_MODE
+#define NL802154_CMD_SET_CCA_MODE		13
+#endif
+#ifndef NL802154_CMD_SET_CCA_ED_LEVEL
+#define NL802154_CMD_SET_CCA_ED_LEVEL		14
+#endif
+#ifndef NL802154_CMD_SET_MAX_FRAME_RETRIES
+#define NL802154_CMD_SET_MAX_FRAME_RETRIES	15
+#endif
+#ifndef NL802154_CMD_SET_BACKOFF_EXPONENT
+#define NL802154_CMD_SET_BACKOFF_EXPONENT	16
+#endif
+#ifndef NL802154_CMD_SET_MAX_CSMA_BACKOFFS
+#define NL802154_CMD_SET_MAX_CSMA_BACKOFFS	17
+#endif
+#ifndef NL802154_CMD_SET_LBT_MODE
+#define NL802154_CMD_SET_LBT_MODE		18
+#endif
+#ifndef NL802154_CMD_SET_ACKREQ_DEFAULT
+#define NL802154_CMD_SET_ACKREQ_DEFAULT		19
+#endif
+#ifndef NL802154_CMD_SET_WPAN_PHY_NETNS
+#define NL802154_CMD_SET_WPAN_PHY_NETNS		20
+#endif
+#ifndef NL802154_CMD_SET_SEC_PARAMS
+#define NL802154_CMD_SET_SEC_PARAMS		21
+#endif
+#ifndef NL802154_CMD_GET_SEC_KEY
+#define NL802154_CMD_GET_SEC_KEY		22
+#endif
+#ifndef NL802154_CMD_NEW_SEC_KEY
+#define NL802154_CMD_NEW_SEC_KEY		23
+#endif
+#ifndef NL802154_CMD_DEL_SEC_KEY
+#define NL802154_CMD_DEL_SEC_KEY		24
+#endif
+#ifndef NL802154_CMD_GET_SEC_DEV
+#define NL802154_CMD_GET_SEC_DEV		25
+#endif
+#ifndef NL802154_CMD_NEW_SEC_DEV
+#define NL802154_CMD_NEW_SEC_DEV		26
+#endif
+#ifndef NL802154_CMD_DEL_SEC_DEV
+#define NL802154_CMD_DEL_SEC_DEV		27
+#endif
+#ifndef NL802154_CMD_GET_SEC_DEVKEY
+#define NL802154_CMD_GET_SEC_DEVKEY		28
+#endif
+#ifndef NL802154_CMD_NEW_SEC_DEVKEY
+#define NL802154_CMD_NEW_SEC_DEVKEY		29
+#endif
+#ifndef NL802154_CMD_DEL_SEC_DEVKEY
+#define NL802154_CMD_DEL_SEC_DEVKEY		30
+#endif
+#ifndef NL802154_CMD_GET_SEC_LEVEL
+#define NL802154_CMD_GET_SEC_LEVEL		31
+#endif
+#ifndef NL802154_CMD_NEW_SEC_LEVEL
+#define NL802154_CMD_NEW_SEC_LEVEL		32
+#endif
+#ifndef NL802154_CMD_DEL_SEC_LEVEL
+#define NL802154_CMD_DEL_SEC_LEVEL		33
+#endif
+#ifndef NL802154_CMD_TRIGGER_SCAN
+#define NL802154_CMD_TRIGGER_SCAN		35
+#endif
+#ifndef NL802154_CMD_ABORT_SCAN
+#define NL802154_CMD_ABORT_SCAN			36
+#endif
+#ifndef NL802154_CMD_SEND_BEACONS
+#define NL802154_CMD_SEND_BEACONS		38
+#endif
+#ifndef NL802154_CMD_STOP_BEACONS
+#define NL802154_CMD_STOP_BEACONS		39
+#endif
+#ifndef NL802154_CMD_ASSOCIATE
+#define NL802154_CMD_ASSOCIATE			40
+#endif
+#ifndef NL802154_CMD_DISASSOCIATE
+#define NL802154_CMD_DISASSOCIATE		41
+#endif
+#ifndef NL802154_CMD_SET_MAX_ASSOCIATIONS
+#define NL802154_CMD_SET_MAX_ASSOCIATIONS	42
+#endif
+#ifndef NL802154_CMD_LIST_ASSOCIATIONS
+#define NL802154_CMD_LIST_ASSOCIATIONS		43
+#endif
+
+/* enum nl802154_attrs (include/net/nl802154.h) */
+#ifndef NL802154_ATTR_WPAN_PHY
+#define NL802154_ATTR_WPAN_PHY			1
+#endif
+#ifndef NL802154_ATTR_WPAN_PHY_NAME
+#define NL802154_ATTR_WPAN_PHY_NAME		2
+#endif
+#ifndef NL802154_ATTR_IFINDEX
+#define NL802154_ATTR_IFINDEX			3
+#endif
+#ifndef NL802154_ATTR_IFNAME
+#define NL802154_ATTR_IFNAME			4
+#endif
+#ifndef NL802154_ATTR_IFTYPE
+#define NL802154_ATTR_IFTYPE			5
+#endif
+#ifndef NL802154_ATTR_WPAN_DEV
+#define NL802154_ATTR_WPAN_DEV			6
+#endif
+#ifndef NL802154_ATTR_PAGE
+#define NL802154_ATTR_PAGE			7
+#endif
+#ifndef NL802154_ATTR_CHANNEL
+#define NL802154_ATTR_CHANNEL			8
+#endif
+#ifndef NL802154_ATTR_PAN_ID
+#define NL802154_ATTR_PAN_ID			9
+#endif
+#ifndef NL802154_ATTR_SHORT_ADDR
+#define NL802154_ATTR_SHORT_ADDR		10
+#endif
+#ifndef NL802154_ATTR_TX_POWER
+#define NL802154_ATTR_TX_POWER			11
+#endif
+#ifndef NL802154_ATTR_CCA_MODE
+#define NL802154_ATTR_CCA_MODE			12
+#endif
+#ifndef NL802154_ATTR_CCA_OPT
+#define NL802154_ATTR_CCA_OPT			13
+#endif
+#ifndef NL802154_ATTR_CCA_ED_LEVEL
+#define NL802154_ATTR_CCA_ED_LEVEL		14
+#endif
+#ifndef NL802154_ATTR_MAX_FRAME_RETRIES
+#define NL802154_ATTR_MAX_FRAME_RETRIES		15
+#endif
+#ifndef NL802154_ATTR_MAX_BE
+#define NL802154_ATTR_MAX_BE			16
+#endif
+#ifndef NL802154_ATTR_MIN_BE
+#define NL802154_ATTR_MIN_BE			17
+#endif
+#ifndef NL802154_ATTR_MAX_CSMA_BACKOFFS
+#define NL802154_ATTR_MAX_CSMA_BACKOFFS		18
+#endif
+#ifndef NL802154_ATTR_LBT_MODE
+#define NL802154_ATTR_LBT_MODE			19
+#endif
+#ifndef NL802154_ATTR_SUPPORTED_CHANNEL
+#define NL802154_ATTR_SUPPORTED_CHANNEL		22
+#endif
+#ifndef NL802154_ATTR_EXTENDED_ADDR
+#define NL802154_ATTR_EXTENDED_ADDR		23
+#endif
+#ifndef NL802154_ATTR_WPAN_PHY_CAPS
+#define NL802154_ATTR_WPAN_PHY_CAPS		24
+#endif
+#ifndef NL802154_ATTR_SUPPORTED_COMMANDS
+#define NL802154_ATTR_SUPPORTED_COMMANDS	25
+#endif
+#ifndef NL802154_ATTR_ACKREQ_DEFAULT
+#define NL802154_ATTR_ACKREQ_DEFAULT		26
+#endif
+#ifndef NL802154_ATTR_PID
+#define NL802154_ATTR_PID			28
+#endif
+#ifndef NL802154_ATTR_NETNS_FD
+#define NL802154_ATTR_NETNS_FD			29
+#endif
+#ifndef NL802154_ATTR_COORDINATOR
+#define NL802154_ATTR_COORDINATOR		30
+#endif
+#ifndef NL802154_ATTR_SCAN_TYPE
+#define NL802154_ATTR_SCAN_TYPE			31
+#endif
+#ifndef NL802154_ATTR_SCAN_FLAGS
+#define NL802154_ATTR_SCAN_FLAGS		32
+#endif
+#ifndef NL802154_ATTR_SCAN_CHANNELS
+#define NL802154_ATTR_SCAN_CHANNELS		33
+#endif
+#ifndef NL802154_ATTR_SCAN_DURATION
+#define NL802154_ATTR_SCAN_DURATION		36
+#endif
+#ifndef NL802154_ATTR_SCAN_DONE_REASON
+#define NL802154_ATTR_SCAN_DONE_REASON		37
+#endif
+#ifndef NL802154_ATTR_BEACON_INTERVAL
+#define NL802154_ATTR_BEACON_INTERVAL		38
+#endif
+#ifndef NL802154_ATTR_MAX_ASSOCIATIONS
+#define NL802154_ATTR_MAX_ASSOCIATIONS		39
+#endif
+#ifndef NL802154_ATTR_PEER
+#define NL802154_ATTR_PEER			40
+#endif
+
+/* CONFIG_IEEE802154_NL802154_EXPERIMENTAL-gated attrs */
+#ifndef NL802154_ATTR_SEC_ENABLED
+#define NL802154_ATTR_SEC_ENABLED		41
+#endif
+#ifndef NL802154_ATTR_SEC_OUT_LEVEL
+#define NL802154_ATTR_SEC_OUT_LEVEL		42
+#endif
+#ifndef NL802154_ATTR_SEC_OUT_KEY_ID
+#define NL802154_ATTR_SEC_OUT_KEY_ID		43
+#endif
+#ifndef NL802154_ATTR_SEC_FRAME_COUNTER
+#define NL802154_ATTR_SEC_FRAME_COUNTER		44
+#endif
+#ifndef NL802154_ATTR_SEC_LEVEL
+#define NL802154_ATTR_SEC_LEVEL			45
+#endif
+#ifndef NL802154_ATTR_SEC_DEVICE
+#define NL802154_ATTR_SEC_DEVICE		46
+#endif
+#ifndef NL802154_ATTR_SEC_DEVKEY
+#define NL802154_ATTR_SEC_DEVKEY		47
+#endif
+#ifndef NL802154_ATTR_SEC_KEY
+#define NL802154_ATTR_SEC_KEY			48
+#endif
