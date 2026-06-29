@@ -58,6 +58,7 @@ FILES=(
 	struct_catalog/quota.c
 	struct_catalog/time.c
 	struct_catalog/perf.c
+	struct_catalog/landlock.c
 	arg-decoder.c
 	lib/cmsg_build.c
 	utils.c
