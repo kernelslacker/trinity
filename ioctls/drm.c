@@ -12,6 +12,9 @@
 #include <drm/radeon_drm.h>
 
 #include "ioctls.h"
+#include "random.h"
+#include "rnd.h"
+#include "sanitise.h"
 #include "utils.h"
 
 /*
@@ -452,11 +455,146 @@ static const char *const drm_devs[] = {
 	"drm",
 };
 
+static void drm_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
+{
+	pick_random_ioctl(grp, rec);
+
+	switch (rec->a2) {
+	case DRM_IOCTL_VERSION: {
+		struct drm_version *p = get_writable_struct(sizeof(*p));
+		if (!p)
+			return;
+		memset(p, 0, sizeof(*p));
+		rec->a3 = (unsigned long) p;
+		break;
+	}
+
+#ifdef DRM_IOCTL_GET_CAP
+	case DRM_IOCTL_GET_CAP: {
+		static const __u64 caps[] = {
+			DRM_CAP_DUMB_BUFFER,
+			DRM_CAP_VBLANK_HIGH_CRTC,
+			DRM_CAP_DUMB_PREFERRED_DEPTH,
+			DRM_CAP_DUMB_PREFER_SHADOW,
+			DRM_CAP_PRIME,
+			DRM_CAP_TIMESTAMP_MONOTONIC,
+			DRM_CAP_ASYNC_PAGE_FLIP,
+			DRM_CAP_CURSOR_WIDTH,
+			DRM_CAP_CURSOR_HEIGHT,
+			DRM_CAP_ADDFB2_MODIFIERS,
+		};
+		struct drm_get_cap *p = get_writable_struct(sizeof(*p));
+		if (!p)
+			return;
+		memset(p, 0, sizeof(*p));
+		p->capability = RAND_ARRAY(caps);
+		rec->a3 = (unsigned long) p;
+		break;
+	}
+#endif
+
+	case DRM_IOCTL_GET_CLIENT: {
+		struct drm_client *p = get_writable_struct(sizeof(*p));
+		if (!p)
+			return;
+		memset(p, 0, sizeof(*p));
+		p->idx = rnd_modulo_u32(8);
+		rec->a3 = (unsigned long) p;
+		break;
+	}
+
+#ifdef DRM_IOCTL_SET_CLIENT_CAP
+	case DRM_IOCTL_SET_CLIENT_CAP: {
+		static const __u64 client_caps[] = {
+			DRM_CLIENT_CAP_STEREO_3D,
+			DRM_CLIENT_CAP_UNIVERSAL_PLANES,
+			DRM_CLIENT_CAP_ATOMIC,
+			DRM_CLIENT_CAP_ASPECT_RATIO,
+			DRM_CLIENT_CAP_WRITEBACK_CONNECTORS,
+		};
+		struct drm_set_client_cap *p = get_writable_struct(sizeof(*p));
+		if (!p)
+			return;
+		memset(p, 0, sizeof(*p));
+		p->capability = RAND_ARRAY(client_caps);
+		p->value = RAND_BOOL();
+		rec->a3 = (unsigned long) p;
+		break;
+	}
+#endif
+
+	case DRM_IOCTL_MODE_GETRESOURCES: {
+		struct drm_mode_card_res *p = get_writable_struct(sizeof(*p));
+		if (!p)
+			return;
+		memset(p, 0, sizeof(*p));
+		rec->a3 = (unsigned long) p;
+		break;
+	}
+
+#ifdef DRM_IOCTL_MODE_GETPLANERESOURCES
+	case DRM_IOCTL_MODE_GETPLANERESOURCES: {
+		struct drm_mode_get_plane_res *p = get_writable_struct(sizeof(*p));
+		if (!p)
+			return;
+		memset(p, 0, sizeof(*p));
+		rec->a3 = (unsigned long) p;
+		break;
+	}
+#endif
+
+	case DRM_IOCTL_MODE_GETCONNECTOR: {
+		struct drm_mode_get_connector *p = get_writable_struct(sizeof(*p));
+		if (!p)
+			return;
+		memset(p, 0, sizeof(*p));
+		p->connector_id = rnd_modulo_u32(64);
+		rec->a3 = (unsigned long) p;
+		break;
+	}
+
+	case DRM_IOCTL_MODE_GETENCODER: {
+		struct drm_mode_get_encoder *p = get_writable_struct(sizeof(*p));
+		if (!p)
+			return;
+		memset(p, 0, sizeof(*p));
+		p->encoder_id = rnd_modulo_u32(64);
+		rec->a3 = (unsigned long) p;
+		break;
+	}
+
+	case DRM_IOCTL_MODE_GETCRTC: {
+		struct drm_mode_crtc *p = get_writable_struct(sizeof(*p));
+		if (!p)
+			return;
+		memset(p, 0, sizeof(*p));
+		p->crtc_id = rnd_modulo_u32(64);
+		rec->a3 = (unsigned long) p;
+		break;
+	}
+
+#ifdef DRM_IOCTL_MODE_GETPLANE
+	case DRM_IOCTL_MODE_GETPLANE: {
+		struct drm_mode_get_plane *p = get_writable_struct(sizeof(*p));
+		if (!p)
+			return;
+		memset(p, 0, sizeof(*p));
+		p->plane_id = rnd_modulo_u32(64);
+		rec->a3 = (unsigned long) p;
+		break;
+	}
+#endif
+
+	default:
+		break;
+	}
+}
+
 static const struct ioctl_group drm_grp = {
 	.devtype = DEV_CHAR,
 	.devs = drm_devs,
 	.devs_cnt = ARRAY_SIZE(drm_devs),
-	.sanitise = pick_random_ioctl,
+	.sanitise = drm_sanitise,
 	.ioctls = drm_ioctls,
 	.ioctls_cnt = ARRAY_SIZE(drm_ioctls),
 };
