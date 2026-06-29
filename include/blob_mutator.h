@@ -12,9 +12,9 @@
  * ...) early-out on the empty residue almost always, so the content
  * lane is the limiting reagent on the blob coverage surface today.
  *
- * Build 1 (this row) introduces a tri-state in use plus a reserved
- * fourth mode (CMPDICT, no-op) so the parse table is stable across
- * the planned Build 2 rung:
+ * Build 1 introduces a tri-state in use plus a reserved fourth mode
+ * (CMPDICT, no-op) so the parse table is stable across the planned
+ * Build 2 rung:
  *
  *   OFF      - default.  The ARG_BUF_SIZED hook skips blob_fill()
  *              entirely: no mode-load past the early return, no RNG
@@ -24,10 +24,12 @@
  *   FILL     - generate_rand_bytes() the owned buffer.  Reuses the
  *              random-page.c content generator (separator-walking,
  *              size-bucketed) -- no new RNG primitive.
- *   HAVOC    - FILL plus a bounded byte-mutation pass; the pass is
- *              introduced in the follow-up commit.  In THIS commit
- *              HAVOC behaves identically to FILL so the flag ladder
- *              is stable across the planned row.
+ *   HAVOC    - FILL plus a bounded byte-mutation pass: bit-flip,
+ *              byte-flip, set-interesting byte / word / dword drawn
+ *              from get_boundary_value() / get_interesting_value().
+ *              Op count is CAPPED at BLOB_HAVOC_MAX_OPS so the pass
+ *              cannot run unbounded; every write is clamped inside
+ *              [0, len).
  *   CMPDICT  - RESERVED for Build 2 (cmp-pool dictionary inserts).
  *              Parsed from day 1 so the flag ladder is stable; in
  *              this build it behaves identically to FILL.
@@ -44,6 +46,11 @@ enum blob_mutator_mode {
 };
 
 extern enum blob_mutator_mode blob_mutator_mode;
+
+/* Cap on havoc ops per blob.  Bounded so the pass cannot run away on
+ * a large blob -- keeps the worst-case work per ARG_BUF_SIZED call
+ * O(BLOB_HAVOC_MAX_OPS), independent of len. */
+#define BLOB_HAVOC_MAX_OPS	64
 
 /*
  * Author content into a writable buffer.

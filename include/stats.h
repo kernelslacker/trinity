@@ -5047,6 +5047,17 @@ struct stats_s {
 	unsigned long arg_len_objrel_pagesize;
 	unsigned long arg_len_objrel_pagesize_plus_1;
 	unsigned long arg_len_objrel_pagesize_minus_1;
+
+	/* --blob-mutator (default off): A/B observability counters for the
+	 * content-authoring lane that backs ARG_BUF_SIZED args.  blob_fills
+	 * is the gate (total invocations of blob_fill() that authored
+	 * content into a buffer); blob_havoc_ops is the count of bounded
+	 * byte-mutation ops the HAVOC rung applied on top of the FILL
+	 * floor; blob_dict_inserts is reserved for the Build 2 CMPDICT
+	 * rung and stays at zero in this build. */
+	unsigned long blob_fills;
+	unsigned long blob_havoc_ops;
+	unsigned long blob_dict_inserts;
 };
 
 unsigned int stats_syscall_category(const char *name);

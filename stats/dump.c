@@ -1709,6 +1709,8 @@ void __cold dump_stats_childop_runs_network(void)
 
 	stat_category_emit_text(&tcp_ulp_swap_churn_category);
 
+	stat_category_emit_text(&blob_mutator_category);
+
 	stat_category_emit_text(&msg_zerocopy_churn_category);
 
 	stat_category_emit_text(&setsockopt_pairing_category);
