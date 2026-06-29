@@ -9,6 +9,7 @@
 #include "arch.h"
 #include "arg-len-semantics.h"
 #include "argtype-ops.h"
+#include "blob_mutator.h"
 #ifdef USE_BPF
 #include "bpf.h"
 #endif
@@ -1251,6 +1252,15 @@ static unsigned long gen_arg_buf_sized(struct syscallentry *entry,
 		publish_paired_length(entry, rec, argnum, 0);
 		return 0;
 	}
+
+	/*
+	 * --blob-mutator hook: author content into the owned buffer
+	 * before the length is published.  The OFF mode short-circuits
+	 * inside blob_fill() before any RNG draw, so the OFF arm is
+	 * byte-identical to a build before this row.
+	 */
+	if (blob_mutator_mode != BLOB_MUTATOR_OFF)
+		blob_fill((unsigned char *) buf, (size_t) size, rec->nr, false);
 
 	if (rnd_modulo_u32(16) == 0) {
 		unsigned long pub;

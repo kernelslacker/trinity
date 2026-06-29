@@ -9,6 +9,7 @@
 #include <string.h>
 #include <time.h>
 #include "arch.h"
+#include "blob_mutator.h"
 #include "child.h"
 #include "cmp_hints.h"
 #include "debug.h"
@@ -422,6 +423,7 @@ static void init_shm_publish_and_subsystems(void)
 	cmp_hints_init();
 	struct_catalog_init();
 	struct_field_mutate_self_check();
+	blob_mutator_self_check();
 
 	/*
 	 * Allocate the deferred-free ring in the parent before any child
