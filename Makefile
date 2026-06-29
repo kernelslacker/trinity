@@ -188,15 +188,21 @@ coverity:
 	@cov-build --dir cov-int make -j $(NR_CPUS)
 	@tar cJvf trinity-coverity.tar.xz cov-int
 
-# Grant the file capability the parent watchdog needs to read
-# /proc/<pid>/stack for the D-state diagnostic snapshot.  setcap needs
-# root (CAP_SETFCAP), so this is a standalone target:
+# Grant the file capabilities the parent process needs:
+#   - CAP_SYS_ADMIN: parent watchdog reads /proc/<pid>/stack for the
+#     D-state diagnostic snapshot.
+#   - CAP_SYS_RESOURCE: parent raises RLIMIT_MEMLOCK to infinity before
+#     fork (rlimits.c), so children inherit enough mlock headroom for
+#     mlockall() to succeed under ASAN's TB-scale shadow.
+# setcap needs root (CAP_SETFCAP), so this is a standalone target:
 #   make && sudo make setcap
 # Re-run after every rebuild -- the security.capability xattr is stripped
 # on recompile.  Needs an xattr-capable, non-nosuid fs (ext4/xfs/btrfs/
 # recent tmpfs; not nfs/overlayfs).
-# Depends on the child capability-drop in child.c: forked fuzz children
-# must shed CAP_SYS_ADMIN before the fuzz loop, or they run privileged.
+# Depends on the child capability-drop in child-init.c: forked fuzz
+# children capset() every cap (CAP_SYS_ADMIN, CAP_SYS_RESOURCE, ...) to
+# empty before the fuzz loop, so the raised RLIMIT_MEMLOCK persists
+# across fork while the cap that raised it does not.
 setcap:
-	setcap cap_sys_admin+ep ./trinity
+	setcap cap_sys_admin,cap_sys_resource+ep ./trinity
 
