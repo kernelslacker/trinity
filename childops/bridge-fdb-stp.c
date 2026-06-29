@@ -112,6 +112,7 @@
 #include "childops-netlink.h"
 #include "compat.h"
 #include "jitter.h"
+#include "name-pool.h"
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
@@ -755,6 +756,17 @@ static int bridge_fdb_stp_iter_bridge_create(struct bridge_fdb_stp_iter_ctx *ctx
 	ctx->br_idx = (int)if_nametoindex(ctx->br_name);
 	if (ctx->br_idx == 0)
 		return -1;
+
+	/* Kernel confirmed ctx->br_name now names a real bridge master;
+	 * publish it via the NETDEV name pool so sibling childops (and
+	 * per-syscall fuzzers drawing this kind) can collide with it on
+	 * subsequent invocations -- reaches "name a previous syscall
+	 * planted" lookup codepaths instead of always-fresh-random
+	 * near-miss space.  Record the master only; the two veth pairs
+	 * created later are deliberately skipped to keep the per-kind
+	 * 16-slot ring from being dominated by a single op's leaves. */
+	name_pool_record(NAME_KIND_NETDEV, ctx->br_name,
+			 strlen(ctx->br_name));
 	return 0;
 }
 
