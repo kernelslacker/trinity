@@ -9,6 +9,7 @@
 #include "random.h"
 #include "sanitise.h"
 #include "compat.h"
+#include "name-pool.h"
 #include "rnd.h"
 
 #pragma GCC diagnostic ignored "-Waddress-of-packed-member"
@@ -39,6 +40,28 @@ static void pppox_PX_PROTO_OE(struct sockaddr **addr, socklen_t *addrlen)
 		pppox->sa_addr.pppoe.sid = rnd_u32();
 		for (i = 0; i < ETH_ALEN; i++)
 			pppox->sa_addr.pppoe.remote[i] = rnd_u32();
+		/*
+		 * Minority arm draws the pppoe device name from the shared
+		 * NAME_KIND_NETDEV pool so connect()'s dev_get_by_name()
+		 * resolves a real interface a concurrent childop just
+		 * planted, exercising the register-then-lookup path.
+		 * Majority arm keeps the raw-bytes fill so the existing
+		 * garbage-name coverage stays warm; empty-pool draws fall
+		 * through to the same path.
+		 */
+		if (ONE_IN(4)) {
+			size_t got = name_pool_draw_mutated(NAME_KIND_NETDEV,
+							    (char *)pppox->sa_addr.pppoe.dev,
+							    IFNAMSIZ);
+
+			if (got > 0) {
+				if (got >= IFNAMSIZ)
+					got = IFNAMSIZ - 1;
+				pppox->sa_addr.pppoe.dev[got] = '\0';
+				break;
+			}
+			/* empty pool -- fall through to raw-bytes fill */
+		}
 		for (i = 0; i < IFNAMSIZ; i++)
 			pppox->sa_addr.pppoe.dev[i] = rnd_u32();
 		break;
