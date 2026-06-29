@@ -170,6 +170,12 @@ extern struct genl_family_grammar fam_dev_energymodel;
  * runtime CTRL_CMD_GETFAMILY decides whether the running kernel
  * carries the family. */
 extern struct genl_family_grammar fam_nl802154;
+/* The legacy "802.15.4 MAC" family (kernel net/ieee802154/netlink.c)
+ * is a distinct genl family from the modern nl802154 above; its CMD/
+ * ATTR enum lives in include/linux/nl802154.h which is also not
+ * shipped via uapi, so the grammar vendors its ids in
+ * include/kernel/ieee802154.h and registers unconditionally. */
+extern struct genl_family_grammar fam_ieee802154;
 
 /*
  * Per-family grammar definitions live in net/netlink-genl-fam-*.c;
@@ -301,6 +307,7 @@ static struct genl_family_grammar *registry[] = {
 	&fam_dev_energymodel,
 #endif
 	&fam_nl802154,
+	&fam_ieee802154,
 };
 
 static int discovery_done;
