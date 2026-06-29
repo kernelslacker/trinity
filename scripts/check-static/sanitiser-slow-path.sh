@@ -63,6 +63,7 @@ FILES=(
 	struct_catalog/ipc.c
 	struct_catalog/fcntl.c
 	struct_catalog/socket.c
+	struct_catalog/aio.c
 	arg-decoder.c
 	lib/cmsg_build.c
 	utils.c

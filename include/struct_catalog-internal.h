@@ -597,3 +597,24 @@ enum {
 extern const struct struct_field sched_attr_fields[SCHED_ATTR_FIELDS_N];
 extern const struct struct_field clone_args_fields[CLONE_ARGS_FIELDS_N];
 extern const struct struct_field sched_param_fields[SCHED_PARAM_FIELDS_N];
+
+/*
+ * aio-shaped leaf tables defined in struct_catalog/aio.c.  Covers
+ * struct iocb (io_cancel) with its IOCB_CMD_* opcode vocab.  Each _N
+ * constant gives the extern decl a complete array type so the spine's
+ * ARRAY_SIZE() at the reference site keeps folding to the same
+ * constant it did before the carve.  iocb_opcode_values is referenced
+ * only by iocb_fields itself but lives at file scope in aio.c so its
+ * ARRAY_SIZE() inside the FIELDX initialiser keeps folding -- the
+ * extern surface lets the spine's struct_catalog[SC_IOCB].fields
+ * reference resolve while iocb_opcode_values stays scoped to aio.c
+ * through this extern.  IOCB_FLAGS_MASK / IOCB_RWF_MASK helper
+ * macros are private to aio.c.
+ */
+enum {
+	IOCB_OPCODE_VALUES_N	= 8,
+	IOCB_FIELDS_N		= 12,
+};
+
+extern const unsigned long iocb_opcode_values[IOCB_OPCODE_VALUES_N];
+extern const struct struct_field iocb_fields[IOCB_FIELDS_N];
