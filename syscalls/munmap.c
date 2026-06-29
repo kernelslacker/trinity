@@ -199,17 +199,6 @@ static void post_munmap(struct syscallrecord *rec)
 		goto out_free;
 	}
 
-	/*
-	 * Either branch invalidates the get_writable_address() known_rw
-	 * skip-cache.  For WHOLE the slot is about to be destroyed; for the
-	 * sub-range branch we are about to clear map->prot to 0.  In both
-	 * cases the cached "slot is RW and resident" claim is stale and
-	 * letting it persist would let the hot path hand a caller a
-	 * pointer into a torn-down or hole-punched VMA.
-	 */
-	if (map != NULL)
-		map->known_rw = false;
-
 	if (action == WHOLE && map != NULL) {
 		enum objecttype pool_type = (enum objecttype) snap->type;
 

@@ -22,10 +22,10 @@
 void * get_writable_address(unsigned long size)
 {
 	struct map_handle h;
-	/* volatile on map, mincore_retries, tries and skip_mprotect: all
-	 * four are written between sigsetjmp(gwa_bookkeeping_recover) and
-	 * its potential longjmp (tries++ and the skip_mprotect reset at the
-	 * retry: label, mincore_retries in the from_mmap branch).
+	/* volatile on map, mincore_retries and tries: all three are
+	 * written between sigsetjmp(gwa_bookkeeping_recover) and its
+	 * potential longjmp (tries++ at the retry: label,
+	 * mincore_retries in the from_mmap branch).
 	 * ISO C 7.13.2.1 only guarantees post-longjmp values for objects
 	 * with volatile-qualified type, and gcc -Wclobbered flags them
 	 * otherwise.  Volatile on the pointer (not the pointee) keeps
@@ -38,20 +38,17 @@ void * get_writable_address(unsigned long size)
 	volatile int tries = 0;
 	volatile int mincore_retries = 0;
 	bool from_mmap = false;
-	volatile bool skip_mprotect = false;
 
 retry:	tries++;
 	/*
 	 * Reset per-iteration state.  The retry: label can be reached
-	 * from anywhere below after from_mmap/map/skip_mprotect have
-	 * been set on a prior iteration; without this reset the
-	 * line-309 short-circuit and the later from_mmap branches see
-	 * stale values from that earlier iteration.  The RAND_BOOL() ==
-	 * true arm below sets both fields afresh when taken.
+	 * from anywhere below after from_mmap/map have been set on a
+	 * prior iteration; without this reset the later from_mmap branches
+	 * see stale values from that earlier iteration.  The RAND_BOOL()
+	 * == true arm below sets both fields afresh when taken.
 	 */
 	from_mmap = false;
 	map = NULL;
-	skip_mprotect = false;
 	if (tries == 100)
 		return NULL;
 
@@ -62,8 +59,8 @@ retry:	tries++;
 	 * but the cached_brk_end snapshot can lag the live break under
 	 * cmp-hint / RedQueen pressure; if a fuzzed PROT_READ overlay
 	 * slips through and lands on a brk page that hosts a map
-	 * struct, every map->known_rw / map->prot write later in this
-	 * function SEGV_ACCERRs the child.
+	 * struct, the map->prot write later in this function
+	 * SEGV_ACCERRs the child.
 	 *
 	 * Install one sigsetjmp recovery point per retry iteration.  On
 	 * SIGSEGV/SIGBUS with si_code > 0 while gwa_bookkeeping_active
@@ -166,31 +163,6 @@ retry:	tries++;
 			goto retry;
 
 		addr = map->ptr;
-		/*
-		 * Map-pool fast path.  If the slot's known_rw bit is set
-		 * the entire mapping was upgraded to PROT_READ|PROT_WRITE
-		 * on a previous call AND no per-slot notifier (post_munmap
-		 * / post_mprotect / post_mremap / mprotect-split childop)
-		 * has fired since.  Skip the mprotect upgrade syscall
-		 * below -- it would be a pure no-op -- but still fall
-		 * through to the tracked-region check and the mincore()
-		 * residency probe.  The per-slot notifiers only clear
-		 * known_rw for the single map they sanitised; a wide
-		 * munmap or MAP_FIXED mmap whose snap->map did not match
-		 * this slot can collaterally tear down THIS slot's VMA
-		 * and leave the cache lying, and a blind return would
-		 * hand the caller a pointer into a hole-punched page
-		 * (SEGV_MAPERR on first store).  The two verification
-		 * gates the slow path already runs catch that without an
-		 * extra syscall on the intact-cache common case.  Note
-		 * the cache must already have been set by a prior call's
-		 * whole-mapping mprotect: setting it on a sub-range
-		 * upgrade would let a later get_writable_address(size >
-		 * previous size) hit the cache and return a buffer whose
-		 * tail pages aren't actually RW.
-		 */
-		if (map->known_rw && size <= map->size)
-			skip_mprotect = true;
 	} else {
 		unsigned int captured_slot;
 
@@ -284,19 +256,29 @@ retry:	tries++;
 	}
 
 	/*
-	 * On the mmap pool branch upgrade the WHOLE mapping (rather than
-	 * just [addr, addr+size)) so the known_rw cache below can vouch
-	 * for any size <= map->size on later calls.  Upgrading the slot
-	 * to RW only adds permissions; the slot is trinity-owned and
-	 * get_writable_address consumers want RW anyway.  The SysV-shm
-	 * branch has no struct map and no slot-local cache, so it stays
-	 * on the sub-range upgrade.  On the cache-hit fast path
-	 * (skip_mprotect set) the upgrade is a known no-op and skipped;
-	 * the verification gates below still run.
+	 * Upgrade exactly [addr, addr+size) to PROT_READ|PROT_WRITE.
+	 * mprotect's all-or-nothing semantics give us the contract we
+	 * need: it returns -ENOMEM if any page in the range is not in a
+	 * VMA, so a successful return GUARANTEES the full requested size
+	 * is contiguous, mapped and writable.  Callers that need a buffer
+	 * of @size bytes can rely on that extent without a separate
+	 * page-by-page residency probe.
+	 *
+	 * This used to skip the syscall on a known_rw cache hit and
+	 * upgrade the WHOLE mapping on the slow path so the cache could
+	 * vouch for any later size <= map->size.  A wide sibling munmap
+	 * or MAP_FIXED placement that collaterally tore down THIS slot's
+	 * tail pages without firing the per-slot notifier left the cache
+	 * lying about pages 2..N of a multi-page slot; the head-page
+	 * mincore() probe below couldn't see past page 0, so the caller
+	 * (alloc_iovec asking for 16 KB) walked off the writable extent
+	 * into a torn-down / PROT_NONE neighbour and SEGV_ACCERR'd.
+	 * Always running mprotect over the requested extent makes the
+	 * contract the kernel's responsibility instead of a shadow bit.
 	 */
-	if (!skip_mprotect) {
-		void *mp_addr = from_mmap ? map->ptr : addr;
-		size_t mp_len = from_mmap ? (size_t) map->size : (size_t) size;
+	{
+		void *mp_addr = addr;
+		size_t mp_len = size;
 
 #ifdef CONFIG_GUARD_SHARED
 	/*
@@ -314,14 +296,6 @@ retry:	tries++;
 #endif
 
 	if (mprotect(mp_addr, mp_len, PROT_READ | PROT_WRITE) != 0) {
-		if (from_mmap) {
-			/* See sigsetjmp install at retry: -- a fuzzed PROT_READ
-			 * overlay on the brk page hosting map turns this store
-			 * into SEGV_ACCERR; gwa_bookkeeping_recover catches it. */
-			gwa_bookkeeping_active = 1;
-			map->known_rw = false;
-			gwa_bookkeeping_active = 0;
-		}
 		log_mprotect_failure(mp_addr, mp_len,
 				     PROT_READ | PROT_WRITE,
 				     __builtin_return_address(0), errno);
@@ -334,6 +308,9 @@ retry:	tries++;
 		 * Returning addr regardless gives the caller a value
 		 * that SEGV_ACCERRs on first dereference; retrying
 		 * picks a different slot and rolls past the bad one.
+		 * ENOMEM here also covers the "sibling tore down tail
+		 * pages of a multi-page slot" case the dropped cache
+		 * used to silently miss.
 		 */
 		{
 			struct childdata *c = this_child();
@@ -358,22 +335,21 @@ retry:	tries++;
 	}
 
 	/*
-	 * mprotect succeeded.  On the mmap branch the upgrade covered the
-	 * full mapping, so record the cache hit for future calls and bring
-	 * the tracked prot in line with what the kernel just applied.  We
-	 * only OR in the bits we know we added -- the cached invariant for
-	 * any other bits (PROT_EXEC, PROT_NONE clearance) is owned by the
-	 * post-syscall hooks.
+	 * mprotect succeeded on the requested extent.  On the mmap branch
+	 * bring the tracked prot in line with what the kernel just applied
+	 * so get_map_with_prot() picks see the upgrade.  We only OR in
+	 * the bits we know we added -- the cached invariant for any other
+	 * bits (PROT_EXEC, PROT_NONE clearance) is owned by the post-
+	 * syscall hooks.
 	 */
 	if (from_mmap) {
 		/* See sigsetjmp install at retry: -- a fuzzed PROT_READ overlay
-		 * on the brk page hosting map turns these stores into
+		 * on the brk page hosting map turns this store into
 		 * SEGV_ACCERR.  Companion commit widened the brk re-test gate
 		 * to close the upstream window; this wrap is the trip-wire if
 		 * a case still slips through. */
 		gwa_bookkeeping_active = 1;
 		map->prot |= PROT_READ | PROT_WRITE;
-		map->known_rw = true;
 		gwa_bookkeeping_active = 0;
 	}
 
@@ -428,75 +404,30 @@ retry:	tries++;
 			else
 				parent_stats.get_writable_address_scribbled_postmp_shm++;
 		}
-		/*
-		 * The cache-hit fast path can land here when a wide
-		 * sibling munmap (or MAP_FIXED placement) collaterally
-		 * tore down this slot's VMA without firing the per-slot
-		 * notifier that would normally clear known_rw.  Clear it
-		 * now so future calls do not blindly trust the cache and
-		 * keep returning a pointer into the hole-punched region.
-		 */
-		if (from_mmap) {
-			/* See sigsetjmp install at retry: -- guarded against
-			 * SEGV_ACCERR on a fuzzed PROT_READ overlay of map. */
-			gwa_bookkeeping_active = 1;
-			map->known_rw = false;
-			gwa_bookkeeping_active = 0;
-		}
 		goto retry;
 	}
 
 	/*
-	 * Final gate: confirm the page backing addr still has a VMA.
-	 * Sibling sanitisers issue raw syscall(2) mm calls (munmap,
-	 * mremap, MADV_DONTNEED on file mappings) that bypass libasan's
-	 * mm-interceptors, so the libasan inline shadow-probe consumers
-	 * rely on can return "addressable" for a slot whose underlying
-	 * VMA was already torn down -- the shadow byte still says ok,
-	 * but the hardware deref faults SEGV_MAPERR on first store.
-	 * mincore() on the head page returns -ENOMEM when the kernel has
-	 * no VMA for that address, which is the exact signal we need.
-	 * On EAGAIN/EFAULT/EINVAL etc. fall through; only ENOMEM is
-	 * actionable.  Bound the residency-driven retries separately
-	 * from the outer tries cap so a transient pool-wide unmap storm
-	 * doesn't spin.  Once the residency budget is exhausted the
-	 * address has been proven unmapped; honour the documented NULL-
-	 * or-valid contract that the writable-buffer rework established
-	 * rather than handing back a pointer that will SEGV_MAPERR on
-	 * first store.  Bump a dedicated stat so spikes in exhausted-
-	 * retry returns are visible.
+	 * Residual head-page residency probe.  The all-or-nothing mprotect
+	 * above already established that [addr, addr+size) is in a VMA at
+	 * the moment of the syscall, so under normal operation this probe
+	 * is redundant on both branches.  It survives as a thin TOCTOU
+	 * trip-wire for the narrow window between the mprotect return and
+	 * this function's return: a sibling sanitiser issuing a raw
+	 * syscall(2) munmap on this exact slot in that window leaves no
+	 * tracked-state breadcrumb to invalidate, but mincore() on the
+	 * head page sees the VMA has gone away (-ENOMEM) and we can
+	 * re-pick before handing the caller a pointer that SEGV_MAPERRs
+	 * on first store.  EAGAIN/EFAULT/EINVAL etc. fall through; only
+	 * ENOMEM is actionable.  Retries are bounded separately from the
+	 * outer tries cap so a transient pool-wide unmap storm doesn't
+	 * spin.  Once exhausted, honour the NULL-or-valid contract.
 	 */
-	/*
-	 * Skip the residency probe on a freshly-mprotected mmap slot.
-	 * The kernel only returns success from the upgrade above when
-	 * the VMA spans every page being touched, so the head-page
-	 * mincore() lookup can only succeed.  The cache-hit branch
-	 * (skip_mprotect set) did NOT just call mprotect -- a sibling
-	 * tear-down between calls is possible and the probe must run
-	 * to detect it.  Same for SysV-shm (no map, no cache).
-	 */
-	if (from_mmap && !skip_mprotect) {
-		/* skip */
-	} else {
+	{
 		unsigned char vec;
 		void *probe_addr = (void *)((uintptr_t) addr & PAGE_MASK);
 
 		if (mincore(probe_addr, 1, &vec) != 0 && errno == ENOMEM) {
-			/*
-			 * Cache-hit fast path can land here when a
-			 * sibling tear-down unmapped this slot without
-			 * the per-slot notifier clearing known_rw.
-			 * Invalidate the cache so future calls do not
-			 * keep returning the same hole-punched slot.
-			 */
-			if (from_mmap) {
-				/* See sigsetjmp install at retry: -- guarded
-				 * against SEGV_ACCERR on a fuzzed PROT_READ
-				 * overlay of map. */
-				gwa_bookkeeping_active = 1;
-				map->known_rw = false;
-				gwa_bookkeeping_active = 0;
-			}
 			mincore_retries++;
 			if (mincore_retries < 4)
 				goto retry;

@@ -976,10 +976,10 @@ void child_fault_handler(int sig, siginfo_t *info, void *ctx)
 	 * Same shape as the asb_copy / cmp_field edges above: a fuzzed
 	 * mmap(MAP_FIXED, PROT_READ) that survived the heap-overlap guard
 	 * can overlay the brk page hosting the map struct, turning the
-	 * known_rw / prot stores into SEGV_ACCERR.  Gated on SIGSEGV or
-	 * SIGBUS with si_code > 0 and gwa_bookkeeping_active set ONLY
-	 * across each map-field write so any other fault still reaches
-	 * the diagnostic + _exit path.  Counted by
+	 * map->prot store into SEGV_ACCERR.  Gated on SIGSEGV or SIGBUS
+	 * with si_code > 0 and gwa_bookkeeping_active set ONLY across
+	 * the map-field write so any other fault still reaches the
+	 * diagnostic + _exit path.  Counted by
 	 * STATS_FIELD_GET_WRITABLE_BOOKKEEPING_RO_FAULT (non-zero rate
 	 * means the brk-staleness gate above missed a case -- the
 	 * counter is the trip-wire that we silently survived something
