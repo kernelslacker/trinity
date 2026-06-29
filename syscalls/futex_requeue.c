@@ -57,7 +57,15 @@ struct syscallentry syscall_futex_requeue = {
 	.arg_params[3].range.low = 0,
 	.arg_params[3].range.hi = 128,
 	.sanitise = sanitise_futex_requeue,
-	.rettype = RET_ZERO_SUCCESS,
+	/*
+	 * sys_futex_requeue returns the number of waiters woken plus
+	 * requeued on success (0 .. nr_wake + nr_requeue), NOT 0.  Tagging
+	 * the entry as RET_ZERO_SUCCESS makes the rzs gate mis-reject every
+	 * non-zero count.  Leave as RET_BORING; the count bound is the
+	 * caller-supplied nr_wake + nr_requeue, which is too far from the
+	 * dispatcher chokepoint to cheaply enforce here.
+	 */
+	.rettype = RET_BORING,
 	.flags = NEED_ALARM,
 	.group = GROUP_IPC,
 };
