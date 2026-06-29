@@ -62,6 +62,7 @@ FILES=(
 	struct_catalog/signal.c
 	struct_catalog/ipc.c
 	struct_catalog/fcntl.c
+	struct_catalog/socket.c
 	arg-decoder.c
 	lib/cmsg_build.c
 	utils.c

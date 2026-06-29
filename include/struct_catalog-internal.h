@@ -338,12 +338,32 @@ extern const struct struct_field group_req_fields[GROUP_REQ_FIELDS_N];
 extern const struct struct_field group_source_req_fields[GROUP_SOURCE_REQ_FIELDS_N];
 
 /*
+ * socket-family leaf tables defined in struct_catalog/socket.c.
+ * Covers struct iovec (msg_iov array element, also referenced from
+ * the io_uring_register variant table below), struct msghdr (sendmsg /
+ * recvmsg), and struct mmsghdr (sendmmsg / recvmmsg).  Each _N constant
+ * gives the extern decl a complete array type so the spine's
+ * ARRAY_SIZE() at the reference site keeps folding to the same constant
+ * it did before the carve.  iovec_fields is shared with
+ * struct_catalog/io_uring_register.c (via its IOVEC_FIELDS_N extern
+ * below), so the count constant stays in the io_uring block to preserve
+ * the existing declaration order.
+ */
+enum {
+	MSGHDR_FIELDS_N			= 7,
+	MMSGHDR_FIELDS_N		= 1,
+};
+
+extern const struct struct_field msghdr_fields[MSGHDR_FIELDS_N];
+extern const struct struct_field mmsghdr_fields[MMSGHDR_FIELDS_N];
+
+/*
  * io_uring_setup / io_uring_register leaf tables defined in
  * struct_catalog/io_uring_register.c.  The _N constants give the
  * extern decls a complete array type so the spine's ARRAY_SIZE() at
  * the reference site keeps folding to the same constant it did before
- * the carve.  iovec_fields lives in struct_catalog.c (referenced by
- * several non-io_uring spine entries too); the io_uring_register
+ * the carve.  iovec_fields lives in struct_catalog/socket.c (referenced
+ * by several non-io_uring spine entries too); the io_uring_register
  * variant table here references it via the same extern, so promoting
  * iovec_fields to external linkage is enough to keep the variant
  * .fields = iovec_fields initialiser resolving.
