@@ -12,6 +12,7 @@
 #include "arch.h"	// biarch
 #include "arg-decoder.h"
 #include "child.h"
+#include "cmp-frontier.h"
 #include "cmp_hints.h"
 #include "cred_throttle.h"
 #include "debug.h"
@@ -208,6 +209,14 @@ enum expensive_adaptive_mode expensive_adaptive_mode =
  * parse-time configured, never mutated at runtime, so a tear is
  * impossible. */
 enum reach_band_mode reach_band_mode = REACH_BAND_OFF;
+
+/*
+ * Default OFF: see the enum comment in include/cmp-frontier.h for the
+ * mode contract.  Read RELAXED at the silent-regime accept gate in
+ * set_syscall_nr_coverage_frontier() -- parse-time configured, never
+ * mutated at runtime, so a tear is impossible.
+ */
+enum cmp_frontier_mode cmp_frontier_mode = CMP_FRONTIER_OFF;
 
 /* Static (today's) accept denominator for EXPENSIVE-flagged syscalls.
  * In OFF / NULL-kcov / SHADOW_ONLY the live accept ALWAYS draws
@@ -1516,6 +1525,53 @@ static bool remote_adaptive_decide(unsigned int nr,
 }
 
 /*
+ * CMP-weighted alternate weight for the silent-regime accept gate in
+ * set_syscall_nr_coverage_frontier() below.  See the enum comment in
+ * include/cmp-frontier.h for the OFF / SHADOW_ONLY / COMBINED contract
+ * and the source-counter rationale.
+ *
+ * Returns a weight in [0, FRONTIER_COLD_SCALE].  Sources are the two
+ * per-syscall CMP-insert counters the dump_stats() "Top syscalls by
+ * CMP unique inserts" block already consumes -- per_syscall_cmp_inserts
+ * (durable pool) and childop_cmp_pool_inserts (childop pool) -- so
+ * no parallel sampler is added.  ilog2 clamps each per-counter
+ * contribution so a single very-active syscall cannot monopolise the
+ * weight; the SIGNAL_SCALE multiplier maps the typical 0..20 sum onto
+ * most of [0, FRONTIER_COLD_SCALE] and the result is saturated at
+ * FRONTIER_COLD_SCALE.  kcov_shm == NULL / nr out of range short-
+ * circuits to 0 -- the silent gate's (w + 1) / (SCALE + 1) accept
+ * floor keeps a zero-weight syscall reachable, matching the cold-
+ * weight degrade-safe contract.
+ *
+ * Conversion accounting (CMP inserts that translate into NEW PC edges)
+ * is not yet a per-syscall counter in kcov_shm; ranking on the two
+ * inserts proxies alone is the deliberate first cut here.  A follow-up
+ * that adds per-syscall conversion accounting can layer a third term
+ * into this helper without changing the call site.
+ */
+static unsigned long cmp_frontier_weight(unsigned int nr)
+{
+	unsigned long cmp_inserts, childop_inserts;
+	unsigned long signal, weight;
+
+	if (kcov_shm == NULL || nr >= MAX_NR_SYSCALL)
+		return 0;
+
+	cmp_inserts = __atomic_load_n(&kcov_shm->per_syscall_cmp_inserts[nr],
+				      __ATOMIC_RELAXED);
+	childop_inserts = __atomic_load_n(
+			&kcov_shm->childop_cmp_pool_inserts[nr],
+			__ATOMIC_RELAXED);
+
+	signal = (unsigned long)ilog2_ul(cmp_inserts + 1UL) +
+		 (unsigned long)ilog2_ul(childop_inserts + 1UL);
+	weight = signal * CMP_FRONTIER_SIGNAL_SCALE;
+	if (weight > (unsigned long)FRONTIER_COLD_SCALE)
+		weight = (unsigned long)FRONTIER_COLD_SCALE;
+	return weight;
+}
+
+/*
  * Pick the syscall to run under STRATEGY_COVERAGE_FRONTIER: uniform draw
  * from active_syscalls, then biased acceptance against the per-syscall
  * frontier-edge weight via rejection sampling.  Each candidate is
@@ -1708,7 +1764,58 @@ retry:
 	} else {
 		unsigned long w = frontier_cold_weight(syscallnr, child);
 		unsigned long denom = (unsigned long)FRONTIER_COLD_SCALE + 1UL;
-		unsigned long roll = (unsigned long)rnd_modulo_u32(denom);
+		unsigned long roll;
+		enum cmp_frontier_mode cmpf_mode;
+
+		/* CMP-weighted alternate picker arm (default off).  The
+		 * mode load is the only work done under OFF -- the
+		 * cmp_frontier_weight() call, the plateau-hint load, and
+		 * the substitution itself are all skipped so a fixed-seed
+		 * dry-run is byte-identical to a build before this row.
+		 * The mode load consumes no RNG.
+		 *
+		 * SHADOW_ONLY computes the alternate weight, samples the
+		 * plateau hint, and bumps the would-route counter on the
+		 * plateau-hit subset; the returned w stays at the PC-led
+		 * value so picks remain identical to OFF for a given seed.
+		 *
+		 * COMBINED replaces w with the alternate weight when the
+		 * plateau classifier currently reads CMP_RISING_PC_FLAT
+		 * -- the "rank the silent regime by CMP-derived signal
+		 * instead" contract.  Off-plateau picks retain the PC-led
+		 * weight; the arm only kicks in on the regime it was
+		 * designed for.  A syscall with no CMP activity sees its
+		 * weight drop to 0 under the swap, which the (w + 1) /
+		 * (SCALE + 1) accept floor keeps reachable rather than
+		 * unreachable.
+		 *
+		 * See include/cmp-frontier.h for the source-counter choice
+		 * and the degrade-safe contract. */
+		cmpf_mode = __atomic_load_n(&cmp_frontier_mode,
+					    __ATOMIC_RELAXED);
+		if (cmpf_mode != CMP_FRONTIER_OFF) {
+			unsigned long cmp_w = cmp_frontier_weight(syscallnr);
+			int plateau;
+
+			__atomic_fetch_add(&shm->stats.cmp_frontier_samples,
+					   1UL, __ATOMIC_RELAXED);
+			plateau = __atomic_load_n(
+					&shm->plateau_current_hypothesis,
+					__ATOMIC_RELAXED);
+			if (plateau == (int)PLATEAU_HYPOTHESIS_CMP_RISING_PC_FLAT) {
+				__atomic_fetch_add(
+					&shm->stats.cmp_frontier_would_route,
+					1UL, __ATOMIC_RELAXED);
+				if (cmpf_mode == CMP_FRONTIER_COMBINED) {
+					__atomic_fetch_add(
+						&shm->stats.cmp_frontier_live_routes,
+						1UL, __ATOMIC_RELAXED);
+					w = cmp_w;
+				}
+			}
+		}
+
+		roll = (unsigned long)rnd_modulo_u32(denom);
 
 		if (roll >= w + 1UL)
 			goto retry;
