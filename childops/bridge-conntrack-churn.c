@@ -72,6 +72,7 @@
 #include "childops-nfnl.h"
 #include "compat.h"
 #include "jitter.h"
+#include "name-pool.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
@@ -579,6 +580,15 @@ static int bridge_conntrack_iter_bridge_create(struct bridge_conntrack_iter_ctx 
 	ctx->br_idx = (int)if_nametoindex(ctx->br_name);
 	if (ctx->br_idx <= 0)
 		return -1;
+
+	/* Kernel confirmed ctx->br_name now names a real device; publish it
+	 * via the NETDEV name pool so sibling childops (and per-syscall
+	 * fuzzers drawing this kind) can reference it on subsequent
+	 * invocations -- exercises SO_BINDTODEVICE / dev_get_by_name HIT
+	 * paths instead of always-fresh-random ENODEV space.  Only the
+	 * primary bridge is recorded; the veth leaves are deliberately
+	 * skipped to keep the 16-slot per-kind ring from thrashing. */
+	name_pool_record(NAME_KIND_NETDEV, ctx->br_name, strlen(ctx->br_name));
 	return 0;
 }
 
