@@ -470,12 +470,42 @@ out_setclock:
 	default:
 		break;
 	}
+	/*
+	 * Per-cmd rec->rettype publication for the dispatcher-level
+	 * reject_corrupt_retfd / rzs gates.  FUTEX_FD is the only cmd
+	 * that returns a fd; the FUTEX_WAIT* / FUTEX_LOCK_PI* /
+	 * FUTEX_UNLOCK_PI / FUTEX_WAIT_REQUEUE_PI family returns 0 on
+	 * success, but the FUTEX_WAKE* / FUTEX_REQUEUE / FUTEX_CMP_REQUEUE
+	 * / FUTEX_WAKE_OP / FUTEX_CMP_REQUEUE_PI family returns a
+	 * non-negative count (waiters woken / requeued).  Tagging the
+	 * count-returning ops as RET_ZERO_SUCCESS misfires the rzs gate
+	 * on every successful wake / requeue, coercing the legitimate
+	 * count back to -1/EINVAL.  Leave those at entry->rettype
+	 * (RET_NONE) so the gate skips them; the kernel-side bound is
+	 * the caller-supplied nr/nr_wake/nr_requeue, which is too far
+	 * from this site to cheaply enforce here.
+	 */
 	switch (rec->a2 & FUTEX_CMD_MASK) {
 	case FUTEX_FD:
 		rec->rettype = RET_FD;
 		break;
-	default:
+	case FUTEX_WAIT:
+	case FUTEX_WAIT_BITSET:
+	case FUTEX_LOCK_PI:
+#ifdef FUTEX_LOCK_PI2
+	case FUTEX_LOCK_PI2:
+#endif
+	case FUTEX_TRYLOCK_PI:
+	case FUTEX_UNLOCK_PI:
+	case FUTEX_WAIT_REQUEUE_PI:
 		rec->rettype = RET_ZERO_SUCCESS;
+		break;
+	default:
+		/* FUTEX_WAKE, FUTEX_WAKE_BITSET, FUTEX_REQUEUE,
+		 * FUTEX_CMP_REQUEUE, FUTEX_WAKE_OP, FUTEX_CMP_REQUEUE_PI,
+		 * and any FUTEX_PRIVATE-stripped variant that isn't enumerated
+		 * above return a non-negative count.  Leave rec->rettype at
+		 * RET_NONE so the rzs gate skips. */
 		break;
 	}
 }
