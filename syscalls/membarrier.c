@@ -126,6 +126,17 @@ struct syscallentry syscall_membarrier = {
 	.arg_params[0].list = ARGLIST(membarrier_cmds),
 	.sanitise = sanitise_membarrier,
 	.group = GROUP_SCHED,
-	.rettype = RET_ZERO_SUCCESS,
+	/*
+	 * Op-multiplexed: MEMBARRIER_CMD_QUERY (cmd=0) returns the kernel's
+	 * supported-cmd bitmask (the cached membarrier_supported_mask read
+	 * by init_membarrier_supported); every other cmd returns 0 on
+	 * success.  Tagging the entry as RET_ZERO_SUCCESS makes the rzs
+	 * gate mis-reject every CMD_QUERY result whose bitmask happens to
+	 * be non-zero (every kernel that supports membarrier at all).
+	 * RET_BORING skips the gate for the syscall entirely; the per-cmd
+	 * zero-success contract for the non-QUERY arms is not enforced
+	 * here today.
+	 */
+	.rettype = RET_BORING,
 	.flags = REEXEC_SANITISE_OK,
 };
