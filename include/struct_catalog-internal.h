@@ -775,3 +775,27 @@ enum {
 
 extern const struct struct_field pollfd_fields[POLLFD_FIELDS_N];
 extern const struct struct_field epoll_event_fields[EPOLL_EVENT_FIELDS_N];
+
+/*
+ * xattr / file_attr leaf tables defined in struct_catalog/xattr.c.
+ * struct xattr_args is gated on USE_XATTR_ARGS to track the build
+ * host's uapi vintage (mirroring the spine reference and the
+ * syscalls/{set,get}xattrat.c guards); struct file_attr is always
+ * available via the compat.h fallback so its extern stays unguarded.
+ * Each _N constant gives the extern decl a complete array type so
+ * the spine's ARRAY_SIZE() at the reference site keeps folding to
+ * the same constant it did before the carve.
+ */
+#ifdef USE_XATTR_ARGS
+enum {
+	XATTR_ARGS_FIELDS_N	= 3,
+};
+
+extern const struct struct_field xattr_args_fields[XATTR_ARGS_FIELDS_N];
+#endif /* USE_XATTR_ARGS */
+
+enum {
+	FILE_ATTR_FIELDS_N	= 5,
+};
+
+extern const struct struct_field file_attr_fields[FILE_ATTR_FIELDS_N];
