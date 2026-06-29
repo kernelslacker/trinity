@@ -266,6 +266,7 @@ static void __attribute__((noreturn)) kmsg_helper_main(void)
 	 * fd-table reference to the operator's stats.log for the whole run.
 	 */
 	stats_log_drop_in_child();
+	stats_timeseries_drop_in_child();
 
 	/*
 	 * Install the SIGTERM handler before anything else: the parent's

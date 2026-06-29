@@ -6,6 +6,7 @@
 #include "minicorpus.h"
 #include "params.h"
 #include "shm.h"
+#include "stats.h"
 #include "stats_ring.h"
 #include "strategy.h"
 #include "trinity.h"
@@ -470,6 +471,13 @@ void print_stats(void)
 			}
 
 			print_stats_pool_ratio();
+
+			/* Per-syscall timeseries side-effect of --stats.
+			 * No-op when --stats was not passed (the file was
+			 * never opened in main_init()).  Piggybacks on the
+			 * existing ~10k-op cadence so the operator gets one
+			 * JSONL record per visible iterations line. */
+			stats_timeseries_emit_window(op_count);
 
 			lastcount = op_count;
 		}

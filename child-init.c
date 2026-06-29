@@ -671,6 +671,7 @@ static void init_child_isolate_io(void)
 	 * reach it numerically via fchmod / ftruncate / write at random
 	 * offset, smashing the operator's log mid-run. */
 	stats_log_drop_in_child();
+	stats_timeseries_drop_in_child();
 
 	/* Same hazard, different fds: the parent's self-cgroup fds (the
 	 * memory.events file fd, its inotify watch fd, and the workload

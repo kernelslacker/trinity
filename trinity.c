@@ -634,6 +634,12 @@ static void init_post_parse_io(void)
 	 * not trinity's tmp/ working directory.  No-op when the flag was
 	 * not passed; failure logs a warning and continues without a log. */
 	stats_log_open(stats_log_path);
+
+	/* Same path-resolution rule as stats_log_open(): open here so the
+	 * stats-timeseries-<epoch>.jsonl file lands in the operator's
+	 * launch CWD rather than trinity's tmp/ working directory.  No-op
+	 * when --stats was not passed. */
+	stats_timeseries_open();
 }
 
 /*
@@ -822,6 +828,7 @@ finalize_and_exit(int ret, bool clean_run)
 	kmsg_monitor_stop();
 
 	stats_log_close();
+	stats_timeseries_close();
 
 #ifdef __SANITIZE_ADDRESS__
 	/*
