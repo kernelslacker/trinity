@@ -96,12 +96,11 @@ static void sanitise_newstat(struct syscallrecord *rec)
 	if (rnd_modulo_u32(2) != 0)
 		return;
 
-	path = (char *) rec->a1;
+	path = get_testfile_path();
 	if (path == NULL)
 		return;
 
-	snprintf(path, MAX_PATH_LEN, "%s/trinity-testfile%u",
-		 trinity_tmpdir_abs(), 1 + rnd_modulo_u32(NR_TESTFILES));
+	rec->a1 = (unsigned long) path;
 }
 
 /*

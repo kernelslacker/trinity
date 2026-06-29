@@ -17,3 +17,5 @@ const char * get_filename(void);
 const char * get_filename_for_pool(unsigned int pool_id);
 unsigned int get_pool_file_count(unsigned int pool_id);
 const char * generate_pathname(void);
+char * get_testfile_path(void);
+char * get_testfile_path_indexed(unsigned int *index_out);

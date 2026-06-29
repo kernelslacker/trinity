@@ -62,23 +62,21 @@ static void sanitise_lremovexattr(struct syscallrecord *rec)
 	if (rnd_modulo_u32(2) != 0)
 		return;
 
-	path = (char *) rec->a1;
-	if (path == NULL)
-		return;
 	name = (char *) rec->a2;
 	if (name == NULL)
 		return;
 
 	/*
-	 * Overwrite the ARG_PATHNAME / ARG_XATTR_NAME buffers in place
-	 * so the plant we make from sanitise and the trinity-dispatched
-	 * lremovexattr that follows see the same byte sequence.
-	 * generate_pathname() zmallocs MAX_PATH_LEN (4096) bytes; the
-	 * xattr name buffer is XATTR_NAME_BUFSZ (256) bytes; both
-	 * comfortably fit the planted values.
+	 * The ARG_XATTR_NAME buffer at rec->a2 is XATTR_NAME_BUFSZ (256)
+	 * bytes and is overwritten in place; it comfortably fits the
+	 * planted value.  Plant and trinity-dispatched lremovexattr see
+	 * the same byte sequences.
 	 */
-	snprintf(path, MAX_PATH_LEN, "%s/trinity-testfile%u",
-		 trinity_tmpdir_abs(), 1 + rnd_modulo_u32(NR_TESTFILES));
+	path = get_testfile_path();
+	if (path == NULL)
+		return;
+
+	rec->a1 = (unsigned long) path;
 	memcpy(name, planted_xattr_name, sizeof(planted_xattr_name));
 
 	/*

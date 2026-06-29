@@ -155,12 +155,10 @@ static void sanitise_file_getattr(struct syscallrecord *rec)
 	 * mutation of the testfile contents, zero pool risk.
 	 */
 	if (rnd_modulo_u32(2) == 0) {
-		char *path = (char *) rec->a2;
+		char *path = get_testfile_path();
 
 		if (path != NULL)
-			snprintf(path, MAX_PATH_LEN, "%s/trinity-testfile%u",
-				 trinity_tmpdir_abs(),
-				 1 + rnd_modulo_u32(NR_TESTFILES));
+			rec->a2 = (unsigned long) path;
 	}
 
 	avoid_shared_buffer_out(&rec->a3, rec->a4);

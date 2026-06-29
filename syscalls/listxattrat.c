@@ -116,19 +116,10 @@ static void sanitise_listxattrat(struct syscallrecord *rec)
 	 * budget for the precondition payoff.
 	 */
 	if (rnd_modulo_u32(2) == 0) {
-		char *path = (char *) rec->a2;
+		char *path = get_testfile_path();
 
 		if (path != NULL) {
-			/*
-			 * Overwrite the ARG_PATHNAME buffer in place.
-			 * generate_pathname() zmallocs MAX_PATH_LEN
-			 * (4096) bytes, so the snprintf cap below cannot
-			 * overflow.
-			 */
-			snprintf(path, MAX_PATH_LEN,
-				 "%s/trinity-testfile%u",
-				 trinity_tmpdir_abs(),
-				 1 + rnd_modulo_u32(LISTXATTRAT_NR_TESTFILES));
+			rec->a2 = (unsigned long) path;
 			(void) setxattr(path, listxattrat_planted_name,
 					"trin", 4, 0);
 		}

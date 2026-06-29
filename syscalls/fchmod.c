@@ -52,12 +52,11 @@ static void sanitise_fchmodat(struct syscallrecord *rec)
 	if (rnd_modulo_u32(2) != 0)
 		return;
 
-	path = (char *) rec->a2;
+	path = get_testfile_path();
 	if (path == NULL)
 		return;
 
-	snprintf(path, MAX_PATH_LEN, "%s/trinity-testfile%u",
-		 trinity_tmpdir_abs(), 1 + rnd_modulo_u32(NR_TESTFILES));
+	rec->a2 = (unsigned long) path;
 }
 
 struct syscallentry syscall_fchmodat = {

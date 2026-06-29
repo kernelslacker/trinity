@@ -73,19 +73,15 @@ static void sanitise_truncate(struct syscallrecord *rec)
 	if (rnd_modulo_u32(2) != 0)
 		return;
 
-	path = (char *) rec->a1;
+	/*
+	 * Use the _indexed variant so post_truncate can
+	 * invalidate_testfile_mmaps_for_index() on the chosen basename.
+	 */
+	path = get_testfile_path_indexed(&index);
 	if (path == NULL)
 		return;
 
-	index = 1 + rnd_modulo_u32(NR_TESTFILES);
-
-	/*
-	 * Overwrite the ARG_PATHNAME buffer in place.  generate_pathname()
-	 * zmallocs MAX_PATH_LEN (4096) bytes, so the snprintf cap below
-	 * cannot overflow.
-	 */
-	snprintf(path, MAX_PATH_LEN, "%s/trinity-testfile%u",
-		 trinity_tmpdir_abs(), index);
+	rec->a1 = (unsigned long) path;
 
 	/*
 	 * Snapshot the chosen basename index so post_truncate can find

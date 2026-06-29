@@ -72,34 +72,32 @@ static void sanitise_removexattrat(struct syscallrecord *rec)
 	 * precondition payoff.
 	 */
 	if (rnd_modulo_u32(2) == 0) {
-		char *path = (char *) rec->a2;
 		char *name = (char *) rec->a4;
+		char *path;
 
-		if (path != NULL && name != NULL) {
+		if (name != NULL) {
 			/*
-			 * Overwrite the ARG_PATHNAME / ARG_XATTR_NAME
-			 * buffers in place.  generate_pathname() zmallocs
-			 * MAX_PATH_LEN (4096) bytes; the xattr name buffer
-			 * is XATTR_NAME_BUFSZ (256) bytes; both comfortably
-			 * fit the planted values.
+			 * The ARG_XATTR_NAME buffer at rec->a4 is
+			 * XATTR_NAME_BUFSZ (256) bytes and is overwritten in
+			 * place; it comfortably fits the planted value.
 			 */
-			snprintf(path, MAX_PATH_LEN,
-				 "%s/trinity-testfile%u",
-				 trinity_tmpdir_abs(),
-				 1 + rnd_modulo_u32(NR_TESTFILES));
-			memcpy(name, planted_xattr_name,
-			       sizeof(planted_xattr_name));
-			/*
-			 * Plant a small opaque value.  Failure (ENOSPC on
-			 * a full xattr list, EOPNOTSUPP on a fs that bailed
-			 * out of the user.* leg, ENOENT if the testfile
-			 * slot was never opened, ...) is non-fatal: an
-			 * earlier draw on the same inode may still hold a
-			 * stale user.trinity_plant from a prior round, so
-			 * the trinity-dispatched removexattrat below may
-			 * still land on the real remove path.
-			 */
-			(void) setxattr(path, name, "trin", 4, 0);
+			path = get_testfile_path();
+			if (path != NULL) {
+				rec->a2 = (unsigned long) path;
+				memcpy(name, planted_xattr_name,
+				       sizeof(planted_xattr_name));
+				/*
+				 * Plant a small opaque value.  Failure (ENOSPC on
+				 * a full xattr list, EOPNOTSUPP on a fs that bailed
+				 * out of the user.* leg, ENOENT if the testfile
+				 * slot was never opened, ...) is non-fatal: an
+				 * earlier draw on the same inode may still hold a
+				 * stale user.trinity_plant from a prior round, so
+				 * the trinity-dispatched removexattrat below may
+				 * still land on the real remove path.
+				 */
+				(void) setxattr(path, name, "trin", 4, 0);
+			}
 		}
 	}
 

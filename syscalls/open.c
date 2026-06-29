@@ -95,12 +95,10 @@ static void sanitise_openat(struct syscallrecord *rec)
 	 * read-only sanitisers depend on.
 	 */
 	if (rnd_modulo_u32(2) == 0) {
-		char *path = (char *) rec->a2;
+		char *path = get_testfile_path();
 
 		if (path != NULL) {
-			snprintf(path, MAX_PATH_LEN, "%s/trinity-testfile%u",
-				 trinity_tmpdir_abs(),
-				 1 + rnd_modulo_u32(NR_TESTFILES));
+			rec->a2 = (unsigned long) path;
 			rec->a1 = (unsigned long) AT_FDCWD;
 		}
 	}
@@ -324,12 +322,10 @@ static void sanitise_openat2(struct syscallrecord *rec)
 	 * a1/a2 draw so the pre-existing random-path coverage stays exercised.
 	 */
 	if (rnd_modulo_u32(2) == 0) {
-		char *path = (char *) rec->a2;
+		char *path = get_testfile_path();
 
 		if (path != NULL) {
-			snprintf(path, MAX_PATH_LEN, "%s/trinity-testfile%u",
-				 trinity_tmpdir_abs(),
-				 1 + rnd_modulo_u32(NR_TESTFILES));
+			rec->a2 = (unsigned long) path;
 			rec->a1 = (unsigned long) AT_FDCWD;
 		}
 	}

@@ -114,24 +114,22 @@ static void sanitise_getxattr(struct syscallrecord *rec)
 	 * budget for the precondition payoff.
 	 */
 	if (rnd_modulo_u32(2) == 0) {
-		char *path = (char *) rec->a1;
 		char *name = (char *) rec->a2;
+		char *path;
 
-		if (path != NULL && name != NULL) {
+		if (name != NULL) {
 			/*
-			 * Overwrite the ARG_PATHNAME / ARG_XATTR_NAME
-			 * buffers in place.  generate_pathname() zmallocs
-			 * MAX_PATH_LEN (4096) bytes; the xattr name buffer
-			 * is XATTR_NAME_BUFSZ (256) bytes; both comfortably
-			 * fit the planted values.
+			 * The ARG_XATTR_NAME buffer at rec->a2 is
+			 * XATTR_NAME_BUFSZ (256) bytes and is overwritten in
+			 * place; it comfortably fits the planted value.
 			 */
-			snprintf(path, MAX_PATH_LEN,
-				 "%s/trinity-testfile%u",
-				 trinity_tmpdir_abs(),
-				 1 + rnd_modulo_u32(GETXATTR_NR_TESTFILES));
-			memcpy(name, getxattr_planted_name,
-			       sizeof(getxattr_planted_name));
-			(void) setxattr(path, name, "trin", 4, 0);
+			path = get_testfile_path();
+			if (path != NULL) {
+				rec->a1 = (unsigned long) path;
+				memcpy(name, getxattr_planted_name,
+				       sizeof(getxattr_planted_name));
+				(void) setxattr(path, name, "trin", 4, 0);
+			}
 		}
 	}
 

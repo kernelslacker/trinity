@@ -63,12 +63,11 @@ static void sanitise_fchownat(struct syscallrecord *rec)
 	if (rnd_modulo_u32(2) != 0)
 		return;			/* half: keep the random path (reject arms) */
 
-	path = (char *) rec->a2;
+	path = get_testfile_path();
 	if (path == NULL)
 		return;
 
-	snprintf(path, MAX_PATH_LEN, "%s/trinity-testfile%u",
-		 trinity_tmpdir_abs(), 1 + rnd_modulo_u32(NR_TESTFILES));
+	rec->a2 = (unsigned long) path;
 }
 
 static unsigned long fchownat_flags[] = {

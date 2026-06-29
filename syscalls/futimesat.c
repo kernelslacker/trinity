@@ -63,11 +63,12 @@ static void sanitise_futimesat(struct syscallrecord *rec)
 	 * -ENOTDIR reject arms stay exercised.  The a3 timeval logic
 	 * below runs in both branches.
 	 */
-	if (rec->a2 && rnd_modulo_u32(2) == 0)
-		snprintf((char *) rec->a2, MAX_PATH_LEN,
-			 "%s/trinity-testfile%u",
-			 trinity_tmpdir_abs(),
-			 1 + rnd_modulo_u32(NR_TESTFILES));
+	if (rec->a2 && rnd_modulo_u32(2) == 0) {
+		char *path = get_testfile_path();
+
+		if (path != NULL)
+			rec->a2 = (unsigned long) path;
+	}
 
 	bucket = rnd_modulo_u32(100);
 

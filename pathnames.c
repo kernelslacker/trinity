@@ -16,8 +16,15 @@
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
+#include "trinity.h"
 #include "uid.h"
 #include "utils.h"
+
+/*
+ * Mirrors MAX_TESTFILES in fds/testfiles.c.  Kept local so pathnames.c
+ * does not need to drag in the fd-pool internals.
+ */
+#define TRINITY_NR_TESTFILES 4
 
 #ifndef FTW_ACTIONRETVAL
 #define FTW_ACTIONRETVAL 0
@@ -752,4 +759,39 @@ const char * generate_pathname(void)
 	}
 
 	return newpath;
+}
+
+/*
+ * Return a freshly-allocated MAX_PATH_LEN buffer containing the absolute
+ * path of one of the trinity-testfile<N> inodes the testfile fd pool
+ * creates, or NULL if the underlying allocation fails.  When @index_out
+ * is non-NULL the 1-based testfile index baked into the path is also
+ * written through it -- callers that need to look up the corresponding
+ * fd / mmap entry (post_truncate) consume it.
+ *
+ * Callers should assign the returned pointer to the syscall arg slot
+ * (rec->aN) instead of snprintf'ing into the buffer rec->aN already
+ * points at.  The generic-arg layer does not guarantee a >=MAX_PATH_LEN
+ * backing buffer for every ARG_PATHNAME slot, so an in-place snprintf
+ * can -- and did -- overrun a smaller heap chunk and corrupt the heap.
+ */
+char *get_testfile_path_indexed(unsigned int *index_out)
+{
+	char *buf = zmalloc_tracked(MAX_PATH_LEN);
+	unsigned int index;
+
+	if (buf == NULL)
+		return NULL;
+
+	index = 1 + rnd_modulo_u32(TRINITY_NR_TESTFILES);
+	snprintf(buf, MAX_PATH_LEN, "%s/trinity-testfile%u",
+		 trinity_tmpdir_abs(), index);
+	if (index_out != NULL)
+		*index_out = index;
+	return buf;
+}
+
+char *get_testfile_path(void)
+{
+	return get_testfile_path_indexed(NULL);
 }
