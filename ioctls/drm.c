@@ -1,7 +1,6 @@
 
 #ifdef USE_DRM
 
-#include <stdlib.h>
 #include <inttypes.h>
 
 #include <drm/drm.h>

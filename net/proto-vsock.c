@@ -1,6 +1,5 @@
 #ifdef USE_VSOCK
 #include <sys/time.h>
-#include <stdlib.h>
 #include "kernel/vm_sockets.h"
 #include "net.h"
 #include "random.h"

@@ -1,7 +1,6 @@
 #ifndef _TRINITY_JITTER_H
 #define _TRINITY_JITTER_H
 
-#include <stdlib.h>
 
 #include "rnd.h"
 

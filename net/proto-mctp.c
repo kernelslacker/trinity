@@ -3,7 +3,6 @@
 #include <sys/uio.h>
 #include <sys/ioctl.h>
 #include <linux/mctp.h>
-#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include "net.h"

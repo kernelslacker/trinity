@@ -20,7 +20,6 @@
 
 #ifdef USE_KVM
 
-#include <stdlib.h>
 #include <linux/ioctl.h>
 #include <linux/kvm.h>
 
