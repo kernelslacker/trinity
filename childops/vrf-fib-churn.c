@@ -75,6 +75,7 @@
 
 #include "child.h"
 #include "childops-netlink.h"
+#include "name-pool.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
@@ -337,6 +338,13 @@ static int vrf_fib_churn_in_ns(void *arg)
 	ifindex = (int)if_nametoindex(vrf_name);
 	if (ifindex == 0)
 		goto out;
+
+	/* Kernel confirmed vrf_name now names a real device; publish it
+	 * via the NETDEV name pool so sibling childops (and per-syscall
+	 * fuzzers drawing this kind) can collide with it on subsequent
+	 * invocations -- reaches "name a previous syscall planted" lookup
+	 * codepaths instead of always-fresh-random near-miss space. */
+	name_pool_record(NAME_KIND_NETDEV, vrf_name, strlen(vrf_name));
 
 	if (build_addaddr(&ctx, ifindex) == 0)
 		__atomic_add_fetch(&shm->stats.vrf_fib_churn_addr_ok,
