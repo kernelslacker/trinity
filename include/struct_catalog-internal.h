@@ -799,3 +799,21 @@ enum {
 };
 
 extern const struct struct_field file_attr_fields[FILE_ATTR_FIELDS_N];
+
+/*
+ * LDT leaf table defined in struct_catalog/ldt.c.  Covers struct
+ * user_desc (modify_ldt write_ldt arm, func == 1).  The _N constant
+ * gives the extern decl a complete array type so the spine's
+ * ARRAY_SIZE() at the reference site keeps folding to the same
+ * constant it did before the carve.  Gated by X86 to mirror the
+ * existing guard on the spine reference and the struct's header
+ * availability -- struct user_desc lives in <asm/ldt.h> and the
+ * modify_ldt syscall it parameterises is x86-only.
+ */
+#ifdef X86
+enum {
+	USER_DESC_FIELDS_N	= 3,
+};
+
+extern const struct struct_field user_desc_fields[USER_DESC_FIELDS_N];
+#endif /* X86 */
