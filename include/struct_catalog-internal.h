@@ -529,3 +529,33 @@ extern const struct struct_field mq_attr_fields[MQ_ATTR_FIELDS_N];
 extern const struct struct_field msqid_ds_fields[MSQID_DS_FIELDS_N];
 extern const struct struct_field shmid_ds_fields[SHMID_DS_FIELDS_N];
 extern const struct struct_field msgbuf_fields[MSGBUF_FIELDS_N];
+
+/*
+ * fcntl-family leaf tables defined in struct_catalog/fcntl.c.
+ * Covers struct flock (fcntl F_*LK / F_OFD_*LK / F_CANCELLK), struct
+ * f_owner_ex (fcntl F_GETOWN_EX / F_SETOWN_EX), struct open_how
+ * (openat2), and struct file_handle (open_by_handle_at).  Each _N
+ * constant gives the extern decl a complete array type so the
+ * spine's ARRAY_SIZE() at the reference site keeps folding to the
+ * same constant it did before the carve.  flock_l_type_values /
+ * flock_l_whence_values / f_owner_ex_type_values are private vocab
+ * pools referenced only by their own fcntl field arrays and stay
+ * scoped to fcntl.c through this extern surface.
+ */
+enum {
+	FLOCK_L_TYPE_VALUES_N		= 3,
+	FLOCK_L_WHENCE_VALUES_N		= 3,
+	FLOCK_FIELDS_N			= 5,
+	F_OWNER_EX_TYPE_VALUES_N	= 3,
+	F_OWNER_EX_FIELDS_N		= 2,
+	OPEN_HOW_FIELDS_N		= 3,
+	FILE_HANDLE_FIELDS_N		= 2,
+};
+
+extern const unsigned long flock_l_type_values[FLOCK_L_TYPE_VALUES_N];
+extern const unsigned long flock_l_whence_values[FLOCK_L_WHENCE_VALUES_N];
+extern const struct struct_field flock_fields[FLOCK_FIELDS_N];
+extern const unsigned long f_owner_ex_type_values[F_OWNER_EX_TYPE_VALUES_N];
+extern const struct struct_field f_owner_ex_fields[F_OWNER_EX_FIELDS_N];
+extern const struct struct_field open_how_fields[OPEN_HOW_FIELDS_N];
+extern const struct struct_field file_handle_fields[FILE_HANDLE_FIELDS_N];
