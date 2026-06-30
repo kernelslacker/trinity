@@ -65,6 +65,7 @@ static void sanitise_vt_kbentry(struct syscallrecord *rec)
 	e = get_writable_struct(sizeof(*e));
 	if (!e)
 		return;
+	memset(e, 0, sizeof(*e));
 	e->kb_table = rnd_u32() & 0x0f;	/* 0-15: modifier-table index */
 	e->kb_index = rnd_u32() & 0x7f;	/* 0-127: key index */
 	e->kb_value = rnd_u32() & 0xffff;
@@ -79,6 +80,7 @@ static void sanitise_vt_kbsentry(struct syscallrecord *rec)
 	s = get_writable_struct(sizeof(*s));
 	if (!s)
 		return;
+	memset(s, 0, sizeof(*s));
 	s->kb_func = rnd_u32() & 0xff;
 	len = rnd_modulo_u32((sizeof(s->kb_string) - 1));
 	if (len) {
@@ -101,6 +103,7 @@ static void sanitise_vt_kbdiacrs(struct syscallrecord *rec)
 	d = get_writable_struct(sizeof(*d));
 	if (!d)
 		return;
+	memset(d, 0, sizeof(*d));
 	cnt = rnd_modulo_u32(256);
 	d->kb_cnt = cnt;
 	for (i = 0; i < cnt; i++) {
@@ -119,6 +122,7 @@ static void sanitise_vt_kbdiacrsuc(struct syscallrecord *rec)
 	d = get_writable_struct(sizeof(*d));
 	if (!d)
 		return;
+	memset(d, 0, sizeof(*d));
 	cnt = rnd_modulo_u32(256);
 	d->kb_cnt = cnt;
 	for (i = 0; i < cnt; i++) {
@@ -136,6 +140,7 @@ static void sanitise_vt_kbkeycode(struct syscallrecord *rec)
 	k = get_writable_struct(sizeof(*k));
 	if (!k)
 		return;
+	memset(k, 0, sizeof(*k));
 	k->scancode = rnd_u32();
 	k->keycode  = rnd_modulo_u32(256);
 	rec->a3 = (unsigned long) k;
@@ -148,6 +153,7 @@ static void sanitise_vt_kbd_repeat(struct syscallrecord *rec)
 	r = get_writable_struct(sizeof(*r));
 	if (!r)
 		return;
+	memset(r, 0, sizeof(*r));
 	r->delay  = rnd_modulo_u32(1000) + 1;	/* 1-1000 ms */
 	r->period = rnd_modulo_u32(500)  + 1;	/* 1-500 ms */
 	rec->a3 = (unsigned long) r;
@@ -182,6 +188,7 @@ static void sanitise_vt_termios(struct syscallrecord *rec)
 	t = get_writable_struct(sizeof(*t));
 	if (!t)
 		return;
+	memset(t, 0, sizeof(*t));
 	fill_termios_flags(&t->c_iflag, &t->c_oflag, &t->c_cflag, &t->c_lflag);
 	t->c_line = rnd_modulo_u32(16);
 	rec->a3 = (unsigned long) t;
@@ -194,6 +201,7 @@ static void sanitise_vt_termios2(struct syscallrecord *rec)
 	t = get_writable_struct(sizeof(*t));
 	if (!t)
 		return;
+	memset(t, 0, sizeof(*t));
 	fill_termios_flags(&t->c_iflag, &t->c_oflag, &t->c_cflag, &t->c_lflag);
 	t->c_line   = rnd_modulo_u32(16);
 	t->c_ispeed = rnd_modulo_u32(4000000) + 50;
@@ -209,6 +217,7 @@ static void sanitise_vt_winsize(struct syscallrecord *rec)
 	w = get_writable_struct(sizeof(*w));
 	if (!w)
 		return;
+	memset(w, 0, sizeof(*w));
 	rows = rnd_modulo_u32(200) + 1;
 	cols = rnd_modulo_u32(300) + 1;
 	w->ws_row    = rows;
@@ -251,6 +260,7 @@ static void sanitise_vt_unimapdesc(struct syscallrecord *rec)
 	d = get_writable_struct(sizeof(*d));
 	if (!d)
 		return;
+	memset(d, 0, sizeof(*d));
 	cnt = rnd_modulo_u32(256) + 1;
 	pairs = get_writable_struct(cnt * sizeof(*pairs));
 	if (pairs) {
@@ -274,6 +284,7 @@ static void sanitise_vt_unimapinit(struct syscallrecord *rec)
 	u = get_writable_struct(sizeof(*u));
 	if (!u)
 		return;
+	memset(u, 0, sizeof(*u));
 	/* 0 = kernel chooses; otherwise a power-of-two hint */
 	u->advised_hashsize  = RAND_BOOL() ? 0 : (1 << (rnd_modulo_u32(8) + 4));
 	u->advised_hashstep  = RAND_BOOL() ? 0 : (rnd_modulo_u32(16) + 1);
@@ -301,6 +312,7 @@ static void sanitise_vt_consolefontdesc(struct syscallrecord *rec)
 	d = get_writable_struct(sizeof(*d));
 	if (!d)
 		return;
+	memset(d, 0, sizeof(*d));
 	charcount  = RAND_BOOL() ? 256 : 512;
 	charheight = rnd_modulo_u32(25) + 8;		/* 8-32 scan lines */
 	d->charheight = charheight;
@@ -360,6 +372,7 @@ static void sanitise_vt_vt_mode(struct syscallrecord *rec)
 	m = get_writable_struct(sizeof(*m));
 	if (!m)
 		return;
+	memset(m, 0, sizeof(*m));
 	fill_vt_mode(m);
 	rec->a3 = (unsigned long) m;
 }
@@ -371,6 +384,7 @@ static void sanitise_vt_vt_stat(struct syscallrecord *rec)
 	s = get_writable_struct(sizeof(*s));
 	if (!s)
 		return;
+	memset(s, 0, sizeof(*s));
 	s->v_active = rnd_modulo_u32(63) + 1;		/* VT 1-63 */
 	s->v_signal = rnd_modulo_u32(31) + 1;
 	s->v_state  = rnd_u32() & 0xffff;
@@ -384,6 +398,7 @@ static void sanitise_vt_vt_sizes(struct syscallrecord *rec)
 	sz = get_writable_struct(sizeof(*sz));
 	if (!sz)
 		return;
+	memset(sz, 0, sizeof(*sz));
 	sz->v_rows       = rnd_modulo_u32(50) + 24;	/* 24-73 rows */
 	sz->v_cols       = rnd_modulo_u32(120) + 80;	/* 80-199 columns */
 	sz->v_scrollsize = rnd_modulo_u32(256);
@@ -398,6 +413,7 @@ static void sanitise_vt_vt_consize(struct syscallrecord *rec)
 	c = get_writable_struct(sizeof(*c));
 	if (!c)
 		return;
+	memset(c, 0, sizeof(*c));
 	rows = rnd_modulo_u32(50) + 24;
 	cols = rnd_modulo_u32(120) + 80;
 	c->v_rows = rows;
@@ -416,6 +432,7 @@ static void sanitise_vt_vt_event(struct syscallrecord *rec)
 	e = get_writable_struct(sizeof(*e));
 	if (!e)
 		return;
+	memset(e, 0, sizeof(*e));
 	e->event = rnd_u32() & VT_MAX_EVENT;
 	e->oldev = rnd_modulo_u32(63) + 1;
 	e->newev = rnd_modulo_u32(63) + 1;
@@ -429,6 +446,7 @@ static void sanitise_vt_setactivate(struct syscallrecord *rec)
 	sa = get_writable_struct(sizeof(*sa));
 	if (!sa)
 		return;
+	memset(sa, 0, sizeof(*sa));
 	sa->console = rnd_modulo_u32(63) + 1;
 	fill_vt_mode(&sa->mode);
 	rec->a3 = (unsigned long) sa;
