@@ -52,12 +52,24 @@ static bool check_lock(lock_t *lk)
 
 	pid = LOCK_OWNER(s);
 
+	/* LOCKED + owner <= 0 is a corrupt encoding: pid 0 is the kernel
+	 * swapper, -1 is the kill-all sentinel, and negative pids cannot
+	 * own anything.  pid_alive() defensively logs and returns true for
+	 * all three (see pids.c), so without this gate the lock sits
+	 * forever — no live process can ever release it, and the dead-pid
+	 * branch below never fires.  Treat as scribbled: force-clear and
+	 * bump the same counter as the LOCK_RESERVED_DIRTY recovery, since
+	 * both paths recover an impossible lock word with no live owner. */
+	if (pid <= 0) {
+		force_bust_lock(lk);
+		parent_stats.lock_word_scribbled++;
+		return true;
+	}
+
 	if (pid_alive(pid) == false) {
 		unsigned long stored_start;
 		unsigned long long current_start;
-
-		if (errno != ESRCH)
-			return true;
+		bool dead_confirmed = (errno == ESRCH);
 
 		/* Recycle race: between pid_alive returning ESRCH and our CAS
 		 * below, the pid could be reissued to a new process that re-
@@ -66,16 +78,35 @@ static bool check_lock(lock_t *lk)
 		 * on the owner_start_time fingerprint: only release if the live
 		 * owner's start_time differs from the sampled one (or is 0 =
 		 * truly dead).  Same fingerprint rule used by
-		 * try_release_dead_holder() and force_bust_lock(). */
+		 * try_release_dead_holder() and force_bust_lock().
+		 *
+		 * Non-ESRCH failures (EPERM/EACCES/transient /proc errors) get
+		 * the same fingerprint check: a changed start_time is real
+		 * evidence the original holder is gone, even if we couldn't
+		 * confirm it via kill().  Without this, a non-ESRCH errno
+		 * returned true unconditionally without clearing the word,
+		 * which made the caller reap+re-enter check_all_locks with the
+		 * lock still held — an unrepaired true-return loop. */
 		stored_start = __atomic_load_n(&lk->owner_start_time, __ATOMIC_ACQUIRE);
 		current_start = pid_start_time(pid);
-		if (current_start != 0 && current_start == stored_start)
-			return true;
+		if (current_start != 0 && current_start == stored_start) {
+			/* Same fingerprint: cannot safely release.  On confirmed
+			 * dead (ESRCH) this is the rare same-fingerprint recycle
+			 * race documented above; defer to the next tick.  On
+			 * transient errors, the holder may genuinely still be
+			 * live, so don't claim progress we didn't make. */
+			return false;
+		}
 
 		debugf("Found a lock held by dead pid %d. Freeing.\n", pid);
-		__atomic_compare_exchange_n(&lk->state, &s, 0, 0,
-					    __ATOMIC_RELEASE, __ATOMIC_RELAXED);
-		return true;
+		if (__atomic_compare_exchange_n(&lk->state, &s, 0, 0,
+						__ATOMIC_RELEASE, __ATOMIC_RELAXED))
+			return true;
+		/* CAS lost: someone else updated the word -- that is real
+		 * progress on confirmed-dead, but on a transient failure with
+		 * an unchanged-since-our-load word we have no evidence the
+		 * lock was repaired. */
+		return dead_confirmed;
 	}
 	return false;
 }
@@ -98,8 +129,13 @@ bool check_all_locks(void)
 	 * syscalltable_lock above — no NULL gate needed. */
 	ret |= check_lock(&shm->buglock);
 
+	/* Preserve ret: shm->syscalltable_lock and shm->buglock above are
+	 * children-array-independent, and a repair to either must surface
+	 * as a true return so the caller's "any repair happened" contract
+	 * holds.  Discarding ret here broke that contract on the very
+	 * early-init window where children[] is still NULL. */
 	if (children == NULL)
-		return false;
+		return ret;
 
 	/* Reap-driven recalibration.  The held_count fast-path gate below
 	 * stays accurate only as long as every lock acquire is paired with
