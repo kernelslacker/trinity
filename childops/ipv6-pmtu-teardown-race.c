@@ -498,10 +498,10 @@ static void reap_with_deadline(pid_t pid, struct timespec *deadline)
 		int status;
 		pid_t r;
 
-		r = waitpid(pid, &status, WNOHANG);
+		r = waitpid_eintr(pid, &status, WNOHANG);
 		if (r == pid)
 			return;
-		if (r < 0 && errno != EINTR && errno != ECHILD)
+		if (r < 0 && errno != ECHILD)
 			return;
 
 		if (clock_gettime(CLOCK_MONOTONIC, &now) == 0 &&

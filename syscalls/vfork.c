@@ -7,6 +7,7 @@
 #include "pids.h"
 #include "sanitise.h"
 #include "trinity.h"
+#include "utils.h"		/* waitpid_eintr() */
 
 static void post_vfork(struct syscallrecord *rec)
 {
@@ -38,7 +39,7 @@ static void post_vfork(struct syscallrecord *rec)
 
 		while (pid_alive(pid) == true) {
 			int status;
-			ret = waitpid(pid, &status, WUNTRACED | WCONTINUED | WNOHANG);
+			ret = waitpid_eintr(pid, &status, WUNTRACED | WCONTINUED | WNOHANG);
 		}
 	}
 }

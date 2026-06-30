@@ -441,8 +441,6 @@ void kmsg_monitor_start(void)
 void kmsg_monitor_stop(void)
 {
 	pid_t pid = kmsg_helper_pid;
-	int status;
-	pid_t rc;
 
 	if (pid == 0)
 		return;
@@ -456,9 +454,7 @@ void kmsg_monitor_stop(void)
 			(int)pid, strerror(errno));
 	}
 
-	do {
-		rc = waitpid(pid, &status, 0);
-	} while (rc < 0 && errno == EINTR);
+	(void)waitpid_eintr(pid, NULL, 0);
 
 	/*
 	 * ECHILD just means reap_dead_kids' waitpid(-1) drain already
