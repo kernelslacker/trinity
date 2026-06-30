@@ -309,7 +309,7 @@ void frontier_record_transition_edge(unsigned int nr);
  * runtime-state change (new namespace, new fd type, new sysctl) can
  * re-promote a previously-saturated slot via the 1-in-20 leak. */
 #define KCOV_SAT_CAP_CALLS    200U
-#define KCOV_SAT_CAP_RATIO    500U
+#define KCOV_SAT_CAP_RATIO    200U
 #define KCOV_SAT_CAP_SKIP_PCT 95U
 
 /* Coverage-plateau detector: window length and trigger thresholds.
