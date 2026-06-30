@@ -149,6 +149,29 @@ static void sanitise_vhost_vring_file(struct syscallrecord *rec)
 	rec->a3 = (unsigned long) f;
 }
 
+static void sanitise_vhost_set_mem_table(struct syscallrecord *rec)
+{
+	struct vhost_memory *m;
+	unsigned int n, i;
+	size_t sz;
+
+	n = 1 + rnd_modulo_u32(4);
+	sz = sizeof(*m) + n * sizeof(struct vhost_memory_region);
+	m = (struct vhost_memory *) get_writable_struct(sz);
+	if (!m)
+		return;
+	memset(m, 0, sz);
+	m->nregions = n;
+	for (i = 0; i < n; i++) {
+		struct vhost_memory_region *r = &m->regions[i];
+
+		r->guest_phys_addr = (__u64) rnd_modulo_u32(0x10000) * page_size;
+		r->memory_size = (__u64) (1 + rnd_modulo_u32(16)) * page_size;
+		r->userspace_addr = (__u64)(unsigned long) get_writable_struct(page_size);
+	}
+	rec->a3 = (unsigned long) m;
+}
+
 static void sanitise_vhost_features(struct syscallrecord *rec)
 {
 	/*
@@ -181,6 +204,9 @@ static void vhost_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 		break;
 	case VHOST_SET_VRING_ADDR:
 		sanitise_vhost_vring_addr(rec);
+		break;
+	case VHOST_SET_MEM_TABLE:
+		sanitise_vhost_set_mem_table(rec);
 		break;
 	case VHOST_SET_VRING_KICK:
 	case VHOST_SET_VRING_CALL:
