@@ -769,10 +769,14 @@ void stat_category_emit_text(const struct stat_category *cat)
 /* --blob-mutator (default off): A/B observability for the ARG_BUF_SIZED
  * content-authoring lane.  fills is the gate (total invocations that
  * authored content), havoc_ops is the count of bounded byte-mutation
- * ops applied on top of the FILL floor, dict_inserts is reserved for
- * the Build 2 CMPDICT rung and stays at zero in this build.  When the
- * mode is OFF the gate counter stays at zero so stat_category_emit_text
- * suppresses the whole block (render-gap-aware). */
+ * ops applied on top of the FILL floor, dict_inserts is the count of
+ * committed cmp-pool splats the CMPDICT rung applied on top of the
+ * HAVOC floor (one bump per successful cmp_hints_try_get pull + splat;
+ * pool misses are silent).  Bumped only by CMPDICT, so the per-rung
+ * contribution is isolated across an off / fill / havoc / cmpdict A/B.
+ * When the mode is OFF the gate counter stays at zero so
+ * stat_category_emit_text suppresses the whole block (render-gap-
+ * aware). */
 static const struct stat_field blob_mutator_fields[] = {
 	STAT_FIELD(blob, fills),
 	STAT_FIELD(blob, havoc_ops),

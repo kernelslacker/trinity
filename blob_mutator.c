@@ -13,14 +13,17 @@
  * OFF (engine-level off, no write), FILL (generate_rand_bytes into
  * the owned buffer), HAVOC (FILL plus a bounded byte-mutation pass:
  * bit-flip / byte-flip / set-interesting byte+word+dword, capped at
- * BLOB_HAVOC_MAX_OPS).  CMPDICT is parsed but no-ops to FILL until
- * Build 2.
+ * BLOB_HAVOC_MAX_OPS), CMPDICT (HAVOC plus a bounded buffer-redqueen
+ * pass that pulls a learned cmp constant via cmp_hints_try_get and
+ * splats it into the buffer at a random offset / width, capped at
+ * BLOB_CMPDICT_MAX_INSERTS).
  */
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
 #include "blob_mutator.h"
+#include "cmp_hints.h"
 #include "debug.h"
 #include "random.h"
 #include "rnd.h"
@@ -159,13 +162,110 @@ static unsigned int blob_havoc(unsigned char *buf, size_t len)
 	return n_ops;
 }
 
+/*
+ * CMPDICT arm: pull learned cmp constants for this syscall from the
+ * per-nr cmp-hint pool and splat each into the buffer at a random
+ * offset with a random width drawn from {1, 2, 4, 8}, little-endian.
+ *
+ * Insert count is drawn from [1, BLOB_CMPDICT_MAX_INSERTS] so the
+ * worst case is bounded independent of len and of how rich the pool
+ * is.  Each iteration consults cmp_hints_try_get(nr, do32, ...); a
+ * miss (empty pool, chaos-suppressed, corrupted) is silent -- the
+ * iteration drops with no write and no counter bump so the
+ * blob_dict_inserts counter measures committed splats, not attempts.
+ *
+ * Every write is clamped so pos + width <= len; widths that do not
+ * fit in len degrade down the {8, 4, 2, 1} ladder until they do (a
+ * len of 0 is rejected by the caller, so the worst case here is
+ * len == 1 which forces a single-byte splat).  Returns the number of
+ * committed inserts so the caller can credit blob_dict_inserts.
+ */
+static unsigned int blob_cmpdict(unsigned char *buf, size_t len,
+				 unsigned int nr, bool do32)
+{
+	unsigned int n_inserts;
+	unsigned int committed = 0;
+	unsigned int i;
+
+	if (len == 0)
+		return 0;
+
+	n_inserts = 1u + rnd_modulo_u32(BLOB_CMPDICT_MAX_INSERTS);
+
+	for (i = 0; i < n_inserts; i++) {
+		unsigned long hint;
+		unsigned int width;
+		size_t pos;
+		size_t max_pos;
+
+		if (!cmp_hints_try_get(nr, do32, &hint))
+			continue;
+
+		/* Width ladder: pick uniformly from {1, 2, 4, 8} then
+		 * degrade if the chosen width does not fit in len.  The
+		 * degrade walks down the same ladder so a len=3 buffer
+		 * accepts width 2 or 1, never the constructed-mid value
+		 * of 3 (which would expose a partial 32-bit stamp). */
+		switch (rnd_modulo_u32(4)) {
+		case 0:  width = 1; break;
+		case 1:  width = 2; break;
+		case 2:  width = 4; break;
+		default: width = 8; break;
+		}
+		while (width > len)
+			width >>= 1;
+		/* width is now in {1, 2, 4, 8} and <= len. */
+
+		max_pos = len - width;
+		if (max_pos == 0)
+			pos = 0;
+		else if (max_pos > UINT32_MAX)
+			pos = (size_t) rnd_modulo_u32(UINT32_MAX);
+		else
+			pos = (size_t) rnd_modulo_u32((uint32_t) max_pos + 1u);
+
+		/* Little-endian splat.  Safe by construction: width is
+		 * <= len and pos <= len - width, so pos + width <= len. */
+		switch (width) {
+		case 1:
+			buf[pos] = (unsigned char) (hint & 0xffu);
+			break;
+		case 2: {
+			uint16_t v = (uint16_t) hint;
+			buf[pos]     = (unsigned char) (v & 0xffu);
+			buf[pos + 1] = (unsigned char) ((v >> 8) & 0xffu);
+			break;
+		}
+		case 4: {
+			uint32_t v = (uint32_t) hint;
+			buf[pos]     = (unsigned char) (v & 0xffu);
+			buf[pos + 1] = (unsigned char) ((v >> 8) & 0xffu);
+			buf[pos + 2] = (unsigned char) ((v >> 16) & 0xffu);
+			buf[pos + 3] = (unsigned char) ((v >> 24) & 0xffu);
+			break;
+		}
+		case 8: {
+			uint64_t v = (uint64_t) hint;
+			buf[pos]     = (unsigned char) (v & 0xffu);
+			buf[pos + 1] = (unsigned char) ((v >> 8) & 0xffu);
+			buf[pos + 2] = (unsigned char) ((v >> 16) & 0xffu);
+			buf[pos + 3] = (unsigned char) ((v >> 24) & 0xffu);
+			buf[pos + 4] = (unsigned char) ((v >> 32) & 0xffu);
+			buf[pos + 5] = (unsigned char) ((v >> 40) & 0xffu);
+			buf[pos + 6] = (unsigned char) ((v >> 48) & 0xffu);
+			buf[pos + 7] = (unsigned char) ((v >> 56) & 0xffu);
+			break;
+		}
+		}
+		committed++;
+	}
+	return committed;
+}
+
 void blob_fill(unsigned char *buf, size_t len, unsigned int nr, bool do32)
 {
 	enum blob_mutator_mode mode;
 	unsigned int n;
-
-	(void) nr;
-	(void) do32;
 
 	if (buf == NULL || len == 0)
 		return;
@@ -185,7 +285,12 @@ void blob_fill(unsigned char *buf, size_t len, unsigned int nr, bool do32)
 	 * suppresses on when zero (render-gap-aware). */
 	__atomic_fetch_add(&shm->stats.blob_fills, 1UL, __ATOMIC_RELAXED);
 
-	if (mode == BLOB_MUTATOR_HAVOC) {
+	/* HAVOC is the floor for CMPDICT: a missed cmp-hint pull still
+	 * leaves the bounded byte-mutation pass on top of FILL, so the
+	 * CMPDICT arm never authors less surface area than HAVOC for the
+	 * same blob.  Fall through into the cmpdict splat below when the
+	 * mode is CMPDICT. */
+	if (mode == BLOB_MUTATOR_HAVOC || mode == BLOB_MUTATOR_CMPDICT) {
 		unsigned int ops = blob_havoc(buf, len);
 
 		if (ops > 0)
@@ -194,10 +299,14 @@ void blob_fill(unsigned char *buf, size_t len, unsigned int nr, bool do32)
 					   __ATOMIC_RELAXED);
 	}
 
-	/* CMPDICT is reserved for Build 2; treat as FILL for now.  The
-	 * blob_dict_inserts counter is declared in struct stats_s so the
-	 * rendered schema is stable across the planned row -- it stays
-	 * at zero until the dict-insert arm is wired. */
+	if (mode == BLOB_MUTATOR_CMPDICT) {
+		unsigned int inserts = blob_cmpdict(buf, len, nr, do32);
+
+		if (inserts > 0)
+			__atomic_fetch_add(&shm->stats.blob_dict_inserts,
+					   (unsigned long) inserts,
+					   __ATOMIC_RELAXED);
+	}
 }
 
 void blob_mutator_self_check(void)
@@ -219,10 +328,15 @@ void blob_mutator_self_check(void)
 	/*
 	 * Invariant 2: BLOB_HAVOC_MAX_OPS must be representable inside
 	 * the rnd_modulo_u32(BLOB_HAVOC_MAX_OPS) draw and non-zero so
-	 * the bounded havoc loop is reachable.
+	 * the bounded havoc loop is reachable.  Same contract for
+	 * BLOB_CMPDICT_MAX_INSERTS: a cap that drops to zero would
+	 * silently skip the entire CMPDICT splat loop.
 	 */
 	if (BLOB_HAVOC_MAX_OPS == 0 || BLOB_HAVOC_MAX_OPS > UINT32_MAX)
 		BUG("BLOB_HAVOC_MAX_OPS out of bounds");
+	if (BLOB_CMPDICT_MAX_INSERTS == 0 ||
+	    BLOB_CMPDICT_MAX_INSERTS > UINT32_MAX)
+		BUG("BLOB_CMPDICT_MAX_INSERTS out of bounds");
 
 	/*
 	 * Invariant 3: blob_fill() must be a true no-op when OFF.  Run
