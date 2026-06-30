@@ -19,8 +19,10 @@ static void watchdog_sanitise(const struct ioctl_group *grp, struct syscallrecor
 	case WDIOC_GETSUPPORT: {
 		/* output only: kernel fills watchdog_info for us */
 		struct watchdog_info *info = get_writable_struct(sizeof(*info));
-		if (info)
+		if (info) {
+			memset(info, 0, sizeof(*info));
 			rec->a3 = (unsigned long) info;
+		}
 		break;
 	}
 
