@@ -231,6 +231,13 @@ void handle_success(struct syscallrecord *rec)
 	 * accessor's mask gate to the live read, so unopted syscalls keep
 	 * their current behaviour. */
 	mask = (uint8_t)(entry->fd_arg_mask | entry->len_arg_mask);
+	/* Clamp to the six valid arg slots before iterating: a stray bit
+	 * 6/7 -- whether from a mask-gen bug or future growth past 6 args
+	 * without bumping the results[] table -- would let __builtin_ctz
+	 * return 6 or 7 and the get_results_ptr() lookup below would
+	 * index past the per-entry six-result array.  Mirrors the same
+	 * clamp at syscall.c:255 for arg_snapshot_mask. */
+	mask &= 0x3f;
 	while (mask != 0) {
 		unsigned int i = (unsigned int)__builtin_ctz(mask) + 1;
 		uint8_t bit = (uint8_t)(1u << (i - 1));
