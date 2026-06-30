@@ -1010,6 +1010,65 @@ static inline void fill_iov_entry_map_backed(struct iovec *iov,
 }
 
 /*
+ * Dedicated MAP_PRIVATE|MAP_ANONYMOUS backing buffer for
+ * get_writable_address().  Allocated once in the parent by
+ * writable_pool_init() and inherited COW by every forked child.
+ *
+ * Properties that make this safe to hand to the kernel as a
+ * copyout buffer across the fleet:
+ *   - MAP_PRIVATE|MAP_ANON  -- no shared inode, no shmem object;
+ *                              madvise(MADV_REMOVE), fallocate
+ *                              (PUNCH_HOLE), ftruncate(shrink),
+ *                              and madvise(MADV_DONTNEED_LOCKED)
+ *                              cannot touch the backing pages.
+ *   - track_shared_region   -- every mm-syscall sanitiser (munmap,
+ *                              mremap, mprotect, madvise, mmap with
+ *                              MAP_FIXED) rejects fuzzed addrs that
+ *                              would land inside the pool.  The
+ *                              mprotect_split / mmap_lifecycle /
+ *                              madvise_pattern_cycler childops
+ *                              already gate on range_overlaps_shared,
+ *                              so the pool is invisible to them
+ *                              without childop-side changes.
+ *   - not add_object'd      -- the pool is never inserted into any
+ *                              OBJ_MMAP_* pool, so get_random_object
+ *                              walks cannot return it and a fuzzed
+ *                              MAP_FIXED mmap cannot ask to land on
+ *                              it (rejected by the shared-region
+ *                              gate above).
+ *   - parent-allocated      -- one VMA, COW per child; every child's
+ *                              first write faults a private zero
+ *                              page in -- cross-child writes never
+ *                              interfere.
+ *
+ * Cursor advances forward; wraps when the next allocation would
+ * overrun.  Within a single arg-gen pass the cursor never wraps
+ * (pool sized far above per-syscall demand), so distinct
+ * get_writable_address() calls from one syscall's sanitiser yield
+ * disjoint buffers.  Across syscalls (sequential within one child)
+ * wrap is harmless: the prior syscall's buffer is no longer in
+ * use.
+ */
+#define WRITABLE_POOL_BYTES   (1UL << 20)   /* 1 MiB */
+#define WRITABLE_POOL_ALIGN   16UL          /* covers __alignof__(max_align_t) */
+
+static unsigned char *writable_pool;
+
+void writable_pool_init(void)
+{
+	void *p = mmap(NULL, WRITABLE_POOL_BYTES, PROT_READ | PROT_WRITE,
+		       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (p == MAP_FAILED) {
+		outputerr("writable_pool_init: mmap %lu failed: %s\n",
+			  WRITABLE_POOL_BYTES, strerror(errno));
+		exit(EXIT_FAILURE);
+	}
+	memset(p, 0, WRITABLE_POOL_BYTES);
+	track_shared_region((unsigned long)p, WRITABLE_POOL_BYTES);
+	writable_pool = p;
+}
+
+/*
  * Dedicated backing buffer for alloc_iovec()'s iov[] array.  Allocated
  * once in the parent by alloc_iovec_init() and re-used by every forked
  * child via COW.  See the comment at alloc_iovec_init() for the

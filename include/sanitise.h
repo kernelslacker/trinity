@@ -69,6 +69,17 @@ struct iovec * alloc_iovec(unsigned int num, enum iov_direction dir) __must_chec
  * fail-loud posture of the other parent-side shared regions.
  */
 void alloc_iovec_init(void);
+/*
+ * One-shot parent-side allocator for get_writable_address()'s backing
+ * pool.  Allocates a dedicated MAP_PRIVATE|MAP_ANON region and registers
+ * it with the shared-region tracker so the mm-syscall sanitisers refuse
+ * fuzzed addresses landing inside it.  Called once from init_shm before
+ * any child forks; every forked child inherits the mapping via COW and
+ * bump-allocates from it for the lifetime of the run.  Exits on mmap
+ * failure -- without this buffer get_writable_address() cannot vend at
+ * all.
+ */
+void writable_pool_init(void);
 unsigned long get_len(void);
 /*
  * Object-size-relative length draw.  Returns a value from a boundary

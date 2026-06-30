@@ -686,6 +686,16 @@ struct childdata {
 	unsigned long local_post_handler_corrupt_ptr;
 	unsigned long local_scribbled_slots_caught;
 
+	/*
+	 * Per-child bump-cursor into the parent's writable_pool (see
+	 * writable_pool_init in rand/random-address.c).  COW-inherited
+	 * from the parent's zero-init at fork; get_writable_address()
+	 * advances it forward and wraps when the next allocation would
+	 * overrun the pool.  Owner-only writes from inside the child,
+	 * no cross-process coherence needed.
+	 */
+	unsigned long writable_pool_cursor;
+
 	/* Rate limiter for the OBJ_LOCAL ANON pool lazy top-up in
 	 * get_map_handle().  Bumped on every draw exhaustion; once it
 	 * reaches MAPS_LOCAL_REFILL_PERIOD we re-clone the OBJ_GLOBAL
