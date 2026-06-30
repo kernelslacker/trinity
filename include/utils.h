@@ -1,14 +1,41 @@
 #pragma once
 
+#include <errno.h>
 #include <sys/types.h>
 #include <sys/mman.h>
+#include <sys/wait.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "compiler.h"
 #include "rnd.h"
+
+/*
+ * Restartable waitpid() wrapper.  Trinity installs SIGALRM and SIGXCPU
+ * without SA_RESTART (signals.c), so any blocking waitpid() in a non-
+ * syscall path can return -1/EINTR.  Every reap site needs the wait to
+ * either complete or fail terminally; treating EINTR as "done" leaves a
+ * child unreaped and, for sites that tear down a shared mapping right
+ * after the wait (barrier-racer, futex-storm), leaves a worker that will
+ * fault when it next touches the destroyed barrier.
+ *
+ * WNOHANG semantics are preserved: the wrapper returns 0 (not block) when
+ * no child has exited, because rc == 0 falls out of the loop condition;
+ * only the EINTR-on-error case is retried.
+ */
+static inline pid_t waitpid_eintr(pid_t pid, int *status, int flags)
+{
+	pid_t rc;
+
+	do {
+		rc = waitpid(pid, status, flags);
+	} while (rc < 0 && errno == EINTR);
+
+	return rc;
+}
 
 #define MB(_x) ((_x) * 1024UL * 1024UL)
 #define GB(_x) ((_x) * 1024UL * MB(1))
