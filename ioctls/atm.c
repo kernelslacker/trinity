@@ -45,6 +45,7 @@ static void sanitise_atmif_sioc(struct syscallrecord *rec)
 	sioc = (struct atmif_sioc *) get_writable_struct(sizeof(*sioc));
 	if (!sioc)
 		return;
+	memset(sioc, 0, sizeof(*sioc));
 	sioc->number = rnd_modulo_u32(16);
 	arg = get_writable_struct(64);
 	if (arg) {
@@ -65,9 +66,11 @@ static void sanitise_atm_cirange(struct syscallrecord *rec)
 	sioc = (struct atmif_sioc *) get_writable_struct(sizeof(*sioc));
 	if (!sioc)
 		return;
+	memset(sioc, 0, sizeof(*sioc));
 	cir = (struct atm_cirange *) get_writable_struct(sizeof(*cir));
 	if (!cir)
 		return;
+	memset(cir, 0, sizeof(*cir));
 	/* ATM_CI_MAX (-1) means use hardware maximum; otherwise 1..8 for vpi, 1..16 for vci */
 	cir->vpi_bits = RAND_BOOL() ? ATM_CI_MAX : (rnd_modulo_u32(8) + 1);
 	cir->vci_bits = RAND_BOOL() ? ATM_CI_MAX : (rnd_modulo_u32(16) + 1);
@@ -86,6 +89,7 @@ static void sanitise_atm_iobuf(struct syscallrecord *rec)
 	iobuf = (struct atm_iobuf *) get_writable_struct(sizeof(*iobuf));
 	if (!iobuf)
 		return;
+	memset(iobuf, 0, sizeof(*iobuf));
 	len = rnd_modulo_u32(256) + 4;
 	buf = get_writable_struct(len);
 	if (buf) {
@@ -184,8 +188,10 @@ static void atm_sanitise(const struct ioctl_group *grp, struct syscallrecord *re
 	case SONET_GETSTATZ: {
 		/* output: struct sonet_stats */
 		struct sonet_stats *stats = get_writable_struct(sizeof(*stats));
-		if (stats)
+		if (stats) {
+			memset(stats, 0, sizeof(*stats));
 			rec->a3 = (unsigned long) stats;
+		}
 		break;
 	}
 
