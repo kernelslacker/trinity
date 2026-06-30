@@ -128,6 +128,7 @@ static void sanitise_cec_phys_addr(struct syscallrecord *rec)
 	p = (__u16 *) get_writable_struct(sizeof(*p));
 	if (!p)
 		return;
+	memset(p, 0, sizeof(*p));
 	*p = (__u16) rnd_u32();
 	rec->a3 = (unsigned long) p;
 }
@@ -174,6 +175,7 @@ static void sanitise_cec_mode(struct syscallrecord *rec)
 	m = (__u32 *) get_writable_struct(sizeof(*m));
 	if (!m)
 		return;
+	memset(m, 0, sizeof(*m));
 	*m = (rnd_u32() & CEC_MODE_INITIATOR_MSK) |
 	     (rnd_u32() & CEC_MODE_FOLLOWER_MSK);
 	rec->a3 = (unsigned long) m;
