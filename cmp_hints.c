@@ -1448,6 +1448,34 @@ static void cmp_hyp_would_pick(unsigned int nr, bool do32,
 #define CMP_HYP_LIVE_INJECT_DENOM	32U
 
 /*
+ * Bootstrap channel dice (channel B) for the LIVE typed-hypothesis arm.
+ * Fires REGARDLESS of plateau so the inject pipeline can earn its first
+ * PC wins on OBSERVED-state hypotheses before the plateau gate has ever
+ * opened.  Sparse (~0.4 %) so it cannot drown the raw cmp-hint signal
+ * even in the worst case; integrated over a multi-hour run this still
+ * accumulates thousands of typed-arm firings, plenty to seed the
+ * promotion ladder.  Resolves the circular dependency where
+ * cmp_hyp_try_live_inject was gated on a plateau that only opens once
+ * PROMOTED hypotheses exist, but PROMOTED hypotheses only appear after
+ * cmp_hyp_try_live_inject has fired and earned wins.
+ */
+#define CMP_HYP_LIVE_INJECT_BOOTSTRAP_DENOM	256U
+
+/*
+ * PROMOTED-bypass channel dice (channel C) for the LIVE typed-hypothesis
+ * arm.  Cheaper than the bootstrap dice (~1.6 %) because the state
+ * machine (cmp_hyp_credit_outcome's DEMOTE / RETIRE on losses, PROMOTE
+ * on wins) has already done the throttling work that the plateau gate
+ * was approximating: a PROMOTED entry has demonstrably produced a
+ * coverage win, so re-firing it cheaply is the warranted bias.  Only
+ * applies when cmp_hyp_would_pick_locked returns a PROMOTED entry at
+ * the served (cmp_ip, width) -- if the picker returns OBSERVED or NULL,
+ * channel C is treated as if its dice had not been rolled (account via
+ * NO_MATCH downstream when picker == NULL, otherwise bail).
+ */
+#define CMP_HYP_LIVE_INJECT_PROMOTED_DENOM	64U
+
+/*
  * Derive ONE candidate value from PICKED via the spec's ladder.  Every
  * derived value is constructed so cmp_hyp_find_for_credit() will
  * re-resolve back to a hypothesis at the same (cmp_ip, width) at

@@ -398,20 +398,32 @@ enum cmp_hypothesis_state {
 
 /*
  * Reason partition for the LIVE typed-hypothesis inject path.  Each
- * value names a distinct early-return / reject site on the path from
- * cmp_hyp_try_live_inject() through the caller's accept-range gate.
- * The sum across reasons + the successful-inject count
- * (cmp_hyp_live_injected) gives the total typed-eligible invocations of
- * the inject arm; the per-reason partition tells which gate is closing
- * when gate_passed stays at zero.  Pure observability -- the inject
- * arm's gate logic is unchanged.
+ * value names a distinct site on the path from cmp_hyp_try_live_inject()
+ * through the caller's accept-range gate.  The downstream reasons
+ * (NO_MATCH, DERIVE_FAIL, ACCEPT_REJECT) and the head-gate failure
+ * reasons (NOT_PLATEAU, DICE_MISS) bump on early-return; the channel
+ * reasons (BOOTSTRAP, PROMOTED_BYPASS) bump on channel-fire SUCCESS to
+ * expose which non-plateau channel admitted the call.  The sum across
+ * head-gate failure reasons + (BOOTSTRAP + PROMOTED_BYPASS) +
+ * (NO_MATCH + DERIVE_FAIL + ACCEPT_REJECT) + cmp_hyp_live_injected gives
+ * the total typed-eligible invocations of the inject arm minus the
+ * channel-A plateau opens that did not bump any channel counter (those
+ * are visible as live_inject_gate_passed minus BOOTSTRAP minus
+ * PROMOTED_BYPASS).
+ *
+ * NOT_PLATEAU/DICE_MISS now bump only when ALL channels fail to open:
+ * NOT_PLATEAU when plateau was off (channels B and C both lost their
+ * dice), DICE_MISS when plateau was on but channel A and the bypass
+ * channels all lost.
  */
 enum cmp_hyp_live_inject_reason {
-	CMP_HYP_LIVE_INJECT_REASON_NOT_PLATEAU,	  /* plateau_current_hypothesis != CMP_RISING_PC_FLAT */
-	CMP_HYP_LIVE_INJECT_REASON_DICE_MISS,	  /* ONE_IN(CMP_HYP_LIVE_INJECT_DENOM) lost the roll */
+	CMP_HYP_LIVE_INJECT_REASON_NOT_PLATEAU,	  /* plateau off AND all bypass channels lost their dice */
+	CMP_HYP_LIVE_INJECT_REASON_DICE_MISS,	  /* plateau on AND every channel's dice lost */
 	CMP_HYP_LIVE_INJECT_REASON_NO_MATCH,	  /* no hypothesis at this (cmp_ip, width) */
 	CMP_HYP_LIVE_INJECT_REASON_DERIVE_FAIL,	  /* cmp_hyp_derive_value() bailed */
 	CMP_HYP_LIVE_INJECT_REASON_ACCEPT_REJECT, /* caller's accept-range gate rejected derived value */
+	CMP_HYP_LIVE_INJECT_REASON_BOOTSTRAP,	  /* channel B opened: bootstrap dice fired regardless of plateau */
+	CMP_HYP_LIVE_INJECT_REASON_PROMOTED_BYPASS, /* channel C opened: PROMOTED hyp present and bypass dice fired */
 	CMP_HYP_LIVE_INJECT_REASON_NR,
 };
 
