@@ -179,6 +179,7 @@ static void sanitise_vhost_set_log_fd(struct syscallrecord *rec)
 	p = (int *) get_writable_struct(sizeof(*p));
 	if (!p)
 		return;
+	memset(p, 0, sizeof(*p));
 	/*
 	 * fd == -1 is the documented disable sentinel for the log eventfd.
 	 * Never hand in a real fd on a shared host.
@@ -194,6 +195,7 @@ static void sanitise_vhost_set_log_base(struct syscallrecord *rec)
 	p = (__u64 *) get_writable_struct(sizeof(*p));
 	if (!p)
 		return;
+	memset(p, 0, sizeof(*p));
 	*p = (__u64)(unsigned long) get_writable_struct(page_size);
 	rec->a3 = (unsigned long) p;
 }
