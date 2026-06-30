@@ -135,7 +135,22 @@ struct __lock * get_random_lock(void)
 		scope = OBJ_LOCAL;
 
 	obj = get_random_object(OBJ_FUTEX, scope);
-	if (!obj)
+	/*
+	 * objpool_check() is the source-of-truth gate: it filters out
+	 * NULL, wild VAs (deferred-free aliased the slot to a recycled
+	 * chunk between the picker's snapshot and the indexed load),
+	 * and entries whose obj_type tag no longer reads as OBJ_FUTEX
+	 * (the slot was reused for a different pool, or its in-pool
+	 * memory was scribbled by a sibling fuzzed value-result
+	 * syscall).  Without this gate &obj->lock was a stale interior
+	 * pointer the caller dereferenced inside futex_trylock_or_wait
+	 * -- the __cmpxchg on thislock->futex SIGSEGV'd in the
+	 * 20260630-1603 run (15 reports, all rooted at futex.c:248 ->
+	 * futex.c:256).  Mirrors the OBJ_FD_BPF_* / OBJ_FD_KVM_VCPU /
+	 * OBJ_FD_EPOLL get_random_object() consumers that already gate
+	 * on objpool_check() before touching obj.
+	 */
+	if (!objpool_check(obj, OBJ_FUTEX))
 		return NULL;
 
 	return &obj->lock;
