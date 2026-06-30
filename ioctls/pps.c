@@ -105,6 +105,7 @@ static void sanitise_setparams(struct syscallrecord *rec)
 	p = (struct pps_kparams *) get_writable_struct(sizeof(*p));
 	if (!p)
 		return;
+	memset(p, 0, sizeof(*p));
 
 	/* Mostly the only api version the kernel accepts; occasionally
 	 * a random int to exercise the -EINVAL branch. */
@@ -127,6 +128,7 @@ static void sanitise_getcap(struct syscallrecord *rec)
 	cap = (int *) get_writable_struct(sizeof(*cap));
 	if (!cap)
 		return;
+	memset(cap, 0, sizeof(*cap));
 	*cap = 0;
 	rec->a3 = (unsigned long) cap;
 }
@@ -163,6 +165,7 @@ static void sanitise_kc_bind(struct syscallrecord *rec)
 	b = (struct pps_bind_args *) get_writable_struct(sizeof(*b));
 	if (!b)
 		return;
+	memset(b, 0, sizeof(*b));
 
 	/* Mostly valid combinations to exercise the bind path; occasionally
 	 * fully random ints to hit the -EINVAL validators. */
