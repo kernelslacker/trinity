@@ -15,6 +15,7 @@ static void sanitise_fw_send_request(struct syscallrecord *rec)
 	req = (struct fw_cdev_send_request *) get_writable_struct(sizeof(*req));
 	if (!req)
 		return;
+	memset(req, 0, sizeof(*req));
 	payload_len = rnd_modulo_u32(512);
 	data = get_writable_struct(payload_len + 4);
 	if (!data)
@@ -35,6 +36,7 @@ static void sanitise_fw_allocate(struct syscallrecord *rec)
 	a = (struct fw_cdev_allocate *) get_writable_struct(sizeof(*a));
 	if (!a)
 		return;
+	memset(a, 0, sizeof(*a));
 	a->offset = rand64() & 0xFFFFFFFFFFFFULL;
 	a->closure = rand64();
 	a->length = rnd_modulo_u32(4096) + 4;
@@ -49,6 +51,7 @@ static void sanitise_fw_deallocate(struct syscallrecord *rec)
 	d = (struct fw_cdev_deallocate *) get_writable_struct(sizeof(*d));
 	if (!d)
 		return;
+	memset(d, 0, sizeof(*d));
 	d->handle = rand32();
 	rec->a3 = (unsigned long) d;
 }
@@ -62,6 +65,7 @@ static void sanitise_fw_send_response(struct syscallrecord *rec)
 	resp = (struct fw_cdev_send_response *) get_writable_struct(sizeof(*resp));
 	if (!resp)
 		return;
+	memset(resp, 0, sizeof(*resp));
 	payload_len = rnd_modulo_u32(512);
 	data = get_writable_struct(payload_len + 4);
 	if (!data)
@@ -82,6 +86,7 @@ static void sanitise_fw_add_descriptor(struct syscallrecord *rec)
 	desc = (struct fw_cdev_add_descriptor *) get_writable_struct(sizeof(*desc));
 	if (!desc)
 		return;
+	memset(desc, 0, sizeof(*desc));
 	len = rnd_modulo_u32(16) + 1;
 	data = get_writable_struct(len * 4);
 	if (!data)
@@ -100,6 +105,7 @@ static void sanitise_fw_create_iso_context(struct syscallrecord *rec)
 	ctx = (struct fw_cdev_create_iso_context *) get_writable_struct(sizeof(*ctx));
 	if (!ctx)
 		return;
+	memset(ctx, 0, sizeof(*ctx));
 	ctx->type = rnd_modulo_u32(3);
 	ctx->header_size = (rnd_modulo_u32(8)) * 4;	/* must be multiple of 4 */
 	ctx->channel = rnd_modulo_u32(64);
@@ -117,9 +123,12 @@ static void sanitise_fw_queue_iso(struct syscallrecord *rec)
 	q = (struct fw_cdev_queue_iso *) get_writable_struct(sizeof(*q));
 	if (!q)
 		return;
+	memset(q, 0, sizeof(*q));
 	pkt = (struct fw_cdev_iso_packet *) get_writable_struct(sizeof(*pkt));
-	if (pkt)
+	if (pkt) {
+		memset(pkt, 0, sizeof(*pkt));
 		pkt->control = rand32();
+	}
 	data = get_writable_struct(4096);
 	if (!data)
 		return;
@@ -137,6 +146,7 @@ static void sanitise_fw_start_iso(struct syscallrecord *rec)
 	s = (struct fw_cdev_start_iso *) get_writable_struct(sizeof(*s));
 	if (!s)
 		return;
+	memset(s, 0, sizeof(*s));
 	s->cycle = RAND_BOOL() ? -1 : (int) rnd_modulo_u32(8000);
 	s->sync = rnd_modulo_u32(16);
 	s->tags = rnd_modulo_u32(16);
@@ -151,6 +161,7 @@ static void sanitise_fw_alloc_iso_resource(struct syscallrecord *rec)
 	r = (struct fw_cdev_allocate_iso_resource *) get_writable_struct(sizeof(*r));
 	if (!r)
 		return;
+	memset(r, 0, sizeof(*r));
 	r->closure = rand64();
 	r->channels = 1ULL << (rnd_modulo_u32(64));
 	r->bandwidth = rnd_modulo_u32(4096);
@@ -166,6 +177,7 @@ static void sanitise_fw_send_stream_packet(struct syscallrecord *rec)
 	pkt = (struct fw_cdev_send_stream_packet *) get_writable_struct(sizeof(*pkt));
 	if (!pkt)
 		return;
+	memset(pkt, 0, sizeof(*pkt));
 	payload_len = rnd_modulo_u32(512);
 	data = get_writable_struct(payload_len + 4);
 	if (!data)
@@ -205,6 +217,7 @@ static void sanitise_fw_initiate_bus_reset(struct syscallrecord *rec)
 	r = (struct fw_cdev_initiate_bus_reset *) get_writable_struct(sizeof(*r));
 	if (!r)
 		return;
+	memset(r, 0, sizeof(*r));
 	r->type = rnd_modulo_u32(2);	/* FW_CDEV_LONG_RESET or FW_CDEV_SHORT_RESET */
 	rec->a3 = (unsigned long) r;
 }
@@ -216,6 +229,7 @@ static void sanitise_fw_remove_descriptor(struct syscallrecord *rec)
 	d = (struct fw_cdev_remove_descriptor *) get_writable_struct(sizeof(*d));
 	if (!d)
 		return;
+	memset(d, 0, sizeof(*d));
 	d->handle = rand32();
 	rec->a3 = (unsigned long) d;
 }
@@ -227,6 +241,7 @@ static void sanitise_fw_stop_iso(struct syscallrecord *rec)
 	s = (struct fw_cdev_stop_iso *) get_writable_struct(sizeof(*s));
 	if (!s)
 		return;
+	memset(s, 0, sizeof(*s));
 	s->handle = rand32();
 	rec->a3 = (unsigned long) s;
 }
@@ -239,6 +254,7 @@ static void sanitise_fw_get_cycle_timer(struct syscallrecord *rec)
 	ct = (struct fw_cdev_get_cycle_timer *) get_writable_struct(sizeof(*ct));
 	if (!ct)
 		return;
+	memset(ct, 0, sizeof(*ct));
 	rec->a3 = (unsigned long) ct;
 }
 
@@ -250,6 +266,7 @@ static void sanitise_fw_get_cycle_timer2(struct syscallrecord *rec)
 	ct2 = (struct fw_cdev_get_cycle_timer2 *) get_writable_struct(sizeof(*ct2));
 	if (!ct2)
 		return;
+	memset(ct2, 0, sizeof(*ct2));
 	/* clk_id is an input field; 0=REALTIME 1=MONOTONIC */
 	ct2->clk_id = rnd_modulo_u32(2);
 	rec->a3 = (unsigned long) ct2;
@@ -264,6 +281,7 @@ static void sanitise_fw_send_phy_packet(struct syscallrecord *rec)
 	p = (struct fw_cdev_send_phy_packet *) get_writable_struct(sizeof(*p));
 	if (!p)
 		return;
+	memset(p, 0, sizeof(*p));
 	p->closure = rand64();
 	p->data[0] = rand32();
 	p->data[1] = ~p->data[0];	/* standard PHY packet encoding */
@@ -280,6 +298,7 @@ static void sanitise_fw_receive_phy_packets(struct syscallrecord *rec)
 	p = (struct fw_cdev_receive_phy_packets *) get_writable_struct(sizeof(*p));
 	if (!p)
 		return;
+	memset(p, 0, sizeof(*p));
 	p->closure = rand64();
 	rec->a3 = (unsigned long) p;
 }
@@ -293,6 +312,7 @@ static void sanitise_fw_set_iso_channels(struct syscallrecord *rec)
 	sc = (struct fw_cdev_set_iso_channels *) get_writable_struct(sizeof(*sc));
 	if (!sc)
 		return;
+	memset(sc, 0, sizeof(*sc));
 	sc->channels = 1ULL << (rnd_modulo_u32(64));
 	sc->handle = rand32();
 	rec->a3 = (unsigned long) sc;
@@ -307,6 +327,7 @@ static void sanitise_fw_flush_iso(struct syscallrecord *rec)
 	f = (struct fw_cdev_flush_iso *) get_writable_struct(sizeof(*f));
 	if (!f)
 		return;
+	memset(f, 0, sizeof(*f));
 	f->handle = rand32();
 	rec->a3 = (unsigned long) f;
 }
