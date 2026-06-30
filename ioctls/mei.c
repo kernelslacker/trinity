@@ -140,6 +140,7 @@ static void sanitise_notify_set(struct syscallrecord *rec)
 	v = (__u32 *) get_writable_struct(sizeof(*v));
 	if (!v)
 		return;
+	memset(v, 0, sizeof(*v));
 
 	/* Mostly 0/1 (the only values the dispatcher accepts), occasionally
 	 * a random u32 to hit the -EINVAL branch in the validator. */
@@ -158,6 +159,7 @@ static void sanitise_notify_get(struct syscallrecord *rec)
 	v = (__u32 *) get_writable_struct(sizeof(*v));
 	if (!v)
 		return;
+	memset(v, 0, sizeof(*v));
 	*v = 0;
 	rec->a3 = (unsigned long) v;
 }
