@@ -585,6 +585,92 @@ static void drm_sanitise(const struct ioctl_group *grp, struct syscallrecord *re
 	}
 #endif
 
+	case DRM_IOCTL_GET_UNIQUE: {
+		struct drm_unique *p = get_writable_struct(sizeof(*p));
+		if (!p)
+			return;
+		memset(p, 0, sizeof(*p));
+		p->unique_len = 0;
+		p->unique = NULL;
+		rec->a3 = (unsigned long) p;
+		break;
+	}
+
+	case DRM_IOCTL_GET_STATS: {
+		struct drm_stats *p = get_writable_struct(sizeof(*p));
+		if (!p)
+			return;
+		memset(p, 0, sizeof(*p));
+		rec->a3 = (unsigned long) p;
+		break;
+	}
+
+	case DRM_IOCTL_MODE_GETGAMMA: {
+		struct drm_mode_crtc_lut *p = get_writable_struct(sizeof(*p));
+		if (!p)
+			return;
+		memset(p, 0, sizeof(*p));
+		p->crtc_id = rnd_modulo_u32(64);
+		p->gamma_size = 0;
+		p->red = 0;
+		p->green = 0;
+		p->blue = 0;
+		rec->a3 = (unsigned long) p;
+		break;
+	}
+
+	case DRM_IOCTL_MODE_GETPROPERTY: {
+		struct drm_mode_get_property *p = get_writable_struct(sizeof(*p));
+		if (!p)
+			return;
+		memset(p, 0, sizeof(*p));
+		p->prop_id = rnd_modulo_u32(128);
+		p->count_values = 0;
+		p->count_enum_blobs = 0;
+		p->values_ptr = 0;
+		p->enum_blob_ptr = 0;
+		rec->a3 = (unsigned long) p;
+		break;
+	}
+
+	case DRM_IOCTL_MODE_GETPROPBLOB: {
+		struct drm_mode_get_blob *p = get_writable_struct(sizeof(*p));
+		if (!p)
+			return;
+		memset(p, 0, sizeof(*p));
+		p->blob_id = rnd_modulo_u32(128);
+		p->length = 0;
+		p->data = 0;
+		rec->a3 = (unsigned long) p;
+		break;
+	}
+
+#ifdef DRM_IOCTL_MODE_OBJ_GETPROPERTIES
+	case DRM_IOCTL_MODE_OBJ_GETPROPERTIES: {
+		static const __u32 obj_types[] = {
+			DRM_MODE_OBJECT_CRTC,
+			DRM_MODE_OBJECT_CONNECTOR,
+			DRM_MODE_OBJECT_ENCODER,
+			DRM_MODE_OBJECT_MODE,
+			DRM_MODE_OBJECT_PROPERTY,
+			DRM_MODE_OBJECT_FB,
+			DRM_MODE_OBJECT_BLOB,
+			DRM_MODE_OBJECT_PLANE,
+		};
+		struct drm_mode_obj_get_properties *p = get_writable_struct(sizeof(*p));
+		if (!p)
+			return;
+		memset(p, 0, sizeof(*p));
+		p->obj_id = rnd_modulo_u32(64);
+		p->obj_type = RAND_ARRAY(obj_types);
+		p->count_props = 0;
+		p->props_ptr = 0;
+		p->prop_values_ptr = 0;
+		rec->a3 = (unsigned long) p;
+		break;
+	}
+#endif
+
 	default:
 		break;
 	}
