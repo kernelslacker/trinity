@@ -18,15 +18,6 @@
 #
 # Lines starting with `#` and blank lines are ignored.
 
-# random-address.c: get_writable_address() upgrades a slot to RW and
-# probes residency on the head page before returning.  The mprotect
-# upgrade and the mincore probe both fire on the hot arg-gen path
-# every time a writable address is requested; both want to migrate to
-# a cached-permissions / cached-residency map maintained on the slow
-# side of the allocator.
-rand/random-address.c:317:mprotect
-rand/random-address.c:485:mincore
-
 # utils.c: heap_bounds_init() is genuinely one-shot (called from the
 # parent during setup) and would normally be slow-ok.  It lives in a
 # scoped file because utils.c also hosts range_readable_user, and
