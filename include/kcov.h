@@ -1696,6 +1696,19 @@ struct kcov_shared {
 	unsigned long per_syscall_cmp_injected[MAX_NR_SYSCALL];
 	unsigned long per_syscall_cmp_hint_pc_wins[MAX_NR_SYSCALL];
 
+	/* Per-syscall typed-hyp outcome partition.  Pairs with the
+	 * per_syscall_cmp_injected/_pc_wins counters above so the
+	 * cmp-frontier weight can route on real conversion rate rather
+	 * than insert volume alone.  Bumped from cmp_hyp_credit_outcome()
+	 * under the same nr-bounds guard as the sibling per-syscall
+	 * counters; only the typed-hyp outcome channels that can fire
+	 * today are partitioned. */
+	unsigned long per_syscall_cmp_hint_transition_wins[MAX_NR_SYSCALL];
+	unsigned long per_syscall_cmp_hint_misses[MAX_NR_SYSCALL];
+	unsigned long per_syscall_cmp_hint_corpus_saves[MAX_NR_SYSCALL];
+	unsigned long per_syscall_cmp_hint_destructive_skips[MAX_NR_SYSCALL];
+	unsigned long per_syscall_cmp_hint_cmp_novelty_wins[MAX_NR_SYSCALL];
+
 	/* Per-callsite total cmp-hint injections, indexed by enum
 	 * cmp_hint_callsite.  Aggregated across all syscalls; the "which
 	 * argtype-handler is responsible for the bulk of injections" question
@@ -2598,6 +2611,19 @@ struct kcov_shared {
 	 */
 	unsigned long cmp_hyp_would_promote_by_kind[CMP_HYP_KIND_NR];
 	unsigned long cmp_hyp_would_demote_by_kind[CMP_HYP_KIND_NR];
+
+	/* Per-kind outcome partition for the typed-hyp credit channels.
+	 * Bumped alongside the flat cmp_hyp_pc_wins / _transition_wins /
+	 * etc.  Lets the periodic dump answer "which hypothesis kind is
+	 * actually converting" without a separate hyp-pool walk.  SHADOW
+	 * telemetry only -- no consumer reads it. */
+	unsigned long cmp_hyp_pc_wins_by_kind[CMP_HYP_KIND_NR];
+	unsigned long cmp_hyp_transition_wins_by_kind[CMP_HYP_KIND_NR];
+	unsigned long cmp_hyp_misses_by_kind[CMP_HYP_KIND_NR];
+	unsigned long cmp_hyp_corpus_save_by_kind[CMP_HYP_KIND_NR];
+	unsigned long cmp_hyp_destructive_by_kind[CMP_HYP_KIND_NR];
+	unsigned long cmp_hyp_context_skip_by_kind[CMP_HYP_KIND_NR];
+	unsigned long cmp_hyp_cmp_novelty_wins_by_kind[CMP_HYP_KIND_NR];
 
 	/*
 	 * SHADOW histogram of the 8-band score_bucket value computed in

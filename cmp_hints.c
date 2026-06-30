@@ -950,6 +950,75 @@ void cmp_hyp_credit_outcome(unsigned int nr, bool do32, unsigned long cmp_ip,
 		__atomic_fetch_add(flat, 1UL, __ATOMIC_RELAXED);
 
 	/*
+	 * Per-syscall + per-kind outcome partition.  Strictly additive
+	 * mirrors of the flat outcome counter just bumped above; the
+	 * per-syscall arrays are paired with per_syscall_cmp_injected /
+	 * per_syscall_cmp_hint_pc_wins so the cmp-frontier weight can
+	 * route on a real conversion rate, and the per-kind arrays let
+	 * the periodic dump answer "which kind is actually converting"
+	 * without a separate hyp-pool walk.  Only the outcome channels
+	 * that exist as per-syscall partitions today bump per-syscall;
+	 * per-kind covers every kind-relevant outcome.
+	 */
+	if (kcov_shm != NULL) {
+		unsigned long *per_nr_field = NULL;
+
+		switch (outcome) {
+		case CMP_HYP_OUTCOME_TRANSITION_WIN:
+			per_nr_field = &kcov_shm->per_syscall_cmp_hint_transition_wins[nr];
+			break;
+		case CMP_HYP_OUTCOME_MISS:
+			per_nr_field = &kcov_shm->per_syscall_cmp_hint_misses[nr];
+			break;
+		case CMP_HYP_OUTCOME_CORPUS_SAVE:
+			per_nr_field = &kcov_shm->per_syscall_cmp_hint_corpus_saves[nr];
+			break;
+		case CMP_HYP_OUTCOME_DESTRUCTIVE_SKIP:
+			per_nr_field = &kcov_shm->per_syscall_cmp_hint_destructive_skips[nr];
+			break;
+		case CMP_HYP_OUTCOME_CMP_NOVELTY:
+			per_nr_field = &kcov_shm->per_syscall_cmp_hint_cmp_novelty_wins[nr];
+			break;
+		default:
+			break;
+		}
+		if (per_nr_field != NULL)
+			__atomic_fetch_add(per_nr_field, 1UL, __ATOMIC_RELAXED);
+
+		if (h->kind < CMP_HYP_KIND_NR) {
+			unsigned long *per_kind_field = NULL;
+
+			switch (outcome) {
+			case CMP_HYP_OUTCOME_PC_WIN:
+				per_kind_field = &kcov_shm->cmp_hyp_pc_wins_by_kind[h->kind];
+				break;
+			case CMP_HYP_OUTCOME_TRANSITION_WIN:
+				per_kind_field = &kcov_shm->cmp_hyp_transition_wins_by_kind[h->kind];
+				break;
+			case CMP_HYP_OUTCOME_MISS:
+				per_kind_field = &kcov_shm->cmp_hyp_misses_by_kind[h->kind];
+				break;
+			case CMP_HYP_OUTCOME_CORPUS_SAVE:
+				per_kind_field = &kcov_shm->cmp_hyp_corpus_save_by_kind[h->kind];
+				break;
+			case CMP_HYP_OUTCOME_DESTRUCTIVE_SKIP:
+				per_kind_field = &kcov_shm->cmp_hyp_destructive_by_kind[h->kind];
+				break;
+			case CMP_HYP_OUTCOME_CONTEXT_SKIP:
+				per_kind_field = &kcov_shm->cmp_hyp_context_skip_by_kind[h->kind];
+				break;
+			case CMP_HYP_OUTCOME_CMP_NOVELTY:
+				per_kind_field = &kcov_shm->cmp_hyp_cmp_novelty_wins_by_kind[h->kind];
+				break;
+			default:
+				break;
+			}
+			if (per_kind_field != NULL)
+				__atomic_fetch_add(per_kind_field, 1UL, __ATOMIC_RELAXED);
+		}
+	}
+
+	/*
 	 * SHADOW scoring pass.  Recompute h->score_bucket from the per-hyp
 	 * evidence counters just bumped above, and evaluate the would-
 	 * promote / would-demote predicate the live state machine will

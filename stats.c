@@ -7757,6 +7757,60 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 					prev_hyp_consumed_kind[k] = cur_cons;
 				}
 			}
+
+			/* Per-kind outcome partition.  Lock-step with the flat
+			 * cmp_hyp_pc_wins / _transition_wins / _misses /
+			 * _corpus_save / _destructive / _context_skip /
+			 * _cmp_novelty_wins above; the per-kind drilldown tells
+			 * which hypothesis kind is converting versus which kind
+			 * is consuming credit without conversion. */
+			{
+				static const char * const kind_labels[CMP_HYP_KIND_NR] = {
+					"exact", "range", "boundary", "bitmask",
+					"enum_family", "alignment", "length",
+					"foreign_value",
+				};
+				static unsigned long prev_pc[CMP_HYP_KIND_NR];
+				static unsigned long prev_tr[CMP_HYP_KIND_NR];
+				static unsigned long prev_ms[CMP_HYP_KIND_NR];
+				static unsigned long prev_cs[CMP_HYP_KIND_NR];
+				static unsigned long prev_ds[CMP_HYP_KIND_NR];
+				static unsigned long prev_ks[CMP_HYP_KIND_NR];
+				static unsigned long prev_nv[CMP_HYP_KIND_NR];
+				unsigned int k;
+
+				for (k = 0; k < CMP_HYP_KIND_NR; k++) {
+					unsigned long pc = __atomic_load_n(
+						&kcov_shm->cmp_hyp_pc_wins_by_kind[k], __ATOMIC_RELAXED);
+					unsigned long tr = __atomic_load_n(
+						&kcov_shm->cmp_hyp_transition_wins_by_kind[k], __ATOMIC_RELAXED);
+					unsigned long ms = __atomic_load_n(
+						&kcov_shm->cmp_hyp_misses_by_kind[k], __ATOMIC_RELAXED);
+					unsigned long cs = __atomic_load_n(
+						&kcov_shm->cmp_hyp_corpus_save_by_kind[k], __ATOMIC_RELAXED);
+					unsigned long ds = __atomic_load_n(
+						&kcov_shm->cmp_hyp_destructive_by_kind[k], __ATOMIC_RELAXED);
+					unsigned long ks = __atomic_load_n(
+						&kcov_shm->cmp_hyp_context_skip_by_kind[k], __ATOMIC_RELAXED);
+					unsigned long nv = __atomic_load_n(
+						&kcov_shm->cmp_hyp_cmp_novelty_wins_by_kind[k], __ATOMIC_RELAXED);
+
+					stats_log_write(
+						"  cmp_hyp[%-13s] outcome  pc +%lu  tr +%lu  ms +%lu  cs +%lu  ds +%lu  ks +%lu  nv +%lu\n",
+						kind_labels[k],
+						pc - prev_pc[k], tr - prev_tr[k],
+						ms - prev_ms[k], cs - prev_cs[k],
+						ds - prev_ds[k], ks - prev_ks[k],
+						nv - prev_nv[k]);
+					prev_pc[k] = pc;
+					prev_tr[k] = tr;
+					prev_ms[k] = ms;
+					prev_cs[k] = cs;
+					prev_ds[k] = ds;
+					prev_ks[k] = ks;
+					prev_nv[k] = nv;
+				}
+			}
 		}
 
 		prev_hyp_observations = cur_hyp_observations;
