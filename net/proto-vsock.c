@@ -3,12 +3,7 @@
 #include "kernel/vm_sockets.h"
 #include "net.h"
 #include "random.h"
-#include "compat.h"
 #include "rnd.h"
-
-#ifndef SOL_VSOCK
-#define SOL_VSOCK 287
-#endif
 
 static void vsock_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct sockaddr **addr, socklen_t *addrlen)
 {
