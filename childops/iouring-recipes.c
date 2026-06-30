@@ -486,7 +486,7 @@ static const struct iour_recipe catalog[] = {
 _Static_assert(ARRAY_SIZE(catalog) <= MAX_IOURING_RECIPES,
 	       "iouring recipe catalog outgrew MAX_IOURING_RECIPES; bump it");
 
-bool iouring_recipes(struct childdata *child __unused__)
+bool iouring_recipes(struct childdata *child)
 {
 	struct iour_ring ctx;
 	struct iour_recipe_state state;
@@ -497,6 +497,13 @@ bool iouring_recipes(struct childdata *child __unused__)
 	unsigned int tries;
 	bool unsupported = false;
 	bool ok;
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	__atomic_add_fetch(&shm->stats.iouring_recipes_runs, 1,
 			   __ATOMIC_RELAXED);
@@ -536,6 +543,17 @@ bool iouring_recipes(struct childdata *child __unused__)
 						 __ATOMIC_RELAXED);
 			return true;
 		}
+	}
+
+	/* Ring is up: the per-process io_uring probe was accepted and
+	 * the dispatcher is committed to driving a recipe through it.
+	 * Bump setup_accepted before data_path so the invariant
+	 * data_path <= setup_accepted holds at every observation point. */
+	if (valid_op) {
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
 	}
 
 	iour_recipe_state_init(&state, &ctx);
