@@ -3,6 +3,7 @@
  */
 
 #include <sys/socket.h>
+#include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <netinet/udp.h>
 #include <linux/filter.h>
@@ -264,6 +265,22 @@ struct sockopt_pair {
 	socklen_t (*build)(void *buf);
 };
 
+/*
+ * Floor for the so->optval buffer try_paired_setsockopt() is willing to
+ * write into.  socket_setsockopt() may have shrunk the page_size buffer
+ * out from under us before pairing fires: SO_ATTACH_FILTER replaces it
+ * with a 16-byte sock_fprog; SO_ATTACH_BPF / SO_ATTACH_REUSEPORT_EBPF /
+ * SO_DETACH_REUSEPORT_BPF replace it with sizeof(int).  A subsequent
+ * pair builder (build_timeval=16, build_ip_mreqn=12, build_ipv6_mreq=20)
+ * would then overrun the shrunken allocation into the next glibc chunk
+ * and trip MALLOC_CHECK_.  Gate on alloc_track_lookup_size() and bail
+ * when the live extent is below this floor.
+ *
+ * MUST cover the largest pair-builder output -- update if a bigger
+ * pair lands in sockopt_pairs[].
+ */
+#define MAX_PAIR_BUILDER_SIZE	sizeof(struct ipv6_mreq)
+
 static const struct sockopt_pair sockopt_pairs[] = {
 	/* SO_KEEPALIVE -> TCP keepalive triplet on the same fd. */
 	{ SOL_SOCKET,   SO_KEEPALIVE,         IPPROTO_TCP,  TCP_KEEPIDLE,         build_int_small_positive },
@@ -344,6 +361,19 @@ static bool try_paired_setsockopt(struct sockopt *so, int fd)
 
 	pair = lookup_sockopt_pair(prev_level, prev_optname);
 	if (pair == NULL)
+		return false;
+
+	/*
+	 * socket_setsockopt() can replace the page_size buffer with a much
+	 * smaller allocation (SO_ATTACH_FILTER: 16-byte sock_fprog;
+	 * SO_ATTACH_BPF / SO_ATTACH_REUSEPORT_EBPF / SO_DETACH_REUSEPORT_BPF:
+	 * sizeof(int)).  Writing a pair-builder payload into that buffer
+	 * would overrun into the next chunk.  alloc_track_lookup_size()
+	 * returns the recorded extent for the live optval allocation, or 0
+	 * if it was never tracked / consumed / rotated out -- treat unknown
+	 * as below the floor and bail (benign: pairing skips this round).
+	 */
+	if (alloc_track_lookup_size((void *) so->optval) < MAX_PAIR_BUILDER_SIZE)
 		return false;
 
 	exact = pair->build((void *) so->optval);
