@@ -71,6 +71,7 @@ static void sanitise_u64(struct syscallrecord *rec)
 	v = (__u64 *) get_writable_struct(sizeof(*v));
 	if (!v)
 		return;
+	memset(v, 0, sizeof(*v));
 	*v = rand64();
 	rec->a3 = (unsigned long) v;
 }
@@ -82,6 +83,7 @@ static void sanitise_u32(struct syscallrecord *rec)
 	v = (__u32 *) get_writable_struct(sizeof(*v));
 	if (!v)
 		return;
+	memset(v, 0, sizeof(*v));
 	*v = rnd_u32();
 	rec->a3 = (unsigned long) v;
 }
@@ -205,6 +207,7 @@ static void sanitise_vq_eventfd(struct syscallrecord *rec)
 	e = (struct vduse_vq_eventfd *) get_writable_struct(sizeof(*e));
 	if (!e)
 		return;
+	memset(e, 0, sizeof(*e));
 	e->index = rnd_modulo_u32(64);
 	e->fd = RAND_BOOL() ? VDUSE_EVENTFD_DEASSIGN : -1;
 	rec->a3 = (unsigned long) e;
