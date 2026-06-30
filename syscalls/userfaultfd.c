@@ -3,13 +3,9 @@
  */
 
 #include <fcntl.h>
+#include "kernel/userfaultfd.h"
 #include "publish_resource.h"
 #include "sanitise.h"
-#include "compat.h"
-
-#ifndef UFFD_USER_MODE_ONLY
-#define UFFD_USER_MODE_ONLY 1
-#endif
 
 static unsigned long userfaultfd_flags[] = {
 	O_CLOEXEC, O_NONBLOCK, UFFD_USER_MODE_ONLY,
