@@ -71,6 +71,7 @@ static void sanitise_lineinfo_unwatch(struct syscallrecord *rec)
 	off = (__u32 *) get_writable_struct(sizeof(*off));
 	if (!off)
 		return;
+	memset(off, 0, sizeof(*off));
 	*off = rnd_modulo_u32(256);
 	rec->a3 = (unsigned long) off;
 }
@@ -144,6 +145,7 @@ static void sanitise_v2_line_config(struct syscallrecord *rec)
 	c = (struct gpio_v2_line_config *) get_writable_struct(sizeof(*c));
 	if (!c)
 		return;
+	memset(c, 0, sizeof(*c));
 	fill_v2_line_config(c);
 	rec->a3 = (unsigned long) c;
 }
@@ -155,6 +157,7 @@ static void sanitise_v2_line_values(struct syscallrecord *rec)
 	v = (struct gpio_v2_line_values *) get_writable_struct(sizeof(*v));
 	if (!v)
 		return;
+	memset(v, 0, sizeof(*v));
 	v->bits = rand64();
 	v->mask = rand64();
 	rec->a3 = (unsigned long) v;
@@ -222,6 +225,7 @@ static void sanitise_v1_handle_data(struct syscallrecord *rec)
 	d = (struct gpiohandle_data *) get_writable_struct(sizeof(*d));
 	if (!d)
 		return;
+	memset(d, 0, sizeof(*d));
 	for (i = 0; i < GPIOHANDLES_MAX; i++)
 		d->values[i] = RAND_BOOL();
 	rec->a3 = (unsigned long) d;
