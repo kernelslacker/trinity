@@ -3489,6 +3489,21 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 	 * push that forgets the gate.
 	 */
 	if (!child->in_reexec) {
+		/* Typed-hyp side channels: credit TRANSITION_WIN and
+		 * CORPUS_SAVE on each hyp_injected stash entry BEFORE the
+		 * PC / CMP-novelty drain below resets the stash.  Mirrors
+		 * the same novelty conditions the parent dispatch uses:
+		 * transition wins are credited when the kernel-side
+		 * transition-edge counter advanced this call, and corpus
+		 * saves are credited when this dispatch's args will land
+		 * in the minicorpus (same gate the save block below
+		 * checks).  Both credits are typed-hyp only -- the flat
+		 * cmp_hint_* counters are unaffected. */
+		if (pcres.transition_edges_real_local > 0)
+			cmp_hints_feedback_credit_transition();
+		if (unlikely(found_something) && entry->sanitise == NULL)
+			cmp_hints_feedback_credit_corpus_save();
+
 		if (child->kcov.mode == KCOV_MODE_PC) {
 			cmp_hints_feedback_credit_pc(new_edges);
 		} else if (new_cmp > 0) {

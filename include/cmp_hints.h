@@ -935,6 +935,18 @@ void cmp_hints_feedback_credit_pc(bool outcome_win);
  */
 void cmp_hints_feedback_credit_cmp_novelty(void);
 
+/*
+ * Walk the per-child stash and credit typed-hyp TRANSITION_WIN /
+ * CORPUS_SAVE outcomes for each entry whose hyp_injected flag is set.
+ * Does NOT reset the stash -- meant to be called BEFORE
+ * cmp_hints_feedback_credit_pc() / _cmp_novelty(), which own the
+ * single stash reset at end-of-dispatch.  No-op if the stash is
+ * empty.  Typed-hyp credit only; the flat / per-pool / per-tier
+ * counters are unaffected.
+ */
+void cmp_hints_feedback_credit_transition(void);
+void cmp_hints_feedback_credit_corpus_save(void);
+
 /* Advance the chaos-mode window counter.  Called once per bandit window
  * rotation from maybe_rotate_strategy().  Every CHAOS_WINDOW_MODULO'th
  * window flips cmp_hints_chaos_active to true for the duration of that

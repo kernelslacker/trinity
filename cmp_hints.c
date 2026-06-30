@@ -4499,6 +4499,68 @@ void cmp_hints_feedback_credit_cmp_novelty(void)
 }
 
 /*
+ * Typed-hyp TRANSITION_WIN credit drain.  Walks the stash without
+ * resetting it -- the single reset is owned by cmp_hints_feedback_
+ * credit_pc() / _cmp_novelty() at end-of-dispatch.  Fires once per
+ * hyp_injected stash entry so a parent that stashed two typed-arm
+ * hints from different (cmp_ip, width) sites bumps both hypotheses'
+ * transition_wins.  Same hyp_injected gate as the PC / CMP-novelty
+ * credits: a raw-pool replay that happened to coincide with a stored
+ * hypothesis at the served site does NOT bump TRANSITION_WIN.
+ */
+void cmp_hints_feedback_credit_transition(void)
+{
+	struct childdata *child = this_child();
+	unsigned int i, n;
+
+	if (child == NULL)
+		return;
+	n = child->cmp_hints_consumed_count;
+	if (n == 0)
+		return;
+
+	for (i = 0; i < n; i++) {
+		const struct cmp_hint_consumed_entry *e =
+			&child->cmp_hints_consumed_stash[i];
+
+		if (e->hyp_injected)
+			cmp_hyp_credit_outcome(e->nr, e->do32 != 0, e->cmp_ip,
+					       e->value, e->size,
+					       CMP_HYP_OUTCOME_TRANSITION_WIN);
+	}
+}
+
+/*
+ * Typed-hyp CORPUS_SAVE credit drain.  Same shape as the transition
+ * drain above -- walks the stash without resetting it, fires once
+ * per hyp_injected entry.  Called from random-syscall.c when the
+ * dispatch produced a novelty signal that minicorpus_save accepted,
+ * so the credited hypothesis is one whose typed-arm value actually
+ * earned its way into the persisted corpus.
+ */
+void cmp_hints_feedback_credit_corpus_save(void)
+{
+	struct childdata *child = this_child();
+	unsigned int i, n;
+
+	if (child == NULL)
+		return;
+	n = child->cmp_hints_consumed_count;
+	if (n == 0)
+		return;
+
+	for (i = 0; i < n; i++) {
+		const struct cmp_hint_consumed_entry *e =
+			&child->cmp_hints_consumed_stash[i];
+
+		if (e->hyp_injected)
+			cmp_hyp_credit_outcome(e->nr, e->do32 != 0, e->cmp_ip,
+					       e->value, e->size,
+					       CMP_HYP_OUTCOME_CORPUS_SAVE);
+	}
+}
+
+/*
  * Warm-start persistence.
  *
  * CMP records are expensive to gather -- each one requires the kernel
