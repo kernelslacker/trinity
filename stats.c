@@ -2510,6 +2510,7 @@ static void dump_stats_json_corruption_and_audit(void)
 			"\"deferred_free_double_admit_skip\":%lu,"
 			"\"alloc_track_refresh_ring_owned_skip\":%lu,"
 			"\"alloc_track_refresh_unverified_skip\":%lu,"
+			"\"alloc_track_refresh_consume_miss\":%lu,"
 			"\"pagecache_canary_corrupt_caught\":%lu,"
 			"\"objpool_array_stale_caught\":%lu,"
 			"\"lock_word_scribbled\":%lu,"
@@ -2587,6 +2588,7 @@ static void dump_stats_json_corruption_and_audit(void)
 		shm->stats.deferred_free_double_admit_skip,
 		shm->stats.alloc_track_refresh_ring_owned_skip,
 		shm->stats.alloc_track_refresh_unverified_skip,
+		shm->stats.alloc_track_refresh_consume_miss,
 		shm->stats.pagecache_canary_corrupt_caught,
 		shm->stats.objpool_array_stale_caught,
 		parent_stats.lock_word_scribbled,
@@ -4088,6 +4090,8 @@ static const struct {
 	  offsetof(struct stats_s, alloc_track_refresh_ring_owned_skip) },
 	{ "alloc_track_refresh_unverified_skip",
 	  offsetof(struct stats_s, alloc_track_refresh_unverified_skip) },
+	{ "alloc_track_refresh_consume_miss",
+	  offsetof(struct stats_s, alloc_track_refresh_consume_miss) },
 	{ "pagecache_canary_corrupt_caught",
 	  offsetof(struct stats_s, pagecache_canary_corrupt_caught) },
 	{ "objpool_array_stale_caught",

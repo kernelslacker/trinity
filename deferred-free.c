@@ -759,10 +759,12 @@ static bool ring_contains(void *ptr)
 
 /*
  * Refresh an existing tracked entry's LRU position without freeing it.
- * If @ptr is in the ring, null its current slot + remove from hash, then
- * re-insert at head.  If @ptr is not present (already rotated out), just
- * insert at head.  Either way the post-call state has @ptr exactly once
- * in the ring (at head) and exactly once in the hash.
+ * If @ptr is currently tracked (alloc_track_consume hit), null its
+ * current slot + remove from hash, then re-insert at head.  If @ptr is
+ * NOT currently tracked (consume miss), bail without inserting -- see
+ * the rationale at the consume-miss bump below.  Post-call state on a
+ * hit has @ptr exactly once in the array (at head) and exactly once in
+ * the hash; on a miss the alloc_track state is unchanged.
  *
  * Pair with the OBJ_LOCAL anon-pool dedup-skip in clone_global_mmap_pool:
  * dedup'd pool entries don't trigger a fresh __zmalloc_tracked, so without
@@ -828,14 +830,41 @@ void alloc_track_refresh(void *ptr)
 	/*
 	 * Preserve the recorded extent across the consume + re-add so
 	 * downstream lookup_size() readers continue to see the original
-	 * allocation length.  If @ptr was already rotated out, the
-	 * lookup returns 0 and the fresh insert acts as a size-unknown
-	 * registration -- the conservative direction (cmp_hints field
-	 * scan skips a slot it cannot bound) is the same as before the
-	 * refresh.
+	 * allocation length.
+	 *
+	 * alloc_track_consume() is the source-of-truth ownership gate
+	 * (see tracked_free_checked() above).  A false return means @ptr
+	 * is NOT currently in alloc_track[] -- either it was rotated out
+	 * by intervening churn, or it was never tracked at all (a stale
+	 * caller ref, an interior pointer the caller derived by a few
+	 * bytes off a tracked chunk, or a scribbled head->array /
+	 * localobj from a sibling fuzzed value-result syscall).  The two
+	 * cases are indistinguishable from this side.  The previous
+	 * shape called deferred_alloc_track(@ptr, 0) unconditionally,
+	 * blessing the unproven @ptr as tracked and arming a bad-free at
+	 * the next tracked_free_checked():
+	 *   deferred-free.c:880 (free_ring_entry / tracked_free_now /
+	 *   ring_evict_oldest_safe) called free() on an interior pointer
+	 *   that alloc_track_consume() now happily approved -- the ASAN
+	 *   "attempting free on address which was not malloc()-ed" class
+	 *   caught by the 20260630-1603 run (88 bytes after a 40-byte
+	 *   region; address derived from a scribbled head->array /
+	 *   localobj from a sibling fuzzed value-result syscall).
+	 *
+	 * Bump @ptr's LRU position only when we have proof it was
+	 * legitimately tracked.  On a miss, bail without inserting; the
+	 * cost is that a legitimately rotated-out tracked ptr loses its
+	 * next deferred_free_enqueue (rejected as untracked, leaked).
+	 * That is the safer direction to err vs. silently blessing an
+	 * arbitrary VA -- the leak is bounded by child lifetime and the
+	 * kernel reclaims at exit, the bad-free is unrecoverable.
 	 */
 	size = alloc_track_lookup_size(ptr);
-	(void)alloc_track_consume(ptr);
+	if (!alloc_track_consume(ptr)) {
+		__atomic_add_fetch(&shm->stats.alloc_track_refresh_consume_miss,
+				   1, __ATOMIC_RELAXED);
+		return;
+	}
 	deferred_alloc_track(ptr, size);
 }
 

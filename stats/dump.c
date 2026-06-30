@@ -484,6 +484,8 @@ void dump_stats_corruption_and_pool(void)
 		stat_row("corruption", "alloc_track_refresh_ring_owned_skip", shm->stats.alloc_track_refresh_ring_owned_skip);
 	if (shm->stats.alloc_track_refresh_unverified_skip)
 		stat_row("corruption", "alloc_track_refresh_unverified_skip", shm->stats.alloc_track_refresh_unverified_skip);
+	if (shm->stats.alloc_track_refresh_consume_miss)
+		stat_row("corruption", "alloc_track_refresh_consume_miss",    shm->stats.alloc_track_refresh_consume_miss);
 	if (parent_stats.snapshot_non_heap_reject)
 		stat_row("corruption", "snapshot_non_heap_reject", parent_stats.snapshot_non_heap_reject);
 	if (parent_stats.lock_word_scribbled)
