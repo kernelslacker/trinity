@@ -27,6 +27,7 @@ static void sanitise_rtc_time(struct syscallrecord *rec)
 	t = (struct rtc_time *) get_writable_struct(sizeof(*t));
 	if (!t)
 		return;
+	memset(t, 0, sizeof(*t));
 	fill_rtc_time(t);
 	rec->a3 = (unsigned long) t;
 }
@@ -38,6 +39,7 @@ static void sanitise_rtc_wkalrm(struct syscallrecord *rec)
 	alrm = (struct rtc_wkalrm *) get_writable_struct(sizeof(*alrm));
 	if (!alrm)
 		return;
+	memset(alrm, 0, sizeof(*alrm));
 	alrm->enabled = RAND_BOOL();
 	alrm->pending = RAND_BOOL();
 	fill_rtc_time(&alrm->time);
@@ -51,6 +53,7 @@ static void sanitise_rtc_pll_info(struct syscallrecord *rec)
 	pll = (struct rtc_pll_info *) get_writable_struct(sizeof(*pll));
 	if (!pll)
 		return;
+	memset(pll, 0, sizeof(*pll));
 	pll->pll_ctrl = rnd_u32();
 	pll->pll_value = (int)(rnd_modulo_u32(201)) - 100;	/* -100 to 100 */
 	pll->pll_max = rnd_modulo_u32(1000);
