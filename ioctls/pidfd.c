@@ -123,6 +123,7 @@ static void pidfd_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 	info = (struct pidfd_info *) get_writable_struct(sizeof(*info));
 	if (!info)
 		return;
+	memset(info, 0, sizeof(*info));
 	info->mask = set_rand_bitmask(ARRAY_SIZE(info_flags), info_flags);
 	rec->a3 = (unsigned long) info;
 }
