@@ -1103,6 +1103,59 @@ void cmp_hyp_credit_outcome(unsigned int nr, bool do32, unsigned long cmp_ip,
 					&kcov_shm->cmp_hyp_would_demote_by_kind[h->kind],
 					1UL, __ATOMIC_RELAXED);
 		}
+
+		/*
+		 * Live h->state mutation.  The would_promote / would_demote
+		 * predicates above were stranded telemetry until now; here
+		 * we drive the real state-machine transition off them so
+		 * the picker (next commit) can route on h->state.
+		 *
+		 *   OBSERVED + would_promote  -> PROMOTED  (first win)
+		 *   DEMOTED  + would_promote  -> OBSERVED  (revive --
+		 *                                earn promotion again)
+		 *   OBSERVED + would_demote   -> DEMOTED
+		 *   DEMOTED  + sustained miss -> RETIRED   (>= retire
+		 *                                threshold misses, still
+		 *                                no wins -- dead end)
+		 *
+		 * RELAXED load/store mirrors the score_bucket store
+		 * directly above: concurrent credit_outcome calls on the
+		 * same hypothesis from sibling children race; a torn
+		 * write at worst mis-attributes a single transition;
+		 * the state machine is monotonic in the long run and
+		 * subsequent credits converge.  PROMOTED only reverts
+		 * via DEMOTED (an explicit miss-stream); DEMOTED ->
+		 * RETIRED is terminal.  TESTING is left as a future
+		 * intermediate -- a per-pick mutation that does not fit
+		 * the credit-side hook.
+		 */
+		{
+			uint8_t old_state = __atomic_load_n(&h->state,
+							    __ATOMIC_RELAXED);
+			uint8_t new_state = old_state;
+
+			if (would_promote && old_state == CMP_HYP_STATE_OBSERVED)
+				new_state = CMP_HYP_STATE_PROMOTED;
+			else if (would_promote && old_state == CMP_HYP_STATE_DEMOTED)
+				new_state = CMP_HYP_STATE_OBSERVED;
+			else if (would_demote && old_state == CMP_HYP_STATE_OBSERVED)
+				new_state = CMP_HYP_STATE_DEMOTED;
+			else if (old_state == CMP_HYP_STATE_DEMOTED &&
+				 ms >= CMP_HYP_RETIRE_MISS_THRESHOLD &&
+				 (pc | tr | cs) == 0)
+				new_state = CMP_HYP_STATE_RETIRED;
+
+			if (new_state != old_state) {
+				__atomic_store_n(&h->state, new_state,
+						 __ATOMIC_RELAXED);
+				if (kcov_shm != NULL &&
+				    old_state < CMP_HYP_STATE_NR &&
+				    new_state < CMP_HYP_STATE_NR)
+					__atomic_fetch_add(
+						&kcov_shm->cmp_hyp_state_transitions[old_state][new_state],
+						1UL, __ATOMIC_RELAXED);
+			}
+		}
 	}
 }
 

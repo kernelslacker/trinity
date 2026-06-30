@@ -389,6 +389,14 @@ enum cmp_hypothesis_state {
 };
 
 /*
+ * Demote miss threshold lives in cmp_hyp_credit_outcome()'s scoring
+ * pass (`ms >= 8`).  Retirement is the dead-end after sustained noise:
+ * a DEMOTED hypothesis that crosses 8x the demote threshold without
+ * earning ANY win is RETIRED and removed from the picker pool.  Kept
+ * here so the picker / dump code can reference the same constant. */
+#define CMP_HYP_RETIRE_MISS_THRESHOLD	64U
+
+/*
  * Reason partition for the LIVE typed-hypothesis inject path.  Each
  * value names a distinct early-return / reject site on the path from
  * cmp_hyp_try_live_inject() through the caller's accept-range gate.

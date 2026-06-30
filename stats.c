@@ -7758,6 +7758,45 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 				}
 			}
 
+			/* h->state live transition census.  Bumped from
+			 * cmp_hyp_credit_outcome() once per state mutation.
+			 * Pairs with the would_promote_by_kind /
+			 * would_demote_by_kind shadow counters above: the
+			 * shadow counters report "would the live state
+			 * machine fire", the transitions matrix reports
+			 * "did it".  Only the active off-diagonal slots
+			 * print (zero rows suppressed). */
+			{
+				static const char * const state_labels[CMP_HYP_STATE_NR] = {
+					"observed", "testing", "promoted",
+					"demoted",  "retired",
+				};
+				static unsigned long prev_trans[CMP_HYP_STATE_NR][CMP_HYP_STATE_NR];
+				unsigned int from, to;
+
+				for (from = 0; from < CMP_HYP_STATE_NR; from++) {
+					for (to = 0; to < CMP_HYP_STATE_NR; to++) {
+						unsigned long cur;
+						unsigned long delta;
+
+						if (from == to)
+							continue;
+						cur = __atomic_load_n(
+							&kcov_shm->cmp_hyp_state_transitions[from][to],
+							__ATOMIC_RELAXED);
+						delta = cur - prev_trans[from][to];
+						prev_trans[from][to] = cur;
+						if (delta == 0 && cur == 0)
+							continue;
+						stats_log_write(
+							"  cmp_hyp_state[%-8s -> %-8s] +%lu  (total %lu)\n",
+							state_labels[from],
+							state_labels[to],
+							delta, cur);
+					}
+				}
+			}
+
 			/* Per-kind outcome partition.  Lock-step with the flat
 			 * cmp_hyp_pc_wins / _transition_wins / _misses /
 			 * _corpus_save / _destructive / _context_skip /

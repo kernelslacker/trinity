@@ -2612,6 +2612,18 @@ struct kcov_shared {
 	unsigned long cmp_hyp_would_promote_by_kind[CMP_HYP_KIND_NR];
 	unsigned long cmp_hyp_would_demote_by_kind[CMP_HYP_KIND_NR];
 
+	/*
+	 * Live h->state transition census.  Bumped once per state
+	 * mutation from cmp_hyp_credit_outcome() at index
+	 * [old_state][new_state].  Diagonal slots stay zero (no-op
+	 * transitions are not bumped).  Pairs with the would_promote /
+	 * would_demote shadow counters above: the shadow counters
+	 * report "would the live state machine fire if it existed",
+	 * the transitions array reports "did the live state machine
+	 * actually fire".  Sized at the enum's NR cap; entries past
+	 * the real five-state ladder stay zero by construction. */
+	unsigned long cmp_hyp_state_transitions[CMP_HYP_STATE_NR][CMP_HYP_STATE_NR];
+
 	/* Per-kind outcome partition for the typed-hyp credit channels.
 	 * Bumped alongside the flat cmp_hyp_pc_wins / _transition_wins /
 	 * etc.  Lets the periodic dump answer "which hypothesis kind is
