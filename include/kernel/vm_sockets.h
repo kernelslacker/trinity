@@ -26,6 +26,10 @@
 #define SO_VM_SOCKETS_CONNECT_TIMEOUT_NEW	9
 #endif
 
+#ifndef SOL_VSOCK
+#define SOL_VSOCK			287
+#endif
+
 #ifndef VMADDR_CID_ANY
 #define VMADDR_CID_ANY			((unsigned int)-1)
 #endif
