@@ -20,507 +20,78 @@
 #include "tables.h"
 #include "utils.h"
 
+/*
+ * Dedicated MAP_PRIVATE|MAP_ANONYMOUS backing buffer for
+ * get_writable_address().  Allocated once in the parent by
+ * writable_pool_init() and inherited COW by every forked child.
+ *
+ * Properties that make this safe to hand to the kernel as a
+ * copyout buffer across the fleet:
+ *   - MAP_PRIVATE|MAP_ANON  -- no shared inode, no shmem object;
+ *                              madvise(MADV_REMOVE), fallocate
+ *                              (PUNCH_HOLE), ftruncate(shrink),
+ *                              and madvise(MADV_DONTNEED_LOCKED)
+ *                              cannot touch the backing pages.
+ *   - track_shared_region   -- every mm-syscall sanitiser (munmap,
+ *                              mremap, mprotect, madvise, mmap with
+ *                              MAP_FIXED) rejects fuzzed addrs that
+ *                              would land inside the pool.  The
+ *                              mprotect_split / mmap_lifecycle /
+ *                              madvise_pattern_cycler childops
+ *                              already gate on range_overlaps_shared,
+ *                              so the pool is invisible to them
+ *                              without childop-side changes.
+ *   - not add_object'd      -- the pool is never inserted into any
+ *                              OBJ_MMAP_* pool, so get_random_object
+ *                              walks cannot return it and a fuzzed
+ *                              MAP_FIXED mmap cannot ask to land on
+ *                              it (rejected by the shared-region
+ *                              gate above).
+ *   - parent-allocated      -- one VMA, COW per child; every child's
+ *                              first write faults a private zero
+ *                              page in -- cross-child writes never
+ *                              interfere.
+ *
+ * Cursor advances forward; wraps when the next allocation would
+ * overrun.  Within a single arg-gen pass the cursor never wraps
+ * (pool sized far above per-syscall demand), so distinct
+ * get_writable_address() calls from one syscall's sanitiser yield
+ * disjoint buffers.  Across syscalls (sequential within one child)
+ * wrap is harmless: the prior syscall's buffer is no longer in
+ * use.
+ */
+#define WRITABLE_POOL_BYTES   (1UL << 20)   /* 1 MiB */
+#define WRITABLE_POOL_ALIGN   16UL          /* covers __alignof__(max_align_t) */
+
+static unsigned char *writable_pool;
+
 void * get_writable_address(unsigned long size)
 {
-	struct map_handle h;
-	/* volatile on map, mincore_retries, tries and skip_mprotect: all
-	 * four are written between sigsetjmp(gwa_bookkeeping_recover) and
-	 * its potential longjmp (tries++ and the skip_mprotect reset at the
-	 * retry: label, mincore_retries in the from_mmap branch).
-	 * ISO C 7.13.2.1 only guarantees post-longjmp values for objects
-	 * with volatile-qualified type, and gcc -Wclobbered flags them
-	 * otherwise.  Volatile on the pointer (not the pointee) keeps
-	 * map->* field accesses non-volatile; the only cost is reloading
-	 * the map pointer from stack on each use, which is well below
-	 * the dominant per-call mprotect()/mincore() cost. */
-	struct map * volatile map = NULL;
-	struct object *obj;
-	void *addr = NULL;
-	volatile int tries = 0;
-	volatile int mincore_retries = 0;
-	bool from_mmap = false;
-	volatile bool skip_mprotect = false;
+	struct childdata *child = this_child();
+	unsigned long aligned, cursor, end;
+	static unsigned long parent_cursor;
+	unsigned long *cursor_p;
 
-retry:	tries++;
-	/*
-	 * Reset per-iteration state.  The retry: label can be reached
-	 * from anywhere below after from_mmap/map/skip_mprotect have
-	 * been set on a prior iteration; without this reset the
-	 * line-309 short-circuit and the later from_mmap branches see
-	 * stale values from that earlier iteration.  The RAND_BOOL() ==
-	 * true arm below sets both fields afresh when taken.
-	 */
-	from_mmap = false;
-	map = NULL;
-	skip_mprotect = false;
-	if (tries == 100)
+	if (writable_pool == NULL)
 		return NULL;
 
-	/*
-	 * Defense-in-depth recovery for the map-struct bookkeeping
-	 * stores below.  range_overlaps_libc_heap() guards against a
-	 * fuzzed mmap(MAP_FIXED, PROT_READ) landing on the brk arena,
-	 * but the cached_brk_end snapshot can lag the live break under
-	 * cmp-hint / RedQueen pressure; if a fuzzed PROT_READ overlay
-	 * slips through and lands on a brk page that hosts a map
-	 * struct, every map->known_rw / map->prot write later in this
-	 * function SEGV_ACCERRs the child.
-	 *
-	 * Install one sigsetjmp recovery point per retry iteration.  On
-	 * SIGSEGV/SIGBUS with si_code > 0 while gwa_bookkeeping_active
-	 * is set (set ONLY across each individual map-field store),
-	 * child_fault_handler longjmps back here.  Bump the counter so
-	 * the rate is visible -- a non-zero number means the brk-overlap
-	 * gate above missed a case and we silently survived something
-	 * that ought to have been caught upstream -- and goto retry to
-	 * pick a different pool slot.  The pre-existing tries == 100
-	 * cap above bounds the retry budget so a mostly-RO pool can't
-	 * spin here forever.
-	 */
-	if (sigsetjmp(gwa_bookkeeping_recover, 1) != 0) {
-		struct childdata *c;
+	if (size == 0)
+		size = page_size;
 
-		gwa_bookkeeping_active = 0;
-		c = this_child();
-		if (c != NULL && c->stats_ring != NULL)
-			stats_ring_enqueue(c->stats_ring,
-					   STATS_FIELD_GET_WRITABLE_BOOKKEEPING_RO_FAULT,
-					   0, 1);
-		else
-			parent_stats.get_writable_address_bookkeeping_ro_fault++;
-		goto retry;
+	aligned = (size + (WRITABLE_POOL_ALIGN - 1)) & ~(WRITABLE_POOL_ALIGN - 1);
+	if (aligned > WRITABLE_POOL_BYTES)
+		return NULL;
+
+	cursor_p = (child != NULL) ? &child->writable_pool_cursor
+				   : &parent_cursor;
+	cursor = *cursor_p;
+	end = cursor + aligned;
+	if (end > WRITABLE_POOL_BYTES) {
+		cursor = 0;
+		end = aligned;
 	}
-
-	if (RAND_BOOL()) {
-		from_mmap = true;
-		if (!get_map_handle(&h))
-			goto retry;
-		map = h.map;
-		/*
-		 * Sanity-guard the map pointer before deref.  Heap pointers
-		 * land at >= 0x10000 and below the user/kernel VA boundary;
-		 * anything else is a stale or corrupted slot from the
-		 * per-child OBJ_MMAP pool and dereferencing it SIGSEGVs.
-		 * Log loudly so the corruption source is visible — this
-		 * branch ought to be impossible.
-		 */
-		if ((uintptr_t)map < 0x10000UL ||
-		    (uintptr_t)map >= 0x800000000000UL) {
-			outputerr("get_writable_address: bogus map pointer %p "
-				  "from get_map_handle() — pool corruption?\n",
-				  map);
-			goto retry;
-		}
-		/*
-		 * If the map struct itself sits in a tracked shared region,
-		 * the prot-bookkeeping store below would either SIGSEGV
-		 * (post-freeze the OBJ_GLOBAL backing heap is mprotect
-		 * PROT_READ) or scribble shared bookkeeping (an OBJ_LOCAL
-		 * map pointer that aliased into the shared heap is by
-		 * definition a stale slot — OBJ_LOCAL maps live on the
-		 * child's private heap, never inside any tracked region).
-		 * Either way, retry to pick a different slot.
-		 */
-		if (range_overlaps_shared((unsigned long)map, sizeof(*map)))
-			goto retry;
-		/*
-		 * Honor the prot=0 invalidation that post_munmap and
-		 * post_mprotect stamp onto pool entries when a sibling
-		 * syscall hole-punches or downgrades prot on the
-		 * underlying VMAs.  Without this skip, a stale entry
-		 * sails past every check and the caller faults on first
-		 * access (SEGV_MAPERR on hole-punched pages, SEGV_ACCERR
-		 * on PROT_NONE pages).  Mirrors the (m->prot & req) == req
-		 * filter in get_map_with_prot(); the prot=0 case is the
-		 * common ground that catches every consumer.
-		 */
-		if (map->prot == 0)
-			goto retry;
-		/*
-		 * Skip hugetlb-backed mmap slots, mirroring the SysV-shm
-		 * branch's SHM_HUGETLB guard further below.  The mmap slow
-		 * path upgrades the whole mapping (mp_len = map->size),
-		 * which is hugepage-aligned for a freshly-created hugetlb
-		 * VMA -- but an mremap or partial-munmap that shrank
-		 * map->size to a non-hugepage-aligned extent makes the
-		 * kernel's hugetlb_change_protection reject the mprotect
-		 * with -EINVAL, and the retry pool churns on the slot every
-		 * pick.  Hugetlb mmap slots stay in the pool for the mmap /
-		 * munmap / mremap sanitisers that legitimately want a
-		 * hugetlb VMA to fuzz.
-		 */
-		if (map->flags & MAP_HUGETLB)
-			goto retry;
-		if (map->size < size)
-			goto retry;
-
-		/*
-		 * Cheap defense-in-depth NULL re-check before we copy out
-		 * map->ptr and fall through to the mprotect() below.  The
-		 * OBJ_MMAP_* pools are per-child private heap, so there is
-		 * no concurrent destroyer that could recycle the slot under
-		 * us; this just catches the handle being clobbered across
-		 * the prot/size reads above.  It is a plain NULL check --
-		 * no counters are bumped here.
-		 */
-		if (!validate_map_handle(&h))
-			goto retry;
-
-		addr = map->ptr;
-		/*
-		 * Map-pool fast path.  If the slot's known_rw bit is set
-		 * the entire mapping was upgraded to PROT_READ|PROT_WRITE
-		 * on a previous call AND no per-slot notifier (post_munmap
-		 * / post_mprotect / post_mremap / mprotect-split childop)
-		 * has fired since.  Skip the mprotect upgrade syscall
-		 * below -- it would be a pure no-op -- but still fall
-		 * through to the tracked-region check and the mincore()
-		 * residency probe.  The per-slot notifiers only clear
-		 * known_rw for the single map they sanitised; a wide
-		 * munmap or MAP_FIXED mmap whose snap->map did not match
-		 * this slot can collaterally tear down THIS slot's VMA
-		 * and leave the cache lying, and a blind return would
-		 * hand the caller a pointer into a hole-punched page
-		 * (SEGV_MAPERR on first store).  The two verification
-		 * gates the slow path already runs catch that without an
-		 * extra syscall on the intact-cache common case.  Note
-		 * the cache must already have been set by a prior call's
-		 * whole-mapping mprotect: setting it on a sub-range
-		 * upgrade would let a later get_writable_address(size >
-		 * previous size) hit the cache and return a buffer whose
-		 * tail pages aren't actually RW.
-		 */
-		if (map->known_rw && size <= map->size)
-			skip_mprotect = true;
-	} else {
-		unsigned int captured_slot;
-
-		from_mmap = false;
-		obj = get_random_object(OBJ_SYSV_SHM, OBJ_GLOBAL);
-		if (obj == NULL)
-			goto retry;
-		/*
-		 * Defend the obj-field reads below against the same
-		 * slot-recycle race fds/sockets.c:684-712 closes one level
-		 * upstream.  get_random_object()'s array-generation gate
-		 * already drops a pick whose head->array snapshot raced a
-		 * grow / teardown, so this captured stamp covers the
-		 * remaining post-pick window: between get_random_object()
-		 * returning and obj->sysv_shm.ptr being copied out below,
-		 * __destroy_object() could swap-with-last over this slot and
-		 * release_obj() the chunk into the deferred-free TTL.  A
-		 * captured pre-deref slot_version that no longer matches
-		 * after the IPC_STAT probe is the same "stale slot" signal
-		 * sockets.c uses, applied to the SysV-SHM hot path that
-		 * turns the stale read into a writable kernel-bound pointer.
-		 */
-		if (!objpool_check(obj, OBJ_SYSV_SHM))
-			goto retry;
-		captured_slot = obj->slot_version;
-		/*
-		 * Skip hugetlb-backed slots.  get_writable_address callers
-		 * ask for sub-hugepage sizes (struct sizes, single
-		 * integers); the kernel's hugetlb_change_protection rejects
-		 * mprotect ranges whose end is not a multiple of the VMA's
-		 * hugepage size, so PAGE_ALIGN(size) EINVALs for any
-		 * reasonable size.  The slot stays in the pool for the
-		 * shmctl/shmat/shmdt sanitisers that legitimately want a
-		 * hugetlb segment to fuzz.
-		 */
-		if (obj->sysv_shm.flags & SHM_HUGETLB)
-			goto retry;
-		if (obj->sysv_shm.size < size)
-			goto retry;
-		/*
-		 * The pool slot was valid when populated, but a sibling
-		 * shmctl(IPC_RMID) may have flipped the segment to the
-		 * SHM_DEST/zombie state in the meantime.  Touching the
-		 * cached ptr after that SIGSEGVs/SIGBUSes the consumer.
-		 * Probe the segment with IPC_STAT and retry the slot if
-		 * the lookup fails or the destroy bit is set.
-		 */
-		{
-			struct shmid_ds buf;
-			if (shmctl(obj->sysv_shm.id, IPC_STAT, &buf) != 0)
-				goto retry;
-			if (buf.shm_perm.mode & SHM_DEST)
-				goto retry;
-		}
-		/*
-		 * Final post-deref re-check: if the slot was destroyed and
-		 * the chunk recycled (or rewritten by add_object's swap-
-		 * with-last under this index) between get_random_object()
-		 * and now, slot_version has been incremented past our
-		 * snapshot and obj->sysv_shm reads above were against stale
-		 * bytes.  Drop the pick rather than handing the caller a
-		 * pointer derived from a destroyed slot.
-		 */
-		if (!object_slot_alive(obj, captured_slot))
-			goto retry;
-		addr = obj->sysv_shm.ptr;
-		/*
-		 * The OBJ_SYSV_SHM branch lacks the OBJ_MMAP branch's
-		 * range_overlaps_shared(map, sizeof(*map)) scribble check,
-		 * so a scribble that replaced obj->sysv_shm.ptr with a
-		 * heap-shaped value sails past the IPC_STAT check above
-		 * (the shm segment id is fine; only the cached attached-
-		 * ptr is stale).  Reject early before the mprotect below
-		 * touches a region that doesn't belong to any tracked
-		 * mapping.
-		 */
-		if (!range_in_tracked_shared((unsigned long) addr,
-					     (unsigned long) size)) {
-			struct childdata *c = this_child();
-
-			if (c != NULL && c->stats_ring != NULL) {
-				stats_ring_enqueue(c->stats_ring,
-						   STATS_FIELD_GET_WRITABLE_SCRIBBLED_SHM_RANGE,
-						   0, 1);
-				c->local_scribbled_slots_caught++;
-			} else {
-				parent_stats.get_writable_address_scribbled_shm_range++;
-			}
-			goto retry;
-		}
-	}
-
-	/*
-	 * On the mmap pool branch upgrade the WHOLE mapping (rather than
-	 * just [addr, addr+size)) so the known_rw cache below can vouch
-	 * for any size <= map->size on later calls.  Upgrading the slot
-	 * to RW only adds permissions; the slot is trinity-owned and
-	 * get_writable_address consumers want RW anyway.  The SysV-shm
-	 * branch has no struct map and no slot-local cache, so it stays
-	 * on the sub-range upgrade.  On the cache-hit fast path
-	 * (skip_mprotect set) the upgrade is a known no-op and skipped;
-	 * the verification gates below still run.
-	 */
-	if (!skip_mprotect) {
-		void *mp_addr = from_mmap ? map->ptr : addr;
-		size_t mp_len = from_mmap ? (size_t) map->size : (size_t) size;
-
-#ifdef CONFIG_GUARD_SHARED
-	/*
-	 * Investigation hook: get_writable_address upgrades the picked
-	 * pool slot to PROT_READ|PROT_WRITE, but a scribbled slot that
-	 * aliased onto a registered kcov buffer would mprotect that
-	 * buffer instead.  PROT_READ|PROT_WRITE is the requested prot
-	 * here, so an overlap warning surfaces the alias before the
-	 * syscall fires -- the spec calls this site out as a distinct
-	 * mechanism for the trace_buf protection-strip class.
-	 */
-	internal_mprotect_audit_kcov("get_writable_address",
-		(unsigned long)mp_addr, (unsigned long)mp_len,
-		PROT_READ | PROT_WRITE);
-#endif
-
-	if (mprotect(mp_addr, mp_len, PROT_READ | PROT_WRITE) != 0) {
-		if (from_mmap) {
-			/* See sigsetjmp install at retry: -- a fuzzed PROT_READ
-			 * overlay on the brk page hosting map turns this store
-			 * into SEGV_ACCERR; gwa_bookkeeping_recover catches it. */
-			gwa_bookkeeping_active = 1;
-			map->known_rw = false;
-			gwa_bookkeeping_active = 0;
-		}
-		log_mprotect_failure(mp_addr, mp_len,
-				     PROT_READ | PROT_WRITE,
-				     __builtin_return_address(0), errno);
-		/*
-		 * mprotect failed -- the slot's stored ptr is almost
-		 * certainly scribbled (real alloc_shared / SysV shm
-		 * mappings stay PROT_READ|PROT_WRITE for their full
-		 * lifetime, so an upgrade-to-RW that returns -1 is the
-		 * fingerprint of a stale or fabricated pointer).
-		 * Returning addr regardless gives the caller a value
-		 * that SEGV_ACCERRs on first dereference; retrying
-		 * picks a different slot and rolls past the bad one.
-		 */
-		{
-			struct childdata *c = this_child();
-			enum stats_field field = from_mmap
-				? STATS_FIELD_GET_WRITABLE_SCRIBBLED_MPROTECT_MMAP
-				: STATS_FIELD_GET_WRITABLE_SCRIBBLED_MPROTECT_SHM;
-
-			if (c != NULL && c->stats_ring != NULL) {
-				stats_ring_enqueue(c->stats_ring,
-						   field,
-						   0, 1);
-				c->local_scribbled_slots_caught++;
-			} else {
-				if (from_mmap)
-					parent_stats.get_writable_address_scribbled_mprotect_mmap++;
-				else
-					parent_stats.get_writable_address_scribbled_mprotect_shm++;
-			}
-		}
-		goto retry;
-	}
-	}
-
-	/*
-	 * mprotect succeeded.  On the mmap branch the upgrade covered the
-	 * full mapping, so record the cache hit for future calls and bring
-	 * the tracked prot in line with what the kernel just applied.  We
-	 * only OR in the bits we know we added -- the cached invariant for
-	 * any other bits (PROT_EXEC, PROT_NONE clearance) is owned by the
-	 * post-syscall hooks.
-	 */
-	if (from_mmap) {
-		/* See sigsetjmp install at retry: -- a fuzzed PROT_READ overlay
-		 * on the brk page hosting map turns these stores into
-		 * SEGV_ACCERR.  Companion commit widened the brk re-test gate
-		 * to close the upstream window; this wrap is the trip-wire if
-		 * a case still slips through. */
-		gwa_bookkeeping_active = 1;
-		map->prot |= PROT_READ | PROT_WRITE;
-		map->known_rw = true;
-		gwa_bookkeeping_active = 0;
-	}
-
-	/*
-	 * Defense: even when mprotect succeeded, validate addr lives in
-	 * a mapping the child legitimately owns.  A scribbled slot can
-	 * hold a heap-shaped userspace address whose pages are already RW
-	 * (libc heap, a stack page, another mmap'd region we don't own)
-	 * -- mprotect succeeds as a no-op upgrade and we'd hand back a
-	 * pointer that doesn't belong to any trinity-owned mapping.  The
-	 * next sanitiser dereference scribbles glibc bookkeeping or some
-	 * unrelated mapping, surfacing far from the scribble origin.
-	 *
-	 * Two acceptance paths because trinity owns mappings in two
-	 * distinct registries:
-	 *
-	 *   - range_in_tracked_shared(): the global shared_regions[]
-	 *     tracker.  Holds startup mappings (setup_initial_mappings),
-	 *     kcov trace buffers, child-data, the obj/str heaps -- the
-	 *     bookkeeping range_overlaps_shared() defends from fuzzed
-	 *     kernel writes.  INITIAL_ANON entries in the OBJ_LOCAL pool
-	 *     alias these and pass here.
-	 *
-	 *   - addr_in_local_runtime_map(): runtime mmap() results seeded
-	 *     into the per-child OBJ_LOCAL pool by post_mmap().  These are
-	 *     not in shared_regions[] (no need -- they belong to one child
-	 *     and there is no bookkeeping to protect).  Previously the
-	 *     tracked-shared gate dropped every runtime mapping as if it
-	 *     were a scribbled slot, reducing writable-buffer diversity
-	 *     for sanitisers and inflating the scribbled diagnostic.
-	 *
-	 * The retry loop's tries==100 cap keeps a mostly-scribbled pool
-	 * from spinning forever.
-	 */
-	if (!range_in_tracked_shared((unsigned long) addr,
-				     (unsigned long) size) &&
-	    !addr_in_local_runtime_map((unsigned long) addr,
-				       (unsigned long) size)) {
-		struct childdata *c = this_child();
-		enum stats_field field = from_mmap
-			? STATS_FIELD_GET_WRITABLE_SCRIBBLED_POSTMP_MMAP
-			: STATS_FIELD_GET_WRITABLE_SCRIBBLED_POSTMP_SHM;
-
-		if (c != NULL && c->stats_ring != NULL) {
-			stats_ring_enqueue(c->stats_ring,
-					   field,
-					   0, 1);
-			c->local_scribbled_slots_caught++;
-		} else {
-			if (from_mmap)
-				parent_stats.get_writable_address_scribbled_postmp_mmap++;
-			else
-				parent_stats.get_writable_address_scribbled_postmp_shm++;
-		}
-		/*
-		 * The cache-hit fast path can land here when a wide
-		 * sibling munmap (or MAP_FIXED placement) collaterally
-		 * tore down this slot's VMA without firing the per-slot
-		 * notifier that would normally clear known_rw.  Clear it
-		 * now so future calls do not blindly trust the cache and
-		 * keep returning a pointer into the hole-punched region.
-		 */
-		if (from_mmap) {
-			/* See sigsetjmp install at retry: -- guarded against
-			 * SEGV_ACCERR on a fuzzed PROT_READ overlay of map. */
-			gwa_bookkeeping_active = 1;
-			map->known_rw = false;
-			gwa_bookkeeping_active = 0;
-		}
-		goto retry;
-	}
-
-	/*
-	 * Final gate: confirm the page backing addr still has a VMA.
-	 * Sibling sanitisers issue raw syscall(2) mm calls (munmap,
-	 * mremap, MADV_DONTNEED on file mappings) that bypass libasan's
-	 * mm-interceptors, so the libasan inline shadow-probe consumers
-	 * rely on can return "addressable" for a slot whose underlying
-	 * VMA was already torn down -- the shadow byte still says ok,
-	 * but the hardware deref faults SEGV_MAPERR on first store.
-	 * mincore() on the head page returns -ENOMEM when the kernel has
-	 * no VMA for that address, which is the exact signal we need.
-	 * On EAGAIN/EFAULT/EINVAL etc. fall through; only ENOMEM is
-	 * actionable.  Bound the residency-driven retries separately
-	 * from the outer tries cap so a transient pool-wide unmap storm
-	 * doesn't spin.  Once the residency budget is exhausted the
-	 * address has been proven unmapped; honour the documented NULL-
-	 * or-valid contract that the writable-buffer rework established
-	 * rather than handing back a pointer that will SEGV_MAPERR on
-	 * first store.  Bump a dedicated stat so spikes in exhausted-
-	 * retry returns are visible.
-	 */
-	/*
-	 * Skip the residency probe on a freshly-mprotected mmap slot.
-	 * The kernel only returns success from the upgrade above when
-	 * the VMA spans every page being touched, so the head-page
-	 * mincore() lookup can only succeed.  The cache-hit branch
-	 * (skip_mprotect set) did NOT just call mprotect -- a sibling
-	 * tear-down between calls is possible and the probe must run
-	 * to detect it.  Same for SysV-shm (no map, no cache).
-	 */
-	if (from_mmap && !skip_mprotect) {
-		/* skip */
-	} else {
-		unsigned char vec;
-		void *probe_addr = (void *)((uintptr_t) addr & PAGE_MASK);
-
-		if (mincore(probe_addr, 1, &vec) != 0 && errno == ENOMEM) {
-			/*
-			 * Cache-hit fast path can land here when a
-			 * sibling tear-down unmapped this slot without
-			 * the per-slot notifier clearing known_rw.
-			 * Invalidate the cache so future calls do not
-			 * keep returning the same hole-punched slot.
-			 */
-			if (from_mmap) {
-				/* See sigsetjmp install at retry: -- guarded
-				 * against SEGV_ACCERR on a fuzzed PROT_READ
-				 * overlay of map. */
-				gwa_bookkeeping_active = 1;
-				map->known_rw = false;
-				gwa_bookkeeping_active = 0;
-			}
-			mincore_retries++;
-			if (mincore_retries < 4)
-				goto retry;
-			{
-				struct childdata *c = this_child();
-
-				if (c != NULL && c->stats_ring != NULL) {
-					stats_ring_enqueue(c->stats_ring,
-							   STATS_FIELD_GET_WRITABLE_ENOMEM_EXHAUSTED,
-							   0, 1);
-				} else {
-					parent_stats.get_writable_address_enomem_exhausted++;
-				}
-			}
-			outputerr("get_writable_address: page residency probe "
-				  "exhausted after %d ENOMEM retries — returning "
-				  "NULL\n",
-				  mincore_retries);
-			return NULL;
-		}
-	}
-
-	return addr;
+	*cursor_p = end;
+	return writable_pool + cursor;
 }
 
 void * get_non_null_address(void)
@@ -1010,49 +581,12 @@ static inline void fill_iov_entry_map_backed(struct iovec *iov,
 }
 
 /*
- * Dedicated MAP_PRIVATE|MAP_ANONYMOUS backing buffer for
- * get_writable_address().  Allocated once in the parent by
- * writable_pool_init() and inherited COW by every forked child.
- *
- * Properties that make this safe to hand to the kernel as a
- * copyout buffer across the fleet:
- *   - MAP_PRIVATE|MAP_ANON  -- no shared inode, no shmem object;
- *                              madvise(MADV_REMOVE), fallocate
- *                              (PUNCH_HOLE), ftruncate(shrink),
- *                              and madvise(MADV_DONTNEED_LOCKED)
- *                              cannot touch the backing pages.
- *   - track_shared_region   -- every mm-syscall sanitiser (munmap,
- *                              mremap, mprotect, madvise, mmap with
- *                              MAP_FIXED) rejects fuzzed addrs that
- *                              would land inside the pool.  The
- *                              mprotect_split / mmap_lifecycle /
- *                              madvise_pattern_cycler childops
- *                              already gate on range_overlaps_shared,
- *                              so the pool is invisible to them
- *                              without childop-side changes.
- *   - not add_object'd      -- the pool is never inserted into any
- *                              OBJ_MMAP_* pool, so get_random_object
- *                              walks cannot return it and a fuzzed
- *                              MAP_FIXED mmap cannot ask to land on
- *                              it (rejected by the shared-region
- *                              gate above).
- *   - parent-allocated      -- one VMA, COW per child; every child's
- *                              first write faults a private zero
- *                              page in -- cross-child writes never
- *                              interfere.
- *
- * Cursor advances forward; wraps when the next allocation would
- * overrun.  Within a single arg-gen pass the cursor never wraps
- * (pool sized far above per-syscall demand), so distinct
- * get_writable_address() calls from one syscall's sanitiser yield
- * disjoint buffers.  Across syscalls (sequential within one child)
- * wrap is harmless: the prior syscall's buffer is no longer in
- * use.
+ * Dedicated backing buffer for alloc_iovec()'s iov[] array.  Allocated
+ * once in the parent by alloc_iovec_init() and re-used by every forked
+ * child via COW.  See the comment at alloc_iovec_init() for the
+ * rationale on the dedicated mapping over a writable-pool slot.
  */
-#define WRITABLE_POOL_BYTES   (1UL << 20)   /* 1 MiB */
-#define WRITABLE_POOL_ALIGN   16UL          /* covers __alignof__(max_align_t) */
-
-static unsigned char *writable_pool;
+static struct iovec *iovec_pool;
 
 void writable_pool_init(void)
 {
@@ -1067,14 +601,6 @@ void writable_pool_init(void)
 	track_shared_region((unsigned long)p, WRITABLE_POOL_BYTES);
 	writable_pool = p;
 }
-
-/*
- * Dedicated backing buffer for alloc_iovec()'s iov[] array.  Allocated
- * once in the parent by alloc_iovec_init() and re-used by every forked
- * child via COW.  See the comment at alloc_iovec_init() for the
- * rationale on the dedicated mapping over a writable-pool slot.
- */
-static struct iovec *iovec_pool;
 
 void alloc_iovec_init(void)
 {
