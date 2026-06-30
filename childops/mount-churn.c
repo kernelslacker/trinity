@@ -86,6 +86,7 @@
 
 #include "child.h"
 #include "compat.h"
+#include "kernel/mount.h"
 #include "pids.h"
 #include "random.h"
 #include "rnd.h"
@@ -95,25 +96,6 @@
 #include "trinity.h"
 #include "userns-bootstrap.h"
 #include "utils.h"	/* ARRAY_SIZE */
-
-/* New-mount-API constants.  Defined locally so the build does not
- * require a current <linux/mount.h>; the syscalls themselves are
- * available on every kernel trinity targets (fsopen landed in 5.2). */
-#ifndef FSOPEN_CLOEXEC
-#define FSOPEN_CLOEXEC		0x00000001
-#endif
-#ifndef FSMOUNT_CLOEXEC
-#define FSMOUNT_CLOEXEC		0x00000001
-#endif
-#ifndef FSCONFIG_SET_FLAG
-#define FSCONFIG_SET_FLAG	0
-#endif
-#ifndef FSCONFIG_SET_STRING
-#define FSCONFIG_SET_STRING	1
-#endif
-#ifndef FSCONFIG_CMD_CREATE
-#define FSCONFIG_CMD_CREATE	6
-#endif
 
 #if defined(__NR_fsopen) && defined(__NR_fsconfig) && \
     defined(__NR_fsmount) && defined(__NR_move_mount)
