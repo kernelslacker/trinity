@@ -443,6 +443,17 @@ static void init_shm_publish_and_subsystems(void)
 	 * iovec_init() in rand/random-address.c for the full rationale.
 	 */
 	alloc_iovec_init();
+
+	/*
+	 * Same pre-fork-allocate / register-once / inherit-via-COW pattern
+	 * for the writable-address pool that backs get_writable_address().
+	 * Replaces the OBJ_MMAP/SysV-shm pool-picking machinery whose slots
+	 * lived in shared backings and could be hole-punched, prot-stripped,
+	 * or otherwise mutated by sibling children.  Keeping the pool in a
+	 * MAP_PRIVATE|MAP_ANON region kills the dual SIGBUS(BUS_ADRERR) and
+	 * SEGV(ACCERR) classes at the same time.
+	 */
+	writable_pool_init();
 }
 
 void init_shm(void)
