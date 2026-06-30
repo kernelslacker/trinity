@@ -230,10 +230,19 @@ static void sanitise_close_range(struct syscallrecord *rec)
 	 * close (lowest protected fd <= rec->a1) we collapse the range to
 	 * a no-op (close_range(N, N - 1) returns -EINVAL) rather than
 	 * issuing a side-effect-free syscall on an unrelated low slot.
+	 *
+	 * Compare and pass bounds as unsigned int: the kernel's
+	 * close_range ABI takes (unsigned int first, unsigned int last),
+	 * and gen_arg_fd's exhaustion fallback hands back (unsigned
+	 * long)-1, which the kernel sees as 0xFFFFFFFF.  A signed-int
+	 * compare here would treat that as a negative "hi", skip the
+	 * truncation, and let the kernel walk [a1, 0xFFFFFFFF] -- the
+	 * exact path that closes the kcov fd at KCOV_FD_HIGH_BASE.
 	 */
-	if (rec->a1 <= rec->a2) {
-		int lowest = lowest_protected_fd_in_range((int) rec->a1,
-							  (int) rec->a2);
+	if ((unsigned int) rec->a1 <= (unsigned int) rec->a2) {
+		int lowest = lowest_protected_fd_in_range(
+				(unsigned int) rec->a1,
+				(unsigned int) rec->a2);
 		if (lowest >= 0) {
 			if ((unsigned int) lowest <= (unsigned int) rec->a1) {
 				/* Whole range was at or above the lowest

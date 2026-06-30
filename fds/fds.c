@@ -691,7 +691,20 @@ bool fd_is_protected(int fd)
 	return false;
 }
 
-int lowest_protected_fd_in_range(int lo, int hi)
+/*
+ * Bounds typed as unsigned int to mirror the kernel's close_range ABI:
+ * the syscall takes (unsigned int first, unsigned int last) and walks
+ * the fd table when first <= last as unsigned.  A signed int
+ * comparison here treats rec->a2 == (unsigned long)-1 (the gen_arg_fd
+ * exhaustion fallback, which surfaces to the kernel as 0xFFFFFFFF) as
+ * a negative "hi", makes hi < lo true, and returns -1 -- skipping the
+ * truncation that should have stopped the kernel-side walk before it
+ * reached the kcov fd at KCOV_FD_HIGH_BASE.  All real protected fds
+ * fit in int (STDERR_FILENO is 2; KCOV_FD_HIGH_BASE is 60000; the
+ * stderr memfd is well below INT_MAX), so widening the comparison
+ * operand to unsigned int doesn't shrink the range we cover.
+ */
+int lowest_protected_fd_in_range(unsigned int lo, unsigned int hi)
 {
 	struct childdata *child;
 	int memfd;
@@ -700,22 +713,26 @@ int lowest_protected_fd_in_range(int lo, int hi)
 	if (hi < lo)
 		return -1;
 
-	if (STDERR_FILENO >= lo && STDERR_FILENO <= hi)
+	if ((unsigned int) STDERR_FILENO >= lo &&
+	    (unsigned int) STDERR_FILENO <= hi)
 		lowest = STDERR_FILENO;
 
 	memfd = trinity_stderr_memfd();
-	if (memfd >= 0 && memfd >= lo && memfd <= hi)
+	if (memfd >= 0 &&
+	    (unsigned int) memfd >= lo && (unsigned int) memfd <= hi)
 		if (lowest < 0 || memfd < lowest)
 			lowest = memfd;
 
 	child = this_child();
 	if (child != NULL) {
 		if (child->kcov.fd >= 0 &&
-		    child->kcov.fd >= lo && child->kcov.fd <= hi)
+		    (unsigned int) child->kcov.fd >= lo &&
+		    (unsigned int) child->kcov.fd <= hi)
 			if (lowest < 0 || child->kcov.fd < lowest)
 				lowest = child->kcov.fd;
 		if (child->kcov.cmp_fd >= 0 &&
-		    child->kcov.cmp_fd >= lo && child->kcov.cmp_fd <= hi)
+		    (unsigned int) child->kcov.cmp_fd >= lo &&
+		    (unsigned int) child->kcov.cmp_fd <= hi)
 			if (lowest < 0 || child->kcov.cmp_fd < lowest)
 				lowest = child->kcov.cmp_fd;
 	}

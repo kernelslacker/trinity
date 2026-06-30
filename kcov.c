@@ -408,8 +408,14 @@ static bool kcov_chronicle_slot_touched_protected(const struct chronicle_slot *s
 	if (e == NULL || e->name == NULL)
 		return false;
 	if (strcmp(e->name, "close_range") == 0) {
-		int lo = (int) s->a1;
-		int hi = (int) s->a2;
+		/* Unsigned int to mirror the kernel ABI -- a signed
+		 * compare would mis-classify an a2 == (unsigned long)-1
+		 * (gen_arg_fd exhaustion) as a negative "hi" and skip
+		 * the protected-fd check entirely, so the diag would
+		 * say "closer did not touch a protected fd" even when
+		 * the kernel walked [a1, 0xFFFFFFFF] over the kcov fd. */
+		unsigned int lo = (unsigned int) s->a1;
+		unsigned int hi = (unsigned int) s->a2;
 
 		if (hi < lo)
 			return false;

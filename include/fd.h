@@ -181,8 +181,17 @@ bool fd_is_protected(int fd);
  * if no protected fd lies in the range.  close_range trims its upper
  * bound to (this value - 1) so the kernel-side walk stops short of
  * the first protected slot rather than skipping it.
+ *
+ * lo / hi are unsigned int to match the kernel ABI for close_range
+ * (SYSCALL_DEFINE3(close_range, unsigned int, unsigned int, unsigned)).
+ * Signed int here lets a sanitiser pass through rec->a1/a2 == (unsigned
+ * long)-1 -- the gen_arg_fd exhaustion fallback -- as int -1.  The
+ * inner `hi < lo` guard then returns -1 (no protected fd "in range")
+ * even though the kernel, casting to u32, walks [a1, 0xFFFFFFFF] and
+ * closes the kcov fd at KCOV_FD_HIGH_BASE.  Unsigned int matches the
+ * kernel's view and closes the gap.
  */
-int lowest_protected_fd_in_range(int lo, int hi);
+int lowest_protected_fd_in_range(unsigned int lo, unsigned int hi);
 
 /*
  * Belt-and-suspenders gate consulted by the size-changing fd-arg
