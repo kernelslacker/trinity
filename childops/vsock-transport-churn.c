@@ -108,16 +108,15 @@
 #include <sys/time.h>
 
 #if __has_include(<linux/vm_sockets.h>)
-#include <linux/vm_sockets.h>
 #include <string.h>
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
+#include "kernel/vm_sockets.h"
 #endif
 
 #include "child.h"
 #include "childops-netlink.h"
-#include "compat.h"
 #include "jitter.h"
 #include "random.h"
 #include "rnd.h"
@@ -126,33 +125,6 @@
 #include "userns-bootstrap.h"
 
 #if __has_include(<linux/vm_sockets.h>)
-
-/* VMADDR_CID_LOCAL was added in 5.6.  Older headers omit it; on a
- * kernel that doesn't recognise it the bind returns EADDRNOTAVAIL and
- * the cap-gate latches.  UAPI value (1) is stable. */
-#ifndef VMADDR_CID_LOCAL
-#define VMADDR_CID_LOCAL		1
-#endif
-
-#ifndef VMADDR_PORT_ANY
-#define VMADDR_PORT_ANY			((unsigned int)-1)
-#endif
-
-#ifndef SO_VM_SOCKETS_BUFFER_SIZE
-#define SO_VM_SOCKETS_BUFFER_SIZE	0
-#endif
-
-#ifndef SO_VM_SOCKETS_CONNECT_TIMEOUT_NEW
-#define SO_VM_SOCKETS_CONNECT_TIMEOUT_NEW	9
-#endif
-
-#ifndef IOCTL_VM_SOCKETS_GET_LOCAL_CID
-#define IOCTL_VM_SOCKETS_GET_LOCAL_CID	_IO(0x07, 0xb9)
-#endif
-
-#ifndef VMADDR_CID_ANY
-#define VMADDR_CID_ANY			((unsigned int)-1)
-#endif
 
 /* Per-process latched gate.  Capability / config / kernel-version
  * support for AF_VSOCK + vsock_loopback is static across a child's

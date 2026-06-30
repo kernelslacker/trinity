@@ -22,3 +22,20 @@
 #ifndef SO_VM_SOCKETS_NONBLOCK_TXRX
 #define SO_VM_SOCKETS_NONBLOCK_TXRX	7
 #endif
+#ifndef SO_VM_SOCKETS_CONNECT_TIMEOUT_NEW
+#define SO_VM_SOCKETS_CONNECT_TIMEOUT_NEW	9
+#endif
+
+#ifndef VMADDR_CID_ANY
+#define VMADDR_CID_ANY			((unsigned int)-1)
+#endif
+#ifndef VMADDR_CID_LOCAL
+#define VMADDR_CID_LOCAL		1
+#endif
+#ifndef VMADDR_PORT_ANY
+#define VMADDR_PORT_ANY			((unsigned int)-1)
+#endif
+
+#ifndef IOCTL_VM_SOCKETS_GET_LOCAL_CID
+#define IOCTL_VM_SOCKETS_GET_LOCAL_CID	_IO(0x07, 0xb9)
+#endif
