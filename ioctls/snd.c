@@ -38,6 +38,7 @@ static void sanitise_snd_hwdep(struct syscallrecord *rec)
 	case SNDRV_HWDEP_IOCTL_INFO: {
 		struct snd_hwdep_info *info = get_writable_struct(sizeof(*info));
 		if (info) {
+			memset(info, 0, sizeof(*info));
 			info->device = rnd_modulo_u32(8);
 			rec->a3 = (unsigned long) info;
 		}
@@ -45,13 +46,16 @@ static void sanitise_snd_hwdep(struct syscallrecord *rec)
 	}
 	case SNDRV_HWDEP_IOCTL_DSP_STATUS: {
 		struct snd_hwdep_dsp_status *st = get_writable_struct(sizeof(*st));
-		if (st)
+		if (st) {
+			memset(st, 0, sizeof(*st));
 			rec->a3 = (unsigned long) st;
+		}
 		break;
 	}
 	case SNDRV_HWDEP_IOCTL_DSP_LOAD: {
 		struct snd_hwdep_dsp_image *img = get_writable_struct(sizeof(*img));
 		if (img) {
+			memset(img, 0, sizeof(*img));
 			unsigned long length = rnd_modulo_u32(4096) + 1;
 			void *image = get_writable_struct(length);
 			img->index = rnd_modulo_u32(8);
@@ -82,6 +86,7 @@ static void sanitise_snd_hda_verb(struct syscallrecord *rec)
 		v = get_writable_struct(sizeof(*v));
 		if (!v)
 			break;
+		memset(v, 0, sizeof(*v));
 		/* nid in the top byte; verb in bits 8-23; param in low byte. */
 		nid = rnd_u32() & 0xff;
 		verb = rnd_u32() & 0xffff;
@@ -108,13 +113,16 @@ static void sanitise_snd_ctl(struct syscallrecord *rec)
 	switch (rec->a2) {
 	case SNDRV_CTL_IOCTL_CARD_INFO: {
 		struct snd_ctl_card_info *info = get_writable_struct(sizeof(*info));
-		if (info)
+		if (info) {
+			memset(info, 0, sizeof(*info));
 			rec->a3 = (unsigned long) info;
+		}
 		break;
 	}
 	case SNDRV_CTL_IOCTL_ELEM_LIST: {
 		struct snd_ctl_elem_list *list = get_writable_struct(sizeof(*list));
 		if (list) {
+			memset(list, 0, sizeof(*list));
 			unsigned int space = rnd_modulo_u32(16) + 1;
 			void *pids = get_writable_struct(space * sizeof(*list->pids));
 			list->offset = rnd_modulo_u32(64);
@@ -134,6 +142,7 @@ static void sanitise_snd_ctl(struct syscallrecord *rec)
 	case SNDRV_CTL_IOCTL_ELEM_REPLACE: {
 		struct snd_ctl_elem_info *info = get_writable_struct(sizeof(*info));
 		if (info) {
+			memset(info, 0, sizeof(*info));
 			fill_snd_ctl_elem_id(&info->id);
 			rec->a3 = (unsigned long) info;
 		}
@@ -143,6 +152,7 @@ static void sanitise_snd_ctl(struct syscallrecord *rec)
 	case SNDRV_CTL_IOCTL_ELEM_WRITE: {
 		struct snd_ctl_elem_value *val = get_writable_struct(sizeof(*val));
 		if (val) {
+			memset(val, 0, sizeof(*val));
 			fill_snd_ctl_elem_id(&val->id);
 			rec->a3 = (unsigned long) val;
 		}
@@ -153,6 +163,7 @@ static void sanitise_snd_ctl(struct syscallrecord *rec)
 	case SNDRV_CTL_IOCTL_ELEM_REMOVE: {
 		struct snd_ctl_elem_id *id = get_writable_struct(sizeof(*id));
 		if (id) {
+			memset(id, 0, sizeof(*id));
 			fill_snd_ctl_elem_id(id);
 			rec->a3 = (unsigned long) id;
 		}
@@ -165,6 +176,7 @@ static void sanitise_snd_ctl(struct syscallrecord *rec)
 		/* snd_ctl_tlv has a flexible array member, allocate with data */
 		struct snd_ctl_tlv *tlv = get_writable_struct(sizeof(*tlv) + datalen);
 		if (tlv) {
+			memset(tlv, 0, sizeof(*tlv) + datalen);
 			tlv->numid = rnd_modulo_u32(64);
 			tlv->length = datalen;
 			rec->a3 = (unsigned long) tlv;
@@ -184,6 +196,7 @@ static void sanitise_snd_ctl(struct syscallrecord *rec)
 	case SNDRV_CTL_IOCTL_HWDEP_INFO: {
 		struct snd_hwdep_info *info = get_writable_struct(sizeof(*info));
 		if (info) {
+			memset(info, 0, sizeof(*info));
 			info->device = rnd_modulo_u32(8);
 			rec->a3 = (unsigned long) info;
 		}
@@ -192,6 +205,7 @@ static void sanitise_snd_ctl(struct syscallrecord *rec)
 	case SNDRV_CTL_IOCTL_PCM_INFO: {
 		struct snd_pcm_info *info = get_writable_struct(sizeof(*info));
 		if (info) {
+			memset(info, 0, sizeof(*info));
 			info->device = rnd_modulo_u32(8);
 			info->subdevice = rnd_modulo_u32(8);
 			info->stream = rnd_u32() & 1;
@@ -202,6 +216,7 @@ static void sanitise_snd_ctl(struct syscallrecord *rec)
 	case SNDRV_CTL_IOCTL_RAWMIDI_INFO: {
 		struct snd_rawmidi_info *info = get_writable_struct(sizeof(*info));
 		if (info) {
+			memset(info, 0, sizeof(*info));
 			info->device = rnd_modulo_u32(8);
 			info->subdevice = rnd_modulo_u32(8);
 			info->stream = rnd_modulo_u32(3);
@@ -263,6 +278,7 @@ static void sanitise_snd_pcm(struct syscallrecord *rec)
 	case SNDRV_PCM_IOCTL_INFO: {
 		struct snd_pcm_info *info = get_writable_struct(sizeof(*info));
 		if (info) {
+			memset(info, 0, sizeof(*info));
 			info->device = rnd_modulo_u32(8);
 			info->subdevice = rnd_modulo_u32(8);
 			info->stream = rnd_u32() & 1;
@@ -283,6 +299,7 @@ static void sanitise_snd_pcm(struct syscallrecord *rec)
 	case SNDRV_PCM_IOCTL_HW_PARAMS: {
 		struct snd_pcm_hw_params *p = get_writable_struct(sizeof(*p));
 		if (p) {
+			memset(p, 0, sizeof(*p));
 			fill_snd_pcm_hw_params(p);
 			rec->a3 = (unsigned long) p;
 		}
@@ -291,6 +308,7 @@ static void sanitise_snd_pcm(struct syscallrecord *rec)
 	case SNDRV_PCM_IOCTL_SW_PARAMS: {
 		struct snd_pcm_sw_params *p = get_writable_struct(sizeof(*p));
 		if (p) {
+			memset(p, 0, sizeof(*p));
 			p->avail_min = rnd_modulo_u32(4096) + 1;
 			p->start_threshold = rnd_modulo_u32(8192) + 1;
 			p->stop_threshold = rnd_modulo_u32(8192) + 1;
@@ -304,6 +322,7 @@ static void sanitise_snd_pcm(struct syscallrecord *rec)
 	case SNDRV_PCM_IOCTL_STATUS_EXT: {
 		struct snd_pcm_status *st = get_writable_struct(sizeof(*st));
 		if (st) {
+			memset(st, 0, sizeof(*st));
 			/* STATUS_EXT reads audio_tstamp_data as a request hint
 			 * for which timestamp variant to report. */
 			if (rec->a2 == SNDRV_PCM_IOCTL_STATUS_EXT)
@@ -321,6 +340,7 @@ static void sanitise_snd_pcm(struct syscallrecord *rec)
 	case SNDRV_PCM_IOCTL_CHANNEL_INFO: {
 		struct snd_pcm_channel_info *info = get_writable_struct(sizeof(*info));
 		if (info) {
+			memset(info, 0, sizeof(*info));
 			info->channel = rnd_modulo_u32(8);
 			rec->a3 = (unsigned long) info;
 		}
@@ -328,14 +348,17 @@ static void sanitise_snd_pcm(struct syscallrecord *rec)
 	}
 	case SNDRV_PCM_IOCTL_SYNC_PTR: {
 		struct snd_pcm_sync_ptr *sp = get_writable_struct(sizeof(*sp));
-		if (sp)
+		if (sp) {
+			memset(sp, 0, sizeof(*sp));
 			rec->a3 = (unsigned long) sp;
+		}
 		break;
 	}
 	case SNDRV_PCM_IOCTL_WRITEI_FRAMES:
 	case SNDRV_PCM_IOCTL_READI_FRAMES: {
 		struct snd_xferi *xfer = get_writable_struct(sizeof(*xfer));
 		if (xfer) {
+			memset(xfer, 0, sizeof(*xfer));
 			unsigned int frames = rnd_modulo_u32(1024) + 1;
 			void *buf = get_writable_struct(frames * 8);	/* up to 8 bytes/frame */
 			if (buf) {
@@ -353,6 +376,7 @@ static void sanitise_snd_pcm(struct syscallrecord *rec)
 	case SNDRV_PCM_IOCTL_READN_FRAMES: {
 		struct snd_xfern *xfer = get_writable_struct(sizeof(*xfer));
 		if (xfer) {
+			memset(xfer, 0, sizeof(*xfer));
 			unsigned int frames = rnd_modulo_u32(1024) + 1;
 			unsigned int channels = rnd_modulo_u32(8) + 1;
 			void **bufs = get_writable_struct(channels * sizeof(void *));
@@ -406,6 +430,7 @@ static void sanitise_snd_rawmidi(struct syscallrecord *rec)
 	case SNDRV_RAWMIDI_IOCTL_INFO: {
 		struct snd_rawmidi_info *info = get_writable_struct(sizeof(*info));
 		if (info) {
+			memset(info, 0, sizeof(*info));
 			info->device = rnd_modulo_u32(8);
 			info->subdevice = rnd_modulo_u32(8);
 			info->stream = rnd_modulo_u32(3);
@@ -416,6 +441,7 @@ static void sanitise_snd_rawmidi(struct syscallrecord *rec)
 	case SNDRV_RAWMIDI_IOCTL_PARAMS: {
 		struct snd_rawmidi_params *p = get_writable_struct(sizeof(*p));
 		if (p) {
+			memset(p, 0, sizeof(*p));
 			p->stream = rnd_u32() & 1;
 			p->buffer_size = (rnd_modulo_u32(16) + 1) * 4096;
 			p->avail_min = rnd_modulo_u32(256) + 1;
@@ -426,6 +452,7 @@ static void sanitise_snd_rawmidi(struct syscallrecord *rec)
 	case SNDRV_RAWMIDI_IOCTL_STATUS: {
 		struct snd_rawmidi_status *st = get_writable_struct(sizeof(*st));
 		if (st) {
+			memset(st, 0, sizeof(*st));
 			st->stream = rnd_u32() & 1;
 			rec->a3 = (unsigned long) st;
 		}
@@ -460,6 +487,7 @@ static void sanitise_snd_timer(struct syscallrecord *rec)
 	case SNDRV_TIMER_IOCTL_NEXT_DEVICE: {
 		struct snd_timer_id *tid = get_writable_struct(sizeof(*tid));
 		if (tid) {
+			memset(tid, 0, sizeof(*tid));
 			fill_snd_timer_id(tid);
 			rec->a3 = (unsigned long) tid;
 		}
@@ -468,6 +496,7 @@ static void sanitise_snd_timer(struct syscallrecord *rec)
 	case SNDRV_TIMER_IOCTL_GINFO: {
 		struct snd_timer_ginfo *gi = get_writable_struct(sizeof(*gi));
 		if (gi) {
+			memset(gi, 0, sizeof(*gi));
 			fill_snd_timer_id(&gi->tid);
 			rec->a3 = (unsigned long) gi;
 		}
@@ -476,6 +505,7 @@ static void sanitise_snd_timer(struct syscallrecord *rec)
 	case SNDRV_TIMER_IOCTL_GPARAMS: {
 		struct snd_timer_gparams *gp = get_writable_struct(sizeof(*gp));
 		if (gp) {
+			memset(gp, 0, sizeof(*gp));
 			fill_snd_timer_id(&gp->tid);
 			gp->period_num = rnd_modulo_u32(1000000) + 1;
 			gp->period_den = rnd_modulo_u32(1000000) + 1;
@@ -486,6 +516,7 @@ static void sanitise_snd_timer(struct syscallrecord *rec)
 	case SNDRV_TIMER_IOCTL_GSTATUS: {
 		struct snd_timer_gstatus *gs = get_writable_struct(sizeof(*gs));
 		if (gs) {
+			memset(gs, 0, sizeof(*gs));
 			fill_snd_timer_id(&gs->tid);
 			rec->a3 = (unsigned long) gs;
 		}
@@ -494,6 +525,7 @@ static void sanitise_snd_timer(struct syscallrecord *rec)
 	case SNDRV_TIMER_IOCTL_SELECT: {
 		struct snd_timer_select *sel = get_writable_struct(sizeof(*sel));
 		if (sel) {
+			memset(sel, 0, sizeof(*sel));
 			fill_snd_timer_id(&sel->id);
 			rec->a3 = (unsigned long) sel;
 		}
@@ -501,19 +533,24 @@ static void sanitise_snd_timer(struct syscallrecord *rec)
 	}
 	case SNDRV_TIMER_IOCTL_INFO: {
 		struct snd_timer_info *info = get_writable_struct(sizeof(*info));
-		if (info)
+		if (info) {
+			memset(info, 0, sizeof(*info));
 			rec->a3 = (unsigned long) info;
+		}
 		break;
 	}
 	case SNDRV_TIMER_IOCTL_STATUS: {
 		struct snd_timer_status *st = get_writable_struct(sizeof(*st));
-		if (st)
+		if (st) {
+			memset(st, 0, sizeof(*st));
 			rec->a3 = (unsigned long) st;
+		}
 		break;
 	}
 	case SNDRV_TIMER_IOCTL_PARAMS: {
 		struct snd_timer_params *p = get_writable_struct(sizeof(*p));
 		if (p) {
+			memset(p, 0, sizeof(*p));
 			p->flags = rnd_u32() & 0x7;
 			p->ticks = rnd_modulo_u32(64) + 1;
 			p->queue_size = rnd_modulo_u32((1024 - 32)) + 32;
@@ -538,6 +575,7 @@ static void sanitise_snd_timer(struct syscallrecord *rec)
 	case SNDRV_TIMER_IOCTL_CREATE: {
 		struct snd_timer_uinfo *ui = get_writable_struct(sizeof(*ui));
 		if (ui) {
+			memset(ui, 0, sizeof(*ui));
 			ui->resolution = (rnd_modulo_u32(1000000ULL) + 1) * 1000ULL;
 			ui->fd = -1;
 			ui->id = rnd_modulo_u32(256);
@@ -560,14 +598,17 @@ static void fill_snd_seq_addr(struct snd_seq_addr *addr)
 static void sanitise_snd_seq_system_info(struct syscallrecord *rec)
 {
 	struct snd_seq_system_info *info = get_writable_struct(sizeof(*info));
-	if (info)
+	if (info) {
+		memset(info, 0, sizeof(*info));
 		rec->a3 = (unsigned long) info;
+	}
 }
 
 static void sanitise_snd_seq_running_mode(struct syscallrecord *rec)
 {
 	struct snd_seq_running_info *info = get_writable_struct(sizeof(*info));
 	if (info) {
+		memset(info, 0, sizeof(*info));
 		info->client = rnd_modulo_u32(128);
 		rec->a3 = (unsigned long) info;
 	}
@@ -577,6 +618,7 @@ static void sanitise_snd_seq_client_info(struct syscallrecord *rec)
 {
 	struct snd_seq_client_info *ci = get_writable_struct(sizeof(*ci));
 	if (ci) {
+		memset(ci, 0, sizeof(*ci));
 		ci->client = RAND_BOOL() ? -1 : (int)(rnd_modulo_u32(128));
 		rec->a3 = (unsigned long) ci;
 	}
@@ -586,6 +628,7 @@ static void sanitise_snd_seq_port_info(struct syscallrecord *rec)
 {
 	struct snd_seq_port_info *pi = get_writable_struct(sizeof(*pi));
 	if (pi) {
+		memset(pi, 0, sizeof(*pi));
 		fill_snd_seq_addr(&pi->addr);
 		if (rec->a2 == SNDRV_SEQ_IOCTL_QUERY_NEXT_PORT)
 			pi->addr.port = (unsigned char)(rnd_modulo_u32(256) - 1);
@@ -600,6 +643,7 @@ static void sanitise_snd_seq_port_subscribe(struct syscallrecord *rec)
 {
 	struct snd_seq_port_subscribe *sub = get_writable_struct(sizeof(*sub));
 	if (sub) {
+		memset(sub, 0, sizeof(*sub));
 		fill_snd_seq_addr(&sub->sender);
 		fill_snd_seq_addr(&sub->dest);
 		rec->a3 = (unsigned long) sub;
@@ -610,6 +654,7 @@ static void sanitise_snd_seq_queue_info(struct syscallrecord *rec)
 {
 	struct snd_seq_queue_info *qi = get_writable_struct(sizeof(*qi));
 	if (qi) {
+		memset(qi, 0, sizeof(*qi));
 		qi->queue = rnd_modulo_u32(8);
 		qi->owner = rnd_modulo_u32(128);
 		rec->a3 = (unsigned long) qi;
@@ -620,6 +665,7 @@ static void sanitise_snd_seq_queue_status(struct syscallrecord *rec)
 {
 	struct snd_seq_queue_status *qs = get_writable_struct(sizeof(*qs));
 	if (qs) {
+		memset(qs, 0, sizeof(*qs));
 		qs->queue = rnd_modulo_u32(8);
 		rec->a3 = (unsigned long) qs;
 	}
@@ -629,6 +675,7 @@ static void sanitise_snd_seq_queue_tempo(struct syscallrecord *rec)
 {
 	struct snd_seq_queue_tempo *qt = get_writable_struct(sizeof(*qt));
 	if (qt) {
+		memset(qt, 0, sizeof(*qt));
 		qt->queue = rnd_modulo_u32(8);
 		qt->tempo = rnd_modulo_u32(2000000) + 60000;	/* 60ms-2s per beat */
 		qt->ppq = rnd_modulo_u32(480) + 24;
@@ -640,6 +687,7 @@ static void sanitise_snd_seq_queue_timer(struct syscallrecord *rec)
 {
 	struct snd_seq_queue_timer *timer = get_writable_struct(sizeof(*timer));
 	if (timer) {
+		memset(timer, 0, sizeof(*timer));
 		timer->queue = rnd_modulo_u32(8);
 		timer->type = rnd_modulo_u32(3);
 		fill_snd_timer_id(&timer->u.alsa.id);
@@ -652,6 +700,7 @@ static void sanitise_snd_seq_queue_client(struct syscallrecord *rec)
 {
 	struct snd_seq_queue_client *qc = get_writable_struct(sizeof(*qc));
 	if (qc) {
+		memset(qc, 0, sizeof(*qc));
 		qc->queue = rnd_modulo_u32(8);
 		qc->client = rnd_modulo_u32(128);
 		qc->used = RAND_BOOL();
@@ -663,6 +712,7 @@ static void sanitise_snd_seq_client_pool(struct syscallrecord *rec)
 {
 	struct snd_seq_client_pool *cp = get_writable_struct(sizeof(*cp));
 	if (cp) {
+		memset(cp, 0, sizeof(*cp));
 		cp->client = rnd_modulo_u32(128);
 		cp->output_pool = rnd_modulo_u32(1024) + 64;
 		cp->input_pool = rnd_modulo_u32(512) + 32;
@@ -675,6 +725,7 @@ static void sanitise_snd_seq_remove_events(struct syscallrecord *rec)
 {
 	struct snd_seq_remove_events *re = get_writable_struct(sizeof(*re));
 	if (re) {
+		memset(re, 0, sizeof(*re));
 		re->remove_mode = rnd_u32() & 0x3ff;
 		rec->a3 = (unsigned long) re;
 	}
@@ -684,6 +735,7 @@ static void sanitise_snd_seq_query_subs(struct syscallrecord *rec)
 {
 	struct snd_seq_query_subs *qs = get_writable_struct(sizeof(*qs));
 	if (qs) {
+		memset(qs, 0, sizeof(*qs));
 		fill_snd_seq_addr(&qs->root);
 		qs->type = rnd_u32() & 1;
 		qs->index = rnd_modulo_u32(64);
@@ -696,6 +748,7 @@ static void sanitise_snd_seq_client_ump_info(struct syscallrecord *rec)
 {
 	struct snd_seq_client_ump_info *ui = get_writable_struct(sizeof(*ui));
 	if (ui) {
+		memset(ui, 0, sizeof(*ui));
 		ui->client = RAND_BOOL() ? -1 : (int)(rnd_modulo_u32(128));
 		ui->type = rnd_u32() & 1;	/* ENDPOINT or BLOCK */
 		rec->a3 = (unsigned long) ui;
@@ -782,6 +835,7 @@ static void sanitise_snd_ump(struct syscallrecord *rec)
 	{
 		struct snd_ump_endpoint_info *info = get_writable_struct(sizeof(*info));
 		if (info) {
+			memset(info, 0, sizeof(*info));
 			info->card = rnd_modulo_u32(8);
 			info->device = rnd_modulo_u32(8);
 			rec->a3 = (unsigned long) info;
@@ -795,6 +849,7 @@ static void sanitise_snd_ump(struct syscallrecord *rec)
 	{
 		struct snd_ump_block_info *info = get_writable_struct(sizeof(*info));
 		if (info) {
+			memset(info, 0, sizeof(*info));
 			info->card = rnd_modulo_u32(8);
 			info->device = rnd_modulo_u32(8);
 			info->block_id = rnd_modulo_u32(SNDRV_UMP_MAX_BLOCKS);
@@ -922,15 +977,19 @@ static void sanitise_oss_dsp(struct syscallrecord *rec)
 	case SNDCTL_DSP_GETOSPACE:
 	case SNDCTL_DSP_GETISPACE: {
 		audio_buf_info *info = get_writable_struct(sizeof(*info));
-		if (info)
+		if (info) {
+			memset(info, 0, sizeof(*info));
 			rec->a3 = (unsigned long) info;
+		}
 		break;
 	}
 	case SNDCTL_DSP_GETIPTR:
 	case SNDCTL_DSP_GETOPTR: {
 		count_info *ci = get_writable_struct(sizeof(*ci));
-		if (ci)
+		if (ci) {
+			memset(ci, 0, sizeof(*ci));
 			rec->a3 = (unsigned long) ci;
+		}
 		break;
 	}
 	default: {
@@ -948,15 +1007,19 @@ static void sanitise_oss_mixer(struct syscallrecord *rec)
 	switch (rec->a2) {
 	case SOUND_MIXER_INFO: {
 		mixer_info *info = get_writable_struct(sizeof(*info));
-		if (info)
+		if (info) {
+			memset(info, 0, sizeof(*info));
 			rec->a3 = (unsigned long) info;
+		}
 		break;
 	}
 #ifdef SOUND_MIXER_ACCESS
 	case SOUND_MIXER_ACCESS: {
 		mixer_record *mr = get_writable_struct(sizeof(*mr));
-		if (mr)
+		if (mr) {
+			memset(mr, 0, sizeof(*mr));
 			rec->a3 = (unsigned long) mr;
+		}
 		break;
 	}
 #endif
@@ -965,6 +1028,7 @@ static void sanitise_oss_mixer(struct syscallrecord *rec)
 	case SOUND_MIXER_SETLEVELS: {
 		mixer_vol_table *vt = get_writable_struct(sizeof(*vt));
 		if (vt) {
+			memset(vt, 0, sizeof(*vt));
 			vt->num = rnd_modulo_u32(SOUND_MIXER_NRDEVICES);
 			vt->levels[0] = rnd_modulo_u32(101);
 			vt->levels[1] = rnd_modulo_u32(101);
@@ -1016,13 +1080,16 @@ static void sanitise_snd_compress(struct syscallrecord *rec)
 	switch (rec->a2) {
 	case SNDRV_COMPRESS_GET_CAPS: {
 		struct snd_compr_caps *caps = get_writable_struct(sizeof(*caps));
-		if (caps)
+		if (caps) {
+			memset(caps, 0, sizeof(*caps));
 			rec->a3 = (unsigned long) caps;
+		}
 		break;
 	}
 	case SNDRV_COMPRESS_GET_CODEC_CAPS: {
 		struct snd_compr_codec_caps *cc = get_writable_struct(sizeof(*cc));
 		if (cc) {
+			memset(cc, 0, sizeof(*cc));
 			cc->codec = compr_codecs[rnd_modulo_u32(ARRAY_SIZE(compr_codecs))];
 			rec->a3 = (unsigned long) cc;
 		}
@@ -1031,6 +1098,7 @@ static void sanitise_snd_compress(struct syscallrecord *rec)
 	case SNDRV_COMPRESS_SET_PARAMS: {
 		struct snd_compr_params *p = get_writable_struct(sizeof(*p));
 		if (p) {
+			memset(p, 0, sizeof(*p));
 			/* fragment_size: power of two between 4 KB and 64 KB */
 			p->buffer.fragment_size = 1U << (rnd_modulo_u32(5) + 12);
 			p->buffer.fragments = rnd_modulo_u32(8) + 2;
@@ -1042,20 +1110,26 @@ static void sanitise_snd_compress(struct syscallrecord *rec)
 	}
 	case SNDRV_COMPRESS_GET_PARAMS: {
 		struct snd_codec *c = get_writable_struct(sizeof(*c));
-		if (c)
+		if (c) {
+			memset(c, 0, sizeof(*c));
 			rec->a3 = (unsigned long) c;
+		}
 		break;
 	}
 	case SNDRV_COMPRESS_TSTAMP: {
 		struct snd_compr_tstamp *t = get_writable_struct(sizeof(*t));
-		if (t)
+		if (t) {
+			memset(t, 0, sizeof(*t));
 			rec->a3 = (unsigned long) t;
+		}
 		break;
 	}
 	case SNDRV_COMPRESS_AVAIL: {
 		struct snd_compr_avail *a = get_writable_struct(sizeof(*a));
-		if (a)
+		if (a) {
+			memset(a, 0, sizeof(*a));
 			rec->a3 = (unsigned long) a;
+		}
 		break;
 	}
 	default:
