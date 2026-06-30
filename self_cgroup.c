@@ -963,7 +963,7 @@ pid_t self_cgroup_fork_into_workload(void)
 			 * worker memory cap; the caller's spawn-retry path handles the
 			 * -1 return. */
 			kill(pid, SIGKILL);
-			(void)waitpid(pid, NULL, 0);
+			(void)waitpid_eintr(pid, NULL, 0);
 			return -1;
 		}
 	}

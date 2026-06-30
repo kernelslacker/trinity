@@ -123,9 +123,7 @@ static bool run_mkfs_ext4(const char *dev_path)
 		_exit(127);
 	}
 
-	do {
-		got = waitpid(pid, &status, 0);
-	} while (got < 0 && errno == EINTR);
+	got = waitpid_eintr(pid, &status, 0);
 
 	if (got < 0)
 		return false;

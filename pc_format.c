@@ -39,6 +39,7 @@
 #include <unistd.h>
 
 #include "pc_format.h"
+#include "utils.h"		/* waitpid_eintr() */
 
 /*
  * Cap a single addr2line invocation.  GNU binutils addr2line on a
@@ -143,8 +144,7 @@ static ssize_t addr2line_drain(int fd, pid_t pid,
 		if (pr <= 0) {
 			close(fd);
 			(void)kill(pid, SIGKILL);
-			while (waitpid(pid, &status, 0) < 0 && errno == EINTR)
-				;
+			(void)waitpid_eintr(pid, &status, 0);
 			return -2;
 		}
 
@@ -296,8 +296,7 @@ const char *pc_to_source_line(void *pc, char *buf, size_t buflen)
 		if (pr <= 0) {
 			close(pipefd[0]);
 			(void)kill(pid, SIGKILL);
-			while (waitpid(pid, &status, 0) < 0 && errno == EINTR)
-				;
+			(void)waitpid_eintr(pid, &status, 0);
 			return NULL;
 		}
 	}
@@ -309,9 +308,7 @@ const char *pc_to_source_line(void *pc, char *buf, size_t buflen)
 	{
 		pid_t w;
 
-		do {
-			w = waitpid(pid, &status, 0);
-		} while (w < 0 && errno == EINTR);
+		w = waitpid_eintr(pid, &status, 0);
 		if (w > 0 && WIFSIGNALED(status)) {
 			/*
 			 * addr2line died by signal (SEGV etc).  If

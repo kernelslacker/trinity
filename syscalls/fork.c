@@ -10,6 +10,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+#include "utils.h"		/* waitpid_eintr() */
 
 /*
  * Because we don't want to forkbomb, we don't really do anything in the child process.
@@ -65,7 +66,7 @@ static void post_fork(struct syscallrecord *rec)
 
 		while (pid_alive(pid) == true) {
 			int status;
-			ret = waitpid(pid, &status, WUNTRACED | WCONTINUED | WNOHANG);
+			ret = waitpid_eintr(pid, &status, WUNTRACED | WCONTINUED | WNOHANG);
 		}
 	}
 }

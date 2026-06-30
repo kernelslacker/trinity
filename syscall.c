@@ -550,16 +550,14 @@ static void do_extrafork(struct syscallrecord *rec, struct syscallentry *entry,
 	for (int i = 0; pid == 0 && i < 1000; i++) {
 		int childstatus;
 
-		pid = waitpid(extrapid, &childstatus, WUNTRACED | WCONTINUED | WNOHANG);
-		if (pid < 0 && errno == EINTR)
-			pid = 0;	/* transient, keep retrying within the budget */
+		pid = waitpid_eintr(extrapid, &childstatus, WUNTRACED | WCONTINUED | WNOHANG);
 		usleep(1000);
 	}
 
 	/* Timed out, or waitpid errored. Force-kill and reap to prevent zombies. */
 	if (pid <= 0) {
 		kill(extrapid, SIGKILL);
-		waitpid(extrapid, NULL, 0);
+		(void)waitpid_eintr(extrapid, NULL, 0);
 	}
 
 	/* Grandchild died before reaching __do_syscall's AFTER block, so
