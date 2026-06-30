@@ -16,10 +16,6 @@
 #include "rnd.h"
 #include "xdp-umem-track.h"
 
-#ifndef SOL_XDP
-#define SOL_XDP 283
-#endif
-
 #define XDP_UMEM_SIZE	(4096 * 64)
 #define XDP_NUM_FRAMES	64
 #define XDP_FRAME_SIZE	4096

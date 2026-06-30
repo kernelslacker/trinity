@@ -10,6 +10,10 @@
  */
 #include <linux/if_xdp.h>
 
+#ifndef SOL_XDP
+#define SOL_XDP			283
+#endif
+
 #ifndef XDP_UMEM_REG
 #define XDP_UMEM_REG		4
 #endif
