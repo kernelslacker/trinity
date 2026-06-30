@@ -7758,6 +7758,62 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 				}
 			}
 
+			/* Picker decision census by h->state.  Bumped from
+			 * cmp_hyp_would_pick_locked() on every non-NULL
+			 * return: PROMOTED should dominate steady-state,
+			 * OBSERVED holds the cold-site share, DEMOTED
+			 * reflects the 1/CMP_HYP_DEMOTED_RETRY_DENOM
+			 * re-roll surfacing.  Companion counters:
+			 * skipped_retired tallies RETIRED slots walked past;
+			 * demoted_reroll_picked tallies fired re-rolls.
+			 * Together these are the directly-measurable proof
+			 * that the state-aware picker is doing what it
+			 * should. */
+			{
+				static const char * const state_labels[CMP_HYP_STATE_NR] = {
+					"observed", "testing", "promoted",
+					"demoted",  "retired",
+				};
+				static unsigned long prev_picked[CMP_HYP_STATE_NR];
+				static unsigned long prev_skipped_retired;
+				static unsigned long prev_demoted_reroll;
+				unsigned long cur_skipped = __atomic_load_n(
+					&kcov_shm->cmp_hyp_skipped_retired,
+					__ATOMIC_RELAXED);
+				unsigned long cur_demoted_reroll = __atomic_load_n(
+					&kcov_shm->cmp_hyp_demoted_reroll_picked,
+					__ATOMIC_RELAXED);
+				unsigned int s;
+
+				for (s = 0; s < CMP_HYP_STATE_NR; s++) {
+					unsigned long cur = __atomic_load_n(
+						&kcov_shm->cmp_hyp_picked_by_state[s],
+						__ATOMIC_RELAXED);
+					unsigned long delta = cur - prev_picked[s];
+
+					prev_picked[s] = cur;
+					if (delta == 0 && cur == 0)
+						continue;
+					stats_log_write(
+						"  cmp_hyp_picked[%-8s] +%lu  (total %lu)\n",
+						state_labels[s], delta, cur);
+				}
+				if (cur_skipped != 0 || prev_skipped_retired != 0) {
+					stats_log_write(
+						"  cmp_hyp_skipped_retired +%lu  (total %lu)\n",
+						cur_skipped - prev_skipped_retired,
+						cur_skipped);
+					prev_skipped_retired = cur_skipped;
+				}
+				if (cur_demoted_reroll != 0 || prev_demoted_reroll != 0) {
+					stats_log_write(
+						"  cmp_hyp_demoted_reroll_picked +%lu  (total %lu)\n",
+						cur_demoted_reroll - prev_demoted_reroll,
+						cur_demoted_reroll);
+					prev_demoted_reroll = cur_demoted_reroll;
+				}
+			}
+
 			/* h->state live transition census.  Bumped from
 			 * cmp_hyp_credit_outcome() once per state mutation.
 			 * Pairs with the would_promote_by_kind /

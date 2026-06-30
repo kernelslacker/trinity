@@ -2613,6 +2613,30 @@ struct kcov_shared {
 	unsigned long cmp_hyp_would_demote_by_kind[CMP_HYP_KIND_NR];
 
 	/*
+	 * Picker decision census, indexed by the h->state of the
+	 * hypothesis the picker returned.  Bumped once per non-NULL
+	 * return from cmp_hyp_would_pick_locked().  The post-deploy
+	 * confirmation that the state-aware picker is doing what it
+	 * should: PROMOTED should dominate once the state machine has
+	 * warmed up, OBSERVED holds steady on cold sites, and the
+	 * DEMOTED slot reflects the rare re-roll surfacing.  Sized at
+	 * the enum's NR cap; only the actually-returnable states
+	 * (PROMOTED / OBSERVED / DEMOTED -- TESTING is treated as
+	 * OBSERVED) ever populate. */
+	unsigned long cmp_hyp_picked_by_state[CMP_HYP_STATE_NR];
+
+	/* Pair counters for the RETIRED / DEMOTED re-roll arms of the
+	 * picker.  cmp_hyp_skipped_retired bumps once per RETIRED slot
+	 * the picker walked past in cmp_hyp_would_pick_locked();
+	 * cmp_hyp_demoted_reroll_picked bumps when the demoted re-roll
+	 * gate (1 / CMP_HYP_DEMOTED_RETRY_DENOM) actually fires.
+	 * Together with cmp_hyp_picked_by_state[DEMOTED] this is the
+	 * directly-measurable channel for "is RETIRED earning its
+	 * keep" and "is the re-roll rate sane". */
+	unsigned long cmp_hyp_skipped_retired;
+	unsigned long cmp_hyp_demoted_reroll_picked;
+
+	/*
 	 * Live h->state transition census.  Bumped once per state
 	 * mutation from cmp_hyp_credit_outcome() at index
 	 * [old_state][new_state].  Diagonal slots stay zero (no-op
