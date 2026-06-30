@@ -104,6 +104,13 @@ bool recipe_runner(struct childdata *child)
 	unsigned int tries;
 	bool unsupported = false;
 	bool ok;
+	/* Snapshot child->op_type once and bounds-check before indexing
+	 * the per-op stats arrays.  The field lives in shared memory and
+	 * can be scribbled by a poisoned-arena write from a sibling; the
+	 * child.c dispatch loop already gates its dispatch + alt-op
+	 * accounting on the same valid_op snapshot. */
+	const enum child_op_type op = child->op_type;
+	const bool valid_op = ((int) op >= 0 && op < NR_CHILD_OP_TYPES);
 
 	__atomic_add_fetch(&shm->stats.recipe_runs, 1, __ATOMIC_RELAXED);
 
@@ -120,6 +127,18 @@ bool recipe_runner(struct childdata *child)
 		return true;	/* nothing runnable on this kernel */
 
 	r = &recipes[idx];
+
+	/* Setup gate passed: a runnable recipe was selected and the
+	 * dispatcher is committed to invoking it.  Bump setup_accepted
+	 * before data_path so the invariant data_path <= setup_accepted
+	 * holds at every observation point; no bail path runs between
+	 * the two bumps here. */
+	if (valid_op) {
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.childop_data_path[op],
+				   1, __ATOMIC_RELAXED);
+	}
 
 	/* Publish the active recipe name so post-mortem can attribute a
 	 * kernel taint to the sequence in flight.  Cleared on completion
