@@ -2545,6 +2545,23 @@ struct stats_s {
 	 * deferred_free_tracked_free_unverified_leak. */
 	unsigned long alloc_track_refresh_unverified_skip;
 
+	/* alloc_track_refresh() found @ptr was not currently tracked
+	 * (alloc_track_consume miss) and bailed without re-inserting.
+	 * Two indistinguishable causes: @ptr was a legitimate tracked
+	 * allocation that rotated out under churn (the LRU bump is
+	 * lost, the next deferred_free_enqueue rejects as untracked
+	 * and leaks the chunk), or @ptr was never tracked -- a stale
+	 * caller ref, an interior pointer derived from a scribbled
+	 * head->array / localobj, or a fuzzed value-result syscall
+	 * scribble.  The previous shape called deferred_alloc_track
+	 * (@ptr, 0) unconditionally, which blessed the latter class
+	 * as tracked and let the next tracked_free_checked() free() it
+	 * -- ASAN bad-free at deferred-free.c:880 (free_ring_entry /
+	 * ring_evict_oldest_safe / tracked_free_now) on an interior
+	 * pointer that consume() approved on the falsely-blessed
+	 * re-insert.  Non-zero proves the gate is engaged. */
+	unsigned long alloc_track_refresh_consume_miss;
+
 	/* Bumped by run_sequence_chain() when chain_corpus_pick() returns
 	 * a chain_entry whose len is zero or greater than MAX_SEQ_LEN.
 	 * The chain corpus is shared memory and tolerates lockless reads
