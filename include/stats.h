@@ -5053,8 +5053,11 @@ struct stats_s {
 	 * is the gate (total invocations of blob_fill() that authored
 	 * content into a buffer); blob_havoc_ops is the count of bounded
 	 * byte-mutation ops the HAVOC rung applied on top of the FILL
-	 * floor; blob_dict_inserts is reserved for the Build 2 CMPDICT
-	 * rung and stays at zero in this build. */
+	 * floor; blob_dict_inserts is the count of committed cmp-pool
+	 * splats the CMPDICT rung applied on top of the HAVOC floor (one
+	 * bump per successful cmp_hints_try_get pull + splat; pool misses
+	 * are silent).  Bumped only by CMPDICT -- isolates the cmp-dict
+	 * contribution from generic HAVOC byte mutations in the A/B. */
 	unsigned long blob_fills;
 	unsigned long blob_havoc_ops;
 	unsigned long blob_dict_inserts;

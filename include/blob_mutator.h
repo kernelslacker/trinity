@@ -12,9 +12,8 @@
  * ...) early-out on the empty residue almost always, so the content
  * lane is the limiting reagent on the blob coverage surface today.
  *
- * Build 1 introduces a tri-state in use plus a reserved fourth mode
- * (CMPDICT, no-op) so the parse table is stable across the planned
- * Build 2 rung:
+ * The flag ladder is OFF -> FILL -> HAVOC -> CMPDICT, each rung
+ * laying its work on top of the prior rung's floor:
  *
  *   OFF      - default.  The ARG_BUF_SIZED hook skips blob_fill()
  *              entirely: no mode-load past the early return, no RNG
@@ -30,9 +29,19 @@
  *              Op count is CAPPED at BLOB_HAVOC_MAX_OPS so the pass
  *              cannot run unbounded; every write is clamped inside
  *              [0, len).
- *   CMPDICT  - RESERVED for Build 2 (cmp-pool dictionary inserts).
- *              Parsed from day 1 so the flag ladder is stable; in
- *              this build it behaves identically to FILL.
+ *   CMPDICT  - HAVOC plus a bounded buffer-redqueen pass: pull a
+ *              learned cmp constant for the syscall via
+ *              cmp_hints_try_get(nr, do32, ...) and splat it into the
+ *              buffer at a random offset with a random width drawn
+ *              from {1, 2, 4, 8} bytes (little-endian).  Insert count
+ *              is CAPPED at BLOB_CMPDICT_MAX_INSERTS; pulls that miss
+ *              the per-nr pool (empty / chaos-suppressed / corrupted)
+ *              are skipped silently and DO NOT bump the
+ *              blob_dict_inserts counter.  Every write is clamped so
+ *              that pos + width <= len.  Less reproducible under a
+ *              fixed seed than FILL / HAVOC because the cmp-hint pool
+ *              state depends on values the kernel has handed back at
+ *              run time, not on RNG sequence alone.
  *
  * Safety: blob_fill() writes only inside the get_writable_struct(size)
  * allocation the caller hands it.  No pointer-like aliasing is
@@ -52,6 +61,12 @@ extern enum blob_mutator_mode blob_mutator_mode;
  * O(BLOB_HAVOC_MAX_OPS), independent of len. */
 #define BLOB_HAVOC_MAX_OPS	64
 
+/* Cap on cmp-dict inserts per blob.  Each insert is one cmp_hints_try_get
+ * pull plus at most one little-endian splat of width <= 8; bounded so
+ * the CMPDICT rung's worst case stays O(BLOB_CMPDICT_MAX_INSERTS),
+ * independent of len and of how rich the per-nr cmp pool is. */
+#define BLOB_CMPDICT_MAX_INSERTS	16
+
 /*
  * Author content into a writable buffer.
  *
@@ -59,12 +74,12 @@ extern enum blob_mutator_mode blob_mutator_mode;
  *   len  - bytes the caller has reserved at buf (the get_writable_struct
  *          size).  Every write is clamped to [0, len); len == 0 returns
  *          immediately.
- *   nr   - the syscall number for the arg being generated.  Reserved
- *          for the Build 2 CMPDICT rung's per-syscall dictionary; the
- *          FILL / HAVOC rungs ignore it.
+ *   nr   - the syscall number for the arg being generated.  Consumed
+ *          by the CMPDICT rung to pick the per-syscall cmp-hint pool;
+ *          the FILL / HAVOC rungs ignore it.
  *   do32 - true when the arg's CMP-pool lane is the 32-bit lane.
- *          Reserved for the Build 2 CMPDICT rung; the FILL / HAVOC
- *          rungs ignore it.
+ *          Consumed by the CMPDICT rung to select the matching per-nr
+ *          pool half; the FILL / HAVOC rungs ignore it.
  */
 void blob_fill(unsigned char *buf, size_t len, unsigned int nr, bool do32);
 
