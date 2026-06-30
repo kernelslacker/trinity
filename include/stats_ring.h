@@ -65,20 +65,6 @@ enum stats_field {
 	 * counter only -- the predicate's return value is unchanged. */
 	STATS_FIELD_HEAP_BRK_STALE_WINDOW_HIT,
 	STATS_FIELD_RANGE_OVERLAPS_SHARED_REJECTS,
-	STATS_FIELD_GET_WRITABLE_SCRIBBLED_SHM_RANGE,
-	STATS_FIELD_GET_WRITABLE_SCRIBBLED_MPROTECT_MMAP,
-	STATS_FIELD_GET_WRITABLE_SCRIBBLED_MPROTECT_SHM,
-	STATS_FIELD_GET_WRITABLE_SCRIBBLED_POSTMP_MMAP,
-	STATS_FIELD_GET_WRITABLE_SCRIBBLED_POSTMP_SHM,
-	STATS_FIELD_GET_WRITABLE_ENOMEM_EXHAUSTED,
-	/* get_writable_address() caught a SIGSEGV/SIGBUS on a map-field
-	 * write via the gwa_bookkeeping sigsetjmp recovery and retried the
-	 * pool pick rather than dying.  Non-zero rate signals that
-	 * range_overlaps_libc_heap()'s brk-staleness gate missed a case --
-	 * a fuzzed mmap(MAP_FIXED, PROT_READ) overlaid a brk page hosting
-	 * a map struct, the upstream guard failed to relocate, and we
-	 * survived only because of this defense-in-depth wrapper. */
-	STATS_FIELD_GET_WRITABLE_BOOKKEEPING_RO_FAULT,
 	STATS_FIELD_CHILDREN_RECYCLED_ON_STORM,
 	STATS_FIELD_WATCHDOG_FD_EVICT,	/* in-child 1s SIGALRM watchdog evicted
 						 * a stuck-on-fd syscall.  Bumped
@@ -247,13 +233,6 @@ struct stats_aggregate {
 	unsigned long heap_pointer_outside_cache;
 	unsigned long heap_brk_stale_window_hit;
 	unsigned long range_overlaps_shared_rejects;
-	unsigned long get_writable_address_scribbled_shm_range;
-	unsigned long get_writable_address_scribbled_mprotect_mmap;
-	unsigned long get_writable_address_scribbled_mprotect_shm;
-	unsigned long get_writable_address_scribbled_postmp_mmap;
-	unsigned long get_writable_address_scribbled_postmp_shm;
-	unsigned long get_writable_address_enomem_exhausted;
-	unsigned long get_writable_address_bookkeeping_ro_fault;
 	unsigned long children_recycled_on_storm;
 	unsigned long watchdog_fd_evict;
 	unsigned long unshare_newnet_throttled;

@@ -427,7 +427,7 @@ static bool storm_rate_recycle(struct childdata *child)
 {
 	struct timespec now;
 	long window_sec;
-	unsigned long delta_post, delta_scribbled;
+	unsigned long delta_post;
 
 	clock_gettime(CLOCK_MONOTONIC, &now);
 	window_sec = (long)(now.tv_sec - child->storm_check_last_time.tv_sec);
@@ -436,11 +436,8 @@ static bool storm_rate_recycle(struct childdata *child)
 
 	delta_post = child->local_post_handler_corrupt_ptr -
 		     child->storm_check_last_post_handler;
-	delta_scribbled = child->local_scribbled_slots_caught -
-			  child->storm_check_last_scribbled;
 
-	if ((delta_post / (unsigned long)window_sec) >= LOCAL_STORM_RATE_THRESHOLD ||
-	    (delta_scribbled / (unsigned long)window_sec) >= LOCAL_STORM_RATE_THRESHOLD)
+	if ((delta_post / (unsigned long)window_sec) >= LOCAL_STORM_RATE_THRESHOLD)
 		return true;
 
 	/* Quiet window: roll the snapshot so the next check measures the
@@ -448,7 +445,6 @@ static bool storm_rate_recycle(struct childdata *child)
 	 * cumulative count against a fresh interval. */
 	child->storm_check_last_time = now;
 	child->storm_check_last_post_handler = child->local_post_handler_corrupt_ptr;
-	child->storm_check_last_scribbled = child->local_scribbled_slots_caught;
 	return false;
 }
 

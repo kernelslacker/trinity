@@ -2517,13 +2517,6 @@ static void dump_stats_json_corruption_and_audit(void)
 			"\"chain_replay_len_corrupt\":%lu},"
 		"\"shared_buffer\":{\"args_redirected\":%lu,\"range_overlaps_shared_rejects\":%lu,"
 			"\"libc_heap_redirected\":%lu,\"libc_heap_embedded_redirected\":%lu,"
-			"\"get_writable_address_scribbled_shm_range\":%lu,"
-			"\"get_writable_address_scribbled_mprotect_mmap\":%lu,"
-			"\"get_writable_address_scribbled_mprotect_shm\":%lu,"
-			"\"get_writable_address_scribbled_postmp_mmap\":%lu,"
-			"\"get_writable_address_scribbled_postmp_shm\":%lu,"
-			"\"get_writable_address_enomem_exhausted\":%lu,"
-			"\"get_writable_address_bookkeeping_ro_fault\":%lu,"
 			"\"mm_gate_post_slip\":%lu},",
 		shm->stats.fd_event_ring_corrupted,
 		shm->stats.fd_event_ring_overwritten,
@@ -2601,13 +2594,6 @@ static void dump_stats_json_corruption_and_audit(void)
 		shm->stats.chain_replay_len_corrupt,
 		parent_stats.shared_buffer_redirected, parent_stats.range_overlaps_shared_rejects,
 		parent_stats.libc_heap_redirected, parent_stats.libc_heap_embedded_redirected,
-		parent_stats.get_writable_address_scribbled_shm_range,
-		parent_stats.get_writable_address_scribbled_mprotect_mmap,
-		parent_stats.get_writable_address_scribbled_mprotect_shm,
-		parent_stats.get_writable_address_scribbled_postmp_mmap,
-		parent_stats.get_writable_address_scribbled_postmp_shm,
-		parent_stats.get_writable_address_enomem_exhausted,
-		parent_stats.get_writable_address_bookkeeping_ro_fault,
 		parent_stats.mm_gate_post_slip);
 }
 
@@ -3872,18 +3858,6 @@ static const struct {
 	  offsetof(struct stats_aggregate, heap_pointer_outside_cache), true },
 	{ "heap_brk_stale_window_hit",
 	  offsetof(struct stats_aggregate, heap_brk_stale_window_hit), true },
-	{ "get_writable_address_scribbled_shm_range",
-	  offsetof(struct stats_aggregate, get_writable_address_scribbled_shm_range), true },
-	{ "get_writable_address_scribbled_mprotect_mmap",
-	  offsetof(struct stats_aggregate, get_writable_address_scribbled_mprotect_mmap), true },
-	{ "get_writable_address_scribbled_mprotect_shm",
-	  offsetof(struct stats_aggregate, get_writable_address_scribbled_mprotect_shm), true },
-	{ "get_writable_address_scribbled_postmp_mmap",
-	  offsetof(struct stats_aggregate, get_writable_address_scribbled_postmp_mmap), true },
-	{ "get_writable_address_scribbled_postmp_shm",
-	  offsetof(struct stats_aggregate, get_writable_address_scribbled_postmp_shm), true },
-	{ "get_writable_address_bookkeeping_ro_fault",
-	  offsetof(struct stats_aggregate, get_writable_address_bookkeeping_ro_fault), true },
 	{ "mm_gate_post_slip",
 	  offsetof(struct stats_aggregate, mm_gate_post_slip), true },
 	{ "post_handler_corrupt_ptr",
@@ -9849,27 +9823,6 @@ static void dump_stats_shared_buffer_misc(void)
 	if (shm->stats.shared_region_overflow)
 		stat_row("shared_buffer", "shared_region_overflow",
 			 shm->stats.shared_region_overflow);
-	if (parent_stats.get_writable_address_scribbled_shm_range)
-		stat_row("shared_buffer", "get_writable_address_scribbled_shm_range",
-			 parent_stats.get_writable_address_scribbled_shm_range);
-	if (parent_stats.get_writable_address_scribbled_mprotect_mmap)
-		stat_row("shared_buffer", "get_writable_address_scribbled_mprotect_mmap",
-			 parent_stats.get_writable_address_scribbled_mprotect_mmap);
-	if (parent_stats.get_writable_address_scribbled_mprotect_shm)
-		stat_row("shared_buffer", "get_writable_address_scribbled_mprotect_shm",
-			 parent_stats.get_writable_address_scribbled_mprotect_shm);
-	if (parent_stats.get_writable_address_scribbled_postmp_mmap)
-		stat_row("shared_buffer", "get_writable_address_scribbled_postmp_mmap",
-			 parent_stats.get_writable_address_scribbled_postmp_mmap);
-	if (parent_stats.get_writable_address_scribbled_postmp_shm)
-		stat_row("shared_buffer", "get_writable_address_scribbled_postmp_shm",
-			 parent_stats.get_writable_address_scribbled_postmp_shm);
-	if (parent_stats.get_writable_address_enomem_exhausted)
-		stat_row("shared_buffer", "get_writable_address_enomem_exhausted",
-			 parent_stats.get_writable_address_enomem_exhausted);
-	if (parent_stats.get_writable_address_bookkeeping_ro_fault)
-		stat_row("shared_buffer", "get_writable_address_bookkeeping_ro_fault",
-			 parent_stats.get_writable_address_bookkeeping_ro_fault);
 	if (parent_stats.mm_gate_post_slip)
 		stat_row("shared_buffer", "mm_gate_post_slip",
 			 parent_stats.mm_gate_post_slip);
