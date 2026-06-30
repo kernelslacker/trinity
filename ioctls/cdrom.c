@@ -98,6 +98,7 @@ static void cdrom_send_packet_sanitise(struct syscallrecord *rec)
 		sense = get_writable_struct(sizeof(*sense));
 		if (!sense)
 			return;
+		memset(sense, 0, sizeof(*sense));
 		cgc->buflen = buflens[rnd_modulo_u32(ARRAY_SIZE(buflens))];
 		cgc->buffer = buffer;
 		cgc->sense = sense;
@@ -147,6 +148,7 @@ static void sanitise_cdrom_playmsf(struct syscallrecord *rec)
 	msf = (struct cdrom_msf *) get_writable_struct(sizeof(*msf));
 	if (!msf)
 		return;
+	memset(msf, 0, sizeof(*msf));
 	msf->cdmsf_min0   = rnd_modulo_u32(80);
 	msf->cdmsf_sec0   = rnd_modulo_u32(60);
 	msf->cdmsf_frame0 = rnd_modulo_u32(75);
@@ -163,6 +165,7 @@ static void sanitise_cdrom_playtrkind(struct syscallrecord *rec)
 	ti = (struct cdrom_ti *) get_writable_struct(sizeof(*ti));
 	if (!ti)
 		return;
+	memset(ti, 0, sizeof(*ti));
 	ti->cdti_trk0 = 1 + rnd_modulo_u32(99);
 	ti->cdti_ind0 = 1 + rnd_modulo_u32(99);
 	ti->cdti_trk1 = 1 + rnd_modulo_u32(99);
@@ -201,6 +204,7 @@ static void sanitise_cdrom_volctrl(struct syscallrecord *rec)
 	vc = (struct cdrom_volctrl *) get_writable_struct(sizeof(*vc));
 	if (!vc)
 		return;
+	memset(vc, 0, sizeof(*vc));
 	vc->channel0 = rnd_modulo_u32(256);
 	vc->channel1 = rnd_modulo_u32(256);
 	vc->channel2 = rnd_modulo_u32(256);
@@ -258,6 +262,7 @@ static void sanitise_cdrom_readaudio(struct syscallrecord *rec)
 	ra = (struct cdrom_read_audio *) get_writable_struct(sizeof(*ra));
 	if (!ra)
 		return;
+	memset(ra, 0, sizeof(*ra));
 	nframes = 1 + rnd_modulo_u32(8);
 	buf = get_writable_struct(nframes * 2352);
 	if (!buf)
@@ -283,6 +288,7 @@ static void sanitise_cdrom_seek(struct syscallrecord *rec)
 	msf = (struct cdrom_msf *) get_writable_struct(sizeof(*msf));
 	if (!msf)
 		return;
+	memset(msf, 0, sizeof(*msf));
 	msf->cdmsf_min0   = rnd_modulo_u32(80);
 	msf->cdmsf_sec0   = rnd_modulo_u32(60);
 	msf->cdmsf_frame0 = rnd_modulo_u32(75);
@@ -299,6 +305,7 @@ static void sanitise_cdrom_playblk(struct syscallrecord *rec)
 	blk = (struct cdrom_blk *) get_writable_struct(sizeof(*blk));
 	if (!blk)
 		return;
+	memset(blk, 0, sizeof(*blk));
 	blk->from = rnd_u32();
 	blk->len  = rnd_modulo_u32(64);
 	rec->a3 = (unsigned long) blk;
@@ -364,6 +371,7 @@ static void sanitise_cdrom_long_out(struct syscallrecord *rec)
 	val = (long *) get_writable_struct(sizeof(*val));
 	if (!val)
 		return;
+	memset(val, 0, sizeof(*val));
 	*val = 0;
 	rec->a3 = (unsigned long) val;
 }
