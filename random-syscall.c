@@ -1549,10 +1549,28 @@ static bool remote_adaptive_decide(unsigned int nr,
  * that adds per-syscall conversion accounting can layer a third term
  * into this helper without changing the call site.
  */
+/*
+ * Sample-size floor for the conversion-rate bonus.  Below this many
+ * cmp-hint injections we ignore the conversion ratio entirely -- a
+ * 1/1 = 100% noise spike must not dominate ranking against syscalls
+ * with thousands of injections.  Sized at the same order as the
+ * typical per-window inject volume for an active syscall. */
+#define CMP_FRONTIER_MIN_INJECTED	32UL
+
+/*
+ * Conversion-rate boost magnitude.  rate_milli is wins-per-1000-
+ * injections (0..1000); ilog2_ul(1 + rate_milli * SCALE / 1000) caps
+ * the bonus at roughly ilog2(257) = 8 for a 100%-converting syscall,
+ * which roughly doubles the typical 8-12 base signal -- lifts proven
+ * converters above flat peers in the same volume tier without
+ * letting them monopolise the weight. */
+#define CMP_FRONTIER_CONVERSION_SCALE	256UL
+
 static unsigned long cmp_frontier_weight(unsigned int nr)
 {
 	unsigned long cmp_inserts, childop_inserts;
-	unsigned long signal, weight;
+	unsigned long injected, pc_wins, tr_wins, wins;
+	unsigned long base, conv_bonus = 0, signal, weight;
 
 	if (kcov_shm == NULL || nr >= MAX_NR_SYSCALL)
 		return 0;
@@ -1563,8 +1581,46 @@ static unsigned long cmp_frontier_weight(unsigned int nr)
 			&kcov_shm->childop_cmp_pool_inserts[nr],
 			__ATOMIC_RELAXED);
 
-	signal = (unsigned long)ilog2_ul(cmp_inserts + 1UL) +
-		 (unsigned long)ilog2_ul(childop_inserts + 1UL);
+	/*
+	 * Conversion-rate bonus.  per_syscall_cmp_injected /
+	 * per_syscall_cmp_hint_pc_wins are the raw cmp-hint pipeline's
+	 * per-syscall PC-edge attribution that has existed for a while;
+	 * per_syscall_cmp_hint_transition_wins is the typed-hyp side
+	 * channel wired in earlier in this stack.  Sum PC + transition
+	 * wins for the conversion numerator -- both are real
+	 * attributable yields of an injected hint, and treating them
+	 * separately would let a transition-rich syscall rank as flat
+	 * just because PC edges have plateaued.
+	 *
+	 * Gated on a sample-size floor (CMP_FRONTIER_MIN_INJECTED) so
+	 * a 1/1 = 100% conversion noise spike does not dominate the
+	 * weight; ilog2 of the scaled rate caps the bonus to the same
+	 * magnitude band as the base inserts signal so a proven
+	 * converter is lifted out of its insert-volume tier without
+	 * monopolising the frontier.  A syscall with 0% conversion
+	 * gets conv_bonus = 0 and ranks on inserts alone (the
+	 * historical behaviour) -- degrade-safe.
+	 */
+	injected = __atomic_load_n(&kcov_shm->per_syscall_cmp_injected[nr],
+				   __ATOMIC_RELAXED);
+	pc_wins = __atomic_load_n(&kcov_shm->per_syscall_cmp_hint_pc_wins[nr],
+				  __ATOMIC_RELAXED);
+	tr_wins = __atomic_load_n(
+			&kcov_shm->per_syscall_cmp_hint_transition_wins[nr],
+			__ATOMIC_RELAXED);
+	wins = pc_wins + tr_wins;
+	if (injected >= CMP_FRONTIER_MIN_INJECTED && wins > 0UL) {
+		unsigned long rate_milli = (wins * 1000UL) / injected;
+		unsigned long scaled = 1UL + (rate_milli *
+					      CMP_FRONTIER_CONVERSION_SCALE) /
+					      1000UL;
+
+		conv_bonus = (unsigned long)ilog2_ul(scaled);
+	}
+
+	base = (unsigned long)ilog2_ul(cmp_inserts + 1UL) +
+	       (unsigned long)ilog2_ul(childop_inserts + 1UL);
+	signal = base + conv_bonus;
 	weight = signal * CMP_FRONTIER_SIGNAL_SCALE;
 	if (weight > (unsigned long)FRONTIER_COLD_SCALE)
 		weight = (unsigned long)FRONTIER_COLD_SCALE;
