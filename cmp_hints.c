@@ -1323,18 +1323,42 @@ cmp_hyp_would_pick_locked(struct cmp_hyp_pool *pool, unsigned long cmp_ip,
 			present_out[present_idx] = true;
 			break;
 		case CMP_HYP_STATE_RETIRED:
+			if (kcov_shm != NULL)
+				__atomic_fetch_add(
+					&kcov_shm->cmp_hyp_skipped_retired,
+					1UL, __ATOMIC_RELAXED);
+			break;
 		default:
 			break;
 		}
 	}
 
 #define CMP_HYP_PICK_TIER(p, o, d) do {					\
-		if ((p) != NULL)					\
+		if ((p) != NULL) {					\
+			if (kcov_shm != NULL)				\
+				__atomic_fetch_add(			\
+					&kcov_shm->cmp_hyp_picked_by_state[CMP_HYP_STATE_PROMOTED], \
+					1UL, __ATOMIC_RELAXED);		\
 			return (p);					\
-		if ((o) != NULL)					\
+		}							\
+		if ((o) != NULL) {					\
+			if (kcov_shm != NULL)				\
+				__atomic_fetch_add(			\
+					&kcov_shm->cmp_hyp_picked_by_state[CMP_HYP_STATE_OBSERVED], \
+					1UL, __ATOMIC_RELAXED);		\
 			return (o);					\
-		if ((d) != NULL && ONE_IN(CMP_HYP_DEMOTED_RETRY_DENOM))	\
+		}							\
+		if ((d) != NULL && ONE_IN(CMP_HYP_DEMOTED_RETRY_DENOM)) { \
+			if (kcov_shm != NULL) {				\
+				__atomic_fetch_add(			\
+					&kcov_shm->cmp_hyp_picked_by_state[CMP_HYP_STATE_DEMOTED], \
+					1UL, __ATOMIC_RELAXED);		\
+				__atomic_fetch_add(			\
+					&kcov_shm->cmp_hyp_demoted_reroll_picked, \
+					1UL, __ATOMIC_RELAXED);		\
+			}						\
 			return (d);					\
+		}							\
 	} while (0)
 
 	CMP_HYP_PICK_TIER(exact_promoted, exact_observed, exact_demoted);
