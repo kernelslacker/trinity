@@ -35,6 +35,7 @@ static void sanitise_extts_request(struct syscallrecord *rec)
 	r = (struct ptp_extts_request *) get_writable_struct(sizeof(*r));
 	if (!r)
 		return;
+	memset(r, 0, sizeof(*r));
 	r->index = rnd_modulo_u32(16);
 	r->flags = rnd_u32() & PTP_EXTTS_VALID_FLAGS;
 	r->rsv[0] = 0;
