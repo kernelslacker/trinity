@@ -14,6 +14,7 @@ static void sanitise_fuse_clone(struct syscallrecord *rec)
 	fd = (uint32_t *) get_writable_struct(sizeof(*fd));
 	if (!fd)
 		return;
+	memset(fd, 0, sizeof(*fd));
 	*fd = get_random_fd();
 	rec->a3 = (unsigned long) fd;
 }
@@ -25,6 +26,7 @@ static void sanitise_fuse_backing_open(struct syscallrecord *rec)
 	map = (struct fuse_backing_map *) get_writable_struct(sizeof(*map));
 	if (!map)
 		return;
+	memset(map, 0, sizeof(*map));
 	map->fd = get_random_fd();
 	map->flags = rand32();
 	map->padding = rand64();
@@ -38,6 +40,7 @@ static void sanitise_fuse_backing_close(struct syscallrecord *rec)
 	id = (uint32_t *) get_writable_struct(sizeof(*id));
 	if (!id)
 		return;
+	memset(id, 0, sizeof(*id));
 	*id = rand32();
 	rec->a3 = (unsigned long) id;
 }
