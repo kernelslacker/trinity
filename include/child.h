@@ -674,17 +674,15 @@ struct childdata {
 	unsigned int last_cov_at_streak;
 	unsigned int group_fd_created_in_streak;
 
-	/* Per-child storm-containment counters.  Bumped in lock-step with
-	 * the existing global stats.{post_handler_corrupt_ptr,
-	 * get_writable_address_scribbled_*} from the same call
-	 * sites; the global counters lose attribution across the fleet, so
-	 * these per-child shadows are what the storm-rate check below scores
+	/* Per-child storm-containment counter.  Bumped in lock-step with
+	 * the global stats.post_handler_corrupt_ptr from the same call
+	 * sites; the global counter loses attribution across the fleet, so
+	 * this per-child shadow is what the storm-rate check below scores
 	 * against.  Owner-only writes from inside the child, no cross-process
 	 * coherence needed.  Reset in clean_childdata so a fresh occupant of
 	 * the slot starts from zero.  See storm_check_last_* below for the
 	 * sliding-window accounting. */
 	unsigned long local_post_handler_corrupt_ptr;
-	unsigned long local_scribbled_slots_caught;
 
 	/*
 	 * Per-child bump-cursor into the parent's writable_pool (see
@@ -732,21 +730,20 @@ struct childdata {
 
 	/* Sliding-window state for the per-child storm-rate check.
 	 * storm_check_last_time is the monotonic timestamp at which the
-	 * three local_* counters above last passed the rate gate (or the
-	 * time clean_childdata ran, whichever is most recent).  The three
-	 * snapshots are the values of each counter at that same instant.
-	 * The check (in child_process) re-reads CLOCK_MONOTONIC and the
-	 * counters every LOCAL_STORM_CHECK_PERIOD iterations and triggers
-	 * a recycle when (counter_now - snapshot) / (now - last_time)
-	 * exceeds LOCAL_STORM_RATE_THRESHOLD events/sec for any of the
-	 * three signals AND the window has been open for at least
-	 * LOCAL_STORM_WINDOW_SEC seconds.  The window-floor is what
-	 * suppresses single-spike false positives; a transient burst that
-	 * cannot sustain over 10 s gets absorbed into the next snapshot
-	 * roll instead of recycling the child. */
+	 * local_post_handler_corrupt_ptr counter above last passed the
+	 * rate gate (or the time clean_childdata ran, whichever is most
+	 * recent).  The snapshot is the value of the counter at that same
+	 * instant.  The check (in child_process) re-reads CLOCK_MONOTONIC
+	 * and the counter every LOCAL_STORM_CHECK_PERIOD iterations and
+	 * triggers a recycle when (counter_now - snapshot) / (now -
+	 * last_time) exceeds LOCAL_STORM_RATE_THRESHOLD events/sec AND the
+	 * window has been open for at least LOCAL_STORM_WINDOW_SEC
+	 * seconds.  The window-floor is what suppresses single-spike false
+	 * positives; a transient burst that cannot sustain over 10 s gets
+	 * absorbed into the next snapshot roll instead of recycling the
+	 * child. */
 	struct timespec storm_check_last_time;
 	unsigned long storm_check_last_post_handler;
-	unsigned long storm_check_last_scribbled;
 
 	/* Ring buffer for reporting fd events to the parent.
 	 * Allocated in shared memory, one per child. */

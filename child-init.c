@@ -340,12 +340,10 @@ void clean_childdata(struct childdata *child)
 	 * check after fork has a clean baseline rather than measuring a
 	 * rate against the previous occupant of this slot. */
 	child->local_post_handler_corrupt_ptr = 0;
-	child->local_scribbled_slots_caught = 0;
 	child->maps_local_refill_credit = 0;
 	child->mmap_pool_nonempty_mask = 0;
 	child->storm_check_last_time = child->tp;
 	child->storm_check_last_post_handler = 0;
-	child->storm_check_last_scribbled = 0;
 
 	/* Reset per-child corruption-attribution shards so a fresh
 	 * occupant's first dump-window samples are not contaminated by

@@ -54,21 +54,6 @@ volatile sig_atomic_t asb_copy_active;
 sigjmp_buf cmp_field_recover;
 volatile sig_atomic_t cmp_field_read_active;
 
-/*
- * Recovery point for get_writable_address()'s map-struct bookkeeping
- * stores.  See include/signals.h and rand/random-address.c::
- * get_writable_address() for the full contract.  Definition lives
- * here so the storage for the jmp_buf is colocated with the handler
- * that reads gwa_bookkeeping_active.
- *
- * Inherited COW-private into every forked child; never touched by the
- * parent.  Plain file-scope storage rather than __thread because
- * trinity children are single-threaded processes -- no two threads in
- * the same address space race on the slot.
- */
-sigjmp_buf gwa_bookkeeping_recover;
-volatile sig_atomic_t gwa_bookkeeping_active;
-
 #ifdef CONFIG_GUARD_SHARED
 /*
  * Recovery point for the kcov_enable_trace() trace_buf[0]=0 reset.
@@ -972,29 +957,10 @@ void child_fault_handler(int sig, siginfo_t *info, void *ctx)
 		siglongjmp(cmp_field_recover, 1);
 	}
 
-	/*
-	 * get_writable_address() map-struct bookkeeping-write recovery.
-	 * Same shape as the asb_copy / cmp_field edges above: a fuzzed
-	 * mmap(MAP_FIXED, PROT_READ) that survived the heap-overlap guard
-	 * can overlay the brk page hosting the map struct, turning the
-	 * known_rw / prot stores into SEGV_ACCERR.  Gated on SIGSEGV or
-	 * SIGBUS with si_code > 0 and gwa_bookkeeping_active set ONLY
-	 * across each map-field write so any other fault still reaches
-	 * the diagnostic + _exit path.  Counted by
-	 * STATS_FIELD_GET_WRITABLE_BOOKKEEPING_RO_FAULT (non-zero rate
-	 * means the brk-staleness gate above missed a case -- the
-	 * counter is the trip-wire that we silently survived something
-	 * that should have been caught upstream).
-	 */
-	if (gwa_bookkeeping_active && info->si_code > 0 &&
-	    (sig == SIGSEGV || sig == SIGBUS)) {
-		siglongjmp(gwa_bookkeeping_recover, 1);
-	}
-
 #ifdef CONFIG_GUARD_SHARED
 	/*
 	 * kcov_enable_trace() trace_buf[0]=0 reset-fault recovery.  Same
-	 * shape as the gwa_bookkeeping edge above: the store is guarded
+	 * shape as the asb_copy / cmp_field edges above: the store is guarded
 	 * by track_shared_region_tagged("kcov-pc") at registration and
 	 * by the mm-sanitiser overlap gates at fuzz time, yet some path
 	 * is intermittently stripping the buffer's PROT_WRITE.  Gated on

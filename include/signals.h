@@ -86,36 +86,6 @@ extern volatile sig_atomic_t asb_copy_active;
 extern sigjmp_buf cmp_field_recover;
 extern volatile sig_atomic_t cmp_field_read_active;
 
-/*
- * Per-child recovery point for get_writable_address()'s map-struct
- * bookkeeping stores.
- *
- * Defense-in-depth for the brk-staleness window: range_overlaps_libc_heap
- * resamples live brk for any addr below the user/kernel split, but a
- * race window between the cached snapshot and the sbrk(0) refresh can
- * still let a fuzzed mmap(MAP_FIXED, PROT_READ) overlay a brk page
- * holding a map struct.  Subsequent map->known_rw / map->prot writes
- * inside get_writable_address() then fault SEGV_ACCERR on the now-RO
- * page, and the child dies on what is really an upstream gate miss.
- *
- * The flag/buffer pair lets each map-field write install a sigsetjmp
- * recovery point: child_fault_handler checks gwa_bookkeeping_active on
- * entry, and on a real kernel SIGSEGV/SIGBUS (si_code > 0) while the
- * flag is set, siglongjmp's back into get_writable_address(), which
- * retries the pool pick (a different slot's map struct is overwhelmingly
- * likely to sit on a still-RW page).  The bookkeeping-fault counter
- * surfaces the recovery rate so a non-zero number signals that the
- * heap-overlap guard missed a case worth investigating upstream.
- *
- * Scope is intentionally narrow: the flag is set ONLY across each
- * individual map-field write and cleared immediately after, and the
- * recovery edge applies only to SIGSEGV / SIGBUS with si_code > 0.
- * All other signals and the default (flag-clear) state fall through to
- * the existing crash-log path so a real kernel-fuzzed bug still
- * produces a bug log.
- */
-extern sigjmp_buf gwa_bookkeeping_recover;
-extern volatile sig_atomic_t gwa_bookkeeping_active;
 
 #ifdef CONFIG_GUARD_SHARED
 /*

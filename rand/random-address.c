@@ -3,9 +3,7 @@
 #include <stdlib.h>	// exit / EXIT_FAILURE for alloc_iovec_init
 #include <sys/uio.h>
 #include <sys/socket.h>	// struct msghdr
-#include <sys/mman.h>	// mprotect
-#include <sys/ipc.h>
-#include <sys/shm.h>
+#include <sys/mman.h>	// mmap for writable_pool_init
 #include <string.h>
 
 #include "arch.h"	// KERNEL_ADDR etc
