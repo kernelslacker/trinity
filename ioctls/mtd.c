@@ -14,6 +14,7 @@ static void sanitise_erase_info_user(struct syscallrecord *rec)
 	eiu = (struct erase_info_user *) get_writable_struct(sizeof(*eiu));
 	if (!eiu)
 		return;
+	memset(eiu, 0, sizeof(*eiu));
 	eiu->start = rand32();
 	eiu->length = rand32();
 	rec->a3 = (unsigned long) eiu;
@@ -26,6 +27,7 @@ static void sanitise_erase_info_user64(struct syscallrecord *rec)
 	eiu = (struct erase_info_user64 *) get_writable_struct(sizeof(*eiu));
 	if (!eiu)
 		return;
+	memset(eiu, 0, sizeof(*eiu));
 	eiu->start = rand64();
 	eiu->length = rand64();
 	rec->a3 = (unsigned long) eiu;
@@ -40,6 +42,7 @@ static void sanitise_mtd_oob_buf(struct syscallrecord *rec)
 	oob = (struct mtd_oob_buf *) get_writable_struct(sizeof(*oob));
 	if (!oob)
 		return;
+	memset(oob, 0, sizeof(*oob));
 	length = rnd_modulo_u32(64);
 	ptr = get_writable_struct(length + 1);
 	if (!ptr)
@@ -59,6 +62,7 @@ static void sanitise_mtd_oob_buf64(struct syscallrecord *rec)
 	oob = (struct mtd_oob_buf64 *) get_writable_struct(sizeof(*oob));
 	if (!oob)
 		return;
+	memset(oob, 0, sizeof(*oob));
 	length = rnd_modulo_u32(64);
 	usr_ptr = get_writable_struct(length + 1);
 	if (!usr_ptr)
@@ -76,6 +80,7 @@ static void sanitise_region_info_user(struct syscallrecord *rec)
 	riu = (struct region_info_user *) get_writable_struct(sizeof(*riu));
 	if (!riu)
 		return;
+	memset(riu, 0, sizeof(*riu));
 	riu->regionindex = rnd_modulo_u32(16);
 	rec->a3 = (unsigned long) riu;
 }
@@ -87,6 +92,7 @@ static void sanitise_otp_info(struct syscallrecord *rec)
 	oi = (struct otp_info *) get_writable_struct(sizeof(*oi));
 	if (!oi)
 		return;
+	memset(oi, 0, sizeof(*oi));
 	oi->start = rand32();
 	oi->length = rnd_modulo_u32(4096);
 	oi->locked = RAND_BOOL();
@@ -102,6 +108,7 @@ static void sanitise_mtd_write_req(struct syscallrecord *rec)
 	req = (struct mtd_write_req *) get_writable_struct(sizeof(*req));
 	if (!req)
 		return;
+	memset(req, 0, sizeof(*req));
 	len = rnd_modulo_u32(4096);
 	ooblen = rnd_modulo_u32(128);
 	usr_data = get_writable_struct(len + 1);
@@ -134,6 +141,7 @@ static void sanitise_mtd_read_req(struct syscallrecord *rec)
 	req = (struct mtd_read_req *) get_writable_struct(sizeof(*req));
 	if (!req)
 		return;
+	memset(req, 0, sizeof(*req));
 	len = rnd_modulo_u32(4096);
 	ooblen = rnd_modulo_u32(128);
 	usr_data = get_writable_struct(len + 1);
@@ -214,29 +222,37 @@ static void mtd_sanitise(const struct ioctl_group *grp, struct syscallrecord *re
 
 	case MEMGETINFO: {
 		struct mtd_info_user *info = get_writable_struct(sizeof(*info));
-		if (info)
+		if (info) {
+			memset(info, 0, sizeof(*info));
 			rec->a3 = (unsigned long) info;
+		}
 		break;
 	}
 
 	case MEMGETOOBSEL: {
 		struct nand_oobinfo *oobsel = get_writable_struct(sizeof(*oobsel));
-		if (oobsel)
+		if (oobsel) {
+			memset(oobsel, 0, sizeof(*oobsel));
 			rec->a3 = (unsigned long) oobsel;
+		}
 		break;
 	}
 
 	case ECCGETLAYOUT: {
 		struct nand_ecclayout_user *layout = get_writable_struct(sizeof(*layout));
-		if (layout)
+		if (layout) {
+			memset(layout, 0, sizeof(*layout));
 			rec->a3 = (unsigned long) layout;
+		}
 		break;
 	}
 
 	case ECCGETSTATS: {
 		struct mtd_ecc_stats *stats = get_writable_struct(sizeof(*stats));
-		if (stats)
+		if (stats) {
+			memset(stats, 0, sizeof(*stats));
 			rec->a3 = (unsigned long) stats;
+		}
 		break;
 	}
 
