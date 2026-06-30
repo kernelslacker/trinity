@@ -49,6 +49,7 @@ static void epoll_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 	params = (struct epoll_params *) get_writable_struct(sizeof(*params));
 	if (!params)
 		return;
+	memset(params, 0, sizeof(*params));
 
 	if (rec->a2 == EPIOCSPARAMS) {
 		params->busy_poll_usecs = rnd_modulo_u32(1000000);
