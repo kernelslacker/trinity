@@ -81,6 +81,7 @@ static void sanitise_fb_cursor(struct syscallrecord *rec)
 	cur = (struct fb_cursor *) get_writable_struct(sizeof(*cur));
 	if (!cur)
 		return;
+	memset(cur, 0, sizeof(*cur));
 	w = rnd_modulo_u32(32) + 1;
 	h = rnd_modulo_u32(32) + 1;
 	mapsize = (w * h + 7) / 8 + 8;
@@ -112,6 +113,7 @@ static void sanitise_fb_con2fbmap(struct syscallrecord *rec)
 	map = (struct fb_con2fbmap *) get_writable_struct(sizeof(*map));
 	if (!map)
 		return;
+	memset(map, 0, sizeof(*map));
 	map->console = rnd_modulo_u32(64);
 	map->framebuffer = rnd_modulo_u32(8);
 	rec->a3 = (unsigned long) map;
@@ -137,8 +139,10 @@ static void fb_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec
 #ifdef FBIOGET_FSCREENINFO
 	case FBIOGET_FSCREENINFO: {
 		struct fb_fix_screeninfo *fix = get_writable_struct(sizeof(*fix));
-		if (fix)
+		if (fix) {
+			memset(fix, 0, sizeof(*fix));
 			rec->a3 = (unsigned long) fix;
+		}
 		break;
 	}
 #endif
@@ -177,8 +181,10 @@ static void fb_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec
 #ifdef FBIOGET_VBLANK
 	case FBIOGET_VBLANK: {
 		struct fb_vblank *vbl = get_writable_struct(sizeof(*vbl));
-		if (vbl)
+		if (vbl) {
+			memset(vbl, 0, sizeof(*vbl));
 			rec->a3 = (unsigned long) vbl;
+		}
 		break;
 	}
 #endif
