@@ -61,6 +61,7 @@ static void sanitise_usbmon_get(struct syscallrecord *rec)
 	g = (struct mon_bin_get *) get_writable_struct(sizeof(*g));
 	if (!g)
 		return;
+	memset(g, 0, sizeof(*g));
 	hdr = get_writable_struct(MON_BIN_HDR_SIZE);
 	g->hdr = hdr;		/* NULL on failure: kernel sees a no-op hdr */
 	alloc = rnd_modulo_u32(4096);
@@ -84,6 +85,7 @@ static void sanitise_usbmon_mfetch(struct syscallrecord *rec)
 	m = (struct mon_bin_mfetch *) get_writable_struct(sizeof(*m));
 	if (!m)
 		return;
+	memset(m, 0, sizeof(*m));
 	nfetch = rnd_modulo_u32(32) + 1;
 	offvec = get_writable_struct(nfetch * sizeof(__u32));
 	if (!offvec)
@@ -101,8 +103,10 @@ static void usbmon_sanitise(const struct ioctl_group *grp, struct syscallrecord 
 	switch (rec->a2) {
 	case MON_IOCG_STATS: {
 		struct mon_bin_stats *s = (struct mon_bin_stats *) get_writable_struct(sizeof(*s));
-		if (s)
+		if (s) {
+			memset(s, 0, sizeof(*s));
 			rec->a3 = (unsigned long) s;
+		}
 		break;
 	}
 
