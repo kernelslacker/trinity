@@ -419,7 +419,7 @@ enum cmp_hypothesis_state {
 enum cmp_hyp_live_inject_reason {
 	CMP_HYP_LIVE_INJECT_REASON_NOT_PLATEAU,	  /* plateau off AND all bypass channels lost their dice */
 	CMP_HYP_LIVE_INJECT_REASON_DICE_MISS,	  /* plateau on AND every channel's dice lost */
-	CMP_HYP_LIVE_INJECT_REASON_NO_MATCH,	  /* no hypothesis at this (cmp_ip, width) */
+	CMP_HYP_LIVE_INJECT_REASON_NO_MATCH,	  /* no qualifying hyp at (cmp_ip, width): picker NULL, or PROMOTED-only channel C contender at a site with no PROMOTED entry */
 	CMP_HYP_LIVE_INJECT_REASON_DERIVE_FAIL,	  /* cmp_hyp_derive_value() bailed */
 	CMP_HYP_LIVE_INJECT_REASON_ACCEPT_REJECT, /* caller's accept-range gate rejected derived value */
 	CMP_HYP_LIVE_INJECT_REASON_BOOTSTRAP,	  /* channel B opened: bootstrap dice fired regardless of plateau */

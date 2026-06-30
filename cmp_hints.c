@@ -1733,6 +1733,11 @@ static bool cmp_hyp_try_live_inject(unsigned int nr, bool do32,
 	bool present[CMP_HYP_KIND_NR];
 	uint8_t width;
 	unsigned long derived;
+	bool plateau_on;
+	bool channel_a_fired;
+	bool channel_b_fired = false;
+	bool channel_c_dice_won = false;
+	uint8_t picked_state;
 
 	*out_gate_fired = false;
 	*out_kind = 0;
@@ -1743,19 +1748,43 @@ static bool cmp_hyp_try_live_inject(unsigned int nr, bool do32,
 		return false;
 	if (shm == NULL)
 		return false;
-	if (__atomic_load_n(&shm->plateau_current_hypothesis,
-			    __ATOMIC_RELAXED) !=
-	    (int)PLATEAU_HYPOTHESIS_CMP_RISING_PC_FLAT) {
+
+	/*
+	 * Three independent channels can open this gate:
+	 *
+	 *   A  plateau == CMP_RISING_PC_FLAT  AND  ONE_IN(LIVE_INJECT_DENOM)
+	 *   B  ONE_IN(BOOTSTRAP_DENOM)                          (always-on)
+	 *   C  ONE_IN(PROMOTED_DENOM)  AND  picker returns PROMOTED
+	 *
+	 * A is the historical plateau-amplified path; the bootstrap (B) and
+	 * promoted-bypass (C) channels exist so PC wins can accumulate even
+	 * when the plateau gate has never opened.  C's "picker returns
+	 * PROMOTED" half is verified AFTER the pool walk further down -- we
+	 * roll the dice here and consult the picker once, deferring channel
+	 * attribution until we know whether C qualifies.
+	 *
+	 * Dice are rolled even when an earlier channel has already fired so
+	 * the random stream stays callsite-deterministic across plateau
+	 * transitions -- without this, flipping the plateau on / off would
+	 * shift every downstream rnd_*() consumer's value.  Cost is two
+	 * rnd_modulo_u32 calls in the rejected case, both off the hot raw
+	 * cmp-hint path.
+	 */
+	plateau_on = (__atomic_load_n(&shm->plateau_current_hypothesis,
+				      __ATOMIC_RELAXED) ==
+		      (int)PLATEAU_HYPOTHESIS_CMP_RISING_PC_FLAT);
+	channel_a_fired = plateau_on && ONE_IN(CMP_HYP_LIVE_INJECT_DENOM);
+	if (ONE_IN(CMP_HYP_LIVE_INJECT_BOOTSTRAP_DENOM))
+		channel_b_fired = true;
+	if (ONE_IN(CMP_HYP_LIVE_INJECT_PROMOTED_DENOM))
+		channel_c_dice_won = true;
+
+	if (!channel_a_fired && !channel_b_fired && !channel_c_dice_won) {
 		if (kcov_shm != NULL)
 			__atomic_fetch_add(
-				&kcov_shm->cmp_hyp_live_inject_reason[CMP_HYP_LIVE_INJECT_REASON_NOT_PLATEAU],
-				1UL, __ATOMIC_RELAXED);
-		return false;
-	}
-	if (!ONE_IN(CMP_HYP_LIVE_INJECT_DENOM)) {
-		if (kcov_shm != NULL)
-			__atomic_fetch_add(
-				&kcov_shm->cmp_hyp_live_inject_reason[CMP_HYP_LIVE_INJECT_REASON_DICE_MISS],
+				&kcov_shm->cmp_hyp_live_inject_reason[plateau_on
+					? CMP_HYP_LIVE_INJECT_REASON_DICE_MISS
+					: CMP_HYP_LIVE_INJECT_REASON_NOT_PLATEAU],
 				1UL, __ATOMIC_RELAXED);
 		return false;
 	}
@@ -1767,6 +1796,42 @@ static bool cmp_hyp_try_live_inject(unsigned int nr, bool do32,
 
 	picked = cmp_hyp_would_pick_locked(pool, cmp_ip, width, present);
 	if (picked == NULL) {
+		if (kcov_shm != NULL)
+			__atomic_fetch_add(
+				&kcov_shm->cmp_hyp_live_inject_reason[CMP_HYP_LIVE_INJECT_REASON_NO_MATCH],
+				1UL, __ATOMIC_RELAXED);
+		return false;
+	}
+
+	/*
+	 * Channel attribution.  Priority C > B > A: PROMOTED_BYPASS is the
+	 * most informative signal (state machine validated the hyp), so when
+	 * channels overlap we credit the most specific one.  Channel A has
+	 * no specific reason counter -- its firings are visible as
+	 * cmp_hyp_live_inject_gate_passed minus the sum of the BOOTSTRAP and
+	 * PROMOTED_BYPASS reason counters.
+	 *
+	 * The "channel C dice won but picked is not PROMOTED, and A/B both
+	 * lost" branch bails via NO_MATCH: structurally there IS a
+	 * hypothesis at the site (picker returned non-NULL), but no channel
+	 * actually qualified to drive an inject -- C requires PROMOTED, B/A
+	 * didn't roll.  Treating it as NO_MATCH keeps the per-reason
+	 * partition closed (sum of head + downstream reasons + injected ==
+	 * total entries past the size-class guard) without adding a third
+	 * new enum value just for this one corner.
+	 */
+	picked_state = __atomic_load_n(&picked->state, __ATOMIC_RELAXED);
+	if (channel_c_dice_won && picked_state == CMP_HYP_STATE_PROMOTED) {
+		if (kcov_shm != NULL)
+			__atomic_fetch_add(
+				&kcov_shm->cmp_hyp_live_inject_reason[CMP_HYP_LIVE_INJECT_REASON_PROMOTED_BYPASS],
+				1UL, __ATOMIC_RELAXED);
+	} else if (channel_b_fired) {
+		if (kcov_shm != NULL)
+			__atomic_fetch_add(
+				&kcov_shm->cmp_hyp_live_inject_reason[CMP_HYP_LIVE_INJECT_REASON_BOOTSTRAP],
+				1UL, __ATOMIC_RELAXED);
+	} else if (!channel_a_fired) {
 		if (kcov_shm != NULL)
 			__atomic_fetch_add(
 				&kcov_shm->cmp_hyp_live_inject_reason[CMP_HYP_LIVE_INJECT_REASON_NO_MATCH],
