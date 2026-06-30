@@ -172,6 +172,32 @@ static void sanitise_vhost_set_mem_table(struct syscallrecord *rec)
 	rec->a3 = (unsigned long) m;
 }
 
+static void sanitise_vhost_set_log_fd(struct syscallrecord *rec)
+{
+	int *p;
+
+	p = (int *) get_writable_struct(sizeof(*p));
+	if (!p)
+		return;
+	/*
+	 * fd == -1 is the documented disable sentinel for the log eventfd.
+	 * Never hand in a real fd on a shared host.
+	 */
+	*p = -1;
+	rec->a3 = (unsigned long) p;
+}
+
+static void sanitise_vhost_set_log_base(struct syscallrecord *rec)
+{
+	__u64 *p;
+
+	p = (__u64 *) get_writable_struct(sizeof(*p));
+	if (!p)
+		return;
+	*p = (__u64)(unsigned long) get_writable_struct(page_size);
+	rec->a3 = (unsigned long) p;
+}
+
 static void sanitise_vhost_features(struct syscallrecord *rec)
 {
 	/*
@@ -207,6 +233,12 @@ static void vhost_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 		break;
 	case VHOST_SET_MEM_TABLE:
 		sanitise_vhost_set_mem_table(rec);
+		break;
+	case VHOST_SET_LOG_FD:
+		sanitise_vhost_set_log_fd(rec);
+		break;
+	case VHOST_SET_LOG_BASE:
+		sanitise_vhost_set_log_base(rec);
 		break;
 	case VHOST_SET_VRING_KICK:
 	case VHOST_SET_VRING_CALL:
