@@ -53,6 +53,7 @@ static void sanitise_uffdio_api(struct syscallrecord *rec)
 	ua = (struct uffdio_api *) get_writable_struct(sizeof(*ua));
 	if (!ua)
 		return;
+	memset(ua, 0, sizeof(*ua));
 	/* Most of the time perform a real handshake (api == UFFD_API)
 	 * so any subsequent ioctl on this fd has a chance of succeeding.
 	 * Occasionally fuzz the api number to exercise the reject path. */
@@ -75,6 +76,7 @@ static void sanitise_uffdio_register(struct syscallrecord *rec)
 	ur = (struct uffdio_register *) get_writable_struct(sizeof(*ur));
 	if (!ur)
 		return;
+	memset(ur, 0, sizeof(*ur));
 	map = get_map();
 	if (map) {
 		ur->range.start = (unsigned long) map->ptr;
@@ -96,6 +98,7 @@ static void sanitise_uffdio_copy(struct syscallrecord *rec)
 	uc = (struct uffdio_copy *) get_writable_struct(sizeof(*uc));
 	if (!uc)
 		return;
+	memset(uc, 0, sizeof(*uc));
 	map = get_map();
 	if (map) {
 		uc->dst = (unsigned long) map->ptr;
@@ -117,6 +120,7 @@ static void sanitise_uffdio_zeropage(struct syscallrecord *rec)
 	uz = (struct uffdio_zeropage *) get_writable_struct(sizeof(*uz));
 	if (!uz)
 		return;
+	memset(uz, 0, sizeof(*uz));
 	map = get_map();
 	if (map) {
 		uz->range.start = (unsigned long) map->ptr;
@@ -138,6 +142,7 @@ static void sanitise_uffdio_writeprotect(struct syscallrecord *rec)
 	uwp = (struct uffdio_writeprotect *) get_writable_struct(sizeof(*uwp));
 	if (!uwp)
 		return;
+	memset(uwp, 0, sizeof(*uwp));
 	map = get_map();
 	if (map) {
 		uwp->range.start = (unsigned long) map->ptr;
@@ -159,6 +164,7 @@ static void sanitise_uffdio_continue(struct syscallrecord *rec)
 	uc = (struct uffdio_continue *) get_writable_struct(sizeof(*uc));
 	if (!uc)
 		return;
+	memset(uc, 0, sizeof(*uc));
 	map = get_map();
 	if (map) {
 		uc->range.start = (unsigned long) map->ptr;
@@ -176,6 +182,7 @@ static void sanitise_uffdio_poison(struct syscallrecord *rec)
 	up = (struct uffdio_poison *) get_writable_struct(sizeof(*up));
 	if (!up)
 		return;
+	memset(up, 0, sizeof(*up));
 	map = get_map();
 	if (map) {
 		up->range.start = (unsigned long) map->ptr;
@@ -197,6 +204,7 @@ static void sanitise_uffdio_move(struct syscallrecord *rec)
 	um = (struct uffdio_move *) get_writable_struct(sizeof(*um));
 	if (!um)
 		return;
+	memset(um, 0, sizeof(*um));
 	map = get_map();
 	if (map) {
 		um->dst = (unsigned long) map->ptr;
