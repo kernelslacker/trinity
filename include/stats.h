@@ -3681,6 +3681,73 @@ struct stats_s {
 	unsigned long expensive_adaptive_extra_accepts;
 	unsigned long expensive_adaptive_demotes;
 
+	/*
+	 * Cost-pool one-shot selector observer counters (gated by
+	 * cost_pool_selector_mode != OFF for the shadow_ pair; the live_
+	 * pair bumps unconditionally so the analytical vs actual
+	 * comparison is available on every run).  See the enum
+	 * cost_pool_selector_mode comment in include/strategy.h for the
+	 * shadow / live contract and the cost-pool-oneshot-selector
+	 * spec section 4.1 for the closed-form identity the shadow rows
+	 * accumulate.
+	 *
+	 *  cost_pool_selector_shadow_picks
+	 *      Cumulative: one bump per HEURISTIC / RANDOM arm entry into
+	 *      set_syscall_nr_* while cost_pool_selector_mode is SHADOW_
+	 *      ONLY or COMBINED, after the arch table has been chosen and
+	 *      before the retry loop's live rnd_modulo_u32 draw.
+	 *      Denominator for the analytical fraction below.  Bumps
+	 *      exactly once per pick call regardless of how many retries
+	 *      the flat picker's expensive_accept early-out consumes; the
+	 *      identity being validated is a per-pick property, not a
+	 *      per-retry one.
+	 *  cost_pool_selector_shadow_expensive_ppm_sum
+	 *      Cumulative sum of the per-pick analytical expected
+	 *      expensive-pool fraction, scaled to parts-per-million
+	 *      (integer accumulation so the shadow bump path stays
+	 *      allocation-free and lock-free).  Per-pick summand is
+	 *      1_000_000 * n_exp / (n_cheap * R + n_exp) with R =
+	 *      EXPENSIVE_ADAPTIVE_FLOOR = 1000 and n_cheap / n_exp read
+	 *      RELAXED from the arch-specific nr_active_cheap /
+	 *      nr_active_exp counters the Phase 0 pool bookkeeping
+	 *      maintains.  Analytical expensive fraction over any window
+	 *      = shadow_expensive_ppm_sum / (shadow_picks * 1_000_000);
+	 *      by the section 4.1 identity this equals the flat draw-then-
+	 *      reject expensive fraction in expectation, so it should
+	 *      match the live_expensive_picks / (live_expensive_picks +
+	 *      live_cheap_picks) actual fraction below on a real run.
+	 *      Divide-by-zero guard: skipped entirely when the arch table
+	 *      has n_cheap == 0 AND n_exp == 0 (no active syscalls on
+	 *      this arch -- the flat picker will bail on nr_syscalls == 0
+	 *      anyway).
+	 *  cost_pool_selector_live_cheap_picks
+	 *      Cumulative: one bump per successful set_syscall_nr_*
+	 *      accepted pick whose finalised syscall is CHEAP under the
+	 *      read-only EXPENSIVE bitmap (syscall_is_expensive() ==
+	 *      false).  Gated on cost_pool_selector_mode != OFF alongside
+	 *      the shadow_ pair so an OFF-mode build is bit-for-bit
+	 *      identical to a pre-row build (no per-pick atomic add).
+	 *      Placed at the pick-finalise site (immediately before
+	 *      srec_publish_begin) so downstream picker gates that reject
+	 *      (validate / cred-throttle) do not double-count -- the
+	 *      accept-fraction being compared is the ACTUAL syscall the
+	 *      child will execute.
+	 *  cost_pool_selector_live_expensive_picks
+	 *      Cumulative: sibling of live_cheap_picks above for the
+	 *      EXPENSIVE half of the finalised-pick stream.
+	 *
+	 * Observability only in this commit: the shadow observer never
+	 * returns a value, never gates any accept, never consumes any
+	 * RNG.  cost_pool_selector_mode == COMBINED in this build behaves
+	 * identically to SHADOW_ONLY (observer accumulates, live pick
+	 * stays flat draw-then-reject); the COMBINED coin-then-draw wire-
+	 * up lands in a follow-up commit.
+	 */
+	unsigned long cost_pool_selector_shadow_picks;
+	unsigned long cost_pool_selector_shadow_expensive_ppm_sum;
+	unsigned long cost_pool_selector_live_cheap_picks;
+	unsigned long cost_pool_selector_live_expensive_picks;
+
 	/* Adaptive remote-KCOV mode A/B disposition counters, bumped from
 	 * dispatch_step in random-syscall.c on every productive-signal call
 	 * into the PC-mode + remote_capable path so the operator can A/B

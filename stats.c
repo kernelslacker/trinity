@@ -5306,6 +5306,61 @@ void __cold cost_pool_periodic_dump(void)
 		stats_log_write("cost-pool active: flat=%u cheap=%u exp=%u\n",
 				flat, cheap, exp);
 	}
+
+	/* Cost-pool selector shadow / live counters -- emitted alongside
+	 * the pool-active snapshot above so an operator can watch the
+	 * closed-form section 4.1 identity hold empirically as the run
+	 * progresses.  RELAXED atomic reads: each counter is an
+	 * independent aggregate so no cross-counter tearing invariant
+	 * matters here; the analytical (ppm-scaled) fraction can be
+	 * off by at most one pick-worth-of-ppm relative to shadow_picks
+	 * across a torn snapshot, which is well below the noise floor
+	 * of a real run.  Rendered only when the observer engaged
+	 * (mode != OFF) OR the live-attribution pair accumulated (which
+	 * happens on every run regardless of mode) so a fixed-seed
+	 * --dry-run under OFF still emits the live-actual fraction as a
+	 * baseline reference. */
+	{
+		unsigned long shadow_picks = __atomic_load_n(
+			&shm->stats.cost_pool_selector_shadow_picks,
+			__ATOMIC_RELAXED);
+		unsigned long shadow_ppm_sum = __atomic_load_n(
+			&shm->stats.cost_pool_selector_shadow_expensive_ppm_sum,
+			__ATOMIC_RELAXED);
+		unsigned long live_cheap = __atomic_load_n(
+			&shm->stats.cost_pool_selector_live_cheap_picks,
+			__ATOMIC_RELAXED);
+		unsigned long live_exp = __atomic_load_n(
+			&shm->stats.cost_pool_selector_live_expensive_picks,
+			__ATOMIC_RELAXED);
+		unsigned long live_total = live_cheap + live_exp;
+		unsigned long shadow_exp_ppm = 0;
+		unsigned long live_exp_ppm = 0;
+		const char *mode_name;
+
+		if (shadow_picks > 0)
+			shadow_exp_ppm = shadow_ppm_sum / shadow_picks;
+		if (live_total > 0)
+			live_exp_ppm = (1000000UL * live_exp) / live_total;
+
+		switch (cost_pool_selector_mode) {
+		case COST_POOL_SELECTOR_MODE_OFF:
+			mode_name = "off"; break;
+		case COST_POOL_SELECTOR_MODE_SHADOW_ONLY:
+			mode_name = "shadow-only"; break;
+		case COST_POOL_SELECTOR_MODE_COMBINED:
+			mode_name = "combined"; break;
+		default:
+			mode_name = "?"; break;
+		}
+
+		stats_log_write("cost-pool selector: mode=%s "
+				"shadow picks=%lu exp_ppm=%lu  "
+				"live cheap=%lu exp=%lu exp_ppm=%lu\n",
+				mode_name,
+				shadow_picks, shadow_exp_ppm,
+				live_cheap, live_exp, live_exp_ppm);
+	}
 }
 
 /* Per-pool top-N entry for top_syscalls_periodic_dump's stack-resident
@@ -9326,6 +9381,16 @@ static const char *runid_frontier_group_antilock_mode_name(void)
 	return "?";
 }
 
+static const char *runid_cost_pool_selector_mode_name(void)
+{
+	switch (cost_pool_selector_mode) {
+	case COST_POOL_SELECTOR_MODE_OFF:         return "off";
+	case COST_POOL_SELECTOR_MODE_SHADOW_ONLY: return "shadow-only";
+	case COST_POOL_SELECTOR_MODE_COMBINED:    return "combined";
+	}
+	return "?";
+}
+
 static const char *runid_expensive_adaptive_mode_name(void)
 {
 	switch (expensive_adaptive_mode) {
@@ -9420,6 +9485,10 @@ static void runid_knob_manifest_render(void)
 		off = runid_knob_append(buf, sizeof(buf), off,
 					"frontier-group-antilock",
 					runid_frontier_group_antilock_mode_name());
+	if (cost_pool_selector_mode != COST_POOL_SELECTOR_MODE_OFF)
+		off = runid_knob_append(buf, sizeof(buf), off,
+					"cost-pool-selector",
+					runid_cost_pool_selector_mode_name());
 	if (__atomic_load_n(&reach_band_mode, __ATOMIC_RELAXED) !=
 	    REACH_BAND_OFF)
 		off = runid_knob_append(buf, sizeof(buf), off,

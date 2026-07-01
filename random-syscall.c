@@ -450,6 +450,123 @@ static bool expensive_accept(unsigned int nr, bool do32)
 }
 
 /*
+ * Cost-pool one-shot selector SHADOW observer.  Called once per
+ * HEURISTIC / RANDOM pick entry (after choose_syscall_table but
+ * before the live rnd_modulo_u32 draw) so the per-pool expected
+ * fractions are attributed against the SAME arch table the live
+ * picker will draw from.
+ *
+ * OFF is the fast path: a single RELAXED mode load, short-circuit,
+ * return.  No shm loads, no divide, no shadow-counter atomics --
+ * the pick's byte-identity to a pre-row build depends on this
+ * being the ONLY side effect the OFF branch has.
+ *
+ * SHADOW_ONLY / COMBINED: read the arch-specific per-pool live
+ * counts under RELAXED (parse-time constants R and 1_000_000
+ * elided into the divide), compute the section 4.1 closed-form
+ * expected-expensive-fraction scaled to parts-per-million, and
+ * accumulate under RELAXED.  ZERO rnd_u32() draws so the live pick
+ * stream is preserved bit-for-bit regardless of mode.  Divide-by-
+ * zero guard: skipped when both per-pool counts are zero (arch
+ * table has no active syscalls; the flat picker's outer_attempts
+ * budget will bail anyway).
+ *
+ * See the enum cost_pool_selector_mode comment in include/strategy.h
+ * for the mode contract and the cost_pool_selector_shadow_* field
+ * comments in include/stats.h for the counter semantics.
+ */
+static void cost_pool_selector_shadow_note(bool do32)
+{
+	enum cost_pool_selector_mode mode;
+	unsigned int n_cheap, n_exp;
+	unsigned long denom;
+	unsigned long ppm;
+
+	mode = __atomic_load_n(&cost_pool_selector_mode, __ATOMIC_RELAXED);
+	if (mode == COST_POOL_SELECTOR_MODE_OFF)
+		return;
+
+	if (biarch) {
+		if (do32) {
+			n_cheap = __atomic_load_n(
+				&shm->nr_active_cheap_32bit,
+				__ATOMIC_RELAXED);
+			n_exp = __atomic_load_n(
+				&shm->nr_active_exp_32bit,
+				__ATOMIC_RELAXED);
+		} else {
+			n_cheap = __atomic_load_n(
+				&shm->nr_active_cheap_64bit,
+				__ATOMIC_RELAXED);
+			n_exp = __atomic_load_n(
+				&shm->nr_active_exp_64bit,
+				__ATOMIC_RELAXED);
+		}
+	} else {
+		n_cheap = __atomic_load_n(&shm->nr_active_cheap,
+					  __ATOMIC_RELAXED);
+		n_exp = __atomic_load_n(&shm->nr_active_exp,
+					__ATOMIC_RELAXED);
+	}
+
+	/* Both empty -- no active syscalls on the chosen arch table; the
+	 * flat picker's outer_attempts loop will bail on nr_syscalls == 0
+	 * and never draw a syscall here.  Skip the divide (would be a
+	 * divide-by-zero) and the shadow bump (there is no pick event
+	 * to attribute). */
+	denom = (unsigned long)n_cheap * (unsigned long)EXPENSIVE_ADAPTIVE_FLOOR
+		+ (unsigned long)n_exp;
+	if (denom == 0)
+		return;
+
+	/* 1_000_000 * n_exp fits in a 64-bit unsigned long comfortably
+	 * for any n_exp <= MAX_NR_SYSCALL (~2 k on Linux); ppm is at
+	 * most 1_000_000 (when n_cheap == 0). */
+	ppm = (1000000UL * (unsigned long)n_exp) / denom;
+
+	__atomic_fetch_add(&shm->stats.cost_pool_selector_shadow_picks,
+			   1UL, __ATOMIC_RELAXED);
+	__atomic_fetch_add(
+		&shm->stats.cost_pool_selector_shadow_expensive_ppm_sum,
+		ppm, __ATOMIC_RELAXED);
+}
+
+/*
+ * Cost-pool one-shot selector LIVE-accept attribution.  Called from
+ * the pick-finalise site in set_syscall_nr_heuristic and
+ * set_syscall_nr_random (immediately before srec_publish_begin so
+ * downstream gates that reject cannot double-count) with the
+ * finalised (nr, do32) the child will execute.
+ *
+ * OFF short-circuits before any shm read or atomic so a build with
+ * cost_pool_selector_mode == OFF is bit-for-bit identical to a
+ * pre-row build (no ppc_call_ratio drift from an added __atomic_
+ * fetch_add per pick, no torn snapshot of the live counters, no
+ * stale-cacheline contention on the pick hot path).  SHADOW_ONLY /
+ * COMBINED bump the arch-appropriate live-accept counter; the cost
+ * class comes from the read-only EXPENSIVE bitmap (via
+ * syscall_is_expensive()) that select_syscall_tables() builds once
+ * at init, so a scribbled entry->flags cannot mis-attribute.
+ */
+static void cost_pool_selector_live_note(unsigned int nr, bool do32)
+{
+	enum cost_pool_selector_mode mode =
+		__atomic_load_n(&cost_pool_selector_mode, __ATOMIC_RELAXED);
+
+	if (mode == COST_POOL_SELECTOR_MODE_OFF)
+		return;
+
+	if (syscall_is_expensive(nr, do32))
+		__atomic_fetch_add(
+			&shm->stats.cost_pool_selector_live_expensive_picks,
+			1UL, __ATOMIC_RELAXED);
+	else
+		__atomic_fetch_add(
+			&shm->stats.cost_pool_selector_live_cheap_picks,
+			1UL, __ATOMIC_RELAXED);
+}
+
+/*
  * Check if a syscall entry belongs to the target group.
  * Used by group biasing to filter candidates.
  */
@@ -496,6 +613,15 @@ static bool set_syscall_nr_heuristic(struct syscallrecord *rec,
 		nr_syscalls = __atomic_load_n(&shm->nr_active_syscalls,
 					      __ATOMIC_RELAXED);
 	}
+
+	/* Cost-pool selector SHADOW observer -- fires once per pick call
+	 * (NOT per retry) so the analytical expected-expensive-fraction
+	 * summand matches the flat picker's one-pick-per-call rhythm.
+	 * OFF is a single RELAXED mode load + short-circuit; SHADOW_ONLY
+	 * / COMBINED accumulates the section 4.1 closed-form summand
+	 * with ZERO RNG draws so the live pick stream stays byte-
+	 * identical to a pre-row build for a given seed. */
+	cost_pool_selector_shadow_note(do32);
 
 retry:
 	if (no_syscalls_enabled() == true) {
@@ -762,6 +888,14 @@ retry:
 		}
 	}
 
+	/* Cost-pool selector LIVE-accept attribution -- placed at the
+	 * pick-finalise site so a validate / cred-throttle / wall-lever
+	 * reject earlier in the loop cannot double-count.  The bump
+	 * fires regardless of cost_pool_selector_mode so the live-actual
+	 * expensive fraction is always available for the section 4.1
+	 * identity validation. */
+	cost_pool_selector_live_note(syscallnr, do32);
+
 	/* publish (nr, do32bit) as a coherent pair. */
 	srec_publish_begin(rec);
 	rec->do32bit = do32;
@@ -872,6 +1006,13 @@ bool set_syscall_nr_random(struct syscallrecord *rec,
 	 * load on every retry. */
 	anti_prior_on = plateau_anti_prior_active();
 
+	/* Cost-pool selector SHADOW observer -- same call-site contract
+	 * as the matching helper call in set_syscall_nr_heuristic above:
+	 * fires once per pick call (NOT per retry), consumes no RNG, and
+	 * is short-circuit-OFF-fast so the RANDOM arm's default-off pick
+	 * stream is byte-identical to a pre-row build for a given seed. */
+	cost_pool_selector_shadow_note(do32);
+
 retry:
 	if (no_syscalls_enabled() == true) {
 		output(0, "[%d] No more syscalls enabled. Exiting\n", mypid());
@@ -950,6 +1091,13 @@ retry:
 				1UL, __ATOMIC_RELAXED);
 		}
 	}
+
+	/* Cost-pool selector LIVE-accept attribution -- same call-site
+	 * contract as the matching bump in set_syscall_nr_heuristic
+	 * above: fires unconditionally at pick-finalise so the live-
+	 * actual expensive fraction over the RANDOM arm is measurable
+	 * on any run regardless of cost_pool_selector_mode. */
+	cost_pool_selector_live_note(syscallnr, do32);
 
 	srec_publish_begin(rec);
 	rec->do32bit = do32;
