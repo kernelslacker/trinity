@@ -11,8 +11,6 @@
 #define CHILD_ANON 2
 #define MMAPED_FILE 3
 
-#define MAPS_NAME_MAX_LEN PATH_MAX
-
 struct map {
 	void *ptr;
 	char *name;
@@ -68,8 +66,6 @@ struct map {
 	 */
 	bool known_rw;
 };
-
-extern struct map *initial_mappings;
 
 #define NR_MAPPING_SIZES 9
 extern unsigned long mapping_sizes[NR_MAPPING_SIZES];
