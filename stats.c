@@ -8133,11 +8133,13 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	 */
 	{
 		static const char * const reason_labels[CMP_HYP_LIVE_INJECT_REASON_NR] = {
-			"not_plateau",
-			"dice_miss",
-			"no_match",
-			"derive_fail",
-			"accept_reject",
+			[CMP_HYP_LIVE_INJECT_REASON_NOT_PLATEAU]     = "not_plateau",
+			[CMP_HYP_LIVE_INJECT_REASON_DICE_MISS]       = "dice_miss",
+			[CMP_HYP_LIVE_INJECT_REASON_NO_MATCH]        = "no_match",
+			[CMP_HYP_LIVE_INJECT_REASON_DERIVE_FAIL]     = "derive_fail",
+			[CMP_HYP_LIVE_INJECT_REASON_ACCEPT_REJECT]   = "accept_reject",
+			[CMP_HYP_LIVE_INJECT_REASON_BOOTSTRAP]       = "bootstrap",
+			[CMP_HYP_LIVE_INJECT_REASON_PROMOTED_BYPASS] = "promoted_bypass",
 		};
 		static unsigned long prev_hyp_live_inject_reason[CMP_HYP_LIVE_INJECT_REASON_NR];
 		unsigned long cur_hyp_live_inject_reason[CMP_HYP_LIVE_INJECT_REASON_NR];
