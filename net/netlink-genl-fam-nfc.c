@@ -30,7 +30,14 @@
 
 #if __has_include(<linux/nfc.h>)
 
-#include <linux/nfc.h>
+/*
+ * kernel/nfc.h pulls <linux/nfc.h> and backfills the post-6.12
+ * NFC_ATTR_TARGET_ATS / NFC_ATS_MAXSIZE the spec table references, so a
+ * host shipping an older <linux/nfc.h> -- which still satisfies the
+ * __has_include gate above -- builds instead of failing on the missing
+ * enumerator.
+ */
+#include "kernel/nfc.h"
 
 #include "netlink-genl-families.h"
 #include "utils.h"
