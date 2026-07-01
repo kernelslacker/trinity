@@ -10,14 +10,8 @@
 #include "random.h"
 #include "socket-family-grammar.h"
 #include "compat.h"
+#include "kernel/if_packet.h"
 #include "rnd.h"
-
-/* Older <linux/if_packet.h> may predate PACKET_FANOUT_FLAG_IGNORE_OUTGOING.
- * Define the bit locally so the fuzzer can name it even when building against
- * an old UAPI header. */
-#ifndef PACKET_FANOUT_FLAG_IGNORE_OUTGOING
-#define PACKET_FANOUT_FLAG_IGNORE_OUTGOING	0x4000
-#endif
 
 /* ETH_P_* values are big-endian Ethernet types; socket() for PF_PACKET
  * expects them in network byte order.  Use a compile-time byte-swap so
@@ -206,10 +200,6 @@ const struct netproto proto_packet = {
  * EPERM on unprivileged hosts latches the family off cleanly via
  * the framework's sfg_unsupported gate.
  */
-
-#ifndef PACKET_FANOUT_HASH
-#define PACKET_FANOUT_HASH		0
-#endif
 
 static const int packet_grammar_protos[] = {
 	ETH_P_ALL, ETH_P_IP, ETH_P_ARP, ETH_P_802_2,
