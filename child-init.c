@@ -341,6 +341,10 @@ void clean_childdata(struct childdata *child)
 	 * rate against the previous occupant of this slot. */
 	child->local_post_handler_corrupt_ptr = 0;
 	child->maps_local_refill_credit = 0;
+	/* Reset the per-child writable-pool bump cursor so a recycled
+	 * slot restarts allocation at pool offset 0 rather than
+	 * continuing from wherever the previous occupant left off. */
+	child->writable_pool_cursor = 0;
 	child->mmap_pool_nonempty_mask = 0;
 	child->storm_check_last_time = child->tp;
 	child->storm_check_last_post_handler = 0;
