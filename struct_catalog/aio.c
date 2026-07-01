@@ -41,6 +41,17 @@ const unsigned long iocb_opcode_values[IOCB_OPCODE_VALUES_N] = {
 #define IOCB_FLAGS_MASK \
 	(IOCB_FLAG_RESFD | IOCB_FLAG_IOPRIO)
 
+/*
+ * RWF_DONTCACHE (0x80) was appended to the RWF_* aio_rw_flags set in
+ * 6.16; a pre-6.16 <linux/fs.h> stops at RWF_ATOMIC (0x40).  The mask
+ * below references it unconditionally, so carry a fallback matching the
+ * upstream value.  RWF_* are #defines, so the guard detects a header
+ * that already ships it.
+ */
+#ifndef RWF_DONTCACHE
+#define RWF_DONTCACHE	((__kernel_rwf_t)0x00000080)
+#endif
+
 #define IOCB_RWF_MASK \
 	(RWF_HIPRI | RWF_DSYNC | RWF_SYNC | RWF_NOWAIT | RWF_APPEND | \
 	 RWF_NOAPPEND | RWF_ATOMIC | RWF_DONTCACHE)
