@@ -3,24 +3,15 @@
                    unsigned int, nr_futexes, unsigned int, flags,
                    struct __kernel_timespec __user *, timeout, clockid_t, clockid)
  */
-#include <linux/futex.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
+#include "kernel/futex.h"
 #include "futex.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
 #include "compat.h"
-
-#ifndef FUTEX_32
-#define FUTEX_32		FUTEX2_SIZE_U32
-#endif
-
-/* Sentinel for "no NUMA node preference" in FUTEX2_MPOL waiters. */
-#ifndef FUTEX_NO_NODE
-#define FUTEX_NO_NODE		(-1)
-#endif
 
 static unsigned long futex_waitv_clockids[] = {
 	CLOCK_MONOTONIC, CLOCK_REALTIME,
