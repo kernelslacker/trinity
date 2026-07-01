@@ -274,8 +274,6 @@ enum {
 	__STATE_GEN_MAX,
 };
 
-#define STATE_GEN_MAX	(__STATE_GEN_MAX - 1)
-
 static const float
 seccomp_markov[__STATE_GEN_MAX][__STATE_GEN_MAX] = {
 	{ .1f,	.5f,	.3f,	.09f,	.01f },
