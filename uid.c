@@ -19,24 +19,6 @@ gid_t orig_gid;
 uid_t nobody_uid;
 gid_t nobody_gid;
 
-void dump_uids(void)
-{
-	uid_t uid, euid, suid;
-	gid_t gid, egid, sgid;
-
-	if (getresuid(&uid, &euid, &suid) == -1) {
-		perror("getresuid");
-		return;
-	}
-	if (getresgid(&gid, &egid, &sgid) == -1) {
-		perror("getresgid");
-		return;
-	}
-
-	outputstd("initial uid:%u gid:%u euid:%u egid:%u suid:%u sgid:%u\n",
-		uid, gid, euid, egid, suid, sgid);
-}
-
 void drop_privs(void)
 {
 	if (setresgid(nobody_gid, nobody_gid, nobody_gid) < 0) {
