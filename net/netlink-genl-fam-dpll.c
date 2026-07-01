@@ -43,10 +43,15 @@
  * version-gated dispatch.  hdrsize stays 0: dpll has no family-
  * specific fixed header, attributes follow the genlmsghdr directly.
  *
- * Header gating mirrors the ovpn / nbd families: <linux/dpll.h> is the
- * upstream UAPI header carrying every DPLL_CMD_* / DPLL_A_* enum
- * referenced below.  Build hosts lacking the header silently drop the
- * family from the registry instead of failing the build.
+ * Header gating mirrors the ovpn / nbd families: the family is compiled
+ * only when <linux/dpll.h> is present, so a build host lacking the
+ * header entirely silently drops the family from the registry instead
+ * of failing the build.  A host that ships an *older* revision of the
+ * header still passes the __has_include gate, so kernel/dpll.h is
+ * pulled in its place -- it includes <linux/dpll.h> and backfills the
+ * post-6.7 DPLL_A_* appends the spec table references
+ * (LOCK_STATUS_ERROR / CLOCK_QUALITY_LEVEL / PHASE_OFFSET_MONITOR) so
+ * the build survives on distro kernels that predate them.
  *
  * arch.h is included unconditionally above the __has_include guard so
  * the translation unit is never empty even on build hosts whose uapi
@@ -59,7 +64,7 @@
 
 #if __has_include(<linux/dpll.h>)
 
-#include <linux/dpll.h>
+#include "kernel/dpll.h"
 
 #include "netlink-genl-families.h"
 #include "utils.h"
