@@ -2,27 +2,8 @@
 #include "net.h"
 #include "random.h"
 #include "compat.h"
+#include "kernel/udp.h"
 #include "rnd.h"
-
-#ifndef UDP_NO_CHECK6_TX
-#define UDP_NO_CHECK6_TX	101
-#endif
-#ifndef UDP_NO_CHECK6_RX
-#define UDP_NO_CHECK6_RX	102
-#endif
-#ifndef UDP_GRO
-#define UDP_GRO			104
-#endif
-
-#ifndef UDP_ENCAP_GTP0
-#define UDP_ENCAP_GTP0		4
-#endif
-#ifndef UDP_ENCAP_GTP1U
-#define UDP_ENCAP_GTP1U		5
-#endif
-#ifndef UDP_ENCAP_RXRPC
-#define UDP_ENCAP_RXRPC		6
-#endif
 
 static const unsigned int udp_opts[] = {
 	UDP_CORK, UDP_ENCAP,
