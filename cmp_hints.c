@@ -1479,12 +1479,19 @@ static void cmp_hyp_would_pick(unsigned int nr, bool do32,
  * Derive ONE candidate value from PICKED via the spec's ladder.  Every
  * derived value is constructed so cmp_hyp_find_for_credit() will
  * re-resolve back to a hypothesis at the same (cmp_ip, width) at
- * credit time (EXACT.exemplar matches EXACT; ENUM_FAMILY exemplar /
- * lo / hi all lie in [lo, hi]; BITMASK single set-bit is single-bit
- * AND set in mask; RANGE lo / hi / midpoint all lie in [lo, hi]).
- * Boundary probes (lo-1, hi+1) are deliberately NOT emitted -- they
- * fall outside [lo, hi] and so are unreachable by the value-keyed
- * credit walk, which would silently drop their attribution.
+ * credit time -- either the SAME hypothesis (EXACT.exemplar matches
+ * EXACT; ENUM_FAMILY exemplar / lo / hi all lie in [lo, hi]; BITMASK
+ * single set-bit is single-bit AND set in mask; RANGE lo / hi /
+ * midpoint all lie in [lo, hi]) or, for the EXACT +/-1 arms, the
+ * co-populated BOUNDARY hypothesis at the same (cmp_ip, width) via
+ * its +/-2 credit window.  For RANGE, boundary probes (lo-1, hi+1)
+ * are deliberately NOT emitted -- they fall outside [lo, hi] and so
+ * are unreachable by the value-keyed credit walk, which would
+ * silently drop their attribution; that neighbourhood is instead the
+ * BOUNDARY arm's job.  The EXACT arm's +/-1 rotation is safe because
+ * BOUNDARY co-registers on every observation and its credit window
+ * (CMP_HYP_BOUNDARY_CREDIT_WINDOW == 2) is wide enough to cover the
+ * shifted values.
  *
  * Bug-pattern rules applied:
  *   * midpoint computed as lo + ((hi - lo) >> 1) so (lo + hi) cannot
@@ -1509,10 +1516,89 @@ static bool cmp_hyp_derive_value(const struct cmp_hypothesis *picked,
 	if (picked == NULL || out == NULL)
 		return false;
 	switch (picked->kind) {
-	case CMP_HYP_EXACT:
-		*out = (unsigned long)picked->exemplar;
-		cls = CMP_HYP_PROBE_CLASS_EXACT_EXEMPLAR;
-		goto out_bump;
+	case CMP_HYP_EXACT: {
+		/*
+		 * Rotate uniformly among {N-1, N, N+1}, mirroring
+		 * cmp_hint_apply_transform's CMP_HINT_BOUNDARY case.
+		 * Before this rotation the derive always returned the
+		 * exemplar unchanged -- the compile-time const the kernel
+		 * had already observed -- so every LIVE typed EXACT inject
+		 * re-fed the site the byte-identical value that got recorded
+		 * there in the first place: the equality gate the const
+		 * originally passed still passed, but strict-inequality
+		 * gates ("x < N", "x > N", the pattern documented in the
+		 * CMP_HYP_BOUNDARY block below and in include/kcov.h's
+		 * cmp_hyp_boundary_* commentary) stayed unsatisfied and
+		 * pc_wins was structurally starved on this arm.  The raw
+		 * cmp-hint arm applies this same +/-1 rotation at the same
+		 * callsites via cmp_hint_apply_transform's CMP_HINT_BOUNDARY
+		 * case, so pre-rotation the LIVE typed EXACT arm was a
+		 * strict downgrade of the raw arm's conversion (the raw
+		 * arm's own comment at the transform notes "the equality
+		 * slot -- C unchanged -- is retained in the rotation, so
+		 * the worst case is a 3x slowdown on a purely
+		 * equality-dominated callsite, while
+		 * length-/cap-/extent-dominated syscalls ... get the
+		 * boundary edges they were missing").  The rotation restores
+		 * parity with the raw arm and lets the strict-inequality
+		 * boundary gates convert on the typed arm too.
+		 *
+		 * Credit attribution: EXACT's find_for_credit arm demands
+		 * exemplar == value, so the +/-1 probes do NOT re-resolve
+		 * back to this EXACT hypothesis at credit time -- they fall
+		 * through to the BOUNDARY arm's +/-2 credit window
+		 * (CMP_HYP_BOUNDARY_CREDIT_WINDOW == 2) and get attributed
+		 * to whichever BOUNDARY entry the observe path registered
+		 * at the same (cmp_ip, width).  Both EXACT and BOUNDARY
+		 * co-populate on every observation (see cmp_hyp_observe),
+		 * so a fired shifted probe has a home; if the BOUNDARY
+		 * slot was reclaimed, per-hypothesis credit misses but the
+		 * pc_win itself is still counted in the flat kcov_shm
+		 * rollup.  The exemplar arm still re-resolves to this
+		 * EXACT hypothesis exactly as before.
+		 *
+		 * Unsigned wrap at the extremes (N == 0 -> N-1 ==
+		 * ULONG_MAX; N == ULONG_MAX -> N+1 == 0) is intentional
+		 * and unclamped, matching the raw transform's rationale:
+		 * both wrapped values are themselves useful probes
+		 * (underflow exercises length-cap validators; overflow
+		 * exercises zero-length rejection paths), and the
+		 * downstream accept-range gate in cmp_hints_try_get_ex
+		 * rejects any that overshoot the caller's bounds and
+		 * counts them under
+		 * CMP_HYP_LIVE_INJECT_REASON_ACCEPT_REJECT.
+		 *
+		 * Probe-class histogram: the +/-1 arms bump the shared
+		 * CMP_HYP_PROBE_CLASS_BOUNDARY_MINUS1 / _PLUS1 buckets by
+		 * *probe shape* rather than by originating hypothesis --
+		 * a "constant nudged down/up by 1" probe reached the
+		 * kernel, which is what a downstream reader wants to
+		 * measure.  Splitting these into dedicated
+		 * EXACT_MINUS1 / _PLUS1 buckets would need an
+		 * include/kcov.h enum extension deferred to a follow-up if
+		 * the shared bucket becomes ambiguous in practice.
+		 */
+		uint64_t n = picked->exemplar;
+
+		switch (rnd_modulo_u32(3)) {
+		case 0:
+			*out = (unsigned long)(n - 1);
+			cls = CMP_HYP_PROBE_CLASS_BOUNDARY_MINUS1;
+			goto out_bump;
+		case 2:
+			*out = (unsigned long)(n + 1);
+			cls = CMP_HYP_PROBE_CLASS_BOUNDARY_PLUS1;
+			goto out_bump;
+		/* case 1 (and default): N unchanged.  Retains the exact
+		 * equality-gate probe so equality-dominated callsites
+		 * (cmd codes, enum selectors, version magics) keep
+		 * converting on the typed arm. */
+		default:
+			*out = (unsigned long)n;
+			cls = CMP_HYP_PROBE_CLASS_EXACT_EXEMPLAR;
+			goto out_bump;
+		}
+	}
 	case CMP_HYP_ENUM_FAMILY:
 		switch (rnd_modulo_u32(3)) {
 		case 0:
