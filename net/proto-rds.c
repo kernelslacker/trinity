@@ -8,16 +8,12 @@
 #include <unistd.h>
 #include "net.h"
 #include "compat.h"
+#include "kernel/rds.h"
 #include "random.h"
 #include "socket-family-grammar.h"
 #include "trinity.h"
 #include "utils.h"
 #include "rnd.h"
-#include <linux/rds.h>
-
-#ifndef SO_RDS_TRANSPORT
-#define SO_RDS_TRANSPORT	8
-#endif
 
 static void rds_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct sockaddr **addr, socklen_t *addrlen)
 {
@@ -52,8 +48,6 @@ static const unsigned int rds_opts[] = {
 	RDS_RECVERR, RDS_CONG_MONITOR, RDS_GET_MR_FOR_DEST,
 	SO_RDS_TRANSPORT,
 };
-
-#define SOL_RDS 276
 
 static void rds_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
