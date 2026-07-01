@@ -152,8 +152,6 @@ static bool g_bus_id_inited;
 #define DEVLINK_CHURN_PKTS_PER_ITER	8U
 
 #define DEVLINK_PORT_SPLIT_COUNT	4U
-#define NETDEVSIM_LOOPBACK_BASE		0x7f000001U	/* 127.0.0.1 */
-#define NR_NETDEVSIM_LOOPBACK_ADDRS	5U
 
 #define NETDEVSIM_NEW_DEVICE	"/sys/bus/netdevsim/new_device"
 #define NETDEVSIM_DEL_DEVICE	"/sys/bus/netdevsim/del_device"
