@@ -5240,6 +5240,74 @@ void __cold defense_counters_periodic_dump(void)
 	last_dump = now;
 }
 
+/*
+ * Per-pool active-count snapshot for the cost-pool selector foundation.
+ *
+ * The picker still draws from the flat shm->active_syscalls*[] arrays;
+ * the cheap / expensive pools maintained beside them by the activate /
+ * deactivate paths are storage-only in this phase.  This dump surfaces
+ * the pool populations so the operator can watch the partition stay
+ * consistent with the flat count (invariant: cheap + exp == flat) and
+ * see the cheap / expensive split of the active set at run-end and at
+ * every periodic tick.  RELAXED atomic reads: pool counts only shift
+ * on -x auto-disable / validation-failure deactivation, which is
+ * infrequent, and any torn read biases the surface by at most one
+ * activation between the flat and pool halves.
+ *
+ * Self-rate-limited on DEFENSE_DUMP_INTERVAL_SEC so the 10-minute cadence
+ * matches the surrounding periodic surfaces and long-fuzz logs stay
+ * legible; the caller in run_periodic_surfaces() fires it every tick
+ * and this gate absorbs the frequency.
+ */
+void __cold cost_pool_periodic_dump(void)
+{
+	static struct timespec last_dump;
+	struct timespec now;
+	long elapsed;
+
+	clock_gettime(CLOCK_MONOTONIC, &now);
+
+	if (last_dump.tv_sec == 0) {
+		last_dump = now;
+		return;
+	}
+
+	elapsed = now.tv_sec - last_dump.tv_sec;
+	if (elapsed < DEFENSE_DUMP_INTERVAL_SEC)
+		return;
+
+	last_dump = now;
+
+	if (biarch == true) {
+		unsigned int flat32 = __atomic_load_n(&shm->nr_active_32bit_syscalls,
+						      __ATOMIC_RELAXED);
+		unsigned int flat64 = __atomic_load_n(&shm->nr_active_64bit_syscalls,
+						      __ATOMIC_RELAXED);
+		unsigned int c32 = __atomic_load_n(&shm->nr_active_cheap_32bit,
+						   __ATOMIC_RELAXED);
+		unsigned int e32 = __atomic_load_n(&shm->nr_active_exp_32bit,
+						   __ATOMIC_RELAXED);
+		unsigned int c64 = __atomic_load_n(&shm->nr_active_cheap_64bit,
+						   __ATOMIC_RELAXED);
+		unsigned int e64 = __atomic_load_n(&shm->nr_active_exp_64bit,
+						   __ATOMIC_RELAXED);
+
+		stats_log_write("cost-pool active: 32bit flat=%u cheap=%u exp=%u  "
+				"64bit flat=%u cheap=%u exp=%u\n",
+				flat32, c32, e32, flat64, c64, e64);
+	} else {
+		unsigned int flat = __atomic_load_n(&shm->nr_active_syscalls,
+						    __ATOMIC_RELAXED);
+		unsigned int cheap = __atomic_load_n(&shm->nr_active_cheap,
+						     __ATOMIC_RELAXED);
+		unsigned int exp = __atomic_load_n(&shm->nr_active_exp,
+						   __ATOMIC_RELAXED);
+
+		stats_log_write("cost-pool active: flat=%u cheap=%u exp=%u\n",
+				flat, cheap, exp);
+	}
+}
+
 /* Per-pool top-N entry for top_syscalls_periodic_dump's stack-resident
  * insertion sort.  Holds the syscall's table index and the per-window
  * delta of its strategy-attributed new-edge counter. */

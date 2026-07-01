@@ -18,8 +18,24 @@ extern bool use_32bit;
 extern bool use_64bit;
 
 void validate_specific_syscall(const struct syscalltable *table, int call);
-void activate_syscall_in_table(unsigned int calln, unsigned int *nr_active, const struct syscalltable *table, int *active_syscall);
-void deactivate_syscall_in_table(unsigned int calln, unsigned int *nr_active, const struct syscalltable *table, int *active_syscall);
+/*
+ * Cost-pool aware activate / deactivate: routes the entry into the flat
+ * active_syscall[] array (unchanged, still authoritative for the live
+ * picker) AND maintains the parallel cheap / expensive pools in
+ * lock-step under the caller's syscalltable_lock coverage.  do32 selects
+ * the EXPENSIVE bitmap for biarch classification; uniarch callers pass
+ * false (syscall_is_expensive() ignores do32 under biarch == false).
+ */
+void activate_syscall_in_table(unsigned int calln, unsigned int *nr_active,
+			       const struct syscalltable *table,
+			       int *active_syscall, bool do32,
+			       int *active_cheap, unsigned int *nr_active_cheap,
+			       int *active_expensive, unsigned int *nr_active_exp);
+void deactivate_syscall_in_table(unsigned int calln, unsigned int *nr_active,
+				 const struct syscalltable *table,
+				 int *active_syscall, bool do32,
+				 int *active_cheap, unsigned int *nr_active_cheap,
+				 int *active_expensive, unsigned int *nr_active_exp);
 
 void check_user_specified_arch(const char *arg, char **arg_name, bool *only_64bit, bool *only_32bit);
 void clear_check_user_specified_arch(const char *arg, char **arg_name);

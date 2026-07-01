@@ -116,6 +116,52 @@ struct shm_s {
 	unsigned int nr_active_64bit_syscalls;
 
 	/*
+	 * Cost-partitioned active pools maintained BESIDE the flat
+	 * active_syscalls*[] arrays above.  Every syscall live in a flat
+	 * array is also live in exactly one of these two pools, split by
+	 * whether syscall_is_expensive() returns true for its table
+	 * index -- the authoritative source of truth is the read-only
+	 * EXPENSIVE bitmap that select_syscall_tables() builds once at
+	 * init from entry->flags & EXPENSIVE, so a scribbled
+	 * entry->flags cannot mis-classify.
+	 *
+	 * Same +1 index encoding as the flat arrays (val = calln + 1,
+	 * val == 0 is the empty slot), same swap-with-last mutation
+	 * discipline, same shm->syscalltable_lock coverage as the flat
+	 * arrays' mutations in deactivate_syscall_locked().  The
+	 * per-entry back-index for pool-side swap-with-last is
+	 * syscallentry->pool_number (see include/syscall.h), mirroring
+	 * active_number's role for the flat array.
+	 *
+	 * Partition invariant, checked from within the activate /
+	 * deactivate paths under the lock:
+	 *   nr_active_cheap + nr_active_exp == nr_active_syscalls
+	 *   nr_active_cheap_32bit + nr_active_exp_32bit == nr_active_32bit_syscalls
+	 *   nr_active_cheap_64bit + nr_active_exp_64bit == nr_active_64bit_syscalls
+	 *
+	 * BEHAVIOUR-NEUTRAL storage: the live picker still draws from
+	 * the flat active_syscalls*[] + expensive_accept.  These pools
+	 * are maintained but NOT read by random-syscall.c -- they are
+	 * the foundation for the later O(1) cost-selector phases.
+	 *
+	 * Uniarch builds only touch the un-suffixed pair; biarch builds
+	 * only touch the _32bit / _64bit pairs, mirroring the flat
+	 * arrays' arch-only-touches convention.
+	 */
+	int active_cheap[MAX_NR_SYSCALL];
+	int active_expensive[MAX_NR_SYSCALL];
+	int active_cheap32[MAX_NR_SYSCALL];
+	int active_expensive32[MAX_NR_SYSCALL];
+	int active_cheap64[MAX_NR_SYSCALL];
+	int active_expensive64[MAX_NR_SYSCALL];
+	unsigned int nr_active_cheap;
+	unsigned int nr_active_exp;
+	unsigned int nr_active_cheap_32bit;
+	unsigned int nr_active_exp_32bit;
+	unsigned int nr_active_cheap_64bit;
+	unsigned int nr_active_exp_64bit;
+
+	/*
 	 * Cached "table has at least one active syscall" booleans for the
 	 * biarch picker.  Maintained by validate_syscall_table_{32,64}() at
 	 * startup and invalidated by the deactivate_syscall{32,64}() paths
