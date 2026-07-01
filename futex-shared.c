@@ -84,7 +84,7 @@ uint32_t * get_shared_futex_word(void)
 	struct object *obj;
 
 	obj = get_random_object(OBJ_FUTEX_SHARED, OBJ_GLOBAL);
-	if (obj == NULL)
+	if (!objpool_check(obj, OBJ_FUTEX_SHARED))
 		return NULL;
 
 	return obj->sharedfutexobj.word;
