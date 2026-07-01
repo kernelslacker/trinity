@@ -5156,6 +5156,13 @@ void corrupt_ptr_spike_check(void);
  * sitting at noise without waiting for the run to finish. */
 void defense_counters_periodic_dump(void) __cold;
 
+/* Per-tick snapshot of the cost-partitioned active-syscall pools maintained
+ * beside the flat shm->active_syscalls*[] arrays.  Surfaces cheap / expensive
+ * pool counts alongside the flat count so an operator can confirm the
+ * partition invariant (cheap + exp == flat) at any time.  Called from
+ * run_periodic_surfaces() every tick and from dump_stats() at shutdown. */
+void cost_pool_periodic_dump(void) __cold;
+
 /* Per-tick scan paired with defense_counters_periodic_dump: every dump
  * window, emits the top-5 syscalls by new-edge attribution for each
  * strategy pool (bandit vs explorer) so the operator can see which

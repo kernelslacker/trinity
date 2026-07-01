@@ -235,6 +235,8 @@ static void run_periodic_surfaces(void)
 
 	defense_counters_periodic_dump();
 
+	cost_pool_periodic_dump();
+
 	top_syscalls_periodic_dump();
 
 	vma_count_periodic_dump();

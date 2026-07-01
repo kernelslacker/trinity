@@ -69,6 +69,25 @@ bool syscall_is_expensive(unsigned int nr, bool do32)
 	return (bm[nr / 64] >> (nr % 64)) & 1;
 }
 
+/*
+ * Authoritative cost-pool classification for a table index.  Reads the
+ * read-only EXPENSIVE bitmap that select_syscall_tables() built once at
+ * init from the syscallentry->flags & EXPENSIVE flag; the bitmap is
+ * never modified at runtime, so this is safe from concurrent scribbles
+ * onto the shared syscallentry copy.
+ *
+ * NEVER infer the pool from a live-mutable counter or from the current
+ * contents of the pool arrays -- the bitmap is the single source of
+ * truth for "which pool this syscall belongs in", and every activate /
+ * deactivate site must consult it directly so a torn pool array can be
+ * detected by the partition-completeness assertion, not silently
+ * ratified by a self-consistency read.
+ */
+static bool cost_pool_of(unsigned int calln, bool do32)
+{
+	return syscall_is_expensive(calln, do32);
+}
+
 int search_syscall_table(const struct syscalltable *table, unsigned int nr_syscalls, const char *arg)
 {
 	unsigned int i;
@@ -131,9 +150,36 @@ int validate_specific_syscall_silent(const struct syscalltable *table, int call)
 	return true;
 }
 
-void activate_syscall_in_table(unsigned int calln, unsigned int *nr_active, const struct syscalltable *table, int *active_syscall)
+/*
+ * Partition-completeness assertion.  With the flat active_syscalls[]
+ * and the pool arrays maintained in lock-step, the pool counts must
+ * exactly cover the flat count at every stable point.  Any drift means
+ * an activate / deactivate site desynchronised the two views, which is
+ * a bug the later O(1) cost-selector phases MUST NOT see -- so panic
+ * loudly at development time rather than let the pools rot into
+ * unusable state.
+ */
+static void assert_pool_partition(unsigned int nr_active,
+				  unsigned int nr_active_cheap,
+				  unsigned int nr_active_exp)
+{
+	if (nr_active_cheap + nr_active_exp != nr_active) {
+		output(0, "[tables] pool-partition drift: flat=%u cheap=%u exp=%u (sum=%u)\n",
+		       nr_active, nr_active_cheap, nr_active_exp,
+		       nr_active_cheap + nr_active_exp);
+		exit(EXIT_FAILURE);
+	}
+}
+
+void activate_syscall_in_table(unsigned int calln, unsigned int *nr_active,
+			       const struct syscalltable *table,
+			       int *active_syscall, bool do32,
+			       int *active_cheap, unsigned int *nr_active_cheap,
+			       int *active_expensive, unsigned int *nr_active_exp)
 {
 	struct syscallentry *entry = table[calln].entry;
+	int *pool;
+	unsigned int *nr_pool;
 
 	if ((entry->flags & NEEDS_ROOT) && orig_uid != 0)
 		return;
@@ -150,12 +196,39 @@ void activate_syscall_in_table(unsigned int calln, unsigned int *nr_active, cons
 		active_syscall[*nr_active] = calln + 1;
 		(*nr_active) += 1;
 		entry->active_number = *nr_active;
+
+		/*
+		 * Cost-pool routing: mirror the flat-array append into the
+		 * cheap or expensive pool, taking the pool from the
+		 * authoritative EXPENSIVE bitmap (never inferred).  Same
+		 * val = calln + 1 encoding, and pool_number is the pool's
+		 * back-index (1 + slot) so deactivate can swap-with-last
+		 * in O(1) just like the flat side.
+		 */
+		if (cost_pool_of(calln, do32)) {
+			pool = active_expensive;
+			nr_pool = nr_active_exp;
+		} else {
+			pool = active_cheap;
+			nr_pool = nr_active_cheap;
+		}
+		pool[*nr_pool] = calln + 1;
+		(*nr_pool) += 1;
+		entry->pool_number = *nr_pool;
 	}
+
+	assert_pool_partition(*nr_active, *nr_active_cheap, *nr_active_exp);
 }
 
-void deactivate_syscall_in_table(unsigned int calln, unsigned int *nr_active, const struct syscalltable *table, int *active_syscall)
+void deactivate_syscall_in_table(unsigned int calln, unsigned int *nr_active,
+				 const struct syscalltable *table,
+				 int *active_syscall, bool do32,
+				 int *active_cheap, unsigned int *nr_active_cheap,
+				 int *active_expensive, unsigned int *nr_active_exp)
 {
 	struct syscallentry *entry;
+	int *pool;
+	unsigned int *nr_pool;
 
 	entry = table[calln].entry;
 
@@ -172,7 +245,41 @@ void deactivate_syscall_in_table(unsigned int calln, unsigned int *nr_active, co
 		active_syscall[last] = 0;
 		(*nr_active) -= 1;
 		entry->active_number = 0;
+
+		/*
+		 * Cost-pool mirror: same swap-with-last shape, but the
+		 * displaced neighbour's pool_number gets rewritten instead
+		 * of its active_number.  Pool selection is taken from the
+		 * authoritative bitmap for THIS entry -- not from a lookup
+		 * on the neighbour, and not by scanning either pool for
+		 * calln.  pool_number must have been set at activate time,
+		 * so nr_pool > 0 whenever active_number != 0; the guard on
+		 * *nr_pool below is defence-in-depth.
+		 */
+		if (entry->pool_number != 0) {
+			if (cost_pool_of(calln, do32)) {
+				pool = active_expensive;
+				nr_pool = nr_active_exp;
+			} else {
+				pool = active_cheap;
+				nr_pool = nr_active_cheap;
+			}
+			if (*nr_pool > 0) {
+				unsigned int pidx = entry->pool_number - 1;
+				unsigned int plast = *nr_pool - 1;
+
+				if (pidx != plast) {
+					pool[pidx] = pool[plast];
+					table[pool[pidx] - 1].entry->pool_number = pidx + 1;
+				}
+				pool[plast] = 0;
+				(*nr_pool) -= 1;
+			}
+			entry->pool_number = 0;
+		}
 	}
+
+	assert_pool_partition(*nr_active, *nr_active_cheap, *nr_active_exp);
 }
 
 /*
@@ -576,6 +683,7 @@ static struct syscalltable * copy_syscall_table(struct syscalltable *from, unsig
 		memcpy(copy + m , entry, sizeof(struct syscallentry));
 		copy[m].number = n;
 		copy[m].active_number = 0;
+		copy[m].pool_number = 0;
 		copy[m].syscall_category = stats_syscall_category(copy[m].name);
 		copy[m].is_close_syscall = (strcmp(copy[m].name, "close") == 0);
 		/*

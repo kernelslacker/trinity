@@ -20,12 +20,18 @@ unsigned int max_nr_syscalls;
 
 void activate_syscall(unsigned int calln)
 {
-	activate_syscall_in_table(calln, &shm->nr_active_syscalls, syscalls, shm->active_syscalls);
+	activate_syscall_in_table(calln, &shm->nr_active_syscalls, syscalls,
+				  shm->active_syscalls, false,
+				  shm->active_cheap, &shm->nr_active_cheap,
+				  shm->active_expensive, &shm->nr_active_exp);
 }
 
 void deactivate_syscall_uniarch(unsigned int calln)
 {
-	deactivate_syscall_in_table(calln, &shm->nr_active_syscalls, syscalls, shm->active_syscalls);
+	deactivate_syscall_in_table(calln, &shm->nr_active_syscalls, syscalls,
+				    shm->active_syscalls, false,
+				    shm->active_cheap, &shm->nr_active_cheap,
+				    shm->active_expensive, &shm->nr_active_exp);
 }
 
 void toggle_syscall_n(int calln, bool state, const char *arg, const char *arg_name)

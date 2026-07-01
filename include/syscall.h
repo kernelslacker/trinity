@@ -441,6 +441,22 @@ struct syscallentry {
 
 	unsigned int number;
 	unsigned int active_number;
+	/*
+	 * Per-cost-pool back-index, mirroring active_number's role in the
+	 * flat shm->active_syscalls[] array.  Zero when the entry is not
+	 * live in any pool; when the entry is active, pool_number is 1 +
+	 * its slot in the cost-appropriate shm->active_cheap*[] or
+	 * shm->active_expensive*[] array, letting the pool-side
+	 * swap-with-last update run in O(1) alongside the existing
+	 * active_number back-index maintained for the flat array.
+	 *
+	 * Cost classification is authoritative from syscall_is_expensive()
+	 * (which reads the read-only EXPENSIVE bitmap built once at
+	 * select_syscall_tables() time), never inferred from array
+	 * contents or from a live-mutable shm counter -- see cost_pool_of()
+	 * in tables.c.
+	 */
+	unsigned int pool_number;
 	const char *name;
 	const unsigned int num_args;
 	unsigned int flags;

@@ -27,24 +27,36 @@ bool use_64bit = false;
 
 void activate_syscall32(unsigned int calln)
 {
-	activate_syscall_in_table(calln, &shm->nr_active_32bit_syscalls, syscalls_32bit, shm->active_syscalls32);
+	activate_syscall_in_table(calln, &shm->nr_active_32bit_syscalls, syscalls_32bit,
+				  shm->active_syscalls32, true,
+				  shm->active_cheap32, &shm->nr_active_cheap_32bit,
+				  shm->active_expensive32, &shm->nr_active_exp_32bit);
 }
 
 void activate_syscall64(unsigned int calln)
 {
-	activate_syscall_in_table(calln, &shm->nr_active_64bit_syscalls, syscalls_64bit, shm->active_syscalls64);
+	activate_syscall_in_table(calln, &shm->nr_active_64bit_syscalls, syscalls_64bit,
+				  shm->active_syscalls64, false,
+				  shm->active_cheap64, &shm->nr_active_cheap_64bit,
+				  shm->active_expensive64, &shm->nr_active_exp_64bit);
 }
 
 void deactivate_syscall32(unsigned int calln)
 {
-	deactivate_syscall_in_table(calln, &shm->nr_active_32bit_syscalls, syscalls_32bit, shm->active_syscalls32);
+	deactivate_syscall_in_table(calln, &shm->nr_active_32bit_syscalls, syscalls_32bit,
+				    shm->active_syscalls32, true,
+				    shm->active_cheap32, &shm->nr_active_cheap_32bit,
+				    shm->active_expensive32, &shm->nr_active_exp_32bit);
 	if (shm->nr_active_32bit_syscalls == 0)
 		__atomic_store_n(&shm->valid_syscall_table_32, false, __ATOMIC_RELAXED);
 }
 
 void deactivate_syscall64(unsigned int calln)
 {
-	deactivate_syscall_in_table(calln, &shm->nr_active_64bit_syscalls, syscalls_64bit, shm->active_syscalls64);
+	deactivate_syscall_in_table(calln, &shm->nr_active_64bit_syscalls, syscalls_64bit,
+				    shm->active_syscalls64, false,
+				    shm->active_cheap64, &shm->nr_active_cheap_64bit,
+				    shm->active_expensive64, &shm->nr_active_exp_64bit);
 	if (shm->nr_active_64bit_syscalls == 0)
 		__atomic_store_n(&shm->valid_syscall_table_64, false, __ATOMIC_RELAXED);
 }
