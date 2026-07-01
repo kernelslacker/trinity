@@ -1885,8 +1885,20 @@ void kcov_disable(struct kcov_child *kc)
 	}
 }
 
-void kcov_reset_trace_header(struct kcov_child *kc)
+void kcov_note_extrafork(struct kcov_child *kc, unsigned int nr)
 {
+	/* Denominator bump runs even when the child has no kcov (kc==NULL
+	 * or !kc->active): per_syscall_extrafork_calls[] is a count of
+	 * EXTRA_FORK dispatches through do_extrafork(), independent of
+	 * whether the worker itself is a kcov producer.  kcov_shm is
+	 * allocated by kcov_init_global() on every trinity startup, so
+	 * the NULL guard is defensive against startup ordering / no-kcov
+	 * builds only.  MAX_NR_SYSCALL upper-bound matches every other
+	 * per_syscall_*[] writer in this file. */
+	if (kcov_shm != NULL && nr < MAX_NR_SYSCALL)
+		__atomic_fetch_add(&kcov_shm->per_syscall_extrafork_calls[nr],
+				   1, __ATOMIC_RELAXED);
+
 	if (kc == NULL || !kc->active)
 		return;
 

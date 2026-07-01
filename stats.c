@@ -216,18 +216,32 @@ static void json_emit_string(const char *s)
 static bool json_emit_syscall(const struct syscalltable *table, unsigned int i)
 {
 	struct syscallentry *entry;
+	unsigned long extrafork_calls = 0;
 	unsigned int j;
+	unsigned int nr;
 	bool first_errno = true;
 
 	entry = table[i].entry;
 	if (entry == NULL || entry->attempted == 0)
 		return false;
 
+	nr = entry->number;
+	if (kcov_shm != NULL && nr < MAX_NR_SYSCALL)
+		extrafork_calls = __atomic_load_n(
+			&kcov_shm->per_syscall_extrafork_calls[nr],
+			__ATOMIC_RELAXED);
+
 	putchar('{');
 	fputs("\"name\":", stdout);
 	json_emit_string(entry->name);
-	printf(",\"attempted\":%u,\"successes\":%u,\"failures\":%u,\"errnos\":{",
-		entry->attempted, entry->successes, entry->failures);
+	/* extrafork_calls: dispatches routed through do_extrafork()
+	 * (execve / execveat / vfork).  Non-zero here means the syscall
+	 * runs in a throwaway grandchild outside the parent kcov bracket,
+	 * so a zero-yield per_syscall_edges / per_syscall_calls ratio for
+	 * this slot is by design, not evidence the syscall is dead. */
+	printf(",\"attempted\":%u,\"successes\":%u,\"failures\":%u,\"extrafork_calls\":%lu,\"errnos\":{",
+		entry->attempted, entry->successes, entry->failures,
+		extrafork_calls);
 	for (j = 0; j <= NR_ERRNOS; j++) {
 		if (entry->errnos[j] == 0)
 			continue;
