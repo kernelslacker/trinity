@@ -22,9 +22,6 @@
 #include "testfile.h"
 #include "trinity.h"
 
-// need this to actually get MAP_UNINITIALIZED defined
-#define CONFIG_MMAP_ALLOW_UNINITIALIZED
-
 #ifndef MAP_SHARED_VALIDATE
 #define MAP_SHARED_VALIDATE 0x03
 #endif
