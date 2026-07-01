@@ -33,10 +33,3 @@ void jsonl_write(int fd, const char *json_line)
 	ret = write(fd, "\n", 1);
 	(void)ret;
 }
-
-void jsonl_close(int fd)
-{
-	if (fd < 0)
-		return;
-	(void)close(fd);
-}

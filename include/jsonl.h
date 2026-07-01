@@ -28,8 +28,3 @@ int jsonl_open(const char *path);
  * fuzzer and there is no useful recovery action.
  */
 void jsonl_write(int fd, const char *json_line);
-
-/*
- * Close fd opened by jsonl_open().  No-op for fd < 0.
- */
-void jsonl_close(int fd);
