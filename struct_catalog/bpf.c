@@ -304,14 +304,21 @@ const struct struct_field bpf_attr_PROG_LOAD_fields[] = {
 };
 
 /*
- * PROG_ATTACH attach_flags mask.  All eight names are stable in
- * mainline; the four newer-arrival names (REPLACE/BEFORE/AFTER/
- * ID/PREORDER/LINK) all postdate the trinity baseline header
- * vintage but are present in /usr/include/linux/bpf.h.
+ * PROG_ATTACH attach_flags mask.  REPLACE/BEFORE/AFTER/ID/LINK predate
+ * the trinity baseline header vintage; BPF_F_PREORDER was appended
+ * later (absent before 6.13), so give it the same #ifdef contribute-0
+ * arm the MAP_CREATE / PROG_LOAD masks use for their late-arrival
+ * flags rather than referencing it unconditionally.
  */
+#ifdef BPF_F_PREORDER
+# define PROG_ATTACH_FLAGS_PREORDER	BPF_F_PREORDER
+#else
+# define PROG_ATTACH_FLAGS_PREORDER	0UL
+#endif
+
 #define PROG_ATTACH_FLAGS_MASK ( \
 	BPF_F_ALLOW_OVERRIDE | BPF_F_ALLOW_MULTI | BPF_F_REPLACE | \
-	BPF_F_BEFORE | BPF_F_AFTER | BPF_F_ID | BPF_F_PREORDER | \
+	BPF_F_BEFORE | BPF_F_AFTER | BPF_F_ID | PROG_ATTACH_FLAGS_PREORDER | \
 	BPF_F_LINK)
 
 /*
@@ -392,14 +399,20 @@ const struct struct_field bpf_attr_MAP_ELEM_fields[] = {
  * The id-shaped fields stay FT_RAW because the kernel iterates
  * IDs linearly and a random u32 typically misses; CMP-hint
  * attribution still scopes here once the cmd matches.
- * fd_by_id_token_fd is an FT_FD slot honoured on the BY_ID arms.
+ * fd_by_id_token_fd is an FT_FD slot honoured on the BY_ID arms; it
+ * was added to union bpf_attr in 6.13, so its field entry (and the
+ * BTF_GET_FD_BY_ID effective_size that reaches for it below) is gated
+ * on USE_BPF_FD_BY_ID_TOKEN_FD -- offsetof() can't be #ifdef-shimmed
+ * against a member the header doesn't declare.
  */
 const struct struct_field bpf_attr_GET_ID_fields[] = {
 	FIELD(union bpf_attr, start_id),
 	FIELD(union bpf_attr, next_id),
 	FIELDX(union bpf_attr, open_flags, FT_FLAGS,
 	       .u.flags.mask = (BPF_F_RDONLY | BPF_F_WRONLY)),
+#ifdef USE_BPF_FD_BY_ID_TOKEN_FD
 	FIELDX(union bpf_attr, fd_by_id_token_fd, FT_FD),
+#endif
 };
 
 /*
@@ -674,6 +687,15 @@ const struct struct_field bpf_attr_RAW_TRACEPOINT_fields[] = {
 	FIELD(union bpf_attr, raw_tracepoint.cookie),
 };
 
+/*
+ * BPF_PROG_STREAM_READ_BY_FD prog_stream_read variant.  The
+ * prog_stream_read named member is a recent addition to union bpf_attr
+ * (absent through 6.18), so the whole table -- and the variant entry
+ * that references it plus BPF_PROG_STREAM_READ_BY_FD below -- is gated
+ * on USE_BPF_PROG_STREAM_READ (a configure probe): offsetof() against
+ * the member can't be #ifdef-shimmed on a header that lacks it.
+ */
+#ifdef USE_BPF_PROG_STREAM_READ
 const struct struct_field bpf_attr_PROG_STREAM_READ_fields[] = {
 	FIELDX(union bpf_attr, prog_stream_read.stream_buf, FT_PTR_BYTES,
 	       .u.ptr_bytes = { .len_field = "prog_stream_read.stream_buf_len",
@@ -685,6 +707,7 @@ const struct struct_field bpf_attr_PROG_STREAM_READ_fields[] = {
 	FIELD(union bpf_attr, prog_stream_read.stream_id),
 	FIELDX(union bpf_attr, prog_stream_read.prog_fd, FT_FD),
 };
+#endif
 
 /*
  * LINK_CREATE outer variant.  attach_type is the inner discriminator
@@ -834,10 +857,19 @@ const struct struct_field bpf_attr_LINK_CREATE_NETKIT_fields[] = {
 	FIELD(union bpf_attr, link_create.netkit.expected_revision),
 };
 
+/*
+ * The link_create.cgroup named member (mprog relative_fd /
+ * expected_revision for cgroup links) was added in 6.13, so this table
+ * and its nested-variant entry below are gated on
+ * USE_BPF_LINK_CREATE_CGROUP.  When absent, cgroup attach types fall
+ * through to the LINK_CREATE base pass rather than this arm.
+ */
+#ifdef USE_BPF_LINK_CREATE_CGROUP
 const struct struct_field bpf_attr_LINK_CREATE_CGROUP_fields[] = {
 	FIELDX(union bpf_attr, link_create.cgroup.relative_fd, FT_FD),
 	FIELD(union bpf_attr, link_create.cgroup.expected_revision),
 };
+#endif
 
 const unsigned long bpf_attach_types_tcx[] = {
 	BPF_TCX_INGRESS, BPF_TCX_EGRESS,
@@ -1035,6 +1067,7 @@ const struct union_variant bpf_attr_LINK_CREATE_nested[] = {
 				  sizeof(((union bpf_attr *)NULL)
 					 ->link_create.netkit.expected_revision),
 	},
+#ifdef USE_BPF_LINK_CREATE_CGROUP
 	{
 		.discrim_values	    = bpf_attach_types_cgroup,
 		.num_discrim_values = ARRAY_SIZE(bpf_attach_types_cgroup),
@@ -1046,6 +1079,7 @@ const struct union_variant bpf_attr_LINK_CREATE_nested[] = {
 				  sizeof(((union bpf_attr *)NULL)
 					 ->link_create.cgroup.expected_revision),
 	},
+#endif
 };
 
 /*
@@ -1195,8 +1229,13 @@ const struct union_variant bpf_attr_variants[] = {
 		.name		= "BTF_GET_FD_BY_ID",
 		.fields		= bpf_attr_GET_ID_fields,
 		.num_fields	= ARRAY_SIZE(bpf_attr_GET_ID_fields),
+#ifdef USE_BPF_FD_BY_ID_TOKEN_FD
 		.effective_size	= offsetof(union bpf_attr, fd_by_id_token_fd) +
 				  sizeof(((union bpf_attr *)NULL)->fd_by_id_token_fd),
+#else
+		.effective_size	= offsetof(union bpf_attr, open_flags) +
+				  sizeof(((union bpf_attr *)NULL)->open_flags),
+#endif
 	},
 	{
 		.discrim_value	= BPF_BTF_GET_NEXT_ID,
@@ -1263,6 +1302,7 @@ const struct union_variant bpf_attr_variants[] = {
 		.num_fields	= ARRAY_SIZE(bpf_attr_TOKEN_CREATE_fields),
 		.effective_size	= sizeof(((union bpf_attr *)NULL)->token_create),
 	},
+#ifdef USE_BPF_PROG_STREAM_READ
 	{
 		.discrim_value	= BPF_PROG_STREAM_READ_BY_FD,
 		.name		= "PROG_STREAM_READ_BY_FD",
@@ -1270,6 +1310,7 @@ const struct union_variant bpf_attr_variants[] = {
 		.num_fields	= ARRAY_SIZE(bpf_attr_PROG_STREAM_READ_fields),
 		.effective_size	= sizeof(((union bpf_attr *)NULL)->prog_stream_read),
 	},
+#endif
 	{
 		.discrim_value	= BPF_PROG_QUERY,
 		.name		= "QUERY",

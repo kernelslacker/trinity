@@ -392,6 +392,84 @@ else
 fi
 
 #############################################################################################
+# Does linux/bpf.h give union bpf_attr the fd_by_id_token_fd member
+# (added in 6.13)
+#
+echo -n "[*] Checking if bpf_attr has fd_by_id_token_fd.. "
+rm -f "$TMP" || exit 1
+
+cat >"$TMP.c" << EOF
+#include <linux/bpf.h>
+
+int main(void)
+{
+	union bpf_attr a = { .fd_by_id_token_fd = 0 };
+	return a.fd_by_id_token_fd;
+}
+EOF
+
+${CC} ${CFLAGS} "$TMP.c" -o "$TMP" &>"$TMP.log"
+if [ ! -x "$TMP" ]; then
+	echo $RED "[NO]" $COL_RESET
+	MISSING_DEFS=1
+else
+	echo $GREEN "[YES]" $COL_RESET
+	echo "#define USE_BPF_FD_BY_ID_TOKEN_FD 1" >> $CONFIGH
+fi
+
+#############################################################################################
+# Does linux/bpf.h give union bpf_attr the prog_stream_read member
+# (BPF_PROG_STREAM_READ_BY_FD, added post-6.18)
+#
+echo -n "[*] Checking if bpf_attr has prog_stream_read.. "
+rm -f "$TMP" || exit 1
+
+cat >"$TMP.c" << EOF
+#include <linux/bpf.h>
+
+int main(void)
+{
+	union bpf_attr a = { .prog_stream_read.stream_id = 0 };
+	return a.prog_stream_read.stream_id;
+}
+EOF
+
+${CC} ${CFLAGS} "$TMP.c" -o "$TMP" &>"$TMP.log"
+if [ ! -x "$TMP" ]; then
+	echo $RED "[NO]" $COL_RESET
+	MISSING_DEFS=1
+else
+	echo $GREEN "[YES]" $COL_RESET
+	echo "#define USE_BPF_PROG_STREAM_READ 1" >> $CONFIGH
+fi
+
+#############################################################################################
+# Does linux/bpf.h give union bpf_attr the link_create.cgroup member
+# (added in 6.13)
+#
+echo -n "[*] Checking if bpf_attr has link_create.cgroup.. "
+rm -f "$TMP" || exit 1
+
+cat >"$TMP.c" << EOF
+#include <linux/bpf.h>
+
+int main(void)
+{
+	union bpf_attr a = { .link_create.cgroup.relative_fd = 0 };
+	return a.link_create.cgroup.relative_fd;
+}
+EOF
+
+${CC} ${CFLAGS} "$TMP.c" -o "$TMP" &>"$TMP.log"
+if [ ! -x "$TMP" ]; then
+	echo $RED "[NO]" $COL_RESET
+	MISSING_DEFS=1
+else
+	echo $GREEN "[YES]" $COL_RESET
+	echo "#define USE_BPF_LINK_CREATE_CGROUP 1" >> $CONFIGH
+fi
+
+#############################################################################################
 
 check_header linux/caif/caif_socket.h USE_CAIF
 check_header linux/fsmap.h USE_FSMAP

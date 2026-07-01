@@ -120,7 +120,16 @@ extern const struct struct_field sctp_prim_fields[SCTP_PRIM_FIELDS_N];
  * syscalls/bpf.c) and intentionally not duplicated here.
  */
 enum {
+	/*
+	 * The BPF_PROG_STREAM_READ_BY_FD variant is gated on
+	 * USE_BPF_PROG_STREAM_READ (the prog_stream_read member is absent
+	 * from older uapi headers), so the variant count tracks it.
+	 */
+#ifdef USE_BPF_PROG_STREAM_READ
 	BPF_ATTR_VARIANTS_N	= 38,
+#else
+	BPF_ATTR_VARIANTS_N	= 37,
+#endif
 	BPF_INSN_FIELDS_N	= 3,
 };
 
@@ -145,7 +154,9 @@ extern const struct struct_field bpf_attr_BATCH_fields[];
 extern const struct struct_field bpf_attr_TEST_fields[];
 extern const struct struct_field bpf_attr_INFO_fields[];
 extern const struct struct_field bpf_attr_RAW_TRACEPOINT_fields[];
+#ifdef USE_BPF_PROG_STREAM_READ
 extern const struct struct_field bpf_attr_PROG_STREAM_READ_fields[];
+#endif
 extern const struct struct_field bpf_attr_LINK_CREATE_fields[];
 extern const struct struct_field bpf_attr_LINK_CREATE_BASE_fields[];
 extern const struct union_variant bpf_attr_LINK_CREATE_base;
@@ -157,7 +168,9 @@ extern const unsigned long netfilter_pfs[];
 extern const struct struct_field bpf_attr_LINK_CREATE_NETFILTER_fields[];
 extern const struct struct_field bpf_attr_LINK_CREATE_TCX_fields[];
 extern const struct struct_field bpf_attr_LINK_CREATE_NETKIT_fields[];
+#ifdef USE_BPF_LINK_CREATE_CGROUP
 extern const struct struct_field bpf_attr_LINK_CREATE_CGROUP_fields[];
+#endif
 extern const unsigned long bpf_attach_types_tcx[];
 extern const unsigned long bpf_attach_types_netkit[];
 extern const unsigned long bpf_attach_types_cgroup[];
