@@ -482,6 +482,88 @@ enum frontier_group_antilock_mode {
 extern enum frontier_group_antilock_mode frontier_group_antilock_mode;
 
 /*
+ * Cost-pool one-shot selector mode (--cost-pool-selector).  Sibling of
+ * the frontier_saturation_cooldown_mode / frontier_group_antilock_mode
+ * shape above.  Governs whether the random-syscall picker's HEURISTIC
+ * and RANDOM arms cross-check the flat draw-then-reject expensive gate
+ * (`expensive_accept()` at the top of each pick's retry loop -- draws
+ * `!ONE_IN(EXPENSIVE_ADAPTIVE_FLOOR)` per EXPENSIVE candidate) against
+ * a closed-form coin-then-draw pool selector that lives on top of the
+ * cost-partitioned active pools laid down in Phase 0 (shm->active_
+ * cheap*[] / active_expensive*[] + nr_active_cheap / nr_active_exp).
+ *
+ * Cost-pool selector shape (coin-then-draw):
+ *
+ *   p_exp   = n_exp   / (n_cheap * R + n_exp)
+ *   p_cheap = n_cheap * R / (n_cheap * R + n_exp)
+ *
+ * with R = EXPENSIVE_ADAPTIVE_FLOOR (1000, the static accept
+ * denominator the flat picker uses for EXPENSIVE candidates today).
+ * The closed form yields the same accept-fraction across the two
+ * pools as the flat draw-then-reject picker in EXPECTATION -- see the
+ * cost-pool-oneshot-selector spec section 4.1 for the algebra.  On
+ * each pick this row observes n_cheap / n_exp under the same arch
+ * table the live picker chose, computes the per-pool expected
+ * fractions, and accumulates them into cost_pool_selector_shadow_*
+ * counters (see include/stats.h).  It does NOT draw a shadow pick --
+ * only the closed-form expected values are summed, so the shadow
+ * accounting consumes ZERO rnd_u32() calls and cannot perturb the
+ * live pick stream even when SHADOW_ONLY is engaged.  The live pick
+ * itself STAYS the flat draw-then-reject shape (flat active_syscalls[]
+ * uniform draw + expensive_accept early-out); the pools are watched,
+ * not driven, until COMBINED lands the coin-then-draw wire-up in a
+ * follow-up commit.
+ *
+ *   OFF          - default, byte-identical to today.  The HEURISTIC
+ *                  and RANDOM arms skip the shadow observer entirely;
+ *                  no atomic loads of the per-pool counters fire, no
+ *                  divide is computed, no cost_pool_selector_shadow_*
+ *                  counter is bumped, no per-syscall bookkeeping is
+ *                  touched.  Under a fixed-seed --dry-run the pick
+ *                  stream and every counter are bit-for-bit identical
+ *                  to a build before this row.
+ *   SHADOW_ONLY  - the observer engages at the top of the HEURISTIC
+ *                  and RANDOM arms (after choose_syscall_table but
+ *                  before the retry loop's live rnd_modulo_u32
+ *                  draw): read n_cheap / n_exp for the chosen arch
+ *                  under RELAXED, compute the analytical expected per-
+ *                  pool fractions, and bump the cost_pool_selector_
+ *                  shadow_picks / shadow_expensive_ppm_sum aggregate
+ *                  under RELAXED.  Live selection stays the flat
+ *                  draw-then-reject -- the observer never returns a
+ *                  value, never gates any accept, never consumes RNG.
+ *                  Read the (shadow_expensive_ppm_sum / (shadow_picks
+ *                  * 1e6)) analytical fraction against the (live_
+ *                  expensive_picks / (live_expensive_picks + live_
+ *                  cheap_picks)) actual-accept fraction to confirm
+ *                  the section 4.1 identity holds empirically on a
+ *                  real run before promoting COMBINED.
+ *   COMBINED     - reserved.  The enum value exists so the coin-
+ *                  then-draw wire-up (dispatch by the shadow p_exp
+ *                  coin, then a uniform draw from the elected pool)
+ *                  can land in a follow-up commit without renumbering
+ *                  the enum, but THIS COMMIT does NOT implement the
+ *                  live selector -- selecting combined today behaves
+ *                  identically to shadow-only (observer accumulates,
+ *                  live pick stays flat draw-then-reject).  Mirrors
+ *                  the OFF / SHADOW_ONLY / COMBINED ramp discipline
+ *                  the sibling frontier_saturation_cooldown_mode /
+ *                  frontier_group_antilock_mode rows use.
+ *
+ * Param-settable from --cost-pool-selector=off|shadow-only|combined;
+ * mirrors the frontier_saturation_cooldown_mode shape so a reader
+ * familiar with that knob (and its SHADOW->COMBINED ramp) recognises
+ * the rollout discipline.
+ */
+enum cost_pool_selector_mode {
+	COST_POOL_SELECTOR_MODE_OFF = 0,
+	COST_POOL_SELECTOR_MODE_SHADOW_ONLY = 1,
+	COST_POOL_SELECTOR_MODE_COMBINED = 2,
+};
+
+extern enum cost_pool_selector_mode cost_pool_selector_mode;
+
+/*
  * Group-pin anti-lock-in damper thresholds.  Tuned to protect
  * legitimate warm-setup clustering: a pin needs at least
  * FRONTIER_FRSEQ_MIN_STREAK heuristic picks before it can be

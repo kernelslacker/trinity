@@ -1444,6 +1444,30 @@ void dump_stats_strategy_summary(void)
 		stat_row("strategy", "strategy_explorer_picks",
 			 shm->stats.strategy_explorer_picks);
 
+	/* Cost-pool one-shot selector observer -- shutdown surface for
+	 * the shadow / live accepted-pick counters bumped from the
+	 * HEURISTIC and RANDOM arms in random-syscall.c.  Emitted in
+	 * dump_stats_strategy_summary alongside the sibling frontier_
+	 * satcool_* / frontier_live_cool_* shadow families above so an
+	 * operator running a short dry-run (which never reaches the 600 s
+	 * cost_pool_periodic_dump cadence) still sees the section 4.1
+	 * identity numbers.  The if-non-zero guard keeps default-OFF
+	 * runs' summary tail suppressed. */
+	if (shm->stats.cost_pool_selector_shadow_picks)
+		stat_row("strategy", "cost_pool_selector_shadow_picks",
+			 shm->stats.cost_pool_selector_shadow_picks);
+	if (shm->stats.cost_pool_selector_shadow_expensive_ppm_sum)
+		stat_row("strategy",
+			 "cost_pool_selector_shadow_expensive_ppm_sum",
+			 shm->stats.cost_pool_selector_shadow_expensive_ppm_sum);
+	if (shm->stats.cost_pool_selector_live_cheap_picks)
+		stat_row("strategy", "cost_pool_selector_live_cheap_picks",
+			 shm->stats.cost_pool_selector_live_cheap_picks);
+	if (shm->stats.cost_pool_selector_live_expensive_picks)
+		stat_row("strategy",
+			 "cost_pool_selector_live_expensive_picks",
+			 shm->stats.cost_pool_selector_live_expensive_picks);
+
 	dump_strategy_stats();
 }
 
