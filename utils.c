@@ -430,6 +430,10 @@ static void register_shared_overflow(const char *who, unsigned long addr,
 		  nr_shared_regions_overflow, SHARED_REGIONS_OVERFLOW_TAIL);
 
 #ifdef __SANITIZE_ADDRESS__
+#ifdef CONFIG_GUARD_SHARED
+	(void)guarded;
+	(void)origin;
+#endif
 	BUG("shared_regions[] overflow (debug build)");
 #else
 	if (nr_shared_regions_overflow >= SHARED_REGIONS_OVERFLOW_TAIL) {
