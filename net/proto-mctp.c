@@ -11,16 +11,6 @@
 #include "kernel/mctp.h"
 #include "rnd.h"
 
-#ifndef SIOCMCTPALLOCTAG
-#define SIOCMCTPALLOCTAG	(SIOCPROTOPRIVATE + 0)
-#define SIOCMCTPDROPTAG		(SIOCPROTOPRIVATE + 1)
-struct mctp_ioc_tag_ctl {
-	mctp_eid_t	peer_addr;
-	__u8		tag;
-	__u16		flags;
-};
-#endif
-
 static void mctp_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_mctp *mctp;
