@@ -217,6 +217,7 @@ static bool json_emit_syscall(const struct syscalltable *table, unsigned int i)
 {
 	struct syscallentry *entry;
 	unsigned long extrafork_calls = 0;
+	unsigned long kcov_calls = 0;
 	unsigned int j;
 	unsigned int nr;
 	bool first_errno = true;
@@ -226,22 +227,35 @@ static bool json_emit_syscall(const struct syscalltable *table, unsigned int i)
 		return false;
 
 	nr = entry->number;
-	if (kcov_shm != NULL && nr < MAX_NR_SYSCALL)
+	if (kcov_shm != NULL && nr < MAX_NR_SYSCALL) {
 		extrafork_calls = __atomic_load_n(
 			&kcov_shm->per_syscall_extrafork_calls[nr],
 			__ATOMIC_RELAXED);
+		kcov_calls = __atomic_load_n(
+			&kcov_shm->per_syscall_calls[nr],
+			__ATOMIC_RELAXED);
+	}
 
 	putchar('{');
 	fputs("\"name\":", stdout);
 	json_emit_string(entry->name);
-	/* extrafork_calls: dispatches routed through do_extrafork()
+	/* kcov_calls / attempted_calls are named explicitly to disambiguate
+	 * the two per-syscall denominators the stats consumers routinely
+	 * conflate: kcov_calls is per_syscall_calls[nr] (KCOV-bracketed
+	 * count kcov_collect() bumps -- the natural numerator match for
+	 * per_syscall_edges and cold-skip / picker productivity ratios),
+	 * while attempted_calls is entry->attempted (every dispatched
+	 * invocation regardless of whether the kcov bracket ran, so it
+	 * also counts EXTRA_FORK / validator-rejected / dry-run paths).
+	 *
+	 * extrafork_calls: dispatches routed through do_extrafork()
 	 * (execve / execveat / vfork).  Non-zero here means the syscall
 	 * runs in a throwaway grandchild outside the parent kcov bracket,
-	 * so a zero-yield per_syscall_edges / per_syscall_calls ratio for
-	 * this slot is by design, not evidence the syscall is dead. */
-	printf(",\"attempted\":%u,\"successes\":%u,\"failures\":%u,\"extrafork_calls\":%lu,\"errnos\":{",
-		entry->attempted, entry->successes, entry->failures,
-		extrafork_calls);
+	 * so a zero-yield edges / kcov_calls ratio for this slot is by
+	 * design, not evidence the syscall is dead. */
+	printf(",\"attempted_calls\":%u,\"kcov_calls\":%lu,\"successes\":%u,\"failures\":%u,\"extrafork_calls\":%lu,\"errnos\":{",
+		entry->attempted, kcov_calls, entry->successes,
+		entry->failures, extrafork_calls);
 	for (j = 0; j <= NR_ERRNOS; j++) {
 		if (entry->errnos[j] == 0)
 			continue;
@@ -4925,12 +4939,22 @@ void stats_timeseries_drop_in_child(void)
 	stats_timeseries_fp = NULL;
 }
 
-/* Walk one syscall table and emit {"nr":N,"edges":E,"calls":C} entries
- * for each enabled slot whose entry pointer is non-NULL.  *first tracks
+/* Walk one syscall table and emit
+ * {"nr":N,"edges":E,"kcov_calls":K,"attempted_calls":A} entries for
+ * each enabled slot whose entry pointer is non-NULL.  *first tracks
  * whether the next entry needs a leading comma so the caller can chain
  * the 32-bit and 64-bit tables into a single array literal.  do32
  * selects the arch dim into per_syscall_diag[][], matching the
- * kcov_diag_emit_block() convention (false=64-bit, true=32-bit). */
+ * kcov_diag_emit_block() convention (false=64-bit, true=32-bit).
+ *
+ * kcov_calls and attempted_calls are named explicitly (replacing the
+ * ambiguous "calls" this used to emit as entry->attempted) because
+ * they measure different denominators: kcov_calls is the KCOV-bracketed
+ * count kcov_collect() bumps into per_syscall_calls[], while
+ * attempted_calls is the entry->attempted dispatch count -- larger,
+ * covering EXTRA_FORK / validator-rejected / dry-run paths where the
+ * kcov bracket never runs.  Callers comparing ratios across the two
+ * tripped over shared naming before. */
 static void stats_timeseries_emit_table(const struct syscalltable *table,
 					unsigned int n, bool do32,
 					bool *first)
@@ -4939,8 +4963,9 @@ static void stats_timeseries_emit_table(const struct syscalltable *table,
 
 	for (i = 0; i < n; i++) {
 		struct syscallentry *entry = table[i].entry;
-		unsigned int nr, calls;
+		unsigned int nr, attempted_calls;
 		unsigned long edges = 0;
+		unsigned long kcov_calls = 0;
 
 		if (entry == NULL)
 			continue;
@@ -4948,15 +4973,20 @@ static void stats_timeseries_emit_table(const struct syscalltable *table,
 			continue;
 
 		nr = entry->number;
-		calls = entry->attempted;
-		if (nr < MAX_NR_SYSCALL && kcov_shm != NULL)
+		attempted_calls = entry->attempted;
+		if (nr < MAX_NR_SYSCALL && kcov_shm != NULL) {
 			edges = __atomic_load_n(
 				&kcov_shm->per_syscall_diag[nr][do32 ? 1 : 0].bucket_bits_real,
 				__ATOMIC_RELAXED);
+			kcov_calls = __atomic_load_n(
+				&kcov_shm->per_syscall_calls[nr],
+				__ATOMIC_RELAXED);
+		}
 
 		fprintf(stats_timeseries_fp,
-			"%s{\"nr\":%u,\"edges\":%lu,\"calls\":%u}",
-			*first ? "" : ",", nr, edges, calls);
+			"%s{\"nr\":%u,\"edges\":%lu,\"kcov_calls\":%lu,\"attempted_calls\":%u}",
+			*first ? "" : ",", nr, edges, kcov_calls,
+			attempted_calls);
 		*first = false;
 	}
 }
