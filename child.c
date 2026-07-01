@@ -404,7 +404,6 @@ static void check_fd_leaks(struct childdata *child)
  * This is the child main loop, entered after init_child has completed
  * from the fork_children() loop.
  */
-#define NEW_OP_COUNT 100000
 
 /*
  * Per-child corruption-rate storm check.  Cheap modulo-gated probe of
