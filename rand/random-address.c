@@ -176,6 +176,26 @@ static void asb_relocate(unsigned long *addr, unsigned long len,
 	if (!overlap_shared && !overlap_heap)
 		return;
 
+	/*
+	 * Skip pointers that already live inside the writable pool.  The
+	 * pool is track_shared_region()'d at init so every pool-vended
+	 * address trips overlap_shared, but the pool is a safe kernel-
+	 * write target by construction (MAP_PRIVATE|MAP_ANON scratch,
+	 * never add_object'd, not on the libc heap) -- redirecting a
+	 * pool address to a fresh pool address is pure waste and, when
+	 * the two ranges intersect, feeds overlapping src/dst into the
+	 * copy_original memcpy below (undefined behaviour, flagged by
+	 * ASAN's memcpy-param-overlap).
+	 */
+	{
+		unsigned long pool_start = (unsigned long) writable_pool;
+
+		if (writable_pool != NULL &&
+		    *addr >= pool_start &&
+		    *addr + len <= pool_start + WRITABLE_POOL_BYTES)
+			return;
+	}
+
 	replacement = get_writable_address(len ? len : page_size);
 	if (replacement == NULL)
 		return;
