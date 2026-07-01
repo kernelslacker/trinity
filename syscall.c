@@ -583,13 +583,18 @@ out:
 	/* do_extrafork bypasses the kcov_enable / syscall / kcov_disable
 	 * bracket entirely -- the grandchild runs __do_syscall with
 	 * kc=NULL, so the worker's trace_buf[0] still holds the count
-	 * from the previous bracketed syscall.  Without this reset the
-	 * caller's post-call kcov_collect() would re-read that count
-	 * and re-account the prior call's PCs as EXTRA_FORK coverage,
-	 * skewing total_calls / per_syscall_calls / warm-known-hits /
-	 * diagnostics counters (rarely new bucket bits, but exactly the
-	 * accounting the observability work cares about). */
-	kcov_reset_trace_header(&child->kcov);
+	 * from the previous bracketed syscall.  Without the trace-header
+	 * reset (inside kcov_note_extrafork) the caller's post-call
+	 * kcov_collect() would re-read that count and re-account the
+	 * prior call's PCs as EXTRA_FORK coverage, skewing total_calls /
+	 * per_syscall_calls / warm-known-hits / diagnostics counters.
+	 * Pass rec->nr so the helper can also bump
+	 * per_syscall_extrafork_calls[nr]: the missing kcov_collect()
+	 * means execve/execveat/vfork never touch per_syscall_calls[] or
+	 * per_syscall_edges[], so downstream productivity ratios need a
+	 * dedicated denominator to tell "EXTRA_FORK, coverage inherently
+	 * unmeasurable via kcov" from "dead syscall". */
+	kcov_note_extrafork(&child->kcov, rec->nr);
 }
 
 

@@ -1356,6 +1356,19 @@ struct kcov_shared {
 	 * top-syscalls dump in stats.c. */
 	unsigned long per_syscall_edges[MAX_NR_SYSCALL];
 	unsigned long per_syscall_calls[MAX_NR_SYSCALL];
+	/* EXTRA_FORK dispatches (execve, execveat, vfork) run their real
+	 * syscall in a throwaway grandchild that do_extrafork() spawns
+	 * OUTSIDE the parent worker's kcov_enable / syscall / kcov_disable
+	 * bracket, so kcov_collect() never fires for them and both
+	 * per_syscall_calls[nr] and per_syscall_edges[nr] stay at zero
+	 * for the life of the run.  Without a dedicated denominator these
+	 * syscalls read as permanently dead in edges/calls productivity
+	 * ratios (0 edges out of 0 tracked calls) even though the fuzzer
+	 * IS dispatching them thousands of times.  Bumped once per
+	 * EXTRA_FORK bypass from kcov_note_extrafork() below so consumers
+	 * (stats.c JSON emit, downstream analysis) can distinguish "dead
+	 * syscall" from "coverage-inherently-unmeasurable via kcov". */
+	unsigned long per_syscall_extrafork_calls[MAX_NR_SYSCALL];
 	unsigned long last_edge_at[MAX_NR_SYSCALL];
 	/* Snapshot of per_syscall_edges at the previous stats interval.
 	 * Used to compute per-interval growth rate of the call-count signal
@@ -2838,14 +2851,26 @@ void kcov_enable_cmp(struct kcov_child *kc);
 void kcov_enable_remote(struct kcov_child *kc, unsigned int child_id, unsigned int nr);
 void kcov_disable(struct kcov_child *kc);
 
-/* Zero the trace count header at trace_buf[0] (or cmp_trace_buf[0]
- * for CMP-mode children) without touching the kcov ioctls.  Use on
- * paths that bypass the normal kcov_enable / syscall / kcov_disable
- * bracket so the next kcov_collect() / kcov_collect_cmp() does not
- * re-read the stale count left by the previous bracketed call and
- * re-account the same PCs / cmp records against the current slot.
- * No-op when KCOV is disabled or the slot is inactive. */
-void kcov_reset_trace_header(struct kcov_child *kc);
+/* EXTRA_FORK bypass hook.  Called from do_extrafork() after the
+ * grandchild ran the real syscall outside the parent worker's kcov
+ * bracket, replacing the plain kcov_reset_trace_header() this used to
+ * call.  Two responsibilities:
+ *
+ *   1. Zero the trace count header at trace_buf[0] (or cmp_trace_buf[0]
+ *      for CMP-mode children) without touching the kcov ioctls so the
+ *      next kcov_collect() / kcov_collect_cmp() on this child does not
+ *      re-read the stale count left by the previous bracketed call
+ *      and re-account the same PCs / cmp records against the current
+ *      slot.  No-op when KCOV is disabled or the slot is inactive.
+ *
+ *   2. Bump per_syscall_extrafork_calls[nr] so the EXTRA_FORK dispatch
+ *      is denominator-visible: without this the syscall has neither a
+ *      per_syscall_calls[] bump (kcov_collect() skipped) nor a
+ *      per_syscall_edges[] bump, and downstream edges/calls ratios
+ *      mis-class it as dead weight.  Does NOT try to attribute
+ *      grandchild coverage back to the parent -- that is a much larger
+ *      change requiring a second kcov fd on the throwaway pid. */
+void kcov_note_extrafork(struct kcov_child *kc, unsigned int nr);
 
 bool kcov_bracket_begin(struct kcov_child *kc);
 unsigned long kcov_bracket_end(struct kcov_child *kc,
