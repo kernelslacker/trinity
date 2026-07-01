@@ -252,15 +252,12 @@ static void build_xdr_head(unsigned char *buf, size_t *off,
  * Build an XDR-RXKAD inner body (sec_ix == 2).  Layout per
  * rxrpc_preparse_xdr_rxkad: 8 __be32 header words (vice_id, kvno,
  * session_key[8 bytes spread across xdr[2]/xdr[3]], start, expiry,
- * primary_flag, ticket_length) followed by tktlen ticket bytes.  Returns
- * the toklen (post-sec_ix payload length) the wrapper should advertise.
+ * primary_flag, ticket_length) followed by tktlen ticket bytes.
  */
-static uint32_t build_xdr_rxkad_inner(unsigned char *buf, size_t *off,
-				      uint32_t tktlen)
+static void build_xdr_rxkad_inner(unsigned char *buf, size_t *off,
+				  uint32_t tktlen)
 {
-	size_t header = 8 * 4;
 	size_t pad = (tktlen + 3) & ~3U;
-	size_t inner_off = *off;
 	uint32_t i;
 
 	append_be32(buf, off, (uint32_t) rand32());		/* vice_id */
@@ -276,8 +273,6 @@ static uint32_t build_xdr_rxkad_inner(unsigned char *buf, size_t *off,
 	for (i = tktlen; i < pad; i++)
 		buf[*off + i] = 0;
 	*off += pad;
-
-	return (uint32_t) (header + pad - (inner_off - inner_off));
 }
 
 /*
@@ -550,7 +545,7 @@ static void arm_xdr_rxkad(int32_t *ring, unsigned int iter)
 	inner_start = off;
 	if (tktlen > sizeof(buf) - inner_start - 8 * 4)
 		tktlen = (uint32_t)(sizeof(buf) - inner_start - 8 * 4);
-	(void) build_xdr_rxkad_inner(buf, &off, tktlen);
+	build_xdr_rxkad_inner(buf, &off, tktlen);
 
 	snprintf(desc, sizeof(desc), "trinity-rxrpc-xrxkad-%u-%u",
 		 (unsigned int) mypid(), iter);
