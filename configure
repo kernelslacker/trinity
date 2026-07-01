@@ -340,6 +340,58 @@ else
 fi
 
 #############################################################################################
+# Does linux/io_uring.h give io_uring_clone_buffers the src_off/dst_off/nr
+# members (added in 6.13)
+#
+echo -n "[*] Checking if io_uring_clone_buffers has src_off.. "
+rm -f "$TMP" || exit 1
+
+cat >"$TMP.c" << EOF
+#include <linux/io_uring.h>
+
+int main(void)
+{
+	struct io_uring_clone_buffers b = { .src_off = 0, .dst_off = 0, .nr = 0 };
+	return b.src_off + b.dst_off + b.nr;
+}
+EOF
+
+${CC} ${CFLAGS} "$TMP.c" -o "$TMP" &>"$TMP.log"
+if [ ! -x "$TMP" ]; then
+	echo $RED "[NO]" $COL_RESET
+	MISSING_DEFS=1
+else
+	echo $GREEN "[YES]" $COL_RESET
+	echo "#define USE_IO_URING_CLONE_BUFFERS_OFF 1" >> $CONFIGH
+fi
+
+#############################################################################################
+# Does linux/io_uring.h give io_uring_napi the opcode/op_param members
+# (added in 6.13)
+#
+echo -n "[*] Checking if io_uring_napi has opcode/op_param.. "
+rm -f "$TMP" || exit 1
+
+cat >"$TMP.c" << EOF
+#include <linux/io_uring.h>
+
+int main(void)
+{
+	struct io_uring_napi n = { .opcode = 0, .op_param = 0 };
+	return n.opcode + n.op_param;
+}
+EOF
+
+${CC} ${CFLAGS} "$TMP.c" -o "$TMP" &>"$TMP.log"
+if [ ! -x "$TMP" ]; then
+	echo $RED "[NO]" $COL_RESET
+	MISSING_DEFS=1
+else
+	echo $GREEN "[YES]" $COL_RESET
+	echo "#define USE_IO_URING_NAPI_OP 1" >> $CONFIGH
+fi
+
+#############################################################################################
 
 check_header linux/caif/caif_socket.h USE_CAIF
 check_header linux/fsmap.h USE_FSMAP

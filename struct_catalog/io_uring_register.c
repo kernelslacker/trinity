@@ -236,7 +236,28 @@ const struct struct_field io_uring_register_restriction_fields[IO_URING_REGISTER
  * napi id -- FT_ENUM is documentation-grade for the register-op case
  * and a harmless small-int hint for the add/del cases.  resv/pad must
  * be zero.  UNREGISTER ignores most fields but shares the layout.
+ *
+ * The io_uring_napi_op / io_uring_napi_tracking_strategy enum values
+ * were appended in 6.13; a pre-6.13 <linux/io_uring.h> stops before
+ * them.  They are enum members (invisible to the preprocessor), so the
+ * #ifndef arms below always fire, carrying the upstream values.  The
+ * matching struct members (opcode / op_param) landed in the same
+ * revision but cannot be shimmed this way -- offsetof() needs the real
+ * member -- so their field entries are gated on USE_IO_URING_NAPI_OP
+ * (a configure probe).  When absent the pools go unreferenced; they are
+ * external-linkage const so this draws no unused-variable warning.
  */
+#ifndef IO_URING_NAPI_REGISTER_OP
+#define IO_URING_NAPI_REGISTER_OP	0
+#define IO_URING_NAPI_STATIC_ADD_ID	1
+#define IO_URING_NAPI_STATIC_DEL_ID	2
+#endif
+#ifndef IO_URING_NAPI_TRACKING_DYNAMIC
+#define IO_URING_NAPI_TRACKING_DYNAMIC	0
+#define IO_URING_NAPI_TRACKING_STATIC	1
+#define IO_URING_NAPI_TRACKING_INACTIVE	255
+#endif
+
 const unsigned long io_uring_napi_opcodes[IO_URING_NAPI_OPCODES_N] = {
 	IO_URING_NAPI_REGISTER_OP,
 	IO_URING_NAPI_STATIC_ADD_ID,
@@ -254,15 +275,19 @@ const struct struct_field io_uring_register_napi_fields[IO_URING_REGISTER_NAPI_F
 	FIELDX(struct io_uring_napi, prefer_busy_poll, FT_RANGE,
 	       .u.range = { .lo = 0, .hi = 1 },
 	       .mutate_weight = 60),
+#ifdef USE_IO_URING_NAPI_OP
 	FIELDX(struct io_uring_napi, opcode, FT_ENUM,
 	       .u.enum_ = { .vals = io_uring_napi_opcodes,
 			    .n = ARRAY_SIZE(io_uring_napi_opcodes) },
 	       .mutate_weight = 80),
+#endif
 	FIELD(struct io_uring_napi, pad),
+#ifdef USE_IO_URING_NAPI_OP
 	FIELDX(struct io_uring_napi, op_param, FT_ENUM,
 	       .u.enum_ = { .vals = io_uring_napi_tracking_strategies,
 			    .n = ARRAY_SIZE(io_uring_napi_tracking_strategies) },
 	       .mutate_weight = 60),
+#endif
 	FIELD(struct io_uring_napi, resv),
 };
 
@@ -291,7 +316,19 @@ const struct struct_field io_uring_register_clock_fields[IO_URING_REGISTER_CLOCK
  * hand-rolled fill path seeds it from the ring pool.  flags carry the
  * IORING_REGISTER_SRC_REGISTERED / DST_REPLACE pair.  src_off / dst_off
  * / nr are small slot indices.  pad[3] must be zero.
+ *
+ * IORING_REGISTER_DST_REPLACE was appended to the clone-buffers flag
+ * enum in 6.13 (SRC_REGISTERED predates it); it is an enum member, so
+ * the #ifndef arm below always fires with the upstream value.  The
+ * src_off / dst_off / nr *struct members* arrived in the same revision
+ * (a pre-6.13 struct is { src_fd, flags, pad[6] }) and cannot be
+ * shimmed -- offsetof() needs the real member -- so their field entries
+ * are gated on USE_IO_URING_CLONE_BUFFERS_OFF (a configure probe).
  */
+#ifndef IORING_REGISTER_DST_REPLACE
+#define IORING_REGISTER_DST_REPLACE	(1U << 1)
+#endif
+
 #define IORING_CLONE_BUFFERS_FLAGS_MASK \
 	(IORING_REGISTER_SRC_REGISTERED | IORING_REGISTER_DST_REPLACE)
 
@@ -301,6 +338,7 @@ const struct struct_field io_uring_register_clone_buffers_fields[IO_URING_REGIST
 	FIELDX(struct io_uring_clone_buffers, flags, FT_FLAGS,
 	       .u.flags.mask = IORING_CLONE_BUFFERS_FLAGS_MASK,
 	       .mutate_weight = 80),
+#ifdef USE_IO_URING_CLONE_BUFFERS_OFF
 	FIELDX(struct io_uring_clone_buffers, src_off, FT_RANGE,
 	       .u.range = { .lo = 0, .hi = 16 },
 	       .mutate_weight = 60),
@@ -310,6 +348,7 @@ const struct struct_field io_uring_register_clone_buffers_fields[IO_URING_REGIST
 	FIELDX(struct io_uring_clone_buffers, nr, FT_RANGE,
 	       .u.range = { .lo = 0, .hi = 16 },
 	       .mutate_weight = 60),
+#endif
 	FIELD(struct io_uring_clone_buffers, pad),
 };
 
