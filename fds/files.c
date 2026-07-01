@@ -199,39 +199,3 @@ int get_rand_pool_fd(enum objecttype objtype)
 	return -1;
 }
 
-int open_pool_fd(unsigned int pool_id, enum objecttype objtype)
-{
-	struct object *obj;
-	const char *filename;
-	struct stat sb;
-	int fd, flags, tries;
-
-	if (fileindex == NULL)
-		return false;
-
-	for (tries = 0; tries < 10; tries++) {
-		filename = get_filename_for_pool(pool_id);
-		if (filename == NULL)
-			return false;
-		if (lstat(filename, &sb) == -1)
-			continue;
-		flags = check_stat_file(&sb);
-		if (flags == -1)
-			continue;
-
-		obj = alloc_object();
-		if (obj == NULL)
-			return false;
-		fd = open_file(obj, filename, flags);
-		if (fd == -1) {
-			tracked_free_now(obj);
-			continue;
-		}
-
-		obj->fileobj.fd = fd;
-		add_object(obj, OBJ_GLOBAL, objtype);
-		return true;
-	}
-	return false;
-}
-
