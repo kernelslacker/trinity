@@ -38,6 +38,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/utsname.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "child.h"
@@ -146,6 +147,14 @@ void chain_corpus_init(void)
 			else if (discarded != 0)
 				output(0, "chain corpus: %u chains discarded from %s -- cold start\n",
 				       discarded, path);
+
+			/* Same path is reused as the mid-run snapshot target so
+			 * a crash between warm-start and clean shutdown does
+			 * not lose every chain admitted during the run.  The
+			 * clean-exit save in trinity.c still fires on top of
+			 * this to capture the trailing window of admits the
+			 * periodic cadence had not yet flushed. */
+			chain_corpus_enable_snapshots(path);
 		}
 	}
 }
@@ -1196,4 +1205,74 @@ const char *chain_corpus_default_path(void)
 	if (ret < 0 || (size_t)ret >= sizeof(pathbuf))
 		return NULL;
 	return pathbuf;
+}
+
+/*
+ * Mid-run periodic snapshot state.  Parallel to cmp_hints_snapshot_*:
+ * the enabled flag gates chain_corpus_maybe_snapshot() so the periodic
+ * hook is a no-op until warm-start setup has resolved a valid path.
+ *
+ * The save trigger is driven off ring->save_count -- the same monotonic
+ * atomic that chain_corpus_save() already increments on every admit --
+ * so no new generation counter is needed on the ring itself.  Reading
+ * it once per stats tick with RELAXED semantics is a single unsigned-
+ * long load, well below the tick budget, and matches the
+ * cmp_hints_total_generation() shape used for the analogous trigger on
+ * the cmp-hints pool.
+ */
+static char chain_corpus_snapshot_path[PATH_MAX];
+static bool chain_corpus_snapshot_enabled;
+static unsigned long chain_corpus_save_count_at_last_snapshot;
+static time_t chain_corpus_last_snapshot_time;
+
+void chain_corpus_enable_snapshots(const char *path)
+{
+	size_t len;
+
+	if (path == NULL)
+		return;
+	len = strlen(path);
+	if (len == 0 || len >= sizeof(chain_corpus_snapshot_path))
+		return;
+	memcpy(chain_corpus_snapshot_path, path, len + 1);
+	chain_corpus_snapshot_enabled = true;
+	chain_corpus_last_snapshot_time = time(NULL);
+	if (chain_corpus_shm != NULL)
+		chain_corpus_save_count_at_last_snapshot =
+			__atomic_load_n(&chain_corpus_shm->save_count,
+					__ATOMIC_RELAXED);
+	else
+		chain_corpus_save_count_at_last_snapshot = 0;
+}
+
+void chain_corpus_maybe_snapshot(void)
+{
+	unsigned long saves_now;
+	time_t now;
+
+	if (!chain_corpus_snapshot_enabled || chain_corpus_shm == NULL)
+		return;
+
+	saves_now = __atomic_load_n(&chain_corpus_shm->save_count,
+				    __ATOMIC_RELAXED);
+	now = time(NULL);
+
+	/* Both gates must expire before a snapshot fires: enough new admits
+	 * (so we don't write a near-identical payload to disk) AND enough
+	 * wall time (so a burst of admits doesn't trigger one save per
+	 * second).  The generation gate stays quiet once the ring saturates
+	 * and the per-(reason, nr) window cap dominates the admit rate; the
+	 * time gate would then be the only limiter, so both gates are
+	 * required to avoid the pathological "saturated ring, high time
+	 * budget, thrashing the disk" case.  Mirrors the cmp_hints gate. */
+	if (saves_now < chain_corpus_save_count_at_last_snapshot
+			+ CHAIN_CORPUS_SNAPSHOT_NEW ||
+	    now < chain_corpus_last_snapshot_time
+			+ (time_t)CHAIN_CORPUS_SNAPSHOT_INTERVAL_SEC)
+		return;
+
+	if (chain_corpus_save_file(chain_corpus_snapshot_path)) {
+		chain_corpus_save_count_at_last_snapshot = saves_now;
+		chain_corpus_last_snapshot_time = now;
+	}
 }

@@ -27,6 +27,7 @@
 #include "pre_crash_ring.h"
 #include "random.h"
 #include "self_cgroup.h"
+#include "sequence.h"
 #include "shm.h"
 #include "stats.h"
 #include "stats_ring.h"
@@ -268,6 +269,14 @@ static void run_periodic_surfaces(void)
 	minicorpus_mut_attrib_canary_check();
 
 	cmp_hints_maybe_snapshot();
+
+	/* Same crash-resilience rationale as cmp_hints_maybe_snapshot():
+	 * the end-of-run save in trinity.c only fires on a clean shutdown
+	 * reason, so a kill / crash mid-run would otherwise drop every
+	 * chain admitted since the last successful save.  Cadence gates
+	 * (CHAIN_CORPUS_SNAPSHOT_NEW admits + CHAIN_CORPUS_SNAPSHOT_INTERVAL_SEC
+	 * seconds) live inside the callee. */
+	chain_corpus_maybe_snapshot();
 
 	print_stats();
 
