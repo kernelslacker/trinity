@@ -616,9 +616,20 @@ void fork_children(void)
 			 * process_zombie_pending() pass will retire them
 			 * and main_loop will call us again). */
 			if (find_childno(EMPTY_PIDSLOT) == CHILD_NOT_FOUND) {
-				outputerr("## Pid map was full!\n");
-				dump_childnos();
-				exit(EXIT_LOST_CHILD);
+				/* Every slot holds a pid, but a watchdog
+				 * kill burst can leave slots parked with
+				 * dead pids the exit accounting never
+				 * cleared -- the "0 active" state. Run the
+				 * reconciliation sweep before giving up:
+				 * reap_dead_kids' kill(pid,0)==ESRCH pass
+				 * reaps those slots to EMPTY_PIDSLOT. Only
+				 * a still-full map is a genuine loss. */
+				reap_dead_kids();
+				if (find_childno(EMPTY_PIDSLOT) == CHILD_NOT_FOUND) {
+					outputerr("## Pid map was full!\n");
+					dump_childnos();
+					exit(EXIT_LOST_CHILD);
+				}
 			}
 			return;
 		}
