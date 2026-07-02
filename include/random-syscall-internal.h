@@ -22,4 +22,14 @@ struct syscallrecord;
 struct syscallentry;
 struct kcov_pc_result;
 
+/* pick-common.c -- table selection and validation helpers, shared by
+ * the three picker arms in pickers.c.  choose_syscall_table is public
+ * via include/syscall.h; the rest are cluster-private. */
+void note_validation_success(unsigned int syscallnr, bool do32);
+void note_validation_failure(unsigned int syscallnr, bool do32);
+bool expensive_accept(unsigned int nr, bool do32);
+void cost_pool_selector_shadow_note(bool do32);
+void cost_pool_selector_live_note(unsigned int nr, bool do32);
+bool syscall_in_group(unsigned int nr, bool do32, unsigned int target_group);
+
 #endif /* _TRINITY_RANDOM_SYSCALL_INTERNAL_H */
