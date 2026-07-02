@@ -47,7 +47,7 @@ FILES=(
 	rand/rand-warn.c
 	rand/seed.c
 	rand/text-payloads.c
-	generate-args.c
+	args/generate-args.c
 	random_syscall/chain-subst.c
 	random_syscall/dispatch.c
 	random_syscall/pick-common.c
