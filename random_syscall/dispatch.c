@@ -1,5 +1,18 @@
 /*
- * Call a single random syscall with random args.
+ * Prepare-and-dispatch the picked syscall and run its per-call post-
+ * dispatch bookkeeping.  dispatch_step is the dense correctness
+ * boundary where srec publication, fd accounting, kcov / CMP
+ * collection, minicorpus save, and the greedy CMP RedQueen re-exec
+ * cap all meet; random_syscall_step, replay_syscall_step,
+ * random_syscall_step_biased, and random_syscall are the four
+ * entry points that populate the record and call into it.
+ *
+ * All public entry points here (random_syscall, random_syscall_step,
+ * random_syscall_step_biased, replay_syscall_step) are declared in
+ * include/child.h; redqueen_reexec_step and the redqueen_pin_*
+ * helpers are file-scope static.  Everything upstream of the raw
+ * dispatch (pick, chain substitution, strategy accounting) lives in
+ * the sibling random_syscall/ cluster files.
  */
 
 #include <errno.h>

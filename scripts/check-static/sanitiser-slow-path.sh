@@ -48,7 +48,11 @@ FILES=(
 	rand/seed.c
 	rand/text-payloads.c
 	generate-args.c
-	random-syscall.c
+	random_syscall/chain-subst.c
+	random_syscall/dispatch.c
+	random_syscall/pick-common.c
+	random_syscall/pickers.c
+	random_syscall/strategy-accounting.c
 	arg_coupling.c
 	mutate.c
 	struct_catalog.c
