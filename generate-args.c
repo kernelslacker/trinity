@@ -1,44 +1,16 @@
-#include <limits.h>
-#include <sched.h>
-#include <sys/time.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <time.h>
-
 #include "arch.h"
-#include "arg-len-semantics.h"
 #include "args-internal.h"
 #include "argtype-ops.h"
-#include "blob_mutator.h"
-#ifdef USE_BPF
-#include "bpf.h"
-#endif
 #include "cmp_hints.h"
 #include "debug.h"
 #include "deferred-free.h"
 #include "fd.h"
-#include "kcov.h"
-#include "maps.h"
 #include "minicorpus.h"
-#include "net.h"
-#include "nodemask.h"
-#include "numa.h"
-#include "pathnames.h"
-#include "random.h"
-#include "rnd.h"
-#include "results.h"
 #include "sanitise.h"
 #include "shm.h"
-#include "strategy.h"	// plateau_rescue_bias_active_for, RRC_CMP_DERIVED
-#include "struct_catalog.h"
 #include "syscall.h"
 #include "syscall_record.h"
 #include "tables.h"
-#include "trinity.h"	// num_online_cpus
-#include "utils.h"	// zmalloc
-#include "fstype.h"
-#include "xattr.h"
 
 
 /*
