@@ -14,9 +14,10 @@
  * the owned buffer), HAVOC (FILL plus a bounded byte-mutation pass:
  * bit-flip / byte-flip / set-interesting byte+word+dword, capped at
  * BLOB_HAVOC_MAX_OPS), CMPDICT (HAVOC plus a bounded buffer-redqueen
- * pass that pulls a learned cmp constant via cmp_hints_try_get and
- * splats it into the buffer at a random offset / width, capped at
- * BLOB_CMPDICT_MAX_INSERTS).
+ * pass capped at BLOB_CMPDICT_MAX_INSERTS: each iteration coin-flips
+ * between a built-in well-known-magic table and the learned per-nr
+ * cmp-hint pool via cmp_hints_try_get, splatting the drawn value into
+ * the buffer at a random offset with a little-endian splat).
  */
 #include <stdbool.h>
 #include <stddef.h>
@@ -29,6 +30,7 @@
 #include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "utils.h"
 
 enum blob_mutator_mode blob_mutator_mode = BLOB_MUTATOR_OFF;
 
@@ -163,30 +165,84 @@ static unsigned int blob_havoc(unsigned char *buf, size_t len)
 }
 
 /*
- * CMPDICT arm: pull learned cmp constants for this syscall from the
- * per-nr cmp-hint pool and splat each into the buffer at a random
- * offset with a random width drawn from {1, 2, 4, 8}, little-endian.
+ * Well-known FS / binary-format header magics that a kernel parser
+ * checks BEFORE the KCOV_TRACE_CMP-instrumented compare in the deeper
+ * arm (ext4 / XFS / BTRFS / squashfs super-block sanity, ELF eident,
+ * gzip member header).  The learned cmp_hints pool cannot bootstrap
+ * these: the pre-parser gate rejects the buffer and the instrumented
+ * compare downstream is never reached, so no learned constant ever
+ * flows back into the pool for the arm to draw from.
  *
- * Insert count is drawn from [1, BLOB_CMPDICT_MAX_INSERTS] so the
- * worst case is bounded independent of len and of how rich the pool
- * is.  Each iteration consults cmp_hints_try_get(nr, do32, ...); a
- * miss (empty pool, chaos-suppressed, corrupted) is silent -- the
- * iteration drops with no write and no counter bump so the
- * blob_dict_inserts counter measures committed splats, not attempts.
+ * All entries are stored so that a little-endian splat of value at
+ * width bytes reproduces the on-disk byte sequence the kernel checks
+ * -- values for headers that are big-endian on disk (XFS) are pre-
+ * byteswapped in the table so the same LE splat helper in
+ * blob_cmpdict() consumes the entry unchanged.  Widths are restricted
+ * to {1, 2, 4, 8} to fit that helper without a new byte-path.
+ */
+struct blob_static_magic {
+	uint64_t value;
+	unsigned int width;
+};
+
+static const struct blob_static_magic blob_static_magics[] = {
+	/* EXT2/3/4 s_magic (include/uapi/linux/magic.h) -- LE on disk. */
+	{ 0xEF53ULL,             2 },
+	/* XFS_SB_MAGIC "XFSB" (fs/xfs/libxfs/xfs_format.h) -- big-endian
+	 * on disk; byteswapped here so an LE splat writes the on-disk
+	 * bytes 0x58 0x46 0x53 0x42. */
+	{ 0x42534658ULL,         4 },
+	/* BTRFS_MAGIC "_BHRfS_M" (include/uapi/linux/btrfs_tree.h) --
+	 * LE splat writes 0x5F 0x42 0x48 0x52 0x66 0x53 0x5F 0x4D. */
+	{ 0x4D5F53665248425FULL, 8 },
+	/* SQUASHFS_MAGIC "hsqs" (include/uapi/linux/magic.h) -- LE. */
+	{ 0x73717368ULL,         4 },
+	/* ELF eident (include/uapi/linux/elf.h ELFMAG) -- LE splat writes
+	 * 0x7f 'E' 'L' 'F'. */
+	{ 0x464C457FULL,         4 },
+	/* gzip member header (RFC 1952) -- LE splat writes 0x1f 0x8b. */
+	{ 0x8B1FULL,             2 },
+};
+
+/*
+ * CMPDICT arm: splat one bounded cmp-source into the buffer per
+ * iteration, at a random offset, little-endian.  Insert count is
+ * drawn from [1, BLOB_CMPDICT_MAX_INSERTS] so the worst case is
+ * bounded independent of len and of how rich the source is.
  *
- * Every write is clamped so pos + width <= len; widths that do not
- * fit in len degrade down the {8, 4, 2, 1} ladder until they do (a
- * len of 0 is rejected by the caller, so the worst case here is
- * len == 1 which forces a single-byte splat).  Returns the number of
- * committed inserts so the caller can credit blob_dict_inserts.
+ * Two sources.  Each iteration coin-flips (rnd_u32() & 1u) between
+ * (a) the built-in blob_static_magics[] table -- one uniformly-picked
+ * entry with a fixed width baked into the entry -- and (b) the
+ * learned per-nr cmp_hints pool -- one cmp_hints_try_get(nr, do32,
+ * ...) pull with a width drawn from {1, 2, 4, 8}.  A static draw
+ * whose baked width does not fit len falls back to the learned path
+ * silently; a learned pull that misses (empty pool, chaos-
+ * suppressed, corrupted) is skipped silently.  Neither miss bumps a
+ * counter so both blob_dict_inserts and blob_static_magic_inserts
+ * measure committed splats, not attempts.
+ *
+ * Every write is clamped so pos + width <= len; on the learned arm,
+ * widths that do not fit in len degrade down the {8, 4, 2, 1} ladder
+ * until they do (a len of 0 is rejected by the caller, so the worst
+ * case here is len == 1 which forces a single-byte splat).  The
+ * static arm does not degrade because the baked width is part of the
+ * magic -- a truncated header magic would not satisfy the pre-parser
+ * check the entry exists to satisfy.  Returns the number of committed
+ * learned-pool inserts through the return value and the number of
+ * committed static-table inserts through *static_committed_out so
+ * the caller can credit blob_dict_inserts and
+ * blob_static_magic_inserts respectively.
  */
 static unsigned int blob_cmpdict(unsigned char *buf, size_t len,
-				 unsigned int nr, bool do32)
+				 unsigned int nr, bool do32,
+				 unsigned int *static_committed_out)
 {
 	unsigned int n_inserts;
 	unsigned int committed = 0;
+	unsigned int static_committed = 0;
 	unsigned int i;
 
+	*static_committed_out = 0;
 	if (len == 0)
 		return 0;
 
@@ -197,23 +253,43 @@ static unsigned int blob_cmpdict(unsigned char *buf, size_t len,
 		unsigned int width;
 		size_t pos;
 		size_t max_pos;
+		bool from_static = false;
 
-		if (!cmp_hints_try_get(nr, do32, &hint))
-			continue;
+		/* Source coin-flip.  When the static arm is picked and
+		 * the entry fits, take it; otherwise (arm not picked, or
+		 * baked width > len) fall through to the learned pool so
+		 * short buffers still get some coverage. */
+		if (rnd_u32() & 1u) {
+			const struct blob_static_magic *m =
+				&blob_static_magics[rnd_modulo_u32(
+					ARRAY_SIZE(blob_static_magics))];
 
-		/* Width ladder: pick uniformly from {1, 2, 4, 8} then
-		 * degrade if the chosen width does not fit in len.  The
-		 * degrade walks down the same ladder so a len=3 buffer
-		 * accepts width 2 or 1, never the constructed-mid value
-		 * of 3 (which would expose a partial 32-bit stamp). */
-		switch (rnd_modulo_u32(4)) {
-		case 0:  width = 1; break;
-		case 1:  width = 2; break;
-		case 2:  width = 4; break;
-		default: width = 8; break;
+			if (m->width <= len) {
+				hint = (unsigned long) m->value;
+				width = m->width;
+				from_static = true;
+			}
 		}
-		while (width > len)
-			width >>= 1;
+
+		if (!from_static) {
+			if (!cmp_hints_try_get(nr, do32, &hint))
+				continue;
+
+			/* Width ladder: pick uniformly from {1, 2, 4, 8}
+			 * then degrade if the chosen width does not fit
+			 * in len.  The degrade walks down the same ladder
+			 * so a len=3 buffer accepts width 2 or 1, never
+			 * the constructed-mid value of 3 (which would
+			 * expose a partial 32-bit stamp). */
+			switch (rnd_modulo_u32(4)) {
+			case 0:  width = 1; break;
+			case 1:  width = 2; break;
+			case 2:  width = 4; break;
+			default: width = 8; break;
+			}
+			while (width > len)
+				width >>= 1;
+		}
 		/* width is now in {1, 2, 4, 8} and <= len. */
 
 		max_pos = len - width;
@@ -257,8 +333,12 @@ static unsigned int blob_cmpdict(unsigned char *buf, size_t len,
 			break;
 		}
 		}
-		committed++;
+		if (from_static)
+			static_committed++;
+		else
+			committed++;
 	}
+	*static_committed_out = static_committed;
 	return committed;
 }
 
@@ -300,11 +380,17 @@ void blob_fill(unsigned char *buf, size_t len, unsigned int nr, bool do32)
 	}
 
 	if (mode == BLOB_MUTATOR_CMPDICT) {
-		unsigned int inserts = blob_cmpdict(buf, len, nr, do32);
+		unsigned int static_inserts = 0;
+		unsigned int inserts = blob_cmpdict(buf, len, nr, do32,
+						    &static_inserts);
 
 		if (inserts > 0)
 			__atomic_fetch_add(&shm->stats.blob_dict_inserts,
 					   (unsigned long) inserts,
+					   __ATOMIC_RELAXED);
+		if (static_inserts > 0)
+			__atomic_fetch_add(&shm->stats.blob_static_magic_inserts,
+					   (unsigned long) static_inserts,
 					   __ATOMIC_RELAXED);
 	}
 }

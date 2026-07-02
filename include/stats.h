@@ -5138,13 +5138,24 @@ struct stats_s {
 	 * content into a buffer); blob_havoc_ops is the count of bounded
 	 * byte-mutation ops the HAVOC rung applied on top of the FILL
 	 * floor; blob_dict_inserts is the count of committed cmp-pool
-	 * splats the CMPDICT rung applied on top of the HAVOC floor (one
-	 * bump per successful cmp_hints_try_get pull + splat; pool misses
-	 * are silent).  Bumped only by CMPDICT -- isolates the cmp-dict
-	 * contribution from generic HAVOC byte mutations in the A/B. */
+	 * splats the CMPDICT rung applied on top of the HAVOC floor from
+	 * the learned per-nr cmp_hints pool (one bump per successful
+	 * cmp_hints_try_get pull + splat; pool misses are silent);
+	 * blob_static_magic_inserts is the count of committed splats the
+	 * CMPDICT rung sourced from the built-in well-known-magic table
+	 * (ext4 / XFS / BTRFS / squashfs / ELF / gzip) instead of the
+	 * learned pool.  Each CMPDICT iteration coin-flips between the
+	 * two sources; the ratio of blob_static_magic_inserts to
+	 * blob_dict_inserts is the observable A/B split (a static-draw
+	 * that does not fit len falls back to the learned path and does
+	 * not bump either counter until the fallback either commits or
+	 * misses).  All four counters are bumped only by CMPDICT -- the
+	 * per-rung contribution stays isolated across an
+	 * off / fill / havoc / cmpdict A/B. */
 	unsigned long blob_fills;
 	unsigned long blob_havoc_ops;
 	unsigned long blob_dict_inserts;
+	unsigned long blob_static_magic_inserts;
 };
 
 unsigned int stats_syscall_category(const char *name);
