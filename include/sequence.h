@@ -182,6 +182,28 @@ void chain_corpus_save(const struct chain_step *steps, unsigned int len,
 		       unsigned int reason, unsigned int trigger_nr);
 
 /*
+ * On-disk persistence for the chain corpus (cross-run warm-start).
+ *
+ * chain_corpus_save_file() serialises every occupied slot of the ring
+ * under a versioned, arch-tagged header and atomically renames the
+ * result to @path.  chain_corpus_load_file() reads a previously-saved
+ * image, refuses incompatible headers outright, drops individual
+ * chains that fail re-validation (unknown syscall nr, argtype set no
+ * longer replay-safe), and admits the survivors into the ring using
+ * the same release-store publish sequence chain_corpus_save() uses.
+ *
+ * chain_corpus_default_path() builds an XDG-anchored, arch- and
+ * kernel-release-tagged path so a saved chain corpus is never
+ * accidentally reused across incompatible kernels or arches.  Returns
+ * NULL on any allocation / snprintf / mkdir failure.  The returned
+ * pointer is owned by an internal static buffer.
+ */
+bool chain_corpus_save_file(const char *path);
+bool chain_corpus_load_file(const char *path,
+			    unsigned int *loaded, unsigned int *discarded);
+const char *chain_corpus_default_path(void);
+
+/*
  * Snapshot a random saved chain into @out.  Returns true on success
  * (out->len populated, out->steps[] copied), false if the corpus is
  * empty.  The snapshot is intentionally lockless -- see the long
