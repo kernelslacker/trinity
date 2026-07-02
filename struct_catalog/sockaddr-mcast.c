@@ -13,8 +13,8 @@
  * initialisers .fields = ip_mreqn_fields (and friends) resolve via
  * the externs in struct_catalog-internal.h.
  *
- * See sockaddr-af.c for the shared "schema-aware FILL only" contract
- * that governs every optval row here.
+ * See sockaddr-sockopt.c for the shared "schema-aware FILL only"
+ * contract that governs every optval row here.
  */
 
 #include <stddef.h>

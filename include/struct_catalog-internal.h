@@ -218,12 +218,18 @@ extern const struct union_variant bpf_attr_variants[BPF_ATTR_VARIANTS_N];
 #endif /* USE_BPF */
 
 /*
- * Sockaddr / setsockopt leaf tables defined in struct_catalog/sockaddr.c.
- * The sockaddr_storage envelope itself is always built, so the
- * sockaddr_storage_fields and sockaddr_storage_variants externs (plus
- * the always-on AF arms) live outside any USE_* guard.  Per-AF
- * variants and their pools are gated by the same USE_<AF> macros the
- * definitions use so the extern surface tracks the live build.
+ * Sockaddr / setsockopt leaf tables defined in the struct_catalog/
+ * sockaddr-* TUs: sockaddr_storage variants and per-AF field arrays
+ * live in struct_catalog/sockaddr-af.c, the IPv4/IPv6 multicast
+ * optval tables (ip_mreqn / ip_mreq_source / ipv6_mreq) in
+ * struct_catalog/sockaddr-mcast.c, and the non-multicast optval
+ * tables (linger / packet_mreq / group_req / group_source_req) in
+ * struct_catalog/sockaddr-sockopt.c.  The sockaddr_storage envelope
+ * itself is always built, so the sockaddr_storage_fields and
+ * sockaddr_storage_variants externs (plus the always-on AF arms)
+ * live outside any USE_* guard.  Per-AF variants and their pools are
+ * gated by the same USE_<AF> macros the definitions use so the
+ * extern surface tracks the live build.
  *
  * sockaddr_storage_variants is the tagged-union dispatch table whose
  * entry count is configuration-dependent (one entry per #ifdef
@@ -231,8 +237,8 @@ extern const struct union_variant bpf_attr_variants[BPF_ATTR_VARIANTS_N];
  * SOCKADDR_STORAGE_VARIANTS_N mirrors that arithmetic so the spine's
  * ARRAY_SIZE(sockaddr_storage_variants) still folds to the same
  * constant the static-table form did.  USE_* macros come from
- * config.h, which struct_catalog.c and struct_catalog/sockaddr.c
- * include before this header.
+ * config.h, which struct_catalog.c and the sockaddr-* TUs include
+ * before this header.
  */
 enum {
 	SOCKADDR_STORAGE_FIELDS_N	= 1,

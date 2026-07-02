@@ -10,11 +10,27 @@
  * initialisers .fields = linger_fields (and friends) resolve via the
  * externs in struct_catalog-internal.h.
  *
- * See sockaddr-af.c for the shared "schema-aware FILL only" contract
- * that governs every optval row here: apply_sockopt_entry()'s two-key
- * (level, optname) lookup uses these tables for schema-driven fill,
- * but the setsockopt optval slot is ARG_UNDEFINED so field-scoped CMP
- * attribution never visits it.
+ * setsockopt optval shapes -- proof batch for the two-key
+ * (level, optname) discriminator.  Five shapes already owned by
+ * bespoke build_*() functions in syscalls/setsockopt.c, registered
+ * here so apply_sockopt_entry()'s explicit-key lookup resolves them
+ * and struct_field_fill_schema_aware() takes over the fill.  Bespoke
+ * builders stay in code as the miss-fallback for the int / bool /
+ * string scalar entries (no struct shape to catalog) and for the
+ * higher-leverage shapes that have not been migrated yet (sctp /
+ * mptcp / tcp_repair / can_filter[] etc.); coverage on those paths
+ * is byte-identical to before until their rows land.
+ *
+ * Scope of every row in this TU (and in the sockaddr-mcast.c
+ * sibling): schema-aware FILL only.  There is NO field-scoped CMP
+ * attribution for the setsockopt optval -- the optval slot's argtype
+ * is ARG_UNDEFINED, and the field-scoped CMP machinery
+ * (cmp_hints_field_scan_record() -> field_pools[]) is gated on
+ * ARG_STRUCT_PTR_IN / ARG_STRUCT_PTR_INOUT, so it never visits
+ * optval.  The FT_ tags below shape the live values via the schema
+ * fill; they do not steer struct_field_for_cmp() at runtime for
+ * these rows.  Wiring field-scoped CMP for ARG_UNDEFINED is out of
+ * scope here and waits on the broader field-scoped-steering lift.
  */
 
 #include <stddef.h>
