@@ -32,6 +32,7 @@
 #include "tables.h"
 #include "trinity.h"
 #include "utils.h"
+#include "utils-internal.h"
 
 /*
  * Use this allocator if you have an object a child writes to that you want
@@ -69,32 +70,14 @@
 enum guard_scope guard_shared_scope = GUARD_SCOPE_OFF;
 #endif
 
-static struct {
-	unsigned long addr;
-	unsigned long size;
-#ifdef CONFIG_GUARD_SHARED
-	/*
-	 * 1 iff __alloc_shared() wrapped this region in PROT_NONE guard
-	 * pages; 0 for a legacy single-mmap region (alloc_shared with
-	 * guards off, or track_shared_region for an externally-mmap'd
-	 * mapping).  free_shared() reads this to decide whether to
-	 * derive a guarded span (PAGE + pages + PAGE) and munmap the
-	 * whole span, or to munmap just (addr, size) like the legacy
-	 * path.  child_fault_handler reads this in P1.2 to attribute a
-	 * SEGV that lands in a guard page to its abutting region.
-	 */
-	uint8_t guarded;
-	/*
-	 * Optional short origin string for diagnostic attribution
-	 * (e.g. "kcov-pc", "kcov-cmp").  NULL when the registering
-	 * caller did not tag the region.  Pointer-only, no allocation:
-	 * callers pass a string-literal address, which has static
-	 * storage duration and is safe to read from any context
-	 * including the in-handler audit dump.
-	 */
-	const char *origin;
-#endif
-} shared_regions[MAX_SHARED_ALLOCS];
+/*
+ * shared_regions[] fields (addr, size, and under CONFIG_GUARD_SHARED
+ * the guarded flag and origin tag) are declared as struct
+ * shared_region_entry in include/utils-internal.h so the range_overlap
+ * cluster can read the same layout without duplicating the definition.
+ * The definition lives here as the authoritative registry.
+ */
+struct shared_region_entry shared_regions[MAX_SHARED_ALLOCS];
 unsigned int nr_shared_regions;
 
 /*
@@ -112,17 +95,13 @@ unsigned int nr_shared_regions;
  * class the whole tracker exists to prevent and is never preferable to
  * a loud abort.
  */
-#define SHARED_REGIONS_OVERFLOW_TAIL 256
-
-static struct {
-	unsigned long addr;
-	unsigned long size;
-#ifdef CONFIG_GUARD_SHARED
-	uint8_t guarded;	/* parity with shared_regions[] above */
-	const char *origin;	/* parity with shared_regions[] above */
-#endif
-} shared_regions_overflow[SHARED_REGIONS_OVERFLOW_TAIL];
-static unsigned int nr_shared_regions_overflow;
+/*
+ * SHARED_REGIONS_OVERFLOW_TAIL and struct shared_region_entry are
+ * declared in include/utils-internal.h so the range_overlap cluster
+ * can walk the tail with the same layout as shared_regions[] above.
+ */
+struct shared_region_entry shared_regions_overflow[SHARED_REGIONS_OVERFLOW_TAIL];
+unsigned int nr_shared_regions_overflow;
 
 /*
  * Bitmap accelerator for range_overlaps_shared().  One bit per
@@ -158,14 +137,12 @@ static unsigned int nr_shared_regions_overflow;
  * resident growth is in the kilobytes for a typical fleet host where
  * shared regions cluster in the mmap arena near 0x7f000000....
  */
-#define SHARED_BITMAP_GRANULARITY_LOG2	21UL	/* 2 MiB per bit */
-#define SHARED_BITMAP_VA_LOG2		47UL	/* 128 TiB user VA span */
-#define SHARED_BITMAP_VA_SPAN		(1UL << SHARED_BITMAP_VA_LOG2)
-#define SHARED_BITMAP_NBITS		(SHARED_BITMAP_VA_SPAN >> SHARED_BITMAP_GRANULARITY_LOG2)
-#define SHARED_BITMAP_BITS_PER_WORD	(8UL * sizeof(unsigned long))
-#define SHARED_BITMAP_NWORDS		(SHARED_BITMAP_NBITS / SHARED_BITMAP_BITS_PER_WORD)
-
-static unsigned long shared_region_bitmap[SHARED_BITMAP_NWORDS];
+/*
+ * SHARED_BITMAP_* macros are declared in include/utils-internal.h so
+ * the range_overlap cluster can index into shared_region_bitmap[]
+ * with the same word/bit arithmetic used by the mark/unmark path.
+ */
+unsigned long shared_region_bitmap[SHARED_BITMAP_NWORDS];
 
 /*
  * Per-chunk refcount paired with shared_region_bitmap above.  Multiple
@@ -325,7 +302,7 @@ static void shared_bitmap_unmark(unsigned long addr, unsigned long size)
  * entry that no matching untrack would ever clear.
  */
 #define TRACKED_SIZE_NBUCKETS	64
-static unsigned long tracked_size_bm;
+unsigned long tracked_size_bm;
 static uint16_t tracked_size_bucket_count[TRACKED_SIZE_NBUCKETS];
 
 static inline unsigned int tracked_size_bucket(unsigned long len)
@@ -3885,7 +3862,7 @@ bool range_overlaps_libc_heap(unsigned long addr, unsigned long len)
  * layout returns false (no cached extent implies no proof of
  * readability; the caller treats that as skip-copy).
  */
-static bool range_inside_libc_heap(unsigned long addr, unsigned long len)
+bool range_inside_libc_heap(unsigned long addr, unsigned long len)
 {
 	unsigned long end, hend, cur;
 	unsigned int i;
