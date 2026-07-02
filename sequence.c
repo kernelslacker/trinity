@@ -31,10 +31,12 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <linux/bpf.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/utsname.h>
@@ -89,8 +91,316 @@
 
 struct chain_corpus_ring *chain_corpus_shm = NULL;
 
+/*
+ * Resource-type dependency table for --chain-resource-typing.
+ *
+ * Small on purpose: one row per fd-family with a clean producer /
+ * consumer split we already ship coverage for.  The whole point of
+ * the row is to measure per-kind productivity via
+ * chain_restype_replay_win[] BEFORE deciding which families deserve
+ * a more elaborate schema.  A universal resource model is out of
+ * scope here.
+ *
+ * Entries are syscall NAMES, not compile-time NRs; the numeric slot
+ * is resolved at chain_restype_init() time via search_syscall_table
+ * against the active table set (biarch-aware).  Names that fail to
+ * resolve on the current arch drop out silently -- a compat gap that
+ * removes a producer just leaves that row's producer slot at the
+ * -1 sentinel, and classify_producer skips it.
+ *
+ * PIDFD: clone3 is included as a producer even though it only
+ * produces a pidfd when its user-side struct clone_args carries the
+ * CLONE_PIDFD flag.  Verifying that would require dereferencing
+ * args[0] which may point at a fuzzed / unmapped user buffer.
+ * Classifying by NR alone means clone3 without CLONE_PIDFD is a
+ * false-positive producer -- but the whole point of the row is to
+ * MEASURE per-kind productivity, and the resulting near-zero
+ * chain_restype_replay_win[PIDFD] would surface exactly that
+ * mismatch.  Same rationale for socket-tcp keying on (a1, a2 & 0xff)
+ * -- we can inspect scalar arg values cheaply, but not deref a
+ * pointer.
+ */
+
+#define CHAIN_RESTYPE_MAX_PRODUCERS 4
+#define CHAIN_RESTYPE_MAX_CONSUMERS 6
+
+struct chain_restype_row {
+	const char *producers[CHAIN_RESTYPE_MAX_PRODUCERS];
+	const char *consumers[CHAIN_RESTYPE_MAX_CONSUMERS];
+};
+
+static const struct chain_restype_row chain_restype_table[CHAIN_RESTYPE_NR] = {
+	[CHAIN_RESTYPE_EPOLL_FD] = {
+		.producers = { "epoll_create1", NULL, NULL, NULL },
+		.consumers = { "epoll_ctl", "epoll_wait", "epoll_pwait",
+			       NULL, NULL, NULL },
+	},
+	[CHAIN_RESTYPE_TIMERFD] = {
+		.producers = { "timerfd_create", NULL, NULL, NULL },
+		.consumers = { "timerfd_settime", "read",
+			       NULL, NULL, NULL, NULL },
+	},
+	[CHAIN_RESTYPE_EVENTFD] = {
+		.producers = { "eventfd2", NULL, NULL, NULL },
+		.consumers = { "poll", "read", "write",
+			       NULL, NULL, NULL },
+	},
+	[CHAIN_RESTYPE_IO_URING_FD] = {
+		.producers = { "io_uring_setup", NULL, NULL, NULL },
+		.consumers = { "io_uring_register", "io_uring_enter",
+			       NULL, NULL, NULL, NULL },
+	},
+	[CHAIN_RESTYPE_PIDFD] = {
+		.producers = { "pidfd_open", "clone3", NULL, NULL },
+		.consumers = { "pidfd_send_signal", "waitid",
+			       NULL, NULL, NULL, NULL },
+	},
+	[CHAIN_RESTYPE_SOCKET_TCP] = {
+		.producers = { "socket", NULL, NULL, NULL },
+		.consumers = { "bind", "connect", "setsockopt", "sendmsg",
+			       NULL, NULL },
+	},
+	[CHAIN_RESTYPE_BPF_MAP_FD] = {
+		.producers = { "bpf", NULL, NULL, NULL },
+		.consumers = { "bpf", NULL, NULL, NULL, NULL, NULL },
+	},
+};
+
+/*
+ * Resolved NR tables.  [biarch_slot] indexes are (0 = uniarch or
+ * 64-bit, 1 = 32-bit under biarch).  Slot value -1 means "no NR
+ * resolved" -- either the name is not in the compiled table for
+ * this arch or biarch is off and we never populate slot 1.
+ */
+static int chain_restype_producer_nr[CHAIN_RESTYPE_NR][2]
+					[CHAIN_RESTYPE_MAX_PRODUCERS];
+static int chain_restype_consumer_nr[CHAIN_RESTYPE_NR][2]
+					[CHAIN_RESTYPE_MAX_CONSUMERS];
+
+static void chain_restype_resolve_slot(const char *name, int slot,
+				       int *dst64, int *dst32)
+{
+	int nr;
+
+	if (name == NULL) {
+		*dst64 = -1;
+		if (dst32 != NULL)
+			*dst32 = -1;
+		return;
+	}
+
+	if (biarch == true) {
+		nr = search_syscall_table(syscalls_64bit,
+					  max_nr_64bit_syscalls, name);
+		*dst64 = (nr >= 0 && (unsigned int)nr < MAX_NR_SYSCALL) ?
+			 nr : -1;
+
+		nr = search_syscall_table(syscalls_32bit,
+					  max_nr_32bit_syscalls, name);
+		if (dst32 != NULL)
+			*dst32 = (nr >= 0 && (unsigned int)nr < MAX_NR_SYSCALL) ?
+				 nr : -1;
+	} else {
+		nr = search_syscall_table(syscalls, max_nr_syscalls, name);
+		*dst64 = (nr >= 0 && (unsigned int)nr < MAX_NR_SYSCALL) ?
+			 nr : -1;
+		if (dst32 != NULL)
+			*dst32 = -1;
+	}
+	(void)slot;
+}
+
+void chain_restype_init(void)
+{
+	unsigned int k, i;
+
+	for (k = 0; k < CHAIN_RESTYPE_NR; k++) {
+		const struct chain_restype_row *row = &chain_restype_table[k];
+
+		for (i = 0; i < CHAIN_RESTYPE_MAX_PRODUCERS; i++)
+			chain_restype_resolve_slot(row->producers[i], (int)i,
+				&chain_restype_producer_nr[k][0][i],
+				&chain_restype_producer_nr[k][1][i]);
+		for (i = 0; i < CHAIN_RESTYPE_MAX_CONSUMERS; i++)
+			chain_restype_resolve_slot(row->consumers[i], (int)i,
+				&chain_restype_consumer_nr[k][0][i],
+				&chain_restype_consumer_nr[k][1][i]);
+	}
+}
+
+/*
+ * NR match against the producer slot for @kind.  Biarch-aware: 32-bit
+ * dispatches match against the biarch [1] slot, everything else
+ * matches [0].
+ */
+static bool chain_restype_nr_matches_producer(enum chain_resource_kind kind,
+					      unsigned int nr, bool do32bit)
+{
+	unsigned int slot = do32bit ? 1u : 0u;
+	unsigned int i;
+
+	for (i = 0; i < CHAIN_RESTYPE_MAX_PRODUCERS; i++) {
+		int cand = chain_restype_producer_nr[kind][slot][i];
+
+		if (cand < 0)
+			continue;
+		if ((unsigned int)cand == nr)
+			return true;
+	}
+	return false;
+}
+
+static bool chain_restype_nr_matches_consumer(enum chain_resource_kind kind,
+					      unsigned int nr, bool do32bit)
+{
+	unsigned int slot = do32bit ? 1u : 0u;
+	unsigned int i;
+
+	for (i = 0; i < CHAIN_RESTYPE_MAX_CONSUMERS; i++) {
+		int cand = chain_restype_consumer_nr[kind][slot][i];
+
+		if (cand < 0)
+			continue;
+		if ((unsigned int)cand == nr)
+			return true;
+	}
+	return false;
+}
+
+int chain_restype_classify_producer(unsigned int nr, bool do32bit,
+				    const unsigned long args[6],
+				    unsigned long retval)
+{
+	/* Filter errno-style returns.  A producer that failed did not
+	 * produce a resource; feeding a -EBADF into a consumer next
+	 * step wastes the bias budget on a downstream -EBADF -- exactly
+	 * the same rationale execute_chain_steps uses to gate retval
+	 * substitution on (long)rv >= 0. */
+	if ((long)retval < 0)
+		return -1;
+
+	/* Simple-NR kinds: any producer NR in the row matches. */
+	if (chain_restype_nr_matches_producer(CHAIN_RESTYPE_EPOLL_FD,
+					      nr, do32bit))
+		return CHAIN_RESTYPE_EPOLL_FD;
+	if (chain_restype_nr_matches_producer(CHAIN_RESTYPE_TIMERFD,
+					      nr, do32bit))
+		return CHAIN_RESTYPE_TIMERFD;
+	if (chain_restype_nr_matches_producer(CHAIN_RESTYPE_EVENTFD,
+					      nr, do32bit))
+		return CHAIN_RESTYPE_EVENTFD;
+	if (chain_restype_nr_matches_producer(CHAIN_RESTYPE_IO_URING_FD,
+					      nr, do32bit))
+		return CHAIN_RESTYPE_IO_URING_FD;
+	if (chain_restype_nr_matches_producer(CHAIN_RESTYPE_PIDFD,
+					      nr, do32bit))
+		return CHAIN_RESTYPE_PIDFD;
+
+	/* socket-tcp keys on (family, type & 0xff).  socket()'s a1 is
+	 * the address family, a2 is (type | flags) so mask out
+	 * SOCK_NONBLOCK / SOCK_CLOEXEC before comparing to SOCK_STREAM. */
+	if (chain_restype_nr_matches_producer(CHAIN_RESTYPE_SOCKET_TCP,
+					      nr, do32bit)) {
+		unsigned long fam = args[0];
+		unsigned long type = args[1] & 0xffUL;
+
+		if ((fam == AF_INET || fam == AF_INET6) &&
+		    type == (unsigned long)SOCK_STREAM)
+			return CHAIN_RESTYPE_SOCKET_TCP;
+	}
+
+	/* bpf-map-fd keys on cmd == BPF_MAP_CREATE (a1). */
+	if (chain_restype_nr_matches_producer(CHAIN_RESTYPE_BPF_MAP_FD,
+					      nr, do32bit)) {
+		if (args[0] == (unsigned long)BPF_MAP_CREATE)
+			return CHAIN_RESTYPE_BPF_MAP_FD;
+	}
+
+	return -1;
+}
+
+/*
+ * Classify a step as a consumer.  Used by record_chain_outcome() to
+ * detect producer->consumer PAIRS inside a saved / replayed chain, so
+ * chain_restype_save / chain_restype_replay_win only bump for chains
+ * that actually carried the pair (a producer-only chain isn't the
+ * signal we're trying to reward).
+ *
+ * bpf is both the producer and the consumer for BPF_MAP_FD; the
+ * consumer arm is BPF_MAP_UPDATE_ELEM / BPF_MAP_LOOKUP_ELEM.
+ * Deliberately looser than the producer classifier for the pair-
+ * detection use: any bpf() step in a chain that already carried a
+ * BPF_MAP_CREATE producer counts as a pair candidate, since the
+ * consumer bias would have picked one of the {UPDATE, LOOKUP} arms.
+ * A tighter check would require re-parsing a2 (bpf_attr pointer)
+ * which we intentionally do not deref.
+ */
+static int chain_restype_classify_consumer(enum chain_resource_kind kind,
+					   unsigned int nr, bool do32bit,
+					   const unsigned long args[6])
+{
+	(void)args;
+	if (kind >= CHAIN_RESTYPE_NR)
+		return -1;
+	if (chain_restype_nr_matches_consumer(kind, nr, do32bit))
+		return (int)kind;
+	return -1;
+}
+
+/*
+ * True iff kind has at least one resolved consumer NR in the table
+ * for @do32bit_hint.  Cheap short-circuit for the SHADOW/LIVE hook:
+ * a kind whose consumer table came up empty on this arch cannot bias.
+ */
+static bool chain_restype_has_consumer(enum chain_resource_kind kind,
+				       bool do32bit_hint)
+{
+	unsigned int slot = do32bit_hint ? 1u : 0u;
+	unsigned int i;
+
+	if (kind >= CHAIN_RESTYPE_NR)
+		return false;
+	for (i = 0; i < CHAIN_RESTYPE_MAX_CONSUMERS; i++) {
+		if (chain_restype_consumer_nr[kind][slot][i] >= 0)
+			return true;
+	}
+	return false;
+}
+
+int chain_restype_pick_consumer(enum chain_resource_kind kind,
+				bool do32bit_hint)
+{
+	unsigned int slot = do32bit_hint ? 1u : 0u;
+	int live[CHAIN_RESTYPE_MAX_CONSUMERS];
+	unsigned int nlive = 0;
+	unsigned int i;
+
+	if (kind >= CHAIN_RESTYPE_NR)
+		return -1;
+
+	for (i = 0; i < CHAIN_RESTYPE_MAX_CONSUMERS; i++) {
+		int cand = chain_restype_consumer_nr[kind][slot][i];
+
+		if (cand >= 0)
+			live[nlive++] = cand;
+	}
+	if (nlive == 0)
+		return -1;
+	return live[rnd_modulo_u32(nlive)];
+}
+
 void chain_corpus_init(void)
 {
+	/* Resolve the resource-typing table once, alongside the ring
+	 * allocation.  Runs unconditionally on both the kcov-shm and
+	 * no-kcov-shm paths so an operator can pass
+	 * --chain-resource-typing=shadow even on a build without KCOV
+	 * for the classify counters alone (the ring is what needs
+	 * kcov for save triggers -- classify itself does not).  Safe
+	 * to call more than once; the tables are pure writes to
+	 * static slots. */
+	chain_restype_init();
+
 	/* No coverage signal means no save trigger; skip the allocation
 	 * and let chain_corpus_save / dump_stats fall through their NULL
 	 * guards.  Mirrors the same kcov_shm gate that minicorpus_init
@@ -428,7 +738,118 @@ struct chain_run_state {
 	unsigned int trigger_nr_pc;
 	unsigned int trigger_nr_transition;
 	unsigned int trigger_nr_cmp;
+
+	/* Producer-kind mask carried across steps of the same chain.
+	 * Bit k set means at least one step so far in this chain
+	 * classify_producer'd as kind k with a non-negative retval.
+	 * Consulted by the next step's chain-restype hook (drives the
+	 * consumer-bias override) and by record_chain_outcome's
+	 * per-kind save/replay-win accounting. */
+	unsigned int producer_kinds_seen;
+
+	/* Producer-followed-by-consumer pair mask.  Bit k set means
+	 * some step in this chain classify_producer'd as kind k AND a
+	 * strictly-later step classify_consumer'd as kind k.  This is
+	 * the mask record_chain_outcome uses to decide which
+	 * chain_restype_save[k] / chain_restype_replay_win[k] slots to
+	 * bump: a producer-only chain isn't the signal we're trying
+	 * to reward. */
+	unsigned int pair_kinds_seen;
 };
+
+/*
+ * Chain-restype hook, run before dispatching step i (>= 1) whenever
+ * some earlier step in this chain was classified as a resource
+ * producer (producer_kinds_seen != 0).  Returns the biased NR to use
+ * for this step (via @bias_nr_out) plus its do32bit flag; returns
+ * false when either the mode does not permit an override, no kind in
+ * the mask has a resolved consumer for the current dispatch arch, or
+ * the accept-probability roll (LIVE only) rejected the override.
+ *
+ * The per-kind chain_restype_would_bias / chain_restype_biased
+ * counters are bumped INSIDE this helper so the classifier's
+ * observability lands whether or not the caller ultimately overrides
+ * -- consistent with the "always-on classify counters" contract in
+ * the mode-enum comment.  SHADOW never consumes RNG (the pick stream
+ * stays byte-identical to OFF); LIVE consumes exactly two draws when
+ * the accept passes (kind selection + consumer selection).
+ */
+static bool chain_restype_apply_bias(const struct chain_run_state *s,
+				     bool do32bit_hint,
+				     unsigned int *bias_nr_out,
+				     bool *bias_do32_out)
+{
+	unsigned int mask = s->producer_kinds_seen;
+	unsigned int k;
+	int available[CHAIN_RESTYPE_NR];
+	unsigned int navailable = 0;
+
+	if (chain_resource_typing_mode == CHAIN_RESTYPE_MODE_OFF)
+		return false;
+	if (mask == 0)
+		return false;
+
+	/* Collect the kinds that (a) are set in mask and (b) have at
+	 * least one resolved consumer NR for this arch.  A kind with
+	 * an empty consumer table on the current arch cannot bias --
+	 * counting it toward would_bias would inflate the measurement
+	 * with picks we could never dispatch. */
+	for (k = 0; k < CHAIN_RESTYPE_NR; k++) {
+		if ((mask & (1u << k)) == 0)
+			continue;
+		if (!chain_restype_has_consumer((enum chain_resource_kind)k,
+						do32bit_hint))
+			continue;
+		available[navailable++] = (int)k;
+	}
+	if (navailable == 0)
+		return false;
+
+	if (chain_resource_typing_mode == CHAIN_RESTYPE_MODE_SHADOW) {
+		/* Shadow: count every available kind as "would_bias"
+		 * without consuming RNG.  The pick stream stays
+		 * identical to OFF; the counter only says "the LIVE arm
+		 * would have had these kinds available to override
+		 * with", which is the SHADOW mode's whole contract. */
+		unsigned int i;
+
+		for (i = 0; i < navailable; i++)
+			__atomic_fetch_add(
+				&shm->stats.chain_restype_would_bias[available[i]],
+				1UL, __ATOMIC_RELAXED);
+		return false;
+	}
+
+	/* LIVE.  Probabilistic bias: 50% of the time (ONE_IN(2)) we
+	 * override, otherwise we let the plain random_syscall_step run
+	 * so other links stay possible.  Rationale for 50%: we want
+	 * strong enough steering that the productivity signal in
+	 * chain_restype_replay_win is legible above the fresh-chain
+	 * noise floor, without pinning the mid-chain slot to the
+	 * consumer table -- 100% override would starve the discovery
+	 * paths that Phase 1's uniform pick relies on. */
+	if (!ONE_IN(2))
+		return false;
+
+	{
+		enum chain_resource_kind chosen_kind =
+			(enum chain_resource_kind)
+			available[rnd_modulo_u32(navailable)];
+		int consumer_nr = chain_restype_pick_consumer(chosen_kind,
+							      do32bit_hint);
+
+		if (consumer_nr < 0)
+			return false;
+
+		*bias_nr_out = (unsigned int)consumer_nr;
+		*bias_do32_out = do32bit_hint;
+
+		__atomic_fetch_add(
+			&shm->stats.chain_restype_biased[chosen_kind],
+			1UL, __ATOMIC_RELAXED);
+		return true;
+	}
+}
 
 static void select_chain_source(struct chain_run_state *s)
 {
@@ -485,12 +906,31 @@ static bool execute_chain_steps(struct childdata *child,
 		unsigned long step_new_transition = 0;
 		unsigned long step_new_cmp = 0;
 		unsigned long rv;
+		unsigned int bias_nr = 0;
+		bool bias_do32 = false;
+		bool use_bias = false;
 
 		/* Mark steps i >= 1 of a fresh-generation chain as mid-chain
 		 * so anything that wants to distinguish a chained dispatch
 		 * from a standalone call can do so.  Step 0 and replay steps
 		 * leave the flag clear. */
 		child->in_chain_mid_step = (i > 0) && !s->replaying;
+
+		/* Chain-restype hook.  Only fires for mid-chain fresh
+		 * generation steps (i >= 1, !replaying) where a prior step
+		 * classified as a producer.  In SHADOW/LIVE this bumps the
+		 * per-kind observability counters; LIVE additionally hands
+		 * back a specific consumer NR to override the picker with.
+		 * Replay steps take the saved (nr, args) verbatim and are
+		 * outside the bias contract -- overriding a replayed step's
+		 * NR would break the replay contract with the corpus. */
+		if (i > 0 && !s->replaying && s->producer_kinds_seen != 0) {
+			bool do32_hint = biarch ? rec->do32bit : false;
+
+			use_bias = chain_restype_apply_bias(s, do32_hint,
+							    &bias_nr,
+							    &bias_do32);
+		}
 
 		if (s->replaying) {
 			step_ret = replay_syscall_step(child,
@@ -511,6 +951,32 @@ static bool execute_chain_steps(struct childdata *child,
 				 * replaying. */
 				s->replaying = false;
 				child->in_chain_mid_step = (i > 0);
+				step_ret = random_syscall_step(child,
+							       have_substitute,
+							       substitute_retval,
+							       &step_found_new,
+							       &step_new_transition,
+							       &step_new_cmp);
+			}
+		} else if (use_bias) {
+			step_ret = random_syscall_step_biased(child,
+							      bias_nr, bias_do32,
+							      have_substitute,
+							      substitute_retval,
+							      &step_found_new,
+							      &step_new_transition,
+							      &step_new_cmp);
+			if (step_ret == FAIL) {
+				/* Biased NR became uncallable between the
+				 * chain_restype_init resolve and now
+				 * (deactivated, lost cap, AVOID_SYSCALL).
+				 * Fall back to plain fresh dispatch so the
+				 * slot still runs; the chain_restype_biased
+				 * counter already bumped so a spike in
+				 * fall-backs will surface as fresh dispatch
+				 * counters advancing faster than the biased
+				 * counter's downstream chain_restype_save
+				 * numerator. */
 				step_ret = random_syscall_step(child,
 							       have_substitute,
 							       substitute_retval,
@@ -555,6 +1021,53 @@ static bool execute_chain_steps(struct childdata *child,
 			cs->args[4] = rec->a5;
 			cs->args[5] = rec->a6;
 			cs->retval = rec->retval;
+		}
+
+		/* Chain-restype classifier.  Runs unconditionally after
+		 * every dispatched step -- classify itself is cheap (a
+		 * handful of NR compares) and the OFF gate lives inside
+		 * chain_restype_apply_bias, not here, so
+		 * chain_restype_produced remains an always-on
+		 * observability counter.  Producer classify runs on the
+		 * step's ACTUAL dispatched args + retval so socket-tcp's
+		 * (family, type) check and bpf-map-fd's cmd check see
+		 * what the kernel actually got.  Non-OFF only: OFF must
+		 * stay byte-identical to today, including the counter
+		 * writes -- an OFF run must not perturb shm->stats fields
+		 * that a follow-up A/B differences against a pre-row
+		 * baseline. */
+		if (chain_resource_typing_mode != CHAIN_RESTYPE_MODE_OFF) {
+			unsigned long step_args[6] = {
+				rec->a1, rec->a2, rec->a3,
+				rec->a4, rec->a5, rec->a6,
+			};
+			int pkind = chain_restype_classify_producer(
+					rec->nr, rec->do32bit,
+					step_args, rec->retval);
+			unsigned int k;
+
+			if (pkind >= 0) {
+				__atomic_fetch_add(
+					&shm->stats.chain_restype_produced[pkind],
+					1UL, __ATOMIC_RELAXED);
+				s->producer_kinds_seen |= (1u << pkind);
+			}
+
+			/* Pair detection.  For every producer kind already
+			 * seen in this chain, check whether THIS step is a
+			 * consumer of that kind.  Bit set means the chain
+			 * carried a producer->consumer pair, which is the
+			 * chain_restype_save[k] / chain_restype_replay_win[k]
+			 * gate at record_chain_outcome time. */
+			for (k = 0; k < CHAIN_RESTYPE_NR; k++) {
+				if ((s->producer_kinds_seen & (1u << k)) == 0)
+					continue;
+				if (chain_restype_classify_consumer(
+					    (enum chain_resource_kind)k,
+					    rec->nr, rec->do32bit,
+					    step_args) >= 0)
+					s->pair_kinds_seen |= (1u << k);
+			}
 		}
 
 		if (step_found_new) {
@@ -642,6 +1155,43 @@ static void record_chain_outcome(const struct chain_run_state *s)
 	if (admit)
 		chain_corpus_save(s->steps, s->steps_recorded, reason,
 				  trigger_nr);
+
+	/* Per-resource-kind chain_restype_save / chain_restype_replay_win
+	 * accounting.  Gated on pair_kinds_seen (producer + consumer of
+	 * the same kind both appeared in the chain) rather than the
+	 * looser producer_kinds_seen: a chain that carried an
+	 * epoll_create1 with no downstream epoll_ctl / epoll_wait step
+	 * did not exercise the pair the LIVE bias is trying to build,
+	 * and counting it toward chain_restype_save would inflate the
+	 * denominator that chain_restype_replay_win is measuring
+	 * productivity against.  OFF mode's classifier never runs, so
+	 * pair_kinds_seen is zero and both loops skip -- no
+	 * shm->stats mutation on the OFF path. */
+	if (s->pair_kinds_seen != 0) {
+		unsigned int k;
+
+		if (admit) {
+			for (k = 0; k < CHAIN_RESTYPE_NR; k++) {
+				if ((s->pair_kinds_seen & (1u << k)) == 0)
+					continue;
+				__atomic_fetch_add(
+					&shm->stats.chain_restype_save[k],
+					1UL, __ATOMIC_RELAXED);
+			}
+		}
+
+		if (s->replaying &&
+		    (s->chain_found_new || s->chain_new_transition ||
+		     s->chain_new_cmp)) {
+			for (k = 0; k < CHAIN_RESTYPE_NR; k++) {
+				if ((s->pair_kinds_seen & (1u << k)) == 0)
+					continue;
+				__atomic_fetch_add(
+					&shm->stats.chain_restype_replay_win[k],
+					1UL, __ATOMIC_RELAXED);
+			}
+		}
+	}
 
 	/* Credit a replay "win" when every step of the dispatched
 	 * chain came from the corpus and the chain earned any of the

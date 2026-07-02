@@ -1528,6 +1528,23 @@ bool replay_syscall_step(struct childdata *child,
 			 bool *found_new,
 			 unsigned long *new_transition_out,
 			 unsigned long *new_cmp_out);
+/*
+ * Fresh-args dispatch for a specific pre-picked syscall NR.  Skips
+ * set_syscall_nr() (and its strategy attribution) the same way
+ * replay_syscall_step does, then generates fresh args, applies the
+ * usual chain retval substitution, and enters dispatch_step.  Used by
+ * the sequence-chain executor when --chain-resource-typing=live has
+ * biased the next link to a specific consumer NR; the caller falls
+ * back to plain random_syscall_step() when this returns FAIL (unknown
+ * NR, deactivated, sanitise, or per-syscall AVOID gate).
+ */
+bool random_syscall_step_biased(struct childdata *child,
+				unsigned int bias_nr, bool bias_do32,
+				bool have_substitute,
+				unsigned long substitute_retval,
+				bool *found_new,
+				unsigned long *new_transition_out,
+				unsigned long *new_cmp_out);
 bool mmap_lifecycle(struct childdata *child);
 bool mprotect_split(struct childdata *child);
 bool mlock_pressure(struct childdata *child);
