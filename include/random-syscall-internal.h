@@ -32,4 +32,12 @@ void cost_pool_selector_shadow_note(bool do32);
 void cost_pool_selector_live_note(unsigned int nr, bool do32);
 bool syscall_in_group(unsigned int nr, bool do32, unsigned int target_group);
 
+/* pickers.c -- top-level picker dispatch, called from dispatch_step
+ * in dispatch.c.  set_syscall_nr_random is public via
+ * include/syscall.h; the other picker arms
+ * (set_syscall_nr_heuristic, set_syscall_nr_coverage_frontier) and
+ * their helpers (frontier_cold_weight, cmp_frontier_weight,
+ * ilog2_ul) are file-scope static inside pickers.c. */
+bool set_syscall_nr(struct syscallrecord *rec, struct childdata *child);
+
 #endif /* _TRINITY_RANDOM_SYSCALL_INTERNAL_H */
