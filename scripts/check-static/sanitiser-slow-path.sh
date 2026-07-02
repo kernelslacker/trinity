@@ -53,7 +53,7 @@ FILES=(
 	random_syscall/pick-common.c
 	random_syscall/pickers.c
 	random_syscall/strategy-accounting.c
-	arg_coupling.c
+	args/arg_coupling.c
 	mutate.c
 	struct_catalog.c
 	struct_catalog/sctp.c
@@ -73,7 +73,7 @@ FILES=(
 	struct_catalog/resource.c
 	struct_catalog/poll.c
 	struct_catalog/ldt.c
-	arg-decoder.c
+	args/arg-decoder.c
 	lib/cmsg_build.c
 	utils.c
 )
