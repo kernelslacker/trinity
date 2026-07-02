@@ -2,7 +2,6 @@
 
 #include <sys/socket.h>
 #include <sys/uio.h>
-#include <linux/if_ether.h>
 #include <stdint.h>
 #include <unistd.h>
 #include <string.h>
@@ -11,14 +10,8 @@
 #include "socket-family-grammar.h"
 #include "trinity.h"
 #include "compat.h"
+#include "kernel/if_ether.h"
 #include "rnd.h"
-
-#ifndef ETH_P_MPLS_UC
-#define ETH_P_MPLS_UC 0x8847
-#endif
-#ifndef ETH_P_MPLS_MC
-#define ETH_P_MPLS_MC 0x8848
-#endif
 
 /* MPLS label stack entry: 20-bit label, 3-bit TC, 1-bit BoS, 8-bit TTL */
 struct sockaddr_mpls {
