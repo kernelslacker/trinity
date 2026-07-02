@@ -327,24 +327,35 @@ int chain_restype_classify_producer(unsigned int nr, bool do32bit,
  * signal we're trying to reward).
  *
  * bpf is both the producer and the consumer for BPF_MAP_FD; the
- * consumer arm is BPF_MAP_UPDATE_ELEM / BPF_MAP_LOOKUP_ELEM.
- * Deliberately looser than the producer classifier for the pair-
- * detection use: any bpf() step in a chain that already carried a
- * BPF_MAP_CREATE producer counts as a pair candidate, since the
- * consumer bias would have picked one of the {UPDATE, LOOKUP} arms.
- * A tighter check would require re-parsing a2 (bpf_attr pointer)
- * which we intentionally do not deref.
+ * consumer arm is BPF_MAP_UPDATE_ELEM / BPF_MAP_LOOKUP_ELEM.  The NR
+ * table alone is not enough there -- BPF_MAP_FD is the one row whose
+ * consumer syscall NR is the same as the producer NR, so an "any
+ * later bpf()" match would count every unrelated cmd (PROG_LOAD,
+ * OBJ_PIN, LINK_CREATE ...) as a map-fd consumer and inflate the
+ * pair signal above what the fd coupling actually earned.  Gate the
+ * BPF row on a1 == BPF_MAP_{UPDATE,LOOKUP}_ELEM so the pair credit
+ * lines up with real map-fd use.  a1 is a scalar cmd enum, not the
+ * bpf_attr pointer, so this stays within the "inspect scalars, do
+ * not deref user memory" rule the producer classifier already sets.
  */
 static int chain_restype_classify_consumer(enum chain_resource_kind kind,
 					   unsigned int nr, bool do32bit,
 					   const unsigned long args[6])
 {
-	(void)args;
 	if (kind >= CHAIN_RESTYPE_NR)
 		return -1;
-	if (chain_restype_nr_matches_consumer(kind, nr, do32bit))
-		return (int)kind;
-	return -1;
+	if (!chain_restype_nr_matches_consumer(kind, nr, do32bit))
+		return -1;
+
+	if (kind == CHAIN_RESTYPE_BPF_MAP_FD) {
+		unsigned long cmd = args[0];
+
+		if (cmd != (unsigned long)BPF_MAP_UPDATE_ELEM &&
+		    cmd != (unsigned long)BPF_MAP_LOOKUP_ELEM)
+			return -1;
+	}
+
+	return (int)kind;
 }
 
 /*
