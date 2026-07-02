@@ -2,16 +2,19 @@
 #define _TRINITY_STATS_INTERNAL_H
 
 /*
- * Internal interface shared by stats.c and stats/dump.c.
+ * Internal interface shared by stats.c and the render clusters under
+ * stats/ (dump.c, json_dump.c, corrupt_ptr.c, log.c, periodic.c,
+ * kcov_cmp.c, kcov_diag.c, runid.c).
  *
- * The dump TU contains pure-render emitters carved out of stats.c.
- * Anything those emitters need from the larger stats world -- the
+ * The cluster TUs contain emitters carved out of stats.c.  Anything
+ * those emitters need from the larger stats world -- the
  * stat_category descriptor types and macros, the named category
  * tables, the per-syscall KCOV diag counter enum, and the rendering
  * helpers -- is exposed here.  Not a public header: only stats.c and
- * stats/dump.c are expected to include it.
+ * files under stats/ are expected to include it.
  */
 
+#include <stdbool.h>
 #include <stddef.h>
 #include "params.h"   /* ARRAY_SIZE for STAT_CATEGORY() */
 #include "shm.h"      /* struct stats_s for offsetof() in macros */
@@ -79,6 +82,21 @@ void dump_satcool_would_skip_per_syscall_top(void);
 void dump_live_cooldown_would_skip_per_syscall_top(void);
 void dump_live_cool_per_syscall_top(const unsigned long *arr,
 				    const char *label);
+
+/* Cross-cluster surface for the stats.c file split.  These symbols
+ * are defined in stats.c and referenced from the render cluster
+ * files under stats/. */
+extern const char * const op_names[];
+bool pc_in_text(void *pc);
+unsigned long stat_field_load(const struct stat_field *f);
+unsigned long stat_gate_load(const struct stat_category *cat);
+unsigned long pct_thousandths(unsigned long num, unsigned long denom);
+
+/* Cluster entry points called back from dump_stats() in the stats.c
+ * core.  dump_stats_json() lives in stats/json_dump.c;
+ * childop_split_dump() lives in stats/periodic.c. */
+void dump_stats_json(void);
+void childop_split_dump(void);
 
 /* Pure-render dump_stats_* emitters carved into stats/dump.c. */
 void dump_stats_oracle_anomalies(void);
