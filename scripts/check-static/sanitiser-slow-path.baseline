@@ -11,17 +11,9 @@
 # scoped file fails immediately.
 #
 # Lifecycle: each entry below corresponds to a real follow-up.  When
-# a call site is hoisted to a one-shot init path (cf. heap_bounds_init
-# in utils.c) or otherwise removed, drop its line from this file in
-# the same commit.  A stale entry also fails the check, so the
-# baseline shrinks monotonically toward zero.
+# a call site is hoisted to a one-shot init path or otherwise
+# removed, drop its line from this file in the same commit.  A stale
+# entry also fails the check, so the baseline shrinks monotonically
+# toward zero.
 #
 # Lines starting with `#` and blank lines are ignored.
-
-# utils.c: heap_bounds_init() is genuinely one-shot (called from the
-# parent during setup) and would normally be slow-ok.  It lives in a
-# scoped file because utils.c also hosts range_readable_user, and
-# splitting the file is the follow-up that retires this entry; until
-# then the call is baselined rather than marker-suppressed so the two
-# slow paths get fixed together.
-utils.c:347:fopen
