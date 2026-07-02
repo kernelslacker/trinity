@@ -44,8 +44,8 @@ if ! ls cmp_hints/*.c >/dev/null 2>&1; then
 	echo "FAIL: $NAME: cmp_hints/*.c not found at $ROOT"
 	exit 1
 fi
-if [ ! -f kcov.c ]; then
-	echo "FAIL: $NAME: kcov.c not found at $ROOT"
+if [ ! -f kcov/collect.c ]; then
+	echo "FAIL: $NAME: kcov/collect.c not found at $ROOT"
 	exit 1
 fi
 
@@ -54,10 +54,10 @@ canon_body="$(awk '
 	/^unsigned long kcov_canon_cmp_ip\(/ { in_body = 1 }
 	in_body { print }
 	in_body && /^}/ { exit }
-' kcov.c)"
+' kcov/collect.c)"
 
 if [ -z "$canon_body" ]; then
-	echo "FAIL: $NAME: kcov_canon_cmp_ip() definition not found in kcov.c"
+	echo "FAIL: $NAME: kcov_canon_cmp_ip() definition not found in kcov/collect.c"
 	exit 1
 fi
 

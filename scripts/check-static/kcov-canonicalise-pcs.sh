@@ -10,7 +10,7 @@
 # shifts on every KASLR reroll, silently aliasing the cached bitmap
 # across reboots that the kallsyms fingerprint (deliberately KASLR-
 # invariant) already considers identical.  See the kcov_canon_pc /
-# pc_canon_to_edge / KCOV_BITMAP_FILE_VERSION comments in kcov.c for
+# pc_canon_to_edge / KCOV_BITMAP_FILE_VERSION comments in kcov/ for
 # the design.
 #
 # The PC -> edge-index hash is pc_canon_to_edge() and the
@@ -43,8 +43,8 @@ ROOT="${REPO_ROOT:-$(pwd)}"
 
 cd "$ROOT" || { echo "FAIL: $NAME: cannot cd to $ROOT"; exit 1; }
 
-if [ ! -f kcov.c ]; then
-	echo "FAIL: $NAME: kcov.c not found at $ROOT"
+if [ ! -f kcov/collect.c ]; then
+	echo "FAIL: $NAME: kcov/collect.c not found at $ROOT"
 	exit 1
 fi
 
@@ -53,10 +53,10 @@ canon_body="$(awk '
 	/^static inline unsigned long kcov_canon_pc\(/ { in_body = 1 }
 	in_body { print }
 	in_body && /^}/ { exit }
-' kcov.c)"
+' kcov/collect.c)"
 
 if [ -z "$canon_body" ]; then
-	echo "FAIL: $NAME: kcov_canon_pc() definition not found in kcov.c"
+	echo "FAIL: $NAME: kcov_canon_pc() definition not found in kcov/collect.c"
 	exit 1
 fi
 
@@ -77,10 +77,10 @@ edge_body="$(awk '
 	/^static inline unsigned int pc_canon_to_edge\(/ { in_body = 1 }
 	in_body { print }
 	in_body && /^}/ { exit }
-' kcov.c)"
+' kcov/collect.c)"
 
 if [ -z "$edge_body" ]; then
-	echo "FAIL: $NAME: pc_canon_to_edge() definition not found in kcov.c"
+	echo "FAIL: $NAME: pc_canon_to_edge() definition not found in kcov/collect.c"
 	exit 1
 fi
 
@@ -97,12 +97,12 @@ if grep -q 'kcov_canon_pc' <<< "$edge_body"; then
 	exit 1
 fi
 
-# 3. Every function in kcov.c that calls pc_canon_to_edge() must also
-#    call kcov_canon_pc() somewhere in the same body.  Walks kcov.c
-#    function-by-function: a function header is a line that starts at
-#    column 0 with a return type and a paren, and the matching close
-#    brace also starts at column 0.  Trinity follows that style
-#    throughout kcov.c so the heuristic is reliable.
+# 3. Every function in kcov/collect.c that calls pc_canon_to_edge()
+#    must also call kcov_canon_pc() somewhere in the same body.  Walks
+#    kcov/collect.c function-by-function: a function header is a line
+#    that starts at column 0 with a return type and a paren, and the
+#    matching close brace also starts at column 0.  Trinity follows
+#    that style throughout kcov/collect.c so the heuristic is reliable.
 missing="$(awk '
 	/^[A-Za-z_][A-Za-z0-9_ *]*[A-Za-z0-9_*]\(/ && !in_body {
 		match($0, /[A-Za-z_][A-Za-z0-9_]*\(/)
@@ -127,7 +127,7 @@ missing="$(awk '
 		in_body = 0
 		want = 0
 	}
-' kcov.c)"
+' kcov/collect.c)"
 
 if [ -n "$missing" ]; then
 	{
