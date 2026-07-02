@@ -29,17 +29,29 @@
  *              Op count is CAPPED at BLOB_HAVOC_MAX_OPS so the pass
  *              cannot run unbounded; every write is clamped inside
  *              [0, len).
- *   CMPDICT  - HAVOC plus a bounded buffer-redqueen pass: pull a
- *              learned cmp constant for the syscall via
- *              cmp_hints_try_get(nr, do32, ...) and splat it into the
- *              buffer at a random offset with a random width drawn
- *              from {1, 2, 4, 8} bytes (little-endian).  Insert count
- *              is CAPPED at BLOB_CMPDICT_MAX_INSERTS; pulls that miss
- *              the per-nr pool (empty / chaos-suppressed / corrupted)
- *              are skipped silently and DO NOT bump the
- *              blob_dict_inserts counter.  Every write is clamped so
- *              that pos + width <= len.  Less reproducible under a
- *              fixed seed than FILL / HAVOC because the cmp-hint pool
+ *   CMPDICT  - HAVOC plus a bounded buffer-redqueen pass.  Each of
+ *              the (capped at BLOB_CMPDICT_MAX_INSERTS) iterations
+ *              coin-flips between two sources: (a) the built-in
+ *              well-known-magic table (ext4 / XFS / BTRFS / squashfs
+ *              / ELF / gzip super-block and header magics that a
+ *              kernel parser checks BEFORE the KCOV_TRACE_CMP-
+ *              instrumented compare, so a learned pool cannot
+ *              bootstrap them) with a fixed width baked into the
+ *              entry, and (b) the learned per-nr cmp_hints pool via
+ *              cmp_hints_try_get(nr, do32, ...) with a random width
+ *              drawn from {1, 2, 4, 8} bytes.  In both cases the
+ *              value is splatted little-endian at a random offset
+ *              inside the buffer.  A table draw whose baked width
+ *              does not fit len falls back to the learned path
+ *              silently.  Pulls that miss the per-nr pool
+ *              (empty / chaos-suppressed / corrupted) are skipped
+ *              silently and DO NOT bump the blob_dict_inserts
+ *              counter; committed static-table splats bump
+ *              blob_static_magic_inserts and committed learned-pool
+ *              splats bump blob_dict_inserts, so the observed ratio
+ *              is the source split.  Every write is clamped so that
+ *              pos + width <= len.  Less reproducible under a fixed
+ *              seed than FILL / HAVOC because the cmp-hint pool
  *              state depends on values the kernel has handed back at
  *              run time, not on RNG sequence alone.
  *
