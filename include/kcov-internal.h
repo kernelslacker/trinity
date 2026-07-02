@@ -13,11 +13,43 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <sys/ioctl.h>	/* _IO/_IOR/_IOW for the kcov ioctl macros below */
 
 #include "kcov.h"	/* public kcov API */
 
 struct kcov_child;
 struct childdata;
+
+/* KCOV ioctl commands (from linux/kcov.h). */
+#define KCOV_INIT_TRACE    _IOR('c', 1, unsigned long)
+#define KCOV_ENABLE        _IO('c', 100)
+#define KCOV_DISABLE       _IO('c', 101)
+#define KCOV_REMOTE_ENABLE _IOW('c', 102, struct kcov_remote_arg)
+
+/*
+ * Userspace copy of struct kcov_remote_arg from linux/kcov.h.
+ * We define it here to avoid requiring kernel headers at build time.
+ */
+struct kcov_remote_arg {
+	uint32_t	trace_mode;
+	uint32_t	area_size;
+	uint32_t	num_handles;
+	uint32_t	__pad;
+	uint64_t	common_handle;
+	uint64_t	handles[];
+};
+
+/*
+ * Fallback flush cadence: bump local_syscalls_since_flush every
+ * kcov_collect() call and force a flush once this many syscalls have
+ * elapsed without one.  Picked so the parent's per-iteration drain
+ * still sees a non-stale total_calls under a workload that goes long
+ * stretches without finding a new edge; the found-new piggyback
+ * keeps the common-case latency near zero.  Shared between the
+ * hot-path bump in kcov_collect and the drain guard in
+ * kcov_child_flush_stats.
+ */
+#define KCOV_LOCAL_STATS_FLUSH_SYSCALLS 4096u
 
 /*
  * Cached KASLR base of the running kernel (_text address as reported by
@@ -50,3 +82,15 @@ void kcov_diag_record(int *errno_slot, unsigned int *count_slot, int err);
  * makes the latch fire at most once per run.
  */
 void kcov_latch_first_ebadf(struct kcov_child *kc, struct childdata *c);
+
+/*
+ * Recover a kcov fd that returned EBADF from an enable ioctl by re-
+ * opening /sys/kernel/debug/kcov, re-mmapping the trace buffer, and
+ * relocating the fd back into the high-fd range.  Lives in
+ * kcov/lifecycle.c so all kcov-fd lifetime invariants have a single
+ * home; the enable arms in kcov/enable.c call it from their EBADF
+ * error branches.  Returns true when the fd was successfully
+ * re-established, false when the child should exit with the recovery-
+ * exhausted sentinel.
+ */
+bool kcov_recover_fd(struct kcov_child *kc, bool is_cmp);
