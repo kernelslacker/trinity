@@ -185,6 +185,15 @@ unsigned long gen_arg_struct_size(struct syscallentry *entry,
 				  unsigned int argnum);
 
 /*
+ * Nested-address scrub entry point.  Definition lives in
+ * args/scrub.c; called from blanket_address_scrub in generate-args.c
+ * once the per-slot mask signals which cataloged-struct arg slots
+ * carry an FT_ADDRESS field reachable through the pointer chain.
+ */
+void nested_address_scrub(struct syscallentry *entry,
+			  struct syscallrecord *rec);
+
+/*
  * Struct-field fill / mutate / scrub caps shared across the args/
  * cluster.  STRUCT_FILL_MAX_FIELDS bounds the per-descriptor loop in
  * struct_fill_passes and also seeds STRUCT_MUTATE_MAX_CANDIDATES in
