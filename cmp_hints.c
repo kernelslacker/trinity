@@ -43,6 +43,7 @@
 #include "arch.h"
 #include "child.h"
 #include "cmp_hints.h"
+#include "cmp_hints-internal.h"
 #include "debug.h"
 #include "deferred-free.h"
 #include "fd.h"
@@ -95,7 +96,7 @@ struct cmp_hints_shared *cmp_hints_shm = NULL;
  * served by cmp_hints_try_get() from anything they accumulated before
  * the strip flag was set, so there is no consumer-side hole.
  */
-static bool cmp_hints_strip[2][MAX_NR_SYSCALL];
+bool cmp_hints_strip[2][MAX_NR_SYSCALL];
 
 /*
  * Chaos-mode toggle.  cmp_hints saturates after a warm-up period at
@@ -1167,9 +1168,9 @@ void cmp_hyp_credit_outcome(unsigned int nr, bool do32, unsigned long cmp_ip,
  * counter so the fleet sees the typed-consumer denominator the
  * follow-up live-pick will weigh outcomes against.
  */
-static void cmp_hyp_credit_consume(unsigned int nr, bool do32,
-				   unsigned long cmp_ip, unsigned long value,
-				   unsigned int size)
+void cmp_hyp_credit_consume(unsigned int nr, bool do32,
+			    unsigned long cmp_ip, unsigned long value,
+			    unsigned int size)
 {
 	struct cmp_hyp_pool *pool;
 	struct cmp_hypothesis *h;
@@ -1378,9 +1379,9 @@ cmp_hyp_would_pick_locked(struct cmp_hyp_pool *pool, unsigned long cmp_ip,
  * The live pick (the *out value cmp_hints_try_get_ex already wrote and
  * the bool true it is about to return) is byte-for-byte unchanged.
  */
-static void cmp_hyp_would_pick(unsigned int nr, bool do32,
-			       unsigned long cmp_ip, unsigned int size,
-			       unsigned long live_value)
+void cmp_hyp_would_pick(unsigned int nr, bool do32,
+			unsigned long cmp_ip, unsigned int size,
+			unsigned long live_value)
 {
 	struct cmp_hyp_pool *pool;
 	struct cmp_hypothesis *picked;
@@ -1808,11 +1809,11 @@ out_bump:
  * their accounting off the bool return alone for live_injected and off
  * *out_gate_fired for gate_passed without re-checking helper inputs.
  */
-static bool cmp_hyp_try_live_inject(unsigned int nr, bool do32,
-				    unsigned long cmp_ip, unsigned int size,
-				    unsigned long *out,
-				    uint8_t *out_kind,
-				    bool *out_gate_fired)
+bool cmp_hyp_try_live_inject(unsigned int nr, bool do32,
+			     unsigned long cmp_ip, unsigned int size,
+			     unsigned long *out,
+			     uint8_t *out_kind,
+			     bool *out_gate_fired)
 {
 	struct cmp_hyp_pool *pool;
 	struct cmp_hypothesis *picked;
@@ -1938,7 +1939,7 @@ static bool cmp_hyp_try_live_inject(unsigned int nr, bool do32,
 	return true;
 }
 
-static void pool_lock(struct cmp_hint_pool *pool)
+void pool_lock(struct cmp_hint_pool *pool)
 {
 	if (cmp_hints_shm != NULL)
 		__atomic_fetch_add(&cmp_hints_shm->held_count, 1,
@@ -1946,7 +1947,7 @@ static void pool_lock(struct cmp_hint_pool *pool)
 	lock(&pool->lock);
 }
 
-static void pool_unlock(struct cmp_hint_pool *pool)
+void pool_unlock(struct cmp_hint_pool *pool)
 {
 	unlock(&pool->lock);
 	if (cmp_hints_shm != NULL)
@@ -1999,8 +2000,8 @@ static void pool_unlock(struct cmp_hint_pool *pool)
  * to CMP_HINTS_PENDING_BATCH bumps per cmp_hints_collect call and
  * the count_oob counter would track "exposures" instead of "events".
  */
-static bool cmp_hints_pool_corrupted(struct cmp_hint_pool *pool,
-				     unsigned int observed_count)
+bool cmp_hints_pool_corrupted(struct cmp_hint_pool *pool,
+			      unsigned int observed_count)
 {
 	if (__atomic_load_n(&pool->corrupted, __ATOMIC_RELAXED))
 		return true;
@@ -2046,32 +2047,13 @@ unsigned int cmp_hints_pool_safe_count(struct cmp_hint_pool *pool)
 }
 
 /*
- * Bucket the lock-free LRU-clock delta (pool->last_used_stamp -
- * picked->last_used) measured at pick time into CMP_HINT_AGE_BUCKETS
- * coarse log2 ranges.  Bucket 0 == delta 0 (entry is the most recently
- * refreshed in the pool); higher buckets == entry has been carried over
- * many pool mutations since its last_used was bumped.  Static-asserted
- * against the kcov_shm array width so a future widening of the
- * histogram doesn't silently overflow the kcov_shm counter array.
+ * cmp_hint_age_bucket() definition moved to include/cmp_hints-internal.h
+ * so cmp_hints/get.c and cmp_hints/field.c both see it inline.  The
+ * static assert stays here (in the pool cluster) alongside the kcov_shm
+ * histogram it guards.
  */
 _Static_assert(CMP_HINT_AGE_BUCKETS == 7U,
 	       "cmp_hint_age_bucket() arms must match CMP_HINT_AGE_BUCKETS");
-static inline uint8_t cmp_hint_age_bucket(uint64_t age)
-{
-	if (age == 0)
-		return 0;
-	if (age < 8)
-		return 1;
-	if (age < 32)
-		return 2;
-	if (age < 128)
-		return 3;
-	if (age < 512)
-		return 4;
-	if (age < 2048)
-		return 5;
-	return 6;
-}
 
 /*
  * Insert (cmp_ip, val, size) into the entries[] array.  Dedups via linear
@@ -2236,10 +2218,10 @@ static inline uint32_t cmp_hints_bloom_h2(unsigned long ip, unsigned long val,
  * either bit returns false AND leaves both bits set, so the next
  * encounter with the same tuple hits.
  */
-static bool cmp_hints_bloom_check_and_set(struct cmp_hints_bloom *b,
-					  unsigned long ip,
-					  unsigned long val,
-					  unsigned int size)
+bool cmp_hints_bloom_check_and_set(struct cmp_hints_bloom *b,
+				   unsigned long ip,
+				   unsigned long val,
+				   unsigned int size)
 {
 	uint32_t i1 = cmp_hints_bloom_h1(ip, val, size);
 	uint32_t i2 = cmp_hints_bloom_h2(ip, val, size);
@@ -2263,11 +2245,11 @@ static bool cmp_hints_bloom_check_and_set(struct cmp_hints_bloom *b,
  * batch fall back to multiple flushes -- correct, just less optimal. */
 #define CMP_HINTS_PENDING_BATCH 128
 
-struct cmp_hints_pending {
-	unsigned long ip;
-	unsigned long val;
-	unsigned int size;
-};
+/*
+ * struct cmp_hints_pending moved to include/cmp_hints-internal.h so
+ * cmp_hints/collect.c can build the batch and cmp_hints/pool.c can
+ * drain it against the same type.
+ */
 
 /*
  * Recent-ring insert.  Called for every
@@ -2376,10 +2358,10 @@ void cmp_hints_childop_insert(unsigned int nr, bool do32,
 		__atomic_store_n(&rp->count, count + 1U, __ATOMIC_RELEASE);
 }
 
-static unsigned int cmp_hints_flush_pending(struct cmp_hint_pool *pool,
-					    unsigned int nr, bool do32,
-					    const struct cmp_hints_pending *batch,
-					    unsigned int n)
+unsigned int cmp_hints_flush_pending(struct cmp_hint_pool *pool,
+				     unsigned int nr, bool do32,
+				     const struct cmp_hints_pending *batch,
+				     unsigned int n)
 {
 	unsigned int j;
 	unsigned int inserted = 0;
@@ -2430,11 +2412,11 @@ static unsigned int cmp_hints_flush_pending(struct cmp_hint_pool *pool,
  * result is masked to CMP_FIELD_POOL_BUCKETS so the bucket count can
  * change without touching the hash.
  */
-static inline uint32_t cmp_field_pool_hash(const struct struct_desc *desc,
-					   unsigned int nr, unsigned int do32,
-					   unsigned int arg_idx,
-					   unsigned int field_idx,
-					   unsigned int size)
+uint32_t cmp_field_pool_hash(const struct struct_desc *desc,
+			     unsigned int nr, unsigned int do32,
+			     unsigned int arg_idx,
+			     unsigned int field_idx,
+			     unsigned int size)
 {
 	uint64_t x = (uint64_t)(uintptr_t) desc;
 
@@ -2454,8 +2436,8 @@ static inline uint32_t cmp_field_pool_hash(const struct struct_desc *desc,
  * folded into the per-syscall pool's corruption rate (the two paths
  * write to different parts of cmp_hints_shm and pinpointing which one
  * tripped narrows root-causing wild-write reports). */
-static bool cmp_field_pool_corrupted(struct cmp_field_pool *pool,
-				     unsigned int observed_count)
+bool cmp_field_pool_corrupted(struct cmp_field_pool *pool,
+			      unsigned int observed_count)
 {
 	if (__atomic_load_n(&pool->corrupted, __ATOMIC_RELAXED))
 		return true;
@@ -3714,9 +3696,9 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
  * fourth transform family from the spec ships in a follow-up once a
  * callsite opts into it.
  */
-static unsigned long cmp_hint_apply_transform(unsigned long c,
-					      enum cmp_hint_use use,
-					      unsigned long old)
+unsigned long cmp_hint_apply_transform(unsigned long c,
+				       enum cmp_hint_use use,
+				       unsigned long old)
 {
 	switch (use) {
 	case CMP_HINT_EXACT:
@@ -3812,16 +3794,16 @@ static unsigned long cmp_hint_apply_transform(unsigned long c,
  * call belongs to the re-exec, not the original parent call we are
  * about to credit, and crediting it here would double-attribute.
  */
-static void cmp_hints_stash_consumed(unsigned int nr, bool do32,
-				     enum cmp_hint_pool_kind pool_kind,
-				     unsigned long cmp_ip, unsigned long value,
-				     unsigned int size, enum cmp_hint_use use,
-				     unsigned int arg_idx,
-				     unsigned int field_idx,
-				     const struct struct_desc *desc,
-				     bool served_from_recent,
-				     uint8_t age_bucket,
-				     bool hyp_injected)
+void cmp_hints_stash_consumed(unsigned int nr, bool do32,
+			      enum cmp_hint_pool_kind pool_kind,
+			      unsigned long cmp_ip, unsigned long value,
+			      unsigned int size, enum cmp_hint_use use,
+			      unsigned int arg_idx,
+			      unsigned int field_idx,
+			      const struct struct_desc *desc,
+			      bool served_from_recent,
+			      uint8_t age_bucket,
+			      bool hyp_injected)
 {
 	struct childdata *child = this_child();
 	struct cmp_hint_consumed_entry *e;
@@ -4179,7 +4161,7 @@ static bool cmp_try_get_durable_tier(unsigned int nr, bool do32,
 	return true;
 }
 
-enum cmp_tier_result { CMP_TIER_MISS = 0, CMP_TIER_SERVED, CMP_TIER_REJECTED };
+/* enum cmp_tier_result moved to include/cmp_hints-internal.h. */
 
 static enum cmp_tier_result cmp_try_get_recent_tier(unsigned int nr, bool do32,
 						    enum cmp_hint_use use,
