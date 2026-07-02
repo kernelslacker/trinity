@@ -40,3 +40,46 @@ unsigned int cmp_hint_inject_denom(unsigned int baseline);
 bool cmp_hint_baseline_should_inject(void);
 void credit_cmp_hint_injection(struct syscallrecord *rec,
 			       enum cmp_hint_callsite callsite);
+
+/*
+ * Classic argtype handlers.  Definitions live in args/handle_arg.c;
+ * their addresses are taken by the argtype_table[] dispatch descriptor
+ * in generate-args.c and by nothing else outside args/.
+ */
+unsigned long handle_arg_address(struct syscallentry *entry,
+				 struct syscallrecord *rec,
+				 unsigned int argnum);
+unsigned long handle_arg_range(struct syscallentry *entry,
+			       struct syscallrecord *rec,
+			       unsigned int argnum);
+unsigned long handle_arg_op(struct syscallentry *entry,
+			    struct syscallrecord *rec,
+			    unsigned int argnum);
+unsigned long handle_arg_list(struct syscallentry *entry,
+			      struct syscallrecord *rec,
+			      unsigned int argnum);
+unsigned long handle_arg_iovec(struct syscallentry *entry,
+			       struct syscallrecord *rec,
+			       unsigned int argnum);
+unsigned long handle_arg_iovec_in(struct syscallentry *entry,
+				  struct syscallrecord *rec,
+				  unsigned int argnum);
+unsigned long handle_arg_sockaddr(struct syscallentry *entry,
+				  struct syscallrecord *rec,
+				  unsigned int argnum);
+unsigned long handle_arg_mode_t(struct syscallentry *entry,
+				struct syscallrecord *rec,
+				unsigned int argnum);
+
+/*
+ * Publish a paired-length value into the slot after argnum if the
+ * argtype at argnum declares a paired_length in the descriptor table
+ * and the next slot is of that paired type.  Definition lives in
+ * args/handle_arg.c; consumed by handle_arg_iovec_dir /
+ * handle_arg_sockaddr in that TU and by gen_arg_buf_sized in
+ * generate-args.c.
+ */
+void publish_paired_length(struct syscallentry *entry,
+			   struct syscallrecord *rec,
+			   unsigned int argnum,
+			   unsigned long len);
