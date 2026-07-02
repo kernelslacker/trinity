@@ -110,7 +110,14 @@ bool cmp_hints_bloom_check_and_set(struct cmp_hints_bloom *b,
  * accumulates a per-record batch of these and hands the buffer to
  * cmp_hints_flush_pending() (pool.c) which takes pool->lock once and
  * drains the batch through pool_add_locked().
+ *
+ * Batch depth balances stack footprint (worst case ~3 KB) against
+ * the common case of a hot bloom yielding tens of misses per call --
+ * one pool_lock cycle typically drains the whole loop; bursts that
+ * overshoot fall back to multiple flushes.
  */
+#define CMP_HINTS_PENDING_BATCH 128
+
 struct cmp_hints_pending {
 	unsigned long ip;
 	unsigned long val;
