@@ -19,6 +19,7 @@
 #include "pids.h"
 #include "random.h"
 #include "self_cgroup.h"
+#include "sequence.h"
 #include "shm.h"
 #include "stats.h"
 #include "trinity.h"
@@ -501,6 +502,12 @@ void final_state_save(void)
 
 		if (cpath != NULL && cmp_hints_save_file(cpath))
 			output(0, "cmp-hints: persisted to %s\n", cpath);
+	}
+	if (!no_chain_warm_start && chain_corpus_shm != NULL) {
+		const char *cpath = chain_corpus_default_path();
+
+		if (cpath != NULL && chain_corpus_save_file(cpath))
+			output(0, "chain corpus: persisted to %s\n", cpath);
 	}
 }
 

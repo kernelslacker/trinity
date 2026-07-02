@@ -29,6 +29,7 @@
 #include "random.h"
 #include "rlimits.h"
 #include "self_cgroup.h"
+#include "sequence.h"
 #include "signals.h"
 #include "shm.h"
 #include "stats.h"
@@ -485,6 +486,29 @@ static void persist_state_on_clean_exit(void)
 
 			if (cpath != NULL && cmp_hints_save_file(cpath))
 				output(0, "cmp-hints: persisted to %s\n", cpath);
+		}
+	}
+
+	/*
+	 * End-of-run chain corpus persistence.  Same clean-exit gate the
+	 * other cross-run carriers use -- a poisoned shm after a corruption-
+	 * aborted run could feed garbage back into the next warm-start, so
+	 * we skip the save unless the shutdown was clean.  No periodic
+	 * snapshot trigger for the chain corpus (unlike minicorpus / kcov
+	 * bitmap / cmp-hints, which cover mid-run crashes); this end-of-run
+	 * save is the only persistence point.
+	 */
+	if (!no_chain_warm_start && chain_corpus_shm != NULL) {
+		enum exit_reasons er =
+			__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED);
+
+		if (er == EXIT_REACHED_COUNT || er == EXIT_SIGINT ||
+		    er == EXIT_USER_REQUEST || er == EXIT_EPOCH_DONE) {
+			const char *cpath = chain_corpus_default_path();
+
+			if (cpath != NULL && chain_corpus_save_file(cpath))
+				output(0, "chain corpus: persisted to %s\n",
+				       cpath);
 		}
 	}
 }

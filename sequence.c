@@ -44,6 +44,7 @@
 #include "fd.h"
 #include "kcov.h"
 #include "minicorpus.h"
+#include "params.h"
 #include "persist-util.h"
 #include "random.h"
 #include "rnd.h"
@@ -129,9 +130,11 @@ void chain_corpus_init(void)
 	 * without racing the producers.  Failures (missing file, header
 	 * mismatch, every entry rejected by re-validation) are silent -- a
 	 * missing or stale image just means we boot cold, same policy the
-	 * per-syscall minicorpus warm-start uses.
+	 * per-syscall minicorpus warm-start uses.  Gated on
+	 * --no-chain-warm-start so an operator can opt out of the chain
+	 * carrier independently of the other cross-run caches.
 	 */
-	{
+	if (!no_chain_warm_start) {
 		const char *path = chain_corpus_default_path();
 
 		if (path != NULL) {
