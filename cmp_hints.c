@@ -4179,53 +4179,15 @@ static bool cmp_try_get_durable_tier(unsigned int nr, bool do32,
 	return true;
 }
 
-bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
-			  unsigned long old, bool allow_hyp_inject,
-			  const struct cmp_accept_range *accept,
-			  unsigned long *out)
+enum cmp_tier_result { CMP_TIER_MISS = 0, CMP_TIER_SERVED, CMP_TIER_REJECTED };
+
+static enum cmp_tier_result cmp_try_get_recent_tier(unsigned int nr, bool do32,
+						    enum cmp_hint_use use,
+						    unsigned long old,
+						    bool allow_hyp_inject,
+						    const struct cmp_accept_range *accept,
+						    unsigned long *out)
 {
-	if (cmp_hints_shm == NULL || nr >= MAX_NR_SYSCALL)
-		return false;
-
-	if (kcov_shm != NULL) {
-		/* Scalar attempts counter now lives in parent_stats and is
-		 * fed via the per-child stats_ring -- the kernel cannot
-		 * scribble it through any fuzzed syscall arg because the
-		 * authoritative copy is in MAP_PRIVATE parent memory.
-		 * Direct +1 enqueue (no local staging like the kcov
-		 * batched counters): cmp_hints_try_get fires at consumer
-		 * cadence, well below the SPSC budget.  Ring-full drops
-		 * fold into ring_overflow_total. */
-		struct childdata *attempt_child = this_child();
-
-		if (attempt_child != NULL) {
-			(void) stats_ring_enqueue(attempt_child->stats_ring,
-						  STATS_FIELD_CMP_HINTS_TRY_GET_ATTEMPTS,
-						  0, 1);
-			/* per-nr partition of the consumer-demand counter,
-			 * drained into parent_stats.per_syscall_cmp_attempts[].
-			 * The shm/nr guard above already pinned nr <
-			 * MAX_NR_SYSCALL so aux is in-bounds at the drain. */
-			(void) stats_ring_enqueue(attempt_child->stats_ring,
-						  STATS_FIELD_PER_SYSCALL_CMP_ATTEMPTS,
-						  (uint16_t)nr, 1);
-		}
-	}
-
-	/* Chaos-mode gate.  Placed after the attempts bump so the consumer
-	 * demand series stays comparable across chaos and non-chaos
-	 * windows -- suppressed pulls remain visible as the
-	 * attempts/returned gap, with cmp_hints_chaos_suppressed
-	 * accounting for the difference.  Before the pool snapshot so the
-	 * suppressed path skips the lockless load entirely. */
-	if (kcov_shm != NULL &&
-	    __atomic_load_n(&kcov_shm->cmp_hints_chaos_active,
-			    __ATOMIC_RELAXED)) {
-		__atomic_fetch_add(&kcov_shm->cmp_hints_chaos_suppressed,
-				   1UL, __ATOMIC_RELAXED);
-		return false;
-	}
-
 	/*
 	 * Recent-pool sampling tier.
 	 *
@@ -4290,7 +4252,7 @@ bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 				if (accept != NULL &&
 				    (*out < accept->lo ||
 				     *out > accept->hi))
-					return false;
+					return CMP_TIER_REJECTED;
 
 				if (kcov_shm != NULL)
 					__atomic_fetch_add(&kcov_shm->cmp_recent_live_picks,
@@ -4321,12 +4283,72 @@ bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 							 true, 0, false);
 				cmp_hyp_would_pick(nr, do32, re_cmp_ip,
 						   re_size, re_value);
-				return true;
+				return CMP_TIER_SERVED;
 			}
 		} else if (kcov_shm != NULL) {
 			__atomic_fetch_add(&kcov_shm->cmp_recent_would_miss,
 					   1UL, __ATOMIC_RELAXED);
 		}
+	}
+
+	return CMP_TIER_MISS;
+}
+
+bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
+			  unsigned long old, bool allow_hyp_inject,
+			  const struct cmp_accept_range *accept,
+			  unsigned long *out)
+{
+	if (cmp_hints_shm == NULL || nr >= MAX_NR_SYSCALL)
+		return false;
+
+	if (kcov_shm != NULL) {
+		/* Scalar attempts counter now lives in parent_stats and is
+		 * fed via the per-child stats_ring -- the kernel cannot
+		 * scribble it through any fuzzed syscall arg because the
+		 * authoritative copy is in MAP_PRIVATE parent memory.
+		 * Direct +1 enqueue (no local staging like the kcov
+		 * batched counters): cmp_hints_try_get fires at consumer
+		 * cadence, well below the SPSC budget.  Ring-full drops
+		 * fold into ring_overflow_total. */
+		struct childdata *attempt_child = this_child();
+
+		if (attempt_child != NULL) {
+			(void) stats_ring_enqueue(attempt_child->stats_ring,
+						  STATS_FIELD_CMP_HINTS_TRY_GET_ATTEMPTS,
+						  0, 1);
+			/* per-nr partition of the consumer-demand counter,
+			 * drained into parent_stats.per_syscall_cmp_attempts[].
+			 * The shm/nr guard above already pinned nr <
+			 * MAX_NR_SYSCALL so aux is in-bounds at the drain. */
+			(void) stats_ring_enqueue(attempt_child->stats_ring,
+						  STATS_FIELD_PER_SYSCALL_CMP_ATTEMPTS,
+						  (uint16_t)nr, 1);
+		}
+	}
+
+	/* Chaos-mode gate.  Placed after the attempts bump so the consumer
+	 * demand series stays comparable across chaos and non-chaos
+	 * windows -- suppressed pulls remain visible as the
+	 * attempts/returned gap, with cmp_hints_chaos_suppressed
+	 * accounting for the difference.  Before the pool snapshot so the
+	 * suppressed path skips the lockless load entirely. */
+	if (kcov_shm != NULL &&
+	    __atomic_load_n(&kcov_shm->cmp_hints_chaos_active,
+			    __ATOMIC_RELAXED)) {
+		__atomic_fetch_add(&kcov_shm->cmp_hints_chaos_suppressed,
+				   1UL, __ATOMIC_RELAXED);
+		return false;
+	}
+
+	switch (cmp_try_get_recent_tier(nr, do32, use, old,
+					allow_hyp_inject, accept, out)) {
+	case CMP_TIER_SERVED:
+		return true;
+	case CMP_TIER_REJECTED:
+		return false;
+	case CMP_TIER_MISS:
+		break;
 	}
 
 	return cmp_try_get_durable_tier(nr, do32, use, old,
