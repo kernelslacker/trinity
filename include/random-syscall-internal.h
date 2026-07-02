@@ -40,4 +40,14 @@ bool syscall_in_group(unsigned int nr, bool do32, unsigned int target_group);
  * ilog2_ul) are file-scope static inside pickers.c. */
 bool set_syscall_nr(struct syscallrecord *rec, struct childdata *child);
 
+/* chain-subst.c -- rewrite rec->aN in place for chain-substituted
+ * arguments before dispatch.c publishes the record.
+ * compute_numeric_substitute_mask is public via include/syscall.h;
+ * argtype_accepts_numeric_substitute is file-scope static inside
+ * chain-subst.c. */
+void apply_chain_substitution(struct syscallrecord *rec,
+			      struct syscallentry *entry,
+			      bool have_substitute,
+			      unsigned long substitute_retval);
+
 #endif /* _TRINITY_RANDOM_SYSCALL_INTERNAL_H */
