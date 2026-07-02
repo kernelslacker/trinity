@@ -95,6 +95,22 @@ uint32_t cmp_field_pool_hash(const struct struct_desc *desc,
 			     unsigned int size);
 
 /*
+ * Per-CMP-record field attribution scan.  Definition in
+ * cmp_hints/field.c; called from cmp_hints_collect (collect.c) on
+ * every KCOV_CMP record whose arg1 matched a scalar slot.  Walks the
+ * dispatching syscall's ARG_STRUCT_PTR_IN/INOUT slots, dereferences
+ * the pointed-at struct against the cataloged field layout, and
+ * invokes cmp_hints_field_record() on every matching field.
+ */
+struct syscallrecord;
+struct syscallentry;
+void cmp_hints_field_scan_record(struct syscallrecord *srec,
+				 struct syscallentry *entry,
+				 unsigned int nr, bool do32,
+				 unsigned long arg1, unsigned long arg2,
+				 unsigned int size, unsigned long cmp_ip);
+
+/*
  * Per-child seen-bloom check + set.  Called once per CMP record in
  * cmp_hints/collect.c before the per-pool lock + dedup path; a hit
  * short-circuits the pool_add_locked() round-trip.  Definition in
@@ -128,6 +144,25 @@ unsigned int cmp_hints_flush_pending(struct cmp_hint_pool *pool,
 				     unsigned int nr, bool do32,
 				     const struct cmp_hints_pending *batch,
 				     unsigned int n);
+
+/*
+ * Per-child A/B stamp for the cmp-hints live-pick policy.  Arm B
+ * routes the uniform draw through cmp_hint_weighted_pick() below.
+ * Definition + stamp state live in cmp_hints/get.c; the field
+ * consumer in cmp_hints/field.c also gates its LIVE-arm pick through
+ * the same stamp so both consumers stay in the same cohort.
+ */
+bool cmp_hint_livepick_arm_b_active(void);
+
+/*
+ * Weighted draw over cmp_hint_entry.wins / .misses.  Definition in
+ * cmp_hints/get.c; called from the per-syscall picker (get.c) and
+ * from the field-scoped picker (cmp_hints/field.c) when
+ * cmp_hint_livepick_arm_b_active() is true.  count is the
+ * corruption-gated snapshot; entries is the pool's entries[] array.
+ */
+unsigned int cmp_hint_weighted_pick(struct cmp_hint_entry *entries,
+				    unsigned int count);
 
 /*
  * Post-transform tier verdict for cmp_try_get_recent_tier().
