@@ -145,6 +145,28 @@ struct syscallentry syscall_pkey_alloc = {
 	.rettype = RET_BORING,
 };
 
+/*
+ * pkey_free's key argument is a pkey id previously returned by
+ * pkey_alloc().  The ARG_RANGE fuzz over [0, 15] rarely names a live
+ * key — the kernel's unknown-key reject path collapses the call to
+ * EINVAL, so the actual free path stays under-exercised.  Pull from
+ * the OBJ_PKEY pool (populated by post_pkey_alloc()) 60% of the time
+ * when the pool is non-empty so the call lands on a live key.  The
+ * remaining 40% (and the empty-pool fallback) stay in the ARG_RANGE
+ * draw so the unknown-key reject path keeps getting coverage.
+ * Mirrors the consume shape used by sanitise_mprotect()'s
+ * pkey_mprotect branch.
+ */
+static void sanitise_pkey_free(struct syscallrecord *rec)
+{
+	if (rnd_modulo_u32(100) < 60) {
+		int id = get_random_pkey_id();
+
+		if (id >= 0)
+			rec->a1 = (unsigned long) id;
+	}
+}
+
 struct syscallentry syscall_pkey_free = {
 	.name = "pkey_free",
 	.num_args = 1,
@@ -152,6 +174,7 @@ struct syscallentry syscall_pkey_free = {
 	.argname = { [0] = "key" },
 	.arg_params[0].range.low = 0,
 	.arg_params[0].range.hi = 15,
+	.sanitise = sanitise_pkey_free,
 	.group = GROUP_VM,
 	.rettype = RET_ZERO_SUCCESS,
 };
