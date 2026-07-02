@@ -28,6 +28,7 @@ set -u
 NAME="variant-address-walk"
 ROOT="${REPO_ROOT:-$(pwd)}"
 GEN="$ROOT/generate-args.c"
+MUT="$ROOT/args/struct_mutate.c"
 CAT="$ROOT/struct_catalog.c"
 
 fail() {
@@ -36,6 +37,7 @@ fail() {
 }
 
 [ -r "$GEN" ] || fail "cannot read $GEN"
+[ -r "$MUT" ] || fail "cannot read $MUT"
 [ -r "$CAT" ] || fail "cannot read $CAT"
 
 # Extract the actual function body (not the forward decl) for the
@@ -119,16 +121,18 @@ for needle in "${want_overlay[@]}"; do
 done
 
 # Runtime selftest must exist AND be wired into the entry point.
+# selftest_variant_address_walk() and struct_field_mutate_self_check()
+# live in args/struct_mutate.c after the generate-args carve.
 checked=$((checked + 1))
-if ! grep -qE '^static void selftest_variant_address_walk\(void\)' "$GEN"; then
-	problems+=("selftest_variant_address_walk() not defined in $GEN")
+if ! grep -qE '^static void selftest_variant_address_walk\(void\)' "$MUT"; then
+	problems+=("selftest_variant_address_walk() not defined in $MUT")
 fi
 
 selfcheck_body=$(awk '
 	/^void struct_field_mutate_self_check\(void\)/ { in_block = 1 }
 	in_block { print }
 	in_block && /^\}$/ { exit }
-' "$GEN")
+' "$MUT")
 
 checked=$((checked + 1))
 if ! grep_in "$selfcheck_body" "selftest_variant_address_walk("; then
