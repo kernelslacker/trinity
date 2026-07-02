@@ -3,21 +3,16 @@
  *		unsigned, flags, struct mount_attr __user *, uattr, size_t, usize)
  */
 #include <fcntl.h>
-#include <linux/mount.h>
 #include <string.h>
 #include "compat.h"
 #include "csfu.h"
 #include "deferred-free.h"
+#include "kernel/mount.h"
 #include "object-types.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
 #include "utils.h"
-
-#ifndef OPEN_TREE_CLONE
-#define OPEN_TREE_CLONE		1
-#define OPEN_TREE_CLOEXEC	O_CLOEXEC
-#endif
 
 /*
  * Mutually-exclusive propagation flags.  do_change_type() EINVALs the

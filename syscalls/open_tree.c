@@ -3,17 +3,9 @@
  */
 #include <fcntl.h>
 #include "compat.h"
+#include "kernel/mount.h"
 #include "object-types.h"
 #include "sanitise.h"
-
-#ifndef OPEN_TREE_CLONE
-#define OPEN_TREE_CLONE         1               /* Clone the target tree and attach the clone */
-#define OPEN_TREE_CLOEXEC       O_CLOEXEC       /* Close the file on execve() */
-#endif
-
-#ifndef OPEN_TREE_NAMESPACE
-#define OPEN_TREE_NAMESPACE	2		/* Clone into new mount namespace */
-#endif
 
 static unsigned long open_tree_flags[] = {
 	AT_EMPTY_PATH, AT_NO_AUTOMOUNT, AT_RECURSIVE, AT_SYMLINK_NOFOLLOW,
