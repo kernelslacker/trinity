@@ -57,7 +57,7 @@ FILES=(
 	mutate.c
 	struct_catalog/catalog.c
 	struct_catalog/sctp.c
-	struct_catalog/sockaddr.c
+	struct_catalog/sockaddr-af.c
 	struct_catalog/sockaddr-mcast.c
 	struct_catalog/sockaddr-sockopt.c
 	struct_catalog/bpf.c

@@ -1,17 +1,23 @@
 /*
- * struct_catalog/sockaddr.c -- sockaddr_storage tagged-union variants
- * and setsockopt optval shapes.
+ * struct_catalog/sockaddr-af.c -- sockaddr_storage tagged-union
+ * variants and per-address-family field arrays.
  *
- * Carved out of struct_catalog.c as the third leaf TU of the file
- * split: the central spine (struct_catalog[], syscall_struct_args[])
- * and all logic stay in struct_catalog.c; this TU owns the
- * sockaddr_storage per-AF variant tables and the setsockopt optval
- * struct field tables (linger / ip_mreqn / ipv6_mreq / packet_mreq /
- * group_req / group_source_req / ip_mreq_source) only.  Symbols flip
- * from static const to const so the spine's
- * .variants = sockaddr_storage_variants and .fields = linger_fields
- * (and the other socket-option arrays) references resolve via the
- * externs in struct_catalog-internal.h.
+ * Originally carved out of struct_catalog.c as the sockaddr leaf TU;
+ * subsequently sub-split into three siblings under struct_catalog/:
+ *   - sockaddr-af.c       (this file) owns the sockaddr_storage
+ *     tagged union (sockaddr_storage_fields[] +
+ *     sockaddr_storage_variants[]) and every per-AF variant field
+ *     array plus its curated per-AF vocabularies;
+ *   - sockaddr-mcast.c    owns the IPv4/IPv6 multicast setsockopt
+ *     optval field tables (ip_mreqn / ip_mreq_source / ipv6_mreq)
+ *     and their well-known multicast-address pools;
+ *   - sockaddr-sockopt.c  owns the non-multicast setsockopt optval
+ *     field tables (linger / packet_mreq / group_req /
+ *     group_source_req).
+ * Symbols flip from static const to const so the spine's
+ * .variants = sockaddr_storage_variants (and .fields = ... in the
+ * setsockopt sibling files) references resolve via the externs in
+ * struct_catalog-internal.h.
  *
  * struct_catalog.h and arch.h are included unconditionally so this
  * TU compiles even when the per-AF USE_* options are off; the
@@ -906,37 +912,3 @@ const struct struct_field sockaddr_storage_fields[] = {
 	       .mutate_weight = 200),
 };
 
-/* ------------------------------------------------------------------ */
-/* setsockopt optval shapes -- proof batch for the two-key             */
-/* (level, optname) discriminator.  Five shapes already owned by       */
-/* bespoke build_*() functions in syscalls/setsockopt.c, registered    */
-/* here so apply_sockopt_entry()'s explicit-key lookup resolves them   */
-/* and struct_field_fill_schema_aware() takes over the fill.  Bespoke  */
-/* builders stay in code as the miss-fallback for the int / bool /    */
-/* string scalar entries (no struct shape to catalog) and for the     */
-/* higher-leverage shapes that have not been migrated yet (sctp /     */
-/* mptcp / tcp_repair / can_filter[] etc.); coverage on those paths   */
-/* is byte-identical to before until their rows land.                 */
-/*                                                                    */
-/* Scope of every row in this section: schema-aware FILL only.  There */
-/* is NO field-scoped CMP attribution for the setsockopt optval --    */
-/* the optval slot's argtype is ARG_UNDEFINED, and the field-scoped   */
-/* CMP machinery (cmp_hints_field_scan_record() -> field_pools[]) is  */
-/* gated on ARG_STRUCT_PTR_IN / ARG_STRUCT_PTR_INOUT, so it never     */
-/* visits optval.  The FT_ tags below shape the live values via the   */
-/* schema fill; they do not steer struct_field_for_cmp() at runtime   */
-/* for these rows.  Wiring field-scoped CMP for ARG_UNDEFINED is out  */
-/* of scope here and waits on the broader field-scoped-steering lift. */
-/* ------------------------------------------------------------------ */
-
-/*
- * struct linger lives in struct_catalog/sockaddr-sockopt.c.
- */
-
-/*
- * struct ip_mreqn, ip_mreq_source and ipv6_mreq (plus the IPv4/IPv6
- * multicast address vocabularies they reference) live in
- * struct_catalog/sockaddr-mcast.c.  struct linger, packet_mreq,
- * group_req and group_source_req live in
- * struct_catalog/sockaddr-sockopt.c.
- */
