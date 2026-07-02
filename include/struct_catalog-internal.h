@@ -18,9 +18,34 @@
 
 #pragma once
 
+#include <stdbool.h>
 #include <stddef.h>
 
 #include "struct_catalog.h"
+
+struct syscallrecord;
+
+/* ------------------------------------------------------------------ */
+/* Spine internals shared across struct_catalog/ TUs.                   */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Variant / discriminator resolution helpers defined in
+ * struct_catalog/variant.c.  Shared with the (nr, arg) registry
+ * lookup in struct_catalog/catalog.c so both callers of "match a
+ * discriminated syscall_struct_args[] row against a live rec" run
+ * the same shift/mask/values extraction.
+ */
+bool read_rec_arg(const struct syscallrecord *rec,
+		  unsigned int arg_idx, unsigned long *out);
+bool discrim_key_matches(unsigned long raw,
+			 unsigned int shift,
+			 unsigned long mask,
+			 unsigned long value,
+			 const unsigned long *values,
+			 unsigned int num_values);
+bool discrim_key2_matches(const struct syscall_struct_arg *sa,
+			  const struct syscallrecord *rec);
 
 /*
  * FIELD(S, m): the FT_RAW shortcut.  Tag, weight, and the .u payload
