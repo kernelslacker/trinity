@@ -77,7 +77,7 @@ FILES=(
 	struct_catalog/ldt.c
 	args/arg-decoder.c
 	lib/cmsg_build.c
-	utils.c
+	utils/utils.c
 )
 
 cd "$ROOT" || { echo "FAIL: $NAME: cannot cd to $ROOT"; exit 1; }
