@@ -5149,13 +5149,21 @@ struct stats_s {
 	 * blob_dict_inserts is the observable A/B split (a static-draw
 	 * that does not fit len falls back to the learned path and does
 	 * not bump either counter until the fallback either commits or
-	 * misses).  All four counters are bumped only by CMPDICT -- the
-	 * per-rung contribution stays isolated across an
-	 * off / fill / havoc / cmpdict A/B. */
+	 * misses).  blob_dict_transform_inserts is an orthogonal axis:
+	 * the count of committed splats (across both sources) that
+	 * applied a non-plain splat form -- big-endian byte-swap or
+	 * value ± 1 at width -- for endian and off-by-one boundary
+	 * coverage.  Plain little-endian commits stay uncounted here,
+	 * so the ratio of blob_dict_transform_inserts to
+	 * (blob_dict_inserts + blob_static_magic_inserts) is the
+	 * observable transform-vs-plain split.  All five counters are
+	 * bumped only by CMPDICT -- the per-rung contribution stays
+	 * isolated across an off / fill / havoc / cmpdict A/B. */
 	unsigned long blob_fills;
 	unsigned long blob_havoc_ops;
 	unsigned long blob_dict_inserts;
 	unsigned long blob_static_magic_inserts;
+	unsigned long blob_dict_transform_inserts;
 };
 
 unsigned int stats_syscall_category(const char *name);

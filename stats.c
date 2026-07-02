@@ -804,16 +804,22 @@ void stat_category_emit_text(const struct stat_category *cat)
  * count of committed splats the CMPDICT rung applied from the built-
  * in well-known-magic table (ext4 / XFS / BTRFS / squashfs / ELF /
  * gzip) -- the ratio to dict_inserts is the observable static-vs-
- * learned A/B split.  All four are bumped only by CMPDICT, so the
- * per-rung contribution is isolated across an
- * off / fill / havoc / cmpdict A/B.  When the mode is OFF the gate
- * counter stays at zero so stat_category_emit_text suppresses the
- * whole block (render-gap-aware). */
+ * learned A/B split.  dict_transform_inserts is the count of
+ * committed splats (across both sources) that applied a non-plain
+ * splat form -- big-endian byte-swap or value ± 1 at width -- for
+ * endian and off-by-one boundary coverage; the ratio to
+ * (dict_inserts + static_magic_inserts) is the transform-vs-plain
+ * split.  All five are bumped only by CMPDICT, so the per-rung
+ * contribution is isolated across an off / fill / havoc / cmpdict
+ * A/B.  When the mode is OFF the gate counter stays at zero so
+ * stat_category_emit_text suppresses the whole block (render-gap-
+ * aware). */
 static const struct stat_field blob_mutator_fields[] = {
 	STAT_FIELD(blob, fills),
 	STAT_FIELD(blob, havoc_ops),
 	STAT_FIELD(blob, dict_inserts),
 	STAT_FIELD(blob, static_magic_inserts),
+	STAT_FIELD(blob, dict_transform_inserts),
 };
 
 const struct stat_category blob_mutator_category =
