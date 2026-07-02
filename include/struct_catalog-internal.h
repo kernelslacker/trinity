@@ -48,6 +48,14 @@ bool discrim_key2_matches(const struct syscall_struct_arg *sa,
 			  const struct syscallrecord *rec);
 
 /*
+ * Init-only validation of syscall_struct_args[] slot shapes.  Called
+ * by struct_catalog_init() in struct_catalog/registry.c; defined in
+ * struct_catalog/catalog.c until the next commit moves it to
+ * struct_catalog/validate.c.
+ */
+void validate_syscall_struct_args(void);
+
+/*
  * FIELD(S, m): the FT_RAW shortcut.  Tag, weight, and the .u payload
  * stay zero-initialised, so the field falls through to the historical
  * per-field random splat.  Existing entries keep this form.
