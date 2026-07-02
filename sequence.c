@@ -153,7 +153,7 @@ static const struct chain_restype_row chain_restype_table[CHAIN_RESTYPE_NR] = {
 	[CHAIN_RESTYPE_PIDFD] = {
 		.producers = { "pidfd_open", "clone3", NULL, NULL },
 		.consumers = { "pidfd_send_signal", "pidfd_getfd", "waitid",
-			       NULL, NULL, NULL },
+			       "process_mrelease", NULL, NULL },
 	},
 	[CHAIN_RESTYPE_SOCKET_TCP] = {
 		.producers = { "socket", NULL, NULL, NULL },
