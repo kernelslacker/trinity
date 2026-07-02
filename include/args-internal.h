@@ -83,3 +83,63 @@ void publish_paired_length(struct syscallentry *entry,
 			   struct syscallrecord *rec,
 			   unsigned int argnum,
 			   unsigned long len);
+
+/*
+ * Per-argtype thin generators used by argtype_table[].  Each function
+ * lives in its owning cluster TU inside args/ and is referenced only
+ * by name from the argtype_table[] entries in generate-args.c.
+ */
+unsigned long gen_undefined_arg(struct syscallentry *entry,
+				struct syscallrecord *rec,
+				unsigned int argnum);
+unsigned long gen_arg_fd(struct syscallentry *entry,
+			 struct syscallrecord *rec,
+			 unsigned int argnum);
+unsigned long gen_arg_typed_fd(struct syscallentry *entry,
+			       struct syscallrecord *rec,
+			       unsigned int argnum);
+unsigned long gen_arg_len(struct syscallentry *entry,
+			  struct syscallrecord *rec,
+			  unsigned int argnum);
+unsigned long gen_arg_non_null_address(struct syscallentry *entry,
+				       struct syscallrecord *rec,
+				       unsigned int argnum);
+unsigned long gen_arg_mmap(struct syscallentry *entry,
+			   struct syscallrecord *rec,
+			   unsigned int argnum);
+unsigned long gen_arg_pid(struct syscallentry *entry,
+			  struct syscallrecord *rec,
+			  unsigned int argnum);
+unsigned long gen_arg_key_serial(struct syscallentry *entry,
+				 struct syscallrecord *rec,
+				 unsigned int argnum);
+unsigned long gen_arg_timerid(struct syscallentry *entry,
+			      struct syscallrecord *rec,
+			      unsigned int argnum);
+unsigned long gen_arg_aio_ctx(struct syscallentry *entry,
+			      struct syscallrecord *rec,
+			      unsigned int argnum);
+unsigned long gen_arg_sem_id(struct syscallentry *entry,
+			     struct syscallrecord *rec,
+			     unsigned int argnum);
+unsigned long gen_arg_msg_id(struct syscallentry *entry,
+			     struct syscallrecord *rec,
+			     unsigned int argnum);
+unsigned long gen_arg_sysv_shm(struct syscallentry *entry,
+			       struct syscallrecord *rec,
+			       unsigned int argnum);
+unsigned long gen_arg_cpu(struct syscallentry *entry,
+			  struct syscallrecord *rec,
+			  unsigned int argnum);
+unsigned long gen_arg_numa_node(struct syscallentry *entry,
+				struct syscallrecord *rec,
+				unsigned int argnum);
+unsigned long gen_arg_pathname(struct syscallentry *entry,
+			       struct syscallrecord *rec,
+			       unsigned int argnum);
+unsigned long gen_arg_xattr_name(struct syscallentry *entry,
+				 struct syscallrecord *rec,
+				 unsigned int argnum);
+unsigned long gen_arg_fstype_name(struct syscallentry *entry,
+				  struct syscallrecord *rec,
+				  unsigned int argnum);
