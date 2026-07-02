@@ -380,9 +380,28 @@ int chain_restype_pick_consumer(enum chain_resource_kind kind,
 
 	for (i = 0; i < CHAIN_RESTYPE_MAX_CONSUMERS; i++) {
 		int cand = chain_restype_consumer_nr[kind][slot][i];
+		struct syscallentry *entry;
 
-		if (cand >= 0)
-			live[nlive++] = cand;
+		if (cand < 0)
+			continue;
+
+		/* The resolved NR set is frozen at init time, but a NR
+		 * can go inert mid-run via the self-deactivation path
+		 * (ENOSYS strike-out, capability loss, TO_BE_DEACTIVATED
+		 * sweep).  entry->active_number == 0 marks that state.
+		 * validate_specific_syscall_silent() only rejects the
+		 * static flags (AVOID/NI/NEEDS_ROOT) and will happily
+		 * pass a deactivated entry, so check active_number
+		 * directly here — biasing to a deactivated NR wastes the
+		 * bias budget on a step the dispatch path is going to
+		 * refuse anyway. */
+		entry = get_syscall_entry((unsigned int)cand, do32bit_hint);
+		if (entry == NULL)
+			continue;
+		if (entry->active_number == 0)
+			continue;
+
+		live[nlive++] = cand;
 	}
 	if (nlive == 0)
 		return -1;
