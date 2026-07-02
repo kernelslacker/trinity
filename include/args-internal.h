@@ -194,6 +194,15 @@ void nested_address_scrub(struct syscallentry *entry,
 			  struct syscallrecord *rec);
 
 /*
+ * Top-level per-slot argtype dispatch.  Definition lives in
+ * args/argtype_table.c; called from generic_sanitise in
+ * generate-args.c to fill each of the up-to-six syscall arg slots.
+ */
+unsigned long fill_arg(struct syscallentry *entry,
+		       struct syscallrecord *rec,
+		       unsigned int argnum);
+
+/*
  * Struct-field fill / mutate / scrub caps shared across the args/
  * cluster.  STRUCT_FILL_MAX_FIELDS bounds the per-descriptor loop in
  * struct_fill_passes and also seeds STRUCT_MUTATE_MAX_CANDIDATES in
