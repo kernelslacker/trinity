@@ -98,6 +98,15 @@ unsigned long pct_thousandths(unsigned long num, unsigned long denom);
 void dump_stats_json(void);
 void childop_split_dump(void);
 
+/* corrupt_ptr cluster in stats/corrupt_ptr.c.  Called from the
+ * stats.c core (dump_range_overlaps_shared_top_offenders via
+ * dump_stats_shared_buffer_misc) and from defense_counters_periodic_
+ * dump() in stats/periodic.c (corrupt_ptr_attr_dump and
+ * deferred_free_reject_pc_dump). */
+void dump_range_overlaps_shared_top_offenders(void);
+void corrupt_ptr_attr_dump(void);
+void deferred_free_reject_pc_dump(void);
+
 /* Pure-render dump_stats_* emitters carved into stats/dump.c. */
 void dump_stats_oracle_anomalies(void);
 void dump_stats_fuzzer_subsystems(void);
