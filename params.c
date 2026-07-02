@@ -422,6 +422,7 @@ char *warm_start_path = NULL;
 
 bool no_kcov_warm_start = false;
 bool no_cmp_hints_warm_start = false;
+bool no_chain_warm_start = false;
 
 /* Default tracks the compile-time KCOV_TRACE_SIZE so a default run is
  * byte-identical to a build without this knob (init / mmap / munmap /
@@ -565,6 +566,7 @@ static const struct option_help option_descs[] = {
 	{ "memory-swap-max",	 0,  "children/memory.swap.max cap (workers cgroup). Accepts \"max\", N% of MemTotal, or N[KMG] bytes. Default: 20%." },
 	{ "no-canary-queue",	 0,  "disable the dormant-childop canary queue entirely; the dormant gate is consulted as a static compile-time vector and no canary slots are reserved." },
 	{ "no-cgroup",		 0,  "skip self-cgroup creation entirely (no in-binary memory containment)" },
+	{ "no-chain-warm-start", 0, "skip loading and saving the persisted sequence chain corpus" },
 	{ "no-cmp-hints-warm-start", 0, "skip loading and saving the persisted kcov CMP-hint pool" },
 	{ "no-kcov-warm-start",	 0,  "skip loading and saving the persisted kcov edge bitmap" },
 	{ "no-startup-isolation", 0,  "skip the parent-side unshare(CLONE_NEWNET|CLONE_NEWNS) + MS_PRIVATE remount that the root-launched fuzzer does in init_pre_fork() (children then take the per-child unshare path). Default off; non-root runs never attempt parent-side isolation regardless." },
@@ -692,6 +694,7 @@ static const struct option longopts[] = {
 	{ "warm-start-path", required_argument, NULL, 0 },
 	{ "no-kcov-warm-start", no_argument, NULL, 0 },
 	{ "no-cmp-hints-warm-start", no_argument, NULL, 0 },
+	{ "no-chain-warm-start", no_argument, NULL, 0 },
 	{ "corpus-save-errno-grad-live", no_argument, NULL, 0 },
 	{ "writer-pin-sweep", no_argument, NULL, 0 },
 	{ "writer-pin-stride", required_argument, NULL, 0 },
@@ -920,6 +923,11 @@ static bool parse_cache_options(int opt, const char *name, char *arg)
 
 	if (strcmp("no-cmp-hints-warm-start", name) == 0) {
 		no_cmp_hints_warm_start = true;
+		return true;
+	}
+
+	if (strcmp("no-chain-warm-start", name) == 0) {
+		no_chain_warm_start = true;
 		return true;
 	}
 

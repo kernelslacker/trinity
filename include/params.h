@@ -200,6 +200,7 @@ extern char *warm_start_path;
 
 extern bool no_kcov_warm_start;
 extern bool no_cmp_hints_warm_start;
+extern bool no_chain_warm_start;
 
 /*
  * --kcov-trace-size=N: per-child KCOV PC-trace buffer size, in number
