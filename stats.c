@@ -44,12 +44,12 @@
 extern char __executable_start[];
 extern char _etext[];
 
-static inline bool pc_in_text(void *pc)
+bool pc_in_text(void *pc)
 {
 	return pc >= (void *)__executable_start && pc < (void *)_etext;
 }
 
-static const char * const op_names[MUT_NUM_OPS] = {
+const char * const op_names[MUT_NUM_OPS] = {
 	"bit-flip", "add", "sub", "boundary", "byte-shuf", "keep",
 	"bswap-add", "bswap-sub", "fd-swap"
 };
@@ -745,13 +745,13 @@ static void json_emit_cmp_hints_section(void)
  * struct stats_s + dump_stats_json() + dump_stats() with a single edit
  * site per counter.
  */
-static unsigned long stat_field_load(const struct stat_field *f)
+unsigned long stat_field_load(const struct stat_field *f)
 {
 	unsigned long *p = (unsigned long *)((char *)&shm->stats + f->offset);
 	return __atomic_load_n(p, __ATOMIC_RELAXED);
 }
 
-static unsigned long stat_gate_load(const struct stat_category *cat)
+unsigned long stat_gate_load(const struct stat_category *cat)
 {
 	unsigned long *p = (unsigned long *)((char *)&shm->stats + cat->gate_offset);
 	return __atomic_load_n(p, __ATOMIC_RELAXED);
@@ -3240,7 +3240,7 @@ static void dump_stats_json_probes_misuse_and_tail(void)
 		shm->stats.tty_ldisc_churn_ldisc_set_ok_per_disc[24]);
 }
 
-static void __cold dump_stats_json(void)
+void __cold dump_stats_json(void)
 {
 	putchar('{');
 
@@ -5220,7 +5220,7 @@ void stats_log_write(const char *fmt, ...)
  * sides round to the same scale so the two percentages always sum to
  * 100.0% (within rounding) when the denominator is non-zero.
  */
-static unsigned long pct_thousandths(unsigned long num, unsigned long denom)
+unsigned long pct_thousandths(unsigned long num, unsigned long denom)
 {
 	if (denom == 0)
 		return 0;
@@ -5238,7 +5238,7 @@ static unsigned long pct_thousandths(unsigned long num, unsigned long denom)
 	return (num * 100000UL + denom / 2) / denom;
 }
 
-static void childop_split_dump(void)
+void childop_split_dump(void)
 {
 	unsigned long wt_childop = __atomic_load_n(
 		&shm->stats.childop_walltime_ns, __ATOMIC_RELAXED);
