@@ -94,3 +94,11 @@ void kcov_latch_first_ebadf(struct kcov_child *kc, struct childdata *c);
  * exhausted sentinel.
  */
 bool kcov_recover_fd(struct kcov_child *kc, bool is_cmp);
+
+/*
+ * Coverage-jump breadcrumb, sampled at the tail of kcov_collect() when
+ * call_nr is in hand.  Lives in kcov/plateau.c alongside kcov_plateau_
+ * check so all fleet-level coverage-curve reactions sit in one place;
+ * kcov/collect.c calls it via this extern from the hot path.
+ */
+void kcov_covjump_breadcrumb_maybe(unsigned long call_nr);
