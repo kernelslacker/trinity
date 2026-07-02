@@ -4092,6 +4092,83 @@ bool random_syscall(struct childdata *child)
 }
 
 /*
+ * Fresh-args dispatch for a pre-picked syscall NR.  The chain executor
+ * calls this when --chain-resource-typing=live has classified the
+ * previous step as a resource producer and wants to steer the next
+ * link to a random consumer of the same kind.  Skips set_syscall_nr()
+ * (and its strategy attribution) exactly the way replay_syscall_step
+ * does: any PC / CMP / transition novelty the biased step produces
+ * gets credited to no arm, so the bandit reward signal is not
+ * contaminated by an external NR override.
+ *
+ * Returns FAIL when the biased NR is no longer callable in this run
+ * (out of range, no entry, sanitise, deactivated / AVOID / lost cap);
+ * the chain executor then falls back to a plain random_syscall_step
+ * for the same slot so the iteration still does useful work.
+ */
+bool random_syscall_step_biased(struct childdata *child,
+				unsigned int bias_nr, bool bias_do32,
+				bool have_substitute,
+				unsigned long substitute_retval,
+				bool *found_new,
+				unsigned long *new_transition_out,
+				unsigned long *new_cmp_out)
+{
+	struct syscallrecord *rec = &child->syscall;
+	struct syscallentry *entry;
+
+	if (bias_nr >= MAX_NR_SYSCALL)
+		return FAIL;
+
+	entry = get_syscall_entry(bias_nr, bias_do32);
+	if (entry == NULL)
+		return FAIL;
+
+	/* Same sanitise gate replay_syscall_step uses: sanitise-bearing
+	 * syscalls stash heap pointers into arg slots during
+	 * generic_sanitise, and a fresh-args regeneration here would
+	 * still route through generate_syscall_args -- but the bias
+	 * consumer table is a static NR list, so a NR whose entry
+	 * carries .sanitise cannot come out of pick_consumer(); the
+	 * gate is defensive against a future table addition slipping a
+	 * sanitise-tagged NR through unnoticed. */
+	if (entry->sanitise != NULL)
+		return FAIL;
+
+	if (!validate_specific_syscall_silent(
+			bias_do32 ? syscalls_32bit :
+			(biarch ? syscalls_64bit : syscalls),
+			(int)bias_nr))
+		return FAIL;
+
+	/* Bias dispatches never credit a bandit arm.  Same rationale as
+	 * replay_syscall_step: the arm at shm->current_strategy did not
+	 * actually pick this NR; letting its stamp ride through
+	 * dispatch_step would leak reward attribution to whichever arm
+	 * happens to be current at the time of the override. */
+	child->strategy_at_pick = -1;
+	child->frontier_pick_regime = FRONTIER_PICK_NONE;
+
+	/* Publish (nr, do32bit) inside the srec bracket so an outside
+	 * reader (watchdog, pre_crash_ring decode) cannot see the new
+	 * (nr, do32bit) paired with the previous syscall's args.
+	 * generate_syscall_args carries its own bracket for the a1..a6
+	 * writes, and apply_chain_substitution writes through a1..a6
+	 * again, so both come after this publish window closes. */
+	srec_publish_begin(rec);
+	rec->do32bit = bias_do32;
+	rec->nr = bias_nr;
+	srec_publish_end(rec);
+
+	rec->postbuffer[0] = '\0';
+	generate_syscall_args(rec);
+	apply_chain_substitution(rec, entry, have_substitute, substitute_retval);
+
+	return dispatch_step(child, entry, found_new, new_cmp_out,
+			     new_transition_out);
+}
+
+/*
  * Replay a saved chain step: stage the saved (nr, do32bit, args) into
  * rec, run the saved args through the per-arg mutator chain, apply any
  * Phase 1 retval substitution from the prior step, and dispatch through

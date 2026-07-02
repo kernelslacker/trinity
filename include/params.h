@@ -203,6 +203,43 @@ extern bool no_cmp_hints_warm_start;
 extern bool no_chain_warm_start;
 
 /*
+ * --chain-resource-typing: bias chain generation to pair resource
+ * producers (e.g. epoll_create1, socket, io_uring_setup) with their
+ * consumers (e.g. epoll_ctl, sendmsg, io_uring_enter).  Consulted by
+ * the chain executor in sequence.c AFTER a step whose (nr, args) match
+ * a producer in the small high-confidence resource table:
+ *
+ *   OFF     - default.  Byte-identical to a build without this flag:
+ *             the classify/bias hook returns before touching any
+ *             counter, and the next chain link is picked exactly as
+ *             it would have been.  Guarantees a fixed-seed run
+ *             reproduces the pre-row behaviour bit-for-bit.
+ *   SHADOW  - classify producers, count both chain_restype_produced[kind]
+ *             and chain_restype_would_bias[kind] (the consumer NR the
+ *             LIVE arm WOULD have overridden the next link with), but
+ *             the pick stream stays identical to OFF.  Pure observation
+ *             so operators can measure the opportunity BEFORE flipping
+ *             the live path on.
+ *   LIVE    - actually override the next chain link with a random
+ *             consumer of the produced resource kind, with probabilistic
+ *             acceptance (not a hard override) so other links stay
+ *             possible.  Bumps chain_restype_biased[kind].
+ *
+ * The chain-corpus save gate is unchanged: a chain that discovered a
+ * new producer->consumer pair only gets saved when it also earned a
+ * PC/TRANSITION/CMP novelty signal.  chain_restype_save[kind] and
+ * chain_restype_replay_win[kind] are the per-kind productivity
+ * counters this row exists to measure.
+ */
+enum chain_resource_typing_mode {
+	CHAIN_RESTYPE_MODE_OFF = 0,
+	CHAIN_RESTYPE_MODE_SHADOW = 1,
+	CHAIN_RESTYPE_MODE_LIVE = 2,
+};
+
+extern enum chain_resource_typing_mode chain_resource_typing_mode;
+
+/*
  * --kcov-trace-size=N: per-child KCOV PC-trace buffer size, in number
  * of unsigned longs.  Default = KCOV_TRACE_SIZE (see include/kcov.h).
  * Validated by parse_args() to be a power-of-2 within

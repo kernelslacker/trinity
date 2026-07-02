@@ -6,6 +6,7 @@
 #include "compiler.h"	/* __cold */
 #include "cred_throttle.h"	/* CRED_CLASS_NR */
 #include "reach-band.h"	/* REACH_BAND_NR */
+#include "sequence.h"	/* CHAIN_RESTYPE_NR */
 #include "strategy.h"	/* NR_STRATEGIES */
 #include "syscall.h"	/* MAX_NR_SYSCALL */
 
@@ -4460,6 +4461,46 @@ struct stats_s {
 	 * is gated on. */
 	unsigned long chain_corpus_save_dup_shape;
 	unsigned long chain_corpus_save_unique_shape;
+
+	/* Resource-type chain-generation telemetry (Phase 3;
+	 * --chain-resource-typing=off|shadow|live).  All arrays are
+	 * indexed by enum chain_resource_kind (CHAIN_RESTYPE_NR wide);
+	 * ordering is defined by that enum and MUST NOT change without
+	 * updating the register table in stats.c.
+	 *
+	 * chain_restype_produced[k]     : a chain step matched the (nr, args)
+	 *                                 pattern for a kind-k producer with a
+	 *                                 non-negative retval.  Bumped in every
+	 *                                 non-OFF mode -- the classifier itself
+	 *                                 is the always-on observability.
+	 * chain_restype_would_bias[k]   : SHADOW mode only.  Bumped when the
+	 *                                 next chain link EXISTS and a consumer
+	 *                                 NR for kind k WOULD have been picked
+	 *                                 as the LIVE arm's override.
+	 * chain_restype_biased[k]       : LIVE mode only.  Bumped when the next
+	 *                                 chain link was actually overridden to
+	 *                                 a consumer of kind k (the accept-
+	 *                                 probability roll landed inside the
+	 *                                 bias budget AND the biased dispatch
+	 *                                 did not FAIL fall-back to fresh).
+	 * chain_restype_save[k]         : chain got admitted to the corpus and
+	 *                                 carried at least one producer of kind
+	 *                                 k in its steps.
+	 * chain_restype_replay_win[k]   : a replayed chain that carried a
+	 *                                 kind-k producer earned any novelty
+	 *                                 signal on at least one step.  Ratio
+	 *                                 chain_restype_replay_win[k] /
+	 *                                 chain_restype_save[k] answers "does
+	 *                                 this resource family pay for its bias
+	 *                                 budget" -- the whole point of the row.
+	 *
+	 * All RELAXED atomics; dashboards read once per stats tick and there
+	 * is no cross-counter ordering invariant. */
+	unsigned long chain_restype_produced[CHAIN_RESTYPE_NR];
+	unsigned long chain_restype_would_bias[CHAIN_RESTYPE_NR];
+	unsigned long chain_restype_biased[CHAIN_RESTYPE_NR];
+	unsigned long chain_restype_save[CHAIN_RESTYPE_NR];
+	unsigned long chain_restype_replay_win[CHAIN_RESTYPE_NR];
 
 	/* ---- Childop vs random-syscall effort split ----
 	 *

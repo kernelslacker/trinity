@@ -250,3 +250,72 @@ void chain_corpus_maybe_snapshot(void);
  * does that validation and falls back to a fresh chain on failure.
  */
 bool chain_corpus_pick(struct chain_entry *out);
+
+/*
+ * Resource-type dependency tracking (Phase 3).
+ *
+ * Small, high-confidence producer/consumer table for fd-like resources.
+ * Consulted by the chain executor when --chain-resource-typing is not
+ * OFF: after a step whose (nr, args) match a known producer, the next
+ * chain link is either shadow-counted (SHADOW) or probabilistically
+ * overridden (LIVE) with a random consumer of the same resource kind.
+ *
+ * Kinds are deliberately coarse: one enum value per fd-family that has
+ * a distinct producer/consumer split we already ship syscall coverage
+ * for.  A universal resource schema is out of scope for this row --
+ * the per-kind chain_restype_replay_win counter is the productivity
+ * signal that decides which families to extend into.
+ *
+ * CHAIN_RESTYPE_NR is the count sentinel; the array-shaped stats live
+ * in struct stats_s under this enum's cardinality.
+ */
+enum chain_resource_kind {
+	CHAIN_RESTYPE_EPOLL_FD = 0,
+	CHAIN_RESTYPE_TIMERFD,
+	CHAIN_RESTYPE_EVENTFD,
+	CHAIN_RESTYPE_IO_URING_FD,
+	CHAIN_RESTYPE_PIDFD,
+	CHAIN_RESTYPE_SOCKET_TCP,
+	CHAIN_RESTYPE_BPF_MAP_FD,
+	CHAIN_RESTYPE_NR,
+};
+
+/*
+ * Resolve the producer/consumer NR tables at startup.  Called from
+ * chain_corpus_init() so the resolution happens once, after
+ * select_syscall_tables() has copied the compiled-in table and
+ * before any child forks -- matching the ordering cmp_hints_init
+ * already relies on for its strip-list resolver.
+ *
+ * Unknown syscall names (compat gap on this arch) are dropped
+ * silently: an entry that never lands in the active table becomes
+ * a producer/consumer slot filled with the -1 sentinel, and the
+ * classify / pick helpers skip those slots.
+ */
+void chain_restype_init(void);
+
+/*
+ * Classify the just-dispatched step as a resource producer.  Returns
+ * the enum value on match, -1 on no match.  Consulted by the chain
+ * executor after each successful step (rec->retval >= 0 already
+ * filtered by the caller) so a producer that returned an errno-style
+ * failure is not counted -- feeding a -EBADF into a downstream
+ * consumer would waste the bias slot.
+ *
+ * @args and @retval are the step's dispatched args and kernel-side
+ * return.  Socket-tcp keys on (args[0], args[1] & 0xff), not just NR,
+ * so both are required.
+ */
+int chain_restype_classify_producer(unsigned int nr, bool do32bit,
+				    const unsigned long args[6],
+				    unsigned long retval);
+
+/*
+ * Draw a random consumer NR for @kind.  @do32bit hints which table to
+ * pick from; a returned consumer with an all-slot -1 (no known
+ * consumer resolved on this arch) is signalled by -1.  Otherwise the
+ * caller stages the returned NR into the next chain step's dispatch
+ * via random_syscall_step_biased().
+ */
+int chain_restype_pick_consumer(enum chain_resource_kind kind,
+				bool do32bit_hint);

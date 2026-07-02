@@ -424,6 +424,9 @@ bool no_kcov_warm_start = false;
 bool no_cmp_hints_warm_start = false;
 bool no_chain_warm_start = false;
 
+enum chain_resource_typing_mode chain_resource_typing_mode =
+	CHAIN_RESTYPE_MODE_OFF;
+
 /* Default tracks the compile-time KCOV_TRACE_SIZE so a default run is
  * byte-identical to a build without this knob (init / mmap / munmap /
  * truncation-clamp all read the same value the #define would have
@@ -567,6 +570,7 @@ static const struct option_help option_descs[] = {
 	{ "no-canary-queue",	 0,  "disable the dormant-childop canary queue entirely; the dormant gate is consulted as a static compile-time vector and no canary slots are reserved." },
 	{ "no-cgroup",		 0,  "skip self-cgroup creation entirely (no in-binary memory containment)" },
 	{ "no-chain-warm-start", 0, "skip loading and saving the persisted sequence chain corpus" },
+	{ "chain-resource-typing", 0, "bias chain generation to pair resource producers with consumers using the small fd-family table in sequence.c (default off): off (byte-identical to today; classify hook returns early), shadow (count per-kind chain_restype_produced / chain_restype_would_bias but leave generation identical to off -- pure observation to measure the opportunity), or live (actually override the next chain link with a random consumer of the produced kind, probabilistically so other links stay possible; bumps chain_restype_biased). Per-kind chain_restype_save / chain_restype_replay_win are the productivity signals that decide which families to extend into." },
 	{ "no-cmp-hints-warm-start", 0, "skip loading and saving the persisted kcov CMP-hint pool" },
 	{ "no-kcov-warm-start",	 0,  "skip loading and saving the persisted kcov edge bitmap" },
 	{ "no-startup-isolation", 0,  "skip the parent-side unshare(CLONE_NEWNET|CLONE_NEWNS) + MS_PRIVATE remount that the root-launched fuzzer does in init_pre_fork() (children then take the per-child unshare path). Default off; non-root runs never attempt parent-side isolation regardless." },
@@ -695,6 +699,7 @@ static const struct option longopts[] = {
 	{ "no-kcov-warm-start", no_argument, NULL, 0 },
 	{ "no-cmp-hints-warm-start", no_argument, NULL, 0 },
 	{ "no-chain-warm-start", no_argument, NULL, 0 },
+	{ "chain-resource-typing", required_argument, NULL, 0 },
 	{ "corpus-save-errno-grad-live", no_argument, NULL, 0 },
 	{ "writer-pin-sweep", no_argument, NULL, 0 },
 	{ "writer-pin-stride", required_argument, NULL, 0 },
@@ -928,6 +933,21 @@ static bool parse_cache_options(int opt, const char *name, char *arg)
 
 	if (strcmp("no-chain-warm-start", name) == 0) {
 		no_chain_warm_start = true;
+		return true;
+	}
+
+	if (strcmp("chain-resource-typing", name) == 0) {
+		if (strcmp(arg, "off") == 0) {
+			chain_resource_typing_mode = CHAIN_RESTYPE_MODE_OFF;
+		} else if (strcmp(arg, "shadow") == 0) {
+			chain_resource_typing_mode = CHAIN_RESTYPE_MODE_SHADOW;
+		} else if (strcmp(arg, "live") == 0) {
+			chain_resource_typing_mode = CHAIN_RESTYPE_MODE_LIVE;
+		} else {
+			outputerr("--chain-resource-typing: unknown mode '%s' (expected off, shadow, or live)\n",
+				arg);
+			exit(EXIT_FAILURE);
+		}
 		return true;
 	}
 
