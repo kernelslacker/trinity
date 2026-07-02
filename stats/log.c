@@ -191,11 +191,30 @@ static unsigned long stats_ts_window_delta(unsigned long cur,
  * per-syscall _gained deltas.  Zero-initialised, so the first window's
  * delta equals the level (matching the top-level edges_gained_this_
  * window convention).  Sized by MAX_NR_SYSCALL rather than the active
- * count because entry->number is the stable numeric key we index by. */
+ * count because entry->number is the stable numeric key we index by.
+ *
+ * bucket_bits_real (edges) IS arch-split at the shm side
+ * (per_syscall_diag[nr][arch_ix].bucket_bits_real) so its prev array
+ * carries the arch dim naturally.  The remaining counters are per-nr
+ * only at the shm side (local_pc_edge_count[nr] etc), but the prev
+ * array still carries the arch dim: in biarch mode the same nr
+ * appears twice (once per table walk) and both entries need to see
+ * the same delta.  Snapshotting per-arch lets each walk read a fresh
+ * prev (last window's same-arch snapshot) and emit an identical
+ * delta without a deferred commit pass.  MAX_NR_SYSCALL * 4 fields *
+ * 2 arch * sizeof(unsigned long) = 64 KiB total, all static in the
+ * parent process. */
 static unsigned long stats_ts_prev_per_syscall_edges[MAX_NR_SYSCALL][2];
+static unsigned long stats_ts_prev_per_syscall_local_edges[MAX_NR_SYSCALL][2];
+static unsigned long stats_ts_prev_per_syscall_remote_edges[MAX_NR_SYSCALL][2];
+static unsigned long stats_ts_prev_per_syscall_cmp_injected[MAX_NR_SYSCALL][2];
+static unsigned long stats_ts_prev_per_syscall_cmp_hint_pc_wins[MAX_NR_SYSCALL][2];
 
 /* Walk one syscall table and emit
- * {"nr":N,"edges":E,"edges_gained":G,"kcov_calls":K,"attempted_calls":A}
+ * {"nr":N,"edges":E,"edges_gained":G,"kcov_calls":K,"attempted_calls":A,
+ *  "local_edges":L,"local_edges_gained":LG,"remote_edges":R,
+ *  "remote_edges_gained":RG,"cmp_injected":CI,"cmp_injected_gained":CIG,
+ *  "cmp_hint_pc_wins":CW,"cmp_hint_pc_wins_gained":CWG}
  * entries for each enabled slot whose entry pointer is non-NULL.
  * *first tracks whether the next entry needs a leading comma so the
  * caller can chain the 32-bit and 64-bit tables into a single array
@@ -217,7 +236,22 @@ static unsigned long stats_ts_prev_per_syscall_edges[MAX_NR_SYSCALL][2];
  * at the previous window emit.  Kept alongside the cumulative edges,
  * not in place of it, so consumers that were reading edges keep working
  * and per-slot plateaus are legible without differencing consecutive
- * lines.  Also updates the prev array in-place before returning. */
+ * lines.  Also updates the prev array in-place before returning.
+ *
+ * local_edges / remote_edges partition the per-syscall fresh-edge
+ * count by kcov collection mode (local PC vs KCOV_MODE_REMOTE) so a
+ * run-analysis consumer can tell whether a syscall's late-window edge
+ * burst came from synchronously sampled local coverage or from the
+ * remote-sample path -- the "was this the remote path finally paying
+ * off, or the local path just now waking up" attribution that pairs
+ * with the syscall's edges_gained.  cmp_injected / cmp_hint_pc_wins
+ * partition per-syscall CMP-hint conversion (targets committed to the
+ * syscall's arg surface vs the subset of those hints that drove new
+ * PC coverage on that call), so the CMP-targeting decision can be
+ * routed on real per-syscall conversion rate rather than the flat
+ * cmp_hints_injected total.  All four new counters are cumulative
+ * lifetime totals; the _gained siblings are the per-window deltas
+ * with the same rewind guard as edges_gained. */
 static void stats_timeseries_emit_table(const struct syscalltable *table,
 					unsigned int n, bool do32,
 					bool *first)
@@ -231,6 +265,14 @@ static void stats_timeseries_emit_table(const struct syscalltable *table,
 		unsigned long edges = 0;
 		unsigned long edges_gained = 0;
 		unsigned long kcov_calls = 0;
+		unsigned long local_edges = 0;
+		unsigned long remote_edges = 0;
+		unsigned long cmp_injected = 0;
+		unsigned long cmp_hint_pc_wins = 0;
+		unsigned long local_edges_gained = 0;
+		unsigned long remote_edges_gained = 0;
+		unsigned long cmp_injected_gained = 0;
+		unsigned long cmp_hint_pc_wins_gained = 0;
 
 		if (entry == NULL)
 			continue;
@@ -246,17 +288,51 @@ static void stats_timeseries_emit_table(const struct syscalltable *table,
 			kcov_calls = __atomic_load_n(
 				&kcov_shm->per_syscall_calls[nr],
 				__ATOMIC_RELAXED);
+			local_edges = __atomic_load_n(
+				&kcov_shm->local_pc_edge_count[nr],
+				__ATOMIC_RELAXED);
+			remote_edges = __atomic_load_n(
+				&kcov_shm->remote_pc_edge_count[nr],
+				__ATOMIC_RELAXED);
+			cmp_injected = __atomic_load_n(
+				&kcov_shm->per_syscall_cmp_injected[nr],
+				__ATOMIC_RELAXED);
+			cmp_hint_pc_wins = __atomic_load_n(
+				&kcov_shm->per_syscall_cmp_hint_pc_wins[nr],
+				__ATOMIC_RELAXED);
 		}
 
-		if (nr < MAX_NR_SYSCALL)
+		if (nr < MAX_NR_SYSCALL) {
 			edges_gained = stats_ts_window_delta(
 				edges,
 				&stats_ts_prev_per_syscall_edges[nr][arch_ix]);
+			local_edges_gained = stats_ts_window_delta(
+				local_edges,
+				&stats_ts_prev_per_syscall_local_edges[nr][arch_ix]);
+			remote_edges_gained = stats_ts_window_delta(
+				remote_edges,
+				&stats_ts_prev_per_syscall_remote_edges[nr][arch_ix]);
+			cmp_injected_gained = stats_ts_window_delta(
+				cmp_injected,
+				&stats_ts_prev_per_syscall_cmp_injected[nr][arch_ix]);
+			cmp_hint_pc_wins_gained = stats_ts_window_delta(
+				cmp_hint_pc_wins,
+				&stats_ts_prev_per_syscall_cmp_hint_pc_wins[nr][arch_ix]);
+		}
 
 		fprintf(stats_timeseries_fp,
-			"%s{\"nr\":%u,\"edges\":%lu,\"edges_gained\":%lu,\"kcov_calls\":%lu,\"attempted_calls\":%u}",
+			"%s{\"nr\":%u,\"edges\":%lu,\"edges_gained\":%lu"
+			",\"kcov_calls\":%lu,\"attempted_calls\":%u"
+			",\"local_edges\":%lu,\"local_edges_gained\":%lu"
+			",\"remote_edges\":%lu,\"remote_edges_gained\":%lu"
+			",\"cmp_injected\":%lu,\"cmp_injected_gained\":%lu"
+			",\"cmp_hint_pc_wins\":%lu,\"cmp_hint_pc_wins_gained\":%lu}",
 			*first ? "" : ",", nr, edges, edges_gained,
-			kcov_calls, attempted_calls);
+			kcov_calls, attempted_calls,
+			local_edges, local_edges_gained,
+			remote_edges, remote_edges_gained,
+			cmp_injected, cmp_injected_gained,
+			cmp_hint_pc_wins, cmp_hint_pc_wins_gained);
 		*first = false;
 	}
 }

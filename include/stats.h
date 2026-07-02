@@ -5339,7 +5339,10 @@ void stats_log_drop_in_child(void);
  * cmp-trace truncation levels + deltas, cmp-hint / cmp-hyp inject
  * and conversion levels + deltas, the current plateau hypothesis and
  * intervention mode names, per-arm bandit pulls / reward levels +
- * deltas, and a per-syscall array; close at shutdown; drop_in_child
+ * deltas, and a per-syscall array carrying edges + kcov/attempted
+ * calls plus local_edges / remote_edges (kcov mode split) and
+ * cmp_injected / cmp_hint_pc_wins (CMP-hint conversion), each with a
+ * _gained per-window delta; close at shutdown; drop_in_child
  * closes the inherited fd so a fuzzed write/fchmod can't smash the
  * operator's file.  No-ops when --stats was not passed. */
 void stats_timeseries_open(void);
