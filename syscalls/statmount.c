@@ -6,7 +6,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <linux/mount.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <asm/unistd.h>
@@ -21,6 +20,7 @@
 #include "shm.h"
 #include "trinity.h"
 #include "compat.h"
+#include "kernel/mount.h"
 #include "utils.h"
 
 #if defined(SYS_statmount) || defined(__NR_statmount)
@@ -28,38 +28,6 @@
 #define SYS_statmount __NR_statmount
 #endif
 #define HAVE_SYS_STATMOUNT 1
-#endif
-
-#ifndef LSMT_ROOT
-#define LSMT_ROOT 0xffffffffffffffff
-#endif
-
-#ifndef STATMOUNT_SB_BASIC
-#define STATMOUNT_SB_BASIC		0x00000001U
-#define STATMOUNT_MNT_BASIC		0x00000002U
-#define STATMOUNT_PROPAGATE_FROM	0x00000004U
-#define STATMOUNT_MNT_ROOT		0x00000008U
-#define STATMOUNT_MNT_POINT		0x00000010U
-#define STATMOUNT_FS_TYPE		0x00000020U
-#define STATMOUNT_MNT_NS_ID		0x00000040U
-#define STATMOUNT_MNT_OPTS		0x00000080U
-#define STATMOUNT_FS_SUBTYPE		0x00000100U
-#define STATMOUNT_SB_SOURCE		0x00000200U
-#define STATMOUNT_OPT_ARRAY		0x00000400U
-#define STATMOUNT_OPT_SEC_ARRAY		0x00000800U
-#endif
-/* statmount() param mask bits added in Linux v6.15. */
-#ifndef STATMOUNT_SUPPORTED_MASK
-#define STATMOUNT_SUPPORTED_MASK	0x00001000U
-#endif
-/* statmount() param mask bits added in Linux v7.0. */
-#ifndef STATMOUNT_MNT_UIDMAP
-#define STATMOUNT_MNT_UIDMAP		0x00002000U
-#define STATMOUNT_MNT_GIDMAP		0x00004000U
-#endif
-/* statmount() syscall flags bit added in Linux v7.0. */
-#ifndef STATMOUNT_BY_FD
-#define STATMOUNT_BY_FD			0x00000001U
 #endif
 
 static unsigned long statmount_params[] = {

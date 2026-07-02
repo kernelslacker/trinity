@@ -1,10 +1,10 @@
 /*
  *  SYSCALL_DEFINE2(fsopen, const char __user *, _fs_name, unsigned int, flags)
  */
+#include "kernel/mount.h"
 #include "rnd.h"
 #include "sanitise.h"
 
-#define FSOPEN_CLOEXEC 0x00000001
 static unsigned long fsopen_flags[] = {
 	FSOPEN_CLOEXEC
 };
