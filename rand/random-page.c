@@ -92,6 +92,10 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 {
 	char *p;
 	unsigned int i;
+	/* NUL separator is intentional: it lets this generator emit
+	 * strings with embedded NULs / apparent early truncation, which
+	 * exercises kernel string-parsing paths that assume the first
+	 * NUL is end-of-string.  Do not remove the '\0' entry. */
 	unsigned char separators[] = { ':', ',', '.', ' ', '-', '\0', };
 	unsigned char separator;
 	unsigned int randrange = 10;
