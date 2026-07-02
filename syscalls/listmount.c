@@ -6,7 +6,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <linux/mount.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <asm/unistd.h>
@@ -22,6 +21,7 @@
 #include "shm.h"
 #include "trinity.h"
 #include "compat.h"
+#include "kernel/mount.h"
 #include "utils.h"
 
 #if defined(SYS_listmount) || defined(__NR_listmount)
@@ -29,14 +29,6 @@
 #define SYS_listmount __NR_listmount
 #endif
 #define HAVE_SYS_LISTMOUNT 1
-#endif
-
-#ifndef LISTMOUNT_REVERSE
-#define LISTMOUNT_REVERSE	(1 << 0)
-#endif
-
-#ifndef LSMT_ROOT
-#define LSMT_ROOT 0xffffffffffffffff
 #endif
 
 /*
