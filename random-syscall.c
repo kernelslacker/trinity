@@ -620,7 +620,18 @@ static bool set_syscall_nr_heuristic(struct syscallrecord *rec,
 	 * OFF is a single RELAXED mode load + short-circuit; SHADOW_ONLY
 	 * / COMBINED accumulates the section 4.1 closed-form summand
 	 * with ZERO RNG draws so the live pick stream stays byte-
-	 * identical to a pre-row build for a given seed. */
+	 * identical to a pre-row build for a given seed.
+	 *
+	 * Shadow-vs-live accounting note: the SHADOW note above counts
+	 * pick ATTEMPTS -- it is bumped once here, before the retry:
+	 * loop.  cost_pool_selector_live_note() at the bottom counts
+	 * FINALISES -- it fires once per pick that commits.  On a
+	 * no_syscalls_enabled() early return or a 10k-retry-budget bail
+	 * the pick attempt is charged to shadow but never reaches live,
+	 * so shadow can exceed live_cheap + live_expensive.  Any
+	 * shadow-vs-live expensive-fraction comparison should therefore
+	 * expect a small attempt-vs-finalise gap and not treat it as a
+	 * counting bug. */
 	cost_pool_selector_shadow_note(do32);
 
 retry:
@@ -1010,7 +1021,17 @@ bool set_syscall_nr_random(struct syscallrecord *rec,
 	 * as the matching helper call in set_syscall_nr_heuristic above:
 	 * fires once per pick call (NOT per retry), consumes no RNG, and
 	 * is short-circuit-OFF-fast so the RANDOM arm's default-off pick
-	 * stream is byte-identical to a pre-row build for a given seed. */
+	 * stream is byte-identical to a pre-row build for a given seed.
+	 *
+	 * Same shadow-vs-live accounting caveat as the HEURISTIC arm:
+	 * SHADOW counts pick ATTEMPTS (bumped once, here, before the
+	 * retry: loop) while cost_pool_selector_live_note() counts
+	 * FINALISES (at pick commit).  A no_syscalls_enabled() early
+	 * return or a 10k-retry-budget bail charges the attempt to
+	 * shadow but never reaches live, so shadow can exceed
+	 * live_cheap + live_expensive; a shadow-vs-live expensive-
+	 * fraction comparison should expect that attempt-vs-finalise
+	 * gap. */
 	cost_pool_selector_shadow_note(do32);
 
 retry:
