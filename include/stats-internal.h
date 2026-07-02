@@ -59,6 +59,14 @@ struct stat_category {
  * dump_stats_strategy_summary() block.  Read in stats.c too. */
 #define TOP_SYSCALLS_DUMP_TOPN	5
 
+/* Periodic dump cadence shared by the defense-counter, cost-pool,
+ * top-syscalls, and kcov-cmp periodic rate dumps.  Every consumer
+ * self-rate-limits on this same interval so the parent's tick-driven
+ * rate lines land in a single burst per window.  Also referenced from
+ * breadcrumb_ring.c to keep the corrupt_ptr breadcrumb cadence aligned
+ * with the defense rollup it prints beneath. */
+#define DEFENSE_DUMP_INTERVAL_SEC	600
+
 /* Per-syscall KCOV diag counter selector for kcov_diag_emit_block(). */
 enum kcov_diag_counter {
 	KCOV_DIAG_BUCKET_BITS_REAL,
