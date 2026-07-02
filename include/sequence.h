@@ -204,6 +204,42 @@ bool chain_corpus_load_file(const char *path,
 const char *chain_corpus_default_path(void);
 
 /*
+ * Mid-run snapshot cadence for chain_corpus_maybe_snapshot().  Chain
+ * admits are already rate-limited to one per (reason, syscall_nr) per
+ * rotation window, so the ring grows an order of magnitude slower than
+ * the cmp-hints pool; the generation trigger is scaled down to match.
+ * Snapshots fire only when BOTH 32 newly-admitted chains have
+ * accumulated AND 600s have elapsed since the last save.  Either gate
+ * alone is insufficient -- the generation gate would over-fire during
+ * the initial fill before the ring saturates, and the time gate alone
+ * would keep writing near-identical payloads on a saturated ring where
+ * the per-(reason, nr) cap is holding admits below the generation
+ * threshold.  Hardcoded -- no operator knob, fleet boxes shouldn't
+ * need to retune.
+ */
+#define CHAIN_CORPUS_SNAPSHOT_NEW		32UL
+#define CHAIN_CORPUS_SNAPSHOT_INTERVAL_SEC	600UL
+
+/*
+ * Wire periodic mid-run snapshots of the chain corpus to PATH.
+ * Subsequent chain_corpus_maybe_snapshot() calls become live; a no-op
+ * before this is called.  Path is copied.  Mirrors
+ * cmp_hints_enable_snapshots()'s crash-resilience role -- the
+ * end-of-run save in trinity.c only fires on clean shutdown, so a
+ * kill or crash mid-run would otherwise lose every chain admitted
+ * since the last successful save.
+ */
+void chain_corpus_enable_snapshots(const char *path);
+
+/*
+ * Cheap per-tick gate: writes the snapshot if both triggers have
+ * elapsed since the last successful save, otherwise returns
+ * immediately.  Called from the parent's stats tick alongside the
+ * cmp-hints snapshot.
+ */
+void chain_corpus_maybe_snapshot(void);
+
+/*
  * Snapshot a random saved chain into @out.  Returns true on success
  * (out->len populated, out->steps[] copied), false if the corpus is
  * empty.  The snapshot is intentionally lockless -- see the long
