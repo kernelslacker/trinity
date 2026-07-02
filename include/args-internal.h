@@ -158,3 +158,15 @@ unsigned long gen_arg_itimerspec(struct syscallentry *entry,
 unsigned long gen_arg_timeval(struct syscallentry *entry,
 			      struct syscallrecord *rec,
 			      unsigned int argnum);
+unsigned long gen_arg_nodemask(struct syscallentry *entry,
+			       struct syscallrecord *rec,
+			       unsigned int argnum);
+unsigned long gen_arg_cpumask(struct syscallentry *entry,
+			      struct syscallrecord *rec,
+			      unsigned int argnum);
+unsigned long gen_arg_paired_length(struct syscallentry *entry,
+				    struct syscallrecord *rec,
+				    unsigned int argnum);
+unsigned long gen_arg_socketinfo(struct syscallentry *entry,
+				 struct syscallrecord *rec,
+				 unsigned int argnum);
