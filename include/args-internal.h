@@ -16,6 +16,7 @@
 #include <stdint.h>
 
 #include "kcov.h"		/* enum cmp_hint_callsite */
+#include "struct_catalog.h"	/* struct struct_field, struct union_variant */
 #include "syscall.h"		/* struct syscallentry, struct syscallrecord, enum argtype */
 
 /*
@@ -170,3 +171,46 @@ unsigned long gen_arg_paired_length(struct syscallentry *entry,
 unsigned long gen_arg_socketinfo(struct syscallentry *entry,
 				 struct syscallrecord *rec,
 				 unsigned int argnum);
+
+/*
+ * Struct-field fill / mutate / scrub caps shared across the args/
+ * cluster.  STRUCT_FILL_MAX_FIELDS bounds the per-descriptor loop in
+ * struct_fill_passes and also seeds STRUCT_MUTATE_MAX_CANDIDATES in
+ * the mutator TU; PTR_ARRAY_DEFAULT_MAX caps FT_PTR_ARRAY element
+ * counts in both struct_fill_passes and the scrub walker's
+ * FT_PTR_ARRAY iterator.
+ */
+#define STRUCT_FILL_MAX_FIELDS	64U
+#define PTR_ARRAY_DEFAULT_MAX	16U
+
+/*
+ * Field read/write primitives.  Definitions live in args/struct_fill.c.
+ * write_field_uint plants a 1/2/4/8-byte unsigned value into a field
+ * slot at its natural width (wider fields left untouched);
+ * read_field_uint zero-extends the raw bytes back into a uint64_t
+ * (wider fields return 0).  find_field_index_in resolves a sibling
+ * FT_LEN_* / FT_PTR_* by name against the same fields[] scope the
+ * fill path walks -- returns -1 on unknown name or NULL fields[].
+ */
+void write_field_uint(unsigned char *buf, const struct struct_field *f,
+		      uint64_t val);
+uint64_t read_field_uint(const unsigned char *buf,
+			 const struct struct_field *f);
+int find_field_index_in(const struct struct_field *fields,
+			unsigned int num_fields, const char *name);
+
+/*
+ * Schema-aware struct fill helpers.  struct_fill_passes runs the
+ * three-pass scalar / pointer / length fill over a fields[] array;
+ * struct_variant_overlay_nested handles the depth-1 nested overlay
+ * (base -> matched nested_variant) after the outer variant fill
+ * lands.  Definitions live in args/struct_fill.c; consumed by
+ * struct_field_fill_schema_aware in generate-args.c.
+ */
+void struct_fill_passes(unsigned char *buf, unsigned int size,
+			const struct struct_field *fields,
+			unsigned int n,
+			struct syscallrecord *rec);
+void struct_variant_overlay_nested(unsigned char *buf, unsigned int size,
+				   const struct union_variant *variant,
+				   struct syscallrecord *rec);
