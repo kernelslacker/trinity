@@ -118,6 +118,7 @@
 #include "childops-netlink.h"
 #include "childops-util.h"
 #include "jitter.h"
+#include "kernel/if_ether.h"
 #include "name-pool.h"
 #include "random.h"
 #include "shm.h"
@@ -159,10 +160,6 @@
 #ifndef RTM_NEWQDISC
 #define RTM_NEWQDISC		36
 #define RTM_NEWTFILTER		44
-#endif
-
-#ifndef ETH_P_ALL
-#define ETH_P_ALL		0x0003
 #endif
 
 #ifndef TCM_IFINDEX_MAGIC_BLOCK

@@ -44,6 +44,7 @@
 
 #include "childops-netlink.h"
 #include "compat.h"
+#include "kernel/if_ether.h"
 
 /*
  * UAPI fallbacks.  pkt_sched.h / pkt_cls.h on stripped sysroots may
@@ -76,10 +77,6 @@
 #define RTM_DELTCLASS		41
 #define RTM_NEWTFILTER		44
 #define RTM_DELTFILTER		45
-#endif
-
-#ifndef ETH_P_ALL
-#define ETH_P_ALL		0x0003
 #endif
 
 /* Reasonable ceiling on a single rtnl message + payload.  The
