@@ -3,17 +3,12 @@
  *                const int, ruleset_fd, const enum landlock_rule_type, rule_type,
  *                const void __user *const, rule_attr, const __u32, flags)
  */
-#include <linux/landlock.h>
 #include <string.h>
 #include "fd.h"
+#include "kernel/landlock.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
-#include "compat.h"
-
-#ifndef LANDLOCK_ADD_RULE_QUIET
-#define LANDLOCK_ADD_RULE_QUIET		(1U << 0)
-#endif
 
 enum landlock_rule_type_compat {
 	LANDLOCK_RULE_PATH_BENEATH_COMPAT = 1,
