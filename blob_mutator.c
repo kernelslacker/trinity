@@ -16,8 +16,11 @@
  * BLOB_HAVOC_MAX_OPS), CMPDICT (HAVOC plus a bounded buffer-redqueen
  * pass capped at BLOB_CMPDICT_MAX_INSERTS: each iteration coin-flips
  * between a built-in well-known-magic table and the learned per-nr
- * cmp-hint pool via cmp_hints_try_get, splatting the drawn value into
- * the buffer at a random offset with a little-endian splat).
+ * cmp-hint pool via cmp_hints_try_get, then applies one of four
+ * splat forms -- plain little-endian in the majority, plus three
+ * transform arms {big-endian, value+1, value-1} for endian and
+ * boundary coverage -- and writes the result into the buffer at a
+ * random offset).
  */
 #include <stdbool.h>
 #include <stddef.h>
@@ -205,10 +208,104 @@ static const struct blob_static_magic blob_static_magics[] = {
 };
 
 /*
+ * Splat-form arms drawn per iteration inside the CMPDICT loop.  The
+ * majority draw stays plain little-endian; the three transform arms
+ * are additive coverage for the {LE-only, exact-value} blind spot the
+ * baseline splat has:
+ *
+ *   BE          -- byte-reverse to width.  The heavy netlink / socket
+ *                  / on-wire surface trinity fuzzes checks big-endian
+ *                  fields (family/version u16, port u16, netlink
+ *                  attribute headers), so a raw LE splat of an ORed-
+ *                  in-from-the-cmp-pool constant can never satisfy a
+ *                  BE compare.
+ *   PLUS_ONE    -- (value + 1) at width, wrapping.  Off-by-one over
+ *                  a length/size/offset constant is a well-known
+ *                  boundary that the exact splat misses by
+ *                  construction.
+ *   MINUS_ONE   -- (value - 1) at width, wrapping.  Symmetric
+ *                  boundary neighbour; on unsigned constants that
+ *                  hit zero this wraps to the width-full UINT_MAX
+ *                  which is itself an interesting boundary value.
+ *
+ * A width-1 BE splat is arithmetically the same as the LE-plain
+ * splat; it is still selected and still bumps the transform counter
+ * so the arm-selection distribution stays observable.
+ */
+enum blob_splat_form {
+	BLOB_SPLAT_LE_PLAIN,
+	BLOB_SPLAT_BE,
+	BLOB_SPLAT_PLUS_ONE,
+	BLOB_SPLAT_MINUS_ONE,
+};
+
+/*
+ * Draw one splat form for this iteration.  Eight-slot roll keeps
+ * plain LE the majority arm (5/8 = 62.5%) with the three transform
+ * arms sharing the remaining 3/8 (12.5% each).  The LE-plain slot
+ * count is a deliberate choice: transforms are additive coverage,
+ * not a replacement, and the well-known-magic table entries in
+ * blob_static_magics[] are curated to satisfy the on-disk check
+ * under an LE splat -- shifting the majority away from plain would
+ * regress the static-magic hit-rate for a marginal gain elsewhere.
+ */
+static enum blob_splat_form pick_splat_form(void)
+{
+	switch (rnd_modulo_u32(8)) {
+	case 5:  return BLOB_SPLAT_BE;
+	case 6:  return BLOB_SPLAT_PLUS_ONE;
+	case 7:  return BLOB_SPLAT_MINUS_ONE;
+	default: return BLOB_SPLAT_LE_PLAIN;
+	}
+}
+
+/*
+ * Width-bounded mask so ±1 arithmetic wraps in the operand size and
+ * the BE arm ignores the upper bytes of an over-wide hint.  Width is
+ * always one of {1, 2, 4, 8} on this path; width == 8 dodges the
+ * 1<<64 undefined shift by returning all-ones directly.
+ */
+static uint64_t splat_width_mask(unsigned int width)
+{
+	if (width >= 8)
+		return ~(uint64_t) 0;
+	return (((uint64_t) 1) << (width * 8u)) - 1u;
+}
+
+/* Byte-reverse the low `width` bytes of v; upper bytes are dropped. */
+static uint64_t splat_bswap(uint64_t v, unsigned int width)
+{
+	switch (width) {
+	case 2:  return (uint64_t) __builtin_bswap16((uint16_t) v);
+	case 4:  return (uint64_t) __builtin_bswap32((uint32_t) v);
+	case 8:  return __builtin_bswap64(v);
+	default: return v & 0xffu;
+	}
+}
+
+static uint64_t apply_splat_form(uint64_t v, unsigned int width,
+				 enum blob_splat_form form)
+{
+	uint64_t mask = splat_width_mask(width);
+
+	switch (form) {
+	case BLOB_SPLAT_BE:
+		return splat_bswap(v & mask, width);
+	case BLOB_SPLAT_PLUS_ONE:
+		return (v + 1u) & mask;
+	case BLOB_SPLAT_MINUS_ONE:
+		return (v - 1u) & mask;
+	case BLOB_SPLAT_LE_PLAIN:
+	default:
+		return v & mask;
+	}
+}
+
+/*
  * CMPDICT arm: splat one bounded cmp-source into the buffer per
- * iteration, at a random offset, little-endian.  Insert count is
- * drawn from [1, BLOB_CMPDICT_MAX_INSERTS] so the worst case is
- * bounded independent of len and of how rich the source is.
+ * iteration, at a random offset.  Insert count is drawn from
+ * [1, BLOB_CMPDICT_MAX_INSERTS] so the worst case is bounded
+ * independent of len and of how rich the source is.
  *
  * Two sources.  Each iteration coin-flips (rnd_u32() & 1u) between
  * (a) the built-in blob_static_magics[] table -- one uniformly-picked
@@ -221,6 +318,17 @@ static const struct blob_static_magic blob_static_magics[] = {
  * counter so both blob_dict_inserts and blob_static_magic_inserts
  * measure committed splats, not attempts.
  *
+ * Every commit then draws one splat form via pick_splat_form(): the
+ * majority arm is plain little-endian (matches the baseline that
+ * blob_static_magics[] is curated against); the minority arms are
+ * big-endian byte-swap and value ± 1 at width for endian coverage
+ * on wire-format surface and off-by-one boundary neighbours.  The
+ * transform is applied AFTER the width ladder resolves, so the
+ * bounds contract (pos + width <= len) is unaffected.  A transform
+ * commit bumps blob_dict_transform_inserts in addition to the
+ * source-side counter, giving the transform-vs-plain ratio without
+ * disturbing the existing static-vs-learned ratio.
+ *
  * Every write is clamped so pos + width <= len; on the learned arm,
  * widths that do not fit in len degrade down the {8, 4, 2, 1} ladder
  * until they do (a len of 0 is rejected by the caller, so the worst
@@ -228,21 +336,26 @@ static const struct blob_static_magic blob_static_magics[] = {
  * static arm does not degrade because the baked width is part of the
  * magic -- a truncated header magic would not satisfy the pre-parser
  * check the entry exists to satisfy.  Returns the number of committed
- * learned-pool inserts through the return value and the number of
- * committed static-table inserts through *static_committed_out so
- * the caller can credit blob_dict_inserts and
- * blob_static_magic_inserts respectively.
+ * learned-pool inserts through the return value, the number of
+ * committed static-table inserts through *static_committed_out, and
+ * the count of committed splats that used a non-plain transform
+ * arm (across both sources) through *transform_committed_out so the
+ * caller can credit blob_dict_inserts, blob_static_magic_inserts,
+ * and blob_dict_transform_inserts respectively.
  */
 static unsigned int blob_cmpdict(unsigned char *buf, size_t len,
 				 unsigned int nr, bool do32,
-				 unsigned int *static_committed_out)
+				 unsigned int *static_committed_out,
+				 unsigned int *transform_committed_out)
 {
 	unsigned int n_inserts;
 	unsigned int committed = 0;
 	unsigned int static_committed = 0;
+	unsigned int transform_committed = 0;
 	unsigned int i;
 
 	*static_committed_out = 0;
+	*transform_committed_out = 0;
 	if (len == 0)
 		return 0;
 
@@ -250,9 +363,11 @@ static unsigned int blob_cmpdict(unsigned char *buf, size_t len,
 
 	for (i = 0; i < n_inserts; i++) {
 		unsigned long hint;
+		uint64_t v;
 		unsigned int width;
 		size_t pos;
 		size_t max_pos;
+		enum blob_splat_form form;
 		bool from_static = false;
 
 		/* Source coin-flip.  When the static arm is picked and
@@ -300,28 +415,30 @@ static unsigned int blob_cmpdict(unsigned char *buf, size_t len,
 		else
 			pos = (size_t) rnd_modulo_u32((uint32_t) max_pos + 1u);
 
-		/* Little-endian splat.  Safe by construction: width is
-		 * <= len and pos <= len - width, so pos + width <= len. */
+		/* Apply the splat-form transform (plain LE in the
+		 * majority, else BE / ±1 at width).  Transform is
+		 * value-only; bounds are already resolved above. */
+		form = pick_splat_form();
+		v = apply_splat_form((uint64_t) hint, width, form);
+
+		/* Little-endian splat of the (possibly transformed) value.
+		 * Safe by construction: width is <= len and pos <=
+		 * len - width, so pos + width <= len. */
 		switch (width) {
 		case 1:
-			buf[pos] = (unsigned char) (hint & 0xffu);
+			buf[pos] = (unsigned char) (v & 0xffu);
 			break;
-		case 2: {
-			uint16_t v = (uint16_t) hint;
+		case 2:
 			buf[pos]     = (unsigned char) (v & 0xffu);
 			buf[pos + 1] = (unsigned char) ((v >> 8) & 0xffu);
 			break;
-		}
-		case 4: {
-			uint32_t v = (uint32_t) hint;
+		case 4:
 			buf[pos]     = (unsigned char) (v & 0xffu);
 			buf[pos + 1] = (unsigned char) ((v >> 8) & 0xffu);
 			buf[pos + 2] = (unsigned char) ((v >> 16) & 0xffu);
 			buf[pos + 3] = (unsigned char) ((v >> 24) & 0xffu);
 			break;
-		}
-		case 8: {
-			uint64_t v = (uint64_t) hint;
+		case 8:
 			buf[pos]     = (unsigned char) (v & 0xffu);
 			buf[pos + 1] = (unsigned char) ((v >> 8) & 0xffu);
 			buf[pos + 2] = (unsigned char) ((v >> 16) & 0xffu);
@@ -332,13 +449,15 @@ static unsigned int blob_cmpdict(unsigned char *buf, size_t len,
 			buf[pos + 7] = (unsigned char) ((v >> 56) & 0xffu);
 			break;
 		}
-		}
 		if (from_static)
 			static_committed++;
 		else
 			committed++;
+		if (form != BLOB_SPLAT_LE_PLAIN)
+			transform_committed++;
 	}
 	*static_committed_out = static_committed;
+	*transform_committed_out = transform_committed;
 	return committed;
 }
 
@@ -381,8 +500,10 @@ void blob_fill(unsigned char *buf, size_t len, unsigned int nr, bool do32)
 
 	if (mode == BLOB_MUTATOR_CMPDICT) {
 		unsigned int static_inserts = 0;
+		unsigned int transform_inserts = 0;
 		unsigned int inserts = blob_cmpdict(buf, len, nr, do32,
-						    &static_inserts);
+						    &static_inserts,
+						    &transform_inserts);
 
 		if (inserts > 0)
 			__atomic_fetch_add(&shm->stats.blob_dict_inserts,
@@ -391,6 +512,10 @@ void blob_fill(unsigned char *buf, size_t len, unsigned int nr, bool do32)
 		if (static_inserts > 0)
 			__atomic_fetch_add(&shm->stats.blob_static_magic_inserts,
 					   (unsigned long) static_inserts,
+					   __ATOMIC_RELAXED);
+		if (transform_inserts > 0)
+			__atomic_fetch_add(&shm->stats.blob_dict_transform_inserts,
+					   (unsigned long) transform_inserts,
 					   __ATOMIC_RELAXED);
 	}
 }
