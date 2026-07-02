@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # variant-address-walk: verify both the static reachability walker
-# (struct_desc_has_address_field() in struct_catalog/catalog.c) and the
+# (struct_desc_has_address_field() in struct_catalog/address.c) and the
 # runtime nested-address scrub (scrub_struct_addresses() in
 # generate-args.c) traverse desc->variants[] / variant->base /
 # variant->nested_variants[] -- not just desc->fields[].
@@ -29,7 +29,7 @@ NAME="variant-address-walk"
 ROOT="${REPO_ROOT:-$(pwd)}"
 SCRUB="$ROOT/args/scrub.c"
 MUT="$ROOT/args/struct_mutate.c"
-CAT="$ROOT/struct_catalog/catalog.c"
+CAT="$ROOT/struct_catalog/address.c"
 
 fail() {
 	echo "FAIL: $NAME: $1" >&2
@@ -73,7 +73,7 @@ want_cat=(
 for needle in "${want_cat[@]}"; do
 	checked=$((checked + 1))
 	if ! grep_in "$cat_body" "$needle"; then
-		problems+=("struct_catalog/catalog.c reachability helper missing '$needle' traversal")
+		problems+=("struct_catalog/address.c reachability helper missing '$needle' traversal")
 	fi
 done
 
