@@ -5333,10 +5333,15 @@ void stats_log_drop_in_child(void);
 
 /* Per-syscall timeseries log gated on --stats.  Open writes one JSONL
  * file in the operator's launch CWD (stats-timeseries-<epoch>.jsonl);
- * emit_window appends one record per print_stats() tick; close at
- * shutdown; drop_in_child closes the inherited fd so a fuzzed
- * write/fchmod can't smash the operator's file.  No-ops when --stats
- * was not passed. */
+ * emit_window appends one record per print_stats() tick carrying the
+ * op_count, the distinct-edge and bucket-bit totals + their per-window
+ * deltas, warm-loaded baselines and run-owned edge gains, trace /
+ * cmp-trace truncation levels + deltas, cmp-hint / cmp-hyp inject
+ * and conversion levels + deltas, the current plateau hypothesis and
+ * intervention mode names, per-arm bandit pulls / reward levels +
+ * deltas, and a per-syscall array; close at shutdown; drop_in_child
+ * closes the inherited fd so a fuzzed write/fchmod can't smash the
+ * operator's file.  No-ops when --stats was not passed. */
 void stats_timeseries_open(void);
 void stats_timeseries_close(void);
 void stats_timeseries_emit_window(unsigned long op_count);

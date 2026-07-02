@@ -45,6 +45,7 @@
 #include "stats.h"
 #include "stats-internal.h"
 #include "stats_ring.h"
+#include "strategy.h"
 #include "syscall.h"
 #include "tables.h"
 #include "taint.h"
@@ -171,11 +172,26 @@ void stats_timeseries_drop_in_child(void)
 	stats_timeseries_fp = NULL;
 }
 
-/* Previous window's edge counts, per (nr, arch), for the per-syscall
- * edges_gained delta.  Zero-initialised, so the first window's delta
- * equals the level (matching the top-level edges_gained_this_window
- * convention).  Sized by MAX_NR_SYSCALL rather than the active count
- * because entry->number is the stable numeric key we index by. */
+/* Rewind-guarded window delta over a monotonic counter.  Common shape
+ * repeated for every _gained / _delta field the emit surfaces: current
+ * minus previously snapshotted, snapshot the current into prev, guard
+ * against a rewound source counter (bounded shm counter, resume-from-
+ * checkpoint, etc.) so we never emit a wrap-around negative-as-huge
+ * delta. */
+static unsigned long stats_ts_window_delta(unsigned long cur,
+					   unsigned long *prev)
+{
+	unsigned long delta = cur >= *prev ? cur - *prev : 0;
+
+	*prev = cur;
+	return delta;
+}
+
+/* Previous window's per-syscall counters, per (nr, arch), for the
+ * per-syscall _gained deltas.  Zero-initialised, so the first window's
+ * delta equals the level (matching the top-level edges_gained_this_
+ * window convention).  Sized by MAX_NR_SYSCALL rather than the active
+ * count because entry->number is the stable numeric key we index by. */
 static unsigned long stats_ts_prev_per_syscall_edges[MAX_NR_SYSCALL][2];
 
 /* Walk one syscall table and emit
@@ -232,16 +248,10 @@ static void stats_timeseries_emit_table(const struct syscalltable *table,
 				__ATOMIC_RELAXED);
 		}
 
-		if (nr < MAX_NR_SYSCALL) {
-			unsigned long prev = stats_ts_prev_per_syscall_edges[nr][arch_ix];
-
-			/* Guard against a rewound counter (bounded shm
-			 * counter, resume-from-checkpoint, etc.) so we
-			 * never emit a wrap-around negative-as-huge
-			 * delta. */
-			edges_gained = edges >= prev ? edges - prev : 0;
-			stats_ts_prev_per_syscall_edges[nr][arch_ix] = edges;
-		}
+		if (nr < MAX_NR_SYSCALL)
+			edges_gained = stats_ts_window_delta(
+				edges,
+				&stats_ts_prev_per_syscall_edges[nr][arch_ix]);
 
 		fprintf(stats_timeseries_fp,
 			"%s{\"nr\":%u,\"edges\":%lu,\"edges_gained\":%lu,\"kcov_calls\":%lu,\"attempted_calls\":%u}",
@@ -258,27 +268,201 @@ void stats_timeseries_emit_window(unsigned long op_count)
 	 * first window's delta equals the level (a plateau consumer
 	 * gets a real first value instead of a phantom zero). */
 	static unsigned long prev_edges_total = 0;
+	/* Bucket-bit sibling of prev_edges_total; kcov_shm->edges_found
+	 * grows with bucket churn on already-known edges so its delta
+	 * stays live even when distinct edges have plateaued -- this is
+	 * the "cmp is still rising while pc is flat" signal the plateau
+	 * classifier reads from strategy_plateau_hypothesis_check(). */
+	static unsigned long prev_edges_found_total = 0;
+	/* Trace / cmp-trace truncation snapshots.  Level tells the
+	 * operator how many collect calls have ever hit the buffer cap;
+	 * the delta partitioned per-window is the decision-relevant
+	 * signal (a burst of truncations concentrated in the same
+	 * window as a coverage plateau is the smoking gun for
+	 * KCOV_TRACE_SIZE / KCOV_CMP_BUFFER_SIZE undersizing). */
+	static unsigned long prev_trace_truncated = 0;
+	static unsigned long prev_cmp_trace_truncated = 0;
+	/* CMP-hint / CMP-hyp inject + conversion snapshots.  A window
+	 * where injected rose but consumed/wins did not is a
+	 * conversion-side plateau (targets landed but drove no new
+	 * coverage); a window where injected fell is a supply-side
+	 * plateau (nothing to try).  Kept as level+delta so run-analysis
+	 * can plot both without differencing consecutive lines. */
+	static unsigned long prev_cmp_hints_injected = 0;
+	static unsigned long prev_cmp_hints_consumed = 0;
+	static unsigned long prev_cmp_hint_wins = 0;
+	static unsigned long prev_cmp_hyp_live_injected = 0;
+	static unsigned long prev_cmp_hyp_consumed = 0;
+	/* Per-arm snapshots for the by_strategy block.  NR_STRATEGIES
+	 * is a compile-time constant so these live as fixed-width arrays
+	 * next to the top-level scalars rather than in shm. */
+	static unsigned long prev_bandit_pulls[NR_STRATEGIES];
+	static unsigned long prev_bandit_reward_calls[NR_STRATEGIES];
+	static unsigned long prev_bandit_reward_pc_edge_count[NR_STRATEGIES];
+
 	unsigned long edges_total = 0;
 	unsigned long edges_gained_this_window = 0;
+	unsigned long edges_found_total = 0;
+	unsigned long edges_found_gained = 0;
+	unsigned long edges_warm_loaded = 0;
+	unsigned long distinct_edges_warm_loaded = 0;
+	unsigned long trace_truncated = 0;
+	unsigned long cmp_trace_truncated = 0;
+	unsigned long cmp_hints_injected = 0;
+	unsigned long cmp_hints_consumed = 0;
+	unsigned long cmp_hint_wins = 0;
+	unsigned long cmp_hyp_live_injected = 0;
+	unsigned long cmp_hyp_consumed = 0;
+	int plateau_hypothesis = 0;
+	int intervention_mode = 0;
 	bool first = true;
+	int i;
 
 	if (stats_timeseries_fp == NULL)
 		return;
 
-	if (kcov_shm != NULL)
+	if (kcov_shm != NULL) {
 		edges_total = __atomic_load_n(&kcov_shm->distinct_edges,
 					      __ATOMIC_RELAXED);
+		edges_found_total = __atomic_load_n(&kcov_shm->edges_found,
+						    __ATOMIC_RELAXED);
+		edges_warm_loaded = __atomic_load_n(
+			&kcov_shm->edges_warm_loaded, __ATOMIC_RELAXED);
+		distinct_edges_warm_loaded = __atomic_load_n(
+			&kcov_shm->distinct_edges_warm_loaded,
+			__ATOMIC_RELAXED);
+		trace_truncated = __atomic_load_n(&kcov_shm->trace_truncated,
+						  __ATOMIC_RELAXED);
+		cmp_trace_truncated = __atomic_load_n(
+			&kcov_shm->cmp_trace_truncated, __ATOMIC_RELAXED);
+		cmp_hints_injected = __atomic_load_n(
+			&kcov_shm->cmp_hints_injected, __ATOMIC_RELAXED);
+		cmp_hints_consumed = __atomic_load_n(
+			&kcov_shm->cmp_hints_consumed, __ATOMIC_RELAXED);
+		cmp_hint_wins = __atomic_load_n(&kcov_shm->cmp_hint_wins,
+						__ATOMIC_RELAXED);
+		cmp_hyp_live_injected = __atomic_load_n(
+			&kcov_shm->cmp_hyp_live_injected, __ATOMIC_RELAXED);
+		cmp_hyp_consumed = __atomic_load_n(
+			&kcov_shm->cmp_hyp_consumed, __ATOMIC_RELAXED);
+	}
 
-	/* Guard against a rewound counter for the same reason as the
-	 * per-syscall path above. */
-	edges_gained_this_window = edges_total >= prev_edges_total
-		? edges_total - prev_edges_total
-		: 0;
-	prev_edges_total = edges_total;
+	if (shm != NULL) {
+		plateau_hypothesis = __atomic_load_n(
+			&shm->plateau_current_hypothesis, __ATOMIC_RELAXED);
+		intervention_mode = __atomic_load_n(
+			&shm->plateau_intervention_mode_current,
+			__ATOMIC_RELAXED);
+	}
+
+	edges_gained_this_window = stats_ts_window_delta(edges_total,
+							 &prev_edges_total);
+	edges_found_gained = stats_ts_window_delta(edges_found_total,
+						   &prev_edges_found_total);
+
+	/* Head of the record.  Order chosen so existing consumers
+	 * reading the first three fields keep working; new fields
+	 * append. */
+	fprintf(stats_timeseries_fp,
+		"{\"t\":%lu,\"edges_total\":%lu,\"edges_gained_this_window\":%lu",
+		op_count, edges_total, edges_gained_this_window);
+
+	/* Bucket-bit sibling + warm-load baselines + run-owned deltas.
+	 * edges_run_gained and edges_found_run_gained let the first
+	 * window's line be interpreted as "gained since this run
+	 * started" instead of the whole warm-loaded corpus. */
+	fprintf(stats_timeseries_fp,
+		",\"edges_found_total\":%lu,\"edges_found_gained\":%lu"
+		",\"edges_warm_loaded\":%lu,\"distinct_edges_warm_loaded\":%lu"
+		",\"edges_run_gained\":%lu,\"edges_found_run_gained\":%lu",
+		edges_found_total, edges_found_gained,
+		edges_warm_loaded, distinct_edges_warm_loaded,
+		edges_total >= distinct_edges_warm_loaded
+			? edges_total - distinct_edges_warm_loaded : 0,
+		edges_found_total >= edges_warm_loaded
+			? edges_found_total - edges_warm_loaded : 0);
 
 	fprintf(stats_timeseries_fp,
-		"{\"t\":%lu,\"edges_total\":%lu,\"edges_gained_this_window\":%lu,\"per_syscall\":[",
-		op_count, edges_total, edges_gained_this_window);
+		",\"trace_truncated\":%lu,\"trace_truncated_delta\":%lu"
+		",\"cmp_trace_truncated\":%lu,\"cmp_trace_truncated_delta\":%lu",
+		trace_truncated,
+		stats_ts_window_delta(trace_truncated, &prev_trace_truncated),
+		cmp_trace_truncated,
+		stats_ts_window_delta(cmp_trace_truncated,
+				      &prev_cmp_trace_truncated));
+
+	fprintf(stats_timeseries_fp,
+		",\"cmp_hints_injected\":%lu,\"cmp_hints_injected_delta\":%lu"
+		",\"cmp_hints_consumed\":%lu,\"cmp_hints_consumed_delta\":%lu"
+		",\"cmp_hint_wins\":%lu,\"cmp_hint_wins_delta\":%lu"
+		",\"cmp_hyp_live_injected\":%lu,\"cmp_hyp_live_injected_delta\":%lu"
+		",\"cmp_hyp_consumed\":%lu,\"cmp_hyp_consumed_delta\":%lu",
+		cmp_hints_injected,
+		stats_ts_window_delta(cmp_hints_injected,
+				      &prev_cmp_hints_injected),
+		cmp_hints_consumed,
+		stats_ts_window_delta(cmp_hints_consumed,
+				      &prev_cmp_hints_consumed),
+		cmp_hint_wins,
+		stats_ts_window_delta(cmp_hint_wins, &prev_cmp_hint_wins),
+		cmp_hyp_live_injected,
+		stats_ts_window_delta(cmp_hyp_live_injected,
+				      &prev_cmp_hyp_live_injected),
+		cmp_hyp_consumed,
+		stats_ts_window_delta(cmp_hyp_consumed,
+				      &prev_cmp_hyp_consumed));
+
+	/* Plateau classifier hypothesis + the current intervention mode
+	 * the picker is running.  Emitted as strings via the existing
+	 * name accessors so a consumer does not need to link against the
+	 * enums.  Both fall back to their zeroth entry when shm is not
+	 * mapped, which matches the picker's runtime behaviour. */
+	fprintf(stats_timeseries_fp,
+		",\"plateau_hypothesis\":\"%s\","
+		"\"plateau_intervention_mode\":\"%s\"",
+		strategy_plateau_hypothesis_name(plateau_hypothesis),
+		plateau_intervention_mode_name(intervention_mode));
+
+	/* Per-arm learner state.  Fixed-width array indexed by
+	 * enum strategy; each element carries the lifetime level and
+	 * the per-window delta for the three parallel reward series
+	 * the picker reads.  This is the "which arm just got the wins
+	 * this window" attribution that pc_edge_calls_by_strategy
+	 * would otherwise require joining stats.json for. */
+	fputs(",\"by_strategy\":[", stats_timeseries_fp);
+	for (i = 0; i < NR_STRATEGIES; i++) {
+		unsigned long pulls = 0;
+		unsigned long reward_calls = 0;
+		unsigned long reward_pc_edges = 0;
+
+		if (shm != NULL) {
+			pulls = __atomic_load_n(&shm->bandit_pulls[i],
+						__ATOMIC_RELAXED);
+			reward_calls = __atomic_load_n(
+				&shm->bandit_reward_calls[i],
+				__ATOMIC_RELAXED);
+			reward_pc_edges = __atomic_load_n(
+				&shm->bandit_reward_pc_edge_count[i],
+				__ATOMIC_RELAXED);
+		}
+		fprintf(stats_timeseries_fp,
+			"%s{\"strategy\":%d,\"pulls\":%lu,\"pulls_delta\":%lu"
+			",\"reward_calls\":%lu,\"reward_calls_delta\":%lu"
+			",\"reward_pc_edges\":%lu,\"reward_pc_edges_delta\":%lu}",
+			i == 0 ? "" : ",", i,
+			pulls,
+			stats_ts_window_delta(pulls, &prev_bandit_pulls[i]),
+			reward_calls,
+			stats_ts_window_delta(reward_calls,
+					      &prev_bandit_reward_calls[i]),
+			reward_pc_edges,
+			stats_ts_window_delta(
+				reward_pc_edges,
+				&prev_bandit_reward_pc_edge_count[i]));
+	}
+	fputs("]", stats_timeseries_fp);
+
+	fputs(",\"per_syscall\":[", stats_timeseries_fp);
 
 	if (biarch == true) {
 		stats_timeseries_emit_table(syscalls_64bit,
