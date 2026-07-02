@@ -3,7 +3,7 @@
 # variant-address-walk: verify both the static reachability walker
 # (struct_desc_has_address_field() in struct_catalog/address.c) and the
 # runtime nested-address scrub (scrub_struct_addresses() in
-# generate-args.c) traverse desc->variants[] / variant->base /
+# args/generate-args.c) traverse desc->variants[] / variant->base /
 # variant->nested_variants[] -- not just desc->fields[].
 #
 # Background: scrub_struct_addresses() relocates any FT_ADDRESS field
