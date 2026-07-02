@@ -2,20 +2,13 @@
 #include <netinet/in.h>
 #include <unistd.h>
 #include <errno.h>
-#include <linux/rxrpc.h>
 #include <string.h>
 #include "net.h"
 #include "random.h"
 #include "socket-family-grammar.h"
 #include "utils.h"
-#include "compat.h"
+#include "kernel/rxrpc.h"
 #include "rnd.h"
-
-#define SOL_RXRPC 272
-
-#ifndef RXRPC_MANAGE_RESPONSE
-#define RXRPC_MANAGE_RESPONSE 7
-#endif
 
 static const unsigned int rxrpc_opts[] = {
 	RXRPC_MIN_SECURITY_LEVEL,
