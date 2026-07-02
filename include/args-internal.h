@@ -143,3 +143,18 @@ unsigned long gen_arg_xattr_name(struct syscallentry *entry,
 unsigned long gen_arg_fstype_name(struct syscallentry *entry,
 				  struct syscallrecord *rec,
 				  unsigned int argnum);
+unsigned long gen_arg_timespec(struct syscallentry *entry,
+			       struct syscallrecord *rec,
+			       unsigned int argnum);
+unsigned long gen_arg_buf_sized(struct syscallentry *entry,
+				struct syscallrecord *rec,
+				unsigned int argnum);
+unsigned long gen_arg_itimerval(struct syscallentry *entry,
+				struct syscallrecord *rec,
+				unsigned int argnum);
+unsigned long gen_arg_itimerspec(struct syscallentry *entry,
+				 struct syscallrecord *rec,
+				 unsigned int argnum);
+unsigned long gen_arg_timeval(struct syscallentry *entry,
+			      struct syscallrecord *rec,
+			      unsigned int argnum);
