@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # perf-event-attr-catalog: verify the perf_event_attr field table in
-# struct_catalog.c carries the expected (field -> tag) annotations.
+# struct_catalog/catalog.c carries the expected (field -> tag) annotations.
 #
 # Background: sanitise_perf_event_open() in syscalls/perf_event_open.c
 # hand-rolls the live perf_event_attr payload via pick_perf_tuple() and
@@ -21,7 +21,7 @@ set -u
 NAME="perf-event-attr-catalog"
 ROOT="${REPO_ROOT:-$(pwd)}"
 SRC="$ROOT/struct_catalog/perf.c"
-SPINE="$ROOT/struct_catalog.c"
+SPINE="$ROOT/struct_catalog/catalog.c"
 
 fail() {
 	echo "FAIL: $NAME: $1" >&2
@@ -33,7 +33,7 @@ fail() {
 
 # Slurp the perf_event_attr_fields[] initializer body.  The carve
 # flipped the symbol from `static const` to `const` so the spine in
-# struct_catalog.c can reach it via the extern; match either form.
+# struct_catalog/catalog.c can reach it via the extern; match either form.
 block=$(awk '
 	/^(static[[:space:]]+)?const struct struct_field perf_event_attr_fields\[.*\] = \{/ {
 		in_block = 1

@@ -55,7 +55,7 @@ FILES=(
 	random_syscall/strategy-accounting.c
 	args/arg_coupling.c
 	mutate.c
-	struct_catalog.c
+	struct_catalog/catalog.c
 	struct_catalog/sctp.c
 	struct_catalog/sockaddr.c
 	struct_catalog/bpf.c
