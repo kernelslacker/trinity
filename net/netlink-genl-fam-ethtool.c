@@ -28,7 +28,7 @@
 
 #if __has_include(<linux/ethtool_netlink_generated.h>)
 
-#include <linux/ethtool_netlink_generated.h>
+#include "kernel/ethtool_netlink_generated.h"
 
 #include "netlink-genl-families.h"
 #include "utils.h"
