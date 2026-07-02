@@ -58,6 +58,7 @@ FILES=(
 	struct_catalog/catalog.c
 	struct_catalog/sctp.c
 	struct_catalog/sockaddr.c
+	struct_catalog/sockaddr-mcast.c
 	struct_catalog/sockaddr-sockopt.c
 	struct_catalog/bpf.c
 	struct_catalog/quota.c
