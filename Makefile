@@ -113,6 +113,7 @@ VERSION_H	:= include/version.h
 HEADERS		:= $(wildcard *.h) $(wildcard syscalls/*.h) $(wildcard ioctls/*.h)
 
 SRCS		:= $(wildcard *.c) \
+		   $(wildcard args/*.c) \
 		   $(wildcard childops/*.c) \
 		   $(wildcard cmp_hints/*.c) \
 		   $(wildcard fds/*.c) \
@@ -131,6 +132,7 @@ SRCS		:= $(wildcard *.c) \
 		   $(SYSCALLS_ARCH)
 
 OBJS		:= $(sort $(patsubst %.c,%.o,$(wildcard *.c))) \
+		   $(sort $(patsubst %.c,%.o,$(wildcard args/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard childops/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard cmp_hints/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard fds/*.c))) \
@@ -165,7 +167,7 @@ trinity: test $(OBJS) $(HEADERS)
 
 clean:
 	@rm -f $(OBJS)
-	@rm -f *.o lib/*.o net/*.o stats/*.o utils/*.o
+	@rm -f *.o args/*.o lib/*.o net/*.o stats/*.o utils/*.o
 	@rm -f core.*
 	@rm -f trinity
 	@rm -f tags
