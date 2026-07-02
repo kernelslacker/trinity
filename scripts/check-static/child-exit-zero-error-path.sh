@@ -13,7 +13,7 @@
 # _exit(0)'d instead of returning a sentinel non-zero status.
 #
 # The check is a regex tripwire.  For every _exit(0) callsite in
-# child-context source (childops/*.c, syscalls/*.c, child.c, kcov.c)
+# child-context source (childops/*.c, syscalls/*.c, child.c, kcov/kcov.c)
 # it scans the preceding ~10 source lines in the same file for any of:
 #
 #   perror | outputerr | output_err | warn( | warnx | fprintf(stderr
@@ -64,7 +64,7 @@ for d in "$ROOT/childops" "$ROOT/syscalls"; do
 		files+=("$f")
 	done < <(find "$d" -name '*.c' -type f | sort)
 done
-for f in "$ROOT/child.c" "$ROOT/kcov.c"; do
+for f in "$ROOT/child.c" "$ROOT/kcov/kcov.c"; do
 	[ -f "$f" ] && files+=("$f")
 done
 
