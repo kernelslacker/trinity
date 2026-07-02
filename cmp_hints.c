@@ -3979,164 +3979,18 @@ static unsigned int cmp_hint_weighted_pick(struct cmp_hint_entry *entries,
 	return count - 1;
 }
 
-bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
-			  unsigned long old, bool allow_hyp_inject,
-			  const struct cmp_accept_range *accept,
-			  unsigned long *out)
+static bool cmp_try_get_durable_tier(unsigned int nr, bool do32,
+				     enum cmp_hint_use use, unsigned long old,
+				     bool allow_hyp_inject,
+				     const struct cmp_accept_range *accept,
+				     unsigned long *out)
 {
-	struct cmp_hint_pool *pool;
+	struct cmp_hint_pool *pool = &cmp_hints_shm->pools[nr][do32 ? 1 : 0];
 	struct cmp_hint_entry *picked;
 	unsigned int count;
 	unsigned long picked_value;
 	unsigned long picked_cmp_ip;
 	uint32_t picked_size;
-
-	if (cmp_hints_shm == NULL || nr >= MAX_NR_SYSCALL)
-		return false;
-
-	if (kcov_shm != NULL) {
-		/* Scalar attempts counter now lives in parent_stats and is
-		 * fed via the per-child stats_ring -- the kernel cannot
-		 * scribble it through any fuzzed syscall arg because the
-		 * authoritative copy is in MAP_PRIVATE parent memory.
-		 * Direct +1 enqueue (no local staging like the kcov
-		 * batched counters): cmp_hints_try_get fires at consumer
-		 * cadence, well below the SPSC budget.  Ring-full drops
-		 * fold into ring_overflow_total. */
-		struct childdata *attempt_child = this_child();
-
-		if (attempt_child != NULL) {
-			(void) stats_ring_enqueue(attempt_child->stats_ring,
-						  STATS_FIELD_CMP_HINTS_TRY_GET_ATTEMPTS,
-						  0, 1);
-			/* per-nr partition of the consumer-demand counter,
-			 * drained into parent_stats.per_syscall_cmp_attempts[].
-			 * The shm/nr guard above already pinned nr <
-			 * MAX_NR_SYSCALL so aux is in-bounds at the drain. */
-			(void) stats_ring_enqueue(attempt_child->stats_ring,
-						  STATS_FIELD_PER_SYSCALL_CMP_ATTEMPTS,
-						  (uint16_t)nr, 1);
-		}
-	}
-
-	/* Chaos-mode gate.  Placed after the attempts bump so the consumer
-	 * demand series stays comparable across chaos and non-chaos
-	 * windows -- suppressed pulls remain visible as the
-	 * attempts/returned gap, with cmp_hints_chaos_suppressed
-	 * accounting for the difference.  Before the pool snapshot so the
-	 * suppressed path skips the lockless load entirely. */
-	if (kcov_shm != NULL &&
-	    __atomic_load_n(&kcov_shm->cmp_hints_chaos_active,
-			    __ATOMIC_RELAXED)) {
-		__atomic_fetch_add(&kcov_shm->cmp_hints_chaos_suppressed,
-				   1UL, __ATOMIC_RELAXED);
-		return false;
-	}
-
-	pool = &cmp_hints_shm->pools[nr][do32 ? 1 : 0];
-
-	/*
-	 * Recent-pool sampling tier.
-	 *
-	 * The recent ring carries fresh constants the durable pool's
-	 * saturated LRU floor would have dropped.  During a
-	 * CMP_RISING_PC_FLAT plateau -- when the
-	 * cmp_hints_save_reject_cap dominance signal says the durable
-	 * pool is the bottleneck -- sample the recent ring first; this
-	 * gives the consumer a window onto the late-run constant
-	 * stream without competing with the durable pool's selection
-	 * on the off-plateau steady state.  Typed-inject callsites are
-	 * exempted (allow_hyp_inject) so they reach the inject arm on
-	 * the durable path instead.
-	 *
-	 * cmp_recent_would_pick / cmp_recent_would_miss continue to
-	 * bump on every plateau call so the recent-tier opportunity
-	 * rate stays observable alongside the served rate.
-	 * cmp_recent_live_picks bumps on a return actually served from
-	 * the recent ring.
-	 *
-	 * Lockless reads with ACQUIRE on count + RELAXED on entries[]
-	 * mirror the durable pool's lockless reader contract: torn
-	 * cross-field reads are tolerated (hints are advisory), and a
-	 * concurrent ring writer can only ever produce the pre- or
-	 * post-overwrite triplet -- both lived in the ring.
-	 */
-	if (shm != NULL &&
-	    __atomic_load_n(&shm->plateau_current_hypothesis,
-			    __ATOMIC_RELAXED) ==
-	    (int)PLATEAU_HYPOTHESIS_CMP_RISING_PC_FLAT) {
-		struct cmp_recent_pool *rp =
-			&cmp_hints_shm->recent_pools[nr][do32 ? 1 : 0];
-		unsigned int rcount =
-			__atomic_load_n(&rp->count, __ATOMIC_ACQUIRE);
-
-		if (rcount > 0 && rcount <= CMP_RECENT_PER_SYSCALL) {
-			if (kcov_shm != NULL)
-				__atomic_fetch_add(&kcov_shm->cmp_recent_would_pick,
-						   1UL, __ATOMIC_RELAXED);
-			/* Typed-inject callsites must reach the inject arm on
-			 * the durable path, not be shadowed by the recent-first
-			 * early-return.
-			 */
-			if (!allow_hyp_inject) {
-				struct cmp_recent_entry *re =
-					&rp->entries[rnd_modulo_u32(rcount)];
-				unsigned long re_value = re->value;
-				unsigned long re_cmp_ip = re->cmp_ip;
-				uint32_t re_size = re->size;
-
-				*out = cmp_hint_apply_transform(re_value,
-								use, old);
-
-				/* Caller accept-range gate.  Miss-exit:
-				 * NO live_picks bump, NO stash, NO
-				 * would_pick -- the value never reached
-				 * the consumer so it must not show up
-				 * in any per-pull counter or in the
-				 * SHADOW would-pick resolver, which
-				 * would otherwise re-credit a value the
-				 * caller threw away. */
-				if (accept != NULL &&
-				    (*out < accept->lo ||
-				     *out > accept->hi))
-					return false;
-
-				if (kcov_shm != NULL)
-					__atomic_fetch_add(&kcov_shm->cmp_recent_live_picks,
-							   1UL, __ATOMIC_RELAXED);
-
-				/* Stash the recent-served pull under the
-				 * per-syscall pool-kind: the feedback drain's
-				 * per-entry credit path re-finds by (cmp_ip,
-				 * value, size) in the durable pool and will
-				 * harmlessly fail to find the recent-only
-				 * tuple, while the flat cmp_hint_wins /
-				 * cmp_hint_misses counters still bump -- the
-				 * follow-up commit wires the recent-pool
-				 * conversion credit + promotion.
-				 *
-				 * served_from_recent=1, age_bucket=0: the
-				 * recent ring has no per-entry LRU stamp; its
-				 * freshness story IS the tier itself.  The
-				 * credit drain partitions PC-wins by tier so a
-				 * recent-served stash entry rolls up under
-				 * cmp_hint_tier_recent_wins / _misses; the
-				 * age-bucketed durable counters skip it. */
-				cmp_hints_stash_consumed(nr, do32,
-							 CMP_HINT_POOL_PER_SYSCALL,
-							 re_cmp_ip, re_value,
-							 re_size, use,
-							 0, 0, NULL,
-							 true, 0, false);
-				cmp_hyp_would_pick(nr, do32, re_cmp_ip,
-						   re_size, re_value);
-				return true;
-			}
-		} else if (kcov_shm != NULL) {
-			__atomic_fetch_add(&kcov_shm->cmp_recent_would_miss,
-					   1UL, __ATOMIC_RELAXED);
-		}
-	}
 
 	/*
 	 * Lockless read.  Multiple children fuzzing the same syscall would
@@ -4323,6 +4177,160 @@ bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 	}
 	cmp_hyp_would_pick(nr, do32, picked_cmp_ip, picked_size, picked_value);
 	return true;
+}
+
+bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
+			  unsigned long old, bool allow_hyp_inject,
+			  const struct cmp_accept_range *accept,
+			  unsigned long *out)
+{
+	if (cmp_hints_shm == NULL || nr >= MAX_NR_SYSCALL)
+		return false;
+
+	if (kcov_shm != NULL) {
+		/* Scalar attempts counter now lives in parent_stats and is
+		 * fed via the per-child stats_ring -- the kernel cannot
+		 * scribble it through any fuzzed syscall arg because the
+		 * authoritative copy is in MAP_PRIVATE parent memory.
+		 * Direct +1 enqueue (no local staging like the kcov
+		 * batched counters): cmp_hints_try_get fires at consumer
+		 * cadence, well below the SPSC budget.  Ring-full drops
+		 * fold into ring_overflow_total. */
+		struct childdata *attempt_child = this_child();
+
+		if (attempt_child != NULL) {
+			(void) stats_ring_enqueue(attempt_child->stats_ring,
+						  STATS_FIELD_CMP_HINTS_TRY_GET_ATTEMPTS,
+						  0, 1);
+			/* per-nr partition of the consumer-demand counter,
+			 * drained into parent_stats.per_syscall_cmp_attempts[].
+			 * The shm/nr guard above already pinned nr <
+			 * MAX_NR_SYSCALL so aux is in-bounds at the drain. */
+			(void) stats_ring_enqueue(attempt_child->stats_ring,
+						  STATS_FIELD_PER_SYSCALL_CMP_ATTEMPTS,
+						  (uint16_t)nr, 1);
+		}
+	}
+
+	/* Chaos-mode gate.  Placed after the attempts bump so the consumer
+	 * demand series stays comparable across chaos and non-chaos
+	 * windows -- suppressed pulls remain visible as the
+	 * attempts/returned gap, with cmp_hints_chaos_suppressed
+	 * accounting for the difference.  Before the pool snapshot so the
+	 * suppressed path skips the lockless load entirely. */
+	if (kcov_shm != NULL &&
+	    __atomic_load_n(&kcov_shm->cmp_hints_chaos_active,
+			    __ATOMIC_RELAXED)) {
+		__atomic_fetch_add(&kcov_shm->cmp_hints_chaos_suppressed,
+				   1UL, __ATOMIC_RELAXED);
+		return false;
+	}
+
+	/*
+	 * Recent-pool sampling tier.
+	 *
+	 * The recent ring carries fresh constants the durable pool's
+	 * saturated LRU floor would have dropped.  During a
+	 * CMP_RISING_PC_FLAT plateau -- when the
+	 * cmp_hints_save_reject_cap dominance signal says the durable
+	 * pool is the bottleneck -- sample the recent ring first; this
+	 * gives the consumer a window onto the late-run constant
+	 * stream without competing with the durable pool's selection
+	 * on the off-plateau steady state.  Typed-inject callsites are
+	 * exempted (allow_hyp_inject) so they reach the inject arm on
+	 * the durable path instead.
+	 *
+	 * cmp_recent_would_pick / cmp_recent_would_miss continue to
+	 * bump on every plateau call so the recent-tier opportunity
+	 * rate stays observable alongside the served rate.
+	 * cmp_recent_live_picks bumps on a return actually served from
+	 * the recent ring.
+	 *
+	 * Lockless reads with ACQUIRE on count + RELAXED on entries[]
+	 * mirror the durable pool's lockless reader contract: torn
+	 * cross-field reads are tolerated (hints are advisory), and a
+	 * concurrent ring writer can only ever produce the pre- or
+	 * post-overwrite triplet -- both lived in the ring.
+	 */
+	if (shm != NULL &&
+	    __atomic_load_n(&shm->plateau_current_hypothesis,
+			    __ATOMIC_RELAXED) ==
+	    (int)PLATEAU_HYPOTHESIS_CMP_RISING_PC_FLAT) {
+		struct cmp_recent_pool *rp =
+			&cmp_hints_shm->recent_pools[nr][do32 ? 1 : 0];
+		unsigned int rcount =
+			__atomic_load_n(&rp->count, __ATOMIC_ACQUIRE);
+
+		if (rcount > 0 && rcount <= CMP_RECENT_PER_SYSCALL) {
+			if (kcov_shm != NULL)
+				__atomic_fetch_add(&kcov_shm->cmp_recent_would_pick,
+						   1UL, __ATOMIC_RELAXED);
+			/* Typed-inject callsites must reach the inject arm on
+			 * the durable path, not be shadowed by the recent-first
+			 * early-return.
+			 */
+			if (!allow_hyp_inject) {
+				struct cmp_recent_entry *re =
+					&rp->entries[rnd_modulo_u32(rcount)];
+				unsigned long re_value = re->value;
+				unsigned long re_cmp_ip = re->cmp_ip;
+				uint32_t re_size = re->size;
+
+				*out = cmp_hint_apply_transform(re_value,
+								use, old);
+
+				/* Caller accept-range gate.  Miss-exit:
+				 * NO live_picks bump, NO stash, NO
+				 * would_pick -- the value never reached
+				 * the consumer so it must not show up
+				 * in any per-pull counter or in the
+				 * SHADOW would-pick resolver, which
+				 * would otherwise re-credit a value the
+				 * caller threw away. */
+				if (accept != NULL &&
+				    (*out < accept->lo ||
+				     *out > accept->hi))
+					return false;
+
+				if (kcov_shm != NULL)
+					__atomic_fetch_add(&kcov_shm->cmp_recent_live_picks,
+							   1UL, __ATOMIC_RELAXED);
+
+				/* Stash the recent-served pull under the
+				 * per-syscall pool-kind: the feedback drain's
+				 * per-entry credit path re-finds by (cmp_ip,
+				 * value, size) in the durable pool and will
+				 * harmlessly fail to find the recent-only
+				 * tuple, while the flat cmp_hint_wins /
+				 * cmp_hint_misses counters still bump -- the
+				 * follow-up commit wires the recent-pool
+				 * conversion credit + promotion.
+				 *
+				 * served_from_recent=1, age_bucket=0: the
+				 * recent ring has no per-entry LRU stamp; its
+				 * freshness story IS the tier itself.  The
+				 * credit drain partitions PC-wins by tier so a
+				 * recent-served stash entry rolls up under
+				 * cmp_hint_tier_recent_wins / _misses; the
+				 * age-bucketed durable counters skip it. */
+				cmp_hints_stash_consumed(nr, do32,
+							 CMP_HINT_POOL_PER_SYSCALL,
+							 re_cmp_ip, re_value,
+							 re_size, use,
+							 0, 0, NULL,
+							 true, 0, false);
+				cmp_hyp_would_pick(nr, do32, re_cmp_ip,
+						   re_size, re_value);
+				return true;
+			}
+		} else if (kcov_shm != NULL) {
+			__atomic_fetch_add(&kcov_shm->cmp_recent_would_miss,
+					   1UL, __ATOMIC_RELAXED);
+		}
+	}
+
+	return cmp_try_get_durable_tier(nr, do32, use, old,
+				       allow_hyp_inject, accept, out);
 }
 
 bool cmp_hints_try_get(unsigned int nr, bool do32, unsigned long *out)
