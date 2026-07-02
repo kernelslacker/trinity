@@ -4939,13 +4939,21 @@ void stats_timeseries_drop_in_child(void)
 	stats_timeseries_fp = NULL;
 }
 
+/* Previous window's edge counts, per (nr, arch), for the per-syscall
+ * edges_gained delta.  Zero-initialised, so the first window's delta
+ * equals the level (matching the top-level edges_gained_this_window
+ * convention).  Sized by MAX_NR_SYSCALL rather than the active count
+ * because entry->number is the stable numeric key we index by. */
+static unsigned long stats_ts_prev_per_syscall_edges[MAX_NR_SYSCALL][2];
+
 /* Walk one syscall table and emit
- * {"nr":N,"edges":E,"kcov_calls":K,"attempted_calls":A} entries for
- * each enabled slot whose entry pointer is non-NULL.  *first tracks
- * whether the next entry needs a leading comma so the caller can chain
- * the 32-bit and 64-bit tables into a single array literal.  do32
- * selects the arch dim into per_syscall_diag[][], matching the
- * kcov_diag_emit_block() convention (false=64-bit, true=32-bit).
+ * {"nr":N,"edges":E,"edges_gained":G,"kcov_calls":K,"attempted_calls":A}
+ * entries for each enabled slot whose entry pointer is non-NULL.
+ * *first tracks whether the next entry needs a leading comma so the
+ * caller can chain the 32-bit and 64-bit tables into a single array
+ * literal.  do32 selects the arch dim into per_syscall_diag[][],
+ * matching the kcov_diag_emit_block() convention (false=64-bit,
+ * true=32-bit).
  *
  * kcov_calls and attempted_calls are named explicitly (replacing the
  * ambiguous "calls" this used to emit as entry->attempted) because
@@ -4954,17 +4962,26 @@ void stats_timeseries_drop_in_child(void)
  * attempted_calls is the entry->attempted dispatch count -- larger,
  * covering EXTRA_FORK / validator-rejected / dry-run paths where the
  * kcov bracket never runs.  Callers comparing ratios across the two
- * tripped over shared naming before. */
+ * tripped over shared naming before.
+ *
+ * edges_gained is the per-syscall analogue of the top-level
+ * edges_gained_this_window: current edges minus the same slot's edges
+ * at the previous window emit.  Kept alongside the cumulative edges,
+ * not in place of it, so consumers that were reading edges keep working
+ * and per-slot plateaus are legible without differencing consecutive
+ * lines.  Also updates the prev array in-place before returning. */
 static void stats_timeseries_emit_table(const struct syscalltable *table,
 					unsigned int n, bool do32,
 					bool *first)
 {
 	unsigned int i;
+	unsigned int arch_ix = do32 ? 1 : 0;
 
 	for (i = 0; i < n; i++) {
 		struct syscallentry *entry = table[i].entry;
 		unsigned int nr, attempted_calls;
 		unsigned long edges = 0;
+		unsigned long edges_gained = 0;
 		unsigned long kcov_calls = 0;
 
 		if (entry == NULL)
@@ -4976,24 +4993,41 @@ static void stats_timeseries_emit_table(const struct syscalltable *table,
 		attempted_calls = entry->attempted;
 		if (nr < MAX_NR_SYSCALL && kcov_shm != NULL) {
 			edges = __atomic_load_n(
-				&kcov_shm->per_syscall_diag[nr][do32 ? 1 : 0].bucket_bits_real,
+				&kcov_shm->per_syscall_diag[nr][arch_ix].bucket_bits_real,
 				__ATOMIC_RELAXED);
 			kcov_calls = __atomic_load_n(
 				&kcov_shm->per_syscall_calls[nr],
 				__ATOMIC_RELAXED);
 		}
 
+		if (nr < MAX_NR_SYSCALL) {
+			unsigned long prev = stats_ts_prev_per_syscall_edges[nr][arch_ix];
+
+			/* Guard against a rewound counter (bounded shm
+			 * counter, resume-from-checkpoint, etc.) so we
+			 * never emit a wrap-around negative-as-huge
+			 * delta. */
+			edges_gained = edges >= prev ? edges - prev : 0;
+			stats_ts_prev_per_syscall_edges[nr][arch_ix] = edges;
+		}
+
 		fprintf(stats_timeseries_fp,
-			"%s{\"nr\":%u,\"edges\":%lu,\"kcov_calls\":%lu,\"attempted_calls\":%u}",
-			*first ? "" : ",", nr, edges, kcov_calls,
-			attempted_calls);
+			"%s{\"nr\":%u,\"edges\":%lu,\"edges_gained\":%lu,\"kcov_calls\":%lu,\"attempted_calls\":%u}",
+			*first ? "" : ",", nr, edges, edges_gained,
+			kcov_calls, attempted_calls);
 		*first = false;
 	}
 }
 
 void stats_timeseries_emit_window(unsigned long op_count)
 {
+	/* Previous window's distinct-edge total, for the top-level
+	 * edges_gained_this_window delta.  Zero-initialised so the
+	 * first window's delta equals the level (a plateau consumer
+	 * gets a real first value instead of a phantom zero). */
+	static unsigned long prev_edges_total = 0;
 	unsigned long edges_total = 0;
+	unsigned long edges_gained_this_window = 0;
 	bool first = true;
 
 	if (stats_timeseries_fp == NULL)
@@ -5003,9 +5037,16 @@ void stats_timeseries_emit_window(unsigned long op_count)
 		edges_total = __atomic_load_n(&kcov_shm->distinct_edges,
 					      __ATOMIC_RELAXED);
 
+	/* Guard against a rewound counter for the same reason as the
+	 * per-syscall path above. */
+	edges_gained_this_window = edges_total >= prev_edges_total
+		? edges_total - prev_edges_total
+		: 0;
+	prev_edges_total = edges_total;
+
 	fprintf(stats_timeseries_fp,
-		"{\"t\":%lu,\"edges_total\":%lu,\"per_syscall\":[",
-		op_count, edges_total);
+		"{\"t\":%lu,\"edges_total\":%lu,\"edges_gained_this_window\":%lu,\"per_syscall\":[",
+		op_count, edges_total, edges_gained_this_window);
 
 	if (biarch == true) {
 		stats_timeseries_emit_table(syscalls_64bit,
