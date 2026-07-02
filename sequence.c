@@ -133,12 +133,12 @@ static const struct chain_restype_row chain_restype_table[CHAIN_RESTYPE_NR] = {
 	[CHAIN_RESTYPE_EPOLL_FD] = {
 		.producers = { "epoll_create1", NULL, NULL, NULL },
 		.consumers = { "epoll_ctl", "epoll_wait", "epoll_pwait",
-			       NULL, NULL, NULL },
+			       "epoll_pwait2", NULL, NULL },
 	},
 	[CHAIN_RESTYPE_TIMERFD] = {
 		.producers = { "timerfd_create", NULL, NULL, NULL },
-		.consumers = { "timerfd_settime", "read",
-			       NULL, NULL, NULL, NULL },
+		.consumers = { "timerfd_settime", "timerfd_gettime", "read",
+			       NULL, NULL, NULL },
 	},
 	[CHAIN_RESTYPE_EVENTFD] = {
 		.producers = { "eventfd2", NULL, NULL, NULL },
@@ -152,8 +152,8 @@ static const struct chain_restype_row chain_restype_table[CHAIN_RESTYPE_NR] = {
 	},
 	[CHAIN_RESTYPE_PIDFD] = {
 		.producers = { "pidfd_open", "clone3", NULL, NULL },
-		.consumers = { "pidfd_send_signal", "waitid",
-			       NULL, NULL, NULL, NULL },
+		.consumers = { "pidfd_send_signal", "pidfd_getfd", "waitid",
+			       NULL, NULL, NULL },
 	},
 	[CHAIN_RESTYPE_SOCKET_TCP] = {
 		.producers = { "socket", NULL, NULL, NULL },
