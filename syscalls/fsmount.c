@@ -2,14 +2,9 @@
  *  SYSCALL_DEFINE3(fsmount, int, fs_fd, unsigned int, flags, unsigned int, attr_flags)
  */
 #include "compat.h"
+#include "kernel/mount.h"
 #include "object-types.h"
 #include "sanitise.h"
-
-#define FSMOUNT_CLOEXEC         0x00000001
-/* FSMOUNT_NAMESPACE added in Linux v7.1 merge window. */
-#ifndef FSMOUNT_NAMESPACE
-#define FSMOUNT_NAMESPACE	0x00000002
-#endif
 
 static unsigned long fsmount_flags[] = {
 	FSMOUNT_CLOEXEC,
