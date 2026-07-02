@@ -40,8 +40,8 @@ ROOT="${REPO_ROOT:-$(pwd)}"
 
 cd "$ROOT" || { echo "FAIL: $NAME: cannot cd to $ROOT"; exit 1; }
 
-if [ ! -f cmp_hints.c ]; then
-	echo "FAIL: $NAME: cmp_hints.c not found at $ROOT"
+if ! ls cmp_hints/*.c >/dev/null 2>&1; then
+	echo "FAIL: $NAME: cmp_hints/*.c not found at $ROOT"
 	exit 1
 fi
 if [ ! -f kcov.c ]; then
@@ -82,6 +82,7 @@ fi
 #    cmp_hints.c follows that style throughout so the heuristic is
 #    reliable.  cmp_hints_flush_pending is whitelisted (see file header).
 missing="$(awk '
+	FNR == 1 { in_body = 0; want = 0 }
 	/^[A-Za-z_][A-Za-z0-9_ *]*[A-Za-z0-9_*]\(/ && !in_body {
 		match($0, /[A-Za-z_][A-Za-z0-9_]*\(/)
 		name = substr($0, RSTART, RLENGTH - 1)
@@ -108,7 +109,7 @@ missing="$(awk '
 		in_body = 0
 		want = 0
 	}
-' cmp_hints.c)"
+' cmp_hints/*.c)"
 
 if [ -n "$missing" ]; then
 	{
