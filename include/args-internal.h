@@ -171,6 +171,18 @@ unsigned long gen_arg_paired_length(struct syscallentry *entry,
 unsigned long gen_arg_socketinfo(struct syscallentry *entry,
 				 struct syscallrecord *rec,
 				 unsigned int argnum);
+unsigned long gen_arg_struct_ptr_in(struct syscallentry *entry,
+				    struct syscallrecord *rec,
+				    unsigned int argnum);
+unsigned long gen_arg_struct_ptr_out(struct syscallentry *entry,
+				     struct syscallrecord *rec,
+				     unsigned int argnum);
+unsigned long gen_arg_struct_ptr_inout(struct syscallentry *entry,
+				       struct syscallrecord *rec,
+				       unsigned int argnum);
+unsigned long gen_arg_struct_size(struct syscallentry *entry,
+				  struct syscallrecord *rec,
+				  unsigned int argnum);
 
 /*
  * Struct-field fill / mutate / scrub caps shared across the args/
