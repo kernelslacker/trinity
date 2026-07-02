@@ -27,7 +27,7 @@ set -u
 
 NAME="variant-address-walk"
 ROOT="${REPO_ROOT:-$(pwd)}"
-GEN="$ROOT/generate-args.c"
+SCRUB="$ROOT/args/scrub.c"
 MUT="$ROOT/args/struct_mutate.c"
 CAT="$ROOT/struct_catalog.c"
 
@@ -36,7 +36,7 @@ fail() {
 	exit 1
 }
 
-[ -r "$GEN" ] || fail "cannot read $GEN"
+[ -r "$SCRUB" ] || fail "cannot read $SCRUB"
 [ -r "$MUT" ] || fail "cannot read $MUT"
 [ -r "$CAT" ] || fail "cannot read $CAT"
 
@@ -79,22 +79,24 @@ done
 
 # Extract scrub_struct_addresses() body (skip the forward decl, grab
 # the second match through the next top-level closing brace).
-gen_body=$(awk '
+# scrub_struct_addresses and scrub_variant_overlay_nested live in
+# args/scrub.c after the generate-args carve.
+scrub_body=$(awk '
 	/^static void scrub_struct_addresses\(/ { seen++ }
 	seen == 2 { print }
 	seen == 2 && /^\}$/ { exit }
-' "$GEN")
+' "$SCRUB")
 
-[ -n "$gen_body" ] \
-	|| fail "scrub_struct_addresses() definition not found in $GEN"
+[ -n "$scrub_body" ] \
+	|| fail "scrub_struct_addresses() definition not found in $SCRUB"
 
-want_gen=(
+want_scrub=(
 	"struct_desc_resolve_variant"
 	"scrub_variant_overlay_nested"
 )
-for needle in "${want_gen[@]}"; do
+for needle in "${want_scrub[@]}"; do
 	checked=$((checked + 1))
-	if ! grep_in "$gen_body" "$needle"; then
+	if ! grep_in "$scrub_body" "$needle"; then
 		problems+=("scrub_struct_addresses() missing '$needle' call")
 	fi
 done
@@ -104,10 +106,10 @@ overlay_body=$(awk '
 	/^static void scrub_variant_overlay_nested\(/ { in_block = 1 }
 	in_block { print }
 	in_block && /^\}$/ { exit }
-' "$GEN")
+' "$SCRUB")
 
 [ -n "$overlay_body" ] \
-	|| fail "scrub_variant_overlay_nested() not found in $GEN"
+	|| fail "scrub_variant_overlay_nested() not found in $SCRUB"
 
 want_overlay=(
 	"variant->base"
