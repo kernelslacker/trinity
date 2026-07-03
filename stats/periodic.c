@@ -1037,7 +1037,7 @@ static unsigned long defense_counter_load(unsigned int i)
  * sides round to the same scale so the two percentages always sum to
  * 100.0% (within rounding) when the denominator is non-zero.
  */
-unsigned long pct_thousandths(unsigned long num, unsigned long denom)
+static unsigned long pct_thousandths(unsigned long num, unsigned long denom)
 {
 	if (denom == 0)
 		return 0;

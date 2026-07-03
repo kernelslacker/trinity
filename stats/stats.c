@@ -224,7 +224,7 @@ unsigned long stat_field_load(const struct stat_field *f)
 	return __atomic_load_n(p, __ATOMIC_RELAXED);
 }
 
-unsigned long stat_gate_load(const struct stat_category *cat)
+static unsigned long stat_gate_load(const struct stat_category *cat)
 {
 	unsigned long *p = (unsigned long *)((char *)&shm->stats + cat->gate_offset);
 	return __atomic_load_n(p, __ATOMIC_RELAXED);
