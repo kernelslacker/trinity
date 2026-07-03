@@ -548,7 +548,7 @@ static void dump_stats_render_maps_pick_ratios(void)
 	}
 }
 
-void dump_stats_corruption_and_pool(void)
+static void dump_stats_render_ring_corruption(void)
 {
 	if (shm->stats.fd_event_ring_corrupted)
 		stat_row("corruption", "fd_event_ring_noncanon", shm->stats.fd_event_ring_corrupted);
@@ -560,6 +560,10 @@ void dump_stats_corruption_and_pool(void)
 		stat_row("corruption", "stats_ring_canary",      shm->stats.stats_ring_overwritten);
 	if (shm->stats.fd_event_payload_corrupt)
 		stat_row("corruption", "fd_event_payload",       shm->stats.fd_event_payload_corrupt);
+}
+
+static void dump_stats_render_corrupt_ptr_family(void)
+{
 	if (parent_stats.deferred_free_corrupt_ptr)
 		stat_row("corruption", "deferred_free_corrupt_ptr", parent_stats.deferred_free_corrupt_ptr);
 	if (parent_stats.post_handler_corrupt_ptr)
@@ -581,6 +585,10 @@ void dump_stats_corruption_and_pool(void)
 		dump_stats_render_corrupt_ptr_attrib();
 	if (parent_stats.arg_shadow_stomp)
 		stat_row("corruption", "arg_shadow_stomp", parent_stats.arg_shadow_stomp);
+}
+
+static void dump_stats_render_deferred_free_rejects(void)
+{
 	if (parent_stats.deferred_free_reject)
 		stat_row("corruption", "deferred_free_reject",   parent_stats.deferred_free_reject);
 	if (parent_stats.deferred_free_reject_pathname)
@@ -625,6 +633,10 @@ void dump_stats_corruption_and_pool(void)
 		stat_row("corruption", "alloc_track_refresh_unverified_skip", shm->stats.alloc_track_refresh_unverified_skip);
 	if (shm->stats.alloc_track_refresh_consume_miss)
 		stat_row("corruption", "alloc_track_refresh_consume_miss",    shm->stats.alloc_track_refresh_consume_miss);
+}
+
+static void dump_stats_render_scribble_canary_blanket(void)
+{
 	if (parent_stats.snapshot_non_heap_reject)
 		stat_row("corruption", "snapshot_non_heap_reject", parent_stats.snapshot_non_heap_reject);
 	if (parent_stats.lock_word_scribbled)
@@ -640,6 +652,10 @@ void dump_stats_corruption_and_pool(void)
 		stat_row("corruption", "rzs_blanket_reject",     shm->stats.rzs_blanket_reject);
 	if (shm->stats.retfd_blanket_reject)
 		stat_row("corruption", "retfd_blanket_reject",   shm->stats.retfd_blanket_reject);
+}
+
+static void dump_stats_render_arena_ptr_stale_and_sentinel(void)
+{
 	if (shm->stats.arena_ptr_stale_caught_arg)
 		stat_row("corruption", "arena_ptr_stale_caught_arg",
 			 shm->stats.arena_ptr_stale_caught_arg);
@@ -672,6 +688,10 @@ void dump_stats_corruption_and_pool(void)
 		stat_row("corruption", "destroy_object_idx",     shm->stats.destroy_object_idx_corrupt);
 	if (shm->stats.global_obj_uaf_caught)
 		stat_row("corruption", "global_obj_uaf_caught",  shm->stats.global_obj_uaf_caught);
+}
+
+static void dump_stats_render_maps_pool_rejects(void)
+{
 	if (shm->stats.maps_pool_draw_exhausted)
 		stat_row("pool", "maps_pool_draw_exhausted",   shm->stats.maps_pool_draw_exhausted);
 	if (shm->stats.maps_reject_pool_empty)
@@ -693,6 +713,10 @@ void dump_stats_corruption_and_pool(void)
 		stat_row("pool", "maps_reject_size_zero",      shm->stats.maps_reject_size_zero);
 	if (shm->stats.maps_reject_size_too_large)
 		stat_row("pool", "maps_reject_size_too_large", shm->stats.maps_reject_size_too_large);
+}
+
+static void dump_stats_render_late_corruption_oracle(void)
+{
 	if (shm->stats.chain_replay_len_corrupt)
 		stat_row("corruption", "chain_replay_len_corrupt", shm->stats.chain_replay_len_corrupt);
 	if (shm->stats.pagecache_canary_corrupt_caught)
@@ -701,6 +725,17 @@ void dump_stats_corruption_and_pool(void)
 	if (shm->stats.objpool_array_stale_caught)
 		stat_row("corruption", "objpool_array_stale_caught",
 			 shm->stats.objpool_array_stale_caught);
+}
+
+void dump_stats_corruption_and_pool(void)
+{
+	dump_stats_render_ring_corruption();
+	dump_stats_render_corrupt_ptr_family();
+	dump_stats_render_deferred_free_rejects();
+	dump_stats_render_scribble_canary_blanket();
+	dump_stats_render_arena_ptr_stale_and_sentinel();
+	dump_stats_render_maps_pool_rejects();
+	dump_stats_render_late_corruption_oracle();
 
 	dump_stats_render_maps_pick_ratios();
 }
