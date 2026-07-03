@@ -10,8 +10,30 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <time.h>
+
 #include "compiler.h"
 #include "rnd.h"
+
+/*
+ * CLOCK_MONOTONIC nanoseconds since an arbitrary boot-relative epoch.
+ * The only correct source for any elapsed-time / lifetime / cadence
+ * computation in the codebase: time()/CLOCK_REALTIME can step backwards
+ * on an NTP adjustment, and a negative duration then aliases as either
+ * a false "fast-die" reap (EXIT_SHM_CORRUPTION panic) or an unbounded
+ * snapshot-cadence burst.  Keep time()/localtime_r() strictly for the
+ * human-facing wall-clock timestamps in log headers and filenames.
+ *
+ * Callers that only need seconds can divide by 1000000000ULL at the
+ * use site -- one helper avoids proliferating a nsec/sec/msec family.
+ */
+static inline uint64_t mono_ns(void)
+{
+	struct timespec ts;
+
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
+}
 
 /*
  * Restartable waitpid() wrapper.  Trinity installs SIGALRM and SIGXCPU
