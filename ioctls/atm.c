@@ -228,9 +228,10 @@ static void atm_sanitise(const struct ioctl_group *grp, struct syscallrecord *re
 	case SONET_GETFRSENSE: {
 		/* output: unsigned char[SONET_FRSENSE_SIZE] (6 bytes) */
 		unsigned char *sense = (unsigned char *) get_writable_struct(SONET_FRSENSE_SIZE);
-		if (sense)
+		if (sense) {
 			memset(sense, 0, SONET_FRSENSE_SIZE);
 			rec->a3 = (unsigned long) sense;
+		}
 		break;
 	}
 
