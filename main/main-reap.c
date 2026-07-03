@@ -91,8 +91,12 @@ time_t *zombie_since;
 #define FAST_DIE_LIFETIME_THRESHOLD_S 2
 
 struct reap_record {
-	time_t reaped_at;
-	time_t lifetime;	/* reaped_at - spawn_times[childno] */
+	time_t reaped_at;	/* CLOCK_REALTIME seconds, for log-attribution
+				 * only -- do NOT subtract from to compute a
+				 * duration. */
+	time_t lifetime;	/* CLOCK_MONOTONIC seconds between spawn and
+				 * reap of this slot; the fast-die classifier
+				 * reads this. */
 	int    exit_status;	/* WEXITSTATUS, or -WTERMSIG for signal deaths */
 	int    childno;
 };
@@ -1630,26 +1634,23 @@ static void bail_fast_die_loop(void)
 static void record_reap(int childno, int childstatus)
 {
 	struct reap_record *r;
-	time_t now = time(NULL);
+	time_t now_mono = (time_t)(mono_ns() / 1000000000ULL);
 	time_t lifetime;
 	int exit_status;
 
 	if (spawn_times == NULL)
 		return;
 
-	if (spawn_times[childno] != 0)
-		lifetime = now - spawn_times[childno];
+	/* spawn_times[] and now_mono are both CLOCK_MONOTONIC seconds,
+	 * so a wall-clock NTP step between spawn and reap can no longer
+	 * drive the computed lifetime negative and trip a spurious
+	 * fast-die classification (which would fill the ring and panic
+	 * EXIT_SHM_CORRUPTION on what is really just a clock skew).
+	 * Saturating subtraction stays as belt-and-braces: if a slot's
+	 * spawn stamp was ever missed, the fallback lifetime is 0. */
+	if (spawn_times[childno] != 0 && now_mono >= spawn_times[childno])
+		lifetime = now_mono - spawn_times[childno];
 	else
-		lifetime = 0;
-
-	/* spawn_times[] / now both come from CLOCK_REALTIME via time(2),
-	 * so a backward NTP step between spawn and reap can drive lifetime
-	 * negative.  reap_entry_is_fast_die() then treats every reap as
-	 * fast-die (negative < FAST_DIE_LIFETIME_THRESHOLD_S), fills the
-	 * ring, and panics EXIT_SHM_CORRUPTION on a clock skew the parent
-	 * had no business interpreting as a fork-die-respawn loop.  Clamp
-	 * before the fast-die classifier sees it. */
-	if (lifetime < 0)
 		lifetime = 0;
 
 	if (WIFEXITED(childstatus))
@@ -1668,7 +1669,7 @@ static void record_reap(int childno, int childstatus)
 	    reap_entry_is_fast_die(r))
 		reap_ring_fast_die_count--;
 
-	r->reaped_at = now;
+	r->reaped_at = time(NULL);
 	r->lifetime = lifetime;
 	r->exit_status = exit_status;
 	r->childno = childno;
