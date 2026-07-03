@@ -1243,7 +1243,11 @@ void kcov_bitmap_enable_snapshots(const char *path)
 		return;
 	memcpy(kcov_bitmap_snapshot_path, path, len + 1);
 	kcov_bitmap_snapshot_enabled = true;
-	kcov_bitmap_last_snapshot_time = time(NULL);
+	/* CLOCK_MONOTONIC seconds: the maybe-snapshot cadence compares this
+	 * against a monotonic `now`, so a wall-clock backward step cannot
+	 * starve the cadence and a forward step cannot fire a burst. */
+	kcov_bitmap_last_snapshot_time =
+		(time_t)(mono_ns() / 1000000000ULL);
 }
 
 void kcov_bitmap_maybe_snapshot(void)
@@ -1255,7 +1259,7 @@ void kcov_bitmap_maybe_snapshot(void)
 		return;
 
 	edges_now = __atomic_load_n(&kcov_shm->edges_found, __ATOMIC_RELAXED);
-	now = time(NULL);
+	now = (time_t)(mono_ns() / 1000000000ULL);
 
 	if (edges_now < kcov_bitmap_edges_at_last_snapshot
 			+ KCOV_BITMAP_SNAPSHOT_EDGES &&
