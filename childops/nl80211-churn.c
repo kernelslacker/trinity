@@ -1,112 +1,47 @@
 /*
  * nl80211_churn - cfg80211 state-machine churn under mac80211_hwsim.
  *
- * Random syscall fuzzing essentially never reaches the cfg80211 state-
- * machine asynchronous transitions in net/wireless/nl80211.c,
- * net/wireless/scan.c, and net/wireless/sme.c because those branches only
- * fire when:
+ * Targets async cfg80211 transitions in net/wireless/nl80211.c, scan.c,
+ * sme.c: a second scan / regdom change / disconnect arriving while the
+ * previous async transition is still in flight.  Bug lineage:
+ * cfg80211_inform_bss OOB (CVE-2022-41674), cfg80211_scan_done UAF
+ * (CVE-2025-21672 scan-while-connected), regdom-vs-in-flight wiphy_idx
+ * race (CVE-2023-3090).  Reaching any of it needs a live wiphy backed by
+ * mac80211_hwsim + a NL80211_IFTYPE_STATION iface on it + traffic; random
+ * syscall fuzz never assembles the coherent stack.
  *
- *   - a wiphy backed by a software radio is registered (mac80211_hwsim
- *     provides phy0 with a synthetic IEEE 802.11 PHY that takes scan,
- *     connect, and regdom commands without any real radio);
- *   - an interface of type NL80211_IFTYPE_STATION is created on the wiphy
- *     via NL80211_CMD_NEW_INTERFACE;
- *   - the interface enters scan / connect state and the kernel walks
- *     cfg80211_inform_bss / cfg80211_update_notlisted_nontrans /
- *     cfg80211_scan_done / cfg80211_disconnect under the rdev wiphy_lock;
- *   - a second scan / regdom change / disconnect arrives while the
- *     previous async transition is still in flight.
+ * Sequence per iteration inside a userns_run_in_ns grandchild (identity
+ * userns + CLONE_NEWNET, _exit reaps): genl_open("nl80211") + cap-probe
+ * (mac80211_hwsim sysfs presence, one-shot modprobe, NL80211_CMD_GET_WIPHY
+ * enumerate, latch if zero phys); NL80211_CMD_NEW_INTERFACE STATION on
+ * phy0; TRIGGER_SCAN active with 1..3 random 32-byte SSIDs; brief poll for
+ * NEW_SCAN_RESULTS; CONNECT to a discovered BSSID (or random SSID);
+ * SO_BINDTODEVICE UDP burst (5..32 pkts) to 224.0.0.1:9 to walk cfg80211
+ * state via the bind/route lookup; TRIGGER_SCAN AGAIN (the scan_done UAF
+ * window); REQ_SET_REG alpha2="ZZ" (regdom-vs-in-flight); DISCONNECT +
+ * DEL_INTERFACE racing whatever's still draining.  Per-child cleanup ring
+ * catches leaked ifaces; netns destroy sweeps the rest.
  *
- * Per BUDGETED + JITTER iteration of the outer churn loop (200 ms wall
- * cap; SIGALRM(1s) inherited from child.c):
+ * Spec-vs-reality: spec called it NL80211_CMD_SET_REG; the userspace-
+ * initiated regdom command that the kernel accepts on NETLINK_GENERIC is
+ * NL80211_CMD_REQ_SET_REG (== 26).
  *
- *   1. userns_run_in_ns(CLONE_NEWNET) forks a transient grandchild
- *      into an owned user namespace + private net namespace.  The
- *      whole rest of the sequence runs inside that grandchild; its
- *      _exit() tears down both namespaces along with any iface,
- *      socket, scan / connect state left behind.  Helper -EPERM
- *      (hardened userns policy refused CLONE_NEWUSER) latches the
- *      whole op off via ns_unsupported_nl80211_userns; transient
- *      setup failure (-EAGAIN) skips the iteration without latching.
- *   2. genl_open("nl80211", ...) -- the shared childops-genl wrapper
- *      opens NETLINK_GENERIC, applies SO_RCVTIMEO, and resolves the
- *      nl80211 family id via CTRL_CMD_GETFAMILY.  -ENOENT latches the
- *      cap-gate (kernel doesn't expose nl80211).
- *   3. capability gate: confirm a mac80211_hwsim radio is reachable.
- *      Probe order: presence of /sys/class/mac80211_hwsim, best-effort
- *      modprobe (latched once per child), NL80211_CMD_GET_WIPHY enumerate
- *      with a 100 ms recv window.  Zero phys -> latch ns_unsupported_
- *      nl80211 and noop_forever for the rest of the child's life.
- *   4. NL80211_CMD_NEW_INTERFACE iftype=NL80211_IFTYPE_STATION on phy0
- *      with a per-iter random ifname.  Records the new ifindex for the
- *      scan / connect / disconnect / del-iface chain and for the cleanup
- *      sweep.
- *   5. NL80211_CMD_TRIGGER_SCAN active-scan with 1-3 random 32-byte
- *      SSIDs in NL80211_ATTR_SCAN_SSIDS.  This drives
- *      cfg80211_inform_bss / cfg80211_update_notlisted_nontrans on the
- *      synthetic mac80211_hwsim BSS table -- the OOB site of
- *      CVE-2022-41674 lives there.
- *   6. brief BUDGETED yield (poll on the netlink socket with a short
- *      timeout) for NL80211_CMD_NEW_SCAN_RESULTS.  Best-effort: the
- *      connect step below fires whether or not we observed completion.
- *   7. NL80211_CMD_CONNECT to one discovered BSSID (or a random SSID
- *      if no scan results were captured).  Drives the SME connect path
- *      that races scan_done.
- *   8. SO_BINDTODEVICE UDP burst (5..32 packets) to 224.0.0.1:9 via the
- *      wlan iface.  Loopback-class -- the netns has no real driver, so
- *      the packet is dropped after the bind/route lookup, but the
- *      bind/route lookup itself walks cfg80211 state for the iface.
- *   9. NL80211_CMD_TRIGGER_SCAN AGAIN -- scan-while-connected race
- *      target.  This is the cfg80211_scan_done UAF window
- *      (CVE-2025-21672): a second scan trigger arriving while the rdev
- *      is mid-connect lets two scan_done callbacks race.
- *  10. NL80211_CMD_REQ_SET_REG alpha2="ZZ" (regdom change).  The wiphy
- *      index race target (CVE-2023-3090): a regdom change racing an
- *      in-flight scan / connect / disconnect can land with the rdev's
- *      wiphy_idx mid-mutation.  Spec calls this NL80211_CMD_SET_REG;
- *      the upstream UAPI command for a userspace-initiated regdom
- *      request is NL80211_CMD_REQ_SET_REG (== 26) and is what the
- *      kernel accepts on NETLINK_GENERIC.
- *  11. NL80211_CMD_DISCONNECT -- races the previous scan completion
- *      and the in-flight regdom change.
- *  12. NL80211_CMD_DEL_INTERFACE -- iface tear-down racing whatever
- *      cfg80211 state-machine work is still draining.
+ * Brick-safety: all wireless mutation inside CLONE_NEWNET; mac80211_hwsim
+ * provides a synthetic PHY so no spectrum is touched; all I/O MSG_DONTWAIT
+ * or short SO_RCVTIMEO; bounded retries (<=8) on EAGAIN / EBUSY /
+ * EINPROGRESS so a sibling iteration mid-teardown doesn't waste this iter.
  *
- * Cleanup: cleanup_ifaces() walks the per-child created-iface ring and
- * issues NL80211_CMD_DEL_INTERFACE for each entry.  netns destruction
- * catches anything the per-iter del missed.
+ * Latches: ns_unsupported_nl80211_userns on userns_run_in_ns -EPERM.
+ * Cap-gate ns_unsupported_nl80211 latches on nl80211 family ENOENT or on
+ * a zero-phys GET_WIPHY enumerate; subsequent invocations short-circuit.
+ * The genl_send_recv_retry wrapper is local (nl80211 needs it; the shared
+ * childops-genl wrapper stays unicast-single-ack).
  *
- * Brick-safety:
- *   - All wireless mutation lives inside a per-child CLONE_NEWNET; nothing
- *     touches the host's wiphy / regdom / iface state.
- *   - mac80211_hwsim provides a synthetic PHY -- no real radio is
- *     transmitted to and no spectrum is touched.
- *   - All netlink and socket I/O is MSG_DONTWAIT or short SO_RCVTIMEO; the
- *     SIGALRM(1s) cap inherited from child.c bounds anything we miss.
- *   - Per-kind / per-cap latches so a kernel without mac80211_hwsim or
- *     NL80211 pays the EFAIL once and skips the path for the rest of the
- *     child's life.
- *   - Bounded retries (<= 8) on EAGAIN / EBUSY / EINPROGRESS so a sibling
- *     iteration mid-teardown doesn't waste this iteration's config-plane
- *     work.  The shared childops-genl wrapper is single-ack-only by
- *     design; the retry wrapper sits local to this file (see
- *     genl_send_recv_retry).
- *
- * Migration note: the per-cmd builders all route through the shared
- * childops-genl helpers (genl_open / genl_close / genl_msg_put /
- * genl_send_recv) and the shared childops-netlink Type-A nla_put*
- * family.  Two paths intentionally stay local: genl_dump() (multi-
- * message reply walking, scoped out of the shared API by design per
- * include/childops-genl.h) and genl_send_recv_retry() (the
- * EINPROGRESS/EAGAIN/EBUSY retry loop -- nl80211 needs it, devlink and
- * tipc don't, so the shared wrapper stays unicast-single-ack).
- *
- * Header gates: __has_include(<linux/genetlink.h>) /
- * <linux/if_link.h> / <linux/rtnetlink.h>.  NL80211 UAPI integers
- * (NL80211_CMD_*, NL80211_ATTR_*, NL80211_IFTYPE_STATION) are
- * #define-fallback supplied at their stable UAPI integer values when
- * <linux/nl80211.h> is missing on the build host -- the kernel returns
- * -EOPNOTSUPP / -ENOPROTOOPT and the cap-gate latches.
+ * Header-gated by __has_include() on linux/genetlink.h, linux/if_link.h,
+ * linux/rtnetlink.h.  NL80211 UAPI integers (NL80211_CMD_*, NL80211_ATTR_*,
+ * NL80211_IFTYPE_STATION) get #define fallbacks at their stable UAPI
+ * values; unrecognised on the kernel -> -EOPNOTSUPP/-ENOPROTOOPT and the
+ * cap-gate latches.
  */
 
 #if __has_include(<linux/genetlink.h>) && \
