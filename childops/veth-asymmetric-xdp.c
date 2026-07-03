@@ -1,82 +1,29 @@
 /*
- * veth_asymmetric_xdp - asymmetric-queue paired/slave netdev + XDP_REDIRECT
- * prog + raw packet burst, aimed at the veth tx-queue lookup OOB shape that
- * upstream commit 08f566e8f83b ("veth: prevent NULL pointer dereference in
- * veth_xdp_rcv_one()" and the surrounding asymmetric-queue handling) was
- * about: when the receiving side has fewer rx queues than the sending side
- * has tx queues (or vice-versa), skb_get_tx_queue() / hash-modulo selection
- * on the rcv side can index past the per-queue array.  Random isolated
- * syscall fuzzing essentially never assembles all of (a) a pair created
- * with explicit IFLA_NUM_{TX,RX}_QUEUES asymmetric across the two halves,
- * (b) an XDP program attached on one half only, and (c) live packet traffic
- * through the resulting pair, in a single child's lifetime.  This childop
- * drives the full sequence per outer iteration so the txq lookup path
- * actually runs against an asymmetric pair under XDP.
+ * veth_asymmetric_xdp - drive the veth-family rx-side txq lookup on an
+ * asymmetric pair under XDP.  Targets the shape where the receiving side has
+ * fewer rx queues than the sending side has tx queues (or vice-versa) and
+ * skb_get_tx_queue() / hash-modulo selection walks past the per-queue array
+ * -- veth_xdp_rcv_one() and adjacent asymmetric-queue accounting.  Isolated
+ * syscall fuzz never assembles the coherent triple this op needs: pair created
+ * with explicit asymmetric IFLA_NUM_{TX,RX}_QUEUES, XDP attached on one half
+ * only, live raw-packet traffic through the pair.
  *
- * Pair kinds (picked uniformly per iteration; latched off independently):
- *   PK_VETH    -- classic veth pair.  IFLA_INFO_KIND="veth", nested
- *                 IFLA_INFO_DATA { IFLA_VETH_INFO_PEER { ... } } carries
- *                 the peer's ifinfomsg + IFLA_IFNAME + per-side queue
- *                 counts.  Asymmetric queues straightforward.
- *   PK_VXCAN   -- CAN-bus virtual pair.  Same nested-peer shape as veth
- *                 (IFLA_VXCAN_INFO_PEER == 1 == IFLA_VETH_INFO_PEER) so
- *                 the same builder serves both with just a kind string
- *                 swap.  Raw AF_PACKET send into a CAN device will fail
- *                 at bind/sendto time -- that's fine, the goal is to
- *                 exercise the rtnl pair-create + XDP attach paths and
- *                 their asymmetric-queue accounting.
- *   PK_IPVLAN  -- slave-on-parent: first create a "dummy" parent, then
- *                 RTM_NEWLINK an ipvlan slave with IFLA_LINK=parent_idx
- *                 and IFLA_INFO_DATA { IFLA_IPVLAN_MODE=IPVLAN_MODE_L3 }.
- *                 The "pair" is (slave, parent) -- XDP attach lands on
- *                 the slave (dummy doesn't support XDP), raw traffic on
- *                 the parent.
- *   PK_MACVLAN -- as above with IFLA_MACVLAN_MODE=MACVLAN_MODE_BRIDGE.
+ * Four pair kinds rotate (each latched independently): veth, vxcan (same
+ * nested-peer shape), ipvlan and macvlan slaves on a dummy parent (XDP on the
+ * slave, raw traffic on the parent).  Each iteration runs inside a transient
+ * userns_run_in_ns grandchild (identity userns + CLONE_NEWNET, _exit reaps),
+ * loads a 2-insn "return XDP_REDIRECT" prog in SKB mode, blasts a small
+ * AF_PACKET/SOCK_RAW burst, and RTM_DELLINK-tears everything down.
  *
- * Per iteration (driven by userns_run_in_ns):
- *   Enter a private net namespace via a transient grandchild that
- *   installs an identity user namespace plus a fresh CLONE_NEWNET, runs
- *   phases (b)..(h) below inside, and _exit()s so the kernel reaps the
- *   netns and every link / fd opened against it.  The persistent fuzz
- *   child never changes its own credentials or namespace stack, so the
- *   cap-drop oracle keeps observing the host credential profile.
- *   Helper -EPERM (hardened userns policy refused CLONE_NEWUSER)
- *   latches the childop off for the rest of the child's lifetime;
- *   transient setup failure skips the iteration without latching.
+ * Brick-safety: all work inside CLONE_NEWNET so the host has nothing to reap;
+ * XDP attach in XDP_FLAGS_SKB_MODE only, so no native driver dependency.
  *
- *   (b) Pick a non-latched pair kind (round-robin from random start).
- *   (c) Create the pair/slave with random asymmetric queue counts.
- *   (d) RTM_NEWLINK SET IFF_UP on both ends.
- *   (e) bpf(BPF_PROG_LOAD, BPF_PROG_TYPE_XDP) for "r0 = XDP_REDIRECT;
- *       exit".  Two-insn opaque blob; no map dependency.  Loadable on
- *       any kernel that accepts unprivileged XDP load (the runtime
- *       redirect will fail without an installed map, but the program
- *       returning XDP_REDIRECT is enough to walk the kernel's
- *       xdp_do_redirect path on the rcv side).
- *   (f) Attach the prog to the "a" side via RTM_NEWLINK + nested
- *       IFLA_XDP { IFLA_XDP_FD, IFLA_XDP_FLAGS=XDP_FLAGS_SKB_MODE }.
- *       SKB mode works without driver native-XDP and is what veth and
- *       friends fall back to anyway.
- *   (g) AF_PACKET / SOCK_RAW socket bound to the "b" side's ifindex,
- *       sendto a 4-16 frame burst of small ethernet+IP+UDP-shaped
- *       payloads.  Hash-driven txq selection on the rcv side walks the
- *       asymmetric-queue array.
- *   (h) RTM_DELLINK the "a" side (cascades to peer for veth/vxcan; for
- *       ipvlan/macvlan the parent dummy is also torn down).  Close
- *       prog + raw fds.
+ * Latches: userns -EPERM latches the op off for the child's life.  Per-kind
+ * ns_unsupported_{veth,vxcan,ipvlan,macvlan} and a separate
+ * ns_unsupported_xdp keep the axes independent -- a missing kind doesn't
+ * disable XDP, and no XDP doesn't disable the asymmetric-queue exercise.
  *
- * Latches:
- *   ns_unsupported_veth     -- first ENOENT/EOPNOTSUPP from veth NEWLINK.
- *   ns_unsupported_vxcan    -- ditto for vxcan (CAN_VCAN/CAN_VXCAN module).
- *   ns_unsupported_ipvlan   -- ditto for the ipvlan slave (also tripped
- *                              if the dummy parent NEWLINK fails, since
- *                              ipvlan needs a parent regardless).
- *   ns_unsupported_macvlan  -- ditto for macvlan.
- *   ns_unsupported_xdp      -- first EPERM/EINVAL from BPF_PROG_LOAD.
- *                              Kept separate from the per-kind latches so
- *                              a missing kind doesn't disable XDP for the
- *                              others and a missing XDP doesn't disable
- *                              the asymmetric-queue exercise.
+ * Header-gated by __has_include() on linux/if_link.h + linux/bpf.h.
  */
 
 #if __has_include(<linux/if_link.h>) && __has_include(<linux/bpf.h>)
