@@ -5,6 +5,7 @@
 	size_t, sigsetsize)
  */
 #include <signal.h>
+#include <string.h>
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -143,6 +144,14 @@ static struct sigaction *alloc_sigaction(void)
 	sa = (struct sigaction *) get_writable_address(sizeof(*sa));
 	if (sa == NULL)
 		return NULL;
+
+	/* Zero the struct before setting a subset of fields -- the
+	 * writable-address pool returns uninitialised bytes, and
+	 * sa_restorer (plus any reserved padding around the union) is
+	 * neither picked below nor overwritten by the kernel on input,
+	 * so without this the kernel copies uninitialised bytes on
+	 * every rt_sigaction/sigaction install. */
+	memset(sa, 0, sizeof(*sa));
 
 	build_sa_mask(&sa->sa_mask);
 	sa->sa_flags = build_sa_flags();
