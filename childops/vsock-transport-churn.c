@@ -1,101 +1,41 @@
 /*
  * vsock_transport_churn - drive AF_VSOCK loopback through transport
- * switch + buffer-size rotation + connect-timeout rotation + local-cid
- * ioctl mid-flow, exercising the net/vmw_vsock/af_vsock.c transport
- * assignment, the vsock_loopback transport's per-namespace teardown,
- * and the buffer-size / timeout setsockopt paths in
- * net/vmw_vsock/vmci_transport.c (and the loopback equivalent).
+ * assignment, buffer-size rotation, connect-timeout rotation, and local-cid
+ * ioctl mid-flow.  Targets net/vmw_vsock/af_vsock.c transport assignment,
+ * vsock_loopback per-namespace teardown, and the buffer-size / timeout
+ * setsockopt paths.
  *
- * The AF_VSOCK contract assigns a transport (g2h, h2g, dgram,
- * vsock_loopback) to each socket at bind/connect time based on the
- * destination cid.  The transport pointer lives on the vsock_sock and
- * is consulted on every send/recv; rotating buffer sizes, connect
- * timeouts, and the local-cid ioctl while the per-cpu skbs and the
- * per-sock virtio queues are still in flight has historically tripped
- * on:
+ * Bug classes: vsock virtio refcount imbalance on transport release (per-sock
+ * vsk->transport decremented twice when transport-switch races a buffer-size
+ * update); vsock_loopback flush race leaving a dangling skb on the ringbuffer;
+ * vsock UAF where the vsock_sock outlives a per-netns transport teardown;
+ * vsock_bpf sockmap detach ordering.
  *
- *   - vsock virtio refcount imbalances on transport release where the
- *     per-sock vsk->transport pointer was decremented twice (once by
- *     the explicit release path and once by the destructor) when a
- *     transport-switch was racing with a buffer-size update;
- *   - vsock_loopback flush race where the per-cpu work queue was
- *     drained while a new send was being queued, leaving a dangling
- *     skb on the loopback ringbuffer;
- *   - vsock UAF on transport release where the vsock_sock kept a
- *     reference to a transport that had been torn down by the last
- *     namespace exit (vsock_loopback is per-netns);
- *   - vsock_bpf prog-detach during a sockmap update where the bpf
- *     prog ref on the vsock_sock was released without the matching
- *     sockmap entry being cleared first.
+ * Per iteration (BUDGETED+JITTER, 200 ms wall cap, fresh sockets): listener
+ * bound cid=VMADDR_CID_LOCAL port=VMADDR_PORT_ANY, connect from a client with
+ * SO_RCV/SNDTIMEO=100ms, run a small send/recv burst, then race
+ * SO_VM_SOCKETS_BUFFER_SIZE + SO_VM_SOCKETS_CONNECT_TIMEOUT_NEW +
+ * IOCTL_VM_SOCKETS_GET_LOCAL_CID against the still-queued skbs on the
+ * loopback ringbuffer; shutdown/close last so the per-cpu loopback worker
+ * drains as the final refs go.  Variant 1/4 wraps the whole iteration in a
+ * userns_run_in_ns(CLONE_NEWNET) grandchild so vsock_loopback's per-netns
+ * transport gets torn down under a live vsk->transport ref.
  *
- * Per outer-loop iteration (BUDGETED + JITTER, 200 ms wall-clock cap,
- * fresh sockets per iteration):
+ * Brick-safety: sockets bind to VMADDR_CID_LOCAL only, so traffic stays on
+ * vsock_loopback -- VMADDR_CID_HOST is never touched even on hosts with
+ * vhost-vsock loaded.  Inner burst BUDGETED base 4 / floor 8 / cap 16 with
+ * JITTER, 200 ms wall cap.  Fresh-netns variant runs in a userns_run_in_ns
+ * grandchild; the persistent child never changes creds or namespaces.
  *
- *   1.  socket(AF_VSOCK, SOCK_STREAM); bind cid=VMADDR_CID_LOCAL with
- *       port=VMADDR_PORT_ANY; listen(8).  Loopback transport only --
- *       VMADDR_CID_LOCAL routes through vsock_loopback and never
- *       reaches the virtio_transport host path.
- *   2.  socket(AF_VSOCK, SOCK_STREAM) for the client; SO_RCVTIMEO /
- *       SO_SNDTIMEO 100 ms; connect to the listener address obtained
- *       via getsockname.
- *   3.  Inner send/recv burst (BUDGETED 4 / floor 8 / cap 16, JITTER):
- *       send small payload, drain receiver with MSG_DONTWAIT.
- *   4.  RACE A: setsockopt SO_VM_SOCKETS_BUFFER_SIZE on the client
- *       mid-flow -- rotates the per-sock buffer size while the
- *       loopback ringbuffer may still hold queued skbs from step 3.
- *   5.  RACE B: setsockopt SO_VM_SOCKETS_CONNECT_TIMEOUT_NEW on the
- *       client -- exercises the timer-rearm path while the connection
- *       is established.
- *   6.  RACE C: ioctl IOCTL_VM_SOCKETS_GET_LOCAL_CID -- mid-flight cid
- *       query.  Read-only on the kernel side but takes the vsock
- *       transport rwlock, racing with the in-flight setsockopt paths.
- *   7.  shutdown(SHUT_RDWR); close(client); close(listener).  Per-cpu
- *       loopback worker drains as the last skb refs go.
+ * Per-process cap-gate latch: ns_unsupported_vsock_transport_churn on
+ * EAFNOSUPPORT / EPERM / ENOPROTOOPT / ENOENT from the first AF_VSOCK probe;
+ * subsequent invocations bump runs+setup_failed and return.
  *
- *   Variant 1/4: wrap the entire iteration in a private user + net
- *   namespace via userns_run_in_ns(CLONE_NEWNET).  vsock_loopback
- *   maintains per-netns transport state, so the fresh ns exercises
- *   vsock_transport_assign, and the grandchild's _exit() tears the ns
- *   stack down -- the historical UAF surface is the vsk->transport
- *   pointer outliving the per-ns teardown.  The helper forks a
- *   transient grandchild, installs CLONE_NEWUSER (gaining CAP_NET_ADMIN
- *   in the owned ns so an unprivileged trinity child can actually drive
- *   the netns path) and then CLONE_NEWNET, so the persistent child
- *   never strands itself in a doomed ns.
- *
- * Per-process cap-gate latch: ns_unsupported_vsock_transport_churn
- * fires on EAFNOSUPPORT / EPERM / ENOPROTOOPT / ENOENT from the very
- * first socket(AF_VSOCK, SOCK_STREAM) probe.  Once latched, every
- * subsequent invocation just bumps runs+setup_failed and returns.
- * Mirrors msg_zerocopy_churn / iouring_send_zc_churn /
- * tcp_ulp_swap_churn / netns_teardown_churn.
- *
- * Brick-safety:
- *   - All sockets bind to VMADDR_CID_LOCAL (cid=1), routing through
- *     vsock_loopback exclusively.  The host's virtio-vsock transport
- *     (VMADDR_CID_HOST) is never touched, so even on a host with
- *     vhost-vsock loaded nothing escapes the loopback ringbuffer.
- *   - Inner send/recv loop is BUDGETED (base 4 / floor 8 / cap 16)
- *     with JITTER and a 200 ms wall-clock cap; SO_RCVTIMEO / SO_SNDTIMEO
- *     of 100 ms on every fd.
- *   - The fresh-netns variant runs inside a transient grandchild forked
- *     by userns_run_in_ns(); the persistent child never changes its
- *     own credentials or namespaces, and the grandchild's _exit() tears
- *     the whole ns stack down on every iteration.
- *   - BPF vsock_bpf hook (BPF_PROG_TYPE_SOCK_OPS attach to a vsock
- *     cgroup) is intentionally deferred; loading a runtime BPF prog
- *     adds a CAP_BPF requirement and a cgroup state machine that
- *     belongs in a follow-up childop.
- *
- * Header gate __has_include(<linux/vm_sockets.h>) replaces the entire
- * implementation with a stub that just bumps runs + setup_failed, so
- * the build still links on toolchains without the kernel uapi header.
- * Constants (VMADDR_CID_LOCAL, VMADDR_PORT_ANY, SO_VM_SOCKETS_BUFFER_SIZE,
- * SO_VM_SOCKETS_CONNECT_TIMEOUT_NEW, IOCTL_VM_SOCKETS_GET_LOCAL_CID)
- * come from the header when present and from #define fallbacks set to
- * the stable UAPI integer values when absent; on kernels that do not
- * recognise them the syscall returns EINVAL or ENOPROTOOPT and the
- * cap-gate latches.
+ * Header-gated by __has_include(<linux/vm_sockets.h>) with a setup_failed
+ * stub fallback.  VMADDR_CID_LOCAL / PORT_ANY, SO_VM_SOCKETS_BUFFER_SIZE,
+ * SO_VM_SOCKETS_CONNECT_TIMEOUT_NEW, IOCTL_VM_SOCKETS_GET_LOCAL_CID get
+ * #define fallbacks at their stable UAPI values; unrecognised values return
+ * EINVAL/ENOPROTOOPT and the cap-gate latches.
  */
 
 #include <errno.h>
