@@ -1071,112 +1071,150 @@ static void dump_stats_render_childop_data_path_cold_permille(void)
 	}
 }
 
+static void dump_stats_render_childop_taint_transitions(void)
+{
+	unsigned int op;
+	char metric[40];
+
+	for (op = 0; op < NR_CHILD_OP_TYPES; op++) {
+		if (shm->stats.taint_transitions[op] == 0)
+			continue;
+		snprintf(metric, sizeof(metric), "%s",
+			 alt_op_name((enum child_op_type)op));
+		stat_row("taint_transitions", metric,
+			 shm->stats.taint_transitions[op]);
+	}
+}
+
+static void dump_stats_render_childop_pool_race_aborted(void)
+{
+	unsigned int op;
+	char metric[40];
+
+	for (op = 0; op < NR_CHILD_OP_TYPES; op++) {
+		if (shm->stats.pool_race_aborted[op] == 0)
+			continue;
+		snprintf(metric, sizeof(metric), "%s",
+			 alt_op_name((enum child_op_type)op));
+		stat_row("pool_race_aborted", metric,
+			 shm->stats.pool_race_aborted[op]);
+	}
+}
+
+/* Per-childop missing Step-B yield producer map: emit a row
+ * for each op that has been dispatched at least once but
+ * still has no setup-accepted producer wired -- i.e.
+ * childop_invocations[op] > 0 AND
+ * childop_setup_accepted[op] == 0.  These are the ops that
+ * silently skip the setup/data-path scorecards because no
+ * Step-B producer is bumping setup_accepted on the hot path.
+ * The value rendered is the invocations count so the
+ * operator can see how much dispatch pressure the missing
+ * producer is masking.  Self-maintains as Step-B producers
+ * land: rows disappear once setup_accepted[op] starts
+ * moving.  CHILD_OP_SYSCALL is skipped for the same reason
+ * as the sibling tables. */
+static void dump_stats_render_childop_missing_producer(void)
+{
+	unsigned int op;
+	char metric[40];
+
+	for (op = CHILD_OP_SYSCALL + 1;
+	     op < NR_CHILD_OP_TYPES; op++) {
+		unsigned long inv =
+			shm->stats.childop_invocations[op];
+		if (inv == 0)
+			continue;
+		if (shm->stats.childop_setup_accepted[op] != 0)
+			continue;
+		snprintf(metric, sizeof(metric), "%s",
+			 alt_op_name((enum child_op_type)op));
+		stat_row("childop_missing_producer", metric, inv);
+	}
+}
+
+/* Per-childop one-shot latch reason: rendered as the integer
+ * enum childop_latch_reason code (see include/child.h).  No
+ * string table is materialised at the dump layer -- the
+ * operator decodes.  0 (CHILDOP_LATCH_NONE) is skipped so
+ * the per-op dump only emits rows for ops that actually
+ * latched themselves off.  CHILD_OP_SYSCALL is skipped for
+ * the same reason as above. */
+static void dump_stats_render_childop_latch_reason(void)
+{
+	unsigned int op;
+	char metric[40];
+
+	for (op = CHILD_OP_SYSCALL + 1;
+	     op < NR_CHILD_OP_TYPES; op++) {
+		unsigned long v =
+			shm->stats.childop_latch_reason[op];
+		if (v == 0)
+			continue;
+		snprintf(metric, sizeof(metric), "%s",
+			 alt_op_name((enum child_op_type)op));
+		stat_row("childop_latch_reason", metric, v);
+	}
+}
+
+/* SHADOW score-driven recommendation counters bumped from
+ * close_window_and_decide() in child-canary.c.  Divergence
+ * between these and the live promote/demote count
+ * (canary_op_state.total_demotions / total_promotions, surfaced
+ * via canary_queue_summary()) is the signal the 75.2.B
+ * enforcement work needs before it can take over the picker;
+ * surfacing them here keeps the dump self-contained.  Skip-
+ * zero, CHILD_OP_SYSCALL-skipped (matches the surrounding
+ * per-childop arrays). */
+static void dump_stats_render_childop_would_demote(void)
+{
+	unsigned int op;
+	char metric[40];
+
+	for (op = CHILD_OP_SYSCALL + 1;
+	     op < NR_CHILD_OP_TYPES; op++) {
+		unsigned long v =
+			shm->stats.childop_would_demote[op];
+		if (v == 0)
+			continue;
+		snprintf(metric, sizeof(metric), "%s",
+			 alt_op_name((enum child_op_type)op));
+		stat_row("childop_would_demote", metric, v);
+	}
+}
+
+static void dump_stats_render_childop_would_promote(void)
+{
+	unsigned int op;
+	char metric[40];
+
+	for (op = CHILD_OP_SYSCALL + 1;
+	     op < NR_CHILD_OP_TYPES; op++) {
+		unsigned long v =
+			shm->stats.childop_would_promote[op];
+		if (v == 0)
+			continue;
+		snprintf(metric, sizeof(metric), "%s",
+			 alt_op_name((enum child_op_type)op));
+		stat_row("childop_would_promote", metric, v);
+	}
+}
+
 void dump_stats_childop_ranked_tables(void)
 {
-	{
-		unsigned int op;
-		char metric[40];
-
-		for (op = 0; op < NR_CHILD_OP_TYPES; op++) {
-			if (shm->stats.taint_transitions[op] == 0)
-				continue;
-			snprintf(metric, sizeof(metric), "%s",
-				 alt_op_name((enum child_op_type)op));
-			stat_row("taint_transitions", metric,
-				 shm->stats.taint_transitions[op]);
-		}
-
-		for (op = 0; op < NR_CHILD_OP_TYPES; op++) {
-			if (shm->stats.pool_race_aborted[op] == 0)
-				continue;
-			snprintf(metric, sizeof(metric), "%s",
-				 alt_op_name((enum child_op_type)op));
-			stat_row("pool_race_aborted", metric,
-				 shm->stats.pool_race_aborted[op]);
-		}
-
-		dump_stats_render_childop_edges_discovered();
-		dump_stats_render_childop_calls_with_edges();
-		dump_stats_render_childop_last_success_ts();
-		dump_stats_render_childop_setup_accepted();
-		dump_stats_render_childop_data_path();
-		dump_stats_render_childop_setup_bound_permille();
-		dump_stats_render_childop_data_path_cold_permille();
-
-		/* Per-childop missing Step-B yield producer map: emit a row
-		 * for each op that has been dispatched at least once but
-		 * still has no setup-accepted producer wired -- i.e.
-		 * childop_invocations[op] > 0 AND
-		 * childop_setup_accepted[op] == 0.  These are the ops that
-		 * silently skip the setup/data-path scorecards because no
-		 * Step-B producer is bumping setup_accepted on the hot path.
-		 * The value rendered is the invocations count so the
-		 * operator can see how much dispatch pressure the missing
-		 * producer is masking.  Self-maintains as Step-B producers
-		 * land: rows disappear once setup_accepted[op] starts
-		 * moving.  CHILD_OP_SYSCALL is skipped for the same reason
-		 * as the sibling tables. */
-		for (op = CHILD_OP_SYSCALL + 1;
-		     op < NR_CHILD_OP_TYPES; op++) {
-			unsigned long inv =
-				shm->stats.childop_invocations[op];
-			if (inv == 0)
-				continue;
-			if (shm->stats.childop_setup_accepted[op] != 0)
-				continue;
-			snprintf(metric, sizeof(metric), "%s",
-				 alt_op_name((enum child_op_type)op));
-			stat_row("childop_missing_producer", metric, inv);
-		}
-
-		/* Per-childop one-shot latch reason: rendered as the integer
-		 * enum childop_latch_reason code (see include/child.h).  No
-		 * string table is materialised at the dump layer -- the
-		 * operator decodes.  0 (CHILDOP_LATCH_NONE) is skipped so
-		 * the per-op dump only emits rows for ops that actually
-		 * latched themselves off.  CHILD_OP_SYSCALL is skipped for
-		 * the same reason as above. */
-		for (op = CHILD_OP_SYSCALL + 1;
-		     op < NR_CHILD_OP_TYPES; op++) {
-			unsigned long v =
-				shm->stats.childop_latch_reason[op];
-			if (v == 0)
-				continue;
-			snprintf(metric, sizeof(metric), "%s",
-				 alt_op_name((enum child_op_type)op));
-			stat_row("childop_latch_reason", metric, v);
-		}
-
-		/* SHADOW score-driven recommendation counters bumped from
-		 * close_window_and_decide() in child-canary.c.  Divergence
-		 * between these and the live promote/demote count
-		 * (canary_op_state.total_demotions / total_promotions, surfaced
-		 * via canary_queue_summary()) is the signal the 75.2.B
-		 * enforcement work needs before it can take over the picker;
-		 * surfacing them here keeps the dump self-contained.  Skip-
-		 * zero, CHILD_OP_SYSCALL-skipped (matches the surrounding
-		 * per-childop arrays). */
-		for (op = CHILD_OP_SYSCALL + 1;
-		     op < NR_CHILD_OP_TYPES; op++) {
-			unsigned long v =
-				shm->stats.childop_would_demote[op];
-			if (v == 0)
-				continue;
-			snprintf(metric, sizeof(metric), "%s",
-				 alt_op_name((enum child_op_type)op));
-			stat_row("childop_would_demote", metric, v);
-		}
-		for (op = CHILD_OP_SYSCALL + 1;
-		     op < NR_CHILD_OP_TYPES; op++) {
-			unsigned long v =
-				shm->stats.childop_would_promote[op];
-			if (v == 0)
-				continue;
-			snprintf(metric, sizeof(metric), "%s",
-				 alt_op_name((enum child_op_type)op));
-			stat_row("childop_would_promote", metric, v);
-		}
-	}
+	dump_stats_render_childop_taint_transitions();
+	dump_stats_render_childop_pool_race_aborted();
+	dump_stats_render_childop_edges_discovered();
+	dump_stats_render_childop_calls_with_edges();
+	dump_stats_render_childop_last_success_ts();
+	dump_stats_render_childop_setup_accepted();
+	dump_stats_render_childop_data_path();
+	dump_stats_render_childop_setup_bound_permille();
+	dump_stats_render_childop_data_path_cold_permille();
+	dump_stats_render_childop_missing_producer();
+	dump_stats_render_childop_latch_reason();
+	dump_stats_render_childop_would_demote();
+	dump_stats_render_childop_would_promote();
 }
 
 /* SHADOW-ONLY saturation-cooldown counters.  Gated by
