@@ -16,11 +16,13 @@
  * BLOB_HAVOC_MAX_OPS), CMPDICT (HAVOC plus a bounded buffer-redqueen
  * pass capped at BLOB_CMPDICT_MAX_INSERTS: each iteration coin-flips
  * between a built-in well-known-magic table and the learned per-nr
- * cmp-hint pool via cmp_hints_try_get, then applies one of four
- * splat forms -- plain little-endian in the majority, plus three
- * transform arms {big-endian, value+1, value-1} for endian and
- * boundary coverage -- and writes the result into the buffer at a
- * random offset).
+ * cmp-hint pool via cmp_hints_try_get_sized -- which returns both
+ * the constant AND the operand width the kernel's cmp instruction
+ * recorded, so a learned magic is splatted at the width the kernel
+ * actually compares against -- then applies one of four splat forms
+ * -- plain little-endian in the majority, plus three transform arms
+ * {big-endian, value+1, value-1} for endian and boundary coverage --
+ * and writes the result into the buffer at a random offset).
  */
 #include <stdbool.h>
 #include <stddef.h>
@@ -310,13 +312,19 @@ static uint64_t apply_splat_form(uint64_t v, unsigned int width,
  * Two sources.  Each iteration coin-flips (rnd_u32() & 1u) between
  * (a) the built-in blob_static_magics[] table -- one uniformly-picked
  * entry with a fixed width baked into the entry -- and (b) the
- * learned per-nr cmp_hints pool -- one cmp_hints_try_get(nr, do32,
- * ...) pull with a width drawn from {1, 2, 4, 8}.  A static draw
- * whose baked width does not fit len falls back to the learned path
- * silently; a learned pull that misses (empty pool, chaos-
- * suppressed, corrupted) is skipped silently.  Neither miss bumps a
- * counter so both blob_dict_inserts and blob_static_magic_inserts
- * measure committed splats, not attempts.
+ * learned per-nr cmp_hints pool -- one cmp_hints_try_get_sized(nr,
+ * do32, ...) pull that returns both the constant and its RECORDED
+ * operand width from the cmp record ({1, 2, 4, 8}).  Honoring the
+ * pool entry's own width matches the width the kernel's cmp
+ * instruction reads -- a magic learned at a 2-byte compare is
+ * written as two bytes, not blindly widened to eight bytes of
+ * surrounding garbage the downstream compare then rejects.  A static
+ * draw whose baked width does not fit len falls back to the learned
+ * path silently; a learned pull that misses (empty pool, chaos-
+ * suppressed, corrupted) or whose recorded width does not fit in
+ * len is skipped silently.  Neither miss bumps a counter so both
+ * blob_dict_inserts and blob_static_magic_inserts measure committed
+ * splats, not attempts.
  *
  * Every commit then draws one splat form via pick_splat_form(): the
  * majority arm is plain little-endian (matches the baseline that
@@ -329,13 +337,16 @@ static uint64_t apply_splat_form(uint64_t v, unsigned int width,
  * source-side counter, giving the transform-vs-plain ratio without
  * disturbing the existing static-vs-learned ratio.
  *
- * Every write is clamped so pos + width <= len; on the learned arm,
- * widths that do not fit in len degrade down the {8, 4, 2, 1} ladder
- * until they do (a len of 0 is rejected by the caller, so the worst
- * case here is len == 1 which forces a single-byte splat).  The
- * static arm does not degrade because the baked width is part of the
- * magic -- a truncated header magic would not satisfy the pre-parser
- * check the entry exists to satisfy.  Returns the number of committed
+ * Every write is clamped so pos + width <= len.  On the learned arm
+ * the pool entry's recorded width is honored verbatim -- if that
+ * width does not fit in len (e.g. a 4-byte cmp constant against a
+ * 3-byte buffer) the iteration is skipped rather than truncated,
+ * because a narrowed splat writes a partial constant the kernel's
+ * cmp instruction cannot match at its actual width, and the
+ * substituted low bytes would be indistinguishable from noise.  The
+ * static arm likewise does not degrade because the baked width is
+ * part of the magic -- a truncated header magic would not satisfy
+ * the pre-parser check the entry exists to satisfy.  Returns the number of committed
  * learned-pool inserts through the return value, the number of
  * committed static-table inserts through *static_committed_out, and
  * the count of committed splats that used a non-plain transform
@@ -387,23 +398,30 @@ static unsigned int blob_cmpdict(unsigned char *buf, size_t len,
 		}
 
 		if (!from_static) {
-			if (!cmp_hints_try_get(nr, do32, &hint))
+			unsigned int recorded_width = 0;
+
+			if (!cmp_hints_try_get_sized(nr, do32, &hint,
+						     &recorded_width))
 				continue;
 
-			/* Width ladder: pick uniformly from {1, 2, 4, 8}
-			 * then degrade if the chosen width does not fit
-			 * in len.  The degrade walks down the same ladder
-			 * so a len=3 buffer accepts width 2 or 1, never
-			 * the constructed-mid value of 3 (which would
-			 * expose a partial 32-bit stamp). */
-			switch (rnd_modulo_u32(4)) {
-			case 0:  width = 1; break;
-			case 1:  width = 2; break;
-			case 2:  width = 4; break;
-			default: width = 8; break;
-			}
-			while (width > len)
-				width >>= 1;
+			/* Honor the pool entry's recorded operand width
+			 * verbatim.  The cmp_hints collector only stores
+			 * KCOV_TRACE_CMP records whose size is in
+			 * {1, 2, 4, 8}, but guard defensively: a torn
+			 * lockless read of a freshly-evicted entry or a
+			 * future collector change outside the invariant
+			 * would otherwise splat at a width the LE stamp
+			 * helper below cannot handle.  Skip on both an
+			 * unsupported width AND a recorded width that
+			 * does not fit len -- a narrowed splat writes a
+			 * partial constant the kernel's cmp cannot match
+			 * at its true width. */
+			if (recorded_width != 1 && recorded_width != 2 &&
+			    recorded_width != 4 && recorded_width != 8)
+				continue;
+			if ((size_t) recorded_width > len)
+				continue;
+			width = recorded_width;
 		}
 		/* width is now in {1, 2, 4, 8} and <= len. */
 

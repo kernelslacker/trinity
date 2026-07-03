@@ -128,7 +128,8 @@ static bool cmp_try_get_durable_tier(unsigned int nr, bool do32,
 				     enum cmp_hint_use use, unsigned long old,
 				     bool allow_hyp_inject,
 				     const struct cmp_accept_range *accept,
-				     unsigned long *out)
+				     unsigned long *out,
+				     unsigned int *out_size)
 {
 	struct cmp_hint_pool *pool = &cmp_hints_shm->pools[nr][do32 ? 1 : 0];
 	struct cmp_hint_entry *picked;
@@ -321,6 +322,8 @@ static bool cmp_try_get_durable_tier(unsigned int nr, bool do32,
 					 false, bucket, hyp_injected);
 	}
 	cmp_hyp_would_pick(nr, do32, picked_cmp_ip, picked_size, picked_value);
+	if (out_size != NULL)
+		*out_size = picked_size;
 	return true;
 }
 
@@ -331,7 +334,8 @@ static enum cmp_tier_result cmp_try_get_recent_tier(unsigned int nr, bool do32,
 						    unsigned long old,
 						    bool allow_hyp_inject,
 						    const struct cmp_accept_range *accept,
-						    unsigned long *out)
+						    unsigned long *out,
+						    unsigned int *out_size)
 {
 	/*
 	 * Recent-pool sampling tier.
@@ -428,6 +432,8 @@ static enum cmp_tier_result cmp_try_get_recent_tier(unsigned int nr, bool do32,
 							 true, 0, false);
 				cmp_hyp_would_pick(nr, do32, re_cmp_ip,
 						   re_size, re_value);
+				if (out_size != NULL)
+					*out_size = re_size;
 				return CMP_TIER_SERVED;
 			}
 		} else if (kcov_shm != NULL) {
@@ -439,10 +445,25 @@ static enum cmp_tier_result cmp_try_get_recent_tier(unsigned int nr, bool do32,
 	return CMP_TIER_MISS;
 }
 
-bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
-			  unsigned long old, bool allow_hyp_inject,
-			  const struct cmp_accept_range *accept,
-			  unsigned long *out)
+/*
+ * Common entrypoint that both cmp_hints_try_get_ex() (public width-
+ * discarding surface) and cmp_hints_try_get_sized() (width-preserving
+ * surface for consumers that need to splat at the recorded operand
+ * width) route through.  out_size == NULL matches the historical
+ * behaviour: the recorded operand width is discarded on the served
+ * path; callers that pass a non-NULL out_size receive the pool
+ * entry's uint32_t size (1, 2, 4, or 8) on a true return.  The
+ * chaos-suppressed / accept-rejected / empty-pool fall-through paths
+ * never touch out_size, so a caller can leave its pre-call scratch
+ * uninitialised and only trust *out_size on a true return.
+ */
+static bool cmp_hints_try_get_ex_common(unsigned int nr, bool do32,
+					enum cmp_hint_use use,
+					unsigned long old,
+					bool allow_hyp_inject,
+					const struct cmp_accept_range *accept,
+					unsigned long *out,
+					unsigned int *out_size)
 {
 	if (cmp_hints_shm == NULL || nr >= MAX_NR_SYSCALL)
 		return false;
@@ -487,7 +508,8 @@ bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 	}
 
 	switch (cmp_try_get_recent_tier(nr, do32, use, old,
-					allow_hyp_inject, accept, out)) {
+					allow_hyp_inject, accept, out,
+					out_size)) {
 	case CMP_TIER_SERVED:
 		return true;
 	case CMP_TIER_REJECTED:
@@ -497,11 +519,40 @@ bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 	}
 
 	return cmp_try_get_durable_tier(nr, do32, use, old,
-				       allow_hyp_inject, accept, out);
+				       allow_hyp_inject, accept, out,
+				       out_size);
+}
+
+bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
+			  unsigned long old, bool allow_hyp_inject,
+			  const struct cmp_accept_range *accept,
+			  unsigned long *out)
+{
+	return cmp_hints_try_get_ex_common(nr, do32, use, old,
+					   allow_hyp_inject, accept, out,
+					   NULL);
 }
 
 bool cmp_hints_try_get(unsigned int nr, bool do32, unsigned long *out)
 {
 	return cmp_hints_try_get_ex(nr, do32, CMP_HINT_BOUNDARY, 0, false,
 				    NULL, out);
+}
+
+/*
+ * Width-preserving pull.  Same policy as cmp_hints_try_get() (BOUNDARY
+ * rotation, no typed-hypothesis inject, no accept range) but on a
+ * successful return also writes the pool entry's recorded operand
+ * width to *out_size in {1, 2, 4, 8}.  The blob mutator's CMPDICT
+ * learned arm splats the returned constant at exactly that width so
+ * an on-disk / on-wire byte sequence learned at a 2-byte cmp is not
+ * blindly re-emitted as an 8-byte splat that surrounds the constant
+ * with 6 bytes of garbage the kernel's downstream compare then
+ * rejects.  On a false return *out_size is untouched.
+ */
+bool cmp_hints_try_get_sized(unsigned int nr, bool do32,
+			     unsigned long *out, unsigned int *out_size)
+{
+	return cmp_hints_try_get_ex_common(nr, do32, CMP_HINT_BOUNDARY, 0,
+					   false, NULL, out, out_size);
 }
