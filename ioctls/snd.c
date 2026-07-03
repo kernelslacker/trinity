@@ -108,140 +108,188 @@ static void fill_snd_ctl_elem_id(struct snd_ctl_elem_id *id)
 	id->index = rnd_modulo_u32(8);
 }
 
+static void snd_ctl_sanitise_card_info(struct syscallrecord *rec)
+{
+	struct snd_ctl_card_info *info = get_writable_struct(sizeof(*info));
+	if (info) {
+		memset(info, 0, sizeof(*info));
+		rec->a3 = (unsigned long) info;
+	}
+}
+
+static void snd_ctl_sanitise_elem_list(struct syscallrecord *rec)
+{
+	struct snd_ctl_elem_list *list = get_writable_struct(sizeof(*list));
+	if (list) {
+		memset(list, 0, sizeof(*list));
+		unsigned int space = rnd_modulo_u32(16) + 1;
+		void *pids = get_writable_struct(space * sizeof(*list->pids));
+		list->offset = rnd_modulo_u32(64);
+		if (pids) {
+			list->pids = pids;
+			list->space = space;
+		} else {
+			list->pids = NULL;
+			list->space = 0;
+		}
+		rec->a3 = (unsigned long) list;
+	}
+}
+
+static void snd_ctl_sanitise_elem_info(struct syscallrecord *rec)
+{
+	struct snd_ctl_elem_info *info = get_writable_struct(sizeof(*info));
+	if (info) {
+		memset(info, 0, sizeof(*info));
+		fill_snd_ctl_elem_id(&info->id);
+		rec->a3 = (unsigned long) info;
+	}
+}
+
+static void snd_ctl_sanitise_elem_value(struct syscallrecord *rec)
+{
+	struct snd_ctl_elem_value *val = get_writable_struct(sizeof(*val));
+	if (val) {
+		memset(val, 0, sizeof(*val));
+		fill_snd_ctl_elem_id(&val->id);
+		rec->a3 = (unsigned long) val;
+	}
+}
+
+static void snd_ctl_sanitise_elem_id(struct syscallrecord *rec)
+{
+	struct snd_ctl_elem_id *id = get_writable_struct(sizeof(*id));
+	if (id) {
+		memset(id, 0, sizeof(*id));
+		fill_snd_ctl_elem_id(id);
+		rec->a3 = (unsigned long) id;
+	}
+}
+
+static void snd_ctl_sanitise_tlv(struct syscallrecord *rec)
+{
+	unsigned int datalen = (rnd_modulo_u32(8) + 1) * 4;
+	/* snd_ctl_tlv has a flexible array member, allocate with data */
+	struct snd_ctl_tlv *tlv = get_writable_struct(sizeof(*tlv) + datalen);
+	if (tlv) {
+		memset(tlv, 0, sizeof(*tlv) + datalen);
+		tlv->numid = rnd_modulo_u32(64);
+		tlv->length = datalen;
+		rec->a3 = (unsigned long) tlv;
+	}
+}
+
+static void snd_ctl_sanitise_next_device(struct syscallrecord *rec)
+{
+	int *dev = get_writable_struct(sizeof(int));
+	if (dev) {
+		*dev = (int)(rnd_modulo_u32(8)) - 1;	/* -1 to get first, 0-7 otherwise */
+		rec->a3 = (unsigned long) dev;
+	}
+}
+
+static void snd_ctl_sanitise_hwdep_info(struct syscallrecord *rec)
+{
+	struct snd_hwdep_info *info = get_writable_struct(sizeof(*info));
+	if (info) {
+		memset(info, 0, sizeof(*info));
+		info->device = rnd_modulo_u32(8);
+		rec->a3 = (unsigned long) info;
+	}
+}
+
+static void snd_ctl_sanitise_pcm_info(struct syscallrecord *rec)
+{
+	struct snd_pcm_info *info = get_writable_struct(sizeof(*info));
+	if (info) {
+		memset(info, 0, sizeof(*info));
+		info->device = rnd_modulo_u32(8);
+		info->subdevice = rnd_modulo_u32(8);
+		info->stream = rnd_u32() & 1;
+		rec->a3 = (unsigned long) info;
+	}
+}
+
+static void snd_ctl_sanitise_rawmidi_info(struct syscallrecord *rec)
+{
+	struct snd_rawmidi_info *info = get_writable_struct(sizeof(*info));
+	if (info) {
+		memset(info, 0, sizeof(*info));
+		info->device = rnd_modulo_u32(8);
+		info->subdevice = rnd_modulo_u32(8);
+		info->stream = rnd_modulo_u32(3);
+		rec->a3 = (unsigned long) info;
+	}
+}
+
+static void snd_ctl_sanitise_prefer_subdevice(struct syscallrecord *rec)
+{
+	int *val = get_writable_struct(sizeof(int));
+	if (val) {
+		*val = rnd_modulo_u32(8);
+		rec->a3 = (unsigned long) val;
+	}
+}
+
+static void snd_ctl_sanitise_subscribe_events(struct syscallrecord *rec)
+{
+	int *sub = get_writable_struct(sizeof(int));
+	if (sub) {
+		*sub = RAND_BOOL();
+		rec->a3 = (unsigned long) sub;
+	}
+}
+
 static void sanitise_snd_ctl(struct syscallrecord *rec)
 {
 	switch (rec->a2) {
-	case SNDRV_CTL_IOCTL_CARD_INFO: {
-		struct snd_ctl_card_info *info = get_writable_struct(sizeof(*info));
-		if (info) {
-			memset(info, 0, sizeof(*info));
-			rec->a3 = (unsigned long) info;
-		}
+	case SNDRV_CTL_IOCTL_CARD_INFO:
+		snd_ctl_sanitise_card_info(rec);
 		break;
-	}
-	case SNDRV_CTL_IOCTL_ELEM_LIST: {
-		struct snd_ctl_elem_list *list = get_writable_struct(sizeof(*list));
-		if (list) {
-			memset(list, 0, sizeof(*list));
-			unsigned int space = rnd_modulo_u32(16) + 1;
-			void *pids = get_writable_struct(space * sizeof(*list->pids));
-			list->offset = rnd_modulo_u32(64);
-			if (pids) {
-				list->pids = pids;
-				list->space = space;
-			} else {
-				list->pids = NULL;
-				list->space = 0;
-			}
-			rec->a3 = (unsigned long) list;
-		}
+	case SNDRV_CTL_IOCTL_ELEM_LIST:
+		snd_ctl_sanitise_elem_list(rec);
 		break;
-	}
 	case SNDRV_CTL_IOCTL_ELEM_INFO:
 	case SNDRV_CTL_IOCTL_ELEM_ADD:
-	case SNDRV_CTL_IOCTL_ELEM_REPLACE: {
-		struct snd_ctl_elem_info *info = get_writable_struct(sizeof(*info));
-		if (info) {
-			memset(info, 0, sizeof(*info));
-			fill_snd_ctl_elem_id(&info->id);
-			rec->a3 = (unsigned long) info;
-		}
+	case SNDRV_CTL_IOCTL_ELEM_REPLACE:
+		snd_ctl_sanitise_elem_info(rec);
 		break;
-	}
 	case SNDRV_CTL_IOCTL_ELEM_READ:
-	case SNDRV_CTL_IOCTL_ELEM_WRITE: {
-		struct snd_ctl_elem_value *val = get_writable_struct(sizeof(*val));
-		if (val) {
-			memset(val, 0, sizeof(*val));
-			fill_snd_ctl_elem_id(&val->id);
-			rec->a3 = (unsigned long) val;
-		}
+	case SNDRV_CTL_IOCTL_ELEM_WRITE:
+		snd_ctl_sanitise_elem_value(rec);
 		break;
-	}
 	case SNDRV_CTL_IOCTL_ELEM_LOCK:
 	case SNDRV_CTL_IOCTL_ELEM_UNLOCK:
-	case SNDRV_CTL_IOCTL_ELEM_REMOVE: {
-		struct snd_ctl_elem_id *id = get_writable_struct(sizeof(*id));
-		if (id) {
-			memset(id, 0, sizeof(*id));
-			fill_snd_ctl_elem_id(id);
-			rec->a3 = (unsigned long) id;
-		}
+	case SNDRV_CTL_IOCTL_ELEM_REMOVE:
+		snd_ctl_sanitise_elem_id(rec);
 		break;
-	}
 	case SNDRV_CTL_IOCTL_TLV_READ:
 	case SNDRV_CTL_IOCTL_TLV_WRITE:
-	case SNDRV_CTL_IOCTL_TLV_COMMAND: {
-		unsigned int datalen = (rnd_modulo_u32(8) + 1) * 4;
-		/* snd_ctl_tlv has a flexible array member, allocate with data */
-		struct snd_ctl_tlv *tlv = get_writable_struct(sizeof(*tlv) + datalen);
-		if (tlv) {
-			memset(tlv, 0, sizeof(*tlv) + datalen);
-			tlv->numid = rnd_modulo_u32(64);
-			tlv->length = datalen;
-			rec->a3 = (unsigned long) tlv;
-		}
+	case SNDRV_CTL_IOCTL_TLV_COMMAND:
+		snd_ctl_sanitise_tlv(rec);
 		break;
-	}
 	case SNDRV_CTL_IOCTL_HWDEP_NEXT_DEVICE:
 	case SNDRV_CTL_IOCTL_PCM_NEXT_DEVICE:
-	case SNDRV_CTL_IOCTL_RAWMIDI_NEXT_DEVICE: {
-		int *dev = get_writable_struct(sizeof(int));
-		if (dev) {
-			*dev = (int)(rnd_modulo_u32(8)) - 1;	/* -1 to get first, 0-7 otherwise */
-			rec->a3 = (unsigned long) dev;
-		}
+	case SNDRV_CTL_IOCTL_RAWMIDI_NEXT_DEVICE:
+		snd_ctl_sanitise_next_device(rec);
 		break;
-	}
-	case SNDRV_CTL_IOCTL_HWDEP_INFO: {
-		struct snd_hwdep_info *info = get_writable_struct(sizeof(*info));
-		if (info) {
-			memset(info, 0, sizeof(*info));
-			info->device = rnd_modulo_u32(8);
-			rec->a3 = (unsigned long) info;
-		}
+	case SNDRV_CTL_IOCTL_HWDEP_INFO:
+		snd_ctl_sanitise_hwdep_info(rec);
 		break;
-	}
-	case SNDRV_CTL_IOCTL_PCM_INFO: {
-		struct snd_pcm_info *info = get_writable_struct(sizeof(*info));
-		if (info) {
-			memset(info, 0, sizeof(*info));
-			info->device = rnd_modulo_u32(8);
-			info->subdevice = rnd_modulo_u32(8);
-			info->stream = rnd_u32() & 1;
-			rec->a3 = (unsigned long) info;
-		}
+	case SNDRV_CTL_IOCTL_PCM_INFO:
+		snd_ctl_sanitise_pcm_info(rec);
 		break;
-	}
-	case SNDRV_CTL_IOCTL_RAWMIDI_INFO: {
-		struct snd_rawmidi_info *info = get_writable_struct(sizeof(*info));
-		if (info) {
-			memset(info, 0, sizeof(*info));
-			info->device = rnd_modulo_u32(8);
-			info->subdevice = rnd_modulo_u32(8);
-			info->stream = rnd_modulo_u32(3);
-			rec->a3 = (unsigned long) info;
-		}
+	case SNDRV_CTL_IOCTL_RAWMIDI_INFO:
+		snd_ctl_sanitise_rawmidi_info(rec);
 		break;
-	}
 	case SNDRV_CTL_IOCTL_PCM_PREFER_SUBDEVICE:
 	case SNDRV_CTL_IOCTL_RAWMIDI_PREFER_SUBDEVICE:
-	case SNDRV_CTL_IOCTL_POWER: {
-		int *val = get_writable_struct(sizeof(int));
-		if (val) {
-			*val = rnd_modulo_u32(8);
-			rec->a3 = (unsigned long) val;
-		}
+	case SNDRV_CTL_IOCTL_POWER:
+		snd_ctl_sanitise_prefer_subdevice(rec);
 		break;
-	}
-	case SNDRV_CTL_IOCTL_SUBSCRIBE_EVENTS: {
-		int *sub = get_writable_struct(sizeof(int));
-		if (sub) {
-			*sub = RAND_BOOL();
-			rec->a3 = (unsigned long) sub;
-		}
+	case SNDRV_CTL_IOCTL_SUBSCRIBE_EVENTS:
+		snd_ctl_sanitise_subscribe_events(rec);
 		break;
-	}
 	default:
 		break;
 	}
@@ -272,153 +320,205 @@ static void fill_snd_pcm_hw_params(struct snd_pcm_hw_params *p)
 	/* leave format mask zero: kernel will open it up */
 }
 
+static void snd_pcm_sanitise_info(struct syscallrecord *rec)
+{
+	struct snd_pcm_info *info = get_writable_struct(sizeof(*info));
+	if (info) {
+		memset(info, 0, sizeof(*info));
+		info->device = rnd_modulo_u32(8);
+		info->subdevice = rnd_modulo_u32(8);
+		info->stream = rnd_u32() & 1;
+		rec->a3 = (unsigned long) info;
+	}
+}
+
+static void snd_pcm_sanitise_tstamp(struct syscallrecord *rec)
+{
+	int *mode = get_writable_struct(sizeof(int));
+	if (mode) {
+		*mode = rnd_modulo_u32(3);
+		rec->a3 = (unsigned long) mode;
+	}
+}
+
+static void snd_pcm_sanitise_hw_params(struct syscallrecord *rec)
+{
+	struct snd_pcm_hw_params *p = get_writable_struct(sizeof(*p));
+	if (p) {
+		memset(p, 0, sizeof(*p));
+		fill_snd_pcm_hw_params(p);
+		rec->a3 = (unsigned long) p;
+	}
+}
+
+static void snd_pcm_sanitise_sw_params(struct syscallrecord *rec)
+{
+	struct snd_pcm_sw_params *p = get_writable_struct(sizeof(*p));
+	if (p) {
+		memset(p, 0, sizeof(*p));
+		p->avail_min = rnd_modulo_u32(4096) + 1;
+		p->start_threshold = rnd_modulo_u32(8192) + 1;
+		p->stop_threshold = rnd_modulo_u32(8192) + 1;
+		p->tstamp_mode = rnd_modulo_u32(2);
+		p->period_step = 1;
+		rec->a3 = (unsigned long) p;
+	}
+}
+
+static void snd_pcm_sanitise_status(struct syscallrecord *rec)
+{
+	struct snd_pcm_status *st = get_writable_struct(sizeof(*st));
+	if (st) {
+		memset(st, 0, sizeof(*st));
+		/* STATUS_EXT reads audio_tstamp_data as a request hint
+		 * for which timestamp variant to report. */
+		if (rec->a2 == SNDRV_PCM_IOCTL_STATUS_EXT)
+			st->audio_tstamp_data = rnd_modulo_u32(4);
+		rec->a3 = (unsigned long) st;
+	}
+}
+
+static void snd_pcm_sanitise_delay(struct syscallrecord *rec)
+{
+	snd_pcm_sframes_t *delay = get_writable_struct(sizeof(*delay));
+	if (delay)
+		rec->a3 = (unsigned long) delay;
+}
+
+static void snd_pcm_sanitise_channel_info(struct syscallrecord *rec)
+{
+	struct snd_pcm_channel_info *info = get_writable_struct(sizeof(*info));
+	if (info) {
+		memset(info, 0, sizeof(*info));
+		info->channel = rnd_modulo_u32(8);
+		rec->a3 = (unsigned long) info;
+	}
+}
+
+static void snd_pcm_sanitise_sync_ptr(struct syscallrecord *rec)
+{
+	struct snd_pcm_sync_ptr *sp = get_writable_struct(sizeof(*sp));
+	if (sp) {
+		memset(sp, 0, sizeof(*sp));
+		rec->a3 = (unsigned long) sp;
+	}
+}
+
+static void snd_pcm_sanitise_xferi(struct syscallrecord *rec)
+{
+	struct snd_xferi *xfer = get_writable_struct(sizeof(*xfer));
+	if (xfer) {
+		memset(xfer, 0, sizeof(*xfer));
+		unsigned int frames = rnd_modulo_u32(1024) + 1;
+		void *buf = get_writable_struct(frames * 8);	/* up to 8 bytes/frame */
+		if (buf) {
+			xfer->buf = buf;
+			xfer->frames = frames;
+		} else {
+			xfer->buf = NULL;
+			xfer->frames = 0;
+		}
+		rec->a3 = (unsigned long) xfer;
+	}
+}
+
+static void snd_pcm_sanitise_xfern(struct syscallrecord *rec)
+{
+	struct snd_xfern *xfer = get_writable_struct(sizeof(*xfer));
+	if (xfer) {
+		memset(xfer, 0, sizeof(*xfer));
+		unsigned int frames = rnd_modulo_u32(1024) + 1;
+		unsigned int channels = rnd_modulo_u32(8) + 1;
+		void **bufs = get_writable_struct(channels * sizeof(void *));
+		unsigned int i;
+		if (bufs) {
+			xfer->bufs = bufs;
+			xfer->frames = frames;
+			for (i = 0; i < channels; i++)
+				bufs[i] = get_writable_struct(frames * 4);
+		} else {
+			xfer->bufs = NULL;
+			xfer->frames = 0;
+		}
+		rec->a3 = (unsigned long) xfer;
+	}
+}
+
+static void snd_pcm_sanitise_link(struct syscallrecord *rec)
+{
+	int *fd = get_writable_struct(sizeof(int));
+	if (fd) {
+		*fd = rnd_modulo_u32(1024);
+		rec->a3 = (unsigned long) fd;
+	}
+}
+
+static void snd_pcm_sanitise_pause(struct syscallrecord *rec)
+{
+	int *push = get_writable_struct(sizeof(int));
+	if (push) {
+		*push = RAND_BOOL();	/* 1=pause, 0=resume */
+		rec->a3 = (unsigned long) push;
+	}
+}
+
+static void snd_pcm_sanitise_uframes(struct syscallrecord *rec)
+{
+	snd_pcm_uframes_t *frames = get_writable_struct(sizeof(*frames));
+	if (frames) {
+		*frames = rnd_modulo_u32(4096) + 1;
+		rec->a3 = (unsigned long) frames;
+	}
+}
+
 static void sanitise_snd_pcm(struct syscallrecord *rec)
 {
 	switch (rec->a2) {
-	case SNDRV_PCM_IOCTL_INFO: {
-		struct snd_pcm_info *info = get_writable_struct(sizeof(*info));
-		if (info) {
-			memset(info, 0, sizeof(*info));
-			info->device = rnd_modulo_u32(8);
-			info->subdevice = rnd_modulo_u32(8);
-			info->stream = rnd_u32() & 1;
-			rec->a3 = (unsigned long) info;
-		}
+	case SNDRV_PCM_IOCTL_INFO:
+		snd_pcm_sanitise_info(rec);
 		break;
-	}
 	case SNDRV_PCM_IOCTL_TSTAMP:
-	case SNDRV_PCM_IOCTL_TTSTAMP: {
-		int *mode = get_writable_struct(sizeof(int));
-		if (mode) {
-			*mode = rnd_modulo_u32(3);
-			rec->a3 = (unsigned long) mode;
-		}
+	case SNDRV_PCM_IOCTL_TTSTAMP:
+		snd_pcm_sanitise_tstamp(rec);
 		break;
-	}
 	case SNDRV_PCM_IOCTL_HW_REFINE:
-	case SNDRV_PCM_IOCTL_HW_PARAMS: {
-		struct snd_pcm_hw_params *p = get_writable_struct(sizeof(*p));
-		if (p) {
-			memset(p, 0, sizeof(*p));
-			fill_snd_pcm_hw_params(p);
-			rec->a3 = (unsigned long) p;
-		}
+	case SNDRV_PCM_IOCTL_HW_PARAMS:
+		snd_pcm_sanitise_hw_params(rec);
 		break;
-	}
-	case SNDRV_PCM_IOCTL_SW_PARAMS: {
-		struct snd_pcm_sw_params *p = get_writable_struct(sizeof(*p));
-		if (p) {
-			memset(p, 0, sizeof(*p));
-			p->avail_min = rnd_modulo_u32(4096) + 1;
-			p->start_threshold = rnd_modulo_u32(8192) + 1;
-			p->stop_threshold = rnd_modulo_u32(8192) + 1;
-			p->tstamp_mode = rnd_modulo_u32(2);
-			p->period_step = 1;
-			rec->a3 = (unsigned long) p;
-		}
+	case SNDRV_PCM_IOCTL_SW_PARAMS:
+		snd_pcm_sanitise_sw_params(rec);
 		break;
-	}
 	case SNDRV_PCM_IOCTL_STATUS:
-	case SNDRV_PCM_IOCTL_STATUS_EXT: {
-		struct snd_pcm_status *st = get_writable_struct(sizeof(*st));
-		if (st) {
-			memset(st, 0, sizeof(*st));
-			/* STATUS_EXT reads audio_tstamp_data as a request hint
-			 * for which timestamp variant to report. */
-			if (rec->a2 == SNDRV_PCM_IOCTL_STATUS_EXT)
-				st->audio_tstamp_data = rnd_modulo_u32(4);
-			rec->a3 = (unsigned long) st;
-		}
+	case SNDRV_PCM_IOCTL_STATUS_EXT:
+		snd_pcm_sanitise_status(rec);
 		break;
-	}
-	case SNDRV_PCM_IOCTL_DELAY: {
-		snd_pcm_sframes_t *delay = get_writable_struct(sizeof(*delay));
-		if (delay)
-			rec->a3 = (unsigned long) delay;
+	case SNDRV_PCM_IOCTL_DELAY:
+		snd_pcm_sanitise_delay(rec);
 		break;
-	}
-	case SNDRV_PCM_IOCTL_CHANNEL_INFO: {
-		struct snd_pcm_channel_info *info = get_writable_struct(sizeof(*info));
-		if (info) {
-			memset(info, 0, sizeof(*info));
-			info->channel = rnd_modulo_u32(8);
-			rec->a3 = (unsigned long) info;
-		}
+	case SNDRV_PCM_IOCTL_CHANNEL_INFO:
+		snd_pcm_sanitise_channel_info(rec);
 		break;
-	}
-	case SNDRV_PCM_IOCTL_SYNC_PTR: {
-		struct snd_pcm_sync_ptr *sp = get_writable_struct(sizeof(*sp));
-		if (sp) {
-			memset(sp, 0, sizeof(*sp));
-			rec->a3 = (unsigned long) sp;
-		}
+	case SNDRV_PCM_IOCTL_SYNC_PTR:
+		snd_pcm_sanitise_sync_ptr(rec);
 		break;
-	}
 	case SNDRV_PCM_IOCTL_WRITEI_FRAMES:
-	case SNDRV_PCM_IOCTL_READI_FRAMES: {
-		struct snd_xferi *xfer = get_writable_struct(sizeof(*xfer));
-		if (xfer) {
-			memset(xfer, 0, sizeof(*xfer));
-			unsigned int frames = rnd_modulo_u32(1024) + 1;
-			void *buf = get_writable_struct(frames * 8);	/* up to 8 bytes/frame */
-			if (buf) {
-				xfer->buf = buf;
-				xfer->frames = frames;
-			} else {
-				xfer->buf = NULL;
-				xfer->frames = 0;
-			}
-			rec->a3 = (unsigned long) xfer;
-		}
+	case SNDRV_PCM_IOCTL_READI_FRAMES:
+		snd_pcm_sanitise_xferi(rec);
 		break;
-	}
 	case SNDRV_PCM_IOCTL_WRITEN_FRAMES:
-	case SNDRV_PCM_IOCTL_READN_FRAMES: {
-		struct snd_xfern *xfer = get_writable_struct(sizeof(*xfer));
-		if (xfer) {
-			memset(xfer, 0, sizeof(*xfer));
-			unsigned int frames = rnd_modulo_u32(1024) + 1;
-			unsigned int channels = rnd_modulo_u32(8) + 1;
-			void **bufs = get_writable_struct(channels * sizeof(void *));
-			unsigned int i;
-			if (bufs) {
-				xfer->bufs = bufs;
-				xfer->frames = frames;
-				for (i = 0; i < channels; i++)
-					bufs[i] = get_writable_struct(frames * 4);
-			} else {
-				xfer->bufs = NULL;
-				xfer->frames = 0;
-			}
-			rec->a3 = (unsigned long) xfer;
-		}
+	case SNDRV_PCM_IOCTL_READN_FRAMES:
+		snd_pcm_sanitise_xfern(rec);
 		break;
-	}
-	case SNDRV_PCM_IOCTL_LINK: {
-		int *fd = get_writable_struct(sizeof(int));
-		if (fd) {
-			*fd = rnd_modulo_u32(1024);
-			rec->a3 = (unsigned long) fd;
-		}
+	case SNDRV_PCM_IOCTL_LINK:
+		snd_pcm_sanitise_link(rec);
 		break;
-	}
-	case SNDRV_PCM_IOCTL_PAUSE: {
-		int *push = get_writable_struct(sizeof(int));
-		if (push) {
-			*push = RAND_BOOL();	/* 1=pause, 0=resume */
-			rec->a3 = (unsigned long) push;
-		}
+	case SNDRV_PCM_IOCTL_PAUSE:
+		snd_pcm_sanitise_pause(rec);
 		break;
-	}
 	case SNDRV_PCM_IOCTL_REWIND:
-	case SNDRV_PCM_IOCTL_FORWARD: {
-		snd_pcm_uframes_t *frames = get_writable_struct(sizeof(*frames));
-		if (frames) {
-			*frames = rnd_modulo_u32(4096) + 1;
-			rec->a3 = (unsigned long) frames;
-		}
+	case SNDRV_PCM_IOCTL_FORWARD:
+		snd_pcm_sanitise_uframes(rec);
 		break;
-	}
 	default:
 		break;
 	}
@@ -481,108 +581,149 @@ static void fill_snd_timer_id(struct snd_timer_id *tid)
 	tid->subdevice = rnd_modulo_u32(8);
 }
 
+static void snd_timer_sanitise_next_device(struct syscallrecord *rec)
+{
+	struct snd_timer_id *tid = get_writable_struct(sizeof(*tid));
+	if (tid) {
+		memset(tid, 0, sizeof(*tid));
+		fill_snd_timer_id(tid);
+		rec->a3 = (unsigned long) tid;
+	}
+}
+
+static void snd_timer_sanitise_ginfo(struct syscallrecord *rec)
+{
+	struct snd_timer_ginfo *gi = get_writable_struct(sizeof(*gi));
+	if (gi) {
+		memset(gi, 0, sizeof(*gi));
+		fill_snd_timer_id(&gi->tid);
+		rec->a3 = (unsigned long) gi;
+	}
+}
+
+static void snd_timer_sanitise_gparams(struct syscallrecord *rec)
+{
+	struct snd_timer_gparams *gp = get_writable_struct(sizeof(*gp));
+	if (gp) {
+		memset(gp, 0, sizeof(*gp));
+		fill_snd_timer_id(&gp->tid);
+		gp->period_num = rnd_modulo_u32(1000000) + 1;
+		gp->period_den = rnd_modulo_u32(1000000) + 1;
+		rec->a3 = (unsigned long) gp;
+	}
+}
+
+static void snd_timer_sanitise_gstatus(struct syscallrecord *rec)
+{
+	struct snd_timer_gstatus *gs = get_writable_struct(sizeof(*gs));
+	if (gs) {
+		memset(gs, 0, sizeof(*gs));
+		fill_snd_timer_id(&gs->tid);
+		rec->a3 = (unsigned long) gs;
+	}
+}
+
+static void snd_timer_sanitise_select(struct syscallrecord *rec)
+{
+	struct snd_timer_select *sel = get_writable_struct(sizeof(*sel));
+	if (sel) {
+		memset(sel, 0, sizeof(*sel));
+		fill_snd_timer_id(&sel->id);
+		rec->a3 = (unsigned long) sel;
+	}
+}
+
+static void snd_timer_sanitise_info(struct syscallrecord *rec)
+{
+	struct snd_timer_info *info = get_writable_struct(sizeof(*info));
+	if (info) {
+		memset(info, 0, sizeof(*info));
+		rec->a3 = (unsigned long) info;
+	}
+}
+
+static void snd_timer_sanitise_status(struct syscallrecord *rec)
+{
+	struct snd_timer_status *st = get_writable_struct(sizeof(*st));
+	if (st) {
+		memset(st, 0, sizeof(*st));
+		rec->a3 = (unsigned long) st;
+	}
+}
+
+static void snd_timer_sanitise_params(struct syscallrecord *rec)
+{
+	struct snd_timer_params *p = get_writable_struct(sizeof(*p));
+	if (p) {
+		memset(p, 0, sizeof(*p));
+		p->flags = rnd_u32() & 0x7;
+		p->ticks = rnd_modulo_u32(64) + 1;
+		p->queue_size = rnd_modulo_u32((1024 - 32)) + 32;
+		p->filter = ~0U;	/* all events */
+		rec->a3 = (unsigned long) p;
+	}
+}
+
+static void snd_timer_sanitise_tread(struct syscallrecord *rec)
+{
+	int *tread = get_writable_struct(sizeof(int));
+	if (tread) {
+		*tread = RAND_BOOL();
+		rec->a3 = (unsigned long) tread;
+	}
+}
+
+#ifdef SNDRV_TIMER_IOCTL_CREATE
+static void snd_timer_sanitise_create(struct syscallrecord *rec)
+{
+	struct snd_timer_uinfo *ui = get_writable_struct(sizeof(*ui));
+	if (ui) {
+		memset(ui, 0, sizeof(*ui));
+		ui->resolution = (rnd_modulo_u32(1000000ULL) + 1) * 1000ULL;
+		ui->fd = -1;
+		ui->id = rnd_modulo_u32(256);
+		rec->a3 = (unsigned long) ui;
+	}
+}
+#endif
+
 static void sanitise_snd_timer(struct syscallrecord *rec)
 {
 	switch (rec->a2) {
-	case SNDRV_TIMER_IOCTL_NEXT_DEVICE: {
-		struct snd_timer_id *tid = get_writable_struct(sizeof(*tid));
-		if (tid) {
-			memset(tid, 0, sizeof(*tid));
-			fill_snd_timer_id(tid);
-			rec->a3 = (unsigned long) tid;
-		}
+	case SNDRV_TIMER_IOCTL_NEXT_DEVICE:
+		snd_timer_sanitise_next_device(rec);
 		break;
-	}
-	case SNDRV_TIMER_IOCTL_GINFO: {
-		struct snd_timer_ginfo *gi = get_writable_struct(sizeof(*gi));
-		if (gi) {
-			memset(gi, 0, sizeof(*gi));
-			fill_snd_timer_id(&gi->tid);
-			rec->a3 = (unsigned long) gi;
-		}
+	case SNDRV_TIMER_IOCTL_GINFO:
+		snd_timer_sanitise_ginfo(rec);
 		break;
-	}
-	case SNDRV_TIMER_IOCTL_GPARAMS: {
-		struct snd_timer_gparams *gp = get_writable_struct(sizeof(*gp));
-		if (gp) {
-			memset(gp, 0, sizeof(*gp));
-			fill_snd_timer_id(&gp->tid);
-			gp->period_num = rnd_modulo_u32(1000000) + 1;
-			gp->period_den = rnd_modulo_u32(1000000) + 1;
-			rec->a3 = (unsigned long) gp;
-		}
+	case SNDRV_TIMER_IOCTL_GPARAMS:
+		snd_timer_sanitise_gparams(rec);
 		break;
-	}
-	case SNDRV_TIMER_IOCTL_GSTATUS: {
-		struct snd_timer_gstatus *gs = get_writable_struct(sizeof(*gs));
-		if (gs) {
-			memset(gs, 0, sizeof(*gs));
-			fill_snd_timer_id(&gs->tid);
-			rec->a3 = (unsigned long) gs;
-		}
+	case SNDRV_TIMER_IOCTL_GSTATUS:
+		snd_timer_sanitise_gstatus(rec);
 		break;
-	}
-	case SNDRV_TIMER_IOCTL_SELECT: {
-		struct snd_timer_select *sel = get_writable_struct(sizeof(*sel));
-		if (sel) {
-			memset(sel, 0, sizeof(*sel));
-			fill_snd_timer_id(&sel->id);
-			rec->a3 = (unsigned long) sel;
-		}
+	case SNDRV_TIMER_IOCTL_SELECT:
+		snd_timer_sanitise_select(rec);
 		break;
-	}
-	case SNDRV_TIMER_IOCTL_INFO: {
-		struct snd_timer_info *info = get_writable_struct(sizeof(*info));
-		if (info) {
-			memset(info, 0, sizeof(*info));
-			rec->a3 = (unsigned long) info;
-		}
+	case SNDRV_TIMER_IOCTL_INFO:
+		snd_timer_sanitise_info(rec);
 		break;
-	}
-	case SNDRV_TIMER_IOCTL_STATUS: {
-		struct snd_timer_status *st = get_writable_struct(sizeof(*st));
-		if (st) {
-			memset(st, 0, sizeof(*st));
-			rec->a3 = (unsigned long) st;
-		}
+	case SNDRV_TIMER_IOCTL_STATUS:
+		snd_timer_sanitise_status(rec);
 		break;
-	}
-	case SNDRV_TIMER_IOCTL_PARAMS: {
-		struct snd_timer_params *p = get_writable_struct(sizeof(*p));
-		if (p) {
-			memset(p, 0, sizeof(*p));
-			p->flags = rnd_u32() & 0x7;
-			p->ticks = rnd_modulo_u32(64) + 1;
-			p->queue_size = rnd_modulo_u32((1024 - 32)) + 32;
-			p->filter = ~0U;	/* all events */
-			rec->a3 = (unsigned long) p;
-		}
+	case SNDRV_TIMER_IOCTL_PARAMS:
+		snd_timer_sanitise_params(rec);
 		break;
-	}
 	case SNDRV_TIMER_IOCTL_TREAD:
 #if defined(SNDRV_TIMER_IOCTL_TREAD64) && __BITS_PER_LONG == 64
 	case SNDRV_TIMER_IOCTL_TREAD64:
 #endif
-	{
-		int *tread = get_writable_struct(sizeof(int));
-		if (tread) {
-			*tread = RAND_BOOL();
-			rec->a3 = (unsigned long) tread;
-		}
+		snd_timer_sanitise_tread(rec);
 		break;
-	}
 #ifdef SNDRV_TIMER_IOCTL_CREATE
-	case SNDRV_TIMER_IOCTL_CREATE: {
-		struct snd_timer_uinfo *ui = get_writable_struct(sizeof(*ui));
-		if (ui) {
-			memset(ui, 0, sizeof(*ui));
-			ui->resolution = (rnd_modulo_u32(1000000ULL) + 1) * 1000ULL;
-			ui->fd = -1;
-			ui->id = rnd_modulo_u32(256);
-			rec->a3 = (unsigned long) ui;
-		}
+	case SNDRV_TIMER_IOCTL_CREATE:
+		snd_timer_sanitise_create(rec);
 		break;
-	}
 #endif
 	default:
 		break;
