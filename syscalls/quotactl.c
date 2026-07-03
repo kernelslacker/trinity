@@ -87,9 +87,9 @@ static void sanitise_quotactl(struct syscallrecord *rec)
 
 	/* arg2: block device path */
 	special = (char *) get_writable_struct(32);
+	if (!special)
 		return;
 	memset(special, 0, 32);
-		return;
 	strncpy(special, "/dev/sda1", 31);
 	special[31] = '\0';
 	rec->a2 = (unsigned long) special;
