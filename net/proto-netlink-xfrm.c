@@ -1,137 +1,35 @@
 /*
  * proto-netlink-xfrm.c -- coherent XFRM (IPsec) netlink grammar.
  *
- * grammar_xfrm is a second AF_NETLINK slot in the per-family grammar
- * registry alongside grammar_netlink (proto-netlink.c).  The two slots
- * cover orthogonal angles of the AF_NETLINK surface:
+ * Second AF_NETLINK slot in the per-family grammar registry alongside
+ * grammar_netlink (proto-netlink.c).  Pinned to NETLINK_XFRM, walks
+ * the SA + SP control surface message-by-message across NEWSA /
+ * UPDSA / NEWAE / EXPIRE / DELSA / NEWPOLICY / DELPOLICY / FLUSHSA /
+ * FLUSHPOLICY with coherent attribute pairing inside each message.
+ * The random per-syscall fuzzer never assembles a NEWSA with paired
+ * XFRMA_ALG_AUTH_TRUNC + XFRMA_ALG_CRYPT + XFRMA_ENCAP +
+ * XFRMA_REPLAY_ESN_VAL and follows it with an UPDSA on the same shell.
  *
- *   grammar_netlink  - membership churn + SOL_NETLINK toggle walk over
- *                      a randomly-picked subset of well-supported
- *                      protocols (GENERIC / ROUTE / NETFILTER /
- *                      KOBJECT_UEVENT / AUDIT).  Drives netlink_table_grab
- *                      / nl_groups_alloc / sockopt dispatch.  Pays no
- *                      attention to message shape -- the data leg falls
- *                      back to proto_netlink.gen_msg's per-protocol
- *                      random attribute fuzzer.
+ * A per-process ring of installed SAs backs UPDSA / NEWAE / DELSA so
+ * they target a real previously-installed SA -- without it the kernel
+ * rejects on lookup and the parse path never runs.  NEW -> UPDATE ->
+ * EXPIRE -> DEL is the natural lifecycle the ring closes; FLUSHSA on
+ * accept drains the ring, and ring-full eviction does a synchronous
+ * DELSA on the oldest entry so the SAD does not grow without bound.
  *
- *   grammar_xfrm     - this file.  Pinned to NETLINK_XFRM, walks the
- *                      SA + SP control surface message-by-message
- *                      across NEWSA / UPDSA / NEWAE / EXPIRE / DELSA /
- *                      NEWPOLICY / DELPOLICY / FLUSHSA / FLUSHPOLICY with coherent
- *                      attribute pairing inside each message and a
- *                      per-process ring of installed SAs so UPDSA / NEWAE
- *                      / DELSA target a real previously-installed SA
- *                      instead of a random spi the kernel rejects on
- *                      lookup.  This is the layer the random per-syscall
- *                      fuzzer cannot synthesise -- it never assembles
- *                      a NEWSA with paired XFRMA_ALG_AUTH_TRUNC +
- *                      XFRMA_ALG_CRYPT + XFRMA_ENCAP + XFRMA_REPLAY_ESN_VAL
- *                      and follows it with an UPDSA on the same shell.
- *
- * Why a second SFG slot, not (b) extend grammar_netlink, not (c) extend
- * childops/xfrm-churn.c:
- *
- *   (b) is messy.  grammar_netlink is single-purpose: membership churn
- *       + SOL_NETLINK toggle walk + protocol-agnostic data leg.
- *       Branching internally on nl_pid + protocol to dispatch
- *       XFRM-shaped messages would dilute that slot's distribution
- *       (it currently biases SOCK_RAW across 5 protocols) and bury
- *       XFRM-specific attribute assembly inside what is structurally
- *       a generic-netlink walker.
- *
- *   (c) is occupied with a different mission.  childops/xfrm-churn.c
- *       drives live ESP traffic through a freshly-installed SA + SP
- *       bundle inside a private netns -- it exists to open the
- *       teardown-vs-encrypt race window, not to enumerate the XFRM
- *       attribute / message space.  Stuffing deep XFRMA_REPLAY_ESN_VAL
- *       / XFRMA_OFFLOAD_DEV / XFRMA_ENCAP / XFRMA_IF_ID coverage into
- *       it would dilute the live-traffic race that is the whole point
- *       of the op.
- *
- *   (a) -- this file -- fits cleanly.  The SFG registry pattern
- *       (see proto-rxrpc.c, proto-mctp.c, proto-llc.c, proto-mpls.c,
- *       proto-qrtr.c, proto-kcm.c) is one file per coherent walk
- *       angle.  grammar_xfrm registers as a sibling slot to
- *       grammar_netlink at family=PF_NETLINK; the picker treats them
- *       independently.  The shared shm->sfg_unsupported[PF_NETLINK]
- *       latch is intentionally NOT used -- this grammar carries its
- *       own xfrm_unsupported flag so a kernel without
- *       CONFIG_XFRM_USER doesn't disable grammar_netlink's NETLINK_GENERIC
- *       walk on its way down.
- *
- * Coverage shape (one message per data_leg invocation; rotates):
- *
- *   NEWSA      - xfrm_usersa_info plus a coherent attribute set drawn
- *                from XFRMA_ALG_AEAD vs paired XFRMA_ALG_CRYPT +
- *                XFRMA_ALG_AUTH_TRUNC, optional XFRMA_ALG_COMP,
- *                optional XFRMA_ENCAP (ESPINUDP / ESPINUDP_NON_IKE /
- *                NON-NAT), optional XFRMA_REPLAY_VAL or
- *                XFRMA_REPLAY_ESN_VAL with seq_hi / oseq_hi ramped
- *                through 0 / 1 / 0xFFFFFFFE / 0xFFFFFFFF / random and
- *                bmp_len edge values.  XFRMA_OUTPUT_MARK / XFRMA_SET_MARK
- *                / XFRMA_SET_MARK_MASK / XFRMA_IF_ID / XFRMA_SA_EXTRA_FLAGS
- *                rotate independently.  Family AF_INET / AF_INET6 with
- *                proper saddr / daddr sized matches; mode TRANSPORT /
- *                TUNNEL / BEET / RO / IN_TRIGGER; selector prefixlen
- *                rotates including 0 / 32 / 33 (AF_INET) and 0 / 128 /
- *                129 (AF_INET6) edges.  On accept, push (daddr, spi,
- *                proto, family) onto the SA ring for later targeting.
- *
- *   UPDSA      - target a previously-installed SA from the ring,
- *                rebuild the same shell with a fresh random key and
- *                rotated attribute set.  No-op if the ring is empty.
- *
- *   NEWAE      - xfrm_aevent_id targeting a ring SA, with rotated
- *                XFRM_AE_* flags driving XFRMA_REPLAY_VAL /
- *                XFRMA_REPLAY_ESN_VAL / XFRMA_LTIME_VAL parser arms.
- *
- *   EXPIRE     - xfrm_user_expire targeting a ring SA, with hard==0/1
- *                rotated.  hard==0 drives the lifetime-fired km->event
- *                notification path without teardown; hard==1 additionally
- *                walks __xfrm_state_delete + xfrm_audit_state_delete.
- *                On hard==1 acceptance the ring slot is dropped (kernel
- *                deleted the SA); on soft the entry stays.  Closes the
- *                NEW -> UPDATE -> EXPIRE -> DEL natural lifecycle that
- *                the random per-syscall fuzzer cannot synthesise.
- *
- *   DELSA      - target a previously-installed SA from the ring (the
- *                oldest, on a ring-full eviction; otherwise random).
- *                Removes the ring entry on accept.
- *
- *   NEWPOLICY  - xfrm_userpolicy_info OUT direction with XFRMA_TMPL
- *                pointing at a random ring SA when one exists, or a
- *                synthesised template otherwise.  Selectors rotate
- *                across the prefixlen edges and proto matrix (UDP /
- *                TCP / ICMP / any).
- *
- *   DELPOLICY  - xfrm_userpolicy_id OUT.
- *
- *   FLUSHSA    - xfrm_usersa_flush with rotated proto (ESP / AH /
- *                COMP / IPSEC_PROTO_ANY).  On accept, drain the SA
- *                ring -- every entry is now stale.
- *
- *   FLUSHPOLICY - bare nlmsghdr.
+ * The grammar carries its own xfrm_unsupported latch instead of
+ * sharing shm->sfg_unsupported[PF_NETLINK] -- a kernel without
+ * CONFIG_XFRM_USER must not disable grammar_netlink's NETLINK_GENERIC
+ * walk on its way down.  First -EPERM (no CAP_NET_ADMIN, no
+ * CONFIG_XFRM_USER, or kernel-side lockdown) latches and subsequent
+ * invocations early-return.
  *
  * EXPIRE ack consumption: NETLINK_XFRM multicasts xfrm_user_expire
  * events into the receive buffer when soft / hard lifetimes fire.
- * Without active drainage the socket buffer fills and bind() on the
- * next iteration's fresh socket can succeed but recv() of the ack
- * blocks.  Each iteration drains the inbound side with non-blocking
- * recv() until EAGAIN before the message send.
+ * Each iteration drains the inbound side with non-blocking recv()
+ * before send() so a full socket buffer does not block the next ack.
  *
- * Cleanup discipline: SA ring caps at NR_SA_RING_SLOTS; eviction does
- * a synchronous DELSA on the oldest entry before overwriting the slot
- * (so the SAD doesn't grow without bound under repeated NEWSA runs
- * across thousands of grammar invocations).  On grammar shutdown the
- * fuzzer doesn't get a chance to drain -- the periodic FLUSHSA
- * rotation slot handles that case in steady state.
- *
- * Graceful degradation: the first send that returns -EPERM (no
- * CAP_NET_ADMIN, kernel without CONFIG_XFRM_USER, or kernel-side
- * lockdown) latches xfrm_unsupported and the grammar early-returns on
- * subsequent invocations.  Single outputerr line on the false->true
- * transition matches the uniform pattern from the
- * unsupported_<name>-on-fds-providers refactor.
+ * Header gating via __has_include on linux/xfrm.h.
  */
 
 #include <errno.h>
