@@ -175,11 +175,8 @@ static void json_emit_syscalls_array(void)
 	putchar(']');
 }
 
-static void json_emit_kcov_section(void)
+static void json_emit_kcov_counters(void)
 {
-	unsigned int i, j;
-	const struct syscalltable *table;
-	unsigned int nr_syscalls_to_scan;
 	unsigned long kc_edges, kc_pcs, kc_calls, kc_remote;
 	unsigned long kc_cmp_records, kc_cmp_trunc, kc_cmp_bloom_skipped, kc_cmp_unique;
 	unsigned long kc_cmp_strip_skipped;
@@ -188,17 +185,6 @@ static void json_emit_kcov_section(void)
 	unsigned long kc_cmp_save_reject_sentinel;
 	unsigned long kc_cmp_save_reject_dup;
 	unsigned long kc_cmp_save_reject_cap;
-	unsigned int top_nr[10];
-	unsigned long top_edges[10];
-	unsigned int top_count = 0;
-	unsigned int delta_nr[10];
-	unsigned long delta_edges[10];
-	unsigned int delta_count = 0;
-
-	if (kcov_shm == NULL) {
-		fputs(",\"kcov\":null", stdout);
-		return;
-	}
 
 	kc_edges  = __atomic_load_n(&kcov_shm->edges_found,  __ATOMIC_RELAXED);
 	/* total_pcs / total_calls / remote_calls drained from the
@@ -230,26 +216,6 @@ static void json_emit_kcov_section(void)
 	kc_cmp_save_reject_cap = __atomic_load_n(
 		&kcov_shm->cmp_hints_save_reject_cap, __ATOMIC_RELAXED);
 
-	nr_syscalls_to_scan = biarch ? max_nr_64bit_syscalls : max_nr_syscalls;
-	if (nr_syscalls_to_scan > MAX_NR_SYSCALL)
-		nr_syscalls_to_scan = MAX_NR_SYSCALL;
-	table = biarch ? syscalls_64bit : syscalls;
-
-	memset(top_edges, 0, sizeof(top_edges));
-	memset(delta_edges, 0, sizeof(delta_edges));
-
-	for (i = 0; i < nr_syscalls_to_scan; i++) {
-		unsigned long edges = __atomic_load_n(&kcov_shm->per_syscall_edges[i], __ATOMIC_RELAXED);
-		unsigned long prev  = kcov_shm->per_syscall_edges_previous[i];
-		unsigned long delta = (edges > prev) ? edges - prev : 0;
-
-		if (edges > 0)
-			topn_push(top_edges, top_nr, &top_count, 10, edges, i);
-
-		if (delta > 0)
-			topn_push(delta_edges, delta_nr, &delta_count, 10, delta, i);
-	}
-
 	printf(",\"kcov\":{\"unique_edges\":%lu,\"total_pcs\":%lu,"
 		"\"total_calls\":%lu,\"remote_calls\":%lu,"
 		"\"cmp_records_collected\":%lu,\"cmp_trace_truncated\":%lu,"
@@ -266,22 +232,50 @@ static void json_emit_kcov_section(void)
 		kc_cmp_save_reject_nonconst, kc_cmp_save_reject_uninteresting,
 		kc_cmp_save_reject_sentinel, kc_cmp_save_reject_dup,
 		kc_cmp_save_reject_cap);
+}
 
-	/* Shadow transition-coverage globals.  Emitted unconditionally
-	 * so consumers can rely on a stable schema; both fields are 0
-	 * when the mode is OFF (the per-PC hash never runs and the
-	 * shared counters stay at their post-memset zero). */
-	{
-		unsigned long kc_tedges = __atomic_load_n(
-			&kcov_shm->transition_edges_found,
-			__ATOMIC_RELAXED);
-		unsigned long kc_tdistinct = __atomic_load_n(
-			&kcov_shm->transition_distinct_edges,
-			__ATOMIC_RELAXED);
+/* Shadow transition-coverage globals.  Emitted unconditionally
+ * so consumers can rely on a stable schema; both fields are 0
+ * when the mode is OFF (the per-PC hash never runs and the
+ * shared counters stay at their post-memset zero). */
+static void json_emit_kcov_transition_globals(void)
+{
+	unsigned long kc_tedges = __atomic_load_n(
+		&kcov_shm->transition_edges_found,
+		__ATOMIC_RELAXED);
+	unsigned long kc_tdistinct = __atomic_load_n(
+		&kcov_shm->transition_distinct_edges,
+		__ATOMIC_RELAXED);
 
-		printf(",\"transition_edges_found\":%lu,"
-			"\"transition_distinct_edges\":%lu",
-			kc_tedges, kc_tdistinct);
+	printf(",\"transition_edges_found\":%lu,"
+		"\"transition_distinct_edges\":%lu",
+		kc_tedges, kc_tdistinct);
+}
+
+static void json_emit_kcov_topn(const struct syscalltable *table,
+				unsigned int nr_syscalls_to_scan)
+{
+	unsigned int i, j;
+	unsigned int top_nr[10];
+	unsigned long top_edges[10];
+	unsigned int top_count = 0;
+	unsigned int delta_nr[10];
+	unsigned long delta_edges[10];
+	unsigned int delta_count = 0;
+
+	memset(top_edges, 0, sizeof(top_edges));
+	memset(delta_edges, 0, sizeof(delta_edges));
+
+	for (i = 0; i < nr_syscalls_to_scan; i++) {
+		unsigned long edges = __atomic_load_n(&kcov_shm->per_syscall_edges[i], __ATOMIC_RELAXED);
+		unsigned long prev  = kcov_shm->per_syscall_edges_previous[i];
+		unsigned long delta = (edges > prev) ? edges - prev : 0;
+
+		if (edges > 0)
+			topn_push(top_edges, top_nr, &top_count, 10, edges, i);
+
+		if (delta > 0)
+			topn_push(delta_edges, delta_nr, &delta_count, 10, delta, i);
 	}
 
 	fputs(",\"top_syscalls\":[", stdout);
@@ -307,102 +301,136 @@ static void json_emit_kcov_section(void)
 		printf(",\"delta\":%lu}", delta_edges[j]);
 	}
 	putchar(']');
+}
 
-	/* Shadow transition-coverage top-N: cumulative by real
-	 * transition-slot count, and per-interval growth by call-count
-	 * delta.  Mirrors the PC top_syscalls / top_recent_growth blocks
-	 * directly above so the two signals share the JSON shape.  Both
-	 * arrays come out empty when the mode is OFF since the per-
-	 * syscall counters never get bumped. */
-	{
-		unsigned int tr_top_nr[10];
-		unsigned long tr_top_edges[10];
-		unsigned int tr_top_count = 0;
-		unsigned int tr_delta_nr[10];
-		unsigned long tr_delta_edges[10];
-		unsigned int tr_delta_count = 0;
+/* Shadow transition-coverage top-N: cumulative by real
+ * transition-slot count, and per-interval growth by call-count
+ * delta.  Mirrors the PC top_syscalls / top_recent_growth blocks
+ * directly above so the two signals share the JSON shape.  Both
+ * arrays come out empty when the mode is OFF since the per-
+ * syscall counters never get bumped. */
+static void json_emit_kcov_transition_topn(const struct syscalltable *table,
+					   unsigned int nr_syscalls_to_scan)
+{
+	unsigned int i, j;
+	unsigned int tr_top_nr[10];
+	unsigned long tr_top_edges[10];
+	unsigned int tr_top_count = 0;
+	unsigned int tr_delta_nr[10];
+	unsigned long tr_delta_edges[10];
+	unsigned int tr_delta_count = 0;
 
-		memset(tr_top_edges, 0, sizeof(tr_top_edges));
-		memset(tr_delta_edges, 0, sizeof(tr_delta_edges));
-		for (i = 0; i < nr_syscalls_to_scan; i++) {
-			unsigned long real = __atomic_load_n(
-				&kcov_shm->per_syscall_transition_edges_real[i],
-				__ATOMIC_RELAXED);
-			unsigned long curr = __atomic_load_n(
-				&kcov_shm->per_syscall_transition_edges[i],
-				__ATOMIC_RELAXED);
-			unsigned long prev = kcov_shm->per_syscall_transition_edges_previous[i];
-			unsigned long delta = (curr > prev) ? curr - prev : 0;
+	memset(tr_top_edges, 0, sizeof(tr_top_edges));
+	memset(tr_delta_edges, 0, sizeof(tr_delta_edges));
+	for (i = 0; i < nr_syscalls_to_scan; i++) {
+		unsigned long real = __atomic_load_n(
+			&kcov_shm->per_syscall_transition_edges_real[i],
+			__ATOMIC_RELAXED);
+		unsigned long curr = __atomic_load_n(
+			&kcov_shm->per_syscall_transition_edges[i],
+			__ATOMIC_RELAXED);
+		unsigned long prev = kcov_shm->per_syscall_transition_edges_previous[i];
+		unsigned long delta = (curr > prev) ? curr - prev : 0;
 
-			if (real > 0)
-				topn_push(tr_top_edges, tr_top_nr,
-					  &tr_top_count, 10, real, i);
-			if (delta > 0)
-				topn_push(tr_delta_edges, tr_delta_nr,
-					  &tr_delta_count, 10, delta, i);
-		}
-
-		fputs(",\"top_transition_syscalls\":[", stdout);
-		for (j = 0; j < tr_top_count; j++) {
-			struct syscallentry *entry = table[tr_top_nr[j]].entry;
-
-			if (j > 0)
-				putchar(',');
-			fputs("{\"name\":", stdout);
-			json_emit_string(entry ? entry->name : "???");
-			printf(",\"transitions\":%lu}",
-			       tr_top_edges[j]);
-		}
-		putchar(']');
-
-		fputs(",\"top_transition_recent_growth\":[", stdout);
-		for (j = 0; j < tr_delta_count; j++) {
-			struct syscallentry *entry = table[tr_delta_nr[j]].entry;
-
-			if (j > 0)
-				putchar(',');
-			fputs("{\"name\":", stdout);
-			json_emit_string(entry ? entry->name : "???");
-			printf(",\"delta\":%lu}", tr_delta_edges[j]);
-		}
-		putchar(']');
-
-		for (i = 0; i < nr_syscalls_to_scan; i++)
-			kcov_shm->per_syscall_transition_edges_previous[i] =
-				__atomic_load_n(
-					&kcov_shm->per_syscall_transition_edges[i],
-					__ATOMIC_RELAXED);
+		if (real > 0)
+			topn_push(tr_top_edges, tr_top_nr,
+				  &tr_top_count, 10, real, i);
+		if (delta > 0)
+			topn_push(tr_delta_edges, tr_delta_nr,
+				  &tr_delta_count, 10, delta, i);
 	}
 
-	fputs(",\"cold_syscalls\":[", stdout);
-	{
-		bool first_cold = true;
+	fputs(",\"top_transition_syscalls\":[", stdout);
+	for (j = 0; j < tr_top_count; j++) {
+		struct syscallentry *entry = table[tr_top_nr[j]].entry;
 
-		for (i = 0; i < nr_syscalls_to_scan; i++) {
-			unsigned long slot_edges = __atomic_load_n(&kcov_shm->per_syscall_edges[i], __ATOMIC_RELAXED);
-			struct syscallentry *entry;
-
-			if (slot_edges == 0)
-				continue;
-			if (!kcov_syscall_is_cold(i))
-				continue;
-
-			entry = table[i].entry;
-			if (!first_cold)
-				putchar(',');
-			fputs("{\"name\":", stdout);
-			json_emit_string(entry ? entry->name : "???");
-			printf(",\"edges\":%lu,\"last_edge_at\":%lu}",
-				slot_edges, kcov_shm->last_edge_at[i]);
-			first_cold = false;
-		}
+		if (j > 0)
+			putchar(',');
+		fputs("{\"name\":", stdout);
+		json_emit_string(entry ? entry->name : "???");
+		printf(",\"transitions\":%lu}",
+		       tr_top_edges[j]);
 	}
 	putchar(']');
 
-	/* Snapshot current counts for the next interval, matching text path. */
+	fputs(",\"top_transition_recent_growth\":[", stdout);
+	for (j = 0; j < tr_delta_count; j++) {
+		struct syscallentry *entry = table[tr_delta_nr[j]].entry;
+
+		if (j > 0)
+			putchar(',');
+		fputs("{\"name\":", stdout);
+		json_emit_string(entry ? entry->name : "???");
+		printf(",\"delta\":%lu}", tr_delta_edges[j]);
+	}
+	putchar(']');
+
+	for (i = 0; i < nr_syscalls_to_scan; i++)
+		kcov_shm->per_syscall_transition_edges_previous[i] =
+			__atomic_load_n(
+				&kcov_shm->per_syscall_transition_edges[i],
+				__ATOMIC_RELAXED);
+}
+
+static void json_emit_kcov_cold_syscalls(const struct syscalltable *table,
+					 unsigned int nr_syscalls_to_scan)
+{
+	unsigned int i;
+	bool first_cold = true;
+
+	fputs(",\"cold_syscalls\":[", stdout);
+	for (i = 0; i < nr_syscalls_to_scan; i++) {
+		unsigned long slot_edges = __atomic_load_n(&kcov_shm->per_syscall_edges[i], __ATOMIC_RELAXED);
+		struct syscallentry *entry;
+
+		if (slot_edges == 0)
+			continue;
+		if (!kcov_syscall_is_cold(i))
+			continue;
+
+		entry = table[i].entry;
+		if (!first_cold)
+			putchar(',');
+		fputs("{\"name\":", stdout);
+		json_emit_string(entry ? entry->name : "???");
+		printf(",\"edges\":%lu,\"last_edge_at\":%lu}",
+			slot_edges, kcov_shm->last_edge_at[i]);
+		first_cold = false;
+	}
+	putchar(']');
+}
+
+/* Snapshot current counts for the next interval, matching text path. */
+static void json_emit_kcov_snapshot_previous(unsigned int nr_syscalls_to_scan)
+{
+	unsigned int i;
+
 	for (i = 0; i < nr_syscalls_to_scan; i++)
 		kcov_shm->per_syscall_edges_previous[i] =
 			__atomic_load_n(&kcov_shm->per_syscall_edges[i], __ATOMIC_RELAXED);
+}
+
+static void json_emit_kcov_section(void)
+{
+	const struct syscalltable *table;
+	unsigned int nr_syscalls_to_scan;
+
+	if (kcov_shm == NULL) {
+		fputs(",\"kcov\":null", stdout);
+		return;
+	}
+
+	nr_syscalls_to_scan = biarch ? max_nr_64bit_syscalls : max_nr_syscalls;
+	if (nr_syscalls_to_scan > MAX_NR_SYSCALL)
+		nr_syscalls_to_scan = MAX_NR_SYSCALL;
+	table = biarch ? syscalls_64bit : syscalls;
+
+	json_emit_kcov_counters();
+	json_emit_kcov_transition_globals();
+	json_emit_kcov_topn(table, nr_syscalls_to_scan);
+	json_emit_kcov_transition_topn(table, nr_syscalls_to_scan);
+	json_emit_kcov_cold_syscalls(table, nr_syscalls_to_scan);
+	json_emit_kcov_snapshot_previous(nr_syscalls_to_scan);
 
 	putchar('}');
 }
