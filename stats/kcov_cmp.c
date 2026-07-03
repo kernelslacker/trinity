@@ -349,6 +349,45 @@ static void kcov_redqueen_observability_block_render(long elapsed __unused__)
 }
 
 /*
+ * Sum the SHADOW typed-hypothesis per-syscall counters (pc_wins,
+ * consumed_count, misses) across the parallel hyp_pools[nr][0/1]
+ * entries for a single syscall nr.  The shadow store has no per-
+ * syscall scalar, but the per-hypothesis counters are bumped by
+ * cmp_hyp_credit_outcome() from the same credit drain, so the per-
+ * syscall sum is the natural shadow counterpart to the OLD per-
+ * syscall pool scalars.  No-op when cmp_hints_shm is not attached.
+ */
+static void kcov_cmp_sum_hyp_counters_per_syscall(unsigned int nr,
+						  uint64_t *pc_wins,
+						  uint64_t *consumed,
+						  uint64_t *misses)
+{
+	unsigned int do32_i, e_i;
+
+	if (cmp_hints_shm == NULL)
+		return;
+
+	for (do32_i = 0; do32_i < 2; do32_i++) {
+		struct cmp_hyp_pool *p =
+			&cmp_hints_shm->hyp_pools[nr][do32_i];
+		unsigned int n = p->count;
+
+		if (n > CMP_HYP_PER_SYSCALL)
+			n = CMP_HYP_PER_SYSCALL;
+		for (e_i = 0; e_i < n; e_i++) {
+			struct cmp_hypothesis *h = &p->entries[e_i];
+
+			*pc_wins += __atomic_load_n(
+				&h->pc_wins, __ATOMIC_RELAXED);
+			*consumed += __atomic_load_n(
+				&h->consumed_count, __ATOMIC_RELAXED);
+			*misses += __atomic_load_n(
+				&h->misses, __ATOMIC_RELAXED);
+		}
+	}
+}
+
+/*
  * Per-syscall top-N table: for the top syscalls by per-window cmp-hint
  * injection delta, print the OLD per-syscall pool's conversion
  * (per_syscall_cmp_hint_pc_wins / per_syscall_cmp_injected) alongside
@@ -417,28 +456,10 @@ static void kcov_cmp_render_oldpool_per_syscall_topn(void)
 		unsigned long delta_pc_wins;
 		uint64_t delta_hyp_pc_wins_nr;
 
-		if (cmp_hints_shm != NULL) {
-			unsigned int do32_i, e_i;
-
-			for (do32_i = 0; do32_i < 2; do32_i++) {
-				struct cmp_hyp_pool *p =
-					&cmp_hints_shm->hyp_pools[i][do32_i];
-				unsigned int n = p->count;
-
-				if (n > CMP_HYP_PER_SYSCALL)
-					n = CMP_HYP_PER_SYSCALL;
-				for (e_i = 0; e_i < n; e_i++) {
-					struct cmp_hypothesis *h = &p->entries[e_i];
-
-					cur_hyp_pc_wins_nr += __atomic_load_n(
-						&h->pc_wins, __ATOMIC_RELAXED);
-					cur_hyp_consumed_nr += __atomic_load_n(
-						&h->consumed_count, __ATOMIC_RELAXED);
-					cur_hyp_misses_nr += __atomic_load_n(
-						&h->misses, __ATOMIC_RELAXED);
-				}
-			}
-		}
+		kcov_cmp_sum_hyp_counters_per_syscall(i,
+						      &cur_hyp_pc_wins_nr,
+						      &cur_hyp_consumed_nr,
+						      &cur_hyp_misses_nr);
 
 		delta_injected = (cur_injected > prev_per_nr_injected[i]) ?
 			cur_injected - prev_per_nr_injected[i] : 0;
