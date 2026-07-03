@@ -1,94 +1,47 @@
 /*
  * psp_key_rotate - net/psp TCP key install + mid-flow key rotation race.
  *
- * Random syscall fuzzing essentially never reaches the per-socket PSP
- * SA install / rotate paths in net/psp/psp_main.c, net/psp/psp_sock.c
- * and net/psp/psp_nl.c because those branches only fire when:
+ * Targets a TOCTOU between PSP_CMD_KEY_ROTATE publishing a new key
+ * generation on the device and the per-socket SA refcount walked by the
+ * tx/rx hot path in net/psp/{psp_main.c,psp_sock.c,psp_nl.c} -- the rotate
+ * flips the active key id under an in-flight sendmsg/recvmsg whose assoc
+ * still holds the previous generation.  Random syscall fuzz never assembles
+ * the coherent stack: a PSP-capable netdev (in-tree vehicle netdevsim +
+ * drivers/net/netdevsim/psp.c), a resolved "psp" genetlink family, an
+ * enumerated dev via PSP_CMD_DEV_GET, and a TCP fd attached through
+ * PSP_CMD_TX_ASSOC + PSP_A_ASSOC_SOCK_FD.
  *
- *   - a netdev with PSP capability is present (the in-tree probe vehicle
- *     is netdevsim with its psp shim in drivers/net/netdevsim/psp.c);
- *   - the PSP genetlink family is registered and at least one PSP-
- *     capable device is enumerated by PSP_CMD_DEV_GET;
- *   - a TCP socket has had a TX/RX SA installed via the PSP genetlink
- *     assoc command path (which references the socket by fd through the
- *     PSP_A_ASSOC_SOCK_FD attribute);
- *   - and a PSP_CMD_KEY_ROTATE arrives on the device while that socket
- *     is mid-flow with its assoc still bound to the previous key id.
+ * Per iteration inside a userns_run_in_ns grandchild (identity userns +
+ * CLONE_NEWNET, _exit reaps): rtnl RTM_NEWLINK a netdevsim + IFF_UP, open
+ * an AF_INET SOCK_STREAM with per-syscall timeouts and connect() to
+ * loopback, resolve psp family, DEV_GET a psp_dev_id, KEY_ROTATE + TX_ASSOC
+ * to arm the SA, then a BUDGETED inner loop (base 4 / floor 8 / cap 16,
+ * 200 ms wall) pairing send/recv against a mid-flow KEY_ROTATE and a second
+ * TX_ASSOC that switches the bound generation while I/O overlaps the
+ * rotate publish.
  *
- * The interesting bug shape is a TOCTOU between the rotate publishing a
- * new key generation on the device and the per-socket SA refcount being
- * walked by the tx/rx hot path -- xfrm-class refcount on the SA combined
- * with the rotate flipping the active key id from underneath an in-flight
- * sendmsg/recvmsg.
+ * Brick-safety: all net mutation inside CLONE_NEWNET; only SOCK_STREAM +
+ * genetlink + rtnl (no raw sockets, no modprobe, no /sys writes);
+ * per-syscall SO_RCVTIMEO/SO_SNDTIMEO 100 ms keeps a wedged recv from
+ * punching past child.c's SIGALRM(1s) backstop.
  *
- * Per BUDGETED + JITTER iteration (200 ms wall cap; per-syscall 100 ms
- * SO_RCVTIMEO/SO_SNDTIMEO):
+ * Latches (per-process): ns_unsupported_psp_key_rotate_master on
+ * userns_run_in_ns() -EPERM; cap-gate latches on PSP genetlink family
+ * resolution failure (-EPERM / -ENOSYS / -EOPNOTSUPP / -ENOPROTOOPT /
+ * -EAFNOSUPPORT / -EPROTONOSUPPORT / -ENODEV -- CONFIG absent or
+ * netdevsim/psp not loaded).  Transient setup failures skip without
+ * latching.
  *
- *   1.  userns_run_in_ns(CLONE_NEWNET) forks a transient grandchild
- *       into an owned user namespace + private net namespace.  The
- *       whole rest of the per-iteration sequence runs inside that
- *       grandchild; its _exit() tears the namespaces (and any
- *       netdevsim, sockets, genl/rtnl fds left behind) back down.
- *       Helper -EPERM (hardened userns policy refused CLONE_NEWUSER)
- *       latches ns_unsupported_psp_key_rotate_master and stops
- *       retrying for the lifetime of the trinity child; transient
- *       setup failure (-EAGAIN) bumps psp_key_rotate_setup_failed
- *       and skips the iteration without latching.
- *   2.  rtnl RTM_NEWLINK to spawn a netdevsim instance (best-effort: if
- *       the kernel module is not loaded the request returns -ENODEV /
- *       -EOPNOTSUPP and the cap-gate latches on the first PSP family
- *       probe immediately after).
- *   3.  rtnl RTM_SETLINK IFF_UP on the new netdev.
- *   4.  socket(AF_INET, SOCK_STREAM); apply per-syscall timeouts;
- *       connect() to a loopback peer (best-effort -- the assoc path
- *       still exercises a non-listening socket because the genetlink
- *       attach happens before the peer handshake completes).
- *   5.  genetlink CTRL_CMD_GETFAMILY name="psp" -- resolves the dynamic
- *       PSP family id.  This is the structural-support probe: on
- *       -EPERM / -ENOSYS / -EOPNOTSUPP / -ENOPROTOOPT / -EAFNOSUPPORT /
- *       -EPROTONOSUPPORT / -ENODEV the cap-gate latches for the rest of
- *       the child's life.
- *   6.  genetlink PSP_CMD_DEV_GET -- enumerates PSP devices to pick a
- *       psp_dev_id for subsequent commands.
- *   7.  genetlink PSP_CMD_KEY_ROTATE on that dev_id -- installs / rolls
- *       the kernel-side key generation.
- *   8.  genetlink PSP_CMD_TX_ASSOC carrying the TCP socket fd through
- *       PSP_A_ASSOC_SOCK_FD -- this is the path that actually attaches
- *       the SA to the socket.  Counted under spi_set_ok per spec naming.
- *   9.  BUDGETED inner loop (base 4 / floor 8 / cap 16; 200 ms wall;
- *       per-syscall 100 ms timeouts):
- *         - send/recv over the bound socket (drives psp_xmit / psp_rx);
- *         - genetlink PSP_CMD_KEY_ROTATE mid-flow -- THE RACE TARGET;
- *         - PSP_CMD_TX_ASSOC again to switch the bound generation
- *           mid-stream;
- *         - send/recv again so the post-switch tx/rx walk overlaps the
- *           rotate publish.
- *  10.  shutdown(SHUT_RDWR) followed by randomised socket close order.
- *
- * Brick-safety:
- *   - All net mutation is inside a private CLONE_NEWNET; nothing touches
- *     the host's interface or routing state.
- *   - Userspace SOCK_STREAM + AF_NETLINK genetlink + AF_NETLINK rtnl
- *     only -- no raw sockets, no module load, no /sys writes.
- *   - Per-syscall SO_RCVTIMEO/SO_SNDTIMEO 100 ms keeps a wedged recv
- *     from punching through the SIGALRM(1s) cap inherited from child.c.
- *   - BUDGETED outer loop with 200 ms wall cap.
- *
- * Header gates: __has_include(<linux/genetlink.h>) /
- * <linux/if_link.h> / <linux/rtnetlink.h>.  PSP UAPI integers
- * (PSP_CMD_DEV_GET, PSP_CMD_KEY_ROTATE, PSP_CMD_TX_ASSOC, PSP_A_DEV_ID,
- * PSP_A_ASSOC_DEV_ID, PSP_A_ASSOC_SOCK_FD, PSP_A_ASSOC_VERSION) are
- * #define-fallback supplied at their stable UAPI integer values when
- * <linux/psp.h> is missing on the build host -- the kernel returns
+ * Header-gated by __has_include() on linux/genetlink.h, linux/if_link.h,
+ * linux/rtnetlink.h.  PSP UAPI integers (PSP_CMD_DEV_GET / KEY_ROTATE /
+ * TX_ASSOC, PSP_A_ASSOC_*) get #define-fallback at their stable UAPI
+ * values when <linux/psp.h> is absent; the kernel then returns
  * -ENOPROTOOPT / -EOPNOTSUPP and the cap-gate latches.
  *
- * Spec-deviation note: the spec called out a "SOL_TCP / SO_PSP_SPI"
- * setsockopt as the per-socket bind step, but no such socket option
- * exists in the upstream PSP UAPI -- the sock-fd is conveyed to the SA
- * install via PSP_CMD_TX_ASSOC + PSP_A_ASSOC_SOCK_FD instead.  We honour
- * the spec's stat-counter name (spi_set_ok) but the underlying syscall
- * is the genetlink assoc command rather than a setsockopt.  Same for
- * spi_switch_ok which counts a second PSP_CMD_TX_ASSOC mid-flow.
+ * Spec-vs-reality note: spec called out a SOL_TCP / SO_PSP_SPI setsockopt
+ * for the per-socket bind, but no such optname exists in upstream PSP UAPI
+ * -- the fd is conveyed via PSP_CMD_TX_ASSOC + PSP_A_ASSOC_SOCK_FD.  The
+ * spec's spi_set_ok / spi_switch_ok counter names are preserved.
  */
 
 #if __has_include(<linux/genetlink.h>) && \
