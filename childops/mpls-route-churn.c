@@ -1,142 +1,31 @@
 /*
- * mpls_route_churn - rtnetlink walker for AF_MPLS label routes and
- * IPv4 MPLS_IPTUNNEL lwtunnel encap.
+ * mpls_route_churn - rtnetlink walker for the MPLS FIB install paths
+ * flat netlink fuzzing rarely assembles.  Targets
+ * net/mpls/af_mpls.c:mpls_rtm_newroute (arm A: AF_MPLS in-label route,
+ * 1..3 out-label stack with BoS on the last) and
+ * net/mpls/mpls_iptunnel.c:mpls_build_state (arm B: IPv4 route with a
+ * nested LWTUNNEL_ENCAP_MPLS encap).  Arm B's bug class is a concurrent
+ * install/replace racing the rcu-deferred mpls_destroy_state.
  *
- * Flat netlink fuzzing rarely assembles either MPLS routing path:
+ * Each invocation runs a 200 ms budgeted loop inside a private user+net
+ * namespace (userns_run_in_ns grandchild, _exit reaps the routes);
+ * 50/50 per iter it installs arm A or arm B and RTM_DELROUTE rolls it
+ * back, with up to 8 -EAGAIN/-ENOMEM retries per op.
  *
- *   - net/mpls/af_mpls.c::mpls_rtm_newroute is reached via
- *     RTM_NEWROUTE / NETLINK_ROUTE with rtmsg.rtm_family = AF_MPLS,
- *     dst_len = 20, RTA_DST carrying an mpls_label-encoded inbound
- *     label, RTA_NEWDST carrying a 1..N entry outbound label stack
- *     with the bottom-of-stack bit on the last entry, and RTA_VIA
- *     pointing at an AF_INET nexthop.  AF_MPLS sockets cover the
- *     send/recv side of the LSR but never reach the FIB add path.
+ * Brick-safety: all work is inside CLONE_NEWNET so the host MPLS/IPv4
+ * tables are never touched; routes install onto lo only, nexthops in
+ * 127/8 and 192.0.2/24 (TEST-NET-1, unroutable).
  *
- *   - net/mpls/mpls_iptunnel.c::mpls_build_state is reached via
- *     RTM_NEWROUTE / NETLINK_ROUTE on rtmsg.rtm_family = AF_INET (or
- *     AF_INET6) with RTA_ENCAP_TYPE = LWTUNNEL_ENCAP_MPLS and
- *     RTA_ENCAP nesting MPLS_IPTUNNEL_DST (label stack) plus
- *     MPLS_IPTUNNEL_TTL.  The encap parser builds an lwtunnel state
- *     with mpls_destroy_state as the rcu-deferred dtor; bug class is
- *     concurrent install/replace racing the rcu free.
+ * Latches: userns -EPERM latches the op off for the child's life
+ * (without a private netns we must not touch host routing).  The
+ * per-arm -EAFNOSUPPORT/-EOPNOTSUPP latches and the one-shot
+ * mpls_router/mpls_iptunnel modprobe are set inside the grandchild, so
+ * the COW copy dies on _exit() and each invocation re-probes once
+ * (userns cannot manufacture an absent CONFIG).
  *
- * Sequence (per invocation):
- *
- *   1.  Enter a private net namespace via userns_run_in_ns(): a
- *       transient grandchild fork installs an identity user namespace
- *       plus a fresh CLONE_NEWNET, runs the BUDGETED+JITTER outer
- *       loop body below, and _exit()s so the kernel reaps the
- *       NETLINK_ROUTE socket and any MPLS / IPv4 routes left in the
- *       grandchild's netns.  The persistent fuzz child never touches
- *       its own credentials or namespace stack, so the cap-drop
- *       oracle keeps observing the host credential profile.  Helper
- *       -EPERM (hardened userns policy refused CLONE_NEWUSER:
- *       user.max_user_namespaces=0 or kernel.unprivileged_userns_clone=0)
- *       latches the childop off for the remainder of this child's
- *       lifetime; -EAGAIN (transient setup failure: fork, id-map
- *       write, secondary unshare) skips the invocation without
- *       latching.
- *
- * Inner BUDGETED + JITTER loop (200 ms wall cap), running inside the
- * grandchild's netns:
- *
- *   2.  Open a NETLINK_ROUTE socket with SOCK_CLOEXEC + 1 s recvtimeo.
- *   3.  Pick arm A (AF_MPLS label install) or arm B (IPv4 lwtunnel
- *       MPLS encap install) 50/50 per iteration.
- *
- *   Arm A (AF_MPLS label install):
- *     RTM_NEWROUTE family=AF_MPLS, dst_len=20.
- *     RTA_DST  : mpls_label{entry = htonl((label << 12) | 0x100)}
- *                where label is in [16, 0xFFFFF] (well above the
- *                reserved 0..15 range, RFC 3032).
- *     RTA_NEWDST : 1..3 mpls_label out-stack, BoS bit set on last
- *                  entry only -- exercises the loop in
- *                  nla_get_labels().
- *     RTA_VIA  : struct rtvia { rtvia_family=AF_INET, rtvia_addr=
- *                127.0.0.{2..254} } -- the nexthop is reachable on
- *                lo so the route install doesn't bail on neighbour
- *                resolution.
- *     RTA_OIF  : if_nametoindex("lo") (best-effort; omitted when 0).
- *     RTA_TABLE: RT_TABLE_MAIN (254).
- *     RTM_DELROUTE rollback by in-label after the install.
- *
- *   Arm B (IPv4 lwtunnel MPLS encap):
- *     RTM_NEWROUTE family=AF_INET, dst_len=32.
- *     RTA_DST       : 192.0.2.{1..254} (TEST-NET-1, RFC 5737).
- *     RTA_GATEWAY   : 127.0.0.1.
- *     RTA_OIF       : if_nametoindex("lo").
- *     RTA_ENCAP_TYPE: LWTUNNEL_ENCAP_MPLS.
- *     RTA_ENCAP     : nested MPLS_IPTUNNEL_DST (1..3 label stack with
- *                     BoS bit on last) + MPLS_IPTUNNEL_TTL (rand%256).
- *     RTM_DELROUTE rollback by destination.
- *
- *   4.  Bounded inner retry: up to 8 retries per netlink operation
- *       on -EAGAIN / -ENOMEM.  Single retry per iteration to keep the
- *       wall budget bounded.
- *
- * Per-process latches:
- *
- *   - ns_unsupported_userns_mpls_route_churn
- *                                 : set on userns_run_in_ns() -EPERM
- *                                   (hardened userns policy refused
- *                                   CLONE_NEWUSER in the grandchild).
- *                                   Without a private user+net
- *                                   namespace we MUST NOT touch the
- *                                   host MPLS / IPv4 routing tables,
- *                                   so the op stays disabled for the
- *                                   remainder of this child's
- *                                   lifetime.  Transient helper
- *                                   failures (-EAGAIN) do not set
- *                                   this -- they may not recur.
- *   - ns_unsupported_mpls         : set on first -EAFNOSUPPORT /
- *                                   -ENOPROTOOPT from arm A.  AF_MPLS
- *                                   is unreachable without
- *                                   CONFIG_MPLS_ROUTING and the
- *                                   mpls_router module loaded.  Set
- *                                   inside the grandchild; the COW
- *                                   copy dies on _exit(), so a
- *                                   CONFIG-absent kernel re-probes
- *                                   arm A once per invocation rather
- *                                   than permanently.  Userns cannot
- *                                   manufacture an absent CONFIG, so
- *                                   the per-arm latch stays.
- *   - ns_unsupported_lwtunnel     : set on first -EOPNOTSUPP from arm
- *                                   B's RTA_ENCAP path (LWT not
- *                                   compiled or mpls_iptunnel module
- *                                   unloaded after registration).
- *                                   Same in-grandchild semantics as
- *                                   ns_unsupported_mpls above.
- *   - modprobe_tried_mpls_router  : one-shot best-effort modprobe of
- *                                   "mpls_router" + "mpls_iptunnel"
- *                                   on first -ENETDOWN /
- *                                   -EPROTONOSUPPORT.  fork+execvp
- *                                   pattern from xfrm-churn -- failure
- *                                   (no /sbin/modprobe, lockdown,
- *                                   no module) is harmless, the latch
- *                                   prevents repeated attempts.  Set
- *                                   inside the grandchild; the COW
- *                                   copy dies on _exit(), so each
- *                                   invocation gets one fresh attempt
- *                                   if the kernel keeps returning
- *                                   -ENETDOWN / -EPROTONOSUPPORT.
- *
- * Brick-safety:
- *   - All work happens inside CLONE_NEWNET; the host MPLS table is
- *     never touched.
- *   - Both arms install onto lo only -- no underlying physical
- *     device is involved; nexthops are 127/8 and 192.0.2/24 (TEST-
- *     NET-1, never routable on real networks).
- *   - BUDGETED outer loop with 200 ms wall cap; SO_RCVTIMEO on the
- *     rtnl socket caps any single recv at 1 s.
- *
- * Header gating: __has_include() on linux/mpls.h, linux/lwtunnel.h,
- * linux/mpls_iptunnel.h, linux/rtnetlink.h.  Build hosts without
- * the MPLS uapi silently drop the childop from the registry (the
- * fallback stub just bumps runs+ns_unsupported and returns).  Per-
- * symbol #ifndef shims at use site for RTA_VIA / RTA_NEWDST /
- * struct rtvia (4.5+) and MPLS_IPTUNNEL_* / LWTUNNEL_ENCAP_MPLS
- * (4.3+) so the file compiles even when the build host's headers
- * pre-date those additions.
+ * Header-gated by __has_include() on the MPLS/lwtunnel/rtnetlink uapi
+ * (absent headers drop the childop to a stub), with per-symbol #ifndef
+ * shims at use site for RTA_VIA/RTA_NEWDST/rtvia and MPLS_IPTUNNEL_*.
  */
 
 #if __has_include(<linux/mpls.h>) && __has_include(<linux/lwtunnel.h>) && \
