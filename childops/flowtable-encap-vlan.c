@@ -1,100 +1,39 @@
 /*
  * flowtable_encap_vlan - nf flowtable inline 802.1Q encap exerciser.
  *
- * Random netfilter / netlink fuzzing rarely assembles the chain that
- * drives net/netfilter/nf_flow_table_offload.c's vlan-push fast path.
- * Reaching it needs (a) two vlan netdevs stacked on a veth pair, (b) an
- * nft_flow_offload rule on a forward chain whose flowtable hook
- * references both vlan netdevs, (c) a real conntrack-tracked flow that
- * traverses both legs so the kernel offloads it, then (d) a GSO-large
- * send + an MTU-borderline send + a vlan-child teardown racing live
- * traffic.  Without that combination the inline-encap headroom /
- * checksum / GSO-resegment paths stay cold.
+ * Target: net/netfilter/nf_flow_table_offload.c's vlan-push fast path
+ * -- inline-encap headroom, checksum, and GSO-resegment (fix bundle
+ * for skip-rechecksum-after-vlan-push, reserve-headroom-for-shared-
+ * encap, and re-checksum-GSO-segments-after-inline-vlan).  Random
+ * netfilter fuzzing can't assemble the shape: two vlan netdevs on a
+ * veth, an nft_flow_offload rule on a forward chain whose flowtable
+ * references both, a conntrack-tracked flow across both legs, then
+ * GSO-large + MTU-borderline + vlan-child teardown racing live traffic.
  *
- * Targets the upstream rc-window fix bundle:
- *   baa3c65435fb  flowtable: skip rechecksum after vlan push
- *   69c54f80f407  flowtable: reserve headroom for shared encap
- *   a177ae30f786  flowtable: re-checksum GSO segments after inline vlan
+ * Per outer iteration (BUDGETED+JITTER, 200 ms wall cap), inside a
+ * private user+net namespace via userns_run_in_ns (grandchild _exit
+ * reaps ifaces/rules/addrs/sockets/netns): create a veth pair with
+ * vlan 100 on each leg, disjoint 192.0.2.0/30 addrs, IFF_UP, enable
+ * ip_forward, stand up an nft table + flowtable (NF_NETDEV_INGRESS on
+ * both vlan devs) + forward chain + flow_offload rule, then burst
+ * three traffic shapes: (A) 1400-byte UDP for baseline offload, (B)
+ * SYN + a 64KB TCP write to hit the GSO+vlan re-checksum path, (C)
+ * 1496-byte UDP for the MTU-borderline shared-encap headroom, with a
+ * coin-flip mid-burst RTM_DELLINK on vp_a.100 racing offload-entry
+ * expiry.  Full DELRULE/DELCHAIN/DELFLOWTABLE/DELTABLE teardown.
  *
- * Sequence (per BUDGETED + JITTER outer iteration, 200 ms wall cap,
- * fresh netns + topology per iteration):
+ * Brick-safety: everything runs in the grandchild's private netns;
+ * host tables never see this op; veth is loopback only.  Outer loop
+ * (base 4/4/16, JITTER, 200 ms) + MSG_DONTWAIT / SO_RCVTIMEO=1s keep
+ * the op inside child.c's SIGALRM(1s).
  *
- *   1.  Enter a private net namespace via userns_run_in_ns(): a
- *       transient grandchild fork installs an identity user namespace
- *       plus a fresh CLONE_NEWNET, runs the body below, and _exit()s
- *       so the kernel reaps every interface, rule, address and socket
- *       with the grandchild's netns.  The persistent fuzz child never
- *       changes its own credentials or namespace stack, so the
- *       cap-drop oracle keeps observing the host credential profile.
- *       Helper -EPERM (hardened userns policy refused CLONE_NEWUSER)
- *       latches the childop off for the remainder of this child's
- *       lifetime; -EAGAIN (transient setup failure: fork, id-map write,
- *       secondary unshare) skips the invocation without latching.
- *       The cap-gate still latches on the first NEWFLOWTABLE rejection
- *       inside the grandchild if structural support is missing.
- *   2.  Open NETLINK_ROUTE and NETLINK_NETFILTER sockets, both
- *       SO_RCVTIMEO 1s.
- *   3.  RTM_NEWLINK type=veth pair vp_a / vp_b.
- *   4.  RTM_NEWLINK type=vlan IFLA_VLAN_ID=100 over each leg
- *       (vp_a.100, vp_b.100).
- *   5.  RTM_NEWADDR ipv4 /30 on each vlan netdev (192.0.2.1 and
- *       192.0.2.5 on disjoint /30s so the netns acts as the router
- *       between them).
- *   6.  RTM_SETLINK IFF_UP on every device.
- *   7.  Write "1" to /proc/sys/net/ipv4/ip_forward so FORWARD hook
- *       fires on cross-leg traffic.
- *   8.  NFT_MSG_NEWTABLE family=NFPROTO_IPV4 name="ftvlan_<rng>".
- *   9.  NFT_MSG_NEWFLOWTABLE on that table, hook NF_NETDEV_INGRESS,
- *       priority 0, NFTA_FLOWTABLE_HOOK_DEVS = { vp_a.100, vp_b.100 }.
- *       First-invocation EOPNOTSUPP latches ns_unsupported_flowtable_vlan.
- *  10.  NFT_MSG_NEWCHAIN family=NFPROTO_IPV4 name="fwd",
- *       hook NF_INET_FORWARD priority 0 type "filter".
- *  11.  NFT_MSG_NEWRULE on (table, "fwd") carrying one
- *       nft_flow_offload expression (NFTA_EXPR_NAME="flow_offload",
- *       NFTA_FLOW_TABLE_NAME=<flowtable name>).  flow_offload's
- *       init validator only requires family in {ipv4,ipv6,inet} and a
- *       forward-hook chain; no prior expression dependency.
- *  12.  Per-iter traffic burst, three shapes:
- *         A: SOCK_DGRAM connect+send 1400-byte UDP at 192.0.2.5:9090,
- *            source bound to 192.0.2.1.  Forwards through the chain;
- *            after the 5-tuple is offloaded the next packets traverse
- *            the inline-encap fast path.
- *         B: SOCK_STREAM connect to 192.0.2.5:8080 (no listener — the
- *            SYN drives a single forward, ECONNREFUSED reply does the
- *            return leg; both edges hit the encap path).  After the
- *            handshake-or-rst, do a TCP_NODELAY=0 + write(64KB) on a
- *            second socket targeting 192.0.2.5:9091 with the kernel
- *            already in offload state for the connect SYN — drives the
- *            GSO-with-vlan-encap re-checksum path that a177ae30f786
- *            fixes.
- *         C: One sendto() of an MTU-borderline 1496-byte UDP payload
- *            (ip-mtu 1500 - 4 vlan hdr = 1496) — exercises the shared
- *            encap headroom path that 69c54f80f407 fixes.
- *  13.  Coin-flip: RTM_DELLINK vp_a.100 mid-burst — vlan-child teardown
- *       racing the offload entry expiry path.
- *  14.  NFT_MSG_DELRULE / DELCHAIN / DELFLOWTABLE / DELTABLE for the
- *       per-iteration nft objects, then RTM_DELLINK on the veth pair.
- *
- * Cap-gate latch: ns_unsupported_flowtable_vlan fires on EOPNOTSUPP /
- * EAFNOSUPPORT / EPROTONOSUPPORT from NFT_MSG_NEWFLOWTABLE on the first
- * invocation (means CONFIG_NF_FLOW_TABLE absent at runtime).  Once
- * latched, every subsequent invocation just bumps runs+setup_failed and
- * returns.  Mirrors the bridge_vlan_churn / vsock_transport_churn shape.
- *
- * Brick-safety:
- *   - All work happens inside a private netns; the host flowtable /
- *     vlan / veth tables never see this op.
- *   - BUDGETED outer loop (base 4 / floor 4 / cap 16) with JITTER and
- *     200 ms wall-cap; every send/recv uses MSG_DONTWAIT or carries a
- *     1s SO_RCVTIMEO so an unresponsive kernel can't wedge the child
- *     past the SIGALRM(1s) cap inherited from child.c.
- *   - veth stays in loopback only; no underlying physical device.
- *
- * Header gates: __has_include(<linux/if_link.h>) /
- * <linux/netfilter/nf_tables.h> / <linux/netfilter/nfnetlink.h>.
- * NFT_MSG_NEWFLOWTABLE / NFTA_FLOWTABLE_* / NFTA_FLOW_TABLE_NAME /
- * IFLA_VLAN_ID / VETH_INFO_PEER are #define-fallback-supplied at
- * their stable UAPI integer values when absent.
+ * Latches: userns -EPERM permanently gates the op off for this child;
+ * -EAGAIN skips without latching.  ns_unsupported_flowtable_vlan fires
+ * on the first NEWFLOWTABLE EOPNOTSUPP/EAFNOSUPPORT/EPROTONOSUPPORT
+ * (CONFIG_NF_FLOW_TABLE absent).  Header-gated by __has_include on
+ * <linux/if_link.h>/<linux/netfilter/nf_tables.h>/<nfnetlink.h> with
+ * per-symbol UAPI-integer fallbacks for NFT_MSG_NEWFLOWTABLE /
+ * NFTA_FLOWTABLE_* / IFLA_VLAN_ID / VETH_INFO_PEER.
  */
 
 #if __has_include(<linux/if_link.h>) && \
