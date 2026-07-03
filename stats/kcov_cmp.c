@@ -349,47 +349,20 @@ static void kcov_redqueen_observability_block_render(long elapsed __unused__)
 }
 
 /*
- * Old-flat-pool vs shadow-hypothesis comparison block.  Two sub-blocks:
- *
- *   1. Flat per-pool-kind summary: per-pool consumed / pc-wins / misses /
- *      cmp-novelty cumulative + window-delta.  Lets an operator read the
- *      per-syscall vs field-pool conversion ratio at a glance without
- *      having to thread per-syscall arrays.
- *
- *   2. Per-syscall top-N table: for the top syscalls by per-window
- *      cmp-hint injection delta, print the OLD per-syscall pool's
- *      conversion (per_syscall_cmp_hint_pc_wins / per_syscall_cmp_injected)
- *      alongside the SHADOW typed-hypothesis per-syscall pc-wins (summed
- *      across the matching hyp_pools[nr][0/1] entries).  The two columns
- *      answer the t75 question directly: does the typed store predict
- *      better-converting picks than the flat pool on the same syscalls
- *      the flat pool is most active on.
- *
- * Pure SHADOW: every counter read here is bumped by paths that already
- * existed (the by-pool partition bumps land alongside the existing flat
- * counters and the cmp_hyp_credit_outcome paths); this function only
- * formats the comparison.  Independent prev_* snapshots so other dump
- * blocks that read the same arrays do not desync the window deltas here.
+ * Per-syscall top-N table: for the top syscalls by per-window cmp-hint
+ * injection delta, print the OLD per-syscall pool's conversion
+ * (per_syscall_cmp_hint_pc_wins / per_syscall_cmp_injected) alongside
+ * the SHADOW typed-hypothesis per-syscall pc-wins (summed across the
+ * matching hyp_pools[nr][0/1] entries).  The two columns answer the t75
+ * question directly: does the typed store predict better-converting
+ * picks than the flat pool on the same syscalls the flat pool is most
+ * active on.
  */
-static void kcov_cmp_oldpool_vs_shadow_block_render(long elapsed __unused__)
+static void kcov_cmp_render_oldpool_per_syscall_topn(void)
 {
-	static unsigned long prev_consumed_by_pool[CMP_HINT_POOL_KIND_NR];
-	static unsigned long prev_pc_wins_by_pool[CMP_HINT_POOL_KIND_NR];
-	static unsigned long prev_misses_by_pool[CMP_HINT_POOL_KIND_NR];
-	static unsigned long prev_cmp_novelty_by_pool[CMP_HINT_POOL_KIND_NR];
 	static unsigned long prev_per_nr_injected[MAX_NR_SYSCALL];
 	static unsigned long prev_per_nr_pc_wins[MAX_NR_SYSCALL];
 	static uint64_t prev_per_nr_hyp_pc_wins[MAX_NR_SYSCALL];
-	static bool armed;
-
-	unsigned long cur_consumed_by_pool[CMP_HINT_POOL_KIND_NR];
-	unsigned long cur_pc_wins_by_pool[CMP_HINT_POOL_KIND_NR];
-	unsigned long cur_misses_by_pool[CMP_HINT_POOL_KIND_NR];
-	unsigned long cur_cmp_novelty_by_pool[CMP_HINT_POOL_KIND_NR];
-	unsigned long delta_consumed_by_pool[CMP_HINT_POOL_KIND_NR];
-	unsigned long delta_pc_wins_by_pool[CMP_HINT_POOL_KIND_NR];
-	unsigned long delta_misses_by_pool[CMP_HINT_POOL_KIND_NR];
-	unsigned long delta_cmp_novelty_by_pool[CMP_HINT_POOL_KIND_NR];
 
 	unsigned int top_nr[10];
 	unsigned long top_injected[10];
@@ -404,117 +377,7 @@ static void kcov_cmp_oldpool_vs_shadow_block_render(long elapsed __unused__)
 
 	unsigned int nr_syscalls_to_scan;
 	const struct syscalltable *table;
-	unsigned int k, i, j;
-	bool any_pool_delta = false;
-
-	static const char *const pool_kind_name[CMP_HINT_POOL_KIND_NR] = {
-		[CMP_HINT_POOL_PER_SYSCALL] = "per-syscall",
-		[CMP_HINT_POOL_FIELD]       = "field",
-	};
-
-	if (kcov_shm == NULL)
-		return;
-
-	for (k = 0; k < CMP_HINT_POOL_KIND_NR; k++) {
-		cur_consumed_by_pool[k] = __atomic_load_n(
-			&kcov_shm->cmp_hint_consumed_by_pool[k],
-			__ATOMIC_RELAXED);
-		cur_pc_wins_by_pool[k] = __atomic_load_n(
-			&kcov_shm->cmp_hint_pc_wins_by_pool[k],
-			__ATOMIC_RELAXED);
-		cur_misses_by_pool[k] = __atomic_load_n(
-			&kcov_shm->cmp_hint_misses_by_pool[k],
-			__ATOMIC_RELAXED);
-		cur_cmp_novelty_by_pool[k] = __atomic_load_n(
-			&kcov_shm->cmp_hint_cmp_novelty_wins_by_pool[k],
-			__ATOMIC_RELAXED);
-	}
-
-	if (!armed) {
-		for (k = 0; k < CMP_HINT_POOL_KIND_NR; k++) {
-			prev_consumed_by_pool[k] = cur_consumed_by_pool[k];
-			prev_pc_wins_by_pool[k] = cur_pc_wins_by_pool[k];
-			prev_misses_by_pool[k] = cur_misses_by_pool[k];
-			prev_cmp_novelty_by_pool[k] = cur_cmp_novelty_by_pool[k];
-		}
-		/* per-nr snapshots and hyp walk are armed on the first
-		 * windowed emit below; the first call seeds prev_ and skips
-		 * the comparison, identical to the pattern in
-		 * kcov_cmp_observability_block_render(). */
-		armed = true;
-		return;
-	}
-
-	for (k = 0; k < CMP_HINT_POOL_KIND_NR; k++) {
-		/* Counters are monotonic but guard the subtraction defensively
-		 * the same way the existing per-syscall topn does -- a torn
-		 * load on a hot relaxed atomic could otherwise underflow to
-		 * ~ULONG_MAX and dominate the table. */
-		delta_consumed_by_pool[k] = (cur_consumed_by_pool[k] > prev_consumed_by_pool[k]) ?
-			cur_consumed_by_pool[k] - prev_consumed_by_pool[k] : 0;
-		delta_pc_wins_by_pool[k] = (cur_pc_wins_by_pool[k] > prev_pc_wins_by_pool[k]) ?
-			cur_pc_wins_by_pool[k] - prev_pc_wins_by_pool[k] : 0;
-		delta_misses_by_pool[k] = (cur_misses_by_pool[k] > prev_misses_by_pool[k]) ?
-			cur_misses_by_pool[k] - prev_misses_by_pool[k] : 0;
-		delta_cmp_novelty_by_pool[k] = (cur_cmp_novelty_by_pool[k] > prev_cmp_novelty_by_pool[k]) ?
-			cur_cmp_novelty_by_pool[k] - prev_cmp_novelty_by_pool[k] : 0;
-
-		if ((delta_consumed_by_pool[k] | delta_pc_wins_by_pool[k] |
-		     delta_misses_by_pool[k] | delta_cmp_novelty_by_pool[k]) != 0)
-			any_pool_delta = true;
-	}
-
-	if (any_pool_delta) {
-		stats_log_write("KCOV CMP old-flat-pool conversion by pool kind over last %lds:\n",
-				elapsed);
-		stats_log_write("  %-12s %12s %12s %12s %12s %8s\n",
-				"pool", "consumed+", "pc-wins+", "misses+",
-				"novelty+", "pc-rate");
-		for (k = 0; k < CMP_HINT_POOL_KIND_NR; k++) {
-			unsigned long denom = delta_pc_wins_by_pool[k] +
-					      delta_misses_by_pool[k];
-			unsigned int pct = denom ?
-				(unsigned int)((delta_pc_wins_by_pool[k] * 100UL) /
-					       denom) : 0;
-			const char *name = pool_kind_name[k];
-
-			if (name == NULL)
-				name = "?";
-			stats_log_write("  %-12s %12lu %12lu %12lu %12lu %7u%%\n",
-					name,
-					delta_consumed_by_pool[k],
-					delta_pc_wins_by_pool[k],
-					delta_misses_by_pool[k],
-					delta_cmp_novelty_by_pool[k],
-					pct);
-		}
-		stats_log_write("  cumulative:\n");
-		for (k = 0; k < CMP_HINT_POOL_KIND_NR; k++) {
-			unsigned long denom_cum = cur_pc_wins_by_pool[k] +
-						  cur_misses_by_pool[k];
-			unsigned int pct_cum = denom_cum ?
-				(unsigned int)((cur_pc_wins_by_pool[k] * 100UL) /
-					       denom_cum) : 0;
-			const char *name = pool_kind_name[k];
-
-			if (name == NULL)
-				name = "?";
-			stats_log_write("  %-12s %12lu %12lu %12lu %12lu %7u%%\n",
-					name,
-					cur_consumed_by_pool[k],
-					cur_pc_wins_by_pool[k],
-					cur_misses_by_pool[k],
-					cur_cmp_novelty_by_pool[k],
-					pct_cum);
-		}
-	}
-
-	for (k = 0; k < CMP_HINT_POOL_KIND_NR; k++) {
-		prev_consumed_by_pool[k] = cur_consumed_by_pool[k];
-		prev_pc_wins_by_pool[k] = cur_pc_wins_by_pool[k];
-		prev_misses_by_pool[k] = cur_misses_by_pool[k];
-		prev_cmp_novelty_by_pool[k] = cur_cmp_novelty_by_pool[k];
-	}
+	unsigned int i, j;
 
 	/* Per-syscall top-N: OLD per-syscall pool conversion vs SHADOW
 	 * hypothesis pc-wins.  Rank rows by per-window injected delta -- the
@@ -647,6 +510,156 @@ static void kcov_cmp_oldpool_vs_shadow_block_render(long elapsed __unused__)
 				(unsigned long)top_hyp_consumed_cum[j],
 				(unsigned long)top_hyp_misses_cum[j]);
 	}
+}
+
+/*
+ * Old-flat-pool vs shadow-hypothesis comparison block.  Two sub-blocks:
+ *
+ *   1. Flat per-pool-kind summary: per-pool consumed / pc-wins / misses /
+ *      cmp-novelty cumulative + window-delta.  Lets an operator read the
+ *      per-syscall vs field-pool conversion ratio at a glance without
+ *      having to thread per-syscall arrays.
+ *
+ *   2. Per-syscall top-N table (rendered by
+ *      kcov_cmp_render_oldpool_per_syscall_topn()).
+ *
+ * Pure SHADOW: every counter read here is bumped by paths that already
+ * existed (the by-pool partition bumps land alongside the existing flat
+ * counters and the cmp_hyp_credit_outcome paths); this function only
+ * formats the comparison.  Independent prev_* snapshots so other dump
+ * blocks that read the same arrays do not desync the window deltas here.
+ */
+static void kcov_cmp_oldpool_vs_shadow_block_render(long elapsed __unused__)
+{
+	static unsigned long prev_consumed_by_pool[CMP_HINT_POOL_KIND_NR];
+	static unsigned long prev_pc_wins_by_pool[CMP_HINT_POOL_KIND_NR];
+	static unsigned long prev_misses_by_pool[CMP_HINT_POOL_KIND_NR];
+	static unsigned long prev_cmp_novelty_by_pool[CMP_HINT_POOL_KIND_NR];
+	static bool armed;
+
+	unsigned long cur_consumed_by_pool[CMP_HINT_POOL_KIND_NR];
+	unsigned long cur_pc_wins_by_pool[CMP_HINT_POOL_KIND_NR];
+	unsigned long cur_misses_by_pool[CMP_HINT_POOL_KIND_NR];
+	unsigned long cur_cmp_novelty_by_pool[CMP_HINT_POOL_KIND_NR];
+	unsigned long delta_consumed_by_pool[CMP_HINT_POOL_KIND_NR];
+	unsigned long delta_pc_wins_by_pool[CMP_HINT_POOL_KIND_NR];
+	unsigned long delta_misses_by_pool[CMP_HINT_POOL_KIND_NR];
+	unsigned long delta_cmp_novelty_by_pool[CMP_HINT_POOL_KIND_NR];
+
+	unsigned int k;
+	bool any_pool_delta = false;
+
+	static const char *const pool_kind_name[CMP_HINT_POOL_KIND_NR] = {
+		[CMP_HINT_POOL_PER_SYSCALL] = "per-syscall",
+		[CMP_HINT_POOL_FIELD]       = "field",
+	};
+
+	if (kcov_shm == NULL)
+		return;
+
+	for (k = 0; k < CMP_HINT_POOL_KIND_NR; k++) {
+		cur_consumed_by_pool[k] = __atomic_load_n(
+			&kcov_shm->cmp_hint_consumed_by_pool[k],
+			__ATOMIC_RELAXED);
+		cur_pc_wins_by_pool[k] = __atomic_load_n(
+			&kcov_shm->cmp_hint_pc_wins_by_pool[k],
+			__ATOMIC_RELAXED);
+		cur_misses_by_pool[k] = __atomic_load_n(
+			&kcov_shm->cmp_hint_misses_by_pool[k],
+			__ATOMIC_RELAXED);
+		cur_cmp_novelty_by_pool[k] = __atomic_load_n(
+			&kcov_shm->cmp_hint_cmp_novelty_wins_by_pool[k],
+			__ATOMIC_RELAXED);
+	}
+
+	if (!armed) {
+		for (k = 0; k < CMP_HINT_POOL_KIND_NR; k++) {
+			prev_consumed_by_pool[k] = cur_consumed_by_pool[k];
+			prev_pc_wins_by_pool[k] = cur_pc_wins_by_pool[k];
+			prev_misses_by_pool[k] = cur_misses_by_pool[k];
+			prev_cmp_novelty_by_pool[k] = cur_cmp_novelty_by_pool[k];
+		}
+		/* per-nr snapshots and hyp walk are armed on the first
+		 * windowed emit inside kcov_cmp_render_oldpool_per_syscall_topn();
+		 * the first call here seeds prev_ and skips the comparison,
+		 * identical to the pattern in
+		 * kcov_cmp_observability_block_render(). */
+		armed = true;
+		return;
+	}
+
+	for (k = 0; k < CMP_HINT_POOL_KIND_NR; k++) {
+		/* Counters are monotonic but guard the subtraction defensively
+		 * the same way the existing per-syscall topn does -- a torn
+		 * load on a hot relaxed atomic could otherwise underflow to
+		 * ~ULONG_MAX and dominate the table. */
+		delta_consumed_by_pool[k] = (cur_consumed_by_pool[k] > prev_consumed_by_pool[k]) ?
+			cur_consumed_by_pool[k] - prev_consumed_by_pool[k] : 0;
+		delta_pc_wins_by_pool[k] = (cur_pc_wins_by_pool[k] > prev_pc_wins_by_pool[k]) ?
+			cur_pc_wins_by_pool[k] - prev_pc_wins_by_pool[k] : 0;
+		delta_misses_by_pool[k] = (cur_misses_by_pool[k] > prev_misses_by_pool[k]) ?
+			cur_misses_by_pool[k] - prev_misses_by_pool[k] : 0;
+		delta_cmp_novelty_by_pool[k] = (cur_cmp_novelty_by_pool[k] > prev_cmp_novelty_by_pool[k]) ?
+			cur_cmp_novelty_by_pool[k] - prev_cmp_novelty_by_pool[k] : 0;
+
+		if ((delta_consumed_by_pool[k] | delta_pc_wins_by_pool[k] |
+		     delta_misses_by_pool[k] | delta_cmp_novelty_by_pool[k]) != 0)
+			any_pool_delta = true;
+	}
+
+	if (any_pool_delta) {
+		stats_log_write("KCOV CMP old-flat-pool conversion by pool kind over last %lds:\n",
+				elapsed);
+		stats_log_write("  %-12s %12s %12s %12s %12s %8s\n",
+				"pool", "consumed+", "pc-wins+", "misses+",
+				"novelty+", "pc-rate");
+		for (k = 0; k < CMP_HINT_POOL_KIND_NR; k++) {
+			unsigned long denom = delta_pc_wins_by_pool[k] +
+					      delta_misses_by_pool[k];
+			unsigned int pct = denom ?
+				(unsigned int)((delta_pc_wins_by_pool[k] * 100UL) /
+					       denom) : 0;
+			const char *name = pool_kind_name[k];
+
+			if (name == NULL)
+				name = "?";
+			stats_log_write("  %-12s %12lu %12lu %12lu %12lu %7u%%\n",
+					name,
+					delta_consumed_by_pool[k],
+					delta_pc_wins_by_pool[k],
+					delta_misses_by_pool[k],
+					delta_cmp_novelty_by_pool[k],
+					pct);
+		}
+		stats_log_write("  cumulative:\n");
+		for (k = 0; k < CMP_HINT_POOL_KIND_NR; k++) {
+			unsigned long denom_cum = cur_pc_wins_by_pool[k] +
+						  cur_misses_by_pool[k];
+			unsigned int pct_cum = denom_cum ?
+				(unsigned int)((cur_pc_wins_by_pool[k] * 100UL) /
+					       denom_cum) : 0;
+			const char *name = pool_kind_name[k];
+
+			if (name == NULL)
+				name = "?";
+			stats_log_write("  %-12s %12lu %12lu %12lu %12lu %7u%%\n",
+					name,
+					cur_consumed_by_pool[k],
+					cur_pc_wins_by_pool[k],
+					cur_misses_by_pool[k],
+					cur_cmp_novelty_by_pool[k],
+					pct_cum);
+		}
+	}
+
+	for (k = 0; k < CMP_HINT_POOL_KIND_NR; k++) {
+		prev_consumed_by_pool[k] = cur_consumed_by_pool[k];
+		prev_pc_wins_by_pool[k] = cur_pc_wins_by_pool[k];
+		prev_misses_by_pool[k] = cur_misses_by_pool[k];
+		prev_cmp_novelty_by_pool[k] = cur_cmp_novelty_by_pool[k];
+	}
+
+	kcov_cmp_render_oldpool_per_syscall_topn();
 }
 
 /*
