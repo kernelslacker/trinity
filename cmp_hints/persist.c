@@ -799,7 +799,11 @@ void cmp_hints_enable_snapshots(const char *path)
 		return;
 	memcpy(cmp_hints_snapshot_path, path, len + 1);
 	cmp_hints_snapshot_enabled = true;
-	cmp_hints_last_snapshot_time = time(NULL);
+	/* CLOCK_MONOTONIC seconds: the maybe-snapshot cadence compares this
+	 * against a monotonic `now`, so a wall-clock backward step cannot
+	 * starve the time gate and a forward step cannot fire a burst. */
+	cmp_hints_last_snapshot_time =
+		(time_t)(mono_ns() / 1000000000ULL);
 	cmp_hints_generation_at_last_snapshot = cmp_hints_total_generation();
 }
 
@@ -812,7 +816,7 @@ void cmp_hints_maybe_snapshot(void)
 		return;
 
 	gen_now = cmp_hints_total_generation();
-	now = time(NULL);
+	now = (time_t)(mono_ns() / 1000000000ULL);
 
 	/* Both gates must expire before a snapshot fires: enough generations
 	 * (so we don't write a near-identical payload to disk) AND enough

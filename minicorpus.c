@@ -2260,13 +2260,17 @@ void minicorpus_enable_snapshots(const char *path)
 	memcpy(snapshot_path, path, len + 1);
 	snapshot_enabled = true;
 
-	/* Anchor the wall-clock floor to fuzz-start so the first time-trigger
+	/* Anchor the monotonic floor to fuzz-start so the first time-trigger
 	 * fires MINICORPUS_SNAPSHOT_INTERVAL_SEC after enable rather than
 	 * immediately on the first child's first call against an empty
-	 * corpus.  Defensive shm guard mirrors minicorpus_maybe_snapshot(). */
+	 * corpus.  CLOCK_MONOTONIC seconds: a wall-clock backward step would
+	 * starve the cadence (now_sec never reaches old_time + interval),
+	 * and a forward step would fire a burst of snapshots.  Defensive
+	 * shm guard mirrors minicorpus_maybe_snapshot(). */
 	if (shm != NULL)
 		__atomic_store_n(&shm->stats.minicorpus_last_snapshot_time,
-				 (unsigned long)time(NULL), __ATOMIC_RELAXED);
+				 (unsigned long)(mono_ns() / 1000000000ULL),
+				 __ATOMIC_RELAXED);
 }
 
 void minicorpus_maybe_snapshot(void)
@@ -2284,7 +2288,7 @@ void minicorpus_maybe_snapshot(void)
 			      __ATOMIC_RELAXED);
 	old_time = __atomic_load_n(&shm->stats.minicorpus_last_snapshot_time,
 				   __ATOMIC_RELAXED);
-	now_sec = (unsigned long)time(NULL);
+	now_sec = (unsigned long)(mono_ns() / 1000000000ULL);
 
 	edges_trigger = (edges_now >= old + MINICORPUS_SNAPSHOT_EDGES);
 	time_trigger = (now_sec >= old_time + MINICORPUS_SNAPSHOT_INTERVAL_SEC);
