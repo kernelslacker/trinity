@@ -131,8 +131,7 @@ static char *pick_sacrificial_target(void)
 		return NULL;
 	memset(target, 0, 64);
 	src = sacrificial_mount_paths[rnd_modulo_u32(nr_sacrificial_mount_paths)];
-	strncpy(target, src, 63);
-	target[63] = '\0';
+	memcpy(target, src, strnlen(src, 63));
 	return target;
 }
 
