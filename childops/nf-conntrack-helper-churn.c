@@ -2,102 +2,47 @@
  * nf_conntrack_helper_churn - attach/detach in-kernel conntrack helpers and
  * rotate zones underneath a live flow.
  *
- * The bug class is the conntrack-helper lifecycle: helpers
- * (nf_conntrack_ftp, nf_conntrack_sip, nf_conntrack_h323,
- * nf_conntrack_pptp, nf_conntrack_tftp, ...) attach to an existing
- * struct nf_conn through the CTA_HELP attribute on CTNETLINK CT_NEW
- * messages, allocate a per-conntrack helper extension via
- * nf_ct_helper_ext_add(), and register expectation policies that the
- * data-path matches in nf_ct_helper().  Userspace can attach, detach
- * (CT_NEW NLM_F_REPLACE without CTA_HELP), or delete the parent
- * conntrack while the in-kernel helper is mid-walk over its
- * expectations -- expectation_register / expectation_evict /
- * helper_destroy_rcu / __nf_conntrack_helper_unregister all share the
- * net->expect_lock and the per-helper expectation lists, and the
- * RCU-deferred destroy of struct nf_conntrack_helper has historically
- * raced both the expectation-walk path (CVE-2023-39189-class
- * helper-extension UAFs) and the conntrack-extend reallocation that
- * runs when a helper extension is added after the entry has already
- * been confirmed (CVE-2024-26625-class out-of-bounds on the extend
- * region).  Conntrack zones make this materially worse: a flow whose
- * tuple lives in zone Z but whose expectation injects a child tuple
- * in a different zone exercises the per-zone hash split in
- * __nf_conntrack_find_get() under the same locks the helper
- * registration touches, and zone churn under traffic is exactly the
- * shape that surfaced the h323 expectation-refcount imbalance
- * (CVE-2025-21756-class) -- expectation lookup walks the global
- * expect-hash but the parent conntrack is keyed by zone, so a stale
- * expectation matched against a zone-rotated parent puts the helper
- * into a state the per-helper ->help() callback was never written to
- * tolerate.
+ * Bug class: the conntrack-helper lifecycle in net/netfilter/nf_conntrack_*.
+ * Helpers attach via CTA_HELP on CTNETLINK CT_NEW, allocate a per-nf_conn
+ * extension via nf_ct_helper_ext_add(), and register expectation policies.
+ * expectation_register / evict / helper_destroy_rcu /
+ * __nf_conntrack_helper_unregister share net->expect_lock and the
+ * per-helper expect lists, and the RCU-deferred helper destroy has raced
+ * both the expectation walker (CVE-2023-39189 helper-ext UAFs) and the
+ * conntrack-extend realloc that runs when a helper extension is added
+ * post-confirm (CVE-2024-26625 OOB).  Conntrack zones sharpen it: expect
+ * lookup walks the global expect-hash but the parent nf_conn is zone-keyed,
+ * so a stale expectation against a zone-rotated parent puts the helper in
+ * a state ->help() was never written to tolerate (CVE-2025-21756 h323 refct
+ * imbalance shape).
  *
- * Sequence (per BUDGETED inner-loop iteration):
- *   1.  Choose a zone Z in [0, NF_ZONE_SPREAD) and an L4 protocol
- *       (TCP / UDP) and a helper name from the runtime-available mask.
- *   2.  IPCTNL_MSG_CT_NEW: insert a synthetic tuple in zone Z over
- *       loopback (src/dst ports randomised), CTA_PROTOINFO_TCP_STATE
- *       set to ESTABLISHED for TCP so the conntrack is taken seriously
- *       by the input path.  The CTA_HELP attribute carries the chosen
- *       helper name -- this is the slot that drives
- *       __nf_ct_try_assign_helper() and nf_ct_helper_ext_add().
- *   3.  IPCTNL_MSG_EXP_NEW: manually inject an expectation in zone Z'
- *       (Z' = (Z + 1) % NF_ZONE_SPREAD with low probability, otherwise
- *       Z) with CTA_EXPECT_HELP_NAME set -- exercises the
- *       expectation_insert path under net->expect_lock and the
- *       per-helper expectation list.
- *   4.  AF_INET socket; setsockopt SO_MARK = (zone-derived skb mark);
- *       sendto loopback to drive nf_conntrack_in() over the just-
- *       inserted tuple.  Error returns are benign coverage -- the
- *       conntrack lookup + helper ->help() callback already ran.
- *   5.  Race burst (also BUDGETED):
- *         a) IPCTNL_MSG_CT_DELETE on the tuple in zone Z -- races the
- *            helper expectation walk.
- *         b) setsockopt SO_MARK to a different zone-derived value and
- *            send again -- forces nf_conntrack_in() to re-resolve in
- *            a different zone slot.
- *         c) IPCTNL_MSG_CT_NEW NLM_F_REPLACE without CTA_HELP -- the
- *            mid-flow helper-detach shape.  Drives
- *            __nf_ct_helper_destroy() while the expectation list may
- *            still have an entry pointing at the helper extension.
- *   6.  close all fds.
+ * Per BUDGETED iteration: pick zone Z in [0, NF_ZONE_SPREAD), an L4 proto,
+ * and a helper name from the runtime-available mask; CT_NEW inserts a
+ * synthetic tuple in Z with CTA_HELP (drives __nf_ct_try_assign_helper +
+ * nf_ct_helper_ext_add); EXP_NEW injects an expectation in Z' (usually Z,
+ * occasionally (Z+1)%SPREAD) with CTA_EXPECT_HELP_NAME; AF_INET sendto with
+ * a zone-derived SO_MARK drives nf_conntrack_in over the tuple.  Race burst:
+ * CT_DELETE the tuple, flip SO_MARK to force re-resolve in a different zone
+ * slot, then CT_NEW NLM_F_REPLACE without CTA_HELP (mid-flow helper detach:
+ * __nf_ct_helper_destroy while the expect list may still point at the
+ * helper extension).
  *
- * Brick-safety: nfnetlink + AF_INET on loopback only.  No module
- * load, no sysfs writes, no persistent state outside per-process
- * socket fds.  Synthetic conntrack entries are GC'd by the kernel's
- * timeout (we set CTA_TIMEOUT to a small value so the kernel cleans
- * up even if we fail to send the CT_DELETE).  All netlink sends
- * MSG_DONTWAIT, all recvs SO_RCVTIMEO=1s so a stuck controller
- * cannot pin past child.c's SIGALRM(1s).
+ * Brick-safety: nfnetlink + AF_INET on loopback only; no modprobe, no
+ * sysfs, no persistent state outside process fds.  CTA_TIMEOUT is set small
+ * so the kernel GC reaps synthetic entries even if CT_DELETE never sends.
+ * All netlink sends MSG_DONTWAIT, recvs SO_RCVTIMEO=1s so a stuck
+ * controller can't pin past child.c's SIGALRM(1s).
  *
- * Cap-gate latch behaviour: the first invocation per process probes
- * NETLINK_NETFILTER socket open, then sends a minimal IPCTNL_MSG_CT_NEW
- * to verify the kernel exposes CTNETLINK at all.  If the probe yields
- * -EPROTONOSUPPORT / -EOPNOTSUPP (CONFIG_NF_CONNTRACK_NETLINK=n) the
- * latch fires and every subsequent invocation just bumps setup_failed
- * and returns -- mirrors the g_handshake_resolved pattern from
- * handshake-req-abort.  Helper availability is probed lazily via the
- * first attach attempt for each helper name; helpers absent from the
- * kernel's helper table return -EOPNOTSUPP and the per-name bit in
- * helper_available_mask stays clear for the rest of the child's
- * lifetime.
+ * Latches (per-process): probe latches on NETLINK_NETFILTER + minimal
+ * IPCTNL_MSG_CT_NEW returning -EPROTONOSUPPORT / -EOPNOTSUPP
+ * (CONFIG_NF_CONNTRACK_NETLINK=n); subsequent invocations bump setup_failed
+ * and return.  helper_available_mask is a per-name bit cleared lazily on
+ * first -EOPNOTSUPP for that helper name (module not loaded); other
+ * helpers keep working.  EPERM / ENOENT / EEXIST are counted as benign
+ * coverage -- the validation path ran.
  *
- * Header gating: <linux/netfilter/nfnetlink.h> +
- * <linux/netfilter/nfnetlink_conntrack.h> via __has_include().  Older
- * sysroots without either fall to a stub that bumps runs +
- * setup_failed -- same shape as handshake-req-abort and mptcp-pm-churn.
- *
- * Failure modes treated as benign coverage:
- *   - CTNETLINK absent: latched, every subsequent call short-circuits.
- *   - EOPNOTSUPP on CTA_HELP: helper module not loaded.  Per-name bit
- *     cleared and we skip that helper.  Other helpers may still work.
- *   - EEXIST on CT_NEW: the synthetic tuple already exists from a
- *     prior iteration in the same zone.  Counted as insert_ok because
- *     the lookup + collision-detection path ran end-to-end.
- *   - ENOENT on CT_DELETE / EXP_NEW: the parent conntrack was already
- *     reaped or the expectation tuple doesn't match any pending
- *     master.  The lookup ran -- benign.
- *   - EPERM on any nfnl op: insufficient capabilities in this netns.
- *     The validation path still ran on the front door.
+ * Header-gated by __has_include() on linux/netfilter/nfnetlink.h and
+ * linux/netfilter/nfnetlink_conntrack.h; missing headers fall to a stub.
  */
 
 #include <errno.h>
