@@ -3,96 +3,38 @@
  * concurrent SESSION_CREATE / SESSION_MODIFY / SESSION_DELETE on the
  * same pseudo-wire interface name inside a private netns.
  *
- * Background.  L2TP exposes a genetlink family ("l2tp",
- * net/l2tp/l2tp_netlink.c) whose SESSION_CREATE handler allocates a
- * pseudo-wire (PPP / ETH / ETH_VLAN) and, for pw_type == ETH, lands
- * in l2tp_eth.c which builds a per-session netdevice carrying the
- * caller-supplied L2TP_ATTR_IFNAME.  Two concurrent SESSION_CREATEs
- * picking the same ifname from two tasks race the register_netdev()
- * +-namespace name-uniqueness check against each other; SESSION_MODIFY
- * walks the same per-tunnel session list the second CREATE is
- * splicing into, and SESSION_DELETE tears the netdev down via
- * l2tp_session_delete -> __l2tp_session_unhash -> __l2tp_eth_dev_uninit
- * while the other path is still mid-init.  Per-syscall genl fuzzing
- * never assembles the shape: it can't keep CONN_ID consistent across
- * the TUNNEL_CREATE then a SESSION_CREATE referencing the same
- * tunnel, and it can't keep two siblings on a matching ifname long
- * enough for the race to fire.
+ * Target: net/l2tp/l2tp_netlink.c SESSION_CREATE / _MODIFY / _DELETE
+ * and net/l2tp/l2tp_eth.c:l2tp_eth_create.  Bug class: two concurrent
+ * SESSION_CREATEs picking the same L2TP_ATTR_IFNAME race
+ * register_netdev()'s name-uniqueness check; SESSION_MODIFY walks the
+ * per-tunnel session list the second CREATE is splicing into, and
+ * SESSION_DELETE tears the netdev via __l2tp_session_unhash ->
+ * __l2tp_eth_dev_uninit mid-init.  Random genl fuzzing can't keep
+ * CONN_ID consistent across TUNNEL_CREATE/SESSION_CREATE nor hold
+ * two siblings on a matching ifname long enough.
  *
- * Shape (per outer iteration, BUDGETED+capped):
- *   1.  Pick a per-iter (conn_id, session_id_base, ifname-suffix)
- *       triple, all random in safe ranges so two concurrent children
- *       don't collide on the same tunnel inside the same netns.
- *   2.  Open a UDP/loopback socket bound to an ephemeral port and
- *       issue L2TP_CMD_TUNNEL_CREATE with L2TP_ATTR_FD pointing at
- *       it; PROTO_VERSION=3, ENCAP_TYPE=UDP.  The kernel takes the
- *       fd as the tunnel transport.  Failure to create the tunnel
- *       short-circuits the iteration -- coverage already counted via
- *       the iter counter.
- *   3.  Fork a "creator" sibling: opens its own genl socket and
- *       tight-loops SESSION_CREATE (pwtype=ETH, ifname=<chosen>)
- *       followed by SESSION_DELETE.  Each cycle re-registers the
- *       same netdevice name in the same netns, exercising
- *       l2tp_eth_create + register_netdev + the matching unregister.
- *   4.  Fork a "racer" sibling: opens its own genl socket and
- *       tight-loops SESSION_CREATE with the SAME ifname against the
- *       SAME tunnel.  Two concurrent CREATEs on one ifname is the
- *       core race; the loser typically gets -EEXIST from
- *       register_netdevice after the winner has already started
- *       wiring the session into the tunnel's session list.
- *       Interleaved with periodic SESSION_MODIFY against the
- *       walker's session_id range so the per-tunnel session list is
- *       being walked while the creator is splicing into it.
- *   5.  Parent reaps both via waitpid_eintr().  WIFSIGNALED on
- *       either bumps the forensic sibling_crashed counter.
- *   6.  Parent issues a best-effort L2TP_CMD_TUNNEL_DELETE so a
- *       stuck tunnel doesn't accumulate across iters within this
- *       invocation; the grandchild's netns is reaped on its _exit(),
- *       so any leftover state cannot survive the invocation.
+ * Per outer iteration (BUDGETED+capped), inside a private user+net
+ * namespace via userns_run_in_ns (grandchild _exit reaps udp
+ * socket / tunnel / per-session netdevs / netns): open a UDP/lo
+ * socket, L2TP_CMD_TUNNEL_CREATE (v3, UDP, L2TP_ATTR_FD), fork a
+ * "creator" sibling tight-looping SESSION_CREATE(pwtype=ETH,
+ * ifname=X)/SESSION_DELETE, fork a "racer" sibling tight-looping
+ * SESSION_CREATE on the SAME ifname/tunnel interleaved with
+ * SESSION_MODIFY over the walker's session_id range, reap both, then
+ * best-effort TUNNEL_DELETE.  Each sibling caps at 32 messages / 150 ms.
  *
- * Per-invocation netns: every call dispatches the tunnel/session body
- * via userns_run_in_ns(CLONE_NEWNET, ...).  The helper forks a
- * transient grandchild that installs an identity user namespace plus
- * a fresh CLONE_NEWNET, runs the body, and _exit()s -- the kernel
- * reaps the UDP socket, the tunnel, every per-session netdevice and
- * any forked-sibling state with the grandchild's netns.  The
- * persistent fuzz child never touches its own credentials or
- * namespace stack, so the cap-drop oracle keeps observing the host
- * credential profile, and no state can leak between invocations.
+ * Brick-safety: all tunnel/session state lives in the grandchild's
+ * private netns; UDP bound to 127.0.0.1; no module load, no rtnetlink
+ * on host.  Hard outer wall-clock cap.
  *
- * Self-gating.  Two latches.
- *   - l2tp_family_probed / ns_unsupported_l2tp_ifname_race: first
- *     invocation per process resolves the "l2tp" genl family via
- *     CTRL_CMD_GETFAMILY.  Any failure (family absent, kernel
- *     without CONFIG_L2TP=y/m, l2tp_netlink module not loaded)
- *     latches the op off for the rest of this child's life.  The
- *     family registry is global to the genl subsystem, so probing
- *     once outside the per-invocation netns is sufficient.
- *   - ns_userns_unsupported_l2tp_ifname_race: userns_run_in_ns()
- *     reported -EPERM, meaning the grandchild's
- *     unshare(CLONE_NEWUSER) was refused by a hardened policy
- *     (user.max_user_namespaces=0 or
- *     kernel.unprivileged_userns_clone=0).  Without a private netns
- *     we MUST NOT touch host L2TP state, so the op stays disabled
- *     for the remainder of this child's lifetime.  Transient
- *     grandchild setup failures (helper -EAGAIN: fork, id-map write,
- *     secondary unshare) do not latch -- the failure is not policy
- *     and may not recur.
- *
- * Brick-safety.  All tunnel/session creates land in the grandchild's
- * private netns; the UDP socket is bound to 127.0.0.1; on userns
- * refusal we latch off rather than mutate the host L2TP state.  No
- * module load, no rtnetlink-on-host, no globally-reachable resource.
- * Bounded outer loop with a hard wall-clock cap; each sibling caps
- * its own create burst at 32 messages or 150 ms.
- *
- * Header compat.  <linux/l2tp.h> ships the L2TP_CMD_* / L2TP_ATTR_* /
- * L2TP_PWTYPE_* / L2TP_ENCAPTYPE_* enums and the family-name macro
- * L2TP_GENL_NAME ("l2tp"); fallback constants matching the UAPI
- * numbering are defined under __has_include guards for stripped
+ * Latches: l2tp_family_probed / ns_unsupported_l2tp_ifname_race fires
+ * on first CTRL_CMD_GETFAMILY("l2tp") failure (probed once outside the
+ * netns; family registry is global).  ns_userns_unsupported_* fires on
+ * userns_run_in_ns -EPERM (hardened userns policy) -- without a
+ * private netns we MUST NOT touch host L2TP.  Transient helper failures
+ * (-EAGAIN) skip without latching.  Header-gated by __has_include on
+ * <linux/l2tp.h> with per-symbol UAPI-numbering fallbacks for stripped
  * sysroots.
- *
- * CONFIG_L2TP=m + L2TP_V3=y on the test config.
  */
 
 #include <errno.h>
