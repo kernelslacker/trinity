@@ -161,6 +161,14 @@ static void timer_create_sanitise(struct syscallrecord *rec)
 	if (sigev != NULL) {
 		uint32_t r = rnd_modulo_u32(100);
 
+		/* Zero the struct before setting a subset of fields -- the
+		 * writable-address pool returns uninitialised bytes, and
+		 * sigev_notify_function / sigev_notify_attributes (part of
+		 * sigev_value's union tail on some libc layouts) plus the
+		 * reserved padding would otherwise reach the kernel as
+		 * uninitialised. */
+		memset(sigev, 0, sizeof(*sigev));
+
 		sigev->sigev_value.sival_int = (int) rnd_u32();
 		sigev->sigev_signo = pick_signo_avoiding_sigint();
 
