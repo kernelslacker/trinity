@@ -210,6 +210,22 @@ static unsigned long stats_ts_prev_per_syscall_remote_edges[MAX_NR_SYSCALL][2];
 static unsigned long stats_ts_prev_per_syscall_cmp_injected[MAX_NR_SYSCALL][2];
 static unsigned long stats_ts_prev_per_syscall_cmp_hint_pc_wins[MAX_NR_SYSCALL][2];
 
+/* Previous window's per-childop counters for the by_childop attribution
+ * block.  Same rewind-guarded delta shape as the per-syscall prev arrays
+ * but indexed by enum child_op_type -- lets a coverage-window consumer
+ * answer "which childop drove this window's edge jump?" for the wide
+ * class of windows where per-syscall deltas came back zero because the
+ * wins came from alt-op dispatches (recipe_runner / genetlink_fuzzer /
+ * futex_storm / af_unix_scm_rights_gc_churn / pagecache_canary_check /
+ * perf_chains / fs_lifecycle).  Sized by NR_CHILD_OP_TYPES; parent-
+ * static like the syscall arrays. */
+static unsigned long stats_ts_prev_childop_edges_discovered[NR_CHILD_OP_TYPES];
+static unsigned long stats_ts_prev_childop_edges_clean[NR_CHILD_OP_TYPES];
+static unsigned long stats_ts_prev_childop_calls_with_edges[NR_CHILD_OP_TYPES];
+static unsigned long stats_ts_prev_childop_invocations[NR_CHILD_OP_TYPES];
+static unsigned long stats_ts_prev_childop_would_promote[NR_CHILD_OP_TYPES];
+static unsigned long stats_ts_prev_childop_would_demote[NR_CHILD_OP_TYPES];
+
 /* Walk one syscall table and emit
  * {"nr":N,"edges":E,"edges_gained":G,"kcov_calls":K,"attempted_calls":A,
  *  "local_edges":L,"local_edges_gained":LG,"remote_edges":R,
@@ -535,6 +551,123 @@ void stats_timeseries_emit_window(unsigned long op_count)
 			stats_ts_window_delta(
 				reward_pc_edges,
 				&prev_bandit_reward_pc_edge_count[i]));
+	}
+	fputs("]", stats_timeseries_fp);
+
+	/* Per-childop edge / invocation / canary attribution.  For every
+	 * alt-op with any cumulative activity (skip-zero: never-fired ops
+	 * are elided so a run with ~130 defined ops but only ~10 active
+	 * does not bloat every window record with all-zero blocks), emit
+	 * the level + per-window delta for the four shm counters the child_
+	 * process() post-call block bumps -- childop_edges_discovered (the
+	 * unbracketed global-delta path, noisy but always live),
+	 * childop_edges_clean (the outer-KCOV-bracketed per-call delta the
+	 * canary queue and adapt_budget() consume), childop_calls_with_
+	 * edges (the "at least one new edge" call-count sibling of
+	 * bandit_pool_edges_discovered on the syscall path), and
+	 * childop_invocations (the dispatch count parallel to op_count).
+	 * Plus the shadow canary recommendation deltas (childop_would_
+	 * promote / childop_would_demote) so a jump ties to a childop AND
+	 * its disposition: a nonzero would_promote_delta this window means
+	 * the shadow policy would PROMOTED_CLEAN / PROMOTED_INTERFERENCE
+	 * the op, a nonzero would_demote_delta means THROTTLED /
+	 * QUARANTINED / CONFIG_BLOCKED.  canary_active / canary_promoted
+	 * expose the live queue state directly via the public accessors,
+	 * so an op that is currently the canary pick or currently promoted
+	 * is emitted even with all-zero counters -- the operator can see
+	 * canary state before any counter has moved.  CHILD_OP_SYSCALL is
+	 * skipped: the syscall path attributes its wins through the
+	 * per_syscall block and the by_strategy bandit counters, and the
+	 * per-childop shm arrays are documented as skipping this slot at
+	 * their bump sites. */
+	fputs(",\"by_childop\":[", stats_timeseries_fp);
+	{
+		enum child_op_type active_canary = canary_active_op();
+		bool first_op = true;
+		int op;
+
+		for (op = CHILD_OP_SYSCALL + 1; op < NR_CHILD_OP_TYPES; op++) {
+			unsigned long edges_discovered = 0;
+			unsigned long edges_clean = 0;
+			unsigned long calls_with_edges = 0;
+			unsigned long invocations = 0;
+			unsigned long would_promote = 0;
+			unsigned long would_demote = 0;
+			unsigned long edges_discovered_delta;
+			unsigned long edges_clean_delta;
+			unsigned long calls_with_edges_delta;
+			unsigned long invocations_delta;
+			unsigned long would_promote_delta;
+			unsigned long would_demote_delta;
+			bool canary_active = (op == (int)active_canary);
+			bool canary_promoted = canary_op_is_promoted(op);
+
+			if (shm != NULL) {
+				edges_discovered = __atomic_load_n(
+					&shm->stats.childop_edges_discovered[op],
+					__ATOMIC_RELAXED);
+				edges_clean = __atomic_load_n(
+					&shm->stats.childop_edges_clean[op],
+					__ATOMIC_RELAXED);
+				calls_with_edges = __atomic_load_n(
+					&shm->stats.childop_calls_with_edges[op],
+					__ATOMIC_RELAXED);
+				invocations = __atomic_load_n(
+					&shm->stats.childop_invocations[op],
+					__ATOMIC_RELAXED);
+				would_promote = __atomic_load_n(
+					&shm->stats.childop_would_promote[op],
+					__ATOMIC_RELAXED);
+				would_demote = __atomic_load_n(
+					&shm->stats.childop_would_demote[op],
+					__ATOMIC_RELAXED);
+			}
+
+			edges_discovered_delta = stats_ts_window_delta(
+				edges_discovered,
+				&stats_ts_prev_childop_edges_discovered[op]);
+			edges_clean_delta = stats_ts_window_delta(
+				edges_clean,
+				&stats_ts_prev_childop_edges_clean[op]);
+			calls_with_edges_delta = stats_ts_window_delta(
+				calls_with_edges,
+				&stats_ts_prev_childop_calls_with_edges[op]);
+			invocations_delta = stats_ts_window_delta(
+				invocations,
+				&stats_ts_prev_childop_invocations[op]);
+			would_promote_delta = stats_ts_window_delta(
+				would_promote,
+				&stats_ts_prev_childop_would_promote[op]);
+			would_demote_delta = stats_ts_window_delta(
+				would_demote,
+				&stats_ts_prev_childop_would_demote[op]);
+
+			if (edges_discovered == 0 && edges_clean == 0 &&
+			    calls_with_edges == 0 && invocations == 0 &&
+			    would_promote == 0 && would_demote == 0 &&
+			    !canary_active && !canary_promoted)
+				continue;
+
+			fprintf(stats_timeseries_fp,
+				"%s{\"op\":%d,\"name\":\"%s\""
+				",\"edges_discovered\":%lu,\"edges_discovered_delta\":%lu"
+				",\"edges_clean\":%lu,\"edges_clean_delta\":%lu"
+				",\"calls_with_edges\":%lu,\"calls_with_edges_delta\":%lu"
+				",\"invocations\":%lu,\"invocations_delta\":%lu"
+				",\"would_promote\":%lu,\"would_promote_delta\":%lu"
+				",\"would_demote\":%lu,\"would_demote_delta\":%lu"
+				",\"canary_active\":%d,\"canary_promoted\":%d}",
+				first_op ? "" : ",", op, alt_op_name(op),
+				edges_discovered, edges_discovered_delta,
+				edges_clean, edges_clean_delta,
+				calls_with_edges, calls_with_edges_delta,
+				invocations, invocations_delta,
+				would_promote, would_promote_delta,
+				would_demote, would_demote_delta,
+				canary_active ? 1 : 0,
+				canary_promoted ? 1 : 0);
+			first_op = false;
+		}
 	}
 	fputs("]", stats_timeseries_fp);
 
