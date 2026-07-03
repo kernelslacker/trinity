@@ -1,116 +1,51 @@
 /*
- * statmount_idmap_overflow - drive statmount() down the mnt_idmap
- * uid/gid map serialization path against a freshly-built idmapped
- * tmpfs mount, sweeping caller bufsize around the seq-buffer
- * overflow boundary.
+ * statmount_idmap_overflow - drive statmount() down the mnt_idmap uid/gid
+ * map serialization path against a freshly-built idmapped tmpfs mount,
+ * sweeping caller bufsize around the seq-buffer overflow boundary.
  *
- * Background.  statmount(2) returns per-mount information into a
- * caller-supplied buffer; the variable tail of the response can
- * include the ASCII-rendered uid_map and gid_map of an attached
- * mnt_idmap when the caller asks for STATMOUNT_MNT_UIDMAP /
- * STATMOUNT_MNT_GIDMAP.  Rendering those tables walks the per-userns
- * id_map extents into a seq_buffer whose remaining capacity is
- * derived from (caller-supplied bufsize - already-emitted bytes); a
- * boundary bufsize is the interesting one because it lands the
- * remaining-capacity arithmetic exactly at zero just as a per-extent
- * snprintf is about to run, which is the seq-overflow accounting
- * arm.  Flat per-syscall fuzzing of statmount() never assembles the
- * prerequisite (an idmapped mount carrying a userns with a non-
- * trivial id_map), so syscalls/statmount.c iterates UIDMAP/GIDMAP
- * mask bits but the kernel-side per-mask copy_to_user arm sits
- * behind an idmap pointer that is always NULL.  This childop builds
- * the prerequisite shape directly.
+ * Bug class: the ASCII-rendered uid_map/gid_map tail (STATMOUNT_MNT_UIDMAP /
+ * MNT_GIDMAP) writes each per-userns id_map extent into a seq_buffer whose
+ * remaining capacity is (bufsize - already-emitted).  A boundary bufsize
+ * lands remaining-capacity at zero just as a per-extent snprintf runs --
+ * the seq-overflow accounting arm.  Historical off-by-one between "fits
+ * exactly" and "overflows by one byte" reaches a one-byte slab OOB-write.
+ * Also targets STATMOUNT_SUPPORTED_MASK vs actual-tail-rendered consistency
+ * under overflow truncation, and userns_fd lifetime during statmount walk.
+ * Flat statmount() fuzz iterates UIDMAP/GIDMAP mask bits but the kernel-side
+ * per-mask copy_to_user arm sits behind an idmap pointer that stays NULL
+ * without a coherent (idmapped mount + non-trivial id_map) prerequisite.
  *
- * Bug-class targets (non-exhaustive):
- *   - seq-buffer accounting: per-extent emit at a remaining-capacity
- *     boundary; off-by-one between "fits exactly" and "overflows by
- *     one byte" historically reaches a one-byte slab OOB-write.
- *   - mask-vs-tail bookkeeping: STATMOUNT_SUPPORTED_MASK reporting
- *     of UIDMAP/GIDMAP must remain consistent with whether the tail
- *     actually rendered them under an overflow truncation.
- *   - lifetime: the userns_fd attached via mount_setattr() holds a
- *     reference on the source userns; closing the userns_fd while
- *     statmount() is mid-walk exercises that reference.
+ * Per iteration inside a userns_run_in_ns grandchild (identity userns +
+ * CLONE_NEWNS, _exit reaps): build a carrier child userns (fork sibling
+ * unshare CLONE_NEWUSER + pause; parent writes "deny" to setgroups then a
+ * one-line uid_map/gid_map, opens /proc/<pid>/ns/user to capture userns_fd,
+ * SIGTERMs the carrier); create a detached tmpfs source via
+ * fsopen("tmpfs") + fsconfig(CMD_CREATE) + fsmount() (never moved into the
+ * host hierarchy); mount_setattr(mount_fd, ..., MOUNT_ATTR_IDMAP,
+ * userns_fd) installs the idmap; sweep statmount(STATMOUNT_BY_FD,
+ * BASIC|UIDMAP|GIDMAP|SUPPORTED_MASK) across a bounded bufsize table --
+ * a few large-enough sizes for the success arm plus small sizes around
+ * sizeof(struct statmount) that force tail truncation.  Every step
+ * failure is coverage; close mount_fd + userns_fd before the next iter.
  *
- * Shape (per outer iteration, BUDGETED+capped):
- *   1. First call per process probes statmount() / mount_setattr() /
- *      fsopen() / fsmount() availability (the new-mount-API quartet);
- *      a missing syscall (ENOSYS) latches the op off for the rest of
- *      the child's life.  Per invocation, the outer bufsize-sweep
- *      loop runs inside a transient grandchild forked by
- *      userns_run_in_ns(): the helper installs an identity user
- *      namespace plus a fresh CLONE_NEWNS, runs the loop, and
- *      _exit()s -- the kernel reaps every mount, fd, and sibling
- *      fork (the carrier in step 2) with the grandchild's namespace
- *      stack.  The persistent fuzz child never mutates its own
- *      credentials or namespaces, so the cap-drop oracle keeps
- *      observing the host credential profile.  Helper -EPERM
- *      (hardened userns policy refused CLONE_NEWUSER) latches the
- *      op off uniformly; helper -1 (transient setup failure: fork,
- *      id-map write, secondary CLONE_NEWNS unshare) skips the
- *      invocation without latching.
- *   2. Build a "carrier" child userns: fork a sibling that unshares
- *      CLONE_NEWUSER and pauses; the parent writes "deny" to the
- *      sibling's setgroups, then a one-line uid_map and gid_map
- *      mapping the caller's outer uid/gid into id 0 inside the
- *      sibling.  (A single extent is the floor an unprivileged
- *      caller can install in its own child userns; the bug class
- *      cares about the seq-buffer accounting arm, which a one-
- *      extent map drives just as well as a deeper map once bufsize
- *      lands on the boundary.)  The parent opens /proc/<pid>/ns/user
- *      to capture the userns_fd, SIGTERMs the carrier, and reaps it.
- *   3. Create a detached tmpfs source via fsopen("tmpfs") +
- *      fsconfig(CMD_CREATE) + fsmount(); the resulting mount fd is
- *      never moved into the host hierarchy, so the source mount is
- *      visible only via the fd we hold.
- *   4. mount_setattr(mount_fd, "", AT_EMPTY_PATH, {attr_set =
- *      MOUNT_ATTR_IDMAP, userns_fd = carrier}, sizeof) installs the
- *      idmap on the detached mount.
- *   5. Sweep statmount(STATMOUNT_BY_FD, mask = MNT_BASIC | MNT_UIDMAP
- *      | MNT_GIDMAP | SUPPORTED_MASK, buf, bufsize, ...) across a
- *      bounded set of bufsizes -- a few large-enough sizes for the
- *      success arm, plus a sweep of small sizes around
- *      sizeof(struct statmount) where the variable-tail render is
- *      forced to truncate.  Every step failure is coverage, not a
- *      childop failure; we just bump a stat.
- *   6. Close mount_fd and userns_fd before the next iter so an
- *      outer-loop burn doesn't accumulate detached mounts.
+ * Brick-safety: all mount work inside the grandchild's identity userns +
+ * fresh CLONE_NEWNS; nothing touches the host mount table; the backing
+ * tmpfs lives only behind an fd the grandchild holds.  No modprobe, no
+ * rtnetlink, no globally-reachable resource.  Bounded outer loop with a
+ * hard wall-clock cap; fixed-size bufsize sweep.
  *
- * Self-gating.  Two latches.
- *   - statmount_idmap_unsupported: the first invocation probes the
- *     new-mount-API quartet; a missing syscall (ENOSYS) or a
- *     persistent ENOSYS from statmount itself latches the op off
- *     uniformly.  Same shape as the qrtr / pfkey / l2tp latches.
- *   - ns_unshare_failed_statmount_idmap: latched when
- *     userns_run_in_ns() returns -EPERM, meaning the transient
- *     grandchild's unshare(CLONE_NEWUSER) was refused by a hardened
- *     userns policy (user.max_user_namespaces=0 or
- *     kernel.unprivileged_userns_clone=0).  Helper -1 (transient
- *     setup failure: fork, id-map write, secondary CLONE_NEWNS
- *     unshare) does NOT set this latch -- the failure is not policy
- *     and may not recur on the next invocation.
+ * Latches (per-process): statmount_idmap_unsupported on ENOSYS from any
+ * of the new-mount-API quartet (statmount / mount_setattr / fsopen /
+ * fsmount) or from statmount itself.  ns_unshare_failed_statmount_idmap on
+ * userns_run_in_ns() -EPERM (hardened userns policy refused CLONE_NEWUSER).
+ * Helper transient setup failures (fork, id-map write, secondary
+ * CLONE_NEWNS unshare) do NOT latch -- they may not recur.
  *
- * Box-safety.  All mount work executes inside a transient grandchild
- * forked by userns_run_in_ns(); the grandchild holds an identity
- * user namespace plus a fresh CLONE_NEWNS and _exit()s when the
- * outer-loop callback returns, so the kernel reaps every mount,
- * file descriptor, and sibling fork the loop created with the
- * grandchild's namespace stack.  The persistent fuzz child never
- * mutates its own credentials or namespaces.  Nothing touches the
- * host mount table, nothing is moved into the host hierarchy, and
- * the backing tmpfs is created via the detached new-mount-API
- * (fsopen + fsmount) so the source mount lives only behind a file
- * descriptor the grandchild holds for its lifetime.  No module
- * load, no rtnetlink, no globally-reachable resource.  Bounded
- * outer loop with a hard wall-clock cap; per-iter bufsize sweep is
- * a fixed small table.
- *
- * Header compat.  Modern <linux/mount.h> ships struct mount_attr,
- * MOUNT_ATTR_IDMAP, the fsconfig enum, struct mnt_id_req, struct
- * statmount, and the STATMOUNT_* mask bits including UIDMAP/GIDMAP
- * and the BY_FD flag.  Stripped sysroots get __has_include-guarded
- * fallback constants; the new-mount-API syscall numbers are
- * referenced via __NR_* and a missing number latches the op off.
+ * Header compat: modern <linux/mount.h> ships mount_attr, MOUNT_ATTR_IDMAP,
+ * the fsconfig enum, mnt_id_req, statmount, and STATMOUNT_* mask bits
+ * (UIDMAP/GIDMAP + BY_FD).  Stripped sysroots get __has_include-guarded
+ * fallback constants; new-mount-API syscall numbers are referenced via
+ * __NR_* and a missing number latches the op off.
  */
 
 #include <errno.h>
