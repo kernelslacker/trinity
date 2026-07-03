@@ -279,6 +279,153 @@ static void dump_strategy_stats_edge_race(void)
 	}
 }
 
+static void render_arm_summary(int i)
+{
+	unsigned long pulls = __atomic_load_n(&shm->bandit_pulls[i],
+					      __ATOMIC_RELAXED);
+	unsigned long reward = __atomic_load_n(
+		&shm->bandit_reward_calls[i], __ATOMIC_RELAXED);
+	unsigned long reward_pc_edges = __atomic_load_n(
+		&shm->bandit_reward_pc_edge_count[i], __ATOMIC_RELAXED);
+	unsigned long cmp_new = __atomic_load_n(
+		&shm->bandit_cmp_new_constants[i], __ATOMIC_RELAXED);
+	unsigned long share_sum = __atomic_load_n(
+		&shm->bandit_cmp_share_sum_x1000[i], __ATOMIC_RELAXED);
+	unsigned long mean_calls_x1000 = pulls ? (reward * 1000UL / pulls) : 0;
+	/* Parallel mean for the real bucket-edge series, so the operator
+	 * can eyeball how the two reward shapes would score each arm.
+	 * Strictly >= the call-count mean (a call that produces N edges
+	 * adds N to this series but only 1 to the call-count series). */
+	unsigned long mean_pc_edges_x1000 =
+		pulls ? (reward_pc_edges * 1000UL / pulls) : 0;
+	/* Average per-window CMP share, parts per thousand.  Divides
+	 * by total pulls (not just CMP-contributing pulls) so a low
+	 * value can mean either "CMP rarely fires" or "CMP fires but
+	 * is small relative to PC reward" — both are interesting for
+	 * tuning the 0.25 weight constant. */
+	unsigned long share_avg_x1000 = pulls ? (share_sum / pulls) : 0;
+
+	output(0, "  arm[%d]: pulls=%lu reward_calls=%lu mean_calls=%lu.%03lu/window reward_edge_count=%lu mean_edge_count=%lu.%03lu/window cmp_novel=%lu cmp_share=%lu.%lu%%\n",
+	       i, pulls, reward,
+	       mean_calls_x1000 / 1000UL, mean_calls_x1000 % 1000UL,
+	       reward_pc_edges,
+	       mean_pc_edges_x1000 / 1000UL,
+	       mean_pc_edges_x1000 % 1000UL,
+	       cmp_new,
+	       share_avg_x1000 / 10UL, share_avg_x1000 % 10UL);
+}
+
+/* Exposure line: per-arm syscall-level denominators alongside
+ * the window-level reward summary above.  picks is the widest
+ * population (all dispatched syscalls credited to the arm,
+ * explorer included); bandit_ops is the strict bandit-pool
+ * subset (picks - bandit_ops is the explorer contribution,
+ * which is zero for non-RANDOM arms by construction);
+ * completed is the count that reached the end of dispatch_step
+ * without a set_syscall_nr FAIL upstream.  The
+ * completed/picks ratio surfaces arms whose picker policy is
+ * burning picks on unsatisfiable pick-side gates without
+ * actually dispatching a call. */
+static void render_arm_exposure(int i)
+{
+	unsigned long picks = __atomic_load_n(&shm->strategy_picks[i],
+					      __ATOMIC_RELAXED);
+	unsigned long bandit_ops = __atomic_load_n(
+		&shm->strategy_bandit_pool_ops[i], __ATOMIC_RELAXED);
+	unsigned long completed = __atomic_load_n(
+		&shm->strategy_completed_calls[i], __ATOMIC_RELAXED);
+
+	if (picks > 0) {
+		unsigned long success_x1000 =
+			(completed * 1000UL) / picks;
+		output(0, "    exposure: picks=%lu bandit_ops=%lu completed=%lu (success=%lu.%lu%%)\n",
+		       picks, bandit_ops, completed,
+		       success_x1000 / 10UL, success_x1000 % 10UL);
+	}
+}
+
+/* Reason breakdown: split this arm's window count and reward
+ * by selection path.  Walk all reasons but only print the
+ * ones with nonzero pulls so cold paths (e.g. SR_ROUND_ROBIN
+ * under PICKER_BANDIT_UCB1, SR_PLATEAU_FORCE on a run that
+ * never hit a plateau) stay quiet.  PLATEAU_FORCE rewards
+ * appear here even though they are excluded from the
+ * per-arm bandit_pulls / bandit_reward_calls totals above --
+ * the per-reason matrix is exactly where the intervention
+ * cohort's reward goes so the operator can size it against
+ * the policy cohort.  Format: REASON=pulls/reward_calls, one
+ * leading-space-indented continuation line per arm. */
+static void render_arm_reasons(int i)
+{
+	bool any_reason = false;
+	int r;
+
+	for (r = 0; r < NR_SELECTION_REASONS; r++) {
+		unsigned long rp = __atomic_load_n(
+			&shm->bandit_pulls_by_reason[i][r],
+			__ATOMIC_RELAXED);
+		unsigned long rr = __atomic_load_n(
+			&shm->bandit_reward_calls_by_reason[i][r],
+			__ATOMIC_RELAXED);
+		if (rp == 0)
+			continue;
+		if (!any_reason) {
+			output(0, "    reasons:");
+			any_reason = true;
+		}
+		output(0, " %s=%lu/%lu",
+		       strategy_selection_reason_name(
+			       (enum strategy_selection_reason)r),
+		       rp, rr);
+	}
+	if (any_reason)
+		output(0, "\n");
+}
+
+/* Chaos cohort breakdown: this arm's per-window WARN-fire
+ * rate split by chaos state.  The chaos schedule fires every
+ * CHAOS_WINDOW_MODULO'th window (1-in-8 today) and suppresses
+ * cmp_hints injection for the duration, leaving the random
+ * argument generator unbiased.  The V2 hypothesis is that
+ * chaos-on windows produce measurably more kernel diagnostic
+ * events than chaos-off windows -- the per-arm rate split
+ * here is the headline observation.  Suppressed when both
+ * cohorts are at zero pulls (arm never selected) so an arm
+ * the picker has not visited stays quiet.  WARN fires are
+ * rendered as parts per thousand of the cohort's pulls so the
+ * two cohorts are directly comparable across orders of
+ * magnitude difference in their window counts (chaos-on
+ * cohort is ~1/(MODULO-1) the size of chaos-off in steady
+ * state). */
+static void render_arm_chaos(int i)
+{
+	unsigned long c_pulls[2], c_warn[2];
+	int c;
+
+	for (c = 0; c < 2; c++) {
+		c_pulls[c] = __atomic_load_n(
+			&shm->bandit_pulls_by_chaos[i][c],
+			__ATOMIC_RELAXED);
+		c_warn[c] = __atomic_load_n(
+			&shm->bandit_warn_fires_by_chaos[i][c],
+			__ATOMIC_RELAXED);
+	}
+	if (c_pulls[0] + c_pulls[1] > 0) {
+		unsigned long off_rate_x1000 = c_pulls[0] ?
+			(c_warn[0] * 1000UL / c_pulls[0]) : 0;
+		unsigned long on_rate_x1000 = c_pulls[1] ?
+			(c_warn[1] * 1000UL / c_pulls[1]) : 0;
+
+		output(0, "    chaos: off=%lu/%lu (%lu.%03lu warn/window) on=%lu/%lu (%lu.%03lu warn/window)\n",
+		       c_pulls[0], c_warn[0],
+		       off_rate_x1000 / 1000UL,
+		       off_rate_x1000 % 1000UL,
+		       c_pulls[1], c_warn[1],
+		       on_rate_x1000 / 1000UL,
+		       on_rate_x1000 % 1000UL);
+	}
+}
+
 static void dump_strategy_stats_arms(void)
 {
 	unsigned long total_pulls = 0;
@@ -292,143 +439,10 @@ static void dump_strategy_stats_arms(void)
 		return;
 
 	for (i = 0; i < NR_STRATEGIES; i++) {
-		unsigned long pulls = __atomic_load_n(&shm->bandit_pulls[i],
-						      __ATOMIC_RELAXED);
-		unsigned long reward = __atomic_load_n(
-			&shm->bandit_reward_calls[i], __ATOMIC_RELAXED);
-		unsigned long reward_pc_edges = __atomic_load_n(
-			&shm->bandit_reward_pc_edge_count[i], __ATOMIC_RELAXED);
-		unsigned long cmp_new = __atomic_load_n(
-			&shm->bandit_cmp_new_constants[i], __ATOMIC_RELAXED);
-		unsigned long share_sum = __atomic_load_n(
-			&shm->bandit_cmp_share_sum_x1000[i], __ATOMIC_RELAXED);
-		unsigned long picks = __atomic_load_n(&shm->strategy_picks[i],
-						      __ATOMIC_RELAXED);
-		unsigned long bandit_ops = __atomic_load_n(
-			&shm->strategy_bandit_pool_ops[i], __ATOMIC_RELAXED);
-		unsigned long completed = __atomic_load_n(
-			&shm->strategy_completed_calls[i], __ATOMIC_RELAXED);
-		unsigned long mean_calls_x1000 = pulls ? (reward * 1000UL / pulls) : 0;
-		/* Parallel mean for the real bucket-edge series, so the operator
-		 * can eyeball how the two reward shapes would score each arm.
-		 * Strictly >= the call-count mean (a call that produces N edges
-		 * adds N to this series but only 1 to the call-count series). */
-		unsigned long mean_pc_edges_x1000 =
-			pulls ? (reward_pc_edges * 1000UL / pulls) : 0;
-		/* Average per-window CMP share, parts per thousand.  Divides
-		 * by total pulls (not just CMP-contributing pulls) so a low
-		 * value can mean either "CMP rarely fires" or "CMP fires but
-		 * is small relative to PC reward" — both are interesting for
-		 * tuning the 0.25 weight constant. */
-		unsigned long share_avg_x1000 = pulls ? (share_sum / pulls) : 0;
-
-		output(0, "  arm[%d]: pulls=%lu reward_calls=%lu mean_calls=%lu.%03lu/window reward_edge_count=%lu mean_edge_count=%lu.%03lu/window cmp_novel=%lu cmp_share=%lu.%lu%%\n",
-		       i, pulls, reward,
-		       mean_calls_x1000 / 1000UL, mean_calls_x1000 % 1000UL,
-		       reward_pc_edges,
-		       mean_pc_edges_x1000 / 1000UL,
-		       mean_pc_edges_x1000 % 1000UL,
-		       cmp_new,
-		       share_avg_x1000 / 10UL, share_avg_x1000 % 10UL);
-
-		/* Exposure line: per-arm syscall-level denominators alongside
-		 * the window-level reward summary above.  picks is the widest
-		 * population (all dispatched syscalls credited to the arm,
-		 * explorer included); bandit_ops is the strict bandit-pool
-		 * subset (picks - bandit_ops is the explorer contribution,
-		 * which is zero for non-RANDOM arms by construction);
-		 * completed is the count that reached the end of dispatch_step
-		 * without a set_syscall_nr FAIL upstream.  The
-		 * completed/picks ratio surfaces arms whose picker policy is
-		 * burning picks on unsatisfiable pick-side gates without
-		 * actually dispatching a call. */
-		if (picks > 0) {
-			unsigned long success_x1000 =
-				(completed * 1000UL) / picks;
-			output(0, "    exposure: picks=%lu bandit_ops=%lu completed=%lu (success=%lu.%lu%%)\n",
-			       picks, bandit_ops, completed,
-			       success_x1000 / 10UL, success_x1000 % 10UL);
-		}
-
-		/* Reason breakdown: split this arm's window count and reward
-		 * by selection path.  Walk all reasons but only print the
-		 * ones with nonzero pulls so cold paths (e.g. SR_ROUND_ROBIN
-		 * under PICKER_BANDIT_UCB1, SR_PLATEAU_FORCE on a run that
-		 * never hit a plateau) stay quiet.  PLATEAU_FORCE rewards
-		 * appear here even though they are excluded from the
-		 * per-arm bandit_pulls / bandit_reward_calls totals above --
-		 * the per-reason matrix is exactly where the intervention
-		 * cohort's reward goes so the operator can size it against
-		 * the policy cohort.  Format: REASON=pulls/reward_calls, one
-		 * leading-space-indented continuation line per arm. */
-		{
-			bool any_reason = false;
-			int r;
-
-			for (r = 0; r < NR_SELECTION_REASONS; r++) {
-				unsigned long rp = __atomic_load_n(
-					&shm->bandit_pulls_by_reason[i][r],
-					__ATOMIC_RELAXED);
-				unsigned long rr = __atomic_load_n(
-					&shm->bandit_reward_calls_by_reason[i][r],
-					__ATOMIC_RELAXED);
-				if (rp == 0)
-					continue;
-				if (!any_reason) {
-					output(0, "    reasons:");
-					any_reason = true;
-				}
-				output(0, " %s=%lu/%lu",
-				       strategy_selection_reason_name(
-					       (enum strategy_selection_reason)r),
-				       rp, rr);
-			}
-			if (any_reason)
-				output(0, "\n");
-		}
-
-		/* Chaos cohort breakdown: this arm's per-window WARN-fire
-		 * rate split by chaos state.  The chaos schedule fires every
-		 * CHAOS_WINDOW_MODULO'th window (1-in-8 today) and suppresses
-		 * cmp_hints injection for the duration, leaving the random
-		 * argument generator unbiased.  The V2 hypothesis is that
-		 * chaos-on windows produce measurably more kernel diagnostic
-		 * events than chaos-off windows -- the per-arm rate split
-		 * here is the headline observation.  Suppressed when both
-		 * cohorts are at zero pulls (arm never selected) so an arm
-		 * the picker has not visited stays quiet.  WARN fires are
-		 * rendered as parts per thousand of the cohort's pulls so the
-		 * two cohorts are directly comparable across orders of
-		 * magnitude difference in their window counts (chaos-on
-		 * cohort is ~1/(MODULO-1) the size of chaos-off in steady
-		 * state). */
-		{
-			unsigned long c_pulls[2], c_warn[2];
-			int c;
-
-			for (c = 0; c < 2; c++) {
-				c_pulls[c] = __atomic_load_n(
-					&shm->bandit_pulls_by_chaos[i][c],
-					__ATOMIC_RELAXED);
-				c_warn[c] = __atomic_load_n(
-					&shm->bandit_warn_fires_by_chaos[i][c],
-					__ATOMIC_RELAXED);
-			}
-			if (c_pulls[0] + c_pulls[1] > 0) {
-				unsigned long off_rate_x1000 = c_pulls[0] ?
-					(c_warn[0] * 1000UL / c_pulls[0]) : 0;
-				unsigned long on_rate_x1000 = c_pulls[1] ?
-					(c_warn[1] * 1000UL / c_pulls[1]) : 0;
-
-				output(0, "    chaos: off=%lu/%lu (%lu.%03lu warn/window) on=%lu/%lu (%lu.%03lu warn/window)\n",
-				       c_pulls[0], c_warn[0],
-				       off_rate_x1000 / 1000UL,
-				       off_rate_x1000 % 1000UL,
-				       c_pulls[1], c_warn[1],
-				       on_rate_x1000 / 1000UL,
-				       on_rate_x1000 % 1000UL);
-			}
-		}
+		render_arm_summary(i);
+		render_arm_exposure(i);
+		render_arm_reasons(i);
+		render_arm_chaos(i);
 	}
 }
 
