@@ -1744,6 +1744,25 @@ static void kcov_cmp_render_hyp_probe_class_hist_block(long elapsed __unused__)
 		prev_hyp_probe_class[k] = cur_hyp_probe_class[k];
 }
 
+/*
+ * Per-mode child population (cumulative).  Realised PC/CMP mode mix in the
+ * time series so the operator can read the split at each dump window rather
+ * than only at shutdown.
+ */
+static void kcov_cmp_render_modes_block(void)
+{
+	unsigned int pc_kids, cmp_kids;
+
+	pc_kids  = __atomic_load_n(&kcov_shm->pc_mode_children,  __ATOMIC_RELAXED);
+	cmp_kids = __atomic_load_n(&kcov_shm->cmp_mode_children, __ATOMIC_RELAXED);
+
+	if ((pc_kids | cmp_kids) != 0) {
+		stats_log_write("KCOV CMP modes (cumulative):\n");
+		stats_log_write("  pc_mode_children=%u cmp_mode_children=%u\n",
+				pc_kids, cmp_kids);
+	}
+}
+
 static void kcov_cmp_render_diag_errnos_block(void)
 {
 	char init_buf[256];
@@ -1952,7 +1971,6 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	unsigned int  cur_mut_structured_arm_a_children, cur_mut_structured_arm_b_children;
 	bool any_callsite_delta = false;
 	bool any_prop_callsite_delta = false;
-	unsigned int pc_kids, cmp_kids;
 
 	if (kcov_shm == NULL)
 		return;
@@ -2855,14 +2873,7 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	output(0, "[main] propagation_injected_cumulative=%lu\n",
 	       cur_prop_injected);
 
-	pc_kids  = __atomic_load_n(&kcov_shm->pc_mode_children,  __ATOMIC_RELAXED);
-	cmp_kids = __atomic_load_n(&kcov_shm->cmp_mode_children, __ATOMIC_RELAXED);
-
-	if ((pc_kids | cmp_kids) != 0) {
-		stats_log_write("KCOV CMP modes (cumulative):\n");
-		stats_log_write("  pc_mode_children=%u cmp_mode_children=%u\n",
-				pc_kids, cmp_kids);
-	}
+	kcov_cmp_render_modes_block();
 
 	kcov_cmp_render_diag_errnos_block();
 
