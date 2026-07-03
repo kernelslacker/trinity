@@ -176,6 +176,14 @@ struct childdata * this_child(void)
 	if (cached_childno != CHILD_NOT_FOUND && cached_pid == self)
 		return cached_child;
 
+	/*
+	 * pids[]/children[] aren't mapped until late in init_shm; a BUG()
+	 * fired during early init would otherwise null-deref the loop below.
+	 * Return NULL so __BUG's parent-side path reports cleanly.
+	 */
+	if (pids == NULL || children == NULL)
+		return NULL;
+
 	/* Fallback for main process or before cache is set */
 	for_each_child(i) {
 		if (__atomic_load_n(&pids[i], __ATOMIC_RELAXED) == self)
