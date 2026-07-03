@@ -1,92 +1,32 @@
 /*
- * vxlan_encap_churn - VXLAN / GRE / GENEVE encap setup + packet inject.
+ * vxlan_encap_churn - VXLAN / GRE / GENEVE encap setup + packet inject,
+ * targeting the teardown-vs-in-flight-tx race on overlay tunnels.  Reaches
+ * drivers/net/vxlan/, net/ipv4/ip_gre.c, drivers/net/geneve.c encap fast
+ * paths (vxlan_xmit_one / ipgre_xmit / geneve_xmit) and the RTM_DELLINK
+ * window that opens the vxlan_remcsum UAF lineage.  Flat fuzzing can't keep
+ * IFLA_INFO_DATA (vni for vxlan/geneve, ikey/okey for gre), NTF_SELF fdb,
+ * IFF_UP setlink, and AF_PACKET/SOCK_RAW traffic coherent across the four
+ * messages needed.
  *
- * Flat netlink fuzzing rarely assembles the full chain that an
- * overlay-tunnel needs to reach its decap / encap fast paths: the
- * link must be created with a kind-specific IFLA_INFO_DATA payload
- * (vni for vxlan/geneve, ikey/okey for gre), at least one peer must
- * be installed (NTF_SELF fdb entry on vxlan, or the unicast remote
- * baked into IFLA_*_REMOTE), the link must be brought up, and an
- * AF_PACKET SOCK_RAW peer must push frames at the tunnel device so
- * the encap-tx path actually runs.  Without any one of those the
- * vxlan_xmit_one / geneve_xmit / ipgre_xmit code paths never trigger,
- * and the destroy edge (RTM_DELLINK racing an in-flight skb on the
- * tx queue) never opens its window.
+ * Sequence per invocation runs inside a userns_run_in_ns grandchild
+ * (identity userns + CLONE_NEWNET, _exit reaps).  Persistent child runs a
+ * one-shot best-effort modprobe of vxlan / ip_gre / geneve before the userns
+ * hop (finit_module needs CAP_SYS_MODULE in init_user_ns).  Pick a
+ * non-latched kind, RTM_NEWLINK it with local/remote pinned to
+ * 127.0.0.1/127.0.0.2, bring it up, for vxlan add an NTF_SELF fdb entry to
+ * arm the static-fdb decap path, blast a BUDGETED+JITTER (base 3) AF_PACKET
+ * burst, then RTM_DELLINK the dev while the raw socket is still draining.
  *
- * Sequence (per invocation):
- *   1. Enter a private net namespace via userns_run_in_ns(): a
- *      transient grandchild fork installs an identity user namespace
- *      plus a fresh CLONE_NEWNET, runs the body below, and _exit()s
- *      so the kernel reaps every link, fdb entry, raw socket and
- *      packet buffer left behind with the grandchild's netns.  The
- *      persistent fuzz child never changes its own credentials or
- *      namespace stack, so the cap-drop oracle keeps observing the
- *      host credential profile.  Helper -EPERM (hardened userns
- *      policy refused CLONE_NEWUSER) latches the op off for the
- *      remainder of this child's lifetime; -1 (transient setup
- *      failure: fork, id-map write, secondary unshare) skips the
- *      iteration without latching.
- *   2. Best-effort modprobe vxlan / ip_gre / geneve from the
- *      persistent child (once per child, before the userns hop --
- *      finit_module requires CAP_SYS_MODULE in init_user_ns, which
- *      the grandchild does not hold) and bring lo up inside the
- *      grandchild's fresh netns.
- *   3. Pick a kind (vxlan / gre / geneve) at random; if its latch is
- *      already tripped, fall through to the next kind.  All-tripped
- *      means every kind is structurally unsupported, return cheaply.
- *   4. RTM_NEWLINK with type = picked kind.  Payload has random vni
- *      (vxlan/geneve) or ikey+okey (gre); local/remote pinned to
- *      127.0.0.1 / 127.0.0.2 so packets stay loopback-bound and the
- *      tunnel resolves against `lo` as the underlay.
- *   5. RTM_NEWLINK setlink to bring the tunnel dev up.
- *   6. RTM_NEWNEIGH NTF_SELF (vxlan only): add a permanent fdb entry
- *      pointing inner-mac at peer remote 127.0.0.2.  This drives
- *      vxlan_fdb_add and arms the static-fdb decap path that the
- *      vxlan_remcsum UAF history hangs off.
- *   7. socket(AF_PACKET, SOCK_RAW); bind to the tunnel dev's ifindex.
- *      sendto() a small synthetic IPv4 frame with random length so
- *      the encap-tx path runs once.  BUDGETED+JITTER around base 3
- *      for the per-iteration burst count; each send is MSG_DONTWAIT.
- *   8. RTM_DELLINK the tunnel dev WHILE the raw socket is still open
- *      and any sends from step 7 are still draining.  The teardown-
- *      vs-in-flight-rx race is the targeted window.
+ * Brick-safety: loopback only inside the private netns (peer 127.0.0.2),
+ * one create/destroy per invocation, all I/O MSG_DONTWAIT, netlink ack
+ * SO_RCVTIMEO=1s so an unresponsive rtnl can't wedge past child.c's SIGALRM.
  *
- * CVE class: CVE-2023-52454 nvmet-tcp shift family (oob), CVE-2022-2588
- * cls_route+tunnel UAFs, vxlan_remcsum UAF history (commit 6db924687fd1
- * lineage and re-occurrences).  Subsystems reached: drivers/net/vxlan/,
- * net/ipv4/ip_gre.c, net/ipv6/ip6_gre.c, drivers/net/geneve.c,
- * net/core/lwtunnel.c (encap path inside ip_route_output_tunnel).
- *
- * Self-bounding: one full create/destroy cycle per invocation, packet
- * burst count bounded by BUDGETED+JITTER around base 3, all I/O
- * non-blocking, SO_RCVTIMEO=1s on the netlink ack socket so an
- * unresponsive rtnl can't wedge us past the SIGALRM(1s) cap inherited
- * from child.c.  Loopback only (peer addr 127.0.0.2 inside the
- * private netns).  Latches:
- *
- *   ns_unsupported_vxlan_encap -- master gate.  Set in the wrapper on
- *                                 userns_run_in_ns() = -EPERM
- *                                 (hardened userns policy refused
- *                                 CLONE_NEWUSER); persists across
- *                                 invocations and short-circuits the
- *                                 op for the remainder of the child's
- *                                 lifetime.
- *   shm->vxlan_encap_kind_unsupported[] -- per-kind feature-absent
- *                                 latches set when RTM_NEWLINK rejects
- *                                 the kind with EAFNOSUPPORT /
- *                                 EOPNOTSUPP / ENOTSUP / ENOENT /
- *                                 EPROTONOSUPPORT (rtnl_link_ops not
- *                                 registered -- absent kernel CONFIG
- *                                 or module).  Must live in shm: the
- *                                 rejection is observed inside the
- *                                 transient grandchild forked by
- *                                 userns_run_in_ns(); a process-local
- *                                 static would die with the grandchild
- *                                 on _exit() and the next invocation
- *                                 would re-attempt the same kind
- *                                 forever.  Indexed by enum tun_kind;
- *                                 no auto-clear, since an absent kernel
- *                                 CONFIG does not appear mid-run.
+ * Latches: ns_unsupported_vxlan_encap master gate on userns_run_in_ns()
+ * -EPERM.  shm->vxlan_encap_kind_unsupported[] per-kind (indexed by enum
+ * tun_kind) on RTM_NEWLINK EAFNOSUPPORT / EOPNOTSUPP / ENOTSUP / ENOENT /
+ * EPROTONOSUPPORT.  Per-kind latches live in shm because the rejection is
+ * observed inside the grandchild -- a process-local static would die on
+ * _exit and re-attempt the missing kind forever.
  */
 
 #include <errno.h>
