@@ -182,31 +182,14 @@ static void build_flock64(struct flock64 *fl)
 }
 #endif
 
-static void sanitise_fcntl(struct syscallrecord *rec)
+static void fcntl_lease(struct syscallrecord *rec)
 {
-	rec->a2 = pick_fcntl_cmd();
-
 	switch (rec->a2) {
-	/* arg = fd */
-	case F_DUPFD:
-	case F_DUPFD_CLOEXEC:
-		rec->a3 = (unsigned long) get_random_fd();
-		break;
-
 	case F_SETLEASE: {
 		int lease_types[] = { F_RDLCK, F_WRLCK, F_UNLCK };
 		rec->a3 = lease_types[rnd_modulo_u32(3)];
 		break;
 	}
-
-	/* no arg */
-	case F_GETFD:
-	case F_GETFL:
-	case F_GETOWN:
-	case F_GETSIG:
-	case F_GETPIPE_SZ:
-	case F_GETOWNER_UIDS:
-		break;
 
 	case F_GETLEASE: {
 		int fd;
@@ -221,16 +204,12 @@ static void sanitise_fcntl(struct syscallrecord *rec)
 			rec->a1 = (unsigned long) fd;
 		break;
 	}
+	}
+}
 
-	case F_SETFD:	/* arg = flags */
-		rec->a3 = (unsigned int) rand32();
-		break;
-
-	case F_SETFL:
-		rec->a3 = (unsigned long) random_fcntl_setfl_flags();
-		break;
-
-	/* arg = (struct flock *) */
+static void fcntl_lock(struct syscallrecord *rec)
+{
+	switch (rec->a2) {
 	case F_GETLK:
 	case F_OFD_GETLK:
 		avoid_shared_buffer_inout(&rec->a3, sizeof(struct flock));
@@ -272,7 +251,12 @@ static void sanitise_fcntl(struct syscallrecord *rec)
 		break;
 	}
 #endif
+	}
+}
 
+static void fcntl_owner(struct syscallrecord *rec)
+{
+	switch (rec->a2) {
 	case F_SETOWN:
 		rec->a3 = (unsigned long) get_pid();
 		break;
@@ -294,7 +278,17 @@ static void sanitise_fcntl(struct syscallrecord *rec)
 		break;
 	}
 
-	/* arg = (uint64_t *) */
+	case F_SETSIG:
+		rec->a3 = (unsigned long) rand32();
+		if (rec->a3 == SIGINT)
+			rec->a3 = 0; /* restore default (SIGIO) */
+		break;
+	}
+}
+
+static void fcntl_rw_hint(struct syscallrecord *rec)
+{
+	switch (rec->a2) {
 	case F_GET_RW_HINT:
 	case F_GET_FILE_RW_HINT:
 		avoid_shared_buffer_out(&rec->a3, sizeof(uint64_t));
@@ -308,15 +302,103 @@ static void sanitise_fcntl(struct syscallrecord *rec)
 		}
 		break;
 	}
-
-	case F_ADD_SEALS: {
-		static const unsigned long seal_bits[] = {
-			F_SEAL_SEAL, F_SEAL_SHRINK, F_SEAL_GROW,
-			F_SEAL_WRITE, F_SEAL_FUTURE_WRITE, F_SEAL_EXEC,
-		};
-		rec->a3 = set_rand_bitmask(ARRAY_SIZE(seal_bits), seal_bits);
-		break;
 	}
+}
+
+static void fcntl_seals(struct syscallrecord *rec)
+{
+	static const unsigned long seal_bits[] = {
+		F_SEAL_SEAL, F_SEAL_SHRINK, F_SEAL_GROW,
+		F_SEAL_WRITE, F_SEAL_FUTURE_WRITE, F_SEAL_EXEC,
+	};
+	rec->a3 = set_rand_bitmask(ARRAY_SIZE(seal_bits), seal_bits);
+}
+
+static void fcntl_notify(struct syscallrecord *rec)
+{
+	rec->a3 = 0L;
+	if (RAND_BOOL())
+		rec->a3 |= DN_ACCESS;
+	if (RAND_BOOL())
+		rec->a3 |= DN_MODIFY;
+	if (RAND_BOOL())
+		rec->a3 |= DN_CREATE;
+	if (RAND_BOOL())
+		rec->a3 |= DN_DELETE;
+	if (RAND_BOOL())
+		rec->a3 |= DN_RENAME;
+	if (RAND_BOOL())
+		rec->a3 |= DN_ATTRIB;
+}
+
+static void sanitise_fcntl(struct syscallrecord *rec)
+{
+	rec->a2 = pick_fcntl_cmd();
+
+	switch (rec->a2) {
+	/* arg = fd */
+	case F_DUPFD:
+	case F_DUPFD_CLOEXEC:
+		rec->a3 = (unsigned long) get_random_fd();
+		break;
+
+	case F_SETLEASE:
+	case F_GETLEASE:
+		fcntl_lease(rec);
+		break;
+
+	/* no arg */
+	case F_GETFD:
+	case F_GETFL:
+	case F_GETOWN:
+	case F_GETSIG:
+	case F_GETPIPE_SZ:
+	case F_GETOWNER_UIDS:
+		break;
+
+	case F_SETFD:	/* arg = flags */
+		rec->a3 = (unsigned int) rand32();
+		break;
+
+	case F_SETFL:
+		rec->a3 = (unsigned long) random_fcntl_setfl_flags();
+		break;
+
+	/* arg = (struct flock *) */
+	case F_GETLK:
+	case F_OFD_GETLK:
+	case F_SETLK:
+	case F_SETLKW:
+	case F_OFD_SETLK:
+	case F_OFD_SETLKW:
+	case F_CANCELLK:
+#ifdef HAVE_LK64
+	case F_GETLK64:
+	case F_SETLK64:
+	case F_SETLKW64:
+#endif
+		fcntl_lock(rec);
+		break;
+
+	case F_SETOWN:
+	/* arg = struct f_owner_ex *) */
+	case F_GETOWN_EX:
+	case F_SETOWN_EX:
+	case F_SETSIG:
+		fcntl_owner(rec);
+		break;
+
+	/* arg = (uint64_t *) */
+	case F_GET_RW_HINT:
+	case F_GET_FILE_RW_HINT:
+	case F_SET_RW_HINT:
+	case F_SET_FILE_RW_HINT:
+		fcntl_rw_hint(rec);
+		break;
+
+	case F_ADD_SEALS:
+		fcntl_seals(rec);
+		break;
 
 	/* arg = (int *) */
 	case F_DUPFD_QUERY:
@@ -324,26 +406,8 @@ static void sanitise_fcntl(struct syscallrecord *rec)
 		avoid_shared_buffer_out(&rec->a3, sizeof(int));
 		break;
 
-	case F_SETSIG:
-		rec->a3 = (unsigned long) rand32();
-		if (rec->a3 == SIGINT)
-			rec->a3 = 0; /* restore default (SIGIO) */
-		break;
-
 	case F_NOTIFY:
-		rec->a3 = 0L;
-		if (RAND_BOOL())
-			rec->a3 |= DN_ACCESS;
-		if (RAND_BOOL())
-			rec->a3 |= DN_MODIFY;
-		if (RAND_BOOL())
-			rec->a3 |= DN_CREATE;
-		if (RAND_BOOL())
-			rec->a3 |= DN_DELETE;
-		if (RAND_BOOL())
-			rec->a3 |= DN_RENAME;
-		if (RAND_BOOL())
-			rec->a3 |= DN_ATTRIB;
+		fcntl_notify(rec);
 		break;
 
 	case F_SETPIPE_SZ:
