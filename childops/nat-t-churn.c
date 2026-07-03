@@ -1,123 +1,33 @@
 /*
- * nat_t_churn - coherent IPsec NAT-Traversal (RFC 3948) pipeline walk.
+ * nat_t_churn - coherent IPsec NAT-Traversal pipeline walk (RFC 3948).
  *
- * The other XFRM-adjacent ops in trinity reach the NAT-T pipeline only
- * incidentally: xfrm_churn drives the SA + SP + ESP encrypt path on
- * loopback in plain transport / tunnel mode, and the per-syscall
- * fuzzer happens to land on UDP_ENCAP_ESPINUDP setsockopt or on a
- * NETLINK_XFRM message carrying XFRMA_ENCAP, but never assembles the
- * three pieces simultaneously (UDP socket primed with UDP_ENCAP +
- * matching XFRM SA whose XFRMA_ENCAP fields agree with the socket +
- * actual ESP-in-UDP bytes arriving on that port).  That coherent
- * triple is what drives the kernel's espintcp / esp4_input code paths
- * that demux UDP-encapsulated ESP, validate sport/dport against the
- * SA's xfrm_encap_tmpl, walk the replay window, and hand the inner
- * payload back through xfrm_input.
+ * Other XFRM ops touch the NAT-T pieces only incidentally; none
+ * assemble the coherent triple this op does: a UDP socket primed with
+ * UDP_ENCAP_ESPINUDP, a matching XFRM SA whose XFRMA_ENCAP agrees with
+ * the socket, and actual ESP-in-UDP bytes arriving on that port.  That
+ * triple drives esp4_input / xfrm_input: demux UDP-encapsulated ESP,
+ * validate sport/dport against the SA's xfrm_encap_tmpl, step the
+ * replay window.  The ESP frame is intentionally undecryptable -- the
+ * point is the demux + validate + replay-step path on a coherent SA,
+ * not a successful decrypt.
  *
- * Per invocation:
- *   1. Enter a private net namespace via userns_run_in_ns(): a
- *      transient grandchild fork installs an identity user namespace
- *      plus a fresh CLONE_NEWNET, runs the body below, and _exit()s
- *      so the kernel reaps every interface, address, xfrm SA, UDP
- *      encap binding and socket with the grandchild's netns.  The
- *      persistent fuzz child never changes its own credentials or
- *      namespace stack, so the cap-drop oracle keeps observing the
- *      host credential profile.  Helper -EPERM (hardened userns
- *      policy refused CLONE_NEWUSER) latches the childop off for the
- *      remainder of this child's lifetime; -1 (transient setup
- *      failure: fork, id-map write, secondary unshare) skips the
- *      iteration without latching.
- *   2. Bring lo up via SIOCSIFFLAGS so any UDP we send to 127.0.0.0/8
- *      reaches the input path.  Done once per grandchild (its own
- *      fresh netns starts with lo down).
- *   3. Open NETLINK_XFRM and bind.  EPROTONOSUPPORT (no CONFIG_XFRM)
- *      latches the op off for the rest of the child's lifetime.
- *   4. Build XFRM_MSG_NEWSA with attributes:
- *        XFRMA_ALG_AUTH_TRUNC  (auth alg rotated across the table)
- *        XFRMA_ALG_CRYPT       (crypt alg rotated across the table)
- *        XFRMA_ENCAP           (UDP_ENCAP_ESPINUDP /
- *                               UDP_ENCAP_ESPINUDP_NON_IKE / omitted
- *                               for tunnel mode without encap)
- *        XFRMA_REPLAY_ESN_VAL  (when XFRM_STATE_ESN is set; seq_hi
- *                               rotated across the edge values 0, 1,
- *                               0xfffffffe, 0xffffffff and a random
- *                               sample to exercise the seq_hi
- *                               wrap-around handling in the replay
- *                               window code)
- *      Send via netlink and consume the ack.
- *   5. socket(AF_INET, SOCK_DGRAM); bind to an ephemeral port on lo.
- *   6. setsockopt(SOL_UDP, UDP_ENCAP, UDP_ENCAP_ESPINUDP) on the bound
- *      socket so the kernel installs the encap demux callback.  This
- *      is the binding that turns a plain UDP socket into the input
- *      half of the NAT-T pipeline -- the kernel udp_encap_rcv handler
- *      now strips the UDP header and feeds the ESP bytes into
- *      xfrm_input.
- *   7. Build a small ESP-in-UDP frame: SPI matches the SA, sequence
- *      number is the iteration counter, and the ciphertext bytes are
- *      garbage.  The frame is intentionally undecryptable -- the
- *      authentication check will fail in xfrm_input, the SA's
- *      xfrm_state.stats.integrity_failed counter will tick, and the
- *      replay window position will advance.  That's the path the op
- *      exists to drive: not a successful decrypt, but the demux +
- *      validate + replay-window-step sequence on a coherent SA where
- *      the encap fields actually match the socket.
- *   8. sendto the frame to (127.0.0.1, dport=4500).  recvmsg with
- *      MSG_DONTWAIT is rolled at low odds for the input-side
- *      completion path -- typically there is nothing to receive (the
- *      decrypt failed), but the kernel's input dispatch still walked.
- *   9. XFRM_MSG_DELSA on the same (daddr, spi, proto) tuple.  Cleans
- *      up the SA before the next iteration installs a fresh one with
- *      a new random SPI; without the explicit DELSA the SAD would
- *      grow without bound across thousands of iterations.
- *  10. Close UDP socket; close netlink socket.
+ * Per invocation (inside a private user+net namespace via
+ * userns_run_in_ns; _exit reaps the SA/socket/netns): bring lo up, open
+ * NETLINK_XFRM, XFRM_MSG_NEWSA, prime a UDP socket with UDP_ENCAP,
+ * sendto a garbage ESP-in-UDP frame to :4500, then XFRM_MSG_DELSA (the
+ * explicit delete keeps the SAD from growing unbounded).
  *
- * Rotation axes (rolled once per invocation):
- *   mode      XFRM_MODE_TRANSPORT | XFRM_MODE_TUNNEL
- *   esn       on (XFRM_STATE_ESN | XFRMA_REPLAY_ESN_VAL) | off
- *   encap     UDP_ENCAP_ESPINUDP | UDP_ENCAP_ESPINUDP_NON_IKE |
- *             omitted (only when mode == TUNNEL; transport mode
- *             without encap leaves the SA in a configuration that
- *             never reaches the NAT-T-specific paths and is
- *             handled by xfrm_churn)
- *   auth      hmac(sha256) | hmac(sha384) | hmac(sha1) |
- *             aes-xcbc-mac | a deliberately mistyped name to walk
- *             the kernel's algo lookup error path
- *   crypt     cbc(aes) | cbc(des3_ede) | aes-gcm-rfc4106 |
- *             a deliberately mistyped name
- *   replay    replay_window in {0, 32, 64, 256}
- *   spi       random uint32 in [XFRM_SPI_MIN, XFRM_SPI_MIN + range)
- *   seq_hi    {0, 1, 0xfffffffe, 0xffffffff, random} (when ESN on)
+ * Rotates per invocation across mode (transport/tunnel), ESN on/off
+ * with seq_hi wrap edges (0, 1, 0xfffffffe, 0xffffffff), encap type,
+ * auth/crypt algs (incl. a deliberately mistyped name to walk the
+ * crypto lookup error path), replay window, and random SPI.
  *
- * The mistyped algo names are the cheapest way to keep the kernel's
- * crypto request_module + lookup error path in the random rotation;
- * without that arm every iteration would either succeed or fail in
- * the same XFRMA_ALG_* parser branch.
- *
- * Per-process unsupported latches (one-shot outputerr on transition):
- *   ns_unsupported_nat_t -- the master gate.  Set in the wrapper when
- *                           userns_run_in_ns() returns -EPERM (a
- *                           hardened userns policy refused
- *                           CLONE_NEWUSER); the wrapper-set bit
- *                           persists across invocations and short-
- *                           circuits the op for the remainder of the
- *                           child's lifetime.  Also set inside the
- *                           in-ns callback on the first NETLINK_XFRM
- *                           open or AF_INET socket structural
- *                           rejection (EPROTONOSUPPORT / EAFNOSUPPORT)
- *                           -- that write lives in the grandchild's
- *                           address space and dies with the grand-
- *                           child, so a CONFIG-absent kernel re-
- *                           discovers the rejection once per
- *                           invocation rather than once per child.
- *                           Subsequent invocations early-return when
- *                           the wrapper-set bit is set.
- *
- * Self-bounding: one full SA install + send + DELSA cycle per
- * invocation.  All netlink and socket I/O is MSG_DONTWAIT or carries
- * SO_RCVTIMEO.  Loopback only inside a private netns.  The op
- * inherits the SIGALRM(1s) cap from child.c and the stall threshold
- * (40, comparable to mount_churn / xfrm_churn) bounds the stuck-child
- * detector.
+ * Latch: userns -EPERM (or NETLINK_XFRM EPROTONOSUPPORT) gates the op
+ * off -- the wrapper bit persists for the child's life; the
+ * in-grandchild bit dies on _exit() so a CONFIG-absent kernel re-probes
+ * once per invocation.  Self-bounding: one SA cycle/invocation, all I/O
+ * MSG_DONTWAIT or SO_RCVTIMEO, loopback-only in the private netns,
+ * SIGALRM(1s) cap + stall-threshold 40.  Header-gated on <linux/xfrm.h>.
  */
 
 #if __has_include(<linux/xfrm.h>)
