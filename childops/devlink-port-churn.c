@@ -1,99 +1,37 @@
 /*
  * devlink_port_churn - port up/down + split/reload race vs a bound socket.
  *
- * The devlink generic netlink family is the configuration plane for
- * bus-level device state: port split/unsplit, driver reinit, region
- * snapshots.  The bug class clustered here is the teardown-while-bound
- * race: devlink_reload_actions_perform() and devlink_port_split() walk
- * driver state and free per-port objects while userspace sockets and
- * routes still reference the live netdev.  Concurrent rtnetlink walkers
- * and SO_BINDTODEVICE-bound sockets cross paths with the reload's
- * teardown of the netdev's queue/qdisc/ndo_open state — exactly the
- * shape of CVE-2024-26848 (devlink reload UAF), CVE-2023-23039 (port
- * split tearing) and the broader DRIVER_REINIT-vs-bound-socket family.
+ * Target: net/core/devlink.c reload/split/unsplit paths --
+ * devlink_reload_actions_perform, devlink_port_split -- against a
+ * SO_BINDTODEVICE-bound socket with in-flight skbs.  Bug class: the
+ * reload/split teardown walks driver state and frees per-port objects
+ * while userspace sockets and routes still reference the live netdev
+ * (DRIVER_REINIT-vs-bound-socket family).  Flat syscall fuzzing can't
+ * assemble the shape: a netdevsim bus device + resolved devlink genl
+ * family + valid BUS/DEV/PORT_INDEX selectors + a bound socket + the
+ * SPLIT/RELOAD/UNSPLIT/del_device sequence driven mid-flow.
  *
- * Reaching that window from flat per-syscall fuzzing is hopeless: it
- * needs (a) a netdevsim bus device created via /sys/bus/netdevsim/
- * new_device, (b) the resolved devlink genl family id with a
- * structurally valid BUS_NAME/DEV_NAME pair and a per-cmd selector
- * (PORT_INDEX / RELOAD_ACTION), (c) a live AF_INET socket bound to
- * the netdev, and (d) the SPLIT/RELOAD/UNSPLIT/del_device sequence
- * driven mid-flow.  No combination of independent syscalls assembles
- * that without active orchestration.
+ * Per invocation (BUDGETED cycles): allocate a monotonic bus_id
+ * (10000 + pid%1000 base to avoid sibling collisions), create the
+ * netdevsim device via /sys/bus/netdevsim/new_device, RTM_NEWADDR a
+ * 127.0.0.<rot> loopback address, IFF_UP, SO_BINDTODEVICE an
+ * AF_INET/SOCK_DGRAM to the netdev, drive a bounded sendto burst to
+ * 127.0.0.1 so the reload has live skbs to walk, then in sequence:
+ * DEVLINK_CMD_PORT_SPLIT count=4, DEVLINK_CMD_RELOAD action=
+ * DRIVER_REINIT, PORT_UNSPLIT, write bus_id to del_device while the
+ * socket is still open.
  *
- * Sequence (per invocation):
- *   1.  Probe /sys/bus/netdevsim/new_device once per process; if
- *       absent or unwritable, latch ns_unsupported_netdevsim and bump
- *       create_skipped on every further call (no genl traffic).
- *   2.  genl_open("devlink", ...) — resolves the family id via a
- *       per-ctx CTRL_CMD_GETFAMILY; -ENOENT latches
- *       ns_unsupported_devlink_genl for the rest of the process.
- *   3.  BUDGETED loop:
- *         a) Allocate a fresh bus_id from a per-fork monotonic
- *            counter rooted at a randomized base (10000 + pid%1000)
- *            so concurrent siblings on the same host don't collide
- *            on the netdevsim id namespace.
- *         b) Create the device: write "$BUS_ID 0 1" to new_device.
- *            On EEXIST (rare collision), bump bus_id and retry once.
- *         c) RTM_NEWADDR: assign a 127.0.0.<rot> address to the
- *            netdevsim netdev (loopback only — must not hit the wire).
- *         d) IFF_UP via SIOCSIFFLAGS — drives the netdev open path.
- *         e) socket(AF_INET, SOCK_DGRAM); SO_BINDTODEVICE the
- *            candidate netdev name.  Bind failure (EPERM, ENODEV) is
- *            benign — the socket still references the netdev via
- *            the routing table and the SPLIT/RELOAD path still
- *            exercises the teardown side.
- *         f) Tight sendto loop bounded to a small packet count to
- *            127.0.0.1 — drives ndo_xmit through the netdevsim queue
- *            so the reload tear-down has live skbs to walk.
- *         g) DEVLINK_CMD_PORT_SPLIT count=4 mid-flow — first bug
- *            window: port object torn down while bound socket and
- *            in-flight skbs reference it.
- *         h) DEVLINK_CMD_RELOAD action=DRIVER_REINIT — second bug
- *            window: full driver state reinit while the socket and
- *            in-flight queue still reference the per-driver
- *            structures.  HARDCODED bus="netdevsim" by static
- *            const so this code path can never reach a real PCI/
- *            mlx5/ice device on a fleet host.
- *         i) DEVLINK_CMD_PORT_UNSPLIT — undo the split.
- *         j) Delete the device: write "$BUS_ID" to del_device while
- *            the socket is still open — third bug window: device
- *            teardown vs bound netdev reference.  Kernel cleans up
- *            the residual socket on close; we close after every
- *            iteration so a wedged child can't pile leaks.
+ * Brick-safety: bus name HARDCODED "netdevsim" via static const so
+ * this can never hit real PCI/mlx5/ice hardware; loopback addresses
+ * only; sockets non-blocking; all genl requests carry SO_RCVTIMEO so
+ * an unresponsive controller stays inside child.c's SIGALRM(1s).
  *
- * Self-bounding: one full cycle per invocation, all sockets non-
- * blocking, loopback only, all genl requests timestamped with
- * SO_RCVTIMEO so an unresponsive controller can't pin past child.c's
- * SIGALRM(1s).  Per-invocation iteration budget is small (defaults to
- * a few cycles, jittered ±50%, scaled by adapt_budget) — every iter
- * creates a netdevsim bus device and the ID space rolls forward, so a
- * runaway loop would burn through the netdevsim id range fast.
- *
- * Brick risk: DRIVER_REINIT against real hardware would actually
- * reset the device.  netdevsim is software-only — reload is a no-op
- * tear/recreate of the in-memory driver state.  We HARDCODE the bus
- * name to "netdevsim" via a single static const and never construct
- * a RELOAD message naming any other bus.  A future caller that wants
- * to extend this op to other devlink buses must add its own gate.
- *
- * Header gating: <linux/devlink.h> ships with all distros from kernel
- * 4.6 onward but the constants we lean on here (DEVLINK_CMD_RELOAD,
- * DEVLINK_ATTR_RELOAD_ACTION) need 5.10+.  Sysroots without them fall
- * to a stub that bumps iterations+create_skipped and returns — same
- * shape as mptcp-pm-churn's __has_include fallback.
- *
- * Failure modes treated as benign coverage:
- *   - new_device write returns ENODEV / ENOENT: netdevsim module not
- *     loaded.  Latched ns_unsupported_netdevsim.
- *   - genl_open("devlink", ...) returns -ENOENT: kernel doesn't expose
- *     the devlink genl family.  Latched ns_unsupported_devlink_genl.
- *   - EPERM on any genl op or BINDTODEVICE: trinity wasn't run with
- *     the right caps.  Counted via the matching _fail counter; the
- *     data-plane sends still exercise the netdev xmit path.
- *   - PORT_SPLIT with count != supported: kernel returns EOPNOTSUPP.
- *     Counted as split_fail; the codepath up to the validator still
- *     ran on the live port object.
+ * Latches: ns_unsupported_netdevsim on missing/unwritable
+ * /sys/bus/netdevsim/new_device; ns_unsupported_devlink_genl on
+ * CTRL_CMD_GETFAMILY -ENOENT.  Header-gated by __has_include on
+ * <linux/devlink.h>; sysroots lacking the 5.10+ DEVLINK_CMD_RELOAD /
+ * DEVLINK_ATTR_RELOAD_ACTION constants fall to a stub that bumps
+ * iterations+create_skipped and returns.
  */
 
 #include <errno.h>
