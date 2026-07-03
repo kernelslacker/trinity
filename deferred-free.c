@@ -1,18 +1,9 @@
 /*
- * Deferred-free queue for temporal overlap of syscall allocations.
- *
- * Sanitise callbacks allocate structs/buffers that post callbacks would
- * normally free immediately after the syscall returns.  This means the
- * kernel only ever sees one allocation at a time — no temporal overlap.
- *
- * By queueing allocations for delayed free (5-50 more syscalls), we
- * keep multiple allocations alive simultaneously, increasing the chance
- * of hitting UAF, stale-reference, and double-free bugs in the kernel.
- *
- * Each queue entry is 16 bytes on 64-bit (a pointer plus an unsigned
- * int ttl).  Membership tests go through a side hash rather than a
- * linear walk of the queue, so the per-tick overhead stays negligible
- * even though children do millions of syscalls.
+ * Deferred-free queue: hold syscall-owned allocations for 5-50 more
+ * syscalls instead of freeing them at return, so multiple allocations
+ * overlap in time and expose kernel UAF / stale-ref / double-free.
+ * Membership tests go through a side hash, not a linear ring walk, so
+ * per-tick cost stays flat under millions of syscalls.
  */
 
 #include <errno.h>
@@ -56,22 +47,10 @@ enum argtype deferred_free_get_cleanup_argtype(void)
 }
 
 /*
- * Run the actual TTL-decrement-and-free loop on 1-in-N tick calls.
- * The other (N-1) calls bail before taking the mprotect bracket.
- * N must be a power of two so the modulo collapses to a bitmask.
- *
- * Side effect: TTL is effectively multiplied by N.  Nominal range
- * 5-50 syscalls becomes 80-800 syscalls of in-ring lifetime.  This
- * is fine -- and arguably better for catching UAF overlap -- but
- * worth knowing when reading the TTL constants above.
- *
- * 8 was insufficient for the head->array container lifetime in
- * add_object's OBJ_LOCAL grow path: a get_random_object() reader
- * interrupted by a signal whose handler runs syscalls (ticking the
- * ring) while the original code holds head->array in a register/
- * cache can outlive a 40-400 syscall TTL when the signal handler
- * is heavy.  16 keeps the same shape but lifts the headroom to a
- * range no plausible reader window touches.
+ * Decrement-and-free runs 1-in-N ticks (N power-of-two -> bitmask);
+ * the other N-1 bail before the mprotect bracket.  Effective TTL is
+ * thus ~N x the 5-50 nominal (80-800 syscalls) -- intentional
+ * headroom for UAF overlap.
  */
 #define DEFERRED_TICK_BATCH	16
 
@@ -81,51 +60,19 @@ struct deferred_entry {
 };
 
 /*
- * Side-set of "live" malloc results, opt-in.  Allocation sites that
- * know their pointer is bound to flow through deferred_free_enqueue
- * (post_state sanitisers, alloc_object, ARG_STRUCT_PTR_IN/OUT, execve
- * argv/envp fabrication, the mostly-deferred-freed bpf/setsockopt/
- * getsockopt/seccomp slots) allocate via zmalloc_tracked(), which
- * calls deferred_alloc_track() on the returned pointer; plain
- * zmalloc() leaves the result out of the side-set.
- * deferred_free_enqueue() consumes the matching entry to confirm the
- * pointer it has been handed is a real malloc result before letting
- * it through to free().
+ * Opt-in side-set of live malloc results.  Sites whose pointer flows
+ * through deferred_free_enqueue() allocate via zmalloc_tracked();
+ * enqueue consumes the matching entry to confirm a real malloc start
+ * before free().  Opt-in (not every zmalloc) so direct-free sites
+ * don't leave stale entries a fuzzed scribble could match; a missed
+ * opt-in degrades to a reject leak (observable in stats), the safe
+ * direction to err.
  *
- * The pre-existing looks_like_corrupted_ptr() heuristic only rejects
- * sub-page / above-canonical / mis-aligned values.  A wholesale stomp
- * that scribbles rec->post_state (or rec->aN) with an address that
- * happens to land inside the heap arena passes every band of that test
- * -- 8-byte aligned, in user VA, not pid-shaped -- yet is not a real
- * malloc-return.  Eight ASAN "bad-free" reports hit exactly that gap:
- * the freed pointer was heap-region but not at an allocation start, so
- * libc's free() rejects it.  Tracking the set of live malloc results
- * for the opt-in subset gives us ground truth the pointer-shape
- * heuristic can't, for the pointers that actually flow through this
- * gate.
- *
- * Opt-in (rather than every __zmalloc result) keeps the ring's input
- * population aligned with its consumer.  Sites whose pointer is
- * released via direct free() (process-lifetime tables, per-child obj/
- * fd/hash arrays, error-path fallbacks) used to leave a stale entry
- * behind after each release; with opt-in they never enter the ring,
- * so the previous failure mode -- a fuzzed scribble matching a stale
- * entry and tricking alloc_track_consume() into approving a wrong-
- * free -- disappears.  The mirror-image failure (forgetting to opt in
- * at a site that should have) reduces to a deferred_free_reject
- * leak, observable in stats; that is the safer direction to err.
- *
- * Sized for the in-flight window: between a sanitise's zmalloc and the
- * matching post handler's deferred_free_enqueue, the same syscall does
- * a handful of additional zmallocs (snap struct, arg generators, etc.)
- * -- well under a hundred in the worst case.  4096 entries gives ample
- * headroom; on overflow we evict in arrival order, which only causes a
- * benign drop (memory leak) of the evicted pointer's eventual free.
- * Narrowing the input set to the opt-in subset keeps init-time and
- * per-child-table zmallocs out of the ring entirely.
- *
- * Process-local: zero-initialised BSS, COW-shared at fork, written
- * single-threaded by the owning child.  No locking needed.
+ * Sized (4096) for the in-flight window -- a sanitise's zmalloc to its
+ * post handler's enqueue spans well under 100 zmallocs; overflow
+ * evicts in arrival order (benign leak of the evicted free).
+ * Process-local: zero-init BSS, COW at fork, single-threaded by the
+ * owning child, no locking.
  */
 /* 4096 slots.  Long-lived MMAP_ANON pool entries must stay tracked
  * until their child cycle completes, or get_map_handle's
