@@ -90,6 +90,11 @@ static void havoc_set_interesting(unsigned char *buf, size_t len,
 	size_t pos;
 	size_t max_pos;
 
+	/* An empty buffer has nothing to mutate; returning also avoids the
+	 * len - width underflow to SIZE_MAX below. */
+	if (len == 0)
+		return;
+
 	if (width != 1 && width != 2 && width != 4)
 		width = 1;
 	if (width > len)
