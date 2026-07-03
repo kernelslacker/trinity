@@ -460,6 +460,103 @@ static size_t build_chaos_bhs(unsigned char *out)
 	return ISCSI_BHS_LEN;
 }
 
+/* Chaos-path burst: send 1..CHAOS_PDUS_MAX wholly-random BHS PDUs at the
+ * connected socket, draining any response between each.  This mirrors the
+ * random-spam arm of the older iscsi_target_probe and keeps front-door BHS
+ * validator coverage intact when the walker skips the state-machine path. */
+static void iscsi_send_chaos_burst(int fd, unsigned char *pdu)
+{
+	unsigned int chaos_pdus = 1 + rnd_modulo_u32(CHAOS_PDUS_MAX);
+	unsigned int j;
+	size_t pdu_len;
+	ssize_t n;
+
+	for (j = 0; j < chaos_pdus; j++) {
+		pdu_len = build_chaos_bhs(pdu);
+		n = send(fd, pdu, pdu_len,
+			 MSG_DONTWAIT | MSG_NOSIGNAL);
+		if (n > 0) {
+			__atomic_add_fetch(&shm->stats.iscsi_walker_chaos_pdus,
+					   1, __ATOMIC_RELAXED);
+			__atomic_add_fetch(&shm->stats.iscsi_walker_bytes_out,
+					   (unsigned long)n,
+					   __ATOMIC_RELAXED);
+		}
+		iscsi_drain(fd);
+	}
+}
+
+/* Drive the three-PDU Login state-machine walk on the connected socket:
+ * INIT (CSG=0), SECURITY_NEG -> OP_NEG transition, then OP_NEG -> FFP
+ * transition.  All three PDUs share the caller-supplied ISID so the
+ * kernel treats them as one session being advanced.  Each send is
+ * followed by a drain so response bytes get counted and the socket
+ * doesn't back up between phases. */
+static void iscsi_send_login_walk(int fd, unsigned char *pdu, uint8_t isid[6])
+{
+	size_t pdu_len;
+	ssize_t n;
+
+	pdu_len = build_login_init(pdu, isid);
+	n = send(fd, pdu, pdu_len, MSG_DONTWAIT | MSG_NOSIGNAL);
+	if (n > 0) {
+		__atomic_add_fetch(&shm->stats.iscsi_walker_state_init_sent,
+				   1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.iscsi_walker_bytes_out,
+				   (unsigned long)n, __ATOMIC_RELAXED);
+	}
+	iscsi_drain(fd);
+
+	pdu_len = build_login_security_neg(pdu, isid);
+	n = send(fd, pdu, pdu_len, MSG_DONTWAIT | MSG_NOSIGNAL);
+	if (n > 0) {
+		__atomic_add_fetch(&shm->stats.iscsi_walker_state_security_sent,
+				   1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.iscsi_walker_bytes_out,
+				   (unsigned long)n, __ATOMIC_RELAXED);
+	}
+	iscsi_drain(fd);
+
+	pdu_len = build_login_op_neg(pdu, isid);
+	n = send(fd, pdu, pdu_len, MSG_DONTWAIT | MSG_NOSIGNAL);
+	if (n > 0) {
+		__atomic_add_fetch(&shm->stats.iscsi_walker_state_op_neg_sent,
+				   1, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.iscsi_walker_bytes_out,
+				   (unsigned long)n, __ATOMIC_RELAXED);
+	}
+	iscsi_drain(fd);
+}
+
+/* FullFeaturePhase fuzz burst.  The Login walk is over; the kernel-side
+ * session is in the post-login command-dispatch state (or it RST'd us
+ * mid-walk, in which case these sends just get EPIPE and the stat
+ * increments stop tracking).  Emit 1..FFP_PDUS_MAX fuzzed BHS PDUs with
+ * the opcode biased into the FFP-valid set. */
+static void iscsi_send_ffp_burst(int fd, unsigned char *pdu, uint8_t isid[6])
+{
+	unsigned int j;
+	unsigned int ffp_pdus = 1 + rnd_modulo_u32(FFP_PDUS_MAX);
+	size_t pdu_len;
+	ssize_t n;
+
+	__atomic_add_fetch(&shm->stats.iscsi_walker_ffp_iters, 1,
+			   __ATOMIC_RELAXED);
+	for (j = 0; j < ffp_pdus; j++) {
+		pdu_len = build_ffp_fuzz(pdu, isid);
+		n = send(fd, pdu, pdu_len,
+			 MSG_DONTWAIT | MSG_NOSIGNAL);
+		if (n > 0) {
+			__atomic_add_fetch(&shm->stats.iscsi_walker_ffp_pdus,
+					   1, __ATOMIC_RELAXED);
+			__atomic_add_fetch(&shm->stats.iscsi_walker_bytes_out,
+					   (unsigned long)n,
+					   __ATOMIC_RELAXED);
+		}
+		iscsi_drain(fd);
+	}
+}
+
 bool iscsi_login_walker(struct childdata *child)
 {
 	/* Per-child invocation counter for the chaos toggle.  Single-
@@ -471,8 +568,6 @@ bool iscsi_login_walker(struct childdata *child)
 	unsigned int iters;
 	unsigned int i;
 	int fd;
-	ssize_t n;
-	size_t pdu_len;
 	bool chaos;
 	/* Snapshot child->op_type once and bounds-check before indexing
 	 * the per-op stats arrays.  The field lives in shared memory and
@@ -527,22 +622,7 @@ bool iscsi_login_walker(struct childdata *child)
 		}
 
 		if (chaos) {
-			unsigned int chaos_pdus = 1 + rnd_modulo_u32(CHAOS_PDUS_MAX);
-			unsigned int j;
-
-			for (j = 0; j < chaos_pdus; j++) {
-				pdu_len = build_chaos_bhs(pdu);
-				n = send(fd, pdu, pdu_len,
-					 MSG_DONTWAIT | MSG_NOSIGNAL);
-				if (n > 0) {
-					__atomic_add_fetch(&shm->stats.iscsi_walker_chaos_pdus,
-							   1, __ATOMIC_RELAXED);
-					__atomic_add_fetch(&shm->stats.iscsi_walker_bytes_out,
-							   (unsigned long)n,
-							   __ATOMIC_RELAXED);
-				}
-				iscsi_drain(fd);
-			}
+			iscsi_send_chaos_burst(fd, pdu);
 
 			(void)shutdown(fd, SHUT_RDWR);
 			close(fd);
@@ -554,62 +634,8 @@ bool iscsi_login_walker(struct childdata *child)
 		 * session being driven forward. */
 		rnd_fill(isid, sizeof(isid));
 
-		pdu_len = build_login_init(pdu, isid);
-		n = send(fd, pdu, pdu_len, MSG_DONTWAIT | MSG_NOSIGNAL);
-		if (n > 0) {
-			__atomic_add_fetch(&shm->stats.iscsi_walker_state_init_sent,
-					   1, __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.iscsi_walker_bytes_out,
-					   (unsigned long)n, __ATOMIC_RELAXED);
-		}
-		iscsi_drain(fd);
-
-		pdu_len = build_login_security_neg(pdu, isid);
-		n = send(fd, pdu, pdu_len, MSG_DONTWAIT | MSG_NOSIGNAL);
-		if (n > 0) {
-			__atomic_add_fetch(&shm->stats.iscsi_walker_state_security_sent,
-					   1, __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.iscsi_walker_bytes_out,
-					   (unsigned long)n, __ATOMIC_RELAXED);
-		}
-		iscsi_drain(fd);
-
-		pdu_len = build_login_op_neg(pdu, isid);
-		n = send(fd, pdu, pdu_len, MSG_DONTWAIT | MSG_NOSIGNAL);
-		if (n > 0) {
-			__atomic_add_fetch(&shm->stats.iscsi_walker_state_op_neg_sent,
-					   1, __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.iscsi_walker_bytes_out,
-					   (unsigned long)n, __ATOMIC_RELAXED);
-		}
-		iscsi_drain(fd);
-
-		/* FullFeaturePhase fuzz burst.  The Login walk is over;
-		 * the kernel-side session is in the post-login command-
-		 * dispatch state (or it RST'd us mid-walk, in which case
-		 * these sends just get EPIPE and the stat increments
-		 * stop tracking).  Emit 1..FFP_PDUS_MAX fuzzed BHS PDUs
-		 * with the opcode biased into the FFP-valid set. */
-		__atomic_add_fetch(&shm->stats.iscsi_walker_ffp_iters, 1,
-				   __ATOMIC_RELAXED);
-		{
-			unsigned int j;
-			unsigned int ffp_pdus = 1 + rnd_modulo_u32(FFP_PDUS_MAX);
-
-			for (j = 0; j < ffp_pdus; j++) {
-				pdu_len = build_ffp_fuzz(pdu, isid);
-				n = send(fd, pdu, pdu_len,
-					 MSG_DONTWAIT | MSG_NOSIGNAL);
-				if (n > 0) {
-					__atomic_add_fetch(&shm->stats.iscsi_walker_ffp_pdus,
-							   1, __ATOMIC_RELAXED);
-					__atomic_add_fetch(&shm->stats.iscsi_walker_bytes_out,
-							   (unsigned long)n,
-							   __ATOMIC_RELAXED);
-				}
-				iscsi_drain(fd);
-			}
-		}
+		iscsi_send_login_walk(fd, pdu, isid);
+		iscsi_send_ffp_burst(fd, pdu, isid);
 
 		(void)shutdown(fd, SHUT_RDWR);
 		close(fd);
