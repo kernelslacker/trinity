@@ -1795,6 +1795,431 @@ static void kcov_cmp_render_pc_diag_block(void)
 	}
 }
 
+static void kcov_cmp_render_wild_write_delta(long elapsed,
+					     unsigned long delta_count_oob, unsigned long cur_count_oob,
+					     unsigned long delta_canary_lock_post, unsigned long cur_canary_lock_post,
+					     unsigned long delta_canary_pre, unsigned long cur_canary_pre,
+					     unsigned long delta_canary_post, unsigned long cur_canary_post)
+{
+	/* Wild-write detection: any non-zero delta is news, and the
+	 * 0/s rate noise of a one-shot stomp is fine -- the canary
+	 * counters surface a real corruption channel, not a hot-path
+	 * statistic, so the same row format is used as the rest. */
+	if (delta_count_oob) {
+		unsigned long rate_milli = (delta_count_oob * 1000UL) / (unsigned long)elapsed;
+		stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+				"cmp_hints_count_oob", delta_count_oob,
+				rate_milli / 1000, rate_milli % 1000, cur_count_oob);
+	}
+	if (delta_canary_lock_post) {
+		unsigned long rate_milli = (delta_canary_lock_post * 1000UL) / (unsigned long)elapsed;
+		stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+				"cmp_hints_canary_lock_post_corrupt", delta_canary_lock_post,
+				rate_milli / 1000, rate_milli % 1000, cur_canary_lock_post);
+	}
+	if (delta_canary_pre) {
+		unsigned long rate_milli = (delta_canary_pre * 1000UL) / (unsigned long)elapsed;
+		stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+				"cmp_hints_canary_pre_corrupt", delta_canary_pre,
+				rate_milli / 1000, rate_milli % 1000, cur_canary_pre);
+	}
+	if (delta_canary_post) {
+		unsigned long rate_milli = (delta_canary_post * 1000UL) / (unsigned long)elapsed;
+		stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+				"cmp_hints_canary_post_corrupt", delta_canary_post,
+				rate_milli / 1000, rate_milli % 1000, cur_canary_post);
+	}
+}
+
+static void kcov_cmp_render_reexec_skip_reason_breakdown(long elapsed,
+							 unsigned long delta_reexec_gate_skip_in_reexec, unsigned long cur_reexec_gate_skip_in_reexec,
+							 unsigned long delta_reexec_gate_skip_disabled, unsigned long cur_reexec_gate_skip_disabled,
+							 unsigned long delta_reexec_gate_skip_mode, unsigned long cur_reexec_gate_skip_mode,
+							 unsigned long delta_reexec_gate_skip_chain_mid, unsigned long cur_reexec_gate_skip_chain_mid,
+							 unsigned long delta_reexec_gate_skip_no_new_cmp, unsigned long cur_reexec_gate_skip_no_new_cmp,
+							 unsigned long delta_reexec_gate_skip_no_pending, unsigned long cur_reexec_gate_skip_no_pending,
+							 unsigned long delta_reexec_gate_skip_rate, unsigned long cur_reexec_gate_skip_rate,
+							 unsigned long delta_reexec_gate_pass, unsigned long cur_reexec_gate_pass)
+{
+	/* Re-exec gate skip-reason breakdown.  Counters are mutually
+	 * exclusive: every dispatch_step that reaches the tail bumps
+	 * exactly one of {skip_in_reexec, skip_disabled, skip_mode,
+	 * skip_chain_mid, skip_no_new_cmp, skip_no_pending, skip_rate,
+	 * pass}.  The sum across the eight is the parent-call
+	 * population the gate samples from -- read the per-reason
+	 * fractions to see why reexec_attribution_found shrinks to
+	 * reexec_attempts (rate-gate skip vs destructive vs pending-
+	 * full vs pass), instead of inferring it from a single delta.
+	 * Skip-row order mirrors the evaluation order in
+	 * random-syscall.c so the funnel reads top-to-bottom. */
+	if (delta_reexec_gate_skip_in_reexec) {
+		unsigned long rate_milli = (delta_reexec_gate_skip_in_reexec * 1000UL) / (unsigned long)elapsed;
+		stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+				"reexec_gate_skip_in_reexec", delta_reexec_gate_skip_in_reexec,
+				rate_milli / 1000, rate_milli % 1000, cur_reexec_gate_skip_in_reexec);
+	}
+	if (delta_reexec_gate_skip_disabled) {
+		unsigned long rate_milli = (delta_reexec_gate_skip_disabled * 1000UL) / (unsigned long)elapsed;
+		stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+				"reexec_gate_skip_disabled", delta_reexec_gate_skip_disabled,
+				rate_milli / 1000, rate_milli % 1000, cur_reexec_gate_skip_disabled);
+	}
+	if (delta_reexec_gate_skip_mode) {
+		unsigned long rate_milli = (delta_reexec_gate_skip_mode * 1000UL) / (unsigned long)elapsed;
+		stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+				"reexec_gate_skip_mode", delta_reexec_gate_skip_mode,
+				rate_milli / 1000, rate_milli % 1000, cur_reexec_gate_skip_mode);
+	}
+	if (delta_reexec_gate_skip_chain_mid) {
+		unsigned long rate_milli = (delta_reexec_gate_skip_chain_mid * 1000UL) / (unsigned long)elapsed;
+		stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+				"reexec_gate_skip_chain_mid", delta_reexec_gate_skip_chain_mid,
+				rate_milli / 1000, rate_milli % 1000, cur_reexec_gate_skip_chain_mid);
+	}
+	if (delta_reexec_gate_skip_no_new_cmp) {
+		unsigned long rate_milli = (delta_reexec_gate_skip_no_new_cmp * 1000UL) / (unsigned long)elapsed;
+		stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+				"reexec_gate_skip_no_new_cmp", delta_reexec_gate_skip_no_new_cmp,
+				rate_milli / 1000, rate_milli % 1000, cur_reexec_gate_skip_no_new_cmp);
+	}
+	if (delta_reexec_gate_skip_no_pending) {
+		unsigned long rate_milli = (delta_reexec_gate_skip_no_pending * 1000UL) / (unsigned long)elapsed;
+		stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+				"reexec_gate_skip_no_pending", delta_reexec_gate_skip_no_pending,
+				rate_milli / 1000, rate_milli % 1000, cur_reexec_gate_skip_no_pending);
+	}
+	if (delta_reexec_gate_skip_rate) {
+		unsigned long rate_milli = (delta_reexec_gate_skip_rate * 1000UL) / (unsigned long)elapsed;
+		stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+				"reexec_gate_skip_rate", delta_reexec_gate_skip_rate,
+				rate_milli / 1000, rate_milli % 1000, cur_reexec_gate_skip_rate);
+	}
+	if (delta_reexec_gate_pass) {
+		unsigned long rate_milli = (delta_reexec_gate_pass * 1000UL) / (unsigned long)elapsed;
+		stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+				"reexec_gate_pass", delta_reexec_gate_pass,
+				rate_milli / 1000, rate_milli % 1000, cur_reexec_gate_pass);
+	}
+}
+
+static void kcov_cmp_render_per_entry_feedback_scoring(long elapsed,
+						       unsigned long delta_cmp_hints_consumed, unsigned long cur_cmp_hints_consumed,
+						       unsigned long delta_cmp_hint_wins, unsigned long cur_cmp_hint_wins,
+						       unsigned long delta_cmp_hint_misses, unsigned long cur_cmp_hint_misses,
+						       unsigned long delta_cmp_hint_cmp_novelty_wins, unsigned long cur_cmp_hint_cmp_novelty_wins,
+						       unsigned long delta_cmp_hint_stash_overflow, unsigned long cur_cmp_hint_stash_overflow,
+						       unsigned long delta_cmp_hint_credit_entry_evicted, unsigned long cur_cmp_hint_credit_entry_evicted)
+{
+	/* SHADOW per-entry feedback scoring counters
+	 * ([11-feedback-loop] PHASE 4).  Live pool selection is
+	 * uniform here -- these counters record outcomes for a future
+	 * A/B-gated live-pick weight to read.  cmp_hint_wins /
+	 * cmp_hint_misses are PC-edge only; cmp_hint_cmp_novelty_wins
+	 * is the SEPARATE CMP-mode novelty channel (kept out of the
+	 * PC-edge score). */
+	if (delta_cmp_hints_consumed) {
+		unsigned long rate_milli = (delta_cmp_hints_consumed * 1000UL) / (unsigned long)elapsed;
+		stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+				"cmp_hints_consumed", delta_cmp_hints_consumed,
+				rate_milli / 1000, rate_milli % 1000, cur_cmp_hints_consumed);
+	}
+	if (delta_cmp_hint_wins) {
+		unsigned long rate_milli = (delta_cmp_hint_wins * 1000UL) / (unsigned long)elapsed;
+		stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+				"cmp_hint_wins", delta_cmp_hint_wins,
+				rate_milli / 1000, rate_milli % 1000, cur_cmp_hint_wins);
+	}
+	if (delta_cmp_hint_misses) {
+		unsigned long rate_milli = (delta_cmp_hint_misses * 1000UL) / (unsigned long)elapsed;
+		stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+				"cmp_hint_misses", delta_cmp_hint_misses,
+				rate_milli / 1000, rate_milli % 1000, cur_cmp_hint_misses);
+	}
+	if (delta_cmp_hint_cmp_novelty_wins) {
+		unsigned long rate_milli = (delta_cmp_hint_cmp_novelty_wins * 1000UL) / (unsigned long)elapsed;
+		stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+				"cmp_hint_cmp_novelty_wins",
+				delta_cmp_hint_cmp_novelty_wins,
+				rate_milli / 1000, rate_milli % 1000,
+				cur_cmp_hint_cmp_novelty_wins);
+	}
+	if (delta_cmp_hint_stash_overflow) {
+		unsigned long rate_milli = (delta_cmp_hint_stash_overflow * 1000UL) / (unsigned long)elapsed;
+		stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+				"cmp_hint_stash_overflow",
+				delta_cmp_hint_stash_overflow,
+				rate_milli / 1000, rate_milli % 1000,
+				cur_cmp_hint_stash_overflow);
+	}
+	if (delta_cmp_hint_credit_entry_evicted) {
+		unsigned long rate_milli = (delta_cmp_hint_credit_entry_evicted * 1000UL) / (unsigned long)elapsed;
+		stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+				"cmp_hint_credit_entry_evicted",
+				delta_cmp_hint_credit_entry_evicted,
+				rate_milli / 1000, rate_milli % 1000,
+				cur_cmp_hint_credit_entry_evicted);
+	}
+}
+
+static void kcov_cmp_render_recent_cmp_pool_tier(long elapsed,
+						 unsigned long delta_cmp_recent_inserts, unsigned long cur_cmp_recent_inserts,
+						 unsigned long delta_cmp_recent_evicts, unsigned long cur_cmp_recent_evicts,
+						 unsigned long delta_cmp_recent_would_pick, unsigned long cur_cmp_recent_would_pick,
+						 unsigned long delta_cmp_recent_would_miss, unsigned long cur_cmp_recent_would_miss,
+						 unsigned long delta_cmp_recent_live_picks, unsigned long cur_cmp_recent_live_picks)
+{
+	/* SHADOW recent-CMP-pool tier: inserts/evicts measure the
+	 * absorbed-but-otherwise-dropped throughput; would_pick /
+	 * would_miss is the plateau-window try_get population the
+	 * recent-first arm would sample from (legible from the default
+	 * durable-first run); live_picks stays at zero until the A/B
+	 * flag is flipped to recent-first; promotions is the recording-
+	 * only conversion counter the follow-up commit will route into
+	 * a recent->durable promotion.  Without these rows the tier
+	 * looks identical to "disabled" in the logs -- a non-zero
+	 * would_pick rate with cmp_recent_inserts == 0 is the empty-
+	 * ring signature; a healthy non-zero would_pick alongside
+	 * inserts says the recent-first arm has real signal to draw
+	 * from. */
+	if (delta_cmp_recent_inserts) {
+		unsigned long rate_milli = (delta_cmp_recent_inserts * 1000UL) / (unsigned long)elapsed;
+		stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+				"cmp_recent_inserts", delta_cmp_recent_inserts,
+				rate_milli / 1000, rate_milli % 1000, cur_cmp_recent_inserts);
+	}
+	if (delta_cmp_recent_evicts) {
+		unsigned long rate_milli = (delta_cmp_recent_evicts * 1000UL) / (unsigned long)elapsed;
+		stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+				"cmp_recent_evicts", delta_cmp_recent_evicts,
+				rate_milli / 1000, rate_milli % 1000, cur_cmp_recent_evicts);
+	}
+	if (delta_cmp_recent_would_pick) {
+		unsigned long rate_milli = (delta_cmp_recent_would_pick * 1000UL) / (unsigned long)elapsed;
+		stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+				"cmp_recent_would_pick", delta_cmp_recent_would_pick,
+				rate_milli / 1000, rate_milli % 1000, cur_cmp_recent_would_pick);
+	}
+	if (delta_cmp_recent_would_miss) {
+		unsigned long rate_milli = (delta_cmp_recent_would_miss * 1000UL) / (unsigned long)elapsed;
+		stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+				"cmp_recent_would_miss", delta_cmp_recent_would_miss,
+				rate_milli / 1000, rate_milli % 1000, cur_cmp_recent_would_miss);
+	}
+	if (delta_cmp_recent_live_picks) {
+		unsigned long rate_milli = (delta_cmp_recent_live_picks * 1000UL) / (unsigned long)elapsed;
+		stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+				"cmp_recent_live_picks", delta_cmp_recent_live_picks,
+				rate_milli / 1000, rate_milli % 1000, cur_cmp_recent_live_picks);
+	}
+}
+
+static void kcov_cmp_render_ab_baseline_inject_denom(long elapsed,
+						     unsigned long delta_cmp_inject_arm_a_baseline_fires, unsigned long cur_cmp_inject_arm_a_baseline_fires,
+						     unsigned long delta_cmp_inject_arm_b_baseline_fires, unsigned long cur_cmp_inject_arm_b_baseline_fires,
+						     unsigned long delta_cmp_inject_denom_diverged, unsigned long cur_cmp_inject_denom_diverged,
+						     unsigned int cur_cmp_inject_arm_a_children,
+						     unsigned int cur_cmp_inject_arm_b_children)
+{
+	/* A/B baseline inject denom (Arm A = 16, Arm B = 12).  Print
+	 * the realised cohort split + per-arm baseline-fire deltas +
+	 * the per-call divergence count so the operator can size the
+	 * A/B effect on PC-edge yield against population-normalised
+	 * fire rates without recomputing from cmp_hint_callsite[]. */
+	if (delta_cmp_inject_arm_a_baseline_fires) {
+		unsigned long rate_milli = (delta_cmp_inject_arm_a_baseline_fires * 1000UL) / (unsigned long)elapsed;
+		stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu, children %u)\n",
+				"cmp_inject_arm_a_baseline_fires",
+				delta_cmp_inject_arm_a_baseline_fires,
+				rate_milli / 1000, rate_milli % 1000,
+				cur_cmp_inject_arm_a_baseline_fires,
+				cur_cmp_inject_arm_a_children);
+	}
+	if (delta_cmp_inject_arm_b_baseline_fires) {
+		unsigned long rate_milli = (delta_cmp_inject_arm_b_baseline_fires * 1000UL) / (unsigned long)elapsed;
+		stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu, children %u)\n",
+				"cmp_inject_arm_b_baseline_fires",
+				delta_cmp_inject_arm_b_baseline_fires,
+				rate_milli / 1000, rate_milli % 1000,
+				cur_cmp_inject_arm_b_baseline_fires,
+				cur_cmp_inject_arm_b_children);
+	}
+	if (delta_cmp_inject_denom_diverged) {
+		unsigned long rate_milli = (delta_cmp_inject_denom_diverged * 1000UL) / (unsigned long)elapsed;
+		stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+				"cmp_inject_denom_diverged",
+				delta_cmp_inject_denom_diverged,
+				rate_milli / 1000, rate_milli % 1000,
+				cur_cmp_inject_denom_diverged);
+	}
+}
+
+static void kcov_cmp_render_handle_arg_op_prop_ring_cohort(long elapsed,
+							   unsigned long delta_prop_ring_argop_arm_b_fires,
+							   unsigned long cur_prop_ring_argop_arm_b_fires,
+							   unsigned int cur_prop_ring_argop_arm_a_children,
+							   unsigned int cur_prop_ring_argop_arm_b_children)
+{
+	/* A/B handle_arg_op prop_ring cohort (Arm A = no pull, Arm B =
+	 * low-prob pull).  Print the realised cohort split + the Arm B
+	 * fire delta so the operator can size the per-row contribution
+	 * to propagation_injected against the population-normalised fire
+	 * rate.  Arm A has no symmetric fire counter by design (control
+	 * arm skips the pull entirely). */
+	if (delta_prop_ring_argop_arm_b_fires) {
+		unsigned long rate_milli = (delta_prop_ring_argop_arm_b_fires * 1000UL) / (unsigned long)elapsed;
+		stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu, children a=%u b=%u)\n",
+				"prop_ring_argop_arm_b_fires",
+				delta_prop_ring_argop_arm_b_fires,
+				rate_milli / 1000, rate_milli % 1000,
+				cur_prop_ring_argop_arm_b_fires,
+				cur_prop_ring_argop_arm_a_children,
+				cur_prop_ring_argop_arm_b_children);
+	}
+}
+
+static void kcov_cmp_render_frontier_cold_weight_blend_cohort(long elapsed,
+							      unsigned long delta_frontier_blend_samples,
+							      unsigned long cur_frontier_blend_samples,
+							      unsigned int cur_frontier_blend_arm_a_children,
+							      unsigned int cur_frontier_blend_arm_b_children)
+{
+	/* frontier_cold_weight blend A/B cohort (Arm A = return historical
+	 * OLD weight, Arm B = promote blended weight including the
+	 * transition term to the picker).  Both arms fire the would-be
+	 * divergence sampler frontier_blend_samples in lock-step, so the
+	 * delta gate uses that fire counter and the row prints the
+	 * realised cohort split as the denominator the operator
+	 * normalises the live Arm B promotion against.  Neither arm has
+	 * a per-arm fire counter by design -- the blend logic itself is
+	 * untouched. */
+	if (delta_frontier_blend_samples) {
+		unsigned long rate_milli = (delta_frontier_blend_samples * 1000UL) / (unsigned long)elapsed;
+		stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu, children a=%u b=%u)\n",
+				"frontier_blend_samples",
+				delta_frontier_blend_samples,
+				rate_milli / 1000, rate_milli % 1000,
+				cur_frontier_blend_samples,
+				cur_frontier_blend_arm_a_children,
+				cur_frontier_blend_arm_b_children);
+	}
+}
+
+static void kcov_cmp_render_adaptive_remote_kcov_cohort(long elapsed,
+							unsigned long delta_remote_adaptive_samples,
+							unsigned long cur_remote_adaptive_samples,
+							unsigned int cur_remote_adaptive_arm_a_children,
+							unsigned int cur_remote_adaptive_arm_b_children,
+							unsigned long cur_remote_adaptive_would_demote,
+							unsigned long cur_remote_adaptive_would_promote,
+							unsigned long cur_remote_adaptive_would_force,
+							unsigned long cur_remote_adaptive_would_gate_promote,
+							unsigned long cur_remote_adaptive_agree)
+{
+	/* Adaptive remote-KCOV mode A/B cohort (Arm A = static remote-
+	 * mode policy / byte-identical to pre-row baseline, Arm B = the
+	 * adaptive demote/promote disposition from
+	 * remote_adaptive_decide() substituted as the live remote_mode).
+	 * Both arms feed the would-be disposition counters in lock-
+	 * step, so the headline samples row uses the realised cohort
+	 * split as the denominator the operator normalises the Arm-B-
+	 * only live divergence against.  The three sub-rows print
+	 * unconditionally inside the gate so the breakdown is visible
+	 * even on windows where one disposition is zero (the absence
+	 * itself is the diagnostic signal). */
+	if (delta_remote_adaptive_samples) {
+		unsigned long rate_milli = (delta_remote_adaptive_samples * 1000UL) / (unsigned long)elapsed;
+		stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu, children a=%u b=%u)\n",
+				"remote_adaptive_samples",
+				delta_remote_adaptive_samples,
+				rate_milli / 1000, rate_milli % 1000,
+				cur_remote_adaptive_samples,
+				cur_remote_adaptive_arm_a_children,
+				cur_remote_adaptive_arm_b_children);
+		stats_log_write("  %-32s total %lu\n",
+				"remote_adaptive_would_demote",
+				cur_remote_adaptive_would_demote);
+		stats_log_write("  %-32s total %lu\n",
+				"remote_adaptive_would_promote",
+				cur_remote_adaptive_would_promote);
+		stats_log_write("  %-32s total %lu\n",
+				"remote_adaptive_would_force",
+				cur_remote_adaptive_would_force);
+		stats_log_write("  %-32s total %lu\n",
+				"remote_adaptive_would_gate_promote",
+				cur_remote_adaptive_would_gate_promote);
+		stats_log_write("  %-32s total %lu\n",
+				"remote_adaptive_agree",
+				cur_remote_adaptive_agree);
+	}
+}
+
+static void kcov_cmp_render_per_arg_ownership_sidecar(unsigned long cur_blanket_address_scrub_slots_walked,
+						      unsigned long cur_arg_meta_addr_with_meta,
+						      unsigned long cur_arg_meta_addr_without_meta,
+						      unsigned long cur_arg_meta_argtype_stale,
+						      unsigned long cur_arg_meta_scrub_would_destroy_in,
+						      unsigned long cur_arg_meta_scrub_would_preserve_out)
+{
+	/* SHADOW per-arg ownership-metadata sidecar + blanket-scrub
+	 * contradiction census.  Telemetry only -- the arg_meta_init
+	 * seed pass and blanket_address_scrub walk are byte-unchanged;
+	 * no live decision reads dir/owner/flags.  Cumulative totals
+	 * (no per-window delta) match the remote_adaptive_would_*
+	 * neighbours above: the shadow PROOF here is the ratio between
+	 * the with_meta / without_meta rows and the destroy_in /
+	 * preserve_out skew the operator is sizing future metadata-
+	 * aware scrub coverage against.  Unconditional render so the
+	 * baseline (all zero until per-generator coverage populates
+	 * dir/owner) is itself visible. */
+	stats_log_write("  %-32s total %lu\n",
+			"blanket_address_scrub_slots_walked",
+			cur_blanket_address_scrub_slots_walked);
+	stats_log_write("  %-32s total %lu\n",
+			"arg_meta_addr_with_meta",
+			cur_arg_meta_addr_with_meta);
+	stats_log_write("  %-32s total %lu\n",
+			"arg_meta_addr_without_meta",
+			cur_arg_meta_addr_without_meta);
+	stats_log_write("  %-32s total %lu\n",
+			"arg_meta_argtype_stale",
+			cur_arg_meta_argtype_stale);
+	stats_log_write("  %-32s total %lu\n",
+			"arg_meta_scrub_would_destroy_in",
+			cur_arg_meta_scrub_would_destroy_in);
+	stats_log_write("  %-32s total %lu\n",
+			"arg_meta_scrub_would_preserve_out",
+			cur_arg_meta_scrub_would_preserve_out);
+}
+
+static void kcov_cmp_render_structure_aware_picker_cohort(long elapsed,
+							  unsigned long delta_mut_structured_shadow_divergences,
+							  unsigned long cur_mut_structured_shadow_divergences,
+							  unsigned long cur_mut_structured_shadow_samples,
+							  unsigned int cur_mut_structured_arm_a_children,
+							  unsigned int cur_mut_structured_arm_b_children)
+{
+	/* SHADOW structure-aware picker A/B cohort (Arm A = no shadow
+	 * draw / RNG byte-identical to pre-shadow control, Arm B =
+	 * doubled-pool shadow draw on structured-eligible slots).  Print
+	 * the Arm B divergence delta paired with the cumulative sample
+	 * base and the realised cohort split so the operator can size
+	 * the shadow's per-window steer-rate against the population-
+	 * normalised denominator.  Arm A has no symmetric divergence
+	 * counter by design (control arm skips the shadow draw entirely);
+	 * samples and divergences are both Arm-B-only accumulators. */
+	if (delta_mut_structured_shadow_divergences) {
+		unsigned long rate_milli = (delta_mut_structured_shadow_divergences * 1000UL) / (unsigned long)elapsed;
+		stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu, samples %lu, children a=%u b=%u)\n",
+				"mut_structured_shadow_divergences",
+				delta_mut_structured_shadow_divergences,
+				rate_milli / 1000, rate_milli % 1000,
+				cur_mut_structured_shadow_divergences,
+				cur_mut_structured_shadow_samples,
+				cur_mut_structured_arm_a_children,
+				cur_mut_structured_arm_b_children);
+	}
+}
+
 /*
  * Surface the KCOV CMP counters in the same 600s periodic stats-log-file
  * dump as defense_counters_periodic_dump.  Without this the cmp counters
@@ -2380,34 +2805,11 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 					rate_milli / 1000, rate_milli % 1000, cur_chaos_suppressed,
 					cmp_hints_chaos_query() ? 1 : 0);
 		}
-		/* Wild-write detection: any non-zero delta is news, and the
-		 * 0/s rate noise of a one-shot stomp is fine -- the canary
-		 * counters surface a real corruption channel, not a hot-path
-		 * statistic, so the same row format is used as the rest. */
-		if (delta_count_oob) {
-			unsigned long rate_milli = (delta_count_oob * 1000UL) / (unsigned long)elapsed;
-			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
-					"cmp_hints_count_oob", delta_count_oob,
-					rate_milli / 1000, rate_milli % 1000, cur_count_oob);
-		}
-		if (delta_canary_lock_post) {
-			unsigned long rate_milli = (delta_canary_lock_post * 1000UL) / (unsigned long)elapsed;
-			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
-					"cmp_hints_canary_lock_post_corrupt", delta_canary_lock_post,
-					rate_milli / 1000, rate_milli % 1000, cur_canary_lock_post);
-		}
-		if (delta_canary_pre) {
-			unsigned long rate_milli = (delta_canary_pre * 1000UL) / (unsigned long)elapsed;
-			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
-					"cmp_hints_canary_pre_corrupt", delta_canary_pre,
-					rate_milli / 1000, rate_milli % 1000, cur_canary_pre);
-		}
-		if (delta_canary_post) {
-			unsigned long rate_milli = (delta_canary_post * 1000UL) / (unsigned long)elapsed;
-			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
-					"cmp_hints_canary_post_corrupt", delta_canary_post,
-					rate_milli / 1000, rate_milli % 1000, cur_canary_post);
-		}
+		kcov_cmp_render_wild_write_delta(elapsed,
+						 delta_count_oob, cur_count_oob,
+						 delta_canary_lock_post, cur_canary_lock_post,
+						 delta_canary_pre, cur_canary_pre,
+						 delta_canary_post, cur_canary_post);
 		if (delta_reexec_attempts) {
 			unsigned long rate_milli = (delta_reexec_attempts * 1000UL) / (unsigned long)elapsed;
 			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
@@ -2468,65 +2870,15 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 					"reexec_pending_dropped", delta_reexec_pending_dropped,
 					rate_milli / 1000, rate_milli % 1000, cur_reexec_pending_dropped);
 		}
-		/* Re-exec gate skip-reason breakdown.  Counters are mutually
-		 * exclusive: every dispatch_step that reaches the tail bumps
-		 * exactly one of {skip_in_reexec, skip_disabled, skip_mode,
-		 * skip_chain_mid, skip_no_new_cmp, skip_no_pending, skip_rate,
-		 * pass}.  The sum across the eight is the parent-call
-		 * population the gate samples from -- read the per-reason
-		 * fractions to see why reexec_attribution_found shrinks to
-		 * reexec_attempts (rate-gate skip vs destructive vs pending-
-		 * full vs pass), instead of inferring it from a single delta.
-		 * Skip-row order mirrors the evaluation order in
-		 * random-syscall.c so the funnel reads top-to-bottom. */
-		if (delta_reexec_gate_skip_in_reexec) {
-			unsigned long rate_milli = (delta_reexec_gate_skip_in_reexec * 1000UL) / (unsigned long)elapsed;
-			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
-					"reexec_gate_skip_in_reexec", delta_reexec_gate_skip_in_reexec,
-					rate_milli / 1000, rate_milli % 1000, cur_reexec_gate_skip_in_reexec);
-		}
-		if (delta_reexec_gate_skip_disabled) {
-			unsigned long rate_milli = (delta_reexec_gate_skip_disabled * 1000UL) / (unsigned long)elapsed;
-			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
-					"reexec_gate_skip_disabled", delta_reexec_gate_skip_disabled,
-					rate_milli / 1000, rate_milli % 1000, cur_reexec_gate_skip_disabled);
-		}
-		if (delta_reexec_gate_skip_mode) {
-			unsigned long rate_milli = (delta_reexec_gate_skip_mode * 1000UL) / (unsigned long)elapsed;
-			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
-					"reexec_gate_skip_mode", delta_reexec_gate_skip_mode,
-					rate_milli / 1000, rate_milli % 1000, cur_reexec_gate_skip_mode);
-		}
-		if (delta_reexec_gate_skip_chain_mid) {
-			unsigned long rate_milli = (delta_reexec_gate_skip_chain_mid * 1000UL) / (unsigned long)elapsed;
-			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
-					"reexec_gate_skip_chain_mid", delta_reexec_gate_skip_chain_mid,
-					rate_milli / 1000, rate_milli % 1000, cur_reexec_gate_skip_chain_mid);
-		}
-		if (delta_reexec_gate_skip_no_new_cmp) {
-			unsigned long rate_milli = (delta_reexec_gate_skip_no_new_cmp * 1000UL) / (unsigned long)elapsed;
-			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
-					"reexec_gate_skip_no_new_cmp", delta_reexec_gate_skip_no_new_cmp,
-					rate_milli / 1000, rate_milli % 1000, cur_reexec_gate_skip_no_new_cmp);
-		}
-		if (delta_reexec_gate_skip_no_pending) {
-			unsigned long rate_milli = (delta_reexec_gate_skip_no_pending * 1000UL) / (unsigned long)elapsed;
-			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
-					"reexec_gate_skip_no_pending", delta_reexec_gate_skip_no_pending,
-					rate_milli / 1000, rate_milli % 1000, cur_reexec_gate_skip_no_pending);
-		}
-		if (delta_reexec_gate_skip_rate) {
-			unsigned long rate_milli = (delta_reexec_gate_skip_rate * 1000UL) / (unsigned long)elapsed;
-			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
-					"reexec_gate_skip_rate", delta_reexec_gate_skip_rate,
-					rate_milli / 1000, rate_milli % 1000, cur_reexec_gate_skip_rate);
-		}
-		if (delta_reexec_gate_pass) {
-			unsigned long rate_milli = (delta_reexec_gate_pass * 1000UL) / (unsigned long)elapsed;
-			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
-					"reexec_gate_pass", delta_reexec_gate_pass,
-					rate_milli / 1000, rate_milli % 1000, cur_reexec_gate_pass);
-		}
+		kcov_cmp_render_reexec_skip_reason_breakdown(elapsed,
+							     delta_reexec_gate_skip_in_reexec, cur_reexec_gate_skip_in_reexec,
+							     delta_reexec_gate_skip_disabled, cur_reexec_gate_skip_disabled,
+							     delta_reexec_gate_skip_mode, cur_reexec_gate_skip_mode,
+							     delta_reexec_gate_skip_chain_mid, cur_reexec_gate_skip_chain_mid,
+							     delta_reexec_gate_skip_no_new_cmp, cur_reexec_gate_skip_no_new_cmp,
+							     delta_reexec_gate_skip_no_pending, cur_reexec_gate_skip_no_pending,
+							     delta_reexec_gate_skip_rate, cur_reexec_gate_skip_rate,
+							     delta_reexec_gate_pass, cur_reexec_gate_pass);
 		if (delta_cmp_parent_calls_enabled) {
 			unsigned long rate_milli = (delta_cmp_parent_calls_enabled * 1000UL) / (unsigned long)elapsed;
 			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
@@ -2591,249 +2943,57 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 						cur_prop_injected_callsite[cs]);
 			}
 		}
-		/* SHADOW per-entry feedback scoring counters
-		 * ([11-feedback-loop] PHASE 4).  Live pool selection is
-		 * uniform here -- these counters record outcomes for a future
-		 * A/B-gated live-pick weight to read.  cmp_hint_wins /
-		 * cmp_hint_misses are PC-edge only; cmp_hint_cmp_novelty_wins
-		 * is the SEPARATE CMP-mode novelty channel (kept out of the
-		 * PC-edge score). */
-		if (delta_cmp_hints_consumed) {
-			unsigned long rate_milli = (delta_cmp_hints_consumed * 1000UL) / (unsigned long)elapsed;
-			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
-					"cmp_hints_consumed", delta_cmp_hints_consumed,
-					rate_milli / 1000, rate_milli % 1000, cur_cmp_hints_consumed);
-		}
-		if (delta_cmp_hint_wins) {
-			unsigned long rate_milli = (delta_cmp_hint_wins * 1000UL) / (unsigned long)elapsed;
-			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
-					"cmp_hint_wins", delta_cmp_hint_wins,
-					rate_milli / 1000, rate_milli % 1000, cur_cmp_hint_wins);
-		}
-		if (delta_cmp_hint_misses) {
-			unsigned long rate_milli = (delta_cmp_hint_misses * 1000UL) / (unsigned long)elapsed;
-			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
-					"cmp_hint_misses", delta_cmp_hint_misses,
-					rate_milli / 1000, rate_milli % 1000, cur_cmp_hint_misses);
-		}
-		if (delta_cmp_hint_cmp_novelty_wins) {
-			unsigned long rate_milli = (delta_cmp_hint_cmp_novelty_wins * 1000UL) / (unsigned long)elapsed;
-			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
-					"cmp_hint_cmp_novelty_wins",
-					delta_cmp_hint_cmp_novelty_wins,
-					rate_milli / 1000, rate_milli % 1000,
-					cur_cmp_hint_cmp_novelty_wins);
-		}
-		if (delta_cmp_hint_stash_overflow) {
-			unsigned long rate_milli = (delta_cmp_hint_stash_overflow * 1000UL) / (unsigned long)elapsed;
-			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
-					"cmp_hint_stash_overflow",
-					delta_cmp_hint_stash_overflow,
-					rate_milli / 1000, rate_milli % 1000,
-					cur_cmp_hint_stash_overflow);
-		}
-		if (delta_cmp_hint_credit_entry_evicted) {
-			unsigned long rate_milli = (delta_cmp_hint_credit_entry_evicted * 1000UL) / (unsigned long)elapsed;
-			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
-					"cmp_hint_credit_entry_evicted",
-					delta_cmp_hint_credit_entry_evicted,
-					rate_milli / 1000, rate_milli % 1000,
-					cur_cmp_hint_credit_entry_evicted);
-		}
-		/* SHADOW recent-CMP-pool tier: inserts/evicts measure the
-		 * absorbed-but-otherwise-dropped throughput; would_pick /
-		 * would_miss is the plateau-window try_get population the
-		 * recent-first arm would sample from (legible from the default
-		 * durable-first run); live_picks stays at zero until the A/B
-		 * flag is flipped to recent-first; promotions is the recording-
-		 * only conversion counter the follow-up commit will route into
-		 * a recent->durable promotion.  Without these rows the tier
-		 * looks identical to "disabled" in the logs -- a non-zero
-		 * would_pick rate with cmp_recent_inserts == 0 is the empty-
-		 * ring signature; a healthy non-zero would_pick alongside
-		 * inserts says the recent-first arm has real signal to draw
-		 * from. */
-		if (delta_cmp_recent_inserts) {
-			unsigned long rate_milli = (delta_cmp_recent_inserts * 1000UL) / (unsigned long)elapsed;
-			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
-					"cmp_recent_inserts", delta_cmp_recent_inserts,
-					rate_milli / 1000, rate_milli % 1000, cur_cmp_recent_inserts);
-		}
-		if (delta_cmp_recent_evicts) {
-			unsigned long rate_milli = (delta_cmp_recent_evicts * 1000UL) / (unsigned long)elapsed;
-			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
-					"cmp_recent_evicts", delta_cmp_recent_evicts,
-					rate_milli / 1000, rate_milli % 1000, cur_cmp_recent_evicts);
-		}
-		if (delta_cmp_recent_would_pick) {
-			unsigned long rate_milli = (delta_cmp_recent_would_pick * 1000UL) / (unsigned long)elapsed;
-			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
-					"cmp_recent_would_pick", delta_cmp_recent_would_pick,
-					rate_milli / 1000, rate_milli % 1000, cur_cmp_recent_would_pick);
-		}
-		if (delta_cmp_recent_would_miss) {
-			unsigned long rate_milli = (delta_cmp_recent_would_miss * 1000UL) / (unsigned long)elapsed;
-			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
-					"cmp_recent_would_miss", delta_cmp_recent_would_miss,
-					rate_milli / 1000, rate_milli % 1000, cur_cmp_recent_would_miss);
-		}
-		if (delta_cmp_recent_live_picks) {
-			unsigned long rate_milli = (delta_cmp_recent_live_picks * 1000UL) / (unsigned long)elapsed;
-			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
-					"cmp_recent_live_picks", delta_cmp_recent_live_picks,
-					rate_milli / 1000, rate_milli % 1000, cur_cmp_recent_live_picks);
-		}
-		/* A/B baseline inject denom (Arm A = 16, Arm B = 12).  Print
-		 * the realised cohort split + per-arm baseline-fire deltas +
-		 * the per-call divergence count so the operator can size the
-		 * A/B effect on PC-edge yield against population-normalised
-		 * fire rates without recomputing from cmp_hint_callsite[]. */
-		if (delta_cmp_inject_arm_a_baseline_fires) {
-			unsigned long rate_milli = (delta_cmp_inject_arm_a_baseline_fires * 1000UL) / (unsigned long)elapsed;
-			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu, children %u)\n",
-					"cmp_inject_arm_a_baseline_fires",
-					delta_cmp_inject_arm_a_baseline_fires,
-					rate_milli / 1000, rate_milli % 1000,
-					cur_cmp_inject_arm_a_baseline_fires,
-					cur_cmp_inject_arm_a_children);
-		}
-		if (delta_cmp_inject_arm_b_baseline_fires) {
-			unsigned long rate_milli = (delta_cmp_inject_arm_b_baseline_fires * 1000UL) / (unsigned long)elapsed;
-			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu, children %u)\n",
-					"cmp_inject_arm_b_baseline_fires",
-					delta_cmp_inject_arm_b_baseline_fires,
-					rate_milli / 1000, rate_milli % 1000,
-					cur_cmp_inject_arm_b_baseline_fires,
-					cur_cmp_inject_arm_b_children);
-		}
-		if (delta_cmp_inject_denom_diverged) {
-			unsigned long rate_milli = (delta_cmp_inject_denom_diverged * 1000UL) / (unsigned long)elapsed;
-			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
-					"cmp_inject_denom_diverged",
-					delta_cmp_inject_denom_diverged,
-					rate_milli / 1000, rate_milli % 1000,
-					cur_cmp_inject_denom_diverged);
-		}
-		/* A/B handle_arg_op prop_ring cohort (Arm A = no pull, Arm B =
-		 * low-prob pull).  Print the realised cohort split + the Arm B
-		 * fire delta so the operator can size the per-row contribution
-		 * to propagation_injected against the population-normalised fire
-		 * rate.  Arm A has no symmetric fire counter by design (control
-		 * arm skips the pull entirely). */
-		if (delta_prop_ring_argop_arm_b_fires) {
-			unsigned long rate_milli = (delta_prop_ring_argop_arm_b_fires * 1000UL) / (unsigned long)elapsed;
-			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu, children a=%u b=%u)\n",
-					"prop_ring_argop_arm_b_fires",
-					delta_prop_ring_argop_arm_b_fires,
-					rate_milli / 1000, rate_milli % 1000,
-					cur_prop_ring_argop_arm_b_fires,
-					cur_prop_ring_argop_arm_a_children,
-					cur_prop_ring_argop_arm_b_children);
-		}
-		/* frontier_cold_weight blend A/B cohort (Arm A = return historical
-		 * OLD weight, Arm B = promote blended weight including the
-		 * transition term to the picker).  Both arms fire the would-be
-		 * divergence sampler frontier_blend_samples in lock-step, so the
-		 * delta gate uses that fire counter and the row prints the
-		 * realised cohort split as the denominator the operator
-		 * normalises the live Arm B promotion against.  Neither arm has
-		 * a per-arm fire counter by design -- the blend logic itself is
-		 * untouched. */
-		if (delta_frontier_blend_samples) {
-			unsigned long rate_milli = (delta_frontier_blend_samples * 1000UL) / (unsigned long)elapsed;
-			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu, children a=%u b=%u)\n",
-					"frontier_blend_samples",
-					delta_frontier_blend_samples,
-					rate_milli / 1000, rate_milli % 1000,
-					cur_frontier_blend_samples,
-					cur_frontier_blend_arm_a_children,
-					cur_frontier_blend_arm_b_children);
-		}
-		/* Adaptive remote-KCOV mode A/B cohort (Arm A = static remote-
-		 * mode policy / byte-identical to pre-row baseline, Arm B = the
-		 * adaptive demote/promote disposition from
-		 * remote_adaptive_decide() substituted as the live remote_mode).
-		 * Both arms feed the would-be disposition counters in lock-
-		 * step, so the headline samples row uses the realised cohort
-		 * split as the denominator the operator normalises the Arm-B-
-		 * only live divergence against.  The three sub-rows print
-		 * unconditionally inside the gate so the breakdown is visible
-		 * even on windows where one disposition is zero (the absence
-		 * itself is the diagnostic signal). */
-		if (delta_remote_adaptive_samples) {
-			unsigned long rate_milli = (delta_remote_adaptive_samples * 1000UL) / (unsigned long)elapsed;
-			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu, children a=%u b=%u)\n",
-					"remote_adaptive_samples",
-					delta_remote_adaptive_samples,
-					rate_milli / 1000, rate_milli % 1000,
-					cur_remote_adaptive_samples,
-					cur_remote_adaptive_arm_a_children,
-					cur_remote_adaptive_arm_b_children);
-			stats_log_write("  %-32s total %lu\n",
-					"remote_adaptive_would_demote",
-					cur_remote_adaptive_would_demote);
-			stats_log_write("  %-32s total %lu\n",
-					"remote_adaptive_would_promote",
-					cur_remote_adaptive_would_promote);
-			stats_log_write("  %-32s total %lu\n",
-					"remote_adaptive_would_force",
-					cur_remote_adaptive_would_force);
-			stats_log_write("  %-32s total %lu\n",
-					"remote_adaptive_would_gate_promote",
-					cur_remote_adaptive_would_gate_promote);
-			stats_log_write("  %-32s total %lu\n",
-					"remote_adaptive_agree",
-					cur_remote_adaptive_agree);
-		}
-		/* SHADOW per-arg ownership-metadata sidecar + blanket-scrub
-		 * contradiction census.  Telemetry only -- the arg_meta_init
-		 * seed pass and blanket_address_scrub walk are byte-unchanged;
-		 * no live decision reads dir/owner/flags.  Cumulative totals
-		 * (no per-window delta) match the remote_adaptive_would_*
-		 * neighbours above: the shadow PROOF here is the ratio between
-		 * the with_meta / without_meta rows and the destroy_in /
-		 * preserve_out skew the operator is sizing future metadata-
-		 * aware scrub coverage against.  Unconditional render so the
-		 * baseline (all zero until per-generator coverage populates
-		 * dir/owner) is itself visible. */
-		stats_log_write("  %-32s total %lu\n",
-				"blanket_address_scrub_slots_walked",
-				cur_blanket_address_scrub_slots_walked);
-		stats_log_write("  %-32s total %lu\n",
-				"arg_meta_addr_with_meta",
-				cur_arg_meta_addr_with_meta);
-		stats_log_write("  %-32s total %lu\n",
-				"arg_meta_addr_without_meta",
-				cur_arg_meta_addr_without_meta);
-		stats_log_write("  %-32s total %lu\n",
-				"arg_meta_argtype_stale",
-				cur_arg_meta_argtype_stale);
-		stats_log_write("  %-32s total %lu\n",
-				"arg_meta_scrub_would_destroy_in",
-				cur_arg_meta_scrub_would_destroy_in);
-		stats_log_write("  %-32s total %lu\n",
-				"arg_meta_scrub_would_preserve_out",
-				cur_arg_meta_scrub_would_preserve_out);
-		/* SHADOW structure-aware picker A/B cohort (Arm A = no shadow
-		 * draw / RNG byte-identical to pre-shadow control, Arm B =
-		 * doubled-pool shadow draw on structured-eligible slots).  Print
-		 * the Arm B divergence delta paired with the cumulative sample
-		 * base and the realised cohort split so the operator can size
-		 * the shadow's per-window steer-rate against the population-
-		 * normalised denominator.  Arm A has no symmetric divergence
-		 * counter by design (control arm skips the shadow draw entirely);
-		 * samples and divergences are both Arm-B-only accumulators. */
-		if (delta_mut_structured_shadow_divergences) {
-			unsigned long rate_milli = (delta_mut_structured_shadow_divergences * 1000UL) / (unsigned long)elapsed;
-			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu, samples %lu, children a=%u b=%u)\n",
-					"mut_structured_shadow_divergences",
-					delta_mut_structured_shadow_divergences,
-					rate_milli / 1000, rate_milli % 1000,
-					cur_mut_structured_shadow_divergences,
-					cur_mut_structured_shadow_samples,
-					cur_mut_structured_arm_a_children,
-					cur_mut_structured_arm_b_children);
-		}
+		kcov_cmp_render_per_entry_feedback_scoring(elapsed,
+							   delta_cmp_hints_consumed, cur_cmp_hints_consumed,
+							   delta_cmp_hint_wins, cur_cmp_hint_wins,
+							   delta_cmp_hint_misses, cur_cmp_hint_misses,
+							   delta_cmp_hint_cmp_novelty_wins, cur_cmp_hint_cmp_novelty_wins,
+							   delta_cmp_hint_stash_overflow, cur_cmp_hint_stash_overflow,
+							   delta_cmp_hint_credit_entry_evicted, cur_cmp_hint_credit_entry_evicted);
+		kcov_cmp_render_recent_cmp_pool_tier(elapsed,
+						     delta_cmp_recent_inserts, cur_cmp_recent_inserts,
+						     delta_cmp_recent_evicts, cur_cmp_recent_evicts,
+						     delta_cmp_recent_would_pick, cur_cmp_recent_would_pick,
+						     delta_cmp_recent_would_miss, cur_cmp_recent_would_miss,
+						     delta_cmp_recent_live_picks, cur_cmp_recent_live_picks);
+		kcov_cmp_render_ab_baseline_inject_denom(elapsed,
+							 delta_cmp_inject_arm_a_baseline_fires, cur_cmp_inject_arm_a_baseline_fires,
+							 delta_cmp_inject_arm_b_baseline_fires, cur_cmp_inject_arm_b_baseline_fires,
+							 delta_cmp_inject_denom_diverged, cur_cmp_inject_denom_diverged,
+							 cur_cmp_inject_arm_a_children,
+							 cur_cmp_inject_arm_b_children);
+		kcov_cmp_render_handle_arg_op_prop_ring_cohort(elapsed,
+							       delta_prop_ring_argop_arm_b_fires,
+							       cur_prop_ring_argop_arm_b_fires,
+							       cur_prop_ring_argop_arm_a_children,
+							       cur_prop_ring_argop_arm_b_children);
+		kcov_cmp_render_frontier_cold_weight_blend_cohort(elapsed,
+								  delta_frontier_blend_samples,
+								  cur_frontier_blend_samples,
+								  cur_frontier_blend_arm_a_children,
+								  cur_frontier_blend_arm_b_children);
+		kcov_cmp_render_adaptive_remote_kcov_cohort(elapsed,
+							    delta_remote_adaptive_samples,
+							    cur_remote_adaptive_samples,
+							    cur_remote_adaptive_arm_a_children,
+							    cur_remote_adaptive_arm_b_children,
+							    cur_remote_adaptive_would_demote,
+							    cur_remote_adaptive_would_promote,
+							    cur_remote_adaptive_would_force,
+							    cur_remote_adaptive_would_gate_promote,
+							    cur_remote_adaptive_agree);
+		kcov_cmp_render_per_arg_ownership_sidecar(cur_blanket_address_scrub_slots_walked,
+							  cur_arg_meta_addr_with_meta,
+							  cur_arg_meta_addr_without_meta,
+							  cur_arg_meta_argtype_stale,
+							  cur_arg_meta_scrub_would_destroy_in,
+							  cur_arg_meta_scrub_would_preserve_out);
+		kcov_cmp_render_structure_aware_picker_cohort(elapsed,
+							      delta_mut_structured_shadow_divergences,
+							      cur_mut_structured_shadow_divergences,
+							      cur_mut_structured_shadow_samples,
+							      cur_mut_structured_arm_a_children,
+							      cur_mut_structured_arm_b_children);
 	}
 
 	kcov_cmp_render_hyp_shadow_stats_block(elapsed);
