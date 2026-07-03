@@ -1,97 +1,38 @@
 /*
  * nftables_churn - nftables table/chain/set/rule churn racing live traffic.
  *
- * Per-syscall fuzzing rolls a fresh NFT_MSG_* per call and never gets
- * past nf_tables_api's per-message lookup gates: NEWCHAIN demands an
- * existing table, NEWRULE demands an existing chain, DELRULE demands
- * a chain that has rules.  The interesting bug surface lives in the
- * transaction-commit path (nf_tables_commit / nft_chain_commit_drop_policy
- * / nft_rule_destroy / nft_set_destroy), where the rule/set/chain has
- * to actually have references — live verdicts pointing at it, an
- * ongoing lookup walking it, an in-flight skb traversing the hook
- * while the commit tears it down.  Without a coherent table -> chain
- * -> rule chain plus traffic into the registered hook, the whole
- * commit machinery never engages and the recent CVE-class window
- * (CVE-2024-1086 nft_verdict UAF, CVE-2023-32233 anonymous-set
- * double-free, CVE-2024-26642 nft_setelem, CVE-2024-26581
- * nft_set_rbtree, CVE-2023-3390 nft_chain) stays cold.
+ * Targets the transaction-commit teardown in net/netfilter/nf_tables_api.c
+ * (nf_tables_commit / nft_chain_commit_drop_policy / nft_rule_destroy /
+ * nft_set_destroy) against an in-flight skb traversing the hook -- the
+ * commit-vs-softirq-walk window behind the recent nftables CVE lineage
+ * (nft_verdict UAF, anonymous-set double-free, nft_setelem/rbtree/chain
+ * reference races).  Flat per-syscall fuzz never assembles a coherent
+ * table -> chain -> rule tree plus traffic into the registered hook, so
+ * the commit machinery never engages.
  *
- * Sequence (per invocation):
- *   1. userns_run_in_ns(CLONE_NEWNET) forks a transient grandchild
- *      into an owned user namespace + private net namespace.  The
- *      whole rest of the sequence runs inside that grandchild; its
- *      _exit() tears down both namespaces along with any table,
- *      chain, rule, set and socket left behind, so no host nftables
- *      ruleset is touched.  Helper -EPERM (hardened userns policy
- *      refused CLONE_NEWUSER) latches the whole op off; transient
- *      setup failure (-EAGAIN) skips the iteration without latching.
- *   2. Bring lo up inside the netns (per-grandchild one-time).
- *   3. socket(AF_NETLINK, NETLINK_NETFILTER).  EPROTONOSUPPORT here
- *      means CONFIG_NF_NETLINK is off — latch ns_unsupported_nfnetlink
- *      and skip permanently.
- *   4. NFT_MSG_NEWTABLE with a random nf_tables family chosen from
- *      {NFPROTO_INET, NFPROTO_BRIDGE, NFPROTO_NETDEV} per call.  The
- *      family is rolled per-iteration so the commit path runs against
- *      different per-family afinfo registrations, not just one.
- *      EOPNOTSUPP / EAFNOSUPPORT / EPROTONOSUPPORT all latch
- *      ns_unsupported_nf_tables — the kernel's nf_tables module is
- *      unavailable, no point retrying.
- *   5. NFT_MSG_NEWSET creating an anonymous (NFT_SET_ANONYMOUS) set
- *      keyed on ipv4_addr (key_len = 4).  The anonymous flag is what
- *      the CVE-2023-32233 double-free window hangs off — anonymous
- *      sets are tied to the rule that owns them and torn down on
- *      rule removal, with a refcount arrangement that historically
- *      races commit vs abort.
- *   6. NFT_MSG_NEWCHAIN creating an auxiliary regular (no-hook) chain
- *      "chain_aux" — the jump target referenced by the rule's verdict
- *      in step 8.  Created before the base chain so the base-chain
- *      rule's NFT_JUMP/NFT_GOTO can bind successfully on first commit.
- *   7. NFT_MSG_NEWCHAIN creating a base chain "chain_in" with
- *      hook=NF_INET_LOCAL_IN, prio=0, type="filter".  This is the
- *      chain the loopback traffic in step 9 will traverse.
- *   8. NFT_MSG_NEWRULE on chain_in carrying one immediate-verdict
- *      expression: dreg=NFT_REG_VERDICT, code in {NFT_JUMP, NFT_GOTO}
- *      (rolled per call), chain="chain_aux".  A jumping verdict is
- *      what arms the nft_verdict UAF window the CVE-2024-1086 lineage
- *      lives in.
- *   9. socket(AF_INET, SOCK_DGRAM); sendto a small payload to
- *      127.0.0.1:NFT_INNER_PORT inside the netns.  Drives the input
- *      hook via nf_hook_slow on the receive side, walking the freshly
- *      installed chain_in -> chain_aux jump.  BUDGETED+JITTER around
- *      base 3 with a STORM_BUDGET_NS 200 ms wall-clock cap and a
- *      64-frame upper limit on the inner send loop.
- *  10. NFT_MSG_NEWRULE inserted at NFTA_RULE_POSITION = 1 (small
- *      handle guess) on chain_in, mid-traffic.  The position-based
- *      insert path is a different commit-time codepath from the
- *      append-only path in step 8 and historically has its own
- *      reference-count windows.
- *  11. NFT_MSG_DELRULE on chain_in with no NFTA_RULE_HANDLE — kernel
- *      treats this as "delete every rule in chain_in", racing any
- *      in-flight skb from step 9 still draining through softirq.
- *      This is the targeted commit-vs-traffic teardown window.
- *  12. NFT_MSG_DELSET on the anonymous set, then NFT_MSG_DELTABLE on
- *      the table.  DELTABLE cascades cleanup of any chain/rule/set
- *      survivors via nf_tables_table_destroy, racing the same
- *      in-flight skbs.
+ * Sequence per invocation inside a userns_run_in_ns grandchild (identity
+ * userns + CLONE_NEWNET, _exit reaps): NEWTABLE with family rotated across
+ * {NFPROTO_INET, NFPROTO_BRIDGE, NFPROTO_NETDEV} per iter so each per-family
+ * afinfo registration commits; NEWSET anonymous (NFT_SET_ANONYMOUS,
+ * key_len=4, ipv4_addr); NEWCHAIN "chain_aux" (regular, no hook) before
+ * NEWCHAIN "chain_in" (NF_INET_LOCAL_IN, prio 0, "filter") so the base
+ * chain's NFT_JUMP/NFT_GOTO to chain_aux binds on first commit; NEWRULE on
+ * chain_in with an immediate verdict (NFT_JUMP or NFT_GOTO) arming the
+ * verdict-UAF window; AF_INET SOCK_DGRAM burst to 127.0.0.1 walks
+ * nf_hook_slow across the fresh chain; mid-traffic NEWRULE at
+ * NFTA_RULE_POSITION=1 (position-insert has its own commit codepath); then
+ * DELRULE (no handle -> flush all rules) and DELSET/DELTABLE racing the
+ * still-draining skbs.
  *
- * CVE class: CVE-2024-1086 nft_verdict use-after-free (in-the-wild
- * LPE), CVE-2023-32233 anonymous set double-free, CVE-2024-26642
- * nft_setelem ref window, CVE-2024-26581 nft_set_rbtree race,
- * CVE-2023-3390 nft_chain reference window — the most CVE-productive
- * subsystem in the kernel for the last 24 months.  Subsystems reached:
- * net/netfilter/nf_tables_api.c, net/netfilter/nft_immediate.c,
- * net/netfilter/nft_set_*.c, net/netfilter/nf_tables_offload.c,
- * net/netfilter/core.c (nf_hook_slow).
+ * Brick-safety: private netns only, loopback only, no host ruleset ever
+ * touched; burst BUDGETED+JITTER around base 3 with STORM_BUDGET_NS 200 ms
+ * wall cap and 64-frame ceiling; all I/O MSG_DONTWAIT with SO_RCVTIMEO=1s
+ * on the nfnetlink socket.
  *
- * Self-bounding: one full create/destroy cycle per invocation, packet
- * burst count BUDGETED+JITTER around base 3 with a STORM_BUDGET_NS
- * 200 ms wall-clock cap and a 64-frame ceiling on the inner send
- * loop.  All netlink and socket I/O is MSG_DONTWAIT, SO_RCVTIMEO=1s
- * on the netfilter ack socket, so an unresponsive kernel can't wedge
- * us past the SIGALRM(1s) cap inherited from child.c.  Loopback only
- * (private netns).  Three latches so a kernel without
- * CONFIG_NF_NETLINK / CONFIG_NF_TABLES / CONFIG_INET pays the EFAIL
- * once and skips that path permanently.
+ * Latches: userns -EPERM latches the op off for the child's life.  Inside
+ * the grandchild: ns_unsupported_nfnetlink on NETLINK_NETFILTER socket
+ * EPROTONOSUPPORT (CONFIG_NF_NETLINK=n); ns_unsupported_nf_tables on
+ * NEWTABLE EOPNOTSUPP/EAFNOSUPPORT/EPROTONOSUPPORT.
  */
 
 #include "nftables-churn-internal.h"
