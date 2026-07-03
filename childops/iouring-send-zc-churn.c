@@ -4,96 +4,36 @@
  * IORING_UNREGISTER_BUFFERS and IORING_REGISTER_BUFFERS_UPDATE against
  * the in-flight notif slot.
  *
- * The io_uring zerocopy send contract pins user-visible buffers (either
- * fixed via IORING_REGISTER_BUFFERS or one-shot via the SQE) and emits
- * a per-send notification CQE once the kernel has released its hold on
- * the backing pages -- structurally similar to MSG_ZEROCOPY's
- * sk_error_queue notif but routed through the ring's own completion
- * queue and tied to an io_uring rsrc_node refcount on the registered
- * buffer table.  The bug class this childop drives is the rsrc_node
- * lifetime racing the notif:
+ * Target: io_uring send-ZC notif path (io_send_zc_finish family) and
+ * the fixed-buffer rsrc_node refcount.  Bug class: rsrc_node lifetime
+ * racing the deferred notif -- UNREGISTER_BUFFERS while a SEND_ZC notif
+ * still holds a ref to the imu_index (historic UAF), REGISTER_BUFFERS_
+ * UPDATE replacing the slot an in-flight SQE latched onto, and the
+ * broader retransmit-vs-free notif collisions on recycled fixed-buffer
+ * slots.
  *
- *   - IORING_UNREGISTER_BUFFERS while a SEND_ZC notif still holds a
- *     reference to the imu_index it just allocated against (the
- *     historic UAF surface: the rsrc_node freed before the notif's
- *     io_rsrc_node_charge_node ref was decremented);
- *   - IORING_REGISTER_BUFFERS_UPDATE replacing the slot the SEND_ZC
- *     SQE just queued against (the imu_index race: the new io_mapped_ubuf
- *     installed under the same slot before the in-flight notif latched
- *     onto the old one);
- *   - the broader io_send_zc_finish family of retransmit-vs-free bugs,
- *     where an SQE's deferred notif posting collides with a follow-up
- *     SQE that recycles the same fixed-buffer slot.
+ * Per outer iteration (BUDGETED+JITTER, 200 ms wall cap):
+ * io_uring_setup(8, SINGLE_ISSUER|DEFER_TASKRUN) with a no-flags
+ * fallback on EINVAL; REGISTER_BUFFERS an 8 x 4 KiB anon pool as
+ * iov[8]; SOCK_STREAM + SO_ZEROCOPY + SO_{RCV,SND}TIMEO=100 ms
+ * connected to a one-shot accept-and-exit fork on 127.0.0.1.  Inner
+ * loop (BUDGETED 4/8/16, JITTER) submits SEND_ZC / SENDMSG_ZC SQEs
+ * with IORING_RECVSEND_FIXED_BUF pointing at buf_index i%8, then
+ * races A: UNREGISTER_BUFFERS mid-flight; B: REGISTER_BUFFERS_UPDATE
+ * replacing slot 0 with a fresh mmap.  io_uring_enter drives the
+ * rsrc_node release/notif posting; reap acceptor.
  *
- * Per outer-loop iteration (BUDGETED + JITTER, 200 ms wall-clock cap):
+ * Brick-safety: loopback TCP only against a one-shot acceptor;
+ * registered-buffer pool exactly 8 x 4 KiB per iter, freed on exit;
+ * min_complete bounded by submitted count so a stuck CQE can't hang;
+ * acceptor WNOHANG-polled then SIGTERM if it overstays.
  *
- *   1.  io_uring_setup(8, &p) with IORING_SETUP_SINGLE_ISSUER |
- *       IORING_SETUP_DEFER_TASKRUN -- the strictest submission contract,
- *       which is also the path the rsrc_node refcounting was hardened
- *       against most recently.  EINVAL on older kernels falls back to
- *       a no-flags retry so the rest of the sequence still runs.
- *   2.  mmap the SQ ring, CQ ring (or single-mmap alias), and SQE array
- *       inline (no liburing).
- *   3.  mmap 8 x 4 KiB anonymous pages and IORING_REGISTER_BUFFERS them
- *       as iov[8].  Each becomes an io_mapped_ubuf in the ring's
- *       fixed-buffer table indexed 0..7 -- the buf_index pool the
- *       SEND_ZC SQEs will reference.
- *   4.  socket(AF_INET, SOCK_STREAM); SO_RCVTIMEO=100ms; SO_SNDTIMEO=100ms;
- *       SO_ZEROCOPY=1; connect(127.0.0.1) to a one-shot accept-and-exit
- *       acceptor fork.
- *   5.  Inner SEND_ZC loop (BUDGETED 4 / floor 8 / cap 16, JITTER):
- *         a. SQE: IORING_OP_SEND_ZC referring buf_index = i % 8.  Sets
- *            IORING_RECVSEND_FIXED_BUF so the kernel resolves the buffer
- *            via the registered table (the rsrc_node ref path) rather
- *            than walking msg_iov.  msg.msg_iov picks 1..4 iovs from
- *            the buffer pool.
- *         b. SQE: IORING_OP_SENDMSG_ZC pointing at a 1..4-iov msghdr
- *            assembled from the same buffer pool (the multi-iov variant
- *            also walks the rsrc_node table per iov).
- *   6.  RACE A: IORING_UNREGISTER_BUFFERS issued mid-flight, while a
- *       SEND_ZC notif may still reference an imu_index.  On a fixed
- *       kernel the notif's rsrc_node ref keeps the table alive past
- *       the unregister; the bug surface is the ordering window between
- *       the rsrc_node refcount drop and the notif's deferred lookup.
- *   7.  RACE B: IORING_REGISTER_BUFFERS_UPDATE replacing slot 0 with a
- *       freshly-mmap'd page.  An in-flight SEND_ZC SQE that latched
- *       onto the old io_mapped_ubuf must continue to resolve to it
- *       (refcounted), not be redirected to the new page mid-send.
- *   8.  io_uring_enter(SQ submit, min_complete = N) drives the ring
- *       through the rsrc_node release / notif posting paths and reaps
- *       both the send-completion CQEs and the deferred ZC notif CQEs.
- *   9.  munmap pages; close socket; close ring fd; reap acceptor.
- *
- * Per-process cap-gate latch: ns_unsupported_iouring_send_zc_churn fires
- * on ENOSYS / EPERM / ENOMEM / EINVAL from the very first
- * io_uring_setup() probe.  Once latched, every subsequent invocation
- * just bumps runs+setup_failed and returns.  Mirrors the latch shape in
- * msg_zerocopy_churn / tcp_ulp_swap_churn / handshake_req_abort.
- *
- * Brick-safety:
- *   - Every mutation runs on a fresh loopback TCP socket connected to a
- *     one-shot accept-and-exit fork.  Nothing host-visible.
- *   - Inner SEND_ZC loop is BUDGETED (base 4 / floor 8 / cap 16) with
- *     JITTER and a 200 ms wall-clock cap; SO_RCVTIMEO / SO_SNDTIMEO of
- *     100 ms on every fd; the io_uring_enter min_complete is bounded
- *     by what we submitted, so a stuck completion can't hang the loop.
- *   - Acceptor child is reaped via WNOHANG-poll then SIGTERM if it
- *     overstays.
- *   - The registered-buffer pool is exactly 8 x 4 KiB pages (32 KiB
- *     total), allocated and freed per iteration; no shared mappings.
- *
- * Header gate: __has_include(<linux/io_uring.h>) -- without it the
- * compile is skipped (translation unit produces no symbols, the dispatch
- * table entry stays a forward-declared NULL no-op via the dormant slot).
- * Opcode constants are read from the kernel uapi header; the ones this
- * childop names (IORING_OP_SEND_ZC, IORING_OP_SENDMSG_ZC,
- * IORING_REGISTER_BUFFERS, IORING_UNREGISTER_BUFFERS,
- * IORING_REGISTER_BUFFERS_UPDATE, IORING_SETUP_SINGLE_ISSUER,
- * IORING_SETUP_DEFER_TASKRUN, IORING_RECVSEND_FIXED_BUF) are all
- * upstream as of the 6.x line; missing-symbol fallbacks #define them to
- * the stable UAPI integer values so older toolchains still compile (the
- * runtime io_uring_setup / io_uring_register calls return EINVAL on
- * kernels that don't recognise them, and the cap-gate latches).
+ * Latch: ns_unsupported_iouring_send_zc_churn fires on ENOSYS/EPERM/
+ * ENOMEM/EINVAL from the first io_uring_setup probe (same shape as
+ * msg_zerocopy_churn / tcp_ulp_swap_churn).  Header-gated by
+ * __has_include on <linux/io_uring.h>; per-symbol #define fallbacks
+ * at stable UAPI values for the SEND_ZC / SETUP / RECVSEND opcodes so
+ * older toolchains still compile (kernel returns EINVAL, latch fires).
  */
 
 #if __has_include(<linux/io_uring.h>)
