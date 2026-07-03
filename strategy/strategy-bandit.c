@@ -34,6 +34,14 @@
 #include "stats.h"
 #include "strategy.h"
 
+/* Blended-reward mode.  Default OFF keeps the bandit reward total
+ * byte-identical to today (call-count + weighted CMP novelty + the
+ * transition secondary when its own mode is COMBINED).  See the
+ * enum documentation in include/strategy.h for the SHADOW->COMBINED
+ * ramp discipline this mirrors from kcov_transition_reward_mode. */
+enum bandit_reward_edge_count_mode bandit_reward_edge_count_mode =
+	BANDIT_REWARD_EDGE_COUNT_OFF;
+
 /*
  * UCB1 exploration constant.  Standard derivation gives c = sqrt(2);
  * we leave it tunable because reward magnitudes (edges-per-window)
@@ -118,6 +126,8 @@ void bandit_record_pull(int arm, enum strategy_selection_reason reason,
 {
 	unsigned long cmp_term;
 	unsigned long trans_term;
+	unsigned long edge_count_term;
+	enum bandit_reward_edge_count_mode ec_mode;
 	unsigned long total;
 	unsigned int chaos_idx;
 	int i;
@@ -166,7 +176,32 @@ void bandit_record_pull(int arm, enum strategy_selection_reason reason,
 		trans_term = 0;
 	}
 
+	/* Blended edge-count secondary reward.  Read the mode once so
+	 * shadow accounting and the fold-into-total decision cannot drift
+	 * against each other if the operator toggles the knob mid-run
+	 * (nothing does today, but the RELAXED load is trivially cheap
+	 * and keeps the two branches consistent).  Under OFF the term
+	 * stays zero and no shadow counter bumps -- byte-identical to
+	 * the pre-knob reward path.  Under SHADOW_ONLY / COMBINED compute
+	 * edge_count_term = pc_edge_count /
+	 * EDGE_COUNT_BANDIT_REWARD_WEIGHT_RECIPROCAL and bump the
+	 * bandit_edge_count_reward_added shadow counter on every
+	 * non-forced window where the term is non-zero, so the SHADOW
+	 * ramp exposes how often COMBINED would move the reward before
+	 * the mode is promoted.  Only COMBINED folds the term into the
+	 * ucb1-facing total below. */
+	ec_mode = __atomic_load_n(&bandit_reward_edge_count_mode,
+				  __ATOMIC_RELAXED);
+	if (ec_mode == BANDIT_REWARD_EDGE_COUNT_OFF) {
+		edge_count_term = 0;
+	} else {
+		edge_count_term = pc_edge_count /
+				  EDGE_COUNT_BANDIT_REWARD_WEIGHT_RECIPROCAL;
+	}
+
 	total = pc_edge_calls + cmp_term + trans_term;
+	if (ec_mode == BANDIT_REWARD_EDGE_COUNT_COMBINED)
+		total += edge_count_term;
 
 	/* Always bucket the just-finished window by (arm, reason) before
 	 * any cohort-gated learner update.  These matrices are diagnostic
@@ -227,6 +262,18 @@ void bandit_record_pull(int arm, enum strategy_selection_reason reason,
 			   __ATOMIC_RELAXED);
 	__atomic_fetch_add(&shm->bandit_reward_pc_edge_count[arm],
 			   pc_edge_count, __ATOMIC_RELAXED);
+
+	/* Shadow-firing counter for the edge-count secondary reward.  Fires
+	 * on every non-forced window where the term is non-zero, under
+	 * both SHADOW_ONLY (term computed but not folded into total) and
+	 * COMBINED (term folded above).  Placed here alongside the
+	 * learner-facing bandit_pulls[] / bandit_reward_pc_edge_count[]
+	 * bumps so a reader can join the three series at the same cadence.
+	 * Sibling of bandit_cmp_reward_added below -- see the field
+	 * comment in include/stats.h for the ramp semantics. */
+	if (edge_count_term > 0)
+		__atomic_fetch_add(&shm->stats.bandit_edge_count_reward_added,
+				   1UL, __ATOMIC_RELAXED);
 
 	/* Discounted "recent" series update.  Decay every arm's counters
 	 * by gamma = 1 - alpha first, THEN credit the active arm with one

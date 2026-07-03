@@ -791,6 +791,68 @@ const char *picker_mode_name(enum picker_mode_t mode);
 #define CMP_BANDIT_REWARD_WEIGHT_RECIPROCAL 4
 
 /*
+ * Reward weight for the edge-count secondary signal, expressed as the
+ * integer reciprocal.  pc_edge_count (real bucket-edge bits flipped
+ * per window) is typically an order of magnitude larger than
+ * pc_edge_calls (calls with >=1 edge), so the raw delta would dwarf
+ * the call-count headline signal.  A reciprocal of 8 folds a 1/8
+ * secondary weight onto the call-count reward, matching the
+ * "PC-edge stays dominant, secondary signal tie-breaks" shape the
+ * CMP-novelty term already uses.  Hard-coded for the initial shadow
+ * ramp; the operator-facing bandit_edge_count_reward_added counter
+ * plus the parallel bandit_reward_pc_edge_count[] series lets the
+ * value be re-tuned against real runs before COMBINED is defaulted
+ * on.
+ */
+#define EDGE_COUNT_BANDIT_REWARD_WEIGHT_RECIPROCAL 8
+
+/*
+ * Blended-reward mode (--bandit-reward-edge-count).  Wires the
+ * bandit_reward_pc_edge_count[] real-bucket-count series -- collected
+ * today alongside bandit_reward_calls[] but never consumed by
+ * ucb1_score -- into the learner-facing reward total via the
+ * secondary edge-count term.  Shadow-first ramp mirrors
+ * kcov_transition_reward_mode:
+ *
+ *   OFF          - default, byte-identical to today.  The edge-count
+ *                  term is not computed, no shadow counter bumps, and
+ *                  the bandit reward total remains pc_edge_calls +
+ *                  cmp_term (+ trans_term when the transition reward
+ *                  is combined).  Fixed-seed runs reproduce the
+ *                  pre-knob per-window reward exactly.
+ *   SHADOW_ONLY  - compute the edge_count_term = pc_edge_count /
+ *                  EDGE_COUNT_BANDIT_REWARD_WEIGHT_RECIPROCAL and
+ *                  bump the diagnostic bandit_edge_count_reward_added
+ *                  counter on every window where the term is
+ *                  non-zero, but DO NOT fold the term into the total
+ *                  the ucb1 learner sees.  Selection stays
+ *                  byte-identical to OFF; the counter surfaces how
+ *                  often COMBINED would have moved the reward, and
+ *                  the operator can compare its rate against
+ *                  bandit_cmp_reward_added / the frequency the CMP
+ *                  secondary term fires today.
+ *   COMBINED     - fold the edge_count_term into the bandit reward
+ *                  total.  bandit_reward_calls[] then reflects
+ *                  call-count + weighted CMP novelty + weighted
+ *                  edge-count on every window.  Rollout path: promote
+ *                  to COMBINED only after the SHADOW counter shows
+ *                  the term firing on a meaningful fraction of
+ *                  windows on a representative run.
+ *
+ * SR_PLATEAU_FORCE windows already short-circuit the learner-facing
+ * update path in bandit_record_pull(); the edge-count term goes
+ * through the same gate, so a forced-intervention window's edge
+ * yield is not folded into the learner even under COMBINED.
+ */
+enum bandit_reward_edge_count_mode {
+	BANDIT_REWARD_EDGE_COUNT_OFF = 0,
+	BANDIT_REWARD_EDGE_COUNT_SHADOW_ONLY = 1,
+	BANDIT_REWARD_EDGE_COUNT_COMBINED = 2,
+};
+
+extern enum bandit_reward_edge_count_mode bandit_reward_edge_count_mode;
+
+/*
  * Record the just-finished window's outcome for the bandit picker.
  * Always bumps the per-arm-per-reason buckets
  * bandit_pulls_by_reason[arm][reason] /

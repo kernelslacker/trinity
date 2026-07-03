@@ -1381,6 +1381,9 @@ void dump_stats_strategy_summary(void)
 	if (shm->stats.bandit_cmp_reward_added)
 		stat_row("strategy", "bandit_cmp_reward_added",
 			 shm->stats.bandit_cmp_reward_added);
+	if (shm->stats.bandit_edge_count_reward_added)
+		stat_row("strategy", "bandit_edge_count_reward_added",
+			 shm->stats.bandit_edge_count_reward_added);
 	if (shm->stats.frontier_strategy_picks)
 		stat_row("strategy", "frontier_strategy_picks",
 			 shm->stats.frontier_strategy_picks);

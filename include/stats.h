@@ -2612,6 +2612,23 @@ struct stats_s {
 	 * long with __atomic_fetch_add suffices. */
 	unsigned long bandit_cmp_reward_added;
 
+	/* Sibling of bandit_cmp_reward_added for the edge-count secondary
+	 * reward term (--bandit-reward-edge-count).  Bumped from
+	 * bandit_record_pull() whenever the just-finished non-forced
+	 * window's pc_edge_count delta produced a non-zero
+	 * edge_count_term = pc_edge_count /
+	 * EDGE_COUNT_BANDIT_REWARD_WEIGHT_RECIPROCAL.  Bumped under both
+	 * SHADOW_ONLY (where the term is computed but not folded into
+	 * bandit_reward_calls[]) and COMBINED (where it is), so the counter
+	 * measures "windows where the term would move the reward" rather
+	 * than "windows where selection actually saw it" -- gives the
+	 * operator a run's-worth of firing-rate data to gate the shadow-
+	 * to-combined promotion on.  Bumped from the CAS-serialised
+	 * maybe_rotate_strategy() path so a plain unsigned long with
+	 * __atomic_fetch_add suffices, same discipline as
+	 * bandit_cmp_reward_added above. */
+	unsigned long bandit_edge_count_reward_added;
+
 	/* Number of syscall picks completed under STRATEGY_COVERAGE_FRONTIER.
 	 * Bumped on the success path of set_syscall_nr_coverage_frontier --
 	 * surfaces how many calls the frontier-weighted picker actually

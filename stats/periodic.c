@@ -727,6 +727,14 @@ static const struct {
 	 * contributing to arm selection. */
 	{ "bandit_cmp_reward_added",
 	  offsetof(struct stats_s, bandit_cmp_reward_added) },
+	/* Sibling of bandit_cmp_reward_added for the edge-count secondary
+	 * reward.  Fires on windows where pc_edge_count /
+	 * EDGE_COUNT_BANDIT_REWARD_WEIGHT_RECIPROCAL was non-zero under
+	 * either SHADOW_ONLY or COMBINED; zero on default runs (mode OFF).
+	 * Periodic firing rate is the gate the operator watches before
+	 * promoting the mode to COMBINED. */
+	{ "bandit_edge_count_reward_added",
+	  offsetof(struct stats_s, bandit_edge_count_reward_added) },
 	/* Picks accepted by STRATEGY_COVERAGE_FRONTIER's frontier-weighted
 	 * roulette wheel.  Rate-of-change tracks the arm's actual share of
 	 * the fleet's syscall throughput when the bandit picker selects it. */

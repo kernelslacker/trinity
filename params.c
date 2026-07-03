@@ -560,6 +560,7 @@ static const struct option_help option_descs[] = {
 	{ "kcov-trace-size", 0, "per-child KCOV PC-trace buffer size in number of unsigned longs (default: KCOV_TRACE_SIZE = 262144 longs = 2 MB on 64-bit). Must be a power of 2 in [KCOV_TRACE_SIZE, KCOV_TRACE_SIZE_MAX] (max 4M longs = 32 MB). A/B knob for testing whether the hot syscalls (mincore/mlock/writev/shmget/shmat) that today saturate trace_buf[0] at KCOV_TRACE_SIZE-1 are dropping real tail edges; default value is byte-identical to a build without this flag." },
 	{ "kcov-transition-coverage", 0, "shadow transition-coverage map mode: shadow (default; hash consecutive canonical PCs into a separate 16M-slot map and surface a transition top-N beside the PC top-N in the stats dump, with no effect on reward/frontier/plateau steering) or off (skip the per-PC transition hash entirely)." },
 	{ "kcov-transition-reward", 0, "transition-edge reward mode (requires --kcov-transition-coverage=shadow): combined (default; feed the capped transition delta into frontier_cold_weight, bandit_record_pull, and the frontier-edge ring so syscalls producing only transitions earn frontier credit), shadow-only (compute the transition reward and bump per-strategy attribution counters in shm->stats but leave live picker behaviour byte-identical to the pre-knob baseline -- rollback path), or off (skip the reward path entirely). Remote-mode transitions are excluded from live reward under combined until ordering quality is checked." },
+	{ "bandit-reward-edge-count", 0, "blended edge-count secondary reward for the UCB1 bandit (default off): off (byte-identical to the pre-knob baseline -- edge_count_term is not computed, no shadow counter bumps, and bandit_reward_calls[] stays call-count + weighted CMP-novelty + trans_term), shadow-only (compute edge_count_term = pc_edge_count / EDGE_COUNT_BANDIT_REWARD_WEIGHT_RECIPROCAL and bump the bandit_edge_count_reward_added counter on every non-forced window where the term is non-zero, but do NOT fold the term into the ucb1 total -- selection stays byte-identical to off, the counter surfaces how often COMBINED would move the reward), or combined (fold edge_count_term into the reward total so the bandit learns from real bucket-edge yield alongside the call-count headline). SR_PLATEAU_FORCE windows are excluded from the learner path even under combined, mirroring the CMP and transition secondary reward terms. Shadow-first ramp -- validate the shadow firing rate on a real run before promoting the mode." },
 	{ "expensive-adaptive", 0, "adaptive accept-rate mode for the EXPENSIVE early-out gate in random-syscall.c (default off): off (the gate is byte-identical to the prior `syscall_is_expensive && !ONE_IN(1000)` expression -- no kcov_shm reads, no adaptive math, single ONE_IN(1000) RNG draw fires only on EXPENSIVE-flagged candidates so the pick stream is preserved bit-for-bit for a given seed), shadow-only (compute the adaptive denominator from per-syscall productivity (per_syscall_edges + warm-loaded _prior) / per_syscall_calls with a total_calls -- last_edge_at gap decay back toward the floor, but the LIVE accept still draws ONE_IN(1000) so the pick stream stays identical to off; placeholder for the follow-up row that wires shadow A/B counters), or combined (the adaptive denominator drives the live accept -- a productive EXPENSIVE syscall earns up to a 1/50 rate, a once-productive-now-stale slot decays back to the 1/1000 floor over EXPENSIVE_ADAPTIVE_DECAY_STEPS contiguous KCOV_COLD_THRESHOLD-sized gap steps). Degrade-safe: kcov-less / bad-index callers fall back to the static 1/1000 floor." },
 	{ "kernel_taint",	'T', "controls which kernel taint flags should be considered (see README)" },
 	{ "list",		'L', "list all syscalls known on this architecture" },
@@ -644,6 +645,7 @@ static const struct option longopts[] = {
 	{ "kcov-trace-size", required_argument, NULL, 0 },
 	{ "kcov-transition-coverage", required_argument, NULL, 0 },
 	{ "kcov-transition-reward", required_argument, NULL, 0 },
+	{ "bandit-reward-edge-count", required_argument, NULL, 0 },
 	{ "expensive-adaptive", required_argument, NULL, 0 },
 	{ "children", required_argument, NULL, 'C' },
 	{ "clowntown", no_argument, NULL, 0 },
@@ -852,6 +854,24 @@ static bool parse_kcov_options(int opt, const char *name, char *arg)
 			kcov_transition_reward_mode = KCOV_TRANSITION_REWARD_COMBINED;
 		} else {
 			outputerr("--kcov-transition-reward: unknown mode '%s' (expected off, shadow-only, or combined)\n",
+				arg);
+			exit(EXIT_FAILURE);
+		}
+		return true;
+	}
+
+	if (strcmp("bandit-reward-edge-count", name) == 0) {
+		if (strcmp(arg, "off") == 0) {
+			bandit_reward_edge_count_mode =
+				BANDIT_REWARD_EDGE_COUNT_OFF;
+		} else if (strcmp(arg, "shadow-only") == 0) {
+			bandit_reward_edge_count_mode =
+				BANDIT_REWARD_EDGE_COUNT_SHADOW_ONLY;
+		} else if (strcmp(arg, "combined") == 0) {
+			bandit_reward_edge_count_mode =
+				BANDIT_REWARD_EDGE_COUNT_COMBINED;
+		} else {
+			outputerr("--bandit-reward-edge-count: unknown mode '%s' (expected off, shadow-only, or combined)\n",
 				arg);
 			exit(EXIT_FAILURE);
 		}
