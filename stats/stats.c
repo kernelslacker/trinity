@@ -2454,7 +2454,7 @@ void __cold dump_stats_childop_decay_recency(void)
 	}
 }
 
-void __cold dump_stats_topo_pair_shadow(void)
+static void __cold dump_stats_topo_pair_shadow(void)
 {
 	/* Per-setup_op aggregates from the surviving ring entries.  Sized
 	 * by NR_CHILD_OP_TYPES so a corrupted setup_op byte that masks to

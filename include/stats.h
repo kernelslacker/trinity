@@ -5268,7 +5268,6 @@ void topo_pair_record_shadow(unsigned int nr, unsigned int reason);
  * child.  Self-skips if topo_pair_records is zero (the ring has never
  * been written).  Pure reader; no live decision consumes either the
  * ring or any of the counters this function aggregates. */
-void dump_stats_topo_pair_shadow(void) __cold;
 
 /* Run-identity baseline snapshot.  Captured once at parent start, AFTER
  * warm_start_all() has loaded the persisted KCOV bitmap / minicorpus /
