@@ -70,6 +70,7 @@ static char *fill_quotafile(void)
 
 	if (!buf)
 		return NULL;
+	memset(buf, 0, 48);
 	strncpy(buf, src, 47);
 	buf[47] = '\0';
 	return buf;
@@ -86,7 +87,8 @@ static void sanitise_quotactl(struct syscallrecord *rec)
 
 	/* arg2: block device path */
 	special = (char *) get_writable_struct(32);
-	if (!special)
+		return;
+	memset(special, 0, 32);
 		return;
 	strncpy(special, "/dev/sda1", 31);
 	special[31] = '\0';

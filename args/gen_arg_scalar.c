@@ -497,6 +497,7 @@ unsigned long gen_arg_xattr_name(struct syscallentry *entry __unused__,
 	name = (char *) get_writable_struct(XATTR_NAME_BUFSZ);
 	if (name == NULL)
 		return 0;
+	memset(name, 0, XATTR_NAME_BUFSZ);
 	gen_xattr_name_pooled(name, XATTR_NAME_BUFSZ);
 	return (unsigned long) name;
 }
@@ -525,6 +526,7 @@ unsigned long gen_arg_fstype_name(struct syscallentry *entry __unused__,
 	name = (char *) get_writable_struct(FSTYPE_NAME_BUFSZ);
 	if (name == NULL)
 		return 0;
+	memset(name, 0, FSTYPE_NAME_BUFSZ);
 	gen_fstype_name_pooled(name, FSTYPE_NAME_BUFSZ);
 	return (unsigned long) name;
 }
