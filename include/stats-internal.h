@@ -97,8 +97,6 @@ void dump_live_cool_per_syscall_top(const unsigned long *arr,
 extern const char * const op_names[];
 bool pc_in_text(void *pc);
 unsigned long stat_field_load(const struct stat_field *f);
-unsigned long stat_gate_load(const struct stat_category *cat);
-unsigned long pct_thousandths(unsigned long num, unsigned long denom);
 
 /* Cluster entry points called back from dump_stats() in the stats.c
  * core.  dump_stats_json() lives in stats/json_dump.c;
