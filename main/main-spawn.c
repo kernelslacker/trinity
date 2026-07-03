@@ -136,8 +136,12 @@ static bool spawn_child(int childno)
 
 	/* Child won't get out of init_child until we write the pid */
 	__atomic_store_n(&pids[childno], pid, __ATOMIC_RELEASE);
+	/* CLOCK_MONOTONIC seconds -- the fast-die classifier subtracts
+	 * this from a monotonic `now` in record_reap(), so a wall-clock
+	 * NTP step between spawn and reap cannot drive the computed
+	 * lifetime negative and trip a spurious EXIT_SHM_CORRUPTION. */
 	if (spawn_times != NULL)
-		spawn_times[childno] = time(NULL);
+		spawn_times[childno] = (time_t)(mono_ns() / 1000000000ULL);
 	if (pidstatfiles[childno] >= 0) {
 		close(pidstatfiles[childno]);
 		pidstatfiles[childno] = -1;
