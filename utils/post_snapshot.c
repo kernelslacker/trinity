@@ -48,7 +48,7 @@ bool range_readable_user(const void *addr, size_t len)
 
 bool post_snapshot_str(char *dst, size_t dstsz, const char *src)
 {
-	size_t i;
+	volatile size_t i;
 
 	if (dst == NULL || dstsz == 0)
 		return false;
