@@ -1,83 +1,34 @@
 /*
  * mptcp_pm_churn - subflow add/remove race over a live MPTCP connection.
  *
- * The MPTCP path manager netlink family is the userspace control plane
- * for endpoint addresses, subflow steering, and per-namespace limits.
- * The bug class clustered here is the post-DEL race window: a
- * MPTCP_PM_CMD_DEL_ADDR followed promptly by data on the parent socket
- * exercises mptcp_pm_remove_anno_addr() and __mptcp_pm_release_addr()
- * concurrently with the data-plane subflow walker.  Subflow cleanup
- * (mptcp_pm_nl_subflow_chk_stale_on_addr / mptcp_pm_close_subflow)
- * runs against a sk that may still be writing through the very subflow
- * we're tearing down — exactly the shape of CVE-2024-26622
- * (mptcp_pm_remove_anno_addr UAF) and the sk_release-vs-pm-event family.
+ * Targets the post-DEL race window on the MPTCP path-manager genl family:
+ * MPTCP_PM_CMD_DEL_ADDR followed promptly by data on the parent socket runs
+ * mptcp_pm_remove_anno_addr() / __mptcp_pm_release_addr() and the subflow
+ * cleanup path (mptcp_pm_nl_subflow_chk_stale_on_addr / mptcp_pm_close_subflow)
+ * concurrently with the data-plane subflow walker -- exactly the shape of
+ * CVE-2024-26622 and the wider sk_release-vs-pm-event family.  Flat per-syscall
+ * fuzzing can't assemble the coherent quad this op needs: an established MPTCP
+ * socket on both ends, a primary subflow carrying data, and structurally-valid
+ * ADD/GET/DEL/SET pokes against mptcp_pm_genl_ops[].
  *
- * Reaching that window from flat per-syscall fuzzing is hopeless: it
- * needs an established MPTCP socket on both ends, a primary subflow
- * carrying data, plus a sequence of genetlink ADD/DEL/SET pokes against
- * mptcp_pm_genl_ops[] with structurally valid MPTCP_PM_ATTR_ADDR
- * payloads.  No combination of independent setsockopt/sendto calls
- * assembles that without active orchestration.
+ * Each invocation opens an IPPROTO_MPTCP client+server on 127.0.0.1, drives a
+ * baseline send() to reach mptcp_established(), then runs a BUDGETED loop
+ * pairing ADD_ADDR / GET_ADDR / DEL_ADDR against live send()s, occasionally
+ * folding in SET_LIMITS or FLUSH_ADDRS to walk the pernet pm_nl state under
+ * the same spinlock.  loc_id rolls in [1, 127] to stay inside
+ * __mptcp_pm_addr_id_check.
  *
- * Sequence (per invocation):
- *   1.  socket(AF_INET, SOCK_STREAM, IPPROTO_MPTCP) for both server and
- *       client; bind/listen the server on 127.0.0.1:0 and connect.
- *       EPROTONOSUPPORT latches ns_unsupported_mptcp for the rest of
- *       this child's lifetime — CONFIG_MPTCP=n is fixed for the process.
- *   2.  accept() on the server side, drive a baseline send() over the
- *       primary subflow so the connection is in mptcp_established().
- *   3.  genl_open("mptcp_pm", ...) — resolves the family id via a
- *       per-ctx CTRL_CMD_GETFAMILY; -ENOENT latches
- *       ns_unsupported_genetlink_mptcp for the rest of the process.
- *   4.  BUDGETED loop:
- *         a) MPTCP_PM_CMD_ADD_ADDR with MPTCP_PM_ATTR_ADDR carrying
- *            FAMILY=AF_INET, ID=loc_id, ADDR4=127.0.0.<rot>.  Drives
- *            mptcp_pm_nl_add_addr_received() on the listener / pm_nl
- *            tables and queues an MP_ADD_ADDR option for transmit.
- *         b) MPTCP_PM_CMD_GET_ADDR with the same nested ADDR (LOC_ID
- *            inside) — exercises the lookup-by-id path under the same
- *            pernet lock the ADD just released.
- *         c) send() on the live MPTCP socket — race window vs the
- *            ADD_ADDR option emit on the wire.
- *         d) MPTCP_PM_CMD_DEL_ADDR with the same nested ADDR — drives
- *            mptcp_pm_remove_anno_addr() and any in-flight subflow
- *            cleanup against the address we just installed.
- *         e) send() on the live MPTCP socket — the targeted race
- *            window: data path running concurrently with subflow
- *            teardown for the just-removed loc_id.
- *         f) Coin-flip: SET_LIMITS (rcv/subflows u32) or FLUSH_ADDRS
- *            (no attrs).  Both reach pernet pm_nl state under the
- *            spinlock and exercise the broader teardown vs walker
- *            shape (FLUSH walks every endpoint, SET_LIMITS just
- *            updates two counters but reaches the same lock).
- *   5.  Tear down the MPTCP sockets.  loc_id rolls forward bounded
- *       to [1, 127] — the kernel mptcp_pm rejects loc_id > 127 with
- *       EINVAL (per __mptcp_pm_addr_id_check), so going past that
- *       point just plateaus the rejection counter and burns budget.
+ * Brick-safety: loopback only; all sockets O_NONBLOCK so a wedged peer can't
+ * pin past child.c's SIGALRM(1s) backstop; genl ack socket has SO_RCVTIMEO.
+ * All addresses stay inside 127.0.0.0/8, nothing hits the wire.
  *
- * Self-bounding: one full cycle per invocation, all sockets O_NONBLOCK
- * (so a wedged peer can't pin past child.c's SIGALRM(1s) safety net),
- * loopback only.  The genetlink ack socket has SO_RCVTIMEO so an
- * unresponsive controller can't wedge the child either.  All address
- * payloads stay inside 127.0.0.0/8 so nothing hits the wire.
+ * Latches (per-process): ns_unsupported_mptcp on EPROTONOSUPPORT from
+ * IPPROTO_MPTCP socket() -- CONFIG_MPTCP=n is fixed for the process's life.
+ * ns_unsupported_genetlink_mptcp on ENOENT resolving the "mptcp_pm" family.
+ * EPERM / EADDRINUSE are counted and continued.
  *
- * Header gating: <linux/mptcp_pm.h> is the YNL-generated UAPI header
- * that ships from kernel 6.11 onward.  Older sysroots without it (the
- * legacy <linux/mptcp.h> doesn't expose the same constants) fall to a
- * stub that bumps runs+setup_failed and returns — same shape as
- * tipc-link-churn's __has_include fallback.
- *
- * Failure modes treated as benign coverage:
- *   - EPROTONOSUPPORT on the first IPPROTO_MPTCP socket(): kernel built
- *     without CONFIG_MPTCP.  Latched ns_unsupported_mptcp.
- *   - genl_open("mptcp_pm", ...) returns -ENOENT: the running kernel
- *     doesn't expose the mptcp_pm genl family.  Latched
- *     ns_unsupported_genetlink_mptcp.
- *   - EPERM on any genl op: trinity wasn't run with CAP_NET_ADMIN in
- *     the current netns.  Counted as a reject; the data-plane sends
- *     still exercise the MPTCP socket layer.
- *   - EADDRINUSE on bind: another child grabbed the same port; the
- *     kernel will pick a fresh ephemeral on the next iteration.
+ * Header-gated by __has_include(<linux/mptcp_pm.h>) (YNL header, 6.11+); older
+ * sysroots fall to the stub (setup_failed++), same shape as tipc-link-churn.
  */
 
 #include <errno.h>
