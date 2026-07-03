@@ -139,6 +139,14 @@ static bool reap_entry_is_fast_die(const struct reap_record *r)
 	 * Excluded in targeted mode only -- default fuzz mode keeps a zero
 	 * active set on the corruption path.
 	 */
+	/*
+	 * A child that bailed because the main process disappeared (child.c
+	 * PDEATHSIG race) is a clean shutdown, not corruption -- never a
+	 * fast-die, in any mode.
+	 */
+	if (r->exit_status == EXIT_MAIN_DISAPPEARED)
+		return false;
+
 	if ((r->exit_status == EXIT_NO_SYSCALLS_ENABLED ||
 	     r->exit_status == EXIT_REACHED_COUNT ||
 	     r->exit_status == EXIT_EPOCH_DONE ||

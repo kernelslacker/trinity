@@ -469,7 +469,7 @@ void child_process(struct childdata *child, int childno)
 	 * guard has run), so the host-namespace comparison is reliable. */
 	(void)prctl(PR_SET_PDEATHSIG, SIGKILL);
 	if (getppid() != mainpid)
-		_exit(0);
+		_exit(EXIT_MAIN_DISAPPEARED);
 
 	/* Rename and lower OOM priority before init_child() runs.  init_child
 	 * does a lot of mmap-heavy work (init_child_mappings, futex setup,
