@@ -1,0 +1,300 @@
+# Trinity — Linux System-Call Fuzzer
+
+Trinity fuzzes the Linux syscall ABI. A **parent** process forks a fleet of
+**child** processes; each child, in a tight loop, either generates arguments
+for one random syscall and issues it, or runs a scripted multi-syscall
+"childop" workload. KCOV coverage and KCOV-CMP comparison operands are fed
+back to steer argument generation toward new kernel code paths. The parent
+never fuzzes — it forks/reaps/watchdogs the fleet and renders telemetry.
+
+This file is the map. Each subdirectory has its own `CLAUDE.md` with the full
+detail for that subsystem; the ~40 `.c` files at the repository **root** are
+the core runtime and are documented here since they have no directory of
+their own.
+
+## Execution model (the loop, top to bottom)
+
+1. `trinity.c` — process entry: option parse, table selection, warm-start of
+   persisted state, then hands control to the parent control plane.
+2. `main/` — the parent tick loop: fork the fleet, poll-reap exits,
+   D-state/stuck watchdog, periodic stats. Calls into nothing that fuzzes.
+3. `child.c` (+ `child-init.c`, `child-altop.c`) — each forked child's
+   per-iteration loop: pick a syscall **or** an alt-op (childop), run it under
+   an `alarm(1)` stall backstop, thread results forward.
+4. Per iteration the child either:
+   - **random syscall path** — `random_syscall/` picks a syscall number,
+     `syscalls/` supplies its descriptor, `args/` + `struct_catalog/` +
+     `rand/` + `net/` + `ioctls/` generate the arguments, `syscall.c` issues
+     the call, `results.c`/`kcov/`/`cmp_hints/` record the outcome; or
+   - **childop path** — `childops/` runs a scripted stateful sequence
+     (churn/race/storm/recipe) against one kernel subsystem.
+5. `stats/` aggregates everything the fleet writes into shared memory and the
+   parent prints it.
+
+## Subsystem map
+
+| Directory | Role |
+|---|---|
+| [main/](main/CLAUDE.md) | Parent control plane: fork/reap/watchdog/stats tick loop (4 files, ~3,626 LOC) |
+| [random_syscall/](random_syscall/CLAUDE.md) | Per-iteration hot path: pick, substitute, dispatch a syscall (5 files, ~4,807 LOC) |
+| [syscalls/](syscalls/CLAUDE.md) | One `struct syscallentry` descriptor per syscall — the declarative catalog (~361 files, ~56,400 LOC) |
+| [tables/](tables/CLAUDE.md) | Loads the per-syscall descriptors into shared memory and stamps derived fields (3 files, ~1,725 LOC) |
+| [args/](args/CLAUDE.md) | Argument generation layer driven by `argtype[]` (17 files, ~6,127 LOC) |
+| [struct_catalog/](struct_catalog/CLAUDE.md) | Static field-level layout catalog for kernel structs (33 files, ~10,289 LOC) |
+| [rand/](rand/CLAUDE.md) | Randomness core and scalar value generation (10 files, ~2,923 LOC) |
+| [net/](net/CLAUDE.md) | sockaddr / setsockopt / netlink / BPF generation per address family (114 files, ~26,684 LOC) |
+| [ioctls/](ioctls/CLAUDE.md) | Per-subsystem `ioctl()` argument generators (59 files, ~14,243 LOC) |
+| [fds/](fds/CLAUDE.md) | FD provider layer — where live file descriptors come from (37 files, ~9,123 LOC) |
+| [mm/](mm/CLAUDE.md) | Memory-management fuzzing targets (8 files, ~3,029 LOC) |
+| [childops/](childops/CLAUDE.md) | Scripted stateful multi-syscall workloads (churn/race/storm/recipe) (~145 files, ~81,300 LOC) |
+| [strategy/](strategy/CLAUDE.md) | Multi-strategy syscall-picker orchestration (7 files, ~3,700 LOC) |
+| [kcov/](kcov/CLAUDE.md) | Generic KCOV coverage collection (7 files, ~5,004 LOC) |
+| [cmp_hints/](cmp_hints/CLAUDE.md) | KCOV comparison-operand hint system (RedQueen-style) (8 files, ~5,951 LOC) |
+| [stats/](stats/CLAUDE.md) | Telemetry aggregation and operator-facing reporting (10 files, ~15,946 LOC) |
+| [lib/](lib/CLAUDE.md) | Generic reusable primitives, no shared state (7 files, ~1,457 LOC) |
+| [utils/](utils/CLAUDE.md) | General-purpose runtime support (23 files, ~9,181 LOC) |
+| [tools/](tools/CLAUDE.md) | Standalone offline socket-cache dump analyzer, not linked into trinity (2 files, ~225 LOC) |
+
+## Root-level core files
+
+These live at the repository root and are compiled directly into the trinity
+binary. Grouped by concern:
+
+### Startup & parent orchestration
+- `trinity.c` (1,016) — process entry: `main()`, option/table setup,
+  `warm_start_all()`, the epoch loop that repeatedly calls `main/`'s
+  `main_loop()`. Does not fuzz.
+- `params.c` (1,769) — CLI option parsing and the global tunables/flags the
+  rest of the codebase reads (targeting, `--childop`, richness levers, etc.).
+
+### Child runtime
+- `child.c` (1,048) — "each forked process runs this": the child's
+  per-iteration loop, alt-op vs. random-syscall selection, `alarm(1)` backstop.
+- `child-init.c` (1,406) — per-child bring-up: forked-process setup,
+  sandboxing/cap-drop, and the lifetime-constant state `child_process()` needs.
+  Split from child.c for parallel compilation.
+- `child-altop.c` (1,481) — the alt-op (childop) picker, `op_dispatch[]`
+  table, `enum child_op_type` ↔ name mapping, and dormancy/scoring machinery.
+- `child-canary.c` (1,522) — dormant-childop canary promotion queue: flips the
+  runtime gate for one dormant op at a time on a reserved canary child to
+  observe it in isolation.
+- `child-sentinel.c` (305) — periodic-work divergence sentinel: re-issues a
+  curated "should be deterministic" set each tick to catch state drift.
+- `child-capdrop-oracle.c` (316) — sampled assertion that the child's
+  `capset()`-to-empty privilege drop actually held.
+- `cred_throttle.c` (173) — credential-syscall observability oracle plus a
+  flag-gated throttle; companion to the random-syscall picker.
+
+### Syscall dispatch & results
+- `syscall.c` (1,652) — the machinery that actually issues the system calls.
+- `results.c` (277) — per-syscall result counters/scoreboards.
+- `pids.c` (484) — pid liveness/kill/validity primitives (per-child cache set
+  in `init_child()`).
+
+### Object pools & result threading
+- `objects.c` (1,956) — the `OBJ_LOCAL` object pool (`alloc_object`/
+  `add_object`) that lets one syscall's successful result (fd, id, handle)
+  become a later syscall's argument. See `lib/publish_resource.c` for the
+  typed stamping front end.
+- `futex-shared.c` (93) — cross-child shared futex-word pool (word lives in
+  shared memory, wrapper in the parent heap).
+- `prop_ring.c` (293) — per-child ring of recent small-integer syscall return
+  values, re-injectable as later arguments.
+- `fd-event.c` (390) — lock-free SPSC ring reporting child fd-state changes
+  (e.g. closes) up to the parent; built on `lib/spsc-ring.c`.
+
+### Argument content & environment enumeration
+- `pathnames.c` (797) — pathname pool for `ARG_PATHNAME` (mirrors testfiles).
+- `xattr.c` (416) — valid xattr name-string generation.
+- `blob_mutator.c` (607) — `--blob-mutator` content engine for opaque
+  `ARG_BUF_SIZED` arguments.
+- `devices.c` (173) — parses `/proc/devices` for the ioctl fuzzer.
+- `blockdevs.c` (125) — block-device enumeration.
+- `fstype.c` (114) — filesystem-type name strings for the fsopen/mount family.
+
+### Persistence & corpora
+- `minicorpus.c` (2,323) — coverage-guided argument retention: snapshots the
+  args that discovered new KCOV edges, replays them during later generation.
+- `sequence.c` (1,858) — sequence-aware fuzzing: dispatches short syscall
+  chains, threads each return into the next call's args, plus a chain corpus.
+- `deferred-free.c` (2,173) — deferred-free queue giving syscall-owned
+  allocations temporal overlap instead of freeing them immediately at return.
+
+### Signals, crashes & kernel-health monitoring
+- `signals.c` (1,431) — signal handling and the child signal-mask policy.
+- `signals-safelist.c` (75) — the CHILD-NON-FATAL signal set derived from that
+  policy.
+- `post-mortem.c` (559) — crash post-mortem dump assembly.
+- `pre_crash_ring.c` (246) — per-child ring of recent syscalls, drained by the
+  BUG path to recover the sequence that led to a crash.
+- `breadcrumb_ring.c` (230) — per-child breadcrumb ring for
+  `post_handler_corrupt_ptr` fires.
+- `taint.c` (172) — kernel taint-bit checking (first signal the kernel went
+  sideways).
+- `kmsg-monitor.c` (475) — live `/dev/kmsg` scraper capturing kernel
+  diagnostics before the taint bit flips; runs as a helper process outside the
+  fuzz-child `pids[]` machinery.
+
+## Where to start reading
+
+- **To follow one fuzz iteration end-to-end:** `child.c` →
+  `random_syscall/CLAUDE.md` → `syscalls/CLAUDE.md` → `args/CLAUDE.md` →
+  `syscall.c` → `results.c`.
+- **To understand the process fleet / lifecycle:** `trinity.c` →
+  `main/CLAUDE.md`.
+- **To understand scripted (non-random) fuzzing:** `childops/CLAUDE.md`.
+- **To understand coverage-guided steering:** `kcov/CLAUDE.md` +
+  `cmp_hints/CLAUDE.md` + `minicorpus.c`.
+
+## Notes for editors
+
+- The build uses `$(wildcard ...)` globs — dropping a new `.c` into most
+  directories compiles it automatically, but wiring a new *dispatched* childop
+  or syscall still requires the manual registration edits documented in
+  `childops/CLAUDE.md` and `syscalls/CLAUDE.md`.
+- Per-directory `CLAUDE.md` "Areas of attention" sections flag the
+  load-bearing invariants and the largest/riskiest files in each subsystem —
+  read the relevant one before a non-trivial change.
+
+## Randomness
+
+- Use trinity's helpers from `include/rnd.h`: `rnd_u32()`, `rnd_u64()`,
+  `rnd_modulo_u32(N)` (Lemire-debiased), `RAND_BOOL()`, `RAND_RANGE(lo, hi)`,
+  `ONE_IN(N)`.
+- Never add new `rand()` / `random()` / `drand48()` callsites — libc `rand()`
+  is an out-of-line LFSR behind a pthread mutex and shows up at 5%+ in perf on
+  hot fuzz paths. Existing callsites are migrating incrementally; leave the
+  `srand()` seeding in `rand/seed.c` until every caller has moved.
+
+## uapi gaps
+
+- When a uapi struct or field your code needs isn't in the local headers,
+  define a fallback rather than waiting on a header refresh: cross-cutting
+  fields → the matching mirror header under `include/kernel/<header.h>`
+  (mirroring the kernel header the definition comes from); single-file uses →
+  an at-use-site `#ifndef` guard. Shape:
+  ```
+  #ifndef BPF_F_NEW_FLAG
+  #define BPF_F_NEW_FLAG (1U << 17)
+  #endif
+  ```
+
+## Build & static checks
+
+- The build auto-bumps `include/version.h` GIT_HASH on every `make`. Always
+  commit with an explicit pathspec (`git commit <file> …`), never `-a` or
+  `git add -A` — those sweep the bumped `version.h` into the commit.
+- `make asan` wires `-fsanitize=address -Og -ggdb3`; some allocations and fork
+  patterns are gated on `#ifdef __SANITIZE_ADDRESS__` to avoid colliding with
+  ASAN's shadow and allocator.
+- `make tags` builds a ~0.4s ctags db; regenerate after large changes if
+  you'll be grepping.
+- Default child count (no `-C`) is pre-tuned for sustained throughput — pass
+  `-C` only for deliberate experiments.
+- `scripts/check-static/*.sh` enforce invariants via line-numbered baselines. A
+  change that shifts lines in a baselined file must update that baseline in the
+  same commit (common ones: `child-context-output.baseline`,
+  `sanitiser-slow-path.baseline`, `post-state-magic.baseline`).
+
+## Code structure — files & functions
+
+Goal: bounded edit context. Editing one behaviour should page in that
+behaviour, not a 5,000-line TU or a 400-line function. Locality of reference,
+not aesthetics.
+
+- **Files:** a `.c` over ~1,500 lines, or holding more than one subsystem, is a
+  carve candidate → split into `<subsystem>/*.c` (globbed into Makefile
+  SRCS+OBJS), cross-cluster state in `include/<subsystem>-internal.h`, public
+  header stays in `include/`. A carve is pure code-motion: no logic/rename/
+  counter change, one cohesive cluster per commit, each commit passing the full
+  gate.
+- **Functions:** target ~1–2 screens (~120 lines). Over ~200 lines, or with
+  more than one clear responsibility (setup + decision + emit), is an
+  extract-method candidate. Signals that beat raw line count: nesting > 4; a
+  `switch` arm that's its own algorithm; internal `/* phase N */` dividers.
+  Extract cohesive sub-steps into named `static` helpers, one job each, as pure
+  code-motion.
+- **When not to split:** no 1–3 line helpers (inlining is clearer); don't
+  fragment a hot inner loop or a dense correctness boundary to hit a count —
+  move it whole and leave a one-line why (a correct 300-line fn beats five that
+  fragment an atomic sequence). Don't reflow, rename, or micro-optimise while
+  carving — separate commits.
+- **When:** refactor code you're already editing, or when it's the explicit
+  task. Don't drive-by carve untouched code — it's noise in someone else's
+  review and blame.
+
+## Comment style
+
+- Document the *why*, not the *what*.
+- **Load-bearing stays** — a comment that justifies a magic constant, states a
+  non-obvious invariant, or explains an ordering/TOCTOU/concurrency requirement.
+  Aim for signal-per-line, not a line count; never strip rationale to hit a
+  target.
+- No top-of-file textbook essays — don't reproduce RFCs, kernel struct layouts,
+  or a step-by-step that mirrors the code. Cap the file header at ~5 lines:
+  intent, the kernel fn/file targeted (once), the key invariant or bug-class.
+- History → git log, not inline: CVEs, upstream SHAs, "was X, now Y" go in the
+  commit body; inline keeps only the *current* invariant/threshold.
+- Don't narrate the next N lines when the names already make the mechanics
+  clear. State shared rationale once at the definition and reference it by name.
+  Bound `#define` justifications (~3 lines) and syscall-oracle comments (~4
+  lines). Remove `/* phase */` and `====` dividers after a carve.
+
+## Codebase gotchas
+
+- **Old multiplexers:** `syscalls/ipc.c` (msgctl/semctl/shmctl) and
+  `syscalls/socketcall.c` (the 32-bit socket family) bundle several handlers
+  each — a file-grep for one name misses them.
+- **Verify kernel API behaviour against the actual kernel source**, don't claim
+  it from memory.
+
+## Debugging
+
+- **Memory corruption:** reproduce with `--children 1` first — if a single
+  child still corrupts, it's self-corruption, not a sibling shm-stomp; then
+  `-c <syscall>` to bisect. The fault site is usually *not* the bug site: a
+  handler scribbles a shared pool and an unrelated, more frequent consumer
+  later crashes on the stale slot. ASAN only redzones malloc'd heap — it's
+  blind to scribbles of trinity's mmap'd shm; use mprotect / guard-pages for
+  those.
+- **Arg-gen / sanitise testing:** `--dry-run` synthesizes syscall returns and
+  gates childops off, so it exercises the arg-gen and sanitise loop without
+  touching the kernel. Startup walks all of `/proc` and `/sys` to build the
+  pathname pool (slow on a busy host — looks like a hang at init); pass
+  `-V <small-dir>` to limit the walk.
+
+## Bug patterns to avoid
+
+- **Gate correctness on the authoritative state, never a separately-maintained
+  shadow.** Deciding ownership/presence from a value-keyed mirror (a hash) or a
+  counter behind its own fallible `mprotect`, instead of the lock-step source it
+  summarizes (`ring[]` / `occupied_mask`), cost two fix rounds (`inflight_hash`,
+  then `ring_count`) plus a follow-up. Read the source of truth — shadows
+  desync under pressure.
+- **Guard unsigned subtraction:** ensure `b <= a` at the point of `a - b`;
+  don't rely on an invariant that only held under a prior load/sample order
+  (RELAXED or separately-loaded operands can violate it — `frontier_cold_weight`:
+  `edges > calls` → underflow to ~ULONG_MAX).
+- **Cap any loop that drains/copies an fd or buffer into a log** — an unbounded
+  child-stderr memfd drain once materialized a sparse hole into a 1.8 GB log
+  (DoS).
+- **Use `CLOCK_MONOTONIC` for elapsed time / lifetimes, never `time()` /
+  `CLOCK_REALTIME`** (a backward NTP step → negative duration → a spurious
+  corruption panic); clamp computed durations to `>= 0`.
+- **`memset` a `__user` struct to 0 before setting a subset of its fields**, so
+  the kernel never `copy_to_user`s uninitialised bytes (e.g. firewire
+  `fw_cdev_get_info`, mtd `usr_oob`).
+- **Clamp array access to bounds:** per-syscall loops (especially ones that
+  *write* a per-syscall array) clamp to `MAX_NR_SYSCALL`; a bit-position from
+  `ctz`/`ffs` of a mask must be masked to the array size before use.
+- **Free with the size used to allocate under a size-class allocator**
+  (`free_shared_str(p, 80)` matching `alloc_shared_str(80)`, not `strlen+1`) — a
+  wrong size strands or corrupts the slab.
+- **A published "ready/valid" flag guarding a payload needs RELEASE on the store
+  and ACQUIRE on the load, not RELAXED** — otherwise aarch64 readers can see the
+  flag set with stale payload.
+- **`EINTR`-retry `waitpid` and blocking syscalls** — a single `EINTR` must not
+  latch a capability false or leak a zombie on an interrupted reap.
+- **`struct_catalog` rows: verify the arg index against the syscall's real
+  (1-indexed) signature**, and skip op-multiplexed args (e.g. `futex` a4 is a
+  timespec only for the WAIT ops) unless discriminated.
