@@ -1,91 +1,37 @@
 /*
- * tc_mirred_blockcast - act_mirred blockcast egress-recursion driver.
+ * tc_mirred_blockcast - drive the act_mirred blockcast egress-recursion path.
  *
- * Exists to drive the recursion path the act_mirred blockcast fix
- * (CVE-class: kernel-side commit a005fa5d "net/sched: act_mirred:
- * Fix blockcast recursion bypass leading to stack overflow") closes.
- * The bug: tcf_mirred_act() reads m->tcfm_blockid and, when non-zero,
- * returns through tcf_blockcast() BEFORE the sched_mirred_nest++ that
- * gates MIRRED_NEST_LIMIT.  Two devices sharing a TC egress block with
- * a mirred blockcast rule bounce a single skb A->B->A->... until the
- * kernel stack guard page faults.  Reachable from unprivileged code
- * via unshare(CLONE_NEWUSER | CLONE_NEWNET) — user-namespace
- * CAP_NET_ADMIN is enough to wire up dummies + clsact + shared block +
- * mirred blockcast filter.
+ * Bug class: tcf_mirred_act() in net/sched/act_mirred.c reads m->tcfm_blockid
+ * and, when non-zero, tail-calls tcf_blockcast() BEFORE the
+ * sched_mirred_nest++ that gates MIRRED_NEST_LIMIT.  Two dummies sharing a
+ * TC egress block with a mirred blockcast rule bounce a single skb
+ * A->B->A->... until the task-stack guard page faults.  Reachable from
+ * unprivileged code via unshare(CLONE_NEWUSER | CLONE_NEWNET) -- userns
+ * CAP_NET_ADMIN is enough for dummies + clsact + shared block + mirred rule.
+ * Flat fuzzing can't keep TCA_EGRESS_BLOCK, TCA_MIRRED_BLOCKID, and the
+ * TCM_IFINDEX_MAGIC_BLOCK matchall trick coherent across the three rtnl
+ * messages needed.
  *
- * Per-syscall fuzzing never assembles this shape: the random picker
- * cannot keep TCA_INGRESS_BLOCK / TCA_EGRESS_BLOCK consistent across
- * the two RTM_NEWQDISC messages it would need, can't keep
- * TCA_MIRRED_BLOCKID equal to the same block index, and can't keep
- * the matchall-on-shared-block tcm_ifindex == TCM_IFINDEX_MAGIC_BLOCK
- * trick in sync with the qdisc installs.  A deterministic per-op
- * builder assembles the whole stack each iteration.
+ * Sequence per invocation is a userns_run_in_ns grandchild that creates two
+ * dummies, installs clsact roots with a shared TCA_EGRESS_BLOCK index in
+ * [0x10, 0xff00] (0/1 are kernel-reserved), attaches a matchall filter on
+ * the shared block with a mirred{blockid=<idx>} action, and blasts a small
+ * BUDGETED+JITTER UDP burst via SO_BINDTODEVICE on A.  Unpatched kernels
+ * stack-overflow; patched kernels cap at MIRRED_NEST_LIMIT=4.
  *
- * Sequence (per invocation):
- *   1. userns_run_in_ns(CLONE_NEWNET) forks a transient grandchild
- *      into an owned user namespace + private net namespace.  The
- *      whole rest of the sequence runs inside that grandchild; its
- *      _exit() tears down both namespaces along with any dummy link,
- *      qdisc, filter, shared block and socket left behind, so no
- *      host clsact / shared block is touched.  Helper -EPERM
- *      (hardened userns policy refused CLONE_NEWUSER) latches the
- *      whole op off; transient setup failure (-EAGAIN) skips the
- *      iteration without latching.
- *   2. Open NETLINK_ROUTE socket with SO_RCVTIMEO=1s once.
- *      Best-effort modprobe sch_ingress / cls_matchall / act_mirred
- *      once.  Each modprobe attempt is latched so a missing
- *      /sbin/modprobe / lockdown=integrity pays the EFAIL once.
- *   3. Bring lo up inside the netns (one-time).
- *   4. RTM_NEWLINK type=dummy x2 — devices A and B, random suffixes
- *      per iteration so the qdisc tree is isolated from any other
- *      iteration's leftovers.  Failure latches ns_unsupported_dummy.
- *   5. RTM_SETLINK IFF_UP on both dummies.
- *   6. RTM_NEWQDISC clsact root on A with TCA_EGRESS_BLOCK=<idx>.
- *      RTM_NEWQDISC clsact root on B with TCA_EGRESS_BLOCK=<idx>
- *      (same idx).  The shared block index is picked once per
- *      iteration in [0x10, 0xff00] — block 0 / 1 are kernel-reserved.
- *      A reject with EOPNOTSUPP / EAFNOSUPPORT / ENOENT latches
- *      ns_unsupported_clsact and the op short-circuits next call.
- *   7. RTM_NEWTFILTER on the shared block via the magic-block
- *      ifindex (tcm_ifindex = TCM_IFINDEX_MAGIC_BLOCK, tcm_parent
- *      aliased as tcm_block_index = <idx>).  Kind=matchall,
- *      TCA_OPTIONS holds TCA_MATCHALL_ACT containing one nested
- *      action: TCA_ACT_KIND=mirred with TCA_ACT_OPTIONS carrying
- *      TCA_MIRRED_PARMS{ .eaction = TCA_EGRESS_REDIR (or MIRROR),
- *      .action = TC_ACT_STOLEN, .ifindex = B-index } and
- *      TCA_MIRRED_BLOCKID=<idx>.  The blockid is the key field —
- *      it routes the action through tcf_blockcast() in the kernel,
- *      which is the path that skips the nest++.
- *   8. socket(AF_INET, SOCK_DGRAM); bind to A via SO_BINDTODEVICE;
- *      sendto a small payload to a fixed loopback port BUDGETED+
- *      JITTER times.  Each send drives A's egress through
- *      sch_handle_egress -> tcf_classify -> matchall -> tcf_mirred_act
- *      -> tcf_blockcast -> (each device in block) tcf_mirred_to_dev
- *      -> dev_queue_xmit -> B's sch_handle_egress -> tcf_classify ->
- *      matchall (same filter, shared block) -> tcf_mirred_act ->
- *      tcf_blockcast -> back to A.  Unpatched kernels recurse until
- *      the task stack guard page faults; patched kernels cut the
- *      loop at MIRRED_NEST_LIMIT=4 and the burst returns normally.
- *   9. RTM_DELLINK both dummies.  netns destroy on child exit
- *      catches any leak.
+ * Brick-safety: all inside CLONE_NEWNET so no host clsact / shared block is
+ * touched; dummies only, no physical device.  BUDGETED+JITTER around base 3,
+ * STORM_BUDGET_NS 200 ms wall cap, 12-frame ceiling on the inner send loop,
+ * all I/O MSG_DONTWAIT with SO_RCVTIMEO=1s on the rtnl socket.
  *
- * Self-bounding: one full create/drive/destroy cycle per invocation,
- * packet burst BUDGETED+JITTER around base 3 with STORM_BUDGET_NS
- * 200 ms wall-clock cap and a 12-frame ceiling on the inner send
- * loop.  All netlink and socket I/O is MSG_DONTWAIT; SO_RCVTIMEO=1s
- * on the rtnl ack socket so an unresponsive kernel can't wedge us
- * past the SIGALRM(1s) cap inherited from child.c.  Per-iteration
- * cleanup releases both dummies; private netns catches any leak.
+ * Latches: userns -EPERM latches the op off for the child's life.  Set
+ * inside the grandchild: ns_unsupported_dummy on first dummy NEWLINK
+ * failure, ns_unsupported_clsact on clsact reject.  Best-effort modprobe of
+ * sch_ingress / cls_matchall / act_mirred is one-shot latched so a missing
+ * /sbin/modprobe or lockdown=integrity pays the failure once.
  *
- * Subsystems reached: net/sched/sch_api.c (qdisc install with
- * TCA_EGRESS_BLOCK), net/sched/cls_api.c (shared-block filter install
- * via TCM_IFINDEX_MAGIC_BLOCK), net/sched/cls_matchall.c
- * (matchall_change with nested act), net/sched/act_api.c
- * (tcf_action_init / tcf_action_exec), net/sched/act_mirred.c
- * (tcf_mirred_act / tcf_blockcast / tcf_mirred_to_dev),
- * net/core/dev.c (__dev_queue_xmit / sch_handle_egress),
- * drivers/net/dummy.c.  CONFIG_NET_SCHED + NET_CLS_ACT=y +
- * NET_ACT_MIRRED=m + NET_SCH_INGRESS=m + NET_CLS_MATCHALL=m.
+ * Header-gated by __has_include() on linux/pkt_sched.h, linux/pkt_cls.h,
+ * linux/tc_act/tc_mirred.h.
  */
 
 #if __has_include(<linux/pkt_sched.h>)
