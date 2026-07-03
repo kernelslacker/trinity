@@ -1,86 +1,39 @@
 /*
- * Genetlink family grammar: legacy IEEE 802.15.4 MAC control plane.
+ * Genetlink family grammar: legacy IEEE 802.15.4 MAC control plane
+ * ("802.15.4 MAC"), distinct from the modern nl802154 family in
+ * netlink-genl-fam-nl802154.c.  The two coexist in the kernel and
+ * share no command or attribute namespace: nl802154 owns the modern
+ * wpan_phy / scan / coordinator surface; this legacy family owns the
+ * original IFACE add/del, ASSOCIATE / SCAN / START request path, MAC
+ * tuning, and link-layer security key / device / level configuration.
  *
- * This is the legacy ieee802154 generic-netlink family registered by
- * net/ieee802154/netlink.c under the kernel family name "802.15.4 MAC"
- * -- distinct from the modern nl802154 family (kernel family name
- * "nl802154") vendored in net/netlink-genl-fam-nl802154.c.  Both
- * families coexist in the kernel: nl802154 owns the modern wpan_phy /
- * wpan_dev / scan / coordinator control surface, while the legacy
- * family below owns the original IFACE add/del, ASSOCIATE / SCAN /
- * START request path, MAC parameter tuning, and the link-layer
- * security key / device / level configuration surface dispatched out
- * of nl-mac.c / nl-phy.c.  The two share no command or attribute
- * namespace.
+ * Target: the per-cmd nla_policy walker in
+ * net/ieee802154/{nl-mac.c,nl-phy.c,nl_policy.c} plus the LLSEC_ *
+ * add/del/list dispatch chains.  Random nlmsg_type ids essentially
+ * never matched the runtime-assigned "802.15.4 MAC" family_id, so
+ * these arms stayed cold; resolving the family once at first
+ * NETLINK_GENERIC use lets the generator address real messages whose
+ * attribute shapes plausibly survive the shared input-side policy.
  *
- * Random nlmsg_type ids essentially never matched the runtime-assigned
- * family_id for "802.15.4 MAC", so the per-cmd nla_policy walker in
- * net/ieee802154/{nl-mac.c,nl-phy.c,nl_policy.c} plus the LLSEC_*
- * add/del/list dispatch chains have been routinely cold under generic
- * netlink fuzzing; resolving the family at first NETLINK_GENERIC use
- * lets the message generator address real legacy-ieee802154 messages
- * whose attribute shapes plausibly survive the shared input-side
- * policy.
+ * Flat attribute table over the global IEEE802154_ATTR_ * enum.
+ * Encoding rules that matter for validate-time acceptance: signed
+ * scalar attrs (TXPOWER, FRAME_RETRIES, CCA_ED_LEVEL) go on the wire
+ * as their unsigned same-width counterparts (identical bytes; handler
+ * reads through nla_get_s8 / nla_get_s32).  HW_ADDR and the extended
+ * LLSEC key-source variants are declared NLA_HW_ADDR (aliased to
+ * NLA_U64), so they emit as eight-byte U64.  Fixed-length binary
+ * attrs (ED_LIST 27, CHANNEL_PAGE_LIST 128, LLSEC_KEY_BYTES 16,
+ * LLSEC_KEY_USAGE_COMMANDS 32) use NLA_KIND_BINARY within the
+ * kernel's .len bound.  IEEE802154_ATTR_SEC / _PAD have no policy
+ * entry -- emitted as zero-length binary so the wire shape stays
+ * well-formed.
  *
- * The user-callable command set covered here mirrors the entries of
- * ieee802154_ops[] in net/ieee802154/netlink.c (the genl_small_ops
- * dispatch table).  The *_CONF / *_INDIC / event-only command ids
- * (ASSOCIATE_CONF, DISASSOCIATE_INDIC, BEACON_NOTIFY_INDIC, ...) have
- * no inbound handler and are omitted from cmds[]; likewise the GTS_*
- * / RX_ENABLE_* / SET_REQ / GET_REQ / RESET_REQ / SYNC_REQ / POLL_REQ
- * ids reserve numeric slots in the enum but are unimplemented in this
- * version of the kernel and the dispatcher fast-rejects them via
- * -EOPNOTSUPP.  Listing only the dispatched ops keeps fuzz budget on
- * the parsers that actually run.
- *
- * Per the wireguard / tipc / l2tp / team / hsr / fou / psp / psample /
- * nl802154 model, a single flat nla_attr_spec table lists every id
- * used by any command in this family.  The legacy ieee802154 policy
- * (ieee802154_policy[] in net/ieee802154/nl_policy.c) is itself flat
- * over the global IEEE802154_ATTR_* enum, so the per-cmd policy
- * walker validates each child against one shared shape -- there is no
- * per-command namespace to enumerate.  The signed scalar attrs
- * (TXPOWER and FRAME_RETRIES declared NLA_S8; CCA_ED_LEVEL declared
- * NLA_S32) are emitted as their unsigned same-width counterparts --
- * the wire format is identical, the kernel's validator only checks
- * the length, and the handler reads the payload through nla_get_s8 /
- * nla_get_s32 which interpret the raw bytes as signed.  HW_ADDR and
- * the COORD_/SRC_/DEST_/LLSEC_KEY_SOURCE_EXTENDED variants are
- * declared NLA_HW_ADDR which the policy header aliases to NLA_U64;
- * they are listed below as NLA_KIND_U64 to match the eight-byte wire
- * width the kernel's nla_validate gate expects.  The fixed-length
- * binary attrs (ED_LIST 27 bytes, CHANNEL_PAGE_LIST 32*4 == 128
- * bytes, LLSEC_KEY_BYTES 16, LLSEC_KEY_USAGE_COMMANDS 258/8 == 32)
- * use NLA_KIND_BINARY with the kernel's .len bound -- the legacy
- * policy uses .len rather than .type so any payload up to the bound
- * is accepted, matching the spec walker's behaviour on this family.
- * IEEE802154_ATTR_SEC and IEEE802154_ATTR_PAD have no policy entry
- * (the input-side walker silently ignores them); they are emitted as
- * a zero-length binary payload so the wire shape is well-formed
- * without forcing a particular content.
- *
- * The family carries a nonzero declared version (the kernel registers
- * .version = 1) so the default_version member is initialised -- the
- * kernel's dispatcher doesn't gate on the genlmsghdr.version byte
- * today, but matching the declared family version keeps the message
- * generator honest against any future version-gated dispatch.
- * hdrsize stays 0: the legacy family registers .hdrsize = 0 (no
- * family-specific fixed header), attributes follow the genlmsghdr
- * directly.
- *
- * Header gating: the kernel-side enum lives in
- * include/linux/nl802154.h which is a kernel-internal header and is
- * NOT installed via uapi, so the installed sysroot has no header that
- * names the IEEE802154_* symbols.  include/kernel/ieee802154.h
- * vendors every referenced IEEE802154_CMD_* / IEEE802154_ATTR_* id as
- * a hardcoded #ifndef shim mirroring the kernel enum ordering, which
- * has been ABI-stable since the original 2.6.32 ieee802154 socket
- * support.  No build-host gate is needed because the shim is
- * self-contained -- the family registers unconditionally and runtime
- * resolution against CTRL_CMD_GETFAMILY decides whether the running
- * kernel actually carries the family (CONFIG_IEEE802154 must be on
- * and the ieee802154 module loaded for the controller to return a
- * family_id).
+ * Header gating: include/linux/nl802154.h is kernel-internal (not
+ * shipped via uapi).  include/kernel/ieee802154.h vendors every
+ * referenced IEEE802154_CMD_ * / IEEE802154_ATTR_ * id as an #ifndef
+ * shim mirroring the (ABI-stable since 2.6.32) kernel enum ordering.
+ * The family registers unconditionally; runtime CTRL_CMD_GETFAMILY
+ * decides whether CONFIG_IEEE802154 is on and the module loaded.
  */
 
 #include "kernel/ieee802154.h"
