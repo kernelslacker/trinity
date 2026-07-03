@@ -32,6 +32,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "arch.h"
 #include "name-pool.h"
 #include "random.h"
 #include "rnd.h"
@@ -103,6 +104,17 @@ void name_pool_record(enum name_kind kind, const char *name, size_t len)
 		len = NAME_POOL_MAX_NAME_LEN;
 
 	pool = get_pool();
+	/*
+	 * g_pool is a private .bss pointer to a page-aligned shared region.
+	 * A fuzzed value-result write can stomp it with a wild address whose
+	 * ASAN shadow still reads addressable, so the write_idx atomic below
+	 * would fault on unmapped memory (SEGV_MAPERR) instead of tripping a
+	 * poison check.  A scribbled value is effectively never page-aligned;
+	 * skip the record rather than dereference a wild pointer.  Same guard
+	 * on the read path in name_pool_draw_mutated().
+	 */
+	if (((uintptr_t)pool & (page_size - 1)) != 0)
+		return;
 	ring = &pool->per_kind[kind];
 
 	idx = __atomic_fetch_add(&ring->write_idx, 1, __ATOMIC_RELAXED);
@@ -224,6 +236,9 @@ size_t name_pool_draw_mutated(enum name_kind kind, char *out, size_t out_cap)
 
 	pool = __atomic_load_n(&g_pool, __ATOMIC_ACQUIRE);
 	if (pool == NULL)
+		return 0;
+	/* Reject a scribbled (non-page-aligned) g_pool -- see name_pool_record. */
+	if (((uintptr_t)pool & (page_size - 1)) != 0)
 		return 0;
 	ring = &pool->per_kind[kind];
 
