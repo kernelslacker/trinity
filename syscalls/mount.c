@@ -129,6 +129,7 @@ static char *pick_sacrificial_target(void)
 	target = (char *) get_writable_struct(64);
 	if (!target)
 		return NULL;
+	memset(target, 0, 64);
 	src = sacrificial_mount_paths[rnd_modulo_u32(nr_sacrificial_mount_paths)];
 	strncpy(target, src, 63);
 	target[63] = '\0';
@@ -259,6 +260,7 @@ static char *write_str(const char *s)
 
 	if (!buf)
 		return NULL;
+	memset(buf, 0, len + 1);
 	memcpy(buf, s, len + 1);
 	return buf;
 }
@@ -327,6 +329,7 @@ static void sanitise_mount(struct syscallrecord *rec)
 		fstype = filesystem_types[rnd_modulo_u32(nr_filesystem_types)];
 		type = (char *) get_writable_struct(32);
 		if (type) {
+			memset(type, 0, 32);
 			strncpy(type, fstype, 31);
 			type[31] = '\0';
 			rec->a3 = (unsigned long) type;
@@ -334,6 +337,7 @@ static void sanitise_mount(struct syscallrecord *rec)
 	} else {
 		type = (char *) get_writable_struct(16);
 		if (type) {
+			memset(type, 0, 16);
 			generate_rand_bytes((unsigned char *) type, 15);
 			type[15] = '\0';
 			rec->a3 = (unsigned long) type;

@@ -147,6 +147,7 @@ bool sanitise_xattr_name_arg_pooled(struct syscallrecord *rec, unsigned int argn
 		*slot = 0;
 		return false;
 	}
+	memset(name, 0, XATTR_NAME_BUFSZ);
 	gen_xattr_name_pooled(name, XATTR_NAME_BUFSZ);
 	*slot = (unsigned long) name;
 	return true;
@@ -210,6 +211,7 @@ bool sanitise_xattr_name_arg(struct syscallrecord *rec, unsigned int argno)
 	name = (char *) get_writable_struct(XATTR_NAME_BUFSZ);
 	if (!name)
 		return false;
+	memset(name, 0, XATTR_NAME_BUFSZ);
 	gen_xattr_name(name, XATTR_NAME_BUFSZ);
 	*slot = (unsigned long) name;
 	return true;

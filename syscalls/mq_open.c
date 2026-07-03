@@ -72,6 +72,7 @@ static void sanitise_mq_open(struct syscallrecord *rec)
 	name = (char *) get_writable_struct(32);
 	if (!name)
 		return;
+	memset(name, 0, 32);
 
 	if (ONE_IN(4)) {
 		size_t got = name_pool_draw_mutated(NAME_KIND_MQ_NAME,

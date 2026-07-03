@@ -63,6 +63,7 @@ static char *fill_quota_fd_path(void)
 
 	if (!buf)
 		return NULL;
+	memset(buf, 0, 48);
 	strncpy(buf, src, 47);
 	buf[47] = '\0';
 	return buf;
