@@ -1,103 +1,42 @@
 /*
  * bridge_vlan_churn - bridge VLAN-filtering rule churn vs tagged ingress.
  *
- * Random netlink fuzzing rarely assembles the chain that drives
- * net/bridge/br_vlan.c, br_vlan_tunnel.c, br_vlan_options.c and
- * br_mst.c.  Reaching those files needs a bridge with VLAN filtering
- * enabled, ports enslaved into it, a VLAN add carrying the right nested
- * IFLA_AF_SPEC -> IFLA_BRIDGE_VLAN_INFO encoding, an AF_PACKET
- * SOCK_RAW peer pushing 802.1Q tagged frames at the port matching
- * a configured vid, and a concurrent vlan delete / vlan-tunnel mutation
- * / MST topology-change racing the in-flight skb.  Without all of those
- * the br_vlan_get_pvid / br_handle_vlan / br_vlan_tunnel_lookup /
- * br_mst_set_state windows never co-fire.
+ * Target: net/bridge/br_vlan.c, br_vlan_tunnel.c, br_vlan_options.c,
+ * br_mst.c -- specifically br_vlan_get_pvid / br_handle_vlan /
+ * br_vlan_tunnel_lookup / br_mst_set_state.  Bug class: vlan-rcu
+ * mutation racing an in-flight tagged skb.  Random netlink fuzzing
+ * can't assemble the chain: a filtering-on bridge with enslaved ports,
+ * a properly-nested IFLA_AF_SPEC/IFLA_BRIDGE_VLAN_INFO add, an
+ * AF_PACKET peer pushing 802.1Q frames at a matching vid, plus a
+ * concurrent vlan delete / vlan-tunnel mutation / MST topology change.
  *
- * Sequence (per invocation):
+ * Per outer iteration (BUDGETED+JITTER, 200 ms wall cap, fresh
+ * topology), inside a private user+net namespace via userns_run_in_ns
+ * (grandchild _exit reaps bridge/veths/vlan-info/sockets/netns): stand
+ * up a filtering bridge with two veth pairs (v0a/v0b, v1a/v1b, only
+ * the *a ends enslaved), install a vlan range [base..base+10] with
+ * PVID base+5, IFF_UP everything, bind an AF_PACKET SOCK_RAW
+ * (ETH_P_8021Q) to v0b, send one 802.1Q frame at the PVID, then race
+ * one of four variants iter%4: (A) DELLINK VLAN_INFO drop vid base+5,
+ * (B) SETLINK VLAN_TUNNEL_INFO add tunnel_id=42 on base+5, (C) SETLINK
+ * BRIDGE_MST MSTI=1 STATE=BR_STATE_FORWARDING, (D) VLAN_INFO re-add
+ * overlapping range base+3..base+7 (pvid swap).  vid base rotates
+ * {10, 100, 4000}.  Full DELLINK teardown.
  *
- *   1.  Enter a private net namespace via userns_run_in_ns(): a
- *       transient grandchild fork installs an identity user namespace
- *       plus a fresh CLONE_NEWNET, runs the BUDGETED+JITTER outer
- *       loop body below, and _exit()s so the kernel reaps every
- *       bridge, veth, vlan-info entry, AF_PACKET socket and netlink
- *       socket left behind with the grandchild's netns.  The
- *       persistent fuzz child never touches its own credentials or
- *       namespace stack, so the cap-drop oracle keeps observing the
- *       host credential profile.  Helper -EPERM (hardened userns
- *       policy refused CLONE_NEWUSER: user.max_user_namespaces=0 or
- *       kernel.unprivileged_userns_clone=0) latches the childop off
- *       for the remainder of this child's lifetime; -EAGAIN
- *       (transient setup failure: fork, id-map write, secondary
- *       unshare) skips the invocation without latching.
+ * Brick-safety: everything runs in the grandchild's private netns;
+ * host bridge/veth/vlan tables never see the op; veth loopback only.
+ * Outer loop (base 4/8/16, JITTER, 200 ms) + MSG_DONTWAIT / 100 ms
+ * SO_{RCV,SND}TIMEO keep the op inside child.c's SIGALRM(1s).
  *
- * Inner BUDGETED + JITTER loop (200 ms wall cap, fresh topology per
- * iteration), running inside the grandchild's netns:
- *
- *   2.  Open a NETLINK_ROUTE socket; first invocation probes
- *       RTM_NEWLINK type=bridge with IFLA_BR_VLAN_FILTERING=1.  If the
- *       kernel returns -EPERM / -ENOSYS / -EAFNOSUPPORT / -EOPNOTSUPP,
- *       latch ns_unsupported_bridge_vlan_churn and short-circuit every
- *       subsequent invocation.
- *   3.  RTM_NEWLINK type=veth twice (two pairs: v0a/v0b and v1a/v1b).
- *   4.  RTM_SETLINK IFLA_MASTER on v0a and v1a to enslave them to the
- *       bridge.  v0b and v1b stay free so they can carry the AF_PACKET
- *       traffic into the bridge ports.
- *   5.  RTM_SETLINK family=AF_BRIDGE on v0a with IFLA_AF_SPEC
- *       containing IFLA_BRIDGE_VLAN_INFO range begin/end (vid base ..
- *       base+10) plus a PVID at vid base+5.  Range encoding hits the
- *       br_vlan_add range path.
- *   6.  RTM_SETLINK IFF_UP on bridge + every veth end.
- *   7.  socket(AF_PACKET, SOCK_RAW, htons(ETH_P_8021Q)); bind to v0b's
- *       ifindex; SO_RCVTIMEO/SO_SNDTIMEO 100 ms.  Skip on EPERM.
- *   8.  Send one 802.1Q tagged frame at vid base+5 (PVID vid).  The
- *       bridge ingress runs br_handle_vlan against the still-fresh
- *       per-port vlan group.
- *   9.  RACE per iteration -- variant rotates through:
- *         A: RTM_DELLINK family=AF_BRIDGE IFLA_BRIDGE_VLAN_INFO del
- *            single vid base+5 mid-traffic (vlan-rcu vs ingress lookup);
- *         B: RTM_SETLINK family=AF_BRIDGE IFLA_BRIDGE_VLAN_TUNNEL_INFO
- *            add tunnel_id=42 on vid base+5 (br_vlan_tunnel parse path,
- *            the IFLA_BRIDGE_VLAN_TUNNEL_INFO attribute is essentially
- *            unfuzzed by random netlink walks);
- *         C: RTM_SETLINK family=AF_BRIDGE on the bridge dev with
- *            IFLA_BRIDGE_MST nested IFLA_BRIDGE_MST_ENTRY MSTI=1
- *            STATE=BR_STATE_FORWARDING (br_mst_set_state topology
- *            change while the port carries traffic);
- *         D: re-issue the IFLA_BRIDGE_VLAN_INFO add with an overlapping
- *            range (base+3 .. base+7) mid-traffic -- pvid swap window.
- *  10.  shutdown / close raw socket, RTM_DELLINK bridge + veths.
- *
- *   Additional knobs per iteration: vid base rotates in {10, 100, 4000}
- *   so all three vid magnitudes get exercise; the RACE letter that
- *   fires first rotates iter % 4 so no single race predominates.
- *
- * Per-process cap-gate latch: ns_unsupported_bridge_vlan_churn fires
- * when userns_run_in_ns() returns -EPERM (the persistent fuzz child
- * cannot get a private user namespace under hardened policy).  Once
- * latched, every subsequent invocation just bumps runs+setup_failed
- * and returns.  Inside the grandchild, the same static also short-
- * circuits the remainder of an outer loop on -ENOSYS /
- * -EAFNOSUPPORT / -EOPNOTSUPP / -EPROTONOSUPPORT from the bridge
- * create probe (CONFIG_BRIDGE absent); that intra-invocation latch
- * dies with the grandchild's COW copy on _exit(), so a
- * CONFIG-absent kernel re-probes once per invocation rather than
- * permanently.
- *
- * Brick-safety:
- *   - All work happens inside a private netns -- the host bridge /
- *     veth / vlan tables never see this op.
- *   - BUDGETED outer loop (base 4 / floor 8 / cap 16) with JITTER and
- *     200 ms wall-cap; every send/recv uses MSG_DONTWAIT or carries a
- *     100 ms SO_RCVTIMEO/SO_SNDTIMEO so an unresponsive netlink can't
- *     wedge us past the SIGALRM(1s) cap inherited from child.c.
- *   - veth remains in loopback only; no underlying physical device is
- *     touched.
- *
- * Header gates: __has_include(<linux/if_bridge.h>) /
- * <linux/if_link.h> / <linux/rtnetlink.h>.  IFLA_BR_VLAN_FILTERING,
- * IFLA_BRIDGE_*, BRIDGE_VLAN_INFO_*, BRIDGE_FLAGS_*, IFLA_BRIDGE_MST*,
- * VETH_INFO_PEER are #define-fallback-supplied at their stable UAPI
- * integer values when absent on the build host -- the kernel returns
- * EINVAL/ENOPROTOOPT and the cap-gate latches.
+ * Latches: userns -EPERM permanently gates the op off for this child;
+ * -EAGAIN skips.  The intra-invocation ns_unsupported_bridge_vlan_churn
+ * short-circuits the rest of an outer loop on the bridge-create probe
+ * (-ENOSYS/-EAFNOSUPPORT/-EOPNOTSUPP), dying with the grandchild's
+ * COW copy so a CONFIG-absent kernel re-probes once per invocation.
+ * Header-gated by __has_include on <linux/if_bridge.h>/if_link.h/
+ * rtnetlink.h with per-symbol UAPI-integer fallbacks for
+ * IFLA_BR_VLAN_FILTERING / IFLA_BRIDGE_* / BRIDGE_VLAN_INFO_* /
+ * IFLA_BRIDGE_MST* / VETH_INFO_PEER.
  */
 
 #if __has_include(<linux/if_bridge.h>) && __has_include(<linux/if_link.h>) && __has_include(<linux/rtnetlink.h>)
