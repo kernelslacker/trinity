@@ -1079,62 +1079,18 @@ void dump_stats_childop_ranked_tables(void)
 	}
 }
 
-void dump_stats_strategy_summary(void)
+/* SHADOW-ONLY saturation-cooldown counters.  Gated by
+ * --frontier-saturation-cooldown != off; zero on default-off runs
+ * so the rows stay suppressed by the if-non-zero guard.  Read the
+ * (would_skip / candidates) ratio for the spare-lane catch rate and
+ * the per-syscall frontier_satcool_would_skip_per_syscall[] top-N
+ * (rendered by dump_satcool_would_skip_per_syscall_top() below) to
+ * confirm the demote mass concentrates on syncfs / sendfile /
+ * semget / writev and is ~0 on removexattrat / futex /
+ * io_uring_setup / bpf before tuning C_min or wiring the COMBINED
+ * reject. */
+static void dump_stats_render_frontier_satcool(void)
 {
-	if (shm->stats.bandit_cmp_reward_added)
-		stat_row("strategy", "bandit_cmp_reward_added",
-			 shm->stats.bandit_cmp_reward_added);
-	if (shm->stats.frontier_strategy_picks)
-		stat_row("strategy", "frontier_strategy_picks",
-			 shm->stats.frontier_strategy_picks);
-	if (shm->stats.frontier_live_picks)
-		stat_row("strategy", "frontier_live_picks",
-			 shm->stats.frontier_live_picks);
-	if (shm->stats.frontier_silent_picks)
-		stat_row("strategy", "frontier_silent_picks",
-			 shm->stats.frontier_silent_picks);
-	/* SHADOW-ONLY observability companions to frontier_silent_picks:
-	 * the candidate count (how many threshold-crossings the silent
-	 * regime has produced) and the threshold itself, emitted side by
-	 * side so the operator can interpret the count without consulting
-	 * the source.  Neither value is read by the live picker math. */
-	if (shm->stats.frontier_shadow_decay_candidates)
-		stat_row("strategy", "frontier_shadow_decay_candidates",
-			 shm->stats.frontier_shadow_decay_candidates);
-	stat_row("strategy", "frontier_shadow_decay_streak_threshold",
-		 FRONTIER_SHADOW_DECAY_STREAK);
-	/* Tightened decay predicate (sibling of the looser counter above):
-	 * adds the no-CMP-novelty + no-errno-shift UNLESS clause to the
-	 * threshold-crossing test, and tallies the projected demote count
-	 * across all silent-regime picks past the threshold.  The (looser
-	 * candidates / candidates) ratio tells the operator what fraction
-	 * of N-silent crossings the CMP/errno tightening would have spared;
-	 * the would_skip / silent_picks ratio is the projected pick share a
-	 * live silent-decay variant would demote. */
-	if (shm->stats.frontier_decay_candidates)
-		stat_row("strategy", "frontier_decay_candidates",
-			 shm->stats.frontier_decay_candidates);
-	if (shm->stats.frontier_decay_would_skip)
-		stat_row("strategy", "frontier_decay_would_skip",
-			 shm->stats.frontier_decay_would_skip);
-	/* Arm-B-only live reject count for the silent-streak decay above.
-	 * Pairs with frontier_decay_would_skip (both arms) as the headline
-	 * arm-B behaviour delta; normalise against the Arm-B silent-pick
-	 * throughput recoverable from frontier_silent_picks and the
-	 * frontier_silent_decay_arm_{a,b}_children cohort split in kcov_shm. */
-	if (shm->stats.frontier_silent_decay_live_rejects)
-		stat_row("strategy", "frontier_silent_decay_live_rejects",
-			 shm->stats.frontier_silent_decay_live_rejects);
-	/* SHADOW-ONLY saturation-cooldown counters.  Gated by
-	 * --frontier-saturation-cooldown != off; zero on default-off runs
-	 * so the rows stay suppressed by the if-non-zero guard.  Read the
-	 * (would_skip / candidates) ratio for the spare-lane catch rate and
-	 * the per-syscall frontier_satcool_would_skip_per_syscall[] top-N
-	 * (rendered by dump_satcool_would_skip_per_syscall_top() below) to
-	 * confirm the demote mass concentrates on syncfs / sendfile /
-	 * semget / writev and is ~0 on removexattrat / futex /
-	 * io_uring_setup / bpf before tuning C_min or wiring the COMBINED
-	 * reject. */
 	if (shm->stats.frontier_satcool_candidates)
 		stat_row("strategy", "frontier_satcool_candidates",
 			 shm->stats.frontier_satcool_candidates);
@@ -1148,35 +1104,21 @@ void dump_stats_strategy_summary(void)
 		stat_row("strategy", "frontier_satcool_spared_objproducer",
 			 shm->stats.frontier_satcool_spared_objproducer);
 	dump_satcool_would_skip_per_syscall_top();
-	/* SHADOW-ONLY LIVE-regime cooldown projections.  Sibling block to
-	 * the silent-streak decay rows above: candidates is the distinct
-	 * cooldown-episode count (one bump per FRONTIER_LIVE_MISS_COOLDOWN
-	 * crossing per syscall); would_skip is the projected demote count a
-	 * live cooldown variant of the picker would produce, normalised
-	 * against frontier_live_picks for the projected reclaim fraction.
-	 * The threshold is emitted alongside so the operator can interpret
-	 * the candidate count without consulting the source, matching the
-	 * frontier_shadow_decay_streak_threshold row above. */
-	if (shm->stats.frontier_live_cooldown_candidates)
-		stat_row("strategy", "frontier_live_cooldown_candidates",
-			 shm->stats.frontier_live_cooldown_candidates);
-	if (shm->stats.frontier_live_would_skip)
-		stat_row("strategy", "frontier_live_would_skip",
-			 shm->stats.frontier_live_would_skip);
-	stat_row("strategy", "frontier_live_miss_cooldown_threshold",
-		 FRONTIER_LIVE_MISS_COOLDOWN);
-	dump_live_cooldown_would_skip_per_syscall_top();
-	/* SHADOW-ONLY LIVE-regime cooldown discriminator (gated by
-	 * --frontier-live-cooldown-mode != off).  Sibling block to the
-	 * undiscriminated frontier_live_cooldown_candidates / frontier_
-	 * live_would_skip rows above; this row projects the DISCRIMINATED
-	 * LIVE-regime demote mass after the spare lanes peel productive
-	 * syscalls out of the cool set.  Compare (live_cool_would_skip /
-	 * live_would_skip) for the over-cool fraction the discriminator
-	 * removes.  The low live floor (FRONTIER_LIVE_COOL_CMIN) is
-	 * emitted alongside so the operator can interpret the candidate
-	 * count without consulting the source, matching the
-	 * frontier_live_miss_cooldown_threshold row above. */
+}
+
+/* SHADOW-ONLY LIVE-regime cooldown discriminator (gated by
+ * --frontier-live-cooldown-mode != off).  Sibling block to the
+ * undiscriminated frontier_live_cooldown_candidates / frontier_
+ * live_would_skip rows above; this row projects the DISCRIMINATED
+ * LIVE-regime demote mass after the spare lanes peel productive
+ * syscalls out of the cool set.  Compare (live_cool_would_skip /
+ * live_would_skip) for the over-cool fraction the discriminator
+ * removes.  The low live floor (FRONTIER_LIVE_COOL_CMIN) is
+ * emitted alongside so the operator can interpret the candidate
+ * count without consulting the source, matching the
+ * frontier_live_miss_cooldown_threshold row above. */
+static void dump_stats_render_frontier_live_cool(void)
+{
 	if (shm->stats.frontier_live_cool_candidates)
 		stat_row("strategy", "frontier_live_cool_candidates",
 			 shm->stats.frontier_live_cool_candidates);
@@ -1212,48 +1154,16 @@ void dump_stats_strategy_summary(void)
 	dump_live_cool_per_syscall_top(
 		shm->stats.frontier_live_cool_would_spare_per_syscall,
 		"frontier_live_cool_would_spare");
-	/* Did-decay observability counter for the LIVE-regime early ring-
-	 * decay path.  One bump per (nr, rotation) where the early ring-
-	 * decay halved a non-zero cached sum.  Read alongside
-	 * frontier_live_would_skip (F3 projection) to compare the projected
-	 * vs the actually-applied cooldown volume; the ratio reflects how
-	 * often the rotation-time decay catches a syscall the per-pick F3
-	 * projection had already counted as a candidate. */
-	if (shm->stats.frontier_live_cooldown_decays)
-		stat_row("strategy", "frontier_live_cooldown_decays",
-			 shm->stats.frontier_live_cooldown_decays);
-	/* Blanket LIVE-regime probabilistic pick-reject (safe down-
-	 * payment).  Reclaims ~1 / FRONTIER_LIVE_DECAY_REJECT_DENOM of
-	 * LIVE-ring picks unconditionally; the reject rate against
-	 * accepted picks is rejects / (rejects + frontier_live_picks)
-	 * and should converge to 1 / REJECT_DENOM.  Read alongside
-	 * frontier_live_would_skip (the F3 SHADOW projection) to gauge
-	 * the headroom a targeted variant of this reject would unlock. */
-	if (shm->stats.frontier_live_decay_live_rejects)
-		stat_row("strategy", "frontier_live_decay_live_rejects",
-			 shm->stats.frontier_live_decay_live_rejects);
-	/* SHADOW + per-child A/B errno-plateau decay (silent-regime accept
-	 * site): would_skip is the both-arms shadow demote count, live_
-	 * rejects is the arm-B-only actual demote count, overlap_silent is
-	 * the both-arms shadow count of picks where the consecutive-silent
-	 * shadow predicate ALSO fires.  Emitted side by side with the
-	 * silent-streak shadow rows above so the operator can read the
-	 * orthogonal coverage (would_skip - overlap_silent) at a glance. */
-	if (shm->stats.frontier_errno_decay_would_skip)
-		stat_row("strategy", "frontier_errno_decay_would_skip",
-			 shm->stats.frontier_errno_decay_would_skip);
-	if (shm->stats.frontier_errno_decay_live_rejects)
-		stat_row("strategy", "frontier_errno_decay_live_rejects",
-			 shm->stats.frontier_errno_decay_live_rejects);
-	if (shm->stats.frontier_errno_decay_overlap_silent)
-		stat_row("strategy", "frontier_errno_decay_overlap_silent",
-			 shm->stats.frontier_errno_decay_overlap_silent);
-	/* SHADOW-ONLY A/B scoring for the frontier-blend cold-weight
-	 * blend.  Emitted as a sibling block to the silent-decay shadow
-	 * counters above; the picker still consumes the OLD weight from
-	 * frontier_cold_weight() and these counters expose how often the
-	 * blended formula would have steered differently.  See the
-	 * struct-field comments in include/stats.h for semantics. */
+}
+
+/* SHADOW-ONLY A/B scoring for the frontier-blend cold-weight
+ * blend.  Emitted as a sibling block to the silent-decay shadow
+ * counters above; the picker still consumes the OLD weight from
+ * frontier_cold_weight() and these counters expose how often the
+ * blended formula would have steered differently.  See the
+ * struct-field comments in include/stats.h for semantics. */
+static void dump_stats_render_frontier_blend(void)
+{
 	if (shm->stats.frontier_blend_samples) {
 		stat_row("strategy", "frontier_blend_samples",
 			 shm->stats.frontier_blend_samples);
@@ -1268,13 +1178,17 @@ void dump_stats_strategy_summary(void)
 		stat_row("strategy", "frontier_blend_new_weight_sum",
 			 shm->stats.frontier_blend_new_weight_sum);
 	}
-	/* Per-band shadow counters for --reach-band.  Sibling of the
-	 * frontier_blend_* block above.  Silent on default (OFF) runs --
-	 * the gate in frontier_cold_weight() early-outs before the bumps,
-	 * so the per-band picks array stays at zero and the if-guard
-	 * suppresses the whole block.  See the reach_band_* field-comment
-	 * block in include/stats.h for the SHADOW_ONLY vs COMBINED reading
-	 * of would_demote_mid / would_boost_high. */
+}
+
+/* Per-band shadow counters for --reach-band.  Sibling of the
+ * frontier_blend_* block above.  Silent on default (OFF) runs --
+ * the gate in frontier_cold_weight() early-outs before the bumps,
+ * so the per-band picks array stays at zero and the if-guard
+ * suppresses the whole block.  See the reach_band_* field-comment
+ * block in include/stats.h for the SHADOW_ONLY vs COMBINED reading
+ * of would_demote_mid / would_boost_high. */
+static void dump_stats_render_reach_band(void)
+{
 	if (shm->stats.reach_band_picks_per_band[REACH_BAND_IDX_LOW] ||
 	    shm->stats.reach_band_picks_per_band[REACH_BAND_IDX_MID] ||
 	    shm->stats.reach_band_picks_per_band[REACH_BAND_IDX_HIGH]) {
@@ -1289,22 +1203,14 @@ void dump_stats_strategy_summary(void)
 		stat_row("strategy", "reach_band_would_boost_high",
 			 shm->stats.reach_band_would_boost_high);
 	}
-	/* Adaptive expensive-syscall accept gate.  All zero while the
-	 * gate is in its default OFF mode (the early-return path skips
-	 * the bumps).  See the expensive_adaptive_* field-comment block
-	 * in include/stats.h for per-counter semantics. */
-	if (shm->stats.expensive_adaptive_samples) {
-		stat_row("strategy", "expensive_adaptive_samples",
-			 shm->stats.expensive_adaptive_samples);
-		stat_row("strategy", "expensive_adaptive_extra_accepts",
-			 shm->stats.expensive_adaptive_extra_accepts);
-		stat_row("strategy", "expensive_adaptive_demotes",
-			 shm->stats.expensive_adaptive_demotes);
-	}
-	/* Object-size-relative ARG_LEN draw observability.  The gate scalar
-	 * arg_len_semantics_draws stays zero while --arg-len-semantics is
-	 * off (the default), so the whole block is silent on baseline
-	 * runs.  See the struct-field comment in include/stats.h. */
+}
+
+/* Object-size-relative ARG_LEN draw observability.  The gate scalar
+ * arg_len_semantics_draws stays zero while --arg-len-semantics is
+ * off (the default), so the whole block is silent on baseline
+ * runs.  See the struct-field comment in include/stats.h. */
+static void dump_stats_render_arg_len_semantics(void)
+{
 	if (shm->stats.arg_len_semantics_draws) {
 		stat_row("strategy", "arg_len_semantics_draws",
 			 shm->stats.arg_len_semantics_draws);
@@ -1331,23 +1237,15 @@ void dump_stats_strategy_summary(void)
 		stat_row("strategy", "arg_len_objrel_pagesize_minus_1",
 			 shm->stats.arg_len_objrel_pagesize_minus_1);
 	}
-	if (shm->stats.frontier_underflow_prevented)
-		stat_row("strategy", "frontier_underflow_prevented",
-			 shm->stats.frontier_underflow_prevented);
-	if (shm->stats.frontier_intervention_pulls)
-		stat_row("strategy", "frontier_intervention_pulls",
-			 shm->stats.frontier_intervention_pulls);
-	if (shm->stats.frontier_intervention_cold_skipped)
-		stat_row("strategy", "frontier_intervention_cold_skipped",
-			 shm->stats.frontier_intervention_cold_skipped);
-	if (shm->stats.plateau_forced_windows)
-		stat_row("strategy", "plateau_forced_windows",
-			 shm->stats.plateau_forced_windows);
-	/* SHADOW-ONLY wall-lever.  eligible_total / would_suppress_
-	 * total expose the data-driven gate's projected reclaim share on every
-	 * plateau-active pick; baseline_calls is the fleet mean per_syscall_
-	 * calls the predicate scaled WALL_LEVER_HIGH_MULT against.  See the
-	 * struct-field comment in include/stats.h. */
+}
+
+/* SHADOW-ONLY wall-lever.  eligible_total / would_suppress_
+ * total expose the data-driven gate's projected reclaim share on every
+ * plateau-active pick; baseline_calls is the fleet mean per_syscall_
+ * calls the predicate scaled WALL_LEVER_HIGH_MULT against.  See the
+ * struct-field comment in include/stats.h. */
+static void dump_stats_render_wall_lever_eligible(void)
+{
 	if (shm->stats.wall_lever_eligible_total) {
 		stat_row("strategy", "wall_lever_eligible_total",
 			 shm->stats.wall_lever_eligible_total);
@@ -1414,17 +1312,21 @@ void dump_stats_strategy_summary(void)
 			}
 		}
 	}
-	/* Unconditional wall-lever would-suppress observability.  The
-	 * sibling block above only renders when the predicate has
-	 * registered at least one eligible pick (wall_lever_eligible_total
-	 * != 0); this block surfaces the running would-suppress total and
-	 * its top-N per-syscall breakdown on EVERY dump so the projected
-	 * reclaim share + by-syscall attribution stay visible on runs
-	 * where the eligibility gate has not triggered yet.  Skip-zero on
-	 * the per-syscall scan + a top_count guard on the header suppress
-	 * the empty top-N; the scalar total renders unconditionally so a
-	 * 0 is an active "nothing accumulated" signal rather than silence.
-	 * Mirrors the biarch table choice + topn_push idiom used above. */
+}
+
+/* Unconditional wall-lever would-suppress observability.  The
+ * sibling block above only renders when the predicate has
+ * registered at least one eligible pick (wall_lever_eligible_total
+ * != 0); this block surfaces the running would-suppress total and
+ * its top-N per-syscall breakdown on EVERY dump so the projected
+ * reclaim share + by-syscall attribution stay visible on runs
+ * where the eligibility gate has not triggered yet.  Skip-zero on
+ * the per-syscall scan + a top_count guard on the header suppress
+ * the empty top-N; the scalar total renders unconditionally so a
+ * 0 is an active "nothing accumulated" signal rather than silence.
+ * Mirrors the biarch table choice + topn_push idiom used above. */
+static void dump_stats_render_wall_lever_running(void)
+{
 	stat_row("strategy", "wall_lever_would_suppress_total",
 		 shm->stats.wall_lever_would_suppress_total);
 	{
@@ -1472,6 +1374,139 @@ void dump_stats_strategy_summary(void)
 			}
 		}
 	}
+}
+
+void dump_stats_strategy_summary(void)
+{
+	if (shm->stats.bandit_cmp_reward_added)
+		stat_row("strategy", "bandit_cmp_reward_added",
+			 shm->stats.bandit_cmp_reward_added);
+	if (shm->stats.frontier_strategy_picks)
+		stat_row("strategy", "frontier_strategy_picks",
+			 shm->stats.frontier_strategy_picks);
+	if (shm->stats.frontier_live_picks)
+		stat_row("strategy", "frontier_live_picks",
+			 shm->stats.frontier_live_picks);
+	if (shm->stats.frontier_silent_picks)
+		stat_row("strategy", "frontier_silent_picks",
+			 shm->stats.frontier_silent_picks);
+	/* SHADOW-ONLY observability companions to frontier_silent_picks:
+	 * the candidate count (how many threshold-crossings the silent
+	 * regime has produced) and the threshold itself, emitted side by
+	 * side so the operator can interpret the count without consulting
+	 * the source.  Neither value is read by the live picker math. */
+	if (shm->stats.frontier_shadow_decay_candidates)
+		stat_row("strategy", "frontier_shadow_decay_candidates",
+			 shm->stats.frontier_shadow_decay_candidates);
+	stat_row("strategy", "frontier_shadow_decay_streak_threshold",
+		 FRONTIER_SHADOW_DECAY_STREAK);
+	/* Tightened decay predicate (sibling of the looser counter above):
+	 * adds the no-CMP-novelty + no-errno-shift UNLESS clause to the
+	 * threshold-crossing test, and tallies the projected demote count
+	 * across all silent-regime picks past the threshold.  The (looser
+	 * candidates / candidates) ratio tells the operator what fraction
+	 * of N-silent crossings the CMP/errno tightening would have spared;
+	 * the would_skip / silent_picks ratio is the projected pick share a
+	 * live silent-decay variant would demote. */
+	if (shm->stats.frontier_decay_candidates)
+		stat_row("strategy", "frontier_decay_candidates",
+			 shm->stats.frontier_decay_candidates);
+	if (shm->stats.frontier_decay_would_skip)
+		stat_row("strategy", "frontier_decay_would_skip",
+			 shm->stats.frontier_decay_would_skip);
+	/* Arm-B-only live reject count for the silent-streak decay above.
+	 * Pairs with frontier_decay_would_skip (both arms) as the headline
+	 * arm-B behaviour delta; normalise against the Arm-B silent-pick
+	 * throughput recoverable from frontier_silent_picks and the
+	 * frontier_silent_decay_arm_{a,b}_children cohort split in kcov_shm. */
+	if (shm->stats.frontier_silent_decay_live_rejects)
+		stat_row("strategy", "frontier_silent_decay_live_rejects",
+			 shm->stats.frontier_silent_decay_live_rejects);
+	dump_stats_render_frontier_satcool();
+	/* SHADOW-ONLY LIVE-regime cooldown projections.  Sibling block to
+	 * the silent-streak decay rows above: candidates is the distinct
+	 * cooldown-episode count (one bump per FRONTIER_LIVE_MISS_COOLDOWN
+	 * crossing per syscall); would_skip is the projected demote count a
+	 * live cooldown variant of the picker would produce, normalised
+	 * against frontier_live_picks for the projected reclaim fraction.
+	 * The threshold is emitted alongside so the operator can interpret
+	 * the candidate count without consulting the source, matching the
+	 * frontier_shadow_decay_streak_threshold row above. */
+	if (shm->stats.frontier_live_cooldown_candidates)
+		stat_row("strategy", "frontier_live_cooldown_candidates",
+			 shm->stats.frontier_live_cooldown_candidates);
+	if (shm->stats.frontier_live_would_skip)
+		stat_row("strategy", "frontier_live_would_skip",
+			 shm->stats.frontier_live_would_skip);
+	stat_row("strategy", "frontier_live_miss_cooldown_threshold",
+		 FRONTIER_LIVE_MISS_COOLDOWN);
+	dump_live_cooldown_would_skip_per_syscall_top();
+	dump_stats_render_frontier_live_cool();
+	/* Did-decay observability counter for the LIVE-regime early ring-
+	 * decay path.  One bump per (nr, rotation) where the early ring-
+	 * decay halved a non-zero cached sum.  Read alongside
+	 * frontier_live_would_skip (F3 projection) to compare the projected
+	 * vs the actually-applied cooldown volume; the ratio reflects how
+	 * often the rotation-time decay catches a syscall the per-pick F3
+	 * projection had already counted as a candidate. */
+	if (shm->stats.frontier_live_cooldown_decays)
+		stat_row("strategy", "frontier_live_cooldown_decays",
+			 shm->stats.frontier_live_cooldown_decays);
+	/* Blanket LIVE-regime probabilistic pick-reject (safe down-
+	 * payment).  Reclaims ~1 / FRONTIER_LIVE_DECAY_REJECT_DENOM of
+	 * LIVE-ring picks unconditionally; the reject rate against
+	 * accepted picks is rejects / (rejects + frontier_live_picks)
+	 * and should converge to 1 / REJECT_DENOM.  Read alongside
+	 * frontier_live_would_skip (the F3 SHADOW projection) to gauge
+	 * the headroom a targeted variant of this reject would unlock. */
+	if (shm->stats.frontier_live_decay_live_rejects)
+		stat_row("strategy", "frontier_live_decay_live_rejects",
+			 shm->stats.frontier_live_decay_live_rejects);
+	/* SHADOW + per-child A/B errno-plateau decay (silent-regime accept
+	 * site): would_skip is the both-arms shadow demote count, live_
+	 * rejects is the arm-B-only actual demote count, overlap_silent is
+	 * the both-arms shadow count of picks where the consecutive-silent
+	 * shadow predicate ALSO fires.  Emitted side by side with the
+	 * silent-streak shadow rows above so the operator can read the
+	 * orthogonal coverage (would_skip - overlap_silent) at a glance. */
+	if (shm->stats.frontier_errno_decay_would_skip)
+		stat_row("strategy", "frontier_errno_decay_would_skip",
+			 shm->stats.frontier_errno_decay_would_skip);
+	if (shm->stats.frontier_errno_decay_live_rejects)
+		stat_row("strategy", "frontier_errno_decay_live_rejects",
+			 shm->stats.frontier_errno_decay_live_rejects);
+	if (shm->stats.frontier_errno_decay_overlap_silent)
+		stat_row("strategy", "frontier_errno_decay_overlap_silent",
+			 shm->stats.frontier_errno_decay_overlap_silent);
+	dump_stats_render_frontier_blend();
+	dump_stats_render_reach_band();
+	/* Adaptive expensive-syscall accept gate.  All zero while the
+	 * gate is in its default OFF mode (the early-return path skips
+	 * the bumps).  See the expensive_adaptive_* field-comment block
+	 * in include/stats.h for per-counter semantics. */
+	if (shm->stats.expensive_adaptive_samples) {
+		stat_row("strategy", "expensive_adaptive_samples",
+			 shm->stats.expensive_adaptive_samples);
+		stat_row("strategy", "expensive_adaptive_extra_accepts",
+			 shm->stats.expensive_adaptive_extra_accepts);
+		stat_row("strategy", "expensive_adaptive_demotes",
+			 shm->stats.expensive_adaptive_demotes);
+	}
+	dump_stats_render_arg_len_semantics();
+	if (shm->stats.frontier_underflow_prevented)
+		stat_row("strategy", "frontier_underflow_prevented",
+			 shm->stats.frontier_underflow_prevented);
+	if (shm->stats.frontier_intervention_pulls)
+		stat_row("strategy", "frontier_intervention_pulls",
+			 shm->stats.frontier_intervention_pulls);
+	if (shm->stats.frontier_intervention_cold_skipped)
+		stat_row("strategy", "frontier_intervention_cold_skipped",
+			 shm->stats.frontier_intervention_cold_skipped);
+	if (shm->stats.plateau_forced_windows)
+		stat_row("strategy", "plateau_forced_windows",
+			 shm->stats.plateau_forced_windows);
+	dump_stats_render_wall_lever_eligible();
+	dump_stats_render_wall_lever_running();
 	if (shm->stats.strategy_explorer_picks)
 		stat_row("strategy", "strategy_explorer_picks",
 			 shm->stats.strategy_explorer_picks);
