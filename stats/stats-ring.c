@@ -227,7 +227,7 @@ static void apply_slot(const void *p, void *ctx __unused__)
 	}
 }
 
-unsigned int stats_ring_drain(struct stats_ring *ring)
+static unsigned int stats_ring_drain(struct stats_ring *ring)
 {
 	uint64_t overflow = 0;
 	uint32_t processed;
