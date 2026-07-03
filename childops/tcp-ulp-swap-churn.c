@@ -1,83 +1,32 @@
 /*
- * tcp_ulp_swap_churn - drive a TCP socket through a chain of TCP_ULP
- * install / illegal-swap / uninstall / re-install transitions on a
- * connected loopback fd.
+ * tcp_ulp_swap_churn - drive a TCP socket through a chain of TCP_ULP install,
+ * illegal-swap, uninstall, and re-install transitions on a connected loopback
+ * fd.  Targets net/ipv4/tcp_ulp.c and its tcp_set_ulp -> ulp_ops->release ->
+ * ulp_ops->init dance.
  *
- * net/ipv4/tcp_ulp.c constrains setsockopt(TCP_ULP, ...) to a narrow
- * legal window that varies per ULP module:
+ * Bug class: illegal ULP transitions where the cleanup path fails to fully
+ * unwind the prior ULP's per-sock state -- CVE-2023-0461 (inet ULP listener
+ * UAF), CVE-2024-36010 (tls_sw cleanup leaves dangling ctx on proto fallback),
+ * CVE-2025-21683 (espintcp/tcp ULP refcount imbalance on failed swap).  Flat
+ * fuzzing never assembles the full sequence: an ESTABLISHED socket, kTLS
+ * armed with live TX/RX SW ctx, then post-connect swap attempts to "espintcp"
+ * / "smc" (rejected: rejection-after-validate edge), TCP_ULP "" uninstall,
+ * and a second "tls" re-install that trips the missed-unwind.
  *
- *   - "tls" requires the socket to be in TCP_ESTABLISHED.
- *   - "espintcp" requires pre-connect / listener state.
- *   - "smc" likewise refuses on a connected socket.
- *   - "mptcp" upgrade is gated through a different inet_create() path.
+ * Brick-safety: every mutation runs on a fresh loopback TCP socket connected
+ * to a one-shot accept-and-exit fork; nothing host-visible.  The SIOCSIFNAME
+ * probe reuses the name SIOCGIFNAME just returned, so no device is renamed.
+ * BUDGETED (base 4 / cap 32) with JITTER, 200 ms wall-clock cap, SO_RCVTIMEO
+ * 100 ms on every fd; acceptor child WNOHANG-reaped then SIGTERM if it
+ * overstays.
  *
- * Once any ULP is installed, every subsequent TCP_ULP setsockopt against
- * the same socket has to walk through tcp_set_ulp -> ulp_ops->release
- * before another ulp_ops->init can fire.  The bug class is "user
- * attempted illegal transition and the cleanup path didn't fully undo
- * the prior ULP's per-sock state".  Historical examples:
+ * Per-process latch: ns_unsupported_tcp_ulp_swap fires on EAFNOSUPPORT /
+ * ENOPROTOOPT / EPERM from the first "tls" install; subsequent invocations
+ * bump runs+setup_failed and return.  Same shape as tls_ulp_churn.
  *
- *   CVE-2023-0461  inet ULP listener UAF (sk_psock leak after a failed
- *                  ULP install on a listener inherited the wrong proto
- *                  pointers; child socket survived the cleanup).
- *   CVE-2024-36010 tls_sw cleanup on ULP uninstall left ctx pointers
- *                  attached to the proto fallback ops, dangling on the
- *                  next sendmsg.
- *   CVE-2025-21683 espintcp + tcp ULP refcount imbalance: failed swap
- *                  decremented the encap module ref twice.
- *
- * Per outer-loop iteration (BUDGETED + JITTER, 200 ms wall-clock cap):
- *
- *   1.  socket(AF_INET, SOCK_STREAM)
- *   2.  loopback acceptor fork; client connect()s through the 3-way
- *       handshake so the socket lands in ESTABLISHED.
- *   3.  setsockopt(TCP_ULP, "tls") -- install kTLS (the legal window).
- *   4.  setsockopt(SOL_TLS, TLS_TX, &cinfo) and TLS_RX with a urandom-
- *       keyed AES_GCM_128 cinfo on each direction.
- *   5.  send() through the TX side; recv() on the RX side.  Drives
- *       tls_sw_sendmsg + tls_sw_recvmsg so the ULP has live per-sock
- *       state (ctx, strparser, sw_send/recv path) by the time the
- *       illegal-swap attempts hit it.
- *   6.  setsockopt(TCP_ULP, "espintcp") -- KERNEL REJECTS on a connected
- *       socket; EINVAL/EBUSY/EOPNOTSUPP are all the rejection-after-
- *       validate edge that flat fuzzing skips.  Counter bump.
- *   7.  setsockopt(TCP_ULP, "smc") -- likewise rejected post-connect.
- *   8.  ioctl SIOCGIFNAME(ifindex=1), then SIOCSIFNAME with the SAME
- *       name that came back -- the kernel returns 0 / EEXIST and never
- *       disturbs lo.  EPERM latches off the ifname probe forever; this
- *       is gravy, the swap-rejection edge above is the main signal.
- *   9.  setsockopt(TCP_ULP, "") -- uninstall.  net/tls historically
- *       refused this on a TLS-armed socket (CVE-2024-36010 cleanup
- *       window) but the rejection itself is the path.  When accepted,
- *       it races whatever in-flight rx / strparser work is queued.
- *  10.  setsockopt(TCP_ULP, "tls") AGAIN -- re-install on the same
- *       sock.  net/tls's tls_init() takes a fresh trip through the
- *       proto-pointer dance; if the prior cleanup didn't fully unwind
- *       the dangling ctx (the bug class), the second init is the
- *       trigger.
- *  11.  close().
- *
- * Per-process cap-gate latch: ns_unsupported_tcp_ulp_swap fires on
- * EAFNOSUPPORT / ENOPROTOOPT / EPERM from the very first TCP_ULP "tls"
- * install attempt.  Once latched, every subsequent invocation just
- * bumps runs+setup_failed and returns.  Mirrors tls_ulp_churn,
- * netns_teardown_churn, etc.
- *
- * Brick-safety:
- *   - Every mutation runs on a fresh loopback TCP socket connected to
- *     a one-shot accept-and-exit fork.  Nothing host-visible.
- *   - SIOCSIFNAME passes back the name the kernel just handed us, so
- *     the device is never actually renamed.
- *   - Inner sequence is BUDGETED (base 4 / cap 32) with JITTER and
- *     a 200 ms wall-clock cap; SO_RCVTIMEO of 100 ms on every fd.
- *   - Acceptor child is reaped via WNOHANG-poll then SIGTERM if it
- *     overstays.
- *
- * Header gate: the kTLS install structs come from include/tls.h
- * (trinity's private cipher-info shim that shadows <linux/tls.h>); the
- * TCP_ULP optname comes from <netinet/tcp.h>.  SOL_TLS is not always
- * exposed by libc headers -- fall back to the upstream UAPI value if
- * the toolchain hasn't seen it.
+ * Header gate: kTLS install structs come from trinity's private include/tls.h
+ * shim; TCP_ULP from <netinet/tcp.h>.  SOL_TLS falls back to the upstream
+ * UAPI value if libc headers don't expose it.
  */
 
 #include <errno.h>
