@@ -116,6 +116,18 @@ static void mutate_field_enum(unsigned char *buf, const struct struct_field *f)
 			return;
 		}
 	}
+
+	/*
+	 * All 8 random draws collided with the current value (small vocab).
+	 * Deterministic scan guarantees a swap whenever any value differs --
+	 * the enum selftest and callers require the value to actually change.
+	 */
+	for (retries = 0; retries < n; retries++) {
+		if ((uint64_t) vals[retries] != current) {
+			write_field_uint(buf, f, (uint64_t) vals[retries]);
+			return;
+		}
+	}
 }
 
 /*
