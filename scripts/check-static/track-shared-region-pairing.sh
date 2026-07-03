@@ -37,8 +37,8 @@
 # Allow-list:
 #   - Function names matching destroy / destructor / release / cleanup
 #     (per-type destructors only ever untrack -- they don't track).
-#   - utils.c (defines track_shared_region / untrack_shared_region
-#     themselves).
+#   - utils/shared_mem.c (defines track_shared_region /
+#     untrack_shared_region themselves).
 #
 # Auto-discovered by scripts/check-static.sh -- no registration needed.
 
@@ -53,11 +53,11 @@ hits_tmp="$(mktemp)"
 trap 'rm -f "$hits_tmp"' EXIT
 
 # Build the candidate file list: every .c file that mentions
-# track_shared_region(.  utils.c is the home of the function
-# definitions themselves and is excluded.
+# track_shared_region(.  utils/shared_mem.c is the home of the
+# function definitions themselves and is excluded.
 mapfile -t SRCFILES < <(grep -lE '\<track_shared_region[[:space:]]*\(' \
 		--include='*.c' -r . 2>/dev/null \
-	| grep -vE '(^|/)utils\.c$' \
+	| grep -vE '(^|/)utils/shared_mem\.c$' \
 	| sort)
 
 if [ "${#SRCFILES[@]}" -eq 0 ]; then
