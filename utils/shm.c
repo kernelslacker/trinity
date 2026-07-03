@@ -115,6 +115,7 @@ static void init_shm_debug_start(void)
 		shm->stats.childop_budget_mult[i] = ADAPT_BUDGET_UNITY;
 
 	shm->start_time = time(NULL);
+	shm->start_mono_ns = mono_ns();
 }
 
 /*

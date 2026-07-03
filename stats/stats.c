@@ -1687,8 +1687,10 @@ static const struct stat_category fd_lifecycle_category
 static void dump_stats_runtime_header(void)
 {
 	time_t start = shm->start_time;
-	time_t now = time(NULL);
-	long elapsed = (start > 0 && now >= start) ? (long)(now - start) : 0;
+	uint64_t start_ns = shm->start_mono_ns;
+	uint64_t now_ns = mono_ns();
+	long elapsed = (start_ns != 0 && now_ns >= start_ns) ?
+		(long)((now_ns - start_ns) / 1000000000ULL) : 0;
 	struct tm tm;
 	char ts[32];
 

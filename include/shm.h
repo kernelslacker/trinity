@@ -46,8 +46,18 @@ struct shm_s {
 
 	/* Wall-clock time init_shm() ran.  Read-only after init; used by
 	 * dump_stats() to log absolute runtime alongside iters/s, which lets
-	 * crash post-mortem correlate trinity output to external logs. */
+	 * crash post-mortem correlate trinity output to external logs.
+	 * Do NOT subtract from time(NULL) to compute elapsed -- an NTP
+	 * backward step would flip the delta negative.  Elapsed is computed
+	 * from start_mono_ns below. */
 	time_t start_time;
+
+	/* CLOCK_MONOTONIC anchor for the run, stamped in init_shm() alongside
+	 * start_time.  Read-only after init.  Elapsed-runtime computations
+	 * (dump_stats runtime header) subtract mono_ns() from this so an
+	 * NTP wall-clock step -- forward or backward -- cannot skew the
+	 * displayed uptime or (worse) drive a would-be duration negative. */
+	uint64_t start_mono_ns;
 
 	/*
 	 * Identity of trinity's own binary, captured once in init_shm() via
