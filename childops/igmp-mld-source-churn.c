@@ -2,95 +2,38 @@
  * igmp_mld_source_churn - IGMPv3 / MLDv2 source-filter mutation churn
  * vs. live multicast traffic.
  *
- * Random syscall fuzzing essentially never reaches the source-filter
- * state machine in net/ipv4/igmp.c (ip_mc_msfilter, ip_mc_source) or
- * its IPv6 twin in net/ipv6/mcast.c (ip6_mc_msfilter, ip6_mc_source)
- * because those branches only fire when an EXISTING per-socket
- * membership has its include / exclude source list mutated while
- * datagrams are concurrently arriving on the bound group.  Building
- * that precondition takes:
+ * Bug class: the source-filter state machines in net/ipv4/igmp.c
+ * (ip_mc_msfilter, ip_mc_source) and net/ipv6/mcast.c
+ * (ip6_mc_msfilter, ip6_mc_source) only fire when an EXISTING per-
+ * socket membership has its INCLUDE/EXCLUDE source list mutated while
+ * datagrams are concurrently arriving on the bound group.  Random
+ * MCAST_* fuzzing on cold sockets bails at the first validation step
+ * and never reaches the realloc / RCU-publish window.
  *
- *   - one AF_INET / AF_INET6 SOCK_DGRAM sender connected to a
- *     multicast group;
- *   - a second SOCK_DGRAM receiver bound to the same group:port,
- *     SO_REUSEADDR + IP_MULTICAST_LOOP=1 so loopback delivery actually
- *     fires;
- *   - one or more MCAST_JOIN_SOURCE_GROUP calls (INCLUDE filter with
- *     two named sources) -- this primes the per-socket inet_sock
- *     mc_list / ipv6_mc_socklist with a real ip_sf_socklist;
- *   - a primed datagram burst on the sender so the kernel's
- *     ip_check_mc_rcu / ip6_mc_input path is actively walking that
- *     filter;
- *   - and only THEN does a mutation (LEAVE_SOURCE / BLOCK_SOURCE /
- *     IP_MSFILTER bulk replace / full IP_DROP_MEMBERSHIP) reach
- *     ip_mc_source / ip_mc_msfilter (and v6 equivalents) with the
- *     racing receive path actually traversing the just-edited list.
+ * Per iteration (BUDGETED+JITTER, 200 ms wall cap; family alternates
+ * iter%2 AF_INET / AF_INET6): connect a SOCK_DGRAM sender to
+ * 232.42.x.y:1234 (or ff3e::42:*), bind a SO_REUSEADDR receiver with
+ * IP{,V6}_MULTICAST_LOOP=1 on the same group:port, prime the include
+ * filter with two MCAST_JOIN_SOURCE_GROUP calls, burst a datagram,
+ * then race one of four mutations against the rx walk:
+ * MCAST_LEAVE_SOURCE_GROUP (shrink), MCAST_BLOCK_SOURCE (INCLUDE->
+ * EXCLUDE flip), (MCAST_)IP_MSFILTER bulk replace (rotates ~1/8/32
+ * set sizes -- the realloc + RCU-publish path), or full
+ * IP_DROP_MEMBERSHIP.  Second datagram burst while in flight.
  *
- * Random fuzzing of MCAST_* setsockopts on cold sockets returns
- * -EADDRNOTAVAIL or -EINVAL in the very first validation step and
- * never gets to the realloc / list-rcu publish window, so those code
- * paths stay un-exercised.
+ * Brick-safety: SOCK_DGRAM only, no routing/iface touches;
+ * IP_MULTICAST_LOOP keeps traffic on lo; SSM groups stay local.
+ * Per-syscall SO_{RCV,SND}TIMEO=100 ms and 200 ms wall cap keep the
+ * op inside child.c's SIGALRM(1s).
  *
- * Sequence (per BUDGETED + JITTER iteration, 200 ms wall cap; per-
- * iteration the family alternates iter%2 between AF_INET / AF_INET6 so
- * both stacks see the four race shapes across the outer loop):
- *
- *   1.  send_s = socket(AF_INET[6], SOCK_DGRAM); apply 100 ms
- *       SO_RCVTIMEO/SO_SNDTIMEO; connect to the SSM group:port
- *       (239.x.y.z:1234 / ff1e::42:1234).
- *   2.  recv_s = socket(AF_INET[6], SOCK_DGRAM); SO_REUSEADDR,
- *       IP{,V6}_MULTICAST_LOOP=1, bind to that group:port.
- *   3.  setsockopt MCAST_JOIN_SOURCE_GROUP src=A (IGMPv3 SSM include
- *       filter add).  This is the structural-support probe -- on
- *       -EPERM / -ENOSYS / -EOPNOTSUPP / -ENOPROTOOPT / -EAFNOSUPPORT
- *       latch ns_unsupported_igmp_mld_source_churn for the rest of the
- *       child's life and short-circuit subsequent invocations.
- *   4.  setsockopt MCAST_JOIN_SOURCE_GROUP src=B (extends the include
- *       filter ip_sf_socklist).
- *   5.  prime traffic: send 1-2 datagrams on send_s.  Loopback runs
- *       ip_mc_filter_rcu / ip6_mc_filter against the freshly-built
- *       per-socket source list.
- *   6.  RACE per iter % 4:
- *         A: setsockopt MCAST_LEAVE_SOURCE_GROUP src=A mid-stream
- *            (filter shrink under concurrent rx walk);
- *         B: setsockopt MCAST_BLOCK_SOURCE src=B (INCLUDE -> EXCLUDE
- *            transition: ip_mc_source flips the filter mode and the
- *            per-source state in one shot);
- *         C: setsockopt IP_MSFILTER (or MCAST_MSFILTER) bulk replace
- *            with a longer source list (rotates through small ~1,
- *            medium ~8, larger ~32 set sizes per outer loop) -- this
- *            is the path that actually exercises the kmalloc /
- *            ip_mc_socklist realloc + RCU publish in
- *            ip_mc_msfilter;
- *         D: setsockopt IP_DROP_MEMBERSHIP -- full leave race vs the
- *            in-flight sender, drives ip_mc_leave_group while traffic
- *            is still hitting the old filter.
- *   7.  second datagram burst on send_s while the race is in flight.
- *   8.  close both sockets in randomised order.
- *
- * Per-syscall SO_RCVTIMEO/SO_SNDTIMEO 100 ms keeps a wedged loopback
- * recv from punching through the SIGALRM(1s) cap inherited from
- * child.c; the BUDGETED outer loop is base 4 / floor 8 / cap 16 with
- * JITTER and a 200 ms wall-clock break.
- *
- * Header gates: __has_include(<netinet/in.h>) / <sys/socket.h> /
- * <linux/in.h> / <linux/in6.h>.  MCAST_JOIN_SOURCE_GROUP (46),
- * MCAST_LEAVE_SOURCE_GROUP (47), MCAST_BLOCK_SOURCE (43),
- * MCAST_UNBLOCK_SOURCE (44), MCAST_MSFILTER (48), IP_MSFILTER (41),
- * IP_ADD_SOURCE_MEMBERSHIP (39), IP_DROP_SOURCE_MEMBERSHIP (40),
- * IPV6_MULTICAST_LOOP (19) are #define-fallback supplied at their
- * stable UAPI integer values when missing on the build host -- the
- * kernel returns ENOPROTOOPT and the cap-gate latches.
- *
- * Brick-safety:
- *   - All sockets are unprivileged userspace SOCK_DGRAM; nothing
- *     touches the routing table or interface state.
- *   - IP_MULTICAST_LOOP is on so packets stay on lo; no physical
- *     network egress.
- *   - SSM groups in 232.0.0.0/8 (specifically 232.42.x.y) and
- *     ff3e::42:* IPv6 SSM range stay inside the local stack.
- *   - BUDGETED outer loop with 200 ms wall cap and per-syscall 100 ms
- *     timeouts -- can't wedge past the SIGALRM(1s) cap.
+ * Latch: ns_unsupported_igmp_mld_source_churn fires on structural
+ * rejection of the first MCAST_JOIN_SOURCE_GROUP (-EPERM/-ENOSYS/
+ * -EOPNOTSUPP/-ENOPROTOOPT/-EAFNOSUPPORT) and short-circuits the op
+ * for the rest of the child's life.  Header-gated by __has_include
+ * on <netinet/in.h>/<sys/socket.h>/<linux/in.h>/<linux/in6.h>, with
+ * per-symbol #define fallbacks at the stable UAPI values for the
+ * MCAST_* / IP_MSFILTER / IPV6_MULTICAST_LOOP constants so the file
+ * builds on older sysroots (kernel returns ENOPROTOOPT, latch fires).
  */
 
 #if __has_include(<netinet/in.h>) && __has_include(<sys/socket.h>) && \
