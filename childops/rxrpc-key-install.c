@@ -1,81 +1,31 @@
 /*
  * rxrpc_key_install -- fuzz net/rxrpc/key.c token parsers via add_key(2).
  *
- * The AF_RXRPC socket-family-grammar that landed today explicitly skips
- * RXRPC_SECURITY_KEY: per-call security setup (rxrpc_init_client_call_security
- * -> per-security init_connection_security / issue_challenge / verify_response
- * paths in rxkad.c / rxgk.c) is unreachable from the current grammar.  This
- * childop closes the easiest part of that gap -- the kernel-side token
- * parser, reachable purely via add_key("rxrpc", ...) without any socket
- * setup.
+ * The AF_RXRPC socket-family grammar can't reach the per-call security setup
+ * (rxrpc_init_client_call_security -> init_connection_security / issue_challenge
+ * / verify_response in rxkad.c / rxgk.c).  This op closes the easiest slice of
+ * that gap: the kernel-side token parser rxrpc_preparse() in net/rxrpc/key.c,
+ * reachable purely via add_key("rxrpc", ...) with no socket setup.
  *
- * The parser entrypoint is rxrpc_preparse() in net/rxrpc/key.c.  It
- * dispatches on payload length:
+ * Iterations rotate seven arms across the three wire formats behind the
+ * parser: v1 binary RXKAD, AFS-XDR envelope (with XDR-RXKAD / XDR-RXGK
+ * inners), and "rxrpc_s" server keys via preparse_server_key dispatch.
+ * Malformed lengths, bad sec_ix, and truncated headers drive the parser
+ * fall-through paths.
  *
- *   datalen == 0  -> null-security key (success)
- *   datalen >  28 -> rxrpc_preparse_xdr() (XDR envelope; falls back to v1
- *                    binary on -EPROTO)
- *   else          -> v1 binary, single-token RXKAD
- *
- * Three wire formats sit behind it:
- *
- *   - RXKAD v1 binary (struct rxrpc_key_data_v1 in include/keys/rxrpc-type.h):
- *       4 B kif_version (must be 1)
- *       2 B security_index (must be RXRPC_SECURITY_RXKAD == 2 to be accepted)
- *       2 B ticket_length
- *       4 B expiry, 4 B kvno, 8 B session_key, ticket_length B ticket
- *     Total payload exactly = 24 + ticket_length.
- *
- *   - AFS-XDR envelope (rxrpc_preparse_xdr): __be32 array with leading
- *     flags=0, cellname (length-prefixed printable string padded to 4),
- *     ntoken (1..AFSTOKEN_MAX==8), then a sequence of (toklen, sec_ix,
- *     payload[toklen-4]) wrappers.  sec_ix == 2 -> XDR-RXKAD inner;
- *     sec_ix == 6 -> XDR-RXGK inner; anything else -> -EPROTONOSUPPORT.
- *
- *   - rxrpc_s server keys: description "<svcId>:<secIdx>[:<kvno>:<enctype>]",
- *     payload is sec-specific (RXKAD wants exactly 8 B; RXGK wants
- *     krb5->key_len bytes for the named enctype).
- *
- * Per iteration we pick one of seven shapes:
- *   ARM_NULL          datalen == 0 (null-security fast path)
- *   ARM_SHORT_RANDOM  datalen 1..27 random bytes (v1 fast path with various
- *                     truncation patterns; usually -EINVAL, sometimes
- *                     -EKEYREJECTED, all without allocation)
- *   ARM_V1_BINARY     full v1 RXKAD shape with deliberately varied kver,
- *                     security_index, ticket_length, total length
- *   ARM_XDR_ENVELOPE  XDR envelope alone with a randomly-shaped (toklen,
- *                     sec_ix) wrapper -- exercises rxrpc_preparse_xdr()
- *                     fall-through paths (bad cellname, bad ntoken, bad
- *                     toklen) before any inner parser sees the bytes
- *   ARM_XDR_RXKAD     XDR envelope wrapping an XDR-RXKAD inner with
- *                     malformed ticket_length / total length / field values
- *   ARM_XDR_RXGK      XDR envelope wrapping an XDR-RXGK inner with bad
- *                     enctype, level out-of-spec, oversized key/ticket lens
- *   ARM_SERVER_KEY    add_key("rxrpc_s", "<svc>:<sec>[:<kvno>:<enc>]", ...)
- *                     via the rxkad/rxgk preparse_server_key dispatch
- *
- * Lifecycle:
- *   - All keys go on KEY_SPEC_THREAD_KEYRING so they're auto-reaped on
- *     thread exit; no cross-call cleanup needed.
- *   - Successful add_key serials land in a small ring (LIVE_KEYS_RING) so
- *     subsequent iterations can KEYCTL_REVOKE / KEYCTL_UNLINK them and
- *     drive the rxrpc_destroy() / rxrpc_destroy_s() teardown paths --
- *     mirrors the keyring-spam.c pattern.
- *   - -EDQUOT (kernel.keys.maxkeys cap) is expected; counted and continued.
+ * Lifecycle: all keys land on KEY_SPEC_THREAD_KEYRING so thread exit
+ * auto-reaps them.  Live serials are kept in a small ring so later iterations
+ * KEYCTL_REVOKE / KEYCTL_UNLINK them and drive the rxrpc_destroy{,_s}
+ * teardown paths.  -EDQUOT (keys.maxkeys cap) is expected and counted.
  *
  * can_run probe: add_key("rxrpc", "trinity-probe", NULL, 0,
  * KEY_SPEC_THREAD_KEYRING) hits the null-security fast path with no
- * allocation.  -ENOPROTOOPT / -ENOSYS / -EAFNOSUPPORT / -ENODEV (kernel
- * built without CONFIG_RXRPC, or rxrpc.ko not loaded so the key type isn't
- * registered) latches unsupported_rxrpc_key_install for the rest of the
- * process, mirroring the uniform unsupported_<name> idiom used by
- * fds/{kvm,landlock,memfd_secret,mq}.c.
+ * allocation.  -ENOPROTOOPT / -ENOSYS / -EAFNOSUPPORT / -ENODEV latches
+ * unsupported_rxrpc_key_install for the rest of the process (no CONFIG_RXRPC
+ * or rxrpc.ko not loaded, so the key type isn't registered).
  *
- * Self-bounding: 200 ms wall-clock budget and MAX_ITERATIONS cap, same
- * shape and band as keyring-spam.c.  child.c arms alarm(1) around every
- * non-syscall op as a backstop.
- *
- * No socket, no fds, no /sys writes, no module load.  Pure parser fuzz.
+ * Self-bounding: 200 ms wall-clock budget + MAX_ITERATIONS cap.  No socket,
+ * no fds, no /sys writes, no module load -- pure parser fuzz.
  */
 
 #include <errno.h>
