@@ -1,28 +1,12 @@
 /*
  * SYSCALL_DEFINE3(set_mempolicy, int, mode, unsigned long __user *, nmask, unsigned long, maxnode)
  */
+#include "kernel/mempolicy.h"
 #include "nodemask.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
 #include "compat.h"
-
-#ifndef MPOL_DEFAULT
-#define MPOL_DEFAULT		0
-#define MPOL_PREFERRED		1
-#define MPOL_BIND		2
-#define MPOL_INTERLEAVE		3
-#define MPOL_LOCAL		4
-#endif
-#ifndef MPOL_F_NUMA_BALANCING
-#define MPOL_F_NUMA_BALANCING (1 << 13)	/* 5.12+ */
-#endif
-#ifndef MPOL_F_STATIC_NODES
-#define MPOL_F_STATIC_NODES (1 << 15)
-#endif
-#ifndef MPOL_F_RELATIVE_NODES
-#define MPOL_F_RELATIVE_NODES (1 << 14)
-#endif
 
 static unsigned long mempolicy_modes[] = {
 	MPOL_DEFAULT, MPOL_PREFERRED, MPOL_BIND,
