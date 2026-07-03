@@ -353,69 +353,55 @@ static void stats_timeseries_emit_table(const struct syscalltable *table,
 	}
 }
 
-void stats_timeseries_emit_window(unsigned long op_count)
+/* Head of the record.  Order chosen so existing consumers
+ * reading the first three fields keep working; new fields
+ * append.  Returns the freshly loaded distinct-edge total so
+ * stats_ts_emit_baselines can reuse it -- edges_run_gained
+ * differences the same reading against the warm-load baseline
+ * and must see the same value that was reported at the head to
+ * stay consistent within a single window record. */
+static unsigned long stats_ts_emit_record_head(FILE *fp, unsigned long op_count)
 {
 	/* Previous window's distinct-edge total, for the top-level
 	 * edges_gained_this_window delta.  Zero-initialised so the
 	 * first window's delta equals the level (a plateau consumer
 	 * gets a real first value instead of a phantom zero). */
 	static unsigned long prev_edges_total = 0;
+	unsigned long edges_total = 0;
+	unsigned long edges_gained_this_window;
+
+	if (kcov_shm != NULL)
+		edges_total = __atomic_load_n(&kcov_shm->distinct_edges,
+					      __ATOMIC_RELAXED);
+
+	edges_gained_this_window = stats_ts_window_delta(edges_total,
+							 &prev_edges_total);
+
+	fprintf(fp,
+		"{\"t\":%lu,\"edges_total\":%lu,\"edges_gained_this_window\":%lu",
+		op_count, edges_total, edges_gained_this_window);
+
+	return edges_total;
+}
+
+/* Bucket-bit sibling + warm-load baselines + run-owned deltas.
+ * edges_run_gained and edges_found_run_gained let the first
+ * window's line be interpreted as "gained since this run
+ * started" instead of the whole warm-loaded corpus. */
+static void stats_ts_emit_baselines(FILE *fp, unsigned long edges_total)
+{
 	/* Bucket-bit sibling of prev_edges_total; kcov_shm->edges_found
 	 * grows with bucket churn on already-known edges so its delta
 	 * stays live even when distinct edges have plateaued -- this is
 	 * the "cmp is still rising while pc is flat" signal the plateau
 	 * classifier reads from strategy_plateau_hypothesis_check(). */
 	static unsigned long prev_edges_found_total = 0;
-	/* Trace / cmp-trace truncation snapshots.  Level tells the
-	 * operator how many collect calls have ever hit the buffer cap;
-	 * the delta partitioned per-window is the decision-relevant
-	 * signal (a burst of truncations concentrated in the same
-	 * window as a coverage plateau is the smoking gun for
-	 * KCOV_TRACE_SIZE / KCOV_CMP_BUFFER_SIZE undersizing). */
-	static unsigned long prev_trace_truncated = 0;
-	static unsigned long prev_cmp_trace_truncated = 0;
-	/* CMP-hint / CMP-hyp inject + conversion snapshots.  A window
-	 * where injected rose but consumed/wins did not is a
-	 * conversion-side plateau (targets landed but drove no new
-	 * coverage); a window where injected fell is a supply-side
-	 * plateau (nothing to try).  Kept as level+delta so run-analysis
-	 * can plot both without differencing consecutive lines. */
-	static unsigned long prev_cmp_hints_injected = 0;
-	static unsigned long prev_cmp_hints_consumed = 0;
-	static unsigned long prev_cmp_hint_wins = 0;
-	static unsigned long prev_cmp_hyp_live_injected = 0;
-	static unsigned long prev_cmp_hyp_consumed = 0;
-	/* Per-arm snapshots for the by_strategy block.  NR_STRATEGIES
-	 * is a compile-time constant so these live as fixed-width arrays
-	 * next to the top-level scalars rather than in shm. */
-	static unsigned long prev_bandit_pulls[NR_STRATEGIES];
-	static unsigned long prev_bandit_reward_calls[NR_STRATEGIES];
-	static unsigned long prev_bandit_reward_pc_edge_count[NR_STRATEGIES];
-
-	unsigned long edges_total = 0;
-	unsigned long edges_gained_this_window = 0;
 	unsigned long edges_found_total = 0;
-	unsigned long edges_found_gained = 0;
+	unsigned long edges_found_gained;
 	unsigned long edges_warm_loaded = 0;
 	unsigned long distinct_edges_warm_loaded = 0;
-	unsigned long trace_truncated = 0;
-	unsigned long cmp_trace_truncated = 0;
-	unsigned long cmp_hints_injected = 0;
-	unsigned long cmp_hints_consumed = 0;
-	unsigned long cmp_hint_wins = 0;
-	unsigned long cmp_hyp_live_injected = 0;
-	unsigned long cmp_hyp_consumed = 0;
-	int plateau_hypothesis = 0;
-	int intervention_mode = 0;
-	bool first = true;
-	int i;
-
-	if (stats_timeseries_fp == NULL)
-		return;
 
 	if (kcov_shm != NULL) {
-		edges_total = __atomic_load_n(&kcov_shm->distinct_edges,
-					      __ATOMIC_RELAXED);
 		edges_found_total = __atomic_load_n(&kcov_shm->edges_found,
 						    __ATOMIC_RELAXED);
 		edges_warm_loaded = __atomic_load_n(
@@ -423,10 +409,73 @@ void stats_timeseries_emit_window(unsigned long op_count)
 		distinct_edges_warm_loaded = __atomic_load_n(
 			&kcov_shm->distinct_edges_warm_loaded,
 			__ATOMIC_RELAXED);
+	}
+
+	edges_found_gained = stats_ts_window_delta(edges_found_total,
+						   &prev_edges_found_total);
+
+	fprintf(fp,
+		",\"edges_found_total\":%lu,\"edges_found_gained\":%lu"
+		",\"edges_warm_loaded\":%lu,\"distinct_edges_warm_loaded\":%lu"
+		",\"edges_run_gained\":%lu,\"edges_found_run_gained\":%lu",
+		edges_found_total, edges_found_gained,
+		edges_warm_loaded, distinct_edges_warm_loaded,
+		edges_total >= distinct_edges_warm_loaded
+			? edges_total - distinct_edges_warm_loaded : 0,
+		edges_found_total >= edges_warm_loaded
+			? edges_found_total - edges_warm_loaded : 0);
+}
+
+/* Trace / cmp-trace truncation snapshots.  Level tells the
+ * operator how many collect calls have ever hit the buffer cap;
+ * the delta partitioned per-window is the decision-relevant
+ * signal (a burst of truncations concentrated in the same
+ * window as a coverage plateau is the smoking gun for
+ * KCOV_TRACE_SIZE / KCOV_CMP_BUFFER_SIZE undersizing). */
+static void stats_ts_emit_truncation(FILE *fp)
+{
+	static unsigned long prev_trace_truncated = 0;
+	static unsigned long prev_cmp_trace_truncated = 0;
+	unsigned long trace_truncated = 0;
+	unsigned long cmp_trace_truncated = 0;
+
+	if (kcov_shm != NULL) {
 		trace_truncated = __atomic_load_n(&kcov_shm->trace_truncated,
 						  __ATOMIC_RELAXED);
 		cmp_trace_truncated = __atomic_load_n(
 			&kcov_shm->cmp_trace_truncated, __ATOMIC_RELAXED);
+	}
+
+	fprintf(fp,
+		",\"trace_truncated\":%lu,\"trace_truncated_delta\":%lu"
+		",\"cmp_trace_truncated\":%lu,\"cmp_trace_truncated_delta\":%lu",
+		trace_truncated,
+		stats_ts_window_delta(trace_truncated, &prev_trace_truncated),
+		cmp_trace_truncated,
+		stats_ts_window_delta(cmp_trace_truncated,
+				      &prev_cmp_trace_truncated));
+}
+
+/* CMP-hint / CMP-hyp inject + conversion snapshots.  A window
+ * where injected rose but consumed/wins did not is a
+ * conversion-side plateau (targets landed but drove no new
+ * coverage); a window where injected fell is a supply-side
+ * plateau (nothing to try).  Kept as level+delta so run-analysis
+ * can plot both without differencing consecutive lines. */
+static void stats_ts_emit_cmp_hints(FILE *fp)
+{
+	static unsigned long prev_cmp_hints_injected = 0;
+	static unsigned long prev_cmp_hints_consumed = 0;
+	static unsigned long prev_cmp_hint_wins = 0;
+	static unsigned long prev_cmp_hyp_live_injected = 0;
+	static unsigned long prev_cmp_hyp_consumed = 0;
+	unsigned long cmp_hints_injected = 0;
+	unsigned long cmp_hints_consumed = 0;
+	unsigned long cmp_hint_wins = 0;
+	unsigned long cmp_hyp_live_injected = 0;
+	unsigned long cmp_hyp_consumed = 0;
+
+	if (kcov_shm != NULL) {
 		cmp_hints_injected = __atomic_load_n(
 			&kcov_shm->cmp_hints_injected, __ATOMIC_RELAXED);
 		cmp_hints_consumed = __atomic_load_n(
@@ -439,51 +488,7 @@ void stats_timeseries_emit_window(unsigned long op_count)
 			&kcov_shm->cmp_hyp_consumed, __ATOMIC_RELAXED);
 	}
 
-	if (shm != NULL) {
-		plateau_hypothesis = __atomic_load_n(
-			&shm->plateau_current_hypothesis, __ATOMIC_RELAXED);
-		intervention_mode = __atomic_load_n(
-			&shm->plateau_intervention_mode_current,
-			__ATOMIC_RELAXED);
-	}
-
-	edges_gained_this_window = stats_ts_window_delta(edges_total,
-							 &prev_edges_total);
-	edges_found_gained = stats_ts_window_delta(edges_found_total,
-						   &prev_edges_found_total);
-
-	/* Head of the record.  Order chosen so existing consumers
-	 * reading the first three fields keep working; new fields
-	 * append. */
-	fprintf(stats_timeseries_fp,
-		"{\"t\":%lu,\"edges_total\":%lu,\"edges_gained_this_window\":%lu",
-		op_count, edges_total, edges_gained_this_window);
-
-	/* Bucket-bit sibling + warm-load baselines + run-owned deltas.
-	 * edges_run_gained and edges_found_run_gained let the first
-	 * window's line be interpreted as "gained since this run
-	 * started" instead of the whole warm-loaded corpus. */
-	fprintf(stats_timeseries_fp,
-		",\"edges_found_total\":%lu,\"edges_found_gained\":%lu"
-		",\"edges_warm_loaded\":%lu,\"distinct_edges_warm_loaded\":%lu"
-		",\"edges_run_gained\":%lu,\"edges_found_run_gained\":%lu",
-		edges_found_total, edges_found_gained,
-		edges_warm_loaded, distinct_edges_warm_loaded,
-		edges_total >= distinct_edges_warm_loaded
-			? edges_total - distinct_edges_warm_loaded : 0,
-		edges_found_total >= edges_warm_loaded
-			? edges_found_total - edges_warm_loaded : 0);
-
-	fprintf(stats_timeseries_fp,
-		",\"trace_truncated\":%lu,\"trace_truncated_delta\":%lu"
-		",\"cmp_trace_truncated\":%lu,\"cmp_trace_truncated_delta\":%lu",
-		trace_truncated,
-		stats_ts_window_delta(trace_truncated, &prev_trace_truncated),
-		cmp_trace_truncated,
-		stats_ts_window_delta(cmp_trace_truncated,
-				      &prev_cmp_trace_truncated));
-
-	fprintf(stats_timeseries_fp,
+	fprintf(fp,
 		",\"cmp_hints_injected\":%lu,\"cmp_hints_injected_delta\":%lu"
 		",\"cmp_hints_consumed\":%lu,\"cmp_hints_consumed_delta\":%lu"
 		",\"cmp_hint_wins\":%lu,\"cmp_hint_wins_delta\":%lu"
@@ -503,25 +508,50 @@ void stats_timeseries_emit_window(unsigned long op_count)
 		cmp_hyp_consumed,
 		stats_ts_window_delta(cmp_hyp_consumed,
 				      &prev_cmp_hyp_consumed));
+}
 
-	/* Plateau classifier hypothesis + the current intervention mode
-	 * the picker is running.  Emitted as strings via the existing
-	 * name accessors so a consumer does not need to link against the
-	 * enums.  Both fall back to their zeroth entry when shm is not
-	 * mapped, which matches the picker's runtime behaviour. */
-	fprintf(stats_timeseries_fp,
+/* Plateau classifier hypothesis + the current intervention mode
+ * the picker is running.  Emitted as strings via the existing
+ * name accessors so a consumer does not need to link against the
+ * enums.  Both fall back to their zeroth entry when shm is not
+ * mapped, which matches the picker's runtime behaviour. */
+static void stats_ts_emit_plateau(FILE *fp)
+{
+	int plateau_hypothesis = 0;
+	int intervention_mode = 0;
+
+	if (shm != NULL) {
+		plateau_hypothesis = __atomic_load_n(
+			&shm->plateau_current_hypothesis, __ATOMIC_RELAXED);
+		intervention_mode = __atomic_load_n(
+			&shm->plateau_intervention_mode_current,
+			__ATOMIC_RELAXED);
+	}
+
+	fprintf(fp,
 		",\"plateau_hypothesis\":\"%s\","
 		"\"plateau_intervention_mode\":\"%s\"",
 		strategy_plateau_hypothesis_name(plateau_hypothesis),
 		plateau_intervention_mode_name(intervention_mode));
+}
 
-	/* Per-arm learner state.  Fixed-width array indexed by
-	 * enum strategy; each element carries the lifetime level and
-	 * the per-window delta for the three parallel reward series
-	 * the picker reads.  This is the "which arm just got the wins
-	 * this window" attribution that pc_edge_calls_by_strategy
-	 * would otherwise require joining stats.json for. */
-	fputs(",\"by_strategy\":[", stats_timeseries_fp);
+/* Per-arm learner state.  Fixed-width array indexed by
+ * enum strategy; each element carries the lifetime level and
+ * the per-window delta for the three parallel reward series
+ * the picker reads.  This is the "which arm just got the wins
+ * this window" attribution that pc_edge_calls_by_strategy
+ * would otherwise require joining stats.json for. */
+static void stats_ts_emit_by_strategy(FILE *fp)
+{
+	/* Per-arm snapshots for the by_strategy block.  NR_STRATEGIES
+	 * is a compile-time constant so these live as fixed-width arrays
+	 * next to the top-level scalars rather than in shm. */
+	static unsigned long prev_bandit_pulls[NR_STRATEGIES];
+	static unsigned long prev_bandit_reward_calls[NR_STRATEGIES];
+	static unsigned long prev_bandit_reward_pc_edge_count[NR_STRATEGIES];
+	int i;
+
+	fputs(",\"by_strategy\":[", fp);
 	for (i = 0; i < NR_STRATEGIES; i++) {
 		unsigned long pulls = 0;
 		unsigned long reward_calls = 0;
@@ -537,7 +567,7 @@ void stats_timeseries_emit_window(unsigned long op_count)
 				&shm->bandit_reward_pc_edge_count[i],
 				__ATOMIC_RELAXED);
 		}
-		fprintf(stats_timeseries_fp,
+		fprintf(fp,
 			"%s{\"strategy\":%d,\"pulls\":%lu,\"pulls_delta\":%lu"
 			",\"reward_calls\":%lu,\"reward_calls_delta\":%lu"
 			",\"reward_pc_edges\":%lu,\"reward_pc_edges_delta\":%lu}",
@@ -552,124 +582,142 @@ void stats_timeseries_emit_window(unsigned long op_count)
 				reward_pc_edges,
 				&prev_bandit_reward_pc_edge_count[i]));
 	}
-	fputs("]", stats_timeseries_fp);
+	fputs("]", fp);
+}
 
-	/* Per-childop edge / invocation / canary attribution.  For every
-	 * alt-op with any cumulative activity (skip-zero: never-fired ops
-	 * are elided so a run with ~130 defined ops but only ~10 active
-	 * does not bloat every window record with all-zero blocks), emit
-	 * the level + per-window delta for the four shm counters the child_
-	 * process() post-call block bumps -- childop_edges_discovered (the
-	 * unbracketed global-delta path, noisy but always live),
-	 * childop_edges_clean (the outer-KCOV-bracketed per-call delta the
-	 * canary queue and adapt_budget() consume), childop_calls_with_
-	 * edges (the "at least one new edge" call-count sibling of
-	 * bandit_pool_edges_discovered on the syscall path), and
-	 * childop_invocations (the dispatch count parallel to op_count).
-	 * Plus the shadow canary recommendation deltas (childop_would_
-	 * promote / childop_would_demote) so a jump ties to a childop AND
-	 * its disposition: a nonzero would_promote_delta this window means
-	 * the shadow policy would PROMOTED_CLEAN / PROMOTED_INTERFERENCE
-	 * the op, a nonzero would_demote_delta means THROTTLED /
-	 * QUARANTINED / CONFIG_BLOCKED.  canary_active / canary_promoted
-	 * expose the live queue state directly via the public accessors,
-	 * so an op that is currently the canary pick or currently promoted
-	 * is emitted even with all-zero counters -- the operator can see
-	 * canary state before any counter has moved.  CHILD_OP_SYSCALL is
-	 * skipped: the syscall path attributes its wins through the
-	 * per_syscall block and the by_strategy bandit counters, and the
-	 * per-childop shm arrays are documented as skipping this slot at
-	 * their bump sites. */
-	fputs(",\"by_childop\":[", stats_timeseries_fp);
-	{
-		enum child_op_type active_canary = canary_active_op();
-		bool first_op = true;
-		int op;
+/* Per-childop edge / invocation / canary attribution.  For every
+ * alt-op with any cumulative activity (skip-zero: never-fired ops
+ * are elided so a run with ~130 defined ops but only ~10 active
+ * does not bloat every window record with all-zero blocks), emit
+ * the level + per-window delta for the four shm counters the child_
+ * process() post-call block bumps -- childop_edges_discovered (the
+ * unbracketed global-delta path, noisy but always live),
+ * childop_edges_clean (the outer-KCOV-bracketed per-call delta the
+ * canary queue and adapt_budget() consume), childop_calls_with_
+ * edges (the "at least one new edge" call-count sibling of
+ * bandit_pool_edges_discovered on the syscall path), and
+ * childop_invocations (the dispatch count parallel to op_count).
+ * Plus the shadow canary recommendation deltas (childop_would_
+ * promote / childop_would_demote) so a jump ties to a childop AND
+ * its disposition: a nonzero would_promote_delta this window means
+ * the shadow policy would PROMOTED_CLEAN / PROMOTED_INTERFERENCE
+ * the op, a nonzero would_demote_delta means THROTTLED /
+ * QUARANTINED / CONFIG_BLOCKED.  canary_active / canary_promoted
+ * expose the live queue state directly via the public accessors,
+ * so an op that is currently the canary pick or currently promoted
+ * is emitted even with all-zero counters -- the operator can see
+ * canary state before any counter has moved.  CHILD_OP_SYSCALL is
+ * skipped: the syscall path attributes its wins through the
+ * per_syscall block and the by_strategy bandit counters, and the
+ * per-childop shm arrays are documented as skipping this slot at
+ * their bump sites. */
+static void stats_ts_emit_by_childop(FILE *fp)
+{
+	enum child_op_type active_canary = canary_active_op();
+	bool first_op = true;
+	int op;
 
-		for (op = CHILD_OP_SYSCALL + 1; op < NR_CHILD_OP_TYPES; op++) {
-			unsigned long edges_discovered = 0;
-			unsigned long edges_clean = 0;
-			unsigned long calls_with_edges = 0;
-			unsigned long invocations = 0;
-			unsigned long would_promote = 0;
-			unsigned long would_demote = 0;
-			unsigned long edges_discovered_delta;
-			unsigned long edges_clean_delta;
-			unsigned long calls_with_edges_delta;
-			unsigned long invocations_delta;
-			unsigned long would_promote_delta;
-			unsigned long would_demote_delta;
-			bool canary_active = (op == (int)active_canary);
-			bool canary_promoted = canary_op_is_promoted(op);
+	fputs(",\"by_childop\":[", fp);
+	for (op = CHILD_OP_SYSCALL + 1; op < NR_CHILD_OP_TYPES; op++) {
+		unsigned long edges_discovered = 0;
+		unsigned long edges_clean = 0;
+		unsigned long calls_with_edges = 0;
+		unsigned long invocations = 0;
+		unsigned long would_promote = 0;
+		unsigned long would_demote = 0;
+		unsigned long edges_discovered_delta;
+		unsigned long edges_clean_delta;
+		unsigned long calls_with_edges_delta;
+		unsigned long invocations_delta;
+		unsigned long would_promote_delta;
+		unsigned long would_demote_delta;
+		bool canary_active = (op == (int)active_canary);
+		bool canary_promoted = canary_op_is_promoted(op);
 
-			if (shm != NULL) {
-				edges_discovered = __atomic_load_n(
-					&shm->stats.childop_edges_discovered[op],
-					__ATOMIC_RELAXED);
-				edges_clean = __atomic_load_n(
-					&shm->stats.childop_edges_clean[op],
-					__ATOMIC_RELAXED);
-				calls_with_edges = __atomic_load_n(
-					&shm->stats.childop_calls_with_edges[op],
-					__ATOMIC_RELAXED);
-				invocations = __atomic_load_n(
-					&shm->stats.childop_invocations[op],
-					__ATOMIC_RELAXED);
-				would_promote = __atomic_load_n(
-					&shm->stats.childop_would_promote[op],
-					__ATOMIC_RELAXED);
-				would_demote = __atomic_load_n(
-					&shm->stats.childop_would_demote[op],
-					__ATOMIC_RELAXED);
-			}
-
-			edges_discovered_delta = stats_ts_window_delta(
-				edges_discovered,
-				&stats_ts_prev_childop_edges_discovered[op]);
-			edges_clean_delta = stats_ts_window_delta(
-				edges_clean,
-				&stats_ts_prev_childop_edges_clean[op]);
-			calls_with_edges_delta = stats_ts_window_delta(
-				calls_with_edges,
-				&stats_ts_prev_childop_calls_with_edges[op]);
-			invocations_delta = stats_ts_window_delta(
-				invocations,
-				&stats_ts_prev_childop_invocations[op]);
-			would_promote_delta = stats_ts_window_delta(
-				would_promote,
-				&stats_ts_prev_childop_would_promote[op]);
-			would_demote_delta = stats_ts_window_delta(
-				would_demote,
-				&stats_ts_prev_childop_would_demote[op]);
-
-			if (edges_discovered == 0 && edges_clean == 0 &&
-			    calls_with_edges == 0 && invocations == 0 &&
-			    would_promote == 0 && would_demote == 0 &&
-			    !canary_active && !canary_promoted)
-				continue;
-
-			fprintf(stats_timeseries_fp,
-				"%s{\"op\":%d,\"name\":\"%s\""
-				",\"edges_discovered\":%lu,\"edges_discovered_delta\":%lu"
-				",\"edges_clean\":%lu,\"edges_clean_delta\":%lu"
-				",\"calls_with_edges\":%lu,\"calls_with_edges_delta\":%lu"
-				",\"invocations\":%lu,\"invocations_delta\":%lu"
-				",\"would_promote\":%lu,\"would_promote_delta\":%lu"
-				",\"would_demote\":%lu,\"would_demote_delta\":%lu"
-				",\"canary_active\":%d,\"canary_promoted\":%d}",
-				first_op ? "" : ",", op, alt_op_name(op),
-				edges_discovered, edges_discovered_delta,
-				edges_clean, edges_clean_delta,
-				calls_with_edges, calls_with_edges_delta,
-				invocations, invocations_delta,
-				would_promote, would_promote_delta,
-				would_demote, would_demote_delta,
-				canary_active ? 1 : 0,
-				canary_promoted ? 1 : 0);
-			first_op = false;
+		if (shm != NULL) {
+			edges_discovered = __atomic_load_n(
+				&shm->stats.childop_edges_discovered[op],
+				__ATOMIC_RELAXED);
+			edges_clean = __atomic_load_n(
+				&shm->stats.childop_edges_clean[op],
+				__ATOMIC_RELAXED);
+			calls_with_edges = __atomic_load_n(
+				&shm->stats.childop_calls_with_edges[op],
+				__ATOMIC_RELAXED);
+			invocations = __atomic_load_n(
+				&shm->stats.childop_invocations[op],
+				__ATOMIC_RELAXED);
+			would_promote = __atomic_load_n(
+				&shm->stats.childop_would_promote[op],
+				__ATOMIC_RELAXED);
+			would_demote = __atomic_load_n(
+				&shm->stats.childop_would_demote[op],
+				__ATOMIC_RELAXED);
 		}
+
+		edges_discovered_delta = stats_ts_window_delta(
+			edges_discovered,
+			&stats_ts_prev_childop_edges_discovered[op]);
+		edges_clean_delta = stats_ts_window_delta(
+			edges_clean,
+			&stats_ts_prev_childop_edges_clean[op]);
+		calls_with_edges_delta = stats_ts_window_delta(
+			calls_with_edges,
+			&stats_ts_prev_childop_calls_with_edges[op]);
+		invocations_delta = stats_ts_window_delta(
+			invocations,
+			&stats_ts_prev_childop_invocations[op]);
+		would_promote_delta = stats_ts_window_delta(
+			would_promote,
+			&stats_ts_prev_childop_would_promote[op]);
+		would_demote_delta = stats_ts_window_delta(
+			would_demote,
+			&stats_ts_prev_childop_would_demote[op]);
+
+		if (edges_discovered == 0 && edges_clean == 0 &&
+		    calls_with_edges == 0 && invocations == 0 &&
+		    would_promote == 0 && would_demote == 0 &&
+		    !canary_active && !canary_promoted)
+			continue;
+
+		fprintf(fp,
+			"%s{\"op\":%d,\"name\":\"%s\""
+			",\"edges_discovered\":%lu,\"edges_discovered_delta\":%lu"
+			",\"edges_clean\":%lu,\"edges_clean_delta\":%lu"
+			",\"calls_with_edges\":%lu,\"calls_with_edges_delta\":%lu"
+			",\"invocations\":%lu,\"invocations_delta\":%lu"
+			",\"would_promote\":%lu,\"would_promote_delta\":%lu"
+			",\"would_demote\":%lu,\"would_demote_delta\":%lu"
+			",\"canary_active\":%d,\"canary_promoted\":%d}",
+			first_op ? "" : ",", op, alt_op_name(op),
+			edges_discovered, edges_discovered_delta,
+			edges_clean, edges_clean_delta,
+			calls_with_edges, calls_with_edges_delta,
+			invocations, invocations_delta,
+			would_promote, would_promote_delta,
+			would_demote, would_demote_delta,
+			canary_active ? 1 : 0,
+			canary_promoted ? 1 : 0);
+		first_op = false;
 	}
-	fputs("]", stats_timeseries_fp);
+	fputs("]", fp);
+}
+
+void stats_timeseries_emit_window(unsigned long op_count)
+{
+	unsigned long edges_total;
+	bool first = true;
+
+	if (stats_timeseries_fp == NULL)
+		return;
+
+	edges_total = stats_ts_emit_record_head(stats_timeseries_fp, op_count);
+	stats_ts_emit_baselines(stats_timeseries_fp, edges_total);
+	stats_ts_emit_truncation(stats_timeseries_fp);
+	stats_ts_emit_cmp_hints(stats_timeseries_fp);
+	stats_ts_emit_plateau(stats_timeseries_fp);
+	stats_ts_emit_by_strategy(stats_timeseries_fp);
+	stats_ts_emit_by_childop(stats_timeseries_fp);
 
 	fputs(",\"per_syscall\":[", stats_timeseries_fp);
 
