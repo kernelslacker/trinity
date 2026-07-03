@@ -368,7 +368,6 @@ bool stats_ring_enqueue_call_complete(struct stats_ring *ring,
  * parent_stats.  Single-consumer: only the parent writes tail.
  * Returns the number of slots processed.
  */
-unsigned int stats_ring_drain(struct stats_ring *ring);
 
 /*
  * Drain every child's ring and republish the mirror page.  Called from
