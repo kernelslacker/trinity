@@ -371,6 +371,118 @@ void dump_stats_fuzzer_subsystems(void)
 	}
 }
 
+/*
+ * TRINITY_CORRUPT_ATTRIB per-call-site breakdown.  Gated on the
+ * env-var-latched bool so production dumps stay terse; when on,
+ * emits one stat_row per named site plus a computed "post_generic"
+ * row carrying the residual headline - sum(named).  A non-trivial
+ * post_generic value is the lead for the next call-site sweep --
+ * the producer is some legacy post_handler_corrupt_ptr_bump() macro
+ * caller that hasn't been categorised yet.  Reads shm->stats via
+ * RELAXED atomic loads since children are concurrent writers.
+ */
+static void dump_stats_render_corrupt_ptr_attrib(void)
+{
+	unsigned long named_sum = 0;
+	unsigned long total = parent_stats.post_handler_corrupt_ptr;
+	unsigned int i;
+
+	for (i = 0; i < CORRUPT_PTR_SITE__COUNT; i++) {
+		unsigned long v;
+		char metric[64];
+
+		v = __atomic_load_n(&shm->stats.corrupt_ptr_site_count[i],
+				    __ATOMIC_RELAXED);
+		named_sum += v;
+		snprintf(metric, sizeof(metric),
+			 "corrupt_ptr_site:%s",
+			 corrupt_ptr_site_names[i]);
+		stat_row("corruption", metric, v);
+		output(0, "[main] %s_cumulative=%lu\n", metric, v);
+	}
+	/* Anything in the headline not claimed by a named site:
+	 * the legacy post_handler_corrupt_ptr_bump(rec, NULL) callers
+	 * in syscalls (the per-handler oracle bumps that weren't
+	 * routed through _at()).  Saturate to zero if named_sum
+	 * outruns the headline due to non-atomic reads of the two
+	 * counters at slightly different moments. */
+	stat_row("corruption", "corrupt_ptr_site:post_generic",
+		 total > named_sum ? total - named_sum : 0);
+	output(0, "[main] corrupt_ptr_site:post_generic_cumulative=%lu (headline=%lu named_sum=%lu)\n",
+	       total > named_sum ? total - named_sum : 0,
+	       total, named_sum);
+}
+
+/* Per-field divergence-sentinel rows: one stat_row per
+ * non-zero field shard so the operator sees which
+ * monitored field actually drifted rather than a lumped
+ * headline number.  Names match the defense_counters[]
+ * registration above so periodic and end-of-run views
+ * align. */
+static void dump_stats_render_divergence_sentinel(void)
+{
+	static const struct {
+		enum sentinel_field field;
+		const char *name;
+	} divergence_sentinel_rows[] = {
+		{ SF_UNAME_SYSNAME,	"divergence_sentinel_anomalies_sysname"   },
+		{ SF_UNAME_RELEASE,	"divergence_sentinel_anomalies_release"   },
+		{ SF_UNAME_VERSION,	"divergence_sentinel_anomalies_version"   },
+		{ SF_UNAME_MACHINE,	"divergence_sentinel_anomalies_machine"   },
+		{ SF_SYSINFO_TOTALRAM,	"divergence_sentinel_anomalies_totalram"  },
+		{ SF_SYSINFO_TOTALSWAP,	"divergence_sentinel_anomalies_totalswap" },
+		{ SF_SYSINFO_TOTALHIGH,	"divergence_sentinel_anomalies_totalhigh" },
+		{ SF_SYSINFO_MEM_UNIT,	"divergence_sentinel_anomalies_mem_unit"  },
+	};
+	unsigned int s;
+
+	for (s = 0; s < ARRAY_SIZE(divergence_sentinel_rows); s++) {
+		enum sentinel_field f = divergence_sentinel_rows[s].field;
+		unsigned long v = shm->stats.divergence_sentinel_anomalies[f];
+
+		if (v == 0)
+			continue;
+		stat_row("corruption",
+			 divergence_sentinel_rows[s].name, v);
+	}
+}
+
+/* Derived ratio: avg get_map_handle() retry-loop attempts per
+ * successful pick.  The counter-pair comment in include/stats.h
+ * documents this as the realised cost the 1000-iter retry budget
+ * exists to amortise -- a value approaching the budget means the
+ * loop is dominated by the reject path and the side-index work is
+ * justified.  Rendered separately for the general get_map_handle()
+ * path and the get_map_with_prot() outer prot-filter retry, since
+ * the prot filter compounds prot reject on top of pool-pick reject
+ * and carries a different cost curve.  Skipped when the success
+ * denominator is zero. */
+static void dump_stats_render_maps_pick_ratios(void)
+{
+	unsigned long s  = shm->stats.maps_pick_successes;
+	unsigned long a  = shm->stats.maps_pick_attempts_sum;
+	unsigned long ps = shm->stats.maps_pick_with_prot_successes;
+	unsigned long pa = shm->stats.maps_pick_with_prot_attempts_sum;
+	char val[32];
+
+	if (s > 0) {
+		unsigned long milli = ((a % s) * 1000UL) / s;
+
+		snprintf(val, sizeof(val), "%lu.%03lu", a / s, milli);
+		output(0, STATS_HDR_FMT, "pool",
+		       "maps_pick_attempts_per_success", val);
+	}
+	if (ps > 0) {
+		unsigned long milli = ((pa % ps) * 1000UL) / ps;
+
+		snprintf(val, sizeof(val), "%lu.%03lu",
+			 pa / ps, milli);
+		output(0, STATS_HDR_FMT, "pool",
+		       "maps_pick_with_prot_attempts_per_success",
+		       val);
+	}
+}
+
 void dump_stats_corruption_and_pool(void)
 {
 	if (shm->stats.fd_event_ring_corrupted)
@@ -400,46 +512,8 @@ void dump_stats_corruption_and_pool(void)
 	 */
 	output(0, "[main] post_handler_corrupt_ptr_cumulative=%lu\n",
 	       parent_stats.post_handler_corrupt_ptr);
-	/*
-	 * TRINITY_CORRUPT_ATTRIB per-call-site breakdown.  Gated on the
-	 * env-var-latched bool so production dumps stay terse; when on,
-	 * emits one stat_row per named site plus a computed "post_generic"
-	 * row carrying the residual headline - sum(named).  A non-trivial
-	 * post_generic value is the lead for the next call-site sweep --
-	 * the producer is some legacy post_handler_corrupt_ptr_bump() macro
-	 * caller that hasn't been categorised yet.  Reads shm->stats via
-	 * RELAXED atomic loads since children are concurrent writers.
-	 */
-	if (corrupt_ptr_attrib_active()) {
-		unsigned long named_sum = 0;
-		unsigned long total = parent_stats.post_handler_corrupt_ptr;
-		unsigned int i;
-
-		for (i = 0; i < CORRUPT_PTR_SITE__COUNT; i++) {
-			unsigned long v;
-			char metric[64];
-
-			v = __atomic_load_n(&shm->stats.corrupt_ptr_site_count[i],
-					    __ATOMIC_RELAXED);
-			named_sum += v;
-			snprintf(metric, sizeof(metric),
-				 "corrupt_ptr_site:%s",
-				 corrupt_ptr_site_names[i]);
-			stat_row("corruption", metric, v);
-			output(0, "[main] %s_cumulative=%lu\n", metric, v);
-		}
-		/* Anything in the headline not claimed by a named site:
-		 * the legacy post_handler_corrupt_ptr_bump(rec, NULL) callers
-		 * in syscalls (the per-handler oracle bumps that weren't
-		 * routed through _at()).  Saturate to zero if named_sum
-		 * outruns the headline due to non-atomic reads of the two
-		 * counters at slightly different moments. */
-		stat_row("corruption", "corrupt_ptr_site:post_generic",
-			 total > named_sum ? total - named_sum : 0);
-		output(0, "[main] corrupt_ptr_site:post_generic_cumulative=%lu (headline=%lu named_sum=%lu)\n",
-		       total > named_sum ? total - named_sum : 0,
-		       total, named_sum);
-	}
+	if (corrupt_ptr_attrib_active())
+		dump_stats_render_corrupt_ptr_attrib();
 	if (parent_stats.arg_shadow_stomp)
 		stat_row("corruption", "arg_shadow_stomp", parent_stats.arg_shadow_stomp);
 	if (parent_stats.deferred_free_reject)
@@ -525,38 +599,7 @@ void dump_stats_corruption_and_pool(void)
 	       shm->stats.arena_ptr_stale_caught_post_state);
 	if (shm->stats.sibling_mprotect_failed)
 		stat_row("corruption", "sibling_mprotect_failed", shm->stats.sibling_mprotect_failed);
-	{
-		/* Per-field divergence-sentinel rows: one stat_row per
-		 * non-zero field shard so the operator sees which
-		 * monitored field actually drifted rather than a lumped
-		 * headline number.  Names match the defense_counters[]
-		 * registration above so periodic and end-of-run views
-		 * align. */
-		static const struct {
-			enum sentinel_field field;
-			const char *name;
-		} divergence_sentinel_rows[] = {
-			{ SF_UNAME_SYSNAME,	"divergence_sentinel_anomalies_sysname"   },
-			{ SF_UNAME_RELEASE,	"divergence_sentinel_anomalies_release"   },
-			{ SF_UNAME_VERSION,	"divergence_sentinel_anomalies_version"   },
-			{ SF_UNAME_MACHINE,	"divergence_sentinel_anomalies_machine"   },
-			{ SF_SYSINFO_TOTALRAM,	"divergence_sentinel_anomalies_totalram"  },
-			{ SF_SYSINFO_TOTALSWAP,	"divergence_sentinel_anomalies_totalswap" },
-			{ SF_SYSINFO_TOTALHIGH,	"divergence_sentinel_anomalies_totalhigh" },
-			{ SF_SYSINFO_MEM_UNIT,	"divergence_sentinel_anomalies_mem_unit"  },
-		};
-		unsigned int s;
-
-		for (s = 0; s < ARRAY_SIZE(divergence_sentinel_rows); s++) {
-			enum sentinel_field f = divergence_sentinel_rows[s].field;
-			unsigned long v = shm->stats.divergence_sentinel_anomalies[f];
-
-			if (v == 0)
-				continue;
-			stat_row("corruption",
-				 divergence_sentinel_rows[s].name, v);
-		}
-	}
+	dump_stats_render_divergence_sentinel();
 	if (shm->stats.divergence_sentinel_expected_drift)
 		stat_row("corruption", "divergence_sentinel_expected_drift",
 			 shm->stats.divergence_sentinel_expected_drift);
@@ -594,40 +637,7 @@ void dump_stats_corruption_and_pool(void)
 		stat_row("corruption", "objpool_array_stale_caught",
 			 shm->stats.objpool_array_stale_caught);
 
-	/* Derived ratio: avg get_map_handle() retry-loop attempts per
-	 * successful pick.  The counter-pair comment in include/stats.h
-	 * documents this as the realised cost the 1000-iter retry budget
-	 * exists to amortise -- a value approaching the budget means the
-	 * loop is dominated by the reject path and the side-index work is
-	 * justified.  Rendered separately for the general get_map_handle()
-	 * path and the get_map_with_prot() outer prot-filter retry, since
-	 * the prot filter compounds prot reject on top of pool-pick reject
-	 * and carries a different cost curve.  Skipped when the success
-	 * denominator is zero. */
-	{
-		unsigned long s  = shm->stats.maps_pick_successes;
-		unsigned long a  = shm->stats.maps_pick_attempts_sum;
-		unsigned long ps = shm->stats.maps_pick_with_prot_successes;
-		unsigned long pa = shm->stats.maps_pick_with_prot_attempts_sum;
-		char val[32];
-
-		if (s > 0) {
-			unsigned long milli = ((a % s) * 1000UL) / s;
-
-			snprintf(val, sizeof(val), "%lu.%03lu", a / s, milli);
-			output(0, STATS_HDR_FMT, "pool",
-			       "maps_pick_attempts_per_success", val);
-		}
-		if (ps > 0) {
-			unsigned long milli = ((pa % ps) * 1000UL) / ps;
-
-			snprintf(val, sizeof(val), "%lu.%03lu",
-				 pa / ps, milli);
-			output(0, STATS_HDR_FMT, "pool",
-			       "maps_pick_with_prot_attempts_per_success",
-			       val);
-		}
-	}
+	dump_stats_render_maps_pick_ratios();
 }
 
 void dump_stats_childop_ranked_tables(void)
