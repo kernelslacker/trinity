@@ -1744,6 +1744,38 @@ static void kcov_cmp_render_hyp_probe_class_hist_block(long elapsed __unused__)
 		prev_hyp_probe_class[k] = cur_hyp_probe_class[k];
 }
 
+static void kcov_cmp_render_diag_errnos_block(void)
+{
+	char init_buf[256];
+	char rt_buf[256];
+	int ni, nr;
+
+	ni = kcov_cmp_diag_format(init_buf, sizeof(init_buf),
+				  KCOV_CMP_DIAG_INIT);
+	nr = kcov_cmp_diag_format(rt_buf, sizeof(rt_buf),
+				  KCOV_CMP_DIAG_RUNTIME);
+
+	if (ni > 0 || nr > 0) {
+		stats_log_write("KCOV CMP DIAG errnos (first-failure-wins, cumulative count):\n");
+		if (ni > 0)
+			stats_log_write(" %s\n", init_buf);
+		if (nr > 0)
+			stats_log_write(" %s\n", rt_buf);
+	}
+}
+
+static void kcov_cmp_render_pc_diag_block(void)
+{
+	char pc_buf[256];
+	int np;
+
+	np = kcov_pc_diag_format(pc_buf, sizeof(pc_buf));
+	if (np > 0) {
+		stats_log_write("KCOV PC DIAG (first-failure-wins errnos + retry counters, cumulative):\n");
+		stats_log_write(" %s\n", pc_buf);
+	}
+}
+
 /*
  * Surface the KCOV CMP counters in the same 600s periodic stats-log-file
  * dump as defense_counters_periodic_dump.  Without this the cmp counters
@@ -2832,35 +2864,9 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 				pc_kids, cmp_kids);
 	}
 
-	{
-		char init_buf[256];
-		char rt_buf[256];
-		int ni, nr;
+	kcov_cmp_render_diag_errnos_block();
 
-		ni = kcov_cmp_diag_format(init_buf, sizeof(init_buf),
-					  KCOV_CMP_DIAG_INIT);
-		nr = kcov_cmp_diag_format(rt_buf, sizeof(rt_buf),
-					  KCOV_CMP_DIAG_RUNTIME);
-
-		if (ni > 0 || nr > 0) {
-			stats_log_write("KCOV CMP DIAG errnos (first-failure-wins, cumulative count):\n");
-			if (ni > 0)
-				stats_log_write(" %s\n", init_buf);
-			if (nr > 0)
-				stats_log_write(" %s\n", rt_buf);
-		}
-	}
-
-	{
-		char pc_buf[256];
-		int np;
-
-		np = kcov_pc_diag_format(pc_buf, sizeof(pc_buf));
-		if (np > 0) {
-			stats_log_write("KCOV PC DIAG (first-failure-wins errnos + retry counters, cumulative):\n");
-			stats_log_write(" %s\n", pc_buf);
-		}
-	}
+	kcov_cmp_render_pc_diag_block();
 
 	kcov_cmp_observability_block_render(elapsed);
 	kcov_redqueen_observability_block_render(elapsed);
