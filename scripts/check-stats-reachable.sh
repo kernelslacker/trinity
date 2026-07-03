@@ -6,14 +6,14 @@
 # explicit allowlist for hand-emitted / macro-concatenated shadow
 # counters.
 #
-# The dump renderer walks the stat_field descriptor tables in stats.c
-# and emits one JSON key per row.  A field added to struct stats_s
-# without a matching STAT_FIELD() row (or an alternative emission
-# path) is a "dead counter": bumped inside the child, but never
-# printed, never scraped, never useful.  Fable and codex triage lean
-# on the JSON dump to decide whether a strategy is exercising the
-# kernel, so a dead counter looks identical to a broken strategy from
-# the outside.
+# The dump renderer walks the stat_field descriptor tables in
+# stats/stats.c and stats/json_dump.c and emits one JSON key per row.
+# A field added to struct stats_s without a matching STAT_FIELD() row
+# (or an alternative emission path) is a "dead counter": bumped inside
+# the child, but never printed, never scraped, never useful.  Fable
+# and codex triage lean on the JSON dump to decide whether a strategy
+# is exercising the kernel, so a dead counter looks identical to a
+# broken strategy from the outside.
 #
 # This script makes the "is this counter dead?" question mechanical:
 #
@@ -22,9 +22,10 @@
 #
 #   2. Build the REACHABLE set from three sources:
 #      a) STAT_FIELD(prefix, suffix) / STAT_FIELD_JSON(prefix, suffix, ...)
-#         invocations in stats.c.  These concatenate prefix + "_" +
-#         suffix to form the struct field name, so the literal token
-#         never appears in the source -- extract it symbolically.
+#         invocations in stats/stats.c and stats/json_dump.c.  These
+#         concatenate prefix + "_" + suffix to form the struct field
+#         name, so the literal token never appears in the source --
+#         extract it symbolically.
 #      b) Every whole-word occurrence of a field name in any *.c file
 #         in the tree.  Covers direct writes (shm->stats.foo++),
 #         offsetof() lookups, sizeof() references, etc.
@@ -54,7 +55,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 STATS_H="$ROOT/include/stats.h"
-STATS_C="$ROOT/stats.c"
+STATS_C_FILES=("$ROOT/stats/stats.c" "$ROOT/stats/json_dump.c")
 
 fail() {
 	echo "FAIL: $NAME: $1" >&2
@@ -62,7 +63,9 @@ fail() {
 }
 
 [ -r "$STATS_H" ] || fail "cannot read $STATS_H"
-[ -r "$STATS_C" ] || fail "cannot read $STATS_C"
+for f in "${STATS_C_FILES[@]}"; do
+	[ -r "$f" ] || fail "cannot read $f"
+done
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -106,7 +109,7 @@ fi
 # matching the macro invocation and joining the two arguments with
 # an underscore.
 # ---------------------------------------------------------------------
-grep -oE 'STAT_FIELD(_JSON)?\([[:space:]]*[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*,[[:space:]]*[a-zA-Z_][a-zA-Z0-9_]*' "$STATS_C" | \
+grep -hoE 'STAT_FIELD(_JSON)?\([[:space:]]*[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*,[[:space:]]*[a-zA-Z_][a-zA-Z0-9_]*' "${STATS_C_FILES[@]}" | \
 	sed -E 's/STAT_FIELD(_JSON)?\([[:space:]]*//; s/[[:space:]]*,[[:space:]]*/_/' | \
 	sort -u > "$STATFIELDS"
 
@@ -137,10 +140,10 @@ comm -23 "$FIELDS" "$REACHABLE" > "$UNREACHED"
 #
 #   * Hand-emitted per-syscall / per-group arrays.  These are `unsigned
 #     long name[MAX_NR_SYSCALL]` (or [NR_..._GROUPS]) fields walked
-#     directly by dedicated dump helpers in stats.c that pass the
-#     array pointer to a topN emitter.  There is no STAT_FIELD row and
-#     the array name may or may not be spelled in a .c file depending
-#     on whether the walker lives in the same TU.
+#     directly by dedicated dump helpers in stats/stats.c that pass
+#     the array pointer to a topN emitter.  There is no STAT_FIELD row
+#     and the array name may or may not be spelled in a .c file
+#     depending on whether the walker lives in the same TU.
 #
 #   * Multi-dim shadow histories (childop_edge_history,
 #     childop_wall_history).  Consumed via reservoir-style summaries;
@@ -192,8 +195,9 @@ if [ -s "$UNALLOWED" ]; then
 	echo "FAIL: $NAME: struct stats_s fields with no STAT_FIELD row, no C reference, and no allowlist entry:" >&2
 	sed 's/^/  /' "$UNALLOWED" >&2
 	echo "" >&2
-	echo "Either add a STAT_FIELD(prefix, suffix) descriptor row in stats.c" >&2
-	echo "so the dump renderer surfaces the counter, or remove the field." >&2
+	echo "Either add a STAT_FIELD(prefix, suffix) descriptor row in" >&2
+	echo "stats/stats.c or stats/json_dump.c so the dump renderer" >&2
+	echo "surfaces the counter, or remove the field." >&2
 	echo "If the counter is emitted through a bespoke walker, extend the" >&2
 	echo "allowlist in $0 with a specific pattern and a comment explaining" >&2
 	echo "the emission path." >&2
