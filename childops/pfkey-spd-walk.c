@@ -1,93 +1,41 @@
 /*
  * pfkey_spd_walk - race PF_KEYv2 SADB_X_SPDDUMP against concurrent
- * SADB_X_SPDADD / SADB_X_SPDGET mutators on a per-netns Security
- * Policy Database (SPD).  Drives net/key/af_key.c's pfkey_spd_dump
- * walk against pfkey_spdadd / pfkey_spdget on the same xfrm_policy
- * list under spd_hmask / xfrm_policy_byidx.
+ * SADB_X_SPDADD / SADB_X_SPDGET on a per-netns SPD.  Drives
+ * net/key/af_key.c's pfkey_spd_dump against pfkey_spdadd / pfkey_spdget on
+ * the same xfrm_policy list under spd_hmask / xfrm_policy_byidx.
  *
- * Background.  PF_KEYv2 is the legacy IPsec keying interface (RFC
- * 2367); Linux exposes it as AF_KEY SOCK_RAW PF_KEY_V2 from
- * CONFIG_NET_KEY=m.  Userland sends self-describing SADB messages
- * (sadb_msg header + a chain of TLV extensions terminated by total
- * length).  The KAME-derived extensions SADB_X_SPDADD / SPDGET /
- * SPDUPDATE / SPDDELETE / SPDDUMP manipulate the SPD; SPDDUMP walks
- * the per-net xfrm_policy_inexact_table and the per-direction
- * xfrm_policy_byidx hash, serialising each entry back to userland
- * one message at a time.  SPDADD inserts a new entry into the same
- * lists.  Random per-syscall sendmsg fuzzing over AF_KEY never
- * assembles the concurrent walk-vs-mutate shape; this childop drives
- * it directly.
+ * Bug-class targets: TLV length arithmetic / extension overrun in
+ * pfkey_spdadd's parse_exthdrs (sadb_ext_len striding past sadb_msg_len has
+ * historically reached uninit stack); walker vs re-bucketing hash on the
+ * saved SPDDUMP cursor (duplicate emit / skip / UAF of a dying
+ * xfrm_policy); SPDGET-vs-SPDADD racing the ID hash mid-splice.  Random
+ * per-syscall sendmsg over AF_KEY never assembles the concurrent
+ * walk-vs-mutate shape.
  *
- * Bug-class targets (non-exhaustive):
- *   - parser:  TLV length field arithmetic / extension overrun in
- *              pfkey_spdadd / parse_exthdrs (sadb_ext_len in 8-byte
- *              units; a fuzzed extension that strides past sadb_msg_len
- *              has historically reached an uninitialised stack slot).
- *   - walker:  SPDDUMP iterates the list with a saved cursor; an
- *              SPDADD that re-buckets the byidx hash mid-walk can
- *              produce duplicate emit / skip / use-after-free of the
- *              dying xfrm_policy.
- *   - state:   SPDGET resolves a policy id (auto-assigned on SPDADD);
- *              racing SPDGET with SPDADD of the same id walks the
- *              ID hash while another task is splicing into it.
+ * Per iteration inside a userns_run_in_ns grandchild: pick a policy variant
+ * (direction / type / rotating priority / varied src/dst prefixlen -> SPD
+ * bucket), fork a walker (tight-loop SADB_X_SPDADD with rotating TLVs) and
+ * a racer (tight-loop SADB_X_SPDDUMP alternated with SADB_X_SPDGET against
+ * a small id set the walker is churning).  Both forks inherit the
+ * grandchild's netns so they hammer the same per-net spd_hmask +
+ * xfrm_policy_byidx.  Parent reaps via waitpid_eintr; WIFSIGNALED bumps the
+ * forensic counter (the target one-sided crash).  Per-iter SADB_X_SPDFLUSH
+ * drains state to bound memory growth.
  *
- * Shape.  The outer loop below runs inside a transient grandchild
- * that holds an identity user namespace plus a fresh CLONE_NEWNET
- * (via userns_run_in_ns()); the persistent trinity child keeps its
- * host credentials so the cap-drop oracle stays valid.  Per outer
- * iteration, BUDGETED+capped:
- *   1.  Pick a policy variant: direction (IN/OUT/FWD), type
- *       (DISCARD/BYPASS/NONE), priority (rotating 32-bit), and
- *       src/dst prefixlen (varies the SPD bucket the entry hashes
- *       to).  Source / destination are loopback so no host-visible
- *       routing leak even if the netns unshare failed.
- *   2.  fork() a "walker" sibling: opens its own PF_KEY socket,
- *       tight-loops SADB_X_SPDADD with rotating TLVs (the per-iter
- *       variant plus a small per-iter offset for prefixlen / id
- *       rotation), draining replies non-blocking.
- *   3.  fork() a "racer" sibling: opens its own PF_KEY socket,
- *       tight-loops SADB_X_SPDDUMP alternated with SADB_X_SPDGET
- *       against a small set of policy ids the walker is expected
- *       to be churning.  Both children share the parent's unshared
- *       netns (forks inherit the netns) so they hammer the same
- *       per-net spd_hmask + xfrm_policy_byidx the walker mutates.
- *   4.  Parent reaps both via waitpid_eintr().  WIFSIGNALED on
- *       either bumps the forensic crashed counter -- the bug
- *       surface is exactly the one-sided crash where one task
- *       frees an xfrm_policy the other is mid-walk through.
- *   5.  Parent issues a best-effort SADB_X_SPDFLUSH to drain its
- *       own per-netns SPD before the next iter so accumulated
- *       entries don't balloon kernel memory across an outer-loop
- *       burn.  Failure (e.g. socket closed by alarm) is benign.
- *
- * Self-gating.  Two latches.
- *   - ns_unsupported_pfkey_spd_walk: first invocation per process
- *     probes socket(AF_KEY, SOCK_RAW, PF_KEY_V2).  Any failure
- *     (EAFNOSUPPORT, EPROTONOSUPPORT, EACCES) latches the op off
- *     for the rest of this child's life -- typical when
- *     CONFIG_NET_KEY=n or the af_key module isn't loaded.
- *   - ns_unsupported_userns: userns_run_in_ns() reported -EPERM
- *     (hardened userns policy refused CLONE_NEWUSER:
- *     user.max_user_namespaces=0 or
- *     kernel.unprivileged_userns_clone=0).  Without a private netns
- *     we MUST NOT touch the host SPD, so the op stays disabled for
- *     the remainder of the child's lifetime.  Transient grandchild
- *     setup failures (fork, id-map write, secondary unshare) skip
- *     the iteration without latching.
- *
- * Brick-safety.  All SPD writes land inside a transient grandchild
- * holding a fresh CLONE_NEWUSER + CLONE_NEWNET via the userns
- * bootstrap helper; the grandchild _exit()s and the kernel reaps
- * the namespace stack with every SPD entry, AF_KEY socket and
- * forked sibling it created.  SADB_X_SPDFLUSH between iters drains
- * any surviving SPD state.  No module load, no rtnetlink, no
- * globally-reachable resource.  Bounded outer loop with a hard
+ * Brick-safety: src/dst are loopback; all SPD writes are inside the
+ * userns+netns grandchild whose _exit reaps the socket, siblings, and every
+ * SPD entry.  No modprobe, no rtnetlink.  Bounded outer loop with a
  * wall-clock cap.
  *
- * Header compat.  AF_KEY landed in mainline as 15 (RFC 2367).  The
- * sadb_msg / sadb_ext / sadb_address / sadb_x_policy layouts are
- * frozen UAPI; <linux/pfkeyv2.h> ships them.  Stripped sysroots get
- * the fallback structs at the bottom of the file.
+ * Latches (per-process): ns_unsupported_pfkey_spd_walk on
+ * EAFNOSUPPORT/EPROTONOSUPPORT/EACCES from the AF_KEY probe (CONFIG_NET_KEY=n
+ * or af_key not loaded).  ns_unsupported_userns on userns_run_in_ns() -EPERM
+ * -- without a private netns we MUST NOT touch host SPD.  Transient
+ * grandchild setup failures don't latch.
+ *
+ * Header compat: <linux/pfkeyv2.h> ships the frozen sadb_msg / sadb_ext /
+ * sadb_address / sadb_x_policy layouts; stripped sysroots get the fallback
+ * structs at the bottom of the file.
  */
 
 #include <errno.h>
