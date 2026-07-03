@@ -3,9 +3,10 @@
 # shared-region-budget: tripwire that warns when the number of
 # shared-region producer call sites approaches MAX_SHARED_ALLOCS.
 #
-# shared_regions[] in utils.c is a fixed-size table (MAX_SHARED_ALLOCS,
-# see include/utils.h) that backs the range_overlaps_shared() guards
-# in the mm-syscall sanitisers.  When the table overflows the silent
+# shared_regions[] in utils/shared_mem.c is a fixed-size table
+# (MAX_SHARED_ALLOCS, see include/utils.h) that backs the
+# range_overlaps_shared() guards in the mm-syscall sanitisers.  When
+# the table overflows the silent
 # failure mode is: extra regions are NOT tracked and the fuzzer
 # happily munmaps/mremaps/madvises them.  Silent under-protection IS
 # the bug class.
@@ -37,12 +38,11 @@ if [ -z "$MAX" ] || [ "$MAX" -le 0 ]; then
 fi
 
 # Count distinct call sites of the two producer functions across the
-# tree (excluding utils.c where the functions are defined and the
-# bookkeeping happens, and headers where declarations live).
+# tree (excluding utils/shared_mem.c where the functions are defined
+# and the bookkeeping happens, and headers where declarations live).
 sites=$(grep -rEn '\b(alloc_shared(_pool)?|track_shared_region)[[:space:]]*\(' "$ROOT" \
 	--include='*.c' --include='*.h' 2>/dev/null \
-	| grep -v ':utils\.c:' \
-	| grep -v '/utils\.c:' \
+	| grep -v '/utils/shared_mem\.c:' \
 	| grep -v '/include/' \
 	| grep -vE '^[^:]+:[0-9]+:[[:space:]]*(\*|/\*|//)' \
 	| wc -l)
