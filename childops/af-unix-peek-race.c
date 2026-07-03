@@ -1,78 +1,30 @@
 /*
  * af_unix_peek_race - drive the AF_UNIX SOCK_STREAM SO_PEEK_OFF +
  * concurrent MSG_PEEK / plain-recv / shutdown race that reaches the
- * freed-tail path inside unix_stream_read_generic().
+ * freed-tail path inside net/unix/af_unix.c:unix_stream_read_generic.
  *
- * The bug surface this childop targets is the interaction of three
- * SOCK_STREAM features that the existing af-unix coverage does not
- * exercise together:
+ * Bug class: two tasks sharing an fd table contend on one unix_sock
+ * receive queue -- a SO_PEEK_OFF/MSG_PEEK walker against a plain-recv
+ * dequeuer + shutdown driver, so the peek walk can land on a tail skb
+ * a concurrent recv() has just started freeing.  Existing af-unix
+ * coverage exercises SCM_RIGHTS + unix_gc but never this triple.
  *
- *   - SO_PEEK_OFF (SOL_SOCKET, since 3.4): the kernel remembers a
- *     per-socket "next peek byte" offset.  unix_stream_read_generic()
- *     consults and updates this offset under unix_state_lock when
- *     servicing MSG_PEEK; a plain recv() races the same path,
- *     consuming bytes that the peeker has just decided to start at.
+ * Per iteration: socketpair(SOCK_STREAM), SO_PEEK_OFF in
+ * [0, UNIX_PEEK_OFF_MAX), pre-fill sv[1], clone(CLONE_FILES) a sibling
+ * that tight-loops MSG_PEEK / plain recv on sv[0] while the parent
+ * tight-loops send + occasional shutdown(SHUT_WR) on sv[1].  On EPIPE
+ * the pair is re-created.
  *
- *   - MSG_PEEK against a streaming queue: the read loop walks the skb
- *     chain without dequeueing.  Combined with SO_PEEK_OFF the kernel
- *     fast-forwards past already-peeked bytes; the walk can land on a
- *     tail skb whose lifetime is being shortened by a concurrent
- *     plain recv() that does dequeue.
+ * Brick-safety: AF_UNIX local-only -- no modules, no sysfs, no
+ * namespaces, per-process state only.  Recv sockets carry
+ * SO_RCVTIMEO=1s so no recv outlives child.c's SIGALRM(1s).
  *
- *   - shutdown(SHUT_WR) on the writer end: flips the peer to a state
- *     where new sends EPIPE and the reader observes EOF after drain.
- *     Re-establishing the pair (close both ends, socketpair() again)
- *     keeps the race alive for the budgeted iteration count.
- *
- * The userspace recipe matches the race shape that lands in the
- * unix_stream_read_generic freed-tail UAF class
- * (af-unix-stream-data-wait-tail-uaf): two task_structs sharing a fd
- * table contend on the same struct unix_sock receive queue, one as a
- * SO_PEEK_OFF / MSG_PEEK walker and the other as a plain-recv
- * dequeuer + shutdown driver.  af-unix-scm-rights-gc.c covers the
- * SCM_RIGHTS + unix_gc race, never SO_PEEK_OFF + stream-read; this
- * childop fills that gap.
- *
- * Sequence (per BUDGETED inner-loop iteration):
- *   1.  socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sv).
- *   2.  setsockopt(sv[0], SOL_SOCKET, SO_PEEK_OFF, &off, sizeof(off))
- *       with off in [0, UNIX_PEEK_OFF_MAX) -- the small-offset shape
- *       lands in the same arithmetic path that historically miscounted
- *       on the freed-tail walk.
- *   3.  pre-fill: send a small payload on sv[1] so MSG_PEEK has bytes
- *       to walk on entry.
- *   4.  spawn a clone(CLONE_FILES | SIGCHLD) sibling that tight-loops
- *       MSG_PEEK / plain recv on sv[0] via the shared fd table.
- *   5.  parent half: tight-loop send(sv[1], ...) and occasional
- *       shutdown(SHUT_WR, sv[1]).  When sv[1] EPIPEs, close both ends
- *       and socketpair() a fresh pair, re-applying SO_PEEK_OFF.
- *   6.  reap sibling, close both ends.
- *
- * Brick-safety: AF_UNIX local-only -- no module load, no sysfs writes,
- * no namespace touches.  All loops bounded by fixed constants.  Recv
- * sockets carry SO_RCVTIMEO=1s so a stuck recv cannot pin past
- * child.c's SIGALRM(1s).  Per-process state only.
- *
- * Cap-gate latch: first invocation per process probes
- * socketpair(AF_UNIX, SOCK_STREAM, 0).  If -EAFNOSUPPORT or
- * -ESOCKTNOSUPPORT (sysroots / kernels with AF_UNIX disabled,
- * vanishingly rare but possible on heavily-stripped images) the latch
- * fires and every subsequent invocation just bumps setup_failed and
- * returns.
- *
- * Header gating: <sys/socket.h> + <sys/un.h> are standard glibc and
- * always present; the fallback stub remains for the !__has_include
- * case for paranoid sysroots.
- *
- * Failure modes treated as benign coverage:
- *   - send returning EPIPE / EAGAIN: writer was shut down or queue
- *     full; parent re-creates the pair (EPIPE) or just continues
- *     (EAGAIN).
- *   - recv returning EAGAIN / ETIMEDOUT / 0: peer drained or shutdown
- *     observed; sibling continues its bounded loop.
- *   - SO_PEEK_OFF setsockopt rejected (kernels predating SOCK_STREAM
- *     support): bump setup_failed, skip iter, no latch -- next iter
- *     may land on a kernel where the feature works.
+ * Latch: first invocation probes socketpair(AF_UNIX, SOCK_STREAM); on
+ * -EAFNOSUPPORT/-ESOCKTNOSUPPORT the op stays disabled for this
+ * child's life.  SO_PEEK_OFF rejection bumps setup_failed without
+ * latching (a later iter may land on a supporting kernel).  Header-
+ * gated by __has_include on <sys/socket.h>/<sys/un.h> with a fallback
+ * stub for paranoid sysroots.
  */
 
 #include <errno.h>
