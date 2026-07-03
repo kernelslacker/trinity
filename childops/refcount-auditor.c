@@ -392,7 +392,17 @@ static unsigned int collect_held_socket_inodes(ino_t *out, unsigned int max)
  * "socket:[...]" entries.  A child that holds no socket fds cannot mismatch
  * the net tables, and we must not bump the anomaly counter in that window.
  */
-static void audit_socket_bucket(void)
+/*
+ * Collect socket inodes from all /proc/net/{tcp,udp,tcp6,udp6,unix,packet}
+ * files into a single flat array, up to MAX_PROC_NET_INODES entries.
+ *
+ * *any_open_out is set true if at least one file opened successfully.  The
+ * caller uses this to distinguish "no sockets exist right now" (opened
+ * cleanly, zero rows) from "/proc/net is hidden" (every open failed) — the
+ * latter latches proc_net_unavailable to skip all future invocations.
+ */
+static unsigned int collect_all_proc_net_inodes(ino_t *net_inodes,
+						bool *any_open_out)
 {
 	static const struct {
 		const char *path;
@@ -405,23 +415,9 @@ static void audit_socket_bucket(void)
 		{ "/proc/net/unix",    7 },
 		{ "/proc/net/packet",  9 },
 	};
-	struct objhead *head;
-	struct object *obj;
-	ino_t *net_inodes;
 	unsigned int net_count = 0;
-	unsigned int t, i;
+	unsigned int t;
 	bool any_open = false;
-
-	if (proc_net_unavailable)
-		return;
-
-	head = get_objhead(OBJ_GLOBAL, OBJ_FD_SOCKET);
-	if (head == NULL)
-		return;
-
-	net_inodes = malloc(MAX_PROC_NET_INODES * sizeof(*net_inodes));
-	if (!net_inodes)
-		return;
 
 	for (t = 0; t < ARRAY_SIZE(net_files) && net_count < MAX_PROC_NET_INODES; t++) {
 		unsigned int n = 0;
@@ -435,22 +431,23 @@ static void audit_socket_bucket(void)
 		net_count += n;
 	}
 
-	/*
-	 * Latch unavailable only when every probed file failed to open — a
-	 * containerised env with /proc/net hidden.  A zero count from files
-	 * that opened cleanly just means no sockets of those families exist
-	 * right now; skip this round and try again next cycle.
-	 */
-	if (!any_open) {
-		proc_net_unavailable = true;
-		free(net_inodes);
-		return;
-	}
+	*any_open_out = any_open;
+	return net_count;
+}
 
-	if (net_count == 0) {
-		free(net_inodes);
-		return;
-	}
+/*
+ * Phase 1 (pool-side): for each tracked socket in the OBJ_FD_SOCKET pool,
+ * fstat the fd to obtain its kernel inode number and verify the inode
+ * appears in the net-inode set.  A missing inode means the kernel freed
+ * the socket struct while trinity's pool still holds the fd — a refcount
+ * imbalance that will produce a UAF once the fd is eventually used.
+ */
+static void audit_socket_pool_against_net_inodes(struct objhead *head,
+						 const ino_t *net_inodes,
+						 unsigned int net_count)
+{
+	struct object *obj;
+	unsigned int i;
 
 	for_each_obj(head, obj, i) {
 		struct socketinfo *si;
@@ -483,6 +480,46 @@ static void audit_socket_bucket(void)
 					   1, __ATOMIC_RELAXED);
 		}
 	}
+}
+
+static void audit_socket_bucket(void)
+{
+	struct objhead *head;
+	ino_t *net_inodes;
+	unsigned int net_count;
+	bool any_open;
+
+	if (proc_net_unavailable)
+		return;
+
+	head = get_objhead(OBJ_GLOBAL, OBJ_FD_SOCKET);
+	if (head == NULL)
+		return;
+
+	net_inodes = malloc(MAX_PROC_NET_INODES * sizeof(*net_inodes));
+	if (!net_inodes)
+		return;
+
+	net_count = collect_all_proc_net_inodes(net_inodes, &any_open);
+
+	/*
+	 * Latch unavailable only when every probed file failed to open — a
+	 * containerised env with /proc/net hidden.  A zero count from files
+	 * that opened cleanly just means no sockets of those families exist
+	 * right now; skip this round and try again next cycle.
+	 */
+	if (!any_open) {
+		proc_net_unavailable = true;
+		free(net_inodes);
+		return;
+	}
+
+	if (net_count == 0) {
+		free(net_inodes);
+		return;
+	}
+
+	audit_socket_pool_against_net_inodes(head, net_inodes, net_count);
 
 	/*
 	 * Phase 2: fdinfo-side cross-check.  Pull the kernel's own list of

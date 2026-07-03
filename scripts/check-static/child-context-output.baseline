@@ -26,6 +26,7 @@ childops/psp-key-rotate.c:warn_once_unsupported_psp_key_rotate
 childops/refcount-auditor.c:audit_fd_bucket
 childops/refcount-auditor.c:audit_mmap_bucket
 childops/refcount-auditor.c:audit_socket_bucket
+childops/refcount-auditor.c:audit_socket_pool_against_net_inodes
 childops/rtnl-vf-broadcast-getlink.c:warn_once_unsupported_rtnl_vf_broadcast
 childops/rxrpc-key-install.c:do_add_rxrpc
 childops/rxrpc-key-install.c:probe_rxrpc_key_supported
