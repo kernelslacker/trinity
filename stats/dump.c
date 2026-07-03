@@ -1538,14 +1538,9 @@ void dump_stats_strategy_summary(void)
 	dump_strategy_stats();
 }
 
-void __cold dump_stats_childop_runs_network(void)
+
+static void dump_stats_render_packet_fanout_thrash(void)
 {
-	stat_category_emit_text(&socket_family_chain_category);
-
-	stat_category_emit_text(&socket_family_grammar_category);
-
-	stat_category_emit_text(&tls_rotate_category);
-
 	if (shm->stats.packet_fanout_runs) {
 		stat_row("packet_fanout_thrash", "runs",             shm->stats.packet_fanout_runs);
 		stat_row("packet_fanout_thrash", "setup_failed",     shm->stats.packet_fanout_setup_failed);
@@ -1556,7 +1551,10 @@ void __cold dump_stats_childop_runs_network(void)
 		stat_row("packet_fanout_thrash", "rejoins_ok",       shm->stats.packet_fanout_rejoins_ok);
 		stat_row("packet_fanout_thrash", "rejoins_rejected", shm->stats.packet_fanout_rejoins_rejected);
 	}
+}
 
+static void dump_stats_render_eth_emitter(void)
+{
 	if (shm->stats.eth_emitter_runs) {
 		stat_row("eth_emitter", "runs",               shm->stats.eth_emitter_runs);
 		stat_row("eth_emitter", "setup_failed",       shm->stats.eth_emitter_setup_failed);
@@ -1569,7 +1567,10 @@ void __cold dump_stats_childop_runs_network(void)
 		stat_row("eth_emitter", "tmpl_vlan_qinq",     shm->stats.eth_emitter_per_tmpl[3]);
 		stat_row("eth_emitter", "tmpl_bad_ethertype", shm->stats.eth_emitter_per_tmpl[4]);
 	}
+}
 
+static void dump_stats_render_iouring_multishot(void)
+{
 	if (shm->stats.iouring_multishot_runs) {
 		stat_row("iouring_net_multishot", "runs",             shm->stats.iouring_multishot_runs);
 		stat_row("iouring_net_multishot", "setup_failed",     shm->stats.iouring_multishot_setup_failed);
@@ -1584,27 +1585,10 @@ void __cold dump_stats_childop_runs_network(void)
 		stat_row("iouring_net_multishot", "napi_unregister_ok", shm->stats.iouring_napi_unregister_ok);
 		stat_row("iouring_net_multishot", "napi_unregister_fail", shm->stats.iouring_napi_unregister_fail);
 	}
+}
 
-	stat_category_emit_text(&tcp_ao_rotate_category);
-
-	stat_category_emit_text(&tcp_md5_listener_race_category);
-
-	stat_category_emit_text(&ipv6_pmtu_race_category);
-
-	stat_category_emit_text(&vrf_fib_churn_category);
-
-	stat_category_emit_text(&mpls_route_churn_category);
-
-	stat_category_emit_text(&netlink_monitor_race_category);
-
-	stat_category_emit_text(&tipc_link_churn_category);
-
-	stat_category_emit_text(&tls_ulp_churn_category);
-
-	stat_category_emit_text(&vxlan_encap_churn_category);
-
-	stat_category_emit_text(&ovs_tunnel_vport_churn_category);
-
+static void dump_stats_render_bridge_fdb_stp(void)
+{
 	if (shm->stats.bridge_fdb_stp_runs) {
 		stat_row("bridge_fdb_stp", "runs",            shm->stats.bridge_fdb_stp_runs);
 		stat_row("bridge_fdb_stp", "setup_failed",    shm->stats.bridge_fdb_stp_setup_failed);
@@ -1618,9 +1602,10 @@ void __cold dump_stats_childop_runs_network(void)
 		stat_row("bridge_fdb_stp", "vlan_mass_max_n", shm->stats.bridge_vlan_mass_max_n);
 		stat_row("bridge_fdb_stp", "vlan_mass_enotbufs", shm->stats.bridge_vlan_mass_enotbufs);
 	}
+}
 
-	stat_category_emit_text(&bridge_conntrack_churn_category);
-
+static void dump_stats_render_nftables_churn(void)
+{
 	if (shm->stats.nftables_churn_runs) {
 		stat_row("nftables_churn", "runs",             shm->stats.nftables_churn_runs);
 		stat_row("nftables_churn", "setup_failed",     shm->stats.nftables_churn_setup_failed);
@@ -1658,7 +1643,10 @@ void __cold dump_stats_childop_runs_network(void)
 		stat_row("nftables_churn", "l4frag_send_ok",            shm->stats.nft_l4frag_send_ok);
 		stat_row("nftables_churn", "l4frag_send_failed",        shm->stats.nft_l4frag_send_failed);
 	}
+}
 
+static void dump_stats_render_tc_qdisc_churn(void)
+{
 	if (shm->stats.tc_qdisc_churn_runs) {
 		stat_row("tc_qdisc_churn", "runs",              shm->stats.tc_qdisc_churn_runs);
 		stat_row("tc_qdisc_churn", "setup_failed",      shm->stats.tc_qdisc_churn_setup_failed);
@@ -1678,7 +1666,10 @@ void __cold dump_stats_childop_runs_network(void)
 		stat_row("tc_qdisc_churn", "bridge_parent_runs",      shm->stats.tc_qdisc_churn_bridge_parent_runs);
 		stat_row("tc_qdisc_churn", "bridge_dellink_race_ok",  shm->stats.tc_qdisc_churn_bridge_dellink_race_ok);
 	}
+}
 
+static void dump_stats_render_tc_mirred_blockcast(void)
+{
 	if (shm->stats.tc_mirred_blockcast_runs) {
 		stat_row("tc_mirred_blockcast", "runs",            shm->stats.tc_mirred_blockcast_runs);
 		stat_row("tc_mirred_blockcast", "setup_failed",    shm->stats.tc_mirred_blockcast_setup_failed);
@@ -1688,7 +1679,10 @@ void __cold dump_stats_childop_runs_network(void)
 		stat_row("tc_mirred_blockcast", "filter_fail",     shm->stats.tc_mirred_blockcast_filter_fail);
 		stat_row("tc_mirred_blockcast", "packet_sent_ok",  shm->stats.tc_mirred_blockcast_packet_sent_ok);
 	}
+}
 
+static void dump_stats_render_xfrm_churn(void)
+{
 	if (shm->stats.xfrm_churn_runs) {
 		stat_row("xfrm_churn", "runs",          shm->stats.xfrm_churn_runs);
 		stat_row("xfrm_churn", "setup_failed",  shm->stats.xfrm_churn_setup_failed);
@@ -1708,13 +1702,10 @@ void __cold dump_stats_childop_runs_network(void)
 		stat_row("xfrm_churn", "compat_sends_failed", shm->stats.xfrm_compat_sends_failed);
 		stat_row("xfrm_churn", "compat_replies_seen", shm->stats.xfrm_compat_replies_seen);
 	}
+}
 
-	stat_category_emit_text(&altname_thrash_category);
-
-	stat_category_emit_text(&ublk_lifecycle_category);
-
-	stat_category_emit_text(&pci_bind_category);
-
+static void dump_stats_render_accept_unblocker(void)
+{
 	if (shm->stats.accept_unblocker_connects_fired ||
 	    shm->stats.accept_unblocker_loopback_only_skipped ||
 	    shm->stats.accept_unblocker_probe_failed) {
@@ -1725,7 +1716,10 @@ void __cold dump_stats_childop_runs_network(void)
 		stat_row("accept_unblocker", "probe_failed",
 			 shm->stats.accept_unblocker_probe_failed);
 	}
+}
 
+static void dump_stats_render_pipe_waker(void)
+{
 	if (shm->stats.pipe_waker_bytes_written ||
 	    shm->stats.pipe_waker_no_target ||
 	    shm->stats.pipe_waker_write_failed) {
@@ -1736,7 +1730,10 @@ void __cold dump_stats_childop_runs_network(void)
 		stat_row("pipe_waker", "write_failed",
 			 shm->stats.pipe_waker_write_failed);
 	}
+}
 
+static void dump_stats_render_nat_t_churn(void)
+{
 	if (shm->stats.nat_t_churn_runs) {
 		stat_row("nat_t_churn", "runs",              shm->stats.nat_t_churn_runs);
 		stat_row("nat_t_churn", "setup_failed",      shm->stats.nat_t_churn_setup_failed);
@@ -1748,9 +1745,10 @@ void __cold dump_stats_childop_runs_network(void)
 		stat_row("nat_t_churn", "xfrm6_sendto_runs", shm->stats.nat_t_xfrm6_sendto_runs);
 		stat_row("nat_t_churn", "xfrm6_delsa_races", shm->stats.nat_t_xfrm6_delsa_races);
 	}
+}
 
-	stat_category_emit_text(&bpf_cgroup_attach_category);
-
+static void dump_stats_render_mptcp_pm_churn(void)
+{
 	if (shm->stats.mptcp_pm_churn_runs) {
 		stat_row("mptcp_pm_churn", "runs",            shm->stats.mptcp_pm_churn_runs);
 		stat_row("mptcp_pm_churn", "setup_failed",    shm->stats.mptcp_pm_churn_setup_failed);
@@ -1771,7 +1769,10 @@ void __cold dump_stats_childop_runs_network(void)
 		stat_row("mptcp_pm_churn", "sockopt_inherit_mismatch", shm->stats.mptcp_sockopt_inherit_mismatch);
 		stat_row("mptcp_pm_churn", "sockopt_unsupported_latched", shm->stats.mptcp_sockopt_unsupported_latched);
 	}
+}
 
+static void dump_stats_render_devlink_port_churn(void)
+{
 	if (shm->stats.devlink_port_churn_iterations ||
 	    shm->stats.devlink_port_churn_create_skipped) {
 		stat_row("devlink_port_churn", "iterations",     shm->stats.devlink_port_churn_iterations);
@@ -1781,6 +1782,319 @@ void __cold dump_stats_childop_runs_network(void)
 		stat_row("devlink_port_churn", "reload_fail",    shm->stats.devlink_port_churn_reload_fail);
 		stat_row("devlink_port_churn", "create_skipped", shm->stats.devlink_port_churn_create_skipped);
 	}
+}
+
+static void dump_stats_render_vsock_transport_churn(void)
+{
+	if (shm->stats.vsock_transport_churn_runs) {
+		stat_row("vsock_transport_churn", "runs",           shm->stats.vsock_transport_churn_runs);
+		stat_row("vsock_transport_churn", "setup_failed",   shm->stats.vsock_transport_churn_setup_failed);
+		stat_row("vsock_transport_churn", "bind_ok",        shm->stats.vsock_transport_churn_bind_ok);
+		stat_row("vsock_transport_churn", "connect_ok",     shm->stats.vsock_transport_churn_connect_ok);
+		stat_row("vsock_transport_churn", "send_ok",        shm->stats.vsock_transport_churn_send_ok);
+		stat_row("vsock_transport_churn", "buffer_size_ok", shm->stats.vsock_transport_churn_buffer_size_ok);
+		stat_row("vsock_transport_churn", "timeout_ok",     shm->stats.vsock_transport_churn_timeout_ok);
+		stat_row("vsock_transport_churn", "get_cid_ok",     shm->stats.vsock_transport_churn_get_cid_ok);
+		stat_row("vsock_transport_churn", "seq_eom_runs",         shm->stats.vsock_seq_eom_runs);
+		stat_row("vsock_transport_churn", "seq_eom_sends_ok",     shm->stats.vsock_seq_eom_sends_ok);
+		stat_row("vsock_transport_churn", "seq_eom_sends_failed", shm->stats.vsock_seq_eom_sends_failed);
+		stat_row("vsock_transport_churn", "seq_eom_skipped",      shm->stats.vsock_seq_eom_skipped);
+	}
+}
+
+static void dump_stats_render_psp_key_rotate(void)
+{
+	if (shm->stats.psp_key_rotate_runs) {
+		stat_row("psp_key_rotate", "runs",              shm->stats.psp_key_rotate_runs);
+		stat_row("psp_key_rotate", "setup_failed",      shm->stats.psp_key_rotate_setup_failed);
+		stat_row("psp_key_rotate", "netdev_create_ok",  shm->stats.psp_key_rotate_netdev_create_ok);
+		stat_row("psp_key_rotate", "family_resolve_ok", shm->stats.psp_key_rotate_family_resolve_ok);
+		stat_row("psp_key_rotate", "dev_get_ok",        shm->stats.psp_key_rotate_dev_get_ok);
+		stat_row("psp_key_rotate", "key_install_ok",    shm->stats.psp_key_rotate_key_install_ok);
+		stat_row("psp_key_rotate", "spi_set_ok",        shm->stats.psp_key_rotate_spi_set_ok);
+		stat_row("psp_key_rotate", "send_ok",           shm->stats.psp_key_rotate_send_ok);
+		stat_row("psp_key_rotate", "rotate_ok",         shm->stats.psp_key_rotate_rotate_ok);
+		stat_row("psp_key_rotate", "spi_switch_ok",     shm->stats.psp_key_rotate_spi_switch_ok);
+		stat_row("psp_key_rotate", "shutdown_ok",       shm->stats.psp_key_rotate_shutdown_ok);
+	}
+}
+
+static void dump_stats_render_psp_devlink_port_churn(void)
+{
+	if (shm->stats.psp_devlink_port_churn_runs) {
+		stat_row("psp_devlink_port_churn", "runs",                 shm->stats.psp_devlink_port_churn_runs);
+		stat_row("psp_devlink_port_churn", "port_add_ok",          shm->stats.psp_devlink_port_churn_port_add_ok);
+		stat_row("psp_devlink_port_churn", "port_del_ok",          shm->stats.psp_devlink_port_churn_port_del_ok);
+		stat_row("psp_devlink_port_churn", "vf_spawn_ok",          shm->stats.psp_devlink_port_churn_vf_spawn_ok);
+		stat_row("psp_devlink_port_churn", "unsupported_latched",  shm->stats.psp_devlink_port_churn_unsupported_latched);
+	}
+}
+
+static void dump_stats_render_ipvs_sysctl_writer(void)
+{
+	if (shm->stats.ipvs_sysctl_writer_runs) {
+		stat_row("ipvs_sysctl_writer", "runs",                shm->stats.ipvs_sysctl_writer_runs);
+		stat_row("ipvs_sysctl_writer", "writes_ok",           shm->stats.ipvs_sysctl_writer_writes_ok);
+		stat_row("ipvs_sysctl_writer", "writes_failed",       shm->stats.ipvs_sysctl_writer_writes_failed);
+		stat_row("ipvs_sysctl_writer", "unsupported_latched", shm->stats.ipvs_sysctl_writer_unsupported_latched);
+	}
+}
+
+static void dump_stats_render_ipfrag_source(void)
+{
+	if (shm->stats.ipfrag_source_runs) {
+		stat_row("ipfrag_source_churn", "runs",            shm->stats.ipfrag_source_runs);
+		stat_row("ipfrag_source_churn", "packets_sent_ok", shm->stats.ipfrag_packets_sent_ok);
+		stat_row("ipfrag_source_churn", "send_failed",     shm->stats.ipfrag_send_failed);
+		stat_row("ipfrag_source_churn", "unique_srcs",     shm->stats.ipfrag_unique_srcs);
+	}
+}
+
+static void dump_stats_render_obscure_af_churn(void)
+{
+	if (shm->stats.obscure_af_churn_runs) {
+		static const char * const ap_names[] = {
+			"sendmsg_no_bind",
+			"bind_then_sendmsg",
+			"connect_no_listen",
+			"ioctl_rotation",
+			"setsockopt_zero_len",
+			"close_via_dup",
+		};
+		char key[64];
+		unsigned int ap;
+
+		stat_row("obscure_af_churn", "runs",         shm->stats.obscure_af_churn_runs);
+		stat_row("obscure_af_churn", "no_viable_pf", shm->stats.obscure_af_churn_no_viable_pf);
+
+		for (ap = 0; ap < ARRAY_SIZE(ap_names); ap++) {
+			snprintf(key, sizeof(key), "%s_runs", ap_names[ap]);
+			stat_row("obscure_af_churn", key,
+				 shm->stats.obscure_af_churn_pattern_runs[ap]);
+			snprintf(key, sizeof(key), "%s_kernel_rejected", ap_names[ap]);
+			stat_row("obscure_af_churn", key,
+				 shm->stats.obscure_af_churn_pattern_kernel_rejected[ap]);
+			snprintf(key, sizeof(key), "%s_unexpected_success", ap_names[ap]);
+			stat_row("obscure_af_churn", key,
+				 shm->stats.obscure_af_churn_pattern_unexpected_success[ap]);
+		}
+	}
+}
+
+static void dump_stats_render_rxrpc_sendmsg_cmsg(void)
+{
+	if (shm->stats.rxrpc_sendmsg_cmsg_runs) {
+		static const char * const rxrpc_cmsg_slot_names[8] = {
+			"user_call_id",
+			"abort",
+			"accept",
+			"exclusive_call",
+			"upgrade_service",
+			"tx_length",
+			"set_call_timeout",
+			"charge_accept",
+		};
+		char key[64];
+		unsigned int slot;
+
+		stat_row("rxrpc_sendmsg_cmsg_churn", "runs",          shm->stats.rxrpc_sendmsg_cmsg_runs);
+		stat_row("rxrpc_sendmsg_cmsg_churn", "socket_failed", shm->stats.rxrpc_sendmsg_cmsg_socket_failed);
+		stat_row("rxrpc_sendmsg_cmsg_churn", "sendmsg_ok",    shm->stats.rxrpc_sendmsg_cmsg_sendmsg_ok);
+		stat_row("rxrpc_sendmsg_cmsg_churn", "sendmsg_fail",  shm->stats.rxrpc_sendmsg_cmsg_sendmsg_fail);
+		for (slot = 0; slot < 8U; slot++) {
+			snprintf(key, sizeof(key), "cmsg_sent_%s",
+				 rxrpc_cmsg_slot_names[slot]);
+			stat_row("rxrpc_sendmsg_cmsg_churn", key,
+				 shm->stats.rxrpc_sendmsg_cmsg_sent[slot]);
+		}
+	}
+}
+
+static void dump_stats_render_tty_ldisc_churn(void)
+{
+	if (shm->stats.tty_ldisc_churn_runs) {
+		char key[64];
+		unsigned int slot;
+
+		stat_row("tty_ldisc_churn", "runs",             shm->stats.tty_ldisc_churn_runs);
+		stat_row("tty_ldisc_churn", "setup_failed",     shm->stats.tty_ldisc_churn_setup_failed);
+		stat_row("tty_ldisc_churn", "ldisc_set_ok",     shm->stats.tty_ldisc_churn_ldisc_set_ok);
+		stat_row("tty_ldisc_churn", "ldisc_set_failed", shm->stats.tty_ldisc_churn_ldisc_set_failed);
+		stat_row("tty_ldisc_churn", "write_ok",         shm->stats.tty_ldisc_churn_write_ok);
+		stat_row("tty_ldisc_churn", "read_ok",          shm->stats.tty_ldisc_churn_read_ok);
+		for (slot = 0; slot < 25U; slot++) {
+			if (shm->stats.tty_ldisc_churn_ldisc_set_ok_per_disc[slot] == 0)
+				continue;
+			snprintf(key, sizeof(key), "ldisc_set_ok_n%u", slot);
+			stat_row("tty_ldisc_churn", key,
+				 shm->stats.tty_ldisc_churn_ldisc_set_ok_per_disc[slot]);
+		}
+	}
+}
+
+static void dump_stats_render_afxdp_churn(void)
+{
+	if (shm->stats.afxdp_churn_runs) {
+		stat_row("afxdp_churn", "runs",            shm->stats.afxdp_churn_runs);
+		stat_row("afxdp_churn", "setup_failed",    shm->stats.afxdp_churn_setup_failed);
+		stat_row("afxdp_churn", "umem_reg_ok",     shm->stats.afxdp_churn_umem_reg_ok);
+		stat_row("afxdp_churn", "rings_setup_ok",  shm->stats.afxdp_churn_rings_setup_ok);
+		stat_row("afxdp_churn", "prog_load_ok",    shm->stats.afxdp_churn_prog_load_ok);
+		stat_row("afxdp_churn", "map_create_ok",   shm->stats.afxdp_churn_map_create_ok);
+		stat_row("afxdp_churn", "map_update_ok",   shm->stats.afxdp_churn_map_update_ok);
+		stat_row("afxdp_churn", "bind_ok",         shm->stats.afxdp_churn_bind_ok);
+		stat_row("afxdp_churn", "link_attach_ok",  shm->stats.afxdp_churn_link_attach_ok);
+		stat_row("afxdp_churn", "netlink_attach_ok", shm->stats.afxdp_churn_netlink_attach_ok);
+		stat_row("afxdp_churn", "attach_failed",   shm->stats.afxdp_churn_attach_failed);
+		stat_row("afxdp_churn", "send_ok",         shm->stats.afxdp_churn_send_ok);
+		stat_row("afxdp_churn", "recv_ok",         shm->stats.afxdp_churn_recv_ok);
+		stat_row("afxdp_churn", "map_delete_ok",   shm->stats.afxdp_churn_map_delete_ok);
+		stat_row("afxdp_churn", "munmap_race_ok",  shm->stats.afxdp_churn_munmap_race_ok);
+		stat_row("afxdp_churn", "xsg_iters",         shm->stats.afxdp_xsg_iters);
+		stat_row("afxdp_churn", "tx_metadata_iters", shm->stats.afxdp_tx_metadata_iters);
+		stat_row("afxdp_churn", "tun_bind_iters",    shm->stats.afxdp_tun_bind_iters);
+		stat_row("afxdp_churn", "xsg_bind_failed",   shm->stats.afxdp_xsg_bind_failed);
+		stat_row("afxdp_churn", "tx_md_bind_failed", shm->stats.afxdp_tx_md_bind_failed);
+	}
+}
+
+static void dump_stats_render_kvm_run_churn(void)
+{
+	if (shm->stats.kvm_run_invocations) {
+		stat_row("kvm_run_churn", "invocations",        shm->stats.kvm_run_invocations);
+		stat_row("kvm_run_churn", "exit_io",            shm->stats.kvm_run_exit_io);
+		stat_row("kvm_run_churn", "exit_mmio",          shm->stats.kvm_run_exit_mmio);
+		stat_row("kvm_run_churn", "exit_hlt",           shm->stats.kvm_run_exit_hlt);
+		stat_row("kvm_run_churn", "exit_shutdown",      shm->stats.kvm_run_exit_shutdown);
+		stat_row("kvm_run_churn", "exit_fail_entry",    shm->stats.kvm_run_exit_fail_entry);
+		stat_row("kvm_run_churn", "exit_internal_error", shm->stats.kvm_run_exit_internal_error);
+		stat_row("kvm_run_churn", "exit_intr",          shm->stats.kvm_run_exit_intr);
+		stat_row("kvm_run_churn", "exit_other",         shm->stats.kvm_run_exit_other);
+		stat_row("kvm_run_churn", "errors",             shm->stats.kvm_run_errors);
+		stat_row("kvm_run_churn", "gpc_memslot_race_runs",         shm->stats.kvm_gpc_memslot_race_runs);
+		stat_row("kvm_run_churn", "gpc_memslot_race_deletes",      shm->stats.kvm_gpc_memslot_race_deletes);
+		stat_row("kvm_run_churn", "gpc_memslot_race_unsupported",  shm->stats.kvm_gpc_memslot_race_unsupported);
+	}
+}
+
+static void dump_stats_render_nl80211_churn(void)
+{
+	if (shm->stats.nl80211_runs) {
+		stat_row("nl80211_churn", "runs",                  shm->stats.nl80211_runs);
+		stat_row("nl80211_churn", "setup_failed",          shm->stats.nl80211_setup_failed);
+		stat_row("nl80211_churn", "scan_triggered",        shm->stats.nl80211_scan_triggered);
+		stat_row("nl80211_churn", "connect_attempted",     shm->stats.nl80211_connect_attempted);
+		stat_row("nl80211_churn", "connect_succeeded",     shm->stats.nl80211_connect_succeeded);
+		stat_row("nl80211_churn", "disconnect_attempted",  shm->stats.nl80211_disconnect_attempted);
+		stat_row("nl80211_churn", "regdom_changed",        shm->stats.nl80211_regdom_changed);
+		stat_row("nl80211_churn", "iface_created",         shm->stats.nl80211_iface_created);
+		stat_row("nl80211_churn", "iface_destroyed",       shm->stats.nl80211_iface_destroyed);
+		stat_row("nl80211_churn", "bursts_sent",           shm->stats.nl80211_bursts_sent);
+		stat_row("nl80211_churn", "pmsr_runs",             shm->stats.nl80211_pmsr_runs);
+		stat_row("nl80211_churn", "pmsr_ok",               shm->stats.nl80211_pmsr_ok);
+		stat_row("nl80211_churn", "admin_gate_runs",       shm->stats.nl80211_admin_gate_runs);
+		stat_row("nl80211_churn", "admin_gate_eperm_ok",   shm->stats.nl80211_admin_gate_eperm_ok);
+		stat_row("nl80211_churn", "admin_gate_unexpected", shm->stats.nl80211_admin_gate_unexpected);
+	}
+}
+
+static void dump_stats_render_af_alg_probe(void)
+{
+	if (shm->stats.af_alg_probe_runs || shm->stats.af_alg_probe_unsupported) {
+		unsigned int tmpl;
+
+		stat_row("af_alg_probe", "runs",         shm->stats.af_alg_probe_runs);
+		stat_row("af_alg_probe", "unsupported",  shm->stats.af_alg_probe_unsupported);
+		stat_row("af_alg_probe", "accept_total", shm->stats.af_alg_probe_accept_total);
+		stat_row("af_alg_probe", "reject_total", shm->stats.af_alg_probe_reject_total);
+		for (tmpl = 0; tmpl < NR_AF_ALG_PROBE_TEMPLATES; tmpl++) {
+			char metric[64];
+			const char *label = af_alg_probe_template_label(tmpl);
+
+			snprintf(metric, sizeof(metric), "%s.accept", label);
+			stat_row("af_alg_probe", metric, shm->stats.af_alg_probe_accept[tmpl]);
+			snprintf(metric, sizeof(metric), "%s.reject", label);
+			stat_row("af_alg_probe", metric, shm->stats.af_alg_probe_reject[tmpl]);
+		}
+	}
+}
+
+static void dump_stats_render_af_alg_recvmsg_churn(void)
+{
+	if (shm->stats.af_alg_recvmsg_runs) {
+		stat_row("af_alg_recvmsg_churn", "runs",               shm->stats.af_alg_recvmsg_runs);
+		stat_row("af_alg_recvmsg_churn", "setkey_sent",        shm->stats.af_alg_recvmsg_setkey_sent);
+		stat_row("af_alg_recvmsg_churn", "iv_sent",            shm->stats.af_alg_recvmsg_iv_sent);
+		stat_row("af_alg_recvmsg_churn", "oob_iov",            shm->stats.af_alg_recvmsg_oob_iov);
+		stat_row("af_alg_recvmsg_churn", "zerolen",            shm->stats.af_alg_recvmsg_zerolen);
+		stat_row("af_alg_recvmsg_churn", "oversize",           shm->stats.af_alg_recvmsg_oversize);
+		stat_row("af_alg_recvmsg_churn", "empty_cmsg_no_more", shm->stats.af_alg_recvmsg_empty_cmsg_no_more);
+		stat_row("af_alg_recvmsg_churn", "unsupported",        shm->stats.af_alg_recvmsg_unsupported);
+	}
+}
+void __cold dump_stats_childop_runs_network(void)
+{
+	stat_category_emit_text(&socket_family_chain_category);
+
+	stat_category_emit_text(&socket_family_grammar_category);
+
+	stat_category_emit_text(&tls_rotate_category);
+
+	dump_stats_render_packet_fanout_thrash();
+
+	dump_stats_render_eth_emitter();
+
+	dump_stats_render_iouring_multishot();
+
+	stat_category_emit_text(&tcp_ao_rotate_category);
+
+	stat_category_emit_text(&tcp_md5_listener_race_category);
+
+	stat_category_emit_text(&ipv6_pmtu_race_category);
+
+	stat_category_emit_text(&vrf_fib_churn_category);
+
+	stat_category_emit_text(&mpls_route_churn_category);
+
+	stat_category_emit_text(&netlink_monitor_race_category);
+
+	stat_category_emit_text(&tipc_link_churn_category);
+
+	stat_category_emit_text(&tls_ulp_churn_category);
+
+	stat_category_emit_text(&vxlan_encap_churn_category);
+
+	stat_category_emit_text(&ovs_tunnel_vport_churn_category);
+
+	dump_stats_render_bridge_fdb_stp();
+
+	stat_category_emit_text(&bridge_conntrack_churn_category);
+
+	dump_stats_render_nftables_churn();
+
+	dump_stats_render_tc_qdisc_churn();
+
+	dump_stats_render_tc_mirred_blockcast();
+
+	dump_stats_render_xfrm_churn();
+
+	stat_category_emit_text(&altname_thrash_category);
+
+	stat_category_emit_text(&ublk_lifecycle_category);
+
+	stat_category_emit_text(&pci_bind_category);
+
+	dump_stats_render_accept_unblocker();
+
+	dump_stats_render_pipe_waker();
+
+	dump_stats_render_nat_t_churn();
+
+	stat_category_emit_text(&bpf_cgroup_attach_category);
+
+	dump_stats_render_mptcp_pm_churn();
+
+	dump_stats_render_devlink_port_churn();
 
 	stat_category_emit_text(&handshake_req_abort_category);
 
@@ -1810,46 +2124,15 @@ void __cold dump_stats_childop_runs_network(void)
 
 	stat_category_emit_text(&iouring_send_zc_churn_category);
 
-	if (shm->stats.vsock_transport_churn_runs) {
-		stat_row("vsock_transport_churn", "runs",           shm->stats.vsock_transport_churn_runs);
-		stat_row("vsock_transport_churn", "setup_failed",   shm->stats.vsock_transport_churn_setup_failed);
-		stat_row("vsock_transport_churn", "bind_ok",        shm->stats.vsock_transport_churn_bind_ok);
-		stat_row("vsock_transport_churn", "connect_ok",     shm->stats.vsock_transport_churn_connect_ok);
-		stat_row("vsock_transport_churn", "send_ok",        shm->stats.vsock_transport_churn_send_ok);
-		stat_row("vsock_transport_churn", "buffer_size_ok", shm->stats.vsock_transport_churn_buffer_size_ok);
-		stat_row("vsock_transport_churn", "timeout_ok",     shm->stats.vsock_transport_churn_timeout_ok);
-		stat_row("vsock_transport_churn", "get_cid_ok",     shm->stats.vsock_transport_churn_get_cid_ok);
-		stat_row("vsock_transport_churn", "seq_eom_runs",         shm->stats.vsock_seq_eom_runs);
-		stat_row("vsock_transport_churn", "seq_eom_sends_ok",     shm->stats.vsock_seq_eom_sends_ok);
-		stat_row("vsock_transport_churn", "seq_eom_sends_failed", shm->stats.vsock_seq_eom_sends_failed);
-		stat_row("vsock_transport_churn", "seq_eom_skipped",      shm->stats.vsock_seq_eom_skipped);
-	}
+	dump_stats_render_vsock_transport_churn();
 
 	stat_category_emit_text(&bridge_vlan_churn_category);
 
 	stat_category_emit_text(&igmp_mld_source_churn_category);
 
-	if (shm->stats.psp_key_rotate_runs) {
-		stat_row("psp_key_rotate", "runs",              shm->stats.psp_key_rotate_runs);
-		stat_row("psp_key_rotate", "setup_failed",      shm->stats.psp_key_rotate_setup_failed);
-		stat_row("psp_key_rotate", "netdev_create_ok",  shm->stats.psp_key_rotate_netdev_create_ok);
-		stat_row("psp_key_rotate", "family_resolve_ok", shm->stats.psp_key_rotate_family_resolve_ok);
-		stat_row("psp_key_rotate", "dev_get_ok",        shm->stats.psp_key_rotate_dev_get_ok);
-		stat_row("psp_key_rotate", "key_install_ok",    shm->stats.psp_key_rotate_key_install_ok);
-		stat_row("psp_key_rotate", "spi_set_ok",        shm->stats.psp_key_rotate_spi_set_ok);
-		stat_row("psp_key_rotate", "send_ok",           shm->stats.psp_key_rotate_send_ok);
-		stat_row("psp_key_rotate", "rotate_ok",         shm->stats.psp_key_rotate_rotate_ok);
-		stat_row("psp_key_rotate", "spi_switch_ok",     shm->stats.psp_key_rotate_spi_switch_ok);
-		stat_row("psp_key_rotate", "shutdown_ok",       shm->stats.psp_key_rotate_shutdown_ok);
-	}
+	dump_stats_render_psp_key_rotate();
 
-	if (shm->stats.psp_devlink_port_churn_runs) {
-		stat_row("psp_devlink_port_churn", "runs",                 shm->stats.psp_devlink_port_churn_runs);
-		stat_row("psp_devlink_port_churn", "port_add_ok",          shm->stats.psp_devlink_port_churn_port_add_ok);
-		stat_row("psp_devlink_port_churn", "port_del_ok",          shm->stats.psp_devlink_port_churn_port_del_ok);
-		stat_row("psp_devlink_port_churn", "vf_spawn_ok",          shm->stats.psp_devlink_port_churn_vf_spawn_ok);
-		stat_row("psp_devlink_port_churn", "unsupported_latched",  shm->stats.psp_devlink_port_churn_unsupported_latched);
-	}
+	dump_stats_render_psp_devlink_port_churn();
 
 	stat_category_emit_text(&veth_asymmetric_xdp_category);
 
@@ -1865,155 +2148,27 @@ void __cold dump_stats_childop_runs_network(void)
 
 	stat_category_emit_text(&iscsi_login_walker_category);
 
-	if (shm->stats.ipvs_sysctl_writer_runs) {
-		stat_row("ipvs_sysctl_writer", "runs",                shm->stats.ipvs_sysctl_writer_runs);
-		stat_row("ipvs_sysctl_writer", "writes_ok",           shm->stats.ipvs_sysctl_writer_writes_ok);
-		stat_row("ipvs_sysctl_writer", "writes_failed",       shm->stats.ipvs_sysctl_writer_writes_failed);
-		stat_row("ipvs_sysctl_writer", "unsupported_latched", shm->stats.ipvs_sysctl_writer_unsupported_latched);
-	}
+	dump_stats_render_ipvs_sysctl_writer();
 
 	stat_category_emit_text(&ipv6_ndisc_proxy_category);
 
-	if (shm->stats.ipfrag_source_runs) {
-		stat_row("ipfrag_source_churn", "runs",            shm->stats.ipfrag_source_runs);
-		stat_row("ipfrag_source_churn", "packets_sent_ok", shm->stats.ipfrag_packets_sent_ok);
-		stat_row("ipfrag_source_churn", "send_failed",     shm->stats.ipfrag_send_failed);
-		stat_row("ipfrag_source_churn", "unique_srcs",     shm->stats.ipfrag_unique_srcs);
-	}
+	dump_stats_render_ipfrag_source();
 
 	stat_category_emit_text(&rtnl_vf_broadcast_getlink_category);
 
-	if (shm->stats.obscure_af_churn_runs) {
-		static const char * const ap_names[] = {
-			"sendmsg_no_bind",
-			"bind_then_sendmsg",
-			"connect_no_listen",
-			"ioctl_rotation",
-			"setsockopt_zero_len",
-			"close_via_dup",
-		};
-		char key[64];
-		unsigned int ap;
-
-		stat_row("obscure_af_churn", "runs",         shm->stats.obscure_af_churn_runs);
-		stat_row("obscure_af_churn", "no_viable_pf", shm->stats.obscure_af_churn_no_viable_pf);
-
-		for (ap = 0; ap < ARRAY_SIZE(ap_names); ap++) {
-			snprintf(key, sizeof(key), "%s_runs", ap_names[ap]);
-			stat_row("obscure_af_churn", key,
-				 shm->stats.obscure_af_churn_pattern_runs[ap]);
-			snprintf(key, sizeof(key), "%s_kernel_rejected", ap_names[ap]);
-			stat_row("obscure_af_churn", key,
-				 shm->stats.obscure_af_churn_pattern_kernel_rejected[ap]);
-			snprintf(key, sizeof(key), "%s_unexpected_success", ap_names[ap]);
-			stat_row("obscure_af_churn", key,
-				 shm->stats.obscure_af_churn_pattern_unexpected_success[ap]);
-		}
-	}
+	dump_stats_render_obscure_af_churn();
 
 	stat_category_emit_text(&flowtable_encap_vlan_category);
 
-	if (shm->stats.rxrpc_sendmsg_cmsg_runs) {
-		static const char * const rxrpc_cmsg_slot_names[8] = {
-			"user_call_id",
-			"abort",
-			"accept",
-			"exclusive_call",
-			"upgrade_service",
-			"tx_length",
-			"set_call_timeout",
-			"charge_accept",
-		};
-		char key[64];
-		unsigned int slot;
+	dump_stats_render_rxrpc_sendmsg_cmsg();
 
-		stat_row("rxrpc_sendmsg_cmsg_churn", "runs",          shm->stats.rxrpc_sendmsg_cmsg_runs);
-		stat_row("rxrpc_sendmsg_cmsg_churn", "socket_failed", shm->stats.rxrpc_sendmsg_cmsg_socket_failed);
-		stat_row("rxrpc_sendmsg_cmsg_churn", "sendmsg_ok",    shm->stats.rxrpc_sendmsg_cmsg_sendmsg_ok);
-		stat_row("rxrpc_sendmsg_cmsg_churn", "sendmsg_fail",  shm->stats.rxrpc_sendmsg_cmsg_sendmsg_fail);
-		for (slot = 0; slot < 8U; slot++) {
-			snprintf(key, sizeof(key), "cmsg_sent_%s",
-				 rxrpc_cmsg_slot_names[slot]);
-			stat_row("rxrpc_sendmsg_cmsg_churn", key,
-				 shm->stats.rxrpc_sendmsg_cmsg_sent[slot]);
-		}
-	}
+	dump_stats_render_tty_ldisc_churn();
 
-	if (shm->stats.tty_ldisc_churn_runs) {
-		char key[64];
-		unsigned int slot;
+	dump_stats_render_afxdp_churn();
 
-		stat_row("tty_ldisc_churn", "runs",             shm->stats.tty_ldisc_churn_runs);
-		stat_row("tty_ldisc_churn", "setup_failed",     shm->stats.tty_ldisc_churn_setup_failed);
-		stat_row("tty_ldisc_churn", "ldisc_set_ok",     shm->stats.tty_ldisc_churn_ldisc_set_ok);
-		stat_row("tty_ldisc_churn", "ldisc_set_failed", shm->stats.tty_ldisc_churn_ldisc_set_failed);
-		stat_row("tty_ldisc_churn", "write_ok",         shm->stats.tty_ldisc_churn_write_ok);
-		stat_row("tty_ldisc_churn", "read_ok",          shm->stats.tty_ldisc_churn_read_ok);
-		for (slot = 0; slot < 25U; slot++) {
-			if (shm->stats.tty_ldisc_churn_ldisc_set_ok_per_disc[slot] == 0)
-				continue;
-			snprintf(key, sizeof(key), "ldisc_set_ok_n%u", slot);
-			stat_row("tty_ldisc_churn", key,
-				 shm->stats.tty_ldisc_churn_ldisc_set_ok_per_disc[slot]);
-		}
-	}
+	dump_stats_render_kvm_run_churn();
 
-	if (shm->stats.afxdp_churn_runs) {
-		stat_row("afxdp_churn", "runs",            shm->stats.afxdp_churn_runs);
-		stat_row("afxdp_churn", "setup_failed",    shm->stats.afxdp_churn_setup_failed);
-		stat_row("afxdp_churn", "umem_reg_ok",     shm->stats.afxdp_churn_umem_reg_ok);
-		stat_row("afxdp_churn", "rings_setup_ok",  shm->stats.afxdp_churn_rings_setup_ok);
-		stat_row("afxdp_churn", "prog_load_ok",    shm->stats.afxdp_churn_prog_load_ok);
-		stat_row("afxdp_churn", "map_create_ok",   shm->stats.afxdp_churn_map_create_ok);
-		stat_row("afxdp_churn", "map_update_ok",   shm->stats.afxdp_churn_map_update_ok);
-		stat_row("afxdp_churn", "bind_ok",         shm->stats.afxdp_churn_bind_ok);
-		stat_row("afxdp_churn", "link_attach_ok",  shm->stats.afxdp_churn_link_attach_ok);
-		stat_row("afxdp_churn", "netlink_attach_ok", shm->stats.afxdp_churn_netlink_attach_ok);
-		stat_row("afxdp_churn", "attach_failed",   shm->stats.afxdp_churn_attach_failed);
-		stat_row("afxdp_churn", "send_ok",         shm->stats.afxdp_churn_send_ok);
-		stat_row("afxdp_churn", "recv_ok",         shm->stats.afxdp_churn_recv_ok);
-		stat_row("afxdp_churn", "map_delete_ok",   shm->stats.afxdp_churn_map_delete_ok);
-		stat_row("afxdp_churn", "munmap_race_ok",  shm->stats.afxdp_churn_munmap_race_ok);
-		stat_row("afxdp_churn", "xsg_iters",         shm->stats.afxdp_xsg_iters);
-		stat_row("afxdp_churn", "tx_metadata_iters", shm->stats.afxdp_tx_metadata_iters);
-		stat_row("afxdp_churn", "tun_bind_iters",    shm->stats.afxdp_tun_bind_iters);
-		stat_row("afxdp_churn", "xsg_bind_failed",   shm->stats.afxdp_xsg_bind_failed);
-		stat_row("afxdp_churn", "tx_md_bind_failed", shm->stats.afxdp_tx_md_bind_failed);
-	}
-
-	if (shm->stats.kvm_run_invocations) {
-		stat_row("kvm_run_churn", "invocations",        shm->stats.kvm_run_invocations);
-		stat_row("kvm_run_churn", "exit_io",            shm->stats.kvm_run_exit_io);
-		stat_row("kvm_run_churn", "exit_mmio",          shm->stats.kvm_run_exit_mmio);
-		stat_row("kvm_run_churn", "exit_hlt",           shm->stats.kvm_run_exit_hlt);
-		stat_row("kvm_run_churn", "exit_shutdown",      shm->stats.kvm_run_exit_shutdown);
-		stat_row("kvm_run_churn", "exit_fail_entry",    shm->stats.kvm_run_exit_fail_entry);
-		stat_row("kvm_run_churn", "exit_internal_error", shm->stats.kvm_run_exit_internal_error);
-		stat_row("kvm_run_churn", "exit_intr",          shm->stats.kvm_run_exit_intr);
-		stat_row("kvm_run_churn", "exit_other",         shm->stats.kvm_run_exit_other);
-		stat_row("kvm_run_churn", "errors",             shm->stats.kvm_run_errors);
-		stat_row("kvm_run_churn", "gpc_memslot_race_runs",         shm->stats.kvm_gpc_memslot_race_runs);
-		stat_row("kvm_run_churn", "gpc_memslot_race_deletes",      shm->stats.kvm_gpc_memslot_race_deletes);
-		stat_row("kvm_run_churn", "gpc_memslot_race_unsupported",  shm->stats.kvm_gpc_memslot_race_unsupported);
-	}
-
-	if (shm->stats.nl80211_runs) {
-		stat_row("nl80211_churn", "runs",                  shm->stats.nl80211_runs);
-		stat_row("nl80211_churn", "setup_failed",          shm->stats.nl80211_setup_failed);
-		stat_row("nl80211_churn", "scan_triggered",        shm->stats.nl80211_scan_triggered);
-		stat_row("nl80211_churn", "connect_attempted",     shm->stats.nl80211_connect_attempted);
-		stat_row("nl80211_churn", "connect_succeeded",     shm->stats.nl80211_connect_succeeded);
-		stat_row("nl80211_churn", "disconnect_attempted",  shm->stats.nl80211_disconnect_attempted);
-		stat_row("nl80211_churn", "regdom_changed",        shm->stats.nl80211_regdom_changed);
-		stat_row("nl80211_churn", "iface_created",         shm->stats.nl80211_iface_created);
-		stat_row("nl80211_churn", "iface_destroyed",       shm->stats.nl80211_iface_destroyed);
-		stat_row("nl80211_churn", "bursts_sent",           shm->stats.nl80211_bursts_sent);
-		stat_row("nl80211_churn", "pmsr_runs",             shm->stats.nl80211_pmsr_runs);
-		stat_row("nl80211_churn", "pmsr_ok",               shm->stats.nl80211_pmsr_ok);
-		stat_row("nl80211_churn", "admin_gate_runs",       shm->stats.nl80211_admin_gate_runs);
-		stat_row("nl80211_churn", "admin_gate_eperm_ok",   shm->stats.nl80211_admin_gate_eperm_ok);
-		stat_row("nl80211_churn", "admin_gate_unexpected", shm->stats.nl80211_admin_gate_unexpected);
-	}
+	dump_stats_render_nl80211_churn();
 
 	stat_category_emit_text(&splice_protocols_category);
 
@@ -2025,34 +2180,9 @@ void __cold dump_stats_childop_runs_network(void)
 
 	stat_category_emit_text(&fdstress_category);
 
-	if (shm->stats.af_alg_probe_runs || shm->stats.af_alg_probe_unsupported) {
-		unsigned int tmpl;
+	dump_stats_render_af_alg_probe();
 
-		stat_row("af_alg_probe", "runs",         shm->stats.af_alg_probe_runs);
-		stat_row("af_alg_probe", "unsupported",  shm->stats.af_alg_probe_unsupported);
-		stat_row("af_alg_probe", "accept_total", shm->stats.af_alg_probe_accept_total);
-		stat_row("af_alg_probe", "reject_total", shm->stats.af_alg_probe_reject_total);
-		for (tmpl = 0; tmpl < NR_AF_ALG_PROBE_TEMPLATES; tmpl++) {
-			char metric[64];
-			const char *label = af_alg_probe_template_label(tmpl);
-
-			snprintf(metric, sizeof(metric), "%s.accept", label);
-			stat_row("af_alg_probe", metric, shm->stats.af_alg_probe_accept[tmpl]);
-			snprintf(metric, sizeof(metric), "%s.reject", label);
-			stat_row("af_alg_probe", metric, shm->stats.af_alg_probe_reject[tmpl]);
-		}
-	}
-
-	if (shm->stats.af_alg_recvmsg_runs) {
-		stat_row("af_alg_recvmsg_churn", "runs",               shm->stats.af_alg_recvmsg_runs);
-		stat_row("af_alg_recvmsg_churn", "setkey_sent",        shm->stats.af_alg_recvmsg_setkey_sent);
-		stat_row("af_alg_recvmsg_churn", "iv_sent",            shm->stats.af_alg_recvmsg_iv_sent);
-		stat_row("af_alg_recvmsg_churn", "oob_iov",            shm->stats.af_alg_recvmsg_oob_iov);
-		stat_row("af_alg_recvmsg_churn", "zerolen",            shm->stats.af_alg_recvmsg_zerolen);
-		stat_row("af_alg_recvmsg_churn", "oversize",           shm->stats.af_alg_recvmsg_oversize);
-		stat_row("af_alg_recvmsg_churn", "empty_cmsg_no_more", shm->stats.af_alg_recvmsg_empty_cmsg_no_more);
-		stat_row("af_alg_recvmsg_churn", "unsupported",        shm->stats.af_alg_recvmsg_unsupported);
-	}
+	dump_stats_render_af_alg_recvmsg_churn();
 }
 
 /* Helpers shared by the "Top remote-edge producers" view in
