@@ -2,78 +2,31 @@
  * ipv6_pmtu_teardown_race - race ICMPv6 PKT_TOOBIG processing against
  * concurrent netdev teardown of the route's egress device.
  *
- * Bug surface: fib6_mtu() walks rt->rt6i_idev->cnf for the route's
- * device-level MTU.  rt6i_idev can be cleared from under the read by
- * the netdev unregister path (in6_dev_finish_destroy via NETDEV_DOWN /
- * RTM_DELLINK) while a concurrent rt6_update_pmtu invocation, kicked
- * off by an in-flight ICMPv6 PKT_TOOBIG, is mid-walk through the same
- * route.  Upstream commit 5ad509c1fdad fixed it by reading rt6i_idev
- * once into a local and null-checking before deref; the fuzz target is
- * the pre-fix race window.
+ * Bug class: net/ipv6/route.c:fib6_mtu walks rt->rt6i_idev->cnf.
+ * The netdev unregister path (in6_dev_finish_destroy via NETDEV_DOWN /
+ * RTM_DELLINK) can clear rt6i_idev under a concurrent rt6_update_pmtu
+ * that a PTB has kicked off.  Target is the pre-fix race window (read
+ * rt6i_idev once, null-check before deref).
  *
- * Per outer iteration (BUDGETED, base 2, cap 6):
- *   1. Enter a private net namespace via userns_run_in_ns(): a
- *      transient grandchild fork installs an identity user namespace
- *      plus a fresh CLONE_NEWNET, runs the iteration body below, and
- *      _exit()s so the kernel reaps every veth, route, raw socket and
- *      netlink socket left behind with the grandchild's netns.  The
- *      persistent fuzz child never touches its own credentials or
- *      namespace stack, so the cap-drop oracle keeps observing the
- *      host credential profile.  Helper -EPERM (hardened userns policy
- *      refused CLONE_NEWUSER: user.max_user_namespaces=0 or
- *      kernel.unprivileged_userns_clone=0) latches the childop off for
- *      the remainder of this child's lifetime; transient setup failure
- *      (helper return < 0 but not -EPERM) skips the iteration without
- *      latching.  Per-iter dispatch (rather than wrapping the whole
- *      outer loop) preserves the original per-iter netns isolation:
- *      each outer iteration runs in its own fresh grandchild netns, so
- *      a partial teardown in one iter can't leak veth / route state
- *      into the next.
- *   2. Bring lo up.  Create N=4 veth pairs rN/pN via rtnetlink:
- *      RTM_NEWLINK type=veth + IFLA_LINKINFO/IFLA_INFO_DATA/VETH_INFO_PEER.
- *   3. Per pair: RTM_NEWADDR ipv6 fc01::N/64 on rN; RTM_NEWLINK setlink
- *      IFF_UP for rN; RTM_NEWROUTE ipv6 dst=fc01:N::/48 gw=fc01::N+1
- *      oif=rN.  These give four routes whose ->rt6i_idev points at a
- *      device we can DELLINK out from under the PMTU walker.
- *   4. fork worker A (PTB sender): AF_INET6 SOCK_RAW IPPROTO_ICMPV6,
- *      tight sendto() loop emitting ICMPV6_PKT_TOOBIG (type 2 code 0)
- *      toward fc01:0::1, fc01:1::1, fc01:2::1, fc01:3::1 round-robin.
- *      The MTU advertised in the PTB body rotates 576..9000 to keep
- *      the rt6_update_pmtu lookup hot rather than caching a single
- *      value.  Each PTB enters icmpv6_notify -> rt6_pmtu_discovery and
- *      drives the fib6_mtu read on the matching route.
- *   5. fork worker B (DELLINK round-robin): tight RTM_DELLINK loop
- *      followed by RTM_NEWLINK recreate of the same name; cycles r0..r3
- *      so every route's egress device is repeatedly torn down and
- *      replaced.  The DELLINK path triggers in6_dev_finish_destroy on
- *      the down-going device, clearing rt6i_idev on routes that still
- *      reference it.
- *   6. Both workers self-bound to 200ms wall-clock via clock_gettime
- *      checks inside their inner loops; the parent waits up to ~250ms
- *      then SIGKILLs any laggard and waitpid-reaps both.
- *   7. Grandchild _exit() collapses the userns + netns; cleanup_net
- *      reaps the doomed netns once the worker fds drop.
+ * Per outer iteration (BUDGETED, base 2, cap 6), inside a private
+ * user+net namespace via userns_run_in_ns (grandchild _exit() reaps
+ * every veth/route/socket/netns): create N=4 veth pairs on lo, install
+ * an fc01::/64 addr and route per pair, then fork two workers -- A
+ * tight-loops ICMPV6_PKT_TOOBIG sendto() with the advertised MTU
+ * rotated 576..9000 to keep the rt6_update_pmtu lookup hot; B tight-
+ * loops RTM_DELLINK/RTM_NEWLINK cycling r0..r3 so every route's egress
+ * device is torn down under the PMTU walker.  Both workers self-bound
+ * to 200 ms wall; the parent SIGKILLs laggards.
  *
- * Latch:
- *   ns_unsupported_ipv6_pmtu_race -- master gate; set when
- *   userns_run_in_ns() returns -EPERM (hardened userns policy refused
- *   CLONE_NEWUSER in the grandchild).  Once latched, every subsequent
- *   invocation just bumps runs + setup_failed and returns.  Transient
- *   helper failures (return < 0 but not -EPERM) do NOT set this -- the
- *   failure is not policy and may not recur on the next iteration.
+ * Brick-safety: all netlink and raw-socket work runs inside the
+ * grandchild's private netns; addresses are ULA (fc01::/64,
+ * unroutable).  Per-iter dispatch preserves per-iter netns isolation
+ * so partial teardown from one iter can't leak into the next.
  *
- * Brick safety: every netlink and socket op runs inside the
- * grandchild's private netns; the host's network state is untouched.
- * The doomed netns is collected by cleanup_net once the grandchild
- * _exit()s and the last fd drops.
- *
- * Stats:
- *   ipv6_pmtu_race_runs        - total invocations
- *   ipv6_pmtu_race_setup_failed- userns -EPERM / helper transient /
- *                                network setup / worker fork failed
- *   ipv6_pmtu_race_ptb_sent_ok - sendto(ICMPV6_PKT_TOOBIG) returned >=0
- *   ipv6_pmtu_race_dellink_ok  - RTM_DELLINK ack 0 from worker B
- *   ipv6_pmtu_race_completed_ok- iteration reached reap-workers cleanly
+ * Latch: userns_run_in_ns -EPERM (hardened userns policy refused
+ * CLONE_NEWUSER) permanently gates the op off for this child.
+ * Transient helper failures (return < 0 but not -EPERM) skip without
+ * latching.
  */
 
 #include <errno.h>
