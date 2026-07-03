@@ -185,6 +185,59 @@ static size_t build_nested_attrs(unsigned char *buf, size_t buflen,
 	return offset;
 }
 
+static size_t gen_route_addr(unsigned char *p, size_t avail, unsigned char family)
+{
+	if (family == AF_INET6 && avail >= 16) {
+		struct in6_addr addr;
+		rand_ipv6(&addr);
+		memcpy(p, &addr, 16);
+		return 16;
+	}
+	if (avail >= 4) {
+		__u32 addr = rand_ipv4();
+		memcpy(p, &addr, 4);
+		return 4;
+	}
+	return 0;
+}
+
+static size_t gen_route_multipath(unsigned char *p, size_t avail)
+{
+	/* Array of struct rtnexthop, each optionally followed by RTA_GATEWAY */
+	size_t written = 0;
+	int nhops = RAND_RANGE(1, 3);
+
+	while (nhops-- > 0 && written + sizeof(struct rtnexthop) <= avail) {
+		struct rtnexthop nh;
+		size_t nh_start = written;
+
+		nh.rtnh_flags = rnd_modulo_u32(256);
+		nh.rtnh_hops = rnd_modulo_u32(256);
+		nh.rtnh_ifindex = rnd_modulo_u32(64);
+		nh.rtnh_len = sizeof(struct rtnexthop);
+
+		memcpy(p + written, &nh, sizeof(nh));
+		written += sizeof(struct rtnexthop);
+
+		/* Sometimes append an RTA_GATEWAY after the nexthop */
+		if (RAND_BOOL() && written + NLA_HDRLEN + 4 <= avail) {
+			struct nlattr gw_nla;
+			__u32 gw = rand_ipv4();
+
+			gw_nla.nla_len = NLA_HDRLEN + 4;
+			gw_nla.nla_type = RTA_GATEWAY;
+			memcpy(p + written, &gw_nla, NLA_HDRLEN);
+			memcpy(p + written + NLA_HDRLEN, &gw, 4);
+			written += NLA_ALIGN(NLA_HDRLEN + 4);
+		}
+
+		/* Update rtnh_len to include any trailing attrs */
+		nh.rtnh_len = written - nh_start;
+		memcpy(p + nh_start, &nh, sizeof(nh.rtnh_len));
+	}
+	return written;
+}
+
 /*
  * Generate a structured payload for route attributes (RTA_*).
  * Returns payload length, or 0 for random fallback.
@@ -197,18 +250,7 @@ size_t gen_rta_route_payload(unsigned char *p, size_t avail,
 	case RTA_SRC:
 	case RTA_GATEWAY:
 	case RTA_PREFSRC:
-		if (family == AF_INET6 && avail >= 16) {
-			struct in6_addr addr;
-			rand_ipv6(&addr);
-			memcpy(p, &addr, 16);
-			return 16;
-		}
-		if (avail >= 4) {
-			__u32 addr = rand_ipv4();
-			memcpy(p, &addr, 4);
-			return 4;
-		}
-		return 0;
+		return gen_route_addr(p, avail, family);
 
 	case RTA_OIF:
 	case RTA_IIF:
@@ -268,41 +310,8 @@ size_t gen_rta_route_payload(unsigned char *p, size_t avail,
 		}
 		return 0;
 
-	case RTA_MULTIPATH: {
-		/* Array of struct rtnexthop, each optionally followed by RTA_GATEWAY */
-		size_t written = 0;
-		int nhops = RAND_RANGE(1, 3);
-
-		while (nhops-- > 0 && written + sizeof(struct rtnexthop) <= avail) {
-			struct rtnexthop nh;
-			size_t nh_start = written;
-
-			nh.rtnh_flags = rnd_modulo_u32(256);
-			nh.rtnh_hops = rnd_modulo_u32(256);
-			nh.rtnh_ifindex = rnd_modulo_u32(64);
-			nh.rtnh_len = sizeof(struct rtnexthop);
-
-			memcpy(p + written, &nh, sizeof(nh));
-			written += sizeof(struct rtnexthop);
-
-			/* Sometimes append an RTA_GATEWAY after the nexthop */
-			if (RAND_BOOL() && written + NLA_HDRLEN + 4 <= avail) {
-				struct nlattr gw_nla;
-				__u32 gw = rand_ipv4();
-
-				gw_nla.nla_len = NLA_HDRLEN + 4;
-				gw_nla.nla_type = RTA_GATEWAY;
-				memcpy(p + written, &gw_nla, NLA_HDRLEN);
-				memcpy(p + written + NLA_HDRLEN, &gw, 4);
-				written += NLA_ALIGN(NLA_HDRLEN + 4);
-			}
-
-			/* Update rtnh_len to include any trailing attrs */
-			nh.rtnh_len = written - nh_start;
-			memcpy(p + nh_start, &nh, sizeof(nh.rtnh_len));
-		}
-		return written;
-	}
+	case RTA_MULTIPATH:
+		return gen_route_multipath(p, avail);
 
 	default:
 		return 0;
