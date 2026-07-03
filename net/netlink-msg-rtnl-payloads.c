@@ -309,6 +309,135 @@ size_t gen_rta_route_payload(unsigned char *p, size_t avail,
 	}
 }
 
+static size_t gen_link_ifname(unsigned char *p, size_t avail)
+{
+	static const char *names[] = {
+		"eth0", "lo", "br0", "bond0", "veth0",
+		"dummy0", "wlan0", "tun0",
+	};
+	const char *name = RAND_ARRAY(names);
+	size_t slen = strlen(name) + 1;
+
+	if (avail >= slen) {
+		memcpy(p, name, slen);
+		return slen;
+	}
+	return 0;
+}
+
+static size_t gen_link_alt_ifname(unsigned char *p, size_t avail)
+{
+	static const char *alts[] = { "altname0", "renamed1" };
+	const char *name = RAND_ARRAY(alts);
+	size_t slen = strlen(name) + 1;
+
+	if (avail >= slen) {
+		memcpy(p, name, slen);
+		return slen;
+	}
+	return 0;
+}
+
+#ifndef RTEXT_FILTER_NAME_ONLY
+#define RTEXT_FILTER_NAME_ONLY (1 << 8)
+#endif
+static size_t gen_link_ext_mask(unsigned char *p, size_t avail)
+{
+	if (avail >= 4) {
+		static const unsigned long rtext_filter_bits[] = {
+			RTEXT_FILTER_VF,
+			RTEXT_FILTER_BRVLAN,
+			RTEXT_FILTER_BRVLAN_COMPRESSED,
+			RTEXT_FILTER_SKIP_STATS,
+			RTEXT_FILTER_MRP,
+			RTEXT_FILTER_CFM_CONFIG,
+			RTEXT_FILTER_CFM_STATUS,
+			RTEXT_FILTER_MST,
+			RTEXT_FILTER_NAME_ONLY,
+		};
+		__u32 val = (__u32) set_rand_bitmask(
+			sizeof(rtext_filter_bits) / sizeof(rtext_filter_bits[0]),
+			rtext_filter_bits);
+		memcpy(p, &val, 4);
+		return 4;
+	}
+	return 0;
+}
+
+static size_t gen_link_linkinfo(unsigned char *p, size_t avail)
+{
+	/* Nested: IFLA_INFO_KIND (string) + optional IFLA_INFO_DATA */
+	if (avail >= NLA_HDRLEN + 8) {
+		size_t nested_len = 0;
+		const char *kind = link_kinds[rnd_modulo_u32(link_kinds_n)];
+		size_t kind_len = strlen(kind) + 1;
+		size_t kind_total = NLA_ALIGN(NLA_HDRLEN + kind_len);
+
+		/* IFLA_INFO_KIND */
+		if (nested_len + kind_total <= avail) {
+			if (start_nlattr(p, nested_len, avail,
+					 IFLA_INFO_KIND, kind_len)) {
+				memcpy(p + nested_len + NLA_HDRLEN,
+				       kind, kind_len);
+				nested_len += kind_total;
+			}
+		}
+
+		/* Sometimes add IFLA_INFO_DATA with random nested attrs */
+		if (RAND_BOOL() && nested_len + NLA_HDRLEN + 8 <= avail) {
+			size_t data_avail = avail - nested_len - NLA_HDRLEN;
+			size_t data_len;
+			unsigned char sub[128];
+
+			if (data_avail > sizeof(sub))
+				data_avail = sizeof(sub);
+			data_len = RAND_RANGE((size_t)4, data_avail);
+			generate_rand_bytes(sub, data_len);
+
+			if (start_nlattr(p, nested_len, avail,
+					 IFLA_INFO_DATA | NLA_F_NESTED,
+					 data_len)) {
+				memcpy(p + nested_len + NLA_HDRLEN,
+				       sub, data_len);
+				nested_len += NLA_ALIGN(NLA_HDRLEN + data_len);
+			}
+		}
+
+		return nested_len;
+	}
+	return 0;
+}
+
+static size_t gen_link_af_spec(unsigned char *p, size_t avail)
+{
+	/* Nested: per-address-family containers */
+	size_t nested_len = 0;
+	int i, count = RAND_RANGE(1, 3);
+	static const unsigned char af_types[] = {
+		AF_INET, AF_INET6, AF_BRIDGE,
+	};
+
+	for (i = 0; i < count && nested_len + NLA_HDRLEN + 8 <= avail; i++) {
+		unsigned char af = RAND_ARRAY(af_types);
+		size_t inner_avail = avail - nested_len - NLA_HDRLEN;
+		size_t inner_len;
+		unsigned char inner[64];
+
+		if (inner_avail > sizeof(inner))
+			inner_avail = sizeof(inner);
+		inner_len = RAND_RANGE((size_t)4, inner_avail);
+		generate_rand_bytes(inner, inner_len);
+
+		if (start_nlattr(p, nested_len, avail,
+				 af | NLA_F_NESTED, inner_len)) {
+			memcpy(p + nested_len + NLA_HDRLEN,
+			       inner, inner_len);
+			nested_len += NLA_ALIGN(NLA_HDRLEN + inner_len);
+		}
+	}
+	return nested_len;
+}
+
 /*
  * Generate a structured payload for link attributes (IFLA_*).
  */
@@ -318,32 +447,11 @@ size_t gen_rta_link_payload(unsigned char *p, size_t avail,
 	switch (nla_type) {
 	case IFLA_IFNAME:
 	case IFLA_QDISC:
-	case IFLA_IFALIAS: {
-		static const char *names[] = {
-			"eth0", "lo", "br0", "bond0", "veth0",
-			"dummy0", "wlan0", "tun0",
-		};
-		const char *name = RAND_ARRAY(names);
-		size_t slen = strlen(name) + 1;
+	case IFLA_IFALIAS:
+		return gen_link_ifname(p, avail);
 
-		if (avail >= slen) {
-			memcpy(p, name, slen);
-			return slen;
-		}
-		return 0;
-	}
-
-	case IFLA_ALT_IFNAME: {
-		static const char *alts[] = { "altname0", "renamed1" };
-		const char *name = RAND_ARRAY(alts);
-		size_t slen = strlen(name) + 1;
-
-		if (avail >= slen) {
-			memcpy(p, name, slen);
-			return slen;
-		}
-		return 0;
-	}
+	case IFLA_ALT_IFNAME:
+		return gen_link_alt_ifname(p, avail);
 
 	case IFLA_MTU:
 	case IFLA_MIN_MTU:
@@ -384,28 +492,7 @@ size_t gen_rta_link_payload(unsigned char *p, size_t avail,
 		return 0;
 
 	case IFLA_EXT_MASK:
-#ifndef RTEXT_FILTER_NAME_ONLY
-#define RTEXT_FILTER_NAME_ONLY (1 << 8)
-#endif
-		if (avail >= 4) {
-			static const unsigned long rtext_filter_bits[] = {
-				RTEXT_FILTER_VF,
-				RTEXT_FILTER_BRVLAN,
-				RTEXT_FILTER_BRVLAN_COMPRESSED,
-				RTEXT_FILTER_SKIP_STATS,
-				RTEXT_FILTER_MRP,
-				RTEXT_FILTER_CFM_CONFIG,
-				RTEXT_FILTER_CFM_STATUS,
-				RTEXT_FILTER_MST,
-				RTEXT_FILTER_NAME_ONLY,
-			};
-			__u32 val = (__u32) set_rand_bitmask(
-				sizeof(rtext_filter_bits) / sizeof(rtext_filter_bits[0]),
-				rtext_filter_bits);
-			memcpy(p, &val, 4);
-			return 4;
-		}
-		return 0;
+		return gen_link_ext_mask(p, avail);
 
 	case IFLA_ADDRESS:
 	case IFLA_BROADCAST:
@@ -438,75 +525,10 @@ size_t gen_rta_link_payload(unsigned char *p, size_t avail,
 		return 0;
 
 	case IFLA_LINKINFO:
-		/* Nested: IFLA_INFO_KIND (string) + optional IFLA_INFO_DATA */
-		if (avail >= NLA_HDRLEN + 8) {
-			size_t nested_len = 0;
-			const char *kind = link_kinds[rnd_modulo_u32(link_kinds_n)];
-			size_t kind_len = strlen(kind) + 1;
-			size_t kind_total = NLA_ALIGN(NLA_HDRLEN + kind_len);
+		return gen_link_linkinfo(p, avail);
 
-			/* IFLA_INFO_KIND */
-			if (nested_len + kind_total <= avail) {
-				if (start_nlattr(p, nested_len, avail,
-						 IFLA_INFO_KIND, kind_len)) {
-					memcpy(p + nested_len + NLA_HDRLEN,
-					       kind, kind_len);
-					nested_len += kind_total;
-				}
-			}
-
-			/* Sometimes add IFLA_INFO_DATA with random nested attrs */
-			if (RAND_BOOL() && nested_len + NLA_HDRLEN + 8 <= avail) {
-				size_t data_avail = avail - nested_len - NLA_HDRLEN;
-				size_t data_len;
-				unsigned char sub[128];
-
-				if (data_avail > sizeof(sub))
-					data_avail = sizeof(sub);
-				data_len = RAND_RANGE((size_t)4, data_avail);
-				generate_rand_bytes(sub, data_len);
-
-				if (start_nlattr(p, nested_len, avail,
-						 IFLA_INFO_DATA | NLA_F_NESTED,
-						 data_len)) {
-					memcpy(p + nested_len + NLA_HDRLEN,
-					       sub, data_len);
-					nested_len += NLA_ALIGN(NLA_HDRLEN + data_len);
-				}
-			}
-
-			return nested_len;
-		}
-		return 0;
-
-	case IFLA_AF_SPEC: {
-		/* Nested: per-address-family containers */
-		size_t nested_len = 0;
-		int i, count = RAND_RANGE(1, 3);
-		static const unsigned char af_types[] = {
-			AF_INET, AF_INET6, AF_BRIDGE,
-		};
-
-		for (i = 0; i < count && nested_len + NLA_HDRLEN + 8 <= avail; i++) {
-			unsigned char af = RAND_ARRAY(af_types);
-			size_t inner_avail = avail - nested_len - NLA_HDRLEN;
-			size_t inner_len;
-			unsigned char inner[64];
-
-			if (inner_avail > sizeof(inner))
-				inner_avail = sizeof(inner);
-			inner_len = RAND_RANGE((size_t)4, inner_avail);
-			generate_rand_bytes(inner, inner_len);
-
-			if (start_nlattr(p, nested_len, avail,
-					 af | NLA_F_NESTED, inner_len)) {
-				memcpy(p + nested_len + NLA_HDRLEN,
-				       inner, inner_len);
-				nested_len += NLA_ALIGN(NLA_HDRLEN + inner_len);
-			}
-		}
-		return nested_len;
-	}
+	case IFLA_AF_SPEC:
+		return gen_link_af_spec(p, avail);
 
 	default:
 		return 0;
