@@ -1816,7 +1816,7 @@ void chain_corpus_enable_snapshots(const char *path)
 		return;
 	memcpy(chain_corpus_snapshot_path, path, len + 1);
 	chain_corpus_snapshot_enabled = true;
-	chain_corpus_last_snapshot_time = time(NULL);
+	chain_corpus_last_snapshot_time = (time_t)(mono_ns() / 1000000000ULL);
 	if (chain_corpus_shm != NULL)
 		chain_corpus_save_count_at_last_snapshot =
 			__atomic_load_n(&chain_corpus_shm->save_count,
@@ -1835,7 +1835,7 @@ void chain_corpus_maybe_snapshot(void)
 
 	saves_now = __atomic_load_n(&chain_corpus_shm->save_count,
 				    __ATOMIC_RELAXED);
-	now = time(NULL);
+	now = (time_t)(mono_ns() / 1000000000ULL);
 
 	/* Both gates must expire before a snapshot fires: enough new admits
 	 * (so we don't write a near-identical payload to disk) AND enough
