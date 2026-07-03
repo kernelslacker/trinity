@@ -70,15 +70,15 @@ end
 # ---------------------------------------------------------------------
 # Formatted dump of shared_regions[] (the mmap'd shared-allocation
 # tracker used by alloc_shared / range_overlaps_shared).  The array
-# and its counter are file-static in utils.c, so qualify with the
+# and its counter live in utils/shared_mem.c, so qualify with the
 # translation unit if the bare names fail to resolve.
 define regions
-    set $n = (unsigned int) 'utils.c'::nr_shared_regions
+    set $n = (unsigned int) 'utils/shared_mem.c'::nr_shared_regions
     printf "shared_regions: %u entr%s\n", $n, ($n == 1 ? "y" : "ies")
     printf "  %-4s  %-18s  %-18s  %-12s\n", "idx", "start", "end", "size"
     set $i = 0
     while $i < $n
-        set $r     = &(('utils.c'::shared_regions)[$i])
+        set $r     = &(('utils/shared_mem.c'::shared_regions)[$i])
         set $start = $r->addr
         set $size  = $r->size
         set $end   = $start + $size
@@ -88,9 +88,9 @@ define regions
 end
 document regions
 Dump shared_regions[] — every mmap'd region tracked by alloc_shared().
-Shows index, start, end, and size.  shared_regions[] is file-static in
-utils.c, hence the 'utils.c'::name qualifier used by the inspection
-commands above.
+Shows index, start, end, and size.  shared_regions[] lives in
+utils/shared_mem.c, hence the 'utils/shared_mem.c'::name qualifier
+used by the inspection commands above.
 end
 
 # ---------------------------------------------------------------------
