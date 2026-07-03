@@ -1,97 +1,36 @@
 /*
- * sysv_shm_orphan_race - drive the System V shared-memory orphan-destroy
- * TOCTOU race: a creator task exits with SHM_DEST set (post-IPC_RMID)
- * while concurrent attachers tight-loop shmat() against the same shmid.
+ * sysv_shm_orphan_race - drive the SysV shm orphan-destroy TOCTOU: a creator
+ * task exits with SHM_DEST set (post-IPC_RMID) while concurrent attachers
+ * tight-loop shmat() against the same shmid.  Targets the window in
+ * ipc/shm.c between shmat's RCU lookup on ns->ids[IPC_SHM_IDS] and the
+ * ipc_lock that bumps nattch: a concurrent destroy that wins the lock drops
+ * the IDR slot under the attacher's feet, and exit_shm() on the creator
+ * walks shm_clist and calls shm_close on the just-RMID'd segment.
  *
- * Race surface (per BUDGETED inner-loop iteration):
+ * The orphan-reap path only fires for the CREATOR task's exit_shm, so this
+ * op spawns a transient "originator" sub-task (never the long-lived trinity
+ * dispatch child) that shmget's, publishes the shmid, briefly attaches,
+ * IPC_RMIDs, and exits.  An "attacher" sibling tight-loops shmat/shmdt via
+ * raw __NR_* syscalls (no libc, no dispatch, no shm pool); parent runs its
+ * own attach loop for a third source of nattch pressure.  Cross-task state
+ * lives in a MAP_SHARED page with atomic-release + FUTEX_WAKE go/stop.
  *
- *   - The kernel's shm_close() / shm_force_destroy() / exit_shm() path
- *     decrements nattch and, if nattch reaches 0 with SHM_DEST set,
- *     drops the IPC IDR slot under ipc_lock and tears down the
- *     underlying shmem inode + struct file.
+ * Brick-safety: SysV IPC segments leak kernel-wide if not RMID'd, so step
+ * 8 unconditionally shmctl(IPC_RMID) as a backstop (EIDRM/EINVAL from an
+ * already-destroyed segment is expected and ignored).  4096-byte segment,
+ * race burst capped at 32, all loops bounded.  No modprobe / namespace /
+ * sysfs writes.
  *
- *   - shmat() walks ns->ids[IPC_SHM_IDS] under RCU, looks the shmid up,
- *     then takes the ipc_lock to bump nattch.  The window between RCU
- *     lookup and lock-acquire is the TOCTOU; a concurrent destroy that
- *     wins the lock removes the IDR slot under the attacher's feet.
+ * Sibling defences: PR_SET_PDEATHSIG SIGKILL immediately after clone, plus
+ * a getppid()==1 re-check to cover the pre-arming window.  Independent
+ * alarm(2) watchdog (no CLONE_SIGHAND, so it doesn't collide with parent's
+ * SIGALRM(1)).  Raw __NR_* syscalls only.
  *
- *   - exit_shm() walks the creator task's sysvshm.shm_clist; non-creator
- *     tasks have nothing on shm_clist and their exit is a no-op against
- *     the segment.  Driving the orphan-reap path therefore requires the
- *     CREATOR (shmget) task to be a sub-task that exits during the burst,
- *     not the long-lived trinity dispatch child.
- *
- * Existing SysV IPC coverage in trinity touches only the syscall-table
- * SHM args via the normal randomised dispatch; there is no childop that
- * drives the lifecycle (create / RMID-mark / destroy / orphan-reap)
- * race shape against a concurrent attach storm.  This childop fills
- * that gap.
- *
- * Sequence (per BUDGETED inner-loop iteration):
- *   1.  Allocate a MAP_SHARED MAP_ANONYMOUS page of cross-task state
- *       (shmid, futex-go, stop, originator-published flag).
- *   2.  Spawn an "originator" sibling via clone3(SIGCHLD).  It calls
- *       shmget(IPC_PRIVATE, ..., IPC_CREAT | 0600), publishes the shmid
- *       to the shared page with __ATOMIC_RELEASE + FUTEX_WAKE, then
- *       waits for go.
- *   3.  Parent ACQUIRE-loads the published shmid with a bounded futex
- *       wait.  If the originator died before publishing, the iter is
- *       abandoned with setup_failed bumped.
- *   4.  Spawn an "attacher" sibling via clone3(SIGCHLD).  It waits for
- *       go, then tight-loops shmat(shmid, NULL, 0) + shmdt(addr) using
- *       raw __NR_* syscalls only (never enters trinity dispatch, never
- *       touches the shm pool).
- *   5.  Parent flips go and FUTEX_WAKEs both siblings.  Originator
- *       does a small fixed-shape workload: shmat (puts its own
- *       attachment count on), brief pause, shmctl(IPC_RMID) (sets
- *       SHM_DEST), then exit.  Its exit_shm() walks shm_clist and
- *       calls shm_close on the just-RMID'd segment -- that is the
- *       orphan-destroy path the race targets.
- *   6.  Parent concurrently shmat(shmid) + shmdt(addr) for the same
- *       budgeted iter count, adding a third task_struct of nattch
- *       pressure to the segment.
- *   7.  Parent flips stop, FUTEX_WAKEs done, reaps both siblings with
- *       a non-blocking waitpid first then SIGKILL + blocking waitpid.
- *   8.  Parent ALWAYS calls shmctl(shmid, IPC_RMID, NULL) as a
- *       backstop teardown.  EIDRM / EINVAL from a segment already
- *       reaped by the originator's RMID + exit_shm path is the
- *       expected case and is silently ignored -- the goal is "never
- *       leak a SysV segment", not "always succeed".
- *
- * Brick-safety:
- *   - SysV IPC is per-namespace and per-process-visible; segments leak
- *     kernel-wide if not RMID'd.  The teardown shmctl in step 8 is
- *     mandatory.
- *   - All loops bounded by fixed constants; race burst capped at 32.
- *   - Parent's shmat uses a 4096-byte segment so a stale attach that
- *     somehow survived shmdt is at most one page of VA pressure.
- *   - No module load, no namespace touch, no sysfs writes.
- *
- * Sibling defences (both originator and attacher):
- *   - PR_SET_PDEATHSIG SIGKILL right after clone return so an orphaned
- *     sibling cannot spin its loop against an unattended segment.
- *   - alarm(2) self-bound watchdog.  Independent of the parent's
- *     SIGALRM(1) because no CLONE_SIGHAND.
- *   - getppid()==1 re-check post-PDEATHSIG to cover the window between
- *     clone return and prctl arming.
- *   - Raw syscall(__NR_*) only -- no libc heap, no pthread mutex, no
- *     trinity dispatch, no shm pool access.
- *
- * Cap-gate latch: first invocation per process probes
- *   shmget(IPC_PRIVATE, 4096, IPC_CREAT | 0600)
- * and immediately IPC_RMIDs it.  On EPERM / ENOSYS / ENOSPC the latch
- * fires and every subsequent invocation just bumps setup_failed and
- * returns.  Transient errors (EAGAIN, ENOMEM) do not latch; they fall
- * through to the per-iter shmget retry path.
- *
- * Failure modes treated as benign coverage:
- *   - shmat() returning -1 EIDRM: destroy won the race; counted in
- *     attach_failed, loop continues to next iter.
- *   - shmctl(IPC_RMID) returning -1 EIDRM/EINVAL: already destroyed;
- *     counted in rmid_failed, no further action.
- *   - clone3 ENOSYS: latched once, sibling spawn falls back to a
- *     single-task race burst that drives shmat/shmdt + shmctl(IPC_RMID)
- *     in-process so the iter is not wasted.
+ * Cap-gate latch: first invocation probes shmget(IPC_PRIVATE,4096,...) and
+ * immediately IPC_RMIDs it.  EPERM / ENOSYS / ENOSPC latches for the
+ * process's life; transient EAGAIN/ENOMEM fall through to the per-iter
+ * retry.  clone3 ENOSYS latches once and the op falls back to an in-process
+ * single-task race so the iter isn't wasted.
  */
 
 #include <errno.h>
