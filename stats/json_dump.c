@@ -1638,24 +1638,13 @@ static void dump_stats_json_probes_misuse_and_tail(void)
 		shm->stats.tty_ldisc_churn_ldisc_set_ok_per_disc[24]);
 }
 
-void __cold dump_stats_json(void)
+static void json_emit_socket_family_grammar_section(void)
 {
-	putchar('{');
-
-	json_emit_syscalls_array();
-
-	fputs(",\"stats\":{", stdout);
-	dump_stats_json_fault_and_fd_lifecycle();
-	dump_stats_json_oracle();
-	dump_stats_json_basic_subsystems();
-	dump_stats_json_iouring_and_zombies();
-	dump_stats_json_corruption_and_audit();
-	dump_stats_json_lifecycle_and_storms();
 	stat_category_emit_json(&socket_family_grammar_category);
-	printf(",");
-	dump_stats_json_socket_family_and_tls();
-	dump_stats_json_netfilter_and_xfrm();
+}
 
+static void json_emit_net_churn_and_early_storms_section(void)
+{
 	printf(",");
 	stat_category_emit_json(&nf_conntrack_helper_churn_category);
 
@@ -1697,7 +1686,10 @@ void __cold dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&fork_storm_category);
+}
 
+static void json_emit_pidfd_fs_and_container_section(void)
+{
 	printf(",");
 	stat_category_emit_json(&cpu_hotplug_rider_category);
 
@@ -1739,7 +1731,10 @@ void __cold dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&tls_rotate_category);
+}
 
+static void json_emit_tcp_ipv6_and_tunnels_section(void)
+{
 	printf(",");
 	stat_category_emit_json(&netns_teardown_category);
 
@@ -1781,7 +1776,10 @@ void __cold dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&igmp_mld_source_churn_category);
+}
 
+static void json_emit_bridge_pci_unix_and_iouring_section(void)
+{
 	printf(",");
 	stat_category_emit_json(&bridge_vlan_churn_category);
 
@@ -1823,7 +1821,10 @@ void __cold dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&refcount_audit_category);
+}
 
+static void json_emit_iouring_iscsi_and_net_tail_section(void)
+{
 	printf(",");
 	stat_category_emit_json(&iouring_send_zc_churn_category);
 
@@ -1868,6 +1869,31 @@ void __cold dump_stats_json(void)
 
 	printf(",");
 	stat_category_emit_json(&fdstress_category);
+}
+
+void __cold dump_stats_json(void)
+{
+	putchar('{');
+
+	json_emit_syscalls_array();
+
+	fputs(",\"stats\":{", stdout);
+	dump_stats_json_fault_and_fd_lifecycle();
+	dump_stats_json_oracle();
+	dump_stats_json_basic_subsystems();
+	dump_stats_json_iouring_and_zombies();
+	dump_stats_json_corruption_and_audit();
+	dump_stats_json_lifecycle_and_storms();
+	json_emit_socket_family_grammar_section();
+	printf(",");
+	dump_stats_json_socket_family_and_tls();
+	dump_stats_json_netfilter_and_xfrm();
+
+	json_emit_net_churn_and_early_storms_section();
+	json_emit_pidfd_fs_and_container_section();
+	json_emit_tcp_ipv6_and_tunnels_section();
+	json_emit_bridge_pci_unix_and_iouring_section();
+	json_emit_iouring_iscsi_and_net_tail_section();
 
 	dump_stats_json_iouring_zc_and_kvm();
 	dump_stats_json_rxrpc_alg_ublk_block();
