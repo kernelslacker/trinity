@@ -1,111 +1,44 @@
 /*
  * tc_qdisc_churn - TC qdisc tree mutation under live traffic.
  *
- * Per-syscall fuzzing rolls a fresh netlink message every call and
- * never builds a working TCM_HANDLE / TCM_PARENT chain: the random
- * picker can't keep handle:major and parent_handle in sync across
- * iterations, so RTM_NEWTCLASS / RTM_NEWTFILTER bounce off the
- * lookup gates inside net/sched/sch_api.c and net/sched/cls_api.c
- * before any of the actually-interesting commit-time work runs.  The
- * bug class this op exists to expose is "qdisc lifetime ends while
- * an skb is still being classified through it" — that requires a
- * complete (qdisc -> class -> filter) tree, an in-flight UDP burst
- * draining through the qdisc, and a deletion racing the live
- * enqueue.  Random fuzzing assembles that set ~never.
+ * Targets "qdisc lifetime ends while an skb is still being classified" --
+ * the sch_qfq UAF (CVE-2023-4623), sch_qfq OOB (CVE-2023-3611 /
+ * -31436), cls_fw refcount (CVE-2023-3776), sch_netem (CVE-2024-36978)
+ * lineage.  Random fuzz can't build a working TCM_HANDLE/TCM_PARENT chain
+ * so RTM_NEWTCLASS/NEWTFILTER bounce off the lookup gates in
+ * net/sched/sch_api.c and cls_api.c before commit-time work runs.
  *
- * Sequence (per invocation):
- *   1. userns_run_in_ns(CLONE_NEWNET) forks a transient grandchild
- *      into an owned user namespace + private net namespace.  The
- *      whole rest of the sequence runs inside that grandchild; its
- *      _exit() tears down both namespaces along with any qdisc,
- *      class, filter, dummy or socket left behind.  Helper -EPERM
- *      (hardened userns policy refused CLONE_NEWUSER) latches the
- *      whole op off; transient setup failure (-EAGAIN) skips the
- *      iteration without latching.
- *   2. Bring lo up inside the netns (per-grandchild one-time).
- *   3. RTM_NEWLINK type=dummy creating a fresh dummy device per
- *      iteration (random suffix).  Failure latches
- *      ns_unsupported_dummy — a kernel without CONFIG_DUMMY pays the
- *      EFAIL once.  dummy is preferred over lo because each
- *      iteration gets a clean qdisc target instead of stomping the
- *      shared loopback root.
- *   4. RTM_SETLINK IFF_UP on the dummy.
- *   5. RTM_NEWQDISC root, TCA_KIND rotated per iteration across the
- *      qdisc-kind table.  TCM_PARENT=TC_H_ROOT, TCM_HANDLE=major:0
- *      with a random major in [0x10,0xfff0].  Per-kind latches
- *      (ns_unsupported_kind[]) gate the kinds whose modules are
- *      absent so we don't pay the EFAIL again on every retry.  A
- *      best-effort modprobe sch_<kind> is fired the first time a
- *      kind is touched, latched so a missing /sbin/modprobe / no
- *      modules / lockdown=integrity costs the EFAIL once.
- *   6. For classful kinds (htb / hfsc / qfq / prio / ets):
- *      RTM_NEWTCLASS twice, building two classes under root with
- *      handles major:1 and major:2.  parent = TC_H_ROOT.  No
- *      TCA_OPTIONS payload — most classful qdiscs accept defaults
- *      and the lookup-side commit path runs identically either way.
- *   7. RTM_NEWTFILTER, cls kind rotated per iteration across
- *      {u32, basic, matchall, flower}.  Wired to root with priority
- *      1, protocol ETH_P_ALL.  No expression payload (matches
- *      everything for matchall, "no rules" for the others — still
- *      runs the cls_*_change / cls_*_init commit-time codepaths
- *      we care about).
- *   8. socket(AF_INET, SOCK_DGRAM); bind to dummy via
- *      SO_BINDTODEVICE; sendto a small payload to a fixed loopback
- *      port BUDGETED+JITTER times around base 5.  STORM_BUDGET_NS
- *      200 ms wall-clock cap.  Each send drives the dummy's
- *      enqueue path through the freshly-installed qdisc/class/
- *      filter tree; dummy's xmit drops the packet on the floor
- *      after dequeue, but the classification + enqueue + dequeue
- *      cycle inside __dev_xmit_skb / qdisc_enqueue / sch_direct_xmit
- *      is the codepath the CVE class lives in.
- *   9. RTM_NEWQDISC TCM_REPLACE — swap the root qdisc kind to a
- *      different rotation entry mid-flow.  This is the targeted
- *      qdisc_replace race window: the old qdisc's enqueue is still
- *      in flight when the kind swap pulls it out from under any
- *      skb mid-classify.
- *  10. RTM_DELTFILTER on the root filter, racing in-flight skb
- *      classification still draining from step 8.
- *  11. RTM_DELQDISC root — racing the same in-flight skbs.  Kernel
- *      cascades cleanup of any class survivor via qdisc_destroy.
- *  12. RTM_DELLINK dummy (cleanup; netns destroy will catch any
- *      leak).
+ * Sequence per invocation inside a userns_run_in_ns grandchild (identity
+ * userns + CLONE_NEWNET, _exit reaps): fresh RTM_NEWLINK dummy per iter
+ * (clean qdisc target instead of stomping shared lo root), IFF_UP,
+ * RTM_NEWQDISC root with TCA_KIND rotated across the qdisc-kind table
+ * (major:0 handle, random major in [0x10, 0xfff0]).  Classful kinds
+ * (htb/hfsc/qfq/prio/ets) get two RTM_NEWTCLASS children (defaults --
+ * commit-time codepath runs regardless).  RTM_NEWTFILTER with cls kind
+ * rotated {u32, basic, matchall, flower} at prio 1 / ETH_P_ALL wires to
+ * root.  UDP burst via SO_BINDTODEVICE drives __dev_xmit_skb ->
+ * qdisc_enqueue -> sch_direct_xmit through the freshly-installed tree.
+ * Mid-flow RTM_NEWQDISC TCM_REPLACE swaps the root kind (qdisc_replace vs
+ * in-flight classify), then RTM_DELTFILTER + RTM_DELQDISC race the
+ * still-draining skbs.
  *
- * CVE class: CVE-2023-4623 sch_qfq UAF (qdisc lifetime vs enqueue),
- * CVE-2023-3611 sch_qfq enqueue oob, CVE-2023-31436 sch_qfq ndo,
- * CVE-2023-3776 cls_fw refcount, CVE-2024-36978 sch_netem.  This is
- * historically one of the most CVE-productive corners of the
- * networking stack.  Subsystems reached: net/sched/sch_api.c,
- * net/sched/sch_*.c (per-kind enqueue/dequeue/destroy),
- * net/sched/cls_api.c, net/sched/cls_*.c, net/core/dev.c
- * (__dev_xmit_skb), net/sched/sch_generic.c (qdisc_destroy /
- * qdisc_replace), drivers/net/dummy.c.
+ * Sub-mode ONE_IN(4) builds a peek-x-peek stack: parent whose ->dequeue
+ * calls .peek() on an inner qdisc whose .peek is qdisc_peek_dequeued
+ * (dequeues + stashes in q->skb).  Parents: prio/tbf/sfb/red; children:
+ * qfq/sfq/cake.  The bug class: parent believes peek returned a still-
+ * queued skb and returns it unchanged, leaving q->skb pointing at an
+ * already-dequeued skb.  Same UDP burst shape.
  *
- * Self-bounding: one full create/destroy cycle per invocation,
- * packet burst BUDGETED+JITTER around base 5 with a STORM_BUDGET_NS
- * 200 ms wall-clock cap and a 64-frame ceiling on the inner send
- * loop.  All netlink and socket I/O is MSG_DONTWAIT; SO_RCVTIMEO=1s
- * on the rtnl ack socket so an unresponsive kernel can't wedge us
- * past the SIGALRM(1s) cap inherited from child.c.  Loopback +
- * dummy only (private netns).  Per-kind latches so a kernel without
- * a given sch_* / cls_* module pays the EFAIL once and skips that
- * kind permanently.
+ * Brick-safety: private netns only, dummy + loopback only, one full
+ * create/destroy per invocation, burst BUDGETED+JITTER around base 5 with
+ * STORM_BUDGET_NS 200 ms wall cap and 64-frame ceiling, all I/O
+ * MSG_DONTWAIT + SO_RCVTIMEO=1s on the rtnl ack socket.
  *
- * Sub-mode (gated ONE_IN(4) per invocation): build a deliberate
- * peek-x-peek stack — root qdisc whose ->dequeue calls .peek() on
- * an inner qdisc whose .peek is qdisc_peek_dequeued() (i.e. peek
- * dequeues an skb and stashes it in q->skb).  Parents in the
- * stack-set call peek-on-inner during their own dequeue: prio
- * walks bands, tbf gates by token bucket, sfb / red front a single
- * inner queue.  Children in the stack-set implement peek as
- * qdisc_peek_dequeued (qfq, sfq) or as a peek-then-stash equivalent
- * (cake).  The interaction the bug class lives in: the parent
- * believes peek() returned an skb still queued in the child; if the
- * parent's bookkeeping then returns that skb back to the inner
- * unchanged the child's q->skb stash points at an skb the inner
- * already considers dequeued.  Stack is built with parent root +
- * child grafted to parent classid 1; for qfq child also a single
- * qfq class + matchall filter pinning traffic to it.  UDP burst
- * follows the same BUDGETED+JITTER pattern as the standard path.
+ * Latches: userns -EPERM latches the op off for the child's life.  Inside
+ * the grandchild: ns_unsupported_dummy on dummy NEWLINK failure;
+ * ns_unsupported_kind[] per-kind on missing sch_* / cls_* module.  Per-kind
+ * best-effort modprobe sch_<kind> fires once per kind, latched so a missing
+ * /sbin/modprobe or lockdown=integrity pays the EFAIL once.
  */
 
 #if __has_include(<linux/udp.h>)
