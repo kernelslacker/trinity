@@ -1,96 +1,37 @@
 /*
- * iouring_cmd_passthrough — IORING_OP_URING_CMD per-fd cmd_op dispatch.
+ * iouring_cmd_passthrough - IORING_OP_URING_CMD per-fd cmd_op dispatch.
  *
- * The IORING_OP_URING_CMD opcode is io_uring's escape hatch into the
- * per-fd file_operations.uring_cmd handler.  Each subsystem that
- * registers a uring_cmd handler defines its own cmd_op enum and
- * payload layout, and the kernel routes the SQE into the file's
- * ->uring_cmd which decodes cmd_op from the SQE tail and dispatches
- * to a subsystem-specific command path.
+ * IORING_OP_URING_CMD is io_uring's escape hatch into
+ * file_operations.uring_cmd; each subsystem defines its own cmd_op
+ * enum and payload.  The existing iouring-recipes catalog uses only
+ * standard opcodes and never reaches these per-fd cmd_op switches,
+ * and random SQE fuzzing almost never assembles a structurally-valid
+ * uring_cmd dispatch.  Target functions: io_uring_cmd_sock,
+ * nvme_dev_uring_cmd, blkdev_uring_cmd (fuse/btrfs handlers are TODO
+ * -- see arm notes below).
  *
- * Trinity's existing iouring-recipes catalog never reaches this
- * dispatch — every recipe uses standard opcodes (READ/WRITE/POLL/
- * RECV/SEND/...) with standard payloads.  IORING_OP_URING_CMD plus
- * its per-subsystem cmd_op handlers are a separate attack surface
- * that the random-syscall path also misses (random SQEs almost never
- * produce a structurally valid uring_cmd dispatch).  This childop
- * walks the per-fd dispatch deliberately, on whichever subsystems
- * are reachable on the running host without risking real data.
+ * Brick-safety (host kernel, not a VM):
+ *   socket   - always safe; in-kernel state on a loopback AF_INET
+ *              socket per invocation.
+ *   blockdev - only /dev/loopN whose backing_file is absent
+ *              (unbound); bound loops are skipped regardless of what
+ *              they back.  Unbound loops error early in
+ *              blkdev_uring_cmd_discard's validation before touching
+ *              storage, but the dispatch switch has already run.
+ *   nvme     - loop-transport controllers only; restricted to read-
+ *              only ADMIN ops (IDENTIFY / GET_FEATURES /
+ *              GET_LOG_PAGE).  Currently detected-but-skipped -- the
+ *              72-byte nvme_uring_cmd struct only fits in an SQE128
+ *              ring and this op uses the standard 64-byte SQE form.
+ *   fuse     - TODO, needs a trinity-owned fuse session fd (touching
+ *              host mounts like edenfs/gdrive would corrupt data).
+ *   btrfs    - TODO, needs a trinity-owned btrfs mount for the
+ *              ENCODED_READ/WRITE handlers.
  *
- * Five subsystems expose ->uring_cmd in the upstream tree:
- *
- *   socket   io_uring_cmd_sock        SOCKET_URING_OP_SIOCINQ /
- *                                     SIOCOUTQ / GETSOCKOPT /
- *                                     SETSOCKOPT
- *   nvme     nvme_dev_uring_cmd       NVME_URING_CMD_ADMIN / IO and
- *                                     _VEC variants
- *   fuse     fuse_uring_cmd           FUSE_IO_URING_CMD_REGISTER /
- *                                     COMMIT_AND_FETCH
- *   btrfs    btrfs_uring_cmd          BTRFS_IOC_ENCODED_READ /
- *                                     ENCODED_WRITE (and _32)
- *   blockdev blkdev_uring_cmd         BLOCK_URING_CMD_DISCARD
- *
- * Safety model: this childop runs against the host kernel, not a VM,
- * so any IO it issues hits real devices and real filesystems.  The
- * variants are gated on runtime probes that exclude every path with a
- * data-loss risk:
- *
- *   socket   — always safe.  Exercises in-kernel socket state only;
- *              loopback AF_INET socket created per invocation.
- *
- *   nvme     — only loop-backed nvme controllers (transport == "loop"
- *              in /sys/class/nvme/nvmeN/transport).  Real PCIe / TCP /
- *              RDMA controllers are skipped — a stray write to a real
- *              storage namespace would be unrecoverable.  Even on a
- *              loop-backed target the cmd_op set is restricted to the
- *              read-only ADMIN side (IDENTIFY, GET_FEATURES,
- *              GET_LOG_PAGE).  No IO opcodes, no _VEC variants.
- *              Currently a stub: NVMe URING_CMD requires a 72-byte
- *              nvme_uring_cmd struct in the SQE's inline cmd[] tail,
- *              which only fits in an SQE128-sized ring.  This driver
- *              uses the standard 64-byte SQE form (see TODO below),
- *              so the nvme variant is detected-but-skipped pending
- *              SQE128 support.
- *
- *   blockdev — only /dev/loopN where /sys/block/loopN/loop/backing_file
- *              is absent (loop is unbound).  An unbound loop returns
- *              an error early in blkdev_uring_cmd_discard's validation
- *              before any backing storage is touched, but the kernel
- *              still walks the per-fd cmd_op dispatch into
- *              blkdev_uring_cmd's switch — which is the surface this
- *              childop is here to exercise.  Bound loops are skipped
- *              regardless of what they back; even a trinity-owned
- *              backing file would risk concurrent corruption from a
- *              sibling.
- *
- *   fuse     — currently not implemented.  fuse_uring_cmd handlers
- *              (REGISTER / COMMIT_AND_FETCH) require a fuse session
- *              fd from a mount that trinity owns and pinned in a
- *              reusable way, and the fuse-side childops infrastructure
- *              that would set that up does not yet exist.  Operating
- *              against a host fuse mount (gvfs, edenfs, gdrive, ...)
- *              would block the daemon or corrupt user data.  TODO:
- *              wire this up once a fuse-owning childop exists.
- *
- *   btrfs    — currently not implemented.  btrfs_uring_cmd handlers
- *              (ENCODED_READ / ENCODED_WRITE) require a btrfs file
- *              fd inside a mount trinity owns.  No trinity-owned
- *              btrfs mount infrastructure exists; operating against
- *              the host's btrfs root would be a data-loss path.
- *              TODO: wire this up once a btrfs-owning childop exists.
- *
- * SQE form: standard 64-byte SQE.  The cmd_op field is encoded in
- * the SQE's off union (overlaps via the cmd_op/__pad1 anonymous
- * struct), and the per-cmd_op payload that fits inline goes through
- * the addr / level / optname / optval / addr3 unions at the SQE tail.
- * The 80-byte cmd[] inline payload (SQE128) is not used here — the
- * cmd_op handlers we target on safe paths read their payload through
- * the standard SQE union fields, and the nvme path that requires the
- * 80-byte cmd[] is stubbed pending SQE128 support.
- *
- * Variants are probed once per invocation; the probe is cheap (a few
- * sysfs opens) and the result is held in a per-process static so
- * subsequent invocations from the same child skip the probe.
+ * SQE form: standard 64-byte SQE; cmd_op rides in the off union and
+ * inline payload goes through addr/level/optname/optval/addr3.
+ * SQE128 not used here.  Variants probed once per invocation (few
+ * sysfs opens, cached in a per-process static).
  */
 
 #include <dirent.h>
