@@ -68,10 +68,69 @@ struct file_getattr_post_state {
 };
 #endif
 
+/*
+ * Bias at_flags (rec->a5) toward the kernel's allowlist:
+ *
+ *   if ((at_flags & ~(AT_SYMLINK_NOFOLLOW | AT_EMPTY_PATH)) != 0)
+ *           return -EINVAL;
+ *
+ * handle_arg_list ORs in shift_flag_bit() / CMP-hint bits for
+ * adjacent-bit probing on ~3/16 of calls; any bit outside the
+ * two-flag allowlist bounces the call straight back with -EINVAL
+ * before the lookup runs.  Mask the noise off ~7/8 of the time
+ * so the call reaches filename_lookup(); ~1/8 leaves the OR'd
+ * noise intact so the reject path stays covered.  The mask only
+ * trims foreign bits -- the underlying ARG_LIST pick across
+ * {0, AT_SYMLINK_NOFOLLOW, AT_EMPTY_PATH, both} is preserved.
+ */
+static void mask_file_getattr_at_flags(struct syscallrecord *rec)
+{
+	if (!ONE_IN(8))
+		rec->a5 &= (unsigned long)
+			   (AT_SYMLINK_NOFOLLOW | AT_EMPTY_PATH);
+}
+
+#ifdef HAVE_SYS_FILE_GETATTR
+/*
+ * Snapshot input state for the post oracle.  Without this the
+ * post handler reads rec->a1..a5 at post-time, when a sibling
+ * syscall may have scribbled the slots: looks_like_corrupted_ptr()
+ * cannot tell a real-but-wrong heap address from the original
+ * user ufattr pointer, so the memcpy / re-issue would touch a
+ * foreign allocation, a stomped usize or at_flags word would
+ * smear the comparison bound or change the lookup mode, and a
+ * stale rec->a2 / sibling-rewritten pathname bytes would let the
+ * re-issue resolve a different inode.  Snapshot the pathname
+ * BYTES via post_snapshot_str so the post handler never re-derefs
+ * the user pointer; skip the post sample when the snapshot source
+ * is not provably readable.  post_state is private to the post
+ * handler.  Gated on HAVE_SYS_FILE_GETATTR to mirror the .post
+ * body -- on systems without SYS_file_getattr the post handler is
+ * a no-op stub and a snapshot only the post handler can free
+ * would leak.
+ */
+static void snapshot_file_getattr_state(struct syscallrecord *rec,
+					size_t buf_alloc_size)
+{
+	struct file_getattr_post_state *snap;
+
+	snap = zmalloc_tracked(sizeof(*snap));
+	snap->magic    = FILE_GETATTR_POST_STATE_MAGIC;
+	snap->dfd      = rec->a1;
+	snap->ufattr   = rec->a3;
+	snap->usize    = rec->a4;
+	snap->at_flags = rec->a5;
+	snap->buf_alloc_size = buf_alloc_size;
+	if (!post_snapshot_str(snap->pathname, sizeof(snap->pathname),
+			       (const char *)(unsigned long) rec->a2))
+		snap->pathname[0] = '\0';
+	post_state_install(rec, snap);
+}
+#endif
+
 static void sanitise_file_getattr(struct syscallrecord *rec)
 {
 #ifdef HAVE_SYS_FILE_GETATTR
-	struct file_getattr_post_state *snap;
 	unsigned long pre_a3;
 	size_t buf_alloc_size;
 
@@ -116,24 +175,7 @@ static void sanitise_file_getattr(struct syscallrecord *rec)
 		}
 	}
 
-	/*
-	 * Bias at_flags (rec->a5) toward the kernel's allowlist:
-	 *
-	 *   if ((at_flags & ~(AT_SYMLINK_NOFOLLOW | AT_EMPTY_PATH)) != 0)
-	 *           return -EINVAL;
-	 *
-	 * handle_arg_list ORs in shift_flag_bit() / CMP-hint bits for
-	 * adjacent-bit probing on ~3/16 of calls; any bit outside the
-	 * two-flag allowlist bounces the call straight back with -EINVAL
-	 * before the lookup runs.  Mask the noise off ~7/8 of the time
-	 * so the call reaches filename_lookup(); ~1/8 leaves the OR'd
-	 * noise intact so the reject path stays covered.  The mask only
-	 * trims foreign bits -- the underlying ARG_LIST pick across
-	 * {0, AT_SYMLINK_NOFOLLOW, AT_EMPTY_PATH, both} is preserved.
-	 */
-	if (!ONE_IN(8))
-		rec->a5 &= (unsigned long)
-			   (AT_SYMLINK_NOFOLLOW | AT_EMPTY_PATH);
+	mask_file_getattr_at_flags(rec);
 
 	/*
 	 * ARG_PATHNAME plumbed a random pathname into rec->a2, but the
@@ -209,35 +251,7 @@ static void sanitise_file_getattr(struct syscallrecord *rec)
 	if ((size_t) rec->a4 > buf_alloc_size)
 		rec->a4 = (unsigned long) buf_alloc_size;
 
-	/*
-	 * Snapshot input state for the post oracle.  Without this the
-	 * post handler reads rec->a1..a5 at post-time, when a sibling
-	 * syscall may have scribbled the slots: looks_like_corrupted_ptr()
-	 * cannot tell a real-but-wrong heap address from the original
-	 * user ufattr pointer, so the memcpy / re-issue would touch a
-	 * foreign allocation, a stomped usize or at_flags word would
-	 * smear the comparison bound or change the lookup mode, and a
-	 * stale rec->a2 / sibling-rewritten pathname bytes would let the
-	 * re-issue resolve a different inode.  Snapshot the pathname
-	 * BYTES via post_snapshot_str so the post handler never re-derefs
-	 * the user pointer; skip the post sample when the snapshot source
-	 * is not provably readable.  post_state is private to the post
-	 * handler.  Gated on HAVE_SYS_FILE_GETATTR to mirror the .post
-	 * body -- on systems without SYS_file_getattr the post handler is
-	 * a no-op stub and a snapshot only the post handler can free
-	 * would leak.
-	 */
-	snap = zmalloc_tracked(sizeof(*snap));
-	snap->magic    = FILE_GETATTR_POST_STATE_MAGIC;
-	snap->dfd      = rec->a1;
-	snap->ufattr   = rec->a3;
-	snap->usize    = rec->a4;
-	snap->at_flags = rec->a5;
-	snap->buf_alloc_size = buf_alloc_size;
-	if (!post_snapshot_str(snap->pathname, sizeof(snap->pathname),
-			       (const char *)(unsigned long) rec->a2))
-		snap->pathname[0] = '\0';
-	post_state_install(rec, snap);
+	snapshot_file_getattr_state(rec, buf_alloc_size);
 #endif
 }
 
