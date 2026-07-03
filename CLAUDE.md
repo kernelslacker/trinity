@@ -298,3 +298,13 @@ not aesthetics.
 - **`struct_catalog` rows: verify the arg index against the syscall's real
   (1-indexed) signature**, and skip op-multiplexed args (e.g. `futex` a4 is a
   timespec only for the WAIT ops) unless discriminated.
+- **Validate that a pointer is a real allocation start before `free()`-ing it.**
+  A pointer-shape heuristic (aligned / in user VA / not pid-shaped) still passes
+  a heap-region scribble that isn't at an allocation start — libc rejects it as a
+  bad free. Track live allocation results (opt-in) for ground truth; opt-in
+  rather than every allocation, so direct-free sites don't leave stale entries a
+  fuzzed scribble can match.
+- **A tick-batched (1-in-N) free/GC loop multiplies effective lifetime by N.**
+  Size TTL/lifetime constants against the longest reader window — including a
+  reader interrupted by a signal handler that itself ticks the ring — not the
+  nominal TTL.
