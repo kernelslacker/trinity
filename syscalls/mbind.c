@@ -4,27 +4,16 @@
 	unsigned long, maxnode, unsigned, flags)
  */
 
-#include <linux/mempolicy.h>
 #include <string.h>
 #include "arch.h"
 #include "compat.h"
+#include "kernel/mempolicy.h"
 #include "maps.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
-
-#define MPOL_F_STATIC_NODES     (1 << 15)
-#define MPOL_F_RELATIVE_NODES   (1 << 14)
-
-#ifndef MPOL_F_NUMA_BALANCING
-#define MPOL_F_NUMA_BALANCING (1 << 13)	/* 5.12+ */
-#endif
-
-#ifndef MPOL_MF_LAZY
-#define MPOL_MF_LAZY (1 << 3)	/* lazy migrate-on-fault */
-#endif
 
 /* maxnode is the bit count the kernel will use to size its copy_from_user
  * of the nodemask: it copies ((maxnode + BITS_PER_LONG - 1) / BITS_PER_LONG)
