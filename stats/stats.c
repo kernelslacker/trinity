@@ -1918,13 +1918,8 @@ static void dump_stats_top_wedging_childops(void)
 	}
 }
 
-static void dump_stats_fd_tracking(void)
+static void dump_fd_lifecycle(void)
 {
-	if (parent_stats.fault_injected) {
-		stat_row("fault_injection", "armed_fail_nth",  parent_stats.fault_injected);
-		stat_row("fault_injection", "returned_enomem", parent_stats.fault_consumed);
-	}
-
 	if (shm->stats.fd_stale_detected || shm->stats.fd_closed_tracked ||
 	    shm->stats.fd_stale_by_generation ||
 	    shm->stats.fd_duped || shm->stats.fd_events_processed ||
@@ -1951,37 +1946,50 @@ static void dump_stats_fd_tracking(void)
 		stat_row("fd_lifecycle", "random_exhausted",    shm->stats.fd_random_exhausted);
 		stat_row("fd_lifecycle", "provider_invalid",    shm->stats.fd_provider_invalid);
 	}
+}
 
-	/*
-	 * Per-provider outstanding-fd gauge.  Only providers whose live
-	 * count is non-zero get a row -- a clean run with no leaks emits
-	 * nothing; a non-empty block at shutdown surfaces a per-provider
-	 * fd leak (CLOSE events lost in the fd_event ring, an OBJ_GLOBAL
-	 * registration whose subsequent close() bypassed remove_object_by_fd,
-	 * etc.).  The label comes from the registered fd_provider name so
-	 * the row matches --enable-fds/--disable-fds syntax; an entry whose
-	 * objtype has no matching provider is skipped (defensive: should
-	 * not happen, since the bump site fires only on a successful
-	 * fd_hash_insert for an is_fd_type() objtype).
-	 */
-	{
-		unsigned int t;
+/*
+ * Per-provider outstanding-fd gauge.  Only providers whose live
+ * count is non-zero get a row -- a clean run with no leaks emits
+ * nothing; a non-empty block at shutdown surfaces a per-provider
+ * fd leak (CLOSE events lost in the fd_event ring, an OBJ_GLOBAL
+ * registration whose subsequent close() bypassed remove_object_by_fd,
+ * etc.).  The label comes from the registered fd_provider name so
+ * the row matches --enable-fds/--disable-fds syntax; an entry whose
+ * objtype has no matching provider is skipped (defensive: should
+ * not happen, since the bump site fires only on a successful
+ * fd_hash_insert for an is_fd_type() objtype).
+ */
+static void dump_fd_provider_outstanding(void)
+{
+	unsigned int t;
 
-		for (t = 0; t < MAX_OBJECT_TYPES; t++) {
-			unsigned long outstanding =
-				shm->stats.fd_provider_outstanding[t];
-			const char *name;
+	for (t = 0; t < MAX_OBJECT_TYPES; t++) {
+		unsigned long outstanding =
+			shm->stats.fd_provider_outstanding[t];
+		const char *name;
 
-			if (outstanding == 0)
-				continue;
+		if (outstanding == 0)
+			continue;
 
-			name = fd_provider_name((enum objecttype) t);
-			if (name == NULL)
-				continue;
+		name = fd_provider_name((enum objecttype) t);
+		if (name == NULL)
+			continue;
 
-			stat_row("fd_provider_outstanding", name, outstanding);
-		}
+		stat_row("fd_provider_outstanding", name, outstanding);
 	}
+}
+
+static void dump_stats_fd_tracking(void)
+{
+	if (parent_stats.fault_injected) {
+		stat_row("fault_injection", "armed_fail_nth",  parent_stats.fault_injected);
+		stat_row("fault_injection", "returned_enomem", parent_stats.fault_consumed);
+	}
+
+	dump_fd_lifecycle();
+
+	dump_fd_provider_outstanding();
 
 	/* Producer-side capture count for the typed-scalar bypass push.
 	 * Sibling to kcov_shm->propagation_injected (consumer-side); see
