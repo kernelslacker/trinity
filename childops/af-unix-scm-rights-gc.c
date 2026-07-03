@@ -1,104 +1,40 @@
 /*
  * af_unix_scm_rights_gc_churn - build a closed cycle in the AF_UNIX
  * SCM_RIGHTS reference graph, drop all userspace references, then race
- * the kernel garbage collector (unix_gc) against concurrent recvmsg()
- * draining of the queued SCM_RIGHTS messages.
+ * net/unix/garbage.c:unix_gc against concurrent recvmsg() draining of
+ * the queued SCM_RIGHTS messages.
  *
- * The bug class is the AF_UNIX fd-graph + unix_gc race: SCM_RIGHTS
- * cmsgs let one unix socket queue file descriptors that themselves
- * refer to other unix sockets, building a directed reference graph.
- * Userspace can construct a closed cycle (sk1 -> sk2 -> sk3 -> sk1)
- * such that every cycle member's only remaining ref comes from the
- * SCM_RIGHTS message queued on the previous member.  Once userspace
- * drops its descriptors to all three, the cycle is unreachable from
- * any task fd table -- only unix_gc (net/unix/garbage.c) can reclaim
- * it, by walking unix_socket_table under unix_gc_lock and folding
- * inflight refcounts to detect garbage.
- *
+ * Bug class: AF_UNIX fd-graph + unix_gc race.  SCM_RIGHTS lets one
+ * unix sock queue fds referring to other unix socks; userspace can
+ * build a closed cycle sk1->sk2->sk3->sk1 whose only remaining refs
+ * come from the SCM_RIGHTS msgs queued on cycle peers.  Once the
+ * userspace fds are closed, only unix_gc can reclaim -- walking
+ * unix_socket_table under unix_gc_lock and folding inflight refcounts.
  * The interesting failures land in the gc walk vs concurrent activity:
+ * gc snapshots inflight then a recvmsg drains an SCM_RIGHTS msg
+ * before gc finishes the traversal (a decade-defining UAF), listener
+ * accept-queue socks torn down under gc, unix_attach_fds double-drop
+ * error paths, and io_uring registered-files SCM_RIGHTS extending
+ * the graph multi-hop into the gc walk.
  *
- *   - CVE-2021-0920: a concurrent recvmsg() drains an SCM_RIGHTS msg
- *     while unix_gc is mid-walk; the recv decrements the inflight
- *     count after gc has snapshotted it but before gc finishes the
- *     graph traversal, leaving a use-after-free on the sock that gc
- *     was about to release.  One of the most severe Linux CVEs of the
- *     decade -- exploited in the wild against Pixel devices.
+ * Per iteration: open three socketpair(SOCK_DGRAM) sv1/sv2/sv3, cycle
+ * via sendmsg SCM_RIGHTS=[sv1[0]] on sv2[1], =[sv2[0]] on sv3[1],
+ * =[sv3[0]] on sv1[1]; close the original [0] fds so the cycle is
+ * unreachable; kick gc (extra SCM_RIGHTS send + usleep(0)); race
+ * burst alternates recvmsg(sv2[1]) drains against unix_attach_fds
+ * calls carrying a held /dev/null fd (opened once, /dev/null never
+ * threads the cycle walk).  Low-probability variant swaps one cycle
+ * fd for an io_uring fd with a registered files table (multi-hop
+ * graph extension).
  *
- *   - CVE-2024-26923: a unix listener socket with queued connections
- *     races unix_gc; the listener's accept queue holds child socks
- *     that gc treats as inflight but the listener can dispose of
- *     under listen->shutdown without coordination.
+ * Brick-safety: AF_UNIX local-only, no modules/sysfs/namespaces, no
+ * persistent fs writes.  sendmsg MSG_DONTWAIT; recv sockets carry
+ * SO_RCVTIMEO=1s so a stuck recv can't pin past child.c's SIGALRM(1s).
  *
- *   - CVE-2024-43892: unix scm fd refcount imbalance when sendmsg
- *     fails partway through SCM_RIGHTS attach -- the per-fd ref taken
- *     by unix_attach_fds() was dropped twice on the error path.
- *
- *   - CVE-2025-21712 family: an io_uring fd with a registered files
- *     table can be sent over unix sock; gc walks reach the io_uring
- *     fd, which itself holds further fds (some of which may be unix
- *     socks back into the graph), turning a single SCM_RIGHTS send
- *     into a multi-hop graph extension that gc has to handle without
- *     unbounded recursion.
- *
- * Sequence (per BUDGETED inner-loop iteration):
- *   1.  Open three independent socketpair(AF_UNIX, SOCK_DGRAM, 0) pairs
- *       (sv1, sv2, sv3).  Each pair is two endpoints; we use [0] and
- *       [1] as send/recv halves.
- *   2.  Build the cycle:
- *         sendmsg(sv2[1], SCM_RIGHTS=[sv1[0]])
- *         sendmsg(sv3[1], SCM_RIGHTS=[sv2[0]])
- *         sendmsg(sv1[1], SCM_RIGHTS=[sv3[0]])
- *       Each send transfers a kernel ref on the embedded fd's struct
- *       file into the receiving sock's queue (unix_attach_fds path).
- *   3.  close(sv1[0]); close(sv2[0]); close(sv3[0]); -- the original
- *       userspace refs are gone.  The only remaining refs on the
- *       three socks are the SCM_RIGHTS msgs queued on their peers,
- *       and those refs form a closed cycle: cycle is gc fodder.
- *   4.  Trigger gc via one of:
- *       (a) sendmsg over a fourth sock with another SCM_RIGHTS attach
- *           (drives unix_inflight() which schedules gc).
- *       (b) yield via usleep(0) and rely on the workqueue tick.
- *   5.  Race burst (BUDGETED, alternating):
- *       (a) recvmsg(sv2[1]) to drain the SCM_RIGHTS msg queued on the
- *           sv2 peer that holds sv1[0] -- races unix_gc's snapshot of
- *           inflight counts.
- *       (b) sendmsg a held /dev/null fd on a remaining unix sock --
- *           exercises unix_attach_fds() while gc may be walking the
- *           same socket table.  The fd is opened once per burst and
- *           reused; gc sees the same SCM_RIGHTS skb queue and the
- *           same number of attach calls regardless of fd identity,
- *           and /dev/null is not a unix sock so it never threads the
- *           gc cycle walk.
- *   6.  Variant (low probability): replace one of the cycle fds with
- *       an io_uring fd carrying a registered files table.  Drives the
- *       multi-hop graph extension shape from the CVE-2025-21712
- *       family.
- *   7.  close(); the kernel cleans up whatever userspace missed via
- *       unix_destruct_scm() once the last ref drops.
- *
- * Brick-safety: AF_UNIX local-only -- no module load, no sysfs writes,
- * no namespace touches.  All sendmsg use MSG_DONTWAIT.  Recv sockets
- * carry SO_RCVTIMEO=1s so a stuck recv cannot pin past child.c's
- * SIGALRM(1s).  Per-process state only, no persistent fs writes.
- *
- * Cap-gate latch: first invocation per process probes
- * socketpair(AF_UNIX, SOCK_DGRAM, 0).  If -EAFNOSUPPORT or
- * -ESOCKTNOSUPPORT (sysroots / kernels with AF_UNIX disabled, vanishingly
- * rare but possible on heavily-stripped images) the latch fires and
- * every subsequent invocation just bumps setup_failed and returns.
- *
- * Header gating: <sys/socket.h> + <sys/un.h> are standard glibc and
- * always present; the fallback stub remains for the !__has_include
- * case for paranoid sysroots.
- *
- * Failure modes treated as benign coverage:
- *   - sendmsg returning EMSGSIZE / EAGAIN: queue full or msg too big
- *     for the iovec; per-step counter just doesn't bump.
- *   - recvmsg returning EAGAIN / no data: the gc may have raced us
- *     and reclaimed the cycle before the recv fired; the lookup +
- *     lock acquisition path still ran.
- *   - close() returning EBADF: a sibling closed the fd between our
- *     setup and teardown; harmless.
+ * Latch: first invocation probes socketpair(AF_UNIX, SOCK_DGRAM); on
+ * -EAFNOSUPPORT/-ESOCKTNOSUPPORT (AF_UNIX disabled) the op stays off
+ * for this child's life.  Header-gated by __has_include on
+ * <sys/socket.h>/<sys/un.h> with a fallback stub for paranoid sysroots.
  */
 
 #include <errno.h>
