@@ -1511,6 +1511,121 @@ static void top_syscalls_emit_frontier_yield(
 	}
 }
 
+static void top_syscalls_render_frontier_picks(
+		const unsigned long *cur, const unsigned long *prev,
+		long elapsed, unsigned int nr_to_scan,
+		const struct syscalltable *table)
+{
+	/* Frontier-picker accept distribution: which syscalls ate the
+	 * coverage-frontier picks this window.  Same top-N emitter as the
+	 * edge pools above; an empty distribution (frontier arm never
+	 * selected, or selected but accepted nothing) skips the row via the
+	 * helper's zero-total gate. */
+	stats_log_write("Top %u syscalls by frontier picks in last %lds:\n",
+			TOP_SYSCALLS_DUMP_TOPN, elapsed);
+	top_syscalls_emit_pool("frontier", cur, prev, nr_to_scan, table, false);
+}
+
+static void top_syscalls_render_frontier_yield(
+		const unsigned long *cur_live_picks,
+		const unsigned long *prev_live_picks,
+		const unsigned long *cur_silent_picks,
+		const unsigned long *prev_silent_picks,
+		const unsigned long *cur_wins,
+		const unsigned long *prev_wins,
+		const unsigned long *cur_live_misses,
+		const unsigned long *prev_live_misses,
+		const uint32_t *cur_recent_weight,
+		const unsigned long *cur_last_productive,
+		long elapsed, unsigned int nr_to_scan,
+		const struct syscalltable *table)
+{
+	unsigned long bandit_window_now;
+
+	/* Per-syscall frontier yield (kill-list feedstock).  Surfaces the
+	 * regime split (live vs silent pick deltas), productive wins and
+	 * live_misses deltas, the current recent-ring weight, and the age
+	 * since the last productive win for the top-N syscalls by live_miss
+	 * delta.  Render-only over F1's per-syscall counters; the helper
+	 * gates on total_misses == 0 so a window where the live regime never
+	 * wasted a pick collapses to no row. */
+	bandit_window_now = __atomic_load_n(&shm->bandit_window_count,
+					    __ATOMIC_RELAXED);
+	stats_log_write("Per-syscall frontier yield in last %lds:\n", elapsed);
+	top_syscalls_emit_frontier_yield(
+			cur_live_picks, prev_live_picks,
+			cur_silent_picks, prev_silent_picks,
+			cur_wins, prev_wins,
+			cur_live_misses, prev_live_misses,
+			cur_recent_weight,
+			cur_last_productive,
+			bandit_window_now,
+			nr_to_scan, table, false);
+}
+
+static void top_syscalls_render_rq(
+		const unsigned long *cur_saves,
+		const unsigned long *prev_saves,
+		const unsigned long *cur_wins,
+		const unsigned long *prev_wins,
+		long elapsed, unsigned int nr_to_scan,
+		const struct syscalltable *table)
+{
+	/* RedQueen-source corpus saves vs the PC-edge wins those saves
+	 * later produce, per-syscall.  The two top-Ns answer the
+	 * harvest->edge bottleneck question: which syscalls are RedQueen
+	 * harvesting args for, and which of those convert downstream to
+	 * new PC-bucket edges once a corpus replay picks them up.  The
+	 * helper's zero-total gate skips each row when its pool is empty
+	 * (re-exec disabled, or enabled but no corpus replay landed on an
+	 * rq-sourced entry that flipped a new edge this window). */
+	stats_log_write("Top %u syscalls by RedQueen-sourced saves "
+			"in last %lds:\n",
+			TOP_SYSCALLS_DUMP_TOPN, elapsed);
+	top_syscalls_emit_pool("rq-saves", cur_saves, prev_saves,
+			       nr_to_scan, table, false);
+	stats_log_write("Top %u syscalls by PC-edge wins from "
+			"RedQueen-sourced saves in last %lds:\n",
+			TOP_SYSCALLS_DUMP_TOPN, elapsed);
+	top_syscalls_emit_pool("rq-pcedge-wins", cur_wins, prev_wins,
+			       nr_to_scan, table, false);
+}
+
+static void top_syscalls_render_warm_reserve(
+		const unsigned long *cur, const unsigned long *prev,
+		long elapsed, unsigned int nr_to_scan,
+		const struct syscalltable *table)
+{
+	/* SHADOW deep-but-warm candidate accounting (see the warm_reserve_
+	 * candidates* comment in include/stats.h for the predicate).  Same
+	 * top-N shape and zero-total skip as the pools above; an empty
+	 * distribution (no syscall fired the deep-but-warm predicate this
+	 * window) collapses to no row via the emitter's gate. */
+	stats_log_write("Top %u syscalls by deep-but-warm candidates "
+			"in last %lds:\n",
+			TOP_SYSCALLS_DUMP_TOPN, elapsed);
+	top_syscalls_emit_pool("warm-reserve", cur, prev,
+			       nr_to_scan, table, false);
+}
+
+static void top_syscalls_render_warm_reserve_plateau(
+		const unsigned long *cur, const unsigned long *prev,
+		long elapsed, unsigned int nr_to_scan,
+		const struct syscalltable *table)
+{
+	/* SHADOW would-replay-demand accounting -- intersection of the
+	 * deep-but-warm predicate with the CMP_RISING_PC_FLAT plateau
+	 * window (see warm_reserve_during_plateau* in include/stats.h).
+	 * Same top-N shape and zero-total skip as the warm-reserve row
+	 * above; a window without a plateau, or a plateau window without
+	 * any deep-but-warm fires, collapses to no row. */
+	stats_log_write("Top %u syscalls by deep-but-warm candidates "
+			"during plateau in last %lds:\n",
+			TOP_SYSCALLS_DUMP_TOPN, elapsed);
+	top_syscalls_emit_pool("warm-reserve-plateau", cur, prev,
+			       nr_to_scan, table, false);
+}
+
 void __cold top_syscalls_periodic_dump(void)
 {
 	static unsigned long prev_bandit[MAX_NR_SYSCALL];
@@ -1538,7 +1653,6 @@ void __cold top_syscalls_periodic_dump(void)
 	unsigned long cur_rq_wins[MAX_NR_SYSCALL];
 	unsigned long cur_warm_reserve[MAX_NR_SYSCALL];
 	unsigned long cur_warm_reserve_plateau[MAX_NR_SYSCALL];
-	unsigned long bandit_window_now;
 	struct timespec now;
 	long elapsed;
 	unsigned int nr_to_scan;
@@ -1657,78 +1771,29 @@ void __cold top_syscalls_periodic_dump(void)
 	top_syscalls_emit_pool("explorer", cur_explorer, prev_explorer,
 			       nr_to_scan, table, false);
 
-	/* Frontier-picker accept distribution: which syscalls ate the
-	 * coverage-frontier picks this window.  Same top-N emitter as the
-	 * edge pools above; an empty distribution (frontier arm never
-	 * selected, or selected but accepted nothing) skips the row via the
-	 * helper's zero-total gate. */
-	stats_log_write("Top %u syscalls by frontier picks in last %lds:\n",
-			TOP_SYSCALLS_DUMP_TOPN, elapsed);
-	top_syscalls_emit_pool("frontier", cur_frontier_picks,
-			       prev_frontier_picks, nr_to_scan, table, false);
+	top_syscalls_render_frontier_picks(cur_frontier_picks,
+					   prev_frontier_picks,
+					   elapsed, nr_to_scan, table);
 
-	/* Per-syscall frontier yield (kill-list feedstock).  Surfaces the
-	 * regime split (live vs silent pick deltas), productive wins and
-	 * live_misses deltas, the current recent-ring weight, and the age
-	 * since the last productive win for the top-N syscalls by live_miss
-	 * delta.  Render-only over F1's per-syscall counters; the helper
-	 * gates on total_misses == 0 so a window where the live regime never
-	 * wasted a pick collapses to no row. */
-	bandit_window_now = __atomic_load_n(&shm->bandit_window_count,
-					    __ATOMIC_RELAXED);
-	stats_log_write("Per-syscall frontier yield in last %lds:\n", elapsed);
-	top_syscalls_emit_frontier_yield(
+	top_syscalls_render_frontier_yield(
 			cur_frontier_live_picks, prev_frontier_live_picks,
 			cur_frontier_silent_picks, prev_frontier_silent_picks,
 			cur_frontier_wins, prev_frontier_wins,
 			cur_frontier_live_misses, prev_frontier_live_misses,
 			cur_frontier_recent_weight,
 			cur_frontier_last_productive,
-			bandit_window_now,
-			nr_to_scan, table, false);
+			elapsed, nr_to_scan, table);
 
-	/* RedQueen-source corpus saves vs the PC-edge wins those saves
-	 * later produce, per-syscall.  The two top-Ns answer the
-	 * harvest->edge bottleneck question: which syscalls are RedQueen
-	 * harvesting args for, and which of those convert downstream to
-	 * new PC-bucket edges once a corpus replay picks them up.  The
-	 * helper's zero-total gate skips each row when its pool is empty
-	 * (re-exec disabled, or enabled but no corpus replay landed on an
-	 * rq-sourced entry that flipped a new edge this window). */
-	stats_log_write("Top %u syscalls by RedQueen-sourced saves "
-			"in last %lds:\n",
-			TOP_SYSCALLS_DUMP_TOPN, elapsed);
-	top_syscalls_emit_pool("rq-saves", cur_rq_saves, prev_rq_saves,
-			       nr_to_scan, table, false);
-	stats_log_write("Top %u syscalls by PC-edge wins from "
-			"RedQueen-sourced saves in last %lds:\n",
-			TOP_SYSCALLS_DUMP_TOPN, elapsed);
-	top_syscalls_emit_pool("rq-pcedge-wins", cur_rq_wins, prev_rq_wins,
-			       nr_to_scan, table, false);
+	top_syscalls_render_rq(cur_rq_saves, prev_rq_saves,
+			       cur_rq_wins, prev_rq_wins,
+			       elapsed, nr_to_scan, table);
 
-	/* SHADOW deep-but-warm candidate accounting (see the warm_reserve_
-	 * candidates* comment in include/stats.h for the predicate).  Same
-	 * top-N shape and zero-total skip as the pools above; an empty
-	 * distribution (no syscall fired the deep-but-warm predicate this
-	 * window) collapses to no row via the emitter's gate. */
-	stats_log_write("Top %u syscalls by deep-but-warm candidates "
-			"in last %lds:\n",
-			TOP_SYSCALLS_DUMP_TOPN, elapsed);
-	top_syscalls_emit_pool("warm-reserve", cur_warm_reserve,
-			       prev_warm_reserve, nr_to_scan, table, false);
+	top_syscalls_render_warm_reserve(cur_warm_reserve, prev_warm_reserve,
+					 elapsed, nr_to_scan, table);
 
-	/* SHADOW would-replay-demand accounting -- intersection of the
-	 * deep-but-warm predicate with the CMP_RISING_PC_FLAT plateau
-	 * window (see warm_reserve_during_plateau* in include/stats.h).
-	 * Same top-N shape and zero-total skip as the warm-reserve row
-	 * above; a window without a plateau, or a plateau window without
-	 * any deep-but-warm fires, collapses to no row. */
-	stats_log_write("Top %u syscalls by deep-but-warm candidates "
-			"during plateau in last %lds:\n",
-			TOP_SYSCALLS_DUMP_TOPN, elapsed);
-	top_syscalls_emit_pool("warm-reserve-plateau", cur_warm_reserve_plateau,
-			       prev_warm_reserve_plateau, nr_to_scan, table,
-			       false);
+	top_syscalls_render_warm_reserve_plateau(cur_warm_reserve_plateau,
+						 prev_warm_reserve_plateau,
+						 elapsed, nr_to_scan, table);
 
 	memcpy(prev_bandit,   cur_bandit,   sizeof(prev_bandit));
 	memcpy(prev_explorer, cur_explorer, sizeof(prev_explorer));
