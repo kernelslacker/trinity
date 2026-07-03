@@ -169,7 +169,7 @@ void dump_stats_oracle_anomalies(void)
 	}
 }
 
-void dump_stats_fuzzer_subsystems(void)
+static void dump_stats_render_vfs_writes(void)
 {
 	if (shm->stats.procfs_writes_open_fail || shm->stats.procfs_writes_write_fail ||
 	    shm->stats.procfs_writes_write_ok ||
@@ -187,18 +187,16 @@ void dump_stats_fuzzer_subsystems(void)
 		stat_row("vfs_writes", "debugfs_write_fail", shm->stats.debugfs_writes_write_fail);
 		stat_row("vfs_writes", "debugfs_write_ok",   shm->stats.debugfs_writes_write_ok);
 	}
+}
 
+static void dump_stats_render_memory_pressure(void)
+{
 	if (shm->stats.memory_pressure_runs)
 		stat_row("memory_pressure", "runs_madv_pageout", shm->stats.memory_pressure_runs);
+}
 
-	stat_category_emit_text(&sched_cycler_category);
-
-	stat_category_emit_text(&userns_fuzzer_category);
-
-	stat_category_emit_text(&userns_bootstrap_category);
-
-	stat_category_emit_text(&barrier_racer_category);
-
+static void dump_stats_render_genetlink(void)
+{
 	if (shm->stats.genetlink_families_discovered ||
 	    shm->stats.genetlink_msgs_sent              ||
 	    shm->stats.genetlink_missing_producer       ||
@@ -212,7 +210,10 @@ void dump_stats_fuzzer_subsystems(void)
 		stat_row("genetlink_fuzzer", "discovery_io_err",    shm->stats.genetlink_discovery_io_err);
 		stat_row("genetlink_fuzzer", "discovery_nlerr",     shm->stats.genetlink_discovery_nlerr);
 	}
+}
 
+static void dump_stats_render_genl_family_calls(void)
+{
 	if (shm->stats.genl_family_calls_devlink   ||
 	    shm->stats.genl_family_calls_nl80211   ||
 	    shm->stats.genl_family_calls_taskstats ||
@@ -250,7 +251,10 @@ void dump_stats_fuzzer_subsystems(void)
 		stat_row("genl_family_calls", "thermal",   shm->stats.genl_family_calls_thermal);
 		stat_row("genl_family_calls", "ipvs",      shm->stats.genl_family_calls_ipvs);
 	}
+}
 
+static void dump_stats_render_nfnl_subsys(void)
+{
 	if (shm->stats.nfnl_subsys_calls_ctnetlink     ||
 	    shm->stats.nfnl_subsys_calls_ctnetlink_exp ||
 	    shm->stats.nfnl_subsys_calls_nftables      ||
@@ -260,18 +264,25 @@ void dump_stats_fuzzer_subsystems(void)
 		stat_row("nfnl_subsys_calls", "nftables",      shm->stats.nfnl_subsys_calls_nftables);
 		stat_row("nfnl_subsys_calls", "ipset",         shm->stats.nfnl_subsys_calls_ipset);
 	}
+}
 
+static void dump_stats_render_netlink_generator(void)
+{
 	if (shm->stats.netlink_nested_attrs_emitted)
 		stat_row("netlink_generator", "nested_attrs_emitted", shm->stats.netlink_nested_attrs_emitted);
+}
 
+static void dump_stats_render_kvm(void)
+{
 	if (shm->stats.kvm_vcpu_ioctls_dispatched)
 		stat_row("kvm", "vcpu_ioctls_dispatched", shm->stats.kvm_vcpu_ioctls_dispatched);
 
 	if (shm->stats.kvm_vm_ioctls_dispatched)
 		stat_row("kvm", "vm_ioctls_dispatched", shm->stats.kvm_vm_ioctls_dispatched);
+}
 
-	stat_category_emit_text(&perf_event_chains_category);
-
+static void dump_stats_render_tracefs(void)
+{
 	if (shm->stats.tracefs_kprobe_writes_open_fail || shm->stats.tracefs_kprobe_writes_write_fail ||
 	    shm->stats.tracefs_kprobe_writes_write_ok ||
 	    shm->stats.tracefs_uprobe_writes_open_fail || shm->stats.tracefs_uprobe_writes_write_fail ||
@@ -298,14 +309,18 @@ void dump_stats_fuzzer_subsystems(void)
 		stat_row("tracefs_fuzzer", "misc_write_fail",          shm->stats.tracefs_misc_writes_write_fail);
 		stat_row("tracefs_fuzzer", "misc_write_ok",            shm->stats.tracefs_misc_writes_write_ok);
 	}
+}
 
-	stat_category_emit_text(&bpf_lifecycle_category);
-
+static void dump_stats_render_bpf_fd_provider(void)
+{
 	if (shm->stats.bpf_maps_provided || shm->stats.bpf_progs_provided) {
 		stat_row("bpf_fd_provider", "maps_provided",  shm->stats.bpf_maps_provided);
 		stat_row("bpf_fd_provider", "progs_provided", shm->stats.bpf_progs_provided);
 	}
+}
 
+static void dump_stats_render_ebpf_gen(void)
+{
 	if (shm->stats.ebpf_gen_map_fd_substituted) {
 		stat_row("ebpf_gen", "map_fd_substituted",
 			 shm->stats.ebpf_gen_map_fd_substituted);
@@ -324,7 +339,10 @@ void dump_stats_fuzzer_subsystems(void)
 		stat_row("ebpf_gen", "map_value_deref_write",
 			 shm->stats.ebpf_gen_map_value_deref_write);
 	}
+}
 
+static void dump_stats_render_recipe_runner(void)
+{
 	if (shm->stats.recipe_runs) {
 		stat_row("recipe_runner", "runs",        shm->stats.recipe_runs);
 		stat_row("recipe_runner", "completed",   shm->stats.recipe_completed);
@@ -332,7 +350,10 @@ void dump_stats_fuzzer_subsystems(void)
 		stat_row("recipe_runner", "unsupported", shm->stats.recipe_unsupported);
 		recipe_runner_dump_stats();
 	}
+}
 
+static void dump_stats_render_iouring(void)
+{
 	if (shm->stats.iouring_recipes_runs) {
 		stat_row("iouring_recipes", "runs",      shm->stats.iouring_recipes_runs);
 		stat_row("iouring_recipes", "completed", shm->stats.iouring_recipes_completed);
@@ -352,6 +373,55 @@ void dump_stats_fuzzer_subsystems(void)
 		stat_row("iouring_eventfd", "recursive_cqes",
 			 shm->stats.iouring_eventfd_recursive_cqes);
 	}
+}
+
+static void dump_stats_render_zombie_slots(void)
+{
+	if (shm->stats.zombies_reaped || shm->stats.zombies_timed_out ||
+	    shm->stats.zombie_slots_pending) {
+		stat_row("zombie_slots", "pending",   shm->stats.zombie_slots_pending);
+		stat_row("zombie_slots", "reaped",    shm->stats.zombies_reaped);
+		stat_row("zombie_slots", "timed_out", shm->stats.zombies_timed_out);
+	}
+}
+
+void dump_stats_fuzzer_subsystems(void)
+{
+	dump_stats_render_vfs_writes();
+
+	dump_stats_render_memory_pressure();
+
+	stat_category_emit_text(&sched_cycler_category);
+
+	stat_category_emit_text(&userns_fuzzer_category);
+
+	stat_category_emit_text(&userns_bootstrap_category);
+
+	stat_category_emit_text(&barrier_racer_category);
+
+	dump_stats_render_genetlink();
+
+	dump_stats_render_genl_family_calls();
+
+	dump_stats_render_nfnl_subsys();
+
+	dump_stats_render_netlink_generator();
+
+	dump_stats_render_kvm();
+
+	stat_category_emit_text(&perf_event_chains_category);
+
+	dump_stats_render_tracefs();
+
+	stat_category_emit_text(&bpf_lifecycle_category);
+
+	dump_stats_render_bpf_fd_provider();
+
+	dump_stats_render_ebpf_gen();
+
+	dump_stats_render_recipe_runner();
+
+	dump_stats_render_iouring();
 
 	stat_category_emit_text(&aio_category);
 
@@ -363,12 +433,7 @@ void dump_stats_fuzzer_subsystems(void)
 
 	stat_category_emit_text(&fd_runtime_skipped_category);
 
-	if (shm->stats.zombies_reaped || shm->stats.zombies_timed_out ||
-	    shm->stats.zombie_slots_pending) {
-		stat_row("zombie_slots", "pending",   shm->stats.zombie_slots_pending);
-		stat_row("zombie_slots", "reaped",    shm->stats.zombies_reaped);
-		stat_row("zombie_slots", "timed_out", shm->stats.zombies_timed_out);
-	}
+	dump_stats_render_zombie_slots();
 }
 
 /*
