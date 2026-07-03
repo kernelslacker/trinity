@@ -827,6 +827,19 @@ bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
  * consumer slot. */
 bool cmp_hints_try_get(unsigned int nr, bool do32, unsigned long *out);
 
+/* Width-preserving variant of cmp_hints_try_get().  Same policy
+ * (CMP_HINT_BOUNDARY rotation, no typed-hypothesis inject arm, no
+ * accept range) but on a true return also writes the pool entry's
+ * recorded operand width (uint32_t size in {1, 2, 4, 8}) into
+ * *out_size.  Consumers that splat the returned constant into a
+ * byte buffer (the blob mutator's CMPDICT learned arm) use this to
+ * write the constant at the width the kernel's cmp instruction
+ * actually reads, rather than a width chosen independently of the
+ * pool entry's provenance.  On a false return *out_size is left
+ * unchanged. */
+bool cmp_hints_try_get_sized(unsigned int nr, bool do32,
+			     unsigned long *out, unsigned int *out_size);
+
 /*
  * Field-scoped hint pull.  Locates the field pool keyed by
  * (desc, nr, do32, arg_idx, field_idx, size) via the same hash + ACQUIRE
