@@ -1173,6 +1173,130 @@ static void kcov_cmp_render_hyp_shadow_stats_block(long elapsed)
 }
 
 /*
+ * SHADOW would-pick telemetry from cmp_hints_try_get_ex().  Bumped
+ * per successful raw pool return after the typed hypothesis store
+ * is walked through the EXACT > ENUM_FAMILY > BITMASK > RANGE
+ * ladder for the same (cmp_ip, width).  Independent any-delta
+ * gate: a SHADOW run with an empty typed store still bumps
+ * would_miss on every pull, and that is exactly the signal worth
+ * surfacing once the consumer demand picks up.
+ */
+static void kcov_cmp_render_hyp_would_pick_block(long elapsed __unused__)
+{
+	static const char * const kind_labels[CMP_HYP_KIND_NR] = {
+		"exact", "range", "boundary", "bitmask",
+		"enum_family", "alignment", "length",
+		"foreign_value",
+	};
+	static unsigned long prev_hyp_would_pick_kind[CMP_HYP_KIND_NR];
+	static unsigned long prev_hyp_would_miss_kind[CMP_HYP_KIND_NR];
+	static unsigned long prev_hyp_would_value_differs;
+	unsigned long cur_hyp_would_pick_kind[CMP_HYP_KIND_NR];
+	unsigned long cur_hyp_would_miss_kind[CMP_HYP_KIND_NR];
+	unsigned long cur_hyp_would_value_differs;
+	unsigned long delta_hyp_would_value_differs;
+	unsigned long any_would_delta = 0;
+	unsigned int k;
+
+	for (k = 0; k < CMP_HYP_KIND_NR; k++) {
+		cur_hyp_would_pick_kind[k] = __atomic_load_n(
+			&kcov_shm->cmp_hyp_would_pick_by_kind[k],
+			__ATOMIC_RELAXED);
+		cur_hyp_would_miss_kind[k] = __atomic_load_n(
+			&kcov_shm->cmp_hyp_would_miss_by_kind[k],
+			__ATOMIC_RELAXED);
+		any_would_delta |=
+			(cur_hyp_would_pick_kind[k] - prev_hyp_would_pick_kind[k]) |
+			(cur_hyp_would_miss_kind[k] - prev_hyp_would_miss_kind[k]);
+	}
+	cur_hyp_would_value_differs = __atomic_load_n(
+		&kcov_shm->cmp_hyp_would_value_differs, __ATOMIC_RELAXED);
+	delta_hyp_would_value_differs =
+		cur_hyp_would_value_differs - prev_hyp_would_value_differs;
+	any_would_delta |= delta_hyp_would_value_differs;
+
+	if (any_would_delta != 0) {
+		stats_log_write("KCOV CMP hyp would-pick shadow stats over last %lds:\n",
+				elapsed);
+		for (k = 0; k < CMP_HYP_KIND_NR; k++) {
+			stats_log_write(
+				"  cmp_hyp_would[%-13s] pick +%lu (total %lu)  miss +%lu (total %lu)\n",
+				kind_labels[k],
+				cur_hyp_would_pick_kind[k] - prev_hyp_would_pick_kind[k],
+				cur_hyp_would_pick_kind[k],
+				cur_hyp_would_miss_kind[k] - prev_hyp_would_miss_kind[k],
+				cur_hyp_would_miss_kind[k]);
+		}
+		stats_log_write("  %-32s +%lu  (total %lu)\n",
+				"cmp_hyp_would_value_differs",
+				delta_hyp_would_value_differs,
+				cur_hyp_would_value_differs);
+	}
+
+	for (k = 0; k < CMP_HYP_KIND_NR; k++) {
+		prev_hyp_would_pick_kind[k] = cur_hyp_would_pick_kind[k];
+		prev_hyp_would_miss_kind[k] = cur_hyp_would_miss_kind[k];
+	}
+	prev_hyp_would_value_differs = cur_hyp_would_value_differs;
+}
+
+/*
+ * SHADOW would-promote / would-demote eval from
+ * cmp_hyp_credit_outcome().  Bumped per credit landing after the
+ * per-hyp outcome counter is updated: would_promote when any of
+ * (pc_wins, transition_wins, corpus_save_wins) is set, would_demote
+ * when misses >= 8 and none of the win counters are set.  Pure
+ * observation -- h->state stays CMP_HYP_STATE_OBSERVED.  Render
+ * gated on any-delta so the section stays quiet until credit sites
+ * start firing.
+ */
+static void kcov_cmp_render_hyp_would_promote_demote_block(long elapsed __unused__)
+{
+	static const char * const kind_labels[CMP_HYP_KIND_NR] = {
+		"exact", "range", "boundary", "bitmask",
+		"enum_family", "alignment", "length",
+		"foreign_value",
+	};
+	static unsigned long prev_hyp_would_promote_kind[CMP_HYP_KIND_NR];
+	static unsigned long prev_hyp_would_demote_kind[CMP_HYP_KIND_NR];
+	unsigned long cur_hyp_would_promote_kind[CMP_HYP_KIND_NR];
+	unsigned long cur_hyp_would_demote_kind[CMP_HYP_KIND_NR];
+	unsigned long any_delta = 0;
+	unsigned int k;
+
+	for (k = 0; k < CMP_HYP_KIND_NR; k++) {
+		cur_hyp_would_promote_kind[k] = __atomic_load_n(
+			&kcov_shm->cmp_hyp_would_promote_by_kind[k],
+			__ATOMIC_RELAXED);
+		cur_hyp_would_demote_kind[k] = __atomic_load_n(
+			&kcov_shm->cmp_hyp_would_demote_by_kind[k],
+			__ATOMIC_RELAXED);
+		any_delta |=
+			(cur_hyp_would_promote_kind[k] - prev_hyp_would_promote_kind[k]) |
+			(cur_hyp_would_demote_kind[k] - prev_hyp_would_demote_kind[k]);
+	}
+
+	if (any_delta != 0) {
+		stats_log_write("KCOV CMP hyp would-promote/demote shadow stats over last %lds:\n",
+				elapsed);
+		for (k = 0; k < CMP_HYP_KIND_NR; k++) {
+			stats_log_write(
+				"  cmp_hyp_would[%-13s] promote +%lu (total %lu)  demote +%lu (total %lu)\n",
+				kind_labels[k],
+				cur_hyp_would_promote_kind[k] - prev_hyp_would_promote_kind[k],
+				cur_hyp_would_promote_kind[k],
+				cur_hyp_would_demote_kind[k] - prev_hyp_would_demote_kind[k],
+				cur_hyp_would_demote_kind[k]);
+		}
+	}
+
+	for (k = 0; k < CMP_HYP_KIND_NR; k++) {
+		prev_hyp_would_promote_kind[k] = cur_hyp_would_promote_kind[k];
+		prev_hyp_would_demote_kind[k] = cur_hyp_would_demote_kind[k];
+	}
+}
+
+/*
  * Surface the KCOV CMP counters in the same 600s periodic stats-log-file
  * dump as defense_counters_periodic_dump.  Without this the cmp counters
  * are only visible from dump_stats() (run shutdown) and the JSON dump
@@ -2216,72 +2340,7 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 
 	kcov_cmp_render_hyp_shadow_stats_block(elapsed);
 
-	/*
-	 * SHADOW would-pick telemetry from cmp_hints_try_get_ex().  Bumped
-	 * per successful raw pool return after the typed hypothesis store
-	 * is walked through the EXACT > ENUM_FAMILY > BITMASK > RANGE
-	 * ladder for the same (cmp_ip, width).  Independent any-delta
-	 * gate: a SHADOW run with an empty typed store still bumps
-	 * would_miss on every pull, and that is exactly the signal worth
-	 * surfacing once the consumer demand picks up.
-	 */
-	{
-		static const char * const kind_labels[CMP_HYP_KIND_NR] = {
-			"exact", "range", "boundary", "bitmask",
-			"enum_family", "alignment", "length",
-			"foreign_value",
-		};
-		static unsigned long prev_hyp_would_pick_kind[CMP_HYP_KIND_NR];
-		static unsigned long prev_hyp_would_miss_kind[CMP_HYP_KIND_NR];
-		static unsigned long prev_hyp_would_value_differs;
-		unsigned long cur_hyp_would_pick_kind[CMP_HYP_KIND_NR];
-		unsigned long cur_hyp_would_miss_kind[CMP_HYP_KIND_NR];
-		unsigned long cur_hyp_would_value_differs;
-		unsigned long delta_hyp_would_value_differs;
-		unsigned long any_would_delta = 0;
-		unsigned int k;
-
-		for (k = 0; k < CMP_HYP_KIND_NR; k++) {
-			cur_hyp_would_pick_kind[k] = __atomic_load_n(
-				&kcov_shm->cmp_hyp_would_pick_by_kind[k],
-				__ATOMIC_RELAXED);
-			cur_hyp_would_miss_kind[k] = __atomic_load_n(
-				&kcov_shm->cmp_hyp_would_miss_by_kind[k],
-				__ATOMIC_RELAXED);
-			any_would_delta |=
-				(cur_hyp_would_pick_kind[k] - prev_hyp_would_pick_kind[k]) |
-				(cur_hyp_would_miss_kind[k] - prev_hyp_would_miss_kind[k]);
-		}
-		cur_hyp_would_value_differs = __atomic_load_n(
-			&kcov_shm->cmp_hyp_would_value_differs, __ATOMIC_RELAXED);
-		delta_hyp_would_value_differs =
-			cur_hyp_would_value_differs - prev_hyp_would_value_differs;
-		any_would_delta |= delta_hyp_would_value_differs;
-
-		if (any_would_delta != 0) {
-			stats_log_write("KCOV CMP hyp would-pick shadow stats over last %lds:\n",
-					elapsed);
-			for (k = 0; k < CMP_HYP_KIND_NR; k++) {
-				stats_log_write(
-					"  cmp_hyp_would[%-13s] pick +%lu (total %lu)  miss +%lu (total %lu)\n",
-					kind_labels[k],
-					cur_hyp_would_pick_kind[k] - prev_hyp_would_pick_kind[k],
-					cur_hyp_would_pick_kind[k],
-					cur_hyp_would_miss_kind[k] - prev_hyp_would_miss_kind[k],
-					cur_hyp_would_miss_kind[k]);
-			}
-			stats_log_write("  %-32s +%lu  (total %lu)\n",
-					"cmp_hyp_would_value_differs",
-					delta_hyp_would_value_differs,
-					cur_hyp_would_value_differs);
-		}
-
-		for (k = 0; k < CMP_HYP_KIND_NR; k++) {
-			prev_hyp_would_pick_kind[k] = cur_hyp_would_pick_kind[k];
-			prev_hyp_would_miss_kind[k] = cur_hyp_would_miss_kind[k];
-		}
-		prev_hyp_would_value_differs = cur_hyp_would_value_differs;
-	}
+	kcov_cmp_render_hyp_would_pick_block(elapsed);
 
 	/*
 	 * LIVE typed-hypothesis inject arm telemetry.  Fleet-level view of
@@ -2533,60 +2592,7 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 		prev_b_consumed = cur_b_consumed;
 	}
 
-	/*
-	 * SHADOW would-promote / would-demote eval from
-	 * cmp_hyp_credit_outcome().  Bumped per credit landing after the
-	 * per-hyp outcome counter is updated: would_promote when any of
-	 * (pc_wins, transition_wins, corpus_save_wins) is set, would_demote
-	 * when misses >= 8 and none of the win counters are set.  Pure
-	 * observation -- h->state stays CMP_HYP_STATE_OBSERVED.  Render
-	 * gated on any-delta so the section stays quiet until credit sites
-	 * start firing.
-	 */
-	{
-		static const char * const kind_labels[CMP_HYP_KIND_NR] = {
-			"exact", "range", "boundary", "bitmask",
-			"enum_family", "alignment", "length",
-			"foreign_value",
-		};
-		static unsigned long prev_hyp_would_promote_kind[CMP_HYP_KIND_NR];
-		static unsigned long prev_hyp_would_demote_kind[CMP_HYP_KIND_NR];
-		unsigned long cur_hyp_would_promote_kind[CMP_HYP_KIND_NR];
-		unsigned long cur_hyp_would_demote_kind[CMP_HYP_KIND_NR];
-		unsigned long any_delta = 0;
-		unsigned int k;
-
-		for (k = 0; k < CMP_HYP_KIND_NR; k++) {
-			cur_hyp_would_promote_kind[k] = __atomic_load_n(
-				&kcov_shm->cmp_hyp_would_promote_by_kind[k],
-				__ATOMIC_RELAXED);
-			cur_hyp_would_demote_kind[k] = __atomic_load_n(
-				&kcov_shm->cmp_hyp_would_demote_by_kind[k],
-				__ATOMIC_RELAXED);
-			any_delta |=
-				(cur_hyp_would_promote_kind[k] - prev_hyp_would_promote_kind[k]) |
-				(cur_hyp_would_demote_kind[k] - prev_hyp_would_demote_kind[k]);
-		}
-
-		if (any_delta != 0) {
-			stats_log_write("KCOV CMP hyp would-promote/demote shadow stats over last %lds:\n",
-					elapsed);
-			for (k = 0; k < CMP_HYP_KIND_NR; k++) {
-				stats_log_write(
-					"  cmp_hyp_would[%-13s] promote +%lu (total %lu)  demote +%lu (total %lu)\n",
-					kind_labels[k],
-					cur_hyp_would_promote_kind[k] - prev_hyp_would_promote_kind[k],
-					cur_hyp_would_promote_kind[k],
-					cur_hyp_would_demote_kind[k] - prev_hyp_would_demote_kind[k],
-					cur_hyp_would_demote_kind[k]);
-			}
-		}
-
-		for (k = 0; k < CMP_HYP_KIND_NR; k++) {
-			prev_hyp_would_promote_kind[k] = cur_hyp_would_promote_kind[k];
-			prev_hyp_would_demote_kind[k] = cur_hyp_would_demote_kind[k];
-		}
-	}
+	kcov_cmp_render_hyp_would_promote_demote_block(elapsed);
 
 	/*
 	 * SHADOW 8-band histogram of the per-hypothesis score_bucket value
