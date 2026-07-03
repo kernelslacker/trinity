@@ -1,83 +1,35 @@
 /*
  * bridge_fdb_stp - bridge fdb learn vs delete vs STP topology race.
  *
- * Random netlink fuzzing rarely assembles the full chain that the
- * software bridge needs to enter its learning + topology-change paths
- * simultaneously: a bridge dev must exist, at least one port must be
- * enslaved to it, the port must be UP and have BR_LEARNING armed,
- * traffic must arrive on the port (driving br_fdb_update via the
- * receive path rather than via RTM_NEWNEIGH NTF_MASTER), and the STP
- * state machine must be live so a topology-change can race with the
- * learning-driven fdb mutation.  Without all of those the
- * br_fdb_update / br_fdb_delete / br_stp_change_bridge_id windows
- * never co-fire and the lockdep / refcount edges between
- * net/bridge/br_fdb.c and net/bridge/br_stp_*.c stay cold.
+ * Flat netlink fuzzing rarely stands up the full chain the software
+ * bridge needs to co-fire learning + topology-change: a bridge dev,
+ * enslaved+UP ports with BR_LEARNING, rx-path traffic driving
+ * net/bridge/br_fdb.c:br_fdb_update (not RTM_NEWNEIGH NTF_MASTER,
+ * which bypasses the receive-path window), and a live STP state
+ * machine.  Bug class: br_fdb_delete_by_port lineage (UAF on port
+ * teardown racing br_fdb_update from rx softirq), STP topology-change
+ * timer races (br_stp_change_bridge_id vs port state transition).
  *
- * Sequence (per invocation):
- *   1. Enter a private net namespace via userns_run_in_ns(): a
- *      transient grandchild fork installs an identity user namespace
- *      plus a fresh CLONE_NEWNET, runs the body below, and _exit()s
- *      so the kernel reaps every bridge, veth pair, fdb entry,
- *      AF_PACKET socket and sysfs handle with the grandchild's
- *      netns.  The persistent fuzz child never touches its own
- *      credentials or namespace stack, so the cap-drop oracle keeps
- *      observing the host credential profile.  Helper -EPERM
- *      (hardened userns policy refused CLONE_NEWUSER) latches the
- *      childop off for the remainder of this child's lifetime;
- *      -EAGAIN (transient setup failure: fork, id-map write,
- *      secondary unshare) skips the iteration without latching.
- *   2. Bring lo up inside the grandchild's netns (one-time per
- *      grandchild).
- *   3. RTM_NEWLINK type=bridge to create a bridge dev.  Failure of
- *      this first NEWLINK latches ns_unsupported_bridge — a kernel
- *      without CONFIG_BRIDGE pays the EOPNOTSUPP once.
- *   4. RTM_NEWLINK type=veth twice, with VETH_INFO_PEER carrying the
- *      peer's IFLA_IFNAME so each pair has distinct peer names.
- *      Failure latches ns_unsupported_veth.
- *   5. RTM_SETLINK IFLA_MASTER=bridge_ifindex on each of the four
- *      veth ends to enslave them to the bridge.
- *   6. RTM_SETLINK IFF_UP for the bridge and all four veth ends
- *      (5 ifaces total).
- *   7. RTM_SETLINK family=AF_BRIDGE with IFLA_PROTINFO containing
- *      IFLA_BRPORT_LEARNING=1 on each veth port — arms BR_LEARNING.
- *   8. socket(AF_PACKET, SOCK_RAW); bind to one of the veth port
- *      ifindices.  sendto() 50 ethernet frames with random
- *      locally-administered unicast src MACs so each receive at the
- *      bridge port drives br_fdb_update with a fresh source.  This
- *      is the learning path we want — not RTM_NEWNEIGH NTF_MASTER,
- *      which calls br_fdb_add directly and skips the receive-path
- *      window.
- *   9. Toggle STP via /sys/class/net/<br>/bridge/stp_state — write
- *      "1" then "0".  open+write+close per toggle; EROFS / EACCES
- *      latches ns_unsupported_sysfs_stp.  STP toggle drives
- *      br_stp_start / br_stp_stop and the topology-change timer
- *      arm / disarm sequences.
- *  10. RTM_DELNEIGH on one of the just-learned fdb entries (using
- *      one of the random macs we sent), racing the receive-path
- *      learning that may re-add the same entry.  This is the
- *      learn-vs-delete window the op exists to open.
- *  11. RTM_DELLINK on the bridge — kernel cascades the cleanup to
- *      the enslaved veths via br_dev_delete, racing any in-flight
- *      receive from step 8 still draining through softirq.
+ * Per invocation, inside a private user+net namespace via
+ * userns_run_in_ns (grandchild _exit reaps the bridge/veths/fdb/
+ * netns): create a bridge, two veth pairs enslaved and UP with
+ * BR_LEARNING armed, AF_PACKET SOCK_RAW into one port sending frames
+ * with random unicast SMACs to drive br_fdb_update, toggle STP via
+ * /sys/class/net/<br>/bridge/stp_state, then race RTM_DELNEIGH on a
+ * just-learned entry and RTM_DELLINK on the bridge against the still-
+ * draining rx path.
  *
- * CVE class: br_fdb_delete_by_port lineage (use-after-free on enslaved
- * port teardown vs concurrent br_fdb_update from rx softirq), STP
- * topology-change timer races (br_stp_change_bridge_id vs port-state
- * transition), CVE-2024-26982 br_multicast hash teardown vs add (same
- * structural shape: per-port hash table mutation racing dellink-driven
- * cleanup).  Subsystems reached: net/bridge/br_fdb.c,
- * net/bridge/br_stp.c, net/bridge/br_stp_if.c, net/bridge/br_input.c,
- * net/bridge/br_if.c, net/core/dev.c (rx path), drivers/net/veth.c.
+ * Brick-safety: one create/destroy cycle per invocation inside the
+ * private netns; loopback only; packet burst BUDGETED+JITTER (base 3,
+ * 200 ms wall cap); MSG_DONTWAIT + SO_RCVTIMEO=1s so no I/O outlives
+ * child.c's SIGALRM(1s).
  *
- * Self-bounding: one full create/destroy cycle per invocation, packet
- * burst count BUDGETED+JITTER around base 3 with a STORM_BUDGET_NS
- * 200 ms wall-clock cap on the inner send loop.  All I/O is
- * MSG_DONTWAIT, SO_RCVTIMEO=1s on the rtnl ack socket, so an
- * unresponsive netlink can't wedge us past the SIGALRM(1s) cap
- * inherited from child.c.  Loopback only (private netns).  Three
- * latches so a kernel without CONFIG_BRIDGE / CONFIG_VETH / sysfs-
- * writable bridge knobs pays the EFAIL once and skips that part
- * permanently.
+ * Latches: userns -EPERM permanently gates the op off for this child;
+ * -EAGAIN skips without latching.  Per-feature latches
+ * (ns_unsupported_bridge / _veth / _sysfs_stp) fire on the first
+ * EOPNOTSUPP/EROFS/EACCES so a kernel without CONFIG_BRIDGE / veth /
+ * sysfs-writable knobs pays the failure once.  Header-gated by
+ * __has_include on <linux/if_bridge.h>/<linux/veth.h>.
  */
 
 #if __has_include(<linux/if_bridge.h>)
