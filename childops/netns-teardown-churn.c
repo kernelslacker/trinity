@@ -2,118 +2,52 @@
  * netns_teardown_churn - race net namespace teardown against in-flight
  * sockets, raw sockets, and an XFRM netlink socket.
  *
- * Net namespace destruction is the single most prolific generator of
- * late-2024 / 2025 networking use-after-frees in the Linux kernel.
- * Whenever the last user of a struct net drops its reference, the
- * cleanup_net workqueue walks the per-pernet ops registered by every
- * networking module (ipv4, ipv6, netfilter, xfrm, conntrack, sctp,
- * tipc, mptcp, tcp_metrics, netrom, nf_tables, unix gc, ...) and runs
- * their ->exit / ->exit_batch hooks in a defined order.  Any module
- * whose pernet hook drops a reference to an object that another
- * still-running thread is mid-walk through is a candidate for the
- * race.  The bug-class spans:
+ * cleanup_net walks every module's ->exit / ->exit_batch pernet hooks in
+ * order when the last struct net ref drops.  Any hook that releases an
+ * object another thread is mid-walk through is a UAF candidate -- the most
+ * prolific late-2024 / 2025 networking UAF bug class.  Anchors:
+ * CVE-2024-26865 (unix_gc vs SCM_RIGHTS in flight), CVE-2024-26851 (netfilter
+ * pernet exit dropping nft refs early), CVE-2023-32269 (netrom pernet destroy
+ * leaving sock with stale net), CVE-2024-1085 (nft pernet exit vs
+ * nft_del_chain), CVE-2025-21684 (tcp_metrics pernet exit vs concurrent
+ * metrics).
  *
- *   - CVE-2024-26865 unix_gc namespace teardown vs SCM_RIGHTS in flight
- *   - CVE-2024-26851 netfilter pernet exit dropping nft refs early
- *   - CVE-2023-32269 netrom pernet destroy leaving sock with stale net
- *   - CVE-2024-1085  nft pernet exit racing nft_del_chain
- *   - CVE-2025-21684 tcp_metrics pernet exit vs concurrent metrics
+ * Per invocation runs inside a userns_run_in_ns grandchild (identity userns
+ * + CLONE_NEWNET, _exit reaps).  BUDGETED outer loop body:
+ *   a. save anchor nsfd = open("/proc/self/ns/net", O_RDONLY);
+ *   b. unshare(CLONE_NEWNET) -- grandchild enters a nested doomed ns;
+ *   c. rtnl best-effort lo up + 127.0.0.1;
+ *   d/e. establish a loopback SOCK_STREAM pair (listen + connect + accept
+ *        so the pair is truly bidirectional);
+ *   f. fork() an in-ns great-grandchild.  Great-grandchild closes the
+ *      anchor, opens AF_INET/SOCK_RAW/IPPROTO_ICMP (exercises raw pernet
+ *      exit) and NETLINK_XFRM (exercises xfrm4/xfrm6 pernet exit), then
+ *      tight send/recv on the pair (BUDGETED+JITTER, 200 ms wall) until
+ *      SIGKILL.  Grandchild setns(anchor, CLONE_NEWNET) back out, closes
+ *      its own pair copies (so only the great-grandchild holds
+ *      doomed-net refs), brief jitter usleep, kill(SIGKILL) + waitpid.
+ * Doing the unshare+setns dance with full caps inside the grandchild's
+ * userns means cap-dropped persistent children stop silently EPERM'ing
+ * out of the race entirely.
  *
- * Sequence (per invocation):
+ * Brick-safety: everything runs inside the private user+net ns; doomed ns
+ * is reaped by cleanup_net within a few jiffies of the SIGKILL; no
+ * persistent state; raw + xfrm netlink are best-effort (failure benign).
+ * fork() failure latches off + returns clean.  Benign coverage: rtnl
+ * bring-up failure (sends return EHOSTUNREACH but the teardown still
+ * races); send/recv EAGAIN/EPIPE (teardown already started); raw EPERM
+ * (variant skipped for that iter); waitpid EINTR (retried).
  *
- *   1.  Enter a private user + net namespace via userns_run_in_ns(): a
- *       transient grandchild fork installs an identity user namespace
- *       plus a fresh CLONE_NEWNET, runs the BUDGETED outer loop body
- *       below, and _exit()s.  The persistent fuzz child never touches
- *       its own credentials or namespace stack, so the cap-drop oracle
- *       keeps observing the host credential profile.  The
- *       unshare(CLONE_NEWNET) and setns(anchor) dance the per-iter
- *       body performs against the grandchild's starting netns now runs
- *       with full caps inside the grandchild's user namespace, so
- *       cap-dropped persistent children no longer silently EPERM out
- *       of the race entirely.  Helper -EPERM (hardened userns policy
- *       refused CLONE_NEWUSER: user.max_user_namespaces=0 or
- *       kernel.unprivileged_userns_clone=0) latches the childop off
- *       for the remainder of this child's lifetime; -EAGAIN (transient
- *       setup failure: fork, id-map write, secondary CLONE_NEWNET
- *       unshare) skips the invocation without latching.
+ * Cap-gate latch: ns_unsupported_netns_teardown on userns_run_in_ns()
+ * -EPERM in the persistent child; subsequent invocations bump
+ * setup_failed and return.  The grandchild's setns-back failure path
+ * writes CHILDOP_LATCH_NS_UNSUPPORTED to shm as a debug signal (the
+ * grandchild's COW copy of the master bool dies with _exit, but
+ * latch_reason is process-shared).
  *
- * Inner BUDGETED outer loop (per outer iteration), running inside the
- * grandchild's userns + netns:
- *
- *   a.  Save anchor net namespace via open("/proc/self/ns/net", O_RDONLY)
- *       — captures the grandchild's starting netns (the one
- *       userns_run_in_ns supplied).
- *   b.  unshare(CLONE_NEWNET) — grandchild enters a nested doomed ns.
- *   c.  rtnetlink: bring lo up + assign 127.0.0.1 (best-effort; the
- *       send/recv burst still exercises pernet hooks even without
- *       a routable loopback because the sockets bind 127.0.0.1
- *       which the kernel always recognises in the v4 zero-config path).
- *   d.  s_listen = socket(AF_INET, SOCK_STREAM); bind 127.0.0.1:0;
- *       listen(); s_conn = socket(AF_INET, SOCK_STREAM); connect to
- *       s_listen's port — loopback completes the 3-way handshake on
- *       the listen queue without an accept().
- *   e.  s_accept = accept(s_listen) — pulls the connection off the
- *       queue so the in-ns great-grandchild has a true bidirectional
- *       pair.
- *   f.  fork() the in-ns great-grandchild.
- *       Great-grandchild:
- *         - close anchor nsfd (stays in doomed ns).
- *         - opens AF_INET/SOCK_RAW/IPPROTO_ICMP — exercises raw
- *           pernet exit hook on the doomed net.
- *         - opens AF_NETLINK/NETLINK_XFRM if the build supports it
- *           — exercises xfrm6/xfrm4 pernet exit hooks.
- *         - tight send/recv loop on (s_conn ↔ s_accept), BUDGETED
- *           with JITTER and a 200ms wall-clock cap.
- *         - keeps every fd open until SIGKILL.
- *       Grandchild (parent of great-grandchild):
- *         - setns(nsfd, CLONE_NEWNET) — leaves the doomed ns.
- *         - close its own copies of s_listen / s_conn / s_accept
- *           so only the in-ns great-grandchild holds doomed-net refs.
- *         - brief usleep jitter so cleanup_net may or may not have
- *           already started.
- *         - kill(great-grandchild, SIGKILL) — last user of doomed ns
- *           dies.
- *         - waitpid(great-grandchild).
- *   g.  close anchor nsfd.
- *
- * When the BUDGETED outer loop completes, the grandchild _exit()s and
- * the kernel reaps its starting netns (no callers left) along with the
- * grandchild's user namespace.
- *
- * Brick-safety: every operation runs inside a private user+net ns the
- * helper just installed — no host-visible mutation possible.  The
- * doomed ns is cleaned up by the kernel within a few jiffies of the
- * SIGKILL via cleanup_net.  No persistent state left behind.  The raw
- * socket and xfrm netlink socket are best-effort; failure is benign.
- *
- * Cap-gate latch: ns_unsupported_netns_teardown is set in the
- * persistent fuzz child when userns_run_in_ns() returns -EPERM (the
- * kernel refused unshare(CLONE_NEWUSER) under hardened policy).  Once
- * latched, every subsequent invocation just bumps setup_failed and
- * returns — same shape as the bridge_vlan_churn / genetlink_fuzzer
- * userns-adoption latches.  The CHILDOP_LATCH_NS_UNSUPPORTED write
- * inside the grandchild's setns-back failure path is preserved as a
- * debug signal in shm (latch_reason is process-shared) even though
- * the grandchild's COW copy of the master bool dies with _exit().
- *
- * Bound costs:
- *   - Outer loop: BUDGETED with base NETNS_TD_OUTER_BASE and
- *     cap NETNS_TD_OUTER_CAP, JITTER ±50%.
- *   - Inner send/recv: BUDGETED with base NETNS_TD_INNER_BASE
- *     and cap NETNS_TD_INNER_CAP, plus a 200ms wall-clock cap
- *     enforced via clock_gettime(CLOCK_MONOTONIC).
- *   - fork() failure: latch off + return clean.
- *
- * Failure modes treated as benign coverage:
- *   - rtnl bring-up failure: the send/recv path may sendto a socket
- *     bound to 127.0.0.1 with the loopback link still down; sends
- *     return EHOSTUNREACH but the pernet teardown still races.
- *   - send/recv EAGAIN/EPIPE: the racing teardown may have already
- *     started; we just stop pumping and let the kernel finish.
- *   - raw socket EPERM: unprivileged execution; raw socket variant
- *     is skipped that iteration.
- *   - waitpid EINTR: retried until WIFEXITED or WIFSIGNALED.
+ * Bounds: outer BUDGETED base NETNS_TD_OUTER_BASE / cap NETNS_TD_OUTER_CAP,
+ * JITTER +/-50%.  Inner send/recv BUDGETED base NETNS_TD_INNER_BASE / cap
+ * NETNS_TD_INNER_CAP + 200 ms CLOCK_MONOTONIC wall cap.
  */
 
 #include <errno.h>
