@@ -1,111 +1,41 @@
 /*
- * handshake_req_abort - net/handshake request/abort race over kTLS plumbing.
+ * handshake_req_abort - net/handshake request/abort race over kTLS
+ * plumbing (kernel 6.5+ genl family for tlshd-class daemons).
  *
- * The handshake genetlink family (Linux 6.5+) is the userspace bridge
- * for kernel-initiated TLS/QUIC handshakes: tlshd-class daemons pull
- * pending requests via HANDSHAKE_CMD_ACCEPT and report completion via
- * HANDSHAKE_CMD_DONE.  The bug class clustered here is the async-
- * request-broker UAF: handshake_req_alloc()/handshake_req_submit() pin
- * a struct handshake_req on the kernel-side socket, and the request
- * lifetime hinges on a delicate dance between handshake_req_next()
- * (the ACCEPT path), handshake_complete() (the DONE path), and
- * handshake_req_cancel() (the orphan-on-close path in
- * net/handshake/request.c).  Two userspace daemons racing ACCEPT, two
- * DONE messages racing each other for the same sockfd, or a close()
- * landing while DONE is still mid-walk all aim straight at
- * __sock_handshake_req_destroy() with stale or doubly-released refs —
- * the same architectural smell that produced the unaccepted-request
- * UAF family in similar async brokers (CVE-class for net/handshake is
- * not yet on file, but the request-broker shape mirrors prior async
- * netlink-broker UAFs).
+ * Target: net/handshake/request.c -- handshake_req_next (ACCEPT),
+ * handshake_complete (DONE), handshake_req_cancel (orphan-on-close),
+ * __sock_handshake_req_destroy.  Bug class: async-request-broker UAF
+ * -- two daemons racing ACCEPT, two DONE messages on the same sockfd,
+ * or a close() landing while DONE is mid-walk, all aim at
+ * __sock_handshake_req_destroy with stale or doubly-released refs
+ * (mirrors prior async netlink-broker UAF families).  Kernel side is
+ * reachable only via tlshd + a socket whose owner called the in-kernel
+ * tls_client_hello_*() API; flat syscall fuzzing assembles neither.
+ * We drive the genl front door directly -- ACCEPT/DONE lookup walks
+ * the per-net request table under net->hs_lock end-to-end even without
+ * a live in-kernel submitter, exercising the doubly-completed /
+ * completed-after-cancel slots.
  *
- * net/handshake itself has been essentially unfuzzed: the kernel side
- * is reachable only through tlshd-style userspace + a socket whose
- * owner has called the in-kernel tls_client_hello_*() API, and flat
- * per-syscall fuzzing never assembles either.  We don't have the in-
- * kernel API surface from userspace, but we can still drive the genl
- * front door directly: ACCEPT/DONE messages are validated and looked
- * up through the same per-net request table that the in-kernel
- * submitter populates.  Even with no live request to match, the
- * kernel walks the table under net->hs_lock and the lookup-by-sockfd
- * path runs end-to-end — exactly the slot that mishandles the
- * doubly-completed / completed-after-cancel cases.
+ * Per invocation: resolve the "handshake" genl family (CTRL_CMD_
+ * GETFAMILY); AF_INET/SOCK_STREAM connect to a closed loopback port
+ * (ECONNREFUSED fine -- we just need a sockfd for HANDSHAKE_A_DONE_
+ * SOCKFD); non-blocking HANDSHAKE_CMD_ACCEPT probe with HANDLER_CLASS
+ * =TLSHD (kernel returns -EAGAIN; lookup path ran); BUDGETED loop of
+ * HANDSHAKE_CMD_DONE STATUS=0 followed by a second DONE with STATUS!=0
+ * (the kernel's idiomatic abort) on the same sockfd -- races the
+ * prior DONE's request-destroy; then close(socket) driving
+ * __sock_handshake_req_destroy via handshake_sk_destruct.  READY is
+ * intentionally never issued (it would confuse a real tlshd).
  *
- * Sequence (per invocation):
- *   1.  Open a NETLINK_GENERIC socket and resolve the "handshake"
- *       family id via the shared genl_open() helper, which issues a
- *       single-family CTRL_CMD_GETFAMILY unicast.  -ENOENT latches
- *       ns_unsupported_handshake for the rest of this child's lifetime.
- *   2.  socket(AF_INET, SOCK_STREAM); connect to a closed loopback
- *       port — best-effort, ECONNREFUSED is fine.  We need a sockfd
- *       to feed into HANDSHAKE_A_DONE_SOCKFD; whether or not the
- *       three-way handshake completed doesn't matter to the genl
- *       request table walker on the receive side.
- *   3.  HANDSHAKE_CMD_ACCEPT non-blocking probe with HANDLER_CLASS=
- *       TLSHD.  Kernel returns -EAGAIN when no request is pending —
- *       benign coverage of the request-table walk under the per-net
- *       lock.  Counted as accept_ok regardless of ack errno because
- *       the lookup path ran.
- *   4.  BUDGETED loop:
- *         a) HANDSHAKE_CMD_DONE with HANDSHAKE_A_DONE_STATUS=0 and
- *            HANDSHAKE_A_DONE_SOCKFD=our connected socket.  Kernel
- *            walks the per-net request table looking for a request
- *            keyed on this sockfd; with no live request it returns
- *            -ENOENT, but the lookup runs end-to-end — exactly the
- *            slot that mishandles a request freed by a prior DONE.
- *            done_ok bumped on ack 0 (which only fires on hosts with
- *            a live in-kernel handshake request, very rare).
- *         b) Race window: a second HANDSHAKE_CMD_DONE on the same
- *            sockfd with non-zero status — the "abort" shape (DONE
- *            with status != 0 is the kernel's idiomatic abort, see
- *            handshake_complete() in net/handshake/request.c).  The
- *            kernel-side handler races the prior DONE's request-
- *            destroy if both happen to find the same struct
- *            handshake_req — the targeted UAF window.  Counted as
- *            abort_ok regardless of ack errno because the lookup +
- *            (potential) destroy path ran.
- *   5.  close(socket) while requests are notionally outstanding —
- *       drives __sock_handshake_req_destroy() through the
- *       handshake_sk_destruct() callback if the kernel had ever bound
- *       a request to this sock.  orphan_close bumped per close.
+ * Brick-safety: genl + socket-syscall only, no modules/sysfs/persistent
+ * state; loopback only; sockets non-blocking; genl requests carry
+ * SO_RCVTIMEO so an unresponsive controller stays inside child.c's
+ * SIGALRM(1s).
  *
- * Self-bounding: one full cycle per invocation, all sockets non-
- * blocking, loopback only, all genl requests timestamped with
- * SO_RCVTIMEO so an unresponsive controller can't pin past child.c's
- * SIGALRM(1s).  Per-invocation iteration budget is small (defaults to
- * a few cycles, jittered ±50%, scaled by adapt_budget) — every iter
- * emits a small handful of genl messages and one or two syscalls.
- *
- * Brick risk: kernel-side genl + socket-syscall only.  No module
- * load, no sysfs writes, no persistent state outside per-process
- * socket fds.  net/handshake doesn't expose any kernel-state-altering
- * commands beyond per-request lookup; READY isn't issued from this
- * childop (READY is a multicast-ack from the daemon side and would
- * confuse a real tlshd if one were running on the host).
- *
- * Cap-gate latch behaviour: genl_open("handshake", ...) issues one
- * CTRL_CMD_GETFAMILY per invocation.  -ENOENT (CONFIG_NET_HANDSHAKE=n,
- * or the family hasn't been registered on this kernel) latches
- * ns_unsupported_handshake; every further invocation short-circuits
- * via the latch and returns without re-opening a netlink socket.
- * EAGAIN/ENOENT acks from the kernel are benign coverage signals,
- * not failures.
- *
- * Header gating: <linux/handshake.h> is the YNL-generated UAPI header
- * that ships from kernel 6.5 onward.  Older sysroots without it fall
- * to a stub that bumps runs+setup_failed and returns — same shape as
- * mptcp-pm-churn's __has_include fallback.
- *
- * Failure modes treated as benign coverage:
- *   - genl_open("handshake", ...) returns -ENOENT: kernel doesn't
- *     expose the handshake family.  Latched ns_unsupported_handshake.
- *   - EAGAIN on ACCEPT: no pending request — the ordinary case
- *     without an in-kernel submitter.  Lookup path ran.
- *   - ENOENT on DONE: no request matches the sockfd — the ordinary
- *     case.  Lookup path ran.
- *   - EPERM on any genl op: trinity wasn't run with the right caps
- *     in this netns.  The lookup path still ran on the genl front
- *     door.
+ * Latch: ns_unsupported_handshake fires on CTRL_CMD_GETFAMILY
+ * -ENOENT (CONFIG_NET_HANDSHAKE absent).  Header-gated by
+ * __has_include on <linux/handshake.h> (YNL-generated UAPI, 6.5+);
+ * older sysroots fall to a stub that bumps runs+setup_failed.
  */
 
 #include <errno.h>
