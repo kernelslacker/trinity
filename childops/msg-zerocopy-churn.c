@@ -1,115 +1,46 @@
 /*
- * msg_zerocopy_churn - rotate a TCP socket through MSG_ZEROCOPY
- * sendmsg + error-queue completion-notification drain + mid-flight
- * page munmap, exercising the net/ipv4/tcp.c MSG_ZEROCOPY path,
- * net/core/skbuff.c skb_zcopy_* refcounting, and the
- * sock_zerocopy_alloc / __skb_complete_tx_timestamp completion plumbing
- * in net/core/sock.c.
+ * msg_zerocopy_churn - rotate a TCP socket through MSG_ZEROCOPY sendmsg +
+ * error-queue notif drain + mid-flight page munmap.  Targets the
+ * net/ipv4/tcp.c MSG_ZEROCOPY path, net/core/skbuff.c skb_zcopy_*
+ * refcounting, and sock_zerocopy_alloc / __skb_complete_tx_timestamp
+ * completion plumbing.
  *
- * The MSG_ZEROCOPY contract pins user pages onto skb frags and queues
- * a completion notification on the socket error queue once the kernel
- * is done with them (skb destructor fires sock_zerocopy_callback ->
- * skb_complete_tx_timestamp -> sock_queue_err_skb).  The bug class is:
- * the user-visible "I'm done with this notification" signal (recvmsg
- * MSG_ERRQUEUE) and the kernel-internal "I'm done with this page"
- * signal can race against:
+ * Bug class: the user-visible MSG_ERRQUEUE "notif done" signal and the
+ * kernel-internal "page done" signal racing against munmap while a TX skb
+ * still pins the pages (vm_area teardown vs skb-side put_page); a follow-up
+ * MSG_ZEROCOPY send at legal-address / illegal-mapping arithmetic (ubuf_info
+ * install then get_user_pages EFAULT -- the rollback has to undo the
+ * just-installed sk->sk_zckey/uarg); SO_ZEROCOPY=0 toggled while notifs are
+ * pending; shutdown draining post-notif.  CVE anchors: CVE-2023-1281 (tcf
+ * notif refct race), CVE-2024-26602 (zerocopy_fill_skb_from_iter underflow),
+ * CVE-2024-35862 (skb_zerocopy_iter_stream missed bounds when iov shrank
+ * -- munmap-mid-flight is the userspace shape).
  *
- *   - munmap() of the backing range while a TX skb still pins the
- *     pages (page-pinning vs vm_area_struct teardown);
- *   - a follow-up send(MSG_ZEROCOPY) at the same address arithmetic
- *     after the mapping is gone (illegal mapping but legal address;
- *     get_user_pages returns -EFAULT, but the path between
- *     tcp_sendmsg_locked's MSG_ZEROCOPY init and the EFAULT bail
- *     touches the new ubuf_info before the rollback);
- *   - setsockopt(SO_ZEROCOPY, 0) toggled mid-flight while completion
- *     notifications are still queued (the per-sock zerocopy state
- *     machine has historically tripped on the toggle-while-pending
- *     edge);
- *   - tcp_disconnect / shutdown firing while the error queue still
- *     holds notifications (sk_error_queue purge ordering).
+ * Per iteration (BUDGETED+JITTER, 200 ms wall cap): fresh TCP socket to a
+ * one-shot accept-and-exit acceptor on 127.0.0.1, SO_ZEROCOPY=1,
+ * SO_RCV/SNDTIMEO=100ms; mmap MAP_POPULATE|ANON|PRIVATE ~256 KiB (pages
+ * physically present so the first send doesn't just demand-fault); inner
+ * ZC-send loop (BUDGETED 4 / floor 8 / cap 16) sends MSG_ZEROCOPY |
+ * MSG_DONTWAIT | MSG_NOSIGNAL, each enqueuing an SO_EE_ORIGIN_ZEROCOPY
+ * notif; recvmsg MSG_ERRQUEUE drains + validates sock_extended_err shape;
+ * munmap the range (THE RACE); re-send at the now-unmapped address (the
+ * EFAULT-rollback edge); SO_ZEROCOPY=0 while notifs may still be pending;
+ * shutdown/close.
  *
- * CVE class anchors:
+ * Brick-safety: every mutation on a fresh loopback TCP socket + one-shot
+ * acceptor (nothing host-visible); bounded EAGAIN/EBUSY/ENOMEM retry (<=8)
+ * so a persistently-blocked send never spins; acceptor WNOHANG-reaped then
+ * SIGTERM if it overstays; the post-munmap re-send uses the saved address
+ * but the kernel get_user_pages returns EFAULT before host state mutates
+ * -- trinity itself never dereferences the unmapped range.
  *
- *   CVE-2023-1281  net/sched: tcf_zcopy notif refcount race -- a
- *                  sibling of the MSG_ZEROCOPY notif rotation pattern
- *                  where the notif skb was double-freed when the
- *                  refcount transitioned to zero on two CPUs at once.
- *   CVE-2024-26602 net/core: zerocopy_fill_skb_from_iter underflow on
- *                  a partial copy after a previous frag's pages were
- *                  released; same code path entered via
- *                  tcp_sendmsg_locked's MSG_ZEROCOPY branch.
- *   CVE-2024-35862 net/core: skb_zerocopy_iter_stream missed an iov
- *                  bounds check when the source iov shrank between
- *                  init and copy (the munmap-mid-flight pattern this
- *                  childop drives is the user-space shape of that
- *                  race).
- *   broader MSG_ZEROCOPY retransmit-vs-completion family: every
- *   notification that lands on the error queue post-shutdown has had
- *   at least one refcount-balance bug in its history.
- *
- * Per outer-loop iteration (BUDGETED + JITTER, 200 ms wall-clock cap):
- *
- *   1.  socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC); SO_ZEROCOPY=1;
- *       SO_RCVTIMEO=100ms; SO_SNDTIMEO=100ms.
- *   2.  one-shot accept-and-exit acceptor on 127.0.0.1; client
- *       connect() drives the 3-way handshake to ESTABLISHED.
- *   3.  mmap(MAP_POPULATE|MAP_ANONYMOUS|MAP_PRIVATE, ~256 KiB) -- the
- *       backing pages.  MAP_POPULATE so the pages are physically
- *       present before the kernel tries to pin them (otherwise the
- *       first send merely demand-faults and the race we want never
- *       starts).
- *   4.  Inner ZC-send loop (BUDGETED 4 / floor 8 / cap 16, JITTER):
- *       send(pages, MSG_ZEROCOPY | MSG_DONTWAIT | MSG_NOSIGNAL).
- *       Each successful send enqueues a SO_EE_ORIGIN_ZEROCOPY
- *       completion notification on the sk_error_queue.
- *   5.  recvmsg(s, MSG_ERRQUEUE | MSG_DONTWAIT) -- drain notifs.
- *       Validate sock_extended_err shape (ee_origin ==
- *       SO_EE_ORIGIN_ZEROCOPY when present); count drained vs empty
- *       so the sweep tells us whether the kernel actually reached the
- *       completion path on this kernel/config.
- *   6.  munmap(pages) -- THE RACE.  Pages freed while the kernel
- *       skb chain may still pin them.  On a working kernel the skb
- *       holds a page reference so the unmap is decoupled from the
- *       eventual sock_zerocopy_callback; the bug surface is the
- *       ordering window between vm_area_struct teardown and the
- *       skb-side put_page.
- *   7.  send(pages_addr, MSG_ZEROCOPY) AGAIN on the now-unmapped
- *       range -- legal address arithmetic, illegal mapping.  Tests
- *       the EFAULT bail in tcp_sendmsg_locked's MSG_ZEROCOPY init:
- *       ubuf_info is allocated then the get_user_pages fails, so the
- *       rollback path has to undo the just-installed
- *       sk->sk_zckey/uarg state.  Counter bumps on the EFAULT we
- *       expect (the bug is a non-EFAULT return or a refcount leak).
- *   8.  setsockopt(SO_ZEROCOPY, 0) mid-flight -- toggle off while
- *       completion notifs may still be pending on the error queue.
- *       The disable-with-pending-notifs edge is small but historically
- *       buggy (sk_zckey reset paths).
- *   9.  shutdown(SHUT_RDWR); close().
- *
- * Per-process cap-gate latch: ns_unsupported_msg_zerocopy fires on
- * EOPNOTSUPP / EPERM / ENOTSUPP from the very first
- * setsockopt(SO_ZEROCOPY, 1) install attempt.  Once latched, every
- * subsequent invocation just bumps runs+setup_failed and returns.
- * Mirrors tls_ulp_churn / netns_teardown_churn / handshake_req_abort /
- * tcp_ulp_swap_churn.
- *
- * Brick-safety:
- *   - Every mutation runs on a fresh loopback TCP socket connected to
- *     a one-shot accept-and-exit fork.  Nothing host-visible.
- *   - Inner ZC-send loop is BUDGETED (base 4 / floor 8 / cap 16) with
- *     JITTER and a 200 ms wall-clock cap; SO_RCVTIMEO of 100 ms on
- *     every fd; a bounded EAGAIN/EBUSY/ENOMEM retry loop (<= 8) so a
- *     persistently-blocked send never spins.
- *   - Acceptor child is reaped via WNOHANG-poll then SIGTERM if it
- *     overstays.
- *   - The post-munmap re-send uses the saved address but the kernel
- *     get_user_pages returns -EFAULT before any host-visible state
- *     mutates; trinity itself never dereferences the unmapped range.
+ * Per-process cap-gate latch: ns_unsupported_msg_zerocopy on EOPNOTSUPP /
+ * EPERM / ENOTSUPP from the first SO_ZEROCOPY=1 install; subsequent
+ * invocations bump runs+setup_failed and return.
  *
  * Header gate: SO_EE_ORIGIN_ZEROCOPY lives in <linux/errqueue.h>; the
- * UAPI value (5) is stable across every kernel that ships
- * MSG_ZEROCOPY, fall back to it if the toolchain hasn't surfaced the
- * symbol.  MSG_ZEROCOPY / SO_ZEROCOPY already come from compat.h.
+ * stable UAPI value (5) is the #define fallback.  MSG_ZEROCOPY /
+ * SO_ZEROCOPY come from compat.h.
  */
 
 #include <errno.h>
