@@ -1,98 +1,39 @@
 /*
  * afxdp_churn - AF_XDP UMEM + ring + XSKMAP + XDP redirect-prog churn.
  *
- * Random isolated syscall fuzzing essentially never assembles a working
- * AF_XDP socket because the family is the most step-heavy in the kernel:
- * a UMEM region, four rings (RX / TX / FILL / COMPLETION), an XDP program,
- * an XSKMAP entry, and a bind() are ALL required before a single packet
- * can flow.  This childop drives the full sequence per outer iteration so
- * the AF_XDP code in net/xdp/{xsk,xsk_buff_pool,xsk_queue}.c, net/core/xdp.c
- * and kernel/bpf/{devmap,cpumap,xskmap}.c gets exercised end-to-end and the
- * known historical bug classes get a race window opened against a live
- * bound socket:
+ * AF_XDP is the most step-heavy family in the kernel: UMEM + four
+ * rings (RX/TX/FILL/COMPLETION) + XDP program + XSKMAP entry + bind()
+ * all required before a packet flows, so random-syscall fuzzing never
+ * assembles a working socket.  Target functions: net/xdp/xsk*.c,
+ * net/core/xdp.c:xdp_do_redirect, kernel/bpf/xskmap.c.  Bug class:
+ * xsk_setsockopt UAF on duplicate XDP_*_RING, xsk_buff_pool refcount
+ * imbalance on bind/unbind churn, xskmap update vs xsk close, and the
+ * xdp_do_redirect map-UAF when the bound XSKMAP entry is deleted mid-
+ * walk.
  *
- *   - CVE-2022-3625 xsk_setsockopt UAF on duplicate XDP_*_RING setsockopt;
- *   - CVE-2023-39197 xsk_buff_pool refcount imbalance on bind/unbind churn;
- *   - CVE-2024-26800 xskmap update racing the xsk fd close path;
- *   - CVE-2024-50115 xdp_do_redirect map UAF when the bound XSKMAP entry
- *     is deleted while xdp_do_redirect is mid-walk.
+ * Per outer iteration (BUDGETED+JITTER, base 5 / floor 16 / cap 64,
+ * 200 ms wall cap): stand up an AF_XDP socket with UMEM (64 KiB / 16
+ * chunks) and all four rings, create an XSKMAP, BPF_PROG_LOAD the
+ * minimal redirect-map program (returns XDP_REDIRECT), bind to lo
+ * qid=0 with XDP_USE_NEED_WAKEUP, attach the XDP program (BPF_LINK_
+ * CREATE preferred, RTM_NEWLINK IFLA_XDP with XDP_FLAGS_SKB_MODE as
+ * fallback -- SKB mode is mandatory on lo), TX one packet, then race
+ * MAP_DELETE_ELEM on the bound key against the live redirect walker
+ * and munmap a ring while still bound.
  *
- * Per outer iteration (BUDGETED + JITTER, base 5 / floor 16 / cap 64,
- * 200 ms wall-clock cap):
+ * Brick-safety: lo only, no external NICs; qid=0 (XDP_COPY implicit --
+ * no zero-copy on lo).  Attach lifetime is bounded by the link fd
+ * (auto-detaches on teardown / child crash) and the 200 ms wall cap
+ * bounds any localhost disruption.  UMEM/ring memory is per-iter
+ * MAP_PRIVATE|MAP_ANONYMOUS.  setsockopt/sendto are non-blocking with
+ * <= 8 EAGAIN/EBUSY retries.
  *
- *   1.  socket(AF_XDP, SOCK_RAW).  EAFNOSUPPORT / EPROTONOSUPPORT / EPERM
- *       latches ns_unsupported_afxdp for the rest of the child's life.
- *   2.  Allocate a 64 KiB anonymous mmap as the UMEM region (16 chunks of
- *       4 KiB each), setsockopt XDP_UMEM_REG with chunk_size=4096.
- *   3.  setsockopt XDP_RX_RING / XDP_TX_RING / XDP_UMEM_FILL_RING /
- *       XDP_UMEM_COMPLETION_RING with 64 entries each.
- *   4.  setsockopt XDP_MMAP_OFFSETS to harvest per-ring producer/consumer
- *       offsets, then mmap each ring at its documented pgoff.
- *   5.  bpf(BPF_MAP_CREATE, BPF_MAP_TYPE_XSKMAP, max_entries=1).
- *   6.  bpf(BPF_PROG_LOAD, BPF_PROG_TYPE_XDP) loading the minimal 8-insn
- *       XDP program:  r2=0; r3=0; r1 = MAP_FD; call bpf_redirect_map;
- *       r0 = XDP_REDIRECT (3); exit.  XDP_REDIRECT result is what tells
- *       the core xdp_do_redirect() path to walk the XSKMAP entry, which
- *       is the historical UAF surface.
- *   7.  bpf(BPF_MAP_UPDATE_ELEM) installing the xsk_fd at xskmap key 0.
- *       This is the moment xsk_map_update_elem() looks up the xsk's
- *       socket and increments the xsk_buff_pool refcount.
- *   8.  bind(XDP_USE_NEED_WAKEUP, ifindex=lo, qid=0).  Lights up the
- *       per-socket xsk_buff_pool and arms the rings.
- *   9.  Attach the loaded XDP program to lo so xdp_do_redirect() actually
- *       runs against ingress packets.  bpf(BPF_LINK_CREATE, BPF_XDP) is
- *       tried first (auto-detach on link fd close, no separate detach
- *       syscall needed).  On older kernels without LINK_CREATE for XDP,
- *       or when another iter_one already won the lo slot, fall back to
- *       RTM_NEWLINK with a nested IFLA_XDP { IFLA_XDP_FD, IFLA_XDP_FLAGS
- *       = XDP_FLAGS_SKB_MODE } -- SKB mode is mandatory on lo (no
- *       native-XDP path).  Without this attach, no redirect-side walker
- *       runs and step 12's race window stays cold.
- *  10.  Inject a 1-byte packet via the TX ring (UMEM offset 0) and kick
- *       via sendto(MSG_DONTWAIT) so xsk_sendmsg drives a TX descriptor
- *       through the pool.
- *  11.  setsockopt XDP_STATISTICS read while RX is armed (the stats path
- *       walks per-ring counters while the bound rings could race it).
- *  12.  RACE A: bpf(BPF_MAP_DELETE_ELEM) on the bound XSKMAP key while
- *       the attached XDP program is live on lo.  This is CVE-2024-50115's
- *       surface: the redirect-side walker holds an RCU-protected map
- *       pointer that the delete frees underneath.
- *  13.  RACE B: munmap one of the ring mmaps while the socket is still
- *       bound.  CVE-2023-39197's surface: the xsk_buff_pool refcount on
- *       the umem region must keep the kernel's view alive past the
- *       munmap of the *user's* ring mapping.
- *
- * Brick-safety:
- *   - lo (loopback) is the only ifindex we touch -- never an external NIC.
- *     The bind() qid is 0; there's no zero-copy path on lo so XDP_COPY is
- *     the implicit fallback.
- *   - The attached XDP program is the redirect-only sequence from
- *     xdp_prog_load() below: it stamps bpf_redirect_info and returns
- *     XDP_REDIRECT.  When the bound XSKMAP slot is populated, packets
- *     get redirected into our private xsk and consumed (worst case they
- *     sit in the RX ring until teardown unmaps it).  When the slot is
- *     empty (between iter_one's, or after RACE A's delete),
- *     xdp_do_redirect() drops the packet.  Total attached wall-time per
- *     outer invocation is bounded by AFXDP_WALL_CAP_NS (200 ms) so any
- *     localhost-traffic disruption is bursty and short-lived.  The
- *     attach lifetime is the BPF link fd: closing it in teardown
- *     auto-detaches; trinity child crash also closes it (kernel reaps
- *     fds on exit).
- *   - All UMEM / ring memory is per-iteration MAP_PRIVATE | MAP_ANONYMOUS,
- *     unmapped on exit.
- *   - Outer loop is BUDGETED (base 5 / floor 16 / cap 64) with JITTER and
- *     a hard 200 ms wall-clock cap.  Inner setsockopt / sendto calls are
- *     non-blocking (MSG_DONTWAIT) so a wedged ring can't hang the loop.
- *   - Bounded retry <= 8 on EAGAIN/EBUSY for setsockopt and bind.
- *   - Two cap-gate latches: ns_unsupported_afxdp on the AF_XDP socket()
- *     probe (EAFNOSUPPORT / EPROTONOSUPPORT / EPERM), and
- *     ns_unsupported_bpf_xdp on BPF_PROG_LOAD failure -- the AF_XDP path
- *     is still useful (UMEM + rings + bind without redirect) when the
- *     kernel rejects unprivileged XDP prog load.
- *
- * Header gate: __has_include(<linux/if_xdp.h>); UAPI integers fall back
- * to their stable values when the toolchain header is missing (kernel
- * returns -ENOPROTOOPT / -EOPNOTSUPP and the cap-gate latches).
+ * Latches: ns_unsupported_afxdp on AF_XDP socket() probe
+ * (EAFNOSUPPORT/EPROTONOSUPPORT/EPERM), ns_unsupported_bpf_xdp on
+ * BPF_PROG_LOAD failure (AF_XDP without redirect is still useful).
+ * Header-gated by __has_include on <linux/if_xdp.h>/<linux/bpf.h>;
+ * per-symbol UAPI-integer fallbacks let older sysroots compile
+ * (kernel returns -ENOPROTOOPT/-EOPNOTSUPP, latches fire).
  */
 
 #if __has_include(<linux/if_xdp.h>) && __has_include(<linux/bpf.h>)
