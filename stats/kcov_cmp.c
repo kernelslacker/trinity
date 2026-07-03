@@ -1458,6 +1458,176 @@ static void kcov_cmp_render_hyp_live_inject_reasons_block(long elapsed __unused_
 }
 
 /*
+ * BOUNDARY-arm scorecard.  Pulls the existing boundary-kind
+ * shadow counters into one render so the operator can read the
+ * inserted-vs-consumed ratio at a glance: how often a BOUNDARY
+ * hypothesis was created, how often one was available at a
+ * served pick site, how often the value-keyed would-pick ladder
+ * picked it (expected near zero -- EXACT outranks), how often
+ * the live inject arm derived from it, and how often a credited
+ * PC / transition resolved to BOUNDARY via the |v - exemplar|
+ * <= 2 window.  Gated on any-delta so a quiet run reads as
+ * silence, matching the sibling cmp_hyp shadow blocks above.
+ */
+static void kcov_cmp_render_hyp_boundary_scorecard_block(long elapsed __unused__)
+{
+	static unsigned long prev_b_inserted;
+	static unsigned long prev_b_candidate_available;
+	static unsigned long prev_b_credit_window_hits;
+	static unsigned long prev_b_would_pick;
+	static unsigned long prev_b_would_miss;
+	static unsigned long prev_b_live_injected;
+	static unsigned long prev_b_consumed;
+	unsigned long cur_b_inserted = __atomic_load_n(
+		&kcov_shm->cmp_hyp_boundary_inserted, __ATOMIC_RELAXED);
+	unsigned long cur_b_candidate_available = __atomic_load_n(
+		&kcov_shm->cmp_hyp_boundary_candidate_available,
+		__ATOMIC_RELAXED);
+	unsigned long cur_b_credit_window_hits = __atomic_load_n(
+		&kcov_shm->cmp_hyp_boundary_credit_window_hits,
+		__ATOMIC_RELAXED);
+	unsigned long cur_b_would_pick = __atomic_load_n(
+		&kcov_shm->cmp_hyp_would_pick_by_kind[CMP_HYP_BOUNDARY],
+		__ATOMIC_RELAXED);
+	unsigned long cur_b_would_miss = __atomic_load_n(
+		&kcov_shm->cmp_hyp_would_miss_by_kind[CMP_HYP_BOUNDARY],
+		__ATOMIC_RELAXED);
+	unsigned long cur_b_live_injected = __atomic_load_n(
+		&kcov_shm->cmp_hyp_live_injected_by_kind[CMP_HYP_BOUNDARY],
+		__ATOMIC_RELAXED);
+	unsigned long cur_b_consumed = __atomic_load_n(
+		&kcov_shm->cmp_hyp_consumed_by_kind[CMP_HYP_BOUNDARY],
+		__ATOMIC_RELAXED);
+	unsigned long any_delta =
+		(cur_b_inserted - prev_b_inserted) |
+		(cur_b_candidate_available - prev_b_candidate_available) |
+		(cur_b_credit_window_hits - prev_b_credit_window_hits) |
+		(cur_b_would_pick - prev_b_would_pick) |
+		(cur_b_would_miss - prev_b_would_miss) |
+		(cur_b_live_injected - prev_b_live_injected) |
+		(cur_b_consumed - prev_b_consumed);
+
+	if (any_delta != 0) {
+		stats_log_write("KCOV CMP hyp BOUNDARY-arm scorecard over last %lds:\n",
+				elapsed);
+		stats_log_write("  %-40s +%lu  (total %lu)\n",
+				"cmp_hyp_boundary_inserted",
+				cur_b_inserted - prev_b_inserted,
+				cur_b_inserted);
+		stats_log_write("  %-40s +%lu  (total %lu)\n",
+				"cmp_hyp_boundary_candidate_available",
+				cur_b_candidate_available - prev_b_candidate_available,
+				cur_b_candidate_available);
+		stats_log_write("  %-40s +%lu  (total %lu)\n",
+				"cmp_hyp_would_pick_by_kind[boundary]",
+				cur_b_would_pick - prev_b_would_pick,
+				cur_b_would_pick);
+		stats_log_write("  %-40s +%lu  (total %lu)\n",
+				"cmp_hyp_would_miss_by_kind[boundary]",
+				cur_b_would_miss - prev_b_would_miss,
+				cur_b_would_miss);
+		stats_log_write("  %-40s +%lu  (total %lu)\n",
+				"cmp_hyp_live_injected_by_kind[boundary]",
+				cur_b_live_injected - prev_b_live_injected,
+				cur_b_live_injected);
+		stats_log_write("  %-40s +%lu  (total %lu)\n",
+				"cmp_hyp_consumed_by_kind[boundary]",
+				cur_b_consumed - prev_b_consumed,
+				cur_b_consumed);
+		stats_log_write("  %-40s +%lu  (total %lu)\n",
+				"cmp_hyp_boundary_credit_window_hits",
+				cur_b_credit_window_hits - prev_b_credit_window_hits,
+				cur_b_credit_window_hits);
+	}
+
+	prev_b_inserted = cur_b_inserted;
+	prev_b_candidate_available = cur_b_candidate_available;
+	prev_b_credit_window_hits = cur_b_credit_window_hits;
+	prev_b_would_pick = cur_b_would_pick;
+	prev_b_would_miss = cur_b_would_miss;
+	prev_b_live_injected = cur_b_live_injected;
+	prev_b_consumed = cur_b_consumed;
+}
+
+/*
+ * SHADOW per-hypothesis outcome aggregates that have no kcov_shm
+ * flat-counter twin (corpus_save_wins / destructive_skips /
+ * context_skips).  Walk the hyp_pools[][] grid once per window and
+ * sum the per-entry u64s; render gated on any-delta so the section
+ * stays quiet until a future credit site fires.  The walk is bounded
+ * (MAX_NR_SYSCALL * 2 pools * CMP_HYP_PER_SYSCALL entries) and runs
+ * at parent stats cadence, well below any noticeable cost.  Reads
+ * are RELAXED against credit-side bumps; a torn sum at most under-
+ * counts a single in-flight credit on this window and converges on
+ * the next render.
+ */
+static void kcov_cmp_render_hyp_per_hypothesis_aggregates_block(long elapsed)
+{
+	if (cmp_hints_shm == NULL)
+		return;
+
+	static uint64_t prev_hyp_corpus_save_wins;
+	static uint64_t prev_hyp_destructive_skips;
+	static uint64_t prev_hyp_context_skips;
+	uint64_t cur_hyp_corpus_save_wins = 0;
+	uint64_t cur_hyp_destructive_skips = 0;
+	uint64_t cur_hyp_context_skips = 0;
+	uint64_t delta_hyp_corpus_save_wins;
+	uint64_t delta_hyp_destructive_skips;
+	uint64_t delta_hyp_context_skips;
+	unsigned int nr_i, do32_i, e_i;
+
+	for (nr_i = 0; nr_i < MAX_NR_SYSCALL; nr_i++) {
+		for (do32_i = 0; do32_i < 2; do32_i++) {
+			struct cmp_hyp_pool *p =
+				&cmp_hints_shm->hyp_pools[nr_i][do32_i];
+			unsigned int n = p->count;
+
+			if (n > CMP_HYP_PER_SYSCALL)
+				n = CMP_HYP_PER_SYSCALL;
+			for (e_i = 0; e_i < n; e_i++) {
+				struct cmp_hypothesis *h = &p->entries[e_i];
+
+				cur_hyp_corpus_save_wins +=
+					__atomic_load_n(&h->corpus_save_wins,
+							__ATOMIC_RELAXED);
+				cur_hyp_destructive_skips +=
+					__atomic_load_n(&h->destructive_skips,
+							__ATOMIC_RELAXED);
+				cur_hyp_context_skips +=
+					__atomic_load_n(&h->context_skips,
+							__ATOMIC_RELAXED);
+			}
+		}
+	}
+
+	delta_hyp_corpus_save_wins = cur_hyp_corpus_save_wins - prev_hyp_corpus_save_wins;
+	delta_hyp_destructive_skips = cur_hyp_destructive_skips - prev_hyp_destructive_skips;
+	delta_hyp_context_skips = cur_hyp_context_skips - prev_hyp_context_skips;
+
+	if ((delta_hyp_corpus_save_wins | delta_hyp_destructive_skips |
+	     delta_hyp_context_skips) != 0) {
+		stats_log_write("KCOV CMP hyp per-hypothesis aggregates over last %lds:\n", elapsed);
+		stats_log_write("  %-32s +%lu  (total %lu)\n",
+				"cmp_hyp_corpus_save_wins",
+				(unsigned long)delta_hyp_corpus_save_wins,
+				(unsigned long)cur_hyp_corpus_save_wins);
+		stats_log_write("  %-32s +%lu  (total %lu)\n",
+				"cmp_hyp_destructive_skips",
+				(unsigned long)delta_hyp_destructive_skips,
+				(unsigned long)cur_hyp_destructive_skips);
+		stats_log_write("  %-32s +%lu  (total %lu)\n",
+				"cmp_hyp_context_skips",
+				(unsigned long)delta_hyp_context_skips,
+				(unsigned long)cur_hyp_context_skips);
+	}
+
+	prev_hyp_corpus_save_wins = cur_hyp_corpus_save_wins;
+	prev_hyp_destructive_skips = cur_hyp_destructive_skips;
+	prev_hyp_context_skips = cur_hyp_context_skips;
+}
+
+/*
  * Surface the KCOV CMP counters in the same 600s periodic stats-log-file
  * dump as defense_counters_periodic_dump.  Without this the cmp counters
  * are only visible from dump_stats() (run shutdown) and the JSON dump
@@ -2507,96 +2677,7 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 
 	kcov_cmp_render_hyp_live_inject_reasons_block(elapsed);
 
-	/*
-	 * BOUNDARY-arm scorecard.  Pulls the existing boundary-kind
-	 * shadow counters into one render so the operator can read the
-	 * inserted-vs-consumed ratio at a glance: how often a BOUNDARY
-	 * hypothesis was created, how often one was available at a
-	 * served pick site, how often the value-keyed would-pick ladder
-	 * picked it (expected near zero -- EXACT outranks), how often
-	 * the live inject arm derived from it, and how often a credited
-	 * PC / transition resolved to BOUNDARY via the |v - exemplar|
-	 * <= 2 window.  Gated on any-delta so a quiet run reads as
-	 * silence, matching the sibling cmp_hyp shadow blocks above.
-	 */
-	{
-		static unsigned long prev_b_inserted;
-		static unsigned long prev_b_candidate_available;
-		static unsigned long prev_b_credit_window_hits;
-		static unsigned long prev_b_would_pick;
-		static unsigned long prev_b_would_miss;
-		static unsigned long prev_b_live_injected;
-		static unsigned long prev_b_consumed;
-		unsigned long cur_b_inserted = __atomic_load_n(
-			&kcov_shm->cmp_hyp_boundary_inserted, __ATOMIC_RELAXED);
-		unsigned long cur_b_candidate_available = __atomic_load_n(
-			&kcov_shm->cmp_hyp_boundary_candidate_available,
-			__ATOMIC_RELAXED);
-		unsigned long cur_b_credit_window_hits = __atomic_load_n(
-			&kcov_shm->cmp_hyp_boundary_credit_window_hits,
-			__ATOMIC_RELAXED);
-		unsigned long cur_b_would_pick = __atomic_load_n(
-			&kcov_shm->cmp_hyp_would_pick_by_kind[CMP_HYP_BOUNDARY],
-			__ATOMIC_RELAXED);
-		unsigned long cur_b_would_miss = __atomic_load_n(
-			&kcov_shm->cmp_hyp_would_miss_by_kind[CMP_HYP_BOUNDARY],
-			__ATOMIC_RELAXED);
-		unsigned long cur_b_live_injected = __atomic_load_n(
-			&kcov_shm->cmp_hyp_live_injected_by_kind[CMP_HYP_BOUNDARY],
-			__ATOMIC_RELAXED);
-		unsigned long cur_b_consumed = __atomic_load_n(
-			&kcov_shm->cmp_hyp_consumed_by_kind[CMP_HYP_BOUNDARY],
-			__ATOMIC_RELAXED);
-		unsigned long any_delta =
-			(cur_b_inserted - prev_b_inserted) |
-			(cur_b_candidate_available - prev_b_candidate_available) |
-			(cur_b_credit_window_hits - prev_b_credit_window_hits) |
-			(cur_b_would_pick - prev_b_would_pick) |
-			(cur_b_would_miss - prev_b_would_miss) |
-			(cur_b_live_injected - prev_b_live_injected) |
-			(cur_b_consumed - prev_b_consumed);
-
-		if (any_delta != 0) {
-			stats_log_write("KCOV CMP hyp BOUNDARY-arm scorecard over last %lds:\n",
-					elapsed);
-			stats_log_write("  %-40s +%lu  (total %lu)\n",
-					"cmp_hyp_boundary_inserted",
-					cur_b_inserted - prev_b_inserted,
-					cur_b_inserted);
-			stats_log_write("  %-40s +%lu  (total %lu)\n",
-					"cmp_hyp_boundary_candidate_available",
-					cur_b_candidate_available - prev_b_candidate_available,
-					cur_b_candidate_available);
-			stats_log_write("  %-40s +%lu  (total %lu)\n",
-					"cmp_hyp_would_pick_by_kind[boundary]",
-					cur_b_would_pick - prev_b_would_pick,
-					cur_b_would_pick);
-			stats_log_write("  %-40s +%lu  (total %lu)\n",
-					"cmp_hyp_would_miss_by_kind[boundary]",
-					cur_b_would_miss - prev_b_would_miss,
-					cur_b_would_miss);
-			stats_log_write("  %-40s +%lu  (total %lu)\n",
-					"cmp_hyp_live_injected_by_kind[boundary]",
-					cur_b_live_injected - prev_b_live_injected,
-					cur_b_live_injected);
-			stats_log_write("  %-40s +%lu  (total %lu)\n",
-					"cmp_hyp_consumed_by_kind[boundary]",
-					cur_b_consumed - prev_b_consumed,
-					cur_b_consumed);
-			stats_log_write("  %-40s +%lu  (total %lu)\n",
-					"cmp_hyp_boundary_credit_window_hits",
-					cur_b_credit_window_hits - prev_b_credit_window_hits,
-					cur_b_credit_window_hits);
-		}
-
-		prev_b_inserted = cur_b_inserted;
-		prev_b_candidate_available = cur_b_candidate_available;
-		prev_b_credit_window_hits = cur_b_credit_window_hits;
-		prev_b_would_pick = cur_b_would_pick;
-		prev_b_would_miss = cur_b_would_miss;
-		prev_b_live_injected = cur_b_live_injected;
-		prev_b_consumed = cur_b_consumed;
-	}
+	kcov_cmp_render_hyp_boundary_scorecard_block(elapsed);
 
 	kcov_cmp_render_hyp_would_promote_demote_block(elapsed);
 
@@ -2715,79 +2796,7 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 			prev_hyp_probe_class[k] = cur_hyp_probe_class[k];
 	}
 
-	/*
-	 * SHADOW per-hypothesis outcome aggregates that have no kcov_shm
-	 * flat-counter twin (corpus_save_wins / destructive_skips /
-	 * context_skips).  Walk the hyp_pools[][] grid once per window and
-	 * sum the per-entry u64s; render gated on any-delta so the section
-	 * stays quiet until a future credit site fires.  The walk is bounded
-	 * (MAX_NR_SYSCALL * 2 pools * CMP_HYP_PER_SYSCALL entries) and runs
-	 * at parent stats cadence, well below any noticeable cost.  Reads
-	 * are RELAXED against credit-side bumps; a torn sum at most under-
-	 * counts a single in-flight credit on this window and converges on
-	 * the next render.
-	 */
-	if (cmp_hints_shm != NULL) {
-		static uint64_t prev_hyp_corpus_save_wins;
-		static uint64_t prev_hyp_destructive_skips;
-		static uint64_t prev_hyp_context_skips;
-		uint64_t cur_hyp_corpus_save_wins = 0;
-		uint64_t cur_hyp_destructive_skips = 0;
-		uint64_t cur_hyp_context_skips = 0;
-		uint64_t delta_hyp_corpus_save_wins;
-		uint64_t delta_hyp_destructive_skips;
-		uint64_t delta_hyp_context_skips;
-		unsigned int nr_i, do32_i, e_i;
-
-		for (nr_i = 0; nr_i < MAX_NR_SYSCALL; nr_i++) {
-			for (do32_i = 0; do32_i < 2; do32_i++) {
-				struct cmp_hyp_pool *p =
-					&cmp_hints_shm->hyp_pools[nr_i][do32_i];
-				unsigned int n = p->count;
-
-				if (n > CMP_HYP_PER_SYSCALL)
-					n = CMP_HYP_PER_SYSCALL;
-				for (e_i = 0; e_i < n; e_i++) {
-					struct cmp_hypothesis *h = &p->entries[e_i];
-
-					cur_hyp_corpus_save_wins +=
-						__atomic_load_n(&h->corpus_save_wins,
-								__ATOMIC_RELAXED);
-					cur_hyp_destructive_skips +=
-						__atomic_load_n(&h->destructive_skips,
-								__ATOMIC_RELAXED);
-					cur_hyp_context_skips +=
-						__atomic_load_n(&h->context_skips,
-								__ATOMIC_RELAXED);
-				}
-			}
-		}
-
-		delta_hyp_corpus_save_wins = cur_hyp_corpus_save_wins - prev_hyp_corpus_save_wins;
-		delta_hyp_destructive_skips = cur_hyp_destructive_skips - prev_hyp_destructive_skips;
-		delta_hyp_context_skips = cur_hyp_context_skips - prev_hyp_context_skips;
-
-		if ((delta_hyp_corpus_save_wins | delta_hyp_destructive_skips |
-		     delta_hyp_context_skips) != 0) {
-			stats_log_write("KCOV CMP hyp per-hypothesis aggregates over last %lds:\n", elapsed);
-			stats_log_write("  %-32s +%lu  (total %lu)\n",
-					"cmp_hyp_corpus_save_wins",
-					(unsigned long)delta_hyp_corpus_save_wins,
-					(unsigned long)cur_hyp_corpus_save_wins);
-			stats_log_write("  %-32s +%lu  (total %lu)\n",
-					"cmp_hyp_destructive_skips",
-					(unsigned long)delta_hyp_destructive_skips,
-					(unsigned long)cur_hyp_destructive_skips);
-			stats_log_write("  %-32s +%lu  (total %lu)\n",
-					"cmp_hyp_context_skips",
-					(unsigned long)delta_hyp_context_skips,
-					(unsigned long)cur_hyp_context_skips);
-		}
-
-		prev_hyp_corpus_save_wins = cur_hyp_corpus_save_wins;
-		prev_hyp_destructive_skips = cur_hyp_destructive_skips;
-		prev_hyp_context_skips = cur_hyp_context_skips;
-	}
+	kcov_cmp_render_hyp_per_hypothesis_aggregates_block(elapsed);
 
 	/*
 	 * Standalone grep-friendly cumulative lines for counters whose only
