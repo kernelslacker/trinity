@@ -1,100 +1,37 @@
 /*
  * xfrm_churn - XFRM/IPsec SA + SP lifecycle churn under live ESP traffic.
  *
- * Per-syscall fuzzing rolls a fresh netlink_xfrm message every call
- * and never assembles a coherent (SA, matching SP, traffic that hits
- * the SPD lookup) triple: XFRM_MSG_NEWSA without a matching policy is
- * inert (no output path consumes it), XFRM_MSG_NEWPOLICY without a
- * matching SA bounces off __xfrm_policy_check / xfrm_resolve_and_create_bundle
- * before any commit-time work runs, and even when both land the random
- * picker can't drive any traffic through the bundle so xfrm_state_find,
- * esp_output, xfrm_lookup_with_ifid, xfrm_state_delete-vs-lookup races
- * stay cold.  The CVE class this op exists to expose is
- * "SA refcount unbalanced when UPDSA / DELSA races a live ESP encrypt"
- * — that requires a coherent SA + matching SP + an in-flight UDP burst
- * driving the bundle + a UPDSA / DELSA racing the encrypt.  Random
- * fuzzing assembles that set ~never.
+ * Targets "SA refcount unbalanced when UPDSA / DELSA races a live ESP
+ * encrypt" -- the CVE-2023-1611 rekey UAF and CVE-2022-36879
+ * xfrm_expand_policies KASAN UAF lineage.  Requires the coherent quad flat
+ * fuzzing never assembles: a NEWSA, a matching NEWPOLICY, an in-flight UDP
+ * burst driving __ip_local_out -> xfrm_output -> esp_output through the
+ * bundle, and an UPDSA/DELSA racing that encrypt.
  *
- * Sequence (per invocation):
- *   1. userns_run_in_ns(CLONE_NEWNET) forks a transient grandchild
- *      into an owned user namespace + private net namespace.  The
- *      whole rest of the sequence runs inside that grandchild; its
- *      _exit() tears down both namespaces along with any SA, SP,
- *      bundle cache entry and socket left behind, so no host SAD /
- *      SPD entry is touched.  Helper -EPERM (hardened userns policy
- *      refused CLONE_NEWUSER) latches the whole op off; transient
- *      setup failure (-EAGAIN) skips the iteration without latching.
- *   2. Bring lo up inside the netns (per-grandchild one-time).  IPsec on lo with
- *      transport- or tunnel-mode SAs gives us a self-contained data
- *      plane that drives xfrm_lookup_with_ifid -> esp_output without
- *      needing any routes beyond the kernel's automatic 127.0.0.0/8
- *      entry; tunnel-mode SAs keep their outer endpoints on
- *      127.0.0.0/8 so the same automatic loopback route covers them.
- *   3. Open a NETLINK_XFRM socket.  Failure with EPROTONOSUPPORT
- *      latches ns_unsupported_xfrm — a kernel without CONFIG_XFRM
- *      pays the EFAIL once and skips for the child's lifetime.
- *   4. XFRM_MSG_NEWSA, algorithm rotated per iteration across the
- *      xfrm_algos[] table.  XFRMA_ALG_AEAD for AEAD constructions
- *      (rfc4106(gcm(aes))), XFRMA_ALG_CRYPT + XFRMA_ALG_AUTH for
- *      legacy AH/ESP, XFRMA_ALG_COMP for IPCOMP.  reqid rotates
- *      across [1, 16] to spread the per-reqid bundle cache.  random
- *      256-bit key per iteration.  random SPI in the [0x100, 0xffffff]
- *      range (kernel reserves SPI < 256).  Per-algo latches so the
- *      kernel without a particular crypto module pays the EFAIL once.
- *      A best-effort modprobe of the named algorithm fires the first
- *      time each algo is touched, latched so a missing /sbin/modprobe
- *      / no modules / lockdown=integrity costs the EFAIL once.
- *   5. XFRM_MSG_NEWPOLICY OUT direction with a matching template
- *      (xfrm_user_tmpl pointing at the SA we just installed via
- *      reqid + spi + proto + daddr).  Selector matches 127.0.0.0/24
- *      both ends so any UDP we send through lo trips the SPD lookup.
- *   6. socket(AF_INET, SOCK_DGRAM); bind to 127.0.0.1; sendto
- *      127.0.0.2 a small payload BUDGETED+JITTER times around base 5.
- *      STORM_BUDGET_NS 200 ms wall-clock cap.  Each send walks
- *      __ip_local_out -> xfrm_output -> esp_output through the freshly
- *      installed SA + SP bundle; the encrypt + ICV computation +
- *      replay-window stamp + bundle-cache update is the codepath the
- *      CVE class lives in.
- *   7. XFRM_MSG_UPDSA mid-flight: rotate the algorithm key OR change
- *      the SPI on the same SA.  This is the targeted rekey race
- *      window (CVE-2023-1611 family) — the old key's encrypt is still
- *      in flight when the UPDSA pulls it out from under any skb
- *      mid-encrypt.
- *   8. Another sendto burst — may hit stale-key encrypt path.
- *   9. XFRM_MSG_DELSA, racing the in-flight encrypt still draining
- *      from step 8.  Cascades cleanup of the bundle cache via
- *      xfrm_state_delete -> __xfrm_state_destroy.  This is the
- *      primary teardown-vs-traffic window the op exists to open
- *      (CVE-2022-36879 xfrm_expand_policies UAF lineage).
- *  10. XFRM_MSG_DELPOLICY OUT — racing the same in-flight skbs.
- *  11. PF_KEYv2 alt path (1 in 8 invocations): socket(AF_KEY,
- *      SOCK_RAW, PF_KEY_V2); send a minimal SADB_FLUSH for ESP and
- *      AH satypes.  Drives the parallel net/key/af_key.c lookup +
- *      flush paths that share the SAD / SPD with the netlink_xfrm
- *      side.  No matching SA payload — SADB_FLUSH is the smallest
- *      message that exercises the af_key dispatch and dispatcher
- *      lookup gates without needing a full SADB_ADD assembly.
+ * Sequence per invocation inside a userns_run_in_ns grandchild (identity
+ * userns + CLONE_NEWNET, _exit reaps SAs / SPs / bundle cache / sockets):
+ * bring lo up (tunnel-mode outer endpoints stay in 127.0.0.0/8 so the
+ * automatic loopback route covers them), open NETLINK_XFRM, XFRM_MSG_NEWSA
+ * with algo rotated across xfrm_algos[] (AEAD via XFRMA_ALG_AEAD, legacy
+ * AH/ESP via XFRMA_ALG_CRYPT+AUTH, IPCOMP via XFRMA_ALG_COMP), reqid
+ * rotated across [1,16] to spread the bundle cache, SPI in [0x100, 0xffffff]
+ * (<256 reserved), XFRM_MSG_NEWPOLICY OUT with a matching template and
+ * 127.0.0.0/24 selectors, then a BUDGETED+JITTER (base 5, STORM_BUDGET_NS
+ * 200 ms wall, 64-frame ceiling) sendto burst on lo, XFRM_MSG_UPDSA
+ * mid-flight (rekey or SPI swap -- the rekey race window), another burst,
+ * XFRM_MSG_DELSA + XFRM_MSG_DELPOLICY racing the draining encrypt.  1-in-8
+ * invocations also open AF_KEY / PF_KEY_V2 and send SADB_FLUSH for ESP/AH
+ * to exercise the parallel af_key dispatch on the shared SAD/SPD.
  *
- * CVE class: CVE-2023-1611 (XFRM SA refcount UAF — concurrent UPDSA
- * + DELSA), CVE-2022-36879 (xfrm_expand_policies KASAN UAF — policy
- * rotation race), broader xfrm_state_find UAF family, PF_KEYv2
- * sadb_msg parsing edges in net/key/af_key.c.  Subsystems reached:
- * net/xfrm/xfrm_state.c (state add/delete/update, replay window),
- * net/xfrm/xfrm_policy.c (SPD insert/delete, bundle cache),
- * net/xfrm/xfrm_user.c (netlink_xfrm dispatch + attribute parsing),
- * net/xfrm/xfrm_output.c (output dispatch), net/ipv4/esp4.c
- * (ESP encrypt + ICV), net/ipv4/ah4.c (AH digest), net/xfrm/xfrm_ipcomp.c,
- * net/key/af_key.c (PF_KEYv2 dispatch).
+ * Brick-safety: private netns only, loopback only, no host SAD/SPD ever
+ * touched; all netlink+socket I/O MSG_DONTWAIT with SO_RCVTIMEO=1s.
  *
- * Self-bounding: one full create/encrypt/update/delete cycle per
- * invocation, packet burst BUDGETED+JITTER around base 5 with a
- * STORM_BUDGET_NS 200 ms wall-clock cap and a 64-frame ceiling on
- * the inner send loop.  All netlink and socket I/O is MSG_DONTWAIT;
- * SO_RCVTIMEO=1s on the netlink_xfrm ack socket so an unresponsive
- * kernel can't wedge us past the SIGALRM(1s) cap inherited from
- * child.c.  Loopback only (private netns).  Per-algo latches so a
- * kernel without a given crypto module pays the EFAIL once and skips
- * that algo permanently.
+ * Latches: userns -EPERM latches the op off for the child's life.  Inside
+ * the grandchild: ns_unsupported_xfrm on NETLINK_XFRM EPROTONOSUPPORT
+ * (CONFIG_XFRM=n).  Per-algo latches trip on the first EFAIL for a given
+ * xfrm_algos[] entry (missing crypto module).  Best-effort modprobe of the
+ * named algorithm fires once per algo, latched so missing /sbin/modprobe
+ * or lockdown=integrity pays the EFAIL once.
  */
 
 #include "xfrm-churn-internal.h"
