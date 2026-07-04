@@ -158,12 +158,63 @@ static int get_rand_memfd_fd(void)
 	return -1;
 }
 
+/*
+ * Periodic child-tick top-up.  See the block comment above
+ * epoll_try_replenish() (fds/epoll.c) for the general contract.
+ * init_memfd_fds() seeds one memfd per @flags entry once; a child
+ * that has closed most of them via fuzz-driven close/dup2 hits stops
+ * seeing ARG_FD_MEMFD picks.  Push fresh memfds into the live-fd ring
+ * to restore gen_arg_fd() hits without touching the OBJ_GLOBAL pool
+ * the parent owns.
+ *
+ * Reuse the same flag set init used so the topped-up fds carry the
+ * same MFD_CLOEXEC / MFD_ALLOW_SEALING / MFD_HUGETLB / MFD_NOEXEC_SEAL
+ * / MFD_EXEC distribution rather than one fixed flavour, and mirror
+ * init's arm step so MFD_ALLOW_SEALING fds get the same F_ADD_SEALS
+ * mask applied before publish.
+ */
+static void memfd_try_replenish(unsigned int budget)
+{
+	struct childdata *child = this_child();
+	unsigned int i;
+	static const unsigned int flags[] = {
+		0,
+		MFD_CLOEXEC,
+		MFD_CLOEXEC | MFD_ALLOW_SEALING,
+		MFD_ALLOW_SEALING,
+		MFD_HUGETLB,
+		MFD_NOEXEC_SEAL,
+		MFD_EXEC,
+	};
+
+	if (child == NULL)
+		return;
+
+	for (i = 0; i < budget; i++) {
+		char namestr[16];
+		unsigned int idx = rnd_modulo_u32(ARRAY_SIZE(flags));
+		int fd;
+
+		snprintf(namestr, sizeof(namestr), "memfd%u", idx + 1);
+
+		fd = memfd_create(namestr, flags[idx]);
+		if (fd < 0)
+			return;
+
+		if (flags[idx] & MFD_ALLOW_SEALING)
+			arm_memfd(fd);
+
+		child_fd_ring_push(&child->live_fds, fd);
+	}
+}
+
 static const struct fd_provider memfd_fd_provider = {
 	.name = "memfd",
 	.objtype = OBJ_FD_MEMFD,
 	.enabled = true,
 	.init = &init_memfd_fds,
 	.get = &get_rand_memfd_fd,
+	.try_replenish = &memfd_try_replenish,
 };
 
 REG_FD_PROV(memfd_fd_provider);
