@@ -1223,8 +1223,10 @@ static void kcov_cmp_render_hyp_would_pick_block(long elapsed __unused__)
 	static unsigned long prev_hyp_would_pick_kind[CMP_HYP_KIND_NR];
 	static unsigned long prev_hyp_would_miss_kind[CMP_HYP_KIND_NR];
 	static unsigned long prev_hyp_would_value_differs;
+	static unsigned long prev_hyp_would_value_differs_kind[CMP_HYP_KIND_NR];
 	unsigned long cur_hyp_would_pick_kind[CMP_HYP_KIND_NR];
 	unsigned long cur_hyp_would_miss_kind[CMP_HYP_KIND_NR];
+	unsigned long cur_hyp_would_value_differs_kind[CMP_HYP_KIND_NR];
 	unsigned long cur_hyp_would_value_differs;
 	unsigned long delta_hyp_would_value_differs;
 	unsigned long any_would_delta = 0;
@@ -1237,9 +1239,14 @@ static void kcov_cmp_render_hyp_would_pick_block(long elapsed __unused__)
 		cur_hyp_would_miss_kind[k] = __atomic_load_n(
 			&kcov_shm->cmp_hyp_would_miss_by_kind[k],
 			__ATOMIC_RELAXED);
+		cur_hyp_would_value_differs_kind[k] = __atomic_load_n(
+			&kcov_shm->cmp_hyp_would_value_differs_by_kind[k],
+			__ATOMIC_RELAXED);
 		any_would_delta |=
 			(cur_hyp_would_pick_kind[k] - prev_hyp_would_pick_kind[k]) |
-			(cur_hyp_would_miss_kind[k] - prev_hyp_would_miss_kind[k]);
+			(cur_hyp_would_miss_kind[k] - prev_hyp_would_miss_kind[k]) |
+			(cur_hyp_would_value_differs_kind[k] -
+			 prev_hyp_would_value_differs_kind[k]);
 	}
 	cur_hyp_would_value_differs = __atomic_load_n(
 		&kcov_shm->cmp_hyp_would_value_differs, __ATOMIC_RELAXED);
@@ -1252,12 +1259,15 @@ static void kcov_cmp_render_hyp_would_pick_block(long elapsed __unused__)
 				elapsed);
 		for (k = 0; k < CMP_HYP_KIND_NR; k++) {
 			stats_log_write(
-				"  cmp_hyp_would[%-13s] pick +%lu (total %lu)  miss +%lu (total %lu)\n",
+				"  cmp_hyp_would[%-13s] pick +%lu (total %lu)  miss +%lu (total %lu)  value_differs +%lu (total %lu)\n",
 				kind_labels[k],
 				cur_hyp_would_pick_kind[k] - prev_hyp_would_pick_kind[k],
 				cur_hyp_would_pick_kind[k],
 				cur_hyp_would_miss_kind[k] - prev_hyp_would_miss_kind[k],
-				cur_hyp_would_miss_kind[k]);
+				cur_hyp_would_miss_kind[k],
+				cur_hyp_would_value_differs_kind[k] -
+					prev_hyp_would_value_differs_kind[k],
+				cur_hyp_would_value_differs_kind[k]);
 		}
 		stats_log_write("  %-32s +%lu  (total %lu)\n",
 				"cmp_hyp_would_value_differs",
@@ -1268,6 +1278,8 @@ static void kcov_cmp_render_hyp_would_pick_block(long elapsed __unused__)
 	for (k = 0; k < CMP_HYP_KIND_NR; k++) {
 		prev_hyp_would_pick_kind[k] = cur_hyp_would_pick_kind[k];
 		prev_hyp_would_miss_kind[k] = cur_hyp_would_miss_kind[k];
+		prev_hyp_would_value_differs_kind[k] =
+			cur_hyp_would_value_differs_kind[k];
 	}
 	prev_hyp_would_value_differs = cur_hyp_would_value_differs;
 }

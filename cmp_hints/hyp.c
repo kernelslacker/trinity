@@ -1066,9 +1066,13 @@ void cmp_hyp_would_pick(unsigned int nr, bool do32,
 		__atomic_fetch_add(
 			&kcov_shm->cmp_hyp_would_pick_by_kind[picked->kind],
 			1UL, __ATOMIC_RELAXED);
-		if (picked->exemplar != (uint64_t)live_value)
+		if (picked->exemplar != (uint64_t)live_value) {
 			__atomic_fetch_add(&kcov_shm->cmp_hyp_would_value_differs,
 					   1UL, __ATOMIC_RELAXED);
+			__atomic_fetch_add(
+				&kcov_shm->cmp_hyp_would_value_differs_by_kind[picked->kind],
+				1UL, __ATOMIC_RELAXED);
+		}
 	}
 	for (k = 0; k < ARRAY_SIZE(ladder_kinds); k++) {
 		uint8_t lk = ladder_kinds[k];
