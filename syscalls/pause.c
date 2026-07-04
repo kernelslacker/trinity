@@ -28,7 +28,7 @@ static void post_pause(struct syscallrecord *rec)
 struct syscallentry syscall_pause = {
 	.name = "pause",
 	.num_args = 0,
-	.flags = AVOID_SYSCALL, // Boring.  Can cause long sleeps
+	.flags = AVOID_SYSCALL | NEED_ALARM, // Boring.  Can cause long sleeps
 	.group = GROUP_PROCESS,
 	.post = post_pause,
 };
