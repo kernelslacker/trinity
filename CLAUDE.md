@@ -14,7 +14,7 @@ their own.
 
 ## Execution model (the loop, top to bottom)
 
-1. `trinity.c` — process entry: option parse, table selection, warm-start of
+1. `main/trinity.c` — process entry: option parse, table selection, warm-start of
    persisted state, then hands control to the parent control plane.
 2. `main/` — the parent tick loop: fork the fleet, poll-reap exits,
    D-state/stuck watchdog, periodic stats. Calls into nothing that fuzzes.
@@ -35,7 +35,7 @@ their own.
 
 | Directory | Role |
 |---|---|
-| [main/](main/CLAUDE.md) | Parent control plane: fork/reap/watchdog/stats tick loop (4 files, ~3,626 LOC) |
+| [main/](main/CLAUDE.md) | Process entry + CLI/tunables + parent control plane: fork/reap/watchdog/stats tick loop (6 files, ~6,411 LOC) |
 | [child/](child/CLAUDE.md) | Child runtime loop: per-iteration alt-op/syscall pick, canary/sentinel/capdrop oracles, alarm backstop (7 files, ~6,400 LOC) |
 | [random_syscall/](random_syscall/CLAUDE.md) | Per-iteration hot path: pick, substitute, dispatch a syscall (5 files, ~4,807 LOC) |
 | [dispatch/](dispatch/CLAUDE.md) | Issues the picked syscall, records the result, tracks pid liveness (3 files, ~2,400 LOC) |
@@ -67,11 +67,7 @@ These live at the repository root and are compiled directly into the trinity
 binary. Grouped by concern:
 
 ### Startup & parent orchestration
-- `trinity.c` (1,016) — process entry: `main()`, option/table setup,
-  `warm_start_all()`, the epoch loop that repeatedly calls `main/`'s
-  `main_loop()`. Does not fuzz.
-- `params.c` (1,769) — CLI option parsing and the global tunables/flags the
-  rest of the codebase reads (targeting, `--childop`, richness levers, etc.).
+- [main/](main/CLAUDE.md) — process entry (`main/trinity.c`: `main()`, warm-start, the epoch loop) and CLI/tunable parsing (`main/params.c`), alongside the parent control plane (fork/reap/watchdog/stats).
 
 ### Child runtime
 - [child/](child/CLAUDE.md) — per-child loop, bring-up/sandbox, alt-op picker, canary/sentinel/capdrop oracles, cred throttle (7 files).
@@ -97,7 +93,7 @@ binary. Grouped by concern:
 - **To follow one fuzz iteration end-to-end:** `child/child.c` →
   `random_syscall/CLAUDE.md` → `syscalls/CLAUDE.md` → `args/CLAUDE.md` →
   `dispatch/syscall.c` → `dispatch/results.c`.
-- **To understand the process fleet / lifecycle:** `trinity.c` →
+- **To understand the process fleet / lifecycle:** `main/trinity.c` →
   `main/CLAUDE.md`.
 - **To understand scripted (non-random) fuzzing:** `childops/CLAUDE.md`.
 - **To understand coverage-guided steering:** `kcov/CLAUDE.md` +
