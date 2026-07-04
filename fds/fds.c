@@ -95,6 +95,7 @@ void register_fd_provider(const struct fd_provider *prov)
 	newnode->init = prov->init;
 	newnode->get = prov->get;
 	newnode->child_ops = prov->child_ops;
+	newnode->try_replenish = prov->try_replenish;
 	newnode->poll_can_block = prov->poll_can_block;
 	num_fd_providers++;
 
@@ -823,6 +824,12 @@ bool fd_poll_can_block(int fd)
  * Call child_ops for all initialized fd providers that have one.
  * Invoked periodically from the child process to exercise fd-level
  * operations (bind/listen/accept etc.) as fuzzing actions.
+ *
+ * After the child_ops walk, invite ->try_replenish opt-ins to top up
+ * their pools.  Keeping the two dispatchers coupled avoids adding a
+ * second periodic-work callsite in child.c -- the replenish walk is
+ * cheaper than the child_ops walk (self-gated on rate and per-provider
+ * pool depth) and is fine to piggyback here.
  */
 void run_fd_provider_child_ops(void)
 {
@@ -836,6 +843,52 @@ void run_fd_provider_child_ops(void)
 
 		if (provider->initialized && provider->child_ops != NULL)
 			provider->child_ops();
+	}
+
+	run_fd_provider_replenish(2);
+}
+
+/*
+ * Dispatcher cap: the maximum number of providers touched per replenish
+ * tick.  Each provider issues create-syscalls to open the new fds, so a
+ * larger cap trades fuzz-budget cycles for pool depth.  Three lets the
+ * (currently ~4) opted-in providers all get service every couple of
+ * dispatcher ticks without ever bursting more than ~6 create-syscalls
+ * (3 providers * 2 budget) in a single periodic-work pass.
+ */
+#define REPLENISH_MAX_PROVIDERS_PER_TICK	3
+
+void run_fd_provider_replenish(unsigned int per_provider_budget)
+{
+	struct list_head *node;
+	unsigned int providers_touched = 0;
+
+	if (fd_providers == NULL)
+		return;
+
+	/*
+	 * Coarse rate-limit gate.  run_fd_provider_child_ops() itself is
+	 * only entered every 128 child-loop iterations from periodic_work,
+	 * so this halves the effective replenish cadence again to ~1 tick
+	 * in 512 child ops.  Replenish issues create syscalls (epoll_create1,
+	 * eventfd, fanotify_init, ...) that compete with the fuzz budget --
+	 * without the gate, the child-tick add-rate would dominate small
+	 * -N runs and skew per-syscall coverage share.  Mask 3 fires ~1
+	 * call in 4.
+	 */
+	if ((rnd_u32() & 3U) != 0U)
+		return;
+
+	list_for_each(node, &fd_providers->list) {
+		struct fd_provider *provider = (struct fd_provider *) node;
+
+		if (!provider->initialized || provider->try_replenish == NULL)
+			continue;
+
+		provider->try_replenish(per_provider_budget);
+
+		if (++providers_touched >= REPLENISH_MAX_PROVIDERS_PER_TICK)
+			break;
 	}
 }
 

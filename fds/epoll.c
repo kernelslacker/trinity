@@ -229,12 +229,48 @@ static int get_rand_epoll_fd(void)
 	return -1;
 }
 
+/*
+ * Periodic child-tick top-up.  init_epoll_fds() populates MAX_EPOLL_FDS
+ * entries into the OBJ_GLOBAL pool once at startup; each child inherits
+ * a copy that only drains from there.  Once the child's private copy
+ * has been culled by close / dup2 / close_range hits the ARG_FD_EPOLL
+ * pool goes empty and typed picks fall back to get_random_fd() -- so
+ * arm_epoll_if_needed(), ep_item_poll exercise, and every epoll_ctl /
+ * epoll_wait sanitiser that consults ARG_FD_EPOLL stops seeing an
+ * epoll fd at all.
+ *
+ * child_fd_ring_push() reaches gen_arg_fd's 70% live-fd path directly.
+ * add_object(OBJ_GLOBAL) from child context is a no-op by design (see
+ * the mainpid guard in objects/registry.c), so this is the only
+ * post-fork publish channel available to a provider without changing
+ * the pool-ownership model.  The fd is CLOEXEC; whether the child
+ * later hands it off to epoll_ctl or to a completely different
+ * syscall via ARG_FD is up to arg-generation -- both are useful.
+ */
+static void epoll_try_replenish(unsigned int budget)
+{
+	struct childdata *child = this_child();
+	unsigned int i;
+
+	if (child == NULL)
+		return;
+
+	for (i = 0; i < budget; i++) {
+		int fd = epoll_create1(EPOLL_CLOEXEC);
+
+		if (fd < 0)
+			return;
+		child_fd_ring_push(&child->live_fds, fd);
+	}
+}
+
 static const struct fd_provider epoll_fd_provider = {
 	.name = "epoll",
 	.objtype = OBJ_FD_EPOLL,
 	.enabled = true,
 	.init = &init_epoll_fds,
 	.get = &get_rand_epoll_fd,
+	.try_replenish = &epoll_try_replenish,
 };
 
 REG_FD_PROV(epoll_fd_provider);

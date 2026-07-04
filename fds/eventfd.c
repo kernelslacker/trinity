@@ -7,6 +7,7 @@
 #include "fd.h"
 #include "objects.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "utils.h"
@@ -106,12 +107,52 @@ static int get_rand_eventfd_fd(void)
 	return -1;
 }
 
+/*
+ * Periodic child-tick top-up.  See the block comment above
+ * epoll_try_replenish() for the general contract.  init_eventfd_fds()
+ * seeds 8 entries once; a child that has closed most of them via
+ * fuzz-driven close/dup2 hits stops seeing ARG_FD_EVENTFD picks.
+ * Pushing fresh eventfds into the live-fd ring restores gen_arg_fd()
+ * hits without touching the OBJ_GLOBAL pool the parent owns.
+ *
+ * Flags randomised across the same 3-bit set init_eventfd_fds() uses
+ * so downstream read/write/poll paths see the semaphore vs. counter
+ * split and the O_NONBLOCK vs. blocking split rather than one fixed
+ * flavour.  The initial count is intentionally left at 0 to keep the
+ * replenished fds cheap to close down again at process exit -- the
+ * kernel-side benefit here is reachability, not the specific counter
+ * value.
+ */
+static void eventfd_try_replenish(unsigned int budget)
+{
+	struct childdata *child = this_child();
+	unsigned int i;
+	static const unsigned int flags[] = {
+		EFD_CLOEXEC,
+		EFD_CLOEXEC | EFD_NONBLOCK,
+		EFD_CLOEXEC | EFD_SEMAPHORE,
+		EFD_CLOEXEC | EFD_NONBLOCK | EFD_SEMAPHORE,
+	};
+
+	if (child == NULL)
+		return;
+
+	for (i = 0; i < budget; i++) {
+		int fd = eventfd(0, flags[rnd_modulo_u32(ARRAY_SIZE(flags))]);
+
+		if (fd < 0)
+			return;
+		child_fd_ring_push(&child->live_fds, fd);
+	}
+}
+
 static const struct fd_provider eventfd_fd_provider = {
 	.name = "eventfd",
 	.objtype = OBJ_FD_EVENTFD,
 	.enabled = true,
 	.init = &init_eventfd_fds,
 	.get = &get_rand_eventfd_fd,
+	.try_replenish = &eventfd_try_replenish,
 };
 
 REG_FD_PROV(eventfd_fd_provider);
