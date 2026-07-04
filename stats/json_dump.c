@@ -185,6 +185,20 @@ static void json_emit_kcov_counters(void)
 	unsigned long kc_cmp_save_reject_sentinel;
 	unsigned long kc_cmp_save_reject_dup;
 	unsigned long kc_cmp_save_reject_cap;
+	/* PC-win conversion split by source-path.  cmp_hint_wins is
+	 * per-DISPATCH; the split numerators (cmp_hint_pc_wins_by_pool[]
+	 * summed for the flat-replay arm, cmp_hyp_pc_wins[/_by_kind] for
+	 * the typed-hyp LIVE arm) are per-STASH-ENTRY.  The per-entry
+	 * basis is the correct attribution granularity; flat_wins +
+	 * typed_wins is NOT expected to equal cmp_hint_wins. */
+	unsigned long kc_cmp_hint_wins;
+	unsigned long kc_cmp_hints_injected;
+	unsigned long kc_cmp_hyp_pc_wins;
+	unsigned long kc_cmp_hyp_live_injected;
+	unsigned long kc_cmp_hint_pc_wins_by_pool[CMP_HINT_POOL_KIND_NR];
+	unsigned long kc_cmp_hyp_pc_wins_by_kind[CMP_HYP_KIND_NR];
+	unsigned long kc_cmp_hyp_live_injected_by_kind[CMP_HYP_KIND_NR];
+	unsigned int i;
 
 	kc_edges  = __atomic_load_n(&kcov_shm->edges_found,  __ATOMIC_RELAXED);
 	/* total_pcs / total_calls / remote_calls drained from the
@@ -215,6 +229,26 @@ static void json_emit_kcov_counters(void)
 		&kcov_shm->cmp_hints_save_reject_dup, __ATOMIC_RELAXED);
 	kc_cmp_save_reject_cap = __atomic_load_n(
 		&kcov_shm->cmp_hints_save_reject_cap, __ATOMIC_RELAXED);
+	kc_cmp_hint_wins = __atomic_load_n(&kcov_shm->cmp_hint_wins,
+					   __ATOMIC_RELAXED);
+	kc_cmp_hints_injected = __atomic_load_n(&kcov_shm->cmp_hints_injected,
+						__ATOMIC_RELAXED);
+	kc_cmp_hyp_pc_wins = __atomic_load_n(&kcov_shm->cmp_hyp_pc_wins,
+					     __ATOMIC_RELAXED);
+	kc_cmp_hyp_live_injected = __atomic_load_n(
+		&kcov_shm->cmp_hyp_live_injected, __ATOMIC_RELAXED);
+	for (i = 0; i < CMP_HINT_POOL_KIND_NR; i++)
+		kc_cmp_hint_pc_wins_by_pool[i] = __atomic_load_n(
+			&kcov_shm->cmp_hint_pc_wins_by_pool[i],
+			__ATOMIC_RELAXED);
+	for (i = 0; i < CMP_HYP_KIND_NR; i++) {
+		kc_cmp_hyp_pc_wins_by_kind[i] = __atomic_load_n(
+			&kcov_shm->cmp_hyp_pc_wins_by_kind[i],
+			__ATOMIC_RELAXED);
+		kc_cmp_hyp_live_injected_by_kind[i] = __atomic_load_n(
+			&kcov_shm->cmp_hyp_live_injected_by_kind[i],
+			__ATOMIC_RELAXED);
+	}
 
 	printf(",\"kcov\":{\"unique_edges\":%lu,\"total_pcs\":%lu,"
 		"\"total_calls\":%lu,\"remote_calls\":%lu,"
@@ -225,13 +259,27 @@ static void json_emit_kcov_counters(void)
 		"\"cmp_hints_save_reject_uninteresting\":%lu,"
 		"\"cmp_hints_save_reject_sentinel\":%lu,"
 		"\"cmp_hints_save_reject_dup\":%lu,"
-		"\"cmp_hints_save_reject_cap\":%lu",
+		"\"cmp_hints_save_reject_cap\":%lu,"
+		"\"cmp_hint_wins\":%lu,\"cmp_hints_injected\":%lu,"
+		"\"cmp_hyp_pc_wins\":%lu,\"cmp_hyp_live_injected\":%lu",
 		kc_edges, kc_pcs, kc_calls, kc_remote,
 		kc_cmp_records, kc_cmp_trunc, kc_cmp_bloom_skipped,
 		kc_cmp_strip_skipped, kc_cmp_unique,
 		kc_cmp_save_reject_nonconst, kc_cmp_save_reject_uninteresting,
 		kc_cmp_save_reject_sentinel, kc_cmp_save_reject_dup,
-		kc_cmp_save_reject_cap);
+		kc_cmp_save_reject_cap,
+		kc_cmp_hint_wins, kc_cmp_hints_injected,
+		kc_cmp_hyp_pc_wins, kc_cmp_hyp_live_injected);
+	fputs(",\"cmp_hint_pc_wins_by_pool\":[", stdout);
+	for (i = 0; i < CMP_HINT_POOL_KIND_NR; i++)
+		printf("%s%lu", i ? "," : "", kc_cmp_hint_pc_wins_by_pool[i]);
+	fputs("],\"cmp_hyp_pc_wins_by_kind\":[", stdout);
+	for (i = 0; i < CMP_HYP_KIND_NR; i++)
+		printf("%s%lu", i ? "," : "", kc_cmp_hyp_pc_wins_by_kind[i]);
+	fputs("],\"cmp_hyp_live_injected_by_kind\":[", stdout);
+	for (i = 0; i < CMP_HYP_KIND_NR; i++)
+		printf("%s%lu", i ? "," : "", kc_cmp_hyp_live_injected_by_kind[i]);
+	fputc(']', stdout);
 }
 
 /* Shadow transition-coverage globals.  Emitted unconditionally
