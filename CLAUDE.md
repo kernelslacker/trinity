@@ -42,6 +42,7 @@ their own.
 | [syscalls/](syscalls/CLAUDE.md) | One `struct syscallentry` descriptor per syscall — the declarative catalog (~361 files, ~56,400 LOC) |
 | [tables/](tables/CLAUDE.md) | Loads the per-syscall descriptors into shared memory and stamps derived fields (3 files, ~1,725 LOC) |
 | [args/](args/CLAUDE.md) | Argument generation layer driven by `argtype[]` (17 files, ~6,127 LOC) |
+| [args/pools/](args/pools/CLAUDE.md) | Argument-content pools feeding the ARG_* generators — pathnames/xattr/blob/devices/blockdevs/fstype (6 files, ~2,237 LOC) |
 | [struct_catalog/](struct_catalog/CLAUDE.md) | Static field-level layout catalog for kernel structs (33 files, ~10,289 LOC) |
 | [rand/](rand/CLAUDE.md) | Randomness core and scalar value generation (10 files, ~2,923 LOC) |
 | [net/](net/CLAUDE.md) | sockaddr / setsockopt / netlink / BPF generation per address family (114 files, ~26,684 LOC) |
@@ -80,13 +81,7 @@ binary. Grouped by concern:
 - `objects/` — the `OBJ_LOCAL`/`OBJ_GLOBAL` object pools threading a syscall result (fd/id/handle) into a later syscall argument, plus the cross-child futex-word pool and the prop/fd-event rings. See [objects/](objects/CLAUDE.md); `lib/publish_resource.c` is the typed stamping front end.
 
 ### Argument content & environment enumeration
-- `pathnames.c` (797) — pathname pool for `ARG_PATHNAME` (mirrors testfiles).
-- `xattr.c` (416) — valid xattr name-string generation.
-- `blob_mutator.c` (607) — `--blob-mutator` content engine for opaque
-  `ARG_BUF_SIZED` arguments.
-- `devices.c` (173) — parses `/proc/devices` for the ioctl fuzzer.
-- `blockdevs.c` (125) — block-device enumeration.
-- `fstype.c` (114) — filesystem-type name strings for the fsopen/mount family.
+- [args/pools/](args/pools/CLAUDE.md) — the content pools the generators draw from: pathname/xattr/blob/device/blockdev/fstype (6 files).
 
 ### Persistence & corpora
 - `minicorpus.c` (2,323) — coverage-guided argument retention: snapshots the
