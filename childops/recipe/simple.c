@@ -43,7 +43,7 @@
 #include "utils.h"
 #include "pids.h"
 
-#include "childops/recipe-runner-internal.h"
+#include "childops/recipe/internal.h"
 
 /*
  * Recipe 1: timerfd lifecycle.

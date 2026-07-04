@@ -32,7 +32,7 @@
 #include "trinity.h"
 #include "utils.h"
 
-#include "childops/recipe-runner-internal.h"
+#include "childops/recipe/internal.h"
 
 /*
  * Recipe 33: ptrace SEIZE+EXITKILL lifecycle.
