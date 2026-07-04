@@ -1,0 +1,22 @@
+# bpf-subcmd-catalog.baseline
+#
+# Grandfathered list of BPF_* subcommands that appear in bpf_cmds[]
+# (syscalls/bpf.c) but do NOT yet have a matching union_variant in
+# bpf_attr_variants[] (struct_catalog/bpf.c).
+#
+# Each such gap means the fuzzer can draw the cmd but the sanitiser
+# has no schema for its payload, so it falls through to the empty
+# shared prefix and reverts to blind width-guessing.  Every entry
+# below is real debt: a variant should be authored (see BPF_MAP_CREATE
+# / BPF_PROG_LOAD in struct_catalog/bpf.c for the reference shape)
+# and the corresponding line removed from this file in the SAME commit
+# that adds the variant.
+#
+# This baseline should SHRINK over time, never grow.  A new BPF_*
+# added to bpf_cmds[] without a matching variant will FAIL
+# `make check-static` rather than be silently added to this list.
+#
+# Format: one BPF_* token per line.  Lines starting with `#` and
+# blank lines are ignored.  Whitespace is stripped.
+#
+BPF_PROG_ASSOC_STRUCT_OPS
