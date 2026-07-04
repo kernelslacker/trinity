@@ -1,16 +1,10 @@
 /*
  * struct_catalog/tcp.c -- TCP-shaped struct field tables.
  *
- * Carved out of struct_catalog.c as the next leaf TU of the file
- * split: the central spine (struct_catalog[], syscall_struct_args[])
- * and all logic stay in struct_catalog.c; this TU owns the TCP leaf
- * data only -- struct tcp_repair_opt (IPPROTO_TCP / TCP_REPAIR_OPTIONS
- * setsockopt optval element).  Symbols flip from static const to const
- * so the spine's .fields = tcp_repair_opt_fields reference resolves
- * via the externs in struct_catalog-internal.h.
- *
- * struct_catalog.h and arch.h are included unconditionally so this
- * TU is never empty when USE_TCP_REPAIR_OPT is off.
+ * Tables are `const` (not `static const`) so the spine's designated-init
+ * `.fields =` references resolve via the externs in struct_catalog-internal.h.
+ * struct_catalog.h and arch.h are #included unconditionally so this TU is
+ * never empty when USE_TCP_REPAIR_OPT is off.
  */
 
 #include <stddef.h>
