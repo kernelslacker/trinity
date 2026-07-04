@@ -176,7 +176,7 @@ clean:
 	@rm -f *.o args/*.o lib/*.o main/*.o net/*.o objects/*.o stats/*.o tables/*.o utils/*.o
 	@rm -f core.*
 	@rm -f trinity
-	@rm -f tags
+	@rm -f tags tags.json
 	@rm -rf $(DEPDIR)/*
 	@rm -rf trinity-coverity.tar.xz cov-int
 	@rm -f $(VERSION_H)
@@ -193,7 +193,11 @@ install: trinity
 	install trinity $(DESTDIR)$(PREFIX)/bin
 
 tags:	$(SRCS)
-	@ctags -R --exclude=tmp
+	@ctags -R --exclude=tmp --languages=C,Python,Sh
+
+tagsjson:	$(SRCS)
+	@rm -f tags.json
+	@ctags -R --exclude=tmp --languages=C,Python,Sh --output-format=json -f tags.json
 
 scan:
 	@scan-build --use-analyzer=/usr/bin/clang make -j $(NR_CPUS)
