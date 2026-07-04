@@ -2473,12 +2473,27 @@ struct kcov_shared {
 	 *      Bumped when the ladder resolves to a hypothesis whose
 	 *      exemplar is not equal to the raw pool's picked value --
 	 *      the store would have suggested a different concrete value
-	 *      for the same site.  Scalar (no per-kind partition); the
-	 *      per-kind drilldown lives in cmp_hyp_would_pick_by_kind.
+	 *      for the same site.  Scalar headline; the per-kind drilldown
+	 *      lives in cmp_hyp_would_value_differs_by_kind below.
+	 *  cmp_hyp_would_value_differs_by_kind[k]
+	 *      Per-kind partition of cmp_hyp_would_value_differs, bumped
+	 *      at index k = picked->kind in lock-step with the scalar from
+	 *      the same cmp_hyp_would_pick() site.  Sum across kinds equals
+	 *      the scalar modulo concurrent sampling.  Only the kinds that
+	 *      the ladder can resolve to (EXACT, ENUM_FAMILY, BITMASK,
+	 *      RANGE, BOUNDARY) ever populate; the remaining CMP_HYP_KIND_NR
+	 *      slots stay zero by construction.  Paired with
+	 *      cmp_hyp_would_pick_by_kind the ratio
+	 *      value_differs_by_kind[k] / would_pick_by_kind[k] is the
+	 *      per-kind rate at which the typed store's exemplar disagrees
+	 *      with the raw-pool pick -- surfaces which hypothesis kind is
+	 *      most often carrying a value the live path would not have
+	 *      served.  SHADOW telemetry only -- no consumer reads it.
 	 */
 	unsigned long cmp_hyp_would_pick_by_kind[CMP_HYP_KIND_NR];
 	unsigned long cmp_hyp_would_miss_by_kind[CMP_HYP_KIND_NR];
 	unsigned long cmp_hyp_would_value_differs;
+	unsigned long cmp_hyp_would_value_differs_by_kind[CMP_HYP_KIND_NR];
 
 	/*
 	 * LIVE typed-hypothesis inject counters.  Bumped from the inject
