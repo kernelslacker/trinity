@@ -32,7 +32,7 @@
 #include <linux/pkt_cls.h>
 #include <string.h>
 #include "netlink-attrs.h"
-#include "netlink-msg-internal.h"
+#include "msg-internal.h"
 #include "random.h"
 #include "trinity.h"
 #include "rnd.h"
