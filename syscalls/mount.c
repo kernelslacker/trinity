@@ -376,7 +376,7 @@ void sanitise_move_mount(struct syscallrecord *rec)
 struct syscallentry syscall_mount = {
 	.name = "mount",
 	.num_args = 5,
-	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_PATHNAME, [3] = ARG_LIST, [4] = ARG_ADDRESS },
+	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_PATHNAME, [2] = ARG_FSTYPE_NAME, [3] = ARG_LIST, [4] = ARG_ADDRESS },
 	.argname = { [0] = "dev_name", [1] = "dir_name", [2] = "type", [3] = "flags", [4] = "data" },
 	.arg_params[3].list = ARGLIST(mount_flags),
 	.group = GROUP_VFS,
