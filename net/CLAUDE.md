@@ -42,29 +42,14 @@ shared struct-of-callbacks pattern).
 - [netlink/](netlink/CLAUDE.md) — the netlink message-construction engine (nlmsg framing, rtnetlink payloads) plus the genl-family and nfnl-subsystem grammar registries. Subdirs: [netlink/genl/](netlink/genl/CLAUDE.md) (46 files) and [netlink/nfnl/](netlink/nfnl/CLAUDE.md) (12). The AF_NETLINK *socket* helpers (`grammar_netlink`, `grammar_xfrm`) live in `proto/`; this dir builds the *message bodies* they carry.
 
 ### BPF / eBPF program generation
-- `bpf.c` (554) — classic BPF (`struct sock_filter`) program generator
-  for socket filters (`SO_ATTACH_FILTER`) and seccomp; builds
-  instruction sequences, invokes the disassembler at high verbosity
-  for debug output.
-- `bpf-disasm.c` (447) — classic BPF disassembler, used only for debug
-  logging of what `bpf.c` generated (`bpf_disasm_all`).
-- `bpf-internal.h` (153) — private shared declarations + opcode-bit
-  fallback macros for the bpf.c/bpf-disasm.c pair only.
-- `ebpf.c` (1266) — third-largest file: independent eBPF generator
-  (BPF_PROG_LOAD-style programs) with three explicit tiers: Tier 1
-  verifier-valid programs (forward jumps, liveness, bounded stack,
-  valid helper calls), Tier 2 boundary/edge-case programs (near-limit
-  complexity, unchecked map lookups, ALU overflow), Tier 3 chaos
-  (invalid opcodes, backward jumps, OOB registers, malformed 128-bit
-  loads) — targets the verifier and JIT directly.
+
+- [bpf/](bpf/CLAUDE.md) — two independent BPF program generators (classic `sock_filter` for socket filters/seccomp, and tiered eBPF for `BPF_PROG_LOAD`), the classic-BPF disassembler, and the AF_XDP umem tracker (4 files + internal header).
 
 ### Misc
 - `unblocker.c` (309) — loopback-only accept-unblocker / pipe-waker
   connector helpers (fire-and-forget, bounded work, cannot wedge the
   caller); used to stop other children's blocking `accept()`/`recv()`
   calls from stalling the fuzzer.
-- `xdp-umem-track.c` (95) — fixed 256-slot table tracking AF_XDP umem
-  fd/ptr/len triples; used by `proto-xdp.c`.
 
 ## Key design decisions
 

@@ -7,7 +7,7 @@
 #include <string.h>
 
 #include "bpf.h"
-#include "bpf-internal.h"
+#include "internal.h"
 #include "arch.h"
 #include "debug.h"
 #include "deferred-free.h"
