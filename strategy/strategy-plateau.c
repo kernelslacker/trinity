@@ -137,14 +137,6 @@ void plateau_snapshot_capture(struct plateau_window_snapshot *snap)
 	}
 }
 
-/* Saturating-subtract: a - b clamped to 0.  See the field comment on
- * struct plateau_window_snapshot for why an inversion (concurrent
- * writer / counter reset) needs to fold to zero rather than wrap. */
-static unsigned long sat_sub(unsigned long a, unsigned long b)
-{
-	return (a >= b) ? (a - b) : 0UL;
-}
-
 void plateau_snapshot_delta(struct plateau_window_snapshot *out,
 			    const struct plateau_window_snapshot *entry,
 			    const struct plateau_window_snapshot *now)
@@ -154,28 +146,28 @@ void plateau_snapshot_delta(struct plateau_window_snapshot *out,
 	if (out == NULL || entry == NULL || now == NULL)
 		return;
 
-	out->pc_edges = sat_sub(now->pc_edges, entry->pc_edges);
-	out->cmp_unique = sat_sub(now->cmp_unique, entry->cmp_unique);
-	out->bandit_edges = sat_sub(now->bandit_edges, entry->bandit_edges);
-	out->explorer_edges = sat_sub(now->explorer_edges,
-				      entry->explorer_edges);
-	out->childop_edges_total = sat_sub(now->childop_edges_total,
-					   entry->childop_edges_total);
-	out->childop_calls_total = sat_sub(now->childop_calls_total,
-					   entry->childop_calls_total);
-	out->remote_calls = sat_sub(now->remote_calls, entry->remote_calls);
-	out->total_calls = sat_sub(now->total_calls, entry->total_calls);
-	out->frontier_picks = sat_sub(now->frontier_picks,
-				      entry->frontier_picks);
-	out->frontier_pulls = sat_sub(now->frontier_pulls,
-				      entry->frontier_pulls);
-	out->frontier_live_picks = sat_sub(now->frontier_live_picks,
-					   entry->frontier_live_picks);
-	out->frontier_silent_picks = sat_sub(now->frontier_silent_picks,
-					     entry->frontier_silent_picks);
+	out->pc_edges = sat_sub_ul(now->pc_edges, entry->pc_edges);
+	out->cmp_unique = sat_sub_ul(now->cmp_unique, entry->cmp_unique);
+	out->bandit_edges = sat_sub_ul(now->bandit_edges, entry->bandit_edges);
+	out->explorer_edges = sat_sub_ul(now->explorer_edges,
+					 entry->explorer_edges);
+	out->childop_edges_total = sat_sub_ul(now->childop_edges_total,
+					      entry->childop_edges_total);
+	out->childop_calls_total = sat_sub_ul(now->childop_calls_total,
+					      entry->childop_calls_total);
+	out->remote_calls = sat_sub_ul(now->remote_calls, entry->remote_calls);
+	out->total_calls = sat_sub_ul(now->total_calls, entry->total_calls);
+	out->frontier_picks = sat_sub_ul(now->frontier_picks,
+					 entry->frontier_picks);
+	out->frontier_pulls = sat_sub_ul(now->frontier_pulls,
+					 entry->frontier_pulls);
+	out->frontier_live_picks = sat_sub_ul(now->frontier_live_picks,
+					      entry->frontier_live_picks);
+	out->frontier_silent_picks = sat_sub_ul(now->frontier_silent_picks,
+						entry->frontier_silent_picks);
 	for (grp = 0; grp < NR_GROUPS; grp++)
-		out->group_edges[grp] = sat_sub(now->group_edges[grp],
-						entry->group_edges[grp]);
+		out->group_edges[grp] = sat_sub_ul(now->group_edges[grp],
+						   entry->group_edges[grp]);
 }
 
 /*
@@ -300,7 +292,7 @@ enum plateau_hypothesis strategy_plateau_hypothesis_check(
 
 	/* Rule 3: remote KCOV dominates inline KCOV.  inline_calls is
 	 * derived rather than stored to avoid carrying redundant state. */
-	inline_calls = sat_sub(delta.total_calls, delta.remote_calls);
+	inline_calls = sat_sub_ul(delta.total_calls, delta.remote_calls);
 	if (delta.remote_calls > PHC_REMOTE_DOMINANT_MIN &&
 	    delta.remote_calls > PHC_REMOTE_DOMINANT_RATIO * inline_calls)
 		return PLATEAU_HYPOTHESIS_REMOTE_DOMINANT;

@@ -35,6 +35,12 @@ static inline uint64_t mono_ns(void)
 	return (uint64_t)ts.tv_sec * 1000000000ULL + (uint64_t)ts.tv_nsec;
 }
 
+/* Saturating unsigned-long subtract: the only correct source for
+ * a - b when an inversion (concurrent writer / counter reset) must
+ * fold to zero rather than wrap. */
+static inline unsigned long sat_sub_ul(unsigned long a, unsigned long b)
+{ return (a >= b) ? (a - b) : 0UL; }
+
 /*
  * Restartable waitpid() wrapper.  Trinity installs SIGALRM and SIGXCPU
  * without SA_RESTART (signals.c), so any blocking waitpid() in a non-
