@@ -20,8 +20,8 @@ childops/nat-t-churn.c:nat_t_churn_v6
 childops/nat-t-churn.c:open_encap_udp6
 childops/nat-t-churn.c:warn_once_unsupported
 childops/nftables-churn.c:warn_once_unsupported_nftables
-childops/numa-migration-churn.c:parse_online_nodes
-childops/pagecache-canary-check.c:log_corruption
+childops/mm/numa-migration-churn.c:parse_online_nodes
+childops/mm/pagecache-canary-check.c:log_corruption
 childops/psp-key-rotate.c:warn_once_unsupported_psp_key_rotate
 childops/refcount-auditor.c:audit_fd_bucket
 childops/refcount-auditor.c:audit_mmap_bucket
