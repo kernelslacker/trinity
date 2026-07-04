@@ -803,38 +803,9 @@ void minicorpus_struct_field_attrib(enum field_tag tag)
 	this_struct_field_set = true;
 }
 
-void minicorpus_mut_attrib_commit(bool found_new)
+static void minicorpus_mut_attrib_perop_accounting(bool found_new)
 {
 	unsigned int i;
-
-	/* Clear the per-child replay-provenance flag unconditionally,
-	 * regardless of whether the call had a tracked corpus source.  The
-	 * flag is set inside minicorpus_replay() right after the snapshot
-	 * picks an entry tagged rq_sourced, and consumed by
-	 * frontier_record_new_edge() during the call's kcov pass which has
-	 * already completed by the time we get here.  Clearing here keeps
-	 * the next iteration's frontier_record_new_edge from mis-crediting
-	 * its PC win to a stale source -- whether the next call is a
-	 * non-replay (fresh args) or a replay of a non-rq-sourced entry. */
-	{
-		struct childdata *cc = this_child();
-
-		if (cc != NULL) {
-			cc->replay_rq_sourced = false;
-			cc->replay_errno_sourced = false;
-		}
-	}
-
-	if (minicorpus_shm == NULL) {
-		/* Still clear the per-process tag so a future shm-armed
-		 * commit() doesn't see stale state from before init. */
-		this_attrib_cmp_source = false;
-		this_replay_source_tracked = false;
-		this_struct_field_set = false;
-		for (i = 0; i < MUT_NUM_OPS; i++)
-			mut_structured_attrib[i] = 0;
-		return;
-	}
 
 	/* Per-op mutator accounting is gated on having a tracked source
 	 * corpus entry (i.e., the call came from minicorpus_replay, not
@@ -973,6 +944,42 @@ void minicorpus_mut_attrib_commit(bool found_new)
 					   1UL, __ATOMIC_RELAXED);
 		this_replay_xprop = false;
 	}
+}
+
+void minicorpus_mut_attrib_commit(bool found_new)
+{
+	unsigned int i;
+
+	/* Clear the per-child replay-provenance flag unconditionally,
+	 * regardless of whether the call had a tracked corpus source.  The
+	 * flag is set inside minicorpus_replay() right after the snapshot
+	 * picks an entry tagged rq_sourced, and consumed by
+	 * frontier_record_new_edge() during the call's kcov pass which has
+	 * already completed by the time we get here.  Clearing here keeps
+	 * the next iteration's frontier_record_new_edge from mis-crediting
+	 * its PC win to a stale source -- whether the next call is a
+	 * non-replay (fresh args) or a replay of a non-rq-sourced entry. */
+	{
+		struct childdata *cc = this_child();
+
+		if (cc != NULL) {
+			cc->replay_rq_sourced = false;
+			cc->replay_errno_sourced = false;
+		}
+	}
+
+	if (minicorpus_shm == NULL) {
+		/* Still clear the per-process tag so a future shm-armed
+		 * commit() doesn't see stale state from before init. */
+		this_attrib_cmp_source = false;
+		this_replay_source_tracked = false;
+		this_struct_field_set = false;
+		for (i = 0; i < MUT_NUM_OPS; i++)
+			mut_structured_attrib[i] = 0;
+		return;
+	}
+
+	minicorpus_mut_attrib_perop_accounting(found_new);
 
 	/* CMP-source wins counter.  Bumped at most once per commit so its
 	 * units match "calls credited as CMP-source wins" not "per-arg
