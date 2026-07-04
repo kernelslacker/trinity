@@ -152,12 +152,50 @@ static int get_rand_inotify_fd(void)
 	return -1;
 }
 
+/*
+ * Periodic child-tick top-up.  init_inotify_fds() populates the
+ * OBJ_GLOBAL pool once at startup; each child inherits a copy that
+ * only drains via close / dup2 / close_range hits.  Once the child's
+ * private view is empty, get_rand_inotify_fd() and every ARG_FD_INOTIFY
+ * consumer stops seeing an inotify fd at all.
+ *
+ * child_fd_ring_push() reaches gen_arg_fd's 70% live-fd path directly.
+ * add_object(OBJ_GLOBAL) from child context is a no-op by design (see
+ * the mainpid guard in objects/registry.c), so this is the only
+ * post-fork publish channel available without changing the
+ * pool-ownership model.  Reuse the CLOEXEC-marked subset of the
+ * init_inotify_fds() flag set -- these fds may end up passed to
+ * unrelated syscalls via ARG_FD, and CLOEXEC keeps them from leaking
+ * across an exec.
+ */
+static void inotify_try_replenish(unsigned int budget)
+{
+	static const int flags[] = {
+		IN_CLOEXEC,
+		IN_NONBLOCK | IN_CLOEXEC,
+	};
+	struct childdata *child = this_child();
+	unsigned int i;
+
+	if (child == NULL)
+		return;
+
+	for (i = 0; i < budget; i++) {
+		int fd = inotify_init1(flags[rnd_modulo_u32(ARRAY_SIZE(flags))]);
+
+		if (fd < 0)
+			return;
+		child_fd_ring_push(&child->live_fds, fd);
+	}
+}
+
 static const struct fd_provider inotify_fd_provider = {
 	.name = "inotify",
 	.objtype = OBJ_FD_INOTIFY,
 	.enabled = true,
 	.init = &init_inotify_fds,
 	.get = &get_rand_inotify_fd,
+	.try_replenish = &inotify_try_replenish,
 };
 
 REG_FD_PROV(inotify_fd_provider);
