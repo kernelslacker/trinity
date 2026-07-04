@@ -157,12 +157,48 @@ static int get_rand_memfd_secret_fd(void)
 	return -1;
 }
 
+/*
+ * Periodic child-tick top-up.  See the block comment above
+ * memfd_try_replenish() (fds/memfd.c) for the general contract.
+ * init_memfd_secret_fds() seeds NR_MEMFD_SECRET_FDS once; a child that
+ * has drained them via fuzz-driven close/dup2/close_range hits stops
+ * seeing ARG_FD_MEMFD_SECRET picks.  Push fresh secretmem fds into the
+ * live-fd ring to restore gen_arg_fd() hits without touching the
+ * OBJ_GLOBAL pool the parent owns.
+ *
+ * Honour the unsupported_memfd_secret latch: on a kernel without
+ * CONFIG_SECRETMEM or with secretmem.enable_secretmem=0, the syscall
+ * has already failed once and further calls would just burn budget on
+ * ENOSYS/EINVAL.
+ */
+static void memfd_secret_try_replenish(unsigned int budget)
+{
+	struct childdata *child = this_child();
+	unsigned int i;
+
+	if (child == NULL)
+		return;
+	if (unsupported_memfd_secret)
+		return;
+
+	for (i = 0; i < budget; i++) {
+		unsigned int flags = RAND_BOOL() ? O_CLOEXEC : 0;
+		int fd = memfd_secret(flags);
+
+		if (fd < 0)
+			return;
+
+		child_fd_ring_push(&child->live_fds, fd);
+	}
+}
+
 static const struct fd_provider memfd_secret_fd_provider = {
 	.name = "memfd_secret",
 	.objtype = OBJ_FD_MEMFD_SECRET,
 	.enabled = true,
 	.init = &init_memfd_secret_fds,
 	.get = &get_rand_memfd_secret_fd,
+	.try_replenish = &memfd_secret_try_replenish,
 };
 
 REG_FD_PROV(memfd_secret_fd_provider);
