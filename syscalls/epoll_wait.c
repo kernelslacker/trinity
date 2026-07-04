@@ -10,6 +10,8 @@
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
+#include "shm.h"
+#include "stats.h"
 #include "trinity.h"
 #include "utils.h"
 
@@ -57,8 +59,32 @@ static unsigned long pick_timeout_ms(void)
 	}
 }
 
+/*
+ * Attribute why (a3 > 0 && a2 == 0) still holds at sanitise exit --
+ * the state the arg-coupling validator will reject as EFAULT-shaped
+ * without dispatching the syscall.  Companion to the identical helper
+ * in epoll_pwait.c; kept per-file to match the file-local static
+ * pattern (pick_maxevents / pick_timeout_ms) instead of hoisting to a
+ * shared header just for two callers.  See stats.h for the bucket
+ * definitions.
+ */
+static void record_null_events_cause(unsigned long initial_a2,
+				     struct syscallrecord *rec)
+{
+	if ((long) rec->a3 <= 0 || rec->a2 != 0)
+		return;
+	if (initial_a2 == 0)
+		__atomic_add_fetch(&shm->stats.epoll_wait_null_events_alloc_fail,
+				   1, __ATOMIC_RELAXED);
+	else
+		__atomic_add_fetch(&shm->stats.epoll_wait_null_events_shared_reject,
+				   1, __ATOMIC_RELAXED);
+}
+
 static void sanitise_epoll_wait(struct syscallrecord *rec)
 {
+	unsigned long initial_a2 = rec->a2;
+
 	rec->a3 = (unsigned long) pick_maxevents();
 	rec->a4 = pick_timeout_ms();
 
@@ -73,6 +99,8 @@ static void sanitise_epoll_wait(struct syscallrecord *rec)
 
 		avoid_shared_buffer_out(&rec->a2, bytes);
 	}
+
+	record_null_events_cause(initial_a2, rec);
 }
 
 /*
