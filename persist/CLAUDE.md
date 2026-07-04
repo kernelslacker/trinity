@@ -14,7 +14,7 @@ Coverage-guided argument retention plus the deferred-free temporal-overlap queue
 ## Key invariants
 - **minicorpus snapshot on new edge** — only args that produced a fresh KCOV edge are retained; replay threads them into later iterations.
 - **deferred-free TTL** — a freed-but-tracked buffer survives ~5–50 ticks (batched by 16 → ~80–800 effective) before the real free; opt-in `alloc_track` tracking gates what's eligible, so untracked pointers can't be bad-freed.
-- **deferred-free is correctness-critical** — the ring/hash lock-step, same-mprotect-bracket size-slot zeroing, and PROT_READ steady state are the UAF/double-free defenses; changes need fuzz-box ASAN (and the TU-split of this file is held for that reason).
+- **deferred-free is correctness-critical** — the ring/hash lock-step, same-mprotect-bracket size-slot zeroing, and PROT_READ steady state are the UAF/double-free defenses; changes need ASAN validation (and the TU-split of this file is held for that reason).
 
 ## Interactions
 - Gated by **`kcov/`** + **`cmp_hints/`** (the coverage signal that decides what to retain).

@@ -23,7 +23,7 @@ Each forked child's per-iteration lifecycle: bring-up + sandbox, then the loop t
 ## Interactions
 - **`random_syscall/`** — the fresh/biased/replay pick for a non-alt-op iteration.
 - **`childops/`** — the scripted workloads the alt-op picker dispatches.
-- **syscall dispatch + `results.c`** — issues the syscall and records the outcome (root today; `dispatch/` after the dispatch carve).
+- **syscall dispatch + `results.c`** — issues the syscall and records the outcome (`dispatch/`).
 - **`objects/`** — the per-child object pool feeding fd/id/handle args.
 
 ## Areas of attention
