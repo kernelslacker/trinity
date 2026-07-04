@@ -1,0 +1,32 @@
+# net-proto-sfg-parity baseline.
+#
+# Grandfathered list of PF families that have an entry in
+# net_protocols[] (net/protocols.c) but no matching grammar in
+# sfg_registry[] (net/socket-family-grammar.c).  For each of these,
+# the netproto struct exists to feed sfg_default_pick_triplet() /
+# sfg_default_bind() with valid triplets and sockaddr synthesis, but
+# no per-family grammar has been written yet -- so the family is
+# reachable via the raw socket_family_chain path only, not via the
+# richer per-family setsockopt/bind/listen/sendmsg walker.
+#
+# Format: one bare PF_XXX per line; everything after the first
+# whitespace is a reason comment.
+#
+# This baseline file should SHRINK over time, never grow.  When a
+# per-family grammar lands, remove its PF from this file in the same
+# commit.  A brand-new [PF_XXX] entry appearing in net_protocols[]
+# without a matching grammar MUST FAIL check-static rather than be
+# silently added here.
+#
+# Lines starting with `#` and blank lines are ignored.
+
+PF_ALG          crypto AF_ALG -- setsockopt-driven, no bind/listen shape
+PF_ATMPVC       legacy ATM PVC -- niche, no grammar author volunteered
+PF_IB           InfiniBand -- kernel path exists, no fuzz shape drafted
+PF_IEEE802154   low-power WPAN -- no grammar drafted
+PF_IUCV         s390 IUCV -- arch-specific, no grammar author on this side
+PF_KEY          PF_KEYv2 SA/SP dump -- msg-driven, no bind/listen shape
+PF_NETBEUI      obsolete NetBEUI -- kept for triplet enumeration only
+PF_NFC          NFC LLCP -- hardware-gated, no grammar drafted
+PF_PPPOX       PPPoX/L2TP -- setup shape doesn't fit the walker yet
+PF_X25          legacy X.25 -- kept for triplet enumeration only
