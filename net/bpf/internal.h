@@ -1,17 +1,17 @@
 /*
- * bpf-internal.h
+ * internal.h
  *
- * Shared declarations split out of net/bpf.c so the classic-BPF
- * disassembler (bpf-disasm.c) can compile as its own translation
+ * Shared declarations split out of net/bpf/bpf.c so the classic-BPF
+ * disassembler (disasm.c) can compile as its own translation
  * unit and live independently of the seccomp/socket-filter generator.
  * This header is private to the two TUs that make up the bpf
  * subsystem — do not include it from anywhere else.
  *
  * The only widened symbol is bpf_disasm_all(): it is invoked from the
  * generators in bpf.c at MAX_LOGLEVEL verbosity and defined in
- * bpf-disasm.c.  Everything else the disassembler needs (the per-class
+ * disasm.c.  Everything else the disassembler needs (the per-class
  * *_vars_name string tables, the op_table[], the per-class decode
- * helpers and bpf_disasm()) is file-static inside bpf-disasm.c.
+ * helpers and bpf_disasm()) is file-static inside disasm.c.
  *
  * The BPF opcode-bit fallback macros are emitted here because both
  * TUs reference them and must observe the same constant values

@@ -9,7 +9,7 @@
  * peer's first segment passes MD5 verification far enough to allocate
  * the child, and the segment's wire shape forces the early-RST exit
  * before the child is grafted back onto the accept queue.  Random
- * setsockopt fuzzing emits TCP_MD5SIG in isolation (proto-ip-tcp.c)
+ * setsockopt fuzzing emits TCP_MD5SIG in isolation (net/proto/ip-tcp.c)
  * but never assembles listener + per-peer key + tight zero-linger
  * client RST burst, so the racer's response path is unreached.
  *
@@ -55,7 +55,7 @@
 #include "trinity.h"
 
 /* tcp_md5sig and TCP_MD5SIG_MAXKEYLEN already arrive via <linux/tcp.h>
- * and are referenced unconditionally by net/proto-ip-tcp.c, so no
+ * and are referenced unconditionally by net/proto/ip-tcp.c, so no
  * private fallback is needed here. */
 
 /* Latched once per child: the listener's first TCP_MD5SIG returned

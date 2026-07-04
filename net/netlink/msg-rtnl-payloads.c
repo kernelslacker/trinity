@@ -1,17 +1,17 @@
 /*
- * netlink-msg-rtnl-payloads.c
+ * msg-rtnl-payloads.c
  *
  * Per-rtnetlink-group attribute payload builders, split out of
- * net/netlink-msg.c so the message emitter / dispatcher TU stays
+ * net/netlink/msg.c so the message emitter / dispatcher TU stays
  * focused on protocol-body and dispatch logic and the per-group
  * payload bodies can compile in parallel.  The five generators here
  * (gen_rta_{route,link,addr,neigh,dcb}_payload) are dispatched from
- * the gen_rta_payload switch in netlink-msg.c.
+ * the gen_rta_payload switch in msg.c.
  *
  * The four file-static helpers (rand_ipv4, rand_ipv6, start_nlattr,
  * build_nested_attrs) are only consumed inside this TU so they stay
  * file-static here.  Only the five payload generators are widened to
- * external linkage and declared in netlink-msg-internal.h.
+ * external linkage and declared in msg-internal.h.
  */
 #include <sys/socket.h>
 #include <stddef.h>
@@ -37,57 +37,57 @@
 #include "trinity.h"
 #include "rnd.h"
 
-/* Prototype mirrored from the forward declaration in net/netlink-msg.c;
- * kept here (rather than in netlink-msg-internal.h next to its
+/* Prototype mirrored from the forward declaration in net/netlink/msg.c;
+ * kept here (rather than in msg-internal.h next to its
  * gen_rta_* siblings) to keep the rtnl_neightbl wire-up confined to
  * the two TUs that actually need it. */
 size_t gen_rta_neightbl_payload(unsigned char *p, size_t avail,
 				unsigned short nla_type);
 
 /* Same shape as gen_rta_neightbl_payload above: prototype kept here
- * rather than in netlink-msg-internal.h to confine the rtnl_addrlabel
+ * rather than in msg-internal.h to confine the rtnl_addrlabel
  * wire-up to the two TUs that actually need it. */
 size_t gen_rta_addrlabel_payload(unsigned char *p, size_t avail,
 				 unsigned short nla_type);
 
 /* Same shape as gen_rta_neightbl_payload above: prototype kept here
- * rather than in netlink-msg-internal.h to confine the rtnl_stats
+ * rather than in msg-internal.h to confine the rtnl_stats
  * wire-up to the two TUs that actually need it. */
 size_t gen_rta_stats_payload(unsigned char *p, size_t avail,
 			     unsigned short nla_type);
 
 /* Same shape as gen_rta_neightbl_payload above: prototype kept here
- * rather than in netlink-msg-internal.h to confine the rtnl_action
+ * rather than in msg-internal.h to confine the rtnl_action
  * wire-up to the two TUs that actually need it. */
 size_t gen_rta_action_payload(unsigned char *p, size_t avail,
 			      unsigned short nla_type);
 
 /* Same shape as gen_rta_neightbl_payload above: prototype kept here
- * rather than in netlink-msg-internal.h to confine the rtnl_tunnel
+ * rather than in msg-internal.h to confine the rtnl_tunnel
  * wire-up to the two TUs that actually need it. */
 size_t gen_rta_tunnel_payload(unsigned char *p, size_t avail,
 			      unsigned short nla_type);
 
 /* Same shape as gen_rta_neightbl_payload above: prototype kept here
- * rather than in netlink-msg-internal.h to confine the rtnl_prefix
+ * rather than in msg-internal.h to confine the rtnl_prefix
  * wire-up to the two TUs that actually need it. */
 size_t gen_rta_prefix_payload(unsigned char *p, size_t avail,
 			      unsigned short nla_type);
 
 /* Same shape as gen_rta_neightbl_payload above: prototype kept here
- * rather than in netlink-msg-internal.h to confine the rtnl_nsid
+ * rather than in msg-internal.h to confine the rtnl_nsid
  * wire-up to the two TUs that actually need it. */
 size_t gen_rta_nsid_payload(unsigned char *p, size_t avail,
 			    unsigned short nla_type);
 
 /* Same shape as gen_rta_neightbl_payload above: prototype kept here
- * rather than in netlink-msg-internal.h to confine the rtnl_chain
+ * rather than in msg-internal.h to confine the rtnl_chain
  * wire-up to the two TUs that actually need it. */
 size_t gen_rta_chain_payload(unsigned char *p, size_t avail,
 			     unsigned short nla_type);
 
 /* Same shape as gen_rta_neightbl_payload above: prototype kept here
- * rather than in netlink-msg-internal.h to confine the rtnl_linkprop
+ * rather than in msg-internal.h to confine the rtnl_linkprop
  * wire-up to the two TUs that actually need it. */
 size_t gen_rta_linkprop_payload(unsigned char *p, size_t avail,
 				unsigned short nla_type);

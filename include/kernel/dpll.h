@@ -5,7 +5,7 @@
  *
  * The dpll UAPI header shipped in 6.7, but its top-level DPLL_A_*
  * attribute enum has been appended to several times since.  The genl
- * grammar in net/netlink-genl-fam-dpll.c is gated on
+ * grammar in net/netlink/genl/dpll.c is gated on
  * __has_include(<linux/dpll.h>), so a host that ships an *older*
  * revision of the header (e.g. a distro tracking a pre-6.16 kernel)
  * passes that gate and then fails to compile on the newer enum members

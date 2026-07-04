@@ -51,7 +51,7 @@ enum field_tag {
 	FT_VERSION_MAGIC,	/* pick from a curated size/version set */
 	FT_ADDRESS,		/* writable / scrubbable region */
 	FT_TAGGED_UNION,	/* per-discriminator subset of fields */
-	FT_BPF_PROGRAM,		/* eBPF insn buffer; fill delegated to net/ebpf.c generator */
+	FT_BPF_PROGRAM,		/* eBPF insn buffer; fill delegated to net/bpf/ebpf.c generator */
 	FT_VOCAB,		/* pick a NUL-padded byte string from u.vocab.vocab */
 	FT_SRANGE,		/* signed uniform [u.srange.lo, u.srange.hi] */
 	FT_PICKER,		/* call u.picker.pick() for the value (runtime-populated pool) */

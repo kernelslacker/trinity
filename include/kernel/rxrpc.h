@@ -2,7 +2,7 @@
 
 /*
  * Wrapper around <linux/rxrpc.h> that ships #ifndef-guarded fallbacks
- * for a couple of AF_RXRPC UAPI symbols that proto-rxrpc.c was carrying
+ * for a couple of AF_RXRPC UAPI symbols that net/proto/rxrpc.c was carrying
  * inline.  Values are the stable kernel UAPI values; stripped sysroots
  * may be missing them on older build hosts.
  */

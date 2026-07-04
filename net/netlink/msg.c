@@ -38,7 +38,7 @@
 #include "trinity.h"
 #include "rnd.h"
 
-/* Forward declaration — called via gen_msg hook from proto-netlink.c */
+/* Forward declaration — called via gen_msg hook from net/proto/netlink.c */
 void netlink_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len);
 
 /* Generate a random set of nlmsg flags biased toward valid combos */
@@ -103,7 +103,7 @@ static unsigned short pick_nlmsg_type(int protocol)
 		 * Bias toward (subsys, cmd) pairs from the registry so the
 		 * kernel's per-subsys nfnl_callback dispatcher actually
 		 * accepts the type byte; the registered cmd set comes from
-		 * net/netlink-nfnl-sub-*.c.  Keep an unknown-cmd path with
+		 * net/netlink/nfnl/<subsystem>.c.  Keep an unknown-cmd path with
 		 * low probability to keep exercising the
 		 * dispatcher-not-registered fast-reject. */
 		static const unsigned char nfnl_subsys[] = {
@@ -163,8 +163,8 @@ static unsigned short pick_nlmsg_type(int protocol)
 	}
 }
 
-/* Forward declaration — defined in net/netlink-msg-rtnl-payloads.c.
- * Other gen_rta_* sibling declarations live in netlink-msg-internal.h;
+/* Forward declaration — defined in net/netlink/msg-rtnl-payloads.c.
+ * Other gen_rta_* sibling declarations live in msg-internal.h;
  * this one is inline here to keep the rtnl_neightbl wire-up confined
  * to the two TUs that actually need it. */
 size_t gen_rta_neightbl_payload(unsigned char *p, size_t avail,
@@ -408,7 +408,7 @@ static size_t append_nlattr(unsigned char *buf, size_t offset, size_t buflen,
 }
 
 /* NDTA_* attr types for RTM_*NEIGHTBL (rtnl group 12).  File-static
- * here rather than alongside ifla_attrs/etc. in netlink-msg-tables.c
+ * here rather than alongside ifla_attrs/etc. in msg-tables.c
  * to keep the rtnl_neightbl wire-up confined to the two TUs that
  * actually need it; matches the shape of the other per-group lists. */
 static const unsigned short ndtbl_attrs[] = {

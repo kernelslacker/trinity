@@ -2086,7 +2086,7 @@ struct stats_s {
 	unsigned long bpf_maps_provided;
 	unsigned long bpf_progs_provided;
 
-	/* net/ebpf.c generator: cumulative count of programs that prepended
+	/* net/bpf/ebpf.c generator: cumulative count of programs that prepended
 	 * an LD_MAP_FD loading a real bpf-map fd from the trinity object pool
 	 * (Phase 3.3).  Bumped whenever the 5% base substitution rate or the
 	 * tier2 dedicated map-exercise sub-strategy fires AND the pool had at

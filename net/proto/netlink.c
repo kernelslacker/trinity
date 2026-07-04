@@ -110,7 +110,7 @@ static struct socket_triplet netlink_triplets[] = {
 */
 };
 
-/* defined in netlink-msg.c */
+/* defined in net/netlink/msg.c */
 void netlink_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len);
 
 const struct netproto proto_netlink = {
@@ -144,7 +144,7 @@ const struct netproto proto_netlink = {
  * gen_cmsg stays NULL — netlink uses nlmsg framing rather than
  * ancillary cmsg, and the data leg falls through to the framework
  * default which already calls proto_netlink.gen_msg (netlink_gen_msg
- * in netlink-msg.c) for the payload.
+ * in net/netlink/msg.c) for the payload.
  */
 static const int netlink_grammar_protos[] = {
 	NETLINK_GENERIC,

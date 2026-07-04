@@ -2,7 +2,7 @@
  * tls_rotate - kTLS ULP install + cipher swap on a live loopback socket.
  *
  * Trinity's per-syscall fuzzer can issue setsockopt(SOL_TLS, TLS_TX, ...)
- * (proto-ipv4.c call_ulp_sso_ptr() builds the cinfo grammar) but flat
+ * (net/proto/ipv4.c call_ulp_sso_ptr() builds the cinfo grammar) but flat
  * fuzzing essentially never assembles the four-step sequence kTLS
  * actually requires: TCP socket -> ESTABLISHED -> setsockopt(TCP_ULP,
  * "tls") -> setsockopt(SOL_TLS, TLS_TX, &cinfo).  Without those four

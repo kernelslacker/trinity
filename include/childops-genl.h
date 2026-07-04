@@ -28,7 +28,7 @@
  *   - Dump / streaming receive.  Single-ack callers are the common
  *     case; the one existing dump caller (genl_dump in nl80211-
  *     churn.c) stays local.
- *   - The shared dump-based resolver in net/netlink-genl-families.c
+ *   - The shared dump-based resolver in net/netlink/genl/families.c
  *     is separate by design — it walks every registered family in
  *     one dump for the genetlink-fuzzer / per-family stats wire-up.
  *     The per-ctx GETFAMILY here is a single-family unicast.

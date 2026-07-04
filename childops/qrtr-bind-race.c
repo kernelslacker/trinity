@@ -12,7 +12,7 @@
  * driven by sendmsg routing — can grab a reference on the dying
  * struct after its last user has dropped it, producing a refcount /
  * RCU use-after-free on the qrtr_sock.  Random per-syscall sendmsg
- * fuzzing against QRTR_PORT_CTRL (proto-qrtr.c) never assembles the
+ * fuzzing against QRTR_PORT_CTRL (net/proto/qrtr.c) never assembles the
  * concurrent same-port bind/close shape; this op drives it directly.
  *
  * Shape per outer iteration (BUDGETED, bounded wall-clock):
