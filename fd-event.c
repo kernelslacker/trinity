@@ -216,7 +216,7 @@ static void apply_slot(const void *p, void *ctx __unused__)
 			 * counters so the two paths stay observable.
 			 *
 			 * Per-provider outstanding-fd gauge decrement lives
-			 * in __destroy_object() (objects.c) so it covers
+			 * in __destroy_object() (objects/registry.c) so it covers
 			 * every fd-provider destruction path -- parent-side
 			 * stuck-fd eviction, close/close_range post-handlers,
 			 * and perf/kvm peer pre-closes all flow through that

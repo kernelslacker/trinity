@@ -67,7 +67,7 @@ size_t alloc_track_lookup_size(void *ptr) __must_check;
 /*
  * Refresh an existing tracked allocation's LRU position.  Use this
  * when an already-tracked pointer is re-referenced (mm/maps.c dedup-skip,
- * objects.c add_object OBJ_LOCAL pool touch) and you want it to survive
+ * objects/registry.c add_object OBJ_LOCAL pool touch) and you want it to survive
  * subsequent LRU rotation.  Bumps alloc_track_refresh_consume_miss and
  * leaves the alloc_track state unchanged when @ptr is not currently
  * tracked (rotated out, or never tracked -- the two are indistinguishable

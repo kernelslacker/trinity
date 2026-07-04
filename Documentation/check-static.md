@@ -77,7 +77,7 @@ update this section to match `ls scripts/check-static/*.sh`.)
   `fd-event.c` must go through the canonical
   `notify_child_fd_closed[_range]()` helper to preserve the close
   contract.
-- `fd-from-object-coverage`: `fd_from_object()` in `objects.c` must
+- `fd-from-object-coverage`: `fd_from_object()` in `objects/dispatch.c` must
   switch on every `OBJ_FD_*` enum value, and every case label must
   still refer to a live enum member.
 - `nested-writable-len`: flag nested `get_writable_struct` /

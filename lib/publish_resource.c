@@ -78,7 +78,7 @@ static bool publish_resource_type_supported(enum objecttype type)
 /*
  * Stamp the type-specific primary handle.  FD pools route
  * through set_object_fd() so the per-pool union-member
- * mapping stays in exactly one place (objects.c).  Non-fd
+ * mapping stays in exactly one place (objects/).  Non-fd
  * pools each have a one-line typed assignment below — these
  * are the only id-only OBJ types in the enum and the cost of
  * stamping them inline is one switch arm each.  The default
