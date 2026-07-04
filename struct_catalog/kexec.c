@@ -1,16 +1,10 @@
 /*
  * struct_catalog/kexec.c -- kexec-shaped struct field tables.
  *
- * Carved out of struct_catalog.c as the next leaf TU of the file
- * split: the central spine (struct_catalog[], syscall_struct_args[])
- * and all logic stay in struct_catalog.c; this TU owns the kexec leaf
- * data only -- struct kexec_segment (the kexec_load segments array
- * element).  Symbols flip from static const to const so the spine's
- * .fields = kexec_segment_fields reference resolves via the externs
- * in struct_catalog-internal.h.
- *
- * struct_catalog.h and arch.h are included unconditionally so this
- * TU is never empty.  <linux/kexec.h> brings struct kexec_segment.
+ * Tables are `const` (not `static const`) so the spine's designated-init
+ * `.fields =` references resolve via the externs in struct_catalog-internal.h.
+ * struct_catalog.h and arch.h are #included unconditionally so this TU is
+ * never empty.
  */
 
 #include <stddef.h>
