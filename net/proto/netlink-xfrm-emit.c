@@ -1,5 +1,5 @@
 /*
- * proto-netlink-xfrm-emit.c -- per-message-kind NETLINK_XFRM builders.
+ * netlink-xfrm-emit.c -- per-message-kind NETLINK_XFRM builders.
  * Each xfrm_emit_* function assembles one message (NEWSA / NEWAE /
  * NEWPOLICY / ...) plus its coherent attribute payload, sends it
  * through xfrm_send_recv, and -- on accept -- pushes any installed

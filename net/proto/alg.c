@@ -180,7 +180,7 @@ static const char *sig_algos[] = {
 };
 
 /*
- * Static-fallback accessor consumed by net/proto-alg-dict.c.  The dict
+ * Static-fallback accessor consumed by net/alg-dict.c.  The dict
  * merges these entries with whatever it parses from /proc/crypto, so
  * containers/locked-down envs with an empty /proc/crypto still get a
  * working algorithm list.  Keep these arrays in lockstep with upstream

@@ -1,8 +1,8 @@
 /*
- * proto-netlink-xfrm-attr.c -- attribute appenders, algorithm name
+ * netlink-xfrm-attr.c -- attribute appenders, algorithm name
  * rotation tables, and address / selector / lifetime helpers for the
  * NETLINK_XFRM grammar.  The message builders in
- * proto-netlink-xfrm-emit.c reach these through the externs in
+ * netlink-xfrm-emit.c reach these through the externs in
  * include/proto-netlink-xfrm-internal.h.
  */
 
