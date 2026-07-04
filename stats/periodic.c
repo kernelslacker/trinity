@@ -1178,7 +1178,7 @@ void __cold defense_counters_periodic_dump(void)
 
 	for (i = 0; i < ARRAY_SIZE(defense_counters); i++) {
 		unsigned long cur = defense_counter_load(i);
-		unsigned long delta = cur - prev[i];
+		unsigned long delta = sat_sub_ul(cur, prev[i]);
 		unsigned long rate_milli;
 
 		prev[i] = cur;
