@@ -62,59 +62,49 @@ struct listxattrat_post_state {
 };
 #endif
 
-static void sanitise_listxattrat(struct syscallrecord *rec)
+/*
+ * ARG_PATHNAME plumbed a random pathname into rec->a2, but the
+ * random path is most often either not a real file at all
+ * (ENOENT before the per-inode xattr list walk) or, even when
+ * it does land on a real file, that inode has no xattrs --
+ * vfs_listxattr returns a 0-length name list immediately, never
+ * reaching the per-fs handler dispatch or the simple_xattr_list
+ * walk that the per-inode i_xattrs rwsem guards.  Same "high
+ * calls, low edges" cold-syscall shape that the rest of the
+ * xattr family was in before their precondition fixes.
+ *
+ * Half the draws now repoint pathname (a2) at one of the
+ * trinity-testfile<N> absolute paths and plant a known user.*
+ * xattr there via setxattr() so the subsequent listxattrat
+ * walks a non-empty per-inode xattr list and reaches the real
+ * list-walk path.  An absolute pathname makes dfd irrelevant --
+ * the kernel ignores rec->a1 when pathname is absolute -- so
+ * this composes cleanly with the AT_FDCWD-pin / random-fd dfd
+ * logic and the at_flags sanitiser below; the planted testfiles
+ * are regular files so AT_SYMLINK_NOFOLLOW is a no-op on them,
+ * and the absolute non-empty path makes AT_EMPTY_PATH
+ * irrelevant too.  The other half preserves rec->a2 exactly as
+ * the generic draw left it so the empty-list / ENOENT arms
+ * stay exercised.
+ *
+ * The plant runs BEFORE the post-state snapshot below so
+ * snap->pathname captures the planted byte sequence -- the post
+ * oracle's re-call then re-walks the planted path and compares
+ * its returned name list against the first call's payload
+ * exactly as the existing oracle expects.  Plant failure
+ * (ENOSPC on a full xattr list, EOPNOTSUPP on a fs that bailed
+ * out of the user.* leg, ENOENT if the testfile slot was never
+ * opened, ...) is non-fatal: an earlier draw on the same inode
+ * may still hold a stale user.trinity_plant from a prior round,
+ * so listxattrat below may still see a non-empty list.
+ *
+ * Slow-path note: the setxattr() in sanitise is one real
+ * syscall.  syscalls/listxattrat.c is outside the
+ * sanitiser-slow-path check's FILES scope, so this is within
+ * budget for the precondition payoff.
+ */
+static void sanitise_listxattrat_plant_pathname(struct syscallrecord *rec)
 {
-#if defined(SYS_listxattrat) || defined(__NR_listxattrat)
-	struct listxattrat_post_state *snap;
-	unsigned long pre_a4;
-	size_t buf_alloc_size;
-
-	rec->post_state = 0;
-
-	pre_a4 = rec->a4;
-#endif
-
-	/*
-	 * ARG_PATHNAME plumbed a random pathname into rec->a2, but the
-	 * random path is most often either not a real file at all
-	 * (ENOENT before the per-inode xattr list walk) or, even when
-	 * it does land on a real file, that inode has no xattrs --
-	 * vfs_listxattr returns a 0-length name list immediately, never
-	 * reaching the per-fs handler dispatch or the simple_xattr_list
-	 * walk that the per-inode i_xattrs rwsem guards.  Same "high
-	 * calls, low edges" cold-syscall shape that the rest of the
-	 * xattr family was in before their precondition fixes.
-	 *
-	 * Half the draws now repoint pathname (a2) at one of the
-	 * trinity-testfile<N> absolute paths and plant a known user.*
-	 * xattr there via setxattr() so the subsequent listxattrat
-	 * walks a non-empty per-inode xattr list and reaches the real
-	 * list-walk path.  An absolute pathname makes dfd irrelevant --
-	 * the kernel ignores rec->a1 when pathname is absolute -- so
-	 * this composes cleanly with the AT_FDCWD-pin / random-fd dfd
-	 * logic and the at_flags sanitiser below; the planted testfiles
-	 * are regular files so AT_SYMLINK_NOFOLLOW is a no-op on them,
-	 * and the absolute non-empty path makes AT_EMPTY_PATH
-	 * irrelevant too.  The other half preserves rec->a2 exactly as
-	 * the generic draw left it so the empty-list / ENOENT arms
-	 * stay exercised.
-	 *
-	 * The plant runs BEFORE the post-state snapshot below so
-	 * snap->pathname captures the planted byte sequence -- the post
-	 * oracle's re-call then re-walks the planted path and compares
-	 * its returned name list against the first call's payload
-	 * exactly as the existing oracle expects.  Plant failure
-	 * (ENOSPC on a full xattr list, EOPNOTSUPP on a fs that bailed
-	 * out of the user.* leg, ENOENT if the testfile slot was never
-	 * opened, ...) is non-fatal: an earlier draw on the same inode
-	 * may still hold a stale user.trinity_plant from a prior round,
-	 * so listxattrat below may still see a non-empty list.
-	 *
-	 * Slow-path note: the setxattr() in sanitise is one real
-	 * syscall.  syscalls/listxattrat.c is outside the
-	 * sanitiser-slow-path check's FILES scope, so this is within
-	 * budget for the precondition payoff.
-	 */
 	if (rnd_modulo_u32(2) == 0) {
 		char *path = get_testfile_path();
 
@@ -124,42 +114,51 @@ static void sanitise_listxattrat(struct syscallrecord *rec)
 					"trin", 4, 0);
 		}
 	}
+}
 
-	/*
-	 * Buffer-size legality buckets: substitute (buf, size) with a
-	 * curated boundary pair on ~half of all draws.  See xattr.c for
-	 * the bucket list.  Called before avoid_shared_buffer_out so the
-	 * existing pre/post comparison correctly classifies a substituted
-	 * buffer.
-	 */
+#if defined(SYS_listxattrat) || defined(__NR_listxattrat)
+/*
+ * Buffer-size phase for rec->a4 (list) / rec->a5 (size).
+ *
+ * Buffer-size legality buckets: substitute (buf, size) with a
+ * curated boundary pair on ~half of all draws.  See xattr.c for
+ * the bucket list.  Called before avoid_shared_buffer_out so the
+ * existing pre/post comparison correctly classifies a substituted
+ * buffer.
+ *
+ * Resolve the actual allocation size of the buffer at rec->a4 and
+ * clamp rec->a5 (size) to it before the kernel sees the syscall.
+ * rec->a5 comes from ARG_LEN / get_len() which freely returns
+ * UINT_MAX-class values picked independently of the pool slot at
+ * rec->a4.  The kernel's vfs_listxattr writes min(size, name_list_len)
+ * bytes into the user buffer; when size > the live allocation the
+ * write spills into adjacent heap-arena / pool-neighbour objects
+ * and corrupts glibc chunk metadata, with the abort surfacing far
+ * downstream (deferred_free_flush, _int_malloc on a corrupted
+ * tcache, etc.).  Same shape as the sched_getattr clamp
+ * (862ee5c6ae3a), applied here to the pool-backed ARG_ADDRESS
+ * buffer family.
+ *
+ *   - If avoid_shared_buffer_out() redirected (pointer changed),
+ *     the replacement came from get_writable_address(rec->a5) and
+ *     is at least max(rec->a5, page_size) bytes.
+ *   - Otherwise rec->a4 is the original ARG_ADDRESS pool slot from
+ *     get_address() -> get_writable_address(RAND_ARRAY(
+ *     mapping_sizes)); mapping_sizes[0] == page_size so the slot
+ *     is provably at least page_size bytes, the conservative bound
+ *     we can prove without re-resolving the slot.
+ */
+static size_t sanitise_listxattrat_size_buffer(struct syscallrecord *rec)
+{
+	unsigned long pre_a4;
+	size_t buf_alloc_size;
+
+	pre_a4 = rec->a4;
+
 	xattr_pick_listbuf_bucket(&rec->a4, &rec->a5);
 
 	avoid_shared_buffer_out(&rec->a4, rec->a5);
 
-#if defined(SYS_listxattrat) || defined(__NR_listxattrat)
-	/*
-	 * Resolve the actual allocation size of the buffer at rec->a4 and
-	 * clamp rec->a5 (size) to it before the kernel sees the syscall.
-	 * rec->a5 comes from ARG_LEN / get_len() which freely returns
-	 * UINT_MAX-class values picked independently of the pool slot at
-	 * rec->a4.  The kernel's vfs_listxattr writes min(size, name_list_len)
-	 * bytes into the user buffer; when size > the live allocation the
-	 * write spills into adjacent heap-arena / pool-neighbour objects
-	 * and corrupts glibc chunk metadata, with the abort surfacing far
-	 * downstream (deferred_free_flush, _int_malloc on a corrupted
-	 * tcache, etc.).  Same shape as the sched_getattr clamp
-	 * (862ee5c6ae3a), applied here to the pool-backed ARG_ADDRESS
-	 * buffer family.
-	 *
-	 *   - If avoid_shared_buffer_out() redirected (pointer changed),
-	 *     the replacement came from get_writable_address(rec->a5) and
-	 *     is at least max(rec->a5, page_size) bytes.
-	 *   - Otherwise rec->a4 is the original ARG_ADDRESS pool slot from
-	 *     get_address() -> get_writable_address(RAND_ARRAY(
-	 *     mapping_sizes)); mapping_sizes[0] == page_size so the slot
-	 *     is provably at least page_size bytes, the conservative bound
-	 *     we can prove without re-resolving the slot.
-	 */
 	if (rec->a4 != pre_a4)
 		buf_alloc_size = rec->a5 > (unsigned long) page_size
 				       ? (size_t) rec->a5
@@ -170,6 +169,37 @@ static void sanitise_listxattrat(struct syscallrecord *rec)
 	if ((size_t) rec->a5 > buf_alloc_size)
 		rec->a5 = (unsigned long) buf_alloc_size;
 
+	return buf_alloc_size;
+}
+#endif
+
+static void sanitise_listxattrat(struct syscallrecord *rec)
+{
+#if defined(SYS_listxattrat) || defined(__NR_listxattrat)
+	struct listxattrat_post_state *snap;
+	size_t buf_alloc_size;
+
+	rec->post_state = 0;
+#endif
+
+	sanitise_listxattrat_plant_pathname(rec);
+
+#if defined(SYS_listxattrat) || defined(__NR_listxattrat)
+	buf_alloc_size = sanitise_listxattrat_size_buffer(rec);
+#else
+	/*
+	 * Buffer-size legality buckets: substitute (buf, size) with a
+	 * curated boundary pair on ~half of all draws.  See xattr.c for
+	 * the bucket list.  Called before avoid_shared_buffer_out so the
+	 * existing pre/post comparison correctly classifies a substituted
+	 * buffer.
+	 */
+	xattr_pick_listbuf_bucket(&rec->a4, &rec->a5);
+
+	avoid_shared_buffer_out(&rec->a4, rec->a5);
+#endif
+
+#if defined(SYS_listxattrat) || defined(__NR_listxattrat)
 	/*
 	 * at_flags (a3): handle_arg_list's 1/8 shift_flag_bit and 1/16
 	 * cmp-hint paths regularly OR in bits outside the kernel-accepted
