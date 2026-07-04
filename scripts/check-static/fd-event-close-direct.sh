@@ -1,10 +1,10 @@
 #!/bin/bash
 #
 # fd-event-close-direct: every producer of FD_EVENT_CLOSE outside
-# fd-event.c must go through the canonical close helper
+# objects/fd-event.c must go through the canonical close helper
 # (notify_child_fd_closed[_range]()).
 #
-# fd-event.c owns the close-semantic invariants of FD_EVENT_CLOSE:
+# objects/fd-event.c owns the close-semantic invariants of FD_EVENT_CLOSE:
 # the producing child publishes the close to the parent, evicts the
 # local fd_hash[] snapshot, and sentinels-out the live_fds ring slot,
 # and the parent's drain runs remove_object_by_fd() which retires the
@@ -16,7 +16,7 @@
 # skips the local bookkeeping the helper would have done.
 #
 # Heuristic: every reference to the FD_EVENT_CLOSE enum token in a
-# .c file other than fd-event.c is classified.  Switch-case consumers
+# .c file other than objects/fd-event.c is classified.  Switch-case consumers
 # (`case FD_EVENT_CLOSE:`) are pure event-dequeue sites and are not
 # flagged.  Comment text is stripped before classification.  Anything
 # left is a producer, reported as `file:funcname` unless listed in
@@ -31,7 +31,7 @@ set -u
 NAME="fd-event-close-direct"
 ROOT="${REPO_ROOT:-$(pwd)}"
 BASELINE="$ROOT/scripts/check-static/fd-event-close-direct.baseline"
-CANONICAL="fd-event.c"
+CANONICAL="objects/fd-event.c"
 
 declare -A GRANDFATHERED=()
 if [ -r "$BASELINE" ]; then
@@ -46,7 +46,7 @@ RESULTS_FILE="$(mktemp)"
 trap 'rm -f "$RESULTS_FILE" 2>/dev/null' EXIT
 
 # Walk every .c file in the repo that mentions FD_EVENT_CLOSE.  The
-# canonical producer (fd-event.c) is skipped wholesale; everything
+# canonical producer (objects/fd-event.c) is skipped wholesale; everything
 # else is parsed.  Headers are skipped: the enum definition lives in
 # include/fd-event.h and is not a producer.
 while IFS= read -r srcfile; do
@@ -146,10 +146,10 @@ done
 
 if [ "${#new_unbaselined[@]}" -gt 0 ]; then
 	{
-		echo "  ${#new_unbaselined[@]} site(s) emit FD_EVENT_CLOSE outside fd-event.c without the close helper:"
+		echo "  ${#new_unbaselined[@]} site(s) emit FD_EVENT_CLOSE outside objects/fd-event.c without the close helper:"
 		for e in "${new_unbaselined[@]}"; do echo "    $e"; done
 		echo "  fix: route through notify_child_fd_closed() or"
-		echo "       notify_child_fd_closed_range() (fd-event.c) -- those"
+		echo "       notify_child_fd_closed_range() (objects/fd-event.c) -- those"
 		echo "       carry the local fd_hash[] / live_fds eviction the"
 		echo "       producer must pair with the publish."
 		echo "       If the producer is semantically NOT a close (parent-"
@@ -175,7 +175,7 @@ fi
 
 baseline_size=${#GRANDFATHERED[@]}
 total=${#SEEN_KEY[@]}
-helper_routed=0   # producers outside fd-event.c that route through
+helper_routed=0   # producers outside objects/fd-event.c that route through
 		  # the helper never reference FD_EVENT_CLOSE directly,
 		  # so they are not counted here; this metric only
 		  # tracks remaining direct producers.
