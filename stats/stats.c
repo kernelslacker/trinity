@@ -1097,6 +1097,7 @@ static const struct stat_field pidfd_storm_fields[] = {
 	STAT_FIELD(pidfd_storm, signals),
 	STAT_FIELD(pidfd_storm, getfds),
 	STAT_FIELD(pidfd_storm, failed),
+	STAT_FIELD(pidfd_storm, iters),
 };
 
 const struct stat_category pidfd_storm_category =

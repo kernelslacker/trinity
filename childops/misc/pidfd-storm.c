@@ -263,12 +263,20 @@ static unsigned int pidfd_storm_iter_spawn(struct pidfd_slot *slots,
  * Loop is double-bounded by the iters cap and the BUDGET_NS
  * wall-clock gate; the timer is started inside the helper so the
  * caller doesn't have to thread a timespec through.
+ *
+ * out_iters accumulates one bump per issued pidfd syscall (either
+ * pidfd_send_signal or pidfd_getfd).  The dead-slot continue and the
+ * post-getfd close(2) do not count -- only syscalls that hit the
+ * pidfd path.  Caller drains into shm->stats.pidfd_storm_iters after
+ * the drive returns.
  */
 static void pidfd_storm_iter_drive(struct pidfd_slot *slots,
-				   unsigned int active, unsigned int iters)
+				   unsigned int active, unsigned int iters,
+				   unsigned long *out_iters)
 {
 	struct timespec start;
 	unsigned int iter;
+	unsigned long local_iters = 0;
 
 	clock_gettime(CLOCK_MONOTONIC, &start);
 
@@ -290,6 +298,7 @@ static void pidfd_storm_iter_drive(struct pidfd_slot *slots,
 			rc = sys_pidfd_send_signal(s->pidfd,
 						   (int)RAND_NEGATIVE_OR(sig),
 						   NULL, 0);
+			local_iters++;
 			if (rc == 0) {
 				__atomic_add_fetch(&shm->stats.pidfd_storm_signals,
 						   1, __ATOMIC_RELAXED);
@@ -301,6 +310,7 @@ static void pidfd_storm_iter_drive(struct pidfd_slot *slots,
 			int target = getfd_targets[rnd_modulo_u32(ARRAY_SIZE(getfd_targets))];
 
 			rc = sys_pidfd_getfd(s->pidfd, target, 0);
+			local_iters++;
 			if (rc >= 0) {
 				__atomic_add_fetch(&shm->stats.pidfd_storm_getfds,
 						   1, __ATOMIC_RELAXED);
@@ -320,6 +330,8 @@ static void pidfd_storm_iter_drive(struct pidfd_slot *slots,
 		if (budget_elapsed_ns(&start, BUDGET_NS))
 			break;
 	}
+
+	*out_iters = local_iters;
 }
 
 /*
@@ -354,6 +366,7 @@ bool pidfd_storm(struct childdata *child)
 {
 	struct pidfd_slot slots[NR_CHILDREN];
 	unsigned int active;
+	unsigned long iters = 0;
 
 	__atomic_add_fetch(&shm->stats.pidfd_storm_runs, 1, __ATOMIC_RELAXED);
 
@@ -376,7 +389,8 @@ bool pidfd_storm(struct childdata *child)
 		__atomic_add_fetch(&shm->stats.childop_data_path[op],
 				   1, __ATOMIC_RELAXED);
 	}
-	pidfd_storm_iter_drive(slots, active, JITTER_RANGE(MAX_ITERATIONS));
+	pidfd_storm_iter_drive(slots, active, JITTER_RANGE(MAX_ITERATIONS), &iters);
+	__atomic_add_fetch(&shm->stats.pidfd_storm_iters, iters, __ATOMIC_RELAXED);
 	pidfd_storm_iter_reap(slots, active);
 
 	return true;
