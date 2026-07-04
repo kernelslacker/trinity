@@ -426,7 +426,7 @@ struct shm_s {
 	bool sfg_unsupported[TRINITY_PF_MAX];
 
 	/* Per-kind feature-absent latches for the vxlan_encap_churn
-	 * childop (childops/vxlan-encap.c).  Indexed by the file-local
+	 * childop (childops/net/vxlan-encap.c).  Indexed by the file-local
 	 * enum tun_kind (0 = vxlan, 1 = gre, 2 = geneve); the indices
 	 * are stable and pinned by a _Static_assert in vxlan-encap.c.
 	 * Set when RTM_NEWLINK rejects the kind with rtnl_link_ops-not-

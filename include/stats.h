@@ -130,7 +130,7 @@ static inline bool topo_pair_unpack(uint64_t e,
 #define MAX_IOURING_RECIPES 64
 
 /* Number of distinct slab classes the slab_cache_thrash childop targets,
- * one entry per enum slab_target in childops/slab-cache-thrash.c.  Sized
+ * one entry per enum slab_target in childops/misc/slab-cache-thrash.c.  Sized
  * here (rather than in the childop) so the per-target run counter array
  * can live inside struct stats_s.  A static_assert in slab-cache-thrash.c
  * fails the build if the two ever drift. */
@@ -1230,7 +1230,7 @@ struct stats_s {
 	unsigned long eth_emitter_short;		/* template returned a length out of range; frame skipped */
 	unsigned long eth_emitter_sends_ok;		/* sendto returned >0 */
 	unsigned long eth_emitter_sends_failed;		/* sendto returned <=0 (queue full / EPERM / etc.) */
-	unsigned long eth_emitter_per_tmpl[5];		/* per-template successful sends (NR_TEMPLATES in childops/eth-emitter.c) */
+	unsigned long eth_emitter_per_tmpl[5];		/* per-template successful sends (NR_TEMPLATES in childops/net/eth-emitter.c) */
 
 	/* iouring_net_multishot childop counters */
 	unsigned long iouring_multishot_runs;		/* total iouring_net_multishot invocations */
@@ -1288,7 +1288,7 @@ struct stats_s {
 	unsigned long rtnl_vf_broadcast_getlink_ok;	/* RTM_GETLINK with RTEXT_FILTER_VF drained a response */
 
 	/* obscure_af_churn childop counters.  Per-pattern arrays are
-	 * indexed by enum abuse_pattern (childops/obscure-af-churn.c);
+	 * indexed by enum abuse_pattern (childops/net/obscure-af-churn.c);
 	 * NR_AP is currently 6.  Sized at 8 to leave headroom for a
 	 * couple more patterns without re-cutting the shm layout. */
 	unsigned long obscure_af_churn_runs;
@@ -2194,7 +2194,7 @@ struct stats_s {
 	 * is not counted here. */
 	unsigned long global_obj_uaf_caught;
 
-	/* Bumped by childops/pagecache-canary-check.c when a verifier
+	/* Bumped by childops/mm/pagecache-canary-check.c when a verifier
 	 * read returned a byte that did not match the deterministic
 	 * canary_expected_byte() pattern.  A non-zero counter here
 	 * means a kernel code path mutated a canary file's contents
@@ -4045,7 +4045,7 @@ struct stats_s {
 	 * of which AF_ALG crypto template names this kernel accepts via
 	 * bind(2); per-template accept/reject lives in the parallel
 	 * arrays, indexed by the probe_table[] order in
-	 * childops/af-alg-template-probe.c.  af_alg_probe_done is the
+	 * childops/net/af-alg-template-probe.c.  af_alg_probe_done is the
 	 * fleet-wide CAS latch that elects a single child to run the
 	 * probe — not a counter, but lives here so it shares the shm
 	 * mapping and survives across childdata recycles. */
@@ -5366,10 +5366,10 @@ void stats_timeseries_close(void);
 void stats_timeseries_emit_window(unsigned long op_count);
 void stats_timeseries_drop_in_child(void);
 
-/* Implemented in childops/recipe-runner.c; emits per-recipe completion
+/* Implemented in childops/recipe/runner.c; emits per-recipe completion
  * counts so the catalog layout stays private to that file. */
 void recipe_runner_dump_stats(void) __cold;
 
-/* Implemented in childops/iouring-recipes.c; emits per-recipe completion
+/* Implemented in childops/io_uring/recipes.c; emits per-recipe completion
  * counts so the catalog layout stays private to that file. */
 void iouring_recipes_dump_stats(void) __cold;

@@ -1,7 +1,7 @@
 /*
  * userns_run_in_ns() -- see include/userns-bootstrap.h for the full
  * contract.  This is the transient-fork implementation modelled on
- * childops/userns-fuzzer.c's inner_child_main() and outer parent
+ * childops/misc/userns-fuzzer.c's inner_child_main() and outer parent
  * (fork/_exit/waitpid).  It is generalised so any caller can request
  * an identity-mapped userns plus arbitrary secondary namespaces.
  *

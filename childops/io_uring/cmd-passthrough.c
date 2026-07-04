@@ -227,7 +227,7 @@ static void probe_variants(void)
 }
 
 /* ------------------------------------------------------------------ *
- * Ring lifecycle.  Trimmed mirror of childops/iouring-recipes.c —
+ * Ring lifecycle.  Trimmed mirror of childops/io_uring/recipes.c —
  * this childop only needs single-SQE submit/drain so the per-iter
  * teardown is straightforward.
  * ------------------------------------------------------------------ */

@@ -11,7 +11,7 @@
  * iour_ring_setup; recipe_eventfd_recursive drives the registered-
  * eventfd recursive-wakeup path.
  *
- * See childops/iouring-recipes.c for the dispatcher and the shared
+ * See childops/io_uring/recipes.c for the dispatcher and the shared
  * pool-race fault handler; see iouring-recipes-internal.h for the
  * cross-TU symbol boundary.
  */

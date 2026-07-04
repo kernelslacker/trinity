@@ -179,7 +179,7 @@ static void open_fail_nth(struct childdata *child)
 	 * __atomic_exchange_n because the transition has no observable side
 	 * effect beyond the bool itself -- there is no log to gate on the
 	 * first failer, so we mirror the iouring_enosys pattern
-	 * (childops/iouring-recipes.c) rather than the no_private_ns pattern. */
+	 * (childops/io_uring/recipes.c) rather than the no_private_ns pattern. */
 	if (__atomic_load_n(&shm->no_fail_nth, __ATOMIC_RELAXED))
 		return;
 
