@@ -117,6 +117,7 @@ SRCS		:= $(wildcard *.c) \
 		   $(wildcard args/pools/*.c) \
 		   $(wildcard child/*.c) \
 		   $(wildcard childops/*.c) \
+		   $(wildcard childops/fs/*.c) \
 		   $(wildcard cmp_hints/*.c) \
 		   $(wildcard dispatch/*.c) \
 		   $(wildcard fds/*.c) \
@@ -149,6 +150,7 @@ OBJS		:= $(sort $(patsubst %.c,%.o,$(wildcard *.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard args/pools/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard child/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard childops/*.c))) \
+		   $(sort $(patsubst %.c,%.o,$(wildcard childops/fs/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard cmp_hints/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard dispatch/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard fds/*.c))) \
