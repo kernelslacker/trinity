@@ -4,7 +4,7 @@ The pool layer that lets one syscall's successful result — an fd, id, or handl
 
 Public API is `include/objects.h`. Cross-TU glue internal to this dir is `include/objects-internal.h` — symbols that were file-local `static` in the pre-carve `objects.c`; consumers outside objects/ must go through `objects.h`.
 
-## Files (5 files + internal header, ~1,956 LOC)
+## Files (8 files + internal header, ~2,732 LOC)
 
 | File | Lines | Role |
 |---|---|---|
@@ -13,6 +13,9 @@ Public API is `include/objects.h`. Cross-TU glue internal to this dir is `includ
 | local.c | 268 | `OBJ_LOCAL` per-objhead fd→object hash (`local_fd_hash_insert/remove`) for fd-typed local pools; per-child list init. |
 | global.c | 181 | `OBJ_GLOBAL` pool: `register_global_obj_init` / `init_global_objects` / `clone_global_objects_to_child` / `destroy_global_objects`. Shared objects registered at init, snapshotted per-child at fork. |
 | dispatch.c | 162 | Object-op dispatch: `invalidate_object_fd` (clear the fd union before the destructor to prevent double-close after a successful `close()`), `close_fd_destructor`, `generic_fd_dump`. |
+| futex-shared.c | 93 | Cross-child shared futex-word pool — the word lives in shared memory (wrapper in the parent heap) so children can contend on it. |
+| prop_ring.c | 293 | Per-child ring of recent small-integer syscall return values, re-injectable as later arguments. |
+| fd-event.c | 390 | Lock-free SPSC ring reporting child fd-state changes (e.g. closes) up to the parent (`notify_child_fd_closed[_range]`, the canonical FD_EVENT_CLOSE producer); built on `lib/spsc-ring.c`. |
 
 ## Data model
 

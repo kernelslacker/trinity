@@ -47,7 +47,7 @@ their own.
 | [net/](net/CLAUDE.md) | sockaddr / setsockopt / netlink / BPF generation per address family (114 files, ~26,684 LOC) |
 | [ioctls/](ioctls/CLAUDE.md) | Per-subsystem `ioctl()` argument generators (59 files, ~14,243 LOC) |
 | [fds/](fds/CLAUDE.md) | FD provider layer — where live file descriptors come from (37 files, ~9,123 LOC) |
-| [objects/](objects/CLAUDE.md) | OBJ_LOCAL/OBJ_GLOBAL object pools — thread a syscall's result (fd/id/handle) into a later syscall's arg (5 files, ~1,956 LOC) |
+| [objects/](objects/CLAUDE.md) | OBJ_LOCAL/OBJ_GLOBAL object pools — thread a syscall's result (fd/id/handle) into a later syscall's arg  + cross-child futex pool & prop/fd-event rings (8 files, ~2,732 LOC) |
 | [mm/](mm/CLAUDE.md) | Memory-management fuzzing targets (8 files, ~3,029 LOC) |
 | [childops/](childops/CLAUDE.md) | Scripted stateful multi-syscall workloads (churn/race/storm/recipe) (~145 files, ~81,300 LOC) |
 | [strategy/](strategy/CLAUDE.md) | Multi-strategy syscall-picker orchestration (7 files, ~3,700 LOC) |
@@ -77,17 +77,7 @@ binary. Grouped by concern:
 - [dispatch/](dispatch/CLAUDE.md) — issues the picked syscall (syscall.c), records results (results.c), pid liveness/kill primitives (pids.c) (3 files).
 
 ### Object pools & result threading
-- `objects/` — the `OBJ_LOCAL`/`OBJ_GLOBAL` object pools (`alloc_object`/
-  `add_object`) that let one syscall's successful result (fd, id, handle)
-  become a later syscall's argument. See
-  [objects/](objects/CLAUDE.md). `lib/publish_resource.c` is the typed
-  stamping front end.
-- `futex-shared.c` (93) — cross-child shared futex-word pool (word lives in
-  shared memory, wrapper in the parent heap).
-- `prop_ring.c` (293) — per-child ring of recent small-integer syscall return
-  values, re-injectable as later arguments.
-- `fd-event.c` (390) — lock-free SPSC ring reporting child fd-state changes
-  (e.g. closes) up to the parent; built on `lib/spsc-ring.c`.
+- `objects/` — the `OBJ_LOCAL`/`OBJ_GLOBAL` object pools threading a syscall result (fd/id/handle) into a later syscall argument, plus the cross-child futex-word pool and the prop/fd-event rings. See [objects/](objects/CLAUDE.md); `lib/publish_resource.c` is the typed stamping front end.
 
 ### Argument content & environment enumeration
 - `pathnames.c` (797) — pathname pool for `ARG_PATHNAME` (mirrors testfiles).
