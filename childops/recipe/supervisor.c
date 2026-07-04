@@ -234,7 +234,7 @@ bool recipe_ptrace_seize_exitkill(bool *unsupported)
  * to the named /proc/self/{uid_map,gid_map,setgroups} file.  Returns
  * true on a complete write, false otherwise.  Best-effort: callers
  * decide whether a partial map is fatal for their op.  Mirrors the
- * write_one_line helper in childops/userns-fuzzer.c -- intentionally
+ * write_one_line helper in childops/misc/userns-fuzzer.c -- intentionally
  * duplicated rather than hoisted, since recipe-runner.c is a self-
  * contained dispatcher and the helper is a 10-line inline that would
  * not benefit from a cross-file abstraction.
@@ -363,7 +363,7 @@ static void mount_userns_dance_inner(void)
  *   - do_umount with MNT_DETACH (deferred-cleanup path that
  *     decouples namespace removal from final put_mnt_ns)
  *
- * Distinct from childops/userns-fuzzer.c which enters CLONE_NEWUSER
+ * Distinct from childops/misc/userns-fuzzer.c which enters CLONE_NEWUSER
  * but only dispatches a single ns_capable-gated op; distinct from
  * childops/fs-lifecycle.c which drives mount lifecycles inside the
  * trinity child's existing CLONE_NEWNS without a fresh userns.  The

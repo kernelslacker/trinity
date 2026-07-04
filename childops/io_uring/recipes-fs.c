@@ -2,7 +2,7 @@
  * iouring-recipes-fs -- filesystem / openat / xattr / splice / tee /
  * pipe / memfd recipe family for the iouring-recipes catalogue.
  *
- * See childops/iouring-recipes.c for the dispatcher and the shared
+ * See childops/io_uring/recipes.c for the dispatcher and the shared
  * pool-race fault handler; see iouring-recipes-internal.h for the
  * cross-TU symbol boundary.
  */

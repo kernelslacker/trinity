@@ -175,7 +175,7 @@ static void post_mprotect(struct syscallrecord *rec)
 	 * hands the entry to memory_pressure / iouring_* /
 	 * madvise_pattern_cycler, and the per-page write loop SEGV_ACCERRs
 	 * on the first un-upgraded page.  Mirror the conservative AND from
-	 * mprotect_split (childops/mprotect-split.c): for a whole-mapping
+	 * mprotect_split (childops/mm/mprotect-split.c): for a whole-mapping
 	 * mprotect take the new prot exactly; for any sub-range, intersect
 	 * with the existing invariant so we only ever drop bits, never add
 	 * them.  False-negatives (skipping a mapping that still has writable

@@ -15,7 +15,7 @@
  * bugs actually live, instead of bouncing off an unknown-family
  * fast-reject as the legacy random-id path does.
  *
- * The runtime-discovery childop in childops/genetlink-fuzzer.c does
+ * The runtime-discovery childop in childops/net/netlink/genetlink-fuzzer.c does
  * its own discovery for the ops list it caches per family; that path
  * is intentionally separate so the two don't share fragile state and
  * each can evolve at its own pace.
@@ -423,7 +423,7 @@ static void match_response(const char *name, unsigned short id)
 /*
  * Walk a single CTRL_CMD_NEWFAMILY response, extract FAMILY_NAME +
  * FAMILY_ID, and dispatch to match_response().  Skips entries lacking
- * either field.  Mirrors the parser in childops/genetlink-fuzzer.c —
+ * either field.  Mirrors the parser in childops/net/netlink/genetlink-fuzzer.c —
  * intentionally separate so the two paths don't share fragile state.
  */
 static void parse_family_response(const struct nlmsghdr *nlh)

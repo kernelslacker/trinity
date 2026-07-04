@@ -10,11 +10,11 @@
  * Rationale: trinity's persistent fuzz child runs with the host's
  * credentials so privileged syscalls reach the privileged code paths
  * the fuzzer is built to exercise.  Unsharing CLONE_NEWUSER in place
- * (the anti-pattern in childops/statmount-idmap-overflow.c's
+ * (the anti-pattern in childops/fs/statmount-idmap-overflow.c's
  * unshare_ns_once()) would permanently demote the persistent child and
  * the cap-drop oracle would stop observing the credential state the
  * rest of the run depends on.  The transient-fork shape (modelled on
- * childops/userns-fuzzer.c's inner_child_main()) confines the
+ * childops/misc/userns-fuzzer.c's inner_child_main()) confines the
  * namespace change to a process whose death tears every namespace
  * back down with it.
  *

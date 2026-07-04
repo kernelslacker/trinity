@@ -332,7 +332,7 @@ static void *perf_mmap_close_racer_thread(void *arg)
  *
  * Threads share the fdtable, which is the bug class -- a sibling
  * process closing the same numeric fd in its own table never races
- * with our fdget.  Distinct from childops/perf-event-chains.c which
+ * with our fdget.  Distinct from childops/misc/perf-event-chains.c which
  * exercises the group/multiplex surface single-threaded; this recipe
  * drives the *concurrent* close-vs-read window on the file lifetime
  * with an active sampling mmap.

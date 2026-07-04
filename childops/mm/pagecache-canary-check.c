@@ -15,7 +15,7 @@
  *     readv    readv() with a small iovec
  *     mmap     mmap(PROT_READ) + memcmp, guarded by sigsetjmp +
  *              per-op SIGBUS handler (mirrors the pattern in
- *              childops/madvise-pattern-cycler.c)
+ *              childops/mm/madvise-pattern-cycler.c)
  *     splice   splice() canary -> pipe, read() the pipe end
  *     sendfile sendfile() canary -> tmpfile, read tmpfile back
  *

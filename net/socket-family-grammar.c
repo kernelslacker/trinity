@@ -7,7 +7,7 @@
  * socket_family_grammar entry per family.
  *
  * The registry below is empty by default — when no grammar is
- * registered the outer dispatcher in childops/socket-family-chain.c
+ * registered the outer dispatcher in childops/net/socket-family-chain.c
  * falls back to run_alg_chain (the v1 path) so behaviour is identical
  * to v1+v3.  Per-family grammars are added incrementally, each adding
  * one entry to sfg_registry[] alongside its definition in

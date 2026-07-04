@@ -158,7 +158,7 @@ static const enum child_op_type alt_op_rotation[] = {
  * Defaults to true for every op.
  * CHILD_OP_SYSCALL falls through to run_sequence_chain
  * which brackets per-syscall internally.  CHILD_OP_SCHED_CYCLER
- * (childops/sched-cycler.c) calls random_syscall(child) in
+ * (childops/misc/sched-cycler.c) calls random_syscall(child) in
  * a tight loop; an outer bracket would double-call
  * ioctl(KCOV_ENABLE) and the kernel returns -EBUSY which
  * kcov_enable_trace currently treats as fatal.

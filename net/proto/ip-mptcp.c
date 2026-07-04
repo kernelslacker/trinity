@@ -127,7 +127,7 @@ void mptcp_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *trip
  *
  * Subflow path-management (ADD_ADDR / REMOVE_ADDR via the mptcp_pm
  * genetlink family) is intentionally NOT handled here — that surface
- * has its own coherent driver in childops/mptcp-pm-churn.c which
+ * has its own coherent driver in childops/net/mptcp-pm-churn.c which
  * already orchestrates the post-DEL race window.  This grammar is
  * orthogonal: socket-layer option-walk coverage only.
  */

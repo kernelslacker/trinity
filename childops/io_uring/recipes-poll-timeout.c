@@ -10,7 +10,7 @@
  * iouring-recipes.c so the dispatcher's fault handler can route an
  * in-range SEGV/SIGBUS to the sigsetjmp landing pad.
  *
- * See childops/iouring-recipes.c for the dispatcher and the shared
+ * See childops/io_uring/recipes.c for the dispatcher and the shared
  * pool-race fault handler; see iouring-recipes-internal.h for the
  * cross-TU symbol boundary.
  */

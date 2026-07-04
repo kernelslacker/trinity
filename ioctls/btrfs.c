@@ -55,7 +55,7 @@ static int btrfs_fd_test(int fd, const struct stat *st __attribute__((unused)))
 	bool seen_btrfs = false;
 
 	/*
-	 * Box-safety + isolation gate (mirror childops/umount-race.c's
+	 * Box-safety + isolation gate (mirror childops/fs/umount-race.c's
 	 * mnt_ready + scratch_block_ready double-check).  When the parent
 	 * latched a private mount namespace AND the scratch_block pool
 	 * stood up AND it published a btrfs-typed entry, the only block
