@@ -446,6 +446,24 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	{ "connect",		2, &struct_catalog[SC_SOCKADDR_STORAGE] },
 	/* sendto(int, const void *, size_t, int, struct sockaddr *, socklen_t) */
 	{ "sendto",		5, &struct_catalog[SC_SOCKADDR_STORAGE] },
+	/*
+	 * accept(int, struct sockaddr *upeer_sockaddr, int *upeer_addrlen)
+	 * accept4(int, struct sockaddr *upeer_sockaddr, int *upeer_addrlen,
+	 *         int flags)
+	 * a2 is the peer-address OUTPUT slot: sanitise_accept_addrlen()
+	 * publishes a writable-region sockaddr_storage (or a NULL/NULL pair)
+	 * and the kernel writes the peer address back via move_addr_to_user().
+	 * argtype[1] is ARG_SOCKADDR, not ARG_STRUCT_PTR_*, so the schema-aware
+	 * fill never resolves these rows -- attribution-only registration lets
+	 * struct_field_for_cmp() steer KCOV-CMP-learned constants at the named
+	 * ss_family / port / addr fields of sockaddr_storage_variants[] rather
+	 * than at a coincidentally-same-width slot on the accept path.  Mirrors
+	 * bind / connect / sendto above; same descriptor covers both accept
+	 * arms since the sockaddr shape is family-tagged by ss_family and does
+	 * not depend on the extra accept4 flags arg.
+	 */
+	{ "accept",		2, &struct_catalog[SC_SOCKADDR_STORAGE] },
+	{ "accept4",		2, &struct_catalog[SC_SOCKADDR_STORAGE] },
 	/* landlock_create_ruleset(const struct landlock_ruleset_attr *, size_t, u32) */
 	{ "landlock_create_ruleset",	1, &struct_catalog[SC_LANDLOCK_RULESET_ATTR] },
 	/* statmount(const struct mnt_id_req *, struct statmount *, size_t, u32) */
@@ -1425,6 +1443,48 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 		.num_discrim2_values	= ARRAY_SIZE(setsockopt_sctp_prim_optnames),
 	},
 #endif
+	/*
+	 * ----------------------------------------------------------------
+	 * getsockopt(fd, level, optname, optval, optlen) optval -- a4.
+	 *
+	 * Mirrors the setsockopt two-key proof batch above for the (level,
+	 * optname) pairs the kernel also implements on the getsockopt side.
+	 * discrim_arg_idx=2 is level (a2), discrim2_arg_idx=3 is optname (a3);
+	 * the shape at optval is symmetric with setsockopt for these options
+	 * (struct linger for SO_LINGER, struct timeval for SO_RCVTIMEO /
+	 * SO_SNDTIMEO), so the same struct_desc slots the setsockopt rows
+	 * point at describe the bytes the kernel writes back through optval.
+	 *
+	 * sanitise_getsockopt() picks (level, optname) via do_setsockopt() and
+	 * then allocates a page_size valresult buffer at a4 -- argtype[3] is
+	 * ARG_ADDRESS, not ARG_STRUCT_PTR_*, so the schema-aware fill never
+	 * resolves these rows.  Attribution-only registration lets
+	 * struct_field_for_cmp() steer KCOV-CMP-learned constants at the named
+	 * l_onoff / l_linger / tv_sec / tv_usec fields the kernel wrote rather
+	 * than at coincidentally-same-width slots.  Set-only optnames from the
+	 * setsockopt batch above (IP_ADD_MEMBERSHIP, MCAST_*, SCTP_AUTH_CHUNK,
+	 * SCTP_AUTH_*_KEY, SCTP_ADD_STREAMS, SCTP_SET_PEER_PRIMARY_ADDR,
+	 * SCTP_EVENT, TCP_REPAIR_OPTIONS, etc.) are deliberately not mirrored:
+	 * the kernel does not return their payload struct on the get path, and
+	 * a row there would attribute learned constants against bytes never
+	 * written by getsockopt.
+	 * ----------------------------------------------------------------
+	 */
+	{
+		"getsockopt", 4, &struct_catalog[SC_LINGER],
+		.discrim_arg_idx	= 2,
+		.discrim_value		= SOL_SOCKET,
+		.discrim2_arg_idx	= 3,
+		.discrim2_value		= SO_LINGER,
+	},
+	{
+		"getsockopt", 4, &struct_catalog[SC_TIMEVAL],
+		.discrim_arg_idx	= 2,
+		.discrim_value		= SOL_SOCKET,
+		.discrim2_arg_idx	= 3,
+		.discrim2_values	= setsockopt_timeval_optnames,
+		.num_discrim2_values	= ARRAY_SIZE(setsockopt_timeval_optnames),
+	},
 	/*
 	 * io_cancel(aio_context_t ctx_id, struct iocb __user *iocb,
 	 *           struct io_event __user *result)
