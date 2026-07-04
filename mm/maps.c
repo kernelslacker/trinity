@@ -24,6 +24,71 @@
  */
 #define MAPS_LOCAL_REFILL_PERIOD	64u
 
+/*
+ * SAMPLED pick-cost telemetry.  A per-child function-local static
+ * counter gates 1-in-2^MAPS_PICK_SAMPLE_SHIFT calls of
+ * get_map_handle() to bracket its retry loop with rdtsc.  Sampling,
+ * not per-call: an unconditional rdtsc pair on the arg-gen hot path
+ * would show up in profiles.  The counter is deterministic and
+ * consumes no RNG entropy so the emitted arg stream stays byte-
+ * identical to the untelemetered build (verified via --dry-run
+ * shadow-identity gate).  N=64 is a compromise between sample noise
+ * (want more) and hot-path cost (want less).
+ */
+#define MAPS_PICK_SAMPLE_SHIFT	6u
+#define MAPS_PICK_SAMPLE_MASK	((1u << MAPS_PICK_SAMPLE_SHIFT) - 1u)
+
+/*
+ * Read a monotonic cycle counter.  x86 uses rdtsc directly; aarch64
+ * uses the EL0-readable virtual counter (cntvct_el0); other targets
+ * fall back to 0, which collapses the sampled sum to 0 and lets the
+ * dump-time render skip the row via the standard count==0 guard.
+ * Volatile asm keeps the compiler from hoisting the read out of the
+ * measurement bracket.
+ */
+static inline unsigned long maps_pick_read_cycles(void)
+{
+#if defined(__x86_64__) || defined(__i386__)
+	unsigned int lo, hi;
+
+	__asm__ volatile("rdtsc" : "=a"(lo), "=d"(hi));
+	return ((unsigned long)hi << 32) | (unsigned long)lo;
+#elif defined(__aarch64__)
+	unsigned long v;
+
+	__asm__ volatile("mrs %0, cntvct_el0" : "=r"(v));
+	return v;
+#else
+	return 0UL;
+#endif
+}
+
+/*
+ * Bucket the loop-exit index `i` into a log2 histogram slot that
+ * mirrors fd_live_remove_scan_histogram exactly: slot 0 for i==0
+ * (first-iteration hit), slot k for i in [2^(k-1), 2^k) up to a
+ * saturating tail slot for i >= 2^(N-1).  RELAXED add-fetch on the
+ * shared shm counter matches the shm->stats convention used
+ * elsewhere in the file.
+ */
+static void maps_pick_bump_scan_histogram(unsigned int i)
+{
+	unsigned int bucket;
+
+	if (i == 0) {
+		bucket = 0;
+	} else {
+		unsigned int lz = (unsigned int)__builtin_clz(i);
+		unsigned int hi_bit = 31u - lz;
+
+		bucket = hi_bit + 1u;
+		if (bucket >= ARRAY_SIZE(shm->stats.maps_pick_scan_histogram))
+			bucket = ARRAY_SIZE(shm->stats.maps_pick_scan_histogram) - 1u;
+	}
+	__atomic_add_fetch(&shm->stats.maps_pick_scan_histogram[bucket],
+			   1, __ATOMIC_RELAXED);
+}
+
 static void clone_global_mmap_pool(enum objecttype type);
 
 /*
@@ -311,6 +376,15 @@ bool get_map_handle(struct map_handle *h)
 	struct childdata *child = this_child();
 	enum obj_scope scope;
 	enum objecttype type = 0;
+	/*
+	 * Per-child sample counter.  Function-local static so each
+	 * fork'd child gets its own copy via copy-on-write; no cross-
+	 * child coherence needed and no RNG entropy consumed.
+	 */
+	static unsigned int pick_sample_ctr;
+	unsigned long t0 = 0, t1;
+	bool sampled;
+	int i;
 
 	if (h == NULL)
 		return false;
@@ -322,7 +396,11 @@ bool get_map_handle(struct map_handle *h)
 	else
 		scope = OBJ_LOCAL;
 
-	for (int i = 0; i < 1000; i++) {
+	sampled = ((pick_sample_ctr++ & MAPS_PICK_SAMPLE_MASK) == 0);
+	if (sampled)
+		t0 = maps_pick_read_cycles();
+
+	for (i = 0; i < 1000; i++) {
 		struct object *obj;
 		bool all_empty;
 
@@ -356,9 +434,26 @@ bool get_map_handle(struct map_handle *h)
 		h->type = type;
 		h->scope = scope;
 
+		if (sampled) {
+			t1 = maps_pick_read_cycles();
+			__atomic_add_fetch(&shm->stats.maps_pick_cycles_sampled_sum,
+					   t1 - t0, __ATOMIC_RELAXED);
+			__atomic_add_fetch(&shm->stats.maps_pick_cycles_sampled_count,
+					   1, __ATOMIC_RELAXED);
+		}
+		maps_pick_bump_scan_histogram((unsigned int)i);
 		account_pool_pick_success(type, i);
 		return true;
 	}
+
+	if (sampled) {
+		t1 = maps_pick_read_cycles();
+		__atomic_add_fetch(&shm->stats.maps_pick_cycles_sampled_sum,
+				   t1 - t0, __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.maps_pick_cycles_sampled_count,
+				   1, __ATOMIC_RELAXED);
+	}
+	maps_pick_bump_scan_histogram((unsigned int)i);
 
 	maybe_refill_local_anon_pool(child, scope);
 

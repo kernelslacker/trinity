@@ -4397,6 +4397,41 @@ struct stats_s {
 	unsigned long maps_pick_with_prot_attempts_sum;
 	unsigned long maps_pick_with_prot_successes;
 
+	/* SAMPLED shadow telemetry over get_map_handle()'s
+	 * pool-pick reject loop.  A per-child call counter
+	 * (see mm/maps.c) gates 1-in-N calls to bracket the
+	 * for-loop body with rdtsc; on sampled calls the
+	 * total cycles across pick_mmap_pool_type +
+	 * get_random_object + obj_ptr_in_user_va_band +
+	 * obj_alloc_track_check + map_size_in_range reject
+	 * chain are added to _sum and _count is bumped once.
+	 * cycles_sampled_sum / cycles_sampled_count is the
+	 * mean cost of one pick call; multiplied by the
+	 * attempts/success ratio it yields cycles-per-
+	 * successful-pick -- the direct input a per-pool
+	 * side-index gate would trade off against.  Pure
+	 * additive: the gate never consumes RNG and never
+	 * influences arg generation, so the emitted syscall
+	 * arg stream is byte-identical to the untelemetered
+	 * build. */
+	unsigned long maps_pick_cycles_sampled_sum;
+	unsigned long maps_pick_cycles_sampled_count;
+
+	/* Log2 histogram of the loop index i at exit from
+	 * get_map_handle()'s pool-pick retry loop.  Bumped on
+	 * both the success path (i == the 0-indexed iteration
+	 * that landed the pick) and the exhaustion path (i ==
+	 * final loop counter after all_empty break or the
+	 * full 1000-iter budget).  Shape mirrors
+	 * fd_live_remove_scan_histogram exactly: log2 bucket
+	 * with a match-on-first-slot floor and a saturating
+	 * tail slot, RELAXED per-call adds.  The bucket
+	 * distribution answers "how deep does the reject
+	 * chain typically run before yielding a hit" -- a
+	 * distribution biased toward the tail slot is the
+	 * signal a per-pool side-index would eliminate. */
+	unsigned long maps_pick_scan_histogram[8];
+
 	/* common_set_mmap_ptr_len() type-resolution scan accounting.
 	 * The function walks the three OBJ_LOCAL OBJ_MMAP_* pools
 	 * end-to-end looking for the pointer-identity match for

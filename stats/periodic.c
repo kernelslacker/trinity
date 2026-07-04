@@ -497,6 +497,34 @@ static const struct {
 	  offsetof(struct stats_s, maps_pick_with_prot_attempts_sum) },
 	{ "maps_pick_with_prot_successes",
 	  offsetof(struct stats_s, maps_pick_with_prot_successes) },
+	/* SAMPLED get_map_handle() reject-loop cost.  cycles_sum
+	 * accumulates the total rdtsc delta across the loop body on
+	 * gated 1/N calls; cycles_count is the sample denominator.
+	 * See include/stats.h and mm/maps.c for the sampling gate. */
+	{ "maps_pick_cycles_sampled_sum",
+	  offsetof(struct stats_s, maps_pick_cycles_sampled_sum) },
+	{ "maps_pick_cycles_sampled_count",
+	  offsetof(struct stats_s, maps_pick_cycles_sampled_count) },
+	/* Log2 histogram of the get_map_handle() retry-loop exit
+	 * index, bumped on both success and exhaustion paths.  Mirrors
+	 * fd_live_remove_scan_histogram bucket layout: hist_0 is
+	 * first-iteration hits, hist_ge64 is the saturating tail. */
+	{ "maps_pick_scan_hist_0",
+	  offsetof(struct stats_s, maps_pick_scan_histogram[0]) },
+	{ "maps_pick_scan_hist_1",
+	  offsetof(struct stats_s, maps_pick_scan_histogram[1]) },
+	{ "maps_pick_scan_hist_2_3",
+	  offsetof(struct stats_s, maps_pick_scan_histogram[2]) },
+	{ "maps_pick_scan_hist_4_7",
+	  offsetof(struct stats_s, maps_pick_scan_histogram[3]) },
+	{ "maps_pick_scan_hist_8_15",
+	  offsetof(struct stats_s, maps_pick_scan_histogram[4]) },
+	{ "maps_pick_scan_hist_16_31",
+	  offsetof(struct stats_s, maps_pick_scan_histogram[5]) },
+	{ "maps_pick_scan_hist_32_63",
+	  offsetof(struct stats_s, maps_pick_scan_histogram[6]) },
+	{ "maps_pick_scan_hist_ge64",
+	  offsetof(struct stats_s, maps_pick_scan_histogram[7]) },
 	{ "maps_type_resolution_calls",
 	  offsetof(struct stats_s, maps_type_resolution_calls) },
 	{ "maps_type_resolution_scan_length_sum",
