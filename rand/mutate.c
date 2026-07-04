@@ -115,7 +115,7 @@ static unsigned long mutate_cross_width(unsigned long val)
  */
 unsigned long mutate_value(unsigned long val)
 {
-	switch (rnd_modulo_u32(8)) {
+	switch (rnd_modulo_u32(9)) {
 	case 0:
 		return mutate_truncate(val);
 	case 1:
@@ -145,6 +145,9 @@ unsigned long mutate_value(unsigned long val)
 	}
 	case 7:
 		return mutate_cross_width(val);
+	case 8:
+		/* Arithmetic negate -- two's complement (positive <-> negative) */
+		return 0 - val;
 	}
 	return val;
 }
