@@ -186,6 +186,35 @@ struct cmp_hint_entry {
  * by either zero-init or any normal kernel write the fuzzer drives. */
 #define CMP_HINTS_POOL_CANARY	0x7c4d0b3f9e2a5168ULL
 
+/*
+ * SHADOW zero-PC-win hard-cool budget threshold.
+ *
+ * A recent per-syscall pool observation showed ~9k old-flat-pool hints
+ * credited with zero PC-edge wins across a fuzz window: the pool kept
+ * serving hints that never converted.  There is no cooling policy today
+ * that would retire such a dead pool -- the by-pool shadow at credit.c
+ * partitions PC outcomes by pool_kind but does not quantify what a
+ * hard-cool would save.
+ *
+ * zero_win_streak on struct cmp_hint_pool is the per-pool state a
+ * hypothetical hard-cool would key off: consecutive PC-outcome MISS
+ * credits with no intervening PC-WIN, bumped from the per-syscall arm of
+ * cmp_hints_feedback_credit_pc().  When the streak crosses this budget
+ * the shadow counters in kcov_shm (cmp_hint_pool_zero_win_would_retire /
+ * cmp_hint_pool_zero_win_would_save) bump the "N pools retired / M
+ * injections saved at budget T" pair the follow-up live cool switchover
+ * needs to size the trade-off.  Live behaviour is unchanged; the pool is
+ * NOT actually cooled, this is a measurement-only shadow.
+ *
+ * T=64 is 4x CMP_HINTS_PER_SYSCALL (16) -- roughly one full pool worth
+ * of consecutive-miss evidence per retirement decision, aggressive
+ * enough to fire inside a windowed observability tick on a dead pool
+ * but not so twitchy that a run of unlucky misses on a live pool trips
+ * it.  A future live switchover will tune this against the shadow's
+ * reported saved:retired ratio.
+ */
+#define CMP_HINT_ZERO_WIN_BUDGET_T	64U
+
 struct cmp_hint_pool {
 	lock_t lock;
 	/* Header-side wild-write sentinel, placed between lock and count
@@ -238,6 +267,17 @@ struct cmp_hint_pool {
 	 * Never cleared: a stomped pool stays quarantined for the
 	 * lifetime of the trinity invocation. */
 	bool corrupted;
+	/* SHADOW consecutive zero-PC-win injection streak.  Bumped
+	 * atomically from cmp_hints_feedback_credit_pc()'s per-syscall
+	 * arm on every PC-outcome MISS credit that landed on this pool,
+	 * reset on the first PC-outcome WIN credit.  Feeds the hard-cool
+	 * shadow at CMP_HINT_ZERO_WIN_BUDGET_T -- the counter is peeked
+	 * per credit to bump kcov_shm->cmp_hint_pool_zero_win_would_*.
+	 * Advisory / measurement only: live pool selection ignores it and
+	 * a torn observation across concurrent child credits at worst
+	 * misplaces a single retire/save bump.  RELAXED atomic discipline
+	 * matches the rest of the by-pool shadow. */
+	uint32_t zero_win_streak;
 };
 
 /*

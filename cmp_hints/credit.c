@@ -232,6 +232,59 @@ void cmp_hints_feedback_credit_pc(bool outcome_win)
 				&kcov_shm->cmp_hint_misses_by_pool[e->pool_kind],
 				1UL, __ATOMIC_RELAXED);
 
+		/* SHADOW zero-PC-win hard-cool budget census -- see
+		 * CMP_HINT_ZERO_WIN_BUDGET_T + struct cmp_hint_pool's
+		 * zero_win_streak field for the model.  Only the flat per-
+		 * syscall pool participates; field-pool credits (hash-keyed
+		 * open-addressed buckets, not the pools[nr][do32] grid the
+		 * "old-flat" language refers to) don't feed this shadow.
+		 *
+		 * PC-WIN: exchange-clear the streak and, if the pre-clear
+		 * value was already past the budget, count this credit as
+		 * a hint the hypothetical cool would have forfeited (the
+		 * lost-win lane of _would_save).
+		 * PC-MISS: bump the streak; the exact-T post-value marks
+		 * the retirement crossing (_would_retire), post-values past
+		 * T count as injections the retirement would have
+		 * prevented (the saved-miss lane of _would_save).
+		 *
+		 * cmp_hints_shm null-check mirrors the helper guards in
+		 * cmp_hint_credit_entry_* above; kcov_shm null-check keeps
+		 * this measurement-only branch inert when observability is
+		 * disabled.  Live pool selection ignores zero_win_streak, so
+		 * this branch is byte-identical for the injection arm.
+		 */
+		if (cmp_hints_shm != NULL && kcov_shm != NULL &&
+		    e->pool_kind == CMP_HINT_POOL_PER_SYSCALL &&
+		    e->nr < MAX_NR_SYSCALL) {
+			struct cmp_hint_pool *pool =
+				&cmp_hints_shm->pools[e->nr][e->do32 != 0 ? 1U : 0U];
+
+			if (outcome_win) {
+				uint32_t before = __atomic_exchange_n(
+					&pool->zero_win_streak, 0U,
+					__ATOMIC_RELAXED);
+
+				if (before >= CMP_HINT_ZERO_WIN_BUDGET_T)
+					__atomic_fetch_add(
+						&kcov_shm->cmp_hint_pool_zero_win_would_save,
+						1UL, __ATOMIC_RELAXED);
+			} else {
+				uint32_t after = __atomic_add_fetch(
+					&pool->zero_win_streak, 1U,
+					__ATOMIC_RELAXED);
+
+				if (after == CMP_HINT_ZERO_WIN_BUDGET_T)
+					__atomic_fetch_add(
+						&kcov_shm->cmp_hint_pool_zero_win_would_retire,
+						1UL, __ATOMIC_RELAXED);
+				else if (after > CMP_HINT_ZERO_WIN_BUDGET_T)
+					__atomic_fetch_add(
+						&kcov_shm->cmp_hint_pool_zero_win_would_save,
+						1UL, __ATOMIC_RELAXED);
+			}
+		}
+
 		/* Typed-hypothesis outcome credit, gated on hyp_injected.
 		 *
 		 * Before this gate the credit fired on every drained entry,
