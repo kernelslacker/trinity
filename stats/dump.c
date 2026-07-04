@@ -659,6 +659,8 @@ static void dump_stats_render_corrupt_ptr_family(void)
 		stat_row("corruption", "deferred_free_corrupt_ptr", parent_stats.deferred_free_corrupt_ptr);
 	if (parent_stats.post_handler_corrupt_ptr)
 		stat_row("corruption", "post_handler_corrupt_ptr", parent_stats.post_handler_corrupt_ptr);
+	if (parent_stats.validator_rejected)
+		stat_row("corruption", "validator_rejected", parent_stats.validator_rejected);
 	/*
 	 * Standalone grep-friendly cumulative line.  The stat_row above
 	 * is gated on non-zero and the per-handler attribution block
@@ -672,6 +674,8 @@ static void dump_stats_render_corrupt_ptr_family(void)
 	 */
 	output(0, "[main] post_handler_corrupt_ptr_cumulative=%lu\n",
 	       parent_stats.post_handler_corrupt_ptr);
+	output(0, "[main] validator_rejected_cumulative=%lu\n",
+	       parent_stats.validator_rejected);
 	if (corrupt_ptr_attrib_active())
 		dump_stats_render_corrupt_ptr_attrib();
 	if (parent_stats.arg_shadow_stomp)

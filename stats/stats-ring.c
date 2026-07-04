@@ -141,6 +141,9 @@ static void apply_slot(const void *p, void *ctx __unused__)
 	case STATS_FIELD_POST_HANDLER_CORRUPT_PTR:
 		parent_stats.post_handler_corrupt_ptr += delta;
 		break;
+	case STATS_FIELD_VALIDATOR_REJECTED:
+		parent_stats.validator_rejected += delta;
+		break;
 	case STATS_FIELD_DEFERRED_FREE_REJECT:
 		parent_stats.deferred_free_reject += delta;
 		break;

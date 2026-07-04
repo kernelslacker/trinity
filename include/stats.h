@@ -325,11 +325,14 @@ struct stats_s {
 	 * ARG_STRUCT_PTR_OUT consumers is a follow-up. */
 	unsigned long post_handler_untouched_out_buf;
 
-	/* post_handler_corrupt_ptr / deferred_free_reject live in
-	 * struct stats_aggregate (parent-private) and are bumped via the
-	 * per-child stats_ring.  Their per-handler / per-callsite shards
-	 * live in each child's struct childdata.  See include/stats_ring.h
-	 * and include/child.h. */
+	/* post_handler_corrupt_ptr / validator_rejected /
+	 * deferred_free_reject live in struct stats_aggregate
+	 * (parent-private) and are bumped via the per-child stats_ring.
+	 * Their per-handler / per-callsite shards live in each child's
+	 * struct childdata.  See include/stats_ring.h and include/child.h.
+	 * validator_rejected split from post_handler_corrupt_ptr so the
+	 * scribble-catch headline no longer aggregates the pre-dispatch
+	 * structural coupling reject stream. */
 
 	/* Bumped each time check_uid sees the child's uid drift away from
 	 * orig_uid + overflowuid; was previously a hard bail
