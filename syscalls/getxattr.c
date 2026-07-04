@@ -62,57 +62,49 @@ struct getxattr_post_state {
  */
 static const char getxattr_planted_name[] = "user.trinity_plant";
 
-static void sanitise_getxattr(struct syscallrecord *rec)
+/*
+ * ARG_PATHNAME plumbed a random pathname into rec->a1 and
+ * ARG_XATTR_NAME filled rec->a2 with a namespace-shaped name
+ * from the curated pool, but the random path is most often not
+ * a real file (ENOENT) or, even when it does land on a real
+ * file, the drawn name is not currently set on that inode --
+ * vfs_getxattr returns ENOTSUP / ENODATA at the front of the
+ * call before ever touching the per-fs handler dispatch or the
+ * simple_xattr_get fast path that the per-inode i_xattrs rwsem
+ * guards.  Same "high calls, low edges" cold-syscall shape that
+ * fremovexattr / lremovexattr / llistxattr / lgetxattr were in
+ * before their precondition fixes.
+ *
+ * Half the draws now repoint at one of the trinity-testfile<N>
+ * absolute paths and plant a known user.* xattr there via
+ * setxattr() so the subsequent getxattr lands inside the real
+ * per-inode read path.  The plant runs BEFORE the post-state
+ * snapshot below so snap->pathname and snap->name capture the
+ * planted byte sequences -- the post oracle's re-call then
+ * re-walks the planted (path, name) tuple and compares its
+ * returned value against the first call's payload exactly as
+ * the existing oracle expects, including the snap_len equality
+ * gate that drops benign sibling-induced drift (e.g. a
+ * concurrent setxattr that swapped the value out).
+ *
+ * The other half preserves rec->a1 / rec->a2 exactly as the
+ * generic draw left them so the namespace-reject / ENODATA arms
+ * stay exercised; the buffer-overwrite path is in-place so the
+ * trinity dispatch, the plant, and the post-oracle re-call all
+ * see the same byte sequence.  Plant failure (ENOSPC, EOPNOTSUPP
+ * on a fs that bailed out of the user.* leg, ENOENT if the
+ * testfile slot was never opened, ...) is non-fatal: an earlier
+ * draw on the same inode may still hold a stale
+ * user.trinity_plant from a prior round, so getxattr below may
+ * still land on the real read path.
+ *
+ * Slow-path note: the setxattr() in sanitise is one real
+ * syscall.  syscalls/getxattr.c is outside the
+ * sanitiser-slow-path check's FILES scope, so this is within
+ * budget for the precondition payoff.
+ */
+static void sanitise_getxattr_plant_pathname(struct syscallrecord *rec)
 {
-#if defined(SYS_getxattr) || defined(__NR_getxattr)
-	struct getxattr_post_state *snap;
-	unsigned long pre_a3;
-	size_t buf_alloc_size;
-
-	rec->post_state = 0;
-#endif
-
-	/*
-	 * ARG_PATHNAME plumbed a random pathname into rec->a1 and
-	 * ARG_XATTR_NAME filled rec->a2 with a namespace-shaped name
-	 * from the curated pool, but the random path is most often not
-	 * a real file (ENOENT) or, even when it does land on a real
-	 * file, the drawn name is not currently set on that inode --
-	 * vfs_getxattr returns ENOTSUP / ENODATA at the front of the
-	 * call before ever touching the per-fs handler dispatch or the
-	 * simple_xattr_get fast path that the per-inode i_xattrs rwsem
-	 * guards.  Same "high calls, low edges" cold-syscall shape that
-	 * fremovexattr / lremovexattr / llistxattr / lgetxattr were in
-	 * before their precondition fixes.
-	 *
-	 * Half the draws now repoint at one of the trinity-testfile<N>
-	 * absolute paths and plant a known user.* xattr there via
-	 * setxattr() so the subsequent getxattr lands inside the real
-	 * per-inode read path.  The plant runs BEFORE the post-state
-	 * snapshot below so snap->pathname and snap->name capture the
-	 * planted byte sequences -- the post oracle's re-call then
-	 * re-walks the planted (path, name) tuple and compares its
-	 * returned value against the first call's payload exactly as
-	 * the existing oracle expects, including the snap_len equality
-	 * gate that drops benign sibling-induced drift (e.g. a
-	 * concurrent setxattr that swapped the value out).
-	 *
-	 * The other half preserves rec->a1 / rec->a2 exactly as the
-	 * generic draw left them so the namespace-reject / ENODATA arms
-	 * stay exercised; the buffer-overwrite path is in-place so the
-	 * trinity dispatch, the plant, and the post-oracle re-call all
-	 * see the same byte sequence.  Plant failure (ENOSPC, EOPNOTSUPP
-	 * on a fs that bailed out of the user.* leg, ENOENT if the
-	 * testfile slot was never opened, ...) is non-fatal: an earlier
-	 * draw on the same inode may still hold a stale
-	 * user.trinity_plant from a prior round, so getxattr below may
-	 * still land on the real read path.
-	 *
-	 * Slow-path note: the setxattr() in sanitise is one real
-	 * syscall.  syscalls/getxattr.c is outside the
-	 * sanitiser-slow-path check's FILES scope, so this is within
-	 * budget for the precondition payoff.
-	 */
 	if (rnd_modulo_u32(2) == 0) {
 		char *name = (char *) rec->a2;
 		char *path;
@@ -132,20 +124,15 @@ static void sanitise_getxattr(struct syscallrecord *rec)
 			}
 		}
 	}
+}
 
 #if defined(SYS_getxattr) || defined(__NR_getxattr)
-	pre_a3 = rec->a3;
-#endif
-	/*
-	 * Value-buffer legality buckets: substitute (buf, size) with a
-	 * curated bucket on ~half of all draws.  Called before
-	 * avoid_shared_buffer_out so the pre/post comparison sees a
-	 * substituted buffer.
-	 */
-	xattr_pick_valuebuf_bucket(&rec->a3, &rec->a4);
-	avoid_shared_buffer_out(&rec->a3, rec->a4);
+static void sanitise_getxattr_install_post_snapshot(struct syscallrecord *rec,
+						    unsigned long pre_a3)
+{
+	struct getxattr_post_state *snap;
+	size_t buf_alloc_size;
 
-#if defined(SYS_getxattr) || defined(__NR_getxattr)
 	/*
 	 * Resolve the actual allocation size of the buffer at rec->a3 and
 	 * clamp rec->a4 (size) to it before the kernel sees the syscall.
@@ -207,6 +194,33 @@ static void sanitise_getxattr(struct syscallrecord *rec)
 			       (const char *)(unsigned long) rec->a2))
 		snap->name[0] = '\0';
 	post_state_install(rec, snap);
+}
+#endif
+
+static void sanitise_getxattr(struct syscallrecord *rec)
+{
+#if defined(SYS_getxattr) || defined(__NR_getxattr)
+	unsigned long pre_a3;
+
+	rec->post_state = 0;
+#endif
+
+	sanitise_getxattr_plant_pathname(rec);
+
+#if defined(SYS_getxattr) || defined(__NR_getxattr)
+	pre_a3 = rec->a3;
+#endif
+	/*
+	 * Value-buffer legality buckets: substitute (buf, size) with a
+	 * curated bucket on ~half of all draws.  Called before
+	 * avoid_shared_buffer_out so the pre/post comparison sees a
+	 * substituted buffer.
+	 */
+	xattr_pick_valuebuf_bucket(&rec->a3, &rec->a4);
+	avoid_shared_buffer_out(&rec->a3, rec->a4);
+
+#if defined(SYS_getxattr) || defined(__NR_getxattr)
+	sanitise_getxattr_install_post_snapshot(rec, pre_a3);
 #endif
 }
 
