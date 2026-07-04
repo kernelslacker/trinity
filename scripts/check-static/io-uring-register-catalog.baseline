@@ -1,0 +1,38 @@
+# io-uring-register-catalog.baseline
+#
+# Grandfathered list of IORING_* opcodes that appear in
+# io_uring_register_opcodes[] (syscalls/io_uring_register.c) but do
+# NOT yet have a matching union_variant in
+# io_uring_register_variants[] (struct_catalog/io_uring_register.c).
+#
+# Each such gap means the fuzzer can draw the opcode but the sanitiser
+# has no schema for its payload, so it falls through to the empty
+# shared prefix and reverts to blind width-guessing.  Every entry
+# below is real debt: a variant should be authored (see
+# IORING_REGISTER_FILES_UPDATE / IORING_REGISTER_PBUF_RING in
+# struct_catalog/io_uring_register.c for the reference shape) and the
+# corresponding line removed from this file in the SAME commit that
+# adds the variant.
+#
+# This baseline should SHRINK over time, never grow.  A new IORING_*
+# added to io_uring_register_opcodes[] without a matching variant will
+# FAIL `make check-static` rather than be silently added to this list.
+#
+# Format: one IORING_* token per line.  Lines starting with `#` and
+# blank lines are ignored.  Whitespace is stripped.
+#
+IORING_REGISTER_BPF_FILTER
+IORING_REGISTER_ENABLE_RINGS
+IORING_REGISTER_EVENTFD_ASYNC
+IORING_REGISTER_IOWQ_AFF
+IORING_REGISTER_MEM_REGION
+IORING_REGISTER_PERSONALITY
+IORING_REGISTER_QUERY
+IORING_REGISTER_RESIZE_RINGS
+IORING_REGISTER_SEND_MSG_RING
+IORING_REGISTER_USE_REGISTERED_RING
+IORING_REGISTER_ZCRX_CTRL
+IORING_REGISTER_ZCRX_IFQ
+IORING_UNREGISTER_EVENTFD
+IORING_UNREGISTER_IOWQ_AFF
+IORING_UNREGISTER_PERSONALITY
