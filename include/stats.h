@@ -1056,6 +1056,7 @@ struct stats_s {
 	unsigned long pidfd_storm_signals;	/* successful pidfd_send_signal calls */
 	unsigned long pidfd_storm_getfds;	/* successful pidfd_getfd calls */
 	unsigned long pidfd_storm_failed;	/* pidfd_open/send_signal/getfd returned -1 */
+	unsigned long pidfd_storm_iters;	/* cumulative inner-loop pidfd syscalls */
 
 	/* madvise_cycler childop counters */
 	unsigned long madvise_cycler_runs;	/* total madvise_cycler invocations */
