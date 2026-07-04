@@ -74,6 +74,13 @@ static void sanitise_sigaltstack(struct syscallrecord *rec)
 		return;
 	}
 
+	/*
+	 * Zero the whole struct so any inter-field pad (e.g. the 4-byte
+	 * gap between ss_flags and ss_size on LP64) is initialised before
+	 * the kernel copies sizeof(stack_t) from userspace.
+	 */
+	memset(ss, 0, sizeof(*ss));
+
 	if (draw < 40) {
 		/* enabled: MINSIGSTKSZ * (1..4) */
 		unsigned int mult = 1 + rnd_modulo_u32(4);
