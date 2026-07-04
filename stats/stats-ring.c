@@ -239,6 +239,10 @@ static unsigned int stats_ring_drain(struct stats_ring *ring)
 				    sizeof(ring->slots[0]),
 				    apply_slot, NULL, &overflow);
 	parent_stats.ring_overflow_total += overflow;
+	parent_stats.ring_slots_processed_total += processed;
+	parent_stats.ring_drain_children_visited += 1;
+	if (overflow > 0)
+		parent_stats.ring_children_overflow_events += 1;
 	return processed;
 }
 

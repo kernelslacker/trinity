@@ -548,6 +548,48 @@ static void dump_stats_render_maps_pick_ratios(void)
 	}
 }
 
+/*
+ * Ring health: surface the parent-side stats_ring drain accounting so
+ * operators can tell whether children are enqueuing faster than the
+ * parent drains (ring_overflow_delta > 0 window-over-window) and how
+ * widely the pressure is spread (ring_overflow_child_permille).  All
+ * counters are cumulative and parent-write-only; the render reads them
+ * with __ATOMIC_RELAXED to match the sibling corruption rows.  The
+ * delta row uses a function-local static: this helper runs only on
+ * dump_stats() ticks, which are single-threaded parent context.
+ */
+static void dump_stats_render_ring_health(void)
+{
+	static unsigned long prev_overflow_total;
+	unsigned long overflow_total, slots_total, visited, overflow_events;
+	unsigned long delta;
+
+	overflow_total = __atomic_load_n(&parent_stats.ring_overflow_total,
+					 __ATOMIC_RELAXED);
+	slots_total = __atomic_load_n(&parent_stats.ring_slots_processed_total,
+				      __ATOMIC_RELAXED);
+	visited = __atomic_load_n(&parent_stats.ring_drain_children_visited,
+				  __ATOMIC_RELAXED);
+	overflow_events = __atomic_load_n(&parent_stats.ring_children_overflow_events,
+					  __ATOMIC_RELAXED);
+
+	if (visited == 0)
+		return;
+
+	delta = overflow_total >= prev_overflow_total ?
+		overflow_total - prev_overflow_total : 0;
+	prev_overflow_total = overflow_total;
+
+	stat_row("ring_health", "ring_overflow_total",           overflow_total);
+	stat_row("ring_health", "ring_overflow_delta",           delta);
+	stat_row("ring_health", "ring_slots_processed_total",    slots_total);
+	stat_row("ring_health", "ring_drain_children_visited",   visited);
+	stat_row("ring_health", "ring_slots_per_child_mean",     slots_total / visited);
+	stat_row("ring_health", "ring_children_overflow_events", overflow_events);
+	stat_row("ring_health", "ring_overflow_child_permille",
+		 overflow_events * 1000UL / visited);
+}
+
 static void dump_stats_render_ring_corruption(void)
 {
 	if (shm->stats.fd_event_ring_corrupted)
@@ -560,6 +602,7 @@ static void dump_stats_render_ring_corruption(void)
 		stat_row("corruption", "stats_ring_canary",      shm->stats.stats_ring_overwritten);
 	if (shm->stats.fd_event_payload_corrupt)
 		stat_row("corruption", "fd_event_payload",       shm->stats.fd_event_payload_corrupt);
+	dump_stats_render_ring_health();
 }
 
 static void dump_stats_render_corrupt_ptr_family(void)
