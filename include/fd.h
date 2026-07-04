@@ -24,6 +24,30 @@ struct fd_provider {
         int (*init)(void);
         int (*get)(void);
 	void (*child_ops)(void);	/* optional: called periodically in child context */
+	/*
+	 * Optional per-provider top-up hook, called periodically from the
+	 * child tick via run_fd_provider_replenish().  Providers that back a
+	 * small OBJ_GLOBAL pool (epoll, eventfd, fanotify, ...) drain over
+	 * the child's lifetime as inherited slots get closed by fuzz-driven
+	 * close / dup2 / close_range hits; the empty pool then surfaces as
+	 * fd_random_exhausted bumps and EBADF-retry burn in gen_arg_fd.
+	 *
+	 * The hook is invited to open at most @budget new fds and publish
+	 * them into a place the child's own arg-generation can reach.  A
+	 * post-fork add_object(OBJ_GLOBAL) is a no-op by the mainpid guard
+	 * in objects/registry.c, so implementations push new fds into
+	 * this_child()->live_fds via child_fd_ring_push(), which feeds the
+	 * 70% live-fd branch of gen_arg_fd() directly.
+	 *
+	 * Rate-limit contract: the dispatcher also gates how often the walk
+	 * runs and caps how many providers get called per tick, but each
+	 * implementation MUST additionally self-cap -- do not refill-to-full
+	 * every call, only top up while below the init target and only up to
+	 * @budget per invocation.  Replenish issues create syscalls that
+	 * compete with the fuzz budget; the whole path is a small bounded
+	 * bleed-off, not a maintenance loop.
+	 */
+	void (*try_replenish)(unsigned int budget);
 	bool enabled;
 	bool initialized;
 	/*
@@ -48,6 +72,16 @@ struct fd_provider {
 void register_fd_provider(const struct fd_provider *prov);
 void dump_fd_provider_names(void);
 void run_fd_provider_child_ops(void);
+
+/*
+ * Walk registered fd_providers with a non-NULL ->try_replenish and give
+ * each up to @per_provider_budget new fds to publish this tick.  Internally
+ * rate-limited (roughly one in four calls does any work) and dispatcher-
+ * capped at a small number of providers per tick so a burst of
+ * create-syscalls cannot swamp the child's fuzz budget.  Safe to call
+ * from child context only; parent calls fall through without work.
+ */
+void run_fd_provider_replenish(unsigned int per_provider_budget);
 
 /*
  * Reason categories an fd-provider init() can report when it returns

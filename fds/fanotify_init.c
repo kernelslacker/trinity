@@ -120,12 +120,41 @@ static int get_rand_fanotifyfd(void)
 	return -1;
 }
 
+/*
+ * Periodic child-tick top-up.  See the block comment above
+ * epoll_try_replenish() (fds/epoll.c) for the general contract.
+ * init_fanotify_fds() seeds NR_FANOTIFYFDS entries once; without this
+ * hook a child that drained its private copy stopped seeing an
+ * ARG_FD_FANOTIFY hit at all.  Reuse the same randomised flag / event-
+ * flag generators that init used so the topped-up fds carry the same
+ * flag distribution rather than one fixed shape.
+ */
+static void fanotify_try_replenish(unsigned int budget)
+{
+	struct childdata *child = this_child();
+	unsigned int i;
+
+	if (child == NULL)
+		return;
+
+	for (i = 0; i < budget; i++) {
+		unsigned long flags = get_fanotify_init_flags();
+		unsigned long eventflags = get_fanotify_init_event_flags();
+		int fd = fanotify_init(flags, eventflags);
+
+		if (fd < 0)
+			return;
+		child_fd_ring_push(&child->live_fds, fd);
+	}
+}
+
 static const struct fd_provider fanotify_fd_provider = {
 	.name = "fanotify",
 	.objtype = OBJ_FD_FANOTIFY,
 	.enabled = true,
 	.init = &init_fanotify_fds,
 	.get = &get_rand_fanotifyfd,
+	.try_replenish = &fanotify_try_replenish,
 };
 
 REG_FD_PROV(fanotify_fd_provider);
