@@ -17,7 +17,7 @@
 #include <sys/socket.h>
 #include <string.h>
 
-#include "tc-qdisc-churn-internal.h"
+#include "qdisc-churn-internal.h"
 
 /*
  * RTM_NEWLINK type=dummy with the supplied dev name.  Each iteration
