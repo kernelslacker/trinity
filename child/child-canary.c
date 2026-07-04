@@ -874,7 +874,7 @@ static bool pick_next_canary(enum child_op_type *out)
  *   CONFIG_BLOCKED   dispatch shape has no outer KCOV bracket.
  *   QUARANTINED      crash threshold tripped AND the op has been
  *                    demoted at least once already (repeated bad
- *                    windows; matches the codex QUARANTINED criterion).
+ *                    windows).
  *   THROTTLED        crash threshold tripped on the first bad window,
  *                    OR clean / noisy both zero with a wedge in the
  *                    window.
