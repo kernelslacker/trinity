@@ -63,7 +63,7 @@
 #include "name-pool.h"
 #include "random.h"
 #include "shm.h"
-#include "tc-qdisc-churn-internal.h"
+#include "qdisc-churn-internal.h"
 #include "trinity.h"
 #include "userns-bootstrap.h"
 
