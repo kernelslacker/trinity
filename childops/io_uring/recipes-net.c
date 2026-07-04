@@ -24,7 +24,7 @@
 #include "syscall-gate.h"
 #include "trinity.h"
 
-#include "childops/iouring-recipes-internal.h"
+#include "childops/io_uring/recipes-internal.h"
 
 /* ------------------------------------------------------------------ *
  * Recipe 4: SEND + RECV over a socketpair with linked SQEs

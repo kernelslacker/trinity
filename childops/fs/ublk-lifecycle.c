@@ -56,7 +56,7 @@
 
 #include "child.h"
 #include "syscall-gate.h"
-#include "childops/iouring-ring.h"
+#include "childops/io_uring/ring.h"
 #include "compat.h"
 #include "shm.h"
 #include "stats.h"

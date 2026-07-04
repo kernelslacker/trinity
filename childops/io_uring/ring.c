@@ -1,6 +1,6 @@
 /*
  * iouring-ring -- shared SQ/CQ/SQE ring-setup helper.  See
- * childops/iouring-ring.h for the rationale.
+ * childops/io_uring/ring.h for the rationale.
  */
 
 #include <errno.h>
@@ -13,7 +13,7 @@
 #include <linux/io_uring.h>
 #include <unistd.h>
 
-#include "childops/iouring-ring.h"
+#include "childops/io_uring/ring.h"
 #include "compat.h"
 #include "syscall-gate.h"
 #include "errno-classify.h"

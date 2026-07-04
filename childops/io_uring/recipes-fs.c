@@ -26,7 +26,7 @@
 #include "syscall-gate.h"
 #include "trinity.h"
 
-#include "childops/iouring-recipes-internal.h"
+#include "childops/io_uring/recipes-internal.h"
 
 /* ------------------------------------------------------------------ *
  * Recipe 5: OPENAT + CLOSE in linked SQEs (teardown race)
