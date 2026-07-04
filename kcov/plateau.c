@@ -415,7 +415,7 @@ void kcov_plateau_check(void)
 	 * written before the RELEASE-store of plateau_armed so a child
 	 * reader that observes plateau_armed=true via the ACQUIRE pair is
 	 * guaranteed to also see the seeded companion state. */
-	if (!__atomic_load_n(&kcov_shm->plateau_armed, __ATOMIC_RELAXED)) {
+	if (!__atomic_load_n(&kcov_shm->plateau_armed, __ATOMIC_ACQUIRE)) {
 		__atomic_store_n(&kcov_shm->plateau_window_start, now,
 				 __ATOMIC_RELAXED);
 		__atomic_store_n(&kcov_shm->plateau_prev_edges, edges_now,
