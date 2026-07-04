@@ -518,45 +518,40 @@ struct syscallentry syscall_listxattr = {
  */
 static const char llistxattr_planted_name[] = "user.trinity_plant";
 
-static void sanitise_llistxattr(struct syscallrecord *rec)
+/*
+ * ARG_PATHNAME plumbed a random pathname into rec->a1, but the
+ * random path is most often either not a real file at all
+ * (ENOENT before the per-inode xattr list walk) or, even when
+ * it does land on a real file, that inode has no xattrs --
+ * vfs_listxattr returns 0 immediately, never touching the per-fs
+ * handler dispatch or the simple_xattr_list walk that the
+ * per-inode i_xattrs rwsem guards.  Same "high calls, low edges"
+ * cold-syscall shape that the wall-lever shadow gate keeps re-
+ * flagging, identical to the fremovexattr / lremovexattr profile
+ * before their precondition fixes.
+ *
+ * Half the draws now repoint at one of the trinity-testfile<N>
+ * absolute paths and plant a known user.* xattr there via
+ * setxattr() so the subsequent llistxattr walks a non-empty
+ * per-inode xattr list and reaches the real list-walk path.  The
+ * other half preserves the slot exactly as the generic draw
+ * left it, so the empty-list and ENOENT arms stay exercised.
+ *
+ * The plant runs BEFORE the listbuf bucket pick / clamp and
+ * BEFORE the snapshot below so the snapshot captures the
+ * (planted) rec->a1 -- the post oracle's re-call then re-walks
+ * the planted path and compares its result against the first
+ * call's payload exactly as the existing oracle expects.
+ *
+ * Slow-path note: the setxattr() in sanitise is one real
+ * syscall.  syscalls/listxattr.c is outside the
+ * sanitiser-slow-path check's FILES scope, so this is within
+ * budget for the precondition payoff.
+ */
+static void sanitise_llistxattr_plant_pathname(struct syscallrecord *rec)
 {
-	struct listxattr_post_state *snap;
-	unsigned long pre_a2;
-	size_t buf_alloc_size;
 	char *path;
 
-	rec->post_state = 0;
-
-	/*
-	 * ARG_PATHNAME plumbed a random pathname into rec->a1, but the
-	 * random path is most often either not a real file at all
-	 * (ENOENT before the per-inode xattr list walk) or, even when
-	 * it does land on a real file, that inode has no xattrs --
-	 * vfs_listxattr returns 0 immediately, never touching the per-fs
-	 * handler dispatch or the simple_xattr_list walk that the
-	 * per-inode i_xattrs rwsem guards.  Same "high calls, low edges"
-	 * cold-syscall shape that the wall-lever shadow gate keeps re-
-	 * flagging, identical to the fremovexattr / lremovexattr profile
-	 * before their precondition fixes.
-	 *
-	 * Half the draws now repoint at one of the trinity-testfile<N>
-	 * absolute paths and plant a known user.* xattr there via
-	 * setxattr() so the subsequent llistxattr walks a non-empty
-	 * per-inode xattr list and reaches the real list-walk path.  The
-	 * other half preserves the slot exactly as the generic draw
-	 * left it, so the empty-list and ENOENT arms stay exercised.
-	 *
-	 * The plant runs BEFORE the listbuf bucket pick / clamp and
-	 * BEFORE the snapshot below so the snapshot captures the
-	 * (planted) rec->a1 -- the post oracle's re-call then re-walks
-	 * the planted path and compares its result against the first
-	 * call's payload exactly as the existing oracle expects.
-	 *
-	 * Slow-path note: the setxattr() in sanitise is one real
-	 * syscall.  syscalls/listxattr.c is outside the
-	 * sanitiser-slow-path check's FILES scope, so this is within
-	 * budget for the precondition payoff.
-	 */
 	if (rnd_modulo_u32(2) == 0) {
 		path = get_testfile_path();
 		if (path != NULL) {
@@ -574,16 +569,24 @@ static void sanitise_llistxattr(struct syscallrecord *rec)
 					"trin", 4, 0);
 		}
 	}
+}
+
+/*
+ * Buffer-size phase for rec->a2 (list) / rec->a3 (size).
+ *
+ * Clamp rec->a3 (size) to the actual allocation backing rec->a2.
+ * See sanitise_flistxattr above for the full rationale and the
+ * 862ee5c6ae3a (sched_getattr) precedent -- identical pattern.
+ */
+static size_t sanitise_llistxattr_size_buffer(struct syscallrecord *rec)
+{
+	unsigned long pre_a2;
+	size_t buf_alloc_size;
 
 	pre_a2 = rec->a2;
 	xattr_pick_listbuf_bucket(&rec->a2, &rec->a3);
 	avoid_shared_buffer_out(&rec->a2, rec->a3);
 
-	/*
-	 * Clamp rec->a3 (size) to the actual allocation backing rec->a2.
-	 * See sanitise_flistxattr above for the full rationale and the
-	 * 862ee5c6ae3a (sched_getattr) precedent -- identical pattern.
-	 */
 	if (rec->a2 != pre_a2)
 		buf_alloc_size = rec->a3 > (unsigned long) page_size
 				       ? (size_t) rec->a3
@@ -593,6 +596,20 @@ static void sanitise_llistxattr(struct syscallrecord *rec)
 
 	if ((size_t) rec->a3 > buf_alloc_size)
 		rec->a3 = (unsigned long) buf_alloc_size;
+
+	return buf_alloc_size;
+}
+
+static void sanitise_llistxattr(struct syscallrecord *rec)
+{
+	struct listxattr_post_state *snap;
+	size_t buf_alloc_size;
+
+	rec->post_state = 0;
+
+	sanitise_llistxattr_plant_pathname(rec);
+
+	buf_alloc_size = sanitise_llistxattr_size_buffer(rec);
 
 	/*
 	 * Snapshot the pathname and list buffer pointer for the post
