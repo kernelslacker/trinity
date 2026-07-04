@@ -220,7 +220,7 @@ static void post_pselect6(struct syscallrecord *rec)
 struct syscallentry syscall_pselect6 = {
 	.name = "pselect6",
 	.num_args = 6,
-	.flags = AVOID_SYSCALL, // Can cause the fuzzer to hang without timeout firing
+	.flags = AVOID_SYSCALL | NEED_ALARM, // Can cause the fuzzer to hang without timeout firing
 	.argtype = { [0] = ARG_LEN, [1] = ARG_ADDRESS, [2] = ARG_ADDRESS, [3] = ARG_ADDRESS, [4] = ARG_ADDRESS, [5] = ARG_ADDRESS },
 	.argname = { [0] = "n", [1] = "inp", [2] = "outp", [3] = "exp", [4] = "tsp", [5] = "sig" },
 	.sanitise = sanitise_pselect6,
