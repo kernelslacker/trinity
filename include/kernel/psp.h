@@ -50,7 +50,7 @@
 #endif
 
 /* Additional PSP UAPI integers consumed by the genl family grammar in
- * net/netlink-genl-fam-psp.c.  Values mirror include/uapi/linux/psp.h
+ * net/netlink/genl/psp.c.  Values mirror include/uapi/linux/psp.h
  * (the rest of enum psp_cmd plus the PSP_A_DEV_* / PSP_A_ASSOC_*
  * nest-leaf / PSP_A_KEYS_* / PSP_A_STATS_* namespaces).  Supplied as
  * fallbacks for stripped sysroots that omit <linux/psp.h>; existing

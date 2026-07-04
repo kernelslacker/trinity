@@ -4,7 +4,7 @@
  * Generic netlink families are the fastest-growing kernel attack surface.
  * nl80211 alone has accumulated 15+ public CVEs, most rooted in incorrect
  * or missing per-attribute validation in deep parser paths.  Trinity's
- * existing general netlink path (net/netlink-msg.c) constructs
+ * existing general netlink path (net/netlink/msg.c) constructs
  * NETLINK_GENERIC messages with random nlmsg_type and random genlmsghdr.cmd,
  * which is useful for exercising the unknown-family fast-reject path but
  * almost never lines up with a real registered family ID, so the actual

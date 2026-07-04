@@ -66,7 +66,7 @@ Trinity's fd-supply layer. Each file (mostly) implements a "provider" that knows
 - `syscalls/poll.c`, `syscalls/select.c`, `syscalls/pselect6.c`, `syscalls/epoll_ctl.c` — use `get_pollable_random_fd()` and `fd_poll_can_block()` to build/validate watch sets
 - `kcov/lifecycle.c`, `kcov/diag.c` — own the fds that `fd_is_protected()` shields (`child->kcov.fd`, `child->kcov.cmp_fd`)
 - `random_syscall/chain-subst.c` — fd substitution in syscall chains draws from the same typed/random pickers
-- `ioctls/fuse.c`, `ioctls/autofs.c`, `ioctls/seccomp.c`, `net/proto-unix.c`, `net/proto-pppox.c`, `lib/cmsg_build.c` — ioctl/net-specific consumers of fds sourced through this layer
+- `ioctls/fuse.c`, `ioctls/autofs.c`, `ioctls/seccomp.c`, `net/proto/unix.c`, `net/proto/pppox.c`, `lib/cmsg_build.c` — ioctl/net-specific consumers of fds sourced through this layer
 - `struct_catalog/aio.c`, `struct_catalog/landlock.c`, `struct_catalog/registry.c` — struct-field fd slots populated from typed providers
 - `minicorpus.c` — corpus replay biases ARG_FD/typed-fd argument reuse
 - `include/fd.h`, `include/files.h`, `include/object-types.h` — provider struct, pool-file helpers, `OBJ_FD_*` objecttype enum

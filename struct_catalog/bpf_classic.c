@@ -41,7 +41,7 @@
  *
  * All four members stay FT_RAW: the live fill is owned by the
  * bespoke bpf_gen_filter() / bpf_gen_seccomp() Markov-chain BPF
- * generators in net/bpf.c, which build well-formed cBPF programs
+ * generators in net/bpf/bpf.c, which build well-formed cBPF programs
  * the kernel verifier will actually load.  A flat random splat per
  * field would produce instruction words the verifier rejects on the
  * first opcode read.  These FIELD entries exist so struct_field_for_
@@ -74,7 +74,7 @@ const struct struct_field sock_filter_fields[SOCK_FILTER_FIELDS_N] = {
  * Attribution-only registration: the live fill for the seccomp /
  * setsockopt(SO_ATTACH_FILTER) / prctl(PR_SET_SECCOMP) call sites
  * is owned by the bespoke bpf_gen_seccomp() / bpf_gen_filter()
- * Markov generators in net/bpf.c -- those produce well-formed
+ * Markov generators in net/bpf/bpf.c -- those produce well-formed
  * cBPF the kernel verifier accepts, which a schema-aware FT_RAW
  * splat across sock_filter[] words cannot.  The descriptor still
  * earns its keep by giving struct_field_for_cmp() named len /

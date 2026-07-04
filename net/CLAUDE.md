@@ -63,9 +63,8 @@ shared struct-of-callbacks pattern).
    older table.
 2. **Registry-of-tables pattern repeated at 3 layers.** Address
    families (`net_protocols[]`), generic-netlink families
-   (`netlink-genl-families.c` + `netlink-genl-fam-*.c`), and
-   netfilter-netlink subsystems (`netlink-nfnl-subsystems.c` +
-   `netlink-nfnl-sub-*.c`) all use the same shape: a small header file
+   (`netlink/genl/`), and
+   netfilter-netlink subsystems (`netlink/nfnl/`) all use the same shape: a small header file
    declares `{cmd, name}` and `{attr, kind, size}` tables per unit,
    and a central file resolves/dispatches by ID at runtime.
 3. **Attribute shapes are policy-mirrored, not random.** Per-family/
@@ -76,22 +75,21 @@ shared struct-of-callbacks pattern).
    of bouncing off `-EINVAL` at the TLV-validation layer.
 4. **Conditional compilation keyed on target kernel headers.**
    `__has_include(<linux/X.h>)` gates each genl family's `extern`
-   declaration and registry entry (netlink-genl-families.c), and
+   declaration and registry entry (netlink/genl/families.c), and
    `USE_*` build flags gate whole protocol families in
    `net_protocols[]`/`sfg_registry[]` (IPV6, RDS, BLUETOOTH, CAIF,
    VSOCK, XDP, MCTP, IF_ALG) — the directory compiles down to whatever
    subset the build/kernel config supports.
 5. **Stateful sequencing via rings.** XFRM keeps a per-process ring of
-   installed SAs/policies (proto-netlink-xfrm-ring.c) so later
+   installed SAs/policies (proto/netlink-xfrm-ring.c) so later
    UPDSA/NEWAE/DELSA calls target real kernel objects instead of
    random SPIs that fail lookup — the same "install then reference"
    idea recurs informally in other coherent-grammar files.
 6. **BPF has two independent, uncoupled generators.** Classic BPF
    (bpf.c, cBPF `sock_filter`) targets socket filters/seccomp; eBPF
-   (ebpf.c) targets `BPF_PROG_LOAD` and is tiered (valid/boundary/
+   (bpf/ebpf.c) targets `BPF_PROG_LOAD` and is tiered (valid/boundary/
    chaos) to separately stress the verifier's acceptance path and its
-   rejection path. They share no code — bpf-internal.h is explicitly
-   private to the bpf.c/bpf-disasm.c pair only.
+   rejection path. They share no code — bpf/internal.h is explicitly private to the bpf/bpf.c + bpf/disasm.c pair only.
 7. **Deliberate CVE-driven attribute coverage.** Several genl family
    files (e.g. taskstats) document a specific historical CVE or kernel
    validation function in a header comment and size their attribute
@@ -127,7 +125,7 @@ shared struct-of-callbacks pattern).
   *struct-shaped* optval generation lives in struct_catalog/.
 - `childops/genetlink-fuzzer.c` — does its own independent runtime
   discovery of a family's ops list; intentionally decoupled from
-  `netlink-genl-families.c`'s registry so the two paths can't share
+  `netlink/genl/families.c`'s registry so the two paths can't share
   fragile state.
 - `syscalls/bpf.c`, `syscalls/seccomp.c`, `syscalls/prctl.c`,
   `syscalls/setsockopt.c`, `syscalls/io_uring_register-payloads.c`,
@@ -135,7 +133,7 @@ shared struct-of-callbacks pattern).
   `childops/sock-ulp-sockmap-layering.c`,
   `childops/veth-asymmetric-xdp.c`, `childops/afxdp-churn.c`,
   `fds/bpf.c`, `struct_catalog/bpf.c` — wide fan-out of consumers of
-  the classic-BPF/eBPF generators (bpf.c/ebpf.c), since filter programs
+  the classic-BPF/eBPF generators (bpf/bpf.c + bpf/ebpf.c), since filter programs
   attach via seccomp, `SO_ATTACH_FILTER`, `BPF_PROG_LOAD`, sockmap, and
   cgroup/XDP attach points.
 - `net/proto/kcm.c` — one of the few proto files that itself pulls in
@@ -143,13 +141,13 @@ shared struct-of-callbacks pattern).
 
 ## Areas of attention
 
-1. **`netlink-msg-rtnl-payloads.c` (2283 lines) and `netlink-msg.c`
+1. **`netlink/msg-rtnl-payloads.c` (2283 lines) and `netlink/msg.c`
    (1757 lines)** are by far the largest files here; both were already
    split once for compile-unit size (rtnl payloads carved out of the
    message generator) but each single payload generator
    (`gen_rta_{route,link,addr,neigh,dcb}_payload`) still spans hundreds
    of lines of nested attribute construction.
-2. **`ebpf.c` (1266 lines) mixes concerns**: valid-program synthesis,
+2. **`bpf/ebpf.c` (1266 lines) mixes concerns**: valid-program synthesis,
    boundary-case synthesis, and pure-chaos corruption all live in one
    TU across three explicit tiers — logic for "is this instruction
    selection still verifier-valid" and "deliberately break this" sit
@@ -160,7 +158,7 @@ shared struct-of-callbacks pattern).
    bounds-safety comment about `net_protocols[]` sizing that flags this
    class of risk directly.
 4. **XFRM correctness depends on the SA/policy ring staying in sync**
-   with what the kernel actually accepted — `proto-netlink-xfrm-ring.c`
+   with what the kernel actually accepted — `proto/netlink-xfrm-ring.c`
    only records entries `xfrm_emit_*` believes succeeded; any missed
    error path leaves stale ring entries referenced by later
    UPDSA/DELSA calls.
@@ -179,7 +177,7 @@ registry-and-dispatch layers (address family, genl family, nfnl
 subsystem), plus two independent BPF program generators and the core
 netlink message-construction engine. Complexity concentrates in a
 handful of files — the rtnl payload builders, the main netlink message
-generator, the XFRM emit cluster, and ebpf.c — while the other ~90
+generator, the XFRM emit cluster, and bpf/ebpf.c — while the other ~90
 files are short, self-similar, one-family-per-file grammar
 definitions that are cheap to read individually and cheap to extend
 by copying an existing sibling.

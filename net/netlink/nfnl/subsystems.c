@@ -1,7 +1,7 @@
 /*
  * NETLINK_NETFILTER per-subsystem grammar registry.
  *
- * Per-subsystem grammar tables (net/netlink-nfnl-sub-*.c) declare
+ * Per-subsystem grammar tables (net/netlink/nfnl/<subsystem>.c) declare
  * their commands and attribute kinds statically; this file exposes
  * lookup helpers used by the netlink message generator to size
  * attributes per the subsystem's nla_policy and to bias nlmsg_type
@@ -42,7 +42,7 @@ extern struct nfnl_subsys_grammar sub_hook;
 extern struct nfnl_subsys_grammar sub_ulog;
 
 /*
- * Per-subsys grammar definitions live in net/netlink-nfnl-sub-*.c;
+ * Per-subsys grammar definitions live in net/netlink/nfnl/<subsystem>.c;
  * each new subsys adds an extern declaration above and a pointer
  * here.  Lookups skip NULL entries so a temporary placeholder is
  * harmless if a subsys ever needs to be ifdef'd out.

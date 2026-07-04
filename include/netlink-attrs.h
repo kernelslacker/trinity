@@ -3,8 +3,8 @@
 /*
  * Per-attribute kind metadata used by the netlink message generator's
  * spec-driven attribute path.  Lives in its own header so per-genetlink
- * family grammar tables (net/netlink-genl-fam-*.c) can populate
- * nla_attr_spec arrays without depending on net/netlink-msg.c
+ * family grammar tables (net/netlink/genl/<family>.c) can populate
+ * nla_attr_spec arrays without depending on net/netlink/msg.c
  * internals.  The fields mirror what the kernel-side nla_policy struct
  * cares about so the generator can size each attribute the way the
  * family's nla_validate gate expects.

@@ -1,7 +1,7 @@
 /*
- * netlink-msg-internal.h
+ * msg-internal.h
  *
- * Shared declarations split out of net/netlink-msg.c to allow the
+ * Shared declarations split out of net/netlink/msg.c to allow the
  * descriptor tables (per-protocol message-type lists, per-group
  * rtnetlink attribute lists, per-family nla_attr_spec tables and
  * xfrm family-field offsets) to live in their own translation unit
@@ -9,8 +9,8 @@
  * header is private to the two TUs that make up netlink-msg — do
  * not include it from anywhere else.
  *
- * The tables in netlink-msg-tables.c are deliberately widened from
- * file-static to external linkage so the emitters in netlink-msg.c
+ * The tables in msg-tables.c are deliberately widened from
+ * file-static to external linkage so the emitters in msg.c
  * can pick from them across the TU boundary.  Each table is paired
  * with a `_n` size constant so the emitters can index into it without
  * needing the full array type that ARRAY_SIZE() requires; the
@@ -53,7 +53,7 @@
 /*
  * Per-message-type family-field offsets within the xfrm body.  The
  * row layout was previously expressed as an anonymous struct literal
- * inside netlink-msg.c; it is named here so the table can be
+ * inside msg.c; it is named here so the table can be
  * declared extern and referenced from xfrm_pin_family() across the
  * TU boundary.  Field semantics are unchanged: family_offset is the
  * SA / id family byte offset, sel_family_offset is the (optional)
@@ -66,8 +66,8 @@ struct xfrm_family_offset {
 };
 
 /*
- * Descriptor tables — defined in netlink-msg-tables.c, consumed by
- * the message emitters in netlink-msg.c.  Each table is paired with
+ * Descriptor tables — defined in msg-tables.c, consumed by
+ * the message emitters in msg.c.  Each table is paired with
  * a `_n` size constant so the emitters can scale a uniform pick
  * across the table without needing the full array type.
  */
@@ -139,8 +139,8 @@ extern const size_t inet_diag_specs_n;
 
 /*
  * Per-rtnetlink-group attribute payload builders.  Defined in
- * netlink-msg-rtnl-payloads.c, dispatched from the gen_rta_payload
- * switch in netlink-msg.c.  Each generator returns the payload length
+ * msg-rtnl-payloads.c, dispatched from the gen_rta_payload
+ * switch in msg.c.  Each generator returns the payload length
  * it wrote into p, or 0 to signal "fall back to a random blob".
  */
 size_t gen_rta_route_payload(unsigned char *p, size_t avail,

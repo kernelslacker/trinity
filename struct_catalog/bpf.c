@@ -237,7 +237,7 @@ const struct struct_field bpf_attr_MAP_CREATE_fields[] = {
 /*
  * PROG_LOAD variant.  Two pointer/length pairs land here:
  *   - insns + insn_cnt as FT_BPF_PROGRAM/FT_LEN_COUNT.  Fill delegates
- *     to net/ebpf.c's three-tier generator (~50% valid, 25% boundary,
+ *     to net/bpf/ebpf.c's three-tier generator (~50% valid, 25% boundary,
  *     25% chaos) via ebpf_gen_program_into(), so the schema-mutation
  *     path produces the same verifier-reachable instruction streams as
  *     the live BPF_PROG_LOAD sanitiser instead of a per-insn random
@@ -1087,7 +1087,7 @@ const struct union_variant bpf_attr_LINK_CREATE_nested[] = {
  * so a learned KCOV-compare constant on code / off / imm can be
  * attributed back to the right field by struct_field_for_cmp().
  * PROG_LOAD's insns FILL now flows through FT_BPF_PROGRAM (which calls
- * net/ebpf.c's generator) rather than splatting random bpf_insn
+ * net/bpf/ebpf.c's generator) rather than splatting random bpf_insn
  * elements via FT_PTR_ARRAY, but the per-field shape is still the
  * vocabulary the CMP-hint path reasons over.
  */

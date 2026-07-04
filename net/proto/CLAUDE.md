@@ -38,4 +38,4 @@ Plus ~25 smaller families under 160 lines following the same optname-table-plus-
 ## Interactions
 - Contract is `include/net.h` — `struct netproto` plus the `extern const struct netproto proto_*` declarations every file here implements.
 - Registered in `net/protocols.c` (`net_protocols[]`) and `net/socket-family-grammar.c` (`sfg_registry[]`); parity between the two tables is gated by `scripts/check-static/net-proto-sfg-parity.sh`.
-- Consumed by `syscalls/socket.c` (`gen_socket_args`), `syscalls/setsockopt.c` (`do_setsockopt`), and `fds/sockets.c`; message bodies delegate to the netlink message machinery (`netlink-msg.c`).
+- Consumed by `syscalls/socket.c` (`gen_socket_args`), `syscalls/setsockopt.c` (`do_setsockopt`), and `fds/sockets.c`; message bodies delegate to the netlink message machinery (`net/netlink/msg.c`).

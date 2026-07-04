@@ -8,7 +8,7 @@
  * Runtime algorithm dictionary for AF_ALG fuzzing.
  *
  * Built once in the parent at startup by parsing /proc/crypto and merging
- * the result with the static fallback arrays in net/proto-alg.c.  The
+ * the result with the static fallback arrays in net/proto/alg.c.  The
  * dictionary is read-only post-init and inherited by every child via COW,
  * so no locking or shm placement is required.
  *
@@ -37,9 +37,9 @@ void init_alg_template_dict(void);
 const char **alg_dict_names(enum alg_dict_type type, unsigned int *count);
 
 /*
- * Static-fallback accessor exported by net/proto-alg.c and consumed by
- * net/proto-alg-dict.c during the merge step.  Also used as a last-
- * resort fallback inside proto-alg.c if the dict bucket is empty.
+ * Static-fallback accessor exported by net/proto/alg.c and consumed by
+ * net/proto/alg-dict.c during the merge step.  Also used as a last-
+ * resort fallback inside net/proto/alg.c if the dict bucket is empty.
  */
 void alg_static_fallback_get(enum alg_dict_type type,
 			     const char *const **arr, unsigned int *count);

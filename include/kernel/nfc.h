@@ -3,7 +3,7 @@
 
 /* linux/nfc.h
  *
- * The nfc genl grammar in net/netlink-genl-fam-nfc.c is gated on
+ * The nfc genl grammar in net/netlink/genl/nfc.c is gated on
  * __has_include(<linux/nfc.h>), so a host that ships an *older*
  * revision of the header passes that gate and then fails to compile on
  * the newest NFC_ATTR_* members the spec table references.  The

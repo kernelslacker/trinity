@@ -196,7 +196,7 @@ static int wgdf_link_up(struct nl_ctx *rtnl, int ifindex)
  * key, listen port, and a single peer with allowed-ips 192.0.2.0/24
  * and endpoint 127.0.0.1:<peer_port>.  The doubly-nested
  * WGDEVICE_A_PEERS / WGPEER_A_ALLOWEDIPS shape is the one
- * net/netlink-genl-fam-wireguard.c documents. */
+ * net/netlink/genl/wireguard.c documents. */
 static int wgdf_set_device(struct genl_ctx *ctx, int ifindex,
 			   __u16 listen_port, __u16 peer_port)
 {

@@ -1,7 +1,7 @@
 /*
  * Generic netlink runtime family resolver and registry.
  *
- * Per-family grammar tables (net/netlink-genl-fam-*.c) declare their
+ * Per-family grammar tables (net/netlink/genl/<family>.c) declare their
  * commands and attribute kinds statically; this file walks that
  * registry on first use, asks the kernel for each family's
  * dynamically-assigned family_id via CTRL_CMD_GETFAMILY/NLM_F_DUMP,
@@ -181,7 +181,7 @@ extern struct genl_family_grammar fam_nl802154;
 extern struct genl_family_grammar fam_ieee802154;
 
 /*
- * Per-family grammar definitions live in net/netlink-genl-fam-*.c;
+ * Per-family grammar definitions live in net/netlink/genl/<family>.c;
  * each new family adds an extern declaration above and a pointer
  * here.  Lookups skip NULL entries so a temporary placeholder is
  * harmless if a family ever needs to be ifdef'd out.

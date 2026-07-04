@@ -391,7 +391,7 @@ struct xfrm_policy_track {
  * grammar.
  */
 
-/* Core helpers (proto-netlink-xfrm.c) */
+/* Core helpers (net/proto/netlink-xfrm.c) */
 extern bool unsupported_xfrm;
 __u32 xfrm_next_seq(void);
 size_t xfrm_nla_put(unsigned char *buf, size_t off, size_t cap,
@@ -403,7 +403,7 @@ void mcast_fd_open(void);
 void xfrm_drain_mcast(void);
 void xfrm_drain_async(int fd);
 
-/* SA + policy ring (proto-netlink-xfrm-ring.c) */
+/* SA + policy ring (net/proto/netlink-xfrm-ring.c) */
 unsigned int sa_ring_count(void);
 int sa_ring_push(int fd, const struct xfrm_sa_track *entry);
 bool sa_ring_pick(struct xfrm_sa_track *out, unsigned int *idx_out);
@@ -415,7 +415,7 @@ void policy_ring_push(const struct xfrm_policy_track *entry);
 bool policy_ring_pick(struct xfrm_policy_track *out, unsigned int *idx_out);
 void policy_ring_drain(void);
 
-/* Attribute / selector / address helpers (proto-netlink-xfrm-attr.c) */
+/* Attribute / selector / address helpers (net/proto/netlink-xfrm-attr.c) */
 size_t append_auth_trunc(unsigned char *buf, size_t off, size_t cap);
 size_t append_crypt(unsigned char *buf, size_t off, size_t cap);
 size_t append_aead(unsigned char *buf, size_t off, size_t cap);
@@ -434,7 +434,7 @@ __u16 pick_family(void);
 void fill_selector(struct xfrm_selector *sel, __u16 family);
 void fill_lifetime(struct xfrm_lifetime_cfg *lft);
 
-/* Message builders (proto-netlink-xfrm-emit.c) */
+/* Message builders (net/proto/netlink-xfrm-emit.c) */
 int xfrm_emit_newsa(int fd);
 int xfrm_emit_allocspi(int fd);
 int xfrm_emit_updsa(int fd);

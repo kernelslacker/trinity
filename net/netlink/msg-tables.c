@@ -1,7 +1,7 @@
 /*
- * netlink-msg-tables.c
+ * msg-tables.c
  *
- * Descriptor tables extracted from netlink-msg.c so the two halves of
+ * Descriptor tables extracted from msg.c so the two halves of
  * the module can compile in parallel.  The tables here are pure data:
  * per-protocol message-type lists (NETLINK_ROUTE / NETLINK_XFRM /
  * NETLINK_AUDIT), per-rtnetlink-group nlattr-type lists, per-family
@@ -9,7 +9,7 @@
  * family-field offset table consumed by xfrm_pin_family.
  *
  * Each table was file-static in the original TU; linkage is widened
- * to external here so the emitters in netlink-msg.c can index into
+ * to external here so the emitters in msg.c can index into
  * them across the TU split.  A companion `_n` size constant is
  * emitted for every table so the emitter side can scale a uniform
  * pick without needing the complete array type that ARRAY_SIZE()

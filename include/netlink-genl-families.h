@@ -13,17 +13,17 @@
  * actual per-family parsers — where the bugs live — stay cold.
  *
  * The registry below pairs a static command + attribute grammar (one
- * file per family in net/netlink-genl-fam-*.c) with the runtime-resolved
+ * file per family in net/netlink/genl/<family>.c) with the runtime-resolved
  * family_id.  At first NETLINK_GENERIC use, genl_resolve_families()
  * walks the kernel's controller via CTRL_CMD_GETFAMILY/NLM_F_DUMP and
  * stamps each registered grammar with its assigned ID (or marks it
  * unavailable when the family isn't loaded in the running kernel).
  *
  * Adding a family is a small, isolated change: drop a new
- * net/netlink-genl-fam-<name>.c containing static cmds[] and attrs[]
+ * net/netlink/genl/<name>.c containing static cmds[] and attrs[]
  * tables and an extern struct genl_family_grammar fam_<name>; then
  * append &fam_<name> to genl_registry[] in
- * net/netlink-genl-families.c.  No dispatcher edits required.
+ * net/netlink/genl/families.c.  No dispatcher edits required.
  */
 
 struct genl_cmd_grammar {

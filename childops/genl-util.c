@@ -11,7 +11,7 @@
  * list carries CTRL_ATTR_FAMILY_ID — we extract the id and stash it
  * in ctx->family_id.
  *
- * The single shared dump-based resolver in net/netlink-genl-families.c
+ * The single shared dump-based resolver in net/netlink/genl/families.c
  * is intentionally separate: it walks every registered family in one
  * dump for the genetlink-fuzzer / per-family stats wire-up.  Doing
  * per-ctx resolution here keeps a childop's open path independent of

@@ -1,7 +1,7 @@
 /*
  * Genetlink family grammar: legacy IEEE 802.15.4 MAC control plane
  * ("802.15.4 MAC"), distinct from the modern nl802154 family in
- * netlink-genl-fam-nl802154.c.  The two coexist in the kernel and
+ * nl802154.c.  The two coexist in the kernel and
  * share no command or attribute namespace: nl802154 owns the modern
  * wpan_phy / scan / coordinator surface; this legacy family owns the
  * original IFACE add/del, ASSOCIATE / SCAN / START request path, MAC

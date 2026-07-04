@@ -8,7 +8,7 @@
  *
  * Per outer iteration:
  *   1. Sample (salg_type, salg_name) from the shared parent-side
- *      alg_dict (net/proto-alg-dict.c) built once at startup from
+ *      alg_dict (net/proto/alg-dict.c) built once at startup from
  *      /proc/crypto + static fallback.  Children inherit the dict via
  *      COW.  Restricted to the aead/skcipher/hash/rng buckets via
  *      ati_to_dict[].
@@ -104,7 +104,7 @@ static bool alg_unsupported;
 /* Sample (alg_type, alg_name) from the parent-side dict.  Tries up to
  * ATI_NR random buckets; returns false only if every bucket the
  * childop cares about is empty in the dict (the static fallback in
- * net/proto-alg.c keeps that case unreachable in practice). */
+ * net/proto/alg.c keeps that case unreachable in practice). */
 static bool pick_algorithm(enum alg_type_idx *type_out, const char **name_out)
 {
 	unsigned int attempts;

@@ -15,10 +15,10 @@
  * generator's spec-driven nlattr path looks the same on both sides.
  *
  * Adding a subsystem is a small, isolated change: drop a new
- * net/netlink-nfnl-sub-<name>.c containing static cmds[] and attrs[]
+ * net/netlink/nfnl/<name>.c containing static cmds[] and attrs[]
  * tables and an extern struct nfnl_subsys_grammar sub_<name>; then
  * append &sub_<name> to nfnl_registry[] in
- * net/netlink-nfnl-subsystems.c.  No dispatcher edits required.
+ * net/netlink/nfnl/subsystems.c.  No dispatcher edits required.
  *
  * The cmds[] table feeds nfnl_pick_cmd(), which lets the type picker
  * bias toward (subsys, cmd) pairs the kernel's per-subsys nfnl_callback
