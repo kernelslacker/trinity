@@ -155,12 +155,43 @@ static int get_rand_watch_queue_fd(void)
 	return -1;
 }
 
+/*
+ * Periodic child-tick top-up.  See the block comment above
+ * epoll_try_replenish() (fds/epoll.c) for the general contract.
+ * Reuse do_watch_queue() so the direct/fallback probe (and its
+ * close-on-both-failed cleanup) matches init.  Both ends go into the
+ * ring: only the read end carries the watch_queue, but closing the
+ * write end EOFs the notification pipe, and add_object() from child
+ * context is a no-op -- the ring is the only viable owner here.
+ * Non-fatal on failure; kernels without CONFIG_WATCH_QUEUE just get
+ * a no-op.
+ */
+static void watch_queue_try_replenish(unsigned int budget)
+{
+	struct childdata *child = this_child();
+	unsigned int i;
+
+	if (child == NULL)
+		return;
+
+	for (i = 0; i < budget; i++) {
+		int pipefd[2];
+
+		if (do_watch_queue(pipefd) < 0)
+			return;
+
+		child_fd_ring_push(&child->live_fds, pipefd[0]);
+		child_fd_ring_push(&child->live_fds, pipefd[1]);
+	}
+}
+
 static const struct fd_provider watch_queue_fd_provider = {
 	.name = "watch_queue",
 	.objtype = OBJ_FD_WATCH_QUEUE,
 	.enabled = true,
 	.init = &init_watch_queue_fds,
 	.get = &get_rand_watch_queue_fd,
+	.try_replenish = &watch_queue_try_replenish,
 };
 
 REG_FD_PROV(watch_queue_fd_provider);
