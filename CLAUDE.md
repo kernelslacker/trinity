@@ -49,6 +49,7 @@ their own.
 | [ioctls/](ioctls/CLAUDE.md) | Per-subsystem `ioctl()` argument generators (59 files, ~14,243 LOC) |
 | [fds/](fds/CLAUDE.md) | FD provider layer — where live file descriptors come from (37 files, ~9,123 LOC) |
 | [objects/](objects/CLAUDE.md) | OBJ_LOCAL/OBJ_GLOBAL object pools — thread a syscall's result (fd/id/handle) into a later syscall's arg  + cross-child futex pool & prop/fd-event rings (8 files, ~2,732 LOC) |
+| [persist/](persist/CLAUDE.md) | Cross-iteration persistence — coverage-guided arg retention (minicorpus) + deferred-free temporal-overlap queue (2 files, ~4,450 LOC) |
 | [mm/](mm/CLAUDE.md) | Memory-management fuzzing targets (8 files, ~3,029 LOC) |
 | [childops/](childops/CLAUDE.md) | Scripted stateful multi-syscall workloads (churn/race/storm/recipe) (~145 files, ~81,300 LOC) |
 | [strategy/](strategy/CLAUDE.md) | Multi-strategy syscall-picker orchestration (7 files, ~3,700 LOC) |
@@ -84,12 +85,8 @@ binary. Grouped by concern:
 - [args/pools/](args/pools/CLAUDE.md) — the content pools the generators draw from: pathname/xattr/blob/device/blockdev/fstype (6 files).
 
 ### Persistence & corpora
-- `minicorpus.c` (2,323) — coverage-guided argument retention: snapshots the
-  args that discovered new KCOV edges, replays them during later generation.
-- `sequence.c` (1,858) — sequence-aware fuzzing: dispatches short syscall
-  chains, threads each return into the next call's args, plus a chain corpus.
-- `deferred-free.c` (2,173) — deferred-free queue giving syscall-owned
-  allocations temporal overlap instead of freeing them immediately at return.
+- [persist/](persist/CLAUDE.md) — coverage-guided argument retention (minicorpus) and the deferred-free temporal-overlap queue (2 files).
+- `sequence.c` (1,858) — sequence-aware fuzzing: dispatches short syscall chains, threads each return into the next call's args, plus a chain corpus (held at root during the resource-typing rework; folds into persist/ later).
 
 ### Signals, crashes & kernel-health monitoring
 - `signals.c` (1,431) — signal handling and the child signal-mask policy.

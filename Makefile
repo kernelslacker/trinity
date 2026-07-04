@@ -127,6 +127,7 @@ SRCS		:= $(wildcard *.c) \
 		   $(wildcard mm/*.c) \
 		   $(wildcard net/*.c) \
 		   $(wildcard objects/*.c) \
+		   $(wildcard persist/*.c) \
 		   $(wildcard rand/*.c) \
 		   $(wildcard random_syscall/*.c) \
 		   $(wildcard stats/*.c) \
@@ -152,6 +153,7 @@ OBJS		:= $(sort $(patsubst %.c,%.o,$(wildcard *.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard mm/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard net/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard objects/*.c))) \
+		   $(sort $(patsubst %.c,%.o,$(wildcard persist/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard rand/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard random_syscall/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard stats/*.c))) \
