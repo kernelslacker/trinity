@@ -45,6 +45,7 @@ their own.
 | [net/](net/CLAUDE.md) | sockaddr / setsockopt / netlink / BPF generation per address family (114 files, ~26,684 LOC) |
 | [ioctls/](ioctls/CLAUDE.md) | Per-subsystem `ioctl()` argument generators (59 files, ~14,243 LOC) |
 | [fds/](fds/CLAUDE.md) | FD provider layer — where live file descriptors come from (37 files, ~9,123 LOC) |
+| [objects/](objects/CLAUDE.md) | OBJ_LOCAL/OBJ_GLOBAL object pools — thread a syscall's result (fd/id/handle) into a later syscall's arg (5 files, ~1,956 LOC) |
 | [mm/](mm/CLAUDE.md) | Memory-management fuzzing targets (8 files, ~3,029 LOC) |
 | [childops/](childops/CLAUDE.md) | Scripted stateful multi-syscall workloads (churn/race/storm/recipe) (~145 files, ~81,300 LOC) |
 | [strategy/](strategy/CLAUDE.md) | Multi-strategy syscall-picker orchestration (7 files, ~3,700 LOC) |
@@ -92,10 +93,11 @@ binary. Grouped by concern:
   in `init_child()`).
 
 ### Object pools & result threading
-- `objects.c` (1,956) — the `OBJ_LOCAL` object pool (`alloc_object`/
-  `add_object`) that lets one syscall's successful result (fd, id, handle)
-  become a later syscall's argument. See `lib/publish_resource.c` for the
-  typed stamping front end.
+- `objects/` — the `OBJ_LOCAL`/`OBJ_GLOBAL` object pools (`alloc_object`/
+  `add_object`) that let one syscall's successful result (fd, id, handle)
+  become a later syscall's argument. Carved into a subsystem dir — see
+  [objects/](objects/CLAUDE.md). `lib/publish_resource.c` is the typed
+  stamping front end.
 - `futex-shared.c` (93) — cross-child shared futex-word pool (word lives in
   shared memory, wrapper in the parent heap).
 - `prop_ring.c` (293) — per-child ring of recent small-integer syscall return
