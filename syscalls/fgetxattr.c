@@ -53,12 +53,83 @@ struct fgetxattr_post_state {
 };
 #endif
 
+#if defined(SYS_fgetxattr) || defined(__NR_fgetxattr)
+static void sanitise_fgetxattr_install_post_snapshot(struct syscallrecord *rec,
+						     unsigned long pre_a3)
+{
+	struct fgetxattr_post_state *snap;
+	size_t buf_alloc_size;
+
+	/*
+	 * Resolve the actual allocation size of the buffer at rec->a3 and
+	 * clamp rec->a4 (size) to it before the kernel sees the syscall.
+	 * rec->a4 comes from ARG_LEN / get_len() which freely returns
+	 * UINT_MAX-class values picked independently of the pool slot at
+	 * rec->a3.  The kernel's vfs_getxattr writes min(size, value_len)
+	 * bytes into the user buffer; when size > the live allocation the
+	 * write spills into adjacent heap-arena / pool-neighbour objects
+	 * and corrupts glibc chunk metadata, with the abort surfacing far
+	 * downstream (deferred_free_flush, _int_malloc on a corrupted
+	 * tcache, etc.).  Same shape as the sched_getattr clamp
+	 * (862ee5c6ae3a), applied here to the pool-backed ARG_ADDRESS
+	 * buffer family.
+	 *
+	 *   - If avoid_shared_buffer_out() redirected (pointer changed),
+	 *     the replacement came from get_writable_address(rec->a4) and
+	 *     is at least max(rec->a4, page_size) bytes.
+	 *   - Otherwise rec->a3 is the original ARG_ADDRESS pool slot from
+	 *     get_address() -> get_writable_address(RAND_ARRAY(
+	 *     mapping_sizes)); mapping_sizes[0] == page_size so the slot
+	 *     is provably at least page_size bytes, the conservative bound
+	 *     we can prove without re-resolving the slot.
+	 */
+	if (rec->a3 != pre_a3)
+		buf_alloc_size = rec->a4 > (unsigned long) page_size
+				       ? (size_t) rec->a4
+				       : (size_t) page_size;
+	else
+		buf_alloc_size = (size_t) page_size;
+
+	if ((size_t) rec->a4 > buf_alloc_size)
+		rec->a4 = (unsigned long) buf_alloc_size;
+
+	/*
+	 * Snapshot input state for the post oracle.  Without this the
+	 * post handler reads rec->aN at post-time, when a sibling syscall
+	 * may have scribbled the slots: looks_like_corrupted_ptr() cannot
+	 * tell a real-but-wrong heap address from the original user value
+	 * pointer, so the memcpy would touch a foreign allocation, and a
+	 * stale rec->a2 / sibling-rewritten name bytes would hand the
+	 * re-call the wrong xattr name.  Snapshot the name BYTES via
+	 * post_snapshot_str so the post handler never re-derefs the user
+	 * pointer; skip the post sample when the snapshot source is not
+	 * provably readable.  post_state is private to the post handler.
+	 * Gated on SYS_fgetxattr to mirror the .post registration -- on
+	 * systems without SYS_fgetxattr the post handler is not registered
+	 * and a snapshot only the post handler can free would leak.
+	 * post_state_install pairs the rec->post_state assign with the
+	 * ownership-table register so the observable window between the
+	 * two is closed; post_fgetxattr() will then gate the snap through
+	 * post_state_claim_owned() and prove ownership before dereferencing
+	 * any field.
+	 */
+	snap = zmalloc_tracked(sizeof(*snap));
+	snap->magic = FGETXATTR_POST_STATE_MAGIC;
+	snap->fd    = rec->a1;
+	snap->value = rec->a3;
+	snap->size  = rec->a4;
+	snap->buf_alloc_size = buf_alloc_size;
+	if (!post_snapshot_str(snap->name, sizeof(snap->name),
+			       (const char *)(unsigned long) rec->a2))
+		snap->name[0] = '\0';
+	post_state_install(rec, snap);
+}
+#endif
+
 static void sanitise_fgetxattr(struct syscallrecord *rec)
 {
 #if defined(SYS_fgetxattr) || defined(__NR_fgetxattr)
-	struct fgetxattr_post_state *snap;
 	unsigned long pre_a3;
-	size_t buf_alloc_size;
 
 	rec->post_state = 0;
 	pre_a3 = rec->a3;
@@ -126,69 +197,7 @@ static void sanitise_fgetxattr(struct syscallrecord *rec)
 	avoid_shared_buffer_out(&rec->a3, rec->a4);
 
 #if defined(SYS_fgetxattr) || defined(__NR_fgetxattr)
-	/*
-	 * Resolve the actual allocation size of the buffer at rec->a3 and
-	 * clamp rec->a4 (size) to it before the kernel sees the syscall.
-	 * rec->a4 comes from ARG_LEN / get_len() which freely returns
-	 * UINT_MAX-class values picked independently of the pool slot at
-	 * rec->a3.  The kernel's vfs_getxattr writes min(size, value_len)
-	 * bytes into the user buffer; when size > the live allocation the
-	 * write spills into adjacent heap-arena / pool-neighbour objects
-	 * and corrupts glibc chunk metadata, with the abort surfacing far
-	 * downstream (deferred_free_flush, _int_malloc on a corrupted
-	 * tcache, etc.).  Same shape as the sched_getattr clamp
-	 * (862ee5c6ae3a), applied here to the pool-backed ARG_ADDRESS
-	 * buffer family.
-	 *
-	 *   - If avoid_shared_buffer_out() redirected (pointer changed),
-	 *     the replacement came from get_writable_address(rec->a4) and
-	 *     is at least max(rec->a4, page_size) bytes.
-	 *   - Otherwise rec->a3 is the original ARG_ADDRESS pool slot from
-	 *     get_address() -> get_writable_address(RAND_ARRAY(
-	 *     mapping_sizes)); mapping_sizes[0] == page_size so the slot
-	 *     is provably at least page_size bytes, the conservative bound
-	 *     we can prove without re-resolving the slot.
-	 */
-	if (rec->a3 != pre_a3)
-		buf_alloc_size = rec->a4 > (unsigned long) page_size
-				       ? (size_t) rec->a4
-				       : (size_t) page_size;
-	else
-		buf_alloc_size = (size_t) page_size;
-
-	if ((size_t) rec->a4 > buf_alloc_size)
-		rec->a4 = (unsigned long) buf_alloc_size;
-
-	/*
-	 * Snapshot input state for the post oracle.  Without this the
-	 * post handler reads rec->aN at post-time, when a sibling syscall
-	 * may have scribbled the slots: looks_like_corrupted_ptr() cannot
-	 * tell a real-but-wrong heap address from the original user value
-	 * pointer, so the memcpy would touch a foreign allocation, and a
-	 * stale rec->a2 / sibling-rewritten name bytes would hand the
-	 * re-call the wrong xattr name.  Snapshot the name BYTES via
-	 * post_snapshot_str so the post handler never re-derefs the user
-	 * pointer; skip the post sample when the snapshot source is not
-	 * provably readable.  post_state is private to the post handler.
-	 * Gated on SYS_fgetxattr to mirror the .post registration -- on
-	 * systems without SYS_fgetxattr the post handler is not registered
-	 * and a snapshot only the post handler can free would leak.
-	 * post_state_install pairs the rec->post_state assign with the
-	 * ownership-table register so the observable window between the
-	 * two is closed; post_fgetxattr() will then gate the snap through
-	 * post_state_claim_owned() and prove ownership before dereferencing
-	 * any field.
-	 */
-	snap = zmalloc_tracked(sizeof(*snap));
-	snap->magic = FGETXATTR_POST_STATE_MAGIC;
-	snap->fd    = rec->a1;
-	snap->value = rec->a3;
-	snap->size  = rec->a4;
-	snap->buf_alloc_size = buf_alloc_size;
-	if (!post_snapshot_str(snap->name, sizeof(snap->name),
-			       (const char *)(unsigned long) rec->a2))
-		snap->name[0] = '\0';
-	post_state_install(rec, snap);
+	sanitise_fgetxattr_install_post_snapshot(rec, pre_a3);
 #endif
 }
 
