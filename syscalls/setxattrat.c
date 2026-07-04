@@ -3,6 +3,7 @@
  *		unsigned int, at_flags, const char __user *, name,
  *		const struct xattr_args __user *, uargs, size_t, usize)
  */
+#include <stdbool.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include "arch.h"
@@ -53,78 +54,80 @@ static const struct csfu_desc desc_setxattrat = {
 };
 #endif
 
-static void sanitise_setxattrat(struct syscallrecord *rec)
-{
 #ifdef USE_XATTR_ARGS
-	{
-		static const unsigned int flag_choices[] = { 0, XATTR_CREATE, XATTR_REPLACE };
-		struct csfu_buf buf = build_csfu_struct(&desc_setxattrat);
-		struct xattr_args *args = buf.ptr;
+static bool sanitise_setxattrat_build_args(struct syscallrecord *rec)
+{
+	static const unsigned int flag_choices[] = { 0, XATTR_CREATE, XATTR_REPLACE };
+	struct csfu_buf buf = build_csfu_struct(&desc_setxattrat);
+	struct xattr_args *args = buf.ptr;
 
-		if (!args)
-			return;
+	if (!args)
+		return false;
 
-		/*
-		 * Stash the csfu buffer in rec->post_state up front so the
-		 * unconditional .cleanup hook frees it even on the value-buffer
-		 * allocation-failure return below.  setxattrat has no .post handler,
-		 * so this was the only release point; post_state is private to the
-		 * cleanup path and less stomp-prone than rec->a5.
-		 */
-		rec->post_state = (unsigned long) args;
+	/*
+	 * Stash the csfu buffer in rec->post_state up front so the
+	 * unconditional .cleanup hook frees it even on the value-buffer
+	 * allocation-failure return below.  setxattrat has no .post handler,
+	 * so this was the only release point; post_state is private to the
+	 * cleanup path and less stomp-prone than rec->a5.
+	 */
+	rec->post_state = (unsigned long) args;
 
-		/*
-		 * Non-EXACT buckets get rejected on size by the validator
-		 * before the kernel reads any body field, so populating
-		 * args->value / size / flags (and allocating the value
-		 * sub-buffer they reference) is wasted work.  The
-		 * zmalloc_tracked() buffer is already zeroed where the
-		 * kernel cares to look.
-		 */
-		if (buf.bucket == CSFU_BUCKET_EXACT) {
-			__u32 chosen;
+	/*
+	 * Non-EXACT buckets get rejected on size by the validator
+	 * before the kernel reads any body field, so populating
+	 * args->value / size / flags (and allocating the value
+	 * sub-buffer they reference) is wasted work.  The
+	 * zmalloc_tracked() buffer is already zeroed where the
+	 * kernel cares to look.
+	 */
+	if (buf.bucket == CSFU_BUCKET_EXACT) {
+		__u32 chosen;
 
-			switch (rnd_modulo_u32(9)) {
-			case 0:  chosen = 0;                  break;
-			case 1:  chosen = 1;                  break;
-			case 2:  chosen = 32;                 break;
-			case 3:  chosen = 256;                break;
-			case 4:  chosen = page_size;          break;
-			case 5:  chosen = page_size + 1;      break;
-			case 6:  chosen = 65536;              break;
-			case 7:  chosen = 65537;              break;
-			default: chosen = rnd_modulo_u32(1u << 20); break;
-			}
-
-			if (chosen == 0) {
-				args->value = 0;
-			} else {
-				void *value = get_writable_struct(chosen);
-				if (!value) {
-					/*
-					 * Publish safe defaults so the syscall
-					 * doesn't run with stale rec->a5/rec->a6
-					 * from a prior iteration.  args/buf both
-					 * stack-resident — zeroing the published
-					 * slots is enough; the kernel will see
-					 * NULL uargs and reject cleanly.
-					 */
-					rec->a5 = 0;
-					rec->a6 = 0;
-					return;
-				}
-				args->value = (unsigned long) value;
-			}
-			args->size = chosen;
-			args->flags = flag_choices[rnd_modulo_u32(3)];
+		switch (rnd_modulo_u32(9)) {
+		case 0:  chosen = 0;                  break;
+		case 1:  chosen = 1;                  break;
+		case 2:  chosen = 32;                 break;
+		case 3:  chosen = 256;                break;
+		case 4:  chosen = page_size;          break;
+		case 5:  chosen = page_size + 1;      break;
+		case 6:  chosen = 65536;              break;
+		case 7:  chosen = 65537;              break;
+		default: chosen = rnd_modulo_u32(1u << 20); break;
 		}
 
-		rec->a5 = (unsigned long) args;
-		avoid_shared_buffer_inout(&rec->a5, buf.usize);
-		rec->a6 = buf.usize;
+		if (chosen == 0) {
+			args->value = 0;
+		} else {
+			void *value = get_writable_struct(chosen);
+			if (!value) {
+				/*
+				 * Publish safe defaults so the syscall
+				 * doesn't run with stale rec->a5/rec->a6
+				 * from a prior iteration.  args/buf both
+				 * stack-resident — zeroing the published
+				 * slots is enough; the kernel will see
+				 * NULL uargs and reject cleanly.
+				 */
+				rec->a5 = 0;
+				rec->a6 = 0;
+				return false;
+			}
+			args->value = (unsigned long) value;
+		}
+		args->size = chosen;
+		args->flags = flag_choices[rnd_modulo_u32(3)];
 	}
+
+	rec->a5 = (unsigned long) args;
+	avoid_shared_buffer_inout(&rec->a5, buf.usize);
+	rec->a6 = buf.usize;
+	return true;
+}
 #endif
 
+static void sanitise_setxattrat_scrub_flags(struct syscallrecord *rec)
+{
 	/*
 	 * at_flags (a3): handle_arg_list's 1/8 shift_flag_bit and 1/16
 	 * cmp-hint paths regularly OR in bits outside the kernel-accepted
@@ -149,35 +152,49 @@ static void sanitise_setxattrat(struct syscallrecord *rec)
 	 */
 	if (ONE_IN(3))
 		rec->a1 = (unsigned long)(long) AT_FDCWD;
+}
 
-	/*
-	 * pathname (a2): ARG_PATHNAME plumbed a random pathname into the
-	 * slot, but the random path is most often not a real file at all
-	 * (ENOENT before any vfs_setxattr work) or, even when it lands on
-	 * a real file, path_setxattrat bounces it before the per-fs xattr
-	 * handler dispatch and the per-inode i_xattrs rwsem the set would
-	 * have grabbed.  Same "high calls, low edges" cold-syscall shape
-	 * the rest of the xattr family had before their testfile
-	 * precondition repoints (fremovexattr / lremovexattr / llistxattr).
-	 *
-	 * Half the draws now repoint at one of the trinity-testfile<N>
-	 * absolute paths so the set lands on a real per-inode xattr list
-	 * and exercises the per-fs handler dispatch.  The other half
-	 * preserves the slot exactly as ARG_PATHNAME left it so the
-	 * ENOENT / random-path reject arms stay warm.  The absolute path
-	 * makes the dfd choice irrelevant for the pinned arm, so this
-	 * composes cleanly with the AT_FDCWD pin above.
-	 *
-	 * setxattrat is itself the set, so no separate plant is needed --
-	 * the syscall populates the per-inode xattr list directly.  This
-	 * is path-pin only, no sanitiser-slow-path setxattr() call.
-	 */
+/*
+ * pathname (a2): ARG_PATHNAME plumbed a random pathname into the
+ * slot, but the random path is most often not a real file at all
+ * (ENOENT before any vfs_setxattr work) or, even when it lands on
+ * a real file, path_setxattrat bounces it before the per-fs xattr
+ * handler dispatch and the per-inode i_xattrs rwsem the set would
+ * have grabbed.  Same "high calls, low edges" cold-syscall shape
+ * the rest of the xattr family had before their testfile
+ * precondition repoints (fremovexattr / lremovexattr / llistxattr).
+ *
+ * Half the draws now repoint at one of the trinity-testfile<N>
+ * absolute paths so the set lands on a real per-inode xattr list
+ * and exercises the per-fs handler dispatch.  The other half
+ * preserves the slot exactly as ARG_PATHNAME left it so the
+ * ENOENT / random-path reject arms stay warm.  The absolute path
+ * makes the dfd choice irrelevant for the pinned arm, so this
+ * composes cleanly with the AT_FDCWD pin above.
+ *
+ * setxattrat is itself the set, so no separate plant is needed --
+ * the syscall populates the per-inode xattr list directly.  This
+ * is path-pin only, no sanitiser-slow-path setxattr() call.
+ */
+static void sanitise_setxattrat_repoint_pathname(struct syscallrecord *rec)
+{
 	if (rnd_modulo_u32(2) == 0) {
 		char *path = get_testfile_path();
 
 		if (path != NULL)
 			rec->a2 = (unsigned long) path;
 	}
+}
+
+static void sanitise_setxattrat(struct syscallrecord *rec)
+{
+#ifdef USE_XATTR_ARGS
+	if (!sanitise_setxattrat_build_args(rec))
+		return;
+#endif
+
+	sanitise_setxattrat_scrub_flags(rec);
+	sanitise_setxattrat_repoint_pathname(rec);
 }
 
 #ifdef USE_XATTR_ARGS
