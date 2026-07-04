@@ -1073,53 +1073,100 @@ static void dump_stats_json_lifecycle_and_storms(void)
 	putchar(',');
 }
 
+static const struct stat_field packet_fanout_thrash_fields[] = {
+	STAT_FIELD(packet_fanout, runs),
+	STAT_FIELD(packet_fanout, setup_failed),
+	STAT_FIELD(packet_fanout, ring_failed),
+	STAT_FIELD(packet_fanout, rings_installed),
+	STAT_FIELD(packet_fanout, mmap_failed),
+	STAT_FIELD(packet_fanout, joins),
+	STAT_FIELD(packet_fanout, rejoins_ok),
+	STAT_FIELD(packet_fanout, rejoins_rejected),
+};
+
+static const struct stat_category packet_fanout_thrash_category =
+	STAT_CATEGORY("packet_fanout_thrash",
+	              packet_fanout_runs,
+	              packet_fanout_thrash_fields);
+
+/*
+ * eth_emitter's five per-template counters live in an array
+ * (eth_emitter_per_tmpl[NR_TEMPLATES]); the JSON schema emits one
+ * flat key per slot ("tmpl_arp" .. "tmpl_bad_ethertype"), so raw
+ * offsetof() entries pin each key to its array index.
+ */
+static const struct stat_field eth_emitter_fields[] = {
+	STAT_FIELD(eth_emitter, runs),
+	STAT_FIELD(eth_emitter, setup_failed),
+	STAT_FIELD(eth_emitter, short),
+	STAT_FIELD(eth_emitter, sends_ok),
+	STAT_FIELD(eth_emitter, sends_failed),
+	{ .name = "tmpl_arp",
+	  .offset = offsetof(struct stats_s, eth_emitter_per_tmpl[0]) },
+	{ .name = "tmpl_ipv4_frag_zero",
+	  .offset = offsetof(struct stats_s, eth_emitter_per_tmpl[1]) },
+	{ .name = "tmpl_ipv6_na",
+	  .offset = offsetof(struct stats_s, eth_emitter_per_tmpl[2]) },
+	{ .name = "tmpl_vlan_qinq",
+	  .offset = offsetof(struct stats_s, eth_emitter_per_tmpl[3]) },
+	{ .name = "tmpl_bad_ethertype",
+	  .offset = offsetof(struct stats_s, eth_emitter_per_tmpl[4]) },
+};
+
+static const struct stat_category eth_emitter_category =
+	STAT_CATEGORY("eth_emitter",
+	              eth_emitter_runs,
+	              eth_emitter_fields);
+
+static const struct stat_field iouring_net_multishot_fields[] = {
+	STAT_FIELD(iouring_multishot, runs),
+	STAT_FIELD(iouring_multishot, setup_failed),
+	STAT_FIELD(iouring_multishot, pbuf_ring_ok),
+	STAT_FIELD(iouring_multishot, pbuf_legacy_ok),
+	STAT_FIELD(iouring_multishot, armed),
+	STAT_FIELD(iouring_multishot, packets_sent),
+	STAT_FIELD(iouring_multishot, completions),
+	STAT_FIELD(iouring_multishot, cancel_submitted),
+	STAT_FIELD_JSON(iouring_napi, register_ok, "napi_register_ok"),
+	STAT_FIELD_JSON(iouring_napi, register_fail, "napi_register_fail"),
+	STAT_FIELD_JSON(iouring_napi, unregister_ok, "napi_unregister_ok"),
+	STAT_FIELD_JSON(iouring_napi, unregister_fail, "napi_unregister_fail"),
+};
+
+static const struct stat_category iouring_net_multishot_category =
+	STAT_CATEGORY("iouring_net_multishot",
+	              iouring_multishot_runs,
+	              iouring_net_multishot_fields);
+
+static const struct stat_field bridge_fdb_stp_fields[] = {
+	STAT_FIELD(bridge_fdb_stp, runs),
+	STAT_FIELD(bridge_fdb_stp, setup_failed),
+	STAT_FIELD(bridge_fdb_stp, bridge_create_ok),
+	STAT_FIELD(bridge_fdb_stp, veth_create_ok),
+	STAT_FIELD(bridge_fdb_stp, raw_send_ok),
+	STAT_FIELD(bridge_fdb_stp, stp_toggle_ok),
+	STAT_FIELD(bridge_fdb_stp, fdb_del_ok),
+	STAT_FIELD(bridge_fdb_stp, link_del_ok),
+	STAT_FIELD_JSON(bridge_vlan_mass, runs, "vlan_mass_runs"),
+	STAT_FIELD_JSON(bridge_vlan_mass, max_n, "vlan_mass_max_n"),
+	STAT_FIELD_JSON(bridge_vlan_mass, enotbufs, "vlan_mass_enotbufs"),
+};
+
+static const struct stat_category bridge_fdb_stp_category =
+	STAT_CATEGORY("bridge_fdb_stp",
+	              bridge_fdb_stp_runs,
+	              bridge_fdb_stp_fields);
+
 static void dump_stats_json_socket_family_and_tls(void)
 {
-	printf("\"packet_fanout_thrash\":{\"runs\":%lu,\"setup_failed\":%lu,\"ring_failed\":%lu,\"rings_installed\":%lu,\"mmap_failed\":%lu,\"joins\":%lu,\"rejoins_ok\":%lu,\"rejoins_rejected\":%lu},"
-		"\"eth_emitter\":{\"runs\":%lu,\"setup_failed\":%lu,\"short\":%lu,\"sends_ok\":%lu,\"sends_failed\":%lu,\"tmpl_arp\":%lu,\"tmpl_ipv4_frag_zero\":%lu,\"tmpl_ipv6_na\":%lu,\"tmpl_vlan_qinq\":%lu,\"tmpl_bad_ethertype\":%lu},"
-		"\"iouring_net_multishot\":{\"runs\":%lu,\"setup_failed\":%lu,\"pbuf_ring_ok\":%lu,\"pbuf_legacy_ok\":%lu,\"armed\":%lu,\"packets_sent\":%lu,\"completions\":%lu,\"cancel_submitted\":%lu,\"napi_register_ok\":%lu,\"napi_register_fail\":%lu,\"napi_unregister_ok\":%lu,\"napi_unregister_fail\":%lu},"
-		"\"bridge_fdb_stp\":{\"runs\":%lu,\"setup_failed\":%lu,\"bridge_create_ok\":%lu,\"veth_create_ok\":%lu,\"raw_send_ok\":%lu,\"stp_toggle_ok\":%lu,\"fdb_del_ok\":%lu,\"link_del_ok\":%lu,\"vlan_mass_runs\":%lu,\"vlan_mass_max_n\":%lu,\"vlan_mass_enotbufs\":%lu},",
-		shm->stats.packet_fanout_runs,
-		shm->stats.packet_fanout_setup_failed,
-		shm->stats.packet_fanout_ring_failed,
-		shm->stats.packet_fanout_rings_installed,
-		shm->stats.packet_fanout_mmap_failed,
-		shm->stats.packet_fanout_joins,
-		shm->stats.packet_fanout_rejoins_ok,
-		shm->stats.packet_fanout_rejoins_rejected,
-		shm->stats.eth_emitter_runs,
-		shm->stats.eth_emitter_setup_failed,
-		shm->stats.eth_emitter_short,
-		shm->stats.eth_emitter_sends_ok,
-		shm->stats.eth_emitter_sends_failed,
-		shm->stats.eth_emitter_per_tmpl[0],
-		shm->stats.eth_emitter_per_tmpl[1],
-		shm->stats.eth_emitter_per_tmpl[2],
-		shm->stats.eth_emitter_per_tmpl[3],
-		shm->stats.eth_emitter_per_tmpl[4],
-		shm->stats.iouring_multishot_runs,
-		shm->stats.iouring_multishot_setup_failed,
-		shm->stats.iouring_multishot_pbuf_ring_ok,
-		shm->stats.iouring_multishot_pbuf_legacy_ok,
-		shm->stats.iouring_multishot_armed,
-		shm->stats.iouring_multishot_packets_sent,
-		shm->stats.iouring_multishot_completions,
-		shm->stats.iouring_multishot_cancel_submitted,
-		shm->stats.iouring_napi_register_ok,
-		shm->stats.iouring_napi_register_fail,
-		shm->stats.iouring_napi_unregister_ok,
-		shm->stats.iouring_napi_unregister_fail,
-		shm->stats.bridge_fdb_stp_runs,
-		shm->stats.bridge_fdb_stp_setup_failed,
-		shm->stats.bridge_fdb_stp_bridge_create_ok,
-		shm->stats.bridge_fdb_stp_veth_create_ok,
-		shm->stats.bridge_fdb_stp_raw_send_ok,
-		shm->stats.bridge_fdb_stp_stp_toggle_ok,
-		shm->stats.bridge_fdb_stp_fdb_del_ok,
-		shm->stats.bridge_fdb_stp_link_del_ok,
-		shm->stats.bridge_vlan_mass_runs,
-		shm->stats.bridge_vlan_mass_max_n,
-		shm->stats.bridge_vlan_mass_enotbufs);
+	stat_category_emit_json(&packet_fanout_thrash_category);
+	putchar(',');
+	stat_category_emit_json(&eth_emitter_category);
+	putchar(',');
+	stat_category_emit_json(&iouring_net_multishot_category);
+	putchar(',');
+	stat_category_emit_json(&bridge_fdb_stp_category);
+	putchar(',');
 }
 
 /*
@@ -1458,121 +1505,202 @@ static void dump_stats_json_netfilter_and_xfrm(void)
 	stat_category_emit_json(&ipmr_cache_report_category);
 }
 
+static const struct stat_field vsock_transport_churn_fields[] = {
+	STAT_FIELD(vsock_transport_churn, runs),
+	STAT_FIELD(vsock_transport_churn, setup_failed),
+	STAT_FIELD(vsock_transport_churn, bind_ok),
+	STAT_FIELD(vsock_transport_churn, connect_ok),
+	STAT_FIELD(vsock_transport_churn, send_ok),
+	STAT_FIELD(vsock_transport_churn, buffer_size_ok),
+	STAT_FIELD(vsock_transport_churn, timeout_ok),
+	STAT_FIELD(vsock_transport_churn, get_cid_ok),
+	STAT_FIELD(vsock, seq_eom_runs),
+	STAT_FIELD(vsock, seq_eom_sends_ok),
+	STAT_FIELD(vsock, seq_eom_sends_failed),
+	STAT_FIELD(vsock, seq_eom_skipped),
+};
+
+static const struct stat_category vsock_transport_churn_category =
+	STAT_CATEGORY("vsock_transport_churn",
+	              vsock_transport_churn_runs,
+	              vsock_transport_churn_fields);
+
+static const struct stat_field psp_key_rotate_fields[] = {
+	STAT_FIELD(psp_key_rotate, runs),
+	STAT_FIELD(psp_key_rotate, setup_failed),
+	STAT_FIELD(psp_key_rotate, netdev_create_ok),
+	STAT_FIELD(psp_key_rotate, family_resolve_ok),
+	STAT_FIELD(psp_key_rotate, dev_get_ok),
+	STAT_FIELD(psp_key_rotate, key_install_ok),
+	STAT_FIELD(psp_key_rotate, spi_set_ok),
+	STAT_FIELD(psp_key_rotate, send_ok),
+	STAT_FIELD(psp_key_rotate, rotate_ok),
+	STAT_FIELD(psp_key_rotate, spi_switch_ok),
+	STAT_FIELD(psp_key_rotate, shutdown_ok),
+	STAT_FIELD(psp, devlink_port_churn_runs),
+	STAT_FIELD(psp, devlink_port_churn_port_add_ok),
+	STAT_FIELD(psp, devlink_port_churn_port_del_ok),
+	STAT_FIELD(psp, devlink_port_churn_vf_spawn_ok),
+	STAT_FIELD(psp, devlink_port_churn_unsupported_latched),
+};
+
+static const struct stat_category psp_key_rotate_category =
+	STAT_CATEGORY("psp_key_rotate",
+	              psp_key_rotate_runs,
+	              psp_key_rotate_fields);
+
+static const struct stat_field afxdp_churn_fields[] = {
+	STAT_FIELD(afxdp_churn, runs),
+	STAT_FIELD(afxdp_churn, setup_failed),
+	STAT_FIELD(afxdp_churn, umem_reg_ok),
+	STAT_FIELD(afxdp_churn, rings_setup_ok),
+	STAT_FIELD(afxdp_churn, prog_load_ok),
+	STAT_FIELD(afxdp_churn, map_create_ok),
+	STAT_FIELD(afxdp_churn, map_update_ok),
+	STAT_FIELD(afxdp_churn, bind_ok),
+	STAT_FIELD(afxdp_churn, link_attach_ok),
+	STAT_FIELD(afxdp_churn, netlink_attach_ok),
+	STAT_FIELD(afxdp_churn, attach_failed),
+	STAT_FIELD(afxdp_churn, send_ok),
+	STAT_FIELD(afxdp_churn, recv_ok),
+	STAT_FIELD(afxdp_churn, map_delete_ok),
+	STAT_FIELD(afxdp_churn, munmap_race_ok),
+	STAT_FIELD(afxdp, xsg_iters),
+	STAT_FIELD(afxdp, tx_metadata_iters),
+	STAT_FIELD(afxdp, tun_bind_iters),
+	STAT_FIELD(afxdp, xsg_bind_failed),
+	STAT_FIELD(afxdp, tx_md_bind_failed),
+};
+
+static const struct stat_category afxdp_churn_category =
+	STAT_CATEGORY("afxdp_churn",
+	              afxdp_churn_runs,
+	              afxdp_churn_fields);
+
+static const struct stat_field kvm_fields[] = {
+	STAT_FIELD(kvm, vcpu_ioctls_dispatched),
+	STAT_FIELD(kvm, vm_ioctls_dispatched),
+};
+
+static const struct stat_category kvm_category =
+	STAT_CATEGORY("kvm",
+	              kvm_vcpu_ioctls_dispatched,
+	              kvm_fields);
+
+static const struct stat_field kvm_run_churn_fields[] = {
+	STAT_FIELD(kvm_run, invocations),
+	STAT_FIELD(kvm_run, exit_io),
+	STAT_FIELD(kvm_run, exit_mmio),
+	STAT_FIELD(kvm_run, exit_hlt),
+	STAT_FIELD(kvm_run, exit_shutdown),
+	STAT_FIELD(kvm_run, exit_fail_entry),
+	STAT_FIELD(kvm_run, exit_internal_error),
+	STAT_FIELD(kvm_run, exit_intr),
+	STAT_FIELD(kvm_run, exit_other),
+	STAT_FIELD(kvm_run, errors),
+	STAT_FIELD(kvm, gpc_memslot_race_runs),
+	STAT_FIELD(kvm, gpc_memslot_race_deletes),
+	STAT_FIELD(kvm, gpc_memslot_race_unsupported),
+};
+
+static const struct stat_category kvm_run_churn_category =
+	STAT_CATEGORY("kvm_run_churn",
+	              kvm_run_invocations,
+	              kvm_run_churn_fields);
+
+static const struct stat_field nl80211_fields[] = {
+	STAT_FIELD(nl80211, runs),
+	STAT_FIELD(nl80211, setup_failed),
+	STAT_FIELD(nl80211, scan_triggered),
+	STAT_FIELD(nl80211, connect_attempted),
+	STAT_FIELD(nl80211, connect_succeeded),
+	STAT_FIELD(nl80211, disconnect_attempted),
+	STAT_FIELD(nl80211, regdom_changed),
+	STAT_FIELD(nl80211, iface_created),
+	STAT_FIELD(nl80211, iface_destroyed),
+	STAT_FIELD(nl80211, bursts_sent),
+	STAT_FIELD(nl80211, pmsr_runs),
+	STAT_FIELD(nl80211, pmsr_ok),
+	STAT_FIELD(nl80211, admin_gate_runs),
+	STAT_FIELD(nl80211, admin_gate_eperm_ok),
+	STAT_FIELD(nl80211, admin_gate_unexpected),
+};
+
+static const struct stat_category nl80211_category =
+	STAT_CATEGORY("nl80211",
+	              nl80211_runs,
+	              nl80211_fields);
+
+static const struct stat_field nat_t_churn_fields[] = {
+	STAT_FIELD(nat_t_churn, runs),
+	STAT_FIELD(nat_t_churn, setup_failed),
+	STAT_FIELD(nat_t_churn, sa_added),
+	STAT_FIELD(nat_t_churn, sa_deleted),
+	STAT_FIELD(nat_t_churn, frames_sent),
+	STAT_FIELD(nat_t, xfrm6_setup_ok),
+	STAT_FIELD(nat_t, xfrm6_setup_fail),
+	STAT_FIELD(nat_t, xfrm6_sendto_runs),
+	STAT_FIELD(nat_t, xfrm6_delsa_races),
+};
+
+static const struct stat_category nat_t_churn_category =
+	STAT_CATEGORY("nat_t_churn",
+	              nat_t_churn_runs,
+	              nat_t_churn_fields);
+
 static void dump_stats_json_iouring_zc_and_kvm(void)
 {
-	printf(","
-		"\"vsock_transport_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"bind_ok\":%lu,\"connect_ok\":%lu,\"send_ok\":%lu,\"buffer_size_ok\":%lu,\"timeout_ok\":%lu,\"get_cid_ok\":%lu,\"seq_eom_runs\":%lu,\"seq_eom_sends_ok\":%lu,\"seq_eom_sends_failed\":%lu,\"seq_eom_skipped\":%lu},"
-		"\"psp_key_rotate\":{\"runs\":%lu,\"setup_failed\":%lu,\"netdev_create_ok\":%lu,\"family_resolve_ok\":%lu,\"dev_get_ok\":%lu,\"key_install_ok\":%lu,\"spi_set_ok\":%lu,\"send_ok\":%lu,\"rotate_ok\":%lu,\"spi_switch_ok\":%lu,\"shutdown_ok\":%lu,\"devlink_port_churn_runs\":%lu,\"devlink_port_churn_port_add_ok\":%lu,\"devlink_port_churn_port_del_ok\":%lu,\"devlink_port_churn_vf_spawn_ok\":%lu,\"devlink_port_churn_unsupported_latched\":%lu},"
-		"\"afxdp_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"umem_reg_ok\":%lu,\"rings_setup_ok\":%lu,\"prog_load_ok\":%lu,\"map_create_ok\":%lu,\"map_update_ok\":%lu,\"bind_ok\":%lu,\"link_attach_ok\":%lu,\"netlink_attach_ok\":%lu,\"attach_failed\":%lu,\"send_ok\":%lu,\"recv_ok\":%lu,\"map_delete_ok\":%lu,\"munmap_race_ok\":%lu,\"xsg_iters\":%lu,\"tx_metadata_iters\":%lu,\"tun_bind_iters\":%lu,\"xsg_bind_failed\":%lu,\"tx_md_bind_failed\":%lu},"
-		"\"kvm\":{\"vcpu_ioctls_dispatched\":%lu,\"vm_ioctls_dispatched\":%lu},"
-		"\"kvm_run_churn\":{\"invocations\":%lu,\"exit_io\":%lu,\"exit_mmio\":%lu,\"exit_hlt\":%lu,\"exit_shutdown\":%lu,\"exit_fail_entry\":%lu,\"exit_internal_error\":%lu,\"exit_intr\":%lu,\"exit_other\":%lu,\"errors\":%lu,\"gpc_memslot_race_runs\":%lu,\"gpc_memslot_race_deletes\":%lu,\"gpc_memslot_race_unsupported\":%lu},"
-		"\"nl80211\":{\"runs\":%lu,\"setup_failed\":%lu,\"scan_triggered\":%lu,\"connect_attempted\":%lu,\"connect_succeeded\":%lu,\"disconnect_attempted\":%lu,\"regdom_changed\":%lu,\"iface_created\":%lu,\"iface_destroyed\":%lu,\"bursts_sent\":%lu,\"pmsr_runs\":%lu,\"pmsr_ok\":%lu,\"admin_gate_runs\":%lu,\"admin_gate_eperm_ok\":%lu,\"admin_gate_unexpected\":%lu},"
-		"\"nat_t_churn\":{\"runs\":%lu,\"setup_failed\":%lu,\"sa_added\":%lu,\"sa_deleted\":%lu,\"frames_sent\":%lu,\"xfrm6_setup_ok\":%lu,\"xfrm6_setup_fail\":%lu,\"xfrm6_sendto_runs\":%lu,\"xfrm6_delsa_races\":%lu},",
-		shm->stats.vsock_transport_churn_runs,
-		shm->stats.vsock_transport_churn_setup_failed,
-		shm->stats.vsock_transport_churn_bind_ok,
-		shm->stats.vsock_transport_churn_connect_ok,
-		shm->stats.vsock_transport_churn_send_ok,
-		shm->stats.vsock_transport_churn_buffer_size_ok,
-		shm->stats.vsock_transport_churn_timeout_ok,
-		shm->stats.vsock_transport_churn_get_cid_ok,
-		shm->stats.vsock_seq_eom_runs,
-		shm->stats.vsock_seq_eom_sends_ok,
-		shm->stats.vsock_seq_eom_sends_failed,
-		shm->stats.vsock_seq_eom_skipped,
-		shm->stats.psp_key_rotate_runs,
-		shm->stats.psp_key_rotate_setup_failed,
-		shm->stats.psp_key_rotate_netdev_create_ok,
-		shm->stats.psp_key_rotate_family_resolve_ok,
-		shm->stats.psp_key_rotate_dev_get_ok,
-		shm->stats.psp_key_rotate_key_install_ok,
-		shm->stats.psp_key_rotate_spi_set_ok,
-		shm->stats.psp_key_rotate_send_ok,
-		shm->stats.psp_key_rotate_rotate_ok,
-		shm->stats.psp_key_rotate_spi_switch_ok,
-		shm->stats.psp_key_rotate_shutdown_ok,
-		shm->stats.psp_devlink_port_churn_runs,
-		shm->stats.psp_devlink_port_churn_port_add_ok,
-		shm->stats.psp_devlink_port_churn_port_del_ok,
-		shm->stats.psp_devlink_port_churn_vf_spawn_ok,
-		shm->stats.psp_devlink_port_churn_unsupported_latched,
-		shm->stats.afxdp_churn_runs,
-		shm->stats.afxdp_churn_setup_failed,
-		shm->stats.afxdp_churn_umem_reg_ok,
-		shm->stats.afxdp_churn_rings_setup_ok,
-		shm->stats.afxdp_churn_prog_load_ok,
-		shm->stats.afxdp_churn_map_create_ok,
-		shm->stats.afxdp_churn_map_update_ok,
-		shm->stats.afxdp_churn_bind_ok,
-		shm->stats.afxdp_churn_link_attach_ok,
-		shm->stats.afxdp_churn_netlink_attach_ok,
-		shm->stats.afxdp_churn_attach_failed,
-		shm->stats.afxdp_churn_send_ok,
-		shm->stats.afxdp_churn_recv_ok,
-		shm->stats.afxdp_churn_map_delete_ok,
-		shm->stats.afxdp_churn_munmap_race_ok,
-		shm->stats.afxdp_xsg_iters,
-		shm->stats.afxdp_tx_metadata_iters,
-		shm->stats.afxdp_tun_bind_iters,
-		shm->stats.afxdp_xsg_bind_failed,
-		shm->stats.afxdp_tx_md_bind_failed,
-		shm->stats.kvm_vcpu_ioctls_dispatched,
-		shm->stats.kvm_vm_ioctls_dispatched,
-		shm->stats.kvm_run_invocations,
-		shm->stats.kvm_run_exit_io,
-		shm->stats.kvm_run_exit_mmio,
-		shm->stats.kvm_run_exit_hlt,
-		shm->stats.kvm_run_exit_shutdown,
-		shm->stats.kvm_run_exit_fail_entry,
-		shm->stats.kvm_run_exit_internal_error,
-		shm->stats.kvm_run_exit_intr,
-		shm->stats.kvm_run_exit_other,
-		shm->stats.kvm_run_errors,
-		shm->stats.kvm_gpc_memslot_race_runs,
-		shm->stats.kvm_gpc_memslot_race_deletes,
-		shm->stats.kvm_gpc_memslot_race_unsupported,
-		shm->stats.nl80211_runs,
-		shm->stats.nl80211_setup_failed,
-		shm->stats.nl80211_scan_triggered,
-		shm->stats.nl80211_connect_attempted,
-		shm->stats.nl80211_connect_succeeded,
-		shm->stats.nl80211_disconnect_attempted,
-		shm->stats.nl80211_regdom_changed,
-		shm->stats.nl80211_iface_created,
-		shm->stats.nl80211_iface_destroyed,
-		shm->stats.nl80211_bursts_sent,
-		shm->stats.nl80211_pmsr_runs,
-		shm->stats.nl80211_pmsr_ok,
-		shm->stats.nl80211_admin_gate_runs,
-		shm->stats.nl80211_admin_gate_eperm_ok,
-		shm->stats.nl80211_admin_gate_unexpected,
-		shm->stats.nat_t_churn_runs,
-		shm->stats.nat_t_churn_setup_failed,
-		shm->stats.nat_t_churn_sa_added,
-		shm->stats.nat_t_churn_sa_deleted,
-		shm->stats.nat_t_churn_frames_sent,
-		shm->stats.nat_t_xfrm6_setup_ok,
-		shm->stats.nat_t_xfrm6_setup_fail,
-		shm->stats.nat_t_xfrm6_sendto_runs,
-		shm->stats.nat_t_xfrm6_delsa_races);
+	putchar(',');
+	stat_category_emit_json(&vsock_transport_churn_category);
+	putchar(',');
+	stat_category_emit_json(&psp_key_rotate_category);
+	putchar(',');
+	stat_category_emit_json(&afxdp_churn_category);
+	putchar(',');
+	stat_category_emit_json(&kvm_category);
+	putchar(',');
+	stat_category_emit_json(&kvm_run_churn_category);
+	putchar(',');
+	stat_category_emit_json(&nl80211_category);
+	putchar(',');
+	stat_category_emit_json(&nat_t_churn_category);
+	putchar(',');
 }
+
+static const struct stat_field af_alg_probe_fields[] = {
+	STAT_FIELD(af_alg_probe, runs),
+	STAT_FIELD(af_alg_probe, unsupported),
+	STAT_FIELD(af_alg_probe, accept_total),
+	STAT_FIELD(af_alg_probe, reject_total),
+};
+
+static const struct stat_category af_alg_probe_category =
+	STAT_CATEGORY("af_alg_probe",
+	              af_alg_probe_runs,
+	              af_alg_probe_fields);
+
+static const struct stat_field af_alg_recvmsg_fields[] = {
+	STAT_FIELD(af_alg_recvmsg, runs),
+	STAT_FIELD(af_alg_recvmsg, setkey_sent),
+	STAT_FIELD(af_alg_recvmsg, iv_sent),
+	STAT_FIELD(af_alg_recvmsg, oob_iov),
+	STAT_FIELD(af_alg_recvmsg, zerolen),
+	STAT_FIELD(af_alg_recvmsg, oversize),
+	STAT_FIELD(af_alg_recvmsg, empty_cmsg_no_more),
+	STAT_FIELD(af_alg_recvmsg, unsupported),
+};
+
+static const struct stat_category af_alg_recvmsg_category =
+	STAT_CATEGORY("af_alg_recvmsg",
+	              af_alg_recvmsg_runs,
+	              af_alg_recvmsg_fields);
 
 static void dump_stats_json_rxrpc_alg_ublk_block(void)
 {
-	printf("\"af_alg_probe\":{\"runs\":%lu,\"unsupported\":%lu,\"accept_total\":%lu,\"reject_total\":%lu},"
-		"\"af_alg_recvmsg\":{\"runs\":%lu,\"setkey_sent\":%lu,\"iv_sent\":%lu,\"oob_iov\":%lu,\"zerolen\":%lu,\"oversize\":%lu,\"empty_cmsg_no_more\":%lu,\"unsupported\":%lu},",
-		shm->stats.af_alg_probe_runs,
-		shm->stats.af_alg_probe_unsupported,
-		shm->stats.af_alg_probe_accept_total,
-		shm->stats.af_alg_probe_reject_total,
-		shm->stats.af_alg_recvmsg_runs,
-		shm->stats.af_alg_recvmsg_setkey_sent,
-		shm->stats.af_alg_recvmsg_iv_sent,
-		shm->stats.af_alg_recvmsg_oob_iov,
-		shm->stats.af_alg_recvmsg_zerolen,
-		shm->stats.af_alg_recvmsg_oversize,
-		shm->stats.af_alg_recvmsg_empty_cmsg_no_more,
-		shm->stats.af_alg_recvmsg_unsupported);
+	stat_category_emit_json(&af_alg_probe_category);
+	putchar(',');
+	stat_category_emit_json(&af_alg_recvmsg_category);
+	putchar(',');
 }
 
 static void dump_stats_json_probes_misuse_and_tail(void)
