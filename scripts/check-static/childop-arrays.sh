@@ -11,9 +11,9 @@
 # we want that divergence caught at check time instead.
 #
 # What this check enforces today:
-#   1. op_dispatch[] in child-altop.c has exactly one designated
+#   1. op_dispatch[] in child/child-altop.c has exactly one designated
 #      initializer per CHILD_OP_* enum value.
-#   2. alt_op_name() in child-altop.c has exactly one case label per
+#   2. alt_op_name() in child/child-altop.c has exactly one case label per
 #      CHILD_OP_* enum value.
 
 set -u
@@ -22,7 +22,7 @@ NAME="childop-arrays"
 ROOT="${REPO_ROOT:-$(pwd)}"
 
 CHILD_H="$ROOT/include/child.h"
-CHILD_C="$ROOT/child-altop.c"
+CHILD_C="$ROOT/child/child-altop.c"
 
 fail() {
 	echo "FAIL: $NAME: $1"
@@ -57,7 +57,7 @@ dispatch_count=$(awk '
 
 if [ "$dispatch_count" -ne "$enum_count" ]; then
 	fail "op_dispatch[] has $dispatch_count entries but enum has $enum_count values" \
-		"see child-altop.c op_dispatch[] and include/child.h enum child_op_type"
+		"see child/child-altop.c op_dispatch[] and include/child.h enum child_op_type"
 fi
 
 # Count case labels in alt_op_name().
@@ -70,7 +70,7 @@ altname_count=$(awk '
 
 if [ "$altname_count" -ne "$enum_count" ]; then
 	fail "alt_op_name() covers $altname_count of $enum_count CHILD_OP_* values" \
-		"see child-altop.c alt_op_name() and include/child.h enum child_op_type"
+		"see child/child-altop.c alt_op_name() and include/child.h enum child_op_type"
 fi
 
 echo "PASS: $NAME (enum=$enum_count, op_dispatch=$dispatch_count, alt_op_name=$altname_count)"

@@ -114,6 +114,7 @@ HEADERS		:= $(wildcard *.h) $(wildcard syscalls/*.h) $(wildcard ioctls/*.h)
 
 SRCS		:= $(wildcard *.c) \
 		   $(wildcard args/*.c) \
+		   $(wildcard child/*.c) \
 		   $(wildcard childops/*.c) \
 		   $(wildcard cmp_hints/*.c) \
 		   $(wildcard fds/*.c) \
@@ -136,6 +137,7 @@ SRCS		:= $(wildcard *.c) \
 
 OBJS		:= $(sort $(patsubst %.c,%.o,$(wildcard *.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard args/*.c))) \
+		   $(sort $(patsubst %.c,%.o,$(wildcard child/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard childops/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard cmp_hints/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard fds/*.c))) \

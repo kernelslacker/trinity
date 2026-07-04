@@ -18,7 +18,7 @@ their own.
    persisted state, then hands control to the parent control plane.
 2. `main/` — the parent tick loop: fork the fleet, poll-reap exits,
    D-state/stuck watchdog, periodic stats. Calls into nothing that fuzzes.
-3. `child.c` (+ `child-init.c`, `child-altop.c`) — each forked child's
+3. `child/` (child.c loop + child-init.c + child-altop.c picker) — each forked child's
    per-iteration loop: pick a syscall **or** an alt-op (childop), run it under
    an `alarm(1)` stall backstop, thread results forward.
 4. Per iteration the child either:
@@ -36,6 +36,7 @@ their own.
 | Directory | Role |
 |---|---|
 | [main/](main/CLAUDE.md) | Parent control plane: fork/reap/watchdog/stats tick loop (4 files, ~3,626 LOC) |
+| [child/](child/CLAUDE.md) | Child runtime loop: per-iteration alt-op/syscall pick, canary/sentinel/capdrop oracles, alarm backstop (7 files, ~6,400 LOC) |
 | [random_syscall/](random_syscall/CLAUDE.md) | Per-iteration hot path: pick, substitute, dispatch a syscall (5 files, ~4,807 LOC) |
 | [syscalls/](syscalls/CLAUDE.md) | One `struct syscallentry` descriptor per syscall — the declarative catalog (~361 files, ~56,400 LOC) |
 | [tables/](tables/CLAUDE.md) | Loads the per-syscall descriptors into shared memory and stamps derived fields (3 files, ~1,725 LOC) |
@@ -69,22 +70,7 @@ binary. Grouped by concern:
   rest of the codebase reads (targeting, `--childop`, richness levers, etc.).
 
 ### Child runtime
-- `child.c` (1,048) — "each forked process runs this": the child's
-  per-iteration loop, alt-op vs. random-syscall selection, `alarm(1)` backstop.
-- `child-init.c` (1,406) — per-child bring-up: forked-process setup,
-  sandboxing/cap-drop, and the lifetime-constant state `child_process()` needs.
-  Split from child.c for parallel compilation.
-- `child-altop.c` (1,481) — the alt-op (childop) picker, `op_dispatch[]`
-  table, `enum child_op_type` ↔ name mapping, and dormancy/scoring machinery.
-- `child-canary.c` (1,522) — dormant-childop canary promotion queue: flips the
-  runtime gate for one dormant op at a time on a reserved canary child to
-  observe it in isolation.
-- `child-sentinel.c` (305) — periodic-work divergence sentinel: re-issues a
-  curated "should be deterministic" set each tick to catch state drift.
-- `child-capdrop-oracle.c` (316) — sampled assertion that the child's
-  `capset()`-to-empty privilege drop actually held.
-- `cred_throttle.c` (173) — credential-syscall observability oracle plus a
-  flag-gated throttle; companion to the random-syscall picker.
+- [child/](child/CLAUDE.md) — per-child loop, bring-up/sandbox, alt-op picker, canary/sentinel/capdrop oracles, cred throttle (7 files).
 
 ### Syscall dispatch & results
 - `syscall.c` (1,652) — the machinery that actually issues the system calls.
@@ -95,7 +81,7 @@ binary. Grouped by concern:
 ### Object pools & result threading
 - `objects/` — the `OBJ_LOCAL`/`OBJ_GLOBAL` object pools (`alloc_object`/
   `add_object`) that let one syscall's successful result (fd, id, handle)
-  become a later syscall's argument. Carved into a subsystem dir — see
+  become a later syscall's argument. See
   [objects/](objects/CLAUDE.md). `lib/publish_resource.c` is the typed
   stamping front end.
 - `futex-shared.c` (93) — cross-child shared futex-word pool (word lives in
@@ -139,7 +125,7 @@ binary. Grouped by concern:
 
 ## Where to start reading
 
-- **To follow one fuzz iteration end-to-end:** `child.c` →
+- **To follow one fuzz iteration end-to-end:** `child/child.c` →
   `random_syscall/CLAUDE.md` → `syscalls/CLAUDE.md` → `args/CLAUDE.md` →
   `syscall.c` → `results.c`.
 - **To understand the process fleet / lifecycle:** `trinity.c` →
