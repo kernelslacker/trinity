@@ -1,14 +1,17 @@
 # main/ — Parent Process Orchestration Layer
 
-The Trinity parent process: forks and tracks the fuzzer child fleet, reaps
-exits, runs the D-state/stuck watchdog, and drives the periodic stats/health
-dump. This is the hot loop `trinity.c`'s `epoch_loop()`/`main()` calls into;
-it never fuzzes anything itself.
+The Trinity parent process: the entry point (`trinity.c`) and CLI/tunable
+parsing (`params.c`), then the control plane that forks and tracks the fuzzer
+child fleet, reaps exits, runs the D-state/stuck watchdog, and drives the
+periodic stats/health dump. `trinity.c`'s `main()`/`epoch_loop()` sets up and
+repeatedly calls `main_loop()`; none of this fuzzes anything itself.
 
-## Files (4 files, ~3,626 LOC)
+## Files (6 files, ~6,411 LOC)
 
 | File | Lines | Role |
 |---|---|---|
+| trinity.c | 1,016 | Process entry: `main()`, option/table setup, `warm_start_all()`, and the epoch loop that repeatedly calls `main_loop()`. Does not fuzz. |
+| params.c | 1,769 | CLI option parsing and the global tunables/flags the rest of the codebase reads (targeting, `--childop`, richness levers). |
 | main.c | 615 | `main_loop()` driver: per-tick phase sequencing (drain → stop-checks → periodic surfaces → fork-replace), epoch reset (`reset_epoch_state`), `panic()` |
 | main-reap.c | 1,803 | Reap + watchdog: `waitpid(-1)` drain, zombie/D-state slot deferral, stuck-child SIGKILL escalation, fork-die-respawn loop detector, shm corruption sanity checks |
 | main-spawn.c | 723 | `fork_children()`/`spawn_child()`: slot allocation, fork-failure backoff/bail, fork-pressure drain, forensic snapshots, final cross-run state save |
