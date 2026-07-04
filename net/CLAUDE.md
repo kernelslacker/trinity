@@ -37,53 +37,9 @@ shared struct-of-callbacks pattern).
 
 - [proto/](proto/CLAUDE.md) — the 42 per-`PF_*`/`AF_*` files, each defining `const struct netproto proto_<family>` (wired into `net_protocols[]`) plus optional `grammar_<family>` (registered in `sfg_registry[]`), including the XFRM (IPsec netlink) grammar cluster. One family per file, shared optname-table-plus-switch pattern.
 
-### Generic netlink (genl) family grammars
-- `netlink-genl-families.c` (621) — runtime registry: walks
-  statically-declared `genl_family_grammar` structs, resolves each
-  family's dynamic `family_id` via `CTRL_CMD_GETFAMILY`/`NLM_F_DUMP`,
-  exposes lookup helpers to the message generator. Families are
-  conditionally compiled via `__has_include()` against kernel UAPI
-  headers so the build degrades gracefully on older kernels.
-- `netlink-genl-fam-*.c` — 45 files, one per genl family (nl80211,
-  ethtool, devlink, wireguard, macsec, nfsd, ovs, tipc, dpll,
-  psp, handshake, netlabel, thermal, ...). Pattern shown by
-  `netlink-genl-fam-taskstats.c` (54 lines, smallest): a
-  `genl_cmd_grammar[]` table of `{CMD, "name"}`, an
-  `nla_attr_spec[]` table of `{ATTR, NLA_KIND_*, size}` mirroring the
-  kernel's `nla_policy`, packaged into one `struct genl_family_grammar`.
-  Comments frequently cite the specific CVE or kernel validation gate
-  the attribute shape is designed to reach (e.g. taskstats file cites
-  CVE-2017-2671). Largest: `netlink-genl-fam-ovs.c` (441),
-  `netlink-genl-fam-macsec.c` (232), `netlink-genl-fam-netlabel.c` (226),
-  `netlink-genl-fam-nl802154.c` (209), `netlink-genl-fam-ieee802154.c` (201).
-  ~35 files are under 130 lines, following the taskstats pattern exactly.
+### Netlink message machinery (`netlink/`)
 
-### Netfilter netlink (nfnl) subsystem grammars
-- `netlink-nfnl-subsystems.c` (160) — per-subsystem registry, analogous
-  to the genl one but simpler: `NFNL_SUBSYS_*` is a compile-time
-  constant (no dynamic family-id resolution needed), so this file just
-  stamps each grammar's stats counter into the shared arena.
-- `netlink-nfnl-sub-*.c` — 11 files (ipset, nftables, nft-compat,
-  ctnetlink, cttimeout, cthelper, nfqueue, acct, osf, ulog, hook),
-  same `{cmd, attrs}` table pattern as genl files, 59-127 lines each.
-
-### Core netlink message plumbing
-- `netlink-msg.c` (1757) — second-largest file: `netlink_gen_msg()`
-  (the `gen_msg` hook wired into `proto_netlink`), nlmsg flag/type
-  generation, dispatches to per-rtnetlink-group payload builders and
-  the genl/nfnl grammars, occasional deliberate corruption of
-  otherwise-valid messages.
-- `netlink-msg-rtnl-payloads.c` (2283) — largest file in the directory:
-  five payload generators (`gen_rta_{route,link,addr,neigh,dcb}_payload`)
-  split out of netlink-msg.c purely for compile-unit size/parallelism;
-  dispatched from a switch in netlink-msg.c. File-static helpers
-  (`rand_ipv4`, `rand_ipv6`, `start_nlattr`, `build_nested_attrs`) are
-  shared only within this TU.
-- `netlink-msg-tables.c` (386) — shared lookup/size tables consumed by
-  both of the above.
-- `netlink-msg-internal.h` (169) — private cross-TU declarations
-  binding the three files above together (explicitly not for outside
-  inclusion).
+- [netlink/](netlink/CLAUDE.md) — the netlink message-construction engine (nlmsg framing, rtnetlink payloads) plus the genl-family and nfnl-subsystem grammar registries. Subdirs: [netlink/genl/](netlink/genl/CLAUDE.md) (46 files) and [netlink/nfnl/](netlink/nfnl/CLAUDE.md) (12). The AF_NETLINK *socket* helpers (`grammar_netlink`, `grammar_xfrm`) live in `proto/`; this dir builds the *message bodies* they carry.
 
 ### BPF / eBPF program generation
 - `bpf.c` (554) — classic BPF (`struct sock_filter`) program generator

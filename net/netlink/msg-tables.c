@@ -34,7 +34,7 @@
 #include <linux/xfrm.h>
 #include <linux/audit.h>
 #include <linux/inet_diag.h>
-#include "netlink-msg-internal.h"
+#include "msg-internal.h"
 #include "utils.h"
 
 /* rtnetlink message types (NEW/DEL/GET variants picked at random) */

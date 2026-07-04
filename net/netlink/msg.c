@@ -30,7 +30,7 @@
 #include "net.h"
 #include "netlink-attrs.h"
 #include "netlink-genl-families.h"
-#include "netlink-msg-internal.h"
+#include "msg-internal.h"
 #include "netlink-nfnl-subsystems.h"
 #include "random.h"
 #include "shm.h"
