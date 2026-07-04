@@ -56,4 +56,5 @@ struct syscallentry syscall_waitid = {
 	.sanitise = sanitise_waitid,
 	.post = post_waitid,
 	.rettype = RET_ZERO_SUCCESS,
+	.flags = NEED_ALARM,
 };
