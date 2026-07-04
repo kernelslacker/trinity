@@ -796,25 +796,12 @@ static void cgroup_kill_inner(const char *cgroup_path, int pipe_w)
  */
 #define RECIPE_CGROUP_KILL_NOTIFY_MS	200
 
-static int recipe_cgroup_kill_supervisor(void)
+static int cgroup_kill_setup(const char *cgroup_path,
+			     int *events_fd, int *kill_fd,
+			     int pipefd[2], pid_t *inner,
+			     bool *cgroup_made)
 {
-	char cgroup_path[64];
 	char path[128];
-	char readbuf[256];
-	struct pollfd pfd;
-	ssize_t r __unused__;
-	ssize_t w __unused__;
-	int events_fd = -1;
-	int kill_fd = -1;
-	int pipefd[2] = { -1, -1 };
-	pid_t inner = -1;
-	int rc;
-	int status;
-	bool cgroup_made = false;
-	char ack;
-
-	(void)snprintf(cgroup_path, sizeof(cgroup_path),
-		       "/sys/fs/cgroup/trinity-kill-%d", (int)getpid());
 
 	if (mkdir(cgroup_path, 0755) != 0) {
 		if (errno == EACCES || errno == EPERM || errno == EROFS ||
@@ -822,46 +809,53 @@ static int recipe_cgroup_kill_supervisor(void)
 			return 1;
 		return 2;
 	}
-	cgroup_made = true;
+	*cgroup_made = true;
 
 	(void)snprintf(path, sizeof(path), "%s/cgroup.events", cgroup_path);
-	events_fd = open(path, O_RDONLY | O_NONBLOCK);
-	if (events_fd < 0) {
+	*events_fd = open(path, O_RDONLY | O_NONBLOCK);
+	if (*events_fd < 0) {
 		/* cgroup.events appears whenever cgroup v2 is mounted; ENOENT
 		 * here means the kernel doesn't expose it (extremely old
 		 * cgroup v2, or a controller-less hierarchy). */
-		rc = (errno == ENOENT) ? 1 : 2;
-		goto out;
+		return (errno == ENOENT) ? 1 : 2;
 	}
 
 	(void)snprintf(path, sizeof(path), "%s/cgroup.kill", cgroup_path);
-	kill_fd = open(path, O_WRONLY);
-	if (kill_fd < 0) {
+	*kill_fd = open(path, O_WRONLY);
+	if (*kill_fd < 0) {
 		/* cgroup.kill landed in 5.14; ENOENT here is the canonical
 		 * "feature absent" signal that latches the recipe off. */
-		rc = (errno == ENOENT) ? 1 : 2;
-		goto out;
+		return (errno == ENOENT) ? 1 : 2;
 	}
 
-	if (pipe2(pipefd, O_CLOEXEC) != 0) {
-		rc = 2;
-		goto out;
-	}
+	if (pipe2(pipefd, O_CLOEXEC) != 0)
+		return 2;
 
-	inner = fork();
-	if (inner < 0) {
-		rc = 2;
-		goto out;
-	}
+	*inner = fork();
+	if (*inner < 0)
+		return 2;
 
-	if (inner == 0) {
+	if (*inner == 0) {
 		/* Inner doesn't need the supervisor's copies of these fds. */
-		close(events_fd);
-		close(kill_fd);
+		close(*events_fd);
+		close(*kill_fd);
 		close(pipefd[0]);
 		cgroup_kill_inner(cgroup_path, pipefd[1]);
 		/* unreachable -- inner uses _exit on every path */
 	}
+
+	return 0;
+}
+
+static void cgroup_kill_poll_cycle(int events_fd, int kill_fd,
+				   int pipefd[2], pid_t *inner)
+{
+	char readbuf[256];
+	struct pollfd pfd;
+	ssize_t r __unused__;
+	ssize_t w __unused__;
+	char ack;
+	int status;
 
 	/* Supervisor closes its write end; only the inner writes. */
 	close(pipefd[1]);
@@ -911,13 +905,18 @@ static int recipe_cgroup_kill_supervisor(void)
 	 * the cgroup (write to cgroup.procs was denied), so cgroup.kill
 	 * walked an empty iter and didn't reap the inner.  kill() on a
 	 * pid already-killed-by-cgroup is a harmless no-op. */
-	(void)kill(inner, SIGKILL);
-	(void)waitpid_eintr(inner, &status, 0);
-	inner = -1;
+	(void)kill(*inner, SIGKILL);
+	(void)waitpid_eintr(*inner, &status, 0);
+	*inner = -1;
+}
 
-	rc = 0;
+static void cgroup_kill_teardown(const char *cgroup_path,
+				 int events_fd, int kill_fd,
+				 int pipefd[2], pid_t inner,
+				 bool cgroup_made)
+{
+	int status;
 
-out:
 	if (inner > 0) {
 		(void)kill(inner, SIGKILL);
 		(void)waitpid_eintr(inner, &status, 0);
@@ -932,6 +931,32 @@ out:
 		close(events_fd);
 	if (cgroup_made)
 		(void)rmdir(cgroup_path);
+}
+
+static int recipe_cgroup_kill_supervisor(void)
+{
+	char cgroup_path[64];
+	int events_fd = -1;
+	int kill_fd = -1;
+	int pipefd[2] = { -1, -1 };
+	pid_t inner = -1;
+	int rc;
+	bool cgroup_made = false;
+
+	(void)snprintf(cgroup_path, sizeof(cgroup_path),
+		       "/sys/fs/cgroup/trinity-kill-%d", (int)getpid());
+
+	rc = cgroup_kill_setup(cgroup_path, &events_fd, &kill_fd,
+			       pipefd, &inner, &cgroup_made);
+	if (rc != 0)
+		goto out;
+
+	cgroup_kill_poll_cycle(events_fd, kill_fd, pipefd, &inner);
+	rc = 0;
+
+out:
+	cgroup_kill_teardown(cgroup_path, events_fd, kill_fd,
+			     pipefd, inner, cgroup_made);
 	return rc;
 }
 
