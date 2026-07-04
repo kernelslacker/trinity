@@ -127,6 +127,7 @@ SRCS		:= $(wildcard *.c) \
 		   $(wildcard main/*.c) \
 		   $(wildcard mm/*.c) \
 		   $(wildcard net/*.c) \
+		   $(wildcard net/bpf/*.c) \
 		   $(wildcard net/netlink/*.c) \
 		   $(wildcard net/netlink/genl/*.c) \
 		   $(wildcard net/netlink/nfnl/*.c) \
@@ -158,6 +159,7 @@ OBJS		:= $(sort $(patsubst %.c,%.o,$(wildcard *.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard main/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard mm/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard net/*.c))) \
+		   $(sort $(patsubst %.c,%.o,$(wildcard net/bpf/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard net/netlink/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard net/netlink/genl/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard net/netlink/nfnl/*.c))) \

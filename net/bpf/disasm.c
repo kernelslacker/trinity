@@ -5,7 +5,7 @@
 
 #include "debug.h"
 #include "utils.h"
-#include "bpf-internal.h"
+#include "internal.h"
 
 #ifdef USE_BPF
 
