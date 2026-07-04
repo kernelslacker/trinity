@@ -2,7 +2,7 @@
 
 Coverage-guided argument retention plus the deferred-free temporal-overlap queue — state that survives across iterations so productive inputs can be replayed and frees can be safely delayed.
 
-`sequence.c` (the chain corpus) belongs here too but is held at root for now — it's under active rework in the resource-typing lane; it folds in once that settles.
+`sequence.c` (the chain corpus) is the last file still at repo root — under active rework in the resource-typing lane. It moves to `random_syscall/` (beside `chain-subst.c`, its executor sibling), not here, once that settles: it's a chain *executor* whose corpus is a secondary feature, distinct from minicorpus's per-syscall arg snapshots.
 
 ## Files (2 files, ~4,450 LOC)
 
