@@ -25,7 +25,7 @@ cmp_hints/.
 | rlimit-safe.c | 244 | Per-resource "safe" (cur,max) pair dictionaries for fuzzing the rlimit family without self-DoS (RLIMIT_NICE encoding, RTPRIO range, etc.) |
 | shm.c | 474 | `create_shm()`/`init_shm()` orchestrator: shm sizing, sentinel stamping (netns_fd=-1, scratch_block=-1), phased init (debug/start-time, self-exe snapshot, strategy-rotation state, children[] + fd/stats ring allocation, mprotect(PROT_READ) lockdown, subsystem singleton bring-up) |
 | post_snapshot.c | 135 | `range_readable_user()` (VMA-readability gate before deref) and safe struct-copy helpers used by field-scoped attribution and post handlers |
-| sysv-shm.c | 114 | SysV shared-memory object type: create/dump/destructor, integrates with `objects.c` and shared-region tracking |
+| sysv-shm.c | 114 | SysV shared-memory object type: create/dump/destructor, integrates with `objects/` and shared-region tracking |
 | rlimits.c | 128 | Startup rlimit caps: raise RLIMIT_MEMLOCK to infinity (needs CAP_SYS_RESOURCE), cap NOFILE/NPROC/AS as OOM-cascade defense-in-depth |
 | uid.c | 139 | `drop_privs()`, `init_uids()`, `check_uid()` — privilege-drop-to-nobody spine |
 | writer-watch.c | 139 | `--writer-watch=<addr>`: arms a hardware WRITE breakpoint (perf_event_open) per child for pinpointing a wild writer's exact RIP |
@@ -56,7 +56,7 @@ cmp_hints/.
 - `trinity.c` — `create_shm()`/`init_shm()` run at startup before fork; `init_rlimits()`, `log_load_bases()`, and (as root) `setup_startup_isolation()` all run from the same pre-fork init sequence in trinity.c.
 - `child.c`, `child-init.c`, `main/main.c`, `main/main-spawn.c`, `fds/scratch_block.c` — drive `self_cgroup_setup()`/`self_cgroup_fork_into_workload()`/`self_cgroup_cleanup()` around the fork boundary.
 - `signals.c` — `child_fault_handler()` calls `guard_pages_classify()` (async-signal-safe, plain array reads only) to identify a guard-page trap, and consults `range_readable_user()` in the post_snapshot.c recovery path for field-scoped struct dereferences.
-- `objects.c` — `sysv-shm.c` implements the SysV shm object type (`create_sysv_shms`, dump, destructor) plugged into the generic object-lifecycle framework.
+- `objects/` — `sysv-shm.c` implements the SysV shm object type (`create_sysv_shms`, dump, destructor) plugged into the generic object-lifecycle framework.
 
 ## Areas of attention
 

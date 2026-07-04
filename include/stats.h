@@ -360,7 +360,7 @@ struct stats_s {
 	/* get_random_object_versioned() OBJ_LOCAL pick path or add_object()
 	 * pre-grow snapshot saw head->num_entries > head->array_capacity and
 	 * refused to deref head->array[idx] / proceed with the slot write.
-	 * Mirrors the OBJ_GLOBAL wild-stomp defences at objects.c:1022 and
+	 * Mirrors the OBJ_GLOBAL wild-stomp defences at objects/registry.c and
 	 * 1088.  Non-zero means a wild value-result write has scribbled an
 	 * objhead's num_entries; the pick-side bumper converted what would
 	 * have been an OOB head->array[] read into a NULL return; the write-
@@ -2278,7 +2278,7 @@ struct stats_s {
 	 * What this block adds: a single shm->stats five-way split that
 	 * makes the per-branch firing rate trivially comparable.  Lets
 	 * residual-cores triage attribute observed reject windows (e.g. the
-	 * 14/8/8-per-window seen at objects.c:757 add_object oldarray
+	 * 14/8/8-per-window seen at objects/registry.c add_object oldarray
 	 * enqueue in run 1828) to a specific clause, and validates the
 	 * alloc_track LRU widen post-rebuild by tracking the untracked
 	 * branch's rate-of-change on the next live run.  Pure
@@ -2485,7 +2485,7 @@ struct stats_s {
 	 * binds the same value to a new chunk; the second slot's TTL
 	 * fires and free()s the new owner's chunk.  Non-zero proves the
 	 * gate is engaged; rate-of-change correlates with refresh
-	 * pressure on the maps.c / objects.c hot paths. */
+	 * pressure on the maps.c / objects/ hot paths. */
 	unsigned long deferred_free_double_admit_skip;
 
 	/* tracked_free_now() could not verify ring residency because
@@ -2528,7 +2528,7 @@ struct stats_s {
 	 * matches a fresh consume entry and free()s a now-live chunk
 	 * owned by a different allocation.  Non-zero proves the gate
 	 * is engaged on a refresh of a ring-resident ptr; rate-of-
-	 * change correlates with the maps.c / objects.c refresh
+	 * change correlates with the maps.c / objects/ refresh
 	 * pressure that previously fed deferred_free_double_admit_skip
 	 * at the enqueue dedup. */
 	unsigned long alloc_track_refresh_ring_owned_skip;
@@ -4413,7 +4413,7 @@ struct stats_s {
 
 	/* FD bookkeeping observability.
 	 *
-	 * fd_live_remove() (objects.c) does a linear scan of
+	 * fd_live_remove() (objects/fdhash.c) does a linear scan of
 	 * parent_fd_live[0..parent_fd_live_count) on every parent-
 	 * side fd retirement.  Comment at the bump site says
 	 * "typical occupancy is a few hundred entries so the cost

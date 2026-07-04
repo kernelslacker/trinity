@@ -138,7 +138,7 @@ top of each header as private to that pair of TUs).
 - `struct_catalog/` — supplies shared struct-shape tables (`bpf_prog_types`,
   `bpf_map_types`) that `bpf.c` and `struct_catalog.c` both reference to keep
   vocabulary in sync across the catalog and the raw syscall arg generator.
-- `objects.c`/`publish_resource.c` — object-pool registration
+- `objects/registry.c` / `publish_resource.c` — object-pool registration
   (`register_key_serial`, fd publication) that lets one syscall's successful
   result feed a later syscall's argument generation.
 - `cmp_hints/`, `kcov/` — indirectly, via `MAX_NR_SYSCALL`-sized per-syscall
