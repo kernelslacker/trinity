@@ -17,6 +17,8 @@ SYSCALL_DEFINE6(epoll_pwait2, int, epfd, struct epoll_event __user *, events,
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
+#include "shm.h"
+#include "stats.h"
 #include "trinity.h"
 #include "utils.h"
 
@@ -130,19 +132,45 @@ static void size_events_buffer(struct syscallrecord *rec)
 	avoid_shared_buffer_out(&rec->a2, bytes);
 }
 
+/*
+ * Attribute why (a3 > 0 && a2 == 0) still holds at sanitise exit --
+ * the state the arg-coupling validator will reject as EFAULT-shaped
+ * without dispatching the syscall.  Bumps the appropriate cause
+ * counter on shm->stats; no-op on the common path where a2 remains
+ * non-zero.  See stats.h for the bucket definitions.
+ */
+static void record_null_events_cause(unsigned long initial_a2,
+				     struct syscallrecord *rec)
+{
+	if ((long) rec->a3 <= 0 || rec->a2 != 0)
+		return;
+	if (initial_a2 == 0)
+		__atomic_add_fetch(&shm->stats.epoll_wait_null_events_alloc_fail,
+				   1, __ATOMIC_RELAXED);
+	else
+		__atomic_add_fetch(&shm->stats.epoll_wait_null_events_shared_reject,
+				   1, __ATOMIC_RELAXED);
+}
+
 static void sanitise_epoll_pwait(struct syscallrecord *rec)
 {
+	unsigned long initial_a2 = rec->a2;
+
 	rec->a3 = (unsigned long) pick_maxevents();
 	rec->a4 = pick_timeout_ms();
 	pick_sigmask(rec);
 	size_events_buffer(rec);
+	record_null_events_cause(initial_a2, rec);
 }
 
 static void sanitise_epoll_pwait2(struct syscallrecord *rec)
 {
+	unsigned long initial_a2 = rec->a2;
+
 	rec->a3 = (unsigned long) pick_maxevents();
 	pick_sigmask(rec);
 	size_events_buffer(rec);
+	record_null_events_cause(initial_a2, rec);
 
 	/*
 	 * a4 (timeout) is typed ARG_TIMESPEC; the generator publishes

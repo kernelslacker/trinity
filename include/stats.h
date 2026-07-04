@@ -5261,6 +5261,39 @@ struct stats_s {
 	unsigned long blob_dict_inserts;
 	unsigned long blob_static_magic_inserts;
 	unsigned long blob_dict_transform_inserts;
+
+	/* Cause-attribution for the epoll wait-family (epoll_wait,
+	 * epoll_pwait, epoll_pwait2) rejects landing in
+	 * validate_arg_coupling() with maxevents > 0 && events == NULL.
+	 * The bare validator_rejected headline conflates every coupled-
+	 * pair rule; these split the epoll subset by why a2 was zero:
+	 *
+	 *   alloc_fail       -- the initial address the arg generator
+	 *                       produced for a2 (ARG_NON_NULL_ADDRESS)
+	 *                       was already 0 at sanitise entry.  Real
+	 *                       cause today: get_writable_address()
+	 *                       returning NULL when mapping_sizes[] drew
+	 *                       the GB(1) bucket that exceeds the 1 MiB
+	 *                       writable_pool, so get_non_null_address()
+	 *                       returned NULL.
+	 *   shared_reject    -- a2 was non-zero at sanitise entry but
+	 *                       zero at sanitise exit.  No live code path
+	 *                       zeroes *addr inside avoid_shared_buffer_
+	 *                       out today; retained as a bucket so a
+	 *                       future ASB reject that DOES zero the slot
+	 *                       is attributed on first sight instead of
+	 *                       silently collapsing back into the
+	 *                       headline.
+	 *
+	 * A "late mutation" residual (a2 was non-zero at sanitise exit
+	 * but zero at validate_arg_coupling() time -- a sibling stomp
+	 * between the two) is not accounted here; it is derivable as
+	 * (epoll validator-rejects - alloc_fail - shared_reject) once a
+	 * per-family split of validator_rejected is added.  Bumped with
+	 * RELAXED atomics on shm->stats -- multi-producer, low rate,
+	 * dump-side reader only. */
+	unsigned long epoll_wait_null_events_alloc_fail;
+	unsigned long epoll_wait_null_events_shared_reject;
 };
 
 unsigned int stats_syscall_category(const char *name);
