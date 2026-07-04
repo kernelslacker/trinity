@@ -3,7 +3,7 @@
 # no-bare-waitpid: reject bare waitpid() callsites outside the wrapper
 # and the legitimate fuzz-target definitions.
 #
-# Trinity installs SIGALRM and SIGXCPU without SA_RESTART (signals.c),
+# Trinity installs SIGALRM and SIGXCPU without SA_RESTART (health/signals.c),
 # so any blocking waitpid() in a non-syscall path can return -1/EINTR.
 # Treating EINTR as "done" leaves a child unreaped -- for sites that
 # tear down a shared mapping right after the wait (barrier-racer,
