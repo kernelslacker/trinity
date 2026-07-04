@@ -105,12 +105,45 @@ static int get_rand_signalfd_fd(void)
 	return -1;
 }
 
+/*
+ * Periodic child-tick top-up.  See the block comment above
+ * epoll_try_replenish() (fds/epoll.c) for the general contract.
+ * init_signalfd_fds() seeds SIGNALFD_INIT_POOL entries once; without
+ * this hook a child that drained its private copy via close / dup2 /
+ * close_range hits stopped seeing signalfds at all.
+ *
+ * Same tradeoff the epoll hook documents: init_signalfd_fds() stores
+ * fds inside objects (obj->signalfdobj.fd) that get_rand_signalfd_fd()
+ * reads for ARG_FD_SIGNALFD, but a post-fork add_object(OBJ_GLOBAL) is
+ * a no-op by the mainpid guard in objects/registry.c.  child_fd_ring_
+ * push() therefore feeds the generic ARG_FD live-fd path in gen_arg_fd()
+ * rather than the typed ARG_FD_SIGNALFD pool -- reachability from the
+ * generic side is the win.
+ */
+static void signalfd_try_replenish(unsigned int budget)
+{
+	struct childdata *child = this_child();
+	unsigned int i;
+
+	if (child == NULL)
+		return;
+
+	for (i = 0; i < budget; i++) {
+		int fd = do_signalfd4();
+
+		if (fd < 0)
+			return;
+		child_fd_ring_push(&child->live_fds, fd);
+	}
+}
+
 static const struct fd_provider signalfd_fd_provider = {
 	.name = "signalfd",
 	.objtype = OBJ_FD_SIGNALFD,
 	.enabled = true,
 	.init = &init_signalfd_fds,
 	.get = &get_rand_signalfd_fd,
+	.try_replenish = &signalfd_try_replenish,
 };
 
 REG_FD_PROV(signalfd_fd_provider);
