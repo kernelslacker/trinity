@@ -83,58 +83,52 @@ struct getxattrat_post_state {
 	unsigned long size;
 };
 
-static void sanitise_getxattrat(struct syscallrecord *rec)
+/*
+ * ARG_PATHNAME plumbed a random pathname into rec->a2 and
+ * ARG_XATTR_NAME filled rec->a4 with a namespace-shaped name
+ * from the curated pool, but the random path is most often not
+ * a real file (ENOENT) or, even when it does land on a real
+ * file, the drawn name is not currently set on that inode --
+ * path_getxattrat -> vfs_getxattr returns ENOTSUP / ENODATA at
+ * the front of the call before ever touching the per-fs handler
+ * dispatch or the simple_xattr_get fast path that the per-inode
+ * i_xattrs rwsem guards.  Same "high calls, low edges" cold-
+ * syscall shape that the non-at getxattr / lgetxattr /
+ * fremovexattr / lremovexattr / llistxattr were in before their
+ * precondition fixes.
+ *
+ * Half the draws now repoint pathname (a2) at one of the
+ * trinity-testfile<N> absolute paths and overwrite the name
+ * (a4) buffer in place with the curated user.* token, then
+ * plant the value on disk via setxattr() so the subsequent
+ * getxattrat lands inside the real per-inode read path.  An
+ * absolute pathname makes dfd irrelevant -- the kernel ignores
+ * rec->a1 when pathname is absolute -- so this composes cleanly
+ * with the AT_FDCWD-pin / random-fd dfd logic and the at_flags
+ * sanitiser below; the planted testfiles are regular files so
+ * AT_SYMLINK_NOFOLLOW is a no-op on them, and the absolute
+ * non-empty path makes AT_EMPTY_PATH irrelevant too.  The plant
+ * runs BEFORE post_state_install so the size snapshot the .post
+ * handler validates retval against is captured on the same draw
+ * that asks the kernel to populate it.
+ *
+ * The other half preserves rec->a2 / rec->a4 exactly as the
+ * generic draw left them so the namespace-reject / ENODATA arms
+ * stay exercised.  Plant failure (ENOSPC on a full xattr list,
+ * EOPNOTSUPP on a fs that bailed out of the user.* leg, ENOENT
+ * if the testfile slot was never opened, ...) is non-fatal: an
+ * earlier draw on the same inode may still hold a stale
+ * user.trinity_plant from a prior round, so the trinity-
+ * dispatched getxattrat below may still land on the real read
+ * path.
+ *
+ * Slow-path note: the setxattr() in sanitise is one real
+ * syscall.  syscalls/getxattrat.c is outside the sanitiser-
+ * slow-path check's FILES scope, so this is within budget for
+ * the precondition payoff.
+ */
+static void sanitise_getxattrat_plant_pathname(struct syscallrecord *rec)
 {
-#ifdef USE_XATTR_ARGS
-	struct getxattrat_post_state *snap;
-#endif
-
-	rec->post_state = 0;
-
-	/*
-	 * ARG_PATHNAME plumbed a random pathname into rec->a2 and
-	 * ARG_XATTR_NAME filled rec->a4 with a namespace-shaped name
-	 * from the curated pool, but the random path is most often not
-	 * a real file (ENOENT) or, even when it does land on a real
-	 * file, the drawn name is not currently set on that inode --
-	 * path_getxattrat -> vfs_getxattr returns ENOTSUP / ENODATA at
-	 * the front of the call before ever touching the per-fs handler
-	 * dispatch or the simple_xattr_get fast path that the per-inode
-	 * i_xattrs rwsem guards.  Same "high calls, low edges" cold-
-	 * syscall shape that the non-at getxattr / lgetxattr /
-	 * fremovexattr / lremovexattr / llistxattr were in before their
-	 * precondition fixes.
-	 *
-	 * Half the draws now repoint pathname (a2) at one of the
-	 * trinity-testfile<N> absolute paths and overwrite the name
-	 * (a4) buffer in place with the curated user.* token, then
-	 * plant the value on disk via setxattr() so the subsequent
-	 * getxattrat lands inside the real per-inode read path.  An
-	 * absolute pathname makes dfd irrelevant -- the kernel ignores
-	 * rec->a1 when pathname is absolute -- so this composes cleanly
-	 * with the AT_FDCWD-pin / random-fd dfd logic and the at_flags
-	 * sanitiser below; the planted testfiles are regular files so
-	 * AT_SYMLINK_NOFOLLOW is a no-op on them, and the absolute
-	 * non-empty path makes AT_EMPTY_PATH irrelevant too.  The plant
-	 * runs BEFORE post_state_install so the size snapshot the .post
-	 * handler validates retval against is captured on the same draw
-	 * that asks the kernel to populate it.
-	 *
-	 * The other half preserves rec->a2 / rec->a4 exactly as the
-	 * generic draw left them so the namespace-reject / ENODATA arms
-	 * stay exercised.  Plant failure (ENOSPC on a full xattr list,
-	 * EOPNOTSUPP on a fs that bailed out of the user.* leg, ENOENT
-	 * if the testfile slot was never opened, ...) is non-fatal: an
-	 * earlier draw on the same inode may still hold a stale
-	 * user.trinity_plant from a prior round, so the trinity-
-	 * dispatched getxattrat below may still land on the real read
-	 * path.
-	 *
-	 * Slow-path note: the setxattr() in sanitise is one real
-	 * syscall.  syscalls/getxattrat.c is outside the sanitiser-
-	 * slow-path check's FILES scope, so this is within budget for
-	 * the precondition payoff.
-	 */
 	if (rnd_modulo_u32(2) == 0) {
 		char *name = (char *) rec->a4;
 		char *path;
@@ -154,76 +148,80 @@ static void sanitise_getxattrat(struct syscallrecord *rec)
 			}
 		}
 	}
+}
 
 #ifdef USE_XATTR_ARGS
-	{
-		struct csfu_buf buf = build_csfu_struct(&desc_getxattrat);
-		struct xattr_args *args = buf.ptr;
-		bool reaches_vfs;
+static bool sanitise_getxattrat_build_args(struct syscallrecord *rec)
+{
+	struct csfu_buf buf = build_csfu_struct(&desc_getxattrat);
+	struct xattr_args *args = buf.ptr;
+	struct getxattrat_post_state *snap;
+	bool reaches_vfs;
 
-		if (!args)
-			return;
+	if (!args)
+		return false;
 
-		/*
-		 * Hand the csfu buffer to the per-record owned-pointer
-		 * carrier so the post-dispatch cleanup drain frees it
-		 * deterministically after .post runs.
-		 */
-		rec_own(rec, args);
+	/*
+	 * Hand the csfu buffer to the per-record owned-pointer
+	 * carrier so the post-dispatch cleanup drain frees it
+	 * deterministically after .post runs.
+	 */
+	rec_own(rec, args);
 
-		/*
-		 * Validator-reject bias: OVERSIZE_NONZERO and TAIL_MISMATCH
-		 * are guaranteed -E2BIG out of copy_struct_from_user before
-		 * any body field is read.  Half the time pin them back to
-		 * EXACT (zero-tail by construction once usize collapses to
-		 * ksize) so the call actually reaches path_getxattrat ->
-		 * vfs_getxattr.  The remaining half keeps the validator
-		 * reject path exercised.
-		 */
-		if ((buf.bucket == CSFU_BUCKET_OVERSIZE_NONZERO ||
-		     buf.bucket == CSFU_BUCKET_TAIL_MISMATCH) && ONE_IN(2)) {
-			buf.usize = sizeof(*args);
-			buf.bucket = CSFU_BUCKET_EXACT;
-		}
-
-		/*
-		 * EXACT, UNDERSIZE (= ksize here since the single-version
-		 * ABI curates known_sizes to {ksize}), and OVERSIZE_ZERO
-		 * all pass copy_struct_from_user and reach the xattr-get
-		 * path.  Populate args->value / size / flags + install the
-		 * post-handler snap for every bucket that reaches VFS, not
-		 * just EXACT, so the bulk of draws exercise the real read
-		 * path with a populated value buffer rather than the
-		 * size=0 / value=NULL probe shape zmalloc left behind.
-		 * OVERSIZE_NONZERO and TAIL_MISMATCH still bounce at the
-		 * tail-zero check; leaving them with zeroed args is fine.
-		 */
-		reaches_vfs = (buf.bucket == CSFU_BUCKET_EXACT ||
-			       buf.bucket == CSFU_BUCKET_UNDERSIZE ||
-			       buf.bucket == CSFU_BUCKET_OVERSIZE_ZERO);
-
-		if (reaches_vfs) {
-			void *value = get_writable_struct(256);
-			if (!value)
-				return;
-			args->value = (unsigned long) value;
-			args->size = 256;
-			args->flags = 0;
-
-			snap = zmalloc_tracked(sizeof(*snap));
-			snap->magic = GETXATTRAT_POST_STATE_MAGIC;
-			snap->size = args->size;
-			post_state_install(rec, snap);
-		}
-
-		rec->a5 = (unsigned long) args;
-		avoid_shared_buffer_inout(&rec->a5, buf.usize);
-		rec->a6 = buf.usize;
+	/*
+	 * Validator-reject bias: OVERSIZE_NONZERO and TAIL_MISMATCH
+	 * are guaranteed -E2BIG out of copy_struct_from_user before
+	 * any body field is read.  Half the time pin them back to
+	 * EXACT (zero-tail by construction once usize collapses to
+	 * ksize) so the call actually reaches path_getxattrat ->
+	 * vfs_getxattr.  The remaining half keeps the validator
+	 * reject path exercised.
+	 */
+	if ((buf.bucket == CSFU_BUCKET_OVERSIZE_NONZERO ||
+	     buf.bucket == CSFU_BUCKET_TAIL_MISMATCH) && ONE_IN(2)) {
+		buf.usize = sizeof(*args);
+		buf.bucket = CSFU_BUCKET_EXACT;
 	}
-#else
-	avoid_shared_buffer_out(&rec->a5, page_size);
+
+	/*
+	 * EXACT, UNDERSIZE (= ksize here since the single-version
+	 * ABI curates known_sizes to {ksize}), and OVERSIZE_ZERO
+	 * all pass copy_struct_from_user and reach the xattr-get
+	 * path.  Populate args->value / size / flags + install the
+	 * post-handler snap for every bucket that reaches VFS, not
+	 * just EXACT, so the bulk of draws exercise the real read
+	 * path with a populated value buffer rather than the
+	 * size=0 / value=NULL probe shape zmalloc left behind.
+	 * OVERSIZE_NONZERO and TAIL_MISMATCH still bounce at the
+	 * tail-zero check; leaving them with zeroed args is fine.
+	 */
+	reaches_vfs = (buf.bucket == CSFU_BUCKET_EXACT ||
+		       buf.bucket == CSFU_BUCKET_UNDERSIZE ||
+		       buf.bucket == CSFU_BUCKET_OVERSIZE_ZERO);
+
+	if (reaches_vfs) {
+		void *value = get_writable_struct(256);
+		if (!value)
+			return false;
+		args->value = (unsigned long) value;
+		args->size = 256;
+		args->flags = 0;
+
+		snap = zmalloc_tracked(sizeof(*snap));
+		snap->magic = GETXATTRAT_POST_STATE_MAGIC;
+		snap->size = args->size;
+		post_state_install(rec, snap);
+	}
+
+	rec->a5 = (unsigned long) args;
+	avoid_shared_buffer_inout(&rec->a5, buf.usize);
+	rec->a6 = buf.usize;
+	return true;
+}
 #endif
 
+static void sanitise_getxattrat_scrub_flags(struct syscallrecord *rec)
+{
 	/*
 	 * at_flags (a3): handle_arg_list's 1/8 shift_flag_bit and 1/16
 	 * cmp-hint paths regularly OR in bits outside the kernel-accepted
@@ -248,6 +246,22 @@ static void sanitise_getxattrat(struct syscallrecord *rec)
 	 */
 	if (ONE_IN(3))
 		rec->a1 = (unsigned long)(long) AT_FDCWD;
+}
+
+static void sanitise_getxattrat(struct syscallrecord *rec)
+{
+	rec->post_state = 0;
+
+	sanitise_getxattrat_plant_pathname(rec);
+
+#ifdef USE_XATTR_ARGS
+	if (!sanitise_getxattrat_build_args(rec))
+		return;
+#else
+	avoid_shared_buffer_out(&rec->a5, page_size);
+#endif
+
+	sanitise_getxattrat_scrub_flags(rec);
 }
 
 /*
