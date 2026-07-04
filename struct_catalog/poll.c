@@ -1,15 +1,10 @@
 /*
  * struct_catalog/poll.c -- poll / epoll struct field tables.
  *
- * Carved out of struct_catalog.c: the central spine
- * (struct_catalog[], syscall_struct_args[]) stays in struct_catalog.c;
- * this TU owns the leaf data for struct pollfd (poll / ppoll) and
- * struct epoll_event (epoll_ctl).  Symbols flip from static const to
- * const so the spine's .fields = pollfd_fields / epoll_event_fields
- * references resolve via the externs in struct_catalog-internal.h.
- *
+ * Field/variant tables are `const` (not `static const`) so the spine's
+ * .fields=/.variants= references resolve via struct_catalog-internal.h.
  * struct_catalog.h and arch.h are included unconditionally so this TU
- * is never empty.
+ * is never empty when USE_<X> is off.
  */
 
 #include <stddef.h>
