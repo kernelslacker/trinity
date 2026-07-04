@@ -1,0 +1,24 @@
+# siginfo-catalog.baseline
+#
+# Grandfathered list of SI_* si_code tokens that appear in
+# siginfo_t_si_code_vocab[] (struct_catalog/signal.c) but do NOT yet
+# have a matching union_variant in siginfo_t_variants[].
+#
+# Each such gap means the fuzzer can draw the si_code but the
+# sanitiser has no schema for its payload, so it falls through to the
+# empty shared prefix and reverts to blind width-guessing.  Every
+# entry below is real debt: a variant should be authored (see the
+# SI_QUEUE and SI_USER/SI_TKILL variants in struct_catalog/signal.c
+# for the reference shape) and the corresponding line removed from
+# this file in the SAME commit that adds the variant.
+#
+# This baseline should SHRINK over time, never grow.  A new SI_*
+# added to siginfo_t_si_code_vocab[] without a matching variant will
+# FAIL `make check-static` rather than be silently added to this list.
+#
+# Format: one SI_* token per line.  Lines starting with `#` and
+# blank lines are ignored.  Whitespace is stripped.
+#
+SI_ASYNCIO
+SI_KERNEL
+SI_TIMER
