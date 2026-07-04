@@ -549,6 +549,54 @@ static void dump_stats_render_maps_pick_ratios(void)
 }
 
 /*
+ * Render the SAMPLED get_map_handle() pick-cost shadow telemetry
+ * added alongside the maps_pick_attempts ratio: a log2 histogram of
+ * the reject-loop exit index (bumped on both success and exhaustion
+ * paths) and the mean cycles-per-call derived from the rdtsc
+ * sample-sum / sample-count pair.  Bucket layout mirrors
+ * fd_live_remove_scan_histogram exactly; the row labels use the
+ * same _hist_<lo>_<hi> / _hist_ge<max> shape.  Zero buckets are
+ * skipped to keep the dump readable when a run never hits them, and
+ * the cycles-per-call row is skipped when the sample denominator is
+ * zero (no sampled calls yet, or non-x86 non-aarch64 target where
+ * maps_pick_read_cycles() returns 0).
+ */
+static void dump_stats_render_maps_pick_shadow(void)
+{
+	static const char *const bucket_names[8] = {
+		"maps_pick_scan_hist_0",
+		"maps_pick_scan_hist_1",
+		"maps_pick_scan_hist_2_3",
+		"maps_pick_scan_hist_4_7",
+		"maps_pick_scan_hist_8_15",
+		"maps_pick_scan_hist_16_31",
+		"maps_pick_scan_hist_32_63",
+		"maps_pick_scan_hist_ge64",
+	};
+	unsigned long cyc_sum   = shm->stats.maps_pick_cycles_sampled_sum;
+	unsigned long cyc_count = shm->stats.maps_pick_cycles_sampled_count;
+	unsigned int b;
+
+	for (b = 0; b < ARRAY_SIZE(bucket_names); b++) {
+		unsigned long v = shm->stats.maps_pick_scan_histogram[b];
+
+		if (v == 0)
+			continue;
+		stat_row("pool", bucket_names[b], v);
+	}
+
+	if (cyc_count > 0) {
+		char val[32];
+		unsigned long milli = ((cyc_sum % cyc_count) * 1000UL) / cyc_count;
+
+		snprintf(val, sizeof(val), "%lu.%03lu",
+			 cyc_sum / cyc_count, milli);
+		output(0, STATS_HDR_FMT, "pool",
+		       "maps_pick_cycles_per_call_sampled", val);
+	}
+}
+
+/*
  * Ring health: surface the parent-side stats_ring drain accounting so
  * operators can tell whether children are enqueuing faster than the
  * parent drains (ring_overflow_delta > 0 window-over-window) and how
@@ -781,6 +829,7 @@ void dump_stats_corruption_and_pool(void)
 	dump_stats_render_late_corruption_oracle();
 
 	dump_stats_render_maps_pick_ratios();
+	dump_stats_render_maps_pick_shadow();
 }
 
 /* Per-childop edge-discovery attribution: rendered sorted by
