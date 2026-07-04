@@ -985,7 +985,7 @@ cmp_hyp_would_pick_locked(struct cmp_hyp_pool *pool, unsigned long cmp_ip,
 		case CMP_HYP_STATE_RETIRED:
 			if (kcov_shm != NULL)
 				__atomic_fetch_add(
-					&kcov_shm->cmp_hyp_skipped_retired,
+					&kcov_shm->cmp_hyp_skipped_retired_by_kind[h->kind],
 					1UL, __ATOMIC_RELAXED);
 			break;
 		default:
