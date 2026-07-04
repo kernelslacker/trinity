@@ -37,7 +37,7 @@
 #include "trinity.h"
 #include "utils.h"
 
-#include "childops/iouring-recipes-internal.h"
+#include "childops/io_uring/recipes-internal.h"
 
 /* ------------------------------------------------------------------ *
  * Recipe 2: TIMEOUT with IOSQE_IO_DRAIN

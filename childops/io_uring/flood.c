@@ -48,7 +48,7 @@
 #include "syscall-gate.h"
 #include "child.h"
 #include "childops-iouring.h"
-#include "childops/iouring-ring.h"
+#include "childops/io_uring/ring.h"
 #include "compat.h"
 #include "maps.h"
 #include "random.h"

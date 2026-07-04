@@ -23,7 +23,7 @@
 #include <unistd.h>
 
 #include "syscall-gate.h"
-#include "childops/iouring-recipes.h"
+#include "childops/io_uring/recipes.h"
 #include "compat.h"
 #include "rnd.h"
 #include "shm.h"

@@ -26,7 +26,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "childops/iouring-ring.h"
+#include "childops/io_uring/ring.h"
 
 struct io_uring_sqe;
 

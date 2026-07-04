@@ -61,7 +61,7 @@
 #include "childops-iouring.h"
 #include "childops-netlink.h"
 #include "childops-util.h"
-#include "childops/iouring-ring.h"
+#include "childops/io_uring/ring.h"
 #include "compat.h"
 #include "jitter.h"
 #include "random.h"
