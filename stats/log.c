@@ -469,11 +469,13 @@ static void stats_ts_emit_cmp_hints(FILE *fp)
 	static unsigned long prev_cmp_hint_wins = 0;
 	static unsigned long prev_cmp_hyp_live_injected = 0;
 	static unsigned long prev_cmp_hyp_consumed = 0;
+	static unsigned long prev_cmp_hyp_pc_wins = 0;
 	unsigned long cmp_hints_injected = 0;
 	unsigned long cmp_hints_consumed = 0;
 	unsigned long cmp_hint_wins = 0;
 	unsigned long cmp_hyp_live_injected = 0;
 	unsigned long cmp_hyp_consumed = 0;
+	unsigned long cmp_hyp_pc_wins = 0;
 
 	if (kcov_shm != NULL) {
 		cmp_hints_injected = __atomic_load_n(
@@ -486,14 +488,24 @@ static void stats_ts_emit_cmp_hints(FILE *fp)
 			&kcov_shm->cmp_hyp_live_injected, __ATOMIC_RELAXED);
 		cmp_hyp_consumed = __atomic_load_n(
 			&kcov_shm->cmp_hyp_consumed, __ATOMIC_RELAXED);
+		cmp_hyp_pc_wins = __atomic_load_n(&kcov_shm->cmp_hyp_pc_wins,
+						  __ATOMIC_RELAXED);
 	}
 
+	/* cmp_hyp_pc_wins is the typed-hyp LIVE conversion numerator
+	 * (denominator cmp_hyp_live_injected is already emitted above).
+	 * The flat-replay numerator is cmp_hint_pc_wins_by_pool[] summed
+	 * against (cmp_hints_injected - cmp_hyp_live_injected); the
+	 * per-pool array is not on the timeseries line -- the stats.log
+	 * and stats.json emitters carry the split-by-pool decomposition
+	 * for retrospective analysis. */
 	fprintf(fp,
 		",\"cmp_hints_injected\":%lu,\"cmp_hints_injected_delta\":%lu"
 		",\"cmp_hints_consumed\":%lu,\"cmp_hints_consumed_delta\":%lu"
 		",\"cmp_hint_wins\":%lu,\"cmp_hint_wins_delta\":%lu"
 		",\"cmp_hyp_live_injected\":%lu,\"cmp_hyp_live_injected_delta\":%lu"
-		",\"cmp_hyp_consumed\":%lu,\"cmp_hyp_consumed_delta\":%lu",
+		",\"cmp_hyp_consumed\":%lu,\"cmp_hyp_consumed_delta\":%lu"
+		",\"cmp_hyp_pc_wins\":%lu,\"cmp_hyp_pc_wins_delta\":%lu",
 		cmp_hints_injected,
 		stats_ts_window_delta(cmp_hints_injected,
 				      &prev_cmp_hints_injected),
@@ -507,7 +519,9 @@ static void stats_ts_emit_cmp_hints(FILE *fp)
 				      &prev_cmp_hyp_live_injected),
 		cmp_hyp_consumed,
 		stats_ts_window_delta(cmp_hyp_consumed,
-				      &prev_cmp_hyp_consumed));
+				      &prev_cmp_hyp_consumed),
+		cmp_hyp_pc_wins,
+		stats_ts_window_delta(cmp_hyp_pc_wins, &prev_cmp_hyp_pc_wins));
 }
 
 /* Plateau classifier hypothesis + the current intervention mode
