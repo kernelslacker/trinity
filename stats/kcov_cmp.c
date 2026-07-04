@@ -944,16 +944,18 @@ static void kcov_cmp_render_hyp_shadow_picker_census(void)
 		"observed", "testing", "promoted",
 		"demoted",  "retired",
 	};
+	static const char * const kind_labels[CMP_HYP_KIND_NR] = {
+		"exact", "range", "boundary", "bitmask",
+		"enum_family", "alignment", "length",
+		"foreign_value",
+	};
 	static unsigned long prev_picked[CMP_HYP_STATE_NR];
-	static unsigned long prev_skipped_retired;
+	static unsigned long prev_skipped_retired_kind[CMP_HYP_KIND_NR];
 	static unsigned long prev_demoted_reroll;
-	unsigned long cur_skipped = __atomic_load_n(
-		&kcov_shm->cmp_hyp_skipped_retired,
-		__ATOMIC_RELAXED);
 	unsigned long cur_demoted_reroll = __atomic_load_n(
 		&kcov_shm->cmp_hyp_demoted_reroll_picked,
 		__ATOMIC_RELAXED);
-	unsigned int s;
+	unsigned int s, k;
 
 	for (s = 0; s < CMP_HYP_STATE_NR; s++) {
 		unsigned long cur = __atomic_load_n(
@@ -968,12 +970,18 @@ static void kcov_cmp_render_hyp_shadow_picker_census(void)
 			"  cmp_hyp_picked[%-8s] +%lu  (total %lu)\n",
 			state_labels[s], delta, cur);
 	}
-	if (cur_skipped != 0 || prev_skipped_retired != 0) {
+	for (k = 0; k < CMP_HYP_KIND_NR; k++) {
+		unsigned long cur = __atomic_load_n(
+			&kcov_shm->cmp_hyp_skipped_retired_by_kind[k],
+			__ATOMIC_RELAXED);
+		unsigned long delta = sat_sub_ul(cur, prev_skipped_retired_kind[k]);
+
+		prev_skipped_retired_kind[k] = cur;
+		if (delta == 0 && cur == 0)
+			continue;
 		stats_log_write(
-			"  cmp_hyp_skipped_retired +%lu  (total %lu)\n",
-			sat_sub_ul(cur_skipped, prev_skipped_retired),
-			cur_skipped);
-		prev_skipped_retired = cur_skipped;
+			"  cmp_hyp_skipped_retired[%-13s] +%lu  (total %lu)\n",
+			kind_labels[k], delta, cur);
 	}
 	if (cur_demoted_reroll != 0 || prev_demoted_reroll != 0) {
 		stats_log_write(
