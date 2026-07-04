@@ -888,9 +888,10 @@ static void kcov_cmp_render_hyp_shadow_per_kind_census(void)
 		stats_log_write(
 			"  cmp_hyp[%-13s] inserted +%lu (total %lu)  kind_full +%lu (total %lu)  pool_full +%lu (total %lu)\n",
 			kind_labels[k],
-			cur_ins - prev_hyp_ins_kind[k], cur_ins,
-			cur_full - prev_hyp_full_kind[k], cur_full,
-			cur_pool_full - prev_hyp_pool_full_kind[k], cur_pool_full);
+			sat_sub_ul(cur_ins, prev_hyp_ins_kind[k]), cur_ins,
+			sat_sub_ul(cur_full, prev_hyp_full_kind[k]), cur_full,
+			sat_sub_ul(cur_pool_full, prev_hyp_pool_full_kind[k]),
+			cur_pool_full);
 		prev_hyp_ins_kind[k] = cur_ins;
 		prev_hyp_full_kind[k] = cur_full;
 		prev_hyp_pool_full_kind[k] = cur_pool_full;
@@ -921,7 +922,7 @@ static void kcov_cmp_render_hyp_shadow_consumes_census(void)
 		stats_log_write(
 			"  cmp_hyp[%-13s] consumed +%lu (total %lu)\n",
 			kind_labels[k],
-			cur_cons - prev_hyp_consumed_kind[k], cur_cons);
+			sat_sub_ul(cur_cons, prev_hyp_consumed_kind[k]), cur_cons);
 		prev_hyp_consumed_kind[k] = cur_cons;
 	}
 }
@@ -958,7 +959,7 @@ static void kcov_cmp_render_hyp_shadow_picker_census(void)
 		unsigned long cur = __atomic_load_n(
 			&kcov_shm->cmp_hyp_picked_by_state[s],
 			__ATOMIC_RELAXED);
-		unsigned long delta = cur - prev_picked[s];
+		unsigned long delta = sat_sub_ul(cur, prev_picked[s]);
 
 		prev_picked[s] = cur;
 		if (delta == 0 && cur == 0)
@@ -970,14 +971,14 @@ static void kcov_cmp_render_hyp_shadow_picker_census(void)
 	if (cur_skipped != 0 || prev_skipped_retired != 0) {
 		stats_log_write(
 			"  cmp_hyp_skipped_retired +%lu  (total %lu)\n",
-			cur_skipped - prev_skipped_retired,
+			sat_sub_ul(cur_skipped, prev_skipped_retired),
 			cur_skipped);
 		prev_skipped_retired = cur_skipped;
 	}
 	if (cur_demoted_reroll != 0 || prev_demoted_reroll != 0) {
 		stats_log_write(
 			"  cmp_hyp_demoted_reroll_picked +%lu  (total %lu)\n",
-			cur_demoted_reroll - prev_demoted_reroll,
+			sat_sub_ul(cur_demoted_reroll, prev_demoted_reroll),
 			cur_demoted_reroll);
 		prev_demoted_reroll = cur_demoted_reroll;
 	}
@@ -1010,7 +1011,7 @@ static void kcov_cmp_render_hyp_shadow_state_transitions(void)
 			cur = __atomic_load_n(
 				&kcov_shm->cmp_hyp_state_transitions[from][to],
 				__ATOMIC_RELAXED);
-			delta = cur - prev_trans[from][to];
+			delta = sat_sub_ul(cur, prev_trans[from][to]);
 			prev_trans[from][to] = cur;
 			if (delta == 0 && cur == 0)
 				continue;
@@ -1064,10 +1065,10 @@ static void kcov_cmp_render_hyp_shadow_outcome_partition(void)
 		stats_log_write(
 			"  cmp_hyp[%-13s] outcome  pc +%lu  tr +%lu  ms +%lu  cs +%lu  ds +%lu  ks +%lu  nv +%lu\n",
 			kind_labels[k],
-			pc - prev_pc[k], tr - prev_tr[k],
-			ms - prev_ms[k], cs - prev_cs[k],
-			ds - prev_ds[k], ks - prev_ks[k],
-			nv - prev_nv[k]);
+			sat_sub_ul(pc, prev_pc[k]), sat_sub_ul(tr, prev_tr[k]),
+			sat_sub_ul(ms, prev_ms[k]), sat_sub_ul(cs, prev_cs[k]),
+			sat_sub_ul(ds, prev_ds[k]), sat_sub_ul(ks, prev_ks[k]),
+			sat_sub_ul(nv, prev_nv[k]));
 		prev_pc[k] = pc;
 		prev_tr[k] = tr;
 		prev_ms[k] = ms;
@@ -1122,20 +1123,20 @@ static void kcov_cmp_render_hyp_shadow_stats_block(long elapsed)
 		__atomic_load_n(&kcov_shm->cmp_hyp_destructive, __ATOMIC_RELAXED);
 	unsigned long cur_hyp_context_skip =
 		__atomic_load_n(&kcov_shm->cmp_hyp_context_skip, __ATOMIC_RELAXED);
-	unsigned long delta_hyp_observations = cur_hyp_observations - prev_hyp_observations;
-	unsigned long delta_hyp_inserted = cur_hyp_inserted - prev_hyp_inserted;
-	unsigned long delta_hyp_pool_full = cur_hyp_pool_full - prev_hyp_pool_full;
-	unsigned long delta_hyp_pool_overflow = cur_hyp_pool_overflow - prev_hyp_pool_overflow;
-	unsigned long delta_hyp_kind_full = cur_hyp_kind_full - prev_hyp_kind_full;
-	unsigned long delta_hyp_consumed = cur_hyp_consumed - prev_hyp_consumed;
-	unsigned long delta_hyp_pc_wins = cur_hyp_pc_wins - prev_hyp_pc_wins;
-	unsigned long delta_hyp_transition_wins = cur_hyp_transition_wins - prev_hyp_transition_wins;
-	unsigned long delta_hyp_cmp_novelty_wins = cur_hyp_cmp_novelty_wins - prev_hyp_cmp_novelty_wins;
-	unsigned long delta_hyp_misses = cur_hyp_misses - prev_hyp_misses;
-	unsigned long delta_hyp_disabled_skips = cur_hyp_disabled_skips - prev_hyp_disabled_skips;
-	unsigned long delta_hyp_corpus_save = cur_hyp_corpus_save - prev_hyp_corpus_save;
-	unsigned long delta_hyp_destructive = cur_hyp_destructive - prev_hyp_destructive;
-	unsigned long delta_hyp_context_skip = cur_hyp_context_skip - prev_hyp_context_skip;
+	unsigned long delta_hyp_observations = sat_sub_ul(cur_hyp_observations, prev_hyp_observations);
+	unsigned long delta_hyp_inserted = sat_sub_ul(cur_hyp_inserted, prev_hyp_inserted);
+	unsigned long delta_hyp_pool_full = sat_sub_ul(cur_hyp_pool_full, prev_hyp_pool_full);
+	unsigned long delta_hyp_pool_overflow = sat_sub_ul(cur_hyp_pool_overflow, prev_hyp_pool_overflow);
+	unsigned long delta_hyp_kind_full = sat_sub_ul(cur_hyp_kind_full, prev_hyp_kind_full);
+	unsigned long delta_hyp_consumed = sat_sub_ul(cur_hyp_consumed, prev_hyp_consumed);
+	unsigned long delta_hyp_pc_wins = sat_sub_ul(cur_hyp_pc_wins, prev_hyp_pc_wins);
+	unsigned long delta_hyp_transition_wins = sat_sub_ul(cur_hyp_transition_wins, prev_hyp_transition_wins);
+	unsigned long delta_hyp_cmp_novelty_wins = sat_sub_ul(cur_hyp_cmp_novelty_wins, prev_hyp_cmp_novelty_wins);
+	unsigned long delta_hyp_misses = sat_sub_ul(cur_hyp_misses, prev_hyp_misses);
+	unsigned long delta_hyp_disabled_skips = sat_sub_ul(cur_hyp_disabled_skips, prev_hyp_disabled_skips);
+	unsigned long delta_hyp_corpus_save = sat_sub_ul(cur_hyp_corpus_save, prev_hyp_corpus_save);
+	unsigned long delta_hyp_destructive = sat_sub_ul(cur_hyp_destructive, prev_hyp_destructive);
+	unsigned long delta_hyp_context_skip = sat_sub_ul(cur_hyp_context_skip, prev_hyp_context_skip);
 
 	if ((delta_hyp_observations | delta_hyp_inserted | delta_hyp_pool_full |
 	     delta_hyp_pool_overflow | delta_hyp_kind_full |
@@ -1243,15 +1244,15 @@ static void kcov_cmp_render_hyp_would_pick_block(long elapsed __unused__)
 			&kcov_shm->cmp_hyp_would_value_differs_by_kind[k],
 			__ATOMIC_RELAXED);
 		any_would_delta |=
-			(cur_hyp_would_pick_kind[k] - prev_hyp_would_pick_kind[k]) |
-			(cur_hyp_would_miss_kind[k] - prev_hyp_would_miss_kind[k]) |
-			(cur_hyp_would_value_differs_kind[k] -
-			 prev_hyp_would_value_differs_kind[k]);
+			sat_sub_ul(cur_hyp_would_pick_kind[k], prev_hyp_would_pick_kind[k]) |
+			sat_sub_ul(cur_hyp_would_miss_kind[k], prev_hyp_would_miss_kind[k]) |
+			sat_sub_ul(cur_hyp_would_value_differs_kind[k],
+				   prev_hyp_would_value_differs_kind[k]);
 	}
 	cur_hyp_would_value_differs = __atomic_load_n(
 		&kcov_shm->cmp_hyp_would_value_differs, __ATOMIC_RELAXED);
 	delta_hyp_would_value_differs =
-		cur_hyp_would_value_differs - prev_hyp_would_value_differs;
+		sat_sub_ul(cur_hyp_would_value_differs, prev_hyp_would_value_differs);
 	any_would_delta |= delta_hyp_would_value_differs;
 
 	if (any_would_delta != 0) {
@@ -1261,12 +1262,12 @@ static void kcov_cmp_render_hyp_would_pick_block(long elapsed __unused__)
 			stats_log_write(
 				"  cmp_hyp_would[%-13s] pick +%lu (total %lu)  miss +%lu (total %lu)  value_differs +%lu (total %lu)\n",
 				kind_labels[k],
-				cur_hyp_would_pick_kind[k] - prev_hyp_would_pick_kind[k],
+				sat_sub_ul(cur_hyp_would_pick_kind[k], prev_hyp_would_pick_kind[k]),
 				cur_hyp_would_pick_kind[k],
-				cur_hyp_would_miss_kind[k] - prev_hyp_would_miss_kind[k],
+				sat_sub_ul(cur_hyp_would_miss_kind[k], prev_hyp_would_miss_kind[k]),
 				cur_hyp_would_miss_kind[k],
-				cur_hyp_would_value_differs_kind[k] -
-					prev_hyp_would_value_differs_kind[k],
+				sat_sub_ul(cur_hyp_would_value_differs_kind[k],
+					   prev_hyp_would_value_differs_kind[k]),
 				cur_hyp_would_value_differs_kind[k]);
 		}
 		stats_log_write("  %-32s +%lu  (total %lu)\n",
@@ -1316,8 +1317,8 @@ static void kcov_cmp_render_hyp_would_promote_demote_block(long elapsed __unused
 			&kcov_shm->cmp_hyp_would_demote_by_kind[k],
 			__ATOMIC_RELAXED);
 		any_delta |=
-			(cur_hyp_would_promote_kind[k] - prev_hyp_would_promote_kind[k]) |
-			(cur_hyp_would_demote_kind[k] - prev_hyp_would_demote_kind[k]);
+			sat_sub_ul(cur_hyp_would_promote_kind[k], prev_hyp_would_promote_kind[k]) |
+			sat_sub_ul(cur_hyp_would_demote_kind[k], prev_hyp_would_demote_kind[k]);
 	}
 
 	if (any_delta != 0) {
@@ -1327,9 +1328,9 @@ static void kcov_cmp_render_hyp_would_promote_demote_block(long elapsed __unused
 			stats_log_write(
 				"  cmp_hyp_would[%-13s] promote +%lu (total %lu)  demote +%lu (total %lu)\n",
 				kind_labels[k],
-				cur_hyp_would_promote_kind[k] - prev_hyp_would_promote_kind[k],
+				sat_sub_ul(cur_hyp_would_promote_kind[k], prev_hyp_would_promote_kind[k]),
 				cur_hyp_would_promote_kind[k],
-				cur_hyp_would_demote_kind[k] - prev_hyp_would_demote_kind[k],
+				sat_sub_ul(cur_hyp_would_demote_kind[k], prev_hyp_would_demote_kind[k]),
 				cur_hyp_would_demote_kind[k]);
 		}
 	}
@@ -1385,9 +1386,9 @@ static void kcov_cmp_render_hyp_live_inject_block(long elapsed __unused__)
 		__ATOMIC_RELAXED);
 	unsigned long cur_hyp_live_injected_kind[CMP_HYP_KIND_NR];
 	unsigned long delta_hyp_live_injected =
-		cur_hyp_live_injected - prev_hyp_live_injected;
+		sat_sub_ul(cur_hyp_live_injected, prev_hyp_live_injected);
 	unsigned long delta_hyp_live_gate_passed =
-		cur_hyp_live_gate_passed - prev_hyp_live_gate_passed;
+		sat_sub_ul(cur_hyp_live_gate_passed, prev_hyp_live_gate_passed);
 	/*
 	 * gate_passed and injected are loaded separately with RELAXED
 	 * ordering.  injected-first keeps the gap non-negative for the
@@ -1437,8 +1438,8 @@ static void kcov_cmp_render_hyp_live_inject_block(long elapsed __unused__)
 		stats_log_write(
 			"  cmp_hyp_live_inject[%-13s] +%lu (total %lu)\n",
 			kind_labels[k],
-			cur_hyp_live_injected_kind[k] -
-				prev_hyp_live_injected_kind[k],
+			sat_sub_ul(cur_hyp_live_injected_kind[k],
+				   prev_hyp_live_injected_kind[k]),
 			cur_hyp_live_injected_kind[k]);
 	}
 	stats_log_write(
@@ -1480,8 +1481,8 @@ static void kcov_cmp_render_hyp_live_inject_reasons_block(long elapsed __unused_
 			&kcov_shm->cmp_hyp_live_inject_reason[r],
 			__ATOMIC_RELAXED);
 		any_delta |=
-			(cur_hyp_live_inject_reason[r] -
-			 prev_hyp_live_inject_reason[r]);
+			sat_sub_ul(cur_hyp_live_inject_reason[r],
+				   prev_hyp_live_inject_reason[r]);
 	}
 
 	if (any_delta != 0) {
@@ -1491,8 +1492,8 @@ static void kcov_cmp_render_hyp_live_inject_reasons_block(long elapsed __unused_
 			stats_log_write(
 				"  cmp_hyp_live_inject_reason[%-13s] +%lu (total %lu)\n",
 				reason_labels[r],
-				cur_hyp_live_inject_reason[r] -
-					prev_hyp_live_inject_reason[r],
+				sat_sub_ul(cur_hyp_live_inject_reason[r],
+					   prev_hyp_live_inject_reason[r]),
 				cur_hyp_live_inject_reason[r]);
 		}
 	}
@@ -1543,44 +1544,44 @@ static void kcov_cmp_render_hyp_boundary_scorecard_block(long elapsed __unused__
 		&kcov_shm->cmp_hyp_consumed_by_kind[CMP_HYP_BOUNDARY],
 		__ATOMIC_RELAXED);
 	unsigned long any_delta =
-		(cur_b_inserted - prev_b_inserted) |
-		(cur_b_candidate_available - prev_b_candidate_available) |
-		(cur_b_credit_window_hits - prev_b_credit_window_hits) |
-		(cur_b_would_pick - prev_b_would_pick) |
-		(cur_b_would_miss - prev_b_would_miss) |
-		(cur_b_live_injected - prev_b_live_injected) |
-		(cur_b_consumed - prev_b_consumed);
+		sat_sub_ul(cur_b_inserted, prev_b_inserted) |
+		sat_sub_ul(cur_b_candidate_available, prev_b_candidate_available) |
+		sat_sub_ul(cur_b_credit_window_hits, prev_b_credit_window_hits) |
+		sat_sub_ul(cur_b_would_pick, prev_b_would_pick) |
+		sat_sub_ul(cur_b_would_miss, prev_b_would_miss) |
+		sat_sub_ul(cur_b_live_injected, prev_b_live_injected) |
+		sat_sub_ul(cur_b_consumed, prev_b_consumed);
 
 	if (any_delta != 0) {
 		stats_log_write("KCOV CMP hyp BOUNDARY-arm scorecard over last %lds:\n",
 				elapsed);
 		stats_log_write("  %-40s +%lu  (total %lu)\n",
 				"cmp_hyp_boundary_inserted",
-				cur_b_inserted - prev_b_inserted,
+				sat_sub_ul(cur_b_inserted, prev_b_inserted),
 				cur_b_inserted);
 		stats_log_write("  %-40s +%lu  (total %lu)\n",
 				"cmp_hyp_boundary_candidate_available",
-				cur_b_candidate_available - prev_b_candidate_available,
+				sat_sub_ul(cur_b_candidate_available, prev_b_candidate_available),
 				cur_b_candidate_available);
 		stats_log_write("  %-40s +%lu  (total %lu)\n",
 				"cmp_hyp_would_pick_by_kind[boundary]",
-				cur_b_would_pick - prev_b_would_pick,
+				sat_sub_ul(cur_b_would_pick, prev_b_would_pick),
 				cur_b_would_pick);
 		stats_log_write("  %-40s +%lu  (total %lu)\n",
 				"cmp_hyp_would_miss_by_kind[boundary]",
-				cur_b_would_miss - prev_b_would_miss,
+				sat_sub_ul(cur_b_would_miss, prev_b_would_miss),
 				cur_b_would_miss);
 		stats_log_write("  %-40s +%lu  (total %lu)\n",
 				"cmp_hyp_live_injected_by_kind[boundary]",
-				cur_b_live_injected - prev_b_live_injected,
+				sat_sub_ul(cur_b_live_injected, prev_b_live_injected),
 				cur_b_live_injected);
 		stats_log_write("  %-40s +%lu  (total %lu)\n",
 				"cmp_hyp_consumed_by_kind[boundary]",
-				cur_b_consumed - prev_b_consumed,
+				sat_sub_ul(cur_b_consumed, prev_b_consumed),
 				cur_b_consumed);
 		stats_log_write("  %-40s +%lu  (total %lu)\n",
 				"cmp_hyp_boundary_credit_window_hits",
-				cur_b_credit_window_hits - prev_b_credit_window_hits,
+				sat_sub_ul(cur_b_credit_window_hits, prev_b_credit_window_hits),
 				cur_b_credit_window_hits);
 	}
 
@@ -1645,9 +1646,9 @@ static void kcov_cmp_render_hyp_per_hypothesis_aggregates_block(long elapsed)
 		}
 	}
 
-	delta_hyp_corpus_save_wins = cur_hyp_corpus_save_wins - prev_hyp_corpus_save_wins;
-	delta_hyp_destructive_skips = cur_hyp_destructive_skips - prev_hyp_destructive_skips;
-	delta_hyp_context_skips = cur_hyp_context_skips - prev_hyp_context_skips;
+	delta_hyp_corpus_save_wins = sat_sub_ul(cur_hyp_corpus_save_wins, prev_hyp_corpus_save_wins);
+	delta_hyp_destructive_skips = sat_sub_ul(cur_hyp_destructive_skips, prev_hyp_destructive_skips);
+	delta_hyp_context_skips = sat_sub_ul(cur_hyp_context_skips, prev_hyp_context_skips);
 
 	if ((delta_hyp_corpus_save_wins | delta_hyp_destructive_skips |
 	     delta_hyp_context_skips) != 0) {
@@ -1701,7 +1702,7 @@ static void kcov_cmp_render_hyp_score_bucket_block(long elapsed __unused__)
 		cur_hyp_score_bucket[k] = __atomic_load_n(
 			&kcov_shm->cmp_hyp_score_bucket_census[k],
 			__ATOMIC_RELAXED);
-		any_delta |= cur_hyp_score_bucket[k] - prev_hyp_score_bucket[k];
+		any_delta |= sat_sub_ul(cur_hyp_score_bucket[k], prev_hyp_score_bucket[k]);
 	}
 
 	if (any_delta != 0) {
@@ -1711,7 +1712,7 @@ static void kcov_cmp_render_hyp_score_bucket_block(long elapsed __unused__)
 			stats_log_write(
 				"  cmp_hyp_score_bucket[%u %-16s] +%lu  (total %lu)\n",
 				k, bucket_labels[k],
-				cur_hyp_score_bucket[k] - prev_hyp_score_bucket[k],
+				sat_sub_ul(cur_hyp_score_bucket[k], prev_hyp_score_bucket[k]),
 				cur_hyp_score_bucket[k]);
 		}
 	}
@@ -2644,52 +2645,52 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	if (elapsed < DEFENSE_DUMP_INTERVAL_SEC)
 		return;
 
-	delta_records       = cur_records       - prev_records;
-	delta_truncated     = cur_truncated     - prev_truncated;
-	delta_bloom_skipped = cur_bloom_skipped - prev_bloom_skipped;
-	delta_strip_skipped = cur_strip_skipped - prev_strip_skipped;
-	delta_unique        = cur_unique        - prev_unique;
-	delta_try_get_attempts = cur_try_get_attempts - prev_try_get_attempts;
-	delta_try_get_returned = cur_try_get_returned - prev_try_get_returned;
-	delta_injected         = cur_injected         - prev_injected;
-	delta_prop_injected    = cur_prop_injected    - prev_prop_injected;
-	delta_chaos_suppressed = cur_chaos_suppressed - prev_chaos_suppressed;
-	delta_count_oob        = cur_count_oob        - prev_count_oob;
-	delta_canary_lock_post = cur_canary_lock_post - prev_canary_lock_post;
-	delta_canary_pre       = cur_canary_pre       - prev_canary_pre;
-	delta_canary_post      = cur_canary_post      - prev_canary_post;
-	delta_reexec_attempts                = cur_reexec_attempts                - prev_reexec_attempts;
-	delta_reexec_attempts_with_new_cmp   = cur_reexec_attempts_with_new_cmp   - prev_reexec_attempts_with_new_cmp;
-	delta_reexec_attribution_found       = cur_reexec_attribution_found       - prev_reexec_attribution_found;
-	delta_reexec_attribution_ambiguous   = cur_reexec_attribution_ambiguous   - prev_reexec_attribution_ambiguous;
-	delta_reexec_attribution_width_match = cur_reexec_attribution_width_match - prev_reexec_attribution_width_match;
-	delta_reexec_new_cmps_total          = cur_reexec_new_cmps_total          - prev_reexec_new_cmps_total;
-	delta_reexec_skipped_destructive     = cur_reexec_skipped_destructive     - prev_reexec_skipped_destructive;
-	delta_reexec_skipped_validate_silent = cur_reexec_skipped_validate_silent - prev_reexec_skipped_validate_silent;
-	delta_reexec_window_cap_hit          = cur_reexec_window_cap_hit          - prev_reexec_window_cap_hit;
-	delta_reexec_pending_dropped         = cur_reexec_pending_dropped         - prev_reexec_pending_dropped;
-	delta_reexec_gate_skip_in_reexec     = cur_reexec_gate_skip_in_reexec     - prev_reexec_gate_skip_in_reexec;
-	delta_reexec_gate_skip_disabled      = cur_reexec_gate_skip_disabled      - prev_reexec_gate_skip_disabled;
-	delta_reexec_gate_skip_mode          = cur_reexec_gate_skip_mode          - prev_reexec_gate_skip_mode;
-	delta_reexec_gate_skip_chain_mid     = cur_reexec_gate_skip_chain_mid     - prev_reexec_gate_skip_chain_mid;
-	delta_reexec_gate_skip_no_new_cmp    = cur_reexec_gate_skip_no_new_cmp    - prev_reexec_gate_skip_no_new_cmp;
-	delta_reexec_gate_skip_no_pending    = cur_reexec_gate_skip_no_pending    - prev_reexec_gate_skip_no_pending;
-	delta_reexec_gate_skip_rate          = cur_reexec_gate_skip_rate          - prev_reexec_gate_skip_rate;
-	delta_reexec_gate_pass               = cur_reexec_gate_pass               - prev_reexec_gate_pass;
-	delta_cmp_parent_calls_enabled       = cur_cmp_parent_calls_enabled       - prev_cmp_parent_calls_enabled;
-	delta_cmp_parent_calls_control       = cur_cmp_parent_calls_control       - prev_cmp_parent_calls_control;
-	delta_cmp_parent_new_cmps_enabled    = cur_cmp_parent_new_cmps_enabled    - prev_cmp_parent_new_cmps_enabled;
-	delta_cmp_parent_new_cmps_control    = cur_cmp_parent_new_cmps_control    - prev_cmp_parent_new_cmps_control;
-	delta_save_reject_nonconst      = cur_save_reject_nonconst      - prev_save_reject_nonconst;
-	delta_save_reject_uninteresting = cur_save_reject_uninteresting - prev_save_reject_uninteresting;
-	delta_save_reject_sentinel      = cur_save_reject_sentinel      - prev_save_reject_sentinel;
-	delta_save_reject_dup           = cur_save_reject_dup           - prev_save_reject_dup;
-	delta_save_reject_cap           = cur_save_reject_cap           - prev_save_reject_cap;
+	delta_records       = sat_sub_ul(cur_records,       prev_records);
+	delta_truncated     = sat_sub_ul(cur_truncated,     prev_truncated);
+	delta_bloom_skipped = sat_sub_ul(cur_bloom_skipped, prev_bloom_skipped);
+	delta_strip_skipped = sat_sub_ul(cur_strip_skipped, prev_strip_skipped);
+	delta_unique        = sat_sub_ul(cur_unique,        prev_unique);
+	delta_try_get_attempts = sat_sub_ul(cur_try_get_attempts, prev_try_get_attempts);
+	delta_try_get_returned = sat_sub_ul(cur_try_get_returned, prev_try_get_returned);
+	delta_injected         = sat_sub_ul(cur_injected,         prev_injected);
+	delta_prop_injected    = sat_sub_ul(cur_prop_injected,    prev_prop_injected);
+	delta_chaos_suppressed = sat_sub_ul(cur_chaos_suppressed, prev_chaos_suppressed);
+	delta_count_oob        = sat_sub_ul(cur_count_oob,        prev_count_oob);
+	delta_canary_lock_post = sat_sub_ul(cur_canary_lock_post, prev_canary_lock_post);
+	delta_canary_pre       = sat_sub_ul(cur_canary_pre,       prev_canary_pre);
+	delta_canary_post      = sat_sub_ul(cur_canary_post,      prev_canary_post);
+	delta_reexec_attempts                = sat_sub_ul(cur_reexec_attempts,                prev_reexec_attempts);
+	delta_reexec_attempts_with_new_cmp   = sat_sub_ul(cur_reexec_attempts_with_new_cmp,   prev_reexec_attempts_with_new_cmp);
+	delta_reexec_attribution_found       = sat_sub_ul(cur_reexec_attribution_found,       prev_reexec_attribution_found);
+	delta_reexec_attribution_ambiguous   = sat_sub_ul(cur_reexec_attribution_ambiguous,   prev_reexec_attribution_ambiguous);
+	delta_reexec_attribution_width_match = sat_sub_ul(cur_reexec_attribution_width_match, prev_reexec_attribution_width_match);
+	delta_reexec_new_cmps_total          = sat_sub_ul(cur_reexec_new_cmps_total,          prev_reexec_new_cmps_total);
+	delta_reexec_skipped_destructive     = sat_sub_ul(cur_reexec_skipped_destructive,     prev_reexec_skipped_destructive);
+	delta_reexec_skipped_validate_silent = sat_sub_ul(cur_reexec_skipped_validate_silent, prev_reexec_skipped_validate_silent);
+	delta_reexec_window_cap_hit          = sat_sub_ul(cur_reexec_window_cap_hit,          prev_reexec_window_cap_hit);
+	delta_reexec_pending_dropped         = sat_sub_ul(cur_reexec_pending_dropped,         prev_reexec_pending_dropped);
+	delta_reexec_gate_skip_in_reexec     = sat_sub_ul(cur_reexec_gate_skip_in_reexec,     prev_reexec_gate_skip_in_reexec);
+	delta_reexec_gate_skip_disabled      = sat_sub_ul(cur_reexec_gate_skip_disabled,      prev_reexec_gate_skip_disabled);
+	delta_reexec_gate_skip_mode          = sat_sub_ul(cur_reexec_gate_skip_mode,          prev_reexec_gate_skip_mode);
+	delta_reexec_gate_skip_chain_mid     = sat_sub_ul(cur_reexec_gate_skip_chain_mid,     prev_reexec_gate_skip_chain_mid);
+	delta_reexec_gate_skip_no_new_cmp    = sat_sub_ul(cur_reexec_gate_skip_no_new_cmp,    prev_reexec_gate_skip_no_new_cmp);
+	delta_reexec_gate_skip_no_pending    = sat_sub_ul(cur_reexec_gate_skip_no_pending,    prev_reexec_gate_skip_no_pending);
+	delta_reexec_gate_skip_rate          = sat_sub_ul(cur_reexec_gate_skip_rate,          prev_reexec_gate_skip_rate);
+	delta_reexec_gate_pass               = sat_sub_ul(cur_reexec_gate_pass,               prev_reexec_gate_pass);
+	delta_cmp_parent_calls_enabled       = sat_sub_ul(cur_cmp_parent_calls_enabled,       prev_cmp_parent_calls_enabled);
+	delta_cmp_parent_calls_control       = sat_sub_ul(cur_cmp_parent_calls_control,       prev_cmp_parent_calls_control);
+	delta_cmp_parent_new_cmps_enabled    = sat_sub_ul(cur_cmp_parent_new_cmps_enabled,    prev_cmp_parent_new_cmps_enabled);
+	delta_cmp_parent_new_cmps_control    = sat_sub_ul(cur_cmp_parent_new_cmps_control,    prev_cmp_parent_new_cmps_control);
+	delta_save_reject_nonconst      = sat_sub_ul(cur_save_reject_nonconst,      prev_save_reject_nonconst);
+	delta_save_reject_uninteresting = sat_sub_ul(cur_save_reject_uninteresting, prev_save_reject_uninteresting);
+	delta_save_reject_sentinel      = sat_sub_ul(cur_save_reject_sentinel,      prev_save_reject_sentinel);
+	delta_save_reject_dup           = sat_sub_ul(cur_save_reject_dup,           prev_save_reject_dup);
+	delta_save_reject_cap           = sat_sub_ul(cur_save_reject_cap,           prev_save_reject_cap);
 	{
 		unsigned int cs;
 		for (cs = 0; cs < CMP_HINT_CALLSITE_NR; cs++) {
 			delta_cmp_hint_callsite[cs] =
-				cur_cmp_hint_callsite[cs] - prev_cmp_hint_callsite[cs];
+				sat_sub_ul(cur_cmp_hint_callsite[cs], prev_cmp_hint_callsite[cs]);
 			if (delta_cmp_hint_callsite[cs] != 0)
 				any_callsite_delta = true;
 		}
@@ -2698,29 +2699,29 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 		unsigned int cs;
 		for (cs = 0; cs < PROP_INJECTED_CALLSITE_NR; cs++) {
 			delta_prop_injected_callsite[cs] =
-				cur_prop_injected_callsite[cs] - prev_prop_injected_callsite[cs];
+				sat_sub_ul(cur_prop_injected_callsite[cs], prev_prop_injected_callsite[cs]);
 			if (delta_prop_injected_callsite[cs] != 0)
 				any_prop_callsite_delta = true;
 		}
 	}
-	delta_cmp_hints_consumed             = cur_cmp_hints_consumed             - prev_cmp_hints_consumed;
-	delta_cmp_hint_wins                  = cur_cmp_hint_wins                  - prev_cmp_hint_wins;
-	delta_cmp_hint_misses                = cur_cmp_hint_misses                - prev_cmp_hint_misses;
-	delta_cmp_hint_cmp_novelty_wins      = cur_cmp_hint_cmp_novelty_wins      - prev_cmp_hint_cmp_novelty_wins;
-	delta_cmp_hint_stash_overflow        = cur_cmp_hint_stash_overflow        - prev_cmp_hint_stash_overflow;
-	delta_cmp_hint_credit_entry_evicted  = cur_cmp_hint_credit_entry_evicted  - prev_cmp_hint_credit_entry_evicted;
-	delta_cmp_recent_inserts             = cur_cmp_recent_inserts             - prev_cmp_recent_inserts;
-	delta_cmp_recent_evicts              = cur_cmp_recent_evicts              - prev_cmp_recent_evicts;
-	delta_cmp_recent_would_pick          = cur_cmp_recent_would_pick          - prev_cmp_recent_would_pick;
-	delta_cmp_recent_would_miss          = cur_cmp_recent_would_miss          - prev_cmp_recent_would_miss;
-	delta_cmp_recent_live_picks          = cur_cmp_recent_live_picks          - prev_cmp_recent_live_picks;
-	delta_cmp_inject_arm_a_baseline_fires = cur_cmp_inject_arm_a_baseline_fires - prev_cmp_inject_arm_a_baseline_fires;
-	delta_cmp_inject_arm_b_baseline_fires = cur_cmp_inject_arm_b_baseline_fires - prev_cmp_inject_arm_b_baseline_fires;
-	delta_cmp_inject_denom_diverged       = cur_cmp_inject_denom_diverged       - prev_cmp_inject_denom_diverged;
-	delta_prop_ring_argop_arm_b_fires     = cur_prop_ring_argop_arm_b_fires     - prev_prop_ring_argop_arm_b_fires;
-	delta_frontier_blend_samples          = cur_frontier_blend_samples          - prev_frontier_blend_samples;
-	delta_remote_adaptive_samples         = cur_remote_adaptive_samples         - prev_remote_adaptive_samples;
-	delta_mut_structured_shadow_divergences = cur_mut_structured_shadow_divergences - prev_mut_structured_shadow_divergences;
+	delta_cmp_hints_consumed             = sat_sub_ul(cur_cmp_hints_consumed,             prev_cmp_hints_consumed);
+	delta_cmp_hint_wins                  = sat_sub_ul(cur_cmp_hint_wins,                  prev_cmp_hint_wins);
+	delta_cmp_hint_misses                = sat_sub_ul(cur_cmp_hint_misses,                prev_cmp_hint_misses);
+	delta_cmp_hint_cmp_novelty_wins      = sat_sub_ul(cur_cmp_hint_cmp_novelty_wins,      prev_cmp_hint_cmp_novelty_wins);
+	delta_cmp_hint_stash_overflow        = sat_sub_ul(cur_cmp_hint_stash_overflow,        prev_cmp_hint_stash_overflow);
+	delta_cmp_hint_credit_entry_evicted  = sat_sub_ul(cur_cmp_hint_credit_entry_evicted,  prev_cmp_hint_credit_entry_evicted);
+	delta_cmp_recent_inserts             = sat_sub_ul(cur_cmp_recent_inserts,             prev_cmp_recent_inserts);
+	delta_cmp_recent_evicts              = sat_sub_ul(cur_cmp_recent_evicts,              prev_cmp_recent_evicts);
+	delta_cmp_recent_would_pick          = sat_sub_ul(cur_cmp_recent_would_pick,          prev_cmp_recent_would_pick);
+	delta_cmp_recent_would_miss          = sat_sub_ul(cur_cmp_recent_would_miss,          prev_cmp_recent_would_miss);
+	delta_cmp_recent_live_picks          = sat_sub_ul(cur_cmp_recent_live_picks,          prev_cmp_recent_live_picks);
+	delta_cmp_inject_arm_a_baseline_fires = sat_sub_ul(cur_cmp_inject_arm_a_baseline_fires, prev_cmp_inject_arm_a_baseline_fires);
+	delta_cmp_inject_arm_b_baseline_fires = sat_sub_ul(cur_cmp_inject_arm_b_baseline_fires, prev_cmp_inject_arm_b_baseline_fires);
+	delta_cmp_inject_denom_diverged       = sat_sub_ul(cur_cmp_inject_denom_diverged,       prev_cmp_inject_denom_diverged);
+	delta_prop_ring_argop_arm_b_fires     = sat_sub_ul(cur_prop_ring_argop_arm_b_fires,     prev_prop_ring_argop_arm_b_fires);
+	delta_frontier_blend_samples          = sat_sub_ul(cur_frontier_blend_samples,          prev_frontier_blend_samples);
+	delta_remote_adaptive_samples         = sat_sub_ul(cur_remote_adaptive_samples,         prev_remote_adaptive_samples);
+	delta_mut_structured_shadow_divergences = sat_sub_ul(cur_mut_structured_shadow_divergences, prev_mut_structured_shadow_divergences);
 
 	if ((delta_records | delta_truncated | delta_bloom_skipped | delta_strip_skipped |
 	     delta_unique | delta_try_get_attempts | delta_try_get_returned |
