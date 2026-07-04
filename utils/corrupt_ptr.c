@@ -297,6 +297,27 @@ void post_handler_corrupt_ptr_bump_at(struct syscallrecord *rec,
 	post_handler_corrupt_ptr_bump_site(rec, caller_pc, tag);
 }
 
+void validator_rejected_bump(void)
+{
+	struct childdata *child;
+
+	/* Standalone headline; not routed through the
+	 * post_handler_corrupt_ptr aggregate so the spike-detector on
+	 * that counter reads only genuine .post scribble-catches. */
+	child = this_child();
+	if (child != NULL && child->stats_ring != NULL)
+		stats_ring_enqueue(child->stats_ring,
+				   STATS_FIELD_VALIDATOR_REJECTED, 0, 1);
+	else
+		parent_stats.validator_rejected++;
+
+	/* Keep the per-site slot in step with the legacy attribution
+	 * path so a TRINITY_CORRUPT_ATTRIB=1 run still shows the class
+	 * under the same name.  Gated inside corrupt_ptr_site_record on
+	 * the env-latched bool -- production callers pay one branch. */
+	corrupt_ptr_site_record(CORRUPT_PTR_SITE_VALIDATOR_REJECTED);
+}
+
 /*
  * Record a caller PC into this child's deferred_free_reject sub-attribution
  * shard.  Same eviction policy and ownership model as corrupt_ptr_pc_record

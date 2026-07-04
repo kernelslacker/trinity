@@ -674,6 +674,19 @@ void post_handler_corrupt_ptr_bump_at(struct syscallrecord *rec,
 				      enum corrupt_ptr_site site);
 
 /*
+ * Bump the standalone validator_rejected counter used by the
+ * pre-dispatch structural check in validate_arg_coupling().  Split
+ * from post_handler_corrupt_ptr_bump_at() so the arg-coupling reject
+ * stream (perfectly-fine-but-DOA (buf, count) shapes the kernel would
+ * EFAULT at ep_send_events()) no longer inflates the scribble-detector
+ * headline.  Still records the per-site slot under TRINITY_CORRUPT_ATTRIB
+ * so the attribution dump continues to show the class; skips the
+ * per-handler PC / attr / breadcrumb rings because a structural
+ * coupling reject carries no scribbled pointer to attribute.
+ */
+void validator_rejected_bump(void);
+
+/*
  * Cheap per-site bump used by callers that need to keep the existing
  * bump_full() invocation (because they pass a known bad_ptr to the
  * breadcrumb ring -- looks_like_corrupted_ptr_pc, the retfd wrapper)

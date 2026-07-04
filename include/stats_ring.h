@@ -74,6 +74,15 @@ enum stats_field {
 	STATS_FIELD_RANGE_REJECTS_PER_SYSCALL_64,	/* aux = syscall nr */
 	STATS_FIELD_RANGE_REJECTS_PER_SYSCALL_32,	/* aux = syscall nr */
 	STATS_FIELD_POST_HANDLER_CORRUPT_PTR,
+	/*
+	 * Structural pre-dispatch reject from validate_arg_coupling().
+	 * Split out of STATS_FIELD_POST_HANDLER_CORRUPT_PTR so the
+	 * headline counts only genuine scribble-catches: coupling
+	 * rejects fire on perfectly-fine-but-DOA argument shapes the
+	 * kernel would EFAULT at its earliest validation step, not on
+	 * memory the .post handlers detected as scribbled.
+	 */
+	STATS_FIELD_VALIDATOR_REJECTED,
 	STATS_FIELD_DEFERRED_FREE_REJECT,
 	STATS_FIELD_DEFERRED_FREE_REJECT_PATHNAME,
 	STATS_FIELD_DEFERRED_FREE_REJECT_IOVEC,
@@ -245,6 +254,13 @@ struct stats_aggregate {
 	 * the stats_ring; the parent drain accumulates here.  The defense-
 	 * counter periodic dump reads these via the from_aggregate path. */
 	unsigned long post_handler_corrupt_ptr;
+	/*
+	 * Structural pre-dispatch reject count from validate_arg_coupling().
+	 * Formerly folded into post_handler_corrupt_ptr; split so the
+	 * spike-detector on the headline reacts only to genuine scribble-
+	 * catches.  Drained from STATS_FIELD_VALIDATOR_REJECTED.
+	 */
+	unsigned long validator_rejected;
 	unsigned long deferred_free_reject;
 	unsigned long deferred_free_reject_pathname;
 	unsigned long deferred_free_reject_iovec;

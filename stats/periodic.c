@@ -352,6 +352,8 @@ static const struct {
 	  offsetof(struct stats_aggregate, mm_gate_post_slip), true },
 	{ "post_handler_corrupt_ptr",
 	  offsetof(struct stats_aggregate, post_handler_corrupt_ptr), true },
+	{ "validator_rejected",
+	  offsetof(struct stats_aggregate, validator_rejected), true },
 	{ "deferred_free_reject",
 	  offsetof(struct stats_aggregate, deferred_free_reject), true },
 	{ "deferred_free_reject_pathname",
