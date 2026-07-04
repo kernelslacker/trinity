@@ -32,7 +32,7 @@ ROOT="${REPO_ROOT:-$(pwd)}"
 cd "$ROOT" || { echo "FAIL: $NAME: cannot cd to $ROOT"; exit 1; }
 
 OBJ_H="include/objects.h"
-OBJ_C="objects.c"
+OBJ_C="objects/registry.c"
 
 fail=0
 

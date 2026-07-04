@@ -31,7 +31,7 @@ NAME="fd-from-object-coverage"
 ROOT="${REPO_ROOT:-$(pwd)}"
 
 OBJTYPES_H="$ROOT/include/object-types.h"
-OBJECTS_C="$ROOT/objects.c"
+OBJECTS_C="$ROOT/objects/dispatch.c"
 
 fail() {
 	echo "FAIL: $NAME: $1"
