@@ -13,11 +13,11 @@
 # child_fault_handler was recently caught calling snprintf() at two
 # sites; the fix (route via sigsafe_* helpers + a single write()) just
 # landed.  This check stops that class of regression by greping the
-# body of each known signal handler in signals.c for an unsafe-libc
+# body of each known signal handler in health/signals.c for an unsafe-libc
 # denylist and failing the build if anything matches.
 #
 # Handler discovery: scrape sa_sigaction=<fn> and sa_handler=<fn>
-# assignments in signals.c.  Body extraction: find "void <fn>(" and
+# assignments in health/signals.c.  Body extraction: find "void <fn>(" and
 # brace-count from the first '{' to the matching '}'.  Hits are
 # filtered through the same comment-line filter no-libc-rand.sh uses
 # (leading /*, *, //) to suppress false positives in doc comments.
@@ -27,7 +27,7 @@
 #   write, _exit, kill, raise, signal, sigaction, sigprocmask,
 #   pthread_sigmask, time, clock_gettime, getpid, umask, open, close,
 #   dup2, read, fcntl, ... (full set in POSIX 2024 §2.4.3)
-# and the trinity-internal sigsafe_* helpers in signals.c (no libc
+# and the trinity-internal sigsafe_* helpers in health/signals.c (no libc
 # state touched -- byte stores into a caller-owned stack buffer).
 #
 # If this check ever fires, either (a) a real bug was introduced, or
@@ -38,7 +38,7 @@ set -u
 
 NAME="signal-handler-async-unsafe"
 ROOT="${REPO_ROOT:-$(pwd)}"
-TARGET="signals.c"
+TARGET="health/signals.c"
 
 # Async-signal-UNSAFE libc functions.  Token list mirrors no-libc-rand.sh:
 # match the name on a word boundary followed by '(' so unrelated symbols
@@ -55,7 +55,7 @@ if [ ! -f "$TARGET" ]; then
 fi
 
 # Discover handler names: every function name assigned to either
-# sa_sigaction or sa_handler in signals.c.  SIG_DFL / SIG_IGN are
+# sa_sigaction or sa_handler in health/signals.c.  SIG_DFL / SIG_IGN are
 # kernel sentinels, not functions, and are filtered out.
 handlers="$(
 	{
@@ -133,7 +133,7 @@ if [ "$n" -gt 0 ]; then
 		echo "  $NAME: async-signal-unsafe libc call(s) inside signal handler(s):"
 		sed 's/^/    /' "$hits_tmp"
 		echo "  fix: emit diagnostics via the sigsafe_* helpers + write()"
-		echo "       (see signals.c::write_siginfo_safely for the pattern)."
+		echo "       (see health/signals.c::write_siginfo_safely for the pattern)."
 		echo "       POSIX 2024 §2.4.3 lists the small set of safe libc"
 		echo "       calls; nothing outside that set is safe in a handler."
 	} >&2

@@ -50,6 +50,7 @@ their own.
 | [fds/](fds/CLAUDE.md) | FD provider layer — where live file descriptors come from (37 files, ~9,123 LOC) |
 | [objects/](objects/CLAUDE.md) | OBJ_LOCAL/OBJ_GLOBAL object pools — thread a syscall's result (fd/id/handle) into a later syscall's arg  + cross-child futex pool & prop/fd-event rings (8 files, ~2,732 LOC) |
 | [persist/](persist/CLAUDE.md) | Cross-iteration persistence — coverage-guided arg retention (minicorpus) + deferred-free temporal-overlap queue (2 files, ~4,450 LOC) |
+| [health/](health/CLAUDE.md) | Signals, crash post-mortem, pre-crash/breadcrumb rings, /dev/kmsg + taint watch — finding-vs-noise triage and crash-report assembly (7 files, ~3,188 LOC) |
 | [mm/](mm/CLAUDE.md) | Memory-management fuzzing targets (8 files, ~3,029 LOC) |
 | [childops/](childops/CLAUDE.md) | Scripted stateful multi-syscall workloads (churn/race/storm/recipe) (~145 files, ~81,300 LOC) |
 | [strategy/](strategy/CLAUDE.md) | Multi-strategy syscall-picker orchestration (7 files, ~3,700 LOC) |
@@ -89,19 +90,7 @@ binary. Grouped by concern:
 - `sequence.c` (1,858) — sequence-aware fuzzing: dispatches short syscall chains, threads each return into the next call's args, plus a chain corpus (held at root during the resource-typing rework; folds into persist/ later).
 
 ### Signals, crashes & kernel-health monitoring
-- `signals.c` (1,431) — signal handling and the child signal-mask policy.
-- `signals-safelist.c` (75) — the CHILD-NON-FATAL signal set derived from that
-  policy.
-- `post-mortem.c` (559) — crash post-mortem dump assembly.
-- `pre_crash_ring.c` (246) — per-child ring of recent syscalls, drained by the
-  BUG path to recover the sequence that led to a crash.
-- `breadcrumb_ring.c` (230) — per-child breadcrumb ring for
-  `post_handler_corrupt_ptr` fires.
-- `taint.c` (172) — kernel taint-bit checking (first signal the kernel went
-  sideways).
-- `kmsg-monitor.c` (475) — live `/dev/kmsg` scraper capturing kernel
-  diagnostics before the taint bit flips; runs as a helper process outside the
-  fuzz-child `pids[]` machinery.
+- [health/](health/CLAUDE.md) — signal handling + mask policy, crash post-mortem, pre-crash/breadcrumb rings, `/dev/kmsg` scraper and taint-bit watch (7 files).
 
 ## Where to start reading
 

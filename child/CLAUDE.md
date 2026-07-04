@@ -28,5 +28,5 @@ Each forked child's per-iteration lifecycle: bring-up + sandbox, then the loop t
 
 ## Areas of attention
 - Alt-op scoring / canary-promotion cadence live here; the *workloads* live in `childops/`.
-- Signal-mask policy is in `signals.c` (root today; `health/` later), NOT here.
+- Signal-mask policy is in `health/signals.c`, NOT here.
 - child-context-output baseline is line-sensitive — a pure code-motion move preserves line numbers, but new output callsites shift it.
