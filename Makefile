@@ -117,6 +117,7 @@ SRCS		:= $(wildcard *.c) \
 		   $(wildcard child/*.c) \
 		   $(wildcard childops/*.c) \
 		   $(wildcard cmp_hints/*.c) \
+		   $(wildcard dispatch/*.c) \
 		   $(wildcard fds/*.c) \
 		   $(wildcard ioctls/*.c) \
 		   $(wildcard kcov/*.c) \
@@ -140,6 +141,7 @@ OBJS		:= $(sort $(patsubst %.c,%.o,$(wildcard *.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard child/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard childops/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard cmp_hints/*.c))) \
+		   $(sort $(patsubst %.c,%.o,$(wildcard dispatch/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard fds/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard ioctls/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard kcov/*.c))) \

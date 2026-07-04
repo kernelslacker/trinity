@@ -24,8 +24,8 @@ their own.
 4. Per iteration the child either:
    - **random syscall path** — `random_syscall/` picks a syscall number,
      `syscalls/` supplies its descriptor, `args/` + `struct_catalog/` +
-     `rand/` + `net/` + `ioctls/` generate the arguments, `syscall.c` issues
-     the call, `results.c`/`kcov/`/`cmp_hints/` record the outcome; or
+     `rand/` + `net/` + `ioctls/` generate the arguments, `dispatch/syscall.c` issues
+     the call, `dispatch/results.c`/`kcov/`/`cmp_hints/` record the outcome; or
    - **childop path** — `childops/` runs a scripted stateful sequence
      (churn/race/storm/recipe) against one kernel subsystem.
 5. `stats/` aggregates everything the fleet writes into shared memory and the
@@ -38,6 +38,7 @@ their own.
 | [main/](main/CLAUDE.md) | Parent control plane: fork/reap/watchdog/stats tick loop (4 files, ~3,626 LOC) |
 | [child/](child/CLAUDE.md) | Child runtime loop: per-iteration alt-op/syscall pick, canary/sentinel/capdrop oracles, alarm backstop (7 files, ~6,400 LOC) |
 | [random_syscall/](random_syscall/CLAUDE.md) | Per-iteration hot path: pick, substitute, dispatch a syscall (5 files, ~4,807 LOC) |
+| [dispatch/](dispatch/CLAUDE.md) | Issues the picked syscall, records the result, tracks pid liveness (3 files, ~2,400 LOC) |
 | [syscalls/](syscalls/CLAUDE.md) | One `struct syscallentry` descriptor per syscall — the declarative catalog (~361 files, ~56,400 LOC) |
 | [tables/](tables/CLAUDE.md) | Loads the per-syscall descriptors into shared memory and stamps derived fields (3 files, ~1,725 LOC) |
 | [args/](args/CLAUDE.md) | Argument generation layer driven by `argtype[]` (17 files, ~6,127 LOC) |
@@ -73,10 +74,7 @@ binary. Grouped by concern:
 - [child/](child/CLAUDE.md) — per-child loop, bring-up/sandbox, alt-op picker, canary/sentinel/capdrop oracles, cred throttle (7 files).
 
 ### Syscall dispatch & results
-- `syscall.c` (1,652) — the machinery that actually issues the system calls.
-- `results.c` (277) — per-syscall result counters/scoreboards.
-- `pids.c` (484) — pid liveness/kill/validity primitives (per-child cache set
-  in `init_child()`).
+- [dispatch/](dispatch/CLAUDE.md) — issues the picked syscall (syscall.c), records results (results.c), pid liveness/kill primitives (pids.c) (3 files).
 
 ### Object pools & result threading
 - `objects/` — the `OBJ_LOCAL`/`OBJ_GLOBAL` object pools (`alloc_object`/
@@ -127,7 +125,7 @@ binary. Grouped by concern:
 
 - **To follow one fuzz iteration end-to-end:** `child/child.c` →
   `random_syscall/CLAUDE.md` → `syscalls/CLAUDE.md` → `args/CLAUDE.md` →
-  `syscall.c` → `results.c`.
+  `dispatch/syscall.c` → `dispatch/results.c`.
 - **To understand the process fleet / lifecycle:** `trinity.c` →
   `main/CLAUDE.md`.
 - **To understand scripted (non-random) fuzzing:** `childops/CLAUDE.md`.
