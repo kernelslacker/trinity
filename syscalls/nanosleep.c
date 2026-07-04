@@ -19,9 +19,9 @@ struct syscallentry syscall_nanosleep = {
 	.name = "nanosleep",
 	.group = GROUP_TIME,
 	.num_args = 2,
-	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_ADDRESS },
+	.argtype = { [0] = ARG_TIMESPEC, [1] = ARG_ADDRESS },
 	.argname = { [0] = "rqtp", [1] = "rmtp" },
 	.post = post_nanosleep,
-	.flags = AVOID_SYSCALL, // Boring.  Can cause long sleeps.
+	.flags = AVOID_SYSCALL | NEED_ALARM, // Boring.  Can cause long sleeps.
 	.rettype = RET_ZERO_SUCCESS,
 };
