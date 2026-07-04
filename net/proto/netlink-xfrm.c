@@ -1,8 +1,8 @@
 /*
- * proto-netlink-xfrm.c -- coherent XFRM (IPsec) netlink grammar.
+ * netlink-xfrm.c -- coherent XFRM (IPsec) netlink grammar.
  *
  * Second AF_NETLINK slot in the per-family grammar registry alongside
- * grammar_netlink (proto-netlink.c).  Pinned to NETLINK_XFRM, walks
+ * grammar_netlink (netlink.c).  Pinned to NETLINK_XFRM, walks
  * the SA + SP control surface message-by-message across NEWSA /
  * UPDSA / NEWAE / EXPIRE / DELSA / NEWPOLICY / DELPOLICY / FLUSHSA /
  * FLUSHPOLICY with coherent attribute pairing inside each message.

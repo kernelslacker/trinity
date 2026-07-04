@@ -27,62 +27,15 @@ shared struct-of-callbacks pattern).
 - `socket-family-grammar.c` (366) — `sfg_registry[]`, a second,
   independent dispatch table (`struct socket_family_grammar`) driving
   coherent multi-call sequences (setsockopt -> bind -> listen ->
-  accept -> sendmsg) per family, one entry per `net/proto-<family>.c`.
+  accept -> sendmsg) per family, one entry per `net/proto/<family>.c`.
   Falls back to the legacy v1 `run_alg_chain` path when a family has
   no grammar registered. Each protocol file that defines a grammar
   (`grammar_inet`, `grammar_unix`, `grammar_xfrm`, etc.) is declared
   extern and listed here.
 
-### Per-address-family protocol files (`proto-*.c`)
-~50 files, one per `PF_*`/`AF_*` family, each defining `const struct
-netproto proto_<family>` plus (usually) a `setsockopt` handler and a
-`gen_sockaddr`. Pattern shown by `proto-ip-udp.c` (51 lines):
-build a small `RAND_ARRAY` table of valid optnames for that
-level/protocol, switch on the picked optname, size and fill
-`so->optval`/`so->optlen` per kernel expectation (including
-boundary-interesting values like GSO segment sizes 0/1/1400/65535).
-Largest in this group:
-- `proto-ipv4.c` (724) — full AF_INET surface: raw sockets, IP
-  options, `ip_tables`/`ebtables`/`arp_tables`/`ip_set`/`ip_vs`
-  setsockopt levels, multicast.
-- `proto-ipv6.c` (559) — AF_INET6 equivalent.
-- `proto-netlink.c` (270) — `grammar_netlink`: membership churn +
-  `SOL_NETLINK` toggles over GENERIC/ROUTE/NETFILTER/KOBJECT_UEVENT/
-  AUDIT; delegates message-body shape to `netlink_gen_msg` (below).
-- `proto-llc.c` (478), `proto-rxrpc.c` (469), `proto-xdp.c` (454),
-  `proto-rds.c` (398), `proto-kcm.c` (349) — protocol-specific control
-  surfaces (LLC SAP/link ops, RxRPC calls, AF_XDP umem/ring setup via
-  `xdp-umem-track.c`, RDS, KCM with attached BPF via `bpf.c`).
-- `proto-alg.c` (429) + `proto-alg-dict.c` (413) — AF_ALG crypto
-  socket surface; the dict file is a curated table of real cipher/
-  hash/AEAD algorithm names so `bind()` finds a registered transform
-  instead of EINVAL'ing on garbage names.
-- `proto-mctp.c` (290), `proto-ip-mptcp.c` (285), `proto-unix.c` (285),
-  `proto-mpls.c` (285), `proto-can.c` (247), `proto-bluetooth.c` (252),
-  `proto-pppox.c` (245), `proto-qrtr.c` (234), `proto-key.c` (323),
-  `proto-packet.c` (335), `proto-ip-sctp.c` (538) — remainder of the
-  major families, each self-contained.
-- ~25 files under 160 lines following the same
-  optname-table-plus-switch pattern for smaller families
-  (`proto-atm.c`, `proto-x25.c`, `proto-ib.c`, `proto-icmp6.c`,
-  `proto-ip-{dccp,raw,tcp,udplite}.c`, `proto-iucv.c`, `proto-nfc.c`,
-  `proto-phonet.c`, `proto-smc.c`, `proto-tipc.c`, `proto-vsock.c`,
-  `proto-ieee802154.c`, `proto-caif.c`).
+### Per-address-family protocol helpers (`proto/`)
 
-### XFRM (IPsec netlink) cluster — split out for size
-- `proto-netlink-xfrm-emit.c` (924) — largest proto file:
-  `xfrm_emit_newsa`/`newpolicy`/`updsa`/`newae`/etc., one function per
-  XFRM_MSG_* kind, each building a coherent attribute set (AEAD vs
-  paired CRYPT+AUTH_TRUNC, optional COMP/ENCAP/REPLAY/ESN/marks) and
-  pushing accepted SAs/policies onto a per-process ring.
-- `proto-netlink-xfrm.c` (642) — `grammar_xfrm`, the coherent
-  NEWSA/UPDSA/NEWAE/EXPIRE/DELSA/NEWPOLICY/DELPOLICY/FLUSH* walk,
-  pinned to NETLINK_XFRM.
-- `proto-netlink-xfrm-attr.c` (414) — attribute-building helpers shared
-  by the emit functions.
-- `proto-netlink-xfrm-ring.c` (177) — the per-process installed-SA/
-  policy ring so later UPDSA/DELSA/NEWAE target a real entry instead
-  of a random SPI the kernel rejects on lookup.
+- [proto/](proto/CLAUDE.md) — the 42 per-`PF_*`/`AF_*` files, each defining `const struct netproto proto_<family>` (wired into `net_protocols[]`) plus optional `grammar_<family>` (registered in `sfg_registry[]`), including the XFRM (IPsec netlink) grammar cluster. One family per file, shared optname-table-plus-switch pattern.
 
 ### Generic netlink (genl) family grammars
 - `netlink-genl-families.c` (621) — runtime registry: walks
@@ -244,7 +197,7 @@ Largest in this group:
   the classic-BPF/eBPF generators (bpf.c/ebpf.c), since filter programs
   attach via seccomp, `SO_ATTACH_FILTER`, `BPF_PROG_LOAD`, sockmap, and
   cgroup/XDP attach points.
-- `net/proto-kcm.c` — one of the few proto files that itself pulls in
+- `net/proto/kcm.c` — one of the few proto files that itself pulls in
   `bpf.c` output (KCM sockets can have a BPF classifier attached).
 
 ## Areas of attention

@@ -1,5 +1,5 @@
 /*
- * proto-netlink-xfrm-ring.c -- per-process SA + policy tracking rings
+ * netlink-xfrm-ring.c -- per-process SA + policy tracking rings
  * for the NETLINK_XFRM grammar.  Storage and ring operations live
  * here; the rest of the grammar consumes them through the externs in
  * include/proto-netlink-xfrm-internal.h.

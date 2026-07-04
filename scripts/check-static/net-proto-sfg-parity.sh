@@ -22,7 +22,7 @@
 #
 # This check parses both tables from source, resolves each
 # &grammar_XXX registry entry to its .family by locating the
-# grammar's initializer in net/proto-*.c, then diffs the two PF
+# grammar's initializer in net/proto/*.c, then diffs the two PF
 # sets.  Pre-existing "netproto entry, no grammar" gaps are
 # grandfathered via net-proto-sfg-parity.baseline; a fresh gap on
 # either side FAILs the check.  A grammar registered for a PF with
@@ -91,7 +91,7 @@ grammar_names=$(awk '
 [ -n "$grammar_names" ] || fail "no &grammar_* entries parsed from $SFG_SRC"
 
 # Resolve each grammar symbol to its .family by scanning
-# net/proto-*.c for the initializer.  Accept AF_ and PF_ prefixes
+# net/proto/*.c for the initializer.  Accept AF_ and PF_ prefixes
 # (uapi aliases; grammar_packet and grammar_xdp use AF_).  Bare
 # integer literals are not accepted -- every in-tree grammar uses
 # the macro form.
@@ -110,7 +110,7 @@ grammar_pfs_raw=$(
 					exit
 				}
 			}
-		' "$ROOT"/net/proto-*.c 2>/dev/null | head -n1)
+		' "$ROOT"/net/proto/*.c 2>/dev/null | head -n1)
 
 		if [ -z "$fam" ]; then
 			echo "UNRESOLVED:$gname"
@@ -126,7 +126,7 @@ if [ -n "$unresolved" ]; then
 		echo "  $NAME: could not resolve .family for grammar symbol(s):"
 		printf '%s\n' "$unresolved" | sed 's/^UNRESOLVED:/    /'
 		echo "  fix: ensure the grammar's .family = PF_XXX (or AF_XXX)"
-		echo "       initializer is present in net/proto-*.c and this"
+		echo "       initializer is present in net/proto/*.c and this"
 		echo "       check's regex still matches it."
 	} >&2
 	fail "unresolved grammar symbol(s)"
@@ -201,7 +201,7 @@ if [ "${#new_gaps[@]}" -gt 0 ]; then
 		for pf in "${new_gaps[@]}"; do
 			echo "    $pf"
 		done
-		echo "  fix: add a per-family grammar in net/proto-<family>.c and"
+		echo "  fix: add a per-family grammar in net/proto/<family>.c and"
 		echo "       register it in sfg_registry[] in"
 		echo "       net/socket-family-grammar.c.  If the gap is"
 		echo "       intentional (netproto exists purely for triplet or"
