@@ -160,12 +160,62 @@ static int get_rand_timerfd_fd(void)
 	return -1;
 }
 
+/*
+ * Periodic child-tick top-up.  See the block comment above
+ * epoll_try_replenish() (fds/epoll.c) for the general contract.
+ * init_timerfd_fds() seeds a small pool once (four flag combos across
+ * five clockids); a child that has closed most of them via fuzz-driven
+ * close/dup2/close_range hits stops seeing an ARG_FD_TIMERFD pick at
+ * all.  Pushing fresh timerfds into the live-fd ring restores
+ * gen_arg_fd() hits without touching the OBJ_GLOBAL pool the parent
+ * owns.
+ *
+ * Restrict to the CLOEXEC-bearing subset of the init flag set so the
+ * replenished fds do not leak across an exec-carrying syscall picked
+ * later this iteration.  Clockid is picked at random across the same
+ * five __init_timerfd_fds() is called with so downstream read/poll/
+ * settime paths see the CLOCK_MONOTONIC vs. CLOCK_REALTIME_ALARM
+ * split rather than one fixed variety.  Deliberately unarmed -- the
+ * kernel-side benefit here is fd reachability, not timer expiries;
+ * arm_timerfd() would add an extra timerfd_settime() per replenished
+ * fd that this budget-capped path cannot afford.
+ */
+static void timerfd_try_replenish(unsigned int budget)
+{
+	struct childdata *child = this_child();
+	unsigned int i;
+	static const int clockids[] = {
+		CLOCK_REALTIME,
+		CLOCK_MONOTONIC,
+		CLOCK_BOOTTIME,
+		CLOCK_REALTIME_ALARM,
+		CLOCK_BOOTTIME_ALARM,
+	};
+	static const unsigned int flags[] = {
+		TFD_CLOEXEC,
+		TFD_NONBLOCK | TFD_CLOEXEC,
+	};
+
+	if (child == NULL)
+		return;
+
+	for (i = 0; i < budget; i++) {
+		int clockid = clockids[rnd_modulo_u32(ARRAY_SIZE(clockids))];
+		int fd = timerfd_create(clockid, flags[rnd_modulo_u32(ARRAY_SIZE(flags))]);
+
+		if (fd < 0)
+			return;
+		child_fd_ring_push(&child->live_fds, fd);
+	}
+}
+
 static const struct fd_provider timerfd_fd_provider = {
 	.name = "timerfd",
 	.objtype = OBJ_FD_TIMERFD,
 	.enabled = true,
 	.init = &init_timerfd_fds,
 	.get = &get_rand_timerfd_fd,
+	.try_replenish = &timerfd_try_replenish,
 };
 
 REG_FD_PROV(timerfd_fd_provider);
