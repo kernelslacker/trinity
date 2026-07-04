@@ -159,6 +159,40 @@ static void pipes_child_ops(void)
 	pipe_waker_poke_one();
 }
 
+/*
+ * Periodic child-tick top-up.  init_pipes() seeds 16 pairs into the
+ * OBJ_GLOBAL pool once; a child that has closed most of them via
+ * close/dup2/close_range stops seeing ARG_FD_PIPE picks.  Push fresh
+ * pipe ends into the live-fd ring so gen_arg_fd()'s live-fd branch
+ * keeps hitting.  add_object(OBJ_GLOBAL) from child context is a no-op,
+ * so call pipe2() raw rather than open_pipe_pair().  Mirror init's
+ * flag distribution (O_NONBLOCK ? / O_CLOEXEC ?) and push both ends;
+ * reader/writer OBJ coupling is init-pool-only, and the live_fds ring
+ * only tracks raw fds.
+ */
+static void pipe_try_replenish(unsigned int budget)
+{
+	struct childdata *child = this_child();
+	unsigned int i;
+
+	if (child == NULL)
+		return;
+
+	for (i = 0; i < budget; i++) {
+		int flags = RAND_BOOL() ? O_NONBLOCK : 0;
+		int pipefd[2];
+
+		if (RAND_BOOL())
+			flags |= O_CLOEXEC;
+
+		if (pipe2(pipefd, flags) < 0)
+			return;
+
+		child_fd_ring_push(&child->live_fds, pipefd[0]);
+		child_fd_ring_push(&child->live_fds, pipefd[1]);
+	}
+}
+
 static const struct fd_provider pipes_fd_provider = {
 	.name = "pipes",
 	.objtype = OBJ_FD_PIPE,
@@ -166,6 +200,7 @@ static const struct fd_provider pipes_fd_provider = {
 	.init = &init_pipes,
 	.get = &get_rand_pipe_fd,
 	.child_ops = &pipes_child_ops,
+	.try_replenish = &pipe_try_replenish,
 };
 
 REG_FD_PROV(pipes_fd_provider);
