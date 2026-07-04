@@ -35,7 +35,7 @@
 #include "trinity.h"
 #include "utils.h"
 
-#include "childops/recipe-runner-internal.h"
+#include "childops/recipe/internal.h"
 
 /*
  * A discoverable recipe sets *unsupported = true on its first failed

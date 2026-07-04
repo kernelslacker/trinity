@@ -29,7 +29,7 @@
 #include "trinity.h"
 #include "pids.h"
 
-#include "childops/recipe-runner-internal.h"
+#include "childops/recipe/internal.h"
 
 /*
  * Racer thread for recipe_bpf_htab_iter_del.  Walks the hash map's keyspace

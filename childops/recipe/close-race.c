@@ -31,7 +31,7 @@
 #include "utils.h"
 #include "pids.h"
 
-#include "childops/recipe-runner-internal.h"
+#include "childops/recipe/internal.h"
 
 /*
  * Racer thread for recipe_timerfd_xclose.  Blocks in poll() with a

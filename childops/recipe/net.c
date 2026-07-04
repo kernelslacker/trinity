@@ -29,7 +29,7 @@
 #include "utils.h"
 #include "pids.h"
 
-#include "childops/recipe-runner-internal.h"
+#include "childops/recipe/internal.h"
 
 /*
  * Send a single fd over an AF_UNIX socket via SCM_RIGHTS ancillary
