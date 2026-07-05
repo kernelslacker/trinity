@@ -3,36 +3,17 @@
  *
  * Carved out of struct_catalog/catalog.c: this TU owns the mapping
  * from a fuzzed syscall dispatch to the struct_desc that describes
- * the argument's payload.
+ * the argument's payload, plus the fast nr-indexed lookup built at
+ * init time.
  *
- *   - syscall_struct_args[] is the source-of-truth registration
- *     table: one row per (syscall_name, arg_idx) mapping onto a
- *     struct_desc, with optional discriminator keys for
- *     tagged-union args.
+ * The slot_binding pool + desc_by_nr_64/32[] sizing bounds
+ * (SLOT_POOL_MAX, DISCRIM_VARIANTS_PER_SLOT_MAX) BUG on overflow
+ * rather than silently drop mappings.
  *
- *   - The discriminator value-list pools (fcntl_flock_cmds[],
- *     setsockopt_*_optnames[], etc.) enumerate the sibling-arg
- *     values that select each variant.  They stay TU-local because
- *     they only feed syscall_struct_args[] rows.
- *
- *   - The slot_binding pool + desc_by_nr_64/32[] tables are the
- *     fast nr-indexed lookup structure built once at init.  Sizing
- *     bounds (SLOT_POOL_MAX, DISCRIM_VARIANTS_PER_SLOT_MAX) BUG on
- *     overflow rather than silently drop mappings.
- *
- *   - struct_arg_lookup / _two_key / _by_name are the three public
- *     resolvers: rec-driven (nr, arg) with discriminator match,
- *     explicit (name, arg, k1, k2), and discriminator-blind default.
- *
- *   - struct_catalog_init populates the nr-indexed tables by
- *     scanning the active syscall table(s) and calls
- *     validate_syscall_struct_args() (defined in catalog.c, moving
- *     to validate.c next commit) for the slot-shape guard.
- *
- * The catalog descriptor table itself (struct_catalog[]) stays in
- * struct_catalog/catalog.c because its sizeof() dependency graph
- * is the broadest part of the spine and should not be mixed with
- * lookup policy.
+ * Three public resolvers:
+ *   - struct_arg_lookup: rec-driven (nr, arg) with discriminator match.
+ *   - struct_arg_lookup_two_key: explicit (name, arg, k1, k2).
+ *   - struct_arg_lookup_by_name: discriminator-blind default.
  */
 
 #include <stddef.h>
