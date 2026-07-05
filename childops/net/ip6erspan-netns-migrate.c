@@ -15,8 +15,15 @@
  * erspan/vxlan/geneve) get the same shape exercised.
  *
  * Per iteration:
- *   (a) unshare(CLONE_NEWNET) once per child for the original ns.  EPERM
- *       latches the whole op off.
+ *   (a) userns_run_in_ns(CLONE_NEWNET) forks a transient grandchild into
+ *       an owned user namespace + private net namespace ("original
+ *       ns").  Steps (b)-(g) run inside that grandchild; its _exit()
+ *       tears down both namespaces along with the link, socket and
+ *       target-ns FDs left behind.  Helper -EPERM (hardened userns
+ *       policy refused CLONE_NEWUSER) latches the whole op off via
+ *       ns_unsupported_ip6erspan; transient setup failure (-EAGAIN --
+ *       fork, id-map write, secondary unshare) skips the iteration
+ *       without latching.
  *   (b) Open AF_NETLINK NETLINK_ROUTE socket; bind.
  *   (c) RTM_NEWLINK creating a link of the rolled kind: nested
  *       IFLA_LINKINFO with IFLA_INFO_KIND=<kind>; nested IFLA_INFO_DATA
@@ -26,9 +33,17 @@
  *       ENOENT latch ns_unsupported_ip6erspan -- typically a kernel
  *       missing the corresponding tunnel module / erspan ver bits.
  *   (d) unshare(CLONE_NEWNET) again to obtain a fresh sibling
- *       ("target") netns; keep an FD on it via /proc/self/ns/net opened
- *       before re-entering the original.  setns() back to the original
- *       ns so the rtnetlink socket still talks to the link's current ns.
+ *       ("target") netns.  This is an intentional in-ns sub-netns
+ *       unshare: it runs inside the grandchild's owned user namespace,
+ *       where CAP_NET_ADMIN is held, so it succeeds where the
+ *       persistent child's bare unshare would EPERM.  The FD dance in
+ *       step (e) needs to hold both the original and target ns FDs
+ *       simultaneously to pass one as IFLA_NET_NS_FD while the
+ *       rtnetlink socket lives in the other, so this call cannot be
+ *       delegated to a second userns_run_in_ns() grandchild.  Keep an
+ *       FD on the sibling via /proc/self/ns/net opened before
+ *       re-entering the original.  setns() back to the original ns so
+ *       the rtnetlink socket still talks to the link's current ns.
  *   (e) RTM_SETLINK on the link with IFLA_NET_NS_FD pointing at the
  *       target ns FD -- migrates the link to the sibling ns.
  *   (f) setns() into the target ns; open a fresh rtnetlink socket there
@@ -84,6 +99,7 @@
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
+#include "userns-bootstrap.h"
 #include "utils.h"
 
 /*
@@ -173,24 +189,35 @@ static const __u8 inm_v6_remote[16] = {
 	0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,2,	/* ::2 */
 };
 
+/* Master gate.  Persistent across iterations in the persistent fuzz
+ * child.  Set only when userns_run_in_ns() returns -EPERM (hardened
+ * userns policy refused CLONE_NEWUSER -- typically
+ * user.max_user_namespaces=0 or kernel.unprivileged_userns_clone=0)
+ * or, from inside the grandchild, when create_link EPERM / setns /
+ * open-self-netns fails; writes from inside the grandchild only
+ * affect the grandchild's own copy and die with _exit(), so the
+ * persistent-child latch is authoritatively driven by the outer
+ * wrapper's helper-EPERM branch. */
 static bool ns_unsupported_ip6erspan;
 static bool ns_unsupported_changelink;
-static bool inm_unshared_orig;
-static int  inm_orig_ns_fd = -1;
 static __u32 g_iter;
 
 /* Per-invocation state shared across the extracted phase helpers.
- * nl.fd / target_nl.fd / target_ns_fd default to -1 via the
- * orchestrator's designated initialiser so the teardown helper can
- * close them unconditionally regardless of which earlier phase
- * bailed.  k + ifname are filled in by setup; ifindex by create_link;
- * target_ns_fd by migrate; migrated flips true once the link has
- * crossed into the target ns, switching teardown from in-orig
- * dellink to setns-back-then-drop-target-ns. */
+ * nl.fd / target_nl.fd / orig_ns_fd / target_ns_fd default to -1 via
+ * the orchestrator's designated initialiser so the teardown helper
+ * can close them unconditionally regardless of which earlier phase
+ * bailed.  orig_ns_fd is snapshotted at the top of the in-ns callback
+ * so migrate/teardown can setns() back into the grandchild's outer
+ * netns after step (d) unshares into the sibling.  k + ifname are
+ * filled in by setup; ifindex by create_link; target_ns_fd by
+ * migrate; migrated flips true once the link has crossed into the
+ * target ns, switching teardown from in-orig dellink to
+ * setns-back-then-drop-target-ns. */
 struct ip6erspan_migrate_iter_ctx {
 	struct nl_ctx	nl;
 	struct nl_ctx	target_nl;
 	enum inm_kind	k;
+	int		orig_ns_fd;
 	int		target_ns_fd;
 	int		ifindex;
 	bool		migrated;
@@ -400,29 +427,6 @@ static int inm_open_self_netns(void)
 }
 
 /*
- * Per-process one-shot: enter a fresh net ns for the original side and
- * cache its FD so we can setns() back to it after sibling unshare().
- * Returns true on success.  False latches ns_unsupported_ip6erspan via
- * warn_once_unsupported.
- */
-static bool inm_enter_orig_ns(struct childdata *child)
-{
-	if (inm_unshared_orig)
-		return true;
-	if (unshare(CLONE_NEWNET) < 0) {
-		warn_once_unsupported(child);
-		return false;
-	}
-	inm_orig_ns_fd = inm_open_self_netns();
-	if (inm_orig_ns_fd < 0) {
-		warn_once_unsupported(child);
-		return false;
-	}
-	inm_unshared_orig = true;
-	return true;
-}
-
-/*
  * Phase 1: pick the per-iteration kind, open the rtnetlink socket
  * pinned to the original ns, and roll the per-link interface name.
  * The kind roll runs ahead of the socket open so a failed nl_open()
@@ -441,7 +445,11 @@ static int ip6erspan_migrate_iter_setup(struct ip6erspan_migrate_iter_ctx *ctx,
 	if (nl_open(&ctx->nl, opts) < 0)
 		return -1;
 
-	g_iter++;
+	/* g_iter is bumped by the outer wrapper before dispatch so each
+	 * grandchild sees a distinct suffix -- a fresh COW copy inside
+	 * the grandchild would freeze at whatever value the persistent
+	 * child last wrote, defeating traceability and starving the
+	 * NETDEV name-pool of variety. */
 	snprintf(ctx->ifname, sizeof(ctx->ifname), "inm%u",
 		 g_iter & 0xffffU);
 	return 0;
@@ -524,6 +532,11 @@ static int ip6erspan_migrate_iter_migrate(struct ip6erspan_migrate_iter_ctx *ctx
 {
 	int rc;
 
+	/* Intentional in-ns sub-netns unshare -- see file-header step (d).
+	 * Runs inside the grandchild's owned user namespace so CAP_NET_ADMIN
+	 * is held; cannot be delegated to a second userns_run_in_ns() call
+	 * because the FD dance below needs to hold both the outer (original)
+	 * and inner (target) netns FDs concurrently. */
 	if (unshare(CLONE_NEWNET) < 0) {
 		warn_once_unsupported(ctx->child);
 		return -1;
@@ -531,10 +544,10 @@ static int ip6erspan_migrate_iter_migrate(struct ip6erspan_migrate_iter_ctx *ctx
 	ctx->target_ns_fd = inm_open_self_netns();
 	if (ctx->target_ns_fd < 0) {
 		warn_once_unsupported(ctx->child);
-		(void)setns(inm_orig_ns_fd, CLONE_NEWNET);
+		(void)setns(ctx->orig_ns_fd, CLONE_NEWNET);
 		return -1;
 	}
-	if (setns(inm_orig_ns_fd, CLONE_NEWNET) < 0) {
+	if (setns(ctx->orig_ns_fd, CLONE_NEWNET) < 0) {
 		warn_once_unsupported(ctx->child);
 		close(ctx->target_ns_fd);
 		ctx->target_ns_fd = -1;
@@ -616,7 +629,7 @@ static void ip6erspan_migrate_iter_changelink(struct ip6erspan_migrate_iter_ctx 
 static void ip6erspan_migrate_iter_teardown(struct ip6erspan_migrate_iter_ctx *ctx)
 {
 	if (ctx->migrated) {
-		(void)setns(inm_orig_ns_fd, CLONE_NEWNET);
+		(void)setns(ctx->orig_ns_fd, CLONE_NEWNET);
 	} else if (ctx->ifindex > 0 && ctx->nl.fd >= 0) {
 		(void)inm_dellink(&ctx->nl, ctx->ifindex);
 	}
@@ -624,15 +637,32 @@ static void ip6erspan_migrate_iter_teardown(struct ip6erspan_migrate_iter_ctx *c
 		nl_close(&ctx->target_nl);
 	if (ctx->target_ns_fd >= 0)
 		close(ctx->target_ns_fd);
+	if (ctx->orig_ns_fd >= 0)
+		close(ctx->orig_ns_fd);
 	if (ctx->nl.fd >= 0)
 		nl_close(&ctx->nl);
 }
 
-bool ip6erspan_netns_migrate(struct childdata *child)
+/*
+ * Per-invocation body that runs inside the grandchild's private net
+ * namespace.  Executed by userns_run_in_ns(CLONE_NEWNET); the
+ * grandchild's userns + netns are torn down on _exit() so any link,
+ * rtnetlink socket and target-ns FD left behind is reaped along with
+ * the namespace.  Explicit teardown is still issued so the in-ns
+ * stats counters (inm_link_create_ok etc.) reflect only what actually
+ * succeeded and so the target-ns dellink in phase 4 runs before the
+ * grandchild dies.  Per-grandchild latch writes to
+ * ns_unsupported_ip6erspan die with the grandchild -- helper-EPERM in
+ * the outer wrapper is the only signal that survives across
+ * iterations.  Return value is ignored by the helper.
+ */
+static int ip6erspan_netns_migrate_in_ns(void *arg)
 {
+	struct childdata *child = (struct childdata *)arg;
 	struct ip6erspan_migrate_iter_ctx ictx = {
 		.nl = { .fd = -1 },
 		.target_nl = { .fd = -1 },
+		.orig_ns_fd = -1,
 		.target_ns_fd = -1,
 		.child = child,
 	};
@@ -641,14 +671,10 @@ bool ip6erspan_netns_migrate(struct childdata *child)
 		.recv_timeo_s = 1,
 	};
 
-	__atomic_add_fetch(&shm->stats.inm_iters, 1, __ATOMIC_RELAXED);
-
-	if (ns_unsupported_ip6erspan)
-		return true;
-
-	if (!inm_enter_orig_ns(child)) {
-		__atomic_add_fetch(&shm->stats.inm_eperm, 1, __ATOMIC_RELAXED);
-		return true;
+	ictx.orig_ns_fd = inm_open_self_netns();
+	if (ictx.orig_ns_fd < 0) {
+		warn_once_unsupported(child);
+		return 0;
 	}
 
 	if (ip6erspan_migrate_iter_setup(&ictx, &opts) != 0)
@@ -679,5 +705,32 @@ bool ip6erspan_netns_migrate(struct childdata *child)
 
 out:
 	ip6erspan_migrate_iter_teardown(&ictx);
+	return 0;
+}
+
+bool ip6erspan_netns_migrate(struct childdata *child)
+{
+	int rc;
+
+	__atomic_add_fetch(&shm->stats.inm_iters, 1, __ATOMIC_RELAXED);
+
+	if (ns_unsupported_ip6erspan)
+		return true;
+
+	g_iter++;
+	rc = userns_run_in_ns(CLONE_NEWNET, ip6erspan_netns_migrate_in_ns,
+			      child);
+	if (rc == -EPERM) {
+		warn_once_unsupported(child);
+		__atomic_add_fetch(&shm->stats.inm_eperm, 1, __ATOMIC_RELAXED);
+		return true;
+	}
+	if (rc < 0) {
+		/* Transient grandchild setup failure (fork, id-map write,
+		 * secondary unshare).  Skip this iteration without latching
+		 * -- the failure is not policy and may not recur. */
+		return true;
+	}
+
 	return true;
 }
