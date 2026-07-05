@@ -1,19 +1,10 @@
 /*
  * struct_catalog/fcntl.c -- fcntl-family struct field tables.
  *
- * Carved out of struct_catalog.c as the eleventh leaf TU of the file
- * split: the central spine (struct_catalog[], syscall_struct_args[])
- * and all logic stay in struct_catalog.c; this TU owns the fcntl
- * leaf data only -- struct flock (fcntl F_*LK / F_OFD_*LK /
- * F_CANCELLK), struct f_owner_ex (fcntl F_GETOWN_EX / F_SETOWN_EX),
- * struct open_how (openat2), and struct file_handle
- * (open_by_handle_at).  Symbols flip from static const to const so
- * the spine's .fields = flock_fields / f_owner_ex_fields /
- * open_how_fields / file_handle_fields references resolve via the
- * externs in struct_catalog-internal.h.
- *
- * struct_catalog.h and arch.h are included unconditionally so this
- * TU is never empty.
+ * Tables are `const` (not `static const`) so the spine's designated-init
+ * `.fields =` references resolve via the externs in struct_catalog-internal.h.
+ * struct_catalog.h and arch.h are #included unconditionally so this TU is
+ * never empty.
  */
 
 #include <stddef.h>
