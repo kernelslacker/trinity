@@ -1,5 +1,5 @@
 /*
- * childops/genl-util.c — implementation for the shared genetlink
+ * childops/net/netlink/genl-util.c — implementation for the shared genetlink
  * scaffolding declared in include/childops-genl.h.
  *
  * The open path opens a NETLINK_GENERIC socket via nl_open() and then
@@ -18,11 +18,11 @@
  * that shared dump and avoids implicit cross-childop state.
  *
  * Behavioural notes preserved from the per-file copies this file
- * replaces (devlink_genl_send_recv in childops/devlink-port-churn.c
- * and genl_send_recv in childops/nl80211-churn.c):
+ * replaces (devlink_genl_send_recv in childops/net/netlink/devlink-port-churn.c
+ * and genl_send_recv in childops/net/netlink/nl80211-churn.c):
  *
  *   - sendmsg() blocking (no MSG_DONTWAIT).  Matches the underlying
- *     nl_send_recv() in childops/netlink-util.c; a netlink sendmsg
+ *     nl_send_recv() in childops/net/netlink/netlink-util.c; a netlink sendmsg
  *     almost never blocks but if it does we'd rather know than wedge.
  *   - SO_RCVTIMEO is the only thing keeping a wedged kernel off the
  *     SIGALRM(1s) child cap, so genl_open() applies a 1 s default
