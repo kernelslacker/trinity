@@ -960,6 +960,14 @@ static void dump_stats_json_iouring_and_zombies(void)
 	putchar(',');
 	stat_category_emit_json(&fd_runtime_skipped_category);
 	putchar(',');
+	stat_category_emit_json(&child_category);
+	putchar(',');
+	stat_category_emit_json(&parent_category);
+	putchar(',');
+	stat_category_emit_json(&uid_change_category);
+	putchar(',');
+	stat_category_emit_json(&no_domains_category);
+	putchar(',');
 	stat_category_emit_json(&zombie_slots_category);
 	putchar(',');
 }

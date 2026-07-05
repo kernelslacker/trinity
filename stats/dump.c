@@ -433,6 +433,14 @@ void dump_stats_fuzzer_subsystems(void)
 
 	stat_category_emit_text(&fd_runtime_skipped_category);
 
+	stat_category_emit_text(&child_category);
+
+	stat_category_emit_text(&parent_category);
+
+	stat_category_emit_text(&uid_change_category);
+
+	stat_category_emit_text(&no_domains_category);
+
 	dump_stats_render_zombie_slots();
 }
 

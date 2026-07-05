@@ -1596,6 +1596,66 @@ const struct stat_category fd_runtime_skipped_category =
 	              fd_runtime_skipped_stdio,
 	              fd_runtime_skipped_fields);
 
+/* child_dead_parent_observed: init_child()'s pid-handshake loop saw
+ * pid_alive(mainpid) == false -- the parent died before publishing this
+ * child's slot in pids[].  The original outputerr("BUG!: parent went
+ * away!") was swallowed by the dup2 /dev/null redirect; a single-field
+ * category surfaces the survivor signal in both dumps.  Text self-gates
+ * so a healthy run emits nothing. */
+static const struct stat_field child_fields[] = {
+	STAT_FIELD(child, dead_parent_observed),
+};
+
+const struct stat_category child_category =
+	STAT_CATEGORY("child",
+	              child_dead_parent_observed,
+	              child_fields);
+
+/* parent_inherited_fds_closed: sanitize_inherited_fds() closed an fd
+ * the parent inherited from its launcher (or the launcher's parent) at
+ * startup.  Non-zero means the parent came in with stray fds beyond
+ * {0,1,2}, which could otherwise wedge the reap-path epoll/poll loop.
+ * A single-field category surfaces the cleanup count in both dumps;
+ * text self-gates so a clean launch environment emits nothing. */
+static const struct stat_field parent_fields[] = {
+	STAT_FIELD(parent, inherited_fds_closed),
+};
+
+const struct stat_category parent_category =
+	STAT_CATEGORY("parent",
+	              parent_inherited_fds_closed,
+	              parent_fields);
+
+/* uid_change_logged: check_uid saw the child's uid drift away from
+ * orig_uid + overflowuid.  Non-root drifts log-and-continue rather than
+ * hard-bailing, so the drift count is the only positive signal that a
+ * fuzzed setresuid/setreuid/setfsuid landed inside an unshared user
+ * namespace.  A single-field category surfaces the count in both dumps;
+ * text self-gates so a stable-uid run emits nothing. */
+static const struct stat_field uid_change_fields[] = {
+	STAT_FIELD(uid_change, logged),
+};
+
+const struct stat_category uid_change_category =
+	STAT_CATEGORY("uid_change",
+	              uid_change_logged,
+	              uid_change_fields);
+
+/* no_domains_runtime_skipped: socket families auto-marked in no_domains[]
+ * at startup because socket() probes returned EAFNOSUPPORT/EPROTONOSUPPORT
+ * for both SOCK_STREAM and SOCK_DGRAM.  Non-zero tells the operator how
+ * many random-syscall socket() picks per cycle the running kernel can
+ * never reach, and confirms the auto-skip ran (vs. --exclude-domains by
+ * hand).  Text self-gates so a fully-supported build emits nothing. */
+static const struct stat_field no_domains_fields[] = {
+	STAT_FIELD(no_domains, runtime_skipped),
+};
+
+const struct stat_category no_domains_category =
+	STAT_CATEGORY("no_domains",
+	              no_domains_runtime_skipped,
+	              no_domains_fields);
+
 /* zombie_slots mixes two struct prefixes (zombie_slots_ for the gauge,
  * zombies_ for the counters); each STAT_FIELD picks its own prefix so the
  * JSON keys stay flat ("pending", "reaped", "timed_out"). */
