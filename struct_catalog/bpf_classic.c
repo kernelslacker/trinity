@@ -1,23 +1,18 @@
 /*
  * struct_catalog/bpf_classic.c -- classic-BPF struct field tables.
  *
- * Carved out of struct_catalog.c as the next leaf TU of the file
- * split: the central spine (struct_catalog[], syscall_struct_args[])
- * and all logic stay in struct_catalog.c; this TU owns the classic-BPF
- * leaf data only -- struct sock_filter (the cBPF instruction word)
- * and struct sock_fprog (the { len, filter } pair passed to seccomp
- * SET_MODE_FILTER, setsockopt(SO_ATTACH_FILTER), and prctl(PR_SET_
- * SECCOMP)).  The two are kept co-located here because sock_fprog's
- * FT_PTR_ARRAY field names "sock_filter" as its elem_struct -- the
- * pointer-fill pass dereferences that name through the catalog to
- * size the sub-array, so the element descriptor has to ship in the
- * same TU as the container.  Symbols flip from static const to const
- * so the spine's .fields = sock_filter_fields / .fields =
- * sock_fprog_fields references resolve via the externs in
- * struct_catalog-internal.h.
+ * struct sock_filter (the cBPF instruction word) and struct sock_fprog
+ * (the { len, filter } pair passed to seccomp SET_MODE_FILTER,
+ * setsockopt(SO_ATTACH_FILTER), and prctl(PR_SET_SECCOMP)) are kept
+ * co-located here because sock_fprog's FT_PTR_ARRAY field names
+ * "sock_filter" as its elem_struct -- the pointer-fill pass dereferences
+ * that name through the catalog to size the sub-array, so the element
+ * descriptor has to ship in the same TU as the container.
  *
- * struct_catalog.h and arch.h are included unconditionally so this
- * TU is never empty.
+ * Tables are `const` (not `static const`) so the spine's designated-init
+ * `.fields =` references resolve via the externs in struct_catalog-internal.h.
+ * struct_catalog.h and arch.h are #included unconditionally so this TU is
+ * never empty.
  */
 
 #include <stddef.h>
