@@ -1,6 +1,6 @@
 /*
  * tc-qdisc-churn-builders - tc-nlmsg builder family carved out of
- * childops/tc-qdisc-churn.c.  Pure netlink-message constructors:
+ * childops/net/tc/qdisc-churn.c.  Pure netlink-message constructors:
  * every helper takes a caller-supplied nl_ctx and emits one rtnl
  * message (RTM_NEWLINK / RTM_NEWQDISC / RTM_NEWTCLASS /
  * RTM_NEWTFILTER and their DEL twins) plus a couple of TCA_OPTIONS

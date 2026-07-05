@@ -1,7 +1,7 @@
 /*
  * tc-qdisc-churn-internal.h
  *
- * Shared declarations split out of childops/tc-qdisc-churn.c so the
+ * Shared declarations split out of childops/net/tc/qdisc-churn.c so the
  * tc-nlmsg builder family (build_*qdisc / build_*tclass / build_*tfilter
  * / build_dummy_create / build_bridge_create / build_veth_pair /
  * build_setlink_master / build_qfq_class / build_newqdisc_opts and the
