@@ -110,6 +110,12 @@ static const struct ioctl kvm_vm_ioctls[] = {
 #ifdef KVM_PRE_FAULT_MEMORY
 	IOCTL(KVM_PRE_FAULT_MEMORY),
 #endif
+#ifdef KVM_GET_STATS_FD
+	IOCTL(KVM_GET_STATS_FD),
+#endif
+#ifdef KVM_HYPERV_EVENTFD
+	IOCTL(KVM_HYPERV_EVENTFD),
+#endif
 };
 
 /*
