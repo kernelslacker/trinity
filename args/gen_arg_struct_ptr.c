@@ -272,7 +272,7 @@ static const struct struct_desc *paired_struct_desc(struct syscallentry *entry,
  */
 unsigned long gen_arg_struct_size(struct syscallentry *entry,
 					 struct syscallrecord *rec,
-					 unsigned int argnum __unused__)
+					 unsigned int argnum)
 {
 	const struct struct_desc *desc;
 	const struct struct_old_abi_sizes *oa;
@@ -283,12 +283,18 @@ unsigned long gen_arg_struct_size(struct syscallentry *entry,
 	 * is a learned-size scalar slot, the same shape as the typed-safe
 	 * size/count/range scalar set the typed store is calibrated for.
 	 *
+	 * argnum feeds the typed_inject_fill_slot_hist[] placement-proof
+	 * counter (bumped inside cmp_hints_try_get_ex only when the LIVE
+	 * inject fires and the accept gate passes); no rnd draw and no
+	 * behaviour change beyond the observability counter.
+	 *
 	 * No accept range: this consumer has no declared upper bound to
 	 * gate against; the fallback random scalar below clamps at
 	 * ARG_STRUCT_SIZE_FALLBACK_CAP only for the no-catalog path. */
 	if (ONE_IN(cmp_hint_inject_denom(10)) &&
 	    cmp_hints_try_get_ex(rec->nr, rec->do32bit,
-				 CMP_HINT_BOUNDARY, 0, true, NULL, &hint)) {
+				 CMP_HINT_BOUNDARY, 0, true, NULL,
+				 argnum, &hint)) {
 		credit_cmp_hint_injection(rec, CMP_HINT_CALLSITE_ARG_STRUCT_SIZE);
 		return hint;
 	}

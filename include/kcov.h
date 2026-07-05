@@ -1816,6 +1816,25 @@ struct kcov_shared {
 	 *      with reexec_attribution_slot_hist to read per-slot success
 	 *      rate -- a slot that gets the bulk of attributions but no
 	 *      successes is wasted re-exec budget.
+	 *  typed_inject_fill_slot_hist[CMP_REDQUEEN_SLOT_HIST_NR]
+	 *      Sibling of reexec_attribution_slot_hist: same 6-slot
+	 *      histogram (index = argnum - 1) but counting the arg slot the
+	 *      typed-hypothesis LIVE inject arm actually FILLED, threaded
+	 *      through from the caller's argnum on the two typed-eligible
+	 *      call sites (ARG_RANGE, ARG_STRUCT_SIZE) and bumped inside
+	 *      the accept-gated commit block in cmp_try_get_durable_tier()
+	 *      only when hyp_injected -- so an accept-rejected derived
+	 *      value cannot contaminate the fill distribution.  Placement-
+	 *      proof observability: reexec_attribution_slot_hist reports
+	 *      which arg slot the kernel-side CMP fired ON (source slot);
+	 *      this counter reports which arg slot the typed inject
+	 *      landed IN (fill slot).  A divergence between the two
+	 *      distributions means the derived value is being placed on a
+	 *      different arg slot than the one it was learned from --
+	 *      placement is confirmed as the CMP-conversion killer.
+	 *      Value-neutral shadow: no rnd draw is added and no derived
+	 *      value is changed by the plumbing; the counter is bumped by
+	 *      __atomic_fetch_add only.
 	 *  reexec_pending_dropped
 	 *      Per-call counter: bumped once per parent call from
 	 *      cmp_hints_collect() when the per-child reexec_pending[] buffer
@@ -1842,6 +1861,7 @@ struct kcov_shared {
 	unsigned long reexec_ambiguous_by_syscall[MAX_NR_SYSCALL];
 	unsigned long reexec_attribution_slot_hist[CMP_REDQUEEN_SLOT_HIST_NR];
 	unsigned long reexec_success_by_slot[CMP_REDQUEEN_SLOT_HIST_NR];
+	unsigned long typed_inject_fill_slot_hist[CMP_REDQUEEN_SLOT_HIST_NR];
 	unsigned long reexec_pending_dropped;
 	/*
 	 * Obsolete wastage counter.  Originally bumped at the gate-pass

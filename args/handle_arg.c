@@ -94,7 +94,7 @@ unsigned long handle_arg_range(struct syscallentry *entry,
 		if (cmp_hint_baseline_should_inject() &&
 		    cmp_hints_try_get_ex(rec->nr, rec->do32bit,
 					 CMP_HINT_BOUNDARY, 0, true,
-					 &range, &hint)) {
+					 &range, argnum, &hint)) {
 			credit_cmp_hint_injection(rec, CMP_HINT_CALLSITE_OTHER);
 			return hint;
 		}
