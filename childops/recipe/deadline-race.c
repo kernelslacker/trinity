@@ -115,7 +115,7 @@ static void *bpf_htab_racer_thread(void *arg)
  * and the bucket-lock acquisition order between iterate and delete has
  * to keep the chain walk consistent under concurrent prepend/remove.
  *
- * Distinct from recipe_bpf_lifecycle (childops/bpf-lifecycle.c) which
+ * Distinct from recipe_bpf_lifecycle (childops/misc/bpf-lifecycle.c) which
  * drives BPF_MAP_TYPE_ARRAY (no chain walk, no per-bucket lock) plus a
  * loaded program; this recipe drives the *concurrent* iterate-vs-delete
  * window on a real hash map's bucket chain.  Random callers of bpf()
