@@ -461,6 +461,7 @@ const struct stat_category socket_family_chain_category =
 static const struct stat_field socket_family_grammar_fields[] = {
 	STAT_FIELD(socket_family_grammar, runs),
 	STAT_FIELD(socket_family_grammar, completed),
+	STAT_FIELD(socket_family_grammar, distinct_seq),
 };
 
 const struct stat_category socket_family_grammar_category =

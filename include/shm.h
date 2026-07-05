@@ -448,6 +448,28 @@ struct shm_s {
 	bool vxlan_encap_kind_unsupported[VXLAN_ENCAP_NR_KINDS];
 
 	/*
+	 * Distinct-sequence-hash ring for run_grammar_chain's per-walk
+	 * phase ordering.  Each walk computes an FNV-1a hash over the
+	 * step-IDs it actually executed and calls sfg_seq_seen_or_add()
+	 * to fold it into this ring.  The ring's population is surfaced
+	 * as stats.socket_family_grammar_distinct_seq — a value greater
+	 * than one proves the phase-order table is live.
+	 *
+	 * Fixed capacity keeps the memory footprint small (128 * 4 =
+	 * 512 bytes) and the counter saturates when the ring fills — the
+	 * metric is a variety signal, not a full inventory.  Multiple
+	 * children write concurrently; a compare-exchange on sfg_seq_count
+	 * makes the append race-free without a lock.  Losers of the CAS
+	 * re-scan the ring (the winner just wrote a slot that may match
+	 * their hash), so a duplicate under a lost race is possible only
+	 * if two children race with the same NEW hash simultaneously —
+	 * an over-count of one is acceptable for a variety metric.
+	 */
+#define SFG_SEQ_HASH_CAP 128
+	uint32_t sfg_seq_hashes[SFG_SEQ_HASH_CAP];
+	unsigned int sfg_seq_count;
+
+	/*
 	 * Multi-strategy syscall picker — see include/strategy.h.
 	 *
 	 * current_strategy: fleet-wide active strategy enum.  Children read
