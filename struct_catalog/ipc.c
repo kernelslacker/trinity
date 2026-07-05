@@ -1,19 +1,11 @@
 /*
- * struct_catalog/ipc.c -- SysV / POSIX IPC struct field tables.
+ * struct_catalog/ipc.c -- SysV / POSIX IPC struct field tables
+ * (sembuf, mq_attr, msqid_ds, shmid_ds, msgbuf).
  *
- * Carved out of struct_catalog.c as the tenth leaf TU of the file
- * split: the central spine (struct_catalog[], syscall_struct_args[])
- * and all logic stay in struct_catalog.c; this TU owns the IPC leaf
- * data only -- struct sembuf (semop / semtimedop), struct mq_attr
- * (mq_open / mq_getsetattr), struct msqid_ds (msgctl IPC_SET),
- * struct shmid_ds (shmctl IPC_SET), and struct msgbuf (msgsnd).
- * Symbols flip from static const to const so the spine's
- * .fields = sembuf_fields / mq_attr_fields / msqid_ds_fields /
- * shmid_ds_fields / msgbuf_fields references resolve via the externs
- * in struct_catalog-internal.h.
- *
- * struct_catalog.h and arch.h are included unconditionally so this
- * TU is never empty.
+ * Tables are `const` (not `static const`) so the spine's designated-init
+ * `.fields =` references resolve via the externs in struct_catalog-internal.h.
+ * struct_catalog.h and arch.h are #included unconditionally so this TU is
+ * never empty.
  */
 
 #include <stddef.h>
