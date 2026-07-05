@@ -1,23 +1,16 @@
 /*
  * struct_catalog/xattr.c -- xattr_args / file_attr struct field tables.
  *
- * Carved out of struct_catalog.c as another leaf TU of the file
- * split: the central spine (struct_catalog[], syscall_struct_args[])
- * and all logic stay in struct_catalog.c; this TU owns the xattr /
- * file_attr leaf data only -- struct xattr_args (setxattrat /
- * getxattrat, gated on USE_XATTR_ARGS) and struct file_attr
- * (file_setattr).  Symbols flip from static const to const so the
- * spine's .fields = xattr_args_fields / file_attr_fields references
- * resolve via the externs in struct_catalog-internal.h.
+ * Field tables are `const` (not `static const`) so the spine's
+ * .fields=/.variants= references resolve via struct_catalog-internal.h.
+ * struct_catalog.h and arch.h are included unconditionally so this TU
+ * is never empty when USE_XATTR_ARGS is off.
  *
  * struct file_attr comes from <linux/fs.h> when the system uapi
  * headers are recent enough; compat.h carries a layout-identical
  * fallback under #ifndef FILE_ATTR_SIZE_VER0 plus a fallback
  * FS_XFLAG_HASATTR macro, so both TUs land on the same shape
  * regardless of the build host's vintage.
- *
- * struct_catalog.h and arch.h are included unconditionally so this TU
- * is never empty when USE_XATTR_ARGS is off.
  */
 
 #include <stddef.h>
