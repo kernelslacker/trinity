@@ -277,7 +277,25 @@ static int ignore_files(const char *path)
 	}
 
 	for (i = 0; ignored_prefixes[i]; i++) {
-		if (strncmp(path, ignored_prefixes[i], strlen(ignored_prefixes[i])) == 0) {
+		size_t plen = strlen(ignored_prefixes[i]);
+
+		/*
+		 * Every entry above carries a trailing '/' so child paths
+		 * (e.g. "/sys/firmware/efi/efivars/<var>") match cleanly.
+		 * But nftw hands file_tree_callback the root itself as a
+		 * bare directory node (fpath="/sys/kernel/debug", no
+		 * trailing slash) which slips past a straight strncmp
+		 * against a slash-terminated prefix.  Strip the trailing
+		 * '/' for the compare, then require the next byte in
+		 * @path to be '\0' or '/' so the root, its children, and
+		 * only those match — a sibling like "/dev/ptsX" stays
+		 * unaffected.
+		 */
+		if (plen > 0 && ignored_prefixes[i][plen - 1] == '/')
+			plen--;
+
+		if (strncmp(path, ignored_prefixes[i], plen) == 0 &&
+		    (path[plen] == '\0' || path[plen] == '/')) {
 			debugf("Skipping prefix %s\n", path);
 			return 1;
 		}
