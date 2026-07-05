@@ -214,6 +214,8 @@ static const struct ioctl kvm_vcpu_ioctls[] = {
 #endif
 	IOCTL(KVM_X86_SET_MCE),
 	IOCTL(KVM_TPR_ACCESS_REPORTING),
+	IOCTL(KVM_SET_VAPIC_ADDR),
+	IOCTL(KVM_X86_SETUP_MCE),
 #endif
 	IOCTL(KVM_GET_REG_LIST),
 };
