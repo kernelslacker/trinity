@@ -1174,9 +1174,17 @@ struct stats_s {
 	 * run_grammar_chain() — runs counts every entry, completed counts
 	 * the walks that reached the data leg cleanly.  Per-family
 	 * completion counters are intentionally absent: the existing
-	 * chrono log + per-syscall stats already attribute coverage. */
+	 * chrono log + per-syscall stats already attribute coverage.
+	 *
+	 * distinct_seq is the population of the shm sfg_seq_hashes ring:
+	 * the number of DISTINCT executed step-ID sequences observed
+	 * fleet-wide since startup.  Rises as the per-family phase-order
+	 * table exposes new legal permutations; saturates once the ring
+	 * fills at SFG_SEQ_HASH_CAP.  A value > 1 proves the ordering
+	 * table is live and the executor is actually varying the walk. */
 	unsigned long socket_family_grammar_runs;
 	unsigned long socket_family_grammar_completed;
+	unsigned long socket_family_grammar_distinct_seq;
 
 	/* Number of dispatches inside tracefs_fuzzer that landed on a
 	 * function-tracer-subset op (set_ftrace_filter / set_ftrace_notrace /

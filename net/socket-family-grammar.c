@@ -15,6 +15,7 @@
  */
 
 #include <errno.h>
+#include <stdint.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
 #include <unistd.h>
@@ -310,6 +311,61 @@ sfg_pick_phase_order(const struct socket_family_grammar *sfg,
 	return &sfg->phase_orders[rnd_modulo_u32(sfg->nr_phase_orders)];
 }
 
+/*
+ * FNV-1a step-ID hash.  Streamed per-step from the executor loop so
+ * a walk that bails mid-sequence hashes only the steps that actually
+ * ran — the truncated hash is a distinct sequence in its own right,
+ * which is the right variety signal for the P1 metric.
+ */
+#define SFG_FNV1A_OFFSET	0x811c9dc5u
+#define SFG_FNV1A_PRIME		0x01000193u
+
+static inline uint32_t sfg_fnv1a_step(uint32_t h, unsigned char step)
+{
+	h ^= step;
+	h *= SFG_FNV1A_PRIME;
+	return h;
+}
+
+/*
+ * Record a per-walk sequence hash in shm's bounded ring.  Linear scan
+ * to skip duplicates; CAS on sfg_seq_count reserves a fresh slot and
+ * bumps stats.socket_family_grammar_distinct_seq exactly once per new
+ * sequence observed fleet-wide.  Saturates silently once the ring
+ * fills (SFG_SEQ_HASH_CAP entries); the variety-signal use case does
+ * not need a full inventory.
+ */
+static void sfg_seq_record(uint32_t h)
+{
+	unsigned int count, i, slot;
+
+	count = __atomic_load_n(&shm->sfg_seq_count, __ATOMIC_ACQUIRE);
+	for (;;) {
+		for (i = 0; i < count; i++) {
+			if (__atomic_load_n(&shm->sfg_seq_hashes[i],
+					    __ATOMIC_RELAXED) == h)
+				return;
+		}
+		if (count >= SFG_SEQ_HASH_CAP)
+			return;
+		slot = count;
+		if (__atomic_compare_exchange_n(&shm->sfg_seq_count,
+						&count, slot + 1,
+						false,
+						__ATOMIC_ACQ_REL,
+						__ATOMIC_ACQUIRE)) {
+			__atomic_store_n(&shm->sfg_seq_hashes[slot], h,
+					 __ATOMIC_RELEASE);
+			__atomic_add_fetch(
+				&shm->stats.socket_family_grammar_distinct_seq,
+				1, __ATOMIC_RELAXED);
+			return;
+		}
+		/* CAS lost: `count` now holds the witnessed slot count;
+		 * re-scan (the winning writer may have written OUR hash). */
+	}
+}
+
 bool run_grammar_chain(const struct socket_family_grammar *sfg,
 		       unsigned int *err_burst)
 {
@@ -327,6 +383,8 @@ bool run_grammar_chain(const struct socket_family_grammar *sfg,
 	bool ok = false;
 	bool bail = false;
 	unsigned int n_setsockopts;
+	uint32_t seq_hash = SFG_FNV1A_OFFSET;
+	unsigned int seq_len = 0;
 	bool (*needs_la)(struct socket_triplet *);
 
 	__atomic_add_fetch(&shm->stats.socket_family_grammar_runs, 1,
@@ -354,6 +412,9 @@ bool run_grammar_chain(const struct socket_family_grammar *sfg,
 
 		if (step == SFG_PHASE_END)
 			break;
+
+		seq_hash = sfg_fnv1a_step(seq_hash, (unsigned char)step);
+		seq_len++;
 
 		switch (step) {
 		case SFG_PHASE_SOCKET:
@@ -449,6 +510,9 @@ bool run_grammar_chain(const struct socket_family_grammar *sfg,
 				   1, __ATOMIC_RELAXED);
 		*err_burst = 0;
 	}
+
+	if (seq_len > 0)
+		sfg_seq_record(seq_hash);
 out:
 	if (ctx.child_fd >= 0) {
 		xdp_umem_release(ctx.child_fd);
