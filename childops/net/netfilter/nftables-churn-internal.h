@@ -1,7 +1,7 @@
 /*
  * nftables-churn-internal.h
  *
- * Shared declarations split out of childops/nftables-churn.c to allow
+ * Shared declarations split out of childops/net/netfilter/nftables-churn.c to allow
  * the per-nft-expression builders (build_nft_*_expr family) to live in
  * their own translation unit and compile in parallel with the rest of
  * the module.  This header is private to the two TUs that make up

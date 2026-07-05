@@ -1,7 +1,7 @@
 /*
  * xfrm-churn-internal.h
  *
- * Shared declarations split out of childops/xfrm-churn.c to let the
+ * Shared declarations split out of childops/net/xfrm/xfrm-churn.c to let the
  * XFRM netlink builder family (build_sa_msg / build_sa_id_msg /
  * build_newpolicy / build_delpolicy / build_allocspi and their
  * attribute / selector / lifetime helpers) live in their own
@@ -383,8 +383,8 @@ struct xfrm_algo_def {
 };
 
 /*
- * Cross-TU builder API.  Defined in childops/xfrm-churn-builders.c;
- * driven by the per-phase helpers in childops/xfrm-churn.c.  All
+ * Cross-TU builder API.  Defined in childops/net/xfrm/xfrm-churn-builders.c;
+ * driven by the per-phase helpers in childops/net/xfrm/xfrm-churn.c.  All
  * builders return 0 on netlink-ack success, a negative errno on
  * kernel rejection, or -EIO on local buffer/encode failure (matches
  * nl_send_recv() conventions in include/childops-netlink.h).

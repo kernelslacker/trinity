@@ -1,5 +1,5 @@
 /*
- * childops/netlink-util.c — implementation for the shared scaffolding
+ * childops/net/netlink/netlink-util.c — implementation for the shared scaffolding
  * declared in include/childops-netlink.h.
  *
  * Behavioural choices preserved from the per-file copies this file
@@ -29,7 +29,7 @@
  *     -EINPROGRESS is intentionally NOT retried here: the only
  *     caller that needs it (nl80211-churn) wraps genl_send_recv
  *     in its own genl_send_recv_retry (see
- *     childops/nl80211-churn.c:NL80211_RETRY_MAX).  Adding
+ *     childops/net/netlink/nl80211-churn.c:NL80211_RETRY_MAX).  Adding
  *     -EINPROGRESS here would change the behaviour of every
  *     current ROUTE-plane retry caller.
  */
