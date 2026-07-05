@@ -52,6 +52,9 @@ static const struct ioctl kvm_vm_ioctls[] = {
 	IOCTL(KVM_SET_NR_MMU_PAGES),
 	IOCTL(KVM_GET_NR_MMU_PAGES),
 	IOCTL(KVM_SET_USER_MEMORY_REGION),
+#ifdef KVM_SET_USER_MEMORY_REGION2
+	IOCTL(KVM_SET_USER_MEMORY_REGION2),
+#endif
 	IOCTL(KVM_SET_TSS_ADDR),
 	IOCTL(KVM_SET_IDENTITY_MAP_ADDR),
 	IOCTL(KVM_CREATE_IRQCHIP),
@@ -159,6 +162,34 @@ static void sanitise_kvm_user_memory_region(struct syscallrecord *rec)
 	rec->a3 = (unsigned long)m;
 }
 
+#ifdef KVM_SET_USER_MEMORY_REGION2
+static void sanitise_kvm_user_memory_region2(struct syscallrecord *rec)
+{
+	struct kvm_userspace_memory_region2 *m;
+	void *ua;
+
+	m = get_writable_address(sizeof(*m));
+	if (m == NULL)
+		return;
+
+	ua = get_writable_address(KVM_FUZZ_PAGE_SIZE);
+	if (ua == NULL)
+		return;
+
+	memset(m, 0, sizeof(*m));
+
+	m->slot = rnd_modulo_u32(KVM_FUZZ_MEM_SLOTS);
+	m->flags = rnd_modulo_u32(2) ? 0 : KVM_MEM_LOG_DIRTY_PAGES;
+	m->guest_phys_addr = (rnd_u64() % KVM_FUZZ_GPA_LIMIT)
+			   & ~(KVM_FUZZ_PAGE_SIZE - 1);
+	m->memory_size = (rnd_u64() % KVM_FUZZ_MAX_MEM_SIZE)
+		       & ~(KVM_FUZZ_PAGE_SIZE - 1);
+	m->userspace_addr = (__u64)(unsigned long)ua;
+
+	rec->a3 = (unsigned long)m;
+}
+#endif
+
 static void sanitise_kvm_irq_level(struct syscallrecord *rec)
 {
 	struct kvm_irq_level *l;
@@ -230,6 +261,11 @@ static void kvm_vm_sanitise(const struct ioctl_group *grp,
 	case KVM_SET_USER_MEMORY_REGION:
 		sanitise_kvm_user_memory_region(rec);
 		break;
+#ifdef KVM_SET_USER_MEMORY_REGION2
+	case KVM_SET_USER_MEMORY_REGION2:
+		sanitise_kvm_user_memory_region2(rec);
+		break;
+#endif
 	case KVM_IRQ_LINE:
 	case KVM_IRQ_LINE_STATUS:
 		sanitise_kvm_irq_level(rec);
