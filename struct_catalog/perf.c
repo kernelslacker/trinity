@@ -1,21 +1,10 @@
 /*
  * struct_catalog/perf.c -- perf_event_attr field and variant tables.
  *
- * Carved out of struct_catalog.c as the seventh leaf TU of the file
- * split: the central spine (struct_catalog[], syscall_struct_args[])
- * and all logic stay in struct_catalog.c; this TU owns the
- * perf_event_attr leaf data only -- the shared field table plus the
- * five per-PERF_TYPE_* union-variant sub-tables and their value/vocab
- * pools.  Only perf_event_attr_fields and perf_event_attr_variants
- * flip from static const to const so the spine's
- * .fields = perf_event_attr_fields / .variants = perf_event_attr_
- * variants references resolve via the externs in
- * struct_catalog-internal.h; the per-variant field arrays and the
- * value pools they reference are file-private to this TU and stay
- * static const.
- *
- * struct_catalog.h and arch.h are included unconditionally so this
- * TU is never empty.
+ * perf_event_attr_fields and perf_event_attr_variants are `const` (not
+ * `static const`) so the spine's .fields=/.variants= references resolve
+ * via the externs in struct_catalog-internal.h.  struct_catalog.h and
+ * arch.h are #included unconditionally so this TU is never empty.
  */
 
 #include <stddef.h>
