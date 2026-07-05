@@ -22,7 +22,7 @@
  *      cap-drop oracle keeps observing the host credential profile.
  *      Helper -EPERM (hardened userns policy refused CLONE_NEWUSER)
  *      latches the childop off for the remainder of this child's
- *      lifetime; -1 (transient setup failure: fork, id-map write,
+ *      lifetime; -EAGAIN (transient setup failure: fork, id-map write,
  *      secondary unshare) skips the iteration without latching.
  *   2. RTM_NEWLINK kind="vrf" with IFLA_VRF_TABLE = N (random
  *      table id in [1024, 524287], well above the kernel's reserved
@@ -107,7 +107,7 @@
  * (user.max_user_namespaces=0 or kernel.unprivileged_userns_clone=0).
  * Without a private netns we MUST NOT touch the host's main routing
  * table, so the op stays disabled for the remainder of this child's
- * lifetime.  Transient setup failures (helper return -1) do not set
+ * lifetime.  Transient setup failures (helper return -EAGAIN) do not set
  * this — they may not recur on the next iteration. */
 static bool ns_unsupported;
 
