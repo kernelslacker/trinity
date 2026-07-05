@@ -9,6 +9,48 @@
 struct msghdr;
 
 /*
+ * Connection-phase tag for socket_ctx below.  Set by run_grammar_chain
+ * as it walks the shared socket/bind/listen/accept legs, and read by
+ * downstream legs (currently just the data-leg fd pick) to decide which
+ * fd to run against.  Replaces the bare `bool listening` the pre-ctx
+ * driver carried in its stack frame, so families that grow additional
+ * phases (e.g. connect(), a second accept()) can extend the enum
+ * without a fresh boolean per phase.
+ */
+enum sfg_conn_state {
+	SFG_CONN_INIT = 0,	/* nothing opened yet */
+	SFG_CONN_CREATED,	/* parent_fd is a live socket() */
+	SFG_CONN_BOUND,		/* bind_or_connect leg succeeded */
+	SFG_CONN_LISTENING,	/* listen() succeeded, accept() not yet */
+	SFG_CONN_ACCEPTED,	/* accept() produced a live child_fd */
+};
+
+/*
+ * Per-invocation state for run_grammar_chain.  Generalises the AF_ALG-
+ * only alg_chain_iter_ctx (childops/net/socket-family-chain.c) so any
+ * family the grammar table drives can carry its fds, bound address and
+ * lifecycle position through the chain without loose locals.
+ *
+ * Field defaults must match the -1 / NULL / SFG_CONN_INIT initialisation
+ * the driver uses so the teardown gates skip work any early bail
+ * skipped: parent_fd/child_fd default to -1 (close guarded on >= 0),
+ * bound_addr defaults to NULL (tracked_free_now guarded on non-NULL),
+ * conn_state defaults to SFG_CONN_INIT.
+ *
+ * The AF_ALG childop keeps its own alg_chain_iter_ctx for the AF_ALG-
+ * specific extras (sockaddr_alg body, sndbuf/rcvbuf, type enum, splice
+ * pipe fds); folding it onto this struct is a follow-up, not this
+ * commit's scope.
+ */
+struct socket_ctx {
+	int parent_fd;			/* -1 until socket() opens it */
+	int child_fd;			/* -1 until accept() opens it */
+	int family;			/* AF_* from the picked triplet */
+	struct sockaddr *bound_addr;	/* addr the bind leg used, or NULL */
+	enum sfg_conn_state conn_state;	/* how far the chain has walked */
+};
+
+/*
  * Per-family grammar entry — an outer driver (run_grammar_chain in
  * net/socket-family-grammar.c) walks one of these end-to-end inside
  * a single childop, with the same fd flowing through every step.
@@ -82,7 +124,15 @@ void sfg_mark_unsupported(int family);
 /* Default callbacks the grammar entries can plug into the table. */
 bool sfg_always_false(void);
 void sfg_default_pick_triplet(int family, struct socket_triplet *out);
-int sfg_default_bind(int fd, struct socket_triplet *triplet);
+/*
+ * Default bind path.  On success stashes the sockaddr it fabricated
+ * (via net_protocols[family].proto->gen_sockaddr) into ctx->bound_addr
+ * so the caller's teardown frees it exactly once.  Returns 0 on success,
+ * -1 on failure — the caller ignores ctx->bound_addr on failure (it
+ * stays NULL).
+ */
+int sfg_default_bind(int fd, struct socket_triplet *triplet,
+		     struct socket_ctx *ctx);
 bool sfg_default_needs_listen_accept(struct socket_triplet *triplet);
 void sfg_default_walk_setsockopts(int fd, struct socket_triplet *triplet,
 				  unsigned int n);

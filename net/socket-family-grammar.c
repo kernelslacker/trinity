@@ -168,17 +168,17 @@ void sfg_default_pick_triplet(int family, struct socket_triplet *out)
 	*out = proto->valid_triplets[rnd_modulo_u32(proto->nr_triplets)];
 }
 
-int sfg_default_bind(int fd, struct socket_triplet *triplet)
+int sfg_default_bind(int fd, struct socket_triplet *triplet,
+		     struct socket_ctx *ctx)
 {
 	const struct netproto *proto;
 	struct sockaddr *addr = NULL;
 	socklen_t addrlen = 0;
-	int rv = -1;
 
-	if (triplet->family == 0 || triplet->family >= TRINITY_PF_MAX)
+	if (ctx->family == 0 || ctx->family >= TRINITY_PF_MAX)
 		return -1;
 
-	proto = net_protocols[triplet->family].proto;
+	proto = net_protocols[ctx->family].proto;
 	if (proto == NULL || proto->gen_sockaddr == NULL)
 		return -1;
 
@@ -186,11 +186,17 @@ int sfg_default_bind(int fd, struct socket_triplet *triplet)
 	if (addr == NULL)
 		return -1;
 
-	if (bind(fd, addr, addrlen) == 0)
-		rv = 0;
+	if (bind(fd, addr, addrlen) < 0) {
+		tracked_free_now(addr);
+		return -1;
+	}
 
-	tracked_free_now(addr);
-	return rv;
+	/* Hand ownership to the ctx — the driver's teardown will
+	 * tracked_free_now() this pointer on the out: path so later
+	 * legs can reference it without regenerating (and without
+	 * this helper needing to know when they're done with it). */
+	ctx->bound_addr = addr;
+	return 0;
 }
 
 bool sfg_default_needs_listen_accept(struct socket_triplet *triplet)
@@ -281,9 +287,14 @@ bool run_grammar_chain(const struct socket_family_grammar *sfg,
 		       unsigned int *err_burst)
 {
 	struct socket_triplet triplet = { 0, 0, 0 };
-	int parent_fd = -1, child_fd = -1;
+	struct socket_ctx ctx = {
+		.parent_fd = -1,
+		.child_fd = -1,
+		.family = 0,
+		.bound_addr = NULL,
+		.conn_state = SFG_CONN_INIT,
+	};
 	int data_fd;
-	bool listening = false;
 	bool ok = false;
 	unsigned int n_setsockopts;
 	bool (*needs_la)(struct socket_triplet *);
@@ -301,51 +312,57 @@ bool run_grammar_chain(const struct socket_family_grammar *sfg,
 		sfg->pick_triplet(&triplet);
 	else
 		sfg_default_pick_triplet(sfg->family, &triplet);
+	ctx.family = triplet.family;
 
-	parent_fd = socket(triplet.family, triplet.type, triplet.protocol);
-	if (parent_fd < 0) {
+	ctx.parent_fd = socket(triplet.family, triplet.type, triplet.protocol);
+	if (ctx.parent_fd < 0) {
 		if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT)
 			sfg_mark_unsupported(sfg->family);
 		(*err_burst)++;
 		goto out;
 	}
+	ctx.conn_state = SFG_CONN_CREATED;
 
 	if (sfg->configure_pre_bind != NULL)
-		sfg->configure_pre_bind(parent_fd, &triplet);
+		sfg->configure_pre_bind(ctx.parent_fd, &triplet);
 
 	n_setsockopts = 2 + (rnd_modulo_u32(5));	/* 2..6 coordinated calls */
 	if (sfg->walk_setsockopts != NULL)
-		sfg->walk_setsockopts(parent_fd, &triplet, n_setsockopts);
+		sfg->walk_setsockopts(ctx.parent_fd, &triplet, n_setsockopts);
 	else
-		sfg_default_walk_setsockopts(parent_fd, &triplet, n_setsockopts);
+		sfg_default_walk_setsockopts(ctx.parent_fd, &triplet, n_setsockopts);
 
 	if (sfg->bind_or_connect != NULL) {
-		if (sfg->bind_or_connect(parent_fd, &triplet) < 0) {
+		if (sfg->bind_or_connect(ctx.parent_fd, &triplet) < 0) {
 			(*err_burst)++;
 			goto out;
 		}
 	} else {
-		if (sfg_default_bind(parent_fd, &triplet) < 0) {
+		if (sfg_default_bind(ctx.parent_fd, &triplet, &ctx) < 0) {
 			(*err_burst)++;
 			goto out;
 		}
 	}
+	ctx.conn_state = SFG_CONN_BOUND;
 
 	if (sfg->configure_post_bind != NULL)
-		sfg->configure_post_bind(parent_fd, &triplet);
+		sfg->configure_post_bind(ctx.parent_fd, &triplet);
 
 	needs_la = sfg->needs_listen_accept != NULL ? sfg->needs_listen_accept
 						    : sfg_default_needs_listen_accept;
 	if (needs_la(&triplet)) {
-		if (listen(parent_fd, 4) == 0) {
-			child_fd = accept(parent_fd, NULL, NULL);
-			listening = (child_fd >= 0);
+		if (listen(ctx.parent_fd, 4) == 0) {
+			ctx.conn_state = SFG_CONN_LISTENING;
+			ctx.child_fd = accept(ctx.parent_fd, NULL, NULL);
+			if (ctx.child_fd >= 0)
+				ctx.conn_state = SFG_CONN_ACCEPTED;
 		}
 	}
 
-	data_fd = listening ? child_fd : parent_fd;
+	data_fd = (ctx.conn_state == SFG_CONN_ACCEPTED) ? ctx.child_fd
+							: ctx.parent_fd;
 	if (sfg->data_leg != NULL)
-		sfg->data_leg(parent_fd, data_fd, &triplet);
+		sfg->data_leg(ctx.parent_fd, data_fd, &triplet);
 	else
 		sfg_default_data_leg(data_fd, sfg, &triplet);
 
@@ -354,13 +371,15 @@ bool run_grammar_chain(const struct socket_family_grammar *sfg,
 	*err_burst = 0;
 	ok = true;
 out:
-	if (child_fd >= 0) {
-		xdp_umem_release(child_fd);
-		close(child_fd);
+	if (ctx.child_fd >= 0) {
+		xdp_umem_release(ctx.child_fd);
+		close(ctx.child_fd);
 	}
-	if (parent_fd >= 0) {
-		xdp_umem_release(parent_fd);
-		close(parent_fd);
+	if (ctx.parent_fd >= 0) {
+		xdp_umem_release(ctx.parent_fd);
+		close(ctx.parent_fd);
 	}
+	if (ctx.bound_addr != NULL)
+		tracked_free_now(ctx.bound_addr);
 	return ok;
 }
