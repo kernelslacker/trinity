@@ -17,16 +17,18 @@
  * misses silently), so the setup is deliberate rather than fuzzed:
  *   - lo path MTU must be small enough that a legal UDP datagram needs
  *     two IP fragments.  Default lo MTU 65536 rides one fragment with
- *     no continuation, so bring lo down to 1280 (needs CAP_NET_ADMIN,
- *     granted by the userns bootstrap inside the private netns).
- *   - IPv6 @ MTU 1280: fragheaderlen 40, maxfraglen
- *     ((1280-40)&~7)+40-8 = 1272.  P1 fills the MTU exactly at
- *     mtu - ipv6hdr(40) - udphdr(8) = 1232 bytes, with MSG_MORE so the
- *     cork holds (a single uncorked >MTU send fragments cleanly and
- *     never builds a continuation skb).
+ *     no continuation, so bring lo down to a small value picked per
+ *     invocation from cork_splice_mtus[] (needs CAP_NET_ADMIN, granted
+ *     by the userns bootstrap inside the private netns).
+ *   - IPv6 @ picked mtu: fragheaderlen 40, maxfraglen
+ *     ((mtu-40)&~7)+40-8.  p1 is derived to fill the MTU exactly at
+ *     mtu - ipv6hdr(40) - udphdr(8), with MSG_MORE so the cork holds
+ *     (a single uncorked >MTU send fragments cleanly and never builds
+ *     a continuation skb).
  *   - P2 is a 1-byte MSG_SPLICE_PAGES flush; the continuation skb then
  *     takes the paged branch (MSG_SPLICE_PAGES + lo's NETIF_F_SG), with
- *     an 8-byte continuation gap (1280 - maxfraglen 1272).
+ *     a continuation gap of (mtu - maxfraglen) bytes (8 at mtu 1280,
+ *     12 at mtu 1500).
  *
  * The send iov points at a touched, page-aligned anonymous mmap region
  * so the pages are pinnable, matching what real splice callers pass.
@@ -65,18 +67,25 @@
 #include "child.h"
 #include "childops-netlink.h"
 #include "compat.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 #include "userns-bootstrap.h"
+#include "utils.h"
 
-/* The paged continuation branch is reached at MTU 1280 with exactly these payload sizes.  See the
- * file header for the derivation -- do not tune. */
-#define CORK_SPLICE_MTU		1280U
-#define CORK_SPLICE_P1		1232U	/* fills MTU: 1280 - ipv6hdr(40) - udphdr(8) */
+/* Per-invocation MTU picks: both IPv6-valid and both yield a nonzero
+ * continuation gap, so the two-send sequence exercises the paged
+ * continuation branch at every value.  p1 is derived from the picked
+ * mtu inside the body so the first datagram fills the MTU exactly;
+ * see the file header for the derivation -- do not decouple p1 from
+ * mtu. */
+static const uint32_t cork_splice_mtus[] = { 1280, 1500 };
+#define CORK_SPLICE_MTU_MAX	1500U
 #define CORK_SPLICE_P2		1U	/* tail byte; anything >0 works */
 
-/* Anonymous mmap region backing both sends.  One page is plenty; both
- * payloads live at &region[0] and &region[CORK_SPLICE_P1]. */
+/* Anonymous mmap region backing both sends.  One page is plenty at any
+ * picked MTU: max p1 (1452 at mtu 1500) plus p2 (1) fits comfortably.
+ * Both payloads live at &region[0] and &region[p1]. */
 #define CORK_SPLICE_MMAP_BYTES	4096U
 
 #define RTNL_BUF_BYTES		256
@@ -174,10 +183,11 @@ static int lo_add_v6_loopback(struct nl_ctx *ctx, int ifindex)
 
 /*
  * Body: run inside the private CLONE_NEWNET grandchild.  Bring lo up,
- * force its MTU to 1280, wire an AF_INET6 datagram pair on ::1, and
- * emit the two-send sequence that produces an 8-byte continuation gap in the
- * continuation skb.  All fds are O_CLOEXEC; the grandchild's exit
- * reaps everything.  Return value is ignored by the helper.
+ * force its MTU to the per-invocation pick, wire an AF_INET6 datagram
+ * pair on ::1, and emit the two-send sequence that produces an
+ * (mtu - maxfraglen)-byte continuation gap in the continuation skb.
+ * All fds are O_CLOEXEC; the grandchild's exit reaps everything.
+ * Return value is ignored by the helper.
  */
 static int ip6_udp_cork_splice_in_ns(void *arg)
 {
@@ -195,6 +205,8 @@ static int ip6_udp_cork_splice_in_ns(void *arg)
 	int lo_idx;
 	int one = 0;	/* IPV6_PMTUDISC_DONT */
 	ssize_t n;
+	const uint32_t mtu = cork_splice_mtus[rnd_modulo_u32(ARRAY_SIZE(cork_splice_mtus))];
+	const uint32_t p1  = mtu - 40 - 8;	/* fills MTU: ipv6hdr(40) + udphdr(8) */
 
 	/* op_type lives in shared memory and can be scribbled by a
 	 * poisoned-arena write from a sibling; bounds-check before we use
@@ -218,10 +230,11 @@ static int ip6_udp_cork_splice_in_ns(void *arg)
 		goto out;
 	}
 
-	if (lo_set_mtu(&ctx, lo_idx, CORK_SPLICE_MTU) != 0) {
-		/* Without MTU=1280 the datagram rides one fragment,
-		 * continuation gap = 0, and the continuation branch isn't taken.  Bail out
-		 * rather than emit useless traffic. */
+	if (lo_set_mtu(&ctx, lo_idx, mtu) != 0) {
+		/* Without the small path MTU the datagram rides one
+		 * fragment, continuation gap = 0, and the continuation
+		 * branch isn't taken.  Bail out rather than emit useless
+		 * traffic. */
 		__atomic_add_fetch(&shm->stats.ip6_udp_cork_splice_setup_failed,
 				   1, __ATOMIC_RELAXED);
 		goto out;
@@ -277,24 +290,25 @@ static int ip6_udp_cork_splice_in_ns(void *arg)
 	 * MSG_SPLICE_PAGES flag takes the paged branch in the
 	 * ip_generic_getfrag / __ip6_append_data machinery.
 	 *
-	 * If P1 is anything other than mtu - ipv6hdr - udphdr the first
-	 * skb does not land on the MTU boundary and the continuation
-	 * skb's continuation-length accounting looks correct -- the childop then
-	 * silently observes zero coverage of the paged continuation branch.
-	 * Do NOT tune P1. */
+	 * p1 is derived (mtu - ipv6hdr - udphdr) so the first skb lands
+	 * on the MTU boundary at every picked mtu.  Any other value
+	 * would send a generic datagram: the continuation skb's length
+	 * accounting looks correct and the childop silently observes
+	 * zero coverage of the paged continuation branch.  Do NOT
+	 * decouple p1 from mtu. */
 	{
 		struct iovec iov;
 		struct msghdr mh;
 
 		iov.iov_base = region;
-		iov.iov_len  = CORK_SPLICE_P1;
+		iov.iov_len  = p1;
 		memset(&mh, 0, sizeof(mh));
 		mh.msg_iov    = &iov;
 		mh.msg_iovlen = 1;
 
 		n = sendmsg(tx, &mh,
 			    MSG_MORE | MSG_SPLICE_PAGES | MSG_DONTWAIT);
-		if (n != (ssize_t)CORK_SPLICE_P1) {
+		if (n != (ssize_t)p1) {
 			/* Kernel refused the corked splice-pages send.
 			 * Common on stripped configs (no NETIF_F_SG on lo
 			 * in exotic builds, or MSG_SPLICE_PAGES rejected).
@@ -309,15 +323,16 @@ static int ip6_udp_cork_splice_in_ns(void *arg)
 	}
 
 	/* Second send: no MSG_MORE, so the datagram is flushed.  The
-	 * continuation skb sees continuation gap = mtu - maxfraglen = 8; the
-	 * paged path then computes copy = datalen(9) - contgap(8)
-	 * - pagedlen(9) = -8 and skb_copy_and_csum_bits writes 8 bytes
-	 * past skb->end into skb_shared_info -- an out-of-bounds write. */
+	 * continuation skb sees continuation gap = mtu - maxfraglen
+	 * (8 at mtu 1280, 12 at mtu 1500); the paged path then computes
+	 * copy = datalen - contgap - pagedlen.  If that accounting ever
+	 * underflows, skb_copy_and_csum_bits writes past skb->end into
+	 * skb_shared_info -- an out-of-bounds write. */
 	{
 		struct iovec iov;
 		struct msghdr mh;
 
-		iov.iov_base = region + CORK_SPLICE_P1;
+		iov.iov_base = region + p1;
 		iov.iov_len  = CORK_SPLICE_P2;
 		memset(&mh, 0, sizeof(mh));
 		mh.msg_iov    = &iov;
@@ -338,7 +353,7 @@ drain:
 	 * pile up in the receive queue.  Best-effort; MSG_DONTWAIT so
 	 * we never block if the send never made it through. */
 	{
-		unsigned char rxbuf[CORK_SPLICE_MTU];
+		unsigned char rxbuf[CORK_SPLICE_MTU_MAX];
 		(void)recv(rx, rxbuf, sizeof(rxbuf), MSG_DONTWAIT);
 	}
 
