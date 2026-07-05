@@ -1,19 +1,10 @@
 /*
  * struct_catalog/ldt.c -- LDT (struct user_desc) struct field table.
  *
- * Carved out of struct_catalog.c as the final leaf TU of the file
- * split: the central spine (struct_catalog[], syscall_struct_args[])
- * and all logic stay in struct_catalog.c; this TU owns the
- * x86-only LDT leaf data only -- struct user_desc, the arg2 of
- * modify_ldt on its write_ldt (func == 1) arm.  The symbol flips
- * from static const to const so the spine's
- * .fields = user_desc_fields reference resolves via the extern
- * declared in struct_catalog-internal.h.
- *
- * struct_catalog.h and arch.h are included unconditionally so this
- * TU is never an empty object on non-x86 builds; the LDT header and
- * table body live behind the same X86 guard the spine entry uses
- * for this family.
+ * Tables are `const` (not `static const`) so the spine's `.fields =`
+ * references resolve via the externs in struct_catalog-internal.h.
+ * struct_catalog.h and arch.h are #included unconditionally so this TU
+ * is never empty when X86 is off.
  */
 
 #include <stddef.h>
