@@ -1,17 +1,10 @@
 /*
  * struct_catalog/futex.c -- futex / rseq struct field tables.
  *
- * Carved out of struct_catalog.c as a leaf TU of the file split: the
- * central spine (struct_catalog[], syscall_struct_args[]) and all
- * logic stay in struct_catalog.c; this TU owns the futex-family leaf
- * data only -- struct robust_list_head (set_robust_list), struct rseq
- * (rseq), and struct futex_waitv (futex_waitv).  Symbols flip from
- * static const to const so the spine's .fields = robust_list_head_fields
- * / .fields = rseq_fields / .fields = futex_waitv_fields references
- * resolve via the externs in struct_catalog-internal.h.
- *
- * struct_catalog.h and arch.h are included unconditionally so this
- * TU is never empty.  <linux/futex.h> brings struct robust_list_head
+ * Tables are `const` (not `static const`) so the spine's designated-init
+ * `.fields =` references resolve via the externs in struct_catalog-internal.h.
+ * struct_catalog.h and arch.h are #included unconditionally so this TU is
+ * never empty.  <linux/futex.h> brings struct robust_list_head
  * and struct futex_waitv; <linux/rseq.h> brings struct rseq and the
  * RSEQ_CS_FLAG_* mask vocabulary.
  */
