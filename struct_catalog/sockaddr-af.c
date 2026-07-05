@@ -2,27 +2,10 @@
  * struct_catalog/sockaddr-af.c -- sockaddr_storage tagged-union
  * variants and per-address-family field arrays.
  *
- * Originally carved out of struct_catalog.c as the sockaddr leaf TU;
- * subsequently sub-split into three siblings under struct_catalog/:
- *   - sockaddr-af.c       (this file) owns the sockaddr_storage
- *     tagged union (sockaddr_storage_fields[] +
- *     sockaddr_storage_variants[]) and every per-AF variant field
- *     array plus its curated per-AF vocabularies;
- *   - sockaddr-mcast.c    owns the IPv4/IPv6 multicast setsockopt
- *     optval field tables (ip_mreqn / ip_mreq_source / ipv6_mreq)
- *     and their well-known multicast-address pools;
- *   - sockaddr-sockopt.c  owns the non-multicast setsockopt optval
- *     field tables (linger / packet_mreq / group_req /
- *     group_source_req).
- * Symbols flip from static const to const so the spine's
- * .variants = sockaddr_storage_variants (and .fields = ... in the
- * setsockopt sibling files) references resolve via the externs in
- * struct_catalog-internal.h.
- *
- * struct_catalog.h and arch.h are included unconditionally so this
- * TU compiles even when the per-AF USE_* options are off; the
- * always-on sockaddr_storage spine is gated only on the always-built
- * <sys/socket.h> envelope.
+ * Tables are `const` (not `static const`) so the spine's designated-init
+ * `.fields =` / `.variants =` references resolve via the externs in
+ * struct_catalog-internal.h.  struct_catalog.h and arch.h are #included
+ * unconditionally so this TU is never empty when USE_<X> is off.
  */
 
 #include <stddef.h>
