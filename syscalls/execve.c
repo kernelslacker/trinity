@@ -450,7 +450,7 @@ struct syscallentry syscall_execve = {
 	.sanitise = sanitise_execve,
 	.post = post_execve,
 	.group = GROUP_VFS,
-	.flags = EXTRA_FORK,
+	.flags = AVOID_SYSCALL | EXTRA_FORK,
 };
 
 #ifndef AT_EXECVE_CHECK
@@ -470,5 +470,5 @@ struct syscallentry syscall_execveat = {
 	.sanitise = sanitise_execve,
 	.post = post_execveat,
 	.group = GROUP_VFS,
-	.flags = EXTRA_FORK,
+	.flags = AVOID_SYSCALL | EXTRA_FORK,
 };
