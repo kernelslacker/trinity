@@ -2,16 +2,11 @@
  * struct_catalog/quota.c -- quotactl / quotactl_fd per-subcmd struct
  * field tables.
  *
- * Carved out of struct_catalog.c as the fifth leaf TU of the file
- * split: the central spine (struct_catalog[], syscall_struct_args[])
- * and all logic stay in struct_catalog.c; this TU owns the if_dqblk /
- * if_dqinfo / fs_disk_quota leaf data only.  Symbols flip from
- * static const to const so the spine's .fields = if_dqblk_fields /
- * .fields = if_dqinfo_fields / .fields = fs_disk_quota_fields
- * references resolve via the externs in struct_catalog-internal.h.
- *
- * struct_catalog.h and arch.h are included unconditionally so this
- * TU is never empty.
+ * Tables are `const` (not `static const`) so the spine's designated-init
+ * `.fields =` refs (if_dqblk_fields / if_dqinfo_fields /
+ * fs_disk_quota_fields) resolve via the externs in struct_catalog-internal.h.
+ * struct_catalog.h and arch.h are #included unconditionally so this TU is
+ * never empty.
  */
 
 #include <stddef.h>
