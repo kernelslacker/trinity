@@ -13,16 +13,28 @@
  * starving cooperating syscall fuzzer siblings on the box.
  *
  * Sequence (per invocation):
- *   1. (first call only) RTM_NEWLINK kind=wireguard creates wg0 in the
- *      per-child netns child.c already established via
- *      unshare(CLONE_NEWNET).  EOPNOTSUPP / ENODEV / EAFNOSUPPORT
- *      latches ns_unsupported_wireguard_decrypt_flood for the rest of
- *      the process — same shape as the EPROTONOSUPPORT-latch in
- *      atm_vcc_churn.
- *   2. (first call only) Open a NETLINK_GENERIC socket and resolve
+ *   0. userns_run_in_ns(CLONE_NEWNET) forks a transient grandchild
+ *      into an owned user namespace + private net namespace.  Steps
+ *      1..5 all run inside that grandchild; its _exit() tears both
+ *      namespaces down along with wg0, the genl socket, the UDP fd
+ *      and any transient state, so no host wireguard configuration
+ *      is touched.  The persistent fuzz child keeps the host
+ *      credential profile the cap-drop oracle observes.  Helper
+ *      -EPERM (hardened userns policy refused CLONE_NEWUSER) latches
+ *      ns_unsupported_wireguard_decrypt_flood for the child's
+ *      lifetime; -EAGAIN (transient grandchild setup failure) skips
+ *      the iteration without latching.
+ *   1. (per grandchild) RTM_NEWLINK kind=wireguard creates wg0 in the
+ *      grandchild's fresh private netns.  EOPNOTSUPP / ENODEV /
+ *      EAFNOSUPPORT latches ns_unsupported_wireguard_decrypt_flood
+ *      from inside the grandchild — same shape as the
+ *      EPROTONOSUPPORT-latch in atm_vcc_churn.  The write dies with
+ *      the grandchild; a wireguard-absent kernel re-discovers the
+ *      rejection once per invocation.
+ *   2. (per grandchild) Open a NETLINK_GENERIC socket and resolve
  *      the "wireguard" genl family id via the shared genl_open()
  *      helper.  -ENOENT latches ns_unsupported_wireguard_decrypt_flood.
- *   3. (first call only) WG_CMD_SET_DEVICE installs an ephemeral
+ *   3. (per grandchild) WG_CMD_SET_DEVICE installs an ephemeral
  *      curve25519 private key (32 random bytes — the kernel side
  *      clamps), picks our listen port, and registers one peer with a
  *      random public key, allowed-ips 192.0.2.0/24, and endpoint
@@ -31,19 +43,21 @@
  *      tree is the same one walked by the existing genetlink fam-
  *      wireguard grammar, but built inline because we want a peer that
  *      actually parses, not a fuzzed payload.
- *   4. (first call only) RTM_SETLINK IFF_UP brings wg0 up; SOCK_DGRAM
+ *   4. (per grandchild) RTM_SETLINK IFF_UP brings wg0 up; SOCK_DGRAM
  *      is bound to peer_port so any reply traffic terminates cleanly.
- *   5. (every call) Burst loop: build up to 200 MESSAGE_DATA packets
- *      (type=4 LE u32, random key_idx, incrementing counter, 16..1400
- *      random "ciphertext" bytes) and sendto wg0's listen port on
- *      127.0.0.1.  50us nanosleep between sends keeps pps tight.
+ *   5. (per grandchild) Burst loop: build up to 200 MESSAGE_DATA
+ *      packets (type=4 LE u32, random key_idx, incrementing counter,
+ *      16..1400 random "ciphertext" bytes) and sendto wg0's listen
+ *      port on 127.0.0.1.  50us nanosleep between sends keeps pps
+ *      tight.
  *
  * Self-bounding: child.c's SIGALRM(1s) wraps each iter; the burst
- * loop is hard-bounded at 200; netns teardown on child exit reaps wg0
- * and the UDP socket.  Loopback only, no live wire.
+ * loop is hard-bounded at 200; the grandchild's netns teardown on
+ * _exit() reaps wg0 and the UDP socket.  Loopback only, no live wire.
  */
 
 #include <errno.h>
+#include <sched.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <sys/socket.h>
@@ -69,6 +83,7 @@
 #include "childops-netlink.h"
 #include "random.h"
 #include "pids.h"
+#include "userns-bootstrap.h"
 
 #define WGDF_BUF_BYTES		2048
 #define WGDF_BURST_MAX		200U
@@ -83,7 +98,33 @@
  * type codes are 32-bit little-endian on the wire. */
 #define WGDF_MSG_TYPE_DATA	4U
 
+/* Master gate: persistent across iterations in the persistent child.
+ * Two writers:
+ *
+ *   - the wrapper, on userns_run_in_ns() returning -EPERM (hardened
+ *     userns policy refused unshare(CLONE_NEWUSER): typically
+ *     user.max_user_namespaces=0 or kernel.unprivileged_userns_clone=0).
+ *     Without a private netns we MUST NOT touch the host's wireguard
+ *     configuration, so this write persists across invocations and
+ *     short-circuits the op for the remainder of the child's lifetime.
+ *
+ *   - the in-ns callback, on the first RTM_NEWLINK / genl_open /
+ *     WG_CMD_SET_DEVICE structural rejection (EOPNOTSUPP / ENODEV /
+ *     EAFNOSUPPORT / ENOENT) observed inside the grandchild -- the
+ *     wireguard kernel module absent at runtime.  That write lives in
+ *     the grandchild's address space and dies with the grandchild,
+ *     so the rejection is re-discovered once per invocation; userns
+ *     cannot manufacture an absent kernel module, so cross-invocation
+ *     persistence of that path is not in scope. */
 static bool ns_unsupported_wireguard_decrypt_flood;
+
+/* Per-grandchild bookkeeping.  Inherited as false / -1 / 0 at grand-
+ * child fork time (the persistent child never writes these -- the
+ * in-ns callback runs exclusively in transient grandchildren);
+ * populated by the grandchild's wgdf_setup() and consumed by the
+ * grandchild's burst loop.  Die with the grandchild on _exit(), so
+ * each subsequent grandchild re-runs setup once in its own fresh
+ * netns. */
 static bool g_wgdf_setup_done;
 static int g_wgdf_udp_fd = -1;
 static int g_wgdf_wg_ifindex;
@@ -91,8 +132,17 @@ static __u16 g_wgdf_listen_port;
 static __u16 g_wgdf_peer_port;
 static __u64 g_wgdf_counter;
 
-static void wgdf_latch_unsupported(struct childdata *child)
+/* Called from the wrapper (-EPERM) with LATCH_NS_UNSUPPORTED and from
+ * the in-ns callback (config-absent errnos) with LATCH_UNSUPPORTED.
+ * Sets the master gate once and stamps the per-op latch reason.  When
+ * invoked from a grandchild, the master-gate write dies with the
+ * grandchild but the per-op stats slot (in shared memory) still
+ * reflects the last observed reason. */
+static void wgdf_latch_unsupported(struct childdata *child,
+				   enum childop_latch_reason reason)
 {
+	if (ns_unsupported_wireguard_decrypt_flood)
+		return;
 	ns_unsupported_wireguard_decrypt_flood = true;
 	__atomic_add_fetch(&shm->stats.wgdf_unsupported_latched, 1,
 			   __ATOMIC_RELAXED);
@@ -105,7 +155,7 @@ static void wgdf_latch_unsupported(struct childdata *child)
 		const enum child_op_type op = child->op_type;
 		if ((int) op >= 0 && op < NR_CHILD_OP_TYPES)
 			__atomic_store_n(&shm->stats.childop_latch_reason[op],
-					 CHILDOP_LATCH_UNSUPPORTED, __ATOMIC_RELAXED);
+					 reason, __ATOMIC_RELAXED);
 	}
 }
 
@@ -293,13 +343,19 @@ static int wgdf_open_udp(__u16 peer_port)
 	return fd;
 }
 
-/* One-time per-child setup.  All branches that fail with an
- * unsupported-shaped error latch the whole op off; everything else
- * bumps wgdf_setup_failed and returns false so the next iter retries
- * (the failure may be a bind() race against a concurrent wg0 in a
- * shared netns, etc.).  child is threaded in so the latch-off paths
- * can attribute the CHILDOP_LATCH_UNSUPPORTED reason to the running
- * childop's slot. */
+/* One-time per-grandchild setup.  Runs inside the transient userns +
+ * netns grandchild forked by userns_run_in_ns(); the wg0 device, the
+ * netlink sockets and the UDP fd this creates all die with the
+ * grandchild's netns on _exit(), so "one-time per grandchild" is
+ * effectively "once per invocation of wireguard_decrypt_flood()".
+ * All branches that fail with an unsupported-shaped error latch the
+ * whole op off (via the grandchild-local master-gate write; a fresh
+ * grandchild rediscovers the rejection because the wireguard module
+ * cannot be manufactured by userns); everything else bumps
+ * wgdf_setup_failed and returns false so the next iter retries (the
+ * failure may be a transient bind() race, etc.).  child is threaded
+ * in so the latch-off paths can attribute the CHILDOP_LATCH_UNSUPPORTED
+ * reason to the running childop's slot. */
 static bool wgdf_setup(struct childdata *child)
 {
 	pid_t pid = mypid();
@@ -321,7 +377,7 @@ static bool wgdf_setup(struct childdata *child)
 	rc = wgdf_create_wg0(&wgdf_rtnl, "wg0");
 	if (rc != 0) {
 		if (wgdf_err_unsupported(rc))
-			wgdf_latch_unsupported(child);
+			wgdf_latch_unsupported(child, CHILDOP_LATCH_UNSUPPORTED);
 		nl_close(&wgdf_rtnl);
 		return false;
 	}
@@ -339,7 +395,7 @@ static bool wgdf_setup(struct childdata *child)
 	rc = genl_open(&ctx, &opts);
 	if (rc != 0) {
 		if (rc == -ENOENT || wgdf_err_unsupported(rc))
-			wgdf_latch_unsupported(child);
+			wgdf_latch_unsupported(child, CHILDOP_LATCH_UNSUPPORTED);
 		nl_close(&wgdf_rtnl);
 		return false;
 	}
@@ -349,7 +405,7 @@ static bool wgdf_setup(struct childdata *child)
 	genl_close(&ctx);
 	if (rc != 0 && rc != -EEXIST) {
 		if (wgdf_err_unsupported(rc))
-			wgdf_latch_unsupported(child);
+			wgdf_latch_unsupported(child, CHILDOP_LATCH_UNSUPPORTED);
 		nl_close(&wgdf_rtnl);
 		return false;
 	}
@@ -402,23 +458,36 @@ static size_t wgdf_build_data_pkt(unsigned char *out, size_t cap)
 	return total;
 }
 
-bool wireguard_decrypt_flood(struct childdata *child)
+/*
+ * Per-invocation state handed to the in-ns callback so it can keep
+ * accounting against the right childop slot.
+ */
+struct wgdf_iter_ctx {
+	struct childdata *child;
+};
+
+/*
+ * Per-invocation body that must run inside the private net namespace.
+ * Executed in a transient grandchild forked by userns_run_in_ns(); the
+ * grandchild's userns + netns are torn down on _exit() so wg0, the
+ * genl / rtnl sockets and the UDP fd created by wgdf_setup() are
+ * reaped along with the namespace.  Return value is ignored by the
+ * helper.
+ */
+static int wireguard_decrypt_flood_in_ns(void *arg)
 {
+	struct wgdf_iter_ctx *ictx = (struct wgdf_iter_ctx *)arg;
+	struct childdata *child = ictx->child;
 	struct sockaddr_in dst;
 	struct timespec gap = { .tv_sec = 0, .tv_nsec = WGDF_GAP_NS };
 	unsigned char pkt[WGDF_PAYLOAD_MAX + 16];
 	unsigned int i;
 
-	__atomic_add_fetch(&shm->stats.wgdf_runs, 1, __ATOMIC_RELAXED);
-
-	if (ns_unsupported_wireguard_decrypt_flood)
-		return true;
-
 	if (!g_wgdf_setup_done) {
 		if (!wgdf_setup(child)) {
 			__atomic_add_fetch(&shm->stats.wgdf_setup_failed, 1,
 					   __ATOMIC_RELAXED);
-			return true;
+			return 0;
 		}
 	}
 	/* Snapshot child->op_type once and bounds-check before indexing
@@ -465,6 +534,35 @@ bool wireguard_decrypt_flood(struct childdata *child)
 					   __ATOMIC_RELAXED);
 		(void)nanosleep(&gap, NULL);
 	}
+	return 0;
+}
+
+bool wireguard_decrypt_flood(struct childdata *child)
+{
+	struct wgdf_iter_ctx ictx = { .child = child };
+	int rc;
+
+	__atomic_add_fetch(&shm->stats.wgdf_runs, 1, __ATOMIC_RELAXED);
+
+	if (ns_unsupported_wireguard_decrypt_flood)
+		return true;
+
+	rc = userns_run_in_ns(CLONE_NEWNET, wireguard_decrypt_flood_in_ns,
+			      &ictx);
+	if (rc == -EPERM) {
+		wgdf_latch_unsupported(child, CHILDOP_LATCH_NS_UNSUPPORTED);
+		return true;
+	}
+	if (rc < 0) {
+		/* Transient grandchild setup failure (fork, id-map write,
+		 * secondary unshare).  Skip this iteration without
+		 * latching -- the failure is not policy and may not
+		 * recur. */
+		__atomic_add_fetch(&shm->stats.wgdf_setup_failed, 1,
+				   __ATOMIC_RELAXED);
+		return true;
+	}
+
 	return true;
 }
 
