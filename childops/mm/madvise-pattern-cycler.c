@@ -183,7 +183,7 @@ static void touch_subrange(volatile unsigned char *base, unsigned long len)
 	}
 }
 
-/* Pool-race fault guard.  See childops/memory-pressure.c for the full
+/* Pool-race fault guard.  See childops/mm/memory-pressure.c for the full
  * rationale.  The wrap below catches a sibling-driven UAF on the
  * pool-drawn region between draw and the touch_subrange() write/read
  * inside the iter loop, but only when si_addr is inside the drawn
@@ -192,7 +192,7 @@ static void touch_subrange(volatile unsigned char *base, unsigned long len)
  * SIG_DFL and re-raise so child_fault_handler diagnoses + exits and
  * the per-pid bug log path is preserved.  Volatile, ordering, and
  * re-raise rationale match the equivalent statics in
- * childops/memory-pressure.c. */
+ * childops/mm/memory-pressure.c. */
 static sigjmp_buf madvise_cycler_pool_race_jmp;
 static volatile uintptr_t madvise_cycler_pool_race_addr_low;
 static volatile uintptr_t madvise_cycler_pool_race_addr_high;
