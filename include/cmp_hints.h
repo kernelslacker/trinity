@@ -864,7 +864,7 @@ struct cmp_accept_range {
  * inject arm: a callsite whose argtype is on the typed-safe set
  * (ARG_RANGE, ARG_STRUCT_SIZE, cataloged size/count/range scalars,
  * timespec-bounded) passes true and, when the conservative gate
- * (plateau == CMP_RISING_PC_FLAT AND ONE_IN(32)) fires AND the
+ * (plateau == CMP_RISING_PC_FLAT AND ONE_IN(4)) fires AND the
  * resolver has a hypothesis at the same (cmp_ip, width), the raw
  * pool value the pick step computed is replaced by a value derived
  * from that hypothesis (EXACT exemplar / ENUM_FAMILY exemplar or
