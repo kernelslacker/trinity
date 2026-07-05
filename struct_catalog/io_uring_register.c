@@ -2,18 +2,10 @@
  * struct_catalog/io_uring_register.c -- io_uring_setup / io_uring_register
  * per-opcode struct field tables and the tagged-union variant table.
  *
- * Carved out of struct_catalog.c as the fourth leaf TU of the file
- * split: the central spine (struct_catalog[], syscall_struct_args[])
- * and all logic stay in struct_catalog.c; this TU owns the
- * io_uring_params field table plus every io_uring_register-family
- * variant payload field table and the io_uring_register_variants[]
- * tagged-union table.  Symbols flip from static const to const so the
- * spine's .fields = io_uring_params_fields and .variants =
- * io_uring_register_variants references resolve via the externs in
- * struct_catalog-internal.h.
- *
- * struct_catalog.h and arch.h are included unconditionally so this
- * TU is never empty.
+ * Field/variant tables are `const` (not `static const`) so the spine's
+ * .fields=/.variants= references resolve via struct_catalog-internal.h.
+ * struct_catalog.h and arch.h are included unconditionally so this TU
+ * is never empty when USE_<X> is off.
  */
 
 #include <stddef.h>
