@@ -1,17 +1,10 @@
 /*
  * struct_catalog/sockaddr-mcast.c -- IPv4 / IPv6 multicast setsockopt
  * optval struct field tables (ip_mreqn / ip_mreq_source / ipv6_mreq)
- * together with the curated well-known multicast address pools those
- * tables reference.
+ * plus the well-known multicast address pools those tables reference.
  *
- * Carved out of struct_catalog/sockaddr.c: sockaddr_storage per-AF
- * variants stay in sockaddr-af.c and the non-multicast optval shapes
- * (linger / packet_mreq / group_req / group_source_req) live in
- * sockaddr-sockopt.c; this TU owns only the IPv4/IPv6 multicast
- * optval field tables plus their FT_MAGIC address vocabularies.
- * Symbols are const (not static const) so the spine's designated
- * initialisers .fields = ip_mreqn_fields (and friends) resolve via
- * the externs in struct_catalog-internal.h.
+ * Tables are `const` (not `static const`) so the spine's designated-init
+ * `.fields =` references resolve via the externs in struct_catalog-internal.h.
  *
  * See sockaddr-sockopt.c for the shared "schema-aware FILL only"
  * contract that governs every optval row here.
