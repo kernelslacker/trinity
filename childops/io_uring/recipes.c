@@ -271,7 +271,7 @@ struct iour_recipe {
 	bool (*run)(struct iour_recipe_state *s, bool *unsupported);
 };
 
-/* Pool-race fault guard.  See childops/memory-pressure.c for the full
+/* Pool-race fault guard.  See childops/mm/memory-pressure.c for the full
  * rationale.  The wrap below catches a sibling-driven UAF on a pool-
  * drawn buffer used inside r->run().  Only 3 of the 15 catalog recipes
  * draw from the parent's mapping pool (recipe_fixed_buffer_read,
