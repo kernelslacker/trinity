@@ -197,6 +197,10 @@ static void apply_slot(const void *p, void *ctx __unused__)
 		if (aux < MAX_NR_SYSCALL)
 			parent_stats.per_syscall_cmp_returned[aux] += delta;
 		break;
+	case STATS_FIELD_PER_SYSCALL_CMP_HYP_LIVE_INJECTED:
+		if (aux < MAX_NR_SYSCALL)
+			parent_stats.per_syscall_cmp_hyp_live_injected[aux] += delta;
+		break;
 	case STATS_FIELD_MM_GATE_POST_SLIP:
 		parent_stats.mm_gate_post_slip += delta;
 		break;

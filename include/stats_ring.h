@@ -171,6 +171,17 @@ enum stats_field {
 	 * the dump path reads off parent_stats. */
 	STATS_FIELD_PER_SYSCALL_CMP_ATTEMPTS,	/* aux = syscall nr */
 	STATS_FIELD_PER_SYSCALL_CMP_RETURNED,	/* aux = syscall nr */
+	/* Per-syscall partition of the typed-inject (LIVE hypothesis-store)
+	 * denominator: a strict subset of PER_SYSCALL_CMP_RETURNED that only
+	 * counts pulls where the typed derive-and-inject arm replaced the raw
+	 * pool value.  cmp_hyp_live_injected is the scalar sibling in
+	 * kcov_shm; this partition lets a coverage consumer join
+	 * (typed inject count per nr) x local/remote_pc_edge_count[nr] to
+	 * see whether typed inject is aimed at the movers or away from them,
+	 * a signal PER_SYSCALL_CMP_RETURNED (raw + typed conflated) can't
+	 * answer.  Bumped from the same accept-gated commit point the scalar
+	 * bumps from, and gated on nr < MAX_NR_SYSCALL at the drain. */
+	STATS_FIELD_PER_SYSCALL_CMP_HYP_LIVE_INJECTED,	/* aux = syscall nr */
 	/* log_mm_syscall_post_gate_heap_slip() observed an mm-syscall arg
 	 * that passed range_overlaps_libc_heap() but a fresh sbrk(0)
 	 * proved to lie inside the live brk arena -- the gate's cached
@@ -322,6 +333,14 @@ struct stats_aggregate {
 	 * surface for diagnostic counters without changing any reader. */
 	unsigned long per_syscall_cmp_attempts[MAX_NR_SYSCALL];
 	unsigned long per_syscall_cmp_returned[MAX_NR_SYSCALL];
+
+	/* Drained from STATS_FIELD_PER_SYSCALL_CMP_HYP_LIVE_INJECTED.  Per-nr
+	 * partition of the scalar kcov_shm->cmp_hyp_live_injected: counts
+	 * only typed-inject (hypothesis-store) live injects, so
+	 * per_syscall_cmp_returned[nr] - per_syscall_cmp_hyp_live_injected[nr]
+	 * isolates the raw-pool arm's per-nr yield.  Same write-only-by-child
+	 * discipline as the two per_syscall_cmp_* siblings above. */
+	unsigned long per_syscall_cmp_hyp_live_injected[MAX_NR_SYSCALL];
 
 	/* Drained from STATS_FIELD_MM_GATE_POST_SLIP.  Per-run total of
 	 * mm-syscall sanitiser slips: addrs that range_overlaps_libc_heap
