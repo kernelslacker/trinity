@@ -48,6 +48,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "errno-classify.h"
 #include "syscall-gate.h"
 #include "shm.h"
 #include "trinity.h"
@@ -890,8 +891,7 @@ static void probe_af_unix(void)
 	af_unix_scm_rights_gc_probed = true;
 
 	if (socketpair(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0, sv) < 0) {
-		if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT ||
-		    errno == ESOCKTNOSUPPORT)
+		if (is_proto_family_unsupported(errno))
 			ns_unsupported_af_unix_scm_rights_gc = true;
 		return;
 	}
