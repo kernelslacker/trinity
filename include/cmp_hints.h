@@ -853,10 +853,22 @@ struct cmp_accept_range {
  * fails the pull on a miss before any per-pull counter or stash
  * fires, so a rejected value cannot contaminate either the
  * cmp_hyp_live_injected denominator or the cmp_hyp_pc_wins numerator
- * downstream. */
+ * downstream.
+ *
+ * arg_idx is the caller's syscall argnum (1..6) for the arg slot the
+ * returned value is about to be COMMITTED to.  Value-neutral: it feeds
+ * the typed_inject_fill_slot_hist[] placement-proof counter only --
+ * the counter is bumped once at the accept-gated commit block when the
+ * LIVE typed inject actually fired (hyp_injected).  Callers on the
+ * typed-eligible set (allow_hyp_inject == true) pass their argnum
+ * verbatim; non-typed callers pass 0 (the bump site's slot bound
+ * check drops out-of-range indices, and hyp_injected can only be true
+ * under allow_hyp_inject, so 0 is safe by construction).  No rnd_*()
+ * draw and no derived-value change is added by this parameter. */
 bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 			  unsigned long old, bool allow_hyp_inject,
 			  const struct cmp_accept_range *accept,
+			  unsigned int arg_idx,
 			  unsigned long *out);
 
 /* Back-compat wrapper.  Routes to CMP_HINT_BOUNDARY with old == 0 and

@@ -1474,6 +1474,7 @@ out_bump:
  */
 bool cmp_hyp_try_live_inject(unsigned int nr, bool do32,
 			     unsigned long cmp_ip, unsigned int size,
+			     unsigned int arg_idx __attribute__((unused)),
 			     unsigned long *out,
 			     uint8_t *out_kind,
 			     bool *out_gate_fired)

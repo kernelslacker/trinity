@@ -233,9 +233,19 @@ void cmp_hyp_would_pick(unsigned int nr, bool do32,
  * out-params let the caller book the accept-gated denominator +
  * per-kind partition at the commit point.  Definition in
  * cmp_hints/hyp.c.
+ *
+ * arg_idx is the caller's syscall argnum (1..6) threaded through from
+ * cmp_hints_try_get_ex for the placement-proof observability contract
+ * (typed_inject_fill_slot_hist[]).  Value-neutral inside this helper:
+ * the counter is bumped by the caller at the accept-gated commit
+ * point, not here, and the helper adds no rnd_*() draw / no derived
+ * value change tied to arg_idx.  Preserving the full plumbing keeps
+ * the fill-slot contract visible at the site the derived value is
+ * produced.
  */
 bool cmp_hyp_try_live_inject(unsigned int nr, bool do32,
 			     unsigned long cmp_ip, unsigned int size,
+			     unsigned int arg_idx,
 			     unsigned long *out,
 			     uint8_t *out_kind,
 			     bool *out_gate_fired);

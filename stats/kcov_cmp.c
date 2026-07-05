@@ -214,6 +214,7 @@ static void kcov_redqueen_observability_block_render(long elapsed __unused__)
 	unsigned int top_count = 0;
 	unsigned long slot_hist[CMP_REDQUEEN_SLOT_HIST_NR];
 	unsigned long slot_success[CMP_REDQUEEN_SLOT_HIST_NR];
+	unsigned long slot_fill[CMP_REDQUEEN_SLOT_HIST_NR];
 	bool any_slot = false;
 	unsigned long pick_success[REEXEC_PENDING_PICK_HIST_NR];
 	bool any_pick_success = false;
@@ -281,7 +282,10 @@ static void kcov_redqueen_observability_block_render(long elapsed __unused__)
 		slot_success[i] = __atomic_load_n(
 			&kcov_shm->reexec_success_by_slot[i],
 			__ATOMIC_RELAXED);
-		if ((slot_hist[i] | slot_success[i]) != 0)
+		slot_fill[i] = __atomic_load_n(
+			&kcov_shm->typed_inject_fill_slot_hist[i],
+			__ATOMIC_RELAXED);
+		if ((slot_hist[i] | slot_success[i] | slot_fill[i]) != 0)
 			any_slot = true;
 	}
 
@@ -323,6 +327,19 @@ static void kcov_redqueen_observability_block_render(long elapsed __unused__)
 				"success",
 				slot_success[0], slot_success[1], slot_success[2],
 				slot_success[3], slot_success[4], slot_success[5]);
+		/* Placement-proof fill-slot histogram: the arg slot the
+		 * typed-hypothesis LIVE inject actually landed in (bumped
+		 * inside the accept-gated commit block in
+		 * cmp_try_get_durable_tier).  Rendered on the same row set
+		 * as the source-slot attribute row so an operator can read
+		 * the (fill vs attribute) divergence directly: an inject
+		 * that consistently lands on a different arg slot than the
+		 * kernel-side CMP fired on confirms placement is the CMP-
+		 * conversion killer. */
+		stats_log_write("  %-12s %10lu %10lu %10lu %10lu %10lu %10lu\n",
+				"fill",
+				slot_fill[0], slot_fill[1], slot_fill[2],
+				slot_fill[3], slot_fill[4], slot_fill[5]);
 	}
 
 	/* Per-pending-buffer-index success counter (A/B signal for

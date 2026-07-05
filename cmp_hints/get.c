@@ -128,6 +128,7 @@ static bool cmp_try_get_durable_tier(unsigned int nr, bool do32,
 				     enum cmp_hint_use use, unsigned long old,
 				     bool allow_hyp_inject,
 				     const struct cmp_accept_range *accept,
+				     unsigned int arg_idx,
 				     unsigned long *out,
 				     unsigned int *out_size)
 {
@@ -234,7 +235,8 @@ static bool cmp_try_get_durable_tier(unsigned int nr, bool do32,
 			unsigned long derived;
 
 			if (cmp_hyp_try_live_inject(nr, do32, picked_cmp_ip,
-						    picked_size, &derived,
+						    picked_size, arg_idx,
+						    &derived,
 						    &inject_kind,
 						    &inject_gate_fired)) {
 				*out = derived;
@@ -294,6 +296,25 @@ static bool cmp_try_get_durable_tier(unsigned int nr, bool do32,
 				__atomic_fetch_add(
 					&kcov_shm->cmp_hyp_live_injected_by_kind[inject_kind],
 					1UL, __ATOMIC_RELAXED);
+				/* Placement-proof fill-slot counter.
+				 * Sibling of reexec_attribution_slot_hist
+				 * (which reports the arg slot the kernel
+				 * CMP fired ON); this reports the arg slot
+				 * the typed inject actually LANDED IN.
+				 * arg_idx is 1-based (argnum); convert to
+				 * the 0-based histogram index and gate on
+				 * the bound so a non-typed caller
+				 * (arg_idx == 0) or a stray out-of-range
+				 * value is harmlessly dropped without
+				 * indexing off the array.  Sits inside
+				 * the accept-gated commit block so an
+				 * accept-rejected derived value cannot
+				 * contaminate the fill distribution. */
+				if (arg_idx >= 1 &&
+				    arg_idx <= CMP_REDQUEEN_SLOT_HIST_NR)
+					__atomic_fetch_add(
+						&kcov_shm->typed_inject_fill_slot_hist[arg_idx - 1],
+						1UL, __ATOMIC_RELAXED);
 			}
 
 			/* Mirror of the attempts ring path above: both the
@@ -334,6 +355,7 @@ static enum cmp_tier_result cmp_try_get_recent_tier(unsigned int nr, bool do32,
 						    unsigned long old,
 						    bool allow_hyp_inject,
 						    const struct cmp_accept_range *accept,
+						    unsigned int arg_idx __attribute__((unused)),
 						    unsigned long *out,
 						    unsigned int *out_size)
 {
@@ -462,6 +484,7 @@ static bool cmp_hints_try_get_ex_common(unsigned int nr, bool do32,
 					unsigned long old,
 					bool allow_hyp_inject,
 					const struct cmp_accept_range *accept,
+					unsigned int arg_idx,
 					unsigned long *out,
 					unsigned int *out_size)
 {
@@ -508,7 +531,8 @@ static bool cmp_hints_try_get_ex_common(unsigned int nr, bool do32,
 	}
 
 	switch (cmp_try_get_recent_tier(nr, do32, use, old,
-					allow_hyp_inject, accept, out,
+					allow_hyp_inject, accept,
+					arg_idx, out,
 					out_size)) {
 	case CMP_TIER_SERVED:
 		return true;
@@ -519,24 +543,30 @@ static bool cmp_hints_try_get_ex_common(unsigned int nr, bool do32,
 	}
 
 	return cmp_try_get_durable_tier(nr, do32, use, old,
-				       allow_hyp_inject, accept, out,
+				       allow_hyp_inject, accept,
+				       arg_idx, out,
 				       out_size);
 }
 
 bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 			  unsigned long old, bool allow_hyp_inject,
 			  const struct cmp_accept_range *accept,
+			  unsigned int arg_idx,
 			  unsigned long *out)
 {
 	return cmp_hints_try_get_ex_common(nr, do32, use, old,
-					   allow_hyp_inject, accept, out,
+					   allow_hyp_inject, accept,
+					   arg_idx, out,
 					   NULL);
 }
 
 bool cmp_hints_try_get(unsigned int nr, bool do32, unsigned long *out)
 {
+	/* arg_idx == 0: back-compat wrapper keeps allow_hyp_inject == false,
+	 * so hyp_injected can never fire and the fill-slot counter is never
+	 * bumped from this path.  Passing 0 is safe by construction. */
 	return cmp_hints_try_get_ex(nr, do32, CMP_HINT_BOUNDARY, 0, false,
-				    NULL, out);
+				    NULL, 0, out);
 }
 
 /*
@@ -553,6 +583,9 @@ bool cmp_hints_try_get(unsigned int nr, bool do32, unsigned long *out)
 bool cmp_hints_try_get_sized(unsigned int nr, bool do32,
 			     unsigned long *out, unsigned int *out_size)
 {
+	/* arg_idx == 0: sized wrapper is a non-typed CMPDICT byte-splat
+	 * consumer (no argnum context, no typed inject); same safe-by-
+	 * construction reasoning as the cmp_hints_try_get() wrapper. */
 	return cmp_hints_try_get_ex_common(nr, do32, CMP_HINT_BOUNDARY, 0,
-					   false, NULL, out, out_size);
+					   false, NULL, 0, out, out_size);
 }
