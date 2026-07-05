@@ -3,7 +3,7 @@
  * to exercise superblock alloc/free, mount tree linkage, and the
  * deactivate_super RCU/refcount machinery.
  *
- * fs_lifecycle (childops/fs-lifecycle.c) drives a full mount→use→umount
+ * fs_lifecycle (childops/fs/fs-lifecycle.c) drives a full mount→use→umount
  * sequence per invocation, with significant time spent on per-fs file
  * operations (fallocate, xattr, copy_file_range, ...).  mount_churn
  * cuts the use phase entirely: each cycle is mount→umount with no IO
