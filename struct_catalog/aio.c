@@ -1,18 +1,12 @@
 /*
  * struct_catalog/aio.c -- aio-shaped struct field tables.
  *
- * Carved out of struct_catalog.c as the tenth leaf TU of the file
- * split: the central spine (struct_catalog[], syscall_struct_args[])
- * and all logic stay in struct_catalog.c; this TU owns the aio leaf
- * data only -- struct iocb (io_cancel) with its IOCB_CMD_* opcode
- * vocab and IOCB_FLAG_* / RWF_* flag masks.  Symbols flip from static
- * const to const so the spine's .fields = iocb_fields reference
- * resolves via the externs in struct_catalog-internal.h.
- *
- * struct_catalog.h and arch.h are included unconditionally so this
- * TU is never empty.  <linux/aio_abi.h> brings struct iocb, the
- * IOCB_CMD_* opcodes, and the IOCB_FLAG_* bits; <linux/fs.h> brings
- * the RWF_* aio_rw_flags vocab.
+ * Tables are `const` (not `static const`) so the spine's designated-init
+ * `.fields =` references resolve via the externs in struct_catalog-internal.h.
+ * struct_catalog.h and arch.h are #included unconditionally so this TU is
+ * never empty.  <linux/aio_abi.h> brings struct iocb, the IOCB_CMD_*
+ * opcodes, and the IOCB_FLAG_* bits; <linux/fs.h> brings the RWF_*
+ * aio_rw_flags vocab.
  */
 
 #include <stddef.h>
