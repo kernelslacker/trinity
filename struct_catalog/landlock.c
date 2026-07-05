@@ -2,19 +2,10 @@
  * struct_catalog/landlock.c -- landlock_create_ruleset /
  * landlock_add_rule attr struct field tables.
  *
- * Carved out of struct_catalog.c as the eighth leaf TU of the file
- * split: the central spine (struct_catalog[], syscall_struct_args[])
- * and all logic stay in struct_catalog.c; this TU owns the three
- * landlock attr leaf field tables only -- landlock_ruleset_attr
- * (landlock_create_ruleset a1), landlock_path_beneath_attr
- * (landlock_add_rule a3 under LANDLOCK_RULE_PATH_BENEATH), and
- * landlock_net_port_attr (landlock_add_rule a3 under
- * LANDLOCK_RULE_NET_PORT).  Symbols flip from static const to const
- * so the spine's .fields = landlock_*_fields references resolve via
- * the externs in struct_catalog-internal.h.
- *
- * struct_catalog.h and arch.h are included unconditionally so this
- * TU is never empty.
+ * Tables are `const` (not `static const`) so the spine's designated-init
+ * `.fields =` references resolve via the externs in struct_catalog-internal.h.
+ * struct_catalog.h and arch.h are #included unconditionally so this TU is
+ * never empty.
  */
 
 #include <stddef.h>
