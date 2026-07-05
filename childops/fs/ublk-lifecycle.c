@@ -57,20 +57,18 @@
 #include "child.h"
 #include "syscall-gate.h"
 #include "childops/io_uring/ring.h"
-#include "compat.h"
+#include "kernel/ublk.h"
 #include "shm.h"
 #include "stats.h"
 #include "trinity.h"
 
 /*
- * ublk uAPI shims.  Per-symbol #ifndef so a sysroot that ships only a
- * subset of the ublk_cmd.h symbols (older LTS, stripped headers) still
- * compiles.  Layouts mirror linux/ublk_cmd.h as of upstream 6.x.
- *
  * Locally-named struct mirrors (ublk_lc_*) so a sysroot whose
  * linux/ublk_cmd.h DOES expose ublksrv_ctrl_cmd / ublksrv_io_cmd does
  * not collide.  Kernel reads cmd_op + addr/len off the SQE; the
- * addr-pointed payload is what these mirror.
+ * addr-pointed payload is what these mirror.  Layouts mirror
+ * linux/ublk_cmd.h as of upstream 6.x.  Must stay in scope where the
+ * UBLK_U_* macros from kernel/ublk.h are expanded.
  */
 struct ublk_lc_ctrl_cmd {
 	__u32	dev_id;
@@ -106,22 +104,6 @@ struct ublk_lc_io_cmd {
 	__s32	result;
 	__u64	addr;
 };
-
-#ifndef UBLK_CMD_ADD_DEV
-#define UBLK_CMD_ADD_DEV	0x04
-#endif
-#ifndef UBLK_CMD_DEL_DEV
-#define UBLK_CMD_DEL_DEV	0x05
-#endif
-#ifndef UBLK_U_CMD_ADD_DEV
-#define UBLK_U_CMD_ADD_DEV	_IOWR('u', UBLK_CMD_ADD_DEV, struct ublk_lc_ctrl_cmd)
-#endif
-#ifndef UBLK_U_CMD_DEL_DEV
-#define UBLK_U_CMD_DEL_DEV	_IOWR('u', UBLK_CMD_DEL_DEV, struct ublk_lc_ctrl_cmd)
-#endif
-#ifndef UBLK_U_IO_FETCH_REQ
-#define UBLK_U_IO_FETCH_REQ	_IOWR('u', 0x20, struct ublk_lc_io_cmd)
-#endif
 
 #define UBLK_LC_RING_DEPTH	8
 #define UBLK_LC_IO_BUF_BYTES	(64U * 1024U)
