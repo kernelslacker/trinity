@@ -232,6 +232,23 @@ void cmp_hints_feedback_credit_pc(bool outcome_win)
 				&kcov_shm->cmp_hint_misses_by_pool[e->pool_kind],
 				1UL, __ATOMIC_RELAXED);
 
+		/* Sibling by-callsite PC outcome partition.  Same per-stash-
+		 * entry cadence as the by-pool bump above, keyed on the
+		 * callsite the stash was stamped with in
+		 * cmp_hints_stash_consumed().  Closes the "callsite split
+		 * exists for INJECTED only, win split exists for POOL only"
+		 * hole so the raw pool baseline can be projected onto the
+		 * typed-eligible callsite buckets (ARG_STRUCT_SIZE and
+		 * ARG_RANGE) for a per-callsite conversion rate.  Field-pool
+		 * stashes carry the CMP_HINT_CALLSITE_NR sentinel and are
+		 * silently skipped by the bound check. */
+		if (kcov_shm != NULL &&
+		    e->callsite < CMP_HINT_CALLSITE_NR)
+			__atomic_fetch_add(outcome_win ?
+				&kcov_shm->cmp_hint_callsite_pc_wins[e->callsite] :
+				&kcov_shm->cmp_hint_callsite_misses[e->callsite],
+				1UL, __ATOMIC_RELAXED);
+
 		/* SHADOW zero-PC-win hard-cool budget census -- see
 		 * CMP_HINT_ZERO_WIN_BUDGET_T + struct cmp_hint_pool's
 		 * zero_win_streak field for the model.  Only the flat per-

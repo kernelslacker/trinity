@@ -129,6 +129,7 @@ static bool cmp_try_get_durable_tier(unsigned int nr, bool do32,
 				     bool allow_hyp_inject,
 				     const struct cmp_accept_range *accept,
 				     unsigned int arg_idx,
+				     enum cmp_hint_callsite callsite,
 				     unsigned long *out,
 				     unsigned int *out_size)
 {
@@ -354,6 +355,7 @@ static bool cmp_try_get_durable_tier(unsigned int nr, bool do32,
 		}
 
 		cmp_hints_stash_consumed(nr, do32, CMP_HINT_POOL_PER_SYSCALL,
+					 callsite,
 					 picked_cmp_ip, stash_value, picked_size, use,
 					 0, 0, NULL,
 					 false, bucket, hyp_injected);
@@ -372,6 +374,7 @@ static enum cmp_tier_result cmp_try_get_recent_tier(unsigned int nr, bool do32,
 						    bool allow_hyp_inject,
 						    const struct cmp_accept_range *accept,
 						    unsigned int arg_idx __attribute__((unused)),
+						    enum cmp_hint_callsite callsite,
 						    unsigned long *out,
 						    unsigned int *out_size)
 {
@@ -464,6 +467,7 @@ static enum cmp_tier_result cmp_try_get_recent_tier(unsigned int nr, bool do32,
 				 * age-bucketed durable counters skip it. */
 				cmp_hints_stash_consumed(nr, do32,
 							 CMP_HINT_POOL_PER_SYSCALL,
+							 callsite,
 							 re_cmp_ip, re_value,
 							 re_size, use,
 							 0, 0, NULL,
@@ -501,6 +505,7 @@ static bool cmp_hints_try_get_ex_common(unsigned int nr, bool do32,
 					bool allow_hyp_inject,
 					const struct cmp_accept_range *accept,
 					unsigned int arg_idx,
+					enum cmp_hint_callsite callsite,
 					unsigned long *out,
 					unsigned int *out_size)
 {
@@ -548,7 +553,7 @@ static bool cmp_hints_try_get_ex_common(unsigned int nr, bool do32,
 
 	switch (cmp_try_get_recent_tier(nr, do32, use, old,
 					allow_hyp_inject, accept,
-					arg_idx, out,
+					arg_idx, callsite, out,
 					out_size)) {
 	case CMP_TIER_SERVED:
 		return true;
@@ -560,7 +565,7 @@ static bool cmp_hints_try_get_ex_common(unsigned int nr, bool do32,
 
 	return cmp_try_get_durable_tier(nr, do32, use, old,
 				       allow_hyp_inject, accept,
-				       arg_idx, out,
+				       arg_idx, callsite, out,
 				       out_size);
 }
 
@@ -568,21 +573,24 @@ bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 			  unsigned long old, bool allow_hyp_inject,
 			  const struct cmp_accept_range *accept,
 			  unsigned int arg_idx,
+			  enum cmp_hint_callsite callsite,
 			  unsigned long *out)
 {
 	return cmp_hints_try_get_ex_common(nr, do32, use, old,
 					   allow_hyp_inject, accept,
-					   arg_idx, out,
+					   arg_idx, callsite, out,
 					   NULL);
 }
 
-bool cmp_hints_try_get(unsigned int nr, bool do32, unsigned long *out)
+bool cmp_hints_try_get(unsigned int nr, bool do32,
+		       enum cmp_hint_callsite callsite,
+		       unsigned long *out)
 {
 	/* arg_idx == 0: back-compat wrapper keeps allow_hyp_inject == false,
 	 * so hyp_injected can never fire and the fill-slot counter is never
 	 * bumped from this path.  Passing 0 is safe by construction. */
 	return cmp_hints_try_get_ex(nr, do32, CMP_HINT_BOUNDARY, 0, false,
-				    NULL, 0, out);
+				    NULL, 0, callsite, out);
 }
 
 /*
@@ -597,11 +605,13 @@ bool cmp_hints_try_get(unsigned int nr, bool do32, unsigned long *out)
  * rejects.  On a false return *out_size is untouched.
  */
 bool cmp_hints_try_get_sized(unsigned int nr, bool do32,
+			     enum cmp_hint_callsite callsite,
 			     unsigned long *out, unsigned int *out_size)
 {
 	/* arg_idx == 0: sized wrapper is a non-typed CMPDICT byte-splat
 	 * consumer (no argnum context, no typed inject); same safe-by-
 	 * construction reasoning as the cmp_hints_try_get() wrapper. */
 	return cmp_hints_try_get_ex_common(nr, do32, CMP_HINT_BOUNDARY, 0,
-					   false, NULL, 0, out, out_size);
+					   false, NULL, 0, callsite,
+					   out, out_size);
 }

@@ -405,8 +405,13 @@ static unsigned int blob_cmpdict(unsigned char *buf, size_t len,
 		if (!from_static) {
 			unsigned int recorded_width = 0;
 
-			if (!cmp_hints_try_get_sized(nr, do32, &hint,
-						     &recorded_width))
+			/* CMP_HINT_CALLSITE_NR: the CMPDICT arm is a byte-
+			 * splat consumer with no argtype-handler callsite --
+			 * the drain gates on < NR so the pull is not
+			 * attributed to any callsite bucket. */
+			if (!cmp_hints_try_get_sized(nr, do32,
+						     CMP_HINT_CALLSITE_NR,
+						     &hint, &recorded_width))
 				continue;
 
 			/* Honor the pool entry's recorded operand width
