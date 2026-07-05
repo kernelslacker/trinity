@@ -1,15 +1,10 @@
 /*
  * struct_catalog/mount.c -- mount / namespace struct field tables.
  *
- * Carved out of struct_catalog.c as another leaf TU of the file
- * split: the central spine (struct_catalog[], syscall_struct_args[])
- * and all logic stay in struct_catalog.c; this TU owns the mount /
- * namespace leaf data only -- struct mount_attr (mount_setattr /
- * open_tree_attr), struct mnt_id_req (statmount / listmount), and
- * struct ns_id_req (listns).  Symbols flip from static const to const
- * so the spine's .fields = mount_attr_fields / mnt_id_req_fields /
- * ns_id_req_fields references resolve via the externs in
- * struct_catalog-internal.h.
+ * Tables are `const` (not `static const`) so the spine's `.fields =`
+ * references resolve via the externs in struct_catalog-internal.h.
+ * struct_catalog.h and arch.h are #included unconditionally so this TU
+ * is never empty when USE_<X> is off.
  *
  * The struct ns_id_req fallback below mirrors the trinity-local shim
  * that struct_catalog.c keeps under the same #ifndef NS_ID_REQ_SIZE_VER0
@@ -17,9 +12,6 @@
  * entry, so the type must stay visible in both TUs.  Both copies must
  * land on a layout-identical definition; a future uapi bump that grows
  * the struct needs both updated.
- *
- * struct_catalog.h and arch.h are included unconditionally so this TU
- * is never empty.
  */
 
 #include <stddef.h>
