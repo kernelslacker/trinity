@@ -84,7 +84,8 @@ unsigned long gen_undefined_arg(struct syscallentry *entry __unused__,
 	 * always takes the boundary-value fallback that used to fire only
 	 * when the hint try missed. */
 	if (ONE_IN(cmp_hint_inject_denom(9)) &&
-	    cmp_hints_try_get(call, rec->do32bit, &hint)) {
+	    cmp_hints_try_get(call, rec->do32bit,
+			      CMP_HINT_CALLSITE_ARG_UNDEFINED, &hint)) {
 		credit_cmp_hint_injection(rec, CMP_HINT_CALLSITE_ARG_UNDEFINED);
 		return hint;
 	}

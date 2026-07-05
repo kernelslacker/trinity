@@ -294,7 +294,8 @@ unsigned long gen_arg_struct_size(struct syscallentry *entry,
 	if (ONE_IN(cmp_hint_inject_denom(10)) &&
 	    cmp_hints_try_get_ex(rec->nr, rec->do32bit,
 				 CMP_HINT_BOUNDARY, 0, true, NULL,
-				 argnum, &hint)) {
+				 argnum,
+				 CMP_HINT_CALLSITE_ARG_STRUCT_SIZE, &hint)) {
 		credit_cmp_hint_injection(rec, CMP_HINT_CALLSITE_ARG_STRUCT_SIZE);
 		return hint;
 	}

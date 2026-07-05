@@ -975,6 +975,7 @@ unsigned long cmp_hint_apply_transform(unsigned long c,
  */
 void cmp_hints_stash_consumed(unsigned int nr, bool do32,
 			      enum cmp_hint_pool_kind pool_kind,
+			      enum cmp_hint_callsite callsite,
 			      unsigned long cmp_ip, unsigned long value,
 			      unsigned int size, enum cmp_hint_use use,
 			      unsigned int arg_idx,
@@ -1005,6 +1006,16 @@ void cmp_hints_stash_consumed(unsigned int nr, bool do32,
 	e->field_idx = (uint16_t)field_idx;
 	e->do32 = do32 ? 1 : 0;
 	e->pool_kind = (uint8_t)pool_kind;
+	/* Callsite the caller identified when it invoked cmp_hints_try_get*().
+	 * Clamped to the CMP_HINT_CALLSITE_NR sentinel when the caller has
+	 * no argtype-handler callsite (field-pool pulls from
+	 * cmp_hints_field_try_get) so the credit-drain by-callsite bump
+	 * silently skips those entries rather than misattributing them to
+	 * bucket 0 (ARG_OP).  Defensive against a caller bug that passes an
+	 * out-of-range value; the enum only grows via explicit tail appends. */
+	e->callsite = ((unsigned int)callsite < (unsigned int)CMP_HINT_CALLSITE_NR)
+		      ? (uint8_t)callsite
+		      : (uint8_t)CMP_HINT_CALLSITE_NR;
 	e->size = (uint8_t)size;
 	e->transform = (uint8_t)use;
 	e->arg_idx = (uint8_t)arg_idx;

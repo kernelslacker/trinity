@@ -933,32 +933,14 @@ struct kcov_child_local_stats {
 	unsigned int local_syscalls_since_flush;
 };
 
-/* observability: the four generate-args.c callsites
- * that pull a cmp_hint via cmp_hints_try_get() are partitioned into
- * fixed buckets so the per-callsite injection-rate split is visible in
- * the periodic stats dump without a per-argtype array.  Ordering is
- * pinned (the slot index is the bucket id) -- append-only.  STRUCT_FIELD
- * is reserved with no current bumper; the slot exists so the future
- * field-fill path described in struct_catalog.c can land without
- * renumbering. */
-enum cmp_hint_callsite {
-	CMP_HINT_CALLSITE_ARG_OP = 0,
-	CMP_HINT_CALLSITE_ARG_LIST,
-	CMP_HINT_CALLSITE_ARG_UNDEFINED,
-	CMP_HINT_CALLSITE_ARG_STRUCT_SIZE,
-	CMP_HINT_CALLSITE_STRUCT_FIELD,
-	CMP_HINT_CALLSITE_OTHER,
-	CMP_HINT_CALLSITE_NR,
-};
-
 /* observability: the two generate-args.c callsites that pull a value via
  * prop_ring_try_get() are partitioned into fixed buckets so the
  * per-callsite propagation-injection split is visible alongside the flat
  * propagation_injected scalar.  Ordering is pinned (the slot index is the
- * bucket id) -- append-only.  Distinct from cmp_hint_callsite above: that
- * one buckets cmp_hints_try_get() consumers (kernel KCOV_TRACE_CMP value
- * source), this one buckets prop_ring_try_get() consumers (trinity-
- * observed syscall-return value source). */
+ * bucket id) -- append-only.  Distinct from enum cmp_hint_callsite (in
+ * cmp_hints.h): that one buckets cmp_hints_try_get() consumers (kernel
+ * KCOV_TRACE_CMP value source), this one buckets prop_ring_try_get()
+ * consumers (trinity-observed syscall-return value source). */
 enum prop_injected_callsite {
 	PROP_INJECTED_CALLSITE_ARG_OP = 0,
 	PROP_INJECTED_CALLSITE_ARG_UNDEFINED,
@@ -1726,10 +1708,29 @@ struct kcov_shared {
 	 * cmp_hint_callsite.  Aggregated across all syscalls; the "which
 	 * argtype-handler is responsible for the bulk of injections" question
 	 * is callsite-shaped, not syscall-shaped, so the per-nr split lives
-	 * in per_syscall_cmp_injected above and this array stays flat.  6
+	 * in per_syscall_cmp_injected above and this array stays flat.  7
 	 * buckets: ARG_OP, ARG_LIST, ARG_UNDEFINED, ARG_STRUCT_SIZE,
-	 * STRUCT_FIELD (reserved -- no call site today), OTHER. */
+	 * STRUCT_FIELD (reserved -- no call site today), OTHER, ARG_RANGE. */
 	unsigned long cmp_hint_callsite_injected[CMP_HINT_CALLSITE_NR];
+
+	/* PC-mode outcome partition by callsite -- WIN numerator per
+	 * callsite bucket.  Sibling of cmp_hint_callsite_injected[] above
+	 * (which is the per-callsite denominator: how many pulls were
+	 * committed to a produced arg) and of cmp_hint_pc_wins_by_pool[]
+	 * (which partitions the same PC-mode win credit by pool-kind).
+	 * Bumped from cmp_hints_feedback_credit_pc() once per stashed entry
+	 * whose credit lands on a win, using the callsite the stash was
+	 * stamped with at consume time in cmp_hints_stash_consumed().
+	 * Existing splits: callsite-INJECTED-only + pool-WIN-only; this
+	 * closes the callsite-WIN hole so a typed-eligible baseline
+	 * (ARG_STRUCT_SIZE + ARG_RANGE) can be projected out of the raw
+	 * pool wins rather than compared against the aggregate.  Stash
+	 * entries with an unset / out-of-range callsite (field-pool pulls
+	 * from cmp_hints_field_try_get, which have no argtype-handler
+	 * callsite) are not attributed here, so sum(_by_callsite) can be
+	 * less than the flat cmp_hint_wins / cmp_hint_misses. */
+	unsigned long cmp_hint_callsite_pc_wins[CMP_HINT_CALLSITE_NR];
+	unsigned long cmp_hint_callsite_misses[CMP_HINT_CALLSITE_NR];
 
 	/* SHADOW feedback scoring counters ([11-feedback-loop] PHASE 4).
 	 *

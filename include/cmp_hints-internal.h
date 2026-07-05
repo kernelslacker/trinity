@@ -196,6 +196,7 @@ unsigned long cmp_hint_apply_transform(unsigned long c,
  */
 void cmp_hints_stash_consumed(unsigned int nr, bool do32,
 			      enum cmp_hint_pool_kind pool_kind,
+			      enum cmp_hint_callsite callsite,
 			      unsigned long cmp_ip, unsigned long value,
 			      unsigned int size, enum cmp_hint_use use,
 			      unsigned int arg_idx,

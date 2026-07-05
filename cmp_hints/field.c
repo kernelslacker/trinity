@@ -653,7 +653,13 @@ bool cmp_hints_field_try_get(unsigned int nr, bool do32, unsigned int arg_idx,
 			__atomic_fetch_add(&kcov_shm->cmp_field_consumer_live_picks,
 					   1UL, __ATOMIC_RELAXED);
 
+		/* CMP_HINT_CALLSITE_NR: field-scoped pulls have no argtype-
+		 * handler callsite -- the credit drain's bound check gates
+		 * the by-callsite bump so the field-pool stash is silently
+		 * skipped in the callsite partition (already carried by the
+		 * pool-kind partition). */
 		cmp_hints_stash_consumed(nr, do32, CMP_HINT_POOL_FIELD,
+					 CMP_HINT_CALLSITE_NR,
 					 picked_cmp_ip, picked_value, picked_size, use,
 					 arg_idx, field_idx, desc,
 					 false, bucket, false);

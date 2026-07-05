@@ -801,6 +801,33 @@ enum cmp_hint_use {
 	CMP_HINT_FIELD,
 };
 
+/*
+ * Argtype-handler callsite the cmp_hints_try_get*() pull came from.
+ * Stamped on the per-child consume stash so the credit drain can
+ * partition the PC-mode outcome (wins/misses) by callsite, closing
+ * the "callsite split exists for INJECTED only, win split exists
+ * for POOL only" gap.  Aggregated across all syscalls (the per-nr
+ * split lives in per_syscall_cmp_injected / _wins).  Append-only:
+ * callers keying on a slot index (kcov_shm counter arrays sized by
+ * CMP_HINT_CALLSITE_NR, stats/kcov_cmp.c render table) depend on
+ * the ordering being stable across builds.
+ */
+enum cmp_hint_callsite {
+	CMP_HINT_CALLSITE_ARG_OP = 0,
+	CMP_HINT_CALLSITE_ARG_LIST,
+	CMP_HINT_CALLSITE_ARG_UNDEFINED,
+	CMP_HINT_CALLSITE_ARG_STRUCT_SIZE,
+	CMP_HINT_CALLSITE_STRUCT_FIELD,
+	CMP_HINT_CALLSITE_OTHER,
+	/* Appended -- the ARG_RANGE accept-path in handle_arg.c previously
+	 * folded into OTHER; broken out into its own bucket so the typed-
+	 * eligible baseline (ARG_STRUCT_SIZE + ARG_RANGE) can be read
+	 * cleanly out of the callsite split without OTHER also carrying
+	 * any future non-classified sites. */
+	CMP_HINT_CALLSITE_ARG_RANGE,
+	CMP_HINT_CALLSITE_NR,
+};
+
 /* Caller-supplied hard accept range for the value the consumer is
  * about to commit.  When non-NULL, cmp_hints_try_get_ex() applies an
  * inclusive [lo, hi] gate at the served-value site of each tier and
@@ -869,6 +896,7 @@ bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
 			  unsigned long old, bool allow_hyp_inject,
 			  const struct cmp_accept_range *accept,
 			  unsigned int arg_idx,
+			  enum cmp_hint_callsite callsite,
 			  unsigned long *out);
 
 /* Back-compat wrapper.  Routes to CMP_HINT_BOUNDARY with old == 0 and
@@ -877,7 +905,9 @@ bool cmp_hints_try_get_ex(unsigned int nr, bool do32, enum cmp_hint_use use,
  * {C-1, C, C+1} rotation byte-for-byte until each is individually
  * migrated to the use case (and inject opt-in) that fits its
  * consumer slot. */
-bool cmp_hints_try_get(unsigned int nr, bool do32, unsigned long *out);
+bool cmp_hints_try_get(unsigned int nr, bool do32,
+		       enum cmp_hint_callsite callsite,
+		       unsigned long *out);
 
 /* Width-preserving variant of cmp_hints_try_get().  Same policy
  * (CMP_HINT_BOUNDARY rotation, no typed-hypothesis inject arm, no
@@ -890,6 +920,7 @@ bool cmp_hints_try_get(unsigned int nr, bool do32, unsigned long *out);
  * pool entry's provenance.  On a false return *out_size is left
  * unchanged. */
 bool cmp_hints_try_get_sized(unsigned int nr, bool do32,
+			     enum cmp_hint_callsite callsite,
 			     unsigned long *out, unsigned int *out_size);
 
 /*
@@ -979,6 +1010,17 @@ struct cmp_hint_consumed_entry {
 	 * not a correctness issue. */
 	uint8_t served_from_recent;	/* 1 == recent ring, 0 == durable */
 	uint8_t age_bucket;		/* 0..CMP_HINT_AGE_BUCKETS-1 */
+	/* enum cmp_hint_callsite the pull came from, stamped at consume
+	 * time from the try_get_ex()/try_get() caller's known callsite so
+	 * the credit drain can partition the PC-mode outcome by callsite
+	 * (cmp_hint_callsite_pc_wins[] / cmp_hint_callsite_misses[]) in
+	 * lock-step with the existing by-pool partition.  Sentinel value
+	 * CMP_HINT_CALLSITE_NR means "unclassified" -- used by field-pool
+	 * pulls (cmp_hints_field_try_get) that have no argtype-handler
+	 * callsite; the drain gates the by-callsite bump on
+	 * < CMP_HINT_CALLSITE_NR so an unclassified stash entry is
+	 * silently skipped rather than misattributed. */
+	uint8_t callsite;		/* enum cmp_hint_callsite, NR == unset */
 	/* 1 == value came from the live typed-hypothesis inject arm at
 	 * pick time, 0 == raw pool value (the unchanged historical
 	 * path).  Read by the credit drain to gate

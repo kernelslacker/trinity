@@ -94,8 +94,9 @@ unsigned long handle_arg_range(struct syscallentry *entry,
 		if (cmp_hint_baseline_should_inject() &&
 		    cmp_hints_try_get_ex(rec->nr, rec->do32bit,
 					 CMP_HINT_BOUNDARY, 0, true,
-					 &range, argnum, &hint)) {
-			credit_cmp_hint_injection(rec, CMP_HINT_CALLSITE_OTHER);
+					 &range, argnum,
+					 CMP_HINT_CALLSITE_ARG_RANGE, &hint)) {
+			credit_cmp_hint_injection(rec, CMP_HINT_CALLSITE_ARG_RANGE);
 			return hint;
 		}
 	}
@@ -151,7 +152,8 @@ unsigned long handle_arg_op(struct syscallentry *entry,
 	 * window the parent's hypothesis tick has flagged as
 	 * CMP_RISING_PC_FLAT. */
 	if (cmp_hint_baseline_should_inject() &&
-	    cmp_hints_try_get(call, rec->do32bit, &hint)) {
+	    cmp_hints_try_get(call, rec->do32bit,
+			      CMP_HINT_CALLSITE_ARG_OP, &hint)) {
 		credit_cmp_hint_injection(rec, CMP_HINT_CALLSITE_ARG_OP);
 		return hint;
 	}
@@ -216,7 +218,8 @@ unsigned long handle_arg_list(struct syscallentry *entry,
 	 * window the parent's hypothesis tick has flagged as
 	 * CMP_RISING_PC_FLAT. */
 	if (cmp_hint_baseline_should_inject() &&
-	    cmp_hints_try_get(call, rec->do32bit, &hint)) {
+	    cmp_hints_try_get(call, rec->do32bit,
+			      CMP_HINT_CALLSITE_ARG_LIST, &hint)) {
 		credit_cmp_hint_injection(rec, CMP_HINT_CALLSITE_ARG_LIST);
 		mask = set_rand_bitmask(num, values);
 		mask |= hint;
