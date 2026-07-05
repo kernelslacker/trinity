@@ -1,15 +1,10 @@
 /*
  * struct_catalog/bpf.c -- union bpf_attr per-cmd field tables.
  *
- * Second leaf TU of the per-family file split: the central spine
- * (struct_catalog[], syscall_struct_args[]) and all logic stay in
- * struct_catalog.c; this TU owns the bpf_attr leaf data only.
- * Symbols flip from static const to const so the spine's
- * .variants = bpf_attr_variants and .fields = bpf_insn_fields
- * references resolve via the externs in struct_catalog-internal.h.
- *
- * struct_catalog.h and arch.h are included unconditionally so this
- * TU is never empty when USE_BPF is off.
+ * Tables are `const` (not `static const`) so the spine's designated-init
+ * `.variants =` / `.fields =` references resolve via the externs in
+ * struct_catalog-internal.h.  struct_catalog.h and arch.h are #included
+ * unconditionally so this TU is never empty when USE_BPF is off.
  */
 
 #include <stddef.h>
