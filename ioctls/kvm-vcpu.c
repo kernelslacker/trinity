@@ -188,8 +188,10 @@ static const struct ioctl kvm_vcpu_ioctls[] = {
 	IOCTL(KVM_SMI),
 #endif
 	IOCTL(KVM_GET_MP_STATE),
+	IOCTL(KVM_SET_MP_STATE),
 	IOCTL(KVM_TRANSLATE),
 	IOCTL(KVM_KVMCLOCK_CTRL),
+	IOCTL(KVM_SET_GUEST_DEBUG),
 #ifdef X86
 	IOCTL(KVM_GET_LAPIC),
 	IOCTL(KVM_SET_LAPIC),
@@ -207,6 +209,11 @@ static const struct ioctl kvm_vcpu_ioctls[] = {
 #ifdef KVM_GET_SREGS2
 	IOCTL(KVM_GET_SREGS2),
 #endif
+#ifdef KVM_SET_SREGS2
+	IOCTL(KVM_SET_SREGS2),
+#endif
+	IOCTL(KVM_X86_SET_MCE),
+	IOCTL(KVM_TPR_ACCESS_REPORTING),
 #endif
 	IOCTL(KVM_GET_REG_LIST),
 };
