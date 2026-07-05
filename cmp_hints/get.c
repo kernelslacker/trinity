@@ -333,6 +333,22 @@ static bool cmp_try_get_durable_tier(unsigned int nr, bool do32,
 					(void) stats_ring_enqueue(return_child->stats_ring,
 								  STATS_FIELD_PER_SYSCALL_CMP_RETURNED,
 								  (uint16_t)nr, 1);
+					/* Typed-inject partition of the per-nr
+					 * pool-hit counter above: only bumped when
+					 * the raw pool value was replaced by a
+					 * typed hypothesis-store derive.  Same
+					 * accept-gated commit point as the scalar
+					 * cmp_hyp_live_injected bump; nr is already
+					 * pinned < MAX_NR_SYSCALL by
+					 * cmp_hints_try_get_ex_common.  Lets a
+					 * coverage consumer isolate raw vs typed
+					 * arm yield per syscall, which
+					 * per_syscall_cmp_returned (raw + typed
+					 * conflated) cannot answer. */
+					if (hyp_injected)
+						(void) stats_ring_enqueue(return_child->stats_ring,
+									  STATS_FIELD_PER_SYSCALL_CMP_HYP_LIVE_INJECTED,
+									  (uint16_t)nr, 1);
 				}
 			}
 		}

@@ -209,6 +209,13 @@ static unsigned long stats_ts_prev_per_syscall_local_edges[MAX_NR_SYSCALL][2];
 static unsigned long stats_ts_prev_per_syscall_remote_edges[MAX_NR_SYSCALL][2];
 static unsigned long stats_ts_prev_per_syscall_cmp_injected[MAX_NR_SYSCALL][2];
 static unsigned long stats_ts_prev_per_syscall_cmp_hint_pc_wins[MAX_NR_SYSCALL][2];
+/* Typed-inject partition of cmp_injected.  Sourced from parent_stats
+ * (stats_ring drain target) rather than kcov_shm -- the counter lives
+ * outside the wild-write attack surface, same discipline as
+ * per_syscall_cmp_returned/_attempts.  Same [arch] dim as the sibling
+ * per-syscall prev arrays so biarch mode's two table walks each read a
+ * fresh same-arch prev without a deferred commit. */
+static unsigned long stats_ts_prev_per_syscall_cmp_hyp_live_injected[MAX_NR_SYSCALL][2];
 
 /* Previous window's per-childop counters for the by_childop attribution
  * block.  Same rewind-guarded delta shape as the per-syscall prev arrays
@@ -230,7 +237,8 @@ static unsigned long stats_ts_prev_childop_would_demote[NR_CHILD_OP_TYPES];
  * {"nr":N,"edges":E,"edges_gained":G,"kcov_calls":K,"attempted_calls":A,
  *  "local_edges":L,"local_edges_gained":LG,"remote_edges":R,
  *  "remote_edges_gained":RG,"cmp_injected":CI,"cmp_injected_gained":CIG,
- *  "cmp_hint_pc_wins":CW,"cmp_hint_pc_wins_gained":CWG}
+ *  "cmp_hint_pc_wins":CW,"cmp_hint_pc_wins_gained":CWG,
+ *  "cmp_hyp_live_injected":HI,"cmp_hyp_live_injected_gained":HIG}
  * entries for each enabled slot whose entry pointer is non-NULL.
  * *first tracks whether the next entry needs a leading comma so the
  * caller can chain the 32-bit and 64-bit tables into a single array
@@ -265,9 +273,14 @@ static unsigned long stats_ts_prev_childop_would_demote[NR_CHILD_OP_TYPES];
  * syscall's arg surface vs the subset of those hints that drove new
  * PC coverage on that call), so the CMP-targeting decision can be
  * routed on real per-syscall conversion rate rather than the flat
- * cmp_hints_injected total.  All four new counters are cumulative
- * lifetime totals; the _gained siblings are the per-window deltas
- * with the same rewind guard as edges_gained. */
+ * cmp_hints_injected total.  cmp_hyp_live_injected is the typed-inject
+ * (hypothesis-store) subset of cmp_injected: joining it with
+ * local_edges / remote_edges tells a run-analysis consumer whether the
+ * typed derive-and-inject arm is aimed at the syscalls actually moving
+ * coverage, a signal cmp_injected alone (raw + typed conflated) cannot
+ * answer.  All five per-nr counters are cumulative lifetime totals;
+ * the _gained siblings are per-window deltas with the same rewind
+ * guard as edges_gained. */
 static void stats_timeseries_emit_table(const struct syscalltable *table,
 					unsigned int n, bool do32,
 					bool *first)
@@ -285,10 +298,12 @@ static void stats_timeseries_emit_table(const struct syscalltable *table,
 		unsigned long remote_edges = 0;
 		unsigned long cmp_injected = 0;
 		unsigned long cmp_hint_pc_wins = 0;
+		unsigned long cmp_hyp_live_injected = 0;
 		unsigned long local_edges_gained = 0;
 		unsigned long remote_edges_gained = 0;
 		unsigned long cmp_injected_gained = 0;
 		unsigned long cmp_hint_pc_wins_gained = 0;
+		unsigned long cmp_hyp_live_injected_gained = 0;
 
 		if (entry == NULL)
 			continue;
@@ -318,6 +333,16 @@ static void stats_timeseries_emit_table(const struct syscalltable *table,
 				__ATOMIC_RELAXED);
 		}
 
+		/* Sourced from parent_stats, not kcov_shm: the typed-inject
+		 * per-nr denominator is drained through the stats_ring and
+		 * lives in MAP_PRIVATE parent memory the kernel cannot
+		 * scribble.  Read is unlocked because timeseries emit runs
+		 * from parent main_loop context alongside the ring drain --
+		 * no cross-thread writer. */
+		if (nr < MAX_NR_SYSCALL)
+			cmp_hyp_live_injected =
+				parent_stats.per_syscall_cmp_hyp_live_injected[nr];
+
 		if (nr < MAX_NR_SYSCALL) {
 			edges_gained = stats_ts_window_delta(
 				edges,
@@ -334,6 +359,9 @@ static void stats_timeseries_emit_table(const struct syscalltable *table,
 			cmp_hint_pc_wins_gained = stats_ts_window_delta(
 				cmp_hint_pc_wins,
 				&stats_ts_prev_per_syscall_cmp_hint_pc_wins[nr][arch_ix]);
+			cmp_hyp_live_injected_gained = stats_ts_window_delta(
+				cmp_hyp_live_injected,
+				&stats_ts_prev_per_syscall_cmp_hyp_live_injected[nr][arch_ix]);
 		}
 
 		fprintf(stats_timeseries_fp,
@@ -342,13 +370,15 @@ static void stats_timeseries_emit_table(const struct syscalltable *table,
 			",\"local_edges\":%lu,\"local_edges_gained\":%lu"
 			",\"remote_edges\":%lu,\"remote_edges_gained\":%lu"
 			",\"cmp_injected\":%lu,\"cmp_injected_gained\":%lu"
-			",\"cmp_hint_pc_wins\":%lu,\"cmp_hint_pc_wins_gained\":%lu}",
+			",\"cmp_hint_pc_wins\":%lu,\"cmp_hint_pc_wins_gained\":%lu"
+			",\"cmp_hyp_live_injected\":%lu,\"cmp_hyp_live_injected_gained\":%lu}",
 			*first ? "" : ",", nr, edges, edges_gained,
 			kcov_calls, attempted_calls,
 			local_edges, local_edges_gained,
 			remote_edges, remote_edges_gained,
 			cmp_injected, cmp_injected_gained,
-			cmp_hint_pc_wins, cmp_hint_pc_wins_gained);
+			cmp_hint_pc_wins, cmp_hint_pc_wins_gained,
+			cmp_hyp_live_injected, cmp_hyp_live_injected_gained);
 		*first = false;
 	}
 }
