@@ -2,14 +2,10 @@
  * struct_catalog/resource.c -- resource-limit / cachestat-range struct
  * field tables.
  *
- * Carved out of struct_catalog.c as another leaf TU of the file
- * split: the central spine (struct_catalog[], syscall_struct_args[])
- * and all logic stay in struct_catalog.c; this TU owns the
- * resource-shaped leaf data only -- struct rlimit (setrlimit /
- * getrlimit / prlimit64) and struct cachestat_range (cachestat).
- * Symbols flip from static const to const so the spine's
- * .fields = rlimit_fields / cachestat_range_fields references resolve
- * via the externs in struct_catalog-internal.h.
+ * Tables are `const` (not `static const`) so the spine's designated-init
+ * `.fields =` references resolve via the externs in struct_catalog-internal.h.
+ * struct_catalog.h and arch.h are #included unconditionally so this TU is
+ * never empty.
  *
  * The cachestat_range registration is attribution-only: cachestat's
  * argtype slot is not ARG_STRUCT_PTR_*, so the schema-aware fill path
@@ -19,10 +15,6 @@
  * rather than a coincidentally-same-width slot.  Bounds mirror the
  * timespec precedent's u32-fitting ceiling so the catalog stays
  * portable on 32-bit unsigned long builds.
- *
- * struct_catalog.h and arch.h are included unconditionally so this
- * TU is never empty.  <sys/resource.h> brings struct rlimit and
- * <linux/mman.h> brings struct cachestat_range.
  */
 
 #include <stddef.h>
