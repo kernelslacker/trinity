@@ -42,6 +42,7 @@
 #include <sys/types.h>
 
 #include "child.h"
+#include "errno-classify.h"
 #include "shm.h"
 #include "trinity.h"
 
@@ -484,8 +485,7 @@ static void mptcp_setsockopt_all_sf_recipe(struct genl_ctx *ctx)
 
 	sk = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_MPTCP);
 	if (sk < 0) {
-		if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT ||
-		    errno == ESOCKTNOSUPPORT) {
+		if (is_proto_family_unsupported(errno)) {
 			ns_unsupported_mptcp = true;
 			__atomic_add_fetch(&shm->stats.mptcp_setsockopt_unsupported,
 					   1, __ATOMIC_RELAXED);
