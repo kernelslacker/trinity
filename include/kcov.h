@@ -2700,16 +2700,18 @@ struct kcov_shared {
 	/* Pair counters for the RETIRED / DEMOTED re-roll arms of the
 	 * picker.  cmp_hyp_skipped_retired_by_kind[k] bumps once per
 	 * RETIRED slot of kind k the picker walked past in
-	 * cmp_hyp_would_pick_locked(); cmp_hyp_demoted_reroll_picked
-	 * bumps when the demoted re-roll gate
-	 * (1 / CMP_HYP_DEMOTED_RETRY_DENOM) actually fires.  Together
-	 * with cmp_hyp_picked_by_state[DEMOTED] this is the
+	 * cmp_hyp_would_pick_locked();
+	 * cmp_hyp_demoted_reroll_picked_by_kind[k] bumps when the
+	 * demoted re-roll gate (1 / CMP_HYP_DEMOTED_RETRY_DENOM)
+	 * actually fires for a kind-k hypothesis.  Together with
+	 * cmp_hyp_picked_by_state[DEMOTED] this is the
 	 * directly-measurable channel for "is RETIRED earning its
 	 * keep" and "is the re-roll rate sane".  The kind partition
 	 * lets the periodic dump answer "which hypothesis kind is
-	 * hoarding RETIRED slots" without a separate hyp-pool walk. */
+	 * hoarding RETIRED slots" and "which kind wins the demoted
+	 * re-roll" without a separate hyp-pool walk. */
 	unsigned long cmp_hyp_skipped_retired_by_kind[CMP_HYP_KIND_NR];
-	unsigned long cmp_hyp_demoted_reroll_picked;
+	unsigned long cmp_hyp_demoted_reroll_picked_by_kind[CMP_HYP_KIND_NR];
 
 	/*
 	 * Live h->state transition census.  Bumped once per state
