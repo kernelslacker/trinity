@@ -1,17 +1,10 @@
 /*
  * struct_catalog/sctp.c -- SCTP setsockopt optval struct field tables.
  *
- * Carved out of struct_catalog.c as the first leaf TU of an incremental
- * file split: the central spine (struct_catalog[],
- * syscall_struct_args[]) and all logic stay in struct_catalog.c; this
- * TU owns the SCTP leaf data only.  Symbols are declared extern (with
- * explicit array sizes so ARRAY_SIZE() at the spine resolves) in
- * struct_catalog-internal.h, which the spine includes so its
- * designated initialisers ([SC_SCTP_*] = ... .fields = sctp_*_fields)
- * keep linking.
- *
- * struct_catalog.h and arch.h are included unconditionally so this TU
- * is never empty when USE_SCTP is off.
+ * Tables are `const` (not `static const`) so the spine's designated-init
+ * `.fields =` / `.variants =` references resolve via the externs in
+ * struct_catalog-internal.h.  struct_catalog.h and arch.h are #included
+ * unconditionally so this TU is never empty when USE_SCTP is off.
  */
 
 #include <stddef.h>
