@@ -1,18 +1,10 @@
 /*
  * struct_catalog/sched.c -- sched-shaped struct field tables.
  *
- * Carved out of struct_catalog.c as the next leaf TU of the file
- * split: the central spine (struct_catalog[], syscall_struct_args[])
- * and all logic stay in struct_catalog.c; this TU owns the sched
- * leaf data only -- struct sched_attr (sched_setattr / sched_getattr),
- * struct clone_args (clone3), and struct sched_param (sched_setparam /
- * sched_setscheduler).  Symbols flip from static const to const so the
- * spine's .fields = sched_attr_fields / .fields = clone_args_fields /
- * .fields = sched_param_fields references resolve via the externs in
- * struct_catalog-internal.h.
- *
- * struct_catalog.h and arch.h are included unconditionally so this
- * TU is never empty.
+ * Tables are `const` (not `static const`) so the spine's designated-init
+ * `.fields =` references resolve via the externs in struct_catalog-internal.h.
+ * struct_catalog.h and arch.h are #included unconditionally so this TU is
+ * never empty.
  */
 
 #include <stddef.h>
