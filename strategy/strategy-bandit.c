@@ -1,29 +1,14 @@
 /*
- * Bandit reward attribution and UCB1 arm-selection picker.  Split
- * from strategy.c so the bandit learner compiles independently of
- * the intervention / plateau / frontier / cmp-novelty translation
- * units.
+ * Bandit reward attribution and UCB1 arm-selection picker, split
+ * from strategy.c.
  *
- * Two arm-selection policies are wired in here: a fixed round-robin
- * (the original picker) and a UCB1 bandit picker.  Both consume the
- * per-strategy edge attribution recorded in
- * shm->pc_edge_calls_by_strategy[]; the bandit treats those call
- * counts as the reward signal and biases future window picks toward
- * arms producing new-edge calls the fastest, while still occasionally
- * exploring the others so a temporarily-stuck arm doesn't starve
- * forever.  The parallel pc_edge_count_by_strategy[] series (real
- * bucket counts) is surfaced in dump_strategy_stats() as a diagnostic
- * but does not currently feed the learner.
+ * shm->pc_edge_calls_by_strategy[] is the reward signal the learner
+ * consumes; pc_edge_count_by_strategy[] is diagnostic-only and does
+ * not feed the picker.
  *
- * The CAS-winning child at a rotation boundary calls
- * pick_next_strategy() and bandit_record_pull(), runs the bandit
- * math itself, and writes the outcome back to shm->current_strategy.
- *
- * UCB1 is tractable here because the arm count is tiny (NR_STRATEGIES
- * is a handful -- three today, see enum strategy_t) and the picker only
- * runs once per STRATEGY_WINDOW (~100 sec at 10K iter/sec).
- * Floating-point sqrt and log inside the picker are noise relative to
- * the work done in the window itself.
+ * The picker runs once per STRATEGY_WINDOW: the CAS-winning child at
+ * a rotation boundary calls pick_next_strategy() and
+ * bandit_record_pull() and writes the outcome to shm->current_strategy.
  */
 
 #include <math.h>
