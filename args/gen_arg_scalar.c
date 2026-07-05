@@ -49,7 +49,7 @@ static int get_cpu(void)
 
 unsigned long gen_undefined_arg(struct syscallentry *entry __unused__,
 				       struct syscallrecord *rec,
-				       unsigned int argnum __unused__)
+				       unsigned int argnum)
 {
 	unsigned int call = rec->nr;
 	unsigned long hint;
@@ -76,16 +76,20 @@ unsigned long gen_undefined_arg(struct syscallentry *entry __unused__,
 		}
 	}
 
-	/* CMP-hint shortcut.  Hoisted out of the case-0 weight so the
-	 * plateau-aware denom helper can lift the rate from baseline ~1/9
-	 * to amplified ~1/4 when the parent's hypothesis tick flags
-	 * CMP_RISING_PC_FLAT.  Outside the plateau the denom is 9 so the
-	 * attempt rate matches the historical case-0 weight; case 0 now
-	 * always takes the boundary-value fallback that used to fire only
-	 * when the hint try missed. */
+	/* CMP-hint shortcut.  ARG_UNDEFINED has no declared contract (it
+	 * otherwise takes rand64()), so it opts into the LIVE typed-
+	 * hypothesis inject arm with an accept-all range: a kernel-observed
+	 * constant strictly beats uniform random for a slot we have no model
+	 * for, and there is no bound a derived value could violate.  EXACT
+	 * not BOUNDARY -- the gate is unknown, and an equality test is met by
+	 * the observed constant itself, which a +/-1 rotation would miss.
+	 * The denom helper still lifts the attempt rate from ~1/9 to ~1/4
+	 * under CMP_RISING_PC_FLAT; argnum feeds the fill-slot placement
+	 * histogram. */
 	if (ONE_IN(cmp_hint_inject_denom(9)) &&
-	    cmp_hints_try_get(call, rec->do32bit,
-			      CMP_HINT_CALLSITE_ARG_UNDEFINED, &hint)) {
+	    cmp_hints_try_get_ex(call, rec->do32bit, CMP_HINT_EXACT, 0,
+				 true, NULL, argnum,
+				 CMP_HINT_CALLSITE_ARG_UNDEFINED, &hint)) {
 		credit_cmp_hint_injection(rec, CMP_HINT_CALLSITE_ARG_UNDEFINED);
 		return hint;
 	}
