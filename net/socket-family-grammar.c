@@ -283,6 +283,33 @@ void sfg_default_data_leg(int data_fd,
 		free(payload);
 }
 
+/*
+ * Framework-default phase ordering — the single sequence the pre-P1
+ * driver hardcoded.  Consulted for every family that does not opt in
+ * to phase_orders, and for triplets a family's phase_orders_apply gate
+ * declines (e.g. inet's UDP path).  LISTEN/ACCEPT stay in the ordering
+ * unconditionally: their case bodies self-gate via needs_listen_accept
+ * so non-STREAM triplets skip them cleanly without a second ordering.
+ */
+static const struct sfg_phase_order sfg_default_order = {
+	{ SFG_PHASE_SOCKET, SFG_PHASE_PRE_CFG, SFG_PHASE_WALK,
+	  SFG_PHASE_BIND, SFG_PHASE_POST_CFG,
+	  SFG_PHASE_LISTEN, SFG_PHASE_ACCEPT, SFG_PHASE_DATA,
+	  SFG_PHASE_END },
+};
+
+static const struct sfg_phase_order *
+sfg_pick_phase_order(const struct socket_family_grammar *sfg,
+		     const struct socket_triplet *triplet)
+{
+	if (sfg->phase_orders == NULL || sfg->nr_phase_orders == 0)
+		return &sfg_default_order;
+	if (sfg->phase_orders_apply != NULL &&
+	    !sfg->phase_orders_apply(triplet))
+		return &sfg_default_order;
+	return &sfg->phase_orders[rnd_modulo_u32(sfg->nr_phase_orders)];
+}
+
 bool run_grammar_chain(const struct socket_family_grammar *sfg,
 		       unsigned int *err_burst)
 {
@@ -294,8 +321,11 @@ bool run_grammar_chain(const struct socket_family_grammar *sfg,
 		.bound_addr = NULL,
 		.conn_state = SFG_CONN_INIT,
 	};
+	const struct sfg_phase_order *order;
+	unsigned int i;
 	int data_fd;
 	bool ok = false;
+	bool bail = false;
 	unsigned int n_setsockopts;
 	bool (*needs_la)(struct socket_triplet *);
 
@@ -314,62 +344,111 @@ bool run_grammar_chain(const struct socket_family_grammar *sfg,
 		sfg_default_pick_triplet(sfg->family, &triplet);
 	ctx.family = triplet.family;
 
-	ctx.parent_fd = socket(triplet.family, triplet.type, triplet.protocol);
-	if (ctx.parent_fd < 0) {
-		if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT)
-			sfg_mark_unsupported(sfg->family);
-		(*err_burst)++;
-		goto out;
-	}
-	ctx.conn_state = SFG_CONN_CREATED;
-
-	if (sfg->configure_pre_bind != NULL)
-		sfg->configure_pre_bind(ctx.parent_fd, &triplet);
-
 	n_setsockopts = 2 + (rnd_modulo_u32(5));	/* 2..6 coordinated calls */
-	if (sfg->walk_setsockopts != NULL)
-		sfg->walk_setsockopts(ctx.parent_fd, &triplet, n_setsockopts);
-	else
-		sfg_default_walk_setsockopts(ctx.parent_fd, &triplet, n_setsockopts);
-
-	if (sfg->bind_or_connect != NULL) {
-		if (sfg->bind_or_connect(ctx.parent_fd, &triplet) < 0) {
-			(*err_burst)++;
-			goto out;
-		}
-	} else {
-		if (sfg_default_bind(ctx.parent_fd, &triplet, &ctx) < 0) {
-			(*err_burst)++;
-			goto out;
-		}
-	}
-	ctx.conn_state = SFG_CONN_BOUND;
-
-	if (sfg->configure_post_bind != NULL)
-		sfg->configure_post_bind(ctx.parent_fd, &triplet);
-
+	order = sfg_pick_phase_order(sfg, &triplet);
 	needs_la = sfg->needs_listen_accept != NULL ? sfg->needs_listen_accept
 						    : sfg_default_needs_listen_accept;
-	if (needs_la(&triplet)) {
-		if (listen(ctx.parent_fd, 4) == 0) {
-			ctx.conn_state = SFG_CONN_LISTENING;
-			ctx.child_fd = accept(ctx.parent_fd, NULL, NULL);
-			if (ctx.child_fd >= 0)
-				ctx.conn_state = SFG_CONN_ACCEPTED;
+
+	for (i = 0; i < SFG_MAX_PHASES && !bail; i++) {
+		enum sfg_phase step = order->steps[i];
+
+		if (step == SFG_PHASE_END)
+			break;
+
+		switch (step) {
+		case SFG_PHASE_SOCKET:
+			ctx.parent_fd = socket(triplet.family, triplet.type,
+					       triplet.protocol);
+			if (ctx.parent_fd < 0) {
+				if (errno == EAFNOSUPPORT ||
+				    errno == EPROTONOSUPPORT)
+					sfg_mark_unsupported(sfg->family);
+				(*err_burst)++;
+				bail = true;
+				break;
+			}
+			ctx.conn_state = SFG_CONN_CREATED;
+			break;
+
+		case SFG_PHASE_PRE_CFG:
+			if (sfg->configure_pre_bind != NULL)
+				sfg->configure_pre_bind(ctx.parent_fd,
+							&triplet);
+			break;
+
+		case SFG_PHASE_WALK:
+			if (sfg->walk_setsockopts != NULL)
+				sfg->walk_setsockopts(ctx.parent_fd, &triplet,
+						      n_setsockopts);
+			else
+				sfg_default_walk_setsockopts(ctx.parent_fd,
+							     &triplet,
+							     n_setsockopts);
+			break;
+
+		case SFG_PHASE_BIND:
+			if (sfg->bind_or_connect != NULL) {
+				if (sfg->bind_or_connect(ctx.parent_fd,
+							 &triplet) < 0) {
+					(*err_burst)++;
+					bail = true;
+					break;
+				}
+			} else {
+				if (sfg_default_bind(ctx.parent_fd, &triplet,
+						     &ctx) < 0) {
+					(*err_burst)++;
+					bail = true;
+					break;
+				}
+			}
+			ctx.conn_state = SFG_CONN_BOUND;
+			break;
+
+		case SFG_PHASE_POST_CFG:
+			if (sfg->configure_post_bind != NULL)
+				sfg->configure_post_bind(ctx.parent_fd,
+							 &triplet);
+			break;
+
+		case SFG_PHASE_LISTEN:
+			if (needs_la(&triplet)) {
+				if (listen(ctx.parent_fd, 4) == 0)
+					ctx.conn_state = SFG_CONN_LISTENING;
+			}
+			break;
+
+		case SFG_PHASE_ACCEPT:
+			if (ctx.conn_state == SFG_CONN_LISTENING) {
+				ctx.child_fd = accept(ctx.parent_fd, NULL,
+						      NULL);
+				if (ctx.child_fd >= 0)
+					ctx.conn_state = SFG_CONN_ACCEPTED;
+			}
+			break;
+
+		case SFG_PHASE_DATA:
+			data_fd = (ctx.conn_state == SFG_CONN_ACCEPTED)
+					? ctx.child_fd : ctx.parent_fd;
+			if (sfg->data_leg != NULL)
+				sfg->data_leg(ctx.parent_fd, data_fd,
+					      &triplet);
+			else
+				sfg_default_data_leg(data_fd, sfg, &triplet);
+			ok = true;
+			break;
+
+		case SFG_PHASE_END:
+		default:
+			break;
 		}
 	}
 
-	data_fd = (ctx.conn_state == SFG_CONN_ACCEPTED) ? ctx.child_fd
-							: ctx.parent_fd;
-	if (sfg->data_leg != NULL)
-		sfg->data_leg(ctx.parent_fd, data_fd, &triplet);
-	else
-		sfg_default_data_leg(data_fd, sfg, &triplet);
-
-	__atomic_add_fetch(&shm->stats.socket_family_grammar_completed, 1,
-			   __ATOMIC_RELAXED);
-	*err_burst = 0;
-	ok = true;
+	if (ok) {
+		__atomic_add_fetch(&shm->stats.socket_family_grammar_completed,
+				   1, __ATOMIC_RELAXED);
+		*err_burst = 0;
+	}
 out:
 	if (ctx.child_fd >= 0) {
 		xdp_umem_release(ctx.child_fd);

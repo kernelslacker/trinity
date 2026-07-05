@@ -26,6 +26,40 @@ enum sfg_conn_state {
 };
 
 /*
+ * Phase-ID vocabulary for run_grammar_chain's data-driven executor.
+ * A grammar entry (or the framework default) supplies a table of legal
+ * orderings; the executor picks one per walk and drives the callbacks
+ * in that order.  SFG_PHASE_END is the trailing sentinel so a single
+ * fixed-size step buffer per ordering suffices without a separate
+ * length field.
+ *
+ * Values are kept stable (small positive integers) so the per-walk
+ * sequence hash is comparable across runs.
+ */
+enum sfg_phase {
+	SFG_PHASE_END      = 0,	/* sentinel — terminates an ordering */
+	SFG_PHASE_SOCKET   = 1,	/* socket()			  -> CREATED */
+	SFG_PHASE_PRE_CFG  = 2,	/* configure_pre_bind		  (no-op ok) */
+	SFG_PHASE_WALK     = 3,	/* walk_setsockopts		  (no-op ok) */
+	SFG_PHASE_BIND     = 4,	/* bind_or_connect		  -> BOUND */
+	SFG_PHASE_POST_CFG = 5,	/* configure_post_bind		  (no-op ok) */
+	SFG_PHASE_LISTEN   = 6,	/* listen() (needs_la-gated)	  -> LISTENING */
+	SFG_PHASE_ACCEPT   = 7,	/* accept() if LISTENING	  -> ACCEPTED */
+	SFG_PHASE_DATA     = 8,	/* data_leg on child_fd || parent_fd */
+};
+
+/*
+ * Bounded ordering: an ordered list of enum sfg_phase step IDs, with a
+ * trailing SFG_PHASE_END.  Fixed capacity keeps the table static-const
+ * and hashable byte-wise for the variety metric.  Capacity comfortably
+ * fits every current legal permutation (8 real phases + terminator).
+ */
+#define SFG_MAX_PHASES 12
+struct sfg_phase_order {
+	unsigned char steps[SFG_MAX_PHASES];
+};
+
+/*
  * Per-invocation state for run_grammar_chain.  Generalises the AF_ALG-
  * only alg_chain_iter_ctx (childops/net/socket-family-chain.c) so any
  * family the grammar table drives can carry its fds, bound address and
@@ -114,6 +148,25 @@ struct socket_family_grammar {
 	 * payload + this entry's gen_cmsg, then non-blocking recv. */
 	void (*data_leg)(int parent_fd, int child_fd,
 			 struct socket_triplet *triplet);
+
+	/*
+	 * Table of LEGAL phase orderings the executor may pick from per
+	 * walk.  NULL / zero-length falls back to the single default
+	 * ordering the framework uses when no family opts in.  Every entry
+	 * in the table MUST satisfy the invariants documented above
+	 * run_grammar_chain (socket first; bind before listen; listen
+	 * before accept; data leg only after a live connection; pre-bind
+	 * cfg stays pre-bind; post-bind cfg stays post-bind) — the
+	 * executor trusts the table and does not re-validate.
+	 *
+	 * phase_orders_apply gates the table to triplets that actually
+	 * support the alternate orderings (e.g. inet uses the table only
+	 * for SOCK_STREAM triplets; UDP/DGRAM fall back to the default).
+	 * NULL means "table applies to every triplet this family emits".
+	 */
+	const struct sfg_phase_order *phase_orders;
+	unsigned int nr_phase_orders;
+	bool (*phase_orders_apply)(const struct socket_triplet *triplet);
 };
 
 /* Registry helpers (see net/socket-family-grammar.c). */
