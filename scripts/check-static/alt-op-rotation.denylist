@@ -27,6 +27,7 @@ CHILD_OP_KVM_RUN_CHURN           REASON: hardware-state heavy; not safe steady
 CHILD_OP_UBLK_LIFECYCLE          REASON: device lifecycle race
 CHILD_OP_NETNS_TEARDOWN_CHURN    REASON: netns teardown race
 CHILD_OP_IPV6_PMTU_TEARDOWN_RACE REASON: PMTU teardown race
+CHILD_OP_IP6_UDP_CORK_SPLICE      REASON: deterministic OOB stress path; runs only when userns_run_in_ns opens a private netns and does not benefit from steady rotation
 CHILD_OP_TCP_MD5_LISTENER_RACE   REASON: listener-socket race
 CHILD_OP_PCI_BIND                REASON: PCI driver attach/detach lifecycle race
 CHILD_OP_AF_UNIX_PEEK_RACE       REASON: SO_PEEK_OFF + MSG_PEEK/recv/shutdown race

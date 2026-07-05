@@ -1321,6 +1321,14 @@ struct stats_s {
 	unsigned long vrf_fib_churn_rule_removed;	/* RTM_DELRULE for the bound rule accepted */
 	unsigned long vrf_fib_churn_link_removed;	/* RTM_DELLINK vrf accepted (full cycle reached teardown) */
 
+	/* ip6_udp_cork_splice childop counters */
+	unsigned long ip6_udp_cork_splice_runs;			/* total ip6_udp_cork_splice invocations */
+	unsigned long ip6_udp_cork_splice_setup_failed;		/* userns_run_in_ns / rtnl / lo setup failed */
+	unsigned long ip6_udp_cork_splice_mtu_set;		/* lo MTU=1280 netlink accepted */
+	unsigned long ip6_udp_cork_splice_p1_ok;		/* corked MTU-filling sendmsg returned P1 bytes */
+	unsigned long ip6_udp_cork_splice_p1_rejected;		/* corked sendmsg returned short / -1 (splice path refused) */
+	unsigned long ip6_udp_cork_splice_p2_ok;		/* flushing tail sendmsg returned >=0 (trigger burst emitted) */
+
 	/* mpls_route_churn childop counters */
 	unsigned long mpls_route_churn_runs;		/* total mpls_route_churn invocations */
 	unsigned long mpls_route_churn_label_install_ok; /* RTM_NEWROUTE family=AF_MPLS accepted (arm A) */
