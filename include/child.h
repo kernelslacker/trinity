@@ -214,6 +214,7 @@ enum child_op_type {
 	CHILD_OP_STATMOUNT_IDMAP_OVERFLOW,
 	CHILD_OP_SOCK_ULP_SOCKMAP_LAYERING,
 	CHILD_OP_UMOUNT_RACE,
+	CHILD_OP_IP6_UDP_CORK_SPLICE,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -1669,3 +1670,4 @@ bool pfkey_spd_walk(struct childdata *child);
 bool l2tp_ifname_race(struct childdata *child);
 bool statmount_idmap_overflow(struct childdata *child);
 bool umount_race(struct childdata *child);
+bool ip6_udp_cork_splice(struct childdata *child);
