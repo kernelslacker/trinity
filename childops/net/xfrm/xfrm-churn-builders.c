@@ -1,6 +1,6 @@
 /*
  * xfrm-churn-builders - netlink message builders for the xfrm_churn
- * childop.  Carved out of childops/xfrm-churn.c so the heavy
+ * childop.  Carved out of childops/net/xfrm/xfrm-churn.c so the heavy
  * message-assembly code (build_sa_msg / build_sa_id_msg /
  * build_newpolicy / build_delpolicy / build_allocspi and their
  * attribute / selector / lifetime helpers) compiles as its own TU
@@ -13,7 +13,7 @@
  * it has no cross-TU callers.
  *
  * All entry points consume the shared types / constants / UAPI shims
- * declared in childops/xfrm-churn-internal.h; nothing here touches
+ * declared in childops/net/xfrm/xfrm-churn-internal.h; nothing here touches
  * shm or per-child latch state.
  */
 
