@@ -1101,15 +1101,17 @@ void cmp_hyp_would_pick(unsigned int nr, bool do32,
 }
 
 /*
- * Conservative inject rate for the LIVE typed-hypothesis arm.  ~3 %
- * baseline, strictly more conservative than the raw cmp-hint baseline
- * (1/16) so a regression on the unproven typed arm cannot drown the
- * measured raw signal.  Lifts to the existing amplified denom (4) only
- * under the CMP_RISING_PC_FLAT plateau where the raw path is already
- * amplified -- the gate below couples the two so the arm only ever
- * fires alongside the raw amplification.
+ * Inject rate for the LIVE typed-hypothesis arm under the
+ * CMP_RISING_PC_FLAT plateau (channel A below).  Raised from the prior
+ * conservative 1/32 to 1/4 (8x) for the conversion-measurement window:
+ * at 1/32 a 2h run banks only ~10k typed firings, far short of the
+ * ~75k needed to see even one PC win at the raw arm's ~1e-5 rate, so
+ * the typed-vs-raw verdict could never resolve in a practical run.
+ * 1/4 accumulates enough typed firings to measure the arm; it is
+ * deliberately less conservative than the raw baseline (1/16) for that
+ * measurement -- revisit (back toward 1/16-1/32) once the rate is known.
  */
-#define CMP_HYP_LIVE_INJECT_DENOM	32U
+#define CMP_HYP_LIVE_INJECT_DENOM	4U
 
 /*
  * Bootstrap channel dice (channel B) for the LIVE typed-hypothesis arm.
@@ -1436,7 +1438,7 @@ out_bump:
 
 /*
  * LIVE typed-hypothesis inject try.  Composes the conservative gate
- * (plateau == CMP_RISING_PC_FLAT AND ONE_IN(32)) with the shadow
+ * (plateau == CMP_RISING_PC_FLAT AND ONE_IN(4)) with the shadow
  * resolver and the derive helper above.  On a fire the raw pool's
  * (cmp_ip, value, width) tuple the pick step computed is replaced by
  * (cmp_ip, derived, width) -- cmp_ip and width are unchanged because
