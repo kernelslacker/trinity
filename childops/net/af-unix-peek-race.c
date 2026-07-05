@@ -37,6 +37,7 @@
 #include <unistd.h>
 
 #include "child.h"
+#include "errno-classify.h"
 #include "syscall-gate.h"
 #include "compat.h"
 #include "shm.h"
@@ -531,8 +532,7 @@ static void probe_af_unix_stream(void)
 	af_unix_peek_race_probed = true;
 
 	if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sv) < 0) {
-		if (errno == EAFNOSUPPORT || errno == EPROTONOSUPPORT ||
-		    errno == ESOCKTNOSUPPORT)
+		if (is_proto_family_unsupported(errno))
 			ns_unsupported_af_unix_peek_race = true;
 		return;
 	}
