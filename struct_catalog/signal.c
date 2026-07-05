@@ -1,19 +1,10 @@
 /*
  * struct_catalog/signal.c -- signal-shaped struct field tables.
  *
- * Carved out of struct_catalog.c as the ninth leaf TU of the file
- * split: the central spine (struct_catalog[], syscall_struct_args[])
- * and all logic stay in struct_catalog.c; this TU owns the signal
- * leaf data only -- struct sigevent (timer_create), struct sigaction
- * (rt_sigaction), stack_t (sigaltstack), siginfo_t with its si_code-
- * discriminated _rt / _kill variant arms (rt_sigqueueinfo /
- * rt_tgsigqueueinfo / pidfd_send_signal), and sigset_t (signalfd /
- * signalfd4).  Symbols flip from static const to const so the spine's
- * .fields = sig*_fields / .variants = siginfo_t_variants references
- * resolve via the externs in struct_catalog-internal.h.
- *
- * struct_catalog.h and arch.h are included unconditionally so this
- * TU is never empty.
+ * Field/variant tables are `const` (not `static const`) so the spine's
+ * .fields=/.variants= references resolve via struct_catalog-internal.h.
+ * struct_catalog.h and arch.h are included unconditionally so this TU
+ * is never empty when USE_<X> is off.
  */
 
 #include <stddef.h>
