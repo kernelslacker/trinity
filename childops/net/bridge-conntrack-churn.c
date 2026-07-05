@@ -22,7 +22,7 @@
  *      so the cap-drop oracle keeps observing the host credential
  *      profile.  Helper -EPERM (hardened userns policy refused
  *      CLONE_NEWUSER) latches the childop off for the remainder of
- *      this child's lifetime; -1 (transient setup failure: fork,
+ *      this child's lifetime; -EAGAIN (transient setup failure: fork,
  *      id-map write, secondary unshare) skips the iteration without
  *      latching.  Bring lo up inside the grandchild's netns.
  *   2. RTM_NEWLINK bridge br0 + veth pair v0/v1; enslave v0 to br0;
@@ -140,7 +140,7 @@
  * Without a private netns we MUST NOT touch the host's main routing
  * table or netfilter tables, so the op stays disabled for the
  * remainder of this child's lifetime.  Transient setup failures
- * (helper return -1) do not set this — they may not recur on the
+ * (helper return -EAGAIN) do not set this — they may not recur on the
  * next iteration. */
 static bool ns_unsupported;
 static bool lo_up_done;

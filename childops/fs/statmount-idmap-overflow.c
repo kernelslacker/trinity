@@ -213,7 +213,7 @@ static bool statmount_idmap_unsupported;
  * kernel.unprivileged_userns_clone=0).  Without a private mount + user
  * namespace pair we cannot install the idmap on the detached tmpfs, so
  * the op stays disabled for the remainder of this child's lifetime.
- * Helper return -1 (transient setup failure) does NOT set this -- the
+ * Helper return -EAGAIN (transient setup failure) does NOT set this -- the
  * failure is not policy and may not recur on the next invocation. */
 static bool ns_unshare_failed_statmount_idmap;
 
