@@ -2,13 +2,8 @@
  * struct_catalog/sockaddr-sockopt.c -- setsockopt optval struct field
  * tables (linger / packet_mreq / group_req / group_source_req).
  *
- * Carved out of struct_catalog/sockaddr.c: sockaddr_storage per-AF
- * variants stay in sockaddr-af.c and the multicast optval shapes
- * (ip_mreqn / ip_mreq_source / ipv6_mreq) live in sockaddr-mcast.c;
- * this TU owns only the non-multicast setsockopt optval field tables.
- * Symbols are const (not static const) so the spine's designated
- * initialisers .fields = linger_fields (and friends) resolve via the
- * externs in struct_catalog-internal.h.
+ * Tables are `const` (not `static const`) so the spine's designated-init
+ * `.fields =` references resolve via the externs in struct_catalog-internal.h.
  *
  * setsockopt optval shapes -- proof batch for the two-key
  * (level, optname) discriminator.  Five shapes already owned by
