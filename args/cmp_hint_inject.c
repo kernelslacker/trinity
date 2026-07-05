@@ -23,7 +23,7 @@
  * are failing to convert, so inject more aggressively even when the
  * rotation hasn't landed on the CMP_DERIVED amplification slot.
  * Wrapped in a helper so any future tuning lands in one place rather
- * than scattered across the four call sites.
+ * than scattered across the five call sites.
  */
 #define CMP_HINT_INJECT_DENOM_BASELINE  16U
 #define CMP_HINT_INJECT_DENOM_AMPLIFIED 4U
@@ -119,7 +119,7 @@ bool cmp_hint_baseline_should_inject(void)
 /*
  * bookkeeping for a committed cmp_hint injection.
  *
- * Called from each of the four argtype-handler callsites that pull a
+ * Called from each of the five argtype-handler callsites that pull a
  * cmp_hints_try_get() hint and commit it to a produced syscall arg.
  * Centralised so the observability counters stay in lock-step: any new
  * injection callsite gets the full row of bumps via a single helper
