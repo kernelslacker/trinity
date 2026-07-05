@@ -104,7 +104,7 @@ void sqe_clear(struct io_uring_sqe *s);
 extern volatile uintptr_t iouring_recipes_pool_race_addr_low;
 extern volatile uintptr_t iouring_recipes_pool_race_addr_high;
 
-/* fs family -- childops/iouring-recipes-fs.c */
+/* fs family -- childops/io_uring/recipes-fs.c */
 bool recipe_openat_close_linked(struct iour_recipe_state *s, bool *unsupported);
 bool recipe_fsync(struct iour_recipe_state *s, bool *unsupported);
 bool recipe_sync_file_range(struct iour_recipe_state *s, bool *unsupported);
@@ -128,7 +128,7 @@ bool recipe_fsetxattr(struct iour_recipe_state *s, bool *unsupported);
 bool recipe_getxattr(struct iour_recipe_state *s, bool *unsupported);
 bool recipe_fgetxattr(struct iour_recipe_state *s, bool *unsupported);
 
-/* net family -- childops/iouring-recipes-net.c */
+/* net family -- childops/io_uring/recipes-net.c */
 bool recipe_send_recv_linked(struct iour_recipe_state *s, bool *unsupported);
 bool recipe_socket_shutdown_linked(struct iour_recipe_state *s, bool *unsupported);
 bool recipe_sendmsg(struct iour_recipe_state *s, bool *unsupported);
@@ -140,7 +140,7 @@ bool recipe_bind(struct iour_recipe_state *s, bool *unsupported);
 #endif
 bool recipe_listen(struct iour_recipe_state *s, bool *unsupported);
 
-/* poll-timeout family -- childops/iouring-recipes-poll-timeout.c */
+/* poll-timeout family -- childops/io_uring/recipes-poll-timeout.c */
 bool recipe_timeout_drain(struct iour_recipe_state *s, bool *unsupported);
 bool recipe_poll_multishot(struct iour_recipe_state *s, bool *unsupported);
 bool recipe_async_cancel(struct iour_recipe_state *s, bool *unsupported);
@@ -153,7 +153,7 @@ bool recipe_futex_wait_wake(struct iour_recipe_state *s, bool *unsupported);
 #endif
 bool recipe_waitid(struct iour_recipe_state *s, bool *unsupported);
 
-/* register-fixedfile family -- childops/iouring-recipes-register.c */
+/* register-fixedfile family -- childops/io_uring/recipes-register.c */
 bool recipe_fixed_buffer_read(struct iour_recipe_state *s, bool *unsupported);
 bool recipe_write_read_fixed(struct iour_recipe_state *s, bool *unsupported);
 bool recipe_provide_buffers(struct iour_recipe_state *s, bool *unsupported);
