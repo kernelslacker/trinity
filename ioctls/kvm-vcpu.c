@@ -158,6 +158,7 @@ static void kvm_vcpu_sanitise(const struct ioctl_group *grp,
 		break;
 	case KVM_GET_CPUID2:
 	case KVM_SET_CPUID2:
+	case KVM_GET_SUPPORTED_HV_CPUID:
 		sanitise_kvm_cpuid2(rec);
 		break;
 #endif
@@ -186,6 +187,9 @@ static const struct ioctl kvm_vcpu_ioctls[] = {
 #ifdef KVM_SMI
 	IOCTL(KVM_SMI),
 #endif
+	IOCTL(KVM_GET_MP_STATE),
+	IOCTL(KVM_TRANSLATE),
+	IOCTL(KVM_KVMCLOCK_CTRL),
 #ifdef X86
 	IOCTL(KVM_GET_LAPIC),
 	IOCTL(KVM_SET_LAPIC),
@@ -193,12 +197,16 @@ static const struct ioctl kvm_vcpu_ioctls[] = {
 	IOCTL(KVM_SET_MSRS),
 	IOCTL(KVM_GET_CPUID2),
 	IOCTL(KVM_SET_CPUID2),
+	IOCTL(KVM_GET_SUPPORTED_HV_CPUID),
 	IOCTL(KVM_GET_XSAVE),
 	IOCTL(KVM_SET_XSAVE),
 	IOCTL(KVM_GET_XCRS),
 	IOCTL(KVM_SET_XCRS),
 	IOCTL(KVM_GET_DEBUGREGS),
 	IOCTL(KVM_SET_DEBUGREGS),
+#ifdef KVM_GET_SREGS2
+	IOCTL(KVM_GET_SREGS2),
+#endif
 #endif
 	IOCTL(KVM_GET_REG_LIST),
 };
