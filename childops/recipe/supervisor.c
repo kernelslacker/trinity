@@ -365,7 +365,7 @@ static void mount_userns_dance_inner(void)
  *
  * Distinct from childops/misc/userns-fuzzer.c which enters CLONE_NEWUSER
  * but only dispatches a single ns_capable-gated op; distinct from
- * childops/fs-lifecycle.c which drives mount lifecycles inside the
+ * childops/fs/fs-lifecycle.c which drives mount lifecycles inside the
  * trinity child's existing CLONE_NEWNS without a fresh userns.  The
  * combination -- fresh userns *and* fresh mountns *and* a multi-step
  * propagation/remount/detach sequence -- is unreachable through any
@@ -1006,7 +1006,7 @@ out:
  *   - cgroup_rmdir against a recently-emptied cgroup (offline_css for
  *     each subsys, kernfs_remove)
  *
- * Distinct from childops/cgroup-churn.c which mkdirs/rmdirs as fast
+ * Distinct from childops/misc/cgroup-churn.c which mkdirs/rmdirs as fast
  * as possible to drive cgroup_mkdir/rmdir under contention but never
  * populates a cgroup with tasks, never opens cgroup.events, and
  * never exercises cgroup.kill.  This recipe is the only place
