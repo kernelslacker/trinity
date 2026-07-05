@@ -1,5 +1,5 @@
 /*
- * childops/nfnl-util.c — implementation for the shared scaffolding
+ * childops/net/netfilter/nfnl-util.c — implementation for the shared scaffolding
  * declared in include/childops-nfnl.h.
  *
  * Behavioural choices preserved from the per-file copies this file
