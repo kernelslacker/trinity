@@ -797,6 +797,8 @@ static const struct stat_field ip6erspan_netns_migrate_fields[] = {
 	STAT_FIELD(inm, link_create_ok),
 	STAT_FIELD(inm, netns_migrate_ok),
 	STAT_FIELD(inm, changelink_ok),
+	STAT_FIELD(inm, ip6erspan_unsupported_observed),
+	STAT_FIELD(inm, changelink_unsupported_observed),
 };
 
 const struct stat_category ip6erspan_netns_migrate_category =
