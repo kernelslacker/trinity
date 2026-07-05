@@ -1014,7 +1014,7 @@ cmp_hyp_would_pick_locked(struct cmp_hyp_pool *pool, unsigned long cmp_ip,
 					&kcov_shm->cmp_hyp_picked_by_state[CMP_HYP_STATE_DEMOTED], \
 					1UL, __ATOMIC_RELAXED);		\
 				__atomic_fetch_add(			\
-					&kcov_shm->cmp_hyp_demoted_reroll_picked, \
+					&kcov_shm->cmp_hyp_demoted_reroll_picked_by_kind[(d)->kind], \
 					1UL, __ATOMIC_RELAXED);		\
 			}						\
 			return (d);					\
