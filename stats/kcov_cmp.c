@@ -77,12 +77,14 @@ static void kcov_cmp_observability_block_render(long elapsed __unused__)
 	static unsigned long prev_cmp_injected[MAX_NR_SYSCALL];
 	static unsigned long prev_pc_wins[MAX_NR_SYSCALL];
 	static unsigned long prev_edges[MAX_NR_SYSCALL];
+	static unsigned long prev_reject_cap[MAX_NR_SYSCALL];
 	static bool armed;
 	unsigned int top_nr[10];
 	unsigned long top_cmp[10];
 	unsigned long top_injected[10];
 	unsigned long top_pc_wins[10];
 	unsigned long top_edges[10];
+	unsigned long top_reject_cap[10];
 	unsigned int top_count = 0;
 	unsigned int nr_syscalls_to_scan;
 	const struct syscalltable *table;
@@ -101,6 +103,7 @@ static void kcov_cmp_observability_block_render(long elapsed __unused__)
 	memset(top_injected, 0, sizeof(top_injected));
 	memset(top_pc_wins, 0, sizeof(top_pc_wins));
 	memset(top_edges, 0, sizeof(top_edges));
+	memset(top_reject_cap, 0, sizeof(top_reject_cap));
 
 	for (i = 0; i < nr_syscalls_to_scan; i++) {
 		unsigned long cur_inserts = __atomic_load_n(
@@ -111,10 +114,13 @@ static void kcov_cmp_observability_block_render(long elapsed __unused__)
 			&kcov_shm->per_syscall_cmp_hint_pc_wins[i], __ATOMIC_RELAXED);
 		unsigned long cur_edges = __atomic_load_n(
 			&kcov_shm->per_syscall_edges[i], __ATOMIC_RELAXED);
+		unsigned long cur_reject_cap = __atomic_load_n(
+			&kcov_shm->per_syscall_cmp_reject_cap[i], __ATOMIC_RELAXED);
 		unsigned long delta_inserts;
 		unsigned long delta_injected;
 		unsigned long delta_pc_wins;
 		unsigned long delta_edges;
+		unsigned long delta_reject_cap;
 		unsigned int k;
 
 		/* First window: arm the snapshot and skip emit so any
@@ -125,6 +131,7 @@ static void kcov_cmp_observability_block_render(long elapsed __unused__)
 			prev_cmp_injected[i] = cur_injected;
 			prev_pc_wins[i] = cur_pc_wins;
 			prev_edges[i] = cur_edges;
+			prev_reject_cap[i] = cur_reject_cap;
 			continue;
 		}
 
@@ -133,15 +140,17 @@ static void kcov_cmp_observability_block_render(long elapsed __unused__)
 		 * lands between two dumps can publish a lower value; clamp
 		 * to zero so a one-shot warm-start doesn't underflow into a
 		 * ~ULONG_MAX delta the topn picker would pin to slot 0. */
-		delta_inserts  = (cur_inserts  > prev_cmp_inserts[i])  ? cur_inserts  - prev_cmp_inserts[i]  : 0;
-		delta_injected = (cur_injected > prev_cmp_injected[i]) ? cur_injected - prev_cmp_injected[i] : 0;
-		delta_pc_wins  = (cur_pc_wins  > prev_pc_wins[i])      ? cur_pc_wins  - prev_pc_wins[i]      : 0;
-		delta_edges    = (cur_edges    > prev_edges[i])        ? cur_edges    - prev_edges[i]        : 0;
+		delta_inserts    = (cur_inserts    > prev_cmp_inserts[i])  ? cur_inserts    - prev_cmp_inserts[i]  : 0;
+		delta_injected   = (cur_injected   > prev_cmp_injected[i]) ? cur_injected   - prev_cmp_injected[i] : 0;
+		delta_pc_wins    = (cur_pc_wins    > prev_pc_wins[i])      ? cur_pc_wins    - prev_pc_wins[i]      : 0;
+		delta_edges      = (cur_edges      > prev_edges[i])        ? cur_edges      - prev_edges[i]        : 0;
+		delta_reject_cap = (cur_reject_cap > prev_reject_cap[i])   ? cur_reject_cap - prev_reject_cap[i]   : 0;
 
 		prev_cmp_inserts[i] = cur_inserts;
 		prev_cmp_injected[i] = cur_injected;
 		prev_pc_wins[i] = cur_pc_wins;
 		prev_edges[i] = cur_edges;
+		prev_reject_cap[i] = cur_reject_cap;
 
 		if (delta_inserts == 0)
 			continue;
@@ -149,24 +158,30 @@ static void kcov_cmp_observability_block_render(long elapsed __unused__)
 		/* Rank by cmp_inserts delta: that's the producer-side
 		 * "kernel emitted distinct CMP signal for this syscall"
 		 * column, which is the one the PHASE-0 hold cares about.
-		 * Insertion sort on the four arrays in lock-step so the
-		 * top-N rows stay aligned across columns. */
+		 * Insertion sort on the arrays in lock-step so the
+		 * top-N rows stay aligned across columns.  reject_cap+
+		 * rides alongside inserts+ so the (reject_cap / inserts)
+		 * ratio reads out per row: ~0 across the top-20 means the
+		 * per-syscall pool is novelty-starved and widening the cap
+		 * will not help; high means cap-bound and expansion should. */
 		for (j = top_count; j > 0 && delta_inserts > top_cmp[j - 1]; j--) {
 			if (j < 10) {
-				top_cmp[j]      = top_cmp[j - 1];
-				top_injected[j] = top_injected[j - 1];
-				top_pc_wins[j]  = top_pc_wins[j - 1];
-				top_edges[j]    = top_edges[j - 1];
-				top_nr[j]       = top_nr[j - 1];
+				top_cmp[j]        = top_cmp[j - 1];
+				top_injected[j]   = top_injected[j - 1];
+				top_pc_wins[j]    = top_pc_wins[j - 1];
+				top_edges[j]      = top_edges[j - 1];
+				top_reject_cap[j] = top_reject_cap[j - 1];
+				top_nr[j]         = top_nr[j - 1];
 			}
 		}
 		k = j;
 		if (k < 10) {
-			top_cmp[k]      = delta_inserts;
-			top_injected[k] = delta_injected;
-			top_pc_wins[k]  = delta_pc_wins;
-			top_edges[k]    = delta_edges;
-			top_nr[k]       = i;
+			top_cmp[k]        = delta_inserts;
+			top_injected[k]   = delta_injected;
+			top_pc_wins[k]    = delta_pc_wins;
+			top_edges[k]      = delta_edges;
+			top_reject_cap[k] = delta_reject_cap;
+			top_nr[k]         = i;
 			if (top_count < 10)
 				top_count++;
 		}
@@ -181,15 +196,17 @@ static void kcov_cmp_observability_block_render(long elapsed __unused__)
 		return;
 
 	stats_log_write("KCOV CMP-rich syscalls (top by per-window cmp_inserts delta):\n");
-	stats_log_write("  %-24s %10s %10s %10s %10s\n",
-			"syscall", "cmp+", "injected+", "pc-wins+", "edge+");
+	stats_log_write("  %-24s %10s %10s %10s %10s %10s\n",
+			"syscall", "cmp+", "injected+", "pc-wins+", "edge+",
+			"rejcap+");
 	for (j = 0; j < top_count; j++) {
 		struct syscallentry *entry = table[top_nr[j]].entry;
 		const char *name = entry ? entry->name : "???";
 
-		stats_log_write("  %-24s %10lu %10lu %10lu %10lu\n",
+		stats_log_write("  %-24s %10lu %10lu %10lu %10lu %10lu\n",
 				name, top_cmp[j], top_injected[j],
-				top_pc_wins[j], top_edges[j]);
+				top_pc_wins[j], top_edges[j],
+				top_reject_cap[j]);
 	}
 }
 
