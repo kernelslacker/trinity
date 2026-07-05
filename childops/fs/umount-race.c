@@ -249,7 +249,7 @@ bool umount_race(struct childdata *child)
 	__atomic_add_fetch(&shm->stats.umount_race_runs, 1, __ATOMIC_RELAXED);
 
 	/* Box-safety + degrade gate, mirroring mount-churn.c's
-	 * mnt_ready check (childops/mount-churn.c:177).  When the
+	 * mnt_ready check (childops/fs/mount-churn.c:177).  When the
 	 * parent's startup mount-ns provisioning didn't latch
 	 * (non-root, --no-startup-isolation, EPERM/ENOSYS in
 	 * setup_startup_isolation) the inherited "ns" is the host's,
