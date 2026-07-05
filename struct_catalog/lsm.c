@@ -1,12 +1,10 @@
 /*
  * struct_catalog/lsm.c -- lsm_set_self_attr struct field table.
  *
- * Carved out of struct_catalog.c as another leaf TU of the file
- * split: the central spine (struct_catalog[], syscall_struct_args[])
- * and all logic stay in struct_catalog.c; this TU owns the LSM leaf
- * data only -- struct lsm_ctx (lsm_set_self_attr).  The symbol flips
- * from static const to const so the spine's .fields = lsm_ctx_fields
- * reference resolves via the extern in struct_catalog-internal.h.
+ * Tables are `const` (not `static const`) so the spine's `.fields =`
+ * references resolve via the externs in struct_catalog-internal.h.
+ * struct_catalog.h and arch.h are #included unconditionally so this TU
+ * is never empty when USE_<X> is off.
  *
  * The struct lsm_ctx fallback below mirrors the trinity-local shim
  * that struct_catalog.c keeps under the same #ifndef _LINUX_LSM_H
@@ -14,10 +12,6 @@
  * entry, so the type must stay visible in both TUs.  Both copies must
  * land on a layout-identical definition; a future uapi bump that
  * grows the fixed head needs both updated.
- *
- * struct_catalog.h and arch.h are included unconditionally so this
- * TU is never empty.  <linux/types.h> brings __u64 used by the
- * fallback shim.
  */
 
 #include <stddef.h>
