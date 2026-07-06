@@ -259,7 +259,7 @@ void generate_syscall_args(struct syscallrecord *rec)
 
 	/* reset the per-call cmp-hint latch so each new
 	 * call starts with a fresh "no hint injected yet" state.  Any of
-	 * the four argtype-handler callsites below that pulls a hint via
+	 * the five argtype-handler callsites below that pulls a hint via
 	 * cmp_hints_try_get() sets the flag through credit_cmp_hint_injection
 	 * before the dispatch lands; kcov_collect()'s found_new branch then
 	 * reads it to credit per_syscall_cmp_hint_pc_wins[nr].  Parent-
