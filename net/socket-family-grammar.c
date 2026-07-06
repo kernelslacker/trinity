@@ -575,6 +575,11 @@ static inline uint32_t sfg_fnv1a_step(uint32_t h, unsigned char step)
 	return h;
 }
 
+/* Returned by sfg_seq_record when the ring is full and the hash was
+ * not already present -- the caller has no slot to attach per-sequence
+ * data to and skips the attempt. */
+#define SFG_SEQ_SLOT_NONE	((unsigned int)-1)
+
 /*
  * Record a per-walk sequence hash in shm's bounded ring.  Linear scan
  * to skip duplicates; CAS on sfg_seq_count reserves a fresh slot and
@@ -582,8 +587,13 @@ static inline uint32_t sfg_fnv1a_step(uint32_t h, unsigned char step)
  * sequence observed fleet-wide.  Saturates silently once the ring
  * fills (SFG_SEQ_HASH_CAP entries); the variety-signal use case does
  * not need a full inventory.
+ *
+ * Returns the ring slot holding this hash -- the index found on a
+ * duplicate, or the freshly CAS-reserved slot on a first sighting --
+ * so a caller can attach per-sequence data (the P4 reward arms) keyed
+ * by the same slot.  Returns SFG_SEQ_SLOT_NONE when the ring is full.
  */
-static void sfg_seq_record(uint32_t h)
+static unsigned int sfg_seq_record(uint32_t h)
 {
 	unsigned int count, i, slot;
 
@@ -592,10 +602,10 @@ static void sfg_seq_record(uint32_t h)
 		for (i = 0; i < count; i++) {
 			if (__atomic_load_n(&shm->sfg_seq_hashes[i],
 					    __ATOMIC_RELAXED) == h)
-				return;
+				return i;
 		}
 		if (count >= SFG_SEQ_HASH_CAP)
-			return;
+			return SFG_SEQ_SLOT_NONE;
 		slot = count;
 		if (__atomic_compare_exchange_n(&shm->sfg_seq_count,
 						&count, slot + 1,
@@ -607,7 +617,7 @@ static void sfg_seq_record(uint32_t h)
 			__atomic_add_fetch(
 				&shm->stats.socket_family_grammar_distinct_seq,
 				1, __ATOMIC_RELAXED);
-			return;
+			return slot;
 		}
 		/* CAS lost: `count` now holds the witnessed slot count;
 		 * re-scan (the winning writer may have written OUR hash). */
