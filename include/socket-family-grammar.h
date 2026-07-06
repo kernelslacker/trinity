@@ -229,6 +229,34 @@ void sfg_mark_unsupported(int family);
  */
 const char *sfg_illegal_name(enum sfg_illegal_op op);
 
+/*
+ * Stable short tag for enum sfg_conn_state.  Same shape as
+ * sfg_illegal_name — one string table, both channels use it.  Never
+ * returns NULL.
+ */
+const char *sfg_conn_state_name(enum sfg_conn_state st);
+
+/*
+ * Publish a socket-grammar illegal-step label on both channels the
+ * post-mortem walker reads:
+ *   1. this_child()->last_sfg_illegal is stamped so a kernel oops
+ *      caught by the parent's health path renders the label alongside
+ *      the chronicle dump.
+ *   2. output(2, "sfg illegal: %s fd=%d family=%d state=%s\n", ...) is
+ *      emitted so netconsole / logview capture the label on the wire
+ *      before the illegal syscall lands -- the last line on the wire
+ *      names the violated precondition if the kernel oopses inside
+ *      the illegal path.
+ *
+ * Must be called IMMEDIATELY BEFORE the raw illegal syscall so the
+ * wire order (breadcrumb, then syscall entry, then oops) is what
+ * bandicoot/kdump post-mortem sees.  Safe to call outside a child
+ * (this_child()==NULL): the childdata stamp is skipped, the wire
+ * output still fires.
+ */
+void sfg_publish_illegal(enum sfg_illegal_op op, enum sfg_conn_state at,
+			 int family, int fd);
+
 /* Default callbacks the grammar entries can plug into the table. */
 bool sfg_always_false(void);
 void sfg_default_pick_triplet(int family, struct socket_triplet *out);

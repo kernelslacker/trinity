@@ -364,6 +364,14 @@ void clean_childdata(struct childdata *child)
 	 * payload as if it belonged to the fresh child. */
 	memset(&child->breadcrumb_ring, 0, sizeof(child->breadcrumb_ring));
 
+	/* Drop the previous occupant's socket-family-grammar illegal-step
+	 * label so a fresh child that never fires an illegal step is not
+	 * misattributed with a stale precondition-violation record at
+	 * post-mortem time.  Zero maps to {SFG_ILLEGAL_NONE, SFG_CONN_INIT,
+	 * 0} which the post-mortem dumper reads as "no illegal step
+	 * fired". */
+	memset(&child->last_sfg_illegal, 0, sizeof(child->last_sfg_illegal));
+
 	/* Reset live fd ring: -1 marks all slots as empty. */
 	for (int i = 0; i < CHILD_FD_RING_SIZE; i++)
 		child->live_fds.fds[i] = -1;

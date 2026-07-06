@@ -15,6 +15,7 @@
 #include "params.h"
 #include "pids.h"
 #include "shm.h"
+#include "socket-family-grammar.h"
 #include "stats_ring.h"
 #include "tables.h"
 #include "taint.h"
@@ -419,6 +420,38 @@ static void __cold write_artifact_buf(const char *dir, const char *name,
 	fclose(fp);
 }
 
+/*
+ * Render one line per child that fired a socket-family-grammar
+ * illegal step during the tainted run.  Reads the owner-writable
+ * childdata.last_sfg_illegal slot each child stamps immediately
+ * before its illegal syscall (see sfg_publish_illegal).  Silent if no
+ * child ever fired one -- the common case when the taint originated
+ * outside the socket-grammar path.  Children are quiesced by panic()
+ * ahead of the tainted_postmortem() caller so a plain non-atomic read
+ * is race-free.
+ */
+static void __cold dump_sfg_illegal(FILE *fp)
+{
+	unsigned int i;
+	unsigned int seen = 0;
+
+	for_each_child(i) {
+		struct childdata *child = children[i];
+
+		if (child == NULL)
+			continue;
+		if (child->last_sfg_illegal.op == SFG_ILLEGAL_NONE)
+			continue;
+		if (seen == 0)
+			fprintf(fp, "sfg-illegal:\n");
+		fprintf(fp, "  child %u: %s state=%s family=%d\n", i,
+			sfg_illegal_name(child->last_sfg_illegal.op),
+			sfg_conn_state_name(child->last_sfg_illegal.at),
+			child->last_sfg_illegal.family);
+		seen++;
+	}
+}
+
 static void __cold dump_kcov_state(FILE *fp)
 {
 	unsigned long edges, pcs, calls, remote, truncated;
@@ -523,6 +556,7 @@ void __cold tainted_postmortem(void)
 		fprintf(fp, "taint:  0x%x (was 0x%x at startup)\n",
 			taint, kernel_taint_initial);
 		fprintf(fp, "seed:   %u\n", seed);
+		dump_sfg_illegal(fp);
 		fclose(fp);
 	}
 
