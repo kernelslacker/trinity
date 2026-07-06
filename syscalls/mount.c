@@ -20,6 +20,7 @@
 #include "rnd.h"
 #include "sanitise.h"
 #include "compat.h"
+#include "kernel/mount.h"
 #include "trinity.h"
 #include "utils.h"
 
@@ -207,14 +208,6 @@ static void __attribute__((constructor)) read_filesystem_types(void)
 
 	nr_filesystem_types = count;
 }
-
-#ifndef MS_SUBMOUNT
-#define MS_SUBMOUNT	(1<<26)
-#endif
-
-#ifndef MS_NOREMOTELOCK
-#define MS_NOREMOTELOCK	(1<<27)
-#endif
 
 static unsigned long mount_flags[] = {
 	MS_RDONLY, MS_NOSUID, MS_NODEV, MS_NOEXEC,
@@ -492,10 +485,6 @@ static void build_valid_mount_attr(struct mount_attr *ma)
 	if (RAND_BOOL())
 		ma->propagation = mount_propagation_flags[rnd_modulo_u32(ARRAY_SIZE(mount_propagation_flags))];
 }
-
-#ifndef MOUNT_ATTR_SIZE_VER0
-#define MOUNT_ATTR_SIZE_VER0	32
-#endif
 
 /*
  * Pre-ksize ABI floors for the csfu UNDERSIZE bucket.  Today
