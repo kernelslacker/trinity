@@ -352,6 +352,214 @@ sfg_pick_phase_order(const struct socket_family_grammar *sfg,
 }
 
 /*
+ * Injector: with low probability, splice EXACTLY ONE precondition-
+ * violating step into an otherwise-coherent plan.  Kept rare so the
+ * bulk of walks stay coherent and the P1 sequence-variety metric
+ * stays interpretable; a tighter rate would swamp the variety signal
+ * with illegal-step noise.  Only fires on the inet/TCP arm today
+ * (mirrors P1's inet_phase_orders_apply scope); other families opt
+ * in as their grammar tables land.
+ */
+#define SFG_ILLEGAL_RATE	16
+
+static enum sfg_illegal_op sfg_pick_illegal_op(void)
+{
+	static const enum sfg_illegal_op ops[] = {
+		SFG_ILLEGAL_ACCEPT_NON_LISTENER,
+		SFG_ILLEGAL_BIND_AFTER_LISTEN,
+		SFG_ILLEGAL_SEND_BEFORE_BIND,
+		SFG_ILLEGAL_DOUBLE_SHUTDOWN,
+	};
+
+	return ops[rnd_modulo_u32(ARRAY_SIZE(ops))];
+}
+
+/*
+ * Find the first index of `step` in the ordering, stopping at the
+ * SFG_PHASE_END terminator.  Returns -1 if the step is absent (or
+ * the ordering is malformed / unterminated within SFG_MAX_PHASES).
+ */
+static int sfg_find_step(const struct sfg_phase_order *o, unsigned char step)
+{
+	unsigned int i;
+
+	for (i = 0; i < SFG_MAX_PHASES; i++) {
+		if (o->steps[i] == step)
+			return (int) i;
+		if (o->steps[i] == SFG_PHASE_END)
+			return -1;
+	}
+	return -1;
+}
+
+/*
+ * Insert `n` step bytes at position `pos`, shifting the rest of the
+ * ordering (including the SFG_PHASE_END terminator) right by `n`.
+ * Returns false if the resulting ordering would leave no room for
+ * the terminator inside SFG_MAX_PHASES.
+ */
+static bool sfg_insert_steps(struct sfg_phase_order *o, unsigned int pos,
+			     const unsigned char *seq, unsigned int n)
+{
+	unsigned int len = 0;
+
+	while (len < SFG_MAX_PHASES && o->steps[len] != SFG_PHASE_END)
+		len++;
+	if (len + n >= SFG_MAX_PHASES)
+		return false;
+
+	memmove(&o->steps[pos + n], &o->steps[pos],
+		(len + 1 - pos) * sizeof(o->steps[0]));
+	memcpy(&o->steps[pos], seq, n * sizeof(o->steps[0]));
+	return true;
+}
+
+/*
+ * Splice one illegal step into a legal ordering.  Copies the picked
+ * legal order into *out and mutates it in place per the chosen op:
+ *
+ *   ACCEPT_NON_LISTENER: ILLEGAL inserted immediately BEFORE LISTEN,
+ *      so it fires on a BOUND fd that never listen()ed.
+ *   BIND_AFTER_LISTEN:   ILLEGAL inserted immediately AFTER LISTEN,
+ *      so it fires bind() on a LISTENING fd.
+ *   DOUBLE_SHUTDOWN:     ILLEGAL inserted immediately AFTER DATA, so
+ *      it fires the double shutdown() on the ACCEPTED child_fd (or
+ *      the LISTENING parent_fd if accept never took) once the
+ *      coherent walk is otherwise complete.
+ *   SEND_BEFORE_BIND:    ILLEGAL + a second DATA inserted immediately
+ *      BEFORE BIND.  ILLEGAL publishes the label; the following DATA
+ *      step fires sendmsg on the still-CREATED parent_fd (the DATA
+ *      case's data_fd fallback resolves to parent_fd when not
+ *      ACCEPTED).  The trailing legal DATA leg is untouched.
+ *
+ * Returns true on successful splice, false if the target step is
+ * missing from the input ordering or the insertion would overflow.
+ * On false the caller leaves the picked legal ordering unmutated so
+ * the walk falls back to a coherent plan.
+ */
+static bool sfg_splice_illegal(struct sfg_phase_order *out,
+			       const struct sfg_phase_order *in,
+			       enum sfg_illegal_op op)
+{
+	unsigned char seq[2] = { SFG_PHASE_ILLEGAL, 0 };
+	unsigned int nseq = 1;
+	int pos;
+
+	*out = *in;
+
+	switch (op) {
+	case SFG_ILLEGAL_ACCEPT_NON_LISTENER:
+		pos = sfg_find_step(out, SFG_PHASE_LISTEN);
+		break;
+	case SFG_ILLEGAL_BIND_AFTER_LISTEN:
+		pos = sfg_find_step(out, SFG_PHASE_LISTEN);
+		if (pos >= 0)
+			pos++;
+		break;
+	case SFG_ILLEGAL_DOUBLE_SHUTDOWN:
+		pos = sfg_find_step(out, SFG_PHASE_DATA);
+		if (pos >= 0)
+			pos++;
+		break;
+	case SFG_ILLEGAL_SEND_BEFORE_BIND:
+		pos = sfg_find_step(out, SFG_PHASE_BIND);
+		seq[1] = SFG_PHASE_DATA;
+		nseq = 2;
+		break;
+	default:
+		return false;
+	}
+	if (pos < 0)
+		return false;
+	return sfg_insert_steps(out, (unsigned int) pos, seq, nseq);
+}
+
+/*
+ * SFG_PHASE_ILLEGAL handler.  The ONE place in the executor that
+ * deliberately bypasses the guard rails the legal phases self-gate
+ * with (ACCEPT only when LISTENING; DATA falls back to parent_fd;
+ * LISTEN gates on needs_la) — the whole point is to fire the raw
+ * illegal syscall against the current fd regardless of conn_state so
+ * the kernel path that would normally be unreachable from a coherent
+ * walk gets exercised.
+ *
+ * Publishes labels on both channels (childdata slot + on-wire
+ * breadcrumb) IMMEDIATELY BEFORE firing so an oops inside the illegal
+ * syscall carries an unambiguous forensic tail on netconsole / logview
+ * and lands in the post-mortem summary block via last_sfg_illegal.
+ *
+ * For SEND_BEFORE_BIND the handler is publish-only: the extra DATA
+ * step the splicer put immediately after this pseudo-step fires the
+ * actual sendmsg() on the unbound parent_fd (that ordering-only case
+ * is what makes SEND_BEFORE_BIND fit the same "one label per walk"
+ * contract as the three handler-issued ops).
+ */
+static void sfg_do_illegal_step(struct socket_ctx *ctx,
+				struct socket_triplet *triplet,
+				enum sfg_illegal_op op)
+{
+	int fd;
+
+	/* DOUBLE_SHUTDOWN: prefer the ACCEPTED child_fd (that's the fd
+	 * a real double-shutdown crash would land on); every other op
+	 * targets the parent_fd (pre-LISTEN accept / at-LISTEN bind /
+	 * pre-BIND send). */
+	if (op == SFG_ILLEGAL_DOUBLE_SHUTDOWN && ctx->child_fd >= 0)
+		fd = ctx->child_fd;
+	else
+		fd = ctx->parent_fd;
+
+	ctx->illegal_op = op;
+	ctx->illegal_at = ctx->conn_state;
+	sfg_publish_illegal(op, ctx->conn_state, ctx->family, fd);
+
+	switch (op) {
+	case SFG_ILLEGAL_ACCEPT_NON_LISTENER:
+		/* accept() on a BOUND-not-LISTENING fd: the guard case in
+		 * the legal SFG_PHASE_ACCEPT arm gates on conn_state ==
+		 * LISTENING, so no coherent walk ever reaches this kernel
+		 * path.  Discard any fd that unexpectedly escapes. */
+	{
+		int a = accept(fd, NULL, NULL);
+
+		if (a >= 0)
+			close(a);
+		break;
+	}
+	case SFG_ILLEGAL_BIND_AFTER_LISTEN: {
+		const struct netproto *proto;
+		struct sockaddr *addr = NULL;
+		socklen_t addrlen = 0;
+
+		if (ctx->family <= 0 || ctx->family >= TRINITY_PF_MAX)
+			break;
+		proto = net_protocols[ctx->family].proto;
+		if (proto == NULL || proto->gen_sockaddr == NULL)
+			break;
+		/* Fresh sockaddr rather than reusing ctx->bound_addr so a
+		 * downstream free path never sees the same pointer twice. */
+		proto->gen_sockaddr(triplet, &addr, &addrlen);
+		if (addr != NULL) {
+			(void) bind(fd, addr, addrlen);
+			tracked_free_now(addr);
+		}
+		break;
+	}
+	case SFG_ILLEGAL_DOUBLE_SHUTDOWN:
+		(void) shutdown(fd, SHUT_RDWR);
+		(void) shutdown(fd, SHUT_RDWR);
+		break;
+	case SFG_ILLEGAL_SEND_BEFORE_BIND:
+		/* Publish-only.  The trailing SFG_PHASE_DATA step the
+		 * splicer inserted immediately after this pseudo-step
+		 * issues the sendmsg on the still-CREATED parent_fd. */
+		break;
+	default:
+		break;
+	}
+}
+
+/*
  * FNV-1a step-ID hash.  Streamed per-step from the executor loop so
  * a walk that bails mid-sequence hashes only the steps that actually
  * ran — the truncated hash is a distinct sequence in its own right,
@@ -406,6 +614,29 @@ static void sfg_seq_record(uint32_t h)
 	}
 }
 
+/*
+ * Drive one coherent grammar walk end to end.  The picker resolves a
+ * per-family sfg_phase_order table entry and this loop drives each
+ * step in turn against the shared socket_ctx.  Invariants every entry
+ * in a legal phase_orders table satisfies (see the phase_orders field
+ * in socket-family-grammar.h): SOCKET first; BIND before LISTEN;
+ * LISTEN before ACCEPT; DATA only after a live connection; pre-bind
+ * cfg pre-bind; post-bind cfg post-bind.  The executor TRUSTS the
+ * table and does not re-validate — a family that puts a hostile
+ * ordering into its table is telling the framework to run it.
+ *
+ * The illegal-step injector is the ONE controlled break in that
+ * invariant model: with probability ONE_IN(SFG_ILLEGAL_RATE) it copies
+ * the picked legal ordering into a stack-local scratch and splices
+ * exactly one SFG_PHASE_ILLEGAL pseudo-step into it (see
+ * sfg_splice_illegal / sfg_do_illegal_step above).  Legal table
+ * entries STILL satisfy every invariant; the invariant break is
+ * confined to a single, explicitly-labeled, opt-in path — never a
+ * silent reorder.  The illegal handler is the only executor site that
+ * deliberately bypasses the legal-phase guards; every non-illegal
+ * step in the mutated ordering still self-gates via conn_state, so at
+ * most one precondition-violating syscall fires per walk.
+ */
 bool run_grammar_chain(const struct socket_family_grammar *sfg,
 		       unsigned int *err_burst)
 {
@@ -416,8 +647,12 @@ bool run_grammar_chain(const struct socket_family_grammar *sfg,
 		.family = 0,
 		.bound_addr = NULL,
 		.conn_state = SFG_CONN_INIT,
+		.illegal_op = SFG_ILLEGAL_NONE,
+		.illegal_at = SFG_CONN_INIT,
 	};
 	const struct sfg_phase_order *order;
+	struct sfg_phase_order scratch_order;
+	enum sfg_illegal_op illegal_op = SFG_ILLEGAL_NONE;
 	unsigned int i;
 	int data_fd;
 	bool ok = false;
@@ -446,6 +681,23 @@ bool run_grammar_chain(const struct socket_family_grammar *sfg,
 	order = sfg_pick_phase_order(sfg, &triplet);
 	needs_la = sfg->needs_listen_accept != NULL ? sfg->needs_listen_accept
 						    : sfg_default_needs_listen_accept;
+
+	/* Illegal-step injection: only splice on the family/type arm the
+	 * family's phase_orders_apply gate covers (matches P1 scope so
+	 * an inet UDP walk on the default order never gets an ILLEGAL
+	 * step even if the dice roll fires).  The ONE_IN gate keeps the
+	 * rate rare so the P1 sequence-variety metric stays interpretable
+	 * and the bulk of walks stay coherent. */
+	if (sfg->phase_orders_apply != NULL &&
+	    sfg->phase_orders_apply(&triplet) &&
+	    ONE_IN(SFG_ILLEGAL_RATE)) {
+		enum sfg_illegal_op op = sfg_pick_illegal_op();
+
+		if (sfg_splice_illegal(&scratch_order, order, op)) {
+			illegal_op = op;
+			order = &scratch_order;
+		}
+	}
 
 	for (i = 0; i < SFG_MAX_PHASES && !bail; i++) {
 		enum sfg_phase step = order->steps[i];
@@ -537,6 +789,19 @@ bool run_grammar_chain(const struct socket_family_grammar *sfg,
 			else
 				sfg_default_data_leg(data_fd, sfg, &triplet);
 			ok = true;
+			break;
+
+		case SFG_PHASE_ILLEGAL:
+			/* Never present in a legal ordering; only the
+			 * injector splices it in.  illegal_op is
+			 * SFG_ILLEGAL_NONE unless the injector fired, in
+			 * which case the handler bypasses guards and
+			 * publishes labels on both forensic channels
+			 * before firing (or right before the trailing
+			 * DATA step for SEND_BEFORE_BIND). */
+			if (illegal_op != SFG_ILLEGAL_NONE)
+				sfg_do_illegal_step(&ctx, &triplet,
+						    illegal_op);
 			break;
 
 		case SFG_PHASE_END:
