@@ -86,6 +86,17 @@ bool iour_submit_sqes(struct iour_ring *ctx, struct io_uring_sqe *sqe,
 int iour_enter(struct iour_ring *ctx, unsigned int n,
 	       unsigned int min_complete);
 void iour_drain_cqes(struct iour_ring *ctx);
+/*
+ * Drain CQEs and, for any CQE whose user_data matches want_ud and
+ * whose res is a nonnegative fd, close(res).  IORING_OP_OPENAT /
+ * OPENAT2 / SOCKET install the returned fd into the caller's fd table
+ * exactly like the plain syscalls do; a linked CLOSE/SHUTDOWN can't
+ * reference that fd (SQEs are prepared before the prior op runs), so
+ * userspace has to close it after reaping the CQE or it leaks for the
+ * life of the child.  The user_data gate stops us from closing byte
+ * counts that opcodes like SEND/RECV return in res.
+ */
+void iour_drain_cqes_close_fd(struct iour_ring *ctx, __u64 want_ud);
 void sqe_clear(struct io_uring_sqe *s);
 
 /*
