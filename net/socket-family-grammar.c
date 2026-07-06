@@ -25,6 +25,7 @@
 #include "arch.h"		/* page_size */
 #include "child.h"
 #include "deferred-free.h"
+#include "kcov.h"
 #include "net.h"
 #include "random.h"
 #include "shm.h"
@@ -339,6 +340,21 @@ static const struct sfg_phase_order sfg_default_order = {
 	  SFG_PHASE_END },
 };
 
+/*
+ * P4 arm id: one grammar "arm" is a (family, order-index) pair.
+ * Several executed sequence hashes can map to one arm (via needs_la
+ * gating and mid-walk bails), so reward is stored per hash-slot and
+ * rolled up to the arm at pick time.  Packing family in the high bits
+ * and the order-index in the low byte lets the rollup side (here) and
+ * the credit side (sfg_seq_credit) derive the identical id.  order-
+ * index is < SFG_MAX_PHASES and family is a small AF_* constant, so
+ * the low byte never overflows.
+ */
+static inline uint32_t sfg_arm_id(int family, unsigned int order_idx)
+{
+	return ((uint32_t)family << 8) | (order_idx & 0xffu);
+}
+
 static const struct sfg_phase_order *
 sfg_pick_phase_order(const struct socket_family_grammar *sfg,
 		     const struct socket_triplet *triplet)
@@ -624,6 +640,44 @@ static unsigned int sfg_seq_record(uint32_t h)
 	}
 }
 
+/* Halve reward+attempts for a slot once its attempt count reaches this
+ * cap, so a barren-but-historically-lucky arm releases instead of
+ * winning forever on a stale lifetime mean (coverage is non-stationary,
+ * mirroring the strategy bandit's EMA decay discipline). */
+#define SFG_P4_ATTEMPTS_CAP	1024u
+
+/*
+ * Credit one legal walk's new-edge reward to its ring slot.  Stamps the
+ * owning arm on the slot's first credit (attempts 0 -> 1), accumulates
+ * reward + attempts, and decays both by half on reaching the cap to
+ * keep the rolled-up mean recent.  Concurrent crediting from sibling
+ * children is atomic on the accumulate; the coarse cap-halve races
+ * benignly -- a lost increment is noise in a heuristic tilt.
+ */
+static void sfg_seq_credit(unsigned int slot, uint32_t arm_id,
+			   uint32_t reward)
+{
+	if (__atomic_load_n(&shm->sfg_seq_attempts[slot],
+			    __ATOMIC_RELAXED) == 0)
+		__atomic_store_n(&shm->sfg_seq_arm[slot], arm_id,
+				 __ATOMIC_RELAXED);
+
+	__atomic_add_fetch(&shm->sfg_seq_reward[slot], reward,
+			   __ATOMIC_RELAXED);
+
+	if (__atomic_add_fetch(&shm->sfg_seq_attempts[slot], 1,
+			       __ATOMIC_RELAXED) >= SFG_P4_ATTEMPTS_CAP) {
+		__atomic_store_n(&shm->sfg_seq_reward[slot],
+			__atomic_load_n(&shm->sfg_seq_reward[slot],
+					__ATOMIC_RELAXED) / 2,
+			__ATOMIC_RELAXED);
+		__atomic_store_n(&shm->sfg_seq_attempts[slot],
+			__atomic_load_n(&shm->sfg_seq_attempts[slot],
+					__ATOMIC_RELAXED) / 2,
+			__ATOMIC_RELAXED);
+	}
+}
+
 /*
  * Drive one coherent grammar walk end to end.  The picker resolves a
  * per-family sfg_phase_order table entry and this loop drives each
@@ -662,11 +716,15 @@ bool run_grammar_chain(const struct socket_family_grammar *sfg,
 	};
 	const struct sfg_phase_order *order;
 	struct sfg_phase_order scratch_order;
+	struct childdata *child = this_child();
 	enum sfg_illegal_op illegal_op = SFG_ILLEGAL_NONE;
+	int arm_idx = -1;
 	unsigned int i;
 	int data_fd;
 	bool ok = false;
 	bool bail = false;
+	bool p4_bracket = false;
+	unsigned long p4_edges = 0;
 	unsigned int n_setsockopts;
 	uint32_t seq_hash = SFG_FNV1A_OFFSET;
 	unsigned int seq_len = 0;
@@ -689,6 +747,12 @@ bool run_grammar_chain(const struct socket_family_grammar *sfg,
 
 	n_setsockopts = 2 + (rnd_modulo_u32(5));	/* 2..6 coordinated calls */
 	order = sfg_pick_phase_order(sfg, &triplet);
+	/* Capture the picked legal arm (family, order-index) before any
+	 * illegal splice repoints `order` at the scratch copy.  P4 credits
+	 * the legal arm only, and only when the pick landed on a real
+	 * phase_orders entry rather than the fixed default order. */
+	if (sfg->phase_orders != NULL && order != &sfg_default_order)
+		arm_idx = (int)(order - sfg->phase_orders);
 	needs_la = sfg->needs_listen_accept != NULL ? sfg->needs_listen_accept
 						    : sfg_default_needs_listen_accept;
 
@@ -708,6 +772,14 @@ bool run_grammar_chain(const struct socket_family_grammar *sfg,
 			order = &scratch_order;
 		}
 	}
+
+	/* Open P4's per-walk coverage bracket around the executor loop.
+	 * Returns false when there is no child, kcov is inactive, or an
+	 * outer childop-attribution bracket already owns the trace
+	 * (nested) -- the walk still runs in every case, it just is not
+	 * credited.  Paired with kcov_bracket_end after the loop. */
+	if (child != NULL)
+		p4_bracket = kcov_bracket_begin(&child->kcov);
 
 	for (i = 0; i < SFG_MAX_PHASES && !bail; i++) {
 		enum sfg_phase step = order->steps[i];
@@ -820,14 +892,30 @@ bool run_grammar_chain(const struct socket_family_grammar *sfg,
 		}
 	}
 
+	if (p4_bracket)
+		p4_edges = kcov_bracket_end(&child->kcov,
+					   CHILDOP_KCOV_NR_BASE +
+					   CHILD_OP_SOCKET_FAMILY_CHAIN);
+
 	if (ok) {
 		__atomic_add_fetch(&shm->stats.socket_family_grammar_completed,
 				   1, __ATOMIC_RELAXED);
 		*err_burst = 0;
 	}
 
-	if (seq_len > 0)
-		sfg_seq_record(seq_hash);
+	if (seq_len > 0) {
+		unsigned int slot = sfg_seq_record(seq_hash);
+
+		/* Credit the legal arm's productivity: only a legal walk
+		 * (no illegal splice) that owned its bracket and landed on a
+		 * real phase_orders arm contributes reward. */
+		if (p4_bracket && illegal_op == SFG_ILLEGAL_NONE &&
+		    arm_idx >= 0 && slot != SFG_SEQ_SLOT_NONE)
+			sfg_seq_credit(slot,
+				       sfg_arm_id(triplet.family,
+						  (unsigned int)arm_idx),
+				       (uint32_t)p4_edges);
+	}
 out:
 	if (ctx.child_fd >= 0) {
 		xdp_umem_release(ctx.child_fd);
