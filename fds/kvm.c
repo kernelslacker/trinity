@@ -57,6 +57,12 @@ static size_t kvm_vcpu_mmap_size;
 
 static void kvm_vm_destructor(struct object *obj)
 {
+	if (obj->kvmvmobj.guest_ram != NULL) {
+		untrack_shared_region((unsigned long)obj->kvmvmobj.guest_ram,
+				      obj->kvmvmobj.guest_ram_size);
+		munmap(obj->kvmvmobj.guest_ram, obj->kvmvmobj.guest_ram_size);
+		obj->kvmvmobj.guest_ram = NULL;
+	}
 	if (obj->kvmvmobj.fd >= 0) {
 		close(obj->kvmvmobj.fd);
 		obj->kvmvmobj.fd = -1;
@@ -151,6 +157,14 @@ static void kvm_system_destructor(struct object *obj)
 		unsigned int idx;
 
 		for_each_obj(vmhead, peer, idx) {
+			if (peer->kvmvmobj.guest_ram != NULL) {
+				untrack_shared_region(
+					(unsigned long)peer->kvmvmobj.guest_ram,
+					peer->kvmvmobj.guest_ram_size);
+				munmap(peer->kvmvmobj.guest_ram,
+				       peer->kvmvmobj.guest_ram_size);
+				peer->kvmvmobj.guest_ram = NULL;
+			}
 			if (peer->kvmvmobj.fd < 0)
 				continue;
 			fd_hash_remove(peer->kvmvmobj.fd);
@@ -233,6 +247,81 @@ static struct object *peek_vm_obj(void)
 }
 
 /*
+ * Minimal guest seed.  With no memslot and no code the vCPU faults on
+ * entry and every KVM_RUN returns FAIL_ENTRY/SHUTDOWN, leaving the
+ * IO/MMIO/HLT exit handlers unreachable.  Install one small RAM region
+ * at gpa 0 holding a tiny real-mode program:
+ *   mov al,0x42 ; out 0x00,al ; mov [0x8000],al ; hlt
+ * so a single KVM_RUN takes a real exit -- KVM_EXIT_IO (the out), then
+ * KVM_EXIT_MMIO (the store to gpa 0x8000, above RAM so un-backed), then
+ * KVM_EXIT_HLT.  Everything past this first real exit (page tables,
+ * multi-exit guests, dirty-log-feeding loops) is left to follow-ons.
+ */
+#define KVM_GUEST_RAM_SIZE	(4U * 4096U)
+
+static const unsigned char kvm_guest_code[] = {
+	0xb0, 0x42,		/* mov   al, 0x42                       */
+	0xe6, 0x00,		/* out   0x00, al     -> KVM_EXIT_IO    */
+	0xa2, 0x00, 0x80,	/* mov   [0x8000], al -> KVM_EXIT_MMIO  */
+	0xf4,			/* hlt                -> KVM_EXIT_HLT   */
+};
+
+static void kvm_seed_guest(struct object *vmobj)
+{
+	struct kvm_userspace_memory_region region = { 0 };
+	void *ram;
+
+	ram = mmap(NULL, KVM_GUEST_RAM_SIZE, PROT_READ | PROT_WRITE,
+		   MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+	if (ram == MAP_FAILED)
+		return;		/* best-effort: the VM is still usable un-seeded */
+
+	memcpy(ram, kvm_guest_code, sizeof(kvm_guest_code));
+
+	region.slot = 0;
+	region.guest_phys_addr = 0;
+	region.memory_size = KVM_GUEST_RAM_SIZE;
+	region.userspace_addr = (uintptr_t)ram;
+	if (ioctl(vmobj->kvmvmobj.fd, KVM_SET_USER_MEMORY_REGION,
+		  &region) < 0) {
+		munmap(ram, KVM_GUEST_RAM_SIZE);
+		return;
+	}
+
+	/* Same defence kvm_run + the io_uring rings use: the mm-syscall
+	 * sanitisers refuse a fuzzed munmap/mremap against a tracked region,
+	 * so a stray guest-RAM unmap can't yank the memslot out. */
+	track_shared_region((unsigned long)ram, KVM_GUEST_RAM_SIZE);
+	vmobj->kvmvmobj.guest_ram = ram;
+	vmobj->kvmvmobj.guest_ram_size = KVM_GUEST_RAM_SIZE;
+}
+
+/*
+ * Point a vCPU at the seeded guest: flat real-mode entry at gpa 0.  The
+ * architectural reset state already leaves ds/es/ss 0-based, so only CS
+ * (base + selector) and rip need overriding.  Best-effort -- a vCPU
+ * whose regs can't be set is still useful for the register ioctls, it
+ * just won't take the seeded exit.
+ */
+static void kvm_seed_vcpu_regs(int vcpufd)
+{
+	struct kvm_sregs sregs;
+	struct kvm_regs regs = { 0 };
+
+	if (ioctl(vcpufd, KVM_GET_SREGS, &sregs) < 0)
+		return;
+	sregs.cs.base = 0;
+	sregs.cs.selector = 0;
+	if (ioctl(vcpufd, KVM_SET_SREGS, &sregs) < 0)
+		return;
+
+	regs.rip = 0;
+	regs.rflags = 0x2;	/* reserved bit 1 set; interrupts left off */
+	regs.rsp = 0x2000;	/* valid SP inside guest RAM (code uses none) */
+	(void)ioctl(vcpufd, KVM_SET_REGS, &regs);
+}
+
+/*
  * Create one vCPU on the supplied VM and add it to the OBJ_FD_KVM_VCPU
  * pool.  KVM_CREATE_VCPU's argument is the per-VM vcpu_id; pull the
  * next id off the VM's nr_vcpus counter so back-to-back creations on
@@ -293,6 +382,8 @@ static bool create_one_vcpu(struct object *vmobj)
 		track_shared_region((unsigned long)kvm_run, kvm_run_sz);
 	}
 
+	kvm_seed_vcpu_regs(vcpufd);
+
 	obj = alloc_object();
 	if (obj == NULL) {
 		outputerr("init_kvm: alloc_object(vcpu) failed\n");
@@ -351,6 +442,9 @@ static bool create_one_vm(int sysfd)
 	obj->kvmvmobj.parent_sysfd = sysfd;
 	obj->kvmvmobj.nr_vcpus = 0;
 	obj->kvmvmobj.nr_devices = 0;
+	obj->kvmvmobj.guest_ram = NULL;
+	obj->kvmvmobj.guest_ram_size = 0;
+	kvm_seed_guest(obj);
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_KVM_VM);
 	return true;
 }
