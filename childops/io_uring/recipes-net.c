@@ -94,14 +94,14 @@ bool recipe_socket_shutdown_linked(struct iour_recipe_state *s, bool *unsupporte
 	sqes[0].opcode    = IORING_OP_SOCKET;
 	sqes[0].fd        = AF_INET;
 	sqes[0].off       = SOCK_STREAM;
-	sqes[0].user_data = 50;
+	sqes[0].user_data = IOUR_UD_SOCKET_LINK_SOCK;
 	sqes[0].flags     = IOSQE_IO_LINK;
 
 	sqe_clear(&sqes[1]);
 	sqes[1].opcode    = IORING_OP_SHUTDOWN;
 	sqes[1].fd        = -1;
 	sqes[1].len       = SHUT_RDWR;
-	sqes[1].user_data = 51;
+	sqes[1].user_data = IOUR_UD_SOCKET_LINK_SHUT;
 
 	if (!iour_submit_sqes(ctx, sqes, 2))
 		return false;
@@ -116,7 +116,7 @@ bool recipe_socket_shutdown_linked(struct iour_recipe_state *s, bool *unsupporte
 		return false;
 	}
 
-	iour_drain_cqes_close_fd(ctx, 50);
+	iour_drain_cqes_close_fd(ctx, IOUR_UD_SOCKET_LINK_SOCK);
 	return true;
 }
 
