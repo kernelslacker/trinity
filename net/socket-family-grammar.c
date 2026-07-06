@@ -783,7 +783,8 @@ bool run_grammar_chain(const struct socket_family_grammar *sfg,
 	int data_fd;
 	bool ok = false;
 	bool bail = false;
-	bool p4_bracket = false;
+	unsigned long kcov_cursor = 0;
+	bool p4_sampling = false;
 	unsigned long p4_edges = 0;
 	unsigned int n_setsockopts;
 	uint32_t seq_hash = SFG_FNV1A_OFFSET;
@@ -833,13 +834,20 @@ bool run_grammar_chain(const struct socket_family_grammar *sfg,
 		}
 	}
 
-	/* Open P4's per-walk coverage bracket around the executor loop.
-	 * Returns false when there is no child, kcov is inactive, or an
-	 * outer childop-attribution bracket already owns the trace
-	 * (nested) -- the walk still runs in every case, it just is not
-	 * credited.  Paired with kcov_bracket_end after the loop. */
-	if (child != NULL)
-		p4_bracket = kcov_bracket_begin(&child->kcov);
+	/* Snapshot the child's live PC-trace position so the executor
+	 * loop below can be scored by a read-only novelty probe over the
+	 * PCs the loop appends.  The outer childop-attribution bracket
+	 * (opened by the childop dispatcher) already owns the trace and
+	 * is the authoritative writer of bucket_seen / dedup /
+	 * generation; a nested inner bracket would nested-reject and
+	 * leave the per-walk grammar reward silently dead, so instead
+	 * this path samples the outer bracket's live trace without
+	 * mutating any shm counter.  Paired with kcov_sample_new_edges
+	 * after the loop. */
+	if (child != NULL) {
+		kcov_cursor = kcov_trace_pos(&child->kcov);
+		p4_sampling = true;
+	}
 
 	for (i = 0; i < SFG_MAX_PHASES && !bail; i++) {
 		enum sfg_phase step = order->steps[i];
@@ -952,10 +960,8 @@ bool run_grammar_chain(const struct socket_family_grammar *sfg,
 		}
 	}
 
-	if (p4_bracket)
-		p4_edges = kcov_bracket_end(&child->kcov,
-					   CHILDOP_KCOV_NR_BASE +
-					   CHILD_OP_SOCKET_FAMILY_CHAIN);
+	if (p4_sampling)
+		p4_edges = kcov_sample_new_edges(&child->kcov, &kcov_cursor);
 
 	if (ok) {
 		__atomic_add_fetch(&shm->stats.socket_family_grammar_completed,
@@ -969,7 +975,7 @@ bool run_grammar_chain(const struct socket_family_grammar *sfg,
 		/* Credit the legal arm's productivity: only a legal walk
 		 * (no illegal splice) that owned its bracket and landed on a
 		 * real phase_orders arm contributes reward. */
-		if (p4_bracket && illegal_op == SFG_ILLEGAL_NONE &&
+		if (p4_sampling && illegal_op == SFG_ILLEGAL_NONE &&
 		    arm_idx >= 0 && slot != SFG_SEQ_SLOT_NONE)
 			sfg_seq_credit(slot,
 				       sfg_arm_id(triplet.family,

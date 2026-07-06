@@ -773,6 +773,66 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 	return found_new;
 }
 
+/*
+ * Read-only snapshot of the child's current PC-trace write position.
+ * Mirrors the count-load-and-cap sequence at the head of kcov_collect()
+ * so callers get the same "how many PCs have landed so far" value the
+ * collect path would see, but does not touch bucket_seen, dedup, or any
+ * shm counter -- it is safe to call from inside an outer bracket
+ * without perturbing the authoritative kcov_bracket_end harvest that
+ * childop_edges_clean (and thus the child canary) reads.
+ */
+unsigned long kcov_trace_pos(struct kcov_child *kc)
+{
+	unsigned long count;
+
+	if (kc == NULL)
+		return 0;
+	count = __atomic_load_n(&kc->trace_buf[0], __ATOMIC_RELAXED);
+	if (count >= (unsigned long)kcov_trace_size - 1)
+		count = (unsigned long)kcov_trace_size - 1;
+	return count;
+}
+
+/*
+ * Read-only novelty probe over trace_buf[*cursor+1 .. trace_buf[0]].
+ * Counts PCs whose canonicalised edge is currently unseen in
+ * kcov_shm->bucket_seen[], then advances *cursor to the new trace end.
+ * Intended for per-walk reward gates that live inside an outer
+ * childop-attribution bracket: the outer kcov_bracket_end stays the
+ * SOLE authoritative writer of bucket_seen, kc->dedup,
+ * kc->current_generation, and kcov_shm->edges_found, so this probe
+ * does not affect childop_edges_clean (the child canary signal) or
+ * any dedup / generation state.  A brand-new edge that appears N
+ * times in the sampled window contributes N to the returned count;
+ * that hit-count weighting is accepted heuristic noise for the
+ * reward path.
+ */
+unsigned long kcov_sample_new_edges(struct kcov_child *kc, unsigned long *cursor)
+{
+	unsigned long end, idx, start, n = 0;
+
+	if (kc == NULL || cursor == NULL)
+		return 0;
+	end = __atomic_load_n(&kc->trace_buf[0], __ATOMIC_RELAXED);
+	if (end >= (unsigned long)kcov_trace_size - 1)
+		end = (unsigned long)kcov_trace_size - 1;
+	start = *cursor;
+	if (start > end)
+		start = end;
+	for (idx = start; idx < end; idx++) {
+		unsigned long pc = __atomic_load_n(&kc->trace_buf[idx + 1],
+						   __ATOMIC_RELAXED);
+		unsigned int edge = pc_canon_to_edge(kcov_canon_pc(pc));
+
+		if (__atomic_load_n(&kcov_shm->bucket_seen[edge],
+				    __ATOMIC_RELAXED) == 0)
+			n++;
+	}
+	*cursor = end;
+	return n;
+}
+
 unsigned long kcov_collect_cmp(struct kcov_child *kc, unsigned int nr,
 			       bool do32, bool is_explorer,
 			       int strategy_at_pick)
