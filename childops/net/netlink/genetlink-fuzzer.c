@@ -398,8 +398,15 @@ struct genetlink_fuzzer_ctx {
  * the namespace.  The catalog itself is built by the parent (in the
  * host netns) and read here through cctx->cat; we do NOT redo
  * CTRL_CMD_GETFAMILY in the fresh netns, since that registry is
- * effectively empty and the dump would silently fail us out.  Return
- * value is ignored by the helper.
+ * effectively empty and the dump would silently fail us out.
+ *
+ * Setup accounting (childop_setup_accepted / genetlink_families_
+ * discovered) is bumped by the parent right after build_catalog()
+ * succeeds; this body only bumps childop_data_path once we are about
+ * to send.  A grandchild-side nl_open() failure -- for any errno --
+ * is logged via outputerr, but is treated as a data-path miss rather
+ * than a setup miss: the setup gate (discovery) has already passed.
+ * Return value is ignored by the helper.
  */
 static int genetlink_fuzzer_in_ns(void *arg)
 {
@@ -427,18 +434,12 @@ static int genetlink_fuzzer_in_ns(void *arg)
 				__atomic_store_n(&shm->stats.childop_latch_reason[op],
 						 CHILDOP_LATCH_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
-			/* check-static: child-output-ok */
-			outputerr("genetlink_fuzzer: nl_open(NETLINK_GENERIC) failed (errno=%d), disabling\n",
-				  errno);
 		}
+		/* check-static: child-output-ok */
+		outputerr("genetlink_fuzzer: nl_open(NETLINK_GENERIC) failed in fresh netns (errno=%d)\n",
+			  errno);
 		return 0;
 	}
-
-	__atomic_add_fetch(&shm->stats.genetlink_families_discovered,
-			   cat->count, __ATOMIC_RELAXED);
-	if (valid_op)
-		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
-				   1, __ATOMIC_RELAXED);
 
 	fam = &cat->entries[rnd_modulo_u32(cat->count)];
 
@@ -519,6 +520,24 @@ bool genetlink_fuzzer(struct childdata *child)
 	 * catalog and bailed silently. */
 	if (!build_catalog(&cat))
 		return true;
+
+	/* Discovery is the real setup gate: once build_catalog() returns
+	 * with count > 0 we have a family registry the fuzzer can drive
+	 * against, and everything downstream (grandchild fork, userns +
+	 * netns bootstrap, in-ns nl_open, send) is data-path.  Bumping
+	 * childop_setup_accepted here rather than after the grandchild's
+	 * nl_open keeps a per-iteration hiccup inside the grandchild
+	 * (a transient EMFILE from an inherited fd table, an LSM refusal,
+	 * anything past discovery) from stalling the counter at zero and
+	 * tripping the canary's setup_broken early-bail even though the
+	 * dispatch boundary the check is meant to detect is clean.  The
+	 * families_discovered diagnostic follows the same logic: it counts
+	 * successful discovery cycles, which happen in this frame. */
+	if (valid_op)
+		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
+				   1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.genetlink_families_discovered,
+			   cat.count, __ATOMIC_RELAXED);
 
 	rc = userns_run_in_ns(CLONE_NEWNET, genetlink_fuzzer_in_ns, &cctx);
 	if (rc == -EPERM) {
