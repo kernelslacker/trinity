@@ -150,6 +150,18 @@ bool sfg_always_false(void)
 	return false;
 }
 
+const char *sfg_illegal_name(enum sfg_illegal_op op)
+{
+	switch (op) {
+	case SFG_ILLEGAL_NONE:			return "none";
+	case SFG_ILLEGAL_ACCEPT_NON_LISTENER:	return "accept-non-listener";
+	case SFG_ILLEGAL_BIND_AFTER_LISTEN:	return "bind-after-listen";
+	case SFG_ILLEGAL_SEND_BEFORE_BIND:	return "send-before-bind";
+	case SFG_ILLEGAL_DOUBLE_SHUTDOWN:	return "double-shutdown";
+	}
+	return "unknown";
+}
+
 void sfg_default_pick_triplet(int family, struct socket_triplet *out)
 {
 	const struct netproto *proto;
