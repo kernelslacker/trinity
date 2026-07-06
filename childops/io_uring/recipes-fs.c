@@ -50,12 +50,12 @@ bool recipe_openat_close_linked(struct iour_recipe_state *s, bool *unsupported _
 	sqes[0].addr       = (__u64)(uintptr_t)devnull;
 	sqes[0].open_flags = O_RDONLY;
 	sqes[0].flags      = IOSQE_IO_LINK;
-	sqes[0].user_data  = 40;
+	sqes[0].user_data  = IOUR_UD_OPENAT_LINK_OPEN;
 
 	sqe_clear(&sqes[1]);
 	sqes[1].opcode    = IORING_OP_CLOSE;
 	sqes[1].fd        = 0;
-	sqes[1].user_data = 41;
+	sqes[1].user_data = IOUR_UD_OPENAT_LINK_CLOSE;
 
 	if (!iour_submit_sqes(ctx, sqes, 2))
 		return false;
@@ -64,7 +64,7 @@ bool recipe_openat_close_linked(struct iour_recipe_state *s, bool *unsupported _
 	if (r < 0)
 		return false;
 
-	iour_drain_cqes_close_fd(ctx, 40);
+	iour_drain_cqes_close_fd(ctx, IOUR_UD_OPENAT_LINK_OPEN);
 	return true;
 }
 
@@ -413,14 +413,14 @@ bool recipe_openat2(struct iour_recipe_state *s, bool *unsupported __unused__)
 	sqe.addr      = (__u64)(uintptr_t)path;
 	sqe.addr2     = (__u64)(uintptr_t)&how;
 	sqe.len       = sizeof(how);
-	sqe.user_data = 340;
+	sqe.user_data = IOUR_UD_OPENAT2;
 
 	if (!iour_submit_sqes(ctx, &sqe, 1))
 		return false;
 	r = iour_enter(ctx, 1, 1);
 	if (r < 0)
 		return false;
-	iour_drain_cqes_close_fd(ctx, 340);
+	iour_drain_cqes_close_fd(ctx, IOUR_UD_OPENAT2);
 	return true;
 }
 
@@ -488,7 +488,7 @@ bool recipe_openat2_leak_combos(struct iour_recipe_state *s, bool *unsupported _
 	sqe.opcode    = IORING_OP_OPENAT2;
 	sqe.fd        = AT_FDCWD;
 	sqe.len       = sizeof(how);
-	sqe.user_data = 0x4a4b;
+	sqe.user_data = IOUR_UD_OPENAT2_COMBOS;
 	path          = dev_null;
 
 	switch (rnd_modulo_u32(8)) {
@@ -540,7 +540,7 @@ bool recipe_openat2_leak_combos(struct iour_recipe_state *s, bool *unsupported _
 	/* Only case 5 (RESOLVE_CACHED against /etc/passwd) can return a
 	 * valid fd; the other seven combos are error-path probes that
 	 * fast-fail with res < 0, so the close-fd guard no-ops on them. */
-	iour_drain_cqes_close_fd(ctx, 0x4a4b);
+	iour_drain_cqes_close_fd(ctx, IOUR_UD_OPENAT2_COMBOS);
 	return true;
 }
 
