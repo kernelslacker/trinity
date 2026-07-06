@@ -3,6 +3,7 @@
  */
 
 #include <errno.h>
+#include <fcntl.h>
 #include <malloc.h>
 #include <signal.h>
 #include <stdatomic.h>
@@ -399,6 +400,32 @@ static void check_fd_leaks(struct childdata *child)
 			output(0, "  group %-10s: %lu fds created\n",
 				group_names[i], child->fd_created_by_group[i]);
 	}
+}
+
+/*
+ * Cheap "lowest unused fd" probe.  open("/dev/null", O_RDONLY|O_CLOEXEC)
+ * returns the smallest free fd in this child's fd table; close it
+ * immediately so the probe itself has no net effect.  Sampling this
+ * value before and after each dispatched alt-op yields a monotonic
+ * proxy for the op's net fd-table growth: a childop that opens fds
+ * and forgets to close some on an error path bumps the returned
+ * number, and the delta is non-zero on the leaking invocation.
+ *
+ * Returns -1 on any failure so the caller's delta computation short-
+ * circuits (the caller treats a -1 as "no observation" and skips the
+ * per-op bump); the probe is diagnostic only, never load-bearing.
+ * Two syscalls per alt-op dispatch is well inside the syscall-per-op
+ * budget the alarm(1) watchdog and the childop_wall_ns bracket already
+ * pay.
+ */
+static int probe_lowest_free_fd(void)
+{
+	int fd = open("/dev/null", O_RDONLY | O_CLOEXEC);
+
+	if (fd < 0)
+		return -1;
+	close(fd);
+	return fd;
 }
 
 /*
@@ -819,6 +846,18 @@ void child_process(struct childdata *child, int childno)
 		 * the iter so a corrupted op_type can't reroute the bucket
 		 * after we've already paid the op_fn). */
 		struct timespec split_t0, split_t1;
+		/* Fd-delta instrumentation: sample the lowest unused fd
+		 * number before and after the dispatch so a leaking op
+		 * (opens fds and forgets to close some on an error path)
+		 * lands a positive delta.  Scoped to is_alt_op — the
+		 * CHILD_OP_SYSCALL hot 95% path can't afford two extra
+		 * syscalls per iter, and random_syscall's own fd bookkeeping
+		 * covers pool-managed fds separately (see check_fd_leaks).
+		 * A probe failure returns -1 and the delta computation
+		 * below treats that as "no observation" so a transient
+		 * open(/dev/null) EMFILE at fd-exhaustion time doesn't
+		 * scribble negative-cast values into the sum. */
+		int fd_probe_before = is_alt_op ? probe_lowest_free_fd() : -1;
 		clock_gettime(CLOCK_MONOTONIC, &split_t0);
 		child->in_childop = is_alt_op;
 
@@ -826,6 +865,21 @@ void child_process(struct childdata *child, int childno)
 
 		child->in_childop = false;
 		clock_gettime(CLOCK_MONOTONIC, &split_t1);
+		if (is_alt_op && fd_probe_before >= 0 && valid_op) {
+			int fd_probe_after = probe_lowest_free_fd();
+
+			if (fd_probe_after > fd_probe_before) {
+				unsigned int delta =
+					(unsigned int)(fd_probe_after - fd_probe_before);
+
+				__atomic_add_fetch(
+					&shm->stats.childop_fd_delta_positive_sum[op],
+					delta, __ATOMIC_RELAXED);
+				__atomic_add_fetch(
+					&shm->stats.childop_fd_delta_positive_ops[op],
+					1UL, __ATOMIC_RELAXED);
+			}
+		}
 
 		if (bracketed) {
 			edges_this_call = kcov_bracket_end(

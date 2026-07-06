@@ -4711,6 +4711,19 @@ struct stats_s {
 	 * timeout_observed / timeout_missed slots. */
 	unsigned long childop_timeout_observed[NR_CHILD_OP_TYPES];
 	unsigned long childop_timeout_missed[NR_CHILD_OP_TYPES];
+	/* Per-op fd-delta instrumentation for leak triage.  Wraps each
+	 * dispatched alt-op with a cheap "lowest free fd" probe
+	 * (open("/dev/null", O_RDONLY|O_CLOEXEC); close()); the kernel
+	 * returns the smallest unused fd number, so the delta between
+	 * before/after is a monotonic proxy for net fd-table growth across
+	 * the op.  A childop that opens fds and forgets to close some on
+	 * an error path accumulates a positive delta; the leaker is the
+	 * op whose fd_delta_positive_sum climbs unboundedly across a run.
+	 * fd_delta_positive_ops counts distinct invocations where the
+	 * delta was > 0 (so an averaged per-invocation growth is derivable
+	 * from _sum / _ops). */
+	unsigned long childop_fd_delta_positive_sum[NR_CHILD_OP_TYPES];
+	unsigned long childop_fd_delta_positive_ops[NR_CHILD_OP_TYPES];
 	unsigned long syscall_walltime_ns;
 	unsigned long syscalls_in_childops;
 	unsigned long syscalls_random;
