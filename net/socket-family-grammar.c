@@ -355,15 +355,66 @@ static inline uint32_t sfg_arm_id(int family, unsigned int order_idx)
 	return ((uint32_t)family << 8) | (order_idx & 0xffu);
 }
 
+/* P4 tilt strength: 1-in-N picks consult the reward arms; the other
+ * N-1 stay uniform.  ε = 1/8 keeps the uniform pick strongly dominant
+ * so the feedback tilt never collapses into a greedy coverage-chaser. */
+#define SFG_P4_EPSILON_DENOM	8u
+
 static const struct sfg_phase_order *
 sfg_pick_phase_order(const struct socket_family_grammar *sfg,
 		     const struct socket_triplet *triplet)
 {
+	unsigned int count, idx, slot, best_idx = 0;
+	uint64_t best_r = 0, best_a = 0;
+	bool have = false;
+
 	if (sfg->phase_orders == NULL || sfg->nr_phase_orders == 0)
 		return &sfg_default_order;
 	if (sfg->phase_orders_apply != NULL &&
 	    !sfg->phase_orders_apply(triplet))
 		return &sfg_default_order;
+
+	/*
+	 * P4 feedback tilt.  With the dominant probability keep the
+	 * uniform pick; with probability 1/SFG_P4_EPSILON_DENOM roll up
+	 * each candidate arm's mean reward over the ring and pick the
+	 * best.  Cold start (no credited slot for any arm of this family)
+	 * falls through to the uniform pick.
+	 */
+	if (!ONE_IN(SFG_P4_EPSILON_DENOM))
+		return &sfg->phase_orders[rnd_modulo_u32(sfg->nr_phase_orders)];
+
+	count = __atomic_load_n(&shm->sfg_seq_count, __ATOMIC_ACQUIRE);
+	for (idx = 0; idx < sfg->nr_phase_orders; idx++) {
+		uint32_t arm = sfg_arm_id(triplet->family, idx);
+		uint64_t r = 0, a = 0;
+
+		for (slot = 0; slot < count; slot++) {
+			uint32_t at = __atomic_load_n(
+				&shm->sfg_seq_attempts[slot], __ATOMIC_RELAXED);
+
+			if (at == 0)
+				continue;
+			if (__atomic_load_n(&shm->sfg_seq_arm[slot],
+					    __ATOMIC_RELAXED) != arm)
+				continue;
+			r += __atomic_load_n(&shm->sfg_seq_reward[slot],
+					     __ATOMIC_RELAXED);
+			a += at;
+		}
+		if (a == 0)
+			continue;
+		/* mean r/a > best_r/best_a, cross-multiplied to stay integer. */
+		if (!have || r * best_a > best_r * a) {
+			best_r = r;
+			best_a = a;
+			best_idx = idx;
+			have = true;
+		}
+	}
+
+	if (have)
+		return &sfg->phase_orders[best_idx];
 	return &sfg->phase_orders[rnd_modulo_u32(sfg->nr_phase_orders)];
 }
 
