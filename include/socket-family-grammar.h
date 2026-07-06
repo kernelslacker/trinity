@@ -46,6 +46,39 @@ enum sfg_phase {
 	SFG_PHASE_LISTEN   = 6,	/* listen() (needs_la-gated)	  -> LISTENING */
 	SFG_PHASE_ACCEPT   = 7,	/* accept() if LISTENING	  -> ACCEPTED */
 	SFG_PHASE_DATA     = 8,	/* data_leg on child_fd || parent_fd */
+	SFG_PHASE_ILLEGAL  = 9,	/* forced precondition-violating step;
+				 * bypasses the guard rails legal phases
+				 * use — the ONLY path allowed to fire an
+				 * illegal syscall against ctx.parent_fd /
+				 * ctx.child_fd regardless of conn_state.
+				 * Never appears in a legal ordering; the
+				 * injector splices exactly one per walk. */
+};
+
+/*
+ * Precondition-violation vocabulary for the SFG_PHASE_ILLEGAL path.
+ * Each value names the invariant the forced step deliberately breaks
+ * so a kernel oops that fires inside the illegal syscall can be
+ * attributed to a specific violated precondition instead of a
+ * mystery-ordered walk.  SFG_ILLEGAL_NONE is the zero-init sentinel
+ * a coherent (label-free) walk carries end-to-end.
+ *
+ * The four current members are inet/TCP-scoped:
+ *   ACCEPT_NON_LISTENER   accept() on a fd that never listen()ed
+ *   BIND_AFTER_LISTEN     second bind() while LISTENING
+ *   SEND_BEFORE_BIND      sendmsg() on a CREATED (unbound) fd
+ *   DOUBLE_SHUTDOWN       shutdown(fd, RDWR) issued twice back-to-back
+ *
+ * Per-family follow-ons the framework will fold in as other grammars
+ * opt in: LISTEN_ON_CONNECTED (connect-based families),
+ * SETSOCKOPT_AFTER_LISTEN (pre-listen-only opts), DATA_AFTER_SHUTDOWN.
+ */
+enum sfg_illegal_op {
+	SFG_ILLEGAL_NONE = 0,
+	SFG_ILLEGAL_ACCEPT_NON_LISTENER,
+	SFG_ILLEGAL_BIND_AFTER_LISTEN,
+	SFG_ILLEGAL_SEND_BEFORE_BIND,
+	SFG_ILLEGAL_DOUBLE_SHUTDOWN,
 };
 
 /*
@@ -82,6 +115,20 @@ struct socket_ctx {
 	int family;			/* AF_* from the picked triplet */
 	struct sockaddr *bound_addr;	/* addr the bind leg used, or NULL */
 	enum sfg_conn_state conn_state;	/* how far the chain has walked */
+	/*
+	 * Labels for the SFG_PHASE_ILLEGAL path.  illegal_op is
+	 * SFG_ILLEGAL_NONE on a fully coherent walk (the common case)
+	 * and gets stamped by the illegal-step handler immediately
+	 * before issuing the raw illegal syscall; illegal_at snapshots
+	 * conn_state at the same instant so a downstream reader can tell
+	 * which precondition was actually violated (e.g. an
+	 * ACCEPT_NON_LISTENER stamped illegal_at=SFG_CONN_BOUND is a
+	 * bind-but-no-listen fd, while SFG_CONN_CREATED is a raw fresh
+	 * socket).  Consumed by post-mortem rendering + the on-wire
+	 * breadcrumb; never read back by the executor itself.
+	 */
+	enum sfg_illegal_op illegal_op;
+	enum sfg_conn_state illegal_at;
 };
 
 /*
@@ -173,6 +220,14 @@ struct socket_family_grammar {
 const struct socket_family_grammar *sfg_pick_random_active(void);
 bool sfg_can_run_default(int family);
 void sfg_mark_unsupported(int family);
+
+/*
+ * Stable short tag for enum sfg_illegal_op.  Used by both the on-wire
+ * breadcrumb (netconsole capture) and the post-mortem render so a
+ * single string table backs both channels.  Never returns NULL — an
+ * unknown value renders as "unknown".
+ */
+const char *sfg_illegal_name(enum sfg_illegal_op op);
 
 /* Default callbacks the grammar entries can plug into the table. */
 bool sfg_always_false(void);
