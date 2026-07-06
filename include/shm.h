@@ -470,6 +470,22 @@ struct shm_s {
 	unsigned int sfg_seq_count;
 
 	/*
+	 * P4 feedback-scheduler reward arms, parallel to sfg_seq_hashes[]
+	 * and keyed by the same slot index (returned by sfg_seq_record).
+	 * A legal grammar walk credits the slot for its executed sequence
+	 * with the new-edge count harvested over the walk; the picker
+	 * rolls these up per (family, order-index) arm to tilt selection
+	 * toward productive orderings.  sfg_seq_arm holds the arm id that
+	 * owns each slot (stamped on first credit).  Zero-initialised with
+	 * the rest of shm; an uncredited slot has attempts == 0 and is
+	 * skipped by the rollup.  No second unbounded structure — this is
+	 * a fixed extension of the existing ring (128 * 12 = 1536 bytes).
+	 */
+	uint32_t sfg_seq_attempts[SFG_SEQ_HASH_CAP];
+	uint32_t sfg_seq_reward[SFG_SEQ_HASH_CAP];
+	uint32_t sfg_seq_arm[SFG_SEQ_HASH_CAP];
+
+	/*
 	 * Multi-strategy syscall picker — see include/strategy.h.
 	 *
 	 * current_strategy: fleet-wide active strategy enum.  Children read
