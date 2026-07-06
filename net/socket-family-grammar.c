@@ -415,8 +415,11 @@ sfg_pick_phase_order(const struct socket_family_grammar *sfg,
 		}
 	}
 
-	if (have)
+	if (have) {
+		__atomic_add_fetch(&shm->stats.socket_family_grammar_feedback_picks,
+				   1, __ATOMIC_RELAXED);
 		return &sfg->phase_orders[best_idx];
+	}
 	return &sfg->phase_orders[rnd_modulo_u32(sfg->nr_phase_orders)];
 }
 
@@ -718,6 +721,8 @@ static void sfg_seq_credit(unsigned int slot, uint32_t arm_id,
 				 __ATOMIC_RELAXED);
 
 	__atomic_add_fetch(&shm->sfg_seq_reward[slot], reward,
+			   __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.socket_family_grammar_reward, reward,
 			   __ATOMIC_RELAXED);
 
 	if (__atomic_add_fetch(&shm->sfg_seq_attempts[slot], 1,

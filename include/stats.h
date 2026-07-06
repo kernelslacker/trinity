@@ -1185,6 +1185,8 @@ struct stats_s {
 	unsigned long socket_family_grammar_runs;
 	unsigned long socket_family_grammar_completed;
 	unsigned long socket_family_grammar_distinct_seq;
+	unsigned long socket_family_grammar_reward;		/* new-edge reward credited to grammar arms */
+	unsigned long socket_family_grammar_feedback_picks;	/* order picks steered by reward vs uniform */
 
 	/* Number of dispatches inside tracefs_fuzzer that landed on a
 	 * function-tracer-subset op (set_ftrace_filter / set_ftrace_notrace /
