@@ -926,10 +926,10 @@ struct kcov_child_local_stats {
 	unsigned long remote_calls;
 	unsigned long total_pcs;
 	unsigned long total_warm_known_hits;
-	/* Number of syscalls since the last flush.  Drives the
-	 * flush-cadence heuristic the future kcov_child_flush_stats()
-	 * implementation will use; bumped alongside total_calls and
-	 * cleared on flush. */
+	/* Running count of syscalls since the last local-stats flush.
+	 * Drives the flush-cadence heuristic in kcov_child_flush_stats()
+	 * (flush when >= KCOV_LOCAL_STATS_FLUSH_SYSCALLS); bumped
+	 * alongside total_calls and cleared on flush. */
 	unsigned int local_syscalls_since_flush;
 };
 
