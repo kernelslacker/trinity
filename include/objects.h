@@ -216,6 +216,8 @@ struct kvmvmobj {
 	int parent_sysfd;
 	int nr_vcpus;
 	int nr_devices;
+	void *guest_ram;	/* seeded guest RAM (real-mode code @ gpa 0), or NULL */
+	size_t guest_ram_size;
 };
 
 struct kvmvcpuobj {
