@@ -60,7 +60,6 @@
 #include <linux/if_ether.h>
 #include <linux/if_link.h>
 #include <linux/if_packet.h>
-#include <linux/neighbour.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 #include <fcntl.h>
@@ -71,18 +70,12 @@
 #include "childops-netlink.h"
 #include "compat.h"
 #include "jitter.h"
+#include "kernel/neighbour.h"
 #include "name-pool.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
 #include "userns-bootstrap.h"
-
-#ifndef NDA_DST
-#define NDA_DST			1
-#endif
-#ifndef NTF_PROXY
-#define NTF_PROXY		(1 << 3)
-#endif
 
 #define NDP_OUTER_BASE		6U
 #define NDP_OUTER_CAP		32U
