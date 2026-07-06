@@ -2960,6 +2960,8 @@ void kcov_note_extrafork(struct kcov_child *kc, unsigned int nr);
 bool kcov_bracket_begin(struct kcov_child *kc);
 unsigned long kcov_bracket_end(struct kcov_child *kc,
 				unsigned long op_nr);
+unsigned long kcov_trace_pos(struct kcov_child *kc);
+unsigned long kcov_sample_new_edges(struct kcov_child *kc, unsigned long *cursor);
 
 /*
  * CMP-mode childop dispatch bracket.  Mode-exclusive counterpart of
