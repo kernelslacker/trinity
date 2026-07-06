@@ -70,3 +70,12 @@
 #ifndef STATMOUNT_BY_FD
 #define STATMOUNT_BY_FD			0x00000001U
 #endif
+#ifndef MS_SUBMOUNT
+#define MS_SUBMOUNT		(1<<26)
+#endif
+#ifndef MS_NOREMOTELOCK
+#define MS_NOREMOTELOCK		(1<<27)
+#endif
+#ifndef MOUNT_ATTR_SIZE_VER0
+#define MOUNT_ATTR_SIZE_VER0	32
+#endif
