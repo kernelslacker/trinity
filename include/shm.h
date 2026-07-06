@@ -447,6 +447,19 @@ struct shm_s {
 #define VXLAN_ENCAP_NR_KINDS 3
 	bool vxlan_encap_kind_unsupported[VXLAN_ENCAP_NR_KINDS];
 
+	/* Feature-absent latch for the ip_gre_churn childop
+	 * (childops/net/ip_gre-churn.c).  Set when RTM_NEWLINK type=gretap
+	 * rejects with the rtnl_link_ops-not-registered errno set (absent
+	 * CONFIG_NET_IPGRE / module).  Same shm-vs-static rationale as the
+	 * vxlan_encap_kind_unsupported[] block above: the rejection is
+	 * observed inside a transient userns_run_in_ns grandchild that
+	 * _exit()s after the body returns, so a process-local static would
+	 * die with the grandchild and every subsequent invocation would
+	 * re-attempt the unsupported create.  RELAXED atomic load/store
+	 * from multiple grandchildren is safe -- only false -> true, and
+	 * the write is idempotent. */
+	bool ip_gre_kind_unsupported;
+
 	/*
 	 * Distinct-sequence-hash ring for run_grammar_chain's per-walk
 	 * phase ordering.  Each walk computes an FNV-1a hash over the

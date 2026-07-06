@@ -31,7 +31,7 @@
  * Slot ordering matches pick_op_type_table[]; the _Static_assert below
  * pins ARRAY_SIZE equality between the two.
  */
-static int dormant_op_disabled[118] = {
+static int dormant_op_disabled[119] = {
 	0, 0, 0, 0, 0,
 	0, 1, 1, 1, 1,
 	1, 1, 1, 0, 1,
@@ -67,6 +67,7 @@ static int dormant_op_disabled[118] = {
 	1,	/* sock_ulp_sockmap_layering: dormant until canary-queue load-tests the TCP_ULP "tls" + sockmap STREAM_VERDICT layering burst. */
 	1,	/* umount_race: dormant until canary-queue load-tests the umount2(MNT_DETACH)-vs-accessor race against scratch_block-published mounts. */
 	1,	/* ip6_udp_cork_splice: dormant until canary-queue load-tests the ip6 __ip6_append_data continuation-skb length-accounting stress path. */
+	1,	/* ip_gre_churn: dormant until canary-queue load-tests the v4 gretap/ip_gre RX decap burst (userns_run_in_ns + IPPROTO_RAW hand-rolled outer IPv4/GRE/TEB frames). */
 };
 
 /*
@@ -137,6 +138,7 @@ static const enum child_op_type alt_op_rotation[] = {
 	CHILD_OP_TIPC_LINK_CHURN,
 	CHILD_OP_TLS_ULP_CHURN,
 	CHILD_OP_VXLAN_ENCAP_CHURN,
+	CHILD_OP_IP_GRE_CHURN,
 	CHILD_OP_BRIDGE_FDB_STP,
 	CHILD_OP_NFTABLES_CHURN,
 	CHILD_OP_TC_QDISC_CHURN,
@@ -239,6 +241,7 @@ const char *alt_op_name(enum child_op_type op)
 	case CHILD_OP_TIPC_LINK_CHURN:	return "tipc_link_churn";
 	case CHILD_OP_TLS_ULP_CHURN:	return "tls_ulp_churn";
 	case CHILD_OP_VXLAN_ENCAP_CHURN:	return "vxlan_encap_churn";
+	case CHILD_OP_IP_GRE_CHURN:	return "ip_gre_churn";
 	case CHILD_OP_BRIDGE_FDB_STP:	return "bridge_fdb_stp";
 	case CHILD_OP_NFTABLES_CHURN:	return "nftables_churn";
 	case CHILD_OP_TC_QDISC_CHURN:	return "tc_qdisc_churn";
@@ -405,7 +408,7 @@ void log_alt_op_config(void)
  * CHILD_OP_SYSCALL sentinel filter in init_altop_dispatch() stays as
  * defensive coding for any future hole.
  */
-static const enum child_op_type pick_op_type_table[118] = {
+static const enum child_op_type pick_op_type_table[119] = {
 	[0]  = CHILD_OP_MMAP_LIFECYCLE,
 	[1]  = CHILD_OP_MPROTECT_SPLIT,
 	[2]  = CHILD_OP_MLOCK_PRESSURE,
@@ -524,6 +527,7 @@ static const enum child_op_type pick_op_type_table[118] = {
 	[115] = CHILD_OP_SOCK_ULP_SOCKMAP_LAYERING,
 	[116] = CHILD_OP_UMOUNT_RACE,
 	[117] = CHILD_OP_IP6_UDP_CORK_SPLICE,
+	[118] = CHILD_OP_IP_GRE_CHURN,
 };
 _Static_assert(ARRAY_SIZE(pick_op_type_table) == ARRAY_SIZE(dormant_op_disabled),
 	"pick_op_type_table and dormant_op_disabled must have matching slot counts");
@@ -1483,6 +1487,7 @@ bool (*const op_dispatch[NR_CHILD_OP_TYPES])(struct childdata *) = {
 	[CHILD_OP_STATMOUNT_IDMAP_OVERFLOW] = statmount_idmap_overflow,
 	[CHILD_OP_UMOUNT_RACE]		= umount_race,
 	[CHILD_OP_IP6_UDP_CORK_SPLICE]	= ip6_udp_cork_splice,
+	[CHILD_OP_IP_GRE_CHURN]		= ip_gre_churn,
 };
 
 _Static_assert(ARRAY_SIZE(op_dispatch) == NR_CHILD_OP_TYPES,

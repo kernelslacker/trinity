@@ -2317,6 +2317,8 @@ void __cold dump_stats_childop_runs_network(void)
 
 	stat_category_emit_text(&vxlan_encap_churn_category);
 
+	stat_category_emit_text(&ip_gre_churn_category);
+
 	stat_category_emit_text(&ovs_tunnel_vport_churn_category);
 
 	dump_stats_render_bridge_fdb_stp();

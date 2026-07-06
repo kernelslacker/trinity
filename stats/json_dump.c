@@ -1982,6 +1982,9 @@ static void json_emit_tcp_ipv6_and_tunnels_section(void)
 	stat_category_emit_json(&vxlan_encap_churn_category);
 
 	printf(",");
+	stat_category_emit_json(&ip_gre_churn_category);
+
+	printf(",");
 	stat_category_emit_json(&ovs_tunnel_vport_churn_category);
 
 	printf(",");
