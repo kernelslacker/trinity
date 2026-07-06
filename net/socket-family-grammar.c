@@ -385,6 +385,8 @@ sfg_pick_phase_order(const struct socket_family_grammar *sfg,
 		return &sfg->phase_orders[rnd_modulo_u32(sfg->nr_phase_orders)];
 
 	count = __atomic_load_n(&shm->sfg_seq_count, __ATOMIC_ACQUIRE);
+	if (count > SFG_SEQ_HASH_CAP)		/* clamp: shm may be corrupted */
+		count = SFG_SEQ_HASH_CAP;
 	for (idx = 0; idx < sfg->nr_phase_orders; idx++) {
 		uint32_t arm = sfg_arm_id(triplet->family, idx);
 		uint64_t r = 0, a = 0;
@@ -666,6 +668,8 @@ static unsigned int sfg_seq_record(uint32_t h)
 
 	count = __atomic_load_n(&shm->sfg_seq_count, __ATOMIC_ACQUIRE);
 	for (;;) {
+		if (count > SFG_SEQ_HASH_CAP)	/* clamp: shm may be corrupted */
+			count = SFG_SEQ_HASH_CAP;
 		for (i = 0; i < count; i++) {
 			if (__atomic_load_n(&shm->sfg_seq_hashes[i],
 					    __ATOMIC_RELAXED) == h)
