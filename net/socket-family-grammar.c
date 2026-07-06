@@ -23,6 +23,7 @@
 #include <string.h>
 
 #include "arch.h"		/* page_size */
+#include "child.h"
 #include "deferred-free.h"
 #include "net.h"
 #include "random.h"
@@ -160,6 +161,33 @@ const char *sfg_illegal_name(enum sfg_illegal_op op)
 	case SFG_ILLEGAL_DOUBLE_SHUTDOWN:	return "double-shutdown";
 	}
 	return "unknown";
+}
+
+const char *sfg_conn_state_name(enum sfg_conn_state st)
+{
+	switch (st) {
+	case SFG_CONN_INIT:		return "INIT";
+	case SFG_CONN_CREATED:		return "CREATED";
+	case SFG_CONN_BOUND:		return "BOUND";
+	case SFG_CONN_LISTENING:	return "LISTENING";
+	case SFG_CONN_ACCEPTED:		return "ACCEPTED";
+	}
+	return "UNKNOWN";
+}
+
+void sfg_publish_illegal(enum sfg_illegal_op op, enum sfg_conn_state at,
+			 int family, int fd)
+{
+	struct childdata *child = this_child();
+
+	if (child != NULL) {
+		child->last_sfg_illegal.op = op;
+		child->last_sfg_illegal.at = at;
+		child->last_sfg_illegal.family = family;
+	}
+
+	output(2, "sfg illegal: %s fd=%d family=%d state=%s\n",
+	       sfg_illegal_name(op), fd, family, sfg_conn_state_name(at));
 }
 
 void sfg_default_pick_triplet(int family, struct socket_triplet *out)

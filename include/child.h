@@ -12,6 +12,7 @@
 #include "objects.h"
 #include "pre_crash_ring.h"
 #include "prop_ring.h"
+#include "socket-family-grammar.h"
 #include "syscall.h"
 
 struct fd_event_ring;
@@ -892,6 +893,21 @@ struct childdata {
 	 * parent reads at periodic-dump time.  See include/breadcrumb_ring.h
 	 * for the coherence model. */
 	struct corrupt_ptr_breadcrumb_ring breadcrumb_ring;
+
+	/* Last socket-family-grammar illegal-step this child fired, or
+	 * {SFG_ILLEGAL_NONE, SFG_CONN_INIT, 0} if the child has never
+	 * fired one.  Mirrors the corrupt_ptr breadcrumb model:
+	 * owner-only writes from inside the child (sfg_publish_illegal in
+	 * net/socket-family-grammar.c, called immediately before the raw
+	 * illegal syscall), read by the parent's post-mortem walk to
+	 * label the crash context when the kernel oopses inside the
+	 * illegal path.  No cross-process coherence needed -- the parent
+	 * reads only after the child is quiesced by panic(). */
+	struct {
+		enum sfg_illegal_op op;
+		enum sfg_conn_state at;
+		int family;
+	} last_sfg_illegal;
 
 	/* Ring of recently completed syscall records, drained by the parent
 	 * during post-mortem to reconstruct a fleet-wide chronology. */
