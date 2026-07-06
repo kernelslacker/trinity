@@ -607,6 +607,20 @@ const struct stat_category vxlan_encap_churn_category =
 	              vxlan_encap_churn_runs,
 	              vxlan_encap_churn_fields);
 
+static const struct stat_field ip_gre_churn_fields[] = {
+	STAT_FIELD(ip_gre_churn, runs),
+	STAT_FIELD(ip_gre_churn, setup_failed),
+	STAT_FIELD(ip_gre_churn, link_create_ok),
+	STAT_FIELD(ip_gre_churn, link_up_ok),
+	STAT_FIELD(ip_gre_churn, packet_sent_ok),
+	STAT_FIELD(ip_gre_churn, link_del_ok),
+};
+
+const struct stat_category ip_gre_churn_category =
+	STAT_CATEGORY("ip_gre_churn",
+	              ip_gre_churn_runs,
+	              ip_gre_churn_fields);
+
 static const struct stat_field ovs_tunnel_vport_churn_fields[] = {
 	STAT_FIELD(ovs_tunnel_vport_churn, runs),
 	STAT_FIELD(ovs_tunnel_vport_churn, setup_failed),

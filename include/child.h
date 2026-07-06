@@ -216,6 +216,7 @@ enum child_op_type {
 	CHILD_OP_SOCK_ULP_SOCKMAP_LAYERING,
 	CHILD_OP_UMOUNT_RACE,
 	CHILD_OP_IP6_UDP_CORK_SPLICE,
+	CHILD_OP_IP_GRE_CHURN,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -1616,6 +1617,7 @@ bool netlink_monitor_race(struct childdata *child);
 bool tipc_link_churn(struct childdata *child);
 bool tls_ulp_churn(struct childdata *child);
 bool vxlan_encap_churn(struct childdata *child);
+bool ip_gre_churn(struct childdata *child);
 bool bridge_fdb_stp(struct childdata *child);
 bool nftables_churn(struct childdata *child);
 bool tc_qdisc_churn(struct childdata *child);

@@ -1385,6 +1385,14 @@ struct stats_s {
 	unsigned long vxlan_encap_churn_packet_sent_ok;	/* sendto on AF_PACKET raw bound to tunnel returned >0 */
 	unsigned long vxlan_encap_churn_link_del_ok;	/* RTM_DELLINK accepted */
 
+	/* ip_gre_churn childop counters */
+	unsigned long ip_gre_churn_runs;		/* total ip_gre_churn invocations */
+	unsigned long ip_gre_churn_setup_failed;	/* unshare(CLONE_NEWNET) / rtnl_open / kind latched */
+	unsigned long ip_gre_churn_link_create_ok;	/* RTM_NEWLINK type=gretap accepted */
+	unsigned long ip_gre_churn_link_up_ok;		/* RTM_NEWLINK setlink IFF_UP accepted */
+	unsigned long ip_gre_churn_packet_sent_ok;	/* sendto on IPPROTO_RAW returned >0 */
+	unsigned long ip_gre_churn_link_del_ok;		/* RTM_DELLINK accepted */
+
 	/* ovs_tunnel_vport_churn childop counters */
 	unsigned long ovs_tunnel_vport_churn_runs;		/* total ovs_tunnel_vport_churn invocations */
 	unsigned long ovs_tunnel_vport_churn_setup_failed;	/* genl open / family resolve / dp create latched */
