@@ -5,6 +5,7 @@
 #include <unistd.h>
 
 #include "fd.h"
+#include "kernel/mount.h"
 #include "syscall-gate.h"
 #include "objects.h"
 #include "publish_resource.h"
@@ -13,10 +14,6 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "utils.h"
-
-#ifndef FSOPEN_CLOEXEC
-#define FSOPEN_CLOEXEC 0x00000001
-#endif
 
 static int do_fsopen(const char *fstype, unsigned int flags)
 {
