@@ -7,6 +7,7 @@
 
 #include "compat.h"
 #include "fd.h"
+#include "kernel/mount.h"
 #include "syscall-gate.h"
 #include "objects.h"
 #include "publish_resource.h"
@@ -14,10 +15,6 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "utils.h"
-
-#ifndef OPEN_TREE_CLONE
-#define OPEN_TREE_CLONE		1
-#endif
 
 static int do_open_tree(void)
 {
