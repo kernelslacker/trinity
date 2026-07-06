@@ -164,10 +164,7 @@ static const enum child_op_type alt_op_rotation[] = {
  * (childops/misc/sched-cycler.c) calls random_syscall(child) in
  * a tight loop; an outer bracket would double-call
  * ioctl(KCOV_ENABLE) and the kernel returns -EBUSY which
- * kcov_enable_trace currently treats as fatal.  CHILD_OP_SOCKET_FAMILY_CHAIN
- * opens a per-walk P4 reward bracket inside run_grammar_chain; an outer
- * bracket would own the trace first, so every inner per-walk bracket
- * would reject as nested and the P4 feedback scheduler would stay inert.
+ * kcov_enable_trace currently treats as fatal.
  *
  * Expressed as an accessor so new enum members default to
  * eligible without per-table maintenance and without the
@@ -181,7 +178,6 @@ bool op_uses_outer_bracket(enum child_op_type op)
 	switch (op) {
 	case CHILD_OP_SYSCALL:
 	case CHILD_OP_SCHED_CYCLER:
-	case CHILD_OP_SOCKET_FAMILY_CHAIN:
 		return false;
 	default:
 		return true;
