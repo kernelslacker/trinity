@@ -66,6 +66,7 @@
 #include "child.h"
 #include "syscall-gate.h"
 #include "childops-util.h"
+#include "kernel/mount.h"
 #include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
@@ -84,26 +85,6 @@
  */
 #ifndef MOUNT_ATTR_IDMAP
 #define MOUNT_ATTR_IDMAP		0x00100000
-#endif
-
-#ifndef FSCONFIG_CMD_CREATE
-#define FSCONFIG_CMD_CREATE		6
-#endif
-
-#ifndef STATMOUNT_MNT_BASIC
-#define STATMOUNT_MNT_BASIC		0x00000002U
-#endif
-#ifndef STATMOUNT_SUPPORTED_MASK
-#define STATMOUNT_SUPPORTED_MASK	0x00001000U
-#endif
-#ifndef STATMOUNT_MNT_UIDMAP
-#define STATMOUNT_MNT_UIDMAP		0x00002000U
-#endif
-#ifndef STATMOUNT_MNT_GIDMAP
-#define STATMOUNT_MNT_GIDMAP		0x00004000U
-#endif
-#ifndef STATMOUNT_BY_FD
-#define STATMOUNT_BY_FD			0x00000001U
 #endif
 
 #if !__has_include(<linux/mount.h>)
