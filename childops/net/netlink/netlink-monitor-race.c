@@ -85,21 +85,12 @@
 #include "child.h"
 #include "childops-netlink.h"
 #include "compat.h"
+#include "kernel/netlink.h"
 #include "name-pool.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"
 #include "userns-bootstrap.h"
-
-#ifndef NETLINK_BROADCAST_ERROR
-#define NETLINK_BROADCAST_ERROR	4
-#endif
-#ifndef NETLINK_ADD_MEMBERSHIP
-#define NETLINK_ADD_MEMBERSHIP	1
-#endif
-#ifndef NETLINK_DROP_MEMBERSHIP
-#define NETLINK_DROP_MEMBERSHIP	2
-#endif
 
 #define RTNL_BUF_BYTES		2048
 #define RTNL_RECV_TIMEO_S	1
