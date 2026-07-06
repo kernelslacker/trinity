@@ -2608,6 +2608,48 @@ void __cold dump_stats_childop_decay_recency(void)
 	}
 }
 
+/*
+ * Per-op fd-delta triage dump.  Skips ops that never landed a positive
+ * delta (skip-zero convention, matches the rest of the per-childop
+ * dumps).  When any op is emitted, the sort of the surviving rows by
+ * total leak count is left to the operator; a leaker manifests as a
+ * high fd_delta_positive_ops (many invocations that grew the fd table)
+ * and a fd_delta_positive_sum trending unbounded across the run, while
+ * ops with occasional short-lived probe collisions (open()/close() from
+ * a sibling on the same low-numbered slot) sit at fd_delta_positive_ops
+ * <= a few and _sum comparable to that count.  Fully self-suppressed
+ * when instrumentation never fired -- the summary line only appears
+ * once at least one op has a non-zero _sum.
+ */
+static void __cold dump_stats_childop_fd_delta(void)
+{
+	enum child_op_type op;
+	bool any = false;
+
+	for (op = CHILD_OP_SYSCALL + 1; op < NR_CHILD_OP_TYPES; op++) {
+		unsigned long sum, ops;
+
+		sum = __atomic_load_n(
+				&shm->stats.childop_fd_delta_positive_sum[op],
+				__ATOMIC_RELAXED);
+		if (sum == 0)
+			continue;
+		ops = __atomic_load_n(
+				&shm->stats.childop_fd_delta_positive_ops[op],
+				__ATOMIC_RELAXED);
+
+		if (!any) {
+			output(1,
+			       "childop_fd_delta: per-op net fd-table growth "
+			       "observed across dispatched alt-op invocations\n");
+			any = true;
+		}
+		output(1,
+		       "childop_fd_delta %s: positive_sum=%lu positive_ops=%lu\n",
+		       alt_op_name(op), sum, ops);
+	}
+}
+
 static void __cold dump_stats_topo_pair_shadow(void)
 {
 	/* Per-setup_op aggregates from the surviving ring entries.  Sized
@@ -2730,6 +2772,8 @@ void __cold dump_stats(void)
 	childop_outcome_window_dump();
 
 	dump_stats_childop_decay_recency();
+
+	dump_stats_childop_fd_delta();
 
 	dump_stats_topo_pair_shadow();
 
