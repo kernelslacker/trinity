@@ -116,7 +116,7 @@ bool recipe_socket_shutdown_linked(struct iour_recipe_state *s, bool *unsupporte
 		return false;
 	}
 
-	iour_drain_cqes(ctx);
+	iour_drain_cqes_close_fd(ctx, 50);
 	return true;
 }
 

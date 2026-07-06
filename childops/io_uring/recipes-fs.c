@@ -64,7 +64,7 @@ bool recipe_openat_close_linked(struct iour_recipe_state *s, bool *unsupported _
 	if (r < 0)
 		return false;
 
-	iour_drain_cqes(ctx);
+	iour_drain_cqes_close_fd(ctx, 40);
 	return true;
 }
 
@@ -420,7 +420,7 @@ bool recipe_openat2(struct iour_recipe_state *s, bool *unsupported __unused__)
 	r = iour_enter(ctx, 1, 1);
 	if (r < 0)
 		return false;
-	iour_drain_cqes(ctx);
+	iour_drain_cqes_close_fd(ctx, 340);
 	return true;
 }
 
@@ -537,7 +537,10 @@ bool recipe_openat2_leak_combos(struct iour_recipe_state *s, bool *unsupported _
 	r = iour_enter(ctx, 1, 1);
 	if (r < 0)
 		return false;
-	iour_drain_cqes(ctx);
+	/* Only case 5 (RESOLVE_CACHED against /etc/passwd) can return a
+	 * valid fd; the other seven combos are error-path probes that
+	 * fast-fail with res < 0, so the close-fd guard no-ops on them. */
+	iour_drain_cqes_close_fd(ctx, 0x4a4b);
 	return true;
 }
 

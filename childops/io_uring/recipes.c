@@ -135,6 +135,36 @@ void iour_drain_cqes(struct iour_ring *ctx)
 	ring_store_u32(ctx->cq_ring, ctx->cq_off_head, head);
 }
 
+/*
+ * Drain variant that closes the fd carried in a matching CQE's res.
+ * See the header comment for the why.  We skip res 0/1/2 defensively --
+ * a recipe that just clobbers stdin/stdout/stderr breaks the child's
+ * ability to report subsequent failures; the fuzz value of closing them
+ * is nil.
+ */
+void iour_drain_cqes_close_fd(struct iour_ring *ctx, __u64 want_ud)
+{
+	unsigned int head = ring_u32(ctx->cq_ring, ctx->cq_off_head);
+	unsigned int mask = ring_u32(ctx->cq_ring, ctx->cq_off_mask);
+	struct io_uring_cqe *cqes = (struct io_uring_cqe *)
+		((char *)ctx->cq_ring + ctx->cq_off_cqes);
+	unsigned int tail;
+
+	tail = ring_u32(ctx->cq_ring, ctx->cq_off_tail);
+
+	while (head != tail) {
+		struct io_uring_cqe *cqe = &cqes[head & mask];
+
+		if (cqe->user_data == want_ud && cqe->res > 2)
+			close(cqe->res);
+		head++;
+		tail = ring_u32(ctx->cq_ring, ctx->cq_off_tail);
+	}
+
+	__sync_synchronize();
+	ring_store_u32(ctx->cq_ring, ctx->cq_off_head, head);
+}
+
 void sqe_clear(struct io_uring_sqe *s)
 {
 	memset(s, 0, sizeof(*s));
