@@ -6,6 +6,7 @@
 #include "rnd.h"
 
 #include "kernel/socket.h"
+#include "kernel/iucv.h"
 /*
  * IUCV is an s390-only transport.  Probe the machine type once and cache
  * the result so we skip iucv socket work on any other architecture.
