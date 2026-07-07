@@ -180,12 +180,14 @@ static const uint32_t bpf_seccomp_jmp_arch_vars[] = {
 # define TRUE_ARCH		(rnd_u32())
 #endif
 
+#ifndef _LINUX_SECCOMP_H
 struct seccomp_data {
 	int nr;
 	uint32_t arch;
 	uint64_t instruction_pointer;
 	uint64_t args[6];
 };
+#endif
 
 #define bpf_rand(type) \
 	(bpf_##type##_vars[rnd_modulo_u32(ARRAY_SIZE(bpf_##type##_vars))])
