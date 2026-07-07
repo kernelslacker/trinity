@@ -21,7 +21,6 @@
 #include "tables.h"
 #include "trinity.h"	// __unused__
 #include "utils.h"
-#include "compat.h"
 
 #include "kernel/fcntl.h"
 /*

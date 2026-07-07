@@ -54,7 +54,6 @@
 #endif
 
 #include "child.h"
-#include "compat.h"
 #include "random.h"
 #include "shm.h"
 #include "trinity.h"

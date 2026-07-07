@@ -21,7 +21,6 @@
 #include "shm.h"
 #include "trinity.h"
 #include "uid.h"
-#include "compat.h"
 
 #include "kernel/socket.h"
 /* ETH_P_ALL in network byte order, usable in a static initializer. */

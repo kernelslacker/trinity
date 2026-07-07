@@ -8,7 +8,6 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
-#include "compat.h"
 
 #include "kernel/mman.h"
 static void sanitise_mlock(struct syscallrecord *rec)

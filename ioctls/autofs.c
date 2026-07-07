@@ -10,7 +10,6 @@
 #include "shm.h"
 #include "syscall.h"
 #include "utils.h"
-#include "compat.h"
 
 #include "kernel/eventfd.h"
 /* include/linux/auto_dev-ioctl.h */

@@ -7,7 +7,6 @@
 #include <string.h>
 #include <unistd.h>
 #include "net.h"
-#include "compat.h"
 #include "kernel/rds.h"
 #include "random.h"
 #include "socket-family-grammar.h"

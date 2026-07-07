@@ -10,7 +10,6 @@
 #include "rnd.h"
 #include "sanitise.h"
 #include "utils.h"
-#include "compat.h"
 
 #include "kernel/sched.h"
 /*

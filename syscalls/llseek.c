@@ -9,7 +9,6 @@
 #include "rnd.h"
 #include "sanitise.h"
 #include "sparse-files.h"
-#include "compat.h"
 #include "trinity.h"
 #include "utils.h"
 

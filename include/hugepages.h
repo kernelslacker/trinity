@@ -1,5 +1,6 @@
 #pragma once
 
+#include "kernel/shm.h"
 /*
  * MAP_HUGE_*, MFD_HUGE_*, and SHM_HUGE_* all encode a log2 page-size
  * shift into the upper 6 bits of their flags arg via the same

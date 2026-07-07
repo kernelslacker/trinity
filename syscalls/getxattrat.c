@@ -18,7 +18,6 @@
 #include "trinity.h"
 #include "utils.h"
 #include "xattr.h"
-#include "compat.h"
 #ifdef USE_XATTR_ARGS
 #include <linux/xattr.h>
 #endif

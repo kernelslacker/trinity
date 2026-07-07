@@ -35,7 +35,6 @@
 
 #include "arch.h"
 #include "syscall-gate.h"
-#include "compat.h"
 #include "maps.h"
 #include "rnd.h"
 #include "shm.h"

@@ -54,7 +54,6 @@
 #include "child.h"
 #include "childops-netlink.h"
 #include "childops-nfnl.h"
-#include "compat.h"
 #include "jitter.h"
 #include "random.h"
 #include "shm.h"

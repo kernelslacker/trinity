@@ -69,7 +69,6 @@
 #include "child.h"
 #include "childops-netlink.h"
 #include "childops-util.h"
-#include "compat.h"
 #include "jitter.h"
 #include "random.h"
 #include "rnd.h"

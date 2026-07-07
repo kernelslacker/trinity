@@ -9,7 +9,6 @@
 #include "random.h"
 #include "socket-family-grammar.h"
 #include "trinity.h"
-#include "compat.h"
 #include "kernel/if_ether.h"
 #include "rnd.h"
 

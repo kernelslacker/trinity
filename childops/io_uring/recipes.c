@@ -38,7 +38,6 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "compat.h"
 #include "syscall-gate.h"
 #include "pids.h"
 
@@ -58,6 +57,7 @@
 #include "utils.h"
 
 #include "kernel/io_uring.h"
+#include "kernel/unistd.h"
 #ifndef __NR_io_uring_setup
 #define __NR_io_uring_setup	425
 #define __NR_io_uring_enter	426

@@ -13,7 +13,6 @@
 #include "shm.h"
 #include "arch.h"
 #include "utils.h"
-#include "compat.h"
 #include "deferred-free.h"
 #include "hugepages.h"
 #include "objects.h"

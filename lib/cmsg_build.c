@@ -27,7 +27,6 @@
 
 #include "cmsg-richness.h"
 #include "cmsg_build.h"
-#include "compat.h"
 #include "fd.h"
 #include "random.h"
 #include "rnd.h"
@@ -35,6 +34,7 @@
 
 #include "kernel/socket.h"
 #include "kernel/udp.h"
+#include "kernel/in.h"
 /* Older libcs miss a few of these; the kernel uapi headers above
  * normally provide them, but be defensive. */
 #ifndef SCM_TIMESTAMPING

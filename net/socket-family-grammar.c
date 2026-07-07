@@ -34,7 +34,7 @@
 #include "socket-family-grammar.h"
 #include "trinity.h"
 #include "utils.h"
-#include "compat.h"		/* keep last — matches net/proto-*.c order */
+		/* keep last — matches net/proto-*.c order */
 #include "rnd.h"
 #include "xdp-umem-track.h"
 

@@ -17,7 +17,6 @@
 #include "socket-family-grammar.h"
 #include "trinity.h"
 #include "utils.h"
-#include "compat.h"
 #include "kernel/kcm.h"
 #include "pids.h"
 

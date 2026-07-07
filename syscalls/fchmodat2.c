@@ -4,7 +4,6 @@
  */
 #include <fcntl.h>
 #include <stdio.h>
-#include "compat.h"
 #include "pathnames.h"
 #include "random.h"
 #include "sanitise.h"

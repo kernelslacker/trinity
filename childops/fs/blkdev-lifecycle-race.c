@@ -71,7 +71,6 @@
 #include <linux/fs.h>
 #include <linux/loop.h>
 
-#include "compat.h"
 #include "random.h"
 
 #include "kernel/fcntl.h"

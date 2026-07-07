@@ -6,7 +6,6 @@
 #include <string.h>
 #include "random.h"
 #include "sanitise.h"
-#include "compat.h"
 
 #include "kernel/futex.h"
 static void sanitise_futex_requeue(struct syscallrecord *rec)

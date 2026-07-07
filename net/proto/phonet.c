@@ -5,7 +5,6 @@
 #include <string.h>
 #include "net.h"
 #include "random.h"
-#include "compat.h"
 #include "rnd.h"
 
 #pragma GCC diagnostic ignored "-Waddress-of-packed-member"

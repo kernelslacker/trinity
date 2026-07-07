@@ -85,7 +85,6 @@
 #include <unistd.h>
 
 #include "child.h"
-#include "compat.h"
 #include "kernel/mount.h"
 #include "pids.h"
 #include "random.h"

@@ -57,7 +57,6 @@
 
 #include "child.h"
 #include "childops-netlink.h"
-#include "compat.h"
 #include "jitter.h"
 #include "proto-alg-dict.h"
 #include "random.h"

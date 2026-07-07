@@ -18,10 +18,10 @@
 #include "sanitise.h"
 #include "random.h"
 #include "shm.h"
-#include "compat.h"
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/time.h"
 /*
  * OBJ_TIMERID pool: producer-side cache of live POSIX timer ids
  * returned by timer_create.  Consumed by timer_settime/_gettime/

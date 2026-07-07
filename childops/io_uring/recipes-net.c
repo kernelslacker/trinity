@@ -17,7 +17,6 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "compat.h"
 #include "errno-classify.h"
 #include "shm.h"
 #include "stats.h"

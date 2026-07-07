@@ -5,7 +5,6 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-#include "compat.h"
 #include "fd.h"
 #include "kernel/mount.h"
 #include "syscall-gate.h"

@@ -6,7 +6,6 @@
 #include "arch.h"
 #include "random.h"
 #include "net.h"
-#include "compat.h"
 #include "proto-alg-dict.h"
 #include "rnd.h"
 #include "shm.h"

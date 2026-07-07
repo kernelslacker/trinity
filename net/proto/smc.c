@@ -1,6 +1,5 @@
 #include "net.h"
 #include "random.h"
-#include "compat.h"
 #include "rnd.h"
 
 #define SMCPROTO_SMC            0       /* SMC protocol, IPv4 */

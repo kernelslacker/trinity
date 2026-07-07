@@ -6,7 +6,6 @@
 
 #include <string.h>
 #include "arch.h"
-#include "compat.h"
 #include "kernel/mempolicy.h"
 #include "maps.h"
 #include "random.h"

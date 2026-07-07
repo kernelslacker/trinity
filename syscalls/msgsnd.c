@@ -9,7 +9,6 @@
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
-#include "compat.h"
 
 #include "kernel/socket.h"
 static unsigned long msgsnd_flags[] = {

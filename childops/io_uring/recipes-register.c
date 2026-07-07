@@ -31,7 +31,6 @@
 #include <unistd.h>
 
 #include "childops-iouring.h"
-#include "compat.h"
 #include "errno-classify.h"
 #include "maps.h"
 #include "random.h"
@@ -46,6 +45,7 @@
 #include "kernel/eventfd.h"
 #include "kernel/fcntl.h"
 #include "kernel/socket.h"
+#include "kernel/unistd.h"
 /* ------------------------------------------------------------------ *
  * Recipe 9: READ_FIXED with IORING_REGISTER_BUFFERS (registered fixed buffers)
  *

@@ -38,7 +38,6 @@
 #ifdef USE_PPPOX
 #include <linux/if_pppox.h>
 #endif
-#include "compat.h"
 #ifdef USE_VSOCK
 #include <linux/vm_sockets.h>
 #endif

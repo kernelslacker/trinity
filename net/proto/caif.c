@@ -2,7 +2,6 @@
 #include <sys/un.h>
 #include "net.h"
 #include "random.h"
-#include "compat.h"
 #include "rnd.h"
 
 #ifdef USE_CAIF

@@ -3,7 +3,6 @@
  */
 #include <sys/swap.h>
 #include "sanitise.h"
-#include "compat.h"
 
 #include "kernel/swap.h"
 #ifndef SWAP_FLAG_DISCARD_ONCE

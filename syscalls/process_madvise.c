@@ -4,7 +4,6 @@
  */
 #include <sys/mman.h>
 #include <sys/uio.h>
-#include "compat.h"
 #include "sanitise.h"
 #include "trinity.h"
 #include "utils.h"

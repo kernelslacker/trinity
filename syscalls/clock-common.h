@@ -9,6 +9,7 @@
 #include "rnd.h"
 #include "utils.h"
 
+#include "kernel/time.h"
 /*
  * Local copies of the kernel's POSIX CPU clock encoding from
  * include/linux/posix-timers.h.  Not in UAPI but the encoding has been

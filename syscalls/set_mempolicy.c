@@ -6,7 +6,6 @@
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
-#include "compat.h"
 
 static unsigned long mempolicy_modes[] = {
 	MPOL_DEFAULT, MPOL_PREFERRED, MPOL_BIND,

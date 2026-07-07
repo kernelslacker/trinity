@@ -26,7 +26,6 @@
 
 #include "syscall-gate.h"
 #include "childops-util.h"
-#include "compat.h"
 #include "rnd.h"
 #include "shm.h"
 #include "trinity.h"

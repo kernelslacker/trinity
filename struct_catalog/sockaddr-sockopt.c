@@ -42,7 +42,6 @@
 #include <linux/fs.h>
 
 #include "config.h"
-#include "compat.h"
 
 #include "struct_catalog.h"
 #include "struct_catalog-internal.h"

@@ -78,7 +78,6 @@
 #include <sys/types.h>
 
 #include "child.h"
-#include "compat.h"
 #include "deferred-free.h"
 #include "net.h"
 #include "params.h"		/* no_domains[] */

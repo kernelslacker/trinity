@@ -1,6 +1,5 @@
 #include <sys/socket.h>
 #include "net.h"
-#include "compat.h"
 
 #include "kernel/socket.h"
 const struct protoptr net_protocols[TRINITY_PF_MAX] = {

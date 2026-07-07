@@ -20,7 +20,6 @@
 #include "tls.h"
 #include "uid.h"
 #include "utils.h"
-#include "compat.h"
 #include "rnd.h"
 
 #include "kernel/socket.h"

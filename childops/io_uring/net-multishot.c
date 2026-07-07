@@ -76,7 +76,6 @@
 #include "syscall-gate.h"
 #include "childops-iouring.h"
 #include "childops/io_uring/ring.h"
-#include "compat.h"
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
@@ -84,6 +83,7 @@
 
 #include "kernel/fcntl.h"
 #include "kernel/socket.h"
+#include "kernel/unistd.h"
 #ifndef __NR_io_uring_register
 #define __NR_io_uring_register	427
 #endif

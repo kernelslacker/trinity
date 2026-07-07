@@ -2,7 +2,6 @@
 #include <stdint.h>
 #include "net.h"
 #include "random.h"
-#include "compat.h"
 #include "rnd.h"
 #include "utils.h"
 

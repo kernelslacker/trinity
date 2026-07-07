@@ -13,7 +13,6 @@
 #include "socket-family-grammar.h"
 #include "trinity.h"
 #include "utils.h"
-#include "compat.h"
 #include "rnd.h"
 
 #include "kernel/socket.h"

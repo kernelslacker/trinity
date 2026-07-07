@@ -6,7 +6,6 @@
 #include "fd.h"
 #include "random.h"
 #include "sanitise.h"
-#include "compat.h"
 #include "trinity.h"
 #include "utils.h"
 

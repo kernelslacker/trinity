@@ -75,7 +75,6 @@
 
 #include <linux/if_macsec.h>
 
-#include "compat.h"
 #include "netlink-genl-families.h"
 #include "utils.h"
 

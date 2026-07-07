@@ -3,7 +3,7 @@
  *     int, to_dfd, const char *, to_pathname,  unsigned int, flags)
  */
 #include "sanitise.h"
-#include "compat.h"
+#include "kernel/mount.h"
 
 extern void sanitise_move_mount(struct syscallrecord *rec);
 

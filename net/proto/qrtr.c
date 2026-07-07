@@ -9,7 +9,6 @@
 #include "random.h"
 #include "socket-family-grammar.h"
 #include "utils.h"
-#include "compat.h"
 #include "rnd.h"
 
 #include "kernel/qrtr.h"

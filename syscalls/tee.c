@@ -4,7 +4,6 @@
 #include <fcntl.h>
 #include "sanitise.h"
 #include "trinity.h"
-#include "compat.h"
 #include "utils.h"
 
 #include "kernel/splice.h"

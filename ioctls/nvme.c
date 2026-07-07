@@ -2,13 +2,13 @@
 #include <linux/ioctl.h>
 #include <linux/nvme_ioctl.h>
 
-#include "compat.h"
 #include "ioctls.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
 #include "utils.h"
 
+#include "kernel/nvme.h"
 static void sanitise_nvme_admin_cmd(struct syscallrecord *rec)
 {
 	struct nvme_passthru_cmd *cmd;

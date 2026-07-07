@@ -17,6 +17,7 @@
 #include "struct_catalog-internal.h"
 #include "arch.h"
 
+#include "kernel/time.h"
 /* ------------------------------------------------------------------ */
 /* struct io_uring_params (io_uring_setup)                             */
 /* ------------------------------------------------------------------ */

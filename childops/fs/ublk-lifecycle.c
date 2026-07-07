@@ -63,6 +63,7 @@
 #include "trinity.h"
 
 #include "kernel/fcntl.h"
+#include "kernel/unistd.h"
 /*
  * Locally-named struct mirrors (ublk_lc_*) so a sysroot whose
  * linux/ublk_cmd.h DOES expose ublksrv_ctrl_cmd / ublksrv_io_cmd does

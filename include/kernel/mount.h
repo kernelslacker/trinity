@@ -10,6 +10,7 @@
 #include <linux/mount.h>
 
 #include "kernel/fcntl.h"
+#include "kernel/mount.h"
 #ifndef FSOPEN_CLOEXEC
 #define FSOPEN_CLOEXEC		0x00000001
 #endif
@@ -89,5 +90,20 @@
 #endif
 #ifndef UMOUNT_NOFOLLOW
 #define UMOUNT_NOFOLLOW		8
+#endif
+
+#ifndef MOVE_MOUNT_F_SYMLINKS
+#define MOVE_MOUNT_F_SYMLINKS           0x00000001
+#define MOVE_MOUNT_F_AUTOMOUNTS         0x00000002
+#define MOVE_MOUNT_F_EMPTY_PATH         0x00000004
+#define MOVE_MOUNT_T_SYMLINKS           0x00000010
+#define MOVE_MOUNT_T_AUTOMOUNTS         0x00000020
+#define MOVE_MOUNT_T_EMPTY_PATH         0x00000040
+#endif
+#ifndef MOVE_MOUNT_SET_GROUP
+#define MOVE_MOUNT_SET_GROUP            0x00000100
+#endif
+#ifndef MOVE_MOUNT_BENEATH
+#define MOVE_MOUNT_BENEATH              0x00000200
 #endif
 

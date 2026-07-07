@@ -2,7 +2,6 @@
  * SYSCALL_DEFINE3(sched_setscheduler, pid_t, pid, int, policy, struct sched_param __user *, param)
  */
 #include <sched.h>
-#include "compat.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"

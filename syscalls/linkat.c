@@ -8,7 +8,6 @@
 #include "shm.h"
 #include "sanitise.h"
 #include "trinity.h"
-#include "compat.h"
 
 #include "kernel/fcntl.h"
 #ifndef AT_SYMLINK_FOLLOW

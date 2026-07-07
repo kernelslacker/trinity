@@ -3,7 +3,6 @@
  */
 #include <sys/mount.h>
 #include "sanitise.h"
-#include "compat.h"
 
 #include "kernel/mount.h"
 static unsigned long umount_flags[] = {

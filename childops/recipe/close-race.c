@@ -24,7 +24,6 @@
 
 #include "syscall-gate.h"
 #include "childops/io_uring/recipes.h"
-#include "compat.h"
 #include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
@@ -36,6 +35,7 @@
 #include "kernel/eventfd.h"
 #include "kernel/fcntl.h"
 #include "kernel/timerfd.h"
+#include "kernel/unistd.h"
 /*
  * Racer thread for recipe_timerfd_xclose.  Blocks in poll() with a
  * bounded timeout, then drains a single non-blocking read on the

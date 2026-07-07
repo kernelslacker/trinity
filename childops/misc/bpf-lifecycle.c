@@ -81,7 +81,6 @@
 #include "bpf-syscall.h"
 #include "child.h"
 #include "childops-util.h"
-#include "compat.h"
 #include "objects.h"
 #include "publish_resource.h"
 #include "random.h"

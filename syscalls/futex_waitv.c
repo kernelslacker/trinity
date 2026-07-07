@@ -11,7 +11,6 @@
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
-#include "compat.h"
 
 static unsigned long futex_waitv_clockids[] = {
 	CLOCK_MONOTONIC, CLOCK_REALTIME,

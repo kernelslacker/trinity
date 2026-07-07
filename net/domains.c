@@ -5,7 +5,6 @@
 #include "net.h"
 #include "domains.h"
 #include "params.h"
-#include "compat.h"
 
 #include "kernel/socket.h"
 struct domain {

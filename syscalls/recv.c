@@ -13,7 +13,6 @@
 #include "trinity.h"
 #include "utils.h"
 #include "valresult.h"
-#include "compat.h"
 
 #include "kernel/socket.h"
 /*

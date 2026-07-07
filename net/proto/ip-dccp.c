@@ -1,6 +1,5 @@
 #include <linux/dccp.h>
 #include "net.h"
-#include "compat.h"
 #include "random.h"
 #include "rnd.h"
 

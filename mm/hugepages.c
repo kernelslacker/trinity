@@ -14,7 +14,6 @@
 #include <dirent.h>
 #include <stdio.h>
 
-#include "compat.h"
 #include "hugepages.h"
 #include "random.h"
 #include "rnd.h"
@@ -22,6 +21,7 @@
 
 #include "kernel/mman.h"
 #include "kernel/memfd.h"
+#include "kernel/shm.h"
 #ifndef HUGETLB_FLAG_ENCODE_SHIFT
 #define HUGETLB_FLAG_ENCODE_SHIFT 26
 #endif

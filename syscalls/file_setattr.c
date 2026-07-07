@@ -9,7 +9,6 @@
 #include "deferred-free.h"
 #include "random.h"
 #include "sanitise.h"
-#include "compat.h"
 #include "utils.h"
 
 #include "kernel/fcntl.h"

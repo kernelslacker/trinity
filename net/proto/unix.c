@@ -7,7 +7,6 @@
 #include "fd.h"
 #include "random.h"
 #include "socket-family-grammar.h"
-#include "compat.h"
 #include "utils.h"
 #include "pids.h"
 #include "rnd.h"

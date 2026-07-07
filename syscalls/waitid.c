@@ -5,7 +5,6 @@
 #include <signal.h>
 #include <sys/resource.h>
 #include <sys/wait.h>
-#include "compat.h"
 #include "sanitise.h"
 #include "trinity.h"
 #include "utils.h"

@@ -7,9 +7,9 @@
 #include "pids.h"
 #include "sanitise.h"
 #include "utils.h"
-#include "compat.h"
 #include "clock-common.h"
 
+#include "kernel/time.h"
 static unsigned long clock_ids[] = {
 	CLOCK_REALTIME, CLOCK_MONOTONIC, CLOCK_PROCESS_CPUTIME_ID,
 	CLOCK_THREAD_CPUTIME_ID, CLOCK_MONOTONIC_RAW, CLOCK_REALTIME_COARSE,

@@ -90,7 +90,6 @@
 #endif
 
 #include "child.h"
-#include "compat.h"
 #include "syscall-gate.h"
 #include "childops-genl.h"
 #include "childops-util.h"

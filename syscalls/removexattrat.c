@@ -13,7 +13,6 @@
 #include "shm.h"
 #include "trinity.h"
 #include "xattr.h"
-#include "compat.h"
 
 #include "kernel/fcntl.h"
 /*

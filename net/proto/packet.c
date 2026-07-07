@@ -9,7 +9,6 @@
 #include "net.h"
 #include "random.h"
 #include "socket-family-grammar.h"
-#include "compat.h"
 #include "kernel/if_packet.h"
 #include "rnd.h"
 

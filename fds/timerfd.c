@@ -12,9 +12,9 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "utils.h"
-#include "compat.h"
 
 #include "kernel/timerfd.h"
+#include "kernel/time.h"
 /*
  * Cross-process safe: only reads obj->timerfdobj scalar fields and the
  * scope scalar.  These survive fork/COW and no process-local pointers

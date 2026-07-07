@@ -4,7 +4,6 @@
 #include <linux/icmpv6.h>
 #include "net.h"
 #include "random.h"
-#include "compat.h"
 #include "rnd.h"
 
 static const unsigned int icmpv6_opts[] = { ICMPV6_FILTER };

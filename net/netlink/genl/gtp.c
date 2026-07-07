@@ -60,9 +60,9 @@
 
 #include <linux/gtp.h>
 
-#include "compat.h"
 #include "netlink-genl-families.h"
 #include "utils.h"
+#include "kernel/gtp.h"
 
 static const struct genl_cmd_grammar gtp_cmds[] = {
 	{ GTP_CMD_NEWPDP,	"GTP_CMD_NEWPDP" },

@@ -72,7 +72,6 @@
 #include "syscall-gate.h"
 #include "child.h"
 #include "childops-util.h"
-#include "compat.h"
 #include "jitter.h"
 #include "maps.h"
 #include "random.h"

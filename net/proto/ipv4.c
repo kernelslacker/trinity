@@ -16,7 +16,6 @@
 #include <linux/ip_vs.h>
 #include <stdio.h>
 #include <string.h>
-#include "compat.h"
 #include "arch.h"
 #include "net.h"
 #include "random.h"

@@ -11,8 +11,8 @@
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
-#include "compat.h"
 
+#include "kernel/poll.h"
 static const unsigned long poll_events[] = {
 	POLLIN, POLLPRI, POLLOUT, POLLERR,
 	POLLHUP, POLLNVAL, POLLRDNORM, POLLRDBAND,

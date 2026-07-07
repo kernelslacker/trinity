@@ -16,7 +16,6 @@
 #include <stddef.h>
 #include <linux/fs.h>
 
-#include "compat.h"
 #include "struct_catalog.h"
 #include "struct_catalog-internal.h"
 #include "arch.h"

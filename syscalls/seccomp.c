@@ -6,7 +6,6 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <linux/filter.h>
-#include "compat.h"
 #include "net.h"
 #include "random.h"
 #include "rnd.h"

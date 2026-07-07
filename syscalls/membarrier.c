@@ -5,7 +5,6 @@
 #include <unistd.h>
 #include "random.h"
 #include "sanitise.h"
-#include "compat.h"
 #include "kernel/membarrier.h"
 
 static unsigned long membarrier_cmds[] = {
