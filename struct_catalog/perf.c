@@ -17,6 +17,7 @@
 #include "perf.h"		/* random_tracepoint_config -- FT_PICKER for TRACEPOINT.config */
 #include "perf_event.h"
 
+#include "kernel/hw_breakpoint.h"
 /* ------------------------------------------------------------------ */
 /* struct perf_event_attr (perf_event_open)                            */
 /* ------------------------------------------------------------------ */

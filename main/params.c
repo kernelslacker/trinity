@@ -27,6 +27,7 @@
 #include "trinity.h"	// progname, max_files_rlimit
 #include "utils.h"
 
+#include "kernel/hw_breakpoint.h"
 bool set_debug = false;
 bool do_specific_syscall = false;
 bool do_exclude_syscall = false;

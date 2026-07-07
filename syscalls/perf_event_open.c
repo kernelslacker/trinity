@@ -32,6 +32,7 @@
 
 
 #include "kernel/fcntl.h"
+#include "kernel/hw_breakpoint.h"
 static long long random_sysfs_config(__u32 *type,
 				__u64 *config1,
 				__u64 *config2) {
