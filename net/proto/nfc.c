@@ -6,6 +6,7 @@
 #include "random.h"
 #include "rnd.h"
 
+#include "kernel/nfc.h"
 static void nfc_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct sockaddr **addr, socklen_t *addrlen)
 {
 	if (RAND_BOOL()) {
