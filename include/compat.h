@@ -168,14 +168,6 @@
 #define MSG_CMSG_COMPAT 0x80000000
 #endif
 
-/* linux/net.h */
-#ifndef SYS_RECVMMSG
-#define SYS_RECVMMSG 19
-#endif
-#ifndef SYS_SENDMMSG
-#define SYS_SENDMMSG 20
-#endif
-
 /* linux/netlink.h */
 #ifndef NETLINK_CRYPTO
 #define NETLINK_CRYPTO 21

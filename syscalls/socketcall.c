@@ -15,6 +15,7 @@
 #include "deferred-free.h"
 #include "utils.h"
 
+#include "kernel/net.h"
 static int get_random_socket_fd(void)
 {
 	struct socketinfo *si;
