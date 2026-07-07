@@ -11,6 +11,7 @@
 #include "compat.h"
 #include "trinity.h"
 
+#include "kernel/inotify.h"
 static unsigned long inotify_add_watch_masks[] = {
 	IN_ACCESS, IN_MODIFY, IN_ATTRIB, IN_CLOSE_WRITE,
 	IN_CLOSE_NOWRITE, IN_OPEN, IN_MOVED_FROM, IN_MOVED_TO,

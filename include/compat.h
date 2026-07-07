@@ -46,11 +46,6 @@
 #define IPV6_HDRINCL		36
 #endif
 
-/* linux/inotify.h */
-#ifndef IN_EXCL_UNLINK
-#define IN_EXCL_UNLINK	0x04000000	/* exclude events on unlinked objects */
-#endif
-
 #ifndef MSG_COPY
 #define MSG_COPY        040000
 #endif
