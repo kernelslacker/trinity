@@ -75,7 +75,7 @@
  * enough that hundreds of concurrent children stay well under VM
  * limits. */
 #define PFT_BLOCK_SIZE	(1U << 16)
-#define FRAME_SIZE	(1U << 11)
+#define PFT_FRAME_SIZE	(1U << 11)
 #define BLOCK_NR	4U
 #define RING_BYTES	((size_t)PFT_BLOCK_SIZE * BLOCK_NR)
 
@@ -152,9 +152,9 @@ bool packet_fanout_thrash(struct childdata *child)
 
 	memset(&req, 0, sizeof(req));
 	req.tp_block_size = PFT_BLOCK_SIZE;
-	req.tp_frame_size = FRAME_SIZE;
+	req.tp_frame_size = PFT_FRAME_SIZE;
 	req.tp_block_nr = BLOCK_NR;
-	req.tp_frame_nr = (PFT_BLOCK_SIZE * BLOCK_NR) / FRAME_SIZE;
+	req.tp_frame_nr = (PFT_BLOCK_SIZE * BLOCK_NR) / PFT_FRAME_SIZE;
 	req.tp_retire_blk_tov = 60;
 	req.tp_feature_req_word = 0;
 
