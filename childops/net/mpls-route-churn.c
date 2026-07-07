@@ -709,6 +709,7 @@ bool mpls_route_churn(struct childdata *child)
 #include "child.h"
 #include "shm.h"
 
+#include "kernel/socket.h"
 bool mpls_route_churn(struct childdata *child)
 {
 	(void)child;

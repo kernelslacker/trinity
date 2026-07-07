@@ -23,6 +23,7 @@
 #include "uid.h"
 #include "compat.h"
 
+#include "kernel/socket.h"
 /* ETH_P_ALL in network byte order, usable in a static initializer. */
 #define ETH_P_ALL_NBO_LOCAL (((ETH_P_ALL & 0xff) << 8) | ((ETH_P_ALL >> 8) & 0xff))
 

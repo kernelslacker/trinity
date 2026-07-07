@@ -1165,6 +1165,7 @@ bool psp_key_rotate(struct childdata *child)
 #include "shm.h"
 
 #include "kernel/fcntl.h"
+#include "kernel/socket.h"
 bool psp_key_rotate(struct childdata *child)
 {
 	(void)child;

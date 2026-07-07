@@ -11,6 +11,7 @@
 #include "utils.h"
 #include "compat.h"
 
+#include "kernel/socket.h"
 static unsigned long msgsnd_flags[] = {
 	MSG_NOERROR, MSG_EXCEPT, MSG_COPY, IPC_NOWAIT,
 };

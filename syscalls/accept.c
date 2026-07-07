@@ -12,6 +12,7 @@
 #include "unblocker.h"
 #include "utils.h"
 
+#include "kernel/socket.h"
 /*
  * Shape buckets for the (upeer_sockaddr, upeer_addrlen) pair.
  *

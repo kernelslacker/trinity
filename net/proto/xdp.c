@@ -16,6 +16,7 @@
 #include "rnd.h"
 #include "xdp-umem-track.h"
 
+#include "kernel/socket.h"
 #define XDP_UMEM_SIZE	(4096 * 64)
 #define XDP_NUM_FRAMES	64
 #define XDP_FRAME_SIZE	4096

@@ -67,6 +67,7 @@
 #include "shm.h"
 #include "trinity.h"
 
+#include "kernel/socket.h"
 /* SO_EE_ORIGIN_ZEROCOPY lives in <linux/errqueue.h> on the kernel
  * side; some libc trees still don't surface it.  5 is the UAPI value
  * (matches include/uapi/linux/errqueue.h) and is stable across every

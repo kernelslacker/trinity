@@ -11,6 +11,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/socket.h"
 /*
  * gen_socket_args() randomises (family, type, protocol) across the
  * full kernel socket matrix.  On stock kernels only AF_UNIX (plus a

@@ -12,6 +12,7 @@
 
 #include <linux/if_alg.h>
 
+#include "kernel/socket.h"
 struct alg_name_list {
 	const char **names;
 	unsigned int count;

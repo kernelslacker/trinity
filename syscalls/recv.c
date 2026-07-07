@@ -15,6 +15,7 @@
 #include "valresult.h"
 #include "compat.h"
 
+#include "kernel/socket.h"
 /*
  * UIO_MAXIOV is the kernel-side hard cap on iovec count.  Local
  * fallback to the canonical 1024 mirrors generate-args.c:262-267

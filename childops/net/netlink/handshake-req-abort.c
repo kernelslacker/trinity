@@ -60,6 +60,7 @@
 #include "jitter.h"
 #include "random.h"
 
+#include "kernel/socket.h"
 /* Latched per-process: genl_open("handshake", ...) returned -ENOENT,
  * so the kernel doesn't expose the handshake family.  Once latched,
  * every further invocation just bumps setup_failed and returns. */

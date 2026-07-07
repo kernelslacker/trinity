@@ -100,6 +100,7 @@ const struct netproto proto_tipc = {
 
 #include "socket-family-grammar.h"
 
+#include "kernel/socket.h"
 const struct socket_family_grammar grammar_tipc_stub = {
 	.family		= PF_TIPC,
 	.name		= "tipc_stub",

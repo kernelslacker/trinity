@@ -19,6 +19,7 @@
 #include "types.h"
 
 #include "kernel/fcntl.h"
+#include "kernel/socket.h"
 struct io_uringobj;
 
 void create_shm(void);

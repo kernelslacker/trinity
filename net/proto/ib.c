@@ -7,6 +7,7 @@
 #include "compat.h"
 #include "rnd.h"
 
+#include "kernel/socket.h"
 /* struct sockaddr_ib from <rdma/ib_user_sa.h> */
 struct sockaddr_ib {
 	unsigned short	sib_family;

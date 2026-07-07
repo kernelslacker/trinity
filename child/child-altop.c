@@ -21,6 +21,7 @@
 #include "strategy.h"
 #include "trinity.h"
 
+#include "kernel/socket.h"
 /*
  * Startup snapshot of the dormant-op gate consulted by init_altop_dispatch()
  * to build the dense enabled_altops[] vector.  Mutated at runtime by the

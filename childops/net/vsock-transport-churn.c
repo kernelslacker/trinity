@@ -64,6 +64,7 @@
 #include "trinity.h"
 #include "userns-bootstrap.h"
 
+#include "kernel/socket.h"
 #if __has_include(<linux/vm_sockets.h>)
 
 /* Per-process latched gate.  Capability / config / kernel-version

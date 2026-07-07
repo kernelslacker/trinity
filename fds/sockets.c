@@ -24,6 +24,7 @@
 #include "utils.h"
 #include "xdp-umem-track.h"
 
+#include "kernel/socket.h"
 unsigned int nr_sockets = 0;
 
 /* Per-family successful add_socket() count.  Bumped from open_socket()

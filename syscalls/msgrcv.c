@@ -9,6 +9,7 @@
 #include "sanitise.h"
 #include "utils.h"
 
+#include "kernel/socket.h"
 /*
  * Mirror of msgsnd's payload-size picker (kept local to avoid an
  * msgsnd <-> msgrcv shared-header just for two callers).  Used by the

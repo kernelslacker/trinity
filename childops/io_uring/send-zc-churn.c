@@ -689,6 +689,7 @@ bool iouring_send_zc_churn(struct childdata *child)
 #include "child.h"
 #include "shm.h"
 
+#include "kernel/socket.h"
 bool iouring_send_zc_churn(struct childdata *child)
 {
 	(void)child;

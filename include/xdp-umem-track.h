@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "kernel/socket.h"
 /*
  * Per-fd ownership table for AF_XDP UMEM mmap()s.
  *

@@ -38,6 +38,7 @@
 #include "utils.h"
 #include "rnd.h"
 
+#include "kernel/socket.h"
 extern struct genl_family_grammar fam_devlink;
 extern struct genl_family_grammar fam_nl80211;
 extern struct genl_family_grammar fam_taskstats;

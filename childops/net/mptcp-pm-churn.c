@@ -61,6 +61,7 @@
 #include "rnd.h"
 #include "utils.h"
 
+#include "kernel/socket.h"
 /* Latched per-child: IPPROTO_MPTCP socket() returned EPROTONOSUPPORT
  * once.  CONFIG_MPTCP is fixed for the life of the process so further
  * attempts are pure waste. */

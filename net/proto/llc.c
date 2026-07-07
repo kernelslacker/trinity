@@ -16,6 +16,7 @@
 #include "compat.h"
 #include "rnd.h"
 
+#include "kernel/socket.h"
 static void llc_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_llc *llc;

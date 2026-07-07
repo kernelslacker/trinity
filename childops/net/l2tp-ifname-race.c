@@ -67,6 +67,7 @@
 
 #include "kernel/l2tp.h"
 
+#include "kernel/socket.h"
 /*
  * Outer-loop sizing.  Per-iter cost is two fork/exit pairs plus a
  * burst of genl sends inside each plus a UDP socket + TUNNEL_CREATE/

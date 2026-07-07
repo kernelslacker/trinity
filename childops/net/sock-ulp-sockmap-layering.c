@@ -63,6 +63,7 @@
 #include "tls.h"
 #include "trinity.h"
 
+#include "kernel/socket.h"
 #ifndef BPF_PROG_TYPE_SK_SKB
 # define BPF_PROG_TYPE_SK_SKB	17
 #endif

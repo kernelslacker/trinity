@@ -10,6 +10,7 @@
 #include "kernel/rxrpc.h"
 #include "rnd.h"
 
+#include "kernel/socket.h"
 static const unsigned int rxrpc_opts[] = {
 	RXRPC_MIN_SECURITY_LEVEL,
 	RXRPC_UPGRADEABLE_SERVICE,

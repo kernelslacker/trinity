@@ -63,6 +63,7 @@
 #include "kernel/fcntl.h"
 #include "kernel/io_uring.h"
 #include "kernel/blkdev.h"
+#include "kernel/socket.h"
 /* Per-process variant availability cache.  Populated lazily by
  * probe_variants() on the first invocation in this child; subsequent
  * invocations hit the cached result.  Each child re-probes once

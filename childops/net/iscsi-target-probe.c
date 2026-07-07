@@ -72,6 +72,7 @@
 
 #include "generated/parser_vocab.h"
 
+#include "kernel/socket.h"
 /* iSCSI opcode constants from RFC 7143 §11.  Defined locally so we
  * don't drag in <scsi/iscsi_proto.h> / <linux/scsi/iscsi_proto.h>
  * which aren't shipped in every sysroot. */

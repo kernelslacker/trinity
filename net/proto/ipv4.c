@@ -26,6 +26,7 @@
 #include "utils.h"
 #include "rnd.h"
 
+#include "kernel/socket.h"
 /* workaround for <linux/in.h> vs. <netinet/in.h> */
 #ifndef IP_LOCAL_PORT_RANGE
 #define IP_LOCAL_PORT_RANGE 51

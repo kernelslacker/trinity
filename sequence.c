@@ -58,6 +58,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/socket.h"
 /*
  * Probability (as 1/N) that an iteration replays a saved chain instead
  * of generating a fresh one.

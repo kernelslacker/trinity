@@ -5,6 +5,7 @@
 #include "compat.h"
 #include "rnd.h"
 
+#include "kernel/socket.h"
 static const unsigned int tcp_opts[] = {
 	TCP_NODELAY, TCP_MAXSEG, TCP_CORK, TCP_KEEPIDLE,
 	TCP_KEEPINTVL, TCP_KEEPCNT, TCP_SYNCNT, TCP_LINGER2,

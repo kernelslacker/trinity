@@ -88,6 +88,7 @@
 
 #include "kernel/fcntl.h"
 #include "kernel/splice.h"
+#include "kernel/socket.h"
 #ifndef UDP_ENCAP
 # define UDP_ENCAP			100
 #endif

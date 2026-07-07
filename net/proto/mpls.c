@@ -13,6 +13,7 @@
 #include "kernel/if_ether.h"
 #include "rnd.h"
 
+#include "kernel/socket.h"
 /* MPLS label stack entry: 20-bit label, 3-bit TC, 1-bit BoS, 8-bit TTL */
 struct sockaddr_mpls {
 	unsigned short smpls_family;

@@ -28,6 +28,7 @@
 #include "utils.h"
 
 #include "kernel/hw_breakpoint.h"
+#include "kernel/socket.h"
 bool set_debug = false;
 bool do_specific_syscall = false;
 bool do_exclude_syscall = false;

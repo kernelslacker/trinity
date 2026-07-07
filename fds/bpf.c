@@ -23,6 +23,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/socket.h"
 static int bpf(int cmd, union bpf_attr *attr, unsigned int size)
 {
 	return trinity_raw_syscall(__NR_bpf, cmd, attr, size);

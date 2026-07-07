@@ -8,6 +8,7 @@
  */
 #include <linux/rxrpc.h>
 
+#include "kernel/socket.h"
 #ifndef SOL_RXRPC
 #define SOL_RXRPC		272
 #endif

@@ -11,6 +11,7 @@
 #include "kernel/mctp.h"
 #include "rnd.h"
 
+#include "kernel/socket.h"
 static void mctp_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_mctp *mctp;

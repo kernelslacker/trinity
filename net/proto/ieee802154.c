@@ -6,6 +6,7 @@
 #include "rnd.h"
 #include "utils.h"
 
+#include "kernel/socket.h"
 /*
  * No userspace UAPI ships <linux/ieee802154.h> with the sockaddr layout
  * (the kernel keeps it in include/net/af_ieee802154.h).  Mirror the

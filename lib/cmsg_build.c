@@ -33,6 +33,7 @@
 #include "rnd.h"
 #include "sanitise.h"
 
+#include "kernel/socket.h"
 /* Older libcs miss a few of these; the kernel uapi headers above
  * normally provide them, but be defensive. */
 #ifndef SCM_TIMESTAMPING

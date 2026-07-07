@@ -89,6 +89,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/socket.h"
 #ifndef SIOCGSTAMP
 # ifdef SIOCGSTAMP_OLD
 #  define SIOCGSTAMP	SIOCGSTAMP_OLD

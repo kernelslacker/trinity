@@ -23,6 +23,7 @@
 #include "compat.h"
 #include "rnd.h"
 
+#include "kernel/socket.h"
 #ifndef SOL_TCP
 #define SOL_TCP 6
 #endif

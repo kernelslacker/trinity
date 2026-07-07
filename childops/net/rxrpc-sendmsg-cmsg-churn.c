@@ -92,6 +92,7 @@
 #include "random.h"
 #include "utils.h"
 
+#include "kernel/socket.h"
 /*
  * Latched per-process: socket(AF_RXRPC, ...) returned an "unsupported"
  * errno once.  CONFIG_AF_RXRPC is fixed for the process lifetime so

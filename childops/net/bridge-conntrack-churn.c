@@ -78,6 +78,7 @@
 #include "trinity.h"
 #include "userns-bootstrap.h"
 
+#include "kernel/socket.h"
 #ifndef NFPROTO_BRIDGE
 #define NFPROTO_BRIDGE			7
 #endif

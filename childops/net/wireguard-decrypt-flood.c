@@ -85,6 +85,7 @@
 #include "pids.h"
 #include "userns-bootstrap.h"
 
+#include "kernel/socket.h"
 #define WGDF_BUF_BYTES		2048
 #define WGDF_BURST_MAX		200U
 #define WGDF_GAP_NS		50000L		/* 50us between sends */

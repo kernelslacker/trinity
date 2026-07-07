@@ -71,6 +71,7 @@
 #include "trinity.h"
 #include "userns-bootstrap.h"
 
+#include "kernel/socket.h"
 /* IFLA_GRE_* and GRE flag word bits.  Defined inline because
  * linux/if_tunnel.h conflicts with netinet/ip.h (both define struct iphdr)
  * on this codebase's include set.  UAPI values are stable per

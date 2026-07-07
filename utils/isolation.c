@@ -21,6 +21,7 @@
 #include "uid.h"
 
 #include "kernel/fcntl.h"
+#include "kernel/socket.h"
 /*
  * One-shot NETLINK_ROUTE socket helpers for the parent's lo
  * provisioning sequence.  Deliberately self-contained -- the

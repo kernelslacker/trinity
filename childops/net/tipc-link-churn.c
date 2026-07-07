@@ -99,6 +99,7 @@
 #include "random.h"
 
 #include "kernel/fcntl.h"
+#include "kernel/socket.h"
 #define TIPC_BEARER_NAME_MAX	32
 
 /* Loopback UDP bearer endpoint.  Port 6118 is the IANA-assigned TIPC

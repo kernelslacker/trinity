@@ -74,6 +74,7 @@
 #include "utils.h"
 
 #include "kernel/fcntl.h"
+#include "kernel/socket.h"
 /* Per-invocation MTU picks: both IPv6-valid and both yield a nonzero
  * continuation gap, so the two-send sequence exercises the paged
  * continuation branch at every value.  p1 is derived from the picked

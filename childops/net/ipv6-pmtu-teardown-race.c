@@ -67,6 +67,7 @@
 #include "random.h"
 #include "userns-bootstrap.h"
 
+#include "kernel/socket.h"
 #ifndef ICMPV6_PKT_TOOBIG
 #define ICMPV6_PKT_TOOBIG		2
 #endif

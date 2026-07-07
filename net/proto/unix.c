@@ -12,6 +12,7 @@
 #include "pids.h"
 #include "rnd.h"
 
+#include "kernel/socket.h"
 #ifndef SO_PASSSEC
 #define SO_PASSSEC	34
 #endif
