@@ -71,6 +71,7 @@
 #include "trinity.h"
 #include "uid.h"
 
+#include "kernel/sched.h"
 /* Wall-clock ceiling for the inner loop.  300ms — wider than the
  * typical thrash band because real hotplug can stall in stop_machine. */
 #define BUDGET_NS	300000000L

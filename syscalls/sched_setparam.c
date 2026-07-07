@@ -6,6 +6,7 @@
 #include "rnd.h"
 #include "sanitise.h"
 
+#include "kernel/sched.h"
 static void sanitise_sched_setparam(struct syscallrecord *rec)
 {
 	struct sched_param *sp;

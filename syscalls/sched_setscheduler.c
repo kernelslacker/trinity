@@ -7,6 +7,7 @@
 #include "rnd.h"
 #include "sanitise.h"
 
+#include "kernel/sched.h"
 static unsigned long sched_setscheduler_policies[] = {
 	SCHED_OTHER, SCHED_FIFO, SCHED_RR, SCHED_BATCH,
 	SCHED_IDLE, SCHED_DEADLINE,

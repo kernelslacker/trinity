@@ -25,6 +25,7 @@
 
 #include "kernel/fcntl.h"
 #include "kernel/sctp.h"
+#include "kernel/sched.h"
 struct syscallrecord;
 
 /* ------------------------------------------------------------------ */

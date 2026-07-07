@@ -16,6 +16,7 @@
 #include "struct_catalog-internal.h"
 #include "arch.h"
 
+#include "kernel/sched.h"
 /* ------------------------------------------------------------------ */
 /* struct sched_attr (sched_setattr, sched_getattr)                    */
 /* ------------------------------------------------------------------ */

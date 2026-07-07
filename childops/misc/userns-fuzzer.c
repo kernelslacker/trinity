@@ -66,6 +66,7 @@
 #include "shm.h"
 #include "trinity.h"
 
+#include "kernel/sched.h"
 /*
  * Latched once per trinity-child process: if the kernel refuses
  * unshare(CLONE_NEWUSER) we don't try again from this child.  Each

@@ -15,6 +15,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/sched.h"
 /*
  * Mirrors the convention in syscalls/unshare.c: when sanitise admits
  * a CLONE_NEWNET clone() it stamps post_state with NEWNET_INFLIGHT_TICKET

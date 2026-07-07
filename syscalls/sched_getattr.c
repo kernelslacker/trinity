@@ -18,6 +18,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/sched.h"
 #define SCHED_ATTR_SIZE_VER0	48
 
 /*

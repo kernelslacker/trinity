@@ -18,6 +18,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/sched.h"
 /*
  * Snapshot of the three sched_getaffinity input args read by the post
  * oracle, captured at sanitise time and consumed by the post handler.

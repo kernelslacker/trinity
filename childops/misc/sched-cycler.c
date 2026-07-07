@@ -40,6 +40,7 @@
 #include "shm.h"
 #include "trinity.h"
 
+#include "kernel/sched.h"
 #define NSEC_PER_MSEC 1000000ULL
 
 static int do_sched_setattr(pid_t pid, struct sched_attr *attr)
