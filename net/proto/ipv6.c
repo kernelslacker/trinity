@@ -25,6 +25,7 @@
 
 #include "kernel/socket.h"
 #include "kernel/in.h"
+#include "kernel/in6.h"
 #ifndef SOL_TCP
 #define SOL_TCP 6
 #endif
