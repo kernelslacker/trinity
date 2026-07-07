@@ -54,6 +54,7 @@
 
 #include "childops-netlink.h"
 
+#include "kernel/nfnetlink.h"
 /*
  * NETLINK_NETFILTER context.  Composes struct nl_ctx so the shared
  * sequence counter and fd plumbing are reused as-is; the wrapper layer
