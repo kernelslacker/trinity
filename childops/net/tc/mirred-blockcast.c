@@ -71,6 +71,7 @@
 #include "trinity.h"
 #include "userns-bootstrap.h"
 
+#include "kernel/socket.h"
 /*
  * UAPI fallbacks.  Stripped sysroots may not have the full
  * pkt_sched.h / pkt_cls.h / tc_mirred.h; the IDs / values are kernel

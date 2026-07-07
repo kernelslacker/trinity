@@ -50,6 +50,7 @@
 #include "childops-netlink.h"
 #include "shm.h"
 
+#include "kernel/socket.h"
 /*
  * Bounded retry budget for nl_send_recv_retry().  Matches the per-file
  * TC_RETRY_MAX / MPLS_RC_RETRY_MAX values in tc-qdisc-churn.c and

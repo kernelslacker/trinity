@@ -40,6 +40,7 @@
 
 #include "kernel/netlink.h"
 #include "kernel/nfnetlink.h"
+#include "kernel/socket.h"
 /* Forward declaration — called via gen_msg hook from net/proto/netlink.c */
 void netlink_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len);
 

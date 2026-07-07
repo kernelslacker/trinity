@@ -72,6 +72,7 @@
 #include "userns-bootstrap.h"
 
 #include "kernel/fcntl.h"
+#include "kernel/socket.h"
 /* if_bridge.h on stripped sysroots may not have BRIDGE_FLAGS_* / the
  * IFLA_BRIDGE_* enum.  These IDs are stable in the UAPI; redefine the
  * minimal subset we emit if the header didn't supply them. */

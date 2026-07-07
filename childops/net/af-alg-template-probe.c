@@ -52,6 +52,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/socket.h"
 struct af_alg_probe_entry {
 	const char	*type;	/* salg_type, e.g. "skcipher", "hash" */
 	const char	*name;	/* salg_name, e.g. "cbc(des)" */

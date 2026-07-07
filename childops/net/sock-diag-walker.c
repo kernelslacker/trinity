@@ -65,6 +65,7 @@
 #include "trinity.h"
 
 #include "kernel/netlink.h"
+#include "kernel/socket.h"
 #define SD_BUF_BYTES		2048
 #define SD_RECV_TIMEO_S		1
 #define SD_BC_MAX_OPS		8

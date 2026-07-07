@@ -15,6 +15,7 @@
 #ifdef USE_IF_ALG
 #include <linux/if_alg.h>
 
+#include "kernel/socket.h"
 static const char *hashes[] = {
 	"md4", "md5",
 	"sha1", "sha224", "sha256", "sha384", "sha512",

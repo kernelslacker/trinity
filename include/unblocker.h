@@ -2,6 +2,7 @@
 
 #include "socketinfo.h"
 
+#include "kernel/socket.h"
 /*
  * accept-unblocker: fire a fire-and-forget loopback connect() at a
  * pooled listening socket.  The point is to push at least one entry

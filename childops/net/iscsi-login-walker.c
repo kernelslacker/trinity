@@ -87,6 +87,7 @@
 #include "shm.h"
 #include "trinity.h"
 
+#include "kernel/socket.h"
 /* iSCSI constants from RFC 7143 §11.  Defined locally so we don't drag
  * in <scsi/iscsi_proto.h> which is not present on every sysroot. */
 #define ISCSI_TARGET_PORT		3260

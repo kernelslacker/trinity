@@ -80,6 +80,7 @@
 #include "trinity.h"
 
 #include "kernel/fcntl.h"
+#include "kernel/socket.h"
 /* TCP_AO_* constant fallbacks already live in include/compat.h.  The
  * structs (tcp_ao_add / tcp_ao_del / tcp_ao_info_opt) live in
  * <linux/tcp.h>.  TCP_AO_MAXKEYLEN was introduced in the same header

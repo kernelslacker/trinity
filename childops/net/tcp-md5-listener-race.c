@@ -54,6 +54,7 @@
 #include "shm.h"
 #include "trinity.h"
 
+#include "kernel/socket.h"
 /* tcp_md5sig and TCP_MD5SIG_MAXKEYLEN already arrive via <linux/tcp.h>
  * and are referenced unconditionally by net/proto/ip-tcp.c, so no
  * private fallback is needed here. */

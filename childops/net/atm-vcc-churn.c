@@ -55,6 +55,7 @@
 #include "jitter.h"
 #include "random.h"
 
+#include "kernel/socket.h"
 #ifndef AF_ATMPVC
 #define AF_ATMPVC	8
 #endif

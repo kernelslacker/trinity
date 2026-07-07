@@ -85,6 +85,7 @@
 #include "trinity.h"
 #include "userns-bootstrap.h"
 
+#include "kernel/socket.h"
 #ifndef IP_MF
 #define IP_MF			0x2000
 #endif

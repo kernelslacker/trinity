@@ -19,6 +19,7 @@
 #include "socketinfo.h"
 #include "unblocker.h"
 
+#include "kernel/socket.h"
 /*
  * Loopback predicate.  Returns true for any addr the connector is
  * willing to fire at without rewriting:

@@ -44,6 +44,7 @@
 #include <linux/netlink.h>
 #include <linux/types.h>
 
+#include "kernel/socket.h"
 struct nl_ctx {
 	int	fd;
 	int	proto;		/* NETLINK_ROUTE, NETLINK_NETFILTER, ... */

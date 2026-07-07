@@ -47,6 +47,7 @@
 #include "compat.h"
 
 #include "kernel/nfnetlink.h"
+#include "kernel/socket.h"
 #ifndef NETLINK_NETFILTER
 #define NETLINK_NETFILTER		12
 #endif

@@ -7,6 +7,7 @@
 #include "params.h"
 #include "compat.h"
 
+#include "kernel/socket.h"
 struct domain {
 	const char *name;
 	const unsigned int domain;

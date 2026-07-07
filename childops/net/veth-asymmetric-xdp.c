@@ -798,6 +798,7 @@ bool veth_asymmetric_xdp(struct childdata *child)
 #include "child.h"
 #include "shm.h"
 
+#include "kernel/socket.h"
 bool veth_asymmetric_xdp(struct childdata *child)
 {
 	(void)child;

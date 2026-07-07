@@ -12,6 +12,7 @@
 
 #include "kernel/mman.h"
 #include "kernel/netlink.h"
+#include "kernel/socket.h"
 /*
  * Adaptive-budget tunables for childop_budget_mult[] / adapt_budget().
  * Q8.8 fixed point: 256 == 1.0x.  Floor and ceiling cap how far the

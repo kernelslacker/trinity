@@ -84,6 +84,7 @@ const struct netproto proto_caif = {
 
 #include "socket-family-grammar.h"
 
+#include "kernel/socket.h"
 const struct socket_family_grammar grammar_caif_stub = {
 	.family		= PF_CAIF,
 	.name		= "caif_stub",

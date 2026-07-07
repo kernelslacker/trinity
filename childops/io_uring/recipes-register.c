@@ -45,6 +45,7 @@
 
 #include "kernel/eventfd.h"
 #include "kernel/fcntl.h"
+#include "kernel/socket.h"
 /* ------------------------------------------------------------------ *
  * Recipe 9: READ_FIXED with IORING_REGISTER_BUFFERS (registered fixed buffers)
  *

@@ -2,6 +2,7 @@
 #include "net.h"
 #include "compat.h"
 
+#include "kernel/socket.h"
 const struct protoptr net_protocols[TRINITY_PF_MAX] = {
 	[PF_UNIX] = { .proto = &proto_unix },
 	[PF_INET] = { .proto = &proto_ipv4 },

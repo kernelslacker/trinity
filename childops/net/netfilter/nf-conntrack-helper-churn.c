@@ -71,6 +71,7 @@
 #include "jitter.h"
 #include "random.h"
 
+#include "kernel/socket.h"
 /*
  * UAPI fallbacks.  Older sysroots may have nfnetlink.h but be missing
  * a few of these constants; keep us building cleanly.  IDs come from

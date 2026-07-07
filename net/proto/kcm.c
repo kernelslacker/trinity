@@ -21,6 +21,7 @@
 #include "kernel/kcm.h"
 #include "pids.h"
 
+#include "kernel/socket.h"
 static const unsigned int kcm_opts[] = {
 	KCM_RECV_DISABLE,
 };

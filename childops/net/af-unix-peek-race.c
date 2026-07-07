@@ -59,6 +59,7 @@
 #include "jitter.h"
 #include "random.h"
 
+#include "kernel/socket.h"
 /* Per-process latched gate: AF_UNIX SOCK_STREAM probe failed.  Once set,
  * every subsequent invocation just bumps setup_failed and returns. */
 static bool ns_unsupported_af_unix_peek_race;

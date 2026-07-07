@@ -27,6 +27,7 @@
 #include "childops/io_uring/recipes-internal.h"
 
 #include "kernel/io_uring.h"
+#include "kernel/socket.h"
 /* ------------------------------------------------------------------ *
  * Recipe 4: SEND + RECV over a socketpair with linked SQEs
  *

@@ -43,6 +43,7 @@
 #include "netlink-genl-families.h"
 #include "utils.h"
 
+#include "kernel/socket.h"
 static const struct genl_cmd_grammar netdev_cmds[] = {
 	{ NETDEV_CMD_DEV_GET,     "NETDEV_CMD_DEV_GET" },
 	{ NETDEV_CMD_QUEUE_GET,   "NETDEV_CMD_QUEUE_GET" },

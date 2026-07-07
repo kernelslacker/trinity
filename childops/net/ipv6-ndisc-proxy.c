@@ -78,6 +78,7 @@
 #include "userns-bootstrap.h"
 
 #include "kernel/fcntl.h"
+#include "kernel/socket.h"
 #define NDP_OUTER_BASE		6U
 #define NDP_OUTER_CAP		32U
 #define NDP_STORM_BUDGET_NS	200000000L

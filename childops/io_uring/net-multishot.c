@@ -83,6 +83,7 @@
 #include "trinity.h"
 
 #include "kernel/fcntl.h"
+#include "kernel/socket.h"
 #ifndef __NR_io_uring_register
 #define __NR_io_uring_register	427
 #endif

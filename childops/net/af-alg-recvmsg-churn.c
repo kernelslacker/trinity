@@ -67,6 +67,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/socket.h"
 #ifndef ALG_SET_IV
 # define ALG_SET_IV			2
 #endif

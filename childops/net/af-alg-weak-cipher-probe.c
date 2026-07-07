@@ -59,6 +59,7 @@
 #include "shm.h"
 #include "trinity.h"
 
+#include "kernel/socket.h"
 #define WEAK_CIPHER_LATCH_THRESHOLD	3U
 #define WEAK_CIPHER_PROBE_KEY_BYTES	16U
 #define WEAK_CIPHER_EBUSY_RETRY_USEC	1000

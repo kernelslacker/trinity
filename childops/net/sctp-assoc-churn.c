@@ -91,6 +91,7 @@
 #include "shm.h"
 #include "trinity.h"
 
+#include "kernel/socket.h"
 /* Latched per-child: the very first IPPROTO_SCTP socket() returned
  * EPROTONOSUPPORT.  Kernel CONFIG_IP_SCTP is fixed for the life of
  * this process, so further attempts are pure waste. */

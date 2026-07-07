@@ -60,6 +60,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/socket.h"
 #define INNER_MIN		1
 #define INNER_MAX_GRAMMAR	3	/* grammar walks are longer than v1's
 					 * AF_ALG chains; cap at 3 to keep the

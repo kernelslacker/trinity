@@ -49,6 +49,7 @@
 #include "utils.h"
 #include "pids.h"
 
+#include "kernel/socket.h"
 #define BUDGET_NS	200000000L	/* 200 ms */
 #define MAX_ITERATIONS	48
 #define LIVE_KEYS_RING	8

@@ -8,6 +8,7 @@
 
 #ifdef USE_IF_ALG
 #include <linux/if_alg.h>	/* sockaddr_alg in the socket_ctx union arm */
+#include "kernel/socket.h"
 #endif
 
 struct msghdr;

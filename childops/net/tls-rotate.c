@@ -59,6 +59,7 @@
 #include "tls.h"
 #include "trinity.h"
 
+#include "kernel/socket.h"
 /* Cipher selector.  Keep distinct entries for the two install slots so
  * the rekey is GUARANTEED to swap cipher_type — that's where the
  * rejection / re-init paths bifurcate. */

@@ -4,6 +4,7 @@
 
 #include "xdp-umem-track.h"
 
+#include "kernel/socket.h"
 /*
  * 256 slots is plenty in practice: the per-process socket pool caps at
  * NR_SOCKET_FDS (50) and the per-family grammar walker only holds one

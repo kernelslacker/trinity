@@ -59,6 +59,7 @@
 #include "userns-bootstrap.h"
 
 #include "kernel/neighbour.h"
+#include "kernel/socket.h"
 /* if_link.h on stripped sysroots may not have the full VXLAN/GENEVE/GRE
  * attribute enums.  Provide the minimal subset we actually emit: the
  * IDs are stable in the UAPI, so re-defining as a fallback is safe.

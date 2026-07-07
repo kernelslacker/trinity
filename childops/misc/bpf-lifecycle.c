@@ -91,6 +91,7 @@
 
 #include "kernel/fcntl.h"
 #include "kernel/mman.h"
+#include "kernel/socket.h"
 #ifndef SO_DETACH_BPF
 #define SO_DETACH_BPF		SO_DETACH_FILTER
 #endif

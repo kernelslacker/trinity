@@ -94,6 +94,7 @@
 #include "trinity.h"
 #include "userns-bootstrap.h"
 
+#include "kernel/socket.h"
 /* RTNLGRP_IPV4_MROUTE_R is the cache-report multicast group, added to
  * UAPI relatively recently.  Stripped sysroots may predate it; the ID
  * is stable. */

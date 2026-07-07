@@ -38,6 +38,7 @@
 #include "nftables-churn-internal.h"
 #include "name-pool.h"
 
+#include "kernel/socket.h"
 #define NFNL_BUF_BYTES			2048
 #define NFNL_RECV_TIMEO_S		1
 

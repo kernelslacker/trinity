@@ -90,6 +90,7 @@ const struct netproto proto_phonet = {
 
 #include "socket-family-grammar.h"
 
+#include "kernel/socket.h"
 const struct socket_family_grammar grammar_phonet_stub = {
 	.family		= PF_PHONET,
 	.name		= "phonet_stub",
