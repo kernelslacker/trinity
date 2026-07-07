@@ -101,6 +101,20 @@
  * long fuzz session, so a fix that lands mid-run does get re-evaluated. */
 #define CANARY_SETUP_BROKEN_BACKOFF_TIME	(4 * 3600)
 
+/* Wall-clock ceiling on a canary window with zero invocations.  op_fn
+ * bumps childop_invocations[op] only on return; if every dispatch of
+ * the canaried op wedges inside a kernel syscall long enough to trip
+ * the 30 s parent watchdog, the child is killed before that bump ever
+ * lands and invocations stays at 0.  window_iters (measured off the
+ * invocation delta) is then also 0, setup_fail_delta (invocations -
+ * setup_accepted) is 0, and neither the SETUP_BROKEN branch nor the
+ * iters >= budget branch below can fire -- the canary slot is pinned
+ * on the hung op indefinitely and every other dormant op is starved
+ * of a canary window.  600 s is ~20x the parent's 30 s per-child
+ * stall detection so a genuinely slow op that eventually returns is
+ * not misclassified as wedged. */
+#define CANARY_WEDGE_STALL_SEC	600U
+
 /* Width of the small ring of recently-promoted op names rendered by
  * canary_queue_summary().  Fixed at 5; spec verbatim. */
 #define CANARY_PROMOTION_RING_SIZE	5
@@ -725,6 +739,36 @@ static void leave_canarying_demote_setup_broken(enum child_op_type op,
 		(unsigned int)CANARY_SETUP_BROKEN_BACKOFF_TIME);
 }
 
+/* Wedge-stall demote: the canary window has been open for
+ * CANARY_WEDGE_STALL_SEC without a single op_fn return, so every
+ * dispatched child is hanging inside the op's kernel path long enough
+ * that the parent watchdog kills it before the invocation-count bump
+ * at op_fn's return.  Distinct from setup_broken (which requires
+ * invocations > 0 to observe a non-zero setup_fail_delta) and from
+ * zero_edges (which requires the window to have completed budget
+ * iters).  Re-use the setup_broken latch so the demote inherits the
+ * longer CANARY_SETUP_BROKEN_BACKOFF_TIME -- a childop whose op_fn
+ * never returns needs a code fix (to the op or to the kernel), not a
+ * 30-minute wait. */
+static void leave_canarying_demote_wedged(enum child_op_type op,
+					  time_t window_age_sec)
+{
+	struct canary_op_state *s = &canary_ops[op];
+
+	s->state = CANARY_STATE_DEMOTED;
+	s->last_state_transition = monotonic_seconds();
+	s->total_demotions++;
+	canary_op_setup_broken[op] = true;
+
+	/* Flip the gate back to dormant so the random picker stops
+	 * including this op. */
+	dormant_op_set(op, true);
+
+	output(0, "canary: %s WEDGED: no op_fn return in %llds (every child killed by parent watchdog before op_fn could bump invocations) -- fix this op; backoff=%us before re-test; effective for new children at next respawn\n",
+		s->name, (long long)window_age_sec,
+		(unsigned int)CANARY_SETUP_BROKEN_BACKOFF_TIME);
+}
+
 /* Terminal exit for structurally canary-ineligible ops: those for
  * which op_uses_outer_bracket(op) is false and therefore whose
  * childop_edges_clean[op] slot is permanently zero (the outer KCOV
@@ -1338,6 +1382,25 @@ void canary_queue_tick(void)
 		if (setup_ok_delta == 0 &&
 		    setup_fail_delta >= (unsigned long)CANARY_SETUP_BROKEN_FAILS) {
 			leave_canarying_demote_setup_broken(op, iters, setup_fail_delta);
+			stage_next_or_park();
+			return;
+		}
+	}
+
+	/* Wedge-stall bail-out.  invocations bumps at op_fn's return, so
+	 * a childop whose every call wedges long enough for the parent
+	 * watchdog to kill it before op_fn returns leaves iters at 0
+	 * indefinitely -- the SETUP_BROKEN branch above cannot fire
+	 * (setup_fail_delta is also 0), and the iters >= budget branch
+	 * below never reaches the threshold.  Bound the window on wall
+	 * time instead so the canary slot is not pinned on the hung op
+	 * forever and every subsequent dormant op gets its window. */
+	if (iters == 0) {
+		time_t now = monotonic_seconds();
+		time_t window_age = (now >= canary_ops[op].last_canary_window_start)
+			? (now - canary_ops[op].last_canary_window_start) : 0;
+		if (window_age >= (time_t)CANARY_WEDGE_STALL_SEC) {
+			leave_canarying_demote_wedged(op, window_age);
 			stage_next_or_park();
 			return;
 		}
