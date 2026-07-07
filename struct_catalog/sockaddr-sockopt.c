@@ -49,6 +49,7 @@
 #include "arch.h"
 #include "utils.h"
 
+#include "kernel/in.h"
 /*
  * struct linger -- SOL_SOCKET / SO_LINGER.  l_onoff is a boolean
  * (kernel masks to 0/1); l_linger is a small positive lingertime in
