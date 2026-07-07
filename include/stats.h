@@ -10,6 +10,7 @@
 #include "strategy.h"	/* NR_STRATEGIES */
 #include "syscall.h"	/* MAX_NR_SYSCALL */
 
+#include "kernel/mman.h"
 /*
  * Adaptive-budget tunables for childop_budget_mult[] / adapt_budget().
  * Q8.8 fixed point: 256 == 1.0x.  Floor and ceiling cap how far the

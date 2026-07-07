@@ -23,6 +23,7 @@
 #include "trinity.h"
 
 #include "kernel/falloc.h"
+#include "kernel/mman.h"
 #ifndef MAP_SHARED_VALIDATE
 #define MAP_SHARED_VALIDATE 0x03
 #endif

@@ -18,6 +18,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/mman.h"
 static void alloc_zero_map(unsigned long size, int prot, int flags, const char *name)
 {
 	struct object *new;

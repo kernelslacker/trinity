@@ -11,6 +11,7 @@
 #include "utils.h"
 #include "compat.h"
 
+#include "kernel/mman.h"
 #ifndef MADV_HWPOISON
 #define MADV_HWPOISON		100
 #endif

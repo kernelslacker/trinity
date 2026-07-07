@@ -10,6 +10,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/mman.h"
 /*
  * Snapshot of the mprotect inputs read by the post handler, captured at
  * sanitise time and consumed by the post handler.  Lives in

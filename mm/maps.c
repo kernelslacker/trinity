@@ -15,6 +15,7 @@
 #include "shm.h"
 #include "utils.h"
 
+#include "kernel/mman.h"
 /*
  * Trigger threshold for the OBJ_LOCAL ANON lazy refill in
  * get_map_handle().  Post fork-time seed (init_child_mappings) the

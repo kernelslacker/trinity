@@ -74,6 +74,7 @@
 #include "utils.h"
 #include "vma-pressure.h"
 
+#include "kernel/mman.h"
 /* Recent madvise advice modes - libc headers on older build hosts may
  * not define these even though the running kernel supports them.
  * Mirror the values from include/compat.h so we can build cleanly

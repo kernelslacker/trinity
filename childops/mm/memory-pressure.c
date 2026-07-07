@@ -29,6 +29,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/mman.h"
 /*
  * Pool-race fault guard.  See the comment on pool_race_aborted[] in
  * include/stats.h for the race we're catching.  The guard only

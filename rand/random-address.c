@@ -18,6 +18,7 @@
 #include "tables.h"
 #include "utils.h"
 
+#include "kernel/mman.h"
 /*
  * Dedicated MAP_PRIVATE|MAP_ANONYMOUS backing buffer for
  * get_writable_address().  Allocated once in the parent by

@@ -84,6 +84,7 @@
 #include "shm.h"
 #include "trinity.h"
 
+#include "kernel/mman.h"
 #define BUDGET_NS	200000000L	/* 200 ms */
 #define MAX_ITERATIONS	8
 
