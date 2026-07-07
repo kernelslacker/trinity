@@ -16,6 +16,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/io_uring.h"
 #ifndef IORING_SETUP_IOPOLL
 #define IORING_SETUP_IOPOLL	(1U << 0)
 #endif

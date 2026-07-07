@@ -40,6 +40,7 @@
 #include "childops/io_uring/recipes-internal.h"
 
 #include "kernel/eventfd.h"
+#include "kernel/io_uring.h"
 /* ------------------------------------------------------------------ *
  * Recipe 2: TIMEOUT with IOSQE_IO_DRAIN
  *

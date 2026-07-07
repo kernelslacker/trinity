@@ -3,6 +3,9 @@
 #include <sys/socket.h>
 #include <netinet/in.h>		/* IPPROTO_*, IP_*, IPV6_* enum members */
 #include <linux/types.h>
+#if __has_include(<linux/fs.h>)
+#include <linux/fs.h>
+#endif
 
 #include "kernel/mempolicy.h"
 
@@ -173,81 +176,6 @@
 #include "kernel/macsec.h"
 
 #include "kernel/veth.h"
-
-/* linux/io_uring.h
- *
- * IORING_OFF_SQ_RING / IORING_OFF_SQES: mmap offsets for the
- * submission-queue ring and SQE array regions returned by
- * io_uring_setup().  ABI-stable since the syscall landed in 5.1, but
- * absent from very old kernel-headers packages.
- */
-#ifndef IORING_OFF_SQ_RING
-#define IORING_OFF_SQ_RING	0ULL
-#endif
-#ifndef IORING_OFF_SQES
-#define IORING_OFF_SQES		0x10000000ULL
-#endif
-
-/* linux/io_uring.h
- *
- * IORING_OP_* enum values added after the v6.6 LTS cut.  The enum is
- * append-only and never renumbered, so each value below is stable
- * across kernels.  Trinity references these unconditionally from
- * recipe / passthrough childops; without compat fallbacks the build
- * breaks (or, worse, dispatches the wrong opcode) on any host whose
- * kernel-headers package predates the addition.
- */
-#ifndef IORING_OP_READ_MULTISHOT
-#define IORING_OP_READ_MULTISHOT	49
-#endif
-#ifndef IORING_OP_WAITID
-#define IORING_OP_WAITID		50
-#endif
-#ifndef IORING_OP_FUTEX_WAIT
-#define IORING_OP_FUTEX_WAIT		51
-#define IORING_OP_FUTEX_WAKE		52
-#define TRINITY_COMPAT_BACKFILLED_FUTEX_WAIT_WAKE
-#endif
-#ifndef IORING_OP_FUTEX_WAITV
-#define IORING_OP_FUTEX_WAITV		53
-#endif
-#ifndef IORING_OP_FIXED_FD_INSTALL
-#define IORING_OP_FIXED_FD_INSTALL	54
-#endif
-#ifndef IORING_OP_FTRUNCATE
-#define IORING_OP_FTRUNCATE		55
-#endif
-#ifndef IORING_OP_BIND
-#define IORING_OP_BIND			56
-#define TRINITY_COMPAT_BACKFILLED_BIND
-#endif
-#ifndef IORING_OP_LISTEN
-#define IORING_OP_LISTEN		57
-#endif
-#ifndef IORING_OP_RECV_ZC
-#define IORING_OP_RECV_ZC		58
-#endif
-#ifndef IORING_OP_EPOLL_WAIT
-#define IORING_OP_EPOLL_WAIT		59
-#endif
-
-/* SOCKET_URING_OP_* — IORING_OP_URING_CMD socket subsystem cmd_ops,
- * added 6.6 alongside the .level/.optname/.optval/.optlen SQE union
- * members.  The enum can be backfilled here; the matching SQE union
- * members can NOT (struct fields aren't preprocessor-expandable) and
- * are handled call-site. */
-#ifndef SOCKET_URING_OP_SIOCINQ
-#define SOCKET_URING_OP_SIOCINQ		0
-#define SOCKET_URING_OP_SIOCOUTQ	1
-#define SOCKET_URING_OP_GETSOCKOPT	2
-#define SOCKET_URING_OP_SETSOCKOPT	3
-#define TRINITY_COMPAT_BACKFILLED_SOCKET_URING_OP
-#endif
-
-/* linux/blkdev.h — async io_uring discard cmd, added 6.12. */
-#ifndef BLOCK_URING_CMD_DISCARD
-#define BLOCK_URING_CMD_DISCARD		_IO(0x12, 0)
-#endif
 
 /* linux/futex.h — FUTEX2_* flag bits for sys_futex_wait/wake/waitv/requeue
  * and the futex_waitv.flags field.  These landed in 6.7 (FUTEX2_SIZE_*,

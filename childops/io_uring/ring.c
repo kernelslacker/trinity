@@ -18,6 +18,7 @@
 #include "syscall-gate.h"
 #include "errno-classify.h"
 
+#include "kernel/io_uring.h"
 #ifndef __NR_io_uring_setup
 #define __NR_io_uring_setup	425
 #endif
