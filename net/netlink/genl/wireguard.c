@@ -41,6 +41,7 @@
 #include "netlink-genl-families.h"
 #include "utils.h"
 
+#include "kernel/wireguard.h"
 static const struct genl_cmd_grammar wireguard_cmds[] = {
 	{ WG_CMD_GET_DEVICE, "WG_CMD_GET_DEVICE" },
 	{ WG_CMD_SET_DEVICE, "WG_CMD_SET_DEVICE" },
