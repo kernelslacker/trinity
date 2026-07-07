@@ -51,6 +51,7 @@
  * the project-wide trinity RNG rule.
  */
 
+#include <setjmp.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <sys/mman.h>
@@ -59,6 +60,7 @@
 #include "child.h"
 #include "rnd.h"
 #include "shm.h"
+#include "signals.h"
 #include "trinity.h"
 #include "vma-pressure.h"
 
@@ -91,20 +93,46 @@ static void pick_subrange(unsigned long region_bytes,
 /*
  * Touch one byte on a random page of the region.  volatile so the
  * compiler can't elide the store; goal is to keep ptes present so
- * the split / DONTNEED paths have real work.  No fault is fatal
- * here — every byte is in a writable anonymous mapping at call time
- * (the most recent mprotect on this page was either PROT_R|PROT_W
- * or the full-range recompose, both writable, OR was PROT_READ in
- * which case the store SIGSEGVs and child.c's signal handler
- * absorbs it).  Cheap.
+ * the split / DONTNEED paths have real work.  The touched page may
+ * sit in a sub-VMA whose most recent mprotect was PROT_READ, in
+ * which case the store faults with SIGSEGV/SEGV_ACCERR -- a
+ * sanitiser fault from our own bookkeeping, not a kernel bug.
+ *
+ * Wrap the store in sigsetjmp/siglongjmp so the fault degrades to
+ * a no-op instead of killing the child: child_fault_handler checks
+ * vma_split_storm_touch_active first and longjmp's back here when
+ * the store faults.  Flag is set ONLY across the single byte write
+ * and cleared immediately after on BOTH the normal and the fault-
+ * return path, so any unrelated SIGSEGV/SIGBUS the child takes
+ * outside this window still reaches the existing diagnostic +
+ * _exit path.
+ *
+ * Locals are marked volatile / hoisted inside the sigsetjmp==0 arm
+ * to silence -Wclobbered under gcc: values live from before the
+ * sigsetjmp() through the store and are otherwise flagged as
+ * potentially clobbered by the longjmp.
  */
 static void touch_random_page(void *base, unsigned long region_bytes)
 {
-	unsigned long nr_pages = region_bytes / page_size;
-	unsigned long pg = rnd_modulo_u32((uint32_t)nr_pages);
-	volatile char *p = (volatile char *)base + pg * page_size;
+	volatile unsigned long nr_pages = region_bytes / page_size;
 
-	*p = (char)(rnd_u32() & 0xff);
+	if (sigsetjmp(vma_split_storm_touch_recover, 1) == 0) {
+		unsigned long pg = rnd_modulo_u32((uint32_t)nr_pages);
+		volatile char *p = (volatile char *)base + pg * page_size;
+
+		vma_split_storm_touch_active = 1;
+		*p = (char)(rnd_u32() & 0xff);
+		vma_split_storm_touch_active = 0;
+	} else {
+		/*
+		 * child_fault_handler caught a real SIGSEGV/SIGBUS
+		 * inside the store and longjmp'd back.  Clear the flag
+		 * FIRST so any subsequent fault in this child takes the
+		 * normal diagnostic + _exit path rather than silently
+		 * recovering here.
+		 */
+		vma_split_storm_touch_active = 0;
+	}
 }
 
 bool vma_split_storm(struct childdata *child)

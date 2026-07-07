@@ -54,6 +54,21 @@ volatile sig_atomic_t asb_copy_active;
 sigjmp_buf cmp_field_recover;
 volatile sig_atomic_t cmp_field_read_active;
 
+/*
+ * Recovery point for vma_split_storm's touch_random_page() one-byte
+ * store.  See include/signals.h and childops/mm/vma-split-storm.c::
+ * touch_random_page() for the full contract.  Definition lives here
+ * so the storage for the jmp_buf is colocated with the handler that
+ * reads vma_split_storm_touch_active.
+ *
+ * Inherited COW-private into every forked child; never touched by the
+ * parent.  Plain file-scope storage rather than __thread because
+ * trinity children are single-threaded processes -- no two threads in
+ * the same address space race on the slot.
+ */
+sigjmp_buf vma_split_storm_touch_recover;
+volatile sig_atomic_t vma_split_storm_touch_active;
+
 #ifdef CONFIG_GUARD_SHARED
 /*
  * Recovery point for the kcov_enable_trace() trace_buf[0]=0 reset.
@@ -955,6 +970,25 @@ void child_fault_handler(int sig, siginfo_t *info, void *ctx)
 	if (cmp_field_read_active && info->si_code > 0 &&
 	    (sig == SIGSEGV || sig == SIGBUS)) {
 		siglongjmp(cmp_field_recover, 1);
+	}
+
+	/*
+	 * vma_split_storm touch_random_page() one-byte-store recovery.
+	 * Mirrors the asb_copy / cmp_field edges above: the store is a
+	 * pte-priming write to a random page of the op's private 8 MiB
+	 * region, and the page may sit in a sub-VMA whose most recent
+	 * mprotect was PROT_READ -- in which case the store faults with
+	 * SIGSEGV/SEGV_ACCERR (a sanitiser fault from the op's own
+	 * bookkeeping, not a kernel bug).  Gated on SIGSEGV or SIGBUS,
+	 * si_code > 0, and vma_split_storm_touch_active set ONLY across
+	 * the single one-byte store, so any unrelated SIGSEGV/SIGBUS the
+	 * child takes still falls through to the existing diagnostic +
+	 * _exit path.  Placed outside CONFIG_GUARD_SHARED so the fix
+	 * applies to all builds.
+	 */
+	if (vma_split_storm_touch_active && info->si_code > 0 &&
+	    (sig == SIGSEGV || sig == SIGBUS)) {
+		siglongjmp(vma_split_storm_touch_recover, 1);
 	}
 
 #ifdef CONFIG_GUARD_SHARED
