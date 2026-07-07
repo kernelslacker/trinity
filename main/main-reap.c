@@ -888,6 +888,8 @@ static void scream_stuck_child(struct childdata *child, int childno,
 	const char *opname;
 	char state;
 	int fd;
+	int open_errno = 0;
+	int read_errno = 0;
 
 	state = get_pid_state(childno);
 
@@ -898,9 +900,15 @@ static void scream_stuck_child(struct childdata *child, int childno,
 	fd = open(filename, O_RDONLY | O_CLOEXEC);
 	if (fd >= 0) {
 		stack_n = read(fd, stackbuf, sizeof(stackbuf) - 1);
-		close(fd);
-		if (stack_n < 0)
+		if (stack_n < 0) {
+			/* Latch read's errno before close(2), which can
+			 * clobber it on failure. */
+			read_errno = errno;
 			stack_n = 0;
+		}
+		close(fd);
+	} else {
+		open_errno = errno;
 	}
 	stackbuf[stack_n] = '\0';
 
@@ -932,9 +940,25 @@ static void scream_stuck_child(struct childdata *child, int childno,
 		       stackbuf,
 		       stackbuf[stack_n - 1] == '\n' ? "" : "\n");
 	} else {
+		/* Distinguish open-gate (EPERM: ptrace_may_access on a
+		 * non-dumpable child; EACCES: CAP_SYS_ADMIN missing;
+		 * ENOENT: pid exited) from read-gate from a successful
+		 * empty unwind (no errno captured). */
+		char errtag[48] = "";
+
+		if (open_errno) {
+			const char *n = strerrorname_np(open_errno);
+			snprintf(errtag, sizeof(errtag), ": open=%s",
+				 n ? n : "?");
+		} else if (read_errno) {
+			const char *n = strerrorname_np(read_errno);
+			snprintf(errtag, sizeof(errtag), ": read=%s",
+				 n ? n : "?");
+		}
 		output(0,
-		       "STUCK CHILD: pid=%d childno=%d op=%s wedged %lds state=%c wchan=%s (kernel stack unavailable)\n",
-		       pid, childno, opname, (long)wedge_seconds, state, wchan);
+		       "STUCK CHILD: pid=%d childno=%d op=%s wedged %lds state=%c wchan=%s (kernel stack unavailable%s)\n",
+		       pid, childno, opname, (long)wedge_seconds, state, wchan,
+		       errtag);
 	}
 }
 
