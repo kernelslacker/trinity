@@ -93,7 +93,7 @@ static const uint32_t cork_splice_mtus[] = { 1280, 1500 };
 /* Latched per-child: userns_run_in_ns() reported -EPERM, so the
  * grandchild's CLONE_NEWUSER was refused by a hardened policy
  * (user.max_user_namespaces=0 or kernel.unprivileged_userns_clone=0).
- * Without a private user+net namespace we cannot set lo MTU=1280
+ * Without a private user+net namespace we cannot lower the loopback MTU
  * (needs CAP_NET_ADMIN) and the stress path cannot run, so the op stays
  * disabled for the rest of this child's lifetime.  Transient helper
  * failures (-EAGAIN) do NOT set this -- they may not recur. */
