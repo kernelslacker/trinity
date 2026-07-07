@@ -38,6 +38,7 @@
 #include "trinity.h"
 #include "rnd.h"
 
+#include "kernel/netlink.h"
 /* Forward declaration — called via gen_msg hook from net/proto/netlink.c */
 void netlink_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len);
 

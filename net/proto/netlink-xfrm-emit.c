@@ -18,6 +18,7 @@
 #include "random.h"
 #include "utils.h"
 
+#include "kernel/netlink.h"
 /*
  * Build XFRM_MSG_NEWSA.  Picks family / proto / mode / SPI / reqid,
  * builds a coherent attribute set (AEAD vs paired CRYPT+AUTH_TRUNC,

@@ -15,6 +15,7 @@
 
 #if __has_include(<linux/xfrm.h>)
 #include <linux/xfrm.h>
+#include "kernel/netlink.h"
 #endif
 
 /*

@@ -32,6 +32,7 @@
 #include "shm.h"
 #include "utils.h"	// RAND_ARRAY
 
+#include "kernel/netlink.h"
 static const unsigned int socket_opts[] = {
 	SO_DEBUG, SO_REUSEADDR, SO_TYPE, SO_ERROR,
 	SO_DONTROUTE, SO_BROADCAST, SO_SNDBUF, SO_RCVBUF,

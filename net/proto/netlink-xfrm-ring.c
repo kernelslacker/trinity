@@ -12,6 +12,7 @@
 #include "proto-netlink-xfrm-internal.h"
 #include "random.h"
 
+#include "kernel/netlink.h"
 static struct xfrm_sa_track sa_ring[NR_SA_RING_SLOTS];
 static unsigned int sa_ring_next;	/* next-write cursor */
 
