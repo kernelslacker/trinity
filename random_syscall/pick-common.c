@@ -290,12 +290,10 @@ bool expensive_accept(unsigned int nr, bool do32)
 	 * kcov_syscall_cold_skip_pct uses for the saturation cap).  The
 	 * _prior arrays are frozen at warm-start (see include/kcov.h),
 	 * so a plain read is sufficient. */
-	edges = __atomic_load_n(&kcov_shm->per_syscall_edges[nr],
-				__ATOMIC_RELAXED);
-	calls = __atomic_load_n(&kcov_shm->per_syscall_calls[nr],
-				__ATOMIC_RELAXED);
-	edges_total = edges + kcov_shm->per_syscall_edges_prior[nr];
-	calls_total = calls + kcov_shm->per_syscall_calls_prior[nr];
+	edges = per_syscall_edges_total(nr);
+	calls = per_syscall_calls_total(nr);
+	edges_total = edges + per_syscall_edges_prior_total(nr);
+	calls_total = calls + per_syscall_calls_prior_total(nr);
 
 	/* Cold-warmup and barren both pin to the floor.  The warmup
 	 * branch also guarantees calls_total > 0 by the time the divide

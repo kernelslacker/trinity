@@ -494,7 +494,7 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 	}
 
 	if (nr < MAX_NR_SYSCALL) {
-		__atomic_fetch_add(&kcov_shm->per_syscall_calls[nr],
+		__atomic_fetch_add(&kcov_shm->per_syscall_calls[nr][do32 ? 1 : 0],
 			1, __ATOMIC_RELAXED);
 		/* per-syscall split of
 		 * kcov_collect() activity by collection mode.  See the field
@@ -534,7 +534,7 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 			 * see the comment on the field in include/kcov.h).  The
 			 * real bucket-edge count is surfaced via the
 			 * new_edge_count out-param below. */
-			__atomic_fetch_add(&kcov_shm->per_syscall_edges[nr],
+			__atomic_fetch_add(&kcov_shm->per_syscall_edges[nr][do32 ? 1 : 0],
 				1, __ATOMIC_RELAXED);
 			__atomic_store_n(&kcov_shm->last_edge_at[nr],
 				call_nr, __ATOMIC_RELAXED);
@@ -891,12 +891,10 @@ unsigned int kcov_syscall_cold_skip_pct(unsigned int nr)
 	 * path otherwise has to re-accumulate from scratch every run.
 	 * The _prior arrays are frozen at warm-start (see kcov.h) so a
 	 * plain read is sufficient -- no atomic needed. */
-	edges = __atomic_load_n(&kcov_shm->per_syscall_edges[nr],
-		__ATOMIC_RELAXED);
-	calls = __atomic_load_n(&kcov_shm->per_syscall_calls[nr],
-		__ATOMIC_RELAXED);
-	edges_total = edges + kcov_shm->per_syscall_edges_prior[nr];
-	calls_total = calls + kcov_shm->per_syscall_calls_prior[nr];
+	edges = per_syscall_edges_total(nr);
+	calls = per_syscall_calls_total(nr);
+	edges_total = edges + per_syscall_edges_prior_total(nr);
+	calls_total = calls + per_syscall_calls_prior_total(nr);
 
 	/* Saturation cap: confirmed dead-weight slot, short-circuit the
 	 * graduated path below.  See KCOV_SAT_CAP_CALLS / RATIO comment

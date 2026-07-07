@@ -657,8 +657,7 @@ static unsigned long frontier_cold_weight(unsigned int nr,
 	if (kcov_shm == NULL || nr >= MAX_NR_SYSCALL)
 		return FRONTIER_COLD_SCALE;
 
-	calls = __atomic_load_n(&kcov_shm->per_syscall_calls[nr],
-				__ATOMIC_RELAXED);
+	calls = per_syscall_calls_total(nr);
 
 	/* Never invoked: MAX bias, genuinely under-explored.  Bypass the
 	 * shadow A/B math entirely -- both formulas agree on
@@ -668,8 +667,7 @@ static unsigned long frontier_cold_weight(unsigned int nr,
 	if (calls == 0)
 		return FRONTIER_COLD_SCALE;
 
-	edges = __atomic_load_n(&kcov_shm->per_syscall_edges[nr],
-				__ATOMIC_RELAXED);
+	edges = per_syscall_edges_total(nr);
 
 	/* OLD weight (call-count only): the live-path productivity signal
 	 * this function has always returned.  Logic preserved verbatim from
@@ -869,7 +867,7 @@ static unsigned long frontier_cold_weight(unsigned int nr,
 		unsigned long band_weight = picked_weight;
 		bool stale = false;
 
-		reach = edges + kcov_shm->per_syscall_edges_prior[nr];
+		reach = edges + per_syscall_edges_prior_total(nr);
 
 		total = __atomic_load_n(&kcov_shm->total_calls,
 					__ATOMIC_RELAXED);

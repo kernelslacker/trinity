@@ -1336,8 +1336,12 @@ struct kcov_shared {
 	 * field name predates the call-count vs edge-count distinction; kept
 	 * for ABI compatibility with the cold-skip heuristic and the
 	 * top-syscalls dump in stats.c. */
-	unsigned long per_syscall_edges[MAX_NR_SYSCALL];
-	unsigned long per_syscall_calls[MAX_NR_SYSCALL];
+	/* [nr][do32 ? 1 : 0] -- 32-bit and 64-bit paths bump their own
+	 * slot so IA32 compat entries no longer merge with the 64-bit
+	 * total; readers that want the pre-split per-nr value sum both
+	 * dims via per_syscall_edges_total() / _calls_total() below. */
+	unsigned long per_syscall_edges[MAX_NR_SYSCALL][2];
+	unsigned long per_syscall_calls[MAX_NR_SYSCALL][2];
 	/* EXTRA_FORK dispatches (execve, execveat, vfork) run their real
 	 * syscall in a throwaway grandchild that do_extrafork() spawns
 	 * OUTSIDE the parent worker's kcov_enable / syscall / kcov_disable
@@ -1355,15 +1359,15 @@ struct kcov_shared {
 	/* Snapshot of per_syscall_edges at the previous stats interval.
 	 * Used to compute per-interval growth rate of the call-count signal
 	 * above. */
-	unsigned long per_syscall_edges_previous[MAX_NR_SYSCALL];
+	unsigned long per_syscall_edges_previous[MAX_NR_SYSCALL][2];
 	/* Warm-loaded priors from the previous session's bitmap save.
 	 * Never bumped during this run -- frozen at warm-start.  Empty
 	 * (all-zero) on cold-start or when the priors blob in the bitmap
 	 * file failed its CRC check.  Consumers treat these as soft
 	 * priors -- current-run evidence in per_syscall_edges[] /
 	 * per_syscall_calls[] overrides them as soon as it accumulates. */
-	unsigned long per_syscall_edges_prior[MAX_NR_SYSCALL];
-	unsigned long per_syscall_calls_prior[MAX_NR_SYSCALL];
+	unsigned long per_syscall_edges_prior[MAX_NR_SYSCALL][2];
+	unsigned long per_syscall_calls_prior[MAX_NR_SYSCALL][2];
 	/* Per-syscall warm-known hit counter.  Bumped from kcov_collect()
 	 * when the kernel emitted PCs into the trace buffer for this
 	 * call (count > 0) but no new bucket bit flipped (found_new ==
@@ -2907,6 +2911,42 @@ struct kcov_shared {
 };
 
 extern struct kcov_shared *kcov_shm;
+
+/* Combined per-nr accessors for the [nr][do32?1:0]-split productivity
+ * arrays.  Readers that want the pre-split scalar sum both arch dims
+ * with RELAXED atomics -- a torn pair across the two loads is a
+ * one-bump skew, well inside the slack the picker accept/retry loop
+ * already tolerates.  Callers gate on kcov_shm != NULL and nr <
+ * MAX_NR_SYSCALL themselves; these helpers do not re-check. */
+static inline unsigned long per_syscall_edges_total(unsigned int nr)
+{
+	return __atomic_load_n(&kcov_shm->per_syscall_edges[nr][0],
+			       __ATOMIC_RELAXED) +
+	       __atomic_load_n(&kcov_shm->per_syscall_edges[nr][1],
+			       __ATOMIC_RELAXED);
+}
+static inline unsigned long per_syscall_calls_total(unsigned int nr)
+{
+	return __atomic_load_n(&kcov_shm->per_syscall_calls[nr][0],
+			       __ATOMIC_RELAXED) +
+	       __atomic_load_n(&kcov_shm->per_syscall_calls[nr][1],
+			       __ATOMIC_RELAXED);
+}
+static inline unsigned long per_syscall_edges_previous_total(unsigned int nr)
+{
+	return kcov_shm->per_syscall_edges_previous[nr][0] +
+	       kcov_shm->per_syscall_edges_previous[nr][1];
+}
+static inline unsigned long per_syscall_edges_prior_total(unsigned int nr)
+{
+	return kcov_shm->per_syscall_edges_prior[nr][0] +
+	       kcov_shm->per_syscall_edges_prior[nr][1];
+}
+static inline unsigned long per_syscall_calls_prior_total(unsigned int nr)
+{
+	return kcov_shm->per_syscall_calls_prior[nr][0] +
+	       kcov_shm->per_syscall_calls_prior[nr][1];
+}
 
 /* Called once from init_shm() to allocate shared coverage state. */
 void kcov_init_global(void);

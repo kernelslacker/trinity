@@ -413,8 +413,7 @@ bool frontier_errno_plateau_should_decay(unsigned int nr, bool do32)
 	if (cred_class_for_nr(nr, do32) != CRED_CLASS_NR)
 		return false;
 
-	calls = __atomic_load_n(&kcov_shm->per_syscall_calls[nr],
-				__ATOMIC_RELAXED);
+	calls = per_syscall_calls_total(nr);
 	if (calls < FRONTIER_ERRNO_PLATEAU_MIN_CALLS)
 		return false;
 
@@ -424,8 +423,7 @@ bool frontier_errno_plateau_should_decay(unsigned int nr, bool do32)
 	 * productive in PC-coverage terms at least once across its lifetime,
 	 * so the decay must release.  Counter is monotonic non-decreasing,
 	 * so once edges > 0 the predicate is permanently false for nr. */
-	edges = __atomic_load_n(&kcov_shm->per_syscall_edges[nr],
-				__ATOMIC_RELAXED);
+	edges = per_syscall_edges_total(nr);
 	if (edges > 0)
 		return false;
 
@@ -923,9 +921,7 @@ void frontier_satcool_spare(unsigned int syscallnr, bool do32)
 	if (syscallnr >= MAX_NR_SYSCALL)
 		return;
 
-	calls_total = __atomic_load_n(
-		&kcov_shm->per_syscall_calls[syscallnr],
-		__ATOMIC_RELAXED);
+	calls_total = per_syscall_calls_total(syscallnr);
 	if (calls_total < FRONTIER_SATCOOL_CMIN)
 		return;
 
@@ -1046,9 +1042,7 @@ void frontier_live_cool_spare(unsigned int syscallnr, bool do32)
 	 * keeping a syscall with only a handful of picks out -- the
 	 * spare lanes (NOT the magnitude) protect the producers.
 	 */
-	calls_total = __atomic_load_n(
-		&kcov_shm->per_syscall_calls[syscallnr],
-		__ATOMIC_RELAXED);
+	calls_total = per_syscall_calls_total(syscallnr);
 	if (calls_total < FRONTIER_LIVE_COOL_CMIN)
 		return;
 

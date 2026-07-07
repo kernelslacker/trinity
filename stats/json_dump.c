@@ -99,9 +99,7 @@ static bool json_emit_syscall(const struct syscalltable *table, unsigned int i)
 		extrafork_calls = __atomic_load_n(
 			&kcov_shm->per_syscall_extrafork_calls[nr],
 			__ATOMIC_RELAXED);
-		kcov_calls = __atomic_load_n(
-			&kcov_shm->per_syscall_calls[nr],
-			__ATOMIC_RELAXED);
+		kcov_calls = per_syscall_calls_total(nr);
 	}
 
 	putchar('{');
@@ -315,8 +313,8 @@ static void json_emit_kcov_topn(const struct syscalltable *table,
 	memset(delta_edges, 0, sizeof(delta_edges));
 
 	for (i = 0; i < nr_syscalls_to_scan; i++) {
-		unsigned long edges = __atomic_load_n(&kcov_shm->per_syscall_edges[i], __ATOMIC_RELAXED);
-		unsigned long prev  = kcov_shm->per_syscall_edges_previous[i];
+		unsigned long edges = per_syscall_edges_total(i);
+		unsigned long prev  = per_syscall_edges_previous_total(i);
 		unsigned long delta = (edges > prev) ? edges - prev : 0;
 
 		if (edges > 0)
@@ -428,7 +426,7 @@ static void json_emit_kcov_cold_syscalls(const struct syscalltable *table,
 
 	fputs(",\"cold_syscalls\":[", stdout);
 	for (i = 0; i < nr_syscalls_to_scan; i++) {
-		unsigned long slot_edges = __atomic_load_n(&kcov_shm->per_syscall_edges[i], __ATOMIC_RELAXED);
+		unsigned long slot_edges = per_syscall_edges_total(i);
 		struct syscallentry *entry;
 
 		if (slot_edges == 0)
@@ -453,9 +451,14 @@ static void json_emit_kcov_snapshot_previous(unsigned int nr_syscalls_to_scan)
 {
 	unsigned int i;
 
-	for (i = 0; i < nr_syscalls_to_scan; i++)
-		kcov_shm->per_syscall_edges_previous[i] =
-			__atomic_load_n(&kcov_shm->per_syscall_edges[i], __ATOMIC_RELAXED);
+	for (i = 0; i < nr_syscalls_to_scan; i++) {
+		kcov_shm->per_syscall_edges_previous[i][0] =
+			__atomic_load_n(&kcov_shm->per_syscall_edges[i][0],
+					__ATOMIC_RELAXED);
+		kcov_shm->per_syscall_edges_previous[i][1] =
+			__atomic_load_n(&kcov_shm->per_syscall_edges[i][1],
+					__ATOMIC_RELAXED);
+	}
 }
 
 static void json_emit_kcov_section(void)

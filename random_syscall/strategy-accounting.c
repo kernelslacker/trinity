@@ -773,9 +773,7 @@ void account_warm_reserve(struct childdata *child,
 	 * pcs * DEN >= mean_unrolled (pcs >= mean * MULT) folded into
 	 * an integer cross-product so no division per call. */
 	if (pcres->local_distinct_pcs > 0) {
-		unsigned long calls = __atomic_load_n(
-			&kcov_shm->per_syscall_calls[rec->nr],
-			__ATOMIC_RELAXED);
+		unsigned long calls = per_syscall_calls_total(rec->nr);
 		if (calls >= DEEP_WARM_PCS_MIN_CALLS) {
 			unsigned long distinct_sum =
 				__atomic_load_n(&kcov_shm->per_syscall_diag[rec->nr][0].distinct_pcs,
