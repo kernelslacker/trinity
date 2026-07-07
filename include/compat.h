@@ -38,10 +38,6 @@
 #define PACKET_FANOUT_FLAG_DEFRAG	0x8000
 #endif
 
-/* net/udplite.h */
-#ifndef UDPLITE_SEND_CSCOV
-#define UDPLITE_SEND_CSCOV   10 /* sender partial coverage (as sent)      */
-#endif
 #ifndef UDPLITE_RECV_CSCOV
 #define UDPLITE_RECV_CSCOV   11 /* receiver partial coverage (threshold ) */
 #endif

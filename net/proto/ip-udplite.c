@@ -5,6 +5,7 @@
 #include "compat.h"
 #include "rnd.h"
 
+#include "kernel/udplite.h"
 static const unsigned int udplite_opts[] = {
 	UDP_CORK, UDP_ENCAP, UDPLITE_SEND_CSCOV, UDPLITE_RECV_CSCOV,
 	UDP_NO_CHECK6_TX, UDP_NO_CHECK6_RX, UDP_SEGMENT, UDP_GRO,
