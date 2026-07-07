@@ -45,6 +45,7 @@ struct syscallentry syscall_eventfd = {
 #include "sanitise.h"
 #include "compat.h"
 
+#include "kernel/eventfd.h"
 /*
  * eventfd2_flags[] stays wired to ARG_LIST so the generator has a
  * default, but sanitise_eventfd2() overrides rec->a2 below with an

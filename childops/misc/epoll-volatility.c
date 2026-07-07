@@ -71,6 +71,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/eventfd.h"
 /* Number of epoll instances per invocation.  Small on purpose: enough
  * that a single target_fd ends up on multiple per-fd epitem lists, so
  * cross-epfd waitqueue racing is exercised, but well under any sane

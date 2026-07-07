@@ -12,6 +12,7 @@
 #include "utils.h"
 #include "compat.h"
 
+#include "kernel/eventfd.h"
 /* include/linux/auto_dev-ioctl.h */
 /*
  * Copyright 2008 Red Hat, Inc. All rights reserved.
