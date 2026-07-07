@@ -53,13 +53,13 @@
 #if __has_include(<linux/handshake.h>)
 
 #include <netinet/in.h>
-#include <linux/handshake.h>
 #include <linux/netlink.h>
 
 #include "childops-genl.h"
 #include "jitter.h"
 #include "random.h"
 
+#include "kernel/handshake.h"
 #include "kernel/socket.h"
 /* Latched per-process: genl_open("handshake", ...) returned -ENOENT,
  * so the kernel doesn't expose the handshake family.  Once latched,
