@@ -144,6 +144,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/l2tp.h"
 /* FIELD / FIELDX initialiser macros live in struct_catalog-internal.h
  * so the per-family leaf TUs under struct_catalog/ can reuse them. */
 

@@ -68,6 +68,7 @@
 #include "netlink-genl-families.h"
 #include "utils.h"
 
+#include "kernel/l2tp.h"
 static const struct genl_cmd_grammar l2tp_cmds[] = {
 	{ L2TP_CMD_NOOP,		"L2TP_CMD_NOOP" },
 	{ L2TP_CMD_TUNNEL_CREATE,	"L2TP_CMD_TUNNEL_CREATE" },
