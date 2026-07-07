@@ -109,7 +109,7 @@
  * of these enum tags the numeric values match the upstream UAPI.  Inline
  * shims rather than a topic-specific compat-iftunnel.h: ~6 LOC total
  * across 2 consumers (this file + the test build), well under the
- * ~30 LOC / 3 consumer threshold for a dedicated compat header.
+ * ~30 LOC / 3 consumer threshold for a dedicated kernel fallback header.
  */
 #ifndef IFLA_NET_NS_FD
 #define IFLA_NET_NS_FD			28

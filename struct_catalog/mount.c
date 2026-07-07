@@ -100,7 +100,7 @@ const struct struct_field mnt_id_req_fields[MNT_ID_REQ_FIELDS_N] = {
  * an FT_RAW splat almost never reaches the namespace lookup paths;
  * mask the field to the eight defined CLONE_NEW* bits so CMP-learned
  * constants attribute against a real selector.  CLONE_NEWTIME's
- * fallback definition lives in compat.h for older kernel headers.
+ * fallback definition lives in include/kernel/mount.h for older kernel headers.
  */
 #ifndef NS_ID_REQ_SIZE_VER0
 struct ns_id_req {

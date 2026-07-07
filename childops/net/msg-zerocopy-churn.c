@@ -40,7 +40,7 @@
  *
  * Header gate: SO_EE_ORIGIN_ZEROCOPY lives in <linux/errqueue.h>; the
  * stable UAPI value (5) is the #define fallback.  MSG_ZEROCOPY /
- * SO_ZEROCOPY come from compat.h.
+ * SO_ZEROCOPY come from include/kernel/socket.h.
  */
 
 #include <errno.h>

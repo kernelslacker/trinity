@@ -4,7 +4,7 @@
  * Wrapper around <linux/netfilter/nf_tables.h> that ships #ifndef-guarded
  * fallbacks for NFT_MSG_* / NFTA_* symbols added after our installed uapi
  * header.  Included only by its real consumers -- never pulled into
- * compat.h, so editing it doesn't trigger a near-full-tree rebuild.
+ * kernel headers, so editing them doesn't trigger a near-full-tree rebuild.
  */
 #include <linux/netfilter/nf_tables.h>
 

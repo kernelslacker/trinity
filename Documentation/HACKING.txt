@@ -2,10 +2,10 @@
   Trinity is developed using the latest glibc/kernel, which means from time to time
   changes are introduced which may make it fail to compile on older distributions
   (especially enterprise ones).  The preferred way to fix this is to add the missing
-  declarations to compat.h
+  declarations to kernel fallback headers
   If for some reason you can't detect presence of a definition in a header file
   (or need to test prescence of a header file), add it to configure.sh. This should
-  be a last resort, in most cases an #ifndef addition to compat.h will be enough.
+  be a last resort, in most cases an #ifndef addition to kernel fallback headers will be enough.
 
   This means of course that trinity will be trying to run new syscalls on older kernels
   that don't implement them, but it will only call them once. After the first -ENOSYS,

@@ -844,7 +844,7 @@ extern const struct struct_field epoll_event_fields[EPOLL_EVENT_FIELDS_N];
  * struct xattr_args is gated on USE_XATTR_ARGS to track the build
  * host's uapi vintage (mirroring the spine reference and the
  * syscalls/{set,get}xattrat.c guards); struct file_attr is always
- * available via the compat.h fallback so its extern stays unguarded.
+ * available via kernel fallback headers so its extern stays unguarded.
  * Each _N constant gives the extern decl a complete array type so
  * the spine's ARRAY_SIZE() at the reference site keeps folding to
  * the same constant it did before the carve.
