@@ -38,15 +38,6 @@
 #define PACKET_FANOUT_FLAG_DEFRAG	0x8000
 #endif
 
-/* linux/dccp.h */
-#ifndef DCCP_SOCKOPT_QPOLICY_ID
-#define DCCP_SOCKOPT_QPOLICY_ID	16
-#endif
-
-#ifndef DCCP_SOCKOPT_QPOLICY_TXQLEN
-#define DCCP_SOCKOPT_QPOLICY_TXQLEN 17
-#endif
-
 /* net/udplite.h */
 #ifndef UDPLITE_SEND_CSCOV
 #define UDPLITE_SEND_CSCOV   10 /* sender partial coverage (as sent)      */
