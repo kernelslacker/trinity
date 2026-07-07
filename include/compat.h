@@ -46,11 +46,6 @@
 #define IPV6_HDRINCL		36
 #endif
 
-/* asm/resource.h */
-#ifndef RLIMIT_RTTIME
-#define RLIMIT_RTTIME		15
-#endif
-
 /* sctp/user.h */
 #ifndef SCTP_RTOINFO
 #define SCTP_RTOINFO    0

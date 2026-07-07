@@ -15,6 +15,7 @@
 #include "rnd.h"
 #include "utils.h"
 
+#include "kernel/resource.h"
 #ifndef RLIM_INFINITY
 #define RLIM_INFINITY (~0ULL)
 #endif
