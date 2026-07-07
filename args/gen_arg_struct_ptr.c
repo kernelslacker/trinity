@@ -12,6 +12,7 @@
 #include "syscall.h"
 #include "trinity.h"			// ARRAY_SIZE
 
+#include "kernel/sched.h"
 /*
  * Size used when the slot is declared ARG_STRUCT_PTR_IN but the struct
  * catalog has no entry for (syscall, arg).  Big enough to cover the

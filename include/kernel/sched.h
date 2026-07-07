@@ -36,3 +36,11 @@
 #define CLONE_PIDFD_AUTOKILL	(1ULL << 36)
 #define CLONE_EMPTY_MNTNS	(1ULL << 37)
 #endif
+
+#ifndef CLONE_NEWCGROUP
+#define CLONE_NEWCGROUP		0x02000000
+#endif
+#ifndef CLONE_NEWTIME
+#define CLONE_NEWTIME		0x00000080
+#endif
+

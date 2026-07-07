@@ -52,6 +52,7 @@
 #include "uid.h"
 #include "utils.h"	// zmalloc
 
+#include "kernel/sched.h"
 /*
  * Hard per-child virtual-memory cap.  A single runaway mmap/mremap (or the
  * cumulative drift of N children each growing to multi-GiB) can push the

@@ -9,6 +9,7 @@
  */
 #include <linux/sched/types.h>
 
+#include "kernel/sched.h"
 #ifndef SCHED_ATTR_SIZE_VER0
 #define SCHED_ATTR_SIZE_VER0 48
 #endif

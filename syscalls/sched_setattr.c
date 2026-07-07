@@ -12,6 +12,7 @@
 #include "utils.h"
 #include "compat.h"
 
+#include "kernel/sched.h"
 /*
  * Pre-ksize ABI floors for the csfu UNDERSIZE bucket.  The kernel
  * accepts a sched_setattr call whose sa->size matches any prior ABI

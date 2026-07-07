@@ -11,6 +11,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/sched.h"
 /*
  * Snapshot of the two sched_getparam input args read by the post oracle,
  * captured at sanitise time and consumed by the post handler.  Lives in

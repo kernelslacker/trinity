@@ -25,6 +25,7 @@
 #include "struct_catalog-internal.h"
 #include "arch.h"
 
+#include "kernel/sched.h"
 /* ------------------------------------------------------------------ */
 /* struct mount_attr (mount_setattr, open_tree_attr)                   */
 /* ------------------------------------------------------------------ */

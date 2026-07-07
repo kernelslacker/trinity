@@ -21,6 +21,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/sched.h"
 static const unsigned long ns_types[] = {
 	CLONE_NEWNS,
 	CLONE_NEWUTS,

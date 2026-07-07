@@ -8,6 +8,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/sched.h"
 #ifndef SCHED_EXT
 #define SCHED_EXT 7
 #endif

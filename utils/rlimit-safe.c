@@ -16,6 +16,7 @@
 #include "utils.h"
 
 #include "kernel/resource.h"
+#include "kernel/sched.h"
 #ifndef RLIM_INFINITY
 #define RLIM_INFINITY (~0ULL)
 #endif

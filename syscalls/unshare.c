@@ -7,6 +7,7 @@
 #include "shm.h"
 #include "stats_ring.h"
 
+#include "kernel/sched.h"
 #ifndef UNSHARE_EMPTY_MNTNS
 #define UNSHARE_EMPTY_MNTNS	0x00100000
 #endif

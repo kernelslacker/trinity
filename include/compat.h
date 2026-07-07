@@ -11,6 +11,7 @@
 
 
 #include "kernel/socket.h"
+#include "kernel/sched.h"
 /* linux/if_packet.h */
 #ifndef PACKET_VNET_HDR
 #define PACKET_VNET_HDR		15
@@ -95,28 +96,8 @@
 #define ETH_P_AF_IUCV	0xFBFB
 #endif
 
-/* sched.h */
-#ifndef SCHED_DEADLINE
-#define SCHED_DEADLINE 6
-#endif
 #ifndef SCHED_IDLE
 #define SCHED_IDLE 5
-#endif
-
-/* linux/sched.h — CLONE_NEWCGROUP selects the cgroup namespace for
- * clone(2)/clone3(2)/unshare(2)/setns(2)/listns(2).  Older kernel-headers
- * packages predate the constant; the UAPI value (0x02000000) is fixed
- * since the cgroup namespace landed in 4.6. */
-#ifndef CLONE_NEWCGROUP
-#define CLONE_NEWCGROUP 0x02000000
-#endif
-
-/* linux/sched.h — CLONE_NEWTIME selects the time namespace for
- * clone(2)/clone3(2)/unshare(2)/setns(2)/listns(2).  Older kernel-headers
- * packages predate the constant; the UAPI value (0x00000080) has been
- * fixed since the time namespace landed in 5.6. */
-#ifndef CLONE_NEWTIME
-#define CLONE_NEWTIME 0x00000080
 #endif
 
 /* signal.h */

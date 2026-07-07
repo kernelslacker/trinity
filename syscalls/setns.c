@@ -8,6 +8,7 @@
 #include "random.h"
 #include "sanitise.h"
 
+#include "kernel/sched.h"
 static const char *ns_entries[] = {
 	"/proc/self/ns/mnt",
 	"/proc/self/ns/pid",
