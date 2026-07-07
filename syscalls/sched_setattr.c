@@ -165,6 +165,12 @@ static void sanitise_sched_setattr(struct syscallrecord *rec)
 			sa->sched_flags |= SCHED_FLAG_RESET_ON_FORK;
 		if (sa->sched_policy == SCHED_DEADLINE && RAND_BOOL())
 			sa->sched_flags |= SCHED_FLAG_RECLAIM;
+		if (sa->sched_policy == SCHED_DEADLINE && ONE_IN(4))
+			sa->sched_flags |= SCHED_FLAG_DL_OVERRUN;
+		if (ONE_IN(8))
+			sa->sched_flags |= SCHED_FLAG_KEEP_POLICY;
+		if (ONE_IN(8))
+			sa->sched_flags |= SCHED_FLAG_KEEP_PARAMS;
 		if (buf.usize >= SCHED_ATTR_SIZE_VER1 && ONE_IN(8))
 			sa->sched_flags |= SCHED_FLAG_UTIL_CLAMP_MIN |
 					   SCHED_FLAG_UTIL_CLAMP_MAX;
