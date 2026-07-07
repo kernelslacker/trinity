@@ -42,11 +42,6 @@
 #define UDPLITE_RECV_CSCOV   11 /* receiver partial coverage (threshold ) */
 #endif
 
-/* netfilter/ipset/ipset.h */
-#ifndef SO_IP_SET
-#define SO_IP_SET 83
-#endif
-
 #ifndef IPV6_HDRINCL
 #define IPV6_HDRINCL		36
 #endif
