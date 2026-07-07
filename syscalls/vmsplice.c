@@ -11,6 +11,7 @@
 #include "compat.h"
 #include "utils.h"
 
+#include "kernel/splice.h"
 static unsigned long vmsplice_flags[] = {
 	SPLICE_F_MOVE, SPLICE_F_NONBLOCK, SPLICE_F_MORE, SPLICE_F_GIFT,
 };

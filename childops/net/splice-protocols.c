@@ -87,6 +87,7 @@
 #include "trinity.h"
 
 #include "kernel/fcntl.h"
+#include "kernel/splice.h"
 #ifndef UDP_ENCAP
 # define UDP_ENCAP			100
 #endif
