@@ -24,6 +24,7 @@
 #include "compat.h"
 #include "utils.h"
 
+#include "kernel/prctl.h"
 /* ARM pointer authentication (added in 5.8) */
 #ifndef PR_PAC_SET_ENABLED_KEYS
 #define PR_PAC_SET_ENABLED_KEYS		60
