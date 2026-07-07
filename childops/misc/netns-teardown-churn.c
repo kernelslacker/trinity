@@ -84,6 +84,7 @@
 #include "random.h"
 
 #include "kernel/fcntl.h"
+#include "kernel/netlink.h"
 /* Per-process latched gate: userns_run_in_ns() returned -EPERM,
  * meaning the grandchild's unshare(CLONE_NEWUSER) was refused by a
  * hardened policy (user.max_user_namespaces=0 or

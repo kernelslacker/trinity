@@ -59,6 +59,7 @@
 #include "userns-bootstrap.h"
 #include "utils.h"
 
+#include "kernel/netlink.h"
 /*
  * UAPI fallbacks.  linux/xfrm.h and linux/udp.h are present on every
  * sysroot trinity targets, but the __has_include guard plus these

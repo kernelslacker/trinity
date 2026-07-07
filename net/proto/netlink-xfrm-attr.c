@@ -13,6 +13,7 @@
 #include "proto-netlink-xfrm-internal.h"
 #include "random.h"
 
+#include "kernel/netlink.h"
 /*
  * Algorithm rotation tables.  Names include deliberately-mistyped
  * entries so the kernel-side request_module / crypto_alloc_*() failure

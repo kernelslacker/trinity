@@ -37,6 +37,7 @@
 #include "msg-internal.h"
 #include "utils.h"
 
+#include "kernel/netlink.h"
 /* rtnetlink message types (NEW/DEL/GET variants picked at random) */
 const unsigned short rtnl_types[] = {
 	RTM_NEWLINK, RTM_DELLINK, RTM_GETLINK,

@@ -57,6 +57,7 @@
 
 #include "proto-netlink-xfrm-internal.h"
 
+#include "kernel/netlink.h"
 /* Latched-once flag: NETLINK_XFRM open or first NEWSA returns -EPERM
  * / -ENOPROTOOPT / -ENOSYS / -EAFNOSUPPORT / -EPROTONOSUPPORT.  Any
  * of those signal "this kernel build / process won't ever drive
