@@ -607,6 +607,95 @@ struct cmp_hyp_pool {
 };
 
 /*
+ * Fleet-wide shared cmp_ip tier.
+ *
+ * Cross-syscall fallback bank: keyed on canonical (KASLR-stripped)
+ * cmp_ip ALONE, unlike the per-nr pools above which are keyed on
+ * (nr, cmp_ip, value, size).  A single kernel comparison site that
+ * fires under many syscalls (do_syscall_64 / seccomp gates, iov walk,
+ * copy_from_user length checks, kcov entry gate, ...) produces the
+ * SAME canonical cmp_ip regardless of which syscall drove the child;
+ * the shared tier collapses those cross-nr duplicates into ONE
+ * value-set entry so a cold per-nr pool can eventually warm-start
+ * from constants ANY sibling syscall already learned at the same
+ * check.  Validated by the overlap-mine: ~48% of cmp_ips are shared
+ * across nrs and ~87% of learned entries are cross-nr duplicates.
+ *
+ * The per-nr pools stay AUTHORITATIVE; the shared tier is fallback /
+ * warm-start ONLY -- it never displaces a per-nr entry, never gates
+ * a per-nr pick, and never replaces a value the per-nr picker would
+ * have served on its own.  Storage is a fixed-size open-addressed
+ * hash table (CMP_SHARED_TIER_IPS buckets, power-of-two so the mask
+ * beats a modulo) with bounded linear probe on collision.  Probe
+ * exhaustion silently drops the record: the tier is advisory,
+ * dropping is the same shape as the per-nr LRU eviction.
+ *
+ * Per-bucket value-set holds up to CMP_SHARED_TIER_VALUES distinct
+ * (value, size) pairs at the same cmp_ip -- a busy comparison site
+ * (switch dispatch, enum-family compare) legitimately carries many
+ * constants, but past ~8 the incremental value flattens; overflow
+ * drops silently (tier is fallback tier, not authoritative).
+ *
+ * Entry-path filter.  A cmp_ip that fires under every syscall (the
+ * shared-with-fleet entry path: do_syscall_64, seccomp, kcov gate,
+ * copy_from_user length probes, ...) is noise as a warm-start seed:
+ * a value learned at "iov->iov_len < LONG_MAX" tells the picker
+ * nothing about which value to feed a specific syscall arg.  Track
+ * distinct-nr-count per bucket; once it crosses
+ * CMP_SHARED_TIER_ENTRY_PATH_NR_MAX (~15% of MAX_NR_SYSCALL, sized
+ * off the overlap mine) latch entry_path_excluded and stop counting
+ * this bucket toward the shadow warm-start eligibility metric.  The
+ * bucket keeps STORING contributions (so a follow-up analysis can
+ * still probe the entry-path population) but is excluded from the
+ * shadow observer's supply signal.
+ *
+ * NOT persisted by cmp_hints_save_file -- the tier is DERIVED from
+ * the per-nr pools on warm-load (walk pools[][] and union each
+ * live entry into the tier) and topped up on every fresh commit
+ * (pool_add_locked() success), so the persisted per-nr snapshot is
+ * a complete on-disk representation and no new on-disk schema is
+ * needed.
+ */
+#define CMP_SHARED_TIER_IPS			2048U
+#define CMP_SHARED_TIER_VALUES			8U
+#define CMP_SHARED_TIER_ENTRY_PATH_NR_MAX	150U
+#define CMP_SHARED_TIER_PROBE_MAX		8U
+_Static_assert((CMP_SHARED_TIER_IPS & (CMP_SHARED_TIER_IPS - 1)) == 0,
+	       "CMP_SHARED_TIER_IPS must be a power of two");
+
+struct cmp_shared_tier_entry {
+	unsigned long value;
+	uint32_t size;		/* operand width in bytes: 1, 2, 4, or 8 */
+	uint32_t pad;		/* explicit 8-byte alignment */
+};
+
+/*
+ * Occupancy is gated on the `occupied` byte (RELEASE-store on claim,
+ * ACQUIRE-load on read) so a lockless reader that observes occupied=1
+ * is guaranteed to see cmp_ip / values[] / value_count / seen_nrs[]
+ * populated behind it.  All writes on an occupied bucket happen under
+ * the shared_tier_lock in cmp_hints_shared below; only the initial
+ * claim uses the RELEASE-store to publish the key without needing a
+ * distinct probe-side lock.
+ *
+ * seen_nrs[] is a 1024-bit membership bitmap indexed by syscall nr:
+ * bit set => this nr has contributed to this cmp_ip before.  A fresh
+ * bit-set bumps distinct_nr_count; do32 is folded into "nr" for the
+ * count (a 64-bit and a 32-bit syscall at nr=N contribute the same
+ * bit -- the entry-path filter is about the shape "this IP fires
+ * across many callers", not "this IP fires under two architectures").
+ */
+struct cmp_shared_tier_bucket {
+	unsigned long cmp_ip;
+	uint32_t distinct_nr_count;
+	uint16_t value_count;
+	uint8_t occupied;
+	uint8_t entry_path_excluded;
+	struct cmp_shared_tier_entry values[CMP_SHARED_TIER_VALUES];
+	uint8_t seen_nrs[(MAX_NR_SYSCALL + 7) / 8];
+};
+
+/*
  * Pool grid indexed by [syscall_nr][do32 ? 1 : 0].  Mirrors the arch
  * dimension already carried by cmp_hints_strip[2][MAX_NR_SYSCALL]:
  * under biarch, syscall nr=N under the 32-bit table and syscall nr=N
@@ -656,6 +745,20 @@ struct cmp_hints_shared {
 	 * cmp_hyp_observe() under the matching durable cmp_hint_pool lock
 	 * and not yet read by any consumer or injection path. */
 	struct cmp_hyp_pool hyp_pools[MAX_NR_SYSCALL][2];
+	/*
+	 * Fleet-wide shared cmp_ip tier.  Single global lock covers every
+	 * bucket -- the insert path fires only on a per-nr pool_add_locked()
+	 * SUCCESS (fresh insert / evict-replace), which is rare against the
+	 * per-record collect volume once the bloom + strip filters absorb
+	 * the dedup load; a global lock here trades a bounded serialisation
+	 * point for 2048 * sizeof(lock_t) of extra shm the per-bucket lock
+	 * grid would cost, plus a matching entry in every check_all_locks()
+	 * walk.  Bucket occupancy uses the acquire/release pair on
+	 * buckets[i].occupied for the read path so the shadow probe stays
+	 * lock-free -- the lock only covers write-side content changes.
+	 */
+	lock_t shared_tier_lock;
+	struct cmp_shared_tier_bucket shared_tier[CMP_SHARED_TIER_IPS];
 };
 _Static_assert(MAX_NR_SYSCALL == 1024,
 	"cmp_hints_shared layout assumes MAX_NR_SYSCALL == 1024");

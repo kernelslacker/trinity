@@ -473,9 +473,214 @@ unsigned int cmp_hints_flush_pending(struct cmp_hint_pool *pool,
 			 * and no second walk over the trace buffer. */
 			cmp_hyp_observe(nr, do32, batch[j].ip, batch[j].val,
 					batch[j].size);
+			/* Mirror the same fresh content change into the
+			 * fleet-wide shared cmp_ip tier so a cold per-nr
+			 * pool can eventually warm-start from constants
+			 * ANY sibling syscall learned at the same kernel
+			 * check.  Acquires the tier's own global lock
+			 * internally -- the per-nr pool->lock is held
+			 * here, so the two locks nest strictly in this
+			 * order (pool->lock outer, shared_tier_lock
+			 * inner) and no other caller acquires the tier
+			 * lock while holding a per-nr pool lock. */
+			cmp_shared_tier_insert(nr, batch[j].ip, batch[j].val,
+					       batch[j].size);
 		}
 	}
 	pool_unlock(pool);
 	return inserted;
+}
+
+/*
+ * Fleet-wide shared cmp_ip tier.
+ *
+ * See the CMP_SHARED_TIER_* / struct cmp_shared_tier_bucket comments in
+ * include/cmp_hints.h for the tier's data model, entry-path filter, and
+ * NOT-persisted contract.  All state lives inside cmp_hints_shm; this
+ * cluster owns the hash + probe + insert primitives plus the warm-load
+ * populate walk.
+ *
+ * Hot-path cost: insert is called from cmp_hints_flush_pending only on a
+ * pool_add_locked() success (fresh insert / evict-replace), so the per-
+ * record rate is capped by the bloom + LRU-eviction discipline that
+ * already bounds the durable pool.  Steady-state cost is one hash + up
+ * to CMP_SHARED_TIER_PROBE_MAX bucket probes under the tier's global
+ * lock; the bucket-side work is a linear scan of at most
+ * CMP_SHARED_TIER_VALUES value slots and one bit test/set in
+ * seen_nrs[].  No allocation, no RNG, no cross-nr atomic contention
+ * beyond the single shared_tier_lock.
+ */
+static inline uint32_t cmp_shared_tier_hash(unsigned long cmp_ip)
+{
+	/* splitmix64-shape mix on the canonical cmp_ip.  Same finalising
+	 * constants as cmp_hints_bloom_h1 above so the two hash families
+	 * share a common shape, but keyed off cmp_ip alone (the shared
+	 * tier's identity is a single kernel comparison site, not a
+	 * (cmp_ip, value, size) tuple). */
+	uint64_t x = (uint64_t)cmp_ip;
+
+	x ^= x >> 30;
+	x *= 0xbf58476d1ce4e5b9ULL;
+	x ^= x >> 27;
+	x *= 0x94d049bb133111ebULL;
+	x ^= x >> 31;
+	return (uint32_t)(x & (CMP_SHARED_TIER_IPS - 1U));
+}
+
+/* Set bit `nr` in the bucket's seen_nrs[] membership bitmap.  Returns
+ * true when the bit was previously unset (this nr is a NEW contributor
+ * for the bucket, so the caller should bump distinct_nr_count).  Caller
+ * holds shared_tier_lock. */
+static inline bool cmp_shared_tier_mark_nr(struct cmp_shared_tier_bucket *b,
+					   unsigned int nr)
+{
+	unsigned int byte = nr >> 3;
+	uint8_t mask = (uint8_t)(1U << (nr & 7U));
+
+	if (byte >= sizeof(b->seen_nrs))
+		return false;	/* out of range; caller pre-gates but be safe */
+	if ((b->seen_nrs[byte] & mask) != 0)
+		return false;
+	b->seen_nrs[byte] |= mask;
+	return true;
+}
+
+/* Value-slot upsert under the tier's global lock.  Returns
+ *   > 0  on a fresh append or dedup hit (the value is in the bucket
+ *        after the call);
+ *   == 0 on a value-slot overflow (bucket saturated at
+ *        CMP_SHARED_TIER_VALUES; drop silently -- tier is fallback,
+ *        not authoritative).
+ * *was_present receives true when the (value, size) pair was already
+ * in the bucket before the call, false on a fresh append (or on
+ * overflow, though the flag is unused in that arm). */
+static bool cmp_shared_tier_upsert_value(struct cmp_shared_tier_bucket *b,
+					 unsigned long value, unsigned int size,
+					 bool *was_present)
+{
+	unsigned int i;
+	unsigned int cap = b->value_count;
+
+	if (cap > CMP_SHARED_TIER_VALUES)
+		cap = CMP_SHARED_TIER_VALUES;
+	for (i = 0; i < cap; i++) {
+		if (b->values[i].value == value &&
+		    b->values[i].size == size) {
+			*was_present = true;
+			return true;
+		}
+	}
+	*was_present = false;
+	if (b->value_count >= CMP_SHARED_TIER_VALUES)
+		return false;
+	b->values[b->value_count].value = value;
+	b->values[b->value_count].size = size;
+	b->values[b->value_count].pad = 0;
+	b->value_count++;
+	return true;
+}
+
+void cmp_shared_tier_insert(unsigned int nr, unsigned long cmp_ip,
+			    unsigned long value, unsigned int size)
+{
+	uint32_t start;
+	unsigned int probe;
+
+	if (cmp_hints_shm == NULL)
+		return;
+	/* Sentinel guard: cmp_ip == 0 is used as the "bucket unclaimed"
+	 * marker by callers that want to peek without a lock; drop the
+	 * (exceedingly rare) canonical-cmp_ip == 0 case rather than mix
+	 * it into the shared tier's occupancy signal.  Same shape as the
+	 * per-nr corruption gate: cheap check up front, tier is
+	 * advisory. */
+	if (cmp_ip == 0)
+		return;
+	if (nr >= MAX_NR_SYSCALL)
+		return;
+
+	start = cmp_shared_tier_hash(cmp_ip);
+
+	lock(&cmp_hints_shm->shared_tier_lock);
+	for (probe = 0; probe < CMP_SHARED_TIER_PROBE_MAX; probe++) {
+		uint32_t idx = (start + probe) & (CMP_SHARED_TIER_IPS - 1U);
+		struct cmp_shared_tier_bucket *b =
+			&cmp_hints_shm->shared_tier[idx];
+		bool was_present = false;
+
+		if (b->occupied == 0) {
+			/* Claim.  Populate key + first value + nr membership
+			 * before publishing occupied, so a lockless reader
+			 * that observes occupied=1 via ACQUIRE-load sees a
+			 * fully populated bucket. */
+			b->cmp_ip = cmp_ip;
+			b->values[0].value = value;
+			b->values[0].size = size;
+			b->values[0].pad = 0;
+			b->value_count = 1;
+			(void)cmp_shared_tier_mark_nr(b, nr);
+			b->distinct_nr_count = 1;
+			b->entry_path_excluded = 0;
+			__atomic_store_n(&b->occupied, (uint8_t)1,
+					 __ATOMIC_RELEASE);
+			unlock(&cmp_hints_shm->shared_tier_lock);
+			return;
+		}
+		if (b->cmp_ip == cmp_ip) {
+			bool new_nr = cmp_shared_tier_mark_nr(b, nr);
+
+			if (new_nr) {
+				b->distinct_nr_count++;
+				if (b->distinct_nr_count >
+					CMP_SHARED_TIER_ENTRY_PATH_NR_MAX)
+					b->entry_path_excluded = 1;
+			}
+			(void)cmp_shared_tier_upsert_value(b, value, size,
+							   &was_present);
+			(void)was_present;
+			unlock(&cmp_hints_shm->shared_tier_lock);
+			return;
+		}
+		/* Collision on a different cmp_ip; continue linear probe. */
+	}
+	unlock(&cmp_hints_shm->shared_tier_lock);
+	/* Probe exhausted; drop silently.  Fallback tier -- the per-nr
+	 * pools still carry the authoritative record.  A future observer
+	 * commit surfaces the drop rate via a shadow counter. */
+}
+
+void cmp_shared_tier_populate_from_pools(void)
+{
+	unsigned int nr, a, k;
+
+	if (cmp_hints_shm == NULL)
+		return;
+
+	for (nr = 0; nr < MAX_NR_SYSCALL; nr++) {
+		for (a = 0; a < 2; a++) {
+			struct cmp_hint_pool *pool =
+				&cmp_hints_shm->pools[nr][a];
+			unsigned int count;
+
+			count = __atomic_load_n(&pool->count,
+						__ATOMIC_ACQUIRE);
+			/* Skip stomped or empty pools (safe_count returns 0
+			 * on either).  cmp_hints_load_file() runs in parent
+			 * context at boot before any child has started, so a
+			 * concurrent stomp is not a realistic threat -- the
+			 * gate is belt-and-braces against a future caller. */
+			if (count == 0 ||
+			    cmp_hints_pool_corrupted(pool, count))
+				continue;
+			if (count > CMP_HINTS_PER_SYSCALL)
+				count = CMP_HINTS_PER_SYSCALL;
+			for (k = 0; k < count; k++) {
+				cmp_shared_tier_insert(nr,
+					pool->entries[k].cmp_ip,
+					pool->entries[k].value,
+					pool->entries[k].size);
+			}
+		}
+	}
 }
 

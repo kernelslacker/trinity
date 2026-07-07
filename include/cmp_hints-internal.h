@@ -227,6 +227,40 @@ void cmp_hyp_would_pick(unsigned int nr, bool do32,
 			unsigned long live_value);
 
 /*
+ * Fleet-wide shared cmp_ip tier insert.  Called under the per-nr
+ * pool->lock from cmp_hints/pool.c immediately after every
+ * pool_add_locked() SUCCESS (fresh insert / evict-replace); the tier
+ * mirrors the (cmp_ip, value, size) tuple that just landed in a per-
+ * nr pool so a follow-up cold per-nr lookup can eventually warm-
+ * start from constants ANY sibling syscall already learned at the
+ * same kernel check.  nr is folded into the bucket's seen_nrs bitmap
+ * so the entry-path filter (distinct_nr_count >
+ * CMP_SHARED_TIER_ENTRY_PATH_NR_MAX) can latch an IP that fires
+ * under too many syscalls to be a useful warm-start seed.
+ * Definition in cmp_hints/pool.c.
+ *
+ * Bounded work per call: hash lookup + up to CMP_SHARED_TIER_PROBE_MAX
+ * bucket probes + up to CMP_SHARED_TIER_VALUES value-slot scans; no
+ * allocation, no RNG.  Silently drops on shm==NULL, cmp_ip==0
+ * (sentinel-guard for the occupancy check), or probe exhaustion --
+ * the tier is fallback/warm-start ONLY, so drops are the same shape
+ * as the per-nr LRU eviction and never a correctness issue.
+ */
+void cmp_shared_tier_insert(unsigned int nr, unsigned long cmp_ip,
+			    unsigned long value, unsigned int size);
+
+/*
+ * Fleet-wide shared cmp_ip tier warm-load populate.  Called once from
+ * cmp_hints_load_file() after the per-nr pools have been restored
+ * from the on-disk snapshot; walks pools[][] and unions each live
+ * (cmp_ip, value, size) tuple into the shared tier via
+ * cmp_shared_tier_insert().  Idempotent under multiple calls (the
+ * tier's dedup collapses duplicate contributions).  Definition in
+ * cmp_hints/pool.c.
+ */
+void cmp_shared_tier_populate_from_pools(void);
+
+/*
  * LIVE typed-hypothesis inject arm.  Called from cmp_hints/get.c on
  * durable-tier picks whose caller opted in (allow_hyp_inject).  On a
  * gate + resolver + derive triple-hit the raw pool value is replaced
