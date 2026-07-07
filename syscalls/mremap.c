@@ -16,6 +16,7 @@
 #include "compat.h"
 #include "utils.h"
 
+#include "kernel/mman.h"
 static const unsigned long alignments[] = {
 	MB(1), MB(2), MB(4), MB(4),
 	MB(10), MB(100),

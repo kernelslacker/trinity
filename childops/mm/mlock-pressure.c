@@ -22,6 +22,7 @@
 #include "utils.h"
 #include "vma-pressure.h"
 
+#include "kernel/mman.h"
 /*
  * Pick a page-aligned sub-range of a mapping for partial lock/unlock.
  */

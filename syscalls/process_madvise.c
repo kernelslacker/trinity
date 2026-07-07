@@ -9,6 +9,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/mman.h"
 static unsigned long process_madvise_behaviours[] = {
 	MADV_COLD, MADV_PAGEOUT, MADV_WILLNEED, MADV_COLLAPSE,
 };

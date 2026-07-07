@@ -90,6 +90,7 @@
 #include "trinity.h"
 
 #include "kernel/fcntl.h"
+#include "kernel/mman.h"
 #ifndef SO_DETACH_BPF
 #define SO_DETACH_BPF		SO_DETACH_FILTER
 #endif

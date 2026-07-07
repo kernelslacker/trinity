@@ -20,6 +20,7 @@
 #include "rnd.h"
 #include "utils.h"
 
+#include "kernel/mman.h"
 #ifndef HUGETLB_FLAG_ENCODE_SHIFT
 #define HUGETLB_FLAG_ENCODE_SHIFT 26
 #endif

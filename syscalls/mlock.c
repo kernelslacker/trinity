@@ -10,6 +10,7 @@
 #include "trinity.h"
 #include "compat.h"
 
+#include "kernel/mman.h"
 static void sanitise_mlock(struct syscallrecord *rec)
 {
 	struct map *map;
