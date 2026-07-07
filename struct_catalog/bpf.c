@@ -95,6 +95,15 @@ const unsigned int bpf_prog_types_count = ARRAY_SIZE(bpf_prog_types);
 #ifndef BPF_TRACE_FSESSION
 #define BPF_TRACE_FSESSION		58
 #endif
+#ifndef BPF_TRACE_FENTRY_MULTI
+#define BPF_TRACE_FENTRY_MULTI		59
+#endif
+#ifndef BPF_TRACE_FEXIT_MULTI
+#define BPF_TRACE_FEXIT_MULTI		60
+#endif
+#ifndef BPF_TRACE_FSESSION_MULTI
+#define BPF_TRACE_FSESSION_MULTI	61
+#endif
 
 const unsigned long bpf_attach_types[] = {
 	BPF_CGROUP_INET_INGRESS, BPF_CGROUP_INET_EGRESS,
@@ -127,6 +136,8 @@ const unsigned long bpf_attach_types[] = {
 	BPF_NETKIT_PRIMARY, BPF_NETKIT_PEER,
 	BPF_TRACE_KPROBE_SESSION, BPF_TRACE_UPROBE_SESSION,
 	BPF_TRACE_FSESSION,
+	BPF_TRACE_FENTRY_MULTI, BPF_TRACE_FEXIT_MULTI,
+	BPF_TRACE_FSESSION_MULTI,
 };
 const unsigned int bpf_attach_types_count = ARRAY_SIZE(bpf_attach_types);
 
@@ -770,6 +781,8 @@ const unsigned long bpf_attach_types_tracing[] = {
 	BPF_TRACE_FENTRY, BPF_TRACE_FEXIT, BPF_MODIFY_RETURN,
 	BPF_LSM_MAC, BPF_LSM_CGROUP, BPF_TRACE_RAW_TP,
 	BPF_TRACE_FSESSION,
+	BPF_TRACE_FENTRY_MULTI, BPF_TRACE_FEXIT_MULTI,
+	BPF_TRACE_FSESSION_MULTI,
 };
 
 /*
