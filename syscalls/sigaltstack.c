@@ -15,6 +15,7 @@
 #include "compat.h"
 #include "utils.h"
 
+#include "kernel/signal.h"
 #if defined(SYS_sigaltstack) || defined(__NR_sigaltstack)
 #ifndef SYS_sigaltstack
 #define SYS_sigaltstack __NR_sigaltstack
