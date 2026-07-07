@@ -660,6 +660,51 @@ struct cmp_hyp_pool {
 #define CMP_SHARED_TIER_VALUES			8U
 #define CMP_SHARED_TIER_ENTRY_PATH_NR_MAX	150U
 #define CMP_SHARED_TIER_PROBE_MAX		8U
+
+/*
+ * Rollout gate for the shared cmp_ip tier -- same OFF / SHADOW_ONLY /
+ * COMBINED ramp discipline the sibling cost_pool_selector_mode and
+ * frontier_saturation_cooldown_mode rows use.
+ *
+ *   OFF          - default, byte-identical to a build before the tier
+ *                  landed.  Every hot-path shared-tier access (both
+ *                  the collect-side insert and the get-side shadow
+ *                  probe) short-circuits before touching the tier
+ *                  shm.  Under a fixed-seed --dry-run the pick stream
+ *                  and every counter are bit-for-bit identical to a
+ *                  pre-shared-tier build.
+ *   SHADOW_ONLY  - the collect-side insert populates the tier (both
+ *                  at warm-load from cmp_hints_load_file and live on
+ *                  every fresh pool_add_locked success), and the
+ *                  get-side probe bumps cmp_shared_tier_shadow_warm
+ *                  start_eligible on every per-nr cold miss where the
+ *                  tier has a non-entry-path IP available to seed
+ *                  from.  Live selection stays unchanged: try_get
+ *                  returns exactly what it would have returned
+ *                  without the observer.  Zero RNG consumption on the
+ *                  probe path.
+ *   COMBINED     - RESERVED.  The enum value exists so the Phase 2
+ *                  live wire-up (elect a non-entry-path shared-tier
+ *                  value to warm-start the empty per-nr slot from)
+ *                  can land in a follow-up commit without renumbering
+ *                  the enum, but THIS COMMIT does NOT implement the
+ *                  live seed -- selecting COMBINED today behaves
+ *                  identically to SHADOW_ONLY (tier populated,
+ *                  observer accumulates, live pick stays byte-for-
+ *                  byte unchanged).  Mirrors the discipline the
+ *                  sibling cost_pool_selector_mode and frontier_
+ *                  saturation_cooldown_mode rows use.
+ *
+ * Param-settable from --cmp-shared-tier=off|shadow|combined.
+ */
+enum cmp_shared_tier_mode {
+	CMP_SHARED_TIER_MODE_OFF = 0,
+	CMP_SHARED_TIER_MODE_SHADOW_ONLY = 1,
+	CMP_SHARED_TIER_MODE_COMBINED = 2,
+};
+
+extern enum cmp_shared_tier_mode cmp_shared_tier_mode;
+
 _Static_assert((CMP_SHARED_TIER_IPS & (CMP_SHARED_TIER_IPS - 1)) == 0,
 	       "CMP_SHARED_TIER_IPS must be a power of two");
 

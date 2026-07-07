@@ -66,6 +66,18 @@
 struct cmp_hints_shared *cmp_hints_shm = NULL;
 
 /*
+ * Rollout mode for the fleet-wide shared cmp_ip tier.  Default OFF is
+ * bit-for-bit identical to a build before the tier landed: every hot-
+ * path shared-tier access (collect-side insert and get-side shadow
+ * probe) short-circuits before touching the tier shm.  See the enum
+ * cmp_shared_tier_mode comment in include/cmp_hints.h for the SHADOW /
+ * COMBINED contract and the ramp discipline.  Param-settable via
+ * --cmp-shared-tier=off|shadow|combined.
+ */
+enum cmp_shared_tier_mode cmp_shared_tier_mode =
+	CMP_SHARED_TIER_MODE_OFF;
+
+/*
  * Per-syscall CMP-collection strip flags.  When cmp_hints_strip[do32][nr]
  * is true, cmp_hints_collect() returns immediately after the nr range
  * check, bypassing the bloom + pool_add_locked path entirely for that

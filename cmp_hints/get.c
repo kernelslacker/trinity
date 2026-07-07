@@ -159,8 +159,20 @@ static bool cmp_try_get_durable_tier(unsigned int nr, bool do32,
 	 * dedup-vs-eviction policy is built around.
 	 */
 	count = __atomic_load_n(&pool->count, __ATOMIC_ACQUIRE);
-	if (count == 0)
+	if (count == 0) {
+		/* SHADOW warm-start eligibility probe.  The per-nr durable
+		 * pool is COLD on this (nr, do32) slot -- the recent-tier
+		 * pre-pass in the caller already returned MISS, and this
+		 * empty-pool return is the try_get miss the caller sees.
+		 * Fire the shared cmp_ip tier probe to observe whether a
+		 * fleet-wide warm-start seed would have been available; the
+		 * probe is value-neutral (does NOT read a tier value, does
+		 * NOT consume RNG, does NOT change what we return) so live
+		 * pick stays byte-for-byte identical under OFF and SHADOW
+		 * alike. */
+		cmp_shared_tier_shadow_probe_cold_miss();
 		return false;
+	}
 	/* Lockless gate: a kernel-side wild write through a syscall arg
 	 * pointer can stomp pool->count, and rnd_modulo_u32(garbage) would
 	 * then index off the 1.1 MB SHM into an unmapped page.  Hints are

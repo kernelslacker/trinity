@@ -11,6 +11,7 @@
 #include "child.h"
 #include "blob_mutator.h"
 #include "cmp-frontier.h"
+#include "cmp_hints.h"
 #include "cmsg-richness.h"
 #include "fd.h"
 #include "kcov.h"
@@ -540,6 +541,7 @@ static const struct option_help option_descs[] = {
 	{ "cmsg-richness", 0, "extended sendmsg/sendmmsg control-message generator (default off): off (pick_cmsg_kind() draws from the original 5 base kinds with a single rnd_modulo_u32 call; the cmsg-build site is bit-for-bit identical to a build without this lever -- no extra RNG draws, no new kinds, no new arms), or on (extends the per-call cmsg pool with family-gated single-cmsg kinds -- IP_PKTINFO / IPV6_PKTINFO, IP_TOS / IP_TTL / IP_RETOPTS, IPV6_TCLASS / IPV6_HOPLIMIT / IPV6_RTHDR, SCM_TXTIME, TLS_SET_RECORD_TYPE -- and adds a ONE_IN(4) multi-cmsg packer that sizes the buffer by the sum of CMSG_SPACE(plen) across 2-3 distinct entries from a per-family pool, zero-fills the buffer up front, and walks CMSG_FIRSTHDR -> CMSG_NXTHDR with CMSG_LEN(plen) per entry)." },
 	{ "corpus-save-errno-grad-live", 0, "DEFAULT OFF. Enable the errno-gradient corpus save trigger (CORPUS_SAVE_REASON_ERRNO): when a syscall returns a non-EFAULT errno bucket for the first time this run, admit its args to the per-syscall ring. Flag off keeps the corpus admission distribution byte-identical to a build without this trigger; the errno_grad_save_would_save shadow counter is bumped regardless of this flag so the would-be-save volume is measurable before flipping live." },
 	{ "cost-pool-selector", 0, "cost-pool one-shot selector mode for the HEURISTIC and RANDOM picker arms in random-syscall.c (default off): off (skip the observer entirely, byte-identical to today; no per-pool counter loads, no divide, no cost_pool_selector_shadow_* counter bump), shadow-only (at the top of each pick, after choose_syscall_table but before the retry loop's live rnd_modulo_u32 draw, read the arch-specific nr_active_cheap / nr_active_exp pair under RELAXED, compute the closed-form per-pool expected fractions from the section 4.1 identity (p_exp = n_exp / (n_cheap*R + n_exp) with R = EXPENSIVE_ADAPTIVE_FLOOR = 1000), and accumulate them into the cost_pool_selector_shadow_picks / cost_pool_selector_shadow_expensive_ppm_sum aggregate; NO shadow pick is drawn -- the observer consumes ZERO rnd_u32() calls so the pick stream stays identical to off for a given seed; the parallel cost_pool_selector_live_cheap_picks / cost_pool_selector_live_expensive_picks accepted-pick counters bump regardless of this flag so the analytical (shadow) fraction can be validated empirically against the live draw-then-reject fraction on any run), or combined (RESERVED: the enum value exists for a future commit that wires the live coin-then-draw dispatch on top of the shm->active_cheap*[] / active_expensive*[] pools; THIS BUILD treats combined identically to shadow-only -- observer accumulates, live pick stays flat draw-then-reject).  Validate (shadow_expensive_ppm_sum / (shadow_picks * 1e6)) matches (live_expensive_picks / (live_expensive_picks + live_cheap_picks)) under shadow-only before wiring COMBINED." },
+	{ "cmp-shared-tier", 0, "fleet-wide shared cmp_ip tier rollout mode (default off): off (both the collect-side insert and the get-side shadow probe short-circuit BEFORE any shared-tier shm access; every cmp_shared_tier_* counter stays at zero, and a fixed-seed --dry-run pick stream is bit-for-bit identical to a build before the shared tier landed), shadow (populate the tier at warm-load and on every fresh pool_add_locked success, and on every cmp_hints_try_get_ex cold-miss return -- durable per-nr pool empty on the requested (nr, do32) and the recent-tier pre-pass did not serve -- bump cmp_shared_tier_shadow_warmstart_eligible when the tier has at least one non-entry-path IP available to seed from; the probe does NOT read or return a tier value, does NOT consume RNG, and does NOT change what try_get returns; the entry-path filter (distinct_nr_count > CMP_SHARED_TIER_ENTRY_PATH_NR_MAX) excludes IPs that fire under too many syscalls to be a useful warm-start seed, and cmp_shared_tier_shadow_dedup_supplied captures the cross-nr redundant-learn opportunity size), or combined (RESERVED: the enum value exists for a future commit that wires the live warm-start seed served from a non-entry-path shared-tier value; THIS BUILD treats combined identically to shadow -- tier populated, observer accumulates, live pick stays byte-for-byte unchanged).  Validate the (shadow_dedup_supplied / cmp_hints_unique_inserts) cross-nr redundancy rate and the (shadow_warmstart_eligible / cold-miss population) opportunity size under shadow before wiring COMBINED." },
 	{ "cred-throttle",	 0,  "DEFAULT OFF. Enable the credential-syscall throttle: when a credential class (setregid/setreuid/setresuid/setresgid/setgid/setuid/setfsuid/setfsgid/setgroups) has accumulated >=64 attempts with zero successes and EPERM+EINVAL dominating >=90% of returns, downweight the class by rejecting 31/32 of subsequent picks. Flag off keeps the picker distribution byte-identical to a build without this row; the per-class observability counters are bumped regardless of this flag." },
 	{ "frontier-live-cooldown-mode", 0, "LIVE-regime cooldown discriminator mode for the coverage-frontier picker's LIVE-regime miss-attribution path (default off): off (skip the discriminator entirely, byte-identical to today; selection AND the new frontier_live_cool_* shadow counters both stay zero), shadow-only (compute the spare-lane discriminator -- windowed-edges + distinct-CMP / first-success / ret_objtype lanes, gated by the FRONTIER_LIVE_COOL_CMIN low live floor -- inside the existing streak >= FRONTIER_LIVE_MISS_COOLDOWN branch and bump frontier_live_cool_* shadow counters; selection stays byte-identical -- the existing frontier_live_would_skip projection keeps bumping unchanged so the (live_cool_would_skip / live_would_skip) ratio reads the over-cool the discriminator would remove), or combined (RESERVED: the enum value exists for a future commit that wires the live divergence -- rotation-loop halving + per-syscall reject -- gated on the discriminator; THIS BUILD treats combined identically to shadow-only). Validate the per-syscall would-skip distribution against gettid / sched_get_priority_max (expected high) and bpf / io_uring_setup / openat / io_setup / futex / setxattrat (expected ~0) under shadow-only before tuning C_min or wiring the COMBINED divergence. Independent of the existing boolean --frontier-live-cooldown (which gates the rotation-loop halving)." },
 	{ "frontier-saturation-cooldown", 0, "saturation-cooldown predicate mode for the coverage-frontier picker's silent-regime accept site (default off): off (skip the satcool predicate entirely, byte-identical to today; selection AND shadow counters both stay zero), shadow-only (compute the corrected windowed-edge plateau + FRONTIER_SATCOOL_CMIN magnitude + distinct-CMP / first-success / ret_objtype spare-lane predicate inside the silent-regime accept block and bump frontier_satcool_* shadow counters; selection stays byte-identical -- no goto-retry is gated on the predicate), or combined (RESERVED: the enum value exists for a future commit that wires the live reject; THIS BUILD treats combined identically to shadow-only -- predicate evaluates and counters bump, no live reject fires). Validate the per-syscall would-skip distribution against syncfs / sendfile / semget / writev (expected high) and removexattrat / futex / io_uring_setup / bpf (expected ~0) under shadow-only before tuning C_min or wiring the COMBINED reject." },
@@ -667,6 +669,7 @@ static const struct option longopts[] = {
 	{ "frontier-saturation-cooldown", required_argument, NULL, 0 },
 	{ "frontier-group-antilock", required_argument, NULL, 0 },
 	{ "cost-pool-selector", required_argument, NULL, 0 },
+	{ "cmp-shared-tier", required_argument, NULL, 0 },
 	{ "guard-shared", optional_argument, NULL, 0 },
 	{ "kernel_taint", required_argument, NULL, 'T' },
 	{ "help", no_argument, NULL, 'h' },
@@ -1048,6 +1051,21 @@ static bool parse_strategy_options(int opt, const char *name, char *arg)
 				COST_POOL_SELECTOR_MODE_COMBINED;
 		} else {
 			outputerr("--cost-pool-selector: unknown mode '%s' (expected off, shadow-only, or combined)\n",
+				arg);
+			exit(EXIT_FAILURE);
+		}
+		return true;
+	}
+
+	if (strcmp("cmp-shared-tier", name) == 0) {
+		if (strcmp(arg, "off") == 0) {
+			cmp_shared_tier_mode = CMP_SHARED_TIER_MODE_OFF;
+		} else if (strcmp(arg, "shadow") == 0) {
+			cmp_shared_tier_mode = CMP_SHARED_TIER_MODE_SHADOW_ONLY;
+		} else if (strcmp(arg, "combined") == 0) {
+			cmp_shared_tier_mode = CMP_SHARED_TIER_MODE_COMBINED;
+		} else {
+			outputerr("--cmp-shared-tier: unknown mode '%s' (expected off, shadow, or combined)\n",
 				arg);
 			exit(EXIT_FAILURE);
 		}
