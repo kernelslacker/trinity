@@ -16,6 +16,7 @@
 #include "sanitise.h"
 #include "utils.h"
 
+#include "kernel/memfd.h"
 /*
  * Cached memfd used as a backing file for LOOP_CONFIGURE.  Opened
  * lazily on first use per child; the kernel takes its own reference

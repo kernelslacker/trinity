@@ -30,6 +30,7 @@
 
 #include "kernel/fcntl.h"
 #include "kernel/io_uring.h"
+#include "kernel/memfd.h"
 /* ------------------------------------------------------------------ *
  * Recipe 5: OPENAT + CLOSE in linked SQEs (teardown race)
  *

@@ -21,6 +21,7 @@
 #include "utils.h"
 
 #include "kernel/mman.h"
+#include "kernel/memfd.h"
 #ifndef HUGETLB_FLAG_ENCODE_SHIFT
 #define HUGETLB_FLAG_ENCODE_SHIFT 26
 #endif

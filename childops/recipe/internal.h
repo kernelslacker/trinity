@@ -22,6 +22,7 @@
 #include "compat.h"
 
 #include "kernel/io_uring.h"
+#include "kernel/memfd.h"
 #ifndef MFD_ALLOW_SEALING
 #define MFD_ALLOW_SEALING	0x0002U
 #endif
