@@ -1321,15 +1321,25 @@ void __cold cost_pool_periodic_dump(void)
 		unsigned long live_exp = __atomic_load_n(
 			&shm->stats.cost_pool_selector_live_expensive_picks,
 			__ATOMIC_RELAXED);
+		unsigned long predraw_cheap = __atomic_load_n(
+			&shm->stats.cost_pool_selector_predraw_cheap_picks,
+			__ATOMIC_RELAXED);
+		unsigned long predraw_exp = __atomic_load_n(
+			&shm->stats.cost_pool_selector_predraw_expensive_picks,
+			__ATOMIC_RELAXED);
 		unsigned long live_total = live_cheap + live_exp;
+		unsigned long predraw_total = predraw_cheap + predraw_exp;
 		unsigned long shadow_exp_ppm = 0;
 		unsigned long live_exp_ppm = 0;
+		unsigned long predraw_exp_ppm = 0;
 		const char *mode_name;
 
 		if (shadow_picks > 0)
 			shadow_exp_ppm = shadow_ppm_sum / shadow_picks;
 		if (live_total > 0)
 			live_exp_ppm = (1000000UL * live_exp) / live_total;
+		if (predraw_total > 0)
+			predraw_exp_ppm = (1000000UL * predraw_exp) / predraw_total;
 
 		switch (cost_pool_selector_mode) {
 		case COST_POOL_SELECTOR_MODE_OFF:
@@ -1344,9 +1354,11 @@ void __cold cost_pool_periodic_dump(void)
 
 		stats_log_write("cost-pool selector: mode=%s "
 				"shadow picks=%lu exp_ppm=%lu  "
+				"predraw cheap=%lu exp=%lu exp_ppm=%lu  "
 				"live cheap=%lu exp=%lu exp_ppm=%lu\n",
 				mode_name,
 				shadow_picks, shadow_exp_ppm,
+				predraw_cheap, predraw_exp, predraw_exp_ppm,
 				live_cheap, live_exp, live_exp_ppm);
 	}
 }

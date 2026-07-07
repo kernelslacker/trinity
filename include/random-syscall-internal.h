@@ -30,6 +30,7 @@ void note_validation_failure(unsigned int syscallnr, bool do32);
 bool expensive_accept(unsigned int nr, bool do32);
 void cost_pool_selector_shadow_note(bool do32);
 void cost_pool_selector_live_note(unsigned int nr, bool do32);
+void cost_pool_selector_predraw_note(unsigned int nr, bool do32);
 bool syscall_in_group(unsigned int nr, bool do32, unsigned int target_group);
 
 /* pickers.c -- top-level picker dispatch, called from dispatch_step

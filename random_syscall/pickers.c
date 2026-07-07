@@ -179,6 +179,17 @@ retry:
 	if (!expensive_accept(syscallnr, do32))
 		goto retry;
 
+	/* PRE-GATE cost-pool attribution: candidate has survived the
+	 * uniform draw + expensive_accept throttle -- the exact population
+	 * the shadow closed-form models.  Bumped here so a shadow-only
+	 * validation run can compare predraw_expensive / (predraw_cheap +
+	 * predraw_expensive) against shadow_expensive_ppm_sum /
+	 * (shadow_picks * 1e6) without downstream gates (validate /
+	 * anti_prior / cred-throttle) skewing the fraction.  OFF-mode
+	 * short-circuits before any shm access, so this stays RNG- and
+	 * byte-neutral for the default build. */
+	cost_pool_selector_predraw_note(syscallnr, do32);
+
 	if (validate_specific_syscall_silent(syscalls, syscallnr) == false) {
 		note_validation_failure(syscallnr, do32);
 		goto retry;
@@ -537,6 +548,14 @@ retry:
 	 * !ONE_IN(1000)` expression. */
 	if (!expensive_accept(syscallnr, do32))
 		goto retry;
+
+	/* PRE-GATE cost-pool attribution.  See the matching call in
+	 * set_syscall_nr_heuristic above -- this is the RANDOM-arm sibling.
+	 * Fires after expensive_accept survives and before anti_prior /
+	 * validate / cred-throttle can enrich the finalised stream, so
+	 * (predraw_expensive / (predraw_cheap + predraw_expensive)) tracks
+	 * the section 4.1 closed-form the shadow observer accumulates. */
+	cost_pool_selector_predraw_note(syscallnr, do32);
 
 	if (validate_specific_syscall_silent(syscalls, syscallnr) == false) {
 		note_validation_failure(syscallnr, do32);

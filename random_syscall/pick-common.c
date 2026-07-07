@@ -529,6 +529,48 @@ void cost_pool_selector_live_note(unsigned int nr, bool do32)
 }
 
 /*
+ * Cost-pool one-shot selector PRE-GATE draw attribution.  Called from
+ * the HEURISTIC / RANDOM picker arms immediately after the flat
+ * uniform draw survives expensive_accept() -- i.e. once the expensive
+ * throttle has accepted the candidate but BEFORE any downstream
+ * picker gate (validate_specific_syscall_silent, anti_prior, cred-
+ * throttle) has had a chance to reject or re-roll it.
+ *
+ * This is the exact population the shadow closed-form models:
+ * uniform draw over the active table + expensive_accept at 1/1000,
+ * with no post-hoc enrichment.  The live_ pair fires at pick-
+ * finalise (after all downstream gates) and therefore cannot be
+ * compared directly to the shadow analytical fraction on runs where
+ * anti_prior is on -- it enriches the accepted stream in rare /
+ * expensive syscalls ~3x.  The predraw_ pair closes that gap so a
+ * `--cost-pool-selector=shadow-only` validation run can compare
+ * apples to apples.
+ *
+ * OFF short-circuits before any shm read or atomic so a build with
+ * cost_pool_selector_mode == OFF is bit-for-bit identical to a pre-
+ * row build (no per-draw atomic add, no torn snapshot, no stale-
+ * cacheline contention on the pick hot path).  RNG-neutral in every
+ * mode -- no rnd_* calls added.
+ */
+void cost_pool_selector_predraw_note(unsigned int nr, bool do32)
+{
+	enum cost_pool_selector_mode mode =
+		__atomic_load_n(&cost_pool_selector_mode, __ATOMIC_RELAXED);
+
+	if (mode == COST_POOL_SELECTOR_MODE_OFF)
+		return;
+
+	if (syscall_is_expensive(nr, do32))
+		__atomic_fetch_add(
+			&shm->stats.cost_pool_selector_predraw_expensive_picks,
+			1UL, __ATOMIC_RELAXED);
+	else
+		__atomic_fetch_add(
+			&shm->stats.cost_pool_selector_predraw_cheap_picks,
+			1UL, __ATOMIC_RELAXED);
+}
+
+/*
  * Check if a syscall entry belongs to the target group.
  * Used by group biasing to filter candidates.
  */
