@@ -41,6 +41,15 @@
 # define PIDFD_INFO_EXIT     (1UL << 3)
 # define PIDFD_INFO_COREDUMP (1UL << 4)
 #endif
+#ifndef PIDFD_INFO_SUPPORTED_MASK
+# define PIDFD_INFO_SUPPORTED_MASK	(1UL << 5)
+#endif
+#ifndef PIDFD_INFO_COREDUMP_SIGNAL
+# define PIDFD_INFO_COREDUMP_SIGNAL	(1UL << 6)
+#endif
+#ifndef PIDFD_INFO_COREDUMP_CODE
+# define PIDFD_INFO_COREDUMP_CODE	(1UL << 7)
+#endif
 
 /*
  * Linux 6.13 froze the v0 layout of struct pidfd_info at 64 bytes; the
@@ -113,6 +122,9 @@ static void pidfd_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 		PIDFD_INFO_CGROUPID,
 		PIDFD_INFO_EXIT,
 		PIDFD_INFO_COREDUMP,
+		PIDFD_INFO_SUPPORTED_MASK,
+		PIDFD_INFO_COREDUMP_SIGNAL,
+		PIDFD_INFO_COREDUMP_CODE,
 	};
 
 	pick_random_ioctl(grp, rec);
