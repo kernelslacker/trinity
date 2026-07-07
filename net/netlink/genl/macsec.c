@@ -73,7 +73,7 @@
 
 #if __has_include(<linux/if_macsec.h>)
 
-#include <linux/if_macsec.h>
+#include "kernel/macsec.h"
 
 #include "netlink-genl-families.h"
 #include "utils.h"
