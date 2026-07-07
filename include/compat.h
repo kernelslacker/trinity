@@ -46,14 +46,6 @@
 #define IPV6_HDRINCL		36
 #endif
 
-/* linux/udp.h -- UDP_SEGMENT is the SOL_UDP setsockopt/cmsg knob that
- * configures UDP GSO segment size on a sending socket.  Older kernel-
- * headers packages predate the constant; the UAPI value (103) is fixed
- * since UDP GSO landed in 4.18. */
-#ifndef UDP_SEGMENT
-#define UDP_SEGMENT		103
-#endif
-
 /* net/iucv/af_iucv.h */
 #ifndef SO_IPRMDATA_MSG
 #define SO_IPRMDATA_MSG 0x0080          /* send/recv IPRM_DATA msgs */

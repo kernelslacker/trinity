@@ -16,6 +16,7 @@
 #include "kernel/in.h"
 #include "kernel/sctp.h"
 #include "kernel/mptcp.h"
+#include "kernel/udp.h"
 /*
  * Adaptive-budget tunables for childop_budget_mult[] / adapt_budget().
  * Q8.8 fixed point: 256 == 1.0x.  Floor and ceiling cap how far the

@@ -27,6 +27,7 @@
 
 #include <sys/socket.h>
 
+#include "kernel/udp.h"
 enum cmsg_kind {
 	/*
 	 * Base kinds drawn unconditionally by the OFF picker via a single

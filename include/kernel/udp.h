@@ -27,3 +27,7 @@
 #ifndef UDP_ENCAP_RXRPC
 #define UDP_ENCAP_RXRPC		6
 #endif
+
+#ifndef UDP_SEGMENT
+#define UDP_SEGMENT		103
+#endif

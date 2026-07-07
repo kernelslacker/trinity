@@ -68,6 +68,7 @@
 #include "userns-bootstrap.h"
 
 #include "kernel/socket.h"
+#include "kernel/udp.h"
 /* Per-iteration packet burst base.  BUDGETED+JITTER scales it.
  * Sends are MSG_DONTWAIT; the inner loop also clamps to
  * STORM_BUDGET_NS wall-clock so even an unbounded burst can't stall
