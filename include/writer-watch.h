@@ -1,5 +1,6 @@
 #pragma once
 
+#include "kernel/hw_breakpoint.h"
 /*
  * Stage-2 writer-pinning canary (--writer-watch=<hexaddr>).
  *

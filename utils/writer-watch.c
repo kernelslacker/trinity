@@ -37,6 +37,7 @@
 #include "utils.h"
 #include "writer-watch.h"
 
+#include "kernel/hw_breakpoint.h"
 /*
  * Per-child fd for the open perf event.  Kept at file scope so a future
  * teardown helper could close it; currently the child holds it for its
