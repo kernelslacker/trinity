@@ -42,6 +42,7 @@
 #include "netlink-genl-families.h"
 #include "utils.h"
 
+#include "kernel/openvswitch.h"
 /* struct ovs_header is a single int dp_ifindex; kernel-side family
  * registrations all set hdrsize = sizeof(struct ovs_header). */
 #define OVS_FAM_HDRSIZE sizeof(struct ovs_header)
