@@ -177,16 +177,7 @@
 
 #include "kernel/veth.h"
 
-/* linux/futex.h — FUTEX2_* flag bits for sys_futex_wait/wake/waitv/requeue
- * and the futex_waitv.flags field.  These landed in 6.7 (FUTEX2_SIZE_*,
- * FUTEX2_NUMA, FUTEX2_PRIVATE) and 6.13 (FUTEX2_MPOL); older kernel-headers
- * packages predate the names.  Values mirror the upstream uapi
- * <linux/futex.h> literals exactly: FUTEX2_PRIVATE (0x80) collides with
- * FUTEX_PRIVATE_FLAG by design so the per-mm hash routing matches the
- * classic futex op encoding. */
-#ifndef FUTEX2_SIZE_U8
-#define FUTEX2_SIZE_U8		0x00
-#endif
+#include "kernel/futex.h"
 #ifndef FUTEX2_SIZE_U16
 #define FUTEX2_SIZE_U16		0x01
 #endif
