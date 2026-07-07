@@ -272,3 +272,53 @@ struct trinity_io_uring_zcrx_ctrl {
 		struct trinity_io_uring_zcrx_ctrl_flush		zc_flush;
 	} body;
 };
+
+#ifndef IORING_OFF_SQ_RING
+#define IORING_OFF_SQ_RING	0ULL
+#endif
+#ifndef IORING_OFF_SQES
+#define IORING_OFF_SQES		0x10000000ULL
+#endif
+
+#ifndef IORING_OP_READ_MULTISHOT
+#define IORING_OP_READ_MULTISHOT	49
+#endif
+#ifndef IORING_OP_WAITID
+#define IORING_OP_WAITID		50
+#endif
+#ifndef IORING_OP_FUTEX_WAIT
+#define IORING_OP_FUTEX_WAIT		51
+#define IORING_OP_FUTEX_WAKE		52
+#define TRINITY_COMPAT_BACKFILLED_FUTEX_WAIT_WAKE
+#endif
+#ifndef IORING_OP_FUTEX_WAITV
+#define IORING_OP_FUTEX_WAITV		53
+#endif
+#ifndef IORING_OP_FIXED_FD_INSTALL
+#define IORING_OP_FIXED_FD_INSTALL	54
+#endif
+#ifndef IORING_OP_FTRUNCATE
+#define IORING_OP_FTRUNCATE		55
+#endif
+#ifndef IORING_OP_BIND
+#define IORING_OP_BIND			56
+#define TRINITY_COMPAT_BACKFILLED_BIND
+#endif
+#ifndef IORING_OP_LISTEN
+#define IORING_OP_LISTEN		57
+#endif
+#ifndef IORING_OP_RECV_ZC
+#define IORING_OP_RECV_ZC		58
+#endif
+#ifndef IORING_OP_EPOLL_WAIT
+#define IORING_OP_EPOLL_WAIT		59
+#endif
+
+#ifndef SOCKET_URING_OP_SIOCINQ
+#define SOCKET_URING_OP_SIOCINQ		0
+#define SOCKET_URING_OP_SIOCOUTQ	1
+#define SOCKET_URING_OP_GETSOCKOPT	2
+#define SOCKET_URING_OP_SETSOCKOPT	3
+#define TRINITY_COMPAT_BACKFILLED_SOCKET_URING_OP
+#endif
+
