@@ -94,6 +94,7 @@ void register_fd_provider(const struct fd_provider *prov)
 	newnode->enabled = prov->enabled;
 	newnode->init = prov->init;
 	newnode->get = prov->get;
+	newnode->child_init = prov->child_init;
 	newnode->child_ops = prov->child_ops;
 	newnode->try_replenish = prov->try_replenish;
 	newnode->poll_can_block = prov->poll_can_block;
@@ -846,6 +847,21 @@ void run_fd_provider_child_ops(void)
 	}
 
 	run_fd_provider_replenish(2);
+}
+
+void run_fd_provider_child_init(struct childdata *child)
+{
+	struct list_head *node;
+
+	if (fd_providers == NULL)
+		return;
+
+	list_for_each(node, &fd_providers->list) {
+		struct fd_provider *provider = (struct fd_provider *) node;
+
+		if (provider->initialized && provider->child_init != NULL)
+			provider->child_init(child);
+	}
 }
 
 /*

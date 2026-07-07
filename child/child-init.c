@@ -29,6 +29,7 @@
 #include "arch.h"
 #include "child.h"
 #include "child-internal.h"
+#include "fd.h"
 #include "futex.h"
 #include "fd-event.h"
 #include "kcov.h"
@@ -1344,6 +1345,23 @@ void init_child(struct childdata *child, int childno)
 	init_child_rendezvous_parent(child, childno);
 
 	init_child_setup_sandbox(child, childno);
+
+	/*
+	 * Post-fork per-provider bring-up.  Providers whose kernel-side
+	 * resource lifecycle is tied to the creating task's mm (KVM VM /
+	 * vCPU fds most obviously) must create their objects here rather
+	 * than in the parent-side .init hook, otherwise every child
+	 * inherits a parent-owned object that the kernel refuses from
+	 * child context.  Sequenced after init_child_setup_sandbox() so
+	 * per-child unshare/drop_privs/rlimit tightening are already in
+	 * effect and the child's kernel-object view matches what the
+	 * fuzz loop will actually see; sequenced before
+	 * init_child_runtime_config() so the RLIMIT_AS 4 GiB pin does
+	 * not clip legitimate per-provider mmaps at bring-up time.
+	 * No-op today for every existing provider (child_init == NULL);
+	 * providers opt in explicitly.
+	 */
+	run_fd_provider_child_init(child);
 
 	init_child_runtime_config(child, childno);
 

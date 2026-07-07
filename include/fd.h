@@ -23,6 +23,25 @@ struct fd_provider {
 	enum objecttype objtype;
         int (*init)(void);
         int (*get)(void);
+	/*
+	 * Optional per-child post-fork init hook.  Invoked once per child
+	 * from init_child_rendezvous_parent() after the OBJ_LOCAL pool is
+	 * brought up, so implementations can freely populate OBJ_LOCAL
+	 * objhead entries in the child's own mm.  Providers whose kernel-
+	 * side resource lifecycle is tied to the creating task's mm (KVM
+	 * vCPU / VM fds -- vcpu->kvm->mm is stamped at KVM_CREATE_VM time
+	 * and every subsequent vCPU ioctl compares vcpu->kvm->mm against
+	 * current->mm; io_uring rings whose SQE user_data + registered
+	 * buffers reference addresses valid only in the creating mm; ...)
+	 * MUST create their kernel objects here rather than in .init,
+	 * otherwise every child inherits a parent-context object that
+	 * -EIOs from any child-side ioctl.
+	 *
+	 * Runs after init_object_lists(OBJ_LOCAL, ...) and before the
+	 * child touches any fd from the pool, so the hook may unconditionally
+	 * add_object(..., OBJ_LOCAL, ...) without an ordering worry.
+	 */
+	void (*child_init)(struct childdata *child);
 	void (*child_ops)(void);	/* optional: called periodically in child context */
 	/*
 	 * Optional per-provider top-up hook, called periodically from the
@@ -72,6 +91,16 @@ struct fd_provider {
 void register_fd_provider(const struct fd_provider *prov);
 void dump_fd_provider_names(void);
 void run_fd_provider_child_ops(void);
+
+/*
+ * Walk every initialised fd_provider with a non-NULL child_init and
+ * invoke it exactly once against @child.  Called from init_child()
+ * after the OBJ_LOCAL pool has been brought up.  Provider order matches
+ * fd_providers registration order; that order is only observable to a
+ * provider that mutates state shared with a peer provider, and no
+ * current provider does.
+ */
+void run_fd_provider_child_init(struct childdata *child);
 
 /*
  * Walk registered fd_providers with a non-NULL ->try_replenish and give
