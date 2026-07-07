@@ -160,6 +160,7 @@ static const struct sock_option inet6_opts[] = {
 	{ .name = IPV6_RECVPATHMTU, },
 	{ .name = IPV6_PATHMTU, },
 	{ .name = IPV6_DONTFRAG, },
+	{ .name = IPV6_USE_MIN_MTU, },
 
 	{ .name = IP6T_SO_SET_REPLACE, },
 	{ .name = IP6T_SO_SET_ADD_COUNTERS, },
