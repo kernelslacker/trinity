@@ -10,6 +10,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/kcmp.h"
 static unsigned long kcmp_types[] = {
 	KCMP_FILE, KCMP_VM, KCMP_FILES, KCMP_FS,
 	KCMP_SIGHAND, KCMP_IO, KCMP_SYSVSEM,

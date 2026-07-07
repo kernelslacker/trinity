@@ -77,6 +77,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/keyctl.h"
 /* Wall-clock ceiling for the inner cycle loop.  Same band as
  * madvise_cycler / pidfd_storm so dump_stats keeps ticking and SIGALRM
  * stall detection still has headroom. */
