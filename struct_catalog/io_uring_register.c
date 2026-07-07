@@ -26,9 +26,7 @@
  * IORING_SETUP_* vocabulary for io_uring_params.flags.  Mirrors the
  * curated set in io_uring_setup.c's set_rand_bitmask() array — kept in
  * sync by reviewer reading the uapi diff.  Compat #ifndef arms cover
- * bits the system header may pre-date; newer bits (CQE_MIXED, SQE_MIXED,
- * SQ_REWIND in io_uring_setup.c) are deliberately omitted here since
- * neither <linux/io_uring.h> nor the upstream uapi exposes them yet.
+ * bits the system header may pre-date.
  */
 #ifndef IORING_SETUP_NO_MMAP
 #define IORING_SETUP_NO_MMAP		(1U << 14)
@@ -40,6 +38,15 @@
 #ifndef IORING_SETUP_HYBRID_IOPOLL
 #define IORING_SETUP_HYBRID_IOPOLL	(1U << 17)
 #endif
+#ifndef IORING_SETUP_CQE_MIXED
+#define IORING_SETUP_CQE_MIXED		(1U << 18)
+#endif
+#ifndef IORING_SETUP_SQE_MIXED
+#define IORING_SETUP_SQE_MIXED		(1U << 19)
+#endif
+#ifndef IORING_SETUP_SQ_REWIND
+#define IORING_SETUP_SQ_REWIND		(1U << 20)
+#endif
 
 #define IORING_SETUP_MASK \
 	(IORING_SETUP_IOPOLL          | IORING_SETUP_SQPOLL          | \
@@ -50,7 +57,9 @@
 	 IORING_SETUP_SQE128          | IORING_SETUP_CQE32           | \
 	 IORING_SETUP_SINGLE_ISSUER   | IORING_SETUP_DEFER_TASKRUN   | \
 	 IORING_SETUP_NO_MMAP         | IORING_SETUP_REGISTERED_FD_ONLY | \
-	 IORING_SETUP_NO_SQARRAY      | IORING_SETUP_HYBRID_IOPOLL)
+	 IORING_SETUP_NO_SQARRAY      | IORING_SETUP_HYBRID_IOPOLL   | \
+	 IORING_SETUP_CQE_MIXED       | IORING_SETUP_SQE_MIXED       | \
+	 IORING_SETUP_SQ_REWIND)
 
 /*
  * sq_entries / cq_entries: the kernel rounds up to power-of-two via
