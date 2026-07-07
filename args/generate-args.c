@@ -1,6 +1,7 @@
 #include "arch.h"
 #include "args-internal.h"
 #include "argtype-ops.h"
+#include "blob_corpus.h"
 #include "cmp_hints.h"
 #include "debug.h"
 #include "deferred-free.h"
@@ -293,6 +294,12 @@ void generate_syscall_args(struct syscallrecord *rec)
 	 * entry and free a pointer the new caller never owned.  Hoisting
 	 * the reset here matches the post_state contract above. */
 	rec->owned_count = 0;
+	/* Drop any pending blob-corpus stash left over from a previous
+	 * dispatch that never reached the minicorpus_save promotion path
+	 * (no novelty signal fired).  Same rationale as the post_state /
+	 * owned_count hoists above: without this clear a stale pending
+	 * from the prior call could be promoted by this call's save. */
+	blob_corpus_clear_pending();
 	/* Same hoist for arg_snapshot_mask: defaults to "nothing shadowed"
 	 * so get_arg_snapshot() in any unrelated handler that somehow gets
 	 * called against this rec (e.g. an early validate_arg_coupling

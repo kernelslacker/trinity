@@ -273,6 +273,8 @@ static const struct stat_field blob_mutator_fields[] = {
 	STAT_FIELD(blob, dict_inserts),
 	STAT_FIELD(blob, static_magic_inserts),
 	STAT_FIELD(blob, dict_transform_inserts),
+	STAT_FIELD(blob, base_from_corpus),
+	STAT_FIELD(blob, base_from_random),
 };
 
 const struct stat_category blob_mutator_category =

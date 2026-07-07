@@ -25,6 +25,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "blob_corpus.h"
 #include "child.h"
 #include "fd.h"
 #include "kcov.h"
@@ -510,6 +511,14 @@ void minicorpus_save_with_reason(struct syscallrecord *rec,
 		__atomic_fetch_add(
 			&shm->stats.errno_sourced_saves_per_syscall[nr],
 			1UL, __ATOMIC_RELAXED);
+
+	/* Blob-content sibling: promote any pending blob stash from this
+	 * dispatch's blob_fill() calls into the shared blob corpus.  The
+	 * pending stash is process-local, populated per ARG_BUF_SIZED
+	 * draw, and only reaches shared storage on this productive-save
+	 * path -- an unpromoted pending is cleared at the top of the next
+	 * generate_syscall_args() without ever hitting shared memory. */
+	blob_corpus_promote_pending();
 }
 
 /*
