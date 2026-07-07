@@ -64,6 +64,7 @@
 #include <linux/loop.h>
 
 #include "kernel/fcntl.h"
+#include "kernel/mount.h"
 /*
  * Backing-image size, picked uniformly from [SCRATCH_IMG_MIN_SHIFT,
  * SCRATCH_IMG_MAX_SHIFT].  Lower bound matches ext4's minimum useful

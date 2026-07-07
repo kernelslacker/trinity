@@ -79,6 +79,7 @@
 #include "trinity.h"
 
 #include "kernel/fcntl.h"
+#include "kernel/mount.h"
 /*
  * Hard cap on race cycles per invocation.  Three is enough to sample
  * different temporal positions of the race window within one alarm(1),
