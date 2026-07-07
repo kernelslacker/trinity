@@ -91,6 +91,9 @@ extern const unsigned int bpf_attach_types_count;
 #ifndef BPF_MAP_TYPE_INSN_ARRAY
 #define BPF_MAP_TYPE_INSN_ARRAY		34
 #endif
+#ifndef BPF_MAP_TYPE_RHASH
+#define BPF_MAP_TYPE_RHASH		35
+#endif
 
 /* Flags referenced from the MAP_CREATE schema annotation. */
 #ifndef BPF_F_TOKEN_FD
