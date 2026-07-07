@@ -1449,8 +1449,18 @@ invalidate_mmap_pool_range(enum objecttype type,
 		return 0;
 
 	for_each_obj(head, obj, idx) {
-		struct map *m = &obj->map;
+		struct map *m;
 		unsigned long m_start, m_end;
+
+		/*
+		 * Same sibling-scribble defence as addr_in_local_runtime_map:
+		 * reject wild obj / obj_type before touching &obj->map or
+		 * m->ptr / m->size.  Bad-slot stat bump happens inside.
+		 */
+		if (!objpool_check(obj, type))
+			continue;
+
+		m = &obj->map;
 
 		if (m->ptr == NULL || m->size == 0)
 			continue;
@@ -1518,7 +1528,18 @@ unsigned int invalidate_obj_mmap_by_fd(int fd)
 			continue;
 
 		for_each_obj(head, obj, idx) {
-			struct map *m = &obj->map;
+			struct map *m;
+
+			/*
+			 * Same sibling-scribble defence as
+			 * addr_in_local_runtime_map: reject wild obj /
+			 * obj_type before touching &obj->map or m->fd.
+			 * Bad-slot stat bump happens inside.
+			 */
+			if (!objpool_check(obj, map_pool_types[i]))
+				continue;
+
+			m = &obj->map;
 
 			if (m->fd != fd)
 				continue;
