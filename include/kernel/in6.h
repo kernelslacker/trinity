@@ -11,6 +11,9 @@
 #ifndef IPV6_DONTFRAG
 #define IPV6_DONTFRAG		62
 #endif
+#ifndef IPV6_USE_MIN_MTU
+#define IPV6_USE_MIN_MTU	63
+#endif
 #ifndef IPV6_AUTOFLOWLABEL
 #define IPV6_AUTOFLOWLABEL	70
 #endif
