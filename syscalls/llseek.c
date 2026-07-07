@@ -13,6 +13,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/fs.h"
 static unsigned long llseek_origins[] = {
 	SEEK_SET, SEEK_CUR, SEEK_END, SEEK_DATA,
 	SEEK_HOLE,

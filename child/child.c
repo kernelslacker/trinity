@@ -49,6 +49,7 @@
 #include "utils.h"	// zmalloc
 #include "vma-pressure.h"
 
+#include "kernel/if_packet.h"
 /*
  * Pin op_nr — the trailing field of the per-syscall hot block — to an
  * offset under 64 so a future field reorder that moves any of the hot

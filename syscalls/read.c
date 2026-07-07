@@ -15,6 +15,7 @@
 #include "utils.h"
 #include "compat.h"
 
+#include "kernel/fs.h"
 static void sanitise_read(struct syscallrecord *rec)
 {
 	bool typed_size = false;

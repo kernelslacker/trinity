@@ -17,6 +17,7 @@
 #include "struct_catalog-internal.h"
 #include "arch.h"
 
+#include "kernel/epoll.h"
 /* ------------------------------------------------------------------ */
 /* struct pollfd (poll, ppoll)                                         */
 /* ------------------------------------------------------------------ */

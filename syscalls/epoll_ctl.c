@@ -13,6 +13,7 @@
 #include "utils.h"
 #include "compat.h"
 
+#include "kernel/epoll.h"
 #ifndef EPOLLEXCLUSIVE
 #define EPOLLEXCLUSIVE (1 << 28)
 #endif

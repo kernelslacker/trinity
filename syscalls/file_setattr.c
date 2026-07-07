@@ -13,6 +13,7 @@
 #include "utils.h"
 
 #include "kernel/fcntl.h"
+#include "kernel/fs.h"
 static unsigned long file_setattr_at_flags[] = {
 	AT_SYMLINK_NOFOLLOW, AT_EMPTY_PATH,
 };

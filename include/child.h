@@ -15,6 +15,7 @@
 #include "socket-family-grammar.h"
 #include "syscall.h"
 
+#include "kernel/if_packet.h"
 struct fd_event_ring;
 
 /*
