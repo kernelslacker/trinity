@@ -42,62 +42,6 @@
 #define UDPLITE_RECV_CSCOV   11 /* receiver partial coverage (threshold ) */
 #endif
 
-/* linux/in.h */
-#ifndef IP_MTU
-#define IP_MTU			14
-#endif
-#ifndef IP_FREEBIND
-#define IP_FREEBIND		15
-#endif
-#ifndef IP_IPSEC_POLICY
-#define IP_IPSEC_POLICY		16
-#endif
-#ifndef IP_XFRM_POLICY
-#define IP_XFRM_POLICY		17
-#endif
-#ifndef IP_PASSSEC
-#define IP_PASSSEC		18
-#endif
-#ifndef IP_TRANSPARENT
-#define IP_TRANSPARENT		19
-#endif
-#ifndef IP_MINTTL
-#define IP_MINTTL		21
-#endif
-#ifndef IP_ORIGDSTADDR
-#define IP_ORIGDSTADDR		20
-#endif
-#ifndef IP_RECVORIGDSTADDR
-#define IP_RECVORIGDSTADDR	IP_ORIGDSTADDR
-#endif
-#ifndef IP_NODEFRAG
-#define IP_NODEFRAG		22
-#endif
-#ifndef IP_CHECKSUM
-#define IP_CHECKSUM		23
-#endif
-#ifndef IP_BIND_ADDRESS_NO_PORT
-#define IP_BIND_ADDRESS_NO_PORT	24
-#endif
-#ifndef IP_RECVFRAGSIZE
-#define IP_RECVFRAGSIZE		25
-#endif
-#ifndef IP_MULTICAST_ALL
-#define IP_MULTICAST_ALL	49
-#endif
-#ifndef IP_UNICAST_IF
-#define IP_UNICAST_IF		50
-#endif
-#ifndef IPPROTO_BEETPH
-#define IPPROTO_BEETPH		94
-#endif
-#ifndef IPPROTO_MPLS
-#define IPPROTO_MPLS		137
-#endif
-#ifndef IPPROTO_MPTCP
-#define IPPROTO_MPTCP		262
-#endif
-
 /* linux/in6.h */
 #ifndef IPV6_FLOWINFO
 #define IPV6_FLOWINFO 11

@@ -884,6 +884,7 @@ bool igmp_mld_source_churn(struct childdata *child)
 #include "shm.h"
 
 #include "kernel/socket.h"
+#include "kernel/in.h"
 bool igmp_mld_source_churn(struct childdata *child)
 {
 	(void)child;
