@@ -24,6 +24,7 @@
 #include "utils.h"
 #include "rnd.h"
 
+#include "kernel/mptcp.h"
 static const unsigned int mptcp_opts[] = {
 	MPTCP_INFO,
 	MPTCP_TCPINFO,
