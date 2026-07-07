@@ -23,6 +23,7 @@
 
 #include "kernel/socket.h"
 #include "kernel/mount.h"
+#include "kernel/if_packet.h"
 /*
  * Startup snapshot of the dormant-op gate consulted by init_altop_dispatch()
  * to build the dense enabled_altops[] vector.  Mutated at runtime by the

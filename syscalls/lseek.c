@@ -11,6 +11,7 @@
 #include "compat.h"
 #include "utils.h"
 
+#include "kernel/fs.h"
 static unsigned long lseek_whences[] = {
 	SEEK_SET, SEEK_CUR, SEEK_END, SEEK_DATA,
 	SEEK_HOLE,

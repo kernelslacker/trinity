@@ -10,6 +10,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/wait.h"
 static unsigned long waitid_options[] = {
 	WNOHANG, WEXITED, WSTOPPED, WCONTINUED, WNOWAIT,
 	__WALL, __WCLONE, __WNOTHREAD,

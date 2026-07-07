@@ -9,6 +9,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/wait.h"
 static unsigned long wait_options[] = {
 	WNOHANG, WUNTRACED, WCONTINUED, __WALL, __WCLONE, __WNOTHREAD,
 };

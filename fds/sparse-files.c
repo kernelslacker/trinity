@@ -27,6 +27,7 @@
 #include "sparse-files.h"
 #include "utils.h"
 
+#include "kernel/fs.h"
 #define MAX_SPARSE_FILES	8
 #define SPARSE_FILE_PAGES	16
 

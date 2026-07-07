@@ -11,17 +11,19 @@
 #include "rnd.h"
 #include "sanitise.h"
 
+#ifndef _LINUX_MOUNT_H
 enum fsconfig_command {
-    FSCONFIG_SET_FLAG       = 0,    /* Set parameter, supplying no value */
-    FSCONFIG_SET_STRING     = 1,    /* Set parameter, supplying a string value */
-    FSCONFIG_SET_BINARY     = 2,    /* Set parameter, supplying a binary blob value */
-    FSCONFIG_SET_PATH       = 3,    /* Set parameter, supplying an object by path */
-    FSCONFIG_SET_PATH_EMPTY = 4,    /* Set parameter, supplying an object by (empty) path */
-    FSCONFIG_SET_FD         = 5,    /* Set parameter, supplying an object by fd */
-    FSCONFIG_CMD_CREATE     = 6,    /* Invoke superblock creation */
-    FSCONFIG_CMD_RECONFIGURE = 7,   /* Invoke superblock reconfiguration */
-    FSCONFIG_CMD_CREATE_EXCL = 8,   /* Create new, fail if reusing existing */
+    FSCONFIG_SET_FLAG       = 0,
+    FSCONFIG_SET_STRING     = 1,
+    FSCONFIG_SET_BINARY     = 2,
+    FSCONFIG_SET_PATH       = 3,
+    FSCONFIG_SET_PATH_EMPTY = 4,
+    FSCONFIG_SET_FD         = 5,
+    FSCONFIG_CMD_CREATE     = 6,
+    FSCONFIG_CMD_RECONFIGURE = 7,
+    FSCONFIG_CMD_CREATE_EXCL = 8,
 };
+#endif
 
 static unsigned long fsconfig_ops[] = {
  FSCONFIG_SET_FLAG, FSCONFIG_SET_STRING, FSCONFIG_SET_BINARY, FSCONFIG_SET_PATH,

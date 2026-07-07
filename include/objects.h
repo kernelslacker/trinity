@@ -12,6 +12,7 @@
 #include "trinity.h"
 #include "types.h"
 
+#include "kernel/fs.h"
 struct fileobj {
 	const char *filename;
 	int flags;

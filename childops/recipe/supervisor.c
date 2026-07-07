@@ -38,6 +38,7 @@
 #include "kernel/prctl.h"
 #include "kernel/seccomp.h"
 #include "kernel/mount.h"
+#include "kernel/wait.h"
 /*
  * Recipe 33: ptrace SEIZE+EXITKILL lifecycle.
  *

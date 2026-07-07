@@ -29,6 +29,7 @@
 #include "arch.h"
 #include "utils.h"
 
+#include "kernel/fs.h"
 /*
  * struct ip_mreqn -- IPPROTO_IP / IP_{ADD,DROP}_MEMBERSHIP and
  * IP_MULTICAST_IF.  imr_multiaddr is __be32 selecting the multicast

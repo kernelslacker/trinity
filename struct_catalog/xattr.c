@@ -24,6 +24,7 @@
 #ifdef USE_XATTR_ARGS
 #include <linux/xattr.h>
 
+#include "kernel/fs.h"
 /* ------------------------------------------------------------------ */
 /* struct xattr_args (setxattrat, getxattrat)                          */
 /* ------------------------------------------------------------------ */

@@ -16,6 +16,7 @@
 #include "compat.h"
 #include "utils.h"
 
+#include "kernel/fs.h"
 /*
  * Snapshot of the (buf, count) pair the post handler needs, captured at
  * sanitise time and parked in rec->post_state -- a slot the syscall ABI

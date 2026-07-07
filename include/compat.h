@@ -15,11 +15,6 @@
 
 #include "kernel/veth.h"
 
-/* sys/epoll.h */
-#ifndef EPOLLWAKEUP
-#define EPOLLWAKEUP (1u << 29)
-#endif
-
 /* time.h */
 #ifndef CLOCK_MONOTONIC_RAW
 #define CLOCK_MONOTONIC_RAW 4
