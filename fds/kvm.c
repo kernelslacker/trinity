@@ -585,19 +585,37 @@ static int init_kvm_vcpus(void)
 	return true;
 }
 
+/*
+ * Per-child (OBJ_LOCAL) KVM fd pickers.  Every KVM object (system fd,
+ * VM fd, vCPU fd) lives in the calling child's private OBJ_LOCAL pool
+ * -- the kernel binds each object to the creating task's mm at
+ * KVM_CREATE_VM / KVM_CREATE_VCPU time and every subsequent ioctl
+ * compares vcpu->kvm->mm against current->mm.  A parent-created object
+ * inherited across fork is unreachable from every child (kvm_main.c
+ * kvm_vcpu_ioctl / kvm_vm_ioctl at the mm mismatch return -EIO), so
+ * the parent-side OBJ_GLOBAL pool used pre-refactor was never usable
+ * from fuzz context and every KVM_RUN in every child errored.
+ *
+ * objects_pool_empty() short-circuits on an empty local pool; the
+ * bounded per-child retry loop then mirrors the OBJ_GLOBAL pickers
+ * that lived here before.  OBJ_LOCAL is per-child and not exposed to
+ * the lockless-reader UAF window OBJ_GLOBAL guards against, but we
+ * still run objpool_check() -- cheap and matches the fd-provider
+ * defensive shape used elsewhere in this file.
+ */
 static int get_rand_kvm_system_fd(void)
 {
 	if (unsupported_kvm)
 		return -1;
 
-	if (objects_empty(OBJ_FD_KVM_SYSTEM) == true)
+	if (objects_pool_empty(OBJ_LOCAL, OBJ_FD_KVM_SYSTEM) == true)
 		return -1;
 
 	for (int i = 0; i < 1000; i++) {
 		struct object *obj;
 		int fd;
 
-		obj = get_random_object(OBJ_FD_KVM_SYSTEM, OBJ_GLOBAL);
+		obj = get_random_object(OBJ_FD_KVM_SYSTEM, OBJ_LOCAL);
 		if (!objpool_check(obj, OBJ_FD_KVM_SYSTEM))
 			continue;
 
@@ -614,14 +632,14 @@ static int get_rand_kvm_vm_fd(void)
 	if (unsupported_kvm)
 		return -1;
 
-	if (objects_empty(OBJ_FD_KVM_VM) == true)
+	if (objects_pool_empty(OBJ_LOCAL, OBJ_FD_KVM_VM) == true)
 		return -1;
 
 	for (int i = 0; i < 1000; i++) {
 		struct object *obj;
 		int fd;
 
-		obj = get_random_object(OBJ_FD_KVM_VM, OBJ_GLOBAL);
+		obj = get_random_object(OBJ_FD_KVM_VM, OBJ_LOCAL);
 		if (!objpool_check(obj, OBJ_FD_KVM_VM))
 			continue;
 
@@ -638,14 +656,14 @@ static int get_rand_kvm_vcpu_fd(void)
 	if (unsupported_kvm)
 		return -1;
 
-	if (objects_empty(OBJ_FD_KVM_VCPU) == true)
+	if (objects_pool_empty(OBJ_LOCAL, OBJ_FD_KVM_VCPU) == true)
 		return -1;
 
 	for (int i = 0; i < 1000; i++) {
 		struct object *obj;
 		int fd;
 
-		obj = get_random_object(OBJ_FD_KVM_VCPU, OBJ_GLOBAL);
+		obj = get_random_object(OBJ_FD_KVM_VCPU, OBJ_LOCAL);
 		if (!objpool_check(obj, OBJ_FD_KVM_VCPU))
 			continue;
 

@@ -38,25 +38,15 @@
 #include "utils.h"
 
 /*
- * Match against the OBJ_FD_KVM_VCPU pool populated by fds/kvm.c.  Linear
- * scan -- the pool tops out at KVM_VCPUS_PER_VM * (max VMs created at
- * init + regenerated), well under the threshold where O(n) hurts.  Same
- * shape as userfaultfd_fd_test / vduse_fd_test for programmatically-
- * created fds that have no /proc/devices presence to match on.
+ * Match against the calling child's OBJ_LOCAL OBJ_FD_KVM_VCPU pool.
+ * See ioctls/kvm-system.c for the fuller rationale on why KVM fds
+ * live in OBJ_LOCAL post-refactor.  find_local_object_by_fd() replaces
+ * the previous linear for_each_obj walk with a hash probe.
  */
 static int kvm_vcpu_fd_test(int fd, const struct stat *st __attribute__((unused)))
 {
-	struct objhead *head;
-	struct object *obj;
-	unsigned int idx;
-
-	head = get_objhead(OBJ_GLOBAL, OBJ_FD_KVM_VCPU);
-
-	for_each_obj(head, obj, idx) {
-		if (obj->kvmvcpuobj.fd == fd)
-			return 0;
-	}
-
+	if (find_local_object_by_fd(OBJ_FD_KVM_VCPU, fd) != NULL)
+		return 0;
 	return -1;
 }
 
