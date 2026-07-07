@@ -78,6 +78,7 @@
 #include "trinity.h"
 
 #include "kernel/fcntl.h"
+#include "kernel/splice.h"
 /* tls12_crypto_info_aes_gcm_128 and TLS_CIPHER_AES_GCM_128 / TLS_TX /
  * TLS_RX optnames are all provided by include/tls.h above, which
  * shadows the toolchain's <linux/tls.h> intentionally so trinity

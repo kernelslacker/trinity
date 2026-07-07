@@ -100,6 +100,7 @@
 #include "trinity.h"
 
 #include "kernel/fcntl.h"
+#include "kernel/splice.h"
 /* UAPI fallbacks -- every value below is stable kernel UAPI. */
 #ifndef UDP_ENCAP
 # define UDP_ENCAP			100

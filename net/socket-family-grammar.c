@@ -43,6 +43,7 @@
 #include "proto-alg-dict.h"
 
 #include "kernel/fcntl.h"
+#include "kernel/splice.h"
 #ifndef ALG_SET_IV
 #define ALG_SET_IV		2
 #endif

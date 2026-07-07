@@ -66,6 +66,7 @@
 #include "utils.h"
 
 #include "kernel/fcntl.h"
+#include "kernel/splice.h"
 #define READ_CHUNK		4096U
 #define READV_IOV_COUNT		4U
 #define DIFF_NEXT_BYTES		8U
