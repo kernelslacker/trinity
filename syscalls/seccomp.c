@@ -16,6 +16,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/seccomp.h"
 #define SECCOMP_SET_MODE_STRICT		0
 #define SECCOMP_SET_MODE_FILTER		1
 #define SECCOMP_GET_ACTION_AVAIL	2

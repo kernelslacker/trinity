@@ -26,6 +26,7 @@
 #include "utils.h"
 
 #include "kernel/fcntl.h"
+#include "kernel/seccomp.h"
 static __u32 get_kern_version(void)
 {
 	struct utsname buf;

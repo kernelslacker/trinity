@@ -20,6 +20,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/seccomp.h"
 #ifndef SECCOMP_FILTER_FLAG_NEW_LISTENER
 #define SECCOMP_FILTER_FLAG_NEW_LISTENER (1UL << 3)
 #endif
