@@ -19,9 +19,9 @@
 #include "net.h"
 /*
  * struct_catalog.h transitively pulls <linux/fs.h> (via linux/aio_abi.h),
- * which defines struct file_attr.  compat.h's fallback definition of the
+ * which defines struct file_attr.  include/kernel/fs.h's fallback definition of the
  * same struct guards on FILE_ATTR_SIZE_VER0 from the kernel header, so
- * struct_catalog.h must come first or compat.h's unguarded fallback fires
+ * struct_catalog.h must come first or include/kernel/fs.h's unguarded fallback fires
  * and the kernel header then redefines the type.
  */
 #include "struct_catalog.h"

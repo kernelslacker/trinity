@@ -63,8 +63,8 @@
 /*
  * linux/if_pppox.h pulls in linux/l2tp.h, whose enum declares
  * L2TP_ATTR_IP6_SADDR / RX_COOKIE_DISCARDS / ... as identifiers.
- * compat.h defines those same names as fallback numeric macros for
- * older kernel-headers packages, so the include must precede compat.h;
+ * include/kernel headers define those same names as fallback numeric macros for
+ * older kernel-headers packages, so the include must precede the kernel fallback header;
  * otherwise the macro expansion turns the enum members into integer
  * literals and -Werror trips.
  */

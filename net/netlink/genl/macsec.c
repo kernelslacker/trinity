@@ -65,7 +65,7 @@
  * is the upstream UAPI header that ships with kernel headers from 4.6
  * onward.  The XPN (SSCI/SALT) and offload (UPD_OFFLOAD command +
  * MACSEC_ATTR_OFFLOAD + the entire macsec_offload_attrs enum) bits
- * landed in 5.7; per-symbol fallbacks in compat.h carry whichever
+ * landed in 5.7; per-symbol fallbacks in include/kernel/macsec.h carry whichever
  * constants the host header omits.  Build hosts whose sysroot lacks
  * <linux/if_macsec.h> entirely silently drop the family from the
  * registry.

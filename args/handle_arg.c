@@ -267,7 +267,7 @@ void publish_paired_length(struct syscallentry *entry,
 /*
  * UIO_FASTIOV / UIO_MAXIOV are the kernel-side fast-path and absolute
  * limits on iovec count.  Local fallback to the canonical 8/1024
- * mirrors the SPLICE_F_* fallback constants in include/compat.h, so the
+ * mirrors the SPLICE_F_* fallback constants in include/kernel/splice.h, so the
  * file builds against any uapi header vintage without pulling in
  * <sys/uio.h> just for the boundary constants.
  */

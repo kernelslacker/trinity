@@ -4,7 +4,7 @@
  * Wrapper around <linux/if_bridge.h> that ships #ifndef-guarded fallbacks
  * for IFLA_BRIDGE_* / BRIDGE_FLAGS_* / BRIDGE_VLAN_INFO_* / BR_STATE_*
  * symbols added after our installed uapi header.  Included only by its
- * real consumers -- never pulled into compat.h, so editing it doesn't
+ * real consumers -- never pulled into kernel fallback headers, so editing it doesn't
  * trigger a near-full-tree rebuild.
  */
 #include <linux/if_bridge.h>

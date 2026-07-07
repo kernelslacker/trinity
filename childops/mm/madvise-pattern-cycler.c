@@ -77,8 +77,8 @@
 #include "kernel/mman.h"
 /* Recent madvise advice modes - libc headers on older build hosts may
  * not define these even though the running kernel supports them.
- * Mirror the values from include/compat.h so we can build cleanly
- * without dragging the rest of compat.h's namespace into this TU. */
+ * Mirror the values from include/kernel/mman.h so we can build cleanly
+ * without dragging unnecessary headers into this TU. */
 #ifndef MADV_FREE
 #define MADV_FREE	8
 #endif

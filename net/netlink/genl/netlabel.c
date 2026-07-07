@@ -46,12 +46,12 @@
  * Header gating: NetLabel does not ship a UAPI header.  Its constants
  * live in net/netlabel/netlabel_*.h plus include/net/netlabel.h, all
  * of which are kernel-internal and absent from any sysroot.  Compat
- * fallbacks in include/compat.h (per-symbol #ifndef so a hypothetical
+ * fallbacks in include/kernel/netlabel.h (per-symbol #ifndef so a hypothetical
  * future UAPI header would win) carry the NLBL_*_C_* command ids,
  * NLBL_*_A_* attribute ids, the four NLBL_*_GENL_NAME family-name
  * strings, and NETLBL_PROTO_VERSION.  No #include is therefore
  * required at the family-file level — the spec walker references the
- * symbols and compat.h provides them unconditionally.
+ * symbols and include/kernel/netlabel.h provides them unconditionally.
  *
  * Family-name strings match include/net/netlabel.h exactly (including
  * the lowercase 'v' in "NLBL_CIPSOv4" and the truncation in

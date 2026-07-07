@@ -44,7 +44,7 @@
  * so the walker doesn't carry a spec entry for it.  GTPA_FAMILY
  * was appended in 5.10 to disambiguate the IPv4 vs IPv6 PDP arm
  * when both PEER_ADDRESS and PEER_ADDR6 are absent — older host
- * headers stop at GTPA_MS_ADDR6=12, so compat.h carries the
+ * headers stop at GTPA_MS_ADDR6=12, so include/kernel/gtp.h carries the
  * numeric fallback under a per-symbol #ifndef gate.
  *
  * Header gating mirrors the wireguard / l2tp families: the
@@ -53,7 +53,7 @@
  * from the registry instead of failing the build.  A host whose
  * header predates the late-added GTPA_PAD / GTPA_PEER_ADDR6 /
  * GTPA_MS_ADDR6 / GTPA_FAMILY ids picks up the numeric fallback
- * in compat.h instead.
+ * in include/kernel/gtp.h instead.
  */
 
 #if __has_include(<linux/gtp.h>)

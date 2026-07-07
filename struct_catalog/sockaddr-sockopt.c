@@ -34,7 +34,7 @@
 #include <linux/if_packet.h>
 /*
  * linux/fs.h defines FILE_ATTR_SIZE_VER0 + struct file_attr; bring it
- * in before compat.h so compat.h's older-headers fallback for
+ * in before the kernel fallback header so that header's older-headers fallback for
  * struct file_attr stays inactive.  This TU does not use the type,
  * but struct_catalog.h pulls <linux/aio_abi.h> -> <linux/fs.h> below
  * and a duplicate definition would -Werror.

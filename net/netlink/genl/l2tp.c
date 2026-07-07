@@ -49,7 +49,7 @@
  * Build hosts whose sysroot lacks <linux/l2tp.h> entirely silently
  * drop the family from the registry; build hosts whose header
  * predates one of the late-add attributes pick up the numeric
- * fallback in compat.h instead of failing the build.
+ * fallback in include/kernel/l2tp.h instead of failing the build.
  */
 
 #if __has_include(<linux/l2tp.h>)
@@ -57,7 +57,7 @@
 /* <netinet/in.h> directly first to set _NETINET_IN_H, so the libc-compat
  * guards in <linux/in.h> + <linux/in6.h> (pulled in by <linux/l2tp.h>)
  * suppress the struct in_addr / sockaddr_in / IPPROTO_* duplicates.
- * compat.h then comes after <linux/l2tp.h> so its #ifndef L2TP_ATTR_*
+ * include/kernel/l2tp.h then comes after <linux/l2tp.h> so its #ifndef L2TP_ATTR_*
  * shims see the host header's enum values and only fill in the late-add
  * ids the host header actually omits. */
 #include <netinet/in.h>

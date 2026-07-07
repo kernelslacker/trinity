@@ -57,7 +57,7 @@ const struct struct_field pollfd_fields[POLLFD_FIELDS_N] = {
 
 /*
  * EPOLL* event-bit vocabulary for epoll_event.events.  EPOLLEXCLUSIVE
- * and EPOLLWAKEUP postdate older glibc vintages; compat.h declares
+ * and EPOLLWAKEUP postdate older glibc vintages; include/kernel/epoll.h declares
  * EPOLLWAKEUP unconditionally and the local #ifdef arm covers
  * EPOLLEXCLUSIVE.  Bits outside the mask either fail the kernel's
  * EP_PRIVATE_BITS check or get silently masked, so a uniform-byte

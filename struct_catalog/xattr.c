@@ -7,7 +7,7 @@
  * is never empty when USE_XATTR_ARGS is off.
  *
  * struct file_attr comes from <linux/fs.h> when the system uapi
- * headers are recent enough; compat.h carries a layout-identical
+ * headers are recent enough; include/kernel/fs.h carries a layout-identical
  * fallback under #ifndef FILE_ATTR_SIZE_VER0 plus a fallback
  * FS_XFLAG_HASATTR macro, so both TUs land on the same shape
  * regardless of the build host's vintage.
@@ -62,7 +62,7 @@ const struct struct_field xattr_args_fields[XATTR_ARGS_FIELDS_N] = {
 /* ------------------------------------------------------------------ */
 
 /*
- * struct file_attr from <linux/fs.h> (shimmed in include/compat.h when
+ * struct file_attr from <linux/fs.h> (shimmed in include/kernel/fs.h when
  * the system uapi headers predate the file_getattr/file_setattr
  * addition).  The bespoke sanitise_file_setattr() owns the live fill --
  * build_csfu_struct(&desc_file_setattr) stamps the size word envelope
