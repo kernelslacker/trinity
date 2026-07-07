@@ -28,6 +28,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "blob_corpus.h"
 #include "blob_mutator.h"
 #include "cmp_hints.h"
 #include "debug.h"
@@ -505,7 +506,18 @@ void blob_fill(unsigned char *buf, size_t len, unsigned int nr, bool do32)
 	 * takes unsigned int; cap defensively (ARG_BUF_SIZED sizes are
 	 * <= ~64 KiB today so the cap is a future-proofing guard). */
 	n = (len > UINT32_MAX) ? UINT32_MAX : (unsigned int) len;
-	generate_rand_bytes(buf, n);
+
+	/* Prefer a productive base from the per-(nr, do32) blob corpus
+	 * when one exists so HAVOC/CMPDICT lay their bounded pass on top
+	 * of a known-productive byte pattern instead of on top of fresh
+	 * random noise.  On a miss (empty pool, no key match), fall back
+	 * to the original generate_rand_bytes() floor so the FILL contract
+	 * is preserved.  The try_get_base call bumps
+	 * blob_base_from_corpus on hit / blob_base_from_random on miss;
+	 * the ratio is the observable "how often did we get a productive
+	 * base?" gauge without disturbing any existing counter. */
+	if (!blob_corpus_try_get_base(nr, do32, buf, (size_t) n))
+		generate_rand_bytes(buf, n);
 
 	/* Attribute one fill invocation regardless of which non-OFF mode
 	 * we resolved to -- this is the gate the stat-category emitter
@@ -546,6 +558,14 @@ void blob_fill(unsigned char *buf, size_t len, unsigned int nr, bool do32)
 					   (unsigned long) transform_inserts,
 					   __ATOMIC_RELAXED);
 	}
+
+	/* Stash the just-authored bytes as a pending candidate for the
+	 * next minicorpus_save promotion.  Deferred to the caller's
+	 * post-syscall novelty gate so only PRODUCTIVE blobs enter the
+	 * shared corpus -- an unpromoted pending is cleared at the top of
+	 * the next generate_syscall_args() without ever hitting shared
+	 * memory. */
+	blob_corpus_stash_pending(nr, do32, buf, (size_t) n);
 }
 
 void blob_mutator_self_check(void)

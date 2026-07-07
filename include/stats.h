@@ -5366,6 +5366,21 @@ struct stats_s {
 	unsigned long blob_static_magic_inserts;
 	unsigned long blob_dict_transform_inserts;
 
+	/* SHADOW ratio for the per-(nr, do32) blob corpus base source.
+	 * Bumped once per blob_fill() invocation from
+	 * blob_corpus_try_get_base(): base_from_corpus increments on a
+	 * key-matching hit (HAVOC/CMPDICT ran on top of a productive
+	 * saved base), base_from_random on a miss (the generate_rand_bytes
+	 * fallback fired).  Their sum equals blob_fills by construction,
+	 * so the hit ratio is (base_from_corpus /
+	 * (base_from_corpus + base_from_random)) -- the observable
+	 * "how often did the corpus have a productive base ready?"
+	 * gauge.  Both bumped only by non-OFF blob_fill() calls; OFF
+	 * short-circuits before the try_get_base call so the OFF arm
+	 * stays byte-identical. */
+	unsigned long blob_base_from_corpus;
+	unsigned long blob_base_from_random;
+
 	/* Cause-attribution for the epoll wait-family (epoll_wait,
 	 * epoll_pwait, epoll_pwait2) rejects landing in
 	 * validate_arg_coupling() with maxevents > 0 && events == NULL.
