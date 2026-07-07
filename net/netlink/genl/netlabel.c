@@ -62,6 +62,7 @@
 #include "netlink-genl-families.h"
 #include "utils.h"
 
+#include "kernel/netlabel.h"
 /* ---- NLBL_MGMT ---- */
 
 static const struct genl_cmd_grammar nlbl_mgmt_cmds[] = {
