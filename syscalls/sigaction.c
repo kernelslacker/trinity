@@ -13,6 +13,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/prctl.h"
 /*
  * sa_flags shapes.  We assemble subsets out of this pool and (depending
  * on the bucket draw) bolt on a random extra bit or fall through to a

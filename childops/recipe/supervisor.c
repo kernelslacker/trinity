@@ -35,6 +35,7 @@
 #include "childops/recipe/internal.h"
 
 #include "kernel/fcntl.h"
+#include "kernel/prctl.h"
 /*
  * Recipe 33: ptrace SEIZE+EXITKILL lifecycle.
  *
