@@ -18,6 +18,7 @@
 #include "utils.h"
 #include "pids.h"
 
+#include "kernel/falloc.h"
 /* 64KB covers the largest page size (arm64 with 64KB pages). */
 static char page_buf[65536];
 

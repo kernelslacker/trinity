@@ -39,6 +39,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/falloc.h"
 static unsigned long file_counter;
 static bool spew_dir_created;
 

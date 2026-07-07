@@ -4,14 +4,6 @@
 #include <netinet/in.h>		/* IPPROTO_*, IP_*, IPV6_* enum members */
 #include <linux/types.h>
 
-/* linux/falloc.h */
-#ifndef FALLOC_FL_KEEP_SIZE
-#define FALLOC_FL_KEEP_SIZE	0x01
-#endif
-#ifndef FALLOC_FL_PUNCH_HOLE
-#define FALLOC_FL_PUNCH_HOLE	0x02
-#endif
-
 /* Flags for SPLICE and VMSPLICE.  */
 #ifndef SPLICE_F_MOVE
 # define SPLICE_F_MOVE		1	/* Move pages instead of copying.  */
