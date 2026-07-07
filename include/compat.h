@@ -58,19 +58,6 @@
 #define MS_BORN		(1<<29)
 #endif
 
-/* sys/mount.h */
-#ifndef MNT_DETACH
-#define MNT_DETACH		2
-#endif
-
-#ifndef MNT_EXPIRE
-#define MNT_EXPIRE		4
-#endif
-
-#ifndef UMOUNT_NOFOLLOW
-#define UMOUNT_NOFOLLOW		8
-#endif
-
 /* if_ether.h */
 #ifndef ETH_P_CANFD
 #define ETH_P_CANFD	0x000D

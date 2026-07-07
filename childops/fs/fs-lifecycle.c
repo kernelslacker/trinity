@@ -74,6 +74,7 @@
 
 #include "kernel/fcntl.h"
 #include "kernel/falloc.h"
+#include "kernel/mount.h"
 /* Latched per-child: kernel refused CLONE_NEWUSER (helper -EPERM) */
 static bool ns_unsupported;
 

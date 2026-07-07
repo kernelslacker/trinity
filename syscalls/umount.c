@@ -5,6 +5,7 @@
 #include "sanitise.h"
 #include "compat.h"
 
+#include "kernel/mount.h"
 static unsigned long umount_flags[] = {
 	MNT_FORCE, MNT_DETACH, MNT_EXPIRE, UMOUNT_NOFOLLOW,
 };

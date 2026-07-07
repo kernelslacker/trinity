@@ -80,3 +80,14 @@
 #ifndef MOUNT_ATTR_SIZE_VER0
 #define MOUNT_ATTR_SIZE_VER0	32
 #endif
+
+#ifndef MNT_DETACH
+#define MNT_DETACH		2
+#endif
+#ifndef MNT_EXPIRE
+#define MNT_EXPIRE		4
+#endif
+#ifndef UMOUNT_NOFOLLOW
+#define UMOUNT_NOFOLLOW		8
+#endif
+
