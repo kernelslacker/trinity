@@ -19,11 +19,11 @@
 #include "struct_catalog.h"
 #include "struct_catalog-internal.h"
 #include "arch.h"
+#include "kernel/fs.h"
 
 #ifdef USE_XATTR_ARGS
 #include <linux/xattr.h>
 
-#include "kernel/fs.h"
 /* ------------------------------------------------------------------ */
 /* struct xattr_args (setxattrat, getxattrat)                          */
 /* ------------------------------------------------------------------ */
@@ -84,7 +84,8 @@ const struct struct_field xattr_args_fields[XATTR_ARGS_FIELDS_N] = {
 	 FS_XFLAG_NODUMP      | FS_XFLAG_RTINHERIT   | FS_XFLAG_PROJINHERIT | \
 	 FS_XFLAG_NOSYMLINKS  | FS_XFLAG_EXTSIZE     | FS_XFLAG_EXTSZINHERIT | \
 	 FS_XFLAG_NODEFRAG    | FS_XFLAG_FILESTREAM  | FS_XFLAG_DAX      | \
-	 FS_XFLAG_COWEXTSIZE  | FS_XFLAG_HASATTR)
+	 FS_XFLAG_COWEXTSIZE  | FS_XFLAG_VERITY      | FS_XFLAG_CASEFOLD | \
+	 FS_XFLAG_CASENONPRESERVING | FS_XFLAG_HASATTR)
 
 const struct struct_field file_attr_fields[FILE_ATTR_FIELDS_N] = {
 	FIELDX(struct file_attr, fa_xflags, FT_FLAGS,
