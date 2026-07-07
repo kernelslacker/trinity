@@ -12,3 +12,17 @@
 #ifndef PACKET_FANOUT_HASH
 #define PACKET_FANOUT_HASH		0
 #endif
+
+#ifndef PACKET_QDISC_BYPASS
+#define PACKET_QDISC_BYPASS		20
+#endif
+#ifndef PACKET_ROLLOVER_STATS
+#define PACKET_ROLLOVER_STATS		21
+#endif
+#ifndef PACKET_FANOUT_CBPF
+#define PACKET_FANOUT_CBPF		6
+#endif
+#ifndef PACKET_FANOUT_EBPF
+#define PACKET_FANOUT_EBPF		7
+#endif
+

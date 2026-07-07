@@ -58,6 +58,7 @@
 #include "shm.h"
 #include "trinity.h"
 
+#include "kernel/if_packet.h"
 #ifndef PACKET_FANOUT_HASH
 #define PACKET_FANOUT_HASH		0
 #define PACKET_FANOUT_LB		1
