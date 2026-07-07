@@ -37,6 +37,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/kvm.h"
 /*
  * Match against the calling child's OBJ_LOCAL OBJ_FD_KVM_VCPU pool.
  * See ioctls/kvm-system.c for the fuller rationale on why KVM fds
