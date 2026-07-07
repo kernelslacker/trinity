@@ -5,6 +5,7 @@
 #include "sanitise.h"
 #include "compat.h"
 
+#include "kernel/swap.h"
 #ifndef SWAP_FLAG_DISCARD_ONCE
 #define SWAP_FLAG_DISCARD_ONCE  0x20000
 #endif
