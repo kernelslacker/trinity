@@ -174,15 +174,6 @@
 
 #include "kernel/veth.h"
 
-/* linux/neighbour.h — NUD (Neighbour Unreachability Detection) state bits
- * used in ndmsg.ndm_state for RTM_NEWNEIGH / RTM_DELNEIGH / RTM_GETNEIGH.
- * NUD_PERMANENT marks a static entry that won't age out.  Sysroots without
- * <linux/neighbour.h> (or whose copy predates the bit) miss the constant
- * even though the kernel UAPI value has been fixed at 0x80 forever. */
-#ifndef NUD_PERMANENT
-#define NUD_PERMANENT		0x80
-#endif
-
 /* linux/io_uring.h
  *
  * IORING_OFF_SQ_RING / IORING_OFF_SQES: mmap offsets for the

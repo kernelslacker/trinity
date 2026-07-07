@@ -21,3 +21,7 @@
 #ifndef NTF_PROXY
 #define NTF_PROXY		(1 << 3)
 #endif
+
+#ifndef NUD_PERMANENT
+#define NUD_PERMANENT		0x80
+#endif
