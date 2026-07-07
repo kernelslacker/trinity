@@ -57,10 +57,29 @@
 #define KVM_RUN_CHURN_INNER_MAX		3
 #define KVM_RUN_CHURN_MEMSLOT_BURN	8
 
+/*
+ * Cap the number of KVM_RUN errno lines emitted per fuzzer session.
+ * A stuck-at -EIO cascade (e.g. a broken per-child KVM lifecycle where
+ * every child inherits an unreachable parent-context VM) would otherwise
+ * flood the log; a small ceiling keeps the diagnostic useful without
+ * turning it into log spam.  Under shm->debug only -- production runs
+ * keep the compact kvm_run_errors counter unchanged.
+ */
+#define KVM_RUN_ERRNO_LOG_CAP		8
+
 /* Cached KVM_CAP_SYNC_REGS bitmask.  0 == cap absent or not yet probed
  * (sync-regs scribble suppressed in either case). */
 static uint64_t sync_regs_caps;
 static bool sync_regs_probed;
+
+/*
+ * Rolling counter of KVM_RUN errno diagnostics already emitted.  Guarded
+ * by shm->debug and capped at KVM_RUN_ERRNO_LOG_CAP so a stuck failure
+ * mode surfaces the first N errnos in the log (enough to bucket EIO vs
+ * ENOMEM vs EBADF vs the -EINTR/-ERESTARTSYS families) and then falls
+ * silent, leaving the compact kvm_run_errors counter as the ongoing signal.
+ */
+static unsigned int kvm_run_errno_logged;
 
 /* Memslot-race sub-mode state.  user_memory2_supported is the cached
  * KVM_CAP_USER_MEMORY2 result: false skips the v2 ioctl variant in the
@@ -192,8 +211,26 @@ static void run_one(int vcpufd, struct kvm_run *kr, size_t kvm_run_size)
 	rc = ioctl(vcpufd, KVM_RUN, 0UL);
 
 	if (rc < 0) {
+		int saved_errno = errno;
+
 		__atomic_add_fetch(&shm->stats.kvm_run_errors, 1,
 				   __ATOMIC_RELAXED);
+		/*
+		 * Under -D, emit the first KVM_RUN_ERRNO_LOG_CAP failing
+		 * errnos so a stuck-at failure mode (e.g. mm-ownership
+		 * mismatch surfacing as EIO on every child) is visible in
+		 * the log rather than hiding under the compact
+		 * kvm_run_errors counter.  Fetch-and-add is racy across
+		 * children but that's fine -- the cap is an approximate
+		 * budget, not a hard guarantee, and losing a duplicate
+		 * emission to another child is preferable to a lock.
+		 */
+		if (shm->debug &&
+		    __atomic_fetch_add(&kvm_run_errno_logged, 1,
+				       __ATOMIC_RELAXED) < KVM_RUN_ERRNO_LOG_CAP)
+			/* check-static: child-output-ok */
+			outputerr("kvm_run_churn: KVM_RUN(vcpufd=%d) failed: %s (errno=%d)\n",
+				  vcpufd, strerror(saved_errno), saved_errno);
 		return;
 	}
 
