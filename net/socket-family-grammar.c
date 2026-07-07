@@ -187,6 +187,19 @@ const char *sfg_illegal_name(enum sfg_illegal_op op)
 	case SFG_ILLEGAL_BIND_AFTER_LISTEN:	return "bind-after-listen";
 	case SFG_ILLEGAL_SEND_BEFORE_BIND:	return "send-before-bind";
 	case SFG_ILLEGAL_DOUBLE_SHUTDOWN:	return "double-shutdown";
+	case SFG_ILLEGAL_ALG_SEND_BEFORE_SETKEY:
+		return "alg-send-before-setkey";
+	case SFG_ILLEGAL_ALG_RECV_ON_EMPTY_TSGL:
+		return "alg-recv-on-empty-tsgl";
+	case SFG_ILLEGAL_ALG_ACCEPT_BEFORE_BIND:
+		return "alg-accept-before-bind";
+	case SFG_ILLEGAL_ALG_SETKEY_AFTER_ACCEPT:
+		return "alg-setkey-after-accept";
+	case SFG_ILLEGAL_ALG_OP_DIRECTION_MISMATCH:
+		return "alg-op-direction-mismatch";
+	case SFG_ILLEGAL_ALG_DOUBLE_ACCEPT:	return "alg-double-accept";
+	case SFG_ILLEGAL_ALG_SET_AEAD_ON_NON_AEAD:
+		return "alg-set-aead-on-non-aead";
 	}
 	return "unknown";
 }
@@ -461,16 +474,30 @@ sfg_pick_phase_order(const struct socket_family_grammar *sfg,
  */
 #define SFG_ILLEGAL_RATE	16
 
-static enum sfg_illegal_op sfg_pick_illegal_op(void)
+static enum sfg_illegal_op sfg_pick_illegal_op(int family)
 {
-	static const enum sfg_illegal_op ops[] = {
+	static const enum sfg_illegal_op inet_ops[] = {
 		SFG_ILLEGAL_ACCEPT_NON_LISTENER,
 		SFG_ILLEGAL_BIND_AFTER_LISTEN,
 		SFG_ILLEGAL_SEND_BEFORE_BIND,
 		SFG_ILLEGAL_DOUBLE_SHUTDOWN,
 	};
+#ifdef USE_IF_ALG
+	static const enum sfg_illegal_op alg_ops[] = {
+		SFG_ILLEGAL_ALG_SEND_BEFORE_SETKEY,
+		SFG_ILLEGAL_ALG_RECV_ON_EMPTY_TSGL,
+		SFG_ILLEGAL_ALG_ACCEPT_BEFORE_BIND,
+		SFG_ILLEGAL_ALG_SETKEY_AFTER_ACCEPT,
+		SFG_ILLEGAL_ALG_OP_DIRECTION_MISMATCH,
+		SFG_ILLEGAL_ALG_DOUBLE_ACCEPT,
+		SFG_ILLEGAL_ALG_SET_AEAD_ON_NON_AEAD,
+	};
 
-	return ops[rnd_modulo_u32(ARRAY_SIZE(ops))];
+	if (family == PF_ALG)
+		return alg_ops[rnd_modulo_u32(ARRAY_SIZE(alg_ops))];
+#endif
+	(void)family;
+	return inet_ops[rnd_modulo_u32(ARRAY_SIZE(inet_ops))];
 }
 
 /*
@@ -536,6 +563,71 @@ static bool sfg_insert_steps(struct sfg_phase_order *o, unsigned int pos,
  * On false the caller leaves the picked legal ordering unmutated so
  * the walk falls back to a coherent plan.
  */
+#ifdef USE_IF_ALG
+/*
+ * AF_ALG illegal orderings build a fresh hostile plan rather than
+ * splicing into a legal one — the AF_ALG preconditions we violate
+ * (SETKEY-before-send, non-empty tsgl-before-recv, bind-before-accept)
+ * are baked into the LEGAL orderings themselves, so a pure insertion
+ * can't achieve "reach ACCEPTED without SETKEY" or "reach RECV without
+ * SEND_MORE" shapes.  Overwriting the picked ordering with a bespoke
+ * short plan is cleaner than teaching the splicer to remove steps.
+ * Every plan starts SOCKET, terminates on SFG_PHASE_ILLEGAL, and stays
+ * well inside SFG_MAX_PHASES.
+ */
+static bool sfg_build_illegal_order_alg(struct sfg_phase_order *out,
+					enum sfg_illegal_op op)
+{
+	static const unsigned char socket_illegal[] = {
+		SFG_PHASE_SOCKET, SFG_PHASE_ILLEGAL, SFG_PHASE_END };
+	static const unsigned char bind_illegal[] = {
+		SFG_PHASE_SOCKET, SFG_PHASE_ALG_BIND,
+		SFG_PHASE_ILLEGAL, SFG_PHASE_END };
+	static const unsigned char accept_illegal[] = {
+		SFG_PHASE_SOCKET, SFG_PHASE_ALG_BIND,
+		SFG_PHASE_ALG_ACCEPT, SFG_PHASE_ILLEGAL,
+		SFG_PHASE_END };
+	static const unsigned char setkey_accept_illegal[] = {
+		SFG_PHASE_SOCKET, SFG_PHASE_ALG_BIND,
+		SFG_PHASE_ALG_SETKEY, SFG_PHASE_ALG_ACCEPT,
+		SFG_PHASE_ILLEGAL, SFG_PHASE_END };
+	const unsigned char *src;
+	size_t srclen;
+
+	switch (op) {
+	case SFG_ILLEGAL_ALG_ACCEPT_BEFORE_BIND:
+		src = socket_illegal;
+		srclen = sizeof(socket_illegal);
+		break;
+	case SFG_ILLEGAL_ALG_SET_AEAD_ON_NON_AEAD:
+		/* Fires the SET_AEAD_AUTHSIZE setsockopt after BIND but
+		 * before SETKEY, so ctx->fam.alg.type reflects the drawn
+		 * algorithm without being masked by later steps. */
+		src = bind_illegal;
+		srclen = sizeof(bind_illegal);
+		break;
+	case SFG_ILLEGAL_ALG_SEND_BEFORE_SETKEY:
+	case SFG_ILLEGAL_ALG_SETKEY_AFTER_ACCEPT:
+	case SFG_ILLEGAL_ALG_DOUBLE_ACCEPT:
+		src = accept_illegal;
+		srclen = sizeof(accept_illegal);
+		break;
+	case SFG_ILLEGAL_ALG_RECV_ON_EMPTY_TSGL:
+	case SFG_ILLEGAL_ALG_OP_DIRECTION_MISMATCH:
+		src = setkey_accept_illegal;
+		srclen = sizeof(setkey_accept_illegal);
+		break;
+	default:
+		return false;
+	}
+	if (srclen > sizeof(out->steps))
+		return false;
+	memset(out->steps, 0, sizeof(out->steps));
+	memcpy(out->steps, src, srclen);
+	return true;
+}
+#endif /* USE_IF_ALG */
+
 static bool sfg_splice_illegal(struct sfg_phase_order *out,
 			       const struct sfg_phase_order *in,
 			       enum sfg_illegal_op op)
@@ -543,6 +635,22 @@ static bool sfg_splice_illegal(struct sfg_phase_order *out,
 	unsigned char seq[2] = { SFG_PHASE_ILLEGAL, 0 };
 	unsigned int nseq = 1;
 	int pos;
+
+#ifdef USE_IF_ALG
+	switch (op) {
+	case SFG_ILLEGAL_ALG_SEND_BEFORE_SETKEY:
+	case SFG_ILLEGAL_ALG_RECV_ON_EMPTY_TSGL:
+	case SFG_ILLEGAL_ALG_ACCEPT_BEFORE_BIND:
+	case SFG_ILLEGAL_ALG_SETKEY_AFTER_ACCEPT:
+	case SFG_ILLEGAL_ALG_OP_DIRECTION_MISMATCH:
+	case SFG_ILLEGAL_ALG_DOUBLE_ACCEPT:
+	case SFG_ILLEGAL_ALG_SET_AEAD_ON_NON_AEAD:
+		(void)in;
+		return sfg_build_illegal_order_alg(out, op);
+	default:
+		break;
+	}
+#endif
 
 	*out = *in;
 
@@ -599,14 +707,24 @@ static void sfg_do_illegal_step(struct socket_ctx *ctx,
 {
 	int fd;
 
-	/* DOUBLE_SHUTDOWN: prefer the ACCEPTED child_fd (that's the fd
-	 * a real double-shutdown crash would land on); every other op
-	 * targets the parent_fd (pre-LISTEN accept / at-LISTEN bind /
-	 * pre-BIND send). */
-	if (op == SFG_ILLEGAL_DOUBLE_SHUTDOWN && ctx->child_fd >= 0)
-		fd = ctx->child_fd;
-	else
+	/* Route each op to the fd whose kernel path a real crash would
+	 * land on: DOUBLE_SHUTDOWN + the AF_ALG op-fd ops target the
+	 * accepted child_fd (falling back to parent_fd if accept never
+	 * took); every other op targets the parent_fd (pre-LISTEN accept
+	 * / at-LISTEN bind / pre-BIND send / AF_ALG parent-side ops). */
+	switch (op) {
+	case SFG_ILLEGAL_DOUBLE_SHUTDOWN:
+#ifdef USE_IF_ALG
+	case SFG_ILLEGAL_ALG_SEND_BEFORE_SETKEY:
+	case SFG_ILLEGAL_ALG_RECV_ON_EMPTY_TSGL:
+	case SFG_ILLEGAL_ALG_OP_DIRECTION_MISMATCH:
+#endif
+		fd = (ctx->child_fd >= 0) ? ctx->child_fd : ctx->parent_fd;
+		break;
+	default:
 		fd = ctx->parent_fd;
+		break;
+	}
 
 	ctx->illegal_op = op;
 	ctx->illegal_at = ctx->conn_state;
@@ -653,6 +771,111 @@ static void sfg_do_illegal_step(struct socket_ctx *ctx,
 		 * splicer inserted immediately after this pseudo-step
 		 * issues the sendmsg on the still-CREATED parent_fd. */
 		break;
+#ifdef USE_IF_ALG
+	case SFG_ILLEGAL_ALG_ACCEPT_BEFORE_BIND:
+	case SFG_ILLEGAL_ALG_DOUBLE_ACCEPT: {
+		/* accept() on the parent fd.  For ACCEPT_BEFORE_BIND the
+		 * parent is CREATED-not-BOUND (af_alg_accept: ask->type is
+		 * NULL); for DOUBLE_ACCEPT the parent already yielded one
+		 * op fd and a second accept() creates two op sockets
+		 * sharing one alg_sock (the refcount edge). */
+		int a = accept(fd, NULL, NULL);
+
+		if (a >= 0)
+			close(a);
+		break;
+	}
+	case SFG_ILLEGAL_ALG_SEND_BEFORE_SETKEY: {
+		/* sendmsg on the ACCEPTED-but-unkeyed op fd.  skcipher /
+		 * aead reject unkeyed operations at the ctx->more / setkey
+		 * gate in af_alg_sendmsg. */
+		unsigned char buf[16];
+		struct iovec iov;
+		struct msghdr mh;
+
+		generate_rand_bytes(buf, sizeof(buf));
+		memset(&mh, 0, sizeof(mh));
+		iov.iov_base = buf;
+		iov.iov_len = sizeof(buf);
+		mh.msg_iov = &iov;
+		mh.msg_iovlen = 1;
+		(void) sendmsg(fd, &mh, MSG_DONTWAIT);
+		break;
+	}
+	case SFG_ILLEGAL_ALG_RECV_ON_EMPTY_TSGL: {
+		/* The documented af_alg_pull_tsgl OOB trigger: recv() on
+		 * an ACCEPTED op fd with no accumulated tsgl (walker
+		 * skipped SEND_MORE for this walk).  Highest-value member
+		 * of the AF_ALG illegal set — exactly the shape upstream
+		 * CI has a C reproducer for. */
+		unsigned char buf[64];
+
+		(void) recv(fd, buf, sizeof(buf), MSG_DONTWAIT);
+		break;
+	}
+	case SFG_ILLEGAL_ALG_SETKEY_AFTER_ACCEPT: {
+		/* setsockopt(ALG_SET_KEY) on the parent AFTER the op fd
+		 * exists — races af_alg_release_parent refcount
+		 * assumptions.  Always fires on ctx->parent_fd (not fd)
+		 * because the target is the parent regardless of which fd
+		 * the fd-picker returned. */
+		unsigned char key[32];
+
+		if (ctx->parent_fd < 0)
+			break;
+		generate_rand_bytes(key, sizeof(key));
+		(void) setsockopt(ctx->parent_fd, SOL_ALG, ALG_SET_KEY,
+				  key, sizeof(key));
+		break;
+	}
+	case SFG_ILLEGAL_ALG_OP_DIRECTION_MISMATCH: {
+		/* sendmsg with ALG_SET_OP=DECRYPT cmsg + random plaintext
+		 * -shaped payload.  Feeds aead_recvmsg's length math a
+		 * data-vs-authsize mismatch and stresses
+		 * crypto_aead_decrypt's -EBADMSG path. */
+		unsigned char cbuf[CMSG_SPACE(sizeof(uint32_t))];
+		unsigned char payload[64];
+		struct iovec iov;
+		struct msghdr mh;
+		struct cmsghdr *cmsg;
+		uint32_t decrypt_op = ALG_OP_DECRYPT;
+
+		memset(cbuf, 0, sizeof(cbuf));
+		memset(&mh, 0, sizeof(mh));
+		mh.msg_control = cbuf;
+		mh.msg_controllen = sizeof(cbuf);
+		cmsg = CMSG_FIRSTHDR(&mh);
+		cmsg->cmsg_level = SOL_ALG;
+		cmsg->cmsg_type = ALG_SET_OP;
+		cmsg->cmsg_len = CMSG_LEN(sizeof(decrypt_op));
+		memcpy(CMSG_DATA(cmsg), &decrypt_op, sizeof(decrypt_op));
+
+		generate_rand_bytes(payload, sizeof(payload));
+		iov.iov_base = payload;
+		iov.iov_len = sizeof(payload);
+		mh.msg_iov = &iov;
+		mh.msg_iovlen = 1;
+		(void) sendmsg(fd, &mh, MSG_DONTWAIT);
+		break;
+	}
+	case SFG_ILLEGAL_ALG_SET_AEAD_ON_NON_AEAD: {
+		/* ALG_SET_AEAD_AUTHSIZE on a BOUND-but-non-AEAD parent:
+		 * the type ->setauthsize hook is NULL.  Fires
+		 * unconditionally — a coincidental AEAD draw at bind
+		 * would leave this a legal-shape syscall, but the
+		 * published label still names the intent so the wire
+		 * story is unambiguous. */
+		unsigned int authsize;
+
+		if (ctx->parent_fd < 0)
+			break;
+		authsize = alg_boundary_authsizes[
+			rnd_modulo_u32(alg_boundary_authsizes_count)];
+		(void) setsockopt(ctx->parent_fd, SOL_ALG,
+				  ALG_SET_AEAD_AUTHSIZE, NULL, authsize);
+		break;
+	}
+#endif
 	default:
 		break;
 	}
@@ -1097,7 +1320,7 @@ bool run_grammar_chain(const struct socket_family_grammar *sfg,
 	if (sfg->phase_orders_apply != NULL &&
 	    sfg->phase_orders_apply(&triplet) &&
 	    ONE_IN(SFG_ILLEGAL_RATE)) {
-		enum sfg_illegal_op op = sfg_pick_illegal_op();
+		enum sfg_illegal_op op = sfg_pick_illegal_op(triplet.family);
 
 		if (sfg_splice_illegal(&scratch_order, order, op)) {
 			illegal_op = op;
