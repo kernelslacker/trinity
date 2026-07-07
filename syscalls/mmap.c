@@ -22,6 +22,7 @@
 #include "testfile.h"
 #include "trinity.h"
 
+#include "kernel/falloc.h"
 #ifndef MAP_SHARED_VALIDATE
 #define MAP_SHARED_VALIDATE 0x03
 #endif

@@ -13,6 +13,7 @@
 #include "sanitise.h"
 #include "utils.h"
 
+#include "kernel/falloc.h"
 #define FALLOC_FL_KEEP_SIZE	0x01
 #define FALLOC_FL_PUNCH_HOLE	0x02
 #define FALLOC_FL_NO_HIDE_STALE 0x04

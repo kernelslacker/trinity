@@ -19,6 +19,7 @@
 #include "utils.h"
 #include "pids.h"
 
+#include "kernel/falloc.h"
 static bool mark_map_rw(struct map *map)
 {
 	int prot = PROT_READ | PROT_WRITE;

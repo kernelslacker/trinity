@@ -73,6 +73,7 @@
 #include "userns-bootstrap.h"
 
 #include "kernel/fcntl.h"
+#include "kernel/falloc.h"
 /* Latched per-child: kernel refused CLONE_NEWUSER (helper -EPERM) */
 static bool ns_unsupported;
 
