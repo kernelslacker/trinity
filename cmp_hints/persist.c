@@ -662,6 +662,14 @@ bool cmp_hints_load_file(const char *path)
 					  &populated_pools, &rejected);
 
 	free(payload);
+	/* Union the just-restored per-nr pool entries into the fleet-
+	 * wide shared cmp_ip tier so a follow-up cold per-nr lookup can
+	 * warm-start from constants that ANY sibling syscall learned in
+	 * the previous run.  Runs after the per-nr restore so every
+	 * loaded entry is visible via pool->entries[]; the tier's dedup
+	 * collapses cross-nr duplicates so a hot entry-path IP shared
+	 * across many syscalls lands in ONE bucket. */
+	cmp_shared_tier_populate_from_pools();
 	cmp_hints_load_file_finalize(path, loaded_entries, populated_pools,
 				     rejected);
 	return true;
