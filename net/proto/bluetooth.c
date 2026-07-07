@@ -238,6 +238,7 @@ const struct netproto proto_bluetooth = {
 #include "socket-family-grammar.h"
 
 #include "kernel/socket.h"
+#include "kernel/bluetooth.h"
 /*
  * Dormant grammar stub — keeps the AF_BLUETOOTH slot in the registry
  * so a user with the matching CONFIG can plug a real grammar in
