@@ -564,9 +564,27 @@ bool kcov_bitmap_save_file(const char *path)
 		       priors_blob_size);
 		return false;
 	}
-	memcpy(priors_blob, kcov_shm->per_syscall_edges, one_array_size);
-	memcpy(priors_blob + one_array_size, kcov_shm->per_syscall_calls,
-	       one_array_size);
+	/* per_syscall_edges / per_syscall_calls are [nr][do32?1:0]; the
+	 * on-disk priors format is still one MAX_NR_SYSCALL-long per-nr
+	 * blob, so sum both arch dims into the serialised slot.  Loaders
+	 * put the summed value into [nr][0] on warm-start; readers that
+	 * use the priors go through per_syscall_edges_prior_total() /
+	 * _calls_prior_total() and observe the same per-nr sum either
+	 * way, so arch attribution is not persisted (nothing consumes it
+	 * on the prior side today). */
+	{
+		unsigned long *p_edges = (unsigned long *)priors_blob;
+		unsigned long *p_calls =
+			(unsigned long *)(priors_blob + one_array_size);
+		unsigned int i;
+
+		for (i = 0; i < MAX_NR_SYSCALL; i++) {
+			p_edges[i] = kcov_shm->per_syscall_edges[i][0] +
+				     kcov_shm->per_syscall_edges[i][1];
+			p_calls[i] = kcov_shm->per_syscall_calls[i][0] +
+				     kcov_shm->per_syscall_calls[i][1];
+		}
+	}
 
 	/* v6 diag block: pack per_syscall_diag[nr][dim].{bucket_bits_real,
 	 * distinct_pcs} into a contiguous 16-B-per-slot array, nr outer,
@@ -982,11 +1000,27 @@ bool kcov_bitmap_load_file(const char *path)
 					output(0, "kcov-bitmap: priors CRC mismatch at %s -- priors skipped\n",
 					       path);
 				} else {
-					memcpy(kcov_shm->per_syscall_edges_prior,
-					       priors_blob, one_array_size);
-					memcpy(kcov_shm->per_syscall_calls_prior,
-					       priors_blob + one_array_size,
-					       one_array_size);
+					/* On-disk priors are still one long
+					 * per-nr; the in-shm _prior arrays are
+					 * [nr][do32?1:0].  Load into the [nr][0]
+					 * slot and leave [nr][1] at its calloc'd
+					 * zero; readers that use the priors sum
+					 * both dims via the _total helpers, so
+					 * the missing arch attribution is a
+					 * harmless zero addend. */
+					unsigned long *p_edges =
+						(unsigned long *)priors_blob;
+					unsigned long *p_calls =
+						(unsigned long *)(priors_blob +
+								  one_array_size);
+					unsigned int i;
+
+					for (i = 0; i < MAX_NR_SYSCALL; i++) {
+						kcov_shm->per_syscall_edges_prior[i][0] =
+							p_edges[i];
+						kcov_shm->per_syscall_calls_prior[i][0] =
+							p_calls[i];
+					}
 				}
 			}
 			free(priors_blob);

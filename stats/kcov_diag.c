@@ -307,12 +307,8 @@ void kcov_diag_emit_truncation_topn(void)
 						      __ATOMIC_RELAXED);
 			uint64_t dpo = __atomic_load_n(&d->dedup_probe_overflow,
 						       __ATOMIC_RELAXED);
-			uint64_t calls = __atomic_load_n(
-				&kcov_shm->per_syscall_calls[i],
-				__ATOMIC_RELAXED);
-			uint64_t ew = __atomic_load_n(
-				&kcov_shm->per_syscall_edges[i],
-				__ATOMIC_RELAXED);
+			uint64_t calls = per_syscall_calls_total(i);
+			uint64_t ew = per_syscall_edges_total(i);
 			uint64_t rank;
 
 			if (dpo > 0) {

@@ -91,8 +91,7 @@ void plateau_snapshot_capture(struct plateau_window_snapshot *snap)
 			grp = entry->group;
 			if (grp >= NR_GROUPS)
 				continue;
-			e = __atomic_load_n(&kcov_shm->per_syscall_edges[nr],
-					    __ATOMIC_RELAXED);
+			e = per_syscall_edges_total(nr);
 			snap->group_edges[grp] += e;
 		}
 	}
@@ -549,9 +548,7 @@ void plateau_anti_prior_refresh_baseline(void)
 	 * per-slot weight pass below reuses the same observation the
 	 * baseline was computed from. */
 	for (i = 0; i < MAX_NR_SYSCALL; i++) {
-		calls_snapshot[i] = __atomic_load_n(
-			&kcov_shm->per_syscall_calls[i],
-			__ATOMIC_RELAXED);
+		calls_snapshot[i] = per_syscall_calls_total(i);
 		sum += calls_snapshot[i];
 	}
 
@@ -730,12 +727,10 @@ void wall_lever_refresh_baseline(void)
 	for (i = 0; i < MAX_NR_SYSCALL; i++) {
 		unsigned long c, e;
 
-		c = __atomic_load_n(&kcov_shm->per_syscall_calls[i],
-				    __ATOMIC_RELAXED) +
-		    kcov_shm->per_syscall_calls_prior[i];
-		e = __atomic_load_n(&kcov_shm->per_syscall_edges[i],
-				    __ATOMIC_RELAXED) +
-		    kcov_shm->per_syscall_edges_prior[i];
+		c = per_syscall_calls_total(i) +
+		    per_syscall_calls_prior_total(i);
+		e = per_syscall_edges_total(i) +
+		    per_syscall_edges_prior_total(i);
 		calls_snapshot[i] = c;
 		edges_snapshot[i] = e;
 		sum += c;
