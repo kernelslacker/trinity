@@ -107,6 +107,7 @@ void iour_drain_cqes_close_fd(struct iour_ring *ctx, __u64 want_ud);
 #define IOUR_UD_OPENAT_LINK_CLOSE	41	/* its placeholder linked CLOSE */
 #define IOUR_UD_SOCKET_LINK_SOCK	50	/* recipe_socket_shutdown_linked: SOCKET */
 #define IOUR_UD_SOCKET_LINK_SHUT	51	/* its placeholder linked SHUTDOWN */
+#define IOUR_UD_ACCEPT			220	/* recipe_accept: ACCEPT */
 #define IOUR_UD_OPENAT2			340	/* recipe_openat2: OPENAT2 */
 #define IOUR_UD_OPENAT2_COMBOS		0x4a4b	/* recipe_openat2_leak_combos: OPENAT2 */
 

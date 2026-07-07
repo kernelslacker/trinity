@@ -228,14 +228,14 @@ bool recipe_accept(struct iour_recipe_state *s, bool *unsupported __unused__)
 	sqe.addr         = (__u64)(uintptr_t)&ss;
 	sqe.addr2        = (__u64)(uintptr_t)&slen;
 	sqe.accept_flags = SOCK_NONBLOCK | SOCK_CLOEXEC;
-	sqe.user_data    = 220;
+	sqe.user_data    = IOUR_UD_ACCEPT;
 
 	if (!iour_submit_sqes(ctx, &sqe, 1))
 		return false;
 	r = iour_enter(ctx, 1, 1);
 	if (r < 0)
 		return false;
-	iour_drain_cqes(ctx);
+	iour_drain_cqes_close_fd(ctx, IOUR_UD_ACCEPT);
 	return true;
 }
 
