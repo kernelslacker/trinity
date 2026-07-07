@@ -1,6 +1,7 @@
 /*
  * SYSCALL_DEFINE4(ptrace, long, request, long, pid, long, addr, long, data)
  */
+#include <elf.h>
 #include <signal.h>
 #include "arch.h"
 #include "random.h"
@@ -19,14 +20,16 @@
  * the post path is immune to a sibling syscall scribbling rec->a1 or
  * rec->a4 between the syscall returning and the post handler running.
  *
- * Per-op allocation matrix.  Of the 32 PTRACE_* requests this generator
- * knows about, only four allocate a heap buffer that the post handler
+ * Per-op allocation matrix.  Of the 34 PTRACE_* requests this generator
+ * knows about, only six allocate a heap buffer that the post handler
  * has to free:
  *
  *   PTRACE_SETSIGINFO  -> siginfo_t *
  *   PTRACE_GETSIGINFO  -> siginfo_t *
  *   PTRACE_SETSIGMASK  -> sigset_t *
  *   PTRACE_GETSIGMASK  -> sigset_t *
+ *   PTRACE_GETREGSET   -> struct iovec *
+ *   PTRACE_SETREGSET   -> struct iovec *
  *
  * The other 28 requests feed rec->a4 with non-heap values -- signals,
  * immediate bitmasks, addresses from get_address() / get_writable_-
@@ -51,6 +54,19 @@
 struct ptrace_post_state {
 	unsigned long magic;
 	void *data;
+};
+
+/*
+ * NT_* note type ids accepted by PTRACE_{GET,SET}REGSET.  The kernel
+ * gates the note type through arch_ptrace_regsets before touching the
+ * iovec, so a bad type just returns -EINVAL; the small fixed set here
+ * biases the picker toward types that actually reach the copy path on
+ * common arches instead of drowning in the -EINVAL bucket.
+ */
+static const unsigned long ptrace_regset_nt_types[] = {
+	NT_PRSTATUS,
+	NT_PRFPREG,
+	NT_X86_XSTATE,
 };
 
 static unsigned long ptrace_o_flags[] = {
@@ -229,6 +245,43 @@ static void sanitise_ptrace(struct syscallrecord *rec)
 		rec->a4 = (unsigned long) get_address();
 		break;
 
+	case PTRACE_GETREGSET: {
+		/*
+		 * addr is an NT_* note type; data points to a struct iovec
+		 * describing the output regset buffer.  The kernel writes
+		 * into iov_base for up to iov_len bytes, so route iov_base
+		 * through avoid_shared_buffer_out just like the direct
+		 * output-pointer arm above.  The iovec itself is the heap
+		 * chunk the post handler frees; iov_base lives in the
+		 * writable-address pool and is not ours to free.
+		 */
+		struct iovec *iov = zmalloc_tracked(sizeof(*iov));
+
+		rec->a3 = ptrace_regset_nt_types[rnd_modulo_u32(ARRAY_SIZE(ptrace_regset_nt_types))];
+		iov->iov_base = get_writable_address(page_size);
+		avoid_shared_buffer_out((unsigned long *) &iov->iov_base, page_size);
+		iov->iov_len = page_size;
+		rec->a4 = (unsigned long) iov;
+		data = iov;
+		break;
+	}
+
+	case PTRACE_SETREGSET: {
+		/*
+		 * SETREGSET's iov_base is an input the kernel reads from,
+		 * so a plain get_address() is enough -- no output-buffer
+		 * relocation needed.
+		 */
+		struct iovec *iov = zmalloc_tracked(sizeof(*iov));
+
+		rec->a3 = ptrace_regset_nt_types[rnd_modulo_u32(ARRAY_SIZE(ptrace_regset_nt_types))];
+		iov->iov_base = get_address();
+		iov->iov_len = page_size;
+		rec->a4 = (unsigned long) iov;
+		data = iov;
+		break;
+	}
+
 	case PTRACE_TRACEME:
 	case PTRACE_KILL:
 	case PTRACE_ATTACH:
@@ -310,6 +363,7 @@ static unsigned long ptrace_reqs[] = {
 	PTRACE_SYSCALL, PTRACE_SINGLESTEP, PTRACE_SYSEMU, PTRACE_SYSEMU_SINGLESTEP,
 	PTRACE_KILL, PTRACE_ATTACH, PTRACE_DETACH, PTRACE_GETSIGMASK,
 	PTRACE_SETSIGMASK, PTRACE_PEEKSIGINFO,
+	PTRACE_GETREGSET, PTRACE_SETREGSET,
 	PTRACE_SEIZE, PTRACE_INTERRUPT, PTRACE_LISTEN,
 	PTRACE_SECCOMP_GET_FILTER, PTRACE_SECCOMP_GET_METADATA,
 	PTRACE_GET_SYSCALL_INFO, PTRACE_GET_RSEQ_CONFIGURATION,
