@@ -827,6 +827,43 @@ struct stats_s {
 	 * so a kernel-side rejection is distinguishable from both a
 	 * transport failure and a genuinely empty registry. */
 	unsigned long genetlink_discovery_nlerr;
+	/* Successful CTRL_CMD_GETFAMILY dumps that produced a
+	 * non-empty catalog.  Bumped once per genetlink_fuzzer()
+	 * invocation just before the grandchild fork.  Distinct from
+	 * genetlink_families_discovered, which sums cat->count across
+	 * cycles (entries).  With cycles + entries we can tell a
+	 * healthy 50-entry dump repeated N times from a degraded
+	 * 2-entry dump repeated many more times, and we can compare
+	 * cycles against genetlink_msgs_sent to localise a
+	 * discovery-to-send stall (setup_accepted bumps alongside
+	 * this counter, so cycles == setup_accepted on the hot
+	 * path). */
+	unsigned long genetlink_discovery_cycles;
+	/* userns_run_in_ns(CLONE_NEWNET, genetlink_fuzzer_in_ns, ...)
+	 * returned < 0 for any reason (EPERM policy latch, EAGAIN
+	 * transient fork/id-map/target-unshare failure, waitpid
+	 * failure).  Bumped alongside the appropriate
+	 * userns_bootstrap_* counter so we can attribute a
+	 * "setup_accepted grows but msgs_sent stays zero" pattern to
+	 * userns/netns bootstrap vs. the in-ns nl_open vs. the send
+	 * itself without cross-referencing every other userns caller. */
+	unsigned long genetlink_userns_run_fail;
+	/* Grandchild-side nl_open(NETLINK_GENERIC) in the fresh
+	 * user+net namespace returned < 0.  The pre-existing
+	 * outputerr line covers per-event debugging; this counter
+	 * gives the rate.  When this is the dominant miss the fix is
+	 * in the ns-bootstrap path (missing loopback, missing family
+	 * registration, LSM refusal) rather than in the send path. */
+	unsigned long genetlink_in_ns_open_fail;
+	/* Grandchild-side nl_send_drain_errors() returned < 0
+	 * (sendmsg failure, recv returned non-EAGAIN error).
+	 * Previously silent — send_fuzzed_msg() bailed without
+	 * bumping msgs_sent and without accounting the miss, so a
+	 * consistently-failing sendmsg looked identical to a healthy
+	 * op that never picked this family.  When this is the
+	 * dominant miss the fault is in the send-path envelope, not
+	 * in ns bootstrap. */
+	unsigned long genetlink_send_drain_fail;
 
 	/* netlink message generator: NLA_F_NESTED containers emitted */
 	unsigned long netlink_nested_attrs_emitted;
