@@ -58,6 +58,12 @@
 #ifndef ALG_OP_ENCRYPT
 #define ALG_OP_ENCRYPT		1
 #endif
+
+/* Copy Fail-shaped AEAD name that the retired standalone AF_ALG walker
+ * biased at 1-in-8.  Ported here so the CVE-bait probing load stays
+ * steady after run_alg_chain retirement.  Kept as a define rather than
+ * lifted to a shared header — this is the only site that emits it. */
+#define AUTHENCESN_NAME	"authencesn(hmac(sha256),cbc(aes))"
 #endif
 
 /*
@@ -1023,9 +1029,26 @@ static bool sfg_alg_do_bind(struct socket_ctx *ctx, unsigned int *err_burst)
 
 	memset(sa, 0, sizeof(*sa));
 	sa->salg_family = AF_ALG;
-	idx = rnd_modulo_u32(ARRAY_SIZE(sfg_alg_types));
-	ctx->fam.alg.type = sfg_alg_types[idx].sfg;
-	pick_alg(sfg_alg_types[idx].dict, sfg_alg_types[idx].str, sa);
+
+	if (ONE_IN(8)) {
+		/* Copy Fail-shaped bait ported from the retired
+		 * run_alg_chain arm: aead/authencesn-with-extended-sn.
+		 * Kept on its own 1-in-8 gate so the CVE-bait probing
+		 * load stays steady after the standalone AF_ALG walker
+		 * went away. */
+		strncpy((char *)sa->salg_type, "aead",
+			sizeof(sa->salg_type) - 1);
+		strncpy((char *)sa->salg_name, AUTHENCESN_NAME,
+			sizeof(sa->salg_name) - 1);
+		ctx->fam.alg.type = SFG_ALG_TYPE_AEAD;
+		__atomic_add_fetch(
+			&shm->stats.socket_family_chain_authencesn_attempts,
+			1, __ATOMIC_RELAXED);
+	} else {
+		idx = rnd_modulo_u32(ARRAY_SIZE(sfg_alg_types));
+		ctx->fam.alg.type = sfg_alg_types[idx].sfg;
+		pick_alg(sfg_alg_types[idx].dict, sfg_alg_types[idx].str, sa);
+	}
 
 	if (bind(ctx->parent_fd, (struct sockaddr *)sa, sizeof(*sa)) < 0) {
 		/* ENOENT/ESRCH are expected per-alg churn (curated dict
