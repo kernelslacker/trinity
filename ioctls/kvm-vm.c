@@ -30,19 +30,15 @@
 #include "syscall.h"
 #include "utils.h"
 
+/*
+ * Match against the calling child's OBJ_LOCAL OBJ_FD_KVM_VM pool.
+ * See ioctls/kvm-system.c for the fuller rationale on why KVM fds
+ * live in OBJ_LOCAL post-refactor.
+ */
 static int kvm_vm_fd_test(int fd, const struct stat *st __attribute__((unused)))
 {
-	struct objhead *head;
-	struct object *obj;
-	unsigned int idx;
-
-	head = get_objhead(OBJ_GLOBAL, OBJ_FD_KVM_VM);
-
-	for_each_obj(head, obj, idx) {
-		if (obj->kvmvmobj.fd == fd)
-			return 0;
-	}
-
+	if (find_local_object_by_fd(OBJ_FD_KVM_VM, fd) != NULL)
+		return 0;
 	return -1;
 }
 

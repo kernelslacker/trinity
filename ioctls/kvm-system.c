@@ -24,19 +24,20 @@
 #include "shm.h"
 #include "utils.h"
 
+/*
+ * Match against the calling child's OBJ_LOCAL OBJ_FD_KVM_SYSTEM pool.
+ * KVM object lifecycle moved from the parent-side .init hook onto a
+ * per-child post-fork child_init: every system / VM / vCPU fd is now
+ * created inside the child's own mm and lives in that child's
+ * OBJ_LOCAL pool.  find_local_object_by_fd() is the O(1) hash probe
+ * with a linear-fallback that the OBJ_LOCAL pool exposes for exactly
+ * this shape of lookup.  OBJ_GLOBAL for these three types is empty
+ * post-refactor.
+ */
 static int kvm_system_fd_test(int fd, const struct stat *st __attribute__((unused)))
 {
-	struct objhead *head;
-	struct object *obj;
-	unsigned int idx;
-
-	head = get_objhead(OBJ_GLOBAL, OBJ_FD_KVM_SYSTEM);
-
-	for_each_obj(head, obj, idx) {
-		if (obj->kvmsysobj.fd == fd)
-			return 0;
-	}
-
+	if (find_local_object_by_fd(OBJ_FD_KVM_SYSTEM, fd) != NULL)
+		return 0;
 	return -1;
 }
 

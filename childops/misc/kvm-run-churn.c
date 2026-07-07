@@ -12,8 +12,10 @@
  * gap.
  *
  * Per outer iteration (1-3 inner KVM_RUN calls):
- *   1. Pick a random OBJ_FD_KVM_VCPU.  Empty pool means /dev/kvm is
- *      unavailable -- silently skip.
+ *   1. Pick a random OBJ_LOCAL OBJ_FD_KVM_VCPU.  Empty pool means
+ *      /dev/kvm is unavailable to this child (probe failed at fork
+ *      time or the per-child KVM_CREATE_VM landed EINVAL) -- silently
+ *      skip.
  *   2. Scribble the kvm_run fields the UAPI documents as userspace
  *      input: request_interrupt_window, immediate_exit, cr8, apic_base,
  *      and (when KVM_CAP_SYNC_REGS is supported) kvm_valid_regs +
@@ -28,8 +30,8 @@
  *      fuzzed bytes that the guest itself would never have produced.
  *
  * KVM_CAP_SYNC_REGS is probed lazily on first invocation against any
- * live OBJ_FD_KVM_SYSTEM fd; result is cached for the rest of the
- * child's lifetime.  Probe failure or absent system fd leaves
+ * live OBJ_LOCAL OBJ_FD_KVM_SYSTEM fd; result is cached for the rest of
+ * the child's lifetime.  Probe failure or absent system fd leaves
  * sync_regs_caps at 0, which makes step 2 leave the sync-regs fields
  * untouched.
  */
@@ -103,7 +105,7 @@ static void probe_sync_regs_caps(void)
 		return;
 	sync_regs_probed = true;
 
-	head = get_objhead(OBJ_GLOBAL, OBJ_FD_KVM_SYSTEM);
+	head = get_objhead(OBJ_LOCAL, OBJ_FD_KVM_SYSTEM);
 	if (head == NULL || head->array == NULL)
 		return;
 
@@ -247,7 +249,7 @@ static void probe_user_memory2_cap(void)
 	if (memslot_race_user_memory2_probed)
 		return;
 
-	head = get_objhead(OBJ_GLOBAL, OBJ_FD_KVM_SYSTEM);
+	head = get_objhead(OBJ_LOCAL, OBJ_FD_KVM_SYSTEM);
 	if (head == NULL || head->array == NULL)
 		return;
 
@@ -349,10 +351,10 @@ bool kvm_run_churn(struct childdata *child)
 
 	probe_sync_regs_caps();
 
-	if (objects_empty(OBJ_FD_KVM_VCPU))
+	if (objects_pool_empty(OBJ_LOCAL, OBJ_FD_KVM_VCPU))
 		return true;
 
-	obj = get_random_object(OBJ_FD_KVM_VCPU, OBJ_GLOBAL);
+	obj = get_random_object(OBJ_FD_KVM_VCPU, OBJ_LOCAL);
 	if (!objpool_check(obj, OBJ_FD_KVM_VCPU))
 		return true;
 
@@ -363,14 +365,14 @@ bool kvm_run_churn(struct childdata *child)
 		return true;
 
 	/*
-	 * obj lives in shared memory but the kvm_run mmap is per-process.
-	 * Today all vCPUs are mmapped by init_kvm_vcpus in the parent and
-	 * inherited at the same VA by every child via fork().
-	 * shared_regions[] is COW-private after fork, so the inherited
-	 * copy covers exactly the set of kvm_run pages mapped in our VA.
-	 * Keep the range_in_tracked_shared() guard as a defensive belt
-	 * against any future producer that mmap()s kvm_run in a non-
-	 * parent context.
+	 * Per-child mmap: obj lives in the child's OBJ_LOCAL pool (child-
+	 * private heap) and every KVM object (including the kvm_run mmap)
+	 * is created inside this child's mm by fds/kvm.c's per-child init
+	 * hook.  The shared_regions[] tracker sees the child-side
+	 * track_shared_region() call, so range_in_tracked_shared() catches
+	 * the fresh mapping without help.  Keep the guard as a defensive
+	 * belt against any future path that publishes a vcpuobj without
+	 * routing kvm_run through track_shared_region().
 	 */
 	if (!range_in_tracked_shared((unsigned long)kr, kvm_run_size))
 		return true;
