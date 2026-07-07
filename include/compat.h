@@ -178,6 +178,7 @@
 #include "kernel/veth.h"
 
 #include "kernel/futex.h"
+#include "kernel/ptrace.h"
 #ifndef FUTEX2_SIZE_U16
 #define FUTEX2_SIZE_U16		0x01
 #endif
@@ -195,18 +196,6 @@
 #endif
 #ifndef FUTEX2_PRIVATE
 #define FUTEX2_PRIVATE		0x80
-#endif
-
-/* asm/ptrace-abi.h */
-#ifndef PTRACE_SYSEMU
-#define PTRACE_SYSEMU		  31
-#endif
-#ifndef PTRACE_SYSEMU_SINGLESTEP
-#define PTRACE_SYSEMU_SINGLESTEP  32
-#endif
-#ifndef PTRACE_GETSIGMASK
-#define PTRACE_GETSIGMASK	0x420a
-#define PTRACE_SETSIGMASK	0x420b
 #endif
 
 /* sys/timerfd.h */
