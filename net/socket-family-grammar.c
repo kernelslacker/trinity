@@ -15,6 +15,7 @@
  */
 
 #include <errno.h>
+#include <fcntl.h>
 #include <stdint.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
@@ -25,6 +26,7 @@
 #include "arch.h"		/* page_size */
 #include "child.h"
 #include "deferred-free.h"
+#include "files.h"		/* get_rand_pagecache_fd */
 #include "kcov.h"
 #include "net.h"
 #include "random.h"
@@ -64,6 +66,22 @@
  * steady after run_alg_chain retirement.  Kept as a define rather than
  * lifted to a shared header — this is the only site that emits it. */
 #define AUTHENCESN_NAME	"authencesn(hmac(sha256),cbc(aes))"
+
+/*
+ * Probability (out of 100) that the ALG_SEND_MORE phase substitutes a
+ * single splice(tagged_fd -> pipe -> child_fd) pull-from-pagecache for
+ * the default N × sendmsg(MSG_MORE) buffer sends.  Re-added from the
+ * retired v3 run_alg_chain data leg (ef5622b4ac38 / 1c7259d88947): the
+ * splice path reaches alg_sendpage via splice_read_to_pipe, coverage
+ * the buffer-sendmsg walk never lands.  Rate matches v3.  On any setup
+ * miss (no pagecache fd, pipe2 ENFILE, splice returning <= 0 in
+ * either leg) the phase falls through to the buffer sends so the data
+ * leg still runs — mirrors alg_chain_iter_drive's discipline.  The
+ * pipe pair lives in ctx->fam.alg.splice_pfd (already reserved and
+ * initialised to {-1, -1} by the run_grammar_chain designated init)
+ * and is torn down unconditionally by the out: label's close gate.
+ */
+#define SFG_ALG_SPLICE_SUBST_PCT	30
 #endif
 
 /*
@@ -1194,12 +1212,59 @@ static void sfg_alg_do_cmsg(struct socket_ctx *ctx)
 }
 
 /*
+ * ~SFG_ALG_SPLICE_SUBST_PCT% of the time replace the buffer-sends leg
+ * with a splice(tagged_fd -> pipe -> child_fd) pull from a page-cache
+ * fd in the OBJ_FD_PAGECACHE pool so the walk reaches alg_sendpage
+ * via splice_read_to_pipe -- coverage the buffer-sendmsg path never
+ * lands.  Returns true when the splice pair completed and the caller
+ * should skip the buffer sends; returns false on any setup miss so
+ * the caller falls through.  Bumps socket_family_chain_splice_attempts
+ * (retained from the retired run_alg_chain path -- one accounting
+ * story for AF_ALG splice attempts, no new stats field) on every
+ * attempt regardless of eventual outcome.
+ */
+static bool sfg_alg_try_splice_send(struct socket_ctx *ctx)
+{
+	unsigned int sndlen;
+	int tagged_fd;
+	ssize_t in_n;
+
+	if (rnd_modulo_u32(100) >= SFG_ALG_SPLICE_SUBST_PCT)
+		return false;
+
+	tagged_fd = get_rand_pagecache_fd();
+	if (tagged_fd < 0)
+		return false;
+
+	if (pipe2(ctx->fam.alg.splice_pfd, O_CLOEXEC) < 0)
+		return false;
+
+	__atomic_add_fetch(&shm->stats.socket_family_chain_splice_attempts, 1,
+			   __ATOMIC_RELAXED);
+
+	sndlen = 16 + rnd_modulo_u32(256 - 16 + 1);
+	in_n = splice(tagged_fd, NULL, ctx->fam.alg.splice_pfd[1], NULL,
+		      sndlen, SPLICE_F_NONBLOCK | SPLICE_F_MOVE);
+	if (in_n <= 0)
+		return false;
+
+	(void) splice(ctx->fam.alg.splice_pfd[0], NULL, ctx->child_fd, NULL,
+		      (size_t) in_n, SPLICE_F_NONBLOCK | SPLICE_F_MOVE);
+	return true;
+}
+
+/*
  * N × sendmsg(MSG_MORE) with page-straddling segment sizes.  Drives
  * af_alg_sendmsg's cross-call path: tsgl accumulation across calls,
  * SG-list realloc as the accumulated length crosses the per-tsgl entry
  * cap, page-spanning where a segment's tail lands on a different page
  * from the next segment's head.  Terminal ALG_RECV closes the request
  * with a non-MSG_MORE flush.
+ *
+ * ~SFG_ALG_SPLICE_SUBST_PCT% of invocations first try a single splice
+ * pair via sfg_alg_try_splice_send; on success the buffer-send loop
+ * is skipped (the splice already fed the request), on any miss the
+ * loop runs so the data leg still lands.
  */
 static void sfg_alg_do_send_more(struct socket_ctx *ctx)
 {
@@ -1212,6 +1277,9 @@ static void sfg_alg_do_send_more(struct socket_ctx *ctx)
 	unsigned int i;
 
 	if (ctx->conn_state != SFG_CONN_ACCEPTED || ctx->child_fd < 0)
+		return;
+
+	if (sfg_alg_try_splice_send(ctx))
 		return;
 
 	scratch = zmalloc(cap);
