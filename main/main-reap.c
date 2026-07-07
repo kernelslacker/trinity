@@ -119,36 +119,43 @@ static unsigned int reap_ring_fast_die_count;
 static bool reap_entry_is_fast_die(const struct reap_record *r)
 {
 	/*
-	 * Clean, expected terminal exits in targeted mode (-c/-r/-g) are not
-	 * fork-die-respawn corruption -- they are the run finishing on its
-	 * own terms.  Children racing the shutdown exit with one of these
-	 * reasons via the locks.c spin-bailout _exit(shm->exit_reason), which
-	 * otherwise fills the fast-die ring and trips a spurious
-	 * EXIT_SHM_CORRUPTION panic:
-	 *   - EXIT_NO_SYSCALLS_ENABLED: selected set self-disabled via ENOSYS
-	 *     / VALIDATE_FAIL_THRESHOLD (depletion).
-	 *   - EXIT_REACHED_COUNT:       requested op count reached.
-	 *   - EXIT_EPOCH_DONE:          epoch budget consumed.
-	 *   - EXIT_SIGINT:              ^C from terminal -- parent panics
+	 * Always-exempt reasons (any mode) -- these are legitimate clean
+	 * exits that a racing child can propagate via the locks.c spin-
+	 * bailout _exit(shm->exit_reason).  Cascading them into the
+	 * fast-die ring trips a spurious EXIT_SHM_CORRUPTION panic:
+	 *   - EXIT_MAIN_DISAPPEARED:    child.c PDEATHSIG race; the parent
+	 *     is gone, this is a clean shutdown not corruption.
+	 *   - EXIT_NO_SYSCALLS_ENABLED: pickers.c saw no_syscalls_enabled()
+	 *     == true (active set self-disabled via ENOSYS depletion or
+	 *     VALIDATE_FAIL_THRESHOLD).  Was previously only exempt in
+	 *     targeted mode on the theory that a zero active set in
+	 *     default fuzz mode was itself corruption -- but a legit
+	 *     depletion in default mode cascades 16 lock-spin-bailout
+	 *     children through the ring inside the corruption window,
+	 *     which falsely trips EXIT_SHM_CORRUPTION.  One clean bail is
+	 *     enough; exempt unconditionally and let the deeper trigger
+	 *     (why depletion fired) be diagnosed separately.
+	 */
+	if (r->exit_status == EXIT_MAIN_DISAPPEARED ||
+	    r->exit_status == EXIT_NO_SYSCALLS_ENABLED)
+		return false;
+
+	/*
+	 * Targeted-mode-only exempt reasons (-c/-r/-g).  In targeted mode
+	 * these are the run finishing on its own terms, not corruption;
+	 * in default fuzz mode they should not fire at all, and if they
+	 * do a fast-die cluster still signals something wrong.
+	 *   - EXIT_REACHED_COUNT: requested op count reached.
+	 *   - EXIT_EPOCH_DONE:    epoch budget consumed.
+	 *   - EXIT_SIGINT:        ^C from terminal -- parent panics
 	 *     EXIT_SIGINT in sigint_handler; child main loop panics
 	 *     EXIT_SIGINT on ctrlc_pending.  Spin-bailout then propagates
 	 *     EXIT_SIGINT to any racing child.
-	 *   - EXIT_USER_REQUEST:        operator-driven shutdown path; no
+	 *   - EXIT_USER_REQUEST:  operator-driven shutdown path; no
 	 *     current caller, retained so future operator exits routed
 	 *     through shm->exit_reason are exempted the same way.
-	 * Excluded in targeted mode only -- default fuzz mode keeps a zero
-	 * active set on the corruption path.
 	 */
-	/*
-	 * A child that bailed because the main process disappeared (child.c
-	 * PDEATHSIG race) is a clean shutdown, not corruption -- never a
-	 * fast-die, in any mode.
-	 */
-	if (r->exit_status == EXIT_MAIN_DISAPPEARED)
-		return false;
-
-	if ((r->exit_status == EXIT_NO_SYSCALLS_ENABLED ||
-	     r->exit_status == EXIT_REACHED_COUNT ||
+	if ((r->exit_status == EXIT_REACHED_COUNT ||
 	     r->exit_status == EXIT_EPOCH_DONE ||
 	     r->exit_status == EXIT_SIGINT ||
 	     r->exit_status == EXIT_USER_REQUEST) &&
