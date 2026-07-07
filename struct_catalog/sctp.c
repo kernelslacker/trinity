@@ -24,6 +24,7 @@
 
 #include "utils.h"
 
+#include "kernel/sctp.h"
 /*
  * struct sctp_initmsg -- IPPROTO_SCTP / SCTP_INITMSG.  Four __u16 fields
  * controlling SCTP association init params.  Stream counts bound to

@@ -156,6 +156,7 @@
 #include "kernel/l2tp.h"
 #include "kernel/seccomp.h"
 #include "kernel/in.h"
+#include "kernel/sctp.h"
 /* ------------------------------------------------------------------ */
 /* Discriminator value lists                                            */
 /* ------------------------------------------------------------------ */
