@@ -179,6 +179,7 @@
 
 #include "kernel/futex.h"
 #include "kernel/ptrace.h"
+#include "kernel/timerfd.h"
 #ifndef FUTEX2_SIZE_U16
 #define FUTEX2_SIZE_U16		0x01
 #endif
@@ -196,14 +197,6 @@
 #endif
 #ifndef FUTEX2_PRIVATE
 #define FUTEX2_PRIVATE		0x80
-#endif
-
-/* sys/timerfd.h */
-#ifndef TFD_CLOEXEC
-#define TFD_CLOEXEC 02000000
-#endif
-#ifndef TFD_NONBLOCK
-#define TFD_NONBLOCK 04000
 #endif
 
 /* linux/memfd.h */

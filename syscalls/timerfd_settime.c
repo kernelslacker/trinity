@@ -10,6 +10,7 @@
 #include "rnd.h"
 #include "sanitise.h"
 
+#include "kernel/timerfd.h"
 #ifndef TFD_TIMER_CANCEL_ON_SET
 #define TFD_TIMER_CANCEL_ON_SET (1 << 1)
 #endif

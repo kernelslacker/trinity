@@ -8,6 +8,7 @@
 #include "compat.h"
 #include "utils.h"
 
+#include "kernel/timerfd.h"
 static unsigned long timerfd_create_clockids[] = {
 	CLOCK_REALTIME, CLOCK_MONOTONIC, CLOCK_BOOTTIME,
 	CLOCK_REALTIME_ALARM, CLOCK_BOOTTIME_ALARM,
