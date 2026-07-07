@@ -136,7 +136,14 @@ static bool set_syscall_nr_heuristic(struct syscallrecord *rec,
 
 retry:
 	if (no_syscalls_enabled() == true) {
-		output(0, "[%d] No more syscalls enabled. Exiting\n", mypid());
+		/*
+		 * Unbuffered stderr: the racing children about to
+		 * spin-bail via _exit(shm->exit_reason) skip stdio flush,
+		 * so a stdout output() here is lost.  outputerr() lands
+		 * the trigger message before the exit_reason store races
+		 * the child fleet into termination.
+		 */
+		outputerr("[%d] No more syscalls enabled. Exiting\n", mypid());
 		__atomic_store_n(&shm->exit_reason, EXIT_NO_SYSCALLS_ENABLED, __ATOMIC_RELAXED);
 		return FAIL;
 	}
@@ -497,7 +504,14 @@ bool set_syscall_nr_random(struct syscallrecord *rec,
 
 retry:
 	if (no_syscalls_enabled() == true) {
-		output(0, "[%d] No more syscalls enabled. Exiting\n", mypid());
+		/*
+		 * Unbuffered stderr: the racing children about to
+		 * spin-bail via _exit(shm->exit_reason) skip stdio flush,
+		 * so a stdout output() here is lost.  outputerr() lands
+		 * the trigger message before the exit_reason store races
+		 * the child fleet into termination.
+		 */
+		outputerr("[%d] No more syscalls enabled. Exiting\n", mypid());
 		__atomic_store_n(&shm->exit_reason, EXIT_NO_SYSCALLS_ENABLED, __ATOMIC_RELAXED);
 		return FAIL;
 	}
@@ -1113,7 +1127,14 @@ static bool set_syscall_nr_coverage_frontier(struct syscallrecord *rec,
 
 retry:
 	if (no_syscalls_enabled() == true) {
-		output(0, "[%d] No more syscalls enabled. Exiting\n", mypid());
+		/*
+		 * Unbuffered stderr: the racing children about to
+		 * spin-bail via _exit(shm->exit_reason) skip stdio flush,
+		 * so a stdout output() here is lost.  outputerr() lands
+		 * the trigger message before the exit_reason store races
+		 * the child fleet into termination.
+		 */
+		outputerr("[%d] No more syscalls enabled. Exiting\n", mypid());
 		__atomic_store_n(&shm->exit_reason, EXIT_NO_SYSCALLS_ENABLED, __ATOMIC_RELAXED);
 		return FAIL;
 	}
