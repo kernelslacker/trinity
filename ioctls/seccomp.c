@@ -13,6 +13,7 @@
 #include "shm.h"
 #include "utils.h"
 
+#include "kernel/seccomp.h"
 /*
  * Seccomp notification listener ioctls.  These operate on the anonymous fd
  * returned by seccomp(SECCOMP_SET_MODE_FILTER, SECCOMP_FILTER_FLAG_NEW_LISTENER, ...).

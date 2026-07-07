@@ -154,6 +154,7 @@
 
 #include "kernel/fcntl.h"
 #include "kernel/l2tp.h"
+#include "kernel/seccomp.h"
 /* ------------------------------------------------------------------ */
 /* Discriminator value lists                                            */
 /* ------------------------------------------------------------------ */

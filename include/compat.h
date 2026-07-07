@@ -197,29 +197,6 @@
 #define FUTEX2_PRIVATE		0x80
 #endif
 
-/* linux/seccomp.h */
-#ifndef SECCOMP_RET_ALLOW
-#define SECCOMP_RET_ALLOW		0x7fff0000U
-#endif
-/* SECCOMP_RET_USER_NOTIF (added 5.0) returns to user space via a listener fd
- * from SECCOMP_FILTER_FLAG_NEW_LISTENER, parking the trapped syscall until
- * the supervisor responds with SECCOMP_IOCTL_NOTIF_SEND.  Older kernel-headers
- * packages predate the name; the upstream uapi value is fixed at 0x7fc00000U. */
-#ifndef SECCOMP_RET_USER_NOTIF
-#define SECCOMP_RET_USER_NOTIF		0x7fc00000U
-#endif
-/* SECCOMP_SET_MODE_FILTER (added 3.17) is the seccomp(2) operation
- * that installs a classic-BPF filter program; the uapi value is 1. */
-#ifndef SECCOMP_SET_MODE_FILTER
-#define SECCOMP_SET_MODE_FILTER		1
-#endif
-/* SECCOMP_MODE_FILTER (added 3.5) is the mode value passed to
- * prctl(PR_SET_SECCOMP, mode, ...) to install a classic-BPF filter
- * program; the uapi value is 2. */
-#ifndef SECCOMP_MODE_FILTER
-#define SECCOMP_MODE_FILTER		2
-#endif
-
 /* linux/rds.h */
 #ifndef RDS_CANCEL_SENT_TO
 #define RDS_CANCEL_SENT_TO              1

@@ -36,6 +36,7 @@
 
 #include "kernel/fcntl.h"
 #include "kernel/prctl.h"
+#include "kernel/seccomp.h"
 /*
  * Recipe 33: ptrace SEIZE+EXITKILL lifecycle.
  *

@@ -20,6 +20,7 @@
 #include "rnd.h"
 #include "utils.h"
 
+#include "kernel/seccomp.h"
 #ifdef USE_BPF
 /**
  * BPF filters are used in networking such as in pf_packet, but also
