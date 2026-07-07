@@ -19,6 +19,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/resource.h"
 #if defined(SYS_prlimit64) || defined(__NR_prlimit64)
 #ifndef SYS_prlimit64
 #define SYS_prlimit64 __NR_prlimit64

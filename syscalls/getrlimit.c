@@ -14,6 +14,7 @@
 #include "compat.h"
 #include "utils.h"
 
+#include "kernel/resource.h"
 #if defined(SYS_getrlimit) || defined(__NR_getrlimit)
 #ifndef SYS_getrlimit
 #define SYS_getrlimit __NR_getrlimit

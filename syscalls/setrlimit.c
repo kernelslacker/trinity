@@ -9,6 +9,7 @@
 #include "sanitise.h"
 #include "utils.h"
 
+#include "kernel/resource.h"
 static unsigned long rlimit_resources[] = {
 	RLIMIT_CPU, RLIMIT_FSIZE, RLIMIT_DATA, RLIMIT_STACK,
 	RLIMIT_CORE, RLIMIT_RSS, RLIMIT_NPROC, RLIMIT_NOFILE,
