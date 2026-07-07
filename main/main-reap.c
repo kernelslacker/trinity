@@ -851,6 +851,86 @@ static bool dump_dstate_epoll_select_topology(const char *name,
 }
 
 /*
+ * "STUCK CHILD:" loud diagnostic.  One prominent greppable line
+ * summarising a wedged child (pid/childno/op/wedge duration/state
+ * char/wchan) plus the kernel stack from /proc/<pid>/stack when the
+ * kernel exposes it to us.  Falls back to just the wchan when the stack
+ * file is empty or hidden (unprivileged reader, EACCES/ENOENT/EPERM on
+ * most production kernels without CAP_SYS_ADMIN).
+ *
+ * Distinct tag from the existing "watchdog: kill ..." (syscall-side
+ * state int) and "D-state diag ..." (multi-line fd topology / fdinfo
+ * spew) lines: this is the single "which pid, where, how long"
+ * summary that operators grep to attribute wedged tasks.
+ *
+ * Runs on the parent's reap/watchdog path, before the SIGKILL, so the
+ * task's /proc state still reflects the wedge.  Every read tolerates
+ * the pid having exited (open/read failure -> "?" / omitted stack) so
+ * the reap loop cannot be crashed by whatever state the wedged task is
+ * in.  Caller gates on the per-child dstate_diag_dumped latch so this
+ * fires once per stuck child, not every watchdog tick.
+ */
+static void scream_stuck_child(struct childdata *child, int childno,
+			       pid_t pid, time_t wedge_seconds)
+{
+	char wchan[128];
+	char stackbuf[2048];
+	char filename[80];
+	ssize_t stack_n = 0;
+	const char *opname;
+	char state;
+	int fd;
+
+	state = get_pid_state(childno);
+
+	if (read_pid_wchan(pid, wchan, sizeof(wchan)) <= 0)
+		snprintf(wchan, sizeof(wchan), "?");
+
+	snprintf(filename, sizeof(filename), "/proc/%d/stack", pid);
+	fd = open(filename, O_RDONLY | O_CLOEXEC);
+	if (fd >= 0) {
+		stack_n = read(fd, stackbuf, sizeof(stackbuf) - 1);
+		close(fd);
+		if (stack_n < 0)
+			stack_n = 0;
+	}
+	stackbuf[stack_n] = '\0';
+
+	if (child->op_type == CHILD_OP_SYSCALL) {
+		struct syscallrecord *rec = &child->syscall;
+		struct syscallentry *entry;
+		unsigned int callno;
+		bool do32;
+		bool got;
+
+		SREC_SNAPSHOT(rec, {
+			do32 = rec->do32bit;
+			callno = rec->nr;
+		}, got);
+		if (got) {
+			entry = get_syscall_entry(callno, do32);
+			opname = (entry != NULL) ? entry->name : "?";
+		} else {
+			opname = "?";
+		}
+	} else {
+		opname = alt_op_name(child->op_type);
+	}
+
+	if (stack_n > 0) {
+		output(0,
+		       "STUCK CHILD: pid=%d childno=%d op=%s wedged %lds state=%c wchan=%s\nkernel stack:\n%s%s",
+		       pid, childno, opname, (long)wedge_seconds, state, wchan,
+		       stackbuf,
+		       stackbuf[stack_n - 1] == '\n' ? "" : "\n");
+	} else {
+		output(0,
+		       "STUCK CHILD: pid=%d childno=%d op=%s wedged %lds state=%c wchan=%s (kernel stack unavailable)\n",
+		       pid, childno, opname, (long)wedge_seconds, state, wchan);
+	}
+}
+
+/*
  * One-shot D-state diagnostic snapshot.  Fires at the first watchdog
  * detection of TASK_UNINTERRUPTIBLE for a child and prints a richer
  * forensic than the bare "watchdog: kill ..." line:
@@ -1384,6 +1464,7 @@ static bool is_child_making_progress(struct childdata *child, int childno)
 	 * 30s is parked in its wait, so /proc/<pid>/stack is stable either
 	 * way.  Read-only + latched, so no change to the kill logic. */
 	if (!child->dstate_diag_dumped) {
+		scream_stuck_child(child, childno, pid, diff);
 		dump_dstate_diagnostics(child, childno, pid);
 		child->dstate_diag_dumped = true;
 	}
