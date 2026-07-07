@@ -24,6 +24,7 @@
 #include "struct_catalog.h"
 
 #include "kernel/fcntl.h"
+#include "kernel/sctp.h"
 struct syscallrecord;
 
 /* ------------------------------------------------------------------ */

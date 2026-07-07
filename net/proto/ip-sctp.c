@@ -7,6 +7,7 @@
 #include "compat.h"
 #include "rnd.h"
 
+#include "kernel/sctp.h"
 static const unsigned int sctp_opts[] = {
 	SCTP_RTOINFO, SCTP_ASSOCINFO, SCTP_INITMSG, SCTP_NODELAY,
 	SCTP_AUTOCLOSE, SCTP_SET_PEER_PRIMARY_ADDR, SCTP_PRIMARY_ADDR, SCTP_ADAPTATION_LAYER,
