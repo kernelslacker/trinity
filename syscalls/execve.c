@@ -23,6 +23,7 @@
 #include "utils.h"
 #include "compat.h"
 
+#include "kernel/fcntl.h"
 /*
  * Snapshot of the argv/envp arrays and their lengths, captured at sanitise
  * time and consumed by the post handler.  Lives in rec->post_state, a slot

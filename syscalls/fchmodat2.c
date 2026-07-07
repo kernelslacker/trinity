@@ -11,6 +11,7 @@
 #include "shm.h"
 #include "trinity.h"
 
+#include "kernel/fcntl.h"
 #define NR_TESTFILES 4		/* mirror fds/testfiles.c */
 
 static unsigned long fchmodat2_flags[] = {

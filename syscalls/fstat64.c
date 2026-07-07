@@ -8,6 +8,7 @@
 #include "arch.h"
 #include "sanitise.h"
 
+#include "kernel/fcntl.h"
 static void sanitise_fstat64(struct syscallrecord *rec)
 {
 	avoid_shared_buffer_out(&rec->a2, page_size);

@@ -93,6 +93,7 @@
 #include "shm.h"
 #include "trinity.h"
 
+#include "kernel/fcntl.h"
 /* The IFLA_IFNAME-bearing rtnetlink racer is fire-and-forget; we never
  * wait for an ack so we don't need NLM_F_ACK in its flags.  The
  * one-second recv timeout still applies to the genl socket since the

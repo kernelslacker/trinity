@@ -28,6 +28,7 @@
 
 #include "childops/io_uring/recipes-internal.h"
 
+#include "kernel/fcntl.h"
 /* ------------------------------------------------------------------ *
  * Recipe 5: OPENAT + CLOSE in linked SQEs (teardown race)
  *

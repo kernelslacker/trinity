@@ -18,6 +18,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/fcntl.h"
 /*
  * Latched per-process: landlock_create_ruleset returned an errno that
  * won't change for the life of the process (CONFIG_LANDLOCK=n,

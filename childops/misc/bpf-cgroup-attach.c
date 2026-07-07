@@ -81,6 +81,7 @@
 #include "shm.h"
 #include "trinity.h"
 
+#include "kernel/fcntl.h"
 #ifndef BPF_F_ALLOW_MULTI
 #define BPF_F_ALLOW_MULTI	(1U << 1)
 #endif

@@ -14,6 +14,7 @@
 #include "trinity.h"
 #include "compat.h"
 
+#include "kernel/fcntl.h"
 /*
  * SYSCALL_DEFINE1(dup, unsigned int, fildes)
  *

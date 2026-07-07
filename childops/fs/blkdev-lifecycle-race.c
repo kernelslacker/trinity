@@ -74,6 +74,7 @@
 #include "compat.h"
 #include "random.h"
 
+#include "kernel/fcntl.h"
 #define BLKDEV_BACKING_MIN	4096U	/* 4 KiB */
 #define BLKDEV_BACKING_MAX	(16U << 20)	/* 16 MiB */
 #define BLKDEV_RESCAN_BURST	8U	/* thread B inner cycles per spawn */

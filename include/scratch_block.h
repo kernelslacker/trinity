@@ -1,5 +1,6 @@
 #pragma once
 
+#include "kernel/fcntl.h"
 /*
  * Scratch block-device pool.
  *

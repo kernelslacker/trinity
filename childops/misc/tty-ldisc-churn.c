@@ -88,6 +88,7 @@
 #include "jitter.h"
 #include "random.h"
 
+#include "kernel/fcntl.h"
 /*
  * The test kernel config has '# CONFIG_N_GSM is not set' -- exclude
  * N_GSM (21) from the rotation table to keep iters from burning on a

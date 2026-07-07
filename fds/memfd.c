@@ -19,6 +19,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/fcntl.h"
 #ifndef MFD_NOEXEC_SEAL
 #define MFD_NOEXEC_SEAL 0x0008U
 #endif

@@ -18,6 +18,7 @@
 #include "syscall.h"
 #include "types.h"
 
+#include "kernel/fcntl.h"
 struct io_uringobj;
 
 void create_shm(void);

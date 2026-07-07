@@ -9,6 +9,7 @@
  */
 #include <linux/mount.h>
 
+#include "kernel/fcntl.h"
 #ifndef FSOPEN_CLOEXEC
 #define FSOPEN_CLOEXEC		0x00000001
 #endif

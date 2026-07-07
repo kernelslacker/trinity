@@ -10,6 +10,7 @@
 #include "trinity.h"
 #include "compat.h"
 
+#include "kernel/fcntl.h"
 #ifndef AT_SYMLINK_FOLLOW
 #define AT_SYMLINK_FOLLOW	0x400
 #endif

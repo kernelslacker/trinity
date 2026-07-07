@@ -31,6 +31,7 @@
 #include "perf_event_open-internal.h"
 
 
+#include "kernel/fcntl.h"
 static long long random_sysfs_config(__u32 *type,
 				__u64 *config1,
 				__u64 *config2) {

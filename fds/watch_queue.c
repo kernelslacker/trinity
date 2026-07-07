@@ -13,6 +13,7 @@
 #include "shm.h"
 #include "utils.h"
 
+#include "kernel/fcntl.h"
 /*
  * Only the read end of an O_NOTIFICATION_PIPE pipe carries a watch_queue;
  * the write end is a normal pipe writer that the kernel uses to push

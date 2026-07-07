@@ -62,6 +62,7 @@
 #include "utils.h"
 #include "pids.h"
 
+#include "kernel/fcntl.h"
 /* Hard cap on mkdir/rmdir cycles per invocation.  Kept modest so a
  * single op completes well inside the alarm(1) window even when the
  * cgroup subsystem is under contention from sibling churners. */

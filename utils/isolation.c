@@ -20,6 +20,7 @@
 #include "trinity.h"
 #include "uid.h"
 
+#include "kernel/fcntl.h"
 /*
  * One-shot NETLINK_ROUTE socket helpers for the parent's lo
  * provisioning sequence.  Deliberately self-contained -- the

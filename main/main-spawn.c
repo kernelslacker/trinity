@@ -26,6 +26,7 @@
 #include "utils.h"
 #include "main-internal.h"
 
+#include "kernel/fcntl.h"
 /* CLOCK_MONOTONIC second past which the canary picker may resume
  * scheduling pid-heavy ops; 0 means no suppression is in effect.
  * Parent-private (the canary picker is parent-only).  Written from

@@ -33,6 +33,7 @@
 #include "utils.h"
 #include "main-internal.h"
 
+#include "kernel/fcntl.h"
 static void handle_child(int childno, pid_t childpid, int childstatus);
 
 /* Parent-local array of /proc/<pid>/stat file descriptors, indexed by

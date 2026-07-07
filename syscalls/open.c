@@ -15,6 +15,7 @@
 #include "utils.h"
 #include "compat.h"
 
+#include "kernel/fcntl.h"
 /*
  * Mirrors the MAX_TESTFILES bound in fds/testfiles.c so the pin lands
  * inside the same trinity-testfile<N> inodes the rest of the path-pinned

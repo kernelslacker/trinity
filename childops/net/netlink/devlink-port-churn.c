@@ -62,6 +62,7 @@
 #include "rnd.h"
 #include "pids.h"
 
+#include "kernel/fcntl.h"
 /* netdevsim bus name — pinned here as a static const so the RELOAD
  * codepath can never name a different bus.  See the brick-risk note in
  * the file header. */

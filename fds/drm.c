@@ -21,6 +21,7 @@
 #include <fcntl.h>
 #include <drm/drm.h>
 
+#include "kernel/fcntl.h"
 static void drmfd_dump(struct object *obj, enum obj_scope scope)
 {
 	output(2, "drmfd:%d scope:%d\n", obj->drmfd, scope);

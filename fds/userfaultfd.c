@@ -19,6 +19,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/fcntl.h"
 static int userfaultfd_create(__unused__ unsigned int flag)
 {
 #ifdef SYS_userfaultfd

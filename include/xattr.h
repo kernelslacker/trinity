@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "kernel/fcntl.h"
 struct syscallrecord;
 
 /* Writable scratch size used for every xattr name buffer.  Also the cap

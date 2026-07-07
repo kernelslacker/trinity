@@ -70,6 +70,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/fcntl.h"
 #define PCI_BIND_BUS_DIR	"/sys/bus/pci/drivers"
 #define PCI_BIND_BDF_LEN	13U	/* "0000:bb:dd.f" + NUL */
 #define PCI_BIND_DEVS_MAX	256U	/* per-driver enum cap */

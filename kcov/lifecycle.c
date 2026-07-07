@@ -31,6 +31,7 @@
 #include "stats_ring.h"		/* stats_ring_enqueue, STATS_FIELD_* */
 #include "trinity.h"		/* output, outputerr */
 
+#include "kernel/fcntl.h"
 /*
  * Park the per-child kcov fds well above the low-numbered range the
  * kernel typically hands out.  kcov_init_child runs in the child after

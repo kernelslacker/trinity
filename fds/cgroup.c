@@ -16,6 +16,7 @@
 #include "shm.h"
 #include "utils.h"
 
+#include "kernel/fcntl.h"
 #define CGROUP_ROOT		"/sys/fs/cgroup"
 #define CGROUP_INIT_POOL	8
 

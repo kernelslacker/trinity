@@ -222,6 +222,7 @@ struct syscallentry syscall_newfstat = {
  */
 #include <limits.h>
 
+#include "kernel/fcntl.h"
 static unsigned long newfstatat_flags[] = {
 	0,	/* no flags — follow symlinks (default behavior) */
 	AT_SYMLINK_NOFOLLOW,

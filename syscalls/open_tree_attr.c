@@ -14,6 +14,7 @@
 #include "sanitise.h"
 #include "utils.h"
 
+#include "kernel/fcntl.h"
 /*
  * Mutually-exclusive propagation flags.  do_change_type() EINVALs the
  * moment two bits are set, so an OR over the four-element pool would

@@ -70,6 +70,7 @@
 #include "shm.h"
 #include "trinity.h"
 
+#include "kernel/fcntl.h"
 /* Hard cap on close/race cycles per invocation.  Each cycle spawns and
  * joins a thread plus syscall round-trips, so 16 keeps a single op well
  * inside the parent's alarm(1) window even under sibling load. */

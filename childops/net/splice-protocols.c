@@ -86,6 +86,7 @@
 #include "shm.h"
 #include "trinity.h"
 
+#include "kernel/fcntl.h"
 #ifndef UDP_ENCAP
 # define UDP_ENCAP			100
 #endif

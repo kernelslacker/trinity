@@ -31,6 +31,7 @@
 
 #include "childops/recipe/internal.h"
 
+#include "kernel/fcntl.h"
 /*
  * Send a single fd over an AF_UNIX socket via SCM_RIGHTS ancillary
  * data.  Helper for recipe_net_unix_gc, which needs to construct a

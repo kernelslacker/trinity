@@ -11,6 +11,7 @@
 
 #include "utils.h"	/* waitpid_eintr() */
 
+#include "kernel/fcntl.h"
 /*
  * Best-effort `modprobe -q <mod>` invoked from a forked child.  stdio is
  * redirected to /dev/null so module-load chatter doesn't pollute trinity's

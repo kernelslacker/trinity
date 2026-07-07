@@ -28,6 +28,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/fcntl.h"
 static const struct dev_template dev_templates[DEV_TEMPLATE_MAX] = {
 	[DEV_TEMPLATE_NULL]          = { "/dev/null",           O_RDWR,   "baseline (always present)" },
 	[DEV_TEMPLATE_ZERO]          = { "/dev/zero",           O_RDWR,   "baseline (always present)" },

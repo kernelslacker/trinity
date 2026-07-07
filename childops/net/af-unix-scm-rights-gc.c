@@ -71,6 +71,7 @@
 
 #if __has_include(<linux/io_uring.h>)
 #include <linux/io_uring.h>
+#include "kernel/fcntl.h"
 #define HAVE_IOURING_VARIANT	1
 #else
 #define HAVE_IOURING_VARIANT	0

@@ -56,6 +56,7 @@
 #include "shm.h"
 #include "trinity.h"
 
+#include "kernel/fcntl.h"
 /* Hard cap on setup → submit → teardown cycles per invocation.  Sized so
  * the worst-case loop completes well inside the alarm(1) window even when
  * sibling churners are also hammering the kernel allocator. */

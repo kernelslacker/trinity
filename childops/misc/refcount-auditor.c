@@ -47,6 +47,7 @@
 #include "shm.h"
 #include "trinity.h"
 
+#include "kernel/fcntl.h"
 /* Latched once if /proc/self/fdinfo is inaccessible (containerized, etc.). */
 static bool proc_unavailable;
 

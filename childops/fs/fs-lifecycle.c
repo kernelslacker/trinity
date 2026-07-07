@@ -72,6 +72,7 @@
 #include "trinity.h"
 #include "userns-bootstrap.h"
 
+#include "kernel/fcntl.h"
 /* Latched per-child: kernel refused CLONE_NEWUSER (helper -EPERM) */
 static bool ns_unsupported;
 

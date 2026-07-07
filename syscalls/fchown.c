@@ -11,6 +11,7 @@
 #include "sanitise.h"
 #include "trinity.h"
 
+#include "kernel/fcntl.h"
 struct syscallentry syscall_fchown = {
 	.name = "fchown",
 	.num_args = 3,

@@ -57,6 +57,7 @@
 #include <net/if.h>
 #include <linux/sockios.h>
 
+#include "kernel/fcntl.h"
 /* Per-process latched gates.  Module / config / capability state is
  * static for a child's lifetime, so once we've paid the EFAIL we stop
  * probing.  Mirrors tls_ulp_churn / handshake_req_abort. */

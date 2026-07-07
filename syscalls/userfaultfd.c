@@ -7,6 +7,7 @@
 #include "publish_resource.h"
 #include "sanitise.h"
 
+#include "kernel/fcntl.h"
 static unsigned long userfaultfd_flags[] = {
 	O_CLOEXEC, O_NONBLOCK, UFFD_USER_MODE_ONLY,
 };

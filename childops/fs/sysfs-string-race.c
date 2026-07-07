@@ -52,6 +52,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/fcntl.h"
 #define SYSFS_STRING_RACE_ITER_CAP	256U
 #define SYSFS_STRING_RACE_ITER_BASE	32U
 #define SYSFS_STRING_RACE_CHILD_WATCHDOG_S	2

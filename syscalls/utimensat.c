@@ -11,6 +11,7 @@
 #include "sanitise.h"
 #include "trinity.h"
 
+#include "kernel/fcntl.h"
 /*
  * Mirrors the MAX_TESTFILES bound in fds/testfiles.c so we land inside
  * the same trinity-testfile<N> inodes the rest of the fuzzer

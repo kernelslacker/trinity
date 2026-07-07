@@ -92,6 +92,7 @@
 #include "trinity.h"
 #include "userns-bootstrap.h"
 
+#include "kernel/fcntl.h"
 #define RTNL_BUF_BYTES		2048
 #define RTNL_RECV_TIMEO_S	1
 #define MON_DRAIN_BYTES		4096

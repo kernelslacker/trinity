@@ -8,6 +8,7 @@
 #include "syscall.h"	/* MAX_NR_SYSCALL */
 #include "cmp_hints.h"	/* CMP_HYP_STATE_NR */
 
+#include "kernel/fcntl.h"
 /* 8-bucket errno classification used by per_syscall_errno[] below.
  * Bucket layout is part of the dump_stats() output contract; keep
  * the order stable so the column headers in stats.c match. */

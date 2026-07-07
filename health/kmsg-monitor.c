@@ -60,6 +60,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/fcntl.h"
 /*
  * Substrings that mark the start of an interesting kernel report.
  * Matched anywhere inside the printk record body so we tolerate any

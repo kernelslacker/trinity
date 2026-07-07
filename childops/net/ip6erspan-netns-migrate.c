@@ -102,6 +102,7 @@
 #include "userns-bootstrap.h"
 #include "utils.h"
 
+#include "kernel/fcntl.h"
 /*
  * UAPI fallbacks.  linux/if_link.h and linux/if_tunnel.h are present on
  * every sysroot trinity targets, but if a stripped build host lacks any

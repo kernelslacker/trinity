@@ -13,6 +13,7 @@
 #include "utils.h"
 #include "xattr.h"
 
+#include "kernel/fcntl.h"
 static const char *xattr_prefixes[] = {
 	"user.",
 	"security.",

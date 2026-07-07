@@ -7,6 +7,7 @@
 #include "object-types.h"
 #include "sanitise.h"
 
+#include "kernel/fcntl.h"
 static unsigned long open_tree_flags[] = {
 	AT_EMPTY_PATH, AT_NO_AUTOMOUNT, AT_RECURSIVE, AT_SYMLINK_NOFOLLOW,
 	OPEN_TREE_CLONE, OPEN_TREE_CLOEXEC, OPEN_TREE_NAMESPACE,
