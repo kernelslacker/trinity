@@ -20,7 +20,6 @@
 #
 # Lines starting with `#` and blank lines are ignored.
 
-PF_ALG          crypto AF_ALG -- setsockopt-driven, no bind/listen shape
 PF_ATMPVC       legacy ATM PVC -- niche, no grammar author volunteered
 PF_IB           InfiniBand -- kernel path exists, no fuzz shape drafted
 PF_IEEE802154   low-power WPAN -- no grammar drafted

@@ -56,4 +56,17 @@ struct sockaddr_alg;
 void pick_alg(enum alg_dict_type type, const char *type_str,
 	      struct sockaddr_alg *alg);
 
+/*
+ * Boundary tables shared between the per-syscall alg_setsockopt() path
+ * (net/proto/alg.c) and the grammar_alg walker's SETKEY / SET_AEAD
+ * phase handlers (net/socket-family-grammar.c).  Owned by
+ * net/proto/alg.c; the count symbols are kept alongside so callers can
+ * do rnd_modulo_u32(alg_boundary_keylens_count) without needing
+ * ARRAY_SIZE() from a different translation unit.
+ */
+extern const unsigned int alg_boundary_keylens[];
+extern const unsigned int alg_boundary_keylens_count;
+extern const unsigned int alg_boundary_authsizes[];
+extern const unsigned int alg_boundary_authsizes_count;
+
 #endif

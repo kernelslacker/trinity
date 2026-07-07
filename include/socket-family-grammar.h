@@ -6,6 +6,10 @@
 
 #include "syscall.h"	/* socket_triplet */
 
+#ifdef USE_IF_ALG
+#include <linux/if_alg.h>	/* sockaddr_alg in the socket_ctx union arm */
+#endif
+
 struct msghdr;
 
 /*
@@ -53,6 +57,27 @@ enum sfg_phase {
 				 * ctx.child_fd regardless of conn_state.
 				 * Never appears in a legal ordering; the
 				 * injector splices exactly one per walk. */
+
+	/*
+	 * AF_ALG lifecycle phases — the inet-shaped BIND/ACCEPT/DATA vocab
+	 * does not map cleanly onto AF_ALG (bind carries salg_type/name,
+	 * not an IP address; accept is NOT LISTEN-gated — it produces the
+	 * operation fd from a bound parent; the data leg is a MSG_MORE-
+	 * segmented cmsg-driven send/recv against the op fd).  Handled by
+	 * the executor's ctx-aware case bodies in net/socket-family-grammar.c,
+	 * not by the stateless (fd, triplet) sfg-> callback table.  Values
+	 * kept stable so sfg_fnv1a_step's per-walk sequence hash stays
+	 * comparable across runs.
+	 */
+	SFG_PHASE_ALG_BIND      = 10,	/* bind(salg_type,salg_name) -> BOUND */
+	SFG_PHASE_ALG_SETKEY    = 11,	/* setsockopt(ALG_SET_KEY) on parent */
+	SFG_PHASE_ALG_SET_AEAD  = 12,	/* setsockopt(ALG_SET_AEAD_AUTHSIZE) +
+					 * stage assoclen for the CMSG phase */
+	SFG_PHASE_ALG_ACCEPT    = 13,	/* accept() -> op fd -> ACCEPTED */
+	SFG_PHASE_ALG_CMSG      = 14,	/* sendmsg(cmsg: ALG_SET_OP [+ IV]
+					 * [+ AEAD_ASSOCLEN]), empty payload */
+	SFG_PHASE_ALG_SEND_MORE = 15,	/* N × sendmsg(MSG_MORE) tsgl-growing */
+	SFG_PHASE_ALG_RECV      = 16,	/* recvmsg() flush (no MSG_MORE) */
 };
 
 /*
@@ -92,6 +117,41 @@ struct sfg_phase_order {
 	unsigned char steps[SFG_MAX_PHASES];
 };
 
+#ifdef USE_IF_ALG
+/*
+ * Algorithm family group for the grammar_alg walk.  Gates AEAD-only
+ * phases (SET_AEAD, assoclen cmsg) and picks the salg_type string +
+ * dict bucket at ALG_BIND.  Strict subset of the sfc_type_idx enum in
+ * childops/net/socket-family-chain.c — the four buckets the grammar
+ * actually drives (akcipher/kpp/sig lifecycles diverge and don't
+ * benefit from the send/recv walk yet).
+ */
+enum sfg_alg_type {
+	SFG_ALG_TYPE_HASH = 0,
+	SFG_ALG_TYPE_SKCIPHER,
+	SFG_ALG_TYPE_AEAD,
+	SFG_ALG_TYPE_RNG,
+	SFG_ALG_TYPE_NR,
+};
+
+/*
+ * AF_ALG-specific extras for the grammar_alg walker.  Lives in
+ * socket_ctx.fam.alg so the ctx-aware AF_ALG phase handlers can thread
+ * key-set state, chosen alg type, and the authsize/assoclen values
+ * SET_AEAD picked and the CMSG phase must echo.  Splice pipe fds are
+ * reserved here so the follow-on run_alg_chain retirement (§6) can
+ * fold the splice data leg without touching the ctx shape again.
+ */
+struct sfg_alg_extras {
+	struct sockaddr_alg sa;
+	enum sfg_alg_type type;
+	bool key_set;
+	unsigned int authsize;
+	unsigned int assoclen;
+	int splice_pfd[2];
+};
+#endif
+
 /*
  * Per-invocation state for run_grammar_chain.  Generalises the AF_ALG-
  * only alg_chain_iter_ctx (childops/net/socket-family-chain.c) so any
@@ -104,10 +164,12 @@ struct sfg_phase_order {
  * bound_addr defaults to NULL (tracked_free_now guarded on non-NULL),
  * conn_state defaults to SFG_CONN_INIT.
  *
- * The AF_ALG childop keeps its own alg_chain_iter_ctx for the AF_ALG-
- * specific extras (sockaddr_alg body, sndbuf/rcvbuf, type enum, splice
- * pipe fds); folding it onto this struct is a follow-up, not this
- * commit's scope.
+ * The `fam` union carries family-specific extras.  Today only AF_ALG
+ * (grammar_alg) needs any: sockaddr_alg body, alg type, key-set flag,
+ * authsize/assoclen staged at SET_AEAD, and reserved splice pipe fds.
+ * Other families that grow extras add a sibling arm.  splice_pfd
+ * defaults to {-1, -1} — initialised alongside parent_fd/child_fd so
+ * the teardown gate can close guarded on >= 0.
  */
 struct socket_ctx {
 	int parent_fd;			/* -1 until socket() opens it */
@@ -129,6 +191,11 @@ struct socket_ctx {
 	 */
 	enum sfg_illegal_op illegal_op;
 	enum sfg_conn_state illegal_at;
+#ifdef USE_IF_ALG
+	union {
+		struct sfg_alg_extras alg;
+	} fam;
+#endif
 };
 
 /*
@@ -291,6 +358,9 @@ bool run_grammar_chain(const struct socket_family_grammar *sfg,
  * each grammar lands.
  */
 extern const struct socket_family_grammar grammar_inet;
+#ifdef USE_IF_ALG
+extern const struct socket_family_grammar grammar_alg;
+#endif
 #ifdef USE_IPV6
 extern const struct socket_family_grammar grammar_inet6;
 #endif

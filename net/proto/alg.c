@@ -2,12 +2,15 @@
 #include <sys/un.h>
 #include <unistd.h>
 #include <string.h>
+#include <errno.h>
 #include "arch.h"
 #include "random.h"
 #include "net.h"
 #include "compat.h"
 #include "proto-alg-dict.h"
 #include "rnd.h"
+#include "shm.h"
+#include "socket-family-grammar.h"
 
 #ifdef USE_IF_ALG
 #include <linux/if_alg.h>
@@ -266,7 +269,7 @@ static struct socket_triplet alg_triplet[] = {
  * we want to exercise — a kernel that kalloc()s `keylen` bytes without
  * bounding it is the bug class).
  */
-static const unsigned int alg_boundary_keylens[] = {
+const unsigned int alg_boundary_keylens[] = {
 	0, 1, 7,
 	15, 16, 17,			/* AES-128 boundary */
 	23, 24, 25,			/* AES-192 boundary */
@@ -280,19 +283,21 @@ static const unsigned int alg_boundary_keylens[] = {
 	65535, 65536,
 	0x10000000, 0x7fffffff, 0xffffffff,
 };
+const unsigned int alg_boundary_keylens_count = ARRAY_SIZE(alg_boundary_keylens);
 
 /*
  * ALG_SET_AEAD_AUTHSIZE encodes the authsize in `optlen`; `optval` is
  * ignored.  Boundary set covers 0, the GCM/CCM legal sizes (4,8,12,13,
  * 14,15,16), off-by-ones, and unbounded values.
  */
-static const unsigned int alg_boundary_authsizes[] = {
+const unsigned int alg_boundary_authsizes[] = {
 	0, 1, 2, 3, 4, 5, 7, 8, 9,
 	11, 12, 13, 14, 15, 16, 17,
 	24, 31, 32, 33,
 	63, 64, 65,
 	128, 256, 0xffff, 0x10000, 0x7fffffff, 0xffffffff,
 };
+const unsigned int alg_boundary_authsizes_count = ARRAY_SIZE(alg_boundary_authsizes);
 
 static void alg_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
@@ -425,5 +430,93 @@ const struct netproto proto_alg = {
 	.gen_sockaddr = alg_gen_sockaddr,
 	.valid_triplets = alg_triplet,
 	.nr_triplets = ARRAY_SIZE(alg_triplet),
+};
+
+/*
+ * grammar_alg — coherent AF_ALG walk driven by the per-family grammar
+ * dispatcher (net/socket-family-grammar.c).
+ *
+ * AF_ALG's lifecycle does not fit the inet-shaped generic phase
+ * vocabulary (bind carries salg_type/salg_name; accept is not LISTEN-
+ * gated; the data leg is MSG_MORE-segmented cmsg-driven send/recv).
+ * The SFG_PHASE_ALG_* case bodies in the executor own the phase
+ * handlers and thread state through socket_ctx.fam.alg — the stateless
+ * (fd, triplet) sfg-> callbacks can't carry key_set/type/authsize/
+ * assoclen across phases.
+ *
+ * Three legal orderings expose the phase permutations upstream CI
+ * cannot reach in coherent succession from random per-syscall fuzzing:
+ *
+ *   full-AEAD:  SOCKET, BIND, SETKEY, SET_AEAD, ACCEPT, CMSG,
+ *               SEND_MORE, RECV
+ *   non-AEAD:   SOCKET, BIND, SETKEY, ACCEPT, CMSG,
+ *               SEND_MORE, RECV
+ *   hash-only:  SOCKET, BIND, ACCEPT, SEND_MORE, RECV
+ *
+ * The AEAD-only phases (SET_AEAD, the assoclen cmsg) self-gate on
+ * ctx.fam.alg.type so the full-AEAD ordering degenerates cleanly on a
+ * non-AEAD algorithm draw; SETKEY tolerates the algs that reject it
+ * (rng, akcipher) — mirrors run_alg_chain's discipline.
+ */
+
+static bool alg_can_run(void)
+{
+	int fd;
+
+	if (__atomic_load_n(&shm->sfg_unsupported[PF_ALG], __ATOMIC_RELAXED))
+		return false;
+	fd = socket(AF_ALG, SOCK_SEQPACKET, 0);
+	if (fd < 0) {
+		__atomic_store_n(&shm->sfg_unsupported[PF_ALG], true,
+				 __ATOMIC_RELAXED);
+		return false;
+	}
+	close(fd);
+	return true;
+}
+
+static void alg_pick_triplet(struct socket_triplet *out)
+{
+	out->family = PF_ALG;
+	out->type = SOCK_SEQPACKET;
+	out->protocol = 0;
+}
+
+static const struct sfg_phase_order alg_phase_orders[] = {
+	/* full-AEAD arm: SET_AEAD stages authsize + assoclen; CMSG echoes
+	 * assoclen so aead_recvmsg's assoc-vs-data length math is fed
+	 * matching values.  For a non-AEAD draw at BIND, SET_AEAD is a
+	 * no-op and CMSG omits the assoclen cmsg. */
+	{ { SFG_PHASE_SOCKET, SFG_PHASE_ALG_BIND, SFG_PHASE_ALG_SETKEY,
+	    SFG_PHASE_ALG_SET_AEAD, SFG_PHASE_ALG_ACCEPT,
+	    SFG_PHASE_ALG_CMSG, SFG_PHASE_ALG_SEND_MORE,
+	    SFG_PHASE_ALG_RECV, SFG_PHASE_END } },
+
+	/* non-AEAD short-form: SETKEY + CMSG + MSG_MORE-segmented sends —
+	 * exercises af_alg_sendmsg's tsgl accumulation on skcipher. */
+	{ { SFG_PHASE_SOCKET, SFG_PHASE_ALG_BIND, SFG_PHASE_ALG_SETKEY,
+	    SFG_PHASE_ALG_ACCEPT, SFG_PHASE_ALG_CMSG,
+	    SFG_PHASE_ALG_SEND_MORE, SFG_PHASE_ALG_RECV, SFG_PHASE_END } },
+
+	/* hash short-circuit: no key, no CMSG — hashes accept payload
+	 * directly.  Distinct sequence hash for the P1 variety metric. */
+	{ { SFG_PHASE_SOCKET, SFG_PHASE_ALG_BIND, SFG_PHASE_ALG_ACCEPT,
+	    SFG_PHASE_ALG_SEND_MORE, SFG_PHASE_ALG_RECV, SFG_PHASE_END } },
+};
+
+const struct socket_family_grammar grammar_alg = {
+	.family			= PF_ALG,
+	.name			= "alg",
+	.can_run		= alg_can_run,
+	.pick_triplet		= alg_pick_triplet,
+	.phase_orders		= alg_phase_orders,
+	.nr_phase_orders	= ARRAY_SIZE(alg_phase_orders),
+	/* phase_orders_apply=NULL: the AF_ALG orderings apply to every
+	 * triplet grammar_alg emits (it only emits one).  The illegal-op
+	 * injector self-gates on this being non-NULL — MVP keeps
+	 * legal-only walks; the illegal-ops follow-up wires the gate. */
+	/* bind_or_connect / configure_pre_bind / configure_post_bind /
+	 * walk_setsockopts / gen_cmsg / needs_listen_accept / data_leg all
+	 * unused — the SFG_PHASE_ALG_* case bodies own the walk. */
 };
 #endif
