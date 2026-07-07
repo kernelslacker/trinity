@@ -145,35 +145,6 @@
 #define NFC_SOCKPROTO_LLCP	1
 #endif
 
-/* linux/qrtr.h — AF_QIPCRTR sockaddr_qrtr + control-channel sentinels.
- *
- * Older sysroots predate the 2015 mainline merge (commit bdabad3e363d)
- * and do not ship <linux/qrtr.h> at all; on those builds the struct
- * definition and the two well-known sentinels (QRTR_NODE_BCAST, the
- * broadcast node, and QRTR_PORT_CTRL, the qrtr_ctrl_recv() pseudo-
- * port) are missing.  struct_catalog references both unconditionally,
- * so include the header when present and otherwise synthesize a
- * literal-for-literal mirror.  The constants land behind per-symbol
- * #ifndef guards so a sysroot that ships the header but not the
- * sentinels still picks up the missing names.
- */
-#if __has_include(<linux/qrtr.h>)
-#include <linux/qrtr.h>
-#else
-#include <linux/socket.h>		/* __kernel_sa_family_t */
-struct sockaddr_qrtr {
-	__kernel_sa_family_t sq_family;
-	__u32 sq_node;
-	__u32 sq_port;
-};
-#endif
-#ifndef QRTR_NODE_BCAST
-#define QRTR_NODE_BCAST		0xffffffffu
-#endif
-#ifndef QRTR_PORT_CTRL
-#define QRTR_PORT_CTRL		0xfffffffeu
-#endif
-
 /* linux/nfc.h — AF_NFC raw-socket endpoint + NFC_PROTO_* selectors.
  *
  * CONFIG_NFC has historically been a tristate that gated UAPI install

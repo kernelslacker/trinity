@@ -69,6 +69,7 @@
 
 #include <linux/qrtr.h>
 
+#include "kernel/qrtr.h"
 /* AF_QRTR landed in mainline as 42 (commit bdabad3e363d, 2015) but
  * the macro lives in glibc-side <bits/socket.h>, not <linux/qrtr.h>,
  * so sysroots without the bits update need the literal fallback even

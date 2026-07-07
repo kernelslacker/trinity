@@ -93,6 +93,7 @@
 #include "arch.h"
 #include "utils.h"
 
+#include "kernel/qrtr.h"
 /* ------------------------------------------------------------------ */
 /* struct sockaddr_storage (bind, connect, sendto, ...)                */
 /* ------------------------------------------------------------------ */
