@@ -8,6 +8,7 @@
 #include "sanitise.h"
 #include "compat.h"
 
+#include "kernel/futex.h"
 static void sanitise_futex_requeue(struct syscallrecord *rec)
 {
 	struct futex_waitv *waiters;

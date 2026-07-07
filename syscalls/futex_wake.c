@@ -9,6 +9,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/futex.h"
 static unsigned long futex2_flags[] = {
 	FUTEX2_SIZE_U8, FUTEX2_SIZE_U16, FUTEX2_SIZE_U32, FUTEX2_SIZE_U64,
 	FUTEX2_NUMA, FUTEX2_PRIVATE, FUTEX2_MPOL,

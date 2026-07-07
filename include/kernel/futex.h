@@ -17,3 +17,26 @@
 #ifndef FUTEX_NO_NODE
 #define FUTEX_NO_NODE		(-1)
 #endif
+
+#ifndef FUTEX2_SIZE_U8
+#define FUTEX2_SIZE_U8		0x00
+#endif
+#ifndef FUTEX2_SIZE_U16
+#define FUTEX2_SIZE_U16		0x01
+#endif
+#ifndef FUTEX2_SIZE_U32
+#define FUTEX2_SIZE_U32		0x02
+#endif
+#ifndef FUTEX2_SIZE_U64
+#define FUTEX2_SIZE_U64		0x03
+#endif
+#ifndef FUTEX2_NUMA
+#define FUTEX2_NUMA		0x04
+#endif
+#ifndef FUTEX2_MPOL
+#define FUTEX2_MPOL		0x08
+#endif
+#ifndef FUTEX2_PRIVATE
+#define FUTEX2_PRIVATE		0x80
+#endif
+
