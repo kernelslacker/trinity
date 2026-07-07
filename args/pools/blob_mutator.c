@@ -12,8 +12,12 @@
  *
  * OFF (engine-level off, no write), FILL (generate_rand_bytes into
  * the owned buffer), HAVOC (FILL plus a bounded byte-mutation pass:
- * bit-flip / byte-flip / set-interesting byte+word+dword, capped at
- * BLOB_HAVOC_MAX_OPS), CMPDICT (HAVOC plus a bounded buffer-redqueen
+ * bit-flip / byte-flip / set-interesting at the four recorded cmp
+ * widths {1,2,4,8} / ±1..±35 arithmetic on a byte/word/dword field /
+ * memset a bounded run to 0x00 or 0xff / self-splice copy a bounded
+ * region over another / swap two non-overlapping bounded regions,
+ * capped at BLOB_HAVOC_MAX_OPS ops per invocation regardless of arm
+ * cost), CMPDICT (HAVOC plus a bounded buffer-redqueen
  * pass capped at BLOB_CMPDICT_MAX_INSERTS: each iteration coin-flips
  * between a built-in well-known-magic table and the learned per-nr
  * cmp-hint pool via cmp_hints_try_get_sized -- which returns both
@@ -27,6 +31,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "blob_corpus.h"
 #include "blob_mutator.h"
@@ -79,10 +84,12 @@ static void havoc_byte_flip(unsigned char *buf, size_t len)
 }
 
 /*
- * HAVOC arm: stamp an interesting byte / word / dword at a bounded
- * position.  width is the operand size in bytes (1, 2, or 4); the
- * stamp is clamped so that pos + width <= len -- a width that does
- * not fit is degraded to a single-byte stamp.
+ * HAVOC arm: stamp an interesting byte / word / dword / qword at a
+ * bounded position.  width is the operand size in bytes (1, 2, 4, or
+ * 8) -- the four sizes the KCOV_TRACE_CMP collector records, so the
+ * stamp lands at a width the kernel's cmp instruction actually reads
+ * against.  The stamp is clamped so that pos + width <= len -- a
+ * width that does not fit is degraded to a single-byte stamp.
  */
 static void havoc_set_interesting(unsigned char *buf, size_t len,
 				  unsigned int width)
@@ -96,7 +103,7 @@ static void havoc_set_interesting(unsigned char *buf, size_t len,
 	if (len == 0)
 		return;
 
-	if (width != 1 && width != 2 && width != 4)
+	if (width != 1 && width != 2 && width != 4 && width != 8)
 		width = 1;
 	if (width > len)
 		width = 1;
@@ -133,15 +140,237 @@ static void havoc_set_interesting(unsigned char *buf, size_t len,
 		buf[pos + 3] = (unsigned char) ((v >> 24) & 0xffu);
 		break;
 	}
+	case 8: {
+		uint64_t v = (uint64_t) val;
+		buf[pos]     = (unsigned char) (v & 0xffu);
+		buf[pos + 1] = (unsigned char) ((v >> 8) & 0xffu);
+		buf[pos + 2] = (unsigned char) ((v >> 16) & 0xffu);
+		buf[pos + 3] = (unsigned char) ((v >> 24) & 0xffu);
+		buf[pos + 4] = (unsigned char) ((v >> 32) & 0xffu);
+		buf[pos + 5] = (unsigned char) ((v >> 40) & 0xffu);
+		buf[pos + 6] = (unsigned char) ((v >> 48) & 0xffu);
+		buf[pos + 7] = (unsigned char) ((v >> 56) & 0xffu);
+		break;
+	}
+	}
+}
+
+/*
+ * Cap on the run length of the block-scoped HAVOC arms (memset run,
+ * splice copy, region swap).  Kept small so total worst-case bytes
+ * touched per blob_fill() stays O(BLOB_HAVOC_MAX_OPS *
+ * BLOB_HAVOC_BLOCK_MAX) -- 64 * 64 = 4 KiB, comfortably below any
+ * ARG_BUF_SIZED allocation.  Bounded independent of len.
+ */
+#define BLOB_HAVOC_BLOCK_MAX	64u
+
+/*
+ * HAVOC arm: add or subtract a small magnitude (1..35) to a byte /
+ * word / dword at a bounded position, wrapping at width.  Targets
+ * length / counter / index fields the plain byte-flip arms tend to
+ * push far outside any parser-accepted range; small deltas walk the
+ * boundary neighbourhood of whatever value is already there.  Width
+ * must be one of {1, 2, 4}; the little-endian in-place read/modify/
+ * write matches the LE splat style the CMPDICT arm uses.
+ */
+static void havoc_arith(unsigned char *buf, size_t len,
+			unsigned int width, bool sub)
+{
+	uint64_t v;
+	unsigned int mag;
+	size_t pos;
+	size_t max_pos;
+
+	if (len == 0)
+		return;
+
+	if (width != 1 && width != 2 && width != 4)
+		width = 1;
+	if (width > len)
+		width = 1;
+
+	max_pos = len - width;
+	if (max_pos == 0)
+		pos = 0;
+	else if (max_pos > UINT32_MAX)
+		pos = (size_t) rnd_modulo_u32(UINT32_MAX);
+	else
+		pos = (size_t) rnd_modulo_u32((uint32_t) max_pos + 1u);
+
+	/* AFL-style [1..35] magnitude keeps the delta below the size of
+	 * any single byte and inside the "off-by-a-few" neighbourhood of
+	 * length / counter fields. */
+	mag = 1u + rnd_modulo_u32(35);
+
+	switch (width) {
+	case 1:
+		v = buf[pos];
+		break;
+	case 2:
+		v = (uint64_t) buf[pos]
+		  | ((uint64_t) buf[pos + 1] << 8);
+		break;
+	case 4:
+	default:
+		v = (uint64_t) buf[pos]
+		  | ((uint64_t) buf[pos + 1] << 8)
+		  | ((uint64_t) buf[pos + 2] << 16)
+		  | ((uint64_t) buf[pos + 3] << 24);
+		break;
+	}
+
+	if (sub)
+		v -= (uint64_t) mag;
+	else
+		v += (uint64_t) mag;
+
+	switch (width) {
+	case 1:
+		buf[pos] = (unsigned char) (v & 0xffu);
+		break;
+	case 2:
+		buf[pos]     = (unsigned char) (v & 0xffu);
+		buf[pos + 1] = (unsigned char) ((v >> 8) & 0xffu);
+		break;
+	case 4:
+	default:
+		buf[pos]     = (unsigned char) (v & 0xffu);
+		buf[pos + 1] = (unsigned char) ((v >> 8) & 0xffu);
+		buf[pos + 2] = (unsigned char) ((v >> 16) & 0xffu);
+		buf[pos + 3] = (unsigned char) ((v >> 24) & 0xffu);
+		break;
+	}
+}
+
+/*
+ * HAVOC arm: memset a bounded run to 0x00 or 0xff.  All-zero clears
+ * an optional-field TLV to its terminator; all-ones is the classic
+ * "unset" pattern (-1 as a signed length, MAX as a bitmap) that
+ * parsers often special-case.  Run length is clamped so start + run
+ * <= len and run <= BLOB_HAVOC_BLOCK_MAX.
+ */
+static void havoc_memset_block(unsigned char *buf, size_t len)
+{
+	size_t pos;
+	size_t max_run;
+	size_t run;
+	unsigned char val;
+
+	if (len == 0)
+		return;
+
+	val = (rnd_u32() & 1u) ? 0xffu : 0x00u;
+	pos = pick_pos(len);
+
+	max_run = len - pos;
+	if (max_run > BLOB_HAVOC_BLOCK_MAX)
+		max_run = BLOB_HAVOC_BLOCK_MAX;
+	/* max_run is at least 1 here: pos < len from pick_pos, so
+	 * len - pos >= 1. */
+	run = 1u + rnd_modulo_u32((uint32_t) max_run);
+
+	memset(buf + pos, val, run);
+}
+
+/*
+ * HAVOC arm: copy a bounded region over another region inside the
+ * same buffer (self-splice).  Builds the repeated / nested structure
+ * that fresh-random FILL never produces on its own -- repeating a
+ * header field, duplicating a TLV entry, or aliasing a length field
+ * to a body field.  memmove() handles overlap safely; when src and
+ * dst are the same position the write is a no-op which is harmless.
+ * Run length is clamped so both src + run <= len and dst + run <= len
+ * and run <= BLOB_HAVOC_BLOCK_MAX.
+ */
+static void havoc_splice_copy(unsigned char *buf, size_t len)
+{
+	size_t max_run;
+	size_t run;
+	size_t src;
+	size_t dst;
+
+	/* Need at least two bytes to have a meaningful copy target that
+	 * differs from the source; splice on a one-byte buffer collapses
+	 * to a no-op at best. */
+	if (len < 2)
+		return;
+
+	max_run = len;
+	if (max_run > BLOB_HAVOC_BLOCK_MAX)
+		max_run = BLOB_HAVOC_BLOCK_MAX;
+	run = 1u + rnd_modulo_u32((uint32_t) max_run);
+	if (run > len)
+		run = len;
+
+	/* pos in [0, len - run]; +1 makes the range inclusive. */
+	src = (size_t) rnd_modulo_u32((uint32_t)(len - run) + 1u);
+	dst = (size_t) rnd_modulo_u32((uint32_t)(len - run) + 1u);
+
+	memmove(buf + dst, buf + src, run);
+}
+
+/*
+ * HAVOC arm: swap two non-overlapping regions inside the buffer.
+ * Different from splice-copy: swap preserves both original byte
+ * sequences (just at different offsets), so it builds the "same
+ * bytes, wrong position" mutation class (mis-ordered TLV entries,
+ * transposed header fields) rather than the "same bytes duplicated"
+ * class.  Byte-by-byte with a scratch byte -- no hot-path heap.
+ * Overlapping picks are skipped rather than fixed up: the swap
+ * semantic is only well-defined when a and b are disjoint, and any
+ * fix-up here would just re-roll into a distribution the caller
+ * already samples on the next iteration.
+ */
+static void havoc_swap_regions(unsigned char *buf, size_t len)
+{
+	size_t max_run;
+	size_t run;
+	size_t a;
+	size_t b;
+	size_t i;
+
+	/* Two disjoint one-byte regions require len >= 2. */
+	if (len < 2)
+		return;
+
+	max_run = len / 2u;
+	if (max_run > BLOB_HAVOC_BLOCK_MAX)
+		max_run = BLOB_HAVOC_BLOCK_MAX;
+	if (max_run == 0)
+		return;
+	run = 1u + rnd_modulo_u32((uint32_t) max_run);
+
+	a = (size_t) rnd_modulo_u32((uint32_t)(len - run) + 1u);
+	b = (size_t) rnd_modulo_u32((uint32_t)(len - run) + 1u);
+	if (a == b)
+		return;
+	if (a < b) {
+		if (a + run > b)
+			return;
+	} else {
+		if (b + run > a)
+			return;
+	}
+
+	for (i = 0; i < run; i++) {
+		unsigned char t = buf[a + i];
+
+		buf[a + i] = buf[b + i];
+		buf[b + i] = t;
 	}
 }
 
 /*
  * Bounded havoc pass.  Op count is drawn from [1, BLOB_HAVOC_MAX_OPS]
- * so the worst case is bounded independent of len.  Each iteration
- * picks one of the five arms with uniform probability.  Returns the
- * number of ops applied so the caller can attribute the count to the
- * blob_havoc_ops shadow counter.
+ * so the worst case is bounded independent of len and independent of
+ * per-arm cost (block-scoped arms cap their run at
+ * BLOB_HAVOC_BLOCK_MAX bytes).  Each iteration picks one of the
+ * fifteen arms with uniform probability -- single-position arms
+ * (bit-flip, byte-flip, set-interesting at four widths, ±1..±35
+ * arith at three widths) plus block-scoped arms (memset run, self-
+ * splice copy, region swap).  Returns the number of ops applied so
+ * the caller can attribute the count to the blob_havoc_ops shadow
+ * counter.
  */
 static unsigned int blob_havoc(unsigned char *buf, size_t len)
 {
@@ -154,7 +383,7 @@ static unsigned int blob_havoc(unsigned char *buf, size_t len)
 	n_ops = 1u + rnd_modulo_u32(BLOB_HAVOC_MAX_OPS);
 
 	for (i = 0; i < n_ops; i++) {
-		switch (rnd_modulo_u32(5)) {
+		switch (rnd_modulo_u32(15)) {
 		case 0:
 			havoc_bit_flip(buf, len);
 			break;
@@ -167,8 +396,38 @@ static unsigned int blob_havoc(unsigned char *buf, size_t len)
 		case 3:
 			havoc_set_interesting(buf, len, 2);
 			break;
-		default:
+		case 4:
 			havoc_set_interesting(buf, len, 4);
+			break;
+		case 5:
+			havoc_set_interesting(buf, len, 8);
+			break;
+		case 6:
+			havoc_arith(buf, len, 1, false);
+			break;
+		case 7:
+			havoc_arith(buf, len, 1, true);
+			break;
+		case 8:
+			havoc_arith(buf, len, 2, false);
+			break;
+		case 9:
+			havoc_arith(buf, len, 2, true);
+			break;
+		case 10:
+			havoc_arith(buf, len, 4, false);
+			break;
+		case 11:
+			havoc_arith(buf, len, 4, true);
+			break;
+		case 12:
+			havoc_memset_block(buf, len);
+			break;
+		case 13:
+			havoc_splice_copy(buf, len);
+			break;
+		default:
+			havoc_swap_regions(buf, len);
 			break;
 		}
 	}
@@ -633,5 +892,39 @@ void blob_mutator_self_check(void)
 		blob_fill(buf, 0, 0, false);
 		if (buf[0] != 0 || buf[1] != 0 || buf[2] != 0 || buf[3] != 0)
 			BUG("blob_fill(len=0) scribbled buffer");
+	}
+
+	/*
+	 * Invariant 5: the HAVOC arms -- including the block-scoped ones
+	 * (memset run, self-splice copy, region swap) that walk past the
+	 * mutation origin -- must not scribble outside [buf, buf+len).
+	 * Frame the mutation region with sentinel bytes and drive a full
+	 * blob_fill(HAVOC) pass; a broken bound-check on any arm trips
+	 * the guard bytes.  BLOB_HAVOC_BLOCK_MAX (64) exceeds the 32-byte
+	 * mutation region, so the run-clamp path in the block arms is
+	 * exercised too.
+	 */
+	{
+		unsigned char guarded[48];
+		size_t g;
+		enum blob_mutator_mode saved =
+			__atomic_load_n(&blob_mutator_mode, __ATOMIC_RELAXED);
+
+		for (g = 0; g < 8; g++)
+			guarded[g] = (unsigned char) (0xa5u ^ g);
+		for (g = 0; g < 8; g++)
+			guarded[40 + g] = (unsigned char) (0x5au ^ g);
+
+		__atomic_store_n(&blob_mutator_mode, BLOB_MUTATOR_HAVOC,
+				 __ATOMIC_RELAXED);
+		blob_fill(guarded + 8, 32, 0, false);
+		__atomic_store_n(&blob_mutator_mode, saved, __ATOMIC_RELAXED);
+
+		for (g = 0; g < 8; g++)
+			if (guarded[g] != (unsigned char) (0xa5u ^ g))
+				BUG("blob_fill(HAVOC) scribbled below buf");
+		for (g = 0; g < 8; g++)
+			if (guarded[40 + g] != (unsigned char) (0x5au ^ g))
+				BUG("blob_fill(HAVOC) scribbled past len bound");
 	}
 }
