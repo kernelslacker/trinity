@@ -29,6 +29,9 @@
 #ifndef XDP_OPTIONS
 #define XDP_OPTIONS		8
 #endif
+#ifndef XDP_MAX_TX_SKB_BUDGET
+#define XDP_MAX_TX_SKB_BUDGET	9
+#endif
 
 #ifndef XDP_MMAP_OFFSETS
 #define XDP_MMAP_OFFSETS	1

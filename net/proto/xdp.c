@@ -189,6 +189,7 @@ static void xdp_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct s
 static const unsigned int xdp_opts[] = {
 	XDP_RX_RING, XDP_TX_RING,
 	XDP_UMEM_REG, XDP_UMEM_FILL_RING, XDP_UMEM_COMPLETION_RING,
+	XDP_MAX_TX_SKB_BUDGET,
 };
 
 static void xdp_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
