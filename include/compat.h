@@ -12,6 +12,7 @@
 
 #include "kernel/socket.h"
 #include "kernel/sched.h"
+#include "kernel/swap.h"
 /* linux/if_packet.h */
 #ifndef PACKET_VNET_HDR
 #define PACKET_VNET_HDR		15
