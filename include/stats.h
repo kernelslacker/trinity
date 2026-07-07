@@ -1106,6 +1106,8 @@ struct stats_s {
 	unsigned long pidfd_storm_getfds;	/* successful pidfd_getfd calls */
 	unsigned long pidfd_storm_failed;	/* pidfd_open/send_signal/getfd returned -1 */
 	unsigned long pidfd_storm_iters;	/* cumulative inner-loop pidfd syscalls */
+	unsigned long pidfd_storm_reap_slow;	/* teardown poll(pidfd) exceeded PER_PIDFD_REAP_TIMEOUT_MS -- SIGKILL not observed within the budget */
+	unsigned long pidfd_storm_reap_zombies;	/* teardown reap escaped (WNOHANG waitpid did not collect) after the poll timeout; a zombie was left behind for the parent's SIGCHLD path to catch */
 
 	/* madvise_cycler childop counters */
 	unsigned long madvise_cycler_runs;	/* total madvise_cycler invocations */

@@ -32,8 +32,15 @@
  *        inherited the parent's fd table; any returned fd is closed
  *        immediately so the storm doesn't accumulate fd debt.
  *   4. Teardown (outside the timed budget):
- *        SIGKILL every pidfd via pidfd_send_signal, waitpid() each child
- *        to reap, close every pidfd.  All accounted for so no zombie or
+ *        SIGKILL every pidfd via pidfd_send_signal, then per-pidfd
+ *        poll(POLLIN) bounded at PER_PIDFD_REAP_TIMEOUT_MS as the reap
+ *        gate before waitpid() collects the corpse and close() drops
+ *        the pidfd.  A wedged pidfd (SIGKILL not observed within the
+ *        budget) bumps pidfd_storm_reap_slow and falls through to a
+ *        non-blocking waitpid; if that also misses,
+ *        pidfd_storm_reap_zombies is bumped and the slot is left for
+ *        the fuzz child's later SIGCHLD path to catch.  In the healthy
+ *        case every pidfd goes POLLIN within a few ms and no zombie or
  *        leaked pidfd escapes the op.
  *
  * Self-bounding:
@@ -41,12 +48,20 @@
  *   - BUDGET_NS (200 ms) sits in the same band pipe_thrash / flock_thrash
  *     use; setup/teardown is OUTSIDE the timed budget so the storm
  *     itself fits in the window.
+ *   - PER_PIDFD_REAP_TIMEOUT_MS caps the teardown wait per pidfd, so a
+ *     kernel-side hang on the pidfd-exit path cannot pin the whole
+ *     invocation past the parent's 30 s stuck-child watchdog and drown
+ *     out the fleet's genuine wedge signal (the reason for this bound:
+ *     without it, one slow SIGKILL landing on a pause()-child dragged
+ *     the whole pidfd_storm invocation to top-of-fleet wedge attributor).
  *   - alarm(1) is armed by child.c around every non-syscall op, so a
  *     wedged pidfd path here still trips the SIGALRM stall detector.
- *   - All forked children are reaped before return.
+ *   - Forked children are reaped in the healthy case; the escape
+ *     counters above surface any teardown wait that hit its budget.
  */
 
 #include <errno.h>
+#include <poll.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <sys/prctl.h>
@@ -83,6 +98,22 @@
  * iteration can pick a different one, but well under any sane
  * RLIMIT_NPROC margin. */
 #define NR_CHILDREN	6
+
+/* Per-pidfd wall-clock cap on the teardown wait for SIGKILL to land.
+ * A pause()-child hit with pidfd_send_signal(SIGKILL) normally shows
+ * pidfd POLLIN within a few milliseconds; a slow reap in the tens of
+ * ms band is still normal under fleet load.  500 ms is roughly two
+ * orders of magnitude above the observed p99 and keeps the worst-case
+ * teardown (NR_CHILDREN * 500 ms = 3 s) well below the parent's 30 s
+ * per-child stall detector even when every slot times out at once, so
+ * one wedged pidfd cannot push the whole pidfd_storm invocation past
+ * the watchdog and drown out the fleet's genuine stuck-child signal.
+ * The escape counters (pidfd_storm_reap_slow /
+ * pidfd_storm_reap_zombies) surface any actual pidfd-wait wedge so
+ * bounding here does not paper over a kernel-side hang -- an operator
+ * seeing those counters climb has a direct pointer to a pidfd path
+ * that isn't waking on SIGKILL. */
+#define PER_PIDFD_REAP_TIMEOUT_MS	500
 
 /* Curated signal set for the storm body.  Explicitly avoids
  * SIGKILL/SIGTERM — those are for teardown.  SIGSTOP/SIGCONT exercise
@@ -335,11 +366,74 @@ static void pidfd_storm_iter_drive(struct pidfd_slot *slots,
 }
 
 /*
+ * Wait up to timeout_ms for `pidfd` to report POLLIN, meaning the
+ * targeted task has exited (become a zombie) and is ready to be
+ * reaped.  Restartable across EINTR from SIGALRM / SIGXCPU: the
+ * remaining budget is recomputed on each restart so a signal storm
+ * cannot indefinitely extend the wait.  Returns true if POLLIN was
+ * observed; false on timeout or terminal poll error.
+ *
+ * Callers use this as the pre-reap gate in the teardown path so a
+ * blocking waitpid() does not stall the whole pidfd_storm invocation
+ * past the parent's 30 s stuck-child watchdog when SIGKILL somehow
+ * fails to land on a pause()-child promptly.
+ */
+static bool wait_for_pidfd_exit(int pidfd, int timeout_ms)
+{
+	struct timespec deadline, now;
+	struct pollfd pfd = { .fd = pidfd, .events = POLLIN };
+	int remaining_ms = timeout_ms;
+	int rc;
+
+	clock_gettime(CLOCK_MONOTONIC, &deadline);
+	deadline.tv_sec  += timeout_ms / 1000;
+	deadline.tv_nsec += (long)(timeout_ms % 1000) * 1000000L;
+	if (deadline.tv_nsec >= 1000000000L) {
+		deadline.tv_sec  += 1;
+		deadline.tv_nsec -= 1000000000L;
+	}
+
+	for (;;) {
+		rc = poll(&pfd, 1, remaining_ms);
+		if (rc > 0)
+			return (pfd.revents & POLLIN) != 0;
+		if (rc == 0)
+			return false;
+		if (errno != EINTR)
+			return false;
+
+		/* SIGALRM / SIGXCPU EINTR: recompute the remaining budget
+		 * on CLOCK_MONOTONIC so signal churn cannot extend the
+		 * bounded wait beyond timeout_ms. */
+		clock_gettime(CLOCK_MONOTONIC, &now);
+		remaining_ms = (int)((deadline.tv_sec  - now.tv_sec)  * 1000
+				   + (deadline.tv_nsec - now.tv_nsec) / 1000000L);
+		if (remaining_ms <= 0)
+			return false;
+	}
+}
+
+/*
  * Teardown phase: SIGKILL every spawned child via its pidfd, falling
  * back to kill(2) by pid where pidfd_open failed at spawn.  A second
- * pass waitpid()s each pid to reap and closes each pidfd, so no
- * zombie or leaked pidfd escapes the op.  Runs outside the timed
- * budget — correctness, not speed, matters here.
+ * pass reaps each pid and closes each pidfd, so no zombie or leaked
+ * pidfd escapes the op in the healthy case.
+ *
+ * The reap wait is bounded: for slots with a valid pidfd we
+ * poll(POLLIN) up to PER_PIDFD_REAP_TIMEOUT_MS.  On POLLIN the task
+ * has exited and a blocking waitpid_eintr() returns immediately.  On
+ * timeout the pidfd path is either wedged kernel-side or SIGKILL
+ * hasn't landed yet; bump pidfd_storm_reap_slow, try a WNOHANG
+ * waitpid_eintr(), and if that too misses, bump
+ * pidfd_storm_reap_zombies and move on -- leaving a zombie for the
+ * fuzz child's later SIGCHLD path is cheaper than pinning the whole
+ * pidfd_storm invocation past the parent's 30 s stuck-child watchdog
+ * and drowning the fleet's genuine stuck-child signal.  Slots whose
+ * pidfd_open failed at spawn have no pidfd to poll, so they fall
+ * back to the pre-existing blocking waitpid_eintr(); those are the
+ * ENOSYS / raced-and-exited slots and complete promptly in practice.
+ * Runs outside the timed storm budget -- correctness, not speed,
+ * matters here.
  */
 static void pidfd_storm_iter_reap(struct pidfd_slot *slots,
 				  unsigned int active)
@@ -356,9 +450,22 @@ static void pidfd_storm_iter_reap(struct pidfd_slot *slots,
 	for (i = 0; i < active; i++) {
 		int status;
 
-		(void) waitpid_eintr(slots[i].pid, &status, 0);
-		if (slots[i].pidfd >= 0)
+		if (slots[i].pidfd >= 0) {
+			if (wait_for_pidfd_exit(slots[i].pidfd,
+						PER_PIDFD_REAP_TIMEOUT_MS)) {
+				(void) waitpid_eintr(slots[i].pid, &status, 0);
+			} else {
+				__atomic_add_fetch(&shm->stats.pidfd_storm_reap_slow,
+						   1, __ATOMIC_RELAXED);
+				if (waitpid_eintr(slots[i].pid, &status,
+						  WNOHANG) != slots[i].pid)
+					__atomic_add_fetch(&shm->stats.pidfd_storm_reap_zombies,
+							   1, __ATOMIC_RELAXED);
+			}
 			close(slots[i].pidfd);
+		} else {
+			(void) waitpid_eintr(slots[i].pid, &status, 0);
+		}
 	}
 }
 
