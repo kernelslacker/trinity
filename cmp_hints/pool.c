@@ -586,6 +586,14 @@ void cmp_shared_tier_insert(unsigned int nr, unsigned long cmp_ip,
 	uint32_t start;
 	unsigned int probe;
 
+	/* OFF-mode short-circuit BEFORE any shared-tier access so a
+	 * default build is bit-for-bit identical to a pre-shared-tier
+	 * baseline: no shm reads, no lock, no counter bump.  Read the
+	 * mode RELAXED -- the mode is a startup-time knob, never flipped
+	 * mid-run, so a racing load can never observe a partial store. */
+	if (__atomic_load_n(&cmp_shared_tier_mode, __ATOMIC_RELAXED) ==
+	    CMP_SHARED_TIER_MODE_OFF)
+		return;
 	if (cmp_hints_shm == NULL)
 		return;
 	/* Sentinel guard: cmp_ip == 0 is used as the "bucket unclaimed"
@@ -607,6 +615,7 @@ void cmp_shared_tier_insert(unsigned int nr, unsigned long cmp_ip,
 		struct cmp_shared_tier_bucket *b =
 			&cmp_hints_shm->shared_tier[idx];
 		bool was_present = false;
+		bool value_accepted;
 
 		if (b->occupied == 0) {
 			/* Claim.  Populate key + first value + nr membership
@@ -624,35 +633,108 @@ void cmp_shared_tier_insert(unsigned int nr, unsigned long cmp_ip,
 			__atomic_store_n(&b->occupied, (uint8_t)1,
 					 __ATOMIC_RELEASE);
 			unlock(&cmp_hints_shm->shared_tier_lock);
+			if (kcov_shm != NULL) {
+				__atomic_fetch_add(&kcov_shm->cmp_shared_tier_ips,
+						   1UL, __ATOMIC_RELAXED);
+				__atomic_fetch_add(&kcov_shm->cmp_shared_tier_entries,
+						   1UL, __ATOMIC_RELAXED);
+			}
 			return;
 		}
 		if (b->cmp_ip == cmp_ip) {
 			bool new_nr = cmp_shared_tier_mark_nr(b, nr);
+			bool now_excluded = false;
 
 			if (new_nr) {
 				b->distinct_nr_count++;
 				if (b->distinct_nr_count >
-					CMP_SHARED_TIER_ENTRY_PATH_NR_MAX)
+					CMP_SHARED_TIER_ENTRY_PATH_NR_MAX &&
+				    b->entry_path_excluded == 0) {
 					b->entry_path_excluded = 1;
+					now_excluded = true;
+				}
 			}
-			(void)cmp_shared_tier_upsert_value(b, value, size,
-							   &was_present);
-			(void)was_present;
+			value_accepted = cmp_shared_tier_upsert_value(b, value,
+								      size,
+								      &was_present);
 			unlock(&cmp_hints_shm->shared_tier_lock);
+			if (kcov_shm != NULL) {
+				if (value_accepted && !was_present)
+					__atomic_fetch_add(&kcov_shm->cmp_shared_tier_entries,
+							   1UL,
+							   __ATOMIC_RELAXED);
+				/* Cross-nr redundant learn: THIS nr is new to
+				 * the bucket AND the (value, size) was already
+				 * present from a prior contributor.  The tier
+				 * could have SUPPLIED this constant to us via
+				 * warm-start instead of us learning it
+				 * ourselves -- that is the SHADOW dedup signal
+				 * the follow-up live wire-up will exploit. */
+				if (new_nr && was_present)
+					__atomic_fetch_add(&kcov_shm->cmp_shared_tier_shadow_dedup_supplied,
+							   1UL,
+							   __ATOMIC_RELAXED);
+				if (now_excluded)
+					__atomic_fetch_add(&kcov_shm->cmp_shared_tier_entry_path_excluded_ips,
+							   1UL,
+							   __ATOMIC_RELAXED);
+			}
 			return;
 		}
 		/* Collision on a different cmp_ip; continue linear probe. */
 	}
 	unlock(&cmp_hints_shm->shared_tier_lock);
 	/* Probe exhausted; drop silently.  Fallback tier -- the per-nr
-	 * pools still carry the authoritative record.  A future observer
-	 * commit surfaces the drop rate via a shadow counter. */
+	 * pools still carry the authoritative record. */
+}
+
+void cmp_shared_tier_shadow_probe_cold_miss(void)
+{
+	unsigned long ips;
+	unsigned long excluded;
+
+	/* OFF-mode short-circuit BEFORE any shared-tier / counter access
+	 * so a default build's get-path is bit-for-bit identical to a
+	 * pre-tier baseline: no shm reads, no counter bump.  Same RELAXED
+	 * discipline as cmp_shared_tier_insert()'s mode load. */
+	if (__atomic_load_n(&cmp_shared_tier_mode, __ATOMIC_RELAXED) ==
+	    CMP_SHARED_TIER_MODE_OFF)
+		return;
+	if (kcov_shm == NULL)
+		return;
+
+	/* Lock-free eligibility check.  The shared tier maintains three
+	 * monotonically non-decreasing counters (cmp_shared_tier_ips /
+	 * _entries / _entry_path_excluded_ips) under RELAXED atomics, so
+	 * the running "non-entry-path IPs available" is exactly
+	 * ips - excluded (both never decrease -- see the counter
+	 * discipline in cmp_shared_tier_insert()).  Torn cross-counter
+	 * reads at worst misbucket a single probe sample, which matches
+	 * the tier's advisory-shadow discipline; the next miss resamples.
+	 * ZERO shared_tier_lock traffic on the get-path probe. */
+	ips = __atomic_load_n(&kcov_shm->cmp_shared_tier_ips,
+			      __ATOMIC_RELAXED);
+	excluded = __atomic_load_n(&kcov_shm->cmp_shared_tier_entry_path_excluded_ips,
+				   __ATOMIC_RELAXED);
+	if (ips > excluded)
+		__atomic_fetch_add(&kcov_shm->cmp_shared_tier_shadow_warmstart_eligible,
+				   1UL, __ATOMIC_RELAXED);
 }
 
 void cmp_shared_tier_populate_from_pools(void)
 {
 	unsigned int nr, a, k;
 
+	/* OFF-mode short-circuit BEFORE the pools[][] walk so a default
+	 * warm-load skips the 2 * MAX_NR_SYSCALL * CMP_HINTS_PER_SYSCALL
+	 * per-entry loop entirely -- no cmp_shared_tier_insert() calls,
+	 * no shm reads.  Redundant with the per-insert short-circuit
+	 * (which already bails without touching the tier) but eliminates
+	 * even the loop's per-entry corruption gate cost so a pre-tier
+	 * baseline and an OFF build share the same boot-time profile. */
+	if (__atomic_load_n(&cmp_shared_tier_mode, __ATOMIC_RELAXED) ==
+	    CMP_SHARED_TIER_MODE_OFF)
+		return;
 	if (cmp_hints_shm == NULL)
 		return;
 

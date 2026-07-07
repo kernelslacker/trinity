@@ -2909,6 +2909,71 @@ struct kcov_shared {
 	 * the §3.2 noisy-syscall skip-list would need tuning.  Same
 	 * KCOV_CHILDOP_NR_MAX bound the PC-side childop_kcov_* arrays use. */
 	unsigned long childop_cmp_syscalls_sampled_per_op[KCOV_CHILDOP_NR_MAX];
+
+	/*
+	 * SHADOW counters for the fleet-wide shared cmp_ip tier
+	 * (cmp_hints_shared.shared_tier[]).  All six are RELAXED + flat.
+	 * The tier's data model, entry-path filter, and rollout gate live
+	 * in include/cmp_hints.h -- see the CMP_SHARED_TIER_* /
+	 * cmp_shared_tier_mode comments there for the shape.  A default
+	 * OFF-mode build never touches any of these counters (the collect-
+	 * side insert and the get-side probe both short-circuit before
+	 * any shm access), so an OFF vs pre-tier-baseline byte-for-byte
+	 * pick stream reads all six as zero on either side of the diff.
+	 *
+	 *  cmp_shared_tier_ips
+	 *      Cumulative: bumped once per first-time bucket claim in
+	 *      cmp_shared_tier_insert().  Monotonically non-decreasing --
+	 *      the tier has no eviction path (fallback pool; drops on
+	 *      probe exhaustion are silent).  Reads the OCCUPANCY size of
+	 *      the tier at any given moment.  Sibling denominator for
+	 *      cmp_shared_tier_entry_path_excluded_ips below; the non-
+	 *      entry-path IP population is (ips - excluded) and is what
+	 *      the shadow probe consults on every cold per-nr miss.
+	 *  cmp_shared_tier_entries
+	 *      Cumulative: bumped once per fresh (value, size) pair
+	 *      appended into a bucket's values[] array.  Sibling of
+	 *      cmp_shared_tier_ips: total entries / total IPs is the
+	 *      average value-set density per bucket, one of the section
+	 *      6 overlap-mine deltas the shadow validates.
+	 *  cmp_shared_tier_entry_path_excluded_ips
+	 *      Cumulative: bumped once per bucket that crosses the
+	 *      CMP_SHARED_TIER_ENTRY_PATH_NR_MAX distinct-nr threshold and
+	 *      latches entry_path_excluded=1.  Entry-path IPs (do_syscall_
+	 *      64 / seccomp gate / kcov entry / copy_from_user length
+	 *      probes / ...) are noise as a warm-start seed and this
+	 *      counter measures how much of the tier population is
+	 *      filtered by the entry-path rule.
+	 *  cmp_shared_tier_shadow_warmstart_eligible
+	 *      Cumulative: bumped once per cmp_hints_try_get_ex() cold-
+	 *      miss return (durable pool empty on the requested (nr, do32),
+	 *      recent-tier pre-pass returned MISS) where the shared tier
+	 *      had at least one non-entry-path IP available to seed from
+	 *      (cmp_shared_tier_ips > cmp_shared_tier_entry_path_excluded_
+	 *      ips at probe time).  This is the OPPORTUNITY size the
+	 *      Phase 2 live warm-start would consume -- the follow-up
+	 *      commit converts this shadow eligibility into a live seed
+	 *      served from the tier, at which point the counter becomes
+	 *      the denominator for actual warm-start yield.
+	 *  cmp_shared_tier_shadow_dedup_supplied
+	 *      Cumulative: bumped once per cmp_shared_tier_insert() call
+	 *      where THIS nr is a NEW contributor for the bucket AND the
+	 *      (value, size) pair was already present from a prior nr's
+	 *      contribution.  The tier could have SUPPLIED this cross-nr
+	 *      redundant learn via warm-start instead of us learning it
+	 *      here -- the exact section 6 overlap-mine signal (~87% of
+	 *      learned entries are cross-nr duplicates) that motivates
+	 *      the shared tier at all.  Ratio to cmp_shared_tier_entries
+	 *      is the cross-nr redundancy rate on live commits.
+	 *
+	 * Append-only at the tail per the existing convention so consumer
+	 * offsets stay stable.
+	 */
+	unsigned long cmp_shared_tier_ips;
+	unsigned long cmp_shared_tier_entries;
+	unsigned long cmp_shared_tier_entry_path_excluded_ips;
+	unsigned long cmp_shared_tier_shadow_warmstart_eligible;
+	unsigned long cmp_shared_tier_shadow_dedup_supplied;
 };
 
 extern struct kcov_shared *kcov_shm;

@@ -261,6 +261,21 @@ void cmp_shared_tier_insert(unsigned int nr, unsigned long cmp_ip,
 void cmp_shared_tier_populate_from_pools(void);
 
 /*
+ * SHADOW probe fired from cmp_hints/get.c when a per-nr lookup would
+ * miss (durable pool empty on the (nr, do32) slot AND the recent-tier
+ * pre-pass did not serve).  Bumps cmp_shared_tier_shadow_warmstart_
+ * eligible when the shared tier has ANY non-entry-path IP that could
+ * seed the cold per-nr pool.  Value-neutral: does NOT read or return
+ * a shared-tier value, does NOT consume RNG, does NOT change what
+ * try_get returns.  Definition in cmp_hints/pool.c.
+ *
+ * OFF-mode short-circuits BEFORE any shared-tier / counter access so
+ * a default build's get-path is bit-for-bit identical to a pre-tier
+ * baseline.
+ */
+void cmp_shared_tier_shadow_probe_cold_miss(void);
+
+/*
  * LIVE typed-hypothesis inject arm.  Called from cmp_hints/get.c on
  * durable-tier picks whose caller opted in (allow_hyp_inject).  On a
  * gate + resolver + derive triple-hit the raw pool value is replaced
