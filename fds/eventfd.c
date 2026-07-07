@@ -13,6 +13,7 @@
 #include "utils.h"
 #include "compat.h"
 
+#include "kernel/eventfd.h"
 /*
  * Cross-process safe: only reads obj->eventfdobj scalar fields and the
  * scope scalar.  These survive fork/COW and no process-local pointers

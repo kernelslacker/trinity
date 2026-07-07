@@ -43,6 +43,7 @@
 
 #include "childops/io_uring/recipes-internal.h"
 
+#include "kernel/eventfd.h"
 /* ------------------------------------------------------------------ *
  * Recipe 9: READ_FIXED with IORING_REGISTER_BUFFERS (registered fixed buffers)
  *

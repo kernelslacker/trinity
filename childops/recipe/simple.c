@@ -45,6 +45,7 @@
 
 #include "childops/recipe/internal.h"
 
+#include "kernel/eventfd.h"
 /*
  * Recipe 1: timerfd lifecycle.
  *
