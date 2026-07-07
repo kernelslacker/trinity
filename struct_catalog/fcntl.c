@@ -132,6 +132,9 @@ struct open_how {
 #define RESOLVE_IN_ROOT		0x10
 #define RESOLVE_CACHED		0x20
 #endif
+#ifndef OPENAT2_REGULAR
+#define OPENAT2_REGULAR		((__u64)1 << 32)
+#endif
 
 /*
  * openat2 passes struct open_how at a3 with a usize at a4
@@ -155,7 +158,7 @@ struct open_how {
 	(O_ACCMODE | O_CREAT | O_EXCL | O_NOCTTY | O_TRUNC | O_APPEND |	\
 	 O_NONBLOCK | O_DSYNC | O_SYNC | O_ASYNC | O_DIRECTORY |	\
 	 O_NOFOLLOW | O_CLOEXEC | O_DIRECT | O_NOATIME | O_PATH |	\
-	 O_LARGEFILE | O_TMPFILE)
+	 O_LARGEFILE | O_TMPFILE | OPENAT2_REGULAR)
 
 #define OPEN_HOW_RESOLVE_MASK						\
 	(RESOLVE_NO_XDEV | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_SYMLINKS |\

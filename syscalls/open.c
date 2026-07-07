@@ -239,6 +239,9 @@ struct open_how {
 #define RESOLVE_IN_ROOT		0x10
 #define RESOLVE_CACHED		0x20
 #endif
+#ifndef OPENAT2_REGULAR
+#define OPENAT2_REGULAR		((__u64)1 << 32)
+#endif
 
 static unsigned long openat2_resolve_flags[] = {
 	RESOLVE_NO_XDEV, RESOLVE_NO_MAGICLINKS, RESOLVE_NO_SYMLINKS,
@@ -334,6 +337,14 @@ static void sanitise_openat2(struct syscallrecord *rec)
 	how = buf.ptr;
 
 	how->flags = RAND_ARRAY(open_o_flags_base) | get_o_flags();
+
+	/*
+	 * OPENAT2_REGULAR (upper-32-bit, openat2-exclusive) restricts the
+	 * open to regular files; folded in on a fraction of draws so the
+	 * S_ISREG gate arm gets covered without dominating the flag mix.
+	 */
+	if (ONE_IN(4))
+		how->flags |= OPENAT2_REGULAR;
 
 	/*
 	 * mode is only legal when the kernel will create or materialise
