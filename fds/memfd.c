@@ -20,6 +20,7 @@
 #include "utils.h"
 
 #include "kernel/fcntl.h"
+#include "kernel/memfd.h"
 #ifndef MFD_NOEXEC_SEAL
 #define MFD_NOEXEC_SEAL 0x0008U
 #endif

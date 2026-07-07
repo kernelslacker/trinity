@@ -12,6 +12,7 @@
 #include "hugepages.h"
 #include "utils.h"
 
+#include "kernel/memfd.h"
 static unsigned long memfd_create_flags[] = {
 	MFD_CLOEXEC, MFD_ALLOW_SEALING, MFD_HUGETLB,
 };

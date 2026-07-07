@@ -48,6 +48,7 @@
 #include "kernel/eventfd.h"
 #include "kernel/fcntl.h"
 #include "kernel/timerfd.h"
+#include "kernel/memfd.h"
 /*
  * Recipe 1: timerfd lifecycle.
  *

@@ -22,6 +22,7 @@
 #include "utils.h"	// guard_pages_classify (CONFIG_GUARD_SHARED only)
 
 #include "kernel/fcntl.h"
+#include "kernel/memfd.h"
 volatile sig_atomic_t sigalrm_pending;
 volatile sig_atomic_t xcpu_pending;
 volatile sig_atomic_t ctrlc_pending;
