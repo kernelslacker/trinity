@@ -45,6 +45,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/fcntl.h"
 /* Wall-clock ceiling per invocation.  Sits in the 150-250ms band the
  * other recent storm childops use so dump_stats still ticks regularly
  * and SIGALRM-based stall detection still has headroom to fire. */

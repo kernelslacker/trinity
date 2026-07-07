@@ -15,6 +15,7 @@
 #include "xattr.h"
 #include "compat.h"
 
+#include "kernel/fcntl.h"
 /*
  * Curated name we plant ahead of the trinity-dispatched removexattrat.
  * Matches planted_xattr_name in lremovexattr / fremovexattr / getxattrat

@@ -60,6 +60,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/fcntl.h"
 /* Per-process variant availability cache.  Populated lazily by
  * probe_variants() on the first invocation in this child; subsequent
  * invocations hit the cached result.  Each child re-probes once

@@ -89,6 +89,7 @@
 #include "shm.h"
 #include "trinity.h"
 
+#include "kernel/fcntl.h"
 #ifndef SO_DETACH_BPF
 #define SO_DETACH_BPF		SO_DETACH_FILTER
 #endif

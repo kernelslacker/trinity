@@ -46,6 +46,7 @@
 #include "trinity.h"
 #include "userns-bootstrap.h"
 
+#include "kernel/fcntl.h"
 #define IPVS_CANONICAL_PATH	"/proc/sys/net/ipv4/vs/conn_tab_bits"
 #define IPVS_WRITE_BASE		4U
 #define IPVS_WRITE_CAP		16U

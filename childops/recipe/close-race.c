@@ -34,6 +34,7 @@
 #include "childops/recipe/internal.h"
 
 #include "kernel/eventfd.h"
+#include "kernel/fcntl.h"
 /*
  * Racer thread for recipe_timerfd_xclose.  Blocks in poll() with a
  * bounded timeout, then drains a single non-blocking read on the

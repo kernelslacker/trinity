@@ -84,6 +84,7 @@
 #include "pids.h"
 
 #include "kernel/eventfd.h"
+#include "kernel/fcntl.h"
 /* Hard caps on the per-invocation burst size.  Lower bound keeps the
  * burst large enough to span a slab page on any realistic order; upper
  * bound stays safely under Trinity's per-child RLIMIT_NOFILE of 1024

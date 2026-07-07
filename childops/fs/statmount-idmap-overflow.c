@@ -74,6 +74,7 @@
 
 #if __has_include(<linux/mount.h>)
 #include <linux/mount.h>
+#include "kernel/fcntl.h"
 #endif
 
 /*

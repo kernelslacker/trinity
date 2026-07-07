@@ -8,6 +8,7 @@
 #include "taint.h"
 #include "trinity.h"
 
+#include "kernel/fcntl.h"
 int kernel_taint_initial = 0;
 
 static bool taint_available = false;

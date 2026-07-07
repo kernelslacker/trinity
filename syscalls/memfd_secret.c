@@ -7,6 +7,7 @@
 #include "memfd.h"
 #include "compat.h"
 
+#include "kernel/fcntl.h"
 static unsigned long memfd_secret_flags[] = {
 	O_CLOEXEC,
 };

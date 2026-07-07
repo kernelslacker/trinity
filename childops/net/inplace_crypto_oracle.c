@@ -99,6 +99,7 @@
 #include "tls.h"
 #include "trinity.h"
 
+#include "kernel/fcntl.h"
 /* UAPI fallbacks -- every value below is stable kernel UAPI. */
 #ifndef UDP_ENCAP
 # define UDP_ENCAP			100

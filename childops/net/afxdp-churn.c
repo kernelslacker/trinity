@@ -1129,6 +1129,7 @@ bool afxdp_churn(struct childdata *child)
 #include "child.h"
 #include "shm.h"
 
+#include "kernel/fcntl.h"
 bool afxdp_churn(struct childdata *child)
 {
 	(void)child;

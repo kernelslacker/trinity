@@ -9,6 +9,7 @@
 #include "sanitise.h"
 #include "compat.h"
 
+#include "kernel/fcntl.h"
 #ifndef MAX_HANDLE_SZ
 #define MAX_HANDLE_SZ 128
 #endif

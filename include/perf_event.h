@@ -17,6 +17,7 @@
 #include <linux/ioctl.h>
 #include <asm/byteorder.h>
 
+#include "kernel/fcntl.h"
 /*
  * User-space ABI bits:
  */

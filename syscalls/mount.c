@@ -24,6 +24,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/fcntl.h"
 /* Filesystem types read from /proc/filesystems at startup. */
 const char **filesystem_types;
 unsigned int nr_filesystem_types;

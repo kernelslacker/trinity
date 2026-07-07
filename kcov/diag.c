@@ -30,6 +30,7 @@
 #include "tables.h"		/* get_syscall_entry */
 #include "trinity.h"		/* output */
 
+#include "kernel/fcntl.h"
 /* F_DUPFD_QUERY may be missing on glibcs that predate it; replicate
  * the include/compat.h definition locally so the EBADF chronicle-slot
  * classifier can match the cmd without pulling compat.h (which double-

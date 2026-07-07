@@ -69,6 +69,7 @@
 #include "trinity.h"
 #include "userns-bootstrap.h"
 
+#include "kernel/fcntl.h"
 #ifndef RTEXT_FILTER_VF
 #define RTEXT_FILTER_VF		(1U << 0)
 #endif

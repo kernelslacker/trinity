@@ -16,6 +16,7 @@
 #include "shm.h"
 #include "utils.h"
 
+#include "kernel/fcntl.h"
 static int do_open_tree(void)
 {
 #ifdef __NR_open_tree

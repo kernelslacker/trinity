@@ -24,6 +24,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/fcntl.h"
 #define DEFERRED_RING_SIZE	64
 #define DEFERRED_TTL_MIN	5
 #define DEFERRED_TTL_MAX	50

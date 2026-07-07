@@ -83,6 +83,7 @@
 
 #include "vma-pressure.h"
 
+#include "kernel/fcntl.h"
 /* Sample cadence.  Power of two so the gate compiles to a single AND.
  * 64 strikes the typical-cost / responsiveness balance: at ~700 ops/sec
  * a sample lands every ~90 ms, well inside the worst-case VMA-growth

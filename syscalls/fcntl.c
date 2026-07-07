@@ -28,6 +28,7 @@
 #include "trinity.h"
 #include "compat.h"
 
+#include "kernel/fcntl.h"
 #if F_GETLK64 != F_GETLK
 #define HAVE_LK64
 #endif

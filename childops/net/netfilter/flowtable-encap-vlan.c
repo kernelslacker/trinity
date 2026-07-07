@@ -923,6 +923,7 @@ bool flowtable_encap_vlan(struct childdata *child)
 #include "child.h"
 #include "shm.h"
 
+#include "kernel/fcntl.h"
 bool flowtable_encap_vlan(struct childdata *child)
 {
 	(void)child;

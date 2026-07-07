@@ -42,6 +42,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/fcntl.h"
 #define NR_WRITEABLE_PAGECACHE_FDS	8
 
 /*

@@ -20,6 +20,7 @@
 #include "utils.h"
 #include "utils-internal.h"
 
+#include "kernel/fcntl.h"
 /*
  * Render a PROT_* mask as "READ|WRITE|EXEC" into the caller-provided
  * buffer.  Empties to "NONE" for prot==PROT_NONE so the diagnostic line

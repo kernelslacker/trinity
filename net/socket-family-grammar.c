@@ -42,6 +42,7 @@
 #include <linux/if_alg.h>
 #include "proto-alg-dict.h"
 
+#include "kernel/fcntl.h"
 #ifndef ALG_SET_IV
 #define ALG_SET_IV		2
 #endif

@@ -16,6 +16,7 @@
 #include "struct_catalog-internal.h"
 #include "arch.h"
 
+#include "kernel/fcntl.h"
 /* ------------------------------------------------------------------ */
 /* struct flock (fcntl)                                                */
 /* ------------------------------------------------------------------ */

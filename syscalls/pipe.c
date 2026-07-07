@@ -10,6 +10,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/fcntl.h"
 static void register_pipe_fd(int fd, bool reader)
 {
 	struct object *new;

@@ -81,6 +81,7 @@
 #include "trinity.h"
 #include "userns-bootstrap.h"
 
+#include "kernel/fcntl.h"
 #ifndef IFLA_VRF_TABLE
 #define IFLA_VRF_TABLE	1
 #endif

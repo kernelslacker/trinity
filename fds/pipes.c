@@ -17,6 +17,7 @@
 #include "unblocker.h"
 #include "utils.h"
 
+#include "kernel/fcntl.h"
 /*
  * Cross-process safe: only reads obj->pipeobj scalar fields and the
  * scope scalar.  These survive fork/COW and no process-local pointers

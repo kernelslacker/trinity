@@ -58,6 +58,7 @@
 #include "shm.h"
 #include "trinity.h"
 
+#include "kernel/fcntl.h"
 /* Hard cap on uffd lifecycle cycles per invocation.  Kept modest so a
  * single op completes well inside the alarm(1) window even when sibling
  * churners are also pounding the VMA / userfaultfd_ctx allocators. */

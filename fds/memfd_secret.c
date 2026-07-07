@@ -30,6 +30,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/fcntl.h"
 #define NR_MEMFD_SECRET_FDS 4
 
 /*

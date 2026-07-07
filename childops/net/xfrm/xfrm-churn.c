@@ -37,6 +37,7 @@
 #include "xfrm-churn-internal.h"
 #include "userns-bootstrap.h"
 
+#include "kernel/fcntl.h"
 #define XFRM_RECV_TIMEO_S	1
 
 /* Per-iteration packet burst base.  BUDGETED+JITTER scales it.
