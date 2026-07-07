@@ -800,7 +800,11 @@ static void init_child_freeze_shared(struct childdata *child, int childno)
 		(unsigned long)pids, max_children * sizeof(*pids), PROT_READ);
 #endif
 	if (mprotect(pids, max_children * sizeof(*pids), PROT_READ) != 0) {
-		outputerr("init_child: mprotect(pids[]) failed: %s\n", strerror(errno));
+		int saved_errno = errno;
+
+		log_mprotect_failure(pids, max_children * sizeof(*pids), PROT_READ,
+				     __builtin_return_address(0), saved_errno);
+		outputerr("init_child: mprotect(pids[]) failed: %s\n", strerror(saved_errno));
 		__atomic_add_fetch(&shm->stats.sibling_mprotect_failed, 1,
 				   __ATOMIC_RELAXED);
 	}
