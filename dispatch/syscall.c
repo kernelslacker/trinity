@@ -958,9 +958,9 @@ static void deactivate_enosys(struct syscallrecord *rec, struct syscallentry *en
 		if ((do_specific_syscall || random_selection ||
 		     desired_group != GROUP_NONE) &&
 		    no_syscalls_enabled() == true)
-			output(0, "%s was the last syscall in the targeted "
+			outputerr("%s was the last syscall in the targeted "
 				  "set; depleted via ENOSYS self-disable\n",
-			       entry->name);
+				  entry->name);
 	}
 }
 
