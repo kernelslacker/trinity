@@ -618,6 +618,24 @@ static void munge_process(void)
 void freeze_sibling_childdata(int my_childno)
 {
 	unsigned int i;
+	size_t len = childdata_mapping_len;
+
+	/*
+	 * childdata_mapping_len is stamped by init_shm_per_child_rings()
+	 * during parent init, before any child forks -- a zero here means
+	 * a caller reached this site before init_shm ran, which is a
+	 * setup bug rather than a runtime condition.  Refuse to mprotect
+	 * a zero span: the kernel would round it up to the containing
+	 * page, but mprotect(len=0) is a documented no-op that would
+	 * silently leave the freeze off (the same failure mode the
+	 * end-aligned pointer bug had) instead of loudly flagging it.
+	 */
+	if (len == 0) {
+		outputerr("freeze_sibling_childdata: childdata_mapping_len uninitialised\n");
+		__atomic_add_fetch(&shm->stats.sibling_mprotect_failed, 1,
+				   __ATOMIC_RELAXED);
+		return;
+	}
 
 	for_each_child(i) {
 		if ((unsigned int)my_childno == i)
@@ -635,11 +653,26 @@ void freeze_sibling_childdata(int my_childno)
 		 */
 		internal_mprotect_audit_kcov("freeze_sibling_childdata",
 			(unsigned long)children[i],
-			sizeof(struct childdata), PROT_READ);
+			len, PROT_READ);
 #endif
-		if (mprotect(children[i], sizeof(struct childdata), PROT_READ) != 0) {
-			outputerr("freeze_sibling_childdata: mprotect(sibling %u childdata) failed: %s\n",
-				  i, strerror(errno));
+		if (mprotect(children[i], len, PROT_READ) != 0) {
+			int saved_errno = errno;
+
+			/*
+			 * Route through the shared mprotect-failure logger so
+			 * the resolved caller PC lands in the same format as
+			 * every other internal mprotect failure -- the prior
+			 * bare-outputerr line was too easy to lose in the
+			 * fleet log stream and hid the persistent EINVAL
+			 * cluster that came from the end-aligned childdata
+			 * pointer.  Keep the counter bump for the stats view
+			 * that surfaces the failure rate over time.
+			 */
+			log_mprotect_failure(children[i], len, PROT_READ,
+					     __builtin_return_address(0),
+					     saved_errno);
+			outputerr("freeze_sibling_childdata: mprotect(sibling %u childdata, %zu) failed: %s\n",
+				  i, len, strerror(saved_errno));
 			__atomic_add_fetch(&shm->stats.sibling_mprotect_failed, 1,
 					   __ATOMIC_RELAXED);
 		}

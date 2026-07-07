@@ -1218,6 +1218,16 @@ static inline void release_newnet_ticket(struct syscallrecord *rec)
 extern struct childdata **children;
 
 /*
+ * Length of each per-child childdata mapping in bytes.  Set once by
+ * init_shm_per_child_rings() to sizeof(struct childdata) rounded up
+ * to a page multiple, so freeze_sibling_childdata's mprotect() call
+ * covers exactly the span the mapping owns.  Kept in the parent's
+ * data segment (inherited COW-per-child) so a wild write to the
+ * variable in one child cannot perturb another child's freeze length.
+ */
+extern size_t childdata_mapping_len;
+
+/*
  * Canary copy of each child's fd_event_ring pointer, taken at init time
  * so wild-write damage to the per-child ring pointer can be detected.
  * fd_event_drain_all() compares the live pointer against this array;

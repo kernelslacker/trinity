@@ -515,8 +515,27 @@ bool addr_in_local_runtime_map(unsigned long addr, unsigned long len)
 			continue;
 
 		for_each_obj(head, obj, idx) {
-			struct map *m = &obj->map;
+			struct map *m;
 			unsigned long base, end;
+
+			/*
+			 * Defence-in-depth against a sibling wild write that
+			 * scribbled our childdata->objects[OBJ_MMAP_*] array:
+			 * a garbled slot can hold a wild obj pointer, a wild
+			 * obj_type tag, or a wild m->ptr/m->size that would
+			 * otherwise be dereferenced or arithmetic'd here.
+			 * objpool_check() rejects the two cheap fatal cases
+			 * (out-of-userspace-VA pointer, wrong obj_type) using
+			 * the same bracket the fds/ hot paths use before
+			 * dereferencing pool slots.  Bumps the global-obj UAF
+			 * stat on the reject path so the incidence is visible
+			 * in the periodic dump alongside the other pool
+			 * cold-recycle counters.
+			 */
+			if (!objpool_check(obj, map_pool_types[i]))
+				continue;
+
+			m = &obj->map;
 
 			if (m->type != CHILD_ANON && m->type != MMAPED_FILE)
 				continue;

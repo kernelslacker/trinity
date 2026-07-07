@@ -188,6 +188,21 @@ unsigned int guard_shared_count_guarded(void);
 #endif
 
 /*
+ * Dedicated shared allocator for regions whose start MUST be page
+ * aligned -- notably the per-child childdata struct that the sibling
+ * freeze then mprotects.  Bypasses the guard_pages_alloc end-alignment
+ * layout (which returned a non-page-aligned inner pointer and made
+ * mprotect() EINVAL on every sibling).  Returns a MAP_SHARED
+ * MAP_ANONYMOUS mapping whose start is page-aligned by construction
+ * and whose length is inner_size rounded up to a page multiple.  The
+ * rounded length is written back through *out_rounded_len so the
+ * matching mprotect() call in freeze_sibling_childdata covers the same
+ * span the mapping owns.
+ */
+void *alloc_shared_page_aligned(size_t inner_size, size_t *out_rounded_len)
+	__must_check;
+
+/*
  * Checked size = a * b for shared-allocation call sites with a variable
  * count multiplier (max_children, files_in_index, syscall table size).
  * Returns true and writes the product when it fits in size_t; returns
