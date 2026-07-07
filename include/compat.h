@@ -46,17 +46,6 @@
 #define IPV6_HDRINCL		36
 #endif
 
-/* linux/mptcp.h - SOL_MPTCP optnames (getsockopt only in current kernels;
- * setsockopt at SOL_MPTCP returns -EOPNOTSUPP, but the dispatch path still
- * runs, and getsockopt re-uses do_setsockopt to populate level/optname).
- */
-#ifndef MPTCP_INFO
-#define MPTCP_INFO		1
-#define MPTCP_TCPINFO		2
-#define MPTCP_SUBFLOW_ADDRS	3
-#define MPTCP_FULL_INFO		4
-#endif
-
 /* linux/udp.h -- UDP_SEGMENT is the SOL_UDP setsockopt/cmsg knob that
  * configures UDP GSO segment size on a sending socket.  Older kernel-
  * headers packages predate the constant; the UAPI value (103) is fixed
