@@ -30,6 +30,7 @@
 #include "kernel/in.h"
 #include "kernel/ipset.h"
 #include "kernel/mptcp.h"
+#include "kernel/mroute.h"
 /* workaround for <linux/in.h> vs. <netinet/in.h> */
 #ifndef IP_LOCAL_PORT_RANGE
 #define IP_LOCAL_PORT_RANGE 51
