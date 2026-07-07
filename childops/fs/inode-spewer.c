@@ -32,7 +32,6 @@
 #include "arch.h"
 #include "pids.h"
 #include "child.h"
-#include "compat.h"
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"

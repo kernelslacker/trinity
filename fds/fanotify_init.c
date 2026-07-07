@@ -9,7 +9,6 @@
 #include "objects.h"
 #include "sanitise.h"
 #include "shm.h"
-#include "compat.h"
 #include "trinity.h"
 #include "utils.h"
 

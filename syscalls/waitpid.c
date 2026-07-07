@@ -2,7 +2,6 @@
  * SYSCALL_DEFINE3(waitpid, pid_t, pid, int __user *, stat_addr, int, options)
  */
 #include <sys/wait.h>
-#include "compat.h"
 #include "sanitise.h"
 #include "trinity.h"
 #include "utils.h"

@@ -67,7 +67,6 @@
 #include "child.h"
 #include "syscall-gate.h"
 #include "childops-util.h"
-#include "compat.h"
 #include "pids.h"
 #include "jitter.h"
 #include "name-pool.h"

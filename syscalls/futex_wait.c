@@ -9,7 +9,6 @@
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
-#include "compat.h"
 
 #include "kernel/futex.h"
 static unsigned long futex2_flags[] = {

@@ -3,7 +3,6 @@
 #include "kernel/tipc.h"
 #include "net.h"
 #include "random.h"
-#include "compat.h"
 #include "rnd.h"
 
 static const unsigned int tipc_addrtype[] = {

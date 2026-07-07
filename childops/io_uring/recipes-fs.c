@@ -18,7 +18,6 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "compat.h"
 #include "errno-classify.h"
 #include "rnd.h"
 #include "shm.h"

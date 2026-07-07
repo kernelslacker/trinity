@@ -58,7 +58,6 @@
  * "NLBL_UNLBL"), since the controller dump compares byte-for-byte.
  */
 
-#include "compat.h"
 #include "netlink-genl-families.h"
 #include "utils.h"
 

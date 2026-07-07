@@ -52,7 +52,6 @@
 #include "syscall-gate.h"
 #include "childops-iouring.h"
 #include "childops/io_uring/ring.h"
-#include "compat.h"
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
@@ -64,6 +63,7 @@
 #include "kernel/io_uring.h"
 #include "kernel/blkdev.h"
 #include "kernel/socket.h"
+#include "kernel/unistd.h"
 /* Per-process variant availability cache.  Populated lazily by
  * probe_variants() on the first invocation in this child; subsequent
  * invocations hit the cached result.  Each child re-probes once

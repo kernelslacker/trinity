@@ -16,7 +16,6 @@
 #include "random.h"
 #include "trinity.h"	// MAX_LOGLEVEL
 #include "tables.h"
-#include "compat.h"
 #include "rnd.h"
 #include "utils.h"
 

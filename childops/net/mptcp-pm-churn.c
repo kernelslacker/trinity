@@ -55,7 +55,6 @@
 #include <linux/netlink.h>
 
 #include "childops-genl.h"
-#include "compat.h"
 #include "jitter.h"
 #include "random.h"
 #include "rnd.h"

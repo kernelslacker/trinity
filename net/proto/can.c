@@ -6,7 +6,6 @@
 #include <linux/can/j1939.h>
 #include "net.h"
 #include "random.h"
-#include "compat.h"
 #include "rnd.h"
 
 static void can_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct sockaddr **addr, socklen_t *addrlen)

@@ -25,7 +25,6 @@
  * and the kernel header then redefines the type.
  */
 #include "struct_catalog.h"
-#include "compat.h"
 #include "random.h"
 #include "rnd.h"
 #include "setsockopt-internal.h"

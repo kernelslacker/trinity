@@ -8,7 +8,6 @@
 #include "rnd.h"
 #include "sanitise.h"
 #include "sparse-files.h"
-#include "compat.h"
 #include "utils.h"
 
 #include "kernel/fs.h"

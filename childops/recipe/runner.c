@@ -28,7 +28,6 @@
 #include <stdint.h>
 
 #include "child.h"
-#include "compat.h"
 #include "rnd.h"
 #include "shm.h"
 #include "stats.h"

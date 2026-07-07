@@ -5,7 +5,6 @@
 #include <string.h>
 
 #include "arch.h"
-#include "compat.h"
 #include "fd.h"
 #include "objects.h"
 #include "random.h"

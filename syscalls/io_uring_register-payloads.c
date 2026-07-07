@@ -18,6 +18,7 @@
 #include "utils.h"
 #include "io_uring_register-internal.h"
 
+#include "kernel/time.h"
 /*
  * Hard ceiling for the trinity-side flex-array allocation count in
  * IORING_REGISTER_RESTRICTIONS.  Independent of the rnd bound used to

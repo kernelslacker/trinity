@@ -1,6 +1,5 @@
 #pragma once
 
-#include "compat.h"
 
 #include "kernel/socket.h"
 #ifdef USE_IF_ALG

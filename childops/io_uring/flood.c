@@ -49,7 +49,6 @@
 #include "child.h"
 #include "childops-iouring.h"
 #include "childops/io_uring/ring.h"
-#include "compat.h"
 #include "maps.h"
 #include "random.h"
 #include "rnd.h"
@@ -57,6 +56,7 @@
 #include "trinity.h"
 
 #include "kernel/fcntl.h"
+#include "kernel/unistd.h"
 /* Hard cap on setup → submit → teardown cycles per invocation.  Sized so
  * the worst-case loop completes well inside the alarm(1) window even when
  * sibling churners are also hammering the kernel allocator. */

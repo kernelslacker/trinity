@@ -46,7 +46,6 @@
 #endif
 
 #include "child.h"
-#include "compat.h"
 #include "shm.h"
 #include "stats.h"
 #include "trinity.h"

@@ -78,7 +78,6 @@
 #endif
 
 #include "child.h"
-#include "compat.h"
 #include "errno-classify.h"
 #include "jitter.h"
 #include "random.h"

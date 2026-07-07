@@ -7,7 +7,6 @@
 #include "net.h"
 #include "random.h"
 #include "socket-family-grammar.h"
-#include "compat.h"
 #include "kernel/mctp.h"
 #include "rnd.h"
 

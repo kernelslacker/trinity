@@ -44,7 +44,6 @@
 
 #include "childops-netlink.h"
 #include "childops-nfnl.h"
-#include "compat.h"
 
 #include "kernel/nfnetlink.h"
 #include "kernel/socket.h"

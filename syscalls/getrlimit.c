@@ -11,7 +11,6 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
-#include "compat.h"
 #include "utils.h"
 
 #include "kernel/resource.h"

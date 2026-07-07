@@ -17,7 +17,6 @@
 #include <unistd.h>
 #include <string.h>
 #include "arch.h"
-#include "compat.h"
 #include "net.h"
 #include "random.h"
 #include "socket-family-grammar.h"

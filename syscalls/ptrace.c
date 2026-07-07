@@ -10,7 +10,6 @@
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
-#include "compat.h"
 #include "kernel/ptrace.h"
 
 /*

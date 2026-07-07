@@ -8,7 +8,6 @@
 #include <fcntl.h>
 #include <stdio.h>
 #include "arch.h"
-#include "compat.h"
 #include "kernel/stat.h"
 #include "pathnames.h"
 #include "random.h"

@@ -28,7 +28,6 @@
 #include <linux/io_uring.h>
 #include <string.h>
 
-#include "compat.h"
 #include "errno-classify.h"
 #include "maps.h"
 #include "shm.h"

@@ -8,7 +8,6 @@
 #include "random.h"
 #include "sanitise.h"
 #include "memfd.h"
-#include "compat.h"
 #include "hugepages.h"
 #include "utils.h"
 

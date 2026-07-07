@@ -8,7 +8,6 @@
 #include <linux/sched.h>
 #include "child.h"
 #include "clone.h"
-#include "compat.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "stats_ring.h"

@@ -62,7 +62,6 @@
 #include "childops-netlink.h"
 #include "childops-util.h"
 #include "childops/io_uring/ring.h"
-#include "compat.h"
 #include "jitter.h"
 #include "random.h"
 #include "rnd.h"
@@ -690,6 +689,7 @@ bool iouring_send_zc_churn(struct childdata *child)
 #include "shm.h"
 
 #include "kernel/socket.h"
+#include "kernel/unistd.h"
 bool iouring_send_zc_churn(struct childdata *child)
 {
 	(void)child;

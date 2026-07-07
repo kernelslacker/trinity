@@ -6,7 +6,6 @@
 #include <limits.h>
 
 #include "arch.h"
-#include "compat.h"
 #include "deferred-free.h"
 #include "random.h"
 #include "rnd.h"
@@ -14,6 +13,7 @@
 #include "objects.h"
 #include "utils.h"
 
+#include "kernel/shm.h"
 static void dump_sysv_shm(struct object *obj, enum obj_scope scope)
 {
 	output(0, "sysv_shm: id:%u size:%zu flags:%x ptr:%p scope:%d\n",

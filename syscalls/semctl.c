@@ -6,13 +6,13 @@
 #include <sys/sem.h>
 #include <unistd.h>
 #include "arch.h"
-#include "compat.h"
 #include "deferred-free.h"
 #include "rnd.h"
 #include "sanitise.h"
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/sem.h"
 static unsigned long semctl_cmds[] = {
 	IPC_RMID, IPC_SET, IPC_STAT, IPC_INFO,
 	GETPID, GETVAL, GETALL, GETNCNT, GETZCNT,

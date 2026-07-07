@@ -8,7 +8,6 @@
 #include "net.h"
 #include "random.h"
 #include "sanitise.h"
-#include "compat.h"
 #include "name-pool.h"
 #include "rnd.h"
 

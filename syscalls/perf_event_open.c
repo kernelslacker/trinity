@@ -25,7 +25,6 @@
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
-#include "compat.h"
 #include "pids.h"
 
 #include "perf_event_open-internal.h"
@@ -33,6 +32,7 @@
 
 #include "kernel/fcntl.h"
 #include "kernel/hw_breakpoint.h"
+#include "kernel/time.h"
 static long long random_sysfs_config(__u32 *type,
 				__u64 *config1,
 				__u64 *config2) {

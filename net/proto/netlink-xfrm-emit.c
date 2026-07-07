@@ -13,7 +13,6 @@
 #include <linux/netlink.h>
 #include <string.h>
 
-#include "compat.h"
 #include "proto-netlink-xfrm-internal.h"
 #include "random.h"
 #include "utils.h"

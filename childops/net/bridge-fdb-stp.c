@@ -62,7 +62,6 @@
 
 #include "child.h"
 #include "childops-netlink.h"
-#include "compat.h"
 #include "jitter.h"
 #include "name-pool.h"
 #include "random.h"

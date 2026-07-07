@@ -43,7 +43,6 @@ struct syscallentry syscall_eventfd = {
  */
 
 #include "sanitise.h"
-#include "compat.h"
 
 #include "kernel/eventfd.h"
 /*

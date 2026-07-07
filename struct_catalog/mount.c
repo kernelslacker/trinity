@@ -20,12 +20,12 @@
 #include <linux/fs.h>
 #include <linux/sched.h>
 
-#include "compat.h"
 #include "struct_catalog.h"
 #include "struct_catalog-internal.h"
 #include "arch.h"
 
 #include "kernel/sched.h"
+#include "kernel/mount.h"
 /* ------------------------------------------------------------------ */
 /* struct mount_attr (mount_setattr, open_tree_attr)                   */
 /* ------------------------------------------------------------------ */

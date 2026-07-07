@@ -53,7 +53,6 @@
 #include "socket-family-grammar.h"
 #include "trinity.h"
 #include "utils.h"
-#include "compat.h"
 
 #include "proto-netlink-xfrm-internal.h"
 

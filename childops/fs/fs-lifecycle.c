@@ -63,7 +63,6 @@
 #endif
 
 #include "child.h"
-#include "compat.h"
 #include "syscall-gate.h"
 #include "pids.h"
 #include "random.h"

@@ -72,7 +72,6 @@
 #include <sys/types.h>
 
 #include "child.h"
-#include "compat.h"
 #include "jitter.h"
 #include "random.h"
 #include "rnd.h"

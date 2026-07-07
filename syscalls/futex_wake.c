@@ -5,7 +5,6 @@
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
-#include "compat.h"
 #include "trinity.h"
 #include "utils.h"
 

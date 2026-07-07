@@ -13,7 +13,6 @@
 
 #include "config.h"
 #include "struct_catalog.h"
-#include "compat.h"
 #include "struct_catalog-internal.h"
 #include "arch.h"
 

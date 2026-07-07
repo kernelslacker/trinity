@@ -39,7 +39,6 @@
 #include "child.h"
 #include "errno-classify.h"
 #include "syscall-gate.h"
-#include "compat.h"
 #include "shm.h"
 #include "trinity.h"
 

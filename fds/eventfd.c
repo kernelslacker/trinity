@@ -11,7 +11,6 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "utils.h"
-#include "compat.h"
 
 #include "kernel/eventfd.h"
 /*

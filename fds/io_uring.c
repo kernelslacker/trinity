@@ -6,7 +6,6 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "compat.h"
 #include "fd.h"
 #include "syscall-gate.h"
 #include "objects.h"

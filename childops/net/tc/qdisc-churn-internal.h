@@ -43,7 +43,6 @@
 #include <linux/rtnetlink.h>
 
 #include "childops-netlink.h"
-#include "compat.h"
 #include "kernel/if_ether.h"
 
 /*

@@ -4,7 +4,6 @@
 #include <fcntl.h>
 #include <sched.h>
 #include <unistd.h>
-#include "compat.h"
 #include "random.h"
 #include "sanitise.h"
 

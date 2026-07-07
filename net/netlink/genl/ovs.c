@@ -38,7 +38,6 @@
 
 #include <linux/openvswitch.h>
 
-#include "compat.h"
 #include "netlink-genl-families.h"
 #include "utils.h"
 

@@ -64,7 +64,6 @@
 #ifdef USE_PPPOX
 #include <linux/if_pppox.h>
 #endif
-#include "compat.h"
 #ifdef USE_BPF
 #include <linux/bpf.h>
 #endif

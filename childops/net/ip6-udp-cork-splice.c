@@ -66,7 +66,6 @@
 
 #include "child.h"
 #include "childops-netlink.h"
-#include "compat.h"
 #include "rnd.h"
 #include "shm.h"
 #include "trinity.h"

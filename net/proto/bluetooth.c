@@ -5,7 +5,6 @@
 #include <bluetooth/rfcomm.h>
 #include <bluetooth/sco.h>
 #include "net.h"
-#include "compat.h"
 #include "random.h"
 #include "rnd.h"
 

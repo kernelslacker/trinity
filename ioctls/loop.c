@@ -9,7 +9,6 @@
 #include <string.h>
 #include <sys/stat.h>
 
-#include "compat.h"
 #include "ioctls.h"
 #include "random.h"
 #include "rnd.h"

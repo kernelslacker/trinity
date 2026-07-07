@@ -1,7 +1,6 @@
 #include <netinet/udp.h>
 #include "net.h"
 #include "random.h"
-#include "compat.h"
 #include "kernel/udp.h"
 #include "rnd.h"
 

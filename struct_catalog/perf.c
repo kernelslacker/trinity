@@ -18,6 +18,7 @@
 #include "perf_event.h"
 
 #include "kernel/hw_breakpoint.h"
+#include "kernel/time.h"
 /* ------------------------------------------------------------------ */
 /* struct perf_event_attr (perf_event_open)                            */
 /* ------------------------------------------------------------------ */

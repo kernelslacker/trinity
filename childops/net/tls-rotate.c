@@ -52,7 +52,6 @@
 #include <string.h>
 
 #include "child.h"
-#include "compat.h"
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"

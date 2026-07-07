@@ -3,7 +3,6 @@
  */
 #include <stdint.h>
 #include <linux/msg.h>
-#include "compat.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
