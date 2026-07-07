@@ -86,6 +86,36 @@ extern volatile sig_atomic_t asb_copy_active;
 extern sigjmp_buf cmp_field_recover;
 extern volatile sig_atomic_t cmp_field_read_active;
 
+/*
+ * Per-child recovery point for vma_split_storm's touch_random_page()
+ * one-byte store.
+ *
+ * touch_random_page() stores one byte to a random page of the op's
+ * private 8 MiB region between iterations to keep ptes present for
+ * the split / DONTNEED walkers.  The touched page may sit in a sub-
+ * VMA whose most recent mprotect was PROT_READ, in which case the
+ * store faults with SIGSEGV/SEGV_ACCERR -- a sanitiser fault from
+ * the op's own bookkeeping, not a kernel bug -- and the whole child
+ * dies, stamping a bogus bug log for what is by construction a
+ * self-inflicted store into read-only own memory.
+ *
+ * The flag/buffer pair lets the store install a sigsetjmp recovery
+ * point around the single byte write: child_fault_handler checks
+ * vma_split_storm_touch_active on entry, and on a real kernel
+ * SIGSEGV/SIGBUS (si_code > 0) while the flag is set, siglongjmp's
+ * back to touch_random_page(), which clears the flag and returns.
+ *
+ * Scope is intentionally narrow: the flag is set ONLY across the
+ * single one-byte store, cleared immediately after on BOTH the
+ * normal and the fault-return path, and the recovery edge applies
+ * only to SIGSEGV / SIGBUS with si_code > 0.  All other signals,
+ * and the default (flag-clear) state, fall through to the existing
+ * crash-log path so a real kernel-fuzzed bug still produces a bug
+ * log.
+ */
+extern sigjmp_buf vma_split_storm_touch_recover;
+extern volatile sig_atomic_t vma_split_storm_touch_active;
+
 
 #ifdef CONFIG_GUARD_SHARED
 /*
