@@ -234,7 +234,8 @@ static unsigned long stats_ts_prev_childop_would_promote[NR_CHILD_OP_TYPES];
 static unsigned long stats_ts_prev_childop_would_demote[NR_CHILD_OP_TYPES];
 
 /* Walk one syscall table and emit
- * {"nr":N,"edges":E,"edges_gained":G,"kcov_calls":K,"attempted_calls":A,
+ * {"nr":N,"arch":"64","name":"read","edges":E,"edges_gained":G,
+ *  "kcov_calls":K,"attempted_calls":A,
  *  "local_edges":L,"local_edges_gained":LG,"remote_edges":R,
  *  "remote_edges_gained":RG,"cmp_injected":CI,"cmp_injected_gained":CIG,
  *  "cmp_hint_pc_wins":CW,"cmp_hint_pc_wins_gained":CWG,
@@ -245,6 +246,15 @@ static unsigned long stats_ts_prev_childop_would_demote[NR_CHILD_OP_TYPES];
  * literal.  do32 selects the arch dim into per_syscall_diag[][],
  * matching the kcov_diag_emit_block() convention (false=64-bit,
  * true=32-bit).
+ *
+ * arch and name are emitted per row so a run-analysis consumer
+ * grouping by nr does not silently merge biarch's 32-bit and 64-bit
+ * halves (both tables index into the same nr keyspace, so a naive
+ * group-by-nr collapses ~204 pairs into one).  arch is the string
+ * "32" or "64" -- readable without a legend and stable across
+ * archs where do32 is a boolean anyway; name comes straight from
+ * entry->name so a plateau consumer does not need to link against
+ * the syscall tables to label the row.
  *
  * kcov_calls and attempted_calls are named explicitly (replacing the
  * ambiguous "calls" this used to emit as entry->attempted) because
@@ -363,14 +373,17 @@ static void stats_timeseries_emit_table(const struct syscalltable *table,
 		}
 
 		fprintf(stats_timeseries_fp,
-			"%s{\"nr\":%u,\"edges\":%lu,\"edges_gained\":%lu"
+			"%s{\"nr\":%u,\"arch\":\"%s\",\"name\":\"%s\""
+			",\"edges\":%lu,\"edges_gained\":%lu"
 			",\"kcov_calls\":%lu,\"attempted_calls\":%u"
 			",\"local_edges\":%lu,\"local_edges_gained\":%lu"
 			",\"remote_edges\":%lu,\"remote_edges_gained\":%lu"
 			",\"cmp_injected\":%lu,\"cmp_injected_gained\":%lu"
 			",\"cmp_hint_pc_wins\":%lu,\"cmp_hint_pc_wins_gained\":%lu"
 			",\"cmp_hyp_live_injected\":%lu,\"cmp_hyp_live_injected_gained\":%lu}",
-			*first ? "" : ",", nr, edges, edges_gained,
+			*first ? "" : ",", nr, do32 ? "32" : "64",
+			entry->name != NULL ? entry->name : "",
+			edges, edges_gained,
 			kcov_calls, attempted_calls,
 			local_edges, local_edges_gained,
 			remote_edges, remote_edges_gained,
