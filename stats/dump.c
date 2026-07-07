@@ -1793,6 +1793,14 @@ void dump_stats_strategy_summary(void)
 		stat_row("strategy",
 			 "cost_pool_selector_live_expensive_picks",
 			 shm->stats.cost_pool_selector_live_expensive_picks);
+	if (shm->stats.cost_pool_selector_predraw_cheap_picks)
+		stat_row("strategy",
+			 "cost_pool_selector_predraw_cheap_picks",
+			 shm->stats.cost_pool_selector_predraw_cheap_picks);
+	if (shm->stats.cost_pool_selector_predraw_expensive_picks)
+		stat_row("strategy",
+			 "cost_pool_selector_predraw_expensive_picks",
+			 shm->stats.cost_pool_selector_predraw_expensive_picks);
 
 	dump_strategy_stats();
 }

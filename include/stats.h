@@ -3829,6 +3829,34 @@ struct stats_s {
 	 *  cost_pool_selector_live_expensive_picks
 	 *      Cumulative: sibling of live_cheap_picks above for the
 	 *      EXPENSIVE half of the finalised-pick stream.
+	 *  cost_pool_selector_predraw_cheap_picks
+	 *      Cumulative: one bump per HEURISTIC / RANDOM arm draw whose
+	 *      candidate syscall PASSED the expensive_accept gate but has
+	 *      not yet been run past the downstream validate / anti_prior /
+	 *      cred-throttle gates (i.e. bumped immediately after the
+	 *      `if (!expensive_accept(...)) goto retry;` line and before
+	 *      validate_specific_syscall_silent).  Cheap half of that pair
+	 *      under the read-only EXPENSIVE bitmap (syscall_is_expensive()
+	 *      == false).  Gated on cost_pool_selector_mode != OFF alongside
+	 *      the shadow_ pair -- OFF-mode remains bit-for-bit identical
+	 *      to a pre-row build (short-circuit before any shm access, no
+	 *      per-draw atomic add).
+	 *  cost_pool_selector_predraw_expensive_picks
+	 *      Cumulative: EXPENSIVE sibling of predraw_cheap_picks above.
+	 *
+	 *      The predraw_ pair is the exact population the shadow closed-
+	 *      form models: post-expensive_accept uniform-draw survivors,
+	 *      before ANY downstream picker gate (validate / anti_prior /
+	 *      cred-throttle) enriches the finalised stream in rare/
+	 *      expensive syscalls.  Section 4.1 identity check:
+	 *          shadow_expensive_ppm_sum / (shadow_picks * 1e6)
+	 *        should match
+	 *          predraw_expensive / (predraw_expensive + predraw_cheap)
+	 *      to within Monte-Carlo noise.  The live_ pair remains the
+	 *      "what actually executes" signal (post all gates, at
+	 *      pick-finalise); it can and typically will diverge from the
+	 *      shadow analytical fraction because anti_prior selectively
+	 *      enriches rare/expensive syscalls in the accepted stream.
 	 *
 	 * Observability only in this commit: the shadow observer never
 	 * returns a value, never gates any accept, never consumes any
@@ -3841,6 +3869,8 @@ struct stats_s {
 	unsigned long cost_pool_selector_shadow_expensive_ppm_sum;
 	unsigned long cost_pool_selector_live_cheap_picks;
 	unsigned long cost_pool_selector_live_expensive_picks;
+	unsigned long cost_pool_selector_predraw_cheap_picks;
+	unsigned long cost_pool_selector_predraw_expensive_picks;
 
 	/* Adaptive remote-KCOV mode A/B disposition counters, bumped from
 	 * dispatch_step in random-syscall.c on every productive-signal call
