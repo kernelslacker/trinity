@@ -10,6 +10,7 @@
  * parallel under make -j.
  */
 
+#include <arpa/inet.h>
 #include <errno.h>
 #include <net/if.h>
 #include <stdbool.h>
