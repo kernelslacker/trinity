@@ -482,6 +482,21 @@ static void alg_pick_triplet(struct socket_triplet *out)
 	out->protocol = 0;
 }
 
+/*
+ * grammar_alg's orderings apply to every triplet it emits (it only
+ * ever emits {PF_ALG, SOCK_SEQPACKET, 0}), so this gate is a plain
+ * true.  It also opts grammar_alg into the illegal-op injector — the
+ * injector short-circuits when phase_orders_apply is NULL, and MVP
+ * left it NULL for exactly that reason.  Adding the gate here turns
+ * on the (family-scoped) AF_ALG illegal-op picking in
+ * sfg_pick_illegal_op().
+ */
+static bool alg_phase_orders_apply(const struct socket_triplet *triplet)
+{
+	(void)triplet;
+	return true;
+}
+
 static const struct sfg_phase_order alg_phase_orders[] = {
 	/* full-AEAD arm: SET_AEAD stages authsize + assoclen; CMSG echoes
 	 * assoclen so aead_recvmsg's assoc-vs-data length math is fed
@@ -511,10 +526,7 @@ const struct socket_family_grammar grammar_alg = {
 	.pick_triplet		= alg_pick_triplet,
 	.phase_orders		= alg_phase_orders,
 	.nr_phase_orders	= ARRAY_SIZE(alg_phase_orders),
-	/* phase_orders_apply=NULL: the AF_ALG orderings apply to every
-	 * triplet grammar_alg emits (it only emits one).  The illegal-op
-	 * injector self-gates on this being non-NULL — MVP keeps
-	 * legal-only walks; the illegal-ops follow-up wires the gate. */
+	.phase_orders_apply	= alg_phase_orders_apply,
 	/* bind_or_connect / configure_pre_bind / configure_post_bind /
 	 * walk_setsockopts / gen_cmsg / needs_listen_accept / data_leg all
 	 * unused — the SFG_PHASE_ALG_* case bodies own the walk. */

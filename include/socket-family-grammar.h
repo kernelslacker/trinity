@@ -104,6 +104,46 @@ enum sfg_illegal_op {
 	SFG_ILLEGAL_BIND_AFTER_LISTEN,
 	SFG_ILLEGAL_SEND_BEFORE_BIND,
 	SFG_ILLEGAL_DOUBLE_SHUTDOWN,
+
+	/*
+	 * AF_ALG-scoped precondition violations for grammar_alg's walk.
+	 * Same discipline as the inet ops above: one hostile step per
+	 * otherwise-coherent plan, sfg_publish_illegal stamps the label
+	 * on both channels before the raw syscall lands.  The picker in
+	 * sfg_pick_illegal_op gates on triplet.family so an inet walk
+	 * never draws an AF_ALG op and vice versa.
+	 *
+	 *   ALG_SEND_BEFORE_SETKEY    sendmsg on an ACCEPTED-but-unkeyed
+	 *                             op fd (skcipher/aead reject unkeyed
+	 *                             ->encrypt; hits the ctx->more/setkey
+	 *                             gate in af_alg_sendmsg)
+	 *   ALG_RECV_ON_EMPTY_TSGL    the documented af_alg_pull_tsgl
+	 *                             trigger — recv() with no accumulated
+	 *                             request on a fresh ACCEPTED op fd
+	 *                             (walker skips the SEND_MORE phase)
+	 *   ALG_ACCEPT_BEFORE_BIND    accept() on an unbound parent
+	 *                             (af_alg_accept: ask->type == NULL)
+	 *   ALG_SETKEY_AFTER_ACCEPT   setsockopt(ALG_SET_KEY) on parent
+	 *                             AFTER the op fd already exists
+	 *                             (races af_alg_release_parent refcount
+	 *                             assumptions)
+	 *   ALG_OP_DIRECTION_MISMATCH ALG_SET_OP=DECRYPT cmsg with data
+	 *                             shaped for encrypt (aead_recvmsg
+	 *                             length math / crypto_aead_decrypt
+	 *                             -EBADMSG path)
+	 *   ALG_DOUBLE_ACCEPT         second accept() on the same parent
+	 *                             (two op sockets sharing one alg_sock)
+	 *   ALG_SET_AEAD_ON_NON_AEAD  ALG_SET_AEAD_AUTHSIZE on a
+	 *                             skcipher/hash socket (type
+	 *                             ->setauthsize is NULL)
+	 */
+	SFG_ILLEGAL_ALG_SEND_BEFORE_SETKEY,
+	SFG_ILLEGAL_ALG_RECV_ON_EMPTY_TSGL,
+	SFG_ILLEGAL_ALG_ACCEPT_BEFORE_BIND,
+	SFG_ILLEGAL_ALG_SETKEY_AFTER_ACCEPT,
+	SFG_ILLEGAL_ALG_OP_DIRECTION_MISMATCH,
+	SFG_ILLEGAL_ALG_DOUBLE_ACCEPT,
+	SFG_ILLEGAL_ALG_SET_AEAD_ON_NON_AEAD,
 };
 
 /*
