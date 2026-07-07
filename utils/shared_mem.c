@@ -973,6 +973,77 @@ void untrack_shared_region(unsigned long addr, unsigned long size)
 	}
 }
 
+/*
+ * Dedicated allocator for shared regions whose start MUST be page
+ * aligned.  The general alloc_shared_pool() path under CONFIG_GUARD_
+ * SHARED with --guard-shared=pools routes through guard_pages_alloc(),
+ * which END-aligns the inner buffer against the trailing guard.  A
+ * consumer that later calls mprotect() on the region -- freeze_sibling_
+ * childdata over each sibling's childdata -- then hits mprotect's page-
+ * boundary precondition on the start address and returns EINVAL.  The
+ * silent failure left every sibling's childdata unprotected against
+ * wild kernel writes, which was the mechanism behind the self-SIGSEGV
+ * cluster in add_object / kcov_collect / addr_in_local_runtime_map.
+ *
+ * This path pins a page-aligned start unconditionally: the returned
+ * mapping starts at an address mmap chose (page-aligned by
+ * construction), spans inner_size rounded up to a page multiple, and
+ * is registered with shared_regions[] using that same rounded length
+ * so downstream mprotect() and range-guard queries see the true VMA
+ * footprint.  Guard pages are deliberately not layered on -- losing
+ * the trailing-guard trap for this region is the trade for having a
+ * working freeze, which is the primary defence for callers that route
+ * here.
+ *
+ * *out_rounded_len is written before return so the freeze site can
+ * mprotect exactly the span the mapping covers -- passing raw
+ * inner_size to mprotect works too (the kernel rounds up), but keeping
+ * the two lengths locked together makes the "same span" contract
+ * self-evident and lets range_in_tracked_shared / free_shared match
+ * without arithmetic.
+ */
+void *alloc_shared_page_aligned(size_t inner_size, size_t *out_rounded_len)
+{
+	size_t rounded;
+	void *ret;
+	unsigned char *p;
+	size_t i;
+
+	if (inner_size == 0 || page_size == 0) {
+		outputerr("alloc_shared_page_aligned: bad args inner=%zu page_size=%u\n",
+			  inner_size, (unsigned int)page_size);
+		exit(EXIT_FAILURE);
+	}
+
+	rounded = (inner_size + (size_t)page_size - 1) & (size_t)PAGE_MASK;
+
+	ret = mmap(NULL, rounded, PROT_READ | PROT_WRITE,
+		   MAP_ANON | MAP_SHARED, -1, 0);
+	if (ret == MAP_FAILED) {
+		outputerr("alloc_shared_page_aligned: mmap %zu failure\n",
+			  rounded);
+		exit(EXIT_FAILURE);
+	}
+
+	/* Poison with random bytes to expose uninitialised reads, matching
+	 * alloc_shared()'s post-mmap poison so the two allocation paths
+	 * present the same "clear-before-use" contract to consumers. */
+	p = ret;
+	for (i = 0; i + sizeof(unsigned int) <= rounded;
+	     i += sizeof(unsigned int)) {
+		unsigned int r = rnd_u32();
+		memcpy(p + i, &r, sizeof(r));
+	}
+	for (; i < rounded; i++)
+		p[i] = (unsigned char)rnd_u32();
+
+	track_shared_region((unsigned long)ret, rounded);
+
+	if (out_rounded_len != NULL)
+		*out_rounded_len = rounded;
+	return ret;
+}
+
 bool shared_size_mul(size_t a, size_t b, size_t *out)
 {
 	return !__builtin_mul_overflow(a, b, out);

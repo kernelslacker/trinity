@@ -39,6 +39,14 @@ struct stats_ring **expected_stats_rings;
 
 unsigned int shm_size;
 
+/*
+ * Set by init_shm_per_child_rings() to sizeof(struct childdata) rounded
+ * up to a page multiple.  freeze_sibling_childdata() reads it to pass
+ * the same span its mprotect() covers; alloc_shared_page_aligned()
+ * fills it via its out-param on the first per-child alloc.
+ */
+size_t childdata_mapping_len;
+
 void create_shm(void)
 {
 	unsigned int nr_shm_pages;
@@ -335,20 +343,32 @@ static void init_shm_per_child_rings(void)
 	 */
 	for_each_child(i) {
 		struct childdata *child;
+		size_t mapping_len = 0;
 
 		/*
-		 * Wild-write risk on per-child childdata is bounded: a child
-		 * can only realistically corrupt its OWN childdata via its
-		 * own syscall args, and the parent's reads (handle_children's
-		 * progress check, dump_childdata on crash) tolerate
-		 * inconsistency by design.  Cross-child corruption would
-		 * require a child syscall arg pointing into another child's
-		 * slot — possible but exceedingly unlikely given the address-
-		 * space layout, and the parent's overwatch (pidmap sanity,
-		 * fd_event_ring canary) catches the structural fallout when
-		 * it does happen.
+		 * Dedicated page-aligned mapping per childdata.  Cross-child
+		 * corruption via a fuzzed syscall arg pointing into another
+		 * child's slot IS the failure mode this per-child freeze
+		 * exists to defend against: freeze_sibling_childdata()
+		 * mprotect()s every sibling's childdata PROT_READ from each
+		 * child's address space, so a stray kernel-side write
+		 * traps at -EFAULT instead of scribbling the sibling.
+		 *
+		 * Routing through alloc_shared_page_aligned() (rather than
+		 * alloc_shared_pool()) pins a page-aligned base so the
+		 * freeze's mprotect() precondition holds unconditionally.
+		 * The prior alloc_shared_pool() path handed out an end-
+		 * aligned pointer under --guard-shared=pools, silently
+		 * EINVAL'ing every sibling's mprotect() and leaving the
+		 * freeze off -- which was the mechanism behind the
+		 * self-SIGSEGV cluster in add_object / kcov_collect /
+		 * addr_in_local_runtime_map traced to sibling scribbles of
+		 * childdata->objects / OBJ_LOCAL.
 		 */
-		child = alloc_shared_pool(sizeof(struct childdata));
+		child = alloc_shared_page_aligned(sizeof(struct childdata),
+						  &mapping_len);
+		if (childdata_mapping_len == 0)
+			childdata_mapping_len = mapping_len;
 		children[i] = child;
 
 		memset(&child->syscall, 0, sizeof(struct syscallrecord));

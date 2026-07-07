@@ -54,6 +54,31 @@ static inline unsigned long kcov_canon_pc(unsigned long pc)
 }
 
 /*
+ * Defence-in-depth against a sibling wild write that scribbled our
+ * childdata->local_stats pointer.  The per-child freeze in init_child
+ * mprotects childdata PROT_READ across siblings so a stray kernel-side
+ * write traps at -EFAULT rather than reaching the pointer, but the
+ * freeze is best-effort (mprotect can fail on VMA pressure, and the
+ * bug that motivated this bracket -- an end-aligned childdata start
+ * that EINVAL'd every sibling's mprotect -- proved silent freeze
+ * failures are a real state).  The cheap userspace-VA bracket here
+ * mirrors objpool_check()'s reject shape: a scribble that turned
+ * local_stats into a low-VA / pid-encoded pointer is rejected before
+ * the deref that would otherwise SIGSEGV in the syscall hot path.
+ *
+ * Called on every syscall in kcov_collect, so the check is a pair of
+ * unsigned-integer comparisons and nothing else -- no atomics, no
+ * bitmap walks.  Callers keep the existing NULL check redundant with
+ * this predicate for readability at the guarded deref sites.
+ */
+static inline bool kcov_local_stats_plausible(const struct kcov_child_local_stats *ls)
+{
+	uintptr_t p = (uintptr_t)ls;
+
+	return p >= 0x10000UL && p < 0x800000000000UL;
+}
+
+/*
  * KASLR-strip a kernel comparison-instruction address before it lands in
  * the cmp-hints bloom + per-syscall pool + persisted state file.  Same
  * transform as kcov_canon_pc -- both subtract the runtime _text base
@@ -297,7 +322,8 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 	{
 		struct childdata *cc = this_child();
 
-		if (cc != NULL && cc->local_stats != NULL) {
+		if (cc != NULL &&
+		    kcov_local_stats_plausible(cc->local_stats)) {
 			cc->local_stats->total_calls++;
 			if (kc->remote_mode)
 				cc->local_stats->remote_calls++;
@@ -489,7 +515,8 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 	{
 		struct childdata *cc = this_child();
 
-		if (cc != NULL && cc->local_stats != NULL)
+		if (cc != NULL &&
+		    kcov_local_stats_plausible(cc->local_stats))
 			cc->local_stats->total_pcs += count;
 	}
 
@@ -589,7 +616,8 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 			{
 				struct childdata *cc = this_child();
 
-				if (cc != NULL && cc->local_stats != NULL)
+				if (cc != NULL &&
+				    kcov_local_stats_plausible(cc->local_stats))
 					cc->local_stats->total_warm_known_hits++;
 			}
 			/* Lazy-seed last_edge_at[nr] from the warm-known hit
@@ -751,12 +779,15 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 	 *       notification, fold the staged delta into the same drain;
 	 *   (b) the syscalls-since-flush counter has reached the cadence
 	 *       cap, so a long run of no-new-edge calls still publishes.
-	 * The bumps above are gated on this_child() != NULL && local_stats
-	 * != NULL; mirror that gate here. */
+	 * The bumps above are gated on this_child() != NULL &&
+	 * kcov_local_stats_plausible(cc->local_stats); mirror that gate
+	 * here so a scribbled local_stats pointer is not followed on the
+	 * cadence check either. */
 	{
 		struct childdata *cc = this_child();
 
-		if (cc != NULL && cc->local_stats != NULL) {
+		if (cc != NULL &&
+		    kcov_local_stats_plausible(cc->local_stats)) {
 			if (found_new ||
 			    cc->local_stats->local_syscalls_since_flush >=
 				    KCOV_LOCAL_STATS_FLUSH_SYSCALLS)
