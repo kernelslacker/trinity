@@ -95,6 +95,7 @@
 
 #include "kernel/qrtr.h"
 #include "kernel/nfc.h"
+#include "kernel/l2tp.h"
 /* ------------------------------------------------------------------ */
 /* struct sockaddr_storage (bind, connect, sendto, ...)                */
 /* ------------------------------------------------------------------ */

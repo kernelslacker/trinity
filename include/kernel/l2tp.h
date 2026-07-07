@@ -51,3 +51,26 @@
 #define L2TP_ENCAPTYPE_UDP		0
 #define L2TP_ENCAPTYPE_IP		1
 #endif
+
+#ifndef L2TP_ATTR_IP6_SADDR
+#define L2TP_ATTR_IP6_SADDR		31
+#endif
+#ifndef L2TP_ATTR_IP6_DADDR
+#define L2TP_ATTR_IP6_DADDR		32
+#endif
+#ifndef L2TP_ATTR_UDP_ZERO_CSUM6_TX
+#define L2TP_ATTR_UDP_ZERO_CSUM6_TX	33
+#endif
+#ifndef L2TP_ATTR_UDP_ZERO_CSUM6_RX
+#define L2TP_ATTR_UDP_ZERO_CSUM6_RX	34
+#endif
+#ifndef L2TP_ATTR_PAD
+#define L2TP_ATTR_PAD			35
+#endif
+#ifndef L2TP_ATTR_RX_COOKIE_DISCARDS
+#define L2TP_ATTR_RX_COOKIE_DISCARDS	10
+#endif
+#ifndef L2TP_ATTR_RX_INVALID
+#define L2TP_ATTR_RX_INVALID		11
+#endif
+
