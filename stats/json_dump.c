@@ -828,12 +828,16 @@ const struct stat_category numa_migration_category =
 
 static const struct stat_field genetlink_fuzzer_fields[] = {
 	STAT_FIELD(genetlink, families_discovered),
+	STAT_FIELD(genetlink, discovery_cycles),
 	STAT_FIELD(genetlink, msgs_sent),
 	STAT_FIELD(genetlink, eperm),
 	STAT_FIELD(genetlink, stale_seq_drops),
 	STAT_FIELD(genetlink, missing_producer),
 	STAT_FIELD(genetlink, discovery_io_err),
 	STAT_FIELD(genetlink, discovery_nlerr),
+	STAT_FIELD(genetlink, userns_run_fail),
+	STAT_FIELD(genetlink, in_ns_open_fail),
+	STAT_FIELD(genetlink, send_drain_fail),
 };
 
 const struct stat_category genetlink_fuzzer_category =

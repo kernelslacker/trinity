@@ -371,8 +371,11 @@ static void send_fuzzed_msg(struct nl_ctx *ctx, const struct genl_family_entry *
 
 	nlh->nlmsg_len = off;
 
-	if (nl_send_drain_errors(ctx, buf, off, seq, genl_on_err, NULL) < 0)
+	if (nl_send_drain_errors(ctx, buf, off, seq, genl_on_err, NULL) < 0) {
+		__atomic_add_fetch(&shm->stats.genetlink_send_drain_fail,
+				   1, __ATOMIC_RELAXED);
 		return;
+	}
 
 	__atomic_add_fetch(&shm->stats.genetlink_msgs_sent, 1, __ATOMIC_RELAXED);
 }
@@ -435,6 +438,8 @@ static int genetlink_fuzzer_in_ns(void *arg)
 						 CHILDOP_LATCH_UNSUPPORTED,
 						 __ATOMIC_RELAXED);
 		}
+		__atomic_add_fetch(&shm->stats.genetlink_in_ns_open_fail,
+				   1, __ATOMIC_RELAXED);
 		/* check-static: child-output-ok */
 		outputerr("genetlink_fuzzer: nl_open(NETLINK_GENERIC) failed in fresh netns (errno=%d)\n",
 			  errno);
@@ -538,6 +543,8 @@ bool genetlink_fuzzer(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 	__atomic_add_fetch(&shm->stats.genetlink_families_discovered,
 			   cat.count, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.genetlink_discovery_cycles,
+			   1, __ATOMIC_RELAXED);
 
 	rc = userns_run_in_ns(CLONE_NEWNET, genetlink_fuzzer_in_ns, &cctx);
 	if (rc == -EPERM) {
@@ -545,6 +552,8 @@ bool genetlink_fuzzer(struct childdata *child)
 			__atomic_store_n(&shm->stats.childop_latch_reason[op],
 					 CHILDOP_LATCH_NS_UNSUPPORTED,
 					 __ATOMIC_RELAXED);
+		__atomic_add_fetch(&shm->stats.genetlink_userns_run_fail,
+				   1, __ATOMIC_RELAXED);
 		warn_once_unsupported_userns("userns_run_in_ns(CLONE_NEWNET)", EPERM);
 		return true;
 	}
@@ -552,6 +561,8 @@ bool genetlink_fuzzer(struct childdata *child)
 		/* Transient grandchild setup failure (fork, id-map write,
 		 * secondary unshare).  Skip this iteration without latching
 		 * -- the failure is not policy and may not recur. */
+		__atomic_add_fetch(&shm->stats.genetlink_userns_run_fail,
+				   1, __ATOMIC_RELAXED);
 		return true;
 	}
 
