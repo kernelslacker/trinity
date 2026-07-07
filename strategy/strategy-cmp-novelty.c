@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "cmp_hints-internal.h"	/* cmp_hints_strip */
 #include "kcov.h"		/* KCOV_CMP_RECORDS_MAX, kcov_shm */
 #include "shm.h"
 #include "strategy.h"
@@ -112,6 +113,11 @@ unsigned long bandit_cmp_observe(unsigned long *trace_buf, unsigned int nr,
 	unsigned long count, i;
 	unsigned long novel = 0;
 	uint32_t now;
+
+	/* Mirror cmp_hints_collect()'s strip: stripped syscalls' CMP records
+	 * fire on kernel-internal state and must not feed bandit novelty. */
+	if (nr < MAX_NR_SYSCALL && cmp_hints_strip[do32 ? 1 : 0][nr])
+		return 0;
 
 	if (trace_buf == NULL || nr >= MAX_NR_SYSCALL)
 		return 0;
