@@ -2,6 +2,10 @@
 
 #include <sys/wait.h>
 
+#ifndef P_PIDFD
+#define P_PIDFD 3
+#endif
+
 #ifndef __WNOTHREAD
 #define __WNOTHREAD 0x20000000
 #endif
