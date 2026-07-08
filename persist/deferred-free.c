@@ -1092,6 +1092,34 @@ void rec_owned_drain(struct syscallrecord *rec)
 	 */
 	for (i = rec->owned_count; i > 0; i--) {
 		void *p = rec->owned[i - 1];
+		uintptr_t v = (uintptr_t)p;
+
+		/*
+		 * Attribution overlay for the SELF-corruption cluster.  If a
+		 * sibling scribbled one of the rec->owned[] slots between
+		 * enqueue and drain, tracked_free_now(p) below either aborts
+		 * inside glibc (heap-check trip) or SIGSEGVs deep in libc, in
+		 * either case with the current SREC being this rec (the innocent
+		 * drain runs after the culprit's own return) or already-replaced
+		 * by whatever cleanup boundary reached the drain.  Log the
+		 * pre-free SREC so the child bug-log carries the culprit BEFORE
+		 * the glibc abort/SEGV vaporises the state.
+		 *
+		 * NULL is a legitimate slot value in principle (a caller could
+		 * push NULL and rely on tracked_free_now's own NULL handling);
+		 * gate the check on p != NULL so a legitimate NULL slot does
+		 * not manufacture a false positive.  Same [0x10000, 2^47)
+		 * bracket the always-on shape heuristic uses.  Log-only:
+		 * tracked_free_now(p) still runs unchanged.
+		 */
+		if (unlikely(p != NULL &&
+			     !(v >= 0x10000UL && v < 0x800000000000UL))) {
+			struct childdata *cc = this_child();
+
+			log_self_corrupt_culprit(
+				"deferred:rec_owned_drain", v,
+				cc != NULL ? &cc->syscall : NULL);
+		}
 
 		rec->owned[i - 1] = NULL;
 		rec->owned_count = i - 1;

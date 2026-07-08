@@ -225,6 +225,48 @@ void post_handler_corrupt_ptr_bump_site(struct syscallrecord *rec,
 }
 
 /*
+ * Self-corruption attribution logger.  See the docstring on the
+ * declaration in include/utils.h for the contract and rationale.
+ * Body is one outputerr call with fixed formatters, plus a table
+ * lookup for the syscall name -- no allocation, no atomics.
+ *
+ * Name resolution goes through get_syscall_entry(nr, do32bit)
+ * rather than rec->entry: rec sits inside the same struct that
+ * the wild write likely scribbled (the whole point of firing
+ * this logger), so trusting rec->entry here would risk chasing
+ * a wild pointer.  The syscall table is init-time-immutable and
+ * safe to read.
+ */
+void log_self_corrupt_culprit(const char *site, unsigned long wild,
+			      const struct syscallrecord *rec)
+{
+	struct syscallentry *entry;
+	const char *name = "?";
+	unsigned int nr = 0;
+	unsigned long a1 = 0, a2 = 0, a3 = 0, a4 = 0, a5 = 0, a6 = 0;
+	bool do32 = false;
+
+	if (rec != NULL) {
+		nr = rec->nr;
+		do32 = rec->do32bit;
+		a1 = rec->a1;
+		a2 = rec->a2;
+		a3 = rec->a3;
+		a4 = rec->a4;
+		a5 = rec->a5;
+		a6 = rec->a6;
+
+		entry = get_syscall_entry(nr, do32);
+		if (entry != NULL && entry->name != NULL)
+			name = entry->name;
+	}
+
+	outputerr("SELF-CORRUPT [%s] wild=0x%lx | last syscall nr=%u name=%s do32=%d args=0x%lx 0x%lx 0x%lx 0x%lx 0x%lx 0x%lx\n",
+		  site != NULL ? site : "?", wild, nr, name,
+		  do32 ? 1 : 0, a1, a2, a3, a4, a5, a6);
+}
+
+/*
  * TRINITY_CORRUPT_ATTRIB measurement path.  Off by default; enabled at
  * runtime by exporting TRINITY_CORRUPT_ATTRIB=1 before fork.  Latched
  * on first query so the hot path pays one cached-bool branch when the

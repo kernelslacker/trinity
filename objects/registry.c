@@ -459,6 +459,31 @@ static void add_object_publish(struct object *obj, enum obj_scope scope,
 
 	n = head->num_entries;
 
+	/*
+	 * Attribution overlay: log the just-dispatched syscall's SREC if
+	 * head->array is outside the userspace-VA bracket the wild-scribble
+	 * bands are defined against.  The write below still runs -- this
+	 * gate is diagnostic, not a short-circuit -- so a scribbled
+	 * head->array still SIGSEGVs the child, but the child bug-log now
+	 * carries one SELF-CORRUPT line naming the syscall whose arg-gen
+	 * produced the wild write BEFORE the SEGV clobbers the rec.  Same
+	 * [0x10000, 2^47) shape kcov_local_stats_plausible / the dispatch-
+	 * boundary check use, so a false positive is impossible for any
+	 * head->array value zmalloc_tracked could have returned; the only
+	 * value that trips it is a scribbled slot.
+	 */
+	{
+		uintptr_t arr = (uintptr_t)head->array;
+
+		if (unlikely(!(arr >= 0x10000UL && arr < 0x800000000000UL))) {
+			struct childdata *cc = this_child();
+
+			log_self_corrupt_culprit(
+				"objects:add_object", arr,
+				cc != NULL ? &cc->syscall : NULL);
+		}
+	}
+
 	head->array[n] = obj;
 	obj->array_idx = n;
 	/*

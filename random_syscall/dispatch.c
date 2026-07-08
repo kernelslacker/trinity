@@ -165,6 +165,42 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 
 	do_syscall(rec, entry, &child->kcov, child);
 
+	/*
+	 * Attribution overlay for the SELF-corruption cluster.  The
+	 * kcov_local_stats_plausible() gates inside kcov_collect() and
+	 * the objpool_check() gates in addr_in_local_runtime_map() will
+	 * short-circuit the bad deref, but by the time they fire the
+	 * current SREC on the innocent reader (kcov_collect, mmap-pool
+	 * walker) has replaced the SREC of the syscall that produced
+	 * the wild write.  Sample the per-child pointer state HERE --
+	 * one syscall-return boundary after the write, still owning
+	 * rec -- so the log names the actual culprit.  Same
+	 * userspace-VA bracket kcov_local_stats_plausible() uses; a
+	 * scribbled pointer that lands outside [0x10000, 2^47) is
+	 * caught by the compare and logged.  child->local_stats and
+	 * child->objects are the two pointers a sibling-side scribble
+	 * has been observed to overwrite in the childdata region.
+	 *
+	 * Log-only: the downstream gates still run and still gate the
+	 * deref, so a false-positive here (an unexpected NULL / low VA
+	 * that is not actually the crash predecessor) costs one stderr
+	 * line, not a crash or a behaviour change.  Does not consume
+	 * RNG.  When both pointers are plausible (the overwhelming
+	 * steady state) this block is a pair of userspace-VA range
+	 * compares and nothing else.
+	 */
+	{
+		uintptr_t ls = (uintptr_t)child->local_stats;
+		uintptr_t ob = (uintptr_t)child->objects;
+
+		if (!(ls >= 0x10000UL && ls < 0x800000000000UL))
+			log_self_corrupt_culprit("dispatch:local_stats",
+				(unsigned long)child->local_stats, rec);
+		if (!(ob >= 0x10000UL && ob < 0x800000000000UL))
+			log_self_corrupt_culprit("dispatch:objects",
+				(unsigned long)child->objects, rec);
+	}
+
 	/* kcov_collect() returns the real per-call bucket-edge count via the
 	 * out-param alongside its bool found_new return.  Diff-ing the global
 	 * kcov_shm->edges_found around the call would race other children's

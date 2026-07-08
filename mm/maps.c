@@ -530,10 +530,21 @@ bool addr_in_local_runtime_map(unsigned long addr, unsigned long len)
 			 * dereferencing pool slots.  Bumps the global-obj UAF
 			 * stat on the reject path so the incidence is visible
 			 * in the periodic dump alongside the other pool
-			 * cold-recycle counters.
+			 * cold-recycle counters.  A reject additionally logs
+			 * the just-dispatched syscall's SREC to stderr so the
+			 * culprit whose arg-gen produced the wild pointer is
+			 * captured in the child bug-log before the SIGSEGV
+			 * that the same scribble typically causes elsewhere.
 			 */
-			if (!objpool_check(obj, map_pool_types[i]))
+			if (!objpool_check(obj, map_pool_types[i])) {
+				struct childdata *cc = this_child();
+
+				log_self_corrupt_culprit(
+					"mm:runtime-map:objpool",
+					(unsigned long)obj,
+					cc != NULL ? &cc->syscall : NULL);
 				continue;
+			}
 
 			m = &obj->map;
 
@@ -1455,10 +1466,19 @@ invalidate_mmap_pool_range(enum objecttype type,
 		/*
 		 * Same sibling-scribble defence as addr_in_local_runtime_map:
 		 * reject wild obj / obj_type before touching &obj->map or
-		 * m->ptr / m->size.  Bad-slot stat bump happens inside.
+		 * m->ptr / m->size.  Bad-slot stat bump happens inside;
+		 * log_self_corrupt_culprit() on the reject path attributes
+		 * the wild obj to the syscall that just ran.
 		 */
-		if (!objpool_check(obj, type))
+		if (!objpool_check(obj, type)) {
+			struct childdata *cc = this_child();
+
+			log_self_corrupt_culprit(
+				"mm:invalidate-range:objpool",
+				(unsigned long)obj,
+				cc != NULL ? &cc->syscall : NULL);
 			continue;
+		}
 
 		m = &obj->map;
 
@@ -1534,10 +1554,20 @@ unsigned int invalidate_obj_mmap_by_fd(int fd)
 			 * Same sibling-scribble defence as
 			 * addr_in_local_runtime_map: reject wild obj /
 			 * obj_type before touching &obj->map or m->fd.
-			 * Bad-slot stat bump happens inside.
+			 * Bad-slot stat bump happens inside; the culprit
+			 * logger attributes the reject to the just-run
+			 * syscall so the wild-write producer is named in
+			 * the child bug-log.
 			 */
-			if (!objpool_check(obj, map_pool_types[i]))
+			if (!objpool_check(obj, map_pool_types[i])) {
+				struct childdata *cc = this_child();
+
+				log_self_corrupt_culprit(
+					"mm:invalidate-fd:objpool",
+					(unsigned long)obj,
+					cc != NULL ? &cc->syscall : NULL);
 				continue;
+			}
 
 			m = &obj->map;
 
