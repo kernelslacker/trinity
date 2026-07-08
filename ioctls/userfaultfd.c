@@ -192,6 +192,23 @@ static void sanitise_uffdio_poison(struct syscallrecord *rec)
 	rec->a3 = (unsigned long) up;
 }
 
+static void sanitise_uffdio_range(struct syscallrecord *rec)
+{
+	struct uffdio_range *range;
+	struct map *map;
+
+	range = (struct uffdio_range *) get_writable_struct(sizeof(*range));
+	if (!range)
+		return;
+	memset(range, 0, sizeof(*range));
+	map = get_map();
+	if (map) {
+		range->start = (unsigned long) map->ptr;
+		range->len = map->size;
+	}
+	rec->a3 = (unsigned long) range;
+}
+
 static void sanitise_uffdio_move(struct syscallrecord *rec)
 {
 	struct uffdio_move *um;
@@ -246,6 +263,10 @@ static void userfaultfd_sanitise(const struct ioctl_group *grp, struct syscallre
 		break;
 	case UFFDIO_MOVE:
 		sanitise_uffdio_move(rec);
+		break;
+	case UFFDIO_WAKE:
+	case UFFDIO_UNREGISTER:
+		sanitise_uffdio_range(rec);
 		break;
 	default:
 		break;
