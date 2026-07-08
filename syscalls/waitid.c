@@ -5,6 +5,7 @@
 #include <signal.h>
 #include <sys/resource.h>
 #include <sys/wait.h>
+#include "objects.h"
 #include "sanitise.h"
 #include "trinity.h"
 #include "utils.h"
@@ -16,11 +17,39 @@ static unsigned long waitid_options[] = {
 };
 
 static unsigned long waitid_which[] = {
-	P_ALL, P_PID, P_PGID,
+	P_ALL, P_PID, P_PGID, P_PIDFD,
 };
+
+/*
+ * When which==P_PIDFD, upid (a2) must be a real pidfd, not a pid.
+ * Re-resolve a live pidfd from the OBJ_FD_PIDFD pool (mirrors the
+ * versioned slot-pick pattern in mq_timedsend / fds/pidfd.c) and plant
+ * it into a2. Empty pool -> downgrade to P_ALL, which ignores a2, so
+ * we never hand the kernel a random pid dressed up as a fd.
+ */
+static void arm_pidfd(struct syscallrecord *rec)
+{
+	struct object *obj;
+	int i;
+
+	for (i = 0; i < 16; i++) {
+		obj = get_random_object(OBJ_FD_PIDFD, OBJ_GLOBAL);
+		if (!objpool_check(obj, OBJ_FD_PIDFD))
+			continue;
+		if (obj->pidfdobj.fd < 0)
+			continue;
+		rec->a2 = (unsigned long) obj->pidfdobj.fd;
+		return;
+	}
+
+	rec->a1 = P_ALL;
+}
 
 static void sanitise_waitid(struct syscallrecord *rec)
 {
+	if (rec->a1 == P_PIDFD)
+		arm_pidfd(rec);
+
 	avoid_shared_buffer_out(&rec->a3, sizeof(siginfo_t));
 	avoid_shared_buffer_out(&rec->a5, sizeof(struct rusage));
 }
