@@ -163,7 +163,33 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 		child->kcov.remote_mode = false;
 	}
 
+	/*
+	 * --self-corrupt-canary sentinel snapshot.  Deeper detector for
+	 * mid-struct scribbles that leave the userspace-VA bracket the
+	 * always-on gates check intact -- glibc-heap family aborts, an
+	 * OBJ_LOCAL slot byte-flipped mid-record, etc.  Bounded XOR fold
+	 * over child->local_stats + ->objects + kcov trace/cmp/dedup
+	 * pointers + an 8-word magic-filled sentinel, computed here
+	 * before dispatch and again right after so the delta names the
+	 * syscall that produced the scribble.  Both branches gate on
+	 * the OFF flag so a build without the row pays a single
+	 * branch-predicted flag load per dispatch and nothing else --
+	 * no function call, no memory read, no register spill.
+	 */
+	uint64_t canary_pre = 0;
+
+	if (unlikely(self_corrupt_canary))
+		canary_pre = self_corrupt_canary_signature(child);
+
 	do_syscall(rec, entry, &child->kcov, child);
+
+	if (unlikely(self_corrupt_canary)) {
+		uint64_t canary_post = self_corrupt_canary_signature(child);
+
+		if (canary_post != canary_pre)
+			log_self_corrupt_culprit("canary:signature-delta",
+				(unsigned long)(canary_pre ^ canary_post), rec);
+	}
 
 	/*
 	 * Attribution overlay for the SELF-corruption cluster.  The

@@ -6,6 +6,7 @@
 #include "child.h"
 #include "debug.h"
 #include "deferred-free.h"
+#include "params.h"		/* self_corrupt_canary */
 #include "pc_format.h"
 #include "shm.h"
 #include "stats.h"
@@ -237,6 +238,78 @@ void post_handler_corrupt_ptr_bump_site(struct syscallrecord *rec,
  * a wild pointer.  The syscall table is init-time-immutable and
  * safe to read.
  */
+/*
+ * --self-corrupt-canary state.  Per-child (a plain file-static is
+ * per-process, and each trinity child is a fork'd separate process,
+ * so different children never see each other's canary buffer).
+ * Allocated once in self_corrupt_canary_init_child() when the flag
+ * is set; NULL otherwise.  The signature helper folds the sentinel
+ * bytes into its XOR-checksum so a scribble that lands in the
+ * canary allocation itself (or in one of the tracked pointer fields
+ * on struct childdata / struct kcov_child) shows up as a signature
+ * delta between the pre-dispatch and post-dispatch computations.
+ *
+ * SELF_CORRUPT_CANARY_BYTES is a whole number of u64 words so the
+ * signature loop is 8 fixed XORs -- bounded, no branches on the
+ * happy path, and immune to loop-unroll perturbations from later
+ * changes to the buffer size.  The magic pattern is repeated across
+ * the buffer so a partial-word scribble is still detectable in the
+ * XOR fold; the operator-visible value in the log line is
+ * (canary_post ^ canary_pre), which is the exact XOR delta the
+ * scribble introduced.
+ */
+#define SELF_CORRUPT_CANARY_MAGIC	0xdeadbeefcafebabeULL
+#define SELF_CORRUPT_CANARY_BYTES	64
+#define SELF_CORRUPT_CANARY_WORDS	(SELF_CORRUPT_CANARY_BYTES / sizeof(uint64_t))
+
+static uint64_t *self_corrupt_canary_buf;
+
+void self_corrupt_canary_init_child(void)
+{
+	uint64_t *buf;
+	unsigned int i;
+
+	if (!self_corrupt_canary)
+		return;
+
+	buf = zmalloc(SELF_CORRUPT_CANARY_BYTES);
+	for (i = 0; i < SELF_CORRUPT_CANARY_WORDS; i++)
+		buf[i] = SELF_CORRUPT_CANARY_MAGIC;
+	self_corrupt_canary_buf = buf;
+}
+
+uint64_t self_corrupt_canary_signature(const struct childdata *child)
+{
+	uint64_t sig = 0;
+	unsigned int i;
+
+	if (!self_corrupt_canary)
+		return 0;
+	if (child == NULL)
+		return 0;
+
+	/*
+	 * Tracked-pointer surface: five heap pointers a wild write is
+	 * empirically observed to overwrite.  local_stats and objects
+	 * are the childdata fields the always-on gates already cover;
+	 * the kcov trace / cmp_trace / dedup pointers are inside
+	 * struct kcov_child, past the always-on gate surface, and are
+	 * exactly the class of "mid-struct scribble that leaves the
+	 * VA bracket intact" the canary mode exists to catch.
+	 */
+	sig ^= (uint64_t)(uintptr_t)child->local_stats;
+	sig ^= (uint64_t)(uintptr_t)child->objects;
+	sig ^= (uint64_t)(uintptr_t)child->kcov.trace_buf;
+	sig ^= (uint64_t)(uintptr_t)child->kcov.cmp_trace_buf;
+	sig ^= (uint64_t)(uintptr_t)child->kcov.dedup;
+
+	if (self_corrupt_canary_buf != NULL) {
+		for (i = 0; i < SELF_CORRUPT_CANARY_WORDS; i++)
+			sig ^= self_corrupt_canary_buf[i];
+	}
+	return sig;
+}
+
 void log_self_corrupt_culprit(const char *site, unsigned long wild,
 			      const struct syscallrecord *rec)
 {

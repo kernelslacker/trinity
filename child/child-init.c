@@ -1467,4 +1467,13 @@ void init_child(struct childdata *child, int childno)
 	 * writer_trap_handler instead of the kernel-default core-dump
 	 * behaviour. */
 	writer_watch_arm_child();
+
+	/*
+	 * --self-corrupt-canary sentinel allocation (default OFF).  The
+	 * init helper short-circuits when the flag was not passed, so
+	 * an operator not opting in pays no zmalloc, no memset, and no
+	 * per-child heap footprint.  When the flag is on, allocates the
+	 * 64-byte magic-filled buffer whose bytes the pre/post-dispatch
+	 * signature loop folds into its XOR checksum. */
+	self_corrupt_canary_init_child();
 }

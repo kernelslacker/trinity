@@ -679,6 +679,37 @@ void log_self_corrupt_culprit(const char *site, unsigned long wild,
 			      const struct syscallrecord *rec);
 
 /*
+ * --self-corrupt-canary companion helpers.  OFF by default (see
+ * self_corrupt_canary in include/params.h): every call short-circuits
+ * on the flag before any allocation, checksum computation, or memcmp.
+ * When ON, catches mid-struct scribbles the always-on gate loggers
+ * cannot see -- a wild write that leaves child->local_stats /
+ * ->objects inside the userspace-VA bracket but rewrites, say,
+ * child->kcov.trace_buf or a byte in the middle of an OBJ_LOCAL slot
+ * would pass every VA-bracket check silently.  The signature is a
+ * bounded XOR over a small set of pointers plus an 8-word trinity-
+ * heap sentinel (init'd to SELF_CORRUPT_CANARY_MAGIC), so the checked
+ * surface is fixed and independent of the OBJ_LOCAL / dedup ring
+ * dimensions -- no growth as fuzz state accumulates.
+ *
+ * self_corrupt_canary_init_child(): called once per child from
+ * init_child.  No-op when the flag is OFF.  Allocates the 64-byte
+ * sentinel buffer via zmalloc (owned by this child; freed with the
+ * process at exit) and stashes it in a file-static per-process
+ * variable -- each child is a separate process so a plain static is
+ * private to the child that init'd it.
+ *
+ * self_corrupt_canary_signature(child): compute the current
+ * signature.  Returns 0 when the flag is OFF (short-circuit; the
+ * caller compares pre==post, and 0==0 skips the log path).  Bounded:
+ * five pointer XORs + eight u64 sentinel-word XORs, no atomics, no
+ * loops that scale with fuzz state.
+ */
+struct childdata;
+void self_corrupt_canary_init_child(void);
+uint64_t self_corrupt_canary_signature(const struct childdata *child);
+
+/*
  * Per-callsite attribution buckets for post_handler_corrupt_ptr.  The
  * headline counter is the sum of every bump from every site; the
  * spike-detector reacts to that sum but cannot tell whether a spike is

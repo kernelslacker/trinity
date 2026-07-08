@@ -77,6 +77,7 @@ bool do_specific_domain = false;
 bool no_domains[TRINITY_PF_MAX];
 
 bool dry_run = false;
+bool self_corrupt_canary = false;
 bool show_unannotated = false;
 bool show_syscall_list = false;
 bool show_ioctl_list = false;
@@ -584,6 +585,7 @@ static const struct option_help option_descs[] = {
 	{ "no_domain",		'E', "specify network domains to be excluded from testing" },
 	{ "print-disabled-syscalls", 0, "print syscalls disabled via AVOID_SYSCALL or NEED_ALARM and exit" },
 	{ "quiet",		'q', "suppress the per-second progress line (other output unchanged)" },
+	{ "self-corrupt-canary", 0, "DEFAULT OFF.  Deeper self-corruption detector companion to the always-on gate loggers in kcov / mm / dispatch.  At every dispatch, checksum a bounded signature of the child's critical self-state (child->local_stats, child->objects, child->kcov.trace_buf/cmp_trace_buf/dedup pointers, and a 64-byte trinity-heap sentinel filled with SELF_CORRUPT_CANARY_MAGIC) before do_syscall; recompute after; on mismatch log_self_corrupt_culprit names the syscall whose dispatch clobbered the state, catching mid-struct scribbles (glibc-heap family aborts, wrong-offset writes) that leave the tracked-pointer VA bands intact and slip past the always-on gates.  OFF short-circuits before any signature computation and before the sentinel is allocated at init_child, so a fixed-seed --dry-run stderr md5 stays byte-identical to a build without this row." },
 	{ "random",		'r', "pick N syscalls at random and just fuzz those" },
 	{ "reach-band", 0, "reach-banded silent-regime weight adjustment for the coverage-frontier picker's frontier_cold_weight() consumer (default off): off (skip the band classification entirely, byte-identical to today; no extra per_syscall_edges_prior / total_calls / last_edge_at loads, no demote/boost arithmetic, no weight change -- fixed-seed runs reproduce a pre-row build bit-for-bit), shadow-only (compute the LOW / MID / HIGH band classification and the would-demote / would-boost decision inside frontier_cold_weight but leave the returned weight unchanged; placeholder for a follow-up that adds per-band shadow counters), or combined (the band adjustment is applied to the live silent-regime weight -- a MID-reach stale slot has its weight halved on top of the cold-skip path's existing demote, a HIGH-reach fresh slot has a quarter of the FRONTIER_COLD_SCALE headroom lifted back onto its weight so the inverse-productivity transform does not starve the long-tail deep-reach discoverer).  Degrade-safe: frontier_cold_weight's kcov-less / out-of-range short-circuit fires before the band hook, matching the FRONTIER_COLD_SCALE fallback the rest of the picker file takes." },
 	{ "redqueen-pending-pick", 0, "Retained for compatibility; no-op.  The RedQueen re-exec consumer at the dispatch_step tail now drains every staged reexec_pending[] entry per parent dispatch, so the 'random' vs 'first' selection no longer alters behaviour.  Still parsed (accepts 'random' or 'first') so existing invocations do not break; per-pending-index success counters (kcov_shm->reexec_pending_pick_success[]) are still bumped at each entry's true index inside redqueen_reexec_step(), so per-slot / per-index re-exec lift remains directly readable." },
@@ -699,6 +701,7 @@ static const struct option longopts[] = {
 	{ "stats-json", no_argument, NULL, 0 },
 	{ "stats-log-file", required_argument, NULL, 0 },
 	{ "strategy", required_argument, NULL, 0 },
+	{ "self-corrupt-canary", no_argument, NULL, 0 },
 	{ "show-unannotated", no_argument, NULL, 0 },
 	{ "syslog", no_argument, NULL, 'S' },
 	{ "verbose", no_argument, NULL, 'v' },
@@ -1781,6 +1784,9 @@ void parse_args(int argc, char *argv[])
 
 			if (strcmp("dry-run", long_name) == 0)
 				dry_run = true;
+
+			if (strcmp("self-corrupt-canary", long_name) == 0)
+				self_corrupt_canary = true;
 
 			if (strcmp("enable-fds", long_name) == 0)
 				process_fds_param(optarg, true);
