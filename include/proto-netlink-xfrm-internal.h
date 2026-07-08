@@ -425,6 +425,7 @@ size_t append_encap_maybe(unsigned char *buf, size_t off, size_t cap);
 size_t append_replay_maybe(unsigned char *buf, size_t off, size_t cap,
 			   __u8 *flags_inout);
 size_t append_marks_and_if(unsigned char *buf, size_t off, size_t cap);
+size_t append_iptfs_and_extras(unsigned char *buf, size_t off, size_t cap);
 void fill_addresses(__u16 family, xfrm_address_t *saddr,
 		    xfrm_address_t *daddr);
 __u8 pick_prefixlen(__u16 family);
@@ -447,6 +448,7 @@ int xfrm_emit_delpolicy(int fd);
 int xfrm_emit_flushsa(int fd);
 int xfrm_emit_flushpolicy(int fd);
 int xfrm_emit_migrate(int fd);
+int xfrm_emit_migrate_state(int fd);
 int xfrm_emit_polexpire(int fd);
 int xfrm_emit_acquire(int fd);
 int xfrm_emit_setdefault(int fd);
