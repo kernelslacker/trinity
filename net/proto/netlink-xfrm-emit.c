@@ -18,6 +18,29 @@
 #include "utils.h"
 
 #include "kernel/netlink.h"
+
+/*
+ * XFRM_MSG_MIGRATE_STATE + xfrm_user_migrate_state landed in v7.1;
+ * the numeric value follows XFRM_MSG_GETDEFAULT in the enum sequence.
+ * Old-host uapi headers lack both; provide a local shim so the emitter
+ * compiles everywhere and only exercises the path at runtime on a
+ * kernel that recognises the msg type (structural rejections latch
+ * xfrm_unsupported below).
+ */
+#ifndef XFRM_MSG_MIGRATE_STATE
+#define XFRM_MSG_MIGRATE_STATE 42
+struct xfrm_user_migrate_state {
+	struct xfrm_usersa_id id;
+	xfrm_address_t new_daddr;
+	xfrm_address_t new_saddr;
+	struct xfrm_mark old_mark;
+	struct xfrm_selector new_sel;
+	__u32 new_reqid;
+	__u32 flags;
+	__u16 new_family;
+	__u16 reserved;
+};
+#endif
 /*
  * Build XFRM_MSG_NEWSA.  Picks family / proto / mode / SPI / reqid,
  * builds a coherent attribute set (AEAD vs paired CRYPT+AUTH_TRUNC,
@@ -88,6 +111,10 @@ int xfrm_emit_newsa(int fd)
 		return -EIO;
 
 	off = append_marks_and_if(buf, off, sizeof(buf));
+	if (!off)
+		return -EIO;
+
+	off = append_iptfs_and_extras(buf, off, sizeof(buf));
 	if (!off)
 		return -EIO;
 
@@ -219,6 +246,10 @@ int xfrm_emit_allocspi(int fd)
 	if (!off)
 		return -EIO;
 
+	off = append_iptfs_and_extras(buf, off, sizeof(buf));
+	if (!off)
+		return -EIO;
+
 	nlh->nlmsg_len = (__u32)off;
 	rc = xfrm_send_recv(fd, buf, off);
 	if (rc != 0 && is_structural_reject(rc))
@@ -289,6 +320,10 @@ int xfrm_emit_updsa(int fd)
 		return -EIO;
 
 	off = append_marks_and_if(buf, off, sizeof(buf));
+	if (!off)
+		return -EIO;
+
+	off = append_iptfs_and_extras(buf, off, sizeof(buf));
 	if (!off)
 		return -EIO;
 
@@ -919,6 +954,61 @@ int xfrm_emit_getdefault(int fd)
 	upd->out = pick_default_byte();
 
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*upd));
+	nlh->nlmsg_len = (__u32)off;
+	return xfrm_send_recv(fd, buf, off);
+}
+
+/*
+ * Build XFRM_MSG_MIGRATE_STATE (v7.1).  Body is xfrm_user_migrate_state
+ * = xfrm_usersa_id + new_daddr/new_saddr + old_mark + new_sel + reqid +
+ * flags + new_family.  When the SA ring is populated, target a real
+ * entry so xfrm_migrate_state_find hits an installed SA; otherwise
+ * synthesise a coherent (family, proto, daddr, spi) shell and let the
+ * kernel bounce on ESRCH -- still walks the parser arms.  flags is
+ * masked to the two known bits with a 1-in-8 unknown-bit rotation so
+ * both KNOWN_FLAGS and reject-unknown-bits paths get coverage.
+ */
+int xfrm_emit_migrate_state(int fd)
+{
+	unsigned char buf[XFRM_BUF_BYTES];
+	struct nlmsghdr *nlh;
+	struct xfrm_user_migrate_state *ums;
+	struct xfrm_sa_track t;
+	__u16 family;
+	size_t off;
+
+	memset(buf, 0, sizeof(buf));
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_type  = XFRM_MSG_MIGRATE_STATE;
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+	nlh->nlmsg_seq   = xfrm_next_seq();
+
+	ums = (struct xfrm_user_migrate_state *)NLMSG_DATA(nlh);
+	if (sa_ring_pick(&t, NULL)) {
+		family              = t.family;
+		ums->id.daddr       = t.daddr;
+		ums->id.spi         = t.spi;
+		ums->id.family      = family;
+		ums->id.proto       = t.proto;
+	} else {
+		family              = pick_family();
+		ums->id.family      = family;
+		ums->id.proto       = pick_sa_proto();
+		ums->id.spi         = htonl(0x100U + rnd_modulo_u32(0xff00U));
+		fill_addresses(family, &ums->new_saddr, &ums->id.daddr);
+	}
+	fill_addresses(family, &ums->new_saddr, &ums->new_daddr);
+	ums->old_mark.v         = rand32();
+	ums->old_mark.m         = rand32();
+	fill_selector(&ums->new_sel, family);
+	ums->new_reqid          = (rand32() & 0xff) + 1U;
+	ums->flags              = rand32() & 0x3U;
+	if (rnd_modulo_u32(8) == 0)
+		ums->flags |= 1U << (2 + rnd_modulo_u32(30));
+	ums->new_family         = family;
+	ums->reserved           = 0;
+
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*ums));
 	nlh->nlmsg_len = (__u32)off;
 	return xfrm_send_recv(fd, buf, off);
 }

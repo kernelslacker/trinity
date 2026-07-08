@@ -294,6 +294,92 @@ size_t append_marks_and_if(unsigned char *buf, size_t off, size_t cap)
 }
 
 /*
+ * Independent per-attr coin rolls for the newer SA extras: the six
+ * IPTFS parameters (draft-ietf-ipsecme-iptfs), XFRMA_SA_PCPU pinning,
+ * XFRMA_NAT_KEEPALIVE_INTERVAL, and XFRMA_MTIMER_THRESH.  Each may
+ * coexist on a single NEWSA/UPDSA so the parser walks the combined
+ * arms; unrealistic values (0 / ~0 / oversized) are intentional --
+ * boundary rejection paths are the interesting ones for a fuzzer.
+ */
+size_t append_iptfs_and_extras(unsigned char *buf, size_t off, size_t cap)
+{
+	if ((rand32() & 3) == 0) {
+		__u32 drop_time = rand32();
+
+		off = xfrm_nla_put(buf, off, cap, XFRMA_IPTFS_DROP_TIME,
+				   &drop_time, sizeof(drop_time));
+		if (!off)
+			return 0;
+	}
+	if ((rand32() & 3) == 0) {
+		__u16 reorder = (__u16)(rand32() & 0xffff);
+
+		off = xfrm_nla_put(buf, off, cap, XFRMA_IPTFS_REORDER_WINDOW,
+				   &reorder, sizeof(reorder));
+		if (!off)
+			return 0;
+	}
+	if ((rand32() & 7) == 0) {
+		/* Flag-style attr: kernel treats presence-with-empty-payload
+		 * as "set".  Emit with zero-length payload so the parser's
+		 * nla_get_flag path fires. */
+		off = xfrm_nla_put(buf, off, cap, XFRMA_IPTFS_DONT_FRAG,
+				   NULL, 0);
+		if (!off)
+			return 0;
+	}
+	if ((rand32() & 3) == 0) {
+		__u32 init_delay = rand32();
+
+		off = xfrm_nla_put(buf, off, cap, XFRMA_IPTFS_INIT_DELAY,
+				   &init_delay, sizeof(init_delay));
+		if (!off)
+			return 0;
+	}
+	if ((rand32() & 3) == 0) {
+		__u32 max_qsize = rand32();
+
+		off = xfrm_nla_put(buf, off, cap, XFRMA_IPTFS_MAX_QSIZE,
+				   &max_qsize, sizeof(max_qsize));
+		if (!off)
+			return 0;
+	}
+	if ((rand32() & 3) == 0) {
+		__u32 pkt_size = rand32();
+
+		off = xfrm_nla_put(buf, off, cap, XFRMA_IPTFS_PKT_SIZE,
+				   &pkt_size, sizeof(pkt_size));
+		if (!off)
+			return 0;
+	}
+	if ((rand32() & 3) == 0) {
+		__u32 pcpu = rnd_modulo_u32(64);
+
+		off = xfrm_nla_put(buf, off, cap, XFRMA_SA_PCPU,
+				   &pcpu, sizeof(pcpu));
+		if (!off)
+			return 0;
+	}
+	if ((rand32() & 3) == 0) {
+		__u32 keepalive = rand32() & 0xffff;
+
+		off = xfrm_nla_put(buf, off, cap, XFRMA_NAT_KEEPALIVE_INTERVAL,
+				   &keepalive, sizeof(keepalive));
+		if (!off)
+			return 0;
+	}
+	if ((rand32() & 3) == 0) {
+		__u32 mtimer = rand32() & 0xffff;
+
+		off = xfrm_nla_put(buf, off, cap, XFRMA_MTIMER_THRESH,
+				   &mtimer, sizeof(mtimer));
+		if (!off)
+			return 0;
+	}
+	return off;
+}
+
+/*
  * Selector + family + addresses.  AF_INET / AF_INET6 chosen by the
  * caller; the AF_INET path uses 127.0.0.0/8 endpoints, AF_INET6 uses
  * ::1 -based endpoints; prefixlen rotates across boundary values

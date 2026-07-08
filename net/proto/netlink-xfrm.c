@@ -274,6 +274,7 @@ enum xfrm_msg_kind {
 	XMK_NEWPOLICY,
 	XMK_DELPOLICY,
 	XMK_MIGRATE,
+	XMK_MIGRATE_STATE,
 	XMK_ACQUIRE,
 	XMK_FLUSHSA,
 	XMK_FLUSHPOLICY,
@@ -302,6 +303,7 @@ static const unsigned int xmk_weights_empty_ring[XMK_MAX] = {
 	[XMK_NEWPOLICY]		= 30,
 	[XMK_DELPOLICY]		= 5,
 	[XMK_MIGRATE]		= 4,
+	[XMK_MIGRATE_STATE]	= 2,
 	[XMK_ACQUIRE]		= 4,
 	[XMK_FLUSHSA]		= 1,
 	[XMK_FLUSHPOLICY]	= 1,
@@ -319,6 +321,7 @@ static const unsigned int xmk_weights_full_ring[XMK_MAX] = {
 	[XMK_NEWPOLICY]		= 14,
 	[XMK_DELPOLICY]		= 8,
 	[XMK_MIGRATE]		= 4,
+	[XMK_MIGRATE_STATE]	= 4,
 	[XMK_ACQUIRE]		= 6,
 	[XMK_FLUSHSA]		= 2,
 	[XMK_FLUSHPOLICY]	= 1,
@@ -363,6 +366,7 @@ static void dispatch_msg_kind(int fd, enum xfrm_msg_kind k)
 	case XMK_NEWPOLICY:	rc = xfrm_emit_newpolicy(fd); break;
 	case XMK_DELPOLICY:	rc = xfrm_emit_delpolicy(fd); break;
 	case XMK_MIGRATE:	rc = xfrm_emit_migrate(fd); break;
+	case XMK_MIGRATE_STATE:	rc = xfrm_emit_migrate_state(fd); break;
 	case XMK_ACQUIRE:	rc = xfrm_emit_acquire(fd); break;
 	case XMK_FLUSHSA:	rc = xfrm_emit_flushsa(fd); break;
 	case XMK_FLUSHPOLICY:	rc = xfrm_emit_flushpolicy(fd); break;
