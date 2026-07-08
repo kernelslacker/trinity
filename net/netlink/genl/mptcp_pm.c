@@ -11,13 +11,16 @@
  * net/mptcp/pm_netlink.c + pm_userspace.c are exactly the kind of
  * shallow validators that benefit from spec-driven fuzzing.
  *
- * Starter command set covers the address-table side of the family:
- * ADD_ADDR / DEL_ADDR / GET_ADDR / FLUSH_ADDRS plus the limits
- * accessors (SET_LIMITS / GET_LIMITS).  These all dispatch through
- * mptcp_pm_genl_ops[] with the shared MPTCP_PM_ATTR_ADDR nested
- * outer (carrying MPTCP_PM_ADDR_ATTR_FAMILY / ADDR4 / ADDR6 / PORT
- * children) so a single nested entry at type ATTR_ADDR exercises the
- * cross-cutting address parser before each per-cmd handler runs.
+ * Command set covers the full in-kernel opset: the address-table half
+ * (ADD_ADDR / DEL_ADDR / GET_ADDR / FLUSH_ADDRS) plus the limits
+ * accessors (SET_LIMITS / GET_LIMITS) plus the userspace-pm ops that
+ * accreted on top (SET_FLAGS / ANNOUNCE / REMOVE / SUBFLOW_CREATE /
+ * SUBFLOW_DESTROY).  These all dispatch through mptcp_pm_genl_ops[]
+ * with the shared MPTCP_PM_ATTR_ADDR nested outer (carrying
+ * MPTCP_PM_ADDR_ATTR_FAMILY / ADDR4 / ADDR6 / PORT children) plus
+ * MPTCP_PM_ATTR_TOKEN / LOC_ID / ADDR_REMOTE for the subflow ops, so
+ * the existing single-attr table exercises the cross-cutting address
+ * parser and the connection-identifier scalars for every command.
  *
  * Header gating mirrors the ethtool family: <linux/mptcp_pm.h> is
  * a YNL-generated UAPI header that only exists from kernel 6.11
@@ -33,13 +36,41 @@
 #include "netlink-genl-families.h"
 #include "utils.h"
 
+/*
+ * SET_FLAGS / ANNOUNCE / REMOVE / SUBFLOW_CREATE / SUBFLOW_DESTROY were
+ * added to the family after the initial address-table opset.  The
+ * numeric ids match the mptcp_pm.h enum ordering and are shimmed here
+ * so a host with a partially-populated uapi header still builds under
+ * -Werror.
+ */
+#ifndef MPTCP_PM_CMD_SET_FLAGS
+#define MPTCP_PM_CMD_SET_FLAGS		7
+#endif
+#ifndef MPTCP_PM_CMD_ANNOUNCE
+#define MPTCP_PM_CMD_ANNOUNCE		8
+#endif
+#ifndef MPTCP_PM_CMD_REMOVE
+#define MPTCP_PM_CMD_REMOVE		9
+#endif
+#ifndef MPTCP_PM_CMD_SUBFLOW_CREATE
+#define MPTCP_PM_CMD_SUBFLOW_CREATE	10
+#endif
+#ifndef MPTCP_PM_CMD_SUBFLOW_DESTROY
+#define MPTCP_PM_CMD_SUBFLOW_DESTROY	11
+#endif
+
 static const struct genl_cmd_grammar mptcp_pm_cmds[] = {
-	{ MPTCP_PM_CMD_ADD_ADDR,    "MPTCP_PM_CMD_ADD_ADDR" },
-	{ MPTCP_PM_CMD_DEL_ADDR,    "MPTCP_PM_CMD_DEL_ADDR" },
-	{ MPTCP_PM_CMD_GET_ADDR,    "MPTCP_PM_CMD_GET_ADDR" },
-	{ MPTCP_PM_CMD_FLUSH_ADDRS, "MPTCP_PM_CMD_FLUSH_ADDRS" },
-	{ MPTCP_PM_CMD_SET_LIMITS,  "MPTCP_PM_CMD_SET_LIMITS" },
-	{ MPTCP_PM_CMD_GET_LIMITS,  "MPTCP_PM_CMD_GET_LIMITS" },
+	{ MPTCP_PM_CMD_ADD_ADDR,         "MPTCP_PM_CMD_ADD_ADDR" },
+	{ MPTCP_PM_CMD_DEL_ADDR,         "MPTCP_PM_CMD_DEL_ADDR" },
+	{ MPTCP_PM_CMD_GET_ADDR,         "MPTCP_PM_CMD_GET_ADDR" },
+	{ MPTCP_PM_CMD_FLUSH_ADDRS,      "MPTCP_PM_CMD_FLUSH_ADDRS" },
+	{ MPTCP_PM_CMD_SET_LIMITS,       "MPTCP_PM_CMD_SET_LIMITS" },
+	{ MPTCP_PM_CMD_GET_LIMITS,       "MPTCP_PM_CMD_GET_LIMITS" },
+	{ MPTCP_PM_CMD_SET_FLAGS,        "MPTCP_PM_CMD_SET_FLAGS" },
+	{ MPTCP_PM_CMD_ANNOUNCE,         "MPTCP_PM_CMD_ANNOUNCE" },
+	{ MPTCP_PM_CMD_REMOVE,           "MPTCP_PM_CMD_REMOVE" },
+	{ MPTCP_PM_CMD_SUBFLOW_CREATE,   "MPTCP_PM_CMD_SUBFLOW_CREATE" },
+	{ MPTCP_PM_CMD_SUBFLOW_DESTROY,  "MPTCP_PM_CMD_SUBFLOW_DESTROY" },
 };
 
 /*
