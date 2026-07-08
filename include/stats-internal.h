@@ -230,6 +230,7 @@ extern const struct stat_category vdso_mremap_race_category;
 extern const struct stat_category veth_asymmetric_xdp_category;
 extern const struct stat_category vfs_writes_category;
 extern const struct stat_category ip6_udp_cork_splice_category;
+extern const struct stat_category vlan_filter_churn_category;
 extern const struct stat_category vrf_fib_churn_category;
 extern const struct stat_category vxlan_encap_churn_category;
 extern const struct stat_category wireguard_decrypt_flood_category;

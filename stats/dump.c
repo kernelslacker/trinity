@@ -2399,6 +2399,8 @@ void __cold dump_stats_childop_runs_network(void)
 
 	stat_category_emit_text(&bridge_vlan_churn_category);
 
+	stat_category_emit_text(&vlan_filter_churn_category);
+
 	stat_category_emit_text(&igmp_mld_source_churn_category);
 
 	dump_stats_render_psp_key_rotate();

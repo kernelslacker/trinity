@@ -2010,6 +2010,9 @@ static void json_emit_bridge_pci_unix_and_iouring_section(void)
 	stat_category_emit_json(&bridge_vlan_churn_category);
 
 	printf(",");
+	stat_category_emit_json(&vlan_filter_churn_category);
+
+	printf(",");
 	stat_category_emit_json(&pci_bind_category);
 
 	printf(",");

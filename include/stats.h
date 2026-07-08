@@ -1880,6 +1880,13 @@ struct stats_s {
 	unsigned long bridge_vlan_churn_mst_set_ok;		/* RTM_SETLINK IFLA_PROTINFO IFLA_BRPORT_MST_ENTRY set accepted */
 	unsigned long bridge_vlan_churn_raw_send_ok;		/* AF_PACKET sendto with 802.1Q tag returned >0 */
 
+	/* vlan_filter_churn childop counters */
+	unsigned long vlan_filter_churn_runs;			/* total vlan_filter_churn invocations */
+	unsigned long vlan_filter_churn_setup_failed;		/* userns / rtnl_open / veth or vlan probe latched */
+	unsigned long vlan_filter_churn_veth_create_ok;		/* RTM_NEWLINK type=veth base pair accepted */
+	unsigned long vlan_filter_churn_vlan_add_ok;		/* RTM_NEWLINK type=vlan IFLA_VLAN_ID accepted (vlan_vid_add drive) */
+	unsigned long vlan_filter_churn_vlan_del_ok;		/* RTM_DELLINK on vlan child accepted (vlan_vid_del drive) */
+
 	/* igmp_mld_source_churn childop counters */
 	unsigned long igmp_mld_source_churn_runs;		/* total igmp_mld_source_churn invocations */
 	unsigned long igmp_mld_source_churn_setup_failed;	/* socket / bind / probe latched */

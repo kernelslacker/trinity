@@ -34,7 +34,7 @@
  * Slot ordering matches pick_op_type_table[]; the _Static_assert below
  * pins ARRAY_SIZE equality between the two.
  */
-static int dormant_op_disabled[120] = {
+static int dormant_op_disabled[121] = {
 	0, 0, 0, 0, 0,
 	0, 1, 1, 1, 1,
 	1, 1, 1, 0, 1,
@@ -72,6 +72,7 @@ static int dormant_op_disabled[120] = {
 	1,	/* ip6_udp_cork_splice: dormant until canary-queue load-tests the ip6 __ip6_append_data continuation-skb length-accounting stress path. */
 	1,	/* ip_gre_churn: dormant until canary-queue load-tests the v4 gretap/ip_gre RX decap burst (userns_run_in_ns + IPPROTO_RAW hand-rolled outer IPv4/GRE/TEB frames). */
 	1,	/* futex_pi_requeue_rollback: default-off; only for a targeted debugging run behind the canary queue. */
+	1,	/* vlan_filter_churn: dormant until canary-queue load-tests the RTM_NEWLINK type=vlan add/del burst against a private-netns veth base (vlan_vid_add / vlan_vid_del pair). */
 };
 
 /*
@@ -312,6 +313,7 @@ const char *alt_op_name(enum child_op_type op)
 	case CHILD_OP_UMOUNT_RACE:	return "umount_race";
 	case CHILD_OP_IP6_UDP_CORK_SPLICE:	return "ip6_udp_cork_splice";
 	case CHILD_OP_FUTEX_PI_REQUEUE_ROLLBACK:	return "futex_pi_requeue_rollback";
+	case CHILD_OP_VLAN_FILTER_CHURN:	return "vlan_filter_churn";
 	case NR_CHILD_OP_TYPES:		break;
 	}
 	return "unknown";
@@ -409,7 +411,7 @@ void log_alt_op_config(void)
  * CHILD_OP_SYSCALL sentinel filter in init_altop_dispatch() stays as
  * defensive coding for any future hole.
  */
-static const enum child_op_type pick_op_type_table[120] = {
+static const enum child_op_type pick_op_type_table[121] = {
 	[0]  = CHILD_OP_MMAP_LIFECYCLE,
 	[1]  = CHILD_OP_MPROTECT_SPLIT,
 	[2]  = CHILD_OP_MLOCK_PRESSURE,
@@ -530,6 +532,7 @@ static const enum child_op_type pick_op_type_table[120] = {
 	[117] = CHILD_OP_IP6_UDP_CORK_SPLICE,
 	[118] = CHILD_OP_IP_GRE_CHURN,
 	[119] = CHILD_OP_FUTEX_PI_REQUEUE_ROLLBACK,
+	[120] = CHILD_OP_VLAN_FILTER_CHURN,
 };
 _Static_assert(ARRAY_SIZE(pick_op_type_table) == ARRAY_SIZE(dormant_op_disabled),
 	"pick_op_type_table and dormant_op_disabled must have matching slot counts");
@@ -1491,6 +1494,7 @@ bool (*const op_dispatch[NR_CHILD_OP_TYPES])(struct childdata *) = {
 	[CHILD_OP_IP6_UDP_CORK_SPLICE]	= ip6_udp_cork_splice,
 	[CHILD_OP_IP_GRE_CHURN]		= ip_gre_churn,
 	[CHILD_OP_FUTEX_PI_REQUEUE_ROLLBACK]	= futex_pi_requeue_rollback,
+	[CHILD_OP_VLAN_FILTER_CHURN]	= vlan_filter_churn,
 };
 
 _Static_assert(ARRAY_SIZE(op_dispatch) == NR_CHILD_OP_TYPES,
