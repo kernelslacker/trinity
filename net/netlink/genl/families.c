@@ -180,6 +180,10 @@ extern struct genl_family_grammar fam_nl802154;
  * shipped via uapi, so the grammar vendors its ids in
  * include/kernel/ieee802154.h and registers unconditionally. */
 extern struct genl_family_grammar fam_ieee802154;
+/* Binder genl family carries every id via include/kernel/binder_netlink.h
+ * #ifndef shims, so the grammar builds and registers unconditionally on
+ * hosts whose uapi predates the mainlined <linux/android/binder_netlink.h>. */
+extern struct genl_family_grammar fam_binder;
 
 /*
  * Per-family grammar definitions live in net/netlink/genl/<family>.c;
@@ -315,6 +319,7 @@ static struct genl_family_grammar *registry[] = {
 #endif
 	&fam_nl802154,
 	&fam_ieee802154,
+	&fam_binder,
 };
 
 static int discovery_done;
