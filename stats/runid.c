@@ -380,6 +380,15 @@ static const char *runid_childop_cmp_harvest_mode_name(void)
 	return "?";
 }
 
+static const char *runid_childop_cmp_consume_mode_name(void)
+{
+	switch (childop_cmp_consume_mode) {
+	case CHILDOP_CMP_CONSUME_OFF: return "off";
+	case CHILDOP_CMP_CONSUME_ON:  return "on";
+	}
+	return "?";
+}
+
 /*
  * Emit a single line listing every experimental knob whose current
  * value differs from its compile-time default.  Knobs at their
@@ -456,6 +465,10 @@ static void runid_knob_manifest_render(void)
 		off = runid_knob_append(buf, sizeof(buf), off,
 					"childop-cmp-harvest",
 					runid_childop_cmp_harvest_mode_name());
+	if (childop_cmp_consume_mode != CHILDOP_CMP_CONSUME_OFF)
+		off = runid_knob_append(buf, sizeof(buf), off,
+					"childop-cmp-consume",
+					runid_childop_cmp_consume_mode_name());
 	if (kcov_transition_coverage_mode != KCOV_TRANSITION_COVERAGE_SHADOW)
 		off = runid_knob_append(buf, sizeof(buf), off,
 					"kcov-transition-coverage",

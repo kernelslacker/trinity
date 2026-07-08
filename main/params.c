@@ -535,6 +535,7 @@ static const struct option_help option_descs[] = {
 	{ "canary-window",	 0,  "invocations of the active canary op per window (default 10000, range 1000..1000000). Counted against the per-op invocation counter, not the fleet-wide op count, so window size is independent of -C and --canary-slots. Lower windows are too noisy to promote on; higher windows let a useless op squat a slot for too long." },
 	{ "childop-kcov-attribution", 0, "per-childop KCOV attribution mode: off (no bracketing, childop_edges_clean stays zero; budget multipliers stay at unity and canary windows always demote on zero_edges), dual (default; bracket every eligible alt-op and publish the per-call edge delta to childop_edges_clean -- adapt_budget and the canary queue consume this clean signal, the global-delta path keeps writing childop_edges_discovered as a diagnostic comparator), or on (reserved; identical to dual until the discovered counter is retired)." },
 	{ "childop-cmp-harvest", 0, "DEFAULT OFF. Open a per-childop KCOV_TRACE_CMP bracket on CMP-mode children at the child.c childop dispatch gate; childop syscalls routed through trinity_cmp_syscall harvest their CMP operands into the QUARANTINED childop_recent_pools[nr][do32] lane (non-persisted, does NOT evict the durable per-syscall cmp pool). Accepts 'off' (the bracket is never opened; trinity_cmp_syscall is a no-op wrapper around trinity_raw_syscall; every childop_cmp_* shadow counter stays at zero -- the childop dispatch surface is byte-identical to a build without this knob) or 'on' (the bracket opens on every CMP-mode child whose dispatch reaches the existing op_uses_outer_bracket gate; honour the §3.2 all-routed invariant on any childop migrated to trinity_cmp_syscall). Per-childop migration to the wrapper is a separate per-op step earned by the conversion-chain metrics; the OFF default ships the harvest path behaviour-neutral." },
+	{ "childop-cmp-consume", 0, "DEFAULT OFF. Enable the SHADOW consume-side resolver childop_cmp_value() at childop field sites (rxrpc pilot: kver / security_index / ticket_length / toklen / tktlen / sec_ix / enctype in childops/net/rxrpc-key-install.c). Accepts 'off' (childop_cmp_value returns the caller's rng fallback verbatim before any cmp_hints_try_get_ex probe; every childop_cmp_consume_* counter in kcov_shm stays at zero and the field-site pick stream is byte-for-byte identical to a build without this knob) or 'on' (the resolver probes the durable per-nr pool via cmp_hints_try_get_ex and bumps _would_pick / _would_miss / _would_value_differs on the outcome, but STILL returns the caller's rng fallback -- no arg is changed and no downstream behaviour differs). Independent of --childop-cmp-harvest: the two knobs gate producer-side and consumer-side of the same childop CMP pool, and the pool is shared, so consume can bump _would_pick against warm-started / non-childop entries even with harvest OFF. The conversion-chain counters (_candidate_accepted / _arg_changed / _outcome_changed / _new_cov) ship declared but never bumped in this build; C3/C4 slices fill them in once the shadow readout justifies live consume." },
 	{ "children",		'C', "specify number of child processes" },
 	{ "clowntown",		 0,  "enable clowntown mode" },
 	{ "cmp-frontier", 0, "CMP-weighted alternate picker arm for the silent regime of set_syscall_nr_coverage_frontier (default off): off (the silent gate skips the arm entirely -- no mode-load past the early return, no CMP-counter load, no plateau-hint load, no weight change; fixed-seed runs reproduce a pre-row build bit-for-bit and the mode load itself consumes no RNG), shadow-only (compute the CMP-weighted alternate weight from kcov_shm->per_syscall_cmp_inserts[nr] + kcov_shm->childop_cmp_pool_inserts[nr] (insert-volume base) plus a conversion-rate bonus from per_syscall_cmp_injected vs per_syscall_cmp_hint_pc_wins + per_syscall_cmp_hint_transition_wins (gated on CMP_FRONTIER_MIN_INJECTED so 1/1 noise does not dominate; 0%-converters degrade to the historical inserts-only signal), via ilog2 clamps + the CMP_FRONTIER_SIGNAL_SCALE multiplier saturated at FRONTIER_COLD_SCALE, sample the plateau classifier, and bump the cmp_frontier_samples + would_route shadow counters in stats so the would-be route volume is measurable, but leave the live silent-regime weight at the PC-led value -- picks identical to OFF for a given seed), or combined (the live silent-regime weight is REPLACED with the CMP-weighted weight on picks where the plateau classifier reads PLATEAU_HYPOTHESIS_CMP_RISING_PC_FLAT, the 'rank the silent regime by CMP-derived signal instead' contract; off-plateau picks retain the PC-led weight, and the (w+1)/(SCALE+1) accept floor keeps a zero-CMP-signal syscall reachable rather than unreachable under the swap; the cmp_frontier_live_routes counter records the gated route volume).  Degrade-safe: kcov_shm-less / out-of-range short-circuits cmp_frontier_weight() to 0 before any CMP counter is touched, matching the FRONTIER_COLD_SCALE fallback the rest of the picker file takes." },
@@ -646,6 +647,7 @@ static const struct option longopts[] = {
 	{ "canary-window", required_argument, NULL, 0 },
 	{ "childop-kcov-attribution", required_argument, NULL, 0 },
 	{ "childop-cmp-harvest", required_argument, NULL, 0 },
+	{ "childop-cmp-consume", required_argument, NULL, 0 },
 	{ "kcov-trace-size", required_argument, NULL, 0 },
 	{ "kcov-transition-coverage", required_argument, NULL, 0 },
 	{ "kcov-transition-reward", required_argument, NULL, 0 },
@@ -805,6 +807,19 @@ static bool parse_kcov_options(int opt, const char *name, char *arg)
 			childop_cmp_harvest_mode = CHILDOP_CMP_HARVEST_ON;
 		} else {
 			outputerr("--childop-cmp-harvest: unknown mode '%s' (expected off or on)\n",
+				arg);
+			exit(EXIT_FAILURE);
+		}
+		return true;
+	}
+
+	if (strcmp("childop-cmp-consume", name) == 0) {
+		if (strcmp(arg, "off") == 0) {
+			childop_cmp_consume_mode = CHILDOP_CMP_CONSUME_OFF;
+		} else if (strcmp(arg, "on") == 0) {
+			childop_cmp_consume_mode = CHILDOP_CMP_CONSUME_ON;
+		} else {
+			outputerr("--childop-cmp-consume: unknown mode '%s' (expected off or on)\n",
 				arg);
 			exit(EXIT_FAILURE);
 		}

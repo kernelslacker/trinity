@@ -2974,6 +2974,82 @@ struct kcov_shared {
 	unsigned long cmp_shared_tier_entry_path_excluded_ips;
 	unsigned long cmp_shared_tier_shadow_warmstart_eligible;
 	unsigned long cmp_shared_tier_shadow_dedup_supplied;
+
+	/*
+	 * SHADOW consume-side counters for the childop CMP path -- the
+	 * consumer half of the harvest counters above.  All per-nr and
+	 * RELAXED; keyed by the real __NR_X the childop passed at its
+	 * field site (nr-only, no cmd/field split -- pilot single-
+	 * semantic).  Bumped from childop_cmp_value() when
+	 * --childop-cmp-consume=on; the OFF default short-circuits
+	 * before any shm access, so every counter reads as zero on the
+	 * default build and a fixed-seed pick stream is byte-identical
+	 * either way.
+	 *
+	 * Consume-side names mirror the CMP-hyp shadow counters
+	 * (cmp_hyp_would_pick_by_kind / would_miss_by_kind /
+	 * would_value_differs) with per-nr partitioning replacing the
+	 * per-kind partition; the two lanes are independent and can be
+	 * summed for a fleet-wide would-pull rate.  Any counter here
+	 * SIZES what a future C3/C4 live consume WOULD do at this site
+	 * -- no arg is changed, no outcome is changed, and the pick
+	 * stream stays byte-for-byte identical to a build without the
+	 * knob.
+	 *
+	 *  childop_cmp_consume_would_pick[nr]
+	 *      Bumped once per childop_cmp_value() call where the
+	 *      cmp_hints_try_get_ex() shadow probe returned a hint (a
+	 *      pool value exists at this (nr, do32=false, use, cmp_ip
+	 *      family) and the transform succeeded).  The hint is NOT
+	 *      applied -- the caller still writes its rng-drawn
+	 *      fallback -- but the counter records the OPPORTUNITY:
+	 *      how many field-site draws could have been replaced by a
+	 *      learned constant on a run with the same seed.  Sibling
+	 *      denominator for _would_value_differs below.
+	 *
+	 *  childop_cmp_consume_would_miss[nr]
+	 *      Bumped once per childop_cmp_value() call where the
+	 *      cmp_hints_try_get_ex() probe returned FALSE (pool empty
+	 *      on this (nr, do32=false), chaos suppression, or the
+	 *      accept-range gate rejected).  Sum with _would_pick is
+	 *      the field-site draw volume the resolver saw; the ratio
+	 *      is the raw pool-populated rate at these sites.
+	 *
+	 *  childop_cmp_consume_would_value_differs[nr]
+	 *      Bumped once per _would_pick where the returned hint
+	 *      value differed from the caller's rng-drawn fallback (a
+	 *      LIVE consume at this site would have actually changed
+	 *      the arg the syscall received).  Ratio to _would_pick is
+	 *      the "arg would have changed" rate -- the C3/C4 decision
+	 *      gate for whether a live consume at this site has any
+	 *      hope of moving downstream metrics at all.
+	 *
+	 *  childop_cmp_consume_candidate_accepted[nr]
+	 *  childop_cmp_consume_arg_changed[nr]
+	 *  childop_cmp_consume_outcome_changed[nr]
+	 *  childop_cmp_consume_new_cov[nr]
+	 *      Conversion-chain counters MEASURED-ONLY in this build --
+	 *      they are declared here so the shm layout settles before
+	 *      the follow-up C3/C4 slices, but NO bump site exists in
+	 *      the shadow-only tree.  A default run reads all four as
+	 *      zero, always.  When the live-consume slice lands, each
+	 *      stage of the chain (candidate accepted by the resolver
+	 *      transform -> arg written differs from the rng fallback
+	 *      -> the syscall's dispatch outcome differs from a
+	 *      recorded shadow-off outcome -> the call produced fresh
+	 *      PC coverage) bumps its counter, giving the C4 A/B
+	 *      readout a single per-nr yield ratio to size the win at.
+	 *
+	 * Append-only at the tail per the existing convention so
+	 * consumer offsets stay stable.
+	 */
+	unsigned long childop_cmp_consume_would_pick[MAX_NR_SYSCALL];
+	unsigned long childop_cmp_consume_would_miss[MAX_NR_SYSCALL];
+	unsigned long childop_cmp_consume_would_value_differs[MAX_NR_SYSCALL];
+	unsigned long childop_cmp_consume_candidate_accepted[MAX_NR_SYSCALL];
+	unsigned long childop_cmp_consume_arg_changed[MAX_NR_SYSCALL];
+	unsigned long childop_cmp_consume_outcome_changed[MAX_NR_SYSCALL];
+	unsigned long childop_cmp_consume_new_cov[MAX_NR_SYSCALL];
 };
 
 extern struct kcov_shared *kcov_shm;
@@ -3189,6 +3265,42 @@ enum childop_cmp_harvest_mode {
 };
 
 extern enum childop_cmp_harvest_mode childop_cmp_harvest_mode;
+
+/*
+ * --childop-cmp-consume knob mode.  Gates the SHADOW consume-side
+ * resolver childop_cmp_value() at the childop field sites (see
+ * cmp_hints/childop_consume.c and childops/net/rxrpc-key-install.c).
+ *
+ *   CHILDOP_CMP_CONSUME_OFF
+ *      Default.  childop_cmp_value() short-circuits before any
+ *      cmp_hints_try_get_ex() call and returns the caller's rng
+ *      fallback verbatim.  Every childop_cmp_consume_* counter above
+ *      stays at zero and the field-site pick stream is byte-for-byte
+ *      identical to a build without this knob.
+ *
+ *   CHILDOP_CMP_CONSUME_ON
+ *      Shadow-only: the resolver probes the durable per-nr pool via
+ *      cmp_hints_try_get_ex() and bumps _would_pick / _would_miss /
+ *      _would_value_differs on the outcome, but STILL returns the
+ *      caller's rng fallback -- no arg is changed, no downstream
+ *      behaviour differs.  The C0/C2 shadow ships this switch so
+ *      the opportunity size is measurable before the C3/C4 live
+ *      consume slice earns its own re-nod.
+ *
+ * The two modes are kept distinct from --childop-cmp-harvest: harvest
+ * is producer-side (kernel CMP records into the quarantined childop
+ * pool); consume is consumer-side (the resolver reads the pool and
+ * shadow-scores what it would return).  The pool is shared, so a run
+ * with harvest OFF and consume ON reads whatever the durable per-nr
+ * pool was seeded with (warm-start, non-childop sites) -- it is not
+ * a bug that consume can bump _would_pick with harvest off.
+ */
+enum childop_cmp_consume_mode {
+	CHILDOP_CMP_CONSUME_OFF = 0,
+	CHILDOP_CMP_CONSUME_ON,
+};
+
+extern enum childop_cmp_consume_mode childop_cmp_consume_mode;
 
 /* Per-call PC-edge result struct, optionally filled by kcov_collect().
  *

@@ -86,6 +86,20 @@ enum childop_kcov_attribution_mode childop_kcov_attr_mode =
 enum childop_cmp_harvest_mode childop_cmp_harvest_mode =
 	CHILDOP_CMP_HARVEST_OFF;
 
+/* Default is OFF: childop_cmp_value() short-circuits and returns the
+ * caller's rng fallback verbatim; every childop_cmp_consume_* counter
+ * in kcov_shm stays at zero and the field-site pick stream is byte-
+ * for-byte identical to a build without the --childop-cmp-consume
+ * knob.  Flipping to ON opts into the SHADOW-only resolver probe
+ * (cmp_hints_try_get_ex + would_pick / would_miss / would_value_
+ * differs bumps) at the rxrpc field sites -- the returned value is
+ * still discarded, so no arg changes and no outcome differs; the
+ * knob sizes what a future C3/C4 live consume would do at these
+ * sites.  See the childop_cmp_consume_mode enum in include/kcov.h
+ * for the full per-mode contract. */
+enum childop_cmp_consume_mode childop_cmp_consume_mode =
+	CHILDOP_CMP_CONSUME_OFF;
+
 /* Default is SHADOW: collect into the transition map and surface it
  * through the stats dump, but do not feed deltas into any steering
  * consumer.  See the kcov_transition_coverage_mode enum in include/
