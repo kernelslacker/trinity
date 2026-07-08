@@ -172,6 +172,7 @@ static const enum child_op_type canary_config_blocked[] = {
 	CHILD_OP_ATM_VCC_CHURN,
 	CHILD_OP_IP6GRE_BOND_LAPB_STACK,
 	CHILD_OP_FLOCK_THRASH,
+	CHILD_OP_FUTEX_STORM,
 };
 
 /* Pid-heavy ops the picker temporarily evicts while the parent fork
