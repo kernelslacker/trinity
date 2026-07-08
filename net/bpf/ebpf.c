@@ -348,6 +348,34 @@ static const int jmp_ops[] = {
 static const int mem_sizes[] = { BPF_B, BPF_H, BPF_W, BPF_DW };
 
 /*
+ * Atomic-op imm encodings (BPF_STX | size | BPF_ATOMIC + imm).  The
+ * original chaos generator drew from BPF_ADD..BPF_XOR (× optional
+ * BPF_FETCH); extend to the full ISA family so the verifier's atomic
+ * arm walks every op, not just the four add-shaped ones.
+ *
+ *   BPF_ADD/AND/OR/XOR                        — 0x00 base op
+ *   BPF_ADD/AND/OR/XOR | BPF_FETCH            — 0x01 fetch variant
+ *   BPF_XCHG   = 0xe0 | BPF_FETCH             — atomic exchange
+ *   BPF_CMPXCHG= 0xf0 | BPF_FETCH             — compare-and-write
+ *   BPF_LOAD_ACQ = 0x100 (v6.15)              — load-acquire
+ *   BPF_STORE_REL = 0x110 (v6.15)             — store-release
+ */
+static const int atomic_imm_ops[] = {
+	BPF_ADD,
+	BPF_AND,
+	BPF_OR,
+	BPF_XOR,
+	BPF_ADD | BPF_FETCH,
+	BPF_AND | BPF_FETCH,
+	BPF_OR  | BPF_FETCH,
+	BPF_XOR | BPF_FETCH,
+	BPF_XCHG,
+	BPF_CMPXCHG,
+	BPF_LOAD_ACQ,
+	BPF_STORE_REL,
+};
+
+/*
  * Emit one ALU64 op with a sign-bounded immediate.  MOV always initializes
  * the destination; for other ops, dst must already be live or we emit a
  * priming MOV first (and bail if that priming insn hit body_len).
@@ -1070,13 +1098,38 @@ static int gen_tier3(struct bpf_insn *insns, int max_insns)
 						 rnd_modulo_u32(BPF_REG_10),
 						 (int16_t)rnd_u32());
 
-		} else if (choice < 94) {
-			/* Atomic op with bad src/dst */
+		} else if (choice < 88) {
+			/* Atomic op with bad src/dst, covering the full
+			 * BPF_ADD..BPF_STORE_REL imm family (XCHG /
+			 * CMPXCHG / LOAD_ACQ / STORE_REL added) so the
+			 * verifier's atomic dispatch walks every arm. */
 			insns[i].code = BPF_STX | BPF_DW | BPF_ATOMIC;
 			insns[i].dst_reg = rnd_modulo_u32(16);
 			insns[i].src_reg = rnd_modulo_u32(16);
 			insns[i].off = (int16_t)rnd_u32();
-			insns[i].imm = BPF_ADD + (rnd_modulo_u32(4)) * BPF_FETCH;
+			insns[i].imm = RAND_ARRAY(atomic_imm_ops);
+
+		} else if (choice < 92) {
+			/* BPF_MEMSX sign-extending load (mode 0x80).
+			 * Kernel accepts BPF_B/H/W sizes; DW is rejected
+			 * so the reject arm sees traffic too. */
+			int sz_choice = rnd_modulo_u32(4);
+			insns[i].code = BPF_LDX | (uint8_t)(sz_choice << 3) | BPF_MEMSX;
+			insns[i].dst_reg = rnd_modulo_u32(BPF_REG_10);
+			insns[i].src_reg = rnd_modulo_u32(BPF_REG_10);
+			insns[i].off = (int16_t)rnd_u32();
+			insns[i].imm = 0;
+
+		} else if (choice < 96) {
+			/* BPF_JCOND (0xe0): src_reg is the condition
+			 * (BPF_MAY_GOTO = 0); off is the branch delta.
+			 * Verifier arm gated by prog_may_goto in
+			 * kernel/bpf/verifier.c. */
+			insns[i].code = BPF_JMP | BPF_JCOND;
+			insns[i].dst_reg = 0;
+			insns[i].src_reg = BPF_MAY_GOTO;
+			insns[i].off = (int16_t)(rnd_modulo_u32(64) - 32);
+			insns[i].imm = 0;
 
 		} else {
 			/* Malformed 128-bit load: first half only */
