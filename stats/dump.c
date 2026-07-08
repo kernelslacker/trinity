@@ -3457,6 +3457,11 @@ static void dump_stats_render_kcov_base_stats(void)
 	unsigned long kc_cmp_save_reject_sentinel      = __atomic_load_n(&kcov_shm->cmp_hints_save_reject_sentinel,      __ATOMIC_RELAXED);
 	unsigned long kc_cmp_save_reject_dup           = __atomic_load_n(&kcov_shm->cmp_hints_save_reject_dup,           __ATOMIC_RELAXED);
 	unsigned long kc_cmp_save_reject_cap           = __atomic_load_n(&kcov_shm->cmp_hints_save_reject_cap,           __ATOMIC_RELAXED);
+	unsigned long kc_cmp_nonconst_arg1_unique      = __atomic_load_n(&kcov_shm->cmp_nonconst_arg1_unique,           __ATOMIC_RELAXED);
+	unsigned long kc_cmp_nonconst_arg2_unique      = __atomic_load_n(&kcov_shm->cmp_nonconst_arg2_unique,           __ATOMIC_RELAXED);
+	unsigned long kc_cmp_nonconst_both_match       = __atomic_load_n(&kcov_shm->cmp_nonconst_both_match,            __ATOMIC_RELAXED);
+	unsigned long kc_cmp_nonconst_would_attribute  = __atomic_load_n(&kcov_shm->cmp_nonconst_would_attribute,       __ATOMIC_RELAXED);
+	unsigned long kc_cmp_nonconst_measured         = __atomic_load_n(&kcov_shm->cmp_nonconst_measured,              __ATOMIC_RELAXED);
 
 	stat_row("kcov_coverage", "unique_edges",          kc_edges);
 	stat_row("kcov_coverage", "total_pcs",             kc_pcs);
@@ -3495,6 +3500,51 @@ static void dump_stats_render_kcov_base_stats(void)
 		stat_row("kcov_coverage", "cmp_hints_save_reject_dup", kc_cmp_save_reject_dup);
 	if (kc_cmp_save_reject_cap > 0)
 		stat_row("kcov_coverage", "cmp_hints_save_reject_cap", kc_cmp_save_reject_cap);
+
+	/* Shadow measurement of the non-const relational drop-site.
+	 * Counts records the CMP loop drops today into
+	 * cmp_hints_save_reject_nonconst but that a future relational-
+	 * attribution lane could plausibly act on.  would_attribute is
+	 * the actionable population (exactly one operand uniquely ours,
+	 * the other side not ours at all).
+	 *
+	 * Two ratios are emitted because the denominators mean different
+	 * things and neither can be recovered from the other post-hoc:
+	 *
+	 *   per_mille_dropped  -- share of ALL non-const drops that would
+	 *     be actionable.  Denominator (reject_nonconst) includes every
+	 *     early-out where rec_num_args==0 and the measurement never
+	 *     ran (child==NULL, redqueen disabled, in_reexec, dispatch_
+	 *     args invalid, reexec_pending full at entry).  Reads as
+	 *     "of the whole drop stream, what fraction is reachable" --
+	 *     useful for sizing the drop tax, understates lane hit-rate.
+	 *
+	 *   per_mille_measured -- share of ADDRESSABLE non-const records
+	 *     (those where the shadow loop actually ran) that would be
+	 *     actionable.  This is the honest lane hit-rate on the
+	 *     population a relational lane could conceivably see. */
+	if (kc_cmp_nonconst_arg1_unique > 0)
+		stat_row("kcov_coverage", "cmp_nonconst_arg1_unique", kc_cmp_nonconst_arg1_unique);
+	if (kc_cmp_nonconst_arg2_unique > 0)
+		stat_row("kcov_coverage", "cmp_nonconst_arg2_unique", kc_cmp_nonconst_arg2_unique);
+	if (kc_cmp_nonconst_both_match > 0)
+		stat_row("kcov_coverage", "cmp_nonconst_both_match", kc_cmp_nonconst_both_match);
+	if (kc_cmp_nonconst_would_attribute > 0)
+		stat_row("kcov_coverage", "cmp_nonconst_would_attribute", kc_cmp_nonconst_would_attribute);
+	if (kc_cmp_nonconst_measured > 0)
+		stat_row("kcov_coverage", "cmp_nonconst_measured", kc_cmp_nonconst_measured);
+	if (kc_cmp_save_reject_nonconst > 0) {
+		unsigned long ratio_milli =
+			(kc_cmp_nonconst_would_attribute * 1000UL) /
+			kc_cmp_save_reject_nonconst;
+		stat_row("kcov_coverage", "cmp_nonconst_would_attribute_per_mille_dropped", ratio_milli);
+	}
+	if (kc_cmp_nonconst_measured > 0) {
+		unsigned long ratio_milli =
+			(kc_cmp_nonconst_would_attribute * 1000UL) /
+			kc_cmp_nonconst_measured;
+		stat_row("kcov_coverage", "cmp_nonconst_would_attribute_per_mille_measured", ratio_milli);
+	}
 }
 
 /* Find top 10 edge-producing syscalls via insertion sort, then a

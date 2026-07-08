@@ -3050,6 +3050,32 @@ struct kcov_shared {
 	unsigned long childop_cmp_consume_arg_changed[MAX_NR_SYSCALL];
 	unsigned long childop_cmp_consume_outcome_changed[MAX_NR_SYSCALL];
 	unsigned long childop_cmp_consume_new_cov[MAX_NR_SYSCALL];
+
+	/* Shadow measurement of the non-const relational CMP drop-site.
+	 * The per-record loop in cmp_hints_collect() drops every
+	 * !KCOV_CMP_CONST record (both operands runtime) into
+	 * cmp_hints_save_reject_nonconst.  These five counters measure
+	 * how much of that dropped stream WOULD be actionable if a
+	 * future "relational" attribution lane were built -- purely a
+	 * headroom sizing readout, no live path reads them.  Gated on
+	 * rec_num_args > 0 (dispatch-time arg snapshot present); NOT
+	 * gated on attribute_enabled (that flips off under
+	 * reexec_pending back-pressure, a live-resource throttle the
+	 * shadow lane must not inherit).  Append-only at the tail per
+	 * the existing convention so consumer offsets stay stable. */
+	unsigned long cmp_nonconst_arg1_unique;      /* rec_args has exactly one slot == arg1 */
+	unsigned long cmp_nonconst_arg2_unique;      /* rec_args has exactly one slot == arg2 */
+	unsigned long cmp_nonconst_both_match;       /* both operands appear in rec_args (>=1 each) */
+	unsigned long cmp_nonconst_would_attribute;  /* exactly one side uniquely ours, other absent */
+	unsigned long cmp_nonconst_measured;         /* addressable denominator: non-const records
+						      * where rec_num_args>0 (the population the
+						      * shadow measurement actually evaluated).
+						      * reject_nonconst is strictly larger -- it
+						      * counts every non-const drop incl. child==
+						      * NULL / redqueen disabled / in_reexec /
+						      * dispatch_args invalid / reexec_pending
+						      * full-at-entry, all cases where rec_num_args
+						      * is 0 and the per-slot loop never runs. */
 };
 
 extern struct kcov_shared *kcov_shm;

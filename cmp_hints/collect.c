@@ -119,6 +119,20 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 	unsigned long reject_uninteresting = 0;
 	unsigned long reject_sentinel = 0;
 	unsigned long boring_arm_b_drops = 0;
+	/*
+	 * Shadow measurement of the non-const relational drop-site.
+	 * Per-record accumulators flushed once at function exit (same
+	 * pattern as the reject_* counters above) so the hot loop stays
+	 * free of shared atomic traffic.  Nothing in the collect / save /
+	 * re-exec paths reads these -- they exist only to size the
+	 * headroom of a potential future relational-attribution lane.
+	 * See the matching struct-tail comment in include/kcov.h.
+	 */
+	unsigned long nonconst_arg1_unique = 0;
+	unsigned long nonconst_arg2_unique = 0;
+	unsigned long nonconst_both_match = 0;
+	unsigned long nonconst_would_attribute = 0;
+	unsigned long nonconst_measured = 0;
 	struct cmp_hint_pool *pool;
 	struct cmp_hints_bloom *bloom = NULL;
 	struct childdata *child;
@@ -359,6 +373,46 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 		 * them back would just recycle the fuzzer's own inputs. */
 		if (!(type & KCOV_CMP_CONST)) {
 			reject_nonconst++;
+			/*
+			 * Shadow-measure the relational lane BEFORE the
+			 * drop.  Live path is unchanged -- no pool insert,
+			 * no bloom stamp, no reexec_pending mutation; we
+			 * only tally what a future relational-attribution
+			 * lane would see if it existed.  Gate strictly on
+			 * rec_num_args > 0 (the dispatch-time snapshot is
+			 * present); deliberately NOT on attribute_enabled
+			 * -- that flips false under reexec_pending back-
+			 * pressure and would hide the un-throttled headroom
+			 * this readout is meant to expose.
+			 *
+			 * n1 / n2 = number of snapshot slots equal to arg1
+			 * / arg2.  The "would_attribute" population is the
+			 * clean case: exactly one side uniquely ours, the
+			 * other side not ours at all -- that is the record
+			 * a relational lane could act on without ambiguity.
+			 */
+			if (rec_num_args > 0) {
+				unsigned int k;
+				unsigned int n1 = 0;
+				unsigned int n2 = 0;
+
+				nonconst_measured++;
+				for (k = 0; k < rec_num_args; k++) {
+					if (rec_args[k] == arg1)
+						n1++;
+					if (rec_args[k] == arg2)
+						n2++;
+				}
+				if (n1 == 1)
+					nonconst_arg1_unique++;
+				if (n2 == 1)
+					nonconst_arg2_unique++;
+				if (n1 >= 1 && n2 >= 1)
+					nonconst_both_match++;
+				if ((n1 == 1 && n2 == 0) ||
+				    (n2 == 1 && n1 == 0))
+					nonconst_would_attribute++;
+			}
 			continue;
 		}
 
@@ -857,6 +911,21 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 		if (boring_arm_b_drops != 0)
 			__atomic_fetch_add(&kcov_shm->cmp_hints_boring_arm_b_drops,
 					   boring_arm_b_drops, __ATOMIC_RELAXED);
+		if (nonconst_arg1_unique != 0)
+			__atomic_fetch_add(&kcov_shm->cmp_nonconst_arg1_unique,
+					   nonconst_arg1_unique, __ATOMIC_RELAXED);
+		if (nonconst_arg2_unique != 0)
+			__atomic_fetch_add(&kcov_shm->cmp_nonconst_arg2_unique,
+					   nonconst_arg2_unique, __ATOMIC_RELAXED);
+		if (nonconst_both_match != 0)
+			__atomic_fetch_add(&kcov_shm->cmp_nonconst_both_match,
+					   nonconst_both_match, __ATOMIC_RELAXED);
+		if (nonconst_would_attribute != 0)
+			__atomic_fetch_add(&kcov_shm->cmp_nonconst_would_attribute,
+					   nonconst_would_attribute, __ATOMIC_RELAXED);
+		if (nonconst_measured != 0)
+			__atomic_fetch_add(&kcov_shm->cmp_nonconst_measured,
+					   nonconst_measured, __ATOMIC_RELAXED);
 	}
 }
 
