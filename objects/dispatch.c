@@ -1,6 +1,11 @@
+#include <stdint.h>
 #include <unistd.h>
+#include "child.h"
+#include "compiler.h"
 #include "objects.h"
 #include "objects-internal.h"
+#include "syscall.h"
+#include "utils.h"
 
 /*
  * Invalidate the fd stored in an object by setting it to -1.
@@ -115,6 +120,36 @@ void set_object_fd(struct object *obj, enum objecttype type, int fd)
  */
 int fd_from_object(struct object *obj, enum objecttype type)
 {
+	/*
+	 * Attribution overlay for the SELF-corruption cluster.  A sibling
+	 * scribble that lands on an OBJ_LOCAL slot pointer in head->array[]
+	 * leaves obj pointing at either a wild low-VA value (NULL-ish /
+	 * pid-shaped) or a kernel-VA leak; the switch below then derefs
+	 * obj-> and SIGSEGVs the child with the SREC of the innocent fd
+	 * consumer (fds/fds.c, objects/registry.c walkers) rather than the
+	 * syscall whose arg-gen produced the wild pointer.  Log the current
+	 * SREC BEFORE the switch runs so the child bug-log carries a
+	 * SELF-CORRUPT line naming the culprit before the SEGV clobbers rec.
+	 *
+	 * Same [0x10000, 2^47) userspace-VA bracket as the other always-on
+	 * gates; matches the value shape zmalloc / zmalloc_tracked hand out
+	 * for every real obj alloc, so a false positive is impossible for a
+	 * legitimate object.  Log-only: the switch below runs unchanged,
+	 * preserving the "NO change to deref behavior" contract of the
+	 * attribution overlay.
+	 */
+	{
+		uintptr_t v = (uintptr_t)obj;
+
+		if (unlikely(!(v >= 0x10000UL && v < 0x800000000000UL))) {
+			struct childdata *cc = this_child();
+
+			log_self_corrupt_culprit(
+				"objects:fd_from_object", v,
+				cc != NULL ? &cc->syscall : NULL);
+		}
+	}
+
 	switch (type) {
 	case OBJ_FD_PIPE:	return obj->pipeobj.fd;
 	case OBJ_FD_DEVFILE:

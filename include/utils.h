@@ -646,6 +646,39 @@ void post_handler_corrupt_ptr_bump_full(struct syscallrecord *rec,
 	post_handler_corrupt_ptr_bump_site((rec), (caller_pc), NULL)
 
 /*
+ * Attribution overlay for the SELF-corruption cluster.  The
+ * kcov_local_stats_plausible() gates in kcov/collect.c, the
+ * objpool_check() sites in mm/maps.c, and the dispatch-boundary
+ * check in random_syscall/dispatch.c all short-circuit the bad
+ * deref when they fire but were previously silent past a stats
+ * counter bump -- there was no record of which syscall ran
+ * immediately before the wild write.  This helper emits that
+ * record to stderr (child-side: memfd → bug-log on the SIGSEGV
+ * that a scribbled pointer typically produces a few calls later)
+ * so triage can attribute the scribble to the culprit syscall
+ * arg-gen instead of the innocent kcov reader that trips.
+ *
+ * @site is a short kebab-case tag naming the specific gate that
+ * fired (e.g. "kcov:local_stats:calls", "mm:mmap-pool:objpool",
+ * "dispatch:objects").  @wild is the scribbled pointer/value the
+ * gate rejected.  @rec is the just-dispatched syscallrecord (pass
+ * &this_child()->syscall from a child-context gate); NULL is
+ * handled and renders "nr=0 name=?" for parent-context callers
+ * that reach a shared gate.
+ *
+ * Log-only.  Consumes no RNG, does not change control flow, and
+ * runs off the reject path -- when the gate does not fire (the
+ * overwhelming steady state) this function is not called at all.
+ * Callers that already resolve struct childdata for their own use
+ * pass &cc->syscall directly; the name is resolved fresh via
+ * get_syscall_entry(nr, do32bit) rather than off rec->entry so a
+ * scribbled entry pointer in the just-corrupted rec cannot itself
+ * be followed.
+ */
+void log_self_corrupt_culprit(const char *site, unsigned long wild,
+			      const struct syscallrecord *rec);
+
+/*
  * Per-callsite attribution buckets for post_handler_corrupt_ptr.  The
  * headline counter is the sum of every bump from every site; the
  * spike-detector reacts to that sum but cannot tell whether a spike is

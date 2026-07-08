@@ -30,6 +30,7 @@
 #include "syscall.h"
 #include "tables.h"
 #include "trinity.h"		/* output, outputerr */
+#include "utils.h"		/* log_self_corrupt_culprit */
 
 /*
  * Strip the runtime KASLR base from a kernel PC so the bucket index for
@@ -322,12 +323,18 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 	{
 		struct childdata *cc = this_child();
 
-		if (cc != NULL &&
-		    kcov_local_stats_plausible(cc->local_stats)) {
-			cc->local_stats->total_calls++;
-			if (kc->remote_mode)
-				cc->local_stats->remote_calls++;
-			cc->local_stats->local_syscalls_since_flush++;
+		if (cc != NULL) {
+			if (kcov_local_stats_plausible(cc->local_stats)) {
+				cc->local_stats->total_calls++;
+				if (kc->remote_mode)
+					cc->local_stats->remote_calls++;
+				cc->local_stats->local_syscalls_since_flush++;
+			} else {
+				log_self_corrupt_culprit(
+					"kcov:local_stats:calls",
+					(unsigned long)cc->local_stats,
+					&cc->syscall);
+			}
 		}
 	}
 
@@ -515,9 +522,15 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 	{
 		struct childdata *cc = this_child();
 
-		if (cc != NULL &&
-		    kcov_local_stats_plausible(cc->local_stats))
-			cc->local_stats->total_pcs += count;
+		if (cc != NULL) {
+			if (kcov_local_stats_plausible(cc->local_stats))
+				cc->local_stats->total_pcs += count;
+			else
+				log_self_corrupt_culprit(
+					"kcov:local_stats:pcs",
+					(unsigned long)cc->local_stats,
+					&cc->syscall);
+		}
 	}
 
 	if (nr < MAX_NR_SYSCALL) {
@@ -616,9 +629,16 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 			{
 				struct childdata *cc = this_child();
 
-				if (cc != NULL &&
-				    kcov_local_stats_plausible(cc->local_stats))
-					cc->local_stats->total_warm_known_hits++;
+				if (cc != NULL) {
+					if (kcov_local_stats_plausible(
+						    cc->local_stats))
+						cc->local_stats->total_warm_known_hits++;
+					else
+						log_self_corrupt_culprit(
+							"kcov:local_stats:warm",
+							(unsigned long)cc->local_stats,
+							&cc->syscall);
+				}
 			}
 			/* Lazy-seed last_edge_at[nr] from the warm-known hit
 			 * stream.  Without this seed, a syscall whose entire
@@ -786,12 +806,18 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 	{
 		struct childdata *cc = this_child();
 
-		if (cc != NULL &&
-		    kcov_local_stats_plausible(cc->local_stats)) {
-			if (found_new ||
-			    cc->local_stats->local_syscalls_since_flush >=
-				    KCOV_LOCAL_STATS_FLUSH_SYSCALLS)
-				kcov_child_flush_stats(cc);
+		if (cc != NULL) {
+			if (kcov_local_stats_plausible(cc->local_stats)) {
+				if (found_new ||
+				    cc->local_stats->local_syscalls_since_flush >=
+					    KCOV_LOCAL_STATS_FLUSH_SYSCALLS)
+					kcov_child_flush_stats(cc);
+			} else {
+				log_self_corrupt_culprit(
+					"kcov:local_stats:flush",
+					(unsigned long)cc->local_stats,
+					&cc->syscall);
+			}
 		}
 	}
 
