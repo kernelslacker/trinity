@@ -344,6 +344,15 @@ static void log_main_loop_exit(void)
 			  " internal_exit_reason:%s(%d)\n",
 			limit, decode_exit(reason), (int)reason);
 	}
+
+	{
+		unsigned int printed, omitted, sigs;
+
+		dstate_diag_get_counts(&printed, &omitted, &sigs);
+		output(0, "D-state diag summary: verbose printed=%u"
+			  " omitted=%u sigs=%u\n",
+			printed, omitted, sigs);
+	}
 }
 
 /* Shutdown-tail wait: keep reaping and killing children until the

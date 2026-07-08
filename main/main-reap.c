@@ -1045,6 +1045,154 @@ static void dump_dstate_diagnostics(struct childdata *child, int childno,
 	dump_pid_fdinfo_bounded(pid);
 }
 
+/*
+ * Global budget for the verbose dump_dstate_diagnostics() snapshot.
+ * Bounds two axes so a run that wedges thousands of distinct children
+ * (each already gated to one snapshot by child->dstate_diag_dumped)
+ * cannot produce unbounded aggregate output:
+ *
+ *   - DSTATE_DIAG_RUN_BUDGET caps the total number of verbose dumps
+ *     printed across the whole run.
+ *   - DSTATE_DIAG_PER_SIG_MAX caps how many samples a single
+ *     (op_type, syscall nr, wchan-string) signature may burn from the
+ *     budget, so one hot wedge pattern cannot consume the entire budget
+ *     and starve rarer signatures.
+ *
+ * State is a plain file-static -- the reap/watchdog path runs
+ * single-threaded in the parent, so no atomic/lock is needed and
+ * nothing lives in shm.  The signature table is fixed-size (no alloc);
+ * on collision or table-full we linear-probe within the table and, if
+ * still no slot, fall through to the run-budget gate only.
+ *
+ * The one-line "STUCK CHILD:" summary is *not* budgeted -- it is one
+ * greppable line per stuck child and is the always-on operator signal.
+ * The omitted-count is surfaced two ways: an inline notice the first
+ * time the run budget is exhausted, and a final "D-state diag summary"
+ * line printed by log_main_loop_exit() at shutdown.
+ */
+#define DSTATE_DIAG_RUN_BUDGET  256
+#define DSTATE_DIAG_PER_SIG_MAX 8
+#define DSTATE_DIAG_SIG_SLOTS   128
+
+struct dstate_diag_sig {
+	uint32_t hash;		/* zero means slot unused */
+	uint16_t count;		/* verbose dumps printed for this signature */
+};
+
+static struct dstate_diag_sig dstate_diag_sigs[DSTATE_DIAG_SIG_SLOTS];
+static unsigned int dstate_diag_printed;
+static unsigned int dstate_diag_omitted;
+static unsigned int dstate_diag_sig_used;
+static bool dstate_diag_notice_emitted;
+
+static uint32_t dstate_diag_hash(int op_type, unsigned int callno,
+				 const char *wchan)
+{
+	/* FNV-1a over (op_type, callno, wchan bytes).  Force nonzero so
+	 * hash==0 can mark an empty slot without a separate valid bit. */
+	uint32_t h = 2166136261u;
+
+	h ^= (uint32_t)op_type;
+	h *= 16777619u;
+	h ^= callno;
+	h *= 16777619u;
+	while (*wchan) {
+		h ^= (unsigned char)*wchan++;
+		h *= 16777619u;
+	}
+	return h ? h : 1;
+}
+
+static void dstate_diag_note_budget_exhausted(void)
+{
+	if (dstate_diag_notice_emitted)
+		return;
+	output(0,
+	       "D-state diag: run budget %u reached -- further verbose"
+	       " snapshots suppressed (STUCK CHILD summaries continue)\n",
+	       DSTATE_DIAG_RUN_BUDGET);
+	dstate_diag_notice_emitted = true;
+}
+
+/*
+ * Decide whether to emit a verbose D-state diagnostic snapshot for this
+ * (child, wchan).  Returns true if the caller should print, false if
+ * either the per-signature cap or the run budget is exhausted.  Also
+ * bumps the internal counters that log_main_loop_exit() reads via
+ * dstate_diag_get_counts().
+ */
+static bool dstate_diag_budget_take(struct childdata *child,
+				    const char *wchan)
+{
+	unsigned int callno = 0;
+	uint32_t h;
+	unsigned int slot;
+	unsigned int i;
+
+	if (child->op_type == CHILD_OP_SYSCALL) {
+		struct syscallrecord *rec = &child->syscall;
+		bool got;
+
+		SREC_SNAPSHOT(rec, {
+			callno = rec->nr;
+		}, got);
+		if (!got)
+			callno = ~0u;
+	}
+
+	h = dstate_diag_hash(child->op_type, callno, wchan);
+	slot = h % DSTATE_DIAG_SIG_SLOTS;
+
+	for (i = 0; i < DSTATE_DIAG_SIG_SLOTS; i++) {
+		struct dstate_diag_sig *s =
+			&dstate_diag_sigs[(slot + i) % DSTATE_DIAG_SIG_SLOTS];
+
+		if (s->hash == 0) {
+			if (dstate_diag_printed >= DSTATE_DIAG_RUN_BUDGET) {
+				dstate_diag_omitted++;
+				dstate_diag_note_budget_exhausted();
+				return false;
+			}
+			s->hash = h;
+			s->count = 1;
+			dstate_diag_sig_used++;
+			dstate_diag_printed++;
+			return true;
+		}
+		if (s->hash == h) {
+			if (s->count >= DSTATE_DIAG_PER_SIG_MAX) {
+				dstate_diag_omitted++;
+				return false;
+			}
+			if (dstate_diag_printed >= DSTATE_DIAG_RUN_BUDGET) {
+				dstate_diag_omitted++;
+				dstate_diag_note_budget_exhausted();
+				return false;
+			}
+			s->count++;
+			dstate_diag_printed++;
+			return true;
+		}
+	}
+
+	/* Table full -- fall through to the run-budget gate only. */
+	if (dstate_diag_printed >= DSTATE_DIAG_RUN_BUDGET) {
+		dstate_diag_omitted++;
+		dstate_diag_note_budget_exhausted();
+		return false;
+	}
+	dstate_diag_printed++;
+	return true;
+}
+
+void dstate_diag_get_counts(unsigned int *printed, unsigned int *omitted,
+			    unsigned int *sigs)
+{
+	*printed = dstate_diag_printed;
+	*omitted = dstate_diag_omitted;
+	*sigs = dstate_diag_sig_used;
+}
+
 struct stuck_evict_ctx {
 	int fds[6];
 	unsigned int n;
@@ -1496,8 +1644,19 @@ static bool is_child_making_progress(struct childdata *child, int childno)
 	 * 30s is parked in its wait, so /proc/<pid>/stack is stable either
 	 * way.  Read-only + latched, so no change to the kill logic. */
 	if (!child->dstate_diag_dumped) {
+		char wchan[128];
+
 		scream_stuck_child(child, childno, pid, diff);
-		dump_dstate_diagnostics(child, childno, pid);
+		/* Gate the verbose snapshot behind the global budget.  wchan
+		 * is re-read here (scream_stuck_child does its own read) so
+		 * dstate_diag_budget_take can key its per-signature cap on
+		 * the real sleep symbol; on read failure the signature keys
+		 * on "?" and shares a slot with other unreadable-wchan
+		 * wedges, which is the intended aggregation. */
+		if (read_pid_wchan(pid, wchan, sizeof(wchan)) <= 0)
+			snprintf(wchan, sizeof(wchan), "?");
+		if (dstate_diag_budget_take(child, wchan))
+			dump_dstate_diagnostics(child, childno, pid);
 		child->dstate_diag_dumped = true;
 	}
 

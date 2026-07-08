@@ -37,6 +37,8 @@ void check_children_progressing(void);
 void kill_all_kids(void);
 void reap_dead_kids(void);
 void process_zombie_pending(void);
+void dstate_diag_get_counts(unsigned int *printed, unsigned int *omitted,
+			    unsigned int *sigs);
 
 /* main-spawn.c -- exposed entry points. */
 void replace_child(int childno);
