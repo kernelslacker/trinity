@@ -1046,6 +1046,12 @@ struct stats_s {
 	unsigned long futex_storm_inner_crashed; /* inner worker died by signal */
 	unsigned long futex_storm_iters;	/* cumulative inner-worker futex syscalls */
 
+	/* futex_pi_requeue_rollback childop counters */
+	unsigned long futex_pi_requeue_rollback_runs;		/* total invocations */
+	unsigned long futex_pi_requeue_rollback_setup_failed;	/* handshake / spawn shortfall */
+	unsigned long futex_pi_requeue_rollback_requeue_ok;	/* CMP_REQUEUE_PI returned >= 0 */
+	unsigned long futex_pi_requeue_rollback_requeue_failed;	/* CMP_REQUEUE_PI returned < 0 */
+
 	/* pipe_thrash childop counters */
 	unsigned long pipe_thrash_runs;		/* total pipe_thrash invocations */
 	unsigned long pipe_thrash_pipes;	/* successful pipe()/pipe2() calls */
