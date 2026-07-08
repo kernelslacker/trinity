@@ -29,16 +29,37 @@
  * runs before the perm check so the policy path gets exercised either
  * way.
  *
- * Attribute set: the four attributes cttimeout_nla_policy[] accepts —
+ * Attribute set: the four command-level attributes cttimeout_nla_policy[]
+ * accepts, followed by the per-L4 CTA_TIMEOUT_<PROTO>_* namespaces that
+ * the kernel walks under CTA_TIMEOUT_DATA:
  *   CTA_TIMEOUT_NAME    NLA_NUL_STRING, len = CTNL_TIMEOUT_NAME_MAX-1
  *   CTA_TIMEOUT_L3PROTO NLA_U16 (kernel reads as be16 via ntohs)
  *   CTA_TIMEOUT_L4PROTO NLA_U8
  *   CTA_TIMEOUT_DATA    NLA_NESTED (per-L4 sub-policy dispatched by
- *                       L4PROTO; length-only here so the nested parser
- *                       bounds checks get exercised, a follow-up
- *                       grammar can describe the inner sub-policies
- *                       once the generator gains per-attr nested-spec
- *                       dispatch).
+ *                       L4PROTO; children are picked from the same
+ *                       flat table below).
+ *
+ * The per-L4 arms — GENERIC / TCP / UDP / ICMP / DCCP / SCTP / GRE —
+ * live in disjoint enums (ctattr_timeout_tcp, ctattr_timeout_udp, ...)
+ * and each carries NLA_U32 state-timeout values that the L4 policy
+ * validators (tcp_timeout_nla_policy, udp_timeout_nla_policy, ...) gate
+ * with .type = NLA_U32.  The kernel reads the payload as be32 via
+ * nla_get_be32, but the on-wire length validator is 4 bytes, which is
+ * what NLA_KIND_U32 emits.
+ *
+ * The per-L4 id numbering collides with the outer namespace
+ * (CTA_TIMEOUT_TCP_SYN_SENT = 1 shares an id with CTA_TIMEOUT_NAME = 1;
+ * CTA_TIMEOUT_UDP_UNREPLIED = 1 shares it too), because the kernel
+ * matches every child against the policy of whichever nest is being
+ * parsed.  The spec-driven emitter picks entries by index rather than
+ * by id, so outer and inner definitions coexist in one flat table —
+ * the same pattern net/netlink/nfnl/ipset.c and net/netlink/genl/
+ * macsec.c already use for their outer + per-nest attr namespaces.
+ *
+ * All of the per-L4 arm constants below have been in the uapi header
+ * since Linux 4.11 (and most since 3.7), so no #ifndef shims are
+ * needed — the oldest build host trinity targets ships a newer uapi
+ * than that.
  */
 
 #include <linux/netfilter/nfnetlink.h>
@@ -55,10 +76,62 @@ static const struct nfnl_cmd_grammar cttimeout_cmds[] = {
 };
 
 static const struct nla_attr_spec cttimeout_attrs[] = {
-	{ CTA_TIMEOUT_NAME,    NLA_KIND_STRING, CTNL_TIMEOUT_NAME_MAX - 1 },
-	{ CTA_TIMEOUT_L3PROTO, NLA_KIND_U16,    2 },
-	{ CTA_TIMEOUT_L4PROTO, NLA_KIND_U8,     1 },
-	{ CTA_TIMEOUT_DATA,    NLA_KIND_NESTED, 0 },
+	/* Command level (nfnetlink_cttimeout.c). */
+	{ CTA_TIMEOUT_NAME,                  NLA_KIND_STRING,
+					     CTNL_TIMEOUT_NAME_MAX - 1 },
+	{ CTA_TIMEOUT_L3PROTO,               NLA_KIND_U16,    2 },
+	{ CTA_TIMEOUT_L4PROTO,               NLA_KIND_U8,     1 },
+	{ CTA_TIMEOUT_DATA,                  NLA_KIND_NESTED, 0 },
+
+	/* Nested CTA_TIMEOUT_DATA payload — GENERIC arm
+	 * (nf_conntrack_proto_generic.c generic_timeout_nla_policy). */
+	{ CTA_TIMEOUT_GENERIC_TIMEOUT,       NLA_KIND_U32,    4 },
+
+	/* TCP arm (nf_conntrack_proto_tcp.c tcp_timeout_nla_policy). */
+	{ CTA_TIMEOUT_TCP_SYN_SENT,          NLA_KIND_U32,    4 },
+	{ CTA_TIMEOUT_TCP_SYN_RECV,          NLA_KIND_U32,    4 },
+	{ CTA_TIMEOUT_TCP_ESTABLISHED,       NLA_KIND_U32,    4 },
+	{ CTA_TIMEOUT_TCP_FIN_WAIT,          NLA_KIND_U32,    4 },
+	{ CTA_TIMEOUT_TCP_CLOSE_WAIT,        NLA_KIND_U32,    4 },
+	{ CTA_TIMEOUT_TCP_LAST_ACK,          NLA_KIND_U32,    4 },
+	{ CTA_TIMEOUT_TCP_TIME_WAIT,         NLA_KIND_U32,    4 },
+	{ CTA_TIMEOUT_TCP_CLOSE,             NLA_KIND_U32,    4 },
+	{ CTA_TIMEOUT_TCP_SYN_SENT2,         NLA_KIND_U32,    4 },
+	{ CTA_TIMEOUT_TCP_RETRANS,           NLA_KIND_U32,    4 },
+	{ CTA_TIMEOUT_TCP_UNACK,             NLA_KIND_U32,    4 },
+
+	/* UDP arm (nf_conntrack_proto_udp.c udp_timeout_nla_policy). */
+	{ CTA_TIMEOUT_UDP_UNREPLIED,         NLA_KIND_U32,    4 },
+	{ CTA_TIMEOUT_UDP_REPLIED,           NLA_KIND_U32,    4 },
+
+	/* ICMP arm (nf_conntrack_proto_icmp.c icmp_timeout_nla_policy). */
+	{ CTA_TIMEOUT_ICMP_TIMEOUT,          NLA_KIND_U32,    4 },
+
+	/* DCCP arm (nf_conntrack_proto_dccp.c dccp_timeout_nla_policy). */
+	{ CTA_TIMEOUT_DCCP_REQUEST,          NLA_KIND_U32,    4 },
+	{ CTA_TIMEOUT_DCCP_RESPOND,          NLA_KIND_U32,    4 },
+	{ CTA_TIMEOUT_DCCP_PARTOPEN,         NLA_KIND_U32,    4 },
+	{ CTA_TIMEOUT_DCCP_OPEN,             NLA_KIND_U32,    4 },
+	{ CTA_TIMEOUT_DCCP_CLOSEREQ,         NLA_KIND_U32,    4 },
+	{ CTA_TIMEOUT_DCCP_CLOSING,          NLA_KIND_U32,    4 },
+	{ CTA_TIMEOUT_DCCP_TIMEWAIT,         NLA_KIND_U32,    4 },
+
+	/* SCTP arm (nf_conntrack_proto_sctp.c sctp_timeout_nla_policy).
+	 * HEARTBEAT_ACKED is still validated by the kernel policy even
+	 * though the state slot is no longer consumed. */
+	{ CTA_TIMEOUT_SCTP_CLOSED,           NLA_KIND_U32,    4 },
+	{ CTA_TIMEOUT_SCTP_COOKIE_WAIT,      NLA_KIND_U32,    4 },
+	{ CTA_TIMEOUT_SCTP_COOKIE_ECHOED,    NLA_KIND_U32,    4 },
+	{ CTA_TIMEOUT_SCTP_ESTABLISHED,      NLA_KIND_U32,    4 },
+	{ CTA_TIMEOUT_SCTP_SHUTDOWN_SENT,    NLA_KIND_U32,    4 },
+	{ CTA_TIMEOUT_SCTP_SHUTDOWN_RECD,    NLA_KIND_U32,    4 },
+	{ CTA_TIMEOUT_SCTP_SHUTDOWN_ACK_SENT, NLA_KIND_U32,   4 },
+	{ CTA_TIMEOUT_SCTP_HEARTBEAT_SENT,   NLA_KIND_U32,    4 },
+	{ CTA_TIMEOUT_SCTP_HEARTBEAT_ACKED,  NLA_KIND_U32,    4 },
+
+	/* GRE arm (nf_conntrack_proto_gre.c gre_timeout_nla_policy). */
+	{ CTA_TIMEOUT_GRE_UNREPLIED,         NLA_KIND_U32,    4 },
+	{ CTA_TIMEOUT_GRE_REPLIED,           NLA_KIND_U32,    4 },
 };
 
 struct nfnl_subsys_grammar sub_cttimeout = {
