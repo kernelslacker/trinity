@@ -85,6 +85,9 @@
 #ifndef XDP_USE_NEED_WAKEUP
 #define XDP_USE_NEED_WAKEUP	(1 << 3)
 #endif
+#ifndef XDP_USE_SG
+#define XDP_USE_SG		(1 << 4)
+#endif
 #endif
 
 #include "struct_catalog.h"
@@ -669,22 +672,22 @@ const struct struct_field sockaddr_nfc_variant_fields[] = {
 #ifdef USE_XDP
 /*
  * AF_XDP (sockaddr_xdp) -- XSK endpoint.  sxdp_flags drives the
- * UMEM / queue binding semantics; the kernel's xsk_bind() rejects
- * anything outside XDP_SHARED_UMEM | XDP_COPY | XDP_ZEROCOPY |
- * XDP_USE_NEED_WAKEUP with -EINVAL before the dispatch lands, so an
- * FT_FLAGS pick over that mask keeps coverage on the registered
- * codepaths.  sxdp_ifindex is a generic 32-bit ifindex -- trinity
- * has no live ifindex pool here, so leave it FT_RAW; bind() mostly
- * fails at the netlink lookup but xsk_bind itself still runs.
- * sxdp_queue_id stays small since real NICs rarely expose many
- * queues, biasing the range toward something xsk_get_pool_from_qid
- * may actually accept.  sxdp_shared_umem_fd is only honoured with
- * XDP_SHARED_UMEM set, but an FT_FD slot biases toward an existing
- * fd in the pool so the rare accept path exercises something other
- * than -EBADF.
+ * UMEM / queue binding semantics; the kernel's xsk_bind() accepts
+ * XDP_SHARED_UMEM | XDP_COPY | XDP_ZEROCOPY | XDP_USE_NEED_WAKEUP |
+ * XDP_USE_SG, so an FT_FLAGS pick over that mask keeps coverage on
+ * the registered codepaths (including the multi-frag bind path).
+ * sxdp_ifindex is a generic 32-bit ifindex -- trinity has no live
+ * ifindex pool here, so leave it FT_RAW; bind() mostly fails at the
+ * netlink lookup but xsk_bind itself still runs.  sxdp_queue_id
+ * stays small since real NICs rarely expose many queues, biasing
+ * the range toward something xsk_get_pool_from_qid may actually
+ * accept.  sxdp_shared_umem_fd is only honoured with XDP_SHARED_UMEM
+ * set, but an FT_FD slot biases toward an existing fd in the pool
+ * so the rare accept path exercises something other than -EBADF.
  */
 #define SOCKADDR_XDP_FLAGS_MASK						\
-	(XDP_SHARED_UMEM | XDP_COPY | XDP_ZEROCOPY | XDP_USE_NEED_WAKEUP)
+	(XDP_SHARED_UMEM | XDP_COPY | XDP_ZEROCOPY |			\
+	 XDP_USE_NEED_WAKEUP | XDP_USE_SG)
 
 const struct struct_field sockaddr_xdp_variant_fields[] = {
 	FIELDX(struct sockaddr_xdp, sxdp_flags, FT_FLAGS,
