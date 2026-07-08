@@ -123,3 +123,14 @@
 #ifndef PSP_A_STATS_TX_ERROR
 #define PSP_A_STATS_TX_ERROR		11
 #endif
+
+/* Post-6.18 PSP association-lifecycle commands: DEV_ASSOC installs a
+ * new PSP association on a socket bound to a PSP-capable netdev, and
+ * DEV_DISASSOC tears it back down.  Values continue the enum after
+ * PSP_CMD_GET_STATS (=10) at the next available slots. */
+#ifndef PSP_CMD_DEV_ASSOC
+#define PSP_CMD_DEV_ASSOC		11
+#endif
+#ifndef PSP_CMD_DEV_DISASSOC
+#define PSP_CMD_DEV_DISASSOC		12
+#endif

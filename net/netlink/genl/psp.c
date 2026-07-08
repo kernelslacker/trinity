@@ -46,6 +46,8 @@ static const struct genl_cmd_grammar psp_cmds[] = {
 	{ PSP_CMD_RX_ASSOC,	"PSP_CMD_RX_ASSOC" },
 	{ PSP_CMD_TX_ASSOC,	"PSP_CMD_TX_ASSOC" },
 	{ PSP_CMD_GET_STATS,	"PSP_CMD_GET_STATS" },
+	{ PSP_CMD_DEV_ASSOC,	"PSP_CMD_DEV_ASSOC" },
+	{ PSP_CMD_DEV_DISASSOC,	"PSP_CMD_DEV_DISASSOC" },
 };
 
 /*
