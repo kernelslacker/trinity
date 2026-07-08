@@ -3076,6 +3076,24 @@ struct kcov_shared {
 						      * dispatch_args invalid / reexec_pending
 						      * full-at-entry, all cases where rec_num_args
 						      * is 0 and the per-slot loop never runs. */
+
+	/* Shadow measurement of a high-bit-preserving replacement for the
+	 * width-masked CMP RedQueen pin.  On a unique width match the live
+	 * consumer overwrites the WHOLE 64-bit arg slot with arg1 (the
+	 * kernel constant), clobbering the slot's high bits; syzkaller
+	 * instead splices -- replacement = (orig & ~width_mask) |
+	 * (arg1 & width_mask) -- which matters when the high bits feed a
+	 * separate validation path.  These two counters size how often
+	 * that splice would produce a byte-different pin from today's
+	 * whole-slot overwrite, so the headroom of a future preserving
+	 * lever can be judged before building it.  Nothing in the collect /
+	 * save / re-exec paths reads them; live pin is unchanged.  Append-
+	 * only at the tail per convention so consumer offsets stay stable. */
+	unsigned long cmp_width_pin_total;           /* unique width-match stamps executed */
+	unsigned long cmp_width_pin_would_differ;    /* subset where the matched slot has non-zero
+						      * bits outside width_mask, so a high-bit-
+						      * preserving splice would produce a value
+						      * different from today's whole-slot overwrite */
 };
 
 extern struct kcov_shared *kcov_shm;
