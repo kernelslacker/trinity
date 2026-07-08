@@ -74,5 +74,6 @@ CHILD_OP_SYSFS_STRING_RACE            TODO: review for rotation candidacy
 CHILD_OP_TC_MIRRED_BLOCKCAST          TODO: review for rotation candidacy
 CHILD_OP_TCP_ULP_SWAP_CHURN           TODO: review for rotation candidacy
 CHILD_OP_VETH_ASYMMETRIC_XDP          TODO: review for rotation candidacy
+CHILD_OP_VLAN_FILTER_CHURN            TODO: review for rotation candidacy
 CHILD_OP_VSOCK_TRANSPORT_CHURN        TODO: review for rotation candidacy
 CHILD_OP_WIREGUARD_DECRYPT_FLOOD      TODO: review for rotation candidacy

@@ -219,6 +219,7 @@ enum child_op_type {
 	CHILD_OP_IP6_UDP_CORK_SPLICE,
 	CHILD_OP_IP_GRE_CHURN,
 	CHILD_OP_FUTEX_PI_REQUEUE_ROLLBACK,
+	CHILD_OP_VLAN_FILTER_CHURN,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -1642,6 +1643,7 @@ bool msg_zerocopy_churn(struct childdata *child);
 bool iouring_send_zc_churn(struct childdata *child);
 bool vsock_transport_churn(struct childdata *child);
 bool bridge_vlan_churn(struct childdata *child);
+bool vlan_filter_churn(struct childdata *child);
 bool igmp_mld_source_churn(struct childdata *child);
 bool psp_key_rotate(struct childdata *child);
 void psp_key_rotate_cleanup_child(void);
