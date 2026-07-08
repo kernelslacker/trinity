@@ -44,13 +44,40 @@
 #include "utils.h"
 
 #include "kernel/socket.h"
+
+/*
+ * Fresh-uapi shims for NETDEV_CMD_* ids that build hosts with a stale
+ * <linux/netdev.h> may not yet know.  PAGE_POOL_GET / PAGE_POOL_STATS_GET
+ * / NAPI_SET landed at the values below alongside the earlier
+ * BIND_RX / BIND_TX / QSTATS_GET additions; QUEUE_CREATE is the newest
+ * user-callable command (post-6.18) and takes the next slot after
+ * BIND_TX.  Values mirror the mainline enum ordering in
+ * include/uapi/linux/netdev.h.
+ */
+#ifndef NETDEV_CMD_PAGE_POOL_GET
+#define NETDEV_CMD_PAGE_POOL_GET       5
+#endif
+#ifndef NETDEV_CMD_PAGE_POOL_STATS_GET
+#define NETDEV_CMD_PAGE_POOL_STATS_GET 9
+#endif
+#ifndef NETDEV_CMD_NAPI_SET
+#define NETDEV_CMD_NAPI_SET            14
+#endif
+#ifndef NETDEV_CMD_QUEUE_CREATE
+#define NETDEV_CMD_QUEUE_CREATE        16
+#endif
+
 static const struct genl_cmd_grammar netdev_cmds[] = {
-	{ NETDEV_CMD_DEV_GET,     "NETDEV_CMD_DEV_GET" },
-	{ NETDEV_CMD_QUEUE_GET,   "NETDEV_CMD_QUEUE_GET" },
-	{ NETDEV_CMD_NAPI_GET,    "NETDEV_CMD_NAPI_GET" },
-	{ NETDEV_CMD_QSTATS_GET,  "NETDEV_CMD_QSTATS_GET" },
-	{ NETDEV_CMD_BIND_RX,     "NETDEV_CMD_BIND_RX" },
-	{ NETDEV_CMD_BIND_TX,     "NETDEV_CMD_BIND_TX" },
+	{ NETDEV_CMD_DEV_GET,             "NETDEV_CMD_DEV_GET" },
+	{ NETDEV_CMD_PAGE_POOL_GET,       "NETDEV_CMD_PAGE_POOL_GET" },
+	{ NETDEV_CMD_PAGE_POOL_STATS_GET, "NETDEV_CMD_PAGE_POOL_STATS_GET" },
+	{ NETDEV_CMD_QUEUE_GET,           "NETDEV_CMD_QUEUE_GET" },
+	{ NETDEV_CMD_QUEUE_CREATE,        "NETDEV_CMD_QUEUE_CREATE" },
+	{ NETDEV_CMD_NAPI_GET,            "NETDEV_CMD_NAPI_GET" },
+	{ NETDEV_CMD_NAPI_SET,            "NETDEV_CMD_NAPI_SET" },
+	{ NETDEV_CMD_QSTATS_GET,          "NETDEV_CMD_QSTATS_GET" },
+	{ NETDEV_CMD_BIND_RX,             "NETDEV_CMD_BIND_RX" },
+	{ NETDEV_CMD_BIND_TX,             "NETDEV_CMD_BIND_TX" },
 };
 
 /*
