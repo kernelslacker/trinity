@@ -133,6 +133,17 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 	unsigned long nonconst_both_match = 0;
 	unsigned long nonconst_would_attribute = 0;
 	unsigned long nonconst_measured = 0;
+	/*
+	 * Shadow measurement at the width-masked RedQueen pin site.  Live
+	 * consumer overwrites the whole 64-bit slot with arg1; a high-bit-
+	 * preserving splice would keep bits outside width_mask.  Size how
+	 * often the splice would differ from today's overwrite.  Same per-
+	 * record accumulator + function-exit flush pattern as above;
+	 * nothing on the live path reads these.  See the matching struct-
+	 * tail comment in include/kcov.h.
+	 */
+	unsigned long width_pin_total = 0;
+	unsigned long width_pin_would_differ = 0;
 	struct cmp_hint_pool *pool;
 	struct cmp_hints_bloom *bloom = NULL;
 	struct childdata *child;
@@ -670,6 +681,24 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 				if (width_count == 1) {
 					struct reexec_pending *p =
 						&child->reexec_pending[child->reexec_pending_count];
+					/* Shadow measurement (see width_pin_*
+					 * declarations at function top): compare
+					 * the matched slot's full 64-bit value
+					 * against arg1 outside width_mask.  A non-
+					 * zero XOR there means a high-bit-
+					 * preserving splice would produce a
+					 * different pin than today's whole-slot
+					 * overwrite.  width_first is 1-based; the
+					 * outer loop's size > 0 && size <
+					 * sizeof(unsigned long) bound guarantees
+					 * ~width_mask is well-defined and non-
+					 * zero.  Live pin below is unchanged. */
+					unsigned long orig =
+						rec_args[width_first - 1];
+
+					width_pin_total++;
+					if (((orig ^ arg1) & ~width_mask) != 0)
+						width_pin_would_differ++;
 
 					p->cmp_ip = ip;
 					p->value = arg1;
@@ -926,6 +955,12 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 		if (nonconst_measured != 0)
 			__atomic_fetch_add(&kcov_shm->cmp_nonconst_measured,
 					   nonconst_measured, __ATOMIC_RELAXED);
+		if (width_pin_total != 0)
+			__atomic_fetch_add(&kcov_shm->cmp_width_pin_total,
+					   width_pin_total, __ATOMIC_RELAXED);
+		if (width_pin_would_differ != 0)
+			__atomic_fetch_add(&kcov_shm->cmp_width_pin_would_differ,
+					   width_pin_would_differ, __ATOMIC_RELAXED);
 	}
 }
 

@@ -3462,6 +3462,8 @@ static void dump_stats_render_kcov_base_stats(void)
 	unsigned long kc_cmp_nonconst_both_match       = __atomic_load_n(&kcov_shm->cmp_nonconst_both_match,            __ATOMIC_RELAXED);
 	unsigned long kc_cmp_nonconst_would_attribute  = __atomic_load_n(&kcov_shm->cmp_nonconst_would_attribute,       __ATOMIC_RELAXED);
 	unsigned long kc_cmp_nonconst_measured         = __atomic_load_n(&kcov_shm->cmp_nonconst_measured,              __ATOMIC_RELAXED);
+	unsigned long kc_cmp_width_pin_total           = __atomic_load_n(&kcov_shm->cmp_width_pin_total,                __ATOMIC_RELAXED);
+	unsigned long kc_cmp_width_pin_would_differ    = __atomic_load_n(&kcov_shm->cmp_width_pin_would_differ,         __ATOMIC_RELAXED);
 
 	stat_row("kcov_coverage", "unique_edges",          kc_edges);
 	stat_row("kcov_coverage", "total_pcs",             kc_pcs);
@@ -3544,6 +3546,25 @@ static void dump_stats_render_kcov_base_stats(void)
 			(kc_cmp_nonconst_would_attribute * 1000UL) /
 			kc_cmp_nonconst_measured;
 		stat_row("kcov_coverage", "cmp_nonconst_would_attribute_per_mille_measured", ratio_milli);
+	}
+
+	/* Shadow measurement of a high-bit-preserving replacement for the
+	 * width-masked CMP RedQueen pin.  cmp_width_pin_total counts every
+	 * unique width-match stamp; cmp_width_pin_would_differ counts the
+	 * subset where the matched slot carries non-zero bits outside
+	 * width_mask, so a syzkaller-style splice (orig high bits | arg1
+	 * low bits) would produce a value different from today's whole-
+	 * slot overwrite with arg1.  Ratio in per-mille sizes the headroom
+	 * a preserving lever would open up; the live pin is unchanged. */
+	if (kc_cmp_width_pin_total > 0)
+		stat_row("kcov_coverage", "cmp_width_pin_total", kc_cmp_width_pin_total);
+	if (kc_cmp_width_pin_would_differ > 0)
+		stat_row("kcov_coverage", "cmp_width_pin_would_differ", kc_cmp_width_pin_would_differ);
+	if (kc_cmp_width_pin_total > 0) {
+		unsigned long ratio_milli =
+			(kc_cmp_width_pin_would_differ * 1000UL) /
+			kc_cmp_width_pin_total;
+		stat_row("kcov_coverage", "cmp_width_pin_would_differ_per_mille", ratio_milli);
 	}
 }
 
