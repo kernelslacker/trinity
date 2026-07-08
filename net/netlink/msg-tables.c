@@ -128,6 +128,9 @@ const char *link_kinds[] = {
 	"veth", "bridge", "bond", "vlan", "macvlan",
 	"vxlan", "ipvlan", "dummy", "ifb", "gre",
 	"gretap", "sit", "ip6tnl", "ip6gre", "vti",
+	"geneve", "macsec", "wireguard", "gtp", "bareudp",
+	"vrf", "hsr", "xfrm", "rmnet", "amt",
+	"netkit", "ovpn",
 };
 const size_t link_kinds_n = ARRAY_SIZE(link_kinds);
 
