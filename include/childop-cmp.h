@@ -42,6 +42,7 @@
  * site, mirroring the trinity_raw_syscall ergonomics.
  */
 
+#include "cmp_hints.h"
 #include "kcov.h"
 #include "syscall-gate.h"
 #include "child.h"
@@ -56,3 +57,47 @@
 		childop_cmp_collect(_tcsk, (unsigned int)(nr)); \
 		_tcsr; \
 	})
+
+/*
+ * SHADOW consume-side resolver for the childop CMP path.
+ *
+ * childop_cmp_value(nr, use, old, fallback) is the CONSUMER-side
+ * counterpart to trinity_cmp_syscall(): a caller inside a childop's
+ * field-emit path calls it with the rng value it was about to
+ * commit, and it returns the value to actually commit.  In THIS
+ * build the return is unconditionally the fallback -- the resolver
+ * is shadow-only, no arg is changed, no downstream behaviour
+ * differs.  The point is to size the consume-side opportunity via
+ * the kcov_shm childop_cmp_consume_* counters:
+ *
+ *   --childop-cmp-consume=off (default)
+ *      Short-circuit before any cmp_hints_try_get_ex() call and
+ *      return fallback verbatim.  Every childop_cmp_consume_*
+ *      counter stays at zero; a fixed-seed pick stream at the
+ *      callsite is byte-for-byte identical to a build without this
+ *      knob.
+ *
+ *   --childop-cmp-consume=on
+ *      Probe the durable per-nr pool via cmp_hints_try_get_ex(nr,
+ *      do32=false, use, old, allow_hyp_inject=false, accept=NULL,
+ *      arg_idx=0, callsite=CMP_HINT_CALLSITE_OTHER, &resolved);
+ *      bump childop_cmp_consume_would_pick[nr] on a true return and
+ *      childop_cmp_consume_would_miss[nr] on false; on a true
+ *      return, additionally bump childop_cmp_consume_would_value_
+ *      differs[nr] iff resolved != fallback (a live consume at
+ *      this site would have actually changed the arg).  Return
+ *      fallback in both cases.
+ *
+ * do32 is hard-coded to false: childops issue native 64-bit
+ * syscalls only -- see the harvest-side comment in
+ * childop_cmp_collect() for the same reasoning.  nr-only keying
+ * (pilot single-semantic); a future slice adds nr+cmd / nr+field
+ * keying and gates ioctl / keyctl / fcntl childops on it.
+ *
+ * The four conversion-chain counters (candidate_accepted /
+ * arg_changed / outcome_changed / new_cov) declared in kcov_shm
+ * next to the would-* triple have NO bump site in this build --
+ * they wait for the C3/C4 live-consume slice.
+ */
+unsigned long childop_cmp_value(unsigned int nr, enum cmp_hint_use use,
+				unsigned long old, unsigned long fallback);

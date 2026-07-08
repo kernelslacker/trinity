@@ -372,12 +372,28 @@ static void arm_v1_binary(int32_t *ring, unsigned int iter)
 
 	/* Most of the time we want kver==1 and security_index==RXKAD so the
 	 * parser walks through to the alloc/copy path.  One in four uses a
-	 * deliberately wrong field to drive the early-reject branches. */
+	 * deliberately wrong field to drive the early-reject branches.
+	 *
+	 * Each of the three v1-header fields is routed through the shadow
+	 * consume resolver so the childop_cmp_consume_would_* counters
+	 * size what a live pool-served constant would do at this site.
+	 * kver / security_index are EXACT-family (equality gates in
+	 * rxrpc_preparse_xdr / rxrpc_preparse v1); ticket_length is a
+	 * BOUNDARY-family length check.  The resolver is shadow-only and
+	 * returns the rng draw verbatim -- pick stream unchanged. */
 	kver = (rnd_modulo_u32(4) == 0) ? (uint32_t)(rand32() | 2u) : 1u;
+	kver = (uint32_t) childop_cmp_value(__NR_add_key, CMP_HINT_EXACT,
+					     0UL, (unsigned long) kver);
 	sec_idx = (rnd_modulo_u32(4) == 0)
 			? (uint16_t)(rand32() & 0xff)
 			: RXKAD_SEC_IDX;
+	sec_idx = (uint16_t) childop_cmp_value(__NR_add_key, CMP_HINT_EXACT,
+					        0UL, (unsigned long) sec_idx);
 	ticket_length = (uint16_t) rnd_modulo_u32(64);
+	ticket_length = (uint16_t) childop_cmp_value(__NR_add_key,
+						     CMP_HINT_BOUNDARY,
+						     0UL,
+						     (unsigned long) ticket_length);
 
 	/* On half the iterations we lie: payload size disagrees with
 	 * advertised ticket_length, which trips the
@@ -434,8 +450,16 @@ static void arm_xdr_envelope(int32_t *ring, unsigned int iter)
 	 * default -> -EPROTONOSUPPORT branch in rxrpc_preparse_xdr() most
 	 * of the time, and occasionally hit RXKAD/RXGK with a deliberately
 	 * wrong toklen. */
+	/* sec_ix is the XDR-envelope security-index equality gate
+	 * (EXACT family; RXKAD==2 / RXGK==6 exemplars); toklen is a
+	 * length check (BOUNDARY).  Shadow-resolve both -- returned
+	 * value is discarded, rng draw commits verbatim. */
 	sec_ix = (uint32_t) rand32();
+	sec_ix = (uint32_t) childop_cmp_value(__NR_add_key, CMP_HINT_EXACT,
+					       0UL, (unsigned long) sec_ix);
 	toklen = 4 + rnd_modulo_u32(64);
+	toklen = (uint32_t) childop_cmp_value(__NR_add_key, CMP_HINT_BOUNDARY,
+					       0UL, (unsigned long) toklen);
 	header_off = off;
 
 	append_be32(buf, &off, toklen);
@@ -478,10 +502,13 @@ static void arm_xdr_rxkad(int32_t *ring, unsigned int iter)
 	build_xdr_head(buf, &off, 0u, cell_len, 1u, false);
 
 	/* tktlen mostly small (8..64), with occasional spike to drive the
-	 * tktlen > AFSTOKEN_RK_TIX_MAX (12000) reject branch. */
+	 * tktlen > AFSTOKEN_RK_TIX_MAX (12000) reject branch.  Shadow-
+	 * resolve as BOUNDARY -- rng draw commits verbatim. */
 	tktlen = (rnd_modulo_u32(8) == 0)
 			? (uint32_t)(13000 + rnd_modulo_u32(1024))
 			: (uint32_t)(8 + rnd_modulo_u32(56));
+	tktlen = (uint32_t) childop_cmp_value(__NR_add_key, CMP_HINT_BOUNDARY,
+					       0UL, (unsigned long) tktlen);
 
 	/* One in four iterations advertises a toklen that disagrees with
 	 * what we actually wrote, exercising the
@@ -489,6 +516,8 @@ static void arm_xdr_rxkad(int32_t *ring, unsigned int iter)
 	toklen = 8 * 4 + ((tktlen + 3) & ~3U);
 	if (rnd_modulo_u32(4) == 0)
 		toklen += rnd_modulo_u32(64);
+	toklen = (uint32_t) childop_cmp_value(__NR_add_key, CMP_HINT_BOUNDARY,
+					       0UL, (unsigned long) toklen);
 
 	append_be32(buf, &off, toklen);
 	append_be32(buf, &off, RXKAD_SEC_IDX);
@@ -618,6 +647,11 @@ static void arm_xdr_rxgk(int32_t *ring, unsigned int iter)
 		enctype = (int64_t)(17 + rnd_modulo_u32(4));
 		break;
 	}
+	/* enctype is an equality gate against the krb5 enctype table
+	 * (17 == aes128-cts-hmac-sha1-96); shadow-resolve as EXACT.
+	 * Return is discarded -- rng draw commits verbatim. */
+	enctype = (int64_t) childop_cmp_value(__NR_add_key, CMP_HINT_EXACT,
+					       0UL, (unsigned long) enctype);
 
 	keylen = (rnd_modulo_u32(8) == 0)
 			? (uint32_t)(70 + rnd_modulo_u32(64))
@@ -625,11 +659,18 @@ static void arm_xdr_rxgk(int32_t *ring, unsigned int iter)
 	tktlen = (rnd_modulo_u32(16) == 0)
 			? (uint32_t)(17000 + rnd_modulo_u32(256))
 			: (uint32_t)(64 + rnd_modulo_u32(256));
+	/* tktlen is the ticket length check; shadow-resolve as BOUNDARY. */
+	tktlen = (uint32_t) childop_cmp_value(__NR_add_key, CMP_HINT_BOUNDARY,
+					       0UL, (unsigned long) tktlen);
 
 	endtime = pick_xrxgk_endtime();
 
 	toklen = 4 + 6 * 8 + 4 + ((keylen + 3) & ~3U)
 		 + 4 + ((tktlen + 3) & ~3U);
+	/* toklen is the outer envelope length check; shadow-resolve
+	 * as BOUNDARY so the counter partition matches the xrxkad arm. */
+	toklen = (uint32_t) childop_cmp_value(__NR_add_key, CMP_HINT_BOUNDARY,
+					       0UL, (unsigned long) toklen);
 
 	append_be32(buf, &off, toklen);
 	append_be32(buf, &off, RXGK_SEC_IDX);
