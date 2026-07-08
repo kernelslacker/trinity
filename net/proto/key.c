@@ -232,6 +232,9 @@ static void key_gen_msg(__unused__ struct socket_triplet *triplet, void **buf, s
 		SADB_GETSPI, SADB_UPDATE, SADB_ADD, SADB_DELETE,
 		SADB_GET, SADB_REGISTER, SADB_FLUSH, SADB_DUMP,
 		SADB_X_PROMISC, SADB_X_SPDADD, SADB_X_SPDFLUSH,
+		SADB_X_SPDUPDATE, SADB_X_SPDDELETE, SADB_X_SPDGET,
+		SADB_X_SPDDUMP, SADB_X_SPDSETIDX, SADB_X_SPDDELETE2,
+		SADB_X_MIGRATE,
 	};
 	static const __u8 satypes[] = {
 		SADB_SATYPE_AH, SADB_SATYPE_ESP, SADB_X_SATYPE_IPCOMP,
@@ -291,15 +294,40 @@ static void key_gen_msg(__unused__ struct socket_triplet *triplet, void **buf, s
 			pfkey_append_x_sa2(msgbuf, &off);
 		break;
 	case SADB_X_SPDADD:
+	case SADB_X_SPDUPDATE:
 		pfkey_append_x_policy(msgbuf, &off);
 		pfkey_append_addr(msgbuf, &off, SADB_EXT_ADDRESS_SRC);
 		pfkey_append_addr(msgbuf, &off, SADB_EXT_ADDRESS_DST);
 		if (ONE_IN(2))
 			pfkey_append_lifetime(msgbuf, &off, SADB_EXT_LIFETIME_HARD);
 		break;
+	case SADB_X_SPDDELETE:
+	case SADB_X_SPDGET:
+	case SADB_X_SPDSETIDX:
+		/* Lookup by (policy sel-shape + src + dst).  SPDSETIDX
+		 * additionally wants a non-zero policy_id; pfkey_append_x_policy
+		 * randomises the id so ~1/2^32 of the time it hits 0 (kernel
+		 * rejects) — intentional edge coverage. */
+		pfkey_append_x_policy(msgbuf, &off);
+		pfkey_append_addr(msgbuf, &off, SADB_EXT_ADDRESS_SRC);
+		pfkey_append_addr(msgbuf, &off, SADB_EXT_ADDRESS_DST);
+		break;
+	case SADB_X_SPDDELETE2:
+		/* Delete by policy id — bare policy header carries the id
+		 * the kernel matches on; no addresses required. */
+		pfkey_append_x_policy(msgbuf, &off);
+		break;
+	case SADB_X_MIGRATE:
+		/* Coherent policy + endpoints; SADB_EXT_KMADDRESS is
+		 * optional here — the parser walks with or without it. */
+		pfkey_append_x_policy(msgbuf, &off);
+		pfkey_append_addr(msgbuf, &off, SADB_EXT_ADDRESS_SRC);
+		pfkey_append_addr(msgbuf, &off, SADB_EXT_ADDRESS_DST);
+		break;
 	default:
 		/* SADB_REGISTER, SADB_FLUSH, SADB_DUMP, SADB_X_PROMISC,
-		 * SADB_X_SPDFLUSH — bare sadb_msg, no extensions. */
+		 * SADB_X_SPDFLUSH, SADB_X_SPDDUMP — bare sadb_msg, no
+		 * extensions. */
 		break;
 	}
 
