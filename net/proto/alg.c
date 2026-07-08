@@ -249,10 +249,15 @@ static void alg_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct s
 #define ALG_SET_AEAD_AUTHSIZE	5
 #define ALG_SET_DRBG_ENTROPY	6
 
+#ifndef ALG_SET_KEY_BY_KEY_SERIAL
+#define ALG_SET_KEY_BY_KEY_SERIAL 7
+#endif
+
 static const unsigned int alg_opts[] = {
 	ALG_SET_KEY, ALG_SET_IV, ALG_SET_OP,
 	ALG_SET_AEAD_ASSOCLEN, ALG_SET_AEAD_AUTHSIZE,
 	ALG_SET_DRBG_ENTROPY,
+	ALG_SET_KEY_BY_KEY_SERIAL,
 };
 
 static struct socket_triplet alg_triplet[] = {
