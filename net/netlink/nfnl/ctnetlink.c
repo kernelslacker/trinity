@@ -35,6 +35,22 @@
 #include "netlink-nfnl-subsystems.h"
 #include "utils.h"
 
+/*
+ * Fresh-uapi shims for CTA_* ids that build hosts with a stale
+ * <linux/netfilter/nfnetlink_conntrack.h> may not yet know.  Values
+ * mirror the mainline enum ctattr_type ordering; SECMARK is retained
+ * as an obsolete-but-parsed scalar the kernel still validates.
+ */
+#ifndef CTA_SECMARK
+#define CTA_SECMARK        17
+#endif
+#ifndef CTA_SECCTX
+#define CTA_SECCTX         19
+#endif
+#ifndef CTA_TIMESTAMP_EVENT
+#define CTA_TIMESTAMP_EVENT 27
+#endif
+
 static const struct nfnl_cmd_grammar ctnetlink_cmds[] = {
 	{ IPCTNL_MSG_CT_NEW,             "IPCTNL_MSG_CT_NEW" },
 	{ IPCTNL_MSG_CT_GET,             "IPCTNL_MSG_CT_GET" },
@@ -85,6 +101,9 @@ static const struct nla_attr_spec ctnetlink_attrs[] = {
 	{ CTA_SYNPROXY,       NLA_KIND_NESTED, 0 },
 	{ CTA_FILTER,         NLA_KIND_NESTED, 0 },
 	{ CTA_STATUS_MASK,    NLA_KIND_U32,    4 },
+	{ CTA_SECMARK,        NLA_KIND_U32,    4 },
+	{ CTA_SECCTX,         NLA_KIND_NESTED, 0 },
+	{ CTA_TIMESTAMP_EVENT, NLA_KIND_NESTED, 0 },
 };
 
 /*
