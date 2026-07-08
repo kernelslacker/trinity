@@ -61,6 +61,7 @@ static const struct genl_cmd_grammar ethtool_cmds[] = {
 	{ ETHTOOL_MSG_MM_GET,            "ETHTOOL_MSG_MM_GET" },
 	{ ETHTOOL_MSG_PHY_GET,           "ETHTOOL_MSG_PHY_GET" },
 	{ ETHTOOL_MSG_TSCONFIG_GET,      "ETHTOOL_MSG_TSCONFIG_GET" },
+	{ ETHTOOL_MSG_MSE_GET,           "ETHTOOL_MSG_MSE_GET" },
 };
 
 /*
