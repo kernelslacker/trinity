@@ -218,6 +218,7 @@ enum child_op_type {
 	CHILD_OP_UMOUNT_RACE,
 	CHILD_OP_IP6_UDP_CORK_SPLICE,
 	CHILD_OP_IP_GRE_CHURN,
+	CHILD_OP_FUTEX_PI_REQUEUE_ROLLBACK,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -1590,6 +1591,7 @@ bool refcount_auditor(struct childdata *child);
 bool fs_lifecycle(struct childdata *child);
 bool signal_storm(struct childdata *child);
 bool futex_storm(struct childdata *child);
+bool futex_pi_requeue_rollback(struct childdata *child);
 bool pipe_thrash(struct childdata *child);
 bool fork_storm(struct childdata *child);
 bool flock_thrash(struct childdata *child);

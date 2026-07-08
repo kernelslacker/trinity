@@ -36,6 +36,7 @@ CHILD_OP_QRTR_BIND_RACE          REASON: AF_QRTR same-port bind/close race; fork
 CHILD_OP_PFKEY_SPD_WALK          REASON: PF_KEYv2 SPDDUMP-vs-SPDADD walk race; fork+exit storm + per-child netns unshare not safe for steady rotation
 CHILD_OP_L2TP_IFNAME_RACE        REASON: L2TP SESSION_CREATE same-ifname race; fork+exit storm + per-child netns unshare + netdev register/unregister not safe for steady rotation
 CHILD_OP_STATMOUNT_IDMAP_OVERFLOW REASON: statmount() idmap seq-buffer overflow sweep; per-child mount+user ns unshare + detached tmpfs lifecycle not safe for steady rotation
+CHILD_OP_FUTEX_PI_REQUEUE_ROLLBACK REASON: structured PI-chain + timed WAIT_REQUEUE_PI + CMP_REQUEUE_PI race with mid-flight sched_setattr; PI-blocked workers not safe for steady rotation
 CHILD_OP_AFXDP_CHURN                  TODO: review for rotation candidacy
 CHILD_OP_AF_ALG_RECVMSG_CHURN         TODO: review for rotation candidacy
 CHILD_OP_AF_ALG_TEMPLATE_PROBE        TODO: review for rotation candidacy
