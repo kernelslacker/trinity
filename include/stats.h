@@ -5385,9 +5385,19 @@ struct stats_s {
 	 * (blob_dict_inserts + blob_static_magic_inserts) is the
 	 * observable transform-vs-plain split.  All five counters are
 	 * bumped only by CMPDICT -- the per-rung contribution stays
-	 * isolated across an off / fill / havoc / cmpdict A/B. */
+	 * isolated across an off / fill / havoc / cmpdict A/B.
+	 * blob_havoc_prefix_len_ops is an arm-selection shadow of
+	 * blob_havoc_ops: it counts the subset of havoc ops the
+	 * prefix-len arm was picked for (stamp a plausible length /
+	 * size value at buffer offset 0 to reach length-gated parsers
+	 * -- TLV entry length, netlink attr nla_len, on-wire header
+	 * size fields -- that uniform per-byte havoc almost never
+	 * satisfies).  Bumped by HAVOC and CMPDICT rungs (both run
+	 * blob_havoc()); its ratio to blob_havoc_ops is the observable
+	 * per-arm selection rate. */
 	unsigned long blob_fills;
 	unsigned long blob_havoc_ops;
+	unsigned long blob_havoc_prefix_len_ops;
 	unsigned long blob_dict_inserts;
 	unsigned long blob_static_magic_inserts;
 	unsigned long blob_dict_transform_inserts;
