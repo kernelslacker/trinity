@@ -507,6 +507,20 @@ struct shm_s {
 	 * false -> true, and the write is idempotent. */
 	bool fou_gue_mcast_rx_kind_unsupported;
 
+	/* Feature-absent latch for the geneve_rx childop
+	 * (childops/net/geneve-rx.c).  Set when RTM_NEWLINK kind="geneve"
+	 * installing a geneve tunnel dev rejects with the CONFIG_GENEVE
+	 * / module-absent errno set (EAFNOSUPPORT / EOPNOTSUPP / ENOTSUP
+	 * / ENOENT / EPROTONOSUPPORT) inside the transient
+	 * userns_run_in_ns grandchild.  Same shm-vs-static rationale as
+	 * the sibling latches above: the rejection is observed inside a
+	 * transient grandchild that _exit()s after the body returns, so
+	 * a process-local static would die with the grandchild and every
+	 * subsequent invocation would re-attempt the missing kind
+	 * forever.  RELAXED atomic load/store from multiple grandchildren
+	 * is safe -- only false -> true, and the write is idempotent. */
+	bool geneve_rx_kind_unsupported;
+
 	/*
 	 * Distinct-sequence-hash ring for run_grammar_chain's per-walk
 	 * phase ordering.  Each walk computes an FNV-1a hash over the

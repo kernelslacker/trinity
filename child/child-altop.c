@@ -34,7 +34,7 @@
  * Slot ordering matches pick_op_type_table[]; the _Static_assert below
  * pins ARRAY_SIZE equality between the two.
  */
-static int dormant_op_disabled[125] = {
+static int dormant_op_disabled[126] = {
 	0, 0, 0, 0, 0,
 	0, 1, 1, 1, 1,
 	1, 1, 1, 0, 1,
@@ -77,6 +77,7 @@ static int dormant_op_disabled[125] = {
 	0,	/* pkt_builder_probe: lightweight infra prover — one raw/AF_PACKET/UDP socket per child, fixed 6-recipe stack; promote at startup so the composable layer stack keeps compiling and delivering across kernels. */
 	1,	/* esp_crafted_rx: dormant until canary-queue load-tests the crafted ESP RX-decap burst (userns_run_in_ns + NETLINK_XFRM inbound null-cipher/null-auth SA install + IPPROTO_RAW hand-rolled outer IPv4/IPv6 + ESP + truncated inner frames). */
 	1,	/* fou_gue_mcast_rx: dormant until canary-queue load-tests the FOU/GUE multicast crafted-RX burst (userns_run_in_ns + genl "fou" FOU_CMD_ADD install + IPPROTO_RAW hand-rolled outer IPv4/IPv6 + UDP-encap + optional GUE + truncated inner frames at mcast dst). */
+	1,	/* geneve_rx: dormant until canary-queue load-tests the geneve UDP/6081 RX-decap burst (userns_run_in_ns + RTM_NEWLINK kind=geneve install + IPPROTO_RAW hand-rolled outer IPv4/UDP/GENEVE + variable-length options + truncated inner frames). */
 };
 
 /*
@@ -325,6 +326,7 @@ const char *alt_op_name(enum child_op_type op)
 	case CHILD_OP_PKT_BUILDER_PROBE:	return "pkt_builder_probe";
 	case CHILD_OP_ESP_CRAFTED_RX:	return "esp_crafted_rx";
 	case CHILD_OP_FOU_GUE_MCAST_RX:	return "fou_gue_mcast_rx";
+	case CHILD_OP_GENEVE_RX:	return "geneve_rx";
 	case NR_CHILD_OP_TYPES:		break;
 	}
 	return "unknown";
@@ -422,7 +424,7 @@ void log_alt_op_config(void)
  * CHILD_OP_SYSCALL sentinel filter in init_altop_dispatch() stays as
  * defensive coding for any future hole.
  */
-static const enum child_op_type pick_op_type_table[125] = {
+static const enum child_op_type pick_op_type_table[126] = {
 	[0]  = CHILD_OP_MMAP_LIFECYCLE,
 	[1]  = CHILD_OP_MPROTECT_SPLIT,
 	[2]  = CHILD_OP_MLOCK_PRESSURE,
@@ -548,6 +550,7 @@ static const enum child_op_type pick_op_type_table[125] = {
 	[122] = CHILD_OP_PKT_BUILDER_PROBE,
 	[123] = CHILD_OP_ESP_CRAFTED_RX,
 	[124] = CHILD_OP_FOU_GUE_MCAST_RX,
+	[125] = CHILD_OP_GENEVE_RX,
 };
 _Static_assert(ARRAY_SIZE(pick_op_type_table) == ARRAY_SIZE(dormant_op_disabled),
 	"pick_op_type_table and dormant_op_disabled must have matching slot counts");
@@ -1514,6 +1517,7 @@ bool (*const op_dispatch[NR_CHILD_OP_TYPES])(struct childdata *) = {
 	[CHILD_OP_PKT_BUILDER_PROBE]	= pkt_builder_probe,
 	[CHILD_OP_ESP_CRAFTED_RX]	= esp_crafted_rx,
 	[CHILD_OP_FOU_GUE_MCAST_RX]	= fou_gue_mcast_rx,
+	[CHILD_OP_GENEVE_RX]		= geneve_rx,
 };
 
 _Static_assert(ARRAY_SIZE(op_dispatch) == NR_CHILD_OP_TYPES,
