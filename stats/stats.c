@@ -355,6 +355,19 @@ const struct stat_category netns_teardown_category =
 	              netns_teardown_runs,
 	              netns_teardown_fields);
 
+static const struct stat_field deep_path_nesting_fields[] = {
+	STAT_FIELD(deep_path, runs),
+	STAT_FIELD(deep_path, setup_failed),
+	STAT_FIELD(deep_path, max_depth_reached),
+	STAT_FIELD(deep_path, reader_ok),
+	STAT_FIELD(deep_path, reader_failed),
+};
+
+const struct stat_category deep_path_nesting_category =
+	STAT_CATEGORY("deep_path_nesting",
+	              deep_path_runs,
+	              deep_path_nesting_fields);
+
 static const struct stat_field netns_mountns_setup_fields[] = {
 	STAT_FIELD(netns_mountns_setup, runs),
 	STAT_FIELD(netns_mountns_setup, setup_failed),

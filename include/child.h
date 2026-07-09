@@ -228,6 +228,7 @@ enum child_op_type {
 	CHILD_OP_NETNS_MOUNTNS_SETUP_PROBE,
 	CHILD_OP_BAREUDP_RX,
 	CHILD_OP_MPLS_LABEL_STACK_RX,
+	CHILD_OP_DEEP_PATH_NESTING,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -1710,3 +1711,4 @@ bool fou_gue_mcast_rx(struct childdata *child);
 bool geneve_rx(struct childdata *child);
 bool bareudp_rx(struct childdata *child);
 bool mpls_label_stack_rx(struct childdata *child);
+bool deep_path_nesting(struct childdata *child);
