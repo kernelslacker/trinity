@@ -1,70 +1,55 @@
 /*
  * iscsi_login_walker - drive the in-kernel LIO iSCSI Login state machine
  * past the front-door BHS / text-key parser rejection gates so trinity
- * reaches the deeper command-dispatch paths in drivers/target/iscsi/
- * where the higher-value command-side bugs live.
+ * reaches FullFeaturePhase, where the higher-value command-side bugs in
+ * drivers/target/iscsi/ live.
  *
- * Why a second iscsi childop:
+ * Why response-driven:
  *
- *   The existing iscsi_target_probe childop opens a TCP connection to
- *   127.0.0.1:3260 and either fires a wholly-random 48-byte BHS, a
- *   fuzzed text-key Login, or a single well-formed Login followed by
- *   one fuzzed SCSI Command.  A recent kernel-side log survey of a run
- *   that reached the target for the first time recorded ~1820 LIO
- *   rejection messages, every one of them at the front-door framing /
- *   parser gates:
+ *   The earlier fire-and-forget walker sent three Login PDUs back-to-back
+ *   and only drained the responses without parsing them.  LIO rejected
+ *   every negotiation because we never echoed the target-assigned TSIH
+ *   on the second PDU and never advanced ExpStatSN past the StatSN the
+ *   target minted in its first response.  Symptom: ~75k "Login
+ *   negotiation failed" per run and FFP never reached.
  *
- *     "Unable to locate '=' separator for key" -- text-key parser
- *     "Illegal login_req->flags Combination"   -- CSG/NSG/TRANSIT mix
- *     "Login request has both CONTINUE and TRANSIT" -- mutex flag combo
- *     "Received unknown opcode 0x01-0x1b"      -- BHS opcode validator
+ *   The new walk is response-driven and completes the login in two PDUs:
  *
- *   Zero kernel-side BUG/Oops in that window.  The dispatcher coverage
- *   is bottlenecked on the framing, not the deeper logic.
+ *   PDU1 SecurityNegotiation + transit-to-Op:
+ *          opcode 0x43 (Login | Immediate), flags 0x81 (T=1, CSG=0,
+ *          NSG=1).  Data segment carries InitiatorName, SessionType=
+ *          Normal, TargetName, AuthMethod=None so LIO can pick the ACL
+ *          up-front, agree to no authentication and advance to Op.
  *
- * What this childop does:
+ *   READ   48-byte Login Response BHS.  Verify opcode 0x23 and
+ *          Status-Class == 0.  Capture the TSIH the target assigned
+ *          and the StatSN it minted; both are required in PDU2.
  *
- *   INIT          open a nonblocking TCP connection to 127.0.0.1:3260
- *                 and send a Login Request PDU with CSG=0
- *                 (SecurityNegotiation), no TRANSIT, no CONTINUE, and a
- *                 well-formed InitiatorName + AuthMethod=None data
- *                 segment.  Target should accept the framing and reply
- *                 with a Login Response keeping us in CSG=0.
+ *   PDU2 LoginOperationalNegotiation + transit-to-FFP:
+ *          opcode 0x43, flags 0x87 (T=1, CSG=1, NSG=3).  BHS echoes
+ *          the captured TSIH; ExpStatSN is set to StatSN+1 so the
+ *          target's status-window is satisfied.  Data segment carries
+ *          the operational keys (digests, burst / R2T limits, etc.).
  *
- *   SECURITY_NEG  send a second Login Request PDU with TRANSIT=1,
- *                 CSG=0, NSG=1 (LoginOperationalNegotiation).  This is
- *                 the kernel's CSG=0 -> CSG=1 transition handler;
- *                 reaching it requires that the prior INIT PDU framing
- *                 was accepted, which is the whole point of walking the
- *                 state machine instead of one-shotting.
- *
- *   OP_NEG        send a third Login Request PDU with TRANSIT=1,
- *                 CSG=1, NSG=3 (FullFeaturePhase) carrying the
- *                 operational keys: TargetName, HeaderDigest=None,
- *                 DataDigest=None, MaxRecvDataSegmentLength=8192, plus
- *                 the rest of the OP_NEG mandatory set.
- *
- *   FFP           the Login phase is over; the kernel-side session is
- *                 in the post-login command-dispatch state.  Emit a
- *                 small burst (1-4) of fuzzed BHS PDUs with the opcode
- *                 biased into the FFP-valid set (NOP-Out, SCSI Cmd,
- *                 SCSI Task Mgmt, Text Req, SCSI Data-Out, Logout Req,
- *                 SNACK) and the rest of the header random.  This is
- *                 the path the CVE corpus drivers/target/iscsi work
- *                 exercises -- post-login command dispatch.
+ *   READ   final 48-byte Login Response BHS.  Verify Status-Class == 0,
+ *          T bit set, and NSG == FFP.  When all three hold the session
+ *          is in FullFeaturePhase and the FFP fuzz burst may safely run.
  *
  * Chaos toggle: every ISCSI_WALKER_CHAOS_MODULO=5 invocations the
  * walker skips the state-machine walk entirely and sends a burst of
  * wholly-random 48-byte BHS PDUs.  Keeps the front-door BHS / parser
- * coverage the older iscsi_target_probe random-spam path was
- * producing intact, so the new walker doesn't silently erode the
- * coverage we had before.
+ * coverage the older iscsi_target_probe random-spam path was producing
+ * intact, so the walker doesn't silently erode the coverage we had
+ * before.
  *
  * Safety:
  *
  *   - Loopback only: hardcoded 127.0.0.1:3260, never any other address.
  *   - Nonblocking socket + poll-based timeouts so a wedged peer cannot
  *     pin the child past the SIGALRM(1s) child.c safety net.
+ *   - Response BHS read loops on partial recvs to the full 48 bytes or
+ *     the per-recv timeout; short read / RST / EPIPE / bad opcode /
+ *     non-zero Status-Class all close the socket and continue.
  *   - ECONNREFUSED on the first connect latches a per-child
  *     "no target present" flag and the walker silently no-ops for the
  *     rest of the process lifetime, matching iscsi_target_probe.
@@ -92,6 +77,7 @@
  * in <scsi/iscsi_proto.h> which is not present on every sysroot. */
 #define ISCSI_TARGET_PORT		3260
 #define ISCSI_OP_LOGIN			0x03	/* Login Request */
+#define ISCSI_OP_LOGIN_RSP		0x23	/* Login Response */
 #define ISCSI_OP_IMMEDIATE		0x40	/* I bit in opcode byte */
 #define ISCSI_BHS_LEN			48
 
@@ -105,18 +91,28 @@
  *   0b01 - LoginOperationalNegotiation
  *   0b11 - FullFeaturePhase
  *
- * INIT state: CSG=0, NSG=0, T=0, C=0 -> flag byte 0x00.  Keeps the
- * target in SecurityNegotiation; the response echoes CSG=0.
+ * PDU1 (SecurityNegotiation with transit to Op): T=1, C=0, CSG=0,
+ * NSG=1 -> 0x81.  The data segment declares AuthMethod=None, so
+ * SecurityNegotiation has no outstanding work and the TRANSIT bit tells
+ * the target to move us to LoginOperationalNegotiation in its response.
  *
- * SECURITY_NEG -> OP_NEG transition: T=1, C=0, CSG=0, NSG=1 -> 0x81.
- * Asks the kernel to advance from CSG=0 to CSG=1 on the next response.
- *
- * OP_NEG -> FFP transition: T=1, C=0, CSG=1, NSG=3 -> 0x87.  Asks the
- * kernel to advance from CSG=1 straight into FullFeaturePhase, where
- * the post-login command dispatcher takes over. */
-#define ISCSI_LOGIN_FLAGS_INIT			0x00
-#define ISCSI_LOGIN_FLAGS_TRANSIT_SEC_TO_OP	0x81
-#define ISCSI_LOGIN_FLAGS_TRANSIT_OP_TO_FF	0x87
+ * PDU2 (LoginOperationalNegotiation with transit to FFP): T=1, C=0,
+ * CSG=1, NSG=3 -> 0x87.  Advances the session into FullFeaturePhase
+ * where the post-login command dispatcher takes over. */
+#define ISCSI_LOGIN_FLAGS_SEC_TO_OP		0x81
+#define ISCSI_LOGIN_FLAGS_OP_TO_FF		0x87
+
+/* Login Response BHS bit / offset layout, RFC 7143 §11.13.
+ *   flags byte 1: TRANSIT bit is 0x80; NSG in bits 1..0.
+ *   TSIH:            BE16 at [14..15]
+ *   StatSN:          BE32 at [24..27]
+ *   Status-Class:    byte at [36]
+ *   Status-Detail:   byte at [37]
+ * We only need the fields required to build PDU2 and to gate the FFP
+ * burst; the rest of the response body is drained silently. */
+#define ISCSI_RSP_FLAGS_TRANSIT		0x80
+#define ISCSI_RSP_NSG_MASK		0x03
+#define ISCSI_NSG_FFP			0x03
 
 /* Cap on Login text data we'll generate per PDU.  Demo-mode LIO accepts
  * up to MaxRecvDataSegmentLength bytes, but small keeps us well under
@@ -124,8 +120,9 @@
  * memcpy / send work. */
 #define LOGIN_TEXT_MAX			512
 
-/* Receive buffer for login responses.  Login responses are normally
- * <=256 bytes; we only need to drain the socket, not parse it. */
+/* Receive buffer for login responses.  The 48-byte BHS is what we
+ * parse; the buffer is larger so the follow-up data segment can be
+ * drained in one pass. */
 #define ISCSI_RX_BUF			1024
 
 /* poll timeouts.  Connect window kept at 1s to absorb scheduler jitter
@@ -145,15 +142,33 @@
 static bool ns_unsupported;
 
 /* Encode 24-bit big-endian length into bhs[5..7].  iSCSI DataSegment
- * lengths are 24-bit MSB-first; this is the only multi-byte field we
- * need to byte-swap by hand (ITT / CmdSN / ExpStatSN are u32 fields
- * but the kernel treats them as opaque echo cookies for the response
- * direction, so random-ish values in any byte order are fine). */
+ * lengths are 24-bit MSB-first. */
 static void put_be24(unsigned char *p, uint32_t v)
 {
 	p[0] = (unsigned char)((v >> 16) & 0xff);
 	p[1] = (unsigned char)((v >> 8)  & 0xff);
 	p[2] = (unsigned char)(v & 0xff);
+}
+
+/* Encode 32-bit big-endian value into a 4-byte field.  Used for the
+ * ExpStatSN field of PDU2: LIO checks the running status window and
+ * will drop the connection if the sequence number does not match the
+ * StatSN it just handed us + 1. */
+static void put_be32(unsigned char *p, uint32_t v)
+{
+	p[0] = (unsigned char)((v >> 24) & 0xff);
+	p[1] = (unsigned char)((v >> 16) & 0xff);
+	p[2] = (unsigned char)((v >> 8)  & 0xff);
+	p[3] = (unsigned char)(v & 0xff);
+}
+
+/* Read a big-endian 32-bit value from a 4-byte BHS field. */
+static uint32_t get_be32(const unsigned char *p)
+{
+	return ((uint32_t)p[0] << 24) |
+	       ((uint32_t)p[1] << 16) |
+	       ((uint32_t)p[2] << 8)  |
+	       ((uint32_t)p[3]);
 }
 
 static void rnd_fill(unsigned char *buf, size_t len)
@@ -220,11 +235,47 @@ static int iscsi_connect(int timeout_ms)
 	return fd;
 }
 
-/* Drain whatever the target sent back, up to ISCSI_RX_BUF bytes.
- * Bumps bytes_in for operator visibility.  Doesn't try to parse the
- * response — the kernel-side coverage is in handling our request, not
- * in what comes back. */
-static void iscsi_drain(int fd)
+/* Read exactly ISCSI_BHS_LEN bytes into bhs, looping on short reads and
+ * poll()ing between them so a single slow response can still be fully
+ * assembled inside ISCSI_RECV_TIMEOUT_MS wall-clock.  Returns 0 on
+ * success, -1 on RST / EPIPE / timeout / peer close.  After a
+ * successful BHS read the follow-up data segment (if any) is drained
+ * from the socket best-effort so the next PDU we send doesn't share the
+ * kernel's socket read cursor with unread response bytes. */
+static int iscsi_read_bhs(int fd, unsigned char *bhs)
+{
+	struct pollfd pfd;
+	size_t got = 0;
+	ssize_t n;
+	int rc;
+
+	while (got < ISCSI_BHS_LEN) {
+		pfd.fd = fd;
+		pfd.events = POLLIN;
+		pfd.revents = 0;
+		rc = poll(&pfd, 1, ISCSI_RECV_TIMEOUT_MS);
+		if (rc <= 0)
+			return -1;
+		if (pfd.revents & (POLLERR | POLLHUP | POLLNVAL))
+			return -1;
+		n = recv(fd, bhs + got, ISCSI_BHS_LEN - got, MSG_DONTWAIT);
+		if (n <= 0) {
+			if (n < 0 && errno == EAGAIN)
+				continue;
+			return -1;
+		}
+		got += (size_t)n;
+		__atomic_add_fetch(&shm->stats.iscsi_walker_bytes_in,
+				   (unsigned long)n, __ATOMIC_RELAXED);
+	}
+	return 0;
+}
+
+/* Drain the follow-up data segment of a Login Response, best-effort.
+ * We do not need to parse it -- PDU2 does not consume any negotiated
+ * key from the target -- but leaving unread bytes in the socket buffer
+ * would blur the response cursor for the next PDU on this fd. */
+static void iscsi_drain_after_bhs(int fd)
 {
 	unsigned char buf[ISCSI_RX_BUF];
 	struct pollfd pfd;
@@ -237,95 +288,30 @@ static void iscsi_drain(int fd)
 	rc = poll(&pfd, 1, ISCSI_RECV_TIMEOUT_MS);
 	if (rc <= 0)
 		return;
-
 	n = recv(fd, buf, sizeof(buf), MSG_DONTWAIT);
 	if (n > 0)
 		__atomic_add_fetch(&shm->stats.iscsi_walker_bytes_in,
 				   (unsigned long)n, __ATOMIC_RELAXED);
 }
 
-/* Text-key data segment for the INIT-state Login PDU.  CSG=0 means the
- * target is in SecurityNegotiation and expects InitiatorName plus
- * AuthMethod.  AuthMethod=None matches a demo-mode LIO target with
- * authentication=0; the well-formed framing keeps us past the
- * "Unable to locate '=' separator" parser arm so the kernel walks the
- * real text-key handlers. */
-static const char login_text_init[] =
+/* Text-key data segment for PDU1.  Declares the initiator identity, the
+ * session type, the target we want to log into, and picks
+ * AuthMethod=None so the target can transit us out of
+ * SecurityNegotiation on its response.  TargetName is present here
+ * (rather than in PDU2) because LIO validates the ACL lookup against
+ * generate_node_acls=1 during SecurityNegotiation and needs the target
+ * identity in-hand to do it. */
+static const char login_text_pdu1[] =
 	"InitiatorName=iqn.1993-08.org.debian:01:w\0"
+	"SessionType=Normal\0"
+	"TargetName=iqn.2026-05.fuzz:t\0"
 	"AuthMethod=None\0";
 
-/* Build a Login Request PDU for the INIT state: CSG=0, no TRANSIT, no
- * CONTINUE, ISID supplied by the caller (so subsequent PDUs in the
- * same iteration can reuse it for the same session), TSIH=0 (new
- * session), CID=1, CmdSN=0, ExpStatSN=0.  Returns the total PDU
- * length (BHS + padded data segment). */
-static size_t build_login_init(unsigned char *out, uint8_t isid[6])
-{
-	unsigned char *bhs = out;
-	unsigned char *data = out + ISCSI_BHS_LEN;
-	/* sizeof includes the trailing implicit '\0'; we want every
-	 * NUL-terminated key in the buffer to land on the wire including
-	 * the very last one's separator. */
-	size_t data_len = sizeof(login_text_init) - 1;
-	size_t padded = (data_len + 3) & ~(size_t)3;
-
-	memset(bhs, 0, ISCSI_BHS_LEN);
-	bhs[0] = ISCSI_OP_LOGIN | ISCSI_OP_IMMEDIATE;
-	bhs[1] = ISCSI_LOGIN_FLAGS_INIT;
-	bhs[2] = 0;					/* Version-max */
-	bhs[3] = 0;					/* Version-min */
-	bhs[4] = 0;					/* TotalAHSLength */
-	memcpy(bhs + 8, isid, 6);			/* ISID */
-	bhs[14] = 0;					/* TSIH high */
-	bhs[15] = 0;					/* TSIH low (new session) */
-	rnd_fill(bhs + 16, 4);				/* ITT */
-	bhs[20] = 0;
-	bhs[21] = 1;					/* CID = 1 */
-	/* CmdSN = 0, ExpStatSN = 0 for a fresh login */
-	memset(bhs + 24, 0, 8);
-
-	memcpy(data, login_text_init, data_len);
-	if (padded > data_len)
-		memset(data + data_len, 0, padded - data_len);
-
-	put_be24(bhs + 5, (uint32_t)padded);
-	return ISCSI_BHS_LEN + padded;
-}
-
-/* Empty-but-valid Login Request PDU for the SECURITY_NEG -> OP_NEG
- * transition: TRANSIT=1, CSG=0, NSG=1, no data segment.  The kernel
- * sees AuthMethod=None from the prior INIT PDU, so SecurityNegotiation
- * has no outstanding work and the TRANSIT bit advances us to
- * LoginOperationalNegotiation on the next response. */
-static size_t build_login_security_neg(unsigned char *out, uint8_t isid[6])
-{
-	unsigned char *bhs = out;
-
-	memset(bhs, 0, ISCSI_BHS_LEN);
-	bhs[0] = ISCSI_OP_LOGIN | ISCSI_OP_IMMEDIATE;
-	bhs[1] = ISCSI_LOGIN_FLAGS_TRANSIT_SEC_TO_OP;
-	/* Version, AHS, DataSegmentLength all stay 0 */
-	memcpy(bhs + 8, isid, 6);			/* same ISID */
-	bhs[14] = 0;					/* TSIH high */
-	bhs[15] = 0;					/* TSIH low */
-	rnd_fill(bhs + 16, 4);				/* ITT */
-	bhs[20] = 0;
-	bhs[21] = 1;					/* CID = 1 */
-	/* CmdSN = 0, ExpStatSN = 0 — Immediate Login doesn't advance
-	 * the CmdSN window so leaving zeros matches the spec. */
-	memset(bhs + 24, 0, 8);
-
-	return ISCSI_BHS_LEN;
-}
-
-/* Text-key data segment for the OP_NEG state's TRANSIT -> FFP PDU.
- * Operational keys the kernel walks during LoginOperationalNegotiation:
- * TargetName is mandatory for normal sessions, HeaderDigest /
- * DataDigest negotiate the per-PDU CRC, MaxRecvDataSegmentLength caps
- * incoming PDU sizes, and the time-window / R2T / burst keys round out
- * the standard demo-mode acceptable set. */
-static const char login_text_op_neg[] =
-	"TargetName=iqn.2026-05.fuzz:t\0"
+/* Text-key data segment for PDU2.  Operational keys the kernel walks
+ * during LoginOperationalNegotiation: digest algorithms, per-PDU / per-
+ * burst size limits, R2T / immediate-data mode, and the standard
+ * time-window keys.  All values are demo-mode-friendly. */
+static const char login_text_pdu2[] =
 	"HeaderDigest=None\0"
 	"DataDigest=None\0"
 	"MaxRecvDataSegmentLength=8192\0"
@@ -341,30 +327,67 @@ static const char login_text_op_neg[] =
 	"DataSequenceInOrder=Yes\0"
 	"ErrorRecoveryLevel=0\0";
 
-/* Build the OP_NEG -> FFP Login PDU: TRANSIT=1, CSG=1, NSG=3, with the
- * operational-keys data segment.  This is the gate to the post-login
- * command dispatcher; if the kernel accepts the framing and the keys,
- * the session is in FullFeaturePhase on the next response and SCSI
- * Command PDUs are now reachable. */
-static size_t build_login_op_neg(unsigned char *out, uint8_t isid[6])
+/* Build PDU1: SecurityNegotiation with transit-to-Op, carrying the
+ * InitiatorName / SessionType / TargetName / AuthMethod=None keys.
+ * ISID and ITT are caller-supplied so the response can be correlated
+ * on the wire.  TSIH is 0 (new session); CmdSN and ExpStatSN are 0. */
+static size_t build_login_pdu1(unsigned char *out, const uint8_t isid[6],
+			       uint32_t itt)
 {
 	unsigned char *bhs = out;
 	unsigned char *data = out + ISCSI_BHS_LEN;
-	size_t data_len = sizeof(login_text_op_neg) - 1;
+	size_t data_len = sizeof(login_text_pdu1) - 1;
 	size_t padded = (data_len + 3) & ~(size_t)3;
 
 	memset(bhs, 0, ISCSI_BHS_LEN);
 	bhs[0] = ISCSI_OP_LOGIN | ISCSI_OP_IMMEDIATE;
-	bhs[1] = ISCSI_LOGIN_FLAGS_TRANSIT_OP_TO_FF;
-	memcpy(bhs + 8, isid, 6);			/* same ISID */
-	bhs[14] = 0;
-	bhs[15] = 0;
-	rnd_fill(bhs + 16, 4);				/* ITT */
+	bhs[1] = ISCSI_LOGIN_FLAGS_SEC_TO_OP;
+	bhs[2] = 0;					/* Version-max */
+	bhs[3] = 0;					/* Version-min */
+	bhs[4] = 0;					/* TotalAHSLength */
+	memcpy(bhs + 8, isid, 6);			/* ISID */
+	bhs[14] = 0;					/* TSIH high */
+	bhs[15] = 0;					/* TSIH low (new session) */
+	put_be32(bhs + 16, itt);			/* ITT */
 	bhs[20] = 0;
 	bhs[21] = 1;					/* CID = 1 */
-	memset(bhs + 24, 0, 8);
+	memset(bhs + 24, 0, 8);				/* CmdSN=0, ExpStatSN=0 */
 
-	memcpy(data, login_text_op_neg, data_len);
+	memcpy(data, login_text_pdu1, data_len);
+	if (padded > data_len)
+		memset(data + data_len, 0, padded - data_len);
+
+	put_be24(bhs + 5, (uint32_t)padded);
+	return ISCSI_BHS_LEN + padded;
+}
+
+/* Build PDU2: LoginOperationalNegotiation with transit-to-FFP.  Echoes
+ * the target-assigned TSIH from PDU1's response and sets ExpStatSN to
+ * the response StatSN + 1 so the target's status window is satisfied.
+ * Same ISID as PDU1 so LIO threads the two PDUs onto the same session
+ * state. */
+static size_t build_login_pdu2(unsigned char *out, const uint8_t isid[6],
+			       uint32_t itt, uint16_t tsih,
+			       uint32_t exp_stat_sn)
+{
+	unsigned char *bhs = out;
+	unsigned char *data = out + ISCSI_BHS_LEN;
+	size_t data_len = sizeof(login_text_pdu2) - 1;
+	size_t padded = (data_len + 3) & ~(size_t)3;
+
+	memset(bhs, 0, ISCSI_BHS_LEN);
+	bhs[0] = ISCSI_OP_LOGIN | ISCSI_OP_IMMEDIATE;
+	bhs[1] = ISCSI_LOGIN_FLAGS_OP_TO_FF;
+	memcpy(bhs + 8, isid, 6);			/* same ISID */
+	bhs[14] = (unsigned char)((tsih >> 8) & 0xff);	/* echo TSIH */
+	bhs[15] = (unsigned char)(tsih & 0xff);
+	put_be32(bhs + 16, itt);			/* ITT */
+	bhs[20] = 0;
+	bhs[21] = 1;					/* CID = 1 */
+	put_be32(bhs + 24, 0);				/* CmdSN = 0 */
+	put_be32(bhs + 28, exp_stat_sn);		/* ExpStatSN = StatSN+1 */
+
+	memcpy(data, login_text_pdu2, data_len);
 	if (padded > data_len)
 		memset(data + data_len, 0, padded - data_len);
 
@@ -415,7 +438,8 @@ static const unsigned char ffp_opcodes[] = {
  * pins the AHS length / ISID / TSIH fields to values that won't cause
  * the dispatcher to reject before the per-opcode handler runs.  Data
  * segment is 0-15 random bytes plus 4-byte padding. */
-static size_t build_ffp_fuzz(unsigned char *out, uint8_t isid[6])
+static size_t build_ffp_fuzz(unsigned char *out, const uint8_t isid[6],
+			     uint16_t tsih)
 {
 	unsigned char *bhs = out;
 	unsigned char *data = out + ISCSI_BHS_LEN;
@@ -428,9 +452,9 @@ static size_t build_ffp_fuzz(unsigned char *out, uint8_t isid[6])
 			ffp_opcodes[rnd_modulo_u32(NR_FFP_OPCODES)]);
 	bhs[4] = (unsigned char)(bhs[4] & 0x03);	/* small AHS */
 	memcpy(bhs + 8, isid, 6);			/* same session */
-	bhs[14] = 0;					/* TSIH high */
-	bhs[15] = 0;					/* TSIH low */
-	/* ITT / CmdSN / ExpStatSN left random — they are echo cookies
+	bhs[14] = (unsigned char)((tsih >> 8) & 0xff);	/* target-assigned TSIH */
+	bhs[15] = (unsigned char)(tsih & 0xff);
+	/* ITT / CmdSN / ExpStatSN left random -- they are echo cookies
 	 * and per-PDU window fields; the kernel either accepts a fresh
 	 * tag or rejects it, both reasonable coverage. */
 
@@ -483,58 +507,88 @@ static void iscsi_send_chaos_burst(int fd, unsigned char *pdu)
 					   (unsigned long)n,
 					   __ATOMIC_RELAXED);
 		}
-		iscsi_drain(fd);
+		iscsi_drain_after_bhs(fd);
 	}
 }
 
-/* Drive the three-PDU Login state-machine walk on the connected socket:
- * INIT (CSG=0), SECURITY_NEG -> OP_NEG transition, then OP_NEG -> FFP
- * transition.  All three PDUs share the caller-supplied ISID so the
- * kernel treats them as one session being advanced.  Each send is
- * followed by a drain so response bytes get counted and the socket
- * doesn't back up between phases. */
-static void iscsi_send_login_walk(int fd, unsigned char *pdu, uint8_t isid[6])
+/* Drive the response-driven Login walk on the connected socket.  On
+ * success returns true with *tsih_out set to the target-assigned TSIH
+ * so the caller can echo it into any follow-up FFP fuzz PDUs.  Any
+ * short read / non-Login-Response opcode / non-zero Status-Class /
+ * failure to see T=1 + NSG=FFP on the second response returns false
+ * with the corresponding rejection counter bumped -- caller must not
+ * follow up with an FFP burst on a false return. */
+static bool iscsi_login_walk(int fd, unsigned char *pdu,
+			     const uint8_t isid[6], uint16_t *tsih_out)
 {
+	unsigned char resp[ISCSI_BHS_LEN];
+	uint32_t itt = rnd_u32();
+	uint16_t tsih;
+	uint32_t stat_sn;
 	size_t pdu_len;
 	ssize_t n;
 
-	pdu_len = build_login_init(pdu, isid);
+	pdu_len = build_login_pdu1(pdu, isid, itt);
 	n = send(fd, pdu, pdu_len, MSG_DONTWAIT | MSG_NOSIGNAL);
-	if (n > 0) {
-		__atomic_add_fetch(&shm->stats.iscsi_walker_state_init_sent,
-				   1, __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.iscsi_walker_bytes_out,
-				   (unsigned long)n, __ATOMIC_RELAXED);
-	}
-	iscsi_drain(fd);
+	if (n <= 0)
+		return false;
+	__atomic_add_fetch(&shm->stats.iscsi_walker_state_security_sent,
+			   1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.iscsi_walker_bytes_out,
+			   (unsigned long)n, __ATOMIC_RELAXED);
 
-	pdu_len = build_login_security_neg(pdu, isid);
-	n = send(fd, pdu, pdu_len, MSG_DONTWAIT | MSG_NOSIGNAL);
-	if (n > 0) {
-		__atomic_add_fetch(&shm->stats.iscsi_walker_state_security_sent,
+	if (iscsi_read_bhs(fd, resp) < 0)
+		return false;
+	if (resp[0] != ISCSI_OP_LOGIN_RSP)
+		return false;
+	__atomic_add_fetch(&shm->stats.iscsi_walker_login_response_ok,
+			   1, __ATOMIC_RELAXED);
+	if (resp[36] != 0) {
+		__atomic_add_fetch(&shm->stats.iscsi_walker_login_rejected,
 				   1, __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.iscsi_walker_bytes_out,
-				   (unsigned long)n, __ATOMIC_RELAXED);
+		return false;
 	}
-	iscsi_drain(fd);
+	tsih = (uint16_t)(((uint16_t)resp[14] << 8) | resp[15]);
+	stat_sn = get_be32(resp + 24);
+	iscsi_drain_after_bhs(fd);
 
-	pdu_len = build_login_op_neg(pdu, isid);
+	pdu_len = build_login_pdu2(pdu, isid, itt, tsih, stat_sn + 1);
 	n = send(fd, pdu, pdu_len, MSG_DONTWAIT | MSG_NOSIGNAL);
-	if (n > 0) {
-		__atomic_add_fetch(&shm->stats.iscsi_walker_state_op_neg_sent,
+	if (n <= 0)
+		return false;
+	__atomic_add_fetch(&shm->stats.iscsi_walker_state_op_neg_sent,
+			   1, __ATOMIC_RELAXED);
+	__atomic_add_fetch(&shm->stats.iscsi_walker_bytes_out,
+			   (unsigned long)n, __ATOMIC_RELAXED);
+
+	if (iscsi_read_bhs(fd, resp) < 0)
+		return false;
+	if (resp[0] != ISCSI_OP_LOGIN_RSP)
+		return false;
+	__atomic_add_fetch(&shm->stats.iscsi_walker_login_response_ok,
+			   1, __ATOMIC_RELAXED);
+	if (resp[36] != 0) {
+		__atomic_add_fetch(&shm->stats.iscsi_walker_login_rejected,
 				   1, __ATOMIC_RELAXED);
-		__atomic_add_fetch(&shm->stats.iscsi_walker_bytes_out,
-				   (unsigned long)n, __ATOMIC_RELAXED);
+		return false;
 	}
-	iscsi_drain(fd);
+	if (!(resp[1] & ISCSI_RSP_FLAGS_TRANSIT))
+		return false;
+	if ((resp[1] & ISCSI_RSP_NSG_MASK) != ISCSI_NSG_FFP)
+		return false;
+	iscsi_drain_after_bhs(fd);
+
+	__atomic_add_fetch(&shm->stats.iscsi_walker_ffp_reached, 1,
+			   __ATOMIC_RELAXED);
+	*tsih_out = tsih;
+	return true;
 }
 
-/* FullFeaturePhase fuzz burst.  The Login walk is over; the kernel-side
- * session is in the post-login command-dispatch state (or it RST'd us
- * mid-walk, in which case these sends just get EPIPE and the stat
- * increments stop tracking).  Emit 1..FFP_PDUS_MAX fuzzed BHS PDUs with
- * the opcode biased into the FFP-valid set. */
-static void iscsi_send_ffp_burst(int fd, unsigned char *pdu, uint8_t isid[6])
+/* FullFeaturePhase fuzz burst.  Only invoked after iscsi_login_walk
+ * reported FFP was actually reached; the target-assigned TSIH is echoed
+ * into each PDU so the session state stays coherent. */
+static void iscsi_send_ffp_burst(int fd, unsigned char *pdu,
+				 const uint8_t isid[6], uint16_t tsih)
 {
 	unsigned int j;
 	unsigned int ffp_pdus = 1 + rnd_modulo_u32(FFP_PDUS_MAX);
@@ -544,7 +598,7 @@ static void iscsi_send_ffp_burst(int fd, unsigned char *pdu, uint8_t isid[6])
 	__atomic_add_fetch(&shm->stats.iscsi_walker_ffp_iters, 1,
 			   __ATOMIC_RELAXED);
 	for (j = 0; j < ffp_pdus; j++) {
-		pdu_len = build_ffp_fuzz(pdu, isid);
+		pdu_len = build_ffp_fuzz(pdu, isid, tsih);
 		n = send(fd, pdu, pdu_len,
 			 MSG_DONTWAIT | MSG_NOSIGNAL);
 		if (n > 0) {
@@ -554,7 +608,7 @@ static void iscsi_send_ffp_burst(int fd, unsigned char *pdu, uint8_t isid[6])
 					   (unsigned long)n,
 					   __ATOMIC_RELAXED);
 		}
-		iscsi_drain(fd);
+		iscsi_drain_after_bhs(fd);
 	}
 }
 
@@ -596,6 +650,7 @@ bool iscsi_login_walker(struct childdata *child)
 
 	for (i = 0; i < iters; i++) {
 		uint8_t isid[6];
+		uint16_t tsih = 0;
 
 		fd = iscsi_connect(ISCSI_CONNECT_TIMEOUT_MS);
 		if (fd < 0) {
@@ -630,13 +685,13 @@ bool iscsi_login_walker(struct childdata *child)
 			continue;
 		}
 
-		/* Fresh ISID per iteration; the three PDUs in the walk all
-		 * carry the same ISID so the kernel treats them as one
+		/* Fresh ISID per iteration; both PDUs in the walk carry
+		 * the same ISID so the kernel threads them into one
 		 * session being driven forward. */
 		rnd_fill(isid, sizeof(isid));
 
-		iscsi_send_login_walk(fd, pdu, isid);
-		iscsi_send_ffp_burst(fd, pdu, isid);
+		if (iscsi_login_walk(fd, pdu, isid, &tsih))
+			iscsi_send_ffp_burst(fd, pdu, isid, tsih);
 
 		(void)shutdown(fd, SHUT_RDWR);
 		close(fd);
