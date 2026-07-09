@@ -457,6 +457,10 @@ void dump_stats_fuzzer_subsystems(void)
 	if (shm->stats.wrong_fd_type_subst_generic)
 		stat_row("arggen", "wrong_fd_type_subst_generic",
 			 shm->stats.wrong_fd_type_subst_generic);
+
+	if (shm->stats.btrfs_ioctls_dispatched)
+		stat_row("ioctl", "btrfs_ioctls_dispatched",
+			 shm->stats.btrfs_ioctls_dispatched);
 }
 
 /*
