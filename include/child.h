@@ -229,6 +229,7 @@ enum child_op_type {
 	CHILD_OP_BAREUDP_RX,
 	CHILD_OP_MPLS_LABEL_STACK_RX,
 	CHILD_OP_DEEP_PATH_NESTING,
+	CHILD_OP_ESPINTCP_COALESCE_CHURN,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -1712,3 +1713,4 @@ bool geneve_rx(struct childdata *child);
 bool bareudp_rx(struct childdata *child);
 bool mpls_label_stack_rx(struct childdata *child);
 bool deep_path_nesting(struct childdata *child);
+bool espintcp_coalesce_churn(struct childdata *child);

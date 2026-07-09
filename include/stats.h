@@ -1894,6 +1894,14 @@ struct stats_s {
 	unsigned long deep_path_reader_ok;			/* reader pass returned successfully */
 	unsigned long deep_path_reader_failed;			/* reader pass returned an error */
 
+	/* espintcp_coalesce_churn childop counters */
+	unsigned long espintcp_coalesce_runs;			/* total espintcp_coalesce_churn invocations */
+	unsigned long espintcp_coalesce_setup_failed;		/* userns_run_in_ns / loopback pair setup failed (incl. kind-latched or !CONFIG_INET_ESPINTCP) */
+	unsigned long espintcp_coalesce_ulp_install_ok;		/* setsockopt(TCP_ULP, "espintcp") accepted on connected sock */
+	unsigned long espintcp_coalesce_ulp_install_failed;	/* setsockopt(TCP_ULP, "espintcp") rejected (any errno) */
+	unsigned long espintcp_coalesce_send_ok;		/* crafted length-prefixed frame send >0 */
+	unsigned long espintcp_coalesce_keepalive_ok;		/* zero-length non-ESP marker keepalive frame emitted */
+
 	/* netns_mountns_setup_probe childop counters */
 	unsigned long netns_mountns_setup_runs;			/* total netns_mountns_setup_probe invocations */
 	unsigned long netns_mountns_setup_setup_failed;		/* userns_run_in_ns fork/EPERM latch / per-iter unshare failure */

@@ -548,6 +548,20 @@ struct shm_s {
 	 * is safe -- only false -> true, and the write is idempotent. */
 	bool mpls_label_stack_rx_kind_unsupported;
 
+	/* Feature-absent latch for the espintcp_coalesce_churn childop
+	 * (childops/net/espintcp-coalesce-churn.c).  Set when
+	 * setsockopt(TCP_ULP, "espintcp") rejects with the
+	 * CONFIG_INET_ESPINTCP absent errno set (ENOPROTOOPT /
+	 * EOPNOTSUPP / EAFNOSUPPORT / EPERM) inside the transient
+	 * userns_run_in_ns grandchild.  Same shm-vs-static rationale as
+	 * the sibling latches above: the rejection is observed inside a
+	 * transient grandchild that _exit()s after the body returns, so
+	 * a process-local static would die with the grandchild and every
+	 * subsequent invocation would re-attempt the missing kind
+	 * forever.  RELAXED atomic load/store from multiple grandchildren
+	 * is safe -- only false -> true, and the write is idempotent. */
+	bool espintcp_coalesce_kind_unsupported;
+
 	/*
 	 * Distinct-sequence-hash ring for run_grammar_chain's per-walk
 	 * phase ordering.  Each walk computes an FNV-1a hash over the
