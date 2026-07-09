@@ -815,6 +815,25 @@ extern const struct struct_field uffdio_copy_fields[UFFDIO_COPY_FIELDS_N];
 extern const struct struct_field uffdio_zeropage_fields[UFFDIO_ZEROPAGE_FIELDS_N];
 
 /*
+ * crypto / AF_ALG leaf tables defined in struct_catalog/crypto.c.
+ * Covers struct af_alg_iv, the sendmsg(SOL_ALG, ALG_SET_IV) ancillary
+ * control-message payload used by AF_ALG cipher / aead / skcipher
+ * sockets to pin the per-request IV.  Attribution-only registration
+ * (the spec-listed af_alg_sgl and crypto_alg_attr are kernel-internal
+ * structs, not uapi, so there is nothing user-visible to catalog for
+ * them; the sockaddr_alg / salg_type variant table already lives in
+ * struct_catalog/sockaddr-af.c).  Gated by USE_IF_ALG to mirror the
+ * spine reference and the header availability.
+ */
+#ifdef USE_IF_ALG
+enum {
+	AF_ALG_IV_FIELDS_N	= 1,
+};
+
+extern const struct struct_field af_alg_iv_fields[AF_ALG_IV_FIELDS_N];
+#endif /* USE_IF_ALG */
+
+/*
  * mount / namespace leaf tables defined in struct_catalog/mount.c.
  * Covers struct mount_attr (mount_setattr / open_tree_attr), struct
  * mnt_id_req (statmount / listmount), and struct ns_id_req (listns).

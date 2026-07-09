@@ -423,6 +423,9 @@ enum struct_catalog_idx {
 	SC_UFFDIO_REGISTER,
 	SC_UFFDIO_COPY,
 	SC_UFFDIO_ZEROPAGE,
+#ifdef USE_IF_ALG
+	SC_AF_ALG_IV,
+#endif
 
 	SC_NR_ENTRIES,		/* sentinel; equals ARRAY_SIZE(struct_catalog) once both stay in lockstep */
 };
