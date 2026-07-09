@@ -2057,6 +2057,9 @@ static void json_emit_tcp_ipv6_and_tunnels_section(void)
 	stat_category_emit_json(&netns_teardown_category);
 
 	printf(",");
+	stat_category_emit_json(&cred_transition_category);
+
+	printf(",");
 	stat_category_emit_json(&deep_path_nesting_category);
 
 	printf(",");

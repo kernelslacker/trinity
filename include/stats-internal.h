@@ -144,6 +144,7 @@ extern const struct stat_category child_category;
 extern const struct stat_category close_racer_category;
 extern const struct stat_category cold_overflow_category;
 extern const struct stat_category cpu_hotplug_rider_category;
+extern const struct stat_category cred_transition_category;
 extern const struct stat_category devlink_port_churn_category;
 extern const struct stat_category epoll_volatility_category;
 extern const struct stat_category errno_gradient_category;

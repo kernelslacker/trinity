@@ -34,7 +34,7 @@
  * Slot ordering matches pick_op_type_table[]; the _Static_assert below
  * pins ARRAY_SIZE equality between the two.
  */
-static int dormant_op_disabled[131] = {
+static int dormant_op_disabled[132] = {
 	0, 0, 0, 0, 0,
 	0, 1, 1, 1, 1,
 	1, 1, 1, 0, 1,
@@ -83,6 +83,7 @@ static int dormant_op_disabled[131] = {
 	1,	/* mpls_label_stack_rx: dormant until canary-queue load-tests the MPLS label-stack crafted-RX burst (userns_run_in_ns + net.mpls.conf.lo.input=1 + AF_PACKET SOCK_RAW hand-rolled Ethernet(0x8847)/label-stack/inner-IPv4 frames at lo). */
 	1,	/* deep_path_nesting: dormant until canary-queue load-tests the deeply-nested chdir/mkdir tree + proc mountinfo/maps + getcwd/readlink/statx + leaf unlink/rename readers at extreme cwd depth. */
 	1,	/* espintcp_coalesce_churn: dormant until canary-queue load-tests the espintcp TCP-coalesce/page-cache reassembly RX-path burst (userns_run_in_ns + loopback TCP pair + setsockopt(TCP_ULP,"espintcp") both ends + crafted length-prefixed frames with TCP_CORK/TCP_NODELAY toggling to force skb coalescing). */
+	1,	/* cred_transition_churn: dormant until canary-queue load-tests the userns_run_in_ns capset()-into-a-churned-effective-cap-subset + immediate cred-checked op (raw socket / in-ns unshare / session-keyring keyctl) + interleaved JOIN_SESSION_KEYRING / add_key / READ / REVOKE churn. */
 };
 
 /*
@@ -337,6 +338,7 @@ const char *alt_op_name(enum child_op_type op)
 	case CHILD_OP_MPLS_LABEL_STACK_RX:	return "mpls_label_stack_rx";
 	case CHILD_OP_DEEP_PATH_NESTING:	return "deep_path_nesting";
 	case CHILD_OP_ESPINTCP_COALESCE_CHURN:	return "espintcp_coalesce_churn";
+	case CHILD_OP_CRED_TRANSITION_CHURN:	return "cred_transition_churn";
 	case NR_CHILD_OP_TYPES:		break;
 	}
 	return "unknown";
@@ -434,7 +436,7 @@ void log_alt_op_config(void)
  * CHILD_OP_SYSCALL sentinel filter in init_altop_dispatch() stays as
  * defensive coding for any future hole.
  */
-static const enum child_op_type pick_op_type_table[131] = {
+static const enum child_op_type pick_op_type_table[132] = {
 	[0]  = CHILD_OP_MMAP_LIFECYCLE,
 	[1]  = CHILD_OP_MPROTECT_SPLIT,
 	[2]  = CHILD_OP_MLOCK_PRESSURE,
@@ -566,6 +568,7 @@ static const enum child_op_type pick_op_type_table[131] = {
 	[128] = CHILD_OP_MPLS_LABEL_STACK_RX,
 	[129] = CHILD_OP_DEEP_PATH_NESTING,
 	[130] = CHILD_OP_ESPINTCP_COALESCE_CHURN,
+	[131] = CHILD_OP_CRED_TRANSITION_CHURN,
 };
 _Static_assert(ARRAY_SIZE(pick_op_type_table) == ARRAY_SIZE(dormant_op_disabled),
 	"pick_op_type_table and dormant_op_disabled must have matching slot counts");
@@ -1538,6 +1541,7 @@ bool (*const op_dispatch[NR_CHILD_OP_TYPES])(struct childdata *) = {
 	[CHILD_OP_MPLS_LABEL_STACK_RX]	= mpls_label_stack_rx,
 	[CHILD_OP_DEEP_PATH_NESTING]	= deep_path_nesting,
 	[CHILD_OP_ESPINTCP_COALESCE_CHURN]	= espintcp_coalesce_churn,
+	[CHILD_OP_CRED_TRANSITION_CHURN]	= cred_transition_churn,
 };
 
 _Static_assert(ARRAY_SIZE(op_dispatch) == NR_CHILD_OP_TYPES,
