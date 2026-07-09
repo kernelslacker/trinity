@@ -1336,6 +1336,27 @@ const struct stat_category tc_mirred_blockcast_category =
 		tc_mirred_blockcast_runs,
 		tc_mirred_blockcast_fields);
 
+static const struct stat_field tc_live_traffic_fields[] = {
+	STAT_FIELD(tc_live_traffic, runs),
+	STAT_FIELD(tc_live_traffic, setup_failed),
+	STAT_FIELD(tc_live_traffic, qdisc_ok),
+	STAT_FIELD(tc_live_traffic, qdisc_fail),
+	STAT_FIELD(tc_live_traffic, filter_ok),
+	STAT_FIELD(tc_live_traffic, filter_fail),
+	STAT_FIELD(tc_live_traffic, filter_del_ok),
+	STAT_FIELD(tc_live_traffic, filter_replace_ok),
+	STAT_FIELD(tc_live_traffic, packet_sent_ok),
+	STAT_FIELD(tc_live_traffic, link_del_ok),
+	STAT_FIELD(tc_live_traffic, bpf_load_ok),
+	STAT_FIELD(tc_live_traffic, xdp_load_ok),
+	STAT_FIELD(tc_live_traffic, xdp_attach_ok),
+};
+
+const struct stat_category tc_live_traffic_category =
+	STAT_CATEGORY("tc_live_traffic",
+		tc_live_traffic_runs,
+		tc_live_traffic_fields);
+
 static const struct stat_field xfrm_churn_fields[] = {
 	STAT_FIELD(xfrm_churn, runs),
 	STAT_FIELD(xfrm_churn, setup_failed),
@@ -1628,6 +1649,8 @@ static void dump_stats_json_netfilter_and_xfrm(void)
 	stat_category_emit_json(&tc_qdisc_churn_category);
 	putchar(',');
 	stat_category_emit_json(&tc_mirred_blockcast_category);
+	putchar(',');
+	stat_category_emit_json(&tc_live_traffic_category);
 	putchar(',');
 	stat_category_emit_json(&xfrm_churn_category);
 	putchar(',');

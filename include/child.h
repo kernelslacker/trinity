@@ -233,6 +233,7 @@ enum child_op_type {
 	CHILD_OP_CRED_TRANSITION_CHURN,
 	CHILD_OP_NETDEV_NETNS_MIGRATE,
 	CHILD_OP_MAP_SHARED_STRESS,
+	CHILD_OP_TC_LIVE_TRAFFIC,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -1720,3 +1721,4 @@ bool bareudp_rx(struct childdata *child);
 bool mpls_label_stack_rx(struct childdata *child);
 bool deep_path_nesting(struct childdata *child);
 bool espintcp_coalesce_churn(struct childdata *child);
+bool tc_live_traffic(struct childdata *child);

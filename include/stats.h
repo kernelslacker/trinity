@@ -1610,6 +1610,21 @@ struct stats_s {
 	unsigned long tc_mirred_blockcast_filter_fail;	/* matchall+mirred(blockid) on shared block rejected */
 	unsigned long tc_mirred_blockcast_packet_sent_ok;	/* loopback UDP sendto on A bound dummy returned >0 */
 
+	/* tc_live_traffic childop counters */
+	unsigned long tc_live_traffic_runs;		/* total tc_live_traffic invocations */
+	unsigned long tc_live_traffic_setup_failed;	/* userns / rtnl open / grandchild fork latched */
+	unsigned long tc_live_traffic_qdisc_ok;		/* clsact install on the A veth end accepted */
+	unsigned long tc_live_traffic_qdisc_fail;	/* clsact install on the A veth end rejected */
+	unsigned long tc_live_traffic_filter_ok;	/* initial matchall+gact/mirred filter install accepted */
+	unsigned long tc_live_traffic_filter_fail;	/* initial matchall+gact/mirred filter install rejected */
+	unsigned long tc_live_traffic_filter_del_ok;	/* mid-burst RTM_DELTFILTER on the running slot accepted */
+	unsigned long tc_live_traffic_filter_replace_ok;	/* mid-burst RTM_NEWTFILTER at a new prio slot accepted (races tcf_classify) */
+	unsigned long tc_live_traffic_packet_sent_ok;	/* live UDP sendto through the classified ingress path returned >0 */
+	unsigned long tc_live_traffic_link_del_ok;	/* RTM_DELLINK on the A veth end at teardown accepted */
+	unsigned long tc_live_traffic_bpf_load_ok;	/* cls_bpf BPF_PROG_LOAD (SCHED_CLS) accepted */
+	unsigned long tc_live_traffic_xdp_load_ok;	/* BPF_PROG_LOAD (BPF_PROG_TYPE_XDP) for the XDP-pass sub-chain accepted */
+	unsigned long tc_live_traffic_xdp_attach_ok;	/* RTM_NEWLINK IFLA_XDP attach on the A veth end accepted */
+
 	/* xfrm_churn childop counters */
 	unsigned long xfrm_churn_runs;			/* total xfrm_churn invocations */
 	unsigned long xfrm_churn_setup_failed;		/* unshare / NETLINK_XFRM open latched */
