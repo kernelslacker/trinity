@@ -2435,6 +2435,10 @@ void __cold dump_stats_childop_runs_network(void)
 
 	stat_category_emit_text(&sctp_chunk_rx_category);
 
+	stat_category_emit_text(&mpls_label_stack_rx_category);
+
+	stat_category_emit_text(&tc_live_traffic_category);
+
 	dump_stats_render_bridge_fdb_stp();
 
 	stat_category_emit_text(&bridge_conntrack_churn_category);
