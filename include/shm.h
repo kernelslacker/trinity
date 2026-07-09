@@ -492,6 +492,21 @@ struct shm_s {
 	 * the write is idempotent. */
 	bool esp_crafted_rx_kind_unsupported;
 
+	/* Feature-absent latch for the fou_gue_mcast_rx childop
+	 * (childops/net/fou-gue-mcast-rx.c).  Set when genl_open("fou")
+	 * or FOU_CMD_ADD installing a FOU/GUE receive port rejects with
+	 * the CONFIG_NET_FOU / CONFIG_IPV6_FOU absent errno set (ENOENT /
+	 * EPROTONOSUPPORT / EAFNOSUPPORT / EOPNOTSUPP / ENOPROTOOPT /
+	 * EPERM) inside the transient userns_run_in_ns grandchild.  Same
+	 * shm-vs-static rationale as the sibling latches above: the
+	 * rejection is observed inside a transient grandchild that
+	 * _exit()s after the body returns, so a process-local static
+	 * would die with the grandchild and every subsequent invocation
+	 * would re-attempt the missing kind forever.  RELAXED atomic
+	 * load/store from multiple grandchildren is safe -- only
+	 * false -> true, and the write is idempotent. */
+	bool fou_gue_mcast_rx_kind_unsupported;
+
 	/*
 	 * Distinct-sequence-hash ring for run_grammar_chain's per-walk
 	 * phase ordering.  Each walk computes an FNV-1a hash over the

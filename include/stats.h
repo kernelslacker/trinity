@@ -1690,6 +1690,14 @@ struct stats_s {
 	unsigned long esp_crafted_rx_packet_sent_ok;		/* sendto on IPPROTO_RAW (v4 or v6) returned >0 */
 	unsigned long esp_crafted_rx_sa_delete_ok;		/* XFRM_MSG_DELSA on teardown accepted */
 
+	/* fou_gue_mcast_rx childop counters */
+	unsigned long fou_gue_mcast_rx_runs;			/* total fou_gue_mcast_rx invocations */
+	unsigned long fou_gue_mcast_rx_setup_failed;		/* userns_run_in_ns / genl_open("fou") open failed (incl. kind-latched or !CONFIG_NET_FOU) */
+	unsigned long fou_gue_mcast_rx_port_install_ok;		/* FOU_CMD_ADD installing a FOU/GUE receive port accepted */
+	unsigned long fou_gue_mcast_rx_port_install_failed;	/* FOU_CMD_ADD rejected (any errno) */
+	unsigned long fou_gue_mcast_rx_packet_sent_ok;		/* sendto on IPPROTO_RAW (v4 or v6) with UDP-encap frame returned >0 */
+	unsigned long fou_gue_mcast_rx_port_delete_ok;		/* FOU_CMD_DEL on teardown accepted */
+
 	/* mptcp_pm_churn childop counters */
 	unsigned long mptcp_pm_churn_runs;			/* total mptcp_pm_churn invocations */
 	unsigned long mptcp_pm_churn_setup_failed;		/* socket/bind/listen/connect setup failed */

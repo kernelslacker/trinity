@@ -1500,6 +1500,20 @@ const struct stat_category esp_crafted_rx_category =
 	              esp_crafted_rx_runs,
 	              esp_crafted_rx_fields);
 
+static const struct stat_field fou_gue_mcast_rx_fields[] = {
+	STAT_FIELD(fou_gue_mcast_rx, runs),
+	STAT_FIELD(fou_gue_mcast_rx, setup_failed),
+	STAT_FIELD(fou_gue_mcast_rx, port_install_ok),
+	STAT_FIELD(fou_gue_mcast_rx, port_install_failed),
+	STAT_FIELD(fou_gue_mcast_rx, packet_sent_ok),
+	STAT_FIELD(fou_gue_mcast_rx, port_delete_ok),
+};
+
+const struct stat_category fou_gue_mcast_rx_category =
+	STAT_CATEGORY("fou_gue_mcast_rx",
+	              fou_gue_mcast_rx_runs,
+	              fou_gue_mcast_rx_fields);
+
 static const struct stat_field mptcp_pm_churn_fields[] = {
 	STAT_FIELD(mptcp_pm_churn, runs),
 	STAT_FIELD(mptcp_pm_churn, setup_failed),
@@ -1592,6 +1606,8 @@ static void dump_stats_json_netfilter_and_xfrm(void)
 	stat_category_emit_json(&sctp_chunk_rx_category);
 	putchar(',');
 	stat_category_emit_json(&esp_crafted_rx_category);
+	putchar(',');
+	stat_category_emit_json(&fou_gue_mcast_rx_category);
 	putchar(',');
 	stat_category_emit_json(&mptcp_pm_churn_category);
 	putchar(',');
