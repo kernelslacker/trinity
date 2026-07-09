@@ -406,7 +406,7 @@ extern const struct struct_field group_source_req_fields[GROUP_SOURCE_REQ_FIELDS
  */
 enum {
 	MSGHDR_FIELDS_N			= 7,
-	MMSGHDR_FIELDS_N		= 1,
+	MMSGHDR_FIELDS_N		= 2,
 };
 
 extern const struct struct_field msghdr_fields[MSGHDR_FIELDS_N];

@@ -451,6 +451,7 @@ void cmp_hints_field_scan_record(struct syscallrecord *srec,
 			case FT_TAGGED_UNION:
 			case FT_BPF_PROGRAM:
 			case FT_VOCAB:
+			case FT_EMBEDDED_STRUCT:
 				continue;
 			default:
 				break;

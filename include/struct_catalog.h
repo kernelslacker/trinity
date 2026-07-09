@@ -55,6 +55,7 @@ enum field_tag {
 	FT_VOCAB,		/* pick a NUL-padded byte string from u.vocab.vocab */
 	FT_SRANGE,		/* signed uniform [u.srange.lo, u.srange.hi] */
 	FT_PICKER,		/* call u.picker.pick() for the value (runtime-populated pool) */
+	FT_EMBEDDED_STRUCT,	/* cataloged struct embedded in-place at the field offset (no pointer indirection) */
 
 	/*
 	 * Sentinel for per-tag-indexed counters (e.g.
@@ -159,6 +160,18 @@ struct struct_field {
 		struct {
 			unsigned long long (*pick)(void);
 		} picker;
+		/*
+		 * FT_EMBEDDED_STRUCT: names a cataloged struct that lives
+		 * IN-PLACE at this field's offset -- no pointer indirection,
+		 * no allocation.  The fill path resolves elem_struct_name to
+		 * its struct_desc and recursively schema-fills at buf +
+		 * offset for the target's struct_size.  Mirrors ptr_array's
+		 * elem_struct naming convention but with none of the (ptr,
+		 * len) coupling that a heap-allocated array carries.
+		 */
+		struct {
+			const char *elem_struct_name;
+		} embedded_struct;
 	} u;
 };
 

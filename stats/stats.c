@@ -2509,6 +2509,7 @@ static void dump_corpus_struct_field_mutator(void)
 		[FT_BPF_PROGRAM]	= "bpf_program",
 		[FT_VOCAB]		= "vocab",
 		[FT_PICKER]		= "picker",
+		[FT_EMBEDDED_STRUCT]	= "embedded_struct",
 	};
 	unsigned long sf_total = 0;
 	unsigned int t;

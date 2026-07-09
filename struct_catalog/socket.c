@@ -102,16 +102,17 @@ const struct struct_field msghdr_fields[MSGHDR_FIELDS_N] = {
 /*
  * struct mmsghdr { struct msghdr msg_hdr; unsigned int msg_len; }
  *
- * Attribution-only registration for sendmmsg/recvmmsg.  The bespoke
- * array fill in syscalls/send.c + syscalls/recv.c owns the live fill
- * across the vlen-element message array; the catalog map only steers
- * CMP constant attribution onto the message struct.  The catalog has
- * no embedded-struct field tag today, so msg_hdr is left opaque (it
- * defaults to FT_RAW byte-splat through the catalog's view, while the
- * bespoke per-msghdr fill remains authoritative) and only msg_len is
- * named; that keeps the CMP map attribution-ready without diverting
- * any fill path.
+ * Attribution registration for sendmmsg/recvmmsg.  The bespoke array
+ * fill in syscalls/send.c + syscalls/recv.c still owns the live fill
+ * across the vlen-element message array; the catalog map steers CMP
+ * constant attribution onto the message struct.  msg_hdr is an
+ * in-place struct msghdr, resolved via FT_EMBEDDED_STRUCT so its field
+ * layout (msg_iov / msg_iovlen, msg_name / msg_namelen, msg_control /
+ * msg_controllen, msg_flags) is visible to the schema-aware fill and
+ * to KCOV-CMP field attribution.
  */
 const struct struct_field mmsghdr_fields[MMSGHDR_FIELDS_N] = {
+	FIELDX(struct mmsghdr, msg_hdr, FT_EMBEDDED_STRUCT,
+	       .u.embedded_struct = { .elem_struct_name = "msghdr" }),
 	FIELD(struct mmsghdr, msg_len),
 };

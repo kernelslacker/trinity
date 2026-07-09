@@ -93,6 +93,11 @@ static bool fields_have_address_field(const struct struct_field *fields,
 			if (struct_desc_has_address_field_depth(target, depth + 1))
 				return true;
 			break;
+		case FT_EMBEDDED_STRUCT:
+			target = struct_catalog_lookup(f->u.embedded_struct.elem_struct_name);
+			if (struct_desc_has_address_field_depth(target, depth + 1))
+				return true;
+			break;
 		default:
 			break;
 		}
