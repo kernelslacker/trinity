@@ -781,8 +781,16 @@ const unsigned long bpf_attach_types_tracing[] = {
 	BPF_TRACE_FENTRY, BPF_TRACE_FEXIT, BPF_MODIFY_RETURN,
 	BPF_LSM_MAC, BPF_LSM_CGROUP, BPF_TRACE_RAW_TP,
 	BPF_TRACE_FSESSION,
+#ifndef USE_BPF_LINK_CREATE_TRACING_MULTI
+	/*
+	 * Older uapi without link_create.tracing_multi: fall back to
+	 * this arm's (target_btf_id, cookie) overlay so the multi
+	 * attach types still get a cataloged tail.  When the gate is
+	 * on they migrate to the TRACING_MULTI arm below.
+	 */
 	BPF_TRACE_FENTRY_MULTI, BPF_TRACE_FEXIT_MULTI,
 	BPF_TRACE_FSESSION_MULTI,
+#endif
 };
 
 /*
@@ -984,6 +992,44 @@ const struct struct_field bpf_attr_LINK_CREATE_UPROBE_MULTI_fields[] = {
 };
 
 /*
+ * TRACING_MULTI sub-variant: attaches a single tracing program to a
+ * set of kernel functions in one call.  ids[] is the btf_id array of
+ * targets, cookies[] the paired per-target cookie array, cnt bounds
+ * both -- the FT_LEN_COUNT tail sizes both sibling pointer arrays off
+ * the single count field, same shape as the *probe_multi arms.
+ *
+ * Gated on USE_BPF_LINK_CREATE_TRACING_MULTI because the tracing_multi
+ * named union member postdates the trinity baseline and struct members
+ * can't be #ifndef-shimmed -- offsetof() needs the real member.  When
+ * the gate is off the multi attach types stay in
+ * bpf_attach_types_tracing[] above and fall through to the TRACING
+ * arm's (target_btf_id, cookie) overlay.
+ */
+#ifdef USE_BPF_LINK_CREATE_TRACING_MULTI
+const unsigned long bpf_attach_types_tracing_multi[] = {
+	BPF_TRACE_FENTRY_MULTI, BPF_TRACE_FEXIT_MULTI,
+	BPF_TRACE_FSESSION_MULTI,
+};
+
+const char *const bpf_attr_link_create_tracing_multi_arrays[] = {
+	"link_create.tracing_multi.ids",
+	"link_create.tracing_multi.cookies",
+};
+
+const struct struct_field bpf_attr_LINK_CREATE_TRACING_MULTI_fields[] = {
+	FIELDX(union bpf_attr, link_create.tracing_multi.ids, FT_PTR_ARRAY,
+	       .u.ptr_array = { .elem_size = sizeof(uint64_t),
+				.max_count = 32 }),
+	FIELDX(union bpf_attr, link_create.tracing_multi.cookies, FT_PTR_ARRAY,
+	       .u.ptr_array = { .elem_size = sizeof(uint64_t),
+				.max_count = 32 }),
+	FIELDX(union bpf_attr, link_create.tracing_multi.cnt, FT_LEN_COUNT,
+	       .u.len_of = { .buf_fields = bpf_attr_link_create_tracing_multi_arrays,
+			     .n_buf_fields = ARRAY_SIZE(bpf_attr_link_create_tracing_multi_arrays) }),
+};
+#endif
+
+/*
  * LINK_CREATE nested sub-variant table.  attach_type read off the
  * just-filled buffer at offset 8 (relative to the union, equal to
  * link_create.attach_type since link_create is at union offset 0)
@@ -1021,6 +1067,19 @@ const struct union_variant bpf_attr_LINK_CREATE_nested[] = {
 				  sizeof(((union bpf_attr *)NULL)
 					 ->link_create.tracing.cookie),
 	},
+#ifdef USE_BPF_LINK_CREATE_TRACING_MULTI
+	{
+		.discrim_values	    = bpf_attach_types_tracing_multi,
+		.num_discrim_values = ARRAY_SIZE(bpf_attach_types_tracing_multi),
+		.name		= "LINK_CREATE/TRACING_MULTI",
+		.fields		= bpf_attr_LINK_CREATE_TRACING_MULTI_fields,
+		.num_fields	= ARRAY_SIZE(bpf_attr_LINK_CREATE_TRACING_MULTI_fields),
+		.effective_size	= offsetof(union bpf_attr,
+					   link_create.tracing_multi.cnt) +
+				  sizeof(((union bpf_attr *)NULL)
+					 ->link_create.tracing_multi.cnt),
+	},
+#endif
 	{
 		.discrim_values	    = bpf_attach_types_kprobe_multi,
 		.num_discrim_values = ARRAY_SIZE(bpf_attach_types_kprobe_multi),
