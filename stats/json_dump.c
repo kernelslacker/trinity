@@ -1474,6 +1474,18 @@ const struct stat_category sctp_assoc_churn_category =
 	              sctp_assoc_churn_runs,
 	              sctp_assoc_churn_fields);
 
+static const struct stat_field sctp_chunk_rx_fields[] = {
+	STAT_FIELD(sctp_chunk_rx, runs),
+	STAT_FIELD(sctp_chunk_rx, setup_failed),
+	STAT_FIELD(sctp_chunk_rx, listener_ok),
+	STAT_FIELD(sctp_chunk_rx, packet_sent_ok),
+};
+
+const struct stat_category sctp_chunk_rx_category =
+	STAT_CATEGORY("sctp_chunk_rx",
+	              sctp_chunk_rx_runs,
+	              sctp_chunk_rx_fields);
+
 static const struct stat_field mptcp_pm_churn_fields[] = {
 	STAT_FIELD(mptcp_pm_churn, runs),
 	STAT_FIELD(mptcp_pm_churn, setup_failed),
@@ -1562,6 +1574,8 @@ static void dump_stats_json_netfilter_and_xfrm(void)
 	stat_category_emit_json(&altname_thrash_category);
 	putchar(',');
 	stat_category_emit_json(&sctp_assoc_churn_category);
+	putchar(',');
+	stat_category_emit_json(&sctp_chunk_rx_category);
 	putchar(',');
 	stat_category_emit_json(&mptcp_pm_churn_category);
 	putchar(',');
