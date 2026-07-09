@@ -579,14 +579,44 @@ static int build_tls_set_record_type(struct msghdr *m)
 }
 
 /*
+ * Fixed-shape fillers for variable-length kinds in the multi-cmsg
+ * packer.  The single-cmsg builders draw a random plen; the packer
+ * has to know the exact size up front to sum CMSG_SPACE, so pin the
+ * per-kind plen at a representative length and populate just the
+ * structural header bytes -- the surrounding memset leaves the tail
+ * zero.
+ */
+static void fill_ip_retopts_fixed(void *dst)
+{
+	static const uint8_t lead[] = { 0, 1, 7, 131, 137, 148 };
+	uint8_t *p = dst;
+
+	p[0] = lead[rnd_modulo_u32(sizeof(lead) / sizeof(lead[0]))];
+	/* Remaining bytes stay zero from the caller's memset -- an EOL
+	 * or NOP tail is a legal walk terminator. */
+}
+
+static void fill_ipv6_rthdr_fixed(void *dst)
+{
+	uint8_t *p = dst;
+
+	/* Packer pins plen at 16 == 8 * (1 + 1), so ip6r_len is 1. */
+	p[0] = (uint8_t) rand32();		/* ip6r_nxt */
+	p[1] = 1;				/* ip6r_len (8-octet units) */
+	p[2] = ONE_IN(2) ? 0 : (uint8_t) rand32();  /* ip6r_type */
+	p[3] = (uint8_t) rand32();		/* ip6r_segleft */
+}
+
+/*
  * Multi-cmsg packer.  Picks 2-3 distinct entries from a per-family
- * fixed-shape pool (variable-length kinds like IP_RETOPTS and
- * IPV6_RTHDR are excluded to keep the packer's size accounting
- * trivial), sizes the buffer by the SUM of CMSG_SPACE(plen) across
- * the chosen entries, and walks CMSG_FIRSTHDR -> CMSG_NXTHDR with
- * the spec-required CMSG_LEN(plen) per entry.  The whole buffer is
- * zero-filled up front so padding and any unused tail carry no
- * stale writable-pool bytes into the kernel copy.
+ * pool, sizes the buffer by the SUM of CMSG_SPACE(plen) across the
+ * chosen entries, and walks CMSG_FIRSTHDR -> CMSG_NXTHDR with the
+ * spec-required CMSG_LEN(plen) per entry.  Variable-length kinds
+ * (IP_RETOPTS, IPV6_RTHDR) are pinned at a fixed per-kind plen here
+ * so the size accounting stays trivial while still reaching the
+ * variable-length parser branches through the multi-cmsg walk.  The
+ * whole buffer is zero-filled up front so padding and any unused
+ * tail carry no stale writable-pool bytes into the kernel copy.
  */
 struct multi_entry {
 	int level;
@@ -640,12 +670,14 @@ static unsigned int build_multi_pool(unsigned int family,
 		     fill_ip_pktinfo);
 		PUSH(SOL_IP, IP_TOS, sizeof(int), fill_int_small);
 		PUSH(SOL_IP, IP_TTL, sizeof(int), fill_int_ttl);
+		PUSH(SOL_IP, IP_RETOPTS, 10, fill_ip_retopts_fixed);
 	}
 	if (family == AF_INET6) {
 		PUSH(SOL_IPV6, IPV6_PKTINFO, sizeof(struct in6_pktinfo),
 		     fill_ipv6_pktinfo);
 		PUSH(SOL_IPV6, IPV6_TCLASS, sizeof(int), fill_int_small);
 		PUSH(SOL_IPV6, IPV6_HOPLIMIT, sizeof(int), fill_int_ttl);
+		PUSH(SOL_IPV6, IPV6_RTHDR, 16, fill_ipv6_rthdr_fixed);
 	}
 #undef PUSH
 
