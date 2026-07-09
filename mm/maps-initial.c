@@ -21,9 +21,20 @@
 static void alloc_zero_map(unsigned long size, int prot, int flags, const char *name)
 {
 	struct object *new;
+	int mmap_flags = MAP_ANONYMOUS | flags;
 
 	if (size == 0)
 		return;
+
+	/*
+	 * Exercise the eager-fault mmap path on a small subset of the
+	 * initial anon mappings.  Cap by size so startup stays bounded;
+	 * dirty_random_mapping() will still touch every mapping later, so
+	 * this is purely additive coverage of populate-on-mmap (fault-in,
+	 * THP collapse and NUMA balancing on fresh regions).
+	 */
+	if (size <= MB(4) && ONE_IN(10))
+		mmap_flags |= MAP_POPULATE;
 
 	new = alloc_object();
 	if (new == NULL) {
@@ -44,7 +55,7 @@ static void alloc_zero_map(unsigned long size, int prot, int flags, const char *
 	new->map.flags = flags;
 	new->map.fd = -1;
 	new->map.type = INITIAL_ANON;
-	new->map.ptr = mmap(NULL, size, prot, MAP_ANONYMOUS | flags, -1, 0);
+	new->map.ptr = mmap(NULL, size, prot, mmap_flags, -1, 0);
 	if (new->map.ptr == MAP_FAILED) {
 		outputerr("mmap failure:%s\n", strerror(errno));
 		exit(EXIT_FAILURE);
