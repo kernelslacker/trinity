@@ -1716,6 +1716,14 @@ struct stats_s {
 	unsigned long bareudp_rx_packet_sent_ok;	/* sendto on IPPROTO_RAW with UDP/inner-L3 frame returned >0 */
 	unsigned long bareudp_rx_link_del_ok;		/* RTM_DELLINK on teardown accepted */
 
+	/* mpls_label_stack_rx childop counters */
+	unsigned long mpls_label_stack_rx_runs;			/* total mpls_label_stack_rx invocations */
+	unsigned long mpls_label_stack_rx_setup_failed;		/* userns_run_in_ns / rtnl_open / lo lookup failed (incl. kind-latched or !CONFIG_MPLS_ROUTING) */
+	unsigned long mpls_label_stack_rx_config_ok;		/* net.mpls.platform_labels + conf.lo.input writes accepted */
+	unsigned long mpls_label_stack_rx_config_failed;	/* sysctl open/write rejected (any errno) */
+	unsigned long mpls_label_stack_rx_link_up_ok;		/* RTM_SETLINK IFF_UP on lo accepted */
+	unsigned long mpls_label_stack_rx_packet_sent_ok;	/* sendto on AF_PACKET with ETH_P_MPLS_UC frame returned >0 */
+
 	/* mptcp_pm_churn childop counters */
 	unsigned long mptcp_pm_churn_runs;			/* total mptcp_pm_churn invocations */
 	unsigned long mptcp_pm_churn_setup_failed;		/* socket/bind/listen/connect setup failed */

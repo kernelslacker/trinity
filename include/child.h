@@ -227,6 +227,7 @@ enum child_op_type {
 	CHILD_OP_GENEVE_RX,
 	CHILD_OP_NETNS_MOUNTNS_SETUP_PROBE,
 	CHILD_OP_BAREUDP_RX,
+	CHILD_OP_MPLS_LABEL_STACK_RX,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -1708,3 +1709,4 @@ bool esp_crafted_rx(struct childdata *child);
 bool fou_gue_mcast_rx(struct childdata *child);
 bool geneve_rx(struct childdata *child);
 bool bareudp_rx(struct childdata *child);
+bool mpls_label_stack_rx(struct childdata *child);

@@ -34,7 +34,7 @@
  * Slot ordering matches pick_op_type_table[]; the _Static_assert below
  * pins ARRAY_SIZE equality between the two.
  */
-static int dormant_op_disabled[128] = {
+static int dormant_op_disabled[129] = {
 	0, 0, 0, 0, 0,
 	0, 1, 1, 1, 1,
 	1, 1, 1, 0, 1,
@@ -80,6 +80,7 @@ static int dormant_op_disabled[128] = {
 	1,	/* geneve_rx: dormant until canary-queue load-tests the geneve UDP/6081 RX-decap burst (userns_run_in_ns + RTM_NEWLINK kind=geneve install + IPPROTO_RAW hand-rolled outer IPv4/UDP/GENEVE + variable-length options + truncated inner frames). */
 	1,	/* netns_mountns_setup_probe: dormant until canary-queue load-tests the fresh-namespace SETUP-path burst (userns_run_in_ns + repeated CLONE_NEWNET|CLONE_NEWNS unshare + MS_PRIVATE remount + loopback rtnl bring-up + first-socket alloc). */
 	1,	/* bareudp_rx: dormant until canary-queue load-tests the bareudp UDP RX-decap burst (userns_run_in_ns + RTM_NEWLINK kind=bareudp install with picked port+ethertype+multiproto + IPPROTO_RAW hand-rolled outer IPv4/UDP/inner-L3 frames against 127.0.0.1). */
+	1,	/* mpls_label_stack_rx: dormant until canary-queue load-tests the MPLS label-stack crafted-RX burst (userns_run_in_ns + net.mpls.conf.lo.input=1 + AF_PACKET SOCK_RAW hand-rolled Ethernet(0x8847)/label-stack/inner-IPv4 frames at lo). */
 };
 
 /*
@@ -331,6 +332,7 @@ const char *alt_op_name(enum child_op_type op)
 	case CHILD_OP_GENEVE_RX:	return "geneve_rx";
 	case CHILD_OP_NETNS_MOUNTNS_SETUP_PROBE:	return "netns_mountns_setup_probe";
 	case CHILD_OP_BAREUDP_RX:	return "bareudp_rx";
+	case CHILD_OP_MPLS_LABEL_STACK_RX:	return "mpls_label_stack_rx";
 	case NR_CHILD_OP_TYPES:		break;
 	}
 	return "unknown";
@@ -428,7 +430,7 @@ void log_alt_op_config(void)
  * CHILD_OP_SYSCALL sentinel filter in init_altop_dispatch() stays as
  * defensive coding for any future hole.
  */
-static const enum child_op_type pick_op_type_table[128] = {
+static const enum child_op_type pick_op_type_table[129] = {
 	[0]  = CHILD_OP_MMAP_LIFECYCLE,
 	[1]  = CHILD_OP_MPROTECT_SPLIT,
 	[2]  = CHILD_OP_MLOCK_PRESSURE,
@@ -557,6 +559,7 @@ static const enum child_op_type pick_op_type_table[128] = {
 	[125] = CHILD_OP_GENEVE_RX,
 	[126] = CHILD_OP_NETNS_MOUNTNS_SETUP_PROBE,
 	[127] = CHILD_OP_BAREUDP_RX,
+	[128] = CHILD_OP_MPLS_LABEL_STACK_RX,
 };
 _Static_assert(ARRAY_SIZE(pick_op_type_table) == ARRAY_SIZE(dormant_op_disabled),
 	"pick_op_type_table and dormant_op_disabled must have matching slot counts");
@@ -1526,6 +1529,7 @@ bool (*const op_dispatch[NR_CHILD_OP_TYPES])(struct childdata *) = {
 	[CHILD_OP_GENEVE_RX]		= geneve_rx,
 	[CHILD_OP_NETNS_MOUNTNS_SETUP_PROBE]	= netns_mountns_setup_probe,
 	[CHILD_OP_BAREUDP_RX]		= bareudp_rx,
+	[CHILD_OP_MPLS_LABEL_STACK_RX]	= mpls_label_stack_rx,
 };
 
 _Static_assert(ARRAY_SIZE(op_dispatch) == NR_CHILD_OP_TYPES,
