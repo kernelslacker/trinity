@@ -56,6 +56,7 @@ enum cmsg_kind {
 	CMSG_KIND_IPV6_RTHDR,
 	CMSG_KIND_SCM_TXTIME,
 	CMSG_KIND_TLS_SET_RECORD_TYPE,
+	CMSG_KIND_SCM_SECURITY,		/* AF_UNIX LSM label */
 
 	/* Sentinel: dispatches into the multi-cmsg packer in cmsg_build. */
 	CMSG_KIND_MULTI,
