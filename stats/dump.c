@@ -465,6 +465,10 @@ void dump_stats_fuzzer_subsystems(void)
 	if (shm->stats.mmap_size_clamped)
 		stat_row("mmap", "mmap_size_clamped",
 			 shm->stats.mmap_size_clamped);
+
+	if (shm->stats.heap_extra_regions_overflow)
+		stat_row("heap", "heap_extra_regions_overflow",
+			 shm->stats.heap_extra_regions_overflow);
 }
 
 /*
