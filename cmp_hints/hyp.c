@@ -13,6 +13,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "arch.h"
 #include "cmp_hints.h"
 #include "cmp_hints-internal.h"
 #include "kcov.h"
@@ -1142,6 +1143,144 @@ void cmp_hyp_would_pick(unsigned int nr, bool do32,
 #define CMP_HYP_LIVE_INJECT_PROMOTED_DENOM	64U
 
 /*
+ * Bit-pattern test for the SHADOW pow2 / alignment derive class: true
+ * when C is at or within +/-1 of a power of two.  A strict popcount==1
+ * test would miss the common off-by-one boundary constants
+ * (511 vs 512, 4095 vs 4096) that the pow2 lane's would-emit ladder
+ * targets, so the neighbourhood is folded into the eligibility gate
+ * itself.  C == 0 is treated as ineligible (round-to-N variants would
+ * all collapse to zero and the >>1 / <<1 arms carry no information),
+ * matching the empty-mask fallback shape the BITMASK derive uses.
+ */
+static bool cmp_hyp_is_near_pow2(uint64_t c)
+{
+	if (c == 0)
+		return false;
+	if ((c & (c - 1)) == 0)
+		return true;
+	if (((c + 1) & c) == 0)
+		return true;
+	if (c >= 1 && ((c - 1) & (c - 2)) == 0 && (c - 1) != 0)
+		return true;
+	return false;
+}
+
+/*
+ * SHADOW pow2 / alignment derive-class measurement.  Runs on every
+ * derive whose callsite is a size / offset-class argtype
+ * (ARG_RANGE / ARG_STRUCT_SIZE) AND whose picked exemplar is at or
+ * near a power of two.  Bumps cmp_hyp_pow2_derive_would_fire on
+ * eligibility, and cmp_hyp_pow2_derive_would_win when at least one
+ * candidate from the {C>>1, C, C<<1, round-to-512, round-to-4096,
+ * round-to-page-size} ladder differs from live_out (the value the
+ * live derive lane just wrote to *out).  Does NOT touch *out and does
+ * NOT emit into the live candidate stream -- pure observation.
+ *
+ * Argtype gate rationale: flag / enum callsites overlap the existing
+ * EXACT / ENUM_FAMILY lanes, so a pow2 lane firing there is wasted
+ * pick budget with no coverage headroom.  Size / offset callsites
+ * (length caps, struct-size fields, offset arguments) are where
+ * powers of two carry real meaning (page-boundary, cache-line,
+ * allocator bucket) and where the existing lanes' exemplar / lo /
+ * hi / mask candidates do NOT construct the neighbourhood the class
+ * targets.
+ *
+ * Bug-pattern guards: page_size is read via a plain load and clamped
+ * to a well-defined power of two before the round-up computation
+ * (a torn read of a zero page_size would divide-by-zero the naive
+ * form).  The shift arms mask to 64 bits so an out-of-range shift
+ * (C == 0 already gated above, C == 2^63 for <<1) does not surface
+ * as UB.  The round-up computations use the standard
+ * (v + align - 1) & ~(align - 1) form after verifying v + align does
+ * not overflow; on overflow the arm is skipped rather than emitting
+ * a wrapped value.
+ */
+static void cmp_hyp_pow2_shadow_probe(const struct cmp_hypothesis *picked,
+				      enum cmp_hint_callsite callsite,
+				      unsigned long live_out)
+{
+	uint64_t c, cand;
+	uint64_t page_align;
+	uint64_t live_val;
+	bool differs;
+
+	if (kcov_shm == NULL || picked == NULL)
+		return;
+	if (callsite != CMP_HINT_CALLSITE_ARG_RANGE &&
+	    callsite != CMP_HINT_CALLSITE_ARG_STRUCT_SIZE)
+		return;
+
+	c = picked->exemplar;
+	if (!cmp_hyp_is_near_pow2(c))
+		return;
+
+	__atomic_fetch_add(&kcov_shm->cmp_hyp_pow2_derive_would_fire, 1UL,
+			   __ATOMIC_RELAXED);
+
+	live_val = (uint64_t)live_out;
+	differs = false;
+
+	/* C>>1 arm: informationless when C == 0 (gated above) or C == 1
+	 * (right-shift yields 0, indistinguishable from the empty-mask
+	 * fallback). */
+	if (c >= 2) {
+		cand = c >> 1;
+		if (cand != live_val)
+			differs = true;
+	}
+
+	/* C arm: the exemplar itself.  Existing lanes may already emit it
+	 * (EXACT exemplar, ENUM_FAMILY exemplar), which is precisely why
+	 * this candidate is expected to MATCH live_val on the equality-
+	 * dominated path -- the would_win partition surfaces the rest. */
+	if (c != live_val)
+		differs = true;
+
+	/* C<<1 arm: gated against high-bit wrap.  c & (1ULL<<63) != 0
+	 * would shift the sign bit out; skip cleanly (the round-to-N
+	 * arms below still contribute a candidate). */
+	if ((c & (1ULL << 63)) == 0) {
+		cand = c << 1;
+		if (cand != live_val)
+			differs = true;
+	}
+
+	/* Round-to-512 / 4096: standard (v + align - 1) & ~(align - 1),
+	 * skipped when the add would wrap (v > UINT64_MAX - (align - 1)).
+	 * The round-DOWN arm collapses to c & ~(align - 1) and is always
+	 * well-defined for non-zero c, but a v < align input rounds down
+	 * to zero, so the more useful signal is round-UP. */
+	if (c <= (uint64_t)~0ULL - 511UL) {
+		cand = (c + 511UL) & ~(uint64_t)511UL;
+		if (cand != live_val)
+			differs = true;
+	}
+	if (c <= (uint64_t)~0ULL - 4095UL) {
+		cand = (c + 4095UL) & ~(uint64_t)4095UL;
+		if (cand != live_val)
+			differs = true;
+	}
+
+	/* Round-to-page-size: page_size is a runtime global, clamp to a
+	 * safe power of two (4096) if a torn / zero read would break the
+	 * mask math.  __builtin_popcount check gates the clamp to a
+	 * non-pow2 page_size (e.g. a mid-init garbage read), so the align
+	 * math stays valid. */
+	page_align = (uint64_t)page_size;
+	if (page_align == 0 || __builtin_popcountll(page_align) != 1)
+		page_align = 4096UL;
+	if (c <= (uint64_t)~0ULL - (page_align - 1UL)) {
+		cand = (c + page_align - 1UL) & ~(page_align - 1UL);
+		if (cand != live_val)
+			differs = true;
+	}
+
+	if (differs)
+		__atomic_fetch_add(&kcov_shm->cmp_hyp_pow2_derive_would_win,
+				   1UL, __ATOMIC_RELAXED);
+}
+
+/*
  * Derive ONE candidate value from PICKED via the spec's ladder.  Every
  * derived value is constructed so cmp_hyp_find_for_credit() will
  * re-resolve back to a hypothesis at the same (cmp_ip, width) at
@@ -1172,6 +1311,7 @@ void cmp_hyp_would_pick(unsigned int nr, bool do32,
  *     deterministically.
  */
 static bool cmp_hyp_derive_value(const struct cmp_hypothesis *picked,
+				 enum cmp_hint_callsite callsite,
 				 unsigned long *out)
 {
 	uint64_t lo, hi, mask;
@@ -1433,6 +1573,14 @@ out_bump:
 	if (kcov_shm != NULL)
 		__atomic_fetch_add(&kcov_shm->cmp_hyp_probe_class_hist[cls],
 				   1UL, __ATOMIC_RELAXED);
+
+	/* SHADOW: pow2 / alignment probe-class would-fire / would-win
+	 * measurement.  Gated on a size / offset-class callsite and a
+	 * near-pow2 exemplar; compares the value the live derive just
+	 * wrote to *out against the pow2 / align candidate set without
+	 * mutating it.  The live derive path (and every downstream
+	 * caller of cmp_hyp_derive_value) is byte-for-byte unchanged. */
+	cmp_hyp_pow2_shadow_probe(picked, callsite, *out);
 	return true;
 }
 
@@ -1477,6 +1625,7 @@ out_bump:
 bool cmp_hyp_try_live_inject(unsigned int nr, bool do32,
 			     unsigned long cmp_ip, unsigned int size,
 			     unsigned int arg_idx __attribute__((unused)),
+			     enum cmp_hint_callsite callsite,
 			     unsigned long *out,
 			     uint8_t *out_kind,
 			     bool *out_gate_fired)
@@ -1592,7 +1741,7 @@ bool cmp_hyp_try_live_inject(unsigned int nr, bool do32,
 		return false;
 	}
 
-	if (!cmp_hyp_derive_value(picked, &derived)) {
+	if (!cmp_hyp_derive_value(picked, callsite, &derived)) {
 		if (kcov_shm != NULL)
 			__atomic_fetch_add(
 				&kcov_shm->cmp_hyp_live_inject_reason[CMP_HYP_LIVE_INJECT_REASON_DERIVE_FAIL],

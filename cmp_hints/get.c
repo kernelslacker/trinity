@@ -249,6 +249,7 @@ static bool cmp_try_get_durable_tier(unsigned int nr, bool do32,
 
 			if (cmp_hyp_try_live_inject(nr, do32, picked_cmp_ip,
 						    picked_size, arg_idx,
+						    callsite,
 						    &derived,
 						    &inject_kind,
 						    &inject_gate_fired)) {
