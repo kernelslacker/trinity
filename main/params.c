@@ -1584,6 +1584,185 @@ static void reject_extra_positional_args(int argc, char *argv[])
 	exit(EXIT_FAILURE);
 }
 
+/* Selection knobs: which arch/syscalls/domains to fuzz and how many. */
+static bool parse_selection_options(int opt, const char *name, char *arg)
+{
+	(void)name;
+
+	switch (opt) {
+	case 'a':
+		do_32_arch = false;
+		do_64_arch = false;
+		if (strcmp(arg, "64") == 0) {
+			do_32_arch = false;
+			do_64_arch = true;
+		} else if (strcmp(arg, "32") == 0) {
+			do_32_arch = true;
+			do_64_arch = false;
+		} else {
+			outputstd("can't parse %s\n", arg);
+			exit(EXIT_FAILURE);
+		}
+		return true;
+
+	case 'c':
+		/* arg may be a single name or a comma-separated list,
+		 * e.g. -c read,write,mmap. */
+		do_specific_syscall = true;
+		apply_syscall_csv(arg, "-c", csv_enable_syscall);
+		return true;
+
+	case 'E':
+		parse_exclude_domains(arg);
+		return true;
+
+	case 'g':
+		select_group_by_name(arg);
+		return true;
+
+	case 'N': {
+		unsigned long val;
+
+		if (!parse_unsigned(arg, "N", false, &val))
+			exit(EXIT_FAILURE);
+		syscalls_todo = val;
+		return true;
+	}
+
+	case 'P':
+		/*
+		 * -P takes a domain name (e.g. INET, PF_INET6); the
+		 * actual lookup happens later in find_specific_domain()
+		 * via the domains[] table.  Just stash arg here.
+		 */
+		do_specific_domain = true;
+		specific_domain_optarg = arg;
+		return true;
+
+	case 'r': {
+		unsigned long val;
+
+		if (do_exclude_syscall == true) {
+			outputerr("-r needs to be before any -x options.\n");
+			exit(EXIT_FAILURE);
+		}
+		if (!parse_unsigned(arg, "r", false, &val))
+			exit(EXIT_FAILURE);
+		if (val > UINT_MAX) {
+			outputerr("-r: value %lu exceeds UINT_MAX\n", val);
+			exit(EXIT_FAILURE);
+		}
+		random_selection_num = (unsigned int)val;
+		random_selection = true;
+		return true;
+	}
+
+	case 'x':
+		/* arg may be a single name or a comma-separated list,
+		 * e.g. -x read,write,mmap. */
+		do_exclude_syscall = true;
+		apply_syscall_csv(arg, "-x", csv_disable_syscall);
+		return true;
+	}
+
+	return false;
+}
+
+/* Diagnostic-output verbosity knobs. */
+static bool parse_diagnostic_options(int opt, const char *name, char *arg)
+{
+	(void)name;
+	(void)arg;
+
+	switch (opt) {
+	case 'D':
+		set_debug = true;
+		return true;
+	case 'q':
+		quiet = true;
+		return true;
+	case 'S':
+		do_syslog = true;
+		return true;
+	case 'v':
+		verbosity++;
+		return true;
+	}
+
+	return false;
+}
+
+/* Info-dump commands: usage/list/etc.  All of these print and exit. */
+static bool parse_info_options(int opt, const char *name, char *arg)
+{
+	(void)name;
+
+	switch (opt) {
+	case 'b':
+		init_bdev_list();
+		process_bdev_param(arg);
+		dump_bdev_list();
+		outputstd("--bdev doesn't do anything useful yet.\n");
+		exit(EXIT_SUCCESS);
+	case 'h':
+		usage();
+		exit(EXIT_SUCCESS);
+	case 'I':
+		show_ioctl_list = true;
+		return true;
+	case 'L':
+		show_syscall_list = true;
+		return true;
+	}
+
+	return false;
+}
+
+/* Long-only options that don't belong to any other family.  Must run
+ * after all other opt==0 helpers so they claim their names first. */
+static bool parse_long_misc_options(int opt, const char *name, char *arg)
+{
+	if (opt != 0)
+		return false;
+
+	if (strcmp("clowntown", name) == 0) {
+		clowntown = true;
+		return true;
+	}
+
+	if (strcmp("disable-fds", name) == 0) {
+		process_fds_param(arg, false);
+		return true;
+	}
+
+	if (strcmp("dry-run", name) == 0) {
+		dry_run = true;
+		return true;
+	}
+
+	if (strcmp("self-corrupt-canary", name) == 0) {
+		self_corrupt_canary = true;
+		return true;
+	}
+
+	if (strcmp("enable-fds", name) == 0) {
+		process_fds_param(arg, true);
+		return true;
+	}
+
+	if (strcmp("show-unannotated", name) == 0) {
+		show_unannotated = true;
+		return true;
+	}
+
+	if (strcmp("print-disabled-syscalls", name) == 0) {
+		show_disabled_syscalls = true;
+		return true;
+	}
+
+	return false;
+}
+
 void parse_args(int argc, char *argv[])
 {
 	int opt;
@@ -1612,6 +1791,14 @@ void parse_args(int argc, char *argv[])
 			continue;
 		if (parse_guard_shared_options(opt, long_name, optarg))
 			continue;
+		if (parse_selection_options(opt, long_name, optarg))
+			continue;
+		if (parse_diagnostic_options(opt, long_name, optarg))
+			continue;
+		if (parse_info_options(opt, long_name, optarg))
+			continue;
+		if (parse_long_misc_options(opt, long_name, optarg))
+			continue;
 
 		switch (opt) {
 		default:
@@ -1621,109 +1808,14 @@ void parse_args(int argc, char *argv[])
 				outputstd("opt:%c\n", opt);
 			return;
 
-		case 'a':
-			/* One of the architectures selected*/
-			do_32_arch = false;
-			do_64_arch = false;
-			if (strcmp(optarg, "64") == 0) {
-				do_32_arch = false;
-				do_64_arch = true;
-			} else if (strcmp(optarg, "32") == 0) {
-				do_32_arch = true;
-				do_64_arch = false;
-			} else {
-				outputstd("can't parse %s\n", optarg);
-				exit(EXIT_FAILURE);
-			}
-			break;
-
-		case 'b':
-			init_bdev_list();
-			process_bdev_param(optarg);
-			dump_bdev_list();
-			outputstd("--bdev doesn't do anything useful yet.\n");
-			exit(EXIT_SUCCESS);
-
-		case 'c':
-			/* enable the syscall(s) we care about; optarg may be a
-			 * single name or a comma-separated list, e.g.
-			 * -c read,write,mmap. */
-			do_specific_syscall = true;
-			apply_syscall_csv(optarg, "-c", csv_enable_syscall);
+		/* Long-only opt not claimed by any helper -- silent no-op. */
+		case 0:
 			break;
 
 		case 'd':
 			dangerous = true;
 			break;
 
-		case 'D':
-			set_debug = true;
-			break;
-
-		case 'E':
-			parse_exclude_domains(optarg);
-			break;
-
-		case 'g':
-			select_group_by_name(optarg);
-			break;
-
-		/* Show help */
-		case 'h':
-			usage();
-			exit(EXIT_SUCCESS);
-
-		case 'I':
-			show_ioctl_list = true;
-			break;
-
-		case 'L':
-			show_syscall_list = true;
-			break;
-
-		/* Set number of syscalls to do */
-		case 'N': {
-			unsigned long val;
-
-			if (!parse_unsigned(optarg, "N", false, &val))
-				exit(EXIT_FAILURE);
-			syscalls_todo = val;
-			break;
-		}
-
-		case 'P':
-			/*
-			 * -P takes a domain name (e.g. INET, PF_INET6); the
-			 * actual lookup happens later in find_specific_domain()
-			 * via the domains[] table.  Just stash optarg here.
-			 */
-			do_specific_domain = true;
-			specific_domain_optarg = optarg;
-			break;
-
-		case 'q':
-			quiet = true;
-			break;
-
-		case 'r': {
-			unsigned long val;
-
-			if (do_exclude_syscall == true) {
-				outputerr("-r needs to be before any -x options.\n");
-				exit(EXIT_FAILURE);
-			}
-			if (!parse_unsigned(optarg, "r", false, &val))
-				exit(EXIT_FAILURE);
-			if (val > UINT_MAX) {
-				outputerr("-r: value %lu exceeds UINT_MAX\n", val);
-				exit(EXIT_FAILURE);
-			}
-			random_selection_num = (unsigned int)val;
-			random_selection = true;
-			break;
-		}
-
-		/* Set seed */
 		case 's': {
 			unsigned long val;
 
@@ -1738,21 +1830,12 @@ void parse_args(int argc, char *argv[])
 			break;
 		}
 
-
-		case 'S':
-			do_syslog = true;
-			break;
-
 		case 'T':
 			//Load mask for kernel taint flags.
 			process_taint_arg(optarg);
 			if (kernel_taint_mask != 0xFFFFFFFF)
 				outputstd("Custom kernel taint mask has been specified: 0x%08x (%d).\n",
 					kernel_taint_mask, kernel_taint_mask);
-			break;
-
-		case 'v':
-			verbosity++;
 			break;
 
 		case 'V':
@@ -1766,37 +1849,6 @@ void parse_args(int argc, char *argv[])
 				exit(EXIT_FAILURE);
 			}
 			nr_victim_paths++;
-			break;
-
-		case 'x':
-			/* exclude syscall(s); optarg may be a single name or a
-			 * comma-separated list, e.g. -x read,write,mmap. */
-			do_exclude_syscall = true;
-			apply_syscall_csv(optarg, "-x", csv_disable_syscall);
-			break;
-
-		case 0:
-			if (strcmp("clowntown", long_name) == 0)
-				clowntown = true;
-
-			if (strcmp("disable-fds", long_name) == 0)
-				process_fds_param(optarg, false);
-
-			if (strcmp("dry-run", long_name) == 0)
-				dry_run = true;
-
-			if (strcmp("self-corrupt-canary", long_name) == 0)
-				self_corrupt_canary = true;
-
-			if (strcmp("enable-fds", long_name) == 0)
-				process_fds_param(optarg, true);
-
-			if (strcmp("show-unannotated", long_name) == 0)
-				show_unannotated = true;
-
-			if (strcmp("print-disabled-syscalls", long_name) == 0)
-				show_disabled_syscalls = true;
-
 			break;
 		}
 	}
