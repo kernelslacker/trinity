@@ -232,6 +232,7 @@ enum child_op_type {
 	CHILD_OP_ESPINTCP_COALESCE_CHURN,
 	CHILD_OP_CRED_TRANSITION_CHURN,
 	CHILD_OP_NETDEV_NETNS_MIGRATE,
+	CHILD_OP_MAP_SHARED_STRESS,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -1703,6 +1704,7 @@ bool iscsi_target_probe(struct childdata *child);
 bool iscsi_login_walker(struct childdata *child);
 bool eth_emitter(struct childdata *child);
 bool vma_split_storm(struct childdata *child);
+bool map_shared_stress(struct childdata *child);
 bool sysfs_string_race(struct childdata *child);
 bool pci_bind(struct childdata *child);
 bool pfkey_spd_walk(struct childdata *child);
