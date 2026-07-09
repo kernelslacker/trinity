@@ -30,9 +30,9 @@
  * grandchild:
  *   1. Bring lo up so 127.0.0.1 is a valid outer destination.
  *   2. Open an SCTP listen socket on 127.0.0.1:randport with
- *      SO_RCVTIMEO tiny so any inbound ABORT/OOTB replies do not pin us.
+ *      O_NONBLOCK so any inbound ABORT/OOTB replies do not pin us.
  *      Doubles as the SCTP-module probe -- socket() failing with
- *      EPROTONOSUPPORT / EPFNOSUPPORT / ESOCKTNOSUPPORT / EACCES latches
+ *      EPROTONOSUPPORT / EAFNOSUPPORT / ESOCKTNOSUPPORT / EACCES latches
  *      the whole op off for the remainder of the persistent child's
  *      lifetime (RELAXED-store to shm because the observation happens in
  *      a transient grandchild).
@@ -68,7 +68,7 @@
  * Latches: ns_unsupported_sctp_chunk_rx master gate on userns_run_in_ns()
  * -EPERM (unprivileged userns disabled).  shm->sctp_chunk_rx_kind_
  * unsupported on socket(IPPROTO_SCTP) EPROTONOSUPPORT /
- * ESOCKTNOSUPPORT / EPFNOSUPPORT / EACCES observed inside the
+ * ESOCKTNOSUPPORT / EAFNOSUPPORT / EACCES observed inside the
  * grandchild (missing CONFIG_IP_SCTP or a hardening policy blocking
  * raw SCTP sockets).  Per-kind latch lives in shm because the rejection
  * is observed inside the grandchild -- a process-local static would die
