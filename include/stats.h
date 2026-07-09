@@ -1707,6 +1707,15 @@ struct stats_s {
 	unsigned long geneve_rx_packet_sent_ok;		/* sendto on IPPROTO_RAW with UDP/GENEVE frame returned >0 */
 	unsigned long geneve_rx_link_del_ok;		/* RTM_DELLINK on teardown accepted */
 
+	/* bareudp_rx childop counters */
+	unsigned long bareudp_rx_runs;			/* total bareudp_rx invocations */
+	unsigned long bareudp_rx_setup_failed;		/* userns_run_in_ns / rtnl_open failed (incl. kind-latched or !CONFIG_BAREUDP) */
+	unsigned long bareudp_rx_link_create_ok;	/* RTM_NEWLINK kind="bareudp" accepted */
+	unsigned long bareudp_rx_link_create_failed;	/* RTM_NEWLINK rejected (any errno) */
+	unsigned long bareudp_rx_link_up_ok;		/* RTM_SETLINK IFF_UP on the bareudp dev accepted */
+	unsigned long bareudp_rx_packet_sent_ok;	/* sendto on IPPROTO_RAW with UDP/inner-L3 frame returned >0 */
+	unsigned long bareudp_rx_link_del_ok;		/* RTM_DELLINK on teardown accepted */
+
 	/* mptcp_pm_churn childop counters */
 	unsigned long mptcp_pm_churn_runs;			/* total mptcp_pm_churn invocations */
 	unsigned long mptcp_pm_churn_setup_failed;		/* socket/bind/listen/connect setup failed */
