@@ -159,6 +159,29 @@ static int build_scm_rights(struct msghdr *m)
 	return 0;
 }
 
+/*
+ * Pick a pid for a ucred payload.  Three buckets:
+ *
+ *  - 1/8: random u32.  Non-root senders bounce off scm_check_creds's
+ *    tgid mismatch (EPERM); root callers still reach find_get_pid()
+ *    with a very-likely-invalid pid, exercising the NULL-pid path.
+ *  - 1/8: a live sibling child pid from the OBJ_PID pool.  When
+ *    trinity holds CAP_SYS_ADMIN this bypasses the tgid check and
+ *    forces the kernel to resolve a real struct pid via find_get_pid,
+ *    exercising the pid-lookup arm rather than the trivial-self path.
+ *  - 6/8: our own tgid (getpid()).  Accept arm regardless of caps.
+ */
+static pid_t pick_ucred_pid(void)
+{
+	unsigned int r = rnd_modulo_u32(8);
+
+	if (r == 0)
+		return (pid_t) rand32();
+	if (r == 1)
+		return get_random_pid_from_pool();
+	return getpid();
+}
+
 static int build_scm_credentials(struct msghdr *m)
 {
 	struct cmsghdr *cmsg;
@@ -170,7 +193,7 @@ static int build_scm_credentials(struct msghdr *m)
 		return -1;
 	memset(buf, 0, CMSG_SPACE(plen));
 
-	uc.pid = ONE_IN(8) ? (pid_t) rand32() : getpid();
+	uc.pid = pick_ucred_pid();
 	uc.uid = ONE_IN(8) ? (uid_t) rand32() : getuid();
 	uc.gid = ONE_IN(8) ? (gid_t) rand32() : getgid();
 
@@ -362,7 +385,7 @@ static void fill_scm_credentials(void *dst)
 {
 	struct ucred uc;
 
-	uc.pid = ONE_IN(8) ? (pid_t) rand32() : getpid();
+	uc.pid = pick_ucred_pid();
 	uc.uid = ONE_IN(8) ? (uid_t) rand32() : getuid();
 	uc.gid = ONE_IN(8) ? (gid_t) rand32() : getgid();
 	memcpy(dst, &uc, sizeof(uc));
