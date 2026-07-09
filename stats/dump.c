@@ -461,6 +461,10 @@ void dump_stats_fuzzer_subsystems(void)
 	if (shm->stats.btrfs_ioctls_dispatched)
 		stat_row("ioctl", "btrfs_ioctls_dispatched",
 			 shm->stats.btrfs_ioctls_dispatched);
+
+	if (shm->stats.mmap_size_clamped)
+		stat_row("mmap", "mmap_size_clamped",
+			 shm->stats.mmap_size_clamped);
 }
 
 /*
