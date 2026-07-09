@@ -399,6 +399,26 @@ static unsigned int collect_mutable_candidates(unsigned char *buf,
 				child_buf, child_desc->struct_size,
 				child_desc, rec, depth + 1,
 				out + collected, out_max - collected);
+		} else if (f->tag == FT_EMBEDDED_STRUCT) {
+			/*
+			 * Child lives in-place at buf + offset within the
+			 * parent's own backing buffer -- no pointer to deref,
+			 * no NULL-check.  Bounds against the parent's size
+			 * still gate before recursing.
+			 */
+			const struct struct_desc *child_desc;
+
+			child_desc = mutate_lookup_desc(
+				f->u.embedded_struct.elem_struct_name);
+			if (child_desc == NULL || child_desc->struct_size == 0)
+				continue;
+			if ((unsigned long) f->offset + child_desc->struct_size > size)
+				continue;
+
+			collected += collect_mutable_candidates(
+				buf + f->offset, child_desc->struct_size,
+				child_desc, rec, depth + 1,
+				out + collected, out_max - collected);
 		}
 	}
 	return collected;

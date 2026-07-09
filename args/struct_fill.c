@@ -261,6 +261,28 @@ void struct_fill_passes(unsigned char *buf, unsigned int size,
 		case FT_FLAGS:
 			fill_field_flags(buf, f);
 			break;
+		case FT_EMBEDDED_STRUCT: {
+			/*
+			 * Cataloged struct embedded in-place at buf + offset.
+			 * No allocation, no pointer write -- recursively fill
+			 * the target's fields directly into the parent's
+			 * backing buffer.  Rec threads through so a nested
+			 * variant-carrying descriptor reads the same syscall
+			 * args the top-level fill saw.
+			 */
+			const struct struct_desc *target;
+
+			target = struct_catalog_lookup(
+				f->u.embedded_struct.elem_struct_name);
+			if (target == NULL || target->struct_size == 0)
+				break;
+			if (target->struct_size > f->size)
+				break;
+			struct_field_fill_schema_aware(buf + f->offset,
+						       target->struct_size,
+						       target, rec);
+			break;
+		}
 		case FT_ADDRESS:
 			continue;	/* deferred to pointer pass */
 		case FT_FD: {

@@ -120,6 +120,24 @@ static void scrub_field_array(unsigned char *buf, unsigned int size,
 					       target->struct_size,
 					       target, rec, depth + 1);
 			break;
+		case FT_EMBEDDED_STRUCT:
+			/*
+			 * No pointer indirection: the target lives in-place at
+			 * buf + offset within the already-validated parent
+			 * buffer, so the nested_scrub_base_unsafe() guard the
+			 * FT_PTR_STRUCT arm applies to a freshly-read pointer
+			 * is not appropriate here.  Recurse at the child's
+			 * struct_size so per-field bounds still gate reads.
+			 */
+			target = struct_catalog_lookup(f->u.embedded_struct.elem_struct_name);
+			if (target == NULL || target->struct_size == 0)
+				break;
+			if ((unsigned long) f->offset + target->struct_size > size)
+				break;
+			scrub_struct_addresses(buf + f->offset,
+					       target->struct_size,
+					       target, rec, depth + 1);
+			break;
 		case FT_PTR_ARRAY: {
 			unsigned long count = 0;
 			unsigned long cap;
