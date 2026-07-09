@@ -34,7 +34,7 @@
  * Slot ordering matches pick_op_type_table[]; the _Static_assert below
  * pins ARRAY_SIZE equality between the two.
  */
-static int dormant_op_disabled[135] = {
+static int dormant_op_disabled[136] = {
 	0, 0, 0, 0, 0,
 	0, 1, 1, 1, 1,
 	1, 1, 1, 0, 1,
@@ -87,6 +87,7 @@ static int dormant_op_disabled[135] = {
 	1,	/* netdev_netns_migrate: dormant until canary-queue load-tests the userns_run_in_ns + private-netns RTM_NEWLINK (veth/vxlan/gretap) + RTM_SETLINK IFLA_NET_NS_FD migration into a sibling userns-owned netns + in-target-ns bring-up + RTM_NEWADDR drive, with a source-ns AF_INET socket pinned as ref across the move. */
 	1,	/* map_shared_stress: dormant until canary-queue load-tests the file-backed MAP_SHARED writeback / MADV_DONTFORK fork / O_APPEND-vs-mmap coherence burst. */
 	1,	/* tc_live_traffic: dormant until canary-queue load-tests the private-veth clsact matchall+mirred chain with live UDP burst + mid-burst RTM_DELTFILTER/RTM_NEWTFILTER race + opportunistic XDP-pass attach. */
+	1,	/* hfs_mount_fuzz: dormant until canary-queue load-tests the crafted-image HFS mount fuzzer over a scratch_block loop inside a userns_run_in_ns grandchild (image-mount lifecycle race; not safe for steady rotation). */
 };
 
 /*
@@ -345,6 +346,7 @@ const char *alt_op_name(enum child_op_type op)
 	case CHILD_OP_NETDEV_NETNS_MIGRATE:	return "netdev_netns_migrate";
 	case CHILD_OP_MAP_SHARED_STRESS:	return "map_shared_stress";
 	case CHILD_OP_TC_LIVE_TRAFFIC:	return "tc_live_traffic";
+	case CHILD_OP_HFS_MOUNT_FUZZ:	return "hfs_mount_fuzz";
 	case NR_CHILD_OP_TYPES:		break;
 	}
 	return "unknown";
@@ -442,7 +444,7 @@ void log_alt_op_config(void)
  * CHILD_OP_SYSCALL sentinel filter in init_altop_dispatch() stays as
  * defensive coding for any future hole.
  */
-static const enum child_op_type pick_op_type_table[135] = {
+static const enum child_op_type pick_op_type_table[136] = {
 	[0]  = CHILD_OP_MMAP_LIFECYCLE,
 	[1]  = CHILD_OP_MPROTECT_SPLIT,
 	[2]  = CHILD_OP_MLOCK_PRESSURE,
@@ -578,6 +580,7 @@ static const enum child_op_type pick_op_type_table[135] = {
 	[132] = CHILD_OP_NETDEV_NETNS_MIGRATE,
 	[133] = CHILD_OP_MAP_SHARED_STRESS,
 	[134] = CHILD_OP_TC_LIVE_TRAFFIC,
+	[135] = CHILD_OP_HFS_MOUNT_FUZZ,
 };
 _Static_assert(ARRAY_SIZE(pick_op_type_table) == ARRAY_SIZE(dormant_op_disabled),
 	"pick_op_type_table and dormant_op_disabled must have matching slot counts");
@@ -1554,6 +1557,7 @@ bool (*const op_dispatch[NR_CHILD_OP_TYPES])(struct childdata *) = {
 	[CHILD_OP_NETDEV_NETNS_MIGRATE]	= netdev_netns_migrate,
 	[CHILD_OP_MAP_SHARED_STRESS]	= map_shared_stress,
 	[CHILD_OP_TC_LIVE_TRAFFIC]	= tc_live_traffic,
+	[CHILD_OP_HFS_MOUNT_FUZZ]	= hfs_mount_fuzz,
 };
 
 _Static_assert(ARRAY_SIZE(op_dispatch) == NR_CHILD_OP_TYPES,

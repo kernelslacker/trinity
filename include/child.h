@@ -234,6 +234,7 @@ enum child_op_type {
 	CHILD_OP_NETDEV_NETNS_MIGRATE,
 	CHILD_OP_MAP_SHARED_STRESS,
 	CHILD_OP_TC_LIVE_TRAFFIC,
+	CHILD_OP_HFS_MOUNT_FUZZ,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -1722,3 +1723,4 @@ bool mpls_label_stack_rx(struct childdata *child);
 bool deep_path_nesting(struct childdata *child);
 bool espintcp_coalesce_churn(struct childdata *child);
 bool tc_live_traffic(struct childdata *child);
+bool hfs_mount_fuzz(struct childdata *child);

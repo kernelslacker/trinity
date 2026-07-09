@@ -917,6 +917,22 @@ const struct stat_category blkdev_lifecycle_race_category =
 	              blkdev_lifecycle_runs,
 	              blkdev_lifecycle_race_fields);
 
+static const struct stat_field hfs_mount_fuzz_fields[] = {
+	STAT_FIELD(hfs_mount_fuzz, runs),
+	STAT_FIELD(hfs_mount_fuzz, setup_failed),
+	STAT_FIELD(hfs_mount_fuzz, set_fd_ok),
+	STAT_FIELD(hfs_mount_fuzz, set_fd_busy),
+	STAT_FIELD(hfs_mount_fuzz, mount_ok),
+	STAT_FIELD(hfs_mount_fuzz, mount_failed),
+	STAT_FIELD(hfs_mount_fuzz, ns_unsupported),
+	STAT_FIELD(hfs_mount_fuzz, hfs_unsupported),
+};
+
+const struct stat_category hfs_mount_fuzz_category =
+	STAT_CATEGORY("hfs_mount_fuzz",
+	              hfs_mount_fuzz_runs,
+	              hfs_mount_fuzz_fields);
+
 static const struct stat_field veth_asymmetric_xdp_fields[] = {
 	STAT_FIELD(veth_asym, iters),
 	STAT_FIELD(veth_asym, eperm),
