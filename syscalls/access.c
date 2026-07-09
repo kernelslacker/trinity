@@ -22,6 +22,11 @@
 
 static unsigned long access_modes[] = {
 	F_OK, R_OK, W_OK, X_OK,
+	R_OK | W_OK,
+	R_OK | X_OK,
+	W_OK | X_OK,
+	R_OK | W_OK | X_OK,
+	F_OK | X_OK,
 };
 
 static void sanitise_access(struct syscallrecord *rec)
