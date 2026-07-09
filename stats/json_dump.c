@@ -1134,6 +1134,8 @@ static void dump_stats_json_lifecycle_and_storms(void)
 	putchar(',');
 	stat_category_emit_json(&futex_storm_category);
 	putchar(',');
+	stat_category_emit_json(&futex_pi_requeue_rollback_category);
+	putchar(',');
 }
 
 static const struct stat_field packet_fanout_thrash_fields[] = {
