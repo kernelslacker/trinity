@@ -767,6 +767,26 @@ enum {
 extern const struct struct_field kexec_segment_fields[KEXEC_SEGMENT_FIELDS_N];
 
 /*
+ * keyctl payload leaf tables defined in struct_catalog/keyctl.c.
+ * The spine references keyctl_payload_variants by name with
+ * ARRAY_SIZE() at the use site, and the variant entries reference the
+ * per-cmd field arrays plus the KEYCTL_PKEY_* discriminator-value pool;
+ * every one carries an explicit _N constant so a count mismatch fails
+ * at the leaf TU as "excess elements" / "too few".
+ */
+enum {
+	KEYCTL_DH_PARAMS_FIELDS_N	= 3,
+	KEYCTL_PKEY_PARAMS_FIELDS_N	= 3,
+	KEYCTL_PKEY_OP_CMDS_N		= 4,
+	KEYCTL_PAYLOAD_VARIANTS_N	= 2,
+};
+
+extern const struct struct_field keyctl_dh_params_fields[KEYCTL_DH_PARAMS_FIELDS_N];
+extern const struct struct_field keyctl_pkey_params_fields[KEYCTL_PKEY_PARAMS_FIELDS_N];
+extern const unsigned long keyctl_pkey_op_cmds[KEYCTL_PKEY_OP_CMDS_N];
+extern const struct union_variant keyctl_payload_variants[KEYCTL_PAYLOAD_VARIANTS_N];
+
+/*
  * mount / namespace leaf tables defined in struct_catalog/mount.c.
  * Covers struct mount_attr (mount_setattr / open_tree_attr), struct
  * mnt_id_req (statmount / listmount), and struct ns_id_req (listns).
