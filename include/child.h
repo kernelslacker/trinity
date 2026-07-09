@@ -231,6 +231,7 @@ enum child_op_type {
 	CHILD_OP_DEEP_PATH_NESTING,
 	CHILD_OP_ESPINTCP_COALESCE_CHURN,
 	CHILD_OP_CRED_TRANSITION_CHURN,
+	CHILD_OP_NETDEV_NETNS_MIGRATE,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -1651,6 +1652,7 @@ bool sysv_shm_orphan_race(struct childdata *child);
 bool qrtr_bind_race(struct childdata *child);
 bool netns_teardown_churn(struct childdata *child);
 bool cred_transition_churn(struct childdata *child);
+bool netdev_netns_migrate(struct childdata *child);
 bool netns_mountns_setup_probe(struct childdata *child);
 bool tcp_ulp_swap_churn(struct childdata *child);
 bool msg_zerocopy_churn(struct childdata *child);

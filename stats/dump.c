@@ -2519,6 +2519,8 @@ void __cold dump_stats_childop_runs_network(void)
 
 	stat_category_emit_text(&ip6erspan_netns_migrate_category);
 
+	stat_category_emit_text(&netdev_netns_migrate_category);
+
 	stat_category_emit_text(&ip6gre_bond_lapb_stack_category);
 
 	stat_category_emit_text(&wireguard_decrypt_flood_category);

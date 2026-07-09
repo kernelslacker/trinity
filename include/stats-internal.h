@@ -185,6 +185,7 @@ extern const struct stat_category mount_churn_category;
 extern const struct stat_category mpls_route_churn_category;
 extern const struct stat_category mptcp_pm_churn_category;
 extern const struct stat_category msg_zerocopy_churn_category;
+extern const struct stat_category netdev_netns_migrate_category;
 extern const struct stat_category netlink_generator_category;
 extern const struct stat_category netlink_monitor_race_category;
 extern const struct stat_category netns_mountns_setup_category;

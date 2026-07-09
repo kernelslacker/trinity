@@ -2198,6 +2198,9 @@ static void json_emit_iouring_iscsi_and_net_tail_section(void)
 	stat_category_emit_json(&ip6erspan_netns_migrate_category);
 
 	printf(",");
+	stat_category_emit_json(&netdev_netns_migrate_category);
+
+	printf(",");
 	stat_category_emit_json(&flowtable_encap_vlan_category);
 
 	printf(",");
