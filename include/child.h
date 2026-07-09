@@ -222,6 +222,7 @@ enum child_op_type {
 	CHILD_OP_VLAN_FILTER_CHURN,
 	CHILD_OP_SCTP_CHUNK_RX,
 	CHILD_OP_PKT_BUILDER_PROBE,
+	CHILD_OP_ESP_CRAFTED_RX,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -1698,3 +1699,4 @@ bool statmount_idmap_overflow(struct childdata *child);
 bool umount_race(struct childdata *child);
 bool ip6_udp_cork_splice(struct childdata *child);
 bool pkt_builder_probe(struct childdata *child);
+bool esp_crafted_rx(struct childdata *child);
