@@ -1091,7 +1091,7 @@ static int gen_tier3(struct bpf_insn *insns, int max_insns)
 			int off = -(EBPF_STACK_SIZE + 8 + (rnd_modulo_u32(4096)));
 			insns[i] = EBPF_STX_MEM(BPF_DW, BPF_REG_10, BPF_REG_0, off);
 
-		} else if (choice < 88) {
+		} else if (choice < 84) {
 			/* Load from wild pointer (r0 uninitialized or garbage) */
 			insns[i] = EBPF_LDX_MEM(RAND_ARRAY(mem_sizes),
 						 rnd_modulo_u32(BPF_REG_10),
