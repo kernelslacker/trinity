@@ -142,6 +142,9 @@ enum mut_op {
 	MUT_TRUNCATE,		/* keep a prefix of length [1, src_len] */
 	MUT_CASE_FLIP,		/* toggle case on every ASCII letter */
 	MUT_SUFFIX_GROW,	/* append random alphanumerics toward out_cap */
+	MUT_DELIMITER_SWAP,	/* swap '/' '_' '.' '-' ':' for one another */
+	MUT_PREFIX_VARY,	/* replace first 1-3 chars with random alnum */
+	MUT_CASE_MIXED,		/* toggle case on a random subset of letters */
 	MUT__MAX
 };
 
@@ -210,6 +213,50 @@ static size_t apply_mut(enum mut_op op, char *out, size_t out_cap,
 				alphabet[rnd_modulo_u32(sizeof(alphabet) - 1)];
 		return src_len + want;
 	}
+
+	case MUT_DELIMITER_SWAP: {
+		static const char delims[] = "/_.-:";
+
+		memcpy(out, src, src_len);
+		for (i = 0; i < src_len; i++) {
+			char c = out[i];
+
+			if (c != '/' && c != '_' && c != '.' &&
+			    c != '-' && c != ':')
+				continue;
+			if (ONE_IN(2))
+				out[i] = delims[rnd_modulo_u32(
+					sizeof(delims) - 1)];
+		}
+		return src_len;
+	}
+
+	case MUT_PREFIX_VARY: {
+		static const char alnum[] =
+			"abcdefghijklmnopqrstuvwxyz"
+			"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+		size_t max = src_len < 3 ? src_len : 3;
+		size_t n = 1 + rnd_modulo_u32((uint32_t)max);
+
+		memcpy(out, src, src_len);
+		for (i = 0; i < n; i++)
+			out[i] = alnum[rnd_modulo_u32(sizeof(alnum) - 1)];
+		return src_len;
+	}
+
+	case MUT_CASE_MIXED:
+		memcpy(out, src, src_len);
+		for (i = 0; i < src_len; i++) {
+			char c = out[i];
+
+			if (!ONE_IN(2))
+				continue;
+			if (c >= 'a' && c <= 'z')
+				out[i] = (char)(c - 32);
+			else if (c >= 'A' && c <= 'Z')
+				out[i] = (char)(c + 32);
+		}
+		return src_len;
 
 	case MUT__MAX:
 		break;
