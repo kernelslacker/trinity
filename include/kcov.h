@@ -522,7 +522,7 @@ enum kcov_child_mode {
  * so the real enum count is asserted to fit inside this bound from
  * kcov.c at build time -- bump KCOV_CHILDOP_NR_MAX (and accept the
  * shm cost) if the assertion ever fires. */
-#define KCOV_CHILDOP_NR_MAX 128
+#define KCOV_CHILDOP_NR_MAX 160
 
 /* Per-call dedup slot — counts how many times a single trace hit a given
  * edge so the hit count can be classified into a bucket.  A slot is "live"

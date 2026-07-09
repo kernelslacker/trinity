@@ -183,6 +183,7 @@ extern const struct stat_category mptcp_pm_churn_category;
 extern const struct stat_category msg_zerocopy_churn_category;
 extern const struct stat_category netlink_generator_category;
 extern const struct stat_category netlink_monitor_race_category;
+extern const struct stat_category netns_mountns_setup_category;
 extern const struct stat_category netns_teardown_category;
 extern const struct stat_category nf_conntrack_helper_churn_category;
 extern const struct stat_category nfnl_subsys_calls_category;
