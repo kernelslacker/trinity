@@ -256,6 +256,10 @@ coverity:
 #   - CAP_SYS_RESOURCE: parent raises RLIMIT_MEMLOCK to infinity before
 #     fork (rlimits.c), so children inherit enough mlock headroom for
 #     mlockall() to succeed under ASAN's TB-scale shadow.
+#   - CAP_DAC_READ_SEARCH: parent reads fuzz children's /proc/<pid>/ and
+#     other paths regardless of DAC (children mutate their own creds).
+#   - CAP_SYS_PTRACE: parent bypasses ptrace_may_access to read a
+#     cred-changed / non-dumpable child's /proc/<pid>/{mem,stack,...}.
 # setcap needs root (CAP_SETFCAP), so this is a standalone target:
 #   make && sudo make setcap
 # Re-run after every rebuild -- the security.capability xattr is stripped
@@ -266,5 +270,5 @@ coverity:
 # empty before the fuzz loop, so the raised RLIMIT_MEMLOCK persists
 # across fork while the cap that raised it does not.
 setcap:
-	setcap cap_sys_admin,cap_sys_resource+ep ./trinity
+	setcap cap_sys_admin,cap_sys_resource,cap_dac_read_search,cap_sys_ptrace+ep ./trinity
 
