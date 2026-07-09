@@ -46,6 +46,19 @@ static const char *desc_prefixes[] = {
 	"trinity:scratch",
 };
 
+/* Logon-type descriptions must begin with "<subtype>:".  Rotating a
+ * handful of real kernel subtypes (afs, ceph, cifs, dns_resolver)
+ * alongside our fake "trinity:" namespace keeps the subtype-registration
+ * lookup landing in different slots instead of the same "trinity:"
+ * bucket on every call. */
+static const char *logon_subtypes[] = {
+	"trinity:",
+	"afs:",
+	"cifs:",
+	"ceph:",
+	"dns_resolver:",
+};
+
 /* Three short, deliberately-malformed blobs that look enough like a
  * key blob to drive the asymmetric subtype dispatch and x509/pkcs7
  * parse paths.  We are not trying to make them parse; the parse-error
@@ -104,11 +117,15 @@ static void build_description(char *buf, size_t bufsz, const char *ns_prefix)
 	 * mutated) so a later add_key call can collide with an earlier one
 	 * in keyring_search_iterator / __key_link_check_live_key paths --
 	 * those only light up when two descriptions share dcache slots,
-	 * which fresh "<prefix>_<8 hex>" almost never does.  logon keeps
-	 * the fresh path because the kernel requires its description to
-	 * begin with the "<subtype>:" ns_prefix and a raw pool draw would
-	 * not satisfy that. */
-	if (ns_prefix == NULL && ONE_IN(4)) {
+	 * which fresh "<prefix>_<8 hex>" almost never does.  The pool is
+	 * shared across key types: a draw can hand a logon-type
+	 * "trinity:foo" description to a user-type call (and vice versa),
+	 * so keyring_search's (type, description) compare walks over
+	 * matching names with mismatched types instead of short-circuiting
+	 * on the name alone.  For logon the kernel requires the description
+	 * to begin with "<subtype>:"; if the drawn bytes lack a prefix,
+	 * prepend one so the call stays on the valid path. */
+	if (ONE_IN(4)) {
 		size_t got = name_pool_draw_mutated(NAME_KIND_KEY_DESC,
 						    buf, bufsz);
 
@@ -116,6 +133,15 @@ static void build_description(char *buf, size_t bufsz, const char *ns_prefix)
 			if (got >= bufsz)
 				got = bufsz - 1;
 			buf[got] = '\0';
+			if (ns_prefix != NULL) {
+				size_t plen = strlen(ns_prefix);
+
+				if (strncmp(buf, ns_prefix, plen) != 0 &&
+				    got + plen + 1 <= bufsz) {
+					memmove(buf + plen, buf, got + 1);
+					memcpy(buf, ns_prefix, plen);
+				}
+			}
 			return;
 		}
 		/* empty pool -- fall through to fresh generation */
@@ -250,23 +276,76 @@ static const char *pick_type_and_payload(struct syscallrecord *rec, const char *
 	}
 	if (r < 55) {
 		set_user_payload(rec);
-		*out_ns_prefix = "trinity:";
+		*out_ns_prefix = logon_subtypes[rnd_modulo_u32(ARRAY_SIZE(logon_subtypes))];
 		return "logon";
 	}
-	if (r < 75) {
+	if (r < 73) {
 		set_keyring_payload(rec);
 		return "keyring";
 	}
-	if (r < 85) {
+	if (r < 83) {
 		set_big_key_payload(rec);
 		return "big_key";
 	}
-	if (r < 93) {
+	if (r < 90) {
 		set_asymmetric_payload(rec);
 		return "asymmetric";
 	}
-	set_encrypted_payload(rec);
-	return "encrypted";
+	if (r < 97) {
+		set_encrypted_payload(rec);
+		return "encrypted";
+	}
+	/* .preserved: internal key-type slot; the type-lookup path itself
+	 * is worth touching even when the kernel has no matching
+	 * key_type registered (returns -ENODEV before payload use). */
+	set_user_payload(rec);
+	return ".preserved";
+}
+
+/* Description-length extremes.  The kernel calls strndup_user() with a
+ * PAGE_SIZE cap on the description, so the interesting boundaries are
+ * 0-length (rejected by the empty-string check), exactly PAGE_SIZE
+ * bytes including NUL (fits the cap by one), and PAGE_SIZE+2 (past the
+ * cap -- forces the truncation branch).  Returns 1 when it has taken
+ * over the description slot, 0 to leave the default build_description
+ * path to run. */
+static int try_extreme_description(struct syscallrecord *rec,
+				   const char *ns_prefix)
+{
+	unsigned int r;
+	size_t sz;
+	char *buf;
+	size_t plen;
+
+	if (!ONE_IN(20))
+		return 0;
+
+	r = rnd_modulo_u32(3);
+	if (r == 0)
+		sz = 1;			/* 0-length description */
+	else if (r == 1)
+		sz = 4096;		/* PAGE_SIZE: 4095 chars + NUL */
+	else
+		sz = 4098;		/* PAGE_SIZE + 2: past the cap */
+
+	buf = (char *) get_writable_address(sz);
+	if (buf == NULL)
+		return 0;
+
+	if (sz == 1) {
+		buf[0] = '\0';
+	} else {
+		memset(buf, 'A', sz - 1);
+		buf[sz - 1] = '\0';
+		if (ns_prefix != NULL) {
+			plen = strlen(ns_prefix);
+			if (plen < sz - 1)
+				memcpy(buf, ns_prefix, plen);
+		}
+	}
+	rec->a2 = (unsigned long) buf;
+	avoid_shared_buffer_inout(&rec->a2, sz);
+	return 1;
 }
 
 static void sanitise_add_key(struct syscallrecord *rec)
@@ -295,6 +374,9 @@ static void sanitise_add_key(struct syscallrecord *rec)
 	 * -EINVAL.  Move each input into a fresh pool slot with the
 	 * curated bytes intact; the blanket pass then no-ops here. */
 	avoid_shared_buffer_inout(&rec->a1, 32);
+
+	if (try_extreme_description(rec, ns_prefix))
+		return;
 
 	desc_buf = (char *) get_writable_address(128);
 	if (desc_buf == NULL) {
