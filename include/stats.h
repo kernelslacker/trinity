@@ -1887,6 +1887,13 @@ struct stats_s {
 	unsigned long netns_teardown_kill_ok;			/* SIGKILL delivered to in-ns child (race vs cleanup_net) */
 	unsigned long netns_teardown_completed_ok;		/* full cycle reached waitpid + close anchor cleanly */
 
+	/* deep_path_nesting childop counters */
+	unsigned long deep_path_runs;				/* total deep_path_nesting invocations */
+	unsigned long deep_path_setup_failed;			/* scratch base create/enter failed; unsupported latch fired */
+	unsigned long deep_path_max_depth_reached;		/* iterations that hit the requested target depth */
+	unsigned long deep_path_reader_ok;			/* reader pass returned successfully */
+	unsigned long deep_path_reader_failed;			/* reader pass returned an error */
+
 	/* netns_mountns_setup_probe childop counters */
 	unsigned long netns_mountns_setup_runs;			/* total netns_mountns_setup_probe invocations */
 	unsigned long netns_mountns_setup_setup_failed;		/* userns_run_in_ns fork/EPERM latch / per-iter unshare failure */
