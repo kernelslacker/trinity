@@ -361,29 +361,150 @@ static void havoc_swap_regions(unsigned char *buf, size_t len)
 }
 
 /*
+ * HAVOC arm: stamp a plausible length / size value at the buffer
+ * prefix (offset 0).  Many kernel parsers gate on a leading length or
+ * size field at offset 0 (TLV entry length, netlink attribute nla_len,
+ * on-wire packet-header size fields).  The uniform per-byte havoc arms
+ * almost never land a plausible length there, so the length-gated
+ * parse path downstream of that check stays cold.  This arm writes a
+ * width w in {1, 2, 4, 8} (clamped so w <= len) at offset 0, choosing
+ * a candidate biased toward buffer-relative values (len itself, len±1,
+ * len/2, 0, a small int, or a draw from the interesting-numbers pool
+ * for the classic ULONG_MAX / INT_MIN / INT_MAX boundary sentinels)
+ * so the prefix satisfies the "length matches or bounds the buffer"
+ * contract at least some of the time.  Endianness is coin-flipped
+ * LE/BE per iteration -- the on-wire surface is a mix of both, and a
+ * plain LE arm alone would miss every BE-gated parser.  Bounded, in-
+ * place, O(1): writes only within [0, w) which is inside [0, len) by
+ * construction, so a broken bound trips the same guard-byte
+ * self-check the other block-scoped arms are covered by.
+ */
+static void havoc_prefix_len(unsigned char *buf, size_t len)
+{
+	unsigned int width;
+	uint64_t v;
+	bool be;
+
+	if (len == 0)
+		return;
+
+	switch (rnd_modulo_u32(4)) {
+	case 0:  width = 1; break;
+	case 1:  width = 2; break;
+	case 2:  width = 4; break;
+	default: width = 8; break;
+	}
+	if ((size_t) width > len)
+		width = 1;
+
+	/* Uniform pick over eight length candidates.  The first four are
+	 * buffer-relative (satisfy the "length matches the buffer" gate);
+	 * the small-int and interesting-numbers arms cover the "length
+	 * field is a sentinel" gate parsers use as a terminator or
+	 * unbounded marker. */
+	switch (rnd_modulo_u32(8)) {
+	case 0:  v = (uint64_t) len; break;
+	case 1:  v = (uint64_t) len + 1u; break;
+	case 2:  v = (uint64_t) len - 1u; break;
+	case 3:  v = (uint64_t) len / 2u; break;
+	case 4:  v = 0; break;
+	case 5:  v = 1u + (uint64_t) rnd_modulo_u32(16u); break;
+	case 6:  v = (uint64_t) get_boundary_value(); break;
+	default: v = (uint64_t) get_interesting_value(); break;
+	}
+
+	be = (rnd_u32() & 1u) != 0u;
+
+	switch (width) {
+	case 1:
+		buf[0] = (unsigned char) (v & 0xffu);
+		break;
+	case 2: {
+		uint16_t x = (uint16_t) v;
+
+		if (be) {
+			buf[0] = (unsigned char) ((x >> 8) & 0xffu);
+			buf[1] = (unsigned char) (x & 0xffu);
+		} else {
+			buf[0] = (unsigned char) (x & 0xffu);
+			buf[1] = (unsigned char) ((x >> 8) & 0xffu);
+		}
+		break;
+	}
+	case 4: {
+		uint32_t x = (uint32_t) v;
+
+		if (be) {
+			buf[0] = (unsigned char) ((x >> 24) & 0xffu);
+			buf[1] = (unsigned char) ((x >> 16) & 0xffu);
+			buf[2] = (unsigned char) ((x >> 8) & 0xffu);
+			buf[3] = (unsigned char) (x & 0xffu);
+		} else {
+			buf[0] = (unsigned char) (x & 0xffu);
+			buf[1] = (unsigned char) ((x >> 8) & 0xffu);
+			buf[2] = (unsigned char) ((x >> 16) & 0xffu);
+			buf[3] = (unsigned char) ((x >> 24) & 0xffu);
+		}
+		break;
+	}
+	case 8: {
+		uint64_t x = v;
+
+		if (be) {
+			buf[0] = (unsigned char) ((x >> 56) & 0xffu);
+			buf[1] = (unsigned char) ((x >> 48) & 0xffu);
+			buf[2] = (unsigned char) ((x >> 40) & 0xffu);
+			buf[3] = (unsigned char) ((x >> 32) & 0xffu);
+			buf[4] = (unsigned char) ((x >> 24) & 0xffu);
+			buf[5] = (unsigned char) ((x >> 16) & 0xffu);
+			buf[6] = (unsigned char) ((x >> 8) & 0xffu);
+			buf[7] = (unsigned char) (x & 0xffu);
+		} else {
+			buf[0] = (unsigned char) (x & 0xffu);
+			buf[1] = (unsigned char) ((x >> 8) & 0xffu);
+			buf[2] = (unsigned char) ((x >> 16) & 0xffu);
+			buf[3] = (unsigned char) ((x >> 24) & 0xffu);
+			buf[4] = (unsigned char) ((x >> 32) & 0xffu);
+			buf[5] = (unsigned char) ((x >> 40) & 0xffu);
+			buf[6] = (unsigned char) ((x >> 48) & 0xffu);
+			buf[7] = (unsigned char) ((x >> 56) & 0xffu);
+		}
+		break;
+	}
+	}
+}
+
+/*
  * Bounded havoc pass.  Op count is drawn from [1, BLOB_HAVOC_MAX_OPS]
  * so the worst case is bounded independent of len and independent of
  * per-arm cost (block-scoped arms cap their run at
  * BLOB_HAVOC_BLOCK_MAX bytes).  Each iteration picks one of the
- * fifteen arms with uniform probability -- single-position arms
+ * sixteen arms with uniform probability -- single-position arms
  * (bit-flip, byte-flip, set-interesting at four widths, ±1..±35
  * arith at three widths) plus block-scoped arms (memset run, self-
- * splice copy, region swap).  Returns the number of ops applied so
- * the caller can attribute the count to the blob_havoc_ops shadow
- * counter.
+ * splice copy, region swap) plus the prefix-len arm that stamps a
+ * plausible length / size at offset 0 to reach length-gated parsers.
+ * Returns the number of ops applied so the caller can attribute the
+ * count to the blob_havoc_ops shadow counter; the number of ops the
+ * prefix-len arm was picked for is returned through
+ * *prefix_len_ops_out so the caller can credit
+ * blob_havoc_prefix_len_ops for arm-selection observability.
  */
-static unsigned int blob_havoc(unsigned char *buf, size_t len)
+static unsigned int blob_havoc(unsigned char *buf, size_t len,
+			       unsigned int *prefix_len_ops_out)
 {
 	unsigned int n_ops;
 	unsigned int i;
+	unsigned int prefix_len_ops = 0;
 
+	*prefix_len_ops_out = 0;
 	if (len == 0)
 		return 0;
 
 	n_ops = 1u + rnd_modulo_u32(BLOB_HAVOC_MAX_OPS);
 
 	for (i = 0; i < n_ops; i++) {
-		switch (rnd_modulo_u32(15)) {
+		switch (rnd_modulo_u32(16)) {
 		case 0:
 			havoc_bit_flip(buf, len);
 			break;
@@ -426,11 +547,16 @@ static unsigned int blob_havoc(unsigned char *buf, size_t len)
 		case 13:
 			havoc_splice_copy(buf, len);
 			break;
+		case 15:
+			havoc_prefix_len(buf, len);
+			prefix_len_ops++;
+			break;
 		default:
 			havoc_swap_regions(buf, len);
 			break;
 		}
 	}
+	*prefix_len_ops_out = prefix_len_ops;
 	return n_ops;
 }
 
@@ -789,11 +915,16 @@ void blob_fill(unsigned char *buf, size_t len, unsigned int nr, bool do32)
 	 * same blob.  Fall through into the cmpdict splat below when the
 	 * mode is CMPDICT. */
 	if (mode == BLOB_MUTATOR_HAVOC || mode == BLOB_MUTATOR_CMPDICT) {
-		unsigned int ops = blob_havoc(buf, len);
+		unsigned int prefix_len_ops = 0;
+		unsigned int ops = blob_havoc(buf, len, &prefix_len_ops);
 
 		if (ops > 0)
 			__atomic_fetch_add(&shm->stats.blob_havoc_ops,
 					   (unsigned long) ops,
+					   __ATOMIC_RELAXED);
+		if (prefix_len_ops > 0)
+			__atomic_fetch_add(&shm->stats.blob_havoc_prefix_len_ops,
+					   (unsigned long) prefix_len_ops,
 					   __ATOMIC_RELAXED);
 	}
 

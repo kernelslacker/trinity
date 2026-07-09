@@ -250,7 +250,12 @@ void stat_category_emit_text(const struct stat_category *cat)
 /* --blob-mutator (default off): A/B observability for the ARG_BUF_SIZED
  * content-authoring lane.  fills is the gate (total invocations that
  * authored content), havoc_ops is the count of bounded byte-mutation
- * ops applied on top of the FILL floor, dict_inserts is the count of
+ * ops applied on top of the FILL floor, havoc_prefix_len_ops is the
+ * subset of havoc ops the prefix-len arm was picked for (stamp a
+ * plausible length / size value at buffer offset 0 to reach length-
+ * gated parsers -- TLV entry length, netlink attr nla_len, on-wire
+ * header size fields -- its ratio to havoc_ops is the observable per-
+ * arm selection rate), dict_inserts is the count of
  * committed cmp-pool splats the CMPDICT rung applied from the learned
  * per-nr cmp_hints pool (one bump per successful cmp_hints_try_get
  * pull + splat; pool misses are silent), static_magic_inserts is the
@@ -270,6 +275,7 @@ void stat_category_emit_text(const struct stat_category *cat)
 static const struct stat_field blob_mutator_fields[] = {
 	STAT_FIELD(blob, fills),
 	STAT_FIELD(blob, havoc_ops),
+	STAT_FIELD(blob, havoc_prefix_len_ops),
 	STAT_FIELD(blob, dict_inserts),
 	STAT_FIELD(blob, static_magic_inserts),
 	STAT_FIELD(blob, dict_transform_inserts),
