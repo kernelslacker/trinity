@@ -3468,6 +3468,10 @@ static void dump_stats_render_kcov_base_stats(void)
 	unsigned long kc_cmp_width_pin_would_differ    = __atomic_load_n(&kcov_shm->cmp_width_pin_would_differ,         __ATOMIC_RELAXED);
 	unsigned long kc_cmp_hyp_pow2_derive_would_fire = __atomic_load_n(&kcov_shm->cmp_hyp_pow2_derive_would_fire,    __ATOMIC_RELAXED);
 	unsigned long kc_cmp_hyp_pow2_derive_would_win  = __atomic_load_n(&kcov_shm->cmp_hyp_pow2_derive_would_win,     __ATOMIC_RELAXED);
+	unsigned long kc_cmp_hyp_bm_full_or_would_fire     = __atomic_load_n(&kcov_shm->cmp_hyp_bitmask_full_or_would_fire,        __ATOMIC_RELAXED);
+	unsigned long kc_cmp_hyp_bm_full_or_would_win      = __atomic_load_n(&kcov_shm->cmp_hyp_bitmask_full_or_would_win,         __ATOMIC_RELAXED);
+	unsigned long kc_cmp_hyp_bm_andnot_would_fire      = __atomic_load_n(&kcov_shm->cmp_hyp_bitmask_andnot_toggle_would_fire,  __ATOMIC_RELAXED);
+	unsigned long kc_cmp_hyp_bm_andnot_would_win       = __atomic_load_n(&kcov_shm->cmp_hyp_bitmask_andnot_toggle_would_win,   __ATOMIC_RELAXED);
 
 	stat_row("kcov_coverage", "unique_edges",          kc_edges);
 	stat_row("kcov_coverage", "total_pcs",             kc_pcs);
@@ -3592,6 +3596,50 @@ static void dump_stats_render_kcov_base_stats(void)
 			(kc_cmp_hyp_pow2_derive_would_win * 1000UL) /
 			kc_cmp_hyp_pow2_derive_would_fire;
 		stat_row("kcov_coverage", "cmp_hyp_pow2_derive_would_win_per_mille", ratio_milli);
+	}
+
+	/* Shadow measurement of BITMASK combination probe classes in the
+	 * typed-hypothesis derive.  Extends the live single-bit lane at
+	 * (nr, cmp_ip, width) with two combo probes:
+	 *
+	 *   cmp_hyp_bitmask_full_or_would_fire counts every BITMASK derive
+	 *   whose accumulated mask has popcount >= 2 (single-bit lane
+	 *   picks ONE bit per fire, so any (flags & A) && (flags & B) gate
+	 *   is unreachable structurally); cmp_hyp_bitmask_full_or_would_win
+	 *   counts the subset where the full OR differs from the single-
+	 *   bit value the live lane just emitted -- i.e. the FULL_OR combo
+	 *   would have contributed a value the single-bit lane did not.
+	 *
+	 *   cmp_hyp_bitmask_andnot_toggle_would_fire counts every BITMASK
+	 *   derive where the complement of the observed-bits set inside
+	 *   the operand width holds 1..8 bits -- a plausible disallowed-
+	 *   bit mask for an `x & ~c` allow-mask check;
+	 *   cmp_hyp_bitmask_andnot_toggle_would_win counts the subset
+	 *   where at least one (mask | one-disallowed-bit) candidate
+	 *   differs from the value the live lane emitted, so a live
+	 *   toggle sweep would surface a value the single-bit lane did
+	 *   not.  The live derive is byte-for-byte unchanged; ratios in
+	 *   per-mille size the coverage headroom of promoting either
+	 *   class. */
+	if (kc_cmp_hyp_bm_full_or_would_fire > 0)
+		stat_row("kcov_coverage", "cmp_hyp_bitmask_full_or_would_fire", kc_cmp_hyp_bm_full_or_would_fire);
+	if (kc_cmp_hyp_bm_full_or_would_win > 0)
+		stat_row("kcov_coverage", "cmp_hyp_bitmask_full_or_would_win", kc_cmp_hyp_bm_full_or_would_win);
+	if (kc_cmp_hyp_bm_full_or_would_fire > 0) {
+		unsigned long ratio_milli =
+			(kc_cmp_hyp_bm_full_or_would_win * 1000UL) /
+			kc_cmp_hyp_bm_full_or_would_fire;
+		stat_row("kcov_coverage", "cmp_hyp_bitmask_full_or_would_win_per_mille", ratio_milli);
+	}
+	if (kc_cmp_hyp_bm_andnot_would_fire > 0)
+		stat_row("kcov_coverage", "cmp_hyp_bitmask_andnot_toggle_would_fire", kc_cmp_hyp_bm_andnot_would_fire);
+	if (kc_cmp_hyp_bm_andnot_would_win > 0)
+		stat_row("kcov_coverage", "cmp_hyp_bitmask_andnot_toggle_would_win", kc_cmp_hyp_bm_andnot_would_win);
+	if (kc_cmp_hyp_bm_andnot_would_fire > 0) {
+		unsigned long ratio_milli =
+			(kc_cmp_hyp_bm_andnot_would_win * 1000UL) /
+			kc_cmp_hyp_bm_andnot_would_fire;
+		stat_row("kcov_coverage", "cmp_hyp_bitmask_andnot_toggle_would_win_per_mille", ratio_milli);
 	}
 }
 

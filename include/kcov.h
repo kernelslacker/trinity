@@ -964,13 +964,23 @@ enum prop_injected_callsite {
 #define REEXEC_PENDING_PICK_HIST_NR 8U
 
 /* Probe-class buckets for the cmp_hyp_probe_class_hist[] census at the
- * tail of struct kcov_shared.  One entry per branch cmp_hyp_derive_value()
- * ACTUALLY emits a value through today; keep this in lock-step with that
- * switch.  The set deliberately excludes the false-return rejects
- * (hi < lo, default kind) which emit no value.  The BOUNDARY_* classes
- * are the neighbourhood ladder the CMP_HYP_BOUNDARY arm walks --
- * inequality-gate-friendly probes RANGE deliberately refuses to emit
- * because the value-keyed credit walk can only reach interior members. */
+ * tail of struct kcov_shared.  Every entry above the SHADOW block below
+ * corresponds one-for-one with a branch cmp_hyp_derive_value() ACTUALLY
+ * emits a value through today; keep those in lock-step with the switch.
+ * The set deliberately excludes the false-return rejects (hi < lo,
+ * default kind) which emit no value.  The BOUNDARY_* classes are the
+ * neighbourhood ladder the CMP_HYP_BOUNDARY arm walks -- inequality-
+ * gate-friendly probes RANGE deliberately refuses to emit because the
+ * value-keyed credit walk can only reach interior members.
+ *
+ * SHADOW-only classes are appended at the tail below _SINGLE_BIT's
+ * live siblings.  They are reserved as dedicated bucket ids so a
+ * future live promotion of a shadow-measured lane can flip on without
+ * shifting the histogram indices consumers already read; today they
+ * are never assigned to `cls` inside the derive switch, so their
+ * cmp_hyp_probe_class_hist[] slots stay at zero and the dedicated
+ * shadow counters at the tail of struct kcov_shared carry the
+ * would-fire / would-win signal instead. */
 enum cmp_hyp_probe_class {
 	CMP_HYP_PROBE_CLASS_EXACT_EXEMPLAR,
 	CMP_HYP_PROBE_CLASS_ENUM_EXEMPLAR,
@@ -985,6 +995,18 @@ enum cmp_hyp_probe_class {
 	CMP_HYP_PROBE_CLASS_BOUNDARY_PLUS1,
 	CMP_HYP_PROBE_CLASS_BOUNDARY_EXACT,
 	CMP_HYP_PROBE_CLASS_BOUNDARY_SWEEP,
+	/* SHADOW-only bitmask combination classes.  Extend the existing
+	 * BITMASK single-bit lane in cmp_hyp_derive_value() with combo
+	 * probes: FULL_OR is the OR of all single-bit observations at
+	 * (nr, cmp_ip, width) (targets `(flags & A) && (flags & B)`
+	 * gates single-bit probing structurally cannot reach);
+	 * ANDNOT_TOGGLE flips one disallowed bit at a time within the
+	 * complement of the observed-bits set at the same site (targets
+	 * `old & ~c` allow-mask checks).  No branch in the derive switch
+	 * emits either value today; the dedicated shadow counters below
+	 * carry the coverage-headroom signal. */
+	CMP_HYP_PROBE_CLASS_BITMASK_FULL_OR,
+	CMP_HYP_PROBE_CLASS_BITMASK_ANDNOT_TOGGLE,
 	CMP_HYP_PROBE_CLASS_NR,
 };
 
@@ -3115,6 +3137,40 @@ struct kcov_shared {
 	 * stay stable. */
 	unsigned long cmp_hyp_pow2_derive_would_fire;
 	unsigned long cmp_hyp_pow2_derive_would_win;
+
+	/* Shadow measurement of BITMASK combination probe classes in the
+	 * typed-hypothesis derive.  The live BITMASK lane today emits
+	 * only single-bit values chosen uniformly from picked->mask
+	 * (the accumulated OR of all single-bit constants observed at
+	 * this (nr, cmp_ip, width)); two natural combination probes
+	 * carry information single-bit picks structurally cannot:
+	 *
+	 *  FULL_OR: emit picked->mask itself once popcount(mask) >= 2.
+	 *  Reaches `(flags & A) && (flags & B)` gates the single-bit
+	 *  lane cannot converge on -- the two arms need both bits set
+	 *  simultaneously, and a lane that only ever fires ONE bit at a
+	 *  time hits AT MOST one arm per probe.
+	 *
+	 *  ANDNOT_TOGGLE: gated on popcount(~mask & width_mask) small
+	 *  enough (1..8 bits) that the complement forms a plausible
+	 *  disallowed-bit set for an `x & ~c` allow-mask check.  Emits
+	 *  candidates of the form (mask | (1<<b)) for each disallowed
+	 *  bit b -- flipping one at a time surfaces WHICH disallowed
+	 *  bit trips the gate.
+	 *
+	 * would_fire counts every derive at a BITMASK-picked hypothesis
+	 * whose accumulated mask makes the respective combo eligible;
+	 * would_win counts the subset where the combo candidate differs
+	 * from the value the live BITMASK lane just emitted (a single
+	 * bit picked from the mask), so a live promotion would surface
+	 * a value the existing lane did not.  Nothing on the live pick /
+	 * inject / credit path reads these counters; ratio in per-mille
+	 * sizes the delta a live promotion would open up.  Append-only
+	 * at the tail per convention so consumer offsets stay stable. */
+	unsigned long cmp_hyp_bitmask_full_or_would_fire;
+	unsigned long cmp_hyp_bitmask_full_or_would_win;
+	unsigned long cmp_hyp_bitmask_andnot_toggle_would_fire;
+	unsigned long cmp_hyp_bitmask_andnot_toggle_would_win;
 };
 
 extern struct kcov_shared *kcov_shm;

@@ -1281,6 +1281,134 @@ static void cmp_hyp_pow2_shadow_probe(const struct cmp_hypothesis *picked,
 }
 
 /*
+ * SHADOW BITMASK combination derive-class measurement.  The live
+ * BITMASK lane in cmp_hyp_derive_value() emits a SINGLE bit chosen
+ * uniformly from picked->mask (the accumulated OR of every single-bit
+ * constant observed at (nr, cmp_ip, width) by cmp_hyp_observe -- the
+ * per-hypothesis short-window "pair tracker" this class needs is
+ * already materialised in picked->mask because observations at the
+ * same (nr, cmp_ip, width) fold into the SAME BITMASK entry).  Two
+ * combination probes carry information the single-bit lane cannot:
+ *
+ *  FULL_OR (would-fire on popcount(mask) >= 2, would-win when the OR
+ *  differs from the single bit the live lane just emitted): the OR
+ *  of all observed single-bit constants.  Reaches predicates of the
+ *  form `(flags & A) && (flags & B)` -- both arms need both bits set
+ *  simultaneously, and a lane that only ever fires ONE bit at a time
+ *  hits AT MOST one arm per probe.
+ *
+ *  ANDNOT_TOGGLE (would-fire on popcount(~mask & width_mask) in
+ *  [1, 8], would-win when at least one toggled candidate differs
+ *  from the live-emitted single bit): treat the observed single-bit
+ *  set as the "allowed" bit mask of an `x & ~c` predicate.  The
+ *  complement within the operand width is the disallowed-bit mask
+ *  c -- toggling each set bit in c one at a time surfaces WHICH
+ *  disallowed bit trips the gate.  The 1..8 popcount gate keeps the
+ *  candidate set small (a 64-bit width with no observations would
+ *  otherwise produce 64 candidates and swamp the measurement) and
+ *  restricts the class to sites where the "few disallowed bits"
+ *  shape is plausible -- if the complement is dense, the site is
+ *  more likely EXACT / ENUM_FAMILY-shaped and the existing lanes
+ *  already cover it.
+ *
+ * Termination stop-condition prose (baked into the shadow gate
+ * intentionally): FULL_OR is kept shadow-only in this change even
+ * on a large would-win ratio because a lane that always emits the
+ * SAME picked->mask on every fire at a given site would only
+ * reproduce already-seen edges once the combo gate behind the mask
+ * has converted, so a live promotion needs a follow-up feedback-
+ * loop input (per-hypothesis pc_win credit on the OR probe) to
+ * confirm the combo gate exists at all before it can be judged.
+ * ANDNOT_TOGGLE is kept shadow-only for the mirror reason: without
+ * per-bit credit attribution the toggle sweep would fire the same
+ * candidate ladder every time regardless of which disallowed bit
+ * was actually the tripping one.  These counters size the coverage
+ * headroom of both classes; the live promotion decision is a
+ * follow-up.
+ *
+ * Bug-pattern guards:
+ *   * width_mask computed via the same >=8 short-circuit the
+ *     BOUNDARY arm uses (a picked->width of 8 covers the full
+ *     uint64, so the (1<<64) shift is skipped -- would be UB).
+ *   * disallowed-bit iteration walks bits 0..63 with an explicit
+ *     mask test rather than shifting a running bit until wrap; on a
+ *     torn read of picked->width, a 0 width_mask yields disallowed
+ *     == 0 and the loop simply does not fire the would-win path
+ *     (the would-fire gate above already needs popcount >= 1).
+ *   * a would-fire that finds no differing toggle candidate does
+ *     NOT bump would-win, so the live-lane single-bit picks that
+ *     the toggle set happens to hit (e.g. mask == 0x01 and picked
+ *     bit == 0x01, toggle over disallowed bit 1 yields 0x03 which
+ *     obviously differs) are not double-counted -- the FIRST
+ *     differing candidate is enough evidence.
+ */
+static void cmp_hyp_bitmask_shadow_probe(const struct cmp_hypothesis *picked,
+					 unsigned long live_out)
+{
+	uint64_t mask, width_mask, disallowed, cand;
+	uint64_t live_val;
+	unsigned int mask_pop, disallowed_pop;
+	unsigned int bit_idx;
+	bool andnot_differs;
+
+	if (kcov_shm == NULL || picked == NULL)
+		return;
+	if (picked->kind != CMP_HYP_BITMASK)
+		return;
+
+	mask = picked->mask;
+	if (mask == 0)
+		return;
+
+	mask_pop = (unsigned int)__builtin_popcountll(mask);
+	live_val = (uint64_t)live_out;
+
+	/* FULL_OR: needs at least two distinct observed bits, else the
+	 * OR degenerates to the same single bit the live lane emits. */
+	if (mask_pop >= 2) {
+		__atomic_fetch_add(
+			&kcov_shm->cmp_hyp_bitmask_full_or_would_fire,
+			1UL, __ATOMIC_RELAXED);
+		if (mask != live_val)
+			__atomic_fetch_add(
+				&kcov_shm->cmp_hyp_bitmask_full_or_would_win,
+				1UL, __ATOMIC_RELAXED);
+	}
+
+	/* ANDNOT_TOGGLE: width_mask via the same >=8 short-circuit the
+	 * BOUNDARY arm uses so a picked->width of 8 does not shift by
+	 * 64 (UB). */
+	width_mask = (picked->width >= 8)
+		? ~(uint64_t)0
+		: ((uint64_t)1 << (picked->width * 8)) - 1;
+	disallowed = (~mask) & width_mask;
+	disallowed_pop = (unsigned int)__builtin_popcountll(disallowed);
+	if (disallowed_pop < 1 || disallowed_pop > 8)
+		return;
+
+	__atomic_fetch_add(
+		&kcov_shm->cmp_hyp_bitmask_andnot_toggle_would_fire,
+		1UL, __ATOMIC_RELAXED);
+
+	andnot_differs = false;
+	for (bit_idx = 0; bit_idx < 64; bit_idx++) {
+		uint64_t bit = (uint64_t)1 << bit_idx;
+
+		if ((disallowed & bit) == 0)
+			continue;
+		cand = mask | bit;
+		if (cand != live_val) {
+			andnot_differs = true;
+			break;
+		}
+	}
+	if (andnot_differs)
+		__atomic_fetch_add(
+			&kcov_shm->cmp_hyp_bitmask_andnot_toggle_would_win,
+			1UL, __ATOMIC_RELAXED);
+}
+
+/*
  * Derive ONE candidate value from PICKED via the spec's ladder.  Every
  * derived value is constructed so cmp_hyp_find_for_credit() will
  * re-resolve back to a hypothesis at the same (cmp_ip, width) at
@@ -1581,6 +1709,15 @@ out_bump:
 	 * mutating it.  The live derive path (and every downstream
 	 * caller of cmp_hyp_derive_value) is byte-for-byte unchanged. */
 	cmp_hyp_pow2_shadow_probe(picked, callsite, *out);
+
+	/* SHADOW: bitmask FULL_OR / ANDNOT_TOGGLE would-fire / would-win
+	 * measurement.  Gated on picked->kind == CMP_HYP_BITMASK inside
+	 * the helper; picked->mask carries the per-(nr, cmp_ip, width)
+	 * accumulated OR of all single-bit constants observed at this
+	 * site, so no extra pair state is needed.  Nothing else is
+	 * touched -- *out and the probe-class histogram bump above are
+	 * unchanged. */
+	cmp_hyp_bitmask_shadow_probe(picked, *out);
 	return true;
 }
 
