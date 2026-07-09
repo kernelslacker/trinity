@@ -450,6 +450,13 @@ void dump_stats_fuzzer_subsystems(void)
 	stat_category_emit_text(&no_domains_category);
 
 	dump_stats_render_zombie_slots();
+
+	if (shm->stats.wrong_fd_type_substitutions)
+		stat_row("arggen", "wrong_fd_type_substitutions",
+			 shm->stats.wrong_fd_type_substitutions);
+	if (shm->stats.wrong_fd_type_subst_generic)
+		stat_row("arggen", "wrong_fd_type_subst_generic",
+			 shm->stats.wrong_fd_type_subst_generic);
 }
 
 /*
