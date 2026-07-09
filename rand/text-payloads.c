@@ -373,7 +373,7 @@ static unsigned int gen_netdev_fresh(char *buf, unsigned int buflen)
 	/* IFNAMSIZ is 16 (incl NUL); cap names at 15 bytes here. */
 	static const char * const prefixes[] = {
 		"eth", "lo", "veth", "tap", "br", "wlan",
-		"tun", "bond", "vlan", "trinity",
+		"tun", "bond", "vlan", "trinity", "mlx5_",
 	};
 	char scratch[16];
 	const char *pfx = RAND_ARRAY(prefixes);
@@ -399,6 +399,7 @@ static unsigned int gen_key_desc_fresh(char *buf, unsigned int buflen)
 	static const char * const prefixes[] = {
 		"trinity_key", "session_keyring", "user_session",
 		"logon", "asymmetric_key", "trusted_blob",
+		"user:", "system:",
 	};
 	char scratch[48];
 	const char *pfx = RAND_ARRAY(prefixes);
