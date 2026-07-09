@@ -2218,6 +2218,9 @@ static void json_emit_iouring_iscsi_and_net_tail_section(void)
 	stat_category_emit_json(&blkdev_lifecycle_race_category);
 
 	printf(",");
+	stat_category_emit_json(&hfs_mount_fuzz_category);
+
+	printf(",");
 	stat_category_emit_json(&veth_asymmetric_xdp_category);
 
 	printf(",");

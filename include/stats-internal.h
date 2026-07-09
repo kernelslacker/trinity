@@ -163,6 +163,7 @@ extern const struct stat_category genetlink_fuzzer_category;
 extern const struct stat_category geneve_rx_category;
 extern const struct stat_category genl_family_calls_category;
 extern const struct stat_category handshake_req_abort_category;
+extern const struct stat_category hfs_mount_fuzz_category;
 extern const struct stat_category igmp_mld_source_churn_category;
 extern const struct stat_category inplace_crypto_category;
 extern const struct stat_category iouring_eventfd_category;

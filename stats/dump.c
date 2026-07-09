@@ -2529,6 +2529,8 @@ void __cold dump_stats_childop_runs_network(void)
 
 	stat_category_emit_text(&blkdev_lifecycle_race_category);
 
+	stat_category_emit_text(&hfs_mount_fuzz_category);
+
 	stat_category_emit_text(&iscsi_target_probe_category);
 
 	stat_category_emit_text(&iscsi_login_walker_category);
