@@ -223,6 +223,7 @@ enum child_op_type {
 	CHILD_OP_SCTP_CHUNK_RX,
 	CHILD_OP_PKT_BUILDER_PROBE,
 	CHILD_OP_ESP_CRAFTED_RX,
+	CHILD_OP_FOU_GUE_MCAST_RX,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -1700,3 +1701,4 @@ bool umount_race(struct childdata *child);
 bool ip6_udp_cork_splice(struct childdata *child);
 bool pkt_builder_probe(struct childdata *child);
 bool esp_crafted_rx(struct childdata *child);
+bool fou_gue_mcast_rx(struct childdata *child);

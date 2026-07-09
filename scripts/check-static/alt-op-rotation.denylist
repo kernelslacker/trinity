@@ -77,3 +77,4 @@ CHILD_OP_VETH_ASYMMETRIC_XDP          TODO: review for rotation candidacy
 CHILD_OP_VLAN_FILTER_CHURN            TODO: review for rotation candidacy
 CHILD_OP_VSOCK_TRANSPORT_CHURN        TODO: review for rotation candidacy
 CHILD_OP_WIREGUARD_DECRYPT_FLOOD      TODO: review for rotation candidacy
+CHILD_OP_FOU_GUE_MCAST_RX             REASON: transient userns+netns grandchild install of a genl "fou" receive port + IPPROTO_RAW hand-rolled UDP-encap frames at a mcast outer dst; not safe for steady rotation until canary-queue load-tests the FOU/GUE hash + multicast walker interaction

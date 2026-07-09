@@ -152,6 +152,7 @@ extern const struct stat_category fdstress_category;
 extern const struct stat_category flock_thrash_category;
 extern const struct stat_category flowtable_encap_vlan_category;
 extern const struct stat_category fork_storm_category;
+extern const struct stat_category fou_gue_mcast_rx_category;
 extern const struct stat_category fs_lifecycle_category;
 extern const struct stat_category futex_pi_requeue_rollback_category;
 extern const struct stat_category futex_storm_category;
