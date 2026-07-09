@@ -1698,6 +1698,15 @@ struct stats_s {
 	unsigned long fou_gue_mcast_rx_packet_sent_ok;		/* sendto on IPPROTO_RAW (v4 or v6) with UDP-encap frame returned >0 */
 	unsigned long fou_gue_mcast_rx_port_delete_ok;		/* FOU_CMD_DEL on teardown accepted */
 
+	/* geneve_rx childop counters */
+	unsigned long geneve_rx_runs;			/* total geneve_rx invocations */
+	unsigned long geneve_rx_setup_failed;		/* userns_run_in_ns / rtnl_open failed (incl. kind-latched or !CONFIG_GENEVE) */
+	unsigned long geneve_rx_link_create_ok;		/* RTM_NEWLINK kind="geneve" accepted */
+	unsigned long geneve_rx_link_create_failed;	/* RTM_NEWLINK rejected (any errno) */
+	unsigned long geneve_rx_link_up_ok;		/* RTM_SETLINK IFF_UP on the geneve dev accepted */
+	unsigned long geneve_rx_packet_sent_ok;		/* sendto on IPPROTO_RAW with UDP/GENEVE frame returned >0 */
+	unsigned long geneve_rx_link_del_ok;		/* RTM_DELLINK on teardown accepted */
+
 	/* mptcp_pm_churn childop counters */
 	unsigned long mptcp_pm_churn_runs;			/* total mptcp_pm_churn invocations */
 	unsigned long mptcp_pm_churn_setup_failed;		/* socket/bind/listen/connect setup failed */

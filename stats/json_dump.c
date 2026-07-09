@@ -1514,6 +1514,21 @@ const struct stat_category fou_gue_mcast_rx_category =
 	              fou_gue_mcast_rx_runs,
 	              fou_gue_mcast_rx_fields);
 
+static const struct stat_field geneve_rx_fields[] = {
+	STAT_FIELD(geneve_rx, runs),
+	STAT_FIELD(geneve_rx, setup_failed),
+	STAT_FIELD(geneve_rx, link_create_ok),
+	STAT_FIELD(geneve_rx, link_create_failed),
+	STAT_FIELD(geneve_rx, link_up_ok),
+	STAT_FIELD(geneve_rx, packet_sent_ok),
+	STAT_FIELD(geneve_rx, link_del_ok),
+};
+
+const struct stat_category geneve_rx_category =
+	STAT_CATEGORY("geneve_rx",
+	              geneve_rx_runs,
+	              geneve_rx_fields);
+
 static const struct stat_field mptcp_pm_churn_fields[] = {
 	STAT_FIELD(mptcp_pm_churn, runs),
 	STAT_FIELD(mptcp_pm_churn, setup_failed),
@@ -1608,6 +1623,8 @@ static void dump_stats_json_netfilter_and_xfrm(void)
 	stat_category_emit_json(&esp_crafted_rx_category);
 	putchar(',');
 	stat_category_emit_json(&fou_gue_mcast_rx_category);
+	putchar(',');
+	stat_category_emit_json(&geneve_rx_category);
 	putchar(',');
 	stat_category_emit_json(&mptcp_pm_churn_category);
 	putchar(',');
