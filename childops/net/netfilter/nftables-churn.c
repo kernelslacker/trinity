@@ -1256,6 +1256,191 @@ static void nft_xt_ct_usersize_sweep(void)
 }
 
 /*
+ * xt_IDLETIMER grammar sub-mode.  Extends the iptables blob builder
+ * above to install an IDLETIMER target so trinity can exercise the
+ * module's setsockopt validation, label/timeout churn, and the v1
+ * timer_type field (XT_IDLETIMER_ALARM).  Layout mirrors
+ * xt_ct_probe_one and shares the same struct xt_lc_ipt_* /
+ * xt_ct_emit_target helpers so the wire format stays byte-identical
+ * with the CT path -- only the target name and info-blob layout
+ * differ.
+ *
+ * Config: CONFIG_NETFILTER_XT_TARGET_IDLETIMER (module).  When the
+ * module isn't present, setsockopt fails cleanly with ENOENT /
+ * EOPNOTSUPP / ENOPROTOOPT (no hard dependency on the target) and
+ * the ns_unsupported_xt_idletimer latch short-circuits sibling
+ * probes for the child's lifetime.
+ *
+ * Local mirrors track the stable kernel UAPI in
+ * <linux/netfilter/xt_IDLETIMER.h>; XT_IDLETIMER_ALARM and
+ * idletimer_tg_info_v1 aren't guaranteed in the build sysroot's
+ * headers so both are #ifndef-shimmed.  The trailing __u64 slot
+ * mirrors the kernel's internal "struct idletimer_tg *timer" tail
+ * (aligned(8) in the uapi) -- keeps setsockopt's targetsize check
+ * happy without depending on the kernel-internal pointer type.
+ */
+#ifndef XT_IDLETIMER_LABEL_MAX
+#define XT_IDLETIMER_LABEL_MAX	28
+#endif
+#ifndef XT_IDLETIMER_ALARM
+#define XT_IDLETIMER_ALARM	0x01
+#endif
+
+struct xtidle_lc_v0 {
+	__u32	timeout;
+	char	label[XT_IDLETIMER_LABEL_MAX];
+	__u64	_kpad_timer;	/* mirrors kernel's trailing idletimer_tg * */
+} __attribute__((aligned(8)));
+
+struct xtidle_lc_v1 {
+	__u32	timeout;
+	char	label[XT_IDLETIMER_LABEL_MAX];
+	__u8	timer_type;	/* v1: XT_IDLETIMER_ALARM or 0 */
+	__u64	_kpad_timer;
+} __attribute__((aligned(8)));
+
+static bool ns_unsupported_xt_idletimer;
+
+static void xt_idletimer_probe_one(bool ipv6, __u8 revision)
+{
+	unsigned char buf[1536];
+	struct xt_lc_counters counters_scratch[8];
+	unsigned int hdr_sz, entry_hdr_sz;
+	unsigned int target_hdr_sz, target_data_sz;
+	unsigned int std_total, err_total;
+	unsigned int rule_sz, policy_sz, error_sz, total_sz;
+	unsigned int off, t_data_off;
+	int fd, level, sockopt_set;
+
+	if (ipv6) {
+		level        = IPPROTO_IPV6;
+		sockopt_set  = IP6T_SO_SET_REPLACE;
+		entry_hdr_sz = (unsigned int)sizeof(struct xt_lc_ip6t_entry);
+		fd = socket(AF_INET6, SOCK_RAW | SOCK_CLOEXEC, IPPROTO_RAW);
+	} else {
+		level        = IPPROTO_IP;
+		sockopt_set  = IPT_SO_SET_REPLACE;
+		entry_hdr_sz = (unsigned int)sizeof(struct xt_lc_ipt_entry);
+		fd = socket(AF_INET, SOCK_RAW | SOCK_CLOEXEC, IPPROTO_RAW);
+	}
+	hdr_sz = (unsigned int)sizeof(struct xt_lc_ipt_replace);
+	if (fd < 0) {
+		if (errno == EPERM || errno == EAFNOSUPPORT ||
+		    errno == EPROTONOSUPPORT)
+			ns_unsupported_xt_idletimer = true;
+		return;
+	}
+
+	target_hdr_sz  = (unsigned int)XT_LC_ALIGN8(sizeof(struct xt_lc_entry_target_hdr));
+	target_data_sz = (revision == 1)
+		? (unsigned int)XT_LC_ALIGN8(sizeof(struct xtidle_lc_v1))
+		: (unsigned int)XT_LC_ALIGN8(sizeof(struct xtidle_lc_v0));
+	std_total      = target_hdr_sz + (unsigned int)XT_LC_ALIGN8(sizeof(int));
+	err_total      = target_hdr_sz +
+			 (unsigned int)XT_LC_ALIGN8(XT_LC_FUNC_MAXNAMELEN);
+
+	rule_sz   = entry_hdr_sz + target_hdr_sz + target_data_sz;
+	policy_sz = entry_hdr_sz + std_total;
+	error_sz  = entry_hdr_sz + err_total;
+	total_sz  = rule_sz + 2 * policy_sz + error_sz;
+
+	if (hdr_sz + total_sz > sizeof(buf))
+		goto out;
+
+	memset(buf, 0, sizeof(buf));
+	memset(counters_scratch, 0, sizeof(counters_scratch));
+	xt_ct_fill_replace_hdr(buf, rule_sz, policy_sz, total_sz,
+			       counters_scratch, 4);
+
+	off = hdr_sz;
+
+	/* Entry 1: PRE_ROUTING rule -- IDLETIMER target, no match. */
+	if (ipv6) {
+		struct xt_lc_ip6t_entry *e = (struct xt_lc_ip6t_entry *)(buf + off);
+
+		e->target_offset = (__u16)entry_hdr_sz;
+		e->next_offset   = (__u16)rule_sz;
+	} else {
+		struct xt_lc_ipt_entry *e = (struct xt_lc_ipt_entry *)(buf + off);
+
+		e->target_offset = (__u16)entry_hdr_sz;
+		e->next_offset   = (__u16)rule_sz;
+	}
+	xt_ct_emit_target(buf + off + entry_hdr_sz, "IDLETIMER", revision,
+			  (__u16)(target_hdr_sz + target_data_sz));
+	t_data_off = off + entry_hdr_sz + target_hdr_sz;
+	if (revision == 1) {
+		struct xtidle_lc_v1 *info = (struct xtidle_lc_v1 *)(buf + t_data_off);
+
+		info->timeout = rand32();
+		snprintf(info->label, sizeof(info->label), "trlbl_%u",
+			 (unsigned int)(rand32() & 0xffffu));
+		info->timer_type = (rand32() & 1) ? XT_IDLETIMER_ALARM : 0;
+	} else {
+		struct xtidle_lc_v0 *info = (struct xtidle_lc_v0 *)(buf + t_data_off);
+
+		info->timeout = rand32();
+		snprintf(info->label, sizeof(info->label), "trlbl_%u",
+			 (unsigned int)(rand32() & 0xffffu));
+	}
+	off += rule_sz;
+
+	/* Entries 2 + 3: PRE_ROUTING policy + LOCAL_OUT policy (std ACCEPT). */
+	xt_ct_emit_std_policy(buf + off, entry_hdr_sz, policy_sz, std_total, ipv6);
+	off += policy_sz;
+	xt_ct_emit_std_policy(buf + off, entry_hdr_sz, policy_sz, std_total, ipv6);
+	off += policy_sz;
+
+	/* Entry 4: error sentinel. */
+	xt_ct_emit_error(buf + off, entry_hdr_sz, error_sz, err_total, ipv6);
+
+	if (setsockopt(fd, level, sockopt_set, buf,
+		       (socklen_t)(hdr_sz + total_sz)) < 0) {
+		if (errno == EPERM || errno == ENOENT ||
+		    errno == EOPNOTSUPP || errno == ENOPROTOOPT)
+			ns_unsupported_xt_idletimer = true;
+		goto out;
+	}
+
+	/* Cleanup: empty replace (only policy + error entries, no IDLETIMER
+	 * rule).  Reuses buf with rule entry stripped. */
+	{
+		unsigned int empty_total = 2 * policy_sz + error_sz;
+		unsigned int empty_off;
+
+		memset(buf, 0, sizeof(buf));
+		xt_ct_fill_replace_hdr(buf, 0, policy_sz, empty_total,
+				       counters_scratch, 3);
+		empty_off = hdr_sz;
+		xt_ct_emit_std_policy(buf + empty_off, entry_hdr_sz,
+				      policy_sz, std_total, ipv6);
+		empty_off += policy_sz;
+		xt_ct_emit_std_policy(buf + empty_off, entry_hdr_sz,
+				      policy_sz, std_total, ipv6);
+		empty_off += policy_sz;
+		xt_ct_emit_error(buf + empty_off, entry_hdr_sz,
+				 error_sz, err_total, ipv6);
+		(void)setsockopt(fd, level, sockopt_set, buf,
+				 (socklen_t)(hdr_sz + empty_total));
+	}
+out:
+	close(fd);
+}
+
+static void nft_xt_idletimer_sweep(void)
+{
+	if (ns_unsupported_xt_idletimer)
+		return;
+	xt_idletimer_probe_one(false, 0);
+	if (!ns_unsupported_xt_idletimer)
+		xt_idletimer_probe_one(false, 1);
+	if (!ns_unsupported_xt_idletimer)
+		xt_idletimer_probe_one(true, 0);
+	if (!ns_unsupported_xt_idletimer)
+		xt_idletimer_probe_one(true, 1);
+}
+
+/*
  * Dormant-table abort sub-mode.  Drives the abort path the upstream
  * commit 63bac02786030 ("nf_tables: drop releases of nft_hook from
  * dormant tables on abort") repaired.  Single netlink batch:
@@ -2093,6 +2278,17 @@ static int nftables_churn_iter_submode_dispatch(struct nftables_churn_iter_ctx *
 	 * doesn't cascade into nf_tables disablement. */
 	if (ONE_IN(8) && !ns_unsupported_xt_ct) {
 		nft_xt_ct_usersize_sweep();
+		return 1;
+	}
+
+	/* xt_IDLETIMER grammar sub-mode.  Rare gate so the dominant
+	 * expression-fuzz path stays the primary workload.  Independent
+	 * latch (ns_unsupported_xt_idletimer) so a kernel without
+	 * CONFIG_NETFILTER_XT_TARGET_IDLETIMER pays the EFAIL once and the
+	 * rest of the child's iterations skip the socket() + setsockopt
+	 * roundtrip. */
+	if (ONE_IN(8) && !ns_unsupported_xt_idletimer) {
+		nft_xt_idletimer_sweep();
 		return 1;
 	}
 
