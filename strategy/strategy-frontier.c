@@ -1095,3 +1095,145 @@ void frontier_live_cool_spare(unsigned int syscallnr, bool do32)
 		break;
 	}
 }
+
+/*
+ * SHADOW-ONLY Path-A "regular_suppressed" classifier + shadow bump.
+ * Sibling of frontier_satcool_spare / frontier_live_cool_spare above;
+ * lives in the same translation unit so it can consume the file-static
+ * frontier_spare_lane_decide() predicate body (windowed-edges plateau
+ * spare, distinct-CMP / first-success-TRANSITION arggen spare,
+ * ret_objtype producer-observer spare) without duplicating the lane
+ * logic or growing a private exception list.
+ *
+ * The observed axis is orthogonal to cost: cost partitions on the
+ * static EXPENSIVE bit (the sibling cost_pool_selector_shadow_note
+ * observer), context partitions on empirical per-syscall EPERM
+ * behaviour.  A syscall clears the classifier when its run-persistent
+ * kcov counters say it is regular-dead -- lifetime call sample past
+ * the CONTEXT_REGULAR_SUPPRESSED_CMIN magnitude floor, ZERO success
+ * observations, ZERO edge observations, EPERM bucket dominating
+ * >= CONTEXT_REGULAR_SUPPRESSED_EPERM_PCT of the total return
+ * distribution -- AND the shared spare-lane decide function returns
+ * FRONTIER_SPARE_NONE at the same pick, so a syscall the K-window ring
+ * says is recently productive (or one mid-CMP-insert / mid-first-
+ * success transition) is spared from the would_skip attribution
+ * regardless of the lifetime EPERM aggregate.
+ *
+ * Called from the pick-finalise site in random_syscall/pickers.c on
+ * both the HEURISTIC and RANDOM arms, alongside the sibling
+ * cost_pool_selector_live_note attribution so the finalised-pick
+ * cadence is shared and the (would_skip / candidates) ratio reads
+ * directly off the finalised-pick population without an attempt-vs-
+ * finalise skew.  SHADOW-ONLY by construction: this helper computes
+ * the classifier + spare cascade and bumps the context_regular_
+ * suppressed_* shadow counters but NEVER touches the picker's accept
+ * distribution -- selection in set_syscall_nr_heuristic() and
+ * set_syscall_nr_random() stays byte-identical to a build before the
+ * row for a given seed, regardless of which non-OFF mode is selected.
+ * Wiring the COMBINED live suppression (deactivate_syscall_locked on
+ * the regular_suppressed subset out of the regular cost pools) is a
+ * deliberate follow-up after a SHADOW_ONLY run validates the
+ * classifier's demote mass concentrates on the measured EPERM hogs
+ * (fchown / chown / lchown / fchownat + the cred family as seen at
+ * uid 1026) and is ~0 on syscalls with unprivileged regular value.
+ *
+ * Outer guard keeps the OFF path byte-identical to a build before the
+ * row: no kcov_shm load, no counter loads, no spare-lane evaluation,
+ * no atomic bumps beyond the single RELAXED mode read.  The
+ * MAX_NR_SYSCALL bound matches the sibling helpers' bounds so the
+ * per-syscall would-skip array index is safe.
+ *
+ * All counter loads RELAXED: a mixed snapshot across non-atomic
+ * instants at most produces a one-pick mis-classification -- the same
+ * one-window attribution slack the sibling shadow helpers already
+ * document.  Overflow discipline: the percentage comparison is written
+ * as (eperm * 100) >= (total * PCT) so the multiplication cannot
+ * observe an unsigned-subtraction wrap even under a pathological
+ * counter reset mid-load; total is bounded by lifetime pick count
+ * which fits comfortably below ULONG_MAX / 100 for any run length that
+ * matters.
+ */
+void context_regular_suppressed_shadow(unsigned int syscallnr, bool do32)
+{
+	enum context_pool_mode mode;
+	enum frontier_spare_reason reason;
+	unsigned long calls_total, edges_total;
+	unsigned long eperm, success;
+
+	mode = __atomic_load_n(&context_pool_mode, __ATOMIC_RELAXED);
+	if (mode == CONTEXT_POOL_MODE_OFF)
+		return;
+	if (kcov_shm == NULL)
+		return;
+	if (syscallnr >= MAX_NR_SYSCALL)
+		return;
+
+	calls_total = per_syscall_calls_total(syscallnr);
+	if (calls_total < CONTEXT_REGULAR_SUPPRESSED_CMIN)
+		return;
+
+	/*
+	 * Strict success / edges gates first -- a single first-success
+	 * bucket entry or a single edge observation is hard disproof of
+	 * the "regular-dead" classification and short-circuits the whole
+	 * predicate cheaply before the spare-lane load.  Ordered success
+	 * -> edges -> EPERM so the cheapest disproof gets first crack.
+	 */
+	success = __atomic_load_n(
+		&kcov_shm->per_syscall_errno[syscallnr][ERRNO_BUCKET_SUCCESS],
+		__ATOMIC_RELAXED);
+	if (success != 0)
+		return;
+
+	edges_total = per_syscall_edges_total(syscallnr);
+	if (edges_total != 0)
+		return;
+
+	eperm = __atomic_load_n(
+		&kcov_shm->per_syscall_errno[syscallnr][ERRNO_BUCKET_EPERM],
+		__ATOMIC_RELAXED);
+	if ((eperm * 100UL) <
+	    (calls_total * CONTEXT_REGULAR_SUPPRESSED_EPERM_PCT))
+		return;
+
+	__atomic_fetch_add(&shm->stats.context_regular_suppressed_candidates,
+			   1UL, __ATOMIC_RELAXED);
+
+	reason = frontier_spare_lane_decide(syscallnr, do32);
+
+	switch (reason) {
+	case FRONTIER_SPARE_WINDOWED_EDGES:
+		__atomic_fetch_add(
+			&shm->stats.context_regular_suppressed_spared_windowed,
+			1UL, __ATOMIC_RELAXED);
+		break;
+	case FRONTIER_SPARE_ARGGEN:
+		__atomic_fetch_add(
+			&shm->stats.context_regular_suppressed_spared_arggen,
+			1UL, __ATOMIC_RELAXED);
+		break;
+	case FRONTIER_SPARE_OBJPRODUCER:
+		__atomic_fetch_add(
+			&shm->stats.context_regular_suppressed_spared_objproducer,
+			1UL, __ATOMIC_RELAXED);
+		break;
+	case FRONTIER_SPARE_NONE:
+	default:
+		__atomic_fetch_add(
+			&shm->stats.context_regular_suppressed_would_skip,
+			1UL, __ATOMIC_RELAXED);
+		__atomic_fetch_add(
+			&shm->stats.context_regular_suppressed_would_skip_per_syscall[syscallnr],
+			1UL, __ATOMIC_RELAXED);
+		/*
+		 * COMBINED live suppression would sit here gated on mode ==
+		 * COMBINED; intentionally NOT wired in this commit.  The
+		 * block is observability-only regardless of mode so the
+		 * SHADOW_ONLY counter distribution can be validated against
+		 * a real run before any live regular-pool deactivation is
+		 * gated on the classifier.  See the enum comment in
+		 * include/strategy.h for the ramp discipline.
+		 */
+		break;
+	}
+}

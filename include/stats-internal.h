@@ -90,6 +90,7 @@ void dump_satcool_would_skip_per_syscall_top(void);
 void dump_live_cooldown_would_skip_per_syscall_top(void);
 void dump_live_cool_per_syscall_top(const unsigned long *arr,
 				    const char *label);
+void dump_context_regular_suppressed_per_syscall_top(void);
 
 /* Cross-cluster surface for the stats.c file split.  These symbols
  * are defined in stats.c and referenced from the render cluster

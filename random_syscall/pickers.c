@@ -425,6 +425,19 @@ retry:
 	 * identity validation. */
 	cost_pool_selector_live_note(syscallnr, do32);
 
+	/* Path-A "regular_suppressed" context-axis SHADOW attribution --
+	 * co-located with the cost-pool LIVE-note above so the two picker
+	 * observers share the same pick-finalise cadence (the
+	 * (context_regular_suppressed_would_skip /
+	 * context_regular_suppressed_candidates) ratio reads directly off
+	 * the same finalised-pick denominator without an attempt-vs-
+	 * finalise skew).  Byte-identical OFF short-circuit: the helper's
+	 * single RELAXED mode load returns before any kcov_shm access.
+	 * SHADOW-ONLY -- never touches the accept distribution.  See the
+	 * enum context_pool_mode comment in include/strategy.h for the
+	 * mode contract. */
+	context_regular_suppressed_shadow(syscallnr, do32);
+
 	/* publish (nr, do32bit) as a coherent pair. */
 	srec_publish_begin(rec);
 	rec->do32bit = do32;
@@ -613,6 +626,13 @@ retry:
 	 * actual expensive fraction over the RANDOM arm is measurable
 	 * on any run regardless of cost_pool_selector_mode. */
 	cost_pool_selector_live_note(syscallnr, do32);
+
+	/* Path-A "regular_suppressed" context-axis SHADOW attribution --
+	 * same call-site contract as the matching bump in
+	 * set_syscall_nr_heuristic above: fires at pick-finalise so both
+	 * picker arms feed the same shadow denominator; byte-identical
+	 * default when --context-pool=off. */
+	context_regular_suppressed_shadow(syscallnr, do32);
 
 	srec_publish_begin(rec);
 	rec->do32bit = do32;
