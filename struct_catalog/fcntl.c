@@ -131,6 +131,15 @@ struct open_how {
 #define RESOLVE_BENEATH		0x08
 #define RESOLVE_IN_ROOT		0x10
 #define RESOLVE_CACHED		0x20
+#else
+/*
+ * Host <linux/openat2.h> supplied the struct.  Assert its size matches
+ * the 3-u64 fallback above so a future uapi bump that grows the struct
+ * trips at compile time rather than silently diverging from the shim
+ * in struct_catalog/catalog.c.
+ */
+_Static_assert(sizeof(struct open_how) == 3 * sizeof(__u64),
+	       "struct open_how head drifted from trinity fallback; update both fallback copies");
 #endif
 #ifndef OPENAT2_REGULAR
 #define OPENAT2_REGULAR		((__u64)1 << 32)

@@ -169,6 +169,15 @@ struct open_how {
 #define RESOLVE_BENEATH		0x08
 #define RESOLVE_IN_ROOT		0x10
 #define RESOLVE_CACHED		0x20
+#else
+/*
+ * Host <linux/openat2.h> supplied the struct.  Assert its size matches
+ * the 3-u64 fallback above so a future uapi bump that grows the struct
+ * trips at compile time rather than silently diverging from the shim
+ * in struct_catalog/fcntl.c.
+ */
+_Static_assert(sizeof(struct open_how) == 3 * sizeof(__u64),
+	       "struct open_how head drifted from trinity fallback; update both fallback copies");
 #endif
 
 /* ------------------------------------------------------------------ */
@@ -193,6 +202,15 @@ struct ns_id_req {
 	__u64 user_ns_id;
 };
 #define NS_ID_REQ_SIZE_VER0	24
+#else
+/*
+ * Host <linux/nsfs.h> supplied the struct.  Assert its size matches
+ * NS_ID_REQ_SIZE_VER0 so a future uapi bump that grows the head trips
+ * at compile time rather than silently diverging from the shim in
+ * struct_catalog/mount.c.
+ */
+_Static_assert(sizeof(struct ns_id_req) == NS_ID_REQ_SIZE_VER0,
+	       "struct ns_id_req head drifted from trinity fallback; update both fallback copies");
 #endif
 
 /*
@@ -213,6 +231,16 @@ struct lsm_ctx {
 	__u64 len;
 	__u64 ctx_len;
 };
+#else
+/*
+ * Host <linux/lsm.h> supplied the struct.  Assert the fixed head is
+ * the 4-u64 layout the fallback declares so a future uapi bump that
+ * grows the head trips at compile time rather than silently diverging
+ * from the shim in struct_catalog/lsm.c.  Only the fixed head is
+ * cataloged; the flexible ctx[] tail is intentionally not covered.
+ */
+_Static_assert(sizeof(struct lsm_ctx) == 4 * sizeof(__u64),
+	       "struct lsm_ctx head drifted from trinity fallback; update both fallback copies");
 #endif
 
 /*
