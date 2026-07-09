@@ -5,6 +5,7 @@
  * On error, -1 is returned, and errno is set appropriately.
  */
 #include <sys/socket.h>
+#include <netinet/in.h>
 #include "net.h"
 #include "objects.h"
 #include "random.h"
@@ -16,29 +17,47 @@
 /*
  * Shape buckets for the (upeer_sockaddr, upeer_addrlen) pair.
  *
- * The kernel accepts five distinct argument shapes here, and each one
- * traverses a different patch of the accept(2) -> move_addr_to_user()
- * path.  The pre-bucket sanitiser only ever published shape (a) (full
- * sockaddr_storage out + *lenp = sizeof(struct sockaddr_storage)), so
- * the truncation oracle inside move_addr_to_user() and the explicit
- * "peer-not-wanted" NULL/NULL arm never fired.
+ * move_addr_to_user() splits three ways on the caller's *lenp against
+ * the real sockaddr length: full-capacity (no truncation), undersized
+ * (truncated copy, real length written back), and oversized (kernel
+ * clamps *lenp writeback to the real length).  The out buffer itself
+ * is always sized to struct sockaddr_storage via avoid_shared_buffer_out()
+ * -- only the *lenp VALUE varies -- so an oversized *lenp cannot make
+ * the kernel overrun the out buffer.
  *
- *  (a) full sockaddr_storage out + *lenp = full capacity.
+ *  (a) full sockaddr_storage out + *lenp = full capacity -- no
+ *      truncation, no clamp.
  *  (b) addr == NULL && addrlen == NULL -- caller doesn't want the peer
  *      address back.  The kernel requires the pair to be BOTH NULL or
  *      BOTH non-NULL; a mixed pair is -EFAULT.
- *  (c) addr non-NULL, *lenp = 0 -- kernel writes nothing but reports
- *      the full needed length in *lenp via the value-result writeback.
+ *  (c) addr non-NULL, *lenp = 0 -- degenerate undersized: kernel writes
+ *      nothing but reports the full needed length in *lenp via the
+ *      value-result writeback.
  *  (d) addr non-NULL, *lenp = sizeof(struct sockaddr) -- canonical
  *      truncation oracle: kernel writes a truncated address and
  *      reports the full needed length back.
- *  (e) addr non-NULL, *lenp = small non-zero value -- exercises the
- *      move_addr_to_user() length-writeback path with a variety of
- *      undersized buffer claims.
+ *  (e) addr non-NULL, *lenp = a value straddling the real per-family
+ *      sockaddr sizes (16 for AF_INET, 28 for AF_INET6) -- exercises
+ *      the undersized-buffer arm of move_addr_to_user() at the
+ *      boundaries where truncation flips.
+ *  (f) addr non-NULL, *lenp > sizeof(struct sockaddr_storage) --
+ *      exercises the oversized/clamp arm: the kernel copies at most
+ *      the real sockaddr and clamps the *lenp writeback back down.
  */
 static void sanitise_accept_addrlen(struct syscallrecord *rec)
 {
-	static const socklen_t undersized_lens[] = { 1, 2, 4, 8, 12 };
+	static const socklen_t undersized_lens[] = {
+		sizeof(struct sockaddr) - 1,
+		sizeof(struct sockaddr_in) - 1,
+		sizeof(struct sockaddr_in),
+		sizeof(struct sockaddr_in6) - 1,
+		sizeof(struct sockaddr_in6),
+	};
+	static const socklen_t oversized_lens[] = {
+		sizeof(struct sockaddr_storage) + 1,
+		sizeof(struct sockaddr_storage) * 2,
+		4096,
+	};
 	socklen_t *lenp;
 	unsigned int bucket = rnd_modulo_u32(100);
 
@@ -74,18 +93,21 @@ static void sanitise_accept_addrlen(struct syscallrecord *rec)
 		return;
 	}
 
-	if (bucket < 50) {
+	if (bucket < 45) {
 		/* (a) full sockaddr_storage capacity. */
 		*lenp = sizeof(struct sockaddr_storage);
-	} else if (bucket < 65) {
+	} else if (bucket < 60) {
 		/* (c) zero-length writeback oracle. */
 		*lenp = 0;
-	} else if (bucket < 85) {
+	} else if (bucket < 75) {
 		/* (d) canonical truncation length. */
 		*lenp = sizeof(struct sockaddr);
-	} else {
-		/* (e) miscellaneous undersized lengths. */
+	} else if (bucket < 90) {
+		/* (e) undersized lengths straddling per-family sockaddr sizes. */
 		*lenp = RAND_ARRAY(undersized_lens);
+	} else {
+		/* (f) oversized -- kernel clamps the writeback. */
+		*lenp = RAND_ARRAY(oversized_lens);
 	}
 
 	rec->a3 = (unsigned long) lenp;
