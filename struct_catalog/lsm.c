@@ -41,6 +41,16 @@ struct lsm_ctx {
 	__u64 len;
 	__u64 ctx_len;
 };
+#else
+/*
+ * Host <linux/lsm.h> supplied the struct.  Assert the fixed head is
+ * the 4-u64 layout the fallback declares so a future uapi bump that
+ * grows the head trips at compile time rather than silently diverging
+ * from the shim in struct_catalog/catalog.c.  Only the fixed head is
+ * cataloged; the flexible ctx[] tail is intentionally not covered.
+ */
+_Static_assert(sizeof(struct lsm_ctx) == 4 * sizeof(__u64),
+	       "struct lsm_ctx head drifted from trinity fallback; update both fallback copies");
 #endif
 
 /*

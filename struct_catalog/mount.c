@@ -110,6 +110,15 @@ struct ns_id_req {
 	__u64 user_ns_id;
 };
 #define NS_ID_REQ_SIZE_VER0	24
+#else
+/*
+ * Host <linux/nsfs.h> supplied the struct.  Assert its size matches
+ * NS_ID_REQ_SIZE_VER0 so a future uapi bump that grows the head trips
+ * at compile time rather than silently diverging from the shim in
+ * struct_catalog/catalog.c.
+ */
+_Static_assert(sizeof(struct ns_id_req) == NS_ID_REQ_SIZE_VER0,
+	       "struct ns_id_req head drifted from trinity fallback; update both fallback copies");
 #endif
 
 #define NS_ID_REQ_NS_TYPE_MASK \
