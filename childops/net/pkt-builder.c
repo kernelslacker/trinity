@@ -592,10 +592,11 @@ static void repair_length_field(struct pktb_frame *f,
 		put_be16(p, (uint16_t)coverage_from_layer_start);
 		break;
 	case PKTB_LAYER_GENEVE:
-		/* opt_len is a 6-bit field (top 6 bits of byte 0), in
-		 * 4-octet units past the 8-byte fixed header.  Header only,
-		 * no options, so opt_len=0.  Preserve the low 2 Ver bits
-		 * mutation may have written. */
+		/* byte 0 = Ver (top 2 bits) | opt_len (low 6 bits), in
+		 * 4-octet units past the 8-byte fixed header.  Header
+		 * only, no options, so opt_len stays 0.  & 0x3f clears
+		 * Ver and keeps opt_len - harmless here because byte 0
+		 * is an owned length field pinned to 0. */
 		p[0] = (uint8_t)(p[0] & 0x3f);
 		break;
 	case PKTB_LAYER_RPL_SRH:
