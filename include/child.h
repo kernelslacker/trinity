@@ -235,6 +235,7 @@ enum child_op_type {
 	CHILD_OP_MAP_SHARED_STRESS,
 	CHILD_OP_TC_LIVE_TRAFFIC,
 	CHILD_OP_HFS_MOUNT_FUZZ,
+	CHILD_OP_RDS_ZCOPY_CRAFTED_SEND,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -1724,3 +1725,4 @@ bool deep_path_nesting(struct childdata *child);
 bool espintcp_coalesce_churn(struct childdata *child);
 bool tc_live_traffic(struct childdata *child);
 bool hfs_mount_fuzz(struct childdata *child);
+bool rds_zcopy_crafted_send(struct childdata *child);
