@@ -58,6 +58,9 @@
 #ifndef TLS_SET_RECORD_TYPE
 #define TLS_SET_RECORD_TYPE	1
 #endif
+#ifndef SCM_SECURITY
+#define SCM_SECURITY		0x03
+#endif
 
 enum cmsg_richness_mode cmsg_richness_mode = CMSG_RICHNESS_OFF;
 
@@ -96,6 +99,7 @@ enum cmsg_kind pick_cmsg_kind(unsigned int family)
 	if (family == AF_UNIX) {
 		pool[n++] = CMSG_KIND_SCM_RIGHTS;
 		pool[n++] = CMSG_KIND_SCM_CREDENTIALS;
+		pool[n++] = CMSG_KIND_SCM_SECURITY;
 	}
 	if (family == AF_PACKET)
 		pool[n++] = CMSG_KIND_PACKET_AUXDATA;
@@ -177,6 +181,38 @@ static int build_scm_credentials(struct msghdr *m)
 	cmsg->cmsg_type = SCM_CREDENTIALS;
 	cmsg->cmsg_len = CMSG_LEN(plen);
 	memcpy(CMSG_DATA(cmsg), &uc, plen);
+	return 0;
+}
+
+/*
+ * SCM_SECURITY carries an LSM security label (opaque bytes -- SELinux
+ * context string, Smack label, etc.).  Kernel-side unix_recv_scm() /
+ * scm_passec() copy a bounded blob; length is whatever userspace
+ * supplies.  Bound to 4..64 bytes so the parser sees short and
+ * medium-length labels without inflating the writable-pool draw.
+ */
+static int build_scm_security(struct msghdr *m)
+{
+	struct cmsghdr *cmsg;
+	size_t plen = RAND_RANGE(4, 64);
+	unsigned int i;
+	uint8_t *p;
+
+	void *buf = get_writable_struct(CMSG_SPACE(plen));
+	if (buf == NULL)
+		return -1;
+	memset(buf, 0, CMSG_SPACE(plen));
+
+	m->msg_control = buf;
+	m->msg_controllen = CMSG_SPACE(plen);
+	cmsg = CMSG_FIRSTHDR(m);
+	cmsg->cmsg_level = SOL_SOCKET;
+	cmsg->cmsg_type = SCM_SECURITY;
+	cmsg->cmsg_len = CMSG_LEN(plen);
+
+	p = (uint8_t *) CMSG_DATA(cmsg);
+	for (i = 0; i < plen; i++)
+		p[i] = (uint8_t) rand32();
 	return 0;
 }
 
@@ -673,6 +709,7 @@ int cmsg_build(struct msghdr *m, enum cmsg_kind k, unsigned int family)
 	case CMSG_KIND_SCM_TXTIME:	return build_scm_txtime(m);
 	case CMSG_KIND_TLS_SET_RECORD_TYPE:
 		return build_tls_set_record_type(m);
+	case CMSG_KIND_SCM_SECURITY:	return build_scm_security(m);
 	case CMSG_KIND_MULTI:		return build_cmsg_multi(m, family);
 	default:
 		return -1;
