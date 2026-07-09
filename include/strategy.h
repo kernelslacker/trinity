@@ -564,6 +564,109 @@ enum cost_pool_selector_mode {
 extern enum cost_pool_selector_mode cost_pool_selector_mode;
 
 /*
+ * Context-pool mode -- Path-A "regular_suppressed" shadow instrumentation
+ * for the picker.  Sibling of cost_pool_selector_mode above; layered on
+ * the same OFF / SHADOW_ONLY / COMBINED ramp discipline the other picker
+ * observers use, and gated at the outer edge so OFF is byte-identical to
+ * a build before this row.
+ *
+ * The axis this observes is orthogonal to cost: cost partitions on a
+ * static EXPENSIVE bit, context partitions on empirical per-syscall
+ * EPERM behaviour -- run-persistent per_syscall_errno + per_syscall_
+ * edges data classifies a syscall as regular_suppressed (proven regular-
+ * dead) so the shadow row projects how many finalised picks a live Path-A
+ * suppression would remove from the regular cost pools.  The classifier
+ * is data-gated, NOT a curated exception list -- membership is derived
+ * from the kcov counters at the pick site (magnitude floor +
+ * success == 0 + edges == 0 + EPERM rate >= threshold); a
+ * newly-productive syscall stops being classified regular_suppressed on
+ * its own without any manual map edit.  Shared spare-lane predicate
+ * (frontier_spare_lane_decide, above) is consumed at the site so a
+ * syscall the K-window ring says is recently productive is spared from
+ * the would_skip attribution even if its lifetime EPERM rate is still
+ * high -- keeps the shadow projection honest against transient
+ * recovery.
+ *
+ *   OFF          - default, byte-identical to today.  Single RELAXED
+ *                  mode load short-circuits before any kcov_shm access,
+ *                  any per-syscall counter load, or any shadow counter
+ *                  bump.  Fixed-seed --dry-run pick streams are
+ *                  bit-for-bit identical to a build before this row.
+ *   SHADOW_ONLY  - compute the classifier at the pick-finalise site
+ *                  (once per accepted pick, matched to the cost_pool_
+ *                  selector_live_note cadence so the (context_regular_
+ *                  suppressed_would_skip / context_regular_suppressed_
+ *                  candidates) ratio reads directly off the finalised
+ *                  pick population).  Bumps the context_regular_
+ *                  suppressed_* shadow counters; selection stays
+ *                  byte-identical -- no goto-retry is gated on the
+ *                  classifier, no live suppression fires.
+ *   COMBINED     - reserved.  The enum value exists so a future commit
+ *                  that wires the live regular-pool removal
+ *                  (deactivate_syscall_locked on the regular_suppressed
+ *                  subset) can land without renumbering the enum, but
+ *                  THIS BUILD treats combined identically to
+ *                  shadow-only -- classifier evaluates and counters
+ *                  bump, no live pool change happens.  The switchover
+ *                  is a separate, gated step after SHADOW_ONLY
+ *                  validates the classifier against a real run per the
+ *                  needs-root-pool-userns-axis-2026-06-27 §5 Phase 2
+ *                  A/B ramp.
+ *
+ * Param-settable from --context-pool=off|shadow-only|combined.
+ */
+enum context_pool_mode {
+	CONTEXT_POOL_MODE_OFF = 0,
+	CONTEXT_POOL_MODE_SHADOW_ONLY = 1,
+	CONTEXT_POOL_MODE_COMBINED = 2,
+};
+
+extern enum context_pool_mode context_pool_mode;
+
+/*
+ * Magnitude floor for the regular_suppressed classifier.  Sized on the
+ * same rationale as FRONTIER_LIVE_COOL_CMIN above: the productive
+ * syscalls the classifier MUST NOT mis-suppress sit far below the
+ * satcool 10000 mark, so reusing FRONTIER_SATCOOL_CMIN would leave the
+ * measured EPERM hogs (fchown / cred family etc.) under-floor and never
+ * classified; but a syscall with only a handful of picks must not
+ * qualify on a statistically-meaningless sample.  256 admits the
+ * measured hogs while keeping the sample-size bar high enough that a
+ * fresh-run tail cannot spuriously classify.  A/B-tunable from the
+ * SHADOW_ONLY context_regular_suppressed_would_skip_per_syscall[]
+ * readout once that runs.
+ */
+#define CONTEXT_REGULAR_SUPPRESSED_CMIN 256UL
+
+/*
+ * EPERM-rate threshold (percent of total kernel-visible calls) required
+ * before a syscall is classified regular_suppressed.  The spec's
+ * "regular EPERM-rate ~= 100%" gate is expressed as a percentage so the
+ * eventual tweak is a single integer, and 90 matches the sibling
+ * CRED_THROTTLE_HARD_FAIL_PCT convention (see include/cred_throttle.h)
+ * -- calibrated to the same "provably impossible" evidence bar the
+ * cred oracle already uses.  The success == 0 AND edges == 0 clauses
+ * are strict rather than percentage-gated because a single first-
+ * success TRANSITION or first-edge event is a hard disproof of the
+ * "regular-dead" classification.
+ */
+#define CONTEXT_REGULAR_SUPPRESSED_EPERM_PCT 90UL
+
+/*
+ * Path-A regular_suppressed classifier + shadow bump.  Called from the
+ * pick-finalise site in random_syscall/pickers.c (both HEURISTIC and
+ * RANDOM arms) after every gate has passed and the pick is about to be
+ * published, alongside the cost_pool_selector_live_note attribution so
+ * the shadow projection and the live finalise cadence stay in lock-
+ * step.  No-op when context_pool_mode is OFF or kcov_shm is unavailable;
+ * SHADOW-ONLY -- never returns a value, never gates picker selection.
+ * The COMBINED live suppression is a deliberate follow-up after the
+ * classifier is validated against a real run.  See the implementation
+ * in strategy-frontier.c for the full contract.
+ */
+void context_regular_suppressed_shadow(unsigned int syscallnr, bool do32);
+
+/*
  * Group-pin anti-lock-in damper thresholds.  Tuned to protect
  * legitimate warm-setup clustering: a pin needs at least
  * FRONTIER_FRSEQ_MIN_STREAK heuristic picks before it can be

@@ -308,6 +308,91 @@ void dump_live_cool_per_syscall_top(const unsigned long *arr,
 	output(0, "%s per-syscall total: %lu\n", label, total);
 }
 
+/*
+ * Top-N per-syscall distribution dump for the SHADOW Path-A
+ * regular_suppressed context-axis projection.  Walks context_regular_
+ * suppressed_would_skip_per_syscall[] and emits the highest-bumping
+ * syscalls in descending order followed by a trailing total.  Called
+ * from dump_stats_strategy_summary() alongside the aggregate context_
+ * regular_suppressed_* scalar rows so the operator can confirm the
+ * projected demote mass concentrates on the measured EPERM hogs (fchown
+ * / chown / lchown / fchownat + the cred family as seen at uid 1026)
+ * and stays near zero on syscalls with unprivileged regular value
+ * before any tuning of the classifier thresholds or promotion to a
+ * live regular-pool deactivation.
+ *
+ * Render-only: never read by the pick-finalise site or the picker.
+ * Mode == OFF returns before any output so the default-off behaviour
+ * stays byte-identical to today; the writer at the pick-finalise site
+ * also early-returns on OFF so the array stays empty there too.
+ * Header + total are printed even when the array is empty so an
+ * operator running a short or under-populated session can confirm the
+ * wiring fired without having to grep for absence, matching the
+ * satcool / live cooldown sibling discipline.
+ *
+ * The biarch table-scan choice mirrors the satcool / live cooldown
+ * siblings: under biarch only the 64-bit table is walked, matching
+ * the slot-alias shape the pick-finalise writer site uses.
+ */
+#define CONTEXT_REGULAR_SUPPRESSED_TOPN 30
+
+void dump_context_regular_suppressed_per_syscall_top(void)
+{
+	struct {
+		unsigned int nr;
+		unsigned long count;
+	} top[CONTEXT_REGULAR_SUPPRESSED_TOPN];
+	unsigned int top_count = 0;
+	unsigned long total = 0;
+	unsigned int nr_to_scan;
+	unsigned int i;
+	int j;
+	enum context_pool_mode mode =
+		__atomic_load_n(&context_pool_mode, __ATOMIC_RELAXED);
+
+	if (mode == CONTEXT_POOL_MODE_OFF)
+		return;
+
+	nr_to_scan = biarch ? max_nr_64bit_syscalls : max_nr_syscalls;
+	if (nr_to_scan > MAX_NR_SYSCALL)
+		nr_to_scan = MAX_NR_SYSCALL;
+
+	memset(top, 0, sizeof(top));
+
+	for (i = 0; i < nr_to_scan; i++) {
+		unsigned long c =
+			shm->stats.context_regular_suppressed_would_skip_per_syscall[i];
+
+		if (c == 0)
+			continue;
+
+		total += c;
+
+		for (j = (int)top_count;
+		     j > 0 && c > top[j - 1].count;
+		     j--) {
+			if (j < CONTEXT_REGULAR_SUPPRESSED_TOPN)
+				top[j] = top[j - 1];
+		}
+		if (j < CONTEXT_REGULAR_SUPPRESSED_TOPN) {
+			top[j].nr = i;
+			top[j].count = c;
+			if (top_count < CONTEXT_REGULAR_SUPPRESSED_TOPN)
+				top_count++;
+		}
+	}
+
+	output(0, "context_regular_suppressed_would_skip per-syscall top %u:\n",
+	       top_count);
+	for (j = 0; j < (int)top_count; j++) {
+		const char *sname = print_syscall_name(top[j].nr, false);
+
+		output(0, "  %s=%lu\n", sname, top[j].count);
+	}
+	output(0, "context_regular_suppressed_would_skip per-syscall total: %lu\n",
+	       total);
+}
+
 
 /*
  * Periodic surface of the defense-counter family that dump_stats() only
@@ -838,6 +923,23 @@ static const struct {
 	  offsetof(struct stats_s, frontier_live_cool_spared_arggen) },
 	{ "frontier_live_cool_spared_objproducer",
 	  offsetof(struct stats_s, frontier_live_cool_spared_objproducer) },
+	/* SHADOW-ONLY Path-A "regular_suppressed" context-axis projection
+	 * (gated by --context-pool != off).  See the struct-field comment
+	 * in include/stats.h for the per-counter semantics and the enum
+	 * context_pool_mode comment in include/strategy.h for the mode
+	 * contract.  The (would_skip / candidates) ratio is the projected
+	 * regular-pool pick share a live Path-A deactivation would
+	 * reclaim; the spared_* triple partitions the spare cascade. */
+	{ "context_regular_suppressed_candidates",
+	  offsetof(struct stats_s, context_regular_suppressed_candidates) },
+	{ "context_regular_suppressed_would_skip",
+	  offsetof(struct stats_s, context_regular_suppressed_would_skip) },
+	{ "context_regular_suppressed_spared_windowed",
+	  offsetof(struct stats_s, context_regular_suppressed_spared_windowed) },
+	{ "context_regular_suppressed_spared_arggen",
+	  offsetof(struct stats_s, context_regular_suppressed_spared_arggen) },
+	{ "context_regular_suppressed_spared_objproducer",
+	  offsetof(struct stats_s, context_regular_suppressed_spared_objproducer) },
 	/* SHADOW-ONLY LIVE-regime cooldown projections, paired with
 	 * frontier_live_miss_streak_per_syscall[].  Candidates is edge-
 	 * triggered at FRONTIER_LIVE_MISS_COOLDOWN crossings; would_skip is

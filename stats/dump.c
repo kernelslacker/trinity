@@ -1412,6 +1412,53 @@ static void dump_stats_render_frontier_live_cool(void)
 		"frontier_live_cool_would_spare");
 }
 
+/* SHADOW-ONLY Path-A "regular_suppressed" context-axis projection.
+ * Gated by --context-pool != off; zero on default-off runs so the
+ * rows stay suppressed by the if-non-zero guard.  Read the
+ * (would_skip / candidates) ratio for the projected regular-pool
+ * pick share a live Path-A deactivation would reclaim; the spared_*
+ * triple partitions the shared spare-lane cascade so a syscall
+ * spared for windowed edges / arggen progress / objproducer status
+ * is not mis-attributed to the would_skip pool.  The per-syscall
+ * top-N (rendered by dump_context_regular_suppressed_per_syscall_
+ * top() below) is the headline SHADOW_ONLY diagnostic: the demote
+ * mass MUST concentrate on the measured EPERM hogs (fchown / chown
+ * / lchown / fchownat + the cred family as seen at uid 1026) and
+ * stay near zero on syscalls with unprivileged regular value before
+ * tuning CMIN / EPERM_PCT or wiring the COMBINED live suppression.
+ * The classifier thresholds are emitted alongside so the operator
+ * can interpret the candidate count without consulting the source,
+ * matching the frontier_live_cool_cmin row above. */
+static void dump_stats_render_context_regular_suppressed(void)
+{
+	if (shm->stats.context_regular_suppressed_candidates)
+		stat_row("strategy", "context_regular_suppressed_candidates",
+			 shm->stats.context_regular_suppressed_candidates);
+	if (shm->stats.context_regular_suppressed_would_skip)
+		stat_row("strategy", "context_regular_suppressed_would_skip",
+			 shm->stats.context_regular_suppressed_would_skip);
+	if (shm->stats.context_regular_suppressed_spared_windowed)
+		stat_row("strategy",
+			 "context_regular_suppressed_spared_windowed",
+			 shm->stats.context_regular_suppressed_spared_windowed);
+	if (shm->stats.context_regular_suppressed_spared_arggen)
+		stat_row("strategy",
+			 "context_regular_suppressed_spared_arggen",
+			 shm->stats.context_regular_suppressed_spared_arggen);
+	if (shm->stats.context_regular_suppressed_spared_objproducer)
+		stat_row("strategy",
+			 "context_regular_suppressed_spared_objproducer",
+			 shm->stats.context_regular_suppressed_spared_objproducer);
+	if (__atomic_load_n(&context_pool_mode, __ATOMIC_RELAXED) !=
+	    CONTEXT_POOL_MODE_OFF) {
+		stat_row("strategy", "context_regular_suppressed_cmin",
+			 CONTEXT_REGULAR_SUPPRESSED_CMIN);
+		stat_row("strategy", "context_regular_suppressed_eperm_pct",
+			 CONTEXT_REGULAR_SUPPRESSED_EPERM_PCT);
+	}
+	dump_context_regular_suppressed_per_syscall_top();
+}
+
 /* SHADOW-ONLY A/B scoring for the frontier-blend cold-weight
  * blend.  Emitted as a sibling block to the silent-decay shadow
  * counters above; the picker still consumes the OLD weight from
@@ -1701,6 +1748,7 @@ void dump_stats_strategy_summary(void)
 		 FRONTIER_LIVE_MISS_COOLDOWN);
 	dump_live_cooldown_would_skip_per_syscall_top();
 	dump_stats_render_frontier_live_cool();
+	dump_stats_render_context_regular_suppressed();
 	/* Did-decay observability counter for the LIVE-regime early ring-
 	 * decay path.  One bump per (nr, rotation) where the early ring-
 	 * decay halved a non-zero cached sum.  Read alongside

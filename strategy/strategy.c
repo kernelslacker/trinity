@@ -108,6 +108,17 @@ enum cost_pool_selector_mode cost_pool_selector_mode =
 	COST_POOL_SELECTOR_MODE_OFF;
 
 /*
+ * Context-pool mode -- Path-A "regular_suppressed" shadow projection.
+ * Default OFF keeps the picker pick-finalise site byte-identical to
+ * today; SHADOW_ONLY engages the data-gated classifier + context_
+ * regular_suppressed_* counter bumps without changing live selection.
+ * See the enum comment in include/strategy.h for the mode contract and
+ * the ramp discipline.  Param-settable via
+ * --context-pool=off|shadow-only|combined.
+ */
+enum context_pool_mode context_pool_mode = CONTEXT_POOL_MODE_OFF;
+
+/*
  * Translate the --strategy=NAME argument into a picker_mode_t.
  * Recognises the human-friendly aliases ("round-robin", "rr",
  * "bandit", "ucb1", "bandit-ucb1").  Returns false on unknown
