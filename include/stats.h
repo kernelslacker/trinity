@@ -1877,6 +1877,16 @@ struct stats_s {
 	unsigned long statmount_idmap_statmount_ok;		/* statmount() returned 0 (full render fit) */
 	unsigned long statmount_idmap_statmount_overflow;	/* statmount() returned -EOVERFLOW (seq-buffer truncation path) */
 
+	/* cred_transition_churn childop counters */
+	unsigned long cred_transition_runs;			/* total cred_transition_churn invocations */
+	unsigned long cred_transition_setup_failed;		/* userns_run_in_ns / capget refused; unsupported latch fired */
+	unsigned long cred_transition_capset_ok;		/* capset() re-installed a churned effective subset */
+	unsigned long cred_transition_capset_failed;		/* capset() rejected the churned mask (EPERM/EINVAL) */
+	unsigned long cred_transition_op_ok;			/* post-capset permission-sensitive op succeeded */
+	unsigned long cred_transition_op_failed;		/* post-capset permission-sensitive op rejected (EPERM/EACCES/EINVAL) */
+	unsigned long cred_transition_keyctl_ok;		/* session-keyring keyctl churn call succeeded */
+	unsigned long cred_transition_keyctl_failed;		/* session-keyring keyctl churn call rejected */
+
 	/* netns_teardown_churn childop counters */
 	unsigned long netns_teardown_runs;			/* total netns_teardown_churn invocations */
 	unsigned long netns_teardown_setup_failed;		/* anchor open / fork / unsupported latch fired */

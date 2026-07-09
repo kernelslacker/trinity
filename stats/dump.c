@@ -2483,6 +2483,8 @@ void __cold dump_stats_childop_runs_network(void)
 
 	stat_category_emit_text(&netns_teardown_category);
 
+	stat_category_emit_text(&cred_transition_category);
+
 	stat_category_emit_text(&deep_path_nesting_category);
 
 	stat_category_emit_text(&espintcp_coalesce_category);
