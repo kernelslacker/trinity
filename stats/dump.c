@@ -3466,6 +3466,8 @@ static void dump_stats_render_kcov_base_stats(void)
 	unsigned long kc_cmp_nonconst_measured         = __atomic_load_n(&kcov_shm->cmp_nonconst_measured,              __ATOMIC_RELAXED);
 	unsigned long kc_cmp_width_pin_total           = __atomic_load_n(&kcov_shm->cmp_width_pin_total,                __ATOMIC_RELAXED);
 	unsigned long kc_cmp_width_pin_would_differ    = __atomic_load_n(&kcov_shm->cmp_width_pin_would_differ,         __ATOMIC_RELAXED);
+	unsigned long kc_cmp_hyp_pow2_derive_would_fire = __atomic_load_n(&kcov_shm->cmp_hyp_pow2_derive_would_fire,    __ATOMIC_RELAXED);
+	unsigned long kc_cmp_hyp_pow2_derive_would_win  = __atomic_load_n(&kcov_shm->cmp_hyp_pow2_derive_would_win,     __ATOMIC_RELAXED);
 
 	stat_row("kcov_coverage", "unique_edges",          kc_edges);
 	stat_row("kcov_coverage", "total_pcs",             kc_pcs);
@@ -3567,6 +3569,29 @@ static void dump_stats_render_kcov_base_stats(void)
 			(kc_cmp_width_pin_would_differ * 1000UL) /
 			kc_cmp_width_pin_total;
 		stat_row("kcov_coverage", "cmp_width_pin_would_differ_per_mille", ratio_milli);
+	}
+
+	/* Shadow measurement of a POW2 / alignment probe class in the
+	 * typed-hypothesis derive.  cmp_hyp_pow2_derive_would_fire counts
+	 * every derive whose callsite is a size / offset-class argtype
+	 * (ARG_RANGE / ARG_STRUCT_SIZE) AND whose picked exemplar sits at
+	 * or near a power of two, so a pow2 / align probe class would be
+	 * eligible to emit.  cmp_hyp_pow2_derive_would_win counts the
+	 * subset where at least one candidate from the {C>>1, C, C<<1,
+	 * round-to-512, round-to-4096, round-to-page-size} ladder differs
+	 * from the value the live derive lane just emitted, so the class
+	 * would have contributed a value the existing lanes did not.
+	 * The live derive is byte-for-byte unchanged; the ratio in
+	 * per-mille sizes the coverage headroom of promoting the class. */
+	if (kc_cmp_hyp_pow2_derive_would_fire > 0)
+		stat_row("kcov_coverage", "cmp_hyp_pow2_derive_would_fire", kc_cmp_hyp_pow2_derive_would_fire);
+	if (kc_cmp_hyp_pow2_derive_would_win > 0)
+		stat_row("kcov_coverage", "cmp_hyp_pow2_derive_would_win", kc_cmp_hyp_pow2_derive_would_win);
+	if (kc_cmp_hyp_pow2_derive_would_fire > 0) {
+		unsigned long ratio_milli =
+			(kc_cmp_hyp_pow2_derive_would_win * 1000UL) /
+			kc_cmp_hyp_pow2_derive_would_fire;
+		stat_row("kcov_coverage", "cmp_hyp_pow2_derive_would_win_per_mille", ratio_milli);
 	}
 }
 

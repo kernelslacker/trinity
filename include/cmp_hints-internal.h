@@ -292,10 +292,20 @@ void cmp_shared_tier_shadow_probe_cold_miss(void);
  * value change tied to arg_idx.  Preserving the full plumbing keeps
  * the fill-slot contract visible at the site the derived value is
  * produced.
+ *
+ * callsite is the argtype-handler classification threaded through from
+ * cmp_hints_try_get_ex.  Value-neutral for the LIVE inject path (does
+ * not gate the raw pool / typed hypothesis pick or derive output).
+ * Consumed only by the SHADOW pow2 / alignment derive measurement in
+ * cmp_hyp_derive_value(), which filters to size / offset-class
+ * callsites (ARG_RANGE, ARG_STRUCT_SIZE) so the pow2 lane's would-fire
+ * / would-win counters are not polluted by flag- or enum-typed picks
+ * that overlap the existing EXACT / ENUM_FAMILY lanes.
  */
 bool cmp_hyp_try_live_inject(unsigned int nr, bool do32,
 			     unsigned long cmp_ip, unsigned int size,
 			     unsigned int arg_idx,
+			     enum cmp_hint_callsite callsite,
 			     unsigned long *out,
 			     uint8_t *out_kind,
 			     bool *out_gate_fired);

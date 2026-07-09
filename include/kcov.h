@@ -3094,6 +3094,27 @@ struct kcov_shared {
 						      * bits outside width_mask, so a high-bit-
 						      * preserving splice would produce a value
 						      * different from today's whole-slot overwrite */
+
+	/* Shadow measurement of a POW2 / alignment probe class in the
+	 * typed-hypothesis derive.  Fires only on picks whose callsite
+	 * is a size / offset-class argtype (ARG_RANGE / ARG_STRUCT_SIZE
+	 * today) AND whose picked exemplar C is at or near a power of
+	 * two: the class would emit candidates from {C>>1, C, C<<1,
+	 * round-to-512, round-to-4096, round-to-page-size}.  The live
+	 * derive path (cmp_hyp_derive_value's *out and probe-class
+	 * histogram bump) is byte-for-byte unchanged; these two counters
+	 * size the coverage headroom of promoting the class:
+	 * would_fire counts every eligible pick (argtype gate AND bit-
+	 * pattern gate both open); would_win counts the subset where at
+	 * least one pow2 / align candidate differs from the value the
+	 * live derive lane just emitted -- i.e. the class would have
+	 * contributed a value the existing lanes did not.  Nothing on
+	 * the live pick / inject / credit path reads these; ratio in
+	 * per-mille sizes the delta a live promotion would open up.
+	 * Append-only at the tail per convention so consumer offsets
+	 * stay stable. */
+	unsigned long cmp_hyp_pow2_derive_would_fire;
+	unsigned long cmp_hyp_pow2_derive_would_win;
 };
 
 extern struct kcov_shared *kcov_shm;
