@@ -1658,6 +1658,12 @@ struct stats_s {
 	unsigned long sctp_assoc_churn_peeloff_rejected;	/* peeloff rejected (EINVAL/ENOENT) */
 	unsigned long sctp_assoc_churn_cycles;			/* full cycles reaching teardown */
 
+	/* sctp_chunk_rx childop counters */
+	unsigned long sctp_chunk_rx_runs;			/* total sctp_chunk_rx invocations */
+	unsigned long sctp_chunk_rx_setup_failed;		/* userns_run_in_ns / listener / raw setup failed (incl. !CONFIG_IP_SCTP) */
+	unsigned long sctp_chunk_rx_listener_ok;		/* SCTP listener created + bound + listen() accepted */
+	unsigned long sctp_chunk_rx_packet_sent_ok;		/* sendto on IPPROTO_RAW returned >0 */
+
 	/* mptcp_pm_churn childop counters */
 	unsigned long mptcp_pm_churn_runs;			/* total mptcp_pm_churn invocations */
 	unsigned long mptcp_pm_churn_setup_failed;		/* socket/bind/listen/connect setup failed */

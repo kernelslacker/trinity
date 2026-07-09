@@ -462,6 +462,21 @@ struct shm_s {
 	 * the write is idempotent. */
 	bool ip_gre_kind_unsupported;
 
+	/* Feature-absent latch for the sctp_chunk_rx childop
+	 * (childops/net/sctp-chunk-rx.c).  Set when socket(IPPROTO_SCTP)
+	 * rejects with EPROTONOSUPPORT / ESOCKTNOSUPPORT / EAFNOSUPPORT /
+	 * EACCES inside the transient userns_run_in_ns grandchild
+	 * (missing CONFIG_IP_SCTP / hardening policy blocking raw SCTP
+	 * sockets in the child's userns).  Same shm-vs-static rationale
+	 * as the ip_gre_kind_unsupported gate above: the rejection is
+	 * observed inside a transient grandchild that _exit()s after the
+	 * body returns, so a process-local static would die with the
+	 * grandchild and every subsequent invocation would re-attempt
+	 * the missing kind forever.  RELAXED atomic load/store from
+	 * multiple grandchildren is safe -- only false -> true, and the
+	 * write is idempotent. */
+	bool sctp_chunk_rx_kind_unsupported;
+
 	/*
 	 * Distinct-sequence-hash ring for run_grammar_chain's per-walk
 	 * phase ordering.  Each walk computes an FNV-1a hash over the

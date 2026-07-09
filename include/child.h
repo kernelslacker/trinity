@@ -220,6 +220,7 @@ enum child_op_type {
 	CHILD_OP_IP_GRE_CHURN,
 	CHILD_OP_FUTEX_PI_REQUEUE_ROLLBACK,
 	CHILD_OP_VLAN_FILTER_CHURN,
+	CHILD_OP_SCTP_CHUNK_RX,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -1629,6 +1630,7 @@ bool tc_mirred_blockcast(struct childdata *child);
 bool xfrm_churn(struct childdata *child);
 bool bpf_cgroup_attach(struct childdata *child);
 bool sctp_assoc_churn(struct childdata *child);
+bool sctp_chunk_rx(struct childdata *child);
 bool mptcp_pm_churn(struct childdata *child);
 bool devlink_port_churn(struct childdata *child);
 bool handshake_req_abort(struct childdata *child);
