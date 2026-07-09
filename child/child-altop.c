@@ -34,7 +34,7 @@
  * Slot ordering matches pick_op_type_table[]; the _Static_assert below
  * pins ARRAY_SIZE equality between the two.
  */
-static int dormant_op_disabled[122] = {
+static int dormant_op_disabled[123] = {
 	0, 0, 0, 0, 0,
 	0, 1, 1, 1, 1,
 	1, 1, 1, 0, 1,
@@ -74,6 +74,7 @@ static int dormant_op_disabled[122] = {
 	1,	/* futex_pi_requeue_rollback: default-off; only for a targeted debugging run behind the canary queue. */
 	1,	/* vlan_filter_churn: dormant until canary-queue load-tests the RTM_NEWLINK type=vlan add/del burst against a private-netns veth base (vlan_vid_add / vlan_vid_del pair). */
 	1,	/* sctp_chunk_rx: dormant until canary-queue load-tests the SCTP chunk-parse RX-path burst (userns_run_in_ns + IPPROTO_RAW hand-rolled outer IPv4/SCTP frames with fuzzed INIT/INIT_ACK/COOKIE_ECHO chunk + parameter TLV lengths). */
+	0,	/* pkt_builder_probe: lightweight infra prover — one raw/AF_PACKET/UDP socket per child, fixed 6-recipe stack; promote at startup so the composable layer stack keeps compiling and delivering across kernels. */
 };
 
 /*
@@ -122,6 +123,7 @@ static const enum child_op_type alt_op_rotation[] = {
 	CHILD_OP_SOCK_ULP_SOCKMAP_LAYERING,
 	CHILD_OP_PACKET_FANOUT_THRASH,
 	CHILD_OP_ETH_EMITTER,
+	CHILD_OP_PKT_BUILDER_PROBE,
 	CHILD_OP_USERNS_FUZZER,
 	CHILD_OP_SCHED_CYCLER,
 	CHILD_OP_BARRIER_RACER,
@@ -317,6 +319,7 @@ const char *alt_op_name(enum child_op_type op)
 	case CHILD_OP_FUTEX_PI_REQUEUE_ROLLBACK:	return "futex_pi_requeue_rollback";
 	case CHILD_OP_VLAN_FILTER_CHURN:	return "vlan_filter_churn";
 	case CHILD_OP_SCTP_CHUNK_RX:	return "sctp_chunk_rx";
+	case CHILD_OP_PKT_BUILDER_PROBE:	return "pkt_builder_probe";
 	case NR_CHILD_OP_TYPES:		break;
 	}
 	return "unknown";
@@ -414,7 +417,7 @@ void log_alt_op_config(void)
  * CHILD_OP_SYSCALL sentinel filter in init_altop_dispatch() stays as
  * defensive coding for any future hole.
  */
-static const enum child_op_type pick_op_type_table[122] = {
+static const enum child_op_type pick_op_type_table[123] = {
 	[0]  = CHILD_OP_MMAP_LIFECYCLE,
 	[1]  = CHILD_OP_MPROTECT_SPLIT,
 	[2]  = CHILD_OP_MLOCK_PRESSURE,
@@ -537,6 +540,7 @@ static const enum child_op_type pick_op_type_table[122] = {
 	[119] = CHILD_OP_FUTEX_PI_REQUEUE_ROLLBACK,
 	[120] = CHILD_OP_VLAN_FILTER_CHURN,
 	[121] = CHILD_OP_SCTP_CHUNK_RX,
+	[122] = CHILD_OP_PKT_BUILDER_PROBE,
 };
 _Static_assert(ARRAY_SIZE(pick_op_type_table) == ARRAY_SIZE(dormant_op_disabled),
 	"pick_op_type_table and dormant_op_disabled must have matching slot counts");
@@ -1500,6 +1504,7 @@ bool (*const op_dispatch[NR_CHILD_OP_TYPES])(struct childdata *) = {
 	[CHILD_OP_FUTEX_PI_REQUEUE_ROLLBACK]	= futex_pi_requeue_rollback,
 	[CHILD_OP_VLAN_FILTER_CHURN]	= vlan_filter_churn,
 	[CHILD_OP_SCTP_CHUNK_RX]	= sctp_chunk_rx,
+	[CHILD_OP_PKT_BUILDER_PROBE]	= pkt_builder_probe,
 };
 
 _Static_assert(ARRAY_SIZE(op_dispatch) == NR_CHILD_OP_TYPES,

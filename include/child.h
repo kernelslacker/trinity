@@ -221,6 +221,7 @@ enum child_op_type {
 	CHILD_OP_FUTEX_PI_REQUEUE_ROLLBACK,
 	CHILD_OP_VLAN_FILTER_CHURN,
 	CHILD_OP_SCTP_CHUNK_RX,
+	CHILD_OP_PKT_BUILDER_PROBE,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -1696,3 +1697,4 @@ bool l2tp_ifname_race(struct childdata *child);
 bool statmount_idmap_overflow(struct childdata *child);
 bool umount_race(struct childdata *child);
 bool ip6_udp_cork_splice(struct childdata *child);
+bool pkt_builder_probe(struct childdata *child);
