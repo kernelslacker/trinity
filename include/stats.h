@@ -1682,6 +1682,14 @@ struct stats_s {
 	unsigned long sctp_chunk_rx_listener_ok;		/* SCTP listener created + bound + listen() accepted */
 	unsigned long sctp_chunk_rx_packet_sent_ok;		/* sendto on IPPROTO_RAW returned >0 */
 
+	/* esp_crafted_rx childop counters */
+	unsigned long esp_crafted_rx_runs;			/* total esp_crafted_rx invocations */
+	unsigned long esp_crafted_rx_setup_failed;		/* userns_run_in_ns / NETLINK_XFRM open failed (incl. kind-latched or !CONFIG_XFRM) */
+	unsigned long esp_crafted_rx_sa_install_ok;		/* XFRM_MSG_NEWSA installing an inbound null-cipher/null-auth ESP SA accepted */
+	unsigned long esp_crafted_rx_sa_install_failed;		/* XFRM_MSG_NEWSA rejected (any errno) */
+	unsigned long esp_crafted_rx_packet_sent_ok;		/* sendto on IPPROTO_RAW (v4 or v6) returned >0 */
+	unsigned long esp_crafted_rx_sa_delete_ok;		/* XFRM_MSG_DELSA on teardown accepted */
+
 	/* mptcp_pm_churn childop counters */
 	unsigned long mptcp_pm_churn_runs;			/* total mptcp_pm_churn invocations */
 	unsigned long mptcp_pm_churn_setup_failed;		/* socket/bind/listen/connect setup failed */
