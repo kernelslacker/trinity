@@ -787,6 +787,34 @@ extern const unsigned long keyctl_pkey_op_cmds[KEYCTL_PKEY_OP_CMDS_N];
 extern const struct union_variant keyctl_payload_variants[KEYCTL_PAYLOAD_VARIANTS_N];
 
 /*
+ * userfaultfd ioctl arg struct leaf tables defined in struct_catalog/
+ * uffdio.c.  Covers the flat u64-heavy structs UFFDIO_* ioctls read
+ * at the ioctl arg slot: struct uffdio_range (UFFDIO_WAKE /
+ * UNREGISTER + the embedded range in the others), struct uffdio_api
+ * (UFFDIO_API), struct uffdio_register (UFFDIO_REGISTER), struct
+ * uffdio_copy (UFFDIO_COPY), and struct uffdio_zeropage
+ * (UFFDIO_ZEROPAGE).  Attribution-only registrations: ioctls do not
+ * resolve through syscall_struct_args[], and the bespoke sanitisers
+ * in ioctls/userfaultfd.c keep owning every live fill.  Each _N
+ * constant gives the extern decl a complete array type so the
+ * spine's ARRAY_SIZE() at the reference site keeps folding to the
+ * same constant.
+ */
+enum {
+	UFFDIO_RANGE_FIELDS_N		= 2,
+	UFFDIO_API_FIELDS_N		= 3,
+	UFFDIO_REGISTER_FIELDS_N	= 3,
+	UFFDIO_COPY_FIELDS_N		= 5,
+	UFFDIO_ZEROPAGE_FIELDS_N	= 3,
+};
+
+extern const struct struct_field uffdio_range_fields[UFFDIO_RANGE_FIELDS_N];
+extern const struct struct_field uffdio_api_fields[UFFDIO_API_FIELDS_N];
+extern const struct struct_field uffdio_register_fields[UFFDIO_REGISTER_FIELDS_N];
+extern const struct struct_field uffdio_copy_fields[UFFDIO_COPY_FIELDS_N];
+extern const struct struct_field uffdio_zeropage_fields[UFFDIO_ZEROPAGE_FIELDS_N];
+
+/*
  * mount / namespace leaf tables defined in struct_catalog/mount.c.
  * Covers struct mount_attr (mount_setattr / open_tree_attr), struct
  * mnt_id_req (statmount / listmount), and struct ns_id_req (listns).

@@ -418,6 +418,11 @@ enum struct_catalog_idx {
 	SC_LSM_CTX,
 	SC_KEXEC_SEGMENT,
 	SC_KEYCTL_PAYLOAD,
+	SC_UFFDIO_RANGE,
+	SC_UFFDIO_API,
+	SC_UFFDIO_REGISTER,
+	SC_UFFDIO_COPY,
+	SC_UFFDIO_ZEROPAGE,
 
 	SC_NR_ENTRIES,		/* sentinel; equals ARRAY_SIZE(struct_catalog) once both stay in lockstep */
 };
