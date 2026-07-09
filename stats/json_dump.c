@@ -1544,6 +1544,20 @@ const struct stat_category bareudp_rx_category =
 	              bareudp_rx_runs,
 	              bareudp_rx_fields);
 
+static const struct stat_field mpls_label_stack_rx_fields[] = {
+	STAT_FIELD(mpls_label_stack_rx, runs),
+	STAT_FIELD(mpls_label_stack_rx, setup_failed),
+	STAT_FIELD(mpls_label_stack_rx, config_ok),
+	STAT_FIELD(mpls_label_stack_rx, config_failed),
+	STAT_FIELD(mpls_label_stack_rx, link_up_ok),
+	STAT_FIELD(mpls_label_stack_rx, packet_sent_ok),
+};
+
+const struct stat_category mpls_label_stack_rx_category =
+	STAT_CATEGORY("mpls_label_stack_rx",
+	              mpls_label_stack_rx_runs,
+	              mpls_label_stack_rx_fields);
+
 static const struct stat_field mptcp_pm_churn_fields[] = {
 	STAT_FIELD(mptcp_pm_churn, runs),
 	STAT_FIELD(mptcp_pm_churn, setup_failed),
@@ -1642,6 +1656,8 @@ static void dump_stats_json_netfilter_and_xfrm(void)
 	stat_category_emit_json(&geneve_rx_category);
 	putchar(',');
 	stat_category_emit_json(&bareudp_rx_category);
+	putchar(',');
+	stat_category_emit_json(&mpls_label_stack_rx_category);
 	putchar(',');
 	stat_category_emit_json(&mptcp_pm_churn_category);
 	putchar(',');
