@@ -1362,6 +1362,26 @@ static void dump_stats_render_frontier_satcool(void)
 	dump_satcool_would_skip_per_syscall_top();
 }
 
+/* SHADOW-ONLY cmp-frontier picker-arm counters.  Gated by
+ * --cmp-frontier != off; zero on default-off runs so the rows stay
+ * suppressed by the if-non-zero guard.  Read the
+ * (would_route / samples) ratio for the projected route volume the
+ * shadow arm would produce, and (live_routes / would_route) for the
+ * subset actually routed once COMBINED replaces the accept weight,
+ * before flipping shadow-only -> combined. */
+static void dump_stats_render_frontier_cmp(void)
+{
+	if (shm->stats.cmp_frontier_samples)
+		stat_row("strategy", "cmp_frontier_samples",
+			 shm->stats.cmp_frontier_samples);
+	if (shm->stats.cmp_frontier_would_route)
+		stat_row("strategy", "cmp_frontier_would_route",
+			 shm->stats.cmp_frontier_would_route);
+	if (shm->stats.cmp_frontier_live_routes)
+		stat_row("strategy", "cmp_frontier_live_routes",
+			 shm->stats.cmp_frontier_live_routes);
+}
+
 /* SHADOW-ONLY LIVE-regime cooldown discriminator (gated by
  * --frontier-live-cooldown-mode != off).  Sibling block to the
  * undiscriminated frontier_live_cooldown_candidates / frontier_
@@ -1729,6 +1749,7 @@ void dump_stats_strategy_summary(void)
 		stat_row("strategy", "frontier_silent_decay_live_rejects",
 			 shm->stats.frontier_silent_decay_live_rejects);
 	dump_stats_render_frontier_satcool();
+	dump_stats_render_frontier_cmp();
 	/* SHADOW-ONLY LIVE-regime cooldown projections.  Sibling block to
 	 * the silent-streak decay rows above: candidates is the distinct
 	 * cooldown-episode count (one bump per FRONTIER_LIVE_MISS_COOLDOWN
