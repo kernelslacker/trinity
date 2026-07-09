@@ -218,6 +218,7 @@ extern const struct stat_category rxrpc_key_install_category;
 extern const struct stat_category sched_cycler_category;
 extern const struct stat_category sctp_assoc_churn_category;
 extern const struct stat_category sctp_chunk_rx_category;
+extern const struct stat_category bridge_ip6_refrag_fraggap_category;
 extern const struct stat_category setsockopt_pairing_category;
 extern const struct stat_category signal_storm_category;
 extern const struct stat_category sock_diag_walker_category;
