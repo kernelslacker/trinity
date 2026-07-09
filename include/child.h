@@ -225,6 +225,7 @@ enum child_op_type {
 	CHILD_OP_ESP_CRAFTED_RX,
 	CHILD_OP_FOU_GUE_MCAST_RX,
 	CHILD_OP_GENEVE_RX,
+	CHILD_OP_NETNS_MOUNTNS_SETUP_PROBE,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -1644,6 +1645,7 @@ bool af_unix_peek_race(struct childdata *child);
 bool sysv_shm_orphan_race(struct childdata *child);
 bool qrtr_bind_race(struct childdata *child);
 bool netns_teardown_churn(struct childdata *child);
+bool netns_mountns_setup_probe(struct childdata *child);
 bool tcp_ulp_swap_churn(struct childdata *child);
 bool msg_zerocopy_churn(struct childdata *child);
 bool iouring_send_zc_churn(struct childdata *child);

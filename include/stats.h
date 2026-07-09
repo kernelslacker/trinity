@@ -1870,6 +1870,15 @@ struct stats_s {
 	unsigned long netns_teardown_kill_ok;			/* SIGKILL delivered to in-ns child (race vs cleanup_net) */
 	unsigned long netns_teardown_completed_ok;		/* full cycle reached waitpid + close anchor cleanly */
 
+	/* netns_mountns_setup_probe childop counters */
+	unsigned long netns_mountns_setup_runs;			/* total netns_mountns_setup_probe invocations */
+	unsigned long netns_mountns_setup_setup_failed;		/* userns_run_in_ns fork/EPERM latch / per-iter unshare failure */
+	unsigned long netns_mountns_setup_unshare_ok;		/* per-iter unshare(CLONE_NEWNET|CLONE_NEWNS) into fresh nested ns */
+	unsigned long netns_mountns_setup_mount_private_ok;	/* MS_REC|MS_PRIVATE remount of '/' inside fresh mount ns */
+	unsigned long netns_mountns_setup_loopback_ok;		/* rtnl bring-up of loopback inside fresh net ns */
+	unsigned long netns_mountns_setup_socket_ok;		/* first AF_INET socket alloc inside fresh net ns */
+	unsigned long netns_mountns_setup_completed_ok;		/* full iter reached end of setup sequence */
+
 	/* tcp_ulp_swap_churn childop counters */
 	unsigned long tcp_ulp_swap_churn_runs;			/* total tcp_ulp_swap_churn invocations */
 	unsigned long tcp_ulp_swap_churn_setup_failed;		/* loopback pair / connect / unsupported latch fired */
