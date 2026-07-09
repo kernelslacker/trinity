@@ -148,6 +148,7 @@ extern const struct stat_category devlink_port_churn_category;
 extern const struct stat_category epoll_volatility_category;
 extern const struct stat_category errno_gradient_category;
 extern const struct stat_category esp_crafted_rx_category;
+extern const struct stat_category espintcp_coalesce_category;
 extern const struct stat_category fd_runtime_skipped_category;
 extern const struct stat_category fdstress_category;
 extern const struct stat_category flock_thrash_category;
