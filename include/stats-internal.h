@@ -180,6 +180,7 @@ extern const struct stat_category iscsi_target_probe_category;
 extern const struct stat_category keyring_spam_category;
 extern const struct stat_category l2tp_ifname_race_category;
 extern const struct stat_category madvise_cycler_category;
+extern const struct stat_category map_shared_stress_category;
 extern const struct stat_category memory_pressure_category;
 extern const struct stat_category mount_churn_category;
 extern const struct stat_category mpls_route_churn_category;

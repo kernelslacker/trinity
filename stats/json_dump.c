@@ -2144,6 +2144,9 @@ static void json_emit_bridge_pci_unix_and_iouring_section(void)
 	stat_category_emit_json(&sysv_shm_orphan_race_category);
 
 	printf(",");
+	stat_category_emit_json(&map_shared_stress_category);
+
+	printf(",");
 	stat_category_emit_json(&qrtr_bind_race_category);
 
 	printf(",");

@@ -2475,6 +2475,8 @@ void __cold dump_stats_childop_runs_network(void)
 
 	stat_category_emit_text(&sysv_shm_orphan_race_category);
 
+	stat_category_emit_text(&map_shared_stress_category);
+
 	stat_category_emit_text(&qrtr_bind_race_category);
 
 	stat_category_emit_text(&pfkey_spd_walk_category);
