@@ -1967,6 +1967,17 @@ struct stats_s {
 	unsigned long msg_zerocopy_churn_send_after_munmap_caught;	/* send(MSG_ZEROCOPY) after munmap returned EFAULT (rollback path reached) */
 	unsigned long msg_zerocopy_churn_sndzc_disable_ok;	/* setsockopt(SO_ZEROCOPY, 0) accepted with notifs possibly pending */
 
+	/* rds_zcopy_crafted_send childop counters */
+	unsigned long rds_zcopy_crafted_send_runs;			/* total rds_zcopy_crafted_send invocations */
+	unsigned long rds_zcopy_crafted_send_setup_failed;		/* socket(AF_RDS) / bind / SO_ZEROCOPY / mmap / unsupported latch fired */
+	unsigned long rds_zcopy_crafted_send_bind_ok;			/* bind(AF_RDS, 127.0.0.1:0) accepted */
+	unsigned long rds_zcopy_crafted_send_zc_enable_ok;		/* setsockopt(SO_ZEROCOPY, 1) accepted on the AF_RDS sock */
+	unsigned long rds_zcopy_crafted_send_hole_ok;			/* munmap punched a hole in the backing region (pin walk will fault) */
+	unsigned long rds_zcopy_crafted_send_sends_ok;			/* sendmsg(MSG_ZEROCOPY) returned >=0 (full pin walk completed) */
+	unsigned long rds_zcopy_crafted_send_sends_efault;		/* sendmsg(MSG_ZEROCOPY) returned EFAULT (partial-pin unwind reached) */
+	unsigned long rds_zcopy_crafted_send_sends_failed;		/* sendmsg(MSG_ZEROCOPY) returned a non-EFAULT error (any errno) */
+	unsigned long rds_zcopy_crafted_send_errqueue_drained;		/* recvmsg(MSG_ERRQUEUE) drained at least one zcopy completion cookie */
+
 	/* iouring_send_zc_churn childop counters */
 	unsigned long iouring_send_zc_churn_runs;			/* total iouring_send_zc_churn invocations */
 	unsigned long iouring_send_zc_churn_setup_failed;		/* io_uring_setup / mmap / loopback / SO_ZEROCOPY / unsupported latch fired */

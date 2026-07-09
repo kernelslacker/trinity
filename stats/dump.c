@@ -2499,6 +2499,8 @@ void __cold dump_stats_childop_runs_network(void)
 
 	stat_category_emit_text(&msg_zerocopy_churn_category);
 
+	stat_category_emit_text(&rds_zcopy_crafted_send_category);
+
 	stat_category_emit_text(&setsockopt_pairing_category);
 
 	stat_category_emit_text(&iouring_send_zc_churn_category);

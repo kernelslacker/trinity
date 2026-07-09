@@ -1579,6 +1579,23 @@ const struct stat_category mpls_label_stack_rx_category =
 	              mpls_label_stack_rx_runs,
 	              mpls_label_stack_rx_fields);
 
+static const struct stat_field rds_zcopy_crafted_send_fields[] = {
+	STAT_FIELD(rds_zcopy_crafted_send, runs),
+	STAT_FIELD(rds_zcopy_crafted_send, setup_failed),
+	STAT_FIELD(rds_zcopy_crafted_send, bind_ok),
+	STAT_FIELD(rds_zcopy_crafted_send, zc_enable_ok),
+	STAT_FIELD(rds_zcopy_crafted_send, hole_ok),
+	STAT_FIELD(rds_zcopy_crafted_send, sends_ok),
+	STAT_FIELD(rds_zcopy_crafted_send, sends_efault),
+	STAT_FIELD(rds_zcopy_crafted_send, sends_failed),
+	STAT_FIELD(rds_zcopy_crafted_send, errqueue_drained),
+};
+
+const struct stat_category rds_zcopy_crafted_send_category =
+	STAT_CATEGORY("rds_zcopy_crafted_send",
+	              rds_zcopy_crafted_send_runs,
+	              rds_zcopy_crafted_send_fields);
+
 static const struct stat_field mptcp_pm_churn_fields[] = {
 	STAT_FIELD(mptcp_pm_churn, runs),
 	STAT_FIELD(mptcp_pm_churn, setup_failed),
@@ -1681,6 +1698,8 @@ static void dump_stats_json_netfilter_and_xfrm(void)
 	stat_category_emit_json(&bareudp_rx_category);
 	putchar(',');
 	stat_category_emit_json(&mpls_label_stack_rx_category);
+	putchar(',');
+	stat_category_emit_json(&rds_zcopy_crafted_send_category);
 	putchar(',');
 	stat_category_emit_json(&mptcp_pm_churn_category);
 	putchar(',');
