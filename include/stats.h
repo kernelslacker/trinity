@@ -1744,6 +1744,12 @@ struct stats_s {
 	unsigned long mpls_label_stack_rx_link_up_ok;		/* RTM_SETLINK IFF_UP on lo accepted */
 	unsigned long mpls_label_stack_rx_packet_sent_ok;	/* sendto on AF_PACKET with ETH_P_MPLS_UC frame returned >0 */
 
+	/* bridge_ip6_refrag_fraggap childop counters */
+	unsigned long bridge_ip6_refrag_fraggap_runs;		/* total bridge_ip6_refrag_fraggap invocations */
+	unsigned long bridge_ip6_refrag_fraggap_brnf_enabled;	/* bridge-nf-call-ip6tables sysctl write accepted */
+	unsigned long bridge_ip6_refrag_fraggap_bursts;		/* per-iter frag-pair emission bursts inside the netns */
+	unsigned long bridge_ip6_refrag_fraggap_frags_sent;	/* individual fragment frames sendto returned >0 */
+
 	/* mptcp_pm_churn childop counters */
 	unsigned long mptcp_pm_churn_runs;			/* total mptcp_pm_churn invocations */
 	unsigned long mptcp_pm_churn_setup_failed;		/* socket/bind/listen/connect setup failed */

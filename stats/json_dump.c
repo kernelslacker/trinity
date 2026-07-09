@@ -1596,6 +1596,18 @@ const struct stat_category rds_zcopy_crafted_send_category =
 	              rds_zcopy_crafted_send_runs,
 	              rds_zcopy_crafted_send_fields);
 
+static const struct stat_field bridge_ip6_refrag_fraggap_fields[] = {
+	STAT_FIELD(bridge_ip6_refrag_fraggap, runs),
+	STAT_FIELD(bridge_ip6_refrag_fraggap, brnf_enabled),
+	STAT_FIELD(bridge_ip6_refrag_fraggap, bursts),
+	STAT_FIELD(bridge_ip6_refrag_fraggap, frags_sent),
+};
+
+const struct stat_category bridge_ip6_refrag_fraggap_category =
+	STAT_CATEGORY("bridge_ip6_refrag_fraggap",
+	              bridge_ip6_refrag_fraggap_runs,
+	              bridge_ip6_refrag_fraggap_fields);
+
 static const struct stat_field mptcp_pm_churn_fields[] = {
 	STAT_FIELD(mptcp_pm_churn, runs),
 	STAT_FIELD(mptcp_pm_churn, setup_failed),
@@ -1700,6 +1712,8 @@ static void dump_stats_json_netfilter_and_xfrm(void)
 	stat_category_emit_json(&mpls_label_stack_rx_category);
 	putchar(',');
 	stat_category_emit_json(&rds_zcopy_crafted_send_category);
+	putchar(',');
+	stat_category_emit_json(&bridge_ip6_refrag_fraggap_category);
 	putchar(',');
 	stat_category_emit_json(&mptcp_pm_churn_category);
 	putchar(',');

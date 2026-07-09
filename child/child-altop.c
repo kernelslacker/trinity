@@ -34,7 +34,7 @@
  * Slot ordering matches pick_op_type_table[]; the _Static_assert below
  * pins ARRAY_SIZE equality between the two.
  */
-static int dormant_op_disabled[138] = {
+static int dormant_op_disabled[139] = {
 	0, 0, 0, 0, 0,
 	0, 1, 1, 1, 1,
 	1, 1, 1, 0, 1,
@@ -90,6 +90,7 @@ static int dormant_op_disabled[138] = {
 	1,	/* hfs_mount_fuzz: dormant until canary-queue load-tests the crafted-image HFS mount fuzzer over a scratch_block loop inside a userns_run_in_ns grandchild (image-mount lifecycle race; not safe for steady rotation). */
 	1,	/* rds_zcopy_crafted_send: dormant until canary-queue load-tests the AF_RDS SO_ZEROCOPY sendmsg with a partially-mapped iovec that faults mid pin-walk (rds_message_zcopy_from_user + rds_message_purge page-refcount edge). */
 	1,	/* bridge_ip6frag_refrag: dormant until canary-queue load-tests the bridge IPv6 defrag / refrag burst (userns_run_in_ns + private-netns bridge + veth + nft bridge-family ct rule + AF_PACKET IPv6-fragment injection with pre-frag extension headers and small egress MTU forcing br_ip6_fragment on the reassembled skb). */
+	1,	/* bridge_ip6_refrag_fraggap: dormant until canary-queue load-tests the bridge IPv6 refrag path (userns_run_in_ns + bridge + veth + bridge-nf + nft ct + AF_PACKET hand-rolled fragmented IPv6 frames with churned HbH/DstOpt chain + short-prevhdr arm). */
 };
 
 /*
@@ -351,6 +352,7 @@ const char *alt_op_name(enum child_op_type op)
 	case CHILD_OP_HFS_MOUNT_FUZZ:	return "hfs_mount_fuzz";
 	case CHILD_OP_RDS_ZCOPY_CRAFTED_SEND:	return "rds_zcopy_crafted_send";
 	case CHILD_OP_BRIDGE_IP6FRAG_REFRAG:	return "bridge_ip6frag_refrag";
+	case CHILD_OP_BRIDGE_IP6_REFRAG_FRAGGAP:	return "bridge_ip6_refrag_fraggap";
 	case NR_CHILD_OP_TYPES:		break;
 	}
 	return "unknown";
@@ -448,7 +450,7 @@ void log_alt_op_config(void)
  * CHILD_OP_SYSCALL sentinel filter in init_altop_dispatch() stays as
  * defensive coding for any future hole.
  */
-static const enum child_op_type pick_op_type_table[138] = {
+static const enum child_op_type pick_op_type_table[139] = {
 	[0]  = CHILD_OP_MMAP_LIFECYCLE,
 	[1]  = CHILD_OP_MPROTECT_SPLIT,
 	[2]  = CHILD_OP_MLOCK_PRESSURE,
@@ -587,6 +589,7 @@ static const enum child_op_type pick_op_type_table[138] = {
 	[135] = CHILD_OP_HFS_MOUNT_FUZZ,
 	[136] = CHILD_OP_RDS_ZCOPY_CRAFTED_SEND,
 	[137] = CHILD_OP_BRIDGE_IP6FRAG_REFRAG,
+	[138] = CHILD_OP_BRIDGE_IP6_REFRAG_FRAGGAP,
 };
 _Static_assert(ARRAY_SIZE(pick_op_type_table) == ARRAY_SIZE(dormant_op_disabled),
 	"pick_op_type_table and dormant_op_disabled must have matching slot counts");
@@ -1566,6 +1569,7 @@ bool (*const op_dispatch[NR_CHILD_OP_TYPES])(struct childdata *) = {
 	[CHILD_OP_HFS_MOUNT_FUZZ]	= hfs_mount_fuzz,
 	[CHILD_OP_RDS_ZCOPY_CRAFTED_SEND]	= rds_zcopy_crafted_send,
 	[CHILD_OP_BRIDGE_IP6FRAG_REFRAG]	= bridge_ip6frag_refrag,
+	[CHILD_OP_BRIDGE_IP6_REFRAG_FRAGGAP]	= bridge_ip6_refrag_fraggap,
 };
 
 _Static_assert(ARRAY_SIZE(op_dispatch) == NR_CHILD_OP_TYPES,

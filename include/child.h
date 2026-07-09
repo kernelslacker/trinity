@@ -237,6 +237,7 @@ enum child_op_type {
 	CHILD_OP_HFS_MOUNT_FUZZ,
 	CHILD_OP_RDS_ZCOPY_CRAFTED_SEND,
 	CHILD_OP_BRIDGE_IP6FRAG_REFRAG,
+	CHILD_OP_BRIDGE_IP6_REFRAG_FRAGGAP,
 	NR_CHILD_OP_TYPES,
 };
 
@@ -1444,6 +1445,7 @@ bool xfrm_churn(struct childdata *child);
 bool bpf_cgroup_attach(struct childdata *child);
 bool sctp_assoc_churn(struct childdata *child);
 bool sctp_chunk_rx(struct childdata *child);
+bool bridge_ip6_refrag_fraggap(struct childdata *child);
 bool mptcp_pm_churn(struct childdata *child);
 bool devlink_port_churn(struct childdata *child);
 bool handshake_req_abort(struct childdata *child);
