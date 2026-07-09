@@ -141,8 +141,8 @@
 #define FGMR_PACKET_BASE	5U
 
 /* Outer packet buffer size.  Outer IPv6 (40) + UDP (8) + GUE with
- * max Hlen*4 (124) + inner IPv6 (40) + inner payload (16) + slack
- * fits well under 256; leaves headroom for length randomisation. */
+ * max Hlen*4 (124) + inner IPv6 (40) + slack fits well under 320;
+ * leaves headroom for length randomisation. */
 #define FGMR_PKT_MAX		320
 
 /* Maximum inner header we may emit before applying truncation.
