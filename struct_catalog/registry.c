@@ -516,6 +516,24 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	/* bpf(int, union bpf_attr *, unsigned int) */
 	{ "bpf",		2, &struct_catalog[SC_BPF_ATTR] },
 #endif
+	/*
+	 * keyctl(int cmd, unsigned long a2, unsigned long a3,
+	 *        unsigned long a4, unsigned long a5)
+	 * The a2 slot's shape is cmd-selected: DH_COMPUTE points it at a
+	 * struct keyctl_dh_params, the four PKEY_{ENCRYPT,DECRYPT,SIGN,
+	 * VERIFY} ops at a struct keyctl_pkey_params; the remaining cmds
+	 * put a scalar (key_serial_t, mask, or opaque flag) there and
+	 * match no variant.  argtype[1] is left at the syscall's default
+	 * (ARG_UNDEFINED) and sanitise_keyctl() owns the live fill for
+	 * every cmd, so this is an attribution-only row -- the schema-
+	 * aware fill path never resolves rec->a2 through the catalog, and
+	 * struct_field_for_cmp() gets to name the specific struct field
+	 * (keyctl_dh_params.prime, keyctl_pkey_params.in_len, ...) that a
+	 * KCOV-CMP-learned constant fell out of.  The variants dispatch
+	 * off rec->a1 (discrim_arg_idx=1 on the descriptor itself, same
+	 * shape bpf_attr uses for its per-cmd tagged union).
+	 */
+	{ "keyctl",		2, &struct_catalog[SC_KEYCTL_PAYLOAD] },
 	/* clock_nanosleep(clockid_t, int, struct timespec *, struct timespec *) */
 	{ "clock_nanosleep",	3, &struct_catalog[SC_TIMESPEC] },
 	/* nanosleep(struct timespec *, struct timespec *) */

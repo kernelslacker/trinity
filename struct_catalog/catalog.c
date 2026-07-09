@@ -143,6 +143,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/keyctl.h"
 #include "kernel/l2tp.h"
 /* FIELD / FIELDX initialiser macros live in struct_catalog-internal.h
  * so the per-family leaf TUs under struct_catalog/ can reuse them. */
@@ -210,6 +211,31 @@ struct lsm_ctx {
 	__u64 flags;
 	__u64 len;
 	__u64 ctx_len;
+};
+#endif
+
+/*
+ * struct keyctl_pkey_params / keyctl_dh_params may not be present in
+ * every host's <linux/keyctl.h>.  The field tables live in
+ * struct_catalog/keyctl.c, but the spine's struct_catalog[] entry
+ * takes sizeof(struct keyctl_pkey_params), so the type definition must
+ * also be visible here.  The ifndef guard hands off to the host header
+ * when it is present; both TUs land on a layout-identical definition
+ * either way.  A future uapi bump that grows either struct needs both
+ * copies updated.
+ */
+#ifndef KEYCTL_SUPPORTS_ENCRYPT
+struct keyctl_dh_params {
+	__s32 priv;
+	__s32 prime;
+	__s32 base;
+};
+
+struct keyctl_pkey_params {
+	__s32 key_id;
+	__u32 in_len;
+	__u32 out_len;
+	__u32 __spare[7];
 };
 #endif
 
@@ -824,6 +850,24 @@ const struct struct_desc struct_catalog[] = {
 		.struct_size	= sizeof(struct kexec_segment),
 		.fields		= kexec_segment_fields,
 		.num_fields	= ARRAY_SIZE(kexec_segment_fields),
+	},
+	[SC_KEYCTL_PAYLOAD] = {
+		.name			= "keyctl_payload",
+		/*
+		 * a2 carries the widest per-cmd struct (keyctl_pkey_params
+		 * at 40 bytes) across the cataloged variants; DH_COMPUTE's
+		 * 12-byte keyctl_dh_params fits inside.  Attribution-only
+		 * (keyctl's argtype[1] is ARG_UNDEFINED so the schema-aware
+		 * fill never allocates against this size), so the value is
+		 * a bound for struct_field_for_cmp()'s per-variant walk
+		 * rather than a live-fill allocation size.
+		 */
+		.struct_size		= sizeof(struct keyctl_pkey_params),
+		.fields			= NULL,
+		.num_fields		= 0,
+		.discrim_arg_idx	= 1,
+		.variants		= keyctl_payload_variants,
+		.num_variants		= ARRAY_SIZE(keyctl_payload_variants),
 	},
 };
 
