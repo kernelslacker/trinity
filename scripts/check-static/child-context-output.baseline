@@ -37,9 +37,9 @@ syscalls/bpf.c:bpf_post_validate_retval
 syscalls/bpf.c:post_bpf
 syscalls/cred/capget.c:post_capget
 syscalls/cred/capset.c:post_capset
-syscalls/clock_getres.c:post_clock_getres
-syscalls/clock_gettime.c:post_clock_gettime
-syscalls/clock_nanosleep.c:post_clock_nanosleep
+syscalls/clock/clock_getres.c:post_clock_getres
+syscalls/clock/clock_gettime.c:post_clock_gettime
+syscalls/clock/clock_nanosleep.c:post_clock_nanosleep
 syscalls/clone3.c:post_clone3
 syscalls/clone.c:post_clone
 syscalls/epoll_pwait.c:post_epoll_pwait
@@ -88,7 +88,7 @@ syscalls/getsockname.c:getsockname_recheck
 syscalls/getsockname.c:getsockname_report_divergence
 syscalls/getsockname.c:getsockname_validate_snap
 syscalls/gettid.c:post_gettid
-syscalls/gettimeofday.c:post_gettimeofday
+syscalls/clock/gettimeofday.c:post_gettimeofday
 syscalls/cred/getuid.c:post_getuid
 syscalls/xattr/getxattrat.c:post_getxattrat
 syscalls/xattr/getxattr.c:post_getxattr
@@ -117,7 +117,7 @@ syscalls/mq_notify.c:post_mq_notify
 syscalls/mq_open.c:post_mq_open
 syscalls/mremap.c:post_mremap
 syscalls/munmap.c:post_munmap
-syscalls/nanosleep.c:post_nanosleep
+syscalls/clock/nanosleep.c:post_nanosleep
 syscalls/newfstat.c:post_newfstat
 syscalls/newfstat.c:post_newfstatat
 syscalls/newlstat.c:post_newlstat
@@ -198,7 +198,7 @@ syscalls/statfs.c:post_statfs64
 syscalls/statmount.c:post_statmount
 syscalls/sysfs.c:post_sysfs
 syscalls/sysinfo.c:post_sysinfo
-syscalls/time.c:post_time
+syscalls/clock/time.c:post_time
 syscalls/timer_create.c:post_timer_create
 syscalls/timerfd_gettime.c:post_timerfd_gettime
 syscalls/timer_getoverrun.c:post_timer_getoverrun

@@ -110,7 +110,7 @@ SYSCALLS_ARCH	:= $(shell case "$(MACHINE)" in \
 
 VERSION_H	:= include/version.h
 
-HEADERS		:= $(wildcard *.h) $(wildcard syscalls/*.h) $(wildcard ioctls/*.h)
+HEADERS		:= $(wildcard *.h) $(wildcard syscalls/*.h) $(wildcard syscalls/clock/*.h) $(wildcard ioctls/*.h)
 
 SRCS		:= $(wildcard *.c) \
 		   $(wildcard args/*.c) \
@@ -150,6 +150,7 @@ SRCS		:= $(wildcard *.c) \
 		   $(wildcard strategy/*.c) \
 		   $(wildcard struct_catalog/*.c) \
 		   $(wildcard syscalls/*.c) \
+		   $(wildcard syscalls/clock/*.c) \
 		   $(wildcard syscalls/signal/*.c) \
 		   $(wildcard syscalls/sched/*.c) \
 		   $(wildcard syscalls/cred/*.c) \
@@ -196,6 +197,7 @@ OBJS		:= $(sort $(patsubst %.c,%.o,$(wildcard *.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard strategy/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard struct_catalog/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/*.c))) \
+		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/clock/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/signal/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/sched/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/cred/*.c))) \
