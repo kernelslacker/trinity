@@ -482,7 +482,7 @@ static int netns_teardown_iter_parent_setns_back(struct netns_teardown_iter_ctx 
  */
 static void netns_teardown_iter_drive_teardown(struct netns_teardown_iter_ctx *it)
 {
-	(void)usleep(rand32() % NETNS_TD_PARENT_USLEEP_MAX);
+	(void)usleep(rnd_modulo_u32(NETNS_TD_PARENT_USLEEP_MAX));
 
 	if (kill(it->pid, SIGKILL) == 0) {
 		__atomic_add_fetch(&shm->stats.netns_teardown_kill_ok,
