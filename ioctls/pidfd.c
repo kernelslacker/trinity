@@ -97,6 +97,25 @@ struct pidfd_info {
 # define PIDFD_GET_INFO _IOWR(PIDFS_IOCTL_MAGIC, 11, struct pidfd_info)
 #endif
 
+/*
+ * Compile-time: PIDFD_GET_INFO is the only fixed-shape struct
+ * command this file fills.  Pin sizeof(struct pidfd_info) against
+ * its _IOC_SIZE so a <linux/pidfd.h> change (or a drift between
+ * the fallback struct above and the shipping uapi it mirrors)
+ * that grows or shrinks the struct hard-fails the compile rather
+ * than silently having the kernel copy_from_user() /
+ * copy_to_user() a different number of bytes than the sanitiser
+ * prepared.
+ *
+ * The ten PIDFD_GET_*_NAMESPACE commands are all _IO() with no
+ * arg (the return value IS the new nsfd), so _IOC_SIZE(cmd) is
+ * zero and there is no size pairing to assert -- intentionally
+ * absent.
+ */
+_Static_assert(sizeof(struct pidfd_info) ==
+	       _IOC_SIZE(PIDFD_GET_INFO),
+	       "pidfd_info size vs _IOC_SIZE mismatch");
+
 static int pidfd_fd_test(int fd, const struct stat *st __attribute__((unused)))
 {
 	struct objhead *head;
