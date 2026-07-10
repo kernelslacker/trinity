@@ -29,6 +29,54 @@
 #include "utils.h"
 
 /*
+ * Compile-time: every fixed-shape VDUSE_* command the sanitisers
+ * below fill must have sizeof(struct) matching the _IOC_SIZE encoded
+ * in its request bits.  A mismatch means <linux/vduse.h> moved under
+ * us and the sanitiser is memset()ing / stamping into a buffer the
+ * kernel copies less of than we prepared (under-encoded) or reads
+ * past (over-encoded).  VDUSE_IOTLB_REG_UMEM and VDUSE_IOTLB_DEREG_UMEM
+ * both take struct vduse_iova_umem and each get their own assert --
+ * the two sides can drift independently in a header refactor.
+ *
+ * VDUSE_GET_API_VERSION, VDUSE_SET_API_VERSION and VDUSE_DEV_GET_FEATURES
+ * encode a bare __u64; VDUSE_VQ_INJECT_IRQ encodes a bare __u32;
+ * VDUSE_DESTROY_DEV encodes a char[VDUSE_NAME_MAX] buffer;
+ * VDUSE_DEV_INJECT_CONFIG_IRQ is _IO() with no arg.  All are
+ * intentionally absent -- asserting sizeof(struct) against a scalar,
+ * a bare char array or a zero _IOC_SIZE would be the wrong shape of
+ * check.  VDUSE_CREATE_DEV (struct vduse_dev_config) and
+ * VDUSE_DEV_SET_CONFIG (struct vduse_config_data) both carry a
+ * trailing flex array whose runtime length is stamped in the payload,
+ * so sizeof(struct) is only the header prefix and does not equal
+ * _IOC_SIZE either -- also intentionally absent.
+ */
+_Static_assert(sizeof(struct vduse_iotlb_entry) ==
+	       _IOC_SIZE(VDUSE_IOTLB_GET_FD),
+	       "vduse_iotlb_entry size vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct vduse_vq_config) ==
+	       _IOC_SIZE(VDUSE_VQ_SETUP),
+	       "vduse_vq_config size vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct vduse_vq_info) ==
+	       _IOC_SIZE(VDUSE_VQ_GET_INFO),
+	       "vduse_vq_info size vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct vduse_vq_eventfd) ==
+	       _IOC_SIZE(VDUSE_VQ_SETUP_KICKFD),
+	       "vduse_vq_eventfd size vs _IOC_SIZE mismatch");
+#ifdef VDUSE_IOTLB_REG_UMEM
+_Static_assert(sizeof(struct vduse_iova_umem) ==
+	       _IOC_SIZE(VDUSE_IOTLB_REG_UMEM),
+	       "vduse_iova_umem size vs VDUSE_IOTLB_REG_UMEM mismatch");
+_Static_assert(sizeof(struct vduse_iova_umem) ==
+	       _IOC_SIZE(VDUSE_IOTLB_DEREG_UMEM),
+	       "vduse_iova_umem size vs VDUSE_IOTLB_DEREG_UMEM mismatch");
+#endif
+#ifdef VDUSE_IOTLB_GET_INFO
+_Static_assert(sizeof(struct vduse_iova_info) ==
+	       _IOC_SIZE(VDUSE_IOTLB_GET_INFO),
+	       "vduse_iova_info size vs _IOC_SIZE mismatch");
+#endif
+
+/*
  * uapi vduse.h does not export *_VALID_FLAGS masks, so hand-roll the
  * legal bit ranges from the header definitions.  Masking against these
  * keeps fuzz pressure on parsers that actually look at the field
