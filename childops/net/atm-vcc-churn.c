@@ -98,8 +98,6 @@ static const struct atm_ioctl_spec atm_ioctl_table[] = {
 	{ ATM_SETESIF,		true },
 };
 
-#define NR_ATM_IOCTLS	ARRAY_SIZE(atm_ioctl_table)
-
 /*
  * Open one AF_ATMPVC socket.  The kernel atm_create() accepts
  * AF_ATMPVC with SOCK_DGRAM and the AAL number as protocol.  Returns
@@ -188,7 +186,7 @@ static void atm_churn_cycle(struct childdata *child)
 
 	batch = 1U + (rand32() % 4U);
 	for (j = 0; j < batch; j++) {
-		spec = &atm_ioctl_table[rand32() % NR_ATM_IOCTLS];
+		spec = &RAND_ARRAY(atm_ioctl_table);
 		atm_fire_one(fd, spec);
 	}
 
