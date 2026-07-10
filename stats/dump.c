@@ -2824,6 +2824,41 @@ static void dump_stats_render_kcov_ring_replay(void)
 			stat_row("kcov_coverage", "cmp_field_timespec_skipped_bad_ptr", fx_ts_bad_ptr);
 }
 
+static void dump_stats_render_kcov_cmp_field_consumer(void)
+{
+		unsigned long fc_would_pick = __atomic_load_n(&kcov_shm->cmp_field_consumer_would_pick, __ATOMIC_RELAXED);
+		unsigned long fc_would_miss = __atomic_load_n(&kcov_shm->cmp_field_consumer_would_miss, __ATOMIC_RELAXED);
+		unsigned long fc_key_absent = __atomic_load_n(&kcov_shm->cmp_field_consumer_key_absent, __ATOMIC_RELAXED);
+		unsigned long fc_pool_corrupt = __atomic_load_n(&kcov_shm->cmp_field_consumer_pool_corrupted, __ATOMIC_RELAXED);
+		unsigned long fc_live_picks = __atomic_load_n(&kcov_shm->cmp_field_consumer_live_picks, __ATOMIC_RELAXED);
+		unsigned long fc_g_variant = __atomic_load_n(&kcov_shm->cmp_field_consumer_guard_variant_layout, __ATOMIC_RELAXED);
+		unsigned long fc_g_bufdisc = __atomic_load_n(&kcov_shm->cmp_field_consumer_guard_buffer_discrim, __ATOMIC_RELAXED);
+		unsigned long fc_g_lenpair = __atomic_load_n(&kcov_shm->cmp_field_consumer_guard_len_pair, __ATOMIC_RELAXED);
+		unsigned long fc_g_nested = __atomic_load_n(&kcov_shm->cmp_field_consumer_guard_nested_pointer, __ATOMIC_RELAXED);
+		unsigned long fc_g_dep = __atomic_load_n(&kcov_shm->cmp_field_consumer_guard_dependent, __ATOMIC_RELAXED);
+
+		if (fc_would_pick > 0)
+			stat_row("kcov_coverage", "cmp_field_consumer_would_pick", fc_would_pick);
+		if (fc_would_miss > 0)
+			stat_row("kcov_coverage", "cmp_field_consumer_would_miss", fc_would_miss);
+		if (fc_key_absent > 0)
+			stat_row("kcov_coverage", "cmp_field_consumer_key_absent", fc_key_absent);
+		if (fc_pool_corrupt > 0)
+			stat_row("kcov_coverage", "cmp_field_consumer_pool_corrupted", fc_pool_corrupt);
+		if (fc_live_picks > 0)
+			stat_row("kcov_coverage", "cmp_field_consumer_live_picks", fc_live_picks);
+		if (fc_g_variant > 0)
+			stat_row("kcov_coverage", "cmp_field_consumer_guard_variant_layout", fc_g_variant);
+		if (fc_g_bufdisc > 0)
+			stat_row("kcov_coverage", "cmp_field_consumer_guard_buffer_discrim", fc_g_bufdisc);
+		if (fc_g_lenpair > 0)
+			stat_row("kcov_coverage", "cmp_field_consumer_guard_len_pair", fc_g_lenpair);
+		if (fc_g_nested > 0)
+			stat_row("kcov_coverage", "cmp_field_consumer_guard_nested_pointer", fc_g_nested);
+		if (fc_g_dep > 0)
+			stat_row("kcov_coverage", "cmp_field_consumer_guard_dependent", fc_g_dep);
+}
+
 static void dump_stats_render_kcov_exit_edge_delta(void)
 {
 		unsigned long rc_inserts = __atomic_load_n(&kcov_shm->cmp_recent_inserts, __ATOMIC_RELAXED);
@@ -3917,6 +3952,8 @@ void __cold dump_stats_kcov_block(void)
 		dump_stats_render_kcov_reexec();
 
 		dump_stats_render_kcov_ring_replay();
+
+		dump_stats_render_kcov_cmp_field_consumer();
 
 		dump_stats_render_kcov_exit_edge_delta();
 

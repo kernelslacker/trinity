@@ -511,6 +511,111 @@ void cmp_hints_field_scan_record(struct syscallrecord *srec,
  */
 static bool cmp_field_consumer_live_arm;
 
+/*
+ * Generator-invariant guard for the field-scoped consumer.  Some keys
+ * the field-attribution recorder can populate carry a kernel constant
+ * whose injection into the generated struct would break an invariant
+ * the generator relies on (union arm selection, length/buffer pairing,
+ * pointer-shaped slots, tagged-union discriminators, coupled scalars)
+ * and turn every dispatched call into a guaranteed reject.  Classify
+ * from EXISTING desc + field metadata; the classifier is observation-
+ * only, only ever gates the SHADOW would_pick and bumps a per-reason
+ * skip counter.
+ *
+ * Categories the existing struct-catalog metadata cannot detect and
+ * therefore fall through as CMP_FIELD_GUARD_OK (a wider metadata pass
+ * on the catalog would be needed to close these; explicitly out of
+ * scope here to avoid catalog sprawl):
+ *
+ *   - Endian-swapped fields (host-order kernel value smashed into a
+ *     big-endian on-wire slot) -- no per-field endian tag today.
+ *   - Bitfield-packed fields sharing a byte with an unrelated
+ *     neighbour -- the catalog schema records offset+size, not bit
+ *     ranges within a byte.
+ *   - Checksum fields paired with a covered buffer -- FT_LEN_* covers
+ *     length pairing but there is no FT_CSUM tag; injecting a value
+ *     into a checksum field will desync the same way FT_LEN_* would.
+ *   - Fully arbitrary dependent scalars (field-must-equal-sibling,
+ *     value-in-enum-derived-from-another-field) beyond the FT_TAGGED_
+ *     UNION / FT_VOCAB cases already covered by CMP_FIELD_GUARD_
+ *     DEPENDENT.
+ */
+enum cmp_field_guard_reason {
+	CMP_FIELD_GUARD_OK = 0,
+	CMP_FIELD_GUARD_VARIANT_LAYOUT,
+	CMP_FIELD_GUARD_BUFFER_DISCRIM,
+	CMP_FIELD_GUARD_LEN_PAIR,
+	CMP_FIELD_GUARD_NESTED_POINTER,
+	CMP_FIELD_GUARD_DEPENDENT,
+};
+
+static enum cmp_field_guard_reason
+cmp_field_key_classify_guard(const struct struct_desc *desc,
+			     unsigned int field_idx)
+{
+	const struct struct_field *f;
+
+	if (desc->variants != NULL || desc->num_variants != 0)
+		return CMP_FIELD_GUARD_VARIANT_LAYOUT;
+	if (desc->buffer_discrim_size != 0)
+		return CMP_FIELD_GUARD_BUFFER_DISCRIM;
+
+	if (desc->fields == NULL || field_idx >= desc->num_fields)
+		return CMP_FIELD_GUARD_OK;
+
+	f = &desc->fields[field_idx];
+	switch (f->tag) {
+	case FT_LEN_BYTES:
+	case FT_LEN_COUNT:
+		return CMP_FIELD_GUARD_LEN_PAIR;
+	case FT_PTR_BYTES:
+	case FT_PTR_ARRAY:
+	case FT_PTR_STRUCT:
+	case FT_EMBEDDED_STRUCT:
+	case FT_BPF_PROGRAM:
+		return CMP_FIELD_GUARD_NESTED_POINTER;
+	case FT_TAGGED_UNION:
+	case FT_VOCAB:
+		return CMP_FIELD_GUARD_DEPENDENT;
+	default:
+		return CMP_FIELD_GUARD_OK;
+	}
+}
+
+static bool cmp_field_key_guard_skip(const struct struct_desc *desc,
+				     unsigned int field_idx)
+{
+	unsigned long *slot;
+
+	if (kcov_shm == NULL)
+		return cmp_field_key_classify_guard(desc, field_idx) !=
+		       CMP_FIELD_GUARD_OK;
+
+	switch (cmp_field_key_classify_guard(desc, field_idx)) {
+	case CMP_FIELD_GUARD_OK:
+		return false;
+	case CMP_FIELD_GUARD_VARIANT_LAYOUT:
+		slot = &kcov_shm->cmp_field_consumer_guard_variant_layout;
+		break;
+	case CMP_FIELD_GUARD_BUFFER_DISCRIM:
+		slot = &kcov_shm->cmp_field_consumer_guard_buffer_discrim;
+		break;
+	case CMP_FIELD_GUARD_LEN_PAIR:
+		slot = &kcov_shm->cmp_field_consumer_guard_len_pair;
+		break;
+	case CMP_FIELD_GUARD_NESTED_POINTER:
+		slot = &kcov_shm->cmp_field_consumer_guard_nested_pointer;
+		break;
+	case CMP_FIELD_GUARD_DEPENDENT:
+		slot = &kcov_shm->cmp_field_consumer_guard_dependent;
+		break;
+	default:
+		return false;
+	}
+	__atomic_fetch_add(slot, 1UL, __ATOMIC_RELAXED);
+	return true;
+}
+
 bool cmp_hints_field_try_get(unsigned int nr, bool do32, unsigned int arg_idx,
 			     const struct struct_desc *desc,
 			     unsigned int field_idx, unsigned int size,
@@ -541,6 +646,15 @@ bool cmp_hints_field_try_get(unsigned int nr, bool do32, unsigned int arg_idx,
 	if (kcov_shm != NULL &&
 	    __atomic_load_n(&kcov_shm->cmp_hints_chaos_active,
 			    __ATOMIC_RELAXED))
+		return false;
+
+	/* Generator-invariant guard.  Rejects keys whose value, if injected,
+	 * would corrupt a generator invariant (variant arm, len/buf pairing,
+	 * pointer slot, tagged-union discriminator).  Fires BEFORE the pool
+	 * lookup so an ineligible key never contributes to would_pick /
+	 * would_miss / key_absent -- each guard skip lands in its own
+	 * per-reason counter. */
+	if (cmp_field_key_guard_skip(desc, field_idx))
 		return false;
 
 	/* Bucket lookup: same hash + ACQUIRE-load key probe loop as the
