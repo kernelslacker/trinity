@@ -42,8 +42,8 @@ syscalls/clock/clock_gettime.c:post_clock_gettime
 syscalls/clock/clock_nanosleep.c:post_clock_nanosleep
 syscalls/clone3.c:post_clone3
 syscalls/clone.c:post_clone
-syscalls/epoll_pwait.c:post_epoll_pwait
-syscalls/epoll_wait.c:post_epoll_wait
+syscalls/poll/epoll_pwait.c:post_epoll_pwait
+syscalls/poll/epoll_wait.c:post_epoll_wait
 syscalls/execve.c:post_execve
 syscalls/execve.c:post_execveat
 syscalls/fcntl.c:post_fcntl_getfd
@@ -133,8 +133,8 @@ syscalls/perf_event_open.c:post_perf_event_open
 syscalls/personality.c:post_personality
 syscalls/pipe.c:post_pipe
 syscalls/pkey.c:post_pkey_alloc
-syscalls/poll.c:post_poll
-syscalls/poll.c:post_ppoll
+syscalls/poll/poll.c:post_poll
+syscalls/poll/poll.c:post_ppoll
 syscalls/prctl.c:post_capbset_read
 syscalls/prctl.c:post_get_child_subreaper
 syscalls/prctl.c:post_get_dumpable
@@ -154,7 +154,7 @@ syscalls/prctl.c:post_set_name
 syscalls/prctl.c:post_set_no_new_privs
 syscalls/prctl.c:post_set_pdeathsig
 syscalls/prlimit64.c:post_prlimit64
-syscalls/pselect6.c:post_pselect6
+syscalls/poll/pselect6.c:post_pselect6
 syscalls/ptrace.c:post_ptrace
 syscalls/readlink.c:post_readlink
 syscalls/readlink.c:post_readlinkat
@@ -171,7 +171,7 @@ syscalls/sched/sched_getscheduler.c:post_sched_getscheduler
 syscalls/sched/sched_rr_get_interval.c:post_sched_rr_get_interval
 syscalls/sched/sched_yield.c:post_sched_yield
 syscalls/seccomp.c:post_seccomp
-syscalls/select.c:post_select
+syscalls/poll/select.c:post_select
 syscalls/socket/send.c:post_sendmmsg
 syscalls/socket/send.c:post_sendmsg
 syscalls/cred/setfsgid.c:post_setfsgid
