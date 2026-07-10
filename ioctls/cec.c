@@ -131,7 +131,6 @@ static const __u8 cec_prim_device_types[] = {
 };
 
 static const __u8 cec_versions[] = {
-	CEC_OP_CEC_VERSION_1_3A,
 	CEC_OP_CEC_VERSION_1_4,
 	CEC_OP_CEC_VERSION_2_0,
 };
