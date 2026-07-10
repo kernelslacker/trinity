@@ -11,6 +11,46 @@
 #include "utils.h"
 
 /*
+ * Compile-time: every fixed-shape CEC_* ioctl the sanitisers below
+ * fill must have sizeof(struct) matching the _IOC_SIZE encoded in
+ * its request bits.  A mismatch means <linux/cec.h> moved under us
+ * and the sanitiser is memset()ing / stamping into a buffer the
+ * kernel copies less of than we prepared (under-encoded) or reads
+ * past (over-encoded).  Each command is wrapped in its own #ifdef
+ * to mirror the guards on the callsites below, so builds against
+ * older libc-headers-supplied <linux/cec.h> still compile.
+ * CEC_ADAP_{G,S}_PHYS_ADDR (bare __u16), CEC_{G,S}_MODE (bare __u32)
+ * and CEC_RECEIVE / CEC_ADAP_S_LOG_ADDRS (share struct with their
+ * G-side twins covered here) are intentionally absent from this
+ * first wave.
+ */
+#ifdef CEC_ADAP_G_CAPS
+_Static_assert(sizeof(struct cec_caps) ==
+	       _IOC_SIZE(CEC_ADAP_G_CAPS),
+	       "cec_caps size vs CEC_ADAP_G_CAPS mismatch");
+#endif
+#ifdef CEC_ADAP_G_LOG_ADDRS
+_Static_assert(sizeof(struct cec_log_addrs) ==
+	       _IOC_SIZE(CEC_ADAP_G_LOG_ADDRS),
+	       "cec_log_addrs size vs CEC_ADAP_G_LOG_ADDRS mismatch");
+#endif
+#ifdef CEC_TRANSMIT
+_Static_assert(sizeof(struct cec_msg) ==
+	       _IOC_SIZE(CEC_TRANSMIT),
+	       "cec_msg size vs CEC_TRANSMIT mismatch");
+#endif
+#ifdef CEC_DQEVENT
+_Static_assert(sizeof(struct cec_event) ==
+	       _IOC_SIZE(CEC_DQEVENT),
+	       "cec_event size vs CEC_DQEVENT mismatch");
+#endif
+#ifdef CEC_ADAP_G_CONNECTOR_INFO
+_Static_assert(sizeof(struct cec_connector_info) ==
+	       _IOC_SIZE(CEC_ADAP_G_CONNECTOR_INFO),
+	       "cec_connector_info size vs CEC_ADAP_G_CONNECTOR_INFO mismatch");
+#endif
+
+/*
  * The CEC core (drivers/media/cec/core/cec-core.c) registers its own
  * char-major via alloc_chrdev_region() with the literal name "cec".
  * That string appears in /proc/devices for any host with CONFIG_CEC_CORE
