@@ -129,7 +129,7 @@ syscalls/open.c:post_open
 syscalls/open.c:post_openat
 syscalls/open.c:post_openat2
 syscalls/signal/pause.c:post_pause
-syscalls/perf_event_open.c:post_perf_event_open
+syscalls/perf/perf_event_open.c:post_perf_event_open
 syscalls/process/personality.c:post_personality
 syscalls/pipe.c:post_pipe
 syscalls/pkey.c:post_pkey_alloc
