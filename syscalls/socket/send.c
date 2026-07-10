@@ -443,8 +443,7 @@ skip_bound:
 	rec->a2 = 0;
 
 out_free:
-	post_state_unregister(snap);
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_sendmsg = {
@@ -718,8 +717,7 @@ static void post_sendmmsg(struct syscallrecord *rec)
 	rec->a2 = 0;
 
 out_free:
-	post_state_unregister(snap);
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_sendmmsg = {
