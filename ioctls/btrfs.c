@@ -44,6 +44,56 @@ struct btrfs_ioctl_received_subvol_args_32 {
 	struct btrfs_ioctl_received_subvol_args_32)
 #endif
 
+/*
+ * Compile-time: fixed-shape ioctl args must match _IOC_SIZE.  A
+ * failure means the btrfs UAPI moved and the sanitiser's
+ * memset(sizeof(*args)) is against a stale layout -- fix the
+ * sanitiser, do not silence.  Flex-tail cmds (TREE_SEARCH_V2 with
+ * buf[], SPACE_INFO with spaces[]) and scalar _IOR/W (SUBVOL_GETFLAGS
+ * → __u64) are intentionally absent -- _IOC_SIZE covers only the
+ * header or a scalar there.
+ */
+_Static_assert(sizeof(struct btrfs_ioctl_search_args) ==
+	       _IOC_SIZE(BTRFS_IOC_TREE_SEARCH),
+	       "btrfs_ioctl_search_args size vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct btrfs_ioctl_ino_lookup_args) ==
+	       _IOC_SIZE(BTRFS_IOC_INO_LOOKUP),
+	       "btrfs_ioctl_ino_lookup_args vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct btrfs_ioctl_ino_path_args) ==
+	       _IOC_SIZE(BTRFS_IOC_INO_PATHS),
+	       "btrfs_ioctl_ino_path_args vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct btrfs_ioctl_logical_ino_args) ==
+	       _IOC_SIZE(BTRFS_IOC_LOGICAL_INO),
+	       "btrfs_ioctl_logical_ino_args vs _IOC_SIZE mismatch");
+#ifdef BTRFS_IOC_LOGICAL_INO_V2
+_Static_assert(sizeof(struct btrfs_ioctl_logical_ino_args) ==
+	       _IOC_SIZE(BTRFS_IOC_LOGICAL_INO_V2),
+	       "btrfs_ioctl_logical_ino_args vs V2 _IOC_SIZE mismatch");
+#endif
+_Static_assert(sizeof(struct btrfs_ioctl_dev_info_args) ==
+	       _IOC_SIZE(BTRFS_IOC_DEV_INFO),
+	       "btrfs_ioctl_dev_info_args vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct btrfs_ioctl_fs_info_args) ==
+	       _IOC_SIZE(BTRFS_IOC_FS_INFO),
+	       "btrfs_ioctl_fs_info_args vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct btrfs_ioctl_feature_flags) ==
+	       _IOC_SIZE(BTRFS_IOC_GET_FEATURES),
+	       "btrfs_ioctl_feature_flags vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct btrfs_ioctl_quota_rescan_args) ==
+	       _IOC_SIZE(BTRFS_IOC_QUOTA_RESCAN_STATUS),
+	       "btrfs_ioctl_quota_rescan_args vs _IOC_SIZE mismatch");
+#ifdef BTRFS_IOC_GET_SUBVOL_INFO
+_Static_assert(sizeof(struct btrfs_ioctl_get_subvol_info_args) ==
+	       _IOC_SIZE(BTRFS_IOC_GET_SUBVOL_INFO),
+	       "btrfs_ioctl_get_subvol_info_args vs _IOC_SIZE mismatch");
+#endif
+_Static_assert(sizeof(struct btrfs_ioctl_vol_args_v2) ==
+	       _IOC_SIZE(BTRFS_IOC_SNAP_CREATE_V2),
+	       "btrfs_ioctl_vol_args_v2 vs SNAP_CREATE_V2 mismatch");
+_Static_assert(sizeof(struct btrfs_ioctl_vol_args_v2) ==
+	       _IOC_SIZE(BTRFS_IOC_SUBVOL_CREATE_V2),
+	       "btrfs_ioctl_vol_args_v2 vs SUBVOL_CREATE_V2 mismatch");
+
 static int btrfs_fd_test(int fd, const struct stat *st __attribute__((unused)))
 {
 	struct objhead *head;

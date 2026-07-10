@@ -40,6 +40,73 @@
  * ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
  * OTHER DEALINGS IN THE SOFTWARE.
  */
+/*
+ * Compile-time: sanitiser struct sizes must match _IOC_SIZE.  A
+ * failure means the DRM UAPI moved and the memset(sizeof(*p)) below
+ * is sizing against a stale struct definition -- fix the sanitiser,
+ * do not silence the assert.  Only fixed-shape ioctls appear here;
+ * ioctls whose arg is a pointer/scalar or a flex-tail struct are
+ * skipped.
+ */
+_Static_assert(sizeof(struct drm_version) ==
+	       _IOC_SIZE(DRM_IOCTL_VERSION),
+	       "drm_version size vs DRM_IOCTL_VERSION mismatch");
+_Static_assert(sizeof(struct drm_unique) ==
+	       _IOC_SIZE(DRM_IOCTL_GET_UNIQUE),
+	       "drm_unique size vs DRM_IOCTL_GET_UNIQUE mismatch");
+_Static_assert(sizeof(struct drm_client) ==
+	       _IOC_SIZE(DRM_IOCTL_GET_CLIENT),
+	       "drm_client size vs DRM_IOCTL_GET_CLIENT mismatch");
+_Static_assert(sizeof(struct drm_stats) ==
+	       _IOC_SIZE(DRM_IOCTL_GET_STATS),
+	       "drm_stats size vs DRM_IOCTL_GET_STATS mismatch");
+#ifdef DRM_IOCTL_GET_CAP
+_Static_assert(sizeof(struct drm_get_cap) ==
+	       _IOC_SIZE(DRM_IOCTL_GET_CAP),
+	       "drm_get_cap size vs DRM_IOCTL_GET_CAP mismatch");
+#endif
+#ifdef DRM_IOCTL_SET_CLIENT_CAP
+_Static_assert(sizeof(struct drm_set_client_cap) ==
+	       _IOC_SIZE(DRM_IOCTL_SET_CLIENT_CAP),
+	       "drm_set_client_cap vs DRM_IOCTL_SET_CLIENT_CAP mismatch");
+#endif
+_Static_assert(sizeof(struct drm_mode_card_res) ==
+	       _IOC_SIZE(DRM_IOCTL_MODE_GETRESOURCES),
+	       "drm_mode_card_res vs DRM_IOCTL_MODE_GETRESOURCES mismatch");
+#ifdef DRM_IOCTL_MODE_GETPLANERESOURCES
+_Static_assert(sizeof(struct drm_mode_get_plane_res) ==
+	       _IOC_SIZE(DRM_IOCTL_MODE_GETPLANERESOURCES),
+	       "drm_mode_get_plane_res size vs _IOC_SIZE mismatch");
+#endif
+_Static_assert(sizeof(struct drm_mode_get_connector) ==
+	       _IOC_SIZE(DRM_IOCTL_MODE_GETCONNECTOR),
+	       "drm_mode_get_connector size vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct drm_mode_get_encoder) ==
+	       _IOC_SIZE(DRM_IOCTL_MODE_GETENCODER),
+	       "drm_mode_get_encoder size vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct drm_mode_crtc) ==
+	       _IOC_SIZE(DRM_IOCTL_MODE_GETCRTC),
+	       "drm_mode_crtc size vs DRM_IOCTL_MODE_GETCRTC mismatch");
+#ifdef DRM_IOCTL_MODE_GETPLANE
+_Static_assert(sizeof(struct drm_mode_get_plane) ==
+	       _IOC_SIZE(DRM_IOCTL_MODE_GETPLANE),
+	       "drm_mode_get_plane size vs _IOC_SIZE mismatch");
+#endif
+_Static_assert(sizeof(struct drm_mode_crtc_lut) ==
+	       _IOC_SIZE(DRM_IOCTL_MODE_GETGAMMA),
+	       "drm_mode_crtc_lut size vs DRM_IOCTL_MODE_GETGAMMA mismatch");
+_Static_assert(sizeof(struct drm_mode_get_property) ==
+	       _IOC_SIZE(DRM_IOCTL_MODE_GETPROPERTY),
+	       "drm_mode_get_property size vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct drm_mode_get_blob) ==
+	       _IOC_SIZE(DRM_IOCTL_MODE_GETPROPBLOB),
+	       "drm_mode_get_blob size vs _IOC_SIZE mismatch");
+#ifdef DRM_IOCTL_MODE_OBJ_GETPROPERTIES
+_Static_assert(sizeof(struct drm_mode_obj_get_properties) ==
+	       _IOC_SIZE(DRM_IOCTL_MODE_OBJ_GETPROPERTIES),
+	       "drm_mode_obj_get_properties vs _IOC_SIZE mismatch");
+#endif
+
 #ifndef DRM_IOCTL_NOUVEAU_GETPARAM
 struct drm_nouveau_getparam {
 	uint64_t param;
