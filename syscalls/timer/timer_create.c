@@ -385,8 +385,7 @@ static void post_timer_create(struct syscallrecord *rec)
 	}
 
 out_free:
-	post_state_unregister(snap);
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_timer_create = {
