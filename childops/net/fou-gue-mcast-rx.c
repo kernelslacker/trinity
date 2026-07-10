@@ -151,8 +151,8 @@
 #define FGMR_INNER_NOMINAL	96
 
 /* GUE Hlen is a 5-bit field expressed in 4-byte units, so the
- * maximum extension byte count is 31 * 4 = 124.  We stay well under
- * this by rotating a small set of Hlen values. */
+ * maximum extension byte count is 31 * 4 = 124.  The picker rotates a
+ * small set of Hlen values that includes this 31 (124-byte) maximum. */
 #define FGMR_GUE_HLEN_MAX	31U
 
 /* FOU udp port range.  Stays above the assigned-port well-known band
