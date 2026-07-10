@@ -59,7 +59,7 @@ syscalls/file_getattr.c:post_file_getattr
 syscalls/fork.c:post_fork
 syscalls/fstatfs.c:post_fstatfs
 syscalls/fstatfs.c:post_fstatfs64
-syscalls/futex_wake.c:post_futex_wake
+syscalls/concurrency/futex_wake.c:post_futex_wake
 syscalls/sched/getcpu.c:post_getcpu
 syscalls/getcwd.c:post_getcwd
 syscalls/getdents.c:post_getdents
@@ -81,7 +81,7 @@ syscalls/sched/getpriority.c:post_getpriority
 syscalls/cred/getresgid.c:post_getresgid
 syscalls/cred/getresuid.c:post_getresuid
 syscalls/getrlimit.c:post_getrlimit
-syscalls/get_robust_list.c:post_get_robust_list
+syscalls/concurrency/get_robust_list.c:post_get_robust_list
 syscalls/getrusage.c:post_getrusage
 syscalls/getsid.c:post_getsid
 syscalls/socket/getsockname.c:getsockname_recheck
