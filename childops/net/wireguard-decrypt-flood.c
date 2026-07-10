@@ -442,7 +442,7 @@ static size_t wgdf_build_data_pkt(unsigned char *out, size_t cap)
 	size_t total;
 
 	payload_len = WGDF_PAYLOAD_MIN +
-		      (rand32() % (WGDF_PAYLOAD_MAX - WGDF_PAYLOAD_MIN + 1U));
+		      rnd_modulo_u32(WGDF_PAYLOAD_MAX - WGDF_PAYLOAD_MIN + 1U);
 	total = 16 + payload_len;
 	if (total > cap)
 		total = cap;
