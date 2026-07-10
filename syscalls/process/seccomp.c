@@ -272,8 +272,7 @@ static void post_seccomp(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap->heap)) {
 		outputerr("post_seccomp: rejected suspicious snap heap=%p (post_state-scribbled?)\n",
 			  snap->heap);
-		post_state_unregister(snap);
-		deferred_freeptr(&rec->post_state);
+		post_state_release(rec, snap);
 		return;
 	}
 
@@ -334,8 +333,7 @@ static void post_seccomp(struct syscallrecord *rec)
 		break;
 	}
 
-	post_state_unregister(snap);
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 
 static unsigned long seccomp_ops[] = {
