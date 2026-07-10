@@ -411,8 +411,7 @@ static void getsockname_release(struct syscallrecord *rec,
 				struct getsockname_post_state *snap)
 {
 	valresult_free(&snap->vrb);
-	post_state_unregister(snap);
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 
 static void post_getsockname(struct syscallrecord *rec)
