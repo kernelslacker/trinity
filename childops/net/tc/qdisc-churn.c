@@ -213,7 +213,7 @@ static void modprobe_cls(unsigned int idx)
  */
 static unsigned int pick_qdisc_idx(void)
 {
-	unsigned int start = rand32() % NR_QDISC_KINDS;
+	unsigned int start = rnd_modulo_u32(NR_QDISC_KINDS);
 	unsigned int i;
 
 	for (i = 0; i < NR_QDISC_KINDS; i++) {
@@ -231,7 +231,7 @@ static unsigned int pick_qdisc_idx(void)
  */
 static unsigned int pick_qdisc_idx_other(unsigned int avoid)
 {
-	unsigned int start = rand32() % NR_QDISC_KINDS;
+	unsigned int start = rnd_modulo_u32(NR_QDISC_KINDS);
 	unsigned int i;
 
 	for (i = 0; i < NR_QDISC_KINDS; i++) {
@@ -247,7 +247,7 @@ static unsigned int pick_qdisc_idx_other(unsigned int avoid)
 
 static unsigned int pick_cls_idx(void)
 {
-	unsigned int start = rand32() % NR_CLS_KINDS;
+	unsigned int start = rnd_modulo_u32(NR_CLS_KINDS);
 	unsigned int i;
 
 	for (i = 0; i < NR_CLS_KINDS; i++) {
@@ -346,8 +346,8 @@ static void do_peek_stack(struct nl_ctx *ctx, int ifindex, const char *dev_name)
 	__atomic_add_fetch(&shm->stats.tc_qdisc_peek_stack_runs, 1,
 			   __ATOMIC_RELAXED);
 
-	p_idx = rand32() % NR_PEEK_PARENTS;
-	c_idx = rand32() % NR_PEEK_CHILDREN;
+	p_idx = rnd_modulo_u32(NR_PEEK_PARENTS);
+	c_idx = rnd_modulo_u32(NR_PEEK_CHILDREN);
 	p = &peek_parents[p_idx];
 	child_name = peek_children[c_idx];
 
