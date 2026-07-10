@@ -83,6 +83,21 @@ enum stats_field {
 	 * memory the .post handlers detected as scribbled.
 	 */
 	STATS_FIELD_VALIDATOR_REJECTED,
+	/*
+	 * Per-disposition observability for validate_arg_coupling()'s
+	 * repair path.  A coupled (buf, len) or iovec (iov_base, iov_len)
+	 * pair whose length overshoots the base's writable extent is
+	 * probabilistically clamped down to the extent: the repaired
+	 * arm bumps _REPAIRED and now walks real kernel code instead of
+	 * copy-faulting at import; the skipped arm bumps _KEPT_INCOHERENT
+	 * so the kernel's copy_from_user()/import_iovec() rejection paths
+	 * still see traffic and stay in coverage.  Rejects (NULL base with
+	 * a positive length) continue to route through the existing
+	 * STATS_FIELD_VALIDATOR_REJECTED path, so the three dispositions
+	 * are visible independently without a per-family fanout here.
+	 */
+	STATS_FIELD_ARG_CONSTRAINT_REPAIRED,
+	STATS_FIELD_ARG_CONSTRAINT_KEPT_INCOHERENT,
 	STATS_FIELD_DEFERRED_FREE_REJECT,
 	STATS_FIELD_DEFERRED_FREE_REJECT_PATHNAME,
 	STATS_FIELD_DEFERRED_FREE_REJECT_IOVEC,
@@ -272,6 +287,19 @@ struct stats_aggregate {
 	 * catches.  Drained from STATS_FIELD_VALIDATOR_REJECTED.
 	 */
 	unsigned long validator_rejected;
+	/*
+	 * Drained from STATS_FIELD_ARG_CONSTRAINT_REPAIRED /
+	 * STATS_FIELD_ARG_CONSTRAINT_KEPT_INCOHERENT.  Each over-extent
+	 * (buf, len) or iovec entry validate_arg_coupling() detects bumps
+	 * exactly one of these: the clamp-applied arm increments
+	 * arg_constraint_repaired, the probabilistic skip arm increments
+	 * arg_constraint_kept_incoherent.  DOA rejects continue to bump
+	 * validator_rejected via the -1 return path, so the ratio of
+	 * repaired:kept:rejected across a window shows which arm the
+	 * repair policy is driving traffic into.
+	 */
+	unsigned long arg_constraint_repaired;
+	unsigned long arg_constraint_kept_incoherent;
 	unsigned long deferred_free_reject;
 	unsigned long deferred_free_reject_pathname;
 	unsigned long deferred_free_reject_iovec;

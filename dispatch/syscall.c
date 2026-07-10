@@ -196,6 +196,39 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 	 * pass — only the timing moves. */
 	blanket_address_scrub(entry, rec);
 
+	/* Cross-arg consistency check + coupled-pair repair: catch
+	 * (buf_ptr, count) pairs the kernel would reject at its earliest
+	 * validation step, and clamp over-extent lengths in place so the
+	 * syscall walks real kernel code instead of copy-faulting at
+	 * import.  Runs BEFORE the local snapshot so any repair mutation
+	 * to rec->aN flows through to the values the kernel actually sees
+	 * (and to dispatch_args / arg_shadow below).  On reject synthesize
+	 * a -1/EINVAL AFTER state so handle_syscall_ret() accounts the
+	 * rejection identically to a real early-EINVAL failure.  Zero the
+	 * kcov trace count header manually because kcov_enable_trace
+	 * (which usually owns that zeroing) never runs on the skip path
+	 * and the caller's kcov_collect() would otherwise re-process the
+	 * previous syscall's PCs against this slot. */
+	if (validate_arg_coupling(rec) != 0) {
+		validator_rejected_bump();
+		if (kc != NULL && kc->active) {
+			if (kc->mode == KCOV_MODE_PC && kc->trace_buf != NULL)
+				__atomic_store_n(&kc->trace_buf[0], 0,
+						 __ATOMIC_RELAXED);
+			else if (kc->mode == KCOV_MODE_CMP &&
+				 kc->cmp_trace_buf != NULL)
+				__atomic_store_n(&kc->cmp_trace_buf[0], 0,
+						 __ATOMIC_RELAXED);
+		}
+		srec_publish_begin(rec);
+		rec->errno_post = EINVAL;
+		rec->retval = (unsigned long) -1L;
+		rec->validator_rejected = true;
+		__atomic_store_n(&rec->state, AFTER, __ATOMIC_RELEASE);
+		srec_publish_end(rec);
+		return;
+	}
+
 	/* Snapshot the argument slots before dispatch.  rec lives in
 	 * shared memory and a sibling child can stomp rec->aN mid-flight
 	 * (the per-arg snapshot pattern in .post handlers exists for
@@ -271,37 +304,6 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 			rec->arg_shadow[i] = val;
 			mask &= (uint8_t)(mask - 1);
 		}
-	}
-
-	/* Cross-arg consistency check: catch (buf_ptr, count) pairs the
-	 * kernel would reject at its earliest validation step so we
-	 * don't burn a syscall round-trip and a kcov enable/disable on
-	 * a call that can't exercise an interesting path.  On rejection
-	 * synthesize a -1/EINVAL AFTER state so handle_syscall_ret()
-	 * accounts the rejection identically to a real early-EINVAL
-	 * failure (no separate stats infrastructure to maintain).  Zero
-	 * the kcov trace count header manually because kcov_enable_trace
-	 * (which usually owns that zeroing) never runs on the skip path
-	 * and the caller's kcov_collect() would otherwise re-process the
-	 * previous syscall's PCs against this slot. */
-	if (validate_arg_coupling(rec) != 0) {
-		validator_rejected_bump();
-		if (kc != NULL && kc->active) {
-			if (kc->mode == KCOV_MODE_PC && kc->trace_buf != NULL)
-				__atomic_store_n(&kc->trace_buf[0], 0,
-						 __ATOMIC_RELAXED);
-			else if (kc->mode == KCOV_MODE_CMP &&
-				 kc->cmp_trace_buf != NULL)
-				__atomic_store_n(&kc->cmp_trace_buf[0], 0,
-						 __ATOMIC_RELAXED);
-		}
-		srec_publish_begin(rec);
-		rec->errno_post = EINVAL;
-		rec->retval = (unsigned long) -1L;
-		rec->validator_rejected = true;
-		__atomic_store_n(&rec->state, AFTER, __ATOMIC_RELEASE);
-		srec_publish_end(rec);
-		return;
 	}
 
 	/*
