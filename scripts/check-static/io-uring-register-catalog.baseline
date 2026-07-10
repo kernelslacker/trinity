@@ -1,7 +1,7 @@
 # io-uring-register-catalog.baseline
 #
 # Grandfathered list of IORING_* opcodes that appear in
-# io_uring_register_opcodes[] (syscalls/io_uring_register.c) but do
+# io_uring_register_opcodes[] (syscalls/io_uring/io_uring_register.c) but do
 # NOT yet have a matching union_variant in
 # io_uring_register_variants[] (struct_catalog/io_uring_register.c).
 #
