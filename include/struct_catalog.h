@@ -378,6 +378,10 @@ enum struct_catalog_idx {
 #ifdef X86
 	SC_USER_DESC,
 #endif
+#if defined(__x86_64__) || defined(__aarch64__)
+	SC_PT_REGS,
+	SC_USER_REGS_STRUCT,
+#endif
 	SC_SOCK_FILTER,
 	SC_SOCK_FPROG,
 	SC_SHMID_DS,

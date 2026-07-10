@@ -947,3 +947,33 @@ enum {
 
 extern const struct struct_field user_desc_fields[USER_DESC_FIELDS_N];
 #endif /* X86 */
+
+/*
+ * ptrace register-set leaf tables defined in struct_catalog/ptrace_regs.c.
+ * Covers the per-arch pt_regs / user_regs_struct shapes that
+ * PTRACE_{GET,SET}REGS and PTRACE_{GET,SET}REGSET carry.  Gated by the
+ * same arch-macro pair as the SC_PT_REGS / SC_USER_REGS_STRUCT enum
+ * slots and the central-array entries -- builds on arches outside the
+ * covered set (i386, ppc, s390, ...) stay byte-identical.  The _N
+ * constants are per-arch because the register-frame shape differs
+ * between x86_64 (21-slot pt_regs, 27-slot user_regs_struct) and
+ * aarch64 (4-slot regs[]+sp+pc+pstate); both externs still resolve
+ * against a complete array type so the spine's ARRAY_SIZE() at the
+ * reference site keeps folding.
+ */
+#if defined(__x86_64__)
+enum {
+	PT_REGS_FIELDS_N		= 21,
+	USER_REGS_STRUCT_FIELDS_N	= 27,
+};
+#elif defined(__aarch64__)
+enum {
+	PT_REGS_FIELDS_N		= 4,
+	USER_REGS_STRUCT_FIELDS_N	= 4,
+};
+#endif
+
+#if defined(__x86_64__) || defined(__aarch64__)
+extern const struct struct_field pt_regs_fields[PT_REGS_FIELDS_N];
+extern const struct struct_field user_regs_struct_fields[USER_REGS_STRUCT_FIELDS_N];
+#endif
