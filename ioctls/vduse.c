@@ -75,6 +75,11 @@ _Static_assert(sizeof(struct vduse_iova_info) ==
 	       _IOC_SIZE(VDUSE_IOTLB_GET_INFO),
 	       "vduse_iova_info size vs _IOC_SIZE mismatch");
 #endif
+#ifdef VDUSE_IOTLB_GET_FD2
+_Static_assert(sizeof(struct vduse_iotlb_entry_v2) ==
+	       _IOC_SIZE(VDUSE_IOTLB_GET_FD2),
+	       "vduse_iotlb_entry_v2 size vs _IOC_SIZE mismatch");
+#endif
 
 /*
  * uapi vduse.h does not export *_VALID_FLAGS masks, so hand-roll the
@@ -280,6 +285,29 @@ static void sanitise_iova_umem(struct syscallrecord *rec)
 }
 #endif
 
+#ifdef VDUSE_IOTLB_GET_FD2
+static void sanitise_iotlb_entry_v2(struct syscallrecord *rec)
+{
+	struct vduse_iotlb_entry_v2 *e;
+	__u64 start, span;
+
+	e = (struct vduse_iotlb_entry_v2 *) get_writable_struct(sizeof(*e));
+	if (!e)
+		return;
+	memset(e, 0, sizeof(*e));
+
+	start = rand64() & 0xffffffffULL;
+	span = (rand64() & 0xfffffULL) + 1;
+	e->offset = rand64();
+	e->start = start;
+	e->last = start + span - 1;
+	e->perm = (rnd_u32() & VDUSE_ACCESS_MASK);
+	e->asid = rnd_modulo_u32(64);
+
+	rec->a3 = (unsigned long) e;
+}
+#endif
+
 #ifdef VDUSE_IOTLB_GET_INFO
 static void sanitise_iova_info(struct syscallrecord *rec)
 {
@@ -359,6 +387,12 @@ static void vduse_sanitise(const struct ioctl_group *grp,
 		break;
 #endif
 
+#ifdef VDUSE_IOTLB_GET_FD2
+	case VDUSE_IOTLB_GET_FD2:
+		sanitise_iotlb_entry_v2(rec);
+		break;
+#endif
+
 	case VDUSE_DEV_INJECT_CONFIG_IRQ:
 	default:
 		break;
@@ -384,6 +418,9 @@ static const struct ioctl vduse_ioctls[] = {
 #endif
 #ifdef VDUSE_IOTLB_GET_INFO
 	IOCTL(VDUSE_IOTLB_GET_INFO),
+#endif
+#ifdef VDUSE_IOTLB_GET_FD2
+	IOCTL(VDUSE_IOTLB_GET_FD2),
 #endif
 };
 
