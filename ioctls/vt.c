@@ -2,6 +2,7 @@
 #include <sys/ioctl.h>
 #include <linux/kd.h>
 #include <linux/serial.h>
+#include <linux/tty.h>
 #include <termios.h>
 
 #include "ioctls.h"
@@ -61,6 +62,82 @@ _Static_assert(sizeof(struct termios2) ==
 
 /* KD* family */
 
+static const unsigned int kd_font_op_vals[] = {
+	KD_FONT_OP_SET,
+	KD_FONT_OP_GET,
+	KD_FONT_OP_SET_DEFAULT,
+	KD_FONT_OP_COPY,
+	KD_FONT_OP_SET_TALL,
+	KD_FONT_OP_GET_TALL,
+};
+
+static const unsigned char kd_mode_vals[] = {
+	KD_TEXT,
+	KD_GRAPHICS,
+	KD_TEXT0,
+	KD_TEXT1,
+};
+
+static const unsigned char kd_kbmode_vals[] = {
+	K_RAW,
+	K_XLATE,
+	K_MEDIUMRAW,
+	K_UNICODE,
+	K_OFF,
+};
+
+/*
+ * Line-discipline numbers the kernel actually knows about.  Not every
+ * kernel has every N_* symbol, so gate the newer ones on the header.
+ * A raw modulo-16 draw used to cap coverage at N_TTY..N_HCI and never
+ * exercised the modern disciplines (SLCAN, PPS, MCTP, ...).
+ */
+static const unsigned int n_ldisc_vals[] = {
+	N_TTY, N_SLIP, N_MOUSE, N_PPP, N_STRIP,
+	N_AX25, N_X25, N_6PACK, N_MASC, N_R3964,
+	N_PROFIBUS_FDL, N_IRDA, N_SMSBLOCK, N_HDLC, N_SYNC_PPP,
+	N_HCI,
+#ifdef N_GIGASET_M101
+	N_GIGASET_M101,
+#endif
+#ifdef N_SLCAN
+	N_SLCAN,
+#endif
+#ifdef N_PPS
+	N_PPS,
+#endif
+#ifdef N_V253
+	N_V253,
+#endif
+#ifdef N_CAIF
+	N_CAIF,
+#endif
+#ifdef N_GSM0710
+	N_GSM0710,
+#endif
+#ifdef N_TI_WL
+	N_TI_WL,
+#endif
+#ifdef N_TRACESINK
+	N_TRACESINK,
+#endif
+#ifdef N_TRACEROUTER
+	N_TRACEROUTER,
+#endif
+#ifdef N_NCI
+	N_NCI,
+#endif
+#ifdef N_SPEAKUP
+	N_SPEAKUP,
+#endif
+#ifdef N_NULL
+	N_NULL,
+#endif
+#ifdef N_MCTP
+	N_MCTP,
+#endif
+};
+
 static void sanitise_vt_console_font_op(struct syscallrecord *rec)
 {
 	struct console_font_op *op;
@@ -71,7 +148,7 @@ static void sanitise_vt_console_font_op(struct syscallrecord *rec)
 	if (!op)
 		return;
 	memset(op, 0, sizeof(*op));
-	op->op = rnd_modulo_u32(6);	/* KD_FONT_OP_SET=0 .. KD_FONT_OP_GET_TALL=5 */
+	op->op = RAND_ARRAY(kd_font_op_vals);
 	op->flags = RAND_BOOL() ? KD_FONT_FLAG_DONT_RECALC : 0;
 	op->width = rnd_modulo_u32(8) + 8;	/* 8-15 pixels wide */
 	op->height = rnd_modulo_u32(25) + 8;	/* 8-32 pixels tall */
@@ -219,7 +296,7 @@ static void sanitise_vt_termios(struct syscallrecord *rec)
 		return;
 	memset(t, 0, sizeof(*t));
 	fill_termios_flags(&t->c_iflag, &t->c_oflag, &t->c_cflag, &t->c_lflag);
-	t->c_line = rnd_modulo_u32(16);
+	t->c_line = RAND_ARRAY(n_ldisc_vals);
 	rec->a3 = (unsigned long) t;
 }
 
@@ -232,7 +309,7 @@ static void sanitise_vt_termios2(struct syscallrecord *rec)
 		return;
 	memset(t, 0, sizeof(*t));
 	fill_termios_flags(&t->c_iflag, &t->c_oflag, &t->c_cflag, &t->c_lflag);
-	t->c_line   = rnd_modulo_u32(16);
+	t->c_line   = RAND_ARRAY(n_ldisc_vals);
 	t->c_ispeed = rnd_modulo_u32(4000000) + 50;
 	t->c_ospeed = rnd_modulo_u32(4000000) + 50;
 	rec->a3 = (unsigned long) t;
@@ -525,12 +602,12 @@ static void vt_sanitise_kd(struct syscallrecord *rec)
 
 	/* scalar arg: mode */
 	case KDSETMODE:
-		rec->a3 = rnd_modulo_u32(4);	/* KD_TEXT=0 .. KD_TEXT1=3 */
+		rec->a3 = RAND_ARRAY(kd_mode_vals);
 		break;
 
 	/* scalar arg: keyboard mode */
 	case KDSKBMODE:
-		rec->a3 = rnd_modulo_u32(5);	/* K_RAW=0 .. K_OFF=4 */
+		rec->a3 = RAND_ARRAY(kd_kbmode_vals);
 		break;
 
 	/* scalar arg: meta handling mode */
