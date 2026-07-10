@@ -1593,8 +1593,8 @@ static const struct stat_field rds_zcopy_crafted_send_fields[] = {
 
 const struct stat_category rds_zcopy_crafted_send_category =
 	STAT_CATEGORY("rds_zcopy_crafted_send",
-	              rds_zcopy_crafted_send_runs,
-	              rds_zcopy_crafted_send_fields);
+		      rds_zcopy_crafted_send_runs,
+		      rds_zcopy_crafted_send_fields);
 
 static const struct stat_field bridge_ip6_refrag_fraggap_fields[] = {
 	STAT_FIELD(bridge_ip6_refrag_fraggap, runs),
@@ -1605,8 +1605,8 @@ static const struct stat_field bridge_ip6_refrag_fraggap_fields[] = {
 
 const struct stat_category bridge_ip6_refrag_fraggap_category =
 	STAT_CATEGORY("bridge_ip6_refrag_fraggap",
-	              bridge_ip6_refrag_fraggap_runs,
-	              bridge_ip6_refrag_fraggap_fields);
+		      bridge_ip6_refrag_fraggap_runs,
+		      bridge_ip6_refrag_fraggap_fields);
 
 static const struct stat_field mptcp_pm_churn_fields[] = {
 	STAT_FIELD(mptcp_pm_churn, runs),

@@ -1,7 +1,7 @@
 /*
  * SYSCALL_DEFINE5(futex_waitv, struct futex_waitv __user *, waiters,
-                   unsigned int, nr_futexes, unsigned int, flags,
-                   struct __kernel_timespec __user *, timeout, clockid_t, clockid)
+		   unsigned int, nr_futexes, unsigned int, flags,
+		   struct __kernel_timespec __user *, timeout, clockid_t, clockid)
  */
 #include <stdbool.h>
 #include <stdint.h>

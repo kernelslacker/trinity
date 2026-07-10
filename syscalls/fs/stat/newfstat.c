@@ -218,7 +218,7 @@ struct syscallentry syscall_newfstat = {
 
 /*
  * SYSCALL_DEFINE4(newfstatat, int, dfd, const char __user *, filename,
-                   struct stat __user *, statbuf, int, flag)
+		   struct stat __user *, statbuf, int, flag)
  */
 #include <limits.h>
 

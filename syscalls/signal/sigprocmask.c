@@ -1,6 +1,6 @@
 /*
  * SYSCALL_DEFINE3(sigprocmask, int, how, old_sigset_t __user *, set,
-                 old_sigset_t __user *, oset)
+		 old_sigset_t __user *, oset)
  */
 #include <signal.h>
 #include "sanitise.h"

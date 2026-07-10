@@ -1,6 +1,6 @@
 /*
    asmlinkage long sys_recv(int fd, void __user *ubuf, size_t size,
-                            unsigned flags)
+			    unsigned flags)
 
  */
 #include <sys/socket.h>

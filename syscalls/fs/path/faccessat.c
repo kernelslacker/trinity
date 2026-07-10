@@ -68,10 +68,10 @@ struct syscallentry syscall_faccessat = {
 };
 
 #define AT_FDCWD                -100    /* Special value used to indicate
-                                           openat should use the current
-                                           working directory. */
+					   openat should use the current
+					   working directory. */
 #define AT_EACCESS              0x200   /* Test access permitted for
-                                           effective IDs, not real IDs.  */
+					   effective IDs, not real IDs.  */
 
 static unsigned long faccessat2_flags[] = {
 	AT_SYMLINK_NOFOLLOW, AT_EACCESS, AT_EMPTY_PATH,
