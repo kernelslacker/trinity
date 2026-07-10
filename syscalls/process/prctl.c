@@ -909,8 +909,7 @@ static void post_prctl(struct syscallrecord *rec)
 	if (snap->bpf != NULL && looks_like_corrupted_ptr(rec, snap->bpf)) {
 		outputerr("post_prctl: rejected suspicious snap bpf=%p (post_state-scribbled?)\n",
 			  snap->bpf);
-		post_state_unregister(snap);
-		deferred_freeptr(&rec->post_state);
+		post_state_release(rec, snap);
 		return;
 	}
 
@@ -974,8 +973,7 @@ static void post_prctl(struct syscallrecord *rec)
 		break;
 	}
 
-	post_state_unregister(snap);
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_prctl = {
