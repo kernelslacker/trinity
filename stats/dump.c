@@ -29,6 +29,7 @@
 #include "taint.h"
 #include "trinity.h"
 #include "utils.h"
+#include "utils-proc.h"
 #include "version.h"
 
 /*
@@ -507,9 +508,9 @@ static void dump_stats_render_corrupt_ptr_attrib(void)
 	 * outruns the headline due to non-atomic reads of the two
 	 * counters at slightly different moments. */
 	stat_row("corruption", "corrupt_ptr_site:post_generic",
-		 total > named_sum ? total - named_sum : 0);
+		 sat_sub_ul(total, named_sum));
 	output(0, "[main] corrupt_ptr_site:post_generic_cumulative=%lu (headline=%lu named_sum=%lu)\n",
-	       total > named_sum ? total - named_sum : 0,
+	       sat_sub_ul(total, named_sum),
 	       total, named_sum);
 }
 
@@ -659,8 +660,7 @@ static void dump_stats_render_ring_health(void)
 	if (visited == 0)
 		return;
 
-	delta = overflow_total >= prev_overflow_total ?
-		overflow_total - prev_overflow_total : 0;
+	delta = sat_sub_ul(overflow_total, prev_overflow_total);
 	prev_overflow_total = overflow_total;
 
 	stat_row("ring_health", "ring_overflow_total",           overflow_total);
@@ -2936,7 +2936,7 @@ static void dump_stats_render_kcov_per_syscall_edges_topn(unsigned int nr_syscal
 		for (i = 0; i < nr_syscalls_to_scan; i++) {
 			unsigned long prev = per_syscall_edges_previous_total(i);
 			unsigned long curr = per_syscall_edges_total(i);
-			unsigned long delta = (curr > prev) ? curr - prev : 0;
+			unsigned long delta = sat_sub_ul(curr, prev);
 
 			if (delta > 0)
 				any_delta = true;
@@ -3021,7 +3021,7 @@ static void dump_stats_render_kcov_per_syscall_edge_calls_topn(unsigned int nr_s
 			unsigned long curr = __atomic_load_n(
 				&kcov_shm->per_syscall_transition_edges[i],
 				__ATOMIC_RELAXED);
-			unsigned long delta = (curr > prev) ? curr - prev : 0;
+			unsigned long delta = sat_sub_ul(curr, prev);
 
 			if (delta > 0)
 				any_tr_delta = true;
@@ -3063,7 +3063,7 @@ static void dump_stats_render_kcov_per_syscall_cold_topn(unsigned int nr_syscall
 		for (i = 0; i < nr_syscalls_to_scan; i++) {
 			unsigned long prev = kcov_shm->per_syscall_cmp_inserts_previous[i];
 			unsigned long curr = __atomic_load_n(&kcov_shm->per_syscall_cmp_inserts[i], __ATOMIC_RELAXED);
-			unsigned long delta = (curr > prev) ? curr - prev : 0;
+			unsigned long delta = sat_sub_ul(curr, prev);
 
 			if (delta > 0)
 				any_cmp_delta = true;
