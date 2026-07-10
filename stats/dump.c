@@ -771,6 +771,22 @@ static void dump_stats_render_deferred_free_rejects(void)
 		stat_row("corruption", "alloc_track_refresh_consume_miss",    shm->stats.alloc_track_refresh_consume_miss);
 }
 
+static void dump_stats_render_post_state_release_rejects(void)
+{
+	if (shm->stats.post_state_release_reject_untracked)
+		stat_row("corruption", "post_state_release_reject_untracked",
+			 shm->stats.post_state_release_reject_untracked);
+	if (shm->stats.post_state_release_reject_released)
+		stat_row("corruption", "post_state_release_reject_released",
+			 shm->stats.post_state_release_reject_released);
+	if (shm->stats.post_state_release_reject_wrong_owner)
+		stat_row("corruption", "post_state_release_reject_wrong_owner",
+			 shm->stats.post_state_release_reject_wrong_owner);
+	if (shm->stats.post_state_release_reject_bad_magic)
+		stat_row("corruption", "post_state_release_reject_bad_magic",
+			 shm->stats.post_state_release_reject_bad_magic);
+}
+
 static void dump_stats_render_scribble_canary_blanket(void)
 {
 	if (parent_stats.snapshot_non_heap_reject)
@@ -868,6 +884,7 @@ void dump_stats_corruption_and_pool(void)
 	dump_stats_render_ring_corruption();
 	dump_stats_render_corrupt_ptr_family();
 	dump_stats_render_deferred_free_rejects();
+	dump_stats_render_post_state_release_rejects();
 	dump_stats_render_scribble_canary_blanket();
 	dump_stats_render_arena_ptr_stale_and_sentinel();
 	dump_stats_render_maps_pool_rejects();
