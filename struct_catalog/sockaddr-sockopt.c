@@ -106,17 +106,19 @@ const struct struct_field packet_mreq_fields[] = {
  * sockaddr_storage carrying the multicast group address (AF_INET sin_addr
  * in 224.0.0.0/4 or AF_INET6 sin6_addr in ff00::/8).  gr_interface tags
  * FT_RANGE over a small ifindex window, mirroring packet_mreq's
- * mr_ifindex.  gr_group is left FT_RAW: a multicast-addr bias (or
- * re-using the cataloged sockaddr_storage variant set) is a follow-up;
- * for the initial registration FT_RAW is the accepted default per the
- * two-key catalog design (the bespoke builder did not exist for this
- * shape, so there is no "lands in a valid range" regression to preserve).
+ * mr_ifindex.  gr_group resolves as an embedded sockaddr_storage via the
+ * cataloged SC_SOCKADDR_STORAGE tagged-union, so its ss_family and the
+ * per-AF address bytes are populated by the schema-aware fill.  The
+ * variant set spans all cataloged families rather than biasing toward
+ * multicast addresses, so MCAST_JOIN kernel validation will still reject
+ * a fraction of draws; a multicast-addr bias is a follow-up.
  */
 const struct struct_field group_req_fields[] = {
 	FIELDX(struct group_req, gr_interface, FT_RANGE,
 	       .u.range = { 0, 4 },
 	       .mutate_weight = 60),
-	FIELD(struct group_req, gr_group),
+	FIELDX(struct group_req, gr_group, FT_EMBEDDED_STRUCT,
+	       .u.embedded_struct = { .elem_struct_name = "sockaddr_storage" }),
 };
 
 /*
@@ -128,16 +130,21 @@ const struct struct_field group_req_fields[] = {
  * source range).  The protocol-independent MCAST_*_SOURCE optnames
  * accept the same payload under both IPv4 and IPv6 levels.
  * gsr_interface tags FT_RANGE over the same small ifindex window
- * used for gr_interface / mr_ifindex; gsr_group and gsr_source are
- * left FT_RAW.  A multicast-addr bias on gsr_group (and a unicast
- * bias on gsr_source) is a follow-up, mirroring the group_req
- * deferral; FT_RAW is the accepted default for the initial
- * registration since no bespoke builder for this shape exists.
+ * used for gr_interface / mr_ifindex; gsr_group and gsr_source both
+ * resolve as embedded sockaddr_storage via the cataloged
+ * SC_SOCKADDR_STORAGE tagged-union, so ss_family and the per-AF
+ * address bytes come from the schema-aware fill.  As with group_req
+ * the variant set spans all cataloged families and does not bias
+ * toward multicast (on gsr_group) or unicast (on gsr_source), so
+ * MCAST_*_SOURCE kernel validation will still reject a fraction of
+ * draws; addr-class biases are a follow-up.
  */
 const struct struct_field group_source_req_fields[] = {
 	FIELDX(struct group_source_req, gsr_interface, FT_RANGE,
 	       .u.range = { 0, 4 },
 	       .mutate_weight = 60),
-	FIELD(struct group_source_req, gsr_group),
-	FIELD(struct group_source_req, gsr_source),
+	FIELDX(struct group_source_req, gsr_group, FT_EMBEDDED_STRUCT,
+	       .u.embedded_struct = { .elem_struct_name = "sockaddr_storage" }),
+	FIELDX(struct group_source_req, gsr_source, FT_EMBEDDED_STRUCT,
+	       .u.embedded_struct = { .elem_struct_name = "sockaddr_storage" }),
 };
