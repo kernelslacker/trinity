@@ -15,6 +15,42 @@
 #include "sanitise.h"
 #include "utils.h"
 
+/*
+ * Compile-time: the two fixed-shape framebuffer commands this file
+ * fills -- FBIO_CURSOR (struct fb_cursor) and FBIOGET_VBLANK
+ * (struct fb_vblank) -- must have sizeof(struct) matching the
+ * _IOC_SIZE the request bits encode.  A <linux/fb.h> refactor that
+ * grows or shrinks either struct otherwise silently has the kernel
+ * copy a different number of bytes than the sanitiser prepared.
+ * Both commands are #ifdef-gated by the same uapi symbol they
+ * define, so each assert lives inside the matching guard so builds
+ * against older uapi headers still compile.
+ *
+ * FBIOGET_VSCREENINFO / FBIOPUT_VSCREENINFO / FBIOPAN_DISPLAY
+ * (struct fb_var_screeninfo), FBIOGET_FSCREENINFO
+ * (struct fb_fix_screeninfo), FBIOGETCMAP / FBIOPUTCMAP
+ * (struct fb_cmap) and FBIOGET_CON2FBMAP / FBIOPUT_CON2FBMAP
+ * (struct fb_con2fbmap) all carry fixed-shape structs too, but
+ * these commands are historically _IO() with a hardcoded numeric
+ * type argument, not _IOR/_IOW parameterised on the struct, so
+ * _IOC_SIZE(cmd) is zero and there is no size pairing to assert.
+ * FBIOBLANK passes an integer level, not a pointer.  FBIO_ALLOC /
+ * FBIO_FREE / FBIOGET_GLYPH / FBIOGET_HWCINFO / FBIOPUT_MODEINFO /
+ * FBIOGET_DISPINFO are driver-private and take opaque buffers.
+ * FBIO_WAITFORVSYNC takes a bare __u32.  All are intentionally
+ * absent for that reason.
+ */
+#ifdef FBIO_CURSOR
+_Static_assert(sizeof(struct fb_cursor) ==
+	       _IOC_SIZE(FBIO_CURSOR),
+	       "fb_cursor size vs _IOC_SIZE mismatch");
+#endif
+#ifdef FBIOGET_VBLANK
+_Static_assert(sizeof(struct fb_vblank) ==
+	       _IOC_SIZE(FBIOGET_VBLANK),
+	       "fb_vblank size vs _IOC_SIZE mismatch");
+#endif
+
 static void sanitise_fb_var_screeninfo(struct syscallrecord *rec)
 {
 	struct fb_var_screeninfo *var;
