@@ -14,6 +14,31 @@
 #include "utils.h"
 
 #include "kernel/seccomp.h"
+
+/*
+ * Compile-time: the two SECCOMP_IOCTL_NOTIF_* commands this file
+ * fills with a fixed-shape struct -- NOTIF_SEND (struct
+ * seccomp_notif_resp) and NOTIF_ADDFD (struct seccomp_notif_addfd)
+ * -- must have sizeof(struct) matching the _IOC_SIZE the request
+ * encodes.  Pin the pairing at build time so a <linux/seccomp.h>
+ * change that grows or shrinks either struct hard-fails the
+ * compile rather than silently having the kernel copy_from_user()
+ * a different number of bytes than the sanitiser prepared.
+ *
+ * SECCOMP_IOCTL_NOTIF_ID_VALID and SECCOMP_IOCTL_NOTIF_SET_FLAGS
+ * take a bare __u64; SECCOMP_IOCTL_NOTIF_RECV takes struct
+ * seccomp_notif but the sanitiser here does not build one -- the
+ * kernel writes the struct out to userspace on RECV.  Asserting
+ * sizeof(struct) against a scalar, or against a struct this file
+ * never fills, would be the wrong shape of check.
+ */
+_Static_assert(sizeof(struct seccomp_notif_resp) ==
+	       _IOC_SIZE(SECCOMP_IOCTL_NOTIF_SEND),
+	       "seccomp_notif_resp size vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct seccomp_notif_addfd) ==
+	       _IOC_SIZE(SECCOMP_IOCTL_NOTIF_ADDFD),
+	       "seccomp_notif_addfd size vs _IOC_SIZE mismatch");
+
 /*
  * Seccomp notification listener ioctls.  These operate on the anonymous fd
  * returned by seccomp(SECCOMP_SET_MODE_FILTER, SECCOMP_FILTER_FLAG_NEW_LISTENER, ...).
