@@ -93,6 +93,46 @@ struct sgx_modification_param {
 };
 #pragma GCC diagnostic pop
 
+/*
+ * Compile-time: every fixed-shape sgx ioctl command whose arg is a
+ * kernel struct must have sizeof(struct) matching the _IOC_SIZE
+ * encoded in its request bits.  A mismatch means the local struct
+ * definitions (or, when HAVE_LINUX_SGX_H, the kernel uapi header)
+ * moved without the matching _IO* macro and the kernel would
+ * copy_from_user() / copy_to_user() a different number of bytes
+ * than we prepared.
+ *
+ * SGX_IOC_ENCLAVE_MKTCS, SGX_IOC_ENCLAVE_TRIM and
+ * SGX_IOC_ENCLAVE_NOTIFY_ACCEPT all take sgx_range and get one
+ * assert each -- the three sides can drift independently in a
+ * header refactor.
+ *
+ * SGX_IOC_ENCLAVE_PAGE_REMOVE encodes a bare scalar (unsigned long)
+ * and is intentionally absent -- asserting sizeof(struct) against a
+ * scalar would be the wrong shape of check.
+ */
+_Static_assert(sizeof(struct sgx_enclave_create) ==
+	       _IOC_SIZE(SGX_IOC_ENCLAVE_CREATE),
+	       "sgx_enclave_create size vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct sgx_enclave_add_page) ==
+	       _IOC_SIZE(SGX_IOC_ENCLAVE_ADD_PAGE),
+	       "sgx_enclave_add_page size vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct sgx_enclave_init) ==
+	       _IOC_SIZE(SGX_IOC_ENCLAVE_INIT),
+	       "sgx_enclave_init size vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct sgx_modification_param) ==
+	       _IOC_SIZE(SGX_IOC_ENCLAVE_EMODPR),
+	       "sgx_modification_param size vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct sgx_range) ==
+	       _IOC_SIZE(SGX_IOC_ENCLAVE_MKTCS),
+	       "sgx_range size vs SGX_IOC_ENCLAVE_MKTCS mismatch");
+_Static_assert(sizeof(struct sgx_range) ==
+	       _IOC_SIZE(SGX_IOC_ENCLAVE_TRIM),
+	       "sgx_range size vs SGX_IOC_ENCLAVE_TRIM mismatch");
+_Static_assert(sizeof(struct sgx_range) ==
+	       _IOC_SIZE(SGX_IOC_ENCLAVE_NOTIFY_ACCEPT),
+	       "sgx_range size vs SGX_IOC_ENCLAVE_NOTIFY_ACCEPT mismatch");
+
 static const struct ioctl sgx_ioctls[] = {
 	IOCTL(SGX_IOC_ENCLAVE_CREATE),
 	IOCTL(SGX_IOC_ENCLAVE_ADD_PAGE),
