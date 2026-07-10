@@ -1,4 +1,5 @@
 #include <linux/firewire-cdev.h>
+#include <linux/firewire-constants.h>
 
 #include "ioctls.h"
 #include "random.h"
@@ -99,6 +100,25 @@ _Static_assert(sizeof(struct fw_cdev_flush_iso) ==
 	       "fw_cdev_flush_iso size vs _IOC_SIZE mismatch");
 #endif
 
+/*
+ * The kernel's ioctl_send_request() rejects anything outside this set with
+ * -EINVAL, so drawing over the full 4-bit space wastes 12/16 attempts and
+ * never reaches the lock tcodes (>= 0x10) at all.
+ */
+static const __u32 fw_request_tcodes[] = {
+	TCODE_WRITE_QUADLET_REQUEST,
+	TCODE_WRITE_BLOCK_REQUEST,
+	TCODE_READ_QUADLET_REQUEST,
+	TCODE_READ_BLOCK_REQUEST,
+	TCODE_LOCK_MASK_SWAP,
+	TCODE_LOCK_COMPARE_SWAP,
+	TCODE_LOCK_FETCH_ADD,
+	TCODE_LOCK_LITTLE_ADD,
+	TCODE_LOCK_BOUNDED_ADD,
+	TCODE_LOCK_WRAP_ADD,
+	TCODE_LOCK_VENDOR_DEPENDENT,
+};
+
 static void sanitise_fw_send_request(struct syscallrecord *rec)
 {
 	struct fw_cdev_send_request *req;
@@ -113,7 +133,7 @@ static void sanitise_fw_send_request(struct syscallrecord *rec)
 	data = get_writable_struct(payload_len + 4);
 	if (!data)
 		return;
-	req->tcode = rnd_modulo_u32(16);
+	req->tcode = RAND_ARRAY(fw_request_tcodes);
 	req->length = payload_len;
 	req->offset = rand64() & 0xFFFFFFFFFFFFULL;	/* 48-bit address space */
 	req->closure = rand64();
