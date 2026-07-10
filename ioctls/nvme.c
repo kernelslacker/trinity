@@ -9,6 +9,41 @@
 #include "utils.h"
 
 #include "kernel/nvme.h"
+
+/*
+ * Compile-time: every fixed-shape NVME_IOCTL_* command the sanitisers
+ * below fill must have sizeof(struct) matching the _IOC_SIZE encoded
+ * in its request bits.  A mismatch means <linux/nvme_ioctl.h> moved
+ * under us and the sanitiser is memset()ing / stamping into a buffer
+ * the kernel copies less of than we prepared (under-encoded) or reads
+ * past (over-encoded).  NVME_IOCTL_ADMIN_CMD + NVME_IOCTL_IO_CMD both
+ * take struct nvme_passthru_cmd, and NVME_IOCTL_ADMIN64_CMD +
+ * NVME_IOCTL_IO64_CMD + NVME_IOCTL_IO64_CMD_VEC all take struct
+ * nvme_passthru_cmd64; each gets its own assert -- the two sides can
+ * drift independently in a header refactor.  NVME_IOCTL_ID,
+ * NVME_IOCTL_RESET, NVME_IOCTL_SUBSYS_RESET and NVME_IOCTL_RESCAN are
+ * _IO() with no struct arg and are intentionally absent -- their
+ * _IOC_SIZE is 0 by construction.
+ */
+_Static_assert(sizeof(struct nvme_passthru_cmd) ==
+	       _IOC_SIZE(NVME_IOCTL_ADMIN_CMD),
+	       "nvme_passthru_cmd size vs NVME_IOCTL_ADMIN_CMD mismatch");
+_Static_assert(sizeof(struct nvme_passthru_cmd) ==
+	       _IOC_SIZE(NVME_IOCTL_IO_CMD),
+	       "nvme_passthru_cmd size vs NVME_IOCTL_IO_CMD mismatch");
+_Static_assert(sizeof(struct nvme_user_io) ==
+	       _IOC_SIZE(NVME_IOCTL_SUBMIT_IO),
+	       "nvme_user_io size vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct nvme_passthru_cmd64) ==
+	       _IOC_SIZE(NVME_IOCTL_ADMIN64_CMD),
+	       "nvme_passthru_cmd64 size vs NVME_IOCTL_ADMIN64_CMD mismatch");
+_Static_assert(sizeof(struct nvme_passthru_cmd64) ==
+	       _IOC_SIZE(NVME_IOCTL_IO64_CMD),
+	       "nvme_passthru_cmd64 size vs NVME_IOCTL_IO64_CMD mismatch");
+_Static_assert(sizeof(struct nvme_passthru_cmd64) ==
+	       _IOC_SIZE(NVME_IOCTL_IO64_CMD_VEC),
+	       "nvme_passthru_cmd64 size vs NVME_IOCTL_IO64_CMD_VEC mismatch");
+
 static void sanitise_nvme_admin_cmd(struct syscallrecord *rec)
 {
 	struct nvme_passthru_cmd *cmd;
