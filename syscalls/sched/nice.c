@@ -54,7 +54,7 @@ static void post_nice(struct syscallrecord *rec)
 		return;
 	if (ret < -20 || ret > 19) {
 		outputerr("post_nice: rejected retval 0x%lx outside [-20, 19] (and not -1)\n",
-		          (unsigned long) ret);
+			  (unsigned long) ret);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 	}
 }

@@ -352,8 +352,8 @@ static const struct stat_field cred_transition_fields[] = {
 
 const struct stat_category cred_transition_category =
 	STAT_CATEGORY("cred_transition",
-	              cred_transition_runs,
-	              cred_transition_fields);
+		      cred_transition_runs,
+		      cred_transition_fields);
 
 static const struct stat_field netns_teardown_fields[] = {
 	STAT_FIELD(netns_teardown, runs),
@@ -912,8 +912,8 @@ static const struct stat_field bridge_ip6frag_refrag_fields[] = {
 
 const struct stat_category bridge_ip6frag_refrag_category =
 	STAT_CATEGORY("bridge_ip6frag_refrag",
-	              bridge_ip6frag_runs,
-	              bridge_ip6frag_refrag_fields);
+		      bridge_ip6frag_runs,
+		      bridge_ip6frag_refrag_fields);
 
 static const struct stat_field blkdev_lifecycle_race_fields[] = {
 	STAT_FIELD(blkdev_lifecycle, runs),
@@ -942,8 +942,8 @@ static const struct stat_field hfs_mount_fuzz_fields[] = {
 
 const struct stat_category hfs_mount_fuzz_category =
 	STAT_CATEGORY("hfs_mount_fuzz",
-	              hfs_mount_fuzz_runs,
-	              hfs_mount_fuzz_fields);
+		      hfs_mount_fuzz_runs,
+		      hfs_mount_fuzz_fields);
 
 static const struct stat_field veth_asymmetric_xdp_fields[] = {
 	STAT_FIELD(veth_asym, iters),
@@ -991,8 +991,8 @@ static const struct stat_field netdev_netns_migrate_fields[] = {
 
 const struct stat_category netdev_netns_migrate_category =
 	STAT_CATEGORY("netdev_netns_migrate",
-	              nnm_iters,
-	              netdev_netns_migrate_fields);
+		      nnm_iters,
+		      netdev_netns_migrate_fields);
 
 static const struct stat_field flowtable_encap_vlan_fields[] = {
 	STAT_FIELD(flowtable_vlan, runs),

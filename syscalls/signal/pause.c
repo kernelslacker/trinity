@@ -20,7 +20,7 @@ static void post_pause(struct syscallrecord *rec)
 
 	if (retval != -1UL) {
 		outputerr("post_pause: rejected retval 0x%lx (must be -1UL/EINTR)\n",
-		          retval);
+			  retval);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 	}
 }

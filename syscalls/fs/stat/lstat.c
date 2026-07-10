@@ -1,6 +1,6 @@
 /*
  * SYSCALL_DEFINE2(lstat, const char __user *, filename,
-                   struct __old_kernel_stat __user *, statbuf)
+		   struct __old_kernel_stat __user *, statbuf)
  */
 #include <stdio.h>
 #include "arch.h"
@@ -67,7 +67,7 @@ struct syscallentry syscall_lstat = {
 
 /*
  * SYSCALL_DEFINE2(lstat64, const char __user *, filename,
-                 struct stat64 __user *, statbuf)
+		 struct stat64 __user *, statbuf)
  */
 
 struct syscallentry syscall_lstat64 = {

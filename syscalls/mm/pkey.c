@@ -125,7 +125,7 @@ static void post_pkey_alloc(struct syscallrecord *rec)
 		return;
 	if (ret < 0 || ret > 15) {
 		outputerr("post_pkey_alloc: rejected retval 0x%lx outside [0, 15] (and not -1)\n",
-		          (unsigned long) ret);
+			  (unsigned long) ret);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		return;
 	}

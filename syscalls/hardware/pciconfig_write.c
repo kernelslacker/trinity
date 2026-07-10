@@ -1,6 +1,6 @@
 /*
    sys_pciconfig_write (unsigned long bus, unsigned long dfn, unsigned long off, unsigned long len,
-                        void *buf)
+			void *buf)
  */
 #include "sanitise.h"
 

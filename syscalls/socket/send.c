@@ -1,6 +1,6 @@
 /*
  *  SYSCALL_DEFINE4(send, int, fd, void __user *, buff, size_t, len,
-                unsigned, flags)
+		unsigned, flags)
  */
 #include <sys/socket.h>
 #include <sys/uio.h>

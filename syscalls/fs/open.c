@@ -224,7 +224,7 @@ struct syscallentry syscall_openat = {
 
 /*
  * SYSCALL_DEFINE4(openat2, int, dfd, const char __user *, filename,
-                 struct open_how __user *, how, size_t, usize)
+		 struct open_how __user *, how, size_t, usize)
  */
 #ifndef RESOLVE_NO_XDEV
 struct open_how {

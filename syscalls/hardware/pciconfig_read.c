@@ -1,6 +1,6 @@
 /*
    sys_pciconfig_read (unsigned long bus, unsigned long dfn, unsigned long off, unsigned long len,
-                       void *buf)
+		       void *buf)
  */
 #include "arch.h"
 #include "sanitise.h"

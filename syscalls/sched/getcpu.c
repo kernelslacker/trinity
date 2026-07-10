@@ -1,6 +1,6 @@
 /*
  * SYSCALL_DEFINE3(getcpu, unsigned __user *, cpup, unsigned __user *, nodep,
-                 struct getcpu_cache __user *, unused)
+		 struct getcpu_cache __user *, unused)
  */
 #include <dirent.h>
 #include <stdlib.h>

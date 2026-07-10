@@ -1,7 +1,7 @@
 /*
  * SYSCALL_DEFINE5(llseek, unsigned int, fd, unsigned long, offset_high,
-                unsigned long, offset_low, loff_t __user *, result,
-                unsigned int, origin)
+		unsigned long, offset_low, loff_t __user *, result,
+		unsigned int, origin)
  */
 #include "fd.h"
 #include "objects.h"
