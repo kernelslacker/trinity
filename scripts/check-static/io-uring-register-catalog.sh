@@ -5,7 +5,7 @@
 # entry in the catalog.
 #
 # Background: the io_uring_register argument picker draws opcode values
-# from io_uring_register_opcodes[] in syscalls/io_uring_register.c, so
+# from io_uring_register_opcodes[] in syscalls/io_uring/io_uring_register.c, so
 # the fuzzer only ever emits opcodes drawn from that pool.  The catalog
 # side, io_uring_register_variants[] in
 # struct_catalog/io_uring_register.c, drives schema-aware fill for the
@@ -32,7 +32,7 @@ set -u
 
 NAME="io-uring-register-catalog"
 ROOT="${REPO_ROOT:-$(pwd)}"
-OPCODES_SRC="$ROOT/syscalls/io_uring_register.c"
+OPCODES_SRC="$ROOT/syscalls/io_uring/io_uring_register.c"
 CAT_SRC="$ROOT/struct_catalog/io_uring_register.c"
 BASELINE="$ROOT/scripts/check-static/io-uring-register-catalog.baseline"
 
@@ -46,7 +46,7 @@ fail() {
 
 # Slurp the io_uring_register_opcodes[] initializer body.  The
 # declaration is `static unsigned long io_uring_register_opcodes[] = {`
-# per syscalls/io_uring_register.c; accept an optional `static` for
+# per syscalls/io_uring/io_uring_register.c; accept an optional `static` for
 # symmetry with future carves.
 opcodes_block=$(awk '
 	/^(static[[:space:]]+)?unsigned long io_uring_register_opcodes\[.*\] = \{/ {
