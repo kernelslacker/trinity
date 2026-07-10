@@ -2351,6 +2351,65 @@ struct kcov_shared {
 	unsigned long cmp_field_consumer_guard_dependent;
 
 	/*
+	 * Prove-overlay metric for the field-scoped SHADOW consumer.
+	 *
+	 * The would_pick counter above proves the pool has post-guard hits.
+	 * It does NOT prove that routing the entry's value into the field
+	 * would produce new edge / cmp progress, nor that it would raise
+	 * the rejected-struct rate.  The counters below capture the
+	 * fleet-wide baseline state at each eligible would-pick sample so
+	 * a later live-arm flip can diff shadow-window vs live-window
+	 * rates: eligible_pick_count is the sample denominator, and the
+	 * three "_at_pick" sums are the numerators the live counterpart
+	 * (bumped from the same site with the arm on) will be measured
+	 * against.
+	 *
+	 * All bumps are keyed to the field-pool identity (struct type /
+	 * arg slot / offset+width): each snapshot fires exactly at the
+	 * point where the live arm would have injected that specific
+	 * pool's value.  The counters accumulate flat totals -- precision
+	 * comes from the tight sampling condition, not per-key storage --
+	 * so a run whose eligible pick population is dominated by one
+	 * pool cannot bias a later broader flip's read.
+	 *
+	 *  cmp_field_consumer_prove_eligible
+	 *      Bumped once per eligible (post-guard) would-pick.  The
+	 *      denominator for the three sums below.  Numerically equal
+	 *      to cmp_field_consumer_would_pick under the current wiring
+	 *      -- kept as an independently named counter so downstream
+	 *      readers of the prove overlay do not have to memorise the
+	 *      identity.
+	 *  cmp_field_consumer_prove_edges_at_pick
+	 *      Sum of kcov_shm->distinct_edges captured at each eligible
+	 *      would-pick.  Grows linearly with prove_eligible while
+	 *      distinct_edges is stable; a live-arm counterpart summed
+	 *      the same way (post-arm-flip) plus the corresponding
+	 *      prove_eligible delta answers "did routing this value in
+	 *      produce new edges".
+	 *  cmp_field_consumer_prove_cmp_records_at_pick
+	 *      Sum of kcov_shm->cmp_records_collected captured at each
+	 *      eligible would-pick.  Same shape as the edges baseline but
+	 *      the CMP-progress axis: a live-arm delta on this sum tells
+	 *      whether injection unlocked more kernel-side CMPs, not just
+	 *      more PC coverage.
+	 *  cmp_field_consumer_prove_einval_at_pick
+	 *      Sum of kcov_shm->per_syscall_errno[nr][ERRNO_BUCKET_EINVAL]
+	 *      captured at each eligible would-pick, keyed to the pick's
+	 *      own syscall nr.  Answers "did it raise the rejected-struct
+	 *      rate": a live-arm counterpart sum divided by its
+	 *      prove_eligible delta, compared to the shadow ratio here,
+	 *      is the injection's contribution to the EINVAL floor for
+	 *      the population of syscalls where the arm actually fired.
+	 *
+	 * Append-only at the tail per the existing convention so consumer
+	 * offsets stay stable.
+	 */
+	unsigned long cmp_field_consumer_prove_eligible;
+	unsigned long cmp_field_consumer_prove_edges_at_pick;
+	unsigned long cmp_field_consumer_prove_cmp_records_at_pick;
+	unsigned long cmp_field_consumer_prove_einval_at_pick;
+
+	/*
 	 * Number of age-bucket slots for the CMP-hint staleness histogram
 	 * below.  Buckets are coarse-spaced log2 ranges of the durable
 	 * pool's LRU-clock delta at pick time (see cmp_hint_age_bucket()

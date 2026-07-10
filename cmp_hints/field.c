@@ -713,10 +713,37 @@ bool cmp_hints_field_try_get(unsigned int nr, bool do32, unsigned int arg_idx,
 	/* SHADOW: count the would-be-pick on EVERY call regardless of arm
 	 * so the would-pick rate is legible from a default (LIVE off) run.
 	 * The LIVE arm bumps the separate cmp_field_consumer_live_picks
-	 * counter so the two rates stay cleanly separable. */
-	if (kcov_shm != NULL)
+	 * counter so the two rates stay cleanly separable.
+	 *
+	 * Prove-overlay: snapshot the current fleet-wide edge / cmp /
+	 * per-syscall reject counters at each eligible would-pick so a
+	 * later live-arm flip can diff shadow-window vs live-window rates
+	 * and answer "did routing this value in produce new edge / cmp
+	 * progress, and did it raise the rejected-struct rate?".  Loads
+	 * are RELAXED (racing writers may leave the sample a few counts
+	 * stale -- a per-sample skew that averages out over the
+	 * prove_eligible denominator).  Per-syscall EINVAL bucket is
+	 * keyed to the pick's own nr; the (nr < MAX_NR_SYSCALL) bound is
+	 * already established by the parameter validation at the head of
+	 * the function so the array index is safe. */
+	if (kcov_shm != NULL) {
 		__atomic_fetch_add(&kcov_shm->cmp_field_consumer_would_pick,
 				   1UL, __ATOMIC_RELAXED);
+		__atomic_fetch_add(&kcov_shm->cmp_field_consumer_prove_eligible,
+				   1UL, __ATOMIC_RELAXED);
+		__atomic_fetch_add(&kcov_shm->cmp_field_consumer_prove_edges_at_pick,
+				   __atomic_load_n(&kcov_shm->distinct_edges,
+						   __ATOMIC_RELAXED),
+				   __ATOMIC_RELAXED);
+		__atomic_fetch_add(&kcov_shm->cmp_field_consumer_prove_cmp_records_at_pick,
+				   __atomic_load_n(&kcov_shm->cmp_records_collected,
+						   __ATOMIC_RELAXED),
+				   __ATOMIC_RELAXED);
+		__atomic_fetch_add(&kcov_shm->cmp_field_consumer_prove_einval_at_pick,
+				   __atomic_load_n(&kcov_shm->per_syscall_errno[nr][ERRNO_BUCKET_EINVAL],
+						   __ATOMIC_RELAXED),
+				   __ATOMIC_RELAXED);
+	}
 
 	if (!cmp_field_consumer_live_arm)
 		return false;
