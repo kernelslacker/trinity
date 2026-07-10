@@ -65,7 +65,7 @@ size_t build_nft_ct_expr(unsigned char *buf, size_t off, size_t cap)
 	size_t elem_off, expr_data_off;
 	bool store_mode = ONE_IN(2);
 	__u32 key;
-	__u32 reg = regs[rand32() % ARRAY_SIZE(regs)];
+	__u32 reg = RAND_ARRAY(regs);
 
 	elem_off = off;
 	off = nla_put(buf, off, cap, NFTA_LIST_ELEM | NLA_F_NESTED, NULL, 0);
@@ -82,7 +82,7 @@ size_t build_nft_ct_expr(unsigned char *buf, size_t off, size_t cap)
 		return 0;
 
 	if (store_mode) {
-		key = store_keys[rand32() % ARRAY_SIZE(store_keys)];
+		key = RAND_ARRAY(store_keys);
 		off = nla_put_be32(buf, off, cap, NFTA_CT_KEY, key);
 		if (!off)
 			return 0;
@@ -92,7 +92,7 @@ size_t build_nft_ct_expr(unsigned char *buf, size_t off, size_t cap)
 	} else {
 		bool tuple_key;
 
-		key = load_keys[rand32() % ARRAY_SIZE(load_keys)];
+		key = RAND_ARRAY(load_keys);
 		off = nla_put_be32(buf, off, cap, NFTA_CT_KEY, key);
 		if (!off)
 			return 0;
@@ -132,7 +132,7 @@ size_t build_nft_ct_expr(unsigned char *buf, size_t off, size_t cap)
  * (NLA_U32), NFTA_FIB_RESULT (NLA_U32), and NFTA_FIB_FLAGS (NLA_U32)
  * are MANDATORY.
  *
- * RESULT distribution per call (rand32() % 3) — roughly 1/3 each:
+ * RESULT distribution per call (rnd_modulo_u32(3)) — roughly 1/3 each:
  *   - OIF       (1): valid only on PRE_ROUTING/LOCAL_IN/FORWARD/
  *     LOCAL_OUT/POST_ROUTING hooks (nft_fib_validate -> -EOPNOTSUPP
  *     elsewhere).
@@ -141,14 +141,14 @@ size_t build_nft_ct_expr(unsigned char *buf, size_t off, size_t cap)
  *     only RESULT that legally combines with NFTA_FIB_F_PRESENT.
  *
  * FLAGS distribution per call:
- *   - SADDR / DADDR slot (rand32() % 16): bucket 0 leaves NEITHER set
+ *   - SADDR / DADDR slot (rnd_modulo_u32(16)): bucket 0 leaves NEITHER set
  *     (~1/16, drives -EINVAL in nft_fib_init), bucket 1 sets BOTH
  *     (~1/16, also -EINVAL), buckets 2..15 set exactly one (14/16
  *     total, split 7/7 between SADDR and DADDR by parity for a clean
  *     50/50 inside the in-policy slice).
  *   - MARK (~1/4 via ONE_IN(4)): legal when CONFIG_NF_CONNTRACK_MARK
  *     is on; rejected with -EOPNOTSUPP otherwise.
- *   - IIF / OIF (mutually exclusive, ~1/8 each via rand32() % 16
+ *   - IIF / OIF (mutually exclusive, ~1/8 each via rnd_modulo_u32(16)
  *     buckets 0,1 -> IIF and 2,3 -> OIF; the kernel rejects -EINVAL
  *     if both are ever set, which can't happen here).
  *   - PRESENT (~1/4 via ONE_IN(4)) ONLY when RESULT=ADDRTYPE; on the
@@ -168,10 +168,10 @@ size_t build_nft_fib_expr(unsigned char *buf, size_t off, size_t cap)
 {
 	struct nlattr *elem, *expr_data;
 	size_t elem_off, expr_data_off;
-	__u32 dreg = NFT_REG_1 + (rand32() % 4);
-	__u32 result_bucket = rand32() % 3;
-	__u32 saddr_daddr_bucket = rand32() % 16;
-	__u32 iif_oif_bucket = rand32() % 16;
+	__u32 dreg = NFT_REG_1 + rnd_modulo_u32(4);
+	__u32 result_bucket = rnd_modulo_u32(3);
+	__u32 saddr_daddr_bucket = rnd_modulo_u32(16);
+	__u32 iif_oif_bucket = rnd_modulo_u32(16);
 	__u32 result;
 	__u32 flags = 0;
 
@@ -259,7 +259,7 @@ size_t build_nft_fib_expr(unsigned char *buf, size_t off, size_t cap)
  * time).  Both NFTA_RT_DREG (NLA_U32) and NFTA_RT_KEY
  * (NLA_POLICY_MAX(NLA_BE32, 255)) are MANDATORY.
  *
- * KEY distribution per call (rand32() % 8):
+ * KEY distribution per call (rand32() & 0x7):
  *   - CLASSID  ~1/4 (buckets 0,1): always valid across IPv4/IPv6/INET.
  *   - NEXTHOP4 ~1/4 (buckets 2,3): always valid.
  *   - NEXTHOP6 ~1/4 (buckets 4,5): always valid.
@@ -280,7 +280,7 @@ size_t build_nft_rt_expr(unsigned char *buf, size_t off, size_t cap)
 {
 	struct nlattr *elem, *expr_data;
 	size_t elem_off, expr_data_off;
-	__u32 dreg = NFT_REG_1 + (rand32() % 4);
+	__u32 dreg = NFT_REG_1 + rnd_modulo_u32(4);
 	__u32 bucket = rand32() & 0x7;
 	__u32 key;
 
@@ -367,7 +367,7 @@ size_t build_nft_xfrm_expr(unsigned char *buf, size_t off, size_t cap)
 {
 	struct nlattr *elem, *expr_data;
 	size_t elem_off, expr_data_off;
-	__u32 dreg = NFT_REG_1 + (rand32() % 4);
+	__u32 dreg = NFT_REG_1 + rnd_modulo_u32(4);
 	__u32 key;
 	__u8 dir;
 
@@ -376,7 +376,7 @@ size_t build_nft_xfrm_expr(unsigned char *buf, size_t off, size_t cap)
 		 * NLA_POLICY_MAX cap and the init switch. */
 		key = rand32() & 0xff;
 	} else {
-		switch (rand32() % 7) {
+		switch (rnd_modulo_u32(7)) {
 		case 0:
 			key = NFT_XFRM_KEY_DADDR_IP4;
 			break;
@@ -493,8 +493,8 @@ size_t build_nft_socket_expr(unsigned char *buf, size_t off, size_t cap)
 	};
 	struct nlattr *elem, *expr_data;
 	size_t elem_off, expr_data_off;
-	__u32 key = keys[rand32() % ARRAY_SIZE(keys)];
-	__u32 dreg = regs[rand32() % ARRAY_SIZE(regs)];
+	__u32 key = RAND_ARRAY(keys);
+	__u32 dreg = RAND_ARRAY(regs);
 	__u32 level = rand32() & 0xff;
 
 	elem_off = off;
