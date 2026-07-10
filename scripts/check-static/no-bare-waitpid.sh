@@ -42,14 +42,14 @@ trap 'rm -f "$hits_tmp"' EXIT
 
 # Walk every .c / .h file outside the allow-list and grep for the
 # pattern.  Allow-list: include/utils.h (the wrapper) and
-# syscalls/wait4.c / syscalls/waitpid.c / syscalls/waitid.c (the
+# syscalls/process/wait4.c / syscalls/process/waitpid.c / syscalls/process/waitid.c (the
 # fuzz-target syscall definitions).
 while IFS= read -r srcfile; do
 	case "$srcfile" in
 		./include/utils.h|include/utils.h)               continue ;;
-		./syscalls/wait4.c|syscalls/wait4.c)             continue ;;
-		./syscalls/waitpid.c|syscalls/waitpid.c)         continue ;;
-		./syscalls/waitid.c|syscalls/waitid.c)           continue ;;
+		syscalls/process/wait4.c)             continue ;;
+		syscalls/process/waitpid.c)         continue ;;
+		syscalls/process/waitid.c)           continue ;;
 	esac
 
 	grep -E -H -n "$PATTERN" "$srcfile" 2>/dev/null

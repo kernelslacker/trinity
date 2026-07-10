@@ -76,7 +76,7 @@ if [ -d "$ROOT/childops" ]; then
 fi
 if [ -d "$ROOT/syscalls" ]; then
 	while IFS= read -r f; do
-		[ "$f" = "$ROOT/syscalls/prctl.c" ] && continue
+		[ "$f" = "$ROOT/syscalls/process/prctl.c" ] && continue
 		files+=("$f")
 	done < <(find "$ROOT/syscalls" -name '*.c' -type f | sort)
 fi
