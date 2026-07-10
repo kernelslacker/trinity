@@ -318,6 +318,27 @@ bool cmp_hints_bloom_check_and_set(struct cmp_hints_bloom *b,
 }
 
 /*
+ * Read-only bloom probe.  Same hash pair as check_and_set above, but
+ * does NOT mutate the filter -- returns true only when both bits are
+ * already set, false otherwise.  For shadow readouts that need to ask
+ * "would this tuple have been treated as fresh?" without stamping bits
+ * the natural (cmp_ip, arg1, size) ingress does not.
+ */
+bool cmp_hints_bloom_probe(const struct cmp_hints_bloom *b,
+			   unsigned long ip,
+			   unsigned long val,
+			   unsigned int size)
+{
+	uint32_t i1 = cmp_hints_bloom_h1(ip, val, size);
+	uint32_t i2 = cmp_hints_bloom_h2(ip, val, size);
+	uint8_t m1 = (uint8_t)(1U << (i1 & 7));
+	uint8_t m2 = (uint8_t)(1U << (i2 & 7));
+
+	return ((b->bits[i1 >> 3] & m1) != 0) &&
+	       ((b->bits[i2 >> 3] & m2) != 0);
+}
+
+/*
  * CMP_HINTS_PENDING_BATCH moved to include/cmp_hints-internal.h --
  * cmp_hints/collect.c allocates the stack batch and cmp_hints/pool.c
  * drains it, so both sides need the same size.

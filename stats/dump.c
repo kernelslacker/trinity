@@ -3663,6 +3663,7 @@ static void dump_stats_render_kcov_base_stats(void)
 	unsigned long kc_cmp_nonconst_both_match       = __atomic_load_n(&kcov_shm->cmp_nonconst_both_match,            __ATOMIC_RELAXED);
 	unsigned long kc_cmp_nonconst_would_attribute  = __atomic_load_n(&kcov_shm->cmp_nonconst_would_attribute,       __ATOMIC_RELAXED);
 	unsigned long kc_cmp_nonconst_measured         = __atomic_load_n(&kcov_shm->cmp_nonconst_measured,              __ATOMIC_RELAXED);
+	unsigned long kc_cmp_nonconst_cfactual_win     = __atomic_load_n(&kcov_shm->cmp_nonconst_cfactual_win,          __ATOMIC_RELAXED);
 	unsigned long kc_cmp_width_pin_total           = __atomic_load_n(&kcov_shm->cmp_width_pin_total,                __ATOMIC_RELAXED);
 	unsigned long kc_cmp_width_pin_would_differ    = __atomic_load_n(&kcov_shm->cmp_width_pin_would_differ,         __ATOMIC_RELAXED);
 	unsigned long kc_cmp_hyp_pow2_derive_would_fire = __atomic_load_n(&kcov_shm->cmp_hyp_pow2_derive_would_fire,    __ATOMIC_RELAXED);
@@ -3753,6 +3754,28 @@ static void dump_stats_render_kcov_base_stats(void)
 			(kc_cmp_nonconst_would_attribute * 1000UL) /
 			kc_cmp_nonconst_measured;
 		stat_row("kcov_coverage", "cmp_nonconst_would_attribute_per_mille_measured", ratio_milli);
+	}
+
+	/* Counterfactual replay proxy over the would_attribute stream.
+	 * cmp_nonconst_would_attribute counts value-match opportunities;
+	 * cmp_nonconst_cfactual_win counts the subset where the operand
+	 * a relational replay would inject was bloom-fresh at this
+	 * (cmp_ip, width), i.e. the natural KCOV_CMP_CONST ingress has
+	 * NOT already witnessed that tuple in the current bloom window.
+	 * The ratio in per-mille strips out coincidental correspondences
+	 * so a fleet operator can read the honest retention rate: a
+	 * would-be relational lane sitting in the 100-150 per-mille band
+	 * carries the signal that promoting the shadow measurement to a
+	 * live inject arm is worth its invalid-syscall cost.  Live inject
+	 * decisions belong to a separate human step; this readout only
+	 * sizes the headroom. */
+	if (kc_cmp_nonconst_cfactual_win > 0)
+		stat_row("kcov_coverage", "cmp_nonconst_cfactual_win", kc_cmp_nonconst_cfactual_win);
+	if (kc_cmp_nonconst_would_attribute > 0) {
+		unsigned long ratio_milli =
+			(kc_cmp_nonconst_cfactual_win * 1000UL) /
+			kc_cmp_nonconst_would_attribute;
+		stat_row("kcov_coverage", "cmp_nonconst_cfactual_win_per_mille_would_attribute", ratio_milli);
 	}
 
 	/* Shadow measurement of a high-bit-preserving replacement for the
