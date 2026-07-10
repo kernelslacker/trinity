@@ -122,9 +122,9 @@ syscalls/newfstat.c:post_newfstat
 syscalls/newfstat.c:post_newfstatat
 syscalls/newlstat.c:post_newlstat
 syscalls/newstat.c:post_newstat
-syscalls/newuname.c:post_newuname
+syscalls/uname/newuname.c:post_newuname
 syscalls/sched/nice.c:post_nice
-syscalls/olduname.c:post_olduname
+syscalls/uname/olduname.c:post_olduname
 syscalls/open.c:post_open
 syscalls/open.c:post_openat
 syscalls/open.c:post_openat2
@@ -205,7 +205,7 @@ syscalls/timer/timer_getoverrun.c:post_timer_getoverrun
 syscalls/timer/timer_gettime.c:post_timer_gettime
 syscalls/process/times.c:post_times
 syscalls/umask.c:post_umask
-syscalls/uname.c:post_uname
+syscalls/uname/uname.c:post_uname
 syscalls/process/vfork.c:post_vfork
 syscalls/process/wait4.c:post_wait4
 syscalls/process/waitid.c:post_waitid
