@@ -150,6 +150,7 @@ SRCS		:= $(wildcard *.c) \
 		   $(wildcard strategy/*.c) \
 		   $(wildcard struct_catalog/*.c) \
 		   $(wildcard syscalls/*.c) \
+		   $(wildcard syscalls/kexec/*.c) \
 		   $(wildcard syscalls/uname/*.c) \
 		   $(wildcard syscalls/hardware/*.c) \
 		   $(wildcard syscalls/process/*.c) \
@@ -215,6 +216,7 @@ OBJS		:= $(sort $(patsubst %.c,%.o,$(wildcard *.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard strategy/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard struct_catalog/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/*.c))) \
+		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/kexec/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/uname/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/hardware/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/process/*.c))) \
