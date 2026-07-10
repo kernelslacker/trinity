@@ -199,10 +199,10 @@ syscalls/statmount.c:post_statmount
 syscalls/sysfs.c:post_sysfs
 syscalls/sysinfo.c:post_sysinfo
 syscalls/clock/time.c:post_time
-syscalls/timer_create.c:post_timer_create
-syscalls/timerfd_gettime.c:post_timerfd_gettime
-syscalls/timer_getoverrun.c:post_timer_getoverrun
-syscalls/timer_gettime.c:post_timer_gettime
+syscalls/timer/timer_create.c:post_timer_create
+syscalls/timer/timerfd_gettime.c:post_timerfd_gettime
+syscalls/timer/timer_getoverrun.c:post_timer_getoverrun
+syscalls/timer/timer_gettime.c:post_timer_gettime
 syscalls/times.c:post_times
 syscalls/umask.c:post_umask
 syscalls/uname.c:post_uname
