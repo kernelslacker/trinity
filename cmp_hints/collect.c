@@ -75,6 +75,69 @@
  * recovered fault -- caller should bump the shared skip counter and
  * move to the next field.
  */
+/*
+ * Non-const relational shadow classifier.
+ *
+ * Per-record readout of a would-be relational-attribution lane sitting
+ * next to today's !KCOV_CMP_CONST drop-site.  Runs BEFORE the drop and
+ * leaves the live path (pool, bloom, reexec_pending, credit) byte-for-
+ * byte unchanged; the returned counts only feed the flush-at-exit
+ * accumulators in cmp_hints_collect() and the kcov_shm shadow
+ * counters they in turn drain into.
+ *
+ * Split out of the collector's hot loop so the classification lives in
+ * one cohesive function -- easier to read on its own and gives the
+ * counterfactual replay probe (added alongside) a scoped home instead
+ * of growing another inline branch inside cmp_hints_collect().
+ *
+ * Gated by rec_num_args > 0 at the caller (dispatch-time snapshot
+ * available); a zero-arg call returns the zero-init struct which
+ * bumps nothing.  The population meaning of each field:
+ *
+ *   measured        -- non-const record where the shadow evaluated;
+ *                      addressable denominator for the ratios below.
+ *   arg1_unique     -- exactly one snapshot slot equals arg1.
+ *   arg2_unique     -- exactly one snapshot slot equals arg2.
+ *   both_match      -- at least one slot on each side (ambiguous).
+ *   would_attribute -- clean case: one side uniquely ours, the other
+ *                      not ours at all; a relational lane could act
+ *                      on this record without ambiguity.
+ */
+struct cmp_nonconst_shadow_result {
+	bool measured;
+	bool arg1_unique;
+	bool arg2_unique;
+	bool both_match;
+	bool would_attribute;
+};
+
+static struct cmp_nonconst_shadow_result
+cmp_nonconst_shadow_classify(unsigned int rec_num_args,
+			     const unsigned long *rec_args,
+			     unsigned long arg1, unsigned long arg2)
+{
+	struct cmp_nonconst_shadow_result r = { 0 };
+	unsigned int k;
+	unsigned int n1 = 0;
+	unsigned int n2 = 0;
+
+	if (rec_num_args == 0)
+		return r;
+
+	r.measured = true;
+	for (k = 0; k < rec_num_args; k++) {
+		if (rec_args[k] == arg1)
+			n1++;
+		if (rec_args[k] == arg2)
+			n2++;
+	}
+	r.arg1_unique     = (n1 == 1);
+	r.arg2_unique     = (n2 == 1);
+	r.both_match      = (n1 >= 1 && n2 >= 1);
+	r.would_attribute = (n1 == 1 && n2 == 0) || (n2 == 1 && n1 == 0);
+	return r;
+}
+
 static __attribute__((noinline)) bool
 cmp_field_match_timespec(const struct timespec *ts, unsigned long arg2,
 			 enum reexec_field_kind *out_kind)
@@ -383,6 +446,8 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 		 * entirely; both operands are runtime values and feeding
 		 * them back would just recycle the fuzzer's own inputs. */
 		if (!(type & KCOV_CMP_CONST)) {
+			struct cmp_nonconst_shadow_result cls;
+
 			reject_nonconst++;
 			/*
 			 * Shadow-measure the relational lane BEFORE the
@@ -395,35 +460,20 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 			 * -- that flips false under reexec_pending back-
 			 * pressure and would hide the un-throttled headroom
 			 * this readout is meant to expose.
-			 *
-			 * n1 / n2 = number of snapshot slots equal to arg1
-			 * / arg2.  The "would_attribute" population is the
-			 * clean case: exactly one side uniquely ours, the
-			 * other side not ours at all -- that is the record
-			 * a relational lane could act on without ambiguity.
 			 */
-			if (rec_num_args > 0) {
-				unsigned int k;
-				unsigned int n1 = 0;
-				unsigned int n2 = 0;
-
+			cls = cmp_nonconst_shadow_classify(rec_num_args,
+							   rec_args,
+							   arg1, arg2);
+			if (cls.measured)
 				nonconst_measured++;
-				for (k = 0; k < rec_num_args; k++) {
-					if (rec_args[k] == arg1)
-						n1++;
-					if (rec_args[k] == arg2)
-						n2++;
-				}
-				if (n1 == 1)
-					nonconst_arg1_unique++;
-				if (n2 == 1)
-					nonconst_arg2_unique++;
-				if (n1 >= 1 && n2 >= 1)
-					nonconst_both_match++;
-				if ((n1 == 1 && n2 == 0) ||
-				    (n2 == 1 && n1 == 0))
-					nonconst_would_attribute++;
-			}
+			if (cls.arg1_unique)
+				nonconst_arg1_unique++;
+			if (cls.arg2_unique)
+				nonconst_arg2_unique++;
+			if (cls.both_match)
+				nonconst_both_match++;
+			if (cls.would_attribute)
+				nonconst_would_attribute++;
 			continue;
 		}
 
