@@ -2234,6 +2234,9 @@ static void json_emit_iouring_iscsi_and_net_tail_section(void)
 	stat_category_emit_json(&bridge_conntrack_churn_category);
 
 	printf(",");
+	stat_category_emit_json(&bridge_ip6frag_refrag_category);
+
+	printf(",");
 	stat_category_emit_json(&blkdev_lifecycle_race_category);
 
 	printf(",");

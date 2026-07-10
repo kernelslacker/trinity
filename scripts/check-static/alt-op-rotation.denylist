@@ -44,6 +44,7 @@ CHILD_OP_AF_ALG_WEAK_CIPHER_PROBE     TODO: review for rotation candidacy
 CHILD_OP_AF_UNIX_SCM_RIGHTS_GC        TODO: review for rotation candidacy
 CHILD_OP_ATM_VCC_CHURN                TODO: review for rotation candidacy
 CHILD_OP_BRIDGE_CT_CHURN              TODO: review for rotation candidacy
+CHILD_OP_BRIDGE_IP6FRAG_REFRAG        TODO: review for rotation candidacy
 CHILD_OP_BRIDGE_VLAN_CHURN            TODO: review for rotation candidacy
 CHILD_OP_DEVLINK_PORT_CHURN           TODO: review for rotation candidacy
 CHILD_OP_FLOWTABLE_ENCAP_VLAN         TODO: review for rotation candidacy

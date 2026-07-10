@@ -1490,6 +1490,11 @@ struct stats_s {
 	unsigned long bridge_ct_flushes;		/* IPCTNL_MSG_CT_FLUSH messages emitted */
 	unsigned long bridge_ct_pkts_sent;		/* UDP packets pushed via veth peer end */
 
+	/* bridge_ip6frag_refrag childop counters */
+	unsigned long bridge_ip6frag_runs;		/* total bridge_ip6frag_refrag invocations */
+	unsigned long bridge_ip6frag_pairs_sent;	/* two-fragment IPv6 datagram pairs attempted */
+	unsigned long bridge_ip6frag_frames_sent;	/* individual IPv6 fragment frames sendto() >0 */
+
 	/* atm_vcc_churn childop counters */
 	unsigned long atm_vcc_churn_runs;		/* total atm_vcc_churn invocations */
 	unsigned long atm_vcc_churn_unsupported;	/* socket(AF_ATM*) returned EAFNOSUPPORT (CONFIG_ATM=n) */

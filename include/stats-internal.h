@@ -138,6 +138,7 @@ extern const struct stat_category bpf_cgroup_attach_category;
 extern const struct stat_category bpf_fd_provider_category;
 extern const struct stat_category bpf_lifecycle_category;
 extern const struct stat_category bridge_conntrack_churn_category;
+extern const struct stat_category bridge_ip6frag_refrag_category;
 extern const struct stat_category bridge_vlan_churn_category;
 extern const struct stat_category cgroup_churn_category;
 extern const struct stat_category child_category;
