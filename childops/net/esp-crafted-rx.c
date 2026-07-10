@@ -241,7 +241,7 @@ struct xfrm_usersa_id {
 
 /* Outer packet buffer size.  Outer IPv6 (40) + ESP header (8) + inner
  * (up to 32 with truncation applied) + ESP trailer (2 + pad up to 4)
- * fits well under 128; leaves headroom for header stamping variance. */
+ * fits well under 192; leaves headroom for header stamping variance. */
 #define ESPRX_PKT_MAX		192
 
 /* Nominal inner header sizes.  Kernel's post-decap parse reads at
