@@ -138,7 +138,7 @@ static size_t bc_emit(unsigned char *buf, size_t cap)
 
 	for (i = 0; i < n_ops; i++) {
 		struct inet_diag_bc_op op;
-		unsigned char code = op_codes[rand32() % sizeof(op_codes)];
+		unsigned char code = RAND_ARRAY(op_codes);
 		size_t arg_len = 0;
 		unsigned char arg_buf[24];
 
@@ -263,7 +263,7 @@ static void variant_inet(struct nl_ctx *ctx)
 	/* Rotate the states mask through small valid sets and the
 	 * all-states wildcard so the per-state filter paths in
 	 * inet_diag_dump_one are reached. */
-	req->idiag_states   = (r & 0x4) ? 0xffffu : (1u << (rand32() % 13));
+	req->idiag_states   = (r & 0x4) ? 0xffffu : (1u << rnd_modulo_u32(13));
 
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*req));
 
@@ -278,7 +278,7 @@ static void variant_inet(struct nl_ctx *ctx)
 					  INET_DIAG_REQ_BYTECODE, bc, bc_len);
 	}
 	if (rand32() & 1) {
-		__u8 proto = protos[rand32() % sizeof(protos)];
+		__u8 proto = RAND_ARRAY(protos);
 		off = nla_put(buf, off, sizeof(buf),
 				  INET_DIAG_REQ_PROTOCOL, &proto, sizeof(proto));
 	}
@@ -325,7 +325,7 @@ static void variant_unix(struct nl_ctx *ctx)
 	req = (struct unix_diag_req *)NLMSG_DATA(nlh);
 	req->sdiag_family = AF_UNIX;
 	req->udiag_states = (rand32() & 1) ? 0xffffu :
-			    (1u << (rand32() % 13));
+			    (1u << rnd_modulo_u32(13));
 
 	for (i = 0; i < sizeof(show_bits) / sizeof(show_bits[0]); i++) {
 		if (rand32() & 1)
@@ -432,7 +432,7 @@ static void variant_vsock(struct nl_ctx *ctx)
 	req->sdiag_family   = AF_VSOCK;
 	req->sdiag_protocol = 0;
 	req->vdiag_states   = (rand32() & 1) ? 0xffffu :
-			      (1u << (rand32() % 13));
+			      (1u << rnd_modulo_u32(13));
 	req->vdiag_ino      = 0;
 	req->vdiag_show     = 0;
 
@@ -485,7 +485,7 @@ bool sock_diag_walker(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 	}
 
-	v = (enum sd_variant)(rand32() % NR_SD_VARIANTS);
+	v = (enum sd_variant)rnd_modulo_u32(NR_SD_VARIANTS);
 	switch (v) {
 	case SD_VARIANT_INET:		variant_inet(&ctx); break;
 	case SD_VARIANT_UNIX:		variant_unix(&ctx); break;
