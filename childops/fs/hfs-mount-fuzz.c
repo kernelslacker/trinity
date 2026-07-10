@@ -341,6 +341,7 @@ static int hfs_mount_in_ns(void *arg)
 	char options[192];
 	unsigned int seq = ++hfs_mount_seq;
 	int loop_fd;
+	bool set_ok = false;
 	unsigned long flags = MS_NOSUID | MS_NODEV;
 
 	(void)mount(NULL, "/", NULL, MS_REC | MS_PRIVATE, NULL);
@@ -349,8 +350,9 @@ static int hfs_mount_in_ns(void *arg)
 		 "/dev/loop%d", ctx->loop_num);
 	loop_fd = open(loop_path, O_RDWR | O_NONBLOCK | O_CLOEXEC);
 	if (loop_fd >= 0) {
-		if (ioctl(loop_fd, LOOP_SET_FD,
-			  (unsigned long)ctx->image_fd) == 0)
+		set_ok = (ioctl(loop_fd, LOOP_SET_FD,
+				(unsigned long)ctx->image_fd) == 0);
+		if (set_ok)
 			__atomic_add_fetch(&shm->stats.hfs_mount_fuzz_set_fd_ok,
 					   1, __ATOMIC_RELAXED);
 		else if (errno == EBUSY || errno == ENXIO || errno == EPERM)
@@ -389,13 +391,12 @@ static int hfs_mount_in_ns(void *arg)
 
 	(void)rmdir(target);
 
-	loop_fd = open(loop_path, O_RDWR | O_NONBLOCK | O_CLOEXEC);
-	if (loop_fd >= 0) {
-		/* Only clear if WE set it; a swap the parent still holds
-		 * open EBUSY-s harmlessly.  Either way the grandchild
-		 * exits and the mount ns tears down. */
-		(void)ioctl(loop_fd, LOOP_CLR_FD);
-		close(loop_fd);
+	if (set_ok) {
+		loop_fd = open(loop_path, O_RDWR | O_NONBLOCK | O_CLOEXEC);
+		if (loop_fd >= 0) {
+			(void)ioctl(loop_fd, LOOP_CLR_FD);
+			close(loop_fd);
+		}
 	}
 	return 0;
 }
