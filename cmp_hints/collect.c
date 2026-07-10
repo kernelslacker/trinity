@@ -1087,7 +1087,8 @@ void cmp_hints_stash_consumed(unsigned int nr, bool do32,
 			      const struct struct_desc *desc,
 			      bool served_from_recent,
 			      uint8_t age_bucket,
-			      bool hyp_injected)
+			      bool hyp_injected,
+			      bool served_from_shared)
 {
 	struct childdata *child = this_child();
 	struct cmp_hint_consumed_entry *e;
@@ -1131,6 +1132,7 @@ void cmp_hints_stash_consumed(unsigned int nr, bool do32,
 	e->age_bucket = (age_bucket < CMP_HINT_AGE_BUCKETS) ?
 			age_bucket : (uint8_t)(CMP_HINT_AGE_BUCKETS - 1U);
 	e->hyp_injected = hyp_injected ? 1 : 0;
+	e->served_from_shared = served_from_shared ? 1 : 0;
 
 	if (kcov_shm != NULL) {
 		__atomic_fetch_add(&kcov_shm->cmp_hints_consumed, 1UL,
@@ -1139,7 +1141,12 @@ void cmp_hints_stash_consumed(unsigned int nr, bool do32,
 		 * to the flat consumed counter so the per-pool denominator is
 		 * tracked in lock-step with the global denominator the
 		 * existing dump path already exposes.  pool_kind has already
-		 * been clamped into enum range by the assignment above. */
+		 * been clamped into enum range by the assignment above.
+		 * Shared-served stash entries are stamped with the
+		 * CMP_HINT_POOL_KIND_NR sentinel by their caller so this
+		 * gate silently skips them -- the shared-tier bootstrap has
+		 * its own denominator (cmp_shared_tier_serves) and must not
+		 * pollute the native by-pool consumed distribution. */
 		if ((unsigned int)pool_kind < CMP_HINT_POOL_KIND_NR)
 			__atomic_fetch_add(
 				&kcov_shm->cmp_hint_consumed_by_pool[pool_kind],
@@ -1152,6 +1159,13 @@ void cmp_hints_stash_consumed(unsigned int nr, bool do32,
 	 * consumed_count + flat cmp_hyp_consumed so the typed denominator
 	 * tracks the per-pool denominator already established above.  No-op
 	 * when no hypothesis explains the value -- the credit lands only
-	 * where the parallel inference layer has standing. */
-	cmp_hyp_credit_consume(nr, do32, cmp_ip, value, size);
+	 * where the parallel inference layer has standing.  Gated off for
+	 * shared-served entries: the cmp_ip carried on the stash comes
+	 * from another syscall's observation, so any hypothesis hit at
+	 * (this nr, that cross-syscall cmp_ip) would be a coincidence
+	 * indistinguishable from noise and would inflate the typed
+	 * consume denominator with cross-nr chatter the shared-tier
+	 * bootstrap is not authorised to spend against native credit. */
+	if (!served_from_shared)
+		cmp_hyp_credit_consume(nr, do32, cmp_ip, value, size);
 }

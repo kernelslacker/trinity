@@ -169,8 +169,30 @@ static bool cmp_try_get_durable_tier(unsigned int nr, bool do32,
 		 * probe is value-neutral (does NOT read a tier value, does
 		 * NOT consume RNG, does NOT change what we return) so live
 		 * pick stays byte-for-byte identical under OFF and SHADOW
-		 * alike. */
+		 * alike.  Fires unconditionally on the cold-miss branch so
+		 * cmp_shared_tier_shadow_warmstart_eligible remains the
+		 * complete opportunity denominator regardless of whether
+		 * the COMBINED-mode serve below actually returns a
+		 * value. */
 		cmp_shared_tier_shadow_probe_cold_miss();
+		/* COMBINED-mode QUARANTINED live serve.  Fires strictly
+		 * lower priority than every native tier: the recent-tier
+		 * pre-pass in cmp_try_get_recent_tier returned MISS above
+		 * and the per-nr durable pool is empty here, so no native
+		 * warm hit was available to prefer.  Under
+		 * CMP_SHARED_TIER_MODE_COMBINED the helper elects an
+		 * occupied non-entry-path bucket at random, budget-gated
+		 * by ONE_IN(CMP_SHARED_TIER_SERVE_DICE), and stashes the
+		 * result with served_from_shared=1 so the credit drain
+		 * routes the PC outcome to the shared-tier lane ONLY --
+		 * a shared-served value NEVER becomes native pool
+		 * evidence under this path.  Under SHADOW_ONLY / OFF the
+		 * helper short-circuits to false and this branch is
+		 * byte-identical to the pre-serve cold-miss return. */
+		if (cmp_shared_tier_try_serve_cold_miss(nr, do32, use, old,
+							accept, callsite,
+							out, out_size))
+			return true;
 		return false;
 	}
 	/* Lockless gate: a kernel-side wild write through a syscall arg
@@ -371,7 +393,7 @@ static bool cmp_try_get_durable_tier(unsigned int nr, bool do32,
 					 callsite,
 					 picked_cmp_ip, stash_value, picked_size, use,
 					 0, 0, NULL,
-					 false, bucket, hyp_injected);
+					 false, bucket, hyp_injected, false);
 	}
 	cmp_hyp_would_pick(nr, do32, picked_cmp_ip, picked_size, picked_value);
 	if (out_size != NULL)
@@ -484,7 +506,7 @@ static enum cmp_tier_result cmp_try_get_recent_tier(unsigned int nr, bool do32,
 							 re_cmp_ip, re_value,
 							 re_size, use,
 							 0, 0, NULL,
-							 true, 0, false);
+							 true, 0, false, false);
 				cmp_hyp_would_pick(nr, do32, re_cmp_ip,
 						   re_size, re_value);
 				if (out_size != NULL)

@@ -204,7 +204,8 @@ void cmp_hints_stash_consumed(unsigned int nr, bool do32,
 			      const struct struct_desc *desc,
 			      bool served_from_recent,
 			      uint8_t age_bucket,
-			      bool hyp_injected);
+			      bool hyp_injected,
+			      bool served_from_shared);
 
 /*
  * SHADOW typed-hypothesis consume credit.  Called from
@@ -274,6 +275,38 @@ void cmp_shared_tier_populate_from_pools(void);
  * baseline.
  */
 void cmp_shared_tier_shadow_probe_cold_miss(void);
+
+/*
+ * COMBINED-mode QUARANTINED live serve fired from cmp_hints/get.c on
+ * a per-nr cold miss, immediately after cmp_shared_tier_shadow_probe_
+ * cold_miss() has recorded the eligibility.  Elects an occupied,
+ * non-entry-path-excluded shared-tier bucket at random under the
+ * shared_tier_lock and returns one of its (value, size) pairs plus
+ * the bucket's cmp_ip via *out / *out_size on true; leaves *out /
+ * *out_size untouched on false so the caller's fall-through miss
+ * path stays unchanged.  Applies cmp_hint_apply_transform() and the
+ * caller's cmp_accept_range before the commit so a rejected served
+ * value returns false and does NOT bump cmp_shared_tier_serves.
+ *
+ * On a successful serve the stash entry is stamped served_from_
+ * shared=1; the credit drain then routes the PC outcome to
+ * cmp_hint_tier_shared_wins / _misses ONLY and skips every native
+ * pool per-entry / by-pool / by-tier / by-age credit (the
+ * quarantine invariant that gates a future promotion decision off
+ * this shared-tier bootstrap).
+ *
+ * Gated on cmp_shared_tier_mode == CMP_SHARED_TIER_MODE_COMBINED
+ * AND ONE_IN(CMP_SHARED_TIER_SERVE_DICE); OFF and SHADOW_ONLY
+ * short-circuit to false without touching the tier or the caller
+ * out-params.  Definition in cmp_hints/pool.c.
+ */
+bool cmp_shared_tier_try_serve_cold_miss(unsigned int nr, bool do32,
+					 enum cmp_hint_use use,
+					 unsigned long old,
+					 const struct cmp_accept_range *accept,
+					 enum cmp_hint_callsite callsite,
+					 unsigned long *out,
+					 unsigned int *out_size);
 
 /*
  * LIVE typed-hypothesis inject arm.  Called from cmp_hints/get.c on
