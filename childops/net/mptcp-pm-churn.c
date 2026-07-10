@@ -400,7 +400,7 @@ static void mptcp_sockopt_inheritance_sweep(int cli, struct genl_ctx *ctx)
 		return;
 
 	for (tries = 0; tries < n_opts * 2U; tries++) {
-		idx = (unsigned int)(rand32() % n_opts);
+		idx = (unsigned int)rnd_modulo_u32(n_opts);
 		if (!(sweep_unsupported_mask & (1U << idx)))
 			break;
 	}
@@ -427,7 +427,7 @@ static void mptcp_sockopt_inheritance_sweep(int cli, struct genl_ctx *ctx)
 			   1, __ATOMIC_RELAXED);
 
 	loc_id = 1U + (__u8)(rand32() % MPTCP_PM_LOC_ID_MAX);
-	addr_h = MPTCP_PM_LOOPBACK_BASE + (rand32() % NR_MPTCP_LOOPBACK_ADDRS);
+	addr_h = MPTCP_PM_LOOPBACK_BASE + rnd_modulo_u32(NR_MPTCP_LOOPBACK_ADDRS);
 	(void)mptcp_pm_addr_cmd(ctx, MPTCP_PM_CMD_ADD_ADDR,
 				loc_id, addr_h);
 
@@ -494,7 +494,7 @@ static void mptcp_setsockopt_all_sf_recipe(struct genl_ctx *ctx)
 		return;
 	}
 
-	spec = &mptcp_sf_opts[rand32() % ARRAY_SIZE(mptcp_sf_opts)];
+	spec = &RAND_ARRAY(mptcp_sf_opts);
 	set_val = spec->genval();
 
 	if (setsockopt(sk, IPPROTO_TCP, spec->optname,
@@ -511,7 +511,7 @@ static void mptcp_setsockopt_all_sf_recipe(struct genl_ctx *ctx)
 	 * addr ranges match the outer loop's bounds so the kernel's
 	 * pernet endpoint validator accepts the request. */
 	loc_id = 1U + (__u8)(rand32() % MPTCP_PM_LOC_ID_MAX);
-	addr_h = MPTCP_PM_LOOPBACK_BASE + (rand32() % NR_MPTCP_LOOPBACK_ADDRS);
+	addr_h = MPTCP_PM_LOOPBACK_BASE + rnd_modulo_u32(NR_MPTCP_LOOPBACK_ADDRS);
 	(void)mptcp_pm_addr_cmd(ctx, MPTCP_PM_CMD_ADD_ADDR,
 				loc_id, addr_h);
 
