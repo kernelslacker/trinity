@@ -275,8 +275,7 @@ static void post_io_setup(struct syscallrecord *rec)
 	}
 
 out_free:
-	post_state_unregister(snap);
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_io_setup = {
