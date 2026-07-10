@@ -329,7 +329,7 @@ static int build_publish(int sock)
 	sa.addrtype = TIPC_ADDR_NAMESEQ;
 	sa.scope    = TIPC_CLUSTER_SCOPE;
 	sa.addr.nameseq.type  = TIPC_USER_TYPE_MIN +
-				(rand32() % TIPC_USER_TYPE_RANGE);
+				rnd_modulo_u32(TIPC_USER_TYPE_RANGE);
 	sa.addr.nameseq.lower = rand32();
 	sa.addr.nameseq.upper = sa.addr.nameseq.lower;
 
@@ -473,7 +473,7 @@ bool tipc_link_churn(struct childdata *child)
 		__atomic_add_fetch(&shm->stats.childop_setup_accepted[op],
 				   1, __ATOMIC_RELAXED);
 
-	cluster = TIPC_CLUSTER_ID_MIN + (rand32() % TIPC_CLUSTER_ID_RANGE);
+	cluster = TIPC_CLUSTER_ID_MIN + rnd_modulo_u32(TIPC_CLUSTER_ID_RANGE);
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop_data_path[op],
 				   1, __ATOMIC_RELAXED);
