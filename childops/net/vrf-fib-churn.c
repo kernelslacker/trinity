@@ -324,8 +324,8 @@ static int vrf_fib_churn_in_ns(void *arg)
 
 	snprintf(vrf_name, sizeof(vrf_name), "trvrf%u",
 		 (unsigned int)(rand32() & 0xffffu));
-	table = VRF_TABLE_MIN + (rand32() % VRF_TABLE_RANGE);
-	prio  = VRF_PRIO_MIN  + (rand32() % VRF_PRIO_RANGE);
+	table = VRF_TABLE_MIN + rnd_modulo_u32(VRF_TABLE_RANGE);
+	prio  = VRF_PRIO_MIN  + rnd_modulo_u32(VRF_PRIO_RANGE);
 
 	rc = build_vrf_link(&ctx, vrf_name, table);
 	if (rc != 0)
