@@ -52,6 +52,33 @@ struct mon_bin_mfetch {
 /* mon_bin_hdr is 64 bytes in the 64-bit kernel ABI */
 #define MON_BIN_HDR_SIZE 64
 
+/*
+ * Compile-time: every fixed-shape usbmon ioctl command the sanitisers
+ * below fill must have sizeof(struct) matching the _IOC_SIZE encoded
+ * in its request bits.  A mismatch means one of the local struct
+ * definitions or the matching _IO* macro moved without the other,
+ * and the sanitiser is stamping into a buffer the kernel copies less
+ * of than we prepared (under-encoded) or reads past (over-encoded).
+ * MON_IOCX_GET and MON_IOCX_GETX both take mon_bin_get and get one
+ * assert each -- the two sides can drift independently.
+ * MON_IOCQ_URB_LEN, MON_IOCT_RING_SIZE, MON_IOCQ_RING_SIZE and
+ * MON_IOCH_MFLUSH are _IO() with no struct arg and are intentionally
+ * absent -- asserting sizeof(struct) against a zero _IOC_SIZE would
+ * be the wrong shape of check.
+ */
+_Static_assert(sizeof(struct mon_bin_stats) ==
+	       _IOC_SIZE(MON_IOCG_STATS),
+	       "mon_bin_stats size vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct mon_bin_get) ==
+	       _IOC_SIZE(MON_IOCX_GET),
+	       "mon_bin_get size vs MON_IOCX_GET mismatch");
+_Static_assert(sizeof(struct mon_bin_get) ==
+	       _IOC_SIZE(MON_IOCX_GETX),
+	       "mon_bin_get size vs MON_IOCX_GETX mismatch");
+_Static_assert(sizeof(struct mon_bin_mfetch) ==
+	       _IOC_SIZE(MON_IOCX_MFETCH),
+	       "mon_bin_mfetch size vs _IOC_SIZE mismatch");
+
 static void sanitise_usbmon_get(struct syscallrecord *rec)
 {
 	struct mon_bin_get *g;
