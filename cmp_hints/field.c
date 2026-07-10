@@ -804,7 +804,7 @@ bool cmp_hints_field_try_get(unsigned int nr, bool do32, unsigned int arg_idx,
 					 CMP_HINT_CALLSITE_NR,
 					 picked_cmp_ip, picked_value, picked_size, use,
 					 arg_idx, field_idx, desc,
-					 false, bucket, false);
+					 false, bucket, false, false);
 	}
 	return true;
 }

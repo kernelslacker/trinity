@@ -15,6 +15,8 @@
 #include "cmp_hints-internal.h"
 #include "kcov.h"
 #include "locks.h"
+#include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "tables.h"
 
@@ -719,6 +721,151 @@ void cmp_shared_tier_shadow_probe_cold_miss(void)
 	if (ips > excluded)
 		__atomic_fetch_add(&kcov_shm->cmp_shared_tier_shadow_warmstart_eligible,
 				   1UL, __ATOMIC_RELAXED);
+}
+
+/*
+ * Per-eligible-cold-miss dice for the COMBINED-mode quarantined
+ * shared-tier serve.  Fires the serve on 1 / CMP_SHARED_TIER_SERVE_
+ * DICE of the opportunities cmp_shared_tier_shadow_probe_cold_miss()
+ * has already bumped so the live serve rate stays a small fraction
+ * of the shadow eligibility rate, preventing a run that turns
+ * COMBINED on from flooding the cold-miss lane with cross-syscall
+ * values before the wins/misses conversion metric has anything to
+ * say about their quality.  Same discipline the sibling SHADOW-arm
+ * dice gates use.
+ */
+#define CMP_SHARED_TIER_SERVE_DICE 4U
+
+bool cmp_shared_tier_try_serve_cold_miss(unsigned int nr, bool do32,
+					 enum cmp_hint_use use,
+					 unsigned long old,
+					 const struct cmp_accept_range *accept,
+					 enum cmp_hint_callsite callsite,
+					 unsigned long *out,
+					 unsigned int *out_size)
+{
+	unsigned long ips;
+	unsigned long excluded;
+	unsigned long served_value = 0;
+	unsigned long served_cmp_ip = 0;
+	unsigned int served_size = 0;
+	unsigned long transformed;
+	bool have_pick = false;
+	uint32_t start;
+	unsigned int probe;
+
+	/* Live serve gated on COMBINED mode only: OFF and SHADOW_ONLY
+	 * keep the get-path bit-for-bit identical to a pre-serve
+	 * baseline (the sibling shadow probe above still runs and
+	 * accumulates the opportunity denominator).  RELAXED mode load
+	 * matches the discipline every other cmp_shared_tier_mode read
+	 * in this TU uses -- the mode is a startup-time knob, never
+	 * flipped mid-run, so a racing load can never observe a partial
+	 * store. */
+	if (__atomic_load_n(&cmp_shared_tier_mode, __ATOMIC_RELAXED) !=
+	    CMP_SHARED_TIER_MODE_COMBINED)
+		return false;
+	if (cmp_hints_shm == NULL)
+		return false;
+
+	/* Budget gate BEFORE the tier lock so a rate-limited miss pays
+	 * no lock cost and does not walk the bucket grid. */
+	if (!ONE_IN(CMP_SHARED_TIER_SERVE_DICE))
+		return false;
+
+	/* Non-entry-path availability check identical to the shadow
+	 * probe's, so a run whose tier has only entry-path IPs (or is
+	 * empty) short-circuits before acquiring the tier lock. */
+	if (kcov_shm == NULL)
+		return false;
+	ips = __atomic_load_n(&kcov_shm->cmp_shared_tier_ips,
+			      __ATOMIC_RELAXED);
+	excluded = __atomic_load_n(&kcov_shm->cmp_shared_tier_entry_path_excluded_ips,
+				   __ATOMIC_RELAXED);
+	if (ips <= excluded)
+		return false;
+
+	/* Random-start linear probe for the first occupied, non-entry-
+	 * path-excluded bucket with at least one value slot filled.
+	 * Bounded at CMP_SHARED_TIER_PROBE_MAX per the tier's fallback
+	 * discipline -- probe exhaustion drops silently, same shape as
+	 * the insert path's collision drop.  The bucket picked is
+	 * value-slot-random within the chosen bucket so a hot bucket
+	 * with 8 values does not always serve slot 0. */
+	start = rnd_modulo_u32(CMP_SHARED_TIER_IPS);
+	lock(&cmp_hints_shm->shared_tier_lock);
+	for (probe = 0; probe < CMP_SHARED_TIER_PROBE_MAX; probe++) {
+		uint32_t idx = (start + probe) & (CMP_SHARED_TIER_IPS - 1U);
+		struct cmp_shared_tier_bucket *b =
+			&cmp_hints_shm->shared_tier[idx];
+		unsigned int vcount;
+		unsigned int slot;
+
+		if (b->occupied == 0)
+			continue;
+		if (b->entry_path_excluded)
+			continue;
+		vcount = b->value_count;
+		if (vcount == 0)
+			continue;
+		if (vcount > CMP_SHARED_TIER_VALUES)
+			vcount = CMP_SHARED_TIER_VALUES;
+		slot = rnd_modulo_u32(vcount);
+		served_value = b->values[slot].value;
+		served_size = b->values[slot].size;
+		served_cmp_ip = b->cmp_ip;
+		have_pick = true;
+		break;
+	}
+	unlock(&cmp_hints_shm->shared_tier_lock);
+
+	if (!have_pick)
+		return false;
+
+	/* Transform + caller accept-range gate BEFORE the serve is
+	 * committed.  An accept-rejected value bumps a dedicated
+	 * shared-tier reject counter -- the invalid-rate half of the
+	 * measurement -- and does NOT bump cmp_shared_tier_serves, so
+	 * the wins/misses conversion rate's denominator only counts
+	 * values that actually reached the caller.  Mirrors the
+	 * CMP_HYP_LIVE_INJECT_REASON_ACCEPT_REJECT bookkeeping the
+	 * typed inject arm uses. */
+	transformed = cmp_hint_apply_transform(served_value, use, old);
+	if (accept != NULL &&
+	    (transformed < accept->lo || transformed > accept->hi)) {
+		__atomic_fetch_add(&kcov_shm->cmp_shared_tier_serve_accept_reject,
+				   1UL, __ATOMIC_RELAXED);
+		return false;
+	}
+
+	*out = transformed;
+	if (out_size != NULL)
+		*out_size = served_size;
+
+	__atomic_fetch_add(&kcov_shm->cmp_shared_tier_serves, 1UL,
+			   __ATOMIC_RELAXED);
+
+	/* Stash under the CMP_HINT_POOL_KIND_NR sentinel so every
+	 * pool-kind-gated bump in cmp_hints_stash_consumed() and the
+	 * credit drain silently skips this entry.  The served_from_
+	 * shared=1 stamp is what routes the PC outcome to
+	 * cmp_hint_tier_shared_wins / _misses in the drain; every
+	 * other native credit lane (per-entry pool wins, by-pool /
+	 * by-callsite / by-tier / by-age partitions, typed-hyp
+	 * consume/would-pick) is gated OFF for this entry.  arg_idx /
+	 * field_idx / desc are unused (per-syscall-shape stash) and
+	 * age_bucket is zero because the shared tier has no per-entry
+	 * LRU stamp -- same shape the recent-tier stash uses.  The
+	 * cmp_ip carried on the stash is the tier bucket's cmp_ip
+	 * (may belong to another syscall's observation); it is used
+	 * as a stable identifier for the shared-tier lane, never
+	 * looked up against this nr's native pool. */
+	cmp_hints_stash_consumed(nr, do32, CMP_HINT_POOL_KIND_NR,
+				 callsite,
+				 served_cmp_ip, served_value, served_size,
+				 use, 0, 0, NULL,
+				 false, 0, false, true);
+	return true;
 }
 
 void cmp_shared_tier_populate_from_pools(void)

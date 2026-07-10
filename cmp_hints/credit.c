@@ -201,6 +201,29 @@ void cmp_hints_feedback_credit_pc(bool outcome_win)
 		const struct cmp_hint_consumed_entry *e =
 			&child->cmp_hints_consumed_stash[i];
 
+		/* Shared-tier serve is QUARANTINED: route the PC outcome
+		 * to cmp_hint_tier_shared_wins / _misses ONLY and skip
+		 * every native pool credit lane below.  A shared-served
+		 * value came from a cross-syscall observation and has
+		 * not been locally re-observed, so it must not credit
+		 * this nr's native pool per-entry wins/misses (the weight
+		 * the live pick would consume), the by-pool / by-tier /
+		 * by-age partitions (operator-facing conversion rates),
+		 * or the zero-win-budget census.  The
+		 * cmp_hint_tier_shared_* pair is the ONLY lane a
+		 * served_from_shared stash entry contributes to.  The
+		 * `continue` is what enforces the invariant -- every
+		 * native lane below this point is unconditionally
+		 * skipped. */
+		if (e->served_from_shared) {
+			if (kcov_shm != NULL)
+				__atomic_fetch_add(outcome_win ?
+					&kcov_shm->cmp_hint_tier_shared_wins :
+					&kcov_shm->cmp_hint_tier_shared_misses,
+					1UL, __ATOMIC_RELAXED);
+			continue;
+		}
+
 		switch ((enum cmp_hint_pool_kind)e->pool_kind) {
 		case CMP_HINT_POOL_PER_SYSCALL:
 			cmp_hint_credit_entry_per_syscall(e->nr, e->do32 != 0,

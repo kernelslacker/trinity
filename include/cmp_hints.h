@@ -683,17 +683,29 @@ struct cmp_hyp_pool {
  *                  returns exactly what it would have returned
  *                  without the observer.  Zero RNG consumption on the
  *                  probe path.
- *   COMBINED     - RESERVED.  The enum value exists so the Phase 2
- *                  live wire-up (elect a non-entry-path shared-tier
- *                  value to warm-start the empty per-nr slot from)
- *                  can land in a follow-up commit without renumbering
- *                  the enum, but THIS COMMIT does NOT implement the
- *                  live seed -- selecting COMBINED today behaves
- *                  identically to SHADOW_ONLY (tier populated,
- *                  observer accumulates, live pick stays byte-for-
- *                  byte unchanged).  Mirrors the discipline the
- *                  sibling cost_pool_selector_mode and frontier_
- *                  saturation_cooldown_mode rows use.
+ *   COMBINED     - Live serve enabled AND quarantined.  In addition
+ *                  to the SHADOW_ONLY behaviour above,
+ *                  cmp_shared_tier_try_serve_cold_miss() fires on a
+ *                  per-nr cold miss (durable pool empty on the
+ *                  requested (nr, do32), recent-tier pre-pass
+ *                  returned MISS) and, gated by a
+ *                  ONE_IN(CMP_SHARED_TIER_SERVE_DICE) budget,
+ *                  elects an occupied non-entry-path bucket at
+ *                  random and returns one of its (value, size)
+ *                  pairs.  The served value is stamped
+ *                  served_from_shared=1 on the per-child stash so
+ *                  the credit drain routes its PC outcome to
+ *                  cmp_hint_tier_shared_wins / _misses ONLY and
+ *                  does NOT touch native pool per-entry / by-pool /
+ *                  by-callsite / by-tier / by-age credit.  A
+ *                  constant served from the shared tier NEVER
+ *                  becomes native pool provenance under this path
+ *                  -- promotion requires separate local
+ *                  re-observation via cmp_hints_collect().  Native
+ *                  warm hits are strictly preferred: the serve
+ *                  fires only after every native tier (recent ring,
+ *                  durable per-nr pool) has been consulted and
+ *                  missed.
  *
  * Param-settable from --cmp-shared-tier=off|shadow|combined.
  */
@@ -1180,6 +1192,23 @@ struct cmp_hint_consumed_entry {
 	 * finally measures real hypothesis-derived conversion rather
 	 * than coincidence. */
 	uint8_t hyp_injected;
+	/* 1 == value came from the quarantined shared-tier COMBINED-mode
+	 * serve at pick time (cmp_shared_tier_try_serve_cold_miss); 0 ==
+	 * native pool / recent ring value.  The credit drain routes the
+	 * PC outcome for shared-served entries to
+	 * cmp_hint_tier_shared_wins / cmp_hint_tier_shared_misses ONLY
+	 * and SKIPS the native pool per-entry credit, the by-pool /
+	 * by-callsite / by-tier / by-age partitions, and the typed-hyp
+	 * consume/would-pick credit.  A shared-served constant must not
+	 * pollute native pool provenance because it was never locally
+	 * re-observed; promotion to native evidence requires
+	 * cmp_hints_collect() picking the same (cmp_ip, value, size) up
+	 * from the kernel independently.  Mutually exclusive with
+	 * served_from_recent / hyp_injected by construction: the serve
+	 * path fires only on a native cold miss (recent-tier pre-pass
+	 * already returned MISS, durable pool empty) and does not run
+	 * the inject arm. */
+	uint8_t served_from_shared;
 };
 
 #define CMP_HINT_CONSUMED_STASH_MAX	8U
