@@ -7,6 +7,24 @@
 #include "sanitise.h"
 #include "utils.h"
 
+/*
+ * Compile-time: FUSE_DEV_IOC_BACKING_OPEN is the only fixed-shape
+ * struct command this file fills.  Pin sizeof(struct
+ * fuse_backing_map) against its _IOC_SIZE so a <linux/fuse.h>
+ * change that grows or shrinks the struct (an extra flags word,
+ * a wider padding field) hard-fails the compile rather than
+ * silently having the kernel copy_from_user() a different number
+ * of bytes than the sanitiser prepared.
+ *
+ * FUSE_DEV_IOC_CLONE and FUSE_DEV_IOC_BACKING_CLOSE both take a
+ * bare uint32_t; FUSE_DEV_IOC_SYNC_INIT (when the uapi defines it)
+ * is _IO() with no arg.  Asserting sizeof(struct) against a
+ * scalar or a zero _IOC_SIZE would be the wrong shape of check.
+ */
+_Static_assert(sizeof(struct fuse_backing_map) ==
+	       _IOC_SIZE(FUSE_DEV_IOC_BACKING_OPEN),
+	       "fuse_backing_map size vs _IOC_SIZE mismatch");
+
 static void sanitise_fuse_clone(struct syscallrecord *rec)
 {
 	uint32_t *fd;
