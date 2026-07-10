@@ -3271,6 +3271,37 @@ struct kcov_shared {
 						      * full-at-entry, all cases where rec_num_args
 						      * is 0 and the per-slot loop never runs. */
 
+	/* Counterfactual replay proxy over the would_attribute stream.
+	 * The naive would_attribute predicate registers any value-match
+	 * as attributable, including coincidental correspondences that
+	 * a hypothetical relational-injection lane would replay onto a
+	 * (cmp_ip, target, width) tuple the natural KCOV_CMP_CONST
+	 * ingress has already stamped in the current bloom window --
+	 * revisiting a tuple already witnessed produces no new edge /
+	 * cmp progress and carries no honest signal.
+	 *
+	 * cmp_nonconst_cfactual_win is the subset of would_attribute
+	 * records where the operand a relational replay would inject
+	 * (the side NOT matching any dispatch snapshot slot) is bloom-
+	 * fresh at this (cmp_ip, width) -- the honest, causally
+	 * plausible subset a fleet operator can use to size the real
+	 * yield of promoting the lane.  Per-record measurement is keyed
+	 * per (nr, arg_slot, cmp_ip, width): nr / width scope the
+	 * per-child bloom the probe reads, arg_slot is the uniquely
+	 * matching snapshot slot, cmp_ip identifies the kernel site.
+	 *
+	 * Denominator is the sibling cmp_nonconst_would_attribute above
+	 * -- cfactual_win is a strict subset by construction (the probe
+	 * only fires when would_attribute fires), so per_mille reads
+	 * the counterfactual retention rate of the would-be lane.
+	 * Nothing on the live inject / consume path reads this; a
+	 * per_mille sitting in the 100-150 band across the fleet is the
+	 * decision-quality signal that promoting the relational lane
+	 * from shadow to live is worth the extra invalid-syscall cost
+	 * to evaluate.  Append-only at the tail per convention so
+	 * consumer offsets stay stable. */
+	unsigned long cmp_nonconst_cfactual_win;
+
 	/* Shadow measurement of a high-bit-preserving replacement for the
 	 * width-masked CMP RedQueen pin.  On a unique width match the live
 	 * consumer overwrites the WHOLE 64-bit arg slot with arg1 (the

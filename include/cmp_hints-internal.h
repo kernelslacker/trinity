@@ -122,6 +122,18 @@ bool cmp_hints_bloom_check_and_set(struct cmp_hints_bloom *b,
 				   unsigned int size);
 
 /*
+ * Read-only sibling of cmp_hints_bloom_check_and_set().  Returns true
+ * only when both bloom bits for (ip, val, size) are already set; does
+ * not stamp bits, so shadow-only callers can ask "have we seen this
+ * tuple in the current bloom window?" without perturbing the natural
+ * (cmp_ip, arg1, size) ingress the check-and-set path tracks.
+ */
+bool cmp_hints_bloom_probe(const struct cmp_hints_bloom *b,
+			   unsigned long ip,
+			   unsigned long val,
+			   unsigned int size);
+
+/*
  * Batched dedup-and-add payload.  cmp_hints_collect() (collect.c)
  * accumulates a per-record batch of these and hands the buffer to
  * cmp_hints_flush_pending() (pool.c) which takes pool->lock once and
