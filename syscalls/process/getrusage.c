@@ -4,6 +4,7 @@
 #include <sys/resource.h>
 #include <sys/syscall.h>
 #include "deferred-free.h"
+#include "output-poison.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -22,13 +23,18 @@ static unsigned long getrusage_who[] = {
  * syscall scribbling rec->aN between the syscall returning and the post
  * handler running cannot flip the who selector to a different accounting
  * domain (RUSAGE_SELF vs RUSAGE_THREAD vs RUSAGE_CHILDREN diverge wildly)
- * or redirect the source memcpy at a foreign user buffer.
+ * or redirect the source memcpy at a foreign user buffer.  The poison
+ * seed travels with the pointer so a stomp cannot smear the seed
+ * against a heap page that happens to still carry a residual pattern
+ * from an earlier call, and the untouched-buffer check reads the
+ * snapshotted ru pointer rather than rec->a2 directly.
  */
-#define GETRUSAGE_POST_STATE_MAGIC	0x47525553UL	/* "GRUS" */
+#define GETRUSAGE_POST_STATE_MAGIC	0x47525534UL	/* "GRU4" */
 struct getrusage_post_state {
 	unsigned long magic;
 	unsigned long who;
 	unsigned long ru;
+	uint64_t poison_seed;
 };
 #endif
 
@@ -36,6 +42,7 @@ static void sanitise_getrusage(struct syscallrecord *rec)
 {
 #if defined(SYS_getrusage) || defined(__NR_getrusage)
 	struct getrusage_post_state *snap;
+	void *buf;
 
 	/*
 	 * Clear post_state up front so an early return below leaves the
@@ -49,22 +56,48 @@ static void sanitise_getrusage(struct syscallrecord *rec)
 
 #if defined(SYS_getrusage) || defined(__NR_getrusage)
 	/*
-	 * Snapshot the two input args for the post oracle.  Without this
-	 * the post handler reads rec->aN at post-time, when a sibling
-	 * syscall may have scribbled the slots: looks_like_corrupted_ptr()
-	 * cannot tell a real-but-wrong heap address from the original ru
-	 * user-buffer pointer, so the source memcpy would touch a foreign
-	 * allocation, and a stomped who slot retargets the re-issue at a
-	 * different accounting domain than the first call ran in.
-	 * post_state is private to the post handler.  Gated on the syscall
-	 * number macro to mirror the .post registration -- on systems
-	 * without SYS_getrusage the post handler's re-issue would not work
-	 * and a snapshot only the post handler can free would leak.
+	 * ARG_NON_NULL_ADDRESS draws from get_writable_address(), which
+	 * returns NULL when the writable pool cannot back the requested
+	 * mapping_sizes[] pick.  Skip the poison + snap install on those
+	 * calls -- writing a poison pattern to a NULL or otherwise not-
+	 * provably-writable user pointer would SIGSEGV inside the
+	 * sanitiser and mask the syscall path we are trying to fuzz.
+	 * range_readable_user() also filters raw fuzz addresses that fell
+	 * outside the tracked shared / libc-heap snapshots; those
+	 * addresses may not be writable and the poison stamp would fault
+	 * the same way.  On skip, rec->post_state stays 0 --
+	 * post_state_claim_owned() returns NULL and the post handler
+	 * no-ops without ever touching the pointer.
+	 */
+	buf = (void *)(unsigned long) rec->a2;
+	if (!range_readable_user(buf, sizeof(struct rusage)))
+		return;
+
+	/*
+	 * Snapshot the two input args + the output-buffer poison seed for
+	 * the post oracle.  Without the a1/a2 snap the post handler reads
+	 * rec->aN at post-time, when a sibling syscall may have scribbled
+	 * the slots: looks_like_corrupted_ptr() cannot tell a real-but-
+	 * wrong heap address from the original ru user-buffer pointer, so
+	 * the source memcpy would touch a foreign allocation, and a
+	 * stomped who slot retargets the re-issue at a different
+	 * accounting domain than the first call ran in.  The poison seed
+	 * travels with the pointer so a stomp cannot smear the seed
+	 * against a heap page that happens to still carry a residual
+	 * pattern from an earlier call.  post_state is private to the
+	 * post handler.  Gated on the syscall number macro to mirror the
+	 * .post registration -- on systems without SYS_getrusage the post
+	 * handler's re-issue would not work and a snapshot only the post
+	 * handler can free would leak.  Stamp the poison after
+	 * avoid_shared_buffer_out() so it lands on the final buffer the
+	 * kernel will see; the returned seed is fed back into
+	 * check_output_struct() in the post handler.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
-	snap->magic     = GETRUSAGE_POST_STATE_MAGIC;
-	snap->who       = rec->a1;
-	snap->ru        = rec->a2;
+	snap->magic       = GETRUSAGE_POST_STATE_MAGIC;
+	snap->who         = rec->a1;
+	snap->ru          = rec->a2;
+	snap->poison_seed = poison_output_struct(buf, sizeof(struct rusage), 0);
 	post_state_install(rec, snap);
 #endif
 }
@@ -159,6 +192,33 @@ static void post_getrusage(struct syscallrecord *rec)
 
 	if (snap == NULL)
 		return;
+
+	/*
+	 * Untouched-buffer check: getrusage returned 0 (success) but the
+	 * user buffer still byte-for-byte matches the poison pattern we
+	 * stamped at sanitise time -- the kernel never called
+	 * copy_to_user() at all, or short-copied and left an
+	 * uninitialised-field tail readable in user memory (a kernel->
+	 * user infoleak).  Runs on every retval==0 sample, not gated by
+	 * ONE_IN(100), because the check is cheap (a snapshot memcpy and
+	 * a byte-walk against a repeating 8-byte pattern -- no re-issue
+	 * syscall).  Snapshot the buffer via post_snapshot_or_skip so a
+	 * sibling munmap of the writable-pool page between syscall return
+	 * and the poison compare degrades to a skipped sample instead of
+	 * a SIGSEGV in check_output_struct's byte-walk.  Counts against
+	 * the shared post_handler_untouched_out_buf slot.
+	 */
+	if ((long) rec->retval == 0 && snap->ru != 0) {
+		unsigned char poison_snap[sizeof(struct rusage)];
+
+		if (post_snapshot_or_skip(poison_snap,
+					  (const void *)(unsigned long) snap->ru,
+					  sizeof(poison_snap)) &&
+		    check_output_struct(poison_snap, sizeof(poison_snap),
+					snap->poison_seed))
+			__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+					   1, __ATOMIC_RELAXED);
+	}
 
 	if (!ONE_IN(100))
 		goto out_free;
