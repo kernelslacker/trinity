@@ -336,7 +336,7 @@ int build_delpolicy(struct nl_ctx *ctx)
  */
 __u32 pick_sa_seq(void)
 {
-	switch (rand32() % 6U) {
+	switch (rnd_modulo_u32(6U)) {
 	case 0:  return 0U;
 	case 1:  return 1U;
 	case 2:  return 2U;
