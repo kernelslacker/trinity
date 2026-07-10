@@ -31,7 +31,7 @@ childops/net/netlink/rtnl-vf-broadcast-getlink.c:warn_once_unsupported_rtnl_vf_b
 childops/net/rxrpc-key-install.c:do_add_rxrpc
 childops/net/rxrpc-key-install.c:probe_rxrpc_key_supported
 childops/net/tc/qdisc-churn.c:warn_once_unsupported_tc_qdisc
-syscalls/alarm.c:post_alarm
+syscalls/itimer/alarm.c:post_alarm
 syscalls/bpf.c:bpf_post_state_owned_and_valid_magic
 syscalls/bpf.c:bpf_post_validate_retval
 syscalls/bpf.c:post_bpf
@@ -67,7 +67,7 @@ syscalls/cred/getegid.c:post_getegid
 syscalls/cred/geteuid.c:post_geteuid
 syscalls/cred/getgid.c:post_getgid
 syscalls/cred/getgroups.c:post_getgroups
-syscalls/getitimer.c:post_getitimer
+syscalls/itimer/getitimer.c:post_getitimer
 syscalls/get_mempolicy.c:post_get_mempolicy
 syscalls/getpagesize.c:post_getpagesize
 syscalls/getpeername.c:getpeername_recheck
