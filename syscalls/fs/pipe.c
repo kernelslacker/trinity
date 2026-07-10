@@ -188,8 +188,7 @@ static void post_pipe(struct syscallrecord *rec)
 	}
 
 	rec->a1 = 0;
-	post_state_unregister(snap);
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_pipe = {
