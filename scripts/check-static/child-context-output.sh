@@ -76,7 +76,9 @@ HITS_FILE="$(mktemp)"
 trap 'rm -f "$POSTS_FILE" "$RAW_FILE" "$HITS_FILE"' EXIT
 
 # Collect every .post handler name from any syscallentry table.
-grep -hE '^[[:space:]]*\.post[[:space:]]*=' "$ROOT"/syscalls/*.c \
+find "$ROOT/syscalls" \
+	\( -type d \( -name x86 -o -name ppc -o -name sh -o -name sparc -o -name s390x \) -prune \) \
+	-o -type f -name '*.c' -exec grep -hE '^[[:space:]]*\.post[[:space:]]*=' {} + \
 	| sed -e 's/.*\.post[[:space:]]*=[[:space:]]*//' \
 	      -e 's/[[:space:],].*//' \
 	| sort -u > "$POSTS_FILE"
