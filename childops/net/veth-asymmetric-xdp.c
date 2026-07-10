@@ -654,7 +654,7 @@ static void veth_xdp_iter_drive_burst(struct veth_xdp_iter_ctx *ictx)
 	memset(sll.sll_addr, 0xff, 6);
 
 	burst = VAX_BURST_MIN +
-		(rand32() % (VAX_BURST_MAX - VAX_BURST_MIN + 1U));
+		rnd_modulo_u32(VAX_BURST_MAX - VAX_BURST_MIN + 1U);
 	for (i = 0; i < burst; i++) {
 		generate_rand_bytes(frame, sizeof(frame));
 		frame[12] = 0x08; frame[13] = 0x00;	/* ethertype IP */
