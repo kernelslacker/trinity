@@ -38,10 +38,10 @@ size_t build_nft_payload_expr(unsigned char *buf, size_t off, size_t cap)
 	};
 	struct nlattr *elem, *expr_data;
 	size_t elem_off, expr_data_off;
-	__u32 base = bases[rand32() % ARRAY_SIZE(bases)];
-	__u32 reg  = regs[rand32() % ARRAY_SIZE(regs)];
-	__u32 offset_v = rand32() % 64;
-	__u32 len_v    = (rand32() % 16) + 1;
+	__u32 base = RAND_ARRAY(bases);
+	__u32 reg  = RAND_ARRAY(regs);
+	__u32 offset_v = rnd_modulo_u32(64);
+	__u32 len_v    = rnd_modulo_u32(16) + 1;
 	bool write_path = ONE_IN(4);
 
 	elem_off = off;
@@ -73,11 +73,11 @@ size_t build_nft_payload_expr(unsigned char *buf, size_t off, size_t cap)
 		if (!off)
 			return 0;
 		off = nla_put_be32(buf, off, cap, NFTA_PAYLOAD_CSUM_TYPE,
-				   rand32() % 3);
+				   rnd_modulo_u32(3));
 		if (!off)
 			return 0;
 		off = nla_put_be32(buf, off, cap, NFTA_PAYLOAD_CSUM_OFFSET,
-				   rand32() % 64);
+				   rnd_modulo_u32(64));
 		if (!off)
 			return 0;
 		off = nla_put_be32(buf, off, cap, NFTA_PAYLOAD_CSUM_FLAGS,
@@ -145,10 +145,10 @@ size_t build_nft_meta_expr(unsigned char *buf, size_t off, size_t cap)
 	struct nlattr *elem, *expr_data;
 	size_t elem_off, expr_data_off;
 	bool write_path = ONE_IN(4);
-	__u32 reg = regs[rand32() % ARRAY_SIZE(regs)];
+	__u32 reg = RAND_ARRAY(regs);
 	__u32 key = write_path
-		? write_keys[rand32() % ARRAY_SIZE(write_keys)]
-		: read_keys[rand32() % ARRAY_SIZE(read_keys)];
+		? RAND_ARRAY(write_keys)
+		: RAND_ARRAY(read_keys);
 
 	elem_off = off;
 	off = nla_put(buf, off, cap, NFTA_LIST_ELEM | NLA_F_NESTED, NULL, 0);
@@ -217,7 +217,7 @@ size_t build_nft_immediate_expr(unsigned char *buf, size_t off, size_t cap)
 	size_t elem_off, expr_data_off, imm_data_off;
 	__u32 dreg = ONE_IN(2)
 		? NFT_REG_VERDICT
-		: regs[rand32() % ARRAY_SIZE(regs)];
+		: RAND_ARRAY(regs);
 
 	elem_off = off;
 	off = nla_put(buf, off, cap, NFTA_LIST_ELEM | NLA_F_NESTED, NULL, 0);
@@ -245,7 +245,7 @@ size_t build_nft_immediate_expr(unsigned char *buf, size_t off, size_t cap)
 	if (dreg == NFT_REG_VERDICT) {
 		struct nlattr *verdict;
 		size_t verdict_off;
-		__u32 code = verdicts[rand32() % ARRAY_SIZE(verdicts)];
+		__u32 code = RAND_ARRAY(verdicts);
 
 		verdict_off = off;
 		off = nla_put(buf, off, cap,
@@ -258,7 +258,7 @@ size_t build_nft_immediate_expr(unsigned char *buf, size_t off, size_t cap)
 		verdict = (struct nlattr *)(buf + verdict_off);
 		verdict->nla_len = (unsigned short)(off - verdict_off);
 	} else {
-		__u32 len_v = lens[rand32() % ARRAY_SIZE(lens)];
+		__u32 len_v = RAND_ARRAY(lens);
 		unsigned char bytes[16];
 
 		generate_rand_bytes(bytes, len_v);
@@ -310,11 +310,11 @@ size_t build_nft_cmp_expr(unsigned char *buf, size_t off, size_t cap)
 	};
 	struct nlattr *elem, *expr_data, *value;
 	size_t elem_off, expr_data_off, value_off;
-	__u32 sreg = regs[rand32() % ARRAY_SIZE(regs)];
-	__u32 len_v = lens[rand32() % ARRAY_SIZE(lens)];
+	__u32 sreg = RAND_ARRAY(regs);
+	__u32 len_v = RAND_ARRAY(lens);
 	__u32 op = ONE_IN(2)
 		? NFT_CMP_EQ
-		: ordered_ops[rand32() % ARRAY_SIZE(ordered_ops)];
+		: RAND_ARRAY(ordered_ops);
 	unsigned char bytes[16];
 
 	elem_off = off;
@@ -390,10 +390,10 @@ size_t build_nft_range_expr(unsigned char *buf, size_t off, size_t cap)
 	};
 	struct nlattr *elem, *expr_data, *value;
 	size_t elem_off, expr_data_off, value_off;
-	__u32 sreg = regs[rand32() % ARRAY_SIZE(regs)];
+	__u32 sreg = RAND_ARRAY(regs);
 	__u32 op = ONE_IN(2) ? NFT_RANGE_EQ : NFT_RANGE_NEQ;
 	__u32 from_v = rand32() & 0x7fffffffU;
-	__u32 to_v = from_v + 1 + (rand32() % 0x10000);
+	__u32 to_v = from_v + 1 + rnd_modulo_u32(0x10000);
 
 	elem_off = off;
 	off = nla_put(buf, off, cap, NFTA_LIST_ELEM | NLA_F_NESTED, NULL, 0);
@@ -474,9 +474,9 @@ size_t build_nft_bitwise_expr(unsigned char *buf, size_t off, size_t cap)
 	};
 	struct nlattr *elem, *expr_data, *value;
 	size_t elem_off, expr_data_off, value_off;
-	__u32 sreg = regs[rand32() % ARRAY_SIZE(regs)];
-	__u32 dreg = regs[rand32() % ARRAY_SIZE(regs)];
-	__u32 len_v = lens[rand32() % ARRAY_SIZE(lens)];
+	__u32 sreg = RAND_ARRAY(regs);
+	__u32 dreg = RAND_ARRAY(regs);
+	__u32 len_v = RAND_ARRAY(lens);
 	bool boolean_op = ONE_IN(2);
 	__u32 op = boolean_op
 		? NFT_BITWISE_BOOL
@@ -538,7 +538,7 @@ size_t build_nft_bitwise_expr(unsigned char *buf, size_t off, size_t cap)
 		value = (struct nlattr *)(buf + value_off);
 		value->nla_len = (unsigned short)(off - value_off);
 	} else {
-		__u32 shift = rand32() % 32;
+		__u32 shift = rnd_modulo_u32(32);
 
 		value_off = off;
 		off = nla_put(buf, off, cap,
@@ -595,12 +595,12 @@ size_t build_nft_byteorder_expr(unsigned char *buf, size_t off, size_t cap)
 	static const __u32 sizes[] = { 2, 4, 8 };
 	struct nlattr *elem, *expr_data;
 	size_t elem_off, expr_data_off;
-	__u32 sreg = regs[rand32() % ARRAY_SIZE(regs)];
-	__u32 dreg = regs[rand32() % ARRAY_SIZE(regs)];
+	__u32 sreg = RAND_ARRAY(regs);
+	__u32 dreg = RAND_ARRAY(regs);
 	__u32 op = ONE_IN(2) ? NFT_BYTEORDER_NTOH : NFT_BYTEORDER_HTON;
-	__u32 size = sizes[rand32() % ARRAY_SIZE(sizes)];
+	__u32 size = RAND_ARRAY(sizes);
 	__u32 max_mult = 16 / size;
-	__u32 mult = 1 + (rand32() % max_mult);
+	__u32 mult = 1 + rnd_modulo_u32(max_mult);
 	__u32 len = mult * size;
 
 	elem_off = off;
@@ -653,7 +653,7 @@ size_t build_nft_byteorder_expr(unsigned char *buf, size_t off, size_t cap)
  * offset within the parsed header), LEN (NLA_U32 big-endian, validator
  * clamps at 127) plus exactly one of DREG (read) or SREG (write).
  *
- * OP distribution per call (rand32() % 4) — uniform across the four
+ * OP distribution per call (rnd_modulo_u32(4)) — uniform across the four
  * kernel arms so each init helper sees an equal share of inbound
  * messages.  TYPE per arm is picked from an arm-appropriate set so the
  * post-OP switch lands on a recognised value:
@@ -693,12 +693,12 @@ size_t build_nft_exthdr_expr(unsigned char *buf, size_t off, size_t cap)
 	static const __u8 sctp_types[] = { 0, 1, 2, 3, 4, 5 };
 	struct nlattr *elem, *expr_data;
 	size_t elem_off, expr_data_off;
-	__u32 op_bucket = rand32() % 4;
+	__u32 op_bucket = rnd_modulo_u32(4);
 	__u32 op;
 	__u8 type;
-	__u32 offset = rand32() % 64;
-	__u32 len = 1 + (rand32() % 16);
-	__u32 reg = NFT_REG_1 + (rand32() % 4);
+	__u32 offset = rnd_modulo_u32(64);
+	__u32 len = 1 + rnd_modulo_u32(16);
+	__u32 reg = NFT_REG_1 + rnd_modulo_u32(4);
 	bool use_sreg = false;
 	bool emit_flags;
 
@@ -706,20 +706,20 @@ size_t build_nft_exthdr_expr(unsigned char *buf, size_t off, size_t cap)
 	case 0:
 	default:
 		op = NFT_EXTHDR_OP_IPV6;
-		type = ipv6_types[rand32() % ARRAY_SIZE(ipv6_types)];
+		type = RAND_ARRAY(ipv6_types);
 		break;
 	case 1:
 		op = NFT_EXTHDR_OP_TCPOPT;
-		type = tcpopt_types[rand32() % ARRAY_SIZE(tcpopt_types)];
+		type = RAND_ARRAY(tcpopt_types);
 		use_sreg = ONE_IN(4);
 		break;
 	case 2:
 		op = NFT_EXTHDR_OP_IPV4;
-		type = ipv4_types[rand32() % ARRAY_SIZE(ipv4_types)];
+		type = RAND_ARRAY(ipv4_types);
 		break;
 	case 3:
 		op = NFT_EXTHDR_OP_SCTP;
-		type = sctp_types[rand32() % ARRAY_SIZE(sctp_types)];
+		type = RAND_ARRAY(sctp_types);
 		break;
 	}
 
