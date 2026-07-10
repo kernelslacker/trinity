@@ -769,6 +769,8 @@ static void dump_stats_render_deferred_free_rejects(void)
 		stat_row("corruption", "alloc_track_refresh_unverified_skip", shm->stats.alloc_track_refresh_unverified_skip);
 	if (shm->stats.alloc_track_refresh_consume_miss)
 		stat_row("corruption", "alloc_track_refresh_consume_miss",    shm->stats.alloc_track_refresh_consume_miss);
+	if (shm->stats.rec_owned_overflow_to_ring)
+		stat_row("corruption", "rec_owned_overflow_to_ring",          shm->stats.rec_owned_overflow_to_ring);
 }
 
 static void dump_stats_render_post_state_release_rejects(void)
