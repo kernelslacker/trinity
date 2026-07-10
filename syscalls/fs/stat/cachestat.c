@@ -6,9 +6,31 @@
 #include <sys/stat.h>
 #include <linux/mman.h>
 #include "arch.h"
+#include "output-poison.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
+#include "shm.h"
+#include "trinity.h"
+#include "utils.h"
+
+/*
+ * Snapshot of the cachestat output-buffer pointer + poison seed the
+ * post oracle needs, captured at sanitise time.  Lives in
+ * rec->post_state, a slot the syscall ABI does not expose, so a
+ * sibling syscall scribbling rec->aN between the syscall returning
+ * and the post handler running cannot retarget the untouched-buffer
+ * check at a foreign user allocation.  The poison seed travels with
+ * the pointer so a stomp cannot smear the seed against a heap page
+ * that happens to still carry a residual pattern from an earlier
+ * call.
+ */
+#define CACHESTAT_POST_STATE_MAGIC	0x43535441UL	/* "CSTA" */
+struct cachestat_post_state {
+	unsigned long magic;
+	unsigned long cstat;
+	uint64_t poison_seed;
+};
 
 /*
  * Pick a cachestat_range based on the fd's actual file size.  The
@@ -110,6 +132,10 @@ static void sanitise_cachestat(struct syscallrecord *rec)
 {
 	struct cachestat_range *range;
 	struct cachestat *cs;
+	struct cachestat_post_state *snap;
+	void *buf;
+
+	rec->post_state = 0;
 
 	range = (struct cachestat_range *) get_writable_struct(sizeof(*range));
 	if (!range)
@@ -136,6 +162,87 @@ static void sanitise_cachestat(struct syscallrecord *rec)
 		rec->a4 = 0;
 
 	avoid_shared_buffer_out(&rec->a3, sizeof(struct cachestat));
+
+	/*
+	 * See sanitise_fstat64 for the full rationale: writing a poison
+	 * pattern into an unmapped or non-writable user address would
+	 * SIGSEGV the sanitiser and mask the syscall path we are trying
+	 * to fuzz.  range_readable_user() proves the range from cached
+	 * VMA state before we touch it; the writable-pool page backing
+	 * cs is track_shared_region()'d so this check nearly always
+	 * passes, but the gate closes the sibling-munmap window where a
+	 * fuzzed munmap has torn down the tracked region between the
+	 * pool allocation and the poison stamp.  On skip, rec->post_state
+	 * stays 0 and the post handler no-ops via post_state_claim_owned()
+	 * returning NULL.
+	 */
+	buf = (void *)(unsigned long) rec->a3;
+	if (!range_readable_user(buf, sizeof(struct cachestat)))
+		return;
+
+	/*
+	 * Snapshot the output-buffer pointer + poison seed for the post
+	 * oracle.  Without this the post handler reads rec->a3 at
+	 * post-time, when a sibling syscall may have scribbled the slot:
+	 * looks_like_corrupted_ptr() cannot tell a real-but-wrong heap
+	 * address from the original user cstat pointer, so the poison
+	 * check would touch a foreign allocation and mistake stale bytes
+	 * elsewhere for a real "untouched" signal.  Stamp the poison
+	 * after avoid_shared_buffer_out() so it lands on the final buffer
+	 * the kernel will see; the returned seed is fed back into
+	 * check_output_struct() in the post handler.  post_state is
+	 * private to the post handler.
+	 */
+	snap = zmalloc_tracked(sizeof(*snap));
+	snap->magic       = CACHESTAT_POST_STATE_MAGIC;
+	snap->cstat       = rec->a3;
+	snap->poison_seed = poison_output_struct(buf, sizeof(struct cachestat), 0);
+	post_state_install(rec, snap);
+}
+
+/*
+ * Oracle: cachestat(fd, cstat_range, cstat, flags) writes a struct
+ * cachestat describing the page-cache residency of the requested
+ * range into the user cstat buffer.  This post handler catches the
+ * "returned success but wrote zero bytes" bug shape by stamping a
+ * per-call poison pattern into the output buffer at sanitise time
+ * and asking check_output_struct() whether the pattern survived
+ * intact on a success return.  A byte-identical poison after a
+ * 0-retval means the kernel never called copy_to_user() at all, or
+ * copied fewer bytes than sizeof(struct cachestat) implies and left
+ * an uninitialised-field tail readable in user memory (a
+ * kernel->user infoleak).  Snapshot the buffer via
+ * post_snapshot_or_skip so a sibling munmap of the writable-pool
+ * page between syscall return and the poison compare degrades to a
+ * skipped sample instead of a SIGSEGV in check_output_struct's
+ * byte-walk; false from the snapshot means the buffer is not
+ * provably readable now and the sample is skipped.  Counts against
+ * the shared post_handler_untouched_out_buf slot -- no per-syscall
+ * counter here, so this file stays a one-file change.
+ */
+static void post_cachestat(struct syscallrecord *rec)
+{
+	struct cachestat_post_state *snap;
+	struct cachestat snapshot;
+
+	snap = post_state_claim_owned(rec, CACHESTAT_POST_STATE_MAGIC, __func__);
+	if (snap == NULL)
+		return;
+
+	if ((long) rec->retval != 0)
+		goto out_release;
+
+	if (!post_snapshot_or_skip(&snapshot,
+				   (void *)(unsigned long) snap->cstat,
+				   sizeof(snapshot)))
+		goto out_release;
+
+	if (check_output_struct(&snapshot, sizeof(snapshot), snap->poison_seed))
+		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+				   1, __ATOMIC_RELAXED);
+
+out_release:
+	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_cachestat = {
@@ -146,5 +253,6 @@ struct syscallentry syscall_cachestat = {
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_VFS,
 	.sanitise = sanitise_cachestat,
+	.post = post_cachestat,
 	.flags = REEXEC_SANITISE_OK,
 };
