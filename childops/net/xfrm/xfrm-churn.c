@@ -186,7 +186,7 @@ static void modprobe_algo(unsigned int idx)
  */
 static unsigned int pick_algo_idx(void)
 {
-	unsigned int start = rand32() % NR_XFRM_ALGOS;
+	unsigned int start = rnd_modulo_u32(NR_XFRM_ALGOS);
 	unsigned int i;
 
 	for (i = 0; i < NR_XFRM_ALGOS; i++) {
@@ -417,7 +417,7 @@ static void install_ah_esn_async_sa(struct nl_ctx *ctx, int udp,
 	__atomic_add_fetch(&shm->stats.xfrm_ah_esn_async_runs, 1,
 			   __ATOMIC_RELAXED);
 
-	alg   = &ah_esn_async_algos[rand32() % ARRAY_SIZE(ah_esn_async_algos)];
+	alg   = &RAND_ARRAY(ah_esn_async_algos);
 	reqid = (rand32() % XFRM_REQID_RANGE) + 1U;
 	spi   = htonl((rand32() % XFRM_SPI_RANGE) + XFRM_SPI_MIN);
 	v6    = ONE_IN(2);
