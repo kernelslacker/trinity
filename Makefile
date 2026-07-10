@@ -150,6 +150,7 @@ SRCS		:= $(wildcard *.c) \
 		   $(wildcard strategy/*.c) \
 		   $(wildcard struct_catalog/*.c) \
 		   $(wildcard syscalls/*.c) \
+		   $(wildcard syscalls/pidfd/*.c) \
 		   $(wildcard syscalls/module/*.c) \
 		   $(wildcard syscalls/keyctl/*.c) \
 		   $(wildcard syscalls/fsnotify/*.c) \
@@ -209,6 +210,7 @@ OBJS		:= $(sort $(patsubst %.c,%.o,$(wildcard *.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard strategy/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard struct_catalog/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/*.c))) \
+		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/pidfd/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/module/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/keyctl/*.c))) \
 		   $(sort $(patsubst %.c,%.o,$(wildcard syscalls/fsnotify/*.c))) \
