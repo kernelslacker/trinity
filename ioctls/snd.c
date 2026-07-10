@@ -387,10 +387,30 @@ static void sanitise_snd_hda_verb(struct syscallrecord *rec)
 	}
 }
 
+static const unsigned int snd_ctl_elem_iface_vals[] = {
+	SNDRV_CTL_ELEM_IFACE_CARD,
+	SNDRV_CTL_ELEM_IFACE_HWDEP,
+	SNDRV_CTL_ELEM_IFACE_MIXER,
+	SNDRV_CTL_ELEM_IFACE_PCM,
+	SNDRV_CTL_ELEM_IFACE_RAWMIDI,
+	SNDRV_CTL_ELEM_IFACE_TIMER,
+	SNDRV_CTL_ELEM_IFACE_SEQUENCER,
+};
+
+static const int snd_pcm_stream_vals[] = {
+	SNDRV_PCM_STREAM_PLAYBACK,
+	SNDRV_PCM_STREAM_CAPTURE,
+};
+
+static const int snd_rawmidi_stream_vals[] = {
+	SNDRV_RAWMIDI_STREAM_OUTPUT,
+	SNDRV_RAWMIDI_STREAM_INPUT,
+};
+
 static void fill_snd_ctl_elem_id(struct snd_ctl_elem_id *id)
 {
 	id->numid = RAND_BOOL() ? 0 : rnd_modulo_u32(64);
-	id->iface = rnd_modulo_u32(7);		/* SNDRV_CTL_ELEM_IFACE_* 0-6 */
+	id->iface = RAND_ARRAY(snd_ctl_elem_iface_vals);
 	id->device = rnd_modulo_u32(8);
 	id->subdevice = rnd_modulo_u32(8);
 	id->index = rnd_modulo_u32(8);
@@ -493,7 +513,7 @@ static void snd_ctl_sanitise_pcm_info(struct syscallrecord *rec)
 		memset(info, 0, sizeof(*info));
 		info->device = rnd_modulo_u32(8);
 		info->subdevice = rnd_modulo_u32(8);
-		info->stream = rnd_u32() & 1;
+		info->stream = RAND_ARRAY(snd_pcm_stream_vals);
 		rec->a3 = (unsigned long) info;
 	}
 }
@@ -505,7 +525,7 @@ static void snd_ctl_sanitise_rawmidi_info(struct syscallrecord *rec)
 		memset(info, 0, sizeof(*info));
 		info->device = rnd_modulo_u32(8);
 		info->subdevice = rnd_modulo_u32(8);
-		info->stream = rnd_modulo_u32(3);
+		info->stream = RAND_ARRAY(snd_rawmidi_stream_vals);
 		rec->a3 = (unsigned long) info;
 	}
 }
@@ -615,7 +635,7 @@ static void snd_pcm_sanitise_info(struct syscallrecord *rec)
 		memset(info, 0, sizeof(*info));
 		info->device = rnd_modulo_u32(8);
 		info->subdevice = rnd_modulo_u32(8);
-		info->stream = rnd_u32() & 1;
+		info->stream = RAND_ARRAY(snd_pcm_stream_vals);
 		rec->a3 = (unsigned long) info;
 	}
 }
@@ -821,7 +841,7 @@ static void sanitise_snd_rawmidi(struct syscallrecord *rec)
 			memset(info, 0, sizeof(*info));
 			info->device = rnd_modulo_u32(8);
 			info->subdevice = rnd_modulo_u32(8);
-			info->stream = rnd_modulo_u32(3);
+			info->stream = RAND_ARRAY(snd_rawmidi_stream_vals);
 			rec->a3 = (unsigned long) info;
 		}
 		break;
@@ -830,7 +850,7 @@ static void sanitise_snd_rawmidi(struct syscallrecord *rec)
 		struct snd_rawmidi_params *p = get_writable_struct(sizeof(*p));
 		if (p) {
 			memset(p, 0, sizeof(*p));
-			p->stream = rnd_u32() & 1;
+			p->stream = RAND_ARRAY(snd_rawmidi_stream_vals);
 			p->buffer_size = (rnd_modulo_u32(16) + 1) * 4096;
 			p->avail_min = rnd_modulo_u32(256) + 1;
 			rec->a3 = (unsigned long) p;
@@ -841,7 +861,7 @@ static void sanitise_snd_rawmidi(struct syscallrecord *rec)
 		struct snd_rawmidi_status *st = get_writable_struct(sizeof(*st));
 		if (st) {
 			memset(st, 0, sizeof(*st));
-			st->stream = rnd_u32() & 1;
+			st->stream = RAND_ARRAY(snd_rawmidi_stream_vals);
 			rec->a3 = (unsigned long) st;
 		}
 		break;
@@ -850,7 +870,7 @@ static void sanitise_snd_rawmidi(struct syscallrecord *rec)
 	case SNDRV_RAWMIDI_IOCTL_DRAIN: {
 		int *stream = get_writable_struct(sizeof(int));
 		if (stream) {
-			*stream = rnd_u32() & 1;
+			*stream = RAND_ARRAY(snd_rawmidi_stream_vals);
 			rec->a3 = (unsigned long) stream;
 		}
 		break;
