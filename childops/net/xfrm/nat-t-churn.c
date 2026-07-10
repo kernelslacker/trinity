@@ -472,7 +472,7 @@ static __u32 pick_seq_hi(void)
 {
 	if ((rand32() & 1U) == 0)
 		return rand32();
-	return esn_seq_hi_edges[rand32() % ARRAY_SIZE(esn_seq_hi_edges)];
+	return RAND_ARRAY(esn_seq_hi_edges);
 }
 
 /*
@@ -853,9 +853,9 @@ static void nat_t_churn_v6(void)
 
 	mode  = (rand32() & 1U) ? XFRM_MODE_TUNNEL : XFRM_MODE_TRANSPORT;
 	esn   = (rand32() & 1U) != 0;
-	replay_window = replay_windows[rand32() % ARRAY_SIZE(replay_windows)];
-	auth  = &auth_algs[rand32()  % ARRAY_SIZE(auth_algs)];
-	crypt = &crypt_algs[rand32() % ARRAY_SIZE(crypt_algs)];
+	replay_window = RAND_ARRAY(replay_windows);
+	auth  = &RAND_ARRAY(auth_algs);
+	crypt = &RAND_ARRAY(crypt_algs);
 
 	if (mode == XFRM_MODE_TUNNEL && (rand32() & 3U) == 0)
 		encap_choice = NAT_T_ENCAP_OMIT;
@@ -1043,9 +1043,9 @@ static int nat_t_churn_in_ns(void *arg)
 
 	mode  = (rand32() & 1U) ? XFRM_MODE_TUNNEL : XFRM_MODE_TRANSPORT;
 	esn   = (rand32() & 1U) != 0;
-	replay_window = replay_windows[rand32() % ARRAY_SIZE(replay_windows)];
-	auth  = &auth_algs[rand32()  % ARRAY_SIZE(auth_algs)];
-	crypt = &crypt_algs[rand32() % ARRAY_SIZE(crypt_algs)];
+	replay_window = RAND_ARRAY(replay_windows);
+	auth  = &RAND_ARRAY(auth_algs);
+	crypt = &RAND_ARRAY(crypt_algs);
 	spi   = htonl((rand32() % XFRM_SPI_RANGE) + XFRM_SPI_MIN);
 
 	/* encap omission is only meaningful in tunnel mode -- in
