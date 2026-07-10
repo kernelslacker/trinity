@@ -14,6 +14,31 @@
 #include "shm.h"
 #include "utils.h"
 
+/*
+ * Compile-time: every fixed-shape ATM/SONET/BR2684 ioctl the sanitisers
+ * below fill must have sizeof(struct) matching the _IOC_SIZE encoded in
+ * its request bits.  A mismatch means one of <linux/atmdev.h>,
+ * <linux/sonet.h> or <linux/atmbr2684.h> moved under us and the
+ * sanitiser is memset()ing / stamping into a buffer the kernel copies
+ * less of than we prepared (under-encoded) or reads past (over-encoded).
+ * The remaining ATM_/SONET_ commands here take bare scalars (int,
+ * atm_backend_t) or a raw byte buffer (SONET_GETFRSENSE) and are
+ * intentionally absent -- asserting sizeof(struct) against a scalar
+ * would not be meaningful.
+ */
+_Static_assert(sizeof(struct atmif_sioc) ==
+	       _IOC_SIZE(ATM_GETLINKRATE),
+	       "atmif_sioc size vs ATM_GETLINKRATE mismatch");
+_Static_assert(sizeof(struct atm_iobuf) ==
+	       _IOC_SIZE(ATM_GETNAMES),
+	       "atm_iobuf size vs ATM_GETNAMES mismatch");
+_Static_assert(sizeof(struct br2684_filter_set) ==
+	       _IOC_SIZE(BR2684_SETFILT),
+	       "br2684_filter_set size vs BR2684_SETFILT mismatch");
+_Static_assert(sizeof(struct sonet_stats) ==
+	       _IOC_SIZE(SONET_GETSTAT),
+	       "sonet_stats size vs SONET_GETSTAT mismatch");
+
 static int atm_fd_test(int fd, const struct stat *st __attribute__((unused)))
 {
 	struct objhead *head;
