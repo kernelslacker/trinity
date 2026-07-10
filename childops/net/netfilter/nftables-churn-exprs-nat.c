@@ -87,7 +87,7 @@ size_t build_nft_masq_expr(unsigned char *buf, size_t off, size_t cap)
 	}
 
 	if (with_min) {
-		__u32 reg = NFT_REG_1 + (rand32() % 4);
+		__u32 reg = NFT_REG_1 + (rnd_modulo_u32(4));
 
 		off = nla_put_be32(buf, off, cap,
 				   NFTA_MASQ_REG_PROTO_MIN, reg);
@@ -96,7 +96,7 @@ size_t build_nft_masq_expr(unsigned char *buf, size_t off, size_t cap)
 	}
 
 	if (with_max) {
-		__u32 reg = NFT_REG_1 + (rand32() % 4);
+		__u32 reg = NFT_REG_1 + (rnd_modulo_u32(4));
 
 		off = nla_put_be32(buf, off, cap,
 				   NFTA_MASQ_REG_PROTO_MAX, reg);
@@ -187,7 +187,7 @@ size_t build_nft_redir_expr(unsigned char *buf, size_t off, size_t cap)
 	}
 
 	if (with_min) {
-		__u32 reg = NFT_REG_1 + (rand32() % 4);
+		__u32 reg = NFT_REG_1 + (rnd_modulo_u32(4));
 
 		off = nla_put_be32(buf, off, cap,
 				   NFTA_REDIR_REG_PROTO_MIN, reg);
@@ -196,7 +196,7 @@ size_t build_nft_redir_expr(unsigned char *buf, size_t off, size_t cap)
 	}
 
 	if (with_max) {
-		__u32 reg = NFT_REG_1 + (rand32() % 4);
+		__u32 reg = NFT_REG_1 + (rnd_modulo_u32(4));
 
 		off = nla_put_be32(buf, off, cap,
 				   NFTA_REDIR_REG_PROTO_MAX, reg);
@@ -279,7 +279,7 @@ size_t build_nft_tproxy_expr(unsigned char *buf, size_t off, size_t cap)
 	}
 
 	if (with_addr) {
-		__u32 reg = NFT_REG_1 + (rand32() % 4);
+		__u32 reg = NFT_REG_1 + (rnd_modulo_u32(4));
 
 		off = nla_put_be32(buf, off, cap,
 				   NFTA_TPROXY_REG_ADDR, reg);
@@ -288,7 +288,7 @@ size_t build_nft_tproxy_expr(unsigned char *buf, size_t off, size_t cap)
 	}
 
 	if (with_port) {
-		__u32 reg = NFT_REG_1 + (rand32() % 4);
+		__u32 reg = NFT_REG_1 + (rnd_modulo_u32(4));
 
 		off = nla_put_be32(buf, off, cap,
 				   NFTA_TPROXY_REG_PORT, reg);
@@ -334,7 +334,7 @@ size_t build_nft_dup_netdev_expr(unsigned char *buf, size_t off, size_t cap)
 	if (ONE_IN(8))
 		sreg_dev = rand32();
 	else
-		sreg_dev = NFT_REG_1 + (rand32() % 4);
+		sreg_dev = NFT_REG_1 + (rnd_modulo_u32(4));
 
 	elem_off = off;
 	off = nla_put(buf, off, cap, NFTA_LIST_ELEM | NLA_F_NESTED, NULL, 0);
@@ -406,7 +406,7 @@ size_t build_nft_dup_ipv4_expr(unsigned char *buf, size_t off, size_t cap)
 	if (ONE_IN(8))
 		sreg_addr = rand32();
 	else
-		sreg_addr = NFT_REG_1 + (rand32() % 4);
+		sreg_addr = NFT_REG_1 + (rnd_modulo_u32(4));
 
 	elem_off = off;
 	off = nla_put(buf, off, cap, NFTA_LIST_ELEM | NLA_F_NESTED, NULL, 0);
@@ -430,7 +430,7 @@ size_t build_nft_dup_ipv4_expr(unsigned char *buf, size_t off, size_t cap)
 		if (ONE_IN(8))
 			sreg_dev = rand32();
 		else
-			sreg_dev = NFT_REG_1 + (rand32() % 4);
+			sreg_dev = NFT_REG_1 + (rnd_modulo_u32(4));
 
 		off = nla_put_be32(buf, off, cap, NFTA_DUP_SREG_DEV, sreg_dev);
 		if (!off)
@@ -498,7 +498,7 @@ size_t build_nft_dup_ipv6_expr(unsigned char *buf, size_t off, size_t cap)
 	if (ONE_IN(8))
 		sreg_addr = rand32();
 	else
-		sreg_addr = NFT_REG_1 + (rand32() % 4);
+		sreg_addr = NFT_REG_1 + (rnd_modulo_u32(4));
 
 	elem_off = off;
 	off = nla_put(buf, off, cap, NFTA_LIST_ELEM | NLA_F_NESTED, NULL, 0);
@@ -522,7 +522,7 @@ size_t build_nft_dup_ipv6_expr(unsigned char *buf, size_t off, size_t cap)
 		if (ONE_IN(8))
 			sreg_dev = rand32();
 		else
-			sreg_dev = NFT_REG_1 + (rand32() % 4);
+			sreg_dev = NFT_REG_1 + (rnd_modulo_u32(4));
 
 		off = nla_put_be32(buf, off, cap, NFTA_DUP_SREG_DEV, sreg_dev);
 		if (!off)
@@ -593,7 +593,7 @@ size_t build_nft_fwd_netdev_expr(unsigned char *buf, size_t off, size_t cap)
 	if (ONE_IN(8))
 		sreg_dev = rand32();
 	else
-		sreg_dev = NFT_REG_1 + (rand32() % 4);
+		sreg_dev = NFT_REG_1 + (rnd_modulo_u32(4));
 
 	elem_off = off;
 	off = nla_put(buf, off, cap, NFTA_LIST_ELEM | NLA_F_NESTED, NULL, 0);
@@ -617,7 +617,7 @@ size_t build_nft_fwd_netdev_expr(unsigned char *buf, size_t off, size_t cap)
 		if (ONE_IN(8))
 			sreg_addr = rand32();
 		else
-			sreg_addr = NFT_REG_1 + (rand32() % 4);
+			sreg_addr = NFT_REG_1 + (rnd_modulo_u32(4));
 
 		off = nla_put_be32(buf, off, cap, NFTA_FWD_SREG_ADDR, sreg_addr);
 		if (!off)
