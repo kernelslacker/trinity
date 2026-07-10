@@ -127,6 +127,5 @@ void post_ipcctl_buf_free(struct syscallrecord *rec, const char *name)
 
 	rec->a3 = 0;
 	deferred_freeptr(&snap->buf);
-	post_state_unregister(snap);
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
