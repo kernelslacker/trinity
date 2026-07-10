@@ -1,42 +1,10 @@
 /*
  * child-canary.c -- Dormant-childop canary promotion queue.
  *
- * The queue flips the runtime gate (dormant_op_disabled[]) for one
- * dormant op at a time, runs that op on a reserved canary child for a
- * fixed iteration budget, and promotes the op into the random alt-op
- * picker when it produces new edges without self-crashing.  Failed
- * canaries are demoted with a backoff.  The slots are carved from the
- * front of the existing --alt-op-children pool.
+ * Design write-up: see Documentation/childop-canary-queue.md
  *
- * State lives entirely in parent-private static memory.  The gate
- * vector (dormant_op_disabled[]) and the dense enabled_altops[]
- * vector rebuilt from it are seeded into children by fork() COW, so
- * the INITIAL snapshot is shared, but they are not shm-resident: any
- * runtime flip from dormant_op_set() is parent-only.
- *
- * Propagation model: state changes here are seen by NEW children (next
- * respawn forward).  Already-running random children -- those at slot
- * index >= alt_op_children, where pick_op_type() may select an alt-op
- * with ~5% probability -- continue with their fork-time snapshot of
- * dormant_op_disabled[] / enabled_altops[] until they exit.  Slot
- * turnover (the natural respawn cadence) propagates the new state
- * organically across the fleet.  Dedicated canary slots (the first
- * canary_slots indices) re-stamp their op_type on every respawn via
- * assign_dedicated_alt_op() and so always see the current queue state.
- *
- * Runtime promotions/demotions are deliberately not published into the
- * shared region: already-forked random children would need an shm-
- * resident gate (plus persistence) to observe them, and that cost is
- * not paid here.
- *
- * No childop implementation is modified by this queue.  A broken op
- * is detected via the demote path; the cure is to leave it dormant.
- *
- * The priority seed list (consumed in this order before the FIFO walk
- * over remaining dormant ops): genetlink_fuzzer, bpf_lifecycle,
- * iouring_recipes, nftables_churn, perf_chains, tracefs_fuzzer,
- * tls_rotate, af_unix_scm_rights_gc_churn, userns_fuzzer,
- * sock_diag_walker.
+ * Invariant: state lives entirely in parent-private static memory;
+ * runtime flips are parent-only, not shm-resident.
  */
 #include <errno.h>
 #include <signal.h>
