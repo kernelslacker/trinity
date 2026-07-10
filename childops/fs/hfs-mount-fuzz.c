@@ -204,7 +204,11 @@ static int hfs_build_image_memfd(void)
 	build_hfs_mdb(mdb);
 	{
 		ssize_t w __unused__;
-		w = pwrite(fd, mdb, sizeof(mdb), (off_t)HFS_MDB_OFFSET);
+		size_t write_len = sizeof(mdb);
+
+		if ((off_t)HFS_MDB_OFFSET + (off_t)write_len > sz)
+			write_len = (size_t)(sz - (off_t)HFS_MDB_OFFSET);
+		w = pwrite(fd, mdb, write_len, (off_t)HFS_MDB_OFFSET);
 	}
 
 	return fd;
