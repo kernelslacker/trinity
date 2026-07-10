@@ -750,7 +750,7 @@ static int bridge_ip6_refrag_fraggap_in_ns(void *arg)
 
 	(void)bif_rtnl_setlink_master(&rtnl, va_idx, br_idx);
 
-	mtu = bif_mtus[rand32() % (unsigned int)ARRAY_SIZE(bif_mtus)];
+	mtu = RAND_ARRAY(bif_mtus);
 	(void)bif_rtnl_set_mtu(&rtnl, br_idx, mtu);
 	(void)bif_rtnl_set_mtu(&rtnl, va_idx, mtu);
 	(void)bif_rtnl_set_mtu(&rtnl, vb_idx, mtu);
