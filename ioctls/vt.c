@@ -30,6 +30,35 @@ struct termios2 {
 };
 #endif
 
+/*
+ * Compile-time: sanitise_vt_termios2() fills a struct termios2 whose
+ * shape must match the _IOC_SIZE the TCGETS2 family encodes.  The
+ * bare-numeric KD/VT/TIOC ioctls dispatched elsewhere in this file
+ * (TCGETS, VT_GETMODE, KDGKBENT, ...) carry no size in their request
+ * bits (_IOC_SIZE(x) == 0) and are intentionally absent -- a static
+ * assert against them would compare sizeof(struct) to 0.
+ */
+#if defined(TCGETS2)
+_Static_assert(sizeof(struct termios2) ==
+	       _IOC_SIZE(TCGETS2),
+	       "termios2 size vs TCGETS2 _IOC_SIZE mismatch");
+#endif
+#if defined(TCSETS2)
+_Static_assert(sizeof(struct termios2) ==
+	       _IOC_SIZE(TCSETS2),
+	       "termios2 size vs TCSETS2 _IOC_SIZE mismatch");
+#endif
+#if defined(TCSETSW2)
+_Static_assert(sizeof(struct termios2) ==
+	       _IOC_SIZE(TCSETSW2),
+	       "termios2 size vs TCSETSW2 _IOC_SIZE mismatch");
+#endif
+#if defined(TCSETSF2)
+_Static_assert(sizeof(struct termios2) ==
+	       _IOC_SIZE(TCSETSF2),
+	       "termios2 size vs TCSETSF2 _IOC_SIZE mismatch");
+#endif
+
 /* KD* family */
 
 static void sanitise_vt_console_font_op(struct syscallrecord *rec)
