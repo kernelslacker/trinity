@@ -136,6 +136,10 @@ static const struct ioctl vhost_ioctls[] = {
 #ifdef VHOST_VSOCK_SET_RUNNING
 	IOCTL(VHOST_VSOCK_SET_RUNNING),
 #endif
+#ifdef VHOST_SET_FEATURES_ARRAY
+	IOCTL(VHOST_SET_FEATURES_ARRAY),
+	IOCTL(VHOST_GET_FEATURES_ARRAY),
+#endif
 };
 
 /*
@@ -285,6 +289,40 @@ static void sanitise_vhost_features(struct syscallrecord *rec)
 		rec->a3 = rand64();
 }
 
+#ifdef VHOST_SET_FEATURES_ARRAY
+static void sanitise_vhost_features_array(struct syscallrecord *rec)
+{
+	struct vhost_features_array *fa;
+	unsigned int count, i;
+	size_t sz;
+
+	/*
+	 * The kernel copies fa->count from userspace and then trusts it
+	 * to size the trailing features[] copy (count * sizeof(__u64)).
+	 * Bound count so we exercise a real flex-tail copy without
+	 * asking for an unreasonable allocation; keep an occasional
+	 * count == 0 so the zero-length boundary path stays live.
+	 * VHOST_GET_FEATURES_ARRAY shares the same layout -- the kernel
+	 * reads count in and writes the tail back, so the same buffer
+	 * shape services both directions.
+	 */
+	if (RAND_BOOL())
+		count = 0;
+	else
+		count = 1 + rnd_modulo_u32(32);
+
+	sz = sizeof(*fa) + count * sizeof(__u64);
+	fa = (struct vhost_features_array *) get_writable_struct(sz);
+	if (!fa)
+		return;
+	memset(fa, 0, sz);
+	fa->count = count;
+	for (i = 0; i < count; i++)
+		fa->features[i] = rand64();
+	rec->a3 = (unsigned long) fa;
+}
+#endif
+
 static void vhost_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
 {
 	pick_random_ioctl(grp, rec);
@@ -327,6 +365,12 @@ static void vhost_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 #endif
 		sanitise_vhost_features(rec);
 		break;
+#ifdef VHOST_SET_FEATURES_ARRAY
+	case VHOST_SET_FEATURES_ARRAY:
+	case VHOST_GET_FEATURES_ARRAY:
+		sanitise_vhost_features_array(rec);
+		break;
+#endif
 	default:
 		break;
 	}
