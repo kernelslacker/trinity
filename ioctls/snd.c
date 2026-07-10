@@ -32,6 +32,294 @@ struct hda_verb_ioctl {
 #define HDA_IOCTL_VERB_WRITE            _IOWR('H', 0x11, struct hda_verb_ioctl)
 #define HDA_IOCTL_GET_WCAP              _IOWR('H', 0x12, struct hda_verb_ioctl)
 
+/*
+ * Compile-time: every fixed-shape sound ioctl the sanitisers below
+ * fill must match the _IOC_SIZE its request encodes.  A failure means
+ * the ALSA/OSS UAPI moved and a sanitiser is memset()ing / stamping
+ * against a stale struct definition -- fix the sanitiser, do not
+ * silence.  Skipped by design: TLV / DSP_LOAD-style flex bodies,
+ * scalar int/frames args (TSTAMP, DELAY, LINK, PAUSE, REWIND,
+ * FORWARD, DROP, DRAIN, TREAD, SUBSCRIBE_EVENTS, *_NEXT_DEVICE,
+ * PREFER_SUBDEVICE, POWER, UMP_NEXT_DEVICE), and OSS DSP/mixer,
+ * HDSPM, EMU10K1 and SB CSP legacy magic-number ioctls that carry
+ * driver-specific or pointer-only args.
+ */
+_Static_assert(sizeof(struct hda_verb_ioctl) ==
+	       _IOC_SIZE(HDA_IOCTL_VERB_WRITE),
+	       "hda_verb_ioctl size vs HDA_IOCTL_VERB_WRITE mismatch");
+_Static_assert(sizeof(struct hda_verb_ioctl) ==
+	       _IOC_SIZE(HDA_IOCTL_GET_WCAP),
+	       "hda_verb_ioctl size vs HDA_IOCTL_GET_WCAP mismatch");
+
+/* hwdep */
+_Static_assert(sizeof(struct snd_hwdep_info) ==
+	       _IOC_SIZE(SNDRV_HWDEP_IOCTL_INFO),
+	       "snd_hwdep_info vs SNDRV_HWDEP_IOCTL_INFO mismatch");
+_Static_assert(sizeof(struct snd_hwdep_dsp_status) ==
+	       _IOC_SIZE(SNDRV_HWDEP_IOCTL_DSP_STATUS),
+	       "snd_hwdep_dsp_status vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct snd_hwdep_dsp_image) ==
+	       _IOC_SIZE(SNDRV_HWDEP_IOCTL_DSP_LOAD),
+	       "snd_hwdep_dsp_image vs SNDRV_HWDEP_IOCTL_DSP_LOAD mismatch");
+
+/* ctl */
+_Static_assert(sizeof(struct snd_ctl_card_info) ==
+	       _IOC_SIZE(SNDRV_CTL_IOCTL_CARD_INFO),
+	       "snd_ctl_card_info vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct snd_ctl_elem_list) ==
+	       _IOC_SIZE(SNDRV_CTL_IOCTL_ELEM_LIST),
+	       "snd_ctl_elem_list vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct snd_ctl_elem_info) ==
+	       _IOC_SIZE(SNDRV_CTL_IOCTL_ELEM_INFO),
+	       "snd_ctl_elem_info vs ELEM_INFO mismatch");
+_Static_assert(sizeof(struct snd_ctl_elem_info) ==
+	       _IOC_SIZE(SNDRV_CTL_IOCTL_ELEM_ADD),
+	       "snd_ctl_elem_info vs ELEM_ADD mismatch");
+_Static_assert(sizeof(struct snd_ctl_elem_info) ==
+	       _IOC_SIZE(SNDRV_CTL_IOCTL_ELEM_REPLACE),
+	       "snd_ctl_elem_info vs ELEM_REPLACE mismatch");
+_Static_assert(sizeof(struct snd_ctl_elem_value) ==
+	       _IOC_SIZE(SNDRV_CTL_IOCTL_ELEM_READ),
+	       "snd_ctl_elem_value vs ELEM_READ mismatch");
+_Static_assert(sizeof(struct snd_ctl_elem_value) ==
+	       _IOC_SIZE(SNDRV_CTL_IOCTL_ELEM_WRITE),
+	       "snd_ctl_elem_value vs ELEM_WRITE mismatch");
+_Static_assert(sizeof(struct snd_ctl_elem_id) ==
+	       _IOC_SIZE(SNDRV_CTL_IOCTL_ELEM_LOCK),
+	       "snd_ctl_elem_id vs ELEM_LOCK mismatch");
+_Static_assert(sizeof(struct snd_ctl_elem_id) ==
+	       _IOC_SIZE(SNDRV_CTL_IOCTL_ELEM_UNLOCK),
+	       "snd_ctl_elem_id vs ELEM_UNLOCK mismatch");
+_Static_assert(sizeof(struct snd_ctl_elem_id) ==
+	       _IOC_SIZE(SNDRV_CTL_IOCTL_ELEM_REMOVE),
+	       "snd_ctl_elem_id vs ELEM_REMOVE mismatch");
+_Static_assert(sizeof(struct snd_hwdep_info) ==
+	       _IOC_SIZE(SNDRV_CTL_IOCTL_HWDEP_INFO),
+	       "snd_hwdep_info vs CTL_HWDEP_INFO mismatch");
+_Static_assert(sizeof(struct snd_pcm_info) ==
+	       _IOC_SIZE(SNDRV_CTL_IOCTL_PCM_INFO),
+	       "snd_pcm_info vs CTL_PCM_INFO mismatch");
+_Static_assert(sizeof(struct snd_rawmidi_info) ==
+	       _IOC_SIZE(SNDRV_CTL_IOCTL_RAWMIDI_INFO),
+	       "snd_rawmidi_info vs CTL_RAWMIDI_INFO mismatch");
+
+/* pcm */
+_Static_assert(sizeof(struct snd_pcm_info) ==
+	       _IOC_SIZE(SNDRV_PCM_IOCTL_INFO),
+	       "snd_pcm_info vs PCM_INFO mismatch");
+_Static_assert(sizeof(struct snd_pcm_hw_params) ==
+	       _IOC_SIZE(SNDRV_PCM_IOCTL_HW_REFINE),
+	       "snd_pcm_hw_params vs HW_REFINE mismatch");
+_Static_assert(sizeof(struct snd_pcm_hw_params) ==
+	       _IOC_SIZE(SNDRV_PCM_IOCTL_HW_PARAMS),
+	       "snd_pcm_hw_params vs HW_PARAMS mismatch");
+_Static_assert(sizeof(struct snd_pcm_sw_params) ==
+	       _IOC_SIZE(SNDRV_PCM_IOCTL_SW_PARAMS),
+	       "snd_pcm_sw_params vs SW_PARAMS mismatch");
+_Static_assert(sizeof(struct snd_pcm_status) ==
+	       _IOC_SIZE(SNDRV_PCM_IOCTL_STATUS),
+	       "snd_pcm_status vs PCM_STATUS mismatch");
+_Static_assert(sizeof(struct snd_pcm_status) ==
+	       _IOC_SIZE(SNDRV_PCM_IOCTL_STATUS_EXT),
+	       "snd_pcm_status vs STATUS_EXT mismatch");
+_Static_assert(sizeof(struct snd_pcm_channel_info) ==
+	       _IOC_SIZE(SNDRV_PCM_IOCTL_CHANNEL_INFO),
+	       "snd_pcm_channel_info vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct snd_pcm_sync_ptr) ==
+	       _IOC_SIZE(SNDRV_PCM_IOCTL_SYNC_PTR),
+	       "snd_pcm_sync_ptr vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct snd_xferi) ==
+	       _IOC_SIZE(SNDRV_PCM_IOCTL_WRITEI_FRAMES),
+	       "snd_xferi vs WRITEI_FRAMES mismatch");
+_Static_assert(sizeof(struct snd_xferi) ==
+	       _IOC_SIZE(SNDRV_PCM_IOCTL_READI_FRAMES),
+	       "snd_xferi vs READI_FRAMES mismatch");
+_Static_assert(sizeof(struct snd_xfern) ==
+	       _IOC_SIZE(SNDRV_PCM_IOCTL_WRITEN_FRAMES),
+	       "snd_xfern vs WRITEN_FRAMES mismatch");
+_Static_assert(sizeof(struct snd_xfern) ==
+	       _IOC_SIZE(SNDRV_PCM_IOCTL_READN_FRAMES),
+	       "snd_xfern vs READN_FRAMES mismatch");
+
+/* rawmidi */
+_Static_assert(sizeof(struct snd_rawmidi_info) ==
+	       _IOC_SIZE(SNDRV_RAWMIDI_IOCTL_INFO),
+	       "snd_rawmidi_info vs RAWMIDI_INFO mismatch");
+_Static_assert(sizeof(struct snd_rawmidi_params) ==
+	       _IOC_SIZE(SNDRV_RAWMIDI_IOCTL_PARAMS),
+	       "snd_rawmidi_params vs RAWMIDI_PARAMS mismatch");
+_Static_assert(sizeof(struct snd_rawmidi_status) ==
+	       _IOC_SIZE(SNDRV_RAWMIDI_IOCTL_STATUS),
+	       "snd_rawmidi_status vs RAWMIDI_STATUS mismatch");
+
+/* timer */
+_Static_assert(sizeof(struct snd_timer_id) ==
+	       _IOC_SIZE(SNDRV_TIMER_IOCTL_NEXT_DEVICE),
+	       "snd_timer_id vs TIMER_NEXT_DEVICE mismatch");
+_Static_assert(sizeof(struct snd_timer_ginfo) ==
+	       _IOC_SIZE(SNDRV_TIMER_IOCTL_GINFO),
+	       "snd_timer_ginfo vs TIMER_GINFO mismatch");
+_Static_assert(sizeof(struct snd_timer_gparams) ==
+	       _IOC_SIZE(SNDRV_TIMER_IOCTL_GPARAMS),
+	       "snd_timer_gparams vs TIMER_GPARAMS mismatch");
+_Static_assert(sizeof(struct snd_timer_gstatus) ==
+	       _IOC_SIZE(SNDRV_TIMER_IOCTL_GSTATUS),
+	       "snd_timer_gstatus vs TIMER_GSTATUS mismatch");
+_Static_assert(sizeof(struct snd_timer_select) ==
+	       _IOC_SIZE(SNDRV_TIMER_IOCTL_SELECT),
+	       "snd_timer_select vs TIMER_SELECT mismatch");
+_Static_assert(sizeof(struct snd_timer_info) ==
+	       _IOC_SIZE(SNDRV_TIMER_IOCTL_INFO),
+	       "snd_timer_info vs TIMER_INFO mismatch");
+_Static_assert(sizeof(struct snd_timer_status) ==
+	       _IOC_SIZE(SNDRV_TIMER_IOCTL_STATUS),
+	       "snd_timer_status vs TIMER_STATUS mismatch");
+_Static_assert(sizeof(struct snd_timer_params) ==
+	       _IOC_SIZE(SNDRV_TIMER_IOCTL_PARAMS),
+	       "snd_timer_params vs TIMER_PARAMS mismatch");
+#ifdef SNDRV_TIMER_IOCTL_CREATE
+_Static_assert(sizeof(struct snd_timer_uinfo) ==
+	       _IOC_SIZE(SNDRV_TIMER_IOCTL_CREATE),
+	       "snd_timer_uinfo vs TIMER_CREATE mismatch");
+#endif
+
+/* seq */
+_Static_assert(sizeof(struct snd_seq_system_info) ==
+	       _IOC_SIZE(SNDRV_SEQ_IOCTL_SYSTEM_INFO),
+	       "snd_seq_system_info vs SEQ_SYSTEM_INFO mismatch");
+_Static_assert(sizeof(struct snd_seq_running_info) ==
+	       _IOC_SIZE(SNDRV_SEQ_IOCTL_RUNNING_MODE),
+	       "snd_seq_running_info vs SEQ_RUNNING_MODE mismatch");
+_Static_assert(sizeof(struct snd_seq_client_info) ==
+	       _IOC_SIZE(SNDRV_SEQ_IOCTL_GET_CLIENT_INFO),
+	       "snd_seq_client_info vs GET_CLIENT_INFO mismatch");
+_Static_assert(sizeof(struct snd_seq_client_info) ==
+	       _IOC_SIZE(SNDRV_SEQ_IOCTL_SET_CLIENT_INFO),
+	       "snd_seq_client_info vs SET_CLIENT_INFO mismatch");
+_Static_assert(sizeof(struct snd_seq_client_info) ==
+	       _IOC_SIZE(SNDRV_SEQ_IOCTL_QUERY_NEXT_CLIENT),
+	       "snd_seq_client_info vs QUERY_NEXT_CLIENT mismatch");
+_Static_assert(sizeof(struct snd_seq_port_info) ==
+	       _IOC_SIZE(SNDRV_SEQ_IOCTL_CREATE_PORT),
+	       "snd_seq_port_info vs CREATE_PORT mismatch");
+_Static_assert(sizeof(struct snd_seq_port_info) ==
+	       _IOC_SIZE(SNDRV_SEQ_IOCTL_DELETE_PORT),
+	       "snd_seq_port_info vs DELETE_PORT mismatch");
+_Static_assert(sizeof(struct snd_seq_port_info) ==
+	       _IOC_SIZE(SNDRV_SEQ_IOCTL_GET_PORT_INFO),
+	       "snd_seq_port_info vs GET_PORT_INFO mismatch");
+_Static_assert(sizeof(struct snd_seq_port_info) ==
+	       _IOC_SIZE(SNDRV_SEQ_IOCTL_SET_PORT_INFO),
+	       "snd_seq_port_info vs SET_PORT_INFO mismatch");
+_Static_assert(sizeof(struct snd_seq_port_info) ==
+	       _IOC_SIZE(SNDRV_SEQ_IOCTL_QUERY_NEXT_PORT),
+	       "snd_seq_port_info vs QUERY_NEXT_PORT mismatch");
+_Static_assert(sizeof(struct snd_seq_port_subscribe) ==
+	       _IOC_SIZE(SNDRV_SEQ_IOCTL_SUBSCRIBE_PORT),
+	       "snd_seq_port_subscribe vs SUBSCRIBE_PORT mismatch");
+_Static_assert(sizeof(struct snd_seq_port_subscribe) ==
+	       _IOC_SIZE(SNDRV_SEQ_IOCTL_UNSUBSCRIBE_PORT),
+	       "snd_seq_port_subscribe vs UNSUBSCRIBE_PORT mismatch");
+_Static_assert(sizeof(struct snd_seq_port_subscribe) ==
+	       _IOC_SIZE(SNDRV_SEQ_IOCTL_GET_SUBSCRIPTION),
+	       "snd_seq_port_subscribe vs GET_SUBSCRIPTION mismatch");
+_Static_assert(sizeof(struct snd_seq_queue_info) ==
+	       _IOC_SIZE(SNDRV_SEQ_IOCTL_CREATE_QUEUE),
+	       "snd_seq_queue_info vs CREATE_QUEUE mismatch");
+_Static_assert(sizeof(struct snd_seq_queue_info) ==
+	       _IOC_SIZE(SNDRV_SEQ_IOCTL_DELETE_QUEUE),
+	       "snd_seq_queue_info vs DELETE_QUEUE mismatch");
+_Static_assert(sizeof(struct snd_seq_queue_info) ==
+	       _IOC_SIZE(SNDRV_SEQ_IOCTL_GET_QUEUE_INFO),
+	       "snd_seq_queue_info vs GET_QUEUE_INFO mismatch");
+_Static_assert(sizeof(struct snd_seq_queue_info) ==
+	       _IOC_SIZE(SNDRV_SEQ_IOCTL_SET_QUEUE_INFO),
+	       "snd_seq_queue_info vs SET_QUEUE_INFO mismatch");
+_Static_assert(sizeof(struct snd_seq_queue_info) ==
+	       _IOC_SIZE(SNDRV_SEQ_IOCTL_GET_NAMED_QUEUE),
+	       "snd_seq_queue_info vs GET_NAMED_QUEUE mismatch");
+_Static_assert(sizeof(struct snd_seq_queue_status) ==
+	       _IOC_SIZE(SNDRV_SEQ_IOCTL_GET_QUEUE_STATUS),
+	       "snd_seq_queue_status vs GET_QUEUE_STATUS mismatch");
+_Static_assert(sizeof(struct snd_seq_queue_tempo) ==
+	       _IOC_SIZE(SNDRV_SEQ_IOCTL_GET_QUEUE_TEMPO),
+	       "snd_seq_queue_tempo vs GET_QUEUE_TEMPO mismatch");
+_Static_assert(sizeof(struct snd_seq_queue_tempo) ==
+	       _IOC_SIZE(SNDRV_SEQ_IOCTL_SET_QUEUE_TEMPO),
+	       "snd_seq_queue_tempo vs SET_QUEUE_TEMPO mismatch");
+_Static_assert(sizeof(struct snd_seq_queue_timer) ==
+	       _IOC_SIZE(SNDRV_SEQ_IOCTL_GET_QUEUE_TIMER),
+	       "snd_seq_queue_timer vs GET_QUEUE_TIMER mismatch");
+_Static_assert(sizeof(struct snd_seq_queue_timer) ==
+	       _IOC_SIZE(SNDRV_SEQ_IOCTL_SET_QUEUE_TIMER),
+	       "snd_seq_queue_timer vs SET_QUEUE_TIMER mismatch");
+_Static_assert(sizeof(struct snd_seq_queue_client) ==
+	       _IOC_SIZE(SNDRV_SEQ_IOCTL_GET_QUEUE_CLIENT),
+	       "snd_seq_queue_client vs GET_QUEUE_CLIENT mismatch");
+_Static_assert(sizeof(struct snd_seq_queue_client) ==
+	       _IOC_SIZE(SNDRV_SEQ_IOCTL_SET_QUEUE_CLIENT),
+	       "snd_seq_queue_client vs SET_QUEUE_CLIENT mismatch");
+_Static_assert(sizeof(struct snd_seq_client_pool) ==
+	       _IOC_SIZE(SNDRV_SEQ_IOCTL_GET_CLIENT_POOL),
+	       "snd_seq_client_pool vs GET_CLIENT_POOL mismatch");
+_Static_assert(sizeof(struct snd_seq_client_pool) ==
+	       _IOC_SIZE(SNDRV_SEQ_IOCTL_SET_CLIENT_POOL),
+	       "snd_seq_client_pool vs SET_CLIENT_POOL mismatch");
+_Static_assert(sizeof(struct snd_seq_remove_events) ==
+	       _IOC_SIZE(SNDRV_SEQ_IOCTL_REMOVE_EVENTS),
+	       "snd_seq_remove_events vs REMOVE_EVENTS mismatch");
+_Static_assert(sizeof(struct snd_seq_query_subs) ==
+	       _IOC_SIZE(SNDRV_SEQ_IOCTL_QUERY_SUBS),
+	       "snd_seq_query_subs vs QUERY_SUBS mismatch");
+#ifdef SNDRV_SEQ_IOCTL_GET_CLIENT_UMP_INFO
+_Static_assert(sizeof(struct snd_seq_client_ump_info) ==
+	       _IOC_SIZE(SNDRV_SEQ_IOCTL_GET_CLIENT_UMP_INFO),
+	       "snd_seq_client_ump_info vs GET_CLIENT_UMP_INFO mismatch");
+_Static_assert(sizeof(struct snd_seq_client_ump_info) ==
+	       _IOC_SIZE(SNDRV_SEQ_IOCTL_SET_CLIENT_UMP_INFO),
+	       "snd_seq_client_ump_info vs SET_CLIENT_UMP_INFO mismatch");
+#endif
+
+/* ump */
+_Static_assert(sizeof(struct snd_ump_endpoint_info) ==
+	       _IOC_SIZE(SNDRV_UMP_IOCTL_ENDPOINT_INFO),
+	       "snd_ump_endpoint_info vs UMP_ENDPOINT_INFO mismatch");
+_Static_assert(sizeof(struct snd_ump_block_info) ==
+	       _IOC_SIZE(SNDRV_UMP_IOCTL_BLOCK_INFO),
+	       "snd_ump_block_info vs UMP_BLOCK_INFO mismatch");
+#ifdef SNDRV_CTL_IOCTL_UMP_ENDPOINT_INFO
+_Static_assert(sizeof(struct snd_ump_endpoint_info) ==
+	       _IOC_SIZE(SNDRV_CTL_IOCTL_UMP_ENDPOINT_INFO),
+	       "snd_ump_endpoint_info vs CTL UMP_ENDPOINT_INFO mismatch");
+#endif
+#ifdef SNDRV_CTL_IOCTL_UMP_BLOCK_INFO
+_Static_assert(sizeof(struct snd_ump_block_info) ==
+	       _IOC_SIZE(SNDRV_CTL_IOCTL_UMP_BLOCK_INFO),
+	       "snd_ump_block_info vs CTL UMP_BLOCK_INFO mismatch");
+#endif
+
+/* compress offload */
+#ifdef USE_SNDDRV_COMPRESS_OFFLOAD
+_Static_assert(sizeof(struct snd_compr_caps) ==
+	       _IOC_SIZE(SNDRV_COMPRESS_GET_CAPS),
+	       "snd_compr_caps vs COMPRESS_GET_CAPS mismatch");
+_Static_assert(sizeof(struct snd_compr_codec_caps) ==
+	       _IOC_SIZE(SNDRV_COMPRESS_GET_CODEC_CAPS),
+	       "snd_compr_codec_caps vs COMPRESS_GET_CODEC_CAPS mismatch");
+_Static_assert(sizeof(struct snd_compr_params) ==
+	       _IOC_SIZE(SNDRV_COMPRESS_SET_PARAMS),
+	       "snd_compr_params vs COMPRESS_SET_PARAMS mismatch");
+_Static_assert(sizeof(struct snd_codec) ==
+	       _IOC_SIZE(SNDRV_COMPRESS_GET_PARAMS),
+	       "snd_codec vs COMPRESS_GET_PARAMS mismatch");
+_Static_assert(sizeof(struct snd_compr_tstamp) ==
+	       _IOC_SIZE(SNDRV_COMPRESS_TSTAMP),
+	       "snd_compr_tstamp vs COMPRESS_TSTAMP mismatch");
+_Static_assert(sizeof(struct snd_compr_avail) ==
+	       _IOC_SIZE(SNDRV_COMPRESS_AVAIL),
+	       "snd_compr_avail vs COMPRESS_AVAIL mismatch");
+#endif
+
 static void sanitise_snd_hwdep(struct syscallrecord *rec)
 {
 	switch (rec->a2) {
