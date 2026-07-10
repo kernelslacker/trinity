@@ -442,7 +442,7 @@ static int build_pmsr_ftm_req(struct genl_ctx *ctx, uint32_t ifindex,
 	size_t off;
 	size_t pmsr_off, peers_off, peer1_off, req_off, type_ftm_off, ftm_off;
 	unsigned char mac[6];
-	uint32_t preamble = (uint32_t)(rand32() % 4U);	/* LEGACY..DMG */
+	uint32_t preamble = rnd_modulo_u32(4U);	/* LEGACY..DMG */
 	uint16_t burst_period = (uint16_t)(rand32() & 0xffffu);
 	uint8_t num_bursts_exp = (uint8_t)(rand32() & 0xfu);
 	uint8_t burst_duration = (uint8_t)(rand32() & 0xfu);
@@ -1073,7 +1073,7 @@ static void nl80211_iter_submodes(struct genl_ctx *ctx, int ifindex)
 
 	if (ONE_IN(8) && created_count > 0) {
 		bool as_u32 = ONE_IN(2);
-		int slot = (int)(rand32() % created_count);
+		int slot = (int)rnd_modulo_u32(created_count);
 		int target = created_ifindex[slot];
 
 		if (target > 0) {
