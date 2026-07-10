@@ -7,6 +7,40 @@
 #include "sanitise.h"
 #include "utils.h"
 
+/*
+ * Compile-time: the RTC command set is split across three
+ * fixed-shape uapi structs and the sanitisers below fill each to
+ * sizeof(struct).  Pin every struct against a representative
+ * _IOC_SIZE so that a <linux/rtc.h> refactor that grows or shrinks
+ * one of them hard-fails the compile rather than silently having
+ * the kernel copy_from_user() / copy_to_user() a different number
+ * of bytes than the sanitiser prepared.
+ *
+ * RTC_ALM_{SET,READ}, RTC_RD_TIME and RTC_SET_TIME all carry
+ * struct rtc_time; RTC_WKALM_{SET,RD} carry struct rtc_wkalrm;
+ * RTC_PLL_{GET,SET} carry struct rtc_pll_info.  One assert per
+ * struct is enough -- the RTC uapi wires every command in a group
+ * to the same struct, so all commands in a group share the same
+ * _IOC_SIZE.
+ *
+ * RTC_IRQP_{READ,SET} and RTC_EPOCH_{READ,SET} take a bare
+ * unsigned long; RTC_VL_READ takes a bare unsigned int; the
+ * RTC_{AIE,UIE,PIE,WIE}_{ON,OFF} and RTC_VL_CLR entries are
+ * _IO() with no arg; RTC_PARAM_{GET,SET} carry struct rtc_param
+ * whose _IOC_SIZE is deliberately not asserted here (not touched
+ * by this file's sanitisers).  Asserting sizeof(struct) against a
+ * scalar or a zero _IOC_SIZE would be the wrong shape of check.
+ */
+_Static_assert(sizeof(struct rtc_time) ==
+	       _IOC_SIZE(RTC_RD_TIME),
+	       "rtc_time size vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct rtc_wkalrm) ==
+	       _IOC_SIZE(RTC_WKALM_RD),
+	       "rtc_wkalrm size vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct rtc_pll_info) ==
+	       _IOC_SIZE(RTC_PLL_GET),
+	       "rtc_pll_info size vs _IOC_SIZE mismatch");
+
 static void fill_rtc_time(struct rtc_time *t)
 {
 	t->tm_sec = rnd_modulo_u32(60);
