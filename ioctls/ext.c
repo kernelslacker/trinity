@@ -50,6 +50,41 @@ struct ext4_encryption_policy {
 #define EXT4_IOC_GET_ENCRYPTION_PWSALT  _IOW('f', 20, __u8[16])
 #define EXT4_IOC_GET_ENCRYPTION_POLICY  _IOW('f', 21, struct ext4_encryption_policy)
 
+/*
+ * Compile-time: every fixed-shape ext ioctl command whose arg is a
+ * kernel struct must have sizeof(struct) matching the _IOC_SIZE
+ * encoded in its request bits.  A mismatch means one of the local
+ * struct definitions or the matching _IO* macro moved without the
+ * other, and the kernel will copy_from_user() / copy_to_user() a
+ * different number of bytes than we prepared -- either short of the
+ * kernel's copy or past it.  EXT4_IOC_SET_ENCRYPTION_POLICY and
+ * EXT4_IOC_GET_ENCRYPTION_POLICY both take ext4_encryption_policy
+ * and get one assert each -- the two sides can drift independently
+ * in a header refactor.
+ *
+ * EXT4_IOC_GETVERSION, EXT4_IOC_SETVERSION, EXT4_IOC_GETRSVSZ,
+ * EXT4_IOC_SETRSVSZ, EXT4_IOC_GROUP_EXTEND and EXT4_IOC_RESIZE_FS
+ * encode a bare scalar (long / unsigned long / __u64);
+ * EXT4_IOC_GET_ENCRYPTION_PWSALT encodes a fixed 16-byte array;
+ * EXT4_IOC_MIGRATE, EXT4_IOC_ALLOC_DA_BLKS, EXT4_IOC_SWAP_BOOT and
+ * EXT4_IOC_PRECACHE_EXTENTS are _IO() with no arg at all.  All are
+ * intentionally absent -- asserting sizeof(struct) against a scalar,
+ * a bare array, or a zero _IOC_SIZE would be the wrong shape of
+ * check.
+ */
+_Static_assert(sizeof(struct ext4_new_group_input) ==
+	       _IOC_SIZE(EXT4_IOC_GROUP_ADD),
+	       "ext4_new_group_input size vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct move_extent) ==
+	       _IOC_SIZE(EXT4_IOC_MOVE_EXT),
+	       "move_extent size vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct ext4_encryption_policy) ==
+	       _IOC_SIZE(EXT4_IOC_SET_ENCRYPTION_POLICY),
+	       "ext4_encryption_policy size vs EXT4_IOC_SET_ENCRYPTION_POLICY mismatch");
+_Static_assert(sizeof(struct ext4_encryption_policy) ==
+	       _IOC_SIZE(EXT4_IOC_GET_ENCRYPTION_POLICY),
+	       "ext4_encryption_policy size vs EXT4_IOC_GET_ENCRYPTION_POLICY mismatch");
+
 static int ext_fd_test(int fd, const struct stat *st __attribute__((unused)))
 {
 	struct objhead *head;
