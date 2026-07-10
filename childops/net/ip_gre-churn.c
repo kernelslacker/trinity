@@ -502,7 +502,7 @@ static void ip_gre_iter_send_burst(struct ip_gre_iter_ctx *ctx)
 		off = stamp_gre_header(pkt, off, ctx->gre_flags,
 				       ctx->key, (__u32)i);
 
-		shape = (enum inner_shape)(rand32() % INNER_SHAPE_NR);
+		shape = (enum inner_shape)rnd_modulo_u32(INNER_SHAPE_NR);
 		off = stamp_inner_frame(pkt, off, shape);
 
 		iph->tot_len = htons((__u16)off);
