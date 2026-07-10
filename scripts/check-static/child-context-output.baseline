@@ -99,7 +99,7 @@ syscalls/io_uring/io_uring_register.c:post_io_uring_register
 syscalls/ipc/sysv/ipc.c:post_ipc
 syscalls/process/kcmp.c:post_kcmp
 syscalls/xattr/lgetxattr.c:post_lgetxattr
-syscalls/listmount.c:post_listmount
+syscalls/fs/mount/listmount.c:post_listmount
 syscalls/process/listns.c:post_listns
 syscalls/xattr/listxattrat.c:post_listxattrat
 syscalls/xattr/listxattr.c:post_flistxattr
@@ -195,7 +195,7 @@ syscalls/socket/socketpair.c:post_socketpair
 syscalls/fs/stat/stat.c:post_statx
 syscalls/fs/stat/statfs.c:post_statfs
 syscalls/fs/stat/statfs.c:post_statfs64
-syscalls/statmount.c:post_statmount
+syscalls/fs/mount/statmount.c:post_statmount
 syscalls/fs/stat/sysfs.c:post_sysfs
 syscalls/sysinfo.c:post_sysinfo
 syscalls/clock/time.c:post_time
