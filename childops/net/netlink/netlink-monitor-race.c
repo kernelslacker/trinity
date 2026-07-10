@@ -111,7 +111,6 @@ static const __u32 monitor_group_ids[] = {
 	RTNLGRP_IPV6_IFADDR,		/* RTMGRP_IPV6_IFADDR */
 	RTNLGRP_IPV6_ROUTE,		/* RTMGRP_IPV6_ROUTE */
 };
-#define NR_MONITOR_GROUPS	(sizeof(monitor_group_ids) / sizeof(monitor_group_ids[0]))
 
 /* Latched per-child: userns_run_in_ns() reported -EPERM, meaning the
  * grandchild's unshare(CLONE_NEWUSER) was refused by a hardened policy
@@ -404,8 +403,8 @@ static void netlink_monitor_race_iter_address_burst(struct netlink_monitor_race_
  */
 static void netlink_monitor_race_iter_membership_churn(struct netlink_monitor_race_iter_ctx *ctx)
 {
-	__u32 drop_grp = monitor_group_ids[rand32() % NR_MONITOR_GROUPS];
-	__u32 add_grp  = monitor_group_ids[rand32() % NR_MONITOR_GROUPS];
+	__u32 drop_grp = RAND_ARRAY(monitor_group_ids);
+	__u32 add_grp  = RAND_ARRAY(monitor_group_ids);
 
 	if (setsockopt(ctx->mon.fd, SOL_NETLINK, NETLINK_DROP_MEMBERSHIP,
 		       &drop_grp, sizeof(drop_grp)) == 0)
