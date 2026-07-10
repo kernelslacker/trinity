@@ -69,7 +69,7 @@ syscalls/cred/getgid.c:post_getgid
 syscalls/cred/getgroups.c:post_getgroups
 syscalls/itimer/getitimer.c:post_getitimer
 syscalls/get_mempolicy.c:post_get_mempolicy
-syscalls/getpagesize.c:post_getpagesize
+syscalls/hardware/getpagesize.c:post_getpagesize
 syscalls/socket/getpeername.c:getpeername_recheck
 syscalls/socket/getpeername.c:getpeername_report_divergence
 syscalls/socket/getpeername.c:getpeername_validate_snap
