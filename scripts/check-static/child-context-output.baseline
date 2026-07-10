@@ -106,8 +106,8 @@ syscalls/xattr/listxattr.c:post_flistxattr
 syscalls/xattr/listxattr.c:post_listxattr
 syscalls/xattr/listxattr.c:post_llistxattr
 syscalls/lookup_dcookie.c:post_lookup_dcookie
-syscalls/lsm_get_self_attr.c:post_lsm_get_self_attr
-syscalls/lsm_list_modules.c:post_lsm_list_modules
+syscalls/lsm/lsm_get_self_attr.c:post_lsm_get_self_attr
+syscalls/lsm/lsm_list_modules.c:post_lsm_list_modules
 syscalls/map_shadow_stack.c:post_map_shadow_stack
 syscalls/mmap.c:post_mmap_oracle_aligned
 syscalls/mmap.c:post_mmap_oracle_proc_maps
