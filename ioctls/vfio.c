@@ -122,7 +122,7 @@ static void sanitise_vfio_dma_map(struct syscallrecord *rec)
 	m->flags = ONE_IN(4)
 		 ? VFIO_DMA_MAP_FLAG_READ
 		 : (VFIO_DMA_MAP_FLAG_READ | VFIO_DMA_MAP_FLAG_WRITE);
-	m->iova = (rnd_u64() % VFIO_FUZZ_IOVA_LIMIT)
+	m->iova = rnd_modulo_u64(VFIO_FUZZ_IOVA_LIMIT)
 		& ~(VFIO_FUZZ_PAGE_SIZE - 1);
 	m->size = size;
 	m->vaddr = (__u64)(unsigned long)ua;
@@ -153,7 +153,7 @@ static void sanitise_vfio_dma_unmap(struct syscallrecord *rec)
 		u->iova = 0;
 		u->size = 0;
 	} else {
-		u->iova = (rnd_u64() % VFIO_FUZZ_IOVA_LIMIT)
+		u->iova = rnd_modulo_u64(VFIO_FUZZ_IOVA_LIMIT)
 			& ~(VFIO_FUZZ_PAGE_SIZE - 1);
 		u->size = size;
 	}
