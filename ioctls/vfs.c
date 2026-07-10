@@ -125,6 +125,68 @@ struct space_resv {
 #endif
 
 /*
+ * Compile-time: every fixed-shape vfs ioctl command whose arg is a
+ * kernel struct must have sizeof(struct) matching the _IOC_SIZE
+ * encoded in its request bits.  A mismatch means the kernel uapi
+ * header moved under us and the request bits now encode a different
+ * struct than we're passing (or vice versa) -- either short of the
+ * kernel's copy_from_user() / copy_to_user() or past it.  Commands
+ * sharing a struct (FS_IOC_RESVSP and FS_IOC_RESVSP64 both take
+ * space_resv; FS_IOC_FSGETXATTR and FS_IOC_FSSETXATTR both take
+ * fsxattr; FS_IOC_SET_ENCRYPTION_POLICY and
+ * FS_IOC_GET_ENCRYPTION_POLICY both take fscrypt_policy) get one
+ * assert each -- the two sides can drift independently in a header
+ * refactor.
+ *
+ * FS_IOC_FIEMAP, FS_IOC_GETFSMAP and FIDEDUPERANGE encode a fixed
+ * head followed by a variable-length flex-array tail (fm_extents[],
+ * fmh_recs[], info[]); FIO*, BLK* and FS_IOC_GETFLAGS-family commands
+ * encode a bare scalar (int / long / loff_t / size_t) or nothing at
+ * all.  All are intentionally absent -- asserting sizeof(struct)
+ * against a flex-array tail, a scalar, or a zero _IOC_SIZE would be
+ * the wrong shape of check.
+ */
+_Static_assert(sizeof(struct file_clone_range) ==
+	       _IOC_SIZE(FICLONERANGE),
+	       "file_clone_range size vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct space_resv) ==
+	       _IOC_SIZE(FS_IOC_RESVSP),
+	       "space_resv size vs FS_IOC_RESVSP mismatch");
+_Static_assert(sizeof(struct space_resv) ==
+	       _IOC_SIZE(FS_IOC_RESVSP64),
+	       "space_resv size vs FS_IOC_RESVSP64 mismatch");
+#ifdef BLKTRACESETUP
+_Static_assert(sizeof(struct blk_user_trace_setup) ==
+	       _IOC_SIZE(BLKTRACESETUP),
+	       "blk_user_trace_setup size vs _IOC_SIZE mismatch");
+#endif
+#ifdef FITRIM
+_Static_assert(sizeof(struct fstrim_range) ==
+	       _IOC_SIZE(FITRIM),
+	       "fstrim_range size vs _IOC_SIZE mismatch");
+#endif
+#ifdef FS_IOC_FSGETXATTR
+_Static_assert(sizeof(struct fsxattr) ==
+	       _IOC_SIZE(FS_IOC_FSGETXATTR),
+	       "fsxattr size vs FS_IOC_FSGETXATTR mismatch");
+#endif
+#ifdef FS_IOC_FSSETXATTR
+_Static_assert(sizeof(struct fsxattr) ==
+	       _IOC_SIZE(FS_IOC_FSSETXATTR),
+	       "fsxattr size vs FS_IOC_FSSETXATTR mismatch");
+#endif
+#ifdef FS_IOC_SET_ENCRYPTION_POLICY
+_Static_assert(sizeof(struct fscrypt_policy) ==
+	       _IOC_SIZE(FS_IOC_SET_ENCRYPTION_POLICY),
+	       "fscrypt_policy size vs FS_IOC_SET_ENCRYPTION_POLICY mismatch");
+#endif
+#ifdef FS_IOC_GET_ENCRYPTION_POLICY
+_Static_assert(sizeof(struct fscrypt_policy) ==
+	       _IOC_SIZE(FS_IOC_GET_ENCRYPTION_POLICY),
+	       "fscrypt_policy size vs FS_IOC_GET_ENCRYPTION_POLICY mismatch");
+#endif
+
+/*
  * Header-count gated query: fm_extent_count == 0 makes FIEMAP a pure
  * read-only "how many extents?" probe — the kernel never reads or writes
  * the fm_extents[] tail and only stores the count in fm_mapped_extents.
