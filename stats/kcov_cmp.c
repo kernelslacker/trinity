@@ -139,11 +139,11 @@ static void kcov_cmp_observability_block_render(long elapsed __unused__)
 		 * lands between two dumps can publish a lower value; clamp
 		 * to zero so a one-shot warm-start doesn't underflow into a
 		 * ~ULONG_MAX delta the topn picker would pin to slot 0. */
-		delta_inserts    = (cur_inserts    > prev_cmp_inserts[i])  ? cur_inserts    - prev_cmp_inserts[i]  : 0;
-		delta_injected   = (cur_injected   > prev_cmp_injected[i]) ? cur_injected   - prev_cmp_injected[i] : 0;
-		delta_pc_wins    = (cur_pc_wins    > prev_pc_wins[i])      ? cur_pc_wins    - prev_pc_wins[i]      : 0;
-		delta_edges      = (cur_edges      > prev_edges[i])        ? cur_edges      - prev_edges[i]        : 0;
-		delta_reject_cap = (cur_reject_cap > prev_reject_cap[i])   ? cur_reject_cap - prev_reject_cap[i]   : 0;
+		delta_inserts    = sat_sub_ul(cur_inserts,    prev_cmp_inserts[i]);
+		delta_injected   = sat_sub_ul(cur_injected,   prev_cmp_injected[i]);
+		delta_pc_wins    = sat_sub_ul(cur_pc_wins,    prev_pc_wins[i]);
+		delta_edges      = sat_sub_ul(cur_edges,      prev_edges[i]);
+		delta_reject_cap = sat_sub_ul(cur_reject_cap, prev_reject_cap[i]);
 
 		prev_cmp_inserts[i] = cur_inserts;
 		prev_cmp_injected[i] = cur_injected;
@@ -265,8 +265,8 @@ static void kcov_redqueen_observability_block_render(long elapsed __unused__)
 			continue;
 		}
 
-		delta_attempts = (cur_attempts > prev_attempts[i])  ? cur_attempts - prev_attempts[i]  : 0;
-		delta_ambig    = (cur_ambig    > prev_ambiguous[i]) ? cur_ambig    - prev_ambiguous[i] : 0;
+		delta_attempts = sat_sub_ul(cur_attempts, prev_attempts[i]);
+		delta_ambig    = sat_sub_ul(cur_ambig,    prev_ambiguous[i]);
 
 		prev_attempts[i] = cur_attempts;
 		prev_ambiguous[i] = cur_ambig;
