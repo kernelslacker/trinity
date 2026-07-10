@@ -619,7 +619,7 @@ static __u8 pick_family(void)
 		NFPROTO_INET, NFPROTO_BRIDGE, NFPROTO_NETDEV,
 	};
 
-	return families[rand32() % ARRAY_SIZE(families)];
+	return RAND_ARRAY(families);
 }
 
 /*
@@ -1467,8 +1467,8 @@ static void nft_dormant_abort_sweep(struct nfnl_ctx *ctx)
 	char table_name[32];
 	const char *chain_name = "dhkc";
 	__u8 family = NFPROTO_INET;
-	__u32 hk_a = hooks[rand32() % ARRAY_SIZE(hooks)];
-	__u32 hk_b = hooks[rand32() % ARRAY_SIZE(hooks)];
+	__u32 hk_a = RAND_ARRAY(hooks);
+	__u32 hk_b = RAND_ARRAY(hooks);
 	__u64 bogus_handle;
 	size_t off = 0, msg_off, hook_off;
 	__u16 chain_flags[] = { NLM_F_CREATE, NLM_F_REPLACE };
