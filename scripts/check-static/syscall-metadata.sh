@@ -102,7 +102,9 @@ fi
 
 # Count how many ARG_RANGE arguments we successfully validated, for
 # the pass line.
-total_range=$(grep -h "ARG_RANGE" "$ROOT"/syscalls/*.c 2>/dev/null \
+total_range=$(find "$ROOT/syscalls" \
+	\( -type d \( -name x86 -o -name ppc -o -name sh -o -name sparc -o -name s390x \) -prune \) \
+	-o -type f -name '*.c' -exec grep -h "ARG_RANGE" {} + 2>/dev/null \
 	| grep -oE 'ARG_RANGE' | wc -l)
 echo "PASS: $NAME (ARG_RANGE occurrences validated: $total_range)"
 exit 0
