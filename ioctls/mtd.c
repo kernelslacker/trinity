@@ -7,6 +7,88 @@
 #include "sanitise.h"
 #include "utils.h"
 
+/*
+ * Compile-time: every fixed-shape MTD ioctl command the sanitisers
+ * below fill must have sizeof(struct) matching the _IOC_SIZE encoded
+ * in its request bits.  A mismatch means the kernel mtd-abi.h moved
+ * under us and the sanitiser is stamping into a buffer the kernel
+ * copies less of than we prepared (under-encoded) or reads past
+ * (over-encoded).  Commands sharing a struct (MEMERASE, MEMLOCK,
+ * MEMUNLOCK, MEMISLOCKED all take erase_info_user; MEMWRITEOOB and
+ * MEMREADOOB both take mtd_oob_buf; MEMWRITEOOB64 and MEMREADOOB64
+ * both take mtd_oob_buf64; OTPGETREGIONINFO, OTPLOCK, OTPERASE all
+ * take otp_info) get one assert each -- the two sides can drift
+ * independently in a header refactor.  MEMGETREGIONCOUNT, OTPSELECT
+ * and OTPGETREGIONCOUNT take a bare int, MEMGETBADBLOCK and
+ * MEMSETBADBLOCK take a __kernel_loff_t, and MTDFILEMODE has no
+ * struct arg -- all are intentionally absent.
+ */
+_Static_assert(sizeof(struct mtd_info_user) ==
+	       _IOC_SIZE(MEMGETINFO),
+	       "mtd_info_user size vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct erase_info_user) ==
+	       _IOC_SIZE(MEMERASE),
+	       "erase_info_user size vs MEMERASE mismatch");
+_Static_assert(sizeof(struct mtd_oob_buf) ==
+	       _IOC_SIZE(MEMWRITEOOB),
+	       "mtd_oob_buf size vs MEMWRITEOOB mismatch");
+_Static_assert(sizeof(struct mtd_oob_buf) ==
+	       _IOC_SIZE(MEMREADOOB),
+	       "mtd_oob_buf size vs MEMREADOOB mismatch");
+_Static_assert(sizeof(struct erase_info_user) ==
+	       _IOC_SIZE(MEMLOCK),
+	       "erase_info_user size vs MEMLOCK mismatch");
+_Static_assert(sizeof(struct erase_info_user) ==
+	       _IOC_SIZE(MEMUNLOCK),
+	       "erase_info_user size vs MEMUNLOCK mismatch");
+_Static_assert(sizeof(struct region_info_user) ==
+	       _IOC_SIZE(MEMGETREGIONINFO),
+	       "region_info_user size vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct nand_oobinfo) ==
+	       _IOC_SIZE(MEMGETOOBSEL),
+	       "nand_oobinfo size vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct otp_info) ==
+	       _IOC_SIZE(OTPGETREGIONINFO),
+	       "otp_info size vs OTPGETREGIONINFO mismatch");
+_Static_assert(sizeof(struct otp_info) ==
+	       _IOC_SIZE(OTPLOCK),
+	       "otp_info size vs OTPLOCK mismatch");
+_Static_assert(sizeof(struct nand_ecclayout_user) ==
+	       _IOC_SIZE(ECCGETLAYOUT),
+	       "nand_ecclayout_user size vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct mtd_ecc_stats) ==
+	       _IOC_SIZE(ECCGETSTATS),
+	       "mtd_ecc_stats size vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct erase_info_user64) ==
+	       _IOC_SIZE(MEMERASE64),
+	       "erase_info_user64 size vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct mtd_oob_buf64) ==
+	       _IOC_SIZE(MEMWRITEOOB64),
+	       "mtd_oob_buf64 size vs MEMWRITEOOB64 mismatch");
+_Static_assert(sizeof(struct mtd_oob_buf64) ==
+	       _IOC_SIZE(MEMREADOOB64),
+	       "mtd_oob_buf64 size vs MEMREADOOB64 mismatch");
+#ifdef MEMISLOCKED
+_Static_assert(sizeof(struct erase_info_user) ==
+	       _IOC_SIZE(MEMISLOCKED),
+	       "erase_info_user size vs MEMISLOCKED mismatch");
+#endif
+#ifdef MEMWRITE
+_Static_assert(sizeof(struct mtd_write_req) ==
+	       _IOC_SIZE(MEMWRITE),
+	       "mtd_write_req size vs _IOC_SIZE mismatch");
+#endif
+#ifdef OTPERASE
+_Static_assert(sizeof(struct otp_info) ==
+	       _IOC_SIZE(OTPERASE),
+	       "otp_info size vs OTPERASE mismatch");
+#endif
+#ifdef MEMREAD
+_Static_assert(sizeof(struct mtd_read_req) ==
+	       _IOC_SIZE(MEMREAD),
+	       "mtd_read_req size vs _IOC_SIZE mismatch");
+#endif
+
 static void sanitise_erase_info_user(struct syscallrecord *rec)
 {
 	struct erase_info_user *eiu;
