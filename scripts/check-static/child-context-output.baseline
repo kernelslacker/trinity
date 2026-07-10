@@ -96,7 +96,7 @@ syscalls/inotify_add_watch.c:post_inotify_add_watch
 syscalls/sched/ioprio_get.c:post_ioprio_get
 syscalls/io_setup.c:post_io_setup
 syscalls/io_uring_register.c:post_io_uring_register
-syscalls/ipc.c:post_ipc
+syscalls/ipc/sysv/ipc.c:post_ipc
 syscalls/kcmp.c:post_kcmp
 syscalls/xattr/lgetxattr.c:post_lgetxattr
 syscalls/listmount.c:post_listmount
