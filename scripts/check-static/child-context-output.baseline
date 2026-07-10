@@ -68,7 +68,7 @@ syscalls/cred/geteuid.c:post_geteuid
 syscalls/cred/getgid.c:post_getgid
 syscalls/cred/getgroups.c:post_getgroups
 syscalls/itimer/getitimer.c:post_getitimer
-syscalls/get_mempolicy.c:post_get_mempolicy
+syscalls/mm/numa/get_mempolicy.c:post_get_mempolicy
 syscalls/hardware/getpagesize.c:post_getpagesize
 syscalls/socket/getpeername.c:getpeername_recheck
 syscalls/socket/getpeername.c:getpeername_report_divergence
@@ -111,7 +111,7 @@ syscalls/lsm/lsm_list_modules.c:post_lsm_list_modules
 syscalls/mm/map_shadow_stack.c:post_map_shadow_stack
 syscalls/mm/mmap.c:post_mmap_oracle_aligned
 syscalls/mm/mmap.c:post_mmap_oracle_proc_maps
-syscalls/move_pages.c:post_move_pages
+syscalls/mm/numa/move_pages.c:post_move_pages
 syscalls/mm/mprotect.c:post_mprotect
 syscalls/mq/mq_notify.c:post_mq_notify
 syscalls/mq/mq_open.c:post_mq_open
