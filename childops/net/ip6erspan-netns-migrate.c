@@ -441,7 +441,7 @@ static int inm_open_self_netns(void)
 static int ip6erspan_migrate_iter_setup(struct ip6erspan_migrate_iter_ctx *ctx,
 					const struct nl_open_opts *opts)
 {
-	ctx->k = (enum inm_kind)(rand32() % (unsigned int)INM_KIND_NR);
+	ctx->k = (enum inm_kind)rnd_modulo_u32((unsigned int)INM_KIND_NR);
 
 	if (nl_open(&ctx->nl, opts) < 0)
 		return -1;
