@@ -92,7 +92,7 @@ syscalls/clock/gettimeofday.c:post_gettimeofday
 syscalls/cred/getuid.c:post_getuid
 syscalls/xattr/getxattrat.c:post_getxattrat
 syscalls/xattr/getxattr.c:post_getxattr
-syscalls/inotify_add_watch.c:post_inotify_add_watch
+syscalls/fsnotify/inotify_add_watch.c:post_inotify_add_watch
 syscalls/sched/ioprio_get.c:post_ioprio_get
 syscalls/aio/io_setup.c:post_io_setup
 syscalls/io_uring/io_uring_register.c:post_io_uring_register
