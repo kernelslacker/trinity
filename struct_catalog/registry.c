@@ -809,31 +809,11 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 */
 	{ "utime",		2, &struct_catalog[SC_UTIMBUF] },
 	/*
-	 * fcntl(int fd, int cmd, ... arg)
-	 * a3's type depends on the cmd in a2 -- the first proof of the
-	 * discriminator-aware syscall_struct_args[] mechanism.  Two
-	 * variants, both attribution-only (the bespoke sanitise_fcntl()
-	 * keeps owning the live fill):
-	 *
-	 *   - struct flock for F_GETLK / F_SETLK / F_SETLKW, the F_OFD_*
-	 *     variants, F_CANCELLK (and the LK64 variants on archs where
-	 *     F_GETLK64 != F_GETLK).  build_flock() picks an l_type /
-	 *     l_whence vocab member, a bounded l_start and l_len, and
-	 *     zeroes l_pid.  struct_field_for_cmp() steers CMP-learned
-	 *     constants at the named l_type / l_whence slots.
-	 *
-	 *   - struct f_owner_ex for F_GETOWN_EX / F_SETOWN_EX.  The
-	 *     bespoke arm picks type from {F_OWNER_TID, F_OWNER_PID,
-	 *     F_OWNER_PGRP} and stamps get_pid() into pid;
-	 *     struct_field_for_cmp() steers CMP-learned constants at the
-	 *     named type slot.
-	 *
-	 * cmds that don't carry a struct at a3 (F_DUPFD, F_GETFD,
-	 * F_SETFL, F_*OWN, F_*SIG, F_*LEASE, F_*PIPE_SZ, F_ADD_SEALS,
-	 * F_NOTIFY, F_DUPFD_QUERY, ...) match no variant and resolve to
-	 * NULL -- gen_arg_struct_ptr_inout falls through to a zeroed
-	 * fallback buffer that sanitise_fcntl overwrites with an fd or
-	 * integer flag word, same as before.
+	 * fcntl(int fd, int cmd, ... arg): a3 is cmd-discriminated between
+	 * struct flock (fcntl_flock_cmds pool) and struct f_owner_ex
+	 * (fcntl_f_owner_ex_cmds pool).  Both attribution-only; bespoke
+	 * sanitise_fcntl() owns the live fill.  Unlisted cmds resolve NULL.
+	 * See Documentation/struct_catalog.md.
 	 */
 	{
 		"fcntl", 3, &struct_catalog[SC_FLOCK],
@@ -848,66 +828,22 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 		.num_discrim_values	= ARRAY_SIZE(fcntl_f_owner_ex_cmds),
 	},
 	/*
-	 * settimeofday(struct timeval __user *tv, struct timezone __user *tz)
-	 * a1 is the INPUT struct timeval pointer.  The bespoke
-	 * sanitise_settimeofday() keeps owning the live fill (70% near-now
-	 * via clock_gettime() + bounded tv_usec, 30% random with an
-	 * explicit invalid-tv_usec leg).  Attribution-only registration
-	 * lets struct_field_for_cmp steer CMP-learned constants at the
-	 * named tv_sec / tv_usec slots rather than at a coincidentally-
-	 * same-width slot.
-	 *
-	 * select(int n, fd_set *, fd_set *, fd_set *, struct timeval *tvp)
-	 * a5 is the INOUT timeout pointer.  sanitise_select() stamps a
-	 * deterministic {0, 10us} short timeout in the writable buffer it
-	 * allocates; the kernel may write back the remaining time, so the
-	 * slot is INOUT.  Attribution-only registration again -- the
-	 * bespoke fill remains the sole writer; the catalog entry just
-	 * lets CMP-learned constants attribute at tv_sec / tv_usec rather
-	 * than at a coincidentally-same-width slot.
-	 *
-	 * futimesat(int dfd, const char __user *filename,
-	 *           struct timeval __user *utimes)
-	 * a3 is the INPUT struct timeval[2] pointer.  The bespoke
-	 * sanitise_futimesat() owns the live fill via a bucketed picker
-	 * (NULL leg, near-now / far-past / far-future valid, deliberately
-	 * invalid tv_usec, mixed, fully random) writing both array
-	 * elements into a get_writable_address(sizeof(*tv) * 2) slab.
-	 * Attribution-only registration describes utimes[0] only -- the
-	 * single-struct descriptor cannot span the [2] array, but covering
-	 * the first element is enough to let struct_field_for_cmp steer
-	 * CMP-learned constants at the named tv_sec / tv_usec slots
-	 * rather than at a coincidentally-same-width slot.  The bespoke
-	 * fill remains the sole writer of both elements.
-	 *
-	 * utimes(char __user *filename, struct __kernel_old_timeval __user *utimes)
-	 * a2 is the INPUT struct timeval[2] pointer.  Attribution-only
-	 * registration describes utimes[0] only -- the single-struct
-	 * descriptor cannot span the [2] array, but covering the first
-	 * element is enough to let struct_field_for_cmp steer CMP-learned
-	 * constants at the named tv_sec / tv_usec slots rather than at a
-	 * coincidentally-same-width slot.  The live fill remains the sole
-	 * writer of both elements.
-	 *
-	 * Not mapped here on purpose: gettimeofday's a1 is a kernel-written
-	 * OUTPUT buffer with no input fill to attribute against.
+	 * timeval slots on settimeofday a1 (INPUT), select a5 (INOUT
+	 * remaining-time), futimesat a3 (INPUT timeval[2], first-elem
+	 * only), utimes a2 (INPUT timeval[2], first-elem only).  All
+	 * attribution-only; bespoke sanitisers own the live fill.
+	 * gettimeofday's a1 not mapped: kernel-written OUTPUT with no
+	 * input to attribute.  See Documentation/struct_catalog.md.
 	 */
 	{ "settimeofday",	1, &struct_catalog[SC_TIMEVAL] },
 	{ "select",		5, &struct_catalog[SC_TIMEVAL] },
 	{ "futimesat",		3, &struct_catalog[SC_TIMEVAL] },
 	{ "utimes",		2, &struct_catalog[SC_TIMEVAL] },
 	/*
-	 * settimeofday(struct timeval __user *tv, struct timezone __user *tz)
-	 * a2 is the INPUT struct timezone pointer.  The bespoke
-	 * sanitise_settimeofday() keeps owning the live fill via a
-	 * RAND_BOOL() gate over get_writable_address(): a 50/50 zero-leg vs
-	 * random-leg producing tz_minuteswest in [-780, +780] and tz_dsttime
-	 * in [0, 3].  Attribution-only registration lets struct_field_for_cmp
-	 * steer CMP-learned constants at the named tz_minuteswest /
-	 * tz_dsttime slots rather than at a coincidentally-same-width slot.
-	 *
-	 * Not mapped here on purpose: gettimeofday's a2 is a kernel-written
-	 * OUTPUT buffer with no input fill to attribute against.
+	 * settimeofday a2: INPUT struct timezone.  Attribution-only;
+	 * bespoke sanitise_settimeofday() owns the live fill.
+	 * gettimeofday's a2 not mapped: kernel-written OUTPUT.
+	 * See Documentation/struct_catalog.md.
 	 */
 	{ "settimeofday",	2, &struct_catalog[SC_TIMEZONE] },
 	/*
@@ -962,40 +898,12 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	 */
 	{ "file_setattr",	3, &struct_catalog[SC_FILE_ATTR] },
 	/*
-	 * landlock_add_rule(int ruleset_fd, enum landlock_rule_type rule_type,
-	 *                   const void __user *rule_attr, __u32 flags)
-	 * a3's type depends on the rule_type in a2, mirroring fcntl's
-	 * cmd-discriminated a3 above.  Two variants, both attribution-only
-	 * (the bespoke sanitise_landlock_add_rule() keeps owning the live
-	 * fill -- argtype[2] is not declared, so the schema-aware fill
-	 * path never runs against rec->a3):
-	 *
-	 *   - struct landlock_path_beneath_attr for
-	 *     LANDLOCK_RULE_PATH_BENEATH.  The bespoke arm masks
-	 *     allowed_access to the low 16 bits (LANDLOCK_ACCESS_FS_*) and
-	 *     stamps get_random_fd() into parent_fd;
-	 *     struct_field_for_cmp() steers CMP-learned constants at the
-	 *     named allowed_access / parent_fd slots.
-	 *
-	 *   - struct landlock_net_port_attr for LANDLOCK_RULE_NET_PORT.
-	 *     The bespoke arm picks allowed_access from the 2-bit
-	 *     LANDLOCK_ACCESS_NET_* pool and stratifies port across
-	 *     ephemeral / well-known / privileged / unprivileged ranges;
-	 *     struct_field_for_cmp() steers CMP-learned constants at the
-	 *     named allowed_access / port slots.
-	 *
-	 * rule_types outside both lists match no variant and resolve to
-	 * NULL -- gen_arg_struct_ptr_inout falls through to a zeroed
-	 * fallback buffer that sanitise_landlock_add_rule's switch
-	 * default leaves untouched (rec->a3 keeps whatever the generic
-	 * arg-gen wrote), same as before.
-	 *
-	 * Pre-discriminator the catalog could map only one descriptor per
-	 * (syscall, arg), so a3 resolved to landlock_path_beneath_attr
-	 * for every rule_type and struct_field_for_cmp() was attributing
-	 * CMP-learned constants at allowed_access / parent_fd even on
-	 * NET_PORT dispatches where the kernel was reading a wholly
-	 * different struct.
+	 * landlock_add_rule a3: rule_type-discriminated between
+	 * struct landlock_path_beneath_attr (LANDLOCK_RULE_PATH_BENEATH)
+	 * and struct landlock_net_port_attr (LANDLOCK_RULE_NET_PORT).
+	 * Both attribution-only; bespoke sanitise_landlock_add_rule()
+	 * owns the live fill.  Unlisted rule_types resolve NULL.
+	 * See Documentation/struct_catalog.md.
 	 */
 	{
 		"landlock_add_rule", 3,
@@ -1012,38 +920,13 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 		.num_discrim_values	= ARRAY_SIZE(landlock_add_rule_net_port_rule_types),
 	},
 	/*
-	 * quotactl(unsigned int cmd, const char *special, qid_t id,
-	 *          void *addr)
-	 * quotactl_fd(unsigned int fd, unsigned int cmd, qid_t id,
-	 *             void *addr)
-	 * The addr slot (quotactl a4 / quotactl_fd a4) is a struct
-	 * if_dqblk pointer under Q_SETQUOTA -- the SET path is the
-	 * input arm where the bytes we stamp actually reach the
-	 * kernel's quota lookup.  Both sanitisers keep owning the live
-	 * fill (writable allocation, dqb_*hardlimit / dqb_*softlimit
-	 * pickers, routed through avoid_shared_buffer_inout()); this
-	 * registration is attribution-only so struct_field_for_cmp()
-	 * can steer CMP-learned constants at the named limit / time /
-	 * valid slots rather than at a coincidentally-same-width slot.
-	 *
-	 * The cmd discriminator is packed: rec->a1 (quotactl) /
-	 * rec->a2 (quotactl_fd) is QCMD(subcmd, type) ==
-	 * (subcmd << SUBCMDSHIFT) | (type & SUBCMDMASK), so the
-	 * pre-extension exact-match discriminator could never resolve
-	 * (Q_SETQUOTA would have had to land in the low byte to
-	 * compare equal to the raw arg).  discrim_shift = SUBCMDSHIFT
-	 * strips the type byte before the match; discrim_mask defaults
-	 * to zero (i.e. ~0UL, all bits after the shift), which suffices
-	 * because the kernel-side subcmd values are disjoint scalars.
-	 *
-	 * Q_GETQUOTA / Q_GETNEXTQUOTA also use if_dqblk at the same
-	 * slot but they're output-only -- registering them would
-	 * attribute CMP-learned constants against bytes the kernel
-	 * wrote rather than bytes we stamped.  Subcmds outside the
-	 * Q_SETQUOTA pool match no variant and resolve to NULL --
-	 * gen_arg_struct_ptr_inout falls through to a zeroed fallback
-	 * buffer that the bespoke sanitiser overwrites for the
-	 * remaining cmds, same as before.
+	 * quotactl / quotactl_fd a4 (addr): struct if_dqblk under
+	 * Q_SETQUOTA.  Packed cmd: rec->a1 (quotactl) / rec->a2
+	 * (quotactl_fd) is QCMD(subcmd, type); discrim_shift =
+	 * SUBCMDSHIFT strips the type byte before the match.
+	 * Attribution-only; bespoke sanitisers own the live fill.
+	 * Q_GET* not mapped (output-only).  Unlisted subcmds resolve
+	 * NULL.  See Documentation/struct_catalog.md.
 	 */
 	{
 		"quotactl", 4, &struct_catalog[SC_IF_DQBLK],
@@ -1133,37 +1016,12 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	},
 #endif
 	/*
-	 * seccomp(unsigned int op, unsigned int flags, void __user *args)
-	 * a3 is a struct sock_fprog pointer only on SECCOMP_SET_MODE_FILTER
-	 * (the cBPF install arm); the other ops point a3 at different
-	 * shapes (uint32_t * for SECCOMP_GET_ACTION_AVAIL, a seccomp_notif_
-	 * sizes-sized scratch buffer for SECCOMP_GET_NOTIF_SIZES) or leave
-	 * it unused (SECCOMP_SET_MODE_STRICT).  The bespoke sanitise_seccomp()
-	 * keeps owning the live fill via bpf_gen_seccomp(), which builds a
-	 * Markov-chain cBPF program the kernel verifier will load; an
-	 * FT_RAW splat across sock_filter[] insn words could not.
-	 * Attribution-only registration so struct_field_for_cmp() can steer
-	 * CMP-learned constants at the named len / filter slots (and at
-	 * the cataloged sock_filter elem_struct's code / jt / jf / k
-	 * slots) rather than at a coincidentally-same-width slot.
-	 *
-	 * argtype[2] is ARG_ADDRESS, not ARG_STRUCT_PTR_*, so the schema-
-	 * aware fill path never overwrites rec->a3 -- the bespoke fill
-	 * stays the sole writer.  Ops outside the SET_MODE_FILTER pool
-	 * match no variant and resolve to NULL, matching the iovec /
-	 * sembuf / pollfd attribution-only pattern.
-	 *
-	 * prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, sock_fprog *, ...)
-	 * shares the cBPF install shape and is registered as a two-key row
-	 * immediately below (option at a1 == PR_SET_SECCOMP, mode at a2 ==
-	 * SECCOMP_MODE_FILTER, sock_fprog pointer at a3).
-	 *
-	 * setsockopt(fd, SOL_SOCKET, SO_ATTACH_FILTER, ...) is the
-	 * SO_ATTACH_FILTER arm of the (level, optname) two-key family the
-	 * proof batch below exercises -- it stays bespoke because the BPF
-	 * arm REPLACES the optval allocation wholesale rather than fills
-	 * it (see socket_setsockopt() SO_ATTACH_FILTER branch), so a
-	 * schema-fill row would race the bpf_gen_filter() replacement.
+	 * seccomp a3: struct sock_fprog under SECCOMP_SET_MODE_FILTER
+	 * (the cBPF install arm).  Attribution-only; bespoke
+	 * sanitise_seccomp() owns the live fill via bpf_gen_seccomp().
+	 * Prctl PR_SET_SECCOMP shares the shape (two-key row below);
+	 * setsockopt SO_ATTACH_FILTER stays bespoke (BPF arm REPLACES
+	 * optval wholesale).  See Documentation/struct_catalog.md.
 	 */
 	{
 		"seccomp", 3, &struct_catalog[SC_SOCK_FPROG],
@@ -1172,22 +1030,11 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 		.num_discrim_values	= ARRAY_SIZE(seccomp_set_mode_filter_ops),
 	},
 	/*
-	 * prctl(option, arg2, arg3, arg4, arg5) cBPF install arm:
-	 * option == PR_SET_SECCOMP with arg2 == SECCOMP_MODE_FILTER points
-	 * arg3 at a struct sock_fprog the kernel reads to load the classic
-	 * BPF program (the cBPF arm; PR_SET_SECCOMP with arg2 ==
-	 * SECCOMP_MODE_STRICT ignores arg3, and other option values do not
-	 * touch a sock_fprog at all -- those dispatches match no variant
-	 * and resolve to NULL).  sanitise_prctl()'s PR_SET_SECCOMP arm
-	 * owns the live fill via bpf_gen_seccomp() and stays the sole
-	 * writer of rec->a3; the syscallentry leaves argtype[2] at the
-	 * default ARG_UNDEFINED, so the schema-aware fill path (gated on
-	 * ARG_STRUCT_PTR_*) never resolves this slot and cannot race the
-	 * heap sock_fprog.  Attribution-only registration so
-	 * struct_field_for_cmp() can steer CMP-learned constants at the
-	 * named len / filter slots (and at the cataloged sock_filter
-	 * elem_struct's code / jt / jf / k slots) rather than at a
-	 * coincidentally-same-width slot.
+	 * prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, sock_fprog *) cBPF
+	 * install arm.  Two-key row (option at a1, mode at a2).
+	 * Attribution-only; bespoke sanitise_prctl() PR_SET_SECCOMP arm
+	 * owns the live fill via bpf_gen_seccomp().
+	 * See Documentation/struct_catalog.md.
 	 */
 	{
 		"prctl", 3, &struct_catalog[SC_SOCK_FPROG],
@@ -1197,28 +1044,11 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 		.discrim2_value		= SECCOMP_MODE_FILTER,
 	},
 	/*
-	 * ----------------------------------------------------------------
-	 * setsockopt(fd, level, optname, optval, optlen) optval -- a4.
-	 *
-	 * Two-key proof batch: five (level, optname) shapes already owned
-	 * by bespoke build_*() functions in syscalls/setsockopt.c, now
-	 * resolved through struct_arg_lookup_two_key() from
-	 * apply_sockopt_entry().  discrim_arg_idx=2 is level (a2) and
-	 * discrim2_arg_idx=3 is optname (a3); the explicit-key consumer
-	 * passes them directly off the picked sockopt_table[] row so the
-	 * lookup runs against the authoritative picked values, not the
-	 * post-mangle rec->a2/a3 the kernel would see.
-	 *
-	 * argtype[3] is not ARG_STRUCT_PTR_*, so the rec-based
-	 * struct_arg_lookup() never resolves these rows -- which is the
-	 * point: the bespoke driver owns selection / optlen / BPF-arm
-	 * replacement / per-fd pairing, and routes only the fill through
-	 * the catalog when a row matches.  Bespoke builders remain in
-	 * code as the miss-fallback for the int / bool / string scalar
-	 * sockopt_table[] entries (no struct shape, no row to register)
-	 * and for the higher-leverage shapes (sctp / mptcp / tcp_repair /
-	 * can_filter[] etc.) that follow this proof.
-	 * ----------------------------------------------------------------
+	 * setsockopt a4 (optval): two-key (level, optname) rows resolved
+	 * via struct_arg_lookup_two_key() from apply_sockopt_entry().
+	 * Attribution-only; bespoke build_*() in syscalls/setsockopt.c
+	 * owns selection / optlen / BPF replacement.
+	 * See Documentation/struct_catalog.md.
 	 */
 	{
 		"setsockopt", 4, &struct_catalog[SC_LINGER],
@@ -1447,31 +1277,11 @@ const struct syscall_struct_arg syscall_struct_args[] = {
 	},
 #endif
 	/*
-	 * ----------------------------------------------------------------
-	 * getsockopt(fd, level, optname, optval, optlen) optval -- a4.
-	 *
-	 * Mirrors the setsockopt two-key proof batch above for the (level,
-	 * optname) pairs the kernel also implements on the getsockopt side.
-	 * discrim_arg_idx=2 is level (a2), discrim2_arg_idx=3 is optname (a3);
-	 * the shape at optval is symmetric with setsockopt for these options
-	 * (struct linger for SO_LINGER, struct timeval for SO_RCVTIMEO /
-	 * SO_SNDTIMEO), so the same struct_desc slots the setsockopt rows
-	 * point at describe the bytes the kernel writes back through optval.
-	 *
-	 * sanitise_getsockopt() picks (level, optname) via do_setsockopt() and
-	 * then allocates a page_size valresult buffer at a4 -- argtype[3] is
-	 * ARG_ADDRESS, not ARG_STRUCT_PTR_*, so the schema-aware fill never
-	 * resolves these rows.  Attribution-only registration lets
-	 * struct_field_for_cmp() steer KCOV-CMP-learned constants at the named
-	 * l_onoff / l_linger / tv_sec / tv_usec fields the kernel wrote rather
-	 * than at coincidentally-same-width slots.  Set-only optnames from the
-	 * setsockopt batch above (IP_ADD_MEMBERSHIP, MCAST_*, SCTP_AUTH_CHUNK,
-	 * SCTP_AUTH_*_KEY, SCTP_ADD_STREAMS, SCTP_SET_PEER_PRIMARY_ADDR,
-	 * SCTP_EVENT, TCP_REPAIR_OPTIONS, etc.) are deliberately not mirrored:
-	 * the kernel does not return their payload struct on the get path, and
-	 * a row there would attribute learned constants against bytes never
-	 * written by getsockopt.
-	 * ----------------------------------------------------------------
+	 * getsockopt a4 (optval): mirrors the setsockopt two-key rows
+	 * for gettable (level, optname) pairs; attribution-only.
+	 * Set-only optnames not mirrored (kernel does not return their
+	 * payload struct on the get path).
+	 * See Documentation/struct_catalog.md.
 	 */
 	{
 		"getsockopt", 4, &struct_catalog[SC_LINGER],
