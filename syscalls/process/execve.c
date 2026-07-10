@@ -344,8 +344,7 @@ static void post_execve(struct syscallrecord *rec)
 	    looks_like_corrupted_ptr(rec, local_snap.envp)) {
 		outputerr("post_execve: rejected suspicious argv=%p envp=%p "
 			  "(post_state-scribbled?)\n", local_snap.argv, local_snap.envp);
-		post_state_unregister(snap);
-		deferred_freeptr(&rec->post_state);
+		post_state_release(rec, snap);
 		return;
 	}
 	/*
@@ -358,14 +357,12 @@ static void post_execve(struct syscallrecord *rec)
 		outputerr("post_execve: rejected suspicious argvcount=%lu envpcount=%lu "
 			  "(post_state-scribbled?)\n",
 			  local_snap.argvcount, local_snap.envpcount);
-		post_state_unregister(snap);
-		deferred_freeptr(&rec->post_state);
+		post_state_release(rec, snap);
 		return;
 	}
 	enqueue_execve_ptrs(local_snap.argv, local_snap.envp,
 			    local_snap.argvcount, local_snap.envpcount);
-	post_state_unregister(snap);
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 
 static void post_execveat(struct syscallrecord *rec)
@@ -424,22 +421,19 @@ static void post_execveat(struct syscallrecord *rec)
 	    looks_like_corrupted_ptr(rec, local_snap.envp)) {
 		outputerr("post_execveat: rejected suspicious argv=%p envp=%p "
 			  "(post_state-scribbled?)\n", local_snap.argv, local_snap.envp);
-		post_state_unregister(snap);
-		deferred_freeptr(&rec->post_state);
+		post_state_release(rec, snap);
 		return;
 	}
 	if (local_snap.argvcount > 32 || local_snap.envpcount > 32) {
 		outputerr("post_execveat: rejected suspicious argvcount=%lu envpcount=%lu "
 			  "(post_state-scribbled?)\n",
 			  local_snap.argvcount, local_snap.envpcount);
-		post_state_unregister(snap);
-		deferred_freeptr(&rec->post_state);
+		post_state_release(rec, snap);
 		return;
 	}
 	enqueue_execve_ptrs(local_snap.argv, local_snap.envp,
 			    local_snap.argvcount, local_snap.envpcount);
-	post_state_unregister(snap);
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_execve = {
