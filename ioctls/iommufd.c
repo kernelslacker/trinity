@@ -119,7 +119,7 @@ static void sanitise_iommufd_ioas_map(struct syscallrecord *rec)
 	m->ioas_id = rnd_modulo_u32(IOMMUFD_FUZZ_MAX_ID);
 	m->user_va = (__u64)(unsigned long)ua;
 	m->length = length;
-	m->iova = (rnd_u64() % IOMMUFD_FUZZ_IOVA_LIMIT)
+	m->iova = rnd_modulo_u64(IOMMUFD_FUZZ_IOVA_LIMIT)
 		& ~(IOMMUFD_FUZZ_PAGE_SIZE - 1);
 
 	rec->a3 = (unsigned long)m;
@@ -140,7 +140,7 @@ static void sanitise_iommufd_ioas_unmap(struct syscallrecord *rec)
 	memset(u, 0, sizeof(*u));
 	u->size = sizeof(*u);
 	u->ioas_id = rnd_modulo_u32(IOMMUFD_FUZZ_MAX_ID);
-	u->iova = (rnd_u64() % IOMMUFD_FUZZ_IOVA_LIMIT)
+	u->iova = rnd_modulo_u64(IOMMUFD_FUZZ_IOVA_LIMIT)
 		& ~(IOMMUFD_FUZZ_PAGE_SIZE - 1);
 	u->length = length;
 
