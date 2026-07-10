@@ -229,8 +229,7 @@ static void post_socketpair(struct syscallrecord *rec)
 	}
 
 	rec->a4 = 0;
-	post_state_unregister(snap);
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_socketpair = {
