@@ -877,8 +877,7 @@ static void post_setsockopt(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap->optval)) {
 		outputerr("post_setsockopt: rejected suspicious snap optval=%p (post_state-scribbled?)\n",
 			  snap->optval);
-		post_state_unregister(snap);
-		deferred_freeptr(&rec->post_state);
+		post_state_release(rec, snap);
 		return;
 	}
 
@@ -910,8 +909,7 @@ static void post_setsockopt(struct syscallrecord *rec)
 		deferred_free_enqueue(snap->optval);
 	}
 
-	post_state_unregister(snap);
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_setsockopt = {
