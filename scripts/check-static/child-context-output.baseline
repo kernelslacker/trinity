@@ -60,7 +60,7 @@ syscalls/fork.c:post_fork
 syscalls/fstatfs.c:post_fstatfs
 syscalls/fstatfs.c:post_fstatfs64
 syscalls/futex_wake.c:post_futex_wake
-syscalls/getcpu.c:post_getcpu
+syscalls/sched/getcpu.c:post_getcpu
 syscalls/getcwd.c:post_getcwd
 syscalls/getdents.c:post_getdents
 syscalls/cred/getegid.c:post_getegid
@@ -77,7 +77,7 @@ syscalls/getpgid.c:post_getpgid
 syscalls/getpgrp.c:post_getpgrp
 syscalls/getpid.c:post_getpid
 syscalls/getppid.c:post_getppid
-syscalls/getpriority.c:post_getpriority
+syscalls/sched/getpriority.c:post_getpriority
 syscalls/cred/getresgid.c:post_getresgid
 syscalls/cred/getresuid.c:post_getresuid
 syscalls/getrlimit.c:post_getrlimit
@@ -93,7 +93,7 @@ syscalls/cred/getuid.c:post_getuid
 syscalls/xattr/getxattrat.c:post_getxattrat
 syscalls/xattr/getxattr.c:post_getxattr
 syscalls/inotify_add_watch.c:post_inotify_add_watch
-syscalls/ioprio_get.c:post_ioprio_get
+syscalls/sched/ioprio_get.c:post_ioprio_get
 syscalls/io_setup.c:post_io_setup
 syscalls/io_uring_register.c:post_io_uring_register
 syscalls/ipc.c:post_ipc
@@ -123,7 +123,7 @@ syscalls/newfstat.c:post_newfstatat
 syscalls/newlstat.c:post_newlstat
 syscalls/newstat.c:post_newstat
 syscalls/newuname.c:post_newuname
-syscalls/nice.c:post_nice
+syscalls/sched/nice.c:post_nice
 syscalls/olduname.c:post_olduname
 syscalls/open.c:post_open
 syscalls/open.c:post_openat
@@ -162,14 +162,14 @@ syscalls/recv.c:post_recvmmsg
 syscalls/recv.c:post_recvmsg
 syscalls/rt_sigpending.c:post_rt_sigpending
 syscalls/rt_sigprocmask.c:post_rt_sigprocmask
-syscalls/sched_getaffinity.c:post_sched_getaffinity
-syscalls/sched_getattr.c:post_sched_getattr
-syscalls/sched_getparam.c:post_sched_getparam
-syscalls/sched_get_priority_max.c:post_sched_get_priority_max
-syscalls/sched_get_priority_min.c:post_sched_get_priority_min
-syscalls/sched_getscheduler.c:post_sched_getscheduler
-syscalls/sched_rr_get_interval.c:post_sched_rr_get_interval
-syscalls/sched_yield.c:post_sched_yield
+syscalls/sched/sched_getaffinity.c:post_sched_getaffinity
+syscalls/sched/sched_getattr.c:post_sched_getattr
+syscalls/sched/sched_getparam.c:post_sched_getparam
+syscalls/sched/sched_get_priority_max.c:post_sched_get_priority_max
+syscalls/sched/sched_get_priority_min.c:post_sched_get_priority_min
+syscalls/sched/sched_getscheduler.c:post_sched_getscheduler
+syscalls/sched/sched_rr_get_interval.c:post_sched_rr_get_interval
+syscalls/sched/sched_yield.c:post_sched_yield
 syscalls/seccomp.c:post_seccomp
 syscalls/select.c:post_select
 syscalls/send.c:post_sendmmsg
@@ -179,7 +179,7 @@ syscalls/cred/setfsuid.c:post_setfsuid
 syscalls/cred/setgid.c:post_setgid
 syscalls/cred/setgroups.c:post_setgroups
 syscalls/setpgid.c:post_setpgid
-syscalls/setpriority.c:post_setpriority
+syscalls/sched/setpriority.c:post_setpriority
 syscalls/cred/setregid.c:post_setregid
 syscalls/cred/setresgid.c:post_setresgid
 syscalls/cred/setresuid.c:post_setresuid
