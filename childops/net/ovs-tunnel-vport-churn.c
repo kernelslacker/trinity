@@ -147,7 +147,7 @@ enum ovs_tun_kind {
 };
 
 /* Pick weights mirror the spec: GENEVE 5 / VXLAN 4 / GRE 3.  Sum = 12,
- * picker rolls rand32() % 12 and walks the cumulative table.  Weights
+ * picker rolls rnd_modulo_u32(12) and walks the cumulative table.  Weights
  * are intentionally biased toward GENEVE because its sys netdev is the
  * one most often touched by the upstream regression history. */
 static const unsigned int ovs_kind_weights[OVS_TUN_NR] = {
@@ -211,7 +211,7 @@ static void ovs_fill_helper_netdev(enum ovs_tun_kind k, __u16 port,
 
 static enum ovs_tun_kind ovs_pick_kind(void)
 {
-	unsigned int roll = rand32() % OVS_KIND_WEIGHT_SUM;
+	unsigned int roll = rnd_modulo_u32(OVS_KIND_WEIGHT_SUM);
 	unsigned int acc = 0;
 	unsigned int i;
 	enum ovs_tun_kind picked = OVS_TUN_NR;
