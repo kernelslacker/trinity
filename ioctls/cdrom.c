@@ -104,11 +104,13 @@ static void cdrom_send_packet_sanitise(struct syscallrecord *rec)
 		cgc->sense = sense;
 	}
 
-	switch (rnd_modulo_u32(3)) {
-	case 0:	cgc->data_direction = CGC_DATA_READ;	break;
-	case 1:	cgc->data_direction = CGC_DATA_WRITE;	break;
-	case 2:	cgc->data_direction = CGC_DATA_NONE;	break;
-	default: break;
+	{
+		static const __u8 cgc_data_dirs[] = {
+			CGC_DATA_UNKNOWN, CGC_DATA_WRITE,
+			CGC_DATA_READ,    CGC_DATA_NONE,
+		};
+
+		cgc->data_direction = RAND_ARRAY(cgc_data_dirs);
 	}
 
 	cgc->timeout = 1000;
