@@ -8,6 +8,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include "arch.h"
+#include "output-poison.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -27,6 +28,7 @@ struct fstatfs_post_state {
 	unsigned long magic;
 	unsigned long fd;
 	unsigned long buf;
+	uint64_t poison_seed;
 };
 
 static void sanitise_fstatfs(struct syscallrecord *rec)
@@ -51,6 +53,27 @@ static void sanitise_fstatfs(struct syscallrecord *rec)
 	snap->magic = FSTATFS_POST_STATE_MAGIC;
 	snap->fd  = rec->a1;
 	snap->buf = rec->a2;
+
+	/*
+	 * Stamp a per-call poison across the OUT struct the kernel is
+	 * about to fill.  On success the post handler asks
+	 * check_output_struct() whether every byte still matches -- an
+	 * intact pattern after retval==0 means the kernel returned success
+	 * without a copy_to_user() of the writeback (short or absent copy
+	 * leaks whatever was in the user page before).  Gate on
+	 * range_readable_user() so a NULL or short user pointer from the
+	 * ARG_NON_NULL_ADDRESS pool cannot SIGSEGV inside the byte walk;
+	 * on skip the seed stays zero and the post check no-ops.  Poison
+	 * after avoid_shared_buffer_out() so it lands on the final buffer
+	 * the kernel will see.
+	 */
+	if (rec->a2 != 0 &&
+	    range_readable_user((void *)(unsigned long) rec->a2,
+				sizeof(struct statfs)))
+		snap->poison_seed = poison_output_struct(
+			(void *)(unsigned long) rec->a2,
+			sizeof(struct statfs), 0);
+
 	post_state_install(rec, snap);
 }
 
@@ -114,6 +137,23 @@ static void post_fstatfs(struct syscallrecord *rec)
 	snap = post_state_claim_owned(rec, FSTATFS_POST_STATE_MAGIC, __func__);
 	if (snap == NULL)
 		return;
+
+	/*
+	 * Output-struct poison check: runs on every success (cheap memcmp
+	 * against a stack pattern, no re-issue), before the ONE_IN(100)
+	 * mount-recheck sample below.  Intact poison after retval==0 means
+	 * the kernel skipped copy_to_user() entirely, or short-copied and
+	 * left an uninitialised tail readable in user memory
+	 * (kernel->user infoleak).  Counts against the shared
+	 * post_handler_untouched_out_buf slot alongside the other
+	 * untouched-buffer signals.
+	 */
+	if ((long) rec->retval == 0 && snap->buf != 0 &&
+	    snap->poison_seed != 0 &&
+	    check_output_struct((void *)(unsigned long) snap->buf,
+				sizeof(struct statfs), snap->poison_seed))
+		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+				   1, __ATOMIC_RELAXED);
 
 	if (!ONE_IN(100))
 		goto out_release;
@@ -212,6 +252,7 @@ struct fstatfs64_post_state {
 	unsigned long fd;
 	unsigned long sz;
 	unsigned long buf;
+	uint64_t poison_seed;
 };
 #endif
 
@@ -241,6 +282,26 @@ static void sanitise_fstatfs64(struct syscallrecord *rec)
 		snap->fd  = rec->a1;
 		snap->sz  = rec->a2;
 		snap->buf = rec->a3;
+
+		/*
+		 * Stamp a per-call poison across the OUT struct so the post
+		 * handler can detect a success-with-no-copy_to_user leak.
+		 * fstatfs64 requires sz == sizeof(struct statfs64) or the
+		 * kernel rejects with -EINVAL before touching the buffer, so
+		 * on the retval==0 path the kernel overwrites exactly
+		 * sizeof(struct statfs64) bytes.  Gate on
+		 * range_readable_user() so a NULL or short user pointer
+		 * cannot SIGSEGV inside the byte walk; on skip the seed
+		 * stays zero and the post check no-ops.  Poison after
+		 * avoid_shared_buffer_out() so it lands on the final buffer.
+		 */
+		if (rec->a3 != 0 &&
+		    range_readable_user((void *)(unsigned long) rec->a3,
+					sizeof(struct statfs64)))
+			snap->poison_seed = poison_output_struct(
+				(void *)(unsigned long) rec->a3,
+				sizeof(struct statfs64), 0);
+
 		post_state_install(rec, snap);
 	}
 #endif
@@ -289,6 +350,22 @@ static void post_fstatfs64(struct syscallrecord *rec)
 	snap = post_state_claim_owned(rec, FSTATFS64_POST_STATE_MAGIC, __func__);
 	if (snap == NULL)
 		return;
+
+	/*
+	 * Output-struct poison check: runs on every success (cheap memcmp,
+	 * no re-issue), before the ONE_IN(100) mount-recheck sample below.
+	 * Intact poison after retval==0 means the kernel skipped
+	 * copy_to_user() entirely, or short-copied and left an
+	 * uninitialised tail readable in user memory (kernel->user
+	 * infoleak).  Counts against the shared
+	 * post_handler_untouched_out_buf slot.
+	 */
+	if ((long) rec->retval == 0 && snap->buf != 0 &&
+	    snap->poison_seed != 0 &&
+	    check_output_struct((void *)(unsigned long) snap->buf,
+				sizeof(struct statfs64), snap->poison_seed))
+		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+				   1, __ATOMIC_RELAXED);
 
 	if (!ONE_IN(100))
 		goto out_release;
