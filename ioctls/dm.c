@@ -8,6 +8,24 @@
 #include "random.h"
 #include "sanitise.h"
 
+/*
+ * Compile-time: every DM_* command carries the same fixed-shape
+ * struct dm_ioctl header (a trailing data area flexes past
+ * sizeof(struct) at runtime via ->data_start / ->data_size, but
+ * the header itself is what _IOC_SIZE encodes and what the
+ * sanitiser fills).  Pin sizeof(struct dm_ioctl) against a
+ * representative _IOC_SIZE so a <linux/dm-ioctl.h> layout change
+ * that grows or shrinks the header (a wider event_nr, an
+ * extended name[]/uuid[] pair) hard-fails the compile rather
+ * than silently letting the kernel copy_from_user() a different
+ * number of bytes than the sanitiser prepared.  DM_VERSION stands
+ * in for all DM_* commands -- the uapi wires every command to
+ * struct dm_ioctl, so a single anchor is enough.
+ */
+_Static_assert(sizeof(struct dm_ioctl) ==
+	       _IOC_SIZE(DM_VERSION),
+	       "dm_ioctl size vs _IOC_SIZE mismatch");
+
 static const struct ioctl dm_ioctls[] = {
 	IOCTL(DM_VERSION),
 	IOCTL(DM_REMOVE_ALL),
