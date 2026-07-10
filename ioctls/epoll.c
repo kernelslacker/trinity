@@ -40,6 +40,25 @@ struct epoll_params {
 #define EPIOCGPARAMS _IOR(EPOLL_IOC_TYPE, 0x02, struct epoll_params)
 #endif
 
+/*
+ * Compile-time: EPIOCSPARAMS and EPIOCGPARAMS both carry struct
+ * epoll_params and the sanitiser below fills it to sizeof(struct).
+ * Pin each direction against its _IOC_SIZE independently so a
+ * <linux/eventpoll.h> change that grows or shrinks the struct
+ * (or -- more likely -- an older-header fallback here that drifts
+ * from the shipping uapi) hard-fails the compile rather than
+ * silently letting the kernel copy_from_user() / copy_to_user() a
+ * different number of bytes than the sanitiser prepared.  The two
+ * directions get one assert each: a header refactor could
+ * conceivably touch one _IOC_SIZE and not the other.
+ */
+_Static_assert(sizeof(struct epoll_params) ==
+	       _IOC_SIZE(EPIOCSPARAMS),
+	       "epoll_params size vs EPIOCSPARAMS mismatch");
+_Static_assert(sizeof(struct epoll_params) ==
+	       _IOC_SIZE(EPIOCGPARAMS),
+	       "epoll_params size vs EPIOCGPARAMS mismatch");
+
 static void epoll_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
 {
 	struct epoll_params *params;
