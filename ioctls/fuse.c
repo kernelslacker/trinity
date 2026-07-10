@@ -46,8 +46,8 @@ static void sanitise_fuse_backing_open(struct syscallrecord *rec)
 		return;
 	memset(map, 0, sizeof(*map));
 	map->fd = get_random_fd();
-	map->flags = rand32();
-	map->padding = rand64();
+	map->flags = ONE_IN(16) ? rand32() : 0;
+	map->padding = ONE_IN(16) ? rand64() : 0;
 	rec->a3 = (unsigned long) map;
 }
 
