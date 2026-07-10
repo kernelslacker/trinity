@@ -150,11 +150,11 @@ static size_t pick_payload_len(enum rxrpc_cmsg_slot slot)
 	if (RAND_BOOL())
 		return valid;
 
-	switch (rand32() % 4U) {
+	switch (rnd_modulo_u32(4U)) {
 	case 0:		return 0;
 	case 1:		return valid > 0 ? valid - 1U : 1U;
 	case 2:		return valid + 1U;
-	default:	return (size_t)(rand32() % 32U);
+	default:	return (size_t)rnd_modulo_u32(32U);
 	}
 }
 
@@ -244,7 +244,7 @@ static int send_one_cmsg(int fd, const struct sockaddr_rxrpc *peer,
 	if (RAND_BOOL()) {
 		generate_rand_bytes(data, sizeof(data));
 		iov.iov_base = data;
-		iov.iov_len  = 1U + (rand32() % sizeof(data));
+		iov.iov_len  = 1U + rnd_modulo_u32(sizeof(data));
 		mh.msg_iov    = &iov;
 		mh.msg_iovlen = 1;
 	}
@@ -281,14 +281,14 @@ static void make_peer(struct sockaddr_rxrpc *srx, bool v6)
 		srx->transport.sin6.sin6_addr   = loop6;
 		srx->transport.sin6.sin6_port =
 			htons((uint16_t)(LOOPBACK_PEER_PORT_BASE +
-					 (rand32() % NR_LOOPBACK_PEER_PORTS)));
+					 rnd_modulo_u32(NR_LOOPBACK_PEER_PORTS)));
 	} else {
 		srx->transport_len = sizeof(struct sockaddr_in);
 		srx->transport.sin.sin_family = AF_INET;
 		srx->transport.sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 		srx->transport.sin.sin_port =
 			htons((uint16_t)(LOOPBACK_PEER_PORT_BASE +
-					 (rand32() % NR_LOOPBACK_PEER_PORTS)));
+					 rnd_modulo_u32(NR_LOOPBACK_PEER_PORTS)));
 	}
 }
 
@@ -374,7 +374,7 @@ bool rxrpc_sendmsg_cmsg_churn(struct childdata *child)
 		make_peer(&peer, v6);
 	}
 
-	slot = (enum rxrpc_cmsg_slot)(rand32() % (unsigned int)NR_CMSG_SLOTS);
+	slot = (enum rxrpc_cmsg_slot)rnd_modulo_u32((unsigned int)NR_CMSG_SLOTS);
 	__atomic_add_fetch(&shm->stats.rxrpc_sendmsg_cmsg_sent[slot],
 			   1, __ATOMIC_RELAXED);
 
