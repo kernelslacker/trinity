@@ -94,7 +94,7 @@ syscalls/xattr/getxattrat.c:post_getxattrat
 syscalls/xattr/getxattr.c:post_getxattr
 syscalls/inotify_add_watch.c:post_inotify_add_watch
 syscalls/sched/ioprio_get.c:post_ioprio_get
-syscalls/io_setup.c:post_io_setup
+syscalls/aio/io_setup.c:post_io_setup
 syscalls/io_uring/io_uring_register.c:post_io_uring_register
 syscalls/ipc/sysv/ipc.c:post_ipc
 syscalls/kcmp.c:post_kcmp
