@@ -368,6 +368,20 @@ struct minicorpus_shared {
 	 * zero. */
 	unsigned long held_count;
 
+	/* Post-replay perturbation counters (see MINICORPUS_PERTURB_DENOM
+	 * below).  replay_perturbed_count is bumped once per replay on
+	 * which a light FT_FLAGS/FT_RANGE neighbour mutation actually
+	 * landed on a cataloged struct-ptr arg; replay_perturbed_wins is
+	 * bumped in minicorpus_mut_attrib_commit when such a replay found
+	 * new coverage.  The verbatim yield is derived by subtracting the
+	 * perturbed counters from replay_count / replay_wins above, so
+	 * both arms are readable from one dump without a symmetric
+	 * verbatim counter.  Bumped RELAXED, read at dump time.  Exists
+	 * so the perturbed-vs-verbatim edge yield ratio can be measured
+	 * before anyone promotes perturbation to always-on. */
+	unsigned long replay_perturbed_count;
+	unsigned long replay_perturbed_wins;
+
 	/* Aggregate count of lockless-reader num_args validator failures;
 	 * non-zero means torn reads ARE happening at this rate.  Bumped on
 	 * each [1, 6] out-of-range snapshot.num_args observed by the xprop
@@ -424,6 +438,25 @@ void minicorpus_save_with_reason(struct syscallrecord *rec,
  * was available or the dice roll said to generate fresh args.
  * Only call when entry->sanitise == NULL. */
 bool minicorpus_replay(struct syscallrecord *rec);
+
+/* Post-replay perturbation fraction (1-in-N gate).  Single tunable so
+ * an operator can trivially lift or drop the perturbation rate; also
+ * lets the perturbation be disabled outright by driving the roll to
+ * never fire (define to 0 -- ONE_IN() short-circuits on zero).
+ * Kept small so verbatim replay stays the dominant path. */
+#define MINICORPUS_PERTURB_DENOM	32U
+
+/* Mark the current process's pending mutator attribution as having
+ * applied a post-replay perturbation on a cataloged struct-ptr arg.
+ * Consumed and cleared by the next minicorpus_mut_attrib_commit()
+ * call, which bumps replay_perturbed_wins iff found_new was set.
+ * At most one perturbation per replay by construction (the caller
+ * picks a single field per invocation).  The count-side bump
+ * (replay_perturbed_count) is the caller's responsibility so the
+ * count is a "landed" measurement, not a "flagged" one -- attribution
+ * and count would drift if a caller marked but then decided not to
+ * perturb, so they are held on opposite sides of the same event. */
+void minicorpus_replay_perturbation_mark(void);
 
 /* Apply the per-arg mutator chain (cross-arg splice + weighted-stack
  * mutate + fd safety) to args[6] in place.  Used by both per-syscall

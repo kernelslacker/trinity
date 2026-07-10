@@ -7,11 +7,14 @@
 #include "deferred-free.h"
 #include "fd.h"
 #include "minicorpus.h"
+#include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "syscall.h"
 #include "syscall_record.h"
 #include "tables.h"
+#include "utils-alloc.h"
 
 
 /*
@@ -244,6 +247,199 @@ void generic_free_arg(struct syscallentry *entry, struct syscallrecord *rec)
 	}
 }
 
+/*
+ * Post-replay perturbation: on a bounded fraction of replays, replace
+ * one cataloged ARG_STRUCT_PTR_{IN,INOUT} arg with a freshly schema-
+ * filled buffer whose single FT_FLAGS or FT_RANGE field has been
+ * nudged one neighbour away.  Verbatim replay is the dominant path;
+ * this is a shadow-measured exploration knob, not a rewrite.
+ *
+ * Tag discipline: FT_FLAGS/FT_RANGE only.  Every coupled tag
+ * (FT_PTR_*, FT_LEN_*, FT_FD, FT_ADDRESS, ...) is never picked -- a
+ * blind flip on a length or a pointer just steers the syscall onto
+ * the reject-path and burns iterations for no coverage.
+ *
+ * At most one field mutated per replay by construction, so the
+ * replay_perturbed_wins signal attributes to a single (arg, field)
+ * neighbourhood step rather than to a whole-buffer re-roll.
+ */
+struct perturb_cand {
+	unsigned int argnum;			/* 1-based */
+	const struct struct_desc *desc;
+	const struct struct_field *field;
+};
+
+#define PERTURB_MAX_CANDS	32U
+
+static void perturb_flags_field(unsigned char *buf, const struct struct_field *f)
+{
+	uint64_t mask = f->u.flags.mask;
+	uint64_t val, bit;
+	unsigned int pop, pick, seen, flips, k, i;
+
+	if (mask == 0)
+		return;
+
+	pop = (unsigned int) __builtin_popcountll(mask);
+	val = read_field_uint(buf, f);
+
+	/* Flip 1 bit unconditionally; on wide masks (>=2 in-mask bits) roll
+	 * a second flip so the neighbour move is either 1 or 2 bits.  Both
+	 * flips are drawn from the mask, so the invariant "no out-of-mask
+	 * bit set" holds. */
+	flips = (pop >= 2 && ONE_IN(2)) ? 2U : 1U;
+
+	for (k = 0; k < flips; k++) {
+		pick = rnd_modulo_u32(pop);
+		seen = 0;
+		for (i = 0; i < 64; i++) {
+			bit = (uint64_t) 1 << i;
+			if ((mask & bit) == 0)
+				continue;
+			if (seen == pick) {
+				val ^= bit;
+				break;
+			}
+			seen++;
+		}
+	}
+
+	write_field_uint(buf, f, val);
+}
+
+static void perturb_range_field(unsigned char *buf, const struct struct_field *f)
+{
+	uint64_t lo = f->u.range.lo;
+	uint64_t hi = f->u.range.hi;
+	uint64_t cur, next;
+
+	if (hi <= lo)
+		return;
+
+	cur = read_field_uint(buf, f);
+
+	/* Snap out-of-range into the interval before stepping so the
+	 * clamp invariant [lo, hi] holds without needing a "give up"
+	 * branch on a torn / stale value. */
+	if (cur < lo)
+		cur = lo;
+	else if (cur > hi)
+		cur = hi;
+
+	if (cur == lo)
+		next = cur + 1;
+	else if (cur == hi)
+		next = cur - 1;
+	else if (rnd_u32() & 1)
+		next = cur + 1;
+	else
+		next = cur - 1;
+
+	write_field_uint(buf, f, next);
+}
+
+static bool field_is_perturbable(const struct struct_field *f)
+{
+	switch (f->tag) {
+	case FT_FLAGS:
+		return f->u.flags.mask != 0;
+	case FT_RANGE:
+		return f->u.range.hi > f->u.range.lo;
+	default:
+		return false;
+	}
+}
+
+static unsigned int collect_perturb_candidates(struct syscallentry *entry,
+					       struct syscallrecord *rec,
+					       struct perturb_cand *out,
+					       unsigned int out_max)
+{
+	unsigned int i, k;
+	unsigned int n = 0;
+
+	for (i = 0; i < entry->num_args && i < 6 && n < out_max; i++) {
+		enum argtype t = entry->argtype[i];
+		const struct struct_desc *desc;
+		const struct struct_field *fields;
+		unsigned int n_fields;
+
+		if (t != ARG_STRUCT_PTR_IN && t != ARG_STRUCT_PTR_INOUT)
+			continue;
+
+		desc = struct_arg_lookup(rec->nr, i + 1, rec->do32bit, rec);
+		if (desc == NULL || desc->struct_size == 0)
+			continue;
+
+		fields = desc->fields;
+		n_fields = desc->num_fields;
+		if (fields == NULL || n_fields == 0)
+			continue;
+		if (n_fields > STRUCT_FILL_MAX_FIELDS)
+			n_fields = STRUCT_FILL_MAX_FIELDS;
+
+		for (k = 0; k < n_fields && n < out_max; k++) {
+			const struct struct_field *f = &fields[k];
+
+			if ((unsigned long) f->offset + f->size > desc->struct_size)
+				continue;
+			if (!field_is_perturbable(f))
+				continue;
+
+			out[n].argnum = i + 1;
+			out[n].desc = desc;
+			out[n].field = f;
+			n++;
+		}
+	}
+	return n;
+}
+
+static void perturb_replayed_struct_field(struct syscallentry *entry,
+					  struct syscallrecord *rec)
+{
+	struct perturb_cand cands[PERTURB_MAX_CANDS];
+	const struct perturb_cand *pick;
+	unsigned int n;
+	unsigned char *buf;
+	unsigned long *slot;
+
+	if (!ONE_IN(MINICORPUS_PERTURB_DENOM))
+		return;
+
+	n = collect_perturb_candidates(entry, rec, cands, PERTURB_MAX_CANDS);
+	if (n == 0)
+		return;
+
+	pick = &cands[rnd_modulo_u32(n)];
+
+	buf = zmalloc_tracked(pick->desc->struct_size);
+	struct_field_fill_schema_aware(buf, pick->desc->struct_size,
+				       pick->desc, rec);
+
+	if (pick->field->tag == FT_FLAGS)
+		perturb_flags_field(buf, pick->field);
+	else
+		perturb_range_field(buf, pick->field);
+
+	deferred_free_enqueue_or_leak(buf);
+
+	switch (pick->argnum) {
+	case 1: slot = &rec->a1; break;
+	case 2: slot = &rec->a2; break;
+	case 3: slot = &rec->a3; break;
+	case 4: slot = &rec->a4; break;
+	case 5: slot = &rec->a5; break;
+	case 6: slot = &rec->a6; break;
+	default: return;
+	}
+	*slot = (unsigned long) buf;
+
+	__atomic_fetch_add(&minicorpus_shm->replay_perturbed_count, 1UL,
+			   __ATOMIC_RELAXED);
+	minicorpus_replay_perturbation_mark();
+}
+
 void generate_syscall_args(struct syscallrecord *rec)
 {
 	struct syscallentry *entry;
@@ -315,6 +511,8 @@ void generate_syscall_args(struct syscallrecord *rec)
 	 * skip generic_sanitise — the args are already populated. */
 	if (entry->sanitise == NULL && minicorpus_replay(rec)) {
 		rec->rettype = entry->rettype;
+		if (minicorpus_shm != NULL)
+			perturb_replayed_struct_field(entry, rec);
 		arg_meta_init(entry, rec);
 		blanket_address_scrub(entry, rec);
 		srec_publish_end(rec);

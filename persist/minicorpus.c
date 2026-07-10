@@ -558,6 +558,16 @@ static bool this_replay_spliced;
 static bool this_replay_xprop;
 
 /*
+ * Process-local post-replay perturbation attribution flag.  Set by
+ * minicorpus_replay_perturbation_mark() when the caller has actually
+ * landed a light FT_FLAGS/FT_RANGE neighbour mutation on a cataloged
+ * struct-ptr arg; consumed and cleared by minicorpus_mut_attrib_commit
+ * to bump replay_perturbed_wins on found_new.  Same fork/single-
+ * threaded guarantee as the other this_replay_* stashes above.
+ */
+static bool this_replay_perturbed;
+
+/*
  * Process-local per-syscall-replay source pointer.
  *
  * minicorpus_replay() sets these to the (nr, slot) of the corpus entry it
@@ -806,6 +816,11 @@ void minicorpus_mut_attrib_set_cmp_source(void)
 	this_attrib_cmp_source = true;
 }
 
+void minicorpus_replay_perturbation_mark(void)
+{
+	this_replay_perturbed = true;
+}
+
 void minicorpus_struct_field_attrib(enum field_tag tag)
 {
 	this_struct_field_tag = tag;
@@ -953,6 +968,13 @@ static void minicorpus_mut_attrib_perop_accounting(bool found_new)
 					   1UL, __ATOMIC_RELAXED);
 		this_replay_xprop = false;
 	}
+
+	if (this_replay_perturbed) {
+		if (found_new)
+			__atomic_fetch_add(&minicorpus_shm->replay_perturbed_wins,
+					   1UL, __ATOMIC_RELAXED);
+		this_replay_perturbed = false;
+	}
 }
 
 void minicorpus_mut_attrib_commit(bool found_new)
@@ -983,6 +1005,7 @@ void minicorpus_mut_attrib_commit(bool found_new)
 		this_attrib_cmp_source = false;
 		this_replay_source_tracked = false;
 		this_struct_field_set = false;
+		this_replay_perturbed = false;
 		for (i = 0; i < MUT_NUM_OPS; i++)
 			mut_structured_attrib[i] = 0;
 		return;
