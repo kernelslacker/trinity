@@ -448,7 +448,7 @@ static void altname_thrash_iter_burst(struct altname_iter_ctx *ctx)
 		if (ns_since(&t0) >= STORM_BUDGET_NS)
 			break;
 
-		batch = ((unsigned int)rand32() % ALT_BURST) + 1U;
+		batch = rnd_modulo_u32(ALT_BURST) + 1U;
 		for (j = 0; j < batch; j++) {
 			gen_altname(added[j]);
 			ring_push(added[j]);
@@ -473,12 +473,11 @@ static void altname_thrash_iter_burst(struct altname_iter_ctx *ctx)
 		 * the lookup gate. */
 		if (alt_ring_count == 0)
 			continue;
-		vbatch = ((unsigned int)rand32() % ALT_BURST) + 1U;
+		vbatch = rnd_modulo_u32(ALT_BURST) + 1U;
 		if (vbatch > alt_ring_count)
 			vbatch = alt_ring_count;
 		for (j = 0; j < vbatch; j++) {
-			unsigned int idx = (unsigned int)rand32() %
-					   alt_ring_count;
+			unsigned int idx = rnd_modulo_u32(alt_ring_count);
 			memcpy(victims[j], alt_ring[idx], ALT_NAME_MAX + 1);
 		}
 
