@@ -128,7 +128,7 @@ syscalls/olduname.c:post_olduname
 syscalls/open.c:post_open
 syscalls/open.c:post_openat
 syscalls/open.c:post_openat2
-syscalls/pause.c:post_pause
+syscalls/signal/pause.c:post_pause
 syscalls/perf_event_open.c:post_perf_event_open
 syscalls/personality.c:post_personality
 syscalls/pipe.c:post_pipe
@@ -160,8 +160,8 @@ syscalls/readlink.c:post_readlink
 syscalls/readlink.c:post_readlinkat
 syscalls/recv.c:post_recvmmsg
 syscalls/recv.c:post_recvmsg
-syscalls/rt_sigpending.c:post_rt_sigpending
-syscalls/rt_sigprocmask.c:post_rt_sigprocmask
+syscalls/signal/rt_sigpending.c:post_rt_sigpending
+syscalls/signal/rt_sigprocmask.c:post_rt_sigprocmask
 syscalls/sched/sched_getaffinity.c:post_sched_getaffinity
 syscalls/sched/sched_getattr.c:post_sched_getattr
 syscalls/sched/sched_getparam.c:post_sched_getparam
@@ -187,9 +187,9 @@ syscalls/cred/setreuid.c:post_setreuid
 syscalls/setsid.c:post_setsid
 syscalls/setsockopt.c:post_setsockopt
 syscalls/cred/setuid.c:post_setuid
-syscalls/sigaction.c:post_rt_sigaction
-syscalls/sigaltstack.c:post_sigaltstack
-syscalls/sigpending.c:post_sigpending
+syscalls/signal/sigaction.c:post_rt_sigaction
+syscalls/signal/sigaltstack.c:post_sigaltstack
+syscalls/signal/sigpending.c:post_sigpending
 syscalls/socketcall.c:post_socketcall
 syscalls/socketpair.c:post_socketpair
 syscalls/stat.c:post_statx
