@@ -2261,8 +2261,12 @@ struct kcov_shared {
 	 *  cmp_field_consumer_would_pick
 	 *      Bumped once per cmp_hints_field_try_get() call where the
 	 *      keyed bucket was found AND its entries[] pool was non-
-	 *      empty AND uncorrupted -- i.e. the call where the live
-	 *      arm would have served a value.  Active in BOTH arms.
+	 *      empty AND uncorrupted AND the generator-invariant guard
+	 *      classified the (desc, field_idx) as eligible -- i.e. the
+	 *      call where the live arm would have served a value.  Guard-
+	 *      skipped keys are excluded from this counter and land in the
+	 *      per-reason cmp_field_consumer_guard_* counters below
+	 *      instead.  Active in BOTH arms.
 	 *  cmp_field_consumer_would_miss
 	 *      Bumped once per cmp_hints_field_try_get() call where the
 	 *      keyed bucket was found but its entries[] pool was empty.
@@ -2297,6 +2301,54 @@ struct kcov_shared {
 	unsigned long cmp_field_consumer_key_absent;
 	unsigned long cmp_field_consumer_pool_corrupted;
 	unsigned long cmp_field_consumer_live_picks;
+
+	/*
+	 * Generator-invariant guard skip counters (per rejection reason).
+	 * The would_pick counter above measures raw eligibility: the pool
+	 * had a key and non-empty entries[].  A subset of those keys, if
+	 * their value were ever injected into the generated struct, would
+	 * damage a generator invariant and turn a real syscall into a
+	 * guaranteed reject (union arm corruption, length/buffer desync,
+	 * pointer-shaped fields overwritten with data, tagged-union
+	 * discriminator picking a wrong variant, and so on).  The classifier
+	 * fires BEFORE the would_pick bump so the counter now reflects
+	 * post-guard eligibility -- what the live arm would actually
+	 * inject -- and each skip lands in exactly one of the reasons below.
+	 * All observation-only; no live behaviour changes with the arm off.
+	 *
+	 *  cmp_field_consumer_guard_variant_layout
+	 *      Struct descriptor carries syscall-arg tagged-union variants
+	 *      (desc->variants / num_variants).  Overwriting one arm's field
+	 *      corrupts whichever arm the fill path chose at generation.
+	 *  cmp_field_consumer_guard_buffer_discrim
+	 *      Struct descriptor selects its variant off an in-buffer byte
+	 *      (desc->buffer_discrim_size != 0), so any field overwrite risks
+	 *      steering the discriminator (or a sibling variant field) to a
+	 *      wrong arm -- includes sockaddr_storage / ioctl-request shapes.
+	 *  cmp_field_consumer_guard_len_pair
+	 *      Field is FT_LEN_BYTES / FT_LEN_COUNT: its value is the paired
+	 *      buffer's chosen length.  Injecting a kernel-observed CMP
+	 *      constant here desyncs the (ptr, len) pair.
+	 *  cmp_field_consumer_guard_nested_pointer
+	 *      Field is a pointer / embedded-struct / eBPF-buffer container
+	 *      (FT_PTR_BYTES, FT_PTR_ARRAY, FT_PTR_STRUCT, FT_EMBEDDED_STRUCT,
+	 *      FT_BPF_PROGRAM).  The stored value is an address / structural
+	 *      handle, not data; injecting a scalar hint mints a garbage
+	 *      pointer.
+	 *  cmp_field_consumer_guard_dependent
+	 *      Field carries structural state whose meaning is relative to
+	 *      another field (FT_TAGGED_UNION per-arm subset selector,
+	 *      FT_VOCAB NUL-padded curated-string slot).  A raw scalar hint
+	 *      doesn't honour the coupling and injecting it desyncs the pair.
+	 *
+	 * Append-only at the tail per the existing convention so consumer
+	 * offsets stay stable.
+	 */
+	unsigned long cmp_field_consumer_guard_variant_layout;
+	unsigned long cmp_field_consumer_guard_buffer_discrim;
+	unsigned long cmp_field_consumer_guard_len_pair;
+	unsigned long cmp_field_consumer_guard_nested_pointer;
+	unsigned long cmp_field_consumer_guard_dependent;
 
 	/*
 	 * Number of age-bucket slots for the CMP-hint staleness histogram
