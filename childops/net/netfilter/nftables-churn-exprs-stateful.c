@@ -169,7 +169,7 @@ size_t build_nft_connlimit_expr(unsigned char *buf, size_t off, size_t cap)
 	};
 	struct nlattr *elem, *expr_data;
 	size_t elem_off, expr_data_off;
-	__u32 count = count_buckets[rand32() % ARRAY_SIZE(count_buckets)];
+	__u32 count = RAND_ARRAY(count_buckets);
 	bool with_flags = ONE_IN(2);
 
 	elem_off = off;
@@ -197,7 +197,7 @@ size_t build_nft_connlimit_expr(unsigned char *buf, size_t off, size_t cap)
 			/* Drive the `flags & ~NFT_CONNLIMIT_F_INV` ->
 			 * -EOPNOTSUPP rejection path: pick any non-zero
 			 * byte from the disallowed range. */
-			flags = 0x02U + (rand32() % 0xfeU);
+			flags = 0x02U + rnd_modulo_u32(0xfeU);
 		} else {
 			flags = ONE_IN(2) ? NFT_CONNLIMIT_F_INV : 0U;
 		}
@@ -246,7 +246,7 @@ size_t build_nft_quota_expr(unsigned char *buf, size_t off, size_t cap)
 	};
 	struct nlattr *elem, *expr_data;
 	size_t elem_off, expr_data_off;
-	__u64 bytes = byte_caps[rand32() % ARRAY_SIZE(byte_caps)];
+	__u64 bytes = RAND_ARRAY(byte_caps);
 	bool with_flags = ONE_IN(2);
 	bool with_consumed = ONE_IN(2);
 
@@ -349,8 +349,8 @@ size_t build_nft_limit_expr(unsigned char *buf, size_t off, size_t cap)
 	};
 	struct nlattr *elem, *expr_data;
 	size_t elem_off, expr_data_off;
-	__u64 rate = rates[rand32() % ARRAY_SIZE(rates)];
-	__u64 unit = units[rand32() % ARRAY_SIZE(units)];
+	__u64 rate = RAND_ARRAY(rates);
+	__u64 unit = RAND_ARRAY(units);
 	bool with_burst = ONE_IN(2);
 	bool with_type = ONE_IN(2);
 	bool with_flags = ONE_IN(2);
@@ -377,7 +377,7 @@ size_t build_nft_limit_expr(unsigned char *buf, size_t off, size_t cap)
 		return 0;
 
 	if (with_burst) {
-		__u32 burst = bursts[rand32() % ARRAY_SIZE(bursts)];
+		__u32 burst = RAND_ARRAY(bursts);
 
 		off = nla_put_be32(buf, off, cap, NFTA_LIMIT_BURST, burst);
 		if (!off)
@@ -421,7 +421,7 @@ size_t build_nft_limit_expr(unsigned char *buf, size_t off, size_t cap)
  * round-trips both fields, so the interesting validator coverage is
  * at init time.
  *
- * Bucket distribution per call (rand32() % 8):
+ * Bucket distribution per call (rand32() & 0x7):
  *   - both attributes absent (~1/4): default-init path, neither
  *     attribute seeds anything.
  *   - SET only present, value 0 (~1/8): policy walker consumes SET
@@ -471,13 +471,13 @@ size_t build_nft_last_expr(unsigned char *buf, size_t off, size_t cap)
 		with_set = true;
 		set_val = 1;
 		with_msecs = true;
-		msecs_val = msecs_small[rand32() % ARRAY_SIZE(msecs_small)];
+		msecs_val = RAND_ARRAY(msecs_small);
 		break;
 	default:
 		with_set = true;
 		set_val = 1;
 		with_msecs = true;
-		msecs_val = msecs_large[rand32() % ARRAY_SIZE(msecs_large)];
+		msecs_val = RAND_ARRAY(msecs_large);
 		break;
 	}
 
@@ -540,7 +540,7 @@ size_t build_nft_log_expr(unsigned char *buf, size_t off, size_t cap)
 
 	if (!with_prefix && !with_group && !with_snaplen &&
 	    !with_qthresh && !with_level && !with_flags) {
-		switch (rand32() % 6) {
+		switch (rnd_modulo_u32(6)) {
 		case 0: with_prefix  = true; break;
 		case 1: with_group   = true; break;
 		case 2: with_snaplen = true; break;
@@ -566,11 +566,11 @@ size_t build_nft_log_expr(unsigned char *buf, size_t off, size_t cap)
 
 	if (with_prefix) {
 		char prefix[9];
-		unsigned int len = (rand32() % 8) + 1;
+		unsigned int len = rnd_modulo_u32(8) + 1;
 		unsigned int i;
 
 		for (i = 0; i < len; i++)
-			prefix[i] = 'a' + (rand32() % 26);
+			prefix[i] = 'a' + rnd_modulo_u32(26);
 		prefix[len] = '\0';
 		off = nla_put_str(buf, off, cap, NFTA_LOG_PREFIX, prefix);
 		if (!off)
@@ -586,7 +586,7 @@ size_t build_nft_log_expr(unsigned char *buf, size_t off, size_t cap)
 
 	if (with_snaplen) {
 		off = nla_put_be32(buf, off, cap, NFTA_LOG_SNAPLEN,
-				   rand32() % 0x10000);
+				   rnd_modulo_u32(0x10000));
 		if (!off)
 			return 0;
 	}
@@ -600,7 +600,7 @@ size_t build_nft_log_expr(unsigned char *buf, size_t off, size_t cap)
 
 	if (with_level) {
 		off = nla_put_be32(buf, off, cap, NFTA_LOG_LEVEL,
-				   rand32() % 8);
+				   rnd_modulo_u32(8));
 		if (!off)
 			return 0;
 	}
