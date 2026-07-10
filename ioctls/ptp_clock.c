@@ -10,6 +10,77 @@
 #include "sanitise.h"
 #include "utils.h"
 
+/*
+ * Compile-time: every fixed-shape PTP_* ioctl the sanitisers below
+ * fill must have sizeof(struct) matching the _IOC_SIZE encoded in
+ * its request bits.  A mismatch means <linux/ptp_clock.h> moved
+ * under us and the sanitiser is memset()ing / stamping into a
+ * buffer the kernel copies less of than we prepared (under-encoded)
+ * or reads past (over-encoded).
+ * PTP_ENABLE_PPS / PTP_MASK_EN_SINGLE take a bare scalar (int /
+ * unsigned int) and PTP_MASK_CLEAR_ALL is _IO() with no argument;
+ * all three are intentionally absent -- asserting sizeof(struct)
+ * against a scalar or zero would not be meaningful.
+ */
+_Static_assert(sizeof(struct ptp_clock_caps) ==
+	       _IOC_SIZE(PTP_CLOCK_GETCAPS),
+	       "ptp_clock_caps size vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct ptp_extts_request) ==
+	       _IOC_SIZE(PTP_EXTTS_REQUEST),
+	       "ptp_extts_request size vs PTP_EXTTS_REQUEST mismatch");
+_Static_assert(sizeof(struct ptp_perout_request) ==
+	       _IOC_SIZE(PTP_PEROUT_REQUEST),
+	       "ptp_perout_request size vs PTP_PEROUT_REQUEST mismatch");
+_Static_assert(sizeof(struct ptp_sys_offset) ==
+	       _IOC_SIZE(PTP_SYS_OFFSET),
+	       "ptp_sys_offset size vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct ptp_pin_desc) ==
+	       _IOC_SIZE(PTP_PIN_GETFUNC),
+	       "ptp_pin_desc size vs PTP_PIN_GETFUNC mismatch");
+_Static_assert(sizeof(struct ptp_pin_desc) ==
+	       _IOC_SIZE(PTP_PIN_SETFUNC),
+	       "ptp_pin_desc size vs PTP_PIN_SETFUNC mismatch");
+#ifdef PTP_SYS_OFFSET_PRECISE
+_Static_assert(sizeof(struct ptp_sys_offset_precise) ==
+	       _IOC_SIZE(PTP_SYS_OFFSET_PRECISE),
+	       "ptp_sys_offset_precise size vs PTP_SYS_OFFSET_PRECISE mismatch");
+#endif
+#ifdef PTP_SYS_OFFSET_EXTENDED
+_Static_assert(sizeof(struct ptp_sys_offset_extended) ==
+	       _IOC_SIZE(PTP_SYS_OFFSET_EXTENDED),
+	       "ptp_sys_offset_extended size vs PTP_SYS_OFFSET_EXTENDED mismatch");
+#endif
+#ifdef PTP_EXTTS_REQUEST2
+_Static_assert(sizeof(struct ptp_extts_request) ==
+	       _IOC_SIZE(PTP_EXTTS_REQUEST2),
+	       "ptp_extts_request size vs PTP_EXTTS_REQUEST2 mismatch");
+#endif
+#ifdef PTP_PEROUT_REQUEST2
+_Static_assert(sizeof(struct ptp_perout_request) ==
+	       _IOC_SIZE(PTP_PEROUT_REQUEST2),
+	       "ptp_perout_request size vs PTP_PEROUT_REQUEST2 mismatch");
+#endif
+#ifdef PTP_PIN_GETFUNC2
+_Static_assert(sizeof(struct ptp_pin_desc) ==
+	       _IOC_SIZE(PTP_PIN_GETFUNC2),
+	       "ptp_pin_desc size vs PTP_PIN_GETFUNC2 mismatch");
+#endif
+#ifdef PTP_PIN_SETFUNC2
+_Static_assert(sizeof(struct ptp_pin_desc) ==
+	       _IOC_SIZE(PTP_PIN_SETFUNC2),
+	       "ptp_pin_desc size vs PTP_PIN_SETFUNC2 mismatch");
+#endif
+#ifdef PTP_SYS_OFFSET_PRECISE2
+_Static_assert(sizeof(struct ptp_sys_offset_precise) ==
+	       _IOC_SIZE(PTP_SYS_OFFSET_PRECISE2),
+	       "ptp_sys_offset_precise size vs PTP_SYS_OFFSET_PRECISE2 mismatch");
+#endif
+#ifdef PTP_SYS_OFFSET_EXTENDED2
+_Static_assert(sizeof(struct ptp_sys_offset_extended) ==
+	       _IOC_SIZE(PTP_SYS_OFFSET_EXTENDED2),
+	       "ptp_sys_offset_extended size vs PTP_SYS_OFFSET_EXTENDED2 mismatch");
+#endif
+
 static void fill_clock_time(struct ptp_clock_time *t)
 {
 	t->sec = (__s64) rand64();
