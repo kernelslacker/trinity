@@ -546,7 +546,7 @@ static int tc_mirred_blockcast_in_ns(void *arg)
 	 * shared-block seed in some configs).  Upper bound keeps us
 	 * clear of TCM_IFINDEX_MAGIC_BLOCK's neighbourhood and any
 	 * future kernel-reserved range. */
-	block_idx = (__u32)((rand32() % 0xfef0U) + 0x10U);
+	block_idx = (__u32)(rnd_modulo_u32(0xfef0U) + 0x10U);
 
 	rc = build_clsact_with_egress_block(&nl, a_idx, block_idx);
 	if (rc != 0) {
