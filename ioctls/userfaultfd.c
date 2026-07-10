@@ -11,6 +11,47 @@
 #include "shm.h"
 #include "utils.h"
 
+/*
+ * Compile-time: every fixed-shape UFFDIO_* command the sanitisers
+ * below fill must have sizeof(struct) matching the _IOC_SIZE encoded
+ * in its request bits.  A mismatch means <linux/userfaultfd.h> moved
+ * under us and the sanitiser is memset()ing / stamping into a buffer
+ * the kernel copies less of than we prepared (under-encoded) or
+ * reads past (over-encoded).  UFFDIO_WAKE and UFFDIO_UNREGISTER both
+ * take struct uffdio_range and each get their own assert -- the two
+ * sides can drift independently in a header refactor.
+ */
+_Static_assert(sizeof(struct uffdio_api) ==
+	       _IOC_SIZE(UFFDIO_API),
+	       "uffdio_api size vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct uffdio_register) ==
+	       _IOC_SIZE(UFFDIO_REGISTER),
+	       "uffdio_register size vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct uffdio_range) ==
+	       _IOC_SIZE(UFFDIO_UNREGISTER),
+	       "uffdio_range size vs UFFDIO_UNREGISTER mismatch");
+_Static_assert(sizeof(struct uffdio_range) ==
+	       _IOC_SIZE(UFFDIO_WAKE),
+	       "uffdio_range size vs UFFDIO_WAKE mismatch");
+_Static_assert(sizeof(struct uffdio_copy) ==
+	       _IOC_SIZE(UFFDIO_COPY),
+	       "uffdio_copy size vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct uffdio_zeropage) ==
+	       _IOC_SIZE(UFFDIO_ZEROPAGE),
+	       "uffdio_zeropage size vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct uffdio_writeprotect) ==
+	       _IOC_SIZE(UFFDIO_WRITEPROTECT),
+	       "uffdio_writeprotect size vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct uffdio_continue) ==
+	       _IOC_SIZE(UFFDIO_CONTINUE),
+	       "uffdio_continue size vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct uffdio_poison) ==
+	       _IOC_SIZE(UFFDIO_POISON),
+	       "uffdio_poison size vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct uffdio_move) ==
+	       _IOC_SIZE(UFFDIO_MOVE),
+	       "uffdio_move size vs _IOC_SIZE mismatch");
+
 static int userfaultfd_fd_test(int fd, const struct stat *st __attribute__((unused)))
 {
 	struct objhead *head;
