@@ -391,7 +391,7 @@ static int nnm_pin_source_socket(void)
 static int nnm_iter_setup(struct nnm_iter_ctx *ctx,
 			  const struct nl_open_opts *opts)
 {
-	ctx->k = (enum nnm_kind)(rand32() % (unsigned int)NNM_KIND_NR);
+	ctx->k = (enum nnm_kind)rnd_modulo_u32((unsigned int)NNM_KIND_NR);
 	snprintf(ctx->ifname, sizeof(ctx->ifname), "nnm%u",
 		 g_iter & 0xffffU);
 	snprintf(ctx->peer_ifname, sizeof(ctx->peer_ifname), "nnp%u",
