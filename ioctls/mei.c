@@ -42,6 +42,32 @@
  * group still builds against pre-vtag uapi headers.
  */
 
+/*
+ * Compile-time: the two mei CONNECT commands this file fills with
+ * a fixed-shape struct -- IOCTL_MEI_CONNECT_CLIENT (struct
+ * mei_connect_client_data) and IOCTL_MEI_CONNECT_CLIENT_VTAG
+ * (struct mei_connect_client_data_vtag) -- must have sizeof(struct)
+ * matching the _IOC_SIZE the request encodes.  Pin the pairing at
+ * build time so a <linux/mei.h> change that grows or shrinks the
+ * union in either struct hard-fails the compile rather than
+ * silently having the kernel copy_from_user() a different number
+ * of bytes than the sanitiser prepared.  The VTAG assert lives
+ * inside the same #ifdef as its ioctl so pre-vtag uapi headers
+ * still build.
+ *
+ * IOCTL_MEI_NOTIFY_SET and IOCTL_MEI_NOTIFY_GET both take a bare
+ * __u32; asserting sizeof(struct) against a scalar would be the
+ * wrong shape of check.
+ */
+_Static_assert(sizeof(struct mei_connect_client_data) ==
+	       _IOC_SIZE(IOCTL_MEI_CONNECT_CLIENT),
+	       "mei_connect_client_data size vs _IOC_SIZE mismatch");
+#ifdef IOCTL_MEI_CONNECT_CLIENT_VTAG
+_Static_assert(sizeof(struct mei_connect_client_data_vtag) ==
+	       _IOC_SIZE(IOCTL_MEI_CONNECT_CLIENT_VTAG),
+	       "mei_connect_client_data_vtag size vs _IOC_SIZE mismatch");
+#endif
+
 struct mei_uuid_entry {
 	__u8 b[16];
 };
