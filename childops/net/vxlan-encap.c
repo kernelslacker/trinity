@@ -377,7 +377,7 @@ static int build_fdb_add(struct nl_ctx *ctx, int ifindex)
  */
 static enum tun_kind pick_kind(void)
 {
-	enum tun_kind start = (enum tun_kind)(rand32() % TUN_NR);
+	enum tun_kind start = (enum tun_kind)rnd_modulo_u32(TUN_NR);
 	unsigned int i;
 
 	for (i = 0; i < TUN_NR; i++) {
