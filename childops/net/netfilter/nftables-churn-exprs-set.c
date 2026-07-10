@@ -33,8 +33,8 @@ size_t build_nft_lookup_expr(unsigned char *buf, size_t off,
 {
 	struct nlattr *elem, *expr_data;
 	size_t elem_off, expr_data_off;
-	__u32 sreg = NFT_REG32_00 + (rand32() % 16);
-	__u32 dreg = NFT_REG32_00 + (rand32() % 16);
+	__u32 sreg = NFT_REG32_00 + rnd_modulo_u32(16);
+	__u32 dreg = NFT_REG32_00 + rnd_modulo_u32(16);
 	__u32 flags = ONE_IN(4) ? NFT_LOOKUP_F_INV : 0;
 	bool with_dreg = ONE_IN(2);
 
@@ -152,7 +152,7 @@ size_t build_nft_objref_expr(unsigned char *buf, size_t off,
 		return 0;
 
 	if (set_mode) {
-		__u32 sreg = regs[rand32() % ARRAY_SIZE(regs)];
+		__u32 sreg = RAND_ARRAY(regs);
 		bool with_name = ONE_IN(2);
 		bool with_id = with_name ? ONE_IN(2) : true;
 
@@ -161,8 +161,7 @@ size_t build_nft_objref_expr(unsigned char *buf, size_t off,
 		if (!off)
 			return 0;
 		if (with_name) {
-			const char *nm =
-				obj_names[rand32() % ARRAY_SIZE(obj_names)];
+			const char *nm = RAND_ARRAY(obj_names);
 
 			off = nla_put_str(buf, off, cap,
 					  NFTA_OBJREF_SET_NAME, nm);
@@ -176,9 +175,8 @@ size_t build_nft_objref_expr(unsigned char *buf, size_t off,
 				return 0;
 		}
 	} else {
-		const char *nm =
-			obj_names[rand32() % ARRAY_SIZE(obj_names)];
-		__u32 type = obj_types[rand32() % ARRAY_SIZE(obj_types)];
+		const char *nm = RAND_ARRAY(obj_names);
+		__u32 type = RAND_ARRAY(obj_types);
 
 		off = nla_put_str(buf, off, cap,
 				  NFTA_OBJREF_IMM_NAME, nm);
@@ -239,9 +237,9 @@ size_t build_nft_dynset_expr(unsigned char *buf, size_t off,
 	};
 	struct nlattr *elem, *expr_data;
 	size_t elem_off, expr_data_off;
-	__u32 op = ops[rand32() % ARRAY_SIZE(ops)];
-	__u32 sreg_key = regs[rand32() % ARRAY_SIZE(regs)];
-	__u32 sreg_data = regs[rand32() % ARRAY_SIZE(regs)];
+	__u32 op = RAND_ARRAY(ops);
+	__u32 sreg_key = RAND_ARRAY(regs);
+	__u32 sreg_data = RAND_ARRAY(regs);
 	__u32 flags = ONE_IN(4) ? NFT_DYNSET_F_INV : 0;
 	bool with_sreg_data = ONE_IN(2);
 	bool with_timeout = ONE_IN(3);
@@ -280,7 +278,7 @@ size_t build_nft_dynset_expr(unsigned char *buf, size_t off,
 			return 0;
 	}
 	if (with_timeout) {
-		__u64 timeout_ms = (__u64)((rand32() % 1000) + 1);
+		__u64 timeout_ms = (__u64)(rnd_modulo_u32(1000) + 1);
 		__u64 be_t = ((__u64)htonl((__u32)(timeout_ms >> 32))) |
 			     (((__u64)htonl((__u32)timeout_ms)) << 32);
 
