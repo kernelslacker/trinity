@@ -46,6 +46,16 @@ _Static_assert(sizeof(struct vhost_vring_state) ==
 _Static_assert(sizeof(struct vhost_vring_state) ==
 	       _IOC_SIZE(VHOST_GET_VRING_BASE),
 	       "vhost_vring_state size vs VHOST_GET_VRING_BASE mismatch");
+#ifdef VHOST_SET_VRING_BUSYLOOP_TIMEOUT
+_Static_assert(sizeof(struct vhost_vring_state) ==
+	       _IOC_SIZE(VHOST_SET_VRING_BUSYLOOP_TIMEOUT),
+	       "vhost_vring_state size vs VHOST_SET_VRING_BUSYLOOP_TIMEOUT mismatch");
+#endif
+#ifdef VHOST_GET_VRING_BUSYLOOP_TIMEOUT
+_Static_assert(sizeof(struct vhost_vring_state) ==
+	       _IOC_SIZE(VHOST_GET_VRING_BUSYLOOP_TIMEOUT),
+	       "vhost_vring_state size vs VHOST_GET_VRING_BUSYLOOP_TIMEOUT mismatch");
+#endif
 _Static_assert(sizeof(struct vhost_vring_addr) ==
 	       _IOC_SIZE(VHOST_SET_VRING_ADDR),
 	       "vhost_vring_addr size vs _IOC_SIZE mismatch");
@@ -78,6 +88,12 @@ static const struct ioctl vhost_ioctls[] = {
 	IOCTL(VHOST_SET_VRING_CALL),
 	IOCTL(VHOST_SET_VRING_ERR),
 	IOCTL(VHOST_NET_SET_BACKEND),
+#ifdef VHOST_SET_VRING_BUSYLOOP_TIMEOUT
+	IOCTL(VHOST_SET_VRING_BUSYLOOP_TIMEOUT),
+#endif
+#ifdef VHOST_GET_VRING_BUSYLOOP_TIMEOUT
+	IOCTL(VHOST_GET_VRING_BUSYLOOP_TIMEOUT),
+#endif
 #ifdef VHOST_GET_BACKEND_FEATURES
 	IOCTL(VHOST_GET_BACKEND_FEATURES),
 #endif
@@ -279,6 +295,12 @@ static void vhost_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 		break;
 	case VHOST_SET_VRING_BASE:
 	case VHOST_GET_VRING_BASE:
+#ifdef VHOST_SET_VRING_BUSYLOOP_TIMEOUT
+	case VHOST_SET_VRING_BUSYLOOP_TIMEOUT:
+#endif
+#ifdef VHOST_GET_VRING_BUSYLOOP_TIMEOUT
+	case VHOST_GET_VRING_BUSYLOOP_TIMEOUT:
+#endif
 		sanitise_vhost_vring_state_base(rec);
 		break;
 	case VHOST_SET_VRING_ADDR:
