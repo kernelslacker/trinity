@@ -22,6 +22,71 @@
 #include "utils.h"
 
 /*
+ * Compile-time: every fixed-shape GPIO ioctl the sanitisers below
+ * fill must have sizeof(struct) matching the _IOC_SIZE encoded in
+ * its request bits.  A mismatch means <linux/gpio.h> moved under
+ * us and the sanitiser is memset()ing / stamping into a buffer
+ * the kernel copies less of than we prepared (under-encoded) or
+ * reads past (over-encoded).
+ * GPIO_GET_LINEINFO_UNWATCH_IOCTL takes a bare __u32 offset, not
+ * a struct, and is intentionally absent.
+ */
+_Static_assert(sizeof(struct gpiochip_info) ==
+	       _IOC_SIZE(GPIO_GET_CHIPINFO_IOCTL),
+	       "gpiochip_info size vs _IOC_SIZE mismatch");
+#ifdef GPIO_V2_GET_LINEINFO_IOCTL
+_Static_assert(sizeof(struct gpio_v2_line_info) ==
+	       _IOC_SIZE(GPIO_V2_GET_LINEINFO_IOCTL),
+	       "gpio_v2_line_info size vs GPIO_V2_GET_LINEINFO_IOCTL mismatch");
+_Static_assert(sizeof(struct gpio_v2_line_info) ==
+	       _IOC_SIZE(GPIO_V2_GET_LINEINFO_WATCH_IOCTL),
+	       "gpio_v2_line_info size vs GPIO_V2_GET_LINEINFO_WATCH_IOCTL mismatch");
+_Static_assert(sizeof(struct gpio_v2_line_request) ==
+	       _IOC_SIZE(GPIO_V2_GET_LINE_IOCTL),
+	       "gpio_v2_line_request size vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct gpio_v2_line_config) ==
+	       _IOC_SIZE(GPIO_V2_LINE_SET_CONFIG_IOCTL),
+	       "gpio_v2_line_config size vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct gpio_v2_line_values) ==
+	       _IOC_SIZE(GPIO_V2_LINE_GET_VALUES_IOCTL),
+	       "gpio_v2_line_values size vs GPIO_V2_LINE_GET_VALUES_IOCTL mismatch");
+_Static_assert(sizeof(struct gpio_v2_line_values) ==
+	       _IOC_SIZE(GPIO_V2_LINE_SET_VALUES_IOCTL),
+	       "gpio_v2_line_values size vs GPIO_V2_LINE_SET_VALUES_IOCTL mismatch");
+#endif
+#ifdef GPIO_GET_LINEINFO_IOCTL
+_Static_assert(sizeof(struct gpioline_info) ==
+	       _IOC_SIZE(GPIO_GET_LINEINFO_IOCTL),
+	       "gpioline_info size vs GPIO_GET_LINEINFO_IOCTL mismatch");
+_Static_assert(sizeof(struct gpioline_info) ==
+	       _IOC_SIZE(GPIO_GET_LINEINFO_WATCH_IOCTL),
+	       "gpioline_info size vs GPIO_GET_LINEINFO_WATCH_IOCTL mismatch");
+#endif
+#ifdef GPIO_GET_LINEHANDLE_IOCTL
+_Static_assert(sizeof(struct gpiohandle_request) ==
+	       _IOC_SIZE(GPIO_GET_LINEHANDLE_IOCTL),
+	       "gpiohandle_request size vs _IOC_SIZE mismatch");
+#endif
+#ifdef GPIO_GET_LINEEVENT_IOCTL
+_Static_assert(sizeof(struct gpioevent_request) ==
+	       _IOC_SIZE(GPIO_GET_LINEEVENT_IOCTL),
+	       "gpioevent_request size vs _IOC_SIZE mismatch");
+#endif
+#ifdef GPIOHANDLE_GET_LINE_VALUES_IOCTL
+_Static_assert(sizeof(struct gpiohandle_data) ==
+	       _IOC_SIZE(GPIOHANDLE_GET_LINE_VALUES_IOCTL),
+	       "gpiohandle_data size vs GPIOHANDLE_GET_LINE_VALUES_IOCTL mismatch");
+_Static_assert(sizeof(struct gpiohandle_data) ==
+	       _IOC_SIZE(GPIOHANDLE_SET_LINE_VALUES_IOCTL),
+	       "gpiohandle_data size vs GPIOHANDLE_SET_LINE_VALUES_IOCTL mismatch");
+#endif
+#ifdef GPIOHANDLE_SET_CONFIG_IOCTL
+_Static_assert(sizeof(struct gpiohandle_config) ==
+	       _IOC_SIZE(GPIOHANDLE_SET_CONFIG_IOCTL),
+	       "gpiohandle_config size vs _IOC_SIZE mismatch");
+#endif
+
+/*
  * Keep these in sync with <linux/gpio.h>.  We mask user-supplied flag
  * values against these so the kernel rejects on the requested behaviour
  * rather than on EINVAL from a stray reserved bit.  Recomputing them
