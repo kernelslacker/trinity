@@ -4,39 +4,13 @@
 #include <sys/types.h>
 
 /*
- * Self-cgroup: at startup, place trinity into its own cgroup v2 sub-cgroup
- * with a memory cap so a runaway allocation triggers a scoped OOM kill of
- * the worker pool instead of a host-wide global OOM (which would take down
- * the surrounding shell/tmux/ssh) or an upstream group-OOM cascade (which
- * would take down trinity-main alongside the workers).
+ * Self-cgroup: at startup, place trinity into its own cgroup v2
+ * sub-cgroup with a memory cap so a runaway allocation triggers a
+ * scoped OOM kill of the worker pool instead of a host-wide global
+ * OOM or an upstream group-OOM cascade.
  *
- * Layout (preferred, "split mode"):
- *
- *   trinity-<pid>/                 container, no procs
- *     ├── parent/                  trinity-main lives here
- *     │                            memory.high small reservation, no .max,
- *     │                            memory.oom.group=0 — never the OOM victim
- *     └── children/                all forked workers live here
- *                                  memory.max=<cap>, memory.oom.group=1 —
- *                                  cap kills the whole worker pool atomically,
- *                                  parent then re-spawns from clean state
- *
- * Workers land in children/ via clone3(CLONE_INTO_CGROUP) so the placement
- * is atomic (no transient window in parent/ where a racing allocation
- * could land against the wrong limit).  See self_cgroup_fork_into_workload().
- *
- * Setup also arms an inotify watch on children/memory.events so the parent
- * can apply proactive back-pressure on memory.high crossings (fork-rate
- * throttle).  memory.max crossings are tracked for diagnostics only — the
- * kernel's group-OOM handles the cap.  Polled from the parent's main_loop
- * via self_cgroup_events_check().
- *
- * Failures degrade gracefully: if the parent/children split can't be set
- * up (older kernel without memory.oom.group, delegation gap, etc.) trinity
- * falls back to a single-cgroup with memory.max — the operator still gets
- * the hard cap, just without OOM scope isolation.  When even that fails
- * trinity continues without any cgroup containment rather than refusing
- * to start.
+ * Design rationale, split-mode layout diagram, and failure fallback
+ * ladder: Documentation/self-cgroup.md
  */
 void self_cgroup_setup(void);
 void self_cgroup_cleanup(void);
