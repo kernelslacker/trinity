@@ -204,7 +204,7 @@ static uint32_t pick_label(void)
 	case 2:  return 2U;			/* IPv6 Explicit NULL */
 	case 3:  return 3U;			/* Implicit NULL */
 	case 4:  return 13U;			/* GAL */
-	default: return 16U + (rand32() % 0xffffU);
+	default: return 16U + rnd_modulo_u32(0xffffU);
 	}
 }
 
