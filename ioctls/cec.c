@@ -74,6 +74,49 @@ static const __u8 cec_safe_destinations[] = {
 	CEC_LOG_ADDR_SPECIFIC,
 };
 
+/*
+ * CEC_OP_PRIM_DEVTYPE_* is a non-contiguous set (value 2 is unused
+ * between RECORD=1 and TUNER=3), so a modulo draw both over- and
+ * under-shoots the valid space and gets -EINVAL'd by
+ * cec_adap_s_log_addrs.  Pick from the named constants only.
+ */
+static const __u8 cec_prim_device_types[] = {
+	CEC_OP_PRIM_DEVTYPE_TV,
+	CEC_OP_PRIM_DEVTYPE_RECORD,
+	CEC_OP_PRIM_DEVTYPE_TUNER,
+	CEC_OP_PRIM_DEVTYPE_PLAYBACK,
+	CEC_OP_PRIM_DEVTYPE_AUDIOSYSTEM,
+	CEC_OP_PRIM_DEVTYPE_SWITCH,
+	CEC_OP_PRIM_DEVTYPE_PROCESSOR,
+};
+
+static const __u8 cec_versions[] = {
+	CEC_OP_CEC_VERSION_1_3A,
+	CEC_OP_CEC_VERSION_1_4,
+	CEC_OP_CEC_VERSION_2_0,
+};
+
+/*
+ * Initiator/follower nibbles of the mode word.  Raw
+ * (rnd_u32() & _MSK) draws reserved values inside each nibble that
+ * CEC_S_MODE rejects; pick from the named constants only.
+ */
+static const __u32 cec_initiator_modes[] = {
+	CEC_MODE_NO_INITIATOR,
+	CEC_MODE_INITIATOR,
+	CEC_MODE_EXCL_INITIATOR,
+};
+
+static const __u32 cec_follower_modes[] = {
+	CEC_MODE_NO_FOLLOWER,
+	CEC_MODE_FOLLOWER,
+	CEC_MODE_EXCL_FOLLOWER,
+	CEC_MODE_EXCL_FOLLOWER_PASSTHRU,
+	CEC_MODE_MONITOR_PIN,
+	CEC_MODE_MONITOR,
+	CEC_MODE_MONITOR_ALL,
+};
+
 static void sanitise_cec_msg(struct syscallrecord *rec)
 {
 	struct cec_msg *m;
@@ -143,14 +186,14 @@ static void sanitise_cec_log_addrs(struct syscallrecord *rec)
 		return;
 	memset(la, 0, sizeof(*la));
 
-	la->cec_version = RAND_BOOL() ? 0x04 : 0x05;	/* 1.4 or 2.0 */
+	la->cec_version = RAND_ARRAY(cec_versions);
 	la->num_log_addrs = rnd_modulo_u32((CEC_MAX_LOG_ADDRS + 1));
 	la->vendor_id = RAND_BOOL() ? CEC_VENDOR_ID_NONE : (rnd_u32() & 0xffffff);
 	la->flags = rnd_u32() & 0x7;	/* known flag bits */
 
 	for (i = 0; i < CEC_MAX_LOG_ADDRS; i++) {
 		la->log_addr_type[i] = rnd_modulo_u32((CEC_LOG_ADDR_TYPE_UNREGISTERED + 1));
-		la->primary_device_type[i] = rnd_modulo_u32(8);
+		la->primary_device_type[i] = RAND_ARRAY(cec_prim_device_types);
 		la->all_device_types[i] = rnd_u32() & 0xff;
 	}
 
@@ -176,8 +219,8 @@ static void sanitise_cec_mode(struct syscallrecord *rec)
 	if (!m)
 		return;
 	memset(m, 0, sizeof(*m));
-	*m = (rnd_u32() & CEC_MODE_INITIATOR_MSK) |
-	     (rnd_u32() & CEC_MODE_FOLLOWER_MSK);
+	*m = RAND_ARRAY(cec_initiator_modes) |
+	     RAND_ARRAY(cec_follower_modes);
 	rec->a3 = (unsigned long) m;
 }
 
