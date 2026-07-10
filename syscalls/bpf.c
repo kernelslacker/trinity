@@ -1098,8 +1098,7 @@ static void post_bpf(struct syscallrecord *rec)
 	if (looks_like_corrupted_ptr(rec, snap->attr_original)) {
 		outputerr("post_bpf: rejected suspicious snap attr_original=%p (post_state-scribbled?)\n",
 			  snap->attr_original);
-		post_state_unregister(snap);
-		deferred_freeptr(&rec->post_state);
+		post_state_release(rec, snap);
 		return;
 	}
 
@@ -1164,8 +1163,7 @@ static void post_bpf(struct syscallrecord *rec)
 		post_bpf_close_orphan_fd(fd, cmd);
 
 	deferred_free_enqueue(attr);
-	post_state_unregister(snap);
-	deferred_freeptr(&rec->post_state);
+	post_state_release(rec, snap);
 }
 
 static unsigned long bpf_cmds[] = {
