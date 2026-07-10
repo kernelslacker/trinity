@@ -60,8 +60,8 @@ size_t build_nft_numgen_expr(unsigned char *buf, size_t off, size_t cap)
 	};
 	struct nlattr *elem, *expr_data;
 	size_t elem_off, expr_data_off;
-	__u32 dreg = regs[rand32() % ARRAY_SIZE(regs)];
-	__u32 modulus = moduli[rand32() % ARRAY_SIZE(moduli)];
+	__u32 dreg = RAND_ARRAY(regs);
+	__u32 modulus = RAND_ARRAY(moduli);
 	__u32 type = ONE_IN(2) ? NFT_NG_INCREMENTAL : NFT_NG_RANDOM;
 	bool with_offset = ONE_IN(2);
 
@@ -90,7 +90,7 @@ size_t build_nft_numgen_expr(unsigned char *buf, size_t off, size_t cap)
 		return 0;
 
 	if (with_offset) {
-		__u32 offset = offsets[rand32() % ARRAY_SIZE(offsets)];
+		__u32 offset = RAND_ARRAY(offsets);
 
 		off = nla_put_be32(buf, off, cap, NFTA_NG_OFFSET, offset);
 		if (!off)
@@ -166,8 +166,8 @@ size_t build_nft_hash_expr(unsigned char *buf, size_t off, size_t cap)
 	};
 	struct nlattr *elem, *expr_data;
 	size_t elem_off, expr_data_off;
-	__u32 dreg = regs[rand32() % ARRAY_SIZE(regs)];
-	__u32 modulus = moduli[rand32() % ARRAY_SIZE(moduli)];
+	__u32 dreg = RAND_ARRAY(regs);
+	__u32 modulus = RAND_ARRAY(moduli);
 	__u32 type = ONE_IN(2) ? NFT_HASH_JENKINS : NFT_HASH_SYM;
 	bool with_offset = ONE_IN(2);
 	bool with_seed = ONE_IN(2);
@@ -197,8 +197,8 @@ size_t build_nft_hash_expr(unsigned char *buf, size_t off, size_t cap)
 		return 0;
 
 	if (type == NFT_HASH_JENKINS) {
-		__u32 sreg = regs[rand32() % ARRAY_SIZE(regs)];
-		__u32 len = lens[rand32() % ARRAY_SIZE(lens)];
+		__u32 sreg = RAND_ARRAY(regs);
+		__u32 len = RAND_ARRAY(lens);
 
 		off = nla_put_be32(buf, off, cap, NFTA_HASH_SREG, sreg);
 		if (!off)
@@ -216,7 +216,7 @@ size_t build_nft_hash_expr(unsigned char *buf, size_t off, size_t cap)
 	}
 
 	if (with_offset) {
-		__u32 offset = offsets[rand32() % ARRAY_SIZE(offsets)];
+		__u32 offset = RAND_ARRAY(offsets);
 
 		off = nla_put_be32(buf, off, cap, NFTA_HASH_OFFSET, offset);
 		if (!off)
@@ -311,7 +311,7 @@ size_t build_nft_synproxy_expr(unsigned char *buf, size_t off, size_t cap)
 		return 0;
 
 	if (with_mss) {
-		__u16 mss = mss_values[rand32() % ARRAY_SIZE(mss_values)];
+		__u16 mss = RAND_ARRAY(mss_values);
 
 		off = nla_put_be16(buf, off, cap, NFTA_SYNPROXY_MSS, mss);
 		if (!off)
@@ -319,7 +319,7 @@ size_t build_nft_synproxy_expr(unsigned char *buf, size_t off, size_t cap)
 	}
 
 	if (with_wscale) {
-		__u8 wscale = (__u8)(rand32() % (TCP_MAX_WSCALE + 1));
+		__u8 wscale = (__u8)rnd_modulo_u32(TCP_MAX_WSCALE + 1);
 
 		off = nla_put(buf, off, cap, NFTA_SYNPROXY_WSCALE,
 			      &wscale, sizeof(wscale));
@@ -382,7 +382,7 @@ size_t build_nft_osf_expr(unsigned char *buf, size_t off, size_t cap)
 	};
 	struct nlattr *elem, *expr_data;
 	size_t elem_off, expr_data_off;
-	__u32 dreg = NFT_REG_1 + (rand32() % 4);
+	__u32 dreg = NFT_REG_1 + rnd_modulo_u32(4);
 	bool with_ttl = ONE_IN(2);
 	bool with_flags = ONE_IN(3);
 	__u8 ttl;
@@ -390,16 +390,16 @@ size_t build_nft_osf_expr(unsigned char *buf, size_t off, size_t cap)
 
 	if (with_ttl) {
 		if (ONE_IN(8))
-			ttl = 3 + (rand32() % 253);	/* 3..255: -EINVAL */
+			ttl = 3 + rnd_modulo_u32(253);	/* 3..255: -EINVAL */
 		else
-			ttl = (__u8)(rand32() % 3);	/* 0..2: in policy */
+			ttl = (__u8)rnd_modulo_u32(3);	/* 0..2: in policy */
 	} else {
 		ttl = 0;
 	}
 
 	if (with_flags) {
 		if (ONE_IN(4))
-			flags = bad_flags[rand32() % ARRAY_SIZE(bad_flags)];
+			flags = RAND_ARRAY(bad_flags);
 		else
 			flags = NFT_OSF_F_VERSION;
 	} else {
@@ -505,21 +505,21 @@ size_t build_nft_queue_expr(unsigned char *buf, size_t off, size_t cap)
 	__u32 sreg_qnum = 0;
 
 	if (sreg_arm) {
-		sreg_qnum = NFT_REG32_00 + (rand32() % 16);
+		sreg_qnum = NFT_REG32_00 + rnd_modulo_u32(16);
 	} else {
 		if (with_total) {
-			total = (__u16)(1 + (rand32() % 16));
-			num = (__u16)(rand32() % (0x10000U - total));
+			total = (__u16)(1 + rnd_modulo_u32(16));
+			num = (__u16)rnd_modulo_u32(0x10000U - total);
 		} else {
-			num = (__u16)(rand32() % 0xFFFFU);
+			num = (__u16)rnd_modulo_u32(0xFFFFU);
 		}
 	}
 
 	if (with_flags) {
 		if (ONE_IN(4))
-			flags = bad_flags[rand32() % ARRAY_SIZE(bad_flags)];
+			flags = RAND_ARRAY(bad_flags);
 		else
-			flags = good_flags[rand32() % ARRAY_SIZE(good_flags)];
+			flags = RAND_ARRAY(good_flags);
 	}
 
 	elem_off = off;
