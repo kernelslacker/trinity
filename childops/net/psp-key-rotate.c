@@ -694,8 +694,8 @@ static void iter_devlink_port_churn(unsigned int iter_idx,
 		goto out;
 	}
 
-	idx_a = (unsigned int)(rand32() % pdpc_n_instances);
-	idx_b = (unsigned int)(rand32() % pdpc_n_instances);
+	idx_a = rnd_modulo_u32(pdpc_n_instances);
+	idx_b = rnd_modulo_u32(pdpc_n_instances);
 	if (idx_b == idx_a)
 		idx_b = (idx_a + 1U) % pdpc_n_instances;
 	idx_c = (pdpc_n_instances > 2U) ?
