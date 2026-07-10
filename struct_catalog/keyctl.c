@@ -47,6 +47,17 @@ struct keyctl_pkey_params {
 	__u32 out_len;		/* union { out_len; in2_len; } -- same offset */
 	__u32 __spare[7];
 };
+#else
+/*
+ * Host <linux/keyctl.h> supplied the structs.  Assert their sizes match
+ * the fallback layouts above so a future uapi bump that grows either
+ * struct trips at compile time rather than silently diverging from the
+ * shim in struct_catalog/catalog.c.
+ */
+_Static_assert(sizeof(struct keyctl_dh_params) == 3 * sizeof(__s32),
+	       "struct keyctl_dh_params head drifted from trinity fallback; update both fallback copies");
+_Static_assert(sizeof(struct keyctl_pkey_params) == sizeof(__s32) + 9 * sizeof(__u32),
+	       "struct keyctl_pkey_params head drifted from trinity fallback; update both fallback copies");
 #endif
 
 /*
