@@ -543,7 +543,7 @@ static int pick_helper(void)
 	if (popcount == 0)
 		return -1;
 
-	pick = rand32() % popcount;
+	pick = rnd_modulo_u32(popcount);
 	for (i = 0; i < NUM_HELPERS; i++) {
 		if (!(mask & (1U << i)))
 			continue;
