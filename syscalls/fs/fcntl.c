@@ -24,7 +24,7 @@
 #include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
-#include "syscalls.h"
+#include "../syscalls.h"
 #include "trinity.h"
 
 #include "kernel/fcntl.h"
