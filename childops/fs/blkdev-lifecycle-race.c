@@ -144,7 +144,7 @@ static int blkdev_pick_loop_num(struct childdata *child)
 static off_t blkdev_pick_size(void)
 {
 	unsigned int span = BLKDEV_BACKING_MAX - BLKDEV_BACKING_MIN + 1U;
-	unsigned int raw = BLKDEV_BACKING_MIN + (rand32() % span);
+	unsigned int raw = BLKDEV_BACKING_MIN + rnd_modulo_u32(span);
 	off_t v = 1;
 
 	while ((unsigned int)v < raw && v < (off_t)BLKDEV_BACKING_MAX)
