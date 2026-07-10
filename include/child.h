@@ -1426,6 +1426,7 @@ bool vdso_mremap_race(struct childdata *child);
 bool numa_migration_churn(struct childdata *child);
 bool cpu_hotplug_rider(struct childdata *child);
 bool slab_cache_thrash(struct childdata *child);
+const char *slab_target_name(unsigned int idx);
 bool tls_rotate(struct childdata *child);
 bool sock_ulp_sockmap_layering(struct childdata *child);
 bool packet_fanout_thrash(struct childdata *child);

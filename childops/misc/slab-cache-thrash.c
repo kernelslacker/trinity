@@ -320,6 +320,20 @@ static void run_burst(enum slab_target t, unsigned int n)
 	}
 }
 
+const char *slab_target_name(unsigned int idx)
+{
+	switch ((enum slab_target)idx) {
+	case SLAB_KMALLOC_32:	return "kmalloc_32";
+	case SLAB_KMALLOC_64:	return "kmalloc_64";
+	case SLAB_KMALLOC_192:	return "kmalloc_192";
+	case SLAB_KMALLOC_256:	return "kmalloc_256";
+	case SLAB_DENTRY:	return "dentry";
+	case SLAB_INODE_CACHE:	return "inode_cache";
+	case SLAB_FILES_CACHE:	return "files_cache";
+	}
+	return "unknown";
+}
+
 bool slab_cache_thrash(struct childdata *child)
 {
 	enum slab_target t;
