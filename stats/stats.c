@@ -436,6 +436,7 @@ static const struct stat_field userns_fuzzer_fields[] = {
 	STAT_FIELD(userns, runs),
 	STAT_FIELD(userns, inner_crashed),
 	STAT_FIELD(userns, unsupported),
+	STAT_FIELD(userns, root_private_failed),
 };
 
 const struct stat_category userns_fuzzer_category =
