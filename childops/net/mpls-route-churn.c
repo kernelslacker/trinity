@@ -230,7 +230,7 @@ static size_t mpls_build_label_stack(struct mpls_label *stack,
 
 	for (i = 0; i < count; i++) {
 		__u32 label = MPLS_RC_LABEL_MIN +
-			      (rand32() % MPLS_RC_LABEL_RANGE);
+			      rnd_modulo_u32(MPLS_RC_LABEL_RANGE);
 		stack[i].entry = mpls_label_encode(label,
 						   (i == count - 1));
 	}
@@ -283,14 +283,14 @@ static int build_mpls_label_install(struct nl_ctx *ctx, int lo_ifindex,
 
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*rtm));
 
-	in_label = MPLS_RC_LABEL_MIN + (rand32() % MPLS_RC_LABEL_RANGE);
+	in_label = MPLS_RC_LABEL_MIN + rnd_modulo_u32(MPLS_RC_LABEL_RANGE);
 	in_label_buf.entry = mpls_label_encode(in_label, true);
 	off = nla_put(buf, off, sizeof(buf), RTA_DST,
 		      &in_label_buf, sizeof(in_label_buf));
 	if (!off)
 		return -EIO;
 
-	stack_n = 1U + (rand32() % MPLS_RC_MAX_STACK);
+	stack_n = 1U + rnd_modulo_u32(MPLS_RC_MAX_STACK);
 	stack_len = mpls_build_label_stack(out_stack, stack_n);
 	off = nla_put(buf, off, sizeof(buf), RTA_NEWDST,
 		      out_stack, stack_len);
@@ -299,7 +299,7 @@ static int build_mpls_label_install(struct nl_ctx *ctx, int lo_ifindex,
 
 	memset(via_buf, 0, sizeof(via_buf));
 	via->rtvia_family = AF_INET;
-	nexthop = htonl(0x7f000002U + (rand32() % 253U)); /* 127.0.0.{2..254} */
+	nexthop = htonl(0x7f000002U + rnd_modulo_u32(253U)); /* 127.0.0.{2..254} */
 	memcpy(via->rtvia_addr, &nexthop, sizeof(nexthop));
 	off = nla_put(buf, off, sizeof(buf), RTA_VIA,
 		      via_buf, sizeof(struct mpls_rtvia) + sizeof(nexthop));
@@ -410,7 +410,7 @@ static int build_iptunnel_install(struct nl_ctx *ctx, int lo_ifindex,
 
 	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*rtm));
 
-	dst = htonl(0xC0000201U + (rand32() % 254U)); /* 192.0.2.{1..254} */
+	dst = htonl(0xC0000201U + rnd_modulo_u32(254U)); /* 192.0.2.{1..254} */
 	off = nla_put(buf, off, sizeof(buf), RTA_DST, &dst, sizeof(dst));
 	if (!off)
 		return -EIO;
@@ -435,7 +435,7 @@ static int build_iptunnel_install(struct nl_ctx *ctx, int lo_ifindex,
 	if (!off)
 		return -EIO;
 
-	stack_n = 1U + (rand32() % MPLS_RC_MAX_STACK);
+	stack_n = 1U + rnd_modulo_u32(MPLS_RC_MAX_STACK);
 	stack_len = mpls_build_label_stack(out_stack, stack_n);
 	off = nla_put(buf, off, sizeof(buf), MPLS_IPTUNNEL_DST,
 		      out_stack, stack_len);
