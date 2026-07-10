@@ -144,6 +144,12 @@ static void apply_slot(const void *p, void *ctx __unused__)
 	case STATS_FIELD_VALIDATOR_REJECTED:
 		parent_stats.validator_rejected += delta;
 		break;
+	case STATS_FIELD_ARG_CONSTRAINT_REPAIRED:
+		parent_stats.arg_constraint_repaired += delta;
+		break;
+	case STATS_FIELD_ARG_CONSTRAINT_KEPT_INCOHERENT:
+		parent_stats.arg_constraint_kept_incoherent += delta;
+		break;
 	case STATS_FIELD_DEFERRED_FREE_REJECT:
 		parent_stats.deferred_free_reject += delta;
 		break;
