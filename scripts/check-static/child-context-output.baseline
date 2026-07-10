@@ -113,8 +113,8 @@ syscalls/mmap.c:post_mmap_oracle_aligned
 syscalls/mmap.c:post_mmap_oracle_proc_maps
 syscalls/move_pages.c:post_move_pages
 syscalls/mprotect.c:post_mprotect
-syscalls/mq_notify.c:post_mq_notify
-syscalls/mq_open.c:post_mq_open
+syscalls/mq/mq_notify.c:post_mq_notify
+syscalls/mq/mq_open.c:post_mq_open
 syscalls/mremap.c:post_mremap
 syscalls/munmap.c:post_munmap
 syscalls/clock/nanosleep.c:post_nanosleep
