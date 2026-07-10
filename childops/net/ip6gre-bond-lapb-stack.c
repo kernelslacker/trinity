@@ -88,6 +88,7 @@
 #include "childops-netlink.h"
 #include "name-pool.h"
 #include "random.h"
+#include "rnd.h"
 #include "shm.h"
 #include "trinity.h"
 #include "userns-bootstrap.h"
@@ -490,7 +491,7 @@ static void ip6gre_lapb_iter_flag_cycles(struct ip6gre_lapb_iter_ctx *ctx)
 					   1, __ATOMIC_RELAXED);
 	}
 
-	cycles = (rand32() % (IBLS_FLAG_CYCLES_CAP - IBLS_FLAG_CYCLES_BASE + 1U))
+	cycles = rnd_modulo_u32(IBLS_FLAG_CYCLES_CAP - IBLS_FLAG_CYCLES_BASE + 1U)
 	         + IBLS_FLAG_CYCLES_BASE;
 	for (i = 0; i < cycles; i++) {
 		(void)ibls_setlink(&ctx->ctx, lapb_idx, 0, IFF_UP, IFF_UP);
