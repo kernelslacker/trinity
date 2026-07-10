@@ -11,6 +11,25 @@
 #define WDIOS_ENABLECARD	0x0002
 #define WDIOS_TEMPPANIC		0x0004
 
+/*
+ * Compile-time: WDIOC_GETSUPPORT is the only fixed-shape struct
+ * command this file fills.  Pin sizeof(struct watchdog_info)
+ * against its _IOC_SIZE so a <linux/watchdog.h> change that grows
+ * or shrinks the identity[] tail (or any of the leading u32
+ * fields) hard-fails the compile rather than silently having the
+ * kernel copy_to_user() a different number of bytes than the
+ * sanitiser prepared.
+ *
+ * Every other command in this file (WDIOC_GET{STATUS,BOOTSTATUS,
+ * TEMP,TIMEOUT,PRETIMEOUT,TIMELEFT}, WDIOC_KEEPALIVE,
+ * WDIOC_SETOPTIONS, WDIOC_SET{TIMEOUT,PRETIMEOUT}) takes a bare
+ * int; asserting sizeof(struct) against a scalar would be the
+ * wrong shape of check.
+ */
+_Static_assert(sizeof(struct watchdog_info) ==
+	       _IOC_SIZE(WDIOC_GETSUPPORT),
+	       "watchdog_info size vs _IOC_SIZE mismatch");
+
 static void watchdog_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
 {
 	pick_random_ioctl(grp, rec);
