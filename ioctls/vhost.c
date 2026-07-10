@@ -11,6 +11,57 @@
 #include "sanitise.h"
 #include "utils.h"
 
+/*
+ * Compile-time: every fixed-shape VHOST_* command the sanitisers
+ * below fill must have sizeof(struct) matching the _IOC_SIZE encoded
+ * in its request bits.  A mismatch means <linux/vhost.h> or
+ * <linux/vhost_types.h> moved under us and the sanitiser is
+ * memset()ing / stamping into a buffer the kernel copies less of
+ * than we prepared (under-encoded) or reads past (over-encoded).
+ * VHOST_SET_VRING_NUM, VHOST_SET_VRING_BASE and VHOST_GET_VRING_BASE
+ * all take struct vhost_vring_state; VHOST_SET_VRING_KICK,
+ * VHOST_SET_VRING_CALL, VHOST_SET_VRING_ERR and VHOST_NET_SET_BACKEND
+ * all take struct vhost_vring_file.  Each command gets its own assert
+ * -- the sides can drift independently in a header refactor.
+ *
+ * VHOST_GET_FEATURES, VHOST_SET_FEATURES, VHOST_GET_BACKEND_FEATURES,
+ * VHOST_SET_BACKEND_FEATURES, VHOST_VSOCK_SET_GUEST_CID and
+ * VHOST_SET_LOG_BASE encode a bare __u64; VHOST_SET_LOG_FD,
+ * VHOST_SCSI_GET_ABI_VERSION and VHOST_VSOCK_SET_RUNNING encode a
+ * bare int; VHOST_SCSI_SET_EVENTS_MISSED and
+ * VHOST_SCSI_GET_EVENTS_MISSED encode a bare __u32;
+ * VHOST_SET_FORK_FROM_OWNER encodes a bare __u8; VHOST_SET_OWNER and
+ * VHOST_RESET_OWNER are _IO() with no arg; VHOST_SET_MEM_TABLE
+ * carries struct vhost_memory with a trailing flex array of
+ * vhost_memory_region.  All are intentionally absent -- asserting
+ * sizeof(struct) against a scalar, a zero _IOC_SIZE or a flex-tail
+ * prefix would be the wrong shape of check.
+ */
+_Static_assert(sizeof(struct vhost_vring_state) ==
+	       _IOC_SIZE(VHOST_SET_VRING_NUM),
+	       "vhost_vring_state size vs VHOST_SET_VRING_NUM mismatch");
+_Static_assert(sizeof(struct vhost_vring_state) ==
+	       _IOC_SIZE(VHOST_SET_VRING_BASE),
+	       "vhost_vring_state size vs VHOST_SET_VRING_BASE mismatch");
+_Static_assert(sizeof(struct vhost_vring_state) ==
+	       _IOC_SIZE(VHOST_GET_VRING_BASE),
+	       "vhost_vring_state size vs VHOST_GET_VRING_BASE mismatch");
+_Static_assert(sizeof(struct vhost_vring_addr) ==
+	       _IOC_SIZE(VHOST_SET_VRING_ADDR),
+	       "vhost_vring_addr size vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct vhost_vring_file) ==
+	       _IOC_SIZE(VHOST_SET_VRING_KICK),
+	       "vhost_vring_file size vs VHOST_SET_VRING_KICK mismatch");
+_Static_assert(sizeof(struct vhost_vring_file) ==
+	       _IOC_SIZE(VHOST_SET_VRING_CALL),
+	       "vhost_vring_file size vs VHOST_SET_VRING_CALL mismatch");
+_Static_assert(sizeof(struct vhost_vring_file) ==
+	       _IOC_SIZE(VHOST_SET_VRING_ERR),
+	       "vhost_vring_file size vs VHOST_SET_VRING_ERR mismatch");
+_Static_assert(sizeof(struct vhost_vring_file) ==
+	       _IOC_SIZE(VHOST_NET_SET_BACKEND),
+	       "vhost_vring_file size vs VHOST_NET_SET_BACKEND mismatch");
+
 static const struct ioctl vhost_ioctls[] = {
 	IOCTL(VHOST_GET_FEATURES),
 	IOCTL(VHOST_SET_FEATURES),
