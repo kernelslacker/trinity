@@ -407,6 +407,14 @@ static const int snd_rawmidi_stream_vals[] = {
 	SNDRV_RAWMIDI_STREAM_INPUT,
 };
 
+static const int snd_timer_class_vals[] = {
+	SNDRV_TIMER_CLASS_NONE,
+	SNDRV_TIMER_CLASS_SLAVE,
+	SNDRV_TIMER_CLASS_GLOBAL,
+	SNDRV_TIMER_CLASS_CARD,
+	SNDRV_TIMER_CLASS_PCM,
+};
+
 static void fill_snd_ctl_elem_id(struct snd_ctl_elem_id *id)
 {
 	id->numid = RAND_BOOL() ? 0 : rnd_modulo_u32(64);
@@ -882,7 +890,7 @@ static void sanitise_snd_rawmidi(struct syscallrecord *rec)
 
 static void fill_snd_timer_id(struct snd_timer_id *tid)
 {
-	tid->dev_class = (int)(rnd_modulo_u32(4)) - 1;	/* -1 (none) to 3 (PCM) */
+	tid->dev_class = RAND_ARRAY(snd_timer_class_vals);
 	tid->dev_sclass = rnd_modulo_u32(4);
 	tid->card = RAND_BOOL() ? -1 : (int)(rnd_modulo_u32(8));
 	tid->device = RAND_BOOL() ? -1 : (int)(rnd_modulo_u32(32));
