@@ -105,6 +105,16 @@ const unsigned int bpf_prog_types_count = ARRAY_SIZE(bpf_prog_types);
 #define BPF_TRACE_FSESSION_MULTI	61
 #endif
 
+/*
+ * uprobe_multi.flags bit added in v7.2-rc1: when set, the kernel reads
+ * link_create.uprobe_multi.path_fd as an fd referring to the target
+ * binary instead of copying path in as a filename string.  Fallback to
+ * the upstream value so older /usr/include/linux/bpf.h still builds.
+ */
+#ifndef BPF_F_UPROBE_MULTI_PATH_FD
+#define BPF_F_UPROBE_MULTI_PATH_FD	(1U << 1)
+#endif
+
 const unsigned long bpf_attach_types[] = {
 	BPF_CGROUP_INET_INGRESS, BPF_CGROUP_INET_EGRESS,
 	BPF_CGROUP_INET_SOCK_CREATE, BPF_CGROUP_SOCK_OPS,
@@ -987,7 +997,8 @@ const struct struct_field bpf_attr_LINK_CREATE_UPROBE_MULTI_fields[] = {
 	       .u.len_of = { .buf_fields = bpf_attr_link_create_uprobe_multi_arrays,
 			     .n_buf_fields = ARRAY_SIZE(bpf_attr_link_create_uprobe_multi_arrays) }),
 	FIELDX(union bpf_attr, link_create.uprobe_multi.flags, FT_FLAGS,
-	       .u.flags.mask = BPF_F_UPROBE_MULTI_RETURN),
+	       .u.flags.mask = BPF_F_UPROBE_MULTI_RETURN |
+			       BPF_F_UPROBE_MULTI_PATH_FD),
 	FIELD(union bpf_attr, link_create.uprobe_multi.pid),
 };
 
