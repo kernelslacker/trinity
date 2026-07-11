@@ -59,13 +59,9 @@
  * __u32; asserting sizeof(struct) against a scalar would be the
  * wrong shape of check.
  */
-_Static_assert(sizeof(struct mei_connect_client_data) ==
-	       _IOC_SIZE(IOCTL_MEI_CONNECT_CLIENT),
-	       "mei_connect_client_data size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(IOCTL_MEI_CONNECT_CLIENT, struct mei_connect_client_data);
 #ifdef IOCTL_MEI_CONNECT_CLIENT_VTAG
-_Static_assert(sizeof(struct mei_connect_client_data_vtag) ==
-	       _IOC_SIZE(IOCTL_MEI_CONNECT_CLIENT_VTAG),
-	       "mei_connect_client_data_vtag size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(IOCTL_MEI_CONNECT_CLIENT_VTAG, struct mei_connect_client_data_vtag);
 #endif
 
 struct mei_uuid_entry {
