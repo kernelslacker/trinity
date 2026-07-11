@@ -7,7 +7,6 @@
 #include <string.h>
 #include <unistd.h>
 #include <linux/bpf.h>
-#include <sys/resource.h>
 #include <linux/unistd.h>
 #include <linux/perf_event.h>
 
@@ -123,9 +122,6 @@ static int init_bpf_fds(void)
 {
 	struct objhead *head;
 	unsigned int i;
-	struct rlimit r = {1 << 20, 1 << 20};
-
-	setrlimit(RLIMIT_MEMLOCK, &r);
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_BPF_MAP);
 	head->destroy = &close_fd_destructor;
@@ -306,16 +302,8 @@ static void bpf_prog_dump(struct object *obj, enum obj_scope scope)
 static int init_bpf_prog_fds(void)
 {
 	struct objhead *head;
-	struct rlimit r = {1 << 20, 1 << 20};
 	unsigned int i;
 	unsigned int loaded = 0;
-
-	/*
-	 * The map provider already raised RLIMIT_MEMLOCK if it ran first;
-	 * the providers are visited in REG_FD_PROV registration order which
-	 * isn't guaranteed, so re-set it here.  setrlimit is idempotent.
-	 */
-	setrlimit(RLIMIT_MEMLOCK, &r);
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_BPF_PROG);
 	head->destroy = &close_fd_destructor;
