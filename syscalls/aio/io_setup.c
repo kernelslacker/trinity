@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include "deferred-free.h"
 #include "objects.h"
+#include "output-poison.h"
 #include "pids.h"
 #include "publish_resource.h"
 #include "sanitise.h"
@@ -121,6 +122,21 @@ unsigned long seed_aio_ctx_if_empty(void)
 #define IO_SETUP_POST_STATE_MAGIC	0x494F5354505F4D47UL	/* "IOSTP_MG" */
 struct io_setup_post_state {
 	unsigned long magic;
+	/*
+	 * Seed for the poison pattern stamped into the aio_context_t
+	 * OUT-buffer (*ctxp) at sanitise time.  Fed back into
+	 * check_output_struct() on the retval == 0 success arm of
+	 * post_io_setup_record_ctx(): a byte-identical 8-byte poison after
+	 * success means the kernel returned 0 without writing the
+	 * aio_context_t at all.  Snapshot lives in rec->post_state so a
+	 * sibling stomp of rec->aN between dispatch and post cannot
+	 * redirect the poison check at an unrelated heap page whose
+	 * residual bytes happen to match some earlier seed.  A seed of 0
+	 * means sanitise chose not to stamp (unwritable pointer) -- the
+	 * post handler no-ops the poison check rather than confuse "we
+	 * could not poison" with "kernel did not write".
+	 */
+	uint64_t poison_seed;
 };
 
 static void sanitise_io_setup(struct syscallrecord *rec)
@@ -143,8 +159,34 @@ static void sanitise_io_setup(struct syscallrecord *rec)
 	 * dispatch-time arg_shadow capture, not a snap field. */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = IO_SETUP_POST_STATE_MAGIC;
+	snap->poison_seed = 0;
 	rec->post_state = (unsigned long) snap;
 	post_state_register(snap);
+
+	/*
+	 * Stamp a per-call poison pattern into the aio_context_t OUT-buffer
+	 * the kernel is about to fill.  The post handler feeds the seed
+	 * back into check_output_struct(); a byte-identical poison after a
+	 * retval == 0 return means the kernel returned success without
+	 * calling copy_to_user() -- io_setup(2) is contracted to write the
+	 * fresh aio_context_t on success.  Gate on range_readable_user()
+	 * so a writable-pool draw that avoid_shared_buffer_inout() moved
+	 * to an address that is no longer provably mapped -- e.g. a
+	 * sibling munmap between allocation and now -- does not SIGSEGV
+	 * the sanitiser inside poison_output_struct's byte-walk.  On skip
+	 * the seed stays 0 and the post handler no-ops the poison check
+	 * while the existing zero-ctx bookkeeping keeps running.  Done
+	 * after avoid_shared_buffer_inout() so the poison lands on the
+	 * final buffer the kernel will see.
+	 */
+	{
+		void *buf = (void *)(unsigned long) rec->a2;
+
+		if (range_readable_user(buf, sizeof(aio_context_t)))
+			snap->poison_seed = poison_output_struct(buf,
+								 sizeof(aio_context_t),
+								 0);
+	}
 }
 
 /*
@@ -194,6 +236,23 @@ static void post_io_setup_record_ctx(struct syscallrecord *rec)
 	ctxp = (unsigned long *) get_arg_snapshot(rec, 2);
 	if (ctxp == NULL || looks_like_corrupted_ptr(rec, ctxp))
 		return;
+
+	/*
+	 * Untouched-buffer poison check: retval == 0 but the aio_context_t
+	 * OUT-buffer still byte-for-byte matches the poison pattern we
+	 * stamped at sanitise time -- the kernel returned success without
+	 * writing the aio_context_t.  Guarded on poison_seed so the
+	 * unwritable-address "we couldn't poison" path is not confused with
+	 * "kernel didn't write".  Runs on every success (no ONE_IN gate)
+	 * because the check is an 8-byte compare with no re-issue.  The
+	 * existing zero-ctx / arg_shadow / snap-magic corruption gates keep
+	 * running in post_io_setup() and stay attribution-owning; this arm
+	 * only bumps the shared post_handler_untouched_out_buf slot.
+	 */
+	if (snap->poison_seed != 0 &&
+	    check_output_struct(ctxp, sizeof(aio_context_t), snap->poison_seed))
+		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+				   1, __ATOMIC_RELAXED);
 
 	/*
 	 * arg_shadow protects the OUT-pointer (ctxp) from rec->aN scribbles,
