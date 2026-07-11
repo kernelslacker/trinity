@@ -45,6 +45,7 @@
 #include "tables.h"
 #include "taint.h"
 #include "trinity.h"
+#include "utils-proc.h"
 #include "utils.h"
 #include "version.h"
 
@@ -315,7 +316,7 @@ static void json_emit_kcov_topn(const struct syscalltable *table,
 	for (i = 0; i < nr_syscalls_to_scan; i++) {
 		unsigned long edges = per_syscall_edges_total(i);
 		unsigned long prev  = per_syscall_edges_previous_total(i);
-		unsigned long delta = (edges > prev) ? edges - prev : 0;
+		unsigned long delta = sat_sub_ul(edges, prev);
 
 		if (edges > 0)
 			topn_push(top_edges, top_nr, &top_count, 10, edges, i);
@@ -376,7 +377,7 @@ static void json_emit_kcov_transition_topn(const struct syscalltable *table,
 			&kcov_shm->per_syscall_transition_edges[i],
 			__ATOMIC_RELAXED);
 		unsigned long prev = kcov_shm->per_syscall_transition_edges_previous[i];
-		unsigned long delta = (curr > prev) ? curr - prev : 0;
+		unsigned long delta = sat_sub_ul(curr, prev);
 
 		if (real > 0)
 			topn_push(tr_top_edges, tr_top_nr,
