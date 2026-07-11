@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <sys/stat.h>
 #include "arch.h"
+#include "output-poison.h"
 #include "pathnames.h"
 #include "random.h"
 #include "sanitise.h"
@@ -14,22 +15,28 @@
 #include "utils.h"
 
 /*
- * Snapshot of the two newstat input args read by the post oracle,
- * captured at sanitise time and consumed by the post handler.  Lives
- * in rec->post_state, a slot the syscall ABI does not expose, so a
- * sibling syscall scribbling rec->aN between the syscall returning
- * and the post handler running cannot steer the source memcpy at a
- * foreign user statbuf.  The pathname is snapshotted by VALUE into
- * the embedded byte buffer below rather than by pointer -- a stale
- * heap-shaped filename pointer that survived looks_like_corrupted_ptr's
- * shape-only gate would otherwise let the .post strncpy walk off the
- * end of an unrelated allocation, and a sibling rewrite of the bytes
- * between sanitise and post would forge a clean-looking divergence.
+ * Snapshot of the two newstat input args plus the poison seed read by
+ * the post oracle, captured at sanitise time and consumed by the post
+ * handler.  Lives in rec->post_state, a slot the syscall ABI does not
+ * expose, so a sibling syscall scribbling rec->aN between the syscall
+ * returning and the post handler running cannot steer the source memcpy
+ * at a foreign user statbuf or smear the poison seed against a heap
+ * page that happens to still carry a residual pattern from an earlier
+ * call.  The pathname is snapshotted by VALUE into the embedded byte
+ * buffer below rather than by pointer -- a stale heap-shaped filename
+ * pointer that survived looks_like_corrupted_ptr's shape-only gate would
+ * otherwise let the .post strncpy walk off the end of an unrelated
+ * allocation, and a sibling rewrite of the bytes between sanitise and
+ * post would forge a clean-looking divergence.  A poison_seed of 0
+ * means the sanitise-time writability check refused to stamp poison
+ * for this call and the post handler must no-op the untouched-buffer
+ * check.
  */
 #define NEWSTAT_POST_STATE_MAGIC	0x4E534154UL	/* "NSAT" */
 struct newstat_post_state {
 	unsigned long magic;
 	unsigned long statbuf;
+	uint64_t poison_seed;
 	char filename[PATH_MAX];
 };
 
@@ -74,6 +81,31 @@ static void sanitise_newstat(struct syscallrecord *rec)
 	if (!post_snapshot_str(snap->filename, sizeof(snap->filename),
 			       (const char *)(unsigned long) rec->a1))
 		snap->filename[0] = '\0';
+	/*
+	 * Stamp a per-call poison pattern into the user struct stat the
+	 * kernel is about to fill.  The post handler feeds the seed back
+	 * into check_output_struct(); a byte-identical poison after a
+	 * retval == 0 return means the kernel skipped copy_to_user()
+	 * entirely -- newstat(2) contracts to overwrite the whole
+	 * struct stat on success via cp_new_stat().  Gate on
+	 * range_readable_user() so a writable-pool draw that
+	 * avoid_shared_buffer_out() moved to an address that is no
+	 * longer provably mapped -- e.g. a sibling munmap between
+	 * allocation and now -- does not SIGSEGV the sanitiser inside
+	 * poison_output_struct's byte-walk.  On skip, poison_seed stays
+	 * 0 and the post handler no-ops the poison check while the
+	 * field-diff oracle still runs against snap->statbuf.  Done
+	 * after avoid_shared_buffer_out() so the poison lands on the
+	 * final buffer the kernel will see.
+	 */
+	{
+		void *buf = (void *)(unsigned long) rec->a2;
+
+		if (range_readable_user(buf, sizeof(struct stat)))
+			snap->poison_seed = poison_output_struct(buf,
+								 sizeof(struct stat),
+								 0);
+	}
 	post_state_install(rec, snap);
 
 	/*
@@ -160,13 +192,30 @@ static void post_newstat(struct syscallrecord *rec)
 	if (snap == NULL)
 		return;
 
-	if (!ONE_IN(100))
-		goto out_release;
-
 	if ((long) rec->retval != 0)
 		goto out_release;
 
 	if (snap->statbuf == 0)
+		goto out_release;
+
+	/*
+	 * Untouched-buffer check: newstat returned 0 (success) but the
+	 * user struct stat still byte-for-byte matches the poison
+	 * pattern we stamped at sanitise time -- the kernel never called
+	 * copy_to_user() at all.  Runs on every success (no ONE_IN gate)
+	 * because the check is a ~sizeof(struct stat) memcmp with no
+	 * re-issue, so it stays cheap enough to fire every time; bumps
+	 * the shared post_handler_untouched_out_buf slot.  Skip when
+	 * poison_seed is 0: sanitise refused to stamp (unmapped
+	 * statbuf) so there is no pattern to compare against.
+	 */
+	if (snap->poison_seed != 0 &&
+	    check_output_struct((void *)(unsigned long) snap->statbuf,
+				sizeof(struct stat), snap->poison_seed))
+		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+				   1, __ATOMIC_RELAXED);
+
+	if (!ONE_IN(100))
 		goto out_release;
 
 	if (snap->filename[0] == '\0')
