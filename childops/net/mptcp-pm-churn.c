@@ -515,7 +515,7 @@ static void mptcp_setsockopt_all_sf_recipe(struct genl_ctx *ctx)
 	(void)mptcp_pm_addr_cmd(ctx, MPTCP_PM_CMD_ADD_ADDR,
 				loc_id, addr_h);
 
-	idle = 1U + (rand32() % 3U);
+	idle = 1U + rnd_modulo_u32(3U);
 	while (idle--)
 		sched_yield();
 
