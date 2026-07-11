@@ -53,6 +53,10 @@ void dump_ioctls(void);
 #define IOCTL(_request) \
 	{ .request = _request, .name = #_request, }
 
+#define IOCTL_SIZE_ASSERT(cmd, type) \
+	_Static_assert(sizeof(type) == _IOC_SIZE(cmd), \
+		       #type " size vs " #cmd " _IOC_SIZE mismatch")
+
 #define REG_IOCTL_GROUP(_struct) \
 	static void __attribute__((constructor)) register_##_struct(void) { \
 		register_ioctl_group(&_struct); \
