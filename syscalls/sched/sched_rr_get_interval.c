@@ -6,6 +6,7 @@
 #include <sys/types.h>
 #include <time.h>
 #include "deferred-free.h"
+#include "output-poison.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -19,18 +20,23 @@
  * Lives in rec->post_state, a slot the syscall ABI does not expose, so a
  * sibling syscall scribbling rec->aN between the syscall returning and
  * the post handler running cannot retarget the pid self-filter or
- * redirect the source memcpy at a foreign user buffer.
+ * redirect the source memcpy at a foreign user buffer.  The poison seed
+ * travels with the pointer so a stomp cannot smear the seed against a
+ * heap page that happens to still carry a residual pattern from an
+ * earlier call.
  */
 #define SCHED_RR_GET_INTERVAL_POST_STATE_MAGIC	0x53525249UL	/* "SRRI" */
 struct sched_rr_get_interval_post_state {
 	unsigned long magic;
 	unsigned long pid;
 	unsigned long tp;
+	uint64_t poison_seed;
 };
 
 static void sanitise_sched_rr_get_interval(struct syscallrecord *rec)
 {
 	struct sched_rr_get_interval_post_state *snap;
+	void *buf;
 
 	/*
 	 * Clear post_state up front so an early return below leaves the
@@ -42,18 +48,44 @@ static void sanitise_sched_rr_get_interval(struct syscallrecord *rec)
 	avoid_shared_buffer_out(&rec->a2, sizeof(struct timespec));
 
 	/*
-	 * Snapshot both input args for the post oracle.  Without this the
-	 * post handler reads rec->aN at post-time, when a sibling syscall
-	 * may have scribbled the slots: looks_like_corrupted_ptr() cannot
-	 * tell a real-but-wrong heap address from the original interval
-	 * pointer, so the source memcpy would touch a foreign allocation,
-	 * and the pid self-filter would resolve against a scribbled value.
-	 * post_state is private to the post handler.
+	 * ARG_NON_NULL_ADDRESS draws from get_writable_address(), which
+	 * returns NULL when the writable pool cannot back the requested
+	 * mapping_sizes[] pick.  Skip the poison + snap install on those
+	 * calls -- writing a poison pattern to a NULL or otherwise not-
+	 * provably-writable user pointer would SIGSEGV inside the
+	 * sanitiser and mask the syscall path we are trying to fuzz.
+	 * range_readable_user() also filters raw fuzz addresses that fell
+	 * outside the tracked shared / libc-heap snapshots; those
+	 * addresses may not be writable and the poison stamp would fault
+	 * the same way.  On skip, rec->post_state stays 0 --
+	 * post_state_claim_owned() returns NULL and the post handler
+	 * no-ops without ever touching the pointer.
+	 */
+	buf = (void *)(unsigned long) rec->a2;
+	if (!range_readable_user(buf, sizeof(struct timespec)))
+		return;
+
+	/*
+	 * Snapshot both input args plus the output-buffer poison seed for
+	 * the post oracle.  Without the pid/tp snap the post handler reads
+	 * rec->aN at post-time, when a sibling syscall may have scribbled
+	 * the slots: looks_like_corrupted_ptr() cannot tell a real-but-
+	 * wrong heap address from the original interval pointer, so the
+	 * source memcpy would touch a foreign allocation, and the pid
+	 * self-filter would resolve against a scribbled value.  The poison
+	 * seed travels with the pointer so a stomp cannot smear the seed
+	 * against a heap page that happens to still carry a residual
+	 * pattern from an earlier call.  Stamp the poison after
+	 * avoid_shared_buffer_out() so it lands on the final buffer the
+	 * kernel will see; the returned seed is fed back into
+	 * check_output_struct() in the post handler.  post_state is private
+	 * to the post handler.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
-	snap->magic = SCHED_RR_GET_INTERVAL_POST_STATE_MAGIC;
-	snap->pid = rec->a1;
-	snap->tp  = rec->a2;
+	snap->magic       = SCHED_RR_GET_INTERVAL_POST_STATE_MAGIC;
+	snap->pid         = rec->a1;
+	snap->tp          = rec->a2;
+	snap->poison_seed = poison_output_struct(buf, sizeof(struct timespec), 0);
 	post_state_install(rec, snap);
 }
 
@@ -113,6 +145,35 @@ static void post_sched_rr_get_interval(struct syscallrecord *rec)
 				      __func__);
 	if (snap == NULL)
 		return;
+
+	/*
+	 * Untouched-buffer check: sched_rr_get_interval returned 0 (success)
+	 * but the user buffer still byte-for-byte matches the poison pattern
+	 * we stamped at sanitise time -- the kernel never called
+	 * copy_to_user() at all, or short-copied and left an uninitialised-
+	 * field tail readable in user memory (a kernel->user infoleak).  The
+	 * non-RR-task path is not a false positive: the kernel still writes
+	 * {0, 0} into the full timespec, which overwrites the 8-byte poison
+	 * repeats.  Runs on every retval==0 sample, not gated by ONE_IN(100),
+	 * because the check is cheap (a snapshot memcpy and a byte-walk
+	 * against a repeating 8-byte pattern -- no re-issue syscall).
+	 * Snapshot the buffer via post_snapshot_or_skip so a sibling munmap
+	 * of the writable-pool page between syscall return and the poison
+	 * compare degrades to a skipped sample instead of a SIGSEGV in
+	 * check_output_struct's byte-walk.  Counts against the shared
+	 * post_handler_untouched_out_buf slot.
+	 */
+	if ((long) rec->retval == 0 && snap->tp != 0) {
+		unsigned char poison_snap[sizeof(struct timespec)];
+
+		if (post_snapshot_or_skip(poison_snap,
+					  (const void *)(unsigned long) snap->tp,
+					  sizeof(poison_snap)) &&
+		    check_output_struct(poison_snap, sizeof(poison_snap),
+					snap->poison_seed))
+			__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+					   1, __ATOMIC_RELAXED);
+	}
 
 	if (!ONE_IN(100))
 		goto out_free;
