@@ -16,6 +16,7 @@
 #include <asm/unistd.h>
 #include <string.h>
 #include "deferred-free.h"
+#include "output-poison.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -27,22 +28,28 @@
 #endif
 
 /*
- * Snapshot of the one uname input arg read by the post oracle, captured
- * at sanitise time and consumed by the post handler.  Lives in
- * rec->post_state, a slot the syscall ABI does not expose, so a sibling
- * syscall scribbling rec->aN between the syscall returning and the post
- * handler running cannot redirect the source memcpy at a foreign user
- * buffer.
+ * Snapshot of the one uname input arg plus the poison seed read by the
+ * post oracle, captured at sanitise time and consumed by the post
+ * handler.  Lives in rec->post_state, a slot the syscall ABI does not
+ * expose, so a sibling syscall scribbling rec->aN between the syscall
+ * returning and the post handler running cannot redirect the source
+ * memcpy at a foreign user buffer or smear the poison seed against a
+ * heap page that happens to still carry a residual pattern from an
+ * earlier call.  A poison_seed of 0 means the sanitise-time writability
+ * check refused to stamp poison for this call -- the field-diff oracle
+ * still runs, the poison check does not.
  */
 #define UNAME_POST_STATE_MAGIC	0x554E414DUL	/* "UNAM" */
 struct uname_post_state {
 	unsigned long magic;
 	unsigned long name;
+	uint64_t poison_seed;
 };
 
 static void sanitise_uname(struct syscallrecord *rec)
 {
 	struct uname_post_state *snap;
+	void *buf;
 
 	/*
 	 * Clear post_state up front so an early return below leaves the
@@ -64,6 +71,29 @@ static void sanitise_uname(struct syscallrecord *rec)
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = UNAME_POST_STATE_MAGIC;
 	snap->name = rec->a1;
+	snap->poison_seed = 0;
+
+	/*
+	 * Stamp a per-call poison pattern into the output buffer the kernel
+	 * is about to fill.  The post handler feeds the seed back into
+	 * check_output_struct(); a byte-identical poison after a success
+	 * return means the kernel skipped copy_to_user() entirely or short-
+	 * copied and left an uninitialised tail readable in user memory (a
+	 * kernel->user infoleak).  Done after avoid_shared_buffer_out() so
+	 * the poison lands on the final buffer the kernel will see.  Gate
+	 * on range_readable_user() so a writable-pool draw that landed on
+	 * an address no longer provably mapped -- e.g. a sibling munmap
+	 * between allocation and now -- does not SIGSEGV the sanitiser
+	 * inside poison_output_struct's byte-walk.  On skip, poison_seed
+	 * stays 0 and the post handler no-ops the poison check while the
+	 * field-recheck oracle still runs against snap->name.
+	 */
+	buf = (void *)(unsigned long) rec->a1;
+	if (range_readable_user(buf, sizeof(struct new_utsname)))
+		snap->poison_seed = poison_output_struct(buf,
+							 sizeof(struct new_utsname),
+							 0);
+
 	post_state_install(rec, snap);
 }
 
@@ -123,10 +153,7 @@ static void post_uname(struct syscallrecord *rec)
 	if (snap == NULL)
 		return;
 
-	if (!ONE_IN(100))
-		goto out_release;
-
-	if (rec->retval != 0)
+	if ((long) rec->retval != 0)
 		goto out_release;
 
 	if (snap->name == 0)
@@ -135,6 +162,24 @@ static void post_uname(struct syscallrecord *rec)
 	if (!post_snapshot_or_skip(&first,
 				   (void *)(unsigned long) snap->name,
 				   sizeof(first)))
+		goto out_release;
+
+	/*
+	 * Untouched-buffer poison check runs on every success sample the
+	 * buffer snapshot succeeded on.  poison_seed of 0 means sanitise
+	 * chose not to stamp poison (unwritable pointer) -- skip the check
+	 * so "we couldn't poison" is not confused with "kernel didn't
+	 * write".  Counts against the shared post_handler_untouched_out_buf
+	 * slot.  The heavier field-recheck oracle below stays gated on
+	 * ONE_IN(100) because it re-issues the syscall; this check is a
+	 * cheap memcmp with no re-issue.
+	 */
+	if (snap->poison_seed != 0 &&
+	    check_output_struct(&first, sizeof(first), snap->poison_seed))
+		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+				   1, __ATOMIC_RELAXED);
+
+	if (!ONE_IN(100))
 		goto out_release;
 
 	if (syscall(SYS_uname, &recheck) != 0)
