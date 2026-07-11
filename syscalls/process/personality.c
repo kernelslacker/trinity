@@ -11,6 +11,9 @@ static unsigned long personalities[] = {
 	PER_LINUX, PER_SVR4, PER_SVR3, PER_SCOSVR3,
 	PER_OSR5, PER_WYSEV386, PER_ISCR4, PER_BSD,
 	PER_LINUX32,
+	PER_LINUX_32BIT, PER_LINUX_FDPIC, PER_XENIX, PER_LINUX32_3GB,
+	PER_IRIX32, PER_IRIXN32, PER_IRIX64, PER_SOLARIS, PER_UW7,
+	PER_OSF4, PER_HPUX,
 };
 
 static void post_personality(struct syscallrecord *rec)
