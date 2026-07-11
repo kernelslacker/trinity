@@ -204,7 +204,7 @@ static size_t apply_mut(enum mut_op op, char *out, size_t out_cap,
 		size_t want;
 
 		memcpy(out, src, src_len);
-		headroom = (out_cap > src_len) ? (out_cap - src_len) : 0;
+		headroom = sat_sub_ul(out_cap, src_len);
 		if (headroom == 0)
 			return src_len;
 		want = 1 + rnd_modulo_u32((uint32_t)headroom);
