@@ -184,7 +184,7 @@ static void atm_churn_cycle(struct childdata *child)
 	__atomic_add_fetch(&shm->stats.atm_vcc_churn_socket_ok, 1,
 			   __ATOMIC_RELAXED);
 
-	batch = 1U + (rand32() % 4U);
+	batch = 1U + rnd_modulo_u32(4U);
 	for (j = 0; j < batch; j++) {
 		spec = &RAND_ARRAY(atm_ioctl_table);
 		atm_fire_one(fd, spec);
