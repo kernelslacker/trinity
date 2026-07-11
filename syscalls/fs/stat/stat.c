@@ -4,11 +4,13 @@
 #include <limits.h>
 #include <linux/stat.h>
 #include <stdint.h>
+#include <sys/stat.h>
 #include <sys/syscall.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include "arch.h"
 #include "kernel/stat.h"
+#include "output-poison.h"
 #include "pathnames.h"
 #include "random.h"
 #include "rnd.h"
@@ -60,12 +62,93 @@ static void sanitise_statbuf_a2(struct syscallrecord *rec)
 	rec->a1 = (unsigned long) path;
 }
 
+/*
+ * Snapshot of the stat output-buffer pointer + poison seed the post
+ * oracle needs, captured at sanitise time.  Lives in rec->post_state,
+ * a slot the syscall ABI does not expose, so a sibling scribble of
+ * rec->a2 between syscall return and post entry cannot retarget the
+ * untouched-buffer check at a foreign user allocation or smear the
+ * seed against a heap page that still carries a residual pattern from
+ * an earlier call.
+ */
+#define STAT_POST_STATE_MAGIC	0x53544154UL	/* "STAT" */
+struct stat_post_state {
+	unsigned long magic;
+	unsigned long statbuf;
+	uint64_t poison_seed;
+};
+
+static void sanitise_stat(struct syscallrecord *rec)
+{
+	struct stat_post_state *snap;
+	void *buf;
+
+	rec->post_state = 0;
+
+	sanitise_statbuf_a2(rec);
+
+	/*
+	 * ARG_NON_NULL_ADDRESS still hands out NULL when the writable pool
+	 * cannot back the requested mapping size; keep the readability gate
+	 * so poison_output_struct's byte-walk does not SIGSEGV the sanitiser
+	 * on NULL or on a raw fuzz address outside the tracked writable
+	 * regions.  On skip, rec->post_state stays 0 and the post handler
+	 * no-ops via post_state_claim_owned() == NULL.
+	 */
+	buf = (void *)(unsigned long) rec->a2;
+	if (!range_readable_user(buf, sizeof(struct stat)))
+		return;
+
+	snap = zmalloc_tracked(sizeof(*snap));
+	snap->magic       = STAT_POST_STATE_MAGIC;
+	snap->statbuf     = rec->a2;
+	snap->poison_seed = poison_output_struct(buf, sizeof(struct stat), 0);
+	post_state_install(rec, snap);
+}
+
+/*
+ * Oracle: stat(filename, statbuf) is the i386 compat entry point that
+ * writes struct stat to userspace on success.  The x86-64 path lives in
+ * syscall_newstat and is already poison-checked; this handler catches
+ * the same "returned success but wrote zero bytes" bug shape on the
+ * 32-bit ABI where cp_stat64() / __do_compat_stat() land instead.
+ * check_output_struct() reports a match iff every byte of the returned
+ * struct still equals the poison we stamped -- i.e. copy_to_user() was
+ * skipped entirely.  See fstat64.c for the full rationale; the shape is
+ * identical.
+ */
+static void post_stat(struct syscallrecord *rec)
+{
+	struct stat_post_state *snap;
+	struct stat snapshot;
+
+	snap = post_state_claim_owned(rec, STAT_POST_STATE_MAGIC, __func__);
+	if (snap == NULL)
+		return;
+
+	if ((long) rec->retval != 0)
+		goto out_release;
+
+	if (!post_snapshot_or_skip(&snapshot,
+				   (void *)(unsigned long) snap->statbuf,
+				   sizeof(snapshot)))
+		goto out_release;
+
+	if (check_output_struct(&snapshot, sizeof(snapshot), snap->poison_seed))
+		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+				   1, __ATOMIC_RELAXED);
+
+out_release:
+	post_state_release(rec, snap);
+}
+
 struct syscallentry syscall_stat = {
 	.name = "stat",
 	.num_args = 2,
 	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_NON_NULL_ADDRESS },
 	.argname = { [0] = "filename", [1] = "statbuf" },
-	.sanitise = sanitise_statbuf_a2,
+	.sanitise = sanitise_stat,
+	.post = post_stat,
 	.group = GROUP_VFS,
 	.flags = REEXEC_SANITISE_OK,
 };
@@ -75,12 +158,77 @@ struct syscallentry syscall_stat = {
  * SYSCALL_DEFINE2(stat64, const char __user *, filename, struct stat64 __user *, statbuf)
  */
 
+/*
+ * Sibling of stat_post_state for the i386 __NR_stat64 entry.  Separate
+ * magic + struct size so a snap installed by one entry cannot be
+ * misclaimed by the other's post handler if a sibling scribble ever
+ * flipped rec->a2 into the wrong post_state slot.
+ */
+#define STAT64_POST_STATE_MAGIC	0x53544136UL	/* "ST46" */
+struct stat64_post_state {
+	unsigned long magic;
+	unsigned long statbuf;
+	uint64_t poison_seed;
+};
+
+static void sanitise_stat64(struct syscallrecord *rec)
+{
+	struct stat64_post_state *snap;
+	void *buf;
+
+	rec->post_state = 0;
+
+	sanitise_statbuf_a2(rec);
+
+	buf = (void *)(unsigned long) rec->a2;
+	if (!range_readable_user(buf, sizeof(struct stat64)))
+		return;
+
+	snap = zmalloc_tracked(sizeof(*snap));
+	snap->magic       = STAT64_POST_STATE_MAGIC;
+	snap->statbuf     = rec->a2;
+	snap->poison_seed = poison_output_struct(buf, sizeof(struct stat64), 0);
+	post_state_install(rec, snap);
+}
+
+/*
+ * Oracle: stat64(filename, statbuf) is the i386 LFS variant that fills a
+ * struct stat64 (64-bit off_t, ino_t, blkcnt_t).  Same untouched-buffer
+ * bug shape as stat above; the wider struct exercises cp_new_stat64()
+ * rather than cp_stat64(), which is a separate copy path in the kernel.
+ */
+static void post_stat64(struct syscallrecord *rec)
+{
+	struct stat64_post_state *snap;
+	struct stat64 snapshot;
+
+	snap = post_state_claim_owned(rec, STAT64_POST_STATE_MAGIC, __func__);
+	if (snap == NULL)
+		return;
+
+	if ((long) rec->retval != 0)
+		goto out_release;
+
+	if (!post_snapshot_or_skip(&snapshot,
+				   (void *)(unsigned long) snap->statbuf,
+				   sizeof(snapshot)))
+		goto out_release;
+
+	if (check_output_struct(&snapshot, sizeof(snapshot), snap->poison_seed))
+		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+				   1, __ATOMIC_RELAXED);
+
+out_release:
+	post_state_release(rec, snap);
+}
+
 struct syscallentry syscall_stat64 = {
 	.name = "stat64",
 	.num_args = 2,
 	.argtype = { [0] = ARG_PATHNAME, [1] = ARG_NON_NULL_ADDRESS },
 	.argname = { [0] = "filename", [1] = "statbuf" },
-	.sanitise = sanitise_statbuf_a2,
+	.sanitise = sanitise_stat64,
+	.post = post_stat64,
 	.group = GROUP_VFS,
 	.flags = REEXEC_SANITISE_OK,
 };
