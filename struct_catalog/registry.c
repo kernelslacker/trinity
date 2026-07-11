@@ -77,9 +77,6 @@
 #ifdef USE_VSOCK
 #include <linux/vm_sockets.h>
 #endif
-#ifdef USE_CAIF
-#include <linux/caif/caif_socket.h>
-#endif
 #ifdef USE_CAN
 #include <linux/can.h>
 #endif
@@ -91,12 +88,6 @@
 #endif
 #ifdef USE_PHONET
 #include <linux/phonet.h>
-#endif
-#ifdef USE_AX25
-#include <linux/ax25.h>
-#endif
-#ifdef USE_ROSE
-#include <linux/rose.h>
 #endif
 #ifdef USE_ATALK
 #include <linux/atalk.h>

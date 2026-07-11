@@ -445,7 +445,6 @@ fi
 
 #############################################################################################
 
-check_header linux/caif/caif_socket.h USE_CAIF
 check_header linux/fsmap.h USE_FSMAP
 check_header linux/if_alg.h USE_IF_ALG
 check_header linux/rds.h USE_RDS
@@ -471,8 +470,6 @@ check_header linux/sctp.h USE_SCTP
 check_header linux/tcp.h USE_TCP_REPAIR_OPT
 check_header linux/x25.h USE_X25
 check_header linux/phonet.h USE_PHONET
-check_header linux/ax25.h USE_AX25
-check_header linux/rose.h USE_ROSE
 check_header linux/atm.h USE_ATM
 
 #############################################################################################

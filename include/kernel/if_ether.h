@@ -21,9 +21,6 @@
 #ifndef ETH_P_CANFD
 #define ETH_P_CANFD	0x000D
 #endif
-#ifndef ETH_P_CAIF
-#define ETH_P_CAIF	0x00F7
-#endif
 #ifndef ETH_P_802_3_MIN
 #define ETH_P_802_3_MIN	0x0600
 #endif

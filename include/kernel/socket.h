@@ -69,13 +69,6 @@
 #define AF_IEEE802154	PF_IEEE802154
 #endif
 
-#ifndef PF_CAIF
-#define PF_CAIF		37
-#endif
-#ifndef AF_CAIF
-#define AF_CAIF		PF_CAIF
-#endif
-
 #ifndef PF_ALG
 #define PF_ALG		38
 #endif

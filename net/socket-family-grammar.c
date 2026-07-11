@@ -129,9 +129,6 @@ static const struct socket_family_grammar * const sfg_registry[] = {
 #ifdef USE_BLUETOOTH
 	&grammar_bluetooth_stub,
 #endif
-#ifdef USE_CAIF
-	&grammar_caif_stub,
-#endif
 #ifdef USE_VSOCK
 	&grammar_vsock_stub,
 #endif

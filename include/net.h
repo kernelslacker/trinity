@@ -69,7 +69,6 @@ extern const struct netproto proto_ipv4;
 extern const struct netproto proto_inet6;
 extern const struct netproto proto_pppol2tp;
 extern const struct netproto proto_unix;
-extern const struct netproto proto_caif;
 extern const struct netproto proto_alg;
 extern const struct netproto proto_nfc;
 extern const struct netproto proto_atmpvc;
