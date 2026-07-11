@@ -48,63 +48,31 @@
  * ioctls whose arg is a pointer/scalar or a flex-tail struct are
  * skipped.
  */
-_Static_assert(sizeof(struct drm_version) ==
-	       _IOC_SIZE(DRM_IOCTL_VERSION),
-	       "drm_version size vs DRM_IOCTL_VERSION mismatch");
-_Static_assert(sizeof(struct drm_unique) ==
-	       _IOC_SIZE(DRM_IOCTL_GET_UNIQUE),
-	       "drm_unique size vs DRM_IOCTL_GET_UNIQUE mismatch");
-_Static_assert(sizeof(struct drm_client) ==
-	       _IOC_SIZE(DRM_IOCTL_GET_CLIENT),
-	       "drm_client size vs DRM_IOCTL_GET_CLIENT mismatch");
-_Static_assert(sizeof(struct drm_stats) ==
-	       _IOC_SIZE(DRM_IOCTL_GET_STATS),
-	       "drm_stats size vs DRM_IOCTL_GET_STATS mismatch");
+IOCTL_SIZE_ASSERT(DRM_IOCTL_VERSION, struct drm_version);
+IOCTL_SIZE_ASSERT(DRM_IOCTL_GET_UNIQUE, struct drm_unique);
+IOCTL_SIZE_ASSERT(DRM_IOCTL_GET_CLIENT, struct drm_client);
+IOCTL_SIZE_ASSERT(DRM_IOCTL_GET_STATS, struct drm_stats);
 #ifdef DRM_IOCTL_GET_CAP
-_Static_assert(sizeof(struct drm_get_cap) ==
-	       _IOC_SIZE(DRM_IOCTL_GET_CAP),
-	       "drm_get_cap size vs DRM_IOCTL_GET_CAP mismatch");
+IOCTL_SIZE_ASSERT(DRM_IOCTL_GET_CAP, struct drm_get_cap);
 #endif
 #ifdef DRM_IOCTL_SET_CLIENT_CAP
-_Static_assert(sizeof(struct drm_set_client_cap) ==
-	       _IOC_SIZE(DRM_IOCTL_SET_CLIENT_CAP),
-	       "drm_set_client_cap vs DRM_IOCTL_SET_CLIENT_CAP mismatch");
+IOCTL_SIZE_ASSERT(DRM_IOCTL_SET_CLIENT_CAP, struct drm_set_client_cap);
 #endif
-_Static_assert(sizeof(struct drm_mode_card_res) ==
-	       _IOC_SIZE(DRM_IOCTL_MODE_GETRESOURCES),
-	       "drm_mode_card_res vs DRM_IOCTL_MODE_GETRESOURCES mismatch");
+IOCTL_SIZE_ASSERT(DRM_IOCTL_MODE_GETRESOURCES, struct drm_mode_card_res);
 #ifdef DRM_IOCTL_MODE_GETPLANERESOURCES
-_Static_assert(sizeof(struct drm_mode_get_plane_res) ==
-	       _IOC_SIZE(DRM_IOCTL_MODE_GETPLANERESOURCES),
-	       "drm_mode_get_plane_res size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(DRM_IOCTL_MODE_GETPLANERESOURCES, struct drm_mode_get_plane_res);
 #endif
-_Static_assert(sizeof(struct drm_mode_get_connector) ==
-	       _IOC_SIZE(DRM_IOCTL_MODE_GETCONNECTOR),
-	       "drm_mode_get_connector size vs _IOC_SIZE mismatch");
-_Static_assert(sizeof(struct drm_mode_get_encoder) ==
-	       _IOC_SIZE(DRM_IOCTL_MODE_GETENCODER),
-	       "drm_mode_get_encoder size vs _IOC_SIZE mismatch");
-_Static_assert(sizeof(struct drm_mode_crtc) ==
-	       _IOC_SIZE(DRM_IOCTL_MODE_GETCRTC),
-	       "drm_mode_crtc size vs DRM_IOCTL_MODE_GETCRTC mismatch");
+IOCTL_SIZE_ASSERT(DRM_IOCTL_MODE_GETCONNECTOR, struct drm_mode_get_connector);
+IOCTL_SIZE_ASSERT(DRM_IOCTL_MODE_GETENCODER, struct drm_mode_get_encoder);
+IOCTL_SIZE_ASSERT(DRM_IOCTL_MODE_GETCRTC, struct drm_mode_crtc);
 #ifdef DRM_IOCTL_MODE_GETPLANE
-_Static_assert(sizeof(struct drm_mode_get_plane) ==
-	       _IOC_SIZE(DRM_IOCTL_MODE_GETPLANE),
-	       "drm_mode_get_plane size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(DRM_IOCTL_MODE_GETPLANE, struct drm_mode_get_plane);
 #endif
-_Static_assert(sizeof(struct drm_mode_crtc_lut) ==
-	       _IOC_SIZE(DRM_IOCTL_MODE_GETGAMMA),
-	       "drm_mode_crtc_lut size vs DRM_IOCTL_MODE_GETGAMMA mismatch");
-_Static_assert(sizeof(struct drm_mode_get_property) ==
-	       _IOC_SIZE(DRM_IOCTL_MODE_GETPROPERTY),
-	       "drm_mode_get_property size vs _IOC_SIZE mismatch");
-_Static_assert(sizeof(struct drm_mode_get_blob) ==
-	       _IOC_SIZE(DRM_IOCTL_MODE_GETPROPBLOB),
-	       "drm_mode_get_blob size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(DRM_IOCTL_MODE_GETGAMMA, struct drm_mode_crtc_lut);
+IOCTL_SIZE_ASSERT(DRM_IOCTL_MODE_GETPROPERTY, struct drm_mode_get_property);
+IOCTL_SIZE_ASSERT(DRM_IOCTL_MODE_GETPROPBLOB, struct drm_mode_get_blob);
 #ifdef DRM_IOCTL_MODE_OBJ_GETPROPERTIES
-_Static_assert(sizeof(struct drm_mode_obj_get_properties) ==
-	       _IOC_SIZE(DRM_IOCTL_MODE_OBJ_GETPROPERTIES),
-	       "drm_mode_obj_get_properties vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(DRM_IOCTL_MODE_OBJ_GETPROPERTIES, struct drm_mode_obj_get_properties);
 #endif
 
 #ifndef DRM_IOCTL_NOUVEAU_GETPARAM
