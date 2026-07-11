@@ -142,7 +142,7 @@ static void post_modify_ldt(struct syscallrecord *rec)
 }
 
 static unsigned long modify_ldt_funcs[] = {
-	0, 1,
+	0, 1, 2, 0x11,
 };
 
 struct syscallentry syscall_modify_ldt = {
