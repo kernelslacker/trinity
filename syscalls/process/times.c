@@ -2,6 +2,7 @@
  * SYSCALL_DEFINE1(times, struct tms __user *, tbuf)
  */
 #include <sys/times.h>
+#include "output-poison.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -9,17 +10,22 @@
 #include "utils.h"
 
 /*
- * Snapshot of the one times input arg read by the post oracle, captured
- * at sanitise time and consumed by the post handler.  Lives in
- * rec->post_state, a slot the syscall ABI does not expose, so a sibling
- * syscall scribbling rec->aN between the syscall returning and the post
- * handler running cannot redirect the source memcpy at a foreign user
- * buffer.
+ * Snapshot of the one times input arg plus the poison seed read by the
+ * post oracle, captured at sanitise time and consumed by the post handler.
+ * Lives in rec->post_state, a slot the syscall ABI does not expose, so a
+ * sibling syscall scribbling rec->aN between the syscall returning and
+ * the post handler running cannot redirect the source memcpy at a foreign
+ * user buffer or smear the poison seed against a heap page that happens
+ * to still carry a residual pattern from an earlier call.  A poison_seed
+ * of 0 means the sanitise-time writability check refused to stamp poison
+ * for this call and the post handler must no-op the untouched-buffer
+ * check.
  */
 #define TIMES_POST_STATE_MAGIC	0x54494D53UL	/* "TIMS" */
 struct times_post_state {
 	unsigned long magic;
 	unsigned long tbuf;
+	uint64_t poison_seed;
 };
 
 static void sanitise_times(struct syscallrecord *rec)
@@ -51,6 +57,31 @@ static void sanitise_times(struct syscallrecord *rec)
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = TIMES_POST_STATE_MAGIC;
 	snap->tbuf = rec->a1;
+	/*
+	 * Stamp a per-call poison pattern into the user buffer the kernel
+	 * is about to fill.  The post handler feeds the seed back into
+	 * check_output_struct(); a byte-identical poison after a non-error
+	 * clock_t return means the kernel skipped copy_to_user() entirely
+	 * -- times(2) promises to overwrite the whole struct tms on
+	 * success.  Gate on range_readable_user() so a writable-pool draw
+	 * that avoid_shared_buffer_out() moved to an address that is no
+	 * longer provably mapped -- e.g. a sibling munmap between
+	 * allocation and now, or the ARG_ADDRESS generator handing back
+	 * NULL -- does not SIGSEGV the sanitiser inside
+	 * poison_output_struct's byte-walk.  On skip, poison_seed stays 0
+	 * and the post handler no-ops the poison check while the
+	 * field-diff oracle still runs against snap->tbuf.  Done after
+	 * avoid_shared_buffer_out() so the poison lands on the final
+	 * buffer the kernel will see.
+	 */
+	{
+		void *buf = (void *)(unsigned long) rec->a1;
+
+		if (range_readable_user(buf, sizeof(struct tms)))
+			snap->poison_seed = poison_output_struct(buf,
+								 sizeof(struct tms),
+								 0);
+	}
 	post_state_install(rec, snap);
 }
 
@@ -132,13 +163,38 @@ static void post_times(struct syscallrecord *rec)
 	retval = rec->retval;
 	syscall_r = (clock_t) retval;
 
-	if (!ONE_IN(100))
-		goto out_release;
-
-	if (syscall_r == (clock_t) -1)
+	/*
+	 * Success gate for times(2): the syscall returns a clock_t, not
+	 * 0-on-success, so the "did it succeed" test keys on retval !=
+	 * (unsigned long)-1 rather than retval == 0.  Any other value --
+	 * including 0 clock ticks moments after boot -- is a real success
+	 * return, so the untouched-buffer check below must run for all of
+	 * them.
+	 */
+	if (retval == (unsigned long) -1)
 		goto out_release;
 
 	if (snap->tbuf == 0)
+		goto out_release;
+
+	/*
+	 * Untouched-buffer check: times returned a non-error clock_t but
+	 * the user buffer still byte-for-byte matches the poison pattern
+	 * we stamped at sanitise time -- the kernel never called
+	 * copy_to_user() at all.  Runs on every success (no ONE_IN gate)
+	 * because the check is a ~32-byte memcmp with no re-issue, so it
+	 * stays cheap enough to fire every time; bumps the shared
+	 * post_handler_untouched_out_buf slot.  Skip when poison_seed is
+	 * 0: sanitise refused to stamp (unmapped or NULL tbuf) so there
+	 * is no pattern to compare against.
+	 */
+	if (snap->poison_seed != 0 &&
+	    check_output_struct((void *)(unsigned long) snap->tbuf,
+				sizeof(struct tms), snap->poison_seed))
+		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+				   1, __ATOMIC_RELAXED);
+
+	if (!ONE_IN(100))
 		goto out_release;
 
 	if (!post_snapshot_or_skip(&first,
