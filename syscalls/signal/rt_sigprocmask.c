@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <string.h>
 #include "deferred-free.h"
+#include "output-poison.h"
 #include "proc-status.h"
 #include "random.h"
 #include "sanitise.h"
@@ -14,13 +15,18 @@
 #include "utils.h"
 
 /*
- * Snapshot of the four rt_sigprocmask input args read by the post oracle,
- * captured at sanitise time and consumed by the post handler.  Lives in
- * rec->post_state, a slot the syscall ABI does not expose, so a sibling
- * syscall scribbling rec->aN between the syscall returning and the post
- * handler running cannot retarget the oracle at a foreign oset user
- * buffer, smear the sigsetsize length check, or steer the set != NULL
- * gate that decides whether to run the procfs cross-check at all.
+ * Snapshot of the four rt_sigprocmask input args plus the oset poison
+ * seed read by the post oracle, captured at sanitise time and consumed
+ * by the post handler.  Lives in rec->post_state, a slot the syscall
+ * ABI does not expose, so a sibling syscall scribbling rec->aN between
+ * the syscall returning and the post handler running cannot retarget
+ * the oracle at a foreign oset user buffer, smear the sigsetsize
+ * length check, steer the set != NULL gate that decides whether to
+ * run the procfs cross-check at all, or redirect the poison check at
+ * a residual pattern on an unrelated heap page.  A poison_seed of 0
+ * means the sanitise-time writability check refused to stamp poison
+ * for this call and the post handler must no-op the untouched-buffer
+ * arm.
  */
 #define RT_SIGPROCMASK_POST_STATE_MAGIC	0x5254534DUL	/* "RTSM" */
 struct rt_sigprocmask_post_state {
@@ -29,6 +35,7 @@ struct rt_sigprocmask_post_state {
 	unsigned long set;
 	unsigned long oset;
 	unsigned long sigsetsize;
+	uint64_t poison_seed;
 };
 
 static void sanitise_rt_sigprocmask(struct syscallrecord *rec)
@@ -71,6 +78,30 @@ static void sanitise_rt_sigprocmask(struct syscallrecord *rec)
 	snap->set        = rec->a2;
 	snap->oset       = rec->a3;
 	snap->sigsetsize = rec->a4;
+	/*
+	 * Stamp a per-call poison pattern into the oset OUT-buffer the
+	 * kernel is about to fill on success.  Independent of set: the
+	 * kernel still writes the previous mask out to oset before it
+	 * swaps in the new one, so the poison stamp is meaningful on the
+	 * mutating path (set != NULL) as well as the pure-read path.
+	 * Gate on range_readable_user() so an ARG_ADDRESS draw of NULL,
+	 * or a writable-pool draw that avoid_shared_buffer_out() moved to
+	 * an address that is no longer provably mapped, does not SIGSEGV
+	 * the sanitiser inside poison_output_struct's byte walk.  On
+	 * skip, poison_seed stays 0 (zmalloc_tracked zeros the slot) and
+	 * the post handler no-ops the poison check while the procfs
+	 * divergence oracle still runs against snap->oset.  Done after
+	 * avoid_shared_buffer_out() so the poison lands on the final
+	 * buffer the kernel will see.
+	 */
+	{
+		void *buf = (void *)(unsigned long) rec->a3;
+
+		if (range_readable_user(buf, sizeof(sigset_t)))
+			snap->poison_seed = poison_output_struct(buf,
+								 sizeof(sigset_t),
+								 0);
+	}
 	/*
 	 * post_state_install pairs the rec->post_state assign with the
 	 * ownership-table register so the observable window between the
@@ -120,16 +151,42 @@ static void post_rt_sigprocmask(struct syscallrecord *rec)
 	if (snap == NULL)
 		return;
 
-	if (!ONE_IN(100))
-		goto out_free;
-
+	/*
+	 * Success gate and per-call output-shape gates hoisted above the
+	 * ONE_IN(100) rate limit so the untouched-buffer arm below runs
+	 * on every success; the rate limit still guards the expensive
+	 * procfs divergence arm at its original 1/100 cadence.
+	 */
 	if (rec->retval != 0)
-		goto out_free;
-	if (snap->set != 0)
 		goto out_free;
 	if (snap->oset == 0)
 		goto out_free;
 	if (snap->sigsetsize != sizeof(sigset_t))
+		goto out_free;
+
+	/*
+	 * Untouched-buffer check: rt_sigprocmask returned success and
+	 * oset was non-NULL, but the oset user buffer still byte-for-byte
+	 * matches the poison pattern we stamped at sanitise time -- the
+	 * kernel never called copy_to_user() into it at all.  Runs on
+	 * every success (no ONE_IN gate) because it is a
+	 * sizeof(sigset_t) memcmp with no syscall re-issue, same shape
+	 * as the times, sysinfo, and get_robust_list oracles.  Bumps
+	 * the shared post_handler_untouched_out_buf slot.  Skip when
+	 * poison_seed is 0: sanitise refused to stamp (NULL oset or the
+	 * writable-pool draw is no longer provably mapped) so there is
+	 * no pattern to compare against.
+	 */
+	if (snap->poison_seed != 0 &&
+	    check_output_struct((void *)(unsigned long) snap->oset,
+				sizeof(sigset_t), snap->poison_seed))
+		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+				   1, __ATOMIC_RELAXED);
+
+	if (!ONE_IN(100))
+		goto out_free;
+
+	if (snap->set != 0)
 		goto out_free;
 
 	if (!post_snapshot_or_skip(&buf,
