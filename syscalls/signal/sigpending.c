@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <sys/syscall.h>
 #include "deferred-free.h"
+#include "output-poison.h"
 #include "proc-status.h"
 #include "random.h"
 #include "sanitise.h"
@@ -33,6 +34,19 @@
 struct sigpending_post_state {
 	unsigned long magic;
 	unsigned long set;
+	/*
+	 * Seed for the poison pattern stamped into the 8-byte
+	 * old_sigset_t buffer at sanitise time.  Returned by
+	 * poison_output_struct() and fed back into check_output_struct()
+	 * in the post handler.  A stomp of rec->a1 between syscall return
+	 * and post entry cannot redirect the poison check at an unrelated
+	 * heap page whose residual bytes happen to still match some
+	 * earlier call's seed.  0 means sanitise chose not to stamp
+	 * (unwritable pointer) -- the post handler no-ops the poison arm
+	 * on 0 rather than confuse "we could not poison" with "kernel did
+	 * not write".
+	 */
+	uint64_t poison_seed;
 };
 #endif
 
@@ -40,6 +54,7 @@ static void sanitise_sigpending(struct syscallrecord *rec)
 {
 #ifdef HAVE_SYS_SIGPENDING
 	struct sigpending_post_state *snap;
+	void *buf;
 
 	/*
 	 * Clear post_state up front so an early return below leaves the
@@ -71,8 +86,33 @@ static void sanitise_sigpending(struct syscallrecord *rec)
 	 * can free would leak.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
-	snap->magic = SIGPENDING_POST_STATE_MAGIC;
-	snap->set = rec->a1;
+	snap->magic       = SIGPENDING_POST_STATE_MAGIC;
+	snap->set         = rec->a1;
+	snap->poison_seed = 0;
+
+	/*
+	 * Stamp a per-call poison pattern into the output buffer the
+	 * kernel is about to fill.  CRITICAL: the poison window is
+	 * exactly sizeof(unsigned long) == old_sigset_t (8 bytes on
+	 * x86_64), NOT sizeof(sigset_t).  avoid_shared_buffer_out above
+	 * bounds the writable draw at the larger sigset_t width, but the
+	 * kernel only writes the leading old_sigset_t word -- a wider
+	 * poison window would leave the unwritten tail intact and false-
+	 * positive on every success return.  Gate on range_readable_user()
+	 * so a writable-pool draw that landed at an address no longer
+	 * provably mapped does not SIGSEGV the sanitiser inside
+	 * poison_output_struct's byte-walk.  On skip, poison_seed stays 0
+	 * and the post handler no-ops the poison arm while the existing
+	 * procfs SigPnd oracle keeps running against snap->set.  Done
+	 * after avoid_shared_buffer_out() so the poison lands on the
+	 * final buffer the kernel will see.
+	 */
+	buf = (void *)(unsigned long) rec->a1;
+	if (range_readable_user(buf, sizeof(unsigned long)))
+		snap->poison_seed = poison_output_struct(buf,
+							 sizeof(unsigned long),
+							 0);
+
 	/*
 	 * post_state_install pairs the rec->post_state assign with the
 	 * ownership-table register so the observable window between the
@@ -128,10 +168,7 @@ static void post_sigpending(struct syscallrecord *rec)
 	if (snap == NULL)
 		return;
 
-	if (!ONE_IN(100))
-		goto out_free;
-
-	if (rec->retval != 0)
+	if ((long)rec->retval != 0)
 		goto out_free;
 	if (snap->set == 0)
 		goto out_free;
@@ -146,6 +183,34 @@ static void post_sigpending(struct syscallrecord *rec)
 				   sizeof(user_snap)))
 		goto out_free;
 	syscall_pending = (uint64_t)user_snap;
+
+	/*
+	 * Untouched-buffer poison check: sigpending returned 0 (success)
+	 * but the leading old_sigset_t word still matches the poison
+	 * pattern we stamped at sanitise time -- the kernel never called
+	 * copy_to_user() at all and never landed the pending mask.  Window
+	 * is exactly sizeof(unsigned long) == old_sigset_t (8 bytes),
+	 * matching what the kernel actually writes; the sigset_t upper
+	 * bound used by avoid_shared_buffer_out() is deliberately NOT
+	 * reused here or the unwritten tail would false-positive on every
+	 * success.  (No short-copy tail arm as in wider-struct oracles --
+	 * a single-word writeback either lands whole or not at all.)
+	 * Cheap (single-word compare, no re-issue), so runs on every
+	 * success sample the buffer snapshot succeeded on -- unlike the
+	 * procfs SigPnd divergence arm below, which stays rate-limited.
+	 * Counts against the shared post_handler_untouched_out_buf slot.
+	 * poison_seed of 0 means sanitise skipped the stamp -- skip the
+	 * check too so "we could not poison" is not confused with "kernel
+	 * did not write".
+	 */
+	if (snap->poison_seed != 0 &&
+	    check_output_struct(&user_snap, sizeof(user_snap),
+				snap->poison_seed))
+		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+				   1, __ATOMIC_RELAXED);
+
+	if (!ONE_IN(100))
+		goto out_free;
 
 	if (!proc_status_read_sigmask("SigPnd", &proc_pending))
 		goto out_free;
