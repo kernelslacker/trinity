@@ -111,27 +111,13 @@ struct sgx_modification_param {
  * and is intentionally absent -- asserting sizeof(struct) against a
  * scalar would be the wrong shape of check.
  */
-_Static_assert(sizeof(struct sgx_enclave_create) ==
-	       _IOC_SIZE(SGX_IOC_ENCLAVE_CREATE),
-	       "sgx_enclave_create size vs _IOC_SIZE mismatch");
-_Static_assert(sizeof(struct sgx_enclave_add_page) ==
-	       _IOC_SIZE(SGX_IOC_ENCLAVE_ADD_PAGE),
-	       "sgx_enclave_add_page size vs _IOC_SIZE mismatch");
-_Static_assert(sizeof(struct sgx_enclave_init) ==
-	       _IOC_SIZE(SGX_IOC_ENCLAVE_INIT),
-	       "sgx_enclave_init size vs _IOC_SIZE mismatch");
-_Static_assert(sizeof(struct sgx_modification_param) ==
-	       _IOC_SIZE(SGX_IOC_ENCLAVE_EMODPR),
-	       "sgx_modification_param size vs _IOC_SIZE mismatch");
-_Static_assert(sizeof(struct sgx_range) ==
-	       _IOC_SIZE(SGX_IOC_ENCLAVE_MKTCS),
-	       "sgx_range size vs SGX_IOC_ENCLAVE_MKTCS mismatch");
-_Static_assert(sizeof(struct sgx_range) ==
-	       _IOC_SIZE(SGX_IOC_ENCLAVE_TRIM),
-	       "sgx_range size vs SGX_IOC_ENCLAVE_TRIM mismatch");
-_Static_assert(sizeof(struct sgx_range) ==
-	       _IOC_SIZE(SGX_IOC_ENCLAVE_NOTIFY_ACCEPT),
-	       "sgx_range size vs SGX_IOC_ENCLAVE_NOTIFY_ACCEPT mismatch");
+IOCTL_SIZE_ASSERT(SGX_IOC_ENCLAVE_CREATE, struct sgx_enclave_create);
+IOCTL_SIZE_ASSERT(SGX_IOC_ENCLAVE_ADD_PAGE, struct sgx_enclave_add_page);
+IOCTL_SIZE_ASSERT(SGX_IOC_ENCLAVE_INIT, struct sgx_enclave_init);
+IOCTL_SIZE_ASSERT(SGX_IOC_ENCLAVE_EMODPR, struct sgx_modification_param);
+IOCTL_SIZE_ASSERT(SGX_IOC_ENCLAVE_MKTCS, struct sgx_range);
+IOCTL_SIZE_ASSERT(SGX_IOC_ENCLAVE_TRIM, struct sgx_range);
+IOCTL_SIZE_ASSERT(SGX_IOC_ENCLAVE_NOTIFY_ACCEPT, struct sgx_range);
 
 static const struct ioctl sgx_ioctls[] = {
 	IOCTL(SGX_IOC_ENCLAVE_CREATE),
