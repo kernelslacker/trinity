@@ -83,7 +83,11 @@ static int open_loopback_listener(struct sockaddr_in *addr)
 	int one = 1;
 	int s;
 
-	s = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+	/* Non-blocking listener: the drain loop below relies on accept4()
+	 * returning EAGAIN on an empty queue.  SOCK_NONBLOCK passed to
+	 * accept4() only sets O_NONBLOCK on the accepted fd, not on the
+	 * accept() call itself. */
+	s = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
 	if (s < 0)
 		return -1;
 	(void)setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
