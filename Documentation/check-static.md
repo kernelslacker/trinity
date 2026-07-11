@@ -52,6 +52,13 @@ update this section to match `ls scripts/check-static/*.sh`.)
 - `activate-syscall-active-flag`: every direct `activate_syscall*()`
   callsite must first set the entry's ACTIVE flag, so the flag-driven
   init / dump / picker consumers see the activated entry.
+- `bpf-opcode-shim`: every `BPF_*` symbol used in `net/bpf/*.c` must be
+  `#define`d by trinity's uapi-shim headers (`include/bpf.h`,
+  `net/bpf/internal.h`) or listed in `bpf-opcode-shim.baseline`.  A newly
+  used ISA opcode with no `#ifndef` fallback builds on a modern
+  `<linux/bpf.h>` but breaks on an older fuzz-host header; this makes that a
+  build-time failure instead of a fuzz-box surprise.  The baseline holds
+  base-UAPI symbols relied on from the system header.
 - `check-alt-op-rotation`: every `CHILD_OP_*` referenced from
   `pick_op_type_table[]` must be reachable via `alt_op_rotation[]` or
   explicitly listed in `alt-op-rotation.denylist` with a reason.
