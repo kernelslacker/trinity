@@ -26,18 +26,10 @@
  * intentionally absent -- asserting sizeof(struct) against a scalar
  * would not be meaningful.
  */
-_Static_assert(sizeof(struct atmif_sioc) ==
-	       _IOC_SIZE(ATM_GETLINKRATE),
-	       "atmif_sioc size vs ATM_GETLINKRATE mismatch");
-_Static_assert(sizeof(struct atm_iobuf) ==
-	       _IOC_SIZE(ATM_GETNAMES),
-	       "atm_iobuf size vs ATM_GETNAMES mismatch");
-_Static_assert(sizeof(struct br2684_filter_set) ==
-	       _IOC_SIZE(BR2684_SETFILT),
-	       "br2684_filter_set size vs BR2684_SETFILT mismatch");
-_Static_assert(sizeof(struct sonet_stats) ==
-	       _IOC_SIZE(SONET_GETSTAT),
-	       "sonet_stats size vs SONET_GETSTAT mismatch");
+IOCTL_SIZE_ASSERT(ATM_GETLINKRATE, struct atmif_sioc);
+IOCTL_SIZE_ASSERT(ATM_GETNAMES, struct atm_iobuf);
+IOCTL_SIZE_ASSERT(BR2684_SETFILT, struct br2684_filter_set);
+IOCTL_SIZE_ASSERT(SONET_GETSTAT, struct sonet_stats);
 
 static int atm_fd_test(int fd, const struct stat *st __attribute__((unused)))
 {
