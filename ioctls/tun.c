@@ -276,12 +276,8 @@ static void tun_sanitise(const struct ioctl_group *grp,
  * of the table encodes bare int / unsigned int / ifreq handled
  * inline and is intentionally not asserted.
  */
-_Static_assert(sizeof(struct sock_fprog) ==
-	       _IOC_SIZE(TUNATTACHFILTER),
-	       "sock_fprog size vs TUNATTACHFILTER mismatch");
-_Static_assert(sizeof(struct sock_fprog) ==
-	       _IOC_SIZE(TUNDETACHFILTER),
-	       "sock_fprog size vs TUNDETACHFILTER mismatch");
+IOCTL_SIZE_ASSERT(TUNATTACHFILTER, struct sock_fprog);
+IOCTL_SIZE_ASSERT(TUNDETACHFILTER, struct sock_fprog);
 
 static const struct ioctl tun_ioctls[] = {
 	IOCTL(TUNSETIFF),
