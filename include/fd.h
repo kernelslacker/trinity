@@ -11,8 +11,6 @@
 
 struct epollobj;
 
-void setup_fd_providers(void);
-
 bool open_fds(void);
 
 void process_fds_param(char *optarg, bool enable);

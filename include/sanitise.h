@@ -109,7 +109,5 @@ void register_sysv_msg(int msqid);
 int get_random_sysv_shm(void);
 void register_sysv_shm(int shmid);
 
-void gen_unicode_page(char *page);
-
 enum argtype get_argtype(struct syscallentry *entry, unsigned int argnum);
 void generate_syscall_args(struct syscallrecord *rec);
