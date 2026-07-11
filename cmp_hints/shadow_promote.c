@@ -50,6 +50,7 @@
 #define SHADOW_ARM_PILOT_WIN_RATIO_PER_MILLE  120UL
 
 enum shadow_arm_id {
+	SHADOW_ARM_CMP_WIDTH_PIN,
 	SHADOW_ARM_CMP_HYP_POW2_DERIVE,
 	SHADOW_ARM_CMP_HYP_BITMASK_FULL_OR,
 	SHADOW_ARM_CMP_HYP_BITMASK_ANDNOT_TOGGLE,
@@ -57,6 +58,29 @@ enum shadow_arm_id {
 };
 
 static const struct shadow_arm shadow_arm_registry[SHADOW_ARM_NR] = {
+	/*
+	 * High-bit-preserving splice shadow, layered on the width-
+	 * masked CMP RedQueen pin.  baseline bumps on every unique
+	 * width-match stamp the live pin executes; would-win bumps
+	 * on the subset where the matched slot has non-zero bits
+	 * outside width_mask -- i.e. a splice replacement =
+	 * (orig & ~width_mask) | (arg1 & width_mask) would produce
+	 * a byte-different pin from today's whole-slot arg1
+	 * overwrite.  No live counterpart yet.
+	 */
+	[SHADOW_ARM_CMP_WIDTH_PIN] = {
+		.name = "cmp_width_pin_preserve",
+		.would_win_offset =
+			offsetof(struct kcov_shared,
+				 cmp_width_pin_would_differ),
+		.live_win_offset = 0,
+		.baseline_offset =
+			offsetof(struct kcov_shared,
+				 cmp_width_pin_total),
+		.live_flag = 0,
+		.min_baseline_samples = SHADOW_ARM_PILOT_MIN_BASELINE_SAMPLES,
+		.win_ratio_per_mille = SHADOW_ARM_PILOT_WIN_RATIO_PER_MILLE,
+	},
 	/*
 	 * POW2 / alignment derive-class layered on the typed-
 	 * hypothesis derive.  would_fire bumps on every eligible
