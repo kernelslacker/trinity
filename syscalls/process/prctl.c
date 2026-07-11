@@ -761,7 +761,7 @@ static void post_get_timing(struct syscallrecord *rec, unsigned long retval)
 static void post_get_fp_exc_emu(struct syscallrecord *rec, unsigned long retval)
 {
 	/*
-	 * Kernel ABI (PowerPC / IA-64): returns a small bitmask of
+	 * Kernel ABI (PowerPC): returns a small bitmask of
 	 * PR_FP_EXC_* / PR_FP_EMU_* flags, all of which fit in a byte.
 	 * Anything above 0xff is a sign-extension tear or a leak of
 	 * upper bits from the source field.
