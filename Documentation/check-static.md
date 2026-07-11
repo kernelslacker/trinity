@@ -73,6 +73,11 @@ update this section to match `ls scripts/check-static/*.sh`.)
 - `childop-arrays`: arrays and dispatch tables indexed by
   `NR_CHILD_OP_TYPES` must have one entry per `enum child_op_type`
   value.
+- `doc-pointer-exists`: every flat `Documentation/<name>.md` path named
+  in a code comment must resolve to a real file, so the one-line
+  pointers that replaced carved-out design essays never dangle.
+  Kernel-tree references (`Documentation/<subdir>/...`) are out of
+  scope -- they point outside this repo.
 - `fd-event-close-direct`: every producer of `FD_EVENT_CLOSE` outside
   `fd-event.c` must go through the canonical
   `notify_child_fd_closed[_range]()` helper to preserve the close
