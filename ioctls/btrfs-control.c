@@ -6,6 +6,22 @@
 #include "utils.h"
 #include "ioctls.h"
 
+/*
+ * Compile-time: BTRFS_IOC_SCAN_DEV and BTRFS_IOC_DEVICES_READY both
+ * carry struct btrfs_ioctl_vol_args.  sizeof(struct) must match the
+ * _IOC_SIZE encoded in the request bits, so a linux/btrfs.h refactor
+ * that grows or shrinks the struct hard-fails the compile instead of
+ * silently having the kernel copy_from_user() a different number of
+ * bytes than we prepared.  One assert per command -- the two sides
+ * can drift independently in a header refactor.
+ */
+_Static_assert(sizeof(struct btrfs_ioctl_vol_args) ==
+	       _IOC_SIZE(BTRFS_IOC_SCAN_DEV),
+	       "btrfs_ioctl_vol_args size vs BTRFS_IOC_SCAN_DEV mismatch");
+_Static_assert(sizeof(struct btrfs_ioctl_vol_args) ==
+	       _IOC_SIZE(BTRFS_IOC_DEVICES_READY),
+	       "btrfs_ioctl_vol_args size vs BTRFS_IOC_DEVICES_READY mismatch");
+
 static const struct ioctl btrfs_control_ioctls[] = {
 	IOCTL(BTRFS_IOC_SCAN_DEV),
 	IOCTL(BTRFS_IOC_DEVICES_READY),
