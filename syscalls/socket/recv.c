@@ -7,6 +7,7 @@
 #include <sys/uio.h>
 #include "net.h"
 #include "random.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "deferred-free.h"
 #include "shm.h"
@@ -318,7 +319,7 @@ skip_si:
 		 */
 		msg->msg_control = get_writable_address(4096);
 		if (msg->msg_control != NULL)
-			msg->msg_controllen = rand32() % 4096;
+			msg->msg_controllen = rnd_modulo_u32(4096);
 		else
 			msg->msg_controllen = 0;
 	}
@@ -623,7 +624,7 @@ static void sanitise_recvmmsg(struct syscallrecord *rec)
 			 */
 			msg->msg_control = get_writable_address(4096);
 			if (msg->msg_control != NULL)
-				msg->msg_controllen = rand32() % 4096;
+				msg->msg_controllen = rnd_modulo_u32(4096);
 			else
 				msg->msg_controllen = 0;
 		}
