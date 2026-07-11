@@ -29,22 +29,25 @@
 #include "trinity.h"
 
 /*
- * Baseline sample floor.  Below this many would-fire samples the
+ * Named defaults for the pilot arms.  Referenced only by the arm
+ * registry below -- the evaluator reads the per-arm fields, so a
+ * future arm needing a stricter floor or threshold sets its own
+ * initialiser values and neither of these constants moves.
+ *
+ * Baseline sample floor: below this many would-fire samples the
  * would-win / baseline ratio is dominated by short-run variance and
  * the surfacing line would fire spuriously on nearly-empty runs.
  * Sits at the low end of the 50-100 band this pilot targets.
+ *
+ * Would-win ratio threshold: per-mille integer to mirror the
+ * surrounding kcov_coverage per_mille idiom and dodge floating-
+ * point in the parent stats path.  120 / 1000 == 12%, middle of
+ * the 10-15% band this pilot targets.  Per-mille (rather than
+ * percent) so a future arm needing a finer threshold (e.g. 125)
+ * can be described without changing the type.
  */
-#define SHADOW_ARM_MIN_BASELINE_SAMPLES 64UL
-
-/*
- * Would-win ratio threshold, expressed as a per-mille integer to
- * mirror the surrounding kcov_coverage per_mille idiom and dodge
- * floating-point in the parent stats path.  120 / 1000 == 12%, in
- * the middle of the 10-15% band this pilot targets.  Expressed as
- * per-mille rather than percent so a future arm needing a finer
- * threshold (e.g. 125) can be described without changing the type.
- */
-#define SHADOW_ARM_WIN_RATIO_PER_MILLE 120UL
+#define SHADOW_ARM_PILOT_MIN_BASELINE_SAMPLES 64UL
+#define SHADOW_ARM_PILOT_WIN_RATIO_PER_MILLE  120UL
 
 enum shadow_arm_id {
 	SHADOW_ARM_CMP_HYP_BITMASK_FULL_OR,
@@ -73,6 +76,8 @@ static const struct shadow_arm shadow_arm_registry[SHADOW_ARM_NR] = {
 			offsetof(struct kcov_shared,
 				 cmp_hyp_bitmask_full_or_would_fire),
 		.live_flag = 0,
+		.min_baseline_samples = SHADOW_ARM_PILOT_MIN_BASELINE_SAMPLES,
+		.win_ratio_per_mille = SHADOW_ARM_PILOT_WIN_RATIO_PER_MILLE,
 	},
 	/*
 	 * Pilot arm: ANDNOT_TOGGLE combo probe layered on the same
@@ -94,6 +99,8 @@ static const struct shadow_arm shadow_arm_registry[SHADOW_ARM_NR] = {
 			offsetof(struct kcov_shared,
 				 cmp_hyp_bitmask_andnot_toggle_would_fire),
 		.live_flag = 0,
+		.min_baseline_samples = SHADOW_ARM_PILOT_MIN_BASELINE_SAMPLES,
+		.win_ratio_per_mille = SHADOW_ARM_PILOT_WIN_RATIO_PER_MILLE,
 	},
 };
 
@@ -143,7 +150,7 @@ void shadow_promotion_evaluate(void)
 		baseline = __atomic_load_n(
 			shadow_arm_counter(arm->baseline_offset),
 			__ATOMIC_RELAXED);
-		if (baseline < SHADOW_ARM_MIN_BASELINE_SAMPLES)
+		if (baseline < arm->min_baseline_samples)
 			continue;
 		would_win = __atomic_load_n(
 			shadow_arm_counter(arm->would_win_offset),
@@ -159,7 +166,7 @@ void shadow_promotion_evaluate(void)
 		 * length short of 2^54 baseline samples.
 		 */
 		if (would_win * 1000UL <
-		    baseline * SHADOW_ARM_WIN_RATIO_PER_MILLE)
+		    baseline * arm->win_ratio_per_mille)
 			continue;
 
 		/*
