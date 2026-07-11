@@ -1,0 +1,51 @@
+# bpf-opcode-shim baseline: BPF_ symbols used under net/bpf/*.c that trinity
+# takes from the base <linux/bpf.h> instead of shimming -- assumed present on
+# every supported build host (register numbers, classic-filter macros,
+# long-standing prog types, ...).
+#
+# A BPF_ symbol used in net/bpf/*.c that is neither #define'd by
+# include/bpf.h / net/bpf/internal.h nor listed here fails check-static:
+#   - recent ISA opcode an older <linux/bpf.h> may lack -> add an #ifndef
+#     fallback to include/bpf.h (do NOT add it here), or
+#   - genuinely base UAPI present everywhere -> add it here.
+# One symbol per line; keep sorted.
+BPF_JUMP
+BPF_MAXINSNS
+BPF_MAY_GOTO
+BPF_PROG_TYPE_CGROUP_DEVICE
+BPF_PROG_TYPE_CGROUP_SKB
+BPF_PROG_TYPE_CGROUP_SOCK
+BPF_PROG_TYPE_CGROUP_SOCK_ADDR
+BPF_PROG_TYPE_CGROUP_SOCKOPT
+BPF_PROG_TYPE_CGROUP_SYSCTL
+BPF_PROG_TYPE_FLOW_DISSECTOR
+BPF_PROG_TYPE_KPROBE
+BPF_PROG_TYPE_LSM
+BPF_PROG_TYPE_LWT_IN
+BPF_PROG_TYPE_LWT_OUT
+BPF_PROG_TYPE_LWT_SEG6LOCAL
+BPF_PROG_TYPE_LWT_XMIT
+BPF_PROG_TYPE_NETFILTER
+BPF_PROG_TYPE_PERF_EVENT
+BPF_PROG_TYPE_RAW_TRACEPOINT
+BPF_PROG_TYPE_RAW_TRACEPOINT_WRITABLE
+BPF_PROG_TYPE_SCHED_ACT
+BPF_PROG_TYPE_SCHED_CLS
+BPF_PROG_TYPE_SK_LOOKUP
+BPF_PROG_TYPE_SK_MSG
+BPF_PROG_TYPE_SK_REUSEPORT
+BPF_PROG_TYPE_SK_SKB
+BPF_PROG_TYPE_SOCKET_FILTER
+BPF_PROG_TYPE_SOCK_OPS
+BPF_PROG_TYPE_TRACEPOINT
+BPF_PROG_TYPE_TRACING
+BPF_PROG_TYPE_XDP
+BPF_REG_0
+BPF_REG_1
+BPF_REG_10
+BPF_REG_2
+BPF_REG_3
+BPF_REG_4
+BPF_REG_5
+BPF_REG_6
+BPF_STMT
