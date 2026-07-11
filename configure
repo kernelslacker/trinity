@@ -74,32 +74,6 @@ EOF
 fi
 
 #############################################################################################
-# is /usr/include/linux/bpf.h new enough to feature fd_by_id_token_fd
-# (added kernel 6.11 -- routes BPF_*_GET_FD_BY_ID through the token cap check)
-#
-echo -n "[*] Checking if bpf_attr has fd_by_id_token_fd.. "
-rm -f "$TMP" || exit 1
-
-cat >"$TMP.c" << EOF
-#include <linux/bpf.h>
-
-int main(void)
-{
-	union bpf_attr a;
-	a.fd_by_id_token_fd = 0;
-	return a.fd_by_id_token_fd;
-}
-EOF
-
-${CC} ${CFLAGS} "$TMP.c" -o "$TMP" &>"$TMP.log"
-if [ ! -x "$TMP" ]; then
-	echo $RED "[NO]" $COL_RESET
-else
-	echo $GREEN "[YES]" $COL_RESET
-	echo "#define HAVE_BPF_ATTR_FD_BY_ID_TOKEN_FD 1" >> $CONFIGH
-fi
-
-#############################################################################################
 # is /usr/include/linux/if_pppox.h new enough to feature pppol2tpin6/pppol2tpv3in6
 #
 echo -n "[*] Checking if pppox can use pppol2tpin6.. "
