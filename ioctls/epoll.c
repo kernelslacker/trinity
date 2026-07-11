@@ -52,12 +52,8 @@ struct epoll_params {
  * directions get one assert each: a header refactor could
  * conceivably touch one _IOC_SIZE and not the other.
  */
-_Static_assert(sizeof(struct epoll_params) ==
-	       _IOC_SIZE(EPIOCSPARAMS),
-	       "epoll_params size vs EPIOCSPARAMS mismatch");
-_Static_assert(sizeof(struct epoll_params) ==
-	       _IOC_SIZE(EPIOCGPARAMS),
-	       "epoll_params size vs EPIOCGPARAMS mismatch");
+IOCTL_SIZE_ASSERT(EPIOCSPARAMS, struct epoll_params);
+IOCTL_SIZE_ASSERT(EPIOCGPARAMS, struct epoll_params);
 
 static void epoll_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
 {
