@@ -37,40 +37,20 @@
  * sizeof(struct) against a scalar, a zero _IOC_SIZE or a flex-tail
  * prefix would be the wrong shape of check.
  */
-_Static_assert(sizeof(struct vhost_vring_state) ==
-	       _IOC_SIZE(VHOST_SET_VRING_NUM),
-	       "vhost_vring_state size vs VHOST_SET_VRING_NUM mismatch");
-_Static_assert(sizeof(struct vhost_vring_state) ==
-	       _IOC_SIZE(VHOST_SET_VRING_BASE),
-	       "vhost_vring_state size vs VHOST_SET_VRING_BASE mismatch");
-_Static_assert(sizeof(struct vhost_vring_state) ==
-	       _IOC_SIZE(VHOST_GET_VRING_BASE),
-	       "vhost_vring_state size vs VHOST_GET_VRING_BASE mismatch");
+IOCTL_SIZE_ASSERT(VHOST_SET_VRING_NUM, struct vhost_vring_state);
+IOCTL_SIZE_ASSERT(VHOST_SET_VRING_BASE, struct vhost_vring_state);
+IOCTL_SIZE_ASSERT(VHOST_GET_VRING_BASE, struct vhost_vring_state);
 #ifdef VHOST_SET_VRING_BUSYLOOP_TIMEOUT
-_Static_assert(sizeof(struct vhost_vring_state) ==
-	       _IOC_SIZE(VHOST_SET_VRING_BUSYLOOP_TIMEOUT),
-	       "vhost_vring_state size vs VHOST_SET_VRING_BUSYLOOP_TIMEOUT mismatch");
+IOCTL_SIZE_ASSERT(VHOST_SET_VRING_BUSYLOOP_TIMEOUT, struct vhost_vring_state);
 #endif
 #ifdef VHOST_GET_VRING_BUSYLOOP_TIMEOUT
-_Static_assert(sizeof(struct vhost_vring_state) ==
-	       _IOC_SIZE(VHOST_GET_VRING_BUSYLOOP_TIMEOUT),
-	       "vhost_vring_state size vs VHOST_GET_VRING_BUSYLOOP_TIMEOUT mismatch");
+IOCTL_SIZE_ASSERT(VHOST_GET_VRING_BUSYLOOP_TIMEOUT, struct vhost_vring_state);
 #endif
-_Static_assert(sizeof(struct vhost_vring_addr) ==
-	       _IOC_SIZE(VHOST_SET_VRING_ADDR),
-	       "vhost_vring_addr size vs _IOC_SIZE mismatch");
-_Static_assert(sizeof(struct vhost_vring_file) ==
-	       _IOC_SIZE(VHOST_SET_VRING_KICK),
-	       "vhost_vring_file size vs VHOST_SET_VRING_KICK mismatch");
-_Static_assert(sizeof(struct vhost_vring_file) ==
-	       _IOC_SIZE(VHOST_SET_VRING_CALL),
-	       "vhost_vring_file size vs VHOST_SET_VRING_CALL mismatch");
-_Static_assert(sizeof(struct vhost_vring_file) ==
-	       _IOC_SIZE(VHOST_SET_VRING_ERR),
-	       "vhost_vring_file size vs VHOST_SET_VRING_ERR mismatch");
-_Static_assert(sizeof(struct vhost_vring_file) ==
-	       _IOC_SIZE(VHOST_NET_SET_BACKEND),
-	       "vhost_vring_file size vs VHOST_NET_SET_BACKEND mismatch");
+IOCTL_SIZE_ASSERT(VHOST_SET_VRING_ADDR, struct vhost_vring_addr);
+IOCTL_SIZE_ASSERT(VHOST_SET_VRING_KICK, struct vhost_vring_file);
+IOCTL_SIZE_ASSERT(VHOST_SET_VRING_CALL, struct vhost_vring_file);
+IOCTL_SIZE_ASSERT(VHOST_SET_VRING_ERR, struct vhost_vring_file);
+IOCTL_SIZE_ASSERT(VHOST_NET_SET_BACKEND, struct vhost_vring_file);
 
 static const struct ioctl vhost_ioctls[] = {
 	IOCTL(VHOST_GET_FEATURES),
