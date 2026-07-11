@@ -37,14 +37,10 @@
  * check.
  */
 #ifdef HIDIOCGRDESC
-_Static_assert(sizeof(struct hidraw_report_descriptor) ==
-	       _IOC_SIZE(HIDIOCGRDESC),
-	       "hidraw_report_descriptor size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(HIDIOCGRDESC, struct hidraw_report_descriptor);
 #endif
 #ifdef HIDIOCGRAWINFO
-_Static_assert(sizeof(struct hidraw_devinfo) ==
-	       _IOC_SIZE(HIDIOCGRAWINFO),
-	       "hidraw_devinfo size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(HIDIOCGRAWINFO, struct hidraw_devinfo);
 #endif
 
 static const struct ioctl hidraw_ioctls[] = {
