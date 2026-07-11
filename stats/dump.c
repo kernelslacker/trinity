@@ -3635,29 +3635,16 @@ static void dump_stats_render_kcov_per_syscall_local_pc_topn(unsigned int nr_sys
 			}
 		}
 }
-static void dump_stats_render_kcov_base_stats(void)
+/* Render the shadow-measurement counter blocks that sit at the tail
+ * of dump_stats_render_kcov_base_stats().  Each block surfaces the
+ * would_fire / would_win pair for one shadow-only lane and, where
+ * applicable, a per-mille ratio.  Split out so the base function no
+ * longer carries fourteen shadow-only locals plus a hundred-and-fifty
+ * lines of counter formatting; behaviour-neutral by construction --
+ * every stat_row call, its gate, and its ordering is preserved. */
+static void dump_stats_render_kcov_shadow_measurements(void)
 {
-	unsigned long kc_edges       = __atomic_load_n(&kcov_shm->edges_found,            __ATOMIC_RELAXED);
-	/* See per-child kcov stats migration in stats_ring.h:
-	 * total_pcs / total_calls / remote_calls read from
-	 * parent_stats.  kcov_shm->total_calls is kept as the
-	 * stamp source for last_edge_at[] / last_efault_at[];
-	 * the other two shm fields are no longer bumped. */
-	unsigned long kc_pcs         = parent_stats.total_pcs;
-	unsigned long kc_calls       = parent_stats.total_calls;
-	unsigned long kc_remote      = parent_stats.remote_calls;
-	unsigned long kc_cmp_records = __atomic_load_n(&kcov_shm->cmp_records_collected,  __ATOMIC_RELAXED);
-	unsigned long kc_cmp_trunc   = __atomic_load_n(&kcov_shm->cmp_trace_truncated,    __ATOMIC_RELAXED);
-	unsigned long kc_dedup_overflow    = __atomic_load_n(&kcov_shm->dedup_probe_overflow,   __ATOMIC_RELAXED);
-	unsigned long kc_dedup_max_probe   = __atomic_load_n(&kcov_shm->dedup_max_probe_seen,   __ATOMIC_RELAXED);
-	unsigned long kc_cmp_bloom_skipped = __atomic_load_n(&kcov_shm->cmp_hints_bloom_skipped, __ATOMIC_RELAXED);
-	unsigned long kc_cmp_strip_skipped = __atomic_load_n(&kcov_shm->cmp_hints_strip_skipped, __ATOMIC_RELAXED);
-	unsigned long kc_cmp_unique  = __atomic_load_n(&kcov_shm->cmp_hints_unique_inserts, __ATOMIC_RELAXED);
 	unsigned long kc_cmp_save_reject_nonconst      = __atomic_load_n(&kcov_shm->cmp_hints_save_reject_nonconst,      __ATOMIC_RELAXED);
-	unsigned long kc_cmp_save_reject_uninteresting = __atomic_load_n(&kcov_shm->cmp_hints_save_reject_uninteresting, __ATOMIC_RELAXED);
-	unsigned long kc_cmp_save_reject_sentinel      = __atomic_load_n(&kcov_shm->cmp_hints_save_reject_sentinel,      __ATOMIC_RELAXED);
-	unsigned long kc_cmp_save_reject_dup           = __atomic_load_n(&kcov_shm->cmp_hints_save_reject_dup,           __ATOMIC_RELAXED);
-	unsigned long kc_cmp_save_reject_cap           = __atomic_load_n(&kcov_shm->cmp_hints_save_reject_cap,           __ATOMIC_RELAXED);
 	unsigned long kc_cmp_nonconst_arg1_unique      = __atomic_load_n(&kcov_shm->cmp_nonconst_arg1_unique,           __ATOMIC_RELAXED);
 	unsigned long kc_cmp_nonconst_arg2_unique      = __atomic_load_n(&kcov_shm->cmp_nonconst_arg2_unique,           __ATOMIC_RELAXED);
 	unsigned long kc_cmp_nonconst_both_match       = __atomic_load_n(&kcov_shm->cmp_nonconst_both_match,            __ATOMIC_RELAXED);
@@ -3672,44 +3659,6 @@ static void dump_stats_render_kcov_base_stats(void)
 	unsigned long kc_cmp_hyp_bm_full_or_would_win      = __atomic_load_n(&kcov_shm->cmp_hyp_bitmask_full_or_would_win,         __ATOMIC_RELAXED);
 	unsigned long kc_cmp_hyp_bm_andnot_would_fire      = __atomic_load_n(&kcov_shm->cmp_hyp_bitmask_andnot_toggle_would_fire,  __ATOMIC_RELAXED);
 	unsigned long kc_cmp_hyp_bm_andnot_would_win       = __atomic_load_n(&kcov_shm->cmp_hyp_bitmask_andnot_toggle_would_win,   __ATOMIC_RELAXED);
-
-	stat_row("kcov_coverage", "unique_edges",          kc_edges);
-	stat_row("kcov_coverage", "total_pcs",             kc_pcs);
-	stat_row("kcov_coverage", "total_calls",           kc_calls);
-	stat_row("kcov_coverage", "remote_calls",          kc_remote);
-	stat_row("kcov_coverage", "cmp_records_collected", kc_cmp_records);
-
-	/* Shadow transition-coverage globals.  See the
-	 * kcov_transition_coverage_mode enum + KCOV_NUM_TRANSITIONS
-	 * comments in include/kcov.h for the design; this block
-	 * surfaces the two run-wide counters so PC vs transition
-	 * yield can be compared side-by-side without parsing a
-	 * separate log channel.  Both stay at zero when the mode is
-	 * OFF, so the early-out below keeps the stats stream quiet
-	 * for runs that opted out. */
-	dump_stats_render_kcov_transition_edges();
-	if (kc_cmp_trunc > 0)
-		stat_row("kcov_coverage", "cmp_trace_truncated", kc_cmp_trunc);
-	if (kc_dedup_overflow > 0)
-		stat_row("kcov_coverage", "dedup_probe_overflow", kc_dedup_overflow);
-	if (kc_dedup_max_probe > 0)
-		stat_row("kcov_coverage", "dedup_max_probe_seen", kc_dedup_max_probe);
-	if (kc_cmp_bloom_skipped > 0)
-		stat_row("kcov_coverage", "cmp_hints_bloom_skipped", kc_cmp_bloom_skipped);
-	if (kc_cmp_strip_skipped > 0)
-		stat_row("kcov_coverage", "cmp_hints_strip_skipped", kc_cmp_strip_skipped);
-	if (kc_cmp_unique > 0)
-		stat_row("kcov_coverage", "cmp_hints_unique_inserts", kc_cmp_unique);
-	if (kc_cmp_save_reject_nonconst > 0)
-		stat_row("kcov_coverage", "cmp_hints_save_reject_nonconst", kc_cmp_save_reject_nonconst);
-	if (kc_cmp_save_reject_uninteresting > 0)
-		stat_row("kcov_coverage", "cmp_hints_save_reject_uninteresting", kc_cmp_save_reject_uninteresting);
-	if (kc_cmp_save_reject_sentinel > 0)
-		stat_row("kcov_coverage", "cmp_hints_save_reject_sentinel", kc_cmp_save_reject_sentinel);
-	if (kc_cmp_save_reject_dup > 0)
-		stat_row("kcov_coverage", "cmp_hints_save_reject_dup", kc_cmp_save_reject_dup);
-	if (kc_cmp_save_reject_cap > 0)
-		stat_row("kcov_coverage", "cmp_hints_save_reject_cap", kc_cmp_save_reject_cap);
 
 	/* Shadow measurement of the non-const relational drop-site.
 	 * Counts records the CMP loop drops today into
@@ -3863,6 +3812,71 @@ static void dump_stats_render_kcov_base_stats(void)
 			kc_cmp_hyp_bm_andnot_would_fire;
 		stat_row("kcov_coverage", "cmp_hyp_bitmask_andnot_toggle_would_win_per_mille", ratio_milli);
 	}
+}
+
+static void dump_stats_render_kcov_base_stats(void)
+{
+	unsigned long kc_edges       = __atomic_load_n(&kcov_shm->edges_found,            __ATOMIC_RELAXED);
+	/* See per-child kcov stats migration in stats_ring.h:
+	 * total_pcs / total_calls / remote_calls read from
+	 * parent_stats.  kcov_shm->total_calls is kept as the
+	 * stamp source for last_edge_at[] / last_efault_at[];
+	 * the other two shm fields are no longer bumped. */
+	unsigned long kc_pcs         = parent_stats.total_pcs;
+	unsigned long kc_calls       = parent_stats.total_calls;
+	unsigned long kc_remote      = parent_stats.remote_calls;
+	unsigned long kc_cmp_records = __atomic_load_n(&kcov_shm->cmp_records_collected,  __ATOMIC_RELAXED);
+	unsigned long kc_cmp_trunc   = __atomic_load_n(&kcov_shm->cmp_trace_truncated,    __ATOMIC_RELAXED);
+	unsigned long kc_dedup_overflow    = __atomic_load_n(&kcov_shm->dedup_probe_overflow,   __ATOMIC_RELAXED);
+	unsigned long kc_dedup_max_probe   = __atomic_load_n(&kcov_shm->dedup_max_probe_seen,   __ATOMIC_RELAXED);
+	unsigned long kc_cmp_bloom_skipped = __atomic_load_n(&kcov_shm->cmp_hints_bloom_skipped, __ATOMIC_RELAXED);
+	unsigned long kc_cmp_strip_skipped = __atomic_load_n(&kcov_shm->cmp_hints_strip_skipped, __ATOMIC_RELAXED);
+	unsigned long kc_cmp_unique  = __atomic_load_n(&kcov_shm->cmp_hints_unique_inserts, __ATOMIC_RELAXED);
+	unsigned long kc_cmp_save_reject_nonconst      = __atomic_load_n(&kcov_shm->cmp_hints_save_reject_nonconst,      __ATOMIC_RELAXED);
+	unsigned long kc_cmp_save_reject_uninteresting = __atomic_load_n(&kcov_shm->cmp_hints_save_reject_uninteresting, __ATOMIC_RELAXED);
+	unsigned long kc_cmp_save_reject_sentinel      = __atomic_load_n(&kcov_shm->cmp_hints_save_reject_sentinel,      __ATOMIC_RELAXED);
+	unsigned long kc_cmp_save_reject_dup           = __atomic_load_n(&kcov_shm->cmp_hints_save_reject_dup,           __ATOMIC_RELAXED);
+	unsigned long kc_cmp_save_reject_cap           = __atomic_load_n(&kcov_shm->cmp_hints_save_reject_cap,           __ATOMIC_RELAXED);
+
+	stat_row("kcov_coverage", "unique_edges",          kc_edges);
+	stat_row("kcov_coverage", "total_pcs",             kc_pcs);
+	stat_row("kcov_coverage", "total_calls",           kc_calls);
+	stat_row("kcov_coverage", "remote_calls",          kc_remote);
+	stat_row("kcov_coverage", "cmp_records_collected", kc_cmp_records);
+
+	/* Shadow transition-coverage globals.  See the
+	 * kcov_transition_coverage_mode enum + KCOV_NUM_TRANSITIONS
+	 * comments in include/kcov.h for the design; this block
+	 * surfaces the two run-wide counters so PC vs transition
+	 * yield can be compared side-by-side without parsing a
+	 * separate log channel.  Both stay at zero when the mode is
+	 * OFF, so the early-out below keeps the stats stream quiet
+	 * for runs that opted out. */
+	dump_stats_render_kcov_transition_edges();
+	if (kc_cmp_trunc > 0)
+		stat_row("kcov_coverage", "cmp_trace_truncated", kc_cmp_trunc);
+	if (kc_dedup_overflow > 0)
+		stat_row("kcov_coverage", "dedup_probe_overflow", kc_dedup_overflow);
+	if (kc_dedup_max_probe > 0)
+		stat_row("kcov_coverage", "dedup_max_probe_seen", kc_dedup_max_probe);
+	if (kc_cmp_bloom_skipped > 0)
+		stat_row("kcov_coverage", "cmp_hints_bloom_skipped", kc_cmp_bloom_skipped);
+	if (kc_cmp_strip_skipped > 0)
+		stat_row("kcov_coverage", "cmp_hints_strip_skipped", kc_cmp_strip_skipped);
+	if (kc_cmp_unique > 0)
+		stat_row("kcov_coverage", "cmp_hints_unique_inserts", kc_cmp_unique);
+	if (kc_cmp_save_reject_nonconst > 0)
+		stat_row("kcov_coverage", "cmp_hints_save_reject_nonconst", kc_cmp_save_reject_nonconst);
+	if (kc_cmp_save_reject_uninteresting > 0)
+		stat_row("kcov_coverage", "cmp_hints_save_reject_uninteresting", kc_cmp_save_reject_uninteresting);
+	if (kc_cmp_save_reject_sentinel > 0)
+		stat_row("kcov_coverage", "cmp_hints_save_reject_sentinel", kc_cmp_save_reject_sentinel);
+	if (kc_cmp_save_reject_dup > 0)
+		stat_row("kcov_coverage", "cmp_hints_save_reject_dup", kc_cmp_save_reject_dup);
+	if (kc_cmp_save_reject_cap > 0)
+		stat_row("kcov_coverage", "cmp_hints_save_reject_cap", kc_cmp_save_reject_cap);
+
+	dump_stats_render_kcov_shadow_measurements();
 }
 
 /* Find top 10 edge-producing syscalls via insertion sort, then a
