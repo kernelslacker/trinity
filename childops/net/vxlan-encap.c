@@ -571,7 +571,7 @@ static void vxlan_encap_iter_send_burst(struct vxlan_encap_iter_ctx *ctx)
 		 * sees small / medium / fragmenting candidates instead of
 		 * one fixed shape.  Minimum sized to fit the iphdr we
 		 * stamp; maximum sized to fit the buffer. */
-		pkt_len = 40U + (rand32() % (sizeof(pkt) - 40U));
+		pkt_len = 40U + rnd_modulo_u32((unsigned int)(sizeof(pkt) - 40U));
 
 		memset(pkt, 0, sizeof(pkt));
 		iph = (struct iphdr *)pkt;
