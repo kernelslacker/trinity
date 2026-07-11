@@ -52,19 +52,13 @@ static int dmabuf_fd_test(int fd, const struct stat *st __attribute__((unused)))
  * would be the wrong shape of check.
  */
 #ifdef DMA_BUF_IOCTL_SYNC
-_Static_assert(sizeof(struct dma_buf_sync) ==
-	       _IOC_SIZE(DMA_BUF_IOCTL_SYNC),
-	       "dma_buf_sync size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(DMA_BUF_IOCTL_SYNC, struct dma_buf_sync);
 #endif
 #ifdef DMA_BUF_IOCTL_EXPORT_SYNC_FILE
-_Static_assert(sizeof(struct dma_buf_export_sync_file) ==
-	       _IOC_SIZE(DMA_BUF_IOCTL_EXPORT_SYNC_FILE),
-	       "dma_buf_export_sync_file size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(DMA_BUF_IOCTL_EXPORT_SYNC_FILE, struct dma_buf_export_sync_file);
 #endif
 #ifdef DMA_BUF_IOCTL_IMPORT_SYNC_FILE
-_Static_assert(sizeof(struct dma_buf_import_sync_file) ==
-	       _IOC_SIZE(DMA_BUF_IOCTL_IMPORT_SYNC_FILE),
-	       "dma_buf_import_sync_file size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(DMA_BUF_IOCTL_IMPORT_SYNC_FILE, struct dma_buf_import_sync_file);
 #endif
 
 static const struct ioctl dmabuf_ioctls[] = {
