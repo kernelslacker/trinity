@@ -2,6 +2,7 @@
  * SYSCALL_DEFINE2(timerfd_gettime, int, ufd, struct itimerspec __user *, otmr)
  */
 #include <sys/timerfd.h>
+#include "output-poison.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "stats_ring.h"
@@ -14,12 +15,17 @@
  * rec->post_state, a slot the syscall ABI does not expose, so a sibling
  * syscall scribbling rec->aN between the syscall returning and the post
  * handler running cannot redirect the source memcpy at a foreign user
- * buffer.
+ * buffer.  The poison_seed slot travels alongside so the untouched-buffer
+ * check in the post handler is pinned against the exact byte pattern
+ * stamped at sanitise time -- a stomp of rec->aN cannot redirect the
+ * check against an unrelated heap page that happens to still carry the
+ * original (or any) byte pattern.
  */
 #define TIMERFD_GETTIME_POST_STATE_MAGIC	0x54464754UL	/* "TFGT" */
 struct timerfd_gettime_post_state {
 	unsigned long magic;
 	unsigned long otmr;
+	uint64_t poison_seed;
 };
 
 static void sanitise_timerfd_gettime(struct syscallrecord *rec)
@@ -46,6 +52,17 @@ static void sanitise_timerfd_gettime(struct syscallrecord *rec)
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = TIMERFD_GETTIME_POST_STATE_MAGIC;
 	snap->otmr  = rec->a2;
+	/*
+	 * Stamp a per-call poison pattern into the user buffer the kernel
+	 * is about to fill.  The post handler asks check_output_struct()
+	 * whether the pattern survived intact; if it did on a success
+	 * return, the kernel wrote zero bytes despite reporting success.
+	 * Done after avoid_shared_buffer_out() so the poison lands on the
+	 * final buffer the kernel will see (the relocation may have swapped
+	 * rec->a2 for a fresh page).
+	 */
+	snap->poison_seed = poison_output_struct((void *)(unsigned long) rec->a2,
+						 sizeof(struct itimerspec), 0);
 	post_state_install(rec, snap);
 }
 
@@ -90,6 +107,22 @@ static void post_timerfd_gettime(struct syscallrecord *rec)
 
 	if (snap->otmr == 0)
 		goto out_free;
+
+	/*
+	 * Untouched-buffer check: timerfd_gettime returned 0 (success) but
+	 * the user buffer still byte-for-byte matches the poison pattern we
+	 * stamped at sanitise time -- the kernel never called copy_to_user()
+	 * at all.  Bumps the shared post_handler_untouched_out_buf counter;
+	 * the tv_nsec range oracle below will still fire (poison bytes do
+	 * not happen to look like a valid tv_nsec) but the dedicated counter
+	 * is the cheaper, no-re-issue signal that dedups against the other
+	 * ARG_STRUCT_PTR_OUT consumers.
+	 */
+	if (check_output_struct((const void *)(unsigned long) snap->otmr,
+				sizeof(struct itimerspec),
+				snap->poison_seed))
+		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+				   1, __ATOMIC_RELAXED);
 
 	if (!post_snapshot_or_skip(&first,
 				   (const void *)(unsigned long) snap->otmr,
