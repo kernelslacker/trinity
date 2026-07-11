@@ -112,9 +112,7 @@ struct pidfd_info {
  * zero and there is no size pairing to assert -- intentionally
  * absent.
  */
-_Static_assert(sizeof(struct pidfd_info) ==
-	       _IOC_SIZE(PIDFD_GET_INFO),
-	       "pidfd_info size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(PIDFD_GET_INFO, struct pidfd_info);
 
 static int pidfd_fd_test(int fd, const struct stat *st __attribute__((unused)))
 {
