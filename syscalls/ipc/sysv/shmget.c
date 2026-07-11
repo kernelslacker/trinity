@@ -14,7 +14,7 @@
 #include "utils.h"
 
 static unsigned long ipc_flags[] = {
-	IPC_CREAT, IPC_EXCL,
+	IPC_CREAT, IPC_EXCL, SHM_NORESERVE,
 };
 
 /*
