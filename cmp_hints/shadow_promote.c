@@ -50,12 +50,38 @@
 #define SHADOW_ARM_PILOT_WIN_RATIO_PER_MILLE  120UL
 
 enum shadow_arm_id {
+	SHADOW_ARM_CMP_HYP_POW2_DERIVE,
 	SHADOW_ARM_CMP_HYP_BITMASK_FULL_OR,
 	SHADOW_ARM_CMP_HYP_BITMASK_ANDNOT_TOGGLE,
 	SHADOW_ARM_NR,
 };
 
 static const struct shadow_arm shadow_arm_registry[SHADOW_ARM_NR] = {
+	/*
+	 * POW2 / alignment derive-class layered on the typed-
+	 * hypothesis derive.  would_fire bumps on every eligible
+	 * pick (argtype gate AND bit-pattern gate both open) --
+	 * i.e. every derive where the class could plausibly emit a
+	 * power-of-two or aligned candidate; would_win bumps on the
+	 * subset where at least one candidate from {C>>1, C, C<<1,
+	 * round-to-512, round-to-4096, round-to-page-size} differs
+	 * from the value the live derive lane just emitted, i.e.
+	 * the class would have contributed a value the existing
+	 * lanes did not.  No live counterpart yet.
+	 */
+	[SHADOW_ARM_CMP_HYP_POW2_DERIVE] = {
+		.name = "cmp_hyp_pow2_derive",
+		.would_win_offset =
+			offsetof(struct kcov_shared,
+				 cmp_hyp_pow2_derive_would_win),
+		.live_win_offset = 0,
+		.baseline_offset =
+			offsetof(struct kcov_shared,
+				 cmp_hyp_pow2_derive_would_fire),
+		.live_flag = 0,
+		.min_baseline_samples = SHADOW_ARM_PILOT_MIN_BASELINE_SAMPLES,
+		.win_ratio_per_mille = SHADOW_ARM_PILOT_WIN_RATIO_PER_MILLE,
+	},
 	/*
 	 * Pilot arm: FULL_OR combo probe layered on the BITMASK derive
 	 * lane.  would_fire bumps on every BITMASK derive whose picked
