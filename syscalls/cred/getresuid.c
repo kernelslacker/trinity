@@ -3,6 +3,7 @@
  */
 #include <sys/types.h>
 #include "deferred-free.h"
+#include "output-poison.h"
 #include "proc-status.h"
 #include "random.h"
 #include "shm.h"
@@ -29,6 +30,21 @@
 #define GETRESUID_POST_STATE_MAGIC	0x47525549UL	/* "GRUI" */
 struct getresuid_post_state {
 	unsigned long magic;
+	/*
+	 * Per-slot seeds for the poison pattern stamped into the three
+	 * uid_t OUT-buffers (ruid/euid/suid) at sanitise time.  Returned
+	 * by poison_output_struct() and fed back into check_output_struct()
+	 * in the post handler: a byte-identical match on any slot after a
+	 * success return means the kernel wrote zero bytes into that
+	 * scalar and left the poison intact.  Snapshot lives in
+	 * rec->post_state so a sibling stomp of rec->aN between dispatch
+	 * and post cannot redirect the poison check at an unrelated heap
+	 * page whose residual bytes happen to match some earlier seed.
+	 * A seed of 0 means sanitise chose not to stamp that slot
+	 * (unwritable pointer) -- the post handler no-ops that arm rather
+	 * than confuse "we could not poison" with "kernel did not write".
+	 */
+	uint64_t poison_seed[3];
 };
 
 static void sanitise_getresuid16(struct syscallrecord *rec)
@@ -62,6 +78,40 @@ static void sanitise_getresuid(struct syscallrecord *rec)
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = GETRESUID_POST_STATE_MAGIC;
+	snap->poison_seed[0] = 0;
+	snap->poison_seed[1] = 0;
+	snap->poison_seed[2] = 0;
+
+	/*
+	 * Stamp a per-slot poison pattern into each of the three uid_t
+	 * OUT-buffers the kernel is about to fill.  The post handler feeds
+	 * each seed back into check_output_struct(); a byte-identical
+	 * poison after a success return means the kernel wrote zero bytes
+	 * into that scalar and left our stamp intact.  Gate each stamp on
+	 * range_readable_user() so a writable-pool draw that
+	 * avoid_shared_buffer_out() moved to an address no longer provably
+	 * mapped (e.g. sibling munmap between allocation and now) does not
+	 * SIGSEGV the sanitiser inside poison_output_struct's byte-walk.
+	 * On skip the seed stays 0 and the post handler no-ops that arm
+	 * while the existing procfs Uid: divergence oracle keeps running.
+	 * Done after avoid_shared_buffer_out() so the poison lands on the
+	 * final buffer the kernel will see.
+	 */
+	{
+		unsigned long slots[3] = { rec->a1, rec->a2, rec->a3 };
+		unsigned int i;
+
+		for (i = 0; i < 3; i++) {
+			void *buf = (void *)(unsigned long) slots[i];
+
+			if (range_readable_user(buf, sizeof(uid_t)))
+				snap->poison_seed[i] =
+					poison_output_struct(buf,
+							     sizeof(uid_t),
+							     0);
+		}
+	}
+
 	/*
 	 * post_state_install pairs the rec->post_state assign with the
 	 * ownership-table register so the observable window between the
@@ -106,9 +156,6 @@ static void post_getresuid(struct syscallrecord *rec)
 	if (snap == NULL)
 		return;
 
-	if (!ONE_IN(100))
-		goto out_free;
-
 	if ((long) rec->retval != 0)
 		goto out_free;
 
@@ -140,6 +187,38 @@ static void post_getresuid(struct syscallrecord *rec)
 		keuid = *e;
 		ksuid = *s;
 	}
+
+	/*
+	 * Untouched-buffer poison check: sanitise stamped a per-slot
+	 * poison pattern into each of ruid/euid/suid.  A byte-identical
+	 * match on any slot after a success return means the kernel wrote
+	 * zero bytes into that scalar and left our stamp intact -- a
+	 * short-copy or partial copy_to_user() the field-diff arm below
+	 * would also catch, but only after paying for a procfs re-read.
+	 * Cheap (three 4-byte compares, no re-issue), so runs on every
+	 * success sample; the procfs arm stays rate-limited.  Check
+	 * against the local snapshots taken above so a sibling munmap of
+	 * the writable-pool page between the deref and here cannot fault
+	 * inside a second read.  A seed of 0 means sanitise skipped that
+	 * slot -- skip the check too so "we could not poison" is not
+	 * confused with "kernel did not write".  Counts against the
+	 * shared post_handler_untouched_out_buf slot.
+	 */
+	if (snap->poison_seed[0] != 0 &&
+	    check_output_struct(&kruid, sizeof(kruid), snap->poison_seed[0]))
+		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+				   1, __ATOMIC_RELAXED);
+	if (snap->poison_seed[1] != 0 &&
+	    check_output_struct(&keuid, sizeof(keuid), snap->poison_seed[1]))
+		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+				   1, __ATOMIC_RELAXED);
+	if (snap->poison_seed[2] != 0 &&
+	    check_output_struct(&ksuid, sizeof(ksuid), snap->poison_seed[2]))
+		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+				   1, __ATOMIC_RELAXED);
+
+	if (!ONE_IN(100))
+		goto out_free;
 
 	if (!proc_status_read_id_quad("Uid", ids))
 		goto out_free;
