@@ -53,90 +53,38 @@
  * guards mirror the ioctl-table wrapping so builds against older uapi
  * headers that predate a command still compile.
  */
-_Static_assert(sizeof(struct kvm_regs) ==
-	       _IOC_SIZE(KVM_GET_REGS),
-	       "kvm_regs size vs KVM_GET_REGS mismatch");
-_Static_assert(sizeof(struct kvm_regs) ==
-	       _IOC_SIZE(KVM_SET_REGS),
-	       "kvm_regs size vs KVM_SET_REGS mismatch");
-_Static_assert(sizeof(struct kvm_sregs) ==
-	       _IOC_SIZE(KVM_GET_SREGS),
-	       "kvm_sregs size vs KVM_GET_SREGS mismatch");
-_Static_assert(sizeof(struct kvm_sregs) ==
-	       _IOC_SIZE(KVM_SET_SREGS),
-	       "kvm_sregs size vs KVM_SET_SREGS mismatch");
-_Static_assert(sizeof(struct kvm_fpu) ==
-	       _IOC_SIZE(KVM_GET_FPU),
-	       "kvm_fpu size vs KVM_GET_FPU mismatch");
-_Static_assert(sizeof(struct kvm_fpu) ==
-	       _IOC_SIZE(KVM_SET_FPU),
-	       "kvm_fpu size vs KVM_SET_FPU mismatch");
-_Static_assert(sizeof(struct kvm_vcpu_events) ==
-	       _IOC_SIZE(KVM_GET_VCPU_EVENTS),
-	       "kvm_vcpu_events size vs KVM_GET_VCPU_EVENTS mismatch");
-_Static_assert(sizeof(struct kvm_vcpu_events) ==
-	       _IOC_SIZE(KVM_SET_VCPU_EVENTS),
-	       "kvm_vcpu_events size vs KVM_SET_VCPU_EVENTS mismatch");
-_Static_assert(sizeof(struct kvm_interrupt) ==
-	       _IOC_SIZE(KVM_INTERRUPT),
-	       "kvm_interrupt size vs _IOC_SIZE mismatch");
-_Static_assert(sizeof(struct kvm_mp_state) ==
-	       _IOC_SIZE(KVM_GET_MP_STATE),
-	       "kvm_mp_state size vs KVM_GET_MP_STATE mismatch");
-_Static_assert(sizeof(struct kvm_mp_state) ==
-	       _IOC_SIZE(KVM_SET_MP_STATE),
-	       "kvm_mp_state size vs KVM_SET_MP_STATE mismatch");
-_Static_assert(sizeof(struct kvm_translation) ==
-	       _IOC_SIZE(KVM_TRANSLATE),
-	       "kvm_translation size vs _IOC_SIZE mismatch");
-_Static_assert(sizeof(struct kvm_guest_debug) ==
-	       _IOC_SIZE(KVM_SET_GUEST_DEBUG),
-	       "kvm_guest_debug size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(KVM_GET_REGS, struct kvm_regs);
+IOCTL_SIZE_ASSERT(KVM_SET_REGS, struct kvm_regs);
+IOCTL_SIZE_ASSERT(KVM_GET_SREGS, struct kvm_sregs);
+IOCTL_SIZE_ASSERT(KVM_SET_SREGS, struct kvm_sregs);
+IOCTL_SIZE_ASSERT(KVM_GET_FPU, struct kvm_fpu);
+IOCTL_SIZE_ASSERT(KVM_SET_FPU, struct kvm_fpu);
+IOCTL_SIZE_ASSERT(KVM_GET_VCPU_EVENTS, struct kvm_vcpu_events);
+IOCTL_SIZE_ASSERT(KVM_SET_VCPU_EVENTS, struct kvm_vcpu_events);
+IOCTL_SIZE_ASSERT(KVM_INTERRUPT, struct kvm_interrupt);
+IOCTL_SIZE_ASSERT(KVM_GET_MP_STATE, struct kvm_mp_state);
+IOCTL_SIZE_ASSERT(KVM_SET_MP_STATE, struct kvm_mp_state);
+IOCTL_SIZE_ASSERT(KVM_TRANSLATE, struct kvm_translation);
+IOCTL_SIZE_ASSERT(KVM_SET_GUEST_DEBUG, struct kvm_guest_debug);
 
 #ifdef X86
-_Static_assert(sizeof(struct kvm_lapic_state) ==
-	       _IOC_SIZE(KVM_GET_LAPIC),
-	       "kvm_lapic_state size vs KVM_GET_LAPIC mismatch");
-_Static_assert(sizeof(struct kvm_lapic_state) ==
-	       _IOC_SIZE(KVM_SET_LAPIC),
-	       "kvm_lapic_state size vs KVM_SET_LAPIC mismatch");
-_Static_assert(sizeof(struct kvm_xsave) ==
-	       _IOC_SIZE(KVM_GET_XSAVE),
-	       "kvm_xsave size vs KVM_GET_XSAVE mismatch");
-_Static_assert(sizeof(struct kvm_xsave) ==
-	       _IOC_SIZE(KVM_SET_XSAVE),
-	       "kvm_xsave size vs KVM_SET_XSAVE mismatch");
-_Static_assert(sizeof(struct kvm_xcrs) ==
-	       _IOC_SIZE(KVM_GET_XCRS),
-	       "kvm_xcrs size vs KVM_GET_XCRS mismatch");
-_Static_assert(sizeof(struct kvm_xcrs) ==
-	       _IOC_SIZE(KVM_SET_XCRS),
-	       "kvm_xcrs size vs KVM_SET_XCRS mismatch");
-_Static_assert(sizeof(struct kvm_debugregs) ==
-	       _IOC_SIZE(KVM_GET_DEBUGREGS),
-	       "kvm_debugregs size vs KVM_GET_DEBUGREGS mismatch");
-_Static_assert(sizeof(struct kvm_debugregs) ==
-	       _IOC_SIZE(KVM_SET_DEBUGREGS),
-	       "kvm_debugregs size vs KVM_SET_DEBUGREGS mismatch");
+IOCTL_SIZE_ASSERT(KVM_GET_LAPIC, struct kvm_lapic_state);
+IOCTL_SIZE_ASSERT(KVM_SET_LAPIC, struct kvm_lapic_state);
+IOCTL_SIZE_ASSERT(KVM_GET_XSAVE, struct kvm_xsave);
+IOCTL_SIZE_ASSERT(KVM_SET_XSAVE, struct kvm_xsave);
+IOCTL_SIZE_ASSERT(KVM_GET_XCRS, struct kvm_xcrs);
+IOCTL_SIZE_ASSERT(KVM_SET_XCRS, struct kvm_xcrs);
+IOCTL_SIZE_ASSERT(KVM_GET_DEBUGREGS, struct kvm_debugregs);
+IOCTL_SIZE_ASSERT(KVM_SET_DEBUGREGS, struct kvm_debugregs);
 #ifdef KVM_GET_SREGS2
-_Static_assert(sizeof(struct kvm_sregs2) ==
-	       _IOC_SIZE(KVM_GET_SREGS2),
-	       "kvm_sregs2 size vs KVM_GET_SREGS2 mismatch");
+IOCTL_SIZE_ASSERT(KVM_GET_SREGS2, struct kvm_sregs2);
 #endif
 #ifdef KVM_SET_SREGS2
-_Static_assert(sizeof(struct kvm_sregs2) ==
-	       _IOC_SIZE(KVM_SET_SREGS2),
-	       "kvm_sregs2 size vs KVM_SET_SREGS2 mismatch");
+IOCTL_SIZE_ASSERT(KVM_SET_SREGS2, struct kvm_sregs2);
 #endif
-_Static_assert(sizeof(struct kvm_x86_mce) ==
-	       _IOC_SIZE(KVM_X86_SET_MCE),
-	       "kvm_x86_mce size vs _IOC_SIZE mismatch");
-_Static_assert(sizeof(struct kvm_tpr_access_ctl) ==
-	       _IOC_SIZE(KVM_TPR_ACCESS_REPORTING),
-	       "kvm_tpr_access_ctl size vs _IOC_SIZE mismatch");
-_Static_assert(sizeof(struct kvm_vapic_addr) ==
-	       _IOC_SIZE(KVM_SET_VAPIC_ADDR),
-	       "kvm_vapic_addr size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(KVM_X86_SET_MCE, struct kvm_x86_mce);
+IOCTL_SIZE_ASSERT(KVM_TPR_ACCESS_REPORTING, struct kvm_tpr_access_ctl);
+IOCTL_SIZE_ASSERT(KVM_SET_VAPIC_ADDR, struct kvm_vapic_addr);
 #endif	/* X86 */
 
 /*
