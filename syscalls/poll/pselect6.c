@@ -67,7 +67,7 @@ static void sanitise_pselect6(struct syscallrecord *rec)
 	sigset_t *sigmask;
 	fd_set *rfds, *wfds, *exfds;
 
-	nfds = (rand32() % 1023) + 1;
+	nfds = rnd_modulo_u32(1023) + 1;
 	rec->a1 = nfds;
 
 	rfds = get_writable_address(sizeof(fd_set));
@@ -87,7 +87,7 @@ static void sanitise_pselect6(struct syscallrecord *rec)
 	FD_ZERO(wfds);
 	FD_ZERO(exfds);
 
-	nset = rand32() % 10;
+	nset = rnd_modulo_u32(10);
 	/*
 	 * Pick the bits to set with the same coverage bias as poll(2) /
 	 * select(2): ~60% tracked pollable fd_type fd numbers (real wait
