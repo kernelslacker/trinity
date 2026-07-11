@@ -22,9 +22,7 @@
  * in for all DM_* commands -- the uapi wires every command to
  * struct dm_ioctl, so a single anchor is enough.
  */
-_Static_assert(sizeof(struct dm_ioctl) ==
-	       _IOC_SIZE(DM_VERSION),
-	       "dm_ioctl size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(DM_VERSION, struct dm_ioctl);
 
 static const struct ioctl dm_ioctls[] = {
 	IOCTL(DM_VERSION),
