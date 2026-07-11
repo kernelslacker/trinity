@@ -264,6 +264,25 @@ static void tun_sanitise(const struct ioctl_group *grp,
 	}
 }
 
+/*
+ * Compile-time: TUNATTACHFILTER / TUNDETACHFILTER encode
+ * sizeof(struct sock_fprog) in their request bits, so a header
+ * refactor that grew or shrank sock_fprog would silently desync
+ * the _IOC_SIZE the kernel reads against the buffer the sanitiser
+ * hands it.  struct sock_fprog embeds a struct sock_filter *
+ * pointer, so its size is arch/compat-dependent, but for the
+ * native compile-time build the sizeof and _IOC_SIZE always agree
+ * -- an in-tree mismatch would still trip these asserts.  The rest
+ * of the table encodes bare int / unsigned int / ifreq handled
+ * inline and is intentionally not asserted.
+ */
+_Static_assert(sizeof(struct sock_fprog) ==
+	       _IOC_SIZE(TUNATTACHFILTER),
+	       "sock_fprog size vs TUNATTACHFILTER mismatch");
+_Static_assert(sizeof(struct sock_fprog) ==
+	       _IOC_SIZE(TUNDETACHFILTER),
+	       "sock_fprog size vs TUNDETACHFILTER mismatch");
+
 static const struct ioctl tun_ioctls[] = {
 	IOCTL(TUNSETIFF),
 	IOCTL(TUNGETIFF),
