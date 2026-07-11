@@ -1095,12 +1095,20 @@ bool cmp_hints_try_get_sized(unsigned int nr, bool do32,
  * false on chaos suppression / corrupted pool / out-of-range key / SHADOW
  * arm.  Caller contract mirrors cmp_hints_field_record(): nr <
  * MAX_NR_SYSCALL, arg_idx in 1..6, size in {1,2,4,8}, desc != NULL.
+ *
+ * fallback carries the value the generator would OTHERWISE write to the
+ * slot if this pull did not fire (i.e. the pre-hint value already sitting
+ * in the destination).  Consumed only by the SHADOW would_value_differs
+ * measurement -- compared against the elected pool entry's value to bump
+ * the differs win-scalar on the subset where a live-arm flip would
+ * actually change the byte on the wire.  Does not influence pick / miss
+ * / key-absent counting and does not affect the returned value.
  */
 bool cmp_hints_field_try_get(unsigned int nr, bool do32, unsigned int arg_idx,
 			     const struct struct_desc *desc,
 			     unsigned int field_idx, unsigned int size,
 			     enum cmp_hint_use use, unsigned long old,
-			     unsigned long *out);
+			     unsigned long fallback, unsigned long *out);
 
 /*
  * SHADOW per-entry feedback scoring for hint consumption -- the

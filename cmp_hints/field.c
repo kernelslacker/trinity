@@ -620,7 +620,7 @@ bool cmp_hints_field_try_get(unsigned int nr, bool do32, unsigned int arg_idx,
 			     const struct struct_desc *desc,
 			     unsigned int field_idx, unsigned int size,
 			     enum cmp_hint_use use, unsigned long old,
-			     unsigned long *out)
+			     unsigned long fallback, unsigned long *out)
 {
 	struct cmp_field_pool *pool = NULL;
 	struct cmp_hint_entry *picked;
@@ -727,6 +727,8 @@ bool cmp_hints_field_try_get(unsigned int nr, bool do32, unsigned int arg_idx,
 	 * already established by the parameter validation at the head of
 	 * the function so the array index is safe. */
 	if (kcov_shm != NULL) {
+		unsigned long shadow_elect;
+
 		__atomic_fetch_add(&kcov_shm->cmp_field_consumer_would_pick,
 				   1UL, __ATOMIC_RELAXED);
 		__atomic_fetch_add(&kcov_shm->cmp_field_consumer_prove_eligible,
@@ -743,6 +745,30 @@ bool cmp_hints_field_try_get(unsigned int nr, bool do32, unsigned int arg_idx,
 				   __atomic_load_n(&kcov_shm->per_syscall_errno[nr][ERRNO_BUCKET_EINVAL],
 						   __ATOMIC_RELAXED),
 				   __ATOMIC_RELAXED);
+
+		/*
+		 * SHADOW would_value_differs bump.  Deterministic proxy for
+		 * the live arm's rnd_modulo_u32(count) elect: read entries[0]
+		 * so no RNG draw fires from the shadow path (a per-child RNG
+		 * advance here would break dry-run byte-identical).  Pool
+		 * insertion / eviction over run duration rotates fresh
+		 * constants through slot 0, so the differs subset observed
+		 * here converges on the pool-population differs rate the
+		 * uniform live pick would sample.  Sits inside the post-guard
+		 * would_pick branch (bounded from above by would_pick) and
+		 * uses the caller's pre-injection fallback (the value the
+		 * generator was about to write); a raw byte-for-byte match
+		 * means a live flip at this call would swap in the same value
+		 * the generator already had and change nothing on the wire.
+		 * Skipping the cmp_hint_apply_transform() call is safe because
+		 * CMP_HINT_FIELD's transform is bare-C (see the FALLTHROUGH
+		 * with CMP_HINT_EXACT in cmp_hint_apply_transform).
+		 */
+		shadow_elect = __atomic_load_n(&pool->entries[0].value,
+					       __ATOMIC_RELAXED);
+		if (shadow_elect != fallback)
+			__atomic_fetch_add(&kcov_shm->cmp_field_consumer_would_value_differs,
+					   1UL, __ATOMIC_RELAXED);
 	}
 
 	if (!cmp_field_consumer_live_arm)

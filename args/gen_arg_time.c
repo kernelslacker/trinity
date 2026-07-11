@@ -114,13 +114,24 @@ unsigned long gen_arg_timespec(struct syscallentry *entry __unused__,
 	 */
 	desc = struct_catalog_lookup("timespec");
 	if (desc != NULL) {
+		/*
+		 * Pass the pre-injection field value as fallback so the
+		 * SHADOW cmp_field_consumer_would_value_differs measurement
+		 * has a byte-accurate comparison target: the value the
+		 * generator would OTHERWISE write to the slot if the pull
+		 * did not fire.  Consumed only inside the field consumer's
+		 * shadow branch; does not steer pick / miss counting and
+		 * does not affect the returned value.
+		 */
 		if (cmp_hints_field_try_get(rec->nr, rec->do32bit, argnum,
 					    desc, 0, sizeof(ts->tv_sec),
-					    CMP_HINT_FIELD, 0, &hint))
+					    CMP_HINT_FIELD, 0,
+					    (unsigned long) ts->tv_sec, &hint))
 			ts->tv_sec = (time_t) hint;
 		if (cmp_hints_field_try_get(rec->nr, rec->do32bit, argnum,
 					    desc, 1, sizeof(ts->tv_nsec),
-					    CMP_HINT_FIELD, 0, &hint))
+					    CMP_HINT_FIELD, 0,
+					    (unsigned long) ts->tv_nsec, &hint))
 			ts->tv_nsec = (long) hint;
 	}
 
