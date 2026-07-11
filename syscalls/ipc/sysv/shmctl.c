@@ -5,6 +5,7 @@
 #include <linux/shm.h>
 #include <unistd.h>
 #include "ipc-common.h"
+#include "output-poison.h"
 #include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -18,6 +19,7 @@ static unsigned long shmctl_ops[] = {
 
 static void sanitise_shmctl(struct syscallrecord *rec)
 {
+	struct ipcctl_post_state *snap;
 	void *buf;
 	unsigned long allocated_size;
 	bool input_buf = false;
@@ -78,7 +80,7 @@ static void sanitise_shmctl(struct syscallrecord *rec)
 
 	rec->a3 = (unsigned long) buf;
 
-	ipcctl_post_state_alloc(rec, buf, allocated_size);
+	snap = ipcctl_post_state_alloc(rec, buf, allocated_size);
 
 	/*
 	 * IPC_SET is the only input branch: the kernel reads shm_perm
@@ -88,11 +90,17 @@ static void sanitise_shmctl(struct syscallrecord *rec)
 	 * silently neutering IPC_SET coverage.  IPC_INFO / SHM_INFO /
 	 * IPC_STAT / SHM_STAT / SHM_STAT_ANY are pure outputs -- the
 	 * kernel writes them, so the cheaper relocate-only suffices.
+	 * The pure-output branches also stamp a poison pattern into
+	 * the out-buffer that the shared post handler re-reads to
+	 * detect a success return with no matching copy_to_user().
 	 */
-	if (input_buf)
+	if (input_buf) {
 		avoid_shared_buffer_inout(&rec->a3, allocated_size);
-	else
+	} else {
+		snap->poison_seed = poison_output_struct(buf,
+							 allocated_size, 0);
 		avoid_shared_buffer_out(&rec->a3, allocated_size);
+	}
 }
 
 static void post_shmctl(struct syscallrecord *rec)

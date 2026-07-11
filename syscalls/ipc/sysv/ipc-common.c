@@ -26,17 +26,13 @@
 #include <stddef.h>
 #include "deferred-free.h"
 #include "ipc-common.h"
+#include "output-poison.h"
+#include "shm.h"
 #include "syscall.h"
 #include "trinity.h"
 #include "utils.h"
 
 #define IPCCTL_POST_STATE_MAGIC	0x49504343544C5F4DUL	/* "IPCCTL_M" */
-
-struct ipcctl_post_state {
-	unsigned long magic;
-	unsigned long buf;
-	size_t buf_size;
-};
 
 void post_ipc_get(struct syscallrecord *rec,
 		  void (*register_fn)(int id),
@@ -60,8 +56,8 @@ void post_ipc_get(struct syscallrecord *rec,
 	register_fn((int) ret);
 }
 
-void ipcctl_post_state_alloc(struct syscallrecord *rec,
-			     void *buf, size_t buf_size)
+struct ipcctl_post_state *ipcctl_post_state_alloc(struct syscallrecord *rec,
+						  void *buf, size_t buf_size)
 {
 	struct ipcctl_post_state *snap;
 
@@ -71,6 +67,7 @@ void ipcctl_post_state_alloc(struct syscallrecord *rec,
 	snap->buf_size = buf_size;
 	rec->post_state = (unsigned long) snap;
 	post_state_register(snap);
+	return snap;
 }
 
 void post_ipcctl_buf_free(struct syscallrecord *rec, const char *name)
@@ -126,6 +123,27 @@ void post_ipcctl_buf_free(struct syscallrecord *rec, const char *name)
 	}
 
 	rec->a3 = 0;
+
+	/*
+	 * Untouched-buffer oracle: on a success return (>= 0 -- the
+	 * *_STAT / *_STAT_ANY commands return the IPC index, IPC_STAT
+	 * and *_INFO return 0, only < 0 signals failure) with a poison
+	 * seed stamped at sanitise time, the out-buffer should have been
+	 * overwritten by the kernel.  A byte-identical match against
+	 * the poison pattern means the kernel skipped copy_to_user()
+	 * entirely; bump the shared post_handler_untouched_out_buf slot.
+	 * The check is a struct-sized memcmp with no syscall re-issue,
+	 * so it stays cheap enough to fire on every success (no ONE_IN
+	 * sample).  A zero poison_seed means the sanitise-side skipped
+	 * the stamp (input-only branch or a command that carries no
+	 * out-buffer) and the check is a no-op.
+	 */
+	if (snap->poison_seed != 0 && (long) rec->retval >= 0 &&
+	    check_output_struct((void *) snap->buf, snap->buf_size,
+				snap->poison_seed))
+		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+				   1, __ATOMIC_RELAXED);
+
 	deferred_freeptr(&snap->buf);
 	post_state_release(rec, snap);
 }
