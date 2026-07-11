@@ -5,6 +5,29 @@
 struct syscallrecord;
 
 /*
+ * Shared post-state snap for the shmctl/msgctl IPC_STAT / IPC_INFO
+ * out-buffer path.  Fields:
+ *   magic       - cookie verified in the post handler after the
+ *                 heap-shape gate; catches a sibling scribble that
+ *                 redirected rec->post_state to a foreign allocation.
+ *   buf         - inner IPC out-buffer (zmalloc_tracked at sanitise
+ *                 time); freed via deferred_freeptr in the post path.
+ *   buf_size    - byte count of the out-buffer; drives both the
+ *                 poison stamp/check window and the free-side size.
+ *   poison_seed - non-zero if the sanitiser stamped a poison pattern
+ *                 into the buffer; a zero seed means the poison arm
+ *                 was skipped (input-only branch, or no out-buffer
+ *                 at all) and the post handler no-ops the untouched
+ *                 buffer check.
+ */
+struct ipcctl_post_state {
+	unsigned long magic;
+	unsigned long buf;
+	size_t buf_size;
+	unsigned long poison_seed;
+};
+
+/*
  * Post-handler shape shared by shmget/msgget/semget.  On the ordinary
  * failure path (ret < 0, e.g. EEXIST / ENOSPC / EACCES with errno set)
  * the helper returns silently.  Otherwise it validates that retval fits
@@ -35,8 +58,8 @@ void post_ipc_get(struct syscallrecord *rec,
  * leave rec->post_state at zero; post_ipcctl_buf_free no-ops on the
  * NULL snap.
  */
-void ipcctl_post_state_alloc(struct syscallrecord *rec,
-			     void *buf, size_t buf_size);
+struct ipcctl_post_state *ipcctl_post_state_alloc(struct syscallrecord *rec,
+						  void *buf, size_t buf_size);
 
 /*
  * Post-handler shape shared by shmctl/msgctl IPC_STAT / IPC_INFO paths.
