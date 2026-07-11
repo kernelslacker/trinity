@@ -4,6 +4,7 @@
 #include <sys/socket.h>
 #include "net.h"
 #include "objects.h"
+#include "output-poison.h"
 #include "random.h"
 #include "sanitise.h"
 #include "deferred-free.h"
@@ -89,6 +90,18 @@ static void register_socketpair_fd(int fd, struct syscallrecord *rec)
 #define SOCKETPAIR_POST_STATE_MAGIC	0x534F434B5F4D4147UL	/* "SOCK_MAG" */
 struct socketpair_post_state {
 	unsigned long magic;
+	/*
+	 * Seed for the poison pattern stamped into the sv fd-pair buffer at
+	 * sanitise time.  Fed back into check_output_struct() in the success
+	 * arm of post_socketpair_record_fds() so a "returned 0 but wrote no
+	 * fds" bug is caught: an intact 8-byte poison after retval == 0 means
+	 * the kernel skipped the two put_user() writes entirely.  Two written
+	 * fd ints (each in the valid fd range) fully overwrite the 8-byte
+	 * seed word, so a coincidental match is not a concern.  A seed of 0
+	 * means sanitise did not stamp poison (pool exhaustion path) and the
+	 * post check no-ops.
+	 */
+	uint64_t poison_seed;
 };
 
 static void sanitise_socketpair(struct syscallrecord *rec)
@@ -129,8 +142,21 @@ static void sanitise_socketpair(struct syscallrecord *rec)
 	 * dispatch-time arg_shadow capture, not a snap field. */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = SOCKETPAIR_POST_STATE_MAGIC;
+	snap->poison_seed = 0;
 	rec->post_state = (unsigned long) snap;
 	post_state_register(snap);
+
+	/*
+	 * Stamp a per-call poison pattern into the sv fd-pair buffer the
+	 * kernel is about to fill.  The success arm of
+	 * post_socketpair_record_fds() feeds the seed back into
+	 * check_output_struct(): a byte-identical poison after a 0-retval
+	 * means the kernel returned success without writing the fd pair.
+	 * The buffer comes from get_writable_address() and is unconditionally
+	 * writable, so no range_readable_user() gate is needed here.
+	 */
+	snap->poison_seed = poison_output_struct(usockvec,
+						 sizeof(int) * 2, 0);
 }
 
 /*
@@ -174,6 +200,22 @@ static void post_socketpair_record_fds(struct syscallrecord *rec)
 	usockvec = (int *) get_arg_snapshot(rec, 4);
 	if (usockvec == NULL || looks_like_corrupted_ptr(rec, usockvec))
 		return;
+
+	/*
+	 * Untouched-buffer poison check: retval == 0 but the sv fd-pair
+	 * buffer still byte-for-byte matches the poison pattern we stamped
+	 * at sanitise time -- the kernel returned success without writing
+	 * the fd pair.  Two valid fds (0..1<<20) fully overwrite the 8-byte
+	 * seed word, so a coincidental match cannot happen on a real write.
+	 * Guarded on poison_seed so the pool-exhaustion "we couldn't poison"
+	 * path is not confused with "kernel didn't write".  register_*_fd()
+	 * self-gates on fd range so a match here still safely no-ops the
+	 * publish below.
+	 */
+	if (snap->poison_seed != 0 &&
+	    check_output_struct(usockvec, sizeof(int) * 2, snap->poison_seed))
+		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+				   1, __ATOMIC_RELAXED);
 
 	register_socketpair_fd(usockvec[0], rec);
 	register_socketpair_fd(usockvec[1], rec);
