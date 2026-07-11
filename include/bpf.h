@@ -129,6 +129,12 @@ extern const unsigned int bpf_attach_types_count;
 #ifndef BPF_CMPXCHG
 #define BPF_CMPXCHG	(0xf0 | BPF_FETCH)
 #endif
+#ifndef BPF_LOAD_ACQ
+#define BPF_LOAD_ACQ	0x100	/* atomic load-acquire (v6.15) */
+#endif
+#ifndef BPF_STORE_REL
+#define BPF_STORE_REL	0x110	/* atomic store-release (v6.15) */
+#endif
 
 /* eBPF signed comparisons */
 #ifndef BPF_JLT
@@ -142,6 +148,14 @@ extern const unsigned int bpf_attach_types_count;
 #endif
 #ifndef BPF_JSLE
 #define BPF_JSLE	0xd0
+#endif
+
+/* eBPF sign-extending load mode + conditional pseudo-jumps */
+#ifndef BPF_MEMSX
+#define BPF_MEMSX	0x80	/* load with sign extension (v6.6) */
+#endif
+#ifndef BPF_JCOND
+#define BPF_JCOND	0xe0	/* conditional pseudo jumps: may_goto (v6.10) */
 #endif
 
 /* Register numbers — already defined in <linux/bpf.h> as enum + MAX_BPF_REG */
