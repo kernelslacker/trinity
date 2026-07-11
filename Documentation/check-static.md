@@ -55,9 +55,9 @@ update this section to match `ls scripts/check-static/*.sh`.)
 - `bpf-opcode-shim`: every `BPF_*` symbol used in `net/bpf/*.c` must be
   `#define`d by trinity's uapi-shim headers (`include/bpf.h`,
   `net/bpf/internal.h`) or listed in `bpf-opcode-shim.baseline`.  A newly
-  used ISA opcode with no `#ifndef` fallback builds on a modern
-  `<linux/bpf.h>` but breaks on an older fuzz-host header; this makes that a
-  build-time failure instead of a fuzz-box surprise.  The baseline holds
+  used ISA opcode with no `#ifndef` fallback builds where
+  `<linux/bpf.h>` is new enough but breaks where it is older; this makes that
+  a build-time failure instead of a late surprise.  The baseline holds
   base-UAPI symbols relied on from the system header.
 - `check-alt-op-rotation`: every `CHILD_OP_*` referenced from
   `pick_op_type_table[]` must be reachable via `alt_op_rotation[]` or

@@ -1,6 +1,6 @@
 # bpf-opcode-shim baseline: BPF_ symbols used under net/bpf/*.c that trinity
-# takes from the base <linux/bpf.h> instead of shimming -- assumed present on
-# every supported build host (register numbers, classic-filter macros,
+# takes from the base <linux/bpf.h> instead of shimming -- assumed present in
+# the oldest supported <linux/bpf.h> (register numbers, classic-filter macros,
 # long-standing prog types, ...).
 #
 # A BPF_ symbol used in net/bpf/*.c that is neither #define'd by
