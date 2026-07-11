@@ -32,7 +32,7 @@ command -v perl >/dev/null 2>&1 || { echo "WARN: $NAME: perl unavailable, skippi
 used=$(perl -0777 -pe 's{/\*.*?\*/}{}gs; s{//[^\n]*}{}g' "$SRC_DIR"/*.c 2>/dev/null \
 	| grep -oE '\bBPF_[A-Z0-9_]+\b' | sort -u)
 
-# BPF_ tokens trinity #defines in its shim headers (host-independent:
+# BPF_ tokens trinity #defines in its shim headers (header-independent:
 # either an #ifndef uapi fallback or a derived macro).
 defined=$(grep -hoE '#[[:space:]]*define[[:space:]]+BPF_[A-Z0-9_]+' \
 	"$ROOT/include/bpf.h" "$SRC_DIR/internal.h" 2>/dev/null \
