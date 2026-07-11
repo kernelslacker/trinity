@@ -31,6 +31,9 @@
 #ifndef ARCH_GET_XCOMP_GUEST_PERM
 #define ARCH_GET_XCOMP_GUEST_PERM	0x1024
 #endif
+#ifndef ARCH_REQ_XCOMP_GUEST_PERM
+#define ARCH_REQ_XCOMP_GUEST_PERM	0x1025
+#endif
 #ifndef ARCH_XCOMP_TILECFG
 #define ARCH_XCOMP_TILECFG		17
 #endif
@@ -60,8 +63,8 @@
  * Curated subset of ARCH_* codes that are safe to fuzz inside a child:
  * read-only getters (ARCH_GET_*, ARCH_SHSTK_STATUS) and benign feature-bit
  * setters whose effect on the child is harmless or transparent
- * (ARCH_REQ_XCOMP_PERM, ARCH_ENABLE_TAGGED_ADDR, ARCH_FORCE_TAGGED_SVA,
- * ARCH_SHSTK_LOCK).
+ * (ARCH_REQ_XCOMP_PERM, ARCH_REQ_XCOMP_GUEST_PERM, ARCH_ENABLE_TAGGED_ADDR,
+ * ARCH_FORCE_TAGGED_SVA, ARCH_SHSTK_LOCK).
  *
  * Deliberately excluded:
  *   ARCH_SET_FS / ARCH_SET_GS / ARCH_SET_CPUID  -- mutate segment / cpuid
@@ -77,7 +80,7 @@ static unsigned long arch_prctl_codes[] = {
 	ARCH_GET_FS, ARCH_GET_GS,
 	ARCH_GET_CPUID,
 	ARCH_GET_XCOMP_SUPP, ARCH_GET_XCOMP_PERM, ARCH_REQ_XCOMP_PERM,
-	ARCH_GET_XCOMP_GUEST_PERM,
+	ARCH_GET_XCOMP_GUEST_PERM, ARCH_REQ_XCOMP_GUEST_PERM,
 	ARCH_GET_UNTAG_MASK, ARCH_GET_MAX_TAG_BITS,
 	ARCH_ENABLE_TAGGED_ADDR, ARCH_FORCE_TAGGED_SVA,
 	ARCH_SHSTK_STATUS, ARCH_SHSTK_LOCK,
@@ -116,11 +119,14 @@ static void sanitise_arch_prctl(struct syscallrecord *rec)
 		avoid_shared_buffer_out(&rec->a2, sizeof(unsigned long));
 		break;
 
+	case ARCH_REQ_XCOMP_GUEST_PERM:
 	case ARCH_REQ_XCOMP_PERM:
 		/* arg2 is the xfeature bit number; AMX TILECFG (17) and
 		 * TILEDATA (18) are the only values the kernel inspects.
 		 * TILEDATA sets a per-task allow-bit -- no architectural
-		 * state change until the child actually executes AMX. */
+		 * state change until the child actually executes AMX.  The
+		 * GUEST variant only touches the guest-permission mask via
+		 * KVM's fpu_guest_cfg, so the child's own state is unaffected. */
 		rec->a2 = RAND_BOOL() ? ARCH_XCOMP_TILECFG : ARCH_XCOMP_TILEDATA;
 		break;
 
