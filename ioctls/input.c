@@ -8,6 +8,65 @@
 #include "syscall.h"
 #include "utils.h"
 
+/*
+ * Compile-time: every fixed-shape input ioctl command in the table
+ * below whose arg is a kernel struct must have sizeof(struct)
+ * matching the _IOC_SIZE encoded in its request bits.  A mismatch
+ * means input.h moved under us and the request bits now encode a
+ * different struct than we're passing (or vice versa) -- either
+ * short of the kernel's copy_from_user() / copy_to_user() or past
+ * it.  Commands sharing a struct (EVIOCGKEYCODE_V2 and
+ * EVIOCSKEYCODE_V2 both take input_keymap_entry; EVIOCGABS and
+ * EVIOCSABS both take input_absinfo; EVIOCGMASK and EVIOCSMASK both
+ * take input_mask) get one assert each -- the two sides can drift
+ * independently in a header refactor.  Per-cmd #ifdef guards mirror
+ * the ioctl-table wrapping so builds against older uapi headers
+ * that predate a command still compile.
+ *
+ * EVIOCGREP, EVIOCSREP, EVIOCGKEYCODE and EVIOCSKEYCODE encode a
+ * bare unsigned int[2] pair; the EVIOCG*(len) family (GNAME, GPHYS,
+ * GUNIQ, GPROP, GMTSLOTS, GKEY, GLED, GSND, GSW, GBIT) encode the
+ * buffer length in the request bits and take a variable-length
+ * buffer; EVIOCGVERSION, EVIOCGEFFECTS and EVIOCSCLOCKID encode a
+ * bare int, and EVIOCRMFF encodes a bare int effect id;
+ * EVIOCGRAB and EVIOCREVOKE are _IOW(int) / _IO() with no struct
+ * arg.  All are intentionally absent -- asserting sizeof(struct)
+ * against a scalar, a fixed-size array pair, or a length-encoded
+ * variable buffer would be the wrong shape of check.
+ */
+_Static_assert(sizeof(struct input_id) ==
+	       _IOC_SIZE(EVIOCGID),
+	       "input_id size vs _IOC_SIZE mismatch");
+#ifdef EVIOCGKEYCODE_V2
+_Static_assert(sizeof(struct input_keymap_entry) ==
+	       _IOC_SIZE(EVIOCGKEYCODE_V2),
+	       "input_keymap_entry size vs EVIOCGKEYCODE_V2 mismatch");
+#endif
+#ifdef EVIOCSKEYCODE_V2
+_Static_assert(sizeof(struct input_keymap_entry) ==
+	       _IOC_SIZE(EVIOCSKEYCODE_V2),
+	       "input_keymap_entry size vs EVIOCSKEYCODE_V2 mismatch");
+#endif
+_Static_assert(sizeof(struct input_absinfo) ==
+	       _IOC_SIZE(EVIOCGABS(0)),
+	       "input_absinfo size vs EVIOCGABS mismatch");
+_Static_assert(sizeof(struct input_absinfo) ==
+	       _IOC_SIZE(EVIOCSABS(0)),
+	       "input_absinfo size vs EVIOCSABS mismatch");
+_Static_assert(sizeof(struct ff_effect) ==
+	       _IOC_SIZE(EVIOCSFF),
+	       "ff_effect size vs _IOC_SIZE mismatch");
+#ifdef EVIOCGMASK
+_Static_assert(sizeof(struct input_mask) ==
+	       _IOC_SIZE(EVIOCGMASK),
+	       "input_mask size vs EVIOCGMASK mismatch");
+#endif
+#ifdef EVIOCSMASK
+_Static_assert(sizeof(struct input_mask) ==
+	       _IOC_SIZE(EVIOCSMASK),
+	       "input_mask size vs EVIOCSMASK mismatch");
+#endif
+
 static const struct ioctl input_ioctls[] = {
 	IOCTL(EVIOCGVERSION),
 	IOCTL(EVIOCGID),
