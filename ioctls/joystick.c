@@ -34,14 +34,10 @@
  * would be the wrong shape of check.
  */
 #ifdef JSIOCSCORR
-_Static_assert(sizeof(struct js_corr) ==
-	       _IOC_SIZE(JSIOCSCORR),
-	       "js_corr size vs JSIOCSCORR mismatch");
+IOCTL_SIZE_ASSERT(JSIOCSCORR, struct js_corr);
 #endif
 #ifdef JSIOCGCORR
-_Static_assert(sizeof(struct js_corr) ==
-	       _IOC_SIZE(JSIOCGCORR),
-	       "js_corr size vs JSIOCGCORR mismatch");
+IOCTL_SIZE_ASSERT(JSIOCGCORR, struct js_corr);
 #endif
 
 /*
