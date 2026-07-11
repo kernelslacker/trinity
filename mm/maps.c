@@ -720,20 +720,21 @@ void map_destructor(struct object *obj)
 		munmap(map->ptr, extent);
 	}
 	/*
-	 * Gate the name free on the live-allocation set, the same way the
-	 * BPF eBPF insn-buffer release does (syscalls/bpf.c:789).  The
-	 * alloc_track armor at get_map_handle (maps.c:103) validates the
-	 * obj pointer, not the bytes inside the obj; an in-place scribble
-	 * of map->name via a fuzzed value-result syscall can leave a real,
-	 * pool-resident obj with a wild .name that survives a shape-only
-	 * looks_like_corrupted_ptr.  Plain free() on the scribbled value
-	 * either aborts in glibc ("invalid pointer") or, worse, lands on a
-	 * valid-but-unowned chunk and corrupts the heap.  Leak the unproven
-	 * pointer instead -- "release what we own, leak the unproven", same
-	 * pattern as bpf_free_filter for the classic-BPF inner buffer.
+	 * Free the name via tracked_free_now(), not a bare free().  A bare
+	 * free() releases the buffer to glibc but leaves its pointer in
+	 * alloc_track[] -- the alloc_track_lookup() gate only tests
+	 * membership, it does not consume the entry.  A later
+	 * alloc_track_consume() (the deferred-free ring drain, or after
+	 * glibc reuses the freed chunk for a new tracked allocation) then
+	 * still returns true and free()s it a second time -- the ASAN
+	 * bad-free observed at deferred-free.c:697.  tracked_free_now()
+	 * consumes the alloc_track entry as it frees, skips ring-owned
+	 * pointers so the ring's drain stays authoritative, and still
+	 * leaks an unproven (scribbled) name because the consume gate
+	 * rejects any pointer __zmalloc never produced -- "release what we
+	 * own, leak the unproven".
 	 */
-	if (map->name != NULL && alloc_track_lookup(map->name))
-		free(map->name);
+	tracked_free_now(map->name);
 	map->name = NULL;
 }
 
