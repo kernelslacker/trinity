@@ -71,7 +71,7 @@ static void sanitise_sched_setattr(struct syscallrecord *rec)
 
 	if (roll < 70) {
 		/* Valid shape bucket: policy + matching params. */
-		switch (rnd_modulo_u32(6)) {
+		switch (rnd_modulo_u32(7)) {
 		case 0: /* SCHED_OTHER */
 			sa->sched_policy = 0;
 			sa->sched_nice = (rnd_modulo_u32(40)) - 20;	/* -20 to 19 */
@@ -90,6 +90,9 @@ static void sanitise_sched_setattr(struct syscallrecord *rec)
 			break;
 		case 4: /* SCHED_IDLE */
 			sa->sched_policy = SCHED_IDLE;
+			break;
+		case 6: /* SCHED_EXT */
+			sa->sched_policy = SCHED_EXT;
 			break;
 		default: /* SCHED_DEADLINE */
 			sa->sched_policy = SCHED_DEADLINE;
