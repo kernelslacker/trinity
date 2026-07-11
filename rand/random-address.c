@@ -600,12 +600,26 @@ static inline void fill_iov_entry_map_backed(struct iovec *iov,
 }
 
 /*
- * Dedicated backing buffer for alloc_iovec()'s iov[] array.  Allocated
- * once in the parent by alloc_iovec_init() and re-used by every forked
- * child via COW.  See the comment at alloc_iovec_init() for the
- * rationale on the dedicated mapping over a writable-pool slot.
+ * Dedicated backing buffer for alloc_iovec()'s iov[] arrays.  The
+ * buffer is carved into NR_IOVEC_SLICES disjoint slices of UIO_MAXIOV
+ * entries each; alloc_iovec() returns the slice at iovec_pool_cursor
+ * and advances the cursor.  Back-to-back alloc_iovec() calls -- e.g.
+ * lvec+rvec for process_vm_readv or the two iovec args of
+ * process_vm_writev -- therefore land in disjoint arrays, so the
+ * second generation call cannot overwrite the first.  With four
+ * slices there is 2x headroom over the two-iovec-arg syscalls, which
+ * is the current fleet maximum; the ring wraps at slice 4 so any
+ * future syscall with more iovec args would need this bumped.
+ *
+ * The cursor lives per-child via COW: each forked child gets its own
+ * copy of the .data page on first advance.  Allocated once in the
+ * parent by alloc_iovec_init() and re-used by every forked child.
+ * See the comment at alloc_iovec_init() for the rationale on the
+ * dedicated mapping over a writable-pool slot.
  */
+#define NR_IOVEC_SLICES 4
 static struct iovec *iovec_pool;
+static unsigned int iovec_pool_cursor;
 
 void writable_pool_init(void)
 {
@@ -623,7 +637,7 @@ void writable_pool_init(void)
 
 void alloc_iovec_init(void)
 {
-	const size_t bytes = UIO_MAXIOV * sizeof(struct iovec);
+	const size_t bytes = NR_IOVEC_SLICES * UIO_MAXIOV * sizeof(struct iovec);
 	void *p;
 
 	/*
@@ -690,14 +704,15 @@ struct iovec * alloc_iovec(unsigned int num, enum iov_direction dir)
 		return NULL;
 
 	/*
-	 * The pool holds exactly UIO_MAXIOV entries.  generate-args hands
-	 * num == UIO_MAXIOV + 1 to exercise the kernel's oversized-iovcnt
-	 * EINVAL arm; that count reaches the syscall via publish_paired_
-	 * length(), so cap the fill here -- writing iov[UIO_MAXIOV] runs
-	 * off the buffer into the adjacent unmapped page (SEGV_ACCERR at
-	 * the page boundary).
+	 * Each slice holds exactly UIO_MAXIOV entries.  generate-args
+	 * hands num == UIO_MAXIOV + 1 to exercise the kernel's oversized-
+	 * iovcnt EINVAL arm; that count reaches the syscall via publish_
+	 * paired_length(), so cap the fill here -- writing iov[UIO_MAXIOV]
+	 * runs off the slice into the next slice (or, on the last slice,
+	 * into the adjacent unmapped page).
 	 */
-	iov = iovec_pool;
+	iov = iovec_pool + iovec_pool_cursor * UIO_MAXIOV;
+	iovec_pool_cursor = (iovec_pool_cursor + 1) % NR_IOVEC_SLICES;
 	if (num > UIO_MAXIOV)
 		num = UIO_MAXIOV;
 
