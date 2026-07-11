@@ -20,6 +20,7 @@
 #include "pids.h"
 #include "reach-band.h"
 #include "sequence.h"
+#include "shadow_promote.h"
 #include "shm.h"
 #include "stats.h"
 #include "stats-internal.h"
@@ -3812,6 +3813,15 @@ static void dump_stats_render_kcov_shadow_measurements(void)
 			kc_cmp_hyp_bm_andnot_would_fire;
 		stat_row("kcov_coverage", "cmp_hyp_bitmask_andnot_toggle_would_win_per_mille", ratio_milli);
 	}
+
+	/* Walk the shadow-arm promotion registry after the counter
+	 * rows have been rendered.  Measure-only: for each registered
+	 * arm whose baseline / would-win pair meets the promotion
+	 * criterion, one surfacing line is emitted; no generation
+	 * path is touched, no live_flag is flipped.  See
+	 * cmp_hints/shadow_promote.c for the criterion and the
+	 * pilot arm registrations. */
+	shadow_promotion_evaluate();
 }
 
 static void dump_stats_render_kcov_base_stats(void)
