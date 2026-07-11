@@ -14,6 +14,37 @@
 #include "utils.h"
 
 /*
+ * Compile-time: JSIOCSCORR / JSIOCGCORR are the only jsdev ioctls
+ * in the table below whose arg is a fixed kernel struct.
+ * sizeof(struct js_corr) must match the _IOC_SIZE encoded in the
+ * request bits, or a header refactor has shifted the struct out
+ * from under the kernel's copy_from_user() / copy_to_user() and
+ * we're copying short of or past it.  The two commands share the
+ * struct but get one assert each -- the sides can drift
+ * independently in a header refactor.  #ifdef guards mirror the
+ * ioctl-table wrapping so builds against older uapi headers that
+ * predate the commands still compile.
+ *
+ * JSIOCGVERSION encodes a bare __u32; JSIOCGAXES and JSIOCGBUTTONS
+ * encode a bare __u8; JSIOCGNAME encodes a userspace-chosen
+ * variable length in the _IOC_SIZE field itself; JSIOC{S,G}AXMAP
+ * and JSIOC{S,G}BTNMAP encode fixed __u8 / __u16 arrays rather
+ * than structs.  All are intentionally absent -- asserting
+ * sizeof(struct) against a scalar, a variable length, or an array
+ * would be the wrong shape of check.
+ */
+#ifdef JSIOCSCORR
+_Static_assert(sizeof(struct js_corr) ==
+	       _IOC_SIZE(JSIOCSCORR),
+	       "js_corr size vs JSIOCSCORR mismatch");
+#endif
+#ifdef JSIOCGCORR
+_Static_assert(sizeof(struct js_corr) ==
+	       _IOC_SIZE(JSIOCGCORR),
+	       "js_corr size vs JSIOCGCORR mismatch");
+#endif
+
+/*
  * jsdev shares INPUT_MAJOR (13) with evdev, so a devname-only match
  * collides with the input group.  Use fd_test to claim only the
  * jsdev minor range; evdev (minor >= 64) falls through to input.c.
