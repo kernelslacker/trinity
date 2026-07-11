@@ -34,6 +34,39 @@ static int dmabuf_fd_test(int fd, const struct stat *st __attribute__((unused)))
 	return -1;
 }
 
+/*
+ * Compile-time: every fixed-shape dma-buf ioctl command in the table
+ * below whose arg is a kernel struct must have sizeof(struct)
+ * matching the _IOC_SIZE encoded in its request bits.  A mismatch
+ * means dma-buf.h moved under us and the request bits now encode a
+ * different struct than we're passing (or vice versa) -- either
+ * short of the kernel's copy_from_user() / copy_to_user() or past
+ * it.  Per-cmd #ifdef guards mirror the ioctl-table wrapping so
+ * builds against older uapi headers that predate a command still
+ * compile.
+ *
+ * DMA_BUF_SET_NAME_A and DMA_BUF_SET_NAME_B encode a bare __u32 and
+ * __u64 respectively (two spellings of the same DMA_BUF_SET_NAME
+ * request that took a plain string pointer historically).  Both are
+ * intentionally absent -- asserting sizeof(struct) against a scalar
+ * would be the wrong shape of check.
+ */
+#ifdef DMA_BUF_IOCTL_SYNC
+_Static_assert(sizeof(struct dma_buf_sync) ==
+	       _IOC_SIZE(DMA_BUF_IOCTL_SYNC),
+	       "dma_buf_sync size vs _IOC_SIZE mismatch");
+#endif
+#ifdef DMA_BUF_IOCTL_EXPORT_SYNC_FILE
+_Static_assert(sizeof(struct dma_buf_export_sync_file) ==
+	       _IOC_SIZE(DMA_BUF_IOCTL_EXPORT_SYNC_FILE),
+	       "dma_buf_export_sync_file size vs _IOC_SIZE mismatch");
+#endif
+#ifdef DMA_BUF_IOCTL_IMPORT_SYNC_FILE
+_Static_assert(sizeof(struct dma_buf_import_sync_file) ==
+	       _IOC_SIZE(DMA_BUF_IOCTL_IMPORT_SYNC_FILE),
+	       "dma_buf_import_sync_file size vs _IOC_SIZE mismatch");
+#endif
+
 static const struct ioctl dmabuf_ioctls[] = {
 #ifdef DMA_BUF_IOCTL_SYNC
 	IOCTL(DMA_BUF_IOCTL_SYNC),
