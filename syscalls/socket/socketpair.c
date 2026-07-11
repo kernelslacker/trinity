@@ -213,7 +213,8 @@ static void post_socketpair_record_fds(struct syscallrecord *rec)
 	 * publish below.
 	 */
 	if (snap->poison_seed != 0 &&
-	    check_output_struct(usockvec, sizeof(int) * 2, snap->poison_seed))
+	    check_output_struct_user_or_skip(usockvec, sizeof(int) * 2,
+					     snap->poison_seed))
 		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
 				   1, __ATOMIC_RELAXED);
 

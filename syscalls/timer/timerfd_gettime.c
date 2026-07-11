@@ -118,9 +118,9 @@ static void post_timerfd_gettime(struct syscallrecord *rec)
 	 * is the cheaper, no-re-issue signal that dedups against the other
 	 * ARG_STRUCT_PTR_OUT consumers.
 	 */
-	if (check_output_struct((const void *)(unsigned long) snap->otmr,
-				sizeof(struct itimerspec),
-				snap->poison_seed))
+	if (check_output_struct_user_or_skip((const void *)(unsigned long) snap->otmr,
+					     sizeof(struct itimerspec),
+					     snap->poison_seed))
 		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
 				   1, __ATOMIC_RELAXED);
 

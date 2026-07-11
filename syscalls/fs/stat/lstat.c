@@ -131,8 +131,8 @@ static void post_lstat(struct syscallrecord *rec)
 		return;
 
 	if ((long) rec->retval == 0 && snap->statbuf != 0 &&
-	    check_output_struct((void *)(unsigned long) snap->statbuf,
-				LSTAT_POISON_SZ, snap->poison_seed))
+	    check_output_struct_user_or_skip((void *)(unsigned long) snap->statbuf,
+					     LSTAT_POISON_SZ, snap->poison_seed))
 		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
 				   1, __ATOMIC_RELAXED);
 

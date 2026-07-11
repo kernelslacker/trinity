@@ -21,6 +21,7 @@
  */
 #include "output-poison.h"
 #include "rnd.h"
+#include "utils-mem.h"
 
 uint64_t poison_output_struct(void *buf, size_t sz, uint64_t seed)
 {
@@ -54,4 +55,18 @@ bool check_output_struct(const void *buf, size_t sz, uint64_t seed)
 			return false;
 	}
 	return true;
+}
+
+bool check_output_struct_user_or_skip(const void *user, size_t sz,
+				      uint64_t seed)
+{
+	unsigned char snap[CHECK_OUTPUT_STRUCT_SNAP_MAX];
+
+	if (sz == 0 || sz > sizeof(snap))
+		return false;
+
+	if (!post_snapshot_or_skip(snap, user, sz))
+		return false;
+
+	return check_output_struct(snap, sz, seed);
 }

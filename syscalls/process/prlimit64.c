@@ -367,8 +367,9 @@ static void post_prlimit64(struct syscallrecord *rec)
 	 * confused with "kernel didn't write".
 	 */
 	if (snap->poison_seed != 0 &&
-	    check_output_struct((const void *)(unsigned long) snap->old_rlim,
-				sizeof(struct rlimit64), snap->poison_seed))
+	    check_output_struct_user_or_skip((const void *)(unsigned long) snap->old_rlim,
+					     sizeof(struct rlimit64),
+					     snap->poison_seed))
 		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
 				   1, __ATOMIC_RELAXED);
 

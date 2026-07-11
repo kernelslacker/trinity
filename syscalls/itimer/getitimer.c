@@ -149,8 +149,9 @@ static void post_getitimer(struct syscallrecord *rec)
 	 * copy_to_user() at all.  Bump the shared untouched-out-buf
 	 * counter and let the tv_usec oracle below run as before.
 	 */
-	if (check_output_struct((void *)(unsigned long) snap->value,
-				sizeof(struct itimerval), snap->poison_seed))
+	if (check_output_struct_user_or_skip((void *)(unsigned long) snap->value,
+					     sizeof(struct itimerval),
+					     snap->poison_seed))
 		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
 				   1, __ATOMIC_RELAXED);
 
