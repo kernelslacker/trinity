@@ -7,6 +7,7 @@
 #include "arch.h"
 #include "deferred-free.h"
 #include "maps.h"
+#include "output-poison.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -37,6 +38,19 @@ struct sigaltstack_post_state {
 	unsigned long magic;
 	unsigned long uss;
 	unsigned long uoss;
+	/*
+	 * Seed for the poison pattern stamped into the uoss stack_t buffer
+	 * at sanitise time.  Fed back into check_output_struct() in the
+	 * post handler on the syscall's real success gate: a byte-identical
+	 * poison after retval == 0 with uoss != NULL means the kernel
+	 * returned success without writing the old-stack fields.  A seed
+	 * of 0 means sanitise refused to stamp (uoss == NULL, or a
+	 * writable-pool draw that avoid_shared_buffer_out relocated to an
+	 * address that is no longer provably readable) and the post check
+	 * no-ops -- independent of the mode-B (snap->uss == 0) field-diff
+	 * oracle, which continues to run under its own gate.
+	 */
+	uint64_t poison_seed;
 };
 #endif
 
@@ -148,6 +162,36 @@ choose_uoss:
 	snap->uss   = rec->a1;
 	snap->uoss  = rec->a2;
 	/*
+	 * Stamp a per-call poison pattern into the uoss user buffer the
+	 * kernel is about to fill on this success path.  The post handler
+	 * feeds the seed back into check_output_struct(); a byte-identical
+	 * poison after a 0-retval means the kernel skipped the old-stack
+	 * writeback entirely.  Two gates before stamping:
+	 *
+	 *   - uoss == NULL: ~30% of calls force uoss = 0 as the "don't
+	 *     bother reporting old stack" arm.  The kernel contract there
+	 *     is to not touch the buffer, so there is nothing to poison
+	 *     and nothing to check.  poison_seed stays 0.
+	 *
+	 *   - range_readable_user(): a writable-pool draw that
+	 *     avoid_shared_buffer_out() relocated to an address no longer
+	 *     provably mapped (e.g. sibling munmap between allocation and
+	 *     now) must not SIGSEGV the sanitiser inside
+	 *     poison_output_struct's byte-walk.
+	 *
+	 * Done after avoid_shared_buffer_out() so the poison lands on the
+	 * final buffer the kernel will see.
+	 */
+	{
+		void *uoss_buf = (void *)(unsigned long) rec->a2;
+
+		if (uoss_buf != NULL &&
+		    range_readable_user(uoss_buf, sizeof(stack_t)))
+			snap->poison_seed = poison_output_struct(uoss_buf,
+								 sizeof(stack_t),
+								 0);
+	}
+	/*
 	 * post_state_install pairs the rec->post_state assign with the
 	 * ownership-table register so the observable window between the
 	 * two is closed; post_sigaltstack() will then gate the snap
@@ -229,10 +273,30 @@ static void post_sigaltstack(struct syscallrecord *rec)
 	if (snap == NULL)
 		return;
 
-	if (!ONE_IN(100))
+	if ((long) rec->retval != 0)
 		goto out_free;
 
-	if ((long) rec->retval != 0)
+	/*
+	 * Untouched-buffer poison check: sigaltstack returned 0 with a
+	 * non-NULL uoss but the user buffer still byte-for-byte matches
+	 * the poison pattern we stamped at sanitise time -- the kernel
+	 * never wrote back the old stack_t.  Runs on every success path
+	 * where poison actually got stamped (no ONE_IN gate) because the
+	 * check is a sizeof(stack_t) memcmp with no syscall re-issue, and
+	 * it is independent of the mode-B (snap->uss == 0) field-diff
+	 * oracle below -- a mode-A caller that supplies uoss also gets
+	 * the writeback contract, so limiting the check to mode-B would
+	 * miss the broader class.  Skip when poison_seed is 0: sanitise
+	 * refused to stamp (uoss == NULL or unmapped) so there is no
+	 * pattern to compare against.
+	 */
+	if (snap->uoss != 0 && snap->poison_seed != 0 &&
+	    check_output_struct((void *)(unsigned long) snap->uoss,
+				sizeof(stack_t), snap->poison_seed))
+		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+				   1, __ATOMIC_RELAXED);
+
+	if (!ONE_IN(100))
 		goto out_free;
 
 	if (snap->uss != 0)
