@@ -34,37 +34,21 @@
  * against a scalar, a fixed-size array pair, or a length-encoded
  * variable buffer would be the wrong shape of check.
  */
-_Static_assert(sizeof(struct input_id) ==
-	       _IOC_SIZE(EVIOCGID),
-	       "input_id size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(EVIOCGID, struct input_id);
 #ifdef EVIOCGKEYCODE_V2
-_Static_assert(sizeof(struct input_keymap_entry) ==
-	       _IOC_SIZE(EVIOCGKEYCODE_V2),
-	       "input_keymap_entry size vs EVIOCGKEYCODE_V2 mismatch");
+IOCTL_SIZE_ASSERT(EVIOCGKEYCODE_V2, struct input_keymap_entry);
 #endif
 #ifdef EVIOCSKEYCODE_V2
-_Static_assert(sizeof(struct input_keymap_entry) ==
-	       _IOC_SIZE(EVIOCSKEYCODE_V2),
-	       "input_keymap_entry size vs EVIOCSKEYCODE_V2 mismatch");
+IOCTL_SIZE_ASSERT(EVIOCSKEYCODE_V2, struct input_keymap_entry);
 #endif
-_Static_assert(sizeof(struct input_absinfo) ==
-	       _IOC_SIZE(EVIOCGABS(0)),
-	       "input_absinfo size vs EVIOCGABS mismatch");
-_Static_assert(sizeof(struct input_absinfo) ==
-	       _IOC_SIZE(EVIOCSABS(0)),
-	       "input_absinfo size vs EVIOCSABS mismatch");
-_Static_assert(sizeof(struct ff_effect) ==
-	       _IOC_SIZE(EVIOCSFF),
-	       "ff_effect size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(EVIOCGABS(0), struct input_absinfo);
+IOCTL_SIZE_ASSERT(EVIOCSABS(0), struct input_absinfo);
+IOCTL_SIZE_ASSERT(EVIOCSFF, struct ff_effect);
 #ifdef EVIOCGMASK
-_Static_assert(sizeof(struct input_mask) ==
-	       _IOC_SIZE(EVIOCGMASK),
-	       "input_mask size vs EVIOCGMASK mismatch");
+IOCTL_SIZE_ASSERT(EVIOCGMASK, struct input_mask);
 #endif
 #ifdef EVIOCSMASK
-_Static_assert(sizeof(struct input_mask) ==
-	       _IOC_SIZE(EVIOCSMASK),
-	       "input_mask size vs EVIOCSMASK mismatch");
+IOCTL_SIZE_ASSERT(EVIOCSMASK, struct input_mask);
 #endif
 
 static const struct ioctl input_ioctls[] = {
