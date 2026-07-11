@@ -146,44 +146,26 @@ struct space_resv {
  * against a flex-array tail, a scalar, or a zero _IOC_SIZE would be
  * the wrong shape of check.
  */
-_Static_assert(sizeof(struct file_clone_range) ==
-	       _IOC_SIZE(FICLONERANGE),
-	       "file_clone_range size vs _IOC_SIZE mismatch");
-_Static_assert(sizeof(struct space_resv) ==
-	       _IOC_SIZE(FS_IOC_RESVSP),
-	       "space_resv size vs FS_IOC_RESVSP mismatch");
-_Static_assert(sizeof(struct space_resv) ==
-	       _IOC_SIZE(FS_IOC_RESVSP64),
-	       "space_resv size vs FS_IOC_RESVSP64 mismatch");
+IOCTL_SIZE_ASSERT(FICLONERANGE, struct file_clone_range);
+IOCTL_SIZE_ASSERT(FS_IOC_RESVSP, struct space_resv);
+IOCTL_SIZE_ASSERT(FS_IOC_RESVSP64, struct space_resv);
 #ifdef BLKTRACESETUP
-_Static_assert(sizeof(struct blk_user_trace_setup) ==
-	       _IOC_SIZE(BLKTRACESETUP),
-	       "blk_user_trace_setup size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(BLKTRACESETUP, struct blk_user_trace_setup);
 #endif
 #ifdef FITRIM
-_Static_assert(sizeof(struct fstrim_range) ==
-	       _IOC_SIZE(FITRIM),
-	       "fstrim_range size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(FITRIM, struct fstrim_range);
 #endif
 #ifdef FS_IOC_FSGETXATTR
-_Static_assert(sizeof(struct fsxattr) ==
-	       _IOC_SIZE(FS_IOC_FSGETXATTR),
-	       "fsxattr size vs FS_IOC_FSGETXATTR mismatch");
+IOCTL_SIZE_ASSERT(FS_IOC_FSGETXATTR, struct fsxattr);
 #endif
 #ifdef FS_IOC_FSSETXATTR
-_Static_assert(sizeof(struct fsxattr) ==
-	       _IOC_SIZE(FS_IOC_FSSETXATTR),
-	       "fsxattr size vs FS_IOC_FSSETXATTR mismatch");
+IOCTL_SIZE_ASSERT(FS_IOC_FSSETXATTR, struct fsxattr);
 #endif
 #ifdef FS_IOC_SET_ENCRYPTION_POLICY
-_Static_assert(sizeof(struct fscrypt_policy) ==
-	       _IOC_SIZE(FS_IOC_SET_ENCRYPTION_POLICY),
-	       "fscrypt_policy size vs FS_IOC_SET_ENCRYPTION_POLICY mismatch");
+IOCTL_SIZE_ASSERT(FS_IOC_SET_ENCRYPTION_POLICY, struct fscrypt_policy);
 #endif
 #ifdef FS_IOC_GET_ENCRYPTION_POLICY
-_Static_assert(sizeof(struct fscrypt_policy) ==
-	       _IOC_SIZE(FS_IOC_GET_ENCRYPTION_POLICY),
-	       "fscrypt_policy size vs FS_IOC_GET_ENCRYPTION_POLICY mismatch");
+IOCTL_SIZE_ASSERT(FS_IOC_GET_ENCRYPTION_POLICY, struct fscrypt_policy);
 #endif
 
 /*
