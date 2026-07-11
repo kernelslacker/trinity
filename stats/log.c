@@ -181,7 +181,7 @@ void stats_timeseries_drop_in_child(void)
 static unsigned long stats_ts_window_delta(unsigned long cur,
 					   unsigned long *prev)
 {
-	unsigned long delta = cur >= *prev ? cur - *prev : 0;
+	unsigned long delta = sat_sub_ul(cur, *prev);
 
 	*prev = cur;
 	return delta;
@@ -461,10 +461,8 @@ static void stats_ts_emit_baselines(FILE *fp, unsigned long edges_total)
 		",\"edges_run_gained\":%lu,\"edges_found_run_gained\":%lu",
 		edges_found_total, edges_found_gained,
 		edges_warm_loaded, distinct_edges_warm_loaded,
-		edges_total >= distinct_edges_warm_loaded
-			? edges_total - distinct_edges_warm_loaded : 0,
-		edges_found_total >= edges_warm_loaded
-			? edges_found_total - edges_warm_loaded : 0);
+		sat_sub_ul(edges_total, distinct_edges_warm_loaded),
+		sat_sub_ul(edges_found_total, edges_warm_loaded));
 }
 
 /* Trace / cmp-trace truncation snapshots.  Level tells the
