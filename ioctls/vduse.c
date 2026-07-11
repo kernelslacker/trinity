@@ -50,35 +50,19 @@
  * so sizeof(struct) is only the header prefix and does not equal
  * _IOC_SIZE either -- also intentionally absent.
  */
-_Static_assert(sizeof(struct vduse_iotlb_entry) ==
-	       _IOC_SIZE(VDUSE_IOTLB_GET_FD),
-	       "vduse_iotlb_entry size vs _IOC_SIZE mismatch");
-_Static_assert(sizeof(struct vduse_vq_config) ==
-	       _IOC_SIZE(VDUSE_VQ_SETUP),
-	       "vduse_vq_config size vs _IOC_SIZE mismatch");
-_Static_assert(sizeof(struct vduse_vq_info) ==
-	       _IOC_SIZE(VDUSE_VQ_GET_INFO),
-	       "vduse_vq_info size vs _IOC_SIZE mismatch");
-_Static_assert(sizeof(struct vduse_vq_eventfd) ==
-	       _IOC_SIZE(VDUSE_VQ_SETUP_KICKFD),
-	       "vduse_vq_eventfd size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(VDUSE_IOTLB_GET_FD, struct vduse_iotlb_entry);
+IOCTL_SIZE_ASSERT(VDUSE_VQ_SETUP, struct vduse_vq_config);
+IOCTL_SIZE_ASSERT(VDUSE_VQ_GET_INFO, struct vduse_vq_info);
+IOCTL_SIZE_ASSERT(VDUSE_VQ_SETUP_KICKFD, struct vduse_vq_eventfd);
 #ifdef VDUSE_IOTLB_REG_UMEM
-_Static_assert(sizeof(struct vduse_iova_umem) ==
-	       _IOC_SIZE(VDUSE_IOTLB_REG_UMEM),
-	       "vduse_iova_umem size vs VDUSE_IOTLB_REG_UMEM mismatch");
-_Static_assert(sizeof(struct vduse_iova_umem) ==
-	       _IOC_SIZE(VDUSE_IOTLB_DEREG_UMEM),
-	       "vduse_iova_umem size vs VDUSE_IOTLB_DEREG_UMEM mismatch");
+IOCTL_SIZE_ASSERT(VDUSE_IOTLB_REG_UMEM, struct vduse_iova_umem);
+IOCTL_SIZE_ASSERT(VDUSE_IOTLB_DEREG_UMEM, struct vduse_iova_umem);
 #endif
 #ifdef VDUSE_IOTLB_GET_INFO
-_Static_assert(sizeof(struct vduse_iova_info) ==
-	       _IOC_SIZE(VDUSE_IOTLB_GET_INFO),
-	       "vduse_iova_info size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(VDUSE_IOTLB_GET_INFO, struct vduse_iova_info);
 #endif
 #ifdef VDUSE_IOTLB_GET_FD2
-_Static_assert(sizeof(struct vduse_iotlb_entry_v2) ==
-	       _IOC_SIZE(VDUSE_IOTLB_GET_FD2),
-	       "vduse_iotlb_entry_v2 size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(VDUSE_IOTLB_GET_FD2, struct vduse_iotlb_entry_v2);
 #endif
 
 /*
