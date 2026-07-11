@@ -41,14 +41,10 @@
  * absent for that reason.
  */
 #ifdef FBIO_CURSOR
-_Static_assert(sizeof(struct fb_cursor) ==
-	       _IOC_SIZE(FBIO_CURSOR),
-	       "fb_cursor size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(FBIO_CURSOR, struct fb_cursor);
 #endif
 #ifdef FBIOGET_VBLANK
-_Static_assert(sizeof(struct fb_vblank) ==
-	       _IOC_SIZE(FBIOGET_VBLANK),
-	       "fb_vblank size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(FBIOGET_VBLANK, struct fb_vblank);
 #endif
 
 static void sanitise_fb_var_screeninfo(struct syscallrecord *rec)
