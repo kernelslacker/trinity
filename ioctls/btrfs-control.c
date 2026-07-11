@@ -15,12 +15,8 @@
  * bytes than we prepared.  One assert per command -- the two sides
  * can drift independently in a header refactor.
  */
-_Static_assert(sizeof(struct btrfs_ioctl_vol_args) ==
-	       _IOC_SIZE(BTRFS_IOC_SCAN_DEV),
-	       "btrfs_ioctl_vol_args size vs BTRFS_IOC_SCAN_DEV mismatch");
-_Static_assert(sizeof(struct btrfs_ioctl_vol_args) ==
-	       _IOC_SIZE(BTRFS_IOC_DEVICES_READY),
-	       "btrfs_ioctl_vol_args size vs BTRFS_IOC_DEVICES_READY mismatch");
+IOCTL_SIZE_ASSERT(BTRFS_IOC_SCAN_DEV, struct btrfs_ioctl_vol_args);
+IOCTL_SIZE_ASSERT(BTRFS_IOC_DEVICES_READY, struct btrfs_ioctl_vol_args);
 
 static const struct ioctl btrfs_control_ioctls[] = {
 	IOCTL(BTRFS_IOC_SCAN_DEV),
