@@ -72,18 +72,10 @@ struct ext4_encryption_policy {
  * a bare array, or a zero _IOC_SIZE would be the wrong shape of
  * check.
  */
-_Static_assert(sizeof(struct ext4_new_group_input) ==
-	       _IOC_SIZE(EXT4_IOC_GROUP_ADD),
-	       "ext4_new_group_input size vs _IOC_SIZE mismatch");
-_Static_assert(sizeof(struct move_extent) ==
-	       _IOC_SIZE(EXT4_IOC_MOVE_EXT),
-	       "move_extent size vs _IOC_SIZE mismatch");
-_Static_assert(sizeof(struct ext4_encryption_policy) ==
-	       _IOC_SIZE(EXT4_IOC_SET_ENCRYPTION_POLICY),
-	       "ext4_encryption_policy size vs EXT4_IOC_SET_ENCRYPTION_POLICY mismatch");
-_Static_assert(sizeof(struct ext4_encryption_policy) ==
-	       _IOC_SIZE(EXT4_IOC_GET_ENCRYPTION_POLICY),
-	       "ext4_encryption_policy size vs EXT4_IOC_GET_ENCRYPTION_POLICY mismatch");
+IOCTL_SIZE_ASSERT(EXT4_IOC_GROUP_ADD, struct ext4_new_group_input);
+IOCTL_SIZE_ASSERT(EXT4_IOC_MOVE_EXT, struct move_extent);
+IOCTL_SIZE_ASSERT(EXT4_IOC_SET_ENCRYPTION_POLICY, struct ext4_encryption_policy);
+IOCTL_SIZE_ASSERT(EXT4_IOC_GET_ENCRYPTION_POLICY, struct ext4_encryption_policy);
 
 static int ext_fd_test(int fd, const struct stat *st __attribute__((unused)))
 {
