@@ -10,6 +10,7 @@
 #include <string.h>
 #include "arch.h"
 #include "deferred-free.h"
+#include "output-poison.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -22,19 +23,24 @@
 
 #ifdef HAVE_SYS_GETCPU
 /*
- * Snapshot of the two getcpu input args read by the post oracle, captured
- * at sanitise time and consumed by the post handler.  Lives in
- * rec->post_state, a slot the syscall ABI does not expose, so a sibling
- * syscall scribbling rec->aN between the syscall returning and the post
- * handler running cannot redirect the oracle at a foreign cpup / nodep
- * user buffer.  rec->a3 (the deprecated tcache buffer) is not read by the
- * post handler and is therefore not snapshotted.
+ * Snapshot of the two getcpu input args plus per-slot poison seeds read
+ * by the post oracle, captured at sanitise time and consumed by the post
+ * handler.  Lives in rec->post_state, a slot the syscall ABI does not
+ * expose, so a sibling syscall scribbling rec->aN between the syscall
+ * returning and the post handler running cannot redirect the oracle at
+ * a foreign cpup / nodep user buffer or smear a poison check against a
+ * heap page that happens to carry a residual pattern from an earlier
+ * call.  rec->a3 (the deprecated tcache buffer) is not read by the post
+ * handler and is therefore not snapshotted.  A poison_seed of 0 means
+ * the sanitise-time writability check refused to stamp poison for that
+ * slot (unmapped or NULL) and the post handler must no-op that arm.
  */
 #define GETCPU_POST_STATE_MAGIC	0x47435055UL	/* "GCPU" */
 struct getcpu_post_state {
 	unsigned long magic;
 	unsigned long cpup;
 	unsigned long nodep;
+	uint64_t poison_seed[2];
 };
 #endif
 
@@ -77,6 +83,45 @@ static void sanitise_getcpu(struct syscallrecord *rec)
 	snap->magic = GETCPU_POST_STATE_MAGIC;
 	snap->cpup  = rec->a1;
 	snap->nodep = rec->a2;
+	snap->poison_seed[0] = 0;
+	snap->poison_seed[1] = 0;
+
+	/*
+	 * Stamp a per-slot poison pattern into each of the cpup / nodep
+	 * OUT-buffers the kernel is about to fill.  The post handler feeds
+	 * each seed back into check_output_struct(); a byte-identical
+	 * poison after a rec->retval == 0 return means the kernel wrote
+	 * zero bytes into that unsigned int and left our stamp intact --
+	 * getcpu(2) is contracted to overwrite both slots on success when
+	 * they are non-NULL.  Each slot is independently nullable, so
+	 * skip stamping when the arg draw was 0.  Gate each stamp on
+	 * range_readable_user() so a writable-pool draw that
+	 * avoid_shared_buffer_out() moved to an address no longer provably
+	 * mapped (e.g. sibling munmap between allocation and now) does not
+	 * SIGSEGV the sanitiser inside poison_output_struct's byte-walk.
+	 * On skip the seed stays 0 and the post handler no-ops that arm
+	 * while the existing sysfs range oracle keeps running.  Done after
+	 * avoid_shared_buffer_out() so the poison lands on the final
+	 * buffer the kernel will see.
+	 */
+	{
+		void *cpup_buf  = (void *)(unsigned long) rec->a1;
+		void *nodep_buf = (void *)(unsigned long) rec->a2;
+
+		if (rec->a1 != 0 &&
+		    range_readable_user(cpup_buf, sizeof(unsigned int)))
+			snap->poison_seed[0] =
+				poison_output_struct(cpup_buf,
+						     sizeof(unsigned int),
+						     0);
+		if (rec->a2 != 0 &&
+		    range_readable_user(nodep_buf, sizeof(unsigned int)))
+			snap->poison_seed[1] =
+				poison_output_struct(nodep_buf,
+						     sizeof(unsigned int),
+						     0);
+	}
+
 	post_state_install(rec, snap);
 #endif
 }
@@ -238,11 +283,48 @@ static void post_getcpu(struct syscallrecord *rec)
 	if (snap == NULL)
 		return;
 
+	if (rec->retval != 0)
+		goto out_free;
+
+	/*
+	 * Untouched-buffer poison check: sanitise stamped a per-slot
+	 * poison pattern into each non-NULL cpup / nodep OUT-buffer.  A
+	 * byte-identical match on a slot after a rec->retval == 0 return
+	 * means the kernel wrote zero bytes into that unsigned int and
+	 * left our stamp intact -- a short-copy or partial copy_to_user()
+	 * the sysfs range arm below would not detect at all because a
+	 * residual pre-syscall value that already happened to fall inside
+	 * the possible-cpu / possible-node bounds would pass the range
+	 * check.  Cheap (two 4-byte compares, no re-issue), so runs on
+	 * every success sample; the sysfs range arm stays rate-limited
+	 * behind ONE_IN(100).  Snapshot each slot into the local cpu_user
+	 * / node_user before the compare so a sibling munmap of the
+	 * writable-pool page between the deref and here cannot fault
+	 * inside a second read.  A seed of 0 means sanitise skipped that
+	 * slot (unmapped or NULL) -- skip the check too so "we could not
+	 * poison" is not confused with "kernel did not write".  Counts
+	 * against the shared post_handler_untouched_out_buf slot.
+	 */
+	if (snap->cpup != 0 && snap->poison_seed[0] != 0 &&
+	    post_snapshot_or_skip(&cpu_user,
+				  (const void *) snap->cpup,
+				  sizeof(cpu_user)) &&
+	    check_output_struct(&cpu_user, sizeof(cpu_user),
+				snap->poison_seed[0]))
+		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+				   1, __ATOMIC_RELAXED);
+	if (snap->nodep != 0 && snap->poison_seed[1] != 0 &&
+	    post_snapshot_or_skip(&node_user,
+				  (const void *) snap->nodep,
+				  sizeof(node_user)) &&
+	    check_output_struct(&node_user, sizeof(node_user),
+				snap->poison_seed[1]))
+		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+				   1, __ATOMIC_RELAXED);
+
 	if (!ONE_IN(100))
 		goto out_free;
 
-	if (rec->retval != 0)
-		goto out_free;
 	if (snap->cpup == 0 || snap->nodep == 0)
 		goto out_free;
 
