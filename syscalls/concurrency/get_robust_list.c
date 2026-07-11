@@ -7,6 +7,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <sys/types.h>
+#include "output-poison.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -35,6 +36,18 @@ struct get_robust_list_post_state {
 	unsigned long pid;
 	unsigned long head_ptr;
 	unsigned long len_ptr;
+	/*
+	 * Per-slot seeds for the poison pattern stamped into the head_ptr
+	 * and len_ptr OUT-buffers at sanitise time.  [0] covers the 8-byte
+	 * robust_list_head pointer, [1] the 8-byte size_t.  The post
+	 * handler feeds each seed back into check_output_struct(): a
+	 * byte-identical match on a success return means the kernel wrote
+	 * zero bytes into that slot and left our stamp intact.  A seed of
+	 * 0 means sanitise chose not to stamp that slot (unwritable
+	 * pointer) -- the post handler no-ops that arm so "we could not
+	 * poison" is not confused with "kernel did not write".
+	 */
+	uint64_t poison_seed[2];
 };
 #endif
 
@@ -79,6 +92,34 @@ static void sanitise_get_robust_list(struct syscallrecord *rec)
 	snap->pid      = rec->a1;
 	snap->head_ptr = rec->a2;
 	snap->len_ptr  = rec->a3;
+	snap->poison_seed[0] = 0;
+	snap->poison_seed[1] = 0;
+
+	/*
+	 * Stamp a per-slot poison pattern into the two OUT-buffers the
+	 * kernel is about to fill on success (head_ptr: 8-byte pointer,
+	 * len_ptr: 8-byte size_t).  Gate each stamp on
+	 * range_readable_user() so an ARG_NON_NULL_ADDRESS draw at an
+	 * address no longer provably mapped skips that slot rather than
+	 * SIGSEGVing the sanitiser inside poison_output_struct's byte
+	 * walk; on skip the seed stays 0 and the post handler no-ops that
+	 * arm.  Done after avoid_shared_buffer_out() so the poison lands
+	 * on the final buffer the kernel will see.
+	 */
+	{
+		unsigned long slots[2] = { rec->a2, rec->a3 };
+		size_t szs[2] = { sizeof(void *), sizeof(size_t) };
+		unsigned int i;
+
+		for (i = 0; i < 2; i++) {
+			void *buf = (void *)(unsigned long) slots[i];
+
+			if (range_readable_user(buf, szs[i]))
+				snap->poison_seed[i] =
+					poison_output_struct(buf, szs[i], 0);
+		}
+	}
+
 	post_state_install(rec, snap);
 #endif
 }
@@ -143,16 +184,10 @@ static void post_get_robust_list(struct syscallrecord *rec)
 	if (snap == NULL)
 		return;
 
-	if (!ONE_IN(100))
-		goto out_free;
-
 	if ((long) rec->retval != 0)
 		goto out_free;
 
 	if (snap->head_ptr == 0 || snap->len_ptr == 0)
-		goto out_free;
-
-	if ((pid_t) snap->pid != 0 && (pid_t) snap->pid != gettid())
 		goto out_free;
 
 	if (!post_snapshot_or_skip(&user_head,
@@ -162,6 +197,41 @@ static void post_get_robust_list(struct syscallrecord *rec)
 	if (!post_snapshot_or_skip(&user_len,
 				   (const void *) snap->len_ptr,
 				   sizeof(user_len)))
+		goto out_free;
+
+	/*
+	 * Untouched-out-buf poison check: sanitise stamped a per-slot
+	 * poison pattern into head_ptr and len_ptr.  A byte-identical
+	 * match on either slot after a success return means the kernel
+	 * wrote zero bytes into that scalar and left our stamp intact --
+	 * a short-copy or missing copy_to_user() the divergence arm below
+	 * would also catch, but only on the 1/100 self-target sample and
+	 * only after paying for a re-issue.  Cheap (two 8-byte compares,
+	 * no re-issue), so runs on every success sample against the local
+	 * snapshots above so a sibling munmap of the writable-pool page
+	 * between the deref and here cannot fault inside a second read.
+	 * A seed of 0 means sanitise skipped that slot -- skip the check
+	 * too.  Counts against the shared post_handler_untouched_out_buf
+	 * slot.
+	 */
+	{
+		const void *bufs[2] = { &user_head, &user_len };
+		size_t szs[2] = { sizeof(user_head), sizeof(user_len) };
+		unsigned int i;
+
+		for (i = 0; i < 2; i++) {
+			if (snap->poison_seed[i] != 0 &&
+			    check_output_struct(bufs[i], szs[i],
+						snap->poison_seed[i]))
+				__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+						   1, __ATOMIC_RELAXED);
+		}
+	}
+
+	if (!ONE_IN(100))
+		goto out_free;
+
+	if ((pid_t) snap->pid != 0 && (pid_t) snap->pid != gettid())
 		goto out_free;
 
 	rc = syscall(SYS_get_robust_list, 0, &kernel_head, &kernel_len);
