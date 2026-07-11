@@ -386,8 +386,6 @@ enum kcov_child_mode {
 /* KCOV remote coverage handle construction.
  * KCOV_SUBSYSTEM_COMMON covers softirqs and threaded IRQ handlers. */
 #define KCOV_SUBSYSTEM_COMMON	(0x00ULL << 56)
-#define KCOV_SUBSYSTEM_MASK	(0xffULL << 56)
-#define KCOV_INSTANCE_MASK	(0xffffffffULL)
 
 /* Fraction of syscalls that use remote mode instead of per-thread mode.
  * 1 in KCOV_REMOTE_RATIO syscalls will use KCOV_REMOTE_ENABLE.  This is
