@@ -37,6 +37,13 @@ struct shadow_arm {
 	size_t live_win_offset;    /* 0 -> no live counterpart yet */
 	size_t baseline_offset;    /* denominator, typically the would-fire */
 	int live_flag;             /* 0 in this pilot; a human flips this */
+	/*
+	 * Promotion criterion, per-arm so a future arm layered on a
+	 * noisier or coarser baseline can carry a stricter floor /
+	 * threshold without touching the evaluator.
+	 */
+	unsigned long min_baseline_samples;
+	unsigned long win_ratio_per_mille;
 };
 
 /*
