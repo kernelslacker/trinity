@@ -17,87 +17,39 @@
  * FW_CDEV_IOC_GET_SPEED is _IO() with no struct arg and is
  * intentionally absent -- its _IOC_SIZE is 0 by construction.
  */
-_Static_assert(sizeof(struct fw_cdev_get_info) ==
-	       _IOC_SIZE(FW_CDEV_IOC_GET_INFO),
-	       "fw_cdev_get_info size vs _IOC_SIZE mismatch");
-_Static_assert(sizeof(struct fw_cdev_send_request) ==
-	       _IOC_SIZE(FW_CDEV_IOC_SEND_REQUEST),
-	       "fw_cdev_send_request size vs FW_CDEV_IOC_SEND_REQUEST mismatch");
-_Static_assert(sizeof(struct fw_cdev_send_request) ==
-	       _IOC_SIZE(FW_CDEV_IOC_SEND_BROADCAST_REQUEST),
-	       "fw_cdev_send_request size vs FW_CDEV_IOC_SEND_BROADCAST_REQUEST mismatch");
-_Static_assert(sizeof(struct fw_cdev_allocate) ==
-	       _IOC_SIZE(FW_CDEV_IOC_ALLOCATE),
-	       "fw_cdev_allocate size vs _IOC_SIZE mismatch");
-_Static_assert(sizeof(struct fw_cdev_deallocate) ==
-	       _IOC_SIZE(FW_CDEV_IOC_DEALLOCATE),
-	       "fw_cdev_deallocate size vs FW_CDEV_IOC_DEALLOCATE mismatch");
-_Static_assert(sizeof(struct fw_cdev_deallocate) ==
-	       _IOC_SIZE(FW_CDEV_IOC_DEALLOCATE_ISO_RESOURCE),
-	       "fw_cdev_deallocate size vs FW_CDEV_IOC_DEALLOCATE_ISO_RESOURCE mismatch");
-_Static_assert(sizeof(struct fw_cdev_send_response) ==
-	       _IOC_SIZE(FW_CDEV_IOC_SEND_RESPONSE),
-	       "fw_cdev_send_response size vs _IOC_SIZE mismatch");
-_Static_assert(sizeof(struct fw_cdev_initiate_bus_reset) ==
-	       _IOC_SIZE(FW_CDEV_IOC_INITIATE_BUS_RESET),
-	       "fw_cdev_initiate_bus_reset size vs _IOC_SIZE mismatch");
-_Static_assert(sizeof(struct fw_cdev_add_descriptor) ==
-	       _IOC_SIZE(FW_CDEV_IOC_ADD_DESCRIPTOR),
-	       "fw_cdev_add_descriptor size vs _IOC_SIZE mismatch");
-_Static_assert(sizeof(struct fw_cdev_remove_descriptor) ==
-	       _IOC_SIZE(FW_CDEV_IOC_REMOVE_DESCRIPTOR),
-	       "fw_cdev_remove_descriptor size vs _IOC_SIZE mismatch");
-_Static_assert(sizeof(struct fw_cdev_create_iso_context) ==
-	       _IOC_SIZE(FW_CDEV_IOC_CREATE_ISO_CONTEXT),
-	       "fw_cdev_create_iso_context size vs _IOC_SIZE mismatch");
-_Static_assert(sizeof(struct fw_cdev_queue_iso) ==
-	       _IOC_SIZE(FW_CDEV_IOC_QUEUE_ISO),
-	       "fw_cdev_queue_iso size vs _IOC_SIZE mismatch");
-_Static_assert(sizeof(struct fw_cdev_start_iso) ==
-	       _IOC_SIZE(FW_CDEV_IOC_START_ISO),
-	       "fw_cdev_start_iso size vs _IOC_SIZE mismatch");
-_Static_assert(sizeof(struct fw_cdev_stop_iso) ==
-	       _IOC_SIZE(FW_CDEV_IOC_STOP_ISO),
-	       "fw_cdev_stop_iso size vs _IOC_SIZE mismatch");
-_Static_assert(sizeof(struct fw_cdev_get_cycle_timer) ==
-	       _IOC_SIZE(FW_CDEV_IOC_GET_CYCLE_TIMER),
-	       "fw_cdev_get_cycle_timer size vs _IOC_SIZE mismatch");
-_Static_assert(sizeof(struct fw_cdev_allocate_iso_resource) ==
-	       _IOC_SIZE(FW_CDEV_IOC_ALLOCATE_ISO_RESOURCE),
-	       "fw_cdev_allocate_iso_resource size vs FW_CDEV_IOC_ALLOCATE_ISO_RESOURCE mismatch");
-_Static_assert(sizeof(struct fw_cdev_allocate_iso_resource) ==
-	       _IOC_SIZE(FW_CDEV_IOC_ALLOCATE_ISO_RESOURCE_ONCE),
-	       "fw_cdev_allocate_iso_resource size vs FW_CDEV_IOC_ALLOCATE_ISO_RESOURCE_ONCE mismatch");
-_Static_assert(sizeof(struct fw_cdev_allocate_iso_resource) ==
-	       _IOC_SIZE(FW_CDEV_IOC_DEALLOCATE_ISO_RESOURCE_ONCE),
-	       "fw_cdev_allocate_iso_resource size vs FW_CDEV_IOC_DEALLOCATE_ISO_RESOURCE_ONCE mismatch");
-_Static_assert(sizeof(struct fw_cdev_send_stream_packet) ==
-	       _IOC_SIZE(FW_CDEV_IOC_SEND_STREAM_PACKET),
-	       "fw_cdev_send_stream_packet size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(FW_CDEV_IOC_GET_INFO, struct fw_cdev_get_info);
+IOCTL_SIZE_ASSERT(FW_CDEV_IOC_SEND_REQUEST, struct fw_cdev_send_request);
+IOCTL_SIZE_ASSERT(FW_CDEV_IOC_SEND_BROADCAST_REQUEST, struct fw_cdev_send_request);
+IOCTL_SIZE_ASSERT(FW_CDEV_IOC_ALLOCATE, struct fw_cdev_allocate);
+IOCTL_SIZE_ASSERT(FW_CDEV_IOC_DEALLOCATE, struct fw_cdev_deallocate);
+IOCTL_SIZE_ASSERT(FW_CDEV_IOC_DEALLOCATE_ISO_RESOURCE, struct fw_cdev_deallocate);
+IOCTL_SIZE_ASSERT(FW_CDEV_IOC_SEND_RESPONSE, struct fw_cdev_send_response);
+IOCTL_SIZE_ASSERT(FW_CDEV_IOC_INITIATE_BUS_RESET, struct fw_cdev_initiate_bus_reset);
+IOCTL_SIZE_ASSERT(FW_CDEV_IOC_ADD_DESCRIPTOR, struct fw_cdev_add_descriptor);
+IOCTL_SIZE_ASSERT(FW_CDEV_IOC_REMOVE_DESCRIPTOR, struct fw_cdev_remove_descriptor);
+IOCTL_SIZE_ASSERT(FW_CDEV_IOC_CREATE_ISO_CONTEXT, struct fw_cdev_create_iso_context);
+IOCTL_SIZE_ASSERT(FW_CDEV_IOC_QUEUE_ISO, struct fw_cdev_queue_iso);
+IOCTL_SIZE_ASSERT(FW_CDEV_IOC_START_ISO, struct fw_cdev_start_iso);
+IOCTL_SIZE_ASSERT(FW_CDEV_IOC_STOP_ISO, struct fw_cdev_stop_iso);
+IOCTL_SIZE_ASSERT(FW_CDEV_IOC_GET_CYCLE_TIMER, struct fw_cdev_get_cycle_timer);
+IOCTL_SIZE_ASSERT(FW_CDEV_IOC_ALLOCATE_ISO_RESOURCE, struct fw_cdev_allocate_iso_resource);
+IOCTL_SIZE_ASSERT(FW_CDEV_IOC_ALLOCATE_ISO_RESOURCE_ONCE, struct fw_cdev_allocate_iso_resource);
+IOCTL_SIZE_ASSERT(FW_CDEV_IOC_DEALLOCATE_ISO_RESOURCE_ONCE, struct fw_cdev_allocate_iso_resource);
+IOCTL_SIZE_ASSERT(FW_CDEV_IOC_SEND_STREAM_PACKET, struct fw_cdev_send_stream_packet);
 #ifdef FW_CDEV_IOC_GET_CYCLE_TIMER2
-_Static_assert(sizeof(struct fw_cdev_get_cycle_timer2) ==
-	       _IOC_SIZE(FW_CDEV_IOC_GET_CYCLE_TIMER2),
-	       "fw_cdev_get_cycle_timer2 size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(FW_CDEV_IOC_GET_CYCLE_TIMER2, struct fw_cdev_get_cycle_timer2);
 #endif
 #ifdef FW_CDEV_IOC_SEND_PHY_PACKET
-_Static_assert(sizeof(struct fw_cdev_send_phy_packet) ==
-	       _IOC_SIZE(FW_CDEV_IOC_SEND_PHY_PACKET),
-	       "fw_cdev_send_phy_packet size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(FW_CDEV_IOC_SEND_PHY_PACKET, struct fw_cdev_send_phy_packet);
 #endif
 #ifdef FW_CDEV_IOC_RECEIVE_PHY_PACKETS
-_Static_assert(sizeof(struct fw_cdev_receive_phy_packets) ==
-	       _IOC_SIZE(FW_CDEV_IOC_RECEIVE_PHY_PACKETS),
-	       "fw_cdev_receive_phy_packets size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(FW_CDEV_IOC_RECEIVE_PHY_PACKETS, struct fw_cdev_receive_phy_packets);
 #endif
 #ifdef FW_CDEV_IOC_SET_ISO_CHANNELS
-_Static_assert(sizeof(struct fw_cdev_set_iso_channels) ==
-	       _IOC_SIZE(FW_CDEV_IOC_SET_ISO_CHANNELS),
-	       "fw_cdev_set_iso_channels size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(FW_CDEV_IOC_SET_ISO_CHANNELS, struct fw_cdev_set_iso_channels);
 #endif
 #ifdef FW_CDEV_IOC_FLUSH_ISO
-_Static_assert(sizeof(struct fw_cdev_flush_iso) ==
-	       _IOC_SIZE(FW_CDEV_IOC_FLUSH_ISO),
-	       "fw_cdev_flush_iso size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(FW_CDEV_IOC_FLUSH_ISO, struct fw_cdev_flush_iso);
 #endif
 
 /*
