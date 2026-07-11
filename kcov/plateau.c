@@ -25,6 +25,7 @@
 #include "strategy.h"		/* strategy_plateau_response */
 #include "tables.h"		/* print_syscall_name */
 #include "trinity.h"		/* output */
+#include "utils.h"		/* sat_sub_ul */
 
 /*
  * Coverage-jump breadcrumb -- diagnostic only.
@@ -180,7 +181,7 @@ void kcov_covjump_breadcrumb_maybe(unsigned long call_nr)
 	edges_now = __atomic_load_n(&kcov_shm->distinct_edges, __ATOMIC_RELAXED);
 	edges_prev = __atomic_load_n(&kcov_shm->covjump_window_start_distinct_edges,
 				     __ATOMIC_RELAXED);
-	delta = (edges_now >= edges_prev) ? edges_now - edges_prev : 0;
+	delta = sat_sub_ul(edges_now, edges_prev);
 
 	/* Refresh the edge snapshot every window even when the delta is
 	 * sub-threshold so the NEXT window measures a contiguous interval. */
@@ -370,10 +371,10 @@ void kcov_covjump_breadcrumb_maybe(unsigned long call_nr)
 		strategy_plateau_hypothesis_name(hyp),
 		strategy_name(arm),
 		syscalls_buf, childops_buf,
-		saves_pc_now > saves_pc_snap ? saves_pc_now - saves_pc_snap : 0UL,
-		saves_cmp_now > saves_cmp_snap ? saves_cmp_now - saves_cmp_snap : 0UL,
-		chain_saves_now > chain_saves_snap ? chain_saves_now - chain_saves_snap : 0UL,
-		chain_replays_now > chain_replays_snap ? chain_replays_now - chain_replays_snap : 0UL,
+		sat_sub_ul(saves_pc_now, saves_pc_snap),
+		sat_sub_ul(saves_cmp_now, saves_cmp_snap),
+		sat_sub_ul(chain_saves_now, chain_saves_snap),
+		sat_sub_ul(chain_replays_now, chain_replays_snap),
 		tag_buf);
 
 refresh_snapshot:
@@ -436,7 +437,7 @@ void kcov_plateau_check(void)
 		unsigned long prev_edges =
 			__atomic_load_n(&kcov_shm->plateau_prev_edges,
 					__ATOMIC_RELAXED);
-		delta = (edges_now >= prev_edges) ? edges_now - prev_edges : 0;
+		delta = sat_sub_ul(edges_now, prev_edges);
 	}
 	__atomic_store_n(&kcov_shm->plateau_last_window_delta, delta,
 			 __ATOMIC_RELAXED);
