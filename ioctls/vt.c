@@ -40,24 +40,16 @@ struct termios2 {
  * assert against them would compare sizeof(struct) to 0.
  */
 #if defined(TCGETS2)
-_Static_assert(sizeof(struct termios2) ==
-	       _IOC_SIZE(TCGETS2),
-	       "termios2 size vs TCGETS2 _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(TCGETS2, struct termios2);
 #endif
 #if defined(TCSETS2)
-_Static_assert(sizeof(struct termios2) ==
-	       _IOC_SIZE(TCSETS2),
-	       "termios2 size vs TCSETS2 _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(TCSETS2, struct termios2);
 #endif
 #if defined(TCSETSW2)
-_Static_assert(sizeof(struct termios2) ==
-	       _IOC_SIZE(TCSETSW2),
-	       "termios2 size vs TCSETSW2 _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(TCSETSW2, struct termios2);
 #endif
 #if defined(TCSETSF2)
-_Static_assert(sizeof(struct termios2) ==
-	       _IOC_SIZE(TCSETSF2),
-	       "termios2 size vs TCSETSF2 _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(TCSETSF2, struct termios2);
 #endif
 
 /* KD* family */
