@@ -178,8 +178,9 @@ static void post_rt_sigprocmask(struct syscallrecord *rec)
 	 * no pattern to compare against.
 	 */
 	if (snap->poison_seed != 0 &&
-	    check_output_struct((void *)(unsigned long) snap->oset,
-				sizeof(sigset_t), snap->poison_seed))
+	    check_output_struct_user_or_skip((void *)(unsigned long) snap->oset,
+					     sizeof(sigset_t),
+					     snap->poison_seed))
 		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
 				   1, __ATOMIC_RELAXED);
 

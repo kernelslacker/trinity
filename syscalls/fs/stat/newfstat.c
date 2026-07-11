@@ -138,23 +138,21 @@ static void post_newfstat(struct syscallrecord *rec)
 
 	fd = (int) snap->fd;
 
-	{
-		void *buf = (void *)(unsigned long) snap->statbuf;
-
-		/*
-		 * Untouched-buffer check: newfstat returned 0 (success) but
-		 * the user buffer still byte-for-byte matches the poison
-		 * pattern we stamped at sanitise time -- the kernel never
-		 * called copy_to_user() at all.  Bump the headline counter
-		 * and let the field-level oracle below run as before; that
-		 * will also fire (every field "differs" because first is all
-		 * poison and recheck is real) but the dedicated counter is
-		 * the cheaper, no-re-issue signal.
-		 */
-		if (check_output_struct(buf, sizeof(struct stat), snap->poison_seed))
-			__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
-					   1, __ATOMIC_RELAXED);
-	}
+	/*
+	 * Untouched-buffer check: newfstat returned 0 (success) but the
+	 * user buffer still byte-for-byte matches the poison pattern we
+	 * stamped at sanitise time -- the kernel never called
+	 * copy_to_user() at all.  Bump the headline counter and let the
+	 * field-level oracle below run as before; that will also fire
+	 * (every field "differs" because first is all poison and recheck
+	 * is real) but the dedicated counter is the cheaper, no-re-issue
+	 * signal.
+	 */
+	if (check_output_struct_user_or_skip((void *)(unsigned long) snap->statbuf,
+					     sizeof(struct stat),
+					     snap->poison_seed))
+		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+				   1, __ATOMIC_RELAXED);
 
 	if (!post_snapshot_or_skip(&first,
 				   (void *)(unsigned long) snap->statbuf,

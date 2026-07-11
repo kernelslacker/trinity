@@ -214,8 +214,9 @@ static void post_statfs(struct syscallrecord *rec)
 	 * untouched-buffer signals.
 	 */
 	if (snap->poison_seed != 0 &&
-	    check_output_struct((void *)(unsigned long) snap->buf,
-				sizeof(struct statfs), snap->poison_seed))
+	    check_output_struct_user_or_skip((void *)(unsigned long) snap->buf,
+					     sizeof(struct statfs),
+					     snap->poison_seed))
 		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
 				   1, __ATOMIC_RELAXED);
 
@@ -458,8 +459,9 @@ static void post_statfs64(struct syscallrecord *rec)
 	 * post_handler_untouched_out_buf slot.
 	 */
 	if (snap->poison_seed != 0 &&
-	    check_output_struct((void *)(unsigned long) snap->buf,
-				sizeof(struct statfs64), snap->poison_seed))
+	    check_output_struct_user_or_skip((void *)(unsigned long) snap->buf,
+					     sizeof(struct statfs64),
+					     snap->poison_seed))
 		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
 				   1, __ATOMIC_RELAXED);
 

@@ -250,7 +250,8 @@ static void post_io_setup_record_ctx(struct syscallrecord *rec)
 	 * only bumps the shared post_handler_untouched_out_buf slot.
 	 */
 	if (snap->poison_seed != 0 &&
-	    check_output_struct(ctxp, sizeof(aio_context_t), snap->poison_seed))
+	    check_output_struct_user_or_skip(ctxp, sizeof(aio_context_t),
+					     snap->poison_seed))
 		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
 				   1, __ATOMIC_RELAXED);
 

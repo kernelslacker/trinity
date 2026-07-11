@@ -226,8 +226,8 @@ static void post_pipe(struct syscallrecord *rec)
 
 		if (fildes != NULL &&
 		    !looks_like_corrupted_ptr(rec, fildes) &&
-		    check_output_struct(fildes, sizeof(int) * 2,
-					snap->poison_seed))
+		    check_output_struct_user_or_skip(fildes, sizeof(int) * 2,
+						     snap->poison_seed))
 			__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
 					   1, __ATOMIC_RELAXED);
 	}
