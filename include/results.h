@@ -20,11 +20,3 @@ static inline void results_init_one(struct results *r)
 	r->len_score.u.max = 0;
 	r->fail_run.raw = 0;
 }
-
-/* Decode the len_score sentinel: a fresh slot reads back min==UINT32_MAX,
- * max==0 (set by results_init_one), which any in-band (min, max) pair
- * cannot represent because store_successful_len keeps min <= max. */
-static inline bool len_score_is_seen(const struct results *r)
-{
-	return !(r->len_score.u.min == UINT32_MAX && r->len_score.u.max == 0);
-}
