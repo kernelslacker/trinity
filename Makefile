@@ -311,7 +311,7 @@ tags:	$(SRCS)
 
 tagsjson:	$(SRCS)
 	@rm -f tags.json
-	@ctags -R --exclude=tmp --languages=C,Python,Sh --output-format=json -f tags.json
+	@ctags -R --exclude=tmp --languages=C,Python,Sh --output-format=json --fields=+n -f tags.json
 
 scan:
 	@scan-build --use-analyzer=/usr/bin/clang make -j $(NR_CPUS)
