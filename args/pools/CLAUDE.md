@@ -14,5 +14,5 @@ The data pools the `args/` generators draw from — pathname strings, xattr name
 | fstype.c | 114 | Filesystem-type name strings for the fsopen/mount family. |
 
 ## Notes
-- Pools are built at startup via a `/proc` + `/sys` + file-index walk; `-V` limits the walk for devserver speed.
+- Pools are built at startup via a `/proc` + `/sys` + file-index walk; `-V` limits the walk for faster local runs.
 - They feed the `args/` generators (ARG_PATHNAME / ARG_BUF_SIZED / ARG_FSTYPE / ioctl device pools) — args/ decides *which* generator runs; args/pools/ supplies the content it draws.
