@@ -584,7 +584,7 @@ static int del_iface_by_index(struct genl_ctx *ctx, int ifindex)
  */
 static size_t build_scan_ssids(unsigned char *buf, size_t cap)
 {
-	unsigned int n = 1U + (rand32() % 3U);
+	unsigned int n = 1U + rnd_modulo_u32(3U);
 	size_t off = 0;
 	unsigned int i;
 
@@ -773,7 +773,7 @@ static void send_inner_burst(const char *ifname, const struct timespec *t_outer)
 	int s;
 	struct sockaddr_in dst;
 	unsigned int n = NL80211_BURST_MIN +
-			 (rand32() % (NL80211_BURST_MAX - NL80211_BURST_MIN + 1U));
+			 rnd_modulo_u32(NL80211_BURST_MAX - NL80211_BURST_MIN + 1U);
 	unsigned int i;
 
 	s = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
