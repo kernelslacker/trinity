@@ -1,21 +1,21 @@
 #!/bin/bash
 #
 # bpf-opcode-shim: every BPF_* symbol used in net/bpf/*.c must have a
-# definition that does NOT depend on the build host's <linux/bpf.h>
-# vintage -- either a trinity #define (a uapi-gap #ifndef fallback or a
-# derived convenience macro in include/bpf.h / net/bpf/internal.h), or an
-# entry in bpf-opcode-shim.baseline (symbols we deliberately take from the
-# base UAPI, present on every supported build host).
+# definition that does NOT depend on the local <linux/bpf.h> vintage --
+# either a trinity #define (a uapi-gap #ifndef fallback or a derived
+# convenience macro in include/bpf.h / net/bpf/internal.h), or an entry in
+# bpf-opcode-shim.baseline (symbols we deliberately take from the base
+# UAPI, present in the oldest supported <linux/bpf.h>).
 #
 # Why this exists: the eBPF generators encode instructions with raw ISA
 # opcode values (BPF_LOAD_ACQ, BPF_MEMSX, ...).  A newly-used opcode that
-# has no #ifndef fallback still compiles on a modern devserver header, so
-# the gap is invisible there -- then the build breaks on the older fuzz-box
-# header with "BPF_FOO undeclared here (not in a function)".  We must NOT
-# trust the local header (that is exactly what hides the bug), hence the
-# shim-or-baseline rule.  Add a new opcode -> add its #ifndef shim; add a
-# base-UAPI/API symbol -> add a baseline line.  Either way it is a
-# conscious, reviewable decision instead of a fuzz-host surprise.
+# has no #ifndef fallback still compiles where <linux/bpf.h> is new enough,
+# so the gap is invisible there -- then the build breaks where the header
+# is older, with "BPF_FOO undeclared here (not in a function)".  We must
+# NOT trust the local header (that is exactly what hides the bug), hence
+# the shim-or-baseline rule.  Add a new opcode -> add its #ifndef shim; add
+# a base-UAPI/API symbol -> add a baseline line.  Either way it is a
+# conscious, reviewable decision instead of a late build surprise.
 
 set -u
 
@@ -45,11 +45,11 @@ known=$(printf '%s\n%s\n' "$defined" "$base" | sort -u)
 missing=$(comm -23 <(printf '%s\n' "$used") <(printf '%s\n' "$known"))
 
 if [ -n "$missing" ]; then
-	echo "FAIL: $NAME: BPF_ symbol(s) used in net/bpf/ with no host-independent definition:" >&2
+	echo "FAIL: $NAME: BPF_ symbol(s) used in net/bpf/ with no header-independent definition:" >&2
 	printf '%s\n' "$missing" | sed 's/^/    /' >&2
 	echo "  Fix: if it is an ISA opcode a pre-6.x <linux/bpf.h> may lack, add an" >&2
 	echo "  #ifndef fallback to include/bpf.h; if it is a base-UAPI symbol present" >&2
-	echo "  on every supported build host, add it to" >&2
+	echo "  in the oldest supported <linux/bpf.h>, add it to" >&2
 	echo "  scripts/check-static/bpf-opcode-shim.baseline." >&2
 	n=$(printf '%s\n' "$missing" | grep -c .)
 	echo "FAIL: $NAME: $n unshimmed/unbaselined BPF_ symbol(s)"
