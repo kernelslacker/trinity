@@ -3,6 +3,7 @@
  */
 #include <fcntl.h>
 #include "objects.h"
+#include "output-poison.h"
 #include "sanitise.h"
 #include "deferred-free.h"
 #include "shm.h"
@@ -62,6 +63,16 @@ static void register_pipe_fd(int fd, bool reader)
 #define PIPE_POST_STATE_MAGIC	0x504950455F4D4147UL	/* "PIPE_MAG" */
 struct pipe_post_state {
 	unsigned long magic;
+	/*
+	 * Seed for the poison pattern stamped into the fildes[2] output
+	 * buffer at sanitise time.  Returned by poison_output_struct() and
+	 * fed back into check_output_struct() in the post handler so an
+	 * intact pattern after a success return flags the kernel having
+	 * skipped copy_to_user() on the fd pair entirely.  A seed of 0
+	 * means sanitise did not stamp poison for this call (pool-
+	 * exhaustion early return) and the post handler no-ops the check.
+	 */
+	uint64_t poison_seed;
 };
 
 static void sanitise_pipe(struct syscallrecord *rec)
@@ -87,6 +98,15 @@ static void sanitise_pipe(struct syscallrecord *rec)
 	 * dispatch-time arg_shadow capture, not a snap field. */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = PIPE_POST_STATE_MAGIC;
+	/*
+	 * Stamp a per-call poison pattern into the fd-pair buffer the
+	 * kernel is about to fill.  The post handler feeds the seed back
+	 * into check_output_struct(); a byte-identical poison after a 0
+	 * retval means the kernel skipped copy_to_user() entirely.  The
+	 * two written fd ints fully clobber the 8-byte seed on a real
+	 * write, so no coincidental-match risk.
+	 */
+	snap->poison_seed = poison_output_struct(fildes, sizeof(int) * 2, 0);
 	rec->post_state = (unsigned long) snap;
 	post_state_register(snap);
 }
@@ -187,6 +207,31 @@ static void post_pipe(struct syscallrecord *rec)
 		return;
 	}
 
+	/*
+	 * Untouched-out-buf poison check: on a success return, ask
+	 * check_output_struct() whether the sanitise-time poison pattern
+	 * survived intact in the fildes[2] buffer.  Intact poison after
+	 * a 0 retval means the kernel reported success but never wrote
+	 * the fd pair -- bump the shared post_handler_untouched_out_buf
+	 * counter.  Recover the OUT pointer via the arg_shadow accessor
+	 * (matches post_pipe_record_fds) so a sibling stomp of rec->a1
+	 * between dispatch and now bumps arg_shadow_stomp from inside
+	 * the accessor rather than steering the check at foreign bytes.
+	 * A seed of 0 means sanitise did not stamp poison for this call
+	 * (mirrors sysinfo.c) -- skip so "we couldn't poison" is not
+	 * confused with "kernel didn't write".
+	 */
+	if ((long) rec->retval == 0 && snap->poison_seed != 0) {
+		int *fildes = (int *) get_arg_snapshot(rec, 1);
+
+		if (fildes != NULL &&
+		    !looks_like_corrupted_ptr(rec, fildes) &&
+		    check_output_struct(fildes, sizeof(int) * 2,
+					snap->poison_seed))
+			__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+					   1, __ATOMIC_RELAXED);
+	}
+
 	rec->a1 = 0;
 	post_state_release(rec, snap);
 }
@@ -284,6 +329,11 @@ static void sanitise_pipe2(struct syscallrecord *rec)
 	 * dispatch-time arg_shadow capture, not a snap field. */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = PIPE_POST_STATE_MAGIC;
+	/*
+	 * Stamp a per-call poison pattern into the fd-pair buffer the
+	 * kernel is about to fill; see sanitise_pipe() for the rationale.
+	 */
+	snap->poison_seed = poison_output_struct(fildes, sizeof(int) * 2, 0);
 	rec->post_state = (unsigned long) snap;
 	post_state_register(snap);
 
