@@ -67,9 +67,9 @@ static void socketcall_socketpair(unsigned long *args)
  */
 enum socketcall_extra {
 	EXTRA_NONE,
-	EXTRA_LEN,	/* args[2] = rand32() % page_size  (send/recv/sendto/recvfrom) */
-	EXTRA_SHUT,	/* args[1] = rand32() % 3          (shutdown how) */
-	EXTRA_BACKLOG,	/* args[1] = rand32() % 128        (listen) */
+	EXTRA_LEN,	/* args[2] = rnd_modulo_u32(page_size)  (send/recv/sendto/recvfrom) */
+	EXTRA_SHUT,	/* args[1] = rand32() % 3               (shutdown how) */
+	EXTRA_BACKLOG,	/* args[1] = rnd_modulo_u32(128)        (listen) */
 };
 
 struct socketcall_desc {
@@ -119,13 +119,13 @@ static void sanitise_socketcall(struct syscallrecord *rec)
 		args[0] = get_random_socket_fd();
 		switch (desc->extra) {
 		case EXTRA_LEN:
-			args[2] = rand32() % page_size;
+			args[2] = rnd_modulo_u32(page_size);
 			break;
 		case EXTRA_SHUT:
 			args[1] = rand32() % 3;	/* SHUT_RD, SHUT_WR, SHUT_RDWR */
 			break;
 		case EXTRA_BACKLOG:
-			args[1] = rand32() % 128;
+			args[1] = rnd_modulo_u32(128);
 			break;
 		case EXTRA_NONE:
 			break;
