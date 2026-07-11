@@ -66,18 +66,10 @@ struct mon_bin_mfetch {
  * absent -- asserting sizeof(struct) against a zero _IOC_SIZE would
  * be the wrong shape of check.
  */
-_Static_assert(sizeof(struct mon_bin_stats) ==
-	       _IOC_SIZE(MON_IOCG_STATS),
-	       "mon_bin_stats size vs _IOC_SIZE mismatch");
-_Static_assert(sizeof(struct mon_bin_get) ==
-	       _IOC_SIZE(MON_IOCX_GET),
-	       "mon_bin_get size vs MON_IOCX_GET mismatch");
-_Static_assert(sizeof(struct mon_bin_get) ==
-	       _IOC_SIZE(MON_IOCX_GETX),
-	       "mon_bin_get size vs MON_IOCX_GETX mismatch");
-_Static_assert(sizeof(struct mon_bin_mfetch) ==
-	       _IOC_SIZE(MON_IOCX_MFETCH),
-	       "mon_bin_mfetch size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(MON_IOCG_STATS, struct mon_bin_stats);
+IOCTL_SIZE_ASSERT(MON_IOCX_GET, struct mon_bin_get);
+IOCTL_SIZE_ASSERT(MON_IOCX_GETX, struct mon_bin_get);
+IOCTL_SIZE_ASSERT(MON_IOCX_MFETCH, struct mon_bin_mfetch);
 
 static void sanitise_usbmon_get(struct syscallrecord *rec)
 {
