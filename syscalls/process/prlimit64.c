@@ -10,6 +10,7 @@
 #include <string.h>
 #include "arch.h"
 #include "deferred-free.h"
+#include "output-poison.h"
 #include "pids.h"
 #include "random.h"
 #include "rlimit-safe.h"
@@ -29,13 +30,18 @@
 
 #ifdef HAVE_SYS_PRLIMIT64
 /*
- * Snapshot of the four prlimit64 input args read by the post oracle,
- * captured at sanitise time and consumed by the post handler.  Lives in
- * rec->post_state, a slot the syscall ABI does not expose, so a sibling
- * syscall scribbling rec->aN between the syscall returning and the post
- * handler running cannot redirect the oracle at a foreign old_rlim
- * buffer, retarget the pid self-filter, or smear the resource bound
- * used to gate the re-issue.
+ * Snapshot of the four prlimit64 input args plus the poison seed read
+ * by the post oracle, captured at sanitise time and consumed by the
+ * post handler.  Lives in rec->post_state, a slot the syscall ABI does
+ * not expose, so a sibling syscall scribbling rec->aN between the
+ * syscall returning and the post handler running cannot redirect the
+ * oracle at a foreign old_rlim buffer, retarget the pid self-filter,
+ * smear the resource bound used to gate the re-issue, or smear the
+ * poison seed against a heap page that happens to still carry a
+ * residual pattern from an earlier call.  A poison_seed of 0 means the
+ * sanitise-time writability check refused to stamp poison for this
+ * call (NULL old_rlim, or the range gate rejected the address) and the
+ * post handler must no-op the untouched-buffer check.
  */
 #define PRLIMIT64_POST_STATE_MAGIC	0x50524C36UL	/* "PRL6" */
 struct prlimit64_post_state {
@@ -44,6 +50,7 @@ struct prlimit64_post_state {
 	unsigned long resource;
 	unsigned long new_rlim;
 	unsigned long old_rlim;
+	uint64_t poison_seed;
 };
 #endif
 
@@ -238,6 +245,30 @@ static void sanitise_prlimit64(struct syscallrecord *rec)
 	snap->resource  = rec->a2;
 	snap->new_rlim  = rec->a3;
 	snap->old_rlim  = rec->a4;
+
+	/*
+	 * Stamp a per-call poison pattern into the old_rlim user buffer
+	 * the kernel is about to fill.  The post handler feeds the seed
+	 * back into check_output_struct(); a byte-identical poison after
+	 * retval == 0 means the kernel returned success without writing
+	 * old_rlim -- prlimit64 promises to fill the 16-byte struct
+	 * rlimit64 whenever old_rlim is non-NULL, in both mode-A (new
+	 * limit + read old) and mode-B (pure read).  Gate on non-NULL
+	 * a4 -- old_rlim is nullable (ARG_ADDRESS) -- and then on
+	 * range_readable_user() so a pool draw that landed at an address
+	 * that is no longer provably mapped does not SIGSEGV the
+	 * sanitiser inside poison_output_struct's byte-walk.  On skip,
+	 * poison_seed stays 0 (zmalloc_tracked cleared it) and the post
+	 * handler no-ops the poison check.
+	 */
+	if (rec->a4 != 0) {
+		void *old_buf = (void *)(unsigned long) rec->a4;
+
+		if (range_readable_user(old_buf, sizeof(struct rlimit64)))
+			snap->poison_seed = poison_output_struct(old_buf,
+					sizeof(struct rlimit64), 0);
+	}
+
 	post_state_install(rec, snap);
 #endif
 }
@@ -318,10 +349,30 @@ static void post_prlimit64(struct syscallrecord *rec)
 	if (snap == NULL)
 		return;
 
-	if (!ONE_IN(100))
+	if ((long) rec->retval != 0)
 		goto out_free;
 
-	if ((long) rec->retval != 0)
+	/*
+	 * Untouched-buffer poison check.  prlimit64 is contracted to
+	 * fill the 16-byte old_rlim struct on any success where
+	 * old_rlim is non-NULL -- true for both mode-A (new_rlim set)
+	 * and mode-B (pure read) -- so this gate is INDEPENDENT of the
+	 * new_rlim == 0 gate that keys the value-oracle re-issue
+	 * below.  A byte-identical poison after success means the
+	 * kernel returned 0 without writing old_rlim.  Not sampled by
+	 * ONE_IN(100): the check is a 16-byte memcmp with no syscall
+	 * re-issue, so it stays cheap enough to fire on every success.
+	 * Guarded on poison_seed so the sanitise-refused-to-stamp path
+	 * (NULL a4 or the range gate rejected the address) is not
+	 * confused with "kernel didn't write".
+	 */
+	if (snap->poison_seed != 0 &&
+	    check_output_struct((const void *)(unsigned long) snap->old_rlim,
+				sizeof(struct rlimit64), snap->poison_seed))
+		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+				   1, __ATOMIC_RELAXED);
+
+	if (!ONE_IN(100))
 		goto out_free;
 
 	if (snap->new_rlim != 0)
