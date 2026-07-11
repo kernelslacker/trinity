@@ -15,6 +15,7 @@
 #include "trinity.h"
 #include "utils.h"
 #include "clock-common.h"
+#include "output-poison.h"
 
 #include "kernel/time.h"
 static unsigned long clock_ids[] = {
@@ -29,13 +30,17 @@ static unsigned long clock_ids[] = {
  * rec->post_state, a slot the syscall ABI does not expose, so a sibling
  * syscall scribbling rec->aN between the syscall returning and the post
  * handler running cannot retarget the re-issue at a different clockid or
- * redirect the source memcpy at a foreign user buffer.
+ * redirect the source memcpy at a foreign user buffer.  poison_seed is
+ * the per-call seed poison_output_struct() stamped into the tp buffer
+ * at sanitise time; 0 means the poison arm was skipped (NULL tp) and
+ * the post handler must skip the matching untouched-buffer check.
  */
 #define CLOCK_GETRES_POST_STATE_MAGIC	0x43475253UL	/* "CGRS" */
 struct clock_getres_post_state {
 	unsigned long magic;
 	unsigned long clockid;
 	unsigned long tp;
+	uint64_t poison_seed;
 };
 
 static void sanitise_clock_getres(struct syscallrecord *rec)
@@ -66,6 +71,22 @@ static void sanitise_clock_getres(struct syscallrecord *rec)
 	snap->magic   = CLOCK_GETRES_POST_STATE_MAGIC;
 	snap->clockid = rec->a1;
 	snap->tp      = rec->a2;
+
+	/*
+	 * clock_getres accepts a NULL tp -- clock_getres(clk, NULL) is a
+	 * legal 0-byte success -- so gate the poison arm on tp != NULL.
+	 * Stamping and then checking nothing would false-fire the
+	 * untouched-buffer counter on every NULL call.  Poison after
+	 * avoid_shared_buffer_out() so the pattern lands on the final
+	 * buffer the kernel will see; the returned seed is fed back into
+	 * check_output_struct() in the post handler.  poison_seed stays
+	 * 0 on the NULL path and gates the post-side check.
+	 */
+	if (snap->tp != 0)
+		snap->poison_seed = poison_output_struct((void *)(unsigned long) snap->tp,
+							 sizeof(struct timespec),
+							 0);
+
 	post_state_install(rec, snap);
 }
 
@@ -142,6 +163,25 @@ static void post_clock_getres(struct syscallrecord *rec)
 				   (const void *)(unsigned long) snap->tp,
 				   sizeof(first)))
 		goto out_free;
+
+	/*
+	 * Untouched-buffer check: clock_getres reported success but the
+	 * user buffer still byte-for-byte matches the poison we stamped
+	 * at sanitise time -- the kernel never called copy_to_user() at
+	 * all, or short-copied and left an uninitialised-field tail
+	 * readable in user memory (a kernel->user infoleak).  Cheap
+	 * (byte-walk against a repeating 8-byte pattern, no re-issue),
+	 * so runs on every sampled success.  Guarded on poison_seed so
+	 * the NULL-tp sanitise path (poison arm skipped) can't false-
+	 * fire against a pattern that was never laid down.  An intact
+	 * poison pattern has bytes well outside a legitimate timespec
+	 * range so the tv_nsec/tv_sec divergence oracle below will fire
+	 * too, but this counter is the dedicated no-re-issue signal.
+	 */
+	if (snap->poison_seed &&
+	    check_output_struct(&first, sizeof(first), snap->poison_seed))
+		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+				   1, __ATOMIC_RELAXED);
 
 	if (syscall(SYS_clock_getres, clockid, &recall) != 0)
 		goto out_free;
