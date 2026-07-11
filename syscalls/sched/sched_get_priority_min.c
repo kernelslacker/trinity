@@ -32,10 +32,9 @@ static unsigned long sched_policies[] = {
  *
  * Skip if the kernel rejected the policy with -EINVAL: there is no
  * answer to validate.  Only oracle the well-known stable policies;
- * SCHED_EXT (7) and any future policy fall through silently rather
- * than false-positive on values we do not have a hardcoded
- * expectation for.  Sample one in a hundred to stay in line with the
- * rest of the oracle family.
+ * any future policy falls through silently rather than false-positive
+ * on values we do not have a hardcoded expectation for.  Sample one in
+ * a hundred to stay in line with the rest of the oracle family.
  */
 static void post_sched_get_priority_min(struct syscallrecord *rec)
 {
@@ -65,6 +64,9 @@ static void post_sched_get_priority_min(struct syscallrecord *rec)
 		expected = 0;
 		break;
 	case SCHED_DEADLINE:
+		expected = 0;
+		break;
+	case SCHED_EXT:
 		expected = 0;
 		break;
 	default:
