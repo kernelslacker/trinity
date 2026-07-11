@@ -277,7 +277,7 @@ set_control:
 				    cmsg_family) == 0) {
 		/* msg_control / msg_controllen populated by cmsg_build */
 	} else if (RAND_BOOL()) {
-		msg->msg_controllen = rand32() % 20480;	// /proc/sys/net/core/optmem_max
+		msg->msg_controllen = rnd_modulo_u32(20480);	// /proc/sys/net/core/optmem_max
 		msg->msg_control = get_address();
 	} else {
 		msg->msg_controllen = 0;
@@ -569,7 +569,7 @@ static void sanitise_sendmmsg(struct syscallrecord *rec)
 					    family) == 0) {
 			/* msg_control / msg_controllen populated by cmsg_build */
 		} else if (RAND_BOOL()) {
-			msg->msg_controllen = rand32() % 20480;
+			msg->msg_controllen = rnd_modulo_u32(20480);
 			msg->msg_control = get_address();
 		}
 
