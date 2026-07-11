@@ -35,10 +35,12 @@
 #include "child.h"		/* this_child */
 #include "random.h"		/* ONE_IN */
 #include "sanitise.h"		/* get_argval */
+#include "signals.h"		/* asb_copy_active, asb_copy_recover */
 #include "stats_ring.h"		/* STATS_FIELD_*, stats_ring_enqueue */
 #include "syscall.h"
 #include "trinity.h"
-#include "utils-mem.h"		/* shared_region_size_for */
+#include "utils-mem.h"		/* range_in_tracked_shared, range_readable_user,
+				 * shared_region_size_for */
 
 /*
  * Reciprocal of the per-detection probability that an over-extent shape
@@ -161,6 +163,66 @@ static int reconcile_addr_len(struct syscallrecord *rec,
 }
 
 /*
+ * Refuse to touch the iovec array unless it lies wholly within a
+ * region trinity itself owns and knows is writable.  Between
+ * srec_publish_end() and __do_syscall() a sibling can stomp rec->aN,
+ * so the (iov, count) pair fetched from the record may redirect the
+ * walk to unmapped, stale, read-only, or foreign memory.  Without a
+ * gate, the iov_len writeback below would turn a validator meant to
+ * REDUCE kernel EFAULTs into a trinity-side SIGSEGV source.
+ *
+ * range_readable_user() proves the count-entry span is mapped;
+ * range_in_tracked_shared() then proves it belongs to one of the
+ * mappings alloc_shared() created R/W for this run, so the writeback
+ * cannot land on a foreign or read-only page.  Either failure => skip
+ * silently, same disposition as the outer iov==NULL / count-out-of-
+ * range early-continues (no bump).
+ *
+ * The walk itself is wrapped in the asb_copy_active / asb_copy_recover
+ * sigsetjmp slot (see health/signals.c and post_snapshot_or_skip in
+ * utils/post_snapshot.c) so a TOCTOU fault -- a sibling mprotect /
+ * munmap in the window between the two proofs and the loads/stores
+ * below -- unwinds to a skipped repair rather than a child SIGSEGV.
+ * @j is volatile to silence -Wclobbered across the sigsetjmp edge.
+ */
+static void repair_iovec_extents_user(struct iovec *iov, unsigned long count)
+{
+	volatile unsigned long j;
+	size_t bytes = count * sizeof(*iov);
+
+	if (!range_readable_user(iov, bytes))
+		return;
+	if (!range_in_tracked_shared((unsigned long) iov, bytes))
+		return;
+
+	if (sigsetjmp(asb_copy_recover, 1) != 0) {
+		asb_copy_active = 0;
+		return;
+	}
+	asb_copy_active = 1;
+
+	for (j = 0; j < count; j++) {
+		unsigned long base = (unsigned long) iov[j].iov_base;
+		unsigned long ilen = (unsigned long) iov[j].iov_len;
+		unsigned long extent;
+
+		if (base == 0 || ilen == 0)
+			continue;
+		extent = shared_region_size_for(base);
+		if (extent == 0 || ilen <= extent)
+			continue;
+		if (ONE_IN(ARG_COUPLING_REPAIR_SKIP_ONE_IN)) {
+			arg_coupling_bump(STATS_FIELD_ARG_CONSTRAINT_KEPT_INCOHERENT);
+			continue;
+		}
+		iov[j].iov_len = (size_t) extent;
+		arg_coupling_bump(STATS_FIELD_ARG_CONSTRAINT_REPAIRED);
+	}
+
+	asb_copy_active = 0;
+}
+
+/*
  * Clamp each iovec entry's iov_len down to the writable extent of its
  * iov_base whenever it overshoots.  Same probabilistic partial-repair
  * gate as the addr/len rule so a fraction of over-extent entries
@@ -187,7 +249,6 @@ static void repair_iovec_extents(struct syscallrecord *rec)
 		enum argtype t = entry->argtype[i];
 		struct iovec *iov;
 		unsigned long count;
-		unsigned long j;
 
 		if (t != ARG_IOVEC && t != ARG_IOVEC_IN)
 			continue;
@@ -201,23 +262,7 @@ static void repair_iovec_extents(struct syscallrecord *rec)
 		if (count == 0 || count > UIO_MAXIOV)
 			continue;
 
-		for (j = 0; j < count; j++) {
-			unsigned long base = (unsigned long) iov[j].iov_base;
-			unsigned long ilen = (unsigned long) iov[j].iov_len;
-			unsigned long extent;
-
-			if (base == 0 || ilen == 0)
-				continue;
-			extent = shared_region_size_for(base);
-			if (extent == 0 || ilen <= extent)
-				continue;
-			if (ONE_IN(ARG_COUPLING_REPAIR_SKIP_ONE_IN)) {
-				arg_coupling_bump(STATS_FIELD_ARG_CONSTRAINT_KEPT_INCOHERENT);
-				continue;
-			}
-			iov[j].iov_len = (size_t) extent;
-			arg_coupling_bump(STATS_FIELD_ARG_CONSTRAINT_REPAIRED);
-		}
+		repair_iovec_extents_user(iov, count);
 	}
 }
 
