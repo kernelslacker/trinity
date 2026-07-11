@@ -13,9 +13,7 @@
 
 #include "kernel/eventfd.h"
 
-_Static_assert(sizeof(struct autofs_packet_expire) ==
-	       _IOC_SIZE(AUTOFS_IOC_EXPIRE),
-	       "autofs_packet_expire size vs AUTOFS_IOC_EXPIRE mismatch");
+IOCTL_SIZE_ASSERT(AUTOFS_IOC_EXPIRE, struct autofs_packet_expire);
 
 /* include/linux/auto_dev-ioctl.h */
 /*
