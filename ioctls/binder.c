@@ -94,6 +94,21 @@ struct binder_version {
 #define BINDER_VERSION			_IOWR('b', 9, struct binder_version)
 
 /*
+ * Compile-time: every fixed-shape binder ioctl command whose arg is a
+ * kernel struct must have sizeof(struct) matching the _IOC_SIZE encoded
+ * in its request bits.  A mismatch means the uapi header moved under us
+ * and the request bits now encode a different byte count than the struct
+ * trinity copies in/out.  The scalar BINDER_SET_* commands and the
+ * BC_ / BR_ protocol codes are intentionally absent (see below).
+ */
+_Static_assert(sizeof(struct binder_write_read) ==
+	       _IOC_SIZE(BINDER_WRITE_READ),
+	       "binder_write_read size vs _IOC_SIZE mismatch");
+_Static_assert(sizeof(struct binder_version) ==
+	       _IOC_SIZE(BINDER_VERSION),
+	       "binder_version size vs _IOC_SIZE mismatch");
+
+/*
  * NOTE: Two special error codes you should check for when calling
  * in to the driver are:
  *
