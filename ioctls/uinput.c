@@ -24,18 +24,10 @@
  * sizeof(struct) against a scalar or a zero _IOC_SIZE would be the
  * wrong shape of check.
  */
-_Static_assert(sizeof(struct uinput_ff_upload) ==
-	       _IOC_SIZE(UI_BEGIN_FF_UPLOAD),
-	       "uinput_ff_upload size vs UI_BEGIN_FF_UPLOAD mismatch");
-_Static_assert(sizeof(struct uinput_ff_upload) ==
-	       _IOC_SIZE(UI_END_FF_UPLOAD),
-	       "uinput_ff_upload size vs UI_END_FF_UPLOAD mismatch");
-_Static_assert(sizeof(struct uinput_ff_erase) ==
-	       _IOC_SIZE(UI_BEGIN_FF_ERASE),
-	       "uinput_ff_erase size vs UI_BEGIN_FF_ERASE mismatch");
-_Static_assert(sizeof(struct uinput_ff_erase) ==
-	       _IOC_SIZE(UI_END_FF_ERASE),
-	       "uinput_ff_erase size vs UI_END_FF_ERASE mismatch");
+IOCTL_SIZE_ASSERT(UI_BEGIN_FF_UPLOAD, struct uinput_ff_upload);
+IOCTL_SIZE_ASSERT(UI_END_FF_UPLOAD, struct uinput_ff_upload);
+IOCTL_SIZE_ASSERT(UI_BEGIN_FF_ERASE, struct uinput_ff_erase);
+IOCTL_SIZE_ASSERT(UI_END_FF_ERASE, struct uinput_ff_erase);
 
 static const struct ioctl uinput_ioctls[] = {
 	IOCTL(UI_DEV_CREATE),
