@@ -22,63 +22,35 @@
  * all three are intentionally absent -- asserting sizeof(struct)
  * against a scalar or zero would not be meaningful.
  */
-_Static_assert(sizeof(struct ptp_clock_caps) ==
-	       _IOC_SIZE(PTP_CLOCK_GETCAPS),
-	       "ptp_clock_caps size vs _IOC_SIZE mismatch");
-_Static_assert(sizeof(struct ptp_extts_request) ==
-	       _IOC_SIZE(PTP_EXTTS_REQUEST),
-	       "ptp_extts_request size vs PTP_EXTTS_REQUEST mismatch");
-_Static_assert(sizeof(struct ptp_perout_request) ==
-	       _IOC_SIZE(PTP_PEROUT_REQUEST),
-	       "ptp_perout_request size vs PTP_PEROUT_REQUEST mismatch");
-_Static_assert(sizeof(struct ptp_sys_offset) ==
-	       _IOC_SIZE(PTP_SYS_OFFSET),
-	       "ptp_sys_offset size vs _IOC_SIZE mismatch");
-_Static_assert(sizeof(struct ptp_pin_desc) ==
-	       _IOC_SIZE(PTP_PIN_GETFUNC),
-	       "ptp_pin_desc size vs PTP_PIN_GETFUNC mismatch");
-_Static_assert(sizeof(struct ptp_pin_desc) ==
-	       _IOC_SIZE(PTP_PIN_SETFUNC),
-	       "ptp_pin_desc size vs PTP_PIN_SETFUNC mismatch");
+IOCTL_SIZE_ASSERT(PTP_CLOCK_GETCAPS, struct ptp_clock_caps);
+IOCTL_SIZE_ASSERT(PTP_EXTTS_REQUEST, struct ptp_extts_request);
+IOCTL_SIZE_ASSERT(PTP_PEROUT_REQUEST, struct ptp_perout_request);
+IOCTL_SIZE_ASSERT(PTP_SYS_OFFSET, struct ptp_sys_offset);
+IOCTL_SIZE_ASSERT(PTP_PIN_GETFUNC, struct ptp_pin_desc);
+IOCTL_SIZE_ASSERT(PTP_PIN_SETFUNC, struct ptp_pin_desc);
 #ifdef PTP_SYS_OFFSET_PRECISE
-_Static_assert(sizeof(struct ptp_sys_offset_precise) ==
-	       _IOC_SIZE(PTP_SYS_OFFSET_PRECISE),
-	       "ptp_sys_offset_precise size vs PTP_SYS_OFFSET_PRECISE mismatch");
+IOCTL_SIZE_ASSERT(PTP_SYS_OFFSET_PRECISE, struct ptp_sys_offset_precise);
 #endif
 #ifdef PTP_SYS_OFFSET_EXTENDED
-_Static_assert(sizeof(struct ptp_sys_offset_extended) ==
-	       _IOC_SIZE(PTP_SYS_OFFSET_EXTENDED),
-	       "ptp_sys_offset_extended size vs PTP_SYS_OFFSET_EXTENDED mismatch");
+IOCTL_SIZE_ASSERT(PTP_SYS_OFFSET_EXTENDED, struct ptp_sys_offset_extended);
 #endif
 #ifdef PTP_EXTTS_REQUEST2
-_Static_assert(sizeof(struct ptp_extts_request) ==
-	       _IOC_SIZE(PTP_EXTTS_REQUEST2),
-	       "ptp_extts_request size vs PTP_EXTTS_REQUEST2 mismatch");
+IOCTL_SIZE_ASSERT(PTP_EXTTS_REQUEST2, struct ptp_extts_request);
 #endif
 #ifdef PTP_PEROUT_REQUEST2
-_Static_assert(sizeof(struct ptp_perout_request) ==
-	       _IOC_SIZE(PTP_PEROUT_REQUEST2),
-	       "ptp_perout_request size vs PTP_PEROUT_REQUEST2 mismatch");
+IOCTL_SIZE_ASSERT(PTP_PEROUT_REQUEST2, struct ptp_perout_request);
 #endif
 #ifdef PTP_PIN_GETFUNC2
-_Static_assert(sizeof(struct ptp_pin_desc) ==
-	       _IOC_SIZE(PTP_PIN_GETFUNC2),
-	       "ptp_pin_desc size vs PTP_PIN_GETFUNC2 mismatch");
+IOCTL_SIZE_ASSERT(PTP_PIN_GETFUNC2, struct ptp_pin_desc);
 #endif
 #ifdef PTP_PIN_SETFUNC2
-_Static_assert(sizeof(struct ptp_pin_desc) ==
-	       _IOC_SIZE(PTP_PIN_SETFUNC2),
-	       "ptp_pin_desc size vs PTP_PIN_SETFUNC2 mismatch");
+IOCTL_SIZE_ASSERT(PTP_PIN_SETFUNC2, struct ptp_pin_desc);
 #endif
 #ifdef PTP_SYS_OFFSET_PRECISE2
-_Static_assert(sizeof(struct ptp_sys_offset_precise) ==
-	       _IOC_SIZE(PTP_SYS_OFFSET_PRECISE2),
-	       "ptp_sys_offset_precise size vs PTP_SYS_OFFSET_PRECISE2 mismatch");
+IOCTL_SIZE_ASSERT(PTP_SYS_OFFSET_PRECISE2, struct ptp_sys_offset_precise);
 #endif
 #ifdef PTP_SYS_OFFSET_EXTENDED2
-_Static_assert(sizeof(struct ptp_sys_offset_extended) ==
-	       _IOC_SIZE(PTP_SYS_OFFSET_EXTENDED2),
-	       "ptp_sys_offset_extended size vs PTP_SYS_OFFSET_EXTENDED2 mismatch");
+IOCTL_SIZE_ASSERT(PTP_SYS_OFFSET_EXTENDED2, struct ptp_sys_offset_extended);
 #endif
 
 static void fill_clock_time(struct ptp_clock_time *t)
