@@ -22,9 +22,6 @@ const struct protoptr net_protocols[TRINITY_PF_MAX] = {
 	[PF_BLUETOOTH] = { .proto = &proto_bluetooth },
 #endif
 	[PF_PHONET] = { .proto = &proto_phonet },
-#ifdef USE_CAIF
-	[PF_CAIF] = { .proto = &proto_caif },
-#endif
 	[PF_NFC] = { .proto = &proto_nfc },
 	[PF_NETLINK] = { .proto = &proto_netlink },
 	[PF_ATMPVC] = { .proto = &proto_atmpvc },

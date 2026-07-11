@@ -7,8 +7,7 @@
  * object another thread is mid-walk through is a UAF candidate -- the most
  * prolific late-2024 / 2025 networking UAF bug class.  Anchors:
  * CVE-2024-26865 (unix_gc vs SCM_RIGHTS in flight), CVE-2024-26851 (netfilter
- * pernet exit dropping nft refs early), CVE-2023-32269 (netrom pernet destroy
- * leaving sock with stale net), CVE-2024-1085 (nft pernet exit vs
+ * pernet exit dropping nft refs early), CVE-2024-1085 (nft pernet exit vs
  * nft_del_chain), CVE-2025-21684 (tcp_metrics pernet exit vs concurrent
  * metrics).
  *

@@ -435,9 +435,6 @@ extern const struct socket_family_grammar grammar_xdp;
 #ifdef USE_BLUETOOTH
 extern const struct socket_family_grammar grammar_bluetooth_stub;
 #endif
-#ifdef USE_CAIF
-extern const struct socket_family_grammar grammar_caif_stub;
-#endif
 #ifdef USE_VSOCK
 extern const struct socket_family_grammar grammar_vsock_stub;
 #endif

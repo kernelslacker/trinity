@@ -237,7 +237,7 @@ extern const struct union_variant bpf_attr_variants[BPF_ATTR_VARIANTS_N];
  *
  * sockaddr_storage_variants is the tagged-union dispatch table whose
  * entry count is configuration-dependent (one entry per #ifdef
- * USE_<AF> arm; USE_AX25 contributes two for AF_AX25/AF_NETROM).
+ * USE_<AF> arm).
  * SOCKADDR_STORAGE_VARIANTS_N mirrors that arithmetic so the spine's
  * ARRAY_SIZE(sockaddr_storage_variants) still folds to the same
  * constant the static-table form did.  USE_* macros come from
@@ -261,9 +261,6 @@ enum {
 #ifdef USE_PPPOX
 		+ 1
 #endif
-#ifdef USE_CAIF
-		+ 1
-#endif
 #ifdef USE_CAN
 		+ 1
 #endif
@@ -274,12 +271,6 @@ enum {
 		+ 1
 #endif
 #ifdef USE_PHONET
-		+ 1
-#endif
-#ifdef USE_AX25
-		+ 2 /* AF_AX25 + AF_NETROM */
-#endif
-#ifdef USE_ROSE
 		+ 1
 #endif
 #ifdef USE_ATM
@@ -316,9 +307,6 @@ extern const struct struct_field sockaddr_vm_variant_fields[];
 #ifdef USE_PPPOX
 extern const struct struct_field sockaddr_pppox_variant_fields[];
 #endif
-#ifdef USE_CAIF
-extern const struct struct_field sockaddr_caif_variant_fields[];
-#endif
 #ifdef USE_CAN
 extern const struct struct_field sockaddr_can_variant_fields[];
 #endif
@@ -330,12 +318,6 @@ extern const struct struct_field sockaddr_x25_variant_fields[];
 #endif
 #ifdef USE_PHONET
 extern const struct struct_field sockaddr_pn_variant_fields[];
-#endif
-#ifdef USE_AX25
-extern const struct struct_field sockaddr_ax25_variant_fields[];
-#endif
-#ifdef USE_ROSE
-extern const struct struct_field sockaddr_rose_variant_fields[];
 #endif
 #ifdef USE_ATM
 extern const struct struct_field sockaddr_atmpvc_variant_fields[];

@@ -41,9 +41,6 @@
 #ifdef USE_VSOCK
 #include <linux/vm_sockets.h>
 #endif
-#ifdef USE_CAIF
-#include <linux/caif/caif_socket.h>
-#endif
 #ifdef USE_CAN
 #include <linux/can.h>
 #endif
@@ -55,12 +52,6 @@
 #endif
 #ifdef USE_PHONET
 #include <linux/phonet.h>
-#endif
-#ifdef USE_AX25
-#include <linux/ax25.h>
-#endif
-#ifdef USE_ROSE
-#include <linux/rose.h>
 #endif
 #ifdef USE_ATM
 #include <linux/atm.h>
@@ -137,9 +128,6 @@ const unsigned long sockaddr_storage_af_vocab[] = {
 #ifdef USE_PPPOX
 	AF_PPPOX,
 #endif
-#ifdef USE_CAIF
-	AF_CAIF,
-#endif
 #ifdef USE_CAN
 	AF_CAN,
 #endif
@@ -151,13 +139,6 @@ const unsigned long sockaddr_storage_af_vocab[] = {
 #endif
 #ifdef USE_PHONET
 	AF_PHONET,
-#endif
-#ifdef USE_AX25
-	AF_AX25,
-	AF_NETROM,
-#endif
-#ifdef USE_ROSE
-	AF_ROSE,
 #endif
 #ifdef USE_ATM
 	AF_ATMPVC,
@@ -307,23 +288,6 @@ const struct struct_field sockaddr_pppox_variant_fields[] = {
 };
 #endif
 
-#ifdef USE_CAIF
-/*
- * AF_CAIF (sockaddr_caif) -- ST-Ericsson modem CAIF endpoint.  The
- * scalar head carries u.dgm.connection_id (datagram service id the
- * kernel dispatches on); a __u32 that reaches dispatch as raw, so
- * FT_RAW covers the surface without a curated vocabulary.  The
- * family field is omitted; the shared-head pass already writes
- * ss_family.  The remaining union u arms (at/util/rfm/dbg) stay
- * HELD and zeroed -- the kernel parses them conditional on the
- * socket protocol (CAIFPROTO_*) and an unmodeled inner address
- * won't bias dispatch.
- */
-const struct struct_field sockaddr_caif_variant_fields[] = {
-	FIELD(struct sockaddr_caif, u.dgm.connection_id),
-};
-#endif
-
 #ifdef USE_CAN
 /*
  * AF_CAN (sockaddr_can) -- Controller Area Network endpoint.  The
@@ -391,48 +355,6 @@ const struct struct_field sockaddr_pn_variant_fields[] = {
 	FIELD(struct sockaddr_pn, spn_obj),
 	FIELD(struct sockaddr_pn, spn_dev),
 	FIELD(struct sockaddr_pn, spn_resource),
-};
-#endif
-
-#ifdef USE_AX25
-/*
- * AF_AX25 (sockaddr_ax25) -- amateur-radio packet endpoint.  The
- * base struct carries the 7-byte AX.25 callsign (ax25_address, a
- * shifted-ASCII callsign + SSID byte the kernel walks via ax25cmp()
- * in ax25_bind / ax25_connect) and sax25_ndigis, the digipeater
- * count the kernel uses to decide whether to read the trailing
- * fsa_digipeater[] array of full_sockaddr_ax25.  trinity steers the
- * base sockaddr_ax25 only; full_sockaddr_ax25's variable-length
- * digipeater tail is intentionally out of scope here so the variant
- * stays a fixed-size record.  sax25_family is omitted; the shared-
- * head pass already writes ss_family.
- */
-const struct struct_field sockaddr_ax25_variant_fields[] = {
-	FIELD(struct sockaddr_ax25, sax25_call),
-	FIELD(struct sockaddr_ax25, sax25_ndigis),
-};
-#endif
-
-#ifdef USE_ROSE
-/*
- * AF_ROSE (sockaddr_rose) -- ROSE (Rec.X.25 over amateur radio) endpoint.
- * The address tuple is a 5-byte ROSE address (rose_address), the 7-byte
- * AX.25 source callsign (ax25_address), the digipeater count the kernel
- * uses to gate consumption of the trailing digipeater slot, and a single
- * 7-byte AX.25 digipeater callsign.  The kernel walks these raw via
- * rose_bind / rose_connect (net/rose/af_rose.c) against the bound ROSE
- * neighbour table; FT_RAW covers the dispatch surface without curated
- * callsign / ROSE-address vocabularies.  trinity steers the base
- * sockaddr_rose only; full_sockaddr_rose's variable-length digipeater
- * tail is intentionally out of scope here so the variant stays a
- * fixed-size record.  srose_family is omitted; the shared-head pass
- * already writes ss_family.
- */
-const struct struct_field sockaddr_rose_variant_fields[] = {
-	FIELD(struct sockaddr_rose, srose_addr),
-	FIELD(struct sockaddr_rose, srose_call),
-	FIELD(struct sockaddr_rose, srose_ndigis),
-	FIELD(struct sockaddr_rose, srose_digi),
 };
 #endif
 
@@ -753,15 +675,6 @@ const struct union_variant sockaddr_storage_variants[] = {
 		.effective_size	 = sizeof(struct sockaddr_pppox),
 	},
 #endif
-#ifdef USE_CAIF
-	{
-		.discrim_value	 = AF_CAIF,
-		.name		 = "AF_CAIF",
-		.fields		 = sockaddr_caif_variant_fields,
-		.num_fields	 = ARRAY_SIZE(sockaddr_caif_variant_fields),
-		.effective_size	 = sizeof(struct sockaddr_caif),
-	},
-#endif
 #ifdef USE_CAN
 	{
 		.discrim_value	 = AF_CAN,
@@ -796,31 +709,6 @@ const struct union_variant sockaddr_storage_variants[] = {
 		.fields		 = sockaddr_pn_variant_fields,
 		.num_fields	 = ARRAY_SIZE(sockaddr_pn_variant_fields),
 		.effective_size	 = sizeof(struct sockaddr_pn),
-	},
-#endif
-#ifdef USE_AX25
-	{
-		.discrim_value	 = AF_AX25,
-		.name		 = "AF_AX25",
-		.fields		 = sockaddr_ax25_variant_fields,
-		.num_fields	 = ARRAY_SIZE(sockaddr_ax25_variant_fields),
-		.effective_size	 = sizeof(struct sockaddr_ax25),
-	},
-	{
-		.discrim_value	 = AF_NETROM,
-		.name		 = "AF_NETROM",
-		.fields		 = sockaddr_ax25_variant_fields,
-		.num_fields	 = ARRAY_SIZE(sockaddr_ax25_variant_fields),
-		.effective_size	 = sizeof(struct sockaddr_ax25),
-	},
-#endif
-#ifdef USE_ROSE
-	{
-		.discrim_value	 = AF_ROSE,
-		.name		 = "AF_ROSE",
-		.fields		 = sockaddr_rose_variant_fields,
-		.num_fields	 = ARRAY_SIZE(sockaddr_rose_variant_fields),
-		.effective_size	 = sizeof(struct sockaddr_rose),
 	},
 #endif
 #ifdef USE_ATM

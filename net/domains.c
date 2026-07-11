@@ -44,7 +44,6 @@ static const struct domain domains[] = {
 	{ "ISDN",	PF_ISDN },
 	{ "PHONET",	PF_PHONET },
 	{ "IEEE802154",	PF_IEEE802154 },
-	{ "CAIF",	PF_CAIF },
 	{ "ALG",	PF_ALG },
 	{ "NFC",	PF_NFC },
 	{ "VSOCK",	PF_VSOCK },
