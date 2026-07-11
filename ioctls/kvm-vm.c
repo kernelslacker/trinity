@@ -42,23 +42,13 @@
  * (KVM_SET_IDENTITY_MAP_ADDR, KVM_SET_TSS_ADDR) are intentionally
  * absent -- their _IOC_SIZE either counts only the header or is 0.
  */
-_Static_assert(sizeof(struct kvm_userspace_memory_region) ==
-	       _IOC_SIZE(KVM_SET_USER_MEMORY_REGION),
-	       "kvm_userspace_memory_region size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(KVM_SET_USER_MEMORY_REGION, struct kvm_userspace_memory_region);
 #ifdef KVM_SET_USER_MEMORY_REGION2
-_Static_assert(sizeof(struct kvm_userspace_memory_region2) ==
-	       _IOC_SIZE(KVM_SET_USER_MEMORY_REGION2),
-	       "kvm_userspace_memory_region2 size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(KVM_SET_USER_MEMORY_REGION2, struct kvm_userspace_memory_region2);
 #endif
-_Static_assert(sizeof(struct kvm_irq_level) ==
-	       _IOC_SIZE(KVM_IRQ_LINE),
-	       "kvm_irq_level size vs KVM_IRQ_LINE _IOC_SIZE mismatch");
-_Static_assert(sizeof(struct kvm_irq_level) ==
-	       _IOC_SIZE(KVM_IRQ_LINE_STATUS),
-	       "kvm_irq_level size vs KVM_IRQ_LINE_STATUS mismatch");
-_Static_assert(sizeof(struct kvm_pit_config) ==
-	       _IOC_SIZE(KVM_CREATE_PIT2),
-	       "kvm_pit_config size vs KVM_CREATE_PIT2 mismatch");
+IOCTL_SIZE_ASSERT(KVM_IRQ_LINE, struct kvm_irq_level);
+IOCTL_SIZE_ASSERT(KVM_IRQ_LINE_STATUS, struct kvm_irq_level);
+IOCTL_SIZE_ASSERT(KVM_CREATE_PIT2, struct kvm_pit_config);
 
 /*
  * Match against the calling child's OBJ_LOCAL OBJ_FD_KVM_VM pool.
