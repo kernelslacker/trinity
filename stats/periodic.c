@@ -1492,7 +1492,7 @@ static void top_syscalls_emit_pool(const char *pool_name,
 	int j;
 
 	for (i = 0; i < nr_to_scan; i++) {
-		unsigned long delta = (cur[i] > prev[i]) ? cur[i] - prev[i] : 0;
+		unsigned long delta = sat_sub_ul(cur[i], prev[i]);
 
 		if (delta == 0)
 			continue;
@@ -1577,14 +1577,10 @@ static void top_syscalls_emit_frontier_yield(
 	int j;
 
 	for (i = 0; i < nr_to_scan; i++) {
-		unsigned long live_d = (cur_live_picks[i] > prev_live_picks[i])
-			? cur_live_picks[i] - prev_live_picks[i] : 0;
-		unsigned long silent_d = (cur_silent_picks[i] > prev_silent_picks[i])
-			? cur_silent_picks[i] - prev_silent_picks[i] : 0;
-		unsigned long wins_d = (cur_wins[i] > prev_wins[i])
-			? cur_wins[i] - prev_wins[i] : 0;
-		unsigned long misses_d = (cur_misses[i] > prev_misses[i])
-			? cur_misses[i] - prev_misses[i] : 0;
+		unsigned long live_d = sat_sub_ul(cur_live_picks[i], prev_live_picks[i]);
+		unsigned long silent_d = sat_sub_ul(cur_silent_picks[i], prev_silent_picks[i]);
+		unsigned long wins_d = sat_sub_ul(cur_wins[i], prev_wins[i]);
+		unsigned long misses_d = sat_sub_ul(cur_misses[i], prev_misses[i]);
 
 		if (misses_d == 0)
 			continue;
