@@ -16,9 +16,7 @@
  * asserting sizeof(struct) against a zero _IOC_SIZE or a scalar
  * would be the wrong shape of check.
  */
-_Static_assert(sizeof(struct hpet_info) ==
-	       _IOC_SIZE(HPET_INFO),
-	       "hpet_info size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(HPET_INFO, struct hpet_info);
 
 static const struct ioctl hpet_ioctls[] = {
 	IOCTL(HPET_IE_ON),
