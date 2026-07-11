@@ -25,24 +25,12 @@
  * _IO() with no struct arg and are intentionally absent -- their
  * _IOC_SIZE is 0 by construction.
  */
-_Static_assert(sizeof(struct nvme_passthru_cmd) ==
-	       _IOC_SIZE(NVME_IOCTL_ADMIN_CMD),
-	       "nvme_passthru_cmd size vs NVME_IOCTL_ADMIN_CMD mismatch");
-_Static_assert(sizeof(struct nvme_passthru_cmd) ==
-	       _IOC_SIZE(NVME_IOCTL_IO_CMD),
-	       "nvme_passthru_cmd size vs NVME_IOCTL_IO_CMD mismatch");
-_Static_assert(sizeof(struct nvme_user_io) ==
-	       _IOC_SIZE(NVME_IOCTL_SUBMIT_IO),
-	       "nvme_user_io size vs _IOC_SIZE mismatch");
-_Static_assert(sizeof(struct nvme_passthru_cmd64) ==
-	       _IOC_SIZE(NVME_IOCTL_ADMIN64_CMD),
-	       "nvme_passthru_cmd64 size vs NVME_IOCTL_ADMIN64_CMD mismatch");
-_Static_assert(sizeof(struct nvme_passthru_cmd64) ==
-	       _IOC_SIZE(NVME_IOCTL_IO64_CMD),
-	       "nvme_passthru_cmd64 size vs NVME_IOCTL_IO64_CMD mismatch");
-_Static_assert(sizeof(struct nvme_passthru_cmd64) ==
-	       _IOC_SIZE(NVME_IOCTL_IO64_CMD_VEC),
-	       "nvme_passthru_cmd64 size vs NVME_IOCTL_IO64_CMD_VEC mismatch");
+IOCTL_SIZE_ASSERT(NVME_IOCTL_ADMIN_CMD, struct nvme_passthru_cmd);
+IOCTL_SIZE_ASSERT(NVME_IOCTL_IO_CMD, struct nvme_passthru_cmd);
+IOCTL_SIZE_ASSERT(NVME_IOCTL_SUBMIT_IO, struct nvme_user_io);
+IOCTL_SIZE_ASSERT(NVME_IOCTL_ADMIN64_CMD, struct nvme_passthru_cmd64);
+IOCTL_SIZE_ASSERT(NVME_IOCTL_IO64_CMD, struct nvme_passthru_cmd64);
+IOCTL_SIZE_ASSERT(NVME_IOCTL_IO64_CMD_VEC, struct nvme_passthru_cmd64);
 
 static void sanitise_nvme_admin_cmd(struct syscallrecord *rec)
 {
