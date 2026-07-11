@@ -32,12 +32,8 @@
  * sizeof(struct) against a scalar, or against a struct this file
  * never fills, would be the wrong shape of check.
  */
-_Static_assert(sizeof(struct seccomp_notif_resp) ==
-	       _IOC_SIZE(SECCOMP_IOCTL_NOTIF_SEND),
-	       "seccomp_notif_resp size vs _IOC_SIZE mismatch");
-_Static_assert(sizeof(struct seccomp_notif_addfd) ==
-	       _IOC_SIZE(SECCOMP_IOCTL_NOTIF_ADDFD),
-	       "seccomp_notif_addfd size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(SECCOMP_IOCTL_NOTIF_SEND, struct seccomp_notif_resp);
+IOCTL_SIZE_ASSERT(SECCOMP_IOCTL_NOTIF_ADDFD, struct seccomp_notif_addfd);
 
 /*
  * Seccomp notification listener ioctls.  These operate on the anonymous fd
