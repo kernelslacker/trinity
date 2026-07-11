@@ -31,15 +31,9 @@
  * by this file's sanitisers).  Asserting sizeof(struct) against a
  * scalar or a zero _IOC_SIZE would be the wrong shape of check.
  */
-_Static_assert(sizeof(struct rtc_time) ==
-	       _IOC_SIZE(RTC_RD_TIME),
-	       "rtc_time size vs _IOC_SIZE mismatch");
-_Static_assert(sizeof(struct rtc_wkalrm) ==
-	       _IOC_SIZE(RTC_WKALM_RD),
-	       "rtc_wkalrm size vs _IOC_SIZE mismatch");
-_Static_assert(sizeof(struct rtc_pll_info) ==
-	       _IOC_SIZE(RTC_PLL_GET),
-	       "rtc_pll_info size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(RTC_RD_TIME, struct rtc_time);
+IOCTL_SIZE_ASSERT(RTC_WKALM_RD, struct rtc_wkalrm);
+IOCTL_SIZE_ASSERT(RTC_PLL_GET, struct rtc_pll_info);
 
 static void fill_rtc_time(struct rtc_time *t)
 {
