@@ -26,9 +26,7 @@
  * int; asserting sizeof(struct) against a scalar would be the
  * wrong shape of check.
  */
-_Static_assert(sizeof(struct watchdog_info) ==
-	       _IOC_SIZE(WDIOC_GETSUPPORT),
-	       "watchdog_info size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(WDIOC_GETSUPPORT, struct watchdog_info);
 
 static void watchdog_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
 {
