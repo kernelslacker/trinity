@@ -21,9 +21,7 @@
  * is _IO() with no arg.  Asserting sizeof(struct) against a
  * scalar or a zero _IOC_SIZE would be the wrong shape of check.
  */
-_Static_assert(sizeof(struct fuse_backing_map) ==
-	       _IOC_SIZE(FUSE_DEV_IOC_BACKING_OPEN),
-	       "fuse_backing_map size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(FUSE_DEV_IOC_BACKING_OPEN, struct fuse_backing_map);
 
 static void sanitise_fuse_clone(struct syscallrecord *rec)
 {
