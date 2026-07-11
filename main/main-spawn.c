@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <sys/resource.h>
+#include <sys/syscall.h>
 #include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
@@ -126,7 +127,21 @@ static bool spawn_child(int childno)
 
 	if (pid == 0) {
 		child_process(child, childno);
+#ifdef __SANITIZE_ADDRESS__
+		/*
+		 * Raw exit syscall under ASAN: _exit() is noreturn, so the
+		 * compiler emits __asan_handle_no_return, whose
+		 * PlatformUnpoisonStacks() CHECK-fails (asan_poisoning.cpp:85)
+		 * on children forked via clone3(CLONE_INTO_CGROUP) -- libasan
+		 * never registered their stack bounds, so it unpoisons [0,0].
+		 * syscall() is not noreturn-attributed, so no unpoison runs;
+		 * scrubbing the stack shadow at process exit is pointless.
+		 */
+		syscall(SYS_exit_group, EXIT_SUCCESS);
+		__builtin_unreachable();
+#else
 		_exit(EXIT_SUCCESS);
+#endif
 	} else {
 		if (pid == -1) {
 			debugf("Couldn't fork a new child in pidslot %d. errno:%s\n",
