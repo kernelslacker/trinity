@@ -55,6 +55,7 @@ enum shadow_arm_id {
 	SHADOW_ARM_CMP_HYP_BITMASK_FULL_OR,
 	SHADOW_ARM_CMP_HYP_BITMASK_ANDNOT_TOGGLE,
 	SHADOW_ARM_CMP_NONCONST_RELATIONAL,
+	SHADOW_ARM_CMP_FIELD_SCOPED_INJECT,
 	SHADOW_ARM_NR,
 };
 
@@ -180,6 +181,44 @@ static const struct shadow_arm shadow_arm_registry[SHADOW_ARM_NR] = {
 		.baseline_offset =
 			offsetof(struct kcov_shared,
 				 cmp_nonconst_would_attribute),
+		.live_flag = 0,
+		.min_baseline_samples = 100,
+		.win_ratio_per_mille = 100,
+	},
+	/*
+	 * Field-scoped CMP inject shadow.  baseline
+	 * (cmp_field_consumer_would_pick) bumps on every post-guard
+	 * eligible would-pick the field consumer observes -- the pool
+	 * was populated, the (desc, field) key resolved, and the
+	 * generator-invariant guard classified the target as safe to
+	 * inject; would-win (cmp_field_consumer_would_value_differs)
+	 * bumps on the subset where the elected pool entry's value
+	 * differs from the value the generator was about to write, i.e.
+	 * a live-arm flip at that site would swap a different byte on
+	 * the wire.  Stricter per-arm criterion than the pilot band --
+	 * baseline floor of 100 samples and 100/1000 win threshold --
+	 * matching the sibling non-const relational entry: the field
+	 * pool's fill rate is currently thin (only the two timespec
+	 * fields are wired end-to-end) and a lower floor would surface
+	 * on run-to-run noise.  No live counterpart yet --
+	 * cmp_field_consumer_live_arm stays off; wiring the flip is a
+	 * separate follow-up.
+	 *
+	 * READINESS gate, NOT a coverage proxy: surfacing a "ready to
+	 * promote" line for this arm means "the field-inject candidate
+	 * shows a high arg-change rate at eligible sites, worth a
+	 * live-flip coverage experiment", NOT "promote now".  The
+	 * live-flip decision remains a human call on the follow-up.
+	 */
+	[SHADOW_ARM_CMP_FIELD_SCOPED_INJECT] = {
+		.name = "cmp_field_scoped_inject",
+		.would_win_offset =
+			offsetof(struct kcov_shared,
+				 cmp_field_consumer_would_value_differs),
+		.live_win_offset = 0,
+		.baseline_offset =
+			offsetof(struct kcov_shared,
+				 cmp_field_consumer_would_pick),
 		.live_flag = 0,
 		.min_baseline_samples = 100,
 		.win_ratio_per_mille = 100,

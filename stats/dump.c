@@ -2828,6 +2828,7 @@ static void dump_stats_render_kcov_ring_replay(void)
 static void dump_stats_render_kcov_cmp_field_consumer(void)
 {
 		unsigned long fc_would_pick = __atomic_load_n(&kcov_shm->cmp_field_consumer_would_pick, __ATOMIC_RELAXED);
+		unsigned long fc_would_differs = __atomic_load_n(&kcov_shm->cmp_field_consumer_would_value_differs, __ATOMIC_RELAXED);
 		unsigned long fc_would_miss = __atomic_load_n(&kcov_shm->cmp_field_consumer_would_miss, __ATOMIC_RELAXED);
 		unsigned long fc_key_absent = __atomic_load_n(&kcov_shm->cmp_field_consumer_key_absent, __ATOMIC_RELAXED);
 		unsigned long fc_pool_corrupt = __atomic_load_n(&kcov_shm->cmp_field_consumer_pool_corrupted, __ATOMIC_RELAXED);
@@ -2844,6 +2845,8 @@ static void dump_stats_render_kcov_cmp_field_consumer(void)
 
 		if (fc_would_pick > 0)
 			stat_row("kcov_coverage", "cmp_field_consumer_would_pick", fc_would_pick);
+		if (fc_would_differs > 0)
+			stat_row("kcov_coverage", "cmp_field_consumer_would_value_differs", fc_would_differs);
 		if (fc_would_miss > 0)
 			stat_row("kcov_coverage", "cmp_field_consumer_would_miss", fc_would_miss);
 		if (fc_key_absent > 0)

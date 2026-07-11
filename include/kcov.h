@@ -3372,6 +3372,39 @@ struct kcov_shared {
 	unsigned long cmp_hyp_bitmask_full_or_would_win;
 	unsigned long cmp_hyp_bitmask_andnot_toggle_would_fire;
 	unsigned long cmp_hyp_bitmask_andnot_toggle_would_win;
+
+	/*
+	 * SHADOW win-scalar for the field-scoped CMP inject arm.
+	 *
+	 * Sibling to the existing cmp_field_consumer_would_pick baseline
+	 * above: pick counts every post-guard eligible would-pick (the
+	 * denominator the shadow_arm_registry evaluator reads), and this
+	 * counter is the numerator -- bumped on the subset where the
+	 * pool would have offered a value DIFFERENT from the value the
+	 * generator was about to write to that slot.  A raw would-pick
+	 * that always resolves to the same value the generator already
+	 * chose is a no-op for coverage -- the live arm would flip zero
+	 * bytes on the wire and no downstream metric could move.  The
+	 * differs subset is the actionable slice: only these would_picks
+	 * could produce a byte-changed arg on a live flip.
+	 *
+	 * Mirrors the measure-only "differs" precedent set by
+	 * childop_cmp_consume_would_value_differs above: bumped once
+	 * per would_pick where the elected pool entry differs from the
+	 * caller's fallback, active in BOTH arms (SHADOW and LIVE), and
+	 * strictly bounded above by cmp_field_consumer_would_pick so
+	 * differs/would_pick reads as a plain per-mille rate.  Elected
+	 * entry is entries[0] as a deterministic RNG-free proxy for the
+	 * live arm's uniform draw (see cmp_hints_field_try_get): pool
+	 * rotation over run duration surfaces the population differs-
+	 * rate through slot 0 without advancing per-child RNG state or
+	 * touching the generator, keeping the shadow bump dry-run byte-
+	 * identical to a build without this row.
+	 *
+	 * Append-only at the tail per the existing convention so
+	 * consumer offsets stay stable.
+	 */
+	unsigned long cmp_field_consumer_would_value_differs;
 };
 
 extern struct kcov_shared *kcov_shm;
