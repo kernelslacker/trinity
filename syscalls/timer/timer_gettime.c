@@ -2,6 +2,7 @@
  * SYSCALL_DEFINE2(timer_gettime, timer_t, timer_id, struct itimerspec __user *, setting)
  */
 #include <time.h>
+#include "output-poison.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "stats_ring.h"
@@ -20,11 +21,21 @@
 struct timer_gettime_post_state {
 	unsigned long magic;
 	unsigned long setting;
+	/*
+	 * Seed for the poison pattern stamped into the setting buffer at
+	 * sanitise time.  Returned by poison_output_struct() and fed back
+	 * into check_output_struct() in the post handler so a stomp of
+	 * rec->aN cannot redirect the check against an unrelated heap page
+	 * that happens to still carry a residual pattern from an earlier
+	 * call.
+	 */
+	uint64_t poison_seed;
 };
 
 static void sanitise_timer_gettime(struct syscallrecord *rec)
 {
 	struct timer_gettime_post_state *snap;
+	void *buf;
 	int32_t tid;
 
 	/*
@@ -55,16 +66,37 @@ static void sanitise_timer_gettime(struct syscallrecord *rec)
 	avoid_shared_buffer_out(&rec->a2, sizeof(struct itimerspec));
 
 	/*
-	 * Snapshot the one input arg for the post oracle.  Without this
-	 * the post handler reads rec->a2 at post-time, when a sibling
-	 * syscall may have scribbled the slot: looks_like_corrupted_ptr()
-	 * cannot tell a real-but-wrong heap address from the original
-	 * setting user-buffer pointer, so the source memcpy would touch a
-	 * foreign allocation.  post_state is private to the post handler.
+	 * ARG_NON_NULL_ADDRESS draws from get_writable_address(), which
+	 * returns NULL when the writable pool cannot back the requested
+	 * mapping_sizes[] pick.  Skip the poison + snap install on those
+	 * calls -- writing a poison pattern to a NULL or otherwise not-
+	 * provably-writable user pointer would SIGSEGV inside the
+	 * sanitiser and mask the syscall path we are trying to fuzz.  On
+	 * skip, rec->post_state stays 0 -- post_state_claim_owned()
+	 * returns NULL and the post handler no-ops without ever touching
+	 * the pointer.
+	 */
+	buf = (void *)(unsigned long) rec->a2;
+	if (!range_readable_user(buf, sizeof(struct itimerspec)))
+		return;
+
+	/*
+	 * Snapshot the one input arg + the output-buffer poison seed for
+	 * the post oracle.  Without the a2 snap the post handler reads
+	 * rec->a2 at post-time, when a sibling syscall may have scribbled
+	 * the slot: looks_like_corrupted_ptr() cannot tell a real-but-
+	 * wrong heap address from the original setting user-buffer
+	 * pointer, so the source memcpy would touch a foreign allocation.
+	 * post_state is private to the post handler.  Stamp the poison
+	 * after avoid_shared_buffer_out() so it lands on the final buffer
+	 * the kernel will see; the returned seed is fed back into
+	 * check_output_struct() in the post handler.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
-	snap->magic   = TIMER_GETTIME_POST_STATE_MAGIC;
-	snap->setting = rec->a2;
+	snap->magic       = TIMER_GETTIME_POST_STATE_MAGIC;
+	snap->setting     = rec->a2;
+	snap->poison_seed = poison_output_struct(buf,
+						 sizeof(struct itimerspec), 0);
 	post_state_install(rec, snap);
 }
 
@@ -114,6 +146,23 @@ static void post_timer_gettime(struct syscallrecord *rec)
 				   (const void *)(unsigned long) snap->setting,
 				   sizeof(first)))
 		goto out_free;
+
+	/*
+	 * Untouched-buffer check: timer_gettime returned 0 (success) but
+	 * the user buffer still byte-for-byte matches the poison pattern
+	 * we stamped at sanitise time -- the kernel never called
+	 * copy_to_user() at all, or short-copied and left an
+	 * uninitialised-field tail readable in user memory (a kernel->
+	 * user infoleak).  Cheap (byte-walk against a repeating 8-byte
+	 * pattern, no re-issue syscall), so runs on every success sample.
+	 * Counts against the shared post_handler_untouched_out_buf slot;
+	 * the tv_nsec check below still runs -- an intact poison pattern
+	 * has bytes well outside [0, 999999999] so it will fire too, but
+	 * this counter is the dedicated no-re-issue signal.
+	 */
+	if (check_output_struct(&first, sizeof(first), snap->poison_seed))
+		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+				   1, __ATOMIC_RELAXED);
 
 	if (first.it_value.tv_nsec < 0 ||
 	    first.it_value.tv_nsec > 999999999L ||
