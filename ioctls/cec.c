@@ -25,29 +25,19 @@
  * first wave.
  */
 #ifdef CEC_ADAP_G_CAPS
-_Static_assert(sizeof(struct cec_caps) ==
-	       _IOC_SIZE(CEC_ADAP_G_CAPS),
-	       "cec_caps size vs CEC_ADAP_G_CAPS mismatch");
+IOCTL_SIZE_ASSERT(CEC_ADAP_G_CAPS, struct cec_caps);
 #endif
 #ifdef CEC_ADAP_G_LOG_ADDRS
-_Static_assert(sizeof(struct cec_log_addrs) ==
-	       _IOC_SIZE(CEC_ADAP_G_LOG_ADDRS),
-	       "cec_log_addrs size vs CEC_ADAP_G_LOG_ADDRS mismatch");
+IOCTL_SIZE_ASSERT(CEC_ADAP_G_LOG_ADDRS, struct cec_log_addrs);
 #endif
 #ifdef CEC_TRANSMIT
-_Static_assert(sizeof(struct cec_msg) ==
-	       _IOC_SIZE(CEC_TRANSMIT),
-	       "cec_msg size vs CEC_TRANSMIT mismatch");
+IOCTL_SIZE_ASSERT(CEC_TRANSMIT, struct cec_msg);
 #endif
 #ifdef CEC_DQEVENT
-_Static_assert(sizeof(struct cec_event) ==
-	       _IOC_SIZE(CEC_DQEVENT),
-	       "cec_event size vs CEC_DQEVENT mismatch");
+IOCTL_SIZE_ASSERT(CEC_DQEVENT, struct cec_event);
 #endif
 #ifdef CEC_ADAP_G_CONNECTOR_INFO
-_Static_assert(sizeof(struct cec_connector_info) ==
-	       _IOC_SIZE(CEC_ADAP_G_CONNECTOR_INFO),
-	       "cec_connector_info size vs CEC_ADAP_G_CONNECTOR_INFO mismatch");
+IOCTL_SIZE_ASSERT(CEC_ADAP_G_CONNECTOR_INFO, struct cec_connector_info);
 #endif
 
 /*
