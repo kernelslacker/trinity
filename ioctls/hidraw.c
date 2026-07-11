@@ -17,6 +17,36 @@
  * fd_test or anon_inode probe needed.
  */
 
+/*
+ * Compile-time: every fixed-shape hidraw ioctl command in the table
+ * below whose arg is a kernel struct must have sizeof(struct)
+ * matching the _IOC_SIZE encoded in its request bits.  A mismatch
+ * means hidraw.h moved under us and the request bits now encode a
+ * different struct than we're passing (or vice versa) -- either
+ * short of the kernel's copy_from_user() / copy_to_user() or past
+ * it.  Per-cmd #ifdef guards mirror the ioctl-table wrapping so
+ * builds against older uapi headers that predate a command still
+ * compile.
+ *
+ * HIDIOCGRDESCSIZE and HIDIOCREVOKE encode a bare int; HIDIOCG /
+ * HIDIOCS{RAWNAME,RAWPHYS,RAWUNIQ,FEATURE,INPUT,OUTPUT} are
+ * variable-length _IOC(...,len) forms whose _IOC_SIZE is a runtime
+ * length that hidraw_sanitise() rewrites, not sizeof(struct).  All
+ * are intentionally absent -- asserting sizeof(struct) against a
+ * scalar or a runtime-chosen length would be the wrong shape of
+ * check.
+ */
+#ifdef HIDIOCGRDESC
+_Static_assert(sizeof(struct hidraw_report_descriptor) ==
+	       _IOC_SIZE(HIDIOCGRDESC),
+	       "hidraw_report_descriptor size vs _IOC_SIZE mismatch");
+#endif
+#ifdef HIDIOCGRAWINFO
+_Static_assert(sizeof(struct hidraw_devinfo) ==
+	       _IOC_SIZE(HIDIOCGRAWINFO),
+	       "hidraw_devinfo size vs _IOC_SIZE mismatch");
+#endif
+
 static const struct ioctl hidraw_ioctls[] = {
 #ifdef HIDIOCGRDESCSIZE
 	IOCTL(HIDIOCGRDESCSIZE),
