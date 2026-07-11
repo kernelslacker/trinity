@@ -9,7 +9,7 @@
 #include "kernel/sched.h"
 static unsigned long sched_setscheduler_policies[] = {
 	SCHED_OTHER, SCHED_FIFO, SCHED_RR, SCHED_BATCH,
-	SCHED_IDLE, SCHED_DEADLINE,
+	SCHED_IDLE, SCHED_DEADLINE, SCHED_EXT,
 };
 
 static void sanitise_sched_setscheduler(struct syscallrecord *rec)

@@ -44,3 +44,7 @@
 #define CLONE_NEWTIME		0x00000080
 #endif
 
+#ifndef SCHED_EXT
+#define SCHED_EXT 7
+#endif
+
