@@ -9,9 +9,6 @@
 #include "utils.h"
 
 #include "kernel/sched.h"
-#ifndef SCHED_EXT
-#define SCHED_EXT 7
-#endif
 
 /*
  * Oracle: sched_getscheduler(pid) reads the target task's scheduling
