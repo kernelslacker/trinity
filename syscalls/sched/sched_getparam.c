@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <string.h>
 #include "deferred-free.h"
+#include "output-poison.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -18,18 +19,23 @@
  * rec->post_state, a slot the syscall ABI does not expose, so a sibling
  * syscall scribbling rec->aN between the syscall returning and the post
  * handler running cannot retarget the pid self-filter or redirect the
- * source memcpy at a foreign user buffer.
+ * source memcpy at a foreign user buffer.  The poison seed travels
+ * with the pointer so a stomp cannot smear the seed against a heap
+ * page that happens to still carry a residual pattern from an earlier
+ * call.
  */
 #define SCHED_GETPARAM_POST_STATE_MAGIC	0x53475052UL	/* "SGPR" */
 struct sched_getparam_post_state {
 	unsigned long magic;
 	unsigned long pid;
 	unsigned long param;
+	uint64_t poison_seed;
 };
 
 static void sanitise_sched_getparam(struct syscallrecord *rec)
 {
 	struct sched_getparam_post_state *snap;
+	void *buf;
 
 	/*
 	 * Clear post_state up front so an early return below leaves the
@@ -41,23 +47,49 @@ static void sanitise_sched_getparam(struct syscallrecord *rec)
 	avoid_shared_buffer_out(&rec->a2, sizeof(struct sched_param));
 
 	/*
-	 * Snapshot both input args for the post oracle.  Without this the
-	 * post handler reads rec->aN at post-time, when a sibling syscall
-	 * may have scribbled the slots: looks_like_corrupted_ptr() cannot
-	 * tell a real-but-wrong heap address from the original param
-	 * pointer, so the source memcpy would touch a foreign allocation,
-	 * and the pid self-filter would resolve against a scribbled value.
-	 * post_state is private to the post handler.  post_state_install
-	 * pairs the rec->post_state assign with the ownership-table register
-	 * so the observable window between the two is closed;
+	 * ARG_NON_NULL_ADDRESS draws from get_writable_address(), which
+	 * returns NULL when the writable pool cannot back the requested
+	 * mapping_sizes[] pick.  Skip the poison + snap install on those
+	 * calls -- writing a poison pattern to a NULL or otherwise not-
+	 * provably-writable user pointer would SIGSEGV inside the
+	 * sanitiser and mask the syscall path we are trying to fuzz.
+	 * range_readable_user() also filters raw fuzz addresses that fell
+	 * outside the tracked shared / libc-heap snapshots; those
+	 * addresses may not be writable and the poison stamp would fault
+	 * the same way.  On skip, rec->post_state stays 0 --
+	 * post_state_claim_owned() returns NULL and the post handler
+	 * no-ops without ever touching the pointer.
+	 */
+	buf = (void *)(unsigned long) rec->a2;
+	if (!range_readable_user(buf, sizeof(struct sched_param)))
+		return;
+
+	/*
+	 * Snapshot both input args plus the output-buffer poison seed for
+	 * the post oracle.  Without the pid/param snap the post handler
+	 * reads rec->aN at post-time, when a sibling syscall may have
+	 * scribbled the slots: looks_like_corrupted_ptr() cannot tell a
+	 * real-but-wrong heap address from the original param pointer, so
+	 * the source memcpy would touch a foreign allocation, and the pid
+	 * self-filter would resolve against a scribbled value.  The
+	 * poison seed travels with the pointer so a stomp cannot smear
+	 * the seed against a heap page that happens to still carry a
+	 * residual pattern from an earlier call.  Stamp the poison after
+	 * avoid_shared_buffer_out() so it lands on the final buffer the
+	 * kernel will see; the returned seed is fed back into
+	 * check_output_struct() in the post handler.  post_state is
+	 * private to the post handler.  post_state_install pairs the
+	 * rec->post_state assign with the ownership-table register so the
+	 * observable window between the two is closed;
 	 * post_sched_getparam() will then gate the snap through
 	 * post_state_claim_owned() and prove ownership before dereferencing
 	 * any field.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
-	snap->magic = SCHED_GETPARAM_POST_STATE_MAGIC;
-	snap->pid   = rec->a1;
-	snap->param = rec->a2;
+	snap->magic       = SCHED_GETPARAM_POST_STATE_MAGIC;
+	snap->pid         = rec->a1;
+	snap->param       = rec->a2;
+	snap->poison_seed = poison_output_struct(buf, sizeof(struct sched_param), 0);
 	post_state_install(rec, snap);
 }
 
@@ -106,6 +138,33 @@ static void post_sched_getparam(struct syscallrecord *rec)
 				      __func__);
 	if (snap == NULL)
 		return;
+
+	/*
+	 * Untouched-buffer check: sched_getparam returned 0 (success) but
+	 * the user buffer still byte-for-byte matches the poison pattern
+	 * we stamped at sanitise time -- the kernel never called
+	 * copy_to_user() at all, or short-copied and left an
+	 * uninitialised-field tail readable in user memory (a kernel->
+	 * user infoleak).  Runs on every retval==0 sample, not gated by
+	 * ONE_IN(100), because the check is cheap (a snapshot memcpy and
+	 * a byte-walk against a repeating 8-byte pattern -- no re-issue
+	 * syscall).  Snapshot the buffer via post_snapshot_or_skip so a
+	 * sibling munmap of the writable-pool page between syscall return
+	 * and the poison compare degrades to a skipped sample instead of
+	 * a SIGSEGV in check_output_struct's byte-walk.  Counts against
+	 * the shared post_handler_untouched_out_buf slot.
+	 */
+	if ((long) rec->retval == 0 && snap->param != 0) {
+		unsigned char poison_snap[sizeof(struct sched_param)];
+
+		if (post_snapshot_or_skip(poison_snap,
+					  (const void *)(unsigned long) snap->param,
+					  sizeof(poison_snap)) &&
+		    check_output_struct(poison_snap, sizeof(poison_snap),
+					snap->poison_seed))
+			__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+					   1, __ATOMIC_RELAXED);
+	}
 
 	if (!ONE_IN(100))
 		goto out_free;
