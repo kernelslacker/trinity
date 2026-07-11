@@ -391,8 +391,8 @@ struct results {
 	/* ARG_LEN: range of successful length values, folded into one
 	 * 64-bit word so store_successful_len() can RMW it with a single
 	 * CAS.  min == UINT32_MAX && max == 0 is the not-seen sentinel
-	 * (stamped by results_init_one() in results.h); readers should
-	 * check len_score_is_seen() before consuming min/max. */
+	 * (stamped by results_init_one() in results.h); readers must
+	 * treat min > max as never-seen before consuming min/max. */
 	union len_score_u len_score;
 	/* Run-length tracking for the failed_fds bitmap.  Only the most
 	 * recently-failing fd is tracked (full per-fd counters would cost
