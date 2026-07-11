@@ -20,6 +20,7 @@
 #include "stats.h"
 #include "strategy.h"
 #include "trinity.h"
+#include "utils.h"
 
 #include "kernel/socket.h"
 #include "kernel/mount.h"
@@ -1046,7 +1047,7 @@ void childop_outcome_snapshot(enum child_op_type op,
 				__ATOMIC_RELAXED);
 
 	out->clean_edges = clean;
-	out->noisy_edges = (discovered > clean) ? (discovered - clean) : 0;
+	out->noisy_edges = sat_sub_ul(discovered, clean);
 	out->wall_ns = __atomic_load_n(&shm->stats.childop_wall_ns[op],
 				       __ATOMIC_RELAXED);
 	out->wedges = (uint32_t)__atomic_load_n(
