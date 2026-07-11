@@ -2,6 +2,8 @@
 #include <linux/ioctl.h>
 #include <sys/types.h>
 
+#include "ioctls.h"
+
 #define __user
 /* drivers/staging/android/binder.h */
 /*
@@ -101,12 +103,8 @@ struct binder_version {
  * trinity copies in/out.  The scalar BINDER_SET_* commands and the
  * BC_ / BR_ protocol codes are intentionally absent (see below).
  */
-_Static_assert(sizeof(struct binder_write_read) ==
-	       _IOC_SIZE(BINDER_WRITE_READ),
-	       "binder_write_read size vs _IOC_SIZE mismatch");
-_Static_assert(sizeof(struct binder_version) ==
-	       _IOC_SIZE(BINDER_VERSION),
-	       "binder_version size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(BINDER_WRITE_READ, struct binder_write_read);
+IOCTL_SIZE_ASSERT(BINDER_VERSION, struct binder_version);
 
 /*
  * NOTE: Two special error codes you should check for when calling
