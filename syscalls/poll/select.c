@@ -72,7 +72,7 @@ static void sanitise_select(struct syscallrecord *rec)
 	struct timeval *tv;
 	fd_set *rfds, *wfds, *exfds;
 
-	nfds = (rand32() % 1023) + 1;
+	nfds = rnd_modulo_u32(1023) + 1;
 	rec->a1 = nfds;
 
 	rfds = get_writable_address(sizeof(fd_set));
@@ -91,7 +91,7 @@ static void sanitise_select(struct syscallrecord *rec)
 	FD_ZERO(wfds);
 	FD_ZERO(exfds);
 
-	nset = rand32() % 10;
+	nset = rnd_modulo_u32(10);
 	/*
 	 * Pick the bits to set with the same coverage bias as poll(2):
 	 *   ~60% — use the actual fd number of a tracked pollable fd_type
