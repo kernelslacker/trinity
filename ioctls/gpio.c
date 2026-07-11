@@ -31,59 +31,31 @@
  * GPIO_GET_LINEINFO_UNWATCH_IOCTL takes a bare __u32 offset, not
  * a struct, and is intentionally absent.
  */
-_Static_assert(sizeof(struct gpiochip_info) ==
-	       _IOC_SIZE(GPIO_GET_CHIPINFO_IOCTL),
-	       "gpiochip_info size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(GPIO_GET_CHIPINFO_IOCTL, struct gpiochip_info);
 #ifdef GPIO_V2_GET_LINEINFO_IOCTL
-_Static_assert(sizeof(struct gpio_v2_line_info) ==
-	       _IOC_SIZE(GPIO_V2_GET_LINEINFO_IOCTL),
-	       "gpio_v2_line_info size vs GPIO_V2_GET_LINEINFO_IOCTL mismatch");
-_Static_assert(sizeof(struct gpio_v2_line_info) ==
-	       _IOC_SIZE(GPIO_V2_GET_LINEINFO_WATCH_IOCTL),
-	       "gpio_v2_line_info size vs GPIO_V2_GET_LINEINFO_WATCH_IOCTL mismatch");
-_Static_assert(sizeof(struct gpio_v2_line_request) ==
-	       _IOC_SIZE(GPIO_V2_GET_LINE_IOCTL),
-	       "gpio_v2_line_request size vs _IOC_SIZE mismatch");
-_Static_assert(sizeof(struct gpio_v2_line_config) ==
-	       _IOC_SIZE(GPIO_V2_LINE_SET_CONFIG_IOCTL),
-	       "gpio_v2_line_config size vs _IOC_SIZE mismatch");
-_Static_assert(sizeof(struct gpio_v2_line_values) ==
-	       _IOC_SIZE(GPIO_V2_LINE_GET_VALUES_IOCTL),
-	       "gpio_v2_line_values size vs GPIO_V2_LINE_GET_VALUES_IOCTL mismatch");
-_Static_assert(sizeof(struct gpio_v2_line_values) ==
-	       _IOC_SIZE(GPIO_V2_LINE_SET_VALUES_IOCTL),
-	       "gpio_v2_line_values size vs GPIO_V2_LINE_SET_VALUES_IOCTL mismatch");
+IOCTL_SIZE_ASSERT(GPIO_V2_GET_LINEINFO_IOCTL, struct gpio_v2_line_info);
+IOCTL_SIZE_ASSERT(GPIO_V2_GET_LINEINFO_WATCH_IOCTL, struct gpio_v2_line_info);
+IOCTL_SIZE_ASSERT(GPIO_V2_GET_LINE_IOCTL, struct gpio_v2_line_request);
+IOCTL_SIZE_ASSERT(GPIO_V2_LINE_SET_CONFIG_IOCTL, struct gpio_v2_line_config);
+IOCTL_SIZE_ASSERT(GPIO_V2_LINE_GET_VALUES_IOCTL, struct gpio_v2_line_values);
+IOCTL_SIZE_ASSERT(GPIO_V2_LINE_SET_VALUES_IOCTL, struct gpio_v2_line_values);
 #endif
 #ifdef GPIO_GET_LINEINFO_IOCTL
-_Static_assert(sizeof(struct gpioline_info) ==
-	       _IOC_SIZE(GPIO_GET_LINEINFO_IOCTL),
-	       "gpioline_info size vs GPIO_GET_LINEINFO_IOCTL mismatch");
-_Static_assert(sizeof(struct gpioline_info) ==
-	       _IOC_SIZE(GPIO_GET_LINEINFO_WATCH_IOCTL),
-	       "gpioline_info size vs GPIO_GET_LINEINFO_WATCH_IOCTL mismatch");
+IOCTL_SIZE_ASSERT(GPIO_GET_LINEINFO_IOCTL, struct gpioline_info);
+IOCTL_SIZE_ASSERT(GPIO_GET_LINEINFO_WATCH_IOCTL, struct gpioline_info);
 #endif
 #ifdef GPIO_GET_LINEHANDLE_IOCTL
-_Static_assert(sizeof(struct gpiohandle_request) ==
-	       _IOC_SIZE(GPIO_GET_LINEHANDLE_IOCTL),
-	       "gpiohandle_request size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(GPIO_GET_LINEHANDLE_IOCTL, struct gpiohandle_request);
 #endif
 #ifdef GPIO_GET_LINEEVENT_IOCTL
-_Static_assert(sizeof(struct gpioevent_request) ==
-	       _IOC_SIZE(GPIO_GET_LINEEVENT_IOCTL),
-	       "gpioevent_request size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(GPIO_GET_LINEEVENT_IOCTL, struct gpioevent_request);
 #endif
 #ifdef GPIOHANDLE_GET_LINE_VALUES_IOCTL
-_Static_assert(sizeof(struct gpiohandle_data) ==
-	       _IOC_SIZE(GPIOHANDLE_GET_LINE_VALUES_IOCTL),
-	       "gpiohandle_data size vs GPIOHANDLE_GET_LINE_VALUES_IOCTL mismatch");
-_Static_assert(sizeof(struct gpiohandle_data) ==
-	       _IOC_SIZE(GPIOHANDLE_SET_LINE_VALUES_IOCTL),
-	       "gpiohandle_data size vs GPIOHANDLE_SET_LINE_VALUES_IOCTL mismatch");
+IOCTL_SIZE_ASSERT(GPIOHANDLE_GET_LINE_VALUES_IOCTL, struct gpiohandle_data);
+IOCTL_SIZE_ASSERT(GPIOHANDLE_SET_LINE_VALUES_IOCTL, struct gpiohandle_data);
 #endif
 #ifdef GPIOHANDLE_SET_CONFIG_IOCTL
-_Static_assert(sizeof(struct gpiohandle_config) ==
-	       _IOC_SIZE(GPIOHANDLE_SET_CONFIG_IOCTL),
-	       "gpiohandle_config size vs _IOC_SIZE mismatch");
+IOCTL_SIZE_ASSERT(GPIOHANDLE_SET_CONFIG_IOCTL, struct gpiohandle_config);
 #endif
 
 /*
