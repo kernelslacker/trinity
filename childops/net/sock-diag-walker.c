@@ -133,7 +133,7 @@ static size_t bc_emit(unsigned char *buf, size_t cap)
 	size_t off = 0;
 	bool truncate;
 
-	n_ops = (rand32() % SD_BC_MAX_OPS) + 1;
+	n_ops = rnd_modulo_u32(SD_BC_MAX_OPS) + 1;
 	truncate = (rand32() & 0x3) == 0;
 
 	for (i = 0; i < n_ops; i++) {
@@ -223,7 +223,7 @@ static size_t bc_emit(unsigned char *buf, size_t cap)
 		/* Truncate mid-chain on the final op so the bytecode walker
 		 * sees a header that points past the actual buffer end. */
 		if (truncate && i + 1 == n_ops && off > 2)
-			off -= 1 + (rand32() % 2);
+			off -= 1 + rnd_modulo_u32(2);
 	}
 
 	return off;
