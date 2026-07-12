@@ -38,9 +38,9 @@
  * means kernel headers moved under us and the sanitiser is
  * memset()ing / stamping into a buffer the kernel will read past
  * (over-encoded) or copy less of than we prepared (under-encoded).
- * Flex-tail requests (KVM_SET_GSI_ROUTING) and scalar/_IO() encodings
- * (KVM_SET_IDENTITY_MAP_ADDR, KVM_SET_TSS_ADDR) are intentionally
- * absent -- their _IOC_SIZE either counts only the header or is 0.
+ * Flex-tail requests (KVM_SET_GSI_ROUTING) and _IO() encodings
+ * (KVM_SET_TSS_ADDR) are intentionally absent -- their _IOC_SIZE
+ * counts only the header or is 0.
  */
 IOCTL_SIZE_ASSERT(KVM_SET_USER_MEMORY_REGION, struct kvm_userspace_memory_region);
 #ifdef KVM_SET_USER_MEMORY_REGION2
@@ -49,6 +49,7 @@ IOCTL_SIZE_ASSERT(KVM_SET_USER_MEMORY_REGION2, struct kvm_userspace_memory_regio
 IOCTL_SIZE_ASSERT(KVM_IRQ_LINE, struct kvm_irq_level);
 IOCTL_SIZE_ASSERT(KVM_IRQ_LINE_STATUS, struct kvm_irq_level);
 IOCTL_SIZE_ASSERT(KVM_CREATE_PIT2, struct kvm_pit_config);
+IOCTL_SIZE_ASSERT(KVM_SET_IDENTITY_MAP_ADDR, __u64);
 
 /*
  * Match against the calling child's OBJ_LOCAL OBJ_FD_KVM_VM pool.
