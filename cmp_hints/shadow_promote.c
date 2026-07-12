@@ -56,6 +56,7 @@ enum shadow_arm_id {
 	SHADOW_ARM_CMP_HYP_BITMASK_ANDNOT_TOGGLE,
 	SHADOW_ARM_CMP_NONCONST_RELATIONAL,
 	SHADOW_ARM_CMP_FIELD_SCOPED_INJECT,
+	SHADOW_ARM_CMP_SHARED_TIER_COLDSERVE,
 	SHADOW_ARM_NR,
 };
 
@@ -222,6 +223,52 @@ static const struct shadow_arm shadow_arm_registry[SHADOW_ARM_NR] = {
 		.live_flag = 0,
 		.min_baseline_samples = 100,
 		.win_ratio_per_mille = 100,
+	},
+	/*
+	 * Shared-tier cold-serve shadow.  baseline
+	 * (cmp_shared_tier_shadow_warmstart_eligible) bumps once per
+	 * cmp_hints_try_get_ex() cold-miss return where the shared tier
+	 * had at least one non-entry-path IP available to seed from --
+	 * the OPPORTUNITY size a live cold-serve would consume; would-
+	 * win (cmp_shared_tier_shadow_would_confirm) bumps on the subset
+	 * where the deterministically elected (cmp_ip, value, size)
+	 * triple from the shared tier is already present in THIS nr's
+	 * own native durable / recent pool at probe time (exact identity
+	 * match).  Ratio is the fraction of shared-tier cold-serve
+	 * opportunities whose elected value the native evidence for this
+	 * syscall already corroborates -- the "shared serve would agree
+	 * with what we would eventually learn locally" measurement the
+	 * cold-serve go / no-go decision needs.
+	 *
+	 * Stricter per-arm criterion than the pilot band -- baseline
+	 * floor of 100 samples and 250/1000 win threshold -- matching
+	 * the sibling shared-tier lane's noisier population profile
+	 * (cross-syscall shared entries + entry-path filtering leave a
+	 * wider variance envelope than the per-nr equality baselines).
+	 * A live counterpart exists (cmp_shared_tier_serves under
+	 * COMBINED mode) but is not wired here: this arm onboards the
+	 * MEASURE half only; live_flag stays 0 and the promotion
+	 * decision is a separate human call once the ratio stabilises.
+	 *
+	 * READINESS gate, NOT a coverage proxy: surfacing a "ready to
+	 * promote" line means "the shared-tier cold-serve elects
+	 * triples that agree with local native evidence at a high
+	 * enough rate to warrant flipping the live cold-serve on by
+	 * default", NOT "promote now".  "Present now" is a conservative
+	 * floor per the counter's doc-comment in include/kcov.h.
+	 */
+	[SHADOW_ARM_CMP_SHARED_TIER_COLDSERVE] = {
+		.name = "cmp_shared_tier_coldserve",
+		.would_win_offset =
+			offsetof(struct kcov_shared,
+				 cmp_shared_tier_shadow_would_confirm),
+		.live_win_offset = 0,
+		.baseline_offset =
+			offsetof(struct kcov_shared,
+				 cmp_shared_tier_shadow_warmstart_eligible),
+		.live_flag = 0,
+		.min_baseline_samples = 100,
+		.win_ratio_per_mille = 250,
 	},
 };
 

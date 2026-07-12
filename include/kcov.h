@@ -3405,6 +3405,47 @@ struct kcov_shared {
 	 * consumer offsets stay stable.
 	 */
 	unsigned long cmp_field_consumer_would_value_differs;
+
+	/*
+	 * SHADOW would-confirm win-scalar for the shared-tier cold-serve
+	 * arm.
+	 *
+	 * Sibling to the cmp_shared_tier_shadow_warmstart_eligible
+	 * baseline above: eligible bumps once per cmp_hints_try_get_ex()
+	 * cold-miss return where the shared tier had at least one non-
+	 * entry-path IP available to seed from (the OPPORTUNITY size a
+	 * live cold-serve would consume), and this counter is the
+	 * numerator -- bumped on the subset where the deterministically
+	 * elected (cmp_ip, value, size) triple from the shared tier is
+	 * already present in THIS nr's OWN native durable / recent pool
+	 * at probe time (exact identity match).  A would-confirm bump
+	 * means the shared tier's cold-serve would have elected a triple
+	 * the native pool for this syscall already carries -- i.e. a
+	 * live serve at this site would confirm what the native evidence
+	 * already agrees with, and the elected value is not a cross-
+	 * syscall lift the native pool has never seen.
+	 *
+	 * The election is READ-ONLY, no-RNG and deterministic (first
+	 * occupied non-entry-path-excluded bucket by ascending index):
+	 * no generator state is advanced and the pick stream stays byte-
+	 * for-byte identical to a build without this row.  Bumped
+	 * strictly inside the SAME eligible branch that bumps
+	 * cmp_shared_tier_shadow_warmstart_eligible so
+	 * would_confirm <= warmstart_eligible holds and the ratio
+	 * reads as a plain per-mille rate -- the fraction of shared-
+	 * tier cold-serve opportunities whose elected triple is already
+	 * corroborated by this nr's own native evidence.
+	 *
+	 * CONSERVATIVE FLOOR: "present now" undercounts delayed native
+	 * discovery -- a native pool that eventually observes the triple
+	 * but has not yet at probe time reads as a would-confirm MISS.
+	 * The measurement bounds the confirm fraction from below, which
+	 * is the direction the go/no-go decision needs.
+	 *
+	 * Append-only at the tail per the existing convention so
+	 * consumer offsets stay stable.
+	 */
+	unsigned long cmp_shared_tier_shadow_would_confirm;
 };
 
 extern struct kcov_shared *kcov_shm;

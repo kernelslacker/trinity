@@ -711,6 +711,135 @@ void cmp_shared_tier_insert(unsigned int nr, unsigned long cmp_ip,
 	 * pools still carry the authoritative record. */
 }
 
+/*
+ * Measure-only would-confirm sibling of the eligible cold-miss bump
+ * below.  Deterministically elects the first occupied, non-entry-
+ * path-excluded shared-tier bucket by ascending index and checks
+ * whether the elected (cmp_ip, value, size) triple is already
+ * present in THIS nr's own native durable / recent pool at probe
+ * time (exact identity match).  A hit bumps
+ * cmp_shared_tier_shadow_would_confirm; a miss (or absent context)
+ * bumps nothing.  READ-ONLY across every pool it touches: no lock,
+ * no RNG, no generator-state advance, no counter mutation beyond
+ * the one would-confirm scalar.  Called STRICTLY inside the same
+ * eligible branch that bumps cmp_shared_tier_shadow_warmstart_
+ * eligible so would_confirm <= warmstart_eligible holds and the
+ * ratio reads as a per-mille rate.
+ *
+ * "THIS nr" is read off this_child()->syscall -- the syscall the
+ * dispatch layer stamped before generate_syscall_args() fired; a
+ * parent-context caller (init self-check path) short-circuits on
+ * child == NULL and never bumps would_confirm.  Election ignores
+ * the shared_tier_lock: occupied / value_count are RELAXED reads
+ * and a torn observation at worst misbuckets a single sample,
+ * matching the tier's advisory-shadow discipline.
+ *
+ * "Present now" is a CONSERVATIVE floor.  A native pool that will
+ * eventually observe the triple but has not yet at probe time
+ * reads as a miss, and the childop_consume path passes a wrapped
+ * nr to cmp_hints_try_get_ex while this_child()->syscall.nr stays
+ * the outer trinity_cmp_syscall's nr, so the scan hits the outer
+ * syscall's pool instead of the wrapped nr's.  Both directions
+ * push the count DOWN vs the true would-confirm rate, which is
+ * the direction the go / no-go decision needs.
+ */
+static void cmp_shared_tier_shadow_probe_would_confirm(void)
+{
+	struct childdata *child;
+	struct syscallrecord *rec;
+	unsigned int nr;
+	bool do32;
+	unsigned long served_cmp_ip = 0;
+	unsigned long served_value = 0;
+	unsigned int served_size = 0;
+	bool have_pick = false;
+	uint32_t idx;
+	struct cmp_hint_pool *native_pool;
+	struct cmp_recent_pool *recent_pool;
+	unsigned int native_count;
+	unsigned int recent_count;
+	unsigned int i;
+
+	if (cmp_hints_shm == NULL)
+		return;
+	child = this_child();
+	if (child == NULL)
+		return;
+	rec = &child->syscall;
+	nr = rec->nr;
+	if (nr >= MAX_NR_SYSCALL)
+		return;
+	do32 = rec->do32bit;
+
+	/* Deterministic index-0-forward election.  RELAXED reads on
+	 * occupied / entry_path_excluded / value_count mirror the sibling
+	 * eligibility check's discipline; probe exhaustion (empty tier
+	 * modulo entry-path noise) drops out silently with have_pick
+	 * false. */
+	for (idx = 0; idx < CMP_SHARED_TIER_IPS; idx++) {
+		struct cmp_shared_tier_bucket *b =
+			&cmp_hints_shm->shared_tier[idx];
+
+		if (b->occupied == 0)
+			continue;
+		if (b->entry_path_excluded)
+			continue;
+		if (b->value_count == 0)
+			continue;
+		served_cmp_ip = b->cmp_ip;
+		served_value = b->values[0].value;
+		served_size = b->values[0].size;
+		have_pick = true;
+		break;
+	}
+	if (!have_pick)
+		return;
+
+	/* Scan THIS nr's own native durable pool for exact identity
+	 * match.  ACQUIRE on count pairs with the RELEASE-store the
+	 * durable insert path emits under the pool lock; any count
+	 * above the per-syscall cap is a wild-write symptom and the
+	 * pool is treated as empty for the probe (the sticky
+	 * cmp_hints_pool_corrupted latch on the next real reader
+	 * access still picks up the corruption via the normal path). */
+	native_pool = &cmp_hints_shm->pools[nr][do32 ? 1 : 0];
+	native_count = __atomic_load_n(&native_pool->count, __ATOMIC_ACQUIRE);
+	if (native_count > CMP_HINTS_PER_SYSCALL)
+		native_count = 0;
+	for (i = 0; i < native_count; i++) {
+		struct cmp_hint_entry *e = &native_pool->entries[i];
+
+		if (e->cmp_ip == served_cmp_ip &&
+		    e->value == served_value &&
+		    e->size == served_size) {
+			__atomic_fetch_add(&kcov_shm->cmp_shared_tier_shadow_would_confirm,
+					   1UL, __ATOMIC_RELAXED);
+			return;
+		}
+	}
+
+	/* Then this nr's recent ring under the same skip-if-oob
+	 * discipline.  Recent entries mirror the durable entry triple
+	 * layout for the fields this probe reads (cmp_ip / value /
+	 * size); a hit bumps and returns so a triple present in both
+	 * tiers only counts once, keeping the invariant. */
+	recent_pool = &cmp_hints_shm->recent_pools[nr][do32 ? 1 : 0];
+	recent_count = __atomic_load_n(&recent_pool->count, __ATOMIC_ACQUIRE);
+	if (recent_count > CMP_RECENT_PER_SYSCALL)
+		recent_count = 0;
+	for (i = 0; i < recent_count; i++) {
+		struct cmp_recent_entry *e = &recent_pool->entries[i];
+
+		if (e->cmp_ip == served_cmp_ip &&
+		    e->value == served_value &&
+		    e->size == served_size) {
+			__atomic_fetch_add(&kcov_shm->cmp_shared_tier_shadow_would_confirm,
+					   1UL, __ATOMIC_RELAXED);
+			return;
+		}
+	}
+}
+
 void cmp_shared_tier_shadow_probe_cold_miss(void)
 {
 	unsigned long ips;
@@ -739,9 +868,11 @@ void cmp_shared_tier_shadow_probe_cold_miss(void)
 			      __ATOMIC_RELAXED);
 	excluded = __atomic_load_n(&kcov_shm->cmp_shared_tier_entry_path_excluded_ips,
 				   __ATOMIC_RELAXED);
-	if (ips > excluded)
+	if (ips > excluded) {
 		__atomic_fetch_add(&kcov_shm->cmp_shared_tier_shadow_warmstart_eligible,
 				   1UL, __ATOMIC_RELAXED);
+		cmp_shared_tier_shadow_probe_would_confirm();
+	}
 }
 
 /*
