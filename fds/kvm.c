@@ -217,6 +217,7 @@ static void kvm_seed_guest(struct object *vmobj)
  */
 static void kvm_seed_vcpu_regs(int vcpufd)
 {
+#if defined(__x86_64__) || defined(__i386__)
 	struct kvm_sregs sregs;
 	struct kvm_regs regs = { 0 };
 
@@ -231,6 +232,13 @@ static void kvm_seed_vcpu_regs(int vcpufd)
 	regs.rflags = 0x2;	/* reserved bit 1 set; interrupts left off */
 	regs.rsp = 0x2000;	/* valid SP inside guest RAM (code uses none) */
 	(void)ioctl(vcpufd, KVM_SET_REGS, &regs);
+#else
+	/* The seeded entry state above is x86 flat-real-mode specific
+	 * (CS/RIP/RSP/RFLAGS); other arches have no equivalent register
+	 * layout, so leave the vCPU at its architectural reset state -- it
+	 * is still useful for the register ioctls, per the note above. */
+	(void)vcpufd;
+#endif
 }
 
 /*
