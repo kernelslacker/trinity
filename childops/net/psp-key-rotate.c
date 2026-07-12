@@ -316,10 +316,48 @@ static bool ns_unsupported_psp_sriov;
 static bool pdpc_setup_done;
 static bool pdpc_modprobe_tried;
 static int  pdpc_latched_netns_fd = -1;
+/* Persistent worker's original netns fd, captured once before the first
+ * unshare(CLONE_NEWNET) inside the sub-mode.  The sub-mode runs directly
+ * in the worker (not in a userns_run_in_ns grandchild), so without
+ * restoring on exit every subsequent childop in this worker would run
+ * in the sub-mode's private (empty) netns. */
+static int  pdpc_worker_original_netns_fd = -1;
 static __u32 pdpc_bus_ids[PDPC_MAX_INSTANCES];
 static unsigned int pdpc_n_instances;
 static __u32 pdpc_next_port[PDPC_MAX_INSTANCES];
 static __u32 pdpc_last_port[PDPC_MAX_INSTANCES];
+
+/* Save the persistent worker's original netns fd.  Idempotent -- the fd
+ * is captured on the first call and reused for the lifetime of the
+ * worker process.  Must be called before any unshare(CLONE_NEWNET) or
+ * setns() switch in this file so pdpc_restore_worker_netns() can put
+ * the worker back where every other childop expects to run. */
+static bool pdpc_save_worker_netns_once(void)
+{
+	int fd;
+
+	if (pdpc_worker_original_netns_fd >= 0)
+		return true;
+
+	fd = open("/proc/self/ns/net", O_RDONLY | O_CLOEXEC);
+	if (fd < 0)
+		return false;
+	pdpc_worker_original_netns_fd = fd;
+	return true;
+}
+
+/* Restore the worker to the netns captured by
+ * pdpc_save_worker_netns_once().  Returns true when nothing was saved
+ * (no switch ever happened) or the setns succeeded; false means the
+ * worker is stuck in the sub-mode's netns and the caller should latch
+ * the sub-mode off. */
+static bool pdpc_restore_worker_netns(void)
+{
+	if (pdpc_worker_original_netns_fd < 0)
+		return true;
+
+	return setns(pdpc_worker_original_netns_fd, CLONE_NEWNET) == 0;
+}
 
 static int pdpc_sysfs_write_str(const char *path, const char *s)
 {
@@ -663,11 +701,25 @@ static void iter_devlink_port_churn(unsigned int iter_idx,
 	__atomic_add_fetch(&shm->stats.psp_devlink_port_churn_runs,
 			   1, __ATOMIC_RELAXED);
 
+	/* Capture the worker's original netns before any switch so out:
+	 * can restore it.  If the open fails we cannot safely enter the
+	 * sub-mode -- latch it off rather than risk stranding the worker
+	 * in an unshared netns. */
+	if (!pdpc_save_worker_netns_once()) {
+		ns_unsupported_psp_devlink_port = true;
+		__atomic_add_fetch(&shm->stats.psp_devlink_port_churn_unsupported_latched,
+				   1, __ATOMIC_RELAXED);
+		return;
+	}
+
 	if (!pdpc_setup_done) {
 		if (!pdpc_setup_once()) {
 			__atomic_add_fetch(&shm->stats.psp_devlink_port_churn_unsupported_latched,
 					   1, __ATOMIC_RELAXED);
-			return;
+			/* pdpc_setup_once() may have unshared before
+			 * failing -- fall through to out: so the netns
+			 * restore fires. */
+			goto out;
 		}
 	} else if (pdpc_latched_netns_fd >= 0 &&
 		   setns(pdpc_latched_netns_fd, CLONE_NEWNET) < 0) {
@@ -779,6 +831,21 @@ out:
 		genl_close(&devlink_ctx);
 	if (rtnl.fd >= 0)
 		nl_close(&rtnl);
+
+	/* Return the worker to its original netns.  A no-op if no switch
+	 * ever happened (early bail before setup).  On failure the worker
+	 * is stuck in the sub-mode's netns -- latch the sub-mode off and
+	 * drop the latched fd so the setns branch above cannot re-enter,
+	 * limiting the blast radius to whatever downstream childops run
+	 * next in this worker. */
+	if (!pdpc_restore_worker_netns()) {
+		ns_unsupported_psp_devlink_port = true;
+		pdpc_setup_done = false;
+		if (pdpc_latched_netns_fd >= 0) {
+			close(pdpc_latched_netns_fd);
+			pdpc_latched_netns_fd = -1;
+		}
+	}
 }
 
 /* Issue a single PSP_CMD_DEV_GET on @ctx as a structural probe; the
