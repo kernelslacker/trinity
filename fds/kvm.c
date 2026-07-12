@@ -313,41 +313,34 @@ static bool create_one_vcpu(struct object *vmobj)
 }
 
 /*
- * Populate vmobj with KVM_VCPUS_PER_VM vCPUs.  Best-effort: each vCPU
- * is an independent object in the OBJ_LOCAL OBJ_FD_KVM_VCPU pool, so a
- * partial result (one of two creates failed) is still useful and the
- * caller does not need to roll the first vCPU back.  NULL vmobj passes
- * through to create_one_vcpu()'s own NULL guard.
- */
-static void create_vcpus_for_vm(struct object *vmobj)
-{
-	int i;
-
-	for (i = 0; i < KVM_VCPUS_PER_VM; i++)
-		(void)create_one_vcpu(vmobj);
-}
-
-/*
  * Create one VM against @sysfd (this child's own /dev/kvm fd) and add
- * it to the calling child's OBJ_LOCAL OBJ_FD_KVM_VM pool.  Runs from
- * the per-child fd_provider child_init hook so vcpu->kvm->mm resolves
- * to this child's mm on every subsequent per-VM / per-vCPU ioctl.
- * Returns the added vmobj on success (caller chains create_vcpus_for_vm
- * onto it) or NULL on failure.
+ * it to the calling child's OBJ_LOCAL OBJ_FD_KVM_VM pool, together
+ * with KVM_VCPUS_PER_VM vCPUs on that VM.  Runs from the per-child
+ * fd_provider child_init hook so vcpu->kvm->mm resolves to this
+ * child's mm on every subsequent per-VM / per-vCPU ioctl.
+ *
+ * vCPU creation is done before add_object() publishes the VM: once
+ * the pool takes ownership of obj, an internal rejection path
+ * (bad-fd guard, snapshot-missing head, grow-alloc failure) may
+ * release the slot straight back to the deferred-free ring, so
+ * dereferencing obj after that point could touch reclaimed memory.
+ * Best-effort throughout -- a partial vCPU set is still useful, and
+ * a failed add_object() leaves the vCPUs (whose parent_vmfd captured
+ * the raw fd, not an obj pointer) intact for the child's fuzz loop.
  */
-static struct object *create_one_vm(int sysfd)
+static void create_one_vm(int sysfd)
 {
 	struct object *obj;
-	int vmfd;
+	int vmfd, i;
 
 	vmfd = ioctl(sysfd, KVM_CREATE_VM, 0UL);
 	if (vmfd < 0)
-		return NULL;
+		return;
 
 	obj = alloc_object();
 	if (obj == NULL) {
 		close(vmfd);
-		return NULL;
+		return;
 	}
 	obj->kvmvmobj.fd = vmfd;
 	obj->kvmvmobj.parent_sysfd = sysfd;
@@ -356,8 +349,11 @@ static struct object *create_one_vm(int sysfd)
 	obj->kvmvmobj.guest_ram = NULL;
 	obj->kvmvmobj.guest_ram_size = 0;
 	kvm_seed_guest(obj);
+
+	for (i = 0; i < KVM_VCPUS_PER_VM; i++)
+		(void)create_one_vcpu(obj);
+
 	add_object(obj, OBJ_LOCAL, OBJ_FD_KVM_VM);
-	return obj;
 }
 
 /*
@@ -458,7 +454,7 @@ static int init_kvm_system(void)
  */
 static void kvm_child_init(struct childdata *child __attribute__((unused)))
 {
-	struct object *sysobj, *vmobj;
+	struct object *sysobj;
 	int sysfd;
 
 	if (unsupported_kvm)
@@ -477,11 +473,7 @@ static void kvm_child_init(struct childdata *child __attribute__((unused)))
 	sysobj->kvmsysobj.api_version = KVM_EXPECTED_API_VERSION;
 	add_object(sysobj, OBJ_LOCAL, OBJ_FD_KVM_SYSTEM);
 
-	vmobj = create_one_vm(sysfd);
-	if (vmobj == NULL)
-		return;
-
-	create_vcpus_for_vm(vmobj);
+	create_one_vm(sysfd);
 }
 
 /*
