@@ -336,8 +336,6 @@ static void havoc_swap_regions(unsigned char *buf, size_t len)
 	max_run = len / 2u;
 	if (max_run > BLOB_HAVOC_BLOCK_MAX)
 		max_run = BLOB_HAVOC_BLOCK_MAX;
-	if (max_run == 0)
-		return;
 	run = 1u + rnd_modulo_u32((uint32_t) max_run);
 
 	a = (size_t) rnd_modulo_u32((uint32_t)(len - run) + 1u);
