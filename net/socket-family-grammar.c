@@ -1583,7 +1583,6 @@ bool run_grammar_chain(const struct socket_family_grammar *sfg,
 			break;
 #endif
 
-		case SFG_PHASE_END:
 		default:
 			break;
 		}
