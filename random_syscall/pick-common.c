@@ -47,6 +47,63 @@
 #include "utils.h"
 
 /*
+ * Checked loader for the shared active-syscall counts.  All three
+ * picker arms (set_syscall_nr_heuristic / _random / _coverage_frontier
+ * in pickers.c) and the biarch table-selector (choose_syscall_table
+ * below) load one of shm->nr_active_syscalls, nr_active_32bit_syscalls,
+ * or nr_active_64bit_syscalls under RELAXED, feed it to rnd_modulo_u32
+ * (), and index child->active_syscalls[] -- which points into the
+ * shm->active_syscalls*[MAX_NR_SYSCALL] arrays (include/shm.h).  A
+ * stomped count that exceeds MAX_NR_SYSCALL walks the flat draw off
+ * the SHM mapping.  Same failure class as the cmp-hints pool count
+ * (see cmp_hints_pool_corrupted() in cmp_hints/pool.c and the
+ * cmp_hints_count_oob counter in include/kcov.h).
+ *
+ * Centralise the load + validate + log here so every consumer trips
+ * the same self-corrupt marker with a uniform arch label, and so
+ * follow-up work that grows the observability surface (e.g. a
+ * per-arch shm counter modelled after cmp_hints_count_oob) has one
+ * site to bump.  Callers detect corruption via the returned value
+ * being > MAX_NR_SYSCALL and take their existing FAIL / skip path;
+ * the raw observed value is returned so forensics from the log line
+ * and the caller's decision are consistent.
+ *
+ * A zero count is NOT corrupt and is deliberately not touched here:
+ * rnd_modulo_u32(0) is defined to return 0, no_syscalls_enabled()
+ * bails on the sustained-zero case, and a transient zero from a
+ * racing deactivate is absorbed by the picker's existing val==0
+ * retry guard.  The picked-syscall-number bound (syscallnr <
+ * MAX_NR_SYSCALL) is guarded at its own indexing sites and is not
+ * this helper's concern.
+ *
+ * RELAXED matches the pre-existing pick-hot-path atomic shape (no
+ * ordering is inferred from the count against the active_syscalls[]
+ * slot loads; the val == 0 retry absorbs any tear on the paired
+ * entry).  Consumes no RNG so seeded-run determinism is preserved.
+ *
+ * Prototype duplicated in pickers.c (the other caller): not hoisted
+ * into random-syscall-internal.h yet -- promote when a caller
+ * appears outside this two-file cluster.  The local prototype
+ * silences -Wmissing-prototypes for the non-static definition
+ * without dragging a header edit into this fix.
+ */
+unsigned int load_active_syscall_count(const unsigned int *shm_count,
+				       const char *arch_label);
+unsigned int load_active_syscall_count(const unsigned int *shm_count,
+				       const char *arch_label)
+{
+	unsigned int nr = __atomic_load_n(shm_count, __ATOMIC_RELAXED);
+
+	if (nr > MAX_NR_SYSCALL) {
+		output(0,
+		       "[%d] active-syscall count self-corrupt: %s=%u exceeds cap %u\n",
+		       mypid(), arch_label, nr,
+		       (unsigned int)MAX_NR_SYSCALL);
+	}
+	return nr;
+}
+
+/*
  * This function decides if we're going to be doing a 32bit or 64bit syscall.
  * There are various factors involved here, from whether we're on a 32-bit only arch
  * to 'we asked to do a 32bit only syscall' and more.. Hairy.
@@ -97,14 +154,20 @@ bool choose_syscall_table(struct childdata *child,
 	if (do32 == false) {
 		syscalls = syscalls_64bit;
 		child->active_syscalls = shm->active_syscalls64;
-		*nr_syscalls_out = __atomic_load_n(&shm->nr_active_64bit_syscalls,
-						   __ATOMIC_RELAXED);
+		*nr_syscalls_out = load_active_syscall_count(
+			&shm->nr_active_64bit_syscalls,
+			"nr_active_64bit_syscalls");
 	} else {
 		syscalls = syscalls_32bit;
 		child->active_syscalls = shm->active_syscalls32;
-		*nr_syscalls_out = __atomic_load_n(&shm->nr_active_32bit_syscalls,
-						   __ATOMIC_RELAXED);
+		*nr_syscalls_out = load_active_syscall_count(
+			&shm->nr_active_32bit_syscalls,
+			"nr_active_32bit_syscalls");
 	}
+	/* Return signal reserved for do32 by the public signature in
+	 * include/syscall.h; a corrupt count arrives at the caller via
+	 * *nr_syscalls_out > MAX_NR_SYSCALL and each picker arm turns
+	 * that into its existing FAIL path. */
 	return do32;
 }
 
