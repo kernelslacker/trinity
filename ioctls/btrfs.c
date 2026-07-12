@@ -49,9 +49,8 @@ struct btrfs_ioctl_received_subvol_args_32 {
  * failure means the btrfs UAPI moved and the sanitiser's
  * memset(sizeof(*args)) is against a stale layout -- fix the
  * sanitiser, do not silence.  Flex-tail cmds (TREE_SEARCH_V2 with
- * buf[], SPACE_INFO with spaces[]) and scalar _IOR/W (SUBVOL_GETFLAGS
- * → __u64) are intentionally absent -- _IOC_SIZE covers only the
- * header or a scalar there.
+ * buf[], SPACE_INFO with spaces[]) are intentionally absent --
+ * _IOC_SIZE covers only the header there.
  */
 IOCTL_SIZE_ASSERT(BTRFS_IOC_TREE_SEARCH, struct btrfs_ioctl_search_args);
 IOCTL_SIZE_ASSERT(BTRFS_IOC_INO_LOOKUP, struct btrfs_ioctl_ino_lookup_args);
@@ -69,6 +68,7 @@ IOCTL_SIZE_ASSERT(BTRFS_IOC_GET_SUBVOL_INFO, struct btrfs_ioctl_get_subvol_info_
 #endif
 IOCTL_SIZE_ASSERT(BTRFS_IOC_SNAP_CREATE_V2, struct btrfs_ioctl_vol_args_v2);
 IOCTL_SIZE_ASSERT(BTRFS_IOC_SUBVOL_CREATE_V2, struct btrfs_ioctl_vol_args_v2);
+IOCTL_SIZE_ASSERT(BTRFS_IOC_SUBVOL_GETFLAGS, __u64);
 
 static int btrfs_fd_test(int fd, const struct stat *st __attribute__((unused)))
 {
