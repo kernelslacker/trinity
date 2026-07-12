@@ -140,6 +140,9 @@ static bool parse_duration(const char *s, unsigned int *out)
 	if (s == NULL || *s == '\0')
 		return false;
 
+	if (s[0] == '-' || s[0] == '+')
+		return false;
+
 	errno = 0;
 	val = strtoul(s, &end, 10);
 	if (end == s || errno == ERANGE)
