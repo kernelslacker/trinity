@@ -7,6 +7,8 @@
 #include <unistd.h>
 #include "arch.h"
 #include "deferred-free.h"
+#include "ipc-common.h"
+#include "output-poison.h"
 #include "rnd.h"
 #include "sanitise.h"
 #include "trinity.h"
@@ -105,6 +107,7 @@ static void build_semun_arg(struct syscallrecord *rec)
 {
 	int cmd = (int) rec->a3;
 	union trinity_semun u;
+	struct ipcctl_post_state *snap;
 	struct semid_ds *ds;
 	unsigned short *array;
 	struct seminfo *info;
@@ -140,6 +143,8 @@ static void build_semun_arg(struct syscallrecord *rec)
 		ds = zmalloc_tracked(sizeof(*ds));
 		u.buf = ds;
 		rec->a4 = (unsigned long) u.buf;
+		snap = ipcctl_post_state_alloc(rec, ds, sizeof(*ds));
+		snap->poison_seed = poison_output_struct(ds, sizeof(*ds), 0);
 		avoid_shared_buffer_out(&rec->a4, sizeof(*ds));
 		return;
 
@@ -175,6 +180,8 @@ static void build_semun_arg(struct syscallrecord *rec)
 		info = zmalloc_tracked(sizeof(*info));
 		u.__buf = info;
 		rec->a4 = (unsigned long) u.__buf;
+		snap = ipcctl_post_state_alloc(rec, info, sizeof(*info));
+		snap->poison_seed = poison_output_struct(info, sizeof(*info), 0);
 		avoid_shared_buffer_out(&rec->a4, sizeof(*info));
 		return;
 
@@ -197,6 +204,8 @@ static void build_semun_arg(struct syscallrecord *rec)
 
 static void sanitise_semctl(struct syscallrecord *rec)
 {
+	rec->post_state = 0;
+
 	/*
 	 * Override the ARG_RANGE-generated semnum with a pool-aware pick.
 	 * The default 0..250 range was wider than any set's real nsems
@@ -209,6 +218,11 @@ static void sanitise_semctl(struct syscallrecord *rec)
 	build_semun_arg(rec);
 }
 
+static void post_semctl(struct syscallrecord *rec)
+{
+	post_ipcctl_buf_free(rec, "post_semctl");
+}
+
 struct syscallentry syscall_semctl = {
 	.name = "semctl",
 	.group = GROUP_IPC,
@@ -219,4 +233,5 @@ struct syscallentry syscall_semctl = {
 	.arg_params[1].range.hi = 250,
 	.arg_params[2].list = ARGLIST(semctl_cmds),
 	.sanitise = sanitise_semctl,
+	.post = post_semctl,
 };
