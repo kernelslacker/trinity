@@ -415,7 +415,8 @@ static void do_overlay_lifecycle(void)
 	/* New file created directly in upper via merged. */
 	snprintf(mfile, sizeof(mfile), "%s/upper-only", merged);
 	fd = create_filled_file(mfile, 0x99, 2048);
-	if (fd >= 0) { close(fd); fd = -1; }
+	if (fd >= 0)
+		close(fd);
 
 	/* Delete shared via merged → whiteout entry in upper. */
 	snprintf(mfile, sizeof(mfile), "%s/shared", merged);
