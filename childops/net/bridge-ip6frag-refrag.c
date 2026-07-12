@@ -396,11 +396,12 @@ static int b6r_nft_install_bridge_ct(struct nfnl_ctx *nf, const char *table,
  *   0  no extension     — ipv6->nexthdr = FRAGMENT
  *   1  DEST-OPT stub    — 8-byte DEST option, then FRAGMENT
  *   2  HOP-BY-HOP stub  — 8-byte HOP option, then FRAGMENT
- *   3  DEST-OPT stub with hdr_ext_len = 0 but 8 bytes present
+ *   3  DEST-OPT stub with hdr_ext_len = 1 but only 8 bytes present
  *                      — the "short prev-header" the refrag walker
  *                        must tolerate: reassembler recorded the
  *                        actual chain, refragmenter re-derives it
- *                        from hdr_ext_len and may under-read.
+ *                        from hdr_ext_len and may over-read past
+ *                        the recorded chain.
  *
  * Returns the total frame length in bytes.
  */
@@ -452,9 +453,10 @@ static size_t b6r_build_frag_frame(unsigned char *frame, size_t cap,
 	if (ext_kind != 0) {
 		frame[off + 0] = B6R_NEXTHDR_FRAGMENT;	/* next-hdr */
 		/* hdr_ext_len is (total-8)/8; 0 == 8 total.  ext_kind 3
-		 * stamps 0 but still writes an 8-byte body so the walker
-		 * sees a short length claim next to a real payload. */
-		frame[off + 1] = (ext_kind == 3) ? 0 : 0;
+		 * stamps 1 (claim 16 total) while only 8 bytes are
+		 * written, so the walker over-reads past the recorded
+		 * chain into the fragment header. */
+		frame[off + 1] = (ext_kind == 3) ? 1 : 0;
 		/* PadN of type=0x01, len=4 to fill the 8-byte unit */
 		frame[off + 2] = 0x01; frame[off + 3] = 0x04;
 		memset(frame + off + 4, 0, 4);
