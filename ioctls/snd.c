@@ -40,9 +40,9 @@ struct hda_verb_ioctl {
  * silence.  Skipped by design: TLV / DSP_LOAD-style flex bodies,
  * scalar int/frames args (TSTAMP, DELAY, LINK, PAUSE, REWIND,
  * FORWARD, DROP, DRAIN, TREAD, SUBSCRIBE_EVENTS, *_NEXT_DEVICE,
- * PREFER_SUBDEVICE, POWER, UMP_NEXT_DEVICE), and OSS DSP/mixer,
- * HDSPM, EMU10K1 and SB CSP legacy magic-number ioctls that carry
- * driver-specific or pointer-only args.
+ * PREFER_SUBDEVICE, POWER, UMP_NEXT_DEVICE), HDSPM, EMU10K1, SB CSP
+ * legacy magic-number ioctls that carry driver-specific or
+ * pointer-only args, and OSS DSP/mixer int/pointer-only cmds.
  */
 IOCTL_SIZE_ASSERT(HDA_IOCTL_VERB_WRITE, struct hda_verb_ioctl);
 IOCTL_SIZE_ASSERT(HDA_IOCTL_GET_WCAP, struct hda_verb_ioctl);
@@ -152,6 +152,22 @@ IOCTL_SIZE_ASSERT(SNDRV_COMPRESS_SET_PARAMS, struct snd_compr_params);
 IOCTL_SIZE_ASSERT(SNDRV_COMPRESS_GET_PARAMS, struct snd_codec);
 IOCTL_SIZE_ASSERT(SNDRV_COMPRESS_TSTAMP, struct snd_compr_tstamp);
 IOCTL_SIZE_ASSERT(SNDRV_COMPRESS_AVAIL, struct snd_compr_avail);
+#endif
+
+/* OSS DSP */
+IOCTL_SIZE_ASSERT(SNDCTL_DSP_GETOSPACE, audio_buf_info);
+IOCTL_SIZE_ASSERT(SNDCTL_DSP_GETISPACE, audio_buf_info);
+IOCTL_SIZE_ASSERT(SNDCTL_DSP_GETIPTR, count_info);
+IOCTL_SIZE_ASSERT(SNDCTL_DSP_GETOPTR, count_info);
+
+/* OSS mixer */
+IOCTL_SIZE_ASSERT(SOUND_MIXER_INFO, mixer_info);
+#ifdef SOUND_MIXER_ACCESS
+IOCTL_SIZE_ASSERT(SOUND_MIXER_ACCESS, mixer_record);
+#endif
+#ifdef SOUND_MIXER_GETLEVELS
+IOCTL_SIZE_ASSERT(SOUND_MIXER_GETLEVELS, mixer_vol_table);
+IOCTL_SIZE_ASSERT(SOUND_MIXER_SETLEVELS, mixer_vol_table);
 #endif
 
 static void sanitise_snd_hwdep(struct syscallrecord *rec)
