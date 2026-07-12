@@ -522,6 +522,8 @@ static void bind_child_to_cpu(struct childdata *child, int childno)
  * Deliberately omits CLONE_NEWPID (doesn't move us, affects future forks
  * unpredictably) and CLONE_NEWUSER (drops caps, breaks privileged paths).
  */
+#define CHILD_MEMLOCK_CAP	(256UL << 20)	/* per-child locked-memory cap (see munge_process) */
+
 static void munge_process(void)
 {
 	static const int extra_ns_flags[] = {
@@ -551,6 +553,30 @@ static void munge_process(void)
 	char cgpath[64];
 	unsigned int i;
 	int fd;
+
+	/*
+	 * Deterministic cap on locked memory (NOT part of the random sweep
+	 * below).  A fuzzed mlockall(MCL_FUTURE) locks every subsequent mmap
+	 * in this child; left unbounded that grows into the cgroup
+	 * memory.high throttle and the child wedges in
+	 * __mem_cgroup_handle_over_high instead of fuzzing.  Capping
+	 * RLIMIT_MEMLOCK makes the over-cap locked alloc fail -EAGAIN, which
+	 * trips __zmalloc's munlockall()+retry fallback (utils/zmalloc.c) --
+	 * so a runaway self-bounds and mlockall coverage (including the
+	 * failure path) is preserved.  Only lower it; setting rlim_max blocks
+	 * a fuzzed setrlimit from lifting it back up.
+	 */
+	{
+		struct rlimit ml;
+
+		if (getrlimit(RLIMIT_MEMLOCK, &ml) == 0) {
+			if (ml.rlim_max == RLIM_INFINITY || ml.rlim_max > CHILD_MEMLOCK_CAP)
+				ml.rlim_max = CHILD_MEMLOCK_CAP;
+			if (ml.rlim_cur == RLIM_INFINITY || ml.rlim_cur > CHILD_MEMLOCK_CAP)
+				ml.rlim_cur = CHILD_MEMLOCK_CAP;
+			(void) setrlimit(RLIMIT_MEMLOCK, &ml);
+		}
+	}
 
 	/* Additional namespace diversity on top of what init_child already does. */
 	for (i = 0; i < ARRAY_SIZE(extra_ns_flags); i++) {
