@@ -50,6 +50,18 @@
 #include "utils.h"
 
 /*
+ * Defined in pick-common.c.  Checked loader for shm->nr_active_
+ * *syscalls: returns the RELAXED-loaded count, logs a self-corrupt
+ * marker when it exceeds MAX_NR_SYSCALL.  Callers detect corruption
+ * via the returned value being > MAX_NR_SYSCALL and route into
+ * their existing FAIL path.  Not hoisted into random-syscall-
+ * internal.h yet -- promote when a fourth caller appears outside
+ * this cluster.
+ */
+unsigned int load_active_syscall_count(const unsigned int *shm_count,
+				       const char *arch_label);
+
+/*
  * Compression factor for the frontier-weighted acceptance denominator.
  * See the gate in set_syscall_nr_coverage_frontier() for the rationale.
  */
@@ -110,9 +122,15 @@ static bool set_syscall_nr_heuristic(struct syscallrecord *rec,
 		do32 = choose_syscall_table(child, &nr_syscalls);
 	} else {
 		do32 = false;
-		nr_syscalls = __atomic_load_n(&shm->nr_active_syscalls,
-					      __ATOMIC_RELAXED);
+		nr_syscalls = load_active_syscall_count(
+			&shm->nr_active_syscalls, "nr_active_syscalls");
 	}
+	/* Corrupt shared count (either arch) -- the helper has already
+	 * logged the self-corrupt marker; bail out on this pick so the
+	 * rnd_modulo_u32(nr_syscalls) below cannot index child->
+	 * active_syscalls[] past the mapped MAX_NR_SYSCALL bound. */
+	if (nr_syscalls > MAX_NR_SYSCALL)
+		return FAIL;
 
 	/* Cost-pool selector SHADOW observer -- fires once per pick call
 	 * (NOT per retry) so the analytical expected-expensive-fraction
@@ -498,9 +516,15 @@ bool set_syscall_nr_random(struct syscallrecord *rec,
 		do32 = choose_syscall_table(child, &nr_syscalls);
 	} else {
 		do32 = false;
-		nr_syscalls = __atomic_load_n(&shm->nr_active_syscalls,
-					      __ATOMIC_RELAXED);
+		nr_syscalls = load_active_syscall_count(
+			&shm->nr_active_syscalls, "nr_active_syscalls");
 	}
+	/* See the matching guard in set_syscall_nr_heuristic above --
+	 * corrupt shared count is already logged by the helper; bail
+	 * before the rnd_modulo_u32 draw feeds an OOB index into
+	 * child->active_syscalls[]. */
+	if (nr_syscalls > MAX_NR_SYSCALL)
+		return FAIL;
 
 	/* Latch the anti-prior mode once per pick so the per-retry inner
 	 * loop reads a stable answer; a rotation that lands mid-pick is
@@ -1157,9 +1181,15 @@ static bool set_syscall_nr_coverage_frontier(struct syscallrecord *rec,
 		do32 = choose_syscall_table(child, &nr_syscalls);
 	} else {
 		do32 = false;
-		nr_syscalls = __atomic_load_n(&shm->nr_active_syscalls,
-					      __ATOMIC_RELAXED);
+		nr_syscalls = load_active_syscall_count(
+			&shm->nr_active_syscalls, "nr_active_syscalls");
 	}
+	/* See the matching guard in set_syscall_nr_heuristic above --
+	 * corrupt shared count is already logged by the helper; bail
+	 * before the rnd_modulo_u32 draw feeds an OOB index into
+	 * child->active_syscalls[]. */
+	if (nr_syscalls > MAX_NR_SYSCALL)
+		return FAIL;
 
 	max_weight = __atomic_load_n(&shm->frontier_max_weight_cached,
 				     __ATOMIC_RELAXED);
