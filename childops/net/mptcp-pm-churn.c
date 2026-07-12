@@ -278,7 +278,7 @@ static int genval_maxseg(void)		{ return 536 + (int)(rand32() % 800U); }
 static int genval_bool(void)		{ return RAND_BOOL() ? 1 : 0; }
 static int genval_keepidle(void)	{ return 1 + (int)(rand32() % 600U); }
 static int genval_keepintvl(void)	{ return 1 + (int)(rand32() % 60U); }
-static int genval_keepcnt(void)		{ return 1 + (int)(rand32() % 16U); }
+static int genval_keepcnt(void)		{ return 1 + (int)rnd_modulo_u32(16U); }
 static int genval_user_to(void)		{ return 1 + (int)(rand32() % 30000U); }
 static int genval_defer(void)		{ return 1 + (int)(rand32() % 60U); }
 
@@ -304,10 +304,10 @@ static const struct mptcp_sf_optspec mptcp_sf_opts[] = {
  * inheritance edge, not the value-validation edge.
  */
 static int sweep_genval_u32(void)	{ return (int)rand32(); }
-static int sweep_genval_syncnt(void)	{ return 1 + (int)(rand32() % 127U); }
+static int sweep_genval_syncnt(void)	{ return 1 + (int)rnd_modulo_u32(127U); }
 static int sweep_genval_keepidle_w(void){ return 1 + (int)(rand32() % 32767U); }
 static int sweep_genval_keepintvl_w(void){ return 1 + (int)(rand32() % 32767U); }
-static int sweep_genval_keepcnt_w(void)	{ return 1 + (int)(rand32() % 127U); }
+static int sweep_genval_keepcnt_w(void)	{ return 1 + (int)rnd_modulo_u32(127U); }
 static int sweep_genval_maxseg_w(void)	{ return 88 + (int)(rand32() % (32767U - 88U)); }
 
 static const struct mptcp_sf_optspec mptcp_sf_sweep_opts[] = {
