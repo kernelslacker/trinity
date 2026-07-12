@@ -843,7 +843,7 @@ unsigned long kcov_trace_pos(struct kcov_child *kc)
 {
 	unsigned long count;
 
-	if (kc == NULL)
+	if (kc == NULL || kc->trace_buf == NULL || !kc->active)
 		return 0;
 	count = __atomic_load_n(&kc->trace_buf[0], __ATOMIC_RELAXED);
 	if (count >= (unsigned long)kcov_trace_size - 1)
@@ -869,7 +869,7 @@ unsigned long kcov_sample_new_edges(struct kcov_child *kc, unsigned long *cursor
 {
 	unsigned long end, idx, start, n = 0;
 
-	if (kc == NULL || cursor == NULL)
+	if (kc == NULL || cursor == NULL || kc->trace_buf == NULL || !kc->active)
 		return 0;
 	end = __atomic_load_n(&kc->trace_buf[0], __ATOMIC_RELAXED);
 	if (end >= (unsigned long)kcov_trace_size - 1)
