@@ -27,6 +27,20 @@ unique inserts" sibling block already uses to surface this exact
 pattern; the picker reads them straight, no parallel sampler is
 introduced.
 
+On top of that insert-volume base the helper adds a conversion-rate
+bonus derived from `per_syscall_cmp_injected` (denominator) and
+`per_syscall_cmp_hint_pc_wins + per_syscall_cmp_hint_transition_wins`
+(numerator -- PC-edge wins plus typed-hyp transition wins summed so
+a transition-rich syscall does not read as flat just because PC
+edges have plateaued).  The bonus is gated on a sample-size floor
+(`CMP_FRONTIER_MIN_INJECTED`, 32) so a `1/1 = 100%` noise spike
+cannot dominate ranking against syscalls with thousands of
+injections; a syscall with `0%` conversion (or below the floor)
+sees `conv_bonus = 0` and ranks on inserts alone -- the historical
+inserts-only behaviour is the degrade-safe fallback.  This lifts a
+proven converter out of its insert-volume tier without letting it
+monopolise the frontier.
+
 ## Mode ladder in detail
 
 `OFF` is the A/B baseline: the silent-regime accept gate skips the
@@ -72,3 +86,20 @@ so the `(w + 1) / (SCALE + 1)` accept floor in the silent gate sees
 a usable spread instead of compressing every active syscall to the
 same near-cap weight.  Saturated at `FRONTIER_COLD_SCALE` in the
 helper.
+
+The conversion-rate bonus described in "Why a CMP-weighted
+alternate arm" is folded in additively before the `SIGNAL_SCALE`
+multiply: `signal = ilog2(cmp_inserts + 1) + ilog2(childop_inserts
++ 1) + conv_bonus`, where `conv_bonus = ilog2(1 + rate_milli *
+CMP_FRONTIER_CONVERSION_SCALE / 1000)` and `rate_milli` is
+wins-per-1000-injections.  `CMP_FRONTIER_CONVERSION_SCALE` (256)
+caps the bonus at roughly `ilog2(257) = 8` for a 100%-converting
+syscall, which sits in the same magnitude band as a saturated
+inserts-side term and roughly doubles the typical `8..12` base
+signal for a proven converter.  Below `CMP_FRONTIER_MIN_INJECTED`
+(32) injections, or at zero wins, `conv_bonus = 0` and the signal
+reduces to the inserts-only sum -- degrade-safe against small-N
+noise spikes and against syscalls the CMP-hint pipeline has yet to
+touch.  The saturating clamp at `FRONTIER_COLD_SCALE` applies to
+the final `signal * SIGNAL_SCALE`, so the bonus never pushes past
+the same cap the inserts-only weight already respected.

@@ -29,6 +29,14 @@ enum cmp_frontier_mode {
 extern enum cmp_frontier_mode cmp_frontier_mode;
 
 /* Scale on the ilog2-clamped CMP-signal sum; saturated at
- * FRONTIER_COLD_SCALE in the helper.  Derivation of the 8x factor
- * lives in Documentation/cmp-frontier.md. */
+ * FRONTIER_COLD_SCALE in the helper.  The signal sum is
+ * ilog2(per_syscall_cmp_inserts + 1) + ilog2(childop_cmp_pool_inserts
+ * + 1) plus a conversion-rate bonus derived from
+ * per_syscall_cmp_injected vs (per_syscall_cmp_hint_pc_wins +
+ * per_syscall_cmp_hint_transition_wins) -- gated on
+ * CMP_FRONTIER_MIN_INJECTED so a 1/1 noise spike cannot dominate,
+ * capped by CMP_FRONTIER_CONVERSION_SCALE to the same magnitude
+ * band as the inserts side, and degrading to inserts-only for
+ * 0%-converters.  Derivation of the 8x factor and the conversion
+ * bonus lives in Documentation/cmp-frontier.md. */
 #define CMP_FRONTIER_SIGNAL_SCALE	8UL
