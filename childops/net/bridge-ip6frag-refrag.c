@@ -438,7 +438,7 @@ static size_t b6r_build_frag_frame(unsigned char *frame, size_t cap,
 	frame[ip6_off + 22] = 0x5a; frame[ip6_off + 23] = 0x5a;
 	frame[ip6_off + 27] = 0x01;
 	frame[ip6_off + 24] = 0xfe; frame[ip6_off + 25] = 0x80;
-	frame[ip6_off + 38] = 0xa5; frame[ip6_off + 39] = 0xa5;
+	frame[ip6_off + 36] = 0xa5; frame[ip6_off + 37] = 0xa5;
 	frame[ip6_off + 39] = 0x01;
 	off = ip6_off + B6R_IP6HDR_LEN;
 
