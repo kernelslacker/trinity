@@ -193,7 +193,7 @@ static bool parse_unsigned(const char *s, const char *name,
 	 * modulo ULONG_MAX+1, turning "-1" into a huge "unsigned" limit.
 	 * Reject it up front so the parser matches its documented contract.
 	 */
-	if (s[0] == '-') {
+	if (s[0] == '-' || s[0] == '+') {
 		outputerr("--%s: negative value '%s' not allowed\n", name, s);
 		return false;
 	}
