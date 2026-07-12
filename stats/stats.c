@@ -267,9 +267,13 @@ void stat_category_emit_text(const struct stat_category *cat)
  * splat form -- big-endian byte-swap or value ± 1 at width -- for
  * endian and off-by-one boundary coverage; the ratio to
  * (dict_inserts + static_magic_inserts) is the transform-vs-plain
- * split.  All five are bumped only by CMPDICT, so the per-rung
- * contribution is isolated across an off / fill / havoc / cmpdict
- * A/B.  When the mode is OFF the gate counter stays at zero so
+ * split.  Per-rung attribution: blob_fills bumps for every non-OFF
+ * mode (FILL / HAVOC / CMPDICT), blob_havoc_ops and
+ * blob_havoc_prefix_len_ops bump for HAVOC and CMPDICT, and
+ * blob_dict_inserts, blob_static_magic_inserts, and
+ * blob_dict_transform_inserts bump only for CMPDICT -- so each
+ * rung's contribution is isolated across an off / fill / havoc /
+ * cmpdict A/B.  When the mode is OFF the gate counter stays at zero so
  * stat_category_emit_text suppresses the whole block (render-gap-
  * aware). */
 static const struct stat_field blob_mutator_fields[] = {
