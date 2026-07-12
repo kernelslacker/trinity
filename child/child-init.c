@@ -581,11 +581,11 @@ static void munge_process(void)
 	/* Additional namespace diversity on top of what init_child already does. */
 	for (i = 0; i < ARRAY_SIZE(extra_ns_flags); i++) {
 		if (RAND_BOOL())
-			unshare(extra_ns_flags[i]);
+			(void) unshare(extra_ns_flags[i]);
 	}
 
 	/* Random personality — stay within PER_LINUX family to remain sane. */
-	personality(RAND_ARRAY(personas));
+	(void) personality(RAND_ARRAY(personas));
 
 	/*
 	 * Best-effort cgroup migration.  Trinity can pre-create numbered
@@ -600,7 +600,7 @@ static void munge_process(void)
 		int len = snprintf(pidbuf, sizeof(pidbuf), "%d", mypid());
 		ssize_t ret __attribute__((unused));
 		ret = write(fd, pidbuf, (size_t) len);
-		close(fd);
+		(void) close(fd);
 	}
 
 	/* Randomly tighten a subset of resource limits. */
