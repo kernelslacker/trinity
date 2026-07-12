@@ -51,37 +51,45 @@ static const unsigned long epoll_flags[] = {
 static void sanitise_epoll_ctl(struct syscallrecord *rec)
 {
 	struct epoll_event *ep = (struct epoll_event *) rec->a4;
-	int target_fd;
+	int target_fd = -1;
 	unsigned int tries;
 
 	if (ep == NULL)
 		return;
 
 	/*
-	 * Reroll target_fd until we land on one whose fd_provider has not
-	 * opted into poll_can_block.  ep_item_poll runs the target's
-	 * f_op->poll synchronously for both EPOLL_CTL_ADD and EPOLL_CTL_MOD
-	 * (the kernel calls ep_modify → ep_item_poll on every MOD), and a
-	 * blocking ->poll wedges the child in TASK_UNINTERRUPTIBLE — see the
-	 * matching guard in arm_epoll() for the full callchain context.
-	 * EPOLL_CTL_DEL takes a different path that does not invoke ->poll,
-	 * but the op selection happens after we pick the fd, so reject
-	 * uniformly rather than coupling the two.  Bounded retry budget so a
-	 * pool dominated by blocking-poll fds (rare) still terminates; if we
-	 * fall through with a tagged fd, the count is bumped and the kernel
-	 * is allowed to handle it (the syscall will pin one child, recoverable
-	 * via the watchdog's is_child_making_progress() path).
+	 * Reroll the polled fd (rec->a3) until we land on one whose
+	 * fd_provider has not opted into poll_can_block.  ep_item_poll runs
+	 * the target's f_op->poll synchronously for both EPOLL_CTL_ADD and
+	 * EPOLL_CTL_MOD (the kernel calls ep_modify → ep_item_poll on every
+	 * MOD), and a blocking ->poll wedges the child in
+	 * TASK_UNINTERRUPTIBLE — see the matching guard in arm_epoll() for
+	 * the full callchain context.  EPOLL_CTL_DEL takes a different path
+	 * that does not invoke ->poll, but the op selection happens after we
+	 * pick the fd, so reject uniformly rather than coupling the two.
+	 *
+	 * The fd the kernel actually polls is rec->a3 (populated from
+	 * .argtype[2] = ARG_FD before this hook runs); ep->data.fd is just a
+	 * user cookie the kernel echoes back and never dereferences, so
+	 * vetting it in isolation would leave a blocking-poll fd on the
+	 * syscall arg.  Overwrite rec->a3 with the vetted value, and on
+	 * retry-exhaust fail closed with -1 rather than letting an unvetted
+	 * fd through.
 	 */
 	for (tries = 0; tries < 16; tries++) {
-		target_fd = get_random_fd();
-		if (target_fd < 0)
+		int candidate = get_random_fd();
+
+		if (candidate < 0)
 			break;
-		if (!fd_poll_can_block(target_fd))
+		if (!fd_poll_can_block(candidate)) {
+			target_fd = candidate;
 			break;
+		}
 		__atomic_add_fetch(&shm->stats.epoll_blocking_poll_skipped, 1,
 				   __ATOMIC_RELAXED);
 	}
 
+	rec->a3 = (unsigned long) target_fd;
 	ep->data.fd = target_fd;
 	ep->events = set_rand_bitmask(ARRAY_SIZE(epoll_flags), epoll_flags);
 
