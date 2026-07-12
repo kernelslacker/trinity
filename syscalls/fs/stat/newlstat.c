@@ -4,6 +4,7 @@
 #include <limits.h>
 #include <sys/syscall.h>
 #include <stdio.h>
+#include <fcntl.h>
 #include <sys/stat.h>
 #include "arch.h"
 #include "output-poison.h"
@@ -224,7 +225,8 @@ static void post_newlstat(struct syscallrecord *rec)
 				   sizeof(first)))
 		goto out_release;
 
-	if (syscall(SYS_lstat, snap->filename, &recheck) != 0)
+	if (syscall(SYS_newfstatat, AT_FDCWD, snap->filename, &recheck,
+		    AT_SYMLINK_NOFOLLOW) != 0)
 		goto out_release;
 
 	if (first.st_dev     != recheck.st_dev)     diverged = 1;
