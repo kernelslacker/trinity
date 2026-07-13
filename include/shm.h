@@ -233,15 +233,18 @@ struct shm_s {
 	 * Per-bucket freelist head for the shared string heap.
 	 * NUM_SHM_FREELIST_BUCKETS fixed-size slots (8..1024 bytes, powers of
 	 * two); allocations above 1024 bytes bypass the freelist and use the
-	 * bump allocator directly.  Each head is a 64-bit tagged pointer:
-	 * the low 48 bits hold the address of the most-recently-freed slot
-	 * (0 = empty list) and the high 16 bits hold a monotonic version
+	 * bump allocator directly.  Each head is a 64-bit (version, token)
+	 * tuple: the low 32 bits carry a heap-offset token (slot offset + 1;
+	 * 0 == empty list) and the high 32 bits carry a monotonic version
 	 * counter that defeats the ABA race in freelist_pop (see the long
 	 * comment above the freelist primitives in utils.c).  The link to the
-	 * next free slot is stored in the slot's own first sizeof(uintptr_t)
-	 * bytes (safe because the slot is, by definition, not live when the
-	 * link is written).  Manipulated by lock-free CAS in freelist_push/pop
-	 * in utils.c.
+	 * next free slot is stored as a token in the slot's own first
+	 * uint32_t (safe because the slot is, by definition, not live when
+	 * the link is written).  The offset encoding is arch-portable — it
+	 * survives processes mapping the shared heap at different base
+	 * addresses and makes no assumption about pointer width or canonical
+	 * VA layout.  Manipulated by lock-free CAS in freelist_push/pop in
+	 * utils.c.
 	 */
 #define NUM_SHM_FREELIST_BUCKETS 8
 	uint64_t shared_str_freelist[NUM_SHM_FREELIST_BUCKETS];
