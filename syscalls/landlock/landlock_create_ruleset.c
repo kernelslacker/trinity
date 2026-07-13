@@ -110,19 +110,23 @@ static __u64 random_mask(const __u64 *bits, unsigned int n)
 }
 
 /*
- * Pre-ksize ABI floors for the csfu UNDERSIZE bucket.  Each value is
- * the size of a published struct landlock_ruleset_attr layout:
+ * Published struct landlock_ruleset_attr sizes for the csfu
+ * UNDERSIZE bucket:
  *   8  -- ABI v1, handled_access_fs only
  *   16 -- ABI v4, + handled_access_net
  *   24 -- ABI v6, + scoped
+ *   48 -- ABI v10 (v7.2), + quiet_*
  * build_csfu_struct() draws uniformly from this pool for UNDERSIZE;
  * the EXACT bucket already covers sizeof(struct landlock_ruleset_attr),
- * so the current ksize is not repeated here.
+ * so the current ksize is not repeated here.  The 48-byte entry now
+ * exceeds the build-time ksize (headers still declare the 24-byte
+ * layout); csfu clamps to buflen (ksize + CSFU_TAIL_SLACK = 56).
  */
 static const size_t landlock_known_sizes[] = {
 	8,
 	16,
 	24,
+	48,
 };
 
 static const struct csfu_desc desc_landlock_create_ruleset = {
@@ -146,6 +150,29 @@ static void sanitise_landlock_create_ruleset(struct syscallrecord *rec)
 	if (RAND_BOOL())
 		attr->scoped = random_mask(landlock_scope_bits,
 					   ARRAY_SIZE(landlock_scope_bits));
+
+	/*
+	 * ABI v10 quiet_* fields live at byte offsets 24/32/40 of the
+	 * userspace struct; the local uapi header predates them, so write
+	 * raw __u64s via buf.ptr.  The kernel EINVALs unless each quiet_*
+	 * is a subset of the corresponding handled_* mask, so AND against
+	 * the values just picked above.
+	 */
+	if (buf.usize >= 48) {
+		__u64 quiet_fs = random_mask(landlock_access_fs_bits,
+					     ARRAY_SIZE(landlock_access_fs_bits))
+				 & attr->handled_access_fs;
+		__u64 quiet_net = random_mask(landlock_access_net_bits,
+					      ARRAY_SIZE(landlock_access_net_bits))
+				  & attr->handled_access_net;
+		__u64 quiet_scoped = random_mask(landlock_scope_bits,
+						 ARRAY_SIZE(landlock_scope_bits))
+				     & attr->scoped;
+
+		memcpy((char *) attr + 24, &quiet_fs, sizeof(quiet_fs));
+		memcpy((char *) attr + 32, &quiet_net, sizeof(quiet_net));
+		memcpy((char *) attr + 40, &quiet_scoped, sizeof(quiet_scoped));
+	}
 
 	rec->a1 = (unsigned long) attr;
 	avoid_shared_buffer_inout(&rec->a1, buf.usize);
