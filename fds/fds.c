@@ -781,20 +781,32 @@ void reroll_protected_fd_arg(unsigned long *slot)
 }
 
 /*
- * Map fd → owning fd_provider via the global fd hash.  Returns NULL for
- * untracked fds (anything not in the OBJ_GLOBAL pools — child-private
- * fds, accept()'d sockets that haven't been registered yet, kernel-
- * opened fds in shared trees, ...) and for tracked fds whose objtype
- * does not match any registered provider.
+ * Map fd → owning fd_provider.  Consults the fork-time OBJ_GLOBAL
+ * fd_hash first, then the calling child's OBJ_LOCAL pools so fds
+ * created post-fork by providers that publish into OBJ_LOCAL
+ * (kvm-vcpu, kvm-vm, io_uring, userfaultfd, pidfd, seccomp-notif, ...)
+ * resolve to their provider — those never enter fd_hash, and
+ * fd_poll_can_block() used to answer false for their poll-blocking
+ * fds, letting the epoll/poll/select sanitisers admit them into
+ * watch sets.  Returns NULL for untracked fds and for tracked fds
+ * whose objtype does not match any registered provider.
  */
 static struct fd_provider *fd_lookup_provider(int fd)
 {
 	struct fd_hash_entry *e;
 	struct list_head *node;
+	enum objecttype type;
 
 	e = fd_hash_lookup(fd);
-	if (e == NULL)
-		return NULL;
+	if (e != NULL) {
+		type = e->type;
+	} else {
+		struct object *lobj = local_fd_find_by_fd(fd);
+
+		if (lobj == NULL)
+			return NULL;
+		type = lobj->obj_type;
+	}
 
 	if (fd_providers == NULL)
 		return NULL;
@@ -802,7 +814,7 @@ static struct fd_provider *fd_lookup_provider(int fd)
 	list_for_each(node, &fd_providers->list) {
 		struct fd_provider *provider = (struct fd_provider *) node;
 
-		if (provider->objtype == e->type)
+		if (provider->objtype == type)
 			return provider;
 	}
 	return NULL;

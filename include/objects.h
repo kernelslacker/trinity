@@ -647,6 +647,19 @@ void close_fd_destructor(struct object *obj);
  */
 void generic_fd_dump(struct object *obj, enum obj_scope scope);
 struct object *find_local_object_by_fd(enum objecttype type, int fd);
+
+/*
+ * Walk every OBJ_LOCAL fd-typed pool for the calling child and return
+ * the object that owns @fd, or NULL if no local pool tracks it.  Lets
+ * fd_lookup_provider reach fds that live only in per-child OBJ_LOCAL
+ * pools (kvm-vcpu, kvm-vm, io_uring, userfaultfd, pidfd,
+ * seccomp-notif, ...) — those never enter the fork-time global
+ * fd_hash snapshot, so the epoll/poll/select sanitisers used to see
+ * them as untracked and let their blocking ->poll handlers into watch
+ * sets.
+ */
+struct object *local_fd_find_by_fd(int fd);
+
 void remove_object_by_fd(int fd);
 
 /* fd hash table for O(1) fd→object lookup */
