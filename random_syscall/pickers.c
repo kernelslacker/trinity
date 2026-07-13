@@ -1563,6 +1563,23 @@ retry:
 		 */
 		frontier_satcool_spare(syscallnr, do32);
 
+		/*
+		 * SHADOW-ONLY floored-barren sub-floor demote predicate
+		 * (gated by --frontier-barren-demote != off).  Sibling of
+		 * the satcool spare above; targets the pure zero-arg
+		 * getter set whose lifetime PC-edge yield has plateaued
+		 * to a hard floor rather than the windowed-plateau of
+		 * the saturated-productive set the satcool predicate
+		 * owns.  Disjoint from satcool by construction (the
+		 * barren predicate requires lifetime edges == 0 at the
+		 * small FRONTIER_BARREN_C_MIN floor; satcool requires
+		 * the FRONTIER_SATCOOL_CMIN 10000-call magnitude and
+		 * keys plateau on the K-window ring going flat for a
+		 * syscall that HAS produced).  See the full contract
+		 * above frontier_barren_demote() in strategy-frontier.c.
+		 */
+		frontier_barren_demote(syscallnr, do32);
+
 		/* Errno-plateau decay (SHADOW + per-child A/B).  See the
 		 * FRONTIER_ERRNO_PLATEAU_* contract in include/strategy.h and the
 		 * frontier_errno_plateau_should_decay() implementation in strategy.c.

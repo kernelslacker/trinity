@@ -81,6 +81,19 @@ enum frontier_live_cooldown_mode frontier_live_cooldown_mode =
 	FRONTIER_LIVE_COOLDOWN_MODE_OFF;
 
 /*
+ * Floored-barren sub-floor demote mode.  Default OFF keeps the silent-
+ * regime accept path byte-identical to today; SHADOW_ONLY enables the
+ * vetted floored-barren predicate's shadow accounting (how many
+ * silent-regime picks a COMBINED sub-floor variant would demote)
+ * without changing live selection.  See the enum comment in
+ * include/strategy.h for the mode contract and the ramp discipline.
+ * Param-settable via
+ * --frontier-barren-demote=off|shadow-only|combined.
+ */
+enum frontier_barren_demote_mode frontier_barren_demote_mode =
+	FRONTIER_BARREN_DEMOTE_MODE_OFF;
+
+/*
  * Heuristic-arm group-bias anti-lock-in damper mode.  Default OFF
  * keeps the dispatch-step per-child bookkeeping (group-change streak
  * reset, fd-warm bump, coverage watermark advance) and the

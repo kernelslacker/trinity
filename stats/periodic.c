@@ -145,6 +145,83 @@ void dump_satcool_would_skip_per_syscall_top(void)
 }
 
 /*
+ * Top-N per-syscall distribution dump for the SHADOW floored-barren
+ * sub-floor demote.  Walks frontier_barren_would_skip_per_syscall[]
+ * and emits the highest-bumping syscalls in descending order followed
+ * by a trailing total.  Called from dump_stats_strategy_summary()
+ * alongside the aggregate frontier_barren_* rows so the operator can
+ * confirm the projected demote mass concentrates on the pure zero-arg
+ * getter cohort and stays near zero on the object-producer / state-
+ * mutator / heuristic-arm-spike sets the vetted skeleton is supposed
+ * to exclude.
+ *
+ * Render-only: never read by the silent-regime accept site or the
+ * predicate it gates.  Mode-OFF runs return before any output so the
+ * default-off behaviour stays byte-identical to today; under shadow-
+ * only or combined the header + total are always printed (even when
+ * the array is empty) so an operator running a short or under-
+ * populated session can confirm the wiring fired without having to
+ * grep for absence, matching the satcool sibling's discipline.
+ */
+#define BARREN_TOPN 30
+
+void dump_barren_would_skip_per_syscall_top(void)
+{
+	struct {
+		unsigned int nr;
+		unsigned long count;
+	} top[BARREN_TOPN];
+	unsigned int top_count = 0;
+	unsigned long total = 0;
+	unsigned int nr_to_scan;
+	unsigned int i;
+	int j;
+	enum frontier_barren_demote_mode mode =
+		__atomic_load_n(&frontier_barren_demote_mode,
+				__ATOMIC_RELAXED);
+
+	if (mode == FRONTIER_BARREN_DEMOTE_MODE_OFF)
+		return;
+
+	nr_to_scan = biarch ? max_nr_64bit_syscalls : max_nr_syscalls;
+	if (nr_to_scan > MAX_NR_SYSCALL)
+		nr_to_scan = MAX_NR_SYSCALL;
+
+	memset(top, 0, sizeof(top));
+
+	for (i = 0; i < nr_to_scan; i++) {
+		unsigned long c =
+			shm->stats.frontier_barren_would_skip_per_syscall[i];
+
+		if (c == 0)
+			continue;
+
+		total += c;
+
+		for (j = (int)top_count; j > 0 && c > top[j - 1].count; j--) {
+			if (j < BARREN_TOPN)
+				top[j] = top[j - 1];
+		}
+		if (j < BARREN_TOPN) {
+			top[j].nr = i;
+			top[j].count = c;
+			if (top_count < BARREN_TOPN)
+				top_count++;
+		}
+	}
+
+	output(0, "frontier_barren_would_skip per-syscall top %u:\n",
+	       top_count);
+	for (j = 0; j < (int)top_count; j++) {
+		const char *sname = print_syscall_name(top[j].nr, false);
+
+		output(0, "  %s=%lu\n", sname, top[j].count);
+	}
+	output(0, "frontier_barren_would_skip per-syscall total: %lu\n",
+	       total);
+}
+
+/*
  * Top-N per-syscall distribution dump for the SHADOW LIVE-regime
  * cooldown.  Walks frontier_live_would_skip_per_syscall[] and emits
  * the highest-bumping syscalls in descending order followed by a
@@ -909,6 +986,16 @@ static const struct {
 	  offsetof(struct stats_s, frontier_satcool_spared_arggen) },
 	{ "frontier_satcool_spared_objproducer",
 	  offsetof(struct stats_s, frontier_satcool_spared_objproducer) },
+	/* SHADOW-ONLY floored-barren sub-floor demote scalars (gated by
+	 * --frontier-barren-demote != off).  Sibling of the frontier_
+	 * satcool_* scalars above; targets the pure zero-arg getter set
+	 * whose lifetime PC-edge yield has plateaued to a hard floor.
+	 * See the struct-field comment in include/stats.h for the
+	 * per-counter contract. */
+	{ "frontier_barren_candidates",
+	  offsetof(struct stats_s, frontier_barren_candidates) },
+	{ "frontier_barren_would_skip",
+	  offsetof(struct stats_s, frontier_barren_would_skip) },
 	/* SHADOW-ONLY LIVE-regime cooldown discriminator scalars (gated
 	 * by --frontier-live-cooldown-mode != off).  Sibling of the
 	 * frontier_satcool_* scalars above; this row projects the

@@ -87,6 +87,7 @@ void kcov_diag_emit_block(const char *counter_name,
 			  enum kcov_diag_counter counter);
 void kcov_diag_emit_truncation_topn(void);
 void dump_satcool_would_skip_per_syscall_top(void);
+void dump_barren_would_skip_per_syscall_top(void);
 void dump_live_cooldown_would_skip_per_syscall_top(void);
 void dump_live_cool_per_syscall_top(const unsigned long *arr,
 				    const char *label);
