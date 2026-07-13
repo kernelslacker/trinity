@@ -25,9 +25,6 @@
 #ifdef __mips__
 #include "syscalls-mips.h"
 #endif
-#ifdef __sh__
-#include "syscalls-sh.h"
-#endif
 #ifdef __aarch64__
 #include "syscalls-aarch64.h"
 #endif
