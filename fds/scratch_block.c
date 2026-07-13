@@ -234,7 +234,7 @@ static void scratch_block_atexit_cleanup(void)
 	if (!scratch_block_atexit_armed)
 		return;
 
-	for (i = 0; i < shm->isolation.scratch_block_count; i++)
+	for (i = 0; i < load_scratch_block_count(); i++)
 		scratch_entry_release(i);
 
 	if (loopctl_fd >= 0) {
