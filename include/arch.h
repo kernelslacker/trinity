@@ -14,10 +14,6 @@
 #include "arch-ppc.h"
 #endif
 
-#ifdef __sparc__
-#include "arch-sparc.h"
-#endif
-
 #ifdef __s390__
 #include "arch-s390.h"
 #endif
