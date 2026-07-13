@@ -1187,8 +1187,6 @@ const char *kcov_bitmap_default_path(void)
 	arch = "aarch64";
 #elif defined(__arm__)
 	arch = "arm";
-#elif defined(__s390x__)
-	arch = "s390x";
 #else
 	arch = "unknown";
 #endif

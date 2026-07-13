@@ -135,12 +135,6 @@ static const uint32_t bpf_seccomp_jmp_arch_vars[] = {
 #elif defined(__arm__)
 # define TRUE_REG_SYSCALL	syscall_nr
 # define TRUE_ARCH		AUDIT_ARCH_ARM
-#elif defined(__s390x__)
-# define TRUE_REG_SYSCALL	syscall_nr
-# define TRUE_ARCH		AUDIT_ARCH_S390X
-#elif defined(__s390__)
-# define TRUE_REG_SYSCALL	syscall_nr
-# define TRUE_ARCH		AUDIT_ARCH_S390
 #else
 # define TRUE_REG_SYSCALL	syscall_nr
 # define TRUE_ARCH		(rnd_u32())
