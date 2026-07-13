@@ -143,7 +143,7 @@ static void post_recvfrom(struct syscallrecord *rec)
 }
 
 #ifndef MSG_SOCK_DEVMEM
-#define MSG_SOCK_DEVMEM	0x2000000	/* 6.10+ */
+#define MSG_SOCK_DEVMEM	0x2000000	/* 6.12+ */
 #endif
 
 static unsigned long recv_flags[] = {
