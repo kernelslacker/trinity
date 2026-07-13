@@ -79,6 +79,21 @@
 #define XFRMA_REPLAY_ESN_VAL		23
 #endif
 
+/* Direction + keepalive attributes gate the per-net nat_keepalive
+ * worker: the kernel arms it only when (XFRMA_SA_DIR == OUT) coincides
+ * with a non-zero XFRMA_NAT_KEEPALIVE_INTERVAL on an encap-bearing SA.
+ * UAPI-stable IDs; shim so a stripped <linux/xfrm.h> still builds. */
+#ifndef XFRMA_SA_DIR
+#define XFRMA_SA_DIR			33
+#endif
+#ifndef XFRMA_NAT_KEEPALIVE_INTERVAL
+#define XFRMA_NAT_KEEPALIVE_INTERVAL	34
+#endif
+#ifndef XFRM_SA_DIR_OUT
+#define XFRM_SA_DIR_IN			1
+#define XFRM_SA_DIR_OUT			2
+#endif
+
 #ifndef XFRM_MODE_TRANSPORT
 #define XFRM_MODE_TRANSPORT		0
 #define XFRM_MODE_TUNNEL		1
@@ -566,6 +581,141 @@ static int build_delsa(struct nl_ctx *ctx, __be32 spi)
 	return nl_send_recv(ctx, buf, off);
 }
 
+/* Keepalive interval rotation (seconds).  0 disables the keepalive
+ * worker entirely; non-zero + XFRMA_SA_DIR=OUT + XFRMA_ENCAP arms the
+ * per-net keepalive worker on the SA at construct time.  Small values
+ * exercise the worker's arming/rearming path; a large value exercises
+ * the same setup arithmetic without ever actually firing during the
+ * op's 1s lifetime. */
+static const __u32 nat_keepalive_intervals[] = {
+	1U, 2U, 5U, 60U, 0xffffU,
+};
+
+/*
+ * Build XFRM_MSG_NEWSA carrying the standard NAT-T attribute set plus
+ * XFRMA_SA_DIR and XFRMA_NAT_KEEPALIVE_INTERVAL.  The kernel accepts
+ * the SA only when the (direction, encap-present, interval) triple is
+ * mutually consistent -- OUT + encap + non-zero interval arms the
+ * per-net keepalive worker; IN with a non-zero interval or an
+ * encap-less SA with a non-zero interval is rejected by
+ * xfrm_nat_keepalive_init after the SA shell has already been
+ * partly-constructed, driving the construct-error teardown path.
+ *
+ * Every combination is emitted intentionally so the rejection paths
+ * get roughly equal cycles alongside the accepted (OUT + encap +
+ * interval) baseline.
+ */
+static int build_newsa_keepalive(struct nl_ctx *ctx, __be32 spi, __u8 mode,
+				 enum nat_t_encap_choice encap_choice,
+				 __u8 sa_dir, __u32 interval,
+				 const struct nat_t_alg *auth,
+				 const struct nat_t_alg *crypt)
+{
+	unsigned char buf[NAT_T_BUF_BYTES];
+	struct nlmsghdr *nlh;
+	struct xfrm_usersa_info *sa;
+	size_t off;
+
+	memset(buf, 0, sizeof(buf));
+	nlh = (struct nlmsghdr *)buf;
+	nlh->nlmsg_type  = XFRM_MSG_NEWSA;
+	nlh->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+	nlh->nlmsg_seq   = nl_seq_next(ctx);
+
+	sa = (struct xfrm_usersa_info *)NLMSG_DATA(nlh);
+	fill_selector(&sa->sel);
+	sa->id.daddr.a4   = NAT_T_DADDR_BE;
+	sa->id.spi        = spi;
+	sa->id.proto      = IPPROTO_ESP;
+	sa->saddr.a4      = NAT_T_SADDR_BE;
+	fill_lifetime(&sa->lft);
+	sa->reqid         = 1;
+	sa->family        = AF_INET;
+	sa->mode          = mode;
+	/* Kernel rejects OUT SAs whose replay_window is non-zero once
+	 * XFRMA_SA_DIR is present; pair the two so the accepted path
+	 * doesn't fall over on that unrelated check. */
+	sa->replay_window = (sa_dir == XFRM_SA_DIR_OUT) ? 0 : 32;
+	sa->flags         = 0;
+
+	off = NLMSG_HDRLEN + NLMSG_ALIGN(sizeof(*sa));
+
+	off = append_auth_trunc(buf, off, sizeof(buf), auth);
+	if (!off)
+		return -EIO;
+
+	off = append_crypt(buf, off, sizeof(buf), crypt);
+	if (!off)
+		return -EIO;
+
+	if (encap_choice != NAT_T_ENCAP_OMIT) {
+		__u16 et = (encap_choice == NAT_T_ENCAP_NON_IKE)
+				? UDP_ENCAP_ESPINUDP_NON_IKE
+				: UDP_ENCAP_ESPINUDP;
+		off = append_encap(buf, off, sizeof(buf), et);
+		if (!off)
+			return -EIO;
+	}
+
+	off = nla_put_u8(buf, off, sizeof(buf), XFRMA_SA_DIR, sa_dir);
+	if (!off)
+		return -EIO;
+
+	off = nla_put_u32(buf, off, sizeof(buf),
+			  XFRMA_NAT_KEEPALIVE_INTERVAL, interval);
+	if (!off)
+		return -EIO;
+
+	nlh->nlmsg_len = (__u32)off;
+	return nl_send_recv(ctx, buf, off);
+}
+
+/*
+ * Drive one full nat_keepalive setup->teardown cycle over one SA:
+ * pick a (direction, encap-present, interval) triple, dispatch NEWSA
+ * (accepted or rejected depending on the triple's coherence), then
+ * DELSA on the same SPI so a successful install runs the teardown side
+ * of xfrm_nat_keepalive_fini and a failing install has already walked
+ * the construct-error cleanup path.  Consistent-triple iterations
+ * (OUT + encap + interval>0) additionally short-race the worker
+ * arming with the DELSA so the delete lands while the worker's per-net
+ * accounting is still transient.
+ */
+static void nat_keepalive_err_cycle(struct nl_ctx *ctx)
+{
+	__be32 spi;
+	__u8 mode, sa_dir;
+	__u32 interval;
+	enum nat_t_encap_choice encap_choice;
+	const struct nat_t_alg *auth, *crypt;
+	int rc;
+
+	mode  = (rand32() & 1U) ? XFRM_MODE_TUNNEL : XFRM_MODE_TRANSPORT;
+	auth  = &RAND_ARRAY(auth_algs);
+	crypt = &RAND_ARRAY(crypt_algs);
+	spi   = htonl((rand32() % XFRM_SPI_RANGE) + XFRM_SPI_MIN);
+
+	/* Rotate every triple corner deliberately -- the point of this
+	 * cycle is to exercise both the arming path and the two error
+	 * shapes (IN + interval; no-encap + interval), not to bias
+	 * toward one. */
+	sa_dir       = (rand32() & 1U) ? XFRM_SA_DIR_OUT : XFRM_SA_DIR_IN;
+	interval     = ONE_IN(3) ? 0U : RAND_ARRAY(nat_keepalive_intervals);
+	encap_choice = ONE_IN(3) ? NAT_T_ENCAP_OMIT
+				 : ((rand32() & 1U) ? NAT_T_ENCAP_NON_IKE
+						    : NAT_T_ENCAP_ESPINUDP);
+
+	rc = build_newsa_keepalive(ctx, spi, mode, encap_choice, sa_dir,
+				   interval, auth, crypt);
+	if (rc == 0)
+		__atomic_add_fetch(&shm->stats.nat_t_churn_sa_added,
+				   1, __ATOMIC_RELAXED);
+
+	if (build_delsa(ctx, spi) == 0)
+		__atomic_add_fetch(&shm->stats.nat_t_churn_sa_deleted,
+				   1, __ATOMIC_RELAXED);
+}
+
 /*
  * Open a UDP socket bound to (127.0.0.1, NAT_T_ENCAP_PORT) and prime
  * it with UDP_ENCAP_ESPINUDP so the kernel installs the encap demux
@@ -1040,6 +1190,20 @@ static int nat_t_churn_in_ns(void *arg)
 	if (valid_op)
 		__atomic_add_fetch(&shm->stats.childop_data_path[op],
 				   1, __ATOMIC_RELAXED);
+
+	/* nat_keepalive error-path sub-branch: ~1 in 4 iterations swap
+	 * the baseline single-SA data-plane cycle for a tight NEWSA -->
+	 * DELSA on an SA whose XFRMA_SA_DIR / XFRMA_ENCAP /
+	 * XFRMA_NAT_KEEPALIVE_INTERVAL combination flips between the
+	 * accepted OUT-arms-worker path and the two rejected shapes
+	 * (IN + interval; encap-less + interval).  Rejected shapes drive
+	 * the construct-error teardown; accepted shapes race the delete
+	 * against the per-net worker arming.  Same netns / netlink fd as
+	 * the baseline branch -- no extra socket cost. */
+	if (ONE_IN(4)) {
+		nat_keepalive_err_cycle(&ctx);
+		goto out;
+	}
 
 	mode  = (rand32() & 1U) ? XFRM_MODE_TUNNEL : XFRM_MODE_TRANSPORT;
 	esn   = (rand32() & 1U) != 0;
