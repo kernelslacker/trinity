@@ -6,6 +6,7 @@
 #include <sys/syscall.h>
 #include <time.h>
 #include "deferred-free.h"
+#include "output-poison.h"
 #include "pids.h"
 #include "random.h"
 #include "rnd.h"
@@ -36,6 +37,14 @@ struct clock_gettime_post_state {
 	unsigned long magic;
 	unsigned long clockid;
 	unsigned long tp;
+	/*
+	 * Seed for the poison pattern stamped into the tp OUT buffer at
+	 * sanitise time.  Fed back into check_output_struct_user_or_skip()
+	 * in the post handler so a stomp of rec->a2 cannot redirect the
+	 * check against an unrelated heap page that happens to still carry
+	 * the original (or any) byte pattern.
+	 */
+	uint64_t poison_seed;
 };
 #endif
 
@@ -73,6 +82,25 @@ static void sanitise_clock_gettime(struct syscallrecord *rec)
 	snap->magic   = CLOCK_GETTIME_POST_STATE_MAGIC;
 	snap->clockid = rec->a1;
 	snap->tp      = rec->a2;
+	snap->poison_seed = 0;
+	/*
+	 * Stamp a per-call poison pattern into the user buffer the kernel
+	 * is about to fill.  The post handler asks check_output_struct()
+	 * whether the pattern survived intact; if it did on a success
+	 * return the kernel wrote zero bytes despite reporting success.
+	 * Done after avoid_shared_buffer_out() so the poison lands on the
+	 * final buffer the kernel will see (the relocation may have
+	 * swapped rec->a2 for a fresh page).  Gated on range_readable_user()
+	 * so an ARG_NON_NULL_ADDRESS draw that landed on an address the
+	 * writable-pool did not relocate does not SIGSEGV the sanitiser
+	 * inside poison_output_struct's byte-walk; on skip poison_seed
+	 * stays 0 and the post handler no-ops the untouched-buffer arm.
+	 */
+	if (range_readable_user((void *)(unsigned long) rec->a2,
+				sizeof(struct timespec)))
+		snap->poison_seed =
+			poison_output_struct((void *)(unsigned long) rec->a2,
+					     sizeof(struct timespec), 0);
 	post_state_install(rec, snap);
 #endif
 }
@@ -119,6 +147,14 @@ static void sanitise_clock_gettime(struct syscallrecord *rec)
  *     return and the post-hook read — caught because the snapshot
  *     happens before the cross-check.
  *
+ * A second oracle bumps shm->stats.post_handler_untouched_out_buf
+ * when the per-call poison pattern stamped at sanitise time survives
+ * a success return: the kernel reported 0 but wrote zero bytes into
+ * the timespec — a torn copy_to_user, a "return 0 before fill" early
+ * exit, or a mis-wired compat wrapper.  The range oracle above can't
+ * catch this because an untouched buffer still carries a byte pattern
+ * that may happen to parse as a plausible timespec.
+ *
  * Wrapped in #if defined(SYS_clock_gettime) || defined(__NR_clock_gettime)
  * for consistency with the rest of the oracle batch; clock_gettime has
  * been in Linux since 2.6 but minimal libcs may omit the macro.
@@ -139,12 +175,25 @@ static void post_clock_gettime(struct syscallrecord *rec)
 	if (snap == NULL)
 		return;
 
-	if (!ONE_IN(100))
-		goto out_free;
-
 	if (rec->retval != 0)
 		goto out_free;
 	if (snap->tp == 0)
+		goto out_free;
+
+	/*
+	 * Untouched-buffer oracle: no false positives, runs every success.
+	 * poison_seed == 0 is the sanitise-refused-to-stamp sentinel; skip
+	 * the check in that case rather than reading an unstamped buffer
+	 * against a fixed pattern.
+	 */
+	if (snap->poison_seed != 0 &&
+	    check_output_struct_user_or_skip((void *)(unsigned long) snap->tp,
+					     sizeof(struct timespec),
+					     snap->poison_seed))
+		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+				   1, __ATOMIC_RELAXED);
+
+	if (!ONE_IN(100))
 		goto out_free;
 
 	/*
