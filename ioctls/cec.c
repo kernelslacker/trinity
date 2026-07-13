@@ -19,10 +19,9 @@
  * past (over-encoded).  Each command is wrapped in its own #ifdef
  * to mirror the guards on the callsites below, so builds against
  * older libc-headers-supplied <linux/cec.h> still compile.
- * CEC_ADAP_{G,S}_PHYS_ADDR (bare __u16), CEC_{G,S}_MODE (bare __u32)
- * and CEC_RECEIVE / CEC_ADAP_S_LOG_ADDRS (share struct with their
- * G-side twins covered here) are intentionally absent from this
- * first wave.
+ * CEC_ADAP_{G,S}_PHYS_ADDR (bare __u16) and CEC_{G,S}_MODE
+ * (bare __u32) are intentionally absent -- these encode a
+ * scalar, not a struct, so there is no sizeof() to assert.
  */
 #ifdef CEC_ADAP_G_CAPS
 IOCTL_SIZE_ASSERT(CEC_ADAP_G_CAPS, struct cec_caps);
@@ -30,8 +29,14 @@ IOCTL_SIZE_ASSERT(CEC_ADAP_G_CAPS, struct cec_caps);
 #ifdef CEC_ADAP_G_LOG_ADDRS
 IOCTL_SIZE_ASSERT(CEC_ADAP_G_LOG_ADDRS, struct cec_log_addrs);
 #endif
+#ifdef CEC_ADAP_S_LOG_ADDRS
+IOCTL_SIZE_ASSERT(CEC_ADAP_S_LOG_ADDRS, struct cec_log_addrs);
+#endif
 #ifdef CEC_TRANSMIT
 IOCTL_SIZE_ASSERT(CEC_TRANSMIT, struct cec_msg);
+#endif
+#ifdef CEC_RECEIVE
+IOCTL_SIZE_ASSERT(CEC_RECEIVE, struct cec_msg);
 #endif
 #ifdef CEC_DQEVENT
 IOCTL_SIZE_ASSERT(CEC_DQEVENT, struct cec_event);
