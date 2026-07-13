@@ -196,7 +196,7 @@ static void one_cycle(void)
 	size_t n;
 	pid_t pid;
 
-	count = shm->isolation.scratch_block_count;
+	count = load_scratch_block_count();
 	idx = pick_mounted_index(count);
 	if (idx == UINT_MAX)
 		return;

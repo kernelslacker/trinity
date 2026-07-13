@@ -64,3 +64,12 @@ struct scratch_block_entry {
  * Safe to call from any process; reads shm->isolation atomically.
  */
 int scratch_block_random_loop_num(void);
+
+/*
+ * Load shm->isolation.scratch_block_count clamped to SCRATCH_BLOCK_MAX.
+ * The publisher bounds every increment to SCRATCH_BLOCK_MAX, so a
+ * value beyond the cap is a stomped shm counter; clamping here keeps
+ * subsequent scratch_block[] pool walks (loops and modulo indexing)
+ * inside the fixed-size array instead of running off its end.
+ */
+unsigned int load_scratch_block_count(void);
