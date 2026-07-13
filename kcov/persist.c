@@ -1195,8 +1195,6 @@ const char *kcov_bitmap_default_path(void)
 	arch = "s390x";
 #elif defined(__sparc__)
 	arch = "sparc";
-#elif defined(__riscv) || defined(__riscv__)
-	arch = "riscv64";
 #else
 	arch = "unknown";
 #endif
