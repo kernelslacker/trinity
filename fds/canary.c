@@ -286,7 +286,18 @@ const struct canary_file_info *canary_file_get(unsigned int idx)
 
 unsigned int canary_pool_size(void)
 {
-	return canary_pool ? canary_pool->count : 0;
+	unsigned int count;
+
+	/*
+	 * count lives in shared memory; clamp to the array cap so a caller
+	 * that picks an index from this size (pagecache_canary_check) can't
+	 * be driven past entries[] by a stomped count -- matches the cap in
+	 * canary_file_get() above.
+	 */
+	if (canary_pool == NULL)
+		return 0;
+	count = canary_pool->count;
+	return count < NR_CANARY_FILES ? count : NR_CANARY_FILES;
 }
 
 static int get_rand_canary_fd(void)
