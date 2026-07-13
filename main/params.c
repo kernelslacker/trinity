@@ -1,3 +1,4 @@
+#include <ctype.h>
 #include <errno.h>
 #include <getopt.h>
 #include <limits.h>
@@ -1478,8 +1479,24 @@ static bool parse_writer_pin_options(int opt, const char *name, char *arg)
 
 	if (strcmp("writer-watch", name) == 0) {
 		const char *p = arg;
+		const char *sign_check = arg;
 		char *end = NULL;
 		unsigned long val;
+
+		/*
+		 * strtoul() silently accepts a leading '-'/'+' even in
+		 * base 16, wrapping a negative value into a huge address.
+		 * Reject a sign up front (after any leading whitespace)
+		 * so "-1", "+0x10" etc. are diagnosed rather than turned
+		 * into a wild watch address.
+		 */
+		while (isspace((unsigned char)*sign_check))
+			sign_check++;
+		if (*sign_check == '-' || *sign_check == '+') {
+			outputerr("--writer-watch: can't parse '%s' as hex address\n",
+				  arg);
+			exit(EXIT_FAILURE);
+		}
 
 		/* Accept either bare hex or 0x-prefixed; strtoul
 		 * with base 16 handles a leading 0x but errno=0
