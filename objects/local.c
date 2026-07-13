@@ -266,3 +266,20 @@ struct object *find_local_object_by_fd(enum objecttype type, int fd)
 	}
 	return NULL;
 }
+
+struct object *local_fd_find_by_fd(int fd)
+{
+	unsigned int type;
+
+	if (fd < 0)
+		return NULL;
+
+	for (type = OBJ_NONE + 1; type < MAX_OBJECT_TYPES; type++) {
+		struct object *obj;
+
+		obj = find_local_object_by_fd((enum objecttype)type, fd);
+		if (obj != NULL)
+			return obj;
+	}
+	return NULL;
+}
