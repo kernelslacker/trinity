@@ -10,10 +10,6 @@
 #include "arch-i386.h"
 #endif
 
-#ifdef __powerpc__
-#include "arch-ppc.h"
-#endif
-
 #ifdef __s390__
 #include "arch-s390.h"
 #endif
