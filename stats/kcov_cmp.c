@@ -2595,6 +2595,10 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	static unsigned long prev_reexec_attribution_ambiguous;
 	static unsigned long prev_reexec_attribution_width_match;
 	static unsigned long prev_reexec_new_cmps_total;
+	static unsigned long prev_reexec_new_edges_total;
+	static unsigned long prev_reexec_attempts_by_arm[2];
+	static unsigned long prev_reexec_new_cmps_by_arm[2];
+	static unsigned long prev_reexec_new_edges_by_arm[2];
 	static unsigned long prev_reexec_skipped_destructive;
 	static unsigned long prev_reexec_skipped_validate_silent;
 	static unsigned long prev_reexec_window_cap_hit;
@@ -2650,6 +2654,10 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	unsigned long cur_reexec_attempts, cur_reexec_attribution_found;
 	unsigned long cur_reexec_attempts_with_new_cmp;
 	unsigned long cur_reexec_attribution_ambiguous, cur_reexec_new_cmps_total;
+	unsigned long cur_reexec_new_edges_total;
+	unsigned long cur_reexec_attempts_by_arm[2];
+	unsigned long cur_reexec_new_cmps_by_arm[2];
+	unsigned long cur_reexec_new_edges_by_arm[2];
 	unsigned long cur_reexec_attribution_width_match;
 	unsigned long cur_reexec_skipped_destructive, cur_reexec_skipped_validate_silent;
 	unsigned long cur_reexec_window_cap_hit;
@@ -2681,6 +2689,10 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	unsigned long delta_reexec_attempts, delta_reexec_attribution_found;
 	unsigned long delta_reexec_attempts_with_new_cmp;
 	unsigned long delta_reexec_attribution_ambiguous, delta_reexec_new_cmps_total;
+	unsigned long delta_reexec_new_edges_total;
+	unsigned long delta_reexec_attempts_by_arm[2];
+	unsigned long delta_reexec_new_cmps_by_arm[2];
+	unsigned long delta_reexec_new_edges_by_arm[2];
 	unsigned long delta_reexec_attribution_width_match;
 	unsigned long delta_reexec_skipped_destructive, delta_reexec_skipped_validate_silent;
 	unsigned long delta_reexec_window_cap_hit;
@@ -2769,6 +2781,13 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	cur_reexec_attribution_ambiguous   = __atomic_load_n(&kcov_shm->reexec_attribution_ambiguous,   __ATOMIC_RELAXED);
 	cur_reexec_attribution_width_match = __atomic_load_n(&kcov_shm->reexec_attribution_width_match, __ATOMIC_RELAXED);
 	cur_reexec_new_cmps_total          = __atomic_load_n(&kcov_shm->reexec_new_cmps_total,          __ATOMIC_RELAXED);
+	cur_reexec_new_edges_total         = __atomic_load_n(&kcov_shm->reexec_new_edges_total,         __ATOMIC_RELAXED);
+	cur_reexec_attempts_by_arm[0]      = __atomic_load_n(&kcov_shm->reexec_attempts_by_arm[0],      __ATOMIC_RELAXED);
+	cur_reexec_attempts_by_arm[1]      = __atomic_load_n(&kcov_shm->reexec_attempts_by_arm[1],      __ATOMIC_RELAXED);
+	cur_reexec_new_cmps_by_arm[0]      = __atomic_load_n(&kcov_shm->reexec_new_cmps_by_arm[0],      __ATOMIC_RELAXED);
+	cur_reexec_new_cmps_by_arm[1]      = __atomic_load_n(&kcov_shm->reexec_new_cmps_by_arm[1],      __ATOMIC_RELAXED);
+	cur_reexec_new_edges_by_arm[0]     = __atomic_load_n(&kcov_shm->reexec_new_edges_by_arm[0],     __ATOMIC_RELAXED);
+	cur_reexec_new_edges_by_arm[1]     = __atomic_load_n(&kcov_shm->reexec_new_edges_by_arm[1],     __ATOMIC_RELAXED);
 	cur_reexec_skipped_destructive     = __atomic_load_n(&kcov_shm->reexec_skipped_destructive,     __ATOMIC_RELAXED);
 	cur_reexec_skipped_validate_silent = __atomic_load_n(&kcov_shm->reexec_skipped_validate_silent, __ATOMIC_RELAXED);
 	cur_reexec_window_cap_hit          = __atomic_load_n(&kcov_shm->reexec_window_cap_hit,          __ATOMIC_RELAXED);
@@ -2899,6 +2918,13 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 		prev_reexec_attribution_ambiguous   = cur_reexec_attribution_ambiguous;
 		prev_reexec_attribution_width_match = cur_reexec_attribution_width_match;
 		prev_reexec_new_cmps_total          = cur_reexec_new_cmps_total;
+		prev_reexec_new_edges_total         = cur_reexec_new_edges_total;
+		prev_reexec_attempts_by_arm[0]      = cur_reexec_attempts_by_arm[0];
+		prev_reexec_attempts_by_arm[1]      = cur_reexec_attempts_by_arm[1];
+		prev_reexec_new_cmps_by_arm[0]      = cur_reexec_new_cmps_by_arm[0];
+		prev_reexec_new_cmps_by_arm[1]      = cur_reexec_new_cmps_by_arm[1];
+		prev_reexec_new_edges_by_arm[0]     = cur_reexec_new_edges_by_arm[0];
+		prev_reexec_new_edges_by_arm[1]     = cur_reexec_new_edges_by_arm[1];
 		prev_reexec_skipped_destructive     = cur_reexec_skipped_destructive;
 		prev_reexec_skipped_validate_silent = cur_reexec_skipped_validate_silent;
 		prev_reexec_window_cap_hit          = cur_reexec_window_cap_hit;
@@ -2975,6 +3001,13 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	delta_reexec_attribution_ambiguous   = sat_sub_ul(cur_reexec_attribution_ambiguous,   prev_reexec_attribution_ambiguous);
 	delta_reexec_attribution_width_match = sat_sub_ul(cur_reexec_attribution_width_match, prev_reexec_attribution_width_match);
 	delta_reexec_new_cmps_total          = sat_sub_ul(cur_reexec_new_cmps_total,          prev_reexec_new_cmps_total);
+	delta_reexec_new_edges_total         = sat_sub_ul(cur_reexec_new_edges_total,         prev_reexec_new_edges_total);
+	delta_reexec_attempts_by_arm[0]      = sat_sub_ul(cur_reexec_attempts_by_arm[0],      prev_reexec_attempts_by_arm[0]);
+	delta_reexec_attempts_by_arm[1]      = sat_sub_ul(cur_reexec_attempts_by_arm[1],      prev_reexec_attempts_by_arm[1]);
+	delta_reexec_new_cmps_by_arm[0]      = sat_sub_ul(cur_reexec_new_cmps_by_arm[0],      prev_reexec_new_cmps_by_arm[0]);
+	delta_reexec_new_cmps_by_arm[1]      = sat_sub_ul(cur_reexec_new_cmps_by_arm[1],      prev_reexec_new_cmps_by_arm[1]);
+	delta_reexec_new_edges_by_arm[0]     = sat_sub_ul(cur_reexec_new_edges_by_arm[0],     prev_reexec_new_edges_by_arm[0]);
+	delta_reexec_new_edges_by_arm[1]     = sat_sub_ul(cur_reexec_new_edges_by_arm[1],     prev_reexec_new_edges_by_arm[1]);
 	delta_reexec_skipped_destructive     = sat_sub_ul(cur_reexec_skipped_destructive,     prev_reexec_skipped_destructive);
 	delta_reexec_skipped_validate_silent = sat_sub_ul(cur_reexec_skipped_validate_silent, prev_reexec_skipped_validate_silent);
 	delta_reexec_window_cap_hit          = sat_sub_ul(cur_reexec_window_cap_hit,          prev_reexec_window_cap_hit);
@@ -3052,6 +3085,10 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	     delta_reexec_attribution_found |
 	     delta_reexec_attribution_ambiguous | delta_reexec_attribution_width_match |
 	     delta_reexec_new_cmps_total |
+	     delta_reexec_new_edges_total |
+	     delta_reexec_attempts_by_arm[0] | delta_reexec_attempts_by_arm[1] |
+	     delta_reexec_new_cmps_by_arm[0] | delta_reexec_new_cmps_by_arm[1] |
+	     delta_reexec_new_edges_by_arm[0] | delta_reexec_new_edges_by_arm[1] |
 	     delta_reexec_skipped_destructive | delta_reexec_skipped_validate_silent |
 	     delta_reexec_window_cap_hit | delta_reexec_pending_dropped |
 	     delta_reexec_gate_skip_in_reexec | delta_reexec_gate_skip_disabled |
@@ -3210,6 +3247,48 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
 					"reexec_new_cmps_total", delta_reexec_new_cmps_total,
 					rate_milli / 1000, rate_milli % 1000, cur_reexec_new_cmps_total);
+		}
+		if (delta_reexec_new_edges_total) {
+			unsigned long rate_milli = (delta_reexec_new_edges_total * 1000UL) / (unsigned long)elapsed;
+			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu)\n",
+					"reexec_new_edges_total", delta_reexec_new_edges_total,
+					rate_milli / 1000, rate_milli % 1000, cur_reexec_new_edges_total);
+		}
+		/* Plateau-burst per-call drain-cap A/B cohort split.  Renders
+		 * arm-A (control, drain-all baseline) and arm-B (measure,
+		 * capped at REDQUEEN_REEXEC_BURST_DRAIN during plateau) side-
+		 * by-side so the shadow success criterion
+		 *   (edges/attempt B) >= (edges/attempt A)
+		 * can be read directly off the periodic dump.  Attempts are
+		 * the denominator across both novelty axes; the block only
+		 * fires when at least one arm bumped an attempt this window
+		 * to keep the render quiet under CMP-off / non-plateau runs. */
+		if (delta_reexec_attempts_by_arm[0] |
+		    delta_reexec_attempts_by_arm[1] |
+		    delta_reexec_new_cmps_by_arm[0] |
+		    delta_reexec_new_cmps_by_arm[1] |
+		    delta_reexec_new_edges_by_arm[0] |
+		    delta_reexec_new_edges_by_arm[1]) {
+			stats_log_write("  reexec burst_drain_arm cohort (A=drain-all, B=drain<=%u during plateau):\n",
+					REDQUEEN_REEXEC_BURST_DRAIN);
+			stats_log_write("    %-20s A +%lu (total %lu)   B +%lu (total %lu)\n",
+					"attempts_by_arm",
+					delta_reexec_attempts_by_arm[0],
+					cur_reexec_attempts_by_arm[0],
+					delta_reexec_attempts_by_arm[1],
+					cur_reexec_attempts_by_arm[1]);
+			stats_log_write("    %-20s A +%lu (total %lu)   B +%lu (total %lu)\n",
+					"new_cmps_by_arm",
+					delta_reexec_new_cmps_by_arm[0],
+					cur_reexec_new_cmps_by_arm[0],
+					delta_reexec_new_cmps_by_arm[1],
+					cur_reexec_new_cmps_by_arm[1]);
+			stats_log_write("    %-20s A +%lu (total %lu)   B +%lu (total %lu)\n",
+					"new_edges_by_arm",
+					delta_reexec_new_edges_by_arm[0],
+					cur_reexec_new_edges_by_arm[0],
+					delta_reexec_new_edges_by_arm[1],
+					cur_reexec_new_edges_by_arm[1]);
 		}
 		if (delta_reexec_skipped_destructive) {
 			unsigned long rate_milli = (delta_reexec_skipped_destructive * 1000UL) / (unsigned long)elapsed;

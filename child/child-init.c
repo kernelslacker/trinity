@@ -1121,6 +1121,19 @@ static void init_child_ab_stamps(struct childdata *child)
 	 * comparison. */
 	child->redqueen_enabled = (child->kcov.mode == KCOV_MODE_CMP) && ONE_IN(2);
 
+	/* Plateau burst per-call drain-cap A/B stamp.  Independent axis from
+	 * redqueen_enabled so an arm-A control child (drain-all-baseline)
+	 * and an arm-B measure child (drain-K-during-plateau) can be paired
+	 * inside either redqueen cohort; the burst path itself still gates on
+	 * redqueen_enabled at the dispatch_step tail so a burst_drain_arm_b
+	 * child that lost the redqueen dice never actually bursts.  Stamped
+	 * unconditionally: the flag is moot for children who won't ever reach
+	 * a CMP_RISING_PC_FLAT plateau (short-lived children, PC-mode kcov),
+	 * but the ONE_IN(2) draw stays uniform across the population so the
+	 * arm split is directly readable from any subsequent burst-drain
+	 * observability slice. */
+	child->burst_drain_arm_b = ONE_IN(2);
+
 	/* Cmp-hint baseline inject denom A/B-comparison stamp.  Half the
 	 * children get Arm B (the more aggressive 1-in-12 baseline rate);
 	 * the rest stay on Arm A (the historical 1-in-16 baseline).  Stamped

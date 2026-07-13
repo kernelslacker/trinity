@@ -658,19 +658,43 @@ static bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 				 * directly readable.  MAX_REEXEC_PENDING
 				 * clamp on the loop bound is defence in
 				 * depth against a corrupted count reaching
-				 * the array index. */
+				 * the array index.
+				 *
+				 * plateau_burst && burst_drain_arm_b:
+				 * measure-arm burst-drain cap.  Arm B trims
+				 * the drain to the first
+				 * REDQUEEN_REEXEC_BURST_DRAIN entries and
+				 * breaks the loop on a helper FAIL (the per-
+				 * window ceiling hit, the destructive /
+				 * validate-silent / bad-slot gates, or any
+				 * future FAIL surface inside
+				 * redqueen_reexec_step).  Arm A (control)
+				 * keeps draining to MAX_REEXEC_PENDING with
+				 * no early break so the two arms measure
+				 * "surgical top-K drain during plateau" vs
+				 * "greedy drain-all during plateau" on
+				 * distinct-edge lift per attempt (see the
+				 * per-arm counter block below the drain). */
 				unsigned int count = child->reexec_pending_count;
 				unsigned int i;
+				bool burst_drain_arm =
+					plateau_burst && child->burst_drain_arm_b;
 
 				if (count > MAX_REEXEC_PENDING)
 					count = MAX_REEXEC_PENDING;
+				if (burst_drain_arm &&
+				    count > REDQUEEN_REEXEC_BURST_DRAIN)
+					count = REDQUEEN_REEXEC_BURST_DRAIN;
 
 				child->in_reexec = true;
 				for (i = 0; i < count; i++) {
 					struct reexec_pending p =
 						child->reexec_pending[i];
+					bool fired;
 
-					redqueen_reexec_step(child, &p, i);
+					fired = redqueen_reexec_step(child, &p, i);
+					if (burst_drain_arm && !fired)
+						break;
 				}
 				child->in_reexec = false;
 				gate_passed = true;
@@ -1161,6 +1185,7 @@ static bool redqueen_reexec_step(struct childdata *child,
 
 	{
 		unsigned long inner_new_cmp = 0;
+		unsigned long inner_new_edges = 0;
 
 		/* The re-exec's lift signal is the inner dispatch's per-call
 		 * bloom-novel CMP count -- the authoritative value
@@ -1170,11 +1195,43 @@ static bool redqueen_reexec_step(struct childdata *child,
 		 * loads race other CMP children's increments (over-attributing
 		 * their records to this re-exec) and count raw duplicate
 		 * records (not just novel ones), the same bug class avoided
-		 * for PC edges via kcov_collect()'s new_edge_count out-param. */
-		ok = dispatch_step(child, entry, NULL, &inner_new_cmp, NULL);
+		 * for PC edges via kcov_collect()'s new_edge_count out-param.
+		 *
+		 * The 6th param (inner_new_edges) reports the inner call's
+		 * pcres.transition_edges_real_local; distinct transition-edge
+		 * lift is the go/no-go metric for the plateau_burst measure
+		 * arm (§4 of the plateau-burst spec) because a fresh CMP
+		 * record that opens no new distinct edge is invisible to the
+		 * 85k distinct-PC-edge wall the intensification is meant to
+		 * break. */
+		ok = dispatch_step(child, entry, NULL, &inner_new_cmp,
+				   &inner_new_edges);
+
+		if (kcov_shm != NULL) {
+			unsigned int arm = child->burst_drain_arm_b ? 1U : 0U;
+
+			/* Per-arm attempt denominator for the plateau_burst
+			 * A/B measure.  Bumped on every attempt regardless of
+			 * inner_new_cmp so the per-arm ratio
+			 *   reexec_new_edges_by_arm[arm] /
+			 *   reexec_attempts_by_arm[arm]
+			 * has a clean denominator on both cohorts. */
+			__atomic_fetch_add(&kcov_shm->reexec_attempts_by_arm[arm],
+					   1UL, __ATOMIC_RELAXED);
+
+			/* Per-arm distinct-edge lift for the plateau_burst
+			 * A/B measure.  Bumped unconditionally by the inner
+			 * transition-edge delta (0 attempts contribute 0 --
+			 * cheaper than a branch that skips the add). */
+			__atomic_fetch_add(&kcov_shm->reexec_new_edges_by_arm[arm],
+					   inner_new_edges, __ATOMIC_RELAXED);
+			__atomic_fetch_add(&kcov_shm->reexec_new_edges_total,
+					   inner_new_edges, __ATOMIC_RELAXED);
+		}
 
 		if (kcov_shm != NULL && inner_new_cmp > 0) {
 			unsigned int op_type = (unsigned int)child->op_type;
+			unsigned int arm = child->burst_drain_arm_b ? 1U : 0U;
 
 			/* Discrete count of attempts that produced novelty
 			 * (PHASE 0 measurement).  Sibling of reexec_attempts
@@ -1185,6 +1242,12 @@ static bool redqueen_reexec_step(struct childdata *child,
 			__atomic_fetch_add(&kcov_shm->reexec_attempts_with_new_cmp,
 					   1UL, __ATOMIC_RELAXED);
 			__atomic_fetch_add(&kcov_shm->reexec_new_cmps_total,
+					   inner_new_cmp, __ATOMIC_RELAXED);
+			/* Per-arm CMP-novelty lift for the plateau_burst A/B
+			 * measure: sibling of reexec_new_edges_by_arm above so
+			 * a run can compare arm ratios on either the edge-lift
+			 * (primary) or the CMP-novelty (secondary) axis. */
+			__atomic_fetch_add(&kcov_shm->reexec_new_cmps_by_arm[arm],
 					   inner_new_cmp, __ATOMIC_RELAXED);
 			if (rec->nr < MAX_NR_SYSCALL)
 				__atomic_fetch_add(
