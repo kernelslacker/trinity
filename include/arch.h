@@ -26,10 +26,6 @@
 #include "arch-arm.h"
 #endif
 
-#ifdef __mips__
-#include "arch-mips.h"
-#endif
-
 #ifdef __aarch64__
 #include "arch-aarch64.h"
 #endif

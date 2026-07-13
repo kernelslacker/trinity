@@ -1193,8 +1193,6 @@ const char *kcov_bitmap_default_path(void)
 	arch = "ppc";
 #elif defined(__s390x__)
 	arch = "s390x";
-#elif defined(__mips__)
-	arch = "mips";
 #elif defined(__sparc__)
 	arch = "sparc";
 #elif defined(__riscv) || defined(__riscv__)
