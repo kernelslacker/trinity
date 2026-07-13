@@ -5,6 +5,7 @@
 #include <time.h>
 #include "arch.h"
 #include "deferred-free.h"
+#include "output-poison.h"
 #include "shm.h"
 #include "random.h"
 #include "rnd.h"
@@ -13,19 +14,27 @@
 #include "utils.h"
 
 /*
- * Snapshot of the one gettimeofday input arg read by the post oracle,
- * captured at sanitise time and consumed by the post handler.  Lives in
- * rec->post_state, a slot the syscall ABI does not expose, so a sibling
- * syscall scribbling rec->aN between the syscall returning and the post
- * handler running cannot redirect the source memcpy at a foreign user
- * buffer.  The tz arg (rec->a2) is not snapshotted because the post
- * handler does not read the timezone payload -- the oracle compares only
- * the wall-clock seconds in tv against clock_gettime(CLOCK_REALTIME).
+ * Snapshot of the two gettimeofday input args plus per-slot poison seeds
+ * read by the post oracle, captured at sanitise time and consumed by the
+ * post handler.  Lives in rec->post_state, a slot the syscall ABI does
+ * not expose, so a sibling syscall scribbling rec->aN between the
+ * syscall returning and the post handler running cannot redirect the
+ * oracle at a foreign tv / tz user buffer or smear a poison check
+ * against a heap page that happens to carry a residual pattern from an
+ * earlier call.  Both slots are independently nullable -- the tz arg is
+ * deliberately NULL half the time to fuzz the modern-caller path, and
+ * the tv arg carries an intentional past-end-of-page fault 10% of the
+ * time -- so each pointer / seed pair is checked on its own.  A
+ * poison_seed of 0 means the sanitise-time writability check refused to
+ * stamp poison for that slot (unmapped or NULL) and the post handler
+ * must no-op that arm.
  */
 #define GETTIMEOFDAY_POST_STATE_MAGIC	0x47544F44UL	/* "GTOD" */
 struct gettimeofday_post_state {
 	unsigned long magic;
 	unsigned long tv;
+	unsigned long tz;
+	uint64_t poison_seed[2];
 };
 
 static void sanitise_gettimeofday(struct syscallrecord *rec)
@@ -69,16 +78,57 @@ static void sanitise_gettimeofday(struct syscallrecord *rec)
 	}
 
 	/*
-	 * Snapshot the one input arg the post oracle reads.  Without this
-	 * the post handler reads rec->a1 at post-time, when a sibling
-	 * syscall may have scribbled the slot: looks_like_corrupted_ptr()
-	 * cannot tell a real-but-wrong heap address from the original tv
-	 * user-buffer pointer, so the source memcpy would touch a foreign
-	 * allocation.  post_state is private to the post handler.
+	 * Snapshot the two input args read by the post oracle.  Without
+	 * this the post handler reads rec->a1/a2 at post-time, when a
+	 * sibling syscall may have scribbled the slots:
+	 * looks_like_corrupted_ptr() cannot tell a real-but-wrong heap
+	 * address from the original tv / tz user-buffer pointers, so the
+	 * source memcpy would touch a foreign allocation.  post_state is
+	 * private to the post handler.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = GETTIMEOFDAY_POST_STATE_MAGIC;
 	snap->tv = rec->a1;
+	snap->tz = rec->a2;
+	snap->poison_seed[0] = 0;
+	snap->poison_seed[1] = 0;
+
+	/*
+	 * Stamp a per-slot poison pattern into each of the tv / tz
+	 * OUT-buffers the kernel is about to fill.  The post handler
+	 * feeds each seed back into check_output_struct(); a byte-
+	 * identical poison after a rec->retval == 0 return means the
+	 * kernel wrote zero bytes into that struct and left our stamp
+	 * intact -- gettimeofday(2) is contracted to overwrite tv on
+	 * success, and to overwrite tz when it was passed non-NULL.
+	 * Each slot is independently nullable, so skip stamping when the
+	 * arg draw was 0.  Gate each stamp on range_readable_user() so a
+	 * writable-pool draw that avoid_shared_buffer_out() moved to an
+	 * address no longer provably mapped -- including the 10% tv
+	 * branch that deliberately lands one page past a real allocation
+	 * -- does not SIGSEGV the sanitiser inside poison_output_struct's
+	 * byte-walk.  On skip the seed stays 0 and the post handler
+	 * no-ops that arm.  Done after the address-picking above so the
+	 * poison lands on the final buffer the kernel will see.
+	 */
+	{
+		void *tv_buf = (void *)(unsigned long) rec->a1;
+		void *tz_buf = (void *)(unsigned long) rec->a2;
+
+		if (rec->a1 != 0 &&
+		    range_readable_user(tv_buf, sizeof(struct timeval)))
+			snap->poison_seed[0] =
+				poison_output_struct(tv_buf,
+						     sizeof(struct timeval),
+						     0);
+		if (rec->a2 != 0 &&
+		    range_readable_user(tz_buf, sizeof(struct timezone)))
+			snap->poison_seed[1] =
+				poison_output_struct(tz_buf,
+						     sizeof(struct timezone),
+						     0);
+	}
+
 	post_state_install(rec, snap);
 }
 
@@ -104,20 +154,22 @@ static void sanitise_gettimeofday(struct syscallrecord *rec)
  * real break without drowning in false positives from the gap between
  * the two samples.
  *
- * TOCTOU defeat: the tv input arg is snapshotted at sanitise time into
- * a heap struct in rec->post_state, so a sibling that scribbles rec->a1
- * between syscall return and post entry cannot redirect the source
- * memcpy at a foreign user buffer.  The user-buffer payload at tv is
- * then memcpy'd into a stack-local before inspection so a concurrent
- * thread can't mutate the user buffer between our checks.  Sample only
- * successful returns with a non-NULL tv; sanitised pointers can produce
- * -EFAULT and that's not an oracle violation.  ONE_IN(100) keeps the
- * extra clock_gettime cost in line with the rest of the oracle family.
+ * TOCTOU defeat: the tv and tz input args are snapshotted at sanitise
+ * time into a heap struct in rec->post_state, so a sibling that
+ * scribbles rec->a1 or rec->a2 between syscall return and post entry
+ * cannot redirect the source memcpy at a foreign user buffer.  The
+ * user-buffer payload at tv is then memcpy'd into a stack-local before
+ * inspection so a concurrent thread can't mutate the user buffer
+ * between our checks.  Sample only successful returns with a non-NULL
+ * tv; sanitised pointers can produce -EFAULT and that's not an oracle
+ * violation.  ONE_IN(100) keeps the extra clock_gettime cost in line
+ * with the rest of the oracle family.
  */
 static void post_gettimeofday(struct syscallrecord *rec)
 {
 	struct gettimeofday_post_state *snap;
 	struct timeval local_tv;
+	struct timezone local_tz;
 	struct timespec ts;
 	long diff;
 
@@ -132,10 +184,44 @@ static void post_gettimeofday(struct syscallrecord *rec)
 	if (snap == NULL)
 		return;
 
-	if (!ONE_IN(100))
+	if (rec->retval != 0)
 		goto out_free;
 
-	if (rec->retval != 0)
+	/*
+	 * Untouched-buffer poison check: sanitise stamped a per-slot
+	 * poison pattern into each non-NULL tv / tz OUT-buffer.  A byte-
+	 * identical match on a slot after a rec->retval == 0 return means
+	 * the kernel wrote zero bytes into that struct and left our stamp
+	 * intact -- a skipped copy_to_user() the wall-clock arm below
+	 * would not detect on tz at all (that arm reads only tv.tv_sec)
+	 * and would miss on tv 99 of 100 samples (the arm is rate-limited
+	 * behind ONE_IN(100)).  Cheap (a struct-sized compare, no
+	 * re-issue), so runs on every success sample.  Snapshot each slot
+	 * into a local before the compare so a sibling munmap of the
+	 * writable-pool page between the deref and here cannot fault
+	 * inside a second read.  A seed of 0 means sanitise skipped that
+	 * slot (unmapped or NULL) -- skip the check too so "we could not
+	 * poison" is not confused with "kernel did not write".  Counts
+	 * against the shared post_handler_untouched_out_buf slot.
+	 */
+	if (snap->tv != 0 && snap->poison_seed[0] != 0 &&
+	    post_snapshot_or_skip(&local_tv,
+				  (const void *)(unsigned long) snap->tv,
+				  sizeof(local_tv)) &&
+	    check_output_struct(&local_tv, sizeof(local_tv),
+				snap->poison_seed[0]))
+		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+				   1, __ATOMIC_RELAXED);
+	if (snap->tz != 0 && snap->poison_seed[1] != 0 &&
+	    post_snapshot_or_skip(&local_tz,
+				  (const void *)(unsigned long) snap->tz,
+				  sizeof(local_tz)) &&
+	    check_output_struct(&local_tz, sizeof(local_tz),
+				snap->poison_seed[1]))
+		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+				   1, __ATOMIC_RELAXED);
+
+	if (!ONE_IN(100))
 		goto out_free;
 
 	if (snap->tv == 0)
