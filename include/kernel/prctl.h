@@ -29,13 +29,6 @@
 #define PR_GET_THP_DISABLE      42
 #endif
 
-#ifdef __mips__
-#ifndef PR_SET_FP_MODE
-#define PR_SET_FP_MODE         45
-#define PR_GET_FP_MODE         46
-#endif
-#endif
-
 #ifndef PR_CAP_AMBIENT
 #define PR_CAP_AMBIENT		47
 #endif
