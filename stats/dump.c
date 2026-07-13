@@ -1415,6 +1415,27 @@ static void dump_stats_render_frontier_satcool(void)
 	dump_satcool_would_skip_per_syscall_top();
 }
 
+/* SHADOW-ONLY floored-barren sub-floor demote counters.  Gated by
+ * --frontier-barren-demote != off; zero on default-off runs so the
+ * rows stay suppressed by the if-non-zero guard.  Read the
+ * (would_skip / candidates) ratio for the vetted-predicate demote
+ * catch rate and the per-syscall frontier_barren_would_skip_per_
+ * syscall[] top-N (rendered by dump_barren_would_skip_per_syscall_
+ * top() below) to confirm the demote mass concentrates on the pure
+ * zero-arg getter cohort and is ~0 on the object-producer / state-
+ * mutator / heuristic-arm-spike sets the vetted skeleton excludes,
+ * before considering the combined sub-floor ramp. */
+static void dump_stats_render_frontier_barren(void)
+{
+	if (shm->stats.frontier_barren_candidates)
+		stat_row("strategy", "frontier_barren_candidates",
+			 shm->stats.frontier_barren_candidates);
+	if (shm->stats.frontier_barren_would_skip)
+		stat_row("strategy", "frontier_barren_would_skip",
+			 shm->stats.frontier_barren_would_skip);
+	dump_barren_would_skip_per_syscall_top();
+}
+
 /* SHADOW-ONLY cmp-frontier picker-arm counters.  Gated by
  * --cmp-frontier != off; zero on default-off runs so the rows stay
  * suppressed by the if-non-zero guard.  Read the
@@ -1802,6 +1823,7 @@ void dump_stats_strategy_summary(void)
 		stat_row("strategy", "frontier_silent_decay_live_rejects",
 			 shm->stats.frontier_silent_decay_live_rejects);
 	dump_stats_render_frontier_satcool();
+	dump_stats_render_frontier_barren();
 	dump_stats_render_frontier_cmp();
 	/* SHADOW-ONLY LIVE-regime cooldown projections.  Sibling block to
 	 * the silent-streak decay rows above: candidates is the distinct

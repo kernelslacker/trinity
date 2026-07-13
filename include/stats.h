@@ -3218,6 +3218,23 @@ struct stats_s {
 	 * for the saturation cooldown. */
 	unsigned long frontier_satcool_would_skip_per_syscall[MAX_NR_SYSCALL];
 
+	/* SHADOW-ONLY per-syscall floored-barren sub-floor demote would-
+	 * skip counter.  Bumped at the silent-regime accept site alongside
+	 * the scalar frontier_barren_would_skip whenever the full vetted
+	 * predicate fires for this syscall.  The headline diagnostic for
+	 * SHADOW_ONLY: a single run's top entries should be the pure
+	 * zero-arg getter cohort whose lifetime PC-edge yield has genuinely
+	 * plateaued to a hard floor; any object-producer, state-mutator,
+	 * or heuristic-arm spike source appearing here indicates the
+	 * vetted skeleton (num_args, ret_objtype, sanitise, reach) is mis-
+	 * gated and COMBINED MUST NOT be promoted.
+	 *
+	 * Sized and bounds-guarded the same way the sibling per-syscall
+	 * arrays above are.  Read by no live-path code -- observability
+	 * only, surfaced via the periodic stats dump's top-N attribution
+	 * for the floored-barren demote. */
+	unsigned long frontier_barren_would_skip_per_syscall[MAX_NR_SYSCALL];
+
 	/* SHADOW-ONLY LIVE-regime cooldown accounting, paired with the
 	 * frontier_live_miss_streak_per_syscall[] counter above.  Mirrors
 	 * the SHADOW silent-streak decay scalars (frontier_decay_candidates
@@ -3553,6 +3570,53 @@ struct stats_s {
 	unsigned long frontier_satcool_would_skip;
 	unsigned long frontier_satcool_spared_arggen;
 	unsigned long frontier_satcool_spared_objproducer;
+
+	/* SHADOW-ONLY floored-barren sub-floor demote accounting (gated
+	 * by --frontier-barren-demote != off).  Sibling of the
+	 * frontier_satcool_* counters above; targets the pure zero-arg
+	 * getter set whose lifetime PC-edge yield has plateaued to a
+	 * hard floor rather than the windowed-plateau of the saturated-
+	 * productive set the satcool predicate owns.  Disjoint from the
+	 * satcool projection by construction: the barren predicate
+	 * requires lifetime edges == 0 at the small FRONTIER_BARREN_C_MIN
+	 * floor, satcool requires FRONTIER_SATCOOL_CMIN 10000 magnitude
+	 * plus the K-window ring going flat for a syscall that HAS
+	 * produced.
+	 *
+	 *  frontier_barren_candidates
+	 *      Cumulative: one bump per silent-regime pick where the
+	 *      vetted skeleton matches (num_args == 0 AND ret_objtype ==
+	 *      OBJ_NONE AND sanitise == NULL AND reach <= FRONTIER_
+	 *      BARREN_MAX_REACH AND calls > FRONTIER_BARREN_C_MIN).
+	 *      The candidate set the demote lane peels from.
+	 *  frontier_barren_would_skip
+	 *      Cumulative: subset of candidates whose full demote
+	 *      predicate also holds (lifetime edges == 0 AND windowed
+	 *      edges == 0) -- the mass a COMBINED sub-floor variant
+	 *      would demote by swapping the silent-branch accept
+	 *      denominator to (FRONTIER_COLD_SCALE * FRONTIER_BARREN_
+	 *      DEMOTE_MULT + 1).  Ratio against frontier_silent_picks is
+	 *      the projected silent-regime pick share the sub-floor
+	 *      reclaims.
+	 *
+	 * CRITICAL: the vetted skeleton is what keeps object-producers
+	 * (inotify_init), state-mutators (munlockall / setsid / sched_
+	 * yield), and heuristic-arm spike sources (rseq) OUT of the
+	 * demote set -- num_args == 0 alone is NECESSARY but NOT
+	 * SUFFICIENT.  The excluded classes are left to the softer
+	 * sibling plateau decay, not un-cooled.
+	 *
+	 * Observability only in this commit: the predicate-evaluation
+	 * block is added inside the silent-regime accept path with NO
+	 * live sub-floor divergence wired, so live selection in
+	 * set_syscall_nr_coverage_frontier() stays byte-identical to
+	 * today regardless of which mode is selected.  COMBINED is
+	 * reserved in the enum for a follow-up that wires the sub-floor
+	 * accept-denominator swap after SHADOW_ONLY validates the
+	 * predicate against a real run.  Mirrors the off-by-construction
+	 * discipline the sibling frontier_satcool_* counters use. */
+	unsigned long frontier_barren_candidates;
+	unsigned long frontier_barren_would_skip;
 
 	/* SHADOW-ONLY LIVE-regime cooldown discriminator accounting
 	 * (gated by --frontier-live-cooldown-mode != off).  Sibling of

@@ -218,6 +218,66 @@ extern enum frontier_live_cooldown_mode frontier_live_cooldown_mode;
 void frontier_live_cool_spare(unsigned int syscallnr, bool do32);
 
 /*
+ * Floored-barren sub-floor demote thresholds.  The predicate targets
+ * pure zero-arg getters whose lifetime PC-edge yield has plateaued to
+ * a hard floor: num_args == 0, no object producer (ret_objtype ==
+ * OBJ_NONE), no sanitiser (state-mutators like munlockall / setsid /
+ * sched_yield are excluded and left to the softer sibling plateau
+ * decay), reach <= FRONTIER_BARREN_MAX_REACH, calls > FRONTIER_BARREN_
+ * C_MIN, and both lifetime and windowed edges == 0.
+ *
+ * FRONTIER_BARREN_C_MIN is deliberately much smaller than the
+ * FRONTIER_SATCOOL_CMIN 10000 floor: the barren predicate needs less
+ * evidence to conclude "hard-floored" precisely because the vetted
+ * skeleton (zero args, no producer, no mutator, low reach) already
+ * excludes the syscalls whose payoff is delayed or off-path.
+ * FRONTIER_BARREN_MAX_REACH caps the predicate to slots whose
+ * lifetime edge yield is genuinely marginal; a slot past that reach
+ * has earned its productivity and is left to the reach-band picker.
+ * FRONTIER_BARREN_DEMOTE_MULT is the sub-floor denominator multiplier
+ * a COMBINED live variant would apply -- accept probability drops
+ * from (w + 1) / (SCALE + 1) to (w + 1) / (SCALE * M + 1), keeping a
+ * residual sample rather than starving the slot; only a real PC-edge
+ * or transition resets the underlying signals.
+ */
+#define FRONTIER_BARREN_C_MIN         2500UL
+#define FRONTIER_BARREN_MAX_REACH     16UL
+#define FRONTIER_BARREN_DEMOTE_MULT   16UL
+
+/*
+ * Floored-barren sub-floor demote mode
+ * (--frontier-barren-demote).  OFF | SHADOW_ONLY | COMBINED ramp;
+ * SHADOW_ONLY and COMBINED are both shadow-only today (predicate
+ * evaluates + counters bump, live selection unchanged).  OFF is
+ * byte-identical to a build before this knob existed.
+ * See Documentation/strategy.md for the design rationale.
+ */
+enum frontier_barren_demote_mode {
+	FRONTIER_BARREN_DEMOTE_MODE_OFF = 0,
+	FRONTIER_BARREN_DEMOTE_MODE_SHADOW_ONLY = 1,
+	FRONTIER_BARREN_DEMOTE_MODE_COMBINED = 2,
+};
+
+extern enum frontier_barren_demote_mode frontier_barren_demote_mode;
+
+/*
+ * Floored-barren sub-floor demote helper.  Sibling of
+ * frontier_satcool_spare / frontier_live_cool_spare above; targets
+ * the pure zero-arg getter set whose lifetime PC-edge yield has
+ * plateaued to a hard floor and whose vetted skeleton (num_args == 0
+ * AND ret_objtype == OBJ_NONE AND sanitise == NULL AND reach <=
+ * FRONTIER_BARREN_MAX_REACH) already excludes the object-producer,
+ * state-mutator, and heuristic-arm-spike sets that the softer plateau
+ * decay owns.  No-op when frontier_barren_demote_mode is OFF or
+ * kcov_shm is unavailable; SHADOW-ONLY -- never returns a value,
+ * never gates picker selection; the COMBINED sub-floor live divergence
+ * is a deliberate follow-up.  Called from the silent-regime accept
+ * site in random-syscall.c immediately after frontier_satcool_spare
+ * so the two shadow projections sit alongside each other.
+ */
+void frontier_barren_demote(unsigned int syscallnr, bool do32);
+
+/*
  * Heuristic-arm group-bias anti-lock-in damper -- F-RSEQ.
  * (--frontier-group-antilock).  OFF | SHADOW_ONLY | COMBINED ramp;
  * SHADOW_ONLY and COMBINED are both shadow-only today (predicate

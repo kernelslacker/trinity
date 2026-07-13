@@ -312,6 +312,16 @@ static const char *runid_frontier_saturation_cooldown_mode_name(void)
 	return "?";
 }
 
+static const char *runid_frontier_barren_demote_mode_name(void)
+{
+	switch (frontier_barren_demote_mode) {
+	case FRONTIER_BARREN_DEMOTE_MODE_OFF:         return "off";
+	case FRONTIER_BARREN_DEMOTE_MODE_SHADOW_ONLY: return "shadow-only";
+	case FRONTIER_BARREN_DEMOTE_MODE_COMBINED:    return "combined";
+	}
+	return "?";
+}
+
 static const char *runid_frontier_group_antilock_mode_name(void)
 {
 	switch (frontier_group_antilock_mode) {
@@ -430,6 +440,11 @@ static void runid_knob_manifest_render(void)
 		off = runid_knob_append(buf, sizeof(buf), off,
 					"frontier-saturation-cooldown",
 					runid_frontier_saturation_cooldown_mode_name());
+	if (frontier_barren_demote_mode !=
+	    FRONTIER_BARREN_DEMOTE_MODE_OFF)
+		off = runid_knob_append(buf, sizeof(buf), off,
+					"frontier-barren-demote",
+					runid_frontier_barren_demote_mode_name());
 	if (frontier_group_antilock_mode !=
 	    FRONTIER_GROUP_ANTILOCK_MODE_OFF)
 		off = runid_knob_append(buf, sizeof(buf), off,
