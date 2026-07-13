@@ -199,14 +199,6 @@ static unsigned long per_arch_interesting_addr(unsigned long low)
 	case 2: return KERNEL_ADDR | (low & 0x0fffff);			// kernel text
 	case 3: return 0xffffff8000000000UL | (low & 0x3fffffff);	// KASAN shadow region
 	}
-#elif defined(__s390x__)
-	i = rnd_modulo_u32(3);
-
-	switch (i) {
-	case 0: return MODULE_ADDR | (low & 0x7fffffff);		// module region
-	case 1: return 0x0000000000100000UL | (low & 0x0fffff);	// kernel text
-	case 2: return 0x0000020000000000UL | (low & 0x3fffffff);	// vmemmap region
-	}
 #endif
 
 	return i | low;

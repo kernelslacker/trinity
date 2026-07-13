@@ -7,12 +7,6 @@
 #ifdef __i386__
 #include "syscalls-i386.h"
 #endif
-#ifdef __s390x__
-#include "syscalls-s390x.h"
-#endif
-#ifdef __s390__
-#include "syscalls-s390.h"
-#endif
 #ifdef __arm__
 #include "syscalls-arm.h"
 #endif
