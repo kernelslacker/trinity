@@ -28,9 +28,6 @@
 #ifdef __aarch64__
 #include "syscalls-aarch64.h"
 #endif
-#ifdef __hppa__
-#include "syscalls-parisc.h"
-#endif
 #if defined(__riscv) || defined(__riscv__)
 #if __riscv_xlen == 64
 #include "syscalls-riscv64.h"
