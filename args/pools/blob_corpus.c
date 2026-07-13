@@ -109,6 +109,8 @@ bool blob_corpus_try_get_base(unsigned int nr, bool do32,
 			continue;
 
 		copy = (size_t) e->len;
+		if (copy > BLOB_CORPUS_MAX_LEN)
+			copy = BLOB_CORPUS_MAX_LEN;
 		if (copy > len)
 			copy = len;
 		memcpy(buf, e->bytes, copy);
