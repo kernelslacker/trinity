@@ -28,9 +28,6 @@
 #ifdef __sh__
 #include "syscalls-sh.h"
 #endif
-#ifdef __alpha__
-#include "syscalls-alpha.h"
-#endif
 #ifdef __aarch64__
 #include "syscalls-aarch64.h"
 #endif
