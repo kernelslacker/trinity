@@ -502,6 +502,9 @@ int kcov_pc_diag_format(char *buf, size_t bufsz)
 		if (fd_count && (size_t)n < bufsz) {
 			unsigned int i;
 
+			if (fd_count > KCOV_FIRST_EBADF_PROC_FD_MAX)
+				fd_count = KCOV_FIRST_EBADF_PROC_FD_MAX;
+
 			n += snprintf(buf + n, bufsz - n, ":fds=");
 			for (i = 0; i < fd_count && (size_t)n < bufsz; i++) {
 				int fd_n = __atomic_load_n(
