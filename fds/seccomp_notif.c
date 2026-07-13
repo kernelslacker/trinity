@@ -39,14 +39,25 @@
  * and validate_specific_syscall_silent() skips NI_SYSCALL entries at
  * activation time so the random picker never reaches it.
  */
+#ifdef __NR_query_module
+#define SECCOMP_NOTIF_TARGET_NR	__NR_query_module
+#else
+/*
+ * aarch64 and other new arches never had query_module.  Any number no
+ * live syscall uses works: the filter only needs a target trinity never
+ * issues, so the listener fd exists (fuzzable) without ever firing.
+ */
+#define SECCOMP_NOTIF_TARGET_NR	0x7fffffff
+#endif
+
 static int create_seccomp_notif_fd(void)
 {
 	struct sock_filter filter[] = {
 		/* A = syscall number */
 		BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
 			 offsetof(struct seccomp_data, nr)),
-		/* if (A == __NR_query_module) goto notify */
-		BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_query_module, 0, 1),
+		/* if (A == the obsolete/never-issued target) goto notify */
+		BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SECCOMP_NOTIF_TARGET_NR, 0, 1),
 		/* notify: return USER_NOTIF */
 		BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_USER_NOTIF),
 		/* allow: return ALLOW */
