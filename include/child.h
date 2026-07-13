@@ -764,6 +764,21 @@ struct childdata {
 	unsigned int reexec_pending_count;
 	bool in_reexec;
 	bool redqueen_enabled;
+	/* A/B-comparison stamp for the plateau_burst per-call drain cap.
+	 * When true AND the dispatch_step tail classifies the current call
+	 * as inside a CMP_RISING_PC_FLAT plateau (plateau_burst), the drain
+	 * loop caps at REDQUEEN_REEXEC_BURST_DRAIN entries (default 4) and
+	 * breaks on a helper FAIL (per-window ceiling hit).  Arm A (false)
+	 * leaves the greedy drain-all baseline (b86f2e77a846) untouched so
+	 * the two arms measure "surgical top-K drain during plateau" vs
+	 * "greedy drain-all during plateau" on distinct-edge lift per
+	 * attempt.  Independent of redqueen_enabled (an arm-B child with
+	 * redqueen_enabled == false still bumps its cohort denominators but
+	 * no burst fires because the outer redqueen_enabled gate short-
+	 * circuits first).  Stamped once at child init via ONE_IN(2)
+	 * alongside the other A/B rows and never mutated; owner-only writes,
+	 * no cross-process coherence needed. */
+	bool burst_drain_arm_b;
 	/* A/B-comparison stamp for the cmp_hints "uninteresting constant"
 	 * substitution-pool drop mask.  Half the children get Arm A (the
 	 * historical ~3UL mask -- drop 0/1/2/3) and half get Arm B (~7UL --

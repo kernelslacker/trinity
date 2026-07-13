@@ -143,6 +143,21 @@ struct reexec_pending {
 #define REDQUEEN_REEXEC_WINDOW_OPS	(1UL << 17)	/* mirror STRATEGY_WINDOW */
 #define REDQUEEN_REEXEC_WINDOW_CAP	(REDQUEEN_REEXEC_WINDOW_OPS / 4)
 
+/*
+ * Per-call burst-drain cap for the CMP_RISING_PC_FLAT plateau A/B measure
+ * arm.  When plateau_burst && child->burst_drain_arm_b, the dispatch_step
+ * tail caps the per-call drain at this many reexec_pending[] entries and
+ * breaks the loop on a helper FAIL (the per-window ceiling hit); the
+ * control arm (burst_drain_arm_b == false) is unaffected and continues to
+ * drain up to MAX_REEXEC_PENDING per the greedy baseline landed in
+ * b86f2e77a846 ("drain all staged reexec_pending entries per dispatch").
+ * K=4 is half the producer-side buffer cap: the measurement asks whether
+ * a surgical top-K drain converts to more distinct-edge lift per attempt
+ * than the greedy drain during the exact plateau where the greedy drain
+ * has the most fuel to burn.
+ */
+#define REDQUEEN_REEXEC_BURST_DRAIN	4U
+
 struct cmp_hint_entry {
 	unsigned long value;
 	unsigned long cmp_ip;

@@ -3495,6 +3495,37 @@ struct kcov_shared {
 	 * consumer offsets stay stable.
 	 */
 	unsigned long cmp_shared_tier_shadow_would_confirm;
+
+	/*
+	 * RedQueen plateau_burst per-call drain-cap A/B measure arm counters.
+	 *
+	 * The go/no-go metric for the burst_drain_arm_b measure lives in the
+	 * distinct-edge lift domain, not the CMP-record domain: the 85k
+	 * distinct-PC-edge wall is what the plateau intensification is meant
+	 * to break, but reexec_new_cmps_total counts bloom-novel CMP records
+	 * and a fresh CMP that opens no new distinct edge is invisible to
+	 * that wall.  reexec_new_edges_total wires the 6th dispatch_step()
+	 * out-param (pcres.transition_edges_real_local at
+	 * random_syscall/dispatch.c:709) into redqueen_reexec_step()'s
+	 * inner_new_cmp > 0 success block and accumulates it in lock-step
+	 * with reexec_new_cmps_total, so a run can be scored on transition-
+	 * distinct-edge lift instead of CMP-record lift.
+	 *
+	 * The _by_arm[2] triplet partitions each numerator by the child's
+	 * burst_drain_arm_b stamp (arm A = index 0, arm B = index 1), bumped
+	 * from redqueen_reexec_step() inside the same critical sections that
+	 * bump the flat counters.  reexec_attempts_by_arm supplies the
+	 * per-arm denominator; a per-arm distinct-edge ratio is then
+	 *     reexec_new_edges_by_arm[B] / reexec_attempts_by_arm[B]
+	 * versus the same ratio for arm A -- the shadow success criterion
+	 * (§4 of the plateau-burst spec) is arm-B >= arm-A.
+	 *
+	 * Append-only at the tail per the existing convention.
+	 */
+	unsigned long reexec_new_edges_total;
+	unsigned long reexec_attempts_by_arm[2];
+	unsigned long reexec_new_cmps_by_arm[2];
+	unsigned long reexec_new_edges_by_arm[2];
 };
 
 extern struct kcov_shared *kcov_shm;
