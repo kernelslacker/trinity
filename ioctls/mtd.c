@@ -8,9 +8,9 @@
 #include "utils.h"
 
 /*
- * Compile-time: every fixed-shape MTD ioctl command the sanitisers
- * below fill must have sizeof(struct) matching the _IOC_SIZE encoded
- * in its request bits.  A mismatch means the kernel mtd-abi.h moved
+ * Compile-time: every size-carrying MTD ioctl command the sanitisers
+ * below fill must have sizeof(arg) matching the _IOC_SIZE encoded in
+ * its request bits.  A mismatch means the kernel mtd-abi.h moved
  * under us and the sanitiser is stamping into a buffer the kernel
  * copies less of than we prepared (under-encoded) or reads past
  * (over-encoded).  Commands sharing a struct (MEMERASE, MEMLOCK,
@@ -18,10 +18,11 @@
  * MEMREADOOB both take mtd_oob_buf; MEMWRITEOOB64 and MEMREADOOB64
  * both take mtd_oob_buf64; OTPGETREGIONINFO, OTPLOCK, OTPERASE all
  * take otp_info) get one assert each -- the two sides can drift
- * independently in a header refactor.  MEMGETREGIONCOUNT, OTPSELECT
- * and OTPGETREGIONCOUNT take a bare int, MEMGETBADBLOCK and
- * MEMSETBADBLOCK take a __kernel_loff_t, and MTDFILEMODE has no
- * struct arg -- all are intentionally absent.
+ * independently in a header refactor.  The scalar-carrying commands
+ * (MEMGETREGIONCOUNT, OTPSELECT, OTPGETREGIONCOUNT each take a bare
+ * int; MEMGETBADBLOCK and MEMSETBADBLOCK each take a __kernel_loff_t,
+ * which is long long and matches __u64 in width) are asserted too.
+ * MTDFILEMODE is _IO() with no size and is intentionally absent.
  */
 IOCTL_SIZE_ASSERT(MEMGETINFO, struct mtd_info_user);
 IOCTL_SIZE_ASSERT(MEMERASE, struct erase_info_user);
@@ -29,8 +30,13 @@ IOCTL_SIZE_ASSERT(MEMWRITEOOB, struct mtd_oob_buf);
 IOCTL_SIZE_ASSERT(MEMREADOOB, struct mtd_oob_buf);
 IOCTL_SIZE_ASSERT(MEMLOCK, struct erase_info_user);
 IOCTL_SIZE_ASSERT(MEMUNLOCK, struct erase_info_user);
+IOCTL_SIZE_ASSERT(MEMGETREGIONCOUNT, int);
 IOCTL_SIZE_ASSERT(MEMGETREGIONINFO, struct region_info_user);
 IOCTL_SIZE_ASSERT(MEMGETOOBSEL, struct nand_oobinfo);
+IOCTL_SIZE_ASSERT(MEMGETBADBLOCK, __u64);
+IOCTL_SIZE_ASSERT(MEMSETBADBLOCK, __u64);
+IOCTL_SIZE_ASSERT(OTPSELECT, int);
+IOCTL_SIZE_ASSERT(OTPGETREGIONCOUNT, int);
 IOCTL_SIZE_ASSERT(OTPGETREGIONINFO, struct otp_info);
 IOCTL_SIZE_ASSERT(OTPLOCK, struct otp_info);
 IOCTL_SIZE_ASSERT(ECCGETLAYOUT, struct nand_ecclayout_user);
