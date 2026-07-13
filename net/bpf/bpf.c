@@ -159,12 +159,6 @@ static const uint32_t bpf_seccomp_jmp_arch_vars[] = {
 #elif defined(__sparc__)
 # define TRUE_REG_SYSCALL	syscall_nr
 # define TRUE_ARCH		AUDIT_ARCH_SPARC
-#elif defined(__hppa__) && defined(__LP64__)
-# define TRUE_REG_SYSCALL	syscall_nr
-# define TRUE_ARCH		AUDIT_ARCH_PARISC64
-#elif defined(__hppa__)
-# define TRUE_REG_SYSCALL	syscall_nr
-# define TRUE_ARCH		AUDIT_ARCH_PARISC
 #elif defined(__riscv) && (__riscv_xlen == 64)
 # define TRUE_REG_SYSCALL	syscall_nr
 # define TRUE_ARCH		AUDIT_ARCH_RISCV64
