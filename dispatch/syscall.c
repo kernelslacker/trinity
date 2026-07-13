@@ -162,6 +162,60 @@ static void child_watchdog_evict_fd(int fd, void *ctx)
 		fd_event_enqueue(child->fd_event_ring, FD_EVENT_EVICT, fd);
 }
 
+/*
+ * SHADOW-only Phase-1 per-syscall clean-vs-noisy attribution sampler.
+ * See the field comments on per_syscall_edges_noisy /
+ * per_syscall_noisy_samples in include/kcov.h and the extern comment on
+ * frontier_noise_sample in include/params.h.
+ *
+ * noisy_sample_ctr is a file-scope integer, per-child by virtue of the
+ * fork isolation the tree already relies on for sigalrm_pending and
+ * in_do_syscall.  Deliberately NOT a global atomic: the cadence gate is
+ * a single non-atomic increment on child-local state, so the sampler
+ * does not add cross-child cacheline bounce (which would defeat the
+ * entire point of sampling).  When frontier_noise_sample == 0 (default),
+ * the _begin helper short-circuits before touching the shared
+ * edges_found counter, so the default build issues zero new hot-path
+ * loads on the syscall dispatch path.
+ */
+static unsigned int noisy_sample_ctr;
+
+static inline bool syscall_noisy_sample_begin(unsigned long *before_out)
+{
+	unsigned int n = __atomic_load_n(&frontier_noise_sample,
+					 __ATOMIC_RELAXED);
+
+	if (n == 0)
+		return false;
+	if (kcov_shm == NULL)
+		return false;
+	if (++noisy_sample_ctr < n)
+		return false;
+	noisy_sample_ctr = 0;
+	*before_out = __atomic_load_n(&kcov_shm->edges_found,
+				      __ATOMIC_RELAXED);
+	return true;
+}
+
+static inline void syscall_noisy_sample_end(unsigned int nr,
+					    unsigned long before)
+{
+	unsigned long after;
+	unsigned long delta;
+
+	after = __atomic_load_n(&kcov_shm->edges_found, __ATOMIC_RELAXED);
+	/* Guard the unsigned subtraction: RELAXED loads of a concurrently-
+	 * incremented atomic can invert in principle, and a wrap-underflow
+	 * would attribute a colossal delta to this syscall.  Clamp to zero
+	 * on the pathological ordering. */
+	delta = (after >= before) ? (after - before) : 0UL;
+
+	__atomic_fetch_add(&kcov_shm->per_syscall_edges_noisy[nr], delta,
+			   __ATOMIC_RELAXED);
+	__atomic_fetch_add(&kcov_shm->per_syscall_noisy_samples[nr], 1UL,
+			   __ATOMIC_RELAXED);
+}
+
 static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 			 enum syscallstate state,
 			 struct kcov_child *kc, struct childdata *child)
@@ -376,6 +430,24 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 	 * one-`t->kcov`-per-task rule returns -EBUSY on a second simultaneous
 	 * enable; the fleet-wide PC/CMP signal split comes from the
 	 * population mix instead of per-call mode toggling. */
+	/* SHADOW-only Phase-1 per-syscall clean-vs-noisy attribution sampler.
+	 * When frontier_noise_sample > 0 and the counter has ticked over,
+	 * snapshot edges_found immediately before kcov_enable_* and again
+	 * after kcov_disable so the delta captures the global new-edge
+	 * accrual across this syscall's enable/disable window (the "noisy"
+	 * global-attribution denominator complementary to per_syscall_edges'
+	 * per-thread clean numerator).  Gated on nr < MAX_NR_SYSCALL to
+	 * match the per_syscall_edges_noisy[] array bound and skip childop-
+	 * base nr values.  The sample_begin helper short-circuits at N==0,
+	 * kcov_shm==NULL, or when the child-local counter has not yet
+	 * ticked to N, so the default build issues zero new edges_found
+	 * loads. */
+	unsigned long noisy_before = 0;
+	bool noisy_sampled = false;
+
+	if (rec->nr < MAX_NR_SYSCALL)
+		noisy_sampled = syscall_noisy_sample_begin(&noisy_before);
+
 	if (rec->do32bit == false) {
 		if (kc != NULL && kc->mode == KCOV_MODE_CMP) {
 			kcov_enable_cmp(kc);
@@ -401,6 +473,9 @@ static void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 		saved_errno = errno;
 		kcov_disable(kc);
 	}
+
+	if (noisy_sampled)
+		syscall_noisy_sample_end(rec->nr, noisy_before);
 
 	/* fail-nth resets to 0 in the kernel after the syscall completes.
 	 * Tally whether the armed fault actually triggered (-ENOMEM) vs

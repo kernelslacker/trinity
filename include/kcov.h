@@ -1407,6 +1407,55 @@ struct kcov_shared {
 	 * parent_stats.total_warm_known_hits; the field is retained so
 	 * the shared-mapping ABI does not shift. */
 	unsigned long total_warm_known_hits;
+	/* Per-syscall SHADOW-ONLY clean-vs-noisy attribution counters.  The
+	 * existing per_syscall_edges[] is a per-thread, per-call, trace-
+	 * isolated "clean" signal (kcov_collect() bumps it only on the
+	 * found_new branch, from this task's own trace walk).  What was
+	 * missing was a per-syscall analogue of the global-delta counter the
+	 * childop path already carries in childop_edges_discovered[]: how
+	 * many new edges accrued to the shared bucket_seen[] hash across all
+	 * children during this syscall's enable/disable window, regardless
+	 * of which child was the dedup-race winner.  The ratio of the two
+	 * (clean numerator, sampled global-delta denominator) is the
+	 * attribution-confidence signal Phase 2 will consume; Phase 1
+	 * records it alongside the existing counters and NO selection or
+	 * scoring code reads it.
+	 *
+	 *   per_syscall_edges_noisy[nr]     Sum of edges_found deltas across
+	 *                                   the sampled windows for this nr.
+	 *                                   Bumped from dispatch/syscall.c
+	 *                                   around the syscall's enable/
+	 *                                   disable pair only on the 1-in-N
+	 *                                   sampled call (see
+	 *                                   frontier_noise_sample in
+	 *                                   include/params.h).
+	 *   per_syscall_noisy_samples[nr]   Count of windows actually
+	 *                                   sampled for this nr; the
+	 *                                   denominator that lets a reader
+	 *                                   scale per_syscall_edges_noisy
+	 *                                   back up by N to estimate the
+	 *                                   full-population delta.
+	 *   per_syscall_edges_clean_remote[nr]
+	 *                                   Subset of the per_syscall_edges
+	 *                                   found_new bumps that fired under
+	 *                                   kc->remote_mode -- the remote-
+	 *                                   context cross-attribution split
+	 *                                   (kernel copies coverage from
+	 *                                   remote contexts into this task's
+	 *                                   trace_buf, so the credited edge
+	 *                                   may not be causally tied to this
+	 *                                   syscall's own kernel work).
+	 *                                   (per_syscall_edges - this) is
+	 *                                   the local-only clean signal.
+	 *
+	 * Sampling default: frontier_noise_sample==0 (feature fully off);
+	 * the sampled edges_found loads are the only new hot-path cost, so
+	 * the default build issues zero new loads and stays byte-identical
+	 * on selection to the pre-row baseline.  SHADOW-ONLY: no live
+	 * picker or accept-gate reads any of these three counters. */
+	unsigned long per_syscall_edges_noisy[MAX_NR_SYSCALL];
+	unsigned long per_syscall_noisy_samples[MAX_NR_SYSCALL];
+	unsigned long per_syscall_edges_clean_remote[MAX_NR_SYSCALL];
 	/* Per-syscall split of kcov_collect() activity by collection mode.
 	 * A remote-sampled syscall lands in a DIFFERENT mode (the kernel
 	 * puts the task in KCOV_MODE_REMOTE and drops synchronous local

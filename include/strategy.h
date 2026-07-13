@@ -137,6 +137,28 @@ enum frontier_saturation_cooldown_mode {
 extern enum frontier_saturation_cooldown_mode frontier_saturation_cooldown_mode;
 
 /*
+ * Spare-cascade classification shared by the silent-regime and LIVE-
+ * regime cooldown helpers below and by the shadow attribution-
+ * confidence dump in stats/dump.c.  Returns the FIRST matching spare
+ * reason under the same lane order (windowed-edges > arggen >
+ * ret_objtype producer > none), so a diagnostic reader can bucket a
+ * syscall's clean/noisy ratio by why it survives cooldown.  Cheap: one
+ * RELAXED load on each of frontier_recent_count / per_syscall_cmp_
+ * inserts / per_syscall_errno[SUCCESS] / per-arch producer bitmap.  No
+ * side effects -- unlike the _spare helpers below the classifier bumps
+ * no shadow counters, so it stays safe to call from the dump loop.
+ */
+enum frontier_spare_reason {
+	FRONTIER_SPARE_NONE = 0,
+	FRONTIER_SPARE_WINDOWED_EDGES,
+	FRONTIER_SPARE_ARGGEN,
+	FRONTIER_SPARE_OBJPRODUCER,
+};
+
+enum frontier_spare_reason
+frontier_spare_lane_decide(unsigned int syscallnr, bool do32);
+
+/*
  * Saturation-cooldown spare-lane helper, extracted from the silent-
  * regime accept site in random-syscall.c so the predicate, the per-
  * arch producer-observer bitmap, and the shadow-counter bumps live in

@@ -254,6 +254,29 @@ extern enum chain_resource_typing_mode chain_resource_typing_mode;
  */
 extern unsigned int kcov_trace_size;
 
+/*
+ * --frontier-noise-sample=N: SHADOW-ONLY per-syscall clean-vs-noisy
+ * attribution sampler.  When N > 0, every Nth per-syscall enable/disable
+ * bracket in dispatch/syscall.c snapshots the shared edges_found counter
+ * before enable and after disable, records the delta into
+ * kcov_shm->per_syscall_edges_noisy[nr], and bumps
+ * per_syscall_noisy_samples[nr] so a reader can scale the sampled sum
+ * back up by N to estimate the full-population global-delta denominator.
+ * Paired with the pre-existing per_syscall_edges[] clean numerator and
+ * the Phase-1 per_syscall_edges_clean_remote[] split, this lets the
+ * dump surface per-syscall attribution confidence without changing any
+ * live selection or scoring code.
+ *
+ * Default 0: feature fully off.  The sampled edges_found loads are the
+ * only new hot-path cost this row adds (the noisy counter is a shared
+ * write-hot atomic that every child bumps on every new edge; sampling
+ * bounds the cross-child cacheline bounce to ~1/N of the naive per-call
+ * cost).  With N==0 the sampler helpers short-circuit at the earliest
+ * gate and issue zero edges_found loads, keeping the default build
+ * byte-identical on the selection path to the pre-row baseline.
+ */
+extern unsigned int frontier_noise_sample;
+
 /* errno-gradient-save A/B flag: when true, the errno-gradient
  * trigger in handle_syscall_ret() admits CORPUS_SAVE_REASON_ERRNO
  * entries to the minicorpus ring (live distribution change).  Default
