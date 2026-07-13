@@ -133,7 +133,7 @@ static const struct ioctl kvm_vm_ioctls[] = {
 #ifdef KVM_GET_STATS_FD
 	IOCTL(KVM_GET_STATS_FD),
 #endif
-#ifdef KVM_HYPERV_EVENTFD
+#if defined(X86) && defined(KVM_HYPERV_EVENTFD)
 	IOCTL(KVM_HYPERV_EVENTFD),
 #endif
 };
@@ -222,6 +222,7 @@ static void sanitise_kvm_irq_level(struct syscallrecord *rec)
 	rec->a3 = (unsigned long)l;
 }
 
+#ifdef X86
 static void sanitise_kvm_irq_routing(struct syscallrecord *rec)
 {
 	struct kvm_irq_routing *r;
@@ -242,6 +243,7 @@ static void sanitise_kvm_irq_routing(struct syscallrecord *rec)
 
 	rec->a3 = (unsigned long)r;
 }
+#endif
 
 static void sanitise_kvm_pit_config(struct syscallrecord *rec)
 {
