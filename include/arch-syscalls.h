@@ -10,9 +10,6 @@
 #ifdef __powerpc__
 #include "syscalls-ppc.h"
 #endif
-#ifdef __sparc__
-#include "syscalls-sparc.h"
-#endif
 #ifdef __s390x__
 #include "syscalls-s390x.h"
 #endif
