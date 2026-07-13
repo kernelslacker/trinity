@@ -114,6 +114,18 @@ static void sanitise_socketpair(struct syscallrecord *rec)
 		/* 60%: force the AF_UNIX success-publish arm. */
 		st.family = AF_UNIX;
 		st.type = RAND_ARRAY(af_unix_types);
+		/*
+		 * Independently OR in each fd-flag modifier so the success
+		 * arm exercises SOCK_CLOEXEC / SOCK_NONBLOCK propagation on
+		 * the returned fd pair.  Both flags are valid for AF_UNIX
+		 * socketpair, so this stays on the success arm.  ONE_IN(2)
+		 * each yields roughly 25% coverage of plain / CLOEXEC /
+		 * NONBLOCK / both, keeping bare-type draws in the mix.
+		 */
+		if (ONE_IN(2))
+			st.type |= SOCK_CLOEXEC;
+		if (ONE_IN(2))
+			st.type |= SOCK_NONBLOCK;
 		st.protocol = 0;
 	} else {
 		/* 40%: retain wide kernel reject coverage. */
