@@ -788,14 +788,12 @@ static bool producer_observer_lookup(unsigned int nr,
  * (frontier_live_cool_spare on every LIVE-regime miss) pays one
  * lookup per call, no get_syscall_entry indirection.
  */
-enum frontier_spare_reason {
-	FRONTIER_SPARE_NONE = 0,
-	FRONTIER_SPARE_WINDOWED_EDGES,
-	FRONTIER_SPARE_ARGGEN,
-	FRONTIER_SPARE_OBJPRODUCER,
-};
+/* enum frontier_spare_reason lives in include/strategy.h so the shadow
+ * attribution-confidence dump in stats/dump.c can bucket per-syscall
+ * clean/noisy readings by the same spare-cascade classification the
+ * silent- and LIVE-regime cooldown helpers here consume. */
 
-static enum frontier_spare_reason
+enum frontier_spare_reason
 frontier_spare_lane_decide(unsigned int syscallnr, bool do32)
 {
 	unsigned long cmp_now, cmp_base;

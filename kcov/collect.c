@@ -576,6 +576,22 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 			 * new_edge_count out-param below. */
 			__atomic_fetch_add(&kcov_shm->per_syscall_edges[nr][do32 ? 1 : 0],
 				1, __ATOMIC_RELAXED);
+			/* SHADOW-only Phase-1 remote-context split of the clean
+			 * per-thread signal above.  kcov_enable_remote()'s
+			 * KCOV_REMOTE_ENABLE puts the task in KCOV_MODE_REMOTE and
+			 * merges coverage copied from remote kernel contexts
+			 * (kthreads / softirqs / threaded IRQ handlers) into this
+			 * task's trace_buf; a found_new credited under remote_mode
+			 * may therefore correspond to kernel work not causally
+			 * bound to this syscall's own dispatch.  Recording the
+			 * remote-mode subset here lets the attribution-confidence
+			 * dump surface the local-only clean signal as
+			 * (per_syscall_edges - per_syscall_edges_clean_remote)
+			 * without changing any live selection or scoring code. */
+			if (kc->remote_mode)
+				__atomic_fetch_add(
+					&kcov_shm->per_syscall_edges_clean_remote[nr],
+					1, __ATOMIC_RELAXED);
 			__atomic_store_n(&kcov_shm->last_edge_at[nr],
 				call_nr, __ATOMIC_RELAXED);
 			/* if this call had a cmp_hint

@@ -25,6 +25,7 @@
 #include "stats.h"
 #include "stats-internal.h"
 #include "stats_ring.h"
+#include "strategy.h"		/* frontier_spare_lane_decide, enum frontier_spare_reason */
 #include "syscall.h"
 #include "tables.h"
 #include "taint.h"
@@ -2979,6 +2980,108 @@ static void dump_stats_render_kcov_per_syscall_edges_topn(unsigned int nr_syscal
 		}
 }
 
+/*
+ * SHADOW-only Phase-1 per-syscall attribution-confidence diagnostic
+ * dump.  Silent when frontier_noise_sample == 0 (feature off => no
+ * samples collected => no rows to render) or when kcov_shm is
+ * unavailable.  Prints a top-N by sampled noisy-window count of the
+ * per-syscall clean numerator, the sampled global-delta denominator
+ * (scaled back up by N so the reported figure estimates the full-
+ * population delta), the resulting attribution-confidence ratio
+ * (clean_frac = clean / est_noisy, clamped denominator), the local-
+ * only clean subset (clean - clean_remote), and the spare-cascade
+ * lane the frontier picker would use for this syscall.  Purely
+ * observational -- no counter reset, no back-pressure on selection.
+ * The spare-lane column consumes frontier_spare_lane_decide from
+ * include/strategy.h so this dump and the cooldown helpers stay in
+ * lockstep on how a syscall is classified.
+ */
+static void dump_stats_render_kcov_per_syscall_noisy_topn(unsigned int nr_syscalls_to_scan, const struct syscalltable *table)
+{
+	unsigned int i, j;
+	unsigned int noisy_sample_n;
+	unsigned int top_nr[10];
+	unsigned long top_samples[10];
+	unsigned int top_count = 0;
+	bool any_samples = false;
+
+	noisy_sample_n = __atomic_load_n(&frontier_noise_sample,
+					 __ATOMIC_RELAXED);
+	if (noisy_sample_n == 0 || kcov_shm == NULL)
+		return;
+
+	memset(top_samples, 0, sizeof(top_samples));
+	for (i = 0; i < nr_syscalls_to_scan; i++) {
+		unsigned long samples = __atomic_load_n(
+			&kcov_shm->per_syscall_noisy_samples[i],
+			__ATOMIC_RELAXED);
+
+		if (samples == 0)
+			continue;
+		any_samples = true;
+		topn_push(top_samples, top_nr, &top_count, 10, samples, i);
+	}
+
+	if (!any_samples || top_count == 0)
+		return;
+
+	output(0, "Top syscalls by sampled noisy attribution (N=%u, SHADOW):\n",
+	       noisy_sample_n);
+	output(0, "  %-24s %10s %10s %14s %14s %14s %10s\n",
+	       "name", "samples", "clean", "est_noisy",
+	       "clean/est_noisy", "clean_local", "spare_lane");
+	for (j = 0; j < top_count; j++) {
+		struct syscallentry *entry = table[top_nr[j]].entry;
+		const char *name = entry ? entry->name : "???";
+		unsigned int nr = top_nr[j];
+		unsigned long samples = top_samples[j];
+		unsigned long clean = per_syscall_edges_total(nr);
+		unsigned long clean_remote = __atomic_load_n(
+			&kcov_shm->per_syscall_edges_clean_remote[nr],
+			__ATOMIC_RELAXED);
+		unsigned long noisy_raw = __atomic_load_n(
+			&kcov_shm->per_syscall_edges_noisy[nr],
+			__ATOMIC_RELAXED);
+		unsigned long est_noisy;
+		unsigned long clean_local;
+		unsigned long frac_permille;
+		enum frontier_spare_reason reason;
+		const char *lane;
+
+		/* Scale the sampled delta sum back up by N to estimate the
+		 * full-population noisy denominator.  samples is guaranteed
+		 * non-zero on the topn path. */
+		est_noisy = (noisy_raw * (unsigned long) noisy_sample_n) / samples;
+		clean_local = (clean >= clean_remote) ? (clean - clean_remote) : 0UL;
+		/* Report clean / max(1, est_noisy) as permille (three-digit
+		 * fraction so a 12.3% confidence renders as "123"), matching
+		 * the tt_call_str shape used in the truncation top-N dump. */
+		{
+			unsigned long denom = est_noisy > 0 ? est_noisy : 1UL;
+
+			frac_permille = (clean * 1000UL) / denom;
+		}
+		/* Read the spare-cascade lane for the 64-bit slot (do32=false)
+		 * -- the diagnostic dump does not split by arch elsewhere and
+		 * the 64-bit slot is the dominant caller for every non-IA32-
+		 * only syscall.  Callers reading a biarch nr's IA32 side can
+		 * still cross-reference the arch split via per_syscall_edges
+		 * total. */
+		reason = frontier_spare_lane_decide(nr, false);
+		switch (reason) {
+		case FRONTIER_SPARE_WINDOWED_EDGES: lane = "windowed"; break;
+		case FRONTIER_SPARE_ARGGEN:         lane = "arggen"; break;
+		case FRONTIER_SPARE_OBJPRODUCER:    lane = "objprod"; break;
+		default:                            lane = "none"; break;
+		}
+
+		output(0, "  %-24s %10lu %10lu %14lu %11lu.%1lu%% %14lu %10s\n",
+		       name, samples, clean, est_noisy,
+		       frac_permille / 10, frac_permille % 10,
+		       clean_local, lane);
+	}
+}
+
 static void dump_stats_render_kcov_per_syscall_calls_topn(unsigned int nr_syscalls_to_scan, const struct syscalltable *table)
 {
 	unsigned int i, j;
@@ -3933,6 +4036,15 @@ static void dump_stats_render_kcov_top_edges_and_cold(unsigned int nr_syscalls_t
 
 	/* Top-N by per-interval edge growth (delta since last dump_stats). */
 	dump_stats_render_kcov_per_syscall_edges_topn(nr_syscalls_to_scan, table);
+
+	/* SHADOW-only Phase-1 per-syscall attribution-confidence dump.
+	 * Silent by default (frontier_noise_sample==0); on any run with
+	 * --frontier-noise-sample=N > 0 this renders a top-N with the
+	 * clean numerator, the sampled-then-scaled global-delta noisy
+	 * denominator, the resulting clean/est_noisy fraction, the
+	 * local-only clean subset (clean - clean_remote), and the spare-
+	 * cascade lane the frontier picker would consume. */
+	dump_stats_render_kcov_per_syscall_noisy_topn(nr_syscalls_to_scan, table);
 
 	/* Shadow transition coverage: top-N by real transition-slot
 	 * count (cumulative since process start, not since the last
