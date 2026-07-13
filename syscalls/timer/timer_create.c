@@ -12,6 +12,7 @@
 
 #include "deferred-free.h"
 #include "objects.h"
+#include "output-poison.h"
 #include "prop_ring.h"
 #include "publish_resource.h"
 #include "rnd.h"
@@ -150,6 +151,16 @@ static int pick_signo_avoiding_sigint(void)
 #define TIMER_CREATE_POST_STATE_MAGIC	0x54494D52435F4D47UL	/* "TIMRC_MG" */
 struct timer_create_post_state {
 	unsigned long magic;
+	/*
+	 * Per-call seed poison_output_struct() stamped into the timer_t
+	 * output buffer at sanitise time; the post handler feeds it back
+	 * into check_output_struct_user_or_skip() to detect a skipped
+	 * copy_to_user of the timer_id on a retval==0 success.  0 means
+	 * the poison arm was skipped (a3 NULL or the writable-pool draw
+	 * was no longer provably mapped by range_readable_user()) and
+	 * the post-side check must no-op.
+	 */
+	uint64_t poison_seed;
 };
 
 static void timer_create_sanitise(struct syscallrecord *rec)
@@ -217,6 +228,26 @@ static void timer_create_sanitise(struct syscallrecord *rec)
 	snap->magic = TIMER_CREATE_POST_STATE_MAGIC;
 	rec->post_state = (unsigned long) snap;
 	post_state_register(snap);
+
+	/*
+	 * Stamp a per-call poison pattern into the user timer_t the kernel
+	 * is about to fill.  timer_create is RET_ZERO_SUCCESS with a NULL
+	 * created_timer_id yielding -EFAULT, so on a retval==0 return the
+	 * timer_id is contracted to have been written; a byte-identical
+	 * poison after that success means the kernel skipped the
+	 * copy_to_user() of the timer_id entirely.  Gate on non-NULL a3
+	 * and on range_readable_user() so a writable-pool draw that
+	 * avoid_shared_buffer_out() moved to an address no longer provably
+	 * mapped -- e.g. a sibling munmap between allocation and now --
+	 * does not SIGSEGV the sanitiser inside poison_output_struct's
+	 * byte-walk.  Done after avoid_shared_buffer_out() so the pattern
+	 * lands on the final buffer the kernel will see.  poison_seed
+	 * stays 0 on skip and gates the post-side check.
+	 */
+	if (rec->a3 != 0 &&
+	    range_readable_user((void *)(unsigned long) rec->a3, sizeof(timer_t)))
+		snap->poison_seed = poison_output_struct((void *)(unsigned long) rec->a3,
+							 sizeof(timer_t), 0);
 }
 
 static unsigned long clock_ids[] = {
@@ -376,6 +407,28 @@ static void post_timer_create(struct syscallrecord *rec)
 	idp = (timer_t *) get_arg_snapshot(rec, 3);
 	if (idp == NULL || looks_like_corrupted_ptr(rec, idp))
 		goto out_free;
+
+	/*
+	 * Untouched-buffer check: timer_create reported success but the
+	 * user timer_t still byte-for-byte matches the poison stamped at
+	 * sanitise time -- the kernel never called copy_to_user() at all
+	 * on the created_timer_id, an ABI break for a RET_ZERO_SUCCESS
+	 * that contracts to write the id on every success arm.  Cheap
+	 * (byte-walk against a repeating 8-byte pattern, no re-issue) so
+	 * runs on every success; bumps the shared
+	 * post_handler_untouched_out_buf slot.  Skip when poison_seed is
+	 * 0: sanitise refused to stamp (NULL a3 or unmapped writable-pool
+	 * draw) so there is no pattern to compare against.  Return early
+	 * on a survived poison so the subsequent tid range gate does not
+	 * additionally bump the corrupt-ptr counter for the same event.
+	 */
+	if (snap->poison_seed != 0 &&
+	    check_output_struct_user_or_skip(idp, sizeof(timer_t),
+					     snap->poison_seed)) {
+		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+				   1, __ATOMIC_RELAXED);
+		goto out_free;
+	}
 
 	tid_int = (intptr_t) *idp;
 	if (tid_int < 0 || tid_int > 65535) {
