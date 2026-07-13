@@ -89,9 +89,6 @@ static const struct ioctl kvm_vm_ioctls[] = {
 	IOCTL(KVM_IOEVENTFD),
 	IOCTL(KVM_SET_CLOCK),
 	IOCTL(KVM_GET_CLOCK),
-#if defined(__powerpc__)
-	IOCTL(KVM_PPC_GET_PVINFO),
-#endif
 	IOCTL(KVM_SET_TSC_KHZ),
 	IOCTL(KVM_GET_TSC_KHZ),
 	IOCTL(KVM_SIGNAL_MSI),
@@ -102,17 +99,6 @@ static const struct ioctl kvm_vm_ioctls[] = {
 	IOCTL(KVM_SET_PIT2),
 	IOCTL(KVM_SET_GSI_ROUTING),
 	IOCTL(KVM_XEN_HVM_CONFIG),
-#endif
-#if defined(__powerpc__)
-	IOCTL(KVM_PPC_GET_SMMU_INFO),
-	IOCTL(KVM_PPC_ALLOCATE_HTAB),
-#if defined(KVM_CREATE_SPAPR_TCE)
-	IOCTL(KVM_CREATE_SPAPR_TCE),
-#endif
-#if defined(KVM_ALLOCATE_RMA)
-	IOCTL(KVM_ALLOCATE_RMA),
-#endif
-	IOCTL(KVM_PPC_GET_HTAB_FD),
 #endif
 #if defined(__arm__) || defined(__aarch64__)
 	IOCTL(KVM_ARM_SET_DEVICE_ADDR),

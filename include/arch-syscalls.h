@@ -7,9 +7,6 @@
 #ifdef __i386__
 #include "syscalls-i386.h"
 #endif
-#ifdef __powerpc__
-#include "syscalls-ppc.h"
-#endif
 #ifdef __s390x__
 #include "syscalls-s390x.h"
 #endif

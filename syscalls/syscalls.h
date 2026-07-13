@@ -223,7 +223,6 @@ extern struct syscallentry syscall_rename;
 extern struct syscallentry syscall_request_key;
 extern struct syscallentry syscall_restart_syscall;
 extern struct syscallentry syscall_rmdir;
-extern struct syscallentry syscall_rtas;
 extern struct syscallentry syscall_rt_sigaction;
 extern struct syscallentry syscall_rt_sigpending;
 extern struct syscallentry syscall_rt_sigprocmask;
