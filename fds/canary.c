@@ -273,7 +273,13 @@ static int init_canary_fds(void)
 
 const struct canary_file_info *canary_file_get(unsigned int idx)
 {
-	if (canary_pool == NULL || idx >= canary_pool->count)
+	/*
+	 * count lives in shared memory: a stomped value > NR_CANARY_FILES
+	 * would let an in-range-of-count idx still index past entries[].
+	 * Bound at the array cap too so the deref is provably in-array.
+	 */
+	if (canary_pool == NULL || idx >= NR_CANARY_FILES ||
+	    idx >= canary_pool->count)
 		return NULL;
 	return &canary_pool->entries[idx];
 }
