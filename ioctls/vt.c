@@ -33,11 +33,13 @@ struct termios2 {
 
 /*
  * Compile-time: sanitise_vt_termios2() fills a struct termios2 whose
- * shape must match the _IOC_SIZE the TCGETS2 family encodes.  The
- * bare-numeric KD/VT/TIOC ioctls dispatched elsewhere in this file
- * (TCGETS, VT_GETMODE, KDGKBENT, ...) carry no size in their request
- * bits (_IOC_SIZE(x) == 0) and are intentionally absent -- a static
- * assert against them would compare sizeof(struct) to 0.
+ * shape must match the _IOC_SIZE the TCGETS2 family encodes, and
+ * VT_GETCONSIZECSRPOS -- the sole _IOR-encoded struct command in the
+ * VT_* set -- must match struct vt_consizecsrpos.  The bare-numeric
+ * KD/VT/TIOC ioctls dispatched elsewhere in this file (TCGETS,
+ * VT_GETMODE, KDGKBENT, ...) carry no size in their request bits
+ * (_IOC_SIZE(x) == 0) and are intentionally absent -- a static assert
+ * against them would compare sizeof(struct) to 0.
  */
 #if defined(TCGETS2)
 IOCTL_SIZE_ASSERT(TCGETS2, struct termios2);
@@ -50,6 +52,9 @@ IOCTL_SIZE_ASSERT(TCSETSW2, struct termios2);
 #endif
 #if defined(TCSETSF2)
 IOCTL_SIZE_ASSERT(TCSETSF2, struct termios2);
+#endif
+#ifdef VT_GETCONSIZECSRPOS
+IOCTL_SIZE_ASSERT(VT_GETCONSIZECSRPOS, struct vt_consizecsrpos);
 #endif
 
 /* KD* family */
