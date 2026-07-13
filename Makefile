@@ -97,7 +97,6 @@ test:
 
 MACHINE		:= $(shell $(CC) -dumpmachine)
 SYSCALLS_ARCH	:= $(shell case "$(MACHINE)" in \
-		   (sh*) echo syscalls/sh/*.c ;; \
 		   (ppc*|powerpc*) echo syscalls/ppc/*.c ;; \
 		   (sparc*) echo syscalls/sparc/*.c ;; \
 		   (x86_64*) echo syscalls/x86/*.c \

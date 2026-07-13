@@ -30,10 +30,6 @@
 #include "arch-mips.h"
 #endif
 
-#ifdef __sh__
-#include "arch-sh.h"
-#endif
-
 #ifdef __aarch64__
 #include "arch-aarch64.h"
 #endif
