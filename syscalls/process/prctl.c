@@ -46,6 +46,14 @@
 #define PR_PPC_GET_DEXCR		72
 #define PR_PPC_SET_DEXCR		73
 #endif
+/* arm64 MTE store-only checking (added in 6.17) */
+#ifndef PR_MTE_STORE_ONLY
+#define PR_MTE_STORE_ONLY		(1UL << 19)
+#endif
+/* RISC-V pointer-masking tag length (added in 6.13) */
+#ifndef PR_PMLEN_MASK
+#define PR_PMLEN_MASK			(0x7fUL << 24)
+#endif
 
 /* Capabilities added after Linux 5.8/5.9 — guard for older build systems. */
 #ifndef CAP_PERFMON
@@ -273,6 +281,9 @@ static void sanitise_set_tagged_addr_ctrl(struct syscallrecord *rec)
 		PR_TAGGED_ADDR_ENABLE | PR_MTE_TCF_ASYNC,
 		PR_TAGGED_ADDR_ENABLE | PR_MTE_TCF_SYNC  | PR_MTE_TAG_MASK,
 		PR_TAGGED_ADDR_ENABLE | PR_MTE_TCF_ASYNC | PR_MTE_TAG_MASK,
+		PR_TAGGED_ADDR_ENABLE | PR_MTE_TCF_SYNC  | PR_MTE_STORE_ONLY,
+		PR_TAGGED_ADDR_ENABLE | PR_MTE_TCF_ASYNC | PR_MTE_STORE_ONLY,
+		PR_TAGGED_ADDR_ENABLE | (PR_PMLEN_MASK & (7UL << 24)),
 	};
 	rec->a2 = tagged_addr_flags[rnd_modulo_u32(ARRAY_SIZE(tagged_addr_flags))];
 }
