@@ -21,15 +21,29 @@
  * <linux/sonet.h> or <linux/atmbr2684.h> moved under us and the
  * sanitiser is memset()ing / stamping into a buffer the kernel copies
  * less of than we prepared (under-encoded) or reads past (over-encoded).
- * The remaining ATM_/SONET_ commands here take bare scalars (int,
- * atm_backend_t) or a raw byte buffer (SONET_GETFRSENSE) and are
- * intentionally absent -- asserting sizeof(struct) against a scalar
- * would not be meaningful.
+ * ATM_SETSC (int), ATM_SETBACKEND / ATM_NEWBACKENDIF (atm_backend_t),
+ * SONET_SETDIAG / SONET_CLRDIAG / SONET_GETDIAG / SONET_SETFRAMING /
+ * SONET_GETFRAMING (int) and SONET_GETFRSENSE (unsigned char[6] raw byte
+ * buffer) take bare scalars or a fixed byte array and are intentionally
+ * absent -- asserting sizeof(struct) against a scalar would not be
+ * meaningful.
  */
 IOCTL_SIZE_ASSERT(ATM_GETLINKRATE, struct atmif_sioc);
 IOCTL_SIZE_ASSERT(ATM_GETNAMES, struct atm_iobuf);
+IOCTL_SIZE_ASSERT(ATM_GETTYPE, struct atmif_sioc);
+IOCTL_SIZE_ASSERT(ATM_GETESI, struct atmif_sioc);
+IOCTL_SIZE_ASSERT(ATM_GETCIRANGE, struct atmif_sioc);
+IOCTL_SIZE_ASSERT(ATM_SETCIRANGE, struct atmif_sioc);
+IOCTL_SIZE_ASSERT(ATM_SETESI, struct atmif_sioc);
+IOCTL_SIZE_ASSERT(ATM_SETESIF, struct atmif_sioc);
+IOCTL_SIZE_ASSERT(ATM_GETSTAT, struct atmif_sioc);
+IOCTL_SIZE_ASSERT(ATM_GETSTATZ, struct atmif_sioc);
+IOCTL_SIZE_ASSERT(ATM_GETLOOP, struct atmif_sioc);
+IOCTL_SIZE_ASSERT(ATM_SETLOOP, struct atmif_sioc);
+IOCTL_SIZE_ASSERT(ATM_QUERYLOOP, struct atmif_sioc);
 IOCTL_SIZE_ASSERT(BR2684_SETFILT, struct br2684_filter_set);
 IOCTL_SIZE_ASSERT(SONET_GETSTAT, struct sonet_stats);
+IOCTL_SIZE_ASSERT(SONET_GETSTATZ, struct sonet_stats);
 
 static int atm_fd_test(int fd, const struct stat *st __attribute__((unused)))
 {
