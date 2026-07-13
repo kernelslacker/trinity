@@ -314,6 +314,20 @@ static void post_timer_create_record_tid(struct syscallrecord *rec)
 		return;
 
 	/*
+	 * If the kernel skipped the copy_to_user() (the untouched-buffer
+	 * oracle target) the timer_t still holds the sanitise-time poison;
+	 * a poison value that decodes into [0, 65535] would otherwise be
+	 * registered as a bogus timer id here, before post_timer_create()
+	 * runs its own untouched-buffer check.  Gate registration on the
+	 * same check -- the counter bump + attribution stay in
+	 * post_timer_create() so a single event is logged once.
+	 */
+	if (snap->poison_seed != 0 &&
+	    check_output_struct_user_or_skip(idp, sizeof(timer_t),
+					     snap->poison_seed))
+		return;
+
+	/*
 	 * arg_shadow protects the OUT-pointer (idp) from rec->aN scribbles,
 	 * but the kernel-written timer_t value at *idp lives in the
 	 * user-supplied buffer and is fair game for a sibling syscall to
