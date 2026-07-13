@@ -8,6 +8,7 @@
 #include "ipc-common.h"
 #include "objects.h"
 #include "prop_ring.h"
+#include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
@@ -119,6 +120,35 @@ static void post_shmget(struct syscallrecord *rec)
 	prop_ring_push_scalar(rec->nr, shmid, SCALAR_SYSV_SHM);
 }
 
+/*
+ * Cap the fuzzed segment size.  A SysV shm segment created by a child
+ * that then dies on an uncatchable signal (watchdog / OOM kill / SIGSEGV)
+ * never runs its OBJ_LOCAL RMID destructor, so it orphans with its
+ * committed pages held until reaped.  An unbounded size lets a single
+ * orphan balloon the shmem accounting and OOM the box; shmget fixes the
+ * segment's maximum size, so clamping it here bounds every orphan.  Keep
+ * a bucketed spread so the small / multi-page / near-cap regimes stay warm.
+ */
+#define SHMGET_MAX_SIZE (4UL * 1024 * 1024)
+
+static size_t pick_shmget_size(void)
+{
+	uint32_t pick = rnd_modulo_u32(100);
+
+	if (pick < 10)
+		return 0;					/* get-existing / EINVAL edge */
+	if (pick < 45)
+		return 1 + rnd_modulo_u32(4096);		/* sub-page / small */
+	if (pick < 80)
+		return (size_t)(1 + rnd_modulo_u32(512)) * 4096; /* 4 KiB .. 2 MiB, THP-eligible */
+	return 1 + rnd_modulo_u32(SHMGET_MAX_SIZE);		/* up to the cap */
+}
+
+static void sanitise_shmget(struct syscallrecord *rec)
+{
+	rec->a2 = pick_shmget_size();
+}
+
 struct syscallentry syscall_shmget = {
 	.name = "shmget",
 	.group = GROUP_IPC,
@@ -129,4 +159,5 @@ struct syscallentry syscall_shmget = {
 	.arg_params[0].range.hi = 65535,
 	.arg_params[2].list = ARGLIST(ipc_flags),
 	.post = post_shmget,
+	.sanitise = sanitise_shmget,
 };
