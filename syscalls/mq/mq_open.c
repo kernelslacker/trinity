@@ -15,7 +15,7 @@
 
 static unsigned long mq_open_flags[] = {
 	O_RDONLY, O_WRONLY, O_RDWR,
-	O_CREAT, O_EXCL, O_NONBLOCK,
+	O_CREAT, O_EXCL, O_NONBLOCK, O_CLOEXEC,
 };
 
 /*
