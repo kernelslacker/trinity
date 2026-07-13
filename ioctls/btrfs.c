@@ -98,7 +98,7 @@ static int btrfs_fd_test(int fd, const struct stat *st __attribute__((unused)))
 		   __atomic_load_n(&shm->isolation.scratch_block_ready,
 				   __ATOMIC_RELAXED);
 	if (isolated) {
-		count = shm->isolation.scratch_block_count;
+		count = load_scratch_block_count();
 		for (i = 0; i < count; i++) {
 			struct scratch_block_entry *e =
 				&shm->isolation.scratch_block[i];

@@ -59,6 +59,15 @@
 #include "trinity.h"
 #include "utils.h"
 
+unsigned int load_scratch_block_count(void)
+{
+	unsigned int count = shm->isolation.scratch_block_count;
+
+	if (count > SCRATCH_BLOCK_MAX)
+		count = SCRATCH_BLOCK_MAX;
+	return count;
+}
+
 #if __has_include(<linux/loop.h>)
 
 #include <linux/loop.h>
@@ -592,7 +601,7 @@ int scratch_block_random_loop_num(void)
 	if (!__atomic_load_n(&shm->isolation.scratch_block_ready,
 			     __ATOMIC_RELAXED))
 		return -1;
-	count = shm->isolation.scratch_block_count;
+	count = load_scratch_block_count();
 	if (count == 0)
 		return -1;
 
