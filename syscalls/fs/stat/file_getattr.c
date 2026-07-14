@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "arch.h"
+#include "output-poison.h"
 #include "pathnames.h"
 #include "random.h"
 #include "rnd.h"
@@ -58,6 +59,7 @@ static unsigned long file_getattr_at_flags[] = {
  * inode than the one the original syscall actually resolved.
  */
 #define FILE_GETATTR_POST_STATE_MAGIC	0x46474154UL	/* "FGAT" */
+#define FILE_GETATTR_POISON_SEED	0x4641545452505354ULL	/* "FATTRPST" */
 struct file_getattr_post_state {
 	unsigned long magic;
 	unsigned long dfd;
@@ -65,6 +67,7 @@ struct file_getattr_post_state {
 	unsigned long usize;
 	unsigned long at_flags;
 	size_t buf_alloc_size;
+	uint64_t poison_seed;
 	char pathname[PATH_MAX];
 };
 #endif
@@ -122,9 +125,42 @@ static void snapshot_file_getattr_state(struct syscallrecord *rec,
 	snap->usize    = rec->a4;
 	snap->at_flags = rec->a5;
 	snap->buf_alloc_size = buf_alloc_size;
+	snap->poison_seed = 0;
 	if (!post_snapshot_str(snap->pathname, sizeof(snap->pathname),
 			       (const char *)(unsigned long) rec->a2))
 		snap->pathname[0] = '\0';
+
+	/*
+	 * Stamp a fixed poison pattern into the FILE_ATTR_SIZE_VER0 window
+	 * the kernel is guaranteed to fully overwrite on a retval==0 return
+	 * (usize was clamped >= VER0 by the biased draw above, and any usize
+	 * < VER0 bounces on -EINVAL before touching the buffer).  The post
+	 * handler asks check_output_struct_user_or_skip() whether the prefix
+	 * survived intact on a success return; a match means the kernel
+	 * reported success without ever calling copy_to_user -- the same
+	 * untouched-out-buffer signal lstat's LSTAT_POISON_SZ oracle surfaces,
+	 * bounded to the guaranteed-written prefix so an unwritten padding
+	 * tail cannot false-positive.  Pattern is a fixed non-zero magic
+	 * (not rnd_u64()) so the sanitise pass draws no RNG bytes on this
+	 * leg: --dry-run output with a fixed seed stays byte-identical to a
+	 * build without this oracle, keeping cross-tree replays and fixed-
+	 * seed corpus regeneration unaffected.  Guard on buf_alloc_size >=
+	 * VER0 so a pool draw smaller than the ver0 window (rare, the
+	 * sanitise resolver conservatively caps at page_size) does not
+	 * overrun the allocation, and range_readable_user() so a writable-
+	 * pool draw that avoid_shared_buffer_out moved to an address no
+	 * longer provably mapped does not SIGSEGV the sanitiser inside
+	 * poison_output_struct's byte-walk.  On skip poison_seed stays 0
+	 * and the post handler no-ops the untouched-buffer arm; the
+	 * ONE_IN(100) re-issue oracle below is unaffected either way.
+	 */
+	if (rec->a3 != 0 && buf_alloc_size >= FILE_ATTR_SIZE_VER0 &&
+	    range_readable_user((void *)(unsigned long) rec->a3,
+				FILE_ATTR_SIZE_VER0))
+		snap->poison_seed = poison_output_struct(
+			(void *)(unsigned long) rec->a3,
+			FILE_ATTR_SIZE_VER0, FILE_GETATTR_POISON_SEED);
+
 	post_state_install(rec, snap);
 }
 #endif
@@ -320,6 +356,27 @@ static void post_file_getattr(struct syscallrecord *rec)
 				      __func__);
 	if (snap == NULL)
 		return;
+
+	/*
+	 * Untouched-out-buffer check: on every retval==0 return, verify the
+	 * FILE_ATTR_SIZE_VER0 poison prefix stamped at sanitise time did NOT
+	 * survive intact.  A match means the kernel reported success without
+	 * copy_to_user'ing anything into the buffer -- a torn write, a "return
+	 * 0 before fill" early-exit, or a mis-wired compat wrapper.  O(24)
+	 * memcmp against a fixed pattern, no re-issue, so runs on every
+	 * success rather than the ONE_IN(100) sample used by the heavier
+	 * field-divergence oracle below.  Skips silently when the sanitiser
+	 * refused to stamp (poison_seed == 0) or ufattr was NULL, and the
+	 * check_output_struct_user_or_skip helper folds in the post_snapshot
+	 * TOCTOU guard against sibling munmap of the pool page mid-check.
+	 */
+	if ((long) rec->retval == 0 && snap->ufattr != 0 &&
+	    snap->poison_seed != 0 &&
+	    check_output_struct_user_or_skip(
+		    (void *)(unsigned long) snap->ufattr,
+		    FILE_ATTR_SIZE_VER0, snap->poison_seed))
+		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+				   1, __ATOMIC_RELAXED);
 
 	if (!ONE_IN(100))
 		goto out_release;
