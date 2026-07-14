@@ -365,6 +365,17 @@ struct statx_post_state {
 	unsigned long flags;
 	unsigned long mask;
 	unsigned long statxbuf;
+	/*
+	 * Seed for the poison pattern stamped into statxbuf at sanitise
+	 * time.  Returned by poison_output_struct() and fed back into
+	 * check_output_struct_user_or_skip() in the post handler so a
+	 * stomp of rec->aN cannot redirect the check against an unrelated
+	 * heap page that happens to still carry the original (or any)
+	 * byte pattern.  Left at 0 on the arm where sanitise skipped the
+	 * stamp (unreadable buffer, NULL statxbuf); the post handler
+	 * no-ops the poison arm on a zero seed.
+	 */
+	uint64_t poison_seed;
 };
 
 static void sanitise_statx(struct syscallrecord *rec)
@@ -434,6 +445,31 @@ static void sanitise_statx(struct syscallrecord *rec)
 	snap->flags    = rec->a3;
 	snap->mask     = rec->a4;
 	snap->statxbuf = rec->a5;
+	snap->poison_seed = 0;
+
+	/*
+	 * Stamp a per-call poison pattern into the user buffer the kernel
+	 * is about to fill.  The post handler asks
+	 * check_output_struct_user_or_skip() whether the pattern survived
+	 * intact; a match after a rec->retval == 0 return means the
+	 * kernel reported success without calling copy_to_user() on the
+	 * statxbuf.  cp_statx() zero-fills then writes the whole struct
+	 * on success, so a full-struct poison is safe (no legitimate
+	 * partial-write path leaves poison in the tail).  Gate on
+	 * range_readable_user() so an ARG_NON_NULL_ADDRESS draw the
+	 * writable pool could not back does not SIGSEGV the sanitiser
+	 * inside poison_output_struct's byte-walk; on skip poison_seed
+	 * stays 0 and the post handler no-ops the poison arm while the
+	 * equality re-issue arm keeps running.
+	 */
+	if (snap->statxbuf != 0) {
+		void *buf = (void *)(unsigned long) snap->statxbuf;
+
+		if (range_readable_user(buf, sizeof(struct statx)))
+			snap->poison_seed =
+				poison_output_struct(buf, sizeof(struct statx), 0);
+	}
+
 	post_state_install(rec, snap);
 }
 
@@ -590,6 +626,28 @@ static void post_statx(struct syscallrecord *rec)
 			}
 		}
 	}
+
+	/*
+	 * Untouched-buffer check: statx returned 0 (success) but the
+	 * user buffer still byte-for-byte matches the poison pattern we
+	 * stamped at sanitise time -- the kernel never called
+	 * copy_to_user() at all.  Runs on every success (not gated by
+	 * the ONE_IN(100) below) so the untouched-buffer signal is not
+	 * diluted by the sampling that throttles the equality re-issue
+	 * oracle; poison_seed == 0 means sanitise skipped the stamp and
+	 * the arm no-ops.  A hit on this arm would also fire the cheap
+	 * stx_mask oracle above (poison leaves stx_mask == 0, tripping
+	 * the STATX_TYPE-requested-but-not-set check whenever the caller
+	 * asked for STATX_TYPE) and the field-level recheck below on the
+	 * ONE_IN(100) arm, but the dedicated counter is the cheapest
+	 * no-re-issue signal.
+	 */
+	if ((long) retval == 0 && snap->statxbuf != 0 && snap->poison_seed != 0 &&
+	    check_output_struct_user_or_skip((void *)(unsigned long) snap->statxbuf,
+					     sizeof(struct statx),
+					     snap->poison_seed))
+		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+				   1, __ATOMIC_RELAXED);
 
 	if (!ONE_IN(100))
 		goto out_release;
