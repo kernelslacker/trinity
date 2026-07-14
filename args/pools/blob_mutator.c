@@ -1026,6 +1026,21 @@ void blob_fill(unsigned char *buf, size_t len, unsigned int nr, bool do32)
 
 void blob_mutator_self_check(void)
 {
+	bool saved_ab = blob_ab_mode;
+
+	/*
+	 * The invariants below force blob_mutator_mode to exercise specific
+	 * arms.  --blob-ab-mode authors content independent of
+	 * blob_mutator_mode (the gen_arg_time.c caller gate and the ab
+	 * branch in blob_fill), so a --blob-ab-mode run would trip
+	 * Invariant 3's OFF=no-op check against that intended enable.
+	 * Force the flag off across the whole check so each invariant
+	 * tests the mode contract it is about; restored before return.
+	 * init_shm runs single-threaded pre-fork, so the write is
+	 * race-free.
+	 */
+	blob_ab_mode = false;
+
 	/*
 	 * Invariant 1: the enum ordering OFF=0 < FILL < HAVOC < CMPDICT
 	 * underpins both the parser (params.c stores by name) and the
@@ -1124,4 +1139,6 @@ void blob_mutator_self_check(void)
 			if (guarded[40 + g] != (unsigned char) (0x5au ^ g))
 				BUG("blob_fill(HAVOC) scribbled past len bound");
 	}
+
+	blob_ab_mode = saved_ab;
 }
