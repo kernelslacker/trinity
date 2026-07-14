@@ -28,6 +28,7 @@
 #include "stats_ring.h"
 #include "syscall.h"
 #include "syscall_record.h"
+#include "sysv-shm.h"
 #include "tables.h"
 #include "trinity.h"
 #include "utils.h"
@@ -265,7 +266,7 @@ int shm_is_corrupt(void)
  * 2. From handle_child() if it gets a SIGBUS or SIGSTOP from the child,
  *    or if it dies from natural causes.
  */
-void reap_child(struct childdata *child, int childno)
+void reap_child(struct childdata *child, int childno, bool child_dead)
 {
 	pid_t pid;
 
@@ -377,6 +378,16 @@ void reap_child(struct childdata *child, int childno)
 	/* Catch the SIGKILL'd-child case where inode_spewer_cleanup()
 	 * never ran in the child.  No-op when the dir doesn't exist. */
 	inode_spewer_reap(pid);
+
+	/* Same for fuzzed SysV shm segments: a SIGKILL'd/OOM'd child never ran
+	 * its OBJ_LOCAL RMID destructor, so RMID them here from the id ring
+	 * mirrored into childdata.  Bounds the ~10GB orphaned-shmem OOM.  Gated
+	 * on child_dead: the deferred-D-state reap (register_zombie_slot) calls
+	 * us on a child that is still alive and could resume and register more
+	 * ids, which would race this drain -- that caller passes false and
+	 * process_zombie_pending() drains the ring once waitpid confirms death. */
+	if (child_dead)
+		reap_child_sysv_shm(child);
 }
 
 /* Make sure there's no dead kids lying around.
@@ -465,7 +476,7 @@ void reap_dead_kids(void)
 					close(pidstatfiles[i]);
 					pidstatfiles[i] = -1;
 				}
-				reap_child(children[i], i);
+				reap_child(children[i], i, true);
 				reaped++;
 			} else if (errno == EPERM) {
 				/* Child dropped privileges (setresuid/capset/etc.)
@@ -514,7 +525,7 @@ void kill_all_kids(void)
 					close(pidstatfiles[i]);
 					pidstatfiles[i] = -1;
 				}
-				reap_child(children[i], i);
+				reap_child(children[i], i, true);
 			}
 		}
 	}
@@ -1396,7 +1407,7 @@ static void register_zombie_slot(int childno, pid_t pid)
 			close(pidstatfiles[childno]);
 			pidstatfiles[childno] = -1;
 		}
-		reap_child(children[childno], childno);
+		reap_child(children[childno], childno, true);
 		replace_child(childno);
 		__atomic_add_fetch(&shm->stats.zombies_reaped, 1,
 				   __ATOMIC_RELAXED);
@@ -1435,7 +1446,11 @@ static void register_zombie_slot(int childno, pid_t pid)
 		pidstatfiles[childno] = -1;
 	}
 
-	reap_child(children[childno], childno);
+	/* Child still alive here (D-state / stopped / signaled-but-running):
+	 * the WNOHANG waitpid above returned 0.  Pass child_dead=false so the
+	 * shm-ring drain is deferred to process_zombie_pending(); everything
+	 * else reap_child() does is safe to run against the frozen slot now. */
+	reap_child(children[childno], childno, false);
 
 	clock_gettime(CLOCK_MONOTONIC, &now);
 	zombie_pids[childno] = pid;
@@ -1538,6 +1553,13 @@ void process_zombie_pending(void)
 		zombie_since[i] = 0;
 		__atomic_sub_fetch(&shm->stats.zombie_slots_pending, 1,
 				   __ATOMIC_RELAXED);
+
+		/* Deferred child is now confirmed gone (waitpid above, or the
+		 * long-stuck timeout).  reap_child() at the deferral point ran
+		 * with child_dead=false, so drain its fuzzed shm ring here --
+		 * before replace_child() recycles the slot and clean_childdata()
+		 * zeroes the count. */
+		reap_child_sysv_shm(children[i]);
 
 		replace_child(i);
 	}
@@ -1991,7 +2013,7 @@ static void handle_child(int childno, pid_t childpid, int childstatus)
 			debugf("Child %d (pid:%u) exited after %ld operations.\n",
 				childno, childpid, child->op_nr);
 			record_reap(childno, childstatus);
-			reap_child(children[childno], childno);
+			reap_child(children[childno], childno, true);
 			if (pidstatfiles[childno] >= 0)
 				close(pidstatfiles[childno]);
 			pidstatfiles[childno] = -1;

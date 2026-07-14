@@ -3,14 +3,17 @@
  */
 
 #include <limits.h>
+#include <string.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
+#include "child.h"
 #include "ipc-common.h"
 #include "objects.h"
 #include "prop_ring.h"
 #include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "sysv-shm.h"
 #include "trinity.h"
 #include "utils.h"
 
@@ -61,7 +64,9 @@ REG_GLOBAL_OBJ(sysv_shm_pool, init_sysv_shm_pool);
 
 void register_sysv_shm(int shmid)
 {
+	struct childdata *child;
 	struct object *obj;
+	unsigned int n;
 
 	if (shmid < 0)
 		return;
@@ -69,6 +74,39 @@ void register_sysv_shm(int shmid)
 	obj = alloc_object();
 	obj->sysv_shm.id = shmid;
 	add_object(obj, OBJ_LOCAL, OBJ_SYSV_SHM);
+
+	/* Mirror the id into the (shared) childdata ring so the parent can RMID
+	 * it at reap even if this child is SIGKILL'd before the OBJ_LOCAL
+	 * destructor runs.  Ring full -> RMID the oldest to bound the live leak. */
+	child = this_child();
+	if (child == NULL)
+		return;
+	n = child->fuzz_shm_count;
+	if (n >= MAX_FUZZ_SHM_IDS) {
+		shmctl(child->fuzz_shm_ids[0], IPC_RMID, NULL);
+		memmove(&child->fuzz_shm_ids[0], &child->fuzz_shm_ids[1],
+			(MAX_FUZZ_SHM_IDS - 1) * sizeof(child->fuzz_shm_ids[0]));
+		n = MAX_FUZZ_SHM_IDS - 1;
+	}
+	child->fuzz_shm_ids[n] = shmid;
+	/* Release-store the count last so the parent's acquire-load at reap sees
+	 * the id write above. */
+	__atomic_store_n(&child->fuzz_shm_count, n + 1, __ATOMIC_RELEASE);
+}
+
+void reap_child_sysv_shm(struct childdata *child)
+{
+	unsigned int n, i;
+
+	if (child == NULL)
+		return;
+
+	n = __atomic_load_n(&child->fuzz_shm_count, __ATOMIC_ACQUIRE);
+	if (n > MAX_FUZZ_SHM_IDS)	/* guard a torn/garbage count */
+		n = MAX_FUZZ_SHM_IDS;
+	for (i = 0; i < n; i++)
+		(void) shmctl(child->fuzz_shm_ids[i], IPC_RMID, NULL);
+	child->fuzz_shm_count = 0;
 }
 
 int get_random_sysv_shm(void)
