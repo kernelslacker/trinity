@@ -26,6 +26,7 @@
 #include <limits.h>
 #include <fcntl.h>
 #include <stdlib.h>
+#include "child.h"
 #include "shm.h"
 #include "params.h"	// 'user_set_seed'
 #include "pids.h"

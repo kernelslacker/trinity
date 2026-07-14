@@ -2,7 +2,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include "child.h"	/* NR_CHILD_OP_TYPES */
+#include "child-api.h"	/* NR_CHILD_OP_TYPES */
 #include "compiler.h"	/* __cold */
 #include "cred_throttle.h"	/* CRED_CLASS_NR */
 #include "reach-band.h"	/* REACH_BAND_NR */

@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include "child.h"
 #include "cmp_hints.h"
 #include "debug.h"
 #include "exit.h"

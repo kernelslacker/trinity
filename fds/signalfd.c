@@ -6,6 +6,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 
+#include "child.h"
 #include "fd.h"
 #include "syscall-gate.h"
 #include "objects.h"

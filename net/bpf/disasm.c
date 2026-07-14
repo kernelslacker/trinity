@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "debug.h"
+#include "trinity.h"
 #include "utils.h"
 #include "internal.h"
 

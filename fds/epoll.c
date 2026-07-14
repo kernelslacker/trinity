@@ -6,6 +6,7 @@
 #include <fcntl.h>
 #include <string.h>
 
+#include "child.h"
 #include "fd.h"
 #include "objects.h"
 #include "random.h"

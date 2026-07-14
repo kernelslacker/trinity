@@ -1,6 +1,6 @@
 #pragma once
 
-#include "child.h"
+#include "child-api.h"
 #include "syscall.h"
 #include "utils.h"
 

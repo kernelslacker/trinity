@@ -8,6 +8,7 @@
 
 #include "ioctls.h"
 #include "net.h"
+#include "objects.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"

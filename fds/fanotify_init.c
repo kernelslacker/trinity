@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <unistd.h>
 
+#include "child.h"
 #include "fd.h"
 #include "syscall-gate.h"
 #include "fanotify.h"

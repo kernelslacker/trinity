@@ -1,7 +1,7 @@
 #ifndef _CHILD_INTERNAL_H
 #define _CHILD_INTERNAL_H 1
 
-#include "child.h"
+#include "child-api.h"
 
 /*
  * Internal-only declarations for symbols shared between the three

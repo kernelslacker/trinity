@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 
+#include "child.h"
 #include "fd.h"
 #include "objects.h"
 #include "random.h"

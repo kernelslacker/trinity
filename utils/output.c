@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "arg-decoder.h"
+#include "child.h"
 #include "pids.h"
 #include "params.h"	// verbosity
 #include "shm.h"

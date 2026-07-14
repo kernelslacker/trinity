@@ -1,7 +1,7 @@
 #pragma once
 
 #include <sys/types.h>
-#include "child.h"
+#include "child-api.h"
 #include "types.h"
 
 extern pid_t *pids;

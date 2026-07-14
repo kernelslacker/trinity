@@ -36,6 +36,7 @@
 #include "random.h"
 #include "trinity.h"
 #include "rnd.h"
+#include "utils-macros.h"		/* ARRAY_SIZE, RAND_ARRAY */
 
 /* Prototype mirrored from the forward declaration in net/netlink/msg.c;
  * kept here (rather than in msg-internal.h next to its

@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "child.h"
 #include "fd.h"
 #include "fd-event.h"
 #include "list.h"

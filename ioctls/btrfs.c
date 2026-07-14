@@ -6,6 +6,7 @@
 #include <linux/btrfs.h>
 #include <linux/btrfs_tree.h>
 #include "ioctls.h"
+#include "objects.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
