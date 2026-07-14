@@ -6,7 +6,9 @@
  * When an error occurs, returns -1 and errno is set appropriately.
  */
 #include <limits.h>
+#include <stdint.h>
 #include <sys/epoll.h>
+#include "output-poison.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -14,6 +16,26 @@
 #include "stats.h"
 #include "trinity.h"
 #include "utils.h"
+
+/*
+ * Snapshot of the events OUT-buffer pointer, its byte size, and the
+ * per-call poison seed, captured at sanitise time and consumed by the
+ * post handler.  Lives in rec->post_state so a sibling syscall scribbling
+ * rec->a2 between the syscall returning and the post handler running
+ * cannot redirect the untouched-buffer check at an unrelated user page
+ * whose residual bytes happen to still match some earlier call's seed.
+ * A poison_seed of 0 is the sanitise-refused-to-stamp signal (a2 == 0,
+ * maxevents <= 0, or the writable draw was no longer provably readable)
+ * and the post handler must no-op the untouched-buffer arm.
+ */
+#define EPOLL_WAIT_POST_STATE_MAGIC	0x45505741UL	/* "EPWA" */
+#define EPOLL_WAIT_POISON_SEED		0x45504F4C57414921ULL /* "EPOLWAI!" */
+struct epoll_wait_post_state {
+	unsigned long magic;
+	unsigned long events;
+	size_t buf_bytes;
+	uint64_t poison_seed;
+};
 
 /*
  * Bias maxevents toward sizes the kernel actually exercises rather than
@@ -83,7 +105,16 @@ static void record_null_events_cause(unsigned long initial_a2,
 
 static void sanitise_epoll_wait(struct syscallrecord *rec)
 {
+	struct epoll_wait_post_state *snap;
 	unsigned long initial_a2 = rec->a2;
+	long mx;
+
+	/*
+	 * Clear post_state up front so an early return below leaves the
+	 * post handler with a NULL snapshot to bail on rather than a stale
+	 * pointer carried over from an earlier syscall on this record.
+	 */
+	rec->post_state = 0;
 
 	rec->a3 = (unsigned long) pick_maxevents();
 	rec->a4 = pick_timeout_ms();
@@ -93,14 +124,51 @@ static void sanitise_epoll_wait(struct syscallrecord *rec)
 	 * negative or zero maxevents picked above doesn't underflow the
 	 * allocation hint -- the kernel still sees the chosen rec->a3.
 	 */
+	mx = (long) rec->a3;
 	{
-		long mx = (long) rec->a3;
 		unsigned long bytes = (mx > 0 ? mx : 1) * sizeof(struct epoll_event);
 
 		avoid_shared_buffer_out(&rec->a2, bytes);
 	}
 
 	record_null_events_cause(initial_a2, rec);
+
+	/*
+	 * Untouched-buffer oracle setup.  Stamp a fixed-pattern poison
+	 * over the full maxevents-sized events buffer AFTER
+	 * avoid_shared_buffer_out() has picked the final buffer so the
+	 * poison lands on the page the kernel will actually see.  Use a
+	 * FIXED seed (not RNG) so --dry-run stays byte-identical to a
+	 * build without this oracle.  On success epoll_wait returns
+	 * retval >= 0 and the kernel writes exactly
+	 * retval * sizeof(struct epoll_event) bytes via ep_send_events()'s
+	 * copy_to_user; a byte-identical match across those bytes after
+	 * retval > 0 means copy_to_user was skipped entirely.  Gated on
+	 * range_readable_user() so a writable-pool draw that
+	 * avoid_shared_buffer_out moved to an address no longer provably
+	 * mapped does not SIGSEGV the sanitiser inside
+	 * poison_output_struct's byte-walk.  Non-positive maxevents skips
+	 * the stamp -- the kernel rejects those with -EINVAL before
+	 * touching the buffer.
+	 */
+	snap = zmalloc_tracked(sizeof(*snap));
+	snap->magic       = EPOLL_WAIT_POST_STATE_MAGIC;
+	snap->events      = rec->a2;
+	snap->buf_bytes   = 0;
+	snap->poison_seed = 0;
+
+	if (mx > 0 && rec->a2 != 0) {
+		size_t poison_bytes = (size_t) mx * sizeof(struct epoll_event);
+		void *buf = (void *)(unsigned long) rec->a2;
+
+		if (range_readable_user(buf, poison_bytes)) {
+			snap->buf_bytes   = poison_bytes;
+			snap->poison_seed = poison_output_struct(buf, poison_bytes,
+								 EPOLL_WAIT_POISON_SEED);
+		}
+	}
+
+	post_state_install(rec, snap);
 }
 
 /*
@@ -112,21 +180,65 @@ static void sanitise_epoll_wait(struct syscallrecord *rec)
  * sign-extension tear in the syscall return path, a torn write of the count
  * by a parallel signal-restart path, or -errno leaking through the success
  * return slot instead of the errno slot.
+ *
+ * Second oracle: untouched-buffer.  On retval > 0 the kernel wrote exactly
+ * retval * sizeof(struct epoll_event) bytes; a byte-identical poison
+ * pattern across those bytes means ep_send_events() claimed a completion
+ * count without running copy_to_user.  retval == 0 (timeout / nothing
+ * ready, nothing was written and nothing to check) and every negative
+ * return are silent -- no writeback contract, no false positives.  The
+ * check_output_struct_user_or_skip SNAP_MAX cap silently drops checks
+ * larger than that ceiling, so multi-KB (maxevents up to 1024) requests
+ * trade coverage for a bounded post-handler cost -- we cap check_bytes at
+ * snap->buf_bytes and let the helper's own cap take it from there.
+ * Measure-only: no re-issue, no argument mutation, no oracle output
+ * beyond the counter bump.
  */
 static void post_epoll_wait(struct syscallrecord *rec)
 {
+	struct epoll_wait_post_state *snap;
 	long retval    = (long) rec->retval;
 	long maxevents = (long) get_arg_snapshot(rec, 3);
+	size_t check_bytes;
+
+	snap = post_state_claim_owned(rec, EPOLL_WAIT_POST_STATE_MAGIC,
+				      __func__);
+	if (snap == NULL)
+		return;
 
 	if (retval == -1L)
-		return;
+		goto out_release;
 	if (maxevents <= 0)
-		return;
+		goto out_release;
 	if (retval > maxevents) {
 		outputerr("post_epoll_wait: rejecting retval %ld > maxevents %ld\n",
 			  retval, maxevents);
 		post_handler_corrupt_ptr_bump(rec, NULL);
+		goto out_release;
 	}
+
+	if (retval <= 0)
+		goto out_release;
+	if (snap->poison_seed == 0)
+		goto out_release;
+
+	/*
+	 * Bound the check by the buffer we actually poisoned so a broken
+	 * kernel returning retval > maxevents (already rejected above)
+	 * cannot drive us to read past the allocation.
+	 */
+	check_bytes = (size_t) retval * sizeof(struct epoll_event);
+	if (check_bytes > snap->buf_bytes)
+		check_bytes = snap->buf_bytes;
+
+	if (check_output_struct_user_or_skip((void *)(unsigned long) snap->events,
+					     check_bytes,
+					     snap->poison_seed))
+		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+				   1, __ATOMIC_RELAXED);
+
+out_release:
+	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_epoll_wait = {
