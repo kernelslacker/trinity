@@ -436,6 +436,7 @@ void clean_childdata(struct childdata *child)
 	child->in_reexec = false;
 	child->fuzz_shm_count = 0;	/* fresh occupant: no tracked shm segments yet */
 	child->fuzz_msg_count = 0;	/* fresh occupant: no tracked msg queues yet */
+	child->fuzz_sem_count = 0;	/* fresh occupant: no tracked sem sets yet */
 	child->redqueen_enabled = false;
 	child->boring_filter_arm_b = false;
 	child->frontier_blend_arm_b = false;

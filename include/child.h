@@ -52,6 +52,11 @@
  * reap because their OBJ_LOCAL destructor is also skipped on SIGKILL. */
 #define MAX_FUZZ_MSG_IDS 128
 
+/* Same cap for fuzzed SysV semaphore sets (see fuzz_sem_ids in struct
+ * childdata) -- semget-created sets need the same parent-side RMID at
+ * reap because their OBJ_LOCAL destructor is also skipped on SIGKILL. */
+#define MAX_FUZZ_SEM_IDS 128
+
 struct childdata {
 	/* ---- Hot leading cacheline (64 bytes) ---- */
 
@@ -594,6 +599,18 @@ struct childdata {
 	 * key) returns EINVAL/EIDRM and is ignored. */
 	int fuzz_msg_ids[MAX_FUZZ_MSG_IDS];
 	unsigned int fuzz_msg_count;
+
+	/* SysV semaphore sets this child created via fuzzed semget.  Same
+	 * OBJ_LOCAL-destructor-skipped-on-SIGKILL problem as fuzz_shm_ids /
+	 * fuzz_msg_ids above: an orphaned sem set is a kernel-persistent object
+	 * that survives the child, and once the fleet accumulates SEMMNI
+	 * (~32000) orphans every subsequent semget returns ENOSPC and coverage
+	 * dies.  Mirror the same bounded-ring / release-store / acquire-load-
+	 * at-reap shape so the parent can IPC_RMID the ids no matter how the
+	 * child died.  Double RMID (fuzzed semctl already freed the id, or two
+	 * children shared a key) returns EINVAL/EIDRM and is ignored. */
+	int fuzz_sem_ids[MAX_FUZZ_SEM_IDS];
+	unsigned int fuzz_sem_count;
 	/* A/B-comparison stamp for the cmp_hints "uninteresting constant"
 	 * substitution-pool drop mask.  Half the children get Arm A (the
 	 * historical ~3UL mask -- drop 0/1/2/3) and half get Arm B (~7UL --

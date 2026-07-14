@@ -2,13 +2,16 @@
  * SYSCALL_DEFINE3(semget, key_t, key, int, nsems, int, semflg)
  */
 #include <limits.h>
+#include <string.h>
 #include <sys/ipc.h>
 #include <sys/sem.h>
+#include "child.h"
 #include "ipc-common.h"
 #include "objects.h"
 #include "prop_ring.h"
 #include "publish_resource.h"
 #include "sanitise.h"
+#include "sysv-sem.h"
 #include "trinity.h"
 #include "utils.h"
 
@@ -50,10 +53,48 @@ REG_GLOBAL_OBJ(sysv_sem, init_sysv_sem_pool);
 
 void register_sysv_sem(int semid)
 {
+	struct childdata *child;
+	unsigned int n;
+
 	if (semid < 0)
 		return;
 
 	publish_resource(OBJ_SYSV_SEM, (unsigned long)semid, NULL);
+
+	/* Mirror the id into the (shared) childdata ring so the parent can RMID
+	 * it at reap even if this child is SIGKILL'd before the OBJ_LOCAL
+	 * destructor runs.  Ring full -> RMID the oldest to bound the live
+	 * orphan set (the fleet-wide cap is SEMMNI; once we hit it every
+	 * semget returns ENOSPC and coverage dies). */
+	child = this_child();
+	if (child == NULL)
+		return;
+	n = child->fuzz_sem_count;
+	if (n >= MAX_FUZZ_SEM_IDS) {
+		semctl(child->fuzz_sem_ids[0], 0, IPC_RMID);
+		memmove(&child->fuzz_sem_ids[0], &child->fuzz_sem_ids[1],
+			(MAX_FUZZ_SEM_IDS - 1) * sizeof(child->fuzz_sem_ids[0]));
+		n = MAX_FUZZ_SEM_IDS - 1;
+	}
+	child->fuzz_sem_ids[n] = semid;
+	/* Release-store the count last so the parent's acquire-load at reap sees
+	 * the id write above. */
+	__atomic_store_n(&child->fuzz_sem_count, n + 1, __ATOMIC_RELEASE);
+}
+
+void reap_child_sysv_sem(struct childdata *child)
+{
+	unsigned int n, i;
+
+	if (child == NULL)
+		return;
+
+	n = __atomic_load_n(&child->fuzz_sem_count, __ATOMIC_ACQUIRE);
+	if (n > MAX_FUZZ_SEM_IDS)	/* guard a torn/garbage count */
+		n = MAX_FUZZ_SEM_IDS;
+	for (i = 0; i < n; i++)
+		(void) semctl(child->fuzz_sem_ids[i], 0, IPC_RMID);
+	child->fuzz_sem_count = 0;
 }
 
 int get_random_sysv_sem(void)
