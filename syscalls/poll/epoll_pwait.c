@@ -13,7 +13,9 @@ SYSCALL_DEFINE6(epoll_pwait2, int, epfd, struct epoll_event __user *, events,
  */
 #include <limits.h>
 #include <signal.h>
+#include <stdint.h>
 #include <sys/epoll.h>
+#include "output-poison.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -21,6 +23,22 @@ SYSCALL_DEFINE6(epoll_pwait2, int, epfd, struct epoll_event __user *, events,
 #include "stats.h"
 #include "trinity.h"
 #include "utils.h"
+
+/*
+ * Snapshot of the events OUT-buffer pointer, its byte size, and the
+ * per-call poison seed, captured at sanitise time and consumed by the
+ * shared post handler.  See syscalls/poll/epoll_wait.c for the full
+ * rationale -- this file mirrors that oracle for the pwait / pwait2
+ * entries which both go through post_epoll_pwait().
+ */
+#define EPOLL_PWAIT_POST_STATE_MAGIC	0x45505057UL	/* "EPPW" */
+#define EPOLL_PWAIT_POISON_SEED		0x45504F4C50574121ULL /* "EPOLPWA!" */
+struct epoll_pwait_post_state {
+	unsigned long magic;
+	unsigned long events;
+	size_t buf_bytes;
+	uint64_t poison_seed;
+};
 
 static int pick_maxevents(void)
 {
@@ -133,6 +151,43 @@ static void size_events_buffer(struct syscallrecord *rec)
 }
 
 /*
+ * Untouched-buffer oracle setup, shared by pwait and pwait2 which both
+ * take the same struct epoll_event __user *events (a2) OUT slot and both
+ * dispatch through post_epoll_pwait() below.  Stamp the poison AFTER
+ * size_events_buffer() has picked the final address so the poison lands
+ * on the page the kernel will actually see.  Use a FIXED seed (not RNG)
+ * so --dry-run stays byte-identical to a build without this oracle.
+ * Gated on range_readable_user() so a writable-pool draw that
+ * avoid_shared_buffer_out moved to an address no longer provably mapped
+ * does not SIGSEGV the sanitiser inside poison_output_struct's byte-walk;
+ * on skip poison_seed stays 0 and the post handler no-ops the arm.
+ */
+static void install_events_poison(struct syscallrecord *rec)
+{
+	struct epoll_pwait_post_state *snap;
+	long mx = (long) rec->a3;
+
+	snap = zmalloc_tracked(sizeof(*snap));
+	snap->magic       = EPOLL_PWAIT_POST_STATE_MAGIC;
+	snap->events      = rec->a2;
+	snap->buf_bytes   = 0;
+	snap->poison_seed = 0;
+
+	if (mx > 0 && rec->a2 != 0) {
+		size_t poison_bytes = (size_t) mx * sizeof(struct epoll_event);
+		void *buf = (void *)(unsigned long) rec->a2;
+
+		if (range_readable_user(buf, poison_bytes)) {
+			snap->buf_bytes   = poison_bytes;
+			snap->poison_seed = poison_output_struct(buf, poison_bytes,
+								 EPOLL_PWAIT_POISON_SEED);
+		}
+	}
+
+	post_state_install(rec, snap);
+}
+
+/*
  * Attribute why (a3 > 0 && a2 == 0) still holds at sanitise exit --
  * the state the arg-coupling validator will reject as EFAULT-shaped
  * without dispatching the syscall.  Bumps the appropriate cause
@@ -156,21 +211,27 @@ static void sanitise_epoll_pwait(struct syscallrecord *rec)
 {
 	unsigned long initial_a2 = rec->a2;
 
+	rec->post_state = 0;
+
 	rec->a3 = (unsigned long) pick_maxevents();
 	rec->a4 = pick_timeout_ms();
 	pick_sigmask(rec);
 	size_events_buffer(rec);
 	record_null_events_cause(initial_a2, rec);
+	install_events_poison(rec);
 }
 
 static void sanitise_epoll_pwait2(struct syscallrecord *rec)
 {
 	unsigned long initial_a2 = rec->a2;
 
+	rec->post_state = 0;
+
 	rec->a3 = (unsigned long) pick_maxevents();
 	pick_sigmask(rec);
 	size_events_buffer(rec);
 	record_null_events_cause(initial_a2, rec);
+	install_events_poison(rec);
 
 	/*
 	 * a4 (timeout) is typed ARG_TIMESPEC; the generator publishes
@@ -179,20 +240,61 @@ static void sanitise_epoll_pwait2(struct syscallrecord *rec)
 	 */
 }
 
+/*
+ * Kernel ABI: epoll_pwait / epoll_pwait2 on success returns the count of
+ * ready file descriptors copied into the user events array -- a value in
+ * [0, maxevents] computed by ep_send_events() walking fs/eventpoll.c's
+ * ready list.  Anything > maxevents (excluding -1UL) is a structural ABI
+ * regression -- see the sibling comment in epoll_wait.c for the failure
+ * modes.
+ *
+ * Second oracle: untouched-buffer.  On retval > 0 the kernel wrote
+ * exactly retval * sizeof(struct epoll_event) bytes; a byte-identical
+ * poison pattern across those bytes means ep_send_events() claimed a
+ * completion count without running copy_to_user.  retval == 0 and every
+ * negative return are silent.  Measure-only: no re-issue, no argument
+ * mutation, no oracle output beyond the counter bump.
+ */
 static void post_epoll_pwait(struct syscallrecord *rec)
 {
+	struct epoll_pwait_post_state *snap;
 	long retval    = (long) rec->retval;
 	long maxevents = (long) get_arg_snapshot(rec, 3);
+	size_t check_bytes;
+
+	snap = post_state_claim_owned(rec, EPOLL_PWAIT_POST_STATE_MAGIC,
+				      __func__);
+	if (snap == NULL)
+		return;
 
 	if (retval == -1L)
-		return;
+		goto out_release;
 	if (maxevents <= 0)
-		return;
+		goto out_release;
 	if (retval > maxevents) {
 		outputerr("post_epoll_pwait: rejecting retval %ld > maxevents %ld\n",
 			 retval, maxevents);
 		post_handler_corrupt_ptr_bump(rec, NULL);
+		goto out_release;
 	}
+
+	if (retval <= 0)
+		goto out_release;
+	if (snap->poison_seed == 0)
+		goto out_release;
+
+	check_bytes = (size_t) retval * sizeof(struct epoll_event);
+	if (check_bytes > snap->buf_bytes)
+		check_bytes = snap->buf_bytes;
+
+	if (check_output_struct_user_or_skip((void *)(unsigned long) snap->events,
+					     check_bytes,
+					     snap->poison_seed))
+		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+				   1, __ATOMIC_RELAXED);
+
+out_release:
+	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_epoll_pwait = {
