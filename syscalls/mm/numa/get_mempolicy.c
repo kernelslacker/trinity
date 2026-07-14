@@ -9,6 +9,7 @@
 #include <string.h>
 #include "arch.h"
 #include "deferred-free.h"
+#include "output-poison.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -55,8 +56,11 @@ struct get_mempolicy_post_state {
 	unsigned long maxnode;
 	unsigned long addr;
 	unsigned long flags;
+	uint64_t poison_seed_policy;
+	uint64_t poison_seed_nmask;
 };
 #define GET_MEMPOLICY_POST_STATE_MAGIC	0x474D504CUL	/* "GMPL" */
+#define GET_MEMPOLICY_POISON_PATTERN	0xD2B7D2B7D2B7D2B7ULL
 #endif
 
 static void sanitise_get_mempolicy(struct syscallrecord *rec)
@@ -102,6 +106,51 @@ static void sanitise_get_mempolicy(struct syscallrecord *rec)
 	snap->maxnode = rec->a3;
 	snap->addr    = rec->a4;
 	snap->flags   = rec->a5;
+	snap->poison_seed_policy = 0;
+	snap->poison_seed_nmask  = 0;
+
+	/*
+	 * Stamp fixed poison across the policy int and (when flags == 0)
+	 * the nmask bitmap.  The post handler compares the buffers
+	 * byte-for-byte against the same pattern; a match after
+	 * rec->retval == 0 means the kernel skipped copy_to_user() for
+	 * that arm -- get_mempolicy is contracted to write *policy on
+	 * every success and to write the task->mempolicy nodes bitmap
+	 * through *nmask when flags == 0.  MPOL_F_NODE reshapes *policy
+	 * (into the next interleave node) but does not populate nmask,
+	 * MPOL_F_MEMS_ALLOWED repurposes the nmask arm to the allowed-
+	 * mems bitmap, and MPOL_F_ADDR makes the whole call VMA-scoped
+	 * and prone to -EFAULT -- gate the nmask arm on flags == 0 so
+	 * the untouched-buffer signal is not diluted by paths where the
+	 * kernel legitimately does not write the bitmap.  Pattern is a
+	 * fixed non-zero magic (not rnd_u64()) so the sanitise pass
+	 * draws no RNG bytes on this leg: --dry-run output with a fixed
+	 * seed stays byte-identical to a build without this oracle,
+	 * keeping cross-tree replays and fixed-seed corpus regeneration
+	 * unaffected.  Gate each stamp on range_readable_user() so a
+	 * writable-pool draw that avoid_shared_buffer_out relocated to
+	 * an address no longer provably mapped does not SIGSEGV inside
+	 * poison_output_struct's byte-walk; on skip poison_seed stays 0
+	 * and the post handler no-ops that arm.
+	 */
+	if (rec->a1 != 0) {
+		void *pbuf = (void *)(unsigned long) rec->a1;
+
+		if (range_readable_user(pbuf, sizeof(int)))
+			snap->poison_seed_policy =
+				poison_output_struct(pbuf, sizeof(int),
+						     GET_MEMPOLICY_POISON_PATTERN);
+	}
+
+	if (rec->a2 != 0 && rec->a5 == 0) {
+		void *nbuf = (void *)(unsigned long) rec->a2;
+
+		if (range_readable_user(nbuf, nmask_bytes))
+			snap->poison_seed_nmask =
+				poison_output_struct(nbuf, nmask_bytes,
+						     GET_MEMPOLICY_POISON_PATTERN);
+	}
+
 	post_state_install(rec, snap);
 #endif
 }
@@ -175,6 +224,43 @@ static void post_get_mempolicy(struct syscallrecord *rec)
 				      __func__);
 	if (snap == NULL)
 		return;
+
+	/*
+	 * Untouched-buffer arms: get_mempolicy returned 0 but the user
+	 * buffer still byte-for-byte matches the fixed poison stamped at
+	 * sanitise time -- the kernel never called copy_to_user() on that
+	 * arm.  poison_seed == 0 signals sanitise refused to stamp
+	 * (writable-pool draw no longer provably mapped, or the nmask arm
+	 * was gated out by flags != 0); skip so "we could not poison" is
+	 * not confused with "kernel did not write".  Runs on every call
+	 * -- not sampled -- so the signal is not diluted by the
+	 * ONE_IN(100) gate that throttles the equality re-issue below.
+	 * Bounded by MAX_NMASK_LONGS on the nmask arm to match the
+	 * on-stack cap the equality arm uses; anything larger would also
+	 * exceed CHECK_OUTPUT_STRUCT_SNAP_MAX and be dropped by the
+	 * helper regardless.
+	 */
+	if ((long) rec->retval == 0) {
+		if (snap->poison_seed_policy != 0 &&
+		    check_output_struct_user_or_skip((void *)(unsigned long) snap->policy,
+						     sizeof(int),
+						     snap->poison_seed_policy))
+			__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+					   1, __ATOMIC_RELAXED);
+
+		if (snap->poison_seed_nmask != 0) {
+			size_t words = (snap->maxnode + 63) / 64;
+
+			if (words == 0)
+				words = 1;
+			if (words <= MAX_NMASK_LONGS &&
+			    check_output_struct_user_or_skip((void *)(unsigned long) snap->nmask,
+							     words * sizeof(unsigned long),
+							     snap->poison_seed_nmask))
+				__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+						   1, __ATOMIC_RELAXED);
+		}
+	}
 
 	if (!ONE_IN(100))
 		goto out_free;
