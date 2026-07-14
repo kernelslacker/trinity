@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include "arch.h"
 #include "maps.h"
+#include "output-poison.h"
 #include "rnd.h"
 #include "sanitise.h"
 #include "deferred-free.h"
@@ -55,9 +56,28 @@ static unsigned long pick_mincore_len(unsigned long map_size)
 	}
 }
 
+/*
+ * Snapshot of the vec OUT-pointer arg captured at sanitise time and
+ * consumed by post_mincore.  Lives in rec->post_state so a sibling
+ * syscall scribbling rec->a3 between the syscall returning and the
+ * post handler running cannot redirect the untouched-buffer check at
+ * a foreign user page.  poison_seed == 0 is the sanitise-refused-to-
+ * stamp signal (vec == 0 or vec_bytes == 0) and the post handler must
+ * no-op the untouched-buffer arm.
+ */
+#define MINCORE_POST_STATE_MAGIC	0x4D434F52UL	/* "MCOR" */
+#define MINCORE_POISON_SEED		0x4D434F52504F5321ULL /* "MCORPOS!" */
+struct mincore_post_state {
+	unsigned long magic;
+	unsigned long vec;
+	size_t vec_bytes;
+	uint64_t poison_seed;
+};
+
 static void sanitise_mincore(struct syscallrecord *rec)
 {
 	struct map *map;
+	struct mincore_post_state *snap;
 	unsigned long start, len, vec_bytes;
 	void *vec;
 
@@ -93,6 +113,47 @@ static void sanitise_mincore(struct syscallrecord *rec)
 	 * (retfd-rejected / killed EXTRA_FORK grandchild) that previously
 	 * leaked the buffer. */
 	rec_own(rec, vec);
+
+	/*
+	 * Untouched-buffer oracle setup.  Kernel writes exactly vec_bytes
+	 * residency bytes (0x00 or 0x01 per page) on retval==0; a fixed-
+	 * pattern nonzero poison can never survive a real write, so the
+	 * check has zero false-positive risk.  Use a FIXED seed (not RNG)
+	 * so --dry-run stays byte-identical.  Poison targets rec->a3 post-
+	 * relocation so we stamp the final buffer the kernel will see.
+	 */
+	snap = zmalloc_tracked(sizeof(*snap));
+	snap->magic = MINCORE_POST_STATE_MAGIC;
+	snap->vec = rec->a3;
+	snap->vec_bytes = vec_bytes;
+	if (rec->a3 != 0 && vec_bytes > 0)
+		snap->poison_seed =
+			poison_output_struct((void *)(unsigned long) rec->a3,
+					     vec_bytes, MINCORE_POISON_SEED);
+	post_state_install(rec, snap);
+}
+
+static void post_mincore(struct syscallrecord *rec)
+{
+	struct mincore_post_state *snap;
+
+	snap = post_state_claim_owned(rec, MINCORE_POST_STATE_MAGIC, __func__);
+	if (snap == NULL)
+		return;
+
+	if (rec->retval != 0)
+		goto out_release;
+	if (snap->poison_seed == 0)
+		goto out_release;
+
+	if (check_output_struct_user_or_skip((void *)(unsigned long) snap->vec,
+					     snap->vec_bytes,
+					     snap->poison_seed))
+		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
+				   1, __ATOMIC_RELAXED);
+
+out_release:
+	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_mincore = {
@@ -102,6 +163,7 @@ struct syscallentry syscall_mincore = {
 	.argname = { [0] = "start", [1] = "len", [2] = "vec" },
 	.group = GROUP_VM,
 	.sanitise = sanitise_mincore,
+	.post = post_mincore,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = REEXEC_SANITISE_OK,
 };
